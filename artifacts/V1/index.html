@@ -2383,7 +2383,7 @@ function makeFighter(r,x,y,idx){
     atkCd:0, spCd:0, smashHold:0, hitstun:0, invuln:0, jumps:2,
     reform:r.name==="Bubble"?1:0, burn:0, armor:0, countering:0, cloud:0,
     weakened:0, defined:0, defineStacks:0, frozen:0, _freezeLock:0, lastHitBy:null, curse:0, curseStacks:0,
-    flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _switchOn:false, _grabbed:null, _grabTimer:0,
+    flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
     rooted:0, ctrlRev:0, _revLock:0, slowed:0, _sawing:0, koCount:0, iceUntil:0, healing:0, _hurt:0, deaths:0, killCount:0, placement:null, _downOrder:0, _kos:0, _falls:0, _dmgDealt:0, _dmgTaken:0, _infected:0, _infectedBy:null, _origTeam:0, _lastInput:null, _empowerT:0, _hasteT:0, _starT:0, _yoyleT:0, _holding:null, _bossHitId:-1, _bossHitDmg:0, _swallow:0, _swallowTick:0,
     flash:0, aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
     r:24
@@ -3316,6 +3316,7 @@ function step(){
       f.vy+=grav;
     }
     f.x+=f.vx; f.y+=f.vy;
+    const _wasAir=!f.onground, _impactVY=f.vy;   // capture for the land-squash before we reset onground
     f.onground=false;
     // solid ground only in single-screen mode; the tower has no floor (fall = KO)
     if(!isBig() && f.y>=gy-f.r){ f.y=gy-f.r; if(f.vy>0){f.vy=0;} f.onground=true; f.jumps=2; f._usedAirSpecial=false; }
@@ -3375,6 +3376,8 @@ function step(){
         }
       }
     }
+    // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
+    if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
     // --- effect zones (glue/ice/bounce/damage/heal/wind) ---
     if(worldZones && worldZones.length){
       for(const z of worldZones){
@@ -6097,10 +6100,88 @@ function drawTendrils(){
     ctx.lineCap="butt";
   }
 }
+// ============================================================
+//  FIGHTER ANIMATION HOOK  (bespoke per-fighter / per-move rendering)
+// ============================================================
+// FIGHTER_ANIM is the single dispatch point every bespoke fighter animation plugs
+// into. It is keyed by fighter `name` first, then falls back to `kit.special` (so a
+// whole archetype can share one entry). Each entry is an object with two optional
+// passes, both cheap and called once per fighter per frame from drawFighter:
+//
+//   body(f, ctx) -> bool     PRE-BODY pass. Runs in RAW center space (origin at the
+//                            fighter's centre, +y is down, same space the default
+//                            blob/eyes use) BEFORE any squash/stretch. Draw a
+//                            REPLACEMENT silhouette and `return true` to suppress the
+//                            default blob+limbs+eyes AND the universal squash/stretch
+//                            for this frame (the move owns its own deform). Return
+//                            false / undefined to fall through to the normal body,
+//                            which is then drawn WITH the universal squash/stretch.
+//                            The caller wraps this in ctx.save()/restore(), so any
+//                            transform / style / alpha you set is auto-scoped.
+//
+//   over(f, ctx)             POST-BODY pass. Runs in UNSCALED center space, after the
+//                            body + team ring / you-marker / smash arc, before the
+//                            nametag. For trails, afterimages, glows — overlays that
+//                            should NOT deform with the squash/stretch. Also wrapped
+//                            in save()/restore().
+//
+// Adding a new fighter later = add ONE entry here; nothing else in drawFighter changes.
+// Look-ups are name -> kit.special. Keep entries allocation-free in the hot path.
+
+// A sharp, pointed leaf-blade silhouette pointing along +x (tip forward). Used by
+// Leafy's dash. L = tip distance forward, Wd = half-width of the belly.
+function leafBladePath(ctx, L, Wd){
+  const back = -L*0.42;
+  ctx.beginPath();
+  ctx.moveTo(L, 0);                                    // sharp leading point
+  ctx.quadraticCurveTo(L*0.35, -Wd, back, -Wd*0.32);   // top edge sweeping back
+  ctx.quadraticCurveTo(back-Wd*0.55, 0, back, Wd*0.32);// rounded tail
+  ctx.quadraticCurveTo(L*0.35, Wd, L, 0);              // bottom edge back to the tip
+  ctx.closePath();
+}
+
+const FIGHTER_ANIM = {
+  // ---- Leafy — Sharp Shadow dash: the whole body becomes a leaf-blade knifing
+  //      through the air along the dash vector (diagonal when down/up-dashing). ----
+  Leafy: {
+    body(f, ctx){
+      if(!(f._dashing>0)) return false;                // only while dashing; else normal + squash/stretch
+      const a0 = ctx.globalAlpha;                      // preserve incoming invuln-blink alpha
+      const dir = (f.face<0?-1:1);
+      const ang = Math.atan2((f._dashVY||0), dir*22);  // travel direction; tilts down on a falling dash
+      const L = f.r*2.8, Wd = f.r*0.9;
+      ctx.rotate(ang);
+      // intensified motion trail: translucent blade afterimages streaking backward
+      ctx.fillStyle = "#8ed24b";
+      for(let i=3;i>=1;i--){
+        ctx.globalAlpha = a0 * 0.10 * i;
+        ctx.save();
+        ctx.translate(-i*11, 0); ctx.scale(1-0.05*i, 1-0.04*i);
+        leafBladePath(ctx, L, Wd); ctx.fill();
+        ctx.restore();
+      }
+      ctx.globalAlpha = a0;
+      // solid sharp blade in Leafy's green with the dark outline
+      leafBladePath(ctx, L, Wd);
+      ctx.fillStyle = (f.flash>0 ? "#eaffd0" : "#8ed24b");
+      ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 3.5;
+      ctx.fill(); ctx.stroke();
+      // leaf midrib
+      ctx.strokeStyle = "#5a9c2c"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-L*0.28, 0); ctx.lineTo(L*0.9, 0); ctx.stroke();
+      // a tiny sharp eye near the leading edge — reads as a face knifing forward
+      ctx.fillStyle = "#1c1c1c";
+      ctx.beginPath(); ctx.arc(L*0.32, -Wd*0.28, 2.6, 0, 7); ctx.fill();
+      return true;                                     // REPLACE the default blob for this frame
+    }
+  }
+};
+
 function drawFighter(f){
   ctx.save(); ctx.translate(f.x,f.y);
   const blink=f.invuln>0 && (f.invuln%8<4);
   ctx.globalAlpha=blink?0.4:1;
+  if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the frames after touchdown
 
   // ---- Teardrop cloud form ----
   if(f.cloud>0){
@@ -6122,21 +6203,52 @@ function drawFighter(f){
     ctx.globalAlpha=1; ctx.restore(); return;
   }
 
-  // limbs (stubby)
-  ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.lineCap="round";
-  const legSw=Math.sin(hazardT*0.3+f.idx)* (Math.abs(f.vx)>0.5?6:1);
-  ctx.beginPath(); ctx.moveTo(-8,f.r-4); ctx.lineTo(-10,f.r+12+legSw); ctx.moveTo(8,f.r-4); ctx.lineTo(10,f.r+12-legSw); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(-f.r+4,2); ctx.lineTo(-f.r-8,10); ctx.moveTo(f.r-4,2); ctx.lineTo(f.r+8,10); ctx.stroke();
-  // body
-  ctx.fillStyle = f.flash>0 ? "#fff" : (f._yoyleT>0 ? "#9aa7b0" : (f._starT>0 ? (hazardT%6<3?"#ffd23f":f.color) : f.color));
-  ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3.5;
-  roundBlob(0,0,f.r);
-  ctx.fill(); ctx.stroke();
-  // burn tint
-  if(f.burn>0){ ctx.fillStyle="#f0521f44"; roundBlob(0,0,f.r); ctx.fill(); }
-  // eyes
-  ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-6*f.face+f.face*2,-4,6,0,7); ctx.arc(6*f.face+f.face*2,-4,6,0,7); ctx.fill();
-  ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-6*f.face+f.face*3,-4,2.6,0,7); ctx.arc(6*f.face+f.face*3,-4,2.6,0,7); ctx.fill();
+  // ---- bespoke per-fighter animation dispatch (name, then kit.special) ----
+  const anim = FIGHTER_ANIM[f.name] || (f.kit && FIGHTER_ANIM[f.kit.special]);
+  // PRE-BODY pass: runs in raw center space; returning true REPLACES the default body
+  // (and opts out of the universal squash/stretch — the move owns its own deform).
+  let handled = false;
+  if(anim && anim.body){ ctx.save(); handled = (anim.body(f, ctx) === true); ctx.restore(); }
+
+  if(!handled){
+    // ---- universal squash & stretch (exaggerated cartoony) ----
+    // Anticipatory deform driven by velocity + a brief landing squat. Applied around
+    // the FEET (y=f.r) so the fighter stays planted; eyes/face ride along with it.
+    let sx=1, sy=1, shear=0;
+    const ls=f._landSquash|0;
+    if(ls>0){                                   // just touched down: squat wide & short
+      const k=ls/6; sy=1-0.30*k; sx=1+0.30*k;
+    } else if(f.vy<-4){                          // rising fast: stretch tall & thin
+      const k=Math.min(1,(-f.vy-4)/8); sy=1+0.25*k; sx=1-0.18*k;
+    } else if(f.vy>6){                           // falling fast: tall-ish + lean into the fall
+      const k=Math.min(1,(f.vy-6)/10); sy=1+0.18*k; sx=1-0.12*k; shear=-0.10*k*f.face;
+    } else if(Math.abs(f.vx)>2){                 // running: slight forward lean/stretch
+      const k=Math.min(1,(Math.abs(f.vx)-2)/4.4); shear=-0.12*k*Math.sign(f.vx); sy=1+0.04*k; sx=1-0.02*k;
+    }
+    // clamp so it never reads as broken
+    sx=sx<0.7?0.7:(sx>1.4?1.4:sx); sy=sy<0.6?0.6:(sy>1.45?1.45:sy);
+
+    ctx.save();
+    if(sx!==1||sy!==1||shear){
+      ctx.translate(0,f.r); ctx.scale(sx,sy); if(shear) ctx.transform(1,0,shear,1,0,0); ctx.translate(0,-f.r);
+    }
+    // limbs (stubby)
+    ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.lineCap="round";
+    const legSw=Math.sin(hazardT*0.3+f.idx)* (Math.abs(f.vx)>0.5?6:1);
+    ctx.beginPath(); ctx.moveTo(-8,f.r-4); ctx.lineTo(-10,f.r+12+legSw); ctx.moveTo(8,f.r-4); ctx.lineTo(10,f.r+12-legSw); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-f.r+4,2); ctx.lineTo(-f.r-8,10); ctx.moveTo(f.r-4,2); ctx.lineTo(f.r+8,10); ctx.stroke();
+    // body
+    ctx.fillStyle = f.flash>0 ? "#fff" : (f._yoyleT>0 ? "#9aa7b0" : (f._starT>0 ? (hazardT%6<3?"#ffd23f":f.color) : f.color));
+    ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3.5;
+    roundBlob(0,0,f.r);
+    ctx.fill(); ctx.stroke();
+    // burn tint
+    if(f.burn>0){ ctx.fillStyle="#f0521f44"; roundBlob(0,0,f.r); ctx.fill(); }
+    // eyes
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-6*f.face+f.face*2,-4,6,0,7); ctx.arc(6*f.face+f.face*2,-4,6,0,7); ctx.fill();
+    ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-6*f.face+f.face*3,-4,2.6,0,7); ctx.arc(6*f.face+f.face*3,-4,2.6,0,7); ctx.fill();
+    ctx.restore();
+  }
   // team ring (team mode only) — a colored ground shadow so allies read at a glance
   if(SETTINGS.mode==='teams'){ ctx.strokeStyle=TEAM_COLORS[f.team%TEAM_COLORS.length]; ctx.lineWidth=3; ctx.globalAlpha=0.9;
     ctx.beginPath(); ctx.ellipse(0,f.r+8,f.r*0.8,5,0,0,7); ctx.stroke(); ctx.globalAlpha=1; }
@@ -6145,6 +6257,8 @@ function drawFighter(f){
     ctx.beginPath(); ctx.moveTo(0,-f.r-16); ctx.lineTo(-7,-f.r-6); ctx.lineTo(7,-f.r-6); ctx.closePath(); ctx.fill(); ctx.stroke(); }
   if(f.smashHold>0){ ctx.strokeStyle="#ffd23f"; ctx.lineWidth=3; ctx.globalAlpha=0.8;
     ctx.beginPath(); ctx.arc(0,0,f.r+6,0,7*(f.smashHold/45)); ctx.stroke(); }
+  // POST-BODY pass: overlays/effects (trails, afterimages, glows) in unscaled space
+  if(anim && anim.over){ ctx.save(); anim.over(f, ctx); ctx.restore(); }
   // ---- NAMETAG: name label above the head so you always know who's who ----
   {
     const label = f.name || "";
