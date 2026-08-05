@@ -1,6 +1,51 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { JSDOM } from 'jsdom';
 import { loadMonolith } from './helpers/load-monolith.js';
 import { spyMediaConstructors } from './helpers/harness.js';
+import { mulberry32 } from './helpers/prng.js';
+
+// A boot whose 2D context RECORDS every call, so the render path can be asserted instead of merely
+// run. loadMonolith's stub swallows calls silently, which is right for the golden harness and
+// useless for proving what was drawn — and the browser is not always available to look.
+function bootRecording(seed = 7) {
+  const html = readFileSync('artifacts/V1/index.html', 'utf8');
+  const rec = [];
+  const dom = new JSDOM(html, {
+    url: 'http://localhost/',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+    beforeParse(window) {
+      const grad = { addColorStop() {} };
+      window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
+        get: (_t, p) => (
+          p === 'measureText' ? () => ({ width: 0 })
+            : p === 'canvas' ? { width: 1100, height: 720 }
+              : p === 'getImageData' ? () => ({ data: [] })
+                : (p === 'createLinearGradient' || p === 'createRadialGradient'
+                  || p === 'createConicGradient' || p === 'createPattern') ? () => grad
+                  : (...args) => { rec.push({ op: p, args }); }),
+        set: () => true,
+      });
+      window.Math.random = mulberry32(seed);
+      window.requestAnimationFrame = () => 0;
+      window.cancelAnimationFrame = () => {};
+    },
+  });
+  return { w: dom.window, rec };
+}
+
+/** Pretend a render has finished decoding, without any network or Image constructor. */
+const FAKE_DECODED = (w, name, nw, nh) => w.eval(
+  `SPRITES[${JSON.stringify(name)}]._req = true;
+   SPRITES[${JSON.stringify(name)}].img = { complete:true, naturalWidth:${nw}, naturalHeight:${nh} };`);
+
+/** One lone FFA fighter — no team ring, no you-marker, no smash arc to pollute the op counts. */
+const soloFighter = (w, name) => w.eval(
+  `SETTINGS.mode='ffa'; SETTINGS.count=2; startMatch();
+   fighters.length = 0;
+   fighters.push(makeFighter(ROSTER.find(r=>r.name===${JSON.stringify(name)}), 300, 300, 0));
+   fighters[0].you = false; fighters[0].smashHold = 0;`);
 
 // Sprite rendering. Three things have to stay true for real character art to be safe to ship:
 //
@@ -22,6 +67,17 @@ describe('sprite registry', () => {
       expect(sp, `${name} has a sprite`).toBeTruthy();
       expect(typeof sp.draw, `${name}.draw`).toBe('function');
       expect(typeof sp.path, `${name}.path — needed to clip flash/burn/yoyle/star tints`).toBe('function');
+    }
+  });
+
+  it('points all twelve at a real render file on disk', () => {
+    const { window: w } = loadMonolith();
+    for (const name of BATCH_1) {
+      const src = w.eval(`SPRITES[${JSON.stringify(name)}].src`);
+      expect(src, `${name} has a render`).toMatch(/^assets\/sprites\/[a-z-]+\.png$/);
+      // The path is resolved relative to index.html at runtime, so it must exist under the
+      // publish root or the fighter silently drops back to vector art in production.
+      expect(() => readFileSync(`artifacts/V1/${src}`), `${src} exists`).not.toThrow();
     }
   });
 
@@ -93,6 +149,72 @@ describe('drawing sprite fighters headlessly', () => {
     `);
     expect(w.eval('fighters.map(f=>!!SPRITES[f.name])')).toEqual([true, false, true, false]);
     expect(() => w.eval('draw()')).not.toThrow();
+  });
+
+  it('renders a decoded image INSTEAD of the vector art, limbs and shared face', () => {
+    // The renders are whole characters. If the stub limbs or the shared BFDI face still drew,
+    // every fighter would sprout a second set of arms and a second pair of eyes.
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+
+    rec.length = 0;
+    w.eval('drawFighter(fighters[0])');
+    const withImg = rec.filter((c) => c.op === 'drawImage');
+    expect(withImg, 'the render is drawn once').toHaveLength(1);
+    expect(rec.filter((c) => c.op === 'arc'), 'no shared face (its pupils/mouth are arcs)').toHaveLength(0);
+    expect(rec.filter((c) => c.op === 'lineTo'), 'no stub limbs (they are moveTo/lineTo)').toHaveLength(0);
+
+    // …and with the image gone the vector art comes straight back.
+    w.eval("SPRITES['Firey'].img = null");
+    rec.length = 0;
+    w.eval('drawFighter(fighters[0])');
+    expect(rec.filter((c) => c.op === 'drawImage'), 'no image').toHaveLength(0);
+    expect(rec.filter((c) => c.op === 'arc').length, 'shared face is back').toBeGreaterThan(0);
+    expect(rec.filter((c) => c.op === 'lineTo').length, 'stub limbs are back').toBeGreaterThan(0);
+  });
+
+  it('contain-fits each render to its own aspect ratio and stands it on the floor line', () => {
+    // Nothing may be stretched: a tall character is capped by imgH, a wide one by imgW, and both
+    // keep the source aspect exactly. Feet land on R+12, where the stub legs used to end.
+    const { w, rec } = bootRecording();
+    const R = 24, FLOOR = R + 12;
+    const cases = [
+      // name,      natural w/h,  which bound should win
+      ['Pencil', 60, 200, 'height'],
+      ['Rocky', 257, 186, 'width'],
+    ];
+    for (const [name, nw, nh, bound] of cases) {
+      soloFighter(w, name);
+      FAKE_DECODED(w, name, nw, nh);
+      const { imgH, imgW } = w.eval(`({imgH:SPRITES[${JSON.stringify(name)}].imgH, imgW:SPRITES[${JSON.stringify(name)}].imgW})`);
+
+      rec.length = 0;
+      w.eval('drawFighter(fighters[0])');
+      const [, , , dw, dh] = rec.find((c) => c.op === 'drawImage').args;
+
+      expect(dw / dh, `${name} keeps its source aspect`).toBeCloseTo(nw / nh, 5);
+      expect(dh, `${name} fits the height cap`).toBeLessThanOrEqual(imgH * R + 1e-6);
+      expect(dw, `${name} fits the width cap`).toBeLessThanOrEqual(imgW * R + 1e-6);
+      if (bound === 'height') expect(dh, `${name} is height-bound`).toBeCloseTo(imgH * R, 5);
+      else expect(dw, `${name} is width-bound`).toBeCloseTo(imgW * R, 5);
+
+      // drawImage is centred at the origin, so the translate is what puts the feet down.
+      const ty = rec.filter((c) => c.op === 'translate').pop().args[1];
+      expect(ty + dh / 2, `${name} stands on the floor line`).toBeCloseTo(FLOOR, 5);
+    }
+  });
+
+  it('still tints a decoded render through every state', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Bubble');
+    FAKE_DECODED(w, 'Bubble', 200, 200);
+    for (const st of ['flash=6', '_yoyleT=200', 'burn=40']) {
+      rec.length = 0;
+      w.eval(`const f=fighters[0]; f.flash=0; f._yoyleT=0; f._starT=0; f.burn=0; f.${st}; drawFighter(f)`);
+      // body + one tint pass, both through the cached source-atop copy
+      expect(rec.filter((c) => c.op === 'drawImage').length, `${st} adds a tint pass (base + offscreen copy + overlay)`).toBe(3);
+    }
   });
 
   it('draws sprites in teams mode with the ring, you-marker and smash arc intact', () => {
