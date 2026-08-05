@@ -175,7 +175,127 @@ Served `artifacts/V1` over HTTP and drove it in a real browser:
 - pointed `MUSIC_FILES.boss` at a missing path → `_fileBad.boss` true, element dropped, synth bed
   running. No silence.
 
-## 5. Concerns / follow-ups
+---
+
+# Follow-up 1 — clutch-time music, owner override slot, local playlists
+
+## 6. Fifth track: `intense`
+
+| | |
+|---|---|
+| **Title** | Big Band Swing with a Chiptune Twist |
+| **Author** | HauntSync |
+| **Licence** | Pixabay Content License (verified on the track page; no attribution required) |
+| **Source** | https://pixabay.com/music/traditional-jazz-big-band-swing-with-a-chiptune-twist-332017/ |
+| **Size** | 2,081,280 bytes (2.0 MB) · 1:05 · MP3 256 kbps 48 kHz |
+
+Swung beat, brass hits, driving bass over a chiptune timbre. New shipped total: **11.6 MiB**
+across five tracks.
+
+## 7. Clutch trigger
+
+Checked from `step()` every `CLUTCH_CHECK_FRAMES` (30 → ~2x/second), never per frame, and it only
+calls `startMusic()` on an actual edge. Base bed is `boss` during Boss Rush, `battle` otherwise;
+if the menus or hub own the music the trigger stands down entirely.
+
+Entry (strict) — any one of:
+- a fighter is down to their last stock (**only when `SETTINGS.stocks > 1`** — otherwise a 1-stock
+  match and the tutorial would sit in clutch mode from the opening frame and the battle bed would
+  never play at all)
+- the player is at **≥ 90%**
+- a Boss Rush boss is under **25% HP**
+
+Exit (loose) — all of: player **< 80%**, nobody on a last stock, boss above **30% HP** — *and* a
+minimum hold of `CLUTCH_MIN_HOLD` (20 ticks ≈ 10 s). Asymmetric on purpose: with symmetric gates
+the bed flips every time a percent wobbles across 90, which is worse than no feature.
+
+## 8. Source priority chain
+
+Per context, best first, skipping anything already known bad:
+
+1. **the player's own playlist** — files they loaded on their device (`blob:` URL, IndexedDB)
+2. **`assets/music/custom/<context>.mp3`** — a track the *site owner* ships to everybody
+3. **the shipped Pixabay default**
+4. **the synth bed**
+
+`assets/music/custom/` ships empty with a `README.md` covering filenames, the requirement that
+tracks be legally acquired, and the Materia Music Publishing credit obligation for
+Undertale/Deltarune music (**both** "Toby Fox (composer)" and "Materia Music Publishing (rights
+administrator)" — the composer alone under-credits). `CREDITS.md` carries a commented-out template
+block, including a filled-in Big Shot example, that activates when a custom track is added.
+
+An unfilled `custom/` slot costs exactly one 404 per context per session; the miss is cached in
+`SND._badSrc` and never re-probed.
+
+## 9. Local custom music (player-side)
+
+- **UI**: a "Custom Music" block in the existing Controls screen — five rows, one per context,
+  each with a multi-select `Load file…` (`accept="audio/*"`), the loaded filenames each with a
+  small `✕`, and `Clear all`. Inline `on*=` handlers, `.maprow`-style panels. Carries the line
+  *"Plays only on this device — use music you own. Nothing is uploaded."*
+- **Storage**: IndexedDB `bfsi-music` / store `tracks`, key = context, value = `[{name, blob}]`.
+  Not `BStore` — that is localStorage-backed and one base64'd track would blow the ~5 MB quota.
+  Hydration runs from the **first-gesture hook**, never at eval time; the whole layer no-ops where
+  `indexedDB` is absent. A legacy single-`{name,blob}` record is still read back.
+- **Playlists**: each context holds a list, `Load file…` appends. On context start a random entry
+  is picked, never the same one twice running. Boss Rush re-rolls on **every boss spawn** so a
+  gauntlet walks through the owner's boss/miniboss themes; the intense slot re-rolls per trigger.
+  The no-repeat search is bounded and falls back to a deterministic step — an unbounded
+  "roll until different" loop would hang forever against the golden harness's stubbed `Math.random`.
+- **Privacy**: nothing leaves the browser. `serializeState()` is an explicit allowlist of
+  fighter/world fields with no path to `SND`; a test asserts the wire payload contains no `blob:`
+  URL, no loaded filename, and no music state at all.
+
+## 10. Crossfade — and a bug the test caught
+
+Two decks alternate; the outgoing one fades out while the incoming one fades in over `SND.fadeMs`
+(700 ms; 0 = instant cut) on one shared wall-clock timer that stops itself when nothing is moving.
+
+The first implementation had **no crossfade at all**: `startMusic()` called `stopMusic()`, which
+hard-pauses both decks, so every "crossfade" started from silence. The overlap test failed and
+exposed it. `startMusic()` now clears only the synth timer and the pending request and hands the
+outgoing deck to the fade; `stopMusic()` keeps its hard stop.
+
+Second bug, same class: `musicRerollContext()` picked a new track and then `startMusic()` re-rolled
+it away — on a two-track boss playlist that landed straight back on the track already playing, so
+the boss theme never changed. Fixed with a one-shot `SND._keepPick`.
+
+## 11. Verification (follow-up)
+
+`npx vitest run` — **12 files, 122 tests green** (baseline 11/72; first pass 12/87).
+
+Mutation-checked, each reverted and the file diffed back to identical:
+
+| Mutation | Result |
+|---|---|
+| drop the no-immediate-repeat guard | 3 tests fail |
+| ignore `_keepPick` (re-roll after a deliberate pick) | 1 test fails |
+| remove the clutch minimum hold | 1 test fails |
+| make the clutch thresholds symmetric | 1 test fails |
+| put `custom/` above the player's own track | 1 test fails |
+| (first pass) remove the autoplay guard | 2 tests fail |
+| (first pass) make `go()` never pick a bed | 3 tests fail |
+
+Live browser (served over HTTP, real trusted click for the gesture):
+
+- cold load: no decks, no gesture, zero `.mp3` requests; request parked as `pending`
+- Controls screen renders 5 slots; `custom/menu.mp3` 404s and `menu.mp3` plays at 0.34
+- loaded two real files into the **boss** slot → UI listed both with `✕` and `Clear all`
+- Boss Rush: theme alternated on each `spawnBossRushBoss()` — durations `76.82 → 80.74 → 76.82`
+  confirm the audio itself changed, no immediate repeat
+- clutch: `battle.mp3` (96.36 s) → forced a fighter to last stock → 30 frames → `intense.mp3`
+  (65.04 s) at 0.32. Held through 19 ticks with the condition cleared; reverted to `battle.mp3`
+  once the hold expired. Entered at 95%, **stayed** at 85% (below entry 90, above exit 80) for 23
+  ticks, left at 40%.
+- one run appeared not to revert — inspection showed a CPU had been KO'd to their last stock
+  during the 10 s of real simulation, so the loose exit test was correctly still true
+- crossfade mid-fade: both decks unpaused, `intense` 0.134 rising / `battle` 0.175 falling; after,
+  `intense` 0.32 and `battle` paused at 0
+- full reload → playlist restored from IndexedDB (`my-boss-theme-A.mp3`, `my-miniboss-B.mp3`),
+  chain resolving `<player blob> → assets/music/custom/boss.mp3 → assets/music/boss.mp3`
+- test data cleared from IndexedDB afterwards
+
+## 12. Concerns / follow-ups
 
 - **9.6 MiB total.** Fine for a static deploy that fetches nothing before the first click, but if
   the payload ever matters, re-encoding these four to ~96 kbps would cut it to roughly 3.6 MiB with
@@ -188,3 +308,14 @@ Served `artifacts/V1` over HTTP and drove it in a real browser:
   single file replacement at the same path plus a CREDITS.md/footer edit.
 - **Music does not duck or pause when the game is paused.** Not in scope; easy to add later in
   `togglePause`.
+- **The clutch trigger fires often in practice.** Any fighter reaching their last stock counts, and
+  in a 5-way FFA that happens well before the fight is actually close. If it feels trigger-happy,
+  the honest knob is to require the *player* to be on their last stock rather than anyone —
+  one condition in `clutchCondition()`.
+- **Local tracks are unbounded in total.** Each file is capped at 30 MB but a player can load many
+  per slot; IndexedDB will push back with a quota error, which is swallowed and leaves the track
+  session-only. Acceptable, but there is no UI telling them the save failed.
+- **`intense` has no `custom/` shipped counterpart** and neither does any other slot — the folder is
+  deliberately empty. If the owner fills one, `test/credential-strip.test.js` fails until the file
+  is added to the publish pin. That is the gate working, but it will look like a broken build to
+  anyone who does not read the message.

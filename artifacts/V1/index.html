@@ -128,6 +128,20 @@
   .keycap{font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:700;
     background:#1c1c1c; color:#fff; border-radius:6px; padding:4px 10px; min-width:64px; text-align:center}
   .maprow.listen .keycap{background:var(--host); animation:pulse .6s infinite}
+  /* custom music slots — same panel language as the key-remap rows above */
+  .musicgrid{display:grid; gap:6px; max-width:560px; width:100%; margin-top:8px}
+  .musicrow{background:var(--panel); border:2px solid #1c1c1c; border-radius:10px; padding:6px 10px}
+  .musicrow .mhead{display:flex; align-items:center; gap:8px}
+  .musicrow .mlbl{flex:1; font-size:13px; font-weight:800; text-align:left}
+  .musicrow .btn{font-size:12px; padding:5px 10px}
+  .musicrow .mlist{display:flex; flex-wrap:wrap; gap:4px; margin-top:5px}
+  .musicrow .mname{font-family:'JetBrains Mono',monospace; font-size:11px; color:#0007}
+  .mtrack{display:inline-flex; align-items:center; gap:4px; max-width:100%;
+    font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700;
+    background:#1c1c1c14; border-radius:6px; padding:2px 4px 2px 7px; overflow:hidden}
+  .mtrack .mx{font-family:inherit; font-size:11px; font-weight:800; cursor:pointer;
+    background:none; border:none; color:#0008; padding:0 3px; line-height:1}
+  .mtrack .mx:hover{color:var(--bad,#e0503a)}
   @keyframes pulse{50%{opacity:.5}}
 
   /* ---- in-game HUD ---- */
@@ -544,6 +558,9 @@
     <h1 style="font-size:30px">Controls</h1>
     <div class="sub">Gamepad-style layout. Click a key and press a new one to remap. A controller works too — face buttons and D-pad are auto-detected in-match.</div>
     <div class="maps" id="maps"></div>
+    <div class="brand" style="margin-top:20px">Custom Music</div>
+    <div class="foot" style="margin-top:2px;max-width:560px;text-align:center">Plays only on this device — use music you own. Nothing is uploaded.</div>
+    <div class="musicgrid" id="customMusic"></div>
     <div class="row" style="margin-top:16px">
       <button class="btn ghost sm" onclick="resetKeys()">Reset defaults</button>
       <button class="btn sm" onclick="go('title')">Done</button>
@@ -872,11 +889,21 @@ const SND = {
   on:true, musicOn:true, started:false, _lastHit:0, _musicTimer:null, _step:0,
   // ---- recorded-music state (see the MUSIC_FILES block below) ----
   gesture:false,      // a real user interaction has happened, so media playback is allowed
-  _el:null,           // the single reused <audio> element; never constructed at load time
-  _elKind:null,       // which track is currently loaded into _el
-  _kind:null,         // the context we WANT to be playing ('menu' | 'battle' | 'boss' | 'tourney')
+  fadeMs:700,         // crossfade length; 0 = instant cut
+  _decks:[null,null], // the two <audio> elements; NEITHER is constructed at load time
+  _deck:0,            // index of the live deck
+  _deckSrc:[null,null],   // the exact URL loaded into each deck
+  _deckKind:[null,null],  // the context each deck was loaded for
+  _fade:[null,null],  // in-flight volume ramp per deck: {from,to,t0}
+  _fadeTimer:null,
+  _kind:null,         // the context we WANT ('menu'|'battle'|'boss'|'tourney'|'intense')
   _pendingKind:null,  // requested before the first gesture; started by musicUnlock()
-  _fileBad:{},        // kinds whose file 404'd / failed to decode — permanently on the synth bed
+  _fileBad:{},        // kinds with no usable source left — permanently on the synth bed
+  _badSrc:{},         // individual URLs that 404'd (mostly unfilled custom/ slots)
+  _userList:{},       // kind -> [{name, blob, url}] the player's own playlist for that context
+  _userPick:{},       // kind -> the blob: URL currently chosen out of that playlist
+  _userLast:{},       // kind -> index of the last pick, so a re-roll avoids an instant repeat
+  _keepPick:false,    // one-shot: the caller already chose a track; startMusic must not re-roll
 };
 function sndInit(){
   if(SND.ctx || !SND.on) return;
@@ -944,9 +971,13 @@ const SFX = {
 //  BACKGROUND MUSIC — real recorded loops, with the synth bed below as the fallback.
 //
 //  Every track is licensed for this use; titles, authors, source URLs and licences are recorded
-//  in assets/music/CREDITS.md next to the files. The four contexts deliberately sound different:
+//  in assets/music/CREDITS.md next to the files. The five contexts deliberately sound different:
 //  a warm chiptune loop for the menus, an energetic 8-bit bed for arena matches, a dark
-//  orchestral bed for Boss Rush, and a regal anthem for the World Cup hub.
+//  orchestral bed for Boss Rush, a regal anthem for the World Cup hub, and a swung big-band
+//  chiptune that takes over when a match reaches clutch time (see the CLUTCH block further down).
+//
+//  Source order per context: assets/music/custom/<context>.mp3 (the owner's own legally acquired
+//  track, if they dropped one in) -> the shipped default -> the synth bed.
 //
 //  Design rules this block has to honour:
 //   * NO Audio element is constructed at load time — the headless jsdom harness boots this file
@@ -963,9 +994,31 @@ const MUSIC_FILES = {
   battle:  'assets/music/battle.mp3',
   boss:    'assets/music/boss.mp3',
   tourney: 'assets/music/tourney.mp3',
+  intense: 'assets/music/intense.mp3',
 };
+// OWNER OVERRIDE SLOT. Every context checks assets/music/custom/<context>.mp3 first and only
+// falls back to the shipped default above (and then to the synth bed) when that is not there.
+// This is how the owner swaps in music they have legitimately acquired themselves — see
+// assets/music/custom/README.md for the filenames and the credit obligations that come with it.
+// Nothing is shipped in custom/, so the first play of each context 404s once, notes the miss in
+// SND._badSrc, and never asks again for the rest of the session.
+const MUSIC_CUSTOM_DIR = 'assets/music/custom/';
+// Ordered candidate sources for a context, best first, minus any that already failed:
+//   1. a track THIS PLAYER loaded from their own device (blob: URL, kept in IndexedDB)
+//   2. assets/music/custom/<context>.mp3 — the site owner's own shipped override
+//   3. the shipped Pixabay default
+// ...and startMusic() falls through to the synth bed when every one of them is unusable.
+function musicSources(kind){
+  const def = MUSIC_FILES[kind];
+  if(!def) return [];
+  const out = [];
+  if(SND._userPick[kind]) out.push(SND._userPick[kind]);
+  out.push(MUSIC_CUSTOM_DIR + kind + '.mp3');
+  out.push(def);
+  return out.filter(s=>!SND._badSrc[s]);
+}
 // Per-context playback level. Music sits well under the SFX so hits and KOs still read clearly.
-const MUSIC_VOLUME = { menu:0.34, battle:0.30, boss:0.34, tourney:0.34 };
+const MUSIC_VOLUME = { menu:0.34, battle:0.30, boss:0.34, tourney:0.34, intense:0.32 };
 // Which screen id gets which bed. Matches (which hide every screen with go('_none_')) call
 // startMusic themselves; anything not listed here leaves the current bed alone.
 const MUSIC_SCREENS = {
@@ -973,44 +1026,91 @@ const MUSIC_SCREENS = {
   editor:'menu', test:'menu', lobby:'menu',
   tourneySetup:'tourney', tourneyHub:'tourney',
 };
-// Lazily build the ONE reused <audio> element. Returns null anywhere media is unavailable.
-function musicEl(){
-  if(SND._el) return SND._el;
+// ---- two decks, so one bed can fade out while the next fades in ----
+// A single element cannot cross-fade with itself, and the clutch trigger switches beds mid-fight
+// where a hard cut is jarring. Deck 0/1 alternate; SND._deck is whichever one is live.
+// SND.fadeMs is deliberately a knob, not a constant: 0 gives an instant cut (used by the tests,
+// and available if the crossfade ever gets in the way).
+function musicDeck(i){
+  if(SND._decks[i]) return SND._decks[i];
   if(typeof Audio!=='function') return null;
   let el;
   try{ el = new Audio(); }catch(e){ return null; }
   try{
     el.loop = true;
     el.preload = 'auto';
-    el.addEventListener('error', ()=>{
-      // 404, decode failure, unsupported codec — never leave the player in silence.
-      const kind = SND._elKind;
-      if(kind) SND._fileBad[kind] = true;
-      SND._el = null; SND._elKind = null;
-      if(kind && SND._kind===kind) startSynthMusic(kind);
-    });
+    el.volume = 0;
+    // 404, decode failure, unsupported codec. This is the ordinary path for a custom/ slot the
+    // owner has not filled, so it steps to the next source rather than giving up on the context.
+    el.addEventListener('error', ()=>{ musicSourceFailed(i); });
   }catch(e){ return null; }
-  SND._el = el;
+  SND._decks[i] = el;
   return el;
+}
+function musicActiveEl(){ return SND._decks[SND._deck] || null; }
+// Whatever the deck at index i was loading is unusable — remember that exact URL and try the
+// next source for the same context. When the list runs out, hand the context to the synth bed.
+function musicSourceFailed(i){
+  const src = SND._deckSrc[i], kind = SND._deckKind[i];
+  if(src) SND._badSrc[src] = true;
+  SND._deckSrc[i] = null; SND._deckKind[i] = null;
+  if(!kind || SND._kind!==kind) return;            // stale deck from an older context; ignore
+  if(musicSources(kind).length){ startMusicFile(kind); return; }
+  SND._fileBad[kind] = true;
+  startSynthMusic(kind);
 }
 function musicPlaying(){
   if(SND._musicTimer) return true;                       // synth bed is ticking
-  const el = SND._el;
+  const el = musicActiveEl();
   try{ return !!(el && el.src && !el.paused && !el.ended); }catch(e){ return false; }
+}
+// Ramp every deck toward its target volume on a wall-clock curve, then park the silent ones.
+// One shared timer for both decks; it stops itself once nothing is moving. No per-frame work.
+function musicFadeTick(){
+  let moving = false;
+  const now = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+  for(let i=0;i<SND._decks.length;i++){
+    const el = SND._decks[i]; if(!el) continue;
+    const f = SND._fade[i]; if(!f) continue;
+    const t = (SND.fadeMs>0) ? Math.min(1, (now - f.t0) / SND.fadeMs) : 1;
+    const v = f.from + (f.to - f.from) * t;
+    try{ el.volume = Math.max(0, Math.min(1, v)); }catch(e){}
+    if(t>=1){
+      SND._fade[i] = null;
+      if(f.to===0){ try{ el.pause(); }catch(e){} }
+    } else moving = true;
+  }
+  if(!moving && SND._fadeTimer){ clearInterval(SND._fadeTimer); SND._fadeTimer=null; }
+}
+function musicFadeTo(i, to){
+  const el = SND._decks[i]; if(!el) return;
+  let from = 0; try{ from = el.volume; }catch(e){}
+  const now = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+  SND._fade[i] = { from, to, t0: now };
+  if(!SND._fadeTimer && typeof setInterval==='function'){
+    SND._fadeTimer = setInterval(musicFadeTick, 40);
+  }
+  musicFadeTick();   // apply immediately so a 0ms fade is a genuine instant cut
 }
 // Try the recorded track for `kind`. Returns true when the file path owns playback (already
 // playing, or parked until the first gesture), false when the caller should use the synth bed.
 function startMusicFile(kind){
-  const src = MUSIC_FILES[kind];
-  if(!src || SND._fileBad[kind]) return false;
+  const sources = musicSources(kind);
+  if(!sources.length || SND._fileBad[kind]) return false;
   if(!SND.gesture){ SND._pendingKind = kind; return true; }   // autoplay is blocked until then
-  const el = musicEl();
+  // Already live on this context (a retry after a failed custom slot lands here): leave it be.
+  const cur = musicActiveEl();
+  if(cur && SND._deckKind[SND._deck]===kind && SND._deckSrc[SND._deck]===sources[0] && !cur.paused) return true;
+  const next = 1 - SND._deck;
+  const el = musicDeck(next);
   if(!el) return false;
   try{
-    if(SND._elKind!==kind){ el.src = src; SND._elKind = kind; }
+    el.src = sources[0];
+    SND._deckSrc[next] = sources[0];
+    SND._deckKind[next] = kind;
     el.loop = true;
-    el.volume = (MUSIC_VOLUME[kind]!=null) ? MUSIC_VOLUME[kind] : 0.32;
     try{ el.currentTime = 0; }catch(e){}
+    try{ el.volume = 0; }catch(e){}
     const p = el.play();
     if(p && typeof p.catch==='function'){
       p.catch(()=>{
@@ -1020,17 +1120,32 @@ function startMusicFile(kind){
         if(SND._kind===kind) startSynthMusic(kind);
       });
     }
+    // crossfade: old deck out, new deck in
+    musicFadeTo(SND._deck, 0);
+    SND._deck = next;
+    musicFadeTo(next, (MUSIC_VOLUME[kind]!=null) ? MUSIC_VOLUME[kind] : 0.32);
     return true;
   }catch(e){ SND._fileBad[kind] = true; return false; }
+}
+// Fade every deck out (used when handing a context over to the synth bed).
+function musicSilenceDecks(){
+  for(let i=0;i<SND._decks.length;i++){ if(SND._decks[i]) musicFadeTo(i, 0); }
 }
 // The one entry point the game calls. Picks the recorded track when there is one, else the synth.
 function startMusic(kind){
   if(!SND.on || !SND.musicOn) return;
   // Re-entering the same context (title -> select -> title) must not restart the track.
   if(kind===SND._kind && (musicPlaying() || SND._pendingKind===kind)) return;
-  stopMusic();
+  // NOT stopMusic() — that hard-pauses both decks, which would leave startMusicFile cross-fading
+  // in from silence, i.e. no crossfade at all. Only the synth bed and the pending request get
+  // cleared here; the outgoing deck is handed to the fade.
+  if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
+  SND._pendingKind = null;
   SND._kind = kind;
+  // a fresh pick from this context's playlist, if it has one (unless a caller already chose)
+  if(!SND._keepPick) musicRollUserTrack(kind);
   if(startMusicFile(kind)) return;
+  musicSilenceDecks();
   startSynthMusic(kind);
 }
 // Called from the first-gesture hook: media is allowed now, so start whatever the game wants.
@@ -1040,17 +1155,273 @@ function startMusic(kind){
 // the game would sit silent on its own front page until the first navigation.
 function musicUnlock(){
   SND.gesture = true;
+  try{ musicHydrateUser(); }catch(e){}   // first gesture is also when IndexedDB becomes fair game
   const k = SND._pendingKind || currentMusicKind();
   if(!k) return;
   if(musicPlaying() && SND._kind===k) return;   // already on the right bed; don't restart it
   SND._pendingKind = null; SND._kind = null;    // clear so startMusic's dedupe doesn't swallow this
   startMusic(k);
 }
+// ============================================================
+//  LOCAL CUSTOM MUSIC — the player's own files, on their own machine.
+//
+//  This is deliberately NOT the same thing as assets/music/custom/: that folder is the SITE
+//  OWNER shipping a track to everybody, which is publishing and carries all the licensing weight
+//  that implies. This is one player pointing the game at a file already on their disk. It never
+//  leaves the browser: the Blob goes into IndexedDB on this device, playback goes through a
+//  blob: URL, and nothing in serializeState() or any NET.send payload can reach it — the netcode
+//  serialises an explicit allowlist of fighter/world fields and has no path to SND.
+//
+//  IndexedDB rather than the existing BStore: BStore is localStorage-backed and stores strings,
+//  so a base64'd track would blow the ~5MB quota on the first file. Nothing here touches IDB at
+//  eval time — hydration is kicked off by the same first-gesture hook as the rest of the audio,
+//  and every entry point degrades to a no-op where IndexedDB is absent (e.g. the jsdom harness).
+// ============================================================
+const MUSIC_CONTEXTS = ['menu','battle','boss','tourney','intense'];
+const MUSIC_CONTEXT_LABEL = { menu:'Menus', battle:'Battles', boss:'Boss Rush', tourney:'World Cup', intense:'Clutch time' };
+const MUSIC_MAX_BYTES = 30*1024*1024;   // a sanity cap; well past any sensible loop
+const MStore = {
+  DB:'bfsi-music', STORE:'tracks', _db:null,
+  available(){ try{ return typeof indexedDB!=='undefined' && !!indexedDB; }catch(e){ return false; } },
+  open(){
+    if(this._db) return Promise.resolve(this._db);
+    if(!this.available()) return Promise.reject(new Error('no-indexeddb'));
+    const self=this;
+    return new Promise((res,rej)=>{
+      let req; try{ req = indexedDB.open(self.DB, 1); }catch(e){ rej(e); return; }
+      req.onupgradeneeded = ()=>{ try{ req.result.createObjectStore(self.STORE); }catch(e){} };
+      req.onsuccess = ()=>{ self._db = req.result; res(self._db); };
+      req.onerror = ()=>rej(req.error || new Error('indexeddb-open-failed'));
+    });
+  },
+  _tx(mode, fn){
+    const self=this;
+    return this.open().then(db=>new Promise((res,rej)=>{
+      let tx, req;
+      try{ tx = db.transaction(self.STORE, mode); req = fn(tx.objectStore(self.STORE)); }
+      catch(e){ rej(e); return; }
+      tx.oncomplete = ()=>res(req ? req.result : undefined);
+      tx.onerror    = ()=>rej(tx.error || new Error('indexeddb-tx-failed'));
+      tx.onabort    = ()=>rej(tx.error || new Error('indexeddb-tx-aborted'));
+    }));
+  },
+  get(k){ return this._tx('readonly',  st=>st.get(k)); },
+  set(k,v){ return this._tx('readwrite', st=>st.put(v,k)); },
+  del(k){ return this._tx('readwrite', st=>st.delete(k)); },
+};
+// Each context holds a PLAYLIST, not a single file — the owner wants a stack of boss and
+// miniboss themes, not one boss theme. SND._userList[kind] = [{name, blob, url}]; the track that
+// actually plays is one random pick from it, re-rolled whenever the context (re)starts.
+//
+// entries: [{name, blob, size?}] — File objects from the picker and {name,blob} records out of
+// IndexedDB both fit, so hydration and picking share this one path.
+function musicAddUserTracks(kind, entries, persist){
+  if(MUSIC_CONTEXTS.indexOf(kind)<0 || !entries || !entries.length) return 0;
+  const list = SND._userList[kind] || (SND._userList[kind] = []);
+  let added = 0;
+  for(const e of entries){
+    if(!e || !e.blob) continue;
+    if(e.size != null && e.size > MUSIC_MAX_BYTES) continue;
+    let url = null;
+    try{ url = URL.createObjectURL(e.blob); }catch(err){ continue; }
+    delete SND._badSrc[url];
+    list.push({ name: e.name || 'track', blob: e.blob, url });
+    added++;
+  }
+  if(!list.length) delete SND._userList[kind];
+  if(!added) return 0;
+  delete SND._fileBad[kind];              // a brand-new source deserves a fresh chance
+  if(persist) musicPersistUserTracks(kind);
+  if(SND._kind===kind){ SND._kind = null; startMusic(kind); }   // swap live (startMusic re-rolls)
+  else musicRollUserTrack(kind);
+  return added;
+}
+// Replace a context's whole playlist with a single track. (Kept because "one track for this
+// context" is the common case and reads better than a one-element array at the call site.)
+function musicSetUserTrack(kind, blob, name){
+  musicClearUserTracks(kind, false);
+  return musicAddUserTracks(kind, [{ name, blob }], true) > 0;
+}
+function musicRemoveUserTrack(kind, idx){
+  const list = SND._userList[kind];
+  if(!list || !list[idx]) return;
+  const gone = list.splice(idx,1)[0];
+  const wasPlaying = (SND._userPick[kind]===gone.url);
+  SND._userLast[kind] = null;                       // indices shifted; forget the repeat guard
+  if(!list.length){ delete SND._userList[kind]; delete SND._userPick[kind]; }
+  if(gone.url) delete SND._badSrc[gone.url];
+  musicPersistUserTracks(kind);
+  if(wasPlaying && SND._kind===kind){ SND._kind = null; startMusic(kind); }
+  else if(wasPlaying) musicRollUserTrack(kind);
+  musicRevokeLater(gone.url);
+}
+function musicClearUserTracks(kind, persist){
+  const list = SND._userList[kind] || [];
+  delete SND._userList[kind];
+  delete SND._userPick[kind];
+  delete SND._userLast[kind];
+  delete SND._fileBad[kind];
+  for(const t of list){ if(t.url) delete SND._badSrc[t.url]; }
+  if(persist!==false) musicPersistUserTracks(kind);
+  if(SND._kind===kind){ SND._kind = null; startMusic(kind); }
+  for(const t of list) musicRevokeLater(t.url);
+}
+// Choose which track of the playlist plays next. Never the same one twice running when there is
+// an alternative — a two-track boss playlist that can repeat is barely a playlist.
+function musicRollUserTrack(kind){
+  const list = SND._userList[kind];
+  if(!list || !list.length){ delete SND._userPick[kind]; return null; }
+  const last = (SND._userLast[kind]!=null) ? SND._userLast[kind] : -1;
+  let i = Math.floor(Math.random()*list.length);
+  // Bounded retry, then a deterministic step. An unbounded do/while would hang forever against a
+  // stubbed Math.random that returns a constant — which is exactly what the golden harness does.
+  for(let tries=0; tries<8 && i===last && list.length>1; tries++) i = Math.floor(Math.random()*list.length);
+  if(i===last && list.length>1) i = (last+1) % list.length;
+  if(i<0 || i>=list.length) i = 0;
+  SND._userLast[kind] = i;
+  SND._userPick[kind] = list[i].url;
+  return SND._userPick[kind];
+}
+// Force a fresh pick mid-context. Boss Rush calls this on every boss spawn so a gauntlet walks
+// through the owner's boss/miniboss themes instead of looping one of them all run.
+// _keepPick suppresses startMusic's own roll for this one call — without it the deliberate pick
+// made here is immediately re-rolled away, which on a two-track playlist lands straight back on
+// the track that was already playing and the boss theme never changes.
+function musicRerollContext(kind){
+  const list = SND._userList[kind];
+  if(!list || list.length<2) return;
+  const before = SND._userPick[kind];
+  musicRollUserTrack(kind);
+  if(SND._kind===kind && SND._userPick[kind]!==before){
+    SND._kind = null;
+    SND._keepPick = true;
+    try{ startMusic(kind); } finally { SND._keepPick = false; }
+  }
+}
+function musicPersistUserTracks(kind){
+  try{
+    const list = SND._userList[kind];
+    if(!list || !list.length){ MStore.del(kind).catch(()=>{}); return; }
+    MStore.set(kind, list.map(t=>({ name:t.name, blob:t.blob }))).catch(()=>{});
+  }catch(e){}
+}
+// Revoke AFTER the crossfade has finished with the old deck, not during it.
+function musicRevokeLater(url){
+  if(!url) return;
+  try{ setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, Math.max(50, SND.fadeMs*3)); }catch(e){}
+}
+// ---- settings UI (inline handlers, house style) ----
+function musicPickFile(kind, input){
+  const files = (input && input.files) ? Array.prototype.slice.call(input.files) : [];
+  if(input) input.value = '';                       // so re-picking the same file still fires
+  if(!files.length) return;
+  const tooBig = files.filter(f=>f && f.size > MUSIC_MAX_BYTES);
+  const ok = files.filter(f=>f && !(f.size > MUSIC_MAX_BYTES))
+                  .map(f=>({ name:f.name, blob:f, size:f.size }));
+  if(ok.length) musicAddUserTracks(kind, ok, true);
+  if(tooBig.length) alert(tooBig.length+" file(s) skipped — please keep each one under 30 MB.");
+  buildCustomMusic();
+}
+function musicRemoveSlotTrack(kind, idx){ musicRemoveUserTrack(kind, idx); buildCustomMusic(); }
+function musicClearSlot(kind){ musicClearUserTracks(kind, true); buildCustomMusic(); }
+function buildCustomMusic(){
+  const host = document.getElementById('customMusic');
+  if(!host) return;
+  host.innerHTML = MUSIC_CONTEXTS.map(kind=>{
+    const id = 'mfile_'+kind, list = SND._userList[kind] || [];
+    const tracks = list.length
+      ? list.map((t,i)=>'<span class="mtrack">'+esc(t.name)
+          + '<button class="mx" title="Remove" onclick="musicRemoveSlotTrack(\''+kind+'\','+i+')">✕</button></span>').join('')
+      : '<span class="mname">default track</span>';
+    return '<div class="musicrow">'
+      + '<div class="mhead"><span class="mlbl">'+MUSIC_CONTEXT_LABEL[kind]+'</span>'
+      + '<input type="file" accept="audio/*" multiple id="'+id+'" style="display:none" onchange="musicPickFile(\''+kind+'\',this)">'
+      + '<button class="btn ghost sm" onclick="document.getElementById(\''+id+'\').click()">Load file…</button>'
+      + (list.length ? '<button class="btn ghost sm" onclick="musicClearSlot(\''+kind+'\')">Clear all</button>' : '')
+      + '</div><div class="mlist">'+tracks+'</div></div>';
+  }).join('');
+}
+// Pull saved playlists back out of IndexedDB. Runs once, from the first-gesture hook — never at
+// eval time, so booting this file headlessly touches no storage and no media.
+let MUSIC_HYDRATED = false;
+function musicHydrateUser(){
+  if(MUSIC_HYDRATED) return;
+  MUSIC_HYDRATED = true;
+  if(!MStore.available()) return;
+  for(const kind of MUSIC_CONTEXTS){
+    try{
+      MStore.get(kind).then(rec=>{
+        // Arrays are the current shape; a bare {name,blob} is tolerated so an older single-track
+        // save still comes back instead of silently vanishing.
+        const arr = Array.isArray(rec) ? rec : (rec && rec.blob ? [rec] : null);
+        if(!arr || !arr.length) return;
+        musicAddUserTracks(kind, arr, false);
+        buildCustomMusic();
+      }).catch(()=>{});
+    }catch(e){}
+  }
+}
+// ---------- CLUTCH TIME: swap the battle bed for the intense one when a match gets tense ----------
+// Checked twice a second from step(), never per frame, and it only ever calls startMusic() on an
+// actual edge — so the steady state costs one modulo and a short scan of the fighter list.
+//
+// Thresholds are asymmetric ON PURPOSE (a Schmitt trigger). Entering needs the strict numbers;
+// leaving needs the loose ones AND a minimum hold. Without both halves the music flaps every time
+// a fighter's percent wobbles across 90, which is worse than having no feature.
+const CLUTCH_CHECK_FRAMES = 30;     // ~2x/second at 60fps
+const CLUTCH_MIN_HOLD = 20;         // ticks; 20 * 30 frames = 600 frames ≈ 10s at 60fps
+const CLUTCH_PCT_IN = 90, CLUTCH_PCT_OUT = 80;          // player damage %
+const CLUTCH_BOSS_IN = 0.25, CLUTCH_BOSS_OUT = 0.30;    // boss HP fraction
+const CLUTCH = { on:false, ticks:0 };
+// strict=true → the entry test; strict=false → the looser "is it CLEARLY over" exit test.
+function clutchCondition(strict){
+  const pctGate  = strict ? CLUTCH_PCT_IN  : CLUTCH_PCT_OUT;
+  const bossGate = strict ? CLUTCH_BOSS_IN : CLUTCH_BOSS_OUT;
+  try{
+    // a Boss Rush boss on the ropes
+    if(typeof summons!=='undefined' && summons){
+      for(const s of summons){
+        if(s && s.type==='boss' && s._bossRush && s.maxHp>0 && s.hp>0 && (s.hp/s.maxHp) < bossGate) return true;
+      }
+    }
+    if(typeof fighters==='undefined' || !fighters || !fighters.length) return false;
+    // the player is one good hit from flying off
+    for(const f of fighters){ if(f.you && !f.dead && f.pct >= pctGate) return true; }
+    // somebody is down to their last life. Only meaningful once stocks have actually been LOST:
+    // in a 1-stock match (and the tutorial) everyone starts on their last one, and treating that
+    // as clutch would pin the intense bed on from the opening frame and never play the battle bed.
+    if(typeof SETTINGS!=='undefined' && SETTINGS && SETTINGS.stocks > 1){
+      for(const f of fighters){
+        if(!f.dead && Number.isFinite(f.stocks) && f.stocks <= 1) return true;
+      }
+    }
+  }catch(e){}
+  return false;
+}
+function clutchBaseKind(){
+  return (typeof BOSSRUSH!=='undefined' && BOSSRUSH && BOSSRUSH.active) ? 'boss' : 'battle';
+}
+function clutchReset(){ CLUTCH.on=false; CLUTCH.ticks=0; }
+function clutchTick(){
+  if(typeof running==='undefined' || !running){ clutchReset(); return; }
+  const base = clutchBaseKind();
+  // Only ever fight over the match bed. If the menu or hub owns the music right now, stand down.
+  if(SND._kind!==base && SND._kind!=='intense'){ clutchReset(); return; }
+  if(CLUTCH.on){
+    CLUTCH.ticks++;
+    if(CLUTCH.ticks < CLUTCH_MIN_HOLD) return;   // minimum hold — the whole point of the hysteresis
+    if(clutchCondition(false)) return;           // still tense by the loose test; stay
+    clutchReset();
+    startMusic(base);
+  } else if(clutchCondition(true)){
+    CLUTCH.on = true; CLUTCH.ticks = 0;
+    startMusic('intense');
+  }
+}
 // Which bed the game SHOULD be playing right now — used when sound is toggled back on.
 function currentMusicKind(){
   try{
-    if(typeof BOSSRUSH!=='undefined' && BOSSRUSH && BOSSRUSH.active) return 'boss';
-    if(typeof running!=='undefined' && running) return 'battle';
+    if(typeof running!=='undefined' && running) return CLUTCH.on ? 'intense' : clutchBaseKind();
     const el = document.querySelector('.screen.active');
     return (el && MUSIC_SCREENS[el.id]) || null;
   }catch(e){ return null; }
@@ -1118,13 +1489,18 @@ function toggleSound(){
     const k = currentMusicKind(); if(k) startMusic(k);
   }
 }
-// Stops BOTH music paths. The recorded element is paused (not torn down) so the next
-// startMusic for the same kind can reuse the already-downloaded file.
+// Stops BOTH music paths. Decks are paused (not torn down) so the next startMusic for the same
+// kind can reuse the already-downloaded file.
 function stopMusic(){
   if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
   SND._pendingKind = null;
   SND._kind = null;
-  if(SND._el){ try{ SND._el.pause(); }catch(e){} }
+  if(SND._fadeTimer){ clearInterval(SND._fadeTimer); SND._fadeTimer=null; }
+  for(let i=0;i<SND._decks.length;i++){
+    SND._fade[i] = null;
+    const el = SND._decks[i]; if(!el) continue;
+    try{ el.pause(); el.volume = 0; }catch(e){}
+  }
 }
 // unlock audio on first interaction (browsers block autoplay)
 if(typeof window!=='undefined' && window.addEventListener){
@@ -1167,7 +1543,7 @@ function go(id){
   const el=document.getElementById(id);
   if(el){el.classList.add('active');}
   if(id==='select'){ buildBoard(); syncModeUI(); }
-  if(id==='controls') buildMaps();
+  if(id==='controls'){ buildMaps(); buildCustomMusic(); }
   // Screen music. Matches use go('_none_') and start their own bed, so they are not listed;
   // startMusic() no-ops when the requested bed is already the one playing, which keeps the
   // menu loop running unbroken across title -> select -> controls -> title.
@@ -1513,7 +1889,7 @@ function startTutorial(){
   });
   running=true; paused=false; hazardT=0;
   particles=[]; projectiles=[]; beams=[]; items=[]; summons=[]; tendrils=[]; itemTimer=1e9;  // no items during the tutorial
-  try{ sndInit(); startMusic('battle'); }catch(e){}
+  try{ clutchReset(); sndInit(); startMusic('battle'); }catch(e){}
   buildHUD(); banner(TUT_STEPS[0].text, 2600); loop();
 }
 // Called each frame while the tutorial runs.
@@ -1801,7 +2177,7 @@ function finishWatchSetup(fx, youPlay, size){
   camX=0; camY=0;
   // A World Cup fixture is an arena match — swap the hub's anthem for the battle bed. (Without
   // this the regal hub loop kept playing straight through every fight.)
-  try{ sndInit(); startMusic('battle'); }catch(e){}
+  try{ clutchReset(); sndInit(); startMusic('battle'); }catch(e){}
   banner((fx.kind==="group"?"GROUP ":"KNOCKOUT ")+fx.a.name+" vs "+fx.b.name, 1600);
   buildHUD(); loop();
 }
@@ -1985,6 +2361,9 @@ function startBossRush(){
   spawnBossRushBoss();
 }
 function spawnBossRushBoss(){
+  // New boss, new theme: re-roll the boss playlist so a gauntlet walks through the owner's
+  // boss/miniboss tracks instead of looping one of them for the whole run. No-op with 0 or 1.
+  try{ musicRerollContext('boss'); }catch(e){}
   const b = BOSS_ROSTER[BOSSRUSH.bossIdx];
   // a beefier boss than the item version: scales HP with the number of fighters ganging up
   const nFighters = fighters.filter(f=>!f.dead).length || 1;
@@ -2042,7 +2421,7 @@ function beginMatchNow(){
   setupWorld();
   buildFighters();
   // audio is best-effort — never let an audio failure abort match setup (empty-map risk)
-  try{ sndInit(); startMusic(SETTINGS.mode==='boss' ? 'boss' : 'battle'); }catch(e){}
+  try{ clutchReset(); sndInit(); startMusic(SETTINGS.mode==='boss' ? 'boss' : 'battle'); }catch(e){}
   try{ startRunRecording(); }catch(e){}   // every match records for replay on the result screen
   running=true; paused=false; hazardT=0;
   window.__elimSeq=0; lastKoFrame=0;   // reset placement/elimination + stalemate timer for the new match
@@ -3261,6 +3640,9 @@ function updateSummons(){
 }
 function step(){
   hazardT++;
+  // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
+  // condition can meaningfully change, and it keeps audio work out of the hot loop.
+  if(hazardT % CLUTCH_CHECK_FRAMES === 0){ try{ clutchTick(); }catch(e){} }
   if(TUT.active) tutorialTick();
   testDpsTick();
   updateItems();

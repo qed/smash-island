@@ -58,10 +58,22 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
       `${PUBLISH_ROOT}/assets/music/CREDITS.md`,
       `${PUBLISH_ROOT}/assets/music/battle.mp3`,
       `${PUBLISH_ROOT}/assets/music/boss.mp3`,
+      `${PUBLISH_ROOT}/assets/music/custom/README.md`,
+      `${PUBLISH_ROOT}/assets/music/intense.mp3`,
       `${PUBLISH_ROOT}/assets/music/menu.mp3`,
       `${PUBLISH_ROOT}/assets/music/tourney.mp3`,
       `${PUBLISH_ROOT}/index.html`,
     ].sort());
+  });
+
+  it('ships no audio in the owner override folder', () => {
+    // assets/music/custom/ is an empty slot the owner fills locally. A track appearing there is a
+    // deliberate publishing decision — it must be credited and consciously added to the pin above,
+    // never carried along by an `git add -A`.
+    const stray = PUBLISHED_FILES
+      .map((f) => f.replace(/\\/g, '/'))
+      .filter((f) => f.includes('/assets/music/custom/') && !f.endsWith('README.md'));
+    expect(stray).toEqual([]);
   });
 
   it('ships a real audio file for every music context the game references', () => {
@@ -71,7 +83,7 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     const block = src.slice(src.indexOf('const MUSIC_FILES'));
     const paths = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']*\.(?:mp3|ogg))'/g)]
       .map((m) => m[1]);
-    expect(paths.length).toBe(4);
+    expect(paths.length).toBe(5);
     for (const rel of paths) {
       const abs = join(PUBLISH_ROOT, rel);
       expect(PUBLISHED_FILES.map((f) => f.replace(/\\/g, '/')))
@@ -87,12 +99,14 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
 
   it('credits every shipped track with a licence', () => {
     const credits = readFileSync(join(PUBLISH_ROOT, 'assets/music/CREDITS.md'), 'utf8');
-    for (const f of ['menu.mp3', 'battle.mp3', 'boss.mp3', 'tourney.mp3']) {
-      expect(credits).toContain(f);
+    // Only the shipped section — the owner-supplied template below it repeats these field names.
+    const shipped = credits.split('## Owner-supplied tracks')[0];
+    for (const f of ['menu.mp3', 'battle.mp3', 'boss.mp3', 'tourney.mp3', 'intense.mp3']) {
+      expect(shipped).toContain(f);
     }
     // Every entry names a licence and a source, so the deploy is defensible without this repo.
-    expect(credits.match(/Licence\*\* \|/g) || []).toHaveLength(4);
-    expect(credits.match(/\*\*Source\*\* \|/g) || []).toHaveLength(4);
+    expect(shipped.match(/Licence\*\* \|/g) || []).toHaveLength(5);
+    expect(shipped.match(/\*\*Source\*\* \|/g) || []).toHaveLength(5);
   });
 
   it.each(PUBLISHED_HTML)('%s contains none of the forbidden credential tokens', (file) => {
