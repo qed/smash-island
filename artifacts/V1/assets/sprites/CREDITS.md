@@ -45,14 +45,20 @@ identical either way, so official PNGs can replace them later with a one-line ch
 
 ## Pending: swapping in real character renders
 
-A follow-up decision is open to replace these vector sprites with actual character artwork
-(official pack first, BFDI Fandom wiki standing/neutral renders second). Nothing has been
-downloaded yet — pulling third-party image files into this repo is a step that needs the repo
-owner's own go-ahead through the permission system, not a relayed instruction, because the files
-land in git history and are then served publicly from this directory.
+The repo owner has decided to replace these vector sprites with actual character artwork from the
+BFDI Fandom wiki, after being shown the licensing tradeoffs. That swap is **not done yet**: the
+agent tooling refused every download path (the fetch proxy returns HTTP 402 for `fandom.com`, and
+the shell permission classifier declined `curl` / `Invoke-WebRequest` content retrieval). Adding a
+Bash permission rule such as `{"permissions":{"allow":["Bash(curl:*)"]}}` unblocks it.
 
-The system is already built for it. When approved, each image drops in with a single added line
-(see below) and no rendering-code change. Target filenames, one per batch-1 fighter:
+When an image is added, its provenance line here must read, honestly and without claiming any
+license:
+
+> jacknjellify's character artwork, via bfdi.fandom.com; no formal license — used under fan-work
+> norms in a disclaimed, non-commercial fan game.
+
+The system is already built for it. Each image drops in with a single added line (see below) and no
+rendering-code change. Target filenames, one per batch-1 fighter:
 
 | Fighter | Target file | Current source |
 |---|---|---|
