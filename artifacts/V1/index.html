@@ -6177,10 +6177,407 @@ const FIGHTER_ANIM = {
   }
 };
 
+// ============================================================
+//  SPRITE REGISTRY  (on-model BFDI character art)
+// ============================================================
+// SPRITES[name] is one fighter's render recipe. A fighter WITHOUT an entry falls straight through
+// to the generic roundBlob body, unchanged — coverage is opt-in, one name at a time.
+//
+// LICENSING: every sprite here is VECTOR ART AUTHORED IN THIS REPO from the written on-model notes
+// in docs/animation-move-design.md. No BFDI image files are bundled, copied, or fetched. See
+// assets/sprites/CREDITS.md for the sourcing decision and the drop-in path for official art.
+//
+// Entry fields:
+//   draw(ctx,R,f)   VECTOR art (the default source). Draws in centred space with the fighter
+//                   radius R (= f.r) as its unit and +x ALWAYS pointing the way the fighter faces
+//                   — drawSpriteBody has already mirrored the space for f.face<0, so never read
+//                   f.face in here.
+//   path(ctx,R,f)   the outer silhouette. Required. Used to clip the flash / yoyle / star / burn
+//                   tints onto the art the same way roundBlob clips them onto the blob.
+//   src             OPTIONAL PNG under assets/sprites/, TRANSPARENT BACKGROUND REQUIRED. The
+//                   Image is constructed on the FIRST DRAW and never at eval time (headless boots
+//                   must not construct media objects while the script parses); the vector art
+//                   keeps rendering until it has decoded, and forever if it fails.
+//   w,h             nominal footprint in units of R. Only the PNG path uses these, for sizing.
+//   anchorY         vertical offset of the art's centre from the fighter's centre, in R (+ = down).
+//   arms,legs       draw the shared stubby limbs (Ice Cube and Rocky are armless; Puffball has no
+//                   limbs at all). limbX = where the arms attach, in R (default 1).
+//   face            {y,s} for the shared BFDI face, drawn ON TOP in UNFLIPPED space so every
+//                   fighter's eyes read identically — or null when the art owns its face
+//                   (Bomby is the one dark character with solid black eyes and no whites).
+//
+// Sprites are RENDER-ONLY: nothing here is serialized, and serializeState already ships `name`, so
+// a client draws the same sprite the host does with no netcode change at all.
+
+let drawAlpha = 1;    // the invuln-blink alpha drawFighter is currently drawing at (sprites read
+                      // this instead of ctx.globalAlpha so translucent art composites correctly)
+
+// The BFDI face the whole cast shares: white oval eyes, black pupils, a simple smile. Offset toward
+// the facing direction exactly like the default blob's eyes.
+function bfdiFace(f, R, cfg){
+  const s=(cfg.s||1)*(R/24), cy=(cfg.y||0)*R, lean=f.face*2*s;
+  ctx.fillStyle="#fff";
+  ctx.beginPath(); ctx.ellipse(-6*s+lean,cy,6*s,6.6*s,0,0,7); ctx.ellipse(6*s+lean,cy,6*s,6.6*s,0,0,7); ctx.fill();
+  ctx.fillStyle="#1c1c1c";
+  ctx.beginPath(); ctx.arc(-6*s+lean+f.face*1.2*s,cy+0.6*s,2.7*s,0,7); ctx.arc(6*s+lean+f.face*1.2*s,cy+0.6*s,2.7*s,0,7); ctx.fill();
+  ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2*s; ctx.lineCap="round";
+  ctx.beginPath(); ctx.arc(lean,cy+7.6*s,4.6*s,0.22*Math.PI,0.78*Math.PI); ctx.stroke();
+}
+
+// The stubby shared limbs, factored out of drawFighter so sprites can opt in/out per character.
+// ax = arm attach x. With ax=f.r and both flags on this is byte-for-byte the original blob rig.
+function drawStubLimbs(f, R, arms, legs, ax){
+  ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.lineCap="round";
+  const legSw=Math.sin(hazardT*0.3+f.idx)*(Math.abs(f.vx)>0.5?6:1);
+  if(legs){ ctx.beginPath(); ctx.moveTo(-8,R-4); ctx.lineTo(-10,R+12+legSw); ctx.moveTo(8,R-4); ctx.lineTo(10,R+12-legSw); ctx.stroke(); }
+  if(arms){ ctx.beginPath(); ctx.moveTo(-ax+4,2); ctx.lineTo(-ax-8,10); ctx.moveTo(ax-4,2); ctx.lineTo(ax+8,10); ctx.stroke(); }
+}
+
+const SPRITES = {
+  // ---- Firey — two-tone flame, rounded base licking up to a tip, constant candle flicker ----
+  Firey: {
+    w:2.1, h:2.6, anchorY:-0.12, arms:true, legs:true, limbX:0.72, face:{y:0.14,s:0.92},
+    path(ctx,R,f){
+      const k=Math.sin(hazardT*0.22+f.idx)*0.06;
+      ctx.beginPath();
+      ctx.moveTo(-0.80*R,0.55*R);
+      ctx.bezierCurveTo(-1.02*R,-0.05*R,-0.78*R,-0.55*R,-0.34*R,-0.88*R);
+      ctx.bezierCurveTo(-0.40*R,-0.42*R,-0.16*R,-0.60*R,(-0.04+k)*R,-1.42*R);
+      ctx.bezierCurveTo(0.16*R,-0.72*R,0.32*R,-0.98*R,0.44*R,-0.62*R);
+      ctx.bezierCurveTo(0.86*R,-0.42*R,1.02*R,0.05*R,0.80*R,0.55*R);
+      ctx.quadraticCurveTo(0,1.10*R,-0.80*R,0.55*R);
+      ctx.closePath();
+    },
+    draw(ctx,R,f){
+      this.path(ctx,R,f);
+      ctx.fillStyle="#f1471d"; ctx.strokeStyle="#8b2e00"; ctx.lineWidth=R*0.14; ctx.fill(); ctx.stroke();
+      ctx.save(); ctx.translate(0,0.24*R); ctx.scale(0.58,0.60);
+      this.path(ctx,R,f); ctx.fillStyle="#ffc800"; ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(0,0.44*R); ctx.scale(0.30,0.34);
+      this.path(ctx,R,f); ctx.fillStyle="#fff000"; ctx.fill(); ctx.restore();
+    }
+  },
+  // ---- Leafy — a single upright leaf: serrated edge, lighter centre vein, thinnest in the cast ----
+  Leafy: {
+    w:1.7, h:2.3, anchorY:-0.05, arms:true, legs:true, limbX:0.62, face:{y:0.04,s:0.90},
+    path(ctx,R){
+      ctx.beginPath();
+      ctx.moveTo(0,-1.18*R);
+      ctx.quadraticCurveTo(0.46*R,-0.86*R,0.40*R,-0.58*R);
+      ctx.quadraticCurveTo(0.72*R,-0.42*R,0.64*R,-0.10*R);
+      ctx.quadraticCurveTo(0.86*R,0.10*R,0.70*R,0.42*R);
+      ctx.quadraticCurveTo(0.78*R,0.74*R,0,1.02*R);
+      ctx.quadraticCurveTo(-0.78*R,0.74*R,-0.70*R,0.42*R);
+      ctx.quadraticCurveTo(-0.86*R,0.10*R,-0.64*R,-0.10*R);
+      ctx.quadraticCurveTo(-0.72*R,-0.42*R,-0.40*R,-0.58*R);
+      ctx.quadraticCurveTo(-0.46*R,-0.86*R,0,-1.18*R);
+      ctx.closePath();
+    },
+    draw(ctx,R){
+      this.path(ctx,R);
+      ctx.fillStyle="#6dbe45"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=R*0.14; ctx.fill(); ctx.stroke();
+      ctx.strokeStyle="#96d867"; ctx.lineWidth=R*0.10; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(0,0.90*R); ctx.lineTo(0,-1.02*R); ctx.stroke();
+      ctx.lineWidth=R*0.055; ctx.beginPath();
+      for(let i=0;i<3;i++){ const y=(-0.42+i*0.42)*R;
+        ctx.moveTo(0,y); ctx.lineTo(0.38*R,y-0.22*R); ctx.moveTo(0,y); ctx.lineTo(-0.38*R,y-0.22*R); }
+      ctx.stroke();
+    }
+  },
+  // ---- Bubble — translucent soap film, iridescent sheen arcs, one white specular hotspot ----
+  Bubble: {
+    w:2.0, h:2.0, anchorY:0, arms:true, legs:true, limbX:0.92, face:{y:-0.04,s:0.88},
+    path(ctx,R){ ctx.beginPath(); ctx.arc(0,0,R*0.96,0,7); ctx.closePath(); },
+    draw(ctx,R){
+      const a0=drawAlpha;
+      ctx.globalAlpha=a0*0.68; this.path(ctx,R); ctx.fillStyle="#eaf6ff"; ctx.fill();
+      ctx.globalAlpha=a0*0.55; ctx.lineCap="round"; ctx.lineWidth=R*0.17;
+      ctx.strokeStyle="#b5f0ff"; ctx.beginPath(); ctx.arc(0,0,R*0.72,3.45,4.45); ctx.stroke();
+      ctx.strokeStyle="#ffc7ec"; ctx.beginPath(); ctx.arc(0,0,R*0.72,4.60,5.40); ctx.stroke();
+      ctx.strokeStyle="#fff6b5"; ctx.beginPath(); ctx.arc(0,0,R*0.72,1.10,2.00); ctx.stroke();
+      ctx.globalAlpha=a0;
+      ctx.fillStyle="#fff"; ctx.beginPath(); ctx.ellipse(-R*0.36,-R*0.42,R*0.21,R*0.13,-0.7,0,7); ctx.fill();
+      ctx.strokeStyle="#8fbdd2"; ctx.lineWidth=R*0.085; this.path(ctx,R); ctx.stroke();
+    }
+  },
+  // ---- Blocky — a red wooden building block: beveled cube, visible grain, top-face highlight ----
+  Blocky: {
+    w:1.9, h:1.9, anchorY:0, arms:true, legs:true, limbX:0.88, face:{y:-0.08,s:0.95},
+    path(ctx,R){
+      const s=R*0.90, b=R*0.16;
+      ctx.beginPath(); ctx.moveTo(-s+b,-s);
+      ctx.arcTo(s,-s,s,s,b); ctx.arcTo(s,s,-s,s,b); ctx.arcTo(-s,s,-s,-s,b); ctx.arcTo(-s,-s,s,-s,b);
+      ctx.closePath();
+    },
+    draw(ctx,R){
+      this.path(ctx,R);
+      ctx.fillStyle="#d62329"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=R*0.14; ctx.fill(); ctx.stroke();
+      ctx.save(); this.path(ctx,R); ctx.clip();
+      ctx.fillStyle="rgba(255,255,255,0.14)"; ctx.fillRect(-R,-R*0.92,R*2,R*0.34);
+      ctx.strokeStyle="#a81a20"; ctx.lineWidth=R*0.055; ctx.beginPath();
+      for(let i=-2;i<=2;i++){ const y=i*R*0.36;
+        ctx.moveTo(-R,y); ctx.bezierCurveTo(-R*0.3,y-R*0.07,R*0.3,y+R*0.07,R,y); }
+      ctx.stroke(); ctx.restore();
+    }
+  },
+  // ---- Pen — slim capped ballpoint: white barrel, light-blue cap + clip, indigo nib ----
+  Pen: {
+    w:1.0, h:2.5, anchorY:-0.26, arms:true, legs:true, limbX:0.48, face:{y:0.12,s:0.82},
+    path(ctx,R){
+      const w=R*0.44;
+      ctx.beginPath(); ctx.moveTo(-w,-R*1.10); ctx.lineTo(w,-R*1.10); ctx.lineTo(w,R*0.62);
+      ctx.quadraticCurveTo(w,R*0.96,0,R*1.10); ctx.quadraticCurveTo(-w,R*0.96,-w,R*0.62); ctx.closePath();
+    },
+    draw(ctx,R){
+      const w=R*0.44;
+      this.path(ctx,R);
+      ctx.fillStyle="#f7f7f7"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=R*0.13; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-w,-R*1.10); ctx.lineTo(w,-R*1.10); ctx.lineTo(w,-R*0.36); ctx.lineTo(-w,-R*0.36); ctx.closePath();
+      ctx.fillStyle="#7fd4e8"; ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#4fa8c4"; ctx.beginPath(); ctx.rect(w*0.30,-R*1.02,w*0.46,R*0.50); ctx.fill();
+      ctx.fillStyle="#16162e"; ctx.beginPath();
+      ctx.moveTo(-w*0.42,R*0.78); ctx.lineTo(w*0.42,R*0.78); ctx.lineTo(0,R*1.08); ctx.closePath(); ctx.fill();
+    }
+  },
+  // ---- Pencil — upright No. 2: pink eraser + ferrule on top, sharpened graphite point below ----
+  Pencil: {
+    w:1.0, h:2.6, anchorY:-0.30, arms:true, legs:true, limbX:0.46, face:{y:-0.08,s:0.82},
+    path(ctx,R){
+      const w=R*0.42;
+      ctx.beginPath(); ctx.moveTo(-w,-R*0.98);
+      ctx.lineTo(-w,-R*1.10); ctx.quadraticCurveTo(0,-R*1.30,w,-R*1.10); ctx.lineTo(w,R*0.50);
+      ctx.lineTo(0,R*1.16); ctx.lineTo(-w,R*0.50); ctx.closePath();
+    },
+    draw(ctx,R){
+      const w=R*0.42;
+      ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=R*0.12;
+      ctx.beginPath(); ctx.moveTo(-w,R*0.50); ctx.lineTo(w,R*0.50); ctx.lineTo(0,R*1.16); ctx.closePath();
+      ctx.fillStyle="#e8d5a8"; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-w*0.34,R*0.90); ctx.lineTo(w*0.34,R*0.90); ctx.lineTo(0,R*1.16); ctx.closePath();
+      ctx.fillStyle="#4a4a4a"; ctx.fill();
+      ctx.beginPath(); ctx.rect(-w,-R*0.76,w*2,R*1.26); ctx.fillStyle="#f5a623"; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.rect(-w,-R*0.98,w*2,R*0.24); ctx.fillStyle="#c0c0c0"; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-w,-R*0.98); ctx.lineTo(-w,-R*1.10);
+      ctx.quadraticCurveTo(0,-R*1.30,w,-R*1.10); ctx.lineTo(w,-R*0.98); ctx.closePath();
+      ctx.fillStyle="#f2a0b4"; ctx.fill(); ctx.stroke();
+    }
+  },
+  // ---- Match — tan wooden stick, red match head, and the one flammable hair tuft ----
+  Match: {
+    w:1.0, h:2.4, anchorY:-0.20, arms:true, legs:true, limbX:0.44, face:{y:0.22,s:0.80},
+    path(ctx,R){
+      const w=R*0.40, b=R*0.18;
+      ctx.beginPath(); ctx.moveTo(-w,-R*0.50);
+      ctx.quadraticCurveTo(-R*0.56,-R*0.98,0,-R*1.16);
+      ctx.quadraticCurveTo(R*0.56,-R*0.98,w,-R*0.50);
+      ctx.lineTo(w,R*0.92); ctx.arcTo(w,R*1.10,0,R*1.10,b); ctx.arcTo(-w,R*1.10,-w,R*0.92,b);
+      ctx.closePath();
+    },
+    draw(ctx,R){
+      const w=R*0.40;
+      this.path(ctx,R);
+      ctx.fillStyle="#e8c6a0"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=R*0.13; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-w,-R*0.50);
+      ctx.quadraticCurveTo(-R*0.56,-R*0.98,0,-R*1.16);
+      ctx.quadraticCurveTo(R*0.56,-R*0.98,w,-R*0.50); ctx.closePath();
+      ctx.fillStyle="#d8443a"; ctx.fill(); ctx.stroke();
+      ctx.strokeStyle="#d8443a"; ctx.lineWidth=R*0.10; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(0,-R*1.12); ctx.quadraticCurveTo(R*0.24,-R*1.36,-R*0.08,-R*1.40); ctx.stroke();
+      ctx.strokeStyle="#cfa87e"; ctx.lineWidth=R*0.05;
+      ctx.beginPath(); ctx.moveTo(-w*0.42,-R*0.34); ctx.lineTo(-w*0.42,R*0.90);
+      ctx.moveTo(w*0.42,-R*0.28); ctx.lineTo(w*0.42,R*0.86); ctx.stroke();
+    }
+  },
+  // ---- Ice Cube — translucent 8x9x11 block (taller than wide), ARMLESS, ghost-white shine ----
+  "Ice Cube": {
+    w:2.0, h:2.2, anchorY:-0.02, arms:false, legs:true, limbX:0.9, face:{y:0.06,s:0.88},
+    path(ctx,R){
+      const hw=R*0.74, ht=R*0.86, d=R*0.26;
+      ctx.beginPath(); ctx.moveTo(-hw,-ht); ctx.lineTo(-hw+d,-ht-d); ctx.lineTo(hw+d,-ht-d);
+      ctx.lineTo(hw+d,ht-d); ctx.lineTo(hw,ht); ctx.lineTo(-hw,ht); ctx.closePath();
+    },
+    draw(ctx,R){
+      const hw=R*0.74, ht=R*0.86, d=R*0.26, a0=drawAlpha;
+      ctx.globalAlpha=a0*0.86; ctx.strokeStyle="#5b8aa5"; ctx.lineWidth=R*0.09;
+      ctx.beginPath(); ctx.moveTo(hw,-ht); ctx.lineTo(hw+d,-ht-d); ctx.lineTo(hw+d,ht-d); ctx.lineTo(hw,ht); ctx.closePath();
+      ctx.fillStyle="#a9d3e6"; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-hw,-ht); ctx.lineTo(-hw+d,-ht-d); ctx.lineTo(hw+d,-ht-d); ctx.lineTo(hw,-ht); ctx.closePath();
+      ctx.fillStyle="#e2f3fb"; ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.rect(-hw,-ht,hw*2,ht*2); ctx.fillStyle="#c9e6f2"; ctx.fill();
+      ctx.globalAlpha=a0*0.80; ctx.fillStyle="#f8f8ff";
+      ctx.beginPath(); ctx.moveTo(-hw*0.76,-ht*0.70); ctx.lineTo(-hw*0.24,-ht*0.70);
+      ctx.lineTo(-hw*0.60,ht*0.16); ctx.lineTo(-hw*0.88,ht*0.16); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha=a0;
+      ctx.strokeStyle="#2c4a5c"; ctx.lineWidth=R*0.12;
+      ctx.beginPath(); ctx.rect(-hw,-ht,hw*2,ht*2); ctx.stroke();
+    }
+  },
+  // ---- Puffball — LIMBLESS lumpy pink pom-pom with spiky fluff tufts; always slightly afloat ----
+  Puffball: {
+    w:2.2, h:2.1, anchorY:-0.08, arms:false, legs:false, limbX:1, face:{y:0.02,s:0.92},
+    path(ctx,R,f){
+      const n=14, t=hazardT*0.05+f.idx;
+      ctx.beginPath();
+      for(let i=0;i<=n;i++){
+        const a=i/n*Math.PI*2, rr=R*(0.92+0.10*Math.sin(a*3+t)+(i%2?0.06:-0.02));
+        const x=Math.cos(a)*rr, y=Math.sin(a)*rr*0.92;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+    },
+    draw(ctx,R,f){
+      ctx.strokeStyle="#e86fb0"; ctx.lineWidth=R*0.16; ctx.lineCap="round"; ctx.beginPath();
+      for(let i=0;i<14;i++){ const a=i/14*Math.PI*2+hazardT*0.012;
+        ctx.moveTo(Math.cos(a)*R*0.78,Math.sin(a)*R*0.72);
+        ctx.lineTo(Math.cos(a)*R*1.14,Math.sin(a)*R*1.02); }
+      ctx.stroke();
+      this.path(ctx,R,f);
+      ctx.fillStyle="#f7a8d0"; ctx.strokeStyle="#da70d6"; ctx.lineWidth=R*0.12; ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#ffd3e9"; ctx.beginPath(); ctx.ellipse(-R*0.30,-R*0.34,R*0.30,R*0.19,-0.5,0,7); ctx.fill();
+    }
+  },
+  // ---- Teardrop — bulbous bottom tapering to a single point, glassy water gradient ----
+  Teardrop: {
+    w:1.8, h:2.4, anchorY:-0.08, arms:true, legs:true, limbX:0.78, face:{y:0.20,s:0.88},
+    path(ctx,R){
+      ctx.beginPath(); ctx.moveTo(0,-R*1.24);
+      ctx.bezierCurveTo(R*0.34,-R*0.62,R*0.86,-R*0.18,R*0.86,R*0.24);
+      ctx.bezierCurveTo(R*0.86,R*0.92,R*0.42,R*1.10,0,R*1.10);
+      ctx.bezierCurveTo(-R*0.42,R*1.10,-R*0.86,R*0.92,-R*0.86,R*0.24);
+      ctx.bezierCurveTo(-R*0.86,-R*0.18,-R*0.34,-R*0.62,0,-R*1.24);
+      ctx.closePath();
+    },
+    draw(ctx,R){
+      this.path(ctx,R);
+      ctx.fillStyle="#5ac8fa"; ctx.strokeStyle="#1c8fbf"; ctx.lineWidth=R*0.13; ctx.fill(); ctx.stroke();
+      ctx.save(); this.path(ctx,R); ctx.clip();
+      ctx.globalAlpha=drawAlpha*0.55; ctx.fillStyle="#eaf7ff";
+      ctx.beginPath(); ctx.ellipse(-R*0.04,R*0.28,R*0.52,R*0.58,0,0,7); ctx.fill();
+      ctx.globalAlpha=drawAlpha; ctx.fillStyle="#fff";
+      ctx.beginPath(); ctx.ellipse(-R*0.42,-R*0.14,R*0.13,R*0.30,0.5,0,7); ctx.fill();
+      ctx.restore();
+    }
+  },
+  // ---- Bomby — gunmetal cast-iron sphere with a floating cream string fuse; own BLACK eyes ----
+  Bomby: {
+    w:2.1, h:2.6, anchorY:0.02, arms:true, legs:true, limbX:0.92, face:null,
+    path(ctx,R){ ctx.beginPath(); ctx.arc(0,R*0.06,R*0.94,0,7); ctx.closePath(); },
+    draw(ctx,R,f){
+      const sw=Math.sin(hazardT*0.09+f.idx)*R*0.12;
+      ctx.strokeStyle="#e6d7b9"; ctx.lineWidth=R*0.13; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(R*0.10,-R*0.84);
+      ctx.bezierCurveTo(R*0.46,-R*1.10,R*0.08+sw,-R*1.40,R*0.44+sw,-R*1.50); ctx.stroke();
+      this.path(ctx,R);
+      ctx.fillStyle="#696969"; ctx.strokeStyle="#2b2b2b"; ctx.lineWidth=R*0.14; ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#a9a9a9"; ctx.beginPath(); ctx.ellipse(-R*0.34,-R*0.30,R*0.30,R*0.19,-0.6,0,7); ctx.fill();
+      // the one dark character drawn with SOLID BLACK eyes instead of whites
+      ctx.fillStyle="#141414";
+      ctx.beginPath(); ctx.ellipse(-R*0.24+R*0.06,-R*0.02,R*0.16,R*0.21,0,0,7);
+      ctx.ellipse(R*0.28+R*0.06,-R*0.02,R*0.16,R*0.21,0,0,7); ctx.fill();
+      ctx.strokeStyle="#141414"; ctx.lineWidth=R*0.09;
+      ctx.beginPath(); ctx.arc(R*0.06,R*0.32,R*0.20,0.20*Math.PI,0.80*Math.PI); ctx.stroke();
+    }
+  },
+  // ---- Rocky — squat irregular pebble, ARMLESS, one shaded side and a couple of chip marks ----
+  Rocky: {
+    w:2.0, h:1.8, anchorY:0.06, arms:false, legs:true, limbX:0.9, face:{y:0.02,s:0.86},
+    path(ctx,R){
+      ctx.beginPath(); ctx.moveTo(-R*0.94,R*0.30);
+      ctx.bezierCurveTo(-R*1.00,-R*0.34,-R*0.56,-R*0.86,-R*0.06,-R*0.84);
+      ctx.bezierCurveTo(R*0.46,-R*0.88,R*0.98,-R*0.40,R*0.94,R*0.22);
+      ctx.bezierCurveTo(R*0.92,R*0.70,R*0.48,R*0.88,0,R*0.86);
+      ctx.bezierCurveTo(-R*0.48,R*0.88,-R*0.92,R*0.72,-R*0.94,R*0.30);
+      ctx.closePath();
+    },
+    draw(ctx,R){
+      this.path(ctx,R);
+      ctx.fillStyle="#b0aaa4"; ctx.strokeStyle="#685e63"; ctx.lineWidth=R*0.13; ctx.fill(); ctx.stroke();
+      ctx.save(); this.path(ctx,R); ctx.clip();
+      ctx.fillStyle="#8c8c88"; ctx.beginPath();
+      ctx.moveTo(R*0.20,-R*1.00); ctx.lineTo(R*1.10,-R*0.30); ctx.lineTo(R*1.10,R*1.00); ctx.lineTo(R*0.04,R*1.00);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle="#8c8c88"; ctx.lineWidth=R*0.05; ctx.beginPath();
+      ctx.moveTo(-R*0.70,-R*0.18); ctx.lineTo(-R*0.34,-R*0.44);
+      ctx.moveTo(-R*0.52,R*0.44); ctx.lineTo(-R*0.16,R*0.30); ctx.stroke();
+      ctx.restore();
+    }
+  }
+};
+
+// Lazily resolve an entry's optional PNG. The Image is constructed on the FIRST DRAW — never while
+// the script is parsed — so a headless boot (jsdom) never touches a media constructor at eval time.
+// Until it decodes (and forever if it 404s or the environment has no Image) callers get null and
+// keep rendering the vector art, so a missing asset degrades instead of blanking the fighter.
+function spriteImage(sp){
+  if(!sp || !sp.src) return null;
+  if(!sp._req){
+    sp._req = true;
+    try{
+      if(typeof Image === "function"){
+        const im = new Image();
+        im.onload = ()=>{ sp.img = im; };
+        im.onerror = ()=>{ sp.img = null; };
+        im.src = sp.src;
+      }
+    }catch(_e){ /* no Image constructor here — stay on the vector art */ }
+  }
+  const im = sp.img;
+  return (im && im.complete && im.naturalWidth>0) ? im : null;
+}
+
+// A tinted copy of a PNG sprite, built once per (sprite, colour) and cached on the entry.
+// Canvas-only (drawImage + source-atop) — no pixel reads, so it needs no CORS-clean surface.
+function tintedSprite(sp, im, col){
+  const cache = sp._tints || (sp._tints = {});
+  let c = cache[col];
+  if(!c){
+    c = document.createElement("canvas");
+    c.width = im.naturalWidth; c.height = im.naturalHeight;
+    const g = c.getContext("2d");
+    g.drawImage(im,0,0);
+    g.globalCompositeOperation = "source-atop";
+    g.fillStyle = col; g.fillRect(0,0,c.width,c.height);
+    cache[col] = c;
+  }
+  return c;
+}
+
+// Renders one sprite fighter in place of the roundBlob body. Called from inside drawFighter's
+// squash/stretch transform, so the art deforms with every jump, landing and run exactly like the
+// blob did. State tints (flash / yoyle metal / star strobe / burn) are laid over the silhouette in
+// the same order and with the same meaning the blob gives them.
+function drawSpriteBody(f, sp){
+  const R = f.r, a0 = drawAlpha;
+  drawStubLimbs(f, R, sp.arms!==false, sp.legs!==false, (sp.limbX==null?1:sp.limbX)*R);
+  ctx.save();
+  ctx.translate(0,(sp.anchorY||0)*R);
+  if(f.face<0) ctx.scale(-1,1);                 // mirror the art to the facing direction
+  const im = spriteImage(sp);
+  const dw = (sp.w||2)*R, dh = (sp.h||2)*R;
+  if(im) ctx.drawImage(im,-dw/2,-dh/2,dw,dh);
+  else if(sp.draw) sp.draw(ctx,R,f);
+  // state tints, clipped to the silhouette
+  const tint = f.flash>0 ? ["#ffffff",0.88]
+             : f._yoyleT>0 ? ["#9aa7b0",0.72]
+             : (f._starT>0 && hazardT%6<3) ? ["#ffd23f",0.62] : null;
+  const lay = (col,a)=>{
+    ctx.globalAlpha = a0*a;
+    if(im) ctx.drawImage(tintedSprite(sp,im,col),-dw/2,-dh/2,dw,dh);
+    else if(sp.path){ sp.path(ctx,R,f); ctx.fillStyle=col; ctx.fill(); }
+    ctx.globalAlpha = a0;
+  };
+  if(tint) lay(tint[0],tint[1]);
+  if(f.burn>0) lay("#f0521f",0.30);             // burn reads on top of any other state, as on the blob
+  ctx.restore();
+  // face last and UNFLIPPED, so eyes read identically across the whole cast
+  if(sp.face) bfdiFace(f,R,sp.face);
+}
+
 function drawFighter(f){
   ctx.save(); ctx.translate(f.x,f.y);
   const blink=f.invuln>0 && (f.invuln%8<4);
   ctx.globalAlpha=blink?0.4:1;
+  drawAlpha=blink?0.4:1;   // sprites composite against this instead of reading back ctx.globalAlpha
   if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the frames after touchdown
 
   // ---- Teardrop cloud form ----
@@ -6232,21 +6629,24 @@ function drawFighter(f){
     if(sx!==1||sy!==1||shear){
       ctx.translate(0,f.r); ctx.scale(sx,sy); if(shear) ctx.transform(1,0,shear,1,0,0); ctx.translate(0,-f.r);
     }
-    // limbs (stubby)
-    ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.lineCap="round";
-    const legSw=Math.sin(hazardT*0.3+f.idx)* (Math.abs(f.vx)>0.5?6:1);
-    ctx.beginPath(); ctx.moveTo(-8,f.r-4); ctx.lineTo(-10,f.r+12+legSw); ctx.moveTo(8,f.r-4); ctx.lineTo(10,f.r+12-legSw); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-f.r+4,2); ctx.lineTo(-f.r-8,10); ctx.moveTo(f.r-4,2); ctx.lineTo(f.r+8,10); ctx.stroke();
-    // body
-    ctx.fillStyle = f.flash>0 ? "#fff" : (f._yoyleT>0 ? "#9aa7b0" : (f._starT>0 ? (hazardT%6<3?"#ffd23f":f.color) : f.color));
-    ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3.5;
-    roundBlob(0,0,f.r);
-    ctx.fill(); ctx.stroke();
-    // burn tint
-    if(f.burn>0){ ctx.fillStyle="#f0521f44"; roundBlob(0,0,f.r); ctx.fill(); }
-    // eyes
-    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-6*f.face+f.face*2,-4,6,0,7); ctx.arc(6*f.face+f.face*2,-4,6,0,7); ctx.fill();
-    ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-6*f.face+f.face*3,-4,2.6,0,7); ctx.arc(6*f.face+f.face*3,-4,2.6,0,7); ctx.fill();
+    // ---- BODY: real character art when this fighter has a sprite, else the generic blob ----
+    // Both paths render inside the squash/stretch transform above, so the deform is identical.
+    const sprite = SPRITES[f.name];
+    if(sprite){ drawSpriteBody(f, sprite); }
+    else{
+      // limbs (stubby)
+      drawStubLimbs(f, f.r, true, true, f.r);
+      // body
+      ctx.fillStyle = f.flash>0 ? "#fff" : (f._yoyleT>0 ? "#9aa7b0" : (f._starT>0 ? (hazardT%6<3?"#ffd23f":f.color) : f.color));
+      ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3.5;
+      roundBlob(0,0,f.r);
+      ctx.fill(); ctx.stroke();
+      // burn tint
+      if(f.burn>0){ ctx.fillStyle="#f0521f44"; roundBlob(0,0,f.r); ctx.fill(); }
+      // eyes
+      ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-6*f.face+f.face*2,-4,6,0,7); ctx.arc(6*f.face+f.face*2,-4,6,0,7); ctx.fill();
+      ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-6*f.face+f.face*3,-4,2.6,0,7); ctx.arc(6*f.face+f.face*3,-4,2.6,0,7); ctx.fill();
+    }
     ctx.restore();
   }
   // team ring (team mode only) — a colored ground shadow so allies read at a glance

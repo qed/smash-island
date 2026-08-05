@@ -27,6 +27,16 @@ const PUBLISHED_FILES = readdirSync(PUBLISH_ROOT).map((f) => join(PUBLISH_ROOT, 
 const PUBLISHED_HTML = PUBLISHED_FILES.filter((f) => f.endsWith('.html'));
 const SOURCE = join(PUBLISH_ROOT, 'index.html');
 
+// Everything under the publish root, recursively, as forward-slashed paths. `assets/` has to live
+// here — sprite art is fetched relative to index.html — so the pin below names what may appear
+// inside it rather than banning the directory outright.
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    return e.isDirectory() ? walk(p) : [p.replace(/\\/g, '/')];
+  });
+}
+
 /** Tokens that must not survive anywhere in the shipped file. */
 const FORBIDDEN = [
   { name: 'Anthropic key prefix', re: /sk-ant/i },
@@ -44,7 +54,22 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
   it('publishes only the files we intend to serve', () => {
     // Anything dropped into the publish root becomes a public URL. Pin the contents so a stray
     // build artifact fails the suite instead of silently shipping.
-    expect(PUBLISHED_FILES.map((f) => f.replace(/\\/g, '/'))).toEqual([`${PUBLISH_ROOT}/index.html`]);
+    expect(readdirSync(PUBLISH_ROOT).sort()).toEqual(['assets', 'index.html']);
+  });
+
+  it('serves exactly one HTML entry point', () => {
+    // The pin above once read `[index.html]` and caught a second, un-stripped copy of the whole
+    // game sitting beside it. Widening the pin for `assets/` must not give that copy a way back
+    // in, so the "one HTML file" half of the guard is asserted separately and recursively.
+    expect(walk(PUBLISH_ROOT).filter((f) => /\.html?$/i.test(f))).toEqual([`${PUBLISH_ROOT}/index.html`]);
+  });
+
+  it('lets nothing but sprite art and its credits into assets/', () => {
+    // Sprite PNGs are the only binaries the game is allowed to serve, and CREDITS.md is the
+    // required record of where each one came from. Anything else here is an accident.
+    const stray = walk(join(PUBLISH_ROOT, 'assets'))
+      .filter((f) => !/\.(png|webp|svg)$/i.test(f) && !/\/CREDITS\.md$/.test(f));
+    expect(stray, `unexpected files under the published assets/ tree: ${stray.join(', ')}`).toEqual([]);
   });
 
   it.each(PUBLISHED_HTML)('%s contains none of the forbidden credential tokens', (file) => {
