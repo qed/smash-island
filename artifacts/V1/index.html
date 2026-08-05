@@ -476,6 +476,13 @@
           <button data-v="0">Off</button><button data-v="1">Low</button><button data-v="2" class="on">Normal</button><button data-v="3">High</button>
         </div>
       </div>
+      <div class="setgrp">
+        <label>Map Size</label>
+        <div class="seg" id="segMapSize">
+          <button data-v="compact">Compact</button><button data-v="normal" class="on">Normal</button><button data-v="tall">Tall</button><button data-v="huge">Huge</button>
+        </div>
+        <div class="foot" id="mapSizeNote" style="margin-top:4px;opacity:.7">Tall and Huge stretch the stadium upward — small stages scroll instead of staying on one screen.</div>
+      </div>
       <div class="setgrp" id="teamRow" style="display:none">
         <label>Team split</label>
         <div class="seg" id="segTeams"></div>
@@ -836,7 +843,30 @@ const KEY_LABELS = {left:"Move Left",right:"Move Right",jump:"Jump",down:"Down /
 // ---------- state ----------
 let chosen = ROSTER.find(r=>r.play);
 let stage = STAGES[0];
-const SETTINGS = { mode:"ffa", count:5, stocks:3, teamKey:"", itemRate:2 };
+const SETTINGS = { mode:"ffa", count:5, stocks:3, teamKey:"", itemRate:2, mapSize:"normal" };
+// ---------- MAP SIZE (match setting) ----------
+// Multipliers applied to the arena width/height that setupWorld() computes. Every other piece of
+// arena geometry (floor span, tower, bluffs, spawns, blast zone, minimap, camera clamps) is derived
+// from WW/WH, so scaling those two values scales the whole stadium coherently.
+//   · Compact/Normal leave small single-screen stages exactly as they are.
+//   · Tall/Huge add real vertical space, so a SMALL stage is routed onto the big-FFA SCROLLING path
+//     (the one that works) with its own platform layout — never the old widened-small path, which
+//     produced an empty, floorless camera view and was reverted.
+const MAP_SIZES = {
+  compact:{ label:"Compact", w:0.85, h:0.85 },
+  normal: { label:"Normal",  w:1.0,  h:1.0  },
+  tall:   { label:"Tall",    w:1.0,  h:1.4  },
+  huge:   { label:"Huge",    w:1.4,  h:1.5  },
+};
+function mapSize(){ return MAP_SIZES[SETTINGS.mapSize] || MAP_SIZES.normal; }
+// A small stage only starts scrolling when the player explicitly asked for extra height.
+// Boss Rush and the tutorial deliberately stay on one fixed screen (boss tells are unreadable
+// behind a panning camera), so they never opt in.
+function forcedScroll(){
+  return mapSize().h > 1 && SETTINGS.mode!=='boss'
+    && !(typeof TESTMODE!=='undefined' && TESTMODE.active)
+    && !(typeof TUT!=='undefined' && TUT.active);
+}
 // Test/practice mode: sandbox with dummies you can configure and infinite stocks
 const TESTMODE = { active:false, dummies:1, dummyMode:"still", damage:true, anchored:false, dpsT:0, dpsDmg:0 };
 // Custom level (from the level editor). When set, single-screen play uses it.
@@ -1005,7 +1035,9 @@ let WW=1100, WH=720, camX=0, camY=0, bases=[], worldPlats=[], floors=[], worldZo
 let TEAM_PLAN = {};
 function isBig(){ return SETTINGS.mode==='teams'; }   // team mode uses the big 4-floor tower
 const CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big map is visible
-function isBigFFA(){ return (SETTINGS.mode!=='teams') && !!stage.big && !CUSTOM_LEVEL; }  // wide scrolling FFA/boss arena
+// Wide scrolling FFA/boss arena: any stage flagged `big`, plus small stages when the MAP SIZE
+// setting asks for extra height (those ride this same, proven scrolling path).
+function isBigFFA(){ return (SETTINGS.mode!=='teams') && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL; }
 function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any arena wider/taller than the screen
 
 // ---------- screen router ----------
@@ -1146,6 +1178,10 @@ function buildSettings(){
       : "Spectator: watch the AI play it out, auto-simming any matches you skip. Group goal: most KOs before time runs out. 3 pts win · 1 draw · stock-difference tiebreaker. Top 2 per group + 8 best 3rd-place advance.";
   });
   bindSeg('segAI', v=>{ AI_LEVEL=+v; updateSummary(); });
+  bindSeg('segMapSize', v=>{ SETTINGS.mapSize = MAP_SIZES[v] ? v : 'normal'; updateSummary(); });
+  // a net match can change mapSize behind the menu's back — re-sync the highlight on open
+  const msSeg=document.getElementById('segMapSize');
+  if(msSeg) msSeg.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===SETTINGS.mapSize));
   buildCountButtons();
   syncModeUI();
   if(SETTINGS.mode==='teams') buildTeamSplits();
@@ -1191,9 +1227,10 @@ function buildTeamSplits(){
 function updateSummary(){
   const el=document.getElementById('matchSummary'); if(!el) return;
   const ai=SETTINGS.count-1;
-  if(SETTINGS.mode==='teams'){ el.textContent=`${SETTINGS.teamKey} teams · ${SETTINGS.stocks} stocks · ${ai} AI`; }
+  const size = (MAP_SIZES[SETTINGS.mapSize]||MAP_SIZES.normal).label;
+  if(SETTINGS.mode==='teams'){ el.textContent=`${SETTINGS.teamKey} teams · ${SETTINGS.stocks} stocks · ${ai} AI · ${size} map`; }
   else if(SETTINGS.mode==='boss'){ el.textContent=`Boss Rush · ${SETTINGS.count} fighter${SETTINGS.count>1?'s':''} vs a boss · ${SETTINGS.stocks} stocks`; }
-  else { el.textContent=`${SETTINGS.count}-player FFA · ${SETTINGS.stocks} stocks · ${ai} AI`; }
+  else { el.textContent=`${SETTINGS.count}-player FFA · ${SETTINGS.stocks} stocks · ${ai} AI · ${size} map`; }
   // In local team mode the Start button opens the strategy huddle first — label it so it's expected.
   const sb=document.getElementById('startBtn');
   if(sb){ sb.textContent = "Start Match ▶"; }
@@ -1292,7 +1329,10 @@ function resize(){ const r=cv.getBoundingClientRect();
   let rw=r.width, rh=r.height;
   if(!rw || rw<50){ rw = (window.innerWidth||W||1100); }
   if(!rh || rh<50){ rh = (window.innerHeight||H||720); }
-  cv.width=W=Math.round(rw); cv.height=H=Math.round(rh); if(!isBig()){ WW=W; WH=H; } }
+  // Only collapse the world to the screen for genuinely single-screen arenas. A mid-match browser
+  // resize used to clobber WW/WH on scrolling FFA maps (leaving the camera clamped to one screen of
+  // a much larger world); setupWorld() recomputes them for those.
+  cv.width=W=Math.round(rw); cv.height=H=Math.round(rh); if(!isBig() && !isBigFFA()){ WW=W; WH=H; } }
 addEventListener('resize',()=>{ if(running){resize();} });
 
 function startMatch(){
@@ -2045,27 +2085,138 @@ function feetY(f){ return f.y + f.r; }
 function groundY(){ return WH*(isBig()?0.86:0.82); }
 function stageScale(){ return Math.max(0.85, Math.min(1.5, 0.7 + SETTINGS.count*0.04)); }
 
+// A double jump gains roughly this much height. Any vertical gap between successive platform
+// LAYERS wider than this can strand a fighter on the floor of a tall arena, so fillClimbGaps()
+// inserts one-way hop platforms until every gap is crossable. This is what makes the MAP SIZE
+// multipliers safe: the taller the world gets, the more rungs the ladder grows.
+const MAX_HOP_RISE = 170;
+// Returns extra one-way platforms that break every over-wide vertical gap between `layers`
+// (a list of standable surface Y values, floor included) into crossable steps. Each inserted
+// step is a ROW spread across the arena so there's a climbable route wherever you are — one-way
+// tops can be jumped through from below, so a row directly under another platform still works.
+function fillClimbGaps(layers, arenaW){
+  const ys = layers.filter(y=>typeof y==='number' && isFinite(y)).sort((a,b)=>a-b);
+  const added=[];
+  const pw = Math.max(120, arenaW*0.055);
+  for(let i=0;i<ys.length-1;i++){
+    const gap = ys[i+1]-ys[i];
+    if(gap <= MAX_HOP_RISE) continue;
+    const steps = Math.ceil(gap/MAX_HOP_RISE) - 1;
+    for(let s=1;s<=steps;s++){
+      const ly = ys[i] + gap*s/(steps+1);
+      for(const nx of [0.2,0.5,0.8]){
+        added.push({ x: arenaW*nx - pw/2, y: ly, w: pw, h: 12, hop:true, ladder:true });
+      }
+    }
+  }
+  return added;
+}
+// Do two boxes overlap, allowing `padX`/`padY` of slack around the second one?
+function boxHit(a, b, padX, padY){
+  return a.x < b.x + (b.w||0) + padX && a.x + (a.w||0) > b.x - padX
+      && a.y < b.y + (b.h||0) + padY && a.y + (a.h||0) > b.y - padY;
+}
+// Deterministic per-cell jitter in 0..1. setupWorld() must stay PURE: replays, the golden traces
+// and netplay all rebuild the world from the same settings and have to get the same arena back,
+// so the scatter grid is hashed from its cell coordinates rather than drawn from Math.random().
+function cellJitter(c, r, salt){
+  let h = (Math.imul(c+1, 374761393) ^ Math.imul(r+1, 668265263) ^ Math.imul(salt+1, 2246822519)) >>> 0;
+  h = Math.imul(h ^ (h>>>13), 1274126177) >>> 0;
+  return ((h ^ (h>>>16)) >>> 0) / 4294967296;
+}
+const FIELD_ROW_GAP = 150;   // <= MAX_HOP_RISE, so a full-height field is climbable by construction
+// Horizontal cell size, in world px. Tied to the SCREEN width, not the world's, so density per
+// screenful stays constant: a Huge map gets more platforms, not sparser ones.
+function FIELD_COL_W(){ return Math.max(380, W*0.62); }
+// Scatter one-way hop platforms across an ENTIRE arena region on a staggered (brick-bond) grid.
+// The hand-placed landmarks only ever furnished the middle of the map: on a 2.5x-tall arena that
+// left the whole upper airspace and the long lateral runs between bluffs/plateaus and the edges as
+// empty sky. This gives the full playable box something to stand on at every height and across the
+// whole width, while the regular grid (jittered, not randomised) keeps it reading as designed.
+//
+// Cells are skipped where they would collide with a solid landmark, a team base and the spawn
+// column above it, the tower's run-under tunnel, a big-FFA respawn perch, or a hand-placed platform
+// that already serves that spot — so nothing here disturbs the landmarks, spawns or invariants.
+// Everything produced is a ONE-WAY top: it can never wall off a horizontal route the way a solid can.
+function scatterPlatforms({x0, x1, top, bot, colW, existing, blockers}){
+  const out=[];
+  // Hold the field back from the lateral blast zones. KOs in this game come almost entirely from
+  // being knocked out sideways, and a platform sitting in the last stretch before the edge catches
+  // the victim and hands them a free recovery. Furnishing all the way out measurably stalled the
+  // biggest map (Huge 2v2 went from resolving 4/4 in ~20k frames to 1/4 in 30k); reserving the
+  // outer EDGE_LANE of the span as an open KO lane restores it without leaving a visible gap.
+  const EDGE_LANE = 0.07;
+  const lane = (x1-x0)*EDGE_LANE;
+  x0 += lane; x1 -= lane;
+  const cols = Math.max(3, Math.round((x1-x0)/colW));
+  const baseW = Math.max(130, colW*0.38);   // wide enough that adjacent columns leave no dead lane
+  for(let r=0; ; r++){
+    const y = bot - r*FIELD_ROW_GAP;
+    if(y < top) break;
+    for(let c=0;c<cols;c++){
+      const t = (c + 0.5 + (r%2 ? 0.5 : 0))/cols;      // brick bond: alternate rows offset by half a cell
+      if(t >= 1) continue;                             // the offset row simply carries one fewer platform
+      const w  = baseW * (0.85 + cellJitter(c,r,2)*0.5);
+      const cx = x0 + (x1-x0)*t + (cellJitter(c,r,1)-0.5)*colW*0.24;   // grid-ish: nudged, not scattered
+      const rect = { x: clamp(cx - w/2, x0, Math.max(x0, x1-w)), y, w, h:12 };
+      if(blockers.some(b=>boxHit(rect,b,10,26))) continue;
+      if(existing.some(p=>boxHit(rect,p,24,90))) continue;
+      out.push({ x:rect.x, y, w, h:12, hop:true, field:true });
+    }
+  }
+  return out;
+}
+// Every standable surface that forms the CLIMB ladder of the current arena, sorted top-down.
+// Deliberately EXCLUDES the two `safe` respawn islands of a big-FFA map: those are isolated
+// high perches you drop OFF of after respawning, never something you have to climb back onto.
+// Both fillClimbGaps() and the stadium tests measure reachability against this list.
+function climbLayers(){
+  const ys = worldPlats.map(p=>p.y);
+  if(isBig()){ for(const b of bases) ys.push(b.y); }
+  else {
+    if(isBigFFA()){ for(const z of spawnZones){ if(z.kind!=="safe") ys.push(z.y); } }
+    ys.push(groundY());                 // the implicit solid ground of every non-teams arena
+  }
+  return ys.sort((a,b)=>a-b);
+}
+
 // Set up world dimensions, floors, and team bases for the current match.
 function setupWorld(){
   spawnZones=[];
+  const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
   if(!isBig()){
     if(isBigFFA()){
-      // ---- WIDE + TALL scrolling FFA arena (~3x screen in both dimensions) ----
-      const wScale = (stage.bigW||2.2)*2.0;    // wide, but not so sprawling that fights never meet
-      const hScale = 2.0;                       // tall, but fighters still find each other
+      // ---- WIDE + TALL scrolling FFA arena ----
+      // A small (non-`big`) stage lands here only when MAP SIZE asked for extra height; it reuses
+      // its own single-screen `plats` layout, laid out over one layout-unit of width.
+      const layoutW = stage.big ? (stage.bigW||2.2) : 1;
+      const layout  = (stage.big ? stage.platsBig : stage.plats) || [];
+      const wScale = (stage.big ? layoutW*2.0 : 2.0) * MS.w;   // wide, but not so sprawling that fights never meet
+      const hScale = 2.5 * MS.h;                // tall enough to play vertically, still one arena
       WW = Math.round(W * wScale); WH = Math.round(H * hScale); camX=0; camY=0; bases=[];
-      // platsBig entries: [nx, ny, nw] or [nx, ny, nw, "solid", nh]
-      // nx/nw are in "screen widths" of the ORIGINAL bigW layout — rescale them across the
-      // (now 3x) world so platforms span the whole arena instead of bunching on the left.
-      const spanX = WW / (stage.bigW||2.2);     // world units per original layout unit
-      worldPlats = (stage.platsBig||[]).map(pd=>{
+      // layout entries: [nx, ny, nw] or [nx, ny, nw, "solid", nh]
+      // nx/nw are in "screen widths" of the ORIGINAL layout — rescale them across the (much wider)
+      // world so platforms span the whole arena instead of bunching on the left.
+      const spanX = WW / layoutW;               // world units per original layout unit
+      // ny is spread over a WIDER vertical band than before (was 0.4..0.95 of WH) so the extra
+      // height is actually used for play instead of becoming dead sky above the map.
+      worldPlats = layout.map(pd=>{
         const [px,py,pw,kind,nh]=pd;
         const solid = kind==="solid";
         const w = pw*spanX;
-        return { x: px*spanX - w/2, y: WH*(0.4+py*0.55), w, h: solid ? (nh? WH*nh : 64) : 16, solid };
+        return { x: px*spanX - w/2, y: WH*(0.25+py*0.65), w, h: solid ? (nh? WH*nh : 64) : 16, solid };
       });
       worldZones=[];
       buildSpawnZones();
+      // Furnish the WHOLE arena, not just the band the stage layout happens to occupy.
+      worldPlats = worldPlats.concat(scatterPlatforms({
+        x0: 0, x1: WW, top: WH*0.10, bot: groundY()-FIELD_ROW_GAP, colW: FIELD_COL_W(),
+        existing: worldPlats,
+        blockers: worldPlats.filter(p=>p.solid)
+          .concat(spawnZones.map(z=>({ x:z.x, y:z.y-70, w:z.w, h:80 }))),
+      }));
+      // Reachability: nobody should be stranded on the floor of a 2.5x-tall arena.
+      worldPlats = worldPlats.concat(fillClimbGaps(climbLayers(), WW));
       return;
     }
     // ---- SMALL stage in FFA/1v1 ----
@@ -2108,17 +2259,19 @@ function setupWorld(){
   // Width was briefly suspected of causing stalls; measurement showed matches resolve 12/12 given
   // a realistic frame budget — the old test simply cut them off early. Kept generous.
   const wMul = 2.9 + SETTINGS.count*0.11;
-  WW = Math.round(W * Math.min(3.6, wMul));
+  WW = Math.round(W * Math.min(3.6, wMul) * MS.w);
 
   const teamCount = (SETTINGS.teamKey||'').split('v').filter(Boolean).length || 2;
-  // Taller vertical arena (was 1.75x): more headroom for a higher tower and an extra
-  // climbing rung, so the map plays vertically. The continuous floor + run-under tunnel
+  // Taller vertical arena (2.5x screen, was 2.15x): more headroom for a higher tower and more
+  // climbing rungs, so the map really plays vertically. The continuous floor + run-under tunnel
   // below stay unchanged, so teams always have a horizontal route to each other (the AI
   // never has to climb to win — verticality is optional high ground, not a required path).
-  WH = Math.round(H * 2.15);
+  WH = Math.round(H * 2.5 * MS.h);
   const marginX = WW*0.03;
   const floorW  = WW - marginX*2;
-  const botY    = WH - H*0.22;
+  // Everything below is a FRACTION of WH, not of the screen, so the MAP SIZE multiplier scales the
+  // whole stadium instead of just adding empty sky. 0.088 of WH == the old H*0.22 pit at 2.5x.
+  const botY    = WH*0.912;
   const midX    = marginX + floorW*0.5;
   floors=[{ level:0, y:botY, x:marginX, w:floorW }];
 
@@ -2131,16 +2284,31 @@ function setupWorld(){
   // because the AI won't reliably climb four ledges to reach the other team. Now it's a structure
   // you fight around, over and under, with the summit as contested high ground.
   const towerW  = Math.max(150, floorW*0.075);
-  const towerTop = botY - H*0.98;                 // taller landmark reaching into the higher arena
-  const towerBot = botY - 150;                    // clearance underneath: a run-through tunnel (unchanged)
+  // Tower height is a fraction of WH (0.48 → H*1.2 at the default 2.5x arena, up from H*0.98), so a
+  // Tall/Huge map grows a taller tower rather than more dead air above the same short one.
+  const towerTop = botY - WH*0.48;                // taller landmark reaching into the higher arena
+  const TUNNEL_H = 150;                           // clearance underneath: a run-through tunnel (unchanged)
+  const towerBot = botY - TUNNEL_H;
   worldPlats.push({ x:midX-towerW/2, y:towerTop, w:towerW, h:towerBot-towerTop, solid:true, floor:0 });
-  // two support legs, narrow enough to run between (visual anchor without walling the map off)
-  worldPlats.push({ x:midX-towerW/2, y:towerBot, w:16, h:150, solid:true, floor:0 });
-  worldPlats.push({ x:midX+towerW/2-16, y:towerBot, w:16, h:150, solid:true, floor:0 });
-  // stepped ledges climbing the tower (alternating sides) — the contested route to the top.
-  // Five rungs (was four) spanning the taller tower, so the vertical climb reads as a real route.
-  for(let i=0;i<5;i++){
-    const ly = botY - 190 - i*128;
+  // Two support corbels under the tower's corners — a visual anchor that must NOT reach the floor.
+  // They used to be full-height (TUNNEL_H) solid legs, which quietly re-created the very thing this
+  // arena is built to avoid: a floor-to-tower wall across BOTH tunnel mouths. Headless 2v2 runs had
+  // both teams pinned against those legs for 9000 frames with zero KOs. Now they hang, leaving
+  // LEG_CLEAR px of genuine run-through space beneath (a fighter is 48px tall), so the horizontal
+  // route across the map is always open and the AI never has to climb to reach the other team.
+  const LEG_CLEAR = 130;
+  const legH = Math.max(12, TUNNEL_H - LEG_CLEAR);
+  worldPlats.push({ x:midX-towerW/2, y:towerBot, w:22, h:legH, solid:true, floor:0 });
+  worldPlats.push({ x:midX+towerW/2-22, y:towerBot, w:22, h:legH, solid:true, floor:0 });
+  // Stepped ledges climbing the tower (alternating sides) — the contested route to the top.
+  // The COUNT adapts to the tower's height so the rungs stay a double jump apart (~125px) at every
+  // map size: 6 rungs on a Normal map (was 5 on the shorter tower), more on Tall/Huge.
+  const climbBot = botY - 190;                    // lowest rung, a hop above the floor
+  const climbTop = towerTop + 50;                 // highest rung, just under the summit perch
+  const climbSpan = Math.max(0, climbBot - climbTop);
+  const rungs = Math.max(6, Math.ceil(climbSpan/128) + 1);
+  for(let i=0;i<rungs;i++){
+    const ly = climbBot - climbSpan*(i/(rungs-1));
     const side = (i%2===0) ? -1 : 1;
     worldPlats.push({ x: midX + side*(towerW/2) - (side<0?150:0), y: ly, w:150, h:14, hop:true, floor:0 });
   }
@@ -2187,6 +2355,20 @@ function setupWorld(){
     bases.push({ team:t, x:bx-bw/2, y:bluffY-4, w:bw, h:18,
       color:TEAM_COLORS[t%TEAM_COLORS.length], spawnX:bx, spawnY:bluffY-46, floor:0, spawns });
   }
+  // --- ARENA-WIDE PLATFORM FIELD ---
+  // The landmarks above furnish the middle of the canyon and nothing else: the long lateral runs
+  // out to the edges and the whole airspace over the tower were empty. Fill the playable box on a
+  // staggered grid, keeping clear of the solids, the bases' spawn columns and the run-under tunnel.
+  const spawnBoxes = bases.map(b=>({ x:b.x, y:b.y-90, w:b.w, h:100 }));
+  const tunnelBox  = { x: midX-towerW/2-30, y: botY-TUNNEL_H, w: towerW+60, h: TUNNEL_H };
+  worldPlats = worldPlats.concat(scatterPlatforms({
+    x0: marginX, x1: marginX+floorW, top: WH*0.10, bot: botY-FIELD_ROW_GAP, colW: FIELD_COL_W(),
+    existing: worldPlats,
+    blockers: worldPlats.filter(p=>p.solid).concat(spawnBoxes, [tunnelBox]),
+  }));
+  // Safety net: the adaptive rung count and the field grid already keep the arena climbable at every
+  // MAP SIZE, but this guarantees it — no layer is ever more than a double jump above the one below.
+  worldPlats = worldPlats.concat(fillClimbGaps(climbLayers(), WW));
 }
 
 // Build spawn areas for big FFA maps:
@@ -5904,9 +6086,11 @@ function drawMinimap(){
   ctx.globalAlpha=0.85; ctx.fillStyle="#1c1c1c"; ctx.fillRect(mx-3,my-3,mw+6,mh+6);
   ctx.fillStyle="#3a4a2a"; ctx.fillRect(mx,my,mw,mh); ctx.globalAlpha=1;
   const sxr=mw/WW, syr=mh/WH;
-  // floors (faint lines)
+  // floors (faint lines). The scatter/ladder field is deliberately NOT drawn: 100+ rungs on a
+  // 150px-wide minimap is a white blur. The minimap's job is landmarks + where everyone is.
   ctx.strokeStyle="#ffffff44"; ctx.lineWidth=1;
-  for(const p of worldPlats){ if(p.floor==null && !isBigFFA()) continue;
+  for(const p of worldPlats){ if(p.field || p.ladder) continue;
+    if(p.floor==null && !isBigFFA()) continue;
     ctx.beginPath(); ctx.moveTo(mx+p.x*sxr, my+p.y*syr); ctx.lineTo(mx+(p.x+p.w)*sxr, my+p.y*syr); ctx.stroke(); }
   // spawn zones on the minimap (big FFA)
   if(isBigFFA()){ for(const z of spawnZones){
@@ -6307,7 +6491,9 @@ function serializeState(){
     stage: stage.id,
     // static-ish world (small; sent each frame for simplicity on LAN)
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop})),
+    // `solid` was missing here, so on a client every stone landmark rendered as a thin ledge;
+    // `field` keeps the client's minimap filtering out the scatter grid the way the host's does.
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field})),
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color})),
     mode: SETTINGS.mode,
     fighters: fighters.map(f=>({
@@ -6482,7 +6668,8 @@ window.NET = {
   startAsHost(){
     // build a roster: humans first (in lobby order), fill rest with AI up to SETTINGS.count
     const humans=this.players.map(p=>p.fighter||"Firey");
-    const settings={mode:SETTINGS.mode, count:Math.max(SETTINGS.count, this.players.length), stocks:SETTINGS.stocks, teamKey:SETTINGS.teamKey};
+    // mapSize travels with the settings: host and clients must build the SAME arena geometry.
+    const settings={mode:SETTINGS.mode, count:Math.max(SETTINGS.count, this.players.length), stocks:SETTINGS.stocks, teamKey:SETTINGS.teamKey, mapSize:SETTINGS.mapSize};
     const roster=humans;
     this.send({t:"start", settings, roster});
     this.beginMatch(settings, roster);
@@ -6490,6 +6677,8 @@ window.NET = {
 
   beginMatch(settings, roster){
     Object.assign(SETTINGS, settings);
+    // peer-supplied: never let an unknown key reach the arena math
+    if(!MAP_SIZES[SETTINGS.mapSize]) SETTINGS.mapSize='normal';
     // mark which fighters are network-controlled
     window.__netRoster = roster;
     window.__netHumanCount = this.players.length;
