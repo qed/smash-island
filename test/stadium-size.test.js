@@ -39,6 +39,35 @@ function setup(w, { mode = 'ffa', stageId = 'goiky', size = 'normal', count = 5 
   };
 }
 
+// Coarse-grid coverage of the playable airspace: divide the box between the top of the arena and
+// the floor into COV_COLS x COV_ROWS cells and count the cells that have a platform in them.
+// This is the "platforms all around the map" check — landmarks alone furnished only the middle
+// band, leaving the whole upper airspace and the lateral runs to the edges as empty sky.
+const COV_COLS = 6, COV_ROWS = 6;
+function coverage(w) {
+  const WW = w.eval('WW'), WH = w.eval('WH');
+  const plats = w.eval('worldPlats');
+  let x0, x1, botY;
+  if (w.eval('isBig()')) {
+    const floor = plats.find(p => p.solid && p.floor === 0 && p.w > WW * 0.8);
+    x0 = floor.x; x1 = floor.x + floor.w; botY = floor.y;
+  } else {
+    x0 = 0; x1 = WW; botY = w.eval('groundY()');
+  }
+  const top = WH * 0.10;
+  const cw = (x1 - x0) / COV_COLS, ch = (botY - top) / COV_ROWS;
+  let served = 0;
+  const empty = [];
+  for (let r = 0; r < COV_ROWS; r++) {
+    for (let c = 0; c < COV_COLS; c++) {
+      const cx0 = x0 + c * cw, cy0 = top + r * ch;
+      const hit = plats.some(p => p.y >= cy0 && p.y < cy0 + ch && p.x < cx0 + cw && p.x + p.w > cx0);
+      if (hit) served++; else empty.push(`r${r}c${c}`);
+    }
+  }
+  return { pct: served / (COV_COLS * COV_ROWS), empty };
+}
+
 // Largest vertical distance between two consecutive standable layers.
 function widestGap(layers) {
   let worst = 0, at = null;
@@ -236,7 +265,8 @@ describe('TEAMS arena — floor continuity and the run-under tunnel survive ever
       const g = setup(w, { mode: 'teams', size, count: 4 });
       const floor = teamsFloor(g);
       const tower = g.plats.filter(p => p.solid && p !== floor).sort((a, b) => (b.h || 0) - (a.h || 0))[0];
-      heights[size] = { tower: tower.h, rungs: g.plats.filter(p => p.hop && p.w === 150).length, WH: g.WH };
+      const rungs = g.plats.filter(p => p.hop && !p.field && !p.ladder && p.w === 150).length;
+      heights[size] = { tower: tower.h, rungs, WH: g.WH };
     }
     expect(heights.normal.rungs, 'six climbing rungs on a Normal map (was five)').toBeGreaterThanOrEqual(6);
     expect(heights.huge.tower).toBeGreaterThan(heights.normal.tower);
@@ -291,13 +321,84 @@ describe('Reachability holds for every SCROLLING arena at every size', () => {
   });
 });
 
+describe('Platforms cover the WHOLE arena, not just the middle band', () => {
+  const bigStages = ['grandplains', 'skytower', 'canyon', 'bigincin', 'fortress'];
+
+  for (const size of SIZES) {
+    it(`${size}: the teams arena is furnished full width and full height`, () => {
+      const { window: w } = loadMonolith();
+      setup(w, { mode: 'teams', size, count: 4 });
+      const { pct, empty } = coverage(w);
+      expect(pct, `coverage ${(pct * 100).toFixed(0)}%, empty cells ${empty.join(',')}`)
+        .toBeGreaterThanOrEqual(0.85);
+    });
+
+    it(`${size}: every scrolling FFA stage is furnished full width and full height`, () => {
+      for (const stageId of bigStages) {
+        const { window: w } = loadMonolith();
+        setup(w, { stageId, size });
+        const { pct, empty } = coverage(w);
+        expect(pct, `${stageId}/${size}: coverage ${(pct * 100).toFixed(0)}%, empty ${empty.join(',')}`)
+          .toBeGreaterThanOrEqual(0.85);
+      }
+    });
+  }
+
+  it('the upper airspace specifically is no longer empty', () => {
+    // The regression this guards: before the scatter pass the top THIRD of every arena had zero
+    // platforms — the landmarks all sat in the lower-middle band.
+    for (const [mode, stageId] of [['teams', 'goiky'], ['ffa', 'grandplains'], ['ffa', 'skytower']]) {
+      for (const size of SIZES) {
+        const { window: w } = loadMonolith();
+        const g = setup(w, { mode, stageId, size, count: mode === 'teams' ? 4 : 5 });
+        const upper = g.plats.filter(p => p.y < g.WH * 0.35);
+        expect(upper.length, `${mode} ${stageId}/${size} has platforms in the top third`).toBeGreaterThan(2);
+      }
+    }
+  });
+
+  it('the field is deterministic — the same settings rebuild the identical arena', () => {
+    // setupWorld must stay pure: replays, goldens and netplay all rebuild from settings alone.
+    const build = (seed) => {
+      const { window: w } = loadMonolith(seed);
+      setup(w, { mode: 'teams', size: 'tall', count: 4 });
+      return w.eval('JSON.stringify(worldPlats)');
+    };
+    expect(build(1)).toBe(build(999));            // different RNG seeds, identical geometry
+  });
+
+  it('the scatter never disturbs the landmarks, spawns or the tunnel', () => {
+    for (const size of SIZES) {
+      const { window: w } = loadMonolith();
+      const g = setup(w, { mode: 'teams', size, count: 4 });
+      const field = g.plats.filter(p => p.field);
+      expect(field.length, `${size} adds field platforms`).toBeGreaterThan(0);
+      expect(field.every(p => p.hop && !p.solid), 'field pieces are one-way tops, never solid walls').toBe(true);
+      // nothing lands inside a solid landmark, nor in the spawn column above a base
+      const solids = g.plats.filter(p => p.solid);
+      for (const f of field) {
+        for (const s of solids) {
+          const overlap = f.x < s.x + s.w && f.x + f.w > s.x && f.y < s.y + (s.h || 16) && f.y + f.h > s.y;
+          expect(overlap, `field plat at ${Math.round(f.x)},${Math.round(f.y)} clear of solids`).toBe(false);
+        }
+        for (const b of w.eval('bases')) {
+          const inSpawn = f.x < b.x + b.w && f.x + f.w > b.x && f.y < b.y + 10 && f.y + f.h > b.y - 90;
+          expect(inSpawn, `field plat clear of base spawn column`).toBe(false);
+        }
+      }
+      // and the tunnel is still a tunnel
+      expect(tunnelClearance(g).clearance).toBeGreaterThanOrEqual(MIN_TUNNEL);
+    }
+  });
+});
+
 describe('The extra height is used for play, not dead sky', () => {
   it('big-FFA platforms map onto the WIDER 0.25 + py*0.65 band', () => {
     const { window: w } = loadMonolith();
     const g = setup(w, { stageId: 'grandplains', size: 'normal' });
     const layout = w.eval('STAGES.find(s=>s.id==="grandplains").platsBig');
     const expected = [...new Set(layout.map(pd => g.WH * (0.25 + pd[1] * 0.65)))].sort((a, b) => a - b);
-    const actual = [...new Set(g.plats.filter(p => !p.ladder).map(p => p.y))].sort((a, b) => a - b);
+    const actual = [...new Set(g.plats.filter(p => !p.ladder && !p.field).map(p => p.y))].sort((a, b) => a - b);
     expect(actual.length).toBe(expected.length);
     actual.forEach((y, i) => expect(y).toBeCloseTo(expected[i], 3));
   });
@@ -305,7 +406,7 @@ describe('The extra height is used for play, not dead sky', () => {
   it('the same layout now spans noticeably more pixels than the old 2.0x / 0.55 band did', () => {
     const { window: w } = loadMonolith();
     const g = setup(w, { stageId: 'grandplains', size: 'normal' });
-    const ys = g.plats.filter(p => !p.ladder).map(p => p.y);
+    const ys = g.plats.filter(p => !p.ladder && !p.field).map(p => p.y);
     const span = Math.max(...ys) - Math.min(...ys);
     const pys = w.eval('STAGES.find(s=>s.id==="grandplains").platsBig').map(pd => pd[1]);
     const pySpan = Math.max(...pys) - Math.min(...pys);

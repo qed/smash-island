@@ -36,7 +36,50 @@ map reads by. Their spacing was measured at every size and stays well inside a d
 - The branch now accepts a stage with no `platsBig`: a **small** stage promoted by MAP SIZE is laid
   out from its own `plats` over one layout-unit of width (`layoutW = 1`, `wScale = 2.0`).
 
-### New: automatic climb-ladder fill
+### Arena-wide platform field (owner feedback: "platforms should be all around the map")
+
+`FIELD_ROW_GAP`, `FIELD_COL_W()`, `cellJitter()`, `scatterPlatforms()`.
+
+The hand-placed landmarks only ever furnished the middle of a map. On a 2.5×-tall arena that left the
+entire upper airspace and the long lateral runs between the bluffs/plateaus and the edges as empty sky —
+a coarse 6×6 grid over the playable box showed the **top two rows empty on every single arena**, and the
+teams map reduced to a narrow `..##..` column around the tower.
+
+`scatterPlatforms()` now fills the whole playable box on a staggered (brick-bond) grid:
+
+- **Rows** every `FIELD_ROW_GAP = 150px` from one hop above the floor up to `WH*0.10`. 150 ≤
+  `MAX_HOP_RISE`, so a full-height field is climbable *by construction* rather than by luck.
+- **Columns** every `FIELD_COL_W() = max(380, W*0.62)` world px — tied to the SCREEN width, not the
+  world's, so density per screenful stays constant and a Huge map gets *more* platforms, not sparser ones.
+- **Brick bond**: alternate rows offset by half a cell, plus a ±0.12-cell x nudge and a 0.85–1.35×
+  width variation. Grid-ish, so it reads deliberate rather than noisy.
+- **Deterministic**: the jitter is a hash of the cell's `(col, row)` coordinates, never `Math.random()`.
+  `setupWorld()` stays pure, so replays, the golden traces and netplay all rebuild the identical arena.
+  A test asserts two different RNG seeds produce byte-identical `worldPlats`.
+- **Skips** any cell that would collide with a solid landmark, a team base and the 90px spawn column
+  above it, the tower's run-under tunnel, a big-FFA respawn perch, or a hand-placed platform already
+  serving that spot. Landmarks, spawns and bases are untouched.
+- Everything produced is a **one-way top**, which by construction cannot wall off a horizontal route
+  the way a solid can — the failure mode from §4 can't recur here.
+- **Edge lane**: the outer 7% of the span on each side is left clear. KOs in this game come almost
+  entirely from being knocked out sideways, and a platform in the last stretch before the blast zone
+  catches the victim and hands them a free recovery. Furnishing all the way out measurably stalled the
+  biggest map — see §4. The lane is narrower than a coverage cell, so nothing reads as a gap.
+
+Coverage, 6×6 grid over the playable box, 30 arenas (teams + 5 big stages + 3 promoted small stages,
+each at all 4 sizes):
+
+| | mean | worst | top-third of the map |
+|---|---|---|---|
+| before | **44.7%** | 33% | empty on all 30 |
+| after | **95.7%** | 86% (3 of the smallest arenas) | populated on all 30 |
+
+(98.0% before the edge lane was reserved; the lane costs ~2 points and buys back the KO rate.)
+
+Widest climb gap also tightened from "up to 170px" to a flat **150px** everywhere, because the field's
+row pitch now dominates the layer spacing.
+
+### Automatic climb-ladder fill
 
 `MAX_HOP_RISE = 170` (a double jump), `climbLayers()`, `fillClimbGaps()`.
 
@@ -99,11 +142,26 @@ telegraphed attacks stay readable), the tutorial, and test mode.
 
 ---
 
-## 3. One drive-by fix: `resize()` clobbering a scrolling world
+## 3. Drive-by fixes
+
+### `resize()` clobbering a scrolling world
 
 `resize()` did `if(!isBig()){ WW=W; WH=H; }`. A mid-match browser resize therefore collapsed a scrolling
 FFA world to one screen, leaving the camera clamped inside a fraction of the real map. Now
 `if(!isBig() && !isBigFFA())`. Pre-existing; it became load-bearing once small stages can scroll.
+
+### `serializeState()` dropping `solid`
+
+The per-frame netcode snapshot serialised `worldPlats` without `solid`, so on a **client** every stone
+landmark (tower, bluffs, mesas, battlements) rendered as a thin one-way ledge instead of a masonry
+slab. Added `solid` and the new `field` flag (the latter keeps the client's minimap filtering the
+scatter grid the same way the host's does).
+
+**Known follow-up, not addressed:** that snapshot ships the whole platform list every frame "for
+simplicity on LAN". The field takes a Huge arena from ~20 platforms to ~110, so the snapshot is ~5×
+bigger than it was. Clients already run `setupWorld()` themselves and `mapSize` now travels in the
+settings, so the world half of this payload is redundant and could be sent once at match start — but
+that is a netcode change, out of scope here.
 
 ---
 
@@ -137,7 +195,40 @@ Matches still run long (a 2v2 at 2 stocks needs 4 KOs on one side), which matche
 note that this map resolves given a realistic frame budget rather than a short cap — but they now
 progress instead of deadlocking, at every map size.
 
-**Platform reachability — holds, pinned.** ≤170px measured, asserted ≤180px.
+**Run-under tunnel after the scatter — still holds.** The field never places a piece in the tunnel box
+(explicit blocker) and everything it places is a one-way top, which cannot block a horizontal route at
+all. Measured clearance is unchanged at 150px nominal / ≥130px real, every size, and is asserted.
+
+**Platform reachability — holds, pinned.** Now a flat 150px (the field's row pitch), asserted ≤180px.
+
+**No stall from the added platforms — but Huge got slower, and that is a real trade-off.**
+The 9000-frame cap used earlier is simply too short for this map; at a realistic budget matches resolve.
+teams 2v2, Hard AI, 2 stocks, seeds 1–4, 30k-frame cap:
+
+| build | size | resolved | KOs | mean frames |
+|---|---|---|---|---|
+| pre-scatter | Normal | 4/4 | 22 | 13858 |
+| field, no edge lane | Normal | 4/4 | 24 | 14483 |
+| **field + edge lane** | Compact | 3/4 | 24 | 16361 |
+| **field + edge lane** | Normal | 4/4 | 23 | 17215 |
+| **field + edge lane** | Tall (6 seeds) | 6/6 | 33 | ~15600 |
+| pre-scatter | **Huge** | 4/4 | 24 | 19797 |
+| field, no edge lane | **Huge** | 1/4 | 19 | >27000 |
+| **field + edge lane** | **Huge** | 2/4 | 19 | 26426 |
+
+**15 of 18 runs resolve** across all four sizes. Compact/Normal/Tall are essentially unaffected.
+**Huge is ~33% slower to resolve than it was** (19.8k → 26.4k frames, with 2 of 4 seeds still going at
+the 30k cap). The cause is not a wall — it's that a map furnished edge to edge catches fighters who
+would otherwise have been knocked out, and Huge has the most airspace to furnish. The edge lane
+recovered half of it (1/4 → 2/4); recovering the rest would mean thinning the field, which is the
+opposite of what was asked for.
+
+Every Huge run still lands 4–6 KOs and progresses steadily, so this is a *long* map (4788×2880 ≈ 19
+screens of area), not a deadlocked one. **Flagging it as a judgement call**: if Huge matches feel like
+they drag in play, the dial to turn is `EDGE_LANE` (wider) or `FIELD_COL_W()` (larger), both one-line.
+
+**Frame cost.** 8-fighter Canyon at Huge, 3000 steps: 21 platforms → 3.35 ms/frame, 133 platforms →
+3.19 ms/frame. No measurable regression; platform count is not on the hot path.
 
 **Known, untouched:** the Incinerator's single-screen layout has a 184px floor→ledge hop. It predates
 this work, is part of that stage's design, and Compact/Normal don't touch small stages, so the
@@ -148,7 +239,11 @@ that small stages at Compact/Normal come out identical to the legacy builder.
 
 ## 5. Verification
 
-- `npx vitest run` — **12 files, 108 tests, all green** (72 pre-existing + 36 new). No golden churn.
+- `npx vitest run` — **12 files, 119 tests, all green** (72 pre-existing + 47 new). No golden churn.
+- `test/stadium-size.test.js` also covers the platform field: ≥85% coarse-grid coverage for the teams
+  arena and every scrolling FFA stage at all 4 sizes; the top third of the map populated on every
+  arena; byte-identical `worldPlats` from two different RNG seeds (purity); and that no field piece is
+  solid, lands inside a landmark, lands in a base's spawn column, or reduces the tunnel below 120px.
 - `test/stadium-size.test.js` covers: the multiplier table and its defaults; the seg control wiring and
   summary text; unknown-`mapSize` fallback; multipliers applied to teams and big-FFA `WW`/`WH`;
   Compact/Normal leaving small stages on one screen and byte-identical; Tall/Huge promoting small stages
