@@ -307,6 +307,7 @@
     <div class="foot" style="margin-top:26px">A cartoon platform fighter starring the Battle for Dream Island cast. Knock your friends off the stage.</div>
     <div class="foot" style="margin-top:4px">59 fighters · 9 bosses · 13 assists · no account, no ads, nothing to install</div>
     <div class="foot" style="margin-top:10px;opacity:0.7">An unofficial fan-made game. Not affiliated with or endorsed by jacknjellify; Battle for Dream Island and its characters belong to them. Made for fun, never sold.</div>
+    <div class="foot" id="musicCredits" style="margin-top:6px;opacity:0.7">Music: "Chill/Calming Chiptune Loop" by Reganati · "8-Bit Chiptune Action Music for Video Games" by HauntSync · "Dark Orchestral Battle Tension" by Montogoronto · "Epic Orchestral Anthem Loop" by Sonican — free under the Pixabay Content License. Full credits: assets/music/CREDITS.md</div>
     <div class="foot" style="margin-top:4px;opacity:0.7">build v68 · new teams arena "The Yoyle Crossing" — bigger, landmark-driven</div>
   </div>
 
@@ -869,6 +870,13 @@ const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, gre
 const SND = {
   ctx:null, master:null, musicGain:null, sfxGain:null,
   on:true, musicOn:true, started:false, _lastHit:0, _musicTimer:null, _step:0,
+  // ---- recorded-music state (see the MUSIC_FILES block below) ----
+  gesture:false,      // a real user interaction has happened, so media playback is allowed
+  _el:null,           // the single reused <audio> element; never constructed at load time
+  _elKind:null,       // which track is currently loaded into _el
+  _kind:null,         // the context we WANT to be playing ('menu' | 'battle' | 'boss' | 'tourney')
+  _pendingKind:null,  // requested before the first gesture; started by musicUnlock()
+  _fileBad:{},        // kinds whose file 404'd / failed to decode — permanently on the synth bed
 };
 function sndInit(){
   if(SND.ctx || !SND.on) return;
@@ -932,6 +940,121 @@ const SFX = {
   win(){ [523,659,784,1047].forEach((f,i)=>tone(f,0.26,'triangle',0.22,i*0.13,f*1.01)); },
   lose(){ [392,330,262,196].forEach((f,i)=>tone(f,0.34,'sine',0.22,i*0.15,f*0.98)); },
 };
+// ============================================================
+//  BACKGROUND MUSIC — real recorded loops, with the synth bed below as the fallback.
+//
+//  Every track is licensed for this use; titles, authors, source URLs and licences are recorded
+//  in assets/music/CREDITS.md next to the files. The four contexts deliberately sound different:
+//  a warm chiptune loop for the menus, an energetic 8-bit bed for arena matches, a dark
+//  orchestral bed for Boss Rush, and a regal anthem for the World Cup hub.
+//
+//  Design rules this block has to honour:
+//   * NO Audio element is constructed at load time — the headless jsdom harness boots this file
+//     and must not touch media. Construction happens on the first real user gesture, at the
+//     earliest, and only through musicEl().
+//   * NO autoplay. Browsers reject play() before an interaction, so a request made too early is
+//     parked in SND._pendingKind and started by musicUnlock() from the existing gesture hook.
+//   * A missing or unplayable file NEVER means silence: the kind is marked bad and the original
+//     synth loop takes over for the rest of the session.
+//   * Everything stays under the one Sound toggle — SND.on off means files and synth both stop.
+// ============================================================
+const MUSIC_FILES = {
+  menu:    'assets/music/menu.mp3',
+  battle:  'assets/music/battle.mp3',
+  boss:    'assets/music/boss.mp3',
+  tourney: 'assets/music/tourney.mp3',
+};
+// Per-context playback level. Music sits well under the SFX so hits and KOs still read clearly.
+const MUSIC_VOLUME = { menu:0.34, battle:0.30, boss:0.34, tourney:0.34 };
+// Which screen id gets which bed. Matches (which hide every screen with go('_none_')) call
+// startMusic themselves; anything not listed here leaves the current bed alone.
+const MUSIC_SCREENS = {
+  title:'menu', select:'menu', controls:'menu', tutorial:'menu', stats:'menu',
+  editor:'menu', test:'menu', lobby:'menu',
+  tourneySetup:'tourney', tourneyHub:'tourney',
+};
+// Lazily build the ONE reused <audio> element. Returns null anywhere media is unavailable.
+function musicEl(){
+  if(SND._el) return SND._el;
+  if(typeof Audio!=='function') return null;
+  let el;
+  try{ el = new Audio(); }catch(e){ return null; }
+  try{
+    el.loop = true;
+    el.preload = 'auto';
+    el.addEventListener('error', ()=>{
+      // 404, decode failure, unsupported codec — never leave the player in silence.
+      const kind = SND._elKind;
+      if(kind) SND._fileBad[kind] = true;
+      SND._el = null; SND._elKind = null;
+      if(kind && SND._kind===kind) startSynthMusic(kind);
+    });
+  }catch(e){ return null; }
+  SND._el = el;
+  return el;
+}
+function musicPlaying(){
+  if(SND._musicTimer) return true;                       // synth bed is ticking
+  const el = SND._el;
+  try{ return !!(el && el.src && !el.paused && !el.ended); }catch(e){ return false; }
+}
+// Try the recorded track for `kind`. Returns true when the file path owns playback (already
+// playing, or parked until the first gesture), false when the caller should use the synth bed.
+function startMusicFile(kind){
+  const src = MUSIC_FILES[kind];
+  if(!src || SND._fileBad[kind]) return false;
+  if(!SND.gesture){ SND._pendingKind = kind; return true; }   // autoplay is blocked until then
+  const el = musicEl();
+  if(!el) return false;
+  try{
+    if(SND._elKind!==kind){ el.src = src; SND._elKind = kind; }
+    el.loop = true;
+    el.volume = (MUSIC_VOLUME[kind]!=null) ? MUSIC_VOLUME[kind] : 0.32;
+    try{ el.currentTime = 0; }catch(e){}
+    const p = el.play();
+    if(p && typeof p.catch==='function'){
+      p.catch(()=>{
+        // Blocked by an autoplay policy we did not anticipate: retry on the next gesture and
+        // keep the synth bed going meanwhile so the context is never silent.
+        SND._pendingKind = kind;
+        if(SND._kind===kind) startSynthMusic(kind);
+      });
+    }
+    return true;
+  }catch(e){ SND._fileBad[kind] = true; return false; }
+}
+// The one entry point the game calls. Picks the recorded track when there is one, else the synth.
+function startMusic(kind){
+  if(!SND.on || !SND.musicOn) return;
+  // Re-entering the same context (title -> select -> title) must not restart the track.
+  if(kind===SND._kind && (musicPlaying() || SND._pendingKind===kind)) return;
+  stopMusic();
+  SND._kind = kind;
+  if(startMusicFile(kind)) return;
+  startSynthMusic(kind);
+}
+// Called from the first-gesture hook: media is allowed now, so start whatever the game wants.
+// A request parked before the gesture wins; otherwise fall back to the bed for the screen the
+// player is actually looking at. That second half matters on a COLD LOAD: the title screen is
+// marked active in the HTML, so go('title') never runs and nothing would ever ask for music —
+// the game would sit silent on its own front page until the first navigation.
+function musicUnlock(){
+  SND.gesture = true;
+  const k = SND._pendingKind || currentMusicKind();
+  if(!k) return;
+  if(musicPlaying() && SND._kind===k) return;   // already on the right bed; don't restart it
+  SND._pendingKind = null; SND._kind = null;    // clear so startMusic's dedupe doesn't swallow this
+  startMusic(k);
+}
+// Which bed the game SHOULD be playing right now — used when sound is toggled back on.
+function currentMusicKind(){
+  try{
+    if(typeof BOSSRUSH!=='undefined' && BOSSRUSH && BOSSRUSH.active) return 'boss';
+    if(typeof running!=='undefined' && running) return 'battle';
+    const el = document.querySelector('.screen.active');
+    return (el && MUSIC_SCREENS[el.id]) || null;
+  }catch(e){ return null; }
+}
 // looping music: a bass groove with a melody layer on top, varying by context
 const MUSIC_SCALES = {
   menu:  [262,330,392,494,392,330,294,247],
@@ -945,9 +1068,11 @@ const MUSIC_BASS = {
   boss:  [110,104,98,110],
   tourney:[165,165,196,147],
 };
-function startMusic(kind){
+// The original file-free synth bed. Now the FALLBACK: it runs when a context has no recorded
+// track, or when that track failed to load. Kept byte-for-byte in behaviour.
+function startSynthMusic(kind){
   if(!SND.on || !SND.musicOn || !SND.ctx) return;
-  stopMusic();
+  if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
   const scale = MUSIC_SCALES[kind] || MUSIC_SCALES.menu;
   const bass = MUSIC_BASS[kind] || MUSIC_BASS.menu;
   const beat = kind==='boss' ? 180 : (kind==='battle' ? 190 : 230);   // boss music is faster/tenser
@@ -986,12 +1111,24 @@ function toggleSound(){
   SND.on = !SND.on;
   const btn=document.getElementById('soundToggle');
   if(!SND.on){ stopMusic(); if(btn) btn.textContent="🔇 Sound: Off"; }
-  else { sndInit(); if(btn) btn.textContent="🔊 Sound: On"; SFX.ui(); }
+  else {
+    sndInit(); if(btn) btn.textContent="🔊 Sound: On"; SFX.ui();
+    // The toggle is a click, so media is unlocked; pick the bed the current context wants back.
+    SND.gesture = true;
+    const k = currentMusicKind(); if(k) startMusic(k);
+  }
 }
-function stopMusic(){ if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; } }
+// Stops BOTH music paths. The recorded element is paused (not torn down) so the next
+// startMusic for the same kind can reuse the already-downloaded file.
+function stopMusic(){
+  if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
+  SND._pendingKind = null;
+  SND._kind = null;
+  if(SND._el){ try{ SND._el.pause(); }catch(e){} }
+}
 // unlock audio on first interaction (browsers block autoplay)
 if(typeof window!=='undefined' && window.addEventListener){
-  ['pointerdown','keydown','touchstart'].forEach(ev=>window.addEventListener(ev, ()=>{ sndInit(); sndResume(); }, {once:false}));
+  ['pointerdown','keydown','touchstart'].forEach(ev=>window.addEventListener(ev, ()=>{ sndInit(); sndResume(); musicUnlock(); }, {once:false}));
 }
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
@@ -1031,6 +1168,11 @@ function go(id){
   if(el){el.classList.add('active');}
   if(id==='select'){ buildBoard(); syncModeUI(); }
   if(id==='controls') buildMaps();
+  // Screen music. Matches use go('_none_') and start their own bed, so they are not listed;
+  // startMusic() no-ops when the requested bed is already the one playing, which keeps the
+  // menu loop running unbroken across title -> select -> controls -> title.
+  const bed = MUSIC_SCREENS[id];
+  if(bed){ try{ startMusic(bed); }catch(e){} }
 }
 
 // ---------- roster board ----------
@@ -1657,6 +1799,9 @@ function finishWatchSetup(fx, youPlay, size){
   if(fx.kind==="group"){ fighters.forEach(f=>{ f.stocks = Infinity; }); }
   particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null;
   camX=0; camY=0;
+  // A World Cup fixture is an arena match — swap the hub's anthem for the battle bed. (Without
+  // this the regal hub loop kept playing straight through every fight.)
+  try{ sndInit(); startMusic('battle'); }catch(e){}
   banner((fx.kind==="group"?"GROUP ":"KNOCKOUT ")+fx.a.name+" vs "+fx.b.name, 1600);
   buildHUD(); loop();
 }

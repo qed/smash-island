@@ -23,7 +23,17 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // sk-ant field. Same class of miss as the four-token version, one level up: the check was
 // narrower than the thing it guards.
 const PUBLISH_ROOT = JSON.parse(readFileSync('vercel.json', 'utf8')).outputDirectory;
-const PUBLISHED_FILES = readdirSync(PUBLISH_ROOT).map((f) => join(PUBLISH_ROOT, f));
+// Walk the WHOLE publish tree, not just its top level. The root gained an assets/ directory when
+// background music landed; a top-level-only listing would have pinned "assets" as one opaque name
+// and stopped noticing anything dropped inside it — which is the exact blind spot this gate exists
+// to close, since Vercel serves every one of those files at its own public URL.
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    return e.isDirectory() ? walk(p) : [p];
+  });
+}
+const PUBLISHED_FILES = walk(PUBLISH_ROOT);
 const PUBLISHED_HTML = PUBLISHED_FILES.filter((f) => f.endsWith('.html'));
 const SOURCE = join(PUBLISH_ROOT, 'index.html');
 
@@ -44,7 +54,45 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
   it('publishes only the files we intend to serve', () => {
     // Anything dropped into the publish root becomes a public URL. Pin the contents so a stray
     // build artifact fails the suite instead of silently shipping.
-    expect(PUBLISHED_FILES.map((f) => f.replace(/\\/g, '/'))).toEqual([`${PUBLISH_ROOT}/index.html`]);
+    expect(PUBLISHED_FILES.map((f) => f.replace(/\\/g, '/')).sort()).toEqual([
+      `${PUBLISH_ROOT}/assets/music/CREDITS.md`,
+      `${PUBLISH_ROOT}/assets/music/battle.mp3`,
+      `${PUBLISH_ROOT}/assets/music/boss.mp3`,
+      `${PUBLISH_ROOT}/assets/music/menu.mp3`,
+      `${PUBLISH_ROOT}/assets/music/tourney.mp3`,
+      `${PUBLISH_ROOT}/index.html`,
+    ].sort());
+  });
+
+  it('ships a real audio file for every music context the game references', () => {
+    // The game maps contexts to filenames in MUSIC_FILES. A typo'd or deleted path degrades
+    // silently to the synth fallback at runtime, so the mismatch has to fail here instead.
+    const src = readFileSync(SOURCE, 'utf8');
+    const block = src.slice(src.indexOf('const MUSIC_FILES'));
+    const paths = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']*\.(?:mp3|ogg))'/g)]
+      .map((m) => m[1]);
+    expect(paths.length).toBe(4);
+    for (const rel of paths) {
+      const abs = join(PUBLISH_ROOT, rel);
+      expect(PUBLISHED_FILES.map((f) => f.replace(/\\/g, '/')))
+        .toContain(abs.replace(/\\/g, '/'));
+      // A 0-byte or HTML-error-page "download" is worse than a missing file: it plays as silence.
+      const bytes = readFileSync(abs);
+      expect(bytes.length).toBeGreaterThan(100_000);
+      // MP3 frame sync or an ID3 tag — proof this is audio, not a saved error page.
+      const isMp3 = bytes[0] === 0xff || bytes.slice(0, 3).toString('latin1') === 'ID3';
+      expect(isMp3, `${rel} does not start with MP3 data`).toBe(true);
+    }
+  });
+
+  it('credits every shipped track with a licence', () => {
+    const credits = readFileSync(join(PUBLISH_ROOT, 'assets/music/CREDITS.md'), 'utf8');
+    for (const f of ['menu.mp3', 'battle.mp3', 'boss.mp3', 'tourney.mp3']) {
+      expect(credits).toContain(f);
+    }
+    // Every entry names a licence and a source, so the deploy is defensible without this repo.
+    expect(credits.match(/Licence\*\* \|/g) || []).toHaveLength(4);
+    expect(credits.match(/\*\*Source\*\* \|/g) || []).toHaveLength(4);
   });
 
   it.each(PUBLISHED_HTML)('%s contains none of the forbidden credential tokens', (file) => {
