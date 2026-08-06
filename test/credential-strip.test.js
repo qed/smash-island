@@ -23,9 +23,24 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // sk-ant field. Same class of miss as the four-token version, one level up: the check was
 // narrower than the thing it guards.
 const PUBLISH_ROOT = JSON.parse(readFileSync('vercel.json', 'utf8')).outputDirectory;
-const PUBLISHED_FILES = readdirSync(PUBLISH_ROOT).map((f) => join(PUBLISH_ROOT, f));
+// Walk the WHOLE publish tree, not just its top level, and normalise to forward slashes so the
+// pins below read the same on Windows and CI. The root gained an assets/ directory when background
+// music landed and a second subtree when sprite art landed; a top-level-only listing would have
+// pinned "assets" as one opaque name and stopped noticing anything dropped inside it — which is the
+// exact blind spot this gate exists to close, since Vercel serves every one of those files at its
+// own public URL. `assets/` has to live here — music and sprite art are fetched relative to
+// index.html — so the pins below name what may appear inside it rather than banning it outright.
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    return e.isDirectory() ? walk(p) : [p.replace(/\\/g, '/')];
+  });
+}
+const PUBLISHED_FILES = walk(PUBLISH_ROOT);
 const PUBLISHED_HTML = PUBLISHED_FILES.filter((f) => f.endsWith('.html'));
 const SOURCE = join(PUBLISH_ROOT, 'index.html');
+const MUSIC_DIR = `${PUBLISH_ROOT}/assets/music`;
+const SPRITE_DIR = `${PUBLISH_ROOT}/assets/sprites`;
 
 /** Tokens that must not survive anywhere in the shipped file. */
 const FORBIDDEN = [
@@ -44,7 +59,106 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
   it('publishes only the files we intend to serve', () => {
     // Anything dropped into the publish root becomes a public URL. Pin the contents so a stray
     // build artifact fails the suite instead of silently shipping.
-    expect(PUBLISHED_FILES.map((f) => f.replace(/\\/g, '/'))).toEqual([`${PUBLISH_ROOT}/index.html`]);
+    expect(PUBLISHED_FILES.slice().sort()).toEqual([
+      `${MUSIC_DIR}/CREDITS.md`,
+      `${MUSIC_DIR}/battle.mp3`,
+      `${MUSIC_DIR}/boss.mp3`,
+      `${MUSIC_DIR}/custom/README.md`,
+      `${MUSIC_DIR}/intense.mp3`,
+      `${MUSIC_DIR}/menu.mp3`,
+      `${MUSIC_DIR}/tourney.mp3`,
+      `${SPRITE_DIR}/CREDITS.md`,
+      `${SPRITE_DIR}/blocky.png`,
+      `${SPRITE_DIR}/bomby.png`,
+      `${SPRITE_DIR}/bubble.png`,
+      `${SPRITE_DIR}/firey.png`,
+      `${SPRITE_DIR}/ice-cube.png`,
+      `${SPRITE_DIR}/leafy.png`,
+      `${SPRITE_DIR}/match.png`,
+      `${SPRITE_DIR}/pen.png`,
+      `${SPRITE_DIR}/pencil.png`,
+      `${SPRITE_DIR}/puffball.png`,
+      `${SPRITE_DIR}/rocky.png`,
+      `${SPRITE_DIR}/teardrop.png`,
+      `${PUBLISH_ROOT}/index.html`,
+    ].sort());
+    // …and nothing new at the top level either, so a stray sibling directory is caught even if the
+    // recursive pin above is ever relaxed to a rule.
+    expect(readdirSync(PUBLISH_ROOT).sort()).toEqual(['assets', 'index.html']);
+  });
+
+  it('serves exactly one HTML entry point', () => {
+    // The pin above once read `[index.html]` and caught a second, un-stripped copy of the whole
+    // game sitting beside it. Widening the pin for `assets/` must not give that copy a way back
+    // in, so the "one HTML file" half of the guard is asserted separately and recursively.
+    expect(PUBLISHED_FILES.filter((f) => /\.html?$/i.test(f))).toEqual([`${PUBLISH_ROOT}/index.html`]);
+  });
+
+  it('confines assets/ to the music and sprite subtrees', () => {
+    // Two media subtrees are sanctioned; each has its own content rule below. Anything landing
+    // directly in assets/, or in a third subdirectory, belongs to neither rule and is an accident.
+    const stray = walk(join(PUBLISH_ROOT, 'assets'))
+      .filter((f) => !f.startsWith(`${MUSIC_DIR}/`) && !f.startsWith(`${SPRITE_DIR}/`));
+    expect(stray, `unexpected files under the published assets/ tree: ${stray.join(', ')}`).toEqual([]);
+  });
+
+  it('lets nothing but sprite art and its credits into assets/sprites/', () => {
+    // Sprite images are the only visual binaries the game is allowed to serve, and CREDITS.md is
+    // the required record of where each one came from. Anything else here is an accident.
+    const stray = walk(SPRITE_DIR)
+      .filter((f) => !/\.(png|webp|svg)$/i.test(f) && !/\/CREDITS\.md$/.test(f));
+    expect(stray, `unexpected files under the published sprites/ tree: ${stray.join(', ')}`).toEqual([]);
+  });
+
+  it('lets nothing but audio, its credits and the override README into assets/music/', () => {
+    // Mirror of the sprite rule: audio binaries only, plus the credits record and the owner-slot
+    // README. An HTML/JS file smuggled in here would be publicly reachable at its own URL.
+    const stray = walk(MUSIC_DIR)
+      .filter((f) => !/\.(mp3|ogg)$/i.test(f)
+        && f !== `${MUSIC_DIR}/CREDITS.md`
+        && f !== `${MUSIC_DIR}/custom/README.md`);
+    expect(stray, `unexpected files under the published music/ tree: ${stray.join(', ')}`).toEqual([]);
+  });
+
+  it('ships no audio in the owner override folder', () => {
+    // assets/music/custom/ is an empty slot the owner fills locally. A track appearing there is a
+    // deliberate publishing decision — it must be credited and consciously added to the pin above,
+    // never carried along by an `git add -A`.
+    const stray = PUBLISHED_FILES
+      .filter((f) => f.includes('/assets/music/custom/') && !f.endsWith('README.md'));
+    expect(stray).toEqual([]);
+  });
+
+  it('ships a real audio file for every music context the game references', () => {
+    // The game maps contexts to filenames in MUSIC_FILES. A typo'd or deleted path degrades
+    // silently to the synth fallback at runtime, so the mismatch has to fail here instead.
+    const src = readFileSync(SOURCE, 'utf8');
+    const block = src.slice(src.indexOf('const MUSIC_FILES'));
+    const paths = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']*\.(?:mp3|ogg))'/g)]
+      .map((m) => m[1]);
+    expect(paths.length).toBe(5);
+    for (const rel of paths) {
+      const abs = join(PUBLISH_ROOT, rel);
+      expect(PUBLISHED_FILES).toContain(abs.replace(/\\/g, '/'));
+      // A 0-byte or HTML-error-page "download" is worse than a missing file: it plays as silence.
+      const bytes = readFileSync(abs);
+      expect(bytes.length).toBeGreaterThan(100_000);
+      // MP3 frame sync or an ID3 tag — proof this is audio, not a saved error page.
+      const isMp3 = bytes[0] === 0xff || bytes.slice(0, 3).toString('latin1') === 'ID3';
+      expect(isMp3, `${rel} does not start with MP3 data`).toBe(true);
+    }
+  });
+
+  it('credits every shipped track with a licence', () => {
+    const credits = readFileSync(join(PUBLISH_ROOT, 'assets/music/CREDITS.md'), 'utf8');
+    // Only the shipped section — the owner-supplied template below it repeats these field names.
+    const shipped = credits.split('## Owner-supplied tracks')[0];
+    for (const f of ['menu.mp3', 'battle.mp3', 'boss.mp3', 'tourney.mp3', 'intense.mp3']) {
+      expect(shipped).toContain(f);
+    }
+    // Every entry names a licence and a source, so the deploy is defensible without this repo.
+    expect(shipped.match(/Licence\*\* \|/g) || []).toHaveLength(5);
+    expect(shipped.match(/\*\*Source\*\* \|/g) || []).toHaveLength(5);
   });
 
   it.each(PUBLISHED_HTML)('%s contains none of the forbidden credential tokens', (file) => {
