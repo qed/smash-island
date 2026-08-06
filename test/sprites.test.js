@@ -255,19 +255,23 @@ describe('drawing sprite fighters headlessly', () => {
     soloFighter(w, 'Firey');
     FAKE_DECODED(w, 'Firey', 150, 200);
 
+    // the SIGN of the horizontal scale carries the facing mirror (see `flip`), so the squash is
+    // only ever about its magnitude.
+    const wide = (m) => Math.abs(m[0]);
+
     // rising fast -> stretch tall and thin
     rec.length = 0;
     w.eval('const f=fighters[0]; f.onground=false; f.vy=-12; f.vx=0; f._landSquash=0; drawFighter(f)');
     let m = ctmAt(rec, findAt(rec, 'drawImage'));
     expect(m[3], 'render is stretched tall while rising').toBeGreaterThan(1.15);
-    expect(m[0], 'render is squeezed thin while rising').toBeLessThan(0.9);
+    expect(wide(m), 'render is squeezed thin while rising').toBeLessThan(0.9);
 
     // just landed -> squat wide and short
     rec.length = 0;
     w.eval('const f=fighters[0]; f.onground=true; f.vy=0; f.vx=0; f._landSquash=6; drawFighter(f)');
     m = ctmAt(rec, findAt(rec, 'drawImage'));
     expect(m[3], 'render squats on the land-squash').toBeLessThan(0.95);
-    expect(m[0], 'render widens on the land-squash').toBeGreaterThan(1.05);
+    expect(wide(m), 'render widens on the land-squash').toBeGreaterThan(1.05);
   });
 
   it('leaves the nametag outside the deform — unscaled and upright', () => {
@@ -347,6 +351,260 @@ describe('drawing sprite fighters headlessly', () => {
     const b = rec.filter((c) => c.op === 'lineTo').map((c) => c.args.join());
     expect(a.length, 'stub limbs drew').toBeGreaterThan(0);
     expect(a.join('|'), 'the legs still swing on their own').not.toBe(b.join('|'));
+  });
+
+  // ---- RIG STATES ------------------------------------------------------------------------------
+  // "Animation must have multiple ones" — the owner's second note. One walk bob shared by the whole
+  // cast reads as a screensaver. spriteRig is a state machine now, and these pin down that the
+  // states actually differ from each other, that a crowd is not in lockstep, and that the two
+  // event-driven states (attack, hitstun) are wired to the triggers that fire them.
+
+  /** Total per-frame movement of the render's CTM across `n` frames — the state's "motion energy". */
+  function energy(w, rec, setup, n = 30) {
+    let prev = null; let sum = 0;
+    for (let t = 0; t < n; t++) {
+      rec.length = 0;
+      w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0;
+              f._landSquash=0; f.vy=0; f.onground=true; ${setup}; drawFighter(f)`);
+      const m = ctmAt(rec, findAt(rec, 'drawImage'));
+      if (prev) sum += m.reduce((a, v, i) => a + Math.abs(v - prev[i]), 0);
+      prev = m;
+    }
+    return sum;
+  }
+  const stateOf = (w, rec, setup) => {
+    rec.length = 0;
+    w.eval(`const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0; f._landSquash=0;
+            f.vx=0; f.vy=0; f.onground=true; ${setup}; drawFighter(f)`);
+    return w.eval('fighters[0]._rigState');
+  };
+
+  it('gives the rig distinct idle / walk / run / air / attack / hitstun states', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+
+    expect(stateOf(w, rec, 'f.vx=0'), 'standing').toBe('idle');
+    expect(stateOf(w, rec, 'f.vx=1.5'), 'strolling').toBe('walk');
+    expect(stateOf(w, rec, 'f.vx=7'), 'sprinting').toBe('run');
+    expect(stateOf(w, rec, 'f.onground=false; f.vy=-9'), 'jumping').toBe('air-rise');
+    expect(stateOf(w, rec, 'f.onground=false; f.vy=9'), 'falling').toBe('air-fall');
+    expect(stateOf(w, rec, 'f.smashHold=30'), 'winding a smash').toBe('charge');
+    expect(stateOf(w, rec, 'f._atkAnim=8; f.flash=6'), 'swinging').toBe('attack');
+    expect(stateOf(w, rec, 'f.flash=9'), 'flashing with no swing = took a hit').toBe('hitstun');
+  });
+
+  it('escalates motion energy from idle to walk to run', () => {
+    // The point of separate states is that they LOOK different. A run that moves no more than a
+    // walk is the same animation with a different name.
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+
+    const idle = energy(w, rec, 'f.vx=0');
+    const walk = energy(w, rec, 'f.vx=1.5');
+    const run = energy(w, rec, 'f.vx=7');
+    expect(idle, 'idle still breathes').toBeGreaterThan(0);
+    expect(walk, 'a walk moves more than a breath').toBeGreaterThan(idle * 3);
+    expect(run, 'a run moves more than a walk').toBeGreaterThan(walk * 1.3);
+  });
+
+  it('blinks while idle — the idle is not one unbroken sine', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+    const ys = [];
+    for (let t = 0; t < 150; t++) {
+      rec.length = 0;
+      w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0;
+              f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; drawFighter(f)`);
+      ys.push(ctmAt(rec, findAt(rec, 'drawImage'))[3]);   // vertical scale
+    }
+    // the breath is gentle; the blink squint is a much sharper single-frame drop
+    const steps = ys.slice(1).map((v, i) => Math.abs(v - ys[i]));
+    const median = [...steps].sort((a, b) => a - b)[steps.length >> 1];
+    expect(Math.max(...steps), 'a blink spikes well past the breath').toBeGreaterThan(median * 8);
+  });
+
+  it('keeps a crowd out of lockstep — the phase is per fighter', () => {
+    const { w, rec } = bootRecording();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=4; startMatch();
+      fighters.length = 0;
+      ['Firey','Firey','Firey','Firey'].forEach((n,i)=>{
+        const f = makeFighter(ROSTER.find(x=>x.name===n), 200+i*70, 300, i);
+        f.you=false; f.smashHold=0; f.invuln=0; fighters.push(f);
+      });`);
+    FAKE_DECODED(w, 'Firey', 150, 200);
+    for (const setup of ['f.vx=0', 'f.vx=1.5', 'f.vx=7']) {
+      rec.length = 0;
+      w.eval(`hazardT=11; for(const f of fighters){ f.flash=0; f._atkAnim=0; f.smashHold=0;
+              f.vy=0; f.onground=true; f._landSquash=0; ${setup}; }
+              for(const f of fighters) drawFighter(f);`);
+      const poses = rec.map((c, i) => (c.op === 'drawImage' ? ctmAt(rec, i).join('|') : null)).filter(Boolean);
+      expect(poses, 'all four drew').toHaveLength(4);
+      expect(new Set(poses).size, `four fighters in [${setup}] hold four different poses`).toBe(4);
+    }
+  });
+
+  it('arms the attack lunge at every attack entry point, and lets it decay', () => {
+    const { window: w } = loadMonolith();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; startMatch();
+      fighters.length = 0;
+      ['Firey','Bubble'].forEach((n,i)=>fighters.push(makeFighter(ROSTER.find(x=>x.name===n), 300+i*160, 300, i)));`);
+    for (const call of ['doAttack(fighters[0])', 'doSmash(fighters[0],1)',
+      'doSpecial(fighters[0])', 'doAttackSpecial(fighters[0])']) {
+      expect(w.eval(`fighters[0]._atkAnim=0; ${call}; fighters[0]._atkAnim`), `${call} arms the lunge`)
+        .toBeGreaterThan(0);
+    }
+    // and the sim winds it back down, or every fighter would lunge forever after their first swing
+    const before = w.eval('fighters[0]._atkAnim=10; fighters[0]._atkAnim');
+    w.eval('step()');
+    expect(w.eval('fighters[0]._atkAnim'), 'the timer decays each tick').toBeLessThan(before);
+  });
+
+  it('lunges forward on an attack and jitters on a hit', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+    const x = (setup) => {
+      rec.length = 0;
+      w.eval(`hazardT=4; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0; f.vx=0;
+              f.vy=0; f.onground=true; f._landSquash=0; ${setup}; drawFighter(f)`);
+      return ctmAt(rec, findAt(rec, 'drawImage'))[4];    // horizontal offset from the fighter's x
+    };
+    const rest = x('');
+    expect(x('f.face=1; f._atkAnim=7'), 'lunges toward the facing side').toBeGreaterThan(rest + 2);
+    expect(x('f.face=-1; f._atkAnim=7'), 'and the other way when turned around').toBeLessThan(rest - 2);
+    expect(x('f.face=1; f.smashHold=45'), 'a charging smash winds BACK first').toBeLessThan(rest);
+    // a hit shakes; two consecutive hitstun frames never sit in the same place
+    const a = x('f.flash=12'); rec.length = 0;
+    w.eval(`hazardT=5; const f=fighters[0]; f.vx=0; f.vy=0; f.onground=true; f._atkAnim=0;
+            f.smashHold=0; f._landSquash=0; f.flash=12; drawFighter(f)`);
+    expect(Math.abs(ctmAt(rec, findAt(rec, 'drawImage'))[4] - a), 'hitstun jitters').toBeGreaterThan(0.5);
+  });
+
+  // ---- PUFFBALL FLOATS -------------------------------------------------------------------------
+  // She is limbless and canonically hovers, so the shared walk/idle bob was planting a floating
+  // creature on the floor. `float` gives her a rig of her own — and it must stay purely visual.
+
+  it('hovers Puffball above her floor line, continuously, even while grounded', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Puffball');
+    FAKE_DECODED(w, 'Puffball', 198, 200);
+
+    const sample = (frames) => {
+      const out = [];
+      for (let t = 0; t < frames; t++) {
+        rec.length = 0;
+        w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0;
+                f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; drawFighter(f)`);
+        out.push(ctmAt(rec, findAt(rec, 'drawImage'))[5]);
+      }
+      return out;
+    };
+    expect(w.eval("SPRITES['Puffball'].float"), 'she is registered as a floater').toBe(true);
+
+    const floating = sample(140);          // > one full hover period (hazardT*0.05 -> ~126 frames)
+    expect(w.eval("fighters[0]._rigState"), 'grounded, she is still floating').toBe('float');
+    w.eval("SPRITES['Puffball'].float = false");
+    const planted = sample(140);
+    w.eval("SPRITES['Puffball'].float = true");
+
+    // 1. she is ALWAYS above where the ground rig would put her — her feet never plant
+    for (let i = 0; i < floating.length; i++) {
+      expect(floating[i], `frame ${i} rides above the floor line`).toBeLessThan(planted[i] - 1);
+    }
+    // 2. the hover is continuous, not a two-step bob: it never stalls between frames
+    const steps = floating.slice(1).map((v, i) => Math.abs(v - floating[i]));
+    expect(Math.min(...steps), 'she is moving on every single frame').toBeGreaterThan(0);
+    // 3. and it swings by roughly 2x floatAmp
+    const swing = Math.max(...floating) - Math.min(...floating);
+    expect(swing, 'the hover has real travel').toBeGreaterThan(7);
+    expect(swing, '…but it is a hover, not a pogo stick').toBeLessThan(20);
+  });
+
+  it('keeps the hover render-only — physics, hitbox and netcode never see it', () => {
+    const { window: w } = loadMonolith();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; startMatch();
+      fighters.length=0;
+      fighters.push(makeFighter(ROSTER.find(r=>r.name==='Puffball'), 300, 300, 0));
+      fighters.push(makeFighter(ROSTER.find(r=>r.name==='Firey'), 460, 300, 1));`);
+    const before = w.eval('JSON.stringify({y:fighters[0].y, r:fighters[0].r, og:fighters[0].onground})');
+    w.eval('draw(); draw(); draw()');
+    expect(w.eval('JSON.stringify({y:fighters[0].y, r:fighters[0].r, og:fighters[0].onground})'))
+      .toBe(before);
+    // and nothing float-related is serialized — a client redraws it from `name` alone
+    const wire = w.eval('JSON.stringify(serializeState().fighters[0])');
+    expect(wire).not.toMatch(/float|_rigState|_atkAnim/);
+  });
+
+  it('sparkles over Puffball without touching the particle system', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Puffball');
+    FAKE_DECODED(w, 'Puffball', 198, 200);
+    let drew = 0;
+    for (let t = 0; t < 90; t++) {
+      const n = w.eval(`hazardT=${t}; particles.length=0; const f=fighters[0]; f.flash=0;
+        f.vx=0; f.vy=0; f.onground=true; drawFighter(f); particles.length`);
+      expect(n, 'the draw path spawns no particles').toBe(0);
+      rec.length = 0;
+      w.eval(`hazardT=${t}; drawFighter(fighters[0])`);
+      if (rec.some((c) => c.op === 'quadraticCurveTo')) drew++;
+    }
+    expect(drew, 'twinkles appear over the run of frames').toBeGreaterThan(10);
+    expect(drew, '…occasionally, not solidly').toBeLessThan(90);
+  });
+
+  // ---- FACING ----------------------------------------------------------------------------------
+  // Most of these renders are posed turned to their own right, so the image natively faces LEFT.
+  // Mirroring only on face<0 pointed them backwards while they ran right — the owner's
+  // "face backwards on the side". `flip` inverts which direction gets the mirror.
+
+  it('mirrors every render to the way its fighter is actually facing', () => {
+    const { w, rec } = bootRecording();
+    // name, natural w/h, does the registry mark it as natively left-facing?
+    const cases = [['Rocky', 257, 186], ['Ice Cube', 166, 200], ['Blocky', 202, 200],
+      ['Firey', 150, 200], ['Puffball', 198, 200], ['Pen', 60, 200]];
+    for (const [name, nw, nh] of cases) {
+      soloFighter(w, name);
+      FAKE_DECODED(w, name, nw, nh);
+      const flip = !!w.eval(`!!SPRITES[${JSON.stringify(name)}].flip`);
+      const mirrored = (face) => {
+        rec.length = 0;
+        w.eval(`hazardT=0; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0; f.vx=0;
+                f.vy=0; f.onground=true; f._landSquash=0; f.face=${face}; drawFighter(f)`);
+        return ctmAt(rec, findAt(rec, 'drawImage'))[0] < 0;
+      };
+      // whichever way the art was drawn, exactly ONE of the two directions gets the mirror…
+      expect(mirrored(1), `${name} facing right`).toBe(flip);
+      expect(mirrored(-1), `${name} facing left`).toBe(!flip);
+      // …so turning around ALWAYS flips the art. That is the whole contract.
+      expect(mirrored(1)).not.toBe(mirrored(-1));
+    }
+  });
+
+  it('flips exactly the renders the facing audit called left-facing', () => {
+    const { window: w } = loadMonolith();
+    const flipped = w.eval(`Object.keys(SPRITES).filter(k=>SPRITES[k].flip)`).sort();
+    expect(flipped, 'the audited four, and only those').toEqual(['Blocky', 'Firey', 'Ice Cube', 'Rocky']);
+    // the flag is render-only: vector art is authored +x-forward and must never consult it
+    for (const name of BATCH_1) {
+      const v = w.eval(`SPRITES[${JSON.stringify(name)}].flip`);
+      expect(v === undefined || v === true, `${name}.flip is a flag or absent`).toBe(true);
+    }
+  });
+
+  it('leaves vector-art mirroring alone — flip describes the PNG, not the drawing', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Rocky');                     // flip:true, but NO decoded image
+    const scaleSigns = (face) => {
+      rec.length = 0;
+      w.eval(`hazardT=0; const f=fighters[0]; f.flash=0; f.vx=0; f.vy=0; f.onground=true;
+              f._landSquash=0; f.face=${face}; drawFighter(f)`);
+      return rec.some((c) => c.op === 'scale' && c.args[0] === -1);
+    };
+    expect(scaleSigns(-1), 'vector art still mirrors on face<0').toBe(true);
+    expect(scaleSigns(1), 'and never on face>0, flip or not').toBe(false);
   });
 
   it('draws sprites in teams mode with the ring, you-marker and smash arc intact', () => {
