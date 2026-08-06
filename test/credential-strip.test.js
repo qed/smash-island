@@ -76,7 +76,7 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
       `${SPRITE_DIR}/leafy.png`,
       `${SPRITE_DIR}/match.png`,
       `${SPRITE_DIR}/pen.png`,
-      `${SPRITE_DIR}/pencil.png`,
+      `${SPRITE_DIR}/pencil-angry.png`,
       `${SPRITE_DIR}/puffball.png`,
       `${SPRITE_DIR}/rocky.png`,
       `${SPRITE_DIR}/teardrop.png`,

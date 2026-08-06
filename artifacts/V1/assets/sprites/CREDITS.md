@@ -21,7 +21,7 @@ non-commercial fan game.
 | Bubble | `bubble.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a0/Bubble_18_Stance_5.png |
 | Blocky | `blocky.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b3/Blockling.png |
 | Pen | `pen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ae/Tpot_renders0040.png |
-| Pencil | `pencil.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f4/PencilTPOT13%2B.png |
+| Pencil | `pencil-angry.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/df/Angry_Pencil_TPOT_11.png |
 | Match | `match.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e7/Tpot_renders0050.png |
 | Ice Cube | `ice-cube.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1a/Tpot_renders0025.png |
 | Puffball | `puffball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ad/Tpot_renders0042.png |
@@ -35,7 +35,7 @@ non-commercial fan game.
 - Transparency verified per image: all four corners fully transparent (alpha 0).
 - `firey.png` had 985 near-zero-alpha artifact pixels, zeroed during processing.
 - No background removal was otherwise required — the wiki infobox originals ship with alpha.
-- Total on disk: ~272 KB.
+- Total on disk: ~249 KB.
 
 ### Notes on individual renders
 
@@ -45,9 +45,29 @@ non-commercial fan game.
 - **`match.png`** — a turned/near-profile pose; her face is barely readable at gameplay scale.
   Functional, but a front-facing render would be a better swap if one is available.
 - **`leafy.png`** — TPOT-era scowling expression rather than her usual neutral smile. On-model,
-  just angrier than the rest of the cast.
+  just angrier than the rest of the cast. Deliberately kept — see the rejected candidates below.
+- **`pencil-angry.png`** — replaced the original `pencil.png` (`PencilTPOT13+`, a wide friendly
+  grin) after the owner read that render as too friendly for a fighting game. The TPOT-11 render
+  is the same character in the same official style, scowling: angled brows, gritted teeth, one
+  arm thrown out. 94x200 rather than 70x200, so it is still height-bound by `imgH:3.1` and no
+  registry geometry changed. Re-measured on the facing audit as FRONT (see below); no `flip`.
 - **`rocky.png`** — noticeably wider than tall. The registry contain-fits by `imgW` for him so he
   is not blown up to match the taller fighters.
+
+### Replacement candidates that were evaluated and REJECTED
+
+Fetched, pixel-inspected, and then deleted rather than shipped. Recorded because "we already
+looked at that one" is worth more than the two minutes it costs to write down.
+
+| Candidate | Intended for | Source | Why it was rejected |
+|---|---|---|---|
+| `LeafyNewPose.png` | Leafy | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/LeafyNewPose.png | A *regression* on the brief. It is a relaxed running pose — dot eyes, one raised brow, a mild smirk. The `leafy.png` already in the repo is a full scowl: angled brows and a wide open snarl (1351 interior ink px vs the candidate's 102). The owner asked for less friendly; this is more. Current render kept. |
+| `Puffball_Body_(TPOT_Intro).png` | Puffball | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3f/Puffball_Body_%28TPOT_Intro%29.png | It is the *body layer* from the intro, not a character render: **zero** dark interior pixels, i.e. no eyes, no brows, no mouth at all. A render suppresses the shared BFDI face, so she would have shipped as a faceless pink blob. It also carries a white background matte on **99.6%** of its rim, which the transparency rule below forbids outright. Current render kept. |
+
+On the Puffball note in the facing audit: the render in the repo was re-measured on the live
+canvas and reads **front-facing** — both eyes, both brows and a centred open smile, offset −0.009
+of body width. She is symmetric, not turned; there is nothing for a `flip` to fix and no swap was
+warranted.
 
 ## How the renders are used
 

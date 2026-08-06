@@ -209,7 +209,7 @@ describe('drawing sprite fighters headlessly', () => {
     const R = 24, FLOOR = R + 12;
     const cases = [
       // name,      natural w/h,  which bound should win
-      ['Pencil', 60, 200, 'height'],
+      ['Pencil', 94, 200, 'height'],
       ['Rocky', 257, 186, 'width'],
     ];
     for (const [name, nw, nh, bound] of cases) {
@@ -641,7 +641,7 @@ describe('drawing sprite fighters headlessly', () => {
   }
 
   const NATURAL = {
-    Firey: [150, 200], Bubble: [176, 200], Blocky: [202, 200], Pen: [60, 200], Pencil: [70, 200],
+    Firey: [150, 200], Bubble: [176, 200], Blocky: [202, 200], Pen: [60, 200], Pencil: [94, 200],
     Match: [55, 200], 'Ice Cube': [166, 200], Teardrop: [144, 200], Bomby: [220, 200], Rocky: [274, 200],
   };
   const withFighter = (w, name) => { soloFighter(w, name); FAKE_DECODED(w, name, ...NATURAL[name]); };
