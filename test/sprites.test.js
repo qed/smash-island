@@ -364,7 +364,7 @@ describe('drawing sprite fighters headlessly', () => {
     let prev = null; let sum = 0;
     for (let t = 0; t < n; t++) {
       rec.length = 0;
-      w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0;
+      w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
               f._landSquash=0; f.vy=0; f.onground=true; ${setup}; drawFighter(f)`);
       const m = ctmAt(rec, findAt(rec, 'drawImage'));
       if (prev) sum += m.reduce((a, v, i) => a + Math.abs(v - prev[i]), 0);
@@ -374,7 +374,7 @@ describe('drawing sprite fighters headlessly', () => {
   }
   const stateOf = (w, rec, setup) => {
     rec.length = 0;
-    w.eval(`const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0; f._landSquash=0;
+    w.eval(`const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0; f._landSquash=0;
             f.vx=0; f.vy=0; f.onground=true; ${setup}; drawFighter(f)`);
     return w.eval('fighters[0]._rigState');
   };
@@ -391,7 +391,12 @@ describe('drawing sprite fighters headlessly', () => {
     expect(stateOf(w, rec, 'f.onground=false; f.vy=9'), 'falling').toBe('air-fall');
     expect(stateOf(w, rec, 'f.smashHold=30'), 'winding a smash').toBe('charge');
     expect(stateOf(w, rec, 'f._atkAnim=8; f.flash=6'), 'swinging').toBe('attack');
-    expect(stateOf(w, rec, 'f.flash=9'), 'flashing with no swing = took a hit').toBe('hitstun');
+    expect(stateOf(w, rec, 'f._hurtAnim=9'), 'took a hit').toBe('hitstun');
+    // a fighter clipped in the middle of its own swing reads as HIT, not as still swinging
+    expect(stateOf(w, rec, 'f._atkAnim=8; f._hurtAnim=9'), 'clipped mid-swing').toBe('hitstun');
+    // …and a netcode client, which is shipped `flash` but neither timer, still gets the reaction
+    expect(stateOf(w, rec, 'delete f._hurtAnim; delete f._atkAnim; f.flash=9'), 'client puppet')
+      .toBe('hitstun');
   });
 
   it('escalates motion energy from idle to walk to run', () => {
@@ -416,7 +421,7 @@ describe('drawing sprite fighters headlessly', () => {
     const ys = [];
     for (let t = 0; t < 150; t++) {
       rec.length = 0;
-      w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0;
+      w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
               f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; drawFighter(f)`);
       ys.push(ctmAt(rec, findAt(rec, 'drawImage'))[3]);   // vertical scale
     }
@@ -437,7 +442,7 @@ describe('drawing sprite fighters headlessly', () => {
     FAKE_DECODED(w, 'Firey', 150, 200);
     for (const setup of ['f.vx=0', 'f.vx=1.5', 'f.vx=7']) {
       rec.length = 0;
-      w.eval(`hazardT=11; for(const f of fighters){ f.flash=0; f._atkAnim=0; f.smashHold=0;
+      w.eval(`hazardT=11; for(const f of fighters){ f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
               f.vy=0; f.onground=true; f._landSquash=0; ${setup}; }
               for(const f of fighters) drawFighter(f);`);
       const poses = rec.map((c, i) => (c.op === 'drawImage' ? ctmAt(rec, i).join('|') : null)).filter(Boolean);
@@ -468,8 +473,8 @@ describe('drawing sprite fighters headlessly', () => {
     FAKE_DECODED(w, 'Firey', 150, 200);
     const x = (setup) => {
       rec.length = 0;
-      w.eval(`hazardT=4; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0; f.vx=0;
-              f.vy=0; f.onground=true; f._landSquash=0; ${setup}; drawFighter(f)`);
+      w.eval(`hazardT=4; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
+              f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; ${setup}; drawFighter(f)`);
       return ctmAt(rec, findAt(rec, 'drawImage'))[4];    // horizontal offset from the fighter's x
     };
     const rest = x('');
@@ -477,9 +482,9 @@ describe('drawing sprite fighters headlessly', () => {
     expect(x('f.face=-1; f._atkAnim=7'), 'and the other way when turned around').toBeLessThan(rest - 2);
     expect(x('f.face=1; f.smashHold=45'), 'a charging smash winds BACK first').toBeLessThan(rest);
     // a hit shakes; two consecutive hitstun frames never sit in the same place
-    const a = x('f.flash=12'); rec.length = 0;
+    const a = x('f._hurtAnim=10'); rec.length = 0;
     w.eval(`hazardT=5; const f=fighters[0]; f.vx=0; f.vy=0; f.onground=true; f._atkAnim=0;
-            f.smashHold=0; f._landSquash=0; f.flash=12; drawFighter(f)`);
+            f.smashHold=0; f._landSquash=0; f.flash=0; f._hurtAnim=10; drawFighter(f)`);
     expect(Math.abs(ctmAt(rec, findAt(rec, 'drawImage'))[4] - a), 'hitstun jitters').toBeGreaterThan(0.5);
   });
 
@@ -496,7 +501,7 @@ describe('drawing sprite fighters headlessly', () => {
       const out = [];
       for (let t = 0; t < frames; t++) {
         rec.length = 0;
-        w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0;
+        w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
                 f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; drawFighter(f)`);
         out.push(ctmAt(rec, findAt(rec, 'drawImage'))[5]);
       }
@@ -571,7 +576,7 @@ describe('drawing sprite fighters headlessly', () => {
       const flip = !!w.eval(`!!SPRITES[${JSON.stringify(name)}].flip`);
       const mirrored = (face) => {
         rec.length = 0;
-        w.eval(`hazardT=0; const f=fighters[0]; f.flash=0; f._atkAnim=0; f.smashHold=0; f.vx=0;
+        w.eval(`hazardT=0; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0; f.vx=0;
                 f.vy=0; f.onground=true; f._landSquash=0; f.face=${face}; drawFighter(f)`);
         return ctmAt(rec, findAt(rec, 'drawImage'))[0] < 0;
       };
@@ -605,6 +610,185 @@ describe('drawing sprite fighters headlessly', () => {
     };
     expect(scaleSigns(-1), 'vector art still mirrors on face<0').toBe(true);
     expect(scaleSigns(1), 'and never on face>0, flip or not').toBe(false);
+  });
+
+  // ---- BATCH-1 BESPOKE ANIMATIONS --------------------------------------------------------------
+  // One FIGHTER_ANIM entry per designed fighter, each the ANIMATION column of
+  // docs/animation-move-design.md. These lock down that every entry (a) actually draws in the state
+  // it is supposed to and NOT otherwise, (b) composes with the render instead of replacing it —
+  // except Bubble, whose whole character is that she is briefly NOT THERE — and (c) never reaches
+  // into the sim.
+
+  /** Ops a fighter's FIGHTER_ANIM entry adds in a given state: the recording with it, minus without. */
+  function bespoke(w, rec, name, setup) {
+    const key = JSON.stringify(name);
+    const pose = () => {
+      rec.length = 0;
+      w.eval(`hazardT=7; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
+              f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; f.face=1; ${setup}; drawFighter(f)`);
+      return rec.length;
+    };
+    const withIt = pose();
+    const saved = w.eval(`(()=>{ const s=FIGHTER_ANIM[${key}]; delete FIGHTER_ANIM[${key}]; window.__saved=s; return 1; })()`);
+    void saved;
+    const withoutIt = pose();
+    const imgs = rec.filter((c) => c.op === 'drawImage').length;
+    w.eval(`FIGHTER_ANIM[${key}] = window.__saved;`);
+    rec.length = 0;
+    w.eval(`hazardT=7; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
+            f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; f.face=1; ${setup}; drawFighter(f)`);
+    return { extra: withIt - withoutIt, renders: rec.filter((c) => c.op === 'drawImage').length, baseRenders: imgs };
+  }
+
+  const NATURAL = {
+    Firey: [150, 200], Bubble: [176, 200], Blocky: [202, 200], Pen: [60, 200], Pencil: [70, 200],
+    Match: [55, 200], 'Ice Cube': [166, 200], Teardrop: [144, 200], Bomby: [220, 200], Rocky: [274, 200],
+  };
+  const withFighter = (w, name) => { soloFighter(w, name); FAKE_DECODED(w, name, ...NATURAL[name]); };
+
+  it('gives every designed fighter a bespoke entry that fires only in its own state', () => {
+    // [fighter, the state it is FOR, a state it must stay quiet in]
+    const CASES = [
+      ['Firey', 'f._atkAnim=7', null],                       // flare-up on the swing
+      ['Firey', 'f.onground=false; f.vy=14', null],          // acrophobic panic on a fast fall
+      ['Bubble', 'f.smashHold=45', 'f.vx=0'],                // inflate wobble while charging
+      ['Blocky', 'f.vx=8', 'f.vx=0'],                        // timber-lean at a sprint
+      ['Blocky', 'f._atkAnim=7', 'f.vx=0'],                  // splinters + sawdust on impact
+      ['Pen', 'f._atkAnim=7', 'f.vx=0'],                     // the cap pops off
+      ['Pencil', 'f._atkAnim=7', 'f.vx=0'],                  // spear-point stretch
+      ['Pencil', 'f.smashHold=45', 'f.vx=0'],                // eraser scrub + crumbs
+      ['Match', 'f._atkAnim=7', 'f.vx=0'],                   // hair tuft flares
+      ['Match', 'f.smashHold=45', 'f.vx=0'],                 // …and while charging
+      ['Ice Cube', 'f.vx=8', 'f.vx=0'],                      // slick tilt onto an edge
+      ['Ice Cube', 'f._hurtAnim=10', 'f.vx=0'],              // shatter glints
+      ['Teardrop', 'f._atkAnim=7', 'f.vx=0'],                // the wooden sign comes out
+      ['Bomby', 'f.smashHold=45', null],                     // fuse crackles harder
+      ['Rocky', 'f._landSquash=4', 'f.vx=0'],                // landing thud dust
+    ];
+    for (const [name, active, quiet] of CASES) {
+      const { w, rec } = bootRecording();
+      withFighter(w, name);
+      const on = bespoke(w, rec, name, active);
+      expect(on.extra, `${name} [${active}] draws something`).toBeGreaterThan(4);
+      expect(on.renders, `${name} [${active}] keeps its render`).toBe(1);
+      if (quiet) {
+        const off = bespoke(w, rec, name, quiet);
+        expect(off.extra, `${name} [${quiet}] stays quiet`).toBeLessThan(on.extra);
+      }
+    }
+  });
+
+  it("pops Bubble out of existence on a hit — and puts her back", () => {
+    // Her defining trait: she pops at the slightest touch and is re-blown. This is the ONE
+    // bespoke entry that replaces the render, so it has to un-replace it too.
+    const { w, rec } = bootRecording();
+    withFighter(w, 'Bubble');
+    const frame = (setup) => {
+      rec.length = 0;
+      w.eval(`hazardT=7; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
+              f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; ${setup}; drawFighter(f)`);
+      return rec;
+    };
+    frame('f._hurtAnim=10');
+    expect(rec.filter((c) => c.op === 'drawImage'), 'popped: no render at all').toHaveLength(0);
+    expect(rec.filter((c) => c.op === 'fill').length, 'film shards are filled').toBeGreaterThan(5);
+
+    frame('f._hurtAnim=3');                        // later in the same reaction: re-blown
+    expect(rec.filter((c) => c.op === 'drawImage').length, 'reformed').toBeGreaterThan(0);
+    frame('');
+    expect(rec.filter((c) => c.op === 'drawImage').length, 'untouched: normal render').toBeGreaterThan(0);
+    // being hit MID-SWING still pops her — the swing must not mask the hit
+    frame('f._atkAnim=8; f._hurtAnim=10');
+    expect(rec.filter((c) => c.op === 'drawImage'), 'clipped mid-swing still pops').toHaveLength(0);
+  });
+
+  it('lets Rocky opt out of most of the universal squash — he is a rock', () => {
+    const { w, rec } = bootRecording();
+    const stretchOf = (name) => {
+      withFighter(w, name);
+      rec.length = 0;
+      w.eval(`hazardT=7; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0; f.smashHold=0;
+              f.vx=0; f.onground=false; f.vy=-14; f._landSquash=0; drawFighter(f)`);
+      return ctmAt(rec, findAt(rec, 'drawImage'))[3];
+    };
+    const rocky = stretchOf('Rocky');
+    const blocky = stretchOf('Blocky');           // same state, no `squash` field
+    expect(blocky, 'the cast default stretches hard on a fast rise').toBeGreaterThan(1.2);
+    expect(rocky, 'Rocky barely deforms').toBeLessThan(1.10);
+    expect(rocky, '…but he is not perfectly rigid either').toBeGreaterThan(1.0);
+    expect(w.eval("FIGHTER_ANIM['Rocky'].squash"), 'declared, not hard-coded').toBe(0.35);
+  });
+
+  it('stands Teardrop dead still and leaves Match unbothered', () => {
+    // Teardrop is canonically mute and eerily motionless; Match is written permanently unbothered.
+    // Everyone else breathes. This is the `idle` knob, and it must not touch any other state.
+    const { w, rec } = bootRecording();
+    const idleTravel = (name) => {
+      withFighter(w, name);
+      let lo = 1e9; let hi = -1e9;
+      for (let t = 0; t < 90; t++) {
+        rec.length = 0;
+        w.eval(`hazardT=${t}; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0;
+                f.smashHold=0; f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; drawFighter(f)`);
+        const v = ctmAt(rec, findAt(rec, 'drawImage'))[3];
+        if (v < lo) lo = v; if (v > hi) hi = v;
+      }
+      return hi - lo;
+    };
+    const td = idleTravel('Teardrop');
+    const match = idleTravel('Match');
+    const blocky = idleTravel('Blocky');
+    expect(td, 'Teardrop does not breathe at all').toBeCloseTo(0, 6);
+    expect(match, 'Match breathes, but barely').toBeGreaterThan(0);
+    expect(match, '…far less than the cast').toBeLessThan(blocky * 0.6);
+    expect(blocky, 'the cast default is a real breath').toBeGreaterThan(0.05);
+    // …and Teardrop still moves the instant she does anything else
+    withFighter(w, 'Teardrop');
+    rec.length = 0;
+    w.eval(`hazardT=3; const f=fighters[0]; f.flash=0; f._hurtAnim=0; f.smashHold=0; f.vx=6;
+            f.vy=0; f.onground=true; f._landSquash=0; f._atkAnim=0; drawFighter(f)`);
+    expect(w.eval('fighters[0]._rigState'), 'the dead-still idle is idle-only').toBe('run');
+  });
+
+  it('keeps every bespoke pass out of the sim and off the nametag', () => {
+    const { w, rec } = bootRecording();
+    const NAMES = Object.keys(NATURAL);
+    for (const name of NAMES) {
+      withFighter(w, name);
+      // hammer every state the bespoke passes react to, in one go
+      const states = ['f._atkAnim=7', 'f._hurtAnim=10', 'f.smashHold=45', 'f.vx=8', 'f.vx=-8',
+        'f._landSquash=4', 'f.onground=false; f.vy=14', 'f.onground=false; f.vy=-14', 'f.face=-1'];
+      for (const st of states) {
+        const before = w.eval('JSON.stringify({p:particles.length, pr:projectiles.length, y:fighters[0].y, r:fighters[0].r})');
+        rec.length = 0;
+        expect(() => w.eval(`hazardT=13; const f=fighters[0]; f.flash=0; f._atkAnim=0; f._hurtAnim=0;
+          f.smashHold=0; f.vx=0; f.vy=0; f.onground=true; f._landSquash=0; f.face=1; ${st};
+          drawFighter(f)`), `${name} [${st}]`).not.toThrow();
+        expect(w.eval('JSON.stringify({p:particles.length, pr:projectiles.length, y:fighters[0].y, r:fighters[0].r})'),
+          `${name} [${st}] spawns nothing and moves nobody`).toBe(before);
+        // the nametag is drawn after the overlay pass and must still be upright and unscaled
+        const tag = findAt(rec, 'fillText');
+        if (tag > -1) {
+          const m = ctmAt(rec, tag);
+          expect([m[0], m[1], m[2], m[3]], `${name} [${st}] nametag stays upright`).toEqual([1, 0, 0, 1]);
+        }
+      }
+    }
+  });
+
+  it('degrades every bespoke pass to what a netcode client is actually shipped', () => {
+    // A client gets face / flash / smashHold / y / r and nothing else — no vx, no onground, no
+    // vy, and neither render timer. Every pass has to survive that instead of throwing on it.
+    const { w, rec } = bootRecording();
+    for (const name of Object.keys(NATURAL)) {
+      withFighter(w, name);
+      rec.length = 0;
+      expect(() => w.eval(`hazardT=21; const f=fighters[0];
+        delete f.vx; delete f.vy; delete f.onground; delete f._atkAnim; delete f._hurtAnim;
+        delete f._landSquash; f.flash=12; f.smashHold=20; f.face=-1; drawFighter(f)`),
+      `${name} as a client puppet`).not.toThrow();
+      expect(rec.length, `${name} still draws`).toBeGreaterThan(0);
+    }
   });
 
   it('draws sprites in teams mode with the ring, you-marker and smash arc intact', () => {
