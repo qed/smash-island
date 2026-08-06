@@ -40,6 +40,34 @@ const FAKE_DECODED = (w, name, nw, nh) => w.eval(
   `SPRITES[${JSON.stringify(name)}]._req = true;
    SPRITES[${JSON.stringify(name)}].img = { complete:true, naturalWidth:${nw}, naturalHeight:${nh} };`);
 
+// ---- CTM replay ------------------------------------------------------------------------------
+// The recorder captures ops, not the matrix, and a Proxy has no getTransform(). Replaying the
+// transform ops gives the real CTM at any point in the recording, which is the only way to prove
+// WHERE in the transform stack something was drawn — e.g. that a render is inside the squash and
+// the nametag is outside it.
+const I = [1, 0, 0, 1, 0, 0];
+const mul = (A, B) => [
+  A[0] * B[0] + A[2] * B[1], A[1] * B[0] + A[3] * B[1],
+  A[0] * B[2] + A[2] * B[3], A[1] * B[2] + A[3] * B[3],
+  A[0] * B[4] + A[2] * B[5] + A[4], A[1] * B[4] + A[3] * B[5] + A[5],
+];
+/** CTM in force when `rec[i]` ran, replaying every transform op from the start of the recording. */
+function ctmAt(rec, i) {
+  let m = I; const stack = [];
+  for (let k = 0; k < i; k++) {
+    const { op, args: a } = rec[k];
+    if (op === 'save') stack.push(m);
+    else if (op === 'restore') m = stack.pop() || I;
+    else if (op === 'translate') m = mul(m, [1, 0, 0, 1, a[0], a[1]]);
+    else if (op === 'scale') m = mul(m, [a[0], 0, 0, a[1], 0, 0]);
+    else if (op === 'rotate') m = mul(m, [Math.cos(a[0]), Math.sin(a[0]), -Math.sin(a[0]), Math.cos(a[0]), 0, 0]);
+    else if (op === 'transform') m = mul(m, a.slice(0, 6));
+    else if (op === 'setTransform') m = a.slice(0, 6);
+  }
+  return m;
+}
+const findAt = (rec, op) => rec.findIndex((c) => c.op === op);
+
 /** One lone FFA fighter — no team ring, no you-marker, no smash arc to pollute the op counts. */
 const soloFighter = (w, name) => w.eval(
   `SETTINGS.mode='ffa'; SETTINGS.count=2; startMatch();
@@ -215,6 +243,110 @@ describe('drawing sprite fighters headlessly', () => {
       // body + one tint pass, both through the cached source-atop copy
       expect(rec.filter((c) => c.op === 'drawImage').length, `${st} adds a tint pass (base + offscreen copy + overlay)`).toBe(3);
     }
+  });
+
+  // ---- COMPOSITION -----------------------------------------------------------------------------
+  // The owner playtested the integrated build and reported "no animations". These lock down the
+  // order drawFighter composes a sprite fighter in, because every one of them is invisible to a
+  // "does it throw" test and every one of them reads as a dead fighter on screen.
+
+  it('draws a decoded render INSIDE the universal squash/stretch', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+
+    // rising fast -> stretch tall and thin
+    rec.length = 0;
+    w.eval('const f=fighters[0]; f.onground=false; f.vy=-12; f.vx=0; f._landSquash=0; drawFighter(f)');
+    let m = ctmAt(rec, findAt(rec, 'drawImage'));
+    expect(m[3], 'render is stretched tall while rising').toBeGreaterThan(1.15);
+    expect(m[0], 'render is squeezed thin while rising').toBeLessThan(0.9);
+
+    // just landed -> squat wide and short
+    rec.length = 0;
+    w.eval('const f=fighters[0]; f.onground=true; f.vy=0; f.vx=0; f._landSquash=6; drawFighter(f)');
+    m = ctmAt(rec, findAt(rec, 'drawImage'));
+    expect(m[3], 'render squats on the land-squash').toBeLessThan(0.95);
+    expect(m[0], 'render widens on the land-squash').toBeGreaterThan(1.05);
+  });
+
+  it('leaves the nametag outside the deform — unscaled and upright', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+    rec.length = 0;
+    w.eval('const f=fighters[0]; f.onground=false; f.vy=-12; f.vx=6; drawFighter(f)');
+    const m = ctmAt(rec, findAt(rec, 'fillText'));
+    expect([m[0], m[1], m[2], m[3]], 'nametag draws at identity scale/rotation').toEqual([1, 0, 0, 1]);
+  });
+
+  it("lets a FIGHTER_ANIM pre-body REPLACE a fighter's render outright", () => {
+    // Leafy's Sharp Shadow dash turns her whole body into a leaf blade. If the sprite path drew
+    // underneath it, the dash would read as her PNG sliding sideways.
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Leafy');
+    FAKE_DECODED(w, 'Leafy', 150, 200);
+
+    rec.length = 0;
+    w.eval('const f=fighters[0]; f._dashing=0; drawFighter(f)');
+    expect(rec.filter((c) => c.op === 'drawImage'), 'not dashing: the render draws').toHaveLength(1);
+
+    rec.length = 0;
+    w.eval('const f=fighters[0]; f._dashing=8; f._dashVY=3; drawFighter(f)');
+    expect(rec.filter((c) => c.op === 'drawImage'), 'dashing: the render is fully replaced').toHaveLength(0);
+    expect(rec.filter((c) => c.op === 'rotate').length, 'the blade is angled along the dash').toBeGreaterThan(0);
+    expect(rec.filter((c) => c.op === 'fill').length, 'the blade silhouette is filled').toBeGreaterThan(0);
+  });
+
+  it('runs a FIGHTER_ANIM post-body overlay OVER the render', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+    w.eval("FIGHTER_ANIM['Firey'] = { over(f, c){ c.fillRect(1,2,3,4); } };");
+    rec.length = 0;
+    w.eval('drawFighter(fighters[0])');
+    const img = findAt(rec, 'drawImage');
+    const overlay = findAt(rec, 'fillRect');
+    expect(img, 'the render drew').toBeGreaterThan(-1);
+    expect(overlay, 'the overlay drew').toBeGreaterThan(-1);
+    expect(overlay, 'trails/effects composite on top of the sprite').toBeGreaterThan(img);
+    // …and an overlay never inherits the squash: it is drawn in unscaled centre space.
+    const m = ctmAt(rec, overlay);
+    expect([m[0], m[1], m[2], m[3]], 'overlay is undeformed').toEqual([1, 0, 0, 1]);
+  });
+
+  it('never leaves a grounded render as a still image', () => {
+    // THE REGRESSION. A render carries its own limbs, so drawSpriteBody suppresses the stub legs —
+    // and with them the only thing that moved while a fighter walked or stood. Velocity
+    // squash/stretch does not fire at rest, so the twelve mains froze into sliding photographs.
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');
+    FAKE_DECODED(w, 'Firey', 150, 200);
+
+    const poseAt = (t, setup) => {
+      rec.length = 0;
+      w.eval(`hazardT=${t}; const f=fighters[0]; f.onground=true; f.vy=0; f._landSquash=0; ${setup}; drawFighter(f)`);
+      return ctmAt(rec, findAt(rec, 'drawImage'));
+    };
+    const differs = (a, b) => a.some((v, i) => Math.abs(v - b[i]) > 1e-3);
+
+    expect(differs(poseAt(0, 'f.vx=0'), poseAt(9, 'f.vx=0')), 'standing still still breathes').toBe(true);
+    const w1 = poseAt(0, 'f.vx=1.5'); const w2 = poseAt(5, 'f.vx=1.5');
+    expect(differs(w1, w2), 'walking bobs and rocks').toBe(true);
+    expect(Math.abs(w2[1]) + Math.abs(w2[2]), 'the walk rocks the body, not just its height').toBeGreaterThan(0);
+  });
+
+  it('keeps the rig off vector art, which still swings its own stub limbs', () => {
+    const { w, rec } = bootRecording();
+    soloFighter(w, 'Firey');                    // no FAKE_DECODED: vector art path
+    rec.length = 0;
+    w.eval('hazardT=0; const f=fighters[0]; f.onground=true; f.vx=1.5; drawFighter(f)');
+    const a = rec.filter((c) => c.op === 'lineTo').map((c) => c.args.join());
+    rec.length = 0;
+    w.eval('hazardT=5; const f=fighters[0]; f.onground=true; f.vx=1.5; drawFighter(f)');
+    const b = rec.filter((c) => c.op === 'lineTo').map((c) => c.args.join());
+    expect(a.length, 'stub limbs drew').toBeGreaterThan(0);
+    expect(a.join('|'), 'the legs still swing on their own').not.toBe(b.join('|'));
   });
 
   it('draws sprites in teams mode with the ring, you-marker and smash arc intact', () => {

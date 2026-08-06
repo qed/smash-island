@@ -7272,6 +7272,39 @@ function tintedSprite(sp, im, col){
   return c;
 }
 
+// ---- RENDER RIG: the per-frame life a flat character render has no limbs to express ----
+// A decoded PNG is the WHOLE character, so drawSpriteBody suppresses the stub limbs — and the
+// leg-swing that went with them was the only thing moving on a fighter that is merely walking or
+// standing still. Velocity squash/stretch only fires on jumps, hard falls and landings, so between
+// them a render froze into a sliding photograph: the owner playtest's "no animations", and it hit
+// exactly the twelve mains everybody actually picks.
+//
+// This puts the motion back on the IMAGE itself: a two-step walk bob + body rock while moving on
+// the ground (same hazardT*0.3 cadence the stub legs swung at, so sprite and blob fighters still
+// step in time), and a slow breath while standing. Everything pivots on the FEET (y = R+12, the
+// floor line the render stands on) so the character never skates, and it is applied INSIDE
+// drawFighter's squash/stretch, so jumps, falls and landings keep deforming on top of it.
+function spriteRig(f, R){
+  const grounded = f.onground !== false;   // netcode clients ship no onground — treat them as grounded
+  const vx = f.vx || 0;
+  const feet = R + 12;
+  let bob = 0, rock = 0, sx = 1, sy = 1;
+  if(grounded && Math.abs(vx) > 0.5){      // WALK — rise on each step and rock into the stride
+    const s = Math.sin(hazardT*0.3 + f.idx);
+    bob  = -Math.abs(s) * R * 0.11;
+    rock = s * 0.07 * (vx < 0 ? -1 : 1);
+    sy = 1 + Math.abs(s)*0.035; sx = 1 - Math.abs(s)*0.025;
+  } else if(grounded){                     // IDLE — a slow breath, so nobody is ever a still image
+    const b = Math.sin(hazardT*0.09 + f.idx);
+    bob = -Math.abs(b) * R * 0.02;
+    sy = 1 + b*0.035; sx = 1 - b*0.028;
+  } else return;                           // airborne: the universal squash/stretch owns the pose
+  ctx.translate(0, feet);
+  if(rock) ctx.rotate(rock);
+  if(sx!==1 || sy!==1) ctx.scale(sx, sy);
+  ctx.translate(0, -feet + bob);
+}
+
 // Renders one sprite fighter in place of the roundBlob body. Called from inside drawFighter's
 // squash/stretch transform, so the art deforms with every jump, landing and run exactly like the
 // blob did. State tints (flash / yoyle metal / star strobe / burn) are laid over the silhouette in
@@ -7284,6 +7317,8 @@ function drawSpriteBody(f, sp){
   // both are suppressed while an image is live or the fighter grows a second set of each.
   if(!im) drawStubLimbs(f, R, sp.arms!==false, sp.legs!==false, (sp.limbX==null?1:sp.limbX)*R);
   ctx.save();
+  // Only a render needs the rig: vector art still draws its own swinging stub limbs.
+  if(im) spriteRig(f, R);
   let dw=0, dh=0;
   if(im){
     // CONTAIN-fit inside the entry's box, driven by the image's OWN aspect ratio, so no render is
