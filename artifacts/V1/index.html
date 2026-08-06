@@ -317,6 +317,7 @@
       <button class="btn ghost sm" onclick="go('controls')">⚙ Controls</button>
       <button class="btn ghost sm" onclick="openStats()">📊 Balance Stats</button>
       <button class="btn ghost sm" id="soundToggle" onclick="toggleSound()">🔊 Sound: On</button>
+      <button class="btn ghost sm" id="musicToggle" onclick="toggleMusic()">🎵 Music: On</button>
     </div>
     <div class="foot" style="margin-top:26px">A cartoon platform fighter starring the Battle for Dream Island cast. Knock your friends off the stage.</div>
     <div class="foot" style="margin-top:4px">59 fighters · 9 bosses · 13 assists · no account, no ads, nothing to install</div>
@@ -567,6 +568,12 @@
     <div class="maps" id="maps"></div>
     <div class="brand" style="margin-top:20px">Custom Music</div>
     <div class="foot" style="margin-top:2px;max-width:560px;text-align:center">Plays only on this device — use music you own. Nothing is uploaded.</div>
+    <!-- Music on/off lives HERE as well as on the title screen: this is where a player who wants
+         to silence the bed (and keep their hits and KOs audible) comes looking for it. Both
+         buttons drive the same toggleMusic() and are re-labelled together by syncMusicToggle(). -->
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost sm" id="musicToggleCtl" onclick="toggleMusic()">🎵 Music: On</button>
+    </div>
     <div class="musicgrid" id="customMusic"></div>
     <div class="row" style="margin-top:16px">
       <button class="btn ghost sm" onclick="resetKeys()">Reset defaults</button>
@@ -914,9 +921,25 @@ const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, gre
 //  SFX for hits/KOs/specials/UI, plus a simple looping music bed. Everything degrades to a
 //  no-op if the browser has no AudioContext, and stays silent until the user interacts (autoplay).
 // ============================================================
+// MUSIC-ONLY MUTE. Separate from the master Sound toggle: a player who wants to hear their own
+// playlist over the game, or who finds a looping bed tiring, should not have to give up the hit
+// and KO cues to get rid of it. Persisted so the choice survives a reload — the whole point of a
+// preference is not having to re-set it every session. Reading localStorage at eval time is safe
+// (no media, no IndexedDB) and wrapped, because with site data blocked the GETTER itself throws.
+const MUSIC_PREF_KEY = 'bfsi:musicOn';
+function musicPrefLoad(){
+  try{ return localStorage.getItem(MUSIC_PREF_KEY) !== '0'; }catch(e){ return true; }   // default ON
+}
+function musicPrefSave(v){
+  try{ localStorage.setItem(MUSIC_PREF_KEY, v ? '1' : '0'); }catch(e){}
+}
+// THE one gate every music start goes through. Precedence is deliberate: the master Sound toggle
+// wins outright, and SND.musicOn only ever narrows things further — sound off can never be
+// overridden into audible music by the music toggle. SFX check SND.on alone, so they keep firing.
+function musicAllowed(){ return !!(SND.on && SND.musicOn); }
 const SND = {
   ctx:null, master:null, musicGain:null, sfxGain:null,
-  on:true, musicOn:true, started:false, _lastHit:0, _musicTimer:null, _step:0,
+  on:true, musicOn:musicPrefLoad(), started:false, _lastHit:0, _musicTimer:null, _step:0,
   // ---- recorded-music state (see the MUSIC_FILES block below) ----
   gesture:false,      // a real user interaction has happened, so media playback is allowed
   fadeMs:700,         // crossfade length; 0 = instant cut
@@ -1125,6 +1148,9 @@ function musicFadeTo(i, to){
 // Try the recorded track for `kind`. Returns true when the file path owns playback (already
 // playing, or parked until the first gesture), false when the caller should use the synth bed.
 function startMusicFile(kind){
+  // Re-checked here, not only in startMusic(): musicSourceFailed() re-enters this from a deck
+  // `error` event, which can land after the player has muted music mid-load.
+  if(!musicAllowed()) return false;
   const sources = musicSources(kind);
   if(!sources.length || SND._fileBad[kind]) return false;
   if(!SND.gesture){ SND._pendingKind = kind; return true; }   // autoplay is blocked until then
@@ -1163,7 +1189,7 @@ function musicSilenceDecks(){
 }
 // The one entry point the game calls. Picks the recorded track when there is one, else the synth.
 function startMusic(kind){
-  if(!SND.on || !SND.musicOn) return;
+  if(!musicAllowed()) return;
   // Re-entering the same context (title -> select -> title) must not restart the track.
   if(kind===SND._kind && (musicPlaying() || SND._pendingKind===kind)) return;
   // NOT stopMusic() — that hard-pauses both decks, which would leave startMusicFile cross-fading
@@ -1472,14 +1498,14 @@ const MUSIC_BASS = {
 // The original file-free synth bed. Now the FALLBACK: it runs when a context has no recorded
 // track, or when that track failed to load. Kept byte-for-byte in behaviour.
 function startSynthMusic(kind){
-  if(!SND.on || !SND.musicOn || !SND.ctx) return;
+  if(!musicAllowed() || !SND.ctx) return;
   if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
   const scale = MUSIC_SCALES[kind] || MUSIC_SCALES.menu;
   const bass = MUSIC_BASS[kind] || MUSIC_BASS.menu;
   const beat = kind==='boss' ? 180 : (kind==='battle' ? 190 : 230);   // boss music is faster/tenser
   SND._step=0;
   const tick=()=>{
-    if(!SND.musicOn || !SND.ctx){ return; }
+    if(!musicAllowed() || !SND.ctx){ return; }   // stops the bed on the very next beat when muted
     const st=SND._step;
     // bassline — a note every beat, driving
     const bn = bass[Math.floor(st/2) % bass.length];
@@ -1516,7 +1542,36 @@ function toggleSound(){
     sndInit(); if(btn) btn.textContent="🔊 Sound: On"; SFX.ui();
     // The toggle is a click, so media is unlocked; pick the bed the current context wants back.
     SND.gesture = true;
+    // ...but only if the player still wants music. startMusic()'s own gate enforces that; the
+    // call is left unconditional so the two toggles have exactly one place that decides.
     const k = currentMusicKind(); if(k) startMusic(k);
+  }
+}
+// MUSIC ONLY. SFX are untouched on both edges — that separation is the entire feature.
+// Off: kill both crossfade decks and the synth bed now, and every later request is refused by
+// musicAllowed(). On: pick up the bed the current screen/match already wants, mid-match included.
+function toggleMusic(){
+  SND.musicOn = !SND.musicOn;
+  musicPrefSave(SND.musicOn);
+  if(!SND.musicOn){
+    stopMusic();
+  } else if(SND.on){
+    // A click IS the gesture browsers require, so this can start media immediately rather than
+    // parking it — otherwise turning music back on would do nothing until the next click.
+    SND.gesture = true;
+    sndInit();
+    const k = currentMusicKind(); if(k) startMusic(k);
+  }
+  if(SND.on) SFX.ui();     // master mute still wins; no click blip while everything is silenced
+  syncMusicToggle();
+}
+// Both buttons (title + Controls) show the same state, on load and after every toggle. A stale
+// second label is how a player ends up convinced the setting does not stick.
+function syncMusicToggle(){
+  const label = SND.musicOn ? "🎵 Music: On" : "🎵 Music: Off";
+  for(const id of ['musicToggle','musicToggleCtl']){
+    const el = document.getElementById(id);
+    if(el) el.textContent = label;
   }
 }
 // Stops BOTH music paths. Decks are paused (not torn down) so the next startMusic for the same
@@ -8652,6 +8707,9 @@ profileReady = (async()=>{ try{ await loadProfile(); }catch(e){ PROFILE = openPr
 profileReady.then(()=>{ try{ buildBoard(); }catch(e){} });
 
 buildBoard();
+// Both music buttons ship labelled "On"; a player who muted music last session must not be shown
+// "On" over a silent game. Pure DOM text — no audio is touched here.
+try{ syncMusicToggle(); }catch(e){}
 try{ autoJoinFromLink(); }catch(e){}   // opened via a shared ...#room=ABCD invite link
 // Clicking an invite link while already on the site is a SAME-DOCUMENT navigation — the script
 // never re-runs, so without this the link silently does nothing. Nothing in the game writes
