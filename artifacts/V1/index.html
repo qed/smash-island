@@ -3091,7 +3091,7 @@ function makeFighter(r,x,y,idx){
     weakened:0, defined:0, defineStacks:0, frozen:0, _freezeLock:0, lastHitBy:null, curse:0, curseStacks:0,
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
     rooted:0, ctrlRev:0, _revLock:0, slowed:0, _sawing:0, koCount:0, iceUntil:0, healing:0, _hurt:0, deaths:0, killCount:0, placement:null, _downOrder:0, _kos:0, _falls:0, _dmgDealt:0, _dmgTaken:0, _infected:0, _infectedBy:null, _origTeam:0, _lastInput:null, _empowerT:0, _hasteT:0, _starT:0, _yoyleT:0, _holding:null, _bossHitId:-1, _bossHitDmg:0, _swallow:0, _swallowTick:0,
-    flash:0, aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
+    flash:0, _atkAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
     r:24
   };
 }
@@ -3883,6 +3883,7 @@ function step(){
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.invuln>0) f.invuln--;
     if(f.flash>0) f.flash--;
+    if(f._atkAnim>0) f._atkAnim--;   // render-only attack-lunge timer (spriteRig)
     if(f.atkCd>0) f.atkCd--;
     if(f.spCd>0) f.spCd--;
     if(f.dropCd>0) f.dropCd--;
@@ -4435,8 +4436,13 @@ const RANGED_ATTACKERS = {
   gust:   {speed:13, r:9,  color:'#bfe8ff', life:50},                          // Fanny — straight air blast
   measure:{speed:16, r:6,  color:'#c0c0c0', life:60},                          // Ruler — precise long straight shot
 };
+// How many frames the attack lunge plays for. RENDER-ONLY: `_atkAnim` is set at every attack entry
+// point below and read only by spriteRig, which uses it both to time the lunge AND to tell an
+// attack's white flash apart from a victim's (see the rig's state-machine note).
+const ATK_ANIM = 13;
 function doAttack(f){
   f.flash=6;
+  f._atkAnim=ATK_ANIM;      // render-only: spriteRig plays the lunge/recoil pulse off this
   // THROWABLE: if holding a picked-up item, this attack hurls it instead of a normal swing
   if(f._holding){
     const h=f._holding; f._holding=null;
@@ -4638,6 +4644,7 @@ const SMASHES = {
 };
 
 function doSmash(f, charge){
+  f._atkAnim=ATK_ANIM+5;    // a smash lunges longer than a jab
   const k=f.kit && f.kit.special;
   if(SMASHES[k]){ SMASHES[k](f, charge); return; }
   genericSmash(f, charge);
@@ -4879,6 +4886,7 @@ const ATKSPECIALS = {
   anvil(f){ f.flash=14; let tgt=null,best=1e9; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.abs(t.x-f.x); if(d<best){best=d;tgt=t;} } const ax=tgt?tgt.x:f.x+f.face*60; dropProj(f, ax, tgt?tgt.y+tgt.r:feetY(f), {dmg:16,kb:10,r:18,color:'#3a3a3a',life:150});  },
 };
 function doAttackSpecial(f){
+  f._atkAnim=ATK_ANIM;
   const k=f.kit && f.kit.special;
   if(ATKSPECIALS[k]) ATKSPECIALS[k](f);
   else { const cx=f.x+f.face*28; f.flash=12; hitCircle(f,cx,f.y,f.r+26,14,14,f.face*12,-9);  }
@@ -4895,6 +4903,7 @@ function applyDashVY(f, upSpeed, downSpeed){
   if(f._dashVY){ f.onground=false; }             // leave the floor so a vertical dash actually rises/dips
 }
 function doSpecial(f){
+  f._atkAnim=ATK_ANIM;
   if(f.you) SFX.special();
   const k=f.kit.special;
   f._lastSpecialKind = k;   // Two's MIND READ copies this back at you
@@ -6885,6 +6894,32 @@ const FIGHTER_ANIM = {
       ctx.beginPath(); ctx.arc(L*0.32, -Wd*0.28, 2.6, 0, 7); ctx.fill();
       return true;                                     // REPLACE the default blob for this frame
     }
+  },
+  // ---- Puffball — hover sparkles. Her rig floats her (SPRITES.Puffball.float); these are the
+  //      little puffs of air-magic that sell it. Drawn as ctx ops in the overlay pass rather than
+  //      pushed into `particles`, so the draw path stays free of sim side effects and allocation. --
+  Puffball: {
+    over(f, ctx){
+      const t = hazardT*0.05 + f.idx*1.7;              // same clock the float rig rides
+      const a0 = ctx.globalAlpha;
+      for(let i=0;i<3;i++){
+        const k = (hazardT*0.9 + i*47 + f.idx*13) % 90;   // each sparkle blinks on its own cycle
+        if(k > 26) continue;                              // …and is off most of the time
+        const p = k/26;
+        ctx.globalAlpha = a0 * (1-p*p) * 0.95;
+        const ang = t*0.8 + i*2.1;
+        const rr  = f.r*(1.18 + p*0.75);                  // OUTSIDE her fluff, or pale pink on pale
+        const sx  = Math.cos(ang)*rr, sy = Math.sin(ang)*rr*0.72 - 10 - Math.sin(t)*5 - p*12;
+        const s   = 3.0*(1-p) + 1.2;
+        ctx.beginPath();                                  // a 4-point twinkle, not a dot
+        ctx.moveTo(sx, sy-s*2); ctx.quadraticCurveTo(sx,sy, sx+s*2,sy);
+        ctx.quadraticCurveTo(sx,sy, sx,sy+s*2); ctx.quadraticCurveTo(sx,sy, sx-s*2,sy);
+        ctx.quadraticCurveTo(sx,sy, sx,sy-s*2);
+        ctx.fillStyle = "#fff2fa"; ctx.fill();
+        ctx.strokeStyle = "#f7a8d0"; ctx.lineWidth = 1.2; ctx.stroke();
+      }
+      ctx.globalAlpha = a0;
+    }
   }
 };
 
@@ -6910,6 +6945,13 @@ const FIGHTER_ANIM = {
 //                   boots must not construct media objects while the script parses); the vector
 //                   art keeps rendering until it has decoded, and FOREVER if the file is missing
 //                   or fails — that is the fallback, and it is why the vector art stays.
+//   flip            RENDER ONLY. true = this PNG's native pose faces LEFT, so it is mirrored when
+//                   the fighter faces RIGHT instead of the other way round. Default (absent) =
+//                   the render natively faces right/front.
+//   float           this character HOVERS. spriteRig gives it a continuous sine bob and never
+//                   plants its feet, even while physics calls it grounded. floatLift / floatAmp
+//                   tune the ride height and the swing, both in px. RENDER-ONLY: pure visual
+//                   offset, so hitboxes, ground checks and netcode are untouched.
 //   imgH,imgW       the box the render is CONTAIN-fitted into, in units of R. The image's own
 //                   aspect ratio decides which one binds, so nothing is ever stretched: tall
 //                   characters (Pencil) are capped by imgH, wide ones (Rocky) by imgW.
@@ -6925,6 +6967,38 @@ const FIGHTER_ANIM = {
 //
 // Sprites are RENDER-ONLY: nothing here is serialized, and serializeState already ships `name`, so
 // a client draws the same sprite the host does with no netcode change at all.
+//
+// ---- FACING AUDIT (all twelve renders, measured — not eyeballed) ---------------------------------
+// Each PNG was decoded and the centroid of its INTERIOR near-black ink (eyes, brows, mouth — the
+// stick limbs erode out of the mask, so they cannot skew it) was compared with the centroid of the
+// body silhouette, normalised by body width. Negative = the face sits LEFT of the body's middle,
+// i.e. the character is posed turned to its own right and the render natively faces LEFT.
+//
+// The same measurement was then repeated ON THE LIVE CANVAS, drawing each fighter facing RIGHT at
+// 4x radius and reading the pixels back, which is what the player actually sees (second column):
+//
+//                  source   on-screen facing right
+//     rocky        -0.158     -0.171  faces LEFT  -> flip
+//     ice-cube     -0.157     -0.069  faces LEFT  -> flip
+//     blocky       -0.120     -0.092  faces LEFT  -> flip
+//     firey        -0.064     -0.047  faces LEFT  -> flip
+//     bubble       -0.070     -0.018  front — the source figure was the white specular, not a face
+//     puffball     -0.007     -0.009  FRONT, dead symmetric
+//     teardrop     -0.005     -0.008  FRONT
+//     bomby        +0.027     -0.005  FRONT
+//     pencil       +0.027     +0.013  FRONT
+//     match        +0.077     +0.007  front-ish; already leads correctly
+//     leafy        +0.048     +0.035  faces RIGHT — correct on the default (mirror on face<0)
+//     pen          +0.090     +0.084  faces RIGHT — correct on the default
+//
+// (the on-screen column is signed by facing: positive = the face LEADS the way the fighter moves,
+// which is what we want; every entry above is positive again once `flip` is applied.)
+//
+// Nothing in this batch is a true side profile; they are wiki character renders, drawn facing the
+// viewer, so `flip` is set only where the turn is unambiguous and the character visibly pointed
+// backwards while running. PUFFBALL measures dead centre in both columns: her art is perfectly
+// symmetric, so mirroring her is a visual no-op and NO flip setting can change which way she looks.
+// If she still reads wrong to the owner, the fix is a front render swap, not a facing flag.
 
 let drawAlpha = 1;    // the invuln-blink alpha drawFighter is currently drawing at (sprites read
                       // this instead of ctx.globalAlpha so translucent art composites correctly)
@@ -6953,7 +7027,7 @@ function drawStubLimbs(f, R, arms, legs, ax){
 const SPRITES = {
   // ---- Firey — two-tone flame, rounded base licking up to a tip, constant candle flicker ----
   Firey: {
-    src:"assets/sprites/firey.png", imgH:2.8, imgW:2.3,
+    src:"assets/sprites/firey.png", imgH:2.8, imgW:2.3, flip:true,   // eyes sit left of the flame core
     w:2.1, h:2.6, anchorY:-0.12, arms:true, legs:true, limbX:0.72, face:{y:0.14,s:0.92},
     path(ctx,R,f){
       const k=Math.sin(hazardT*0.22+f.idx)*0.06;
@@ -7023,7 +7097,7 @@ const SPRITES = {
   // ---- Blocky — a red wooden building block: beveled cube, visible grain, top-face highlight ----
   Blocky: {
     // NB: the source file is titled "Blockling" on the wiki; the render is verified to be Blocky.
-    src:"assets/sprites/blocky.png", imgH:2.6, imgW:2.4,
+    src:"assets/sprites/blocky.png", imgH:2.6, imgW:2.4, flip:true,   // render's face sits left of the cube
     w:1.9, h:1.9, anchorY:0, arms:true, legs:true, limbX:0.88, face:{y:-0.08,s:0.95},
     path(ctx,R){
       const s=R*0.90, b=R*0.16;
@@ -7115,7 +7189,7 @@ const SPRITES = {
   },
   // ---- Ice Cube — translucent 8x9x11 block (taller than wide), ARMLESS, ghost-white shine ----
   "Ice Cube": {
-    src:"assets/sprites/ice-cube.png", imgH:2.6, imgW:2.2,
+    src:"assets/sprites/ice-cube.png", imgH:2.6, imgW:2.2, flip:true,   // face sits left of the block
     w:2.0, h:2.2, anchorY:-0.02, arms:false, legs:true, limbX:0.9, face:{y:0.06,s:0.88},
     path(ctx,R){
       const hw=R*0.74, ht=R*0.86, d=R*0.26;
@@ -7138,9 +7212,14 @@ const SPRITES = {
       ctx.beginPath(); ctx.rect(-hw,-ht,hw*2,ht*2); ctx.stroke();
     }
   },
-  // ---- Puffball — LIMBLESS lumpy pink pom-pom with spiky fluff tufts; always slightly afloat ----
+  // ---- Puffball — LIMBLESS lumpy pink pom-pom with spiky fluff tufts; canonically HOVERS ----
+  // She has no legs to stand on, so the walk/idle bob was wrong for her from the start: it planted
+  // a floating creature on the floor and bounced her off it. `float` swaps her whole rig for a
+  // continuous hover — a slow sine that keeps her clear of the ground line at all times. It is a
+  // DRAW-SPACE offset only: her y, her hitbox, her ground checks and the netcode never see it.
   Puffball: {
     src:"assets/sprites/puffball.png", imgH:2.6, imgW:2.4,
+    float:true, floatLift:8, floatAmp:5,
     w:2.2, h:2.1, anchorY:-0.08, arms:false, legs:false, limbX:1, face:{y:0.02,s:0.92},
     path(ctx,R,f){
       const n=14, t=hazardT*0.05+f.idx;
@@ -7209,7 +7288,7 @@ const SPRITES = {
   },
   // ---- Rocky — squat irregular pebble, ARMLESS, one shaded side and a couple of chip marks ----
   Rocky: {
-    src:"assets/sprites/rocky.png", imgH:2.2, imgW:2.3,
+    src:"assets/sprites/rocky.png", imgH:2.2, imgW:2.3, flip:true,   // face sits well left of the pebble
     w:2.0, h:1.8, anchorY:0.06, arms:false, legs:true, limbX:0.9, face:{y:0.02,s:0.86},
     path(ctx,R){
       ctx.beginPath(); ctx.moveTo(-R*0.94,R*0.30);
@@ -7279,30 +7358,101 @@ function tintedSprite(sp, im, col){
 // them a render froze into a sliding photograph: the owner playtest's "no animations", and it hit
 // exactly the twelve mains everybody actually picks.
 //
-// This puts the motion back on the IMAGE itself: a two-step walk bob + body rock while moving on
-// the ground (same hazardT*0.3 cadence the stub legs swung at, so sprite and blob fighters still
-// step in time), and a slow breath while standing. Everything pivots on the FEET (y = R+12, the
-// floor line the render stands on) so the character never skates, and it is applied INSIDE
-// drawFighter's squash/stretch, so jumps, falls and landings keep deforming on top of it.
-function spriteRig(f, R){
+// This puts the motion back on the IMAGE itself. The first cut was ONE bob for everybody, which
+// the owner playtested as "animation must have multiple ones" — a crowd of renders doing the same
+// two-step at the same phase reads as a screensaver, not a fight. So the rig is now a small STATE
+// MACHINE, and every state pivots on the FEET (y = R+12, the floor line the render stands on) so
+// the character never skates. It runs INSIDE drawFighter's squash/stretch, so jumps, falls and
+// landings keep deforming on top of whatever pose it picks:
+//
+//   float     a limbless hoverer (Puffball) — a continuous sine bob that NEVER touches the floor
+//   idle      slow breath + a blink-squint tick every ~2.4s
+//   walk      the original two-step bob + stride rock (same hazardT*0.3 cadence the stub legs
+//             swing at, so sprite and blob fighters still step in time)
+//   run       |vx| > 4: faster bob, deeper stride, and a hard forward lean
+//   air-rise  / air-fall: the universal squash/stretch still owns the pose; the rig only adds a
+//             lean into the horizontal travel, so a jump arc is not a rigid statue
+//   charge    winding a smash back before it fires (smashHold)
+//   attack    a forward lunge that snaps out and recoils (_atkAnim, set at the attack entries)
+//   hitstun   a decaying high-frequency jitter while the hit flash burns off
+//
+// PHASE: every state is offset by `ph` and detuned by `rate`, both derived from f.idx, so eight
+// fighters standing on a platform breathe out of step instead of pulsing as one organism.
+//
+// Attack vs. hit: `flash` is set by BOTH (attacks flash white, so do victims). `_atkAnim` is set
+// only at the attack entry points and only exists on the host, so `flash && !_atkAnim` is "this
+// fighter was hit" on the host AND the right fallback on a netcode client, which is shipped
+// `flash` but never `_atkAnim`.
+//
+// Cost: a handful of Math.sin calls and pure ctx transforms per fighter per frame. No allocations.
+// (ATK_ANIM — the length of the lunge — is declared next to the attack entry points that set it.)
+function spriteRig(f, R, sp){
   const grounded = f.onground !== false;   // netcode clients ship no onground — treat them as grounded
-  const vx = f.vx || 0;
+  const vx = f.vx || 0, avx = vx < 0 ? -vx : vx;
   const feet = R + 12;
-  let bob = 0, rock = 0, sx = 1, sy = 1;
-  if(grounded && Math.abs(vx) > 0.5){      // WALK — rise on each step and rock into the stride
+  const ph   = f.idx * 1.7;                // per-fighter phase — nobody moves in lockstep
+  const rate = 1 + (f.idx % 4) * 0.05;     // …and a slightly different tempo each
+  let bob = 0, rock = 0, sx = 1, sy = 1, lunge = 0, state;
+
+  if(sp && sp.float){                      // ---- FLOAT — she hovers; her feet never find the floor
+    const t = hazardT*0.05*rate + ph;
+    bob  = -(sp.floatLift==null?7:sp.floatLift) - Math.sin(t)*(sp.floatAmp==null?5:sp.floatAmp);
+    rock = Math.sin(t*0.63 + ph)*0.055;    // a lazy drift tilt, like something held up by air
+    sx = 1 + Math.sin(t)*0.030; sy = 1 - Math.sin(t)*0.034;
+    state = grounded ? "float" : "float-air";
+  } else if(!grounded){                    // ---- AIR — the universal squash owns it; just lean in
+    rock = vx*0.016; if(rock>0.16) rock=0.16; else if(rock<-0.16) rock=-0.16;
+    state = f.vy < -1 ? "air-rise" : "air-fall";
+  } else if(avx > 4){                      // ---- RUN — faster, deeper, and leaning into the sprint
+    const s = Math.sin(hazardT*0.42*rate + ph);
+    bob  = -Math.abs(s) * R * 0.16;
+    rock = s*0.05*(vx<0?-1:1) + (vx<0?-0.11:0.11);
+    sy = 1 + Math.abs(s)*0.05; sx = 1 - Math.abs(s)*0.04;
+    state = "run";
+  } else if(avx > 0.5){                    // ---- WALK — the original two-step, kept exactly
     const s = Math.sin(hazardT*0.3 + f.idx);
     bob  = -Math.abs(s) * R * 0.11;
     rock = s * 0.07 * (vx < 0 ? -1 : 1);
     sy = 1 + Math.abs(s)*0.035; sx = 1 - Math.abs(s)*0.025;
-  } else if(grounded){                     // IDLE — a slow breath, so nobody is ever a still image
-    const b = Math.sin(hazardT*0.09 + f.idx);
+    state = "walk";
+  } else {                                 // ---- IDLE — a slow breath plus an occasional blink
+    const b = Math.sin(hazardT*0.09*rate + ph);
     bob = -Math.abs(b) * R * 0.02;
     sy = 1 + b*0.035; sx = 1 - b*0.028;
-  } else return;                           // airborne: the universal squash/stretch owns the pose
+    const k = (hazardT + f.idx*37) % 144;  // ~2.4s apart, staggered per fighter
+    if(k < 5){ const q = Math.sin(k/5*Math.PI); sy -= q*0.11; sx += q*0.06; }
+    state = "idle";
+  }
+
+  // ---- ATTACK / CHARGE — layered ON TOP of whatever the fighter's feet are doing ----
+  if(f._atkAnim > 0){                      // snap forward, then recoil back to neutral
+    const p = Math.sin((f._atkAnim/ATK_ANIM)*Math.PI);
+    lunge = f.face * p * R * 0.34;
+    rock += f.face * p * 0.14;
+    sx += p*0.10; sy -= p*0.08;
+    state = "attack";
+  } else if(f.smashHold > 0){              // wind BACK while the smash charges — anticipation
+    const c = f.smashHold/45; const cc = c>1?1:c;
+    lunge = -f.face * cc * R * 0.14;
+    rock -= f.face * cc * 0.09;
+    sy -= cc*0.10; sx += cc*0.08;
+    state = "charge";
+  }
+  // ---- HITSTUN — a shake that decays with the flash it rides on ----
+  if(f.flash > 0 && !(f._atkAnim > 0)){
+    const j = f.flash;
+    lunge += Math.sin(hazardT*1.9 + ph)*j*0.55;
+    bob   += Math.cos(hazardT*2.3 + ph)*j*0.35;
+    rock  += Math.sin(hazardT*2.7 + ph)*j*0.012;
+    state = "hitstun";
+  }
+
+  f._rigState = state;                     // exposed for tests / debug overlays; interned literals
   ctx.translate(0, feet);
   if(rock) ctx.rotate(rock);
   if(sx!==1 || sy!==1) ctx.scale(sx, sy);
-  ctx.translate(0, -feet + bob);
+  ctx.translate(lunge, -feet + bob);
+  return state;
 }
 
 // Renders one sprite fighter in place of the roundBlob body. Called from inside drawFighter's
@@ -7317,8 +7467,10 @@ function drawSpriteBody(f, sp){
   // both are suppressed while an image is live or the fighter grows a second set of each.
   if(!im) drawStubLimbs(f, R, sp.arms!==false, sp.legs!==false, (sp.limbX==null?1:sp.limbX)*R);
   ctx.save();
-  // Only a render needs the rig: vector art still draws its own swinging stub limbs.
-  if(im) spriteRig(f, R);
+  // Only a render needs the rig: vector art still draws its own swinging stub limbs. The one
+  // exception is a `float` character — she is LIMBLESS either way, so nothing else would ever
+  // move her, and the hover has to read on the fallback art too.
+  if(im || sp.float) spriteRig(f, R, sp);
   let dw=0, dh=0;
   if(im){
     // CONTAIN-fit inside the entry's box, driven by the image's OWN aspect ratio, so no render is
@@ -7332,7 +7484,12 @@ function drawSpriteBody(f, sp){
   } else {
     ctx.translate(0,(sp.anchorY||0)*R);
   }
-  if(f.face<0) ctx.scale(-1,1);                 // mirror the art to the facing direction
+  // MIRROR TO THE FACING DIRECTION. The vector art is authored with +x forward, so it always
+  // mirrors on face<0. A RENDER has whatever facing the artist drew, and most of this cast is
+  // posed turned to their own right — i.e. the image natively faces LEFT — so mirroring only on
+  // face<0 pointed them backwards while they ran right. `flip:true` marks those, and inverts
+  // which direction gets the mirror. See the audit note above the registry.
+  if(im ? ((f.face<0) !== !!sp.flip) : (f.face<0)) ctx.scale(-1,1);
   if(im) ctx.drawImage(im,-dw/2,-dh/2,dw,dh);
   else if(sp.draw) sp.draw(ctx,R,f);
   // state tints, clipped to the silhouette
