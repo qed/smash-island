@@ -103,3 +103,95 @@ describe('Unit 7 — team construction', () => {
     expect(w.eval('TOURNEY.champion && TOURNEY.champion.name')).toBeTruthy();
   });
 });
+
+// ---- Watched group-fixture length -------------------------------------------------------------
+// The owner playtested the World Cup and reported "the group stage matches are too short": a
+// watched group fixture gives everyone infinite stocks and is scored on KOs when the clock runs
+// out, so TOURNEY_TIME_LIMIT IS the length of the fight. It was ~20s, which a 2-a-side game barely
+// got past the first exchange of. These pin the new length and — more importantly — pin down that
+// the clock governs ONLY watched group fixtures.
+describe('World Cup — watched group fixtures run long enough to be a match', () => {
+  it('runs a watched group fixture for about forty seconds', () => {
+    const { window: w } = loadMonolith();
+    const frames = w.eval('TOURNEY_TIME_LIMIT');
+    expect(frames / 60, 'seconds of group match').toBeGreaterThanOrEqual(38);
+    expect(frames / 60, '…but still a fixture, not a full match').toBeLessThanOrEqual(75);
+  });
+
+  it('arms the clock for a GROUP fixture and leaves knockout on elimination', () => {
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const armed = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false);
+        var groupTimer = TOURNEY.liveTimer;
+        TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false; running = false;
+        return groupTimer;
+      })()`);
+    // (watchFixture kicks the loop, which burns the first frame off the clock)
+    expect(armed, 'a group fixture is timed').toBeGreaterThan(w.eval('TOURNEY_TIME_LIMIT') - 3);
+    // …and the tick only counts down for group fixtures.
+    const koCounts = w.eval(`
+      (function(){
+        TOURNEY_WATCHING = { kind:'ko' };
+        TOURNEY.liveTimer = 999;
+        tourneyLiveTick(); tourneyLiveTick();
+        var after = TOURNEY.liveTimer;
+        TOURNEY_WATCHING = null;
+        return after;
+      })()`);
+    expect(koCounts, 'a knockout fixture ignores the clock entirely').toBe(999);
+  });
+
+  it('leaves the instant-sim path completely untouched by the clock', () => {
+    // Every fixture the player does not watch is resolved by simGroupMatch, a statistical roll
+    // with no clock at all. Lengthening the watched match must not change a single auto result.
+    const { window: w } = loadMonolith();
+    // The seed is installed BEFORE startTournament, so both runs draw the same 48 teams.
+    // This used to reseed afterwards, which worked only because teamStrength was blind to fighter
+    // identity — every lineup produced identical rolls. Now that the sim rates real fighters, two
+    // runs with different teams legitimately differ, and seeding late would be comparing rosters
+    // rather than clock lengths.
+    const roll = (limit) => {
+      w.eval(`Math.random = (function(){ var s = 12345; return function(){
+        s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }; })();`);
+      startTourney(w);
+      return w.eval(`
+        (function(){
+          TOURNEY_TIME_LIMIT = ${limit};
+          var g = TOURNEY.fixtures.filter(function(f){ return f.kind === 'group'; }).slice(0, 12);
+          return g.map(function(fx){ var r = simGroupMatch(fx); return r.sa + ':' + r.sb; }).join(',');
+        })()`);
+    };
+    expect(roll(60 * 40), 'same results at any clock length').toBe(roll(60 * 5));
+  });
+
+  it('scores a timed-out group fixture and hands control back to the hub', () => {
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const out = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false);
+        var guard = 0;
+        while (TOURNEY_WATCHING && guard++ < TOURNEY_TIME_LIMIT + 10) tourneyLiveTick();
+        return JSON.stringify({
+          ticks: guard, played: g.played, result: g.result,
+          watching: TOURNEY_WATCHING, running: running, matchActive: TOURNEY_MATCH_ACTIVE,
+          points: g.a.P + g.b.P
+        });
+      })()`);
+    const r = JSON.parse(out);
+    // (watchFixture's own loop() burns the first frame, so the clock is 1 tick shorter here)
+    expect(r.ticks, 'it ran the whole clock out').toBeGreaterThan(w.eval('TOURNEY_TIME_LIMIT') - 3);
+    expect(r.ticks, 'and no longer').toBeLessThanOrEqual(w.eval('TOURNEY_TIME_LIMIT'));
+    expect(r.played, 'the fixture is marked played').toBe(true);
+    expect(r.result, 'and carries a score').toBeTruthy();
+    expect(typeof r.result.sa, 'scored on KOs').toBe('number');
+    expect(r.watching, 'control left the match').toBe(null);
+    expect(r.running, 'the match loop stopped').toBe(false);
+    expect(r.matchActive, 'and the tournament-match flag cleared').toBe(false);
+    expect(r.points, 'both teams were credited a played fixture').toBe(2);
+  });
+});

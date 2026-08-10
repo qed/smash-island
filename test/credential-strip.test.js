@@ -68,20 +68,24 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
       `${MUSIC_DIR}/menu.mp3`,
       `${MUSIC_DIR}/tourney.mp3`,
       `${SPRITE_DIR}/CREDITS.md`,
-      `${SPRITE_DIR}/blocky.png`,
-      `${SPRITE_DIR}/bomby.png`,
-      `${SPRITE_DIR}/bubble.png`,
-      `${SPRITE_DIR}/firey.png`,
-      `${SPRITE_DIR}/ice-cube.png`,
-      `${SPRITE_DIR}/leafy.png`,
-      `${SPRITE_DIR}/match.png`,
-      `${SPRITE_DIR}/pen.png`,
-      `${SPRITE_DIR}/pencil.png`,
-      `${SPRITE_DIR}/puffball.png`,
-      `${SPRITE_DIR}/rocky.png`,
-      `${SPRITE_DIR}/teardrop.png`,
       `${PUBLISH_ROOT}/index.html`,
+      // sprites are checked by RULE below rather than pinned by name — there are 59 of them and a
+      // hand-maintained list would be pure noise that everyone learns to update without reading
+      ...PUBLISHED_FILES.filter(f => f.startsWith(`${SPRITE_DIR}/`) && f.endsWith('.png')),
     ].sort());
+
+    // The rule that replaces the per-file pin, and is stricter than it was: every published sprite
+    // must be a PNG that some registry entry actually points at, and every entry's src must exist.
+    // A stray image dropped in the directory fails here just as loudly as it did on the old list.
+    const published = PUBLISHED_FILES
+      .filter(f => f.startsWith(`${SPRITE_DIR}/`) && f !== `${SPRITE_DIR}/CREDITS.md`);
+    expect(published.filter(f => !f.endsWith('.png')), 'non-PNG files in the sprite directory').toEqual([]);
+    const { window: w } = loadMonolith();
+    const referenced = new Set(
+      w.eval(`Object.keys(SPRITES).map(function(k){ return SPRITES[k].src||''; }).filter(Boolean)`)
+        .map(src => `${PUBLISH_ROOT}/${src}`.replace(/\\/g, '/')));
+    const orphans = published.map(f => f.replace(/\\/g, '/')).filter(f => !referenced.has(f));
+    expect(orphans, 'sprite files that no fighter uses — dead weight on every page load').toEqual([]);
     // …and nothing new at the top level either, so a stray sibling directory is caught even if the
     // recursive pin above is ever relaxed to a rule.
     expect(readdirSync(PUBLISH_ROOT).sort()).toEqual(['assets', 'index.html']);

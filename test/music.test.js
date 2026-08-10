@@ -80,11 +80,12 @@ function fakeIndexedDB(seed = {}) {
  * @param opts.existing extra URLs that should "load" instead of 404ing
  * @param opts.idb      seed object for the fake IndexedDB (key = context)
  * @param opts.fadeMs   crossfade length; 0 (default) makes switches instant and assertable
+ * @param opts.storage  localStorage seed, applied BEFORE the page script runs (music preference)
  */
 function bootWithAudio(opts = {}) {
   const html = readFileSync(SRC, 'utf8');
   const events = [];
-  const state = { gestureFired: false, constructedEarly: 0, idbTouchedAtBoot: false };
+  const state = { gestureFired: false, constructedEarly: 0, idbTouchedAtBoot: false, oscillators: 0 };
   const existing = new Set([...DEFAULTS, ...(opts.existing || [])]);
   let blobN = 0;
   const dom = new JSDOM(html, {
@@ -92,6 +93,9 @@ function bootWithAudio(opts = {}) {
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     beforeParse(window) {
+      // Seeded before the page script evaluates, because SND.musicOn is read out of localStorage
+      // at eval time — setting it afterwards would be too late to model a reload.
+      for (const [k, v] of Object.entries(opts.storage || {})) window.localStorage.setItem(k, v);
       window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
         get: (_t, p) => (p === 'measureText' ? () => ({ width: 0 })
           : p === 'canvas' ? { width: 1100, height: 720 }
@@ -106,7 +110,8 @@ function bootWithAudio(opts = {}) {
           this.destination = fakeNode();
         }
         createGain() { return fakeNode(); }
-        createOscillator() { return fakeNode(); }
+        // Counted so a test can prove SFX still reach the synth while music is muted.
+        createOscillator() { state.oscillators += 1; return fakeNode(); }
         createBufferSource() { return fakeNode(); }
         createBiquadFilter() { return fakeNode(); }
         createBuffer() { return { getChannelData: () => new Float32Array(8) }; }
@@ -692,6 +697,218 @@ describe('background music — the sound toggle still owns everything', () => {
     w.eval('toggleSound()'); await tick();
     expect(w.eval('SND.on')).toBe(true);
     expect(plays().at(-1)).toBe('assets/music/tourney.mp3');
+  });
+});
+
+// The music-only toggle. The property under test is a SEPARATION: music stops, SFX do not — and
+// the master Sound toggle still outranks it in both directions. Every assertion below is written
+// against observable behaviour (what got played/paused, what reached the synth) rather than the
+// flag, because the flag being right while a start path skips the gate is the exact bug shipped
+// toggles have. The gate itself is one function, musicAllowed(); if any caller stops going
+// through it, the "suppresses every music start" test below fails on that caller specifically.
+describe('background music — the music-only toggle', () => {
+  const MUSIC_KEY = 'bfsi:musicOn';
+  /** Boot, unlock, and start a 3-stock FFA so there is a real match bed playing. */
+  async function inMatch(opts = {}) {
+    const h = bootWithAudio(opts);
+    h.gesture();
+    await tick();
+    h.w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    await tick();
+    return h;
+  }
+
+  it('defaults to on, with both buttons labelled to match', () => {
+    const { w } = bootWithAudio();
+    expect(w.eval('SND.musicOn')).toBe(true);
+    expect(w.localStorage.getItem(MUSIC_KEY)).toBe(null);   // default is implicit, not written
+    expect(w.document.getElementById('musicToggle').textContent).toBe('🎵 Music: On');
+    expect(w.document.getElementById('musicToggleCtl').textContent).toBe('🎵 Music: On');
+    expect(typeof w.toggleMusic).toBe('function');          // the inline on*= handler is bridged
+  });
+
+  it('sits on the title screen beside the master Sound toggle, and again in Controls', () => {
+    const { w } = bootWithAudio();
+    const title = w.document.getElementById('title');
+    expect(title.contains(w.document.getElementById('soundToggle'))).toBe(true);
+    expect(title.contains(w.document.getElementById('musicToggle'))).toBe(true);
+    // Same visual treatment as the control it sits next to, so it does not read as a new species.
+    expect(w.document.getElementById('musicToggle').className)
+      .toBe(w.document.getElementById('soundToggle').className);
+    expect(w.document.getElementById('controls').contains(w.document.getElementById('musicToggleCtl')))
+      .toBe(true);
+  });
+
+  it('stops the bed the moment it is switched off, mid-match, without touching SFX', async () => {
+    const { w, plays, state } = await inMatch();
+    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    w.eval('toggleMusic()');
+    expect(w.eval('SND.musicOn')).toBe(false);
+    expect(w.eval('SND._decks.every(d=>!d || d.paused)')).toBe(true);   // BOTH crossfade decks
+    expect(w.eval('!!SND._musicTimer')).toBe(false);                    // and the synth bed
+    expect(w.eval('SND._kind')).toBe(null);
+    expect(w.eval('SND.on')).toBe(true);                                // master untouched
+    const before = state.oscillators;
+    expect(() => w.eval('SFX.jump(); SFX.hit(20); SFX.ko()')).not.toThrow();
+    expect(state.oscillators, 'SFX still reach the synth while music is muted')
+      .toBeGreaterThan(before);
+  });
+
+  it('suppresses every music start while off — screens, matches, clutch, bosses, playlists', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await tick();
+    w.eval('toggleMusic()');
+    const n = plays().length;
+    // screen beds
+    w.eval("go('tourneyHub'); go('select'); go('title')"); await tick();
+    // match beds
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()"); await tick();
+    // the intense trigger
+    w.eval('fighters[0].stocks = 1; clutchTick()'); await tick();
+    expect(w.eval('CLUTCH.on'), 'clutch stands down when music owns no bed').toBe(false);
+    // a boss run plus its per-spawn re-roll
+    w.eval("musicAddUserTracks('boss', [{name:'a.mp3',blob:new Blob(['a'])},{name:'b.mp3',blob:new Blob(['b'])}], true)");
+    w.eval("SETTINGS.mode='boss'; beginMatchNow()"); await tick();
+    w.eval('spawnBossRushBoss()'); await tick();
+    // a freshly loaded custom playlist for the context that would otherwise be live
+    w.eval("musicSetUserTrack('menu', new Blob(['x']), 'mine.mp3')"); await tick();
+    expect(plays(), 'nothing started audio while music was off').toHaveLength(n);
+    expect(w.eval('!!SND._musicTimer')).toBe(false);
+    expect(w.eval('SND._kind')).toBe(null);
+  });
+
+  it('keeps the synth fallback silent too, not just the file layer', async () => {
+    const { w, gesture } = bootWithAudio({ existing: [] });
+    gesture(); await tick();
+    w.eval('toggleMusic()');
+    // Every source for this context is unusable, so the old code would hand it to the synth bed.
+    w.eval("SND._badSrc['assets/music/boss.mp3']=true; startMusic('boss')");
+    await tick(20);
+    expect(w.eval('!!SND._musicTimer')).toBe(false);
+  });
+
+  it('resumes the bed the current state wants when switched back on mid-match', async () => {
+    const { w, plays } = await inMatch();
+    w.eval('toggleMusic()');
+    const n = plays().length;
+    w.eval('toggleMusic()'); await tick();
+    expect(w.eval('SND.musicOn')).toBe(true);
+    expect(plays().length).toBeGreaterThan(n);
+    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    // ...and the menu bed, not the battle one, when the player is back on a screen.
+    w.eval('toggleMusic()');
+    w.eval("go('title')");
+    w.eval('toggleMusic()'); await tick();
+    expect(plays().at(-1)).toBe('assets/music/menu.mp3');
+  });
+
+  it('relabels BOTH buttons on every toggle', async () => {
+    const { w, gesture } = bootWithAudio();
+    gesture(); await tick();
+    w.eval('toggleMusic()');
+    expect(w.document.getElementById('musicToggle').textContent).toBe('🎵 Music: Off');
+    expect(w.document.getElementById('musicToggleCtl').textContent).toBe('🎵 Music: Off');
+    w.eval('toggleMusic()');
+    expect(w.document.getElementById('musicToggle').textContent).toBe('🎵 Music: On');
+    expect(w.document.getElementById('musicToggleCtl').textContent).toBe('🎵 Music: On');
+  });
+
+  it('persists the choice and honours it on the next load', async () => {
+    const { w, gesture } = bootWithAudio();
+    gesture(); await tick();
+    w.eval('toggleMusic()');
+    expect(w.localStorage.getItem(MUSIC_KEY)).toBe('0');
+
+    // Reload with that preference already on disk.
+    const two = bootWithAudio({ storage: { [MUSIC_KEY]: '0' } });
+    expect(two.w.eval('SND.musicOn')).toBe(false);
+    expect(two.w.document.getElementById('musicToggle').textContent).toBe('🎵 Music: Off');
+    expect(two.w.document.getElementById('musicToggleCtl').textContent).toBe('🎵 Music: Off');
+    two.gesture();                                   // the cold-load unlock must stay silent
+    await tick();
+    expect(two.plays()).toHaveLength(0);
+    expect(two.w.eval('SND._decks[0]'), 'no <audio> built for music nobody asked for').toBe(null);
+    expect(two.w.eval('SND._decks[1]')).toBe(null);
+
+    // And turning it back on writes the preference the other way, so the next load plays.
+    two.w.eval('toggleMusic()');
+    expect(two.w.localStorage.getItem(MUSIC_KEY)).toBe('1');
+    const three = bootWithAudio({ storage: { [MUSIC_KEY]: '1' } });
+    expect(three.w.eval('SND.musicOn')).toBe(true);
+    three.gesture(); await tick();
+    expect(three.plays().at(-1)).toBe('assets/music/menu.mp3');
+  });
+
+  it('survives a realm where localStorage itself throws', () => {
+    // Chrome with site data blocked throws from the localStorage GETTER, not from getItem.
+    const { w } = bootWithAudio();
+    w.eval(`Object.defineProperty(window, 'localStorage', {
+      configurable: true, get(){ throw new Error('SecurityError'); } });`);
+    expect(() => w.eval('toggleMusic()')).not.toThrow();
+    expect(w.eval('SND.musicOn')).toBe(false);        // the toggle still works, just unremembered
+  });
+});
+
+// Precedence. Two independent switches over one output need an unambiguous rule, and this is it:
+// master Sound OFF silences everything regardless of the music flag, and the music flag can only
+// ever subtract. Getting this backwards produces the worst possible bug — a muted game that makes
+// noise — so each direction is pinned separately.
+describe('background music — Sound and Music toggle precedence', () => {
+  it('master Sound off silences music even with the music toggle on', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await tick();
+    expect(w.eval('SND.musicOn')).toBe(true);
+    w.eval('toggleSound()');
+    expect(w.eval('SND.on')).toBe(false);
+    const n = plays().length;
+    w.eval("startMusic('battle'); startMusic('menu')"); await tick();
+    expect(plays()).toHaveLength(n);
+    expect(w.eval('musicAllowed()')).toBe(false);
+  });
+
+  it('the music toggle cannot un-mute a master-muted game', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await tick();
+    w.eval('toggleMusic()');                    // music off
+    w.eval('toggleSound()');                    // master off too
+    const n = plays().length;
+    w.eval('toggleMusic()'); await tick();      // music back ON, master still OFF
+    expect(w.eval('SND.musicOn')).toBe(true);
+    expect(w.eval('SND.on')).toBe(false);
+    expect(plays(), 'master mute outranks the music toggle').toHaveLength(n);
+    expect(w.eval('SND._kind')).toBe(null);
+  });
+
+  it('turning Sound back on does not resurrect music the player switched off', async () => {
+    const { w, plays, gesture, state } = bootWithAudio();
+    gesture(); await tick();
+    w.eval("go('tourneyHub')"); await tick();
+    w.eval('toggleMusic()');                    // music off, master still on
+    w.eval('toggleSound()');                    // master off
+    const n = plays().length;
+    const osc = state.oscillators;
+    w.eval('toggleSound()'); await tick();      // master back on
+    expect(w.eval('SND.on')).toBe(true);
+    expect(plays(), 'music stays off across a master mute cycle').toHaveLength(n);
+    expect(state.oscillators, 'but SFX are audible again').toBeGreaterThan(osc);
+  });
+
+  it('musicAllowed() is the AND of both switches, and SFX never consult it', async () => {
+    const { w, gesture, state } = bootWithAudio();
+    gesture(); await tick();
+    const allowed = () => w.eval('musicAllowed()');
+    expect(allowed()).toBe(true);
+    w.eval('toggleMusic()'); expect(allowed()).toBe(false);
+    w.eval('toggleSound()'); expect(allowed()).toBe(false);
+    w.eval('toggleMusic()'); expect(allowed()).toBe(false);   // music on, sound off
+    w.eval('toggleSound()'); expect(allowed()).toBe(true);
+    // SFX track SND.on alone: audible with music muted, silent when the master is off.
+    w.eval('toggleMusic()');
+    let n = state.oscillators; w.eval('SFX.ko()');
+    expect(state.oscillators).toBeGreaterThan(n);
+    w.eval('toggleSound()');
+    n = state.oscillators; w.eval('SFX.ko()');
+    expect(state.oscillators).toBe(n);
   });
 });
 
