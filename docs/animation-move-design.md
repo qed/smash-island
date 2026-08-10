@@ -286,3 +286,20 @@ the silhouette while keeping the art, pivoted on the feet so nothing lifts off t
 "these are genuinely distinct" is a measurement, not an opinion. Every entry must also survive the
 existing headless draw sweep (flash / burn / yoyle / star / invuln / mirrored / rising / falling /
 landing), which is what catches an animation that throws only in one rare state.
+
+## Batch 3
+
+Same contract as batch 2: `deform` first, canon-anchored, allocation-free.
+
+| Fighter | Trait (idle / squash) | Attack beat | Charge / resting beat | Grounding |
+|---|---|---|---|---|
+| **Marker** | Normal idle, low squash — a hard plastic barrel. | Nib-first stab, tipping forward so the writing end leads. | — | He is a marker; the nib is the business end, and his kit is an ink debilitator. |
+| **Money** | Light idle, **high squash** — he is paper. | Flutters: the swing ripples him rather than swinging a limb. | A constant slow paper **flutter** even at rest. | A bill has no rigidity. Nothing about him should move like a solid object. |
+| **Naily** | Damped idle, **lowest squash** in the batch — hardened steel. | A short, violent **hammer-drive** forward: almost no wind-up, all impact. | — | A nail does one thing, and it is driven. Sharper and angrier than Needle. |
+| **Pillow** | Normal idle, **highest squash in the cast** — softer than Gelatin. | Deep soft compression that settles slowly rather than snapping back. | — | She is stuffed fabric. Her canon gimmick is absorbing hits and growing stronger per KO. |
+| **Remote** | Damped idle, low squash — rigid moulded plastic. | Small stiff jab. | While charging, a **signal pulse** blinks out from the emitter. | A remote control does not deform; it *transmits*. The pulse is the character. |
+| **Rose** | Normal idle, normal squash. | Thorn lash — a whipping lean with the bloom trailing. | — | Elegant and thorned; the flower should trail behind the strike. |
+| **Saw** | Damped idle, low squash. | **Spins.** Full rotation through the swing, accelerating into contact. | Slow idle rotation drift while charging. | She is a circular saw blade. Rotation is the only motion the object has. |
+| **Taco** | Normal idle, moderate squash. | Shell **hinges open then claps shut** — softer and wobblier than Book's snap. | — | A folded shell with a hinge; the fold is the silhouette. |
+| **TV** | Damped idle, low squash. | Stiff jab with a **glitch** — brief horizontal tearing on contact. | Occasional static tear at rest. | A CRT that shows static. The tear is the single most television thing available. |
+| **Woody** | Normal idle, normal squash. | Flinches **away** as he attacks — commits to nothing. | A constant nervous **tremble that grows with his damage**. | Canonically the most fearful character in the show; his fear should be visible and should worsen as he takes damage. |
