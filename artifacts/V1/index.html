@@ -7532,6 +7532,136 @@ function atkPulse(f){ return f._atkAnim > 0 ? Math.sin((f._atkAnim/ATK_ANIM)*Mat
 function chargeK(f){ const c = (f.smashHold||0)/45; return c > 1 ? 1 : c; }
 
 const FIGHTER_ANIM = {
+  // ============================================================
+  //  BATCH 2 — see the "Batch 2 — animation specs" table in docs/animation-move-design.md
+  // ============================================================
+  // All ten use `deform` rather than `body`: every fighter now has official character art, and
+  // `body` would throw that art away to draw a shape. `deform` changes the SILHOUETTE and keeps the
+  // render. Allocation-free by contract — plain numbers, no arrays or closures in these.
+
+  // ---- Needle — rigid steel. She does not wobble; she arrives. ----
+  Needle: {
+    idle: 0.35, squash: 0.45,
+    deform(f, ctx, R){
+      const p = atkPulse(f);
+      if(!p) return;
+      // a flat forward jab: almost no deformation, just a hard lean along the swing
+      deformAboutFeet(ctx, R, 0, 1 + 0.10*p, 1 - 0.05*p);
+    }
+  },
+  // ---- Pin — the point leads. ----
+  Pin: {
+    squash: 0.55,
+    deform(f, ctx, R){
+      const p = atkPulse(f);
+      if(!p) return;
+      deformAboutFeet(ctx, R, f.face*0.30*p, 1 + 0.06*p, 1 - 0.04*p);
+    }
+  },
+  // ---- Coiny — a tossed coin turns over. ----
+  Coiny: {
+    squash: 0.8,
+    deform(f, ctx, R){
+      const p = atkPulse(f);
+      if(!p) return;
+      // horizontal scale swings through zero and back: reads as the coin flipping edge-on.
+      // Never allowed to reach exactly 0 — a zero-scale matrix is singular and some canvas
+      // implementations drop the whole draw for that frame.
+      const flip = Math.cos(p*Math.PI*2);
+      const sx = flip < 0 ? Math.min(-0.08, flip) : Math.max(0.08, flip);
+      deformAboutFeet(ctx, R, 0, sx, 1 + 0.05*p);
+    }
+  },
+  // ---- Golf Ball — precision is the character. ----
+  "Golf Ball": {
+    idle: 0.5, squash: 0.35,
+    deform(f, ctx, R){
+      const p = atkPulse(f);
+      if(!p) return;
+      deformAboutFeet(ctx, R, f.face*0.10*p, 1 + 0.04*p, 1 - 0.03*p);
+    }
+  },
+  // ---- Book — the move IS the silhouette: she snaps shut. ----
+  Book: {
+    deform(f, ctx, R){
+      const p = atkPulse(f);
+      if(!p) return;
+      // flare open early in the swing, then slam narrow on the hit
+      const open = Math.sin(p*Math.PI);
+      deformAboutFeet(ctx, R, 0, 1 + 0.22*open - 0.34*p, 1 + 0.10*p);
+    }
+  },
+  // ---- Ruby — a gem catches the light while she winds up. ----
+  Ruby: {
+    idle: 0.85,
+    deform(f, ctx, R){
+      const p = atkPulse(f);
+      if(!p) return;
+      deformAboutFeet(ctx, R, 0, 1 + 0.12*p, 1 - 0.06*p);
+    },
+    over(f, ctx){
+      const c = chargeK(f);
+      if(c <= 0) return;
+      // facet glints: four sparks pulsing brighter as the smash charges
+      const t = hazardT*0.25;
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.globalAlpha = 0.35 + 0.55*c;
+      for(let i=0;i<4;i++){
+        const a = t + i*1.57;
+        const rad = f.r*(0.9 + 0.25*Math.sin(t*2 + i));
+        const x = Math.cos(a)*rad, y = Math.sin(a)*rad*0.8;
+        const s = 3 + 3*c;
+        ctx.beginPath(); ctx.moveTo(x-s, y); ctx.lineTo(x+s, y);
+        ctx.moveTo(x, y-s); ctx.lineTo(x, y+s); ctx.stroke();
+      }
+    }
+  },
+  // ---- Snowball — the heaviest anticipation in the batch. ----
+  Snowball: {
+    squash: 1.15,
+    deform(f, ctx, R){
+      if(!(f._atkAnim > 0)) return;
+      const p = atkPulse(f);
+      // atkPulse is a SYMMETRIC 0->1->0 pulse, so it cannot tell the start of a swing from the end
+      // — an early check against it leans the same way both times and the anticipation disappears.
+      // _atkAnim counts DOWN from ATK_ANIM, so raw progress is what separates wind-back from
+      // follow-through.
+      const phase = 1 - (f._atkAnim / ATK_ANIM);       // 0 at the start of the swing, 1 at the end
+      const lean = f.face * (phase < 0.4 ? -0.20*(1 - phase/0.4) : 0.34*((phase-0.4)/0.6));
+      deformAboutFeet(ctx, R, lean, 1 + 0.14*p, 1 - 0.10*p);
+    }
+  },
+  // ---- Flower — the tantrum is the character. ----
+  Flower: {
+    deform(f, ctx, R){
+      const p = atkPulse(f);
+      const c = chargeK(f);
+      if(!p && !c) return;
+      // rage tremor while charging, on top of the swing lean
+      const shake = c > 0 ? Math.sin(hazardT*1.5)*0.06*c : 0;
+      deformAboutFeet(ctx, R, f.face*0.22*p + shake, 1 + 0.10*p, 1 - 0.06*p);
+    }
+  },
+  // ---- Tennis Ball — pressurised rubber, the bounciest read in the cast. ----
+  "Tennis Ball": {
+    idle: 0.9, squash: 1.45,
+    deform(f, ctx, R){
+      const p = atkPulse(f);
+      if(!p) return;
+      deformAboutFeet(ctx, R, 0, 1 + 0.16*p, 1 - 0.14*p);
+    }
+  },
+  // ---- Gelatin — never fully still. ----
+  Gelatin: {
+    squash: 1.5,
+    deform(f, ctx, R){
+      // a permanent low wobble, spiking on the swing and settling again
+      const p = atkPulse(f);
+      const amp = 0.035 + 0.10*p;
+      const w = Math.sin(hazardT*0.28 + f.idx);
+      deformAboutFeet(ctx, R, w*0.05*(0.35 + p), 1 + amp*w, 1 - amp*w);
+    }
+  },
+
   // ---- Leafy — Sharp Shadow dash: the whole body becomes a leaf-blade knifing
   //      through the air along the dash vector (diagonal when down/up-dashing). ----
   Leafy: {
@@ -9673,5 +9803,12 @@ try{ autoJoinFromLink(); }catch(e){}   // opened via a shared ...#room=ABCD invi
 // location.hash, so this only ever fires on a real user action.
 window.addEventListener('hashchange', ()=>{ try{ autoJoinFromLink(); }catch(e){} });
 </script>
+<!-- Vercel Web Analytics. Same-origin by design: the script is served from this deployment, not a
+     third-party CDN, so it adds no external request and nothing here can be blocked as a tracker.
+     It is cookie-free and stores no personal data, which is why the game needs no consent banner.
+     Counts pageviews/visitors from the moment it ships — it cannot backfill the period before.
+     Requires "Web Analytics" to be ENABLED for the project in the Vercel dashboard; without that
+     the path 404s harmlessly and the game is unaffected. -->
+<script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

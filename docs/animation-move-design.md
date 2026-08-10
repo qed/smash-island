@@ -255,3 +255,34 @@ A note on color: nearly all hex values below are **approximate** reconstructions
 This document covers the **first batch of 12 fighters**: Firey, Leafy, Bubble, Blocky, Pen, Pencil, Match, Ice Cube, Puffball, Teardrop, Bomby, and Rocky.
 
 The remaining **~47 fighters** in the full BFDI roster are planned as a **follow-up batch** and are not yet documented here.
+
+---
+
+# Batch 2 — animation specs
+
+The sections above carry full seven-slot move tables. Those describe **gameplay that already
+exists in the engine**; what the roster is missing is the *animation language*. So from batch 2 on
+this doc records the column `FIGHTER_ANIM` actually consumes — a character trait, an attack beat,
+and where relevant a charge beat — each still anchored to something canon.
+
+**Read before adding an entry:** reach for `deform` first. `body` throws the character render away,
+and now that all 59 fighters use official art that is almost never what you want. `deform` changes
+the silhouette while keeping the art, pivoted on the feet so nothing lifts off the floor.
+
+| Fighter | Trait (idle / squash) | Attack beat | Charge / special beat | Grounding |
+|---|---|---|---|---|
+| **Needle** | Stiff and minimal — damped idle, low squash. She is a rigid steel pin, not rubber. | A fast, flat forward jab: she barely deforms, she just *arrives*. | — | Canonically terse and easily irritated; slaps anyone who calls her "Needy". Her whole read is economy of motion. |
+| **Pin** | Low squash — pointed and hard. | Leans point-first into the swing, tipping forward on the feet so the sharp end leads. | — | She is literally a pin; her threat is the point, and she is the pushy, take-charge Squashy Grapes leader. |
+| **Coiny** | Normal idle, moderate squash — thin flat metal. | **Flips edge-on** through the swing: horizontal scale passes through zero and back, the way a tossed coin turns over. | — | He is a coin, and the coin-flip is the one motion the object itself suggests. Also the 299-slap Firey feud — his attack should read as *fast*. |
+| **Golf Ball** | Damped idle, low squash — a hard dimpled sphere that does not wobble. | Clinical: a small, precise lean with no follow-through overshoot. | — | The control-freak perfectionist. Precision is the character; sloppy motion would read as wrong. |
+| **Book** | Normal idle, moderate squash. | **Snaps shut** — flares open a touch on the wind-up, then slams narrow on the hit. | — | Her canon attack is closing on things. The silhouette change *is* the move. |
+| **Ruby** | Light idle, normal squash. | Small bright lean. | On a held smash, **facet glints** spark around her while she charges. | A gem — she should catch light. Ditzy and sparkly in temperament too. |
+| **Snowball** | Normal idle, high squash — he is packed snow thrown at speed. | Big **wind-back then lunge**: the most anticipation in the batch, so the tackle reads as heavy. | — | The roster's aggressive brute; his moveset is tackling. Weight needs to be visible before contact. |
+| **Flower** | Normal idle, normal squash. | Sharp lean. | While charging she **shakes with rage**, petals trembling. | Vain and quick-tempered — throwing a tantrum is her most characteristic state. |
+| **Tennis Ball** | Light idle, **high squash** — a pressurised rubber ball. | Springy lean. | — | He is a tennis ball; he should be the bounciest silhouette in the cast. |
+| **Gelatin** | Normal idle, **highest squash**, plus a constant low-amplitude **wobble** even at rest. | Wobble amplitude spikes on the swing and settles. | — | He is a block of jelly. Nothing about him should ever be fully still. |
+
+**Verification:** the motion-energy harness from batch 1 measures each state's pixel delta, so
+"these are genuinely distinct" is a measurement, not an opinion. Every entry must also survive the
+existing headless draw sweep (flash / burn / yoyle / star / invuln / mirrored / rising / falling /
+landing), which is what catches an animation that throws only in one rare state.
