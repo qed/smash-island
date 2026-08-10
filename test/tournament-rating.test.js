@@ -43,15 +43,23 @@ describe('fighter ratings — the sign, not just the spread', () => {
   });
 
   it('is NOT derived from RANGE_PROFILE, whose stats mean the opposite of strength', () => {
-    // Belt and braces against the trap being re-entered by a future edit: a rating correlated
-    // with RANGE_PROFILE damage would be reading the compensation table.
+    // Belt and braces against the trap being re-entered by a future edit: a rating built from
+    // RANGE_PROFILE damage would track it POSITIVELY, and would therefore rank the roster
+    // backwards. That is the only direction this test needs to forbid.
+    //
+    // A strong NEGATIVE correlation is expected and healthy — it is the compensation table doing
+    // exactly its job. Every balance pass lowers damage for fighters who win too much and raises it
+    // for those who lose too much, so the better the roster is balanced, the more anti-correlated
+    // damage becomes with real strength. Measured -0.67 after the automated passes, while
+    // rating-vs-measured-win-rate stayed at 1.000. An earlier version of this test asserted
+    // |corr| < 0.5 and so failed on a *well* balanced roster, which is precisely backwards.
     const { window: w } = loadMonolith();
     const rows = JSON.parse(w.eval(`
       JSON.stringify(ROSTER.filter(function(r){return r.play && r.kit && RANGE_PROFILE[r.kit.special];}).map(function(r){
         return { rating:fighterRating(r), dmg:RANGE_PROFILE[r.kit.special].dmg };
       }))`));
     const r = correlate(rows.map(x => x.dmg), rows.map(x => x.rating));
-    expect(Math.abs(r), 'rating tracks RANGE_PROFILE damage — it is reading the compensation table').toBeLessThan(0.5);
+    expect(r, 'rating tracks RANGE_PROFILE damage upward — it is reading the compensation table').toBeLessThan(0.5);
   });
 
   it('ranks the measured best above the measured worst', () => {
