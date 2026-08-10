@@ -255,3 +255,51 @@ A note on color: nearly all hex values below are **approximate** reconstructions
 This document covers the **first batch of 12 fighters**: Firey, Leafy, Bubble, Blocky, Pen, Pencil, Match, Ice Cube, Puffball, Teardrop, Bomby, and Rocky.
 
 The remaining **~47 fighters** in the full BFDI roster are planned as a **follow-up batch** and are not yet documented here.
+
+---
+
+# Batch 2 — animation specs
+
+The sections above carry full seven-slot move tables. Those describe **gameplay that already
+exists in the engine**; what the roster is missing is the *animation language*. So from batch 2 on
+this doc records the column `FIGHTER_ANIM` actually consumes — a character trait, an attack beat,
+and where relevant a charge beat — each still anchored to something canon.
+
+**Read before adding an entry:** reach for `deform` first. `body` throws the character render away,
+and now that all 59 fighters use official art that is almost never what you want. `deform` changes
+the silhouette while keeping the art, pivoted on the feet so nothing lifts off the floor.
+
+| Fighter | Trait (idle / squash) | Attack beat | Charge / special beat | Grounding |
+|---|---|---|---|---|
+| **Needle** | Stiff and minimal — damped idle, low squash. She is a rigid steel pin, not rubber. | A fast, flat forward jab: she barely deforms, she just *arrives*. | — | Canonically terse and easily irritated; slaps anyone who calls her "Needy". Her whole read is economy of motion. |
+| **Pin** | Low squash — pointed and hard. | Leans point-first into the swing, tipping forward on the feet so the sharp end leads. | — | She is literally a pin; her threat is the point, and she is the pushy, take-charge Squashy Grapes leader. |
+| **Coiny** | Normal idle, moderate squash — thin flat metal. | **Flips edge-on** through the swing: horizontal scale passes through zero and back, the way a tossed coin turns over. | — | He is a coin, and the coin-flip is the one motion the object itself suggests. Also the 299-slap Firey feud — his attack should read as *fast*. |
+| **Golf Ball** | Damped idle, low squash — a hard dimpled sphere that does not wobble. | Clinical: a small, precise lean with no follow-through overshoot. | — | The control-freak perfectionist. Precision is the character; sloppy motion would read as wrong. |
+| **Book** | Normal idle, moderate squash. | **Snaps shut** — flares open a touch on the wind-up, then slams narrow on the hit. | — | Her canon attack is closing on things. The silhouette change *is* the move. |
+| **Ruby** | Light idle, normal squash. | Small bright lean. | On a held smash, **facet glints** spark around her while she charges. | A gem — she should catch light. Ditzy and sparkly in temperament too. |
+| **Snowball** | Normal idle, high squash — he is packed snow thrown at speed. | Big **wind-back then lunge**: the most anticipation in the batch, so the tackle reads as heavy. | — | The roster's aggressive brute; his moveset is tackling. Weight needs to be visible before contact. |
+| **Flower** | Normal idle, normal squash. | Sharp lean. | While charging she **shakes with rage**, petals trembling. | Vain and quick-tempered — throwing a tantrum is her most characteristic state. |
+| **Tennis Ball** | Light idle, **high squash** — a pressurised rubber ball. | Springy lean. | — | He is a tennis ball; he should be the bounciest silhouette in the cast. |
+| **Gelatin** | Normal idle, **highest squash**, plus a constant low-amplitude **wobble** even at rest. | Wobble amplitude spikes on the swing and settles. | — | He is a block of jelly. Nothing about him should ever be fully still. |
+
+**Verification:** the motion-energy harness from batch 1 measures each state's pixel delta, so
+"these are genuinely distinct" is a measurement, not an opinion. Every entry must also survive the
+existing headless draw sweep (flash / burn / yoyle / star / invuln / mirrored / rising / falling /
+landing), which is what catches an animation that throws only in one rare state.
+
+## Batch 3
+
+Same contract as batch 2: `deform` first, canon-anchored, allocation-free.
+
+| Fighter | Trait (idle / squash) | Attack beat | Charge / resting beat | Grounding |
+|---|---|---|---|---|
+| **Marker** | Normal idle, low squash — a hard plastic barrel. | Nib-first stab, tipping forward so the writing end leads. | — | He is a marker; the nib is the business end, and his kit is an ink debilitator. |
+| **Money** | Light idle, **high squash** — he is paper. | Flutters: the swing ripples him rather than swinging a limb. | A constant slow paper **flutter** even at rest. | A bill has no rigidity. Nothing about him should move like a solid object. |
+| **Naily** | Damped idle, **lowest squash** in the batch — hardened steel. | A short, violent **hammer-drive** forward: almost no wind-up, all impact. | — | A nail does one thing, and it is driven. Sharper and angrier than Needle. |
+| **Pillow** | Normal idle, **highest squash in the cast** — softer than Gelatin. | Deep soft compression that settles slowly rather than snapping back. | — | She is stuffed fabric. Her canon gimmick is absorbing hits and growing stronger per KO. |
+| **Remote** | Damped idle, low squash — rigid moulded plastic. | Small stiff jab. | While charging, a **signal pulse** blinks out from the emitter. | A remote control does not deform; it *transmits*. The pulse is the character. |
+| **Rose** | Normal idle, normal squash. | Thorn lash — a whipping lean with the bloom trailing. | — | Elegant and thorned; the flower should trail behind the strike. |
+| **Saw** | Damped idle, low squash. | **Spins.** Full rotation through the swing, accelerating into contact. | Slow idle rotation drift while charging. | She is a circular saw blade. Rotation is the only motion the object has. |
+| **Taco** | Normal idle, moderate squash. | Shell **hinges open then claps shut** — softer and wobblier than Book's snap. | — | A folded shell with a hinge; the fold is the silhouette. |
+| **TV** | Damped idle, low squash. | Stiff jab with a **glitch** — brief horizontal tearing on contact. | Occasional static tear at rest. | A CRT that shows static. The tear is the single most television thing available. |
+| **Woody** | Normal idle, normal squash. | Flinches **away** as he attacks — commits to nothing. | A constant nervous **tremble that grows with his damage**. | Canonically the most fearful character in the show; his fear should be visible and should worsen as he takes damage. |
