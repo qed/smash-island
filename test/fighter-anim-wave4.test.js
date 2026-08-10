@@ -393,3 +393,53 @@ describe('Wave 4 — an attack is never invisible', () => {
     expect(flat, 'fighters whose entire swing is invisible on some frames').toEqual([]);
   });
 });
+
+describe('Wave 4 — a big rotation must pivot on the centre, not the feet', () => {
+  it('never feet-pivots a turn large enough to throw the body off its own feet', () => {
+    // Found by looking at the canvas: Saw's full 360 spin was applied with deformAboutFeet, which
+    // pivots where a fighter STANDS. That is right for a lean and catastrophic for a turn — at a
+    // half-turn the body swings in a circle AROUND the foot point, and she visibly orbited off the
+    // platform. Anything past a quarter-turn belongs on deformAboutCentre.
+    //
+    // deformAboutFeet always emits translate/rotate/translate; deformAboutCentre emits a bare
+    // rotate. So the rule is checkable straight off the op list.
+    const { window: w } = loadMonolith();
+    w.eval(RECORDER);
+    const offenders = w.eval(`
+      (function(){
+        var names = ${JSON.stringify(WAVE_4)}, out = [];
+        for (var n=0;n<names.length;n++){
+          for (var t=ATK_ANIM; t>=0; t--){
+            for (var ht=0; ht<8; ht++){
+              hazardT = ht*3;
+              var ops = window.__deform(names[n], function(f){ f._atkAnim = t; f.smashHold = 0; });
+              var bigTurn = false, translated = false;
+              for (var i=0;i<ops.length;i++){
+                if (ops[i][0]==='rotate' && Math.abs(ops[i][1]) > 0.7) bigTurn = true;
+                if (ops[i][0]==='translate') translated = true;
+              }
+              if (bigTurn && translated) { out.push(names[n]); t = -1; break; }
+            }
+          }
+        }
+        return out;
+      })()`);
+    expect(offenders, 'large rotations applied about the feet').toEqual([]);
+  });
+
+  it('Saw is the one that turns far enough to need it', () => {
+    // Guards the test above from silently becoming vacuous if Saw's spin is ever tuned away.
+    const { window: w } = loadMonolith();
+    w.eval(RECORDER);
+    const maxTurn = w.eval(`
+      (function(){
+        var m = 0;
+        for (var t=ATK_ANIM; t>=0; t--){
+          var ops = window.__deform('Saw', function(f){ f._atkAnim = t; });
+          for (var i=0;i<ops.length;i++) if (ops[i][0]==='rotate') m = Math.max(m, Math.abs(ops[i][1]));
+        }
+        return m;
+      })()`);
+    expect(maxTurn, 'Saw still spins past a quarter turn').toBeGreaterThan(0.7);
+  });
+});

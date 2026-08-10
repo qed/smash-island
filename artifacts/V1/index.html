@@ -5045,7 +5045,7 @@ const RANGED_ATTACKERS = {
 // How many frames the attack lunge plays for. RENDER-ONLY: `_atkAnim` is set at every attack entry
 // point below and read only by spriteRig, which uses it both to time the lunge AND to tell an
 // attack's white flash apart from a victim's (see the rig's state-machine note).
-const ATK_ANIM = 13;
+const ATK_ANIM = 18;   // render-only pulse length. 13 frames (0.2s) was too brief to read at sprite size.
 // …and how long the took-a-hit reaction plays for. `_hurtAnim` is set in applyHit and nowhere else,
 // which makes it the ONE unambiguous "was hit" signal: `flash` is set by attacker and victim alike,
 // and a fighter hit in the middle of its own swing has both _atkAnim and _hurtAnim running.
@@ -7518,6 +7518,14 @@ function leafBladePath(ctx, L, Wd){
 // Push a transform onto a render that pivots on its FEET (y = R+12, the line it stands on), the
 // same anchor the shared rig uses — so a lean or a stretch never lifts the character off the floor.
 // Used by the `deform` passes below. Numbers only, no allocation.
+// Rotate about the fighter's CENTRE instead of their feet. deformAboutFeet is right for a lean —
+// a lean pivots where you stand — but it is wrong for anything that turns all the way round: at
+// 360° a feet-pivoted rotation swings the whole body in a circle AROUND the foot point, so Saw
+// spinning up left her orbiting off the stage instead of spinning in place. Anything that turns
+// more than about a quarter-turn wants this one.
+function deformAboutCentre(ctx, R, ang){
+  if(ang) ctx.rotate(ang);
+}
 function deformAboutFeet(ctx, R, ang, sx, sy){
   const feet = R + 12;
   ctx.translate(0, feet);
@@ -7739,7 +7747,9 @@ const FIGHTER_ANIM = {
       const spin = (f._atkAnim > 0)
         ? f.face * Math.PI * 2 * Math.pow(1 - (f._atkAnim/ATK_ANIM), 1.6)
         : f.face * (hazardT % 360) * 0.02 * c;
-      deformAboutFeet(ctx, R, spin, 1, 1);
+      // about the CENTRE, not the feet — a blade spins in place; a feet pivot threw her in a
+      // circle around her own foot and off the platform.
+      deformAboutCentre(ctx, R, spin);
     }
   },
   // ---- Taco — the fold is the silhouette. ----
@@ -8789,21 +8799,29 @@ function spriteRig(f, R, sp, anim){
       const k = (hazardT + f.idx*37) % 144; // ~2.4s apart, staggered per fighter
       if(k < 5){ const q = Math.sin(k/5*Math.PI)*q0; sy -= q*0.11; sx += q*0.06; }
     }
+    // COMBAT STANCE. Every official render is a neutral standing pose, so a fighter at rest reads
+    // as waiting for a bus rather than as being in a fight. A permanent lean into the direction
+    // faced, on a braced wider base, makes the whole cast look ready without touching the artwork
+    // — and it costs nothing per fighter. Idle only: any real motion state overrides it.
+    rock += f.face * 0.085;
+    sx += 0.05; sy -= 0.03;
     state = "idle";
   }
 
   // ---- ATTACK / CHARGE — layered ON TOP of whatever the fighter's feet are doing ----
   if(f._atkAnim > 0){                      // snap forward, then recoil back to neutral
     const p = Math.sin((f._atkAnim/ATK_ANIM)*Math.PI);
-    lunge = f.face * p * R * 0.34;
-    rock += f.face * p * 0.14;
-    sx += p*0.10; sy -= p*0.08;
+    // Was 0.34 — about 8px of travel on a 67px-tall sprite, which measured as "working" and read
+    // as nothing at all in play. The swipe arc does most of the work now; this carries the body.
+    lunge = f.face * p * R * 0.62;
+    rock += f.face * p * 0.26;
+    sx += p*0.18; sy -= p*0.14;
     state = "attack";
   } else if(f.smashHold > 0){              // wind BACK while the smash charges — anticipation
     const c = f.smashHold/45; const cc = c>1?1:c;
-    lunge = -f.face * cc * R * 0.14;
-    rock -= f.face * cc * 0.09;
-    sy -= cc*0.10; sx += cc*0.08;
+    lunge = -f.face * cc * R * 0.26;
+    rock -= f.face * cc * 0.17;
+    sy -= cc*0.16; sx += cc*0.13;
     state = "charge";
   }
   // ---- HITSTUN — a shake that decays as the reaction wears off. This wins over `attack`: being
@@ -8975,6 +8993,16 @@ function drawFighter(f){
     ctx.beginPath(); ctx.moveTo(0,-f.r-16); ctx.lineTo(-7,-f.r-6); ctx.lineTo(7,-f.r-6); ctx.closePath(); ctx.fill(); ctx.stroke(); }
   if(f.smashHold>0){ ctx.strokeStyle="#ffd23f"; ctx.lineWidth=3; ctx.globalAlpha=0.8;
     ctx.beginPath(); ctx.arc(0,0,f.r+6,0,7*(f.smashHold/45)); ctx.stroke(); }
+  // ---- SHARED ACTION OVERLAYS ----
+  // Measured, not guessed: a fighter's render is only about 67px tall on screen, so the per-
+  // character deforms (4-12% scale, ~0.2rad) move roughly FIVE pixels for 13 frames. They were
+  // working exactly as written and were still not readable in play — "I'm not seeing any attack
+  // animations" was correct. Deform alone cannot fix that at this sprite size; the eye needs
+  // punctuation it can catch, so every attack now throws a swipe and every sprint kicks dust.
+  // Both are pure render: nothing is pushed to `particles`, so the sim, netcode and goldens are
+  // untouched (which is why this cannot use puff()).
+  if(f._atkAnim > 0){ ctx.save(); drawSwipeArc(f); ctx.restore(); }
+  if(f.onground !== false && Math.abs(f.vx||0) > 4){ ctx.save(); drawRunDust(f); ctx.restore(); }
   // POST-BODY pass: overlays/effects (trails, afterimages, glows) in unscaled space
   if(anim && anim.over){ ctx.save(); anim.over(f, ctx); ctx.restore(); }
   // ---- NAMETAG: name label above the head so you always know who's who ----
@@ -9005,6 +9033,54 @@ function drawFighter(f){
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
   ctx.restore();
+}
+// A swipe arc thrown in the direction of the swing. This is what actually makes an attack read at
+// gameplay size — it is large (well outside the body), bright, and lasts the whole swing, none of
+// which is true of a few pixels of scale on the sprite itself. Pure render, no particles.
+function drawSwipeArc(f){
+  const R = f.r;
+  const t = f._atkAnim / ATK_ANIM;          // 1 at the start of the swing -> 0 at the end
+  const p = Math.sin(t*Math.PI);            // fade in and out
+  if(p <= 0.02) return;
+  const dir = f.face < 0 ? -1 : 1;
+  // The arc sweeps from high to low across the swing, like a blade coming down and through.
+  const sweep = (1 - t) * 2.1 - 1.05;       // -1.05 -> +1.05 rad
+  const rad = R * (1.35 + 0.35*(1 - t));
+  ctx.globalAlpha = 0.85 * p;
+  ctx.strokeStyle = f.smashHold > 0 ? "#ffd23f" : "#ffffff";
+  ctx.lineCap = "round";
+  for(let i=0;i<2;i++){
+    ctx.lineWidth = (i ? 3 : 7) * (0.5 + 0.5*p);
+    ctx.globalAlpha = (i ? 0.9 : 0.45) * p;
+    ctx.beginPath();
+    ctx.arc(dir*R*0.35, -R*0.15, rad - i*2, sweep - 0.55, sweep + 0.55, false);
+    ctx.stroke();
+  }
+  // a bright leading tick at the head of the arc, so the direction is unmistakable
+  ctx.globalAlpha = p;
+  ctx.lineWidth = 3;
+  const hx = dir*R*0.35 + Math.cos(sweep + 0.55)*rad;
+  const hy = -R*0.15 + Math.sin(sweep + 0.55)*rad;
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + dir*R*0.28, hy); ctx.stroke();
+}
+// Dust kicked up by a sprint. The run rig bobs the sprite by ~4px, which reads as "moving" but not
+// as "running"; contact with the ground is what sells speed.
+function drawRunDust(f){
+  const R = f.r, dir = f.vx < 0 ? -1 : 1;
+  const feet = R + 10;
+  ctx.fillStyle = "#ffffff";
+  for(let i=0;i<3;i++){
+    // deterministic per-frame phase — no Math.random in a draw pass, so replays stay identical
+    const k = ((hazardT*0.35 + i*0.66 + f.idx*0.21) % 1);
+    const a = 1 - k;
+    if(a <= 0) continue;
+    ctx.globalAlpha = 0.42 * a;
+    const px = -dir * (6 + k*R*1.5);
+    const py = feet - k*R*0.35;
+    ctx.beginPath();
+    ctx.arc(px, py, 2 + k*4, 0, 7);
+    ctx.fill();
+  }
 }
 function roundBlob(x,y,r){ ctx.beginPath();
   ctx.moveTo(x-r,y-r*0.4);

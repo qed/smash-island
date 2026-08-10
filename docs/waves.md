@@ -73,6 +73,20 @@ Wave 4 gives the other 47 their own.
 
 **Risk:** 47 hooks in one 9,000-line file. Batches must land sequentially.
 
+## Queued — art and effects (owner-requested)
+
+Not yet scheduled into a wave; recorded so it is not lost.
+
+1. **Boss sprites and animations.** The bosses still draw procedurally — `BOSS_SPRITE_IMG` is an
+   empty hook already waiting for art, so the wiring exists. They are the only cast left without
+   renders now that all 59 fighters have them.
+2. **Projectile sprites.** Projectiles are flat coloured circles. Every special that throws
+   something is currently represented by a dot.
+3. **Sprite / attack coherence — the owner's rule.** Where a sprite does not fit the move it is
+   attached to, change the RELATIONSHIP rather than forcing the art: adjust the attack, its type,
+   its effect, or its lore justification so that what you see matches what it does. The art is the
+   fixed point; the move description bends to it.
+
 ## Wave 5 — The AI learns you
 
 Two halves of one idea: an AI that is *about* the player rather than a generic difficulty slider.
