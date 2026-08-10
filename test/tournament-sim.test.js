@@ -148,13 +148,18 @@ describe('World Cup — watched group fixtures run long enough to be a match', (
     // Every fixture the player does not watch is resolved by simGroupMatch, a statistical roll
     // with no clock at all. Lengthening the watched match must not change a single auto result.
     const { window: w } = loadMonolith();
+    // The seed is installed BEFORE startTournament, so both runs draw the same 48 teams.
+    // This used to reseed afterwards, which worked only because teamStrength was blind to fighter
+    // identity — every lineup produced identical rolls. Now that the sim rates real fighters, two
+    // runs with different teams legitimately differ, and seeding late would be comparing rosters
+    // rather than clock lengths.
     const roll = (limit) => {
+      w.eval(`Math.random = (function(){ var s = 12345; return function(){
+        s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }; })();`);
       startTourney(w);
       return w.eval(`
         (function(){
           TOURNEY_TIME_LIMIT = ${limit};
-          Math.random = (function(){ var s = 12345; return function(){
-            s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }; })();
           var g = TOURNEY.fixtures.filter(function(f){ return f.kind === 'group'; }).slice(0, 12);
           return g.map(function(fx){ var r = simGroupMatch(fx); return r.sa + ':' + r.sb; }).join(',');
         })()`);

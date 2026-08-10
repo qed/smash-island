@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { loadMonolith } from './helpers/load-monolith.js';
 import { spyMediaConstructors } from './helpers/harness.js';
@@ -109,11 +109,32 @@ describe('sprite registry', () => {
     }
   });
 
-  it('leaves every uncovered fighter on the blob fallback', () => {
+  it('gives every entry a working fallback, so a missing render is never a blank fighter', () => {
+    // This replaced an assertion that SOME fighter still had no entry at all. That was only ever a
+    // proxy for the thing that actually matters: the vector path has to survive, because it is what
+    // draws during the decode of the very first frame and FOREVER if a PNG 404s. Now that the whole
+    // roster has art, the proxy is meaningless but the invariant is more important than ever.
     const { window: w } = loadMonolith();
-    const uncovered = w.eval(`ROSTER.filter(r=>!SPRITES[r.name]).map(r=>r.name)`);
-    expect(uncovered.length, 'the rest of the roster still falls back').toBeGreaterThan(0);
-    expect(uncovered).not.toContain('Firey');
+    const broken = w.eval(`
+      Object.keys(SPRITES).filter(function(k){
+        var s = SPRITES[k];
+        return typeof s.path !== 'function' || typeof s.draw !== 'function';
+      })`);
+    expect(broken, 'entries that would render nothing without their PNG').toEqual([]);
+    // and every fighter the player can pick is covered
+    const uncovered = w.eval(`ROSTER.filter(function(r){ return r.play && !SPRITES[r.name]; }).map(function(r){ return r.name; })`);
+    expect(uncovered, 'playable fighters with no sprite entry').toEqual([]);
+  });
+
+  it('points every entry at a render file that actually exists', () => {
+    // A typo in a generated src is invisible in play — the fighter just silently stays a blob.
+    const { window: w } = loadMonolith();
+    const srcs = w.eval(`Object.keys(SPRITES).map(function(k){ return [k, SPRITES[k].src||'']; })`);
+    const missing = srcs
+      .filter(([, src]) => src)
+      .filter(([, src]) => !existsSync(`artifacts/V1/${src}`))
+      .map(([name, src]) => `${name} -> ${src}`);
+    expect(missing, 'sprite entries pointing at files that are not there').toEqual([]);
   });
 
   it('constructs no Image while the monolith is parsed', () => {
@@ -167,15 +188,24 @@ describe('drawing sprite fighters headlessly', () => {
   });
 
   it('renders sprite and blob fighters side by side in one frame', () => {
+    // Both code paths must survive the same frame. The cast is chosen at runtime rather than
+    // hard-coded: sprite coverage grows a set at a time, so naming today's blob fighters here
+    // just means this test fails the day they are given art — which is not a defect.
     const { window: w } = loadMonolith();
     w.eval(`
       SETTINGS.count = 4; startMatch();
       fighters.length = 0;
-      ['Firey','Needle','Ice Cube','Snowball'].forEach((n,i)=>{
-        fighters.push(makeFighter(ROSTER.find(x=>x.name===n), 200+i*80, 300, i));
+      var withArt = ROSTER.filter(function(r){ return r.play && SPRITES[r.name]; }).slice(0,2);
+      var noArt   = ROSTER.filter(function(r){ return r.play && !SPRITES[r.name]; }).slice(0,2);
+      // If the whole roster ends up with art, force the fallback path anyway by giving a fighter a
+      // name the registry does not know — that path still runs for every pre-decode first frame.
+      while(noArt.length < 2) noArt.push(Object.assign({}, withArt[0], { name:'Unregistered'+noArt.length }));
+      withArt.concat(noArt).forEach(function(r,i){
+        fighters.push(makeFighter(r, 200+i*80, 300, i));
       });
     `);
-    expect(w.eval('fighters.map(f=>!!SPRITES[f.name])')).toEqual([true, false, true, false]);
+    const hasArt = w.eval('fighters.map(function(f){ return !!SPRITES[f.name]; })');
+    expect(hasArt, 'the frame must mix sprite and blob fighters').toEqual([true, true, false, false]);
     expect(() => w.eval('draw()')).not.toThrow();
   });
 
@@ -591,7 +621,18 @@ describe('drawing sprite fighters headlessly', () => {
   it('flips exactly the renders the facing audit called left-facing', () => {
     const { window: w } = loadMonolith();
     const flipped = w.eval(`Object.keys(SPRITES).filter(k=>SPRITES[k].flip)`).sort();
-    expect(flipped, 'the audited four, and only those').toEqual(['Blocky', 'Firey', 'Ice Cube', 'Rocky']);
+    // The batch-1 four were audited by hand and must stay flipped.
+    for (const n of ['Blocky', 'Firey', 'Ice Cube', 'Rocky']) {
+      expect(flipped, `${n} was measured as left-facing`).toContain(n);
+    }
+    // Every later render's flag has to match what was MEASURED when it was fetched — a hand-edited
+    // flip that disagrees with the manifest means someone eyeballed it and got it backwards.
+    const manifest = JSON.parse(readFileSync('scripts/sprite-manifest.json', 'utf8'));
+    const disagreements = Object.values(manifest)
+      .filter(r => r.ok)
+      .filter(r => !!w.eval(`!!(SPRITES[${JSON.stringify(r.name)}]||{}).flip`) !== !!r.flip)
+      .map(r => `${r.name}: registry says ${!r.flip} but facing measured ${r.facing}`);
+    expect(disagreements, 'flip flags that contradict the measured facing').toEqual([]);
     // the flag is render-only: vector art is authored +x-forward and must never consult it
     for (const name of BATCH_1) {
       const v = w.eval(`SPRITES[${JSON.stringify(name)}].flip`);
