@@ -1,7 +1,11 @@
 // ============================================================================
 //  auto-balance.mjs — apply one data-driven balance pass from a measurement
 // ============================================================================
-//   node scripts/auto-balance.mjs scripts/ranking.json [--dry]
+//   node scripts/auto-balance.mjs scripts/run1.json scripts/run2.json ... [--dry]
+//
+// PASS SEVERAL RUNS OF THE SAME BUILD. One run cannot resolve anything finer than about 20
+// percentage points (see scripts/balance-noise.mjs), so a pass built on a single run is mostly
+// noise. Runs are POOLED, and the dead band shrinks as 1/sqrt(k) with the number supplied.
 //
 // Reads a ranking produced by balance-tournament.mjs and nudges the two levers a balance pass has:
 // per-fighter WEIGHT (survivability, koCap = 150 + w) and the fighter's RANGE_PROFILE entry
@@ -29,18 +33,44 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const MONOLITH = 'artifacts/V1/index.html';
 const DRY = process.argv.includes('--dry');
 const src = process.argv[2];
-if (!src) { console.error('usage: node scripts/auto-balance.mjs <ranking.json> [--dry]'); process.exit(1); }
+if (!src) { console.error('usage: node scripts/auto-balance.mjs <ranking.json> [...] [--dry]'); process.exit(1); }
 
 // ---- tuning constants -------------------------------------------------------------------------
-const DEAD_BAND = 0.055;   // |winRate - mean| below this is treated as noise and left alone
+// MEASURED, not chosen. scripts/balance-noise.mjs ran the SAME build twice and found a median
+// run-to-run swing of 7.5pp and a 90th percentile of 20pp with nothing changed at all — Woody
+// alone moved 35pp between identical builds. A dead band under that is not conservatism, it is
+// chasing dice, and it is why pass 4 moved fighters that had simply rolled well.
+//
+// The band therefore scales with how many runs are averaged: noise falls as 1/sqrt(k).
+const BASE_DEAD_BAND = 0.16;
 const W_STEP = 6;          // weight points per pass
 const W_MIN = 40, W_MAX = 145;
 const DMG_MIN = 3, DMG_MAX = 13;
 const KB_MIN = 4, KB_MAX = 12;
 const REACH_MIN = -2, REACH_MAX = 26;
-const MIN_GAMES = 12;      // below this the sample is too thin to act on at all
+const MIN_GAMES = 12;      // below this the sample is too thin to act on at all (per run, pooled)
 
-const ranking = JSON.parse(readFileSync(src, 'utf8')).ranking;
+// Average every ranking supplied. This is the single most important change to how balancing works
+// here: one run cannot resolve anything finer than ~20pp, so a pass built on one run is mostly
+// noise. Averaging k runs divides the per-fighter sigma by sqrt(k).
+const files = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const runs = files.map(f => JSON.parse(readFileSync(f, 'utf8')).ranking);
+const K = runs.length;
+const DEAD_BAND = BASE_DEAD_BAND / Math.sqrt(K);
+const agg = {};
+for (const r of runs) {
+  for (const row of r) {
+    const a = agg[row.name] || (agg[row.name] = { name: row.name, wins: 0, games: 0, kos: 0 });
+    a.wins += row.wins; a.games += row.games; a.kos += row.kos;
+  }
+}
+// Pooled across runs rather than a mean of rates, so a fighter who played more games in one run
+// is weighted by evidence rather than by luck.
+const ranking = Object.values(agg).map(a => ({
+  name: a.name, wins: a.wins, games: a.games,
+  winRate: a.games ? a.wins / a.games : 0,
+  kosPerGame: a.games ? a.kos / a.games : 0,
+}));
 const mean = ranking.reduce((s, r) => s + r.winRate, 0) / ranking.length;
 
 let html = readFileSync(MONOLITH, 'utf8');
@@ -127,7 +157,8 @@ for (const c of weightChanges) {
 
 if (!DRY) writeFileSync(MONOLITH, html);
 
-console.log(`pass from ${src}  (mean win rate ${(mean * 100).toFixed(1)}%, dead band ±${(DEAD_BAND * 100).toFixed(1)}pp)`);
+console.log(`pass from ${K} run(s): ${files.map(f => f.replace('scripts/', '')).join(', ')}`);
+console.log(`  pooled mean win rate ${(mean * 100).toFixed(1)}%, dead band ±${(DEAD_BAND * 100).toFixed(1)}pp (noise-scaled for k=${K})`);
 console.log(`\nWEIGHT  ${weightChanges.length} changes`);
 for (const c of weightChanges.sort((a, b) => b.dev - a.dev)) {
   console.log(`  ${c.name.padEnd(14)} ${String(c.from).padStart(3)} -> ${String(c.to).padStart(3)}   (${(c.dev * 100 >= 0 ? '+' : '')}${(c.dev * 100).toFixed(1)}pp)`);
