@@ -20,8 +20,19 @@ This was measured, not assumed. The same build was run five times with different
 | Leafy | 43.6% | 14.3% | **29 pp** |
 | Fanny | 7.7% | 34.3% | **27 pp** |
 
-Across the whole roster: median run-to-run swing **11.7pp**, 90th percentile **26.6pp**, mean
-per-fighter sigma **5.5pp**.
+Across the whole roster, and the figures firm up as runs are added rather than settling down:
+
+| runs compared | median swing | 90th percentile | mean per-fighter sigma |
+|---|---|---|---|
+| 2 | 7.5pp | 20.3pp | 4.7pp |
+| 3 | 11.7pp | 26.6pp | 5.5pp |
+| **5** | **16.1pp** | **28.3pp** | **6.2pp** |
+
+Two runs *understate* the problem — with only two samples you are unlikely to have caught a
+fighter's best and worst day. The five-run figure is the honest one.
+
+The good news is that pooling cuts it fast: five pooled runs put the effective per-fighter sigma at
+about **2.8pp**, which is finally sharp enough to balance with.
 
 ## Why it is so noisy
 
@@ -33,6 +44,26 @@ Two causes compound, and the second is the one people miss.
    lucky win buys a fighter *more games and more chances to win*; an early unlucky loss ends their
    run. That is positive feedback layered on top of the binomial noise, and it roughly doubles the
    spread you would predict from sample size alone.
+
+## The headline metric is noisy too
+
+It is tempting to shrug off per-fighter noise on the grounds that the roster-level number will
+average it out. It does not, and by nearly enough. Across the same five identical runs, the
+**roster sigma itself** ranged **0.0921 → 0.1146**.
+
+That band is wider than the effect any single balance pass produces. So:
+
+> A pass cannot be judged from one before-run and one after-run, **even on sigma**. You need
+> several runs on each side, and you compare the *mean per-run sigma*, never a pooled figure
+> against a single run.
+
+### The trap that nearly landed here
+
+Comparing a **5-run pool** (before) against a **1-run sample** (after) showed sigma "worsening" by
+40%. That number is meaningless: pooling averages out noise, so a pooled sigma is lower *by
+construction*. It was measuring how many runs each side had, not what the pass did.
+
+Compare like with like: pool-of-k against pool-of-k, or mean-per-run against mean-per-run.
 
 ## What this invalidates
 
