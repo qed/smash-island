@@ -18,7 +18,10 @@ const BATCH_3 = ['Marker', 'Money', 'Naily', 'Pillow', 'Remote', 'Rose',
 // individually further down.
 const BATCH_4 = ['Bell', 'Bracelety', 'Basketball', 'Dora', 'Fern', 'Grassy',
   'Lightning', 'Liy', 'Lollipop', 'Loser'];
-const WAVE_4 = [...BATCH_2, ...BATCH_3, ...BATCH_4];
+const BATCH_5 = ['Fries', 'Nickel', 'Yellow Face', 'Barf Bag', 'Fanny', 'Gaty',
+  'Toothpaste', 'David', 'Firey Jr.', 'Ruler'];
+const BATCH_6 = ['Sidewalky', 'Balloony', 'Roboty', 'Profily', 'Tree', 'Cake', 'Donut'];
+const WAVE_4 = [...BATCH_2, ...BATCH_3, ...BATCH_4, ...BATCH_5, ...BATCH_6];
 
 // A context that records transform ops, so a deform can be measured without replaying a real CTM.
 const RECORDER = `
@@ -29,6 +32,8 @@ const RECORDER = `
         translate:function(x,y){ ops.push(['translate',x,y]); },
         rotate:function(a){ ops.push(['rotate',a]); },
         scale:function(x,y){ ops.push(['scale',x,y]); },
+        // Cake shears its layers, which is a transform() rather than a scale/rotate
+        transform:function(a,b,c,d,e,g){ ops.push(['transform',a,b,c,d,e,g]); },
         // drawing ops are recorded too, so an over-pass (which only paints) is measurable
         save:function(){}, restore:function(){},
         beginPath:function(){ ops.push(['beginPath']); },
@@ -99,6 +104,7 @@ describe('Wave 4 — the motion is real and per-character', () => {
             var o = ops[i];
             if (o[0] === 'rotate') out.push('r' + o[1].toFixed(4));
             else if (o[0] === 'scale') out.push('s' + o[1].toFixed(4) + ',' + o[2].toFixed(4));
+            else if (o[0] === 'transform') out.push('x' + o[2].toFixed(4) + ',' + o[3].toFixed(4));
           }
         }
       }
@@ -112,6 +118,7 @@ describe('Wave 4 — the motion is real and per-character', () => {
       const ops = w.eval(TRAJECTORY(n));
       // a real animation must rotate, or scale away from 1:1, at some point in the swing
       return !ops.some(o => o.startsWith('r') ? Math.abs(parseFloat(o.slice(1))) > 1e-6
+        : o.startsWith('x') ? true
         : o.slice(1).split(',').some(v => Math.abs(parseFloat(v) - 1) > 1e-6));
     });
     expect(inert, 'fighters whose attack does nothing visually').toEqual([]);
@@ -385,6 +392,7 @@ describe('Wave 4 — an attack is never invisible', () => {
                 var o = ops[i];
                 if (o[0]==='rotate' && Math.abs(o[1])>1e-6) movedSomewhere = true;
                 if (o[0]==='scale' && (Math.abs(o[1]-1)>1e-6 || Math.abs(o[2]-1)>1e-6)) movedSomewhere = true;
+                if (o[0]==='transform' && (Math.abs(o[2])>1e-6 || Math.abs(o[1])>1e-6)) movedSomewhere = true;
               }
             }
             if (!movedSomewhere) { out.push(names[n]+'@hazardT='+ht); break; }
