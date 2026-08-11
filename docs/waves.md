@@ -4,7 +4,7 @@ Work is organised into **waves**: one coherent, shippable slice at a time, each 
 site before the next starts. The rule that produced this structure is that five 90%-done features
 are worth less than one shipped one.
 
-Status as of the Wave 3 release.
+Status as of the Wave 4 release.
 
 ---
 
@@ -57,10 +57,11 @@ Presentation only, no new modes or menus — the filter is "deepens what already
 5. Rival memory — the fighter who has KO'd you most gets a badge on the select screen
 6. Crowd cameos from the design doc's benched non-fighters
 
-## Wave 4 — Character depth (next)
+## Wave 4 — Character depth ✅ shipped
 
-All 59 have real art and the shared 9-state rig; only the batch-1 twelve have **bespoke** animation.
-Wave 4 gives the other 47 their own.
+All 59 fighters now have BESPOKE animation, verified by walking the roster against the registry
+rather than counting batches: 0 without an entry. Delivered in five batches of ~10, each spec'd
+into docs/animation-move-design.md before any code.
 
 1. **Extend `docs/animation-move-design.md` first.** It covers 12 characters. The other 47 need
    wiki-grounded notes (idle tell, attack flourish, one signature deform tied to their special)
@@ -71,11 +72,13 @@ Wave 4 gives the other 47 their own.
 4. Verification is already solved — the motion-energy measurement from batch 1 (idle 25 → walk 64 →
    run 89 → attack 198 → hitstun 610) proves states are genuinely distinct.
 
-**Risk:** 47 hooks in one 9,000-line file. Batches must land sequentially.
+Lessons kept:  never  (a render must survive); a rotation past a quarter turn needs a
+CENTRE pivot, not the feet (Saw orbited off the platform); and a deform multiplied by a sine of
+hazardT can collapse to identity on some frames, making an attack pixel-identical to standing still.
 
 ## Art and effects (owner-requested) — mostly shipped
 
-Not yet scheduled into a wave; recorded so it is not lost.
+
 
 1. ~~**Boss sprites and animations.**~~ ✅ Six of the nine now use official renders, animated with
    an idle breath, a wind-up swell into the telegraph, a rage tempo and a white hit-flash. The
