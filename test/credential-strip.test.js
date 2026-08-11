@@ -81,8 +81,12 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
       .filter(f => f.startsWith(`${SPRITE_DIR}/`) && f !== `${SPRITE_DIR}/CREDITS.md`);
     expect(published.filter(f => !f.endsWith('.png')), 'non-PNG files in the sprite directory').toEqual([]);
     const { window: w } = loadMonolith();
+    // Fighters reference their art through SPRITES; BOSSES reference theirs through
+    // BOSS_SPRITE_SRC. Both count as "used", or every boss render would look like dead weight.
     const referenced = new Set(
-      w.eval(`Object.keys(SPRITES).map(function(k){ return SPRITES[k].src||''; }).filter(Boolean)`)
+      w.eval(`Object.keys(SPRITES).map(function(k){ return SPRITES[k].src||''; })
+              .concat(Object.keys(BOSS_SPRITE_SRC).map(function(k){ return BOSS_SPRITE_SRC[k]; }))
+              .filter(Boolean)`)
         .map(src => `${PUBLISH_ROOT}/${src}`.replace(/\\/g, '/')));
     const orphans = published.map(f => f.replace(/\\/g, '/')).filter(f => !referenced.has(f));
     expect(orphans, 'sprite files that no fighter uses — dead weight on every page load').toEqual([]);

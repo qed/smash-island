@@ -4,7 +4,7 @@ Work is organised into **waves**: one coherent, shippable slice at a time, each 
 site before the next starts. The rule that produced this structure is that five 90%-done features
 are worth less than one shipped one.
 
-Status as of the Wave 3 release.
+Status as of the Wave 4 release.
 
 ---
 
@@ -57,32 +57,40 @@ Presentation only, no new modes or menus — the filter is "deepens what already
 5. Rival memory — the fighter who has KO'd you most gets a badge on the select screen
 6. Crowd cameos from the design doc's benched non-fighters
 
-## Wave 4 — Character depth (next)
+## Wave 4 — Character depth ✅ shipped
 
-All 59 have real art and the shared 9-state rig; only the batch-1 twelve have **bespoke** animation.
-Wave 4 gives the other 47 their own.
+All 59 fighters now have BESPOKE animation, verified by walking the roster against the registry
+rather than counting batches: 0 without an entry. Delivered in five batches of ~10, each spec'd
+into docs/animation-move-design.md before any code.
 
-1. **Extend `docs/animation-move-design.md` first.** It covers 12 characters. The other 47 need
-   wiki-grounded notes (idle tell, attack flourish, one signature deform tied to their special)
-   before any code — that discipline is what kept batch 1 on-model.
-2. **Five batches of ~10**, the cadence that worked for the sprite rollout, each landing with tests.
-3. Much cheaper than batch 1: the rig and the art already exist, so each character is a
-   `deform`/`over` hook rather than new illustration.
-4. Verification is already solved — the motion-energy measurement from batch 1 (idle 25 → walk 64 →
-   run 89 → attack 198 → hitstun 610) proves states are genuinely distinct.
+Writing the spec table for each batch *before* the code is what kept the cast on-model, and it is
+the part to repeat. What the wave taught, all of it learned the hard way:
 
-**Risk:** 47 hooks in one 9,000-line file. Batches must land sequentially.
+1. **Use `deform`, never `body`.** `body` suppresses the character render to draw a shape. That was
+   right for Leafy's blade-dash and wrong for everyone else once all 59 had real art.
+2. **A rotation past a quarter turn needs a CENTRE pivot, not the feet.** `deformAboutFeet` pivots
+   where a fighter stands, so at a half turn the body swings in a circle *around the foot point* —
+   Saw visibly orbited off the platform. Now caught automatically by a test.
+3. **Never multiply a whole deform by a sine of `hazardT`.** On frames where the sine crosses zero
+   the animation collapses to the identity transform and the attack is pixel-identical to standing
+   still — while passing every test, because it was true at *other* frame phases.
+4. **Measure at real gameplay scale, against idle, over a full cycle.** Sprites are ~67px on screen.
+   Deform alone moves about five pixels and measures as "working" while being invisible in play.
+   That mistake shipped twice before the swipe arc, run dust and hit spark were added to carry it.
 
-## Queued — art and effects (owner-requested)
+## Art and effects (owner-requested) — mostly shipped
 
-Not yet scheduled into a wave; recorded so it is not lost.
 
-1. **Boss sprites and animations.** The bosses still draw procedurally — `BOSS_SPRITE_IMG` is an
-   empty hook already waiting for art, so the wiring exists. They are the only cast left without
-   renders now that all 59 fighters have them.
-2. **Projectile sprites.** Projectiles are flat coloured circles. Every special that throws
-   something is currently represented by a dot.
-3. **Sprite / attack coherence — the owner's rule.** Where a sprite does not fit the move it is
+
+1. ~~**Boss sprites and animations.**~~ ✅ Six of the nine now use official renders, animated with
+   an idle breath, a wind-up swell into the telegraph, a rage tempo and a white hit-flash. The
+   Announcer, Bug Swarm and Purple Dragon keep their hand-drawn bodies: the Announcer's only
+   transparent wiki candidate was a cropped speaker cone, and the other two are not wiki characters.
+   Boss 2 and Boss 3 shared one sprite key, so they would have worn identical art — Boss 3 has its own now.
+2. ~~**Projectile sprites.**~~ ✅ Shapes derived at draw time from the owner's kit — flame, ice shard,
+   lightning bolt, fluid droplet, fused bomb, saw blade, spike, star — plus a motion trail on every
+   shot. No spawn site changed, so the sim, netcode and goldens are untouched.
+3. **Sprite / attack coherence — the owner's rule.** (applied to projectiles; still open for fighters) Where a sprite does not fit the move it is
    attached to, change the RELATIONSHIP rather than forcing the art: adjust the attack, its type,
    its effect, or its lore justification so that what you see matches what it does. The art is the
    fixed point; the move description bends to it.
