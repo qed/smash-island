@@ -73,16 +73,19 @@ Wave 4 gives the other 47 their own.
 
 **Risk:** 47 hooks in one 9,000-line file. Batches must land sequentially.
 
-## Queued — art and effects (owner-requested)
+## Art and effects (owner-requested) — mostly shipped
 
 Not yet scheduled into a wave; recorded so it is not lost.
 
-1. **Boss sprites and animations.** The bosses still draw procedurally — `BOSS_SPRITE_IMG` is an
-   empty hook already waiting for art, so the wiring exists. They are the only cast left without
-   renders now that all 59 fighters have them.
-2. **Projectile sprites.** Projectiles are flat coloured circles. Every special that throws
-   something is currently represented by a dot.
-3. **Sprite / attack coherence — the owner's rule.** Where a sprite does not fit the move it is
+1. ~~**Boss sprites and animations.**~~ ✅ Six of the nine now use official renders, animated with
+   an idle breath, a wind-up swell into the telegraph, a rage tempo and a white hit-flash. The
+   Announcer, Bug Swarm and Purple Dragon keep their hand-drawn bodies: the Announcer's only
+   transparent wiki candidate was a cropped speaker cone, and the other two are not wiki characters.
+   Boss 2 and Boss 3 shared one sprite key, so they would have worn identical art — Boss 3 has its own now.
+2. ~~**Projectile sprites.**~~ ✅ Shapes derived at draw time from the owner's kit — flame, ice shard,
+   lightning bolt, fluid droplet, fused bomb, saw blade, spike, star — plus a motion trail on every
+   shot. No spawn site changed, so the sim, netcode and goldens are untouched.
+3. **Sprite / attack coherence — the owner's rule.** (applied to projectiles; still open for fighters) Where a sprite does not fit the move it is
    attached to, change the RELATIONSHIP rather than forcing the art: adjust the attack, its type,
    its effect, or its lore justification so that what you see matches what it does. The art is the
    fixed point; the move description bends to it.

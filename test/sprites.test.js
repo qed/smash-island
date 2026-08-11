@@ -628,10 +628,26 @@ describe('drawing sprite fighters headlessly', () => {
     // Every later render's flag has to match what was MEASURED when it was fetched — a hand-edited
     // flip that disagrees with the manifest means someone eyeballed it and got it backwards.
     const manifest = JSON.parse(readFileSync('scripts/sprite-manifest.json', 'utf8'));
+    // The manifest now also holds BOSS renders, which are not fighters and live in a different
+    // registry. Check each against the registry that actually owns it rather than skipping either.
+    const bossByFile = w.eval(`
+      (function(){ var o = {};
+        for (var k in BOSS_SPRITE_SRC) o[BOSS_SPRITE_SRC[k].split('/').pop()] = !!BOSS_SPRITE_FLIP[k];
+        return o; })()`);
     const disagreements = Object.values(manifest)
       .filter(r => r.ok)
-      .filter(r => !!w.eval(`!!(SPRITES[${JSON.stringify(r.name)}]||{}).flip`) !== !!r.flip)
-      .map(r => `${r.name}: registry says ${!r.flip} but facing measured ${r.facing}`);
+      .map(r => {
+        const isFighter = w.eval(`!!SPRITES[${JSON.stringify(r.name)}]`);
+        if (isFighter) {
+          const declared = !!w.eval(`!!(SPRITES[${JSON.stringify(r.name)}]||{}).flip`);
+          return declared !== !!r.flip ? `${r.name} (fighter): registry ${declared} vs measured ${r.facing}` : null;
+        }
+        if (r.file in bossByFile) {
+          return bossByFile[r.file] !== !!r.flip ? `${r.name} (boss): registry ${bossByFile[r.file]} vs measured ${r.facing}` : null;
+        }
+        return null;   // fetched but deliberately not wired (e.g. a rejected candidate)
+      })
+      .filter(Boolean);
     expect(disagreements, 'flip flags that contradict the measured facing').toEqual([]);
     // the flag is render-only: vector art is authored +x-forward and must never consult it
     for (const name of BATCH_1) {

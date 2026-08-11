@@ -3826,7 +3826,7 @@ const ASSIST_ROSTER = [
 const BOSS_ROSTER = [
   {name:"Announcer",           color:"#3a4a6a", hp:175, big:2.5, attack:"announcer", arena:"studio",  stationary:false, sprite:"announcer"},   // Boss 1
   {name:"Puffball Speaker Box",color:"#c0b0d0", hp:200, big:2.5, attack:"soundwave", arena:"studio",  stationary:false, sprite:"speaker"},     // Boss 2
-  {name:"Firey Speaker Box",   color:"#d0402a", hp:215, big:2.5, attack:"firewall",  arena:"studio",  stationary:false, sprite:"speaker"},     // Boss 3
+  {name:"Firey Speaker Box",   color:"#d0402a", hp:215, big:2.5, attack:"firewall",  arena:"studio",  stationary:false, sprite:"speakerfirey"},// Boss 3 — its OWN key: it shared "speaker" with Boss 2, so both would have worn the same art
   {name:"The Bug Swarm",       color:"#8a3a3a", hp:225, big:2.3, attack:"swarm",     arena:"cave",    stationary:false, sprite:"bug"},         // Boss 4
   {name:"Purple Face",         color:"#7a3a8a", hp:235, big:2.6, attack:"swallow",   arena:"studio",  stationary:true,  sprite:"face"},        // Boss 5
   {name:"Purple Dragon",       color:"#6a3a9a", hp:250, big:2.7, attack:"dragon",    arena:"cave",    stationary:false, sprite:"dragon"},      // Boss 6
@@ -7179,6 +7179,29 @@ function draw(){
         ctx.globalAlpha = 1; ctx.lineCap = 'butt';
       }
     }
+    // PROJECTILE SHAPE. Every ordinary projectile was the same flat circle, so a thrown bomb, a
+    // spat ember and a fired ink pellet were visually the same event. The shape is derived at DRAW
+    // TIME from the owner's kit — projectiles already carry `ownerObj` — so nothing is stored on the
+    // projectile, no spawn site changes, and the sim/netcode/goldens are untouched.
+    //
+    // Where a shape would not fit the move, the SHAPE follows the move rather than the reverse:
+    // these are named after what the attack does, not after what the character looks like.
+    {
+      const kit = pr.ownerObj && pr.ownerObj.kit;
+      const sp = kit && kit.special;
+      const shape = PROJ_SHAPE[sp];
+      if(shape){
+        const ang = Math.atan2(pr.vy||0, pr.vx||0);
+        ctx.save();
+        ctx.translate(pr.x, pr.y);
+        // spin the ones that tumble, aim the ones that fly straight
+        ctx.rotate(shape.spin ? hazardT*0.35 + pr.x*0.01 : ang);
+        ctx.fillStyle = pr.color; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 2;
+        shape.draw(ctx, pr.r, pr);
+        ctx.restore();
+        continue;
+      }
+    }
     ctx.fillStyle=pr.color; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
     ctx.beginPath(); ctx.arc(pr.x,pr.y,pr.r,0,7); ctx.fill(); ctx.stroke(); }
 
@@ -7379,6 +7402,32 @@ function drawSummon(s){
 // Procedural boss "sprites" — each boss drawn distinctly. Sprite hook: if BOSS_SPRITE_IMG[s.sprite]
 // is later populated with an Image, it'll be drawn instead (image-sprite path for the future).
 const BOSS_SPRITE_IMG = {};
+// Official renders for the bosses that have one. The Announcer, the Bug Swarm and the Purple Dragon
+// keep their hand-drawn procedural art: the Announcer's only transparent wiki candidate turned out
+// to be a cropped speaker cone rather than the character, and the other two are not wiki characters
+// at all. Same rule as the fighters — no art beats wrong art.
+const BOSS_SPRITE_SRC = {
+  speaker:      "assets/sprites/puffball-speaker-box.png",
+  speakerfirey: "assets/sprites/firey-speaker-box.png",
+  face:         "assets/sprites/purple-face.png",
+  evilleafy:    "assets/sprites/evil-leafy.png",
+  two:          "assets/sprites/two.png",
+  four:         "assets/sprites/four.png",
+};
+// Measured by scripts/fetch-sprites.mjs, same interior-ink method as the fighters.
+const BOSS_SPRITE_FLIP = { speaker:true, face:true, four:true };
+// Lazily constructed on FIRST DRAW, never at eval time — a headless boot must not touch a media
+// constructor while the script parses, which is the same contract the fighter registry follows.
+function bossImage(key){
+  const src = BOSS_SPRITE_SRC[key];
+  if(!src) return null;
+  let im = BOSS_SPRITE_IMG[key];
+  if(im === undefined){
+    try{ im = new Image(); im.src = src; BOSS_SPRITE_IMG[key] = im; }
+    catch(e){ BOSS_SPRITE_IMG[key] = null; return null; }
+  }
+  return (im && im.complete && im.naturalWidth) ? im : null;
+}
 function drawBossSprite(s){
   const R=s.r;
   // telegraph aura: pulsing warning ring while winding up (Silksong-style tell)
@@ -7389,9 +7438,40 @@ function drawBossSprite(s){
     ctx.beginPath(); ctx.arc(0,0,R+10+p*14,0,7); ctx.stroke();
     ctx.globalAlpha=1;
   }
-  // future image-sprite path
-  const img = BOSS_SPRITE_IMG[s.sprite];
-  if(img){ ctx.drawImage(img, -R, -R, R*2, R*2); return; }
+  // ---- REAL BOSS ART, animated ----------------------------------------------------------------
+  const img = bossImage(s.sprite);
+  if(img){
+    // CONTAIN-fit on the image's own aspect ratio. The old hook stretched art into a square
+    // (-R,-R,2R,2R), which would have squashed every non-square render — Two is 255x200 and would
+    // have lost a fifth of its width.
+    const ar = img.naturalWidth/img.naturalHeight;
+    const box = R*2.15;
+    let dh = box, dw = box*ar;
+    if(dw > box*1.25){ dw = box*1.25; dh = dw/ar; }
+    // A boss that just sits there is not menacing. These are the beats a player has to read:
+    const t = hazardT*0.045 + (s.homeX||0)*0.01;
+    const breathe = 1 + Math.sin(t)*0.035;                       // slow, heavy idle
+    const rage = s._rage ? 1 + Math.sin(hazardT*0.35)*0.05 : 1;  // faster once enraged
+    // WIND-UP: swells into the telegraph, so the warning ring is not the only tell
+    const tel = s._tel > 0 ? (1 - s._tel/bossTelLen(s)) : 0;
+    const wind = 1 + tel*0.14;
+    // HIT: recoils and flashes white
+    const hit = s.flash > 0 ? 1 - Math.min(1, s.flash/12)*0.10 : 1;
+
+    ctx.save();
+    ctx.rotate(Math.sin(t*0.7)*0.03 + tel*0.05);                 // a slow menacing list
+    ctx.scale(wind*hit*rage, breathe*wind*hit);
+    if((s.face < 0) !== !!BOSS_SPRITE_FLIP[s.sprite]) ctx.scale(-1, 1);
+    ctx.drawImage(img, -dw/2, -dh/2, dw, dh);
+    // white flash clipped to the art itself, matching how a struck fighter reads
+    if(s.flash > 0){
+      ctx.globalAlpha = Math.min(1, s.flash/10)*0.8;
+      ctx.drawImage(tintedBossSprite(s.sprite, img), -dw/2, -dh/2, dw, dh);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+    return;
+  }
 
   const flash = s.flash>0;
   const body = flash ? "#fff" : s.color;
@@ -7416,6 +7496,7 @@ function drawBossSprite(s){
       ctx.strokeStyle="#0a1a3a"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-R*0.4,R*0.45); ctx.lineTo(R*0.4,R*0.45); ctx.stroke();
       ctx.textAlign="left"; ctx.textBaseline="alphabetic";
       break; }
+    case "speakerfirey":  // shares the drawn fallback with the Puffball box; only the render differs
     case "speaker": {     // speaker box: rounded rect with grille dots
       ctx.fillStyle=body; ctx.beginPath(); ctx.rect(-R*0.8,-R*0.9,R*1.6,R*1.8); ctx.fill(); ctx.stroke();
       ctx.fillStyle="#1c1c1c"; for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){ ctx.beginPath(); ctx.arc(a*R*0.35,b*R*0.35,R*0.08,0,7); ctx.fill(); }
@@ -9011,6 +9092,22 @@ function spriteImage(sp){
 
 // A tinted copy of a PNG sprite, built once per (sprite, colour) and cached on the entry.
 // Canvas-only (drawImage + source-atop) — no pixel reads, so it needs no CORS-clean surface.
+// White-flash copy of a boss render, cached per sprite key. Same source-atop trick as the fighter
+// tint, so a struck boss reads exactly the way a struck fighter does.
+const BOSS_TINT_CACHE = {};
+function tintedBossSprite(key, im){
+  let c = BOSS_TINT_CACHE[key];
+  if(!c){
+    c = document.createElement("canvas");
+    c.width = im.naturalWidth; c.height = im.naturalHeight;
+    const g = c.getContext("2d");
+    g.drawImage(im, 0, 0);
+    g.globalCompositeOperation = "source-atop";
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, c.height);
+    BOSS_TINT_CACHE[key] = c;
+  }
+  return c;
+}
 function tintedSprite(sp, im, col){
   const cache = sp._tints || (sp._tints = {});
   let c = cache[col];
@@ -9365,6 +9462,89 @@ function visualFace(f){
   const committed = (f._atkAnim > 0) || (f.smashHold > 0);
   if(sprinting && !committed) return vx < 0 ? -1 : 1;
   return f.face < 0 ? -1 : 1;
+}
+// ---- PROJECTILE SHAPES -----------------------------------------------------------------------
+// Keyed by the OWNER'S kit special. Named for what the attack does rather than for the character,
+// which is the rule when a shape and a move disagree: the projectile has to read as the effect it
+// applies, or the player cannot tell a burn from a freeze mid-fight.
+//   `spin` tumbles the shape; otherwise it is aimed along its own velocity.
+// Drawn in local space with the projectile already translated to, and rotated about, its position.
+const PROJ_SHAPE = {
+  // --- fire: a flame licking backwards from the direction of travel
+  ember:   { draw(c,r){ flameShape(c,r); } },
+  emberjr: { draw(c,r){ flameShape(c,r*0.85); } },
+  spark:   { draw(c,r){ flameShape(c,r*0.9); } },
+  // --- ice / glass: a hard angular shard
+  shatter: { spin:true, draw(c,r){ shardShape(c,r); } },
+  freeze:  { spin:true, draw(c,r){ shardShape(c,r); } },
+  // --- electricity: a jagged bolt, never round
+  zap:     { draw(c,r){ boltShape(c,r); } },
+  // --- fluids: a teardrop, heavy end forward
+  barf:    { draw(c,r){ dropShape(c,r); } },
+  splash:  { draw(c,r){ dropShape(c,r*1.1); } },
+  paste:   { draw(c,r){ dropShape(c,r); } },
+  ink:     { draw(c,r){ dropShape(c,r); } },
+  cap:     { draw(c,r){ dropShape(c,r*0.9); } },
+  // --- thrown solids: tumbling chunks
+  bomb:    { spin:true, draw(c,r){ c.beginPath(); c.arc(0,0,r,0,7); c.fill(); c.stroke();
+                                   c.strokeStyle="#ffd23f"; c.lineWidth=2;
+                                   c.beginPath(); c.moveTo(0,-r); c.quadraticCurveTo(r*0.8,-r*1.5,r*0.3,-r*1.8); c.stroke(); } },
+  anvil:   { spin:true, draw(c,r){ c.beginPath(); c.rect(-r,-r*0.7,r*2,r*1.4); c.fill(); c.stroke(); } },
+  saw:     { spin:true, draw(c,r){ sawShape(c,r); } },
+  // --- pointed: a spike aimed along travel
+  spike:   { draw(c,r){ spikeShape(c,r); } },
+  pierce:  { draw(c,r){ spikeShape(c,r); } },
+  // --- light: a star that reads as a beam pip
+  beam:    { spin:true, draw(c,r){ starShape(c,r,4); } },
+  buynow:  { spin:true, draw(c,r){ starShape(c,r,5); } },
+};
+function flameShape(c,r){
+  c.beginPath();
+  c.moveTo(r*1.1, 0);
+  c.quadraticCurveTo(0, -r*0.95, -r*1.2, -r*0.45);
+  c.quadraticCurveTo(-r*0.5, 0, -r*1.2, r*0.45);
+  c.quadraticCurveTo(0, r*0.95, r*1.1, 0);
+  c.closePath(); c.fill(); c.stroke();
+}
+function shardShape(c,r){
+  c.beginPath();
+  c.moveTo(0,-r*1.25); c.lineTo(r*0.75,-r*0.25); c.lineTo(r*0.45,r*1.1);
+  c.lineTo(-r*0.5,r*0.95); c.lineTo(-r*0.8,-r*0.35);
+  c.closePath(); c.fill(); c.stroke();
+}
+function boltShape(c,r){
+  c.beginPath();
+  c.moveTo(r*1.3,0); c.lineTo(0,-r*0.55); c.lineTo(r*0.25,-r*0.1);
+  c.lineTo(-r*1.3,r*0.15); c.lineTo(-r*0.2,r*0.5); c.lineTo(-r*0.45,r*0.1);
+  c.closePath(); c.fill(); c.stroke();
+}
+function dropShape(c,r){
+  c.beginPath();
+  c.arc(r*0.25,0,r*0.85,0,7);
+  c.moveTo(r*0.25,-r*0.8); c.lineTo(-r*1.3,0); c.lineTo(r*0.25,r*0.8);
+  c.closePath(); c.fill(); c.stroke();
+}
+function spikeShape(c,r){
+  c.beginPath();
+  c.moveTo(r*1.5,0); c.lineTo(-r*0.7,-r*0.62); c.lineTo(-r*0.35,0); c.lineTo(-r*0.7,r*0.62);
+  c.closePath(); c.fill(); c.stroke();
+}
+function sawShape(c,r){
+  c.beginPath();
+  for(let i=0;i<8;i++){
+    const a0=(i/8)*Math.PI*2, a1=((i+0.5)/8)*Math.PI*2;
+    c.lineTo(Math.cos(a0)*r*1.25, Math.sin(a0)*r*1.25);
+    c.lineTo(Math.cos(a1)*r*0.75, Math.sin(a1)*r*0.75);
+  }
+  c.closePath(); c.fill(); c.stroke();
+}
+function starShape(c,r,pts){
+  c.beginPath();
+  for(let i=0;i<pts*2;i++){
+    const a=(i/(pts*2))*Math.PI*2, rad=i%2? r*0.5 : r*1.3;
+    c.lineTo(Math.cos(a)*rad, Math.sin(a)*rad);
+  }
+  c.closePath(); c.fill(); c.stroke();
 }
 // A swipe arc thrown in the direction of the swing. This is what actually makes an attack read at
 // gameplay size — it is large (well outside the body), bright, and lasts the whole swing, none of
