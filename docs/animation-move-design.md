@@ -318,3 +318,30 @@ Same contract as batch 2: `deform` first, canon-anchored, allocation-free.
 | **Liy** | Normal idle, normal squash. | Reaches out and **grabs**, extending forward further than anyone. | — | Her kit is a light-switch grapple; the reach IS the move. |
 | **Lollipop** | Light idle, low squash — hard candy on a stick. | Rigid pivot around the stick. | — | Glass-hard, haughty, and posh; she should move stiffly and look above it all. |
 | **Loser** | Damped idle, low squash. | **Effortless** — the smallest, most controlled swing in the cast. | — | Canonically perfect at everything and beloved for it. Understatement is the joke. |
+
+## Batch 5
+
+| Fighter | Trait | Attack beat | Grounding |
+|---|---|---|---|
+| **Fries** | Normal | Fries **fan out** — widens hard rather than leaning. | A carton of loose fries; the contents splay. Proud and short-tempered. |
+| **Nickel** | Damped idle, low squash | A deadpan **shove**: minimal wind-up, one blunt push. | Sarcastic and unimpressed. He would not put effort into it. |
+| **Yellow Face** | Normal | **Inflates** — a big scale pop, like an advert blowing up in your face. | The infomercial salesman. His whole shtick is overselling. |
+| **Barf Bag** | High squash | A queasy **slosh** forward, weight arriving late. | She is a bag of fluid and permanently nauseous. |
+| **Fanny** | Normal, low squash | **Spins** her blades about her centre, then pushes. | An electric fan. Rude and blunt — the push should feel dismissive. |
+| **Gaty** | Normal | Swings **open on a side hinge**, like a gate. | She is a gate. The hinge is the whole silhouette. |
+| **Toothpaste** | Normal | **Squeezed**: compresses vertically and extrudes forward. | A tube. Being squeezed is the only thing that happens to one. |
+| **David** | Twitchy idle | A weak **flail** — lots of motion, no commitment. | He only ever says "aw, seriously?" and does nothing. The comedy is the lack of follow-through. |
+| **Firey Jr.** | Normal | A quick **flare**, smaller and faster than Firey's. | He is a smaller Firey and copies him. |
+| **Ruler** | Damped idle, lowest squash | A rigid straight **chop**. No deformation at all. | A ruler is the definition of straight; bossy and exacting. |
+
+## Batch 6 — completes the roster
+
+| Fighter | Trait | Attack beat | Grounding |
+|---|---|---|---|
+| **Sidewalky** | Low squash | A heavy **slam**, dropping weight downward. | A slab of pavement. Everything about him is mass. |
+| **Balloony** | High squash | **Deflates** and snaps back. | A balloon; his kit is literally an air leak. |
+| **Roboty** | Damped idle, low squash | **Stepped** motion — quantised, never eased. | A robot that speaks in morse. Mechanical motion should not be smooth. |
+| **Profily** | Normal | A flat card turning on its **vertical** axis. | A profile picture in a frame — flat, and turns like one. (Distinct from Coiny, who flips horizontally.) |
+| **Tree** | Low squash | A slow, weighty **sway**, timber-heavy. | Enormous and rooted. |
+| **Cake** | Normal | **Layers shear** and slide across each other. | A layer cake — the tiers are the silhouette. |
+| **Donut** | Normal | **Rolls** — a full rotation about the centre. | A torus. Rolling is the motion the object suggests. |
