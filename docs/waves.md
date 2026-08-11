@@ -63,18 +63,20 @@ All 59 fighters now have BESPOKE animation, verified by walking the roster again
 rather than counting batches: 0 without an entry. Delivered in five batches of ~10, each spec'd
 into docs/animation-move-design.md before any code.
 
-1. **Extend `docs/animation-move-design.md` first.** It covers 12 characters. The other 47 need
-   wiki-grounded notes (idle tell, attack flourish, one signature deform tied to their special)
-   before any code — that discipline is what kept batch 1 on-model.
-2. **Five batches of ~10**, the cadence that worked for the sprite rollout, each landing with tests.
-3. Much cheaper than batch 1: the rig and the art already exist, so each character is a
-   `deform`/`over` hook rather than new illustration.
-4. Verification is already solved — the motion-energy measurement from batch 1 (idle 25 → walk 64 →
-   run 89 → attack 198 → hitstun 610) proves states are genuinely distinct.
+Writing the spec table for each batch *before* the code is what kept the cast on-model, and it is
+the part to repeat. What the wave taught, all of it learned the hard way:
 
-Lessons kept:  never  (a render must survive); a rotation past a quarter turn needs a
-CENTRE pivot, not the feet (Saw orbited off the platform); and a deform multiplied by a sine of
-hazardT can collapse to identity on some frames, making an attack pixel-identical to standing still.
+1. **Use `deform`, never `body`.** `body` suppresses the character render to draw a shape. That was
+   right for Leafy's blade-dash and wrong for everyone else once all 59 had real art.
+2. **A rotation past a quarter turn needs a CENTRE pivot, not the feet.** `deformAboutFeet` pivots
+   where a fighter stands, so at a half turn the body swings in a circle *around the foot point* —
+   Saw visibly orbited off the platform. Now caught automatically by a test.
+3. **Never multiply a whole deform by a sine of `hazardT`.** On frames where the sine crosses zero
+   the animation collapses to the identity transform and the attack is pixel-identical to standing
+   still — while passing every test, because it was true at *other* frame phases.
+4. **Measure at real gameplay scale, against idle, over a full cycle.** Sprites are ~67px on screen.
+   Deform alone moves about five pixels and measures as "working" while being invisible in play.
+   That mistake shipped twice before the swipe arc, run dust and hit spark were added to carry it.
 
 ## Art and effects (owner-requested) — mostly shipped
 
