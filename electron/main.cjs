@@ -1,27 +1,47 @@
 const { app, BrowserWindow, session, protocol, net } = require('electron');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
-const DEV = !app.isPackaged;
-const DEV_URL = 'http://localhost:5173';
+// THE GAME IS artifacts/V1. It is a single self-contained HTML file plus its assets, and it is what
+// Vercel serves. It is NOT dist/ — that is the output of the modularization effort whose entry point
+// (src/main.js) is still `console.log('BFSI boot placeholder')`. This app used to load dist/, so
+// `npm run dist` packaged a blank window: the installable build has never actually run the game.
+const GAME_ROOT = path.join(__dirname, '..', 'artifacts', 'V1');
+
+// Served over a real custom origin rather than file://, because localStorage — and therefore the
+// whole progression/profile/custom-music layer — is unavailable on an opaque file:// origin.
+//
+// The host segment is load-bearing. `app://index.html` parses index.html as the HOSTNAME with a
+// path of "/", so a relative asset like `assets/sprites/firey.png` would resolve to
+// app://index.html/assets/... and be looked up at artifacts/V1/index.html/assets/... — every sprite,
+// track and font 404s. Using a fixed host and putting the file in the PATH is what makes relative
+// asset references work.
+const ORIGIN = 'app://game';
 
 function setCsp() {
-  // Permits inline on*= handlers (we keep them this pass) and bundled assets only.
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'unsafe-inline'",   // the game keeps its inline on*= handlers
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
+    "img-src 'self' data: blob:",          // blob: for the share-clip GIF and replay preview
+    "media-src 'self' data: blob:",        // music, and the .webm match recording
     "font-src 'self' data:",
-    "connect-src 'self' ws: http://localhost:5173 https://api.anthropic.com",
+    // ws: for LAN netplay. No third-party origin is allowed: the API-key surface was removed from
+    // the game, so the old api.anthropic.com allowance was a leftover pointing at nothing.
+    "connect-src 'self' ws: wss: blob:",
   ].join('; ');
   session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
     cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } });
   });
 }
 
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
+
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1200, height: 800, backgroundColor: '#88cdf2',
+    width: 1280, height: 800, backgroundColor: '#88cdf2',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -29,30 +49,24 @@ function createWindow() {
       sandbox: true,
     },
   });
-  if (DEV) {
-    win.loadURL(DEV_URL);
-  } else {
-    // Real origin, never bare file:// — localStorage/BStore need a proper origin.
-    win.loadURL('app://index.html');
-  }
-}
-
-// Register a real-origin protocol for the packaged build (prod parity task wires dist/ here).
-if (!DEV) {
-  protocol.registerSchemesAsPrivileged([
-    { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
-  ]);
+  win.loadURL(`${ORIGIN}/index.html`);
 }
 
 app.whenReady().then(() => {
   setCsp();
-  if (!DEV) {
-    protocol.handle('app', (req) => {
-      const url = new URL(req.url);
-      const file = path.join(__dirname, '..', 'dist', url.hostname + url.pathname);
-      return net.fetch('file://' + file);
-    });
-  }
+  protocol.handle('app', (req) => {
+    const url = new URL(req.url);
+    if (url.hostname !== 'game') return new Response('not found', { status: 404 });
+    const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
+    const file = path.normalize(path.join(GAME_ROOT, rel));
+    // Path-traversal guard: a crafted app://game/../../.. must not escape the game directory.
+    if (file !== GAME_ROOT && !file.startsWith(GAME_ROOT + path.sep)) {
+      return new Response('forbidden', { status: 403 });
+    }
+    // pathToFileURL, not 'file://' + file — on Windows the latter produces file://C:\Users\...,
+    // which is not a valid URL and fails for every asset.
+    return net.fetch(pathToFileURL(file).toString());
+  });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

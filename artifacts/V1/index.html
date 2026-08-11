@@ -5063,6 +5063,9 @@ function hurtK(f){
   return 0;
 }
 function doAttack(f){
+  // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
+  if(inOwnTeamZone(f)) return;
+
   f.flash=6;
   f._atkAnim=ATK_ANIM;      // render-only: spriteRig plays the lunge/recoil pulse off this
   // THROWABLE: if holding a picked-up item, this attack hurls it instead of a normal swing
@@ -5266,6 +5269,9 @@ const SMASHES = {
 };
 
 function doSmash(f, charge){
+  // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
+  if(inOwnTeamZone(f)) return;
+
   f._atkAnim=ATK_ANIM+5;    // a smash lunges longer than a jab
   const k=f.kit && f.kit.special;
   if(SMASHES[k]){ SMASHES[k](f, charge); return; }
@@ -5510,6 +5516,9 @@ const ATKSPECIALS = {
   anvil(f){ f.flash=14; let tgt=null,best=1e9; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.abs(t.x-f.x); if(d<best){best=d;tgt=t;} } const ax=tgt?tgt.x:f.x+f.face*60; dropProj(f, ax, tgt?tgt.y+tgt.r:feetY(f), {dmg:16,kb:10,r:18,color:'#3a3a3a',life:150});  },
 };
 function doAttackSpecial(f){
+  // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
+  if(inOwnTeamZone(f)) return;
+
   f._atkAnim=ATK_ANIM;
   const k=f.kit && f.kit.special;
   if(ATKSPECIALS[k]) ATKSPECIALS[k](f);
@@ -5527,6 +5536,9 @@ function applyDashVY(f, upSpeed, downSpeed){
   if(f._dashVY){ f.onground=false; }             // leave the floor so a vertical dash actually rises/dips
 }
 function doSpecial(f){
+  // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
+  if(inOwnTeamZone(f)) return;
+
   f._atkAnim=ATK_ANIM;
   if(f.you) SFX.special();
   const k=f.kit.special;
@@ -5846,7 +5858,40 @@ function applyCtrlRev(t, frames){
 const CURSE_MAX_STACKS = 60;   // hard ceiling: -30% damage at most (was uncapped -> -80% floor)
 const CURSE_FLOOR = 0.7;       // a cursed attacker never drops below 70% of their damage
 const CURSE_DECAY = 90;        // one stack falls off every ~1.5s, so curse is recoverable
+// ============================================================
+//  TEAM ZONES — the safe column above each team's base
+// ============================================================
+// Teams mode only. Each base projects a column straight up to the TOP of the arena. Inside your
+// OWN zone you cannot be damaged and you cannot attack, and it is where your team spawns.
+//
+// The point is spawn protection: a respawning fighter used to drop straight back into whatever was
+// already happening, so a team that lost the middle could be pinned on its own bluff indefinitely.
+// The no-attacking half is what stops it becoming a fort — you cannot camp your own zone and shoot
+// out of it, so it is a place to recover, not a position to hold.
+//
+// Deliberately your OWN zone only: standing in an ENEMY zone protects nobody and disables nothing,
+// so chasing someone home is still allowed, it just cannot land while they are inside.
+const TEAM_ZONE_PAD = 34;          // a little wider than the base, so the edge is forgiving
+function teamZoneOf(team){
+  if(SETTINGS.mode !== 'teams') return null;
+  const b = bases && bases.find ? bases.find(x => x.team === team) : null;
+  if(!b) return null;
+  // from the top of the arena down to just below the bluff the base sits on
+  return { x: b.x - TEAM_ZONE_PAD, y: 0, w: b.w + TEAM_ZONE_PAD*2, h: (b.y + b.h) - 0 };
+}
+// Is this fighter standing in the safe column belonging to their OWN team?
+function inOwnTeamZone(f){
+  if(!f || SETTINGS.mode !== 'teams') return false;
+  const z = teamZoneOf(f.team);
+  if(!z) return false;
+  return f.x >= z.x && f.x <= z.x + z.w && f.y >= z.y && f.y <= z.y + z.h;
+}
 function applyHit(t, dmg, kbx, kby, from, opts){
+  // SAFE IN YOUR OWN ZONE. Checked before anything else so no damage, knockback, burn or status
+  // can be applied — a partial exemption would still let a fighter be juggled out of their spawn.
+  if(inOwnTeamZone(t)) return;
+  // …and you cannot swing out of it either: an attack thrown from inside the zone does not land.
+  if(from && from !== t && inOwnTeamZone(from)) return;
   // BOSS DAMAGE CAP: any single boss attack can deal at most bossDmg() to a fighter total,
   // even if it's made of many projectiles (e.g. Four's Screechy ring). Tracked per attack ID.
   if(opts && opts.bossAtk!=null){
@@ -7228,6 +7273,36 @@ function draw(){
     ctx.restore();
   }
 
+  // TEAM ZONES — the safe column above each base. Drawn UNDER the fighters so nobody is obscured,
+  // and kept faint: it has to be unmistakable where the boundary is without dominating the arena.
+  if(SETTINGS.mode === 'teams' && bases && bases.length){
+    for(const b of bases){
+      const z = teamZoneOf(b.team);
+      if(!z) continue;
+      const col = TEAM_COLORS[b.team % TEAM_COLORS.length];
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = col;
+      ctx.fillRect(z.x, z.y, z.w, z.h);
+      // a brighter boundary line, pulsing gently so it reads as an active rule and not as scenery
+      ctx.globalAlpha = 0.45 + 0.15*Math.sin(hazardT*0.06 + b.team);
+      ctx.strokeStyle = col; ctx.lineWidth = 3;
+      ctx.setLineDash([10, 8]);
+      ctx.beginPath();
+      ctx.moveTo(z.x, z.y); ctx.lineTo(z.x, z.y + z.h);
+      ctx.moveTo(z.x + z.w, z.y); ctx.lineTo(z.x + z.w, z.y + z.h);
+      ctx.moveTo(z.x, z.y + z.h); ctx.lineTo(z.x + z.w, z.y + z.h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = col;
+      ctx.font = "700 13px 'Baloo 2', system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("SAFE ZONE", z.x + z.w/2, z.y + z.h - 12);
+      ctx.textAlign = "left";
+      ctx.restore();
+    }
+  }
   // fighters
   for(const f of fighters){ if(f.dead) continue; drawFighter(f); }
 
