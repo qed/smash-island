@@ -16,7 +16,9 @@ const BATCH_3 = ['Marker', 'Money', 'Naily', 'Pillow', 'Remote', 'Rose',
   'Saw', 'Taco', 'TV', 'Woody'];
 // The generic contract checks apply to every Wave 4 fighter; batch-specific beats are asserted
 // individually further down.
-const WAVE_4 = [...BATCH_2, ...BATCH_3];
+const BATCH_4 = ['Bell', 'Bracelety', 'Basketball', 'Dora', 'Fern', 'Grassy',
+  'Lightning', 'Liy', 'Lollipop', 'Loser'];
+const WAVE_4 = [...BATCH_2, ...BATCH_3, ...BATCH_4];
 
 // A context that records transform ops, so a deform can be measured without replaying a real CTM.
 const RECORDER = `

@@ -303,3 +303,18 @@ Same contract as batch 2: `deform` first, canon-anchored, allocation-free.
 | **Taco** | Normal idle, moderate squash. | Shell **hinges open then claps shut** — softer and wobblier than Book's snap. | — | A folded shell with a hinge; the fold is the silhouette. |
 | **TV** | Damped idle, low squash. | Stiff jab with a **glitch** — brief horizontal tearing on contact. | Occasional static tear at rest. | A CRT that shows static. The tear is the single most television thing available. |
 | **Woody** | Normal idle, normal squash. | Flinches **away** as he attacks — commits to nothing. | A constant nervous **tremble that grows with his damage**. | Canonically the most fearful character in the show; his fear should be visible and should worsen as he takes damage. |
+
+## Batch 4
+
+| Fighter | Trait (idle / squash) | Attack beat | Charge / resting beat | Grounding |
+|---|---|---|---|---|
+| **Bell** | Normal idle, low squash — cast metal. | Swings from the crown and **rings**: a pendulum rock rather than a lunge. | — | A bell is struck and swings from its hanger; the motion is a pivot, not a step. |
+| **Bracelety** | Light idle, normal squash. | Whips round in a loop — a band has no front, so she comes at you sideways. | — | A hoop. Also canonically obsessive about Ice Cube, so her motion should read as eager. |
+| **Basketball** | Normal idle, **high squash** — inflated rubber. | Compresses hard and springs, like a bounce pass. | — | She is a ball; a dribble is a compression, and she is the roster's sports competitor. |
+| **Dora** | **Fastest idle**, normal squash. | A **flurry** — several small rapid beats inside one swing rather than a single arc. | — | Canonically speaks in rapid untranslated bursts. Her rhythm should be visibly faster than anyone else's. |
+| **Fern** | Damped idle, low squash. | A slow, heavy sweep with a long follow-through. | — | Composed and deliberate; a plant does not snap. Contrast to Dora on purpose. |
+| **Grassy** | Normal idle, normal squash. | Blades **ripple** along the swing, like wind crossing a lawn. | — | A patch of grass, whose canon gag is being stepped on. |
+| **Lightning** | **Twitchy idle** — a permanent high-frequency flicker. | A hard, instantaneous strike with almost no travel. | — | Lightning does not wind up; it is already there. |
+| **Liy** | Normal idle, normal squash. | Reaches out and **grabs**, extending forward further than anyone. | — | Her kit is a light-switch grapple; the reach IS the move. |
+| **Lollipop** | Light idle, low squash — hard candy on a stick. | Rigid pivot around the stick. | — | Glass-hard, haughty, and posh; she should move stiffly and look above it all. |
+| **Loser** | Damped idle, low squash. | **Effortless** — the smallest, most controlled swing in the cast. | — | Canonically perfect at everything and beloved for it. Understatement is the joke. |
