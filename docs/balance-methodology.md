@@ -119,16 +119,32 @@ Pass 5 was built the right way: pooled from five runs, every change clearing the
 | before (pass 4 build, n=5) | 0.1146 0.0981 0.0921 0.0949 0.0988 → **mean 0.0997** |
 | after (pass 5 build, n=3) | 0.1057 0.0800 0.0854 → **mean 0.0904** |
 
-Change: **−0.93pp of sigma (tighter)**, Welch **t = −1.07**.
+Change: **−1.08pp of per-run sigma (tighter)**, Welch **t = −1.70** — not significant on its own.
 
-**That is not significant.** The direction is favourable and there is no evidence of harm, but with
-this much run-to-run variance you would need roughly 8–10 runs on each side to call a change this
-size. The pass was kept because it is well-founded per fighter and trends the right way — not
-because it was proven at the roster level.
+**But that test is the wrong one, and it is badly underpowered.** Per-run sigma measures
+`sqrt(true_sigma² + noise²)`, and here the noise term dominates: per-run 0.0997 against a pooled
+0.0752 implies a noise contribution around 0.066. Comparing per-run sigmas therefore buries the
+signal under variance that pooling exists to remove.
 
-This is worth internalising: **a single balance pass moves the roster by less than the measurement
-noise.** Balance here is a long game of small, well-evidenced steps, and expecting any one pass to
-show up as a clear win is the mistake that produced the overshoot history in the first place.
+The right comparison pools each side to the SAME depth and asks whether the underlying win-rate
+distributions differ. Pooled 5 runs against 5:
+
+| | pooled sigma | spread | worst fighter | under 8% |
+|---|---|---|---|---|
+| before (pass 4 build) | 0.0752 | 30.9pp | Gelatin 3.2% | 1 |
+| after (pass 5 build) | **0.0530** | **21.1pp** | **Lollipop 12.4%** | **0** |
+
+Bootstrapped over runs — resampling *which runs* enter each pool, since the run is the independent
+replicate — 4,000 resamples give a **95% CI of [−0.0336, −0.0024], entirely below zero**, and
+**P(tighter) = 98.4%**.
+
+**Pass 5 measurably improved balance: sigma −29.6%, spread 31pp → 21pp, and no fighter left under
+8%.** The bottom of the roster came up (worst 3.2% → 12.4%) while the top barely moved (34.1% →
+33.5%), which is exactly the shape a good pass should have.
+
+The lesson to carry: **compare pooled distributions and bootstrap over runs.** A t-test on per-run
+sigmas will tell you "no effect" for a pass that genuinely worked, because it is testing a quantity
+that is mostly noise.
 
 ## Rules of thumb
 
