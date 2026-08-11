@@ -109,6 +109,27 @@ report also prints:
 - **biggest risers / fallers** — catches a pass that improved sigma by wrecking one fighter.
 - **winless count** and **spread** — a fighter who cannot win at all is a bug, whatever sigma says.
 
+## What pass 5 actually achieved — and how confident we are
+
+Pass 5 was built the right way: pooled from five runs, every change clearing the noise floor by
+2.5 sigma or more. Measured like-for-like afterwards:
+
+| | per-run sigma |
+|---|---|
+| before (pass 4 build, n=5) | 0.1146 0.0981 0.0921 0.0949 0.0988 → **mean 0.0997** |
+| after (pass 5 build, n=3) | 0.1057 0.0800 0.0854 → **mean 0.0904** |
+
+Change: **−0.93pp of sigma (tighter)**, Welch **t = −1.07**.
+
+**That is not significant.** The direction is favourable and there is no evidence of harm, but with
+this much run-to-run variance you would need roughly 8–10 runs on each side to call a change this
+size. The pass was kept because it is well-founded per fighter and trends the right way — not
+because it was proven at the roster level.
+
+This is worth internalising: **a single balance pass moves the roster by less than the measurement
+noise.** Balance here is a long game of small, well-evidenced steps, and expecting any one pass to
+show up as a clear win is the mistake that produced the overshoot history in the first place.
+
 ## Rules of thumb
 
 - Never act on a per-fighter deviation below the measured dead band. It is dice.
