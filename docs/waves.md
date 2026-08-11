@@ -46,15 +46,15 @@ recorded in `assets/sprites/CREDITS.md`.
 
 ---
 
-## Wave 3.5 — Juice (queued)
+## Wave 3.5 — Juice (started)
 
 Presentation only, no new modes or menus — the filter is "deepens what already exists".
 
 1. KO instant-replay on the result screen (pairs with the share-clip GIF)
 2. "Cake at Stake" elimination stingers
-3. Victory quips, grounded in the wiki personalities
+3. ~~Victory quips~~ ✅ 45+ character-voiced lines; a fighter with no entry gets silence rather than a generic line
 4. Daily Match — one seeded matchup a day, one attempt
-5. Rival memory — the fighter who has KO'd you most gets a badge on the select screen
+5. ~~Rival memory~~ ✅ built from balance:matchlog, appears only after two losses
 6. Crowd cameos from the design doc's benched non-fighters
 
 ## Wave 4 — Character depth ✅ shipped
@@ -95,37 +95,56 @@ the part to repeat. What the wave taught, all of it learned the hard way:
    its effect, or its lore justification so that what you see matches what it does. The art is the
    fixed point; the move description bends to it.
 
-## Wave 5 — The AI learns you
+## Wave 5 — The AI learns you (started)
 
 Two halves of one idea: an AI that is *about* the player rather than a generic difficulty slider.
 
 1. **AI coach.** Parked since Wave 1 pending a UX decision on where the API key lives. The review
    panel's own compromise: hide it behind an "Advanced" menu rather than the title screen — never
    the title-screen key box that was removed for trust reasons.
-2. **Per-character play-style learning (owner's design).** The AI observes how *the player* plays a
-   given character and updates how it plays that same character. Beat someone as aggressive Firey
-   and the CPU Firey you meet next starts pressuring the way you did.
+2. ~~**Per-character play-style learning (owner's design).**~~ ✅ **shipped.** `observePlaystyle()`
+   watches only human-driven fighters and records three tendencies — how often you close, the range
+   you attack from, and how much you favour specials over basics. `commitPlaystyles()` folds each
+   match into a running mean in `style:v1`; `styledProfile()` blends it into the AI's class profile.
 
-   Notes for whoever builds it:
-   - The data source already exists — `balance:matchlog` and `balance:tallies` record real matches,
-     and the balance runner proves the engine can be driven headlessly to measure behaviour.
-   - Keep it **per character**, not global: the whole appeal is that Firey learns Firey.
-   - It must stay **local and offline** like the rest of the profile layer; this is a behaviour
-     profile, not an account.
-   - Beware the trap Wave 2 documented: a naive "copy the winner" rule is a feedback loop that
-     converges on one degenerate style. Sample from the player's tendencies, keep a floor of variety.
+   How the constraints were met:
+   - **Per character.** Learning Firey provably leaves Leafy untouched (tested).
+   - **Local and offline.** It lives in `BStore` beside the profile layer; nothing leaves the device.
+   - **Bounded, to avoid the "copy the winner" feedback loop.** The learned style only ever shifts
+     the hand-authored archetype part of the way (`STYLE_WEIGHT` = 0.55), ramping in over 3→12
+     matches, and `AI_PROFILE` is never mutated — a new object is returned, or one player's habits
+     would leak onto every fighter sharing the archetype.
+
+   **Measuring this needed care.** Two obvious metrics are confounded: average distance is dominated
+   by KNOCKBACK (a brawler that lands hits sends the opponent flying, which *widens* the gap), and
+   "fraction of frames closing" is dominated by the ideal range itself (a short-range CPU is already
+   in position, so it closes less). The clean signal is **the distance at which the CPU chooses to
+   attack** — measured 170px for a learned long-range style against 119px for a close-range one.
 
 ---
 
-## Not a wave, but blocking an original requirement
+## The installable desktop app ✅ fixed
 
-**The installable desktop app does not work.** `src/main.js` is still a placeholder, `dist/` holds
-only that stub, and `electron/main.cjs` loads `dist/` — so `npm run dist` packages a blank window.
-The playable game is `artifacts/V1/index.html`, which is what Vercel serves.
+It had **never worked**. `electron/main.cjs` loaded `dist/`, whose entry point `src/main.js` is
+still `console.log('BFSI boot placeholder')`, so `npm run dist` packaged a blank window — and every
+test passed, because nothing asserted that the thing being packaged was the game.
 
-Two ways out:
+It now loads `artifacts/V1`. Three further bugs were fixed on the way, each of which would have
+broken it even pointed at the right directory:
 
-- **Point Electron at the monolith** and package that. Delivers the installable app quickly, no
-  refactor. Recommended.
+- `app://index.html` parses **index.html as the hostname**, so every relative asset resolved to
+  `artifacts/V1/index.html/assets/…`. The host is now fixed and the file is in the path.
+- `net.fetch` was handed `'file://' + path`, which on **Windows** produces `file://C:\…` — not a
+  valid URL. Now `pathToFileURL`.
+- The protocol handler had no containment check, so a crafted `app://game/../..` could read outside
+  the game directory.
+
+A test now asserts the packaged `index.html` is hundreds of KB, contains the roster and the game
+loop, and is not the placeholder — the check that would have caught this on day one.
+
+**Not verified by running the installer** (no GUI available here) — worth one `npm run dist`.
+
+The modularization plan in `docs/superpowers/plans/` remains the long-term option, but is no longer
+blocking anything.
 - **Finish the modularization** (the 32-task plan is still in `docs/superpowers/plans/`). Correct
   long-term, but it is a large refactor of the file every wave now depends on.

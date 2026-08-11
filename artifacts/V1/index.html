@@ -309,6 +309,8 @@
   .rr-video{width:100%;border:3px solid #1c1c1c;border-radius:10px;background:#000;max-height:40vh}
   .rr-actions{margin-top:8px;display:flex;gap:8px;justify-content:center}
   .rr-note{font-size:12px;opacity:.65;padding:8px}
+  .resultquip{margin:6px auto 2px;max-width:560px;text-align:center;font-style:italic;font-weight:700;color:var(--gold,#ffd23f);font-size:15px}
+  .rivaltag{position:absolute;top:2px;right:2px;background:#e0503a;color:#fff;font-size:9px;font-weight:800;padding:1px 4px;border-radius:5px;letter-spacing:.04em}
   .rr-share{margin-top:10px}
   .rr-gif{width:100%;max-height:34vh;object-fit:contain;border:3px solid #1c1c1c;border-radius:10px;background:#000}
   .rr-link{width:100%;font-family:inherit;font-size:12px;padding:7px 9px;border:2px solid #1c1c1c;border-radius:8px}
@@ -715,6 +717,7 @@
     <div class="brand" style="color:var(--gold)">Elimination Ceremony</div>
     <h1 id="resultTitle">Winner!</h1>
     <div class="sub" id="resultSub" style="color:#ddd; text-align:center"></div>
+    <div id="resultQuip" class="resultquip" style="display:none"></div>
     <div id="scorecard" class="scorecard"></div>
     <div id="unlockNote" class="unlock-note" style="display:none"></div>
     <div id="runReview" class="run-review"></div>
@@ -1747,6 +1750,17 @@ function buildBoard(){
     c.className='cell '+(open?'play':'locked');
     if(open && r.name===chosen.name) c.classList.add('sel');
     c.innerHTML=`<div class="dot" style="background:${r.color}"></div><span>${r.name}</span>`;
+    // RIVAL MEMORY (Wave 3.5): the fighter who has beaten you most often gets a tag. Built from
+    // balance:matchlog, which the game already writes — no new tracking, and it only appears after
+    // two losses, because one is not a rivalry.
+    if(open && RIVAL_NAME && r.name === RIVAL_NAME){
+      c.style.position = 'relative';
+      const tag = document.createElement('span');
+      tag.className = 'rivaltag';
+      tag.textContent = 'RIVAL';
+      tag.title = r.name + ' has knocked you out more than anyone else.';
+      c.appendChild(tag);
+    }
     if(open){ c.onclick=()=>{ chosen=r; buildBoard(); refreshSel(); }; }
     else {
       const hint = unlockHint(r.name);
@@ -3067,6 +3081,7 @@ function beginMatchNow(){
   try{ clutchReset(); sndInit(); startMusic(SETTINGS.mode==='boss' ? 'boss' : 'battle'); }catch(e){}
   try{ startRunRecording(); }catch(e){}   // every match records for replay on the result screen
   try{ clipReset(); }catch(e){}       // and a fresh ring for the shareable GIF
+  try{ for(const k in STYLE_REC) delete STYLE_REC[k]; }catch(e){}   // fresh play-style sample
   try{ syncTouchControls(); }catch(e){}   // reveal the on-screen pad for a touch device
   running=true; paused=false; hazardT=0;
   window.__elimSeq=0; lastKoFrame=0;   // reset placement/elimination + stalemate timer for the new match
@@ -4431,6 +4446,7 @@ function step(){
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
   if(hazardT % CLUTCH_CHECK_FRAMES === 0){ try{ clutchTick(); }catch(e){} }
   if(TUT.active) tutorialTick();
+  try{ observePlaystyle(); }catch(e){}   // Wave 5: watch how the human plays this fighter
   testDpsTick();
   updateItems();
   if(TOURNEY_WATCHING) tourneyLiveTick();
@@ -6112,6 +6128,7 @@ function checkWin(){
     }
     awardMatchProgress(winTeam);   // profile + unlock delta, computed synchronously
     recordMatch(winTeam);    // log the result for balance analysis
+    try{ commitPlaystyles(); }catch(e){}   // …and fold this match into the play-style profile
     setTimeout(()=>showResult(winners, winTeam),700);
   }
 }
@@ -6409,6 +6426,97 @@ function placementWinsLosses(place){
 }
 const ORDINAL = p => p==null ? "—" : (["","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th"][p] || (p+"th"));
 
+// ============================================================
+//  WAVE 3.5 — VICTORY QUIPS
+// ============================================================
+// One character-voiced line on the result screen. Text only, grounded in the personalities already
+// researched for the animation work — Match is written permanently unbothered, Teardrop is
+// canonically MUTE (so hers is an action, not a line), Loser is effortlessly good at everything.
+// A fighter with no entry simply gets no quip rather than a generic one, because a generic line in
+// a character's mouth is worse than silence.
+const VICTORY_QUIPS = {
+  Firey:        "Everything's coming up Firey!",
+  Leafy:        "See? Being nice works!",
+  Bubble:       "Yoy! I woy won!",
+  Blocky:       "That was a prank. You got pranked.",
+  Pencil:       "Obviously. I'm the leader.",
+  Match:        "Like, obviously I won?",
+  Pen:          "Good game. Ish.",
+  "Ice Cube":   "Cool.",
+  Bomby:        "Sorry! I get excited.",
+  Rocky:        "Bleh!",
+  Teardrop:     "…(holds up a sign that says 'WINNER')",
+  Puffball:     "I didn't even land.",
+  Needle:       "Don't call me Needy.",
+  Pin:          "Team meeting. I won.",
+  Coiny:        "Heads. I win. Obviously.",
+  "Golf Ball":  "The outcome was calculable.",
+  Book:         "Closed case.",
+  Ruby:         "Did I do that? I did that!",
+  Snowball:     "I'M THE STRONGEST!",
+  Flower:       "Of COURSE I won. Look at me.",
+  "Tennis Ball":"Statistically, that tracks.",
+  Gelatin:      "Wobbled my way to the top.",
+  Fries:        "Order up. You're done.",
+  Nickel:       "Wow. Riveting.",
+  "Yellow Face":"BUY MY VICTORY! Only $19.99!",
+  Lollipop:     "Was that supposed to be difficult?",
+  Loser:        "Aw, you did great too. Really.",
+  Dora:         "¡Ja ja ja ja ja!",
+  Woody:        "…(hides, victorious)",
+  David:        "Aw, seriously?",
+  Fanny:        "You BLEW it. Get it? Because I'm a fan.",
+  Liy:          "Lights out.",
+  Lightning:    "Shocking result.",
+  Saw:          "Cut it close.",
+  TV:           "Broadcast complete.",
+  Roboty:       "beep. beep beep. (I won.)",
+  Tree:         "I'm rooted here. You're not.",
+  Cake:         "Cake at stake. I'm not.",
+  Donut:        "Hole-y victory.",
+  Balloony:     "Still inflated!",
+  Naily:        "Nailed it.",
+  Marker:       "Permanent record.",
+  Pillow:       "Soft landing. For me.",
+  Grassy:       "Nobody steps on me.",
+  Taco:         "Shell yeah.",
+  Toothpaste:   "Clean sweep.",
+  Basketball:   "Nothing but net.",
+  Bell:         "Saved by the bell. Mine.",
+  Ruler:        "By exactly my measure.",
+  "Firey Jr.":  "Just like my dad!",
+};
+function victoryQuipFor(name){ return VICTORY_QUIPS[name] || ""; }
+
+// ============================================================
+//  WAVE 3.5 — RIVAL MEMORY
+// ============================================================
+// The fighter who has KO'd you most often gets a RIVAL tag on the select screen. Free drama from
+// data the game already collects: balance:matchlog records every match, including who fell to whom.
+let RIVAL_NAME = null;
+async function hydrateRival(){
+  try{
+    if(!BStore.available()) return;
+    const raw = await BStore.get('balance:matchlog');
+    if(!raw) return;
+    const log = JSON.parse(raw);
+    const kills = {};
+    for(const m of log){
+      if(!m || !m.fighters) continue;
+      // Only matches the player was actually in, and only the fighters who beat them.
+      const you = m.fighters.find(p => p.you);
+      if(!you || you.won) continue;
+      for(const p of m.fighters){
+        if(p === you || !p.won) continue;
+        kills[p.name] = (kills[p.name]||0) + 1;
+      }
+    }
+    let best = null, n = 0;
+    for(const k in kills) if(kills[k] > n){ n = kills[k]; best = k; }
+    RIVAL_NAME = n >= 2 ? best : null;   // one loss is not a rivalry
+  }catch(e){ RIVAL_NAME = null; }
+}
+
 function showResult(winners, winTeam){
   stopMusic(); SFX.win();
   document.getElementById('hud').classList.remove('active');
@@ -6426,6 +6534,15 @@ function showResult(winners, winTeam){
     if(teams){ const mates=winners.map(f=>f.name).join(" & ");
       document.getElementById('resultSub').innerHTML=`Team ${winTeam+1} takes ${stage.name} — ${mates} standing.`; }
     else document.getElementById('resultSub').innerHTML=`${you.name} is the last contestant standing on ${stage.name}.`;
+    // VICTORY QUIP (Wave 3.5): one character-voiced line under the result. Escaped, because a
+    // fighter name reaches this from netplay and the quip sits next to it.
+    try{
+      var _q = victoryQuipFor(you.name);
+      if(_q){
+        var _el = document.getElementById('resultQuip');
+        if(_el){ _el.textContent = '“' + _q + '”'; _el.style.display='block'; }
+      }
+    }catch(e){}
   } else if(winners && winners.length){
     const who = teams ? `Team ${winTeam+1} (${winners.map(f=>f.name).join(" & ")})` : winners[0].name;
     document.getElementById('resultTitle').textContent = (teams?"Team ":"")+ (winners[0]?winners[0].name:"") + (teams?" & co. win":" wins");
@@ -6600,6 +6717,119 @@ function aiClass(f){
   if(sp==="pricetag") c="zone";                             // Profily debuff-snipes from range
   f._aiClass=c; return c;
 }
+// ============================================================
+//  WAVE 5 — THE AI LEARNS HOW *YOU* PLAY A CHARACTER
+// ============================================================
+// Watches how the PLAYER plays a given fighter and nudges how the CPU plays that SAME fighter.
+// Beat someone as an aggressive, in-your-face Firey and the CPU Firey you meet next starts
+// pressuring the way you did.
+//
+// Three constraints, all deliberate:
+//
+//  · PER CHARACTER, never global. "Firey learns Firey" is the entire appeal; a global style would
+//    just be a difficulty slider with extra steps.
+//  · LOCAL AND OFFLINE, like the rest of the profile layer. This is a behaviour profile, not an
+//    account, and nothing leaves the device.
+//  · BOUNDED, because "copy the winner" is a feedback loop. If the CPU adopted the player's style
+//    outright, then learned from beating them with it, every character converges on one degenerate
+//    pattern. So the learned style only ever SHIFTS the hand-authored class profile part of the
+//    way (STYLE_WEIGHT), and each dimension is clamped. The archetype still leads; the player's
+//    habits colour it.
+const STYLE_KEY = 'style:v1';
+const STYLE_MIN_SAMPLES = 3;     // matches with this fighter before the style is trusted at all
+const STYLE_FULL_SAMPLES = 12;   // …and where it reaches full (still bounded) influence
+const STYLE_WEIGHT = 0.55;       // hard ceiling on how far the player can drag an archetype
+let STYLE_DATA = null;           // in-memory mirror; aiThink is synchronous and cannot await storage
+const STYLE_REC = {};            // this match's accumulator, keyed by fighter name
+
+async function hydratePlaystyles(){
+  try{
+    if(!BStore.available()) return;
+    const raw = await BStore.get(STYLE_KEY);
+    STYLE_DATA = raw ? JSON.parse(raw) : null;
+  }catch(e){ STYLE_DATA = null; }   // learning is a nicety and must never break a match
+}
+// Called once per frame from step(). Only watches fighters a HUMAN is driving.
+function observePlaystyle(){
+  if(typeof fighters === 'undefined') return;
+  for(const f of fighters){
+    if(f.dead) continue;
+    if(f.controller !== 'local' && f.controller !== 'local2') continue;
+    const r = STYLE_REC[f.name] || (STYLE_REC[f.name] =
+      { frames:0, approach:0, moving:0, attacks:0, specials:0, rangeSum:0, rangeN:0, jumps:0 });
+    r.frames++;
+    // nearest opponent — the reference for every spatial measure below
+    let near = null, nd = Infinity;
+    for(const o of fighters){
+      if(o === f || o.dead || o.team === f.team) continue;
+      const d = Math.abs(o.x - f.x);
+      if(d < nd){ nd = d; near = o; }
+    }
+    if(near){
+      if(Math.abs(f.vx) > 0.5){
+        r.moving++;
+        // moving toward them counts as pressure; away counts as spacing
+        if(Math.sign(f.vx) === Math.sign(near.x - f.x)) r.approach++;
+      }
+      // RISING EDGE, not "is attacking": a long swing would otherwise count once per frame and
+      // drown out a player who throws many short pokes.
+      if(f._atkAnim > (f._psAtk||0)){ r.attacks++; r.rangeSum += nd; r.rangeN++; }
+      if((f.spCd||0) > (f._psSp||0)) r.specials++;
+      if(!f.onground && (f._psGround !== false)) r.jumps++;
+    }
+    f._psAtk = f._atkAnim || 0;
+    f._psSp = f.spCd || 0;
+    f._psGround = f.onground;
+  }
+}
+// Fold this match's observations into the stored profile. Called at match end.
+async function commitPlaystyles(){
+  try{
+    if(!BStore.available()) return;
+    const raw = await BStore.get(STYLE_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    for(const name in STYLE_REC){
+      const r = STYLE_REC[name];
+      if(r.frames < 240) continue;                 // under ~4s of play is not a style, it is a blip
+      const a = all[name] || (all[name] = { n:0, aggression:0.5, range:0.5, special:0.35 });
+      const obs = {
+        aggression: r.moving ? r.approach/r.moving : 0.5,
+        range: r.rangeN ? Math.min(1, (r.rangeSum/r.rangeN)/260) : 0.5,
+        special: (r.attacks+r.specials) ? r.specials/(r.attacks+r.specials) : 0.35,
+      };
+      // running mean, so one wild match cannot rewrite a settled style
+      const k = 1/Math.min(10, a.n+1);
+      a.aggression += (obs.aggression - a.aggression)*k;
+      a.range      += (obs.range      - a.range)*k;
+      a.special    += (obs.special    - a.special)*k;
+      a.n++;
+    }
+    await BStore.set(STYLE_KEY, JSON.stringify(all));
+    STYLE_DATA = all;
+  }catch(e){ /* never break the result screen */ }
+  for(const k in STYLE_REC) delete STYLE_REC[k];
+}
+// How much of the learned style to apply, 0..STYLE_WEIGHT, ramping with sample count.
+function styleTrust(name){
+  const s = STYLE_DATA && STYLE_DATA[name];
+  if(!s || s.n < STYLE_MIN_SAMPLES) return 0;
+  const t = Math.min(1, (s.n - STYLE_MIN_SAMPLES) / (STYLE_FULL_SAMPLES - STYLE_MIN_SAMPLES));
+  return STYLE_WEIGHT * (0.4 + 0.6*t);
+}
+// Blend the learned style into a class profile. Returns a NEW object; AI_PROFILE is never mutated,
+// or one player's habits would leak into every other fighter sharing the archetype.
+function styledProfile(name, prof){
+  const w = styleTrust(name);
+  if(w <= 0) return prof;
+  const s = STYLE_DATA[name];
+  return {
+    range:     prof.range * (1 - w) + (60 + s.range*260) * w,
+    aggro:     prof.aggro * (1 - w) + (0.35 + s.aggression*0.75) * w,
+    retreat:   prof.retreat,
+    trapHappy: prof.trapHappy,
+    poke:      prof.poke * (1 - w) + (1 - s.special) * w,
+  };
+}
 // per-class tuning: preferred range, aggression, how much they poke vs commit
 const AI_PROFILE = {
   rush:   { range:52,  aggro:0.95, retreat:false, trapHappy:0, poke:0.2 },
@@ -6679,7 +6909,8 @@ function aiThink(f){
   const ZONERS=["ember","cap","fry","barf","serve","freeze","beam","sign","splash","dribble","debuff","buynow","ring","fly","gust","zap","spark","salsa","spike","sucker","hack","ink","payday","emberjr","measure","morse","shatter","timber","pricetag"];
   const isZoner = ZONERS.includes(sp);
   const cls = aiClass(f);
-  const prof = AI_PROFILE[cls] || AI_PROFILE.brawl;
+  // The player's own habits with THIS fighter, blended into the archetype (Wave 5).
+  const prof = styledProfile(f.name, AI_PROFILE[cls] || AI_PROFILE.brawl);
   const idealRange = prof.range;   // preferred spacing comes from the archetype now
 
   // PROTECT: if the plan told this team to guard an ally, a guardian hovers near them
@@ -10617,6 +10848,8 @@ async function resetStats(){
 // and called in a loop by teamStrength() — never has to reach for async storage. A World Cup that
 // starts before this resolves simply rates from the baked table, which is the correct fallback.
 try{ hydrateRatings(); }catch(e){}
+try{ hydratePlaystyles(); }catch(e){}   // Wave 5: how the player plays each fighter
+try{ hydrateRival(); }catch(e){}        // Wave 3.5: who has beaten you most
 profileReady = (async()=>{ try{ await loadProfile(); }catch(e){ PROFILE = openProfile('load-failed'); } })();
 profileReady.then(()=>{ try{ buildBoard(); }catch(e){} });
 
