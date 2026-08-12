@@ -46,16 +46,16 @@ recorded in `assets/sprites/CREDITS.md`.
 
 ---
 
-## Wave 3.5 — Juice (started)
+## Wave 3.5 — Juice ✅ shipped
 
 Presentation only, no new modes or menus — the filter is "deepens what already exists".
 
-1. KO instant-replay on the result screen (pairs with the share-clip GIF)
-2. "Cake at Stake" elimination stingers
+1. ~~KO instant-replay~~ ✅ replays the tail of the share-clip ring at a third speed, looping
+2. ~~Cake at Stake stingers~~ ✅ fires only on the LAST stock — a mid-match KO is not a ceremony
 3. ~~Victory quips~~ ✅ 45+ character-voiced lines; a fighter with no entry gets silence rather than a generic line
-4. Daily Match — one seeded matchup a day, one attempt
+4. ~~Daily Match~~ ✅ date-seeded, identical for everyone, one attempt a day
 5. ~~Rival memory~~ ✅ built from balance:matchlog, appears only after two losses
-6. Crowd cameos from the design doc's benched non-fighters
+6. ~~Crowd cameos~~ ✅ twelve benched characters watching from the back, hopping after every KO
 
 ## Wave 4 — Character depth ✅ shipped
 

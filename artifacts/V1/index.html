@@ -312,6 +312,11 @@
   .resultquip{margin:6px auto 2px;max-width:560px;text-align:center;font-style:italic;font-weight:700;color:var(--gold,#ffd23f);font-size:15px}
   .rivaltag{position:absolute;top:2px;right:2px;background:#e0503a;color:#fff;font-size:9px;font-weight:800;padding:1px 4px;border-radius:5px;letter-spacing:.04em}
   .rr-share{margin-top:10px}
+  .dailycard{max-width:340px;margin:10px auto;padding:9px 12px;border:2px dashed var(--gold,#ffd23f);border-radius:12px;background:#ffffff14}
+  .daily-title{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--gold,#ffd23f)}
+  .daily-line{font-weight:800;font-size:15px;margin:3px 0 6px}
+  .daily-done{font-size:12px;opacity:.8}
+  .rr-replay{display:block;width:100%;max-height:26vh;object-fit:contain;image-rendering:auto;border:3px solid var(--gold,#ffd23f);border-radius:10px;background:#000;margin-bottom:8px}
   .rr-gif{width:100%;max-height:34vh;object-fit:contain;border:3px solid #1c1c1c;border-radius:10px;background:#000}
   .rr-link{width:100%;font-family:inherit;font-size:12px;padding:7px 9px;border:2px solid #1c1c1c;border-radius:8px}
   .planinput input{flex:1;font-family:inherit;padding:8px 10px;border:2px solid #1c1c1c;border-radius:10px}
@@ -342,6 +347,8 @@
     </div>
     <h1>BATTLE FOR<br>SMASH ISLAND</h1>
     <div class="tag">5-contestant free-for-all · percent & knockback · v1</div>
+    <!-- DAILY MATCH (Wave 3.5): the same seeded matchup for everyone, one attempt a day. -->
+    <div id="dailyCard" class="dailycard" style="display:none"></div>
     <div class="row">
       <button class="btn" onclick="tutorialSeen() ? go('select') : openTutorial()">Take the Plunge ▶</button>
       <button class="btn alt sm" onclick="openLobby()">🌐 Play with Friends</button>
@@ -1674,6 +1681,8 @@ function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any
 
 // ---------- screen router ----------
 function go(id){
+  try{ stopReplay(); }catch(e){}   // a looping replay must not survive leaving the result screen
+  if(id==='title'){ try{ refreshDailyCard(); }catch(e){} }
   try{ syncTouchControls(); }catch(e){}   // any screen change re-evaluates whether the touch pad belongs
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('hud').classList.remove('active');
@@ -2761,6 +2770,7 @@ function showRunReview(){
     + '<a class="btn ghost sm" href="'+RUN_REC.url+'" download="bfsi-match.webm">⬇ Video</a>'
     + '</div>'
     + '<div id="rrShare" class="rr-share"></div>';
+  try{ var _rp=document.getElementById('rrShare'); if(_rp) startReplay(_rp); }catch(e){}
 }
 // ---- share actions ---------------------------------------------------------------------------
 // Copy a link to the GAME, not to the clip. There is no server here, so there is nowhere a clip
@@ -3613,7 +3623,8 @@ function buildFighters(){
     for(let i=0;i<TESTMODE.dummies;i++){ lineup.push({...dummyChar[(i+1)%dummyChar.length], you:false}); }
     lineup.forEach((r,i)=>{
       const sx = W*(0.2+0.6*i/Math.max(1,lineup.length-1)), sy=groundY()-60;
-      const f=makeFighter(r, sx, sy, i);
+      if(PENDING_DAILY && i===1){ r = PENDING_DAILY; }   // Daily Match: a fixed opponent for everyone
+    const f=makeFighter(r, sx, sy, i);
       f.team=i; f.stocks=99; f.homeBase=null;   // everyone their own team; infinite-ish stocks
       f.controller = (i===0) ? "local" : (TESTMODE.dummyMode==="live" ? "ai" : "still");
       fighters.push(f);
@@ -6071,6 +6082,10 @@ function eliminate(f){
   if(f.you) banner(f.stocks>0 ? "KO'd! − a stock" : "You're out!", 1100);
   if(f.stocks<=0){
     f.dead=true; f.alive=false;
+    // CAKE AT STAKE (Wave 3.5). The single most BFDI-native piece of presentation available: losing
+    // your last stock is an elimination ceremony, not just a KO. Render-only — a banner and a
+    // screen-shake flourish keyed off the elimination that already happened.
+    try{ cakeAtStake(f); }catch(e){}
     // record finishing placement: in FFA, placement = number still alive (incl. teammates) + 1.
     // e.g. in a 5-player FFA, the first one out is 5th, the last survivor is 1st.
     if(f.placement==null){
@@ -6128,6 +6143,7 @@ function checkWin(){
     }
     awardMatchProgress(winTeam);   // profile + unlock delta, computed synchronously
     recordMatch(winTeam);    // log the result for balance analysis
+    if(DAILY_ACTIVE){ try{ recordDaily(winTeam===0); }catch(e){} DAILY_ACTIVE=false; PENDING_DAILY=null; }
     try{ commitPlaystyles(); }catch(e){}   // …and fold this match into the play-style profile
     setTimeout(()=>showResult(winners, winTeam),700);
   }
@@ -6425,6 +6441,202 @@ function placementWinsLosses(place){
   return { wins:w, losses: PLACE_MAX - w };
 }
 const ORDINAL = p => p==null ? "—" : (["","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th"][p] || (p+"th"));
+
+// ============================================================
+//  WAVE 3.5 — CAKE AT STAKE
+// ============================================================
+// Losing your LAST stock is an elimination ceremony in this show, not merely a KO. A short
+// flourish on the frame it happens: a heavier shake, a burst of the fighter's own colour, and a
+// named banner. Pure presentation — it reads off an elimination the sim already performed.
+let CAKE_FX = null;   // {name, color, t} — drawn by drawCakeAtStake, decays on its own
+function cakeAtStake(f){
+  CAKE_FX = { name: f.name, color: f.color, t: 78 };
+  try{ shake(16); }catch(e){}
+  try{ banner("CAKE AT STAKE: " + f.name + " is out!", 1500); }catch(e){}
+}
+function drawCakeAtStake(){
+  if(!CAKE_FX) return;
+  CAKE_FX.t--;
+  if(CAKE_FX.t <= 0){ CAKE_FX = null; return; }
+  const k = CAKE_FX.t / 78;                 // 1 -> 0
+  // A widening ring of the eliminated fighter's colour, sweeping outward from centre screen.
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);            // screen space: this is a stinger, not a world object
+  ctx.globalAlpha = 0.30 * k;
+  ctx.strokeStyle = CAKE_FX.color;
+  ctx.lineWidth = 14 * k + 3;
+  ctx.beginPath();
+  ctx.arc(W/2, H/2, (1-k) * Math.max(W,H) * 0.75, 0, 7);
+  ctx.stroke();
+  // …and a brief colour wash, strongest on the first frames
+  ctx.globalAlpha = 0.16 * k * k;
+  ctx.fillStyle = CAKE_FX.color;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+// ============================================================
+//  WAVE 3.5 — KO INSTANT REPLAY
+// ============================================================
+// The share-clip ring already holds the last few seconds of real frames, so the replay costs
+// nothing extra to capture. Played back on the result screen at a THIRD speed — the point is to
+// see the finish, and a slow-motion replay is the reason the share GIF is worth making.
+const REPLAY = { raf:0, i:0, hold:0, cv:null, ctx:null };
+function stopReplay(){
+  if(REPLAY.raf){ try{ cancelAnimationFrame(REPLAY.raf); }catch(e){} REPLAY.raf = 0; }
+}
+function startReplay(host){
+  stopReplay();
+  const frames = clipFrames();
+  // Only the tail: the finish is the interesting part, not four seconds of positioning.
+  const tail = frames.slice(Math.max(0, frames.length - 20));
+  if(tail.length < 4) return false;
+  const el = document.createElement('canvas');
+  el.className = 'rr-replay';
+  el.width = CLIP.W; el.height = CLIP.H;
+  host.appendChild(el);
+  const g = el.getContext('2d');
+  // putImageData ignores transforms, so blit through a scratch canvas of the same size.
+  const scratch = document.createElement('canvas');
+  scratch.width = CLIP.W; scratch.height = CLIP.H;
+  const sg = scratch.getContext('2d');
+  REPLAY.i = 0; REPLAY.hold = 0;
+  const tick = ()=>{
+    const f = tail[REPLAY.i];
+    if(f){
+      sg.putImageData(f, 0, 0);
+      g.clearRect(0,0,el.width,el.height);
+      g.drawImage(scratch, 0, 0);
+    }
+    // a third speed, then a beat on the final frame before looping
+    if(++REPLAY.hold >= 3){
+      REPLAY.hold = 0;
+      REPLAY.i++;
+      if(REPLAY.i >= tail.length){ REPLAY.i = 0; REPLAY.hold = -24; }
+    }
+    REPLAY.raf = requestAnimationFrame(tick);
+  };
+  tick();
+  return true;
+}
+
+// ============================================================
+//  WAVE 3.5 — DAILY MATCH
+// ============================================================
+// One seeded matchup a day, the SAME for everyone, so there is a thing to compare. The game
+// already has deterministic seeding, so this is a date-derived pick rather than new machinery.
+function dailySeed(d){
+  const t = d || new Date();
+  return (t.getUTCFullYear()*10000 + (t.getUTCMonth()+1)*100 + t.getUTCDate()) >>> 0;
+}
+function dailyMatchup(seed){
+  const pool = ROSTER.filter(r=>r.play);
+  if(!pool.length) return null;
+  // mulberry-style hash so the same day gives the same pair everywhere, with no stored state
+  let h = seed >>> 0;
+  const nxt = ()=>{ h = (Math.imul(h ^ (h>>>15), 1 | h) + 0x6D2B79F5) >>> 0; return h / 4294967296; };
+  const a = pool[Math.floor(nxt()*pool.length) % pool.length];
+  let b = pool[Math.floor(nxt()*pool.length) % pool.length];
+  let guard = 0;
+  while(b === a && guard++ < 20) b = pool[Math.floor(nxt()*pool.length) % pool.length];
+  return { you:a, foe:b, seed };
+}
+async function dailyResult(){
+  try{
+    if(!BStore.available()) return null;
+    const raw = await BStore.get('daily:v1');
+    if(!raw) return null;
+    const d = JSON.parse(raw);
+    return (d && d.seed === dailySeed()) ? d : null;   // yesterday's attempt does not count
+  }catch(e){ return null; }
+}
+let DAILY_ACTIVE = false;   // this match is the daily attempt, so its result gets recorded
+// Renders the card on the title screen: today's pairing, and your result once you have played it.
+async function refreshDailyCard(){
+  const el = document.getElementById('dailyCard');
+  if(!el) return;
+  const m = dailyMatchup(dailySeed());
+  if(!m){ el.style.display='none'; return; }
+  const done = await dailyResult();
+  el.style.display = 'block';
+  el.innerHTML = '';
+  const title = document.createElement('div');
+  title.className = 'daily-title';
+  title.textContent = '★ DAILY MATCH';
+  const line = document.createElement('div');
+  line.className = 'daily-line';
+  // textContent, never innerHTML — these are roster names and the card sits on the title screen
+  line.textContent = m.you.name + '  vs  ' + m.foe.name;
+  el.appendChild(title); el.appendChild(line);
+  if(done){
+    const res = document.createElement('div');
+    res.className = 'daily-done';
+    res.textContent = done.won ? '✓ You won today’s match' : '✗ You lost today’s match — back tomorrow';
+    el.appendChild(res);
+  } else {
+    const btn = document.createElement('button');
+    btn.className = 'btn alt sm';
+    btn.textContent = 'Play today’s match ▶';
+    btn.onclick = ()=>startDailyMatch();
+    el.appendChild(btn);
+  }
+}
+function startDailyMatch(){
+  const m = dailyMatchup(dailySeed());
+  if(!m) return;
+  DAILY_ACTIVE = true;
+  chosen = m.you;
+  SETTINGS.mode = 'ffa'; SETTINGS.count = 2; SETTINGS.stocks = 2; SETTINGS.itemRate = 0;
+  // Same pairing for everyone: the opponent is fixed rather than drawn by buildFighters.
+  PENDING_DAILY = m.foe;
+  beginMatchNow();
+}
+let PENDING_DAILY = null;
+async function recordDaily(won){
+  try{
+    if(!BStore.available()) return;
+    await BStore.set('daily:v1', JSON.stringify({ seed: dailySeed(), won: !!won, ts: Date.now() }));
+  }catch(e){}
+}
+
+// ============================================================
+//  WAVE 3.5 — CROWD CAMEOS
+// ============================================================
+// The design doc benches 17 non-fighting characters as "stage and crowd roles". They stand along
+// the back of the arena and REACT — a small hop and a colour pop whenever a KO lands. Purely
+// decorative: drawn behind everything, deterministic from position, never touching the sim.
+const CROWD = [
+  { name:"Announcer",  color:"#3a4a6a" }, { name:"Eraser",   color:"#e8b0a0" },
+  { name:"Spongy",     color:"#e8d84b" }, { name:"8-Ball",   color:"#222222" },
+  { name:"Cloudy",     color:"#dfeaf5" }, { name:"Grotato",  color:"#4a9c6a" },
+  { name:"Pie",        color:"#e8c060" }, { name:"Stapy",    color:"#d0483a" },
+  { name:"Blender",    color:"#9ac0d8" }, { name:"Clock",    color:"#d8c46a" },
+  { name:"Barf Bag",   color:"#c9c04b" }, { name:"Nickel",   color:"#b8b8c0" },
+];
+function drawCrowd(){
+  if(typeof worldPlats === 'undefined') return;
+  const gy = groundY();
+  const n = CROWD.length;
+  const span = Math.max(400, WW * 0.9);
+  const react = Math.max(0, 40 - (hazardT - lastKoFrame));   // a KO ripples through them
+  for(let i=0;i<n;i++){
+    const c = CROWD[i];
+    const x = WW*0.05 + span*(i+0.5)/n;
+    // deterministic idle sway, plus a hop for a couple of seconds after any KO
+    const sway = Math.sin(hazardT*0.03 + i*1.7) * 3;
+    const hop = react > 0 ? -Math.abs(Math.sin((hazardT + i*5) * 0.35)) * react * 0.45 : 0;
+    const y = gy - 6 + sway + hop;
+    const r = 11;
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = c.color;
+    ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r*1.1, 0, 0, 7); ctx.fill(); ctx.stroke();
+    // two dot eyes so they read as characters rather than as scenery pebbles
+    ctx.fillStyle = "#1c1c1c";
+    ctx.beginPath(); ctx.arc(x-3.5, y-2, 1.6, 0, 7); ctx.arc(x+3.5, y-2, 1.6, 0, 7); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
 
 // ============================================================
 //  WAVE 3.5 — VICTORY QUIPS
@@ -7504,6 +7716,7 @@ function draw(){
     ctx.restore();
   }
 
+  try{ drawCrowd(); }catch(e){}   // Wave 3.5: benched characters watching from the back
   // TEAM ZONES — the safe column above each base. Drawn UNDER the fighters so nobody is obscured,
   // and kept faint: it has to be unmistakable where the boundary is without dominating the arena.
   if(SETTINGS.mode === 'teams' && bases && bases.length){
@@ -9293,7 +9506,7 @@ const SPRITES = {
   },
 /* RENDER-SPRITES-START */
   // ---- official character renders (generated by scripts/wire-sprites.mjs — do not hand-edit) ----
-  // 47 fighters. Each falls back to the generic blob until its PNG decodes, and
+  // 53 fighters. Each falls back to the generic blob until its PNG decodes, and
   // forever if the file is missing. Facing was measured, not eyeballed — see fetch-sprites.mjs.
   Balloony: renderSprite("balloony.png", { flip:true }),   // 90x200, facing -0.08
   "Barf Bag": renderSprite("barf-bag.png"),   // 208x200, facing 0.032
@@ -9306,10 +9519,13 @@ const SPRITES = {
   David: renderSprite("david.png", { flip:true }),   // 103x200, facing -0.052
   Donut: renderSprite("donut.png", { flip:true }),   // 212x200, facing -0.057
   Dora: renderSprite("dora.png"),   // 150x200, facing 0.068
-  Fanny: renderSprite("fanny.png", { flip:true }),   // 158x200, facing -0.129
+  "Evil Leafy": renderSprite("evil-leafy.png"),   // 110x200, facing -0.001
+  Fanny: renderSprite("fanny.png"),   // 158x200, facing -0.129
   Fern: renderSprite("fern.png"),   // 151x200, facing 0
   "Firey Jr.": renderSprite("firey-jr.png", { imgW:2.6 }),   // 241x200, facing 0.008
+  "Firey Speaker Box": renderSprite("firey-speaker-box.png"),   // 141x200, facing 0.025
   Flower: renderSprite("flower.png"),   // 161x200, facing 0.013
+  Four: renderSprite("four.png", { flip:true }),   // 190x200, facing -0.055
   Fries: renderSprite("fries.png"),   // 142x200, facing 0.146
   Gaty: renderSprite("gaty.png", { imgW:2.6, flip:true }),   // 278x200, facing -0.022
   Gelatin: renderSprite("gelatin.png"),   // 193x200, facing 0.004
@@ -9320,13 +9536,15 @@ const SPRITES = {
   Lollipop: renderSprite("lollipop.png", { flip:true }),   // 96x200, facing -0.061
   Loser: renderSprite("loser.png", { flip:true }),   // 167x200, facing -0.034
   Marker: renderSprite("marker.png", { imgH:3.1, flip:true }),   // 83x200, facing -0.059
-  Money: renderSprite("money.png", { flip:true }),   // 188x200, facing -0.055
+  Money: renderSprite("money.png"),   // 188x200, facing -0.055
   Naily: renderSprite("naily.png", { imgW:3.2 }),   // 340x200, facing 0.024
   Needle: renderSprite("needle.png", { imgH:3.1 }),   // 42x200, facing -0.005
   Nickel: renderSprite("nickel.png"),   // 186x200, facing -0.011
   Pillow: renderSprite("pillow.png", { flip:true }),   // 151x200, facing -0.062
   Pin: renderSprite("pin.png"),   // 120x200, facing 0.059
   Profily: renderSprite("profily.png"),   // 206x200, facing -0.01
+  "Puffball Speaker Box": renderSprite("puffball-speaker-box.png", { flip:true }),   // 165x200, facing -0.025
+  "Purple Face": renderSprite("purple-face.png", { flip:true }),   // 195x200, facing -0.049
   Remote: renderSprite("remote.png"),   // 202x200, facing 0.029
   Roboty: renderSprite("roboty.png", { imgH:3.1 }),   // 84x200, facing 0
   Rose: renderSprite("rose.png"),   // 144x200, facing 0.004
@@ -9340,6 +9558,7 @@ const SPRITES = {
   Toothpaste: renderSprite("toothpaste.png"),   // 110x200, facing 0.034
   Tree: renderSprite("tree.png", { flip:true }),   // 170x200, facing -0.053
   TV: renderSprite("tv.png"),   // 219x200, facing 0.002
+  Two: renderSprite("two.png", { imgW:2.6 }),   // 255x200, facing -0.006
   Woody: renderSprite("woody.png"),   // 167x200, facing 0.02
   "Yellow Face": renderSprite("yellow-face.png", { flip:true }),   // 194x200, facing -0.059
 /* RENDER-SPRITES-END */
@@ -10850,6 +11069,7 @@ async function resetStats(){
 try{ hydrateRatings(); }catch(e){}
 try{ hydratePlaystyles(); }catch(e){}   // Wave 5: how the player plays each fighter
 try{ hydrateRival(); }catch(e){}        // Wave 3.5: who has beaten you most
+try{ refreshDailyCard(); }catch(e){}    // Wave 3.5: today's seeded matchup
 profileReady = (async()=>{ try{ await loadProfile(); }catch(e){ PROFILE = openProfile('load-failed'); } })();
 profileReady.then(()=>{ try{ buildBoard(); }catch(e){} });
 
