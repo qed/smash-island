@@ -862,3 +862,27 @@ describe('drawing sprite fighters headlessly', () => {
     expect(() => w.eval('draw()')).not.toThrow();
   });
 });
+
+describe('facing overrides — set by eye, and they win', () => {
+  // The automated check finds the centroid of interior dark ink and calls it the face. That is
+  // wrong for a character with dark DECORATION opposite their face, and it shipped a real bug:
+  // Money's "5" and dark clip sit left of his face, dragged the centroid left, and he was mirrored
+  // — so he walked backwards. A later eye-detecting heuristic missed him too.
+  //
+  // The tell that settles it: his "5" reads BACKWARDS when mirrored. A render carrying legible text
+  // must never be flipped, whatever a centroid says.
+  it('does not mirror renders whose face was confirmed by eye', () => {
+    const { window: w } = loadMonolith();
+    for (const name of ['Money', 'Fanny']) {
+      expect(w.eval(`!!SPRITES[${JSON.stringify(name)}].flip`),
+        `${name} faces right in their artwork and must not be mirrored`).toBe(false);
+    }
+  });
+
+  it('keeps the override in the generator, so re-running it cannot undo the fix', () => {
+    const src = readFileSync('scripts/wire-sprites.mjs', 'utf8');
+    expect(src, 'override table present').toContain('FACING_OVERRIDE');
+    expect(src).toContain('money.png');
+    expect(src).toContain('fanny.png');
+  });
+});

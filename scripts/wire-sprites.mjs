@@ -31,9 +31,31 @@ const accepted = Object.values(manifest).filter(r => r.ok).sort((a, b) => a.name
 // cast averaging ~2.4R, so they read as half-size rather than as wide. Widening their box restores
 // comparable apparent SIZE (geometric mean of drawn width and height) without stretching anything,
 // since the image's own aspect ratio still decides the shape.
+// FACING OVERRIDES — set by eye, and they win over the measurement.
+//
+// The automated facing check finds the centroid of interior dark ink and assumes it is the face.
+// That is wrong for any character with dark DECORATION on the opposite side from their face, and
+// it produced real, visible bugs: Money's "5" and his dark money-clip sit left of his face and
+// dragged the centroid with them, so he was flipped and walked backwards. A later eye-detecting
+// heuristic missed him too.
+//
+// The tell that settles it: Money's "5" reads BACKWARDS when mirrored. A render carrying legible
+// text or numerals must never be flipped, whatever any centroid says.
+const FACING_OVERRIDE = {
+  'money.png': false,   // face is on the right; the "5" and clip are decoration, and mirror illegibly
+  'fanny.png': false,   // face is on the right; the blue handle is what the ink check latched onto
+};
+
 function box(r) {
   const ar = r.width / r.height;
   const o = {};
+  if (r.file in FACING_OVERRIDE) {
+    if (FACING_OVERRIDE[r.file]) o.flip = true;
+    if (ar < 0.45) o.imgH = 3.1;
+    else if (ar > 1.5) o.imgW = 3.2;
+    else if (ar > 1.15) o.imgW = 2.6;
+    return o;
+  }
   if (ar < 0.45) o.imgH = 3.1;             // sliver characters stand a little taller
   if (ar > 1.5) o.imgW = 3.2;              // very wide characters get real room sideways
   else if (ar > 1.15) o.imgW = 2.6;        // squat characters get a little
