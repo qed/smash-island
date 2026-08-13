@@ -727,11 +727,16 @@ describe('background music — the music-only toggle', () => {
     expect(typeof w.toggleMusic).toBe('function');          // the inline on*= handler is bridged
   });
 
-  it('sits on the title screen beside the master Sound toggle, and again in Controls', () => {
+  // Both toggles moved off the title screen into the Settings panel when the UI was simplified —
+  // the property under test is unchanged: music sits beside the master Sound switch, in the same
+  // visual treatment, and appears a second time in Controls.
+  it('sits in Settings beside the master Sound toggle, and again in Controls', () => {
     const { w } = bootWithAudio();
-    const title = w.document.getElementById('title');
-    expect(title.contains(w.document.getElementById('soundToggle'))).toBe(true);
-    expect(title.contains(w.document.getElementById('musicToggle'))).toBe(true);
+    const options = w.document.getElementById('options');
+    expect(options.contains(w.document.getElementById('soundToggle'))).toBe(true);
+    expect(options.contains(w.document.getElementById('musicToggle'))).toBe(true);
+    // ...and one click from the title screen, never buried.
+    expect(w.document.getElementById('title').innerHTML).toContain("go('options')");
     // Same visual treatment as the control it sits next to, so it does not read as a new species.
     expect(w.document.getElementById('musicToggle').className)
       .toBe(w.document.getElementById('soundToggle').className);
