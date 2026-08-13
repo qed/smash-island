@@ -89,6 +89,61 @@ describe('match settings — the three dials nobody changes are folded away', ()
       expect(adv.contains(w.document.getElementById(id)), `${id} stays visible`).toBe(false);
     }
   });
+
+  it('every folded control is a live, enabled node inside the panel body', () => {
+    const { window: w } = loadMonolith();
+    w.eval('buildSettings(); toggleAdvSettings()');
+    const body = w.document.getElementById('advBody');
+    const controls = [...body.querySelectorAll('button')];
+    expect(controls).toHaveLength(11);            // 3 CPU + 4 items + 4 map size
+    for (const b of controls) {
+      expect(body.contains(b)).toBe(true);
+      expect(b.disabled).toBe(false);
+      expect(b.dataset.v, 'each folded button carries the value it applies').toBeTruthy();
+      expect(typeof b.onclick, 'and a handler bound by buildSettings').toBe('function');
+    }
+  });
+});
+
+// The shipped panel expanded but showed NOTHING: .screen is a column flex container, and a flex
+// item whose own overflow is not `visible` has an automatic minimum size of zero, so the layout
+// squashed the panel (overflow:hidden, for its rounded corners) to 6px and clipped 247px of
+// options inside it. The roster line went the same way — 12px for 106px of cells — because its
+// overflow-x:auto has the same effect. Measured in a real browser at the game's own 1100x720
+// letterbox, before and after.
+//
+// jsdom has no layout engine, so these tests cannot measure the collapse; they pin the
+// declarations that prevent it. If someone drops the flex line, this goes red.
+describe('collapsible panels and the roster line cannot be squashed flat', () => {
+  const ruleFor = (w, selector) => {
+    for (const sheet of w.document.styleSheets) {
+      for (const rule of sheet.cssRules) {
+        if (rule.selectorText === selector) return rule;
+      }
+    }
+    return null;
+  };
+
+  it('pins flex:0 0 auto on the two items whose overflow zeroes their minimum size', () => {
+    const { window: w } = loadMonolith();
+    for (const sel of ['.board', '.teamchat']) {
+      const rule = ruleFor(w, sel);
+      expect(rule, `${sel} rule exists`).toBeTruthy();
+      expect(rule.style.flex, `${sel} must not shrink`).toBe('0 0 auto');
+      // The pairing is the whole point: overflow that clips + a shrinkable box = invisible content.
+      expect(rule.style.cssText).toMatch(/overflow(-x)?:\s*(hidden|auto)/);
+    }
+  });
+
+  it('does not trap the folded options in a second scroller of their own', () => {
+    const { window: w } = loadMonolith();
+    const rule = ruleFor(w, '.advset .teamchat-body');
+    expect(rule).toBeTruthy();
+    expect(rule.style.cssText).toContain('max-height: none');
+    expect(rule.style.cssText).toContain('overflow: visible');
+    // The chat log keeps its own cap — it grows without bound, the six segments do not.
+    expect(ruleFor(w, '.teamchat-body').style.cssText).toContain('max-height: 52vh');
+  });
 });
 
 describe('the roster is one draggable line of fighter art', () => {
