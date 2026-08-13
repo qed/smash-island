@@ -1835,37 +1835,38 @@ function unlockHint(name){
 // element is handed back to the sprite registry, so picking a fighter warms the exact Image the
 // canvas will use instead of fetching it twice. No render (or a 404) falls back to the colour blob
 // this board has always shown, which is also what the canvas falls back to.
-// Cells fetch their render only once they are about to be dragged into view. Native loading="lazy"
-// alone was not enough: it keys off the VIEWPORT, and this strip is a scroller inside a screen that
-// spends most of its life display:none, so whether a cell ever loads came down to a browser
-// heuristic. An observer rooted on the strip itself is exact — everything within ~400px of the
-// visible window loads, the rest waits until you drag toward it.
-let BOARD_IO = null;
-function boardObserver(){
-  if(BOARD_IO || typeof IntersectionObserver !== 'function') return BOARD_IO;
-  BOARD_IO = new IntersectionObserver((entries)=>{
-    for(const e of entries){
-      if(!e.isIntersecting) continue;
-      const im=e.target;
-      BOARD_IO.unobserve(im);
-      if(im.dataset && im.dataset.src) im.src = im.dataset.src;
-    }
-  }, { root: document.getElementById('board'), rootMargin: '100px 400px' });
-  return BOARD_IO;
+// Cells fetch their render only once they are near the visible slice of the strip. Two mechanisms
+// were tried and rejected before this one: native loading="lazy" keys off the VIEWPORT, and this
+// strip is a scroller inside a screen that spends most of its life display:none, so whether a cell
+// ever loaded came down to a browser heuristic; an IntersectionObserver then only delivers its
+// callbacks on frame boundaries, so a throttled or non-compositing tab left every cell blank. Plain
+// arithmetic over scrollLeft depends on neither. BOARD_LAZY_PAD is how far ahead of the edge a cell
+// starts loading, so dragging reveals art that is already there.
+const BOARD_LAZY_PAD = 400;
+function boardLazyPass(){
+  const b=document.getElementById('board'); if(!b) return;
+  const from = b.scrollLeft - BOARD_LAZY_PAD;
+  const to   = b.scrollLeft + (b.clientWidth||0) + BOARD_LAZY_PAD;
+  for(const im of b.querySelectorAll('img.cellimg[data-src]')){
+    const cell = im.parentElement;
+    const x = cell ? cell.offsetLeft : 0;
+    if(x + (cell ? cell.offsetWidth : 0) < from || x > to) continue;
+    im.src = im.getAttribute('data-src');
+    im.removeAttribute('data-src');
+  }
 }
 function fighterThumb(r){
   let sp=null; try{ sp = SPRITES[r.name]; }catch(e){}
   if(sp && sp.src){
     const im=document.createElement('img');
     im.className='cellimg'; im.alt=''; im.draggable=false;
-    // setAttribute, not the IDL property: the attribute is what the browser's own lazy pass reads,
-    // and it survives environments that do not implement the reflected property.
-    im.setAttribute('loading','lazy'); im.setAttribute('decoding','async');
+    // Deliberately NO loading="lazy": that attribute keeps its own counsel about when to fetch, and
+    // a src handed to it in a hidden or throttled tab can sit unfetched forever. boardLazyPass()
+    // decides what loads; once it hands over a src the browser must act on it at once.
+    im.setAttribute('decoding','async');
     im.onload=()=>{ if(!sp.img){ sp.img=im; sp._req=true; } };
     im.onerror=()=>{ try{ im.replaceWith(blobDot(r)); }catch(e){} };
-    im.dataset.src = sp.src;
-    const io = boardObserver();
-    if(io) io.observe(im); else im.src = sp.src;   // no observer here — load it straight away
+    im.setAttribute('data-src', sp.src);   // promoted to src by boardLazyPass when it nears view
     return im;
   }
   return blobDot(r);
@@ -1902,6 +1903,8 @@ function initBoardDrag(){
     if(!d) return;
     b.scrollLeft += d; e.preventDefault();   // a plain vertical wheel walks the line sideways
   }, {passive:false});
+  // Whatever moved the line — drag, wheel, flick, keyboard — the cells now near the edge load.
+  b.addEventListener('scroll', ()=>{ boardLazyPass(); }, {passive:true});
 }
 // Keep the picked fighter on screen after a rebuild — otherwise choosing cell 40 and coming back
 // stares at cell 1.
@@ -1918,7 +1921,6 @@ function scrollChosenIntoView(b){
 function buildBoard(){
   const b=document.getElementById('board'); if(!b) return;
   const keepScroll = b.scrollLeft || 0;   // a rebuild must not fling the line back to the start
-  if(BOARD_IO) BOARD_IO.disconnect();     // the cells it was watching are about to be thrown away
   b.innerHTML='';
   initBoardDrag();
   const mode = viewMode();
@@ -1968,6 +1970,7 @@ function buildBoard(){
   });
   try{ b.scrollLeft = keepScroll; }catch(e){}
   scrollChosenIntoView(b);
+  boardLazyPass();
   const note=document.getElementById('lockNote'); if(note) note.style.display='none';
   const leg=document.getElementById('rosterLegend');
   if(leg) leg.textContent = nOpen>=ROSTER.length

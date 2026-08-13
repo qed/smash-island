@@ -102,10 +102,13 @@ describe('the roster is one draggable line of fighter art', () => {
     const withArt = cells.filter((c) => c.querySelector('img.cellimg'));
     expect(withArt.length, 'most of the cast has a render').toBeGreaterThan(40);
     for (const img of board.querySelectorAll('img.cellimg')) {
-      // data-src is the deferred source the strip's IntersectionObserver promotes to src when the
-      // cell nears the visible window; without an observer (here) it is loaded straight away.
-      expect(img.dataset.src).toMatch(/^assets\/sprites\/.+\.png$/);
-      expect(img.getAttribute('loading'), 'renders load lazily, not 59 at once').toBe('lazy');
+      // data-src is the deferred source boardLazyPass() promotes to src once the cell nears the
+      // visible slice of the strip; one of the two always names the fighter's own render.
+      const src = img.getAttribute('src') || img.getAttribute('data-src');
+      expect(src).toMatch(/^assets\/sprites\/.+\.png$/);
+      // No loading="lazy": the browser's own deferral would second-guess boardLazyPass() and can
+      // leave a src unfetched indefinitely in a hidden tab. What we hand over must load.
+      expect(img.getAttribute('loading')).toBe(null);
     }
     // A fighter with no render still shows the blob the canvas would draw — never a blank cell.
     for (const c of cells) {
@@ -118,7 +121,34 @@ describe('the roster is one draggable line of fighter art', () => {
     w.eval('buildBoard()');
     const img = w.document.querySelector('#board img.cellimg');
     const name = img.closest('.cell').querySelector('.cellname').textContent;
-    expect(img.getAttribute('src')).toBe(w.eval(`SPRITES[${JSON.stringify(name)}].src`));
+    const src = img.getAttribute('src') || img.getAttribute('data-src');
+    expect(src).toBe(w.eval(`SPRITES[${JSON.stringify(name)}].src`));
+  });
+
+  it('fetches only the renders near the visible slice, and more as the line is dragged', async () => {
+    const { window: w } = loadMonolith();
+    await w.eval('profileReady');
+    // jsdom has no layout, so give the strip one: 84px cells in an 800px window. This is the
+    // geometry boardLazyPass() reasons about — nothing else in the game reads it.
+    w.eval(`
+      Object.defineProperty(HTMLElement.prototype, 'offsetLeft', { configurable:true,
+        get(){ return this.parentElement ? [...this.parentElement.children].indexOf(this)*84 : 0; } });
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable:true, get(){ return 78; } });
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable:true, get(){ return 800; } });
+      PROFILE.viewMode='everything'; buildBoard();
+    `);
+    const board = w.document.getElementById('board');
+    const fetched = () => board.querySelectorAll('img.cellimg[src]').length;
+    const deferred = () => board.querySelectorAll('img.cellimg[data-src]').length;
+    const atRest = fetched();
+    expect(atRest, 'the visible run plus a screen of lead-in').toBeGreaterThan(5);
+    expect(atRest, 'nowhere near all 59').toBeLessThan(30);
+    expect(deferred()).toBeGreaterThan(20);
+    // Drag toward the far end: the cells that come into range load, the rest still wait.
+    board.scrollLeft = 3000;
+    w.eval('boardLazyPass()');
+    expect(fetched(), 'dragging pulls in more art').toBeGreaterThan(atRest);
+    expect(deferred(), 'and still not everything').toBeGreaterThan(0);
   });
 
   it('is wired for drag-to-pan, once, however often the line is rebuilt', () => {
