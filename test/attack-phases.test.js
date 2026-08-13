@@ -55,12 +55,14 @@ const RECORDER = `
       if (a && a.over) a.over(f, ctx2);
       return ctx2.ops;
     };
-    // A frame number that lands inside a named beat.
+    // The MIDDLE frame of a named beat. The middle and not the first: every beat opens at
+    // progress 0, where a choreography scaled by that progress correctly draws nothing yet.
     window.__frameIn = function(beat){
+      var hits = [];
       for (var t = ATK_ANIM; t >= 1; t--){
-        if (atkPhase({_atkAnim:t, _atkLen:ATK_ANIM}) === beat) return t;
+        if (atkPhase({_atkAnim:t, _atkLen:ATK_ANIM}) === beat) hits.push(t);
       }
-      return -1;
+      return hits.length ? hits[hits.length >> 1] : -1;
     };
     return true;
   })()`;
@@ -165,34 +167,43 @@ describe('the anticipation actually anticipates', () => {
   });
 
   it('never jumps between beats — the body cannot teleport mid-swing', () => {
+    // Sampled far finer than the frame rate on purpose. Per-FRAME steps are large by design (the
+    // strike crosses the whole -1..+1 range in about six frames), so they say nothing about
+    // continuity. What must hold is that the underlying curve has no step in it: if the three
+    // pieces did not meet at -1 and +1, the body would visibly snap at the beat boundaries.
     const { window: w } = loadMonolith();
-    const steps = w.eval(`
+    const worst = w.eval(`
       (function(){
-        var prev = null, out = [];
-        for (var t = ATK_ANIM; t >= 1; t--){
+        var N = 4000, prev = null, worst = 0;
+        for (var i = 0; i <= N; i++){
+          var t = ATK_ANIM - (ATK_ANIM - 0.0001) * (i/N);
           var d = atkDrive({_atkAnim:t, _atkLen:ATK_ANIM});
-          if (prev !== null) out.push(Math.abs(d - prev));
+          if (prev !== null) worst = Math.max(worst, Math.abs(d - prev));
           prev = d;
         }
-        return out;
+        return worst;
       })()`);
-    // one frame of an 18-frame swing spans at most ~2/18 of the -1..+1 range with easing headroom
-    expect(Math.max(...steps), 'the drive is continuous across the phase boundaries')
-      .toBeLessThan(0.45);
+    expect(worst, 'the drive is continuous across both phase boundaries').toBeLessThan(0.01);
   });
 
   it('the wind-back check would catch its own removal (mutation check)', () => {
     // The assertion above is only worth having if it REJECTS the pre-phase implementation. The old
     // timeline was a single sine that never went negative — no anticipation at all.
     const { window: w } = loadMonolith();
+    // "Winds back" = no frame of the gather pushes forward, and at least one genuinely pulls back.
+    // The first frame sits at exactly 0 (the swing has only just begun), so it is `> 0` that is
+    // disqualifying, not `>= 0`.
     const windsBack = (fn) => w.eval(`
       (function(){
-        var drive = ${fn};
+        var drive = ${fn}, reached = false;
         for (var t = ATK_ANIM; t >= 1; t--){
           var f = {_atkAnim:t, _atkLen:ATK_ANIM};
-          if (atkPhase(f) === 'windup' && drive(f) >= 0) return false;
+          if (atkPhase(f) !== 'windup') continue;
+          var d = drive(f);
+          if (d > 0) return false;
+          if (d < -0.5) reached = true;
         }
-        return true;
+        return reached;
       })()`);
     expect(windsBack('atkDrive'), 'the real drive winds back through the gather').toBe(true);
     expect(windsBack('function(f){ return Math.sin((f._atkAnim/ATK_ANIM)*Math.PI); }'),
@@ -276,13 +287,16 @@ describe('the launch anchor is purely visual', () => {
         var t0 = hazardT;
         doSpecial(f);
         var pr = projectiles[0];
+        // captured up front: the launch clears _visOrigin the moment it expires, which is the
+        // point — an expired shot must stop costing anything at all
+        var anchor = {x: pr._visOrigin.x, y: pr._visOrigin.y};
         var out = [];
         for (var i = 0; i <= PROJ_VIS_FRAMES; i++){
           hazardT = t0 + i;
           var on = projVisLerp(pr);
           out.push({on: on, dx: on ? _pvDX : 0, dy: on ? _pvDY : 0, s: on ? _pvScale : 1});
         }
-        return {out: out, anchor: pr._visOrigin, spawnX: pr.x, spawnY: pr.y};
+        return {out: out, anchor: anchor, cleared: pr._visOrigin === null, spawnX: pr.x, spawnY: pr.y};
       })()`);
     const first = walk.out[0];
     expect(first.on, 'the shot starts its life in a launch').toBe(true);
@@ -298,6 +312,7 @@ describe('the launch anchor is purely visual', () => {
     expect(active.every((o, i) => i === 0 || o.s > active[i - 1].s), 'and scales out of the mouth')
       .toBe(true);
     expect(walk.out[6].on, 'then stops costing anything').toBe(false);
+    expect(walk.cleared, 'and releases the anchor it was holding').toBe(true);
   });
 
   it('never moves the hitbox — the shot flies the identical path either way', () => {
