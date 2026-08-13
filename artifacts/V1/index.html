@@ -3940,7 +3940,7 @@ function makeFighter(r,x,y,idx){
     weakened:0, defined:0, defineStacks:0, frozen:0, _freezeLock:0, lastHitBy:null, curse:0, curseStacks:0,
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
     rooted:0, ctrlRev:0, _revLock:0, slowed:0, _sawing:0, koCount:0, iceUntil:0, healing:0, _hurt:0, deaths:0, killCount:0, placement:null, _downOrder:0, _kos:0, _falls:0, _dmgDealt:0, _dmgTaken:0, _infected:0, _infectedBy:null, _origTeam:0, _lastInput:null, _empowerT:0, _hasteT:0, _starT:0, _yoyleT:0, _holding:null, _bossHitId:-1, _bossHitDmg:0, _swallow:0, _swallowTick:0,
-    flash:0, _atkAnim:0, _hurtAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
+    flash:0, _atkAnim:0, _atkLen:ATK_ANIM, _atkPhase:null, _atkProg:0, _hurtAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
     r:24
   };
 }
@@ -4734,6 +4734,12 @@ function step(){
     if(f.invuln>0) f.invuln--;
     if(f.flash>0) f.flash--;
     if(f._atkAnim>0) f._atkAnim--;   // render-only attack-lunge timer (spriteRig)
+    // …and mirror WHICH BEAT of the swing this frame landed on onto the fighter, so debug
+    // overlays and tests can read the phase without re-deriving the timeline, and so a future
+    // animation can compare "what beat was I on last frame". Both are render-only, like the timer
+    // that feeds them: nothing in the sim branches on either.
+    f._atkPhase = atkPhase(f);
+    f._atkProg  = atkPhaseK(f);
     if(f._hurtAnim>0) f._hurtAnim--; // render-only took-a-hit timer (spriteRig / bespoke anims)
     if(f.atkCd>0) f.atkCd--;
     if(f.spCd>0) f.spCd--;
@@ -5307,12 +5313,90 @@ function hurtK(f){
   if(f._hurtAnim == null && f.flash > 0 && !(f._atkAnim > 0)) return f.flash/12;
   return 0;
 }
+
+// ---- THE ATTACK PHASE TIMELINE ----------------------------------------------------------------
+// `_atkAnim` used to drive ONE pulse: a lunge that swelled up and fell away again. A strike that
+// READS as a strike has three beats — ANTICIPATION (gather / pull back), RELEASE (the strike
+// itself) and RECOVER (settle) — so the same countdown is now sliced into three named phases, and
+// every animation in the game reads its beat off them instead of off a bare sine.
+//
+// THE GAMEPLAY IS UNTOUCHED, and that is the load-bearing constraint of the whole feature. The
+// anticipation is a visual WRAP-AROUND, never a delay: the hitbox, the projectile, the damage and
+// the knockback all still resolve on the exact frame the attack executes — which is the same frame
+// the windup starts DRAWING. Nothing below this line is read by the sim, by the AI, or by
+// serializeState; delete every phase function and the match plays out frame-identically.
+//
+//   |<-- windup -->|<------ release ------>|<-------- recover -------->|
+//   0            0.25                    0.60                          1     (u, see atkU)
+//   attack fires here
+const ATK_WINDUP  = 0.25;   // share of the timeline spent gathering
+const ATK_RELEASE = 0.35;   // …then snapping forward through the strike; the rest is the settle
+const ATK_RECOVER = 1 - ATK_WINDUP - ATK_RELEASE;
+
+// Arm the render-only swing timeline. `len` frames, starting on the windup THIS frame — the same
+// frame the attack has already resolved. Every attack entry point goes through here so the length
+// is recorded alongside the countdown (a smash runs longer than a jab, and the phase split has to
+// scale with it rather than clipping).
+function armAtk(f, len){
+  f._atkAnim = len;
+  f._atkLen  = len;
+  f._atkPhase = "windup";   // interned literals; mirrored each tick in the fighter loop
+  f._atkProg  = 0;
+}
+// Progress through the WHOLE swing: 0 on the frame it fires -> 1 as it ends. -1 = not swinging.
+// `_atkLen` is absent on a netcode client (which is shipped neither timer), so it falls back to the
+// jab length and degrades to the same shape it always had.
+function atkU(f){
+  if(!(f._atkAnim > 0)) return -1;
+  const len = f._atkLen || ATK_ANIM;
+  const u = 1 - f._atkAnim/len;
+  return u < 0 ? 0 : (u > 1 ? 1 : u);
+}
+// Which of the three beats this frame lands on, or null when the fighter is not swinging.
+function atkPhase(f){
+  const u = atkU(f);
+  if(u < 0) return null;
+  if(u < ATK_WINDUP) return "windup";
+  if(u < ATK_WINDUP + ATK_RELEASE) return "release";
+  return "recover";
+}
+// …and how far through THAT beat we are, 0 -> 1. Every bespoke phase animation rides this, so a
+// character's gather, strike and settle each get a full 0..1 to spend however the move wants.
+function atkPhaseK(f){
+  const u = atkU(f);
+  if(u < 0) return 0;
+  if(u < ATK_WINDUP) return u/ATK_WINDUP;
+  if(u < ATK_WINDUP + ATK_RELEASE) return (u - ATK_WINDUP)/ATK_RELEASE;
+  return (u - ATK_WINDUP - ATK_RELEASE)/ATK_RECOVER;
+}
+// The one SIGNED drive the shared rig and the generic beats ride:
+//   -1  fully wound back (end of the gather)
+//   +1  fully extended   (end of the strike)
+//    0  settled          (end of the recover, and any frame outside a swing)
+// Continuous across the phase boundaries by construction: the gather ends at -1 where the strike
+// starts, and the strike ends at +1 where the settle starts, so the body never teleports between
+// beats. The settle carries a small overshoot past neutral, which is what makes it read as weight
+// coming to rest rather than as an animation being switched off.
+function atkDrive(f){
+  const u = atkU(f);
+  if(u < 0) return 0;
+  if(u < ATK_WINDUP) return -Math.sin((u/ATK_WINDUP) * (Math.PI/2));
+  if(u < ATK_WINDUP + ATK_RELEASE) return -Math.cos(((u - ATK_WINDUP)/ATK_RELEASE) * Math.PI);
+  const c = (u - ATK_WINDUP - ATK_RELEASE)/ATK_RECOVER;
+  return (1 - c) * Math.cos(c * Math.PI * 1.15);
+}
+// Convenience for the bespoke entries: how far through a NAMED beat we are, 0 when we are not in
+// it at all. Lets a per-fighter animation say "puff the cheeks during the gather" in one line.
+function atkBeat(f, name){
+  return atkPhase(f) === name ? atkPhaseK(f) : 0;
+}
+
 function doAttack(f){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
   f.flash=6;
-  f._atkAnim=ATK_ANIM;      // render-only: spriteRig plays the lunge/recoil pulse off this
+  armAtk(f, ATK_ANIM);      // render-only: spriteRig plays the windup/release/recover beats off this
   // THROWABLE: if holding a picked-up item, this attack hurls it instead of a normal swing
   if(f._holding){
     const h=f._holding; f._holding=null;
@@ -5338,6 +5422,7 @@ function doAttack(f){
       beamShot:rubyBeam, pierce:rubyBeam};   // the beam pierces through enemies as it bounces
     if(RA.aim) proj.aimWindow=rubyBeam?46:36;   // Ruby: hold up/down after firing to bend the arc (longer window when charged)
     if(rubyBeam) proj.trail=[];
+    visLaunch(f, proj);     // render-only: the shot draws its way out of the fighter's own anchor
     projectiles.push(proj);
     puff(px,py,rubyBeam?'#ff8aa0':(emp?'#fff':RA.color),emp?6:3);
     if(emp) for(let i=0;i<6;i++) puff(px+f.face*i*8,py,rubyBeam?'#ff3a5a':'#fff',4);
@@ -5517,7 +5602,7 @@ function doSmash(f, charge){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
-  f._atkAnim=ATK_ANIM+5;    // a smash lunges longer than a jab
+  armAtk(f, ATK_ANIM+5);    // a smash lunges longer than a jab — the phase split scales with it
   const k=f.kit && f.kit.special;
   if(SMASHES[k]){ SMASHES[k](f, charge); return; }
   genericSmash(f, charge);
@@ -5611,7 +5696,7 @@ const UPSPECIALS = {
   glaze(f){ upLaunch(f,-14); f._sawing=Math.max(f._sawing||0,18); puff(f.x,f.y+14,'#d98a5a',6); }, // Donut — spinning rise
 };
 function doUpSpecial(f){
-  f._atkAnim=ATK_ANIM;      // render-only: a recovery is the fighter ACTING, not being hit
+  armAtk(f, ATK_ANIM);      // render-only: a recovery is the fighter ACTING, not being hit
   const k=f.kit && f.kit.special;
   if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
   else { upLaunch(f,-13); puff(f.x,f.y+14,f.color,6); }  // default recovery hop
@@ -5726,7 +5811,7 @@ const DOWNSPECIALS = {
   glaze(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:14,color:'#d98a5a',life:220,trap:true,slow:true});  }, // Donut — sticky glaze puddle
 };
 function doDownSpecial(f){
-  f._atkAnim=ATK_ANIM;
+  armAtk(f, ATK_ANIM);
   const k=f.kit && f.kit.special;
   if(DOWNSPECIALS[k]) DOWNSPECIALS[k](f);
   else { f.countering=22; f.flash=8;  }
@@ -5764,7 +5849,7 @@ function doAttackSpecial(f){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
-  f._atkAnim=ATK_ANIM;
+  armAtk(f, ATK_ANIM);
   const k=f.kit && f.kit.special;
   if(ATKSPECIALS[k]) ATKSPECIALS[k](f);
   else { const cx=f.x+f.face*28; f.flash=12; hitCircle(f,cx,f.y,f.r+26,14,14,f.face*12,-9);  }
@@ -5784,7 +5869,7 @@ function doSpecial(f){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
-  f._atkAnim=ATK_ANIM;
+  armAtk(f, ATK_ANIM);
   if(f.you) SFX.special();
   const k=f.kit.special;
   f._lastSpecialKind = k;   // Two's MIND READ copies this back at you
@@ -6017,6 +6102,7 @@ function doSpecial(f){
 function spawnProj(f,o){
   const p={owner:f.idx, ownerObj:f, x:f.x+f.face*20, y:f.y-6, ...o};
   if(p.bounce && p.aimWindow===undefined && !p.noAim) p.aimWindow=30;   // bouncing shots are arc-aimable for ~0.5s
+  visLaunch(f, p);          // render-only: draw its first frames coming OUT of the fighter
   projectiles.push(p);
 }
 // Drop a projectile from just above the visible area onto (lx) with a warning shadow at landing spot,
@@ -7715,6 +7801,97 @@ function updateCamera(){
   camX += (tx-camX)*0.12;   // smooth follow
   camY += (ty-camY)*0.12;
 }
+// ONE projectile, drawn where it says it is. Split out of draw()'s loop so the launch lerp
+// (projVisLerp) can wrap the whole thing in a single transform: every branch below — the
+// telegraph, the beam streak, the orbit petal, the shot trail, the kit shape and the plain
+// dot — then rides out of the fighter's anchor for free, with no per-branch special-casing.
+// The launch pass: every projectile still inside its `_visFrames`, drawn lerping out of its
+// owner's anchor and scaling up along its own real trajectory. Runs AFTER the fighters so a spat
+// ember reads as leaving the mouth instead of being occluded by the body it came from.
+function drawLaunchingProjectiles(){
+  for(const pr of projectiles){
+    if(!projVisLerp(pr)) continue;
+    ctx.save();
+    ctx.translate(pr.x + _pvDX, pr.y + _pvDY);
+    ctx.scale(_pvScale, _pvScale);
+    ctx.translate(-pr.x, -pr.y);
+    drawProjectile(pr);
+    ctx.restore();
+  }
+}
+function drawProjectile(pr){
+    // telegraph shadow for incoming downpour projectiles
+    if(pr.warn>0){ const pulse=0.4+0.4*Math.sin(hazardT*0.5);
+      ctx.globalAlpha=pulse; ctx.strokeStyle=pr.color; ctx.fillStyle=pr.color; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(pr.warnX,pr.warnY-4,pr.r*1.3,6,0,0,7); ctx.stroke();
+      ctx.globalAlpha=pulse*0.3; ctx.beginPath(); ctx.ellipse(pr.warnX,pr.warnY-4,pr.r*1.3,6,0,0,7); ctx.fill();
+      ctx.globalAlpha=1;
+    }
+    if(pr.beamShot){
+      // Ruby's charged beam: a glowing elongated streak along its travel direction
+      const ang=Math.atan2(pr.vy,pr.vx), len=pr.r*3.4;
+      const dx=Math.cos(ang)*len, dy=Math.sin(ang)*len;
+      ctx.lineCap='round';
+      ctx.globalAlpha=0.35; ctx.strokeStyle='#ff8aa0'; ctx.lineWidth=pr.r*2.4;
+      ctx.beginPath(); ctx.moveTo(pr.x-dx,pr.y-dy); ctx.lineTo(pr.x+dx,pr.y+dy); ctx.stroke();
+      ctx.globalAlpha=1; ctx.strokeStyle=pr.color; ctx.lineWidth=pr.r*1.5;
+      ctx.beginPath(); ctx.moveTo(pr.x-dx,pr.y-dy); ctx.lineTo(pr.x+dx,pr.y+dy); ctx.stroke();
+      ctx.strokeStyle='#fff'; ctx.lineWidth=pr.r*0.6;
+      ctx.beginPath(); ctx.moveTo(pr.x-dx*0.7,pr.y-dy*0.7); ctx.lineTo(pr.x+dx,pr.y+dy); ctx.stroke();
+      ctx.lineCap='butt';
+      return;
+    }
+    if(pr.orbit){
+      // petal: a little rotated teardrop/oval that faces along its orbit
+      ctx.save(); ctx.translate(pr.x,pr.y); ctx.rotate((pr.orbitAngle||0)+Math.PI/2);
+      ctx.fillStyle=pr.color; ctx.strokeStyle="#b06a86"; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(0,0,pr.r*0.7,pr.r*1.15,0,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#fff6fa"; ctx.beginPath(); ctx.ellipse(0,-pr.r*0.3,pr.r*0.25,pr.r*0.4,0,0,7); ctx.fill();
+      ctx.restore(); return;
+    }
+    // SHOT TRAIL. Every ordinary projectile was a flat coloured dot, which at this scale reads as
+    // a static pip rather than as something fired — "no shoot animations". A streak along the
+    // travel direction is what makes a shot look shot. Pure render, derived from the projectile's
+    // own velocity, so nothing is stored and replays are unaffected.
+    {
+      const sp = Math.hypot(pr.vx||0, pr.vy||0);
+      if(sp > 1.5){
+        const ux = (pr.vx||0)/sp, uy = (pr.vy||0)/sp;
+        const len = Math.min(pr.r*4.5, sp*2.6);
+        ctx.lineCap = 'round';
+        ctx.globalAlpha = 0.30; ctx.strokeStyle = pr.color; ctx.lineWidth = pr.r*1.7;
+        ctx.beginPath(); ctx.moveTo(pr.x-ux*len, pr.y-uy*len); ctx.lineTo(pr.x, pr.y); ctx.stroke();
+        ctx.globalAlpha = 0.55; ctx.lineWidth = pr.r*0.8;
+        ctx.beginPath(); ctx.moveTo(pr.x-ux*len*0.55, pr.y-uy*len*0.55); ctx.lineTo(pr.x, pr.y); ctx.stroke();
+        ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+      }
+    }
+    // PROJECTILE SHAPE. Every ordinary projectile was the same flat circle, so a thrown bomb, a
+    // spat ember and a fired ink pellet were visually the same event. The shape is derived at DRAW
+    // TIME from the owner's kit — projectiles already carry `ownerObj` — so nothing is stored on the
+    // projectile, no spawn site changes, and the sim/netcode/goldens are untouched.
+    //
+    // Where a shape would not fit the move, the SHAPE follows the move rather than the reverse:
+    // these are named after what the attack does, not after what the character looks like.
+    {
+      const kit = pr.ownerObj && pr.ownerObj.kit;
+      const sp = kit && kit.special;
+      const shape = PROJ_SHAPE[sp];
+      if(shape){
+        const ang = Math.atan2(pr.vy||0, pr.vx||0);
+        ctx.save();
+        ctx.translate(pr.x, pr.y);
+        // spin the ones that tumble, aim the ones that fly straight
+        ctx.rotate(shape.spin ? hazardT*0.35 + pr.x*0.01 : ang);
+        ctx.fillStyle = pr.color; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 2;
+        shape.draw(ctx, pr.r, pr);
+        ctx.restore();
+        return;
+      }
+    }
+    ctx.fillStyle=pr.color; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(pr.x,pr.y,pr.r,0,7); ctx.fill(); ctx.stroke();
+}
 function draw(){
   ctx.save();
   let sx=0,sy=0; if(shakeAmt>0.2){ sx=(Math.random()*2-1)*shakeAmt; sy=(Math.random()*2-1)*shakeAmt; shakeAmt*=0.85; }
@@ -7843,77 +8020,18 @@ function draw(){
   }
   // projectiles
   for(const pr of projectiles){
-    // telegraph shadow for incoming downpour projectiles
-    if(pr.warn>0){ const pulse=0.4+0.4*Math.sin(hazardT*0.5);
-      ctx.globalAlpha=pulse; ctx.strokeStyle=pr.color; ctx.fillStyle=pr.color; ctx.lineWidth=2;
-      ctx.beginPath(); ctx.ellipse(pr.warnX,pr.warnY-4,pr.r*1.3,6,0,0,7); ctx.stroke();
-      ctx.globalAlpha=pulse*0.3; ctx.beginPath(); ctx.ellipse(pr.warnX,pr.warnY-4,pr.r*1.3,6,0,0,7); ctx.fill();
-      ctx.globalAlpha=1;
-    }
-    if(pr.beamShot){
-      // Ruby's charged beam: a glowing elongated streak along its travel direction
-      const ang=Math.atan2(pr.vy,pr.vx), len=pr.r*3.4;
-      const dx=Math.cos(ang)*len, dy=Math.sin(ang)*len;
-      ctx.lineCap='round';
-      ctx.globalAlpha=0.35; ctx.strokeStyle='#ff8aa0'; ctx.lineWidth=pr.r*2.4;
-      ctx.beginPath(); ctx.moveTo(pr.x-dx,pr.y-dy); ctx.lineTo(pr.x+dx,pr.y+dy); ctx.stroke();
-      ctx.globalAlpha=1; ctx.strokeStyle=pr.color; ctx.lineWidth=pr.r*1.5;
-      ctx.beginPath(); ctx.moveTo(pr.x-dx,pr.y-dy); ctx.lineTo(pr.x+dx,pr.y+dy); ctx.stroke();
-      ctx.strokeStyle='#fff'; ctx.lineWidth=pr.r*0.6;
-      ctx.beginPath(); ctx.moveTo(pr.x-dx*0.7,pr.y-dy*0.7); ctx.lineTo(pr.x+dx,pr.y+dy); ctx.stroke();
-      ctx.lineCap='butt';
-      continue;
-    }
-    if(pr.orbit){
-      // petal: a little rotated teardrop/oval that faces along its orbit
-      ctx.save(); ctx.translate(pr.x,pr.y); ctx.rotate((pr.orbitAngle||0)+Math.PI/2);
-      ctx.fillStyle=pr.color; ctx.strokeStyle="#b06a86"; ctx.lineWidth=2;
-      ctx.beginPath(); ctx.ellipse(0,0,pr.r*0.7,pr.r*1.15,0,0,7); ctx.fill(); ctx.stroke();
-      ctx.fillStyle="#fff6fa"; ctx.beginPath(); ctx.ellipse(0,-pr.r*0.3,pr.r*0.25,pr.r*0.4,0,0,7); ctx.fill();
-      ctx.restore(); continue;
-    }
-    // SHOT TRAIL. Every ordinary projectile was a flat coloured dot, which at this scale reads as
-    // a static pip rather than as something fired — "no shoot animations". A streak along the
-    // travel direction is what makes a shot look shot. Pure render, derived from the projectile's
-    // own velocity, so nothing is stored and replays are unaffected.
-    {
-      const sp = Math.hypot(pr.vx||0, pr.vy||0);
-      if(sp > 1.5){
-        const ux = (pr.vx||0)/sp, uy = (pr.vy||0)/sp;
-        const len = Math.min(pr.r*4.5, sp*2.6);
-        ctx.lineCap = 'round';
-        ctx.globalAlpha = 0.30; ctx.strokeStyle = pr.color; ctx.lineWidth = pr.r*1.7;
-        ctx.beginPath(); ctx.moveTo(pr.x-ux*len, pr.y-uy*len); ctx.lineTo(pr.x, pr.y); ctx.stroke();
-        ctx.globalAlpha = 0.55; ctx.lineWidth = pr.r*0.8;
-        ctx.beginPath(); ctx.moveTo(pr.x-ux*len*0.55, pr.y-uy*len*0.55); ctx.lineTo(pr.x, pr.y); ctx.stroke();
-        ctx.globalAlpha = 1; ctx.lineCap = 'butt';
-      }
-    }
-    // PROJECTILE SHAPE. Every ordinary projectile was the same flat circle, so a thrown bomb, a
-    // spat ember and a fired ink pellet were visually the same event. The shape is derived at DRAW
-    // TIME from the owner's kit — projectiles already carry `ownerObj` — so nothing is stored on the
-    // projectile, no spawn site changes, and the sim/netcode/goldens are untouched.
+    // LAUNCH LERP. For its first few frames a fresh shot is DRAWN lerping out of its owner's
+    // anchor — Firey's mouth, Pen's nib — growing from a spark to full size along its own real
+    // trajectory. The hitbox never moves: pr.x/pr.y are exactly where they always were, so the
+    // shot connects on the same frame at the same place. This is a camera trick laid over the
+    // sim, not a change to it.
     //
-    // Where a shape would not fit the move, the SHAPE follows the move rather than the reverse:
-    // these are named after what the attack does, not after what the character looks like.
-    {
-      const kit = pr.ownerObj && pr.ownerObj.kit;
-      const sp = kit && kit.special;
-      const shape = PROJ_SHAPE[sp];
-      if(shape){
-        const ang = Math.atan2(pr.vy||0, pr.vx||0);
-        ctx.save();
-        ctx.translate(pr.x, pr.y);
-        // spin the ones that tumble, aim the ones that fly straight
-        ctx.rotate(shape.spin ? hazardT*0.35 + pr.x*0.01 : ang);
-        ctx.fillStyle = pr.color; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 2;
-        shape.draw(ctx, pr.r, pr);
-        ctx.restore();
-        continue;
-      }
-    }
-    ctx.fillStyle=pr.color; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(pr.x,pr.y,pr.r,0,7); ctx.fill(); ctx.stroke(); }
+    // Those frames are drawn LATER, over the fighters (see drawLaunchingProjectiles): a shot
+    // leaving a mouth sits ON the character who spat it, and this pass runs underneath them —
+    // measured on the real canvas, Firey's own body hid the exact moment the feature is about.
+    if(projVisLerp(pr)) continue;
+    drawProjectile(pr);
+  }
 
   // items on the stage
   for(const it of items){ if(it.taken) continue; drawItem(it); }
@@ -7971,6 +8089,10 @@ function draw(){
   }
   // fighters
   for(const f of fighters){ if(f.dead) continue; drawFighter(f); }
+
+  // …and the shots still coming OUT of a fighter, drawn last so the launch is on top of the
+  // character who launched it rather than buried behind their body.
+  drawLaunchingProjectiles();
 
   // particles
   for(const p of particles){ ctx.globalAlpha=Math.max(0,p.life/22); ctx.fillStyle=p.color;
@@ -8377,6 +8499,76 @@ function deformAboutFeet(ctx, R, ang, sx, sy){
 function atkPulse(f){ return f._atkAnim > 0 ? Math.sin((f._atkAnim/ATK_ANIM)*Math.PI) : 0; }
 // How far a held smash has charged, 0 -> 1.
 function chargeK(f){ const c = (f.smashHold||0)/45; return c > 1 ? 1 : c; }
+
+// ---- LAUNCH ANCHORS ---------------------------------------------------------------------------
+// WHERE a fighter's attacks come out of: Firey's mouth, Pen's nib, Match's burning head, Teardrop's
+// pinched tip. Declared per fighter as `anchor:{x,y}` on their FIGHTER_ANIM entry, in RADIUS units
+// with +x pointing the way the fighter FACES — the same convention as every other measured
+// constant in this file (Bomby's fuse at -0.95R,-0.80R; Pen's nib at 0.30R,-0.95R), so an anchor
+// mirrors for free when the character turns around.
+//
+// Two things read them, and both are pure render: the per-fighter choreography below, and the
+// projectile LAUNCH LERP (visLaunch / projVisLerp) that makes a spat ember leave the mouth instead
+// of blinking into existence 20px in front of the character's belly.
+const ANCHOR_DEFAULT_X = 0.55, ANCHOR_DEFAULT_Y = -0.15;   // a generic "front of the body" origin
+const _anchorOut = {x:0, y:0};                             // module scratch: this runs per shot
+function fighterAnchor(f, out){
+  const a = FIGHTER_ANIM[f.name] || (f.kit && FIGHTER_ANIM[f.kit.special]);
+  const an = a && a.anchor;
+  const face = f.face < 0 ? -1 : 1;
+  out.x = f.x + face * (an ? an.x : ANCHOR_DEFAULT_X) * f.r;
+  out.y = f.y + (an ? an.y : ANCHOR_DEFAULT_Y) * f.r;
+  return out;
+}
+// The same anchor expressed in the OVER pass's own space — centred on the fighter, and already
+// mirrored by the time `over` runs, so the x has to be multiplied by f.face here exactly the way
+// Bomby's fuse and Pen's cap clip already do. This is what the per-fighter choreography draws its
+// cheek-puff, muzzle flash and smoke against, so the effect and the projectile always agree on
+// where the character's mouth is.
+function originX(f){
+  const a = FIGHTER_ANIM[f.name] || (f.kit && FIGHTER_ANIM[f.kit.special]);
+  return (f.face < 0 ? -1 : 1) * ((a && a.anchor) ? a.anchor.x : ANCHOR_DEFAULT_X) * f.r;
+}
+function originY(f){
+  const a = FIGHTER_ANIM[f.name] || (f.kit && FIGHTER_ANIM[f.kit.special]);
+  return ((a && a.anchor) ? a.anchor.y : ANCHOR_DEFAULT_Y) * f.r;
+}
+// How many frames a fresh shot spends drawing its way out of that anchor.
+const PROJ_VIS_FRAMES = 6;
+// Tag a just-spawned projectile with where it should LOOK like it came from. Called at the spawn
+// sites, never in the loop: one small object per SHOT, not per frame.
+//
+// PURELY VISUAL. `_visOrigin` is not part of the sim, is not in serializeState's projectile
+// whitelist, and is never read by any collision test — pr.x/pr.y, the only position the hitbox
+// knows about, are untouched from the first frame. A netcode client receives projectiles without
+// the field and simply draws them where they are, exactly as it does today.
+function visLaunch(f, p){
+  if(!f || f.face === undefined || f.r === undefined) return;   // bosses and assists have no anchor
+  fighterAnchor(f, _anchorOut);
+  p._visOrigin = {x:_anchorOut.x, y:_anchorOut.y};
+  p._visFrames = PROJ_VIS_FRAMES;
+  p._visT0 = hazardT;
+}
+// Draw-time only. Fills the scratch below with how far a shot's DRAWING should be pulled back
+// toward its launch anchor this frame, and how much smaller it should be while it is still coming
+// out. Returns false for anything that is not in its launch frames (which is nearly everything).
+//
+// Frames-remaining is derived from hazardT rather than decremented, so the value is identical no
+// matter how many times a frame is drawn — a paused frame, a re-render, or a double draw can never
+// advance a projectile's launch, and the sim's own clock stays the single source of time.
+let _pvDX = 0, _pvDY = 0, _pvScale = 1;
+function projVisLerp(pr){
+  const o = pr._visOrigin;
+  if(!o) return false;
+  const left = pr._visFrames - (hazardT - pr._visT0);      // frames REMAINING on the launch
+  if(!(left > 0)){ pr._visOrigin = null; return false; }   // done — stop paying for it
+  const k = 1 - left/pr._visFrames;                        // 0 at the anchor -> 1 at the true spot
+  const e = k*k*(3 - 2*k);                                 // smoothstep: leaves fast, settles in
+  _pvDX = (o.x - pr.x) * (1 - e);
+  _pvDY = (o.y - pr.y) * (1 - e);
+  _pvScale = 0.28 + 0.72*e;                                // …and SCALES OUT rather than popping in
+  return true;
+}
 
 const FIGHTER_ANIM = {
   // ============================================================
@@ -8972,11 +9164,25 @@ const FIGHTER_ANIM = {
   // ---- Firey — "constantly flickering" (design doc), flares up when he swings, and goes
   //      acrophobic-panicked on a fast fall (his fear of heights, 'Insectophobe's Nightmare'). ----
   Firey: {
+    // HIS MOUTH. Measured off firey.png through the contain-fit: the dark mouth bar occupies rows
+    // 142-145 of 200 and is centred on column 64 of 150, which lands here once the render is boxed
+    // to 50x67 and mirrored (Firey is a `flip` sprite). Everything he spits leaves from this point
+    // — the choreography below draws against it, and so does the ember itself.
+    anchor: {x:0.15, y:0.71},
     deform(f, ctx, R){
       if(f.onground === false && f.vy > 8){       // leaning AWAY from the drop, not into it
         const k = Math.min(1, (f.vy-8)/10);
         deformAboutFeet(ctx, R, -f.face*0.17*k, 1, 1);
+        return;
       }
+      // EMBER SPIT, beat by beat — docs/animation-move-design.md, "down+X Ember Spit":
+      // "Inhales — flame squashes and swells round, flame-tip cheeks puffing huge — then spits a
+      // glowing pip of himself." The gather is the inhale, so he swells ROUND and pulls back; the
+      // strike is the shared rig's lunge; the settle is the recoil of having spat something out.
+      const w = atkBeat(f, "windup");
+      if(w){ deformAboutFeet(ctx, R, -f.face*0.22*w, 1 + 0.16*w, 1 + 0.08*w); return; }
+      const c = atkBeat(f, "recover");
+      if(c) deformAboutFeet(ctx, R, -f.face*0.14*(1-c), 1 - 0.06*(1-c), 1 + 0.04*(1-c));
     },
     over(f, ctx){
       const R = f.r, a0 = ctx.globalAlpha, atk = atkPulse(f);
@@ -9019,12 +9225,59 @@ const FIGHTER_ANIM = {
         const sy = -R*0.5 + ((hazardT*2)%12);
         ctx.beginPath(); ctx.ellipse(-f.face*R*0.75, sy, R*0.10, R*0.15, 0, 0, 7); ctx.fill();
       }
+      // ---- EMBER SPIT, AT THE MOUTH -------------------------------------------------------
+      // The owner's actual ask: "ember spit should feel like Firey is actually LAUNCHING an ember
+      // from his mouth". Three beats, all drawn on the anchor above, so the effect and the
+      // projectile leave from the same point:
+      //   gather  — the cheeks light up and swell as he inhales (the tell)
+      //   strike  — a brief muzzle flash the ember comes out through (projVisLerp then carries the
+      //             ember itself out of this exact spot along its real arc)
+      //   settle  — smoke, coughed up and drifting off as he recovers
+      const mx = originX(f), my = originY(f);
+      const wu = atkBeat(f, "windup");
+      if(wu){
+        ctx.globalAlpha = a0*(0.30 + 0.55*wu);
+        ctx.fillStyle = "#ffd23f";
+        ctx.beginPath(); ctx.ellipse(mx, my, R*(0.10 + 0.26*wu), R*(0.07 + 0.19*wu), 0, 0, 7); ctx.fill();
+        ctx.globalAlpha = a0*wu*0.85;
+        ctx.fillStyle = "#fff6d0";
+        ctx.beginPath(); ctx.arc(mx + f.face*R*0.05, my, R*(0.03 + 0.13*wu), 0, 7); ctx.fill();
+      }
+      const rel = atkBeat(f, "release");
+      if(rel > 0 && rel < 0.55){
+        const q = 1 - rel/0.55;                    // 1 the instant it leaves -> 0 as the flash dies
+        ctx.globalAlpha = a0*q;
+        ctx.fillStyle = "#fff6d0";
+        ctx.beginPath(); ctx.arc(mx + f.face*R*0.16*(1-q), my, R*0.30*q + 1, 0, 7); ctx.fill();
+        ctx.strokeStyle = "#ff8a2b"; ctx.lineWidth = R*0.07; ctx.lineCap = "round";
+        ctx.beginPath();
+        for(let i=0;i<3;i++){                      // spit-lines fanning off the mouth
+          const a = -0.55 + i*0.55;
+          ctx.moveTo(mx + f.face*Math.cos(a)*R*0.20, my + Math.sin(a)*R*0.20);
+          ctx.lineTo(mx + f.face*Math.cos(a)*R*(0.32 + 0.55*q), my + Math.sin(a)*R*(0.32 + 0.55*q));
+        }
+        ctx.stroke();
+      }
+      const rc = atkBeat(f, "recover");
+      if(rc > 0){
+        ctx.fillStyle = "#8a8478";
+        for(let i=0;i<3;i++){
+          const q = rc + i*0.17;
+          if(q > 1) continue;
+          ctx.globalAlpha = a0*(1-q)*0.50;
+          ctx.beginPath();
+          ctx.arc(mx + f.face*R*(0.10 + q*0.55), my - q*R*0.60, R*(0.07 + q*0.22), 0, 7);
+          ctx.fill();
+        }
+      }
       ctx.globalAlpha = a0;
     }
   },
   // ---- Bubble — she pops at the slightest touch and is re-blown back into existence. That IS
   //      the character, so a hard hit REPLACES her with rainbow film shards for a few frames. ----
   Bubble: {
+    // Her mouth, measured off bubble.png (rows 106-126, column 92 of 176) through the contain-fit.
+    anchor: {x:0.05, y:0.45},
     body(f, ctx){
       // Only a real hit pops her — and only for the first few frames of it, because the rest of
       // the reaction IS the re-blow. wasHit() is exact on the host and falls back to the flash
@@ -9055,6 +9308,16 @@ const FIGHTER_ANIM = {
       if(c > 0){
         const w = Math.sin(hazardT*0.55 + f.idx)*0.055*c;
         deformAboutFeet(ctx, R, 0, 1 + c*0.24 + w, 1 + c*0.24 - w);
+        return;
+      }
+      // A soap bubble has no muscle, so her beats are all PRESSURE: she draws air in on the gather,
+      // squeezes it out on the strike, and rings like a struck film as she settles.
+      const wu = atkBeat(f, "windup");
+      if(wu){ deformAboutFeet(ctx, R, 0, 1 + 0.13*wu, 1 + 0.15*wu); return; }
+      const rc = atkBeat(f, "recover");
+      if(rc){
+        const ring = Math.sin(rc*Math.PI*3.2)*(1 - rc)*0.10;
+        deformAboutFeet(ctx, R, 0, 1 + ring, 1 - ring);
       }
     },
     over(f, ctx){
@@ -9068,18 +9331,41 @@ const FIGHTER_ANIM = {
         ctx.strokeStyle = i===0 ? "#b5f0ff" : (i===1 ? "#ffc7ec" : "#fff6b5");
         ctx.beginPath(); ctx.arc(0, 0, R*0.74, a, a+0.62); ctx.stroke();
       }
+      // …and what she spits: a fine mist of film droplets, out of the mouth anchor on the strike.
+      const rel = atkBeat(f, "release");
+      if(rel > 0 && rel < 0.7){
+        const q = 1 - rel/0.7;
+        const mx = originX(f), my = originY(f);
+        ctx.fillStyle = "#eaf6ff";
+        for(let i=0;i<5;i++){
+          const a = -0.6 + i*0.3;
+          const d = R*(0.16 + (1-q)*0.75);
+          ctx.globalAlpha = a0*q*0.85;
+          ctx.beginPath();
+          ctx.arc(mx + f.face*Math.cos(a)*d, my + Math.sin(a)*d*0.7, R*0.09*q + 1, 0, 7);
+          ctx.fill();
+        }
+      }
       ctx.globalAlpha = a0;
     }
   },
   // ---- Blocky — a solid wooden block: he topples like felled timber when he sprints, and every
   //      body-check sheds splinters and sawdust (design doc: "lean into wood deformation"). ----
   Blocky: {
+    anchor: {x:0.55, y:0.20},                     // where a body-check lands: front of the block
     deform(f, ctx, R){
       const vx = f.vx || 0, a = vx < 0 ? -vx : vx;
       if(f.onground !== false && a > 4){
         const k = Math.min(1, (a-4)/6);
         deformAboutFeet(ctx, R, (vx<0?-1:1)*0.21*k, 1, 1);   // TIMBERRR
+        return;
       }
+      // A solid wooden block does not wind up, it TIPS: he leans back off the swing like a felled
+      // trunk going the wrong way, drops the whole weight through it, then rocks to a stop.
+      const wu = atkBeat(f, "windup");
+      if(wu){ deformAboutFeet(ctx, R, -f.face*0.20*wu, 1, 1 + 0.05*wu); return; }
+      const rc = atkBeat(f, "recover");
+      if(rc) deformAboutFeet(ctx, R, f.face*Math.sin(rc*Math.PI*2.4)*(1-rc)*0.13, 1, 1);
     },
     over(f, ctx){
       const atk = atkPulse(f);
@@ -9110,7 +9396,35 @@ const FIGHTER_ANIM = {
   // ---- Pen — the removable cap is his most distinctive feature. It POPS off to bare the nib
   //      when he stabs, and clicks back on as the lunge recoils. ----
   Pen: {
+    // HIS NIB — the same point the glint below has always been measured at. Every shot he fires
+    // leaves through it.
+    anchor: {x:0.30, y:-0.95},
+    deform(f, ctx, R){
+      // The pen is a rigid barrel: he cocks back off the vertical, drives through, then rights
+      // himself. Small numbers deliberately — a pen that bends is a straw.
+      const wu = atkBeat(f, "windup");
+      if(wu){ deformAboutFeet(ctx, R, -f.face*0.17*wu, 1, 1); return; }
+      const rc = atkBeat(f, "recover");
+      if(rc) deformAboutFeet(ctx, R, f.face*0.09*(1-rc), 1, 1);
+    },
     over(f, ctx){
+      // INK FLICK. The nib snaps forward and throws a spray of ink off itself — drawn on the
+      // anchor, so it starts exactly where his projectiles do.
+      const rel = atkBeat(f, "release");
+      if(rel > 0 && rel < 0.65){
+        const R = f.r, a0 = ctx.globalAlpha, q = 1 - rel/0.65;
+        const nx = originX(f), ny = originY(f);
+        ctx.fillStyle = "#3a6ea5";
+        for(let i=0;i<4;i++){
+          const a = -0.75 + i*0.42;
+          const d = R*(0.12 + (1-q)*0.85);
+          ctx.globalAlpha = a0*q;
+          ctx.beginPath();
+          ctx.arc(nx + f.face*Math.cos(a)*d, ny + Math.sin(a)*d, R*0.10*q + 1, 0, 7);
+          ctx.fill();
+        }
+        ctx.globalAlpha = a0;
+      }
       const p = atkPulse(f);
       if(p <= 0.02) return;
       const R = f.r, a0 = ctx.globalAlpha;
@@ -9136,13 +9450,38 @@ const FIGHTER_ANIM = {
   // ---- Pencil — "SHOOTS upward tall and thin like a spear, her tip elongating to a needle" on
   //      the jab; on the eraser scrub she "vibrates and blurs" and throws pink crumbs. ----
   Pencil: {
+    // The point her jab drives with — the top-front corner of the barrel, which is what the spear
+    // stretch below elongates into.
+    anchor: {x:0.17, y:-1.41},
     deform(f, ctx, R){
+      // The spear has to be LOADED before it shoots: she compresses down into her own base on the
+      // gather, so the stretch that follows reads as a release of stored length.
+      const wu = atkBeat(f, "windup");
+      if(wu){ deformAboutFeet(ctx, R, 0, 1 + 0.13*wu, 1 - 0.15*wu); return; }
       const p = atkPulse(f);
       if(p > 0){ deformAboutFeet(ctx, R, 0, 1 - 0.24*p, 1 + 0.28*p); return; }
       const c = chargeK(f);
       if(c > 0) ctx.translate(Math.sin(hazardT*2.7 + f.idx)*c*R*0.11, 0);
     },
     over(f, ctx){
+      // GRAPHITE SNAP: chips of lead flicked off the point as the spear fires.
+      const rel = atkBeat(f, "release");
+      if(rel > 0 && rel < 0.6){
+        const R = f.r, a0 = ctx.globalAlpha, q = 1 - rel/0.6;
+        const tx = originX(f), ty = originY(f);
+        ctx.fillStyle = "#3a3a3a";
+        for(let i=0;i<4;i++){
+          const a = -1.1 + i*0.38;
+          const d = R*(0.10 + (1-q)*0.80);
+          ctx.globalAlpha = a0*q;
+          ctx.save();
+          ctx.translate(tx + f.face*Math.cos(a)*d, ty + Math.sin(a)*d);
+          ctx.rotate(a + hazardT*0.25);
+          ctx.fillRect(-R*0.03, -R*0.10*q, R*0.06, R*0.20*q + 1);
+          ctx.restore();
+        }
+        ctx.globalAlpha = a0;
+      }
       const c = chargeK(f);
       if(c <= 0.05) return;
       const R = f.r, a0 = ctx.globalAlpha;
@@ -9163,7 +9502,34 @@ const FIGHTER_ANIM = {
   //      flares when she swings or charges, and she is otherwise written as unbothered. ----
   Match: {
     idle: 0.35,
+    // Her burning head, at the top of the stick — every spark she throws starts here.
+    anchor: {x:0.00, y:-1.35},
+    deform(f, ctx, R){
+      // A matchstick is struck, not swung: she rocks back off the head, then whips it through.
+      const wu = atkBeat(f, "windup");
+      if(wu) deformAboutFeet(ctx, R, -f.face*0.19*wu, 1 - 0.04*wu, 1 + 0.05*wu);
+    },
     over(f, ctx){
+      // SPARK, off the head, on the strike. The tuft flare below burns the whole swing; this is
+      // the single moment something actually leaves her.
+      const rel = atkBeat(f, "release");
+      if(rel > 0 && rel < 0.6){
+        const R = f.r, a0 = ctx.globalAlpha, q = 1 - rel/0.6;
+        const hx = originX(f), hy = originY(f);
+        ctx.lineCap = "round";
+        for(let i=0;i<5;i++){
+          const a = -1.25 + i*0.34;
+          const d0 = R*0.10, d1 = R*(0.30 + (1-q)*0.95);
+          ctx.globalAlpha = a0*q;
+          ctx.strokeStyle = i%2 ? "#ffd23f" : "#fff0a0";
+          ctx.lineWidth = R*0.07*q + 1;
+          ctx.beginPath();
+          ctx.moveTo(hx + f.face*Math.cos(a)*d0, hy + Math.sin(a)*d0);
+          ctx.lineTo(hx + f.face*Math.cos(a)*d1, hy + Math.sin(a)*d1);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = a0;
+      }
       const p = atkPulse(f), c = chargeK(f);
       const heat = p > c ? p : c;
       if(heat <= 0.03) return;
@@ -9189,14 +9555,41 @@ const FIGHTER_ANIM = {
   // ---- Ice Cube — rigid glass: she TILTS onto an edge and skates rather than walking, and a hit
   //      throws crystalline shard glints instead of bending her. ----
   "Ice Cube": {
+    // The notch in her front face (rows 119-142 of ice-cube.png) — where a shard breaks off.
+    anchor: {x:0.22, y:0.59},
     deform(f, ctx, R){
       const vx = f.vx || 0, a = vx < 0 ? -vx : vx;
       if(f.onground !== false && a > 3){
         const k = Math.min(1, (a-3)/6);
         deformAboutFeet(ctx, R, (vx<0?-1:1)*0.18*k, 1 + 0.06*k, 1 - 0.05*k);
+        return;
       }
+      // She is a rigid block, so her gather is a TILT onto the back edge rather than a crouch —
+      // the same motion the skate uses, wound the other way.
+      const wu = atkBeat(f, "windup");
+      if(wu){ deformAboutFeet(ctx, R, -f.face*0.15*wu, 1 + 0.04*wu, 1 - 0.03*wu); return; }
+      const rc = atkBeat(f, "recover");
+      if(rc) deformAboutFeet(ctx, R, f.face*0.07*(1-rc), 1, 1);
     },
     over(f, ctx){
+      // A SHARD, cracked off the notch as she strikes.
+      const rel = atkBeat(f, "release");
+      if(rel > 0 && rel < 0.7){
+        const R = f.r, a0 = ctx.globalAlpha, q = 1 - rel/0.7;
+        const nx = originX(f), ny = originY(f);
+        ctx.fillStyle = "#cdeeff"; ctx.strokeStyle = "#f8f8ff"; ctx.lineWidth = 1.5;
+        for(let i=0;i<3;i++){
+          const a = -0.5 + i*0.5;
+          const d = R*(0.10 + (1-q)*0.80);
+          const s = R*0.20*q + 1;
+          const x = nx + f.face*Math.cos(a)*d, y = ny + Math.sin(a)*d;
+          ctx.globalAlpha = a0*q;
+          ctx.beginPath();
+          ctx.moveTo(x, y-s); ctx.lineTo(x + s*0.85, y + s*0.6); ctx.lineTo(x - s*0.75, y + s*0.5);
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+        ctx.globalAlpha = a0;
+      }
       const j = hurtK(f);
       if(j <= 0) return;
       const R = f.r, a0 = ctx.globalAlpha;
@@ -9231,7 +9624,37 @@ const FIGHTER_ANIM = {
   //      she is the one fighter who does not breathe: dead still is the whole joke. ----
   Teardrop: {
     idle: 0,
+    // The POINT of the teardrop, at the top of the render — the one place a drop can be pinched
+    // off a drop.
+    anchor: {x:0.04, y:-1.19},
+    deform(f, ctx, R){
+      // She is a hanging drop, so her anticipation is surface tension: she gathers UP into the
+      // point, then falls back through it. No lean — she is written as unnervingly still.
+      const wu = atkBeat(f, "windup");
+      if(wu) deformAboutFeet(ctx, R, 0, 1 - 0.09*wu, 1 + 0.11*wu);
+    },
     over(f, ctx){
+      // A DROPLET, pinched off the tip: it swells there through the gather and is flicked away on
+      // the strike.
+      const R0 = f.r, a1 = ctx.globalAlpha;
+      const tx = originX(f), ty = originY(f);
+      const wu = atkBeat(f, "windup"), rel = atkBeat(f, "release");
+      if(wu > 0){
+        ctx.globalAlpha = a1*(0.4 + 0.6*wu);
+        ctx.fillStyle = "#9fd0ff"; ctx.strokeStyle = "#6fb7ff"; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.ellipse(tx, ty - R0*0.10*wu, R0*(0.06 + 0.13*wu), R0*(0.08 + 0.17*wu), 0, 0, 7);
+        ctx.fill(); ctx.stroke();
+      } else if(rel > 0 && rel < 0.7){
+        const q = 1 - rel/0.7;
+        ctx.globalAlpha = a1*q;
+        ctx.fillStyle = "#9fd0ff";
+        const d = R0*(1-q)*1.1;
+        ctx.beginPath();
+        ctx.ellipse(tx + f.face*d, ty - d*0.35, R0*0.18*q + 1, R0*0.24*q + 1, 0, 0, 7);
+        ctx.fill();
+      }
+      ctx.globalAlpha = a1;
       const p = atkPulse(f);
       if(p <= 0.02) return;
       const R = f.r, a0 = ctx.globalAlpha;
@@ -9255,6 +9678,30 @@ const FIGHTER_ANIM = {
   // ---- Bomby — his whole existence is one gag: the fuse burns down and he goes off. The longer
   //      the smash is held, the harder the fuse crackles. ----
   Bomby: {
+    anchor: {x:0.00, y:0.44},                     // the sphere's own front — his blast has no muzzle
+    deform(f, ctx, R){
+      // "His body inflates like a balloon into an enormous quivering sphere — then a blinding
+      // flash… he reinflates with an accordion wheeze" (docs/animation-move-design.md, OH NO!).
+      // The gather IS the inflation, the strike snaps it flat, and the settle wheezes it back.
+      const wu = atkBeat(f, "windup");
+      if(wu){
+        const q = wu*wu;
+        deformAboutFeet(ctx, R, 0, 1 + 0.26*q, 1 + 0.26*q);
+        return;
+      }
+      const rl = atkBeat(f, "release");
+      if(rl){
+        // the blast: the sphere he inflated to snaps flat, wide and low, in a couple of frames
+        const q = Math.pow(1 - rl, 2.2);
+        deformAboutFeet(ctx, R, 0, 1 + 0.26*q + 0.16*rl*(1-rl)*4, 1 + 0.26*q - 0.13*rl*(1-rl)*4);
+        return;
+      }
+      const rc = atkBeat(f, "recover");
+      if(rc){
+        const wheeze = Math.sin(rc*Math.PI*3.6)*(1 - rc)*0.14;
+        deformAboutFeet(ctx, R, 0, 1 + wheeze, 1 - wheeze);
+      }
+    },
     over(f, ctx){
       const R = f.r, a0 = ctx.globalAlpha;
       const c = chargeK(f);
@@ -9286,7 +9733,31 @@ const FIGHTER_ANIM = {
   //      rubber), so instead all his weight goes into the THUD when he lands. ----
   Rocky: {
     squash: 0.35,
+    anchor: {x:0.37, y:0.59},                     // his mouth — Barf comes out of it, so it matters
+    deform(f, ctx, R){
+      // Barf is a HEAVE: he rears back and swells, then throws the whole body forward through it.
+      const wu = atkBeat(f, "windup");
+      if(wu){ deformAboutFeet(ctx, R, -f.face*0.16*wu, 1 + 0.11*wu, 1 + 0.07*wu); return; }
+      const rc = atkBeat(f, "recover");
+      if(rc) deformAboutFeet(ctx, R, 0, 1 + 0.07*(1-rc), 1 - 0.05*(1-rc));
+    },
     over(f, ctx){
+      // …and what comes OUT of the mouth on the strike.
+      const rel = atkBeat(f, "release");
+      if(rel > 0 && rel < 0.7){
+        const R = f.r, a0 = ctx.globalAlpha, q = 1 - rel/0.7;
+        const mx = originX(f), my = originY(f);
+        ctx.fillStyle = "#8a9c3a";
+        for(let i=0;i<5;i++){
+          const a = -0.45 + i*0.24;
+          const d = R*(0.12 + (1-q)*0.95);
+          ctx.globalAlpha = a0*q*0.9;
+          ctx.beginPath();
+          ctx.ellipse(mx + f.face*Math.cos(a)*d, my + Math.sin(a)*d, R*0.13*q + 1, R*0.10*q + 1, 0, 0, 7);
+          ctx.fill();
+        }
+        ctx.globalAlpha = a0;
+      }
       const ls = f._landSquash|0;
       if(ls <= 0) return;
       const R = f.r, a0 = ctx.globalAlpha;
@@ -9960,14 +10431,24 @@ function spriteRig(f, R, sp, anim){
   }
 
   // ---- ATTACK / CHARGE — layered ON TOP of whatever the fighter's feet are doing ----
-  if(f._atkAnim > 0){                      // snap forward, then recoil back to neutral
-    const p = Math.sin((f._atkAnim/ATK_ANIM)*Math.PI);
+  if(f._atkAnim > 0){                      // GATHER back, snap forward, then settle to neutral
+    // THREE BEATS, one signed drive (atkDrive): -1 fully wound back -> +1 fully extended -> 0
+    // settled. The release beat is the lunge this rig has always played, unchanged in size and
+    // still peaking mid-swing; the windup and the recover are the frames either side of it that
+    // used to be nothing but a ramp in and out of it.
+    //
+    // Note this is the GENERIC mapping every fighter gets for free — slight crouch and pull-back
+    // on the gather, the lunge on the strike, a settle with a little overshoot after. Bespoke
+    // choreography layers on top of it through FIGHTER_ANIM, it never replaces it.
+    const d = atkDrive(f), m = d < 0 ? -d : d;
     // Was 0.34 — about 8px of travel on a 67px-tall sprite, which measured as "working" and read
     // as nothing at all in play. The swipe arc does most of the work now; this carries the body.
-    lunge = f.face * p * R * 0.62;
-    rock += f.face * p * 0.26;
-    sx += p*0.18; sy -= p*0.14;
-    state = "attack";
+    lunge = f.face * d * R * 0.62;
+    rock += f.face * d * 0.26;
+    // The body compresses at BOTH ends of the drive — a crouch on the gather, a stretch on the
+    // strike — so anticipation reads as weight being loaded rather than as the lunge starting late.
+    sx += m*0.17; sy -= m*0.13;
+    state = "attack";                      // ONE rig state; the beat within it is f._atkPhase
   } else if(f.smashHold > 0){              // wind BACK while the smash charges — anticipation
     const c = f.smashHold/45; const cc = c>1?1:c;
     lunge = -f.face * cc * R * 0.26;
@@ -10298,8 +10779,15 @@ function starShape(c,r,pts){
 // which is true of a few pixels of scale on the sprite itself. Pure render, no particles.
 function drawSwipeArc(f){
   const R = f.r;
-  const t = f._atkAnim / ATK_ANIM;          // 1 at the start of the swing -> 0 at the end
-  const p = Math.sin(t*Math.PI);            // fade in and out
+  // PHASED. The streak belongs to the RELEASE, not to the whole timer: during the gather nothing
+  // has swung yet, so a blade trail hanging in the air there is the single clearest way to make an
+  // anticipation read as a mistake. It blooms the instant the strike starts and trails off through
+  // the settle.
+  const u = atkU(f);
+  if(u < ATK_WINDUP) return;
+  const q = (u - ATK_WINDUP)/(1 - ATK_WINDUP);   // 0 as the strike starts -> 1 as it settles out
+  const t = 1 - q;                          // kept as the old name: 1 at the strike -> 0 at the end
+  const p = Math.sin(Math.pow(q, 0.6)*Math.PI); // blooms fast, fades slow
   if(p <= 0.02) return;
   const dir = f.face < 0 ? -1 : 1;
   // The arc sweeps from high to low across the swing, like a blade coming down and through.
