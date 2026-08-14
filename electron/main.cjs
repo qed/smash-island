@@ -26,9 +26,12 @@ function setCsp() {
     "img-src 'self' data: blob:",          // blob: for the share-clip GIF and replay preview
     "media-src 'self' data: blob:",        // music, and the .webm match recording
     "font-src 'self' data:",
-    // ws: for LAN netplay. No third-party origin is allowed: the API-key surface was removed from
-    // the game, so the old api.anthropic.com allowance was a leftover pointing at nothing.
-    "connect-src 'self' ws: wss: blob:",
+    // ws: for LAN netplay. Exactly ONE third-party origin is allowed, and only because the desktop
+    // build has no /api/strategy to proxy through: the web build's team-strategy calls are
+    // same-origin, but this app is served from app://game with no server behind it, so the only way
+    // an owner can drive the thinking teammate here is the token they paste under Advanced, which
+    // goes straight to the model's own address. Nothing else may be added to this list.
+    "connect-src 'self' ws: wss: blob: https://api.anthropic.com",
   ].join('; ');
   session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
     cb({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } });

@@ -18,10 +18,20 @@ const MAIN_RAW = readFileSync('electron/main.cjs', 'utf8');
 // very checks that forbid them — the same trap the teamStrength no-randomness test hit.
 // The `[^:]` matters: a naive //-stripper also eats the `//` in `app://game`, which is the very
 // literal several of these tests assert on.
-const MAIN = MAIN_RAW
-  .split('\n')
-  .map((line) => line.replace(/(^|[^:])\/\/.*$/, '$1'))
-  .join('\n');
+//
+// SPLIT ON /\r?\n/, NOT ON '\n'. This function was silently inert on every Windows checkout: after
+// splitting on '\n' each line still ended with '\r', and '\r' is a LineTerminator, so neither `.`
+// nor a non-multiline `$` can cross it — the pattern matched nothing and MAIN came back byte-for-
+// byte equal to MAIN_RAW. Two assertions in this file were therefore red locally and green in CI
+// against identical, correct source. A test helper that no-ops on one platform is worse than no
+// helper: it makes the suite's verdict depend on who ran it.
+function codeOnly(src) {
+  return src
+    .split(/\r?\n/)
+    .map((line) => line.replace(/(^|[^:])\/\/.*$/, '$1'))
+    .join('\n');
+}
+const MAIN = codeOnly(MAIN_RAW);
 const PKG = JSON.parse(readFileSync('package.json', 'utf8'));
 
 describe('the desktop app packages the actual game', () => {
@@ -89,7 +99,11 @@ describe('the custom origin resolves assets correctly', () => {
   it('builds a valid file URL on Windows', () => {
     // 'file://' + 'C:\Users\...' is not a valid URL; pathToFileURL is required.
     expect(MAIN, 'uses pathToFileURL rather than string concatenation').toContain('pathToFileURL');
-    expect(MAIN, "no naive 'file://' + path concatenation").not.toMatch(/['"]file:\/\/['"]\s*\+/);
+    // Strip comments before matching. This assertion was RED on main against correct code: the file
+    // documents the bug it fixed ("pathToFileURL, not 'file://' + file"), and the prose describing
+    // the anti-pattern matched the regex looking for the anti-pattern. A source scan that reads
+    // comments as code fails on exactly the files that explain themselves best.
+    expect(codeOnly(MAIN), "no naive 'file://' + path concatenation").not.toMatch(/['"]file:\/\/['"]\s*\+/);
   });
 });
 
@@ -99,8 +113,25 @@ describe('the desktop CSP matches what the game actually needs', () => {
     expect(MAIN, 'media-src blob: for the .webm replay').toMatch(/media-src[^;]*blob:/);
   });
 
-  it('no longer allows a third-party origin the game cannot use', () => {
-    // The API-key surface was removed from the game; the allowance pointed at nothing.
-    expect(MAIN).not.toContain('api.anthropic.com');
+  // RETARGETED when the thinking teammate landed. The old assertion was "no third-party origin at
+  // all", written when the game had no remote call to make. It now has one — the desktop build has
+  // no /api/strategy behind it, so an owner-supplied token talking straight to the model is the only
+  // path available here. The guarantee that actually matters is unchanged and is asserted below:
+  // ONE origin, named, and no second one may be added without this test failing.
+  it('allows exactly one third-party origin, and only in connect-src', () => {
+    const connect = codeOnly(MAIN).match(/"connect-src[^"]*"/);
+    expect(connect, 'a connect-src directive is present').toBeTruthy();
+    const hosts = [...codeOnly(MAIN).matchAll(/https?:\/\/([^/"'\s;]+)/g)].map((m) => m[1]);
+    expect([...new Set(hosts)]).toEqual(['api.anthropic.com']);
+    // and it is confined to connect-src — never script-src, never default-src.
+    expect(connect[0]).toContain('https://api.anthropic.com');
+    expect(codeOnly(MAIN)).toMatch(/default-src 'self'/);
+    expect(codeOnly(MAIN)).not.toMatch(/(script|default|style|img|media|font)-src[^;"]*api\.anthropic\.com/);
+  });
+
+  it('never hardcodes a credential of its own', () => {
+    // The desktop app supplies no key. Whatever reaches the model comes from the player's own
+    // Advanced box at runtime; nothing key-shaped may be baked into the shipped binary.
+    expect(MAIN).not.toMatch(/sk-ant-[A-Za-z0-9_-]{6,}/);
   });
 });

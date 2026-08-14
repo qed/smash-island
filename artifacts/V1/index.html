@@ -331,6 +331,22 @@
   .planlog .mate{align-self:flex-start;background:#ffffffcc;border:2px solid #1c1c1c;padding:6px 10px;border-radius:12px 12px 12px 2px;max-width:80%}
   .planlog .mate b{color:var(--host)}
   .planinput{display:flex;gap:8px}
+  .planlog .mate.thinking{opacity:.6;font-style:italic}
+  /* which difficulty tier is answering — the CPU Skill setting is buried in "More options", so the
+     huddle says out loud how sharp the teammate it is talking to actually is. */
+  .planai-badge{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    background:#1c1c1c;color:#fff;border-radius:8px;padding:3px 8px}
+  .planai-badge:empty{display:none}
+  .planai-status{min-height:14px}
+  .planadv{border-top:2px dashed #1c1c1c33;padding-top:6px;font-size:12px}
+  .planadv summary{cursor:pointer;font-weight:800;color:#555;font-size:12px;list-style:revert}
+  .planadvbody{padding:6px 0 2px;display:flex;flex-direction:column;gap:4px}
+  .planadvinput{font-family:inherit;font-weight:700;padding:7px 9px;border:2px solid #1c1c1c;
+    border-radius:9px;background:var(--panel);width:100%}
+  /* the strategy panel lives below the fold on a laptop-height select screen — revealing it scrolls
+     it into view (see syncModeUI), and this flash makes the arrival legible instead of abrupt. */
+  @keyframes teamchatArrive{0%{box-shadow:0 0 0 0 #ffd23fee}100%{box-shadow:0 0 0 14px #ffd23f00}}
+  .teamchat.arrive{animation:teamchatArrive .9s ease-out 1}
   .tourney-body{max-height:56vh;overflow-y:auto;width:min(760px,94vw);margin:10px auto}
   .th-sub{font-size:13px;opacity:.7;margin:6px 0}
   .th-fx{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;background:rgba(255,255,255,0.05);margin-bottom:4px;font-size:13px}
@@ -707,13 +723,29 @@
         <div class="planchat">
           <div class="planchat-head">
             <span>Talk to your teammates</span>
+            <span class="planai-badge" id="planAiTier"></span>
           </div>
           <div id="planLog" class="planlog"></div>
           <div class="planinput">
             <input id="planMsg" placeholder="e.g. 'Everyone focus the zoner, I'll flank'" maxlength="240"/>
-            <button class="btn sm" onclick="planSend()">Send</button>
+            <button class="btn sm" id="planSendBtn" onclick="planSend()">Send</button>
           </div>
-          <div class="foot" id="planChatNote">Your teammates reply with scripted tactics — name a target or a stance and they'll follow it.</div>
+          <div class="foot" id="planChatNote">Your teammates think for themselves — talk them through the plan and they'll adapt, in the huddle and mid-fight.</div>
+          <!-- ADVANCED: the owner's own model access, for running the game somewhere the /api/strategy
+               proxy is not deployed. Folded away, never on the title screen, and never a thing a
+               player is asked for: the deployed game needs nothing here. -->
+          <details class="planadv" id="planAdv">
+            <summary>Advanced</summary>
+            <div class="planadvbody">
+              <div class="foot" id="planAdvNote">The published game talks to its own <code>/api/strategy</code> endpoint and needs nothing from you. This box is for running the game somewhere that endpoint does not exist. Whatever you paste stays in this browser, is sent only to the model's own address, and is never written to a log, a link or the game's save data.</div>
+              <input id="planLocalKey" class="planadvinput" type="password" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="paste your own model access token" maxlength="200"/>
+              <div class="row" style="gap:8px;margin-top:6px">
+                <button class="btn ghost sm" onclick="teamAiForgetLocalToken()">Forget it</button>
+                <span class="foot" id="planAdvState"></span>
+              </div>
+            </div>
+          </details>
+          <div class="foot planai-status" id="planAiStatus"></div>
         </div>
       </div>
     </div>
@@ -2052,7 +2084,7 @@ function buildSettings(){
     });
   };
   bindSeg('segMode', v=>{ SETTINGS.mode=v;
-    syncModeUI();
+    syncModeUI({ reveal:true });   // a deliberate click on Teams scrolls the strategy panel into view
     // clamp count to the new mode's max and rebuild count buttons
     const cap = v==='teams'?MAX_TEAMS:MAX_FFA;
     if(SETTINGS.count>cap) SETTINGS.count=cap;
@@ -2089,7 +2121,7 @@ function buildSettings(){
 }
 // Force the Team-split row's visibility (and the mode buttons' highlight) to match SETTINGS.mode.
 // Called both on select-screen open and on any mode toggle, so the menu can't get out of sync.
-function syncModeUI(){
+function syncModeUI(opts){
   const isTeams = (SETTINGS.mode==='teams');
   const row=document.getElementById('teamRow');
   if(row) row.style.display = isTeams ? 'flex' : 'none';
@@ -2099,8 +2131,38 @@ function syncModeUI(){
   const panel=document.getElementById('teamChatPanel');
   if(panel){
     const show = isTeams && !inNetSession();
+    const wasHidden = panel.style.display==='none';
     panel.style.display = show ? 'block' : 'none';
     if(show){ try{ refreshTeamChat(); }catch(e){ console.error("refreshTeamChat:", e); } }
+    // WHY THIS SCROLL EXISTS. The owner's report was "it never pops up, which is weird" — and the
+    // display toggle above was already correct. Measured on a 720px-tall window: clicking Teams
+    // flips this panel to display:block at y=735 inside a 720px scroll box, i.e. entirely below the
+    // fold, with the Start button below THAT. The panel appeared perfectly and nobody could ever
+    // see it. Revealing something off-screen is the same as not revealing it, so the reveal now
+    // brings it into view. Gated on `opts.reveal` so only a deliberate mode CLICK scrolls: opening
+    // the select screen already in teams mode must still start at the roster.
+    if(show && wasHidden && opts && opts.reveal){
+      try{
+        if(panel.scrollIntoView){
+          panel.scrollIntoView({ block:'start', behavior:'smooth' });
+          // ...and then GUARANTEE it landed. A smooth scroll is animated by the compositor and
+          // simply never advances in a tab that is not painting frames — measured here: scrollTop
+          // stayed at 0 for 1.5s while behavior:'auto' moved it to 519 instantly. Shipping the
+          // pretty version alone would have reproduced the original bug in exactly the conditions
+          // nobody tests in. So: animate if we can, and snap if the animation did not happen.
+          setTimeout(()=>{
+            try{
+              const r=panel.getBoundingClientRect();
+              const vh=window.innerHeight||0;
+              if(r.top<0 || r.top>vh-60) panel.scrollIntoView({ block:'start', behavior:'auto' });
+            }catch(e){}
+          }, 600);
+        }
+        panel.classList.remove('arrive');
+        void panel.offsetWidth;              // restart the flash if Teams is re-picked
+        panel.classList.add('arrive');
+      }catch(e){}
+    }
   }
 }
 function buildCountButtons(){
@@ -2340,6 +2402,496 @@ function pollPad(){
 }
 
 // ============================================================
+//  TEAM AI — a teammate that actually thinks, in the huddle and in the fight
+// ============================================================
+// The teammate you talk to before a teams match, and the strategy your CPU squad follows during
+// one, are both authored by a model. Two hard rules shape everything below.
+//
+// 1. NOTHING HERE MAY BLOCK A FRAME. A model call takes seconds; a frame takes 16ms. So no call is
+//    ever awaited by step(), by aiThink(), or by startMatch(). The in-fight path is fire-and-forget:
+//    it posts a request, and whenever the answer lands it writes TEAM_PLAN, which aiThink was
+//    already reading every frame as plain property lookups. A match with the network unplugged runs
+//    at exactly the same speed as one with it plugged in.
+//
+// 2. NOTHING HERE MAY BREAK THE GAME. Every path degrades: proxy -> locally-supplied token ->
+//    the scripted replies that shipped before this feature existed. Offline, unconfigured, 404,
+//    timeout, garbage JSON, a model naming a fighter who is not in the match — all of it lands in
+//    the same place, which is "the game plays fine and the teammate says something sensible".
+//
+// The difficulty tier chooses the model, per the owner's brief: easy thinks fast, hard thinks hard.
+
+const TEAM_AI_ENDPOINT = '/api/strategy';
+// AI_LEVEL (0/1/2 = Easy/Normal/Hard) indexes this.
+const TEAM_AI_TIER_BY_LEVEL = ['easy', 'normal', 'hard'];
+// Mirrored server-side in api/strategy.js (TIER_MODELS); test/team-ai.test.js pins them equal. The
+// deployed game never sends a model id — the proxy maps the tier itself — but the locally-supplied
+// token path talks to the model directly and needs the same table.
+const TEAM_AI_MODELS = {
+  easy:   'claude-haiku-4-5-20251001',
+  normal: 'claude-sonnet-5',
+  hard:   'claude-fable-5',
+};
+// COST GUARD. In-fight re-strategy fires on a timer and on KOs, for the length of a match, for
+// every teams match anyone plays. Hard runs the most expensive model, so it thinks less often, not
+// more — a slower cadence of better plans. These are floors: a refresh never happens sooner.
+const TEAM_AI_REFRESH_MS = { easy: 12000, normal: 12000, hard: 20000 };
+// A KO is the one event worth interrupting the cadence for, but only after this much of a gap, so a
+// double-KO scramble cannot fire two calls back to back.
+const TEAM_AI_KO_MIN_GAP_MS = 6000;
+// Absolute ceiling on in-fight calls per match, whatever happens. A 5-minute hard-tier match cannot
+// cost more than this many Fable calls even if every KO lands on a refresh boundary.
+const TEAM_AI_MAX_CALLS = { easy: 16, normal: 16, hard: 8 };
+const TEAM_AI_TIMEOUT_MS = 7000;
+const TEAM_AI_MAX_TOKENS = { chat: 350, strategy: 400 };
+// How often step() even LOOKS at whether a refresh is due. 30 frames = twice a second; the check
+// itself is a couple of comparisons and a string build, and it is nowhere near the hot path.
+const TEAM_AI_TICK_FRAMES = 30;
+const TEAM_AI_STANCES = ['aggressive', 'balanced', 'defensive'];
+const TEAM_AI_SPECIAL_USAGE = ['hoard', 'normal', 'spam'];
+// Where an owner-supplied token is remembered. Local to this browser, never sent anywhere except
+// the model's own address, never placed in a URL, never logged.
+const TEAM_AI_TOKEN_STORE = 'bfsi:teamAiToken';
+const TEAM_AI_DIRECT_URL = 'https://api.anthropic.com/v1/messages';
+
+// Live state. `calls`/`lastAt`/`sig` are the cost guard; `inflight` stops a slow answer from
+// stacking up behind a fast timer; `source` is what the status line reports.
+const TEAM_AI = {
+  inflight: false, calls: 0, lastAt: 0, lastKoAt: 0, koPending: false,
+  sig: '', source: 'none', lastError: '', chatBusy: false, localToken: '',
+};
+
+/** Difficulty tier name for the current CPU Skill setting. Anything unexpected reads as normal. */
+function teamAiTier(level){
+  const lv = (level==null) ? AI_LEVEL : level;
+  return TEAM_AI_TIER_BY_LEVEL[lv] || 'normal';
+}
+/** Model id for a tier — used only by the locally-supplied-token path; the proxy maps its own. */
+function teamAiModel(tier){ return TEAM_AI_MODELS[tier] || TEAM_AI_MODELS.normal; }
+/** Minimum gap between in-fight refreshes for a tier. */
+function teamAiRefreshMs(tier){ return TEAM_AI_REFRESH_MS[tier] || TEAM_AI_REFRESH_MS.normal; }
+/** Per-match ceiling on in-fight calls for a tier. */
+function teamAiMaxCalls(tier){ const n=TEAM_AI_MAX_CALLS[tier]; return n==null ? TEAM_AI_MAX_CALLS.normal : n; }
+
+/** Milliseconds, monotonic where available. Never throws in a headless realm. */
+function teamAiNow(){
+  try{ if(typeof performance!=='undefined' && performance.now) return performance.now(); }catch(e){}
+  return Date.now();
+}
+
+// ---- owner-supplied token (Advanced) -------------------------------------------------
+// This is the SECOND rung of the fallback ladder and exists for one situation: running the game
+// somewhere /api/strategy is not deployed. A deployed player never sees it — it is folded inside
+// "Advanced", inside a panel that only exists in teams mode, and the title screen has no idea it
+// exists. The value is read straight out of the input or storage at call time and handed to the
+// request header. It is never interpolated into a URL, a log line, the chat log, or a save file.
+function teamAiLocalToken(){
+  const el = (typeof document!=='undefined') ? document.getElementById('planLocalKey') : null;
+  if(el && el.value) return String(el.value).trim();
+  return String(TEAM_AI.localToken||'').trim();
+}
+async function teamAiLoadLocalToken(){
+  try{
+    const saved = await BStore.get(TEAM_AI_TOKEN_STORE);
+    if(saved) TEAM_AI.localToken = String(saved);
+  }catch(e){}
+  const el = document.getElementById('planLocalKey');
+  if(el && !el._teamAiWired){
+    el._teamAiWired = true;
+    if(!el.value && TEAM_AI.localToken) el.value = TEAM_AI.localToken;
+    el.addEventListener('input', ()=>{
+      TEAM_AI.localToken = el.value||'';
+      try{ BStore.set(TEAM_AI_TOKEN_STORE, el.value||''); }catch(e){}
+      teamAiPaintAdvState();
+    });
+  }
+  teamAiPaintAdvState();
+}
+function teamAiForgetLocalToken(){
+  TEAM_AI.localToken='';
+  const el=document.getElementById('planLocalKey'); if(el) el.value='';
+  try{ BStore.del(TEAM_AI_TOKEN_STORE); }catch(e){}
+  teamAiPaintAdvState();
+}
+// Reports only PRESENCE, never any part of the value — no prefix, no length, no masked echo.
+function teamAiPaintAdvState(){
+  const st=document.getElementById('planAdvState'); if(!st) return;
+  st.textContent = teamAiLocalToken() ? 'Stored in this browser.' : 'Nothing stored.';
+}
+
+// ---- the call ------------------------------------------------------------------------
+/** Extract the first balanced-looking JSON object from model prose. Throws if there isn't one. */
+function teamAiParseJSON(txt){
+  const s=String(txt==null?'':txt);
+  const a=s.indexOf('{'), b=s.lastIndexOf('}');
+  if(a<0 || b<=a) throw new Error('no-json');
+  return JSON.parse(s.slice(a, b+1));
+}
+
+/**
+ * One model turn, via whichever rung of the ladder answers first.
+ * Rung 1: POST /api/strategy — same origin, no credential in the browser at all.
+ * Rung 2: the owner's own token, direct, only if one has been pasted under Advanced.
+ * Neither works -> throw, and every caller treats a throw as "use the scripted path".
+ */
+async function teamAiCall(req){
+  const tier = req.tier || teamAiTier();
+  const maxTokens = req.maxTokens || 300;
+  const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+  const timer = setTimeout(()=>{ try{ ctrl && ctrl.abort(); }catch(e){} }, TEAM_AI_TIMEOUT_MS);
+  try{
+    // --- rung 1: the proxy ---
+    try{
+      const resp = await fetch(TEAM_AI_ENDPOINT, {
+        method:'POST',
+        headers:{ 'content-type':'application/json' },
+        body: JSON.stringify({ tier, system:req.system, messages:req.messages, maxTokens }),
+        signal: ctrl ? ctrl.signal : undefined,
+      });
+      if(resp.ok){
+        const data = await resp.json();
+        const text = (data && typeof data.text==='string') ? data.text : '';
+        if(text){ TEAM_AI.source='proxy'; TEAM_AI.lastError=''; return { text, source:'proxy', tier }; }
+        throw new Error('empty');
+      }
+      // 503 is the owner-has-not-set-the-env-var case and 404 is the not-deployed case. Both mean
+      // "try the next rung"; so does anything else, there is no failure worth giving up on here.
+      throw new Error('http-'+resp.status);
+    }catch(proxyErr){
+      TEAM_AI.lastError = String((proxyErr && proxyErr.message) || proxyErr || 'proxy-failed');
+    }
+    // --- rung 2: the owner's own token ---
+    const token = teamAiLocalToken();
+    if(!token) throw new Error('unconfigured');
+    const payload = { model: teamAiModel(tier), max_tokens: maxTokens, messages: req.messages };
+    if(req.system) payload.system = req.system;
+    const resp2 = await fetch(TEAM_AI_DIRECT_URL, {
+      method:'POST',
+      headers:{
+        'x-api-key': token,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify(payload),
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+    if(!resp2.ok) throw new Error('http-'+resp2.status);
+    const data2 = await resp2.json();
+    const text2 = (data2 && Array.isArray(data2.content))
+      ? data2.content.filter(b=>b && b.type==='text').map(b=>b.text).join('') : '';
+    if(!text2) throw new Error('empty');
+    TEAM_AI.source='local'; TEAM_AI.lastError='';
+    return { text:text2, source:'local', tier };
+  } finally { clearTimeout(timer); }
+}
+
+// ---- match context -------------------------------------------------------------------
+/** Who is on which team, what they can do, and who is a person rather than a CPU. */
+function teamAiContext(){
+  const byTeam={};
+  (fighters||[]).forEach(f=>{
+    (byTeam[f.team]||(byTeam[f.team]=[])).push({
+      name:f.name,
+      special:(f.kit&&f.kit.special)||'basic',
+      arch:f.arch||'',
+      weight:f.w,
+      pct: Math.round(f.pct||0),
+      stocks: (f.stocks===Infinity ? -1 : (f.stocks|0)),
+      out: !!f.dead,
+      human: !!(f.you||f.you2) || f.controller==='local' || f.controller==='local2' || f.controller==='remote',
+    });
+  });
+  const teams=Object.keys(byTeam).map(k=>+k).sort((a,b)=>a-b).map(t=>({
+    team:t, cpu: !byTeam[t].some(m=>m.human), fighters:byTeam[t],
+  }));
+  return { stage:(stage&&stage.name)||'Arena', teams };
+}
+function teamAiAllyNames(ctx, team){
+  const t=ctx.teams.find(x=>x.team===team);
+  return new Set(t ? t.fighters.filter(m=>!m.out).map(m=>m.name) : []);
+}
+function teamAiEnemyNames(ctx, team){
+  return new Set(ctx.teams.filter(x=>x.team!==team).flatMap(x=>x.fighters).filter(m=>!m.out).map(m=>m.name));
+}
+
+// ---- validation ----------------------------------------------------------------------
+// Model output is UNTRUSTED INPUT, in the same category as anything arriving off the network. It
+// reaches TEAM_PLAN only through here. Enums are clamped to values the game actually implements;
+// a focus target must be a live enemy of that team and a protect target a live ally, by exact name,
+// so a hallucinated fighter ("Firey Jr Deluxe") is dropped rather than chased forever by an aiThink
+// that will never find it; riskTolerance is coerced and clamped. The rejects are returned rather
+// than swallowed so the tests — and the status line — can see that filtering happened.
+function teamAiValidatePlan(raw, ctx, opts){
+  const cpuOnly = !(opts && opts.allowHumanTeams);
+  const out = { plans:{}, rejected:[] };
+  if(!raw || !Array.isArray(raw.teams)) throw new Error('bad-shape');
+  const allowed = new Set(ctx.teams.filter(t=>!cpuOnly || t.cpu).map(t=>t.team));
+  raw.teams.forEach(e=>{
+    if(!e || typeof e!=='object'){ out.rejected.push('non-object team entry'); return; }
+    const team = Number(e.team);
+    if(!Number.isFinite(team) || !allowed.has(team)){ out.rejected.push('team '+String(e.team)); return; }
+    // First answer per team wins. A model that lists the same team twice has contradicted itself,
+    // and last-write-wins hands the match to whichever entry happened to be printed last — observed
+    // in the browser: a well-formed aggressive plan was overwritten by a following entry whose focus
+    // target did not exist, leaving the team worse off than before it asked.
+    if(Object.prototype.hasOwnProperty.call(out.plans, team)){ out.rejected.push('duplicate team '+team); return; }
+    const allies = teamAiAllyNames(ctx, team), enemies = teamAiEnemyNames(ctx, team);
+    const stance = TEAM_AI_STANCES.includes(e.stance) ? e.stance : 'balanced';
+    if(e.stance!=null && e.stance!==stance) out.rejected.push('stance '+String(e.stance));
+    let focusName=null;
+    if(e.focusName!=null && e.focusName!==''){
+      if(enemies.has(e.focusName)) focusName=e.focusName;
+      else out.rejected.push('focusName '+String(e.focusName));
+    }
+    let protectName=null;
+    if(e.protectName!=null && e.protectName!==''){
+      if(allies.has(e.protectName)) protectName=e.protectName;
+      else out.rejected.push('protectName '+String(e.protectName));
+    }
+    const specialUsage = TEAM_AI_SPECIAL_USAGE.includes(e.specialUsage) ? e.specialUsage : 'normal';
+    if(e.specialUsage!=null && e.specialUsage!==specialUsage) out.rejected.push('specialUsage '+String(e.specialUsage));
+    // Absent means "no opinion" -> the neutral middle. Note the explicit null/'' check: Number(null)
+    // is 0 and Number('') is 0, both of which pass isFinite, so a model that simply omitted the
+    // field would silently produce the most timid team on the stage.
+    let risk;
+    if(e.riskTolerance==null || e.riskTolerance===''){ risk=0.5; }
+    else {
+      risk = Number(e.riskTolerance);
+      if(!isFinite(risk)){ out.rejected.push('riskTolerance '+String(e.riskTolerance)); risk=0.5; }
+    }
+    risk = Math.max(0, Math.min(1, risk));
+    out.plans[team] = { stance, focusName, protectName, specialUsage, riskTolerance:risk };
+  });
+  return out;
+}
+
+/** Write validated plans into TEAM_PLAN. Returns how many teams were updated. */
+function teamAiApplyPlans(validated){
+  let n=0;
+  Object.keys(validated.plans||{}).forEach(k=>{
+    TEAM_PLAN[+k] = validated.plans[k];
+    n++;
+  });
+  return n;
+}
+
+// ---- aiThink hooks -------------------------------------------------------------------
+// Both are exact no-ops when no plan field is present, so a match with the feature switched off
+// behaves — frame for frame, random draw for random draw — the way it did before this landed.
+/** Scales the damage at which a fighter starts backing off. Exactly 1 with no plan. */
+function planRiskScale(f){
+  const p = TEAM_PLAN && TEAM_PLAN[f.team];
+  const r = (p && typeof p.riskTolerance==='number') ? p.riskTolerance : null;
+  return (r==null) ? 1 : (0.8 + r*0.4);
+}
+/** 'hoard' | 'normal' | 'spam' — how freely this fighter throws its special out. */
+function planSpecialUsage(f){
+  const p = TEAM_PLAN && TEAM_PLAN[f.team];
+  const v = p && p.specialUsage;
+  return TEAM_AI_SPECIAL_USAGE.includes(v) ? v : 'normal';
+}
+
+// ---- in-fight re-strategy ------------------------------------------------------------
+/**
+ * The material state of the match, as a short string. If this has not changed since the last call,
+ * there is nothing new to think about and the refresh is skipped — which is most of the time, since
+ * damage is bucketed in 25% steps. This is the difference between a plan that updates when the
+ * fight turns and a metronome billing the owner every 12 seconds for the same answer.
+ */
+function teamAiMaterialSig(ctx){
+  return ctx.teams.map(t=>
+    t.team+':'+t.fighters.map(m=>
+      m.name+(m.out?'!':'')+'/'+m.stocks+'/'+Math.floor((m.pct||0)/25)
+    ).join(',')
+  ).join('|');
+}
+
+/** Called from the KO path. Marks the next tick as worth spending a call on. */
+function teamAiKoSignal(){ TEAM_AI.koPending = true; }
+
+/** Reset the per-match cost guard. Called from beginMatchNow. */
+function teamAiResetMatch(){
+  TEAM_AI.calls=0; TEAM_AI.lastAt=0; TEAM_AI.lastKoAt=0;
+  TEAM_AI.koPending=false; TEAM_AI.sig=''; TEAM_AI.inflight=false;
+}
+
+/**
+ * The CPU teams' opening plan, requested as the match starts. Deliberately NOT awaited by
+ * startMatch: the fight begins immediately on the huddle's own settings, and this upgrades the CPU
+ * side a second or two in. It counts against the same per-match ceiling as the in-fight refreshes.
+ */
+function teamAiOpeningPlan(){
+  if(SETTINGS.mode!=='teams' || inNetSession()) return false;
+  const ctx = teamAiContext();
+  if(!ctx.teams.some(t=>t.cpu)) return false;
+  const tier = teamAiTier();
+  if(TEAM_AI.calls >= teamAiMaxCalls(tier)) return false;
+  TEAM_AI.calls++;
+  TEAM_AI.inflight = true; TEAM_AI.lastAt = teamAiNow(); TEAM_AI.sig = teamAiMaterialSig(ctx);
+  teamAiRestrategise(ctx, tier).catch(()=>{}).then(()=>{ TEAM_AI.inflight=false; });
+  return true;
+}
+
+/** Should an in-fight refresh happen right now? Pure and synchronous — no I/O, no awaits. */
+function teamAiShouldRefresh(now, sig, tier){
+  if(TEAM_AI.inflight) return false;
+  if(TEAM_AI.calls >= teamAiMaxCalls(tier)) return false;
+  if(sig === TEAM_AI.sig) return false;                 // nothing material changed
+  if(!TEAM_AI.lastAt) return true;                      // first refresh of the match
+  const since = now - TEAM_AI.lastAt;
+  if(TEAM_AI.koPending && since >= TEAM_AI_KO_MIN_GAP_MS) return true;
+  return since >= teamAiRefreshMs(tier);
+}
+
+/**
+ * Called from step() twice a second. Decides, fires, and returns immediately. The `await` inside
+ * the promise chain never touches the frame that started it.
+ */
+function teamAiTick(){
+  if(!running || SETTINGS.mode!=='teams' || inNetSession()) return false;
+  if(!fighters || !fighters.length) return false;
+  const tier = teamAiTier();
+  const ctx = teamAiContext();
+  if(!ctx.teams.some(t=>t.cpu)) return false;           // nobody to re-strategise for
+  const now = teamAiNow();
+  const sig = teamAiMaterialSig(ctx);
+  if(!teamAiShouldRefresh(now, sig, tier)) return false;
+  TEAM_AI.inflight = true; TEAM_AI.lastAt = now; TEAM_AI.sig = sig;
+  if(TEAM_AI.koPending){ TEAM_AI.koPending=false; TEAM_AI.lastKoAt=now; }
+  TEAM_AI.calls++;
+  // Fire and forget. Nothing downstream of here is awaited by the caller.
+  teamAiRestrategise(ctx, tier)
+    .catch(()=>{})
+    .then(()=>{ TEAM_AI.inflight=false; });
+  return true;
+}
+
+/** The async half of a refresh: ask, validate, write TEAM_PLAN. Never throws to its caller. */
+async function teamAiRestrategise(ctx, tier){
+  try{
+    const res = await teamAiCall({
+      tier,
+      system: TEAM_AI_STRATEGY_SYSTEM,
+      messages: [{ role:'user', content: teamAiStrategyPrompt(ctx, true) }],
+      maxTokens: TEAM_AI_MAX_TOKENS.strategy,
+    });
+    const validated = teamAiValidatePlan(teamAiParseJSON(res.text), ctx);
+    return teamAiApplyPlans(validated);
+  }catch(e){ return 0; }
+}
+
+const TEAM_AI_STRATEGY_SYSTEM =
+  "You are the strategist for CPU teams in a cartoon 2D platform fighter. You answer with STRICT " +
+  "JSON only: no prose, no markdown fences, no commentary. Schema: " +
+  '{"teams":[{"team":<int>,"stance":"aggressive"|"balanced"|"defensive","focusName":<exact enemy name or null>,' +
+  '"protectName":<exact ally name or null>,"specialUsage":"hoard"|"normal"|"spam","riskTolerance":<0..1>}]}. ' +
+  "focusName MUST be copied exactly from that team's listed enemies, protectName exactly from its own " +
+  "listed allies; use null rather than inventing a name. riskTolerance 0 means retreat early at high " +
+  "damage, 1 means keep fighting.";
+
+/** Roster + (mid-match) the current score, as terse lines. */
+function teamAiStrategyPrompt(ctx, live){
+  const fmt = m => `${m.name} [${m.special}${m.arch?', '+m.arch:''}, weight ${m.weight}`
+    + (live ? `, ${m.pct}% damage, ${m.stocks<0?'∞':m.stocks} stocks${m.out?', OUT':''}` : '') + ']';
+  const lines = ctx.teams.filter(t=>t.cpu).map(t=>{
+    const allies = t.fighters.map(fmt).join('; ');
+    const enemies = ctx.teams.filter(o=>o.team!==t.team).flatMap(o=>o.fighters).map(fmt).join('; ');
+    return `Team ${t.team} — allies: ${allies}. Enemies: ${enemies}.`;
+  });
+  return [
+    live ? 'Mid-match. Re-plan for each CPU team given the current score.'
+         : 'Pre-match. Plan for each CPU team.',
+    `Stage: ${ctx.stage}.`,
+    lines.join('\n'),
+    'Reply with the JSON object only.',
+  ].join('\n');
+}
+
+// ---- pre-match huddle chat -----------------------------------------------------------
+const TEAM_AI_CHAT_SYSTEM =
+  "You are a teammate in a cartoon platform fighter, talking to your human partner in the huddle " +
+  "before the match. Be brief and warm — two sentences at most, in character as a scrappy fighter, " +
+  "never a corporate assistant. Then set the squad's plan. Reply with STRICT JSON only, no markdown " +
+  'fences: {"reply":"<what you say out loud>","plan":{"stance":"aggressive"|"balanced"|"defensive",' +
+  '"focusName":<exact enemy name or null>,"protectName":<exact ally name or null>}}. ' +
+  "focusName must be copied exactly from the listed enemies and protectName exactly from the listed " +
+  "allies — use null rather than naming anyone who is not listed. Follow what your partner asks for.";
+
+/** The huddle's view of the match, for the chat prompt. */
+function teamAiChatPrompt(ctx, myTeam, userMsg, plan){
+  const me = ctx.teams.find(t=>t.team===myTeam) || { fighters:[] };
+  const allies = me.fighters.filter(m=>!m.human).map(m=>`${m.name} [${m.special}]`).join(', ') || '(none)';
+  const enemies = ctx.teams.filter(t=>t.team!==myTeam).flatMap(t=>t.fighters)
+    .map(m=>`${m.name} [${m.special}, weight ${m.weight}]`).join(', ') || '(none)';
+  return [
+    `Stage: ${ctx.stage}.`,
+    `Your allies (you are one of them): ${allies}.`,
+    `Your enemies: ${enemies}.`,
+    `Current plan — stance ${plan.stance}, focus ${plan.focusName||'nobody in particular'}, protect ${plan.protectName||'nobody'}.`,
+    `Your partner says: ${userMsg}`,
+  ].join('\n');
+}
+
+/** Read the huddle's three controls back out as a plan object. */
+function teamAiReadHuddle(){
+  const stanceBtn=document.querySelector('#planStance button.on');
+  const focusEl=document.getElementById('planFocus');
+  const protEl=document.getElementById('planProtect');
+  return {
+    stance: stanceBtn?stanceBtn.dataset.v:'balanced',
+    focusName: focusEl?(focusEl.value||null):null,
+    protectName: protEl?(protEl.value||null):null,
+  };
+}
+/** Push a validated plan back into the huddle's controls so the player SEES what was agreed. */
+function teamAiWriteHuddle(plan){
+  if(!plan) return;
+  if(plan.stance) setStanceUI(plan.stance);
+  const focusEl=document.getElementById('planFocus');
+  if(focusEl && plan.focusName!==undefined) focusEl.value = plan.focusName || '';
+  const protEl=document.getElementById('planProtect');
+  if(protEl && plan.protectName!==undefined) protEl.value = plan.protectName || '';
+}
+
+/** Status line under the huddle. Never carries any part of a token. */
+function teamAiSetStatus(msg){
+  const el=document.getElementById('planAiStatus'); if(el) el.textContent = msg||'';
+}
+/** Badge naming the tier the player is talking to. */
+function teamAiPaintTier(){
+  const el=document.getElementById('planAiTier'); if(!el) return;
+  const tier=teamAiTier();
+  el.textContent = tier==='hard' ? 'Hard · sharpest' : tier==='easy' ? 'Easy · quickest' : 'Normal';
+}
+
+/**
+ * One conversational turn with the teammate. Returns the reply text and whether it came from a
+ * model. Falls back to planScriptedReply on ANY failure, so the huddle always answers.
+ */
+async function teamAiChatTurn(userMsg, ctx, myTeam){
+  const tier = teamAiTier();
+  const plan = teamAiReadHuddle();
+  const res = await teamAiCall({
+    tier,
+    system: TEAM_AI_CHAT_SYSTEM,
+    messages: [{ role:'user', content: teamAiChatPrompt(ctx, myTeam, userMsg, plan) }],
+    maxTokens: TEAM_AI_MAX_TOKENS.chat,
+  });
+  const raw = teamAiParseJSON(res.text);
+  const reply = (raw && typeof raw.reply==='string' && raw.reply.trim()) ? raw.reply.trim() : '';
+  if(!reply) throw new Error('no-reply');
+  // The plan half rides the SAME validator as the in-fight path — the huddle is the human's own
+  // team, so human teams are allowed here and nowhere else.
+  let applied=null, rejected=[];
+  if(raw.plan && typeof raw.plan==='object'){
+    const v = teamAiValidatePlan({ teams:[Object.assign({ team:myTeam }, raw.plan)] }, ctx, { allowHumanTeams:true });
+    applied = v.plans[myTeam] || null;
+    rejected = v.rejected;
+  }
+  return { reply, plan:applied, rejected, tier, source:res.source };
+}
+
+// ============================================================
 //  MATCH
 // ============================================================
 function resize(){ const r=cv.getBoundingClientRect();
@@ -2364,9 +2916,15 @@ function startMatch(){
     startTournament(pt.size, pt.mode);   // startTournament reads `chosen` for your team
     return;
   }
-  // Team chat runs on scripted teammate replies. Nothing to configure, nothing to sign up for.
+  // The huddle's own controls are the plan the match STARTS with — read synchronously, so pressing
+  // Start always starts a match at once. The CPU teams' opening plan is then requested in the
+  // background, AFTER beginMatchNow has built the real roster and reset the per-match cost guard;
+  // it lands whenever it lands and aiThink picks it up on the next frame after that.
   if(SETTINGS.mode==="teams" && !inNetSession()){
     captureTeamPlan();
+    beginMatchNow();
+    try{ teamAiOpeningPlan(); }catch(e){}   // fire-and-forget: never awaited, never blocks Start
+    return;
   }
   beginMatchNow();
 }
@@ -3359,6 +3917,7 @@ function beginMatchNow(){
   try{ syncTouchControls(); }catch(e){}   // reveal the on-screen pad for a touch device
   running=true; paused=false; hazardT=0;
   window.__elimSeq=0; lastKoFrame=0;   // reset placement/elimination + stalemate timer for the new match
+  try{ teamAiResetMatch(); }catch(e){}  // and the team-AI cost guard: call budget is per match
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
   particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null;
   // BOSS RUSH: all fighters join forces (team 0) and a boss is summoned as the enemy.
@@ -3376,8 +3935,11 @@ function beginMatchNow(){
 }
 
 // ---------- pre-match co-op planning ----------
-// Teammate replies are generated locally by planScriptedReply(). There is deliberately no
-// remote call and no credential input anywhere in this file.
+// The teammate's REPLIES are model-authored — see teamAiChatTurn — and fall back to
+// planScriptedReply whenever the strategy service is unreachable. The OPENER below stays scripted
+// on purpose: it has to appear the instant the panel does, and a threat-ranked suggestion is a
+// better greeting than a spinner. No credential is needed for any of it; the deployed game talks to
+// its own same-origin /api/strategy and the browser never holds a key.
 // Populate the inline Team Strategy & Chat panel (called when Teams mode is selected).
 function refreshTeamChat(){
   let enemies=[], allies=[], you=null;
@@ -3407,9 +3969,24 @@ function refreshTeamChat(){
   enemies.forEach(e=>{ const o=document.createElement('option'); o.value=e.name; o.textContent=e.name; focus.appendChild(o); });
   const prot=document.getElementById('planProtect'); prot.innerHTML='<option value="">— nobody —</option>';
   allies.forEach(a=>{ const o=document.createElement('option'); o.value=a.name; o.textContent=a.name; prot.appendChild(o); });
-  // fresh chat log — the teammate PROACTIVELY suggests a plan based on the enemy lineup
-  const log=document.getElementById('planLog'); log.innerHTML='';
+  // say which difficulty tier is answering, and re-hydrate the Advanced box if one was stored
+  try{ teamAiPaintTier(); }catch(e){}
+  try{ teamAiLoadLocalToken(); }catch(e){}      // async, never awaited — the panel must not wait on storage
+  // fresh chat log — the teammate PROACTIVELY suggests a plan based on the enemy lineup.
+  //
+  // But only when the lineup ACTUALLY changed. refreshTeamChat runs from syncModeUI, which runs
+  // from buildSettings, which runs from buildBoard — and buildBoard runs every time the player
+  // clicks a fighter, and again when the saved profile finishes loading. Wiping unconditionally
+  // meant a conversation with your teammate disappeared the moment you glanced back at the roster,
+  // which mattered little when the replies were three canned strings and matters a great deal now
+  // that they are a real discussion the player is having.
+  const log=document.getElementById('planLog');
   const mate = allies[0] ? allies[0].name : "Team";
+  const lineupSig = [...(you?[you.name]:[]), ...allies.map(a=>a.name), '|', ...enemies.map(e=>e.name)].join(',');
+  if(log.children.length && lineupSig===window.__planLineupSig) return;   // same fight, keep the talk
+  window.__planLineupSig = lineupSig;
+  log.innerHTML='';
+  teamAiSetStatus('');
   if(enemies.length){
     // rank enemies by a rough threat score so we can recommend who to focus first
     const threat=e=>{
@@ -3442,18 +4019,28 @@ function toggleTeamChat(){
 // no-op shims kept so any stray calls don't throw
 function clearPlanTimer(){}
 function addPlanTime(){}
-function planMate(name,text){
+// Returns the appended node so a "thinking…" placeholder can be swapped for the real reply.
+// `text` reaches innerHTML, so every caller passing model- or peer-derived words escapes first.
+function planMate(name,text,opts){
   const log=document.getElementById('planLog');
-  const d=document.createElement('div'); d.className='mate'; d.innerHTML=`<b>${name}:</b> ${text}`;
+  const d=document.createElement('div'); d.className='mate'+((opts&&opts.thinking)?' thinking':'');
+  d.innerHTML=`<b>${esc(name)}:</b> ${text}`;
   log.appendChild(d); log.scrollTop=log.scrollHeight;
+  return d;
 }
 function planMe(text){
   const log=document.getElementById('planLog');
   const d=document.createElement('div'); d.className='me'; d.textContent=text;
   log.appendChild(d); log.scrollTop=log.scrollHeight;
 }
+// The huddle turn. The keyword pass below runs FIRST and synchronously: it is instant, it is what
+// makes "focus Lightning" work with the network unplugged, and it means the controls have already
+// moved by the time the model is asked. The model call then layers a real conversation and a
+// considered plan on top, and may overrule the keywords. Any failure — offline, unconfigured,
+// timeout, garbage — lands on planScriptedReply, which is what shipped before this feature.
 async function planSend(){
   const inp=document.getElementById('planMsg'); const msg=(inp.value||"").trim(); if(!msg) return;
+  if(TEAM_AI.chatBusy) return;                 // one turn at a time; the Send button is disabled too
   planMe(msg); inp.value="";
   const you=fighters.find(f=>f.you)||fighters[0]; const myTeam=you?you.team:0;
   const allies=fighters.filter(f=>f.team===myTeam && !f.you);
@@ -3468,7 +4055,26 @@ async function planSend(){
   if(named){ document.getElementById('planFocus').value=named.name; }
   // Naming an ally with a protect word sets the protect target.
   if(/protect|guard|cover|watch/.test(low)){ const ally=allies.find(a=>low.includes(a.name.toLowerCase())); if(ally) document.getElementById('planProtect').value=ally.name; }
-  planMate(mate, planScriptedReply(low, enemies));
+
+  const pending = planMate(mate, 'thinking…', { thinking:true });
+  TEAM_AI.chatBusy = true;
+  const sendBtn=document.getElementById('planSendBtn'); if(sendBtn) sendBtn.disabled=true;
+  let text, live=false, rejected=[];
+  try{
+    const turn = await teamAiChatTurn(msg, teamAiContext(), myTeam);
+    text = turn.reply; live = true; rejected = turn.rejected||[];
+    if(turn.plan) teamAiWriteHuddle(turn.plan);
+  }catch(e){
+    text = planScriptedReply(low, enemies);
+  }finally{
+    TEAM_AI.chatBusy = false;
+    if(sendBtn) sendBtn.disabled=false;
+  }
+  if(pending && pending.parentNode) pending.parentNode.removeChild(pending);
+  planMate(mate, esc(text));
+  teamAiSetStatus(live
+    ? ('Teammate is thinking for real (' + teamAiTier() + ' tier)' + (rejected.length ? ' · ignored a call it could not make' : '') + '.')
+    : 'Teammate is on built-in tactics right now — the strategy service is unreachable.');
 }
 function setStanceUI(v){ const seg=document.getElementById('planStance'); seg.querySelectorAll('button').forEach(b=>{ b.classList.toggle('on', b.dataset.v===v); }); }
 function planScriptedReply(low, enemies){
@@ -4732,6 +5338,10 @@ function step(){
   // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
   if(hazardT % CLUTCH_CHECK_FRAMES === 0){ try{ clutchTick(); }catch(e){} }
+  // Team re-strategy, same shape as clutchTick and for the same reason: a periodic check, never a
+  // per-frame one. teamAiTick is synchronous and returns immediately — when it decides a refresh is
+  // due it fires the request and walks away, and the answer arrives on some later frame's microtask.
+  if(hazardT % TEAM_AI_TICK_FRAMES === 0){ try{ teamAiTick(); }catch(e){} }
   if(TUT.active) tutorialTick();
   try{ observePlaystyle(); }catch(e){}   // Wave 5: watch how the human plays this fighter
   testDpsTick();
@@ -6426,6 +7036,7 @@ function eliminate(f){
   // Knocked past a blast zone = KO = lose one stock.
   f.stocks--;
   lastKoFrame = hazardT;                              // reset the stalemate-breaker timer on any KO
+  try{ teamAiKoSignal(); }catch(e){}                  // a KO is worth re-planning for — see teamAiTick
   f._falls = (f._falls||0)+1;                       // universal: stocks this fighter has lost
   if(killer && killer!==f && !killer.dead){ killer._kos=(killer._kos||0)+1; }  // universal: KOs scored
   // Comeback scaling: credit the killer with a KO, and the victim with a death (only for designated fighters)
@@ -7634,8 +8245,11 @@ function aiThink(f){
   // The higher the %, the earlier and harder the fighter backs off. This is what stops
   // e.g. a brawler from charging in at 145% and getting launched.
   const killPct = 100 + (f.w-70)*0.6;          // heavier = survives longer before it's "danger"
-  const danger = f.pct > Math.max(85, killPct*0.85);
-  const scared = f.pct > Math.max(110, killPct*1.05);   // very high: full retreat
+  // TEAM PLAN read: riskTolerance shifts where "danger" starts (0 = bail early, 1 = stay in it).
+  // planRiskScale returns exactly 1 when the team has no plan field, so this is a no-op by default.
+  const riskScale = planRiskScale(f);
+  const danger = f.pct > Math.max(85, killPct*0.85)*riskScale;
+  const scared = f.pct > Math.max(110, killPct*1.05)*riskScale;   // very high: full retreat
   let retreatDir = 0;
   if(danger){
     // find the nearest live threat and move away from it, toward stage center / a safe perch
@@ -7831,6 +8445,12 @@ function aiThink(f){
 // shared tail: difficulty handicap + smash-hold commitment + dropper restraint
 function finishAI(f,inp,sp){
   if(f._aiCharging>0){ inp.smash=true; f._aiCharging--; }
+  // TEAM PLAN read: specialUsage decides how freely this fighter spends its special. The `&&` chain
+  // short-circuits before Math.random() on the default 'normal', so a planless match consumes the
+  // exact same random sequence it always did.
+  const _su = planSpecialUsage(f);
+  if(_su==='hoard' && inp.special && Math.random()<0.5) inp.special=false;
+  else if(_su==='spam' && !inp.special && f.spCd<=0 && Math.random()<0.25) inp.special=true;
   const DROPPERS=["anvil","van","flip","pierce"];
   if(DROPPERS.includes(sp)){
     if(inp.smash && Math.random()<0.6) inp.smash=false;
