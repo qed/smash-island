@@ -23,13 +23,17 @@ function gen(w, cfg) {
 }
 // Load a generated level as the live CUSTOM_LEVEL and rebuild the world through the real code path.
 function realize(w, cfg) {
+  // queueCustomLevel is the real arming path: it carries the level's OWN map size into
+  // SETTINGS.mapSize, and setupWorld() then builds the world box from it. Measuring against W/H
+  // (the screen) rather than WW/WH (the world) is exactly the assumption that made "map size does
+  // nothing for custom maps" invisible to this suite, so everything below measures the world.
   w.eval(`
-    CUSTOM_LEVEL = generateMap(${JSON.stringify(cfg)});
-    SETTINGS.mode='ffa'; SETTINGS.count=5; SETTINGS.mapSize='normal';
+    queueCustomLevel(generateMap(${JSON.stringify(cfg)}));
+    SETTINGS.mode='ffa'; SETTINGS.count=5;
     resize(); setupWorld();
   `);
   return {
-    W: w.eval('W'), H: w.eval('H'),
+    W: w.eval('W'), H: w.eval('H'), WW: w.eval('WW'), WH: w.eval('WH'),
     plats: w.eval('JSON.parse(JSON.stringify(worldPlats))'),
     zones: w.eval('JSON.parse(JSON.stringify(worldZones))'),
     ground: w.eval('groundY()'),
@@ -68,7 +72,7 @@ describe('map generator — every combination produces a climbable arena', () =>
       for (const size of SIZES) {
         const world = realize(w, { type, size, density: 'dense', effects: 'none', seed: 77 });
         for (const p of world.plats) {
-          if (p.x < -1 || p.x + p.w > world.W + 1) bad.push(`${type}/${size}: x=${Math.round(p.x)} w=${Math.round(p.w)} of ${world.W}`);
+          if (p.x < -1 || p.x + p.w > world.WW + 1) bad.push(`${type}/${size}: x=${Math.round(p.x)} w=${Math.round(p.w)} of ${world.WW}`);
           if (p.y < 0 || p.y > world.ground) bad.push(`${type}/${size}: y=${Math.round(p.y)} vs ground ${Math.round(world.ground)}`);
           if (p.w < 10) bad.push(`${type}/${size}: platform ${Math.round(p.w)}px wide — nothing can land on it`);
         }
@@ -118,7 +122,7 @@ describe('map generator — spawns are somewhere you can actually stand', () => 
     for (const type of TYPES) {
       const world = realize(w, { type, size: 'huge', density: 'sparse', effects: 'none', seed: 31337 });
       for (const s of world.spawns) {
-        const sx = s.nx * world.W, sy = s.ny * world.H;
+        const sx = s.nx * world.WW, sy = s.ny * world.WH;
         const below = world.plats.filter(p => !p.solid && sx >= p.x && sx <= p.x + p.w && p.y >= sy)
           .map(p => p.y).concat([world.ground]).sort((a, b) => a - b)[0];
         if (below - sy > MAX_CLIMB_GAP * 2) orphans.push(`${type}: spawn at y=${Math.round(sy)} has nothing until ${Math.round(below)}`);
@@ -268,7 +272,7 @@ describe('map generator — the Generate button', () => {
     expect(before, 'the editor starts empty').toBe(0);
     const ok = w.eval(`(function(){
       document.getElementById('genType').value='towers';
-      document.getElementById('genSize').value='tall';
+      edSetSize('tall');                       // MAP SIZE is one control now, shared with the editor
       document.getElementById('genDensity').value='dense';
       document.getElementById('genEffects').value='heavy';
       var lvl = genQuickMap(12345);
@@ -285,6 +289,7 @@ describe('map generator — the Generate button', () => {
     expect(r.seedLabel, 'the seed is shown so a map can be reproduced').toMatch(/seed \w+/);
     expect(r.gen.type).toBe('towers');
     expect(r.gen.seed).toBe(12345);
+    expect(r.gen.size, 'the editor MAP SIZE is what Quick map builds at').toBe('tall');
   });
 
   it('↻ Again with the same seed reproduces the same map exactly', () => {

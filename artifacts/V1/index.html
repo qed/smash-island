@@ -460,7 +460,9 @@
         <button data-t="solid">▮ Solid</button>
         <button data-t="spawn">◎ Spawn</button>
         <button data-t="zone">▢ Effect</button>
+        <button data-t="deco">🌳 Deco</button>
         <button data-t="move">✥ Move</button>
+        <button data-t="pan">✋ Pan</button>
         <button data-t="erase">✕ Erase</button>
       </span>
       <span class="edhaz">Hazard:
@@ -472,21 +474,36 @@
         </select>
       </span>
     </div>
+    <!-- MAP SIZE — the size the level is BUILT at and the size it PLAYS at. Same four sizes as the
+         match setting, because it is the same setting: it resizes the world box here and
+         setupWorld() rebuilds that exact box for the match. -->
+    <div class="edtoolbar">
+      <span class="edzrow">Map size <span class="seg" id="edSize"></span></span>
+      <button class="btn ghost sm" id="edZoomBtn" onclick="edToggleZoom()">🔍 Zoom in</button>
+      <span class="foot" style="opacity:.7">Drag empty space (or hold Space / middle-drag) to pan · wheel scrolls</span>
+    </div>
     <div class="edtoolbar" id="edProps">
       <span class="edzrow" id="edZoneRow" style="display:none">Effect:
         <select id="edZoneType"></select>
+      </span>
+      <span class="edzrow" id="edDecoRow" style="display:none">Decoration:
+        <select id="edDecoType"></select>
       </span>
       <button class="btn ghost sm" id="edRotBtn" style="display:none" onclick="edRotateSel()">⟳ Rotate (0°)</button>
       <span class="edzrow" id="edStrRow" style="display:none">
         <label id="edStrLabel" style="font-size:12px">Strength</label>
         <input type="range" id="edStrength" min="10" max="300" value="100" oninput="edSetStrength(+this.value)"/>
       </span>
+      <span class="edzrow" id="edDecoSizeRow" style="display:none">
+        <label style="font-size:12px">Prop size</label>
+        <input type="range" id="edDecoSize" min="30" max="300" value="100" oninput="edSetDecoSize(+this.value)"/>
+        <button class="btn ghost sm" onclick="edFlipDeco()">⇋ Flip</button>
+      </span>
     </div>
     <!-- QUICK MAP GENERATOR — four controls, one click, a complete playable level -->
     <div class="edtoolbar edgenbar">
       <b class="edgentitle">✨ Quick map</b>
       <span class="edzrow">Type <select id="genType"></select></span>
-      <span class="edzrow">Size <select id="genSize"></select></span>
       <span class="edzrow">Platforms <select id="genDensity"></select></span>
       <span class="edzrow">Effects <select id="genEffects"></select></span>
       <button class="btn alt sm" onclick="genQuickMap()">Generate</button>
@@ -494,7 +511,7 @@
       <span class="edgenseed" id="genSeedLabel"></span>
     </div>
     <canvas id="edcanvas" class="edcanvas"></canvas>
-    <div class="edhint"><b>Quick map</b> builds a complete playable level from the four settings above — then edit it like anything you drew · Draw platforms & effect zones by dragging · <b>Solid</b> = drag a block you can't pass through or drop off · click to place hops/spawns · <b>Move</b> drags anything · select a platform then <b>Rotate</b> · Erase removes what you click.</div>
+    <div class="edhint"><b>Quick map</b> builds a complete playable level at the chosen <b>map size</b> — then edit it like anything you drew · Draw platforms & effect zones by dragging · <b>Solid</b> = drag a block you can't pass through or drop off · click to place hops/spawns/decorations · <b>Deco</b> props are scenery only — nothing collides with them · <b>Move</b> drags anything, and dragging empty space pans the map · select a platform then <b>Rotate</b> · Erase removes what you click.</div>
     <div class="edtoolbar">
       <input id="edName" class="edname" placeholder="Level name" maxlength="24"/>
       <button class="btn sm" onclick="edSave()">💾 Save</button>
@@ -11781,7 +11798,9 @@ function genFillSelects(){
     el.onchange=()=>{ GEN[id.replace('gen','').toLowerCase()] = el.value; };
   };
   fill('genType', MAP_ARCHETYPES, GEN.type);
-  fill('genSize', MAPGEN_SIZES, GEN.size);
+  // NOTE: there is no `genSize` select any more. Quick map generates at the editor's MAP SIZE —
+  // the duplicate "Size" dropdown here was the one people reached for, and it only ever changed
+  // how much of a fixed one-screen world the layout occupied.
   fill('genDensity', MAPGEN_DENSITY, GEN.density);
   fill('genEffects', MAPGEN_EFFECTS, GEN.effects);
   const t=document.getElementById('genType');
@@ -11792,7 +11811,7 @@ function genFillSelects(){
 function genQuickMap(seed){
   const readSel=(id,fallback)=>{ const el=document.getElementById(id); return el && el.value ? el.value : fallback; };
   GEN.type    = readSel('genType', GEN.type);
-  GEN.size    = readSel('genSize', GEN.size);
+  GEN.size    = MAP_SIZES[ED.size] ? ED.size : 'normal';   // the editor's MAP SIZE, not a second one
   GEN.density = readSel('genDensity', GEN.density);
   GEN.effects = readSel('genEffects', GEN.effects);
   GEN.seed    = (seed>>>0) || (Math.floor(Math.random()*0xFFFFFFFF)>>>0) || 1;
@@ -11801,7 +11820,8 @@ function genQuickMap(seed){
   // player — say so plainly rather than silently shipping an unplayable arena.
   const bad = mapgenValidate(lvl);
   if(bad.length){ banner("MAP GEN FAILED: "+bad[0], 1800); return null; }
-  ED.plats = lvl.plats; ED.spawns = lvl.spawns; ED.zones = lvl.zones; ED.sel = null;
+  edAdoptLevel(lvl);                       // same path a saved level takes in, size and all
+  ED.fit=true; edResize();
   const nameEl=document.getElementById('edName'); if(nameEl) nameEl.value = lvl.name;
   const seedEl=document.getElementById('genSeedLabel');
   if(seedEl) seedEl.textContent = "seed "+lvl.seed.toString(36).toUpperCase();
@@ -11814,21 +11834,49 @@ function openEditor(){
   go('editor');
   const cv=document.getElementById('edcanvas');
   ED.cv=cv; ED.ctx=cv.getContext('2d');
-  const maxW=Math.min(760, (window.innerWidth||760)-24);
-  ED.w=maxW; ED.h=Math.round(maxW*9/16);
-  cv.width=ED.w; cv.height=ED.h;
+  edResize();
   const seg=document.getElementById('edTool');
   seg.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ seg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); ED.tool=b.dataset.t; ED.sel=null; edSyncPanel(); edDraw(); }; });
+  // ---- MAP SIZE: the size the level is BUILT at, and the size it plays at ----
+  // The same four sizes the match setting offers, because it is the same setting — it resizes the
+  // world box here and setupWorld() rebuilds that exact box for the match.
+  const sz=document.getElementById('edSize');
+  if(sz){
+    sz.innerHTML='';
+    for(const k in MAP_SIZES){
+      const b=document.createElement('button'); b.dataset.v=k; b.textContent=MAP_SIZES[k].label;
+      if(k===ED.size) b.classList.add('on');
+      b.onclick=()=>edSetSize(k);
+      sz.appendChild(b);
+    }
+  }
   document.getElementById('edHazard').onchange=e=>{ ED.hazard=e.target.value; edDraw(); };
   document.getElementById('edHazard').value=ED.hazard;
   // zone-type picker
   const zt=document.getElementById('edZoneType');
   if(zt){ zt.innerHTML=''; for(const k in ZONE_TYPES){ const o=document.createElement('option'); o.value=k; o.textContent=ZONE_TYPES[k].label; zt.appendChild(o); } zt.value=ED.zoneType; zt.onchange=e=>{ ED.zoneType=e.target.value; }; }
+  // decoration palette
+  const dt=document.getElementById('edDecoType');
+  if(dt){ dt.innerHTML=''; for(const k of DECO_KEYS){ const o=document.createElement('option'); o.value=k; o.textContent=DECO_TYPES[k].label; dt.appendChild(o); } dt.value=ED.decoKind; dt.onchange=e=>{ ED.decoKind=e.target.value; }; }
   genFillSelects();     // quick-map controls
+  // Displayed px -> internal canvas px (the canvas is CSS-scaled by max-width).
   const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e;
-    const sx=cv.width/r.width, sy=cv.height/r.height;   // canvas may be CSS-scaled (max-width); map displayed px -> internal px
+    const sx=cv.width/(r.width||cv.width), sy=cv.height/(r.height||cv.height);
     return {x:(t.clientX-r.left)*sx, y:(t.clientY-r.top)*sy}; };
-  cv.onpointerdown=e=>{ e.preventDefault(); const p=pos(e);
+
+  cv.oncontextmenu=e=>{ e.preventDefault(); };     // right-drag pans; never pop the browser menu
+  cv.onpointerdown=e=>{ e.preventDefault();
+    const c=pos(e), p=edToWorld(c.x,c.y);
+    // A PAN is: the Pan tool, a middle/right button, a held space bar — or, with the Move tool,
+    // a press that lands on empty space. That last one is why the threshold exists: the same
+    // press is a deselect-click until it has travelled far enough to be a drag, exactly the way
+    // the roster line tells a pick from a pull (initBoardDrag).
+    const forcePan = ED.tool==='pan' || e.button===1 || e.button===2 || ED.space;
+    if(forcePan || (ED.tool==='move' && !edHitTest(p.x,p.y))){
+      ED.drag={mode:"pan", cx:c.x, cy:c.y, far:0, vx:ED.view.x, vy:ED.view.y, committed:forcePan};
+      if(!forcePan){ ED.sel=null; edSyncPanel(); edDraw(); }
+      return;
+    }
     if(ED.tool==="move"){
       const hit=edHitTest(p.x,p.y);
       ED.sel=hit;
@@ -11840,10 +11888,19 @@ function openEditor(){
     else if(ED.tool==="solid"){ ED.drag={mode:"solid", x0:p.x,y0:p.y,x1:p.x,y1:p.y}; }
     else if(ED.tool==="hop"){ const o={nx:(p.x-60)/ED.w, ny:p.y/ED.h, nw:120/ED.w, hop:true, rot:0}; ED.plats.push(o); ED.sel={kind:"plat",obj:o}; edSyncPanel(); edDraw(); }
     else if(ED.tool==="spawn"){ if(ED.spawns.length<8){ const o={nx:p.x/ED.w, ny:p.y/ED.h}; ED.spawns.push(o);} edDraw(); }
+    else if(ED.tool==="deco"){ const o=edMakeDeco(ED.decoKind, p.x/ED.w, p.y/ED.h); ED.deco.push(o); ED.sel={kind:"deco",obj:o}; edSyncPanel(); edDraw(); }
     else if(ED.tool==="zone"){ ED.drag={mode:"zone", x0:p.x,y0:p.y,x1:p.x,y1:p.y}; }
     else if(ED.tool==="erase"){ edEraseAt(p.x,p.y); ED.sel=null; edSyncPanel(); edDraw(); }
   };
-  cv.onpointermove=e=>{ if(!ED.drag) return; const p=pos(e);
+  cv.onpointermove=e=>{ if(!ED.drag) return; const c=pos(e), p=edToWorld(c.x,c.y);
+    if(ED.drag.mode==="pan"){
+      const dx=c.x-ED.drag.cx, dy=c.y-ED.drag.cy;
+      ED.drag.far=Math.max(ED.drag.far, Math.hypot(dx,dy));
+      if(!ED.drag.committed && ED.drag.far<=ED_PAN_START) return;   // still a click, not yet a pan
+      ED.drag.committed=true;
+      ED.view.x = ED.drag.vx - dx/ED.zoom; ED.view.y = ED.drag.vy - dy/ED.zoom;
+      edClampView(); edDraw(); return;
+    }
     if(ED.drag.mode==="draw"||ED.drag.mode==="zone"||ED.drag.mode==="solid"){ ED.drag.x1=p.x; ED.drag.y1=p.y; edDraw(); }
     else if(ED.drag.mode==="move"){ const dx=p.x-ED.drag.ox, dy=p.y-ED.drag.oy;
       ED.drag.obj.nx=Math.max(0,Math.min(1,(ED.drag.sx+dx)/ED.w));
@@ -11851,6 +11908,7 @@ function openEditor(){
       edDraw(); }
   };
   cv.onpointerup=e=>{ if(!ED.drag){ return; } const d=ED.drag; ED.drag=null;
+    if(d.mode==="pan"){ edDraw(); return; }
     if(d.mode==="draw"){ const x=Math.min(d.x0,d.x1), w=Math.abs(d.x1-d.x0);
       if(w>16){ const o={nx:x/ED.w, ny:Math.min(d.y0,d.y1)/ED.h, nw:w/ED.w, hop:false, rot:0}; ED.plats.push(o); ED.sel={kind:"plat",obj:o}; edSyncPanel(); } }
     else if(d.mode==="solid"){ const x=Math.min(d.x0,d.x1), y=Math.min(d.y0,d.y1), w=Math.abs(d.x1-d.x0), hh=Math.abs(d.y1-d.y0);
@@ -11859,32 +11917,79 @@ function openEditor(){
       if(w>16&&hh>12){ const o={nx:x/ED.w, ny:y/ED.h, nw:w/ED.w, nh:hh/ED.h, type:ED.zoneType, strength:ZONE_TYPES[ED.zoneType].def}; ED.zones.push(o); ED.sel={kind:"zone",obj:o}; edSyncPanel(); } }
     edDraw(); };
   cv.onpointerleave=cv.onpointerup;
+  // The wheel walks the map: plain wheel down/up, shift-wheel sideways. On a map that fits, both
+  // clamp to nothing, so it costs a builder of a small level exactly nothing.
+  cv.onwheel=e=>{
+    const d = e.deltaY || 0, dx = e.deltaX || 0;
+    if(e.shiftKey){ ED.view.x += d/ED.zoom; } else { ED.view.y += d/ED.zoom; ED.view.x += dx/ED.zoom; }
+    edClampView(); edDraw(); e.preventDefault();
+  };
+  edBindKeys();
   edSyncPanel(); edDraw(); edRenderList();
 }
+// Space = temporary pan, the gesture every drawing tool shares. Bound once on the window and only
+// listened to while the editor screen is up, so it never eats a space bar in a match.
+function edBindKeys(){
+  if(ED._keys) return; ED._keys=true;
+  addEventListener('keydown', e=>{ if(e.code==='Space' && edIsOpen()){ ED.space=true; } });
+  addEventListener('keyup',   e=>{ if(e.code==='Space'){ ED.space=false; } });
+}
+function edIsOpen(){ const s=document.getElementById('editor'); return !!s && s.classList.contains('active'); }
+// Switch the MAP SIZE being built at. The stored coordinates are normalized against the world box,
+// so the layout keeps its proportions and the box around it grows — nothing has to be rewritten.
+function edSetSize(k){
+  if(!MAP_SIZES[k]) return;
+  ED.size=k;
+  const sz=document.getElementById('edSize');
+  if(sz) sz.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===k));
+  ED.fit=true; edResize(); edSyncPanel(); edDraw();
+}
+function edToggleZoom(){ if(ED.fit) edZoomOne(); else edZoomFit(); edDraw(); }
+// A new prop. A cameo picks a real fighter here rather than at paint time, so the crowd a level
+// was saved with is the crowd it loads back with.
+function edMakeDeco(kind, nx, ny){
+  const d={ k:kind, nx:+nx.toFixed(4), ny:+ny.toFixed(4), s:1 };
+  if(kind==='cameo'){
+    const names = (typeof SPRITES!=='undefined') ? Object.keys(SPRITES) : [];
+    const pool = names.length ? names : ROSTER.map(r=>r.name);
+    d.n = pool[Math.floor(Math.random()*pool.length) % pool.length];
+  }
+  return d;
+}
 
-// which object is under the cursor? (topmost first)
+// which object is under the cursor? (topmost first) — coordinates are WORLD px
 function edHitTest(x,y){
-  for(let i=ED.spawns.length-1;i>=0;i--){ const s=ED.spawns[i]; if(Math.hypot(s.nx*ED.w-x, s.ny*ED.h-y)<16) return {kind:"spawn",obj:s,idx:i}; }
+  const tol = 16/Math.max(0.15, ED.zoom);        // a constant grab radius ON SCREEN, at any zoom
+  for(let i=ED.spawns.length-1;i>=0;i--){ const s=ED.spawns[i]; if(Math.hypot(s.nx*ED.w-x, s.ny*ED.h-y)<tol) return {kind:"spawn",obj:s,idx:i}; }
+  // Decorations are grabbed BEFORE zones and platforms but only inside their own footprint, so a
+  // tree standing on a ledge never blocks picking up the ledge.
+  for(let i=ED.deco.length-1;i>=0;i--){ const d=ED.deco[i]; if(edPointOnDeco(d,x,y)) return {kind:"deco",obj:d,idx:i}; }
   for(let i=ED.zones.length-1;i>=0;i--){ const z=ED.zones[i]; const zx=z.nx*ED.w, zy=z.ny*ED.h, zw=z.nw*ED.w, zh=z.nh*ED.h; if(x>=zx&&x<=zx+zw&&y>=zy&&y<=zy+zh) return {kind:"zone",obj:z,idx:i}; }
   for(let i=ED.plats.length-1;i>=0;i--){ const p=ED.plats[i]; if(edPointOnPlat(p,x,y)) return {kind:"plat",obj:p,idx:i}; }
   return null;
 }
+function edPointOnDeco(d,x,y){
+  const b=decoBox(d, ED.w, ED.h), S=b.s;
+  return x>=b.x-S*0.5 && x<=b.x+S*0.5 && y>=b.y-S && y<=b.y+S*0.12;
+}
 // point-near-platform test accounting for rotation
 function edPointOnPlat(p,x,y){
+  const pad = 6/Math.max(0.15, ED.zoom);
   if(p.solid){
     const sx=p.nx*ED.w, sy=p.ny*ED.h, sw=p.nw*ED.w, sh=(p.nh||0.04)*ED.h;
-    return x>=sx-4 && x<=sx+sw+4 && y>=sy-4 && y<=sy+sh+4;
+    return x>=sx-pad && x<=sx+sw+pad && y>=sy-pad && y<=sy+sh+pad;
   }
   const cx=p.nx*ED.w + p.nw*ED.w/2, cy=p.ny*ED.h + (p.hop?8:12)/2;
   const a=-(p.rot||0)*Math.PI/180;
   const lx=Math.cos(a)*(x-cx)-Math.sin(a)*(y-cy);
   const ly=Math.sin(a)*(x-cx)+Math.cos(a)*(y-cy);
-  return Math.abs(lx)<p.nw*ED.w/2+6 && Math.abs(ly)<(p.hop?8:12)/2+8;
+  return Math.abs(lx)<p.nw*ED.w/2+pad && Math.abs(ly)<(p.hop?8:12)/2+pad+2;
 }
 function edEraseAt(x,y){
   const hit=edHitTest(x,y);
   if(!hit) return;
   if(hit.kind==="spawn") ED.spawns.splice(hit.idx,1);
+  else if(hit.kind==="deco") ED.deco.splice(hit.idx,1);
   else if(hit.kind==="zone") ED.zones.splice(hit.idx,1);
   else if(hit.kind==="plat") ED.plats.splice(hit.idx,1);
 }
@@ -11901,12 +12006,22 @@ function edSyncPanel(){
   const rotBtn=document.getElementById('edRotBtn');
   const zoneRow=document.getElementById('edZoneRow');
   const strRow=document.getElementById('edStrRow');
+  const decoRow=document.getElementById('edDecoRow');
+  const decoSize=document.getElementById('edDecoSizeRow');
+  const zoomBtn=document.getElementById('edZoomBtn');
   const sel=ED.sel;
   // rotate button only for a selected platform
   if(rotBtn) rotBtn.style.display=(sel&&sel.kind==="plat")?'inline-block':'none';
   if(rotBtn&&sel&&sel.kind==="plat") rotBtn.textContent="⟳ Rotate ("+(sel.obj.rot||0)+"°)";
   // zone-type picker only when the zone tool is active
   if(zoneRow) zoneRow.style.display=(ED.tool==="zone")?'flex':'none';
+  // decoration palette only when the deco tool is active
+  if(decoRow) decoRow.style.display=(ED.tool==="deco")?'flex':'none';
+  // size + flip for a selected decoration
+  if(decoSize){ decoSize.style.display=(sel&&sel.kind==="deco")?'flex':'none';
+    if(sel&&sel.kind==="deco"){ const sl=document.getElementById('edDecoSize');
+      if(sl) sl.value=Math.round((sel.obj.s||1)*100); } }
+  if(zoomBtn) zoomBtn.textContent = ED.fit ? "🔍 Zoom in" : "⛶ Fit map";
   // strength slider for a selected zone
   if(strRow){ strRow.style.display=(sel&&sel.kind==="zone")?'flex':'none';
     if(sel&&sel.kind==="zone"){ const sl=document.getElementById('edStrength'); const lab=document.getElementById('edStrLabel');
@@ -11917,59 +12032,126 @@ function edSyncPanel(){
 function edSetStrength(v){
   if(ED.sel && ED.sel.kind==="zone"){ ED.sel.obj.strength=Math.max(0.1,Math.min(3,v/100)); edSyncPanel(); edDraw(); }
 }
+function edSetDecoSize(v){
+  if(ED.sel && ED.sel.kind==="deco"){ ED.sel.obj.s=Math.max(0.3,Math.min(3,v/100)); edDraw(); }
+}
+function edFlipDeco(){
+  if(ED.sel && ED.sel.kind==="deco"){ ED.sel.obj.flip=!ED.sel.obj.flip; edDraw(); }
+}
 
+// The editor canvas. It paints the level through the MATCH's own painters — paintPlat, paintDeco,
+// the same sky gradient and ground colours draw() uses — inside a camera transform, instead of
+// drawing its own flat rectangles at its own scale. A builder is looking at the map, not a
+// diagram of it. On top of that, and only on top, go the editing overlays: selection rings,
+// spawn markers, the drag preview and the minimap.
 function edDraw(){
-  const ctx=ED.ctx, w=ED.w, h=ED.h; if(!ctx) return;
-  ctx.clearRect(0,0,w,h);
+  const ctx2=ED.ctx; if(!ctx2) return;
+  const t = (typeof performance!=='undefined' && performance.now) ? performance.now()/16 : 0;
+  const cw=ED.cw, ch=ED.ch, z=ED.zoom, ox=edOx(), oy=edOy();
+  ctx2.setTransform(1,0,0,1,0,0);
+  ctx2.clearRect(0,0,cw,ch);
+  // out-of-world surround, so the edge of the map is visible as an edge
+  ctx2.fillStyle="#0d1117"; ctx2.fillRect(0,0,cw,ch);
+  ctx2.save();
+  ctx2.translate(ox,oy); ctx2.scale(z,z); ctx2.translate(-ED.view.x, -ED.view.y);
+  const w=ED.w, h=ED.h;
   const skies={"":["#bfe8ff","#88cdf2"], lava:["#3a1a10","#1a0a06"], lowgrav:["#dfeaf2","#b8c9dc"], evilleafy:["#20301a","#0e1a0c"]};
-  const sk=skies[ED.hazard]||skies[""]; const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,sk[0]); g.addColorStop(1,sk[1]);
-  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
-  const gy=h*0.82; ctx.fillStyle=ED.hazard==='lava'?'#5a2a18':(ED.hazard==='evilleafy'?'#2d3a24':'#7bc043');
-  ctx.fillRect(0,gy,w,h-gy);
-  if(ED.hazard==='lava'){ ctx.fillStyle='#f0521f'; ctx.fillRect(0,gy-4,w,5); }
+  const sk=skies[ED.hazard]||skies[""];
+  const g=ctx2.createLinearGradient(0,0,0,h); g.addColorStop(0,sk[0]); g.addColorStop(1,sk[1]);
+  ctx2.fillStyle=g; ctx2.fillRect(0,0,w,h);
+  // the ground, painted the way the match paints it (groundY() is 0.82 of the world box)
+  const gy=h*0.82;
+  ctx2.fillStyle=ED.hazard==='lava'?'#5a2a18':(ED.hazard==='evilleafy'?'#2d3a24':'#7bc043');
+  ctx2.fillRect(0,gy,w,h-gy);
+  ctx2.strokeStyle="#1c1c1c"; ctx2.lineWidth=3; ctx2.beginPath(); ctx2.moveTo(0,gy); ctx2.lineTo(w,gy); ctx2.stroke();
+  if(ED.hazard==='lava'){ ctx2.fillStyle='#f0521f'; ctx2.fillRect(0,gy-4,w,5); }
+  // scenery, behind the geometry — the same painter the match calls
+  paintDecoList(ctx2, ED.deco, w, h, t);
   // effect zones (under platforms)
-  for(const z of ED.zones){ const zx=z.nx*w, zy=z.ny*h, zw=z.nw*w, zh=z.nh*h; const zc=ZONE_TYPES[z.type]||ZONE_TYPES.glue;
-    ctx.globalAlpha=0.4; ctx.fillStyle=zc.color; ctx.fillRect(zx,zy,zw,zh);
-    ctx.globalAlpha=1; ctx.strokeStyle=zc.color; ctx.setLineDash([6,4]); ctx.lineWidth=2; ctx.strokeRect(zx,zy,zw,zh); ctx.setLineDash([]);
-    ctx.fillStyle='#1c1c1c'; ctx.font='bold 11px system-ui'; ctx.textAlign='left'; ctx.fillText(zc.label+" "+(z.strength||1).toFixed(1)+"×", zx+4, zy+13);
-    if(ED.sel&&ED.sel.obj===z){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(zx-2,zy-2,zw+4,zh+4); }
+  for(const z2 of ED.zones){ const zx=z2.nx*w, zy=z2.ny*h, zw=z2.nw*w, zh=z2.nh*h; const zc=ZONE_TYPES[z2.type]||ZONE_TYPES.glue;
+    ctx2.globalAlpha=0.4; ctx2.fillStyle=zc.color; ctx2.fillRect(zx,zy,zw,zh);
+    ctx2.globalAlpha=1; ctx2.strokeStyle=zc.color; ctx2.setLineDash([6,4]); ctx2.lineWidth=2; ctx2.strokeRect(zx,zy,zw,zh); ctx2.setLineDash([]);
+    ctx2.fillStyle='#1c1c1c'; ctx2.font='bold '+Math.round(11/z)+'px system-ui'; ctx2.textAlign='left'; ctx2.fillText(zc.label+" "+(z2.strength||1).toFixed(1)+"×", zx+4, zy+13/z);
+    if(ED.sel&&ED.sel.obj===z2){ edOutline(ctx2, zx-2,zy-2,zw+4,zh+4); }
   }
-  // platforms (with rotation); solids draw as tall stone blocks
-  for(const p of ED.plats){
-    if(p.solid){
-      const px=p.nx*w, py=p.ny*h, pw=p.nw*w, ph=(p.nh||0.04)*h;
-      ctx.fillStyle='#6b6f78'; ctx.fillRect(px,py,pw,ph);
-      ctx.fillStyle='#8b9099'; ctx.fillRect(px,py,pw,Math.min(5,ph*0.3));
-      ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=2; ctx.strokeRect(px,py,pw,ph);
-      if(ED.sel&&ED.sel.obj===p){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(px-3,py-3,pw+6,ph+6); }
-      continue;
+  // platforms — painted by the MATCH's painter, from the MATCH's rectangles
+  const rects = levelPlatRects(ED.plats, w, h);
+  const style = { leafy:true };                    // a custom stage renders as the Goiky palette
+  rects.forEach((r,i)=>{
+    paintPlat(ctx2, r, style);
+    if(ED.sel && ED.sel.obj===ED.plats[i]){
+      if(r.rot){ ctx2.save(); ctx2.translate(r.x+r.w/2, r.y+r.h/2); ctx2.rotate(r.rot*Math.PI/180);
+        edOutline(ctx2, -r.w/2-3, -r.h/2-3, r.w+6, r.h+6); ctx2.restore(); }
+      else edOutline(ctx2, r.x-3, r.y-3, r.w+6, r.h+6);
     }
-    const px=p.nx*w, py=p.ny*h, pw=p.nw*w, ph=p.hop?8:12;
-    ctx.save(); ctx.translate(px+pw/2, py+ph/2); ctx.rotate((p.rot||0)*Math.PI/180);
-    ctx.fillStyle=p.hop?'#d9a441':'#caa06a'; ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=2;
-    ctx.fillRect(-pw/2,-ph/2,pw,ph); ctx.strokeRect(-pw/2,-ph/2,pw,ph);
-    if(ED.sel&&ED.sel.obj===p){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(-pw/2-3,-ph/2-3,pw+6,ph+6); }
-    ctx.restore();
-  }
-  // spawns
+  });
+  // spawns — drawn with the REAL fighter renders standing on them, so the markers show the scale
+  // of an actual body against the platforms you have drawn.
   ED.spawns.forEach((s,i)=>{ const sx=s.nx*w, sy=s.ny*h;
-    ctx.fillStyle='#6fb7ff'; ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(sx,sy,12,0,7); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#fff'; ctx.font='bold 13px system-ui'; ctx.textAlign='center'; ctx.fillText(i+1,sx,sy+4);
-    if(ED.sel&&ED.sel.obj===s){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(sx,sy,16,0,7); ctx.stroke(); } });
+    edDrawSpawnFighter(ctx2, i, sx, sy);
+    ctx2.fillStyle='#6fb7ff'; ctx2.strokeStyle='#1c1c1c'; ctx2.lineWidth=2;
+    ctx2.beginPath(); ctx2.arc(sx,sy,12,0,7); ctx2.fill(); ctx2.stroke();
+    ctx2.fillStyle='#fff'; ctx2.font='bold 13px system-ui'; ctx2.textAlign='center'; ctx2.fillText(i+1,sx,sy+4);
+    if(ED.sel&&ED.sel.obj===s){ ctx2.strokeStyle='#fff'; ctx2.lineWidth=2/z; ctx2.beginPath(); ctx2.arc(sx,sy,16,0,7); ctx2.stroke(); } });
+  // selected decoration
+  if(ED.sel && ED.sel.kind==='deco'){ const b=decoBox(ED.sel.obj, w, h);
+    edOutline(ctx2, b.x-b.s*0.5, b.y-b.s, b.s, b.s*1.1); }
   // drag preview
   if(ED.drag && (ED.drag.mode==="draw"||ED.drag.mode==="zone"||ED.drag.mode==="solid")){ const d=ED.drag;
     const x=Math.min(d.x0,d.x1), y=Math.min(d.y0,d.y1), ww=Math.abs(d.x1-d.x0), hh=Math.abs(d.y1-d.y0);
-    ctx.globalAlpha=0.55;
-    if(d.mode==="draw"){ ctx.fillStyle='#caa06a'; ctx.fillRect(x,y,ww,12); }
-    else if(d.mode==="solid"){ ctx.fillStyle='#6b6f78'; ctx.fillRect(x,y,ww,hh); }
-    else { const zc=ZONE_TYPES[ED.zoneType]; ctx.fillStyle=zc.color; ctx.fillRect(x,y,ww,hh); }
-    ctx.globalAlpha=1; }
+    ctx2.globalAlpha=0.55;
+    if(d.mode==="draw"){ ctx2.fillStyle='#caa06a'; ctx2.fillRect(x,y,ww,12); }
+    else if(d.mode==="solid"){ ctx2.fillStyle='#6b6f78'; ctx2.fillRect(x,y,ww,hh); }
+    else { const zc=ZONE_TYPES[ED.zoneType]; ctx2.fillStyle=zc.color; ctx2.fillRect(x,y,ww,hh); }
+    ctx2.globalAlpha=1; }
+  ctx2.restore();
+  edDrawMinimap(ctx2);
 }
-function edClear(){ ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.sel=null; edSyncPanel(); edDraw(); }
+// A selection ring that stays the same weight on screen however far you are zoomed out.
+function edOutline(g,x,y,w,h){ g.strokeStyle='#fff'; g.lineWidth=2/Math.max(0.15,ED.zoom); g.strokeRect(x,y,w,h); }
+// A real roster render standing on spawn marker `i`. Falls back to a plain silhouette until the
+// PNG decodes — the same degradation rule the fighters themselves use.
+function edDrawSpawnFighter(g, i, x, y){
+  const names = (typeof SPRITES!=='undefined') ? Object.keys(SPRITES) : [];
+  if(!names.length) return;
+  const sp = SPRITES[names[i % names.length]];
+  const im = sp ? spriteImage(sp) : null;
+  g.globalAlpha=0.85;
+  if(im){
+    const hh=84, ww=hh*(im.naturalWidth/Math.max(1,im.naturalHeight));
+    g.drawImage(im, x-ww/2, y-hh, ww, hh);
+  } else {
+    g.fillStyle="#ffffff55"; g.strokeStyle="#1c1c1c"; g.lineWidth=2;
+    g.beginPath(); g.ellipse(x, y-34, 28, 32, 0, 0, 7); g.fill(); g.stroke();
+  }
+  g.globalAlpha=1;
+}
+// A minimap, so a builder panning a Huge map always knows where in it they are. Only drawn when
+// there is actually more map than canvas — on a one-screen level it would be a picture of itself.
+function edDrawMinimap(g){
+  if(ED.w*ED.zoom <= ED.cw+1 && ED.h*ED.zoom <= ED.ch+1) return;
+  const mw=110, mh=Math.max(30, Math.round(mw*ED.h/ED.w)), mx=ED.cw-mw-10, my=ED.ch-mh-10;
+  g.save();
+  g.globalAlpha=0.85; g.fillStyle="#1c1c1c"; g.fillRect(mx-3,my-3,mw+6,mh+6);
+  g.fillStyle="#3a4a2a"; g.fillRect(mx,my,mw,mh); g.globalAlpha=1;
+  const rx=mw/ED.w, ry=mh/ED.h;
+  g.fillStyle="#ffffff88";
+  for(const p of ED.plats) g.fillRect(mx+p.nx*mw, my+p.ny*mh, Math.max(1,(p.nw||0.02)*mw), 1);
+  g.fillStyle="#6fb7ff";
+  for(const s of ED.spawns) g.fillRect(mx+s.nx*mw-1, my+s.ny*mh-1, 3, 3);
+  g.strokeStyle="#ffd34d"; g.lineWidth=1;
+  g.strokeRect(mx+ED.view.x*rx, my+ED.view.y*ry, (ED.cw/ED.zoom)*rx, (ED.ch/ED.zoom)*ry);
+  g.restore();
+}
+function edClear(){ ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.deco=[]; ED.sel=null; edSyncPanel(); edDraw(); }
+// The level as it would be SAVED — and as "▶ Play" and "🧪 Test the Feel" queue it. `size` and
+// `deco` are part of it, which is what makes the test button test the map you are actually
+// looking at rather than a one-screen undressed version of it.
 function edCurrentLevel(){
-  return { name:(document.getElementById('edName').value||'Custom').slice(0,24),
-    plats:ED.plats.map(p=>({...p})), spawns:ED.spawns.map(s=>({...s})), zones:ED.zones.map(z=>({...z})), hazard:ED.hazard };
+  return { v:2, name:(document.getElementById('edName').value||'Custom').slice(0,24),
+    size: MAP_SIZES[ED.size] ? ED.size : 'normal',
+    plats:ED.plats.map(p=>({...p})), spawns:ED.spawns.map(s=>({...s})),
+    zones:ED.zones.map(z=>({...z})), deco:ED.deco.map(d=>({...d})), hazard:ED.hazard };
 }
 async function edSave(){
   const lvl=edCurrentLevel();
@@ -11987,7 +12169,10 @@ async function edRenderList(){
   if(!names.length){ box.innerHTML='<div class="foot">No saved levels yet.</div>'; return; }
   for(const nm of names){
     const d=document.createElement('div'); d.className='edlevel';
-    const label=document.createElement('span'); label.textContent=nm; d.appendChild(label);
+    const lv=levels[nm]||{};
+    const label=document.createElement('span');
+    const sz=MAP_SIZES[lv.size] ? MAP_SIZES[lv.size].label : MAP_SIZES.normal.label;
+    label.textContent=nm+" · "+sz; d.appendChild(label);
     const load=document.createElement('button'); load.className='load'; load.textContent='Load';
     load.onclick=()=>edLoad(nm); d.appendChild(load);
     const play=document.createElement('button'); play.className='load'; play.textContent='▶'; play.style.background='#7bc043';
@@ -11998,14 +12183,31 @@ async function edRenderList(){
     box.appendChild(d);
   }
 }
+// Read a stored level into the editor. THE MIGRATION LIVES HERE, and it is a pair of defaults: a
+// level saved before sizes existed has no `size` and is read as 'normal' — which is the one-screen
+// world box its coordinates were drawn against, so it comes back exactly as it was left — and a
+// level saved before decorations existed has no `deco` and is read as an empty list. Nothing is
+// rewritten on disk and nothing that ever saved is refused.
+function edAdoptLevel(lvl){
+  ED.plats=(lvl.plats||[]).map(p=>({rot:0,...p}));
+  ED.spawns=(lvl.spawns||[]).map(s=>({...s}));
+  ED.zones=(lvl.zones||[]).map(z=>({...z}));
+  ED.deco=(lvl.deco||[]).filter(d=>d && DECO_TYPES[d.k]).map(d=>({s:1,...d}));
+  ED.hazard=lvl.hazard||"";
+  ED.size=MAP_SIZES[lvl.size] ? lvl.size : 'normal';
+  ED.sel=null;
+}
 async function edLoad(nm, thenPlay){
   let levels={}; const raw=await BStore.get('levels:custom'); if(raw){ try{levels=JSON.parse(raw);}catch(e){} }
   const lvl=levels[nm]; if(!lvl) return;
-  ED.plats=(lvl.plats||[]).map(p=>({rot:0,...p})); ED.spawns=(lvl.spawns||[]).map(s=>({...s}));
-  ED.zones=(lvl.zones||[]).map(z=>({...z})); ED.hazard=lvl.hazard||""; ED.sel=null;
-  document.getElementById('edName').value=lvl.name; document.getElementById('edHazard').value=ED.hazard;
+  edAdoptLevel(lvl);
+  document.getElementById('edName').value=lvl.name;
+  document.getElementById('edHazard').value=ED.hazard;
+  const sz=document.getElementById('edSize');
+  if(sz) sz.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===ED.size));
+  ED.fit=true; edResize();
   edSyncPanel(); edDraw();
-  if(thenPlay) playCustomLevel(lvl);
+  if(thenPlay) playCustomLevel(edCurrentLevel());
 }
 function edTestPlay(){ playCustomLevel(edCurrentLevel(), true); }   // quick test from the editor skips character select
 // "Test the feel" — the same sandbox that used to hang off the title screen as "Test Mode", now
