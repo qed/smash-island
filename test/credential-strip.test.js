@@ -42,18 +42,48 @@ const SOURCE = join(PUBLISH_ROOT, 'index.html');
 const MUSIC_DIR = `${PUBLISH_ROOT}/assets/music`;
 const SPRITE_DIR = `${PUBLISH_ROOT}/assets/sprites`;
 
+// ---------------------------------------------------------------------------------------------
+// RETARGETED when the thinking teammate landed (feat/team-ai). READ THIS BEFORE WIDENING ANYTHING.
+//
+// The original gate banned three broad tokens — /sk-ant/, /anthropic/, /api[ _-]?key/ — because at
+// the time the game made NO model call at all, so any occurrence of any of them was, by definition,
+// leftover phishing furniture. That is no longer true: the game now talks to its own same-origin
+// /api/strategy endpoint, and an owner running it off-Vercel can paste their own token behind an
+// Advanced disclosure. A blanket string ban would forbid the correct implementation as loudly as
+// the broken one, so it has been replaced by rules aimed at the ACTUAL hazards, which are narrower
+// and stricter than the strings were:
+//
+//   - a hardcoded credential VALUE in the shipped file            (kept, tightened to a key shape)
+//   - a credential surface anywhere a PLAYER will meet it         (new: structural, per-screen)
+//   - a credential reaching a URL, a log, or the save data        (new)
+//   - a credential input that isn't a password field              (new)
+//   - the dead handlers/ids/classes from the original strip       (kept verbatim)
+//   - any third-party host beyond the single sanctioned one       (kept, now an allowlist of one)
+//
+// The near-miss recorded above still governs: if you add a credential surface, add the rule that
+// contains it in the same commit. Deleting a rule because it went red is how this file failed the
+// first time.
+// ---------------------------------------------------------------------------------------------
+
 /** Tokens that must not survive anywhere in the shipped file. */
 const FORBIDDEN = [
-  { name: 'Anthropic key prefix', re: /sk-ant/i },
-  { name: 'Anthropic vendor reference', re: /anthropic/i },
-  { name: 'API-key phrasing', re: /api[ _-]?key/i },
+  // A key VALUE, not the phrase. `sk-ant-` followed by key material is never legitimate in source;
+  // the words "api key" now are, because the page has to explain the Advanced box to its owner.
+  { name: 'hardcoded credential value', re: /sk-ant-[A-Za-z0-9_-]{6,}/ },
   { name: 'PLAN_KEY state', re: /PLAN_KEY/ },
   { name: 'planSetKey handler', re: /planSetKey/ },
   { name: 'planKey DOM ids', re: /planKey(Btn|Note)/ },
   { name: 'homeKeyNote DOM id', re: /homeKeyNote/ },
   { name: 'key-surface CSS classes', re: /apikeybox|teamkeyrow|apikey-/ },
   { name: 'remote font import', re: /fonts\.googleapis\.com/i },
+  // A credential must never be able to reach a place that persists or travels: query strings are
+  // logged by every proxy in the path, and console output ends up in bug reports and screenshots.
+  { name: 'credential in a query string', re: /[?&][A-Za-z_]{0,12}(key|token)=/i },
+  { name: 'credential written to the console', re: /console\.\w+\([^)]*(apiKey|localToken|LocalToken|TEAM_AI_TOKEN)/ },
 ];
+
+/** The one third-party host the game is allowed to contact, and only for the Advanced path. */
+const SANCTIONED_HOSTS = ['api.anthropic.com'];
 
 describe('Workstream 0 — credential surface is fully stripped', () => {
   it('publishes only the files we intend to serve', () => {
@@ -181,12 +211,73 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     expect(found, `forbidden credential tokens still present:\n  ${found.join('\n  ')}`).toEqual([]);
   });
 
-  it.each(PUBLISHED_HTML)('%s makes no network reference to a third-party host', (file) => {
+  it.each(PUBLISHED_HTML)('%s contacts no host beyond the single sanctioned one', (file) => {
     const src = readFileSync(file, 'utf8');
     const externals = [...src.matchAll(/https?:\/\/([^/"'\s)]+)/g)]
       .map((m) => m[1])
       .filter((host) => !/^(localhost|127\.0\.0\.1)/.test(host));
-    expect([...new Set(externals)]).toEqual([]);
+    // Was `toEqual([])`. It is now an allowlist of exactly one, which is the same guarantee with one
+    // named exception rather than none: a second host still fails, and so does a typo'd first one.
+    expect([...new Set(externals)].sort()).toEqual(SANCTIONED_HOSTS);
+  });
+
+  it('reaches its own endpoint same-origin, with no credential in the browser', () => {
+    const src = readFileSync(SOURCE, 'utf8');
+    // The path every deployed player takes is a relative URL. No host, therefore no key, therefore
+    // nothing to leak — this is the whole reason the serverless proxy exists.
+    expect(src).toMatch(/TEAM_AI_ENDPOINT\s*=\s*'\/api\/strategy'/);
+    // ...and the game never ships a credential of its own to send there.
+    expect(src).not.toMatch(/sk-ant-[A-Za-z0-9_-]{6,}/);
+  });
+});
+
+// The original strip existed because a `sk-ant-...` field sat on the TITLE SCREEN of a public,
+// child-facing game, which reads as phishing whatever the intent. A credential input exists again,
+// so the rule that made the strip necessary is now asserted structurally instead of by string
+// search: not "no key field anywhere", but "no key field anywhere a player will meet one".
+describe('Workstream 0 — the credential surface stays where only an owner will find it', () => {
+  it('puts no credential input on the title screen, or on any screen but the huddle', () => {
+    const { window: w } = loadMonolith();
+    const pw = [...w.document.querySelectorAll('input[type="password"]')];
+    expect(pw.length, 'exactly one credential input exists').toBe(1);
+    // It is not on the title screen, and not on any other screen either.
+    expect(w.document.getElementById('title').querySelectorAll('input[type="password"]').length).toBe(0);
+    // It is inside the Advanced disclosure, inside the teams-only strategy panel — two folds deep,
+    // on a panel that does not exist at all unless the player has chosen a teams match.
+    const adv = w.document.getElementById('planAdv');
+    expect(adv, 'the Advanced disclosure exists').toBeTruthy();
+    expect(adv.tagName, 'and it is collapsed by default (a <details> with no open attribute)').toBe('DETAILS');
+    expect(adv.hasAttribute('open')).toBe(false);
+    expect(adv.contains(pw[0]), 'the credential input is inside the Advanced disclosure').toBe(true);
+    expect(w.document.getElementById('teamChatPanel').contains(adv)).toBe(true);
+  });
+
+  it('never renders the credential as readable text or offers it to a password manager', () => {
+    const { window: w } = loadMonolith();
+    const el = w.document.querySelector('input[type="password"]');
+    expect(el.getAttribute('type')).toBe('password');
+    expect(el.getAttribute('autocomplete')).toBe('off');
+    expect(el.getAttribute('spellcheck')).toBe('false');
+  });
+
+  it('sends the credential only as a request header', () => {
+    const src = readFileSync(SOURCE, 'utf8');
+    // The single sanctioned use. If the token ever appears anywhere else — a URL, a body field, a
+    // log line, the chat log — one of the FORBIDDEN rules or this assertion has to change first.
+    expect(src).toMatch(/'x-api-key':\s*token,/);
+    // ...and the three ways a value escapes a variable in this codebase are each closed off. These
+    // are constructs, not a count: a count drifts every time someone writes the word in a comment.
+    // (`\btoken\b` is the bare local; it does not match teamAiLocalToken or TEAM_AI_TOKEN_STORE.)
+    expect(src, 'never interpolated into a string').not.toMatch(/\$\{\s*token\s*\}/);
+    expect(src, 'never concatenated onto anything').not.toMatch(/\btoken\b\s*\+|\+\s*\btoken\b/);
+    expect(src, 'never written into the page').not.toMatch(/(innerHTML|textContent)[^\n]*\btoken\b/);
+  });
+
+  it('reports only whether a credential is stored, never any part of its value', () => {
+    const { window: w } = loadMonolith();
+    // teamAiPaintAdvState is the only thing that renders anything about the stored value.
+    const fn = String(w.eval('teamAiPaintAdvState.toString()'));
+    expect(fn).not.toMatch(/slice|substr|length|\.\.\./);
   });
 });
 
@@ -230,11 +321,15 @@ describe('Workstream 0 — no handler is orphaned by the strip', () => {
     expect(missing, `inline handlers reference unreachable identifiers: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('retains the scripted teammate planner that replaces the removed LLM path', () => {
+  it('retains the scripted teammate planner, now as the bottom of the fallback ladder', () => {
     const { window: w } = loadMonolith();
+    // These used to be the ONLY teammate path. They are now what answers when the strategy service
+    // is unreachable — which is every offline session, and every deploy before the owner sets the
+    // environment variable. Deleting them would turn "degrades gracefully" into "goes silent".
     expect(typeof w.planScriptedReply).toBe('function');
     expect(typeof w.captureTeamPlan).toBe('function');
-    // planLLM was the dead credential consumer; it must be gone.
+    // planLLM was the dead credential consumer; it must stay gone. teamAiCall replaced it, and
+    // unlike planLLM it sends a complete, correctly-headed request that can actually succeed.
     expect(typeof w.planLLM).toBe('undefined');
   });
 });
