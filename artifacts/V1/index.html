@@ -1272,10 +1272,11 @@ const SFX = {
 //  BACKGROUND MUSIC — real recorded loops, with the synth bed below as the fallback.
 //
 //  Every track is licensed for this use; titles, authors, source URLs and licences are recorded
-//  in assets/music/CREDITS.md next to the files. The five contexts deliberately sound different:
-//  a warm chiptune loop for the menus, an energetic 8-bit bed for arena matches, a dark
+//  in assets/music/CREDITS.md next to the files. The five shipped contexts deliberately sound
+//  different: a warm chiptune loop for the menus, an energetic 8-bit bed for arena matches, a dark
 //  orchestral bed for Boss Rush, a regal anthem for the World Cup hub, and a swung big-band
 //  chiptune that takes over when a match reaches clutch time (see the CLUTCH block further down).
+//  A sixth context, `title`, is a slot with NO shipped file — see MUSIC_FALLBACK below.
 //
 //  Source order per context: assets/music/custom/<context>.mp3 (the owner's own legally acquired
 //  track, if they dropped one in) -> the shipped default -> the synth bed.
@@ -1304,26 +1305,55 @@ const MUSIC_FILES = {
 // Nothing is shipped in custom/, so the first play of each context 404s once, notes the miss in
 // SND._badSrc, and never asks again for the rest of the session.
 const MUSIC_CUSTOM_DIR = 'assets/music/custom/';
+// A context can have a file slot WITHOUT a shipped default. `title` is the only one: the owner
+// wanted their own track on the front page, but shipping a second full-length mp3 for it would
+// cost every visitor a download for something most of them never asked for. So the path is still
+// probed — drop assets/music/title.mp3 in and it plays — it just is not in the repo, which means
+// it 404s once per session for everybody else and is then remembered like any empty custom/ slot.
+const MUSIC_UNSHIPPED = { title: 'assets/music/title.mp3' };
+// When a context runs out of its OWN sources it continues into another context's chain instead of
+// dropping to the synth bed. Again, only `title`: an empty title slot must leave the title screen
+// playing precisely the bed it played before the slot existed — the menu bed, including whatever
+// the player loaded into their own menu playlist. That is the whole "changes nothing by default"
+// guarantee, and it is one line rather than a special case sprinkled through startMusic().
+const MUSIC_FALLBACK = { title: 'menu' };
 // Ordered candidate sources for a context, best first, minus any that already failed:
 //   1. a track THIS PLAYER loaded from their own device (blob: URL, kept in IndexedDB)
 //   2. assets/music/custom/<context>.mp3 — the site owner's own shipped override
-//   3. the shipped Pixabay default
+//   3. the shipped Pixabay default (or the unshipped-but-probed path, for `title`)
+//   4. …then, for a context with a MUSIC_FALLBACK, that context's whole chain, recursively
 // ...and startMusic() falls through to the synth bed when every one of them is unusable.
-function musicSources(kind){
-  const def = MUSIC_FILES[kind];
-  if(!def) return [];
+function musicSources(kind, _seen){
+  const def = MUSIC_FILES[kind] || MUSIC_UNSHIPPED[kind];
+  const next = MUSIC_FALLBACK[kind];
+  if(!def && !next) return [];
   const out = [];
   if(SND._userPick[kind]) out.push(SND._userPick[kind]);
   out.push(MUSIC_CUSTOM_DIR + kind + '.mp3');
-  out.push(def);
+  if(def) out.push(def);
+  // `_seen` makes a mis-typed cycle in MUSIC_FALLBACK a no-op instead of a stack overflow.
+  const seen = _seen || [kind];
+  if(next && seen.indexOf(next) < 0){
+    for(const s of musicSources(next, seen.concat(next))) out.push(s);
+  }
   return out.filter(s=>!SND._badSrc[s]);
 }
+// Every context whose chain feeds `kind`, starting with `kind` itself: ['title','menu'] or
+// ['menu']. Used wherever "is this playlist the one you can currently hear?" is the question.
+function musicChainKinds(kind){
+  const out = [];
+  let k = kind;
+  while(k && out.indexOf(k) < 0 && out.length < 8){ out.push(k); k = MUSIC_FALLBACK[k]; }
+  return out;
+}
 // Per-context playback level. Music sits well under the SFX so hits and KOs still read clearly.
-const MUSIC_VOLUME = { menu:0.34, battle:0.30, boss:0.34, tourney:0.34, intense:0.32 };
+const MUSIC_VOLUME = { title:0.34, menu:0.34, battle:0.30, boss:0.34, tourney:0.34, intense:0.32 };
 // Which screen id gets which bed. Matches (which hide every screen with go('_none_')) call
 // startMusic themselves; anything not listed here leaves the current bed alone.
+// The title screen is the ONLY one on the title bed; every other menu-ish screen stays on the
+// menu bed, and with an empty title slot both resolve to the same file anyway.
 const MUSIC_SCREENS = {
-  title:'menu', select:'menu', controls:'menu', tutorial:'menu', stats:'menu',
+  title:'title', select:'menu', controls:'menu', tutorial:'menu', stats:'menu',
   editor:'menu', test:'menu', lobby:'menu', options:'menu',
   tourneySetup:'tourney', tourneyHub:'tourney',
 };
@@ -1402,9 +1432,16 @@ function startMusicFile(kind){
   const sources = musicSources(kind);
   if(!sources.length || SND._fileBad[kind]) return false;
   if(!SND.gesture){ SND._pendingKind = kind; return true; }   // autoplay is blocked until then
-  // Already live on this context (a retry after a failed custom slot lands here): leave it be.
+  // The exact file we want is ALREADY playing: adopt the live deck instead of crossfading a
+  // second copy of it in from zero. This covers both a retry after a failed custom slot and the
+  // title <-> menu hop, which resolve to the same file whenever the title slot is empty — without
+  // it, every step of title -> select -> controls -> title would restart the menu loop.
   const cur = musicActiveEl();
-  if(cur && SND._deckKind[SND._deck]===kind && SND._deckSrc[SND._deck]===sources[0] && !cur.paused) return true;
+  if(cur && SND._deckSrc[SND._deck]===sources[0] && !cur.paused){
+    SND._deckKind[SND._deck] = kind;
+    musicFadeTo(SND._deck, (MUSIC_VOLUME[kind]!=null) ? MUSIC_VOLUME[kind] : 0.32);
+    return true;
+  }
   const next = 1 - SND._deck;
   const el = musicDeck(next);
   if(!el) return false;
@@ -1447,7 +1484,12 @@ function startMusic(kind){
   SND._pendingKind = null;
   SND._kind = kind;
   // a fresh pick from this context's playlist, if it has one (unless a caller already chose)
-  if(!SND._keepPick) musicRollUserTrack(kind);
+  if(!SND._keepPick){
+    musicRollUserTrack(kind);
+    // Fallback chains only get a pick when they do not already have one. Re-rolling them here
+    // would let a walk onto the title screen silently change which menu track is playing.
+    for(const k of musicChainKinds(kind).slice(1)) if(!SND._userPick[k]) musicRollUserTrack(k);
+  }
   if(startMusicFile(kind)) return;
   musicSilenceDecks();
   startSynthMusic(kind);
@@ -1481,8 +1523,11 @@ function musicUnlock(){
 //  eval time — hydration is kicked off by the same first-gesture hook as the rest of the audio,
 //  and every entry point degrades to a no-op where IndexedDB is absent (e.g. the jsdom harness).
 // ============================================================
-const MUSIC_CONTEXTS = ['menu','battle','boss','tourney','intense'];
-const MUSIC_CONTEXT_LABEL = { menu:'Menus', battle:'Battles', boss:'Boss Rush', tourney:'World Cup', intense:'Clutch time' };
+const MUSIC_CONTEXTS = ['title','menu','battle','boss','tourney','intense'];
+const MUSIC_CONTEXT_LABEL = { title:'Title screen', menu:'Menus', battle:'Battles', boss:'Boss Rush', tourney:'World Cup', intense:'Clutch time' };
+// What a slot plays when the player has loaded nothing into it. Every context has a shipped file
+// except `title`, which borrows the menu bed — say so, or an empty Title row reads as "silence".
+const MUSIC_CONTEXT_EMPTY = { title:'menu track' };
 const MUSIC_MAX_BYTES = 30*1024*1024;   // a sanity cap; well past any sensible loop
 const MStore = {
   DB:'bfsi-music', STORE:'tracks', _db:null,
@@ -1517,6 +1562,17 @@ const MStore = {
 // miniboss themes, not one boss theme. SND._userList[kind] = [{name, blob, url}]; the track that
 // actually plays is one random pick from it, re-rolled whenever the context (re)starts.
 //
+// A playlist just changed. If it feeds the bed that is playing RIGHT NOW, restart that bed so the
+// change is audible immediately; otherwise leave the music alone. It restarts the LIVE context,
+// not the edited one — loading a menu track while the title screen is up (and the title slot is
+// empty, so what you can hear IS the menu bed) has to swap in too.
+function musicRefreshIfLive(kind){
+  const live = SND._kind;
+  if(!live || musicChainKinds(live).indexOf(kind) < 0) return false;
+  SND._kind = null;
+  startMusic(live);
+  return true;
+}
 // entries: [{name, blob, size?}] — File objects from the picker and {name,blob} records out of
 // IndexedDB both fit, so hydration and picking share this one path.
 function musicAddUserTracks(kind, entries, persist){
@@ -1536,8 +1592,8 @@ function musicAddUserTracks(kind, entries, persist){
   if(!added) return 0;
   delete SND._fileBad[kind];              // a brand-new source deserves a fresh chance
   if(persist) musicPersistUserTracks(kind);
-  if(SND._kind===kind){ SND._kind = null; startMusic(kind); }   // swap live (startMusic re-rolls)
-  else musicRollUserTrack(kind);
+  musicRollUserTrack(kind);                       // choose from the new playlist first...
+  musicRefreshIfLive(kind);                       // ...then swap it in if it is audible now
   return added;
 }
 // Replace a context's whole playlist with a single track. (Kept because "one track for this
@@ -1555,8 +1611,7 @@ function musicRemoveUserTrack(kind, idx){
   if(!list.length){ delete SND._userList[kind]; delete SND._userPick[kind]; }
   if(gone.url) delete SND._badSrc[gone.url];
   musicPersistUserTracks(kind);
-  if(wasPlaying && SND._kind===kind){ SND._kind = null; startMusic(kind); }
-  else if(wasPlaying) musicRollUserTrack(kind);
+  if(wasPlaying){ musicRollUserTrack(kind); musicRefreshIfLive(kind); }
   musicRevokeLater(gone.url);
 }
 function musicClearUserTracks(kind, persist){
@@ -1567,7 +1622,7 @@ function musicClearUserTracks(kind, persist){
   delete SND._fileBad[kind];
   for(const t of list){ if(t.url) delete SND._badSrc[t.url]; }
   if(persist!==false) musicPersistUserTracks(kind);
-  if(SND._kind===kind){ SND._kind = null; startMusic(kind); }
+  musicRefreshIfLive(kind);
   for(const t of list) musicRevokeLater(t.url);
 }
 // Choose which track of the playlist plays next. Never the same one twice running when there is
@@ -1636,7 +1691,7 @@ function buildCustomMusic(){
     const tracks = list.length
       ? list.map((t,i)=>'<span class="mtrack">'+esc(t.name)
           + '<button class="mx" title="Remove" onclick="musicRemoveSlotTrack(\''+kind+'\','+i+')">✕</button></span>').join('')
-      : '<span class="mname">default track</span>';
+      : '<span class="mname">'+(MUSIC_CONTEXT_EMPTY[kind] || 'default track')+'</span>';
     return '<div class="musicrow">'
       + '<div class="mhead"><span class="mlbl">'+MUSIC_CONTEXT_LABEL[kind]+'</span>'
       + '<input type="file" accept="audio/*" multiple id="'+id+'" style="display:none" onchange="musicPickFile(\''+kind+'\',this)">'
