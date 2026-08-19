@@ -331,6 +331,22 @@
   .planlog .mate{align-self:flex-start;background:#ffffffcc;border:2px solid #1c1c1c;padding:6px 10px;border-radius:12px 12px 12px 2px;max-width:80%}
   .planlog .mate b{color:var(--host)}
   .planinput{display:flex;gap:8px}
+  .planlog .mate.thinking{opacity:.6;font-style:italic}
+  /* which difficulty tier is answering — the CPU Skill setting is buried in "More options", so the
+     huddle says out loud how sharp the teammate it is talking to actually is. */
+  .planai-badge{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    background:#1c1c1c;color:#fff;border-radius:8px;padding:3px 8px}
+  .planai-badge:empty{display:none}
+  .planai-status{min-height:14px}
+  .planadv{border-top:2px dashed #1c1c1c33;padding-top:6px;font-size:12px}
+  .planadv summary{cursor:pointer;font-weight:800;color:#555;font-size:12px;list-style:revert}
+  .planadvbody{padding:6px 0 2px;display:flex;flex-direction:column;gap:4px}
+  .planadvinput{font-family:inherit;font-weight:700;padding:7px 9px;border:2px solid #1c1c1c;
+    border-radius:9px;background:var(--panel);width:100%}
+  /* the strategy panel lives below the fold on a laptop-height select screen — revealing it scrolls
+     it into view (see syncModeUI), and this flash makes the arrival legible instead of abrupt. */
+  @keyframes teamchatArrive{0%{box-shadow:0 0 0 0 #ffd23fee}100%{box-shadow:0 0 0 14px #ffd23f00}}
+  .teamchat.arrive{animation:teamchatArrive .9s ease-out 1}
   .tourney-body{max-height:56vh;overflow-y:auto;width:min(760px,94vw);margin:10px auto}
   .th-sub{font-size:13px;opacity:.7;margin:6px 0}
   .th-fx{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;background:rgba(255,255,255,0.05);margin-bottom:4px;font-size:13px}
@@ -460,7 +476,9 @@
         <button data-t="solid">▮ Solid</button>
         <button data-t="spawn">◎ Spawn</button>
         <button data-t="zone">▢ Effect</button>
+        <button data-t="deco">🌳 Deco</button>
         <button data-t="move">✥ Move</button>
+        <button data-t="pan">✋ Pan</button>
         <button data-t="erase">✕ Erase</button>
       </span>
       <span class="edhaz">Hazard:
@@ -472,21 +490,36 @@
         </select>
       </span>
     </div>
+    <!-- MAP SIZE — the size the level is BUILT at and the size it PLAYS at. Same four sizes as the
+         match setting, because it is the same setting: it resizes the world box here and
+         setupWorld() rebuilds that exact box for the match. -->
+    <div class="edtoolbar">
+      <span class="edzrow">Map size <span class="seg" id="edSize"></span></span>
+      <button class="btn ghost sm" id="edZoomBtn" onclick="edToggleZoom()">🔍 Zoom in</button>
+      <span class="foot" style="opacity:.7">Drag empty space (or hold Space / middle-drag) to pan · wheel scrolls</span>
+    </div>
     <div class="edtoolbar" id="edProps">
       <span class="edzrow" id="edZoneRow" style="display:none">Effect:
         <select id="edZoneType"></select>
+      </span>
+      <span class="edzrow" id="edDecoRow" style="display:none">Decoration:
+        <select id="edDecoType"></select>
       </span>
       <button class="btn ghost sm" id="edRotBtn" style="display:none" onclick="edRotateSel()">⟳ Rotate (0°)</button>
       <span class="edzrow" id="edStrRow" style="display:none">
         <label id="edStrLabel" style="font-size:12px">Strength</label>
         <input type="range" id="edStrength" min="10" max="300" value="100" oninput="edSetStrength(+this.value)"/>
       </span>
+      <span class="edzrow" id="edDecoSizeRow" style="display:none">
+        <label style="font-size:12px">Prop size</label>
+        <input type="range" id="edDecoSize" min="30" max="300" value="100" oninput="edSetDecoSize(+this.value)"/>
+        <button class="btn ghost sm" onclick="edFlipDeco()">⇋ Flip</button>
+      </span>
     </div>
     <!-- QUICK MAP GENERATOR — four controls, one click, a complete playable level -->
     <div class="edtoolbar edgenbar">
       <b class="edgentitle">✨ Quick map</b>
       <span class="edzrow">Type <select id="genType"></select></span>
-      <span class="edzrow">Size <select id="genSize"></select></span>
       <span class="edzrow">Platforms <select id="genDensity"></select></span>
       <span class="edzrow">Effects <select id="genEffects"></select></span>
       <button class="btn alt sm" onclick="genQuickMap()">Generate</button>
@@ -494,7 +527,7 @@
       <span class="edgenseed" id="genSeedLabel"></span>
     </div>
     <canvas id="edcanvas" class="edcanvas"></canvas>
-    <div class="edhint"><b>Quick map</b> builds a complete playable level from the four settings above — then edit it like anything you drew · Draw platforms & effect zones by dragging · <b>Solid</b> = drag a block you can't pass through or drop off · click to place hops/spawns · <b>Move</b> drags anything · select a platform then <b>Rotate</b> · Erase removes what you click.</div>
+    <div class="edhint"><b>Quick map</b> builds a complete playable level at the chosen <b>map size</b> — then edit it like anything you drew · Draw platforms & effect zones by dragging · <b>Solid</b> = drag a block you can't pass through or drop off · click to place hops/spawns/decorations · <b>Deco</b> props are scenery only — nothing collides with them · <b>Move</b> drags anything, and dragging empty space pans the map · select a platform then <b>Rotate</b> · Erase removes what you click.</div>
     <div class="edtoolbar">
       <input id="edName" class="edname" placeholder="Level name" maxlength="24"/>
       <button class="btn sm" onclick="edSave()">💾 Save</button>
@@ -690,13 +723,29 @@
         <div class="planchat">
           <div class="planchat-head">
             <span>Talk to your teammates</span>
+            <span class="planai-badge" id="planAiTier"></span>
           </div>
           <div id="planLog" class="planlog"></div>
           <div class="planinput">
             <input id="planMsg" placeholder="e.g. 'Everyone focus the zoner, I'll flank'" maxlength="240"/>
-            <button class="btn sm" onclick="planSend()">Send</button>
+            <button class="btn sm" id="planSendBtn" onclick="planSend()">Send</button>
           </div>
-          <div class="foot" id="planChatNote">Your teammates reply with scripted tactics — name a target or a stance and they'll follow it.</div>
+          <div class="foot" id="planChatNote">Your teammates think for themselves — talk them through the plan and they'll adapt, in the huddle and mid-fight.</div>
+          <!-- ADVANCED: the owner's own model access, for running the game somewhere the /api/strategy
+               proxy is not deployed. Folded away, never on the title screen, and never a thing a
+               player is asked for: the deployed game needs nothing here. -->
+          <details class="planadv" id="planAdv">
+            <summary>Advanced</summary>
+            <div class="planadvbody">
+              <div class="foot" id="planAdvNote">The published game talks to its own <code>/api/strategy</code> endpoint and needs nothing from you. This box is for running the game somewhere that endpoint does not exist. Whatever you paste stays in this browser, is sent only to the model's own address, and is never written to a log, a link or the game's save data.</div>
+              <input id="planLocalKey" class="planadvinput" type="password" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="paste your own model access token" maxlength="200"/>
+              <div class="row" style="gap:8px;margin-top:6px">
+                <button class="btn ghost sm" onclick="teamAiForgetLocalToken()">Forget it</button>
+                <span class="foot" id="planAdvState"></span>
+              </div>
+            </div>
+          </details>
+          <div class="foot planai-status" id="planAiStatus"></div>
         </div>
       </div>
     </div>
@@ -1060,8 +1109,41 @@ function forcedScroll(){
 }
 // Test/practice mode: sandbox with dummies you can configure and infinite stocks
 const TESTMODE = { active:false, dummies:1, dummyMode:"still", damage:true, anchored:false, dpsT:0, dpsDmg:0 };
-// Custom level (from the level editor). When set, single-screen play uses it.
-let CUSTOM_LEVEL = null;   // {name, plats:[{nx,ny,nw,hop}], hazard, spawns:[{nx,ny}]}
+// Custom level (from the level editor). When set, play builds the world from it.
+//
+// ---- THE CUSTOM-LEVEL COORDINATE MODEL (v2) -------------------------------------------------
+// Every coordinate a level stores is NORMALIZED 0..1 — but against the WORLD BOX (WW x WH), not
+// against the screen. A level also carries the MAP SIZE it was BUILT at:
+//
+//   {v:2, name, size:'compact'|'normal'|'tall'|'huge',
+//    plats:[{nx,ny,nw,hop|solid,nh,rot}], spawns:[{nx,ny}],
+//    zones:[{nx,ny,nw,nh,type,strength}], deco:[{k,nx,ny,s,flip}], hazard}
+//
+// Why normalized-against-the-world and not world units: it keeps EVERY PRE-v2 SAVE LOADABLE
+// BYTE-FOR-BYTE. A level with no `size` is read as 'normal', and at Compact/Normal the world box
+// IS one screen (WW=W, WH=H) — exactly the box those coordinates were drawn against — so an old
+// level rebuilds pixel-identically. World units would have had to be re-scaled per display, which
+// is the thing normalized coordinates exist to avoid. The migration is therefore a default value,
+// not a rewrite: nothing on disk has to change, and nothing that loads is thrown away.
+//
+// The level's own size wins over the match's MAP SIZE setting, because a map is DESIGNED at a
+// size: its jumps are only guaranteed climbable in the box it was laid out in.
+let CUSTOM_LEVEL = null;
+// The MAP SIZE a custom level plays at: its own, falling back to the match setting for a pre-v2
+// save that never recorded one.
+function customSize(){
+  return (CUSTOM_LEVEL && MAP_SIZES[CUSTOM_LEVEL.size]) ? MAP_SIZES[CUSTOM_LEVEL.size] : mapSize();
+}
+// The world box for a custom level, in world px. Clamped at ONE SCREEN minimum: Compact shrinks
+// the built-in stadiums, but a sub-screen custom world would leave the camera with a viewport
+// bigger than the map to clamp inside (and would silently resize every level ever saved). So
+// Compact/Normal stay one screen — the box every existing level was drawn against — and Tall/Huge
+// are the sizes that actually grow it.
+function customWorldW(){ return Math.round(W * Math.max(1, customSize().w)); }
+function customWorldH(){ return Math.round(H * Math.max(1, customSize().h)); }
+// Does this custom level need a scrolling camera? (Drives scrolls(), and stops a mid-match browser
+// resize from collapsing a Tall/Huge custom world back down to one screen.)
+function customScrolls(){ return !!CUSTOM_LEVEL && (customWorldW()>W+2 || customWorldH()>H+2); }
 const MAX_FFA=5, MAX_TEAMS=20;
 // contestant counts offered per mode (compact set for teams so buttons fit)
 function countOptions(){
@@ -2002,7 +2084,7 @@ function buildSettings(){
     });
   };
   bindSeg('segMode', v=>{ SETTINGS.mode=v;
-    syncModeUI();
+    syncModeUI({ reveal:true });   // a deliberate click on Teams scrolls the strategy panel into view
     // clamp count to the new mode's max and rebuild count buttons
     const cap = v==='teams'?MAX_TEAMS:MAX_FFA;
     if(SETTINGS.count>cap) SETTINGS.count=cap;
@@ -2039,7 +2121,7 @@ function buildSettings(){
 }
 // Force the Team-split row's visibility (and the mode buttons' highlight) to match SETTINGS.mode.
 // Called both on select-screen open and on any mode toggle, so the menu can't get out of sync.
-function syncModeUI(){
+function syncModeUI(opts){
   const isTeams = (SETTINGS.mode==='teams');
   const row=document.getElementById('teamRow');
   if(row) row.style.display = isTeams ? 'flex' : 'none';
@@ -2049,8 +2131,38 @@ function syncModeUI(){
   const panel=document.getElementById('teamChatPanel');
   if(panel){
     const show = isTeams && !inNetSession();
+    const wasHidden = panel.style.display==='none';
     panel.style.display = show ? 'block' : 'none';
     if(show){ try{ refreshTeamChat(); }catch(e){ console.error("refreshTeamChat:", e); } }
+    // WHY THIS SCROLL EXISTS. The owner's report was "it never pops up, which is weird" — and the
+    // display toggle above was already correct. Measured on a 720px-tall window: clicking Teams
+    // flips this panel to display:block at y=735 inside a 720px scroll box, i.e. entirely below the
+    // fold, with the Start button below THAT. The panel appeared perfectly and nobody could ever
+    // see it. Revealing something off-screen is the same as not revealing it, so the reveal now
+    // brings it into view. Gated on `opts.reveal` so only a deliberate mode CLICK scrolls: opening
+    // the select screen already in teams mode must still start at the roster.
+    if(show && wasHidden && opts && opts.reveal){
+      try{
+        if(panel.scrollIntoView){
+          panel.scrollIntoView({ block:'start', behavior:'smooth' });
+          // ...and then GUARANTEE it landed. A smooth scroll is animated by the compositor and
+          // simply never advances in a tab that is not painting frames — measured here: scrollTop
+          // stayed at 0 for 1.5s while behavior:'auto' moved it to 519 instantly. Shipping the
+          // pretty version alone would have reproduced the original bug in exactly the conditions
+          // nobody tests in. So: animate if we can, and snap if the animation did not happen.
+          setTimeout(()=>{
+            try{
+              const r=panel.getBoundingClientRect();
+              const vh=window.innerHeight||0;
+              if(r.top<0 || r.top>vh-60) panel.scrollIntoView({ block:'start', behavior:'auto' });
+            }catch(e){}
+          }, 600);
+        }
+        panel.classList.remove('arrive');
+        void panel.offsetWidth;              // restart the flash if Teams is re-picked
+        panel.classList.add('arrive');
+      }catch(e){}
+    }
   }
 }
 function buildCountButtons(){
@@ -2290,6 +2402,496 @@ function pollPad(){
 }
 
 // ============================================================
+//  TEAM AI — a teammate that actually thinks, in the huddle and in the fight
+// ============================================================
+// The teammate you talk to before a teams match, and the strategy your CPU squad follows during
+// one, are both authored by a model. Two hard rules shape everything below.
+//
+// 1. NOTHING HERE MAY BLOCK A FRAME. A model call takes seconds; a frame takes 16ms. So no call is
+//    ever awaited by step(), by aiThink(), or by startMatch(). The in-fight path is fire-and-forget:
+//    it posts a request, and whenever the answer lands it writes TEAM_PLAN, which aiThink was
+//    already reading every frame as plain property lookups. A match with the network unplugged runs
+//    at exactly the same speed as one with it plugged in.
+//
+// 2. NOTHING HERE MAY BREAK THE GAME. Every path degrades: proxy -> locally-supplied token ->
+//    the scripted replies that shipped before this feature existed. Offline, unconfigured, 404,
+//    timeout, garbage JSON, a model naming a fighter who is not in the match — all of it lands in
+//    the same place, which is "the game plays fine and the teammate says something sensible".
+//
+// The difficulty tier chooses the model, per the owner's brief: easy thinks fast, hard thinks hard.
+
+const TEAM_AI_ENDPOINT = '/api/strategy';
+// AI_LEVEL (0/1/2 = Easy/Normal/Hard) indexes this.
+const TEAM_AI_TIER_BY_LEVEL = ['easy', 'normal', 'hard'];
+// Mirrored server-side in api/strategy.js (TIER_MODELS); test/team-ai.test.js pins them equal. The
+// deployed game never sends a model id — the proxy maps the tier itself — but the locally-supplied
+// token path talks to the model directly and needs the same table.
+const TEAM_AI_MODELS = {
+  easy:   'claude-haiku-4-5-20251001',
+  normal: 'claude-sonnet-5',
+  hard:   'claude-fable-5',
+};
+// COST GUARD. In-fight re-strategy fires on a timer and on KOs, for the length of a match, for
+// every teams match anyone plays. Hard runs the most expensive model, so it thinks less often, not
+// more — a slower cadence of better plans. These are floors: a refresh never happens sooner.
+const TEAM_AI_REFRESH_MS = { easy: 12000, normal: 12000, hard: 20000 };
+// A KO is the one event worth interrupting the cadence for, but only after this much of a gap, so a
+// double-KO scramble cannot fire two calls back to back.
+const TEAM_AI_KO_MIN_GAP_MS = 6000;
+// Absolute ceiling on in-fight calls per match, whatever happens. A 5-minute hard-tier match cannot
+// cost more than this many Fable calls even if every KO lands on a refresh boundary.
+const TEAM_AI_MAX_CALLS = { easy: 16, normal: 16, hard: 8 };
+const TEAM_AI_TIMEOUT_MS = 7000;
+const TEAM_AI_MAX_TOKENS = { chat: 350, strategy: 400 };
+// How often step() even LOOKS at whether a refresh is due. 30 frames = twice a second; the check
+// itself is a couple of comparisons and a string build, and it is nowhere near the hot path.
+const TEAM_AI_TICK_FRAMES = 30;
+const TEAM_AI_STANCES = ['aggressive', 'balanced', 'defensive'];
+const TEAM_AI_SPECIAL_USAGE = ['hoard', 'normal', 'spam'];
+// Where an owner-supplied token is remembered. Local to this browser, never sent anywhere except
+// the model's own address, never placed in a URL, never logged.
+const TEAM_AI_TOKEN_STORE = 'bfsi:teamAiToken';
+const TEAM_AI_DIRECT_URL = 'https://api.anthropic.com/v1/messages';
+
+// Live state. `calls`/`lastAt`/`sig` are the cost guard; `inflight` stops a slow answer from
+// stacking up behind a fast timer; `source` is what the status line reports.
+const TEAM_AI = {
+  inflight: false, calls: 0, lastAt: 0, lastKoAt: 0, koPending: false,
+  sig: '', source: 'none', lastError: '', chatBusy: false, localToken: '',
+};
+
+/** Difficulty tier name for the current CPU Skill setting. Anything unexpected reads as normal. */
+function teamAiTier(level){
+  const lv = (level==null) ? AI_LEVEL : level;
+  return TEAM_AI_TIER_BY_LEVEL[lv] || 'normal';
+}
+/** Model id for a tier — used only by the locally-supplied-token path; the proxy maps its own. */
+function teamAiModel(tier){ return TEAM_AI_MODELS[tier] || TEAM_AI_MODELS.normal; }
+/** Minimum gap between in-fight refreshes for a tier. */
+function teamAiRefreshMs(tier){ return TEAM_AI_REFRESH_MS[tier] || TEAM_AI_REFRESH_MS.normal; }
+/** Per-match ceiling on in-fight calls for a tier. */
+function teamAiMaxCalls(tier){ const n=TEAM_AI_MAX_CALLS[tier]; return n==null ? TEAM_AI_MAX_CALLS.normal : n; }
+
+/** Milliseconds, monotonic where available. Never throws in a headless realm. */
+function teamAiNow(){
+  try{ if(typeof performance!=='undefined' && performance.now) return performance.now(); }catch(e){}
+  return Date.now();
+}
+
+// ---- owner-supplied token (Advanced) -------------------------------------------------
+// This is the SECOND rung of the fallback ladder and exists for one situation: running the game
+// somewhere /api/strategy is not deployed. A deployed player never sees it — it is folded inside
+// "Advanced", inside a panel that only exists in teams mode, and the title screen has no idea it
+// exists. The value is read straight out of the input or storage at call time and handed to the
+// request header. It is never interpolated into a URL, a log line, the chat log, or a save file.
+function teamAiLocalToken(){
+  const el = (typeof document!=='undefined') ? document.getElementById('planLocalKey') : null;
+  if(el && el.value) return String(el.value).trim();
+  return String(TEAM_AI.localToken||'').trim();
+}
+async function teamAiLoadLocalToken(){
+  try{
+    const saved = await BStore.get(TEAM_AI_TOKEN_STORE);
+    if(saved) TEAM_AI.localToken = String(saved);
+  }catch(e){}
+  const el = document.getElementById('planLocalKey');
+  if(el && !el._teamAiWired){
+    el._teamAiWired = true;
+    if(!el.value && TEAM_AI.localToken) el.value = TEAM_AI.localToken;
+    el.addEventListener('input', ()=>{
+      TEAM_AI.localToken = el.value||'';
+      try{ BStore.set(TEAM_AI_TOKEN_STORE, el.value||''); }catch(e){}
+      teamAiPaintAdvState();
+    });
+  }
+  teamAiPaintAdvState();
+}
+function teamAiForgetLocalToken(){
+  TEAM_AI.localToken='';
+  const el=document.getElementById('planLocalKey'); if(el) el.value='';
+  try{ BStore.del(TEAM_AI_TOKEN_STORE); }catch(e){}
+  teamAiPaintAdvState();
+}
+// Reports only PRESENCE, never any part of the value — no prefix, no length, no masked echo.
+function teamAiPaintAdvState(){
+  const st=document.getElementById('planAdvState'); if(!st) return;
+  st.textContent = teamAiLocalToken() ? 'Stored in this browser.' : 'Nothing stored.';
+}
+
+// ---- the call ------------------------------------------------------------------------
+/** Extract the first balanced-looking JSON object from model prose. Throws if there isn't one. */
+function teamAiParseJSON(txt){
+  const s=String(txt==null?'':txt);
+  const a=s.indexOf('{'), b=s.lastIndexOf('}');
+  if(a<0 || b<=a) throw new Error('no-json');
+  return JSON.parse(s.slice(a, b+1));
+}
+
+/**
+ * One model turn, via whichever rung of the ladder answers first.
+ * Rung 1: POST /api/strategy — same origin, no credential in the browser at all.
+ * Rung 2: the owner's own token, direct, only if one has been pasted under Advanced.
+ * Neither works -> throw, and every caller treats a throw as "use the scripted path".
+ */
+async function teamAiCall(req){
+  const tier = req.tier || teamAiTier();
+  const maxTokens = req.maxTokens || 300;
+  const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+  const timer = setTimeout(()=>{ try{ ctrl && ctrl.abort(); }catch(e){} }, TEAM_AI_TIMEOUT_MS);
+  try{
+    // --- rung 1: the proxy ---
+    try{
+      const resp = await fetch(TEAM_AI_ENDPOINT, {
+        method:'POST',
+        headers:{ 'content-type':'application/json' },
+        body: JSON.stringify({ tier, system:req.system, messages:req.messages, maxTokens }),
+        signal: ctrl ? ctrl.signal : undefined,
+      });
+      if(resp.ok){
+        const data = await resp.json();
+        const text = (data && typeof data.text==='string') ? data.text : '';
+        if(text){ TEAM_AI.source='proxy'; TEAM_AI.lastError=''; return { text, source:'proxy', tier }; }
+        throw new Error('empty');
+      }
+      // 503 is the owner-has-not-set-the-env-var case and 404 is the not-deployed case. Both mean
+      // "try the next rung"; so does anything else, there is no failure worth giving up on here.
+      throw new Error('http-'+resp.status);
+    }catch(proxyErr){
+      TEAM_AI.lastError = String((proxyErr && proxyErr.message) || proxyErr || 'proxy-failed');
+    }
+    // --- rung 2: the owner's own token ---
+    const token = teamAiLocalToken();
+    if(!token) throw new Error('unconfigured');
+    const payload = { model: teamAiModel(tier), max_tokens: maxTokens, messages: req.messages };
+    if(req.system) payload.system = req.system;
+    const resp2 = await fetch(TEAM_AI_DIRECT_URL, {
+      method:'POST',
+      headers:{
+        'x-api-key': token,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify(payload),
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+    if(!resp2.ok) throw new Error('http-'+resp2.status);
+    const data2 = await resp2.json();
+    const text2 = (data2 && Array.isArray(data2.content))
+      ? data2.content.filter(b=>b && b.type==='text').map(b=>b.text).join('') : '';
+    if(!text2) throw new Error('empty');
+    TEAM_AI.source='local'; TEAM_AI.lastError='';
+    return { text:text2, source:'local', tier };
+  } finally { clearTimeout(timer); }
+}
+
+// ---- match context -------------------------------------------------------------------
+/** Who is on which team, what they can do, and who is a person rather than a CPU. */
+function teamAiContext(){
+  const byTeam={};
+  (fighters||[]).forEach(f=>{
+    (byTeam[f.team]||(byTeam[f.team]=[])).push({
+      name:f.name,
+      special:(f.kit&&f.kit.special)||'basic',
+      arch:f.arch||'',
+      weight:f.w,
+      pct: Math.round(f.pct||0),
+      stocks: (f.stocks===Infinity ? -1 : (f.stocks|0)),
+      out: !!f.dead,
+      human: !!(f.you||f.you2) || f.controller==='local' || f.controller==='local2' || f.controller==='remote',
+    });
+  });
+  const teams=Object.keys(byTeam).map(k=>+k).sort((a,b)=>a-b).map(t=>({
+    team:t, cpu: !byTeam[t].some(m=>m.human), fighters:byTeam[t],
+  }));
+  return { stage:(stage&&stage.name)||'Arena', teams };
+}
+function teamAiAllyNames(ctx, team){
+  const t=ctx.teams.find(x=>x.team===team);
+  return new Set(t ? t.fighters.filter(m=>!m.out).map(m=>m.name) : []);
+}
+function teamAiEnemyNames(ctx, team){
+  return new Set(ctx.teams.filter(x=>x.team!==team).flatMap(x=>x.fighters).filter(m=>!m.out).map(m=>m.name));
+}
+
+// ---- validation ----------------------------------------------------------------------
+// Model output is UNTRUSTED INPUT, in the same category as anything arriving off the network. It
+// reaches TEAM_PLAN only through here. Enums are clamped to values the game actually implements;
+// a focus target must be a live enemy of that team and a protect target a live ally, by exact name,
+// so a hallucinated fighter ("Firey Jr Deluxe") is dropped rather than chased forever by an aiThink
+// that will never find it; riskTolerance is coerced and clamped. The rejects are returned rather
+// than swallowed so the tests — and the status line — can see that filtering happened.
+function teamAiValidatePlan(raw, ctx, opts){
+  const cpuOnly = !(opts && opts.allowHumanTeams);
+  const out = { plans:{}, rejected:[] };
+  if(!raw || !Array.isArray(raw.teams)) throw new Error('bad-shape');
+  const allowed = new Set(ctx.teams.filter(t=>!cpuOnly || t.cpu).map(t=>t.team));
+  raw.teams.forEach(e=>{
+    if(!e || typeof e!=='object'){ out.rejected.push('non-object team entry'); return; }
+    const team = Number(e.team);
+    if(!Number.isFinite(team) || !allowed.has(team)){ out.rejected.push('team '+String(e.team)); return; }
+    // First answer per team wins. A model that lists the same team twice has contradicted itself,
+    // and last-write-wins hands the match to whichever entry happened to be printed last — observed
+    // in the browser: a well-formed aggressive plan was overwritten by a following entry whose focus
+    // target did not exist, leaving the team worse off than before it asked.
+    if(Object.prototype.hasOwnProperty.call(out.plans, team)){ out.rejected.push('duplicate team '+team); return; }
+    const allies = teamAiAllyNames(ctx, team), enemies = teamAiEnemyNames(ctx, team);
+    const stance = TEAM_AI_STANCES.includes(e.stance) ? e.stance : 'balanced';
+    if(e.stance!=null && e.stance!==stance) out.rejected.push('stance '+String(e.stance));
+    let focusName=null;
+    if(e.focusName!=null && e.focusName!==''){
+      if(enemies.has(e.focusName)) focusName=e.focusName;
+      else out.rejected.push('focusName '+String(e.focusName));
+    }
+    let protectName=null;
+    if(e.protectName!=null && e.protectName!==''){
+      if(allies.has(e.protectName)) protectName=e.protectName;
+      else out.rejected.push('protectName '+String(e.protectName));
+    }
+    const specialUsage = TEAM_AI_SPECIAL_USAGE.includes(e.specialUsage) ? e.specialUsage : 'normal';
+    if(e.specialUsage!=null && e.specialUsage!==specialUsage) out.rejected.push('specialUsage '+String(e.specialUsage));
+    // Absent means "no opinion" -> the neutral middle. Note the explicit null/'' check: Number(null)
+    // is 0 and Number('') is 0, both of which pass isFinite, so a model that simply omitted the
+    // field would silently produce the most timid team on the stage.
+    let risk;
+    if(e.riskTolerance==null || e.riskTolerance===''){ risk=0.5; }
+    else {
+      risk = Number(e.riskTolerance);
+      if(!isFinite(risk)){ out.rejected.push('riskTolerance '+String(e.riskTolerance)); risk=0.5; }
+    }
+    risk = Math.max(0, Math.min(1, risk));
+    out.plans[team] = { stance, focusName, protectName, specialUsage, riskTolerance:risk };
+  });
+  return out;
+}
+
+/** Write validated plans into TEAM_PLAN. Returns how many teams were updated. */
+function teamAiApplyPlans(validated){
+  let n=0;
+  Object.keys(validated.plans||{}).forEach(k=>{
+    TEAM_PLAN[+k] = validated.plans[k];
+    n++;
+  });
+  return n;
+}
+
+// ---- aiThink hooks -------------------------------------------------------------------
+// Both are exact no-ops when no plan field is present, so a match with the feature switched off
+// behaves — frame for frame, random draw for random draw — the way it did before this landed.
+/** Scales the damage at which a fighter starts backing off. Exactly 1 with no plan. */
+function planRiskScale(f){
+  const p = TEAM_PLAN && TEAM_PLAN[f.team];
+  const r = (p && typeof p.riskTolerance==='number') ? p.riskTolerance : null;
+  return (r==null) ? 1 : (0.8 + r*0.4);
+}
+/** 'hoard' | 'normal' | 'spam' — how freely this fighter throws its special out. */
+function planSpecialUsage(f){
+  const p = TEAM_PLAN && TEAM_PLAN[f.team];
+  const v = p && p.specialUsage;
+  return TEAM_AI_SPECIAL_USAGE.includes(v) ? v : 'normal';
+}
+
+// ---- in-fight re-strategy ------------------------------------------------------------
+/**
+ * The material state of the match, as a short string. If this has not changed since the last call,
+ * there is nothing new to think about and the refresh is skipped — which is most of the time, since
+ * damage is bucketed in 25% steps. This is the difference between a plan that updates when the
+ * fight turns and a metronome billing the owner every 12 seconds for the same answer.
+ */
+function teamAiMaterialSig(ctx){
+  return ctx.teams.map(t=>
+    t.team+':'+t.fighters.map(m=>
+      m.name+(m.out?'!':'')+'/'+m.stocks+'/'+Math.floor((m.pct||0)/25)
+    ).join(',')
+  ).join('|');
+}
+
+/** Called from the KO path. Marks the next tick as worth spending a call on. */
+function teamAiKoSignal(){ TEAM_AI.koPending = true; }
+
+/** Reset the per-match cost guard. Called from beginMatchNow. */
+function teamAiResetMatch(){
+  TEAM_AI.calls=0; TEAM_AI.lastAt=0; TEAM_AI.lastKoAt=0;
+  TEAM_AI.koPending=false; TEAM_AI.sig=''; TEAM_AI.inflight=false;
+}
+
+/**
+ * The CPU teams' opening plan, requested as the match starts. Deliberately NOT awaited by
+ * startMatch: the fight begins immediately on the huddle's own settings, and this upgrades the CPU
+ * side a second or two in. It counts against the same per-match ceiling as the in-fight refreshes.
+ */
+function teamAiOpeningPlan(){
+  if(SETTINGS.mode!=='teams' || inNetSession()) return false;
+  const ctx = teamAiContext();
+  if(!ctx.teams.some(t=>t.cpu)) return false;
+  const tier = teamAiTier();
+  if(TEAM_AI.calls >= teamAiMaxCalls(tier)) return false;
+  TEAM_AI.calls++;
+  TEAM_AI.inflight = true; TEAM_AI.lastAt = teamAiNow(); TEAM_AI.sig = teamAiMaterialSig(ctx);
+  teamAiRestrategise(ctx, tier).catch(()=>{}).then(()=>{ TEAM_AI.inflight=false; });
+  return true;
+}
+
+/** Should an in-fight refresh happen right now? Pure and synchronous — no I/O, no awaits. */
+function teamAiShouldRefresh(now, sig, tier){
+  if(TEAM_AI.inflight) return false;
+  if(TEAM_AI.calls >= teamAiMaxCalls(tier)) return false;
+  if(sig === TEAM_AI.sig) return false;                 // nothing material changed
+  if(!TEAM_AI.lastAt) return true;                      // first refresh of the match
+  const since = now - TEAM_AI.lastAt;
+  if(TEAM_AI.koPending && since >= TEAM_AI_KO_MIN_GAP_MS) return true;
+  return since >= teamAiRefreshMs(tier);
+}
+
+/**
+ * Called from step() twice a second. Decides, fires, and returns immediately. The `await` inside
+ * the promise chain never touches the frame that started it.
+ */
+function teamAiTick(){
+  if(!running || SETTINGS.mode!=='teams' || inNetSession()) return false;
+  if(!fighters || !fighters.length) return false;
+  const tier = teamAiTier();
+  const ctx = teamAiContext();
+  if(!ctx.teams.some(t=>t.cpu)) return false;           // nobody to re-strategise for
+  const now = teamAiNow();
+  const sig = teamAiMaterialSig(ctx);
+  if(!teamAiShouldRefresh(now, sig, tier)) return false;
+  TEAM_AI.inflight = true; TEAM_AI.lastAt = now; TEAM_AI.sig = sig;
+  if(TEAM_AI.koPending){ TEAM_AI.koPending=false; TEAM_AI.lastKoAt=now; }
+  TEAM_AI.calls++;
+  // Fire and forget. Nothing downstream of here is awaited by the caller.
+  teamAiRestrategise(ctx, tier)
+    .catch(()=>{})
+    .then(()=>{ TEAM_AI.inflight=false; });
+  return true;
+}
+
+/** The async half of a refresh: ask, validate, write TEAM_PLAN. Never throws to its caller. */
+async function teamAiRestrategise(ctx, tier){
+  try{
+    const res = await teamAiCall({
+      tier,
+      system: TEAM_AI_STRATEGY_SYSTEM,
+      messages: [{ role:'user', content: teamAiStrategyPrompt(ctx, true) }],
+      maxTokens: TEAM_AI_MAX_TOKENS.strategy,
+    });
+    const validated = teamAiValidatePlan(teamAiParseJSON(res.text), ctx);
+    return teamAiApplyPlans(validated);
+  }catch(e){ return 0; }
+}
+
+const TEAM_AI_STRATEGY_SYSTEM =
+  "You are the strategist for CPU teams in a cartoon 2D platform fighter. You answer with STRICT " +
+  "JSON only: no prose, no markdown fences, no commentary. Schema: " +
+  '{"teams":[{"team":<int>,"stance":"aggressive"|"balanced"|"defensive","focusName":<exact enemy name or null>,' +
+  '"protectName":<exact ally name or null>,"specialUsage":"hoard"|"normal"|"spam","riskTolerance":<0..1>}]}. ' +
+  "focusName MUST be copied exactly from that team's listed enemies, protectName exactly from its own " +
+  "listed allies; use null rather than inventing a name. riskTolerance 0 means retreat early at high " +
+  "damage, 1 means keep fighting.";
+
+/** Roster + (mid-match) the current score, as terse lines. */
+function teamAiStrategyPrompt(ctx, live){
+  const fmt = m => `${m.name} [${m.special}${m.arch?', '+m.arch:''}, weight ${m.weight}`
+    + (live ? `, ${m.pct}% damage, ${m.stocks<0?'∞':m.stocks} stocks${m.out?', OUT':''}` : '') + ']';
+  const lines = ctx.teams.filter(t=>t.cpu).map(t=>{
+    const allies = t.fighters.map(fmt).join('; ');
+    const enemies = ctx.teams.filter(o=>o.team!==t.team).flatMap(o=>o.fighters).map(fmt).join('; ');
+    return `Team ${t.team} — allies: ${allies}. Enemies: ${enemies}.`;
+  });
+  return [
+    live ? 'Mid-match. Re-plan for each CPU team given the current score.'
+         : 'Pre-match. Plan for each CPU team.',
+    `Stage: ${ctx.stage}.`,
+    lines.join('\n'),
+    'Reply with the JSON object only.',
+  ].join('\n');
+}
+
+// ---- pre-match huddle chat -----------------------------------------------------------
+const TEAM_AI_CHAT_SYSTEM =
+  "You are a teammate in a cartoon platform fighter, talking to your human partner in the huddle " +
+  "before the match. Be brief and warm — two sentences at most, in character as a scrappy fighter, " +
+  "never a corporate assistant. Then set the squad's plan. Reply with STRICT JSON only, no markdown " +
+  'fences: {"reply":"<what you say out loud>","plan":{"stance":"aggressive"|"balanced"|"defensive",' +
+  '"focusName":<exact enemy name or null>,"protectName":<exact ally name or null>}}. ' +
+  "focusName must be copied exactly from the listed enemies and protectName exactly from the listed " +
+  "allies — use null rather than naming anyone who is not listed. Follow what your partner asks for.";
+
+/** The huddle's view of the match, for the chat prompt. */
+function teamAiChatPrompt(ctx, myTeam, userMsg, plan){
+  const me = ctx.teams.find(t=>t.team===myTeam) || { fighters:[] };
+  const allies = me.fighters.filter(m=>!m.human).map(m=>`${m.name} [${m.special}]`).join(', ') || '(none)';
+  const enemies = ctx.teams.filter(t=>t.team!==myTeam).flatMap(t=>t.fighters)
+    .map(m=>`${m.name} [${m.special}, weight ${m.weight}]`).join(', ') || '(none)';
+  return [
+    `Stage: ${ctx.stage}.`,
+    `Your allies (you are one of them): ${allies}.`,
+    `Your enemies: ${enemies}.`,
+    `Current plan — stance ${plan.stance}, focus ${plan.focusName||'nobody in particular'}, protect ${plan.protectName||'nobody'}.`,
+    `Your partner says: ${userMsg}`,
+  ].join('\n');
+}
+
+/** Read the huddle's three controls back out as a plan object. */
+function teamAiReadHuddle(){
+  const stanceBtn=document.querySelector('#planStance button.on');
+  const focusEl=document.getElementById('planFocus');
+  const protEl=document.getElementById('planProtect');
+  return {
+    stance: stanceBtn?stanceBtn.dataset.v:'balanced',
+    focusName: focusEl?(focusEl.value||null):null,
+    protectName: protEl?(protEl.value||null):null,
+  };
+}
+/** Push a validated plan back into the huddle's controls so the player SEES what was agreed. */
+function teamAiWriteHuddle(plan){
+  if(!plan) return;
+  if(plan.stance) setStanceUI(plan.stance);
+  const focusEl=document.getElementById('planFocus');
+  if(focusEl && plan.focusName!==undefined) focusEl.value = plan.focusName || '';
+  const protEl=document.getElementById('planProtect');
+  if(protEl && plan.protectName!==undefined) protEl.value = plan.protectName || '';
+}
+
+/** Status line under the huddle. Never carries any part of a token. */
+function teamAiSetStatus(msg){
+  const el=document.getElementById('planAiStatus'); if(el) el.textContent = msg||'';
+}
+/** Badge naming the tier the player is talking to. */
+function teamAiPaintTier(){
+  const el=document.getElementById('planAiTier'); if(!el) return;
+  const tier=teamAiTier();
+  el.textContent = tier==='hard' ? 'Hard · sharpest' : tier==='easy' ? 'Easy · quickest' : 'Normal';
+}
+
+/**
+ * One conversational turn with the teammate. Returns the reply text and whether it came from a
+ * model. Falls back to planScriptedReply on ANY failure, so the huddle always answers.
+ */
+async function teamAiChatTurn(userMsg, ctx, myTeam){
+  const tier = teamAiTier();
+  const plan = teamAiReadHuddle();
+  const res = await teamAiCall({
+    tier,
+    system: TEAM_AI_CHAT_SYSTEM,
+    messages: [{ role:'user', content: teamAiChatPrompt(ctx, myTeam, userMsg, plan) }],
+    maxTokens: TEAM_AI_MAX_TOKENS.chat,
+  });
+  const raw = teamAiParseJSON(res.text);
+  const reply = (raw && typeof raw.reply==='string' && raw.reply.trim()) ? raw.reply.trim() : '';
+  if(!reply) throw new Error('no-reply');
+  // The plan half rides the SAME validator as the in-fight path — the huddle is the human's own
+  // team, so human teams are allowed here and nowhere else.
+  let applied=null, rejected=[];
+  if(raw.plan && typeof raw.plan==='object'){
+    const v = teamAiValidatePlan({ teams:[Object.assign({ team:myTeam }, raw.plan)] }, ctx, { allowHumanTeams:true });
+    applied = v.plans[myTeam] || null;
+    rejected = v.rejected;
+  }
+  return { reply, plan:applied, rejected, tier, source:res.source };
+}
+
+// ============================================================
 //  MATCH
 // ============================================================
 function resize(){ const r=cv.getBoundingClientRect();
@@ -2302,7 +2904,9 @@ function resize(){ const r=cv.getBoundingClientRect();
   // Only collapse the world to the screen for genuinely single-screen arenas. A mid-match browser
   // resize used to clobber WW/WH on scrolling FFA maps (leaving the camera clamped to one screen of
   // a much larger world); setupWorld() recomputes them for those.
-  cv.width=W=Math.round(rw); cv.height=H=Math.round(rh); if(!isBig() && !isBigFFA()){ WW=W; WH=H; } }
+  // A Tall/Huge CUSTOM level is a scrolling world too — collapsing it here left the camera clamped
+  // to one screen of a map the player had just built at three times that.
+  cv.width=W=Math.round(rw); cv.height=H=Math.round(rh); if(!isBig() && !isBigFFA() && !customScrolls()){ WW=W; WH=H; } }
 addEventListener('resize',()=>{ if(running){resize();} });
 
 function startMatch(){
@@ -2312,9 +2916,15 @@ function startMatch(){
     startTournament(pt.size, pt.mode);   // startTournament reads `chosen` for your team
     return;
   }
-  // Team chat runs on scripted teammate replies. Nothing to configure, nothing to sign up for.
+  // The huddle's own controls are the plan the match STARTS with — read synchronously, so pressing
+  // Start always starts a match at once. The CPU teams' opening plan is then requested in the
+  // background, AFTER beginMatchNow has built the real roster and reset the per-match cost guard;
+  // it lands whenever it lands and aiThink picks it up on the next frame after that.
   if(SETTINGS.mode==="teams" && !inNetSession()){
     captureTeamPlan();
+    beginMatchNow();
+    try{ teamAiOpeningPlan(); }catch(e){}   // fire-and-forget: never awaited, never blocks Start
+    return;
   }
   beginMatchNow();
 }
@@ -3307,6 +3917,7 @@ function beginMatchNow(){
   try{ syncTouchControls(); }catch(e){}   // reveal the on-screen pad for a touch device
   running=true; paused=false; hazardT=0;
   window.__elimSeq=0; lastKoFrame=0;   // reset placement/elimination + stalemate timer for the new match
+  try{ teamAiResetMatch(); }catch(e){}  // and the team-AI cost guard: call budget is per match
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
   particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null;
   // BOSS RUSH: all fighters join forces (team 0) and a boss is summoned as the enemy.
@@ -3324,8 +3935,11 @@ function beginMatchNow(){
 }
 
 // ---------- pre-match co-op planning ----------
-// Teammate replies are generated locally by planScriptedReply(). There is deliberately no
-// remote call and no credential input anywhere in this file.
+// The teammate's REPLIES are model-authored — see teamAiChatTurn — and fall back to
+// planScriptedReply whenever the strategy service is unreachable. The OPENER below stays scripted
+// on purpose: it has to appear the instant the panel does, and a threat-ranked suggestion is a
+// better greeting than a spinner. No credential is needed for any of it; the deployed game talks to
+// its own same-origin /api/strategy and the browser never holds a key.
 // Populate the inline Team Strategy & Chat panel (called when Teams mode is selected).
 function refreshTeamChat(){
   let enemies=[], allies=[], you=null;
@@ -3355,9 +3969,24 @@ function refreshTeamChat(){
   enemies.forEach(e=>{ const o=document.createElement('option'); o.value=e.name; o.textContent=e.name; focus.appendChild(o); });
   const prot=document.getElementById('planProtect'); prot.innerHTML='<option value="">— nobody —</option>';
   allies.forEach(a=>{ const o=document.createElement('option'); o.value=a.name; o.textContent=a.name; prot.appendChild(o); });
-  // fresh chat log — the teammate PROACTIVELY suggests a plan based on the enemy lineup
-  const log=document.getElementById('planLog'); log.innerHTML='';
+  // say which difficulty tier is answering, and re-hydrate the Advanced box if one was stored
+  try{ teamAiPaintTier(); }catch(e){}
+  try{ teamAiLoadLocalToken(); }catch(e){}      // async, never awaited — the panel must not wait on storage
+  // fresh chat log — the teammate PROACTIVELY suggests a plan based on the enemy lineup.
+  //
+  // But only when the lineup ACTUALLY changed. refreshTeamChat runs from syncModeUI, which runs
+  // from buildSettings, which runs from buildBoard — and buildBoard runs every time the player
+  // clicks a fighter, and again when the saved profile finishes loading. Wiping unconditionally
+  // meant a conversation with your teammate disappeared the moment you glanced back at the roster,
+  // which mattered little when the replies were three canned strings and matters a great deal now
+  // that they are a real discussion the player is having.
+  const log=document.getElementById('planLog');
   const mate = allies[0] ? allies[0].name : "Team";
+  const lineupSig = [...(you?[you.name]:[]), ...allies.map(a=>a.name), '|', ...enemies.map(e=>e.name)].join(',');
+  if(log.children.length && lineupSig===window.__planLineupSig) return;   // same fight, keep the talk
+  window.__planLineupSig = lineupSig;
+  log.innerHTML='';
+  teamAiSetStatus('');
   if(enemies.length){
     // rank enemies by a rough threat score so we can recommend who to focus first
     const threat=e=>{
@@ -3390,18 +4019,28 @@ function toggleTeamChat(){
 // no-op shims kept so any stray calls don't throw
 function clearPlanTimer(){}
 function addPlanTime(){}
-function planMate(name,text){
+// Returns the appended node so a "thinking…" placeholder can be swapped for the real reply.
+// `text` reaches innerHTML, so every caller passing model- or peer-derived words escapes first.
+function planMate(name,text,opts){
   const log=document.getElementById('planLog');
-  const d=document.createElement('div'); d.className='mate'; d.innerHTML=`<b>${name}:</b> ${text}`;
+  const d=document.createElement('div'); d.className='mate'+((opts&&opts.thinking)?' thinking':'');
+  d.innerHTML=`<b>${esc(name)}:</b> ${text}`;
   log.appendChild(d); log.scrollTop=log.scrollHeight;
+  return d;
 }
 function planMe(text){
   const log=document.getElementById('planLog');
   const d=document.createElement('div'); d.className='me'; d.textContent=text;
   log.appendChild(d); log.scrollTop=log.scrollHeight;
 }
+// The huddle turn. The keyword pass below runs FIRST and synchronously: it is instant, it is what
+// makes "focus Lightning" work with the network unplugged, and it means the controls have already
+// moved by the time the model is asked. The model call then layers a real conversation and a
+// considered plan on top, and may overrule the keywords. Any failure — offline, unconfigured,
+// timeout, garbage — lands on planScriptedReply, which is what shipped before this feature.
 async function planSend(){
   const inp=document.getElementById('planMsg'); const msg=(inp.value||"").trim(); if(!msg) return;
+  if(TEAM_AI.chatBusy) return;                 // one turn at a time; the Send button is disabled too
   planMe(msg); inp.value="";
   const you=fighters.find(f=>f.you)||fighters[0]; const myTeam=you?you.team:0;
   const allies=fighters.filter(f=>f.team===myTeam && !f.you);
@@ -3416,7 +4055,26 @@ async function planSend(){
   if(named){ document.getElementById('planFocus').value=named.name; }
   // Naming an ally with a protect word sets the protect target.
   if(/protect|guard|cover|watch/.test(low)){ const ally=allies.find(a=>low.includes(a.name.toLowerCase())); if(ally) document.getElementById('planProtect').value=ally.name; }
-  planMate(mate, planScriptedReply(low, enemies));
+
+  const pending = planMate(mate, 'thinking…', { thinking:true });
+  TEAM_AI.chatBusy = true;
+  const sendBtn=document.getElementById('planSendBtn'); if(sendBtn) sendBtn.disabled=true;
+  let text, live=false, rejected=[];
+  try{
+    const turn = await teamAiChatTurn(msg, teamAiContext(), myTeam);
+    text = turn.reply; live = true; rejected = turn.rejected||[];
+    if(turn.plan) teamAiWriteHuddle(turn.plan);
+  }catch(e){
+    text = planScriptedReply(low, enemies);
+  }finally{
+    TEAM_AI.chatBusy = false;
+    if(sendBtn) sendBtn.disabled=false;
+  }
+  if(pending && pending.parentNode) pending.parentNode.removeChild(pending);
+  planMate(mate, esc(text));
+  teamAiSetStatus(live
+    ? ('Teammate is thinking for real (' + teamAiTier() + ' tier)' + (rejected.length ? ' · ignored a call it could not make' : '') + '.')
+    : 'Teammate is on built-in tactics right now — the strategy service is unreachable.');
 }
 function setStanceUI(v){ const seg=document.getElementById('planStance'); seg.querySelectorAll('button').forEach(b=>{ b.classList.toggle('on', b.dataset.v===v); }); }
 function planScriptedReply(low, enemies){
@@ -3598,12 +4256,18 @@ function setupWorld(){
       worldZones=[]; spawnZones=[];
       return;
     }
-    WW=W; WH=H; camX=0; camY=0; bases=[];
+    // ---- HAND-BUILT / GENERATED CUSTOM LEVEL ----
+    // The world box comes from the LEVEL's own MAP SIZE, so a map built as Huge plays as Huge —
+    // this branch used to pin WW=W, WH=H unconditionally, which is why the size setting appeared
+    // to do nothing for custom maps however it was set. Coordinates are normalized against this
+    // box (see CUSTOM_LEVEL), so an old level with no size still lands on WW=W, WH=H unchanged.
+    WW=customWorldW(); WH=customWorldH(); camX=0; camY=0; bases=[];
     if(CUSTOM_LEVEL){
-      worldPlats = CUSTOM_LEVEL.plats.map(p=>( p.solid
-        ? ({ x:p.nx*W, y:p.ny*H, w:p.nw*W, h:(p.nh||0.04)*H, solid:true, rot:0 })
-        : ({ x:p.nx*W, y:p.ny*H, w:p.nw*W, h:p.hop?12:16, hop:!!p.hop, rot:p.rot||0 }) ));
-      worldZones = (CUSTOM_LEVEL.zones||[]).map(z=>({ x:z.nx*W, y:z.ny*H, w:z.nw*W, h:z.nh*H, type:z.type, strength:z.strength||1 }));
+      // Platform THICKNESS stays in absolute px (12/16) — a fighter is the same size on a Huge map,
+      // so a ledge that scaled with the arena would read as a wall. Only spans and positions scale.
+      // levelPlatRects is the shared mapping the editor paints from, so the two cannot diverge.
+      worldPlats = levelPlatRects(CUSTOM_LEVEL.plats, WW, WH);
+      worldZones = levelZoneRects(CUSTOM_LEVEL.zones, WW, WH);
     } else {
       worldPlats=platRectsSmall();
       worldZones=[];
@@ -3839,7 +4503,7 @@ function buildFighters(){
       // real match on this level would. A level with no floor otherwise dropped everyone at once.
       if(CUSTOM_LEVEL && CUSTOM_LEVEL.spawns && CUSTOM_LEVEL.spawns.length){
         const sp = CUSTOM_LEVEL.spawns[i % CUSTOM_LEVEL.spawns.length];
-        sx = sp.nx*W; sy = sp.ny*H;
+        sx = sp.nx*WW; sy = sp.ny*WH;      // world box, not screen — a Huge map's markers are off-screen
       }
       if(PENDING_DAILY && i===1){ r = PENDING_DAILY; }   // Daily Match: a fixed opponent for everyone
     const f=makeFighter(r, sx, sy, i);
@@ -3897,7 +4561,7 @@ function buildFighters(){
       sy = groundY()-60;
     } else if(CUSTOM_LEVEL && CUSTOM_LEVEL.spawns && CUSTOM_LEVEL.spawns.length){
       const sp = CUSTOM_LEVEL.spawns[i % CUSTOM_LEVEL.spawns.length];
-      sx = sp.nx*W; sy = sp.ny*H;
+      sx = sp.nx*WW; sy = sp.ny*WH;        // world box, not screen
     } else {
       // spread across the (possibly widened) small arena so fighters don't start in one blob
       sx = WW*(0.08+0.84*i/Math.max(1,N-1));
@@ -4674,6 +5338,10 @@ function step(){
   // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
   if(hazardT % CLUTCH_CHECK_FRAMES === 0){ try{ clutchTick(); }catch(e){} }
+  // Team re-strategy, same shape as clutchTick and for the same reason: a periodic check, never a
+  // per-frame one. teamAiTick is synchronous and returns immediately — when it decides a refresh is
+  // due it fires the request and walks away, and the answer arrives on some later frame's microtask.
+  if(hazardT % TEAM_AI_TICK_FRAMES === 0){ try{ teamAiTick(); }catch(e){} }
   if(TUT.active) tutorialTick();
   try{ observePlaystyle(); }catch(e){}   // Wave 5: watch how the human plays this fighter
   testDpsTick();
@@ -5226,7 +5894,7 @@ const RANGE_PROFILE = {
   gust:{reach:16,dmg:4,kb:5,  shock:"poke", shockDmg:4},   // Fanny (wind)
   debuff:{reach:13,dmg:5,kb:5,shock:"poke", shockDmg:3},   // Golf Ball (92% real 1v1 -> trimmed again)
   freeze:{reach:14,dmg:7,kb:7,shock:"poke", shockDmg:4},   // Gelatin
-  sign:{reach:14,dmg:6,kb:6,  shock:"poke", shockDmg:4},   // Bracelety
+  sign:{reach:14,dmg:8,kb:8,  shock:"poke", shockDmg:4},   // Bracelety (11.8% on 1.13 KOs/game — 2nd-worst output in the roster; her jab was doing nothing)
   dribble:{reach:16,dmg:6,kb:7,shock:"poke",shockDmg:4},   // Basketball
   buynow:{reach:16,dmg:10,kb:9,shock:"poke", shockDmg:5},   // Yellow Face (buffed)
   // flyer: extended reach, dangerous airborne
@@ -5457,7 +6125,7 @@ const SMASHES = {
   // ---- Barf Bag (barf/splash) — Toxic Wave: a big lobbed poison glob that splatters ----
   barf(f,c){ f.flash=12; spawnProj(f,{vx:f.face*8,vy:-8,grav:true,bounce:true,dmg:11+c*9,kb:7+c*4,r:13,color:'#8a9c3a',life:120,poison:true});  },
   splash(f,c){ f.flash=12; const R=70+c*40;   // Barf Bag: erupt acid in a pool around her, corroding nearby foes
-    for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<R){ applyHit(t,10+c*8,Math.sign(t.x-f.x||1)*(5+c*3),-6,f); t.burn=Math.max(t.burn,120);} }
+    for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<R){ applyHit(t,10+c*8,Math.sign(t.x-f.x||1)*(9+c*4),-8,f); t.burn=Math.max(t.burn,120);} }   // kb 8 -> 13: same sub-par-finisher problem, now the roster's worst at 9.1%
     projectiles.push({owner:f.idx,ownerObj:f,x:f.x,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:3,kb:1,r:R*0.8,color:'#b8c04b',life:200,trap:true,poison:true,slow:true});
     for(let i=0;i<16;i++) puff(f.x+Math.random()*R-R/2,feetY(f),'#c9c04b',5);  },
   // ---- Ruby (beam) — Prism Burst: a wide sweeping laser fan ----
@@ -5476,7 +6144,11 @@ const SMASHES = {
     hitCircle(f,f.x,f.y+f.r,f.r+44,16+c*10,16+c*10,f.face*(6+c*4),-11-c*3);
     for(let i=0;i<12;i++) puff(f.x,f.y+f.r,'#f2a6e8',5);  },
   // ---- Leafy (dash) — Shadow Blitz: a longer, harder Sharp Shadow ----
-  dash(f,c){ f.vx=f.face*26; f._dashing=22; f.invuln=28; f._dashHits=new Set(); f._dashDmg=16+Math.round(c*10); f.flash=12;
+  // Leafy — 28 frames of INVULNERABILITY stapled to a 26-speed dash made this a safe approach as
+  // much as an attack, and once every stun could trigger it she became the roster's top outlier
+  // (39.1%). The blitz keeps its speed and its damage lead; the free i-frames are halved so it has
+  // to be aimed rather than thrown out as an escape.
+  dash(f,c){ f.vx=f.face*26; f._dashing=22; f.invuln=14; f._dashHits=new Set(); f._dashDmg=14+Math.round(c*8); f.flash=12;
     for(let i=0;i<12;i++) puff(f.x-f.face*i*6,f.y,'#8ed24b',5);  },
   // ---- Needle (counter) — Riposte Stance: long, powerful counter window ----
   counter(f,c){ f.countering=40+Math.round(c*20); f.flash=14; f.armor=20; for(let i=0;i<10;i++) puff(f.x,f.y-8,'#d94f6a',5);  },
@@ -5485,7 +6157,10 @@ const SMASHES = {
     for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+60){ applyHit(t,6+c*5,Math.sign(t.x-f.x||1)*7,-5,f);} }
     for(let i=0;i<12;i++) puff(f.x,f.y,'#e8e8e8',5);  },
   // ---- Bell (ring) — Resonance: a huge stunning shockwave ring ----
-  ring(f,c){ f.flash=14; const R=100+c*50; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<R){ applyHit(t,10+c*8,Math.sign(t.x-f.x||1)*(6+c*4),-7,f); t.hitstun=Math.max(t.hitstun,28);} }
+  // Bell — a 150-radius ring that also applied 28 frames of hitstun to everyone in it: the stun
+  // outlasted the recovery, so it chained into itself across a whole FFA. Radius and stun trimmed
+  // (36.3%); it is still the widest lockdown tool in the game.
+  ring(f,c){ f.flash=14; const R=90+c*35; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<R){ applyHit(t,10+c*8,Math.sign(t.x-f.x||1)*(6+c*4),-7,f); t.hitstun=Math.max(t.hitstun,18);} }
     for(let i=0;i<20;i++){ const a=i/20*Math.PI*2; puff(f.x+Math.cos(a)*R*0.5,f.y+Math.sin(a)*R*0.5,'#f2c84b',5);}  },
   // ---- Book (define) — Hardcover Slam: heavy overhead that stacks defined debuff ----
   define(f,c){ f.flash=12; const cx=f.x+f.face*30; hitCircle(f,cx,f.y,f.r+34,13+c*9,13+c*9,f.face*(10+c*4),-8);
@@ -5500,31 +6175,47 @@ const SMASHES = {
   // ---- Bracelety (sign) — Cheer Boomerang: a big empowering boomerang ----
   sign(f,c){ f.flash=12; spawnProj(f,{vx:f.face*11,vy:0,grav:false,boomerang:true,ownerFace:f.face,dmg:12+c*9,kb:8+c*4,r:11,color:'#6fb7ff',life:90,boomCurve:0.22,homeX:f.x});  },
   // ---- Grassy (mower) — Overdrive Mow: long lawnmower charge ----
-  mower(f,c){ f.flash=12; f.vx=f.face*(12+c*5); f.armor=20+comebackFlavor(f,"armor"); hitCircle(f,f.x+f.face*30,f.y,f.r+30,14+c*10,14+c*10,f.face*(11+c*4),-8);
+  // Grassy — the other real top outlier (34.7%). A charging hitbox that also handed her up to 50
+  // armour meant she won the trade whether or not she read it right. Damage and knockback trimmed
+  // toward the roster norm; the armour and the charge (her whole joke-fighter identity) are intact.
+  mower(f,c){ f.flash=12; f.vx=f.face*(12+c*5); f.armor=20+comebackFlavor(f,"armor"); hitCircle(f,f.x+f.face*30,f.y,f.r+30,12+c*8,12+c*8,f.face*(9+c*3),-8);
     for(let i=0;i<12;i++) puff(f.x+f.face*24,f.y+10,'#7bc043',5);  },
   // ---- Bubble (float) — Bubble Trap: a big floaty bubble that carries foes up ----
   float(f,c){ f.flash=12; let tgt=null,best=140; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} }
     if(tgt){ applyHit(tgt,11+c*8,0,-16-c*5,f); tgt.cloud=Math.max(tgt.cloud,120); for(let i=0;i<12;i++) puff(tgt.x,tgt.y,'#bfe8ff',5); }
      },
   // ---- next 10 ----
-  zap(f,c){ f.flash=12; let src=f,hitset=new Set([f.idx]); for(let n=0;n<4;n++){ let tgt=null,best=300; for(const t of fighters){ if(t.dead||hitset.has(t.idx)||t.team===f.team)continue; const d=Math.hypot(t.x-src.x,t.y-src.y); if(d<best){best=d;tgt=t;} } if(!tgt)break; applyHit(tgt,10+c*7-n*1.2,Math.sign(tgt.x-src.x||f.face)*(7+c*3),-6,f); for(let i=0;i<6;i++){const tt=i/6;puff(src.x+(tgt.x-src.x)*tt,src.y+(tgt.y-src.y)*tt,'#f2e84b',3);} hitset.add(tgt.idx); src=tgt; }  },
+  // Lightning — the roster's one real TOP outlier (36.2%, above the 32.5% a perfectly balanced
+  // roster reaches at this sample size). A 4-target chain that needed no aim and no spacing hit the
+  // whole FFA for free. Trimmed to 3 hops and lower damage; it is still the widest smash in the game.
+  zap(f,c){ f.flash=12; let src=f,hitset=new Set([f.idx]); for(let n=0;n<3;n++){ let tgt=null,best=300; for(const t of fighters){ if(t.dead||hitset.has(t.idx)||t.team===f.team)continue; const d=Math.hypot(t.x-src.x,t.y-src.y); if(d<best){best=d;tgt=t;} } if(!tgt)break; applyHit(tgt,8+c*5-n*1.2,Math.sign(tgt.x-src.x||f.face)*(6+c*3),-6,f); for(let i=0;i<6;i++){const tt=i/6;puff(src.x+(tgt.x-src.x)*tt,src.y+(tgt.y-src.y)*tt,'#f2e84b',3);} hitset.add(tgt.idx); src=tgt; }  },
   spark(f,c){ f.flash=12; for(const dy of [-5,-2.5,0,2.5]) spawnProj(f,{vx:f.face*(9+c*3),vy:dy,grav:true,dmg:9+c*6,kb:6+c*3,r:9,color:'#e04b8a',burn:true,life:70});  },
   saw(f,c){ f.flash=12; f.vx=f.face*(9+c*4); f._sawing=Math.max(f._sawing||0,40+Math.round(c*20)); f.armor=20;  },
   salsa(f,c){ f.flash=12; for(const dx of [5,7,9]) spawnProj(f,{vx:f.face*dx,vy:-6,grav:true,dmg:8+c*6,kb:5+c*3,r:9,color:'#f2c84b',life:80,landsPuddle:true});  },
   spike(f,c){ f.flash=12; for(const dy of [-2,-1,0,1,2]) spawnProj(f,{vx:f.face*(13+c*3),vy:dy*0.6,grav:false,van:true,dmg:6+c*5,kb:0,r:6,color:'#c0c0c0',life:34});  },
   sucker(f,c){ f.flash=12; spawnProj(f,{vx:f.face*(9+c*2),vy:0,grav:false,dmg:10+c*7,kb:4,r:11,color:'#c04be0',life:60,root:true});  },
   static(f,c){ f.flash=14; const R=90+c*50; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<R){ applyHit(t,12+c*8,Math.sign(t.x-f.x||1)*(6+c*3),-6,f); t.hitstun=Math.max(t.hitstun,40); } } for(let i=0;i<22;i++){const a=i/22*Math.PI*2;puff(f.x+Math.cos(a)*R*0.5,f.y+Math.sin(a)*R*0.5,'#8fd0ff',5);}  },
-  hack(f,c){ f.flash=12; spawnProj(f,{vx:f.face*(11+c*3),vy:0,grav:false,dmg:11+c*7,kb:5+c*3,r:9,color:'#4a4a4a',life:44,reverseCtrl:true});  },
-  fluff(f,c){ f.flash=12; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+90){ applyHit(t,9+c*7,Math.sign(t.x-f.x||1)*(4+c*2),-14-c*4,f); } } f.vy=Math.min(f.vy,-6); for(let i=0;i<14;i++) puff(f.x+(Math.random()*120-60),f.y,'#f2e0d0',5);  },
-  cool(f,c){ f.flash=14; f.armor=Math.max(f.armor,44+Math.round(c*28)); f._empower=1; hitCircle(f,f.x+f.face*28,f.y,f.r+30,11+c*8,11+c*8,f.face*(9+c*4),-7); for(let i=0;i<12;i++) puff(f.x,f.y-8,'#e8e8e8',5);  },
+  // Remote — the control-scramble is disruption, not damage; this bolt is his only kill option, so
+  // it carries finisher knockback now (11.8% win rate on a kit that could stun but never close).
+  hack(f,c){ f.flash=12; spawnProj(f,{vx:f.face*(11+c*3),vy:0,grav:false,dmg:11+c*7,kb:9+c*4,r:9,color:'#4a4a4a',life:44,reverseCtrl:true});  },
+  // Pillow — popped foes straight up (kb 6 sideways, big vertical) which juggles but rarely kills:
+  // the ceiling blastzone is much further out than the side walls. Keeps the pop, gains the sideways
+  // carry it needs to actually finish a stock.
+  fluff(f,c){ f.flash=12; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+90){ applyHit(t,9+c*7,Math.sign(t.x-f.x||1)*(8+c*4),-13-c*3,f); } } f.vy=Math.min(f.vy,-6); for(let i=0;i<14;i++) puff(f.x+(Math.random()*120-60),f.y,'#f2e0d0',5);  },
+  // Loser — up to 72 armour (dmg x0.6, knockback x0.4) handed out alongside a damaging hit AND an
+  // empowered follow-up. He gained +7.5 points the moment the smash became reachable; the armour is
+  // trimmed to a normal defensive window so "Stay Cool" is a read, not a stat check.
+  cool(f,c){ f.flash=14; f.armor=Math.max(f.armor,30+Math.round(c*14)); f._empower=1; hitCircle(f,f.x+f.face*28,f.y,f.r+30,11+c*8,11+c*8,f.face*(9+c*4),-7); for(let i=0;i<12;i++) puff(f.x,f.y-8,'#e8e8e8',5);  },
 
   kick(f){ f.cloud=720; f.flash=12; 
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*40-20),f.y+(Math.random()*30-15),'#dfefff',6); },
   debuff(f){ f.curse=190; f.flash=12; f.spCd=150; 
     for(let i=0;i<16;i++) puff(f.x+(Math.random()*50-25),f.y+(Math.random()*40-20),i%2?'#8b5cf6':'#4a2a6a',6); },
   // Firey — Incinerator Blast: burning wide smash that ignites
+  // Firey — the game's default starter was 4th from bottom on 1.43 KOs/game: burn built percent
+  // fast but nothing in the kit launched (smash capped at kb 9 where finishers sit at 12-14).
   ember(f,c){ f.flash=12; const cx=f.x+f.face*30;
-    hitCircle(f,cx,f.y,f.r+40,10+c*10,10+c*10,f.face*(4+c*5),-6);
+    hitCircle(f,cx,f.y,f.r+40,10+c*10,10+c*10,f.face*(8+c*5),-8);
     for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.hypot(t.x-cx,t.y-f.y)<f.r+44) t.burn=Math.max(t.burn,120); }
     for(let i=0;i<12;i++) puff(cx,f.y,i%2?'#f0521f':'#ffd23f',6);  },
   // Snowball — Ground Pound: buries grounded foes, quake radius
@@ -5568,23 +6259,43 @@ const SMASHES = {
   fry(f,c){ f.flash=12; const cx=f.x+f.face*24;
     for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<f.r+50){ applyHit(t,8+c*8,f.face*(3+c*3),-6,f); t.burn=Math.max(t.burn,90); } }
     for(let i=0;i<12;i++) puff(cx+(Math.random()*70-35),f.y,i%2?'#e04b3a':'#f2c84b',5);  },
-  // Gelatin — Freeze Burst: radial freeze that locks foes above 40%
+  // Gelatin — ICE BREAKER: shatter the freeze she set up, and launch through it.
+  //
+  // This smash used to APPLY freeze on top of its own knockback, which made it unable to kill by
+  // construction: a frozen fighter has `f.vx*=0.6` applied EVERY frame (see the fighter loop), so
+  // 40% of the launch is eaten per frame and the victim is standing still again within ~10 frames.
+  // Gelatin's signature status was cancelling her only finisher, and she posted the worst KO
+  // output in the roster (0.83 KOs/game vs a 1.73 mean) while still landing plenty of hits.
+  //
+  // Freeze is now unambiguously the SETUP (her special and her freeze projectiles still apply it)
+  // and this is the CASH-OUT: it cracks the ice first, then launches at finisher-grade knockback.
+  // That is also the loop applyHit already rewards her for — she deals 1.25x to frozen targets.
   freeze(f,c){ f.flash=12;
-    for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+70){ applyHit(t,6+c*6,Math.sign(t.x-f.x||1)*(3+c*2),-5,f); if(t.pct>10) applyFreeze(t, freezeDuration(t.pct,60) + comebackFlavor(f,"freeze")); } }
+    for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+70){
+      t.frozen=0; t._freezeLock=0;                       // SHATTER first, so the launch actually carries
+      applyHit(t,10+c*8,Math.sign(t.x-f.x||1)*(8+c*4),-8,f);
+      for(let i=0;i<5;i++) puff(t.x,t.y-6,'#cdeeff',4); } }
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*120-60),f.y+(Math.random()*40-20),'#9ad24b',5);  },
   // Golf Ball handled above via debuff key
   // ---- final 12 smashes ----
   switch(f,c){ f.flash=12; f._switchOn=true; const cx=f.x+f.face*40; const rng=64+c*40;
     for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<rng){ applyHit(t,12+c*8,f.face*(8+c*4),-9,f);} }
     for(let i=0;i<12;i++) puff(cx,f.y,'#fff29a',5);  },
-  ink(f,c){ f.flash=12; const cx=f.x+f.face*40; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<80){ applyHit(t,10+c*8,f.face*(6+c*3),-5,f); t.slowed=Math.max(t.slowed||0,150); t.weakened=Math.max(t.weakened||0,240);} } for(let i=0;i<14;i++) puff(cx+Math.random()*40-20,f.y+Math.random()*40-20,'#4bb0c0',5);  },
+  // Marker — every part of his kit was a debuff (slow, weaken) and nothing could close: worst win
+  // rate AND worst-but-one KO output in the roster (7.0%, 0.98 KOs/game). The debuffs stay; the
+  // smash is now an actual finisher at the roster's normal charged knockback.
+  ink(f,c){ f.flash=12; const cx=f.x+f.face*40; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<80){ applyHit(t,10+c*8,f.face*(9+c*4),-8,f); t.slowed=Math.max(t.slowed||0,150); t.weakened=Math.max(t.weakened||0,240);} } for(let i=0;i<14;i++) puff(cx+Math.random()*40-20,f.y+Math.random()*40-20,'#4bb0c0',5);  },
   payday(f,c){ f.flash=12; for(let i=0;i<3;i++) spawnProj(f,{vx:f.face*(9+i*2),vy:-4+i*2,grav:true,bounce:true,dmg:9+c*7,kb:7+c*4,r:9,color:'#ffd23f',life:100,payday:true,maxBounces:3});  },
   thorn(f,c){ f.flash=12; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<320){ const dir=Math.sign(f.x-t.x)||1; t.vx=dir*13; t.vy=-4; if(t.invuln<=0) applyHit(t,11+c*8,dir*(4+c*2),-6,f);} } for(let i=0;i<12;i++) puff(f.x+f.face*i*10,f.y,'#e0384b',4);  },
   fraidy(f,c){ f.flash=12; f.vx=-f.face*24; f.invuln=Math.max(f.invuln,16); for(let i=0;i<5;i++) spawnProj(f,{vx:f.face*(3-i),vy:-3,grav:true,dmg:8+c*6,kb:5+c*3,r:8,color:'#e8c84b',life:80});  },
   paste(f,c){ f.flash=12; for(let i=0;i<3;i++) projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*(20+i*40),y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6+c*4,kb:2,r:14,color:'#f0f0f0',life:280,trap:true,root:true,arm:12});  },
   rant(f,c){ f.flash=8; const cx=f.x+f.face*30; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<52){ applyHit(t,14+c*10,f.face*(7+c*4),-6,f);} } for(let i=0;i<10;i++) puff(cx+Math.random()*30-15,f.y+Math.random()*30-15,'#f2a03a',4);  },
   seriously(f,c){ f.flash=14; const cx=f.x; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; const d=Math.hypot(t.x-cx,t.y-f.y); if(d<160){ applyHit(t,16+c*11,Math.sign(t.x-cx||1)*(8+c*5),-10-c*3,f);} } for(let i=0;i<20;i++) puff(cx+Math.random()*180-90,feetY(f),'#4a90c0',6);  },
-  emberjr(f,c){ f.flash=12; const cx=f.x+f.face*28; hitCircle(f,cx,f.y,f.r+34,10+c*8,10+c*8,f.face*(5+c*4),-6); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.hypot(t.x-cx,t.y-f.y)<f.r+38) t.burn=Math.max(t.burn,100);} for(let i=0;i<10;i++) puff(cx,f.y,i%2?'#f0803a':'#ffd23f',5);  },
+  // Firey Jr. — the briefed target. His special is a fast pea-shooter (kb 6) and COMEBACK hands him
+  // MORE of those shots as he loses, so he piled on percent and still could not convert: his smash
+  // was the weakest finisher in the roster at kb 9 / vy -6. This is now the cash-out for all that
+  // chip damage, at the same grade as the rest of the roster's charged smashes.
+  emberjr(f,c){ f.flash=12; const cx=f.x+f.face*28; hitCircle(f,cx,f.y,f.r+34,10+c*8,10+c*8,f.face*(9+c*5),-9); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.hypot(t.x-cx,t.y-f.y)<f.r+38) t.burn=Math.max(t.burn,100);} for(let i=0;i<10;i++) puff(cx,f.y,i%2?'#f0803a':'#ffd23f',5);  },
   photo(f,c){ f.flash=12; f.healing=Math.max(f.healing||0,120); f.pct=Math.max(0,f.pct-(8+c*6)); const cx=f.x+f.face*40; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<70){ applyHit(t,12+c*8,f.face*(7+c*3),-7,f);} } for(let i=0;i<12;i++) puff(f.x,f.y-8,'#4b9c5a',5);  },
   measure(f,c){ f.flash=14; const y=f.y-4, x0=f.x+f.face*10, x1=f.x+f.face*900; const lo=Math.min(x0,x1),hi=Math.max(x0,x1); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0||t.team===f.team)continue; if(t.x>lo-12&&t.x<hi+12&&Math.abs(t.y-y)<t.r+10){ applyHit(t,13+c*9,f.face*(7+c*4),-5,f);} } beams.push({x0,y,x1,face:f.face,color:'#d0d0d0',life:12,owner:f.idx});  },
   slam(f,c){ f.flash=12; f.vx=f.face*16; f.armor=Math.max(f.armor,40); const cx=f.x+f.face*34; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<60){ applyHit(t,16+c*10,f.face*(9+c*4),-9,f); t.hitstun=Math.max(t.hitstun,40);} } for(let i=0;i<12;i++) puff(cx,feetY(f),'#9a9a9a',5);  },
@@ -6355,19 +7066,20 @@ function eliminate(f){
   }
   // Test mode: nobody is ever KO'd for good — just respawn at center
   if(TESTMODE.active){
-    f.x=W*0.5; f.y=-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.cloud=0; f.frozen=0;
+    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.cloud=0; f.frozen=0;
     puff(W*0.5, 40, f.color, 12);
     return;
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=W*0.5; f.y=-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.cloud=0; f.frozen=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.cloud=0; f.frozen=0;
     for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6); banner("YOYLEBERRY REFORM!", 900);
     return;
   }
   // Knocked past a blast zone = KO = lose one stock.
   f.stocks--;
   lastKoFrame = hazardT;                              // reset the stalemate-breaker timer on any KO
+  try{ teamAiKoSignal(); }catch(e){}                  // a KO is worth re-planning for — see teamAiTick
   f._falls = (f._falls||0)+1;                       // universal: stocks this fighter has lost
   if(killer && killer!==f && !killer.dead){ killer._kos=(killer._kos||0)+1; }  // universal: KOs scored
   // Comeback scaling: credit the killer with a KO, and the victim with a death (only for designated fighters)
@@ -6417,7 +7129,12 @@ function eliminate(f){
     }
     if(!best) best={x:b.spawnX, y:b.spawnY};
     f.x=best.x; f.y=best.y-40;
-  } else { f.x=W*0.5; f.y=-40; }
+  } else {
+    // Screen centre, just above the top of the CURRENT VIEW. camX/camY are 0 on every single-screen
+    // arena, so this is the old behaviour there exactly — and on a Tall/Huge custom map it drops
+    // you back in where you can see, instead of at the roof of a world three screens tall.
+    f.x=camX+W*0.5; f.y=camY-40;
+  }
   f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.cloud=0;
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
@@ -7224,6 +7941,11 @@ const AI_CLASS = {
   // new roster (v23+)
   "Aerial floater":"evade","Immobile tank":"heavy","Rooted heavy":"heavy","Fragile slipper":"evade","At-stake bruiser":"brawl","Roller":"rush",
 };
+// Smashes that grant a STANCE OR SELF-BUFF instead of swinging a hitbox. They are excluded from
+// the opportunistic smash commitment below: charging one because the foe is stunned trades a real
+// punish for a buff you could have taken at any time. (Teardrop's cloud, Golf Ball's curse aura,
+// Needle's riposte stance — the last of which the AI already times properly off the foe's attack.)
+const BUFF_SMASHES = new Set(["kick","debuff","counter"]);
 function aiClass(f){
   if(f._aiClass) return f._aiClass;
   const a = f.arch || (ROSTER.find(r=>r.name===f.name)?.arch) || "";
@@ -7571,8 +8293,11 @@ function aiThink(f){
   // The higher the %, the earlier and harder the fighter backs off. This is what stops
   // e.g. a brawler from charging in at 145% and getting launched.
   const killPct = 100 + (f.w-70)*0.6;          // heavier = survives longer before it's "danger"
-  const danger = f.pct > Math.max(85, killPct*0.85);
-  const scared = f.pct > Math.max(110, killPct*1.05);   // very high: full retreat
+  // TEAM PLAN read: riskTolerance shifts where "danger" starts (0 = bail early, 1 = stay in it).
+  // planRiskScale returns exactly 1 when the team has no plan field, so this is a no-op by default.
+  const riskScale = planRiskScale(f);
+  const danger = f.pct > Math.max(85, killPct*0.85)*riskScale;
+  const scared = f.pct > Math.max(110, killPct*1.05)*riskScale;   // very high: full retreat
   let retreatDir = 0;
   if(danger){
     // find the nearest live threat and move away from it, toward stage center / a safe perch
@@ -7747,8 +8472,27 @@ function aiThink(f){
       }
       else if(dist<idealRange+120 && f.atkCd<=0 && rn<prof.poke){ inp.attack=true; inp.down=true; }
     }
-    // heavy/brawler smash commitment when target is locked down
-    if((cls==="heavy"||cls==="brawl") && inMelee && f.smashHold<=0 && !f._aiCharging && (t.hitstun>12||t.frozen>0) && rn<0.25){ f._aiCharging=54; }
+    // SMASH COMMITMENT when the target is locked down.
+    //
+    // This used to read (cls==="heavy"||cls==="brawl"), which silently denied 46 of the 59
+    // fighters the biggest KO tool in the game: no zoner, trapper, rushdown, grappler or evasive
+    // ever charged a smash, even standing over a stunned foe. For a fighter whose SPECIAL is pure
+    // utility — Marker's slow, Remote's control-scramble, Gelatin's freeze, Pillow's juggle-pop —
+    // the smash IS the only finisher, so the archetype gate left them with no path to a kill at
+    // all. That is what the measured KO output showed: Marker 0.98 and Gelatin 0.83 KOs/game
+    // against a roster mean of 1.73.
+    //
+    // The gate that actually matters is the OPPORTUNITY — the target being stunned or frozen,
+    // which is already checked here — not the archetype. Same 0.25 roll, same 54-frame commitment,
+    // so it stays a deliberate read rather than a habit; charging does not block movement or jabs.
+    //
+    // …but ONLY for smashes that are actually a punish. A few characters' smash is a pure SELF-BUFF
+    // with no hitbox at all, and "the target is stunned" is a meaningless cue for those — you buff
+    // on your own schedule, and you counter when the opponent COMMITS (which the AI already reads
+    // separately off t.atkCd). Letting the opportunity gate drive them was measured, not guessed:
+    // it handed Teardrop a 12-SECOND -40% damage-and-knockback cloud refreshable on every stun,
+    // and he went 28.3% -> 49.3%, the only fighter to break the 45% bar in this pass.
+    if(inMelee && f.smashHold<=0 && !f._aiCharging && !BUFF_SMASHES.has(sp) && (t.hitstun>12||t.frozen>0) && rn<0.25){ f._aiCharging=54; }
   }
 
   // === DEFENSE / POSITIONING (skill-scaled) ===
@@ -7768,6 +8512,12 @@ function aiThink(f){
 // shared tail: difficulty handicap + smash-hold commitment + dropper restraint
 function finishAI(f,inp,sp){
   if(f._aiCharging>0){ inp.smash=true; f._aiCharging--; }
+  // TEAM PLAN read: specialUsage decides how freely this fighter spends its special. The `&&` chain
+  // short-circuits before Math.random() on the default 'normal', so a planless match consumes the
+  // exact same random sequence it always did.
+  const _su = planSpecialUsage(f);
+  if(_su==='hoard' && inp.special && Math.random()<0.5) inp.special=false;
+  else if(_su==='spam' && !inp.special && f.spCd<=0 && Math.random()<0.25) inp.special=true;
   const DROPPERS=["anvil","van","flip","pierce"];
   if(DROPPERS.includes(sp)){
     if(inp.smash && Math.random()<0.6) inp.smash=false;
@@ -7956,27 +8706,14 @@ function draw(){
     for(const z of worldZones){ ctx.globalAlpha=0.30; ctx.fillStyle=zcol[z.type]||"#c9a34b"; ctx.fillRect(z.x,z.y,z.w,z.h);
       ctx.globalAlpha=0.9; ctx.strokeStyle=zcol[z.type]||"#c9a34b"; ctx.setLineDash([8,5]); ctx.lineWidth=2; ctx.strokeRect(z.x,z.y,z.w,z.h); ctx.setLineDash([]); ctx.globalAlpha=1; }
   }
-  for(const p of worldPlats){
-    ctx.save();
-    if(p.rot){ ctx.translate(p.x+p.w/2, p.y+p.h/2); ctx.rotate(p.rot*Math.PI/180); ctx.translate(-(p.x+p.w/2), -(p.y+p.h/2)); }
-    if(p.solid){
-      // SOLID block — stone slab with a bevel, visibly different from thin one-way ledges
-      ctx.fillStyle="#6b6f78"; ctx.fillRect(p.x,p.y,p.w,p.h);
-      ctx.fillStyle="#8b9099"; ctx.fillRect(p.x,p.y,p.w,Math.min(6,p.h*0.3));           // top highlight
-      ctx.fillStyle="#4a4e56"; ctx.fillRect(p.x,p.y+p.h-Math.min(6,p.h*0.3),p.w,Math.min(6,p.h*0.3)); // bottom shade
-      ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.strokeRect(p.x,p.y,p.w,p.h);
-      // brick seams so it reads as impassable masonry
-      ctx.strokeStyle="#00000033"; ctx.lineWidth=1;
-      for(let bx=p.x+24; bx<p.x+p.w-6; bx+=32){ ctx.beginPath(); ctx.moveTo(bx,p.y+3); ctx.lineTo(bx,p.y+p.h-3); ctx.stroke(); }
-      ctx.restore(); continue;
-    }
-    ctx.fillStyle=stage.hazard==='yoyle'?"#e8eef2":"#8a5a34";
-    if(stage.id==='goiky'||stage.id==='custom') ctx.fillStyle=p.hop?"#d9a441":"#6aa838";
-    ctx.fillRect(p.x,p.y,p.w,p.h);
-    if(isBig() && p.floor!=null){ ctx.fillStyle="#00000022"; ctx.fillRect(p.x,p.y+p.h,p.w,10); }
-    ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.strokeRect(p.x,p.y,p.w,p.h);
-    ctx.restore();
+  // A custom level's SCENERY, behind the geometry: placed in the editor, drawn here by the very
+  // same painter the editor canvas uses. Decorations never touch worldPlats — nothing collides.
+  if(CUSTOM_LEVEL && CUSTOM_LEVEL.deco && CUSTOM_LEVEL.deco.length){
+    paintDecoList(ctx, CUSTOM_LEVEL.deco, WW, WH, hazardT);
   }
+  const platStyle = { yoyle: stage.hazard==='yoyle',
+                      leafy: (stage.id==='goiky'||stage.id==='custom'), shadow: isBig() };
+  for(const p of worldPlats) paintPlat(ctx, p, platStyle);
 
   // spawn zones (big FFA): safe islands + claimable points
   if(isBigFFA() && spawnZones.length){
@@ -11159,6 +11896,173 @@ function testDpsText(){
   return "DMG "+Math.round(TESTMODE.dpsDmg)+"% · "+ (TESTMODE.dpsDmg/secs).toFixed(1) +" %/s";
 }
 
+
+// ============================================================
+//  LEVEL GEOMETRY + DECORATIONS  (shared by the editor and the match)
+// ============================================================
+// The ONE place a stored level's normalized geometry becomes rectangles. setupWorld() builds the
+// match from it and the editor paints its canvas from it, so the editor cannot drift from what
+// the match constructs — they are the same arithmetic against the same world box.
+function levelPlatRects(plats, ww, wh){
+  return (plats||[]).map(p=>( p.solid
+    ? ({ x:p.nx*ww, y:p.ny*wh, w:p.nw*ww, h:(p.nh||0.04)*wh, solid:true, rot:0 })
+    : ({ x:p.nx*ww, y:p.ny*wh, w:p.nw*ww, h:p.hop?12:16, hop:!!p.hop, rot:p.rot||0 }) ));
+}
+function levelZoneRects(zones, ww, wh){
+  return (zones||[]).map(z=>({ x:z.nx*ww, y:z.ny*wh, w:z.nw*ww, h:z.nh*wh, type:z.type, strength:z.strength||1 }));
+}
+
+// ---- DECORATIONS ------------------------------------------------------------------------------
+// A decoration NEVER enters worldPlats. Nothing collides with it, stands on it, or is stopped by
+// it — that is the whole contract, and it is what lets a builder dress a stage without changing
+// one thing about how it plays.
+//
+// Stored as {k, nx, ny, s, flip, n}: the same normalized-against-the-world-box coordinates as
+// platforms, with ny at the prop's BASE (its feet), because scenery is placed ON a surface rather
+// than centred in the air. `n` names the fighter for a cameo, so a saved level always brings the
+// same crowd back.
+//
+// Every kind is painted by paintDeco(), which the editor canvas and draw() BOTH call. One painter
+// means a map cannot look one way while you build it and another way when you play it.
+const DECO_TYPES = {
+  tree:    { label:"Tree",    size:110 },
+  bush:    { label:"Bush",    size:56  },
+  rock:    { label:"Rock",    size:48  },
+  cloud:   { label:"Cloud",   size:96  },
+  banner:  { label:"Banner",  size:86  },
+  torch:   { label:"Torch",   size:64  },
+  balloon: { label:"Balloon", size:60  },
+  crowd:   { label:"Crowd",   size:52  },
+  cameo:   { label:"Cameo",   size:84  },
+};
+const DECO_KEYS = Object.keys(DECO_TYPES);
+// The prop's on-screen box, in world px. Used for painting and for the editor's hit-test, and for
+// nothing else — a decoration has no physics box because it has no physics.
+function decoBox(d, ww, wh){
+  const t = DECO_TYPES[d.k] || DECO_TYPES.rock;
+  const s = t.size * (d.s || 1);
+  return { x:(d.nx||0)*ww, y:(d.ny||0)*wh, s };
+}
+// A stable per-prop phase, so two trees side by side don't sway in lockstep.
+function decoSeed(d){ return ((d.nx||0)*7919 + (d.ny||0)*104729) % 6.283; }
+
+// Paint one decoration at (x,y) = its BASE. `t` is a frame counter (hazardT in a match, a wall
+// clock in the editor) — the few animated props read it, the rest ignore it.
+function paintDeco(g, d, ww, wh, t){
+  const b = decoBox(d, ww, wh), S = b.s, k = d.k;
+  const ph = decoSeed(d);
+  t = t || 0;
+  g.save();
+  g.translate(b.x, b.y);
+  if(d.flip) g.scale(-1,1);
+  g.lineWidth = Math.max(2, S*0.045);
+  g.strokeStyle = "#1c1c1c";
+  if(k==="tree"){
+    g.fillStyle="#7a4a24"; g.beginPath(); g.rect(-S*0.08, -S*0.46, S*0.16, S*0.46); g.fill(); g.stroke();
+    g.fillStyle="#6aa838";
+    for(const c of [[0,-0.72,0.30],[-0.22,-0.56,0.24],[0.22,-0.56,0.24]]){
+      g.beginPath(); g.arc(c[0]*S, c[1]*S, c[2]*S, 0, 7); g.fill(); g.stroke();
+    }
+    g.fillStyle="#8ed24b"; g.beginPath(); g.arc(-S*0.10, -S*0.78, S*0.10, 0, 7); g.fill();
+  } else if(k==="bush"){
+    g.fillStyle="#5e9a33";
+    g.beginPath(); g.ellipse(-S*0.22,-S*0.16,S*0.26,S*0.20,0,0,7); g.fill(); g.stroke();
+    g.beginPath(); g.ellipse( S*0.20,-S*0.16,S*0.24,S*0.18,0,0,7); g.fill(); g.stroke();
+    g.fillStyle="#6aa838"; g.beginPath(); g.ellipse(0,-S*0.30,S*0.30,S*0.24,0,0,7); g.fill(); g.stroke();
+  } else if(k==="rock"){
+    g.fillStyle="#b0aaa4";
+    g.beginPath();
+    g.moveTo(-S*0.44,0); g.lineTo(-S*0.34,-S*0.34); g.lineTo(-S*0.04,-S*0.46);
+    g.lineTo(S*0.30,-S*0.32); g.lineTo(S*0.44,0); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle="#8c8c88"; g.beginPath();
+    g.moveTo(S*0.06,-S*0.42); g.lineTo(S*0.30,-S*0.32); g.lineTo(S*0.44,0); g.lineTo(S*0.06,0);
+    g.closePath(); g.fill();
+  } else if(k==="cloud"){
+    const drift = Math.sin(t*0.006 + ph)*S*0.06;
+    g.translate(drift, 0);
+    g.fillStyle="#ffffffee";
+    g.beginPath(); g.ellipse(-S*0.24,-S*0.22,S*0.26,S*0.16,0,0,7);
+    g.ellipse( S*0.22,-S*0.20,S*0.24,S*0.15,0,0,7);
+    g.ellipse(0,-S*0.32,S*0.32,S*0.22,0,0,7); g.fill();
+  } else if(k==="banner"){
+    g.fillStyle="#5a4632"; g.beginPath(); g.rect(-S*0.045,-S*0.95,S*0.09,S*0.95); g.fill(); g.stroke();
+    const wave = Math.sin(t*0.05 + ph)*S*0.05;
+    g.fillStyle="#e0503a"; g.beginPath();
+    g.moveTo(S*0.04,-S*0.92); g.lineTo(S*0.62,-S*0.80+wave); g.lineTo(S*0.04,-S*0.60); g.closePath();
+    g.fill(); g.stroke();
+  } else if(k==="torch"){
+    g.fillStyle="#5a4632"; g.beginPath(); g.rect(-S*0.07,-S*0.60,S*0.14,S*0.60); g.fill(); g.stroke();
+    const f = 1 + Math.sin(t*0.22 + ph)*0.16;
+    g.fillStyle="#f0521f"; g.beginPath();
+    g.ellipse(0,-S*0.74, S*0.16, S*0.22*f, 0, 0, 7); g.fill(); g.stroke();
+    g.fillStyle="#ffd34d"; g.beginPath(); g.ellipse(0,-S*0.72, S*0.07, S*0.11*f, 0, 0, 7); g.fill();
+  } else if(k==="balloon"){
+    const bob = Math.sin(t*0.03 + ph)*S*0.10;
+    g.strokeStyle="#1c1c1c"; g.lineWidth=Math.max(1,S*0.02);
+    g.beginPath(); g.moveTo(0,0); g.quadraticCurveTo(S*0.08,-S*0.35, 0, -S*0.62+bob); g.stroke();
+    g.lineWidth=Math.max(2,S*0.045);
+    g.fillStyle="#e84b9c"; g.beginPath(); g.ellipse(0,-S*0.86+bob, S*0.26, S*0.30, 0, 0, 7); g.fill(); g.stroke();
+    g.fillStyle="#ffffff88"; g.beginPath(); g.ellipse(-S*0.09,-S*0.95+bob, S*0.07, S*0.09, 0, 0, 7); g.fill();
+  } else if(k==="crowd"){
+    // The spectators from drawCrowd(), stood where you put them: same blob, same dot eyes, same
+    // idle sway, so a hand-placed crowd reads as part of the same world as the automatic one.
+    const cols=["#f0521f","#8ed24b","#6fb7ff","#ffd34d","#e84b9c"];
+    for(let i=0;i<3;i++){
+      const x=(i-1)*S*0.42, sway=Math.sin(t*0.03 + ph + i*1.7)*S*0.04, r=S*0.22;
+      g.fillStyle=cols[(i + Math.round((d.nx||0)*10)) % cols.length];
+      g.beginPath(); g.ellipse(x, -r + sway, r, r*1.1, 0, 0, 7); g.fill(); g.stroke();
+      g.fillStyle="#1c1c1c";
+      g.beginPath(); g.arc(x-r*0.32, -r*1.15 + sway, r*0.13, 0, 7);
+      g.arc(x+r*0.32, -r*1.15 + sway, r*0.13, 0, 7); g.fill();
+    }
+  } else if(k==="cameo"){
+    // A REAL roster render, watching from the scenery. Degrades exactly the way the fighters do:
+    // until the PNG decodes (and forever if it 404s, or the environment has no Image constructor)
+    // it paints the same spectator blob a crowd prop does — never a hole in the map.
+    const sp = (typeof SPRITES!=='undefined' && d.n) ? SPRITES[d.n] : null;
+    const im = sp ? spriteImage(sp) : null;
+    const bob = Math.sin(t*0.03 + ph)*S*0.03;
+    if(im){
+      const h = S, w = h * (im.naturalWidth/Math.max(1,im.naturalHeight));
+      g.drawImage(im, -w/2, -h + bob, w, h);
+    } else {
+      g.fillStyle="#d9c48a"; g.beginPath(); g.ellipse(0,-S*0.28+bob,S*0.28,S*0.30,0,0,7); g.fill(); g.stroke();
+      g.fillStyle="#1c1c1c";
+      g.beginPath(); g.arc(-S*0.10,-S*0.34+bob,S*0.04,0,7); g.arc(S*0.10,-S*0.34+bob,S*0.04,0,7); g.fill();
+    }
+  }
+  g.restore();
+}
+// Paint a whole level's scenery. Kept as its own pass so decorations sit BEHIND the geometry you
+// actually stand on — scenery must never hide a ledge.
+function paintDecoList(g, list, ww, wh, t){
+  for(const d of (list||[])){ if(d && DECO_TYPES[d.k]) paintDeco(g, d, ww, wh, t); }
+}
+// ONE platform, painted. Extracted from draw() so the LEVEL EDITOR can paint with the code the
+// match uses instead of its own flat rectangles — which is how a map could look nothing in the
+// editor like the thing it turned into on the field.
+function paintPlat(g, p, o){
+  o = o || {};
+  g.save();
+  if(p.rot){ g.translate(p.x+p.w/2, p.y+p.h/2); g.rotate(p.rot*Math.PI/180); g.translate(-(p.x+p.w/2), -(p.y+p.h/2)); }
+  if(p.solid){
+    // SOLID block — stone slab with a bevel, visibly different from thin one-way ledges
+    g.fillStyle="#6b6f78"; g.fillRect(p.x,p.y,p.w,p.h);
+    g.fillStyle="#8b9099"; g.fillRect(p.x,p.y,p.w,Math.min(6,p.h*0.3));           // top highlight
+    g.fillStyle="#4a4e56"; g.fillRect(p.x,p.y+p.h-Math.min(6,p.h*0.3),p.w,Math.min(6,p.h*0.3)); // bottom shade
+    g.strokeStyle="#1c1c1c"; g.lineWidth=3; g.strokeRect(p.x,p.y,p.w,p.h);
+    // brick seams so it reads as impassable masonry
+    g.strokeStyle="#00000033"; g.lineWidth=1;
+    for(let bx=p.x+24; bx<p.x+p.w-6; bx+=32){ g.beginPath(); g.moveTo(bx,p.y+3); g.lineTo(bx,p.y+p.h-3); g.stroke(); }
+    g.restore(); return;
+  }
+  g.fillStyle = o.yoyle ? "#e8eef2" : "#8a5a34";
+  if(o.leafy) g.fillStyle = p.hop?"#d9a441":"#6aa838";
+  g.fillRect(p.x,p.y,p.w,p.h);
+  if(o.shadow && p.floor!=null){ g.fillStyle="#00000022"; g.fillRect(p.x,p.y+p.h,p.w,10); }
+  g.strokeStyle="#1c1c1c"; g.lineWidth=3; g.strokeRect(p.x,p.y,p.w,p.h);
+  g.restore();
+}
 // ============================================================
 //  LEVEL CREATOR
 // ============================================================
@@ -11178,8 +12082,48 @@ const ZONE_TYPES = {
   wind:   {label:"Wind",   color:"#8fd0ff", def:1.0, unit:"push force"},
 };
 const ROT_STEPS = [0,45,90,135];   // snap angles (degrees)
-const ED = { plats:[], spawns:[], zones:[], hazard:"", tool:"plat", zoneType:"glue",
-  drag:null, sel:null, cv:null, ctx:null, w:720, h:405 };
+// ---- EDITOR STATE ----------------------------------------------------------------------------
+// ED.w/ED.h are the WORLD BOX in real world pixels — the very box setupWorld() will build, at the
+// level's MAP SIZE — NOT the canvas. The canvas (ED.cw x ED.ch) is a VIEWPORT onto it: ED.view is
+// the world point at its top-left corner and ED.zoom the scale. Everything stored stays normalized
+// against ED.w/ED.h, so the file format never learns about the canvas or the display.
+const ED = { plats:[], spawns:[], zones:[], deco:[], hazard:"", tool:"plat", zoneType:"glue",
+  decoKind:"tree", size:"normal",
+  drag:null, sel:null, cv:null, ctx:null,
+  w:1100, h:720, cw:760, ch:498, view:{x:0,y:0}, zoom:1, fit:true, pan:false };
+// A press that MOVED is a pan, not a placement. Same discrimination the roster line uses for
+// drag-vs-pick (initBoardDrag: 3px to start moving, 6px to swallow the click), because a builder
+// nudging the mouse while clicking must not have a platform appear under it.
+const ED_PAN_START = 3, ED_PAN_CLICK = 6;
+// The world multipliers for the size currently being edited. Identical to the ones setupWorld()
+// applies at play time — one source of truth for "how big is this map".
+function edMul(){ const S = MAP_SIZES[ED.size] || MAP_SIZES.normal; return { sw:Math.max(1,S.w), sh:Math.max(1,S.h) }; }
+// Recompute the world box for the current MAP SIZE. The canvas keeps the GAME's aspect ratio, so
+// at 1:1 the canvas frames exactly one screen of play — what you draw is what a player sees.
+function edResize(){
+  const cv = ED.cv; if(!cv) return;
+  const gw = W||1100, gh = H||720;
+  const m = edMul();
+  ED.cw = Math.max(320, Math.min(760, (window.innerWidth||760)-24));
+  ED.ch = Math.round(ED.cw * gh/gw);
+  cv.width = ED.cw; cv.height = ED.ch;
+  ED.w = Math.round(gw*m.sw); ED.h = Math.round(gh*m.sh);
+  if(ED.fit) edZoomFit(); else edClampView();
+}
+function edZoomFit(){ ED.fit=true; ED.zoom = Math.min(ED.cw/ED.w, ED.ch/ED.h); ED.view.x=0; ED.view.y=0; edClampView(); }
+function edZoomOne(){ ED.fit=false; ED.zoom = ED.cw/(W||1100); edClampView(); }   // 1:1 with the play screen
+// Letterbox offset: when the whole world is smaller than the canvas it sits centred rather than
+// jammed into the top-left corner.
+function edOx(){ return Math.max(0, (ED.cw - ED.w*ED.zoom)/2); }
+function edOy(){ return Math.max(0, (ED.ch - ED.h*ED.zoom)/2); }
+function edClampView(){
+  ED.view.x = Math.max(0, Math.min(Math.max(0, ED.w - ED.cw/ED.zoom), ED.view.x));
+  ED.view.y = Math.max(0, Math.min(Math.max(0, ED.h - ED.ch/ED.zoom), ED.view.y));
+}
+// canvas px -> world px. Every edit goes through this, so placing, dragging, hit-testing and
+// erasing all stay correct under any pan or zoom, at any map size.
+function edToWorld(cx, cy){ return { x: ED.view.x + (cx-edOx())/ED.zoom, y: ED.view.y + (cy-edOy())/ED.zoom }; }
+function edPan(dxCanvas, dyCanvas){ ED.view.x -= dxCanvas/ED.zoom; ED.view.y -= dyCanvas/ED.zoom; edClampView(); }
 
 // ============================================================
 //  QUICK MAP GENERATOR
@@ -11193,19 +12137,33 @@ const ED = { plats:[], spawns:[], zones:[], hazard:"", tool:"plat", zoneType:"gl
 // The output is the plain editor schema, so a generated map lands IN the editor: play it as-is,
 // or drag it around and save it like anything you drew by hand.
 //
-// THE ONE HARD INVARIANT: every layer must be reachable. A custom level is a single-screen
-// arena, and unlike the big stadiums it never runs through fillClimbGaps() — setupWorld() maps
-// CUSTOM_LEVEL.plats straight to worldPlats. So a generator that stacks a ledge more than one
-// double-jump above everything below it strands fighters on the floor for the whole match, with
-// nothing at runtime to catch it. mapgenLadder() is what prevents that, and it runs on the output
-// of EVERY archetype rather than inside any one of them.
+// THE ONE HARD INVARIANT: every layer must be reachable. Unlike the big stadiums a custom level
+// never runs through fillClimbGaps() — setupWorld() maps CUSTOM_LEVEL.plats straight to
+// worldPlats. So a generator that stacks a ledge more than one double-jump above everything below
+// it strands fighters on the floor for the whole match, with nothing at runtime to catch it.
+// mapgenLadder() is what prevents that, and it runs on the output of EVERY archetype rather than
+// inside any one of them.
+//
+// SIZE IS NOW REAL. The generator's SIZE control is the level's MAP SIZE: it grows the world box
+// (see customWorldW/H) as well as the layout. That makes every vertical budget below relative,
+// because normalized height stops being screen height the moment the world is taller than one
+// screen — 0.14 of a 1.5x-tall world is a 50% longer jump than 0.14 of one screen. Everything
+// measured in JUMPS is therefore expressed in SCREEN units and divided by the height multiplier
+// on the way into world-normalized space. A Huge map ends up with more rungs, not longer ones.
 
-// A double jump climbs MAX_HOP_RISE world px. Custom levels are single-screen, so world height IS
-// the canvas height — which varies per display. Normalising against a TALL reference screen makes
+// A double jump climbs MAX_HOP_RISE world px. Normalising against a TALL reference screen makes
 // the budget conservative everywhere: the gap costs more normalised height on a short screen, so a
 // map that is climbable at 1080px is climbable on anything shorter.
 const MAPGEN_REF_H = 1080;
-const MAPGEN_MAX_RISE_N = MAX_HOP_RISE / MAPGEN_REF_H;      // ≈0.157 of screen height
+const MAPGEN_MAX_RISE_N = MAX_HOP_RISE / MAPGEN_REF_H;      // ≈0.157 of SCREEN height
+// …divided by the world's height multiplier to get the budget in world-normalized units.
+function mapgenMaxRise(sh){ return MAPGEN_MAX_RISE_N / Math.max(1, sh||1); }
+// The world multipliers a level of this size is generated against — the SAME numbers setupWorld()
+// builds the world box from, so what the generator lays out is what the match constructs.
+function mapgenMul(sizeKey){
+  const S = MAP_SIZES[sizeKey] || MAP_SIZES.normal;
+  return { sw: Math.max(1, S.w), sh: Math.max(1, S.h) };
+}
 const MAPGEN_FLOOR_N = 0.82;                                 // groundY() for a single-screen arena
 const MAPGEN_CEIL_N  = 0.08;                                 // keep clear of the top blast zone
 // …and an OPEN KO LANE down each side. KOs in this game come overwhelmingly from being knocked out
@@ -11215,8 +12173,11 @@ const MAPGEN_CEIL_N  = 0.08;                                 // keep clear of th
 // generated arena pinned two survivors against the left wall for 12,000 frames without resolving.
 const MAPGEN_EDGE_N  = 0.08;
 
-// SIZE — how much of the screen the layout occupies. (A custom level is always one screen, so
-// this is the level's vertical reach and rung count, not the MAP SIZE match setting.)
+// SIZE — the level's MAP SIZE. Keyed to MAP_SIZES, because it is the same setting: it sizes the
+// WORLD BOX the level is built and played in (Compact/Normal = one screen, Tall/Huge grow it) and
+// the layout that fills it. `top` is how far up the world the layout reaches (world fraction);
+// `gap` is the rung spacing in SCREEN heights (divided by the height multiplier at use); `cols` is
+// the column count for a one-screen-wide world, scaled up with the width multiplier.
 const MAPGEN_SIZES = {
   compact:{ label:"Compact", top:0.50, gap:0.150, cols:3 },
   normal: { label:"Normal",  top:0.36, gap:0.145, cols:4 },
@@ -11238,9 +12199,13 @@ function mapgenRng(seed){
   };
 }
 // Evenly spaced standable heights from just above the floor up to the size's ceiling.
-function mapgenLayers(size){
-  const bot = MAPGEN_FLOOR_N - 0.10, top = Math.max(MAPGEN_CEIL_N, size.top);
-  const n = Math.max(2, Math.round((bot-top)/size.gap) + 1);
+// The lowest rung sits one comfortable hop above the floor and the rungs are one hop apart — both
+// in SCREEN heights, converted into the (possibly taller) world. A taller world therefore gets
+// MORE layers at the same jump cost, which is what makes a Huge map bigger rather than stretched.
+function mapgenLayers(c){
+  const bot = MAPGEN_FLOOR_N - 0.10/c.sh, top = Math.max(MAPGEN_CEIL_N, c.size.top);
+  const gap = c.size.gap / c.sh;
+  const n = Math.max(2, Math.round((bot-top)/gap) + 1);
   const ys = [];
   for(let i=0;i<n;i++) ys.push(bot - (bot-top)*i/(n-1));
   return ys;                                     // [lowest … highest]
@@ -11253,13 +12218,17 @@ function mapgenLayers(size){
 // slid it flush against the wall instead of dropping it, which both doubled it up on top of its
 // neighbour and planted it in the KO lane. Positioning inside the fitted band has no such failure —
 // a layout that wants more columns than fit simply gets tighter ones, never a pile on the edge.
+//
+// Widths arrive in SCREEN units and are divided by the width multiplier on the way in, for the
+// same reason the heights are: a fighter is the same size on a Huge map, so a ledge that scaled
+// with the arena would be a runway. `nh` likewise.
 function mapgenSpan(t, nw){
   const lo = MAPGEN_EDGE_N, hi = 1 - MAPGEN_EDGE_N - nw;
   return lo + Math.max(0, hi-lo) * Math.max(0, Math.min(1, t));
 }
-function mapgenHop(t, ny, nw){ return { nx:mapgenSpan(t,nw), ny, nw, hop:true, rot:0 }; }
-function mapgenPlat(t, ny, nw){ return { nx:mapgenSpan(t,nw), ny, nw, hop:false, rot:0 }; }
-function mapgenSolid(t, ny, nw, nh){ return { nx:mapgenSpan(t,nw), ny, nw, nh, solid:true, rot:0 }; }
+function mapgenHop(c, t, ny, nw){ nw/=c.sw; return { nx:mapgenSpan(t,nw), ny, nw, hop:true, rot:0 }; }
+function mapgenPlat(c, t, ny, nw){ nw/=c.sw; return { nx:mapgenSpan(t,nw), ny, nw, hop:false, rot:0 }; }
+function mapgenSolid(c, t, ny, nw, nh){ nw/=c.sw; nh/=c.sh; return { nx:mapgenSpan(t,nw), ny, nw, nh, solid:true, rot:0 }; }
 
 // ---- the archetypes (the AI-authored rulesets) ----------------------------------------------
 // Each build() returns platforms only. Spawns, effect zones, the climb ladder and all bounds
@@ -11267,20 +12236,20 @@ function mapgenSolid(t, ny, nw, nh){ return { nx:mapgenSpan(t,nw), ny, nw, nh, s
 const MAP_ARCHETYPES = {
   arena: { label:"Open Arena", blurb:"Symmetric tiers around a wide centre stage.",
     build(rng, c){
-      const out=[], ys=mapgenLayers(c.size);
+      const out=[], ys=mapgenLayers(c);
       ys.forEach((y,i)=>{
-        if(i===0){ out.push(mapgenPlat(0.5, y, 0.42)); return; }          // the centre stage
-        const per = Math.max(2, Math.round((c.size.cols-1) * c.density.mul));
+        if(i===0){ out.push(mapgenPlat(c, 0.5, y, 0.42)); return; }          // the centre stage
+        const per = Math.max(2, Math.round((c.cols-1) * c.density.mul));
         const w   = 0.20 * (1 - i*0.06);                                  // tiers narrow as they rise
         // Even spread across the band — symmetric by construction, which is what makes an arena
         // read as built rather than scattered.
-        for(let k=0;k<per;k++) out.push(mapgenHop((k+0.5)/per, y, w));
+        for(let k=0;k<per;k++) out.push(mapgenHop(c, (k+0.5)/per, y, w));
       });
       return out;
     } },
   towers: { label:"Towers", blurb:"Solid columns you climb, ledges strung between them.",
     build(rng, c){
-      const out=[], ys=mapgenLayers(c.size);
+      const out=[], ys=mapgenLayers(c);
       const towers = Math.max(2, Math.round(2 + c.density.mul));
       const colY = ys[Math.min(ys.length-1, Math.round(ys.length*0.55))];
       for(let t=0;t<towers;t++){
@@ -11288,49 +12257,49 @@ const MAP_ARCHETYPES = {
         // walls, so the ground route around them always stays open — a solid that spans a lane
         // turns a stage into two disconnected halves.
         const w = 0.07 + rng()*0.03;
-        out.push(mapgenSolid((t+0.5)/towers, colY, w, Math.min(0.055, (MAPGEN_FLOOR_N-0.10-colY)*0.5)));
+        out.push(mapgenSolid(c, (t+0.5)/towers, colY, w, Math.min(0.055, (MAPGEN_FLOOR_N-0.10/c.sh-colY)*0.5*c.sh)));
       }
       ys.forEach((y,i)=>{
         if(y > colY - 0.001 && i!==0) return;
         const per = Math.max(2, towers-1);
-        for(let k=0;k<per;k++) out.push(mapgenHop((k+1)/(per+1), y, 0.15));
+        for(let k=0;k<per;k++) out.push(mapgenHop(c, (k+1)/(per+1), y, 0.15));
       });
       return out;
     } },
   islands: { label:"Floating Isles", blurb:"Scattered islands over open air.",
     build(rng, c){
-      const out=[], ys=mapgenLayers(c.size);
+      const out=[], ys=mapgenLayers(c);
       ys.forEach((y,i)=>{
-        const per = Math.max(2, Math.round((c.size.cols - (i%2)) * c.density.mul));
+        const per = Math.max(2, Math.round((c.cols - (i%2)) * c.density.mul));
         for(let k=0;k<per;k++){
           const w = 0.11 + rng()*0.12;
           // brick-bond stagger: odd rows sit over the gaps of the row below, so every island has
           // something to hop to that is not directly overhead
           const t = (k + 0.5 + (i%2 ? 0.5 : 0))/per + (rng()-0.5)*0.05;
-          out.push(mapgenHop(t, y, w));
+          out.push(mapgenHop(c, t, y, w));
         }
       });
       return out;
     } },
   staircase: { label:"Staircase", blurb:"A climb up one way, a run back along the top.",
     build(rng, c){
-      const out=[], ys=mapgenLayers(c.size);
+      const out=[], ys=mapgenLayers(c);
       const w = 0.15 + 0.04*c.density.mul;
       ys.forEach((y,i)=>{
         const t = i/Math.max(1, ys.length-1);
-        out.push(mapgenHop(t, y, w));                                     // the ascending run
+        out.push(mapgenHop(c, t, y, w));                                     // the ascending run
         if(c.density.mul >= 1 && i>0 && i<ys.length-1){
-          out.push(mapgenHop(1-t, y, w*0.75));                            // the way back down
+          out.push(mapgenHop(c, 1-t, y, w*0.75));                            // the way back down
         }
       });
-      out.push(mapgenPlat(0.5, ys[ys.length-1], 0.32));                   // the summit
+      out.push(mapgenPlat(c, 0.5, ys[ys.length-1], 0.32));                   // the summit
       return out;
     } },
   cavern: { label:"Cavern", blurb:"Low stone shelves and tight headroom.",
     build(rng, c){
-      const out=[], ys=mapgenLayers(c.size);
+      const out=[], ys=mapgenLayers(c);
       ys.forEach((y,i)=>{
-        const per = Math.max(2, Math.round((c.size.cols-1) * c.density.mul));
+        const per = Math.max(2, Math.round((c.cols-1) * c.density.mul));
         // ONE slab per shelf, its position rotating with height. The cavern's character is that you
         // cannot phase straight up through the rock — you walk to the opening — but a solid blocks
         // vertical travel outright where a one-way top does not, so a layer made mostly of rock
@@ -11341,22 +12310,22 @@ const MAP_ARCHETYPES = {
         for(let k=0;k<per;k++){
           const w = 0.16 + rng()*0.08;
           const t = (k+0.5)/per;
-          if(k===slab) out.push(mapgenSolid(t, y, w, 0.035));
-          else out.push(mapgenHop(t, y, w));
+          if(k===slab) out.push(mapgenSolid(c, t, y, w, 0.035));
+          else out.push(mapgenHop(c, t, y, w));
         }
       });
       return out;
     } },
   gauntlet: { label:"Gauntlet", blurb:"Rows of narrow rungs, offset all the way up.",
     build(rng, c){
-      const out=[], ys=mapgenLayers(c.size);
+      const out=[], ys=mapgenLayers(c);
       ys.forEach((y,i)=>{
-        const per = Math.max(3, Math.round((c.size.cols+2) * c.density.mul));
+        const per = Math.max(3, Math.round((c.cols+2) * c.density.mul));
         for(let k=0;k<per;k++){
           const w = 0.07 + rng()*0.03;
           const t = (k + 0.5 + (i%2 ? 0.5 : 0))/per;
           if(t >= 1) continue;
-          out.push(mapgenHop(t, y, w));
+          out.push(mapgenHop(c, t, y, w));
         }
       });
       return out;
@@ -11369,16 +12338,21 @@ const MAP_ARCHETYPES = {
 // them. A row rather than a single rung, because a lone rung at x=0.5 is no help to a fighter
 // stranded at the edge; one-way tops can be jumped through from below, so a rung under an existing
 // platform still works.
-function mapgenLadder(plats){
+function mapgenLadder(plats, c){
+  const rise = mapgenMaxRise(c.sh);            // the budget in THIS world's normalized units
   const ys = plats.map(p=>p.ny).concat([MAPGEN_FLOOR_N]).filter(y=>isFinite(y)).sort((a,b)=>a-b);
   const added=[];
   for(let i=0;i<ys.length-1;i++){
     const gap = ys[i+1]-ys[i];
-    if(gap <= MAPGEN_MAX_RISE_N) continue;
-    const steps = Math.ceil(gap/MAPGEN_MAX_RISE_N) - 1;
+    if(gap <= rise) continue;
+    const steps = Math.ceil(gap/rise) - 1;
     for(let s=1;s<=steps;s++){
       const y = ys[i] + gap*s/(steps+1);
-      for(const t of [0.15, 0.5, 0.85]) added.push(mapgenHop(t, y, 0.12));
+      // A wider world needs more rungs across it, or the "row" is three specks in a field. A
+      // one-screen-wide world keeps the exact three positions it always had.
+      const cols = Math.round(3*c.sw);
+      const ts = cols<=3 ? [0.15,0.5,0.85] : Array.from({length:cols},(_,k)=>(k+0.5)/cols);
+      for(const t of ts) added.push(mapgenHop(c, t, y, 0.12));
     }
   }
   return plats.concat(added);
@@ -11402,10 +12376,10 @@ function mapgenSpawns(plats, n){
 }
 // Effect zones sit ON platforms (a zone in mid-air is invisible in play), and never on the lowest
 // layer where every fighter spawns — a damage tile under the whole starting line is not a design.
-function mapgenZones(plats, n, rng){
+function mapgenZones(plats, n, rng, c){
   if(n<=0) return [];
   const kinds = Object.keys(ZONE_TYPES);
-  const cands = plats.filter(p=>!p.solid && p.ny < MAPGEN_FLOOR_N - 0.14 && p.nw >= 0.10);
+  const cands = plats.filter(p=>!p.solid && p.ny < MAPGEN_FLOOR_N - 0.14/c.sh && p.nw >= 0.10/c.sw);
   const out=[];
   // Sample WITHOUT replacement — two zones on one platform stack their effects invisibly and
   // render as overlapping labels, which reads as a rendering bug rather than a stage feature.
@@ -11418,6 +12392,28 @@ function mapgenZones(plats, n, rng){
   return out;
 }
 
+// Dress the generated arena. Scenery is chosen from the same palette the editor offers and placed
+// only where it cannot be mistaken for geometry: props stand ON THE FLOOR (never floating in the
+// middle of a jump arc, where a tree reads as a platform) and clouds sit high in the sky above the
+// whole layout. Runs LAST so it consumes rng after every gameplay decision — a map generated
+// before decorations existed regenerates identically from the same seed.
+function mapgenDeco(plats, c){
+  const rng = c.rng, out = [];
+  const ground = MAPGEN_FLOOR_N;
+  const groundKinds = ["tree","bush","rock","torch","banner","crowd"];
+  const n = Math.round((5 + rng()*3) * c.sw);              // a wider arena gets proportionally more
+  for(let i=0;i<n;i++){
+    const k = groundKinds[Math.floor(rng()*groundKinds.length) % groundKinds.length];
+    out.push({ k, nx:+(0.03 + 0.94*((i+rng())/n)).toFixed(4), ny:ground,
+               s:+(0.75 + rng()*0.5).toFixed(2), flip: rng()<0.4 });
+  }
+  const clouds = Math.max(2, Math.round(3*c.sw));
+  for(let i=0;i<clouds;i++){
+    out.push({ k:"cloud", nx:+(0.08 + 0.84*((i+rng())/clouds)).toFixed(4),
+               ny:+Math.max(0.04, MAPGEN_CEIL_N*0.7*rng()+0.05).toFixed(4), s:+(0.8+rng()*0.6).toFixed(2) });
+  }
+  return out;
+}
 // Build a complete level from the four controls. Pure and deterministic: same cfg + seed → same map.
 function generateMap(cfg){
   cfg = cfg || {};
@@ -11427,8 +12423,12 @@ function generateMap(cfg){
   const effects = MAPGEN_EFFECTS[cfg.effects] || MAPGEN_EFFECTS.none;
   const seed    = (cfg.seed>>>0) || 1;
   const rng     = mapgenRng(seed);
-  let plats = MAP_ARCHETYPES[type].build(rng, { size, density, rng });
-  plats = mapgenLadder(plats);
+  const sizeKey = MAPGEN_SIZES[cfg.size] ? cfg.size : 'normal';
+  const mul     = mapgenMul(sizeKey);                 // the SAME world multipliers setupWorld uses
+  // More columns across a wider world, so a Huge arena is furnished rather than thinned out.
+  const c = { size, density, rng, sw:mul.sw, sh:mul.sh, cols: Math.max(2, Math.round(size.cols*mul.sw)) };
+  let plats = MAP_ARCHETYPES[type].build(rng, c);
+  plats = mapgenLadder(plats, c);
   // Final sweep. Widths are capped to the band and heights held inside the playable strip; a
   // platform is then DROPPED rather than nudged if it still doesn't fit, because sliding a
   // misplaced platform to the nearest legal spot is what put one in the KO lane to begin with.
@@ -11438,12 +12438,16 @@ function generateMap(cfg){
       ny: Math.max(MAPGEN_CEIL_N, Math.min(MAPGEN_FLOOR_N - 0.05, p.ny)) });
   }).filter(p => p.nx >= MAPGEN_EDGE_N - 1e-9 && p.nx + p.nw <= 1 - MAPGEN_EDGE_N + 1e-9);
   return {
+    v: 2,                                           // save-format version (see CUSTOM_LEVEL)
     name: MAP_ARCHETYPES[type].label + " " + seed.toString(36).toUpperCase().slice(-4),
     plats,
     spawns: mapgenSpawns(plats, 5),                 // MAX_FFA is 5
-    zones:  mapgenZones(plats, effects.n, rng),
+    zones:  mapgenZones(plats, effects.n, rng, c),
+    deco:   mapgenDeco(plats, c),                   // non-colliding scenery, drawn in play
     hazard: cfg.hazard || "",
-    seed, type, size:cfg.size||'normal', density:cfg.density||'normal', effects:cfg.effects||'none',
+    // `size` is the level's MAP SIZE: the world box it was generated against, and the one the
+    // match will rebuild. It travels with the level, not with the menu.
+    seed, type, size:sizeKey, density:cfg.density||'normal', effects:cfg.effects||'none',
   };
 }
 // Self-check used by the tests AND by the Generate button: returns a list of problems, empty when
@@ -11456,9 +12460,12 @@ function mapgenValidate(lvl){
     if(!(p.ny > 0 && p.ny < MAPGEN_FLOOR_N)) bad.push("platform outside the playable band at ny="+p.ny.toFixed(3));
     if(!(p.nw > 0.02)) bad.push("platform too narrow to land on");
   }
+  // Reachability is measured in the level's OWN world box: a gap is only as big as the world is
+  // tall, so a Huge level is held to a proportionally tighter normalized budget.
+  const rise = mapgenMaxRise(mapgenMul(lvl.size).sh);
   const ys = lvl.plats.map(p=>p.ny).concat([MAPGEN_FLOOR_N]).sort((a,b)=>a-b);
   for(let i=0;i<ys.length-1;i++){
-    if(ys[i+1]-ys[i] > MAPGEN_MAX_RISE_N + 1e-9) bad.push("unreachable layer: gap of "+(ys[i+1]-ys[i]).toFixed(3));
+    if(ys[i+1]-ys[i] > rise + 1e-9) bad.push("unreachable layer: gap of "+(ys[i+1]-ys[i]).toFixed(3));
   }
   if(!lvl.spawns || lvl.spawns.length < 1) bad.push("no spawn points");
   for(const s of (lvl.spawns||[])){
@@ -11478,7 +12485,9 @@ function genFillSelects(){
     el.onchange=()=>{ GEN[id.replace('gen','').toLowerCase()] = el.value; };
   };
   fill('genType', MAP_ARCHETYPES, GEN.type);
-  fill('genSize', MAPGEN_SIZES, GEN.size);
+  // NOTE: there is no `genSize` select any more. Quick map generates at the editor's MAP SIZE —
+  // the duplicate "Size" dropdown here was the one people reached for, and it only ever changed
+  // how much of a fixed one-screen world the layout occupied.
   fill('genDensity', MAPGEN_DENSITY, GEN.density);
   fill('genEffects', MAPGEN_EFFECTS, GEN.effects);
   const t=document.getElementById('genType');
@@ -11489,7 +12498,7 @@ function genFillSelects(){
 function genQuickMap(seed){
   const readSel=(id,fallback)=>{ const el=document.getElementById(id); return el && el.value ? el.value : fallback; };
   GEN.type    = readSel('genType', GEN.type);
-  GEN.size    = readSel('genSize', GEN.size);
+  GEN.size    = MAP_SIZES[ED.size] ? ED.size : 'normal';   // the editor's MAP SIZE, not a second one
   GEN.density = readSel('genDensity', GEN.density);
   GEN.effects = readSel('genEffects', GEN.effects);
   GEN.seed    = (seed>>>0) || (Math.floor(Math.random()*0xFFFFFFFF)>>>0) || 1;
@@ -11498,7 +12507,8 @@ function genQuickMap(seed){
   // player — say so plainly rather than silently shipping an unplayable arena.
   const bad = mapgenValidate(lvl);
   if(bad.length){ banner("MAP GEN FAILED: "+bad[0], 1800); return null; }
-  ED.plats = lvl.plats; ED.spawns = lvl.spawns; ED.zones = lvl.zones; ED.sel = null;
+  edAdoptLevel(lvl);                       // same path a saved level takes in, size and all
+  ED.fit=true; edResize();
   const nameEl=document.getElementById('edName'); if(nameEl) nameEl.value = lvl.name;
   const seedEl=document.getElementById('genSeedLabel');
   if(seedEl) seedEl.textContent = "seed "+lvl.seed.toString(36).toUpperCase();
@@ -11511,21 +12521,49 @@ function openEditor(){
   go('editor');
   const cv=document.getElementById('edcanvas');
   ED.cv=cv; ED.ctx=cv.getContext('2d');
-  const maxW=Math.min(760, (window.innerWidth||760)-24);
-  ED.w=maxW; ED.h=Math.round(maxW*9/16);
-  cv.width=ED.w; cv.height=ED.h;
+  edResize();
   const seg=document.getElementById('edTool');
   seg.querySelectorAll('button').forEach(b=>{ b.onclick=()=>{ seg.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); ED.tool=b.dataset.t; ED.sel=null; edSyncPanel(); edDraw(); }; });
+  // ---- MAP SIZE: the size the level is BUILT at, and the size it plays at ----
+  // The same four sizes the match setting offers, because it is the same setting — it resizes the
+  // world box here and setupWorld() rebuilds that exact box for the match.
+  const sz=document.getElementById('edSize');
+  if(sz){
+    sz.innerHTML='';
+    for(const k in MAP_SIZES){
+      const b=document.createElement('button'); b.dataset.v=k; b.textContent=MAP_SIZES[k].label;
+      if(k===ED.size) b.classList.add('on');
+      b.onclick=()=>edSetSize(k);
+      sz.appendChild(b);
+    }
+  }
   document.getElementById('edHazard').onchange=e=>{ ED.hazard=e.target.value; edDraw(); };
   document.getElementById('edHazard').value=ED.hazard;
   // zone-type picker
   const zt=document.getElementById('edZoneType');
   if(zt){ zt.innerHTML=''; for(const k in ZONE_TYPES){ const o=document.createElement('option'); o.value=k; o.textContent=ZONE_TYPES[k].label; zt.appendChild(o); } zt.value=ED.zoneType; zt.onchange=e=>{ ED.zoneType=e.target.value; }; }
+  // decoration palette
+  const dt=document.getElementById('edDecoType');
+  if(dt){ dt.innerHTML=''; for(const k of DECO_KEYS){ const o=document.createElement('option'); o.value=k; o.textContent=DECO_TYPES[k].label; dt.appendChild(o); } dt.value=ED.decoKind; dt.onchange=e=>{ ED.decoKind=e.target.value; }; }
   genFillSelects();     // quick-map controls
+  // Displayed px -> internal canvas px (the canvas is CSS-scaled by max-width).
   const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e;
-    const sx=cv.width/r.width, sy=cv.height/r.height;   // canvas may be CSS-scaled (max-width); map displayed px -> internal px
+    const sx=cv.width/(r.width||cv.width), sy=cv.height/(r.height||cv.height);
     return {x:(t.clientX-r.left)*sx, y:(t.clientY-r.top)*sy}; };
-  cv.onpointerdown=e=>{ e.preventDefault(); const p=pos(e);
+
+  cv.oncontextmenu=e=>{ e.preventDefault(); };     // right-drag pans; never pop the browser menu
+  cv.onpointerdown=e=>{ e.preventDefault();
+    const c=pos(e), p=edToWorld(c.x,c.y);
+    // A PAN is: the Pan tool, a middle/right button, a held space bar — or, with the Move tool,
+    // a press that lands on empty space. That last one is why the threshold exists: the same
+    // press is a deselect-click until it has travelled far enough to be a drag, exactly the way
+    // the roster line tells a pick from a pull (initBoardDrag).
+    const forcePan = ED.tool==='pan' || e.button===1 || e.button===2 || ED.space;
+    if(forcePan || (ED.tool==='move' && !edHitTest(p.x,p.y))){
+      ED.drag={mode:"pan", cx:c.x, cy:c.y, far:0, vx:ED.view.x, vy:ED.view.y, committed:forcePan};
+      if(!forcePan){ ED.sel=null; edSyncPanel(); edDraw(); }
+      return;
+    }
     if(ED.tool==="move"){
       const hit=edHitTest(p.x,p.y);
       ED.sel=hit;
@@ -11537,10 +12575,19 @@ function openEditor(){
     else if(ED.tool==="solid"){ ED.drag={mode:"solid", x0:p.x,y0:p.y,x1:p.x,y1:p.y}; }
     else if(ED.tool==="hop"){ const o={nx:(p.x-60)/ED.w, ny:p.y/ED.h, nw:120/ED.w, hop:true, rot:0}; ED.plats.push(o); ED.sel={kind:"plat",obj:o}; edSyncPanel(); edDraw(); }
     else if(ED.tool==="spawn"){ if(ED.spawns.length<8){ const o={nx:p.x/ED.w, ny:p.y/ED.h}; ED.spawns.push(o);} edDraw(); }
+    else if(ED.tool==="deco"){ const o=edMakeDeco(ED.decoKind, p.x/ED.w, p.y/ED.h); ED.deco.push(o); ED.sel={kind:"deco",obj:o}; edSyncPanel(); edDraw(); }
     else if(ED.tool==="zone"){ ED.drag={mode:"zone", x0:p.x,y0:p.y,x1:p.x,y1:p.y}; }
     else if(ED.tool==="erase"){ edEraseAt(p.x,p.y); ED.sel=null; edSyncPanel(); edDraw(); }
   };
-  cv.onpointermove=e=>{ if(!ED.drag) return; const p=pos(e);
+  cv.onpointermove=e=>{ if(!ED.drag) return; const c=pos(e), p=edToWorld(c.x,c.y);
+    if(ED.drag.mode==="pan"){
+      const dx=c.x-ED.drag.cx, dy=c.y-ED.drag.cy;
+      ED.drag.far=Math.max(ED.drag.far, Math.hypot(dx,dy));
+      if(!ED.drag.committed && ED.drag.far<=ED_PAN_START) return;   // still a click, not yet a pan
+      ED.drag.committed=true;
+      ED.view.x = ED.drag.vx - dx/ED.zoom; ED.view.y = ED.drag.vy - dy/ED.zoom;
+      edClampView(); edDraw(); return;
+    }
     if(ED.drag.mode==="draw"||ED.drag.mode==="zone"||ED.drag.mode==="solid"){ ED.drag.x1=p.x; ED.drag.y1=p.y; edDraw(); }
     else if(ED.drag.mode==="move"){ const dx=p.x-ED.drag.ox, dy=p.y-ED.drag.oy;
       ED.drag.obj.nx=Math.max(0,Math.min(1,(ED.drag.sx+dx)/ED.w));
@@ -11548,6 +12595,7 @@ function openEditor(){
       edDraw(); }
   };
   cv.onpointerup=e=>{ if(!ED.drag){ return; } const d=ED.drag; ED.drag=null;
+    if(d.mode==="pan"){ edDraw(); return; }
     if(d.mode==="draw"){ const x=Math.min(d.x0,d.x1), w=Math.abs(d.x1-d.x0);
       if(w>16){ const o={nx:x/ED.w, ny:Math.min(d.y0,d.y1)/ED.h, nw:w/ED.w, hop:false, rot:0}; ED.plats.push(o); ED.sel={kind:"plat",obj:o}; edSyncPanel(); } }
     else if(d.mode==="solid"){ const x=Math.min(d.x0,d.x1), y=Math.min(d.y0,d.y1), w=Math.abs(d.x1-d.x0), hh=Math.abs(d.y1-d.y0);
@@ -11556,32 +12604,79 @@ function openEditor(){
       if(w>16&&hh>12){ const o={nx:x/ED.w, ny:y/ED.h, nw:w/ED.w, nh:hh/ED.h, type:ED.zoneType, strength:ZONE_TYPES[ED.zoneType].def}; ED.zones.push(o); ED.sel={kind:"zone",obj:o}; edSyncPanel(); } }
     edDraw(); };
   cv.onpointerleave=cv.onpointerup;
+  // The wheel walks the map: plain wheel down/up, shift-wheel sideways. On a map that fits, both
+  // clamp to nothing, so it costs a builder of a small level exactly nothing.
+  cv.onwheel=e=>{
+    const d = e.deltaY || 0, dx = e.deltaX || 0;
+    if(e.shiftKey){ ED.view.x += d/ED.zoom; } else { ED.view.y += d/ED.zoom; ED.view.x += dx/ED.zoom; }
+    edClampView(); edDraw(); e.preventDefault();
+  };
+  edBindKeys();
   edSyncPanel(); edDraw(); edRenderList();
 }
+// Space = temporary pan, the gesture every drawing tool shares. Bound once on the window and only
+// listened to while the editor screen is up, so it never eats a space bar in a match.
+function edBindKeys(){
+  if(ED._keys) return; ED._keys=true;
+  addEventListener('keydown', e=>{ if(e.code==='Space' && edIsOpen()){ ED.space=true; } });
+  addEventListener('keyup',   e=>{ if(e.code==='Space'){ ED.space=false; } });
+}
+function edIsOpen(){ const s=document.getElementById('editor'); return !!s && s.classList.contains('active'); }
+// Switch the MAP SIZE being built at. The stored coordinates are normalized against the world box,
+// so the layout keeps its proportions and the box around it grows — nothing has to be rewritten.
+function edSetSize(k){
+  if(!MAP_SIZES[k]) return;
+  ED.size=k;
+  const sz=document.getElementById('edSize');
+  if(sz) sz.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===k));
+  ED.fit=true; edResize(); edSyncPanel(); edDraw();
+}
+function edToggleZoom(){ if(ED.fit) edZoomOne(); else edZoomFit(); edSyncPanel(); edDraw(); }
+// A new prop. A cameo picks a real fighter here rather than at paint time, so the crowd a level
+// was saved with is the crowd it loads back with.
+function edMakeDeco(kind, nx, ny){
+  const d={ k:kind, nx:+nx.toFixed(4), ny:+ny.toFixed(4), s:1 };
+  if(kind==='cameo'){
+    const names = (typeof SPRITES!=='undefined') ? Object.keys(SPRITES) : [];
+    const pool = names.length ? names : ROSTER.map(r=>r.name);
+    d.n = pool[Math.floor(Math.random()*pool.length) % pool.length];
+  }
+  return d;
+}
 
-// which object is under the cursor? (topmost first)
+// which object is under the cursor? (topmost first) — coordinates are WORLD px
 function edHitTest(x,y){
-  for(let i=ED.spawns.length-1;i>=0;i--){ const s=ED.spawns[i]; if(Math.hypot(s.nx*ED.w-x, s.ny*ED.h-y)<16) return {kind:"spawn",obj:s,idx:i}; }
+  const tol = 16/Math.max(0.15, ED.zoom);        // a constant grab radius ON SCREEN, at any zoom
+  for(let i=ED.spawns.length-1;i>=0;i--){ const s=ED.spawns[i]; if(Math.hypot(s.nx*ED.w-x, s.ny*ED.h-y)<tol) return {kind:"spawn",obj:s,idx:i}; }
+  // Decorations are grabbed BEFORE zones and platforms but only inside their own footprint, so a
+  // tree standing on a ledge never blocks picking up the ledge.
+  for(let i=ED.deco.length-1;i>=0;i--){ const d=ED.deco[i]; if(edPointOnDeco(d,x,y)) return {kind:"deco",obj:d,idx:i}; }
   for(let i=ED.zones.length-1;i>=0;i--){ const z=ED.zones[i]; const zx=z.nx*ED.w, zy=z.ny*ED.h, zw=z.nw*ED.w, zh=z.nh*ED.h; if(x>=zx&&x<=zx+zw&&y>=zy&&y<=zy+zh) return {kind:"zone",obj:z,idx:i}; }
   for(let i=ED.plats.length-1;i>=0;i--){ const p=ED.plats[i]; if(edPointOnPlat(p,x,y)) return {kind:"plat",obj:p,idx:i}; }
   return null;
 }
+function edPointOnDeco(d,x,y){
+  const b=decoBox(d, ED.w, ED.h), S=b.s;
+  return x>=b.x-S*0.5 && x<=b.x+S*0.5 && y>=b.y-S && y<=b.y+S*0.12;
+}
 // point-near-platform test accounting for rotation
 function edPointOnPlat(p,x,y){
+  const pad = 6/Math.max(0.15, ED.zoom);
   if(p.solid){
     const sx=p.nx*ED.w, sy=p.ny*ED.h, sw=p.nw*ED.w, sh=(p.nh||0.04)*ED.h;
-    return x>=sx-4 && x<=sx+sw+4 && y>=sy-4 && y<=sy+sh+4;
+    return x>=sx-pad && x<=sx+sw+pad && y>=sy-pad && y<=sy+sh+pad;
   }
   const cx=p.nx*ED.w + p.nw*ED.w/2, cy=p.ny*ED.h + (p.hop?8:12)/2;
   const a=-(p.rot||0)*Math.PI/180;
   const lx=Math.cos(a)*(x-cx)-Math.sin(a)*(y-cy);
   const ly=Math.sin(a)*(x-cx)+Math.cos(a)*(y-cy);
-  return Math.abs(lx)<p.nw*ED.w/2+6 && Math.abs(ly)<(p.hop?8:12)/2+8;
+  return Math.abs(lx)<p.nw*ED.w/2+pad && Math.abs(ly)<(p.hop?8:12)/2+pad+2;
 }
 function edEraseAt(x,y){
   const hit=edHitTest(x,y);
   if(!hit) return;
   if(hit.kind==="spawn") ED.spawns.splice(hit.idx,1);
+  else if(hit.kind==="deco") ED.deco.splice(hit.idx,1);
   else if(hit.kind==="zone") ED.zones.splice(hit.idx,1);
   else if(hit.kind==="plat") ED.plats.splice(hit.idx,1);
 }
@@ -11598,12 +12693,22 @@ function edSyncPanel(){
   const rotBtn=document.getElementById('edRotBtn');
   const zoneRow=document.getElementById('edZoneRow');
   const strRow=document.getElementById('edStrRow');
+  const decoRow=document.getElementById('edDecoRow');
+  const decoSize=document.getElementById('edDecoSizeRow');
+  const zoomBtn=document.getElementById('edZoomBtn');
   const sel=ED.sel;
   // rotate button only for a selected platform
   if(rotBtn) rotBtn.style.display=(sel&&sel.kind==="plat")?'inline-block':'none';
   if(rotBtn&&sel&&sel.kind==="plat") rotBtn.textContent="⟳ Rotate ("+(sel.obj.rot||0)+"°)";
   // zone-type picker only when the zone tool is active
   if(zoneRow) zoneRow.style.display=(ED.tool==="zone")?'flex':'none';
+  // decoration palette only when the deco tool is active
+  if(decoRow) decoRow.style.display=(ED.tool==="deco")?'flex':'none';
+  // size + flip for a selected decoration
+  if(decoSize){ decoSize.style.display=(sel&&sel.kind==="deco")?'flex':'none';
+    if(sel&&sel.kind==="deco"){ const sl=document.getElementById('edDecoSize');
+      if(sl) sl.value=Math.round((sel.obj.s||1)*100); } }
+  if(zoomBtn) zoomBtn.textContent = ED.fit ? "🔍 Zoom in" : "⛶ Fit map";
   // strength slider for a selected zone
   if(strRow){ strRow.style.display=(sel&&sel.kind==="zone")?'flex':'none';
     if(sel&&sel.kind==="zone"){ const sl=document.getElementById('edStrength'); const lab=document.getElementById('edStrLabel');
@@ -11614,59 +12719,126 @@ function edSyncPanel(){
 function edSetStrength(v){
   if(ED.sel && ED.sel.kind==="zone"){ ED.sel.obj.strength=Math.max(0.1,Math.min(3,v/100)); edSyncPanel(); edDraw(); }
 }
+function edSetDecoSize(v){
+  if(ED.sel && ED.sel.kind==="deco"){ ED.sel.obj.s=Math.max(0.3,Math.min(3,v/100)); edDraw(); }
+}
+function edFlipDeco(){
+  if(ED.sel && ED.sel.kind==="deco"){ ED.sel.obj.flip=!ED.sel.obj.flip; edDraw(); }
+}
 
+// The editor canvas. It paints the level through the MATCH's own painters — paintPlat, paintDeco,
+// the same sky gradient and ground colours draw() uses — inside a camera transform, instead of
+// drawing its own flat rectangles at its own scale. A builder is looking at the map, not a
+// diagram of it. On top of that, and only on top, go the editing overlays: selection rings,
+// spawn markers, the drag preview and the minimap.
 function edDraw(){
-  const ctx=ED.ctx, w=ED.w, h=ED.h; if(!ctx) return;
-  ctx.clearRect(0,0,w,h);
+  const ctx2=ED.ctx; if(!ctx2) return;
+  const t = (typeof performance!=='undefined' && performance.now) ? performance.now()/16 : 0;
+  const cw=ED.cw, ch=ED.ch, z=ED.zoom, ox=edOx(), oy=edOy();
+  ctx2.setTransform(1,0,0,1,0,0);
+  ctx2.clearRect(0,0,cw,ch);
+  // out-of-world surround, so the edge of the map is visible as an edge
+  ctx2.fillStyle="#0d1117"; ctx2.fillRect(0,0,cw,ch);
+  ctx2.save();
+  ctx2.translate(ox,oy); ctx2.scale(z,z); ctx2.translate(-ED.view.x, -ED.view.y);
+  const w=ED.w, h=ED.h;
   const skies={"":["#bfe8ff","#88cdf2"], lava:["#3a1a10","#1a0a06"], lowgrav:["#dfeaf2","#b8c9dc"], evilleafy:["#20301a","#0e1a0c"]};
-  const sk=skies[ED.hazard]||skies[""]; const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,sk[0]); g.addColorStop(1,sk[1]);
-  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
-  const gy=h*0.82; ctx.fillStyle=ED.hazard==='lava'?'#5a2a18':(ED.hazard==='evilleafy'?'#2d3a24':'#7bc043');
-  ctx.fillRect(0,gy,w,h-gy);
-  if(ED.hazard==='lava'){ ctx.fillStyle='#f0521f'; ctx.fillRect(0,gy-4,w,5); }
+  const sk=skies[ED.hazard]||skies[""];
+  const g=ctx2.createLinearGradient(0,0,0,h); g.addColorStop(0,sk[0]); g.addColorStop(1,sk[1]);
+  ctx2.fillStyle=g; ctx2.fillRect(0,0,w,h);
+  // the ground, painted the way the match paints it (groundY() is 0.82 of the world box)
+  const gy=h*0.82;
+  ctx2.fillStyle=ED.hazard==='lava'?'#5a2a18':(ED.hazard==='evilleafy'?'#2d3a24':'#7bc043');
+  ctx2.fillRect(0,gy,w,h-gy);
+  ctx2.strokeStyle="#1c1c1c"; ctx2.lineWidth=3; ctx2.beginPath(); ctx2.moveTo(0,gy); ctx2.lineTo(w,gy); ctx2.stroke();
+  if(ED.hazard==='lava'){ ctx2.fillStyle='#f0521f'; ctx2.fillRect(0,gy-4,w,5); }
+  // scenery, behind the geometry — the same painter the match calls
+  paintDecoList(ctx2, ED.deco, w, h, t);
   // effect zones (under platforms)
-  for(const z of ED.zones){ const zx=z.nx*w, zy=z.ny*h, zw=z.nw*w, zh=z.nh*h; const zc=ZONE_TYPES[z.type]||ZONE_TYPES.glue;
-    ctx.globalAlpha=0.4; ctx.fillStyle=zc.color; ctx.fillRect(zx,zy,zw,zh);
-    ctx.globalAlpha=1; ctx.strokeStyle=zc.color; ctx.setLineDash([6,4]); ctx.lineWidth=2; ctx.strokeRect(zx,zy,zw,zh); ctx.setLineDash([]);
-    ctx.fillStyle='#1c1c1c'; ctx.font='bold 11px system-ui'; ctx.textAlign='left'; ctx.fillText(zc.label+" "+(z.strength||1).toFixed(1)+"×", zx+4, zy+13);
-    if(ED.sel&&ED.sel.obj===z){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(zx-2,zy-2,zw+4,zh+4); }
+  for(const z2 of ED.zones){ const zx=z2.nx*w, zy=z2.ny*h, zw=z2.nw*w, zh=z2.nh*h; const zc=ZONE_TYPES[z2.type]||ZONE_TYPES.glue;
+    ctx2.globalAlpha=0.4; ctx2.fillStyle=zc.color; ctx2.fillRect(zx,zy,zw,zh);
+    ctx2.globalAlpha=1; ctx2.strokeStyle=zc.color; ctx2.setLineDash([6,4]); ctx2.lineWidth=2; ctx2.strokeRect(zx,zy,zw,zh); ctx2.setLineDash([]);
+    ctx2.fillStyle='#1c1c1c'; ctx2.font='bold '+Math.round(11/z)+'px system-ui'; ctx2.textAlign='left'; ctx2.fillText(zc.label+" "+(z2.strength||1).toFixed(1)+"×", zx+4, zy+13/z);
+    if(ED.sel&&ED.sel.obj===z2){ edOutline(ctx2, zx-2,zy-2,zw+4,zh+4); }
   }
-  // platforms (with rotation); solids draw as tall stone blocks
-  for(const p of ED.plats){
-    if(p.solid){
-      const px=p.nx*w, py=p.ny*h, pw=p.nw*w, ph=(p.nh||0.04)*h;
-      ctx.fillStyle='#6b6f78'; ctx.fillRect(px,py,pw,ph);
-      ctx.fillStyle='#8b9099'; ctx.fillRect(px,py,pw,Math.min(5,ph*0.3));
-      ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=2; ctx.strokeRect(px,py,pw,ph);
-      if(ED.sel&&ED.sel.obj===p){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(px-3,py-3,pw+6,ph+6); }
-      continue;
+  // platforms — painted by the MATCH's painter, from the MATCH's rectangles
+  const rects = levelPlatRects(ED.plats, w, h);
+  const style = { leafy:true };                    // a custom stage renders as the Goiky palette
+  rects.forEach((r,i)=>{
+    paintPlat(ctx2, r, style);
+    if(ED.sel && ED.sel.obj===ED.plats[i]){
+      if(r.rot){ ctx2.save(); ctx2.translate(r.x+r.w/2, r.y+r.h/2); ctx2.rotate(r.rot*Math.PI/180);
+        edOutline(ctx2, -r.w/2-3, -r.h/2-3, r.w+6, r.h+6); ctx2.restore(); }
+      else edOutline(ctx2, r.x-3, r.y-3, r.w+6, r.h+6);
     }
-    const px=p.nx*w, py=p.ny*h, pw=p.nw*w, ph=p.hop?8:12;
-    ctx.save(); ctx.translate(px+pw/2, py+ph/2); ctx.rotate((p.rot||0)*Math.PI/180);
-    ctx.fillStyle=p.hop?'#d9a441':'#caa06a'; ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=2;
-    ctx.fillRect(-pw/2,-ph/2,pw,ph); ctx.strokeRect(-pw/2,-ph/2,pw,ph);
-    if(ED.sel&&ED.sel.obj===p){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(-pw/2-3,-ph/2-3,pw+6,ph+6); }
-    ctx.restore();
-  }
-  // spawns
+  });
+  // spawns — drawn with the REAL fighter renders standing on them, so the markers show the scale
+  // of an actual body against the platforms you have drawn.
   ED.spawns.forEach((s,i)=>{ const sx=s.nx*w, sy=s.ny*h;
-    ctx.fillStyle='#6fb7ff'; ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(sx,sy,12,0,7); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#fff'; ctx.font='bold 13px system-ui'; ctx.textAlign='center'; ctx.fillText(i+1,sx,sy+4);
-    if(ED.sel&&ED.sel.obj===s){ ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(sx,sy,16,0,7); ctx.stroke(); } });
+    edDrawSpawnFighter(ctx2, i, sx, sy);
+    ctx2.fillStyle='#6fb7ff'; ctx2.strokeStyle='#1c1c1c'; ctx2.lineWidth=2;
+    ctx2.beginPath(); ctx2.arc(sx,sy,12,0,7); ctx2.fill(); ctx2.stroke();
+    ctx2.fillStyle='#fff'; ctx2.font='bold 13px system-ui'; ctx2.textAlign='center'; ctx2.fillText(i+1,sx,sy+4);
+    if(ED.sel&&ED.sel.obj===s){ ctx2.strokeStyle='#fff'; ctx2.lineWidth=2/z; ctx2.beginPath(); ctx2.arc(sx,sy,16,0,7); ctx2.stroke(); } });
+  // selected decoration
+  if(ED.sel && ED.sel.kind==='deco'){ const b=decoBox(ED.sel.obj, w, h);
+    edOutline(ctx2, b.x-b.s*0.5, b.y-b.s, b.s, b.s*1.1); }
   // drag preview
   if(ED.drag && (ED.drag.mode==="draw"||ED.drag.mode==="zone"||ED.drag.mode==="solid")){ const d=ED.drag;
     const x=Math.min(d.x0,d.x1), y=Math.min(d.y0,d.y1), ww=Math.abs(d.x1-d.x0), hh=Math.abs(d.y1-d.y0);
-    ctx.globalAlpha=0.55;
-    if(d.mode==="draw"){ ctx.fillStyle='#caa06a'; ctx.fillRect(x,y,ww,12); }
-    else if(d.mode==="solid"){ ctx.fillStyle='#6b6f78'; ctx.fillRect(x,y,ww,hh); }
-    else { const zc=ZONE_TYPES[ED.zoneType]; ctx.fillStyle=zc.color; ctx.fillRect(x,y,ww,hh); }
-    ctx.globalAlpha=1; }
+    ctx2.globalAlpha=0.55;
+    if(d.mode==="draw"){ ctx2.fillStyle='#caa06a'; ctx2.fillRect(x,y,ww,12); }
+    else if(d.mode==="solid"){ ctx2.fillStyle='#6b6f78'; ctx2.fillRect(x,y,ww,hh); }
+    else { const zc=ZONE_TYPES[ED.zoneType]; ctx2.fillStyle=zc.color; ctx2.fillRect(x,y,ww,hh); }
+    ctx2.globalAlpha=1; }
+  ctx2.restore();
+  edDrawMinimap(ctx2);
 }
-function edClear(){ ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.sel=null; edSyncPanel(); edDraw(); }
+// A selection ring that stays the same weight on screen however far you are zoomed out.
+function edOutline(g,x,y,w,h){ g.strokeStyle='#fff'; g.lineWidth=2/Math.max(0.15,ED.zoom); g.strokeRect(x,y,w,h); }
+// A real roster render standing on spawn marker `i`. Falls back to a plain silhouette until the
+// PNG decodes — the same degradation rule the fighters themselves use.
+function edDrawSpawnFighter(g, i, x, y){
+  const names = (typeof SPRITES!=='undefined') ? Object.keys(SPRITES) : [];
+  if(!names.length) return;
+  const sp = SPRITES[names[i % names.length]];
+  const im = sp ? spriteImage(sp) : null;
+  g.globalAlpha=0.85;
+  if(im){
+    const hh=84, ww=hh*(im.naturalWidth/Math.max(1,im.naturalHeight));
+    g.drawImage(im, x-ww/2, y-hh, ww, hh);
+  } else {
+    g.fillStyle="#ffffff55"; g.strokeStyle="#1c1c1c"; g.lineWidth=2;
+    g.beginPath(); g.ellipse(x, y-34, 28, 32, 0, 0, 7); g.fill(); g.stroke();
+  }
+  g.globalAlpha=1;
+}
+// A minimap, so a builder panning a Huge map always knows where in it they are. Only drawn when
+// there is actually more map than canvas — on a one-screen level it would be a picture of itself.
+function edDrawMinimap(g){
+  if(ED.w*ED.zoom <= ED.cw+1 && ED.h*ED.zoom <= ED.ch+1) return;
+  const mw=110, mh=Math.max(30, Math.round(mw*ED.h/ED.w)), mx=ED.cw-mw-10, my=ED.ch-mh-10;
+  g.save();
+  g.globalAlpha=0.85; g.fillStyle="#1c1c1c"; g.fillRect(mx-3,my-3,mw+6,mh+6);
+  g.fillStyle="#3a4a2a"; g.fillRect(mx,my,mw,mh); g.globalAlpha=1;
+  const rx=mw/ED.w, ry=mh/ED.h;
+  g.fillStyle="#ffffff88";
+  for(const p of ED.plats) g.fillRect(mx+p.nx*mw, my+p.ny*mh, Math.max(1,(p.nw||0.02)*mw), 1);
+  g.fillStyle="#6fb7ff";
+  for(const s of ED.spawns) g.fillRect(mx+s.nx*mw-1, my+s.ny*mh-1, 3, 3);
+  g.strokeStyle="#ffd34d"; g.lineWidth=1;
+  g.strokeRect(mx+ED.view.x*rx, my+ED.view.y*ry, (ED.cw/ED.zoom)*rx, (ED.ch/ED.zoom)*ry);
+  g.restore();
+}
+function edClear(){ ED.plats=[]; ED.spawns=[]; ED.zones=[]; ED.deco=[]; ED.sel=null; edSyncPanel(); edDraw(); }
+// The level as it would be SAVED — and as "▶ Play" and "🧪 Test the Feel" queue it. `size` and
+// `deco` are part of it, which is what makes the test button test the map you are actually
+// looking at rather than a one-screen undressed version of it.
 function edCurrentLevel(){
-  return { name:(document.getElementById('edName').value||'Custom').slice(0,24),
-    plats:ED.plats.map(p=>({...p})), spawns:ED.spawns.map(s=>({...s})), zones:ED.zones.map(z=>({...z})), hazard:ED.hazard };
+  return { v:2, name:(document.getElementById('edName').value||'Custom').slice(0,24),
+    size: MAP_SIZES[ED.size] ? ED.size : 'normal',
+    plats:ED.plats.map(p=>({...p})), spawns:ED.spawns.map(s=>({...s})),
+    zones:ED.zones.map(z=>({...z})), deco:ED.deco.map(d=>({...d})), hazard:ED.hazard };
 }
 async function edSave(){
   const lvl=edCurrentLevel();
@@ -11684,7 +12856,10 @@ async function edRenderList(){
   if(!names.length){ box.innerHTML='<div class="foot">No saved levels yet.</div>'; return; }
   for(const nm of names){
     const d=document.createElement('div'); d.className='edlevel';
-    const label=document.createElement('span'); label.textContent=nm; d.appendChild(label);
+    const lv=levels[nm]||{};
+    const label=document.createElement('span');
+    const sz=MAP_SIZES[lv.size] ? MAP_SIZES[lv.size].label : MAP_SIZES.normal.label;
+    label.textContent=nm+" · "+sz; d.appendChild(label);
     const load=document.createElement('button'); load.className='load'; load.textContent='Load';
     load.onclick=()=>edLoad(nm); d.appendChild(load);
     const play=document.createElement('button'); play.className='load'; play.textContent='▶'; play.style.background='#7bc043';
@@ -11695,14 +12870,31 @@ async function edRenderList(){
     box.appendChild(d);
   }
 }
+// Read a stored level into the editor. THE MIGRATION LIVES HERE, and it is a pair of defaults: a
+// level saved before sizes existed has no `size` and is read as 'normal' — which is the one-screen
+// world box its coordinates were drawn against, so it comes back exactly as it was left — and a
+// level saved before decorations existed has no `deco` and is read as an empty list. Nothing is
+// rewritten on disk and nothing that ever saved is refused.
+function edAdoptLevel(lvl){
+  ED.plats=(lvl.plats||[]).map(p=>({rot:0,...p}));
+  ED.spawns=(lvl.spawns||[]).map(s=>({...s}));
+  ED.zones=(lvl.zones||[]).map(z=>({...z}));
+  ED.deco=(lvl.deco||[]).filter(d=>d && DECO_TYPES[d.k]).map(d=>({s:1,...d}));
+  ED.hazard=lvl.hazard||"";
+  ED.size=MAP_SIZES[lvl.size] ? lvl.size : 'normal';
+  ED.sel=null;
+}
 async function edLoad(nm, thenPlay){
   let levels={}; const raw=await BStore.get('levels:custom'); if(raw){ try{levels=JSON.parse(raw);}catch(e){} }
   const lvl=levels[nm]; if(!lvl) return;
-  ED.plats=(lvl.plats||[]).map(p=>({rot:0,...p})); ED.spawns=(lvl.spawns||[]).map(s=>({...s}));
-  ED.zones=(lvl.zones||[]).map(z=>({...z})); ED.hazard=lvl.hazard||""; ED.sel=null;
-  document.getElementById('edName').value=lvl.name; document.getElementById('edHazard').value=ED.hazard;
+  edAdoptLevel(lvl);
+  document.getElementById('edName').value=lvl.name;
+  document.getElementById('edHazard').value=ED.hazard;
+  const sz=document.getElementById('edSize');
+  if(sz) sz.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===ED.size));
+  ED.fit=true; edResize();
   edSyncPanel(); edDraw();
-  if(thenPlay) playCustomLevel(lvl);
+  if(thenPlay) playCustomLevel(edCurrentLevel());
 }
 function edTestPlay(){ playCustomLevel(edCurrentLevel(), true); }   // quick test from the editor skips character select
 // "Test the feel" — the same sandbox that used to hang off the title screen as "Test Mode", now
@@ -11716,7 +12908,14 @@ function edTestFeel(){
 // Arm a hand-drawn level as the world the next match builds: CUSTOM_LEVEL feeds setupWorld's
 // geometry, `stage` feeds the sky/ground painting. Shared by "▶ Play" and "🧪 Test the Feel".
 function queueCustomLevel(lvl){
-  CUSTOM_LEVEL = { name:lvl.name, plats:lvl.plats, spawns:lvl.spawns, zones:lvl.zones||[], hazard:lvl.hazard };
+  // `size` and `deco` travel with the level. The size decides the WORLD BOX setupWorld builds (so
+  // a map built as Huge plays as Huge, from "▶ Play" and from "🧪 Test the Feel" alike), and it is
+  // mirrored into SETTINGS.mapSize so the menus, the summary line and the netcode all agree with
+  // the arena the match is actually about to construct.
+  const size = MAP_SIZES[lvl.size] ? lvl.size : 'normal';
+  CUSTOM_LEVEL = { v:2, name:lvl.name, size, plats:lvl.plats, spawns:lvl.spawns,
+                   zones:lvl.zones||[], deco:lvl.deco||[], hazard:lvl.hazard };
+  SETTINGS.mapSize = size;
   const skies={"":["#bfe8ff","#88cdf2"], lava:["#3a1a10","#1a0a06"], lowgrav:["#dfeaf2","#b8c9dc"], evilleafy:["#20301a","#0e1a0c"]};
   stage = { id:"custom", name:lvl.name||"Custom", blurb:"Your level", sky:skies[lvl.hazard]||skies[""],
     ground:lvl.hazard==='lava'?'#5a2a18':(lvl.hazard==='evilleafy'?'#2d3a24':'#7bc043'), plats:[], hazard:lvl.hazard||null };

@@ -73,3 +73,56 @@ top-8 / bottom-8.
 - Pilot (2 tournaments, 32 matches): **~73 s, 0 timeouts**.
 - **Full run (8 tournaments, ~128 matches): projected ~5 min** — well under the 15-min budget.
   There is headroom to raise `--tournaments` for finer signal.
+
+## ⚠️ READ THIS BEFORE ACTING ON A RANKING (added in balance pass 3)
+
+**Win-rate at 24 tournaments cannot tell a balanced roster from an unbalanced one.**
+
+Wins and games are *coupled* here — winning a heat advances you, so you play again — so the
+noise in win-rate is not a binomial and cannot be reasoned about analytically. Simulate it:
+
+```bash
+node scripts/_pass3-null.mjs 24 400     # replays the exact bracket with 59 IDENTICAL fighters
+```
+
+A **perfectly balanced** roster still produces, at 24 tournaments:
+
+| statistic | null result |
+|---|---|
+| std-dev | 7.92 (p95 **8.93**) |
+| best fighter | 39.8% (p95 **45.0%**) |
+| worst fighter | 3.9% |
+| fighters at 0% | 0.27 |
+
+So at 24 tournaments a 44% winner and a 4% loser are **exactly what balance looks like**.
+Pass 3's baseline measured std-dev 8.50 / max 42.1% / min 4.0% — every number inside the
+null. The three fighters that pass had been briefed to fix (Liy "~59%", Balloony and
+Firey Jr. "0%") had already been fixed by earlier passes; acting on that brief would have
+been fitting noise.
+
+**Raise the sample before concluding anything.** Chunk it across cores — the runner is
+single-threaded, so N processes with different `--seed` values give ~N× throughput:
+
+```bash
+# 5 chunks x 24 = 120 tournaments (~130-180 games/fighter), ~25 min wall on 8 cores
+for s in 1234 2222 3333 4444 5555; do
+  node scripts/balance-tournament.mjs full --tournaments 24 --seed $s --out chunk-$s.json &
+done; wait
+node scripts/_pass3-merge.mjs merged.json chunk-*.json
+node scripts/_pass3-compare.mjs before.json merged.json
+```
+
+At **120 tournaments** the null tightens to std-dev 3.55 / max 29.9% (p95 32.5) / min 13.2%,
+which is enough resolution to name real outliers.
+
+**Prefer KOs/game for diagnosing a kit.** It is a count over many events rather than one
+binary per match, so it is far less noisy than win-rate: roster mean ~1.73 against a count
+noise floor around 0.25. That statistic is what exposed Gelatin (0.83 — her smash applied
+freeze *on top of* its own knockback, and `frozen` costs 40% of vx every frame, so she was
+erasing the only launch she had) and Marker (0.98 — an all-debuff kit with no finisher).
+
+**Watch for variance an AI gate is hiding.** Smash commitment used to be restricted to
+heavy/brawl, which denied 46 of 59 fighters their finisher *and* damped roster variance by
+holding them all to a common baseline. Opening it (pass 3) lifted the floor 7.0% → 9.1% but
+widened std-dev 5.89 → 6.50, because it amplifies uneven smash quality. If a future pass
+wants the tighter spread back, that single gate in `aiThink` is the lever.

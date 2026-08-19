@@ -33,6 +33,28 @@
 
 import { loadMonolith } from '../test/helpers/load-monolith.js';
 
+// ---------------------------------------------------------------------------
+//  JSDOM TEARDOWN GUARD
+// ---------------------------------------------------------------------------
+// The monolith fires a few FIRE-AND-FORGET async boot tasks (refreshDailyCard() ->
+// await BStore.get(...) -> document.createElement(...)). Their continuations are
+// queued against a window we then close(): jsdom nulls `document` on close, so the
+// continuation throws INSIDE an async function nobody awaited -> unhandled rejection
+// -> Node 22 kills the process mid-run. That is pure teardown noise, not a game bug:
+// the match has already been played and scored by the time we close the window.
+//
+// `settle()` gives those continuations a turn to finish BEFORE the close (which is
+// where they succeed harmlessly), and the guard below swallows only the specific
+// post-close symptom so a REAL error still crashes the run loudly.
+const settle = async (turns = 3) => { for (let i = 0; i < turns; i++) await new Promise(r => setTimeout(r, 0)); };
+const TEARDOWN_RE = /Cannot read properties of (?:undefined|null) \(reading '(?:createElement|getElementById|body|querySelector[A-Za-z]*)'\)/;
+process.on('unhandledRejection', (err) => {
+  const msg = (err && err.message) || String(err);
+  if (TEARDOWN_RE.test(msg)) return;            // dead-window continuation — ignore
+  console.error('UNHANDLED REJECTION:', err);
+  process.exit(1);
+});
+
 // ---- deterministic PRNG for seed derivation + seeded shuffles (mirrors helper's mulberry32)
 function mulberry32(a) {
   return function () {
@@ -241,6 +263,7 @@ function fmtTable(rows, { top = 8, bottom = 8 } = {}) {
 async function getPlayableRoster() {
   const { window: w } = loadMonolith(1);
   const roster = w.eval('ROSTER.filter(r=>r.play).map(r=>r.name)');
+  await settle();                               // let the boot's async tasks finish before teardown
   try { w.close && w.close(); } catch { /* */ }
   return roster;
 }

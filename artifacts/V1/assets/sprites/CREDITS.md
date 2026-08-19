@@ -135,7 +135,7 @@ endorsed by the rights holder.
 
 <!-- RENDER-INVENTORY-START -->
 
-**47 additional character renders**, fetched from the character infobox on
+**53 additional character renders**, fetched from the character infobox on
 `battlefordreamisland.fandom.com` via the MediaWiki API, scaled server-side to 200px tall, PNG
 with verified alpha and the invisible halo erased. Same provenance as the twelve above:
 jacknjellify's character artwork, no formal license, used under fan-work norms in a disclaimed,
@@ -154,10 +154,13 @@ non-commercial fan game.
 | David | `david.png` | 103×200 | -0.052 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/8/86/HD_David.png/revision/latest?cb=20241210131638 |
 | Donut | `donut.png` | 212×200 | -0.057 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a0/Tpot_renders0011.png/revision/latest?cb=20251212031403 |
 | Dora | `dora.png` | 150×200 | 0.068 | https://static.wikia.nocookie.net/battlefordreamisland/images/d/df/Dora2.png/revision/latest?cb=20231226113012 |
+| Evil Leafy | `evil-leafy.png` | 110×200 | -0.001 | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4c/Evil_Leafy_Bfdia_6.png/revision/latest?cb=20240514042356 |
 | Fanny | `fanny.png` | 158×200 | -0.129 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e7/Tpot_renders0004.png/revision/latest?cb=20210113223402 |
 | Fern | `fern.png` | 151×200 | 0 | https://static.wikia.nocookie.net/battlefordreamisland/images/e/ea/FernIntroRecreation.png/revision/latest?cb=20260102040323 |
 | Firey Jr. | `firey-jr.png` | 241×200 | 0.008 | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/Tpot_renders0048.png/revision/latest?cb=20260410150529 |
+| Firey Speaker Box | `firey-speaker-box.png` | 141×200 | 0.025 | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1c/BFDIA-7FlyingFireySpeaker.png/revision/latest?cb=20240124231428 |
 | Flower | `flower.png` | 161×200 | 0.013 | https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/BFDI-TPOT_7_Flower.png/revision/latest?cb=20260131062732 |
+| Four | `four.png` | 190×200 | -0.055 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/9/90/TPOT_Four_Pose.png/revision/latest?cb=20260226000911 |
 | Fries | `fries.png` | 142×200 | 0.146 | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e9/Tpot_renders0041.png/revision/latest?cb=20240619061744 |
 | Gaty | `gaty.png` | 278×200 | -0.022 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/2/21/Tpot_renders0013.png/revision/latest?cb=20210113223705 |
 | Gelatin | `gelatin.png` | 193×200 | 0.004 | https://static.wikia.nocookie.net/battlefordreamisland/images/4/43/Gelatin_sad.png/revision/latest?cb=20260725082718 |
@@ -175,6 +178,8 @@ non-commercial fan game.
 | Pillow | `pillow.png` | 151×200 | -0.062 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Tpot_renders0019.png/revision/latest?cb=20231104233931 |
 | Pin | `pin.png` | 120×200 | 0.059 | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2d/Tpot_renders0010.png/revision/latest?cb=20250802161226 |
 | Profily | `profily.png` | 206×200 | -0.01 | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c7/Profiley_sitting.png/revision/latest?cb=20250622231638 |
+| Puffball Speaker Box | `puffball-speaker-box.png` | 165×200 | -0.025 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d8/Newpsb.png/revision/latest?cb=20260519112421 |
+| Purple Face | `purple-face.png` | 195×200 | -0.049 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/PurpleFaceNewPose.png/revision/latest?cb=20230408121013 |
 | Remote | `remote.png` | 202×200 | 0.029 | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9c/Tpot_renders0006.png/revision/latest?cb=20210113223517 |
 | Roboty | `roboty.png` | 84×200 | 0 | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/Roboty_book.png/revision/latest?cb=20190908174044 |
 | Rose | `rose.png` | 144×200 | 0.004 | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2d/RoseBFDIE.png/revision/latest?cb=20260102044136 |
@@ -188,6 +193,7 @@ non-commercial fan game.
 | Toothpaste | `toothpaste.png` | 110×200 | 0.034 | https://static.wikia.nocookie.net/battlefordreamisland/images/2/26/Toothpaste_BFDIE.png/revision/latest?cb=20260101214409 |
 | Tree | `tree.png` | 170×200 | -0.053 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/8/81/Tree_the_Purple.png/revision/latest?cb=20250714210826 |
 | TV | `tv.png` | 219×200 | 0.002 | https://static.wikia.nocookie.net/battlefordreamisland/images/c/cc/Tpot_renders0036.png/revision/latest?cb=20210113224339 |
+| Two | `two.png` | 255×200 | -0.006 | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2e/TwoTPOT20PromoArt.png/revision/latest?cb=20260131061643 |
 | Woody | `woody.png` | 167×200 | 0.02 | https://static.wikia.nocookie.net/battlefordreamisland/images/6/64/Woody_in_TPOT_%28fair_enough%29.png/revision/latest?cb=20260701141213 |
 | Yellow Face | `yellow-face.png` | 194×200 | -0.059 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/Yellowface.png/revision/latest?cb=20190908174021 |
 <!-- RENDER-INVENTORY-END -->
