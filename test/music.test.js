@@ -38,6 +38,10 @@ async function until(fn, ms = 2000) {
   }
   return fn();
 }
+// The title screen's chain is four sources deep — custom/title.mp3, title.mp3, custom/menu.mp3,
+// menu.mp3 — and every 404 is its own macrotask hop, so "sleep 3ms and assert" is a flake waiting
+// to happen. Wait for the source that should win.
+const lands = (plays, src, ms = 2000) => until(() => plays().at(-1) === src, ms);
 
 function fakeNode() {
   const ramp = { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} };
@@ -88,6 +92,9 @@ function bootWithAudio(opts = {}) {
   const state = { gestureFired: false, constructedEarly: 0, idbTouchedAtBoot: false, oscillators: 0 };
   const existing = new Set([...DEFAULTS, ...(opts.existing || [])]);
   let blobN = 0;
+  // Flipped by a test to model the OTHER reason play() rejects: an autoplay policy refusing a
+  // source that is perfectly loadable. That one really does deserve the synth cover.
+  let blockPlay = !!opts.blockPlay;
   const dom = new JSDOM(html, {
     url: 'http://localhost/',
     runScripts: 'dangerously',
@@ -159,7 +166,27 @@ function bootWithAudio(opts = {}) {
         }
         get src() { return this._src; }
         addEventListener(type, fn) { (this._on[type] = this._on[type] || []).push(fn); }
-        play() { this.paused = false; events.push(['play', this._src]); return Promise.resolve(); }
+        // A real browser reports an unusable source TWICE: the `error` event above, and a
+        // REJECTED play() promise. Modelling only the event hid a doubled-bed bug for months —
+        // the rejection handler treated every rejection as an autoplay block, started the synth
+        // as cover, and nothing stopped it when the next source in the chain loaded. The
+        // rejection is a microtask and the error event a macrotask, so this also reproduces the
+        // nastier of the two orderings: synth first, file afterwards.
+        play() {
+          events.push(['play', this._src]);
+          if (blockPlay || !existing.has(this._src)) {
+            this.paused = true;
+            const err = new Error(blockPlay ? 'NotAllowedError' : 'NotSupportedError');
+            // Nothing promises an ordering between the `error` event and this rejection. By
+            // default the rejection lands FIRST (microtask vs macrotask); opts.rejectDelay models
+            // the other ordering, where a long-dead source reports its failure only after the
+            // chain has stepped on and the file that wins is already playing.
+            if (!opts.rejectDelay) return Promise.reject(err);
+            return new Promise((_res, rej) => setTimeout(() => rej(err), opts.rejectDelay));
+          }
+          this.paused = false;
+          return Promise.resolve();
+        }
         pause() { this.paused = true; events.push(['pause', this._src]); }
       };
     },
@@ -170,7 +197,26 @@ function bootWithAudio(opts = {}) {
   const plays = () => events.filter((e) => e[0] === 'play').map((e) => e[1]);
   const gesture = () => { state.gestureFired = true; w.dispatchEvent(new w.Event('pointerdown')); };
   const decks = () => w.eval('JSON.stringify(SND._decks.map(d=>d?{src:d.src,paused:d.paused,vol:d.volume}:null))');
-  return { w, events, plays, gesture, state, existing, decks: () => JSON.parse(decks()) };
+  return { w, events, plays, gesture, state, existing, decks: () => JSON.parse(decks()),
+           blockPlay: (v) => { blockPlay = v !== false; } };
+}
+
+/** Everything that is ACTUALLY making noise this instant: the synth bed counts as one source, and
+ *  so does every deck that is unpaused with its volume up. Two at once is the doubled-bed bug. */
+function beds(w) {
+  return JSON.parse(w.eval(`JSON.stringify({
+    synth: !!SND._musicTimer,
+    decks: SND._decks.filter(d => d && !d.paused && d.volume > 0).map(d => d.src),
+    pending: SND._pendingKind,
+    kind: SND._kind,
+  })`));
+}
+function expectOneBed(w, src) {
+  const b = beds(w);
+  const audible = b.decks.concat(b.synth ? ['<synth bed>'] : []);
+  expect(audible, `expected exactly one audible bed, heard ${JSON.stringify(audible)}`).toHaveLength(1);
+  if (src) expect(b.decks[0]).toBe(src);
+  return b;
 }
 
 describe('background music — the file layer', () => {
@@ -217,19 +263,19 @@ describe('background music — the file layer', () => {
     const { w, plays, gesture } = bootWithAudio();
     expect(w.eval("document.querySelector('.screen.active').id")).toBe('title');
     gesture();                                        // first click anywhere, no navigation
-    await tick();
+    await lands(plays, 'assets/music/menu.mp3');      // via the empty title slot's fallback
     expect(plays().at(-1)).toBe('assets/music/menu.mp3');
   });
 
   it('does not restart the loop when moving between screens that share a bed', async () => {
     const { w, plays, gesture } = bootWithAudio();
     gesture();
-    await tick();
+    await lands(plays, 'assets/music/menu.mp3');
     const n = plays().length;
     w.eval("go('select')");
     w.eval("go('controls')");
     w.eval("go('title')");
-    await tick();
+    await tick(20);
     expect(plays()).toHaveLength(n);                  // one continuous menu loop, not four restarts
   });
 
@@ -260,8 +306,9 @@ describe('background music — the file layer', () => {
 describe('background music — the source priority chain', () => {
   it('asks for the owner custom/ slot before the shipped default, and falls through on 404', async () => {
     const { w, plays, gesture } = bootWithAudio();          // custom/ is empty, as shipped
+    w.eval("go('select')");                                // the MENU bed specifically, not title
     gesture();
-    await tick();
+    await lands(plays, 'assets/music/menu.mp3');
     expect(plays()[0]).toBe('assets/music/custom/menu.mp3');  // asked first...
     expect(plays().at(-1)).toBe('assets/music/menu.mp3');     // ...and fell through to the default
     expect(w.eval("!!SND._badSrc['assets/music/custom/menu.mp3']")).toBe(true);
@@ -270,11 +317,11 @@ describe('background music — the source priority chain', () => {
 
   it('does not re-ask for a custom slot it already knows is empty', async () => {
     const { w, plays, gesture } = bootWithAudio();
-    gesture(); await tick();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
     const asked = () => plays().filter((s) => s === 'assets/music/custom/menu.mp3').length;
     expect(asked()).toBe(1);
-    w.eval("startMusic('battle')"); await tick();
-    w.eval("startMusic('menu')"); await tick();
+    w.eval("startMusic('battle')"); await lands(plays, 'assets/music/battle.mp3');
+    w.eval("startMusic('menu')"); await lands(plays, 'assets/music/menu.mp3');
     expect(asked()).toBe(1);                                  // still just the one probe
   });
 
@@ -301,7 +348,7 @@ describe('background music — the source priority chain', () => {
 
   it('swaps live when a track is loaded for the context already playing', async () => {
     const { w, plays, gesture } = bootWithAudio();
-    gesture(); await tick();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
     expect(plays().at(-1)).toBe('assets/music/menu.mp3');
     w.eval("musicSetUserTrack('menu', new Blob(['x']), 'mine.mp3')");
     await tick();
@@ -310,7 +357,7 @@ describe('background music — the source priority chain', () => {
 
   it('clearing a slot reverts to the default and revokes the blob URL', async () => {
     const { w, plays, gesture } = bootWithAudio();
-    gesture(); await tick();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
     w.eval("musicSetUserTrack('menu', new Blob(['x']), 'mine.mp3')");
     await tick();
     const url = w.eval("SND._userPick['menu']");
@@ -319,6 +366,121 @@ describe('background music — the source priority chain', () => {
     expect(w.eval("!!SND._userList['menu']")).toBe(false);
     expect(plays().at(-1)).toBe('assets/music/menu.mp3');
     expect(JSON.parse(w.eval('JSON.stringify(__revoked)'))).toContain(url);
+  });
+});
+
+// The owner wanted a specific track on the FRONT PAGE that is not the general menu bed. `title` is
+// therefore a context in its own right — its own file slot, its own picker row, its own screen
+// routing — with one deliberate asymmetry: it ships no default. An empty title slot has to leave
+// the title screen playing exactly the bed it played before the slot existed, or this "feature" is
+// a silent regression for every player who never sets a title track.
+describe('background music — the title bed', () => {
+  it('is a real context, with no shipped file of its own', () => {
+    const { w } = bootWithAudio();
+    expect(JSON.parse(w.eval('JSON.stringify(MUSIC_FILES)')).title).toBeUndefined();
+    const probe = w.eval('MUSIC_UNSHIPPED.title');
+    expect(probe).toBe('assets/music/title.mp3');
+    expect(existsSync(`${PUB}/${probe}`), 'no new audio may be shipped for it').toBe(false);
+    expect(w.eval("MUSIC_CONTEXTS.indexOf('title')")).toBeGreaterThanOrEqual(0);
+  });
+
+  it('routes the title screen to it, and every other menu screen to the menu bed', () => {
+    const { w } = bootWithAudio();
+    expect(w.eval('MUSIC_SCREENS.title')).toBe('title');
+    for (const id of ['select', 'controls', 'tutorial', 'stats', 'editor', 'lobby', 'options']) {
+      expect(w.eval(`MUSIC_SCREENS.${id}`), `${id} keeps the menu bed`).toBe('menu');
+    }
+  });
+
+  it('falls through to the WHOLE menu chain when the slot is empty', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    expect(JSON.parse(w.eval("JSON.stringify(musicSources('title'))"))).toEqual([
+      'assets/music/custom/title.mp3',
+      'assets/music/title.mp3',
+      'assets/music/custom/menu.mp3',
+      'assets/music/menu.mp3',
+    ]);
+    gesture();
+    await lands(plays, 'assets/music/menu.mp3');
+    expect(w.eval('SND._kind'), 'the context is title...').toBe('title');
+    expect(plays().at(-1), '...but what you hear is the menu bed').toBe('assets/music/menu.mp3');
+    expect(w.eval("!!SND._fileBad['title']"), 'never written off to the synth').toBe(false);
+  });
+
+  it('plays the owner title track on the title screen and nowhere else', async () => {
+    const { w, plays, gesture } = bootWithAudio({ existing: ['assets/music/title.mp3'] });
+    gesture();
+    await lands(plays, 'assets/music/title.mp3');
+    expect(plays().at(-1)).toBe('assets/music/title.mp3');
+    w.eval("go('select')");
+    await lands(plays, 'assets/music/menu.mp3');
+    expect(plays().at(-1), 'select is the general menu bed').toBe('assets/music/menu.mp3');
+    w.eval("go('title')");
+    await lands(plays, 'assets/music/title.mp3');
+    expect(plays().at(-1), 'and back again').toBe('assets/music/title.mp3');
+  });
+
+  it("puts the player's own title track above the owner's, and above the menu bed", async () => {
+    const { w, plays, gesture } = bootWithAudio({ existing: ['assets/music/title.mp3'] });
+    gesture(); await lands(plays, 'assets/music/title.mp3');
+    w.eval("musicSetUserTrack('title', new Blob(['x']), 'raining.mp3')");
+    await until(() => /^blob:/.test(plays().at(-1)));
+    expect(plays().at(-1)).toMatch(/^blob:/);
+    const order = JSON.parse(w.eval("JSON.stringify(musicSources('title'))"));
+    expect(order[0]).toMatch(/^blob:/);
+    // custom/title.mp3 has already 404'd and been struck off, so the owner's file is next.
+    expect(order[1]).toBe('assets/music/title.mp3');
+    expect(order.at(-1), 'the menu bed is still the last resort').toBe('assets/music/menu.mp3');
+  });
+
+  it('keeps one unbroken loop across title -> select when the slot is empty', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    const n = plays().length;
+    w.eval("go('select')"); await tick(20);
+    expect(plays(), 'same file either side, so nothing restarts').toHaveLength(n);
+    expect(w.eval('SND._kind')).toBe('menu');
+    expect(w.eval('SND._deckKind[SND._deck]'), 'the live deck was adopted').toBe('menu');
+  });
+
+  it("swaps a player's menu track in live even while the title bed is what is playing", async () => {
+    // The title slot is empty, so the menu playlist IS the title screen's music. Loading one has
+    // to take effect where you can hear it, not on the next navigation.
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    w.eval("musicSetUserTrack('menu', new Blob(['x']), 'mine.mp3')");
+    await until(() => /^blob:/.test(plays().at(-1)));
+    expect(plays().at(-1)).toMatch(/^blob:/);
+    expect(w.eval('SND._kind')).toBe('title');
+  });
+
+  it('is under the music toggle like every other bed', async () => {
+    const { w, plays, gesture, events } = bootWithAudio({ existing: ['assets/music/title.mp3'] });
+    gesture(); await lands(plays, 'assets/music/title.mp3');
+    w.eval('toggleMusic()');
+    expect(w.eval('SND.musicOn')).toBe(false);
+    expect(events.at(-1)[0]).toBe('pause');
+    const n = plays().length;
+    w.eval("go('title')"); await tick(20);
+    expect(plays(), 'muted means muted on the front page too').toHaveLength(n);
+    w.eval('toggleMusic()');
+    await lands(plays, 'assets/music/title.mp3');
+    expect(plays().at(-1)).toBe('assets/music/title.mp3');
+  });
+
+  it('gets its own picker row, persisted under its own key', async () => {
+    const { w, gesture } = bootWithAudio();
+    gesture(); await tick();
+    w.eval("go('controls')");
+    const row = w.document.querySelectorAll('#customMusic .musicrow')[0];
+    expect(row.textContent).toContain('Title screen');
+    expect(row.textContent, 'an empty slot says what it actually plays').toContain('menu track');
+    w.eval("musicPickFile('title', { files:[{name:'raining.mp3',size:10}], value:'' })");
+    await tick(20);
+    expect(JSON.parse(w.eval("JSON.stringify(__idb._data.get('title').map(t=>t.name))")))
+      .toEqual(['raining.mp3']);
+    expect(w.document.querySelectorAll('#customMusic .musicrow')[0].textContent)
+      .toContain('raining.mp3');
   });
 });
 
@@ -515,8 +677,8 @@ describe('background music — the player\'s own files stay on their machine', (
     const { w } = bootWithAudio();
     w.eval("go('controls')");
     const rows = w.document.querySelectorAll('#customMusic .musicrow');
-    expect(rows).toHaveLength(5);
-    for (const kind of ['menu', 'battle', 'boss', 'tourney', 'intense']) {
+    expect(rows).toHaveLength(6);
+    for (const kind of ['title', 'menu', 'battle', 'boss', 'tourney', 'intense']) {
       const input = w.document.getElementById(`mfile_${kind}`);
       expect(input.accept).toBe('audio/*');
       expect(input.multiple).toBe(true);              // playlists, not one file per slot
@@ -530,7 +692,7 @@ describe('background music — the player\'s own files stay on their machine', (
     gesture(); await tick();
     w.eval("musicAddUserTracks('boss', [{name:'a.mp3',blob:new Blob(['a'])},{name:'b.mp3',blob:new Blob(['b'])}], true)");
     w.eval("go('controls')");
-    const row = w.document.querySelectorAll('#customMusic .musicrow')[2];   // boss
+    const row = w.document.querySelectorAll('#customMusic .musicrow')[3];   // boss
     expect(row.querySelectorAll('.mtrack')).toHaveLength(2);
     expect(row.querySelectorAll('.mtrack .mx')).toHaveLength(2);
     expect(row.textContent).toContain('a.mp3');
@@ -840,7 +1002,7 @@ describe('background music — the music-only toggle', () => {
     expect(two.w.localStorage.getItem(MUSIC_KEY)).toBe('1');
     const three = bootWithAudio({ storage: { [MUSIC_KEY]: '1' } });
     expect(three.w.eval('SND.musicOn')).toBe(true);
-    three.gesture(); await tick();
+    three.gesture(); await lands(three.plays, 'assets/music/menu.mp3');
     expect(three.plays().at(-1)).toBe('assets/music/menu.mp3');
   });
 
@@ -914,6 +1076,126 @@ describe('background music — Sound and Music toggle precedence', () => {
     w.eval('toggleSound()');
     n = state.oscillators; w.eval('SFX.ko()');
     expect(state.oscillators).toBe(n);
+  });
+});
+
+// The synth bed is the FALLBACK, never a layer. It shipped as both: a source that 404s rejects
+// play(), the rejection handler read that as an autoplay block, started the synth as cover and
+// parked a retry — and nothing turned either off when the next source in the chain loaded. Since
+// assets/music/custom/ is empty as shipped, every context 404s on the way to the file it plays,
+// so essentially every player heard the synth looping underneath the recorded track.
+describe('background music — exactly one bed is ever audible', () => {
+  it('stops the synth bed when a 404 chain finally lands on a real file', async () => {
+    const { w, plays, gesture } = bootWithAudio();     // custom/ empty, title.mp3 unshipped
+    gesture();                                          // cold load: the title bed, 3 x 404 deep
+    await lands(plays, 'assets/music/menu.mp3');
+    await tick(20);                                     // let every late promise settle
+    expect(plays()[0]).toBe('assets/music/custom/title.mp3');   // it really did walk the chain
+    const b = expectOneBed(w, 'assets/music/menu.mp3');
+    expect(b.synth, 'the synth bed is still looping under the file').toBe(false);
+    expect(b.pending, 'a stale retry is armed and will restart this bed on the next click').toBe(null);
+  });
+
+  it('ignores a dead source rejecting play() long after the chain moved on', async () => {
+    const { w, plays, gesture } = bootWithAudio({ rejectDelay: 40 });
+    gesture();
+    await lands(plays, 'assets/music/menu.mp3');       // the good file wins the chain first...
+    await tick(140);                                    // ...then the three 404s report in, late
+    const b = expectOneBed(w, 'assets/music/menu.mp3');
+    expect(b.synth, 'a stale rejection resurrected the synth under the file').toBe(false);
+    expect(b.pending, 'a stale rejection re-armed a retry for a bed already playing').toBe(null);
+  });
+
+  it('leaves one bed after every title -> select -> battle -> boss step', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3'); await tick(20);
+    expectOneBed(w, 'assets/music/menu.mp3');
+    w.eval("go('select')"); await tick(20);
+    expectOneBed(w, 'assets/music/menu.mp3');
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    await lands(plays, 'assets/music/battle.mp3'); await tick(20);
+    expectOneBed(w, 'assets/music/battle.mp3');
+    w.eval("SETTINGS.mode='boss'; beginMatchNow()");
+    await lands(plays, 'assets/music/boss.mp3'); await tick(20);
+    expectOneBed(w, 'assets/music/boss.mp3');
+  });
+
+  it('stops a synth bed underneath the deck it adopts', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3'); await tick(20);
+    // startMusicFile() gets re-entered straight from a deck `error` (musicSourceFailed does
+    // exactly that), so it cannot lean on startMusic() having cleared the synth for it. Put a bed
+    // underneath the live deck and ask for the file that deck is already playing.
+    w.eval('SND._musicTimer = setTimeout(()=>{}, 9999)');
+    expect(w.eval("startMusicFile('menu')")).toBe(true);
+    expectOneBed(w, 'assets/music/menu.mp3');
+  });
+
+  it('silences a still-playing deck when a context gives up and takes the synth', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3'); await tick(20);
+    // musicSourceFailed() hands a used-up context to the synth directly, without passing through
+    // startMusic()'s fall-through — so the synth's way in silences the decks itself rather than
+    // trust that a crossfade already did. Here the live deck is playing and nothing faded it out.
+    w.eval("SND._badSrc['assets/music/boss.mp3']=true; SND._badSrc['assets/music/custom/boss.mp3']=true");
+    w.eval("SND._kind='boss'; SND._deckKind[SND._deck]='boss'; musicSourceFailed(SND._deck)");
+    await tick(20);
+    const b = expectOneBed(w);
+    expect(b.synth, 'the context is out of files — the synth bed is the one that should be left').toBe(true);
+  });
+
+  it('crossfades into the clutch bed and back without stacking a third source', async () => {
+    const { w, plays, gesture } = bootWithAudio({ fadeMs: 0 });
+    gesture(); await tick();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    await lands(plays, 'assets/music/battle.mp3'); await tick(20);
+    w.eval('fighters[0].stocks = 1; clutchTick()');
+    await lands(plays, 'assets/music/intense.mp3'); await tick(20);
+    expect(w.eval('CLUTCH.on')).toBe(true);
+    expectOneBed(w, 'assets/music/intense.mp3');
+    w.eval('fighters.forEach(f=>{f.stocks=3;f.pct=0;});');
+    for (let i = 0; i <= w.eval('CLUTCH_MIN_HOLD'); i += 1) w.eval('clutchTick()');
+    await lands(plays, 'assets/music/battle.mp3'); await tick(20);
+    expect(w.eval('CLUTCH.on')).toBe(false);
+    expectOneBed(w, 'assets/music/battle.mp3');
+  });
+
+  it('re-rolls a playlist onto one bed, not two', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await tick();
+    w.eval("musicAddUserTracks('boss', [{name:'a.mp3',blob:new Blob(['a'])},{name:'b.mp3',blob:new Blob(['b'])}], true)");
+    w.eval("SETTINGS.mode='boss'; beginMatchNow()");
+    await until(() => plays().at(-1).startsWith('blob:')); await tick(20);
+    expectOneBed(w);
+    const first = w.eval("SND._userPick['boss']");
+    w.eval('spawnBossRushBoss()');                    // forces a fresh pick mid-context
+    await until(() => w.eval("SND._userPick['boss']") !== first); await tick(20);
+    const b = expectOneBed(w);
+    expect(b.decks[0]).toBe(w.eval("SND._userPick['boss']"));
+  });
+
+  it('lands on one bed after the music toggle goes off and back on', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3'); await tick(20);
+    w.eval('toggleMusic()'); await tick(20);
+    const off = beds(w);
+    expect(off.decks.concat(off.synth ? ['<synth bed>'] : [])).toEqual([]);
+    w.eval('toggleMusic()'); await lands(plays, 'assets/music/menu.mp3'); await tick(20);
+    expectOneBed(w, 'assets/music/menu.mp3');
+  });
+
+  // The other half of the fix: the rejection handler still has a real job. A source the browser
+  // CAN load but refuses to autoplay has no `error` event and no next source coming, so it must
+  // keep the synth cover and park the retry — otherwise this context is simply silent.
+  it('still covers a genuinely blocked play() with the synth, and retries on the next gesture', async () => {
+    const { w, plays, gesture, blockPlay } = bootWithAudio({ blockPlay: true });
+    gesture(); await tick(30);
+    const b = expectOneBed(w);
+    expect(b.synth, 'a refused autoplay must not leave the context silent').toBe(true);
+    expect(b.pending, 'and it must arm a retry for the next gesture').toBe('title');
+    blockPlay(false);
+    gesture(); await lands(plays, 'assets/music/menu.mp3'); await tick(20);
+    expectOneBed(w, 'assets/music/menu.mp3');         // and the retry hands the bed back over
   });
 });
 

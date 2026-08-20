@@ -10,13 +10,21 @@ The filename **is** the wiring. Use exactly these names, all lowercase, `.mp3`:
 
 | File | When it plays |
 |---|---|
-| `menu.mp3` | Title, character select, controls, tutorial, stats, level creator, lobby |
+| `title.mp3` | The title screen, and only the title screen |
+| `menu.mp3` | Character select, controls, tutorial, stats, level creator, lobby |
 | `battle.mp3` | Arena matches — FFA, 1v1, teams, World Cup fixtures |
 | `boss.mp3` | Boss Rush |
 | `tourney.mp3` | World Cup setup screen and tournament hub |
 | `intense.mp3` | Clutch time — someone on their last stock, the player above 90%, or a Boss Rush boss under 25% HP |
 
 Resolution order for every context: `custom/<name>.mp3` → `../<name>.mp3` → synth loop.
+
+**`title` is the exception, and it has no shipped default.** There is no `../title.mp3` in the
+repo, so its order is `custom/title.mp3` → `../title.mp3` → *the whole `menu` chain* → synth loop.
+Leave the slot empty and the title screen plays the menu bed, which is exactly what it did before
+the slot existed — so adding a title track is purely additive and removing it changes nothing back.
+Players who load their own menu track through Controls → Custom Music still hear it on the title
+screen; a track in the Title slot beats it.
 
 A slot you have not filled costs one 404 the first time that context comes up in a session. The
 game remembers the miss and does not ask again, so there is no ongoing cost to leaving slots empty.
