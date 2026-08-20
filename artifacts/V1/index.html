@@ -1432,6 +1432,21 @@ function musicFadeTo(i, to){
   }
   musicFadeTick();   // apply immediately so a 0ms fade is a genuine instant cut
 }
+// EXACTLY ONE BED IS EVER AUDIBLE. The synth loop and the <audio> decks are alternatives, never
+// layers, and these two calls are the whole contract: every route INTO the synth silences the
+// decks (see startSynthMusic), and a deck that genuinely starts making sound stops the synth here.
+//
+// It needs saying out loud because the file path is not one call — a context walks a chain of
+// sources and only the last one plays, so "the synth was started while we were still looking" is
+// the normal case, not an exotic one. The parked request goes with it: a retry armed against a
+// source we have since got past would have musicUnlock() restart this same bed on the next click.
+function stopSynthMusic(){
+  if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
+}
+function musicFileTookOver(kind){
+  stopSynthMusic();
+  if(SND._pendingKind===kind) SND._pendingKind = null;
+}
 // Try the recorded track for `kind`. Returns true when the file path owns playback (already
 // playing, or parked until the first gesture), false when the caller should use the synth bed.
 function startMusicFile(kind){
@@ -1448,26 +1463,41 @@ function startMusicFile(kind){
   const cur = musicActiveEl();
   if(cur && SND._deckSrc[SND._deck]===sources[0] && !cur.paused){
     SND._deckKind[SND._deck] = kind;
+    musicFileTookOver(kind);        // this deck is already audible — nothing may sit under it
     musicFadeTo(SND._deck, (MUSIC_VOLUME[kind]!=null) ? MUSIC_VOLUME[kind] : 0.32);
     return true;
   }
   const next = 1 - SND._deck;
   const el = musicDeck(next);
   if(!el) return false;
+  const src = sources[0];
+  // Is this deck still the one the game is relying on? A chain walks several sources and a dead
+  // one's promise can settle at any point afterwards, so both handlers below check before acting.
+  const live = ()=> SND._kind===kind && SND._deck===next && SND._deckSrc[next]===src;
   try{
-    el.src = sources[0];
-    SND._deckSrc[next] = sources[0];
+    el.src = src;
+    SND._deckSrc[next] = src;
     SND._deckKind[next] = kind;
     el.loop = true;
     try{ el.currentTime = 0; }catch(e){}
     try{ el.volume = 0; }catch(e){}
     const p = el.play();
-    if(p && typeof p.catch==='function'){
-      p.catch(()=>{
-        // Blocked by an autoplay policy we did not anticipate: retry on the next gesture and
-        // keep the synth bed going meanwhile so the context is never silent.
+    if(p && typeof p.then==='function'){
+      p.then(()=>{
+        // The file is making sound now. Anything that was covering for it while the chain was
+        // still resolving — the synth bed an earlier 404 in this same chain started, and the retry
+        // that 404 parked — is stale and would otherwise loop on underneath it forever.
+        if(live()) musicFileTookOver(kind);
+      }, ()=>{
+        // TWO different failures reject play(), and they need opposite responses. A source that
+        // 404s rejects here AND fires the deck's `error` event, and that event owns the retry:
+        // musicSourceFailed() clears this deck and steps to the next source, so a synth bed
+        // started here would still be running under whatever finally loads. Only the case where
+        // this deck is STILL the live one — an autoplay policy we did not anticipate, with no
+        // error event and no retry coming — gets the synth cover and the parked request.
+        if(!live()) return;
         SND._pendingKind = kind;
-        if(SND._kind===kind) startSynthMusic(kind);
+        startSynthMusic(kind);
       });
     }
     // crossfade: old deck out, new deck in
@@ -1489,7 +1519,7 @@ function startMusic(kind){
   // NOT stopMusic() — that hard-pauses both decks, which would leave startMusicFile cross-fading
   // in from silence, i.e. no crossfade at all. Only the synth bed and the pending request get
   // cleared here; the outgoing deck is handed to the fade.
-  if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
+  stopSynthMusic();
   SND._pendingKind = null;
   SND._kind = kind;
   // a fresh pick from this context's playlist, if it has one (unless a caller already chose)
@@ -1511,9 +1541,14 @@ function startMusic(kind){
 function musicUnlock(){
   SND.gesture = true;
   try{ musicHydrateUser(); }catch(e){}   // first gesture is also when IndexedDB becomes fair game
-  const k = SND._pendingKind || currentMusicKind();
+  const pending = SND._pendingKind;
+  const k = pending || currentMusicKind();
   if(!k) return;
-  if(musicPlaying() && SND._kind===k) return;   // already on the right bed; don't restart it
+  // "Already on the right bed" is measured by musicPlaying(), which counts the SYNTH bed — so a
+  // parked request has to win outright. It means the file layer never got to start (blocked
+  // autoplay) and the synth is only covering; treating that as "playing" would leave the context
+  // on the fallback forever and make the retry this gesture exists for dead code.
+  if(!pending && musicPlaying() && SND._kind===k) return;
   SND._pendingKind = null; SND._kind = null;    // clear so startMusic's dedupe doesn't swallow this
   startMusic(k);
 }
@@ -1811,7 +1846,11 @@ const MUSIC_BASS = {
 // track, or when that track failed to load. Kept byte-for-byte in behaviour.
 function startSynthMusic(kind){
   if(!musicAllowed() || !SND.ctx) return;
-  if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
+  // The other half of the one-bed contract (see musicFileTookOver): whichever route got here —
+  // startMusic()'s fall-through, a source chain that ran out, a play() the browser refused — the
+  // decks do not get to keep playing under the synth. Cheap and idempotent when they are silent.
+  musicSilenceDecks();
+  stopSynthMusic();
   const scale = MUSIC_SCALES[kind] || MUSIC_SCALES.menu;
   const bass = MUSIC_BASS[kind] || MUSIC_BASS.menu;
   const beat = kind==='boss' ? 180 : (kind==='battle' ? 190 : 230);   // boss music is faster/tenser
@@ -1889,7 +1928,7 @@ function syncMusicToggle(){
 // Stops BOTH music paths. Decks are paused (not torn down) so the next startMusic for the same
 // kind can reuse the already-downloaded file.
 function stopMusic(){
-  if(SND._musicTimer){ clearTimeout(SND._musicTimer); SND._musicTimer=null; }
+  stopSynthMusic();
   SND._pendingKind = null;
   SND._kind = null;
   if(SND._fadeTimer){ clearInterval(SND._fadeTimer); SND._fadeTimer=null; }
