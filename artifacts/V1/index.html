@@ -376,7 +376,16 @@
   .daily-title{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--gold,#ffd23f)}
   .daily-line{font-weight:800;font-size:15px;margin:3px 0 6px}
   .daily-done{font-size:12px;opacity:.8}
+  /* KO instant replay. The box is pointer-events:none in every state so a slow-motion loop can
+     never swallow a click aimed at Rematch, and display:none until it actually has footage. */
+  .rr-replay-box{position:relative;display:none;pointer-events:none}
+  .rr-replay-box.on{display:block}
   .rr-replay{display:block;width:100%;max-height:26vh;object-fit:contain;image-rendering:auto;border:3px solid var(--gold,#ffd23f);border-radius:10px;background:#000;margin-bottom:8px}
+  .rr-replay-tag{position:absolute;top:9px;left:9px;display:flex;align-items:center;gap:5px;
+    font-size:10px;font-weight:800;letter-spacing:.14em;color:#fff;background:#000000a8;
+    border-radius:6px;padding:3px 7px}
+  .rr-replay-dot{width:6px;height:6px;border-radius:50%;background:#ff4d4d;animation:rrpulse 1.2s ease-in-out infinite}
+  @keyframes rrpulse{0%,100%{opacity:1}50%{opacity:.15}}
   .rr-gif{width:100%;max-height:34vh;object-fit:contain;border:3px solid #1c1c1c;border-radius:10px;background:#000}
   .rr-link{width:100%;font-family:inherit;font-size:12px;padding:7px 9px;border:2px solid #1c1c1c;border-radius:8px}
   .planinput input{flex:1;font-family:inherit;padding:8px 10px;border:2px solid #1c1c1c;border-radius:10px}
@@ -3630,6 +3639,7 @@ function stopRunRecording(onReady){
 function showRunReview(){
   const host = document.getElementById('runReview');
   if(!host) return;
+  try{ stopReplay(); }catch(e){}   // this rewrites the panel; nothing may keep drawing into it
   if(!RUN_REC.supported){
     host.innerHTML = '<div class="rr-note">Run recording isn\'t supported in this browser.</div>';
     return;
@@ -3639,7 +3649,10 @@ function showRunReview(){
     return;
   }
   host.innerHTML =
-    '<div class="rr-title">📼 Match Replay</div>'
+    // The KO replay gets a container of its own, ABOVE everything else. Sharing #rrShare with the
+    // GIF meant the first "Make GIF" click wiped the replay out from under itself.
+    '<div id="rrReplay" class="rr-replay-box"></div>'
+    + '<div class="rr-title">📼 Match Replay</div>'
     + '<video class="rr-video" src="'+RUN_REC.url+'" controls autoplay loop playsinline></video>'
     + '<div class="rr-actions">'
     + '<button class="btn sm" id="rrGif" onclick="shareMakeGif()">🎞 Make GIF</button>'
@@ -3647,7 +3660,7 @@ function showRunReview(){
     + '<a class="btn ghost sm" href="'+RUN_REC.url+'" download="bfsi-match.webm">⬇ Video</a>'
     + '</div>'
     + '<div id="rrShare" class="rr-share"></div>';
-  try{ var _rp=document.getElementById('rrShare'); if(_rp) startReplay(_rp); }catch(e){}
+  try{ startReplay(document.getElementById('rrReplay')); }catch(e){}
 }
 // ---- share actions ---------------------------------------------------------------------------
 // Copy a link to the GAME, not to the clip. There is no server here, so there is nowhere a clip
@@ -7559,40 +7572,74 @@ function drawCakeAtStake(){
 //  WAVE 3.5 — KO INSTANT REPLAY
 // ============================================================
 // The share-clip ring already holds the last few seconds of real frames, so the replay costs
-// nothing extra to capture. Played back on the result screen at a THIRD speed — the point is to
-// see the finish, and a slow-motion replay is the reason the share GIF is worth making.
-const REPLAY = { raf:0, i:0, hold:0, cv:null, ctx:null };
+// NOTHING extra to capture: no second recorder, no per-frame work beyond the one clipCapture()
+// the GIF export was already paying for. The result screen replays the tail of that ring in slow
+// motion, twice, and then freezes on the KO.
+//
+// It is deliberately a bystander. It owns its own container so Make GIF / Copy Link cannot erase
+// it (and it cannot erase them), the container is pointer-events:none so a loop can never swallow
+// a click meant for Rematch, and every refusal path renders nothing at all — no footage, no rAF,
+// no real match. The result screen is then exactly the screen it was before this existed.
+const REPLAY_TAIL  = 24;   // ring frames ≈ 2.0s of match (CLIP.EVERY=5 → ~12fps capture)
+const REPLAY_HOLD  = 10;   // display frames per source frame: 60/10 = 6fps vs 12fps captured = half speed
+const REPLAY_PAUSE = 30;   // …and half a second held on the KO itself at the end of each pass
+const REPLAY_LOOPS = 2;    // watching it twice is a beat; looping forever is wallpaper
+const REPLAY = { raf:0, i:0, hold:0, loops:0, frames:null, ctx:null };
+// Tournament sim and spectated fixtures never reach a result screen, and test mode and the
+// tutorial are not matches — there is no "final KO" to be instant about. Nothing captured on
+// those paths may be presented as the finish of a match the player just played.
+function replayAllowed(){
+  try{
+    if(typeof TOURNEY_WATCHING!=='undefined' && TOURNEY_WATCHING) return false;
+    if(typeof TOURNEY_MATCH_ACTIVE!=='undefined' && TOURNEY_MATCH_ACTIVE) return false;
+    if(typeof TESTMODE!=='undefined' && TESTMODE && TESTMODE.active) return false;
+    if(typeof TUT!=='undefined' && TUT && TUT.active) return false;
+  }catch(e){}
+  return true;
+}
+// Stop the loop AND drop everything it was holding. The frames are the ring's own ImageData
+// objects, so this releases a reference rather than a copy — but keeping that reference alive
+// across matches is exactly how a result screen quietly pins several MB of pixels forever.
 function stopReplay(){
-  if(REPLAY.raf){ try{ cancelAnimationFrame(REPLAY.raf); }catch(e){} REPLAY.raf = 0; }
+  if(REPLAY.raf){ try{ cancelAnimationFrame(REPLAY.raf); }catch(e){} }
+  REPLAY.raf = 0; REPLAY.i = 0; REPLAY.hold = 0; REPLAY.loops = 0;
+  REPLAY.frames = null; REPLAY.ctx = null;
+  try{
+    const box = document.getElementById('rrReplay');
+    if(box){ box.innerHTML = ''; box.classList.remove('on'); }
+  }catch(e){}
 }
 function startReplay(host){
   stopReplay();
-  const frames = clipFrames();
+  if(!host || !replayAllowed()) return false;
+  if(typeof requestAnimationFrame !== 'function') return false;
   // Only the tail: the finish is the interesting part, not four seconds of positioning.
-  const tail = frames.slice(Math.max(0, frames.length - 20));
-  if(tail.length < 4) return false;
-  const el = document.createElement('canvas');
-  el.className = 'rr-replay';
-  el.width = CLIP.W; el.height = CLIP.H;
-  host.appendChild(el);
-  const g = el.getContext('2d');
-  // putImageData ignores transforms, so blit through a scratch canvas of the same size.
-  const scratch = document.createElement('canvas');
-  scratch.width = CLIP.W; scratch.height = CLIP.H;
-  const sg = scratch.getContext('2d');
-  REPLAY.i = 0; REPLAY.hold = 0;
+  const tail = clipFrames().slice(-REPLAY_TAIL);
+  if(tail.length < 4) return false;                  // too little footage to read as a replay
+  let el;
+  try{
+    el = document.createElement('canvas');
+    el.className = 'rr-replay';
+    el.width = CLIP.W; el.height = CLIP.H;           // 1:1 with the ring, so putImageData blits
+    REPLAY.ctx = el.getContext('2d');
+  }catch(e){ REPLAY.ctx = null; return false; }
+  if(!REPLAY.ctx) return false;
+  host.innerHTML = '<div class="rr-replay-tag"><i class="rr-replay-dot"></i>REPLAY</div>';
+  host.insertBefore(el, host.firstChild);
+  host.classList.add('on');
+  REPLAY.frames = tail;
   const tick = ()=>{
-    const f = tail[REPLAY.i];
-    if(f){
-      sg.putImageData(f, 0, 0);
-      g.clearRect(0,0,el.width,el.height);
-      g.drawImage(scratch, 0, 0);
-    }
-    // a third speed, then a beat on the final frame before looping
-    if(++REPLAY.hold >= 3){
+    REPLAY.raf = 0;
+    const frames = REPLAY.frames;
+    if(!frames || !REPLAY.ctx) return;               // stopped between frames
+    const f = frames[REPLAY.i];
+    if(f){ try{ REPLAY.ctx.putImageData(f, 0, 0); }catch(e){} }
+    const last = REPLAY.i >= frames.length - 1;
+    if(++REPLAY.hold >= (last ? REPLAY_PAUSE : REPLAY_HOLD)){
       REPLAY.hold = 0;
-      REPLAY.i++;
-      if(REPLAY.i >= tail.length){ REPLAY.i = 0; REPLAY.hold = -24; }
+      if(!last) REPLAY.i++;
+      else if(++REPLAY.loops >= REPLAY_LOOPS){ REPLAY.frames = null; return; }   // freeze on the KO
+      else REPLAY.i = 0;
     }
     REPLAY.raf = requestAnimationFrame(tick);
   };
@@ -7812,6 +7859,7 @@ async function hydrateRival(){
 function showResult(winners, winTeam){
   stopMusic(); SFX.win();
   document.getElementById('hud').classList.remove('active');
+  try{ stopReplay(); }catch(e){}   // last match's replay, and its frame references, go now
   const rr=document.getElementById('runReview'); if(rr) rr.innerHTML='';
   // finalise this match's recording and offer it as a replay
   try{ stopRunRecording(()=>showRunReview()); }catch(e){}
