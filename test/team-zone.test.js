@@ -39,13 +39,115 @@ describe('team zones exist only in teams mode', () => {
     expect(w.eval(`inOwnTeamZone(fighters[0])`)).toBe(false);
   });
 
-  it('stretches to the very top of the arena', () => {
+  // REPLACES 'stretches to the very top of the arena'. The zone used to be a column running from
+  // the ceiling down to the base. On the cross arena it is the pocket the spawn pads sit in, and
+  // the change is the point rather than a side effect: with a column per team, two teams standing
+  // in their own halves were each untouchable AND unable to swing out, so they piled up and the
+  // match never resolved. A zone you can be pushed out of is what makes the fight happen.
+  it('is a pocket around the spawn pads, not a column to the ceiling', () => {
     const { window: w } = loadMonolith();
     teams(w);
-    const z = w.eval(`JSON.stringify(teamZoneOf(bases[0].team))`);
-    const zone = JSON.parse(z);
-    expect(zone.y, 'starts at the top edge').toBe(0);
-    expect(zone.h, 'and reaches down to the base').toBeGreaterThan(100);
+    const { zone, WH, pads } = JSON.parse(w.eval(`JSON.stringify({
+      zone: teamZoneOf(bases[0].team), WH: WH, pads: bases[0].spawns
+    })`));
+    expect(zone.y, 'does not start at the ceiling').toBeGreaterThan(0);
+    expect(zone.h, 'is a real area, not a sliver').toBeGreaterThan(100);
+    expect(zone.h, 'covers well under half the arena height').toBeLessThan(WH * 0.5);
+    // Every pad has to be inside it, or a fighter could reform outside their own protection.
+    for (const p of pads) {
+      expect(p.x >= zone.x && p.x <= zone.x + zone.w, `pad ${p.x} within zone x`).toBe(true);
+      expect(p.y >= zone.y && p.y <= zone.y + zone.h, `pad ${p.y} within zone y`).toBe(true);
+    }
+  });
+
+  // The flaw that stalled the first cut of this arena: give each team a zone covering its whole
+  // side and every point on the map belongs to somebody, so nobody can ever be hit anywhere.
+  it('leaves most of the map contested by nobody', () => {
+    const { window: w } = loadMonolith();
+    teams(w);
+    const covered = w.eval(`
+      (function(){
+        var hit = 0, total = 0;
+        for (var gx = 0; gx < 24; gx++) for (var gy = 0; gy < 24; gy++) {
+          var x = WW*(gx+0.5)/24, y = WH*(gy+0.5)/24;
+          total++;
+          for (var i = 0; i < bases.length; i++) {
+            var z = teamZoneOf(bases[i].team);
+            if (z && x >= z.x && x <= z.x+z.w && y >= z.y && y <= z.y+z.h) { hit++; break; }
+          }
+        }
+        return hit/total;
+      })()`);
+    expect(covered, 'safe zones blanket the arena — no damage could ever land').toBeLessThan(0.5);
+  });
+});
+
+describe('standing in someone ELSE\'S zone bleeds you', () => {
+  // Their corner makes them untouchable by you. Without a cost for trespassing you could simply
+  // walk in and wait them out, which is the camping half of the pile this arena is meant to break.
+  const holdFor = (w, spot) => w.eval(`
+    (function(){
+      var f = fighters[0];
+      // Park everyone else out of reach so nothing but the zone rule can touch him.
+      for (var i=1;i<fighters.length;i++){ fighters[i].x = WW*0.5; fighters[i].y = 40; fighters[i].hitstun = 9999; }
+      var at = ${spot};
+      f.pct = 0; f.hitstun = 0;
+      for (var k=0;k<60;k++){ f.x=at.x; f.y=at.y; f.vx=0; f.vy=0; f.invuln=0; step(); }
+      return f.pct;
+    })()`);
+
+  it('takes chip damage in an enemy zone', () => {
+    const { window: w } = loadMonolith();
+    teams(w);
+    const got = holdFor(w, `(function(){ var z=teamZoneOf(fighters[0].team===0?1:0);
+                                         return {x:z.x+z.w/2, y:z.y+z.h/2}; })()`);
+    expect(got, 'a second inside an enemy corner costs about 2%').toBeGreaterThan(1);
+    expect(got, 'but it is chip damage, not a kill').toBeLessThan(6);
+  });
+
+  it('takes none standing in neutral ground', () => {
+    const { window: w } = loadMonolith();
+    teams(w);
+    const got = holdFor(w, `({ x: WW*0.5, y: WH*0.30 })`);
+    expect(got, 'the contested middle is free to stand in').toBe(0);
+  });
+});
+
+describe('reforming scatters across the pads', () => {
+  it('rolls over every pad rather than always picking one', () => {
+    const { window: w } = loadMonolith();
+    teams(w);
+    const { hit, pads } = JSON.parse(w.eval(`
+      (function(){
+        var b = bases[0], seen = {};
+        // Clear the pads first: teammates START on them, and an occupied pad is refused by design
+        // (that is the next test), which would otherwise look like a gap in the roll's coverage.
+        for (var i=0;i<fighters.length;i++){ fighters[i].x = WW*0.5; fighters[i].y = WH*0.2; }
+        // Keyed on the WHOLE position: the pads sit on three rows, so several legitimately share
+        // an x and counting columns alone would under-report the spread.
+        for (var i=0;i<300;i++){ var p = pickSpawnPad(b, fighters[0]);
+          seen[Math.round(p.x)+':'+Math.round(p.y)] = 1; }
+        return JSON.stringify({ hit: Object.keys(seen).length, pads: b.spawns.length });
+      })()`));
+    expect(pads, 'a 2v2 team gets eight pads').toBe(8);
+    expect(hit, 'every pad is reachable by the roll').toBe(pads);
+  });
+
+  it('skips a pad a living teammate is already standing on', () => {
+    const { window: w } = loadMonolith();
+    teams(w);
+    const landedOnMate = w.eval(`
+      (function(){
+        var b = bases[0], me = fighters.find(function(f){ return f.team === b.team; });
+        var mate = fighters.find(function(f){ return f.team === b.team && f !== me; });
+        if (!mate) return -1;
+        var taken = b.spawns[0];
+        mate.dead = false; mate.x = taken.x; mate.y = taken.y - 40;
+        var bad = 0;
+        for (var i=0;i<200;i++){ var p = pickSpawnPad(b, me); if (p === taken) bad++; }
+        return bad;
+      })()`);
+    expect(landedOnMate, 'never drops you onto an occupied pad').toBe(0);
   });
 });
 
