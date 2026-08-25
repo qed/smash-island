@@ -46,7 +46,7 @@ describe('Unit 10 — the roster board respects unlock state', () => {
     // Locked cells still render in "everything" — but isUnlocked returns true in that mode, so
     // check the criterion text is derivable regardless of the current view.
     // Use a fighter that is genuinely on the drip, not one claimed by a trophy — Naily, for
-    // instance, is the reward for beating Bomby, so its hint names that deed instead.
+    // instance, is the reward for beating 2 bosses solo, so its hint names that deed instead.
     expect(w.eval('unlockHint(DRIP_ORDER[10])')).toMatch(/Play \d+ more match/);
     expect(w.eval('unlockHint(TROPHIES["wc"])')).toBe('Win the World Cup');
     expect(w.eval('unlockHint(TROPHIES["rush2"])')).toBe('Reach Boss Rush loop 2');

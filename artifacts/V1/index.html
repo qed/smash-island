@@ -1156,10 +1156,16 @@ function customScrolls(){ return !!CUSTOM_LEVEL && (customWorldW()>W+2 || custom
 const MAX_FFA=5, MAX_TEAMS=20;
 // contestant counts offered per mode (compact set for teams so buttons fit)
 function countOptions(){
+  // Boss Rush offers ONE. It is a co-op mode and every other mode needs an opponent, so the floor
+  // has always been 2 — but a boss is the opponent, so a lone fighter is a complete match, and
+  // "beat N bosses solo" (TROPHIES) is not a deed anybody could perform without it.
   return SETTINGS.mode==="teams"
     ? [2,3,4,5,6,8,10,12,16,20]
+    : SETTINGS.mode==="boss" ? [1,2,3,4,5]
     : [2,3,4,5];
 }
+// The smallest legal contestant count for a mode — 1 only where a boss supplies the opposition.
+function minCount(){ return SETTINGS.mode==='boss' ? 1 : 2; }
 // generate team-split options for a given player count: balanced 2/3/4-team divisions
 function teamSplitsFor(N){
   const opts=[]; const seen=new Set();
@@ -2021,6 +2027,14 @@ function unlockHint(name){
     if(k==='wc') return 'Win the World Cup';
     if(k==='rush2') return 'Reach Boss Rush loop 2';
     if(k==='tutorial') return 'Finish How to Play';
+    if(k.indexOf('solo:')===0){
+      const need = +k.slice(5);
+      const got = PROFILE ? Object.keys(PROFILE.soloBosses||{}).length : 0;
+      // Say how many are left, not just the target — a locked cell that reads the same after every
+      // run it made progress on is indistinguishable from one that is not tracking anything.
+      return got>=need ? 'Beat '+need+' bosses solo'
+                       : 'Beat '+need+' bosses solo ('+Math.min(got,need)+'/'+need+')';
+    }
     if(k.indexOf('boss:')===0) return 'Defeat '+k.slice(5)+' in Boss Rush';
   }
   const i = DRIP_ORDER.indexOf(name);
@@ -2188,9 +2202,12 @@ function buildSettings(){
   };
   bindSeg('segMode', v=>{ SETTINGS.mode=v;
     syncModeUI({ reveal:true });   // a deliberate click on Teams scrolls the strategy panel into view
-    // clamp count to the new mode's max and rebuild count buttons
+    // clamp count into the new mode's range and rebuild count buttons. The FLOOR matters as well
+    // as the cap now: a solo count of 1 is legal in Boss Rush but leaves every other mode with a
+    // lone fighter and nobody to fight.
     const cap = v==='teams'?MAX_TEAMS:MAX_FFA;
     if(SETTINGS.count>cap) SETTINGS.count=cap;
+    if(SETTINGS.count<minCount()) SETTINGS.count=minCount();
     buildCountButtons();
     if(v==='teams') buildTeamSplits();
     updateSummary();
@@ -4728,7 +4745,7 @@ function buildFighters(){
   const cap = SETTINGS.mode==='teams'?MAX_TEAMS:MAX_FFA;
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
   const humanCount = netRoster ? netRoster.length : 0;
-  const N=Math.max(2, Math.min(cap, SETTINGS.count));
+  const N=Math.max(minCount(), Math.min(cap, SETTINGS.count));
 
   let all;
   if(netRoster){
@@ -7487,7 +7504,10 @@ let PROFILE_STORAGE_OK = true; // false once storage proves unusable — we then
 let profileReady = null;       // boot hydration promise (tests await it)
 
 function freshProfile(){
-  return { version:1, matches:0, wins:0, kos:0, bossesCleared:{}, bestRushLoop:0,
+  // soloBosses: which bosses you have beaten with NO teammate on the stage, keyed by name so
+  // it counts distinct bosses rather than repeat kills of the easiest one. loadProfile runs
+  // Object.assign(freshProfile(), stored), so an existing save gains the field on next load.
+  return { version:1, matches:0, wins:0, kos:0, bossesCleared:{}, soloBosses:{}, bestRushLoop:0,
            wcTitles:0, unlocked:[...STARTERS], viewMode:'starters', migratedFrom:null };
 }
 // Everything unlocked — used when storage is unavailable and when grandfathering an existing
@@ -7511,6 +7531,7 @@ function mergeProfiles(stored, mine){
   out.bestRushLoop = Math.max(stored.bestRushLoop|0, mine.bestRushLoop|0);
   out.wcTitles   = Math.max(stored.wcTitles|0,   mine.wcTitles|0);
   out.bossesCleared = Object.assign({}, stored.bossesCleared||{}, mine.bossesCleared||{});
+  out.soloBosses    = Object.assign({}, stored.soloBosses||{},    mine.soloBosses||{});
   out.migratedFrom = stored.migratedFrom || mine.migratedFrom || null;
   return out;
 }
@@ -7576,9 +7597,15 @@ const TROPHIES = {
   'tutorial':  'Firey Jr.',    // finish How to Play
   'boss:Announcer': 'Ruler',
   'boss:Four':      'Liy',
-  'boss:Golf Ball': 'Book',
-  'boss:Pencil':    'Match',   // starter-adjacent, harmless if already owned
-  'boss:Bomby':     'Naily',
+  // SOLO BOSS RUSH. These three used to be 'boss:Golf Ball', 'boss:Pencil' and 'boss:Bomby' —
+  // names that are NOT in BOSS_ROSTER. awardBossCleared only ever fires with a name from that
+  // list, so the deeds could not be performed, and since TROPHY_FIGHTERS is subtracted from
+  // DRIP_ORDER their fighters were not obtainable by playing either: Naily and Book were
+  // unreachable outside the 'everything' view mode, while the cell told you to go and beat a boss
+  // that does not exist. (The Pencil key was harmless only by luck — Match is a starter, so it is
+  // never locked and its hint never rendered. It is dropped rather than left as the same trap.)
+  'solo:2': 'Naily',
+  'solo:4': 'Book',
 };
 const TROPHY_FIGHTERS = new Set(Object.values(TROPHIES));
 const DRIP_ORDER = UNLOCK_ORDER.filter(n=>!TROPHY_FIGHTERS.has(n));
@@ -7642,10 +7669,30 @@ function awardMatchProgress(winTeam){
   return fresh;
 }
 function awardTutorialUnlock(){ return awardTrophy('tutorial'); }
-function awardBossCleared(name){
+// ALONE means no teammate on the stage — Boss Rush puts every fighter on team 0 against the boss,
+// so `fighters` holding exactly one entry is the whole test. Passed in rather than read off the
+// global so the rule can be exercised without standing up a match.
+function soloRun(solo){
+  if(solo!=null) return !!solo;
+  return SETTINGS.mode==='boss' && Array.isArray(fighters) && fighters.length===1;
+}
+function awardBossCleared(name, solo){
   if(!PROFILE) return [];
   PROFILE.bossesCleared[name] = true;
-  return awardTrophy('boss:'+name);
+  const fresh = awardTrophy('boss:'+name);
+  if(soloRun(solo)){
+    PROFILE.soloBosses = PROFILE.soloBosses || {};
+    PROFILE.soloBosses[name] = true;
+    // Keyed by NAME, so felling the first boss four times over is one boss, not four. The gauntlet
+    // loops back to boss 1 forever, and a milestone you can farm from the easiest fight in the game
+    // is not a milestone.
+    const n = Object.keys(PROFILE.soloBosses).length;
+    for(const k in TROPHIES){
+      if(k.indexOf('solo:')===0 && n >= +k.slice(5)) fresh.push(...awardTrophy(k));
+    }
+    saveProfile();
+  }
+  return fresh;
 }
 function awardRushLoop(loop){
   if(!PROFILE) return [];
