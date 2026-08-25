@@ -11951,6 +11951,23 @@ function applySnapshot(s){
 // ============================================================
 //  NETCODE — LAN multiplayer over WebSocket relay
 // ============================================================
+// WHERE THE RELAY LIVES.
+//
+// Set this to the deployed Cloudflare Worker and both the web build and the desktop build get
+// online play — see relay/README.md for the two commands that deploy it. Example:
+//   const RELAY_URL = "wss://smash-island-relay.your-subdomain.workers.dev/ws";
+//
+// Left empty, the game falls back to a same-origin /api/ws, which is what a relay hosted behind
+// this same domain would look like. That fallback is the historical behaviour and it 404s on the
+// current deployment; see NET.wsURL for why it never could have worked.
+const RELAY_URL = "";
+// An owner can also point a build at a relay without editing this file — useful for testing a
+// staging Worker, or for a LAN party against a locally-run `wrangler dev`:
+//   localStorage.setItem('bfsi:relay', 'ws://localhost:8787/ws')
+function relayEndpoint(){
+  try{ const o = localStorage.getItem('bfsi:relay'); if(o) return o; }catch(e){}
+  return RELAY_URL;
+}
 window.NET = {
   role: "solo",          // solo | host | client
   room: null,            // 4-letter room code shared with friends (null = default room)
@@ -11962,19 +11979,30 @@ window.NET = {
   myId: Math.random().toString(36).slice(2,8),
   lastInputSent: 0,
 
-  wsURL(addr){
-    // On a real domain the page loads over HTTPS, which requires a secure socket (wss://).
-    // On LAN it's plain HTTP, so ws:// is correct. Pick automatically.
-    const secure = (location.protocol === "https:");
-    // If a full ws(s):// address was typed, respect it; otherwise build from host.
+  wsURL(addr, loc){
+    loc = loc || location;
+    // A full ws(s):// address typed into the join box always wins. That is the manual LAN path and
+    // it needs no relay at all, so it keeps working however the hosted relay is (or isn't) set up.
     if(addr && /^wss?:\/\//i.test(addr)) return addr;
-    const host = addr || location.host || "localhost:8080";
-    const _p = (location.protocol === "https:") ? "/api/ws" : "";
-    // ROOM CODES: when the page is served from a real domain, everyone already shares one origin,
-    // so the only thing that needs to match is the room. Players type a 4-letter code instead of
-    // an IP address — the relay shards on ?room=. This is what makes online usable without anyone
-    // running a server or reading their local IP off another screen.
+    // ROOM CODES: everyone shares one relay, so the only thing that has to match between friends is
+    // the room. Players read out a 4-letter code instead of an IP address, and the relay shards on
+    // ?room=. This is what makes online usable without anyone running a server.
     const q = this.room ? ("?room=" + encodeURIComponent(this.room)) : "";
+    const relay = relayEndpoint();
+    if(relay) return relay.replace(/\/+$/, "") + q;
+    // NO RELAY CONFIGURED. Fall back to same origin — which is what a relay deployed behind this
+    // same domain would look like, and is exactly what this function used to do unconditionally.
+    //
+    // That unconditional version is why multiplayer never worked. On the deployed site it produced
+    // wss://<host>/api/ws, an endpoint that has never existed and could not: Vercel's serverless
+    // functions terminate a request instead of holding an upgraded socket open, so the handshake
+    // got a 404 where it needed a 101. And in the desktop build, served from app://game, neither
+    // branch applied: `secure` was false and location.host is the literal "game", so it dialled the
+    // unroutable ws://game. Return null there instead, so connect() can say something true.
+    if(loc.protocol !== "https:" && loc.protocol !== "http:") return null;
+    const secure = (loc.protocol === "https:");
+    const host = addr || loc.host || "localhost:8080";
+    const _p = secure ? "/api/ws" : "";
     return (secure ? "wss://" : "ws://") + host + _p + q;
   },
   // A short, unambiguous code: no vowels (avoids real words), no 0/O/1/I lookalikes.
@@ -11985,15 +12013,28 @@ window.NET = {
   },
 
   connect(addr, asHost){
-    try{ this.ws = new WebSocket(this.wsURL(addr)); }
-    catch(e){ this.status("Bad address"); return; }
+    const url = this.wsURL(addr);
+    // No relay AND no usable origin to guess one from — the desktop build, before RELAY_URL is set.
+    // It used to dial ws://game here and report a generic connection error, which sent an owner
+    // hunting for a server that was never misconfigured because it was never deployed.
+    if(!url){
+      this.status("No relay set up yet — see relay/README.md, or type a ws:// address for LAN play");
+      this.role="solo"; return;
+    }
+    try{ this.ws = new WebSocket(url); }
+    catch(e){ this.status("Bad address"); this.role="solo"; return; }
     this.ws.onopen = ()=>{
       this.status(asHost?"Hosting — waiting for players":"Connected — joining");
       this.send({t:"hello", id:this.myId, host:!!asHost, name:(chosen?chosen.name:"?")});
     };
-    this.ws.onmessage = (ev)=>this.onMessage(JSON.parse(ev.data));
+    this.ws.onmessage = (ev)=>{ try{ this.onMessage(JSON.parse(ev.data)); }catch(e){} };
     this.ws.onclose = ()=>{ this.status("Disconnected"); };
-    this.ws.onerror = ()=>{ this.status("Connection error — is the server running?"); };
+    // Name what was actually dialled. "Is the server running?" is unanswerable when the player has
+    // no idea what server the game even wants.
+    this.ws.onerror = ()=>{
+      this.status(relayEndpoint() ? "Cannot reach the relay — check it is deployed and reachable"
+                                  : "No relay is deployed at " + url + " — see relay/README.md");
+    };
   },
 
   host(){
