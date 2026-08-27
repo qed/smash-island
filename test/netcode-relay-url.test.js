@@ -11,10 +11,19 @@ import { loadMonolith } from './helpers/load-monolith.js';
 const url = (w, { room = 'QXTR', addr = null, relay = null, loc = null } = {}) => w.eval(`
   (function(){
     NET.room = ${JSON.stringify(room)};
-    ${relay === null ? `try{ localStorage.removeItem('bfsi:relay'); }catch(e){}`
+    ${relay === null ? `try{ localStorage.removeItem('bfsi:relay'); }catch(e){} NET.RELAY='';`
                      : `try{ localStorage.setItem('bfsi:relay', ${JSON.stringify(relay)}); }catch(e){}`}
     return NET.wsURL(${JSON.stringify(addr)}, ${loc ? JSON.stringify(loc) : 'null'});
   })()`);
+
+describe('the build ships pointing at a relay', () => {
+  it('has a deployed wss:// endpoint baked in', () => {
+    // If this is ever emptied, wsURL silently falls back to same-origin /api/ws — the endpoint that
+    // has never existed — and Create Room / Join Room go back to failing with a 404.
+    const { window: w } = loadMonolith();
+    expect(w.eval('NET.RELAY'), 'no relay configured in the shipped build').toMatch(/^wss:\/\/.+/);
+  });
+});
 
 describe('a configured relay is what the game dials', () => {
   it('builds relay + room code', () => {

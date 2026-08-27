@@ -1,7 +1,14 @@
 // End-to-end against a running `wrangler dev`: two real sockets through the real Durable Object,
 // speaking the monolith's actual message set. Node 22+ has a global WebSocket.
-const BASE = 'ws://127.0.0.1:8787/ws';
-const wait = ms => new Promise(r => setTimeout(r, ms));
+// Defaults to a local `wrangler dev`. Point it at a deployed Worker to check the real thing:
+//   RELAY=wss://smash-island-relay.<subdomain>.workers.dev/ws node relay/test/e2e.mjs
+const BASE = process.env.RELAY || process.argv[2] || 'ws://127.0.0.1:8787/ws';
+const HTTP = BASE.replace(/^ws/, 'http').replace(/\/ws$/, '');
+// Every wait scales by SLOW. Against a local wrangler dev the round trip is sub-millisecond; against
+// a deployed Worker it is a real network hop plus a Durable Object cold start, so the local timings
+// are far too tight and everything reads as "delivered nothing".
+const SLOW = Number(process.env.SLOW || 1);
+const wait = ms => new Promise(r => setTimeout(r, ms * SLOW));
 let failures = 0;
 const check = (ok, label, detail) => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok || detail === undefined ? '' : `  -> ${JSON.stringify(detail)}`}`);
@@ -22,9 +29,9 @@ const say = (ws, o) => ws.send(JSON.stringify(o));
 const took = (ws, t) => ws.inbox.filter(m => m.t === t);
 
 // --- health ---
-const health = await fetch('http://127.0.0.1:8787/health').then(r => r.text());
+const health = await fetch(`${HTTP}/health`).then(r => r.text());
 check(health === 'ok', 'GET /health returns ok', health);
-const plain = await fetch('http://127.0.0.1:8787/ws?room=QXTR');
+const plain = await fetch(`${HTTP}/ws?room=QXTR`);
 check(plain.status === 426, 'a plain GET on /ws is refused with 426, not a 404', plain.status);
 
 // --- a room forms ---
