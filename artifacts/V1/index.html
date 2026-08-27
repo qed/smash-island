@@ -4482,8 +4482,10 @@ function setupWorld(){
   // THICK, so it reads as architecture rather than a drawn line. HOLLOW, so the inside is somewhere
   // you can actually be: all four arm cavities open into a chamber at the centre, and because every
   // doorway cuts through BOTH faces, a wall you can enter is also a wall you can cross.
-  const CROSS_T = 150;                     // outer face to outer face
-  const FACE    = 20;                      // how much of that is solid, per side
+  // 190 rather than 150: a fighter is 48px tall, and the earlier cavity left only ~110px inside the
+  // wall — enough to stand in, not enough to stand on a step in and still have headroom.
+  const CROSS_T = 190;                     // outer face to outer face
+  const FACE    = 22;                      // how much of that is solid, per side
   const DOOR    = 150;                     // doorway clear span (a fighter is 48px across)
   const half    = CROSS_T/2;
   const cavity  = CROSS_T - FACE*2;
@@ -4517,8 +4519,32 @@ function setupWorld(){
   // IS the horizontal route across the map; without it the AI has to climb to reach an enemy.
   wallRun(midY+half, botY - DOOR, [ midY + half + (botY-midY-half)*0.26 ], putV);
   // HORIZONTAL arm — its top face doubles as the floor of the two upper quadrants.
-  wallRun(marginX, midX-half, exitsOn(midX-half, marginX), putH);
-  wallRun(midX+half, marginX+floorW, exitsOn(midX+half, marginX+floorW), putH);
+  const doorsL = exitsOn(midX-half, marginX);
+  const doorsR = exitsOn(midX+half, marginX+floorW);
+  wallRun(marginX, midX-half, doorsL, putH);
+  wallRun(midX+half, marginX+floorW, doorsR, putH);
+  // A STEP INSIDE EACH HORIZONTAL DOORWAY.
+  //
+  // The doorway is a hole in BOTH faces, so it is an open shaft with nothing to stand on. Measured:
+  // from the highest field row beneath the wall, the top face is a ~200px climb, and a double jump
+  // gains MAX_HOP_RISE (170) — so the whole upper half of the arena could be fallen into but never
+  // climbed to, and an AI sent upward stalled against the wall's underside on every seed. One step
+  // in the cavity splits that into two comfortable hops, in both directions. Sat low in the cavity
+  // so there is real headroom above it rather than a fighter's scalp against the top face.
+  // TWO steps, not one. The scattered field refuses to place anything within 90px of a solid, so
+  // there is a dead band either side of the wall where no ordinary platform can appear: the cavity
+  // step alone still sat 213px above the highest reachable field row, past the 170 a double jump
+  // clears, and the climb measured no better than before. The approach step below the doorway
+  // bridges that band, giving ~88 / ~125 / ~125 hops from field row to cavity to top face.
+  for(const dx of doorsL.concat(doorsR)){
+    // Kept narrow on purpose. A broad 380px landing was tried here to make the approach forgiving
+    // and measured WORSE (every run back to 1008px, losing the one that crossed): the field scatter
+    // refuses to place a platform within 90px of anything already present, so a wide step carves out
+    // the very approach platforms a fighter climbs to reach it.
+    const w = DOOR - 40;
+    worldPlats.push({ x: dx - w/2, y: midY + half + 62, w, h: 12, hop:true, floor:0 });
+    worldPlats.push({ x: dx - w/2, y: midY + 30,        w, h: 12, hop:true, floor:0 });
+  }
 
   // Rungs inside the vertical shaft, so the hollow core is a climbable route rather than a well you
   // drop down once. Spaced well inside a double jump — the tightest platforming on the map.
@@ -4569,9 +4595,12 @@ function setupWorld(){
       if(n<=0) continue;
       const outward = (qi % 2) === 0;                  // quadrants 0 and 2 open to the left
       const inset = Math.min(150, q.w*0.10);
-      const bandW = Math.max(180, q.w*0.42 - inset);
+      const bandW = Math.max(180, q.w*0.52 - inset);
       const bandX = outward ? q.x + inset : q.x + q.w - inset - bandW;
-      const cols = Math.min(3, n);
+      // WIDE, not tall. Capping columns at 3 put a 2v2 team's eight pads on three stacked rows —
+      // a narrow vertical shaft of platforms rather than a corner you fight out of, and the tallest
+      // thing on an already vertical map. Two rows at most, spread sideways instead.
+      const cols = Math.max(1, Math.min(4, Math.ceil(n/2)));
       const pw = 140;
       for(let k=0;k<n;k++){
         const c = k % cols, r = (k/cols)|0;
@@ -8219,12 +8248,29 @@ function navUp(f, t){
   for(const p of worldPlats){
     const ptop=p.y;
     // a useful step is above our feet, at or below the target, and reachable by a jump
+    // A SOLID directly overhead is not a step, it is a ceiling. One-way tops can be jumped up
+    // through; a solid cannot, so its top is only reachable from beside it or above. Without this
+    // an AI under the cross's arm picked the arm's own top surface as its next step and jumped into
+    // the underside on a loop — measured stalling at exactly the wall's lower face, every seed.
+    // Skipping it makes navUp choose the doorway step instead and route through the wall by itself.
+    if(p.solid && f.x > p.x - 8 && f.x < p.x + p.w + 8) continue;
     if(ptop < f.y - 24 && ptop > t.y - 30){
-      const px = p.x + p.w/2;
-      // prefer platforms roughly under us (small horizontal move) and near jump height
       const climbGap = (f.y - ptop);
-      if(climbGap > 300) continue;   // too high to reach in one hop chain — skip
-      cands.push({x:px, y:ptop, xL:p.x, xR:p.x+p.w, d:Math.abs(px-f.x)*1.0 + Math.abs(climbGap-150)*0.4});
+      // Still bounded at 300, NOT at MAX_HOP_RISE. Tightening it to what a double jump clears was
+      // tried and cost match resolution on generated maps (6/6 down to 5/6): a fighter that has run
+      // out of jumps finishes the climb with an up-special, so ledges above jump height are
+      // genuinely reachable and refusing to aim at them stalls the chase outright. Instead they are
+      // heavily penalised below, so a reachable step always wins when one exists.
+      if(climbGap > 300) continue;
+      const reachPenalty = climbGap > MAX_HOP_RISE ? 260 : 0;
+      const xL = p.x, xR = p.x + p.w;
+      // Distance to the NEAREST standable point, not the platform's centre: a wide ledge you are
+      // already beside is a short hop, not a long walk to its middle.
+      const hx = (f.x < xL) ? xL - f.x : (f.x > xR) ? f.x - xR : 0;
+      // Prefer the highest step still within reach — it makes progress fastest — but let sideways
+      // distance dominate so nobody sprints across the arena for one extra platform of height.
+      cands.push({ y:ptop, xL, xR,
+                   d: hx + (MAX_HOP_RISE - Math.min(climbGap, MAX_HOP_RISE))*0.35 + reachPenalty });
     }
   }
   if(!cands.length) return null;
@@ -8233,6 +8279,65 @@ function navUp(f, t){
   const c=cands[0];
   const aimX = (f.x < c.xL) ? c.xL+12 : (f.x > c.xR) ? c.xR-12 : f.x;
   return {x:aimX, y:c.y};
+}
+// Horizontal ground a rising jump covers before the fighter is level with the next step.
+const CLIMB_REACH = 130;
+// Is a SOLID layer between us and a target above, and if so, where is the nearest way through it?
+//
+// The teams arena's cross is exactly this shape: its arms are not climbed, they are walked through
+// at one of the doorways cut in them. Ordinary platform-chaining cannot express that, because the
+// doorway is the ABSENCE of a platform — there is nothing for navUp to aim at. Without this an AI
+// climbs to the underside of the wall and stalls there, which is precisely where a measured climb
+// run topped out (1028px, dead against the wall's lower face, on every seed).
+function nearestCeilingGapX(f, t){
+  let blocker = null;
+  for(const p of worldPlats){
+    if(!p.solid) continue;
+    if(p.y + (p.h||0) < t.y - 30) continue;        // above the target — not in the way
+    if(p.y > f.y - 24) continue;                    // at or below us — not overhead
+    if(f.x <= p.x - 8 || f.x >= p.x + p.w + 8) continue;
+    if(!blocker || p.y > blocker.y) blocker = p;    // the LOWEST one: the first ceiling we meet
+  }
+  if(!blocker) return null;                         // clear overhead — ordinary climbing applies
+  // Everything on that same layer forms the wall; a gap is any x no segment of it covers.
+  const layer = worldPlats.filter(p => p.solid && Math.abs(p.y - blocker.y) < 30);
+  const covered = x => layer.some(p => x > p.x - 12 && x < p.x + p.w + 12);
+  for(let step=60; step<=3600; step+=60){
+    if(f.x - step > 60 && !covered(f.x - step)) return f.x - step;
+    if(f.x + step < WW - 60 && !covered(f.x + step)) return f.x + step;
+  }
+  return null;
+}
+// Drive one frame of a climb toward `t`, steering and jumping TOGETHER.
+//
+// That combination is the whole point. Both callers used to do one or the other — steer if more
+// than ~22px off the mark, else jump — so a fighter walked to directly underneath a ledge and then
+// hopped straight up. The platform field is laid out brick-bond, so the step above you is usually
+// OFFSET rather than overhead, and a ledge over a gap has no "underneath" to walk to at all: the AI
+// would pace back and forth below it indefinitely. Returns whether a step was found.
+function steerClimb(f, t, inp){
+  // Steering toward a doorway was tried here and MEASURED WORSE — 470px climbed against 1028px,
+  // because a wall is overhead for most of the ascent, so the fighter kept breaking off to walk
+  // sideways instead of going up and never regained the height. The doorway is instead made
+  // climbable by the step built inside it (see setupWorld), which navUp finds like any other.
+  const nav = navUp(f, t);
+  const aimX = nav ? nav.x : t.x;
+  const dxn = aimX - f.x;
+  // Steering and jumping TOGETHER only on the teams arena. There it is a clear win — the platform
+  // field is brick-bond, so the next step up is usually offset rather than overhead, and walking to
+  // directly underneath before hopping cannot reach an offset ledge at all. Everywhere ELSE it
+  // measurably hurt: on generated maps, match resolution fell from 6/6 to 5/6, because those are
+  // built from stepped solid blocks where committing the jump early overshoots the edge you were
+  // walking to. So the old steer-or-jump stays the default.
+  if(isBig()){
+    if(Math.abs(dxn) > 12){ inp.left = dxn < 0; inp.right = dxn > 0; }
+    if(f.onground){ if(Math.abs(dxn) <= CLIMB_REACH) inp.jump = true; }
+    else if(climbJump(f)) inp.jump = true;
+  } else {
+    if(Math.abs(dxn) > 22){ inp.left = dxn < 0; inp.right = dxn > 0; }
+    else if(climbJump(f)) inp.jump = true;
+  }
+  return !!nav;
 }
 // Where is the nearest gap edge on the fighter's current floor to drop through?
 // Returns an x just past the edge of the platform segment f is standing on.
@@ -8578,9 +8683,7 @@ function aiThink(f){
     }
     if(adx>30){ if(dx<0) inp.left=true; else inp.right=true; }
     if(dy < -90){                                   // target above — climb toward them
-      const nav=navUp(f,t);
-      if(nav && Math.abs(nav.x-f.x)>24){ inp.left = nav.x<f.x; inp.right = nav.x>=f.x; }
-      else if(climbJump(f)) inp.jump=true;
+      steerClimb(f, t, inp);
       if(dy<-160 && f.spCd<=0 && f.jumps<=0 && rn<0.4){ inp.special=true; inp.up=true; }
     } else if(dy > 130){                            // target below — drop toward them
       if(isBig()){ const gx=nearestDropX(f); if(gx!=null && Math.abs(gx-f.x)>22){ inp.left=gx<f.x; inp.right=gx>=f.x; } else if(f.onground){ inp.down=true; inp.jump=true; } }
@@ -8596,17 +8699,11 @@ function aiThink(f){
   const wantClimb = dy < -80 && (adx > 60 || !isZoner) && onDifferentLevel;
   const wantDrop  = dy > 110 && (adx > 70 || !isZoner) && onDifferentLevel;
   if(wantClimb){
-    const nav = navUp(f, t);
-    if(nav){
-      if(Math.abs(nav.x - f.x) > 22){ if(nav.x < f.x) inp.left=true; else inp.right=true; }
-      else if(climbJump(f)){ inp.jump=true; }   // lined up under the step — jump with proper timing
+    if(steerClimb(f, t, inp)){
       if(dy < -150 && f.spCd<=0 && (f.jumps<=0 || rn<0.3)){ inp.special=true; inp.up=true; }  // up-special boost
     } else {
-      // No platform chain found. If the target is higher than a double jump can reach from
-      // right here, DON'T just bounce in place — slide toward them and use jumps only when
-      // the timing gains height (or an up-special if we've run out of jumps).
-      if(adx>26){ if(dx<0)inp.left=true; else inp.right=true; }
-      if(climbJump(f)) inp.jump=true;
+      // No step within reach at all — steerClimb is already sliding toward the target. Spend the
+      // up-special once the jumps are gone rather than drifting under them.
       if(f.jumps<=0 && !f.onground && dy<-120 && f.spCd<=0 && rn<0.5){ inp.special=true; inp.up=true; }
     }
     if(isZoner && f.spCd<=0 && adx<220 && rn<react*0.5) inp.special=true;   // poke while climbing

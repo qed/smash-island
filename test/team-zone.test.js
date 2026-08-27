@@ -151,6 +151,35 @@ describe('reforming scatters across the pads', () => {
   });
 });
 
+describe('the AI can climb the arena', () => {
+  // The cross makes this map far more vertical than the one it replaced, so an AI that cannot gain
+  // height cannot reach an opponent. Measured baseline before this work: ~911px average with one
+  // run of 6 managing only 347. Guarded well under what it now does so ordinary noise cannot fail
+  // it, but high enough to catch the two bugs that were found here — navUp aiming at ledges beyond
+  // a double jump, and navUp treating a SOLID directly overhead as a step and jumping into its
+  // underside on a loop.
+  it('gains real height when its target is above it', () => {
+    const { window: w } = loadMonolith();
+    const gained = w.eval(`
+      (function(){
+        SETTINGS.mode='teams'; SETTINGS.teamKey='2v2'; SETTINGS.count=4;
+        SETTINGS.itemRate=0; SETTINGS.stocks=99; beginMatchNow();
+        var floorY = worldPlats[0].y, c = fighters[0];
+        c.controller='ai'; c.you=false; c.x=WW*0.18; c.y=floorY-60; c.vx=0; c.vy=0;
+        // Everyone else parked high and inert, so the only sensible move is UP.
+        for (var i=1;i<fighters.length;i++){
+          fighters[i].x = WW*0.22 + i*40; fighters[i].y = WH*0.12;
+          fighters[i].controller='still'; fighters[i].invuln=999999;
+        }
+        var start = c.y, best = c.y;
+        for (var k=0;k<900;k++){ step(); if (c.dead) break; if (c.y < best) best = c.y; }
+        running = false;
+        return Math.round(start - best);
+      })()`);
+    expect(gained, 'the AI barely left the floor').toBeGreaterThan(700);
+  });
+});
+
 describe('inside your own zone you cannot be hurt', () => {
   it('takes no damage at all', () => {
     const { window: w } = loadMonolith();
