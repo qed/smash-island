@@ -1156,10 +1156,16 @@ function customScrolls(){ return !!CUSTOM_LEVEL && (customWorldW()>W+2 || custom
 const MAX_FFA=5, MAX_TEAMS=20;
 // contestant counts offered per mode (compact set for teams so buttons fit)
 function countOptions(){
+  // Boss Rush offers ONE. It is a co-op mode and every other mode needs an opponent, so the floor
+  // has always been 2 — but a boss is the opponent, so a lone fighter is a complete match, and
+  // "beat N bosses solo" (TROPHIES) is not a deed anybody could perform without it.
   return SETTINGS.mode==="teams"
     ? [2,3,4,5,6,8,10,12,16,20]
+    : SETTINGS.mode==="boss" ? [1,2,3,4,5]
     : [2,3,4,5];
 }
+// The smallest legal contestant count for a mode — 1 only where a boss supplies the opposition.
+function minCount(){ return SETTINGS.mode==='boss' ? 1 : 2; }
 // generate team-split options for a given player count: balanced 2/3/4-team divisions
 function teamSplitsFor(N){
   const opts=[]; const seen=new Set();
@@ -2021,6 +2027,14 @@ function unlockHint(name){
     if(k==='wc') return 'Win the World Cup';
     if(k==='rush2') return 'Reach Boss Rush loop 2';
     if(k==='tutorial') return 'Finish How to Play';
+    if(k.indexOf('solo:')===0){
+      const need = +k.slice(5);
+      const got = PROFILE ? Object.keys(PROFILE.soloBosses||{}).length : 0;
+      // Say how many are left, not just the target — a locked cell that reads the same after every
+      // run it made progress on is indistinguishable from one that is not tracking anything.
+      return got>=need ? 'Beat '+need+' bosses solo'
+                       : 'Beat '+need+' bosses solo ('+Math.min(got,need)+'/'+need+')';
+    }
     if(k.indexOf('boss:')===0) return 'Defeat '+k.slice(5)+' in Boss Rush';
   }
   const i = DRIP_ORDER.indexOf(name);
@@ -2188,9 +2202,12 @@ function buildSettings(){
   };
   bindSeg('segMode', v=>{ SETTINGS.mode=v;
     syncModeUI({ reveal:true });   // a deliberate click on Teams scrolls the strategy panel into view
-    // clamp count to the new mode's max and rebuild count buttons
+    // clamp count into the new mode's range and rebuild count buttons. The FLOOR matters as well
+    // as the cap now: a solo count of 1 is legal in Boss Rush but leaves every other mode with a
+    // lone fighter and nobody to fight.
     const cap = v==='teams'?MAX_TEAMS:MAX_FFA;
     if(SETTINGS.count>cap) SETTINGS.count=cap;
+    if(SETTINGS.count<minCount()) SETTINGS.count=minCount();
     buildCountButtons();
     if(v==='teams') buildTeamSplits();
     updateSummary();
@@ -3173,12 +3190,24 @@ function startTournament(teamSize, mode){
   const pool = ROSTER.filter(r=>r.play);
   // build 48 teams; each team is `teamSize` fighters
   const teams=[];
+  // ONE bag for the whole tournament, not a fresh one per team. The old code reset the draw on
+  // every iteration, so a fighter could lead a dozen different sides and the group stage read like
+  // a roster of clones. Drawing from a single bag spends every fighter once before any is spent
+  // twice: at teamSize 1 that is 48 slots from 59, so nobody repeats anywhere in the cup; at
+  // teamSize 2 it is 96 slots, so nobody appears more than twice. Refilled only when it runs dry.
+  let bag = [];
+  function draw(taken){
+    if(!bag.length){ bag=[...pool]; shuffle(bag); }
+    // Never twice on the SAME side, which renders identically in standings ("Firey +1") and is
+    // indistinguishable from a real pairing. Skip past a card already on this team rather than
+    // rejecting the draw — rejection can spin forever once the bag's tail is all duplicates.
+    let k = bag.findIndex(f=>!taken.includes(f));
+    if(k<0){ bag=[...pool]; shuffle(bag); k = bag.findIndex(f=>!taken.includes(f)); }
+    return k<0 ? null : bag.splice(k,1)[0];
+  }
   for(let i=0;i<48;i++){
-    // Draw WITHOUT replacement within a team — otherwise a 2v2 side can field the same fighter
-    // twice, which renders identically in standings ("Firey +1") and is indistinguishable from a
-    // real pairing. Across teams, duplicates remain intentional: 48 teams drawn from 59.
-    const members=[]; const bag=[...pool];
-    for(let m=0;m<teamSize && bag.length;m++){ members.push(bag.splice(Math.floor(Math.random()*bag.length),1)[0]); }
+    const members=[];
+    for(let m=0;m<teamSize;m++){ const f=draw(members); if(f) members.push(f); }
     teams.push({ id:i, name: teamName(members, i), members,
       // Stable per-team tiebreak. Assigned ONCE here, never recomputed, so cmpTeam stays a
       // consistent comparator — it is passed to .sort() in three places and re-sorts all 12
@@ -3192,7 +3221,28 @@ function startTournament(teamSize, mode){
   if(mode==="normal"){
     myTeam = teams[Math.floor(Math.random()*48)];
     const me = chosen || pool[0];
-    myTeam.members[0] = me;                 // your pick leads your team
+    // Your pick LEADS your team, and seating it used to duplicate it two different ways.
+    //
+    // ACROSS teams: the draw may already have spent your fighter on somebody else's side, and at
+    // teamSize 1 the 48 sides are otherwise all-distinct — so the group table would show the same
+    // character twice, once as you and once as a rival you can be drawn against. Clear it off
+    // every other side first and backfill them from the bag.
+    for(const t of teams){
+      if(t===myTeam) continue;
+      const j = t.members.indexOf(me);
+      if(j<0) continue;
+      const rep = draw(t.members);              // t.members still holds `me`, so rep is never `me`
+      if(rep) t.members[j]=rep; else t.members.splice(j,1);
+      t.name = teamName(t.members, t.id);
+    }
+    // WITHIN your team: assigning slot 0 outright fielded the same fighter twice whenever the draw
+    // had put your pick elsewhere on this same side — the duplicate the per-team check exists to
+    // prevent, reintroduced one line later. Pull it out of wherever it landed; if it isn't here at
+    // all, evict a slot and hand that fighter back to the bag.
+    const dup = myTeam.members.indexOf(me);
+    if(dup >= 0) myTeam.members.splice(dup, 1);
+    else if(myTeam.members.length) bag.push(myTeam.members.pop());
+    myTeam.members.unshift(me);
     myTeam.name = teamName(myTeam.members, myTeam.id);
   }
   TOURNEY = {
@@ -4256,6 +4306,11 @@ function cellJitter(c, r, salt){
   return ((h ^ (h>>>16)) >>> 0) / 4294967296;
 }
 const FIELD_ROW_GAP = 150;   // <= MAX_HOP_RISE, so a full-height field is climbable by construction
+// The teams arena packs its rows tighter. Its quadrants are tall and walled, so movement there is
+// mostly vertical, and a 150px step means clearing almost every gap at full jump height. Shorter
+// steps give you something to TIME a jump against. Still well under MAX_HOP_RISE, so the
+// climbable-by-construction guarantee holds exactly as before.
+const TEAM_ROW_GAP = 118;
 // Horizontal cell size, in world px. Tied to the SCREEN width, not the world's, so density per
 // screenful stays constant: a Huge map gets more platforms, not sparser ones.
 function FIELD_COL_W(){ return Math.max(380, W*0.62); }
@@ -4269,8 +4324,9 @@ function FIELD_COL_W(){ return Math.max(380, W*0.62); }
 // column above it, the tower's run-under tunnel, a big-FFA respawn perch, or a hand-placed platform
 // that already serves that spot — so nothing here disturbs the landmarks, spawns or invariants.
 // Everything produced is a ONE-WAY top: it can never wall off a horizontal route the way a solid can.
-function scatterPlatforms({x0, x1, top, bot, colW, existing, blockers}){
+function scatterPlatforms({x0, x1, top, bot, colW, existing, blockers, rowGap}){
   const out=[];
+  const step = rowGap || FIELD_ROW_GAP;   // callers may pack rows tighter than the FFA default
   // Hold the field back from the lateral blast zones. KOs in this game come almost entirely from
   // being knocked out sideways, and a platform sitting in the last stretch before the edge catches
   // the victim and hands them a free recovery. Furnishing all the way out measurably stalled the
@@ -4282,7 +4338,7 @@ function scatterPlatforms({x0, x1, top, bot, colW, existing, blockers}){
   const cols = Math.max(3, Math.round((x1-x0)/colW));
   const baseW = Math.max(130, colW*0.38);   // wide enough that adjacent columns leave no dead lane
   for(let r=0; ; r++){
-    const y = bot - r*FIELD_ROW_GAP;
+    const y = bot - r*step;
     if(y < top) break;
     for(let c=0;c<cols;c++){
       const t = (c + 0.5 + (r%2 ? 0.5 : 0))/cols;      // brick bond: alternate rows offset by half a cell
@@ -4383,128 +4439,194 @@ function setupWorld(){
   }
   // ============================================================
   //  TEAMS ARENA — "The Yoyle Crossing"
-  //  Replaces a flat floor + two rows of identical platforms (functional, but generic and
-  //  perfectly symmetrical). This is ~60% bigger and built from LANDMARKS instead of a grid:
-  //    · fortified home BLUFFS for each team (solid, high ground you defend)
-  //    · a central contested TOWER — the tallest thing on the map, worth fighting over
-  //    · suspended BRIDGES linking bluffs to the tower (drop-through: you can fall past safely)
-  //    · low FLANK routes under the bridges so there are two ways to approach, not one
-  //  The one rule kept from the old map: everything sits above a CONTINUOUS SOLID FLOOR, so a
-  //  missed jump drops you safely instead of into a pit (that bug cost several builds).
+  //  Four quadrants cut by a PLUS of two thick, hollow walls. Each team owns a corner as its safe
+  //  zone — a whole side, two stacked quadrants, when there are only two teams — and the only ways
+  //  between quadrants are the doorways punched clean through the arms: one near the centre of the
+  //  cross, one out near the rim, on every arm.
+  //
+  //  This replaces a central tower with the team bluffs strung along a single floor. That layout
+  //  put every base in the same horizontal line under a full-height safe column, and because a
+  //  fighter is untouchable inside their own column AND cannot swing out of it, both teams simply
+  //  accumulated in their columns: one big pile, no damage dealt, nothing resolving.
+  //
+  //  Rules kept from the old map: a CONTINUOUS SOLID FLOOR under everything, so a missed jump
+  //  drops you safely instead of into a pit (that bug cost several builds), and a ground-level
+  //  route right across the map that never requires climbing — the AI will not reliably climb to
+  //  find an opponent, and a map where it must is a map where matches stall.
+  //
+  //  setupWorld() must stay PURE (see cellJitter): every position below is derived from the match
+  //  settings and never from Math.random(), so replays and netplay rebuild the identical arena.
   // ============================================================
-  // Genuinely bigger: ~3.5x screen wide (old map capped at 3.2x) and now much taller at 2.15x.
-  // Width was briefly suspected of causing stalls; measurement showed matches resolve 12/12 given
-  // a realistic frame budget — the old test simply cut them off early. Kept generous.
+  // 1.5x the old stadium on both axes. The cross eats the whole middle of the map, so without the
+  // extra room each team would be fighting in a cupboard.
+  const ARENA_SCALE = 1.5;
   const wMul = 2.9 + SETTINGS.count*0.11;
-  WW = Math.round(W * Math.min(3.6, wMul) * MS.w);
+  WW = Math.round(W * Math.min(3.6, wMul) * MS.w * ARENA_SCALE);
+  WH = Math.round(H * 2.5 * MS.h * ARENA_SCALE);
 
   const teamCount = (SETTINGS.teamKey||'').split('v').filter(Boolean).length || 2;
-  // Taller vertical arena (2.5x screen, was 2.15x): more headroom for a higher tower and more
-  // climbing rungs, so the map really plays vertically. The continuous floor + run-under tunnel
-  // below stay unchanged, so teams always have a horizontal route to each other (the AI
-  // never has to climb to win — verticality is optional high ground, not a required path).
-  WH = Math.round(H * 2.5 * MS.h);
-  const marginX = WW*0.03;
-  const floorW  = WW - marginX*2;
-  // Everything below is a FRACTION of WH, not of the screen, so the MAP SIZE multiplier scales the
-  // whole stadium instead of just adding empty sky. 0.088 of WH == the old H*0.22 pit at 2.5x.
-  const botY    = WH*0.912;
-  const midX    = marginX + floorW*0.5;
+  const marginX  = WW*0.03;
+  const floorW   = WW - marginX*2;
+  const botY     = WH*0.912;
+  const midX     = marginX + floorW*0.5;
+  const midY     = WH*0.50;        // the horizontal arm — upper and lower quadrants both get real height
+  const crossTop = WH*0.05;        // the vertical arm stops short of the ceiling
   floors=[{ level:0, y:botY, x:marginX, w:floorW }];
 
   worldPlats=[];
+  worldZones=[];
   // --- the canyon floor: one continuous solid surface, no gaps ---
   worldPlats.push({ x:marginX, y:botY, w:floorW, h:46, solid:true, floor:0 });
 
-  // --- CENTRAL TOWER: the landmark. Its base is RAISED off the floor so fighters can run
-  // underneath — as a floor-to-sky column it split the arena in two and ~40% of matches stalled
-  // because the AI won't reliably climb four ledges to reach the other team. Now it's a structure
-  // you fight around, over and under, with the summit as contested high ground.
-  const towerW  = Math.max(150, floorW*0.075);
-  // Tower height is a fraction of WH (0.48 → H*1.2 at the default 2.5x arena, up from H*0.98), so a
-  // Tall/Huge map grows a taller tower rather than more dead air above the same short one.
-  const towerTop = botY - WH*0.48;                // taller landmark reaching into the higher arena
-  const TUNNEL_H = 150;                           // clearance underneath: a run-through tunnel (unchanged)
-  const towerBot = botY - TUNNEL_H;
-  worldPlats.push({ x:midX-towerW/2, y:towerTop, w:towerW, h:towerBot-towerTop, solid:true, floor:0 });
-  // Two support corbels under the tower's corners — a visual anchor that must NOT reach the floor.
-  // They used to be full-height (TUNNEL_H) solid legs, which quietly re-created the very thing this
-  // arena is built to avoid: a floor-to-tower wall across BOTH tunnel mouths. Headless 2v2 runs had
-  // both teams pinned against those legs for 9000 frames with zero KOs. Now they hang, leaving
-  // LEG_CLEAR px of genuine run-through space beneath (a fighter is 48px tall), so the horizontal
-  // route across the map is always open and the AI never has to climb to reach the other team.
-  const LEG_CLEAR = 130;
-  const legH = Math.max(12, TUNNEL_H - LEG_CLEAR);
-  worldPlats.push({ x:midX-towerW/2, y:towerBot, w:22, h:legH, solid:true, floor:0 });
-  worldPlats.push({ x:midX+towerW/2-22, y:towerBot, w:22, h:legH, solid:true, floor:0 });
-  // Stepped ledges climbing the tower (alternating sides) — the contested route to the top.
-  // The COUNT adapts to the tower's height so the rungs stay a double jump apart (~125px) at every
-  // map size: 6 rungs on a Normal map (was 5 on the shorter tower), more on Tall/Huge.
-  const climbBot = botY - 190;                    // lowest rung, a hop above the floor
-  const climbTop = towerTop + 50;                 // highest rung, just under the summit perch
-  const climbSpan = Math.max(0, climbBot - climbTop);
-  const rungs = Math.max(6, Math.ceil(climbSpan/128) + 1);
-  for(let i=0;i<rungs;i++){
-    const ly = climbBot - climbSpan*(i/(rungs-1));
-    const side = (i%2===0) ? -1 : 1;
-    worldPlats.push({ x: midX + side*(towerW/2) - (side<0?150:0), y: ly, w:150, h:14, hop:true, floor:0 });
+  // --- THE CROSS ---
+  // THICK, so it reads as architecture rather than a drawn line. HOLLOW, so the inside is somewhere
+  // you can actually be: all four arm cavities open into a chamber at the centre, and because every
+  // doorway cuts through BOTH faces, a wall you can enter is also a wall you can cross.
+  const CROSS_T = 150;                     // outer face to outer face
+  const FACE    = 20;                      // how much of that is solid, per side
+  const DOOR    = 150;                     // doorway clear span (a fighter is 48px across)
+  const half    = CROSS_T/2;
+  const cavity  = CROSS_T - FACE*2;
+
+  // Lay one arm as a run of segments, leaving the `doors` (centre positions) open.
+  function wallRun(from, to, doors, put){
+    const cuts = doors.map(d=>[d-DOOR/2, d+DOOR/2]).sort((p,q)=>p[0]-q[0]);
+    let at = from;
+    for(const [c0,c1] of cuts){
+      if(c0 > at) put(at, Math.min(c0, to));
+      at = Math.max(at, c1);
+    }
+    if(at < to) put(at, to);
   }
-  // the summit — a small perch above the tower, the highest ground on the map
-  worldPlats.push({ x: midX-110, y: towerTop-96, w:220, h:14, hop:true, floor:0 });
+  // Two exits per arm: one a short way out from the centre of the cross, one near the far end.
+  const exitsOn = (near, far) => [ near + (far-near)*0.24, near + (far-near)*0.82 ];
 
-  // --- TEAM BLUFFS: raised solid home ground, one per team, spread across the canyon ---
+  const putV = (y0,y1)=>{
+    if(y1-y0 < 2) return;
+    worldPlats.push({ x:midX-half,      y:y0, w:FACE, h:y1-y0, solid:true, floor:0, wall:true });
+    worldPlats.push({ x:midX+half-FACE, y:y0, w:FACE, h:y1-y0, solid:true, floor:0, wall:true });
+  };
+  const putH = (x0,x1)=>{
+    if(x1-x0 < 2) return;
+    worldPlats.push({ x:x0, y:midY-half,      w:x1-x0, h:FACE, solid:true, floor:0, wall:true });
+    worldPlats.push({ x:x0, y:midY+half-FACE, w:x1-x0, h:FACE, solid:true, floor:0, wall:true });
+  };
+  // VERTICAL arm, upper half — doorways here are horizontal passages between the top quadrants.
+  wallRun(crossTop, midY-half, exitsOn(midY-half, crossTop), putV);
+  // VERTICAL arm, lower half — its outer exit is flush with the FLOOR. That ground-level doorway
+  // IS the horizontal route across the map; without it the AI has to climb to reach an enemy.
+  wallRun(midY+half, botY - DOOR, [ midY + half + (botY-midY-half)*0.26 ], putV);
+  // HORIZONTAL arm — its top face doubles as the floor of the two upper quadrants.
+  wallRun(marginX, midX-half, exitsOn(midX-half, marginX), putH);
+  wallRun(midX+half, marginX+floorW, exitsOn(midX+half, marginX+floorW), putH);
+
+  // Rungs inside the vertical shaft, so the hollow core is a climbable route rather than a well you
+  // drop down once. Spaced well inside a double jump — the tightest platforming on the map.
+  const SHAFT_STEP = 104;
+  for(let y = botY - SHAFT_STEP; y > crossTop + SHAFT_STEP; y -= SHAFT_STEP){
+    if(Math.abs(y - midY) < half*0.75) continue;         // leave the centre chamber clear
+    worldPlats.push({ x: midX-cavity/2, y, w: cavity, h: 12, hop:true, floor:0 });
+  }
+
+  // --- QUADRANTS → team safe zones ---
+  // 0 upper-left · 1 upper-right · 2 lower-left · 3 lower-right
+  const QUADS = [
+    { x: marginX,   y: crossTop,  w: (midX-half)-marginX,          h: (midY-half)-crossTop, floorY: midY-half },
+    { x: midX+half, y: crossTop,  w: (marginX+floorW)-(midX+half), h: (midY-half)-crossTop, floorY: midY-half },
+    { x: marginX,   y: midY+half, w: (midX-half)-marginX,          h: botY-(midY+half),     floorY: botY },
+    { x: midX+half, y: midY+half, w: (marginX+floorW)-(midX+half), h: botY-(midY+half),     floorY: botY },
+  ];
+  // One corner per team, always — never a whole side. Giving a 2v2 team both quadrants on its side
+  // spread its eight pads from the ceiling to the floor, and the zone drawn round them then covered
+  // 55% of the arena's height; two of those leave almost nowhere that isn't somebody's safe ground.
+  // Two teams take the bottom corners and the entire upper half becomes contested; three teams take
+  // the bottom two and one top corner.
+  const ZONE_QUADS = teamCount>=4 ? [[0],[1],[2],[3]]
+                   : teamCount===3 ? [[2],[3],[0]]
+                   :                 [[2],[3]];
+  // Spawn pads per TEAM: eight for 2v2 as asked, and a single corner is smaller, so four teams
+  // get five each.
+  const SPAWN_PADS = teamCount>=4 ? 5 : teamCount===3 ? 6 : 8;
+  const PAD_STEP = 132;            // vertical gap between pad rows — a comfortable timed jump
+
   bases=[];
-  const bw = 300;
-  const bluffW = Math.max(230, floorW*0.11);
-  for(let t=0;t<teamCount;t++){
-    // teams alternate outward from the edges so nobody starts on top of the tower
-    const frac = teamCount>1 ? (0.10 + 0.80*t/(teamCount-1)) : 0.5;
-    const bx = marginX + floorW*frac;
-    const bluffH = 108 + (t%2)*34;                       // asymmetric: bluffs differ in height
-    const bluffY = botY - bluffH;
-    // Solid home ground you stand on and defend. (Briefly made drop-through while chasing a
-    // "stalling" problem that turned out to be the test's 14k-frame cap, not the geometry —
-    // matches on this map resolve 12/12 given a realistic budget.)
-    worldPlats.push({ x:bx-bluffW/2, y:bluffY, w:bluffW, h:bluffH, solid:true, floor:0 });
+  for(let t=0; t<teamCount; t++){
+    const qs = ZONE_QUADS[t] || [t % 4];
 
-    // --- BRIDGE: a suspended drop-through span from this bluff toward the tower ---
-    const dir = Math.sign(midX - bx) || 1;
-    const bridgeY = bluffY - 92;
-    const bridgeStart = bx + dir*(bluffW*0.4);
-    const bridgeLen = Math.abs(midX - bridgeStart) - towerW*0.7;
-    if(bridgeLen > 120){
-      const segs = Math.max(2, Math.round(bridgeLen/190));
-      for(let sgi=0; sgi<segs; sgi++){
-        const segW = bridgeLen/segs;
-        const sx = bridgeStart + dir*(sgi*segW) - (dir<0?segW:0);
-        worldPlats.push({ x:sx, y:bridgeY, w:segW*0.82, h:12, hop:true, floor:0 });
+    // SPAWN PADS — a staggered grid in the OUTER BAND of the team's quadrant(s), so a whole team
+    // reforming at once lands spread out instead of in one heap on a single point.
+    //
+    // The outer band rather than the whole quadrant, and that is load-bearing. The safe zone below
+    // is derived from where the pads are, and a zone filling the quadrant would — in 2v2, where a
+    // team owns two of them — make EVERY point on the map somebody's safe ground: the attacker
+    // untouchable on their own side, the defender untouchable on theirs, and not one point of
+    // damage possible for the entire match.
+    const spawns=[];
+    const perQuad = Math.ceil(SPAWN_PADS/qs.length);
+    for(const qi of qs){
+      const q = QUADS[qi];
+      const n = Math.min(perQuad, SPAWN_PADS - spawns.length);
+      if(n<=0) continue;
+      const outward = (qi % 2) === 0;                  // quadrants 0 and 2 open to the left
+      const inset = Math.min(150, q.w*0.10);
+      const bandW = Math.max(180, q.w*0.42 - inset);
+      const bandX = outward ? q.x + inset : q.x + q.w - inset - bandW;
+      const cols = Math.min(3, n);
+      const pw = 140;
+      for(let k=0;k<n;k++){
+        const c = k % cols, r = (k/cols)|0;
+        // Brick bond: odd rows sit half a cell over, so a pad is never directly above another.
+        // Divided by cols rather than cols-1 — the latter put the last pad of an offset row at
+        // 1.25 of the band, which clamped back onto the pad already at its right-hand end.
+        const frac = (c + 0.5 + (r%2 ? 0.5 : -0.5)*0.5) / cols;
+        const px = bandX + bandW*frac;
+        const py = q.floorY - PAD_STEP - r*PAD_STEP;
+        if(py < q.y + 40) continue;                    // never punch a pad out through the ceiling
+        worldPlats.push({ x:px-pw/2, y:py, w:pw, h:14, hop:true, floor:0, pad:true });
+        spawns.push({ x:px, y:py, used:0 });
       }
     }
-    // --- FLANK perch: a low platform out in front of the bluff (the under-bridge route) ---
-    worldPlats.push({ x: bx + dir*(bluffW*0.75), y: botY-64, w:130, h:12, hop:true, floor:0 });
 
-    // spawns sit ON the bluff — defensible home ground
-    const spawns=[];
-    for(let k=0;k<3;k++){
-      const sxp = bx - bw*0.5 + bw*(0.16 + 0.34*k);
-      spawns.push({ x: clamp(sxp, bx-bluffW*0.4, bx+bluffW*0.4), y: bluffY-46, used:0 });
-    }
-    bases.push({ team:t, x:bx-bw/2, y:bluffY-4, w:bw, h:18,
-      color:TEAM_COLORS[t%TEAM_COLORS.length], spawnX:bx, spawnY:bluffY-46, floor:0, spawns });
+    // HOME LEDGE — the visible anchor of the zone, out at the rim so the doorways stay contested
+    // ground rather than something a team can stand on top of.
+    const q0 = QUADS[qs[0]];
+    const outward0 = (qs[0] % 2) === 0;
+    const bluffW = Math.min(300, q0.w*0.30);
+    const bluffH = 96;
+    const bluffY = q0.floorY - bluffH;
+    const bx = outward0 ? q0.x + bluffW*0.6 : q0.x + q0.w - bluffW*0.6;
+    worldPlats.push({ x:bx-bluffW/2, y:bluffY, w:bluffW, h:bluffH, solid:true, floor:0 });
+    const pads = spawns.length ? spawns : [{ x:bx, y:bluffY-46, used:0 }];
+
+    // THE SAFE ZONE is the pocket those pads sit in, padded out a little — the corner you reform
+    // in, not the quadrant you fight in. Clamped to the team's own quadrants so it can never reach
+    // across the cross into contested ground.
+    const ZPAD_X = 130, ZPAD_UP = 110;
+    const qx0=Math.min(...qs.map(q=>QUADS[q].x)),            qy0=Math.min(...qs.map(q=>QUADS[q].y));
+    const qx1=Math.max(...qs.map(q=>QUADS[q].x+QUADS[q].w)), qy1=Math.max(...qs.map(q=>QUADS[q].y+QUADS[q].h));
+    const zx0=Math.max(qx0, Math.min(bx-bluffW/2, ...pads.map(p=>p.x)) - ZPAD_X);
+    const zx1=Math.min(qx1, Math.max(bx+bluffW/2, ...pads.map(p=>p.x)) + ZPAD_X);
+    const zy0=Math.max(qy0, Math.min(...pads.map(p=>p.y)) - ZPAD_UP);
+    const zy1=Math.min(qy1, Math.max(bluffY, ...pads.map(p=>p.y)) + 70);
+    const zone = { x:zx0, y:zy0, w:zx1-zx0, h:zy1-zy0 };
+
+    bases.push({ team:t, x:bx-bluffW/2, y:bluffY, w:bluffW, h:18,
+      color:TEAM_COLORS[t%TEAM_COLORS.length], spawnX:bx, spawnY:bluffY-46, floor:0,
+      spawns: pads, zone });
   }
+
   // --- ARENA-WIDE PLATFORM FIELD ---
-  // The landmarks above furnish the middle of the canyon and nothing else: the long lateral runs
-  // out to the edges and the whole airspace over the tower were empty. Fill the playable box on a
-  // staggered grid, keeping clear of the solids, the bases' spawn columns and the run-under tunnel.
-  const spawnBoxes = bases.map(b=>({ x:b.x, y:b.y-90, w:b.w, h:100 }));
-  const tunnelBox  = { x: midX-towerW/2-30, y: botY-TUNNEL_H, w: towerW+60, h: TUNNEL_H };
+  // Rows are CLOSER here than the FFA default (FIELD_ROW_GAP): the quadrants are tall and the
+  // cross demands precise vertical movement, so the steps between them want to be short enough to
+  // time a jump on rather than a maximum-height leap every single time.
+  const padBoxes = bases.flatMap(b=>b.spawns.map(s=>({ x:s.x-90, y:s.y-70, w:180, h:80 })));
   worldPlats = worldPlats.concat(scatterPlatforms({
-    x0: marginX, x1: marginX+floorW, top: WH*0.10, bot: botY-FIELD_ROW_GAP, colW: FIELD_COL_W(),
+    x0: marginX, x1: marginX+floorW, top: WH*0.10, bot: botY-TEAM_ROW_GAP, colW: FIELD_COL_W(),
+    rowGap: TEAM_ROW_GAP,
     existing: worldPlats,
-    blockers: worldPlats.filter(p=>p.solid).concat(spawnBoxes, [tunnelBox]),
+    blockers: worldPlats.filter(p=>p.solid).concat(padBoxes),
   }));
-  // Safety net: the adaptive rung count and the field grid already keep the arena climbable at every
-  // MAP SIZE, but this guarantees it — no layer is ever more than a double jump above the one below.
+  // Safety net: no standable layer is ever more than a double jump above the one below it.
   worldPlats = worldPlats.concat(fillClimbGaps(climbLayers(), WW));
 }
 
@@ -4623,7 +4745,7 @@ function buildFighters(){
   const cap = SETTINGS.mode==='teams'?MAX_TEAMS:MAX_FFA;
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
   const humanCount = netRoster ? netRoster.length : 0;
-  const N=Math.max(2, Math.min(cap, SETTINGS.count));
+  const N=Math.max(minCount(), Math.min(cap, SETTINGS.count));
 
   let all;
   if(netRoster){
@@ -5520,6 +5642,16 @@ function step(){
     if(f.spCd>0) f.spCd--;
     if(f.dropCd>0) f.dropCd--;
     if(f.burn>0){ f.burn--; f.pct+=0.04; if(f.burn%18===0) puff(f.x,f.y-10,'#f0803a',3); }
+    // TRESPASS BLEED — see enemyZoneOf. Skipped while invulnerable so a fighter who was launched
+    // into an enemy corner is not punished for their own i-frames.
+    if(f.invuln<=0){
+      const ez = enemyZoneOf(f);
+      if(ez!=null){
+        f.pct += ENEMY_ZONE_BLEED;
+        f._ezT = (f._ezT||0)+1;
+        if(f._ezT%16===0) puff(f.x, f.y-10, TEAM_COLORS[ez%TEAM_COLORS.length], 2);
+      } else f._ezT = 0;
+    }
     if(f.healing>0){ f.healing--;
       // regen pauses while she's under pressure — hitstun or a very recent hit stops the heal,
       // so a committed aggressor can break through instead of being out-healed forever.
@@ -7025,8 +7157,49 @@ function teamZoneOf(team){
   if(SETTINGS.mode !== 'teams') return null;
   const b = bases && bases.find ? bases.find(x => x.team === team) : null;
   if(!b) return null;
-  // from the top of the arena down to just below the bluff the base sits on
+  // The zone IS the team's quadrant of the cross — a corner you can be pushed out of, not a column
+  // running to the ceiling. The old full-height column was what let two teams stand in their own
+  // halves untouchable and unable to touch anyone, which is how matches turned into one big pile.
+  // (Fallback for any arena built without quadrants: the original column.)
+  if(b.zone) return b.zone;
   return { x: b.x - TEAM_ZONE_PAD, y: 0, w: b.w + TEAM_ZONE_PAD*2, h: (b.y + b.h) - 0 };
+}
+// Standing in someone ELSE'S zone. Their corner protects them from you, so without a cost you
+// could simply park inside it and wait them out; this makes trespassing bleed.
+function enemyZoneOf(f){
+  if(!f || SETTINGS.mode !== 'teams' || !bases || !bases.length) return null;
+  for(const b of bases){
+    if(b.team === f.team) continue;
+    const z = teamZoneOf(b.team);
+    if(!z) continue;
+    if(f.x >= z.x && f.x <= z.x + z.w && f.y >= z.y && f.y <= z.y + z.h) return b.team;
+  }
+  return null;
+}
+// Percent per frame while trespassing — about 2%/s. Damage ONLY, never knockback, so it can never
+// KO by itself: it just makes you progressively easier to launch the longer you loiter.
+const ENEMY_ZONE_BLEED = 0.035;
+// Which pad in the team's zone does a reforming fighter drop onto?
+//
+// Roll a pad uniformly; take it if no living teammate is already standing there, otherwise roll
+// again. The old rule picked whichever of three points was farthest from the nearest enemy, which
+// reads as sensible and is exactly why everyone stacked: the score depends only on where the
+// ENEMIES are, so every teammate reforming in the same situation computed the identical answer and
+// landed on the identical point.
+//
+// The retry is BOUNDED. With more teammates alive than pads every pad can legitimately be occupied,
+// and an unbounded "cycle continues" would spin the frame forever; the fallback is the emptiest pad.
+function pickSpawnPad(b, f){
+  const pads = (b.spawns && b.spawns.length) ? b.spawns : [{x:b.spawnX, y:b.spawnY}];
+  const mates = fighters.filter(o=>o!==f && !o.dead && o.team===f.team);
+  const crowd = p => mates.filter(o=>Math.abs(o.x-p.x) < 95 && Math.abs(o.y-p.y) < 115).length;
+  for(let tries=0; tries<24; tries++){
+    const p = pads[Math.floor(Math.random()*pads.length)];
+    if(!crowd(p)) return p;
+  }
+  let best=pads[0], bestN=Infinity;
+  for(const p of pads){ const n=crowd(p); if(n<bestN){ bestN=n; best=p; } }
+  return best;
 }
 // Is this fighter standing in the safe column belonging to their OWN team?
 function inOwnTeamZone(f){
@@ -7226,16 +7399,8 @@ function eliminate(f){
   if(isBigFFA()){
     const rp=ffaRespawn(f); f.x=rp.x; f.y=rp.y;
   } else if(isBig() && f.homeBase!=null && bases[f.homeBase]){
-    const b=bases[f.homeBase];
-    // pick whichever of the 3 spawn points is farthest from the nearest enemy (safest re-entry)
-    let best=null, bestScore=-1;
-    const foes=fighters.filter(o=>!o.dead && o.team!==f.team);
-    for(const sp of (b.spawns||[{x:b.spawnX,y:b.spawnY}])){
-      let nd=1e9; for(const o of foes){ const d=Math.hypot(o.x-sp.x,o.y-sp.y); if(d<nd)nd=d; }
-      if(nd>bestScore){ bestScore=nd; best=sp; }
-    }
-    if(!best) best={x:b.spawnX, y:b.spawnY};
-    f.x=best.x; f.y=best.y-40;
+    const sp = pickSpawnPad(bases[f.homeBase], f);
+    f.x=sp.x; f.y=sp.y-40;
   } else {
     // Screen centre, just above the top of the CURRENT VIEW. camX/camY are 0 on every single-screen
     // arena, so this is the old behaviour there exactly — and on a Tall/Huge custom map it drops
@@ -7339,7 +7504,10 @@ let PROFILE_STORAGE_OK = true; // false once storage proves unusable — we then
 let profileReady = null;       // boot hydration promise (tests await it)
 
 function freshProfile(){
-  return { version:1, matches:0, wins:0, kos:0, bossesCleared:{}, bestRushLoop:0,
+  // soloBosses: which bosses you have beaten with NO teammate on the stage, keyed by name so
+  // it counts distinct bosses rather than repeat kills of the easiest one. loadProfile runs
+  // Object.assign(freshProfile(), stored), so an existing save gains the field on next load.
+  return { version:1, matches:0, wins:0, kos:0, bossesCleared:{}, soloBosses:{}, bestRushLoop:0,
            wcTitles:0, unlocked:[...STARTERS], viewMode:'starters', migratedFrom:null };
 }
 // Everything unlocked — used when storage is unavailable and when grandfathering an existing
@@ -7363,6 +7531,7 @@ function mergeProfiles(stored, mine){
   out.bestRushLoop = Math.max(stored.bestRushLoop|0, mine.bestRushLoop|0);
   out.wcTitles   = Math.max(stored.wcTitles|0,   mine.wcTitles|0);
   out.bossesCleared = Object.assign({}, stored.bossesCleared||{}, mine.bossesCleared||{});
+  out.soloBosses    = Object.assign({}, stored.soloBosses||{},    mine.soloBosses||{});
   out.migratedFrom = stored.migratedFrom || mine.migratedFrom || null;
   return out;
 }
@@ -7428,9 +7597,15 @@ const TROPHIES = {
   'tutorial':  'Firey Jr.',    // finish How to Play
   'boss:Announcer': 'Ruler',
   'boss:Four':      'Liy',
-  'boss:Golf Ball': 'Book',
-  'boss:Pencil':    'Match',   // starter-adjacent, harmless if already owned
-  'boss:Bomby':     'Naily',
+  // SOLO BOSS RUSH. These three used to be 'boss:Golf Ball', 'boss:Pencil' and 'boss:Bomby' —
+  // names that are NOT in BOSS_ROSTER. awardBossCleared only ever fires with a name from that
+  // list, so the deeds could not be performed, and since TROPHY_FIGHTERS is subtracted from
+  // DRIP_ORDER their fighters were not obtainable by playing either: Naily and Book were
+  // unreachable outside the 'everything' view mode, while the cell told you to go and beat a boss
+  // that does not exist. (The Pencil key was harmless only by luck — Match is a starter, so it is
+  // never locked and its hint never rendered. It is dropped rather than left as the same trap.)
+  'solo:2': 'Naily',
+  'solo:4': 'Book',
 };
 const TROPHY_FIGHTERS = new Set(Object.values(TROPHIES));
 const DRIP_ORDER = UNLOCK_ORDER.filter(n=>!TROPHY_FIGHTERS.has(n));
@@ -7494,10 +7669,30 @@ function awardMatchProgress(winTeam){
   return fresh;
 }
 function awardTutorialUnlock(){ return awardTrophy('tutorial'); }
-function awardBossCleared(name){
+// ALONE means no teammate on the stage — Boss Rush puts every fighter on team 0 against the boss,
+// so `fighters` holding exactly one entry is the whole test. Passed in rather than read off the
+// global so the rule can be exercised without standing up a match.
+function soloRun(solo){
+  if(solo!=null) return !!solo;
+  return SETTINGS.mode==='boss' && Array.isArray(fighters) && fighters.length===1;
+}
+function awardBossCleared(name, solo){
   if(!PROFILE) return [];
   PROFILE.bossesCleared[name] = true;
-  return awardTrophy('boss:'+name);
+  const fresh = awardTrophy('boss:'+name);
+  if(soloRun(solo)){
+    PROFILE.soloBosses = PROFILE.soloBosses || {};
+    PROFILE.soloBosses[name] = true;
+    // Keyed by NAME, so felling the first boss four times over is one boss, not four. The gauntlet
+    // loops back to boss 1 forever, and a milestone you can farm from the easiest fight in the game
+    // is not a milestone.
+    const n = Object.keys(PROFILE.soloBosses).length;
+    for(const k in TROPHIES){
+      if(k.indexOf('solo:')===0 && n >= +k.slice(5)) fresh.push(...awardTrophy(k));
+    }
+    saveProfile();
+  }
+  return fresh;
 }
 function awardRushLoop(loop){
   if(!PROFILE) return [];
@@ -11803,7 +11998,27 @@ function applySnapshot(s){
 // ============================================================
 //  NETCODE — LAN multiplayer over WebSocket relay
 // ============================================================
+// WHERE THE RELAY LIVES.
+//
+// Set this to the deployed Cloudflare Worker and both the web build and the desktop build get
+// online play — see relay/README.md for the two commands that deploy it. Example:
+//   const RELAY_URL = "wss://smash-island-relay.your-subdomain.workers.dev/ws";
+//
+// Left empty, the game falls back to a same-origin /api/ws, which is what a relay hosted behind
+// this same domain would look like. That fallback is the historical behaviour and it 404s on the
+// current deployment; see NET.wsURL for why it never could have worked.
+const RELAY_URL = "wss://smash-island-relay.ginger-chips.workers.dev/ws";
+// An owner can also point a build at a relay without editing this file — useful for testing a
+// staging Worker, or for a LAN party against a locally-run `wrangler dev`:
+//   localStorage.setItem('bfsi:relay', 'ws://localhost:8787/ws')
+// NET.RELAY holds the effective default and can be reassigned at runtime, which is also how the
+// tests exercise the no-relay-configured path now that RELAY_URL is no longer empty.
+function relayEndpoint(){
+  try{ const o = localStorage.getItem('bfsi:relay'); if(o) return o; }catch(e){}
+  return (window.NET && typeof window.NET.RELAY === "string") ? window.NET.RELAY : RELAY_URL;
+}
 window.NET = {
+  RELAY: RELAY_URL,      // the deployed relay; see RELAY_URL above and relay/README.md
   role: "solo",          // solo | host | client
   room: null,            // 4-letter room code shared with friends (null = default room)
   ws: null,
@@ -11814,19 +12029,30 @@ window.NET = {
   myId: Math.random().toString(36).slice(2,8),
   lastInputSent: 0,
 
-  wsURL(addr){
-    // On a real domain the page loads over HTTPS, which requires a secure socket (wss://).
-    // On LAN it's plain HTTP, so ws:// is correct. Pick automatically.
-    const secure = (location.protocol === "https:");
-    // If a full ws(s):// address was typed, respect it; otherwise build from host.
+  wsURL(addr, loc){
+    loc = loc || location;
+    // A full ws(s):// address typed into the join box always wins. That is the manual LAN path and
+    // it needs no relay at all, so it keeps working however the hosted relay is (or isn't) set up.
     if(addr && /^wss?:\/\//i.test(addr)) return addr;
-    const host = addr || location.host || "localhost:8080";
-    const _p = (location.protocol === "https:") ? "/api/ws" : "";
-    // ROOM CODES: when the page is served from a real domain, everyone already shares one origin,
-    // so the only thing that needs to match is the room. Players type a 4-letter code instead of
-    // an IP address — the relay shards on ?room=. This is what makes online usable without anyone
-    // running a server or reading their local IP off another screen.
+    // ROOM CODES: everyone shares one relay, so the only thing that has to match between friends is
+    // the room. Players read out a 4-letter code instead of an IP address, and the relay shards on
+    // ?room=. This is what makes online usable without anyone running a server.
     const q = this.room ? ("?room=" + encodeURIComponent(this.room)) : "";
+    const relay = relayEndpoint();
+    if(relay) return relay.replace(/\/+$/, "") + q;
+    // NO RELAY CONFIGURED. Fall back to same origin — which is what a relay deployed behind this
+    // same domain would look like, and is exactly what this function used to do unconditionally.
+    //
+    // That unconditional version is why multiplayer never worked. On the deployed site it produced
+    // wss://<host>/api/ws, an endpoint that has never existed and could not: Vercel's serverless
+    // functions terminate a request instead of holding an upgraded socket open, so the handshake
+    // got a 404 where it needed a 101. And in the desktop build, served from app://game, neither
+    // branch applied: `secure` was false and location.host is the literal "game", so it dialled the
+    // unroutable ws://game. Return null there instead, so connect() can say something true.
+    if(loc.protocol !== "https:" && loc.protocol !== "http:") return null;
+    const secure = (loc.protocol === "https:");
+    const host = addr || loc.host || "localhost:8080";
+    const _p = secure ? "/api/ws" : "";
     return (secure ? "wss://" : "ws://") + host + _p + q;
   },
   // A short, unambiguous code: no vowels (avoids real words), no 0/O/1/I lookalikes.
@@ -11837,15 +12063,28 @@ window.NET = {
   },
 
   connect(addr, asHost){
-    try{ this.ws = new WebSocket(this.wsURL(addr)); }
-    catch(e){ this.status("Bad address"); return; }
+    const url = this.wsURL(addr);
+    // No relay AND no usable origin to guess one from — the desktop build, before RELAY_URL is set.
+    // It used to dial ws://game here and report a generic connection error, which sent an owner
+    // hunting for a server that was never misconfigured because it was never deployed.
+    if(!url){
+      this.status("No relay set up yet — see relay/README.md, or type a ws:// address for LAN play");
+      this.role="solo"; return;
+    }
+    try{ this.ws = new WebSocket(url); }
+    catch(e){ this.status("Bad address"); this.role="solo"; return; }
     this.ws.onopen = ()=>{
       this.status(asHost?"Hosting — waiting for players":"Connected — joining");
       this.send({t:"hello", id:this.myId, host:!!asHost, name:(chosen?chosen.name:"?")});
     };
-    this.ws.onmessage = (ev)=>this.onMessage(JSON.parse(ev.data));
+    this.ws.onmessage = (ev)=>{ try{ this.onMessage(JSON.parse(ev.data)); }catch(e){} };
     this.ws.onclose = ()=>{ this.status("Disconnected"); };
-    this.ws.onerror = ()=>{ this.status("Connection error — is the server running?"); };
+    // Name what was actually dialled. "Is the server running?" is unanswerable when the player has
+    // no idea what server the game even wants.
+    this.ws.onerror = ()=>{
+      this.status(relayEndpoint() ? "Cannot reach the relay — check it is deployed and reachable"
+                                  : "No relay is deployed at " + url + " — see relay/README.md");
+    };
   },
 
   host(){

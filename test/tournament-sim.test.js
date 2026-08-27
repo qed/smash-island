@@ -87,6 +87,75 @@ describe('Unit 7 — team construction', () => {
     expect(dupes).toBe(0);
   });
 
+  // The test above only ever ran SPECTATE mode, which is why the normal-mode duplicate below
+  // survived it: the bug lived in the `myTeam.members[0] = me` seating that spectate never reaches.
+  it('never fields your pick twice on your own team in normal mode', () => {
+    const { window: w } = loadMonolith();
+    // Shrink the pool to two fighters so every side is the SAME pair and the seating collision is
+    // forced rather than waited for — with the full 59 it lands about once in 59 tournaments.
+    const dupes = w.eval(`
+      (function(){
+        ROSTER.forEach(function(r){ r.play = false; });
+        ROSTER[0].play = true; ROSTER[1].play = true;
+        chosen = ROSTER[0];
+        var bad = 0;
+        for (var run = 0; run < 40; run++) {
+          startTournament(2, 'normal');
+          bad += TOURNEY.teams.filter(function(t){
+            var names = t.members.map(function(m){ return m.name; });
+            return new Set(names).size !== names.length;
+          }).length;
+        }
+        return bad;
+      })()`);
+    expect(dupes).toBe(0);
+  });
+
+  it('gives your pick to nobody else — one fighter, one team', () => {
+    const { window: w } = loadMonolith();
+    // teamSize 1: 48 sides drawn from 59, so every side is distinct and a repeat can only come
+    // from seating YOUR fighter on top of a side that already had it.
+    const clashes = w.eval(`
+      (function(){
+        chosen = ROSTER[7];
+        var bad = 0;
+        for (var run = 0; run < 60; run++) {
+          startTournament(1, 'normal');
+          var names = TOURNEY.teams.map(function(t){ return t.members[0].name; });
+          if (new Set(names).size !== names.length) bad++;
+          if (TOURNEY.myTeam.members[0] !== chosen) bad++;
+        }
+        return bad;
+      })()`);
+    expect(clashes).toBe(0);
+  });
+
+  it('spends every fighter once before spending any of them twice', () => {
+    const { window: w } = loadMonolith();
+    // The old per-team bag reset the draw 48 times over, so one fighter could lead a dozen sides.
+    // One bag for the whole cup bounds it: 48 slots at teamSize 1 all differ, and the 96 slots of
+    // a 2v2 cup come out of 59 fighters, so nobody can appear more than twice.
+    const worst = w.eval(`
+      (function(){
+        var peak = { solo: 0, duo: 0 };
+        for (var run = 0; run < 25; run++) {
+          [[1, 'solo'], [2, 'duo']].forEach(function(pair){
+            startTournament(pair[0], 'spectate');
+            var count = {};
+            TOURNEY.teams.forEach(function(t){
+              t.members.forEach(function(m){ count[m.name] = (count[m.name] || 0) + 1; });
+            });
+            Object.keys(count).forEach(function(n){
+              if (count[n] > peak[pair[1]]) peak[pair[1]] = count[n];
+            });
+          });
+        }
+        return peak;
+      })()`);
+    expect(worst.solo, 'a fighter led two different sides in a solo cup').toBe(1);
+    expect(worst.duo, 'a fighter turned out for three different sides in a 2v2 cup').toBeLessThanOrEqual(2);
+  });
+
   it('still runs a full 48-team tournament without error', () => {
     const { window: w } = loadMonolith();
     startTourney(w);

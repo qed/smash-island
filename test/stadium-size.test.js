@@ -20,7 +20,10 @@ import { loadMonolith } from './helpers/load-monolith.js';
 
 const SIZES = ['compact', 'normal', 'tall', 'huge'];
 const MAX_CLIMB_GAP = 180;   // a double jump gains ~160-180px
-const MIN_TUNNEL = 120;      // run-through clearance under the tower
+const MIN_TUNNEL = 120;      // run-through clearance under the cross's floor-level doorway
+// The teams arena is 2.5x screen height TIMES the 1.5x ARENA_SCALE the cross layout is built at —
+// the plus of walls takes the whole middle of the map, so the quadrants need the extra room.
+const TEAMS_H_MUL = 2.5 * 1.5;
 
 function setup(w, { mode = 'ffa', stageId = 'goiky', size = 'normal', count = 5 } = {}) {
   w.eval(`SETTINGS.mode=${JSON.stringify(mode)}; SETTINGS.count=${count};`);
@@ -152,7 +155,7 @@ describe('MAP SIZE — the setting exists and scales the arena', () => {
     w.eval(`SETTINGS.mapSize='../../etc/passwd';`);
     const g = setup(w, { mode: 'teams', size: '../../etc/passwd', count: 4 });
     expect(Number.isFinite(g.WW) && Number.isFinite(g.WH)).toBe(true);
-    expect(g.WH).toBe(Math.round(g.H * 2.5));
+    expect(g.WH).toBe(Math.round(g.H * TEAMS_H_MUL));
   });
 
   it('scales the TEAMS arena by the size multipliers', () => {
@@ -163,7 +166,7 @@ describe('MAP SIZE — the setting exists and scales the arena', () => {
       if (size === 'normal') { base.WW = g.WW; base.WH = g.WH; base.H = g.H; }
       base[size] = g;
     }
-    expect(base.normal.WH, 'teams arena is 2.5x screen height').toBe(Math.round(base.H * 2.5));
+    expect(base.normal.WH, 'teams arena is 3.75x screen height').toBe(Math.round(base.H * TEAMS_H_MUL));
     for (const size of SIZES) {
       const m = { compact: [0.85, 0.85], normal: [1, 1], tall: [1, 1.4], huge: [1.4, 1.5] }[size];
       expect(base[size].WW / base.WW, `${size} width`).toBeCloseTo(m[0], 2);
@@ -258,20 +261,66 @@ describe('TEAMS arena — floor continuity and the run-under tunnel survive ever
     });
   }
 
-  it('the tower gets taller (and grows rungs) as the arena gets taller', () => {
-    const heights = {};
-    for (const size of SIZES) {
+  // REPLACES 'the tower gets taller (and grows rungs) as the arena gets taller'. There is no tower
+  // any more: the middle of the teams arena is a PLUS of two thick hollow walls, and what has to
+  // hold is that every arm stays passable. An arm that sealed would cut a team off from the fight.
+  for (const size of SIZES) {
+    it(`${size}: every arm of the cross has exactly two ways through it`, () => {
       const { window: w } = loadMonolith();
       const g = setup(w, { mode: 'teams', size, count: 4 });
       const floor = teamsFloor(g);
-      const tower = g.plats.filter(p => p.solid && p !== floor).sort((a, b) => (b.h || 0) - (a.h || 0))[0];
-      const rungs = g.plats.filter(p => p.hop && !p.field && !p.ladder && p.w === 150).length;
-      heights[size] = { tower: tower.h, rungs, WH: g.WH };
-    }
-    expect(heights.normal.rungs, 'six climbing rungs on a Normal map (was five)').toBeGreaterThanOrEqual(6);
-    expect(heights.huge.tower).toBeGreaterThan(heights.normal.tower);
-    expect(heights.huge.rungs).toBeGreaterThan(heights.normal.rungs);
-    expect(heights.compact.tower).toBeLessThan(heights.normal.tower);
+      const walls = g.plats.filter(p => p.wall);
+      expect(walls.length, 'the cross exists').toBeGreaterThan(0);
+
+      const botY = floor.y;
+      const midX = floor.x + floor.w / 2;
+      // Faces are the thin solids; the vertical pair straddles midX, the horizontal pair midY.
+      const vert = walls.filter(p => p.w < p.h);
+      const horz = walls.filter(p => p.h <= p.w);
+      const midY = Math.min(...horz.map(p => p.y)) + (Math.max(...horz.map(p => p.y + p.h)) - Math.min(...horz.map(p => p.y))) / 2;
+
+      // Openings along one arm: the stretches of its span that no face covers.
+      const openings = (segs, lo, hi, from, to) => {
+        const spans = segs.map(s => [from(s), to(s)]).sort((a, b) => a[0] - b[0]);
+        const gaps = [];
+        let at = lo;
+        for (const [a, b] of spans) {
+          if (a > at + 100) gaps.push([at, a]);
+          at = Math.max(at, b);
+        }
+        if (hi > at + 100) gaps.push([at, hi]);
+        return gaps;
+      };
+      const vLeft = vert.filter(p => p.x < midX);
+      const hLeft = horz.filter(p => p.x + p.w <= midX);
+      const hRight = horz.filter(p => p.x >= midX);
+      const vTop = vLeft.filter(p => p.y + p.h <= midY);
+      const vBot = vLeft.filter(p => p.y >= midY);
+
+      const armTop = openings(vTop, Math.min(...vTop.map(p => p.y)), midY, p => p.y, p => p.y + p.h);
+      const armBot = openings(vBot, midY, botY, p => p.y, p => p.y + p.h);
+      const armL = openings(hLeft, Math.min(...hLeft.map(p => p.x)), midX, p => p.x, p => p.x + p.w);
+      const armR = openings(hRight, midX, Math.max(...hRight.map(p => p.x + p.w)), p => p.x, p => p.x + p.w);
+
+      expect(armTop.length, 'upper vertical arm').toBe(2);
+      expect(armBot.length, 'lower vertical arm').toBe(2);
+      expect(armL.length, 'left horizontal arm').toBe(2);
+      expect(armR.length, 'right horizontal arm').toBe(2);
+
+      // One of the lower arm's two exits must sit ON the floor — that ground-level doorway is the
+      // horizontal route across the map, and the AI will not reliably climb to find an opponent.
+      expect(armBot.some(([, b]) => b >= botY - 4), 'a floor-level way through').toBe(true);
+    });
+  }
+
+  it('the cross walls are hollow — the centre of each is open space', () => {
+    const { window: w } = loadMonolith();
+    const g = setup(w, { mode: 'teams', size: 'normal', count: 4 });
+    const floor = teamsFloor(g);
+    const midX = floor.x + floor.w / 2;
+    // Thick but HOLLOW: two faces with a cavity between them, so nothing solid sits on the axis.
+    const onAxis = g.plats.filter(p => p.wall && p.x < midX && p.x + p.w > midX);
+    expect(onAxis.length, 'the vertical wall is a shaft, not a slab').toBe(0);
   });
 });
 
