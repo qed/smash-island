@@ -159,6 +159,23 @@ describe('a solo Boss Rush is a legal match', () => {
     expect(w.eval(`SETTINGS.mode='ffa';  fighters=[{}];       soloRun()`)).toBe(false);
   });
 
+  it('does not offer a solo run when two people share the keyboard', async () => {
+    // A solo count with LOCAL_PLAYERS=2 leaves player 2 with no fighter at all. The pre-existing
+    // guard only fires when the players control itself changes, so 2 Players -> Boss Rush -> 1
+    // walked straight past it the moment the solo option existed.
+    const w = boot(); await settle(w);
+    const r = w.eval(`
+      (function(){
+        LOCAL_PLAYERS = 2; SETTINGS.mode='boss';
+        var offered = countOptions();
+        SETTINGS.count = 1; buildCountButtons();
+        return { offered: offered, corrected: SETTINGS.count, floor: minCount() };
+      })()`);
+    expect(r.offered, 'solo is hidden while two people are playing').not.toContain(1);
+    expect(r.floor).toBe(2);
+    expect(r.corrected, 'an out-of-range 1 clamps UP to the floor, not to the maximum').toBe(2);
+  });
+
   it('leaving Boss Rush cannot strand another mode on one fighter', async () => {
     const w = boot(); await settle(w);
     const after = w.eval(`
