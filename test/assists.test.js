@@ -67,6 +67,32 @@ describe('assist trophies — duration and durability', () => {
     expect(w.eval('summons[0].life')).toBe(60 * 3);
   });
 
+  it('Black Hole pulls hard enough to be felt — and only ever inward', async () => {
+    const w = boot(); await settle(w);
+    stage(w, 'pull');
+    const r = w.eval(`
+      (function(){
+        var s = summons[0];
+        s.x = WW*0.5; s.y = groundY()-60;
+        fighters[1].x = s.x + 220; fighters[1].y = s.y; fighters[1].vx = 0; fighters[1].vy = 0;
+        var d0 = Math.abs(fighters[1].x - s.x), worst = d0, closest = d0;
+        for (var i=0;i<40;i++){
+          updateSummons();
+          fighters[1].x += fighters[1].vx;
+          var d = Math.abs(fighters[1].x - s.x);
+          worst = Math.max(worst, d); closest = Math.min(closest, d);
+        }
+        return { d0: d0, closest: closest, worst: worst };
+      })()`);
+    // The old flat 0.8 nudge measured -0.1 contribution against a 63.3 baseline: undetectable.
+    expect(r.d0 - r.closest, 'the pull is still too weak to notice').toBeGreaterThan(60);
+    // Being carried THROUGH and coasting out the far side is momentum, not a launch — every force
+    // the hole applies points inward. What must never happen is ending up further out than you
+    // started, which is the signature of a thing that can throw you off the stage.
+    expect(r.worst, 'the hole flung someone further out than they began — that is KO power')
+      .toBeLessThanOrEqual(r.d0 + 1);
+  });
+
   it('a persistent assist cannot be killed by damage', async () => {
     const w = boot(); await settle(w);
     stage(w, 'rush');

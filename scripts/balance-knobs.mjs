@@ -63,6 +63,11 @@ export const KNOBS = {
   },
   'tick.buff': {
     doc: 'item buff durations: attack-up, haste, star invincibility, yoyleberry',
+    // The tournament harness sets itemRate=0 on purpose, to keep pickup RNG out of the balance
+    // signal. That makes this knob UNOBSERVABLE there: it comes back a clean 0.0000, which reads
+    // exactly like "buff length does not affect balance" and means nothing of the kind. Declared so
+    // the sweep can say so instead of printing a number nobody should believe.
+    needsItems: true,
     find: /(?:_empowerT|_hasteT|_yoyleT|_starT)\s*=\s*(\d+)/g,
     read: (m) => int(m[1]), write: (m, v) => m[0].replace(/\d+/, v), clamp: [60, 1200],
   },
