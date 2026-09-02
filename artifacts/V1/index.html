@@ -6249,6 +6249,17 @@ function step(){
       for(const s of summons){
         if(s.team===(o?o.team:0)) continue;                  // don't hit your own assist
         if(Math.hypot(s.x-pr.x, s.y-pr.y) < s.r+pr.r){
+          // A pierce/van shot is deliberately NOT consumed on contact (see below) — but this loop,
+          // unlike the fighter loop above, had no per-target guard to go with that. So a piercing
+          // projectile sitting inside a boss's ~85px body re-applied its FULL damage on every frame
+          // it overlapped: one 9-damage nail measures 180 damage over 20 frames. That is why the
+          // piercing characters ran away with Boss Rush — Naily cleared 41 bosses solo against a
+          // roster mean of 4.5. Same guard as the fighters get, same reason.
+          if(pr.pierce || pr.van){
+            if(!pr._sHit) pr._sHit = [];
+            if(pr._sHit.indexOf(s) >= 0) continue;    // already went through this one — pass on
+            pr._sHit.push(s);
+          }
           if(s.type==="boss"){ s.hp -= pr.dmg; for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }
           else { s.vx += Math.sign(pr.vx||1)*2; }   // assists are immune (see damageSummons) — shots shove, never kill
           if(!pr.pierce && !pr.van) pr.life=0;
@@ -6559,6 +6570,34 @@ function genericSmash(f, charge, color){
 }
 
 // ============================================================
+//  SMASH IDENTITY — the name, the sound and the colour of each character's smash
+// ============================================================
+// The MECHANICS below have been per-character for a long time: all 59 fighters resolve to their own
+// SMASHES entry and genericSmash() is unreachable for the playable roster. What was NOT personal was
+// everything the player actually perceives:
+//
+//   · SOUND. `SFX.smash()` was written and then never called from anywhere. Every smash in the game
+//     was silent apart from the generic hit thud — 59 distinct moves sharing one non-sound.
+//   · NAME. The move names existed only as source comments (Grand Slam, Prism Burst, Cyclone…),
+//     visible to whoever read the file and to nobody who played the game.
+//   · COLOUR. The charge ring and the charge trail were hardcoded '#ffd23f' for the whole roster.
+//
+// SMASH_ID supplies all three per kit.special (which is 1:1 with a fighter). Missing entries fall
+// back to the old generic behaviour, so this degrades safely.
+const SMASH_ID = {
+};
+function smashIdOf(f){ return (f && f.kit && SMASH_ID[f.kit.special]) || null; }
+function smashColorOf(f){ const id=smashIdOf(f); return (id && id.color) || '#ffd23f'; }
+function playSmashSfx(id){
+  if(!SND.on) return;
+  if(!id){ SFX.smash(); return; }                       // the bland default, for anything unnamed
+  const ts = id.tones || [];
+  for(let i=0;i<ts.length;i++){ const t=ts[i]; tone(t.freq, t.dur, t.type, t.gain, t.delay, t.freqTo); }
+  const n = id.noise;
+  if(n) noise(n.dur, n.gain, n.filterFreq, n.delay, n.filterTo);
+}
+
+// ============================================================
 //  PERSONALIZED SMASHES  (charge 0..1)  — keyed by kit.special
 //  Only override where it fits the character; else generic.
 // ============================================================
@@ -6757,6 +6796,11 @@ function doSmash(f, charge){
   if(inOwnTeamZone(f)) return;
 
   armAtk(f, ATK_ANIM+5);    // a smash lunges longer than a jab — the phase split scales with it
+  // Announce it. The sound fires for everyone; the name banner only for the local player, because
+  // in a 5-way FFA four AI smashes a second would make the banner unreadable.
+  const id = smashIdOf(f);
+  playSmashSfx(id);
+  if(id && id.moveName && (f.you || f.you2)) banner(id.moveName, 700);
   const k=f.kit && f.kit.special;
   if(SMASHES[k]){ SMASHES[k](f, charge); return; }
   genericSmash(f, charge);
@@ -11975,7 +12019,9 @@ function drawFighter(f){
   // you marker
   if(f.you){ ctx.fillStyle="#ffd23f"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(0,-f.r-16); ctx.lineTo(-7,-f.r-6); ctx.lineTo(7,-f.r-6); ctx.closePath(); ctx.fill(); ctx.stroke(); }
-  if(f.smashHold>0){ ctx.strokeStyle="#ffd23f"; ctx.lineWidth=3; ctx.globalAlpha=0.8;
+  // The charge ring wears the fighter's own smash colour — the first thing you see of a smash, and
+  // for the whole roster's life it was the same yellow for all 59.
+  if(f.smashHold>0){ ctx.strokeStyle=smashColorOf(f); ctx.lineWidth=3; ctx.globalAlpha=0.8;
     ctx.beginPath(); ctx.arc(0,0,f.r+6,0,7*(f.smashHold/45)); ctx.stroke(); }
   // ---- SHARED ACTION OVERLAYS ----
   // Measured, not guessed: a fighter's render is only about 67px tall on screen, so the per-
@@ -12143,7 +12189,7 @@ function drawSwipeArc(f){
   const sweep = (1 - t) * 2.1 - 1.05;       // -1.05 -> +1.05 rad
   const rad = R * (1.35 + 0.35*(1 - t));
   ctx.globalAlpha = 0.85 * p;
-  ctx.strokeStyle = f.smashHold > 0 ? "#ffd23f" : "#ffffff";
+  ctx.strokeStyle = f.smashHold > 0 ? smashColorOf(f) : "#ffffff";
   ctx.lineCap = "round";
   for(let i=0;i<2;i++){
     ctx.lineWidth = (i ? 3 : 7) * (0.5 + 0.5*p);
