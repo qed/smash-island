@@ -53,6 +53,14 @@ describe('assist trophies — duration and durability', () => {
     expect(w.eval('summons[0].life')).toBe(60 * 20);
   });
 
+  it('a one-shot waits for its moment, then gives up — it does not loiter for 20s', async () => {
+    const w = boot(); await settle(w);
+    stage(w, 'flash');
+    // Its act sets life=0 the moment it fires. The budget only matters when it never finds a target.
+    expect(w.eval('summons[0].life')).toBe(60 * 5);
+    expect(w.eval('summons[0].oneShot')).toBe(true);
+  });
+
   it('Black Hole is exempt — 3 seconds, per the design doc', async () => {
     const w = boot(); await settle(w);
     stage(w, 'pull');
