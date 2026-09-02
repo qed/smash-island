@@ -139,11 +139,13 @@ function rankFighters(fs) {
  * @returns {winner, placements, perFighter:{name:{kos,falls,dmgDealt,finalStocks,finalPct,placement}}, frames, timedOut, seed}
  */
 export async function runMatch(fighterNames, opts = {}) {
-  const { seed = 0xC0FFEE, maxFrames = 6000, stocks = 2, aiLevel = 2 } = opts;
+  const { seed = 0xC0FFEE, maxFrames = 6000, stocks = 2, aiLevel = 2, transform } = opts;
   if (!Array.isArray(fighterNames) || fighterNames.length < 2) {
     throw new Error('runMatch needs at least 2 fighter names');
   }
-  const { window: w } = loadMonolith(seed >>> 0);
+  // `transform` rewrites the monolith source before it is parsed — how balance-ab.mjs runs the same
+  // seeded match against two builds that differ by one stat. Undefined for every existing caller.
+  const { window: w } = loadMonolith(seed >>> 0, transform);
   try {
     w.eval(SETUP_SRC);
     w.eval(`__setupCustomMatch(${JSON.stringify(fighterNames)}, ${stocks | 0}, ${aiLevel | 0})`);

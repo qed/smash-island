@@ -2,7 +2,7 @@
 // The previous investigation measured "damage to bosses over 60s", which is not what soloing means.
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { mulberry32 } from '../../test/helpers/prng.js';
+import { mulberry32 } from '../test/helpers/prng.js';
 function boot(seed){
   const html=readFileSync('artifacts/V1/index.html','utf8');
   const dom=new JSDOM(html,{url:'http://localhost/',runScripts:'dangerously',pretendToBeVisual:true,
