@@ -100,7 +100,46 @@ export const KNOBS = {
     find: /(kb:)(\d+)/g,
     read: (m) => int(m[2]), write: (m, v) => m[1] + v, clamp: [0, 30],
   },
+
+  // ---- TIERED DAMAGE / KNOCKBACK -----------------------------------------------------------
+  // dmg.all and kb.all match a digit straight after the colon, so they reach the scalar literals
+  // and nothing else. The 39 rebuilt smashes and the 48 rebuilt up-specials all write the two-tier
+  // form `dmg:[tap,full]` — which meant every number in the newest 87 moves in the game was
+  // invisible to the sweep, silently, exactly the way item buffs are. These reach them.
+  //
+  // The tap is scaled by the SAME ratio as the full rather than independently, because the two are
+  // not free of each other: the charge retune fixed a tap at 0.72x of full roster-wide so the dial
+  // stays learnable, and a sweep that drifted the two apart would be quietly undoing that.
+  'dmg.tiered': {
+    doc: 'two-tier damage on the rebuilt smashes and up-specials — dmg:[tap,full], both scaled together',
+    find: /(dmg:\[)([\d.]+)(,\s*)([\d.]+)(\])/g,
+    read: (m) => parseFloat(m[4]),
+    write: (m, v) => { const f = parseFloat(m[4]) ? v / parseFloat(m[4]) : 1;
+      return m[1] + trim(parseFloat(m[2]) * f) + m[3] + v + m[5]; },
+    clamp: [0, 40],
+  },
+  'kb.tiered': {
+    doc: 'two-tier knockback, same reach as dmg.tiered',
+    find: /(kb:\[)([\d.]+)(,\s*)([\d.]+)(\])/g,
+    read: (m) => parseFloat(m[4]),
+    write: (m, v) => { const f = parseFloat(m[4]) ? v / parseFloat(m[4]) : 1;
+      return m[1] + trim(parseFloat(m[2]) * f) + m[3] + v + m[5]; },
+    clamp: [0, 30],
+  },
+
+  // ---- BLEED -------------------------------------------------------------------------------
+  // Bleed is new this session — a physical damage-over-time beside burn, front-loaded and decaying
+  // where burn is flat. It had no knob at all, so it was another unmeasurable family. Naily's own
+  // is a named constant; the rows that carry it share one format.
+  'tick.bleed': {
+    doc: "bleed duration: Naily's BLEED_FRAMES plus the four smash rows that apply it",
+    find: /(BLEED_FRAMES\s*=\s*|effect:'bleed',\s*n:)(\d+)/g,
+    read: (m) => int(m[2]), write: (m, v) => m[1] + v, clamp: [30, 400],
+  },
 };
+
+// Render a scaled tap value the way it was written: no trailing zeros, at most two decimals.
+const trim = (x) => String(Math.round(x * 100) / 100);
 
 // Build a source transform that scales one knob by `factor` (1.0 = identity).
 export function patch(knobName, factor) {
