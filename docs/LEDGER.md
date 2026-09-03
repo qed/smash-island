@@ -74,26 +74,39 @@ integers apart — and nineteen more were a hop plus one dropped projectile.
 
 ## OPEN
 
-### O1 · Open the pull requests · **blocked on you**
+### O1 - Open the pull requests - **blocked on you**
 
-`gh` 2.99.0 is installed but not logged in, and the login is an interactive browser flow that
-cannot be driven from here. One command in your terminal:
+One command, from PowerShell:
 
 ```
-"C:\Program Files\GitHub CLI\gh.exe" auth login --hostname github.com --git-protocol https --web
+& "C:\Users\carad\Aardvark\smash-island\scripts\open-prs.ps1"
 ```
 
-Then all twelve PRs get created in one go and you get real merge buttons. Until then the compare
-links work but each needs a click to open. This also unblocks A5 and B12.
+It opens your browser once for `gh auth login`, then creates all thirteen PRs stacked in order.
+Re-running is safe; anything that already exists is skipped. `-Dry` shows what it would do.
 
-### O2 · Create the twelve PRs, stacked in order
+Creating a PR is a write to your GitHub account. Pushing branches needs no credential handled here -
+git fetches one from Windows Credential Manager itself - but the API wants a token in a header, and
+the only way to supply one would be to pull your stored token out of the vault. That is the whole
+reason this step needs you. Closing it also closes A5 and B12.
 
-Waiting on O1. Merge order is pr1 → pr12; each diff shows only its own change.
+There is a bash twin at `scripts/open-prs.sh`. Two things to know if you edit either: `<` is a
+reserved operator in PowerShell 5.1, and a BOM-less `.ps1` is read as ANSI, so any non-ASCII in it
+is mis-decoded before the parser sees a single token.
 
-### O3 · Re-run the A/B balance sweep
+### O3 - Re-run the A/B balance sweep  [DONE]
 
-Thirty-nine smashes, forty-eight up-specials and the whole assist overhaul changed the numbers
-the last sweep measured. Its output no longer describes this build.
+Re-run against the rebuilt moveset - `1560bef`, pr13. All sixteen null arms came back identical to
+baseline, so the numbers are admissible. Cooldowns and raw knockback are the load-bearing families;
+weight, which the previous sweep ranked first, is fourth. Full output in
+`artifacts/balance-sweep-run.txt`.
+
+Doing it turned up that the sweep **could not see the newest 87 moves in the game** - `dmg.all` and
+`kb.all` match a digit straight after the colon, and every rebuilt smash and up-special writes
+`dmg:[tap,full]`. Fixed in `f132a93` with two tiered knobs plus one for bleed, which had none.
+
+Read the low end with care: thirty matches over fifty-nine fighters is two matches per fighter, so
+the spread statistic is quantised and the ordering within the bottom eleven is not resolved.
 
 ### O4 · Delete the 39 superseded bodies in `SMASHES`
 
@@ -129,6 +142,6 @@ that the test proves less than it looks like it proves.
 
 | | Count |
 |---|---|
-| Done | 25 |
-| Open | 8 |
+| Done | 28 |
+| Open | 6 |
 | Blocked on you | 1 (O1, which unblocks O2) |
