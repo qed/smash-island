@@ -4871,7 +4871,7 @@ function makeFighter(r,x,y,idx){
     koCap: Math.round(150 + w),   // per-character damage-death threshold (heavier = tougher)
     x, y, vx:0, vy:0, face:1, onground:false,
     pct:0, stocks:3, alive:true, dead:false, team:idx,
-    atkCd:0, spCd:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null, _stall:null, _spinKb:null,
+    atkCd:0, spCd:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null, _stall:null, _spinKb:null, _sm:null, _selfStun:0,
     reform:r.name==="Bubble"?1:0, burn:0, armor:0, countering:0, cloud:0,
     weakened:0, defined:0, defineStacks:0, frozen:0, _freezeLock:0, lastHitBy:null, curse:0, curseStacks:0,
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
@@ -5941,6 +5941,67 @@ function step(){
       }
       if(f._stall && --st.life<=0) f._stall=null;
     }
+    // SMASH PATTERNS that live across frames (see SM_PAT). Naily's _nail below is the same idea
+    // written by hand first; these are the general versions the other thirty-nine use.
+    if(f._sm){
+      const m = f._sm;
+      if(m.pat==='through'){
+        // Dash past them. The light pass-through hit opens the effect; the REAL hit is the swing
+        // back, which lands behind you — so the move is aimed by where you will end up.
+        f.vx = f.face*m.spd; f.invuln = Math.max(f.invuln, 1);
+        if(!m.hit){
+          const pre = smashTargets(f, f.x, f.y, m.reach*0.8);
+          const n2 = hitCircle(f, f.x, f.y, m.reach*0.8, m.dmg*0.3, m.dmg*0.3, f.face*2, -2);
+          if(n2>0){ smashFx(f, pre, m.fx, m.n); m.hit=true; }
+        }
+        if(hazardT%2===0) puff(f.x-f.face*10, f.y+(Math.random()*20-10), m.color, 3);
+        if(--m.t<=0){
+          const cx = f.x - f.face*(m.back+10);
+          smashSwing(f, cx, f.y, m.reach, m.dmg, m.kb, m.band, m.fx, m.n, m.up);
+          for(let i=0;i<10;i++) puff(cx, f.y, m.color, 5);
+          f.vx *= 0.2; f._sm=null;
+        }
+      } else if(m.pat==='leap'){
+        if(f.onground && f.vy>=0){
+          smashSwing(f, f.x, f.y+f.r*0.5, m.rad, m.dmg, m.kb, null, m.fx, m.n, m.up);
+          for(let i=0;i<12;i++) puff(f.x+(Math.random()*70-35), f.y+f.r, m.color, 5);
+          f._sm=null;
+        } else if(--m.life<=0) f._sm=null;
+      } else if(m.pat==='plant'){
+        if(hazardT%3===0) puff(f.x+(Math.random()*30-15), f.y+f.r-4, m.color, 3);
+        if(--m.t<=0){
+          smashSwing(f, f.x, f.y, m.rad, m.dmg, m.kb, null, m.fx, m.n, m.up);
+          for(let i=0;i<16;i++) puff(f.x+(Math.random()*m.rad*2-m.rad), f.y+f.r, m.color, 5);
+          f._sm=null;
+        }
+      } else if(m.pat==='reel'){
+        for(const t of fighters){
+          if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
+          if(Math.hypot(t.x-f.x,t.y-f.y) > m.R) continue;
+          t.vx += Math.sign(f.x-t.x||1)*(m.force*0.35); t.vy=Math.min(t.vy,-1); t.onground=false;
+          if(hazardT%3===0) puff(t.x, t.y, m.color, 3);
+        }
+        if(--m.t<=0){
+          smashSwing(f, f.x+f.face*14, f.y, m.reach, m.dmg, m.kb, m.band, m.fx, m.n, m.up);
+          for(let i=0;i<12;i++){ const a=i/12*Math.PI*2; puff(f.x+Math.cos(a)*40, f.y+Math.sin(a)*30, m.color, 4); }
+          f._sm=null;
+        }
+      } else if(m.pat==='burst'){
+        // The ring EXPANDS, so it catches someone walking in and can be outrun by someone leaving.
+        const k = 1 - (m.t/(m.t0||(m.t0=m.t)));
+        const R = m.r0 + (m.r1-m.r0)*k;
+        for(const t of fighters){
+          if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0||m.hit[t.idx]) continue;
+          if(Math.hypot(t.x-f.x,t.y-f.y) < t.r+R){
+            m.hit[t.idx]=1;
+            applyHit(t, m.dmg, Math.sign(t.x-f.x||1)*m.kb, m.up==null?-m.kb*0.5:m.up, f);
+            if(m.fx && SM_FX[m.fx]) SM_FX[m.fx](t, f, m.n);
+          }
+        }
+        for(let i=0;i<3;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*R, f.y+Math.sin(a)*R*0.5, m.color, 4); }
+        if(--m.t<=0) f._sm=null;
+      } else f._sm=null;
+    }
     if(f._nail){
       const n = f._nail;
       f.vx = f.face * n.speed;
@@ -6337,6 +6398,10 @@ function step(){
           if(pr.freeze && f.pct>15){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); if(f.frozen>0) banner("FROZEN!",600); }
           if(pr.root){ f.rooted=Math.max(f.rooted||0,60); banner("STUCK!",500); }
           if(pr.reverseCtrl){ if(applyCtrlRev(f,70)) banner("SCRAMBLED!",600); }
+          // A smash whose PATTERN is a projectile (walk / rain / mine) carries its row's effect as
+          // a tag rather than a rider, so the effect vocabulary is the same one the melee patterns
+          // use — including the several (stun, weaken, knockdown, bleed) that have no rider at all.
+          if(pr.fxTag && SM_FX[pr.fxTag]) SM_FX[pr.fxTag](f, pr.ownerObj, pr.fxN);
         }
         if(!pr.van && !pr.pierce) { pr.life=0; }
         puff(pr.x,pr.y,pr.color,6);
@@ -6765,6 +6830,11 @@ function playSmashSfx(id){
 //  PERSONALIZED SMASHES  (charge 0..1)  — keyed by kit.special
 //  Only override where it fits the character; else generic.
 // ============================================================
+// NOTE: doSmash consults SMASH_SPEC first (see below), so any key that has a row there is
+// SUPERSEDED and the body here is unreachable — thirty-nine of the fifty-seven. They are kept
+// rather than deleted because several are multi-line and a mechanical sweep orphaned their
+// continuation lines; test/smash-patterns.test.js is what guarantees the table is the live path.
+// If you are changing one of the thirty-nine, change its ROW, not the body below.
 const SMASHES = {
   // ---- Tennis Ball (serve) — Grand Slam: a fast, flat power serve that spikes ----
   serve(f,c){ f.flash=12; spawnProj(f,{vx:f.face*(12.2+c*4.8),vy:-3,grav:true,bounce:true,dmg:15.8+c*6.2,kb:10.1+c*3.9,r:11,color:'#c9f24b',life:150,noAim:true});  },
@@ -6968,6 +7038,287 @@ const SMASHES = {
   glaze(f,c){ f.flash=12; f._sawing=Math.max(f._sawing||0,40+Math.round(c*16)); f.vx=f.face*(10.8+c*4.2);  }, // Donut
 };
 
+// ============================================================
+//  SMASH PATTERNS — the vocabulary the 39 rebuilt smashes are written in
+// ============================================================
+// Thirty-nine of the fifty-nine smashes were one of three generic shapes: twenty-one were "a ring
+// of damage around me", eleven were "spawn one shot", seven were "spawn N shots in a fan". They
+// differed in name, colour and integers, and in nothing a player could do differently.
+//
+// Naily's rebuild set the template and this is that template made general. Every row below says
+// four things, and a player can feel all four:
+//
+//   PATTERN — a movement you can recognise across the stage. Where the fighter GOES, and where the
+//             hit lands relative to that. This is the part that makes a smash identifiable.
+//   EFFECT  — something that outlives the hit. Bleed, burn, a root, a curse, stripped armour.
+//   RATIO   — dmg vs kb. High damage at low launch RACKS PERCENT; low damage at high launch KILLS.
+//             The ratio is the move's job description, and no two fighters should share a job.
+//   COST    — what it takes from you. Self-stun frames, self-damage, a longer cooldown, your own
+//             position. A smash with no cost is not a choice, and the old thirty-nine had none.
+//
+// Two tiers, as the charge system requires: a tap is the same PATTERN with reduced numbers, and
+// the cost does NOT shrink with the charge — committing badly is punished the same either way.
+const SM_FX = {
+  bleed:   (t,f,n)=>{ t.bleed=Math.max(t.bleed||0, n||150); },
+  burn:    (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||110); },
+  poison:  (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||80); },
+  freeze:  (t,f,n)=>{ if(t.pct>15) applyFreeze(t, freezeDuration(t.pct,50)); },
+  root:    (t,f,n)=>{ t.rooted=Math.max(t.rooted||0, n||60); },
+  slow:    (t,f,n)=>{ t.slowed=Math.max(t.slowed||0, n||90); },
+  ice:     (t,f,n)=>{ t.iceUntil=Math.max(t.iceUntil||0, n||120); },
+  curse:   (t,f,n)=>{ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+(n||2)); },
+  define:  (t,f,n)=>{ t.defined=Math.max(t.defined||0,600); t.defineStacks=Math.min((t.defineStacks||0)+(n||2),5); },
+  weaken:  (t,f,n)=>{ t.weakened=Math.max(t.weakened||0, n||180); },
+  scramble:(t,f,n)=>{ applyCtrlRev(t, n||70); },
+  stun:    (t,f,n)=>{ t.hitstun=Math.max(t.hitstun||0, n||22); },
+  strip:   (t,f,n)=>{ t.armor=0; t.countering=0; t.reflecting=0; },   // answers the armour/counter/reflect stances
+  drain:   (t,f,n)=>{ if(f && !f.dead) f.pct=Math.max(0, f.pct-(n||4)); },
+  knockdown:(t,f,n)=>{ t.onground=false; t.vy=Math.min(t.vy,-3); t.hitstun=Math.max(t.hitstun||0,(n||30)); },
+};
+// The cost, paid on activation whether the move connects or not. That is the point of it.
+function smashCost(f, cost){
+  if(!cost) return;
+  if(cost.stun){ f.hitstun = Math.max(f.hitstun||0, cost.stun); f._selfStun = cost.stun; }
+  if(cost.self){ f.pct += cost.self; }
+  if(cost.cd){ f.atkCd = Math.max(f.atkCd||0, cost.cd); f.spCd = Math.max(f.spCd||0, cost.cd); }
+  // `back` is applied by runSmashSpec AFTER the pattern — see there. Setting it here would be
+  // overwritten by any pattern that assigns f.vx, which is how it came to do nothing at all.
+  if(cost.root){ f.rooted = Math.max(f.rooted||0, cost.root); }
+}
+// Who a swing is about to reach. This MUST be evaluated before the hit lands: applyHit grants the
+// target invulnerability frames, so an effect pass that runs afterwards and honours `invuln` skips
+// every single fighter it just hit — which is exactly what it did, silently, for every one of the
+// thirty-nine. Bomby burned nobody and Rose's thorns drew no blood, while the damage landed fine.
+function smashTargets(f, cx, cy, rad){
+  const out=[];
+  for(const t of fighters){
+    if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
+    if(Math.hypot(t.x-cx,t.y-cy) < t.r+rad) out.push(t);
+  }
+  return out;
+}
+function smashFx(f, list, fx, n){
+  if(!fx || !list.length) return 0;
+  const apply = SM_FX[fx]; if(!apply) return 0;
+  for(const t of list) apply(t, f, n);
+  return list.length;
+}
+// One swing: the shared tail of every pattern that lands a hitbox.
+function smashSwing(f, cx, cy, rad, dmg, kb, band, fx, fxN, up){
+  const list = smashTargets(f, cx, cy, rad);
+  const n = hitCircle(f, cx, cy, rad, dmg*0.55, dmg, f.face*kb, up==null?-kb*0.55:up, band);
+  smashFx(f, list, fx, fxN);
+  return n;
+}
+// PATTERNS. Each returns nothing; each either resolves now or installs a cross-frame state that
+// the fighter loop drives (search _sm). `c` is the charge tier: 0 = tap, 1 = full.
+const SM_PAT = {
+  // Step forward and commit to one swing. The band is the identity: a latch, a tip, a hilt.
+  lunge(f,s,c){
+    const reach=f.r+(s.reach||30), cx=f.x+f.face*(s.fx==null?30:s.fx);
+    f.vx += f.face*(s.step||3);
+    smashSwing(f, cx, f.y+(s.fy||0), reach, s.dmg[c], s.kb[c], s.band, s.effect, s.n, s.up);
+    for(let i=0;i<8;i++) puff(cx,f.y+(s.fy||0),s.color||f.color,5);
+  },
+  // Dash THROUGH them and hit behind you — the target ends up on your other side. Naily's shape,
+  // generalised: aimed by where you will END, not where you start.
+  through(f,s,c){
+    f._sm = {pat:'through', t:s.dash[c], back:s.backAt||8, dmg:s.dmg[c], kb:s.kb[c], reach:f.r+(s.reach||26),
+      fx:s.effect, n:s.n, band:s.band, color:s.color||f.color, spd:s.spd||18, hit:false, up:s.up};
+  },
+  // Hop forward; the hit is the LANDING. A committed arc you can see coming and step out of.
+  leap(f,s,c){
+    f.vy = -(s.rise||11); f.vx = f.face*(s.fwd||7); f.onground=false;
+    f._sm = {pat:'leap', rad:f.r+(s.rad||36), dmg:s.dmg[c], kb:s.kb[c], fx:s.effect, n:s.n,
+      color:s.color||f.color, life:120, up:s.up};
+  },
+  // Root yourself, wind up, then release. Cannot move during. The biggest numbers, the worst
+  // punish if you are read.
+  plant(f,s,c){
+    f._sm = {pat:'plant', t:s.wind||18, rad:f.r+(s.rad||46), dmg:s.dmg[c], kb:s.kb[c], fx:s.effect,
+      n:s.n, color:s.color||f.color, up:s.up};
+    f.rooted = Math.max(f.rooted||0, (s.wind||18)+4);
+  },
+  // A hazard that walks away from you along the ground, hitting whatever it meets.
+  walk(f,s,c){
+    spawnProj(f, Object.assign({vx:f.face*(s.spd||7), vy:0, grav:false, dmg:s.dmg[c], kb:s.kb[c],
+      r:s.r||13, color:s.color||f.color, life:s.life||90, pierce:!!s.pierce, van:!!s.van,
+      fxTag:s.effect||null, fxN:s.n||0}, s.rider||{}));
+  },
+  // Falls from above onto a marked spot — telegraphed, so it is a trap rather than an ambush.
+  rain(f,s,c){
+    const n=s.count||1;
+    for(let i=0;i<n;i++){
+      const lx=f.x+f.face*((s.at||90)+i*(s.gap||70));
+      dropProj(f, lx, groundY(), Object.assign({dmg:s.dmg[c], kb:s.kb[c], r:s.r||12,
+        color:s.color||f.color, life:150, grav:true, fxTag:s.effect||null, fxN:s.n||0}, s.rider||{}), i>0);
+    }
+    f.dropCd = s.cd||70;
+  },
+  // Plant something that stays and waits. One at a time — the cost is that it is not a hit.
+  mine(f,s,c){
+    projectiles = projectiles.filter(p=>!(p.owner===f.idx && p._mine));
+    projectiles.push(Object.assign({owner:f.idx, ownerObj:f, x:f.x+f.face*(s.at||34), y:groundY()-8,
+      vx:0, vy:0, grav:false, dmg:s.dmg[c], kb:s.kb[c], r:s.r||14, color:s.color||f.color,
+      life:s.life||360, trap:true, arm:24, _mine:true,
+      fxTag:s.effect||null, fxN:s.n||0}, s.rider||{}));
+    for(let i=0;i<6;i++) puff(f.x+f.face*(s.at||34), groundY()-10, s.color||f.color, 4);
+  },
+  // Pull them in over several frames, THEN swing. Doing both on one frame — which is what this
+  // did first — could only ever hit someone already in range, i.e. exactly the case the pattern
+  // is meant to fix. The pull is the move; the swing is the collection.
+  reel(f,s,c){
+    f._sm = {pat:'reel', t:s.draw||14, R:s.pull||190, force:s.force||9, reach:f.r+(s.reach||34),
+      dmg:s.dmg[c], kb:s.kb[c], band:s.band, fx:s.effect, n:s.n, color:s.color||f.color, up:s.up};
+  },
+  // The old shape, kept for the handful it genuinely suits — but now with a real cost and a real
+  // effect, and a ring that EXPANDS over a few frames instead of resolving in one.
+  burst(f,s,c){
+    f._sm = {pat:'burst', t:s.frames||10, r0:s.r0||30, r1:(s.rad||100)+(c?s.grow||30:0),
+      dmg:s.dmg[c], kb:s.kb[c], fx:s.effect, n:s.n, color:s.color||f.color, hit:{}, up:s.up};
+  },
+  // An instant line to the edge of the stage. No travel time, so it is answered by position only.
+  beam(f,s,c){
+    const y=f.y+(s.fy||0), x0=f.x+f.face*10, x1=f.x+f.face*(s.len||900);
+    const lo=Math.min(x0,x1), hi=Math.max(x0,x1);
+    let n=0;
+    for(const t of fighters){
+      if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
+      if(t.x>lo-16 && t.x<hi+16 && Math.abs(t.y-y)<t.r+(s.wide||18)){
+        applyHit(t, s.dmg[c], f.face*s.kb[c], s.up==null?-6:s.up, f);
+        if(s.effect && SM_FX[s.effect]) SM_FX[s.effect](t, f, s.n); n++;
+      }
+    }
+    beams.push({x0, y, x1, face:f.face, color:s.color||f.color, life:14, owner:f.idx});
+    return n;
+  },
+};
+function runSmashSpec(f, s, c){
+  f.flash = c ? 14 : 10;
+  const cost = c ? s.cost : (s.costTap || s.cost);
+  smashCost(f, cost);
+  (SM_PAT[s.pat] || SM_PAT.lunge)(f, s, c);
+  // Recoil LAST, so it eats into the momentum the pattern just granted instead of being erased by it.
+  if(cost && cost.back){ f.vx -= f.face*cost.back; f.onground=false; }
+}
+// The thirty-nine, each written from what the design doc says the character IS. Costs are paid on
+// activation, connect or not; `dmg`/`kb` are [tap, full] and the cost does not scale with them.
+const SMASH_SPEC = {
+  // ---- LUNGE: step in and commit to one swing. The band is the identity. ----
+  // "Gate Slam: swinging slam with a sweet spot at the latch" — the latch is the far edge, so the
+  // sweet zone is the TIP. A gate judges: it strips armour, counters and reflectors off whoever it
+  // catches, which is the one answer in the game to a stance-holder.
+  reflect:  {pat:'lunge', reach:34, fx:44, band:-0.62, dmg:[9.36,13],  kb:[10.08,14],  effect:'strip',  cost:{stun:26}, color:'#c8d8e8'},
+  // "Clapper Slam: internal clapper strike; brutal up close." The clapper is INSIDE her, so this is
+  // the one lunge whose sweet zone is the hilt. Percent-racker, not a kill.
+  ring:     {pat:'lunge', reach:26, fx:22, band:0.45,  dmg:[12.24,17], kb:[5.04,7],   effect:'stun', n:26, cost:{stun:22}, color:'#ffe08a'},
+  // The slap war, still going. Fast step, no band — Coiny does not need spacing, he needs tempo.
+  slap:     {pat:'lunge', reach:28, fx:30, step:6,     dmg:[10.8,15], kb:[5.76,8],   effect:'bleed', n:120, cost:{stun:14}, color:'#f2c84b'},
+  // "Bounce Serve" is his neutral; the smash is the power serve. A racket is all tip.
+  serve:    {pat:'lunge', reach:36, fx:40, band:-0.7,  dmg:[8.64,12],  kb:[10.8,15], effect:'knockdown', cost:{stun:28}, color:'#c9f24b'},
+  // "Price Tag: slaps a sticker that makes a foe take more damage." The tag IS the move; the hit is
+  // nearly incidental, so the numbers are the lowest here and the cooldown is the price.
+  pricetag: {pat:'lunge', reach:32, fx:36, band:-0.55, dmg:[6.48,9],   kb:[4.32,6],   effect:'define', n:3, cost:{cd:74}, color:'#e8d0a0'},
+  // "Sign Smack: close-range placard swing." A placard to the face: in close, and it rings.
+  sign:     {pat:'lunge', reach:30, fx:28, band:0.5,   dmg:[7.92,11],  kb:[9.36,13],  effect:'stun', n:30, cost:{stun:20}, color:'#6fb7ff'},
+
+  // ---- THROUGH: dash PAST them; the real hit lands behind you. Aimed by where you end up. ----
+  // "Side B — Storm Dash: electric dash-through." Canon, verbatim. Glass at w54, so the cost bites.
+  zap:      {pat:'through', dash:[5,8],  spd:16, reach:26, dmg:[7.92,11], kb:[9.36,13], effect:'stun', n:24, cost:{stun:20}, color:'#f2f24b'},
+  // "Toggle Kick: a different animation and angle per stance." A switch flips you — the effect
+  // reverses your controls, and the damage is high because the launch is not.
+  switch:   {pat:'through', dash:[5,8],  spd:14, reach:24, dmg:[11.52,16], kb:[4.32,6],  effect:'scramble', n:70, cost:{stun:24}, color:'#f2e8b0'},
+  // "Panic Bolt: a terrified burst dash." Balsa, and afraid — he hurts himself getting there.
+  fraidy:   {pat:'through', dash:[6,9],  spd:15, reach:22, dmg:[6.48,9],   kb:[6.48,9],  effect:'slow', n:100, cost:{stun:16, self:4}, color:'#d8b878'},
+  // "Bank Shot: launches herself off walls; damage rises per bounce." The fastest pass in the game.
+  dribble:  {pat:'through', dash:[5,8],  spd:17, reach:26, dmg:[10.08,14],  kb:[8.64,12], effect:'knockdown', cost:{stun:26}, color:'#e08a3a'},
+  // "Bowling Roll: heavy rolling attack." A pin rolls through and the point comes back around.
+  pierce:   {pat:'through', dash:[6,9],  spd:13, reach:28, dmg:[10.8,15], kb:[7.2,10], effect:'bleed', n:140, cost:{stun:30}, color:'#e04b6a'},
+
+  // ---- LEAP: hop forward; the hit is the LANDING. A committed arc you can step out of. ----
+  // "Stomp Quake: grounded shockwave; buries at high %." Buried is a root, and it is the payoff.
+  quake:    {pat:'leap', rise:11, fwd:3.5,  rad:38, dmg:[10.8,15], kb:[6.48,9],  effect:'root', n:75, cost:{stun:22}, color:'#8ed24b'},
+  // Concrete. The heaviest landing here, the longest recovery, and it leaves them stunned.
+  slam:     {pat:'leap', rise:10, fwd:3,  rad:42, dmg:[10.08,14],  kb:[10.08,14], effect:'stun', n:34, cost:{stun:34}, color:'#a0a0a8'},
+  // "Air Leak: jets of released air zip Balloony around." The jet that lifts him also shoves him
+  // backward on release — the only leap that costs you your position instead of your frames.
+  airleak:  {pat:'leap', rise:12, fwd:4.5,  rad:42, dmg:[7.2,10],  kb:[8.64,12], effect:'knockdown', cost:{back:3}, color:'#a0e0f0'},
+  // She pops constantly and comes back anyway. Floatiest arc, weakest landing, and it costs her
+  // percent to do at all — which is the most Bubble thing a move could ask.
+  float:    {pat:'leap', rise:15, fwd:2.5,  rad:30, dmg:[5.76,8],   kb:[5.04,7],  effect:'weaken', n:200, cost:{self:6}, color:'#bfe8ff'},
+  // "Coin Flip: flips himself forward — heads = launcher on landing." He flips himself because no
+  // one else will. Highest launch of any leap; he is a gambler, so it is all in the landing.
+  flip:     {pat:'leap', rise:13, fwd:1.8,  rad:42, dmg:[7.92,11],  kb:[11.52,16], effect:'knockdown', cost:{stun:28}, color:'#d8d8e0'},
+
+  // ---- PLANT: root yourself, wind up, release. Biggest numbers, worst punish if you are read. ----
+  // "The 'Aw, Seriously?!' scream." The widest hit in the game, and he cannot move while he winds
+  // it up — a heavyweight's threat that everyone can see coming.
+  seriously:{pat:'plant', wind:20, rad:50, dmg:[12.96,18], kb:[8.64,12], effect:'stun', n:28, cost:{root:26}, color:'#c8b088'},
+  // "Down B — Inert: goes still, full armor, cannot act, 1.5 s." His own kit already says he plants.
+  barf:     {pat:'plant', wind:16, rad:40, dmg:[13.68,19], kb:[4.32,6],  effect:'poison', n:110, cost:{root:22}, color:'#8a9c3a'},
+  // "Light My Fuse: lights it on purpose. Commit." The doc's word, so the move is built on it: the
+  // largest radius and damage of the three, and it takes a chunk out of him every single time.
+  bomb:     {pat:'plant', wind:22, rad:56, dmg:[15.12,21], kb:[10.8,15], effect:'burn', n:130, cost:{root:28, self:8}, color:'#f0803a'},
+
+  // ---- WALK: a hazard that travels away from you along the ground. ----
+  // "FreeSmart Supervan: the van drives across the ground layer, ramming foes." Canon, verbatim.
+  van:      {pat:'walk', spd:9,  r:16, life:110, pierce:true, dmg:[8.64,12], kb:[7.2,10], effect:'knockdown', cost:{cd:64}, color:'#f0d060'},
+  // "Salsa Splat: lobbed puddle that slows." Slow-moving, slow-making — it is area denial that walks.
+  salsa:    {pat:'walk', spd:5,  r:15, life:130, dmg:[7.92,11], kb:[4.32,6],  effect:'slow', n:120, cost:{cd:58}, color:'#f2c84b'},
+  // "Scribble Shot: erratic ink." Ink weakens what it touches; MARKER SANDWICH.
+  ink:      {pat:'walk', spd:7,  r:13, life:100, dmg:[9.36,13], kb:[5.04,7],  effect:'weaken', n:190, cost:{cd:56}, color:'#4bb0c0'},
+
+  // ---- RAIN: falls from above onto a marked spot. Telegraphed, so it is a trap, not an ambush. ----
+  // "Warehouse Drop: a crate falls where he's looking." Canon, verbatim. ADVERTISEMENT!
+  buynow:   {pat:'rain', at:100, count:1, r:18, dmg:[11.52,16], kb:[7.92,11], effect:'stun', n:30, cost:{cd:70}, color:'#f2e04b'},
+  // "Triple Spark: three-way fireball spread" becomes three falling sparks, spaced along the floor.
+  spark:    {pat:'rain', at:70, count:3, gap:64, r:11, dmg:[6.48,9], kb:[5.04,7], effect:'burn', n:110, cost:{cd:66}, color:'#e04b8a'},
+  // "Cold Snap: bursts an icy shard ring." Four shards, the widest spread, and they freeze.
+  shatter:  {pat:'rain', at:60, count:4, gap:56, r:10, dmg:[5.76,8], kb:[4.32,6], effect:'freeze', cost:{cd:72}, color:'#cdeeff'},
+  // "Morse Beep: a dot-dot-dash burst of signal bolts." Three, evenly spaced, in rhythm. He is an
+  // immobile tank at w134 — a move that reaches without moving is the whole point.
+  morse:    {pat:'rain', at:80, count:3, gap:44, r:12, dmg:[7.92,11], kb:[5.76,8], effect:'scramble', n:60, cost:{cd:62}, color:'#f2d84b'},
+
+  // ---- MINE: plant something that stays and waits. One at a time; the cost is that it is not a hit. ----
+  // "Sales Stand: places her stand; foes passing it 'purchase'." Sticky, and it roots.
+  sucker:   {pat:'mine', at:40, r:16, life:400, dmg:[10.08,14],  kb:[6.48,9],  effect:'root', n:70, cost:{cd:52}, color:'#c04be0'},
+  // "Paste Squirt: lays a slip puddle (canon: this is how Sticker went down)." Ice, not damage.
+  paste:    {pat:'mine', at:34, r:20, life:420, dmg:[7.2,10],  kb:[3.6,5],  effect:'ice', n:150, cost:{cd:48}, color:'#e8f4ff'},
+  // "Syringe Mine: plants one in the ground, point up." Canon, verbatim.
+  freeze:   {pat:'mine', at:36, r:15, life:380, dmg:[8.64,12],  kb:[5.04,7],  effect:'freeze', cost:{cd:56}, color:'#9ad24b'},
+  // "Ink Slick: slippery puddle zone control." The longest-lived mine, and the least damaging.
+  cap:      {pat:'mine', at:38, r:18, life:460, dmg:[5.76,8],   kb:[4.32,6],  effect:'slow', n:130, cost:{cd:44}, color:'#3a6ea5'},
+
+  // ---- REEL: pull them in FIRST, then swing. Spacing becomes your problem, not theirs. ----
+  // "Thorn Lash: tether that yanks a foe in." Canon, verbatim — and thorns bleed.
+  thorn:    {pat:'reel', pull:200, force:10, reach:32, dmg:[10.8,15], kb:[5.04,7], effect:'bleed', n:150, cost:{stun:24}, color:'#e0486a'},
+  // "Cake at Stake: lobs a slice and recovers a little on hit." The pull brings them to the table;
+  // the swing feeds her. The only smash that heals, so its damage is the lowest of the two.
+  atstake:  {pat:'reel', pull:170, force:8,  reach:30, dmg:[8.64,12],  kb:[5.76,8], effect:'drain', n:6, cost:{stun:26}, color:'#f5c88a'},
+
+  // ---- BEAM: an instant line to the edge of the stage. Answered by position only. ----
+  // A broadcast unit broadcasts. "INSTANT REPLAY" is his down-B; this is the live feed — "Static
+  // Shock" is his neutral, so the beam carries the static and the jolt that comes with it.
+  static:   {pat:'beam', len:820, wide:20, dmg:[8.64,12], kb:[6.48,9], effect:'stun', n:32, cost:{stun:30}, color:'#dfe8f5'},
+  // "Channel Surf: random beam." Deterministic here, but it still comes out of a remote: the
+  // longest line in the game, and reversing your controls is the thing only Remote does.
+  hack:     {pat:'beam', len:900, wide:16, dmg:[7.2,10], kb:[5.04,7], effect:'scramble', n:80, cost:{stun:26}, color:'#4a4a4a'},
+  // "The Plan: at full charge her next Neutral B is a screen-length beam." Her own doc entry asks
+  // for this. Rapid-speech, so it racks percent and barely launches.
+  rant:     {pat:'beam', len:860, wide:14, dmg:[12.24,17], kb:[3.6,5], effect:'weaken', n:170, cost:{stun:32}, color:'#e8a0c0'},
+
+  // ---- BURST: the old shape, kept only where it fits — now expanding, with a cost and an effect. ----
+  // "Feather Puff: multi-hit fluff cloud." Soft: the weakest numbers here, and it puts you to sleep.
+  fluff:    {pat:'burst', frames:14, r0:24, rad:96,  grow:26, dmg:[5.76,8],  kb:[4.32,6],  effect:'stun', n:34, cost:{cd:50}, color:'#f5e8d0'},
+  // "9 fries" ammo, farm-to-table, and grumpy. A ring of hot oil that burns.
+  fry:      {pat:'burst', frames:10, r0:28, rad:104, grow:30, dmg:[8.64,12], kb:[6.48,9],  effect:'burn', n:100, cost:{cd:56}, color:'#f0c060'},
+  // "Photosynthesis: heal over time + vine strike." The ring is the vines; the sustain is hers.
+  photo:    {pat:'burst', frames:12, r0:26, rad:100, grow:28, dmg:[7.92,11], kb:[5.76,8],  effect:'drain', n:5, cost:{cd:54}, color:'#4a9c6a'},
+  // "Make It Rain: coin burst around herself." Canon, verbatim — and it is the fastest burst, so
+  // the ring is on top of you before you can leave it.
+  payday:   {pat:'burst', frames:8,  r0:30, rad:92,  grow:24, dmg:[9.36,13], kb:[7.2,10], effect:'bleed', n:110, cost:{cd:48}, color:'#ffd23f'},
+};
+
 function doSmash(f, charge){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
@@ -6979,6 +7330,7 @@ function doSmash(f, charge){
   playSmashSfx(id);
   if(id && id.name && (f.you || f.you2)) banner(id.name, 700);
   const k=f.kit && f.kit.special;
+  if(SMASH_SPEC[k]){ runSmashSpec(f, SMASH_SPEC[k], charge); return; }
   if(SMASHES[k]){ SMASHES[k](f, charge); return; }
   genericSmash(f, charge);
 }
@@ -7801,7 +8153,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(from && from.idx!==t.idx){ t.lastHitBy=from; }   // remember who last damaged us
   // Show-accurate: Firey (and Firey Jr.) have aquaphobia — water-y attackers hurt them extra & douse them
   if(from && (t.name==="Firey"||t.name==="Firey Jr.") && /Teardrop|Barf Bag|Bubble/.test(from.name)){
-    dmg*=1.5; kbx*=1.2; kby*=1.2; t.burn=0; t.bleed=0; t._nail=null; t._stall=null; if(!t.dead){ banner("DOUSED!",500); for(let i=0;i<6;i++) puff(t.x,t.y-6,'#6fb7ff',4); }
+    dmg*=1.5; kbx*=1.2; kby*=1.2; t.burn=0; t.bleed=0; t._nail=null; t._stall=null; t._sm=null; if(!t.dead){ banner("DOUSED!",500); for(let i=0;i<6;i++) puff(t.x,t.y-6,'#6fb7ff',4); }
   }
   // Golf Ball CURSE AURA: while active, every hit she lands permanently saps the victim's damage output
   if(from && from.curse>0 && from.idx!==t.idx && (t.curseFrames===undefined || hazardT-(t.curseFrames||0)>18)){
@@ -7898,13 +8250,13 @@ function eliminate(f){
   }
   // Test mode: nobody is ever KO'd for good — just respawn at center
   if(TESTMODE.active){
-    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f.cloud=0; f.frozen=0;
+    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f.cloud=0; f.frozen=0;
     puff(W*0.5, 40, f.color, 12);
     return;
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f.cloud=0; f.frozen=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f.cloud=0; f.frozen=0;
     for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6); banner("YOYLEBERRY REFORM!", 900);
     return;
   }
@@ -7959,7 +8311,7 @@ function eliminate(f){
     // you back in where you can see, instead of at the roof of a world three screens tall.
     f.x=camX+W*0.5; f.y=camY-40;
   }
-  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f.cloud=0;
+  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f.cloud=0;
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
 
