@@ -4871,7 +4871,7 @@ function makeFighter(r,x,y,idx){
     koCap: Math.round(150 + w),   // per-character damage-death threshold (heavier = tougher)
     x, y, vx:0, vy:0, face:1, onground:false,
     pct:0, stocks:3, alive:true, dead:false, team:idx,
-    atkCd:0, spCd:0, smashHold:0, hitstun:0, invuln:0, jumps:2,
+    atkCd:0, spCd:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null,
     reform:r.name==="Bubble"?1:0, burn:0, armor:0, countering:0, cloud:0,
     weakened:0, defined:0, defineStacks:0, frozen:0, _freezeLock:0, lastHitBy:null, curse:0, curseStacks:0,
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
@@ -5863,6 +5863,7 @@ function step(){
     if(f.spCd>0) f.spCd--;
     if(f.dropCd>0) f.dropCd--;
     if(f.burn>0){ f.burn--; f.pct+=0.04; if(f.burn%18===0) puff(f.x,f.y-10,'#f0803a',3); }
+    if(f.bleed>0){ f.pct += 0.02 + 0.05*(f.bleed/BLEED_FRAMES); f.bleed--; if(f.bleed%12===0) puff(f.x,f.y-6,'#c0304a',3); }
     // TRESPASS BLEED — see enemyZoneOf. Skipped while invulnerable so a fighter who was launched
     // into an enemy corner is not punished for their own i-frames.
     if(f.invuln<=0){
@@ -5912,6 +5913,31 @@ function step(){
     // downward and the hitbox tracks her all the way down, so the payoff can measure the thing it
     // is actually paying for: how far she FELL before she connected. Checking only the activation
     // frame could never work — the hitbox reaches ~88px and a committed plunge is further than that.
+    // Naily — I NAILED IT. Phase one: the dash, a light hit on anyone passed through, once each,
+    // that starts them bleeding. Phase two, the frame the dash ends: one jab BEHIND her — extra
+    // damage, ordinary knockback, bleed — and then she is stuck for half a second. The cost is
+    // real: 30 frames with no input, standing next to whoever she just hit.
+    if(f._nail){
+      const n = f._nail;
+      f.vx = f.face * n.speed;
+      for(const t of fighters){
+        if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0||n.hits.has(t.idx)) continue;
+        if(Math.abs(t.x-f.x) < f.r+t.r+6 && Math.abs(t.y-f.y) < f.r+t.r){
+          applyHit(t, 7, f.face*4, -3, f); applyBleed(t, BLEED_FRAMES); n.hits.add(t.idx);
+          for(let i=0;i<4;i++) puff(t.x,t.y,'#c0304a',3);
+        }
+      }
+      if(hazardT%2===0) puff(f.x-f.face*10, f.y+6, '#c0c0c0', 3);
+      if(--n.t <= 0){
+        const cx = f.x - f.face*30;
+        for(const t of fighters){
+          if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
+          if(Math.hypot(t.x-cx, t.y-f.y) < t.r + f.r + 30){ applyHit(t, n.dmg, -f.face*7, -5, f); applyBleed(t, BLEED_FRAMES); for(let i=0;i<8;i++) puff(t.x,t.y,'#c0304a',4); }
+        }
+        f.vx = 0; f.hitstun = Math.max(f.hitstun, NAIL_STUN); f._nail = null;
+        if(f.you || f.you2) banner("I NAILED IT!", 600);
+      }
+    }
     if(f._plunge){
       const c = f._plunge.c;
       if(f.vy > 0){
@@ -5976,6 +6002,7 @@ function step(){
       if(!inp.left&&!inp.right && f.onground) f.vx*=(f.iceUntil>0?0.99:FRICTION);
       if(f.iceUntil>0) f.iceUntil--;
       if(f._dashing>0){ f.vx=f.face*22; }   // dash overrides normal movement/clamp
+      else if(f._nail){ }                    // Naily's dash holds its own speed (see the _nail block)
       else { const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*(f._hasteT>0?1.4:1); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }
       // jump
       if(inp.jump && !f._jp && f.jumps>0 && !(isBig()&&inp.down&&f.onground)){ f.vy=JUMP; f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }
@@ -6656,7 +6683,7 @@ const SMASH_ID = {
   spark: {name:"Strike Anywhere", color:"#ff3d9e", tones:[{f:1150,d:0.05,w:'square',g:0.2,t:0.02,to:760},{f:520,d:0.15,w:'sawtooth',g:0.2,t:0.07,to:1320}], noise:{d:0.09,g:0.26,hz:3200,t:0,to:1200}},   // Match
   saw: {name:"Ripsaw Roll", color:"#c0d4e0", tones:[{f:90,d:0.22,w:'sawtooth',g:0.24,t:0,to:260},{f:700,d:0.2,w:'square',g:0.16,t:0.03,to:820},{f:150,d:0.18,w:'square',g:0.14,t:0.05,to:120}], noise:{d:0.24,g:0.2,hz:2200,t:0,to:6000}},   // Saw
   salsa: {name:"Combo Platter", color:"#ffcf5a", tones:[{f:300,d:0.07,w:'triangle',g:0.16,t:0,to:170},{f:270,d:0.07,w:'triangle',g:0.15,t:0.05,to:150},{f:240,d:0.07,w:'triangle',g:0.14,t:0.1,to:130}], noise:{d:0.12,g:0.2,hz:1100,t:0.08,to:300}},   // Taco
-  spike: {name:"Nail Gun", color:"#a9c6dc", tones:[{f:1250,d:0.045,w:'square',g:0.2,t:0,to:980},{f:1350,d:0.045,w:'square',g:0.18,t:0.035,to:1060},{f:1450,d:0.045,w:'square',g:0.16,t:0.07,to:1140}], noise:{d:0.1,g:0.16,hz:5200,t:0.02,to:3200}},   // Naily
+  spike:{name:"I NAILED IT!", color:"#a9c6dc", tones:[{f:1250,d:0.045,w:'square',g:0.2,t:0,to:980},{f:1350,d:0.045,w:'square',g:0.18,t:0.035,to:1060},{f:1450,d:0.045,w:'square',g:0.16,t:0.07,to:1140}], noise:{d:0.1,g:0.16,hz:5200,t:0.02,to:3200}},   // Naily
   sucker: {name:"Stuck On You", color:"#d97aff", tones:[{f:900,d:0.07,w:'triangle',g:0.18,t:0,to:520},{f:240,d:0.16,w:'sine',g:0.2,t:0.07,to:70},{f:600,d:0.05,w:'square',g:0.1,t:0.07,to:240}], noise:{d:0.09,g:0.16,hz:1400,t:0.07,to:300}},   // Lollipop
   static: {name:"Signal Jam", color:"#8fd0ff", tones:[{f:132,d:0.18,w:'sawtooth',g:0.26,t:0,to:52},{f:78,d:0.14,w:'square',g:0.14,t:0.02,to:108},{f:1400,d:0.06,w:'square',g:0.12,t:0.16,to:2600}], noise:{d:0.22,g:0.28,hz:700,t:0,to:4200}},   // TV
   hack: {name:"Backwards Day", color:"#ff4bd8", tones:[{f:260,d:0.1,w:'square',g:0.24,t:0,to:720},{f:720,d:0.1,w:'square',g:0.2,t:0.1,to:260},{f:150,d:0.08,w:'triangle',g:0.16,t:0,to:110}], noise:{d:0.07,g:0.18,hz:3400,t:0.03,to:900}},   // Remote
@@ -6794,7 +6821,13 @@ const SMASHES = {
   spark(f,c){ f.flash=12; for(const dy of [-5,-2.5,0,2.5]) spawnProj(f,{vx:f.face*(8.6+c*3.4),vy:dy,grav:true,dmg:10.8+c*4.2,kb:6.5+c*2.5,r:9,color:'#e04b8a',burn:true,life:70});  },
   saw(f,c){ f.flash=12; f.vx=f.face*(9.4+c*3.6); f._sawing=Math.max(f._sawing||0,40+Math.round(c*20)); f.armor=20;  },
   salsa(f,c){ f.flash=12; for(const dx of [5,7,9]) spawnProj(f,{vx:f.face*dx,vy:-6,grav:true,dmg:10.1+c*3.9,kb:5.8+c*2.2,r:9,color:'#f2c84b',life:80,landsPuddle:true});  },
-  spike(f,c){ f.flash=12; for(const dy of [-2,-1,0,1,2]) spawnProj(f,{vx:f.face*(11.5+c*4.5),vy:dy*0.6,grav:false,van:true,dmg:7.9+c*3.1,kb:0,r:6,color:'#c0c0c0',life:34});  },
+  // ---- Naily (spike) — I NAILED IT: dash-jab forward, then a jab BACK ----
+  // The owner's own spec: a dash-jab forwards, then a jab backwards, with a bleed, extra damage at
+  // normal knockback, and half a second of self-stun. Pattern, effect, ratio, cost. You dash
+  // THROUGH them (a light hit that starts the bleed), they are behind you, and the back-jab is the
+  // real one — so the move is aimed by where you will END. Charge is the dash length. Resolved
+  // over frames in the fighter loop (search _nail), like Puffball's plunge.
+  spike(f,c){ f.flash=12; f._nail = { t: c ? 12 : 8, speed: c ? 13 : 11, dmg: c ? 16 : 11.5, hits: new Set() }; f.invuln = Math.max(f.invuln, 3); },
   sucker(f,c){ f.flash=12; spawnProj(f,{vx:f.face*(7.9+c*3.1),vy:0,grav:false,dmg:12.2+c*4.8,kb:4,r:11,color:'#c04be0',life:60,root:true});  },
   static(f,c){ f.flash=14; const R=100.8+c*39.2; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<R){ applyHit(t,14.4+c*5.6,Math.sign(t.x-f.x||1)*(6.5+c*2.5),-6,f); t.hitstun=Math.max(t.hitstun,40); } } for(let i=0;i<22;i++){const a=i/22*Math.PI*2;puff(f.x+Math.cos(a)*R*0.5,f.y+Math.sin(a)*R*0.5,'#8fd0ff',5);}  },
   // Remote — the control-scramble is disruption, not damage; this bolt is his only kill option, so
@@ -7524,6 +7557,11 @@ function freezeDuration(pct, base){
   return Math.min(FREEZE_MAX, Math.round(b*0.55 + bonus));
 }
 const FREEZE_MAX = 45;   // absolute ceiling on any freeze, before or after comeback bonuses
+// BLEED — Naily's status. 150 frames, front-loaded and DECAYING: about 6.75% total, most of it in
+// the first second. Re-wounding refreshes the clock rather than stacking, so it cannot be farmed.
+const BLEED_FRAMES = 150;
+const NAIL_STUN = 30;    // the half-second she is stuck for after the back-jab
+function applyBleed(t, frames){ if(!t || t.dead) return; t.bleed = Math.max(t.bleed||0, frames); }
 // Central freeze application: enforces the hard cap AND a per-target re-freeze cooldown, so a
 // freeze character can't chain-lock you from 0% to KO with no chance to act in between.
 const REFREEZE_GAP = 70;   // ~1.2s of freeze immunity after a freeze ends
@@ -7661,7 +7699,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(from && from.idx!==t.idx){ t.lastHitBy=from; }   // remember who last damaged us
   // Show-accurate: Firey (and Firey Jr.) have aquaphobia — water-y attackers hurt them extra & douse them
   if(from && (t.name==="Firey"||t.name==="Firey Jr.") && /Teardrop|Barf Bag|Bubble/.test(from.name)){
-    dmg*=1.5; kbx*=1.2; kby*=1.2; t.burn=0; if(!t.dead){ banner("DOUSED!",500); for(let i=0;i<6;i++) puff(t.x,t.y-6,'#6fb7ff',4); }
+    dmg*=1.5; kbx*=1.2; kby*=1.2; t.burn=0; t.bleed=0; if(!t.dead){ banner("DOUSED!",500); for(let i=0;i<6;i++) puff(t.x,t.y-6,'#6fb7ff',4); }
   }
   // Golf Ball CURSE AURA: while active, every hit she lands permanently saps the victim's damage output
   if(from && from.curse>0 && from.idx!==t.idx && (t.curseFrames===undefined || hazardT-(t.curseFrames||0)>18)){
@@ -7758,13 +7796,13 @@ function eliminate(f){
   }
   // Test mode: nobody is ever KO'd for good — just respawn at center
   if(TESTMODE.active){
-    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.cloud=0; f.frozen=0;
+    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f.cloud=0; f.frozen=0;
     puff(W*0.5, 40, f.color, 12);
     return;
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.cloud=0; f.frozen=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f.cloud=0; f.frozen=0;
     for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6); banner("YOYLEBERRY REFORM!", 900);
     return;
   }
@@ -7819,7 +7857,7 @@ function eliminate(f){
     // you back in where you can see, instead of at the roof of a world three screens tall.
     f.x=camX+W*0.5; f.y=camY-40;
   }
-  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.cloud=0;
+  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f.cloud=0;
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
 
@@ -12093,7 +12131,8 @@ function drawSpriteBody(f, sp, anim){
     ctx.globalAlpha = a0;
   };
   if(tint) lay(tint[0],tint[1]);
-  if(f.burn>0) lay("#f0521f",0.30);             // burn reads on top of any other state, as on the blob
+  if(f.burn>0) lay("#f0521f",0.30);
+  if(f.bleed>0) lay("#c0304a",0.22);            // bleed: a darker red under the burn tint             // burn reads on top of any other state, as on the blob
   ctx.restore();
   // face last and UNFLIPPED, so eyes read identically across the whole cast — vector art only;
   // a render already carries its own face (see the note at the top of this function)
