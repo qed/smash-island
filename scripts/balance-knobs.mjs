@@ -25,9 +25,14 @@ export const KNOBS = {
     read: (m) => int(m[1]), write: (m, v) => m[0].replace(/\d+/, v), clamp: [6, 120],
   },
   'cd.special': {
-    doc: 'every special cooldown (f.spCd = N), ~50 sites from 26 to 150',
-    find: /f\.spCd\s*=\s*(\d+)/g,
-    read: (m) => int(m[1]), write: (m, v) => m[0].replace(/\d+/, v), clamp: [10, 300],
+    // Two shapes, and missing the second was costly: `f.spCd = Math.max(f.spCd, N)` is how the
+    // GENERIC special path sets its cooldown, i.e. the default for most of the roster. Matching only
+    // the bare-literal form measured 52 sites and silently skipped the single most-used cooldown in
+    // the game, so every cd.special number taken before this was measured on partial coverage.
+    doc: 'every special cooldown — both `f.spCd = N` and `f.spCd = Math.max(f.spCd, N)`',
+    find: /f\.spCd\s*=\s*(?:Math\.max\(f\.spCd\s*,\s*(\d+)\)|(\d+))/g,
+    read: (m) => int(m[1] !== undefined ? m[1] : m[2]),
+    write: (m, v) => m[0].replace(/\d+/, v), clamp: [10, 300],
   },
   'cd.drop': {
     doc: 'the shared downpour throttle (dropCd), so drop moves cannot rapid-fire',

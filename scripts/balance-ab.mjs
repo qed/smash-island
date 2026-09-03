@@ -81,7 +81,7 @@ async function runArm(slate, transform, opts) {
   const wins = {}, played = {}, frames = [];
   let timeouts = 0;
   for (const { heat, seed } of slate) {
-    const r = await runMatch(heat, { seed, stocks: opts.stocks, aiLevel: opts.ai, maxFrames: opts.frames, transform });
+    const r = await runMatch(heat, { seed, stocks: opts.stocks, aiLevel: opts.ai, maxFrames: opts.frames, transform, itemRate: opts.itemRate });
     for (const n of heat) { wins[n] = wins[n] || 0; played[n] = (played[n] || 0) + 1; }
     wins[r.winner] = (wins[r.winner] || 0) + 1;
     frames.push(r.frames);
@@ -117,6 +117,11 @@ async function cmdAb(args) {
     stocks: args.stocks ? +args.stocks : 2,
     ai: args.ai ? +args.ai : 2,
     frames: args.frames ? +args.frames : 6000,
+    // Items are off by default because random pickups are noise in a signal about fighters. But
+    // every item-side knob is then measuring a system that is not running: tick.buff comes back a
+    // clean 0.0000, which reads as "does not affect balance" and means "was never in the room".
+    // --items N turns them on so those knobs have something to move.
+    itemRate: args.items ? +args.items : 0,
   };
   const roster = playableRoster();
   const need = minMatchesFor(roster);
@@ -127,7 +132,8 @@ async function cmdAb(args) {
   console.log(`== A/B: ${knob} ==`);
   console.log(`   ${KNOBS[knob].doc}`);
   console.log(`   reaches ${c.count} literals, range ${c.min}..${c.max}`);
-  console.log(`   ${slate.length} paired matches, stocks=${opts.stocks} ai=${opts.ai} cap=${opts.frames}f`);
+  console.log(`   ${slate.length} paired matches, stocks=${opts.stocks} ai=${opts.ai} cap=${opts.frames}f`
+    + (opts.itemRate ? ` items=${opts.itemRate}` : ' items OFF'));
   console.log(`   coverage ${appearances.toFixed(1)} matches per fighter` +
     (slate.length < need ? `   *** THIN: spread needs >= ${need} matches to mean anything ***` : ''));
   console.log('');
@@ -200,7 +206,9 @@ async function main() {
   if (cmd === 'ab') return cmdAb(args);
   if (cmd === 'sweep') return cmdSweep(args);
   console.log('usage: node scripts/balance-ab.mjs <census|ab|sweep> [--knob NAME] [--factors 0.75,1.33]' +
-    ' [--matches 24] [--seed N] [--stocks 2] [--ai 2] [--frames 6000] [--out file.json]');
+    ' [--matches 24] [--seed N] [--stocks 2] [--ai 2] [--frames 6000] [--items N] [--out file.json]');
+  console.log('  --items N turns item pickups ON (default off). Required for any item-side knob:');
+  console.log('  without it tick.buff measures a system that is not running and reports a false 0.');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
