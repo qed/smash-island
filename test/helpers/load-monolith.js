@@ -42,8 +42,16 @@ function stub2d() {
 // (mutated/read by dispatchStep) resolve to the real, current values.
 const BRIDGE = ['SETTINGS', 'fighters', 'down', 'TOURNEY', 'running', 'stage', 'STAGES'];
 
-export function loadMonolith(seed = 0xC0FFEE) {
-  const html = readFileSync('artifacts/V1/index.html', 'utf8');
+// `transform` rewrites the monolith SOURCE before it is parsed. It exists for the A/B balance
+// harness (scripts/balance-ab.mjs), which has to run two builds that differ by one stat against the
+// same seeds — and the stats worth sweeping (per-move cooldowns, effect tick counts) are literals
+// scattered through the file, not entries in a table anything could override at runtime. Patching
+// the text is what makes them addressable WITHOUT hoisting hundreds of magic numbers into a config
+// object first, and it never touches the file on disk. Default is identity: every existing caller
+// boots the byte-for-byte real build, exactly as before.
+export function loadMonolith(seed = 0xC0FFEE, transform) {
+  const raw = readFileSync('artifacts/V1/index.html', 'utf8');
+  const html = transform ? transform(raw) : raw;
   const dom = new JSDOM(html, {
     // A real origin, not the default opaque one. Without `url`, localStorage is absent, BStore
     // swallows the failure, and NOTHING persists — which made the whole progression layer
