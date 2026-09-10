@@ -170,10 +170,15 @@ The tournament harness disables items on purpose, so item-buff durations come ba
 `0.0000` — which reads exactly like "this does not affect balance" and means nothing of the kind.
 Needs an items-on variant.
 
-### O7 · The music crossfade test is flaky under load
+### O7 · `test/music.test.js` is flaky under load
 
 `test/music.test.js` "overlaps the two decks" fails in the full 643-test run and passes every
 time in isolation. A timing assumption in the test, not a regression in the game.
+
+Under-scoped as originally written: during the D session the failing test was "persists the
+choice and honours it on the next load", a different case in the same file, and it also passed
+on the next two full runs. Whatever the timing assumption is, it is shared across the file
+rather than local to the crossfade case.
 
 ### O8 · `relay/` points at a dead server
 
@@ -195,18 +200,36 @@ sixteen smashes on purpose, so those sixteen were re-measured and the other fort
 alone. The file still guards those forty-three; it no longer holds pre-change numbers for the
 sixteen, which is unavoidable when the change is the point.
 
-### O11 · Smash charge is still flat across all 59
+### O11 · Smash charge is still flat across all 59  [DONE]
 
-`SMASH_FLOOR` 6 and `SMASH_FULL` 45 apply to every fighter. Asked for during the D session
-(`smash charge values could be changed and more varied`) and not started -- a heavy fighter's
-wind-up and a glass zoner's should not cost the same 45 frames.
+Done in `f9dbf96`. `smashFullOf`/`smashFloorOf`/`smashHoldMaxOf` derive the windows from `f.w`.
+Puffball reaches full in 32 frames, Tree takes 58, twenty-two distinct values across the roster;
+bluff time keeps its 3x ratio. The constants stay as the documented baseline.
 
-### O12 · `the main menu`
+**Centre the curve on the MEDIAN weight, not the light end.** Centring on light made the median
+fighter 9% faster and light fighters 38% faster, and `playstyle-and-juice` caught it at 177px
+against a 182px threshold -- its metric counts jabs, not smashes, so a shorter wind-up means
+fewer frames charging instead of jabbing and the two styles converge. Centred on the median, a
+mid-weight fighter still charges in exactly the 45 frames everyone used to.
 
-Named as item 1 of something during the D session and never elaborated. The screen renders
-correctly: `#title` is the active screen, all seven entries present, and the 300x150 canvas is a
-false alarm because `cv` is sized when a match starts. There is one 404 on load from a single
-missing asset. Nothing else identified -- needs the actual complaint.
+That test has now caught two separate changes in this area (the D6 cooldown gate and this one).
+It is doing real work; do not loosen its threshold to make a change fit.
+
+### O12 · `the main menu`  [DONE]
+
+The complaint, once it arrived, was `you should say what the smash does in the main menu`. It was
+not a rendering fault at all -- the move card showed the same "Smash — biggest hit" for all
+fifty-nine fighters, so a smash had a name, a colour and a sound since the identity pass and
+nothing anywhere said what it did.
+
+Done in `f9dbf96`. The sentence is DERIVED from the `SMASH_SPEC` row -- pattern verb, dmg/kb
+ratio, effect -- rather than written out fifty-nine times and then drifting as the numbers move.
+The six fighters with their own bodies are a closed, deliberate set and get written lines. The
+card also shows that fighter's charge and tap frames, which is the only place O11's variance is
+visible to a player. Nothing is left on the generic string.
+
+Still open from the original investigation: **one 404 on page load**. `assets/music/` and
+`assets/sprites/` both exist, so it is a single missing file rather than a broken path.
 
 ---
 
@@ -214,9 +237,9 @@ missing asset. Nothing else identified -- needs the actual complaint.
 
 | | Count |
 |---|---|
-| Done | 35 |
-| Open | 10 |
+| Done | 37 |
+| Open | 8 |
 | Blocked on you | 1 (O1, which unblocks O2) |
 
-The D session added seven done and four open. Suite is **643 of 643 passing**; the O7 flake did
+The D session added nine done and two open (O11 and O12 were opened and closed within it). Suite is **643 of 643 passing**; the O7 flake did
 not reproduce in any of the six full runs it took to land D1-D7.
