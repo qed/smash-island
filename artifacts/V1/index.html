@@ -2347,6 +2347,48 @@ function updateSummary(){
   const sb=document.getElementById('startBtn');
   if(sb){ sb.textContent = "Start Match ▶"; }
 }
+// Every smash has had a name, a colour and a sound since the identity pass, and nothing anywhere
+// told the player what it DOES. Now that all but six are SMASH_SPEC rows, the sentence can be
+// derived from the row instead of written fifty-nine times and then drifting.
+const SMASH_PATTERN_TEXT = {
+  lunge:   'steps in and swings',
+  through: 'dashes clean past them, hitting from behind',
+  leap:    'hops, and the landing is the hit',
+  burst:   'erupts in a growing ring around you',
+  walk:    'advances, hitting through whoever is there',
+  beam:    'fires a long straight line',
+  rain:    'drops from above',
+  mine:    'leaves something behind that waits',
+  plant:   'plants your feet, then detonates',
+  reel:    'pulls them in, then swings',
+};
+const SMASH_EFFECT_TEXT = {
+  burn:'sets them burning', bleed:'leaves them bleeding', stun:'stuns', poison:'poisons',
+  freeze:'freezes', ice:'ices them over', slow:'slows them', root:'roots them in place',
+  knockdown:'knocks them down', scramble:'scrambles their controls', strip:'strips armour and stances',
+  drain:'drains them', weaken:'leaves them taking more', define:'marks them to take more',
+};
+const SMASH_BLURB_BESPOKE = {
+  fly:     'rises, then drops; a plunge from real height pays out Momentum',
+  spike:   'a nail-dash that hits everything it passes through',
+  payday:  'three coins in a fan, worth more against a hurt target',
+  counter: 'a stance that answers the next hit instead of throwing one',
+  kick:    'no hit at all: it leaves a cloud where you stood',
+  debuff:  'no hit at all: it curses the nearest fighter',
+};
+function smashBlurb(f){
+  const sp = f && f.kit && f.kit.special;
+  const id = (typeof SMASH_ID !== 'undefined' && SMASH_ID[sp]) || null;
+  const row = (typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null;
+  const name = id && id.name ? id.name : 'Smash';
+  if(!row) return name + (SMASH_BLURB_BESPOKE[sp] ? ' — ' + SMASH_BLURB_BESPOKE[sp] : ' — hold to charge');
+  const what = SMASH_PATTERN_TEXT[row.pat] || 'hits hard';
+  const eff  = SMASH_EFFECT_TEXT[row.effect];
+  const kills = row.kb[1] > row.dmg[1];                 // the ratio IS the move's job
+  const job  = kills ? 'launches' : 'racks damage';
+  return name + ' — ' + what + ', ' + job + (eff ? ', ' + eff : '');
+}
+
 function refreshSel(){
   document.getElementById('selName').textContent=chosen.name;
   document.getElementById('selArch').textContent="· "+chosen.arch;
@@ -2363,7 +2405,8 @@ function refreshSel(){
       ["C", chosen.kit ? chosen.kit.desc.split("→")[0].trim() : "Special"],
       ["↑+C", "Up special (recovery)"],
       ["↓+C", "Down special"],
-      ["hold V", "Smash — biggest hit"],
+      ["hold V", smashBlurb(chosen)],
+      ["charge", smashFullOf(chosen) + " frames to full · " + smashFloorOf(chosen) + "-frame tap"],
       ["X+C", "Finisher"],
     ];
     mc.innerHTML = `<div class="mc-head">${chosen.name} — moves</div>` +
@@ -6123,7 +6166,7 @@ function step(){
         // Winding up during endlag used to be allowed, and with the release now gated on atkCd the
         // charge would simply be eaten on release — a wasted commitment the player never sees the
         // reason for. Cheaper to refuse the wind-up than to swallow the swing.
-        if(f.atkCd<=0 && f.smashHold < SMASH_HOLD_MAX) f.smashHold++;   // build; past SMASH_FULL it is pure hold — does NOT auto-fire
+        if(f.atkCd<=0 && f.smashHold < smashHoldMaxOf(f)) f.smashHold++;   // build; past SMASH_FULL it is pure hold — does NOT auto-fire
       } else {
         // TWO TIERS. This used to fire only at a full 45-frame hold and discard anything shorter,
         // so doSmash had exactly one caller passing 1.0 and every `c*` term in all 59 smash bodies
@@ -6137,8 +6180,8 @@ function step(){
         // runs AFTER doSmash and therefore overwrote the cost runSmashSpec had just applied: every
         // `cost:{cd:...}` in SMASH_SPEC — 48, 54, 56, 74 — has been dead since it was written.
         // Now the gate is real and the declared cost wins when it is longer than the endlag.
-        if(f.smashHold >= SMASH_FLOOR && f.atkCd<=0){
-          const full = f.smashHold >= SMASH_FULL;
+        if(f.smashHold >= smashFloorOf(f) && f.atkCd<=0){
+          const full = f.smashHold >= smashFullOf(f);
           doSmash(f, full ? 1 : 0);
           f.atkCd = Math.max(f.atkCd||0, full ? 30 : 18);
         }
@@ -9933,7 +9976,7 @@ function aiThink(f){
 const AI_DROPPERS = new Set(["anvil","van","flip","pierce"]);
 function aiChargeDepth(f, sp, punish){
   if(AI_DROPPERS.has(sp) && Math.random()<0.6) return 0;
-  return SMASH_FULL + 9;
+  return smashFullOf(f) + 9;
 }
 // shared tail: difficulty handicap + smash-hold commitment
 function finishAI(f,inp,sp){
@@ -10662,10 +10705,22 @@ function deformAboutFeet(ctx, R, ang, sx, sy){
 // they all peak on the same frame the shared rig's lunge does.
 function atkPulse(f){ return f._atkAnim > 0 ? Math.sin((f._atkAnim/ATK_ANIM)*Math.PI) : 0; }
 // How far a held smash has charged, 0 -> 1.
-const SMASH_FULL = 45;       // frames to a full charge
-const SMASH_HOLD_MAX = 135;  // frames you may keep holding a finished charge — power stops at SMASH_FULL
-const SMASH_FLOOR = 6;       // shorter than this is a mis-press, not a smash
-function chargeK(f){ const c = (f.smashHold||0)/SMASH_FULL; return c > 1 ? 1 : c; }
+const SMASH_FULL = 45;       // BASELINE frames to a full charge — see smashFullOf
+const SMASH_HOLD_MAX = 135;  // baseline hold ceiling; power stops at the fighter's full
+const SMASH_FLOOR = 6;       // baseline mis-press floor
+
+// One wind-up length for all fifty-nine said that a 46kg balloon and a 138kg television commit
+// the same amount to a swing, which is the one thing weight ought to buy. The curve is centred on
+// the roster's MEDIAN weight of 90, so a mid-weight fighter still charges in exactly the 45 frames
+// everyone used to, and the variance spreads either side of that rather than shifting the whole
+// roster faster. Light fighters reach full in 32, the heaviest take 58.
+function smashFullOf(f){ const w = (f && f.w) || 90; return Math.max(32, Math.min(58, Math.round(45 + (w - 90) * 0.30))); }
+// The mis-press floor scales the same way: a heavy fighter's tap is a heavier commitment, so it
+// takes slightly longer before the game agrees you meant it.
+function smashFloorOf(f){ const w = (f && f.w) || 90; return Math.max(4, Math.min(9, Math.round(6 + (w - 90) * 0.04))); }
+// Bluff time keeps its 3x ratio to the wind-up, so the read is the same shape for everyone.
+function smashHoldMaxOf(f){ return smashFullOf(f) * 3; }
+function chargeK(f){ const c = (f.smashHold||0)/smashFullOf(f); return c > 1 ? 1 : c; }
 
 // ---- LAUNCH ANCHORS ---------------------------------------------------------------------------
 // WHERE a fighter's attacks come out of: Firey's mouth, Pen's nib, Match's burning head, Teardrop's
@@ -12617,7 +12672,7 @@ function spriteRig(f, R, sp, anim){
     sx += m*0.17; sy -= m*0.13;
     state = "attack";                      // ONE rig state; the beat within it is f._atkPhase
   } else if(f.smashHold > 0){              // wind BACK while the smash charges — anticipation
-    const c = f.smashHold/SMASH_FULL; const cc = c>1?1:c;
+    const c = f.smashHold/smashFullOf(f); const cc = c>1?1:c;
     lunge = -f.face * cc * R * 0.26;
     rock -= f.face * cc * 0.17;
     sy -= cc*0.16; sx += cc*0.13;
