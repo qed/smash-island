@@ -1,7 +1,7 @@
 # Work ledger — Battle for Smash Island
 
 Every task from this run, done or not. Grouped by where it came from, because that is the
-part that is easy to lose. Written 2026-09-03.
+part that is easy to lose. Written 2026-09-03, extended 2026-09-10.
 
 `origin/main` is at PR #20. Everything below sits on twelve pushed branches, `pr1`..`pr12`,
 each stacked on the one before. Suite: **630 of 631 passing** (the one failure is a known
@@ -70,6 +70,49 @@ integers apart — and nineteen more were a hop plus one dropped projectile.
 | C7 | `through` and `leap` overshot their targets by up to 174px | **Done** | `5101932` · pr12 |
 | C8 | `reel` pulled and swung on one frame, failing at the exact problem it exists to solve | **Done** | `5101932` · pr12 |
 
+## D · The 2026-09-10 session
+
+Typed into the CLI while playing, in this order.
+
+| | Task | Status | Landed in |
+|---|---|---|---|
+| D1 | `up-specials dont do anything- rebuild the system` | **Done** | `1a93b31` |
+| D2 | `puffball should have an option to cancel float with down` | **Done** | `1a93b31` |
+| D3 | `the ai uses specials extremely quickly-why?` | **Done** | `1a93b31` |
+| D4 | `i like moneys old smash, turn her current smash into her special` | **Done** | `1a93b31` |
+| D5 | `barf bag is op` / `and its her smash` | **Done** | `1a93b31` |
+| D6 | `you are able to spam the small versions and triple spike people` | **Done** | `1a93b31` |
+| D7 | `do the 14` -- the smashes the rebuild never reached | **Done** | `1a93b31` |
+
+**D1 was half a bug, and not the half it looked like.** The AI was fine: it already fired
+up-specials in four branches, one for recovery and three for anti-air. The fault was entirely on
+the human path -- `inp.up`/`inp.down` were read on the exact frame special was pressed, so the
+direction had to be held ALREADY. Pressing special and *then* tilting resolved as the neutral
+every time, which is why forty-eight authored up-specials appeared to do nothing. A press with a
+direction held still fires instantly; a press with nothing held arms for `SPECIAL_DIR_WINDOW`
+frames and takes the first direction to land.
+
+**D6 is the third instance of the pattern in C1 and C6** -- a declared mechanic that never ran.
+Two bugs stacked. The smash release branch fired whenever `smashHold` cleared its six-frame floor
+with *no `atkCd` gate at all*, so a smash could be tapped out about every seven frames. And
+`f.atkCd = full ? 30 : 18` ran AFTER `doSmash`, overwriting the cost `runSmashSpec` had just
+applied -- so every `cost:{cd:48|54|56|74}` in `SMASH_SPEC` had been dead since it was written.
+Refusing the wind-up during endlag is load-bearing, not cosmetic: `playstyle-and-juice` fails
+without it, at 179px against a 181px threshold.
+
+**D5's number had never been measured.** Barf Bag's smash was 112.8 total damage against a roster
+runner-up of 40.0 and a norm near 24, because one move carried a top-of-roster hit, a 120-frame
+burn AND a lingering poison trap that duplicated her own down-special. She is at 21.6 now,
+sixteenth close in and sixth at range, which suits "Fluid zoner".
+
+**D7 was twenty, not fourteen.** Six of the twenty are deliberate and stay on their own bodies:
+Needle, Teardrop and Golf Ball land nothing by design (counter stance, cloud, curse aura), Naily
+and Puffball are bespoke tested machinery, and Money's coins were restored by hand in D4. The
+other fourteen were simply never reached, which is why Saw and Donut sat at 40.0. `smash-patterns`
+caught seven `rowKey` collisions on the first pass, two of them between the new rows; each was
+resolved with a design choice rather than a number nudge. SMASH_SPEC is 39 rows no longer -- it is
+53, and the test asserts that count.
+
 ---
 
 ## OPEN
@@ -108,11 +151,13 @@ Doing it turned up that the sweep **could not see the newest 87 moves in the gam
 Read the low end with care: thirty matches over fifty-nine fighters is two matches per fighter, so
 the spread statistic is quantised and the ordering within the bottom eleven is not resolved.
 
-### O4 · Delete the 39 superseded bodies in `SMASHES`
+### O4 · Delete the 53 superseded bodies in `SMASHES`
 
 `doSmash` reads `SMASH_SPEC` first, so they are unreachable. A mechanical sweep of them orphaned
 the continuation lines of the multi-line ones and broke the file, so they are marked rather than
-deleted. Wants doing one at a time with a parse check between each.
+deleted. Wants doing one at a time with a parse check between each. Was 39; D7 added fourteen
+more rows and so superseded fourteen more bodies. The six still REACHABLE -- `counter`, `kick`,
+`debuff`, `spike`, `fly`, `payday` -- must survive any such sweep.
 
 ### O5 · Angling a smash (up / down)
 
@@ -127,7 +172,7 @@ Needs an items-on variant.
 
 ### O7 · The music crossfade test is flaky under load
 
-`test/music.test.js` "overlaps the two decks" fails in the full 631-test run and passes every
+`test/music.test.js` "overlaps the two decks" fails in the full 643-test run and passes every
 time in isolation. A timing assumption in the test, not a regression in the game.
 
 ### O8 · `relay/` points at a dead server
@@ -136,12 +181,42 @@ time in isolation. A timing assumption in the test, not a regression in the game
 while multiplayer cannot connect. Multiplayer is parked by your call — this is only the note
 that the test proves less than it looks like it proves.
 
+### O9 · Blocky's anvil no longer homes
+
+The legacy body scanned for the nearest fighter and dropped on their x. `rain` drops at a fixed
+offset and the pattern vocabulary has no homing flag, so D7 traded the homing for a longer reach
+(`at:90`) and left a note at the row. If the homing was the point it wants a flag on the pattern,
+not a bespoke body.
+
+### O10 · The golden fixture is re-baselined for sixteen fighters
+
+`test/golden/smash-charge.json` exists to prove nobody drifted by accident. D4, D5 and D7 changed
+sixteen smashes on purpose, so those sixteen were re-measured and the other forty-three left
+alone. The file still guards those forty-three; it no longer holds pre-change numbers for the
+sixteen, which is unavoidable when the change is the point.
+
+### O11 · Smash charge is still flat across all 59
+
+`SMASH_FLOOR` 6 and `SMASH_FULL` 45 apply to every fighter. Asked for during the D session
+(`smash charge values could be changed and more varied`) and not started -- a heavy fighter's
+wind-up and a glass zoner's should not cost the same 45 frames.
+
+### O12 · `the main menu`
+
+Named as item 1 of something during the D session and never elaborated. The screen renders
+correctly: `#title` is the active screen, all seven entries present, and the 300x150 canvas is a
+false alarm because `cv` is sized when a match starts. There is one 404 on load from a single
+missing asset. Nothing else identified -- needs the actual complaint.
+
 ---
 
 ## Scoreboard
 
 | | Count |
 |---|---|
-| Done | 28 |
-| Open | 6 |
+| Done | 35 |
+| Open | 10 |
 | Blocked on you | 1 (O1, which unblocks O2) |
+
+The D session added seven done and four open. Suite is **643 of 643 passing**; the O7 flake did
+not reproduce in any of the six full runs it took to land D1-D7.
