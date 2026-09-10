@@ -231,7 +231,7 @@ visible to a player. Nothing is left on the generic string.
 The 404 noted here was wrong twice over: there were **two**, and neither was a missing game
 asset. `/_vercel/insights/script.js` is the deployed analytics script and 404s only when the file
 is served locally -- removing it would break the deploy. The real one was that the head carried no
-icon link at all, so every load asked for `/favicon.ico` and missed. Fixed in `COMMIT`.
+icon link at all, so every load asked for `/favicon.ico` and missed. Fixed in `08bbcb2`.
 
 It is a 412-byte PNG inlined as base64, NOT an SVG, and the reason is worth keeping: an SVG data
 URI has to carry the w3.org SVG namespace to render, and `credential-strip` counts every http(s)
