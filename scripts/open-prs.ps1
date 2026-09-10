@@ -101,7 +101,22 @@ foreach ($br in $branches) {
     $base = $br; continue
   }
 
-  $out = (& $gh pr create --base $base --head $br --title $title --body $body) -join "`n"
+  # gh writes "a pull request ... already exists" to STDERR. In PowerShell 5.1 a native command's
+  # stderr becomes an ErrorRecord, and with $ErrorActionPreference = 'Stop' that is TERMINATING — so
+  # the first branch that already had a PR killed the whole run instead of being skipped, leaving
+  # every later branch uncreated. Relax the preference around the call and stringify the records.
+  # --body-file, never --body. A commit message here runs to dozens of lines and contains quotes,
+  # and PowerShell re-parses a multi-line string when handing it to a native exe: gh received the
+  # prose as a hundred stray positional arguments and refused. A file has no quoting problem.
+  $tmp = Join-Path $env:TEMP ("pr-body-" + $key + ".md")
+  Set-Content -Path $tmp -Value $body -Encoding utf8
+
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $out = (& $gh pr create --base $base --head $br --title $title --body-file $tmp 2>&1 |
+            ForEach-Object { $_.ToString() }) -join "`n"
+  $ErrorActionPreference = $prevEAP
+  Remove-Item $tmp -ErrorAction SilentlyContinue
   if ($LASTEXITCODE -eq 0) {
     Write-Host "created  $out"; $made++
   } elseif ($out -match 'already exists') {

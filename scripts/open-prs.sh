@@ -92,7 +92,11 @@ for br in "${BRANCHES[@]}"; do
     base="$br"; continue
   fi
 
-  if url=$("$GH" pr create --base "$base" --head "$br" --title "$title" --body "$body" 2>&1); then
+  # --body-file, never --body: a commit message here runs to dozens of lines and contains quotes.
+  # Bash survives it, but the PowerShell twin does not, so both use the file form and stay in step.
+  tmpbody="$(mktemp)"
+  printf '%s' "$body" > "$tmpbody"
+  if url=$("$GH" pr create --base "$base" --head "$br" --title "$title" --body-file "$tmpbody" 2>&1); then
     echo "created  $url"
     made=$((made+1))
   else
@@ -101,6 +105,7 @@ for br in "${BRANCHES[@]}"; do
       *) echo "FAILED   $br"; echo "$url" | sed 's/^/         /' ;;
     esac
   fi
+  rm -f "$tmpbody"
   base="$br"
 done
 
