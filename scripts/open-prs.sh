@@ -19,6 +19,9 @@
 # change instead of everything since main. Merge them in order, top to bottom. If you would rather
 # review one combined diff, retarget them all to main in the GitHub UI — but then every PR after
 # the first shows its predecessors' commits too.
+#
+# There is a PowerShell twin at open-prs.ps1, which is the one to use from a normal PowerShell
+# session: `bash` is not on PATH there even with Git for Windows installed.
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -28,7 +31,9 @@ DRY=0
 
 # gh is not on PATH under Git Bash on Windows even when it is installed.
 GH="$(command -v gh || true)"
-[ -z "$GH" ] && [ -x "/c/Program Files/GitHub CLI/gh.exe" ] && GH="/c/Program Files/GitHub CLI/gh.exe"
+for cand in "/c/Program Files/GitHub CLI/gh.exe" "$LOCALAPPDATA/Programs/GitHub CLI/gh.exe"; do
+  [ -z "$GH" ] && [ -x "$cand" ] && GH="$cand"
+done
 if [ -z "$GH" ]; then
   echo "gh is not installed. Install it with:  winget install --id GitHub.cli"
   exit 1
@@ -43,21 +48,16 @@ if ! "$GH" auth status >/dev/null 2>&1; then
   fi
 fi
 
-# The stack, in merge order. Base is the branch before; the first sits on main.
-BRANCHES=(
-  pr1/teams-ai-and-solo-rush
-  pr2/assist-trophies
-  pr3/boss-pierce-multihit
-  pr4/balance-ab-harness
-  pr5/smash-identity
-  pr6/assist-polish-and-smash-payoffs
-  pr7/smash-two-tier-charge
-  pr8/naily-i-nailed-it
-  pr9/upspecial-shapes
-  pr10/needle-reflex
-  pr11/queue
-  pr12/smash-patterns
-)
+# The stack, in merge order, DERIVED rather than listed. A hand-written list went stale the moment
+# pr13 and pr14 existed and would have skipped them silently — the failure mode of a hard-coded list
+# is that it looks like it worked. Sorted numerically, so pr10 follows pr9 rather than pr1.
+BRANCHES=($(git branch --format='%(refname:short)' | grep -E '^pr[0-9]+/' \
+  | awk '{ n=$0; sub(/^pr/,"",n); sub("/.*","",n); print n, $0 }' \
+  | sort -n | cut -d' ' -f2-))
+
+if [ "${#BRANCHES[@]}" -eq 0 ]; then echo "No pr*/ branches found."; exit 1; fi
+echo "Found ${#BRANCHES[@]} branches in the stack."
+echo
 
 made=0
 skipped=0
@@ -70,13 +70,14 @@ for br in "${BRANCHES[@]}"; do
     base="$br"; skipped=$((skipped+1)); continue
   fi
 
-  # Title: a single-commit branch names itself. For the three that carry more than one, neither the
+  # Title: a single-commit branch names itself. For the ones carrying more than one, neither the
   # first nor the last commit is reliably the headline — pr12 would be titled after a docs commit —
   # so those are named explicitly.
   case "$br" in
     pr1/*)  title="fix(teams,ai): flatten the 2v2 spawn area, and never offer a solo Boss Rush to two players" ;;
     pr6/*)  title="feat(assists,smash): a Black Hole you can feel, and the first smash that asks something of you" ;;
     pr12/*) title="feat(smash): the other thirty-nine, written as pattern, effect, ratio and cost" ;;
+    pr13/*) title="chore(balance): re-run the A/B sweep against the rebuilt moveset, and give the sweep its missing eyes" ;;
     *)      title="$(git log --format=%s -1 "$br")" ;;
   esac
 
@@ -86,7 +87,7 @@ for br in "${BRANCHES[@]}"; do
           printf '\n---\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n')"
 
   if [ "$DRY" = "1" ]; then
-    echo "WOULD CREATE  $br  <- base $base  ($n commit(s))"
+    echo "WOULD CREATE  $br   base: $base   commits: $n"
     echo "              title: $title"
     base="$br"; continue
   fi
@@ -108,6 +109,6 @@ if [ "$DRY" = "1" ]; then
   echo "dry run — nothing was created"
 else
   echo "$made created, $skipped skipped"
-  echo "Review them with:  $GH pr list"
-  echo "Merge the series:  $GH pr merge <number> --merge   (in branch-number order)"
+  echo "Review them with:  gh pr list"
+  echo "Merge the series:  gh pr merge NUMBER --merge   (in branch-number order)"
 fi
