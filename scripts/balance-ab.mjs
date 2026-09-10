@@ -165,6 +165,9 @@ async function cmdSweep(args) {
       sensitivity: Math.abs(worst.spread - r.base.spread),
       paceShift: Math.abs(worst.pace - r.base.pace),
       nullClean: r.nullClean,
+      // A zero from an unobservable knob is not a finding. Carried into the JSON so a later reader
+      // of sweep output cannot mistake "the harness is blind to this" for "this does not matter".
+      measurable: !KNOBS[knob].needsItems,
     });
     console.log('');
   }
@@ -172,8 +175,10 @@ async function cmdSweep(args) {
   console.log('== SENSITIVITY: how much moving each stat family disturbs roster balance ==');
   console.log('   (spread = sd of per-fighter win rate; a HIGH number means this stat is load-bearing)\n');
   for (const r of results) {
-    console.log(`  ${r.knob.padEnd(15)} spread ${r.sensitivity.toFixed(4)}   pace ${r.paceShift.toFixed(0)}f` +
-      (r.nullClean ? '' : '   (NULL ARM DIRTY — ignore this row)'));
+    const note = !r.nullClean ? '   (NULL ARM DIRTY — ignore this row)'
+      : KNOBS[r.knob].needsItems ? '   NOT MEASURABLE HERE — the harness disables items'
+      : r.sensitivity === 0 ? '   (no effect on fairness at this factor)' : '';
+    console.log(`  ${r.knob.padEnd(15)} spread ${r.sensitivity.toFixed(4)}   pace ${r.paceShift.toFixed(0)}f${note}`);
   }
   if (args.out) { writeFileSync(args.out, JSON.stringify(results, null, 2)); console.log(`\nwrote ${args.out}`); }
 }
