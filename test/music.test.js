@@ -821,21 +821,56 @@ describe('background music — clutch time', () => {
 });
 
 describe('background music — crossfade', () => {
+  // This raced the wall clock and lost under load. musicFadeTick computes progress as
+  // (performance.now() - t0) / SND.fadeMs on a 40ms interval, so a test that sleeps 60ms and then
+  // asserts "mid-crossfade" is really asserting that the machine got back within 400ms. In the full
+  // suite it often did not, the fade had already finished, and the outgoing deck was parked — one
+  // deck live where the test wanted two. It passed alone and failed in company, which is the
+  // signature.
+  //
+  // The fade is now DRIVEN rather than waited on: fadeMs is set far longer than any plausible
+  // overshoot so the background interval cannot finish it behind our back, and the test moves t0
+  // to land exactly on the progress it wants to inspect. Same real crossfade code, no clock race.
+  const FADE = 20000;
+  // Poll for a condition instead of sleeping and hoping. Returns false on timeout so the caller
+  // fails with its own message rather than on a confusing downstream assertion.
+  const until = async (fn, ms = 5000) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) { if (fn()) return true; await tick(10); }
+    return false;
+  };
+  const advance = (w, frac) => w.eval(`
+    (function(){
+      for (var i=0;i<SND._fade.length;i++){ if(SND._fade[i]) SND._fade[i].t0 -= SND.fadeMs*${frac}; }
+      musicFadeTick();
+    })()`);
+
   it('overlaps the two decks and parks the outgoing one', async () => {
-    const { w, gesture, decks } = bootWithAudio({ fadeMs: 400 });
+    const { w, gesture, decks } = bootWithAudio({ fadeMs: FADE });
     // Steady state: the empty custom/ slots have already been probed once, so each switch is a
     // single clean hop. (With the probe still pending the outgoing deck is a 404'd element, which
     // is genuinely paused and would make "two decks live" the wrong thing to assert.)
     w.eval("SND._badSrc['assets/music/custom/menu.mp3']=true;SND._badSrc['assets/music/custom/intense.mp3']=true");
+
+    // Both waits are POLLS, not sleeps. Driving the fade clock fixed the fade race but left a
+    // second one at the start: a deck begins playing on a resolved play() promise, so under load
+    // `await tick(30)` could return before the menu deck was live. Switching then left exactly one
+    // deck in the whole test and the crossfade assertion had nothing to see — the same symptom as
+    // the fade race, a different cause.
     gesture();
-    await tick(30);
+    expect(await until(() => decks().some((d) => d && !d.paused)), 'menu deck never started').toBe(true);
+
     w.eval("startMusic('intense')");
-    await tick(60);
+    expect(await until(() => decks().filter((d) => d && !d.paused).length === 2),
+      'the incoming deck never started, so there was nothing to cross-fade').toBe(true);
+
+    advance(w, 0.5);         // exactly half way through the crossfade
     const mid = decks();
     // both decks live, one on the way up and one on the way down
     expect(mid.filter((d) => d && !d.paused)).toHaveLength(2);
     expect(mid.find((d) => d && d.src.includes('intense')).vol).toBeGreaterThan(0);
-    await tick(600);
+
+    advance(w, 1);           // and past the end of it
     const end = decks();
     expect(end.filter((d) => d && !d.paused)).toHaveLength(1);
     const live = end.find((d) => d && !d.paused);

@@ -57,21 +57,16 @@ if (-not $loggedIn) {
   }
 }
 
-# The stack, in merge order. Base is the branch before; the first sits on main.
-$branches = @(
-  'pr1/teams-ai-and-solo-rush'
-  'pr2/assist-trophies'
-  'pr3/boss-pierce-multihit'
-  'pr4/balance-ab-harness'
-  'pr5/smash-identity'
-  'pr6/assist-polish-and-smash-payoffs'
-  'pr7/smash-two-tier-charge'
-  'pr8/naily-i-nailed-it'
-  'pr9/upspecial-shapes'
-  'pr10/needle-reflex'
-  'pr11/queue'
-  'pr12/smash-patterns'
-)
+# The stack, in merge order, DERIVED rather than listed. A hand-written list went stale the moment
+# pr13 and pr14 existed and would have silently skipped them — the failure mode of a hard-coded list
+# is that it looks like it worked. Numeric sort, so pr10 comes after pr9 rather than after pr1.
+$branches = @(& git branch --format='%(refname:short)' |
+  Where-Object { $_ -match '^pr\d+/' } |
+  Sort-Object { [int]($_ -replace '^pr(\d+)/.*$', '$1') })
+
+if ($branches.Count -eq 0) { Write-Host "No pr*/ branches found."; exit 1 }
+Write-Host ("Found " + $branches.Count + " branches in the stack.")
+Write-Host ""
 
 # Three branches carry more than one commit, and for those neither the first nor the last subject is
 # the headline — pr12 would be named after a docs commit — so those three are named explicitly.
@@ -79,6 +74,7 @@ $titles = @{
   'pr1'  = 'fix(teams,ai): flatten the 2v2 spawn area, and never offer a solo Boss Rush to two players'
   'pr6'  = 'feat(assists,smash): a Black Hole you can feel, and the first smash that asks something of you'
   'pr12' = 'feat(smash): the other thirty-nine, written as pattern, effect, ratio and cost'
+  'pr13' = 'chore(balance): re-run the A/B sweep against the rebuilt moveset, and give the sweep its missing eyes'
 }
 
 $made = 0; $skipped = 0; $base = 'main'
@@ -105,7 +101,22 @@ foreach ($br in $branches) {
     $base = $br; continue
   }
 
-  $out = (& $gh pr create --base $base --head $br --title $title --body $body) -join "`n"
+  # gh writes "a pull request ... already exists" to STDERR. In PowerShell 5.1 a native command's
+  # stderr becomes an ErrorRecord, and with $ErrorActionPreference = 'Stop' that is TERMINATING — so
+  # the first branch that already had a PR killed the whole run instead of being skipped, leaving
+  # every later branch uncreated. Relax the preference around the call and stringify the records.
+  # --body-file, never --body. A commit message here runs to dozens of lines and contains quotes,
+  # and PowerShell re-parses a multi-line string when handing it to a native exe: gh received the
+  # prose as a hundred stray positional arguments and refused. A file has no quoting problem.
+  $tmp = Join-Path $env:TEMP ("pr-body-" + $key + ".md")
+  Set-Content -Path $tmp -Value $body -Encoding utf8
+
+  $prevEAP = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $out = (& $gh pr create --base $base --head $br --title $title --body-file $tmp 2>&1 |
+            ForEach-Object { $_.ToString() }) -join "`n"
+  $ErrorActionPreference = $prevEAP
+  Remove-Item $tmp -ErrorAction SilentlyContinue
   if ($LASTEXITCODE -eq 0) {
     Write-Host "created  $out"; $made++
   } elseif ($out -match 'already exists') {

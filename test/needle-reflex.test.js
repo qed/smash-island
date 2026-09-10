@@ -26,11 +26,18 @@ describe('The Reflex', () => {
     expect(Math.abs(r.vx), 'the launch is minimised too').toBeLessThan(3);
     expect(r.stance, 'the stance is spent by the hit').toBe(0);
   });
-  it('both of her stances now sit on a 96-frame cooldown', async () => {
+  it('both of her stances cost her double the roster-standard special cooldown', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
-    expect(stance(w, 'Needle').cd, 'neutral special').toBe(96);
-    const down = w.eval(`(function(){ var f=makeFighter(ROSTER.find(function(r){return r.name==='Needle';}),400,groundY()-24,0); fighters=[f]; f.spCd=0; doDownSpecial(f); return f.spCd; })()`);
-    expect(down, 'down special').toBe(96);
+    // Her stances were pinned at 96 when only she was nerfed. The roster-wide cd.special pass
+    // (x1.15, the measured arm) then carried every cooldown in the game up with it, hers included,
+    // so the literal moved to 110. Asserting the RATIO instead of the number keeps this test
+    // meaningful the next time a roster-wide cooldown pass lands.
+    const base = w.eval('(function(){ var f=makeFighter(ROSTER.find(function(r){return r.name==="Coiny";}),400,groundY()-24,0); fighters=[f]; f.spCd=0; doSpecial(f); return f.spCd; })()');
+    const neutral = stance(w, 'Needle').cd;
+    const down = w.eval('(function(){ var f=makeFighter(ROSTER.find(function(r){return r.name==="Needle";}),400,groundY()-24,0); fighters=[f]; f.spCd=0; doDownSpecial(f); return f.spCd; })()');
+    expect(neutral, 'neutral special').toBe(110);
+    expect(down, 'down special').toBe(110);
+    expect(neutral / base, 'still double a plain special').toBeGreaterThanOrEqual(1.9);
   });
   it('Teardrop still counters the old way — nullify and hit back', async () => {
     const w = bootMonolith(); await w.eval('profileReady');

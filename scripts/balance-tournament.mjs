@@ -86,13 +86,17 @@ function seededShuffle(arr, seed) {
 // The setup function we inject into the monolith realm. Kept as a string so it runs
 // INSIDE jsdom's script realm (where SETTINGS/fighters/makeFighter/etc. are lexical).
 const SETUP_SRC = `
-window.__setupCustomMatch = function(names, stocks, aiLevel){
+window.__setupCustomMatch = function(names, stocks, aiLevel, itemRate){
   // Kill every rival mode/flag so we land in a clean plain FFA.
   TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null;
   if(typeof BOSSRUSH!=='undefined') BOSSRUSH.active=false;
   CUSTOM_LEVEL=null; TOURNEY_MATCH_ACTIVE=false; PENDING_TOURNEY=null; window.__netRoster=null;
   SETTINGS.mode='ffa'; SETTINGS.count=names.length; SETTINGS.stocks=stocks;
-  SETTINGS.itemRate=0;                                   // items OFF — remove RNG pickups from the signal
+  // Items OFF by default — random pickups are noise in a balance signal about FIGHTERS. But that
+  // default is also why the sweep reports a clean 0.0000 for item-buff durations, which reads like
+  // "this stat does not affect balance" and means "this stat was never in the room". Passing a rate
+  // turns them on so those knobs can be measured at all.
+  SETTINGS.itemRate = (itemRate === undefined || itemRate === null) ? 0 : itemRate;
   AI_LEVEL=aiLevel; LOCAL_PLAYERS=1;
   stage = STAGES.find(s=>s.id==='goiky') || STAGES.find(s=>!s.big) || STAGES[0];  // flat, hazard:null
   resize(); setupWorld();
@@ -139,7 +143,7 @@ function rankFighters(fs) {
  * @returns {winner, placements, perFighter:{name:{kos,falls,dmgDealt,finalStocks,finalPct,placement}}, frames, timedOut, seed}
  */
 export async function runMatch(fighterNames, opts = {}) {
-  const { seed = 0xC0FFEE, maxFrames = 6000, stocks = 2, aiLevel = 2, transform } = opts;
+  const { seed = 0xC0FFEE, maxFrames = 6000, stocks = 2, aiLevel = 2, transform, itemRate = 0 } = opts;
   if (!Array.isArray(fighterNames) || fighterNames.length < 2) {
     throw new Error('runMatch needs at least 2 fighter names');
   }
@@ -148,7 +152,7 @@ export async function runMatch(fighterNames, opts = {}) {
   const { window: w } = loadMonolith(seed >>> 0, transform);
   try {
     w.eval(SETUP_SRC);
-    w.eval(`__setupCustomMatch(${JSON.stringify(fighterNames)}, ${stocks | 0}, ${aiLevel | 0})`);
+    w.eval(`__setupCustomMatch(${JSON.stringify(fighterNames)}, ${stocks | 0}, ${aiLevel | 0}, ${Number(itemRate) || 0})`);
 
     let frames = 0;
     while (w.eval('running') && frames < maxFrames) {
