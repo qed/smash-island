@@ -228,8 +228,15 @@ The six fighters with their own bodies are a closed, deliberate set and get writ
 card also shows that fighter's charge and tap frames, which is the only place O11's variance is
 visible to a player. Nothing is left on the generic string.
 
-Still open from the original investigation: **one 404 on page load**. `assets/music/` and
-`assets/sprites/` both exist, so it is a single missing file rather than a broken path.
+The 404 noted here was wrong twice over: there were **two**, and neither was a missing game
+asset. `/_vercel/insights/script.js` is the deployed analytics script and 404s only when the file
+is served locally -- removing it would break the deploy. The real one was that the head carried no
+icon link at all, so every load asked for `/favicon.ico` and missed. Fixed in `COMMIT`.
+
+It is a 412-byte PNG inlined as base64, NOT an SVG, and the reason is worth keeping: an SVG data
+URI has to carry the w3.org SVG namespace to render, and `credential-strip` counts every http(s)
+host in the file against a one-host allowlist. It counts hosts inside comments too -- the first
+draft of the explanatory comment failed the test by quoting the namespace it was explaining.
 
 ---
 
