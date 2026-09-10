@@ -186,12 +186,22 @@ rather than local to the crossfade case.
 while multiplayer cannot connect. Multiplayer is parked by your call — this is only the note
 that the test proves less than it looks like it proves.
 
-### O9 · Blocky's anvil no longer homes
+### O9 · Blocky's anvil no longer homes  [DONE]
 
-The legacy body scanned for the nearest fighter and dropped on their x. `rain` drops at a fixed
-offset and the pattern vocabulary has no homing flag, so D7 traded the homing for a longer reach
-(`at:90`) and left a note at the row. If the homing was the point it wants a flag on the pattern,
-not a bespoke body.
+The legacy body scanned for the nearest fighter and dropped on their x. `rain` placed its drop at
+a fixed `face * at` offset and the vocabulary had no way to say "aim this", so D7 traded the
+homing for a longer reach and left a note at the row.
+
+Fixed as a flag, not a bespoke body: `seek: <px>` on any `rain` row drops on the nearest enemy
+within that range and falls back to the offset when nobody is there. Blocky carries `seek:220`.
+The property worth protecting is that a row WITHOUT the flag is bit-for-bit unchanged -- every
+other rain row was authored against the fixed offset -- and `test/smash-seek.test.js` asserts
+that against Yellow Face as well as asserting Blocky now tracks.
+
+**Tree is the other one that lost homing** and is not covered by this. His legacy `timber` scanned
+within 320px and dropped on the target; he is now on `plant`, which roots you and detonates around
+YOU, so `seek` does not apply to him -- restoring it means moving him back to `rain` and giving up
+the wind-up telegraph that suits a falling tree. That is a design call, not a bug fix.
 
 ### O10 · The golden fixture is re-baselined for sixteen fighters
 
@@ -244,8 +254,8 @@ draft of the explanatory comment failed the test by quoting the namespace it was
 
 | | Count |
 |---|---|
-| Done | 37 |
-| Open | 8 |
+| Done | 38 |
+| Open | 7 |
 | Blocked on you | 1 (O1, which unblocks O2) |
 
 The D session added nine done and two open (O11 and O12 were opened and closed within it). Suite is **643 of 643 passing**; the O7 flake did
