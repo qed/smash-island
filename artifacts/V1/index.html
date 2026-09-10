@@ -4871,7 +4871,7 @@ function makeFighter(r,x,y,idx){
     koCap: Math.round(150 + w),   // per-character damage-death threshold (heavier = tougher)
     x, y, vx:0, vy:0, face:1, onground:false,
     pct:0, stocks:3, alive:true, dead:false, team:idx,
-    atkCd:0, spCd:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null,
+    atkCd:0, spCd:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null, _stall:null, _spinKb:null,
     reform:r.name==="Bubble"?1:0, burn:0, armor:0, countering:0, cloud:0,
     weakened:0, defined:0, defineStacks:0, frozen:0, _freezeLock:0, lastHitBy:null, curse:0, curseStacks:0,
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
@@ -5907,7 +5907,11 @@ function step(){
       f._sawing--;
       for(let i=0;i<2;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*30,f.y+Math.sin(a)*30,'#d0d0d0',3); }
       if(f._sawing%6===0){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue;
-        if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+30){ applyHit(t,4,Math.sign(t.x-f.x||f.face)*5,-4,f); } } }
+        if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+(f._spinR||30)){
+          const m=f._spinKb||'out', sx=Math.sign(t.x-f.x||f.face);
+          const kx = m==='up'?0 : m==='fwd'?f.face*6 : m==='pull'?-sx*4 : m==='flat'?f.face*4 : sx*5;
+          const ky = m==='up'?-7 : m==='pull'?-3 : m==='flat'?-1 : -4;
+          applyHit(t,4,kx,ky,f); } } }
     }
     // Puffball — METEOR PUFF: the plunge is a live state, not a single frame. The smash commits her
     // downward and the hitbox tracks her all the way down, so the payoff can measure the thing it
@@ -5917,6 +5921,26 @@ function step(){
     // that starts them bleeding. Phase two, the frame the dash ends: one jab BEHIND her — extra
     // damage, ordinary knockback, bleed — and then she is stuck for half a second. The cost is
     // real: 30 frames with no input, standing next to whoever she just hit.
+    // PLUNGE (UPSPEC shape 'plunge'): the launch is ordinary; at the apex the fighter hangs for a
+    // few frames — the tell — then drops hard, and the LANDING is the hit. What it leaves in the
+    // crater (poison, a puddle, oil, paste) is the row's `leave`.
+    if(f._stall){
+      const st = f._stall;
+      if(st.phase==='rise' && f.vy>=0){ st.phase='hang'; st.t=st.hang; }
+      if(st.phase==='hang'){ f.vy=-0.7; if(--st.t<=0){ st.phase='fall'; f.vy=14; } }
+      else if(st.phase==='fall'){
+        if(!f.onground){ f.vy=Math.max(f.vy,12); if(hazardT%2===0) puff(f.x,f.y-f.r,f.color,3); }
+        else {
+          hitCircle(f, f.x, f.y+f.r, f.r+st.rad, st.dmg, st.dmg, f.face*st.kb[0], st.kb[1]);
+          if(st.leave==='stun'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(Math.hypot(t.x-f.x,t.y-f.y)<t.r+f.r+st.rad) t.hitstun=Math.max(t.hitstun,20); } }
+          else if(st.leave){ spawnProj(f, Object.assign({vx:0,vy:0,grav:true,dmg:4,kb:2,r:10,color:f.color,life:40}, DROP_RIDERS[st.leave]||{})); }
+          for(let i=0;i<10;i++) puff(f.x+(Math.random()*60-30),f.y+f.r,f.color,4);
+          if(st.ram){ f.vx=f.face*st.ram; f._dashing=0; }
+          f._stall=null;
+        }
+      }
+      if(f._stall && --st.life<=0) f._stall=null;
+    }
     if(f._nail){
       const n = f._nail;
       f.vx = f.face * n.speed;
@@ -6965,7 +6989,6 @@ function doSmash(f, charge){
 function upLaunch(f, power){ f.vy=power; f.onground=false; }   // launches, but does NOT hand back a jump
 const UPSPECIALS = {
   // recovery-flavored
-  ember(f){ upLaunch(f,-15); spawnProj(f,{vx:0,vy:6,grav:false,dmg:6,kb:5,r:9,color:'#f0803a',burn:true,life:20}); puff(f.x,f.y+16,'#f0521f',8);  },
   float(f){ // Bubble — POP & REFORM up-special: rise, take small self-damage, spray a 6-blob cascade
     upLaunch(f,-12); f.jumps=1; f.pct+=5;                       // recovery + 5% self-damage
     const px=f.x, py=f.y;
@@ -6983,73 +7006,130 @@ const UPSPECIALS = {
   }, // Bubble — cascade on up-special
   kick(f){ // Teardrop — Evaporate: teleport straight up, brief invuln
     f.y-=140; f.vy=-3; f.invuln=18; f.jumps=1; for(let i=0;i<8;i++) puff(f.x,f.y+30,'#6fb7ff',5);  },
-  serve(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-14,f.r+18,6,6,0,-8); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#c9f24b',4); }, // Tennis Ball — rising serve
-  cap(f){ upLaunch(f,-14); spawnProj(f,{vx:0,vy:5,grav:false,dmg:5,kb:4,r:8,color:'#3a6ea5',life:24}); }, // Pen — cap rocket + ink jet
-  van(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-12,f.r+18,6,6,0,-8); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#f2d84b',4); }, // Pencil — doodle spring uppercut
-  slap(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-12,f.r+18,7,7,f.face*4,-8); puff(f.x,f.y-8,'#e8a33d',5); }, // Coiny — rising backhand
-  flip(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-12,f.r+18,6,6,f.face*3,-8); for(let i=0;i<6;i++){const a=i/6*6.28;puff(f.x+Math.cos(a)*18,f.y+Math.sin(a)*18,'#b0b0b0',3);} }, // Nickel — flip spin
-  freeze(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:5,grav:false,dmg:5,kb:4,r:9,color:'#9ad24b',freeze:true,life:24}); }, // Gelatin — chill shard
-  fry(f){ upLaunch(f,-12); spawnProj(f,{vx:0,vy:5,grav:false,dmg:6,kb:4,r:8,color:'#e04b3a',burn:true,life:22}); }, // Fries — hot oil spray
   // anti-air / hybrid
-  dash(f){ // Leafy — updraft glide: rise + leaf hitboxes
-    upLaunch(f,-13); hitCircle(f,f.x,f.y-20,f.r+20,6,6,0,-8); for(let i=0;i<6;i++) puff(f.x,f.y-10,'#8ed24b',5); },
-  counter(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-16,f.r+18,5,5,f.face*4,-9); }, // Needle — pin vault
-  tackle(f){ upLaunch(f,-11); hitCircle(f,f.x,f.y-10,f.r+22,7,7,f.face*3,-10); puff(f.x,f.y,'#e8f4ff',8); }, // Snowball — avalanche leap, landing hit
   bomb(f){ upLaunch(f,-11); puff(f.x,f.y+16,'#f0803a',6); f.pct+=2; },  // Bomby — powder leap, small self dmg
-  pierce(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-18,f.r+16,6,6,0,-9); }, // Pin — javelin up
-  quake(f){ upLaunch(f,-11); hitCircle(f,f.x,f.y-16,f.r+24,6,6,0,-8); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#ff6fae',4); }, // Flower — petal rise
-  anvil(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-14,f.r+18,6,6,0,-8); }, // Blocky — springboard
-  debuff(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-14,f.r+18,5,5,0,-8); }, // Golf Ball — test-tube booster
-  barf(f){ upLaunch(f,-12); spawnProj(f,{vx:0,vy:5,grav:false,dmg:5,kb:4,r:8,color:'#8a9c3a',poison:true,life:24}); }, // Rocky — geyser barf recoil
-  define(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-14,f.r+18,5,5,0,-8); }, // Book — page flutter
   // ---- new up-specials ----
   fly(f){ upLaunch(f,-10); f.flying=Math.max(f.flying,70); f.jumps=1; for(let i=0;i<6;i++) puff(f.x,f.y+14,'#e6a6e0',5);  }, // Puffball — float boost
-  beam(f){ upLaunch(f,-14); hitCircle(f,f.x,f.y+10,f.r+16,6,6,0,-6); for(let i=0;i<8;i++) puff(f.x,f.y+16,'#e0384b',5); }, // Ruby — gem thruster
-  gust(f){ upLaunch(f,-15); hitCircle(f,f.x,f.y+10,f.r+22,5,5,0,-6); for(let i=0;i<8;i++) puff(f.x,f.y+16,'#bfe8ff',5);  }, // Fanny — big wind lift + gust
   reflect(f){ upLaunch(f,-12); f.reflecting=Math.max(f.reflecting,18); puff(f.x,f.y+14,'#e8e8e8',6); }, // Gaty — mirror hop
-  ring(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-16,f.r+22,6,6,0,-8); for(let i=0;i<8;i++){ const a=i/8*Math.PI*2; puff(f.x+Math.cos(a)*24,f.y+Math.sin(a)*24,'#f2c84b',4);} }, // Bell — chime rise
-  sign(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:5,grav:false,dmg:5,kb:4,r:8,color:'#6fb7ff',life:22}); }, // Bracelety — sign toss under
-  dribble(f){ upLaunch(f,-13); projectiles.push({owner:f.idx,ownerObj:f,x:f.x,y:f.y+10,vx:0,vy:6,grav:true,bounce:true,dmg:6,kb:5,r:8,color:'#e08a3a',life:60}); }, // Basketball — bounce off ball
-  buynow(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-14,f.r+18,5,5,0,-8); puff(f.x,f.y+12,'#f2d84b',6); }, // Yellow Face — sale banner lift
-  splash(f){ upLaunch(f,-12); spawnProj(f,{vx:0,vy:5,grav:false,dmg:5,kb:4,r:8,color:'#c9c04b',poison:true,life:22}); }, // Barf Bag — geyser
-  mower(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-14,f.r+20,7,7,0,-8); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#7bc043',4); }, // Grassy — blade launch
   // ---- next 10 ----
-  zap(f){ upLaunch(f,-14); for(let i=0;i<8;i++) puff(f.x,f.y+16-i*6,'#f2e84b',4); hitCircle(f,f.x,f.y+8,f.r+14,6,6,0,-6); }, // Lightning — bolt-jump
-  spark(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:5,grav:false,dmg:5,kb:4,r:8,color:'#e04b8a',burn:true,life:22}); }, // Match — spark trail
-  saw(f){ upLaunch(f,-12); f._sawing=Math.max(f._sawing||0,20); for(let i=0;i<6;i++) puff(f.x,f.y,'#d0d0d0',4); }, // Saw — rising spin
-  salsa(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:5,grav:true,dmg:5,kb:3,r:8,color:'#f2c84b',life:40,landsPuddle:true}); }, // Taco — lob under
-  spike(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:6,grav:false,van:true,dmg:5,kb:0,r:6,color:'#c0c0c0',life:24}); }, // Naily — nail drop
-  sucker(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-12,f.r+18,6,6,0,-8); puff(f.x,f.y-8,'#c04be0',5); }, // Lollipop — sticky uppercut
-  static(f){ upLaunch(f,-12); hitCircle(f,f.x,f.y-14,f.r+18,6,6,0,-7); for(let i=0;i<8;i++){const a=i/8*Math.PI*2;puff(f.x+Math.cos(a)*22,f.y+Math.sin(a)*22,'#8fd0ff',3);} }, // TV — burst rise
-  hack(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-12,f.r+18,6,6,0,-7); for(let i=0;i<6;i++){const a=i/6*6.28;puff(f.x+Math.cos(a)*20,f.y+Math.sin(a)*20,'#4a4a4a',3);} }, // Remote — signal burst rise
   fluff(f){ upLaunch(f,-15); f.jumps=1; for(let i=0;i<8;i++) puff(f.x,f.y+14,'#f2e0d0',5); }, // Pillow — big springy bounce
   cool(f){ upLaunch(f,-12); f.armor=Math.max(f.armor,20); hitCircle(f,f.x,f.y-12,f.r+18,6,6,0,-8); puff(f.x,f.y-8,'#e8e8e8',5); }, // Loser — cool hop + shove
   // ---- final 12 up-specials ----
   switch(f){ upLaunch(f,-13); f._switchOn=true; for(let i=0;i<6;i++){ const a=i/6*Math.PI*2; puff(f.x+Math.cos(a)*18,f.y+Math.sin(a)*18,'#fff29a',4);} hitCircle(f,f.x,f.y,f.r+22,6,6,0,-6); }, // Liy — spark hop
-  ink(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:5,grav:false,dmg:5,kb:3,r:8,color:'#4bb0c0',life:22}); puff(f.x,f.y+14,'#4bb0c0',6); }, // Marker
-  payday(f){ upLaunch(f,-13); projectiles.push({owner:f.idx,ownerObj:f,x:f.x,y:f.y+10,vx:0,vy:6,grav:true,bounce:true,dmg:6,kb:5,r:8,color:'#ffd23f',life:60,maxBounces:2}); }, // Money
-  thorn(f){ upLaunch(f,-14); hitCircle(f,f.x,f.y-16,f.r+20,6,6,0,-8); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#e0384b',4); }, // Rose — vine climb
   fraidy(f){ upLaunch(f,-15); f.invuln=Math.max(f.invuln,12); f.jumps=1; for(let i=0;i<6;i++) puff(f.x,f.y+14,'#e8c84b',5);  }, // Woody — panic leap
-  paste(f){ upLaunch(f,-12); spawnProj(f,{vx:0,vy:5,grav:true,dmg:5,kb:3,r:8,color:'#f0f0f0',life:40,trap:true}); }, // Toothpaste — paste glob spring
-  rant(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-14,f.r+16,5,5,0,-7); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#f2a03a',4); }, // Dora — shout-jump
-  seriously(f){ upLaunch(f,-11); hitCircle(f,f.x,f.y-12,f.r+24,7,7,0,-8); puff(f.x,f.y,'#4a90c0',8); }, // David — heavy heave
-  emberjr(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:5,grav:false,dmg:5,kb:4,r:8,color:'#f0803a',burn:true,life:20}); }, // Firey Jr.
   photo(f){ upLaunch(f,-13); f.healing=Math.max(f.healing||0,40); for(let i=0;i<6;i++) puff(f.x,f.y+14,'#4b9c5a',5); }, // Fern — spore lift + minor heal
-  measure(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:6,grav:false,dmg:5,kb:4,r:6,color:'#b0b0b0',life:24}); }, // Ruler
-  slam(f){ upLaunch(f,-11); hitCircle(f,f.x,f.y-10,f.r+22,7,7,0,-9); puff(f.x,f.y,'#9a9a9a',8); }, // Sidewalky
   // ---- new roster up-specials (v23+) ----
   airleak(f){ upLaunch(f,-16); f.jumps=Math.max(f.jumps,0); for(let i=0;i<10;i++) puff(f.x,f.y+14,'#bfeae0',5);  }, // Balloony — big air-leak rise (canon propulsion)
-  morse(f){ upLaunch(f,-13); spawnProj(f,{vx:0,vy:6,grav:false,dmg:5,kb:4,r:7,color:'#f2d84b',life:24}); puff(f.x,f.y+14,'#f2d84b',6); }, // Roboty — signal jet
-  pricetag(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-12,f.r+18,7,7,0,-8); puff(f.x,f.y-8,'#f2c0d8',5); }, // Profily — rising appraisal
-  timber(f){ upLaunch(f,-14); hitCircle(f,f.x,f.y-12,f.r+20,8,8,0,-8); for(let i=0;i<6;i++) puff(f.x,f.y-8,'#5a3a1a',4); }, // Tree — springing branch
-  shatter(f){ upLaunch(f,-13); for(let a=0;a<5;a++){ const ang=-Math.PI/2 + (a-2)*0.4; spawnProj(f,{vx:Math.cos(ang)*8,vy:Math.sin(ang)*8,grav:false,dmg:5,kb:4,r:7,color:'#cdeeff',life:70,freeze:true,noAim:true}); } puff(f.x,f.y+14,'#cdeeff',6); }, // Ice Cube — upward shard fan
-  atstake(f){ upLaunch(f,-13); hitCircle(f,f.x,f.y-12,f.r+18,7,7,0,-8); puff(f.x,f.y-8,'#f5c88a',5); }, // Cake — rising slice
-  glaze(f){ upLaunch(f,-14); f._sawing=Math.max(f._sawing||0,18); puff(f.x,f.y+14,'#d98a5a',6); }, // Donut — spinning rise
 };
+// ============================================================
+//  UP-SPECIAL SHAPES — one table, one function, four ways to rise
+// ============================================================
+// Thirty of the fifty-nine up-specials were the same call: upLaunch, one hitCircle, two integers
+// apart. Nineteen more were upLaunch plus one dropped projectile with a rider. That is why "most
+// fighters don't have an up-C" — they had one, it just was not theirs. Each row here is one
+// fighter's answer, in four parts the player can feel:
+//   shape  — hop (rise and swing), warp (vanish, reappear higher, briefly untouchable),
+//            plunge (rise, hang, DROP with a landing hit), spin (rise inside a multi-hit aura)
+//   band   — where the swing is sweet: negative = the TIP (stay at the edge of your reach),
+//            positive = the HILT (get in close), absent = no ring
+//   kb     — where the hit sends them: straight up, forward, back, or PULLED in
+//   drop / leave — what it leaves behind: burn, poison, freeze, a trap, a puddle, a coin…
+// The eleven not listed (Bubble, Teardrop, Puffball, Gaty, Pillow, Woody, Loser, Liy, Bomby,
+// Fern, Balloony) already had a move of their own and keep it, in UPSPECIALS below.
+const DROP_RIDERS = { burn:{burn:true}, poison:{poison:true}, freeze:{freeze:true}, root:{root:true},
+  scramble:{reverseCtrl:true}, trap:{trap:true,grav:true,life:40}, puddle:{landsPuddle:true,grav:true,life:40},
+  bounce:{grav:true,bounce:true,life:60}, coin:{grav:true,bounce:true,life:60,maxBounces:2}, van:{van:true,kb:0}, plain:{} };
+const UPSPEC = {
+  // --- hops: rise and swing. The band and the angle are the whole identity. ---
+  serve:    {shape:'hop', power:-13, hit:{off:-14, reach:18, dmg:[4,9],  band:-0.6, kb:[3,-9]}},                 // Tennis Ball — the tip of the racket
+  counter:  {shape:'hop', power:-12, hit:{off:-16, reach:18, dmg:[3,8],  band:-0.65,kb:[0,-11]}},                // Needle — a pin, straight up, only the point counts
+  pierce:   {shape:'hop', power:-13, hit:{off:-18, reach:16, dmg:[4,10], band:-0.7, kb:[0,-12]}},                // Pin — javelin
+  measure:  {shape:'hop', power:-13, hit:{off:-12, reach:26, dmg:[3,9],  band:-0.75,kb:[2,-8]}},                 // Ruler — measure twice: long, precise, tip only
+  thorn:    {shape:'hop', power:-14, hit:{off:-16, reach:20, dmg:[4,7],  band:-0.6, kb:[-6,-6]}},                // Rose — the lash PULLS you in
+  slap:     {shape:'hop', power:-12, hit:{off:-12, reach:18, dmg:[4,8],  band:0.55, kb:[7,-4]}},                 // Coiny — rising backhand, close and flat
+  define:   {shape:'hop', power:-12, hit:{off:-14, reach:18, dmg:[3,6],  band:0.5,  kb:[4,-8]}, leave:'define'},                 // Book — a hardcover, in close
+  debuff:   {shape:'hop', power:-12, hit:{off:-14, reach:18, dmg:[3,6],  band:0.5,  kb:[0,-9]}},                 // Golf Ball — dense, straight up (curse rides on the hit)
+  sucker:   {shape:'hop', power:-12, hit:{off:-12, reach:18, dmg:[4,7],  band:0.5,  kb:[2,-7]}, drop:{rider:'root', dmg:3, color:'#c04be0'}},   // Lollipop — sticky
+  atstake:  {shape:'hop', power:-13, hit:{off:-12, reach:18, dmg:[5,8],  band:0.55, kb:[3,-8]}, leave:'lifesteal'},                             // Cake — a slice of it comes back
+  pricetag: {shape:'hop', power:-13, hit:{off:-12, reach:18, dmg:[5,8],  band:-0.6, kb:[-3,-8]}, leave:'define'},   // the tag sticks: they take more damage                // Profily — tags at arm's length, knocks them back over you
+  rant:     {shape:'spin', power:-13, frames:19, spinKb:'flat'},                                                  // Dora — a rising flurry that shoves flat                 // Dora — in your face, shoves
+  beam:     {shape:'hop', power:-14, hit:{off:10,  reach:16, dmg:[3,7],  band:-0.6, kb:[0,-6]}},                 // Ruby — a thruster: the hit is UNDER her
+  gust:     {shape:'hop', power:-15, hit:{off:10,  reach:22, dmg:[2,3],  band:null, kb:[9,-3]}},                 // Fanny — barely any damage, a lot of shove
+  ember:    {shape:'hop', power:-15, drop:{rider:'burn', dmg:6, r:9, color:'#f0803a'}},                          // Firey — one ember
+  spark:    {shape:'hop', power:-13, drop:{rider:'burn', dmg:4, count:3, spread:2.5, color:'#e04b8a'}},         // Match — three sparks
+  freeze:   {shape:'hop', power:-13, drop:{rider:'freeze', dmg:5, r:9, color:'#9ad24b'}},                        // Gelatin — one shard
+  shatter:  {shape:'hop', power:-13, drop:{rider:'freeze', dmg:4, count:5, spread:3, color:'#cdeeff'}},         // Ice Cube — a fan of them
+  splash:   {shape:'hop', power:-12, drop:{rider:'poison', dmg:5, color:'#c9c04b'}},                             // Barf Bag — geyser
+  dribble:  {shape:'hop', power:-13, drop:{rider:'bounce', dmg:6, kb:5, color:'#e08a3a', life:60}},             // Basketball — the ball bounces on
+  spike:    {shape:'hop', power:-13, drop:{rider:'van', dmg:5, r:6, color:'#c0c0c0'}},                           // Naily — a nail, straight down, no launch
+  morse:    {shape:'hop', power:-13, drop:{rider:'plain', dmg:4, count:3, spread:0, color:'#f2d84b'}},           // Roboty — dot dot dash
+  anvil:    {shape:'hop', power:-12, drop:{rider:'trap', dmg:10, kb:9, r:12, color:'#8a8a8a'}},                 // Blocky — leaves the prank behind
+  ink:      {shape:'hop', power:-13, drop:{rider:'puddle', dmg:4, color:'#4bb0c0'}},                             // Marker — a slick where he was
+  // --- warps: vanish, reappear higher. Untouchable for the blink; the arrival hit is small. ---
+  flip:     {shape:'warp', dist:150, invuln:8,  hit:{off:0, reach:16, dmg:[4,4], kb:[0,-8]}},                    // Nickel — the self-launch side of the coin
+  zap:      {shape:'warp', dist:170, invuln:6,  hit:{off:0, reach:18, dmg:[5,5], kb:[0,-6]}, leave:'stun'},      // Lightning — a bolt, and everyone near the strike jolts
+  hack:     {shape:'warp', dist:140, invuln:8,  drop:{rider:'scramble', dmg:3, color:'#4a4a4a'}},                // Remote — leaves a scramble signal falling
+  buynow:   {shape:'warp', dist:130, invuln:6,  hit:{off:0, reach:22, dmg:[3,3], kb:[4,-5]}, leave:'stun'},      // Yellow Face — BUY NOW! pops in, everyone flinches
+  dash:     {shape:'warp', dist:110, dx:90, invuln:10},                                                          // Leafy — sprints up and FORWARD, no hit: pure escape
+  cap:      {shape:'warp', dist:140, invuln:6,  drop:{rider:'plain', dmg:5, color:'#3a6ea5'}},                   // Pen — cap rocket
+  emberjr:  {shape:'warp', dist:120, invuln:6,  drop:{rider:'burn', dmg:4, r:7, color:'#f0803a'}},              // Firey Jr. — quick and small
+  payday:   {shape:'warp', dist:130, invuln:6,  drop:{rider:'coin', dmg:6, kb:5, color:'#ffd23f'}},             // Money — drops a coin on the way
+  sign:     {shape:'warp', dist:150, invuln:8,  drop:{rider:'plain', dmg:5, r:9, count:2, spread:4, color:'#6fb7ff'}},   // two signs, fanning             // Bracelety — the sign lifts her
+  static:   {shape:'warp', dist:120, invuln:6,  leave:'stun', stunR:80},                                          // TV — no hit at all: a screen-flash that stuns the room      // TV — a screen-flash on arrival
+  // --- plunges: rise, hang, and come DOWN on someone. The landing is the move. ---
+  seriously:{shape:'plunge', power:-14, hang:10, rad:44, dmg:12, kb:[7,-10]},                                    // David — Aw Seriously: the ground pound
+  slam:     {shape:'plunge', power:-13, hang:6,  rad:40, dmg:10, kb:[5,-9], leave:'stun'},                      // Sidewalky — pavement slam
+  tackle:   {shape:'plunge', power:-12, hang:4,  rad:46, dmg:9,  kb:[9,-6], leave:'freeze'},                    // Snowball — leaves ice in the crater                                     // Snowball — avalanche: wide and outward
+  quake:    {shape:'plunge', power:-13, hang:8,  rad:42, dmg:10, kb:[0,-12]},                                    // Flower — stomp quake: launches up
+  timber:   {shape:'plunge', power:-14, hang:4,  rad:38, dmg:11, kb:[-5,-9]},                                    // Tree — falls forward, flings you back over him                                     // Tree — TIMBER
+  van:      {shape:'plunge', power:-12, hang:2,  rad:34, dmg:8,  kb:[10,-3], ram:9},                             // Pencil — lands and keeps DRIVING                                    // Pencil — the van comes down and RAMS
+  barf:     {shape:'plunge', power:-12, hang:6,  rad:30, dmg:6,  kb:[4,-6], leave:'poison'},                    // Rocky — lands in his own puddle
+  salsa:    {shape:'plunge', power:-13, hang:6,  rad:30, dmg:5,  kb:[4,-6], leave:'puddle'},                    // Taco — salsa splat on landing
+  fry:      {shape:'plunge', power:-12, hang:5,  rad:32, dmg:6,  kb:[4,-6], leave:'burn'},                      // Fries — hot oil splash
+  paste:    {shape:'plunge', power:-12, hang:6,  rad:30, dmg:5,  kb:[3,-6], leave:'trap'},                      // Toothpaste — the glob stays
+  // --- spins: rise inside a multi-hit aura. The angle of every tick is the identity. ---
+  ring:     {shape:'spin', power:-12, frames:25, spinKb:'out'},                                                   // Bell — RING: pushes everyone away
+  mower:    {shape:'spin', power:-13, frames:19, spinKb:'up'},                                                    // Grassy — the blades lift
+  saw:      {shape:'spin', power:-12, frames:25, spinKb:'fwd'},                                                   // Saw — rising spin, carries forward
+  glaze:    {shape:'spin', power:-14, frames:19, spinKb:'pull'},                                                  // Donut — sticky glaze draws you in
+};
+// The one function behind every UPSPEC row. Warp moves the body; the other three launch it and
+// hand the rest to a frame block (spin -> _sawing, plunge -> _stall). Then the optional swing, the
+// optional drop, and whatever the row says it leaves behind.
+function riseShape(f, s){
+  const dir = f._inLeft ? -1 : f._inRight ? 1 : 0;
+  if(s.shape==='warp'){
+    f.y = Math.max(40, f.y - (s.dist||140)); f.x += dir*(s.dx||0); f.vy = -4; f.onground=false;
+    f.invuln = Math.max(f.invuln, s.invuln||8);
+    for(let i=0;i<10;i++) puff(f.x,f.y+(Math.random()*40-20),f.color,4);
+  } else {
+    upLaunch(f, s.power||-13);
+    if(s.shape==='spin'){ f._sawing = Math.max(f._sawing||0, s.frames||20); f._spinKb = s.spinKb||'out'; f._spinR = 56; }   // a rising aura is wider than Saw's grounded one, or it out-climbs its own hitbox
+    if(s.shape==='plunge'){ f._stall = { phase:'rise', hang:s.hang||6, rad:s.rad||40, dmg:s.dmg||10, kb:s.kb||[6,-8], leave:s.leave||null, ram:s.ram||0, life:90 }; }
+  }
+  if(s.hit){
+    const h=s.hit, cx=f.x+f.face*(h.fx||0), cy=f.y+(h.off==null?-14:h.off), reach=f.r+(h.reach||18);
+    const n = hitCircle(f, cx, cy, reach, h.dmg[0], h.dmg[1], f.face*h.kb[0], h.kb[1], h.band==null?undefined:h.band);
+    if(n>0 && s.leave==='lifesteal'){ f.pct=Math.max(0,f.pct-3); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#f5c88a',3); }
+    if(n>0 && s.leave==='define'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(Math.hypot(t.x-cx,t.y-cy)<t.r+reach){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5); } } }
+  }
+  if(s.leave==='stun'){ const R = s.hit ? f.r+(s.hit.reach||18) : (s.stunR||70);
+    for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(Math.hypot(t.x-f.x,t.y-f.y)<t.r+R) t.hitstun=Math.max(t.hitstun,20); }
+    for(let i=0;i<14;i++) puff(f.x+(Math.random()*R*2-R),f.y+(Math.random()*40-20),'#fff',4); }
+  if(s.drop){
+    const D=s.drop, R=DROP_RIDERS[D.rider]||{}, n=D.count||1;
+    for(let i=0;i<n;i++){
+      const spread = n>1 ? (i-(n-1)/2)*(D.spread==null?2.5:D.spread) : 0;
+      spawnProj(f, Object.assign({vx:spread, vy:D.vy||5, grav:false, dmg:D.dmg||5, kb:D.kb==null?4:D.kb, r:D.r||8, color:D.color||f.color, life:D.life||24}, R));
+    }
+  }
+  puff(f.x, f.y+14, f.color, 6);
+}
 function doUpSpecial(f){
   armAtk(f, ATK_ANIM);      // render-only: a recovery is the fighter ACTING, not being hit
   const k=f.kit && f.kit.special;
-  if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
+  if(UPSPEC[k]){ riseShape(f, UPSPEC[k]); }
+  else if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
   else { upLaunch(f,-13); puff(f.x,f.y+14,f.color,6); }  // default recovery hop
   f.flash=8;
 }
@@ -7499,14 +7579,28 @@ function damageSummons(f, cx, cy, rad, dmg){
 // Returns how many FIGHTERS it connected with. Nothing was reading a result before, but a smash
 // cannot have a conditional payoff — "if you land it, and you land it well" — without knowing
 // whether it landed at all. Every existing caller ignores the return, so this is additive.
-function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby){
+// SWEET AND SOUR. `dmgLow` was passed by all 57 callers and read by none — the same value twice,
+// every time, since the first commit. It is now the SOUR value: a hit in the outer ring of the
+// circle (past `band` of the reach) lands dmgLow, a hit inside lands dmgHigh. With the two equal
+// nothing changes, which is why every existing call is untouched. `band` defaults to 1 — no ring —
+// so a move opts in by passing a fraction: 0.55 makes the outer 45% of the reach the sour zone
+// (a hilt: get close), and a NEGATIVE band inverts it so the outer ring is the sweet one (a tip:
+// stay at the edge of your reach). Knockback scales with the damage ratio so a sour hit also
+// launches less, which is what makes the difference readable.
+function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band){
   let landed = 0;
+  const b = band==null ? 1 : Math.abs(band), tip = band!=null && band<0;
   for(const t of fighters){
     if(t.dead||t.idx===f.idx||t.invuln>0) continue;
-    if(Math.hypot(t.x-cx,t.y-cy)<t.r+rad){
+    const d = Math.hypot(t.x-cx,t.y-cy);
+    if(d<t.r+rad){
       // Golf Ball marks whatever she hits, so her bonus-vs-cursed payoff builds up on its own
       if(f.kit && f.kit.special==="debuff" && t.team!==f.team){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2); }
-      applyHit(t, dmgHigh, kbx, kby, f);   // counter handled inside applyHit
+      const outer = d > t.r + rad*b;
+      const sweet = tip ? outer : !outer;
+      const dmg = sweet ? dmgHigh : dmgLow;
+      const k = (dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1;
+      applyHit(t, dmg, kbx*k, kby*k, f);   // counter handled inside applyHit
       if(t.team!==f.team) landed++;
     }
   }
@@ -7699,7 +7793,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(from && from.idx!==t.idx){ t.lastHitBy=from; }   // remember who last damaged us
   // Show-accurate: Firey (and Firey Jr.) have aquaphobia — water-y attackers hurt them extra & douse them
   if(from && (t.name==="Firey"||t.name==="Firey Jr.") && /Teardrop|Barf Bag|Bubble/.test(from.name)){
-    dmg*=1.5; kbx*=1.2; kby*=1.2; t.burn=0; t.bleed=0; if(!t.dead){ banner("DOUSED!",500); for(let i=0;i<6;i++) puff(t.x,t.y-6,'#6fb7ff',4); }
+    dmg*=1.5; kbx*=1.2; kby*=1.2; t.burn=0; t.bleed=0; t._nail=null; t._stall=null; if(!t.dead){ banner("DOUSED!",500); for(let i=0;i<6;i++) puff(t.x,t.y-6,'#6fb7ff',4); }
   }
   // Golf Ball CURSE AURA: while active, every hit she lands permanently saps the victim's damage output
   if(from && from.curse>0 && from.idx!==t.idx && (t.curseFrames===undefined || hazardT-(t.curseFrames||0)>18)){
@@ -7796,13 +7890,13 @@ function eliminate(f){
   }
   // Test mode: nobody is ever KO'd for good — just respawn at center
   if(TESTMODE.active){
-    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f.cloud=0; f.frozen=0;
+    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f.cloud=0; f.frozen=0;
     puff(W*0.5, 40, f.color, 12);
     return;
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f.cloud=0; f.frozen=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f.cloud=0; f.frozen=0;
     for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6); banner("YOYLEBERRY REFORM!", 900);
     return;
   }
@@ -7857,7 +7951,7 @@ function eliminate(f){
     // you back in where you can see, instead of at the roof of a world three screens tall.
     f.x=camX+W*0.5; f.y=camY-40;
   }
-  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f.cloud=0;
+  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f.cloud=0;
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
 
