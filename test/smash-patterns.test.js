@@ -3,7 +3,10 @@ import { bootMonolith } from './helpers/smash-golden.js';
 
 // Thirty-nine of the fifty-nine smashes were one of three generic shapes — 21 "a ring of damage
 // around me", 11 "spawn one shot", 7 "spawn N shots in a fan". They differed in name, colour and
-// integers and in nothing a player could do differently. SMASH_SPEC gives each one a row saying
+// integers and in nothing a player could do differently. Fourteen more have since been brought
+// over, leaving six on their own bodies on purpose: Needle, Teardrop and Golf Ball land nothing
+// by design, Naily and Puffball are bespoke tested machinery, and Money's coins were restored
+// by hand. SMASH_SPEC gives each one a row saying
 // four things a player can feel: a movement PATTERN, an EFFECT that outlives the hit, a dmg/kb
 // RATIO that is the move's job, and a COST paid whether it connects or not.
 //
@@ -30,11 +33,11 @@ const stage = (w, name, dummyAt, frames = 90, charge = 1) => w.eval(`
              weakened:D.weakened|0, ctrlRev:D.ctrlRev|0, defined:D.defineStacks|0, projs:projectiles.length };
   })()`);
 
-describe('no two of the 39 are the same move', () => {
+describe('no two of the 53 are the same move', () => {
   it('every row differs in pattern, effect, band, ratio or cost', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const rows = w.eval('Object.entries(SMASH_SPEC)');
-    expect(rows.length).toBe(39);
+    expect(rows.length).toBe(53);
     const seen = new Map(), dupes = [];
     for (const [k, r] of rows) {
       const id = rowKey(r);

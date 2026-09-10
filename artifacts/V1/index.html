@@ -4871,7 +4871,7 @@ function makeFighter(r,x,y,idx){
     koCap: Math.round(150 + w),   // per-character damage-death threshold (heavier = tougher)
     x, y, vx:0, vy:0, face:1, onground:false,
     pct:0, stocks:3, alive:true, dead:false, team:idx,
-    atkCd:0, spCd:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null, _stall:null, _spinKb:null, _sm:null, _selfStun:0,
+    atkCd:0, spCd:0, _spPend:0, _aiSpGap:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null, _stall:null, _spinKb:null, _sm:null, _selfStun:0,
     reform:r.name==="Bubble"?1:0, burn:0, armor:0, countering:0, cloud:0,
     weakened:0, defined:0, defineStacks:0, frozen:0, _freezeLock:0, lastHitBy:null, curse:0, curseStacks:0,
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
@@ -5847,7 +5847,7 @@ function step(){
       f._lastInput = inp;   // healthy fighters record their input so they can host an infection
     }
 
-    if(f.hitstun>0){ f.hitstun--; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
+    if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.invuln>0) f.invuln--;
     if(f.flash>0) f.flash--;
@@ -5861,6 +5861,7 @@ function step(){
     if(f._hurtAnim>0) f._hurtAnim--; // render-only took-a-hit timer (spriteRig / bespoke anims)
     if(f.atkCd>0) f.atkCd--;
     if(f.spCd>0) f.spCd--;
+    if(f._aiSpGap>0) f._aiSpGap--;
     if(f.dropCd>0) f.dropCd--;
     if(f.burn>0){ f.burn--; f.pct+=0.04; if(f.burn%18===0) puff(f.x,f.y-10,'#f0803a',3); }
     if(f.bleed>0){ f.pct += 0.02 + 0.05*(f.bleed/BLEED_FRAMES); f.bleed--; if(f.bleed%12===0) puff(f.x,f.y-6,'#c0304a',3); }
@@ -6102,31 +6103,27 @@ function step(){
           if(inp.down){ doGroundMove(f); f.atkCd=26; }   // low-dmg ranged/AoE base move
           else { doAttack(f); f.atkCd=22; }
         }
+        // SPECIAL. The direction used to be read on the exact frame special was pressed, so you
+        // had to be ALREADY holding up: pressing special and THEN tilting gave the neutral every
+        // time, which is why 48 authored up-specials effectively never fired for a human. Now a
+        // press with a direction already held fires instantly as before, and a press with nothing
+        // held arms the special for SPECIAL_DIR_WINDOW frames and takes the first direction to land.
         if(inp.special && f.spCd<=0 && !f._sp){
-          // remember held directions so dash-type specials can go diagonally (up-dash / down-dash)
-          f._inLeft=!!inp.left; f._inRight=!!inp.right; f._inUp=!!inp.up; f._inDown=!!inp.down;
-          const dashKit = DASH_KITS.has(f.kit&&f.kit.special);
-          const horiz = inp.left||inp.right;
-          if(dashKit && horiz && (inp.up||inp.down)){
-            // diagonal dash: keep the forward dash special but angle it vertically
-            doSpecial(f); f.spCd=Math.max(f.spCd,55);
-          }
-          else if(inp.up){
-            // an up-special can only be used ONCE per airtime — on the ground it's always allowed,
-            // in the air it's spent until you land again. Prevents jump→upB→jump→upB infinite floating.
-            if(f.onground || !f._usedAirSpecial){
-              if(!f.onground) f._usedAirSpecial=true;
-              doUpSpecial(f); f.spCd=Math.max(f.spCd,60);
-            }
-          }
-          else if(inp.down){ doDownSpecial(f); f.spCd=Math.max(f.spCd,64); }
-          else { doSpecial(f); f.spCd=Math.max(f.spCd,55); }
           f._sp=true;
+          if(inp.up||inp.down) fireSpecial(f, inp);
+          else f._spPend = SPECIAL_DIR_WINDOW;
+        }
+        if(f._spPend>0){
+          if(inp.up||inp.down){ f._spPend=0; fireSpecial(f, inp); }   // a direction arrived: route it
+          else if(--f._spPend<=0) fireSpecial(f, inp);                 // window closed: neutral
         }
         if(!inp.special) f._sp=false;   // must release & re-press special to fire again (no hold-to-spam)
       }
       if(inp.smash){
-        if(f.smashHold < SMASH_HOLD_MAX) f.smashHold++;   // build; past SMASH_FULL it is pure hold — does NOT auto-fire
+        // Winding up during endlag used to be allowed, and with the release now gated on atkCd the
+        // charge would simply be eaten on release — a wasted commitment the player never sees the
+        // reason for. Cheaper to refuse the wind-up than to swallow the swing.
+        if(f.atkCd<=0 && f.smashHold < SMASH_HOLD_MAX) f.smashHold++;   // build; past SMASH_FULL it is pure hold — does NOT auto-fire
       } else {
         // TWO TIERS. This used to fire only at a full 45-frame hold and discard anything shorter,
         // so doSmash had exactly one caller passing 1.0 and every `c*` term in all 59 smash bodies
@@ -6134,12 +6131,25 @@ function step(){
         // endlag) and a release at or past full is FULL (c=1, long endlag). Nothing in between —
         // the ring shows which you are about to get. Holding past full adds no power; the extra
         // 90 frames are bluff time, the opponent deciding whether to approach.
-        if(f.smashHold >= SMASH_FLOOR){ const full = f.smashHold >= SMASH_FULL; doSmash(f, full ? 1 : 0); f.atkCd = full ? 30 : 18; }
+        // Two things were wrong here and they compounded. There was no cooldown GATE, so a release
+        // past the 6-frame floor fired no matter what atkCd said — tap, tap, tap, about one smash
+        // every seven frames. And the assignment below used to be `f.atkCd = full ? 30 : 18`, which
+        // runs AFTER doSmash and therefore overwrote the cost runSmashSpec had just applied: every
+        // `cost:{cd:...}` in SMASH_SPEC — 48, 54, 56, 74 — has been dead since it was written.
+        // Now the gate is real and the declared cost wins when it is longer than the endlag.
+        if(f.smashHold >= SMASH_FLOOR && f.atkCd<=0){
+          const full = f.smashHold >= SMASH_FULL;
+          doSmash(f, full ? 1 : 0);
+          f.atkCd = Math.max(f.atkCd||0, full ? 30 : 18);
+        }
         f.smashHold=0;                                          // release (full or not) clears the charge
       }
     }
 
     // ---- integrate ----
+    // DOWN cancels the float outright, so committing to a hover is not committing to its whole
+    // duration — she can drop out of it to dodge or to chase someone below her.
+    if(f.flying>0 && inp.down && (f.you||f.you2)){ f.flying=0; f.vy=Math.max(f.vy,1); puff(f.x,f.y+f.r,'#e6a6e0',3); }
     if(f.flying>0){                       // Puffball flight: hover, up gives lift, gravity floats
       const wantUp = f.you ? (down[KEYS.jump]||pollPad()?.jump)
                            : (f.aiTarget && f.aiTarget.y < f.y-20);   // AI climbs only if target is above
@@ -7312,11 +7322,64 @@ const SMASH_SPEC = {
   fluff:    {pat:'burst', frames:14, r0:24, rad:96,  grow:26, dmg:[5.76,8],  kb:[4.32,6],  effect:'stun', n:34, cost:{cd:50}, color:'#f5e8d0'},
   // "9 fries" ammo, farm-to-table, and grumpy. A ring of hot oil that burns.
   fry:      {pat:'burst', frames:10, r0:28, rad:104, grow:30, dmg:[8.64,12], kb:[6.48,9],  effect:'burn', n:100, cost:{cd:56}, color:'#f0c060'},
+  // "Acid Reflux": the pool erupts around her feet. The legacy body carried THREE payloads — a
+  // top-of-roster hit, a 120-frame burn, and a lingering poison+slow trap — which made it both the
+  // game's hardest smash and a duplicate of her own down-special, which is already that puddle.
+  // The eruption stays; the puddle stays where it belongs, on the down-special.
+  splash:   {pat:'burst', frames:10, r0:28, rad:98,  grow:28, dmg:[8.64,12], kb:[6.12,8.5], effect:'poison', n:90, cost:{cd:54}, color:'#c9c04b'},
   // "Photosynthesis: heal over time + vine strike." The ring is the vines; the sustain is hers.
   photo:    {pat:'burst', frames:12, r0:26, rad:100, grow:28, dmg:[7.92,11], kb:[5.76,8],  effect:'drain', n:5, cost:{cd:54}, color:'#4a9c6a'},
   // "Make It Rain: coin burst around herself." Canon, verbatim — and it is the fastest burst, so
   // the ring is on top of you before you can leave it.
-  payday:   {pat:'burst', frames:8,  r0:30, rad:92,  grow:24, dmg:[9.36,13], kb:[7.2,10], effect:'bleed', n:110, cost:{cd:48}, color:'#ffd23f'},
+  // ---- THE LAST FOURTEEN ----------------------------------------------------------------
+  // The rebuild reached 39 of 59. Six of the rest are deliberate and stay on their own bodies:
+  // Needle's counter stance, Teardrop's cloud and Golf Ball's curse land nothing on purpose;
+  // Naily's nail-dash and Puffball's Meteor Puff are bespoke, tested machinery; Money's coins
+  // were put back by hand. These fourteen were simply never reached, which is why the legacy
+  // numbers drifted so far — Saw and Donut at 40.0 against a roster norm near 24.
+  // Every entry keeps its old identity and its old shape; only the numbers join the band.
+  // Tap is 0.72x full throughout, as everywhere else in this table.
+
+  // Firey: the flame wash he always had, burn intact. No band — fire does not have a sweet spot.
+  ember:    {pat:'lunge', reach:32, fx:40, step:4, dmg:[10.08,14], kb:[6.48,9], effect:'burn', n:110, cost:{stun:24}, color:'#f0521f'},
+  // Firey Jr.: the same move, smaller and quicker, as he is.
+  emberjr:  {pat:'lunge', reach:28, fx:34, band:0.5, dmg:[8.64,12], kb:[6.48,9], effect:'burn', n:90, cost:{stun:20}, color:'#f0803a'},
+  // Book: a hardcover to the face. The sweet zone is the hilt because that is where the spine is.
+  define:   {pat:'lunge', reach:34, fx:38, band:0.45, dmg:[10.8,15], kb:[7.92,11], effect:'define', n:3, cost:{stun:26}, color:'#c8a06a'},
+  // Loser: effortless, and spaced. The tip is the whole move.
+  cool:     {pat:'lunge', reach:34, fx:42, band:-0.6, dmg:[11.52,16], kb:[9.36,13], effect:'knockdown', cost:{stun:28}, color:'#6fd2c8'},
+
+  // Leafy: she already dashed THROUGH with invulnerability; this is that, in the shared shape.
+  dash:     {pat:'through', dash:[5,8], spd:17, reach:26, dmg:[8.64,12], kb:[9.36,13], effect:'knockdown', cost:{stun:24}, color:'#8ed24b'},
+
+  // Snowball: the avalanche. Widest burst in the table, and it freezes what it catches.
+  tackle:   {pat:'burst', frames:10, r0:30, rad:110, grow:30, dmg:[8.64,12], kb:[6.48,9], effect:'freeze', n:40, cost:{cd:56}, color:'#e8f4ff'},
+  // Fanny: a fan moves people, it does not hurt them. Lowest damage here, and it pops them airborne.
+  gust:     {pat:'burst', frames:12, r0:28, rad:120, grow:32, dmg:[7.2,10], kb:[6.48,9], effect:'knockdown', cost:{cd:52}, color:'#bfe8ff'},
+
+  // Saw: the grind, walking forward through whoever is in the way. Was 40.0 total — the multi-hit
+  // is the identity, so it keeps `pierce` and a long bleed and gives back the raw numbers instead.
+  saw:      {pat:'walk', spd:7, r:20, life:120, pierce:true, dmg:[8.64,12], kb:[5.04,7], effect:'bleed', n:150, cost:{cd:62}, color:'#d0d0d0'},
+  // Donut: the same roll, sweeter and slower to recover.
+  glaze:    {pat:'walk', spd:8, r:18, life:100, pierce:true, dmg:[7.92,11], kb:[8.64,12], effect:'slow', n:110, cost:{cd:58}, color:'#f2c8d8'},
+  // Grassy: a mower advances. That is the whole character.
+  mower:    {pat:'walk', spd:8, r:18, life:100, pierce:true, dmg:[9.36,13], kb:[5.76,8], effect:'root', n:60, cost:{cd:60}, color:'#8ed24b'},
+
+  // Ruby: the prism fan, still the longest reach she had.
+  beam:     {pat:'beam', len:900, wide:22, dmg:[10.8,15], kb:[5.76,8], effect:'burn', n:80, cost:{stun:32}, color:'#ff2a4a'},
+  // Ruler: a straight edge is thin and exact — narrower than Ruby's, and it rings rather than burns.
+  measure:  {pat:'beam', len:860, wide:16, dmg:[8.64,12], kb:[9.36,13], effect:'weaken', n:150, cost:{stun:28}, color:'#e8d8a0'},
+
+  // Blocky: the anvil still falls on whoever is nearest.
+  // NOTE: the legacy body HOMED — it scanned for the nearest fighter and dropped on their x.
+  // `rain` drops at a fixed offset and the pattern vocabulary has no homing flag, so this trades
+  // that for a longer reach. If the homing was the point, he needs a flag rather than an entry.
+  anvil:    {pat:'rain', at:90, count:1, r:18, dmg:[11.52,16], kb:[7.2,10], effect:'knockdown', cost:{cd:68}, color:'#3a3a3a'},
+
+  // Tree: TIMBER. The heaviest band in the table and the longest wind-up, because you can see it
+  // coming and step out of it — which is exactly what the call is for.
+  timber:   {pat:'plant', wind:24, rad:52, dmg:[12.96,18], kb:[8.64,12], effect:'root', n:70, cost:{root:28}, color:'#5a3a1a'},
+
 };
 
 function doSmash(f, charge){
@@ -7641,6 +7704,47 @@ function doAttackSpecial(f){
 
 // kits whose neutral special is a sustained dash that can be angled up/down
 const DASH_KITS = new Set(["dash","switch","fraidy"]);
+
+// Money's special. Her coins moved back to her smash (SMASHES.payday, the Jackpot Spread), so the
+// burst that had displaced them lands here instead: same shape, smaller radius, and roughly 60% of
+// the damage and knockback it carried as a smash.
+const PAYDAY_SPECIAL = {pat:'burst', frames:8, r0:26, rad:74, grow:20, dmg:[5.8,5.8], kb:[4.5,4.5],
+                        effect:'bleed', n:70, cost:{cd:62}, color:'#ffd23f'};
+
+// How long a pressed special waits to find out which way you meant. Eight frames is about 130ms —
+// long enough to catch "special, then up" as one motion, short enough that a neutral special with
+// no direction held does not feel like it lags.
+const SPECIAL_DIR_WINDOW = 8;
+
+// One special, routed by whichever direction is held at the moment it actually fires. Split out of
+// the input block so the instant path and the deferred path cannot drift apart.
+function fireSpecial(f, inp){
+  if(f.spCd>0) return;
+  // remember held directions so dash-type specials can go diagonally (up-dash / down-dash)
+  f._inLeft=!!inp.left; f._inRight=!!inp.right; f._inUp=!!inp.up; f._inDown=!!inp.down;
+  const dashKit = DASH_KITS.has(f.kit&&f.kit.special);
+  const horiz = inp.left||inp.right;
+  if(dashKit && horiz && (inp.up||inp.down)){
+    doSpecial(f); f.spCd=Math.max(f.spCd,55); return;   // diagonal dash: forward dash, angled
+  }
+  f._aiSpGap = aiSpecialGap(f);   // read only by finishAI, so the human path is untouched
+  if(inp.up){
+    // an up-special can only be used ONCE per airtime — on the ground it's always allowed,
+    // in the air it's spent until you land again. Prevents jump→upB→jump→upB infinite floating.
+    if(f.onground || !f._usedAirSpecial){
+      if(!f.onground) f._usedAirSpecial=true;
+      doUpSpecial(f); f.spCd=Math.max(f.spCd,60);
+    }
+    return;
+  }
+  if(inp.down){ doDownSpecial(f); f.spCd=Math.max(f.spCd,64); return; }
+  doSpecial(f); f.spCd=Math.max(f.spCd,55);
+}
+
+// How long an AI waits AFTER its cooldown before it will spend another special. Derived from the
+// roster index, not Math.random(): finishAI's default path deliberately consumes no randomness, and
+// a planless match has to keep reproducing the exact sequence the golden fixtures were recorded on.
+function aiSpecialGap(f){ return 14 + (f.idx * 11) % 20; }
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
   f._dashVY = 0;
@@ -7819,8 +7923,11 @@ function doSpecial(f){
       const cx=f.x+f.face*40; f.flash=8;
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<70 && Math.sign(t.x-f.x)===f.face){ applyHit(t,9,f.face*5,-4,f); t.slowed=Math.max(t.slowed||0,90); t.weakened=Math.max(t.weakened||0,150);} }
       for(let i=0;i<10;i++) puff(cx+Math.random()*20-10,f.y+Math.random()*20-10,'#4bb0c0',4);  f.spCd=60; break; }
-    case "payday": { // Money: coin that deals more damage the more hurt the target is
-      spawnProj(f,{vx:f.face*10,vy:-2,grav:true,bounce:true,dmg:6,kb:6,r:8,color:'#ffd23f',life:80,payday:true,maxBounces:3}); f.flash=6; f.spCd=55; break; }
+    case "payday": {
+      // Money: the burst that used to be her smash, now her special. Both charge tiers hold the
+      // same number on purpose — a special never charges, so the tap value IS the value, and the
+      // whole thing is cut well below the smash it came from.
+      runSmashSpec(f, PAYDAY_SPECIAL, 0); f.flash=8; break; }
     case "thorn": { // Rose: tether that yanks the nearest foe toward her
       let tgt=null,best=300; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} }
       if(tgt){ const dir=Math.sign(f.x-tgt.x)||1; tgt.vx=dir*10; tgt.vy=-3; if(tgt.invuln<=0) applyHit(tgt,7,dir*2,-4,f);
@@ -9837,6 +9944,11 @@ function finishAI(f,inp,sp){
   const _su = planSpecialUsage(f);
   if(_su==='hoard' && inp.special && Math.random()<0.5) inp.special=false;
   else if(_su==='spam' && !inp.special && f.spCd<=0 && Math.random()<0.25) inp.special=true;
+  // CADENCE. The cooldown floors (55 neutral / 60 up / 64 down) are the ONLY thing that paced the
+  // AI, and it pressed special the frame they expired — roughly one a second each, four a second
+  // across a 5-way FFA. This holds it off for a further 14-33 frames, so a special reads as a
+  // decision rather than a metronome.
+  if(inp.special && f._aiSpGap>0) inp.special=false;
   // difficulty handicap: lower levels drop offensive inputs & hesitate (movement still works so they don't look frozen)
   const lvl = (f._lvlCache!=null)?f._lvlCache:1;
   if(lvl===0){                       // easy: frequently fails to attack, sometimes wrong-foots itself
