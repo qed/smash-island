@@ -1957,6 +1957,7 @@ const ctx = cv.getContext('2d');
 let W=1100,H=720, running=false, paused=false, raf=0;
 let fighters=[], particles=[], projectiles=[], beams=[], hazardT=0, evil=null;
 let items=[], summons=[], itemTimer=0;   // pickups on the stage, active assist/boss summons, spawn countdown
+let SPONGY_PLATS = [];   // Spongy republished as terrain each frame (see refreshSpongyPlats) — declared with the rest of the world state so platRects() can never touch it in TDZ
 let lastKoFrame=0;   // frame of the most recent KO — drives the anti-stalemate aggression ramp
 // world (arena) coordinates — for big team mode the world is larger than the screen
 let WW=1100, WH=720, camX=0, camY=0, bases=[], worldPlats=[], floors=[], worldZones=[], spawnZones=[];
@@ -4751,9 +4752,13 @@ function platRectsSmall(){
 }
 // platforms used by physics — world platforms plus base tops (bases are solid ground)
 function platRects(){
-  if(isBigFFA()) return [...worldPlats, ...spawnPlatRects()];
-  if(!isBig()) return worldPlats;
-  return [...worldPlats, ...bases.map(b=>({x:b.x,y:b.y,w:b.w,h:b.h}))];
+  const base = isBigFFA() ? [...worldPlats, ...spawnPlatRects()]
+             : !isBig()   ? worldPlats
+             : [...worldPlats, ...bases.map(b=>({x:b.x,y:b.y,w:b.w,h:b.h}))];
+  // Spongy is a summon that is ALSO terrain (design doc: "a colossal bounce platform"). Rebuilt
+  // once per frame in updateSummons, and concat'd only when one is actually on the stage so the
+  // common case still returns worldPlats untouched.
+  return SPONGY_PLATS.length ? base.concat(SPONGY_PLATS) : base;
 }
 
 function buildFighters(){
@@ -4980,20 +4985,35 @@ function loop(){
 // Assist-trophy cameos (per the Battle for Smash Island design doc, Section 6 — 13 assists).
 // `act` maps each canon effect onto the summon behavior engine.
 const POINTED = new Set(["Pin","Needle","Naily"]);   // canon: the Beach Ball dies to anything sharp
+// ASSIST TENURE. An assist used to get 8 seconds and a life bar any stray hit chewed through
+// (`s.life -= 30` per melee connect on a 480-frame budget = a 16-hit death sentence on a summon
+// whose health nobody could see). It also could not REACH you: no jump, no platform collision, just
+// a floor snap — so every contact-range assist was decoration, and only the two that act at range
+// (8-Ball's roll, Pie's lob) ever did anything. Now a summoned assist is a 20-second guest that
+// cannot be killed, and it can climb.
+//
+//   dur      — frames of tenure. ASSIST_DUR unless the character's own design says otherwise.
+//   oneShot  — fires once and leaves; `dur` is only its window to find the moment. Not a nerf:
+//              Eraser wiping the screen twice is not the Eraser.
+//   mortal   — can be removed by a fighter. ONLY Beach Ball, and only to a pointed one, because
+//              the doc is explicit that it "canonically dies to everything sharp".
+const ASSIST_DUR = 60*20;    // the 20 seconds every persistent assist now gets
 const ASSIST_ROSTER = [
-  {name:"Eraser",       color:"#e8b0a0", act:"erase"},   // wipes all projectiles/traps, drops shields
+  {name:"Eraser",       color:"#e8b0a0", act:"erase",  oneShot:true},   // wipes all projectiles/traps, drops shields
   {name:"Spongy",       color:"#e8d84b", act:"crush"},   // falls as a bounce platform, occasionally flattens
   {name:"8-Ball",       color:"#222222", act:"rush"},    // announces "8", rolls a heavy line through nearest foe
-  {name:"Black Hole",   color:"#1a1a2a", act:"pull"},    // NERFED: gentle pull + chip, NO KO (Death P.A.C.T.)
-  {name:"Clock",        color:"#d8c46a", act:"rewind"},  // rewinds the summoner's damage
+  // The doc pins Black Hole at "3 s of gentle pull" — he is in Death P.A.C.T. and was always going
+  // to hold back. Twenty seconds of even a gentle pull is a different, much worse item.
+  {name:"Black Hole",   color:"#1a1a2a", act:"pull",   dur:60*3},       // NERFED: gentle pull + chip, NO KO (Death P.A.C.T.)
+  {name:"Clock",        color:"#d8c46a", act:"rewind", oneShot:true},   // rewinds the summoner's damage
   {name:"Cloudy",       color:"#dfeaf5", act:"steal"},   // steals enemy-held items for the summoner
-  {name:"Grotato",      color:"#4a9c6a", act:"mines"},   // plants a patch of grotato mines
+  {name:"Grotato",      color:"#4a9c6a", act:"mines",  oneShot:true},   // plants a patch of grotato mines
   {name:"Pie",          color:"#e8c060", act:"bolt"},    // lobs arcing dessert ordnance
   {name:"Stapy",        color:"#d0483a", act:"staple"},  // staples the nearest foe to the ground ~3s
-  {name:"Blender",      color:"#9ac0d8", act:"vortex"},  // multi-hit vortex trap at center
-  {name:"Selfie Stick", color:"#c0c0c8", act:"flash"},   // flash photo stuns everyone facing it
+  {name:"Blender",      color:"#9ac0d8", act:"vortex",  fixed:"center"},// multi-hit vortex trap at center
+  {name:"Selfie Stick", color:"#c0c0c8", act:"flash",  oneShot:true},   // flash photo stuns everyone facing it
   {name:"Shopping Cart",color:"#c85a5a", act:"cart"},    // rideable rampage cart for the summoner
-  {name:"Beach Ball",   color:"#e85a8a", act:"bounce"},  // ricochets as a physics hazard
+  {name:"Beach Ball",   color:"#e85a8a", act:"bounce", mortal:true},    // ricochets as a physics hazard
 ];
 // Bosses (design doc Section 7 — Boss Rush order is intended difficulty order; HP bars, not percent).
 // attack: which telegraphed attack pattern this boss uses. arena: custom stage backdrop key.
@@ -5067,9 +5087,95 @@ function pickUpItem(f, it){
   }
 }
 function summonAssist(owner){
-  const a = ASSIST_ROSTER[Math.floor(Math.random()*ASSIST_ROSTER.length)];
-  summons.push({ type:"assist", name:a.name, color:a.color, act:a.act, team:owner.team, owner:owner.idx,
-    x:owner.x, y:groundY()-40, vx:0, vy:0, r:26, life:60*8, face:owner.face, _cd:0 });
+  summonAssistNamed(owner, ASSIST_ROSTER[Math.floor(Math.random()*ASSIST_ROSTER.length)]);
+}
+// Split out from summonAssist so a test (or a future "call this assist" item) can stage a SPECIFIC
+// cameo instead of rolling for one — thirteen assists behind a 1-in-13 roll is not testable.
+function summonAssistNamed(owner, a){
+  if(!a) return null;
+  // Blender "opens at center stage" per the doc — it is a placed trap, not a chaser, so it arrives
+  // where it belongs rather than wherever its summoner happened to be standing.
+  const cx = a.fixed==="center" ? WW*0.5 : owner.x;
+  const s = { type:"assist", name:a.name, color:a.color, act:a.act, team:owner.team, owner:owner.idx,
+    x:cx, y:groundY()-40, vx:0, vy:0, r:26, life:(a.dur||ASSIST_DUR), face:owner.face, _cd:0,
+    oneShot:!!a.oneShot, mortal:!!a.mortal, fixed:a.fixed||null, jumps:1, onground:false };
+  summons.push(s);
+  return s;
+}
+// The one way an assist leaves early. Only Beach Ball is `mortal`, and only to a pointed fighter,
+// because the doc is explicit that it "canonically dies to everything sharp" — every other assist
+// now shrugs off damage entirely.
+function popAssist(s, by){
+  if(!s.mortal || !by || !POINTED.has(by.name)) return false;
+  banner("POPPED!",600);
+  for(let i=0;i<18;i++) puff(s.x,s.y,s.color,5);
+  s.life=0; return true;
+}
+
+// ---- ASSIST BODY & AI -------------------------------------------------------------------------
+// An assist used to be a floor-bound puck: gravity, a snap to groundY(), and one steering line
+// (`if(|dx|>40) s.vx += sign(dx)*0.6`). No jump and no platform collision, so anyone who stepped
+// onto a platform was permanently unreachable and the cameo just paced the floor underneath. That
+// is why only the two assists that act at RANGE — 8-Ball's roll and Pie's lob — ever appeared to do
+// anything: every contact-range assist was structurally incapable of arriving.
+//
+// Spongy is republished as a real platform each frame (SPONGY_PLATS, folded into platRects) because
+// the doc calls him "a colossal bounce platform" and the old code only checked for fighters BELOW
+// him — while he sat on the floor, where nothing can be below him. He could never hit anyone.
+function refreshSpongyPlats(){
+  if(!summons.length){ if(SPONGY_PLATS.length) SPONGY_PLATS = []; return; }
+  const out = [];
+  for(const s of summons){
+    if(s.type==="assist" && s.act==="crush") out.push({x:s.x-s.r, y:s.y-s.r*0.55, w:s.r*2, h:14, bouncy:true});
+  }
+  SPONGY_PLATS = out;
+}
+function stepAssistBody(s, gy){
+  // Blender "opens at center stage" — it is a placed trap, not a chaser. It holds its ground.
+  if(s.fixed){ s.vx=0; s.vy=0; if(s.y > gy - s.r) s.y = gy - s.r; s.onground=true; return; }
+  s.vy += 0.6;
+  s.y += s.vy; s.x += s.vx;
+  // Beach Ball is a RICOCHET: ground friction and steering would both bleed away the speed that
+  // makes it a hazard, so it keeps its momentum and is left alone by navAssist.
+  if(s.act!=="bounce") s.vx *= 0.9;
+  s.onground = false;
+  if(s.y > gy - s.r){ s.y = gy - s.r; if(s.vy>0) s.vy=0; s.onground=true; }
+  // Same two-pass resolution the fighters use: solids from every side, then one-way tops.
+  for(const p of platRects()){
+    if(p===s._myPlat) continue;                       // Spongy does not stand on himself
+    const ph = p.h||16;
+    if(p.solid){
+      const ox = s.x + s.r > p.x && s.x - s.r < p.x + p.w;
+      const oy = s.y + s.r > p.y && s.y - s.r < p.y + ph;
+      if(!(ox && oy)) continue;
+      const fromLeft=(p.x-(s.x+s.r)), fromRight=((p.x+p.w)-(s.x-s.r));
+      const fromTop=(p.y-(s.y+s.r)), fromBottom=((p.y+ph)-(s.y-s.r));
+      const ax = Math.abs(fromLeft)<Math.abs(fromRight)?fromLeft:fromRight;
+      const ay = Math.abs(fromTop)<Math.abs(fromBottom)?fromTop:fromBottom;
+      if(Math.abs(ax)<Math.abs(ay)){ s.x+=ax; s.vx=0; }
+      else { s.y+=ay; if(ay<0){ s.vy=Math.min(0,s.vy); s.onground=true; } else s.vy=Math.max(0,s.vy); }
+    } else if(s.vy>=0 && s.x>p.x-4 && s.x<p.x+p.w+4){
+      const top=p.y;
+      if(s.y+s.r>=top && s.y+s.r<=top+18+s.vy){ s.y=top-s.r; s.vy=0; s.onground=true; }
+    }
+  }
+  if(s.onground) s.jumps=1;
+  // An assist that removes itself is worse than one that does nothing: keep it inside the world.
+  const AW = (typeof WW==='number' ? WW : W);
+  if(s.x < 20){ s.x = 20; if(s.vx<0) s.vx=0; }
+  if(s.x > AW-20){ s.x = AW-20; if(s.vx>0) s.vx=0; }
+}
+// Steering: the horizontal half is the old line, tuned up; the vertical half is new.
+function navAssist(s, tgt, dx){
+  if(s.fixed || s.act==="bounce") return;   // a placed trap does not chase; a ricochet does not aim
+  if(Math.abs(dx) > 34){ s.vx += Math.sign(dx)*0.75; s.vx = clamp(s.vx, -7.5, 7.5); }
+  const dy = tgt.y - s.y;
+  // Target overhead: hop. `jumps` refills on landing, so this is one hop per touchdown, not a jetpack.
+  if(dy < -50 && s.onground && s.jumps>0 && Math.abs(dx) < 260){ s.vy = -13.5; s.jumps--; s.onground=false; }
+  // Pinned against geometry with the target still far away: hop to clear the lip.
+  else if(s.onground && Math.abs(s.vx) < 0.4 && Math.abs(dx) > 60){
+    if((s._stuck = (s._stuck||0)+1) > 24){ s.vy = -11; s.onground=false; s._stuck = 0; }
+  } else if(s.onground) s._stuck = 0;
 }
 function summonBoss(owner){
   const b = BOSS_ROSTER[Math.floor(Math.random()*BOSS_ROSTER.length)];
@@ -5503,11 +5609,16 @@ function updateTendrils(){
 }
 function updateSummons(){
   const gy=groundY();
+  refreshSpongyPlats();
   for(const s of summons){
     s.life--; if(s._cd>0) s._cd--;
-    // gravity + ground
-    s.vy += 0.6; s.y += s.vy; s.x += s.vx; s.vx*=0.9;
-    if(s.y > gy - s.r){ s.y = gy - s.r; s.vy=0; }
+    // gravity + ground — an assist gets the fighter-grade body (platforms, jumps, world edges);
+    // a boss keeps the floor-snap it was tuned against.
+    if(s.type==="assist"){ stepAssistBody(s, gy); }
+    else {
+      s.vy += 0.6; s.y += s.vy; s.x += s.vx; s.vx*=0.9;
+      if(s.y > gy - s.r){ s.y = gy - s.r; s.vy=0; }
+    }
     // target: nearest valid enemy
     let tgt=null, best=1e9;
     for(const f of fighters){ if(f.dead) continue;
@@ -5523,7 +5634,7 @@ function updateSummons(){
     if(tgt){
       s.face = Math.sign(tgt.x - s.x)||s.face;
       const dx=tgt.x-s.x;
-      { if(Math.abs(dx)>40) s.vx += Math.sign(dx)*0.6; }
+      navAssist(s, tgt, dx);
       // attacks
       if(s._cd<=0){
         const act=s.act||"rush";
@@ -5531,8 +5642,16 @@ function updateSummons(){
         if(act==="cart"){
           // Shopping Cart (doc): "A rideable rampage cart spawns for the summoner." Ride it by
           // standing on it — it accelerates in your facing direction and plows through foes.
+          // The rider test only ever passed for a HUMAN summoner who chose to climb aboard. An AI
+          // owner never did, so for every AI summon the cart just trundled — one of the assists the
+          // owner reported as doing nothing. An AI owner now walks to its own cart and mounts it.
           const rider = fighters.find(f=>!f.dead && f.idx===s.owner
             && Math.abs(f.x-s.x) < s.r+18 && f.y < s.y && f.y > s.y-s.r-70);
+          if(!rider && owner && !owner.dead && owner.controller!=='local' && !owner.you){
+            const odx = s.x - owner.x;
+            if(Math.abs(odx) > 20){ owner.vx += Math.sign(odx)*0.5; }
+            else if(owner.onground && owner.y > s.y - s.r - 40){ owner.vy = -12; owner.onground=false; }
+          }
           if(rider){
             s._ridden = 20;
             s.face = rider.face || s.face;
@@ -5558,7 +5677,10 @@ function updateSummons(){
           s.vx += Math.sign(dx||1)*0.5; s.vx = clamp(s.vx,-9,9);
           if(Math.abs(dx)<s.r+34 && Math.abs(tgt.y-s.y)<s.r+30){ applyHit(tgt, 10, s.face*11, -9, {team:s.team,idx:-2}); s._cd=40; }
         } else if(act==="pull"){                 // Black Hole (NERFED): gentle pull + 1%/s chip, NO KO
-          for(const f of fighters){ if(f.dead||f.team===s.team) continue; const d=Math.hypot(f.x-s.x,f.y-s.y); if(d<200){ f.vx += Math.sign(s.x-f.x)*0.8; if(hazardT%60===0) f.pct+=1; } } s._cd=8;
+          // Exempt from the 20-second tenure: the doc pins him at 3 s. He is in Death P.A.C.T.
+          for(const f of fighters){ if(f.dead||f.team===s.team) continue; const d=Math.hypot(f.x-s.x,f.y-s.y); if(d<200){ f.vx += Math.sign(s.x-f.x)*0.8; if(hazardT%60===0) f.pct+=1; } }
+          if(hazardT%3===0){ const a=hazardT*0.2; puff(s.x+Math.cos(a)*70, s.y+Math.sin(a)*50, '#4a3a6a', 3); }
+          s._cd=8;
         } else if(act==="steal"){                // Cloudy: steal enemy-held items for the summoner
           for(const f of fighters){ if(f.dead||f.team===s.team) continue; if(f._holding && Math.hypot(f.x-s.x,f.y-s.y)<160){ if(owner&&!owner.dead){ owner._holding=f._holding; } f._holding=null; puff(f.x,f.y-8,'#dfeaf5',5); } } s._cd=20;
         } else if(act==="rewind"){               // Clock: rewind the summoner's damage
@@ -5572,23 +5694,60 @@ function updateSummons(){
           if(wiped>0) banner("ERASED "+wiped+"!",700);
           for(let i=0;i<14;i++) puff(s.x+Math.random()*120-60, s.y, '#e8b0a0', 4); s.life=0;   // one-shot
         } else if(act==="staple"){               // Stapy: staple nearest foe to the ground ~3s
-          if(tgt && Math.abs(dx)<s.r+80){ const ft=fighters.find(f=>f===tgt || (f.x===tgt.x&&f.y===tgt.y)); if(ft){ ft.rooted=Math.max(ft.rooted||0,180); banner("STAPLED!",600);} } s._cd=90;
+          // `fighters.find(f => f===tgt || ...)` was a no-op search for a target we already hold,
+          // and s.r+80 is a range a floor-bound assist could rarely close. Stapy is a thrown
+          // fastener: he fires at the target he has, from a range he can actually reach.
+          if(tgt && Math.abs(dx)<300 && Math.abs(tgt.y-s.y)<160){
+            tgt.rooted=Math.max(tgt.rooted||0,180);
+            applyHit(tgt, 4, 0, 0, {team:s.team,idx:-2});
+            for(let i=0;i<8;i++) puff(tgt.x, tgt.y, '#d0483a', 4);
+            banner("STAPLED!",600);
+          }
+          s._cd=90;
         } else if(act==="mines"){                // Grotato: plant a patch of mines
           for(let i=0;i<4;i++){ projectiles.push({owner:-2, ownerObj:{team:s.team,idx:-2}, x:s.x+(i-1.5)*50, y:groundY()-8, vx:0, vy:0, grav:false, dmg:12, kb:11, r:12, color:'#4a9c6a', life:60*8, trap:true, arm:30}); } s.life=0;
-        } else if(act==="vortex"){               // Blender: multi-hit vortex trap
-          for(const f of fighters){ if(f.dead||f.team===s.team) continue; if(Math.hypot(f.x-s.x,f.y-s.y)<70){ f.vx += Math.sign(s.x-f.x)*0.6; applyHit(f, 3, 0, -2, {team:s.team,idx:-2}); } } s._cd=10;
-        } else if(act==="flash"){                // Selfie Stick: flash stun everyone nearby
-          for(const f of fighters){ if(f.dead||f.team===s.team) continue; if(Math.hypot(f.x-s.x,f.y-s.y)<260){ f.hitstun=Math.max(f.hitstun,50); f.frozen=Math.max(f.frozen,30); } } for(let i=0;i<20;i++) puff(s.x,s.y,'#fff',6); banner("FLASH!",600); s.life=0;
+        } else if(act==="vortex"){               // Blender: multi-hit vortex trap, held at centre stage
+          // It no longer chases (see `fixed`), so it needs the reach of a placed trap rather than
+          // the 70px of a thing that was expected to walk up to you.
+          for(const f of fighters){ if(f.dead||f.team===s.team) continue;
+            const d=Math.hypot(f.x-s.x,f.y-s.y);
+            if(d<120){ f.vx += Math.sign(s.x-f.x)*1.1; f.vy -= 0.35; applyHit(f, 3, 0, -2, {team:s.team,idx:-2}); } }
+          if(hazardT%4===0){ const a=hazardT*0.3; puff(s.x+Math.cos(a)*60, s.y+Math.sin(a)*40, '#9ac0d8', 4); }
+          s._cd=10;
+        } else if(act==="flash"){                // Selfie Stick: flash photo — the doc is specific that
+          // it stuns "everyone FACING the camera". Stunning someone who had their back to it was
+          // both wrong and unreadable: there was no way to play around a flash you cannot look away from.
+          for(const f of fighters){ if(f.dead||f.team===s.team) continue;
+            if(Math.hypot(f.x-s.x,f.y-s.y)<260 && Math.sign(s.x-f.x)===Math.sign(f.face||1)){
+              f.hitstun=Math.max(f.hitstun,50); f.frozen=Math.max(f.frozen,30); } }
+          for(let i=0;i<20;i++) puff(s.x,s.y,'#fff',6); banner("FLASH!",600); s.life=0;
         } else if(act==="crush"){                // Spongy: bounce platform that occasionally flattens
-          for(const f of fighters){ if(f.dead||f.team===s.team) continue; if(Math.abs(f.x-s.x)<s.r && f.y>s.y && f.y<s.y+s.r+40){ applyHit(f, 14, 0, -13, {team:s.team,idx:-2}); } } s._cd=70;
+          // This only ever hit fighters BELOW Spongy — while Spongy sat on the floor, where nothing
+          // can be below him. He was incapable of landing a hit for his whole tenure. The flatten is
+          // now the body slam it is described as: he hops and crushes whoever he comes down on.
+          if(s.onground && s._cd<=0){ s.vy = -12; s.onground=false; s._crushing=1; }
+          if(s._crushing && s.vy>4){
+            for(const f of fighters){ if(f.dead||f.team===s.team) continue;
+              if(Math.abs(f.x-s.x)<s.r+14 && Math.abs(f.y-s.y)<s.r+34){
+                applyHit(f, 14, Math.sign(f.x-s.x||1)*4, -13, {team:s.team,idx:-2});
+                for(let i=0;i<8;i++) puff(f.x,f.y,'#e8d84b',5);
+                s._crushing=0; s._cd=70;
+              } } }
+          if(s.onground && s._crushing){ s._crushing=0; s._cd=70; for(let i=0;i<6;i++) puff(s.x,s.y+s.r,'#e8d84b',4); }
         } else if(act==="bounce"){               // Beach Ball (doc): ricochets as a physics hazard, but is
           // "instantly popped by any pointed fighter (Pin, Needle, Naily) — canonically dies to
           // everything sharp." Pointed fighters pop it on contact regardless of whose team it is.
+          // "Ricochets around AT HIGH SPEED as a physics hazard" — it was inheriting the shared
+          // chase steering instead, which is the opposite of a ricochet: it homed, slowly.
+          if(!s._launched){ s._launched=1; s.vx = (s.face||1)*11; s.vy = -9; }
+          if(s.onground && s.vy===0) s.vy = -11;                       // never settles
+          const BW = (typeof WW==='number' ? WW : W);
+          if(s.x<=22 || s.x>=BW-22) s.vx = -s.vx;                      // walls
           for(const f of fighters){ if(f.dead) continue;
             if(Math.hypot(f.x-s.x,f.y-s.y)<s.r+20){
               if(POINTED.has(f.name)){ banner("POPPED!",600); for(let i=0;i<18;i++) puff(s.x,s.y,'#e85a8a',5); s.life=0; break; }
               if(f.team===s.team) continue;
-              applyHit(f, 6, Math.sign(f.x-s.x||1)*10, -8, {team:s.team,idx:-2}); s.vx=-s.vx;
+              applyHit(f, 6, Math.sign(f.x-s.x||1)*10, -8, {team:s.team,idx:-2}); s.vx=-s.vx; s.vy=-8;
             } } s._cd=6;
         } else if(act==="bolt"){                 // Pie: lobs arcing dessert ordnance
           if(Math.abs(dx)<340){ projectiles.push({owner:-2, ownerObj:{team:s.team,idx:-2}, x:s.x, y:s.y, vx:s.face*4, vy:-6, grav:true, bounce:true, dmg:8, kb:7, r:9, color:s.color, life:100}); s._cd=55; }
@@ -5884,7 +6043,14 @@ function step(){
           }
         } else if(f.vy>=0 && f.x>p.x-4 && f.x<p.x+p.w+4){
           const top=p.y;
-          if(f.y+f.r>=top && f.y+f.r<=top+18+f.vy){ f.y=top-f.r; f.vy=0; f.onground=true; f.jumps=2; f._usedAirSpecial=false; }
+          if(f.y+f.r>=top && f.y+f.r<=top+18+f.vy){
+            f.y=top-f.r;
+            // Spongy is the one bouncy surface in the game (design doc: "a colossal bounce
+            // platform"). You land on him and you leave again — so he is NOT grounding: keeping
+            // onground false is what stops the launch being cancelled on the very next frame.
+            if(p.bouncy){ f.vy = -14; f.jumps = 2; f._usedAirSpecial=false; if(f.you) SFX.jump(); }
+            else { f.vy=0; f.onground=true; f.jumps=2; f._usedAirSpecial=false; }
+          }
         }
       }
     }
@@ -6084,7 +6250,7 @@ function step(){
         if(s.team===(o?o.team:0)) continue;                  // don't hit your own assist
         if(Math.hypot(s.x-pr.x, s.y-pr.y) < s.r+pr.r){
           if(s.type==="boss"){ s.hp -= pr.dmg; for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }
-          else { s.life -= 24; }
+          else { s.vx += Math.sign(pr.vx||1)*2; }   // assists are immune (see damageSummons) — shots shove, never kill
           if(!pr.pierce && !pr.van) pr.life=0;
           break;
         }
@@ -7123,7 +7289,10 @@ function damageSummons(f, cx, cy, rad, dmg){
         }
         s.hp -= dmg; s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4);
       }
-      else { s.life -= 30; s.vx += Math.sign(s.x-cx||1)*4; }   // assists get shoved / cut short
+      // An assist is a CAMEO, not a combatant: it can be shoved around, but it cannot be killed.
+      // It used to lose 30 life a connect out of 480, so any fighter who wandered into one deleted
+      // it in half a second and the trophy you spent an item slot on was never seen again.
+      else { s.vx += Math.sign(s.x-cx||1)*4; if(s.mortal) popAssist(s, f); }
     }
   }
 }
