@@ -9403,14 +9403,17 @@ function steerClimb(f, t, inp){
 // Where is the nearest gap edge on the fighter's current floor to drop through?
 // Returns an x just past the edge of the platform segment f is standing on.
 function nearestDropX(f){
-  if(!isBig()) return null;
+  // On a big stage a one-way platform can be dropped THROUGH, so only a solid segment needs an edge
+  // and the little hop pieces are skipped. On a single-screen stage drop-through is off (the physics
+  // gates it on isBig), so EVERY platform -- hop pieces included -- is one you have to walk off.
+  const small = !isBig();
   // find the platform segment directly under the fighter
   let seg=null;
   for(const p of worldPlats){
-    if(p.hop) continue;
+    if(p.hop && !small) continue;
     if(Math.abs((p.y) - (f.y+f.r)) < 24 && f.x>p.x-10 && f.x<p.x+p.w+10){ seg=p; break; }
   }
-  if(!seg) return f.x;   // not clearly on a segment — just drop where we are
+  if(!seg) return small ? null : f.x;   // big: not clearly on a segment — just drop where we are
   // choose whichever edge of this segment is nearer; stepping just past it opens a gap
   const leftEdge=seg.x-14, rightEdge=seg.x+seg.w+14;
   return (Math.abs(leftEdge-f.x) < Math.abs(rightEdge-f.x)) ? leftEdge : rightEdge;
@@ -9748,17 +9751,22 @@ function aiThink(f){
       if(dy<-160 && f.spCd<=0 && f.jumps<=0 && rn<0.4){ inp.special=true; inp.up=true; }
     } else if(dy > 130){                            // target below — drop toward them
       if(isBig()){ const gx=nearestDropX(f); if(gx!=null && Math.abs(gx-f.x)>22){ inp.left=gx<f.x; inp.right=gx>=f.x; } else if(f.onground){ inp.down=true; inp.jump=true; } }
-      else if(f.onground && onDropThroughPlat(f)) { inp.down=true; inp.jump=true; }
+      else if(f.onground){ const ex=nearestDropX(f); if(ex!=null){ inp.left=ex<f.x; inp.right=ex>=f.x; } }   // no drop-through here: walk off
     }
     if(f.spCd<=0 && (sp==="dash"||sp==="rocket"||sp==="tackle"||sp==="mower"||sp==="switch") && adx>140 && rn<0.25) inp.special=true;
     if(f.x<90){ inp.left=false; inp.right=true; }
     if(f.x>WW-90){ inp.right=false; inp.left=true; }
     return finishAI(f,inp,sp);
   }
-  // A zoner can shoot across gaps, so it only bothers navigating if the target is far.
+  // A zoner can shoot across a gap -- but only one it can see across. This used to exempt zoners from
+  // climbing or dropping unless the target was 60-70px off to the side, which was precisely backwards:
+  // a zoner directly above or below its target is the one zoner whose horizontal shot CANNOT land.
+  // Two zoners stacked like that exempted each other and stood still until the frame cap -- Money over
+  // Rocky on a generated cavern, 11,000 frames without a hit. A target on another level is always worth
+  // moving toward; the only fighters this changes are the stacked zoners it used to freeze.
   const onDifferentLevel = ady > 70;
-  const wantClimb = dy < -80 && (adx > 60 || !isZoner) && onDifferentLevel;
-  const wantDrop  = dy > 110 && (adx > 70 || !isZoner) && onDifferentLevel;
+  const wantClimb = dy < -80 && onDifferentLevel;
+  const wantDrop  = dy > 110 && onDifferentLevel;
   if(wantClimb){
     if(steerClimb(f, t, inp)){
       if(dy < -150 && f.spCd<=0 && (f.jumps<=0 || rn<0.3)){ inp.special=true; inp.up=true; }  // up-special boost
@@ -9776,10 +9784,12 @@ function aiThink(f){
       if(gapX!=null && Math.abs(gapX - f.x) > 20){ if(gapX < f.x) inp.left=true; else inp.right=true; }
       else if(f.onground){ inp.down=true; inp.jump=true; }   // drop through the one-way platform
     } else {
-      // single screen: move horizontally toward them; if standing on a one-way platform above the
-      // target, drop through it
-      if(adx>26){ if(dx<0)inp.left=true; else inp.right=true; }
-      if(f.onground && onDropThroughPlat(f) && adx<90){ inp.down=true; inp.jump=true; }
+      // single screen: drop-through is a big-stage move (see the physics), so down+jump on a platform
+      // here is simply a JUMP -- a fighter standing over its target hopped in place for good. Walk off
+      // the nearest edge instead, which is what a human on this stage has to do.
+      const edgeX = f.onground ? nearestDropX(f) : null;
+      if(edgeX!=null){ inp.left = edgeX < f.x; inp.right = edgeX >= f.x; }
+      else if(adx>26){ if(dx<0)inp.left=true; else inp.right=true; }
     }
     return finishAI(f,inp,sp);
   }
