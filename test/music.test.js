@@ -29,7 +29,11 @@ const DEFAULTS = ['menu', 'battle', 'boss', 'tourney', 'intense'].map((k) => `as
 const tick = (n = 3) => new Promise((r) => setTimeout(r, n));
 // IndexedDB work crosses several macrotask hops, so sleeping a fixed number of ms is a flake
 // waiting to happen on a loaded machine. Wait on the OUTCOME instead.
-async function until(fn, ms = 2000) {
+// The ceiling is deliberately generous. It costs nothing when the outcome lands quickly -- this
+// returns the moment it does -- and 2000ms was overrun on a loaded machine: in the full parallel
+// run, the crossfade case and the persist-on-reload case both timed out here while passing every
+// time on their own. A ceiling that only fails under load is measuring the machine, not the music.
+async function until(fn, ms = 10000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     let v; try { v = fn(); } catch (e) { v = false; }
@@ -41,7 +45,7 @@ async function until(fn, ms = 2000) {
 // The title screen's chain is four sources deep — custom/title.mp3, title.mp3, custom/menu.mp3,
 // menu.mp3 — and every 404 is its own macrotask hop, so "sleep 3ms and assert" is a flake waiting
 // to happen. Wait for the source that should win.
-const lands = (plays, src, ms = 2000) => until(() => plays().at(-1) === src, ms);
+const lands = (plays, src, ms = 10000) => until(() => plays().at(-1) === src, ms);
 
 function fakeNode() {
   const ramp = { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} };
