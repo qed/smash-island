@@ -4,8 +4,8 @@ import { bootMonolith } from './helpers/smash-golden.js';
 // ANGLED SMASHES.
 //
 // Holding up or down as a smash goes off tilts its launch -- up steeper, down flatter -- without changing
-// how hard it hits. While a smash is charging, up aims instead of jumping, and that press is used up so
-// releasing the smash does not throw in a jump the player never asked for.
+// how hard it hits. Charging does not take the jump away: an earlier version made up aim instead of jump
+// while a smash charged, and the owner's verdict was "you cant jump while chargin a smash".
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
@@ -53,22 +53,21 @@ describe('the input', () => {
     A.team=0; D.team=1; A.face=1; A.controller='local'; A.you=true; D.controller='still'; fighters=[A,D];
     for (var k in down) delete down[k];
     step(); A.atkCd=0; A.smashHold=0; A._jp=false;
-    var y0 = A.y, rose = false, angle = null, roseAfter = false;
+    var y0 = A.y, rose = false, held = 0, angle = null;
     down[KEYS.smash] = true;
-    for (var i=0;i<14;i++){ if (i===3) down[KEYS.jump] = true; step(); if (A.y < y0 - 4) rose = true; }
+    for (var i=0;i<14;i++){ if (i===3) down[KEYS.jump] = true; step(); if (A.y < y0 - 4) rose = true; if (A.smashHold > 0) held++; }
     down[KEYS.smash] = false; step(); angle = A._smAngle;           // released with up still held
-    for (var j=0;j<10;j++){ step(); if (A.vy < -4) roseAfter = true; }
     down[KEYS.jump] = false;
-    return { rose: rose, angle: angle, roseAfter: roseAfter };
+    return { rose: rose, held: held, angle: angle };
   })()`);
 
-  it('holding up while charging aims the smash instead of jumping', () => {
+  it('you can still jump while a smash is charging', () => {
     const r = drive();
-    expect(r.rose, 'jumped while charging').toBe(false);
-    expect(r.angle, 'released with up held').toBe(1);
+    expect(r.rose, 'pressing jump mid-charge should jump').toBe(true);
+    expect(r.held, 'and the charge should keep building through the jump').toBeGreaterThan(8);
   });
 
-  it('the aiming press is used up, so no jump fires after the smash', () => {
-    expect(drive().roseAfter).toBe(false);
+  it('up held as the smash goes off still angles it up', () => {
+    expect(drive().angle).toBe(1);
   });
 });
