@@ -54,6 +54,16 @@ describe('no two of the 53 are the same move', () => {
     expect(shrinks, 'the cost must not scale with the charge').toEqual([]);
   });
 
+  it('the six hand-written bodies pay a declared cost too', async () => {
+    // The rule above only ever reached SMASH_SPEC rows. The fighters who keep their own body -- Money,
+    // Naily, Puffball, Needle, Teardrop, Golf Ball -- could be free, and Money's restored Jackpot
+    // Spread was thrown twice as often as any other smash in the game because of it.
+    const w = bootMonolith(); await w.eval('profileReady');
+    const free = w.eval('ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.kit.special; })'
+      + '.filter(function(k){ var c = LEGACY_SMASH_COST[k]; return !SMASH_SPEC[k] && SMASHES[k] && !(c && Object.keys(c).length); })');
+    expect(free, 'a smash with no cost is not a choice').toEqual([]);
+  });
+
   it('every row has a real two-tier charge — the full version is stronger', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const bad = w.eval('Object.entries(SMASH_SPEC).filter(function(e){ var r=e[1]; return !(r.dmg[1] > r.dmg[0]) || !(r.kb[1] >= r.kb[0]); }).map(function(e){ return e[0]; })');

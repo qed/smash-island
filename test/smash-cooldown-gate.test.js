@@ -45,14 +45,15 @@ function tapSmash(w, name, { hold = 8, gap = 2, bursts = 3 } = {}) {
 
 describe('a smash cannot be tapped out on repeat', () => {
   it('fires once across three rapid taps, not three times', () => {
-    // 8 frames held clears SMASH_FLOOR (6) so each burst is a legal TAP. Before the gate all three
-    // landed; the tap endlag alone is 18 frames, so only the first may.
+    // 8 frames held clears the tap floor so each burst is a legal TAP. Before the gate all three
+    // landed; Money's smash now costs 62 frames (LEGACY_SMASH_COST), so only the first may.
     const r = tapSmash(W, 'Money');
     expect(r.fires).toBe(1);
   });
 
   it('lets the next one through once the cooldown has actually run out', () => {
-    const r = tapSmash(W, 'Money', { hold: 8, gap: 40, bursts: 3 });
+    // The gap has to outlast her declared cost, 62 frames, not just the 18-frame tap endlag.
+    const r = tapSmash(W, 'Money', { hold: 8, gap: 70, bursts: 3 });
     expect(r.fires).toBe(3);
   });
 });
@@ -67,11 +68,15 @@ describe('a declared smash cost survives the endlag assignment', () => {
     expect(r.peakCd).toBeGreaterThanOrEqual(spec);
   });
 
-  it('still applies the plain endlag to a legacy body that declares no cost', () => {
-    // Puffball is one of the 15 the smash rebuild never reached: no SMASH_SPEC entry, so no cost,
-    // so the tap endlag is all there is.
+  it('makes a legacy body pay its declared cost, not just the flat endlag', () => {
+    // Puffball keeps her own hand-written Meteor Puff rather than a SMASH_SPEC row. Rows had to
+    // declare a cost; bodies like hers did not, so all she paid was the 18-frame tap endlag -- which
+    // is how Money's restored three-coin smash came to be thrown twice as often as any other.
+    // LEGACY_SMASH_COST prices the six of them. This case used to assert the 18; it was right about
+    // the code and wrong about the game.
     expect(W.eval("SMASH_SPEC['fly'] === undefined")).toBe(true);
+    const cd = W.eval("LEGACY_SMASH_COST['fly'].cd");
     const r = tapSmash(W, 'Puffball', { hold: 8, gap: 2, bursts: 1 });
-    expect(r.peakCd).toBe(18);
+    expect(r.peakCd).toBe(cd);
   });
 });
