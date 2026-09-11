@@ -4773,6 +4773,7 @@ function updateSpawnZones(){
 }
 // pick a respawn position for a fighter in big FFA: their claimed point, else a safe edge island
 function ffaRespawn(f){
+  f._windup=null;   // never carry a pending circle across a respawn (see startWindup)
   const mine = spawnZones.find(z=>z.kind==="claim" && z.owner===f.idx);
   if(mine) return { x: mine.x+mine.w/2, y: mine.y-40 };
   // otherwise use whichever safe island is on the side they were nearer to (spread players out)
@@ -5991,6 +5992,13 @@ function step(){
         }
       }
       if(f._stall && --st.life<=0) f._stall=null;
+    }
+    // A circle winding up (startWindup). Nothing lands until it runs out; a hit in the meantime
+    // has already cleared it in applyHit.
+    if(f._windup){
+      const wu = f._windup;
+      if(wu.falls !== (f._falls||0)) f._windup = null;          // KO'd since it started
+      else if(--wu.t <= 0){ f._windup = null; wu.fire(); }
     }
     // SMASH PATTERNS that live across frames (see SM_PAT). Naily's _nail below is the same idea
     // written by hand first; these are the general versions the other thirty-nine use.
@@ -7249,8 +7257,11 @@ const SM_PAT = {
   // The old shape, kept for the handful it genuinely suits — but now with a real cost and a real
   // effect, and a ring that EXPANDS over a few frames instead of resolving in one.
   burst(f,s,c){
-    f._sm = {pat:'burst', t:s.frames||10, r0:s.r0||30, r1:(s.rad||100)+(c?s.grow||30:0),
+    const sm = {pat:'burst', t:s.frames||10, r0:s.r0||30, r1:(s.rad||100)+(c?s.grow||30:0),
       dmg:s.dmg[c], kb:s.kb[c], fx:s.effect, n:s.n, color:s.color||f.color, hit:{}, up:s.up};
+    // A ring around you winds up before it expands -- see CIRCLE_WINDUP. The cost was already
+    // paid in runSmashSpec, so a ring that gets interrupted still costs what it would have.
+    startWindup(f, s.wind==null ? CIRCLE_WINDUP : s.wind, function(){ f._sm = sm; }, sm.color);
   },
   // An instant line to the edge of the stage. No travel time, so it is answered by position only.
   beam(f,s,c){
@@ -7681,7 +7692,7 @@ const DOWNSPECIALS = {
   beam(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:6,kb:4,r:12,color:'#e0384b',life:220,trap:true});  }, // Ruby — gem trap
   gust(f){ f.flash=8; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.abs(t.y-f.y)<70 && Math.abs(t.x-f.x)<170){ t.vx += Math.sign(t.x-f.x||f.face)*7; t.onground=false; } } for(let i=0;i<10;i++) puff(f.x+(Math.random()*120-60),f.y,'#bfe8ff',4);  }, // Fanny — push everyone away
   reflect(f){ f.flash=10; f.reflecting=44; puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
-  ring(f){ f.flash=8; f.armor=30; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#f2c84b',6);  }, // Bell — brace + nearby stun
+  ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b');  }, // Bell — brace + nearby stun
   sign(f){ f.flash=8; f.armor=28; f._empower=1; puff(f.x,f.y-8,'#6fb7ff',6);  }, // Bracelety — self-empower next hit
   dribble(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:5,kb:8,r:13,color:'#e08a3a',life:220,trap:true,arm:24});  }, // Basketball — bouncy mine
   buynow(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ tgt.weakened=160; banner("PRICE CUT!",500);} }, // Yellow Face — weaken nearest
@@ -7694,7 +7705,7 @@ const DOWNSPECIALS = {
   salsa(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x,y:groundY()-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:18,color:'#f2c84b',life:220,trap:true,slow:true});  }, // Taco — instant puddle
   spike(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap
   sucker(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#c04be0',life:220,trap:true,root:true,arm:14});  }, // Lollipop — rooting trap
-  static(f){ f.flash=8; f.armor=30; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#8fd0ff',6);  }, // TV — brace + nearby stun
+  static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff');  }, // TV — brace + nearby stun
   hack(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ if(applyCtrlRev(tgt,55)) banner("REMOTE JAM!",500);} }, // Remote — scramble nearest (capped, was an uncapped 120f)
   fluff(f){ f.flash=8; f.armor=40; f.vy=Math.min(f.vy,-3); puff(f.x,f.y-8,'#f2e0d0',6);  }, // Pillow — cushiony guard
   cool(f){ f.flash=8; f.armor=Math.max(f.armor,50); f.pct=Math.max(0,f.pct-8); puff(f.x,f.y-8,'#e8e8e8',6);  }, // Loser — armor + heal a little
@@ -7824,6 +7835,21 @@ function fireSpecial(f, inp){
 // roster index, not Math.random(): finishAI's default path deliberately consumes no randomness, and
 // a planless match has to keep reproducing the exact sequence the golden fixtures were recorded on.
 function aiSpecialGap(f){ return 14 + (f.idx * 11) % 20; }
+
+// CIRCLE WIND-UP. A ring centred on you, hitting in every direction, used to come out on the frame
+// it was pressed. A jab and a lunge ALSO resolve on their press frame, so the ring won on reach
+// alone: ~100px of instant hitbox against a ~40px swing, and every close-range move lost to it
+// before it could land -- "you can just counter all of the close-range smashes and attacks."
+// Now a circle is a commitment. It telegraphs for CIRCLE_WINDUP frames (drawn in drawFighter),
+// and a hit that connects in that window cancels it (applyHit). What it does once it lands is
+// unchanged. Covers the burst smashes, Money's burst special, and the circle specials.
+const CIRCLE_WINDUP = 8;
+function startWindup(f, frames, fire, color){
+  if(f._windup) return;              // already committed to one; a second press is simply eaten
+  // `falls` pins the wind-up to this life: every KO path bumps _falls, so a ring started just
+  // before a KO can never go off at the respawn point, whichever respawn route ran.
+  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0 };
+}
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
   f._dashVY = 0;
@@ -7923,6 +7949,8 @@ function doSpecial(f){
       for(let i=0;i<8;i++) puff(cx,f.y,'#f2d84b',4);  f.spCd=46; break; }
     case "splash": { // Barf Bag: OUTBREAK — release an infection cloud; caught foes briefly turn (mirror her inputs, join her team)
       if(f._infected>0){ f.flash=8; break; }   // an infected puppet can't spread the outbreak further
+      startWindup(f, CIRCLE_WINDUP, function(){
+        if(f._infected>0) return;   // turned during the wind-up: a puppet cannot spread it
       const R=95; let caught=0;
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue;
         if(Math.hypot(t.x-f.x,t.y-f.y)<R && t._infected<=0){
@@ -7932,15 +7960,20 @@ function doSpecial(f){
         }
       }
       for(let i=0;i<20;i++){ const a=Math.random()*Math.PI*2, d=Math.random()*R; puff(f.x+Math.cos(a)*d,f.y+Math.sin(a)*d,'#b8c04b',4); }
+      }, '#b8c04b');
        f.flash=10; f.spCd=173; break; }
     case "dribble": { // Basketball: ricocheting ball that speeds up per bounce
       projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y,vx:f.face*8,vy:-2,grav:true,bounce:true,dmg:7,kb:6,r:9,color:'#e08a3a',life:130,accel:true,aimWindow:30}); f.flash=6; break; }
     case "ring": { // Bell: AoE stun burst
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+80){ applyHit(t,6,Math.sign(t.x-f.x||1)*5,-5,f); t.hitstun=Math.max(t.hitstun,20);} }
-      for(let i=0;i<14;i++){ const a=i/14*Math.PI*2; puff(f.x+Math.cos(a)*40,f.y+Math.sin(a)*40,'#f2c84b',3);}  f.spCd=69; break; }
+      // It had no team check: applyHit refused an ally the damage, but the stun below was set
+      // directly, so Bell froze her own teammates for 20 frames. It skips her side now.
+      startWindup(f, CIRCLE_WINDUP, function(){
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+80){ applyHit(t,6,Math.sign(t.x-f.x||1)*5,-5,f); t.hitstun=Math.max(t.hitstun,20);} }
+      for(let i=0;i<14;i++){ const a=i/14*Math.PI*2; puff(f.x+Math.cos(a)*40,f.y+Math.sin(a)*40,'#f2c84b',3);}
+      }, '#f2c84b');  f.spCd=69; break; }
     case "sign": spawnProj(f,{vx:f.face*10,vy:0,grav:false,boomerang:true,ownerFace:f.face,dmg:10,kb:8,r:9,color:'#6fb7ff',life:70}); f.flash=6; f.spCd=46; break; // Bracelety (buffed: weak)
     case "gust": f._empower=1; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#bfe8ff',5);  f.spCd=67; break; // Fanny: charge next air blast
-    case "reflect": f.reflecting=36; f.flash=10; { const rr=f.r+44+comebackRange(f); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } } puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
+    case "reflect": f.reflecting=36; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+comebackRange(f); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } }, '#e8e8e8'); puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
     case "mower": { f.flash=10; f.vx=f.face*11; // Grassy: surprise lawnmower (+comeback reach)
       hitCircle(f,f.x+f.face*26,f.y,f.r+26+comebackRange(f),15,15,f.face*12,-7); for(let i=0;i<8;i++) puff(f.x+f.face*20,f.y+10,'#7bc043',4);  break; }
     // ---- next 10 characters ----
@@ -7966,13 +7999,17 @@ function doSpecial(f){
     case "sucker": { // Lollipop: sticky projectile that roots the target in place
       spawnProj(f,{vx:f.face*9,vy:0,grav:false,dmg:5,kb:2,r:9,color:'#c04be0',life:50,root:true}); f.flash=6; f.spCd=67; break; }
     case "static": { // TV: stunning burst around itself
+      startWindup(f, CIRCLE_WINDUP, function(){
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+70){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-4,f); t.hitstun=Math.max(t.hitstun,30);} }
-      for(let i=0;i<16;i++){ const a=i/16*Math.PI*2; puff(f.x+Math.cos(a)*(30+Math.random()*30),f.y+Math.sin(a)*(24+Math.random()*20),'#8fd0ff',4);} f.flash=10; f.spCd=74;  break; }
+      for(let i=0;i<16;i++){ const a=i/16*Math.PI*2; puff(f.x+Math.cos(a)*(30+Math.random()*30),f.y+Math.sin(a)*(24+Math.random()*20),'#8fd0ff',4);}
+      }, '#8fd0ff'); f.flash=10; f.spCd=74;  break; }
     case "hack": { // Remote: bolt that reverses the target's controls briefly
       spawnProj(f,{vx:f.face*11,vy:0,grav:false,dmg:5,kb:3,r:8,color:'#4a4a4a',life:40,reverseCtrl:true}); f.flash=8; f.spCd=103; break; }
     case "fluff": { // Pillow: springy shockwave that pops foes up (low damage, sets up juggles)
+      startWindup(f, CIRCLE_WINDUP, function(){
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+72){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-12,f); } }
-      f.vy=Math.min(f.vy,-4); for(let i=0;i<10;i++) puff(f.x+(Math.random()*80-40),f.y+10,'#f2e0d0',5); f.flash=8; f.spCd=48; break; }
+      f.vy=Math.min(f.vy,-4); for(let i=0;i<10;i++) puff(f.x+(Math.random()*80-40),f.y+10,'#f2e0d0',5);
+      }, '#f2e0d0'); f.flash=8; f.spCd=48; break; }
     case "cool": { // Loser: self-buff — armor + empowered next hit
       f.armor=Math.max(f.armor,22); f._empower=1; f.flash=12; for(let i=0;i<10;i++) puff(f.x,f.y-8,'#e8e8e8',5);  f.spCd=138; break; }
     // ---- final 12 characters ----
@@ -8059,8 +8096,10 @@ function doSpecial(f){
       const lx = tgt?tgt.x:f.x+f.face*80;
       dropProj(f, lx, groundY(), {vx:0,vy:7,grav:true,dmg:11,kb:9,r:15,color:'#5a3a1a',life:120});  f.flash=10; f.spCd=110; break; }
     case "shatter": { // Ice Cube: burst an icy shard ring; can freeze at high %
+      startWindup(f, CIRCLE_WINDUP, function(){
       for(let a=0;a<8;a++){ const ang=a/8*Math.PI*2; spawnProj(f,{vx:Math.cos(ang)*9,vy:Math.sin(ang)*9,grav:false,dmg:5,kb:5,r:7,color:'#cdeeff',life:70,freeze:true,noAim:true}); }
-      for(let i=0;i<12;i++) puff(f.x,f.y,'#cdeeff',4);  f.flash=10; f.spCd=87; break; }
+      for(let i=0;i<12;i++) puff(f.x,f.y,'#cdeeff',4);
+      }, '#cdeeff');  f.flash=10; f.spCd=87; break; }
     case "atstake": { // Cake: lob a slice; Cake heals a little when it connects
       spawnProj(f,{vx:f.face*7,vy:-4,grav:true,bounce:true,dmg:9,kb:7,r:11,color:'#f5c88a',life:100,heals:f.idx});  f.flash=8; f.spCd=69; break; }
     case "glaze": { // Donut: roll forward as a spinning hitbox
@@ -8384,6 +8423,9 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   const scale=(0.5 + t.pct*0.014) * weightK * ramp;
   knock(t, kbx*scale, kby*scale - t.pct*0.025);
   t.hitstun=Math.min(24, 6+dmg);
+  // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
+  // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
+  if(t._windup) t._windup=null;
   t._hurtAnim=HURT_ANIM;   // render-only: the one unambiguous "was HIT" signal (see wasHit)
   t._hurt=90;   // any hit suppresses heal-over-time (Fern) for ~1.5s so aggression can break through
   // hit-grace scales with the hit's weight: light/fast pokes give little grace (so rapid pokes connect),
@@ -8436,13 +8478,13 @@ function eliminate(f){
   }
   // Test mode: nobody is ever KO'd for good — just respawn at center
   if(TESTMODE.active){
-    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f.cloud=0; f.frozen=0;
+    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0;
     puff(W*0.5, 40, f.color, 12);
     return;
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f.cloud=0; f.frozen=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0;
     for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6); banner("YOYLEBERRY REFORM!", 900);
     return;
   }
@@ -8497,7 +8539,7 @@ function eliminate(f){
     // you back in where you can see, instead of at the roof of a world three screens tall.
     f.x=camX+W*0.5; f.y=camY-40;
   }
-  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f.cloud=0;
+  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0;
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
 
@@ -12820,6 +12862,14 @@ function drawFighter(f){
   const blink=f.invuln>0 && (f.invuln%8<4);
   ctx.globalAlpha=blink?0.4:1;
   drawAlpha=blink?0.4:1;   // sprites composite against this instead of reading back ctx.globalAlpha
+  // CIRCLE WIND-UP telegraph (see startWindup): a ring closing IN on the fighter, so the commitment
+  // is readable before it lands. Drawn here rather than as sim puffs so it spends no simulation
+  // randomness -- a seeded match replays identically whether or not it is on screen.
+  if(f._windup){
+    const wu=f._windup, k=wu.t/wu.t0, rr=f.r+10+40*k;
+    ctx.save(); ctx.globalAlpha=0.35+0.5*(1-k); ctx.strokeStyle=wu.color; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(0,0,rr,0,7); ctx.stroke(); ctx.restore();
+  }
   if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the frames after touchdown
 
   // ---- Teardrop cloud form ----

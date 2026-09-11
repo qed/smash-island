@@ -155,11 +155,16 @@ describe('each pattern does what its name says', () => {
     expect(r.weakened).toBeGreaterThan(0);
   });
 
-  it('burst — Money’s ring expands, so a distant target is caught later', async () => {
+  it('burst — Fries’ ring expands, so a distant target is caught later', async () => {
+    // This was Money's. Her smash went back to the three-coin Jackpot Spread -- a projectile fan, not
+    // a ring -- and the case quietly started measuring coins in flight and still passed, so it had
+    // stopped testing a burst at all. Fries is a burst. Every circle also winds up first now
+    // (CIRCLE_WINDUP), so "early" is counted from the frame the ring actually starts.
     const w = bootMonolith(); await w.eval('profileReady');
-    const nearEarly = stage(w, 'Money', 420, 2).pct;
-    const farEarly = stage(w, 'Money', 520, 2).pct;
+    const early = w.eval('CIRCLE_WINDUP') + 2;
+    const nearEarly = stage(w, 'Fries', 420, early).pct;
+    const farEarly = stage(w, 'Fries', 520, early).pct;
     expect(nearEarly, 'the ring starts small').toBeGreaterThan(farEarly);
-    expect(stage(w, 'Money', 520, 20).pct, 'and reaches them a few frames later').toBeGreaterThan(0);
+    expect(stage(w, 'Fries', 520, early + 18).pct, 'and reaches them a few frames later').toBeGreaterThan(0);
   });
 });
