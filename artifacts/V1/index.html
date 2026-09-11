@@ -6698,7 +6698,10 @@ const ATK_RECOVER = 1 - ATK_WINDUP - ATK_RELEASE;
 // frame the attack has already resolved. Every attack entry point goes through here so the length
 // is recorded alongside the countdown (a smash runs longer than a jab, and the phase split has to
 // scale with it rather than clipping).
-function armAtk(f, len){
+function armAtk(f, len, kind){
+  // `kind` is what the limb does on the strike: 'punch' for the jab, 'kick' for the low ground move,
+  // null for everything else (specials and smashes have their own silhouettes). Render-only.
+  f._atkKind = kind || null;
   f._atkAnim = len;
   f._atkLen  = len;
   f._atkPhase = "windup";   // interned literals; mirrored each tick in the fighter loop
@@ -6757,7 +6760,7 @@ function doAttack(f){
   if(inOwnTeamZone(f)) return;
 
   f.flash=6;
-  armAtk(f, ATK_ANIM);      // render-only: spriteRig plays the windup/release/recover beats off this
+  armAtk(f, ATK_ANIM, 'punch');   // render-only: spriteRig plays the windup/release/recover beats off this
   // THROWABLE: if holding a picked-up item, this attack hurls it instead of a normal swing
   if(f._holding){
     const h=f._holding; f._holding=null;
@@ -7648,6 +7651,9 @@ function doUpSpecial(f){
 // ============================================================
 function doGroundMove(f){
   f.flash=5;
+  // It never armed the swing timeline, so the low move played no animation of any kind. It sweeps the
+  // feet, so it kicks.
+  armAtk(f, ATK_ANIM, 'kick');
   const P = rangeProfile(f);
   if(P.shock==="poke"){
     // long, fast, ranged poke projectile — reach scales with the fighter's attack reach
@@ -12246,6 +12252,27 @@ function bfdiFace(f, R, cfg){
 
 // The stubby shared limbs, factored out of drawFighter so sprites can opt in/out per character.
 // ax = arm attach x. With ax=f.r and both flags on this is byte-for-byte the original blob rig.
+// The striking limb, in BFDI's own idiom: a black stick with a small round end. Local space is the
+// rig's -- already translated to the body, lunged, squashed and mirrored -- so +x here is not always
+// forward: a render that natively faces LEFT (sp.flip) was mirrored the other way round, and its
+// forward is -x. Length follows the swing: nothing on the gather, full on the strike, easing home.
+function drawAttackLimb(f, R, im, sp, dw, dh){
+  const ph = f._atkPhase, k = atkPhaseK(f);
+  const ext = ph === 'release' ? Math.sin(k*Math.PI/2) : ph === 'recover' ? 1 - k : 0;
+  if(ext <= 0.02) return;
+  const fwd = (im && sp.flip) ? -1 : 1;
+  const halfW = im ? dw/2 : R*0.9, halfH = im ? dh/2 : R;
+  const kick = f._atkKind === 'kick';
+  const x0 = fwd*halfW*0.55, y0 = kick ? halfH*0.6 : -halfH*0.02;   // hip for a kick, chest for a punch
+  const x1 = x0 + fwd*(kick ? 1.0 : 0.85)*R*ext, y1 = y0 - (kick ? R*0.18*ext : 0);
+  ctx.save();
+  ctx.strokeStyle = '#1c1c1c'; ctx.fillStyle = '#1c1c1c';
+  ctx.lineWidth = Math.max(3, R*0.13); ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  if(kick){ ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 + fwd*R*0.26, y1 + R*0.05); ctx.stroke(); }   // the foot
+  else { ctx.beginPath(); ctx.arc(x1, y1, R*0.16, 0, 7); ctx.fill(); }                                         // the fist
+  ctx.restore();
+}
 function drawStubLimbs(f, R, arms, legs, ax){
   ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.lineCap="round";
   const legSw=Math.sin(hazardT*0.3+f.idx)*(Math.abs(f.vx)>0.5?6:1);
@@ -12828,7 +12855,8 @@ function drawSpriteBody(f, sp, anim){
   // A character RENDER is the whole character — arms, legs and face already drawn. The shared
   // stub limbs and shared BFDI face exist for the VECTOR art, which deliberately omits them, so
   // both are suppressed while an image is live or the fighter grows a second set of each.
-  if(!im) drawStubLimbs(f, R, sp.arms!==false, sp.legs!==false, (sp.limbX==null?1:sp.limbX)*R);
+  const striking = f._atkAnim > 0 ? f._atkKind : null;   // the stub pair gives way to the swinging limb
+  if(!im) drawStubLimbs(f, R, sp.arms!==false && striking!=='punch', sp.legs!==false && striking!=='kick', (sp.limbX==null?1:sp.limbX)*R);
   ctx.save();
   // Only a render needs the rig: vector art still draws its own swinging stub limbs. The one
   // exception is a `float` character — she is LIMBLESS either way, so nothing else would ever
@@ -12875,6 +12903,10 @@ function drawSpriteBody(f, sp, anim){
   if(tint) lay(tint[0],tint[1]);
   if(f.burn>0) lay("#f0521f",0.30);
   if(f.bleed>0) lay("#c0304a",0.22);            // bleed: a darker red under the burn tint             // burn reads on top of any other state, as on the blob
+  // PUNCH / KICK. Every attack used to be the whole body lunging; now the jab throws an arm and the
+  // ground move throws a leg, out on the release beat and back on the recover. Drawn after the art
+  // and inside the rig, so it moves with everything else that moves the body.
+  if(f._atkKind && f._atkAnim > 0) drawAttackLimb(f, R, im, sp, dw, dh);
   ctx.restore();
   // face last and UNFLIPPED, so eyes read identically across the whole cast — vector art only;
   // a render already carries its own face (see the note at the top of this function)
