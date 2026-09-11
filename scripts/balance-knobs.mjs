@@ -13,6 +13,7 @@
 // Nothing here writes to disk.
 //
 // Each knob: { doc, find: RegExp(g), read(match)->number, write(match, v)->string, clamp:[lo,hi] }
+// plus an optional `places`: how many decimals a scaled value keeps (default 0, whole numbers).
 // A scale of 1.0 must reproduce the source byte-for-byte — verify() below asserts exactly that.
 
 const int = (s) => parseInt(s, 10);
@@ -121,7 +122,7 @@ export const KNOBS = {
     read: (m) => parseFloat(m[4]),
     write: (m, v) => { const f = parseFloat(m[4]) ? v / parseFloat(m[4]) : 1;
       return m[1] + trim(parseFloat(m[2]) * f) + m[3] + v + m[5]; },
-    clamp: [0, 40],
+    clamp: [0, 40], places: 2,   // D wrote decimal rows (Money's special, Barf Bag's splash)
   },
   'kb.tiered': {
     doc: 'two-tier knockback, same reach as dmg.tiered',
@@ -129,7 +130,7 @@ export const KNOBS = {
     read: (m) => parseFloat(m[4]),
     write: (m, v) => { const f = parseFloat(m[4]) ? v / parseFloat(m[4]) : 1;
       return m[1] + trim(parseFloat(m[2]) * f) + m[3] + v + m[5]; },
-    clamp: [0, 30],
+    clamp: [0, 30], places: 2,
   },
 
   // ---- BLEED -------------------------------------------------------------------------------
@@ -154,7 +155,10 @@ export function patch(knobName, factor) {
     const m = args.slice(0, -2);
     m[0] = args[0];
     const cur = k.read(m);
-    const next = Math.max(k.clamp[0], Math.min(k.clamp[1], Math.round(cur * factor)));
+    // Whole numbers unless the knob says otherwise: a family written with decimals has to come back
+    // with them, or a scale of 1.0 stops being a no-op (see verify) and every arm inherits the drift.
+    const p = 10 ** (k.places || 0);
+    const next = Math.max(k.clamp[0], Math.min(k.clamp[1], Math.round(cur * factor * p) / p));
     return k.write(m, next);
   });
 }
