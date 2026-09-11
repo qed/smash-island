@@ -925,7 +925,7 @@ const ROSTER = [
   {name:"Flower", w:102, color:"#ff6fae", play:true, arch:"Grappler",
    kit:{special:"quake", desc:"Stomp Quake → grounded shockwave"}},
   {name:"Tennis Ball", w:100, color:"#c9f24b", play:true, arch:"Technician",
-   kit:{special:"serve", desc:"Bounce Serve → ricocheting ball, gains speed"}},
+   kit:{special:"serve", desc:"Gadget Rack → ↓+C swaps ball, mine, turret, battery; C uses it"}},
   // --- 10 NEW PLAYABLE (board order), each a distinct kit ---
   {name:"Blocky",w:110,color:"#e0503a",play:true,arch:"Trapper",
    kit:{special:"anvil", desc:"Prank Rig → drops an anvil trap from above"}},
@@ -2376,6 +2376,7 @@ const SMASH_EFFECT_TEXT = {
   drain:'drains them', weaken:'leaves them taking more', define:'marks them to take more',
 };
 const SMASH_BLURB_BESPOKE = {
+  serve:   'fires a much stronger version of whatever gadget is loaded',
   fly:     'rises, then drops; a plunge from real height pays out Momentum',
   spike:   'a nail-dash that hits everything it passes through',
   payday:  'three coins in a fan, worth more against a hurt target',
@@ -6441,6 +6442,7 @@ function step(){
   // projectiles
   for(const pr of projectiles){
     if(pr.delay>0){ pr.delay--; continue; }   // held back briefly before it starts moving (Morse bursts)
+    if(pr.turret){ tickTurret(pr); continue; }   // Tennis Ball's turret shoots; it is never itself a hit
     // HOMING: gently curve toward the nearest valid target (used by Two's mind-read copies).
     if(pr.homing>0){
       let best=null, bd=1e9;
@@ -7029,6 +7031,8 @@ function playSmashSfx(id){
 // continuation lines; test/smash-patterns.test.js is what guarantees the table is the live path.
 // If you are changing one of the thirty-nine, change its ROW, not the body below.
 const SMASHES = {
+  // Tennis Ball: the smash fires a much stronger version of whichever gadget is loaded (see GADGETS).
+  serve(f,c){ f.flash=12; fireGadget(f, true, c); },
   // ---- Puffball (fly) — Meteor Puff: launch up then a big body-slam ----
   fly(f,c){ f.flash=14;
     // METEOR PUFF PAYOFF. The plunge that connects from real HEIGHT is a committed read — you gave
@@ -7249,7 +7253,8 @@ function runSmashSpec(f, s, c){
 // Money's restored Jackpot Spread is why this exists: three coins every 27 frames, twice the smash
 // rate of anyone else in the game. Values sit in the band the rows use for moves of the same job.
 const LEGACY_SMASH_COST = {
-  payday:  {cd:62},   // Money -- a three-coin fan, priced like Match's and Roboty's three-shot rows
+  payday:  {cd:62},
+  serve:   {cd:66},   // Tennis Ball -- his loaded gadget, fired at full strength   // Money -- a three-coin fan, priced like Match's and Roboty's three-shot rows
   spike:   {cd:50},   // Naily -- the nail-dash
   fly:     {cd:60},   // Puffball -- Meteor Puff
   counter: {cd:56},   // Needle -- the Riposte stance
@@ -7270,8 +7275,6 @@ const SMASH_SPEC = {
   ring:     {pat:'lunge', reach:26, fx:22, band:0.45,  dmg:[12.24,17], kb:[5.04,7],   effect:'stun', n:26, cost:{stun:22}, color:'#ffe08a'},
   // The slap war, still going. Fast step, no band — Coiny does not need spacing, he needs tempo.
   slap:     {pat:'lunge', reach:28, fx:30, step:6,     dmg:[10.8,15], kb:[5.76,8],   effect:'bleed', n:120, cost:{stun:14}, color:'#f2c84b'},
-  // "Bounce Serve" is his neutral; the smash is the power serve. A racket is all tip.
-  serve:    {pat:'lunge', reach:36, fx:40, band:-0.7,  dmg:[8.64,12],  kb:[10.8,15], effect:'knockdown', cost:{stun:28}, color:'#c9f24b'},
   // "Price Tag: slaps a sticker that makes a foe take more damage." The tag IS the move; the hit is
   // nearly incidental, so the numbers are the lowest here and the cooldown is the price.
   pricetag: {pat:'lunge', reach:32, fx:36, band:-0.55, dmg:[6.48,9],   kb:[4.32,6],   effect:'define', n:3, cost:{cd:74}, color:'#e8d0a0'},
@@ -7635,7 +7638,7 @@ const DOWNSPECIALS = {
   quake(f){ f.flash=8; // Flower — stomp shockwave
     for(const t of fighters){ if(t.dead||t.idx===f.idx||!t.onground)continue; if(Math.abs(t.x-f.x)<120){ applyHit(t,5,Math.sign(t.x-f.x||1)*5,-9,f);} }
     for(let i=0;i<8;i++) puff(f.x+(Math.random()*200-100),f.y+18,'#ff6fae',4); },
-  serve(f){ f.flash=8; f.armor=30; puff(f.x,f.y,'#c9f24b',5);  }, // Tennis Ball — brace
+  serve(f){ swapGadget(f); }, // Tennis Ball — steps the gadget rack (see GADGETS); it replaced a 30-frame armour brace
   anvil(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*40,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:8,kb:9,r:14,color:'#8a6a3a',life:260,trap:true,arm:30});  }, // Blocky — trap
   slap(f){ f.flash=8; f.countering=24; puff(f.x,f.y-8,'#e8a33d',5);  }, // Coiny — counter
   cap(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*10,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:3,kb:2,r:12,color:'#3a6ea5',life:200,trap:true,slick:true});  }, // Pen — slippery zone
@@ -7786,7 +7789,7 @@ function fireSpecial(f, inp){
     }
     return;
   }
-  if(inp.down){ doDownSpecial(f); f.spCd=Math.max(f.spCd,64); return; }
+  if(inp.down){ doDownSpecial(f); f.spCd=Math.max(f.spCd, (f.kit && f.kit.special==='serve') ? GADGET_SWAP_CD : 64); return; }
   doSpecial(f); f.spCd=Math.max(f.spCd,55);
 }
 
@@ -7816,6 +7819,100 @@ function applyDashVY(f, upSpeed, downSpeed){
   else if(f._inDown) f._dashVY = (downSpeed||14); // down-dash
   if(f._dashVY){ f.onground=false; }             // leave the floor so a vertical dash actually rises/dips
 }
+// ---- TENNIS BALL'S GADGETS. The design doc gave his down-special as a "Factory Hatch" handing out Golf
+// Ball's gadgets -- mine, turret, battery -- at random. Here it is a rack he steps through on purpose: the
+// down-special swaps which gadget is loaded, the special uses it, and the smash fires a much stronger
+// version of the same thing. The ball is his own and stays first in the rack.
+const GADGETS = ['ball', 'mine', 'turret', 'battery'];
+const GADGET_NAME = { ball:'Ball', mine:'Mine', turret:'Turret', battery:'Battery' };
+const GADGET_SWAP_CD = 18;                                              // swapping is a decision, not a commitment
+const GADGET_SPECIAL_CD = { ball:51, mine:70, turret:110, battery:60 };  // the turret keeps working after he moves on
+function gadgetOf(f){ return f._gadget || 'ball'; }
+function swapGadget(f){
+  f._gadget = GADGETS[(GADGETS.indexOf(gadgetOf(f)) + 1) % GADGETS.length];
+  f.flash = 6; puff(f.x, f.y - 8, '#c9f24b', 6);
+  if(f.you || f.you2) banner('Gadget: ' + GADGET_NAME[f._gadget], 600);
+}
+// what the CPU wants loaded for the range the fight is at
+function gadgetFor(dist){ return dist > 260 ? 'turret' : dist > 150 ? 'ball' : dist > 70 ? 'battery' : 'mine'; }
+// strong = the smash version; c = its charge tier (0 tap, 1 full)
+function fireGadget(f, strong, c){
+  const g = gadgetOf(f);
+  if(g === 'ball'){
+    if(!strong) spawnProj(f, {vx:f.face*6, vy:-6, grav:true, bounce:true, dmg:6, kb:5, r:8, color:'#c9f24b', life:150});
+    else spawnProj(f, {vx:f.face*(13+4*c), vy:-2, grav:false, dmg:13+5*c, kb:12+4*c, r:12, color:'#c9f24b', life:90});   // a rocket serve
+  } else if(g === 'mine'){
+    projectiles = projectiles.filter(pr => !(pr.owner === f.idx && pr._gadgetMine));   // one mine out at a time
+    projectiles.push({owner:f.idx, ownerObj:f, x:f.x + f.face*30, y:feetY(f) - 8, vx:0, vy:0, grav:false,
+      dmg: strong ? 16+6*c : 9, kb: strong ? 13+4*c : 8, r: strong ? 22 : 12, color:'#3a3a3a',
+      life: strong ? 420 : 360, trap:true, arm:24, _gadgetMine:true, shape:'gadgetMine'});
+  } else if(g === 'turret'){
+    projectiles = projectiles.filter(pr => !(pr.owner === f.idx && pr.turret));        // one turret at a time
+    projectiles.push({owner:f.idx, ownerObj:f, x:f.x + f.face*26, y:f.y - 6, vx:0, vy:0, grav:false, dmg:0, kb:0,
+      r:10, color:'#8a8a8a', life: strong ? 190 : 150, shape:'gadgetTurret',
+      turret:{ cd:18, every: strong ? 16 : 30, shots: strong ? 6 : 3, dmg: strong ? 7+2*c : 4, kb: strong ? 6+2*c : 3,
+               range:520, aim: f.face > 0 ? 0 : Math.PI }});
+  } else {   // battery: it shocks what it hits
+    spawnProj(f, {vx:f.face*(strong ? 11 : 8), vy: strong ? -3 : -5, grav:true, dmg: strong ? 12+5*c : 5, kb: strong ? 10+4*c : 4,
+      r: strong ? 11 : 8, color:'#f2d84b', life:110, fxTag:'stun', fxN: strong ? 55 : 28, shape:'gadgetBattery'});
+  }
+}
+// The turret shoots and is never itself a hit: the projectile loop hands it here and moves on.
+function tickTurret(pr){
+  const T = pr.turret, o = pr.ownerObj;
+  pr.life--;
+  if(!o || o.dead){ pr.life = 0; return; }
+  if(T.shots <= 0){ pr.life = Math.min(pr.life, 12); return; }
+  if(--T.cd > 0) return;
+  let best = null, bd = T.range;
+  for(const t of fighters){
+    if(t.dead || t.team === o.team || t.invuln > 0) continue;
+    const d = Math.hypot(t.x - pr.x, t.y - pr.y);
+    if(d < bd){ bd = d; best = t; }
+  }
+  if(!best){ T.cd = 6; return; }
+  const dx = best.x - pr.x, dy = best.y - pr.y, d = Math.hypot(dx, dy) || 1;
+  T.aim = Math.atan2(dy, dx);
+  // pushed directly rather than through spawnProj, so it is drawn leaving the turret, not Tennis Ball
+  projectiles.push({owner:o.idx, ownerObj:o, x:pr.x, y:pr.y - 4, vx:dx/d*10, vy:dy/d*10, grav:false,
+    dmg:T.dmg, kb:T.kb, r:5, color:'#f2f24b', life:60, shape:'gadgetShot'});
+  T.shots--; T.cd = T.every;
+  puff(pr.x, pr.y - 4, '#f2f24b', 2);
+}
+// what he has loaded, in a small badge beside him
+function drawGadgetBadge(f){
+  const g = gadgetOf(f), shape = PROJ_SHAPE[{ ball:'serve', mine:'gadgetMine', turret:'gadgetTurret', battery:'gadgetBattery' }[g]];
+  ctx.save(); ctx.translate(f.r + 12, -f.r - 18);
+  ctx.globalAlpha = 0.9; ctx.fillStyle = '#1c1c1c'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, 7); ctx.fill();
+  ctx.globalAlpha = 1; ctx.fillStyle = g === 'ball' ? '#c9f24b' : g === 'battery' ? '#f2d84b' : '#8a8a8a';
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1.5;
+  if(shape) shape.draw(ctx, 5.5, { x:0, y:0, vx:0, vy:0, color:ctx.fillStyle, turret:{ aim:0 } });
+  ctx.restore();
+}
+function mineShape(c, r){
+  // a squat dome with a light that blinks faster as it waits
+  c.beginPath(); c.arc(0, r*0.3, r*1.05, Math.PI, 0); c.closePath(); c.fillStyle = '#3a3a3a'; c.fill(); c.stroke();
+  c.fillStyle = '#5a5a5a'; c.fillRect(-r*1.2, r*0.25, r*2.4, r*0.35);
+  c.fillStyle = (hazardT % 20 < 10) ? '#ff3a3a' : '#7a1a1a';
+  c.beginPath(); c.arc(0, -r*0.35, r*0.28, 0, 7); c.fill();
+}
+function turretShape(c, r, pr){
+  // a tripod and a barrel that turns to whoever it last fired at
+  const aim = (pr && pr.turret) ? pr.turret.aim : 0;
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 1.6;
+  c.beginPath(); c.moveTo(0, r*0.3); c.lineTo(-r*0.9, r*1.2); c.moveTo(0, r*0.3); c.lineTo(r*0.9, r*1.2); c.stroke();
+  c.save(); c.rotate(aim); c.fillStyle = '#5a5a5a'; c.fillRect(0, -r*0.22, r*1.5, r*0.44); c.strokeRect(0, -r*0.22, r*1.5, r*0.44); c.restore();
+  c.beginPath(); c.arc(0, 0, r*0.7, 0, 7); c.fillStyle = '#8a8a8a'; c.fill(); c.stroke();
+}
+function batteryShape(c, r){
+  // a cell with its terminal, and the charge on its face
+  c.beginPath(); c.rect(-r*1.1, -r*0.55, r*2.0, r*1.1); c.fillStyle = '#2a2a2a'; c.fill(); c.stroke();
+  c.fillStyle = '#f2d84b'; c.fillRect(-r*1.1, -r*0.55, r*0.8, r*1.1);
+  c.fillStyle = '#bdbdbd'; c.fillRect(r*0.9, -r*0.22, r*0.3, r*0.44);
+  c.strokeStyle = '#f2d84b'; c.lineWidth = 1.4; c.beginPath();
+  c.moveTo(r*0.25, -r*0.4); c.lineTo(0, 0); c.lineTo(r*0.35, 0); c.lineTo(r*0.1, r*0.4); c.stroke();
+}
+
 function doSpecial(f){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
@@ -7860,7 +7957,7 @@ function doSpecial(f){
       for(const t of fighters){ if(t.dead||t.idx===f.idx||!t.onground)continue;
         if(Math.abs(t.x-f.x)<170){ applyHit(t, 14, Math.sign(t.x-f.x||1)*12, -16, f);} }   // super-strength: bigger range + launch
       for(let i=0;i<16;i++) puff(f.x+(Math.random()*320-160),f.y+20,'#ff6fae',5);  f.spCd=74; } break;
-    case "serve": spawnProj(f,{vx:f.face*6,vy:-6,grav:true,bounce:true,dmg:6,kb:5,r:8,color:"#c9f24b",life:150}); f.spCd=51; break;
+    case "serve": fireGadget(f, false, 0); f.spCd = GADGET_SPECIAL_CD[gadgetOf(f)]; break;   // Tennis Ball: whatever is loaded
     // ---- new playable kits ----
     case "anvil": { // Blocky: drop an anvil from above onto the nearest foe (telegraphed)
       let tgt=null,best=1e9; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.abs(t.x-f.x); if(d<best){best=d;tgt=t;} }
@@ -9923,6 +10020,13 @@ function aiThink(f){
     if(rn<0.25){ if(dx<0)inp.left=true; else inp.right=true; }
   }
 
+  // TENNIS BALL loads the gadget that suits the range before he spends one: the turret and the ball from
+  // afar, the battery and the mine up close. His choice is re-picked when his target is, not every frame,
+  // so he does not flick between two gadgets at a range boundary; each down-special steps the rack once.
+  if(sp === "serve"){
+    if(!f._wantGadget || f.aiTimer >= 29) f._wantGadget = gadgetFor(dist);
+    if(f.spCd <= 0 && gadgetOf(f) !== f._wantGadget){ inp.special = true; inp.down = true; return finishAI(f, inp, sp); }
+  }
   // === OFFENSE: archetype-specific ===
   const targetVulnerable = (t.hitstun>0 || t.frozen>0 || (t.invuln<=0 && Math.abs(t.vx)>4));
   const inMelee = dist < f.r+t.r+40;
@@ -10180,7 +10284,7 @@ function drawProjectile(pr){
     {
       const kit = pr.ownerObj && pr.ownerObj.kit;
       const sp = kit && kit.special;
-      const shape = PROJ_SHAPE[sp];
+      const shape = PROJ_SHAPE[pr.shape] || PROJ_SHAPE[sp];   // a shot may name its own shape (Tennis Ball's gadgets)
       if(shape){
         const ang = Math.atan2(pr.vy||0, pr.vx||0);
         ctx.save();
@@ -13030,6 +13134,7 @@ function drawFighter(f){
     ctx.fillText(label, 0, tagY+1);
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
+  if(f.kit && f.kit.special === 'serve') drawGadgetBadge(f);   // what Tennis Ball has loaded
   ctx.restore();
 }
 // ---- WHICH WAY A FIGHTER IS DRAWN ------------------------------------------------------------
@@ -13113,6 +13218,11 @@ const PROJ_SHAPE = {
   ring:     { draw(c,r,pr){ chimeShape(c, r, pr.color); } },           // Bell -- a struck note
   gust:     { draw(c,r,pr){ gustShape(c, r, pr.color); } },            // Fanny -- air
   pricetag: { draw(c,r){ tagShape(c, r); } },                          // Profily -- a price tag
+  // Tennis Ball's gadgets name these per shot, so a mine is not drawn as a tennis ball
+  gadgetMine:    { draw(c,r){ mineShape(c, r); } },
+  gadgetTurret:  { draw(c,r,pr){ turretShape(c, r, pr); } },
+  gadgetShot:    { draw(c,r){ c.beginPath(); c.arc(0, 0, r*0.9, 0, 7); c.fill(); c.stroke(); } },
+  gadgetBattery: { spin:true, draw(c,r){ batteryShape(c, r); } },
 };
 
 // ---- PROJECTILE SPRITES, round two. Twenty-three kits that fire something still drew it as the bare

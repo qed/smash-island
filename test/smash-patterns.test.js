@@ -34,11 +34,13 @@ const stage = (w, name, dummyAt, frames = 90, charge = 1) => w.eval(`
              weakened:D.weakened|0, ctrlRev:D.ctrlRev|0, defined:D.defineStacks|0, projs:projectiles.length };
   })()`);
 
-describe('no two of the 53 are the same move', () => {
+// 52: Tennis Ball left the table when his smash became his loaded gadget, fired at full strength --
+// a bespoke body in SMASHES, priced in LEGACY_SMASH_COST, and tested in tennis-gadgets.
+describe('no two of the 52 are the same move', () => {
   it('every row differs in pattern, effect, band, ratio or cost', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const rows = w.eval('Object.entries(SMASH_SPEC)');
-    expect(rows.length).toBe(53);
+    expect(rows.length).toBe(52);
     const seen = new Map(), dupes = [];
     for (const [k, r] of rows) {
       const id = rowKey(r);
