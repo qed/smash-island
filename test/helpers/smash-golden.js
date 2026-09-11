@@ -39,6 +39,7 @@ export function measureSmash(w, name, charge, dist, seed = 5) {
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
       var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(name)}; }), 400, groundY()-24, 0);
       var D = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 400+${dist}, groundY()-24, 1);
+      D.hurt = null;   // a standard 24px target: the fixture measures the smash, not the dummy's body
       A.team=0; D.team=1; A.face=1; D.face=-1;
       [A,D].forEach(function(f){ f.controller='still'; f.stocks=9; f.invuln=0; });
       fighters=[A,D];

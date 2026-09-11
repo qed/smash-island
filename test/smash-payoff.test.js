@@ -58,6 +58,16 @@ describe('Meteor Puff pays for height', () => {
     expect(r.bullet, 'no bullet speed from a committed plunge').toBe(300);
   });
 
+  it('pays from PLUNGE_HEIGHT itself, whatever shape the target is', async () => {
+    // The point-blank hit reaches 92px plus the target's half-height below her feet. A plunge from
+    // inside that band used to be caught by it, spend the target's grace and never pay out, so the
+    // real threshold was 116px on the old 24px circle and moved with every hurtbox after it.
+    const w = boot(); await settle(w);
+    const r = plunge(w, 100);
+    expect(r.hurt, 'the plunge did not connect at all').toBeGreaterThan(0);
+    expect(r.haste, 'no haste from a 100px plunge').toBe(300);
+  });
+
   it('the same move from level ground is just a hit', async () => {
     const w = boot(); await settle(w);
     const r = plunge(w, 0);

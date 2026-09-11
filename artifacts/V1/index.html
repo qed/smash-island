@@ -2413,7 +2413,7 @@ function refreshSel(){
       ["↑+C", "Up special (recovery)"],
       ["↓+C", "Down special"],
       ["hold V", smashBlurb(chosen)],
-      ["charge", smashFullOf(chosen) + " frames to full · " + smashFloorOf(chosen) + "-frame tap"],
+      ["charge", smashFullOf(chosen) + " frames to full · " + smashFloorOf(chosen) + "-frame tap · hold ↑/↓ to angle"],
       ["X+C", "Finisher"],
     ];
     mc.innerHTML = `<div class="mc-head">${chosen.name} — moves</div>` +
@@ -4913,6 +4913,119 @@ function buildFighters(){
     fighters.push(f);
   });
 }
+// ---- HURTBOXES. Every fighter used to be hit as the same 24px circle, so a needle and a television
+// were exactly as easy to tag. Each now has an ellipse sized and shaped from their own art (the SPRITES
+// box, contain-fitted), scaled so the MEDIAN fighter keeps exactly the 24px circle's area, and clamped
+// so the thinnest are still hittable. It is SEPARATE from f.r on purpose: f.r also sizes the art and
+// stands the fighter on platforms, and neither of those should move when the hurtbox does.
+const HURTBOX = {
+  Balloony:{rx:13, ry:28.7},
+  "Barf Bag":{rx:23.5, ry:22.6},
+  Basketball:{rx:23.5, ry:26.0},
+  Bell:{rx:23.5, ry:25.3},
+  Blocky:{rx:24.6, ry:24.3},
+  Bomby:{rx:26.6, ry:24.2},
+  Book:{rx:23.5, ry:22.9},
+  Bracelety:{rx:32.7, ry:18.3},
+  Bubble:{rx:22.5, ry:25.6},
+  Cake:{rx:21.1, ry:28.7},
+  Coiny:{rx:23.5, ry:22.5},
+  David:{rx:14.8, ry:28.7},
+  Donut:{rx:23.5, ry:22.2},
+  Dora:{rx:21.5, ry:28.7},
+  Fanny:{rx:22.6, ry:28.7},
+  Fern:{rx:21.6, ry:28.7},
+  Firey:{rx:21.5, ry:28.7},
+  "Firey Jr.":{rx:26.6, ry:22.1},
+  Flower:{rx:23.1, ry:28.7},
+  Fries:{rx:20.3, ry:28.7},
+  Gaty:{rx:26.6, ry:19.1},
+  Gelatin:{rx:23.5, ry:24.4},
+  "Golf Ball":{rx:23.5, ry:27.2},
+  Grassy:{rx:19.9, ry:28.7},
+  "Ice Cube":{rx:22.1, ry:26.6},
+  Leafy:{rx:17.5, ry:27.6},
+  Lightning:{rx:23.5, ry:25.4},
+  Liy:{rx:23.5, ry:26.6},
+  Lollipop:{rx:13.8, ry:28.7},
+  Loser:{rx:23.5, ry:28.2},
+  Marker:{rx:13.2, ry:31.7},
+  Match:{rx:13, ry:30.7},
+  Money:{rx:23.5, ry:25.0},
+  Naily:{rx:32.7, ry:19.3},
+  Needle:{rx:13, ry:31.7},
+  Nickel:{rx:23.5, ry:25.3},
+  Pen:{rx:13, ry:30.7},
+  Pencil:{rx:14.9, ry:31.7},
+  Pillow:{rx:21.6, ry:28.7},
+  Pin:{rx:17.2, ry:28.7},
+  Profily:{rx:23.5, ry:22.9},
+  Puffball:{rx:24.6, ry:24.8},
+  Remote:{rx:23.5, ry:23.3},
+  Roboty:{rx:13.3, ry:31.7},
+  Rocky:{rx:23.5, ry:17.2},
+  Rose:{rx:20.6, ry:28.7},
+  Ruby:{rx:26.6, ry:22.5},
+  Ruler:{rx:14.9, ry:28.7},
+  Saw:{rx:14.8, ry:28.7},
+  Sidewalky:{rx:23.5, ry:23.3},
+  Snowball:{rx:23.5, ry:23.4},
+  TV:{rx:23.5, ry:21.5},
+  Taco:{rx:23.5, ry:21.4},
+  Teardrop:{rx:20.6, ry:28.7},
+  "Tennis Ball":{rx:23.5, ry:25.7},
+  Toothpaste:{rx:15.8, ry:28.7},
+  Tree:{rx:23.5, ry:27.7},
+  Woody:{rx:23.5, ry:28.2},
+  "Yellow Face":{rx:23.5, ry:24.3},
+};
+const HURT_R0 = 24;   // the old universal hurtbox radius. A check that never included the target's own
+                      // radius was measuring to its centre, which sat HURT_R0 inside its edge.
+function hurtboxFor(name){ const h = HURTBOX[name]; return h ? { rx:h.rx, ry:h.ry, oy:0 } : null; }
+function hurtRX(t){ return t.hurt ? t.hurt.rx : t.r; }
+function hurtRY(t){ return t.hurt ? t.hurt.ry : t.r; }
+function hurtCY(t){ return t.y + (t.hurt ? t.hurt.oy : 0); }
+// Distance from (x,y) to the EDGE of t's hurtbox, negative inside. For a plain circle this is exactly
+// hypot - t.r, which is why every check converted to it reproduces its old number unchanged until a
+// fighter actually has a non-circular box. For an ellipse it is measured along the ray to the centre.
+function hurtGap(t, x, y){
+  const dx = x - t.x, dy = y - hurtCY(t), d = Math.hypot(dx, dy);
+  if(!t.hurt) return d - t.r;
+  const k = Math.hypot(dx/t.hurt.rx, dy/t.hurt.ry);   // exactly 1 on the edge
+  return k < 1e-9 ? -Math.min(t.hurt.rx, t.hurt.ry) : d * (1 - 1/k);
+}
+
+// HITBOX OVERLAY -- press B (unless a player has B bound). Yellow: each fighter's hurtbox, the thing that
+// gets hit. Grey, dashed: f.r, the body that stands on platforms and sizes the art -- a different shape on
+// purpose. Red: attack hitboxes from the last few frames. Render-only; recording happens only while on.
+let SHOW_HITBOXES = false;
+const DEBUG_HITS = [];
+function noteHitbox(x, y, r){ if(SHOW_HITBOXES) DEBUG_HITS.push({ x:x, y:y, r:r, t:10 }); }
+function drawHitboxOverlay(){
+  ctx.save();
+  for(const f of fighters){
+    if(f.dead) continue;
+    ctx.globalAlpha = 0.9; ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(f.x, hurtCY(f), hurtRX(f), hurtRY(f), 0, 0, 7); ctx.stroke();
+    ctx.globalAlpha = 0.5; ctx.strokeStyle = '#9aa7b0'; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for(let i = DEBUG_HITS.length - 1; i >= 0; i--){
+    const h = DEBUG_HITS[i];
+    ctx.globalAlpha = 0.15 + 0.06*h.t; ctx.strokeStyle = '#e0503a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, 7); ctx.stroke();
+    if(--h.t <= 0) DEBUG_HITS.splice(i, 1);
+  }
+  ctx.restore();
+}
+addEventListener('keydown', e => {
+  if(e.code !== 'KeyB') return;
+  if([KEYS, KEYS_P2].some(k => Object.values(k).includes('KeyB'))) return;   // a player's key wins
+  SHOW_HITBOXES = !SHOW_HITBOXES;
+  if(!SHOW_HITBOXES) DEBUG_HITS.length = 0;
+  banner(SHOW_HITBOXES ? 'Hitboxes: ON  (B)' : 'Hitboxes: OFF', 700);
+});
+
 function makeFighter(r,x,y,idx){
   const kit=r.kit||{special:"basic"};
   const w=r.w||90;
@@ -4928,6 +5041,7 @@ function makeFighter(r,x,y,idx){
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
     rooted:0, ctrlRev:0, _revLock:0, slowed:0, _sawing:0, koCount:0, iceUntil:0, healing:0, _hurt:0, deaths:0, killCount:0, placement:null, _downOrder:0, _kos:0, _falls:0, _dmgDealt:0, _dmgTaken:0, _infected:0, _infectedBy:null, _origTeam:0, _lastInput:null, _empowerT:0, _hasteT:0, _bulletT:0, _plunge:null, _starT:0, _yoyleT:0, _holding:null, _bossHitId:-1, _bossHitDmg:0, _swallow:0, _swallowTick:0,
     flash:0, _atkAnim:0, _atkLen:ATK_ANIM, _atkPhase:null, _atkProg:0, _hurtAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
+    hurt: hurtboxFor(r && r.name),   // see HURTBOX; null falls back to the 24px circle
     r:24
   };
 }
@@ -5285,7 +5399,7 @@ function updateBossAttack(s, tgt){
     // contact with Evil Leafy is a hit, not an instant KO. Toned down: less damage + long i-frames
     // so a bump doesn't spiral into a combo you can't escape.
     for(const f of fighters){ if(f.dead||f.invuln>0) continue;
-      if(Math.hypot(f.x-s.x, f.y-s.y) < s.r + f.r){
+      if(hurtGap(f, s.x, s.y) < s.r){
         const kx = Math.sign(f.x - s.x || 1)*13;
         applyHit(f, bossDmg()*0.6, kx, -12, null, {bossAtk: ++BOSS_ATK_ID});   // ~18% instead of 30%
         f.invuln = Math.max(f.invuln, 75);   // longer i-frames = time to reposition after a bump
@@ -5584,7 +5698,7 @@ function fireBossAttack(s, tgt){
     let drained=0;
     const R = ph>=3 ? 340 : 260;
     for(const f of fighters){ if(f.dead) continue;
-      if(Math.hypot(f.x-s.x,f.y-s.y)<R){
+      if(hurtGap(f, s.x, s.y) < -HURT_R0 + R){
         f.pct += 6; drained += 6;
         if(f.meter!==undefined) f.meter = Math.max(0, (f.meter||0) - 25);   // drains Final Smash meter
         for(let i=0;i<5;i++) puff(f.x + (Math.random()*30-15), f.y-8, '#f0d24b', 4);
@@ -5720,7 +5834,7 @@ function updateSummons(){
           else { s.vx += s.face*0.25; s.vx = clamp(s.vx,-7,7); }   // trundles on its own until ridden
           // plow through anyone in the way — harder the faster it's going
           for(const f of fighters){ if(f.dead||f.team===s.team) continue;
-            if(Math.hypot(f.x-s.x,f.y-s.y) < s.r+26){
+            if(hurtGap(f, s.x, s.y) < -HURT_R0 + s.r+26){
               const spd=Math.abs(s.vx);
               applyHit(f, 8+spd*0.9, Math.sign(f.x-s.x||1)*(9+spd*0.5), -9, {team:s.team,idx:-2});
               if(s._ridden>0) banner("RAMPAGE!",500);
@@ -5819,7 +5933,7 @@ function updateSummons(){
           const BW = (typeof WW==='number' ? WW : W);
           if(s.x<=22 || s.x>=BW-22) s.vx = -s.vx;                      // walls
           for(const f of fighters){ if(f.dead) continue;
-            if(Math.hypot(f.x-s.x,f.y-s.y)<s.r+20){
+            if(hurtGap(f, s.x, s.y) < -HURT_R0 + s.r+20){
               if(POINTED.has(f.name)){ banner("POPPED!",600); for(let i=0;i<18;i++) puff(s.x,s.y,'#e85a8a',5); s.life=0; break; }
               if(f.team===s.team) continue;
               applyHit(f, 6, Math.sign(f.x-s.x||1)*10, -8, {team:s.team,idx:-2}); s.vx=-s.vx; s.vy=-8;
@@ -5914,6 +6028,7 @@ function step(){
     if(f.atkCd>0) f.atkCd--;
     if(f.spCd>0) f.spCd--;
     if(f._aiSpGap>0) f._aiSpGap--;
+    if(f._smAngleT>0) f._smAngleT--;
     if(f.dropCd>0) f.dropCd--;
     if(f.burn>0){ f.burn--; f.pct+=0.04; if(f.burn%18===0) puff(f.x,f.y-10,'#f0803a',3); }
     if(f.bleed>0){ f.pct += 0.02 + 0.05*(f.bleed/BLEED_FRAMES); f.bleed--; if(f.bleed%12===0) puff(f.x,f.y-6,'#c0304a',3); }
@@ -5961,7 +6076,7 @@ function step(){
       f._sawing--;
       for(let i=0;i<2;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*30,f.y+Math.sin(a)*30,'#d0d0d0',3); }
       if(f._sawing%6===0){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f))continue;
-        if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+(f._spinR||30)){
+        if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+(f._spinR||30)){
           const m=f._spinKb||'out', sx=Math.sign(t.x-f.x||f.face);
           const kx = m==='up'?0 : m==='fwd'?f.face*6 : m==='pull'?-sx*4 : m==='flat'?f.face*4 : sx*5;
           const ky = m==='up'?-7 : m==='pull'?-3 : m==='flat'?-1 : -4;
@@ -5986,7 +6101,7 @@ function step(){
         if(!f.onground){ f.vy=Math.max(f.vy,12); if(hazardT%2===0) puff(f.x,f.y-f.r,f.color,3); }
         else {
           hitCircle(f, f.x, f.y+f.r, f.r+st.rad, st.dmg, st.dmg, f.face*st.kb[0], st.kb[1]);
-          if(st.leave==='stun'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(Math.hypot(t.x-f.x,t.y-f.y)<t.r+f.r+st.rad) t.hitstun=Math.max(t.hitstun,20); } }
+          if(st.leave==='stun'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<f.r+st.rad) t.hitstun=Math.max(t.hitstun,20); } }
           else if(st.leave){ spawnProj(f, Object.assign({vx:0,vy:0,grav:true,dmg:4,kb:2,r:10,color:f.color,life:40}, DROP_RIDERS[st.leave]||{})); }
           for(let i=0;i<10;i++) puff(f.x+(Math.random()*60-30),f.y+f.r,f.color,4);
           if(st.ram){ f.vx=f.face*st.ram; f._dashing=0; }
@@ -6052,10 +6167,10 @@ function step(){
       } else if(m.pat==='burst'){
         // The ring EXPANDS, so it catches someone walking in and can be outrun by someone leaving.
         const k = 1 - (m.t/(m.t0||(m.t0=m.t)));
-        const R = m.r0 + (m.r1-m.r0)*k;
+        const R = m.r0 + (m.r1-m.r0)*k; noteHitbox(f.x, f.y, R);
         for(const t of fighters){
           if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0||m.hit[t.idx]) continue;
-          if(Math.hypot(t.x-f.x,t.y-f.y) < t.r+R){
+          if(hurtGap(t, f.x, f.y) < R){
             m.hit[t.idx]=1;
             applyHit(t, m.dmg, Math.sign(t.x-f.x||1)*m.kb, m.up==null?-m.kb*0.5:m.up, f);
             if(m.fx && SM_FX[m.fx]) SM_FX[m.fx](t, f, m.n);
@@ -6070,7 +6185,7 @@ function step(){
       f.vx = f.face * n.speed;
       for(const t of fighters){
         if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f)||n.hits.has(t.idx)) continue;
-        if(Math.abs(t.x-f.x) < f.r+t.r+6 && Math.abs(t.y-f.y) < f.r+t.r){
+        if(Math.abs(t.x-f.x) < f.r+hurtRX(t)+6 && Math.abs(hurtCY(t)-f.y) < f.r+hurtRY(t)){
           applyHit(t, 7, f.face*4, -3, f); applyBleed(t, BLEED_FRAMES); n.hits.add(t.idx);
           for(let i=0;i<4;i++) puff(t.x,t.y,'#c0304a',3);
         }
@@ -6080,7 +6195,7 @@ function step(){
         const cx = f.x - f.face*30;
         for(const t of fighters){
           if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f)) continue;   // lands through the dash's grace
-          if(Math.hypot(t.x-cx, t.y-f.y) < t.r + f.r + 30){ applyHit(t, n.dmg, -f.face*7, -5, f); applyBleed(t, BLEED_FRAMES); for(let i=0;i<8;i++) puff(t.x,t.y,'#c0304a',4); }
+          if(hurtGap(t, cx, f.y) < f.r + 30){ applyHit(t, n.dmg, -f.face*7, -5, f); applyBleed(t, BLEED_FRAMES); for(let i=0;i<8;i++) puff(t.x,t.y,'#c0304a',4); }
         }
         f.vx = 0; f.hitstun = Math.max(f.hitstun, NAIL_STUN); f._nail = null;
         if(f.you || f.you2) banner("I NAILED IT!", 600);
@@ -6116,8 +6231,8 @@ function step(){
         if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
         if(f._dashHits && f._dashHits.has(t.idx)) continue;       // hit each enemy only once per dash
         // sweep test: catch enemies anywhere along the dash's path this frame (no tunneling)
-        const withinX = (t.x > Math.min(f.x, f.x-f.vx) - (f.r+t.r+8)) && (t.x < Math.max(f.x, f.x-f.vx) + (f.r+t.r+8));
-        if(withinX && Math.abs(t.y-f.y) < f.r+t.r+8){
+        const withinX = (t.x > Math.min(f.x, f.x-f.vx) - (f.r+hurtRX(t)+8)) && (t.x < Math.max(f.x, f.x-f.vx) + (f.r+hurtRX(t)+8));
+        if(withinX && Math.abs(hurtCY(t)-f.y) < f.r+hurtRY(t)+8){
           applyHit(t, f._dashDmg||12, f.face*10, -7, f);
           if(f._dashHits) f._dashHits.add(t.idx);
           for(let i=0;i<6;i++) puff(t.x,t.y,'#8ed24b',5);
@@ -6153,6 +6268,7 @@ function step(){
       else if(f._nail){ }                    // Naily's dash holds its own speed (see the _nail block)
       else { const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*(f._hasteT>0?1.4:1); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }
       // jump
+      if(f.smashHold>0 && inp.jump) f._jp = true;   // charging: up is aiming the smash, not jumping
       if(inp.jump && !f._jp && f.jumps>0 && !(isBig()&&inp.down&&f.onground)){ f.vy=JUMP; f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }
       if(!inp.jump) f._jp=false;
 
@@ -6201,6 +6317,8 @@ function step(){
         // Now the gate is real and the declared cost wins when it is longer than the endlag.
         if(f.smashHold >= smashFloorOf(f) && f.atkCd<=0){
           const full = f.smashHold >= smashFullOf(f);
+          f._smAngle = inp.up ? 1 : (inp.down ? -1 : 0);          // see SMASH_ANGLE_TILT
+          f._smAngleT = f._smAngle ? SMASH_ANGLE_FRAMES : 0;
           doSmash(f, full ? 1 : 0);
           f.atkCd = Math.max(f.atkCd||0, full ? 30 : 18);
         }
@@ -6343,7 +6461,7 @@ function step(){
       if(pr.arm>0){ pr.arm--; }        // arming delay before it can trigger
       pr.life--;
       for(const f of fighters){ if(f.dead||f.idx===pr.owner||f.invuln>0)continue;
-        if(Math.hypot(f.x-pr.x,f.y-pr.y)<f.r+pr.r){
+        if(hurtGap(f, pr.x, pr.y)<pr.r){
           if(pr.arm>0) continue;
           // friendly fire: a teammate's trap doesn't affect you (traps are never "reflected")
           const ownTeam = pr.ownerObj ? pr.ownerObj.team : -1;
@@ -6373,7 +6491,7 @@ function step(){
       if(pr.orbitAngle%0.6 < 0.15) puff(pr.x,pr.y,'#e8b0c0',1);
       // collision: sweep enemies, consume the petal on hit
       for(const f of fighters){ if(f.dead||f.idx===pr.owner||f.invuln>0||f.team===o.team)continue;
-        if(Math.hypot(f.x-pr.x,f.y-pr.y)<f.r+pr.r){
+        if(hurtGap(f, pr.x, pr.y)<pr.r){
           applyHit(f, pr.dmg, Math.sign(f.x-o.x||1)*pr.kb, -pr.kb*0.6, o);
           for(let i=0;i<6;i++) puff(pr.x,pr.y,'#e8b0c0',4);
           pr.life=0; break;
@@ -6438,7 +6556,7 @@ function step(){
     }
     if(pr.boomerang){ pr.vx += -pr.ownerFace*(pr.boomCurve||0.32); }  // smaller curve = flies further before returning
     for(const f of fighters){ if(f.dead||f.idx===pr.owner||f.invuln>0)continue;
-      if(Math.hypot(f.x-pr.x,f.y-pr.y)<f.r+pr.r){
+      if(hurtGap(f, pr.x, pr.y)<pr.r){
         // Gaty reflect: bounce enemy projectiles back at their owner
         if(f.reflecting>0 && f.team!==(pr.ownerObj?pr.ownerObj.team:-1)){
           pr.vx*=-1; pr.vy*=-0.5; pr.owner=f.idx; pr.ownerObj=f; pr.reflected=true; f.flash=8; puff(pr.x,pr.y,'#e8e8e8',5); continue;
@@ -6919,8 +7037,13 @@ const SMASHES = {
     // point-blank is just a hit, which is all it ever was. The tracking lives in the fighter update
     // (search _plunge): a payoff for falling cannot be judged on the frame you start falling.
     f.vy=13; f.flying=Math.max(f.flying,30);
-    hitCircle(f,f.x,f.y+f.r,f.r+44,18.7+c*7.3,18.7+c*7.3,f.face*(7.2+c*2.8),-11-c*3);   // the point-blank hit, unchanged
-    f._plunge = { from: heightOverFoe(f), c: c, life: 90 };
+    // The point-blank hit is for point-blank. It reaches 92px plus the target's half-height below her --
+    // 116px on the old 24px circle, 134px on the tallest hurtbox -- so a plunge from inside that band
+    // was caught by it, spent the target's grace, and never paid out. From PLUNGE_HEIGHT up the fall
+    // does the hitting, and the payoff starts at 90px whatever shape the target is.
+    const from = heightOverFoe(f);
+    if(from < PLUNGE_HEIGHT) hitCircle(f,f.x,f.y+f.r,f.r+44,18.7+c*7.3,18.7+c*7.3,f.face*(7.2+c*2.8),-11-c*3);
+    f._plunge = { from: from, c: c, life: 90 };
     for(let i=0;i<12;i++) puff(f.x,f.y+f.r,'#f2a6e8',5);  },
   // ---- Needle (counter) — Riposte Stance: long, powerful counter window ----
   counter(f,c){ f.countering=40+Math.round(c*20); f.flash=14; f.armor=20; for(let i=0;i<10;i++) puff(f.x,f.y-8,'#d94f6a',5);  },
@@ -6994,7 +7117,7 @@ function smashTargets(f, cx, cy, rad){
   const out=[];
   for(const t of fighters){
     if(t.dead||t.idx===f.idx||t.team===f.team||(f._combo ? graceBlocks(t,f) : t.invuln>0)) continue;
-    if(Math.hypot(t.x-cx,t.y-cy) < t.r+rad) out.push(t);
+    if(hurtGap(t, cx, cy) < rad) out.push(t);
   }
   return out;
 }
@@ -7103,7 +7226,7 @@ const SM_PAT = {
     let n=0;
     for(const t of fighters){
       if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
-      if(t.x>lo-16 && t.x<hi+16 && Math.abs(t.y-y)<t.r+(s.wide||18)){
+      if(t.x>lo-16 && t.x<hi+16 && Math.abs(hurtCY(t)-y)<hurtRY(t)+(s.wide||18)){
         applyHit(t, s.dmg[c], f.face*s.kb[c], s.up==null?-6:s.up, f);
         if(s.effect && SM_FX[s.effect]) SM_FX[s.effect](t, f, s.n); n++;
       }
@@ -7449,10 +7572,10 @@ function riseShape(f, s){
     const h=s.hit, cx=f.x+f.face*(h.fx||0), cy=f.y+(h.off==null?-14:h.off), reach=f.r+(h.reach||18);
     const n = hitCircle(f, cx, cy, reach, h.dmg[0], h.dmg[1], f.face*h.kb[0], h.kb[1], h.band==null?undefined:h.band);
     if(n>0 && s.leave==='lifesteal'){ f.pct=Math.max(0,f.pct-3); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#f5c88a',3); }
-    if(n>0 && s.leave==='define'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(Math.hypot(t.x-cx,t.y-cy)<t.r+reach){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5); } } }
+    if(n>0 && s.leave==='define'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, cx, cy)<reach){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5); } } }
   }
   if(s.leave==='stun'){ const R = s.hit ? f.r+(s.hit.reach||18) : (s.stunR||70);
-    for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(Math.hypot(t.x-f.x,t.y-f.y)<t.r+R) t.hitstun=Math.max(t.hitstun,20); }
+    for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<R) t.hitstun=Math.max(t.hitstun,20); }
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*R*2-R),f.y+(Math.random()*40-20),'#fff',4); }
   if(s.drop){
     const D=s.drop, R=DROP_RIDERS[D.rider]||{}, n=D.count||1;
@@ -7491,7 +7614,7 @@ function doGroundMove(f){
     // AoE / WIDE shockwave sweep around the feet
     const rad = P.shockR||50;
     for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue;
-      if(Math.abs(t.x-f.x)<f.r+rad && Math.abs(t.y-f.y)<44){ applyHit(t,P.shockDmg,Math.sign(t.x-f.x||1)*4,-3,f); } }
+      if(Math.abs(t.x-f.x)<rad+hurtRX(t) && Math.abs(hurtCY(t)-f.y)<20+hurtRY(t)){ applyHit(t,P.shockDmg,Math.sign(t.x-f.x||1)*4,-3,f); } }
     const spread=rad*1.6;
     for(let i=0;i<8;i++) puff(f.x+(Math.random()*spread-spread/2),f.y+16,f.color,4);
   }
@@ -7528,7 +7651,7 @@ const DOWNSPECIALS = {
   beam(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:6,kb:4,r:12,color:'#e0384b',life:220,trap:true});  }, // Ruby — gem trap
   gust(f){ f.flash=8; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.abs(t.y-f.y)<70 && Math.abs(t.x-f.x)<170){ t.vx += Math.sign(t.x-f.x||f.face)*7; t.onground=false; } } for(let i=0;i<10;i++) puff(f.x+(Math.random()*120-60),f.y,'#bfe8ff',4);  }, // Fanny — push everyone away
   reflect(f){ f.flash=10; f.reflecting=44; puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
-  ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b');  }, // Bell — brace + nearby stun
+  ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b');  }, // Bell — brace + nearby stun
   sign(f){ f.flash=8; f.armor=28; f._empower=1; puff(f.x,f.y-8,'#6fb7ff',6);  }, // Bracelety — self-empower next hit
   dribble(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:5,kb:8,r:13,color:'#e08a3a',life:220,trap:true,arm:24});  }, // Basketball — bouncy mine
   buynow(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ tgt.weakened=160; banner("PRICE CUT!",500);} }, // Yellow Face — weaken nearest
@@ -7541,7 +7664,7 @@ const DOWNSPECIALS = {
   salsa(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x,y:groundY()-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:18,color:'#f2c84b',life:220,trap:true,slow:true});  }, // Taco — instant puddle
   spike(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap
   sucker(f){ f.flash=8; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#c04be0',life:220,trap:true,root:true,arm:14});  }, // Lollipop — rooting trap
-  static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff');  }, // TV — brace + nearby stun
+  static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff');  }, // TV — brace + nearby stun
   hack(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ if(applyCtrlRev(tgt,55)) banner("REMOTE JAM!",500);} }, // Remote — scramble nearest (capped, was an uncapped 120f)
   fluff(f){ f.flash=8; f.armor=40; f.vy=Math.min(f.vy,-3); puff(f.x,f.y-8,'#f2e0d0',6);  }, // Pillow — cushiony guard
   cool(f){ f.flash=8; f.armor=Math.max(f.armor,50); f.pct=Math.max(0,f.pct-8); puff(f.x,f.y-8,'#e8e8e8',6);  }, // Loser — armor + heal a little
@@ -7596,7 +7719,7 @@ const ATKSPECIALS = {
   fly(f){ f.flash=14; f.vy=12; f.flying=Math.max(f.flying,40);   // Puffball — dive bomb: slam down with a wide hit
     const cx=f.x+f.face*10; hitCircle(f,cx,f.y+f.r,f.r+40,18,18,f.face*8,-10);
     for(let i=0;i<10;i++) puff(f.x,f.y+f.r,'#e6a6e0',5);  },
-  ember(f){ f.flash=14; const cx=f.x+f.face*34; hitCircle(f,cx,f.y,f.r+34,16,16,f.face*9,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.hypot(t.x-cx,t.y-f.y)<f.r+38) t.burn=Math.max(t.burn,140);} for(let i=0;i<10;i++) puff(cx,f.y,'#f0521f',6);  },
+  ember(f){ f.flash=14; const cx=f.x+f.face*34; hitCircle(f,cx,f.y,f.r+34,16,16,f.face*9,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&hurtGap(t, cx, f.y) < -HURT_R0 + f.r+38) t.burn=Math.max(t.burn,140);} for(let i=0;i<10;i++) puff(cx,f.y,'#f0521f',6);  },
   dash(f){ f.flash=12; f.vx=f.face*18; f.invuln=14; hitCircle(f,f.x+f.face*24,f.y,f.r+24,14,14,f.face*12,-9);  },
   counter(f){ f.flash=14; const cx=f.x+f.face*30; hitCircle(f,cx,f.y,f.r+22,18,18,f.face*13,-10);  },
   pierce(f){ f.flash=14; const cx=f.x+f.face*42; hitCircle(f,cx,f.y,32,17,17,f.face*13,-8); f.vx=f.face*7; for(const t of fighters){ if(!t.dead&&t.w<70&&Math.hypot(t.x-cx,t.y-f.y)<36){ applyHit(t,24,f.face*15,-9,f); } }  },
@@ -7608,9 +7731,9 @@ const ATKSPECIALS = {
   serve(f){ f.flash=12; spawnProj(f,{vx:f.face*9,vy:-7,grav:true,bounce:true,dmg:12,kb:10,r:10,color:'#c9f24b',life:150});  },
   cap(f){ f.flash=12; for(let i=-1;i<=1;i++) projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-6,vx:f.face*13,vy:i*2,grav:false,dmg:9,kb:8,r:8,color:'#3a6ea5',life:40});  },
   van(f){ if(!f.onground){ f.flash=6; return; } f.flash=14; projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-18,vx:f.face*15,vy:0,grav:false,dmg:16,kb:11,r:20,color:'#f2d84b',life:60,van:true});  },
-  debuff(f){ f.flash=12; const cx=f.x+f.face*44; hitCircle(f,cx,f.y,f.r+30,13,13,f.face*11,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&t.team!==f.team&&Math.hypot(t.x-cx,t.y-f.y)<f.r+34){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2);} }  },
+  debuff(f){ f.flash=12; const cx=f.x+f.face*44; hitCircle(f,cx,f.y,f.r+30,13,13,f.face*11,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&t.team!==f.team&&hurtGap(t, cx, f.y) < -HURT_R0 + f.r+34){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2);} }  },
   barf(f){ f.flash=12; spawnProj(f,{vx:f.face*8,vy:-4,grav:true,bounce:true,dmg:12,kb:9,r:11,color:'#8a9c3a',life:90,poison:true});  },
-  define(f){ f.flash=12; const cx=f.x+f.face*28; hitCircle(f,cx,f.y,f.r+26,13,13,f.face*11,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.hypot(t.x-cx,t.y-f.y)<f.r+30){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5);} }  },
+  define(f){ f.flash=12; const cx=f.x+f.face*28; hitCircle(f,cx,f.y,f.r+26,13,13,f.face*11,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&hurtGap(t, cx, f.y) < -HURT_R0 + f.r+30){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5);} }  },
   fry(f){ f.flash=12; for(let i=0;i<5;i++) projectiles.push({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-8+i*4,vx:f.face*(9+i),vy:0,grav:false,dmg:6,kb:5,r:5,color:'#e04b3a',life:44});  },
   freeze(f){ f.flash=12; spawnProj(f,{vx:f.face*9,vy:-1,grav:true,dmg:11,kb:8,r:9,color:'#9ad24b',life:60,freeze:true});  },
   slap(f){ f.flash=12; const cx=f.x+f.face*30; for(let n=0;n<2;n++) hitCircle(f,cx,f.y,f.r+28,8,8,f.face*10,-7); const fireBonus=fighters.some(t=>!t.dead&&/Firey|Bomby/.test(t.name));  },
@@ -7745,7 +7868,7 @@ function doSpecial(f){
       dropProj(f, ax, tgt?tgt.y+tgt.r:feetY(f), {dmg:13,kb:9,r:12,color:"#3a3a3a",life:150});
       f.flash=8; f.spCd=103; break; }
     case "slap": { const cx=f.x+f.face*32; f.flash=6; const rr=40+comebackRange(f); // Coiny: fast slap, bonus vs Firey (canon rivalry)
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<rr){
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr){
         const fire=/Firey|Bomby/.test(t.name); applyHit(t, fire?13:9, f.face*9, -6, f); if(fire) banner("TAKE THAT, FIREY!",600);} }
       for(let i=0;i<4;i++) puff(cx,f.y,'#e8a33d',4); f.spCd=30; break; }
     case "cap": spawnProj(f,{vx:f.face*11,vy:0,grav:false,bounce:false,dmg:7,kb:6,r:8,color:"#3a6ea5",life:70,boomerang:true,homeX:f.x,ownerFace:f.face}); f.flash=6; f.spCd=51; break;
@@ -7781,7 +7904,7 @@ function doSpecial(f){
     case "fly": f._empower=1; f.flying=90; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#f2a6e8',5);  f.spCd=74; break; // Puffball: charge next shot + brief float
     case "beam": f._empower=1; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#ff8aa0',5);  f.spCd=67; break; // Ruby: charge next gem bolt
     case "buynow": { const cx=f.x+f.face*40; f.flash=8; const rr=66+comebackRange(f); // Yellow Face: stun cone
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<rr && Math.sign(t.x-f.x)===f.face){ applyHit(t,7,f.face*4,-3,f); t.hitstun=Math.max(t.hitstun,28); } }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr && Math.sign(t.x-f.x)===f.face){ applyHit(t,7,f.face*4,-3,f); t.hitstun=Math.max(t.hitstun,28); } }
       for(let i=0;i<8;i++) puff(cx,f.y,'#f2d84b',4);  f.spCd=46; break; }
     case "splash": { // Barf Bag: OUTBREAK — release an infection cloud; caught foes briefly turn (mirror her inputs, join her team)
       if(f._infected>0){ f.flash=8; break; }   // an infected puppet can't spread the outbreak further
@@ -7789,7 +7912,7 @@ function doSpecial(f){
         if(f._infected>0) return;   // turned during the wind-up: a puppet cannot spread it
       const R=95; let caught=0;
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue;
-        if(Math.hypot(t.x-f.x,t.y-f.y)<R && t._infected<=0){
+        if(hurtGap(t, f.x, f.y) < -HURT_R0 + R && t._infected<=0){
           t._origTeam=t.team; t.team=f.team; t._infected=110; t._infectedBy=f.idx;   // ~1.8s zombified
           t.hitstun=0; t.frozen=0;
           for(let i=0;i<8;i++) puff(t.x,t.y-6,'#8ab04b',4); caught++;
@@ -7804,12 +7927,12 @@ function doSpecial(f){
       // It had no team check: applyHit refused an ally the damage, but the stun below was set
       // directly, so Bell froze her own teammates for 20 frames. It skips her side now.
       startWindup(f, CIRCLE_WINDUP, function(){
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+80){ applyHit(t,6,Math.sign(t.x-f.x||1)*5,-5,f); t.hitstun=Math.max(t.hitstun,20);} }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+80){ applyHit(t,6,Math.sign(t.x-f.x||1)*5,-5,f); t.hitstun=Math.max(t.hitstun,20);} }
       for(let i=0;i<14;i++){ const a=i/14*Math.PI*2; puff(f.x+Math.cos(a)*40,f.y+Math.sin(a)*40,'#f2c84b',3);}
       }, '#f2c84b');  f.spCd=69; break; }
     case "sign": spawnProj(f,{vx:f.face*10,vy:0,grav:false,boomerang:true,ownerFace:f.face,dmg:10,kb:8,r:9,color:'#6fb7ff',life:70}); f.flash=6; f.spCd=46; break; // Bracelety (buffed: weak)
     case "gust": f._empower=1; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#bfe8ff',5);  f.spCd=67; break; // Fanny: charge next air blast
-    case "reflect": f.reflecting=36; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+comebackRange(f); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } }, '#e8e8e8'); puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
+    case "reflect": f.reflecting=36; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+comebackRange(f); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } }, '#e8e8e8'); puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
     case "mower": { f.flash=10; f.vx=f.face*11; // Grassy: surprise lawnmower (+comeback reach)
       hitCircle(f,f.x+f.face*26,f.y,f.r+26+comebackRange(f),15,15,f.face*12,-7); for(let i=0;i<8;i++) puff(f.x+f.face*20,f.y+10,'#7bc043',4);  break; }
     // ---- next 10 characters ----
@@ -7836,14 +7959,14 @@ function doSpecial(f){
       spawnProj(f,{vx:f.face*9,vy:0,grav:false,dmg:5,kb:2,r:9,color:'#c04be0',life:50,root:true}); f.flash=6; f.spCd=67; break; }
     case "static": { // TV: stunning burst around itself
       startWindup(f, CIRCLE_WINDUP, function(){
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+70){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-4,f); t.hitstun=Math.max(t.hitstun,30);} }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+70){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-4,f); t.hitstun=Math.max(t.hitstun,30);} }
       for(let i=0;i<16;i++){ const a=i/16*Math.PI*2; puff(f.x+Math.cos(a)*(30+Math.random()*30),f.y+Math.sin(a)*(24+Math.random()*20),'#8fd0ff',4);}
       }, '#8fd0ff'); f.flash=10; f.spCd=74;  break; }
     case "hack": { // Remote: bolt that reverses the target's controls briefly
       spawnProj(f,{vx:f.face*11,vy:0,grav:false,dmg:5,kb:3,r:8,color:'#4a4a4a',life:40,reverseCtrl:true}); f.flash=8; f.spCd=103; break; }
     case "fluff": { // Pillow: springy shockwave that pops foes up (low damage, sets up juggles)
       startWindup(f, CIRCLE_WINDUP, function(){
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+72){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-12,f); } }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+72){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-12,f); } }
       f.vy=Math.min(f.vy,-4); for(let i=0;i<10;i++) puff(f.x+(Math.random()*80-40),f.y+10,'#f2e0d0',5);
       }, '#f2e0d0'); f.flash=8; f.spCd=48; break; }
     case "cool": { // Loser: self-buff — armor + empowered next hit
@@ -7894,7 +8017,7 @@ function doSpecial(f){
       f.flash=8;  f.spCd=55; break; }
     case "rant": { // Dora: rapid flurry of many tiny fast jabs (+comeback reach)
       const cx=f.x+f.face*32; f.flash=4; const rr=52+comebackRange(f);
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0||t.team===f.team)continue; if(Math.hypot(t.x-cx,t.y-f.y)<rr){ applyHit(t,12,f.face*7,-4,f);} }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0||t.team===f.team)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr){ applyHit(t,12,f.face*7,-4,f);} }
       for(let i=0;i<6;i++) puff(cx+Math.random()*18-9,f.y+Math.random()*18-9,'#f2a03a',3); f.spCd=23; break; }
     case "seriously": { // David: heavy ground-pound shockwave (only meaningful grounded)
       const cx=f.x; f.flash=12;
@@ -8001,15 +8124,16 @@ function damageSummons(f, cx, cy, rad, dmg){
 // stay at the edge of your reach). Knockback scales with the damage ratio so a sour hit also
 // launches less, which is what makes the difference readable.
 function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band){
+  noteHitbox(cx, cy, rad);
   let landed = 0;
   const b = band==null ? 1 : Math.abs(band), tip = band!=null && band<0;
   for(const t of fighters){
     if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : t.invuln>0)) continue;
-    const d = Math.hypot(t.x-cx,t.y-cy);
-    if(d<t.r+rad){
+    const d = hurtGap(t, cx, cy);   // to the hurtbox EDGE, so the old t.r is already inside it
+    if(d<rad){
       // Golf Ball marks whatever she hits, so her bonus-vs-cursed payoff builds up on its own
       if(f.kit && f.kit.special==="debuff" && t.team!==f.team){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2); }
-      const outer = d > t.r + rad*b;
+      const outer = d > rad*b;
       const sweet = tip ? outer : !outer;
       const dmg = sweet ? dmgHigh : dmgLow;
       const k = (dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1;
@@ -8272,6 +8396,13 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   const ramp = t.pct>100 ? 1 + (t.pct-100)*0.006 : 1;   // extra launch at high %
   const weightK = Math.min(1.7, 100/t.w);   // cap the featherweight knockback penalty (was up to 2.4x for Bubble)
   const scale=(0.5 + t.pct*0.014) * weightK * ramp;
+  // ANGLED SMASH: turn the launch by SMASH_ANGLE_TILT, keeping its length. Clamped so an up-tilt never
+  // points backwards over the attacker and a down-tilt never drives someone straight into the floor.
+  if(from && from !== t && from._smAngleT > 0 && from._smAngle){
+    const L = Math.hypot(kbx, kby), sx = Math.sign(kbx) || from.face || 1;
+    const a = Math.max(-1.35, Math.min(0.25, Math.atan2(kby, Math.abs(kbx)) - from._smAngle*SMASH_ANGLE_TILT));
+    kbx = sx*L*Math.cos(a); kby = L*Math.sin(a);
+  }
   knock(t, kbx*scale, kby*scale - t.pct*0.025);
   t.hitstun=Math.min(24, 6+dmg);
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
@@ -10249,6 +10380,7 @@ function draw(){
   }
   // fighters
   for(const f of fighters){ if(f.dead) continue; drawFighter(f); }
+  if(SHOW_HITBOXES) drawHitboxOverlay();
 
   // …and the shots still coming OUT of a fighter, drawn last so the launch is on top of the
   // character who launched it rather than buried behind their body.
@@ -10667,6 +10799,11 @@ const SMASH_FLOOR = 6;       // baseline mis-press floor
 // the roster's MEDIAN weight of 90, so a mid-weight fighter still charges in exactly the 45 frames
 // everyone used to, and the variance spreads either side of that rather than shifting the whole
 // roster faster. Light fighters reach full in 32, the heaviest take 58.
+// ANGLED SMASHES (O5). Whatever is held when a smash goes off tilts its launch: up for a steeper line
+// toward the top blast zone, down for a flatter one along the stage. Strength is kept; only the
+// direction moves. The tilt applies to hits from the smasher for SMASH_ANGLE_FRAMES after release,
+// which covers every pattern's active window and ends well inside the smash's own endlag.
+const SMASH_ANGLE_FRAMES = 24, SMASH_ANGLE_TILT = 0.38;   // ~22 degrees either way
 function smashFullOf(f){ const w = (f && f.w) || 90; return Math.max(32, Math.min(58, Math.round(45 + (w - 90) * 0.30))); }
 // The mis-press floor scales the same way: a heavy fighter's tap is a heavier commitment, so it
 // takes slightly longer before the game agrees you meant it.

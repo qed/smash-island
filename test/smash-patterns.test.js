@@ -22,6 +22,7 @@ const stage = (w, name, dummyAt, frames = 90, charge = 1) => w.eval(`
     worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
     var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(name)}; }), 400, groundY()-24, 0);
     var D = makeFighter(ROSTER.find(function(r){ return r.name==='Golf Ball'; }), ${dummyAt}, groundY()-24, 1);
+    D.hurt = null;   // the band distances below were chosen against the standard 24px target
     A.team=0; D.team=1; A.face=1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
     fighters=[A,D]; step(); A.invuln=0; D.invuln=0; A.pct=0; D.pct=0; A.hitstun=0; A.rooted=0;
     var x0=A.x, ownPct0=A.pct;
