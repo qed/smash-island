@@ -5901,6 +5901,7 @@ function step(){
     if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.invuln>0) f.invuln--;
+    if(f._graceLeft>0) f._graceLeft--;   // runs down beside invuln: how much of it is hit-grace
     if(f.flash>0) f.flash--;
     if(f._atkAnim>0) f._atkAnim--;   // render-only attack-lunge timer (spriteRig)
     // …and mirror WHICH BEAT of the swing this frame landed on onto the fighter, so debug
@@ -5956,15 +5957,16 @@ function step(){
     if(f._yoyleT>0){ f._yoyleT--; if(f._yoyleT%12===0) puff(f.x,f.y-8,'#8aa0b0',2); }
     // Saw — Spin Cycle: whirling blade multi-hits everyone nearby for its duration
     if(f._sawing>0){
+      if(!f._sawOn){ f._sawOn = true; beginCombo(f); }   // a fresh spin is one move (see graceBlocks)
       f._sawing--;
       for(let i=0;i<2;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*30,f.y+Math.sin(a)*30,'#d0d0d0',3); }
-      if(f._sawing%6===0){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue;
+      if(f._sawing%6===0){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f))continue;
         if(Math.hypot(t.x-f.x,t.y-f.y)<f.r+(f._spinR||30)){
           const m=f._spinKb||'out', sx=Math.sign(t.x-f.x||f.face);
           const kx = m==='up'?0 : m==='fwd'?f.face*6 : m==='pull'?-sx*4 : m==='flat'?f.face*4 : sx*5;
           const ky = m==='up'?-7 : m==='pull'?-3 : m==='flat'?-1 : -4;
           applyHit(t,4,kx,ky,f); } } }
-    }
+    } else f._sawOn = false;
     // Puffball — METEOR PUFF: the plunge is a live state, not a single frame. The smash commits her
     // downward and the hitbox tracks her all the way down, so the payoff can measure the thing it
     // is actually paying for: how far she FELL before she connected. Checking only the activation
@@ -6016,7 +6018,9 @@ function step(){
         if(hazardT%2===0) puff(f.x-f.face*10, f.y+(Math.random()*20-10), m.color, 3);
         if(--m.t<=0){
           const cx = f.x - f.face*(m.back+10);
+          f._combo = true;    // the swing back is the same move as the pass, so it lands through that grace
           smashSwing(f, cx, f.y, m.reach, m.dmg, m.kb, m.band, m.fx, m.n, m.up);
+          f._combo = false;
           for(let i=0;i<10;i++) puff(cx, f.y, m.color, 5);
           f.vx *= 0.2; f._sm=null;
         }
@@ -6065,7 +6069,7 @@ function step(){
       const n = f._nail;
       f.vx = f.face * n.speed;
       for(const t of fighters){
-        if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0||n.hits.has(t.idx)) continue;
+        if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f)||n.hits.has(t.idx)) continue;
         if(Math.abs(t.x-f.x) < f.r+t.r+6 && Math.abs(t.y-f.y) < f.r+t.r){
           applyHit(t, 7, f.face*4, -3, f); applyBleed(t, BLEED_FRAMES); n.hits.add(t.idx);
           for(let i=0;i<4;i++) puff(t.x,t.y,'#c0304a',3);
@@ -6075,7 +6079,7 @@ function step(){
       if(--n.t <= 0){
         const cx = f.x - f.face*30;
         for(const t of fighters){
-          if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
+          if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f)) continue;   // lands through the dash's grace
           if(Math.hypot(t.x-cx, t.y-f.y) < t.r + f.r + 30){ applyHit(t, n.dmg, -f.face*7, -5, f); applyBleed(t, BLEED_FRAMES); for(let i=0;i<8;i++) puff(t.x,t.y,'#c0304a',4); }
         }
         f.vx = 0; f.hitstun = Math.max(f.hitstun, NAIL_STUN); f._nail = null;
@@ -6989,7 +6993,7 @@ const SMASHES = {
   // THROUGH them (a light hit that starts the bleed), they are behind you, and the back-jab is the
   // real one — so the move is aimed by where you will END. Charge is the dash length. Resolved
   // over frames in the fighter loop (search _nail), like Puffball's plunge.
-  spike(f,c){ f.flash=12; f._nail = { t: c ? 12 : 8, speed: c ? 13 : 11, dmg: c ? 16 : 11.5, hits: new Set() }; f.invuln = Math.max(f.invuln, 3); },
+  spike(f,c){ f.flash=12; beginCombo(f); f._nail = { t: c ? 12 : 8, speed: c ? 13 : 11, dmg: c ? 16 : 11.5, hits: new Set() }; f.invuln = Math.max(f.invuln, 3); },
   sucker(f,c){ f.flash=12; spawnProj(f,{vx:f.face*(7.9+c*3.1),vy:0,grav:false,dmg:12.2+c*4.8,kb:4,r:11,color:'#c04be0',life:60,root:true});  },
   static(f,c){ f.flash=14; const R=100.8+c*39.2; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-f.x,t.y-f.y)<R){ applyHit(t,14.4+c*5.6,Math.sign(t.x-f.x||1)*(6.5+c*2.5),-6,f); t.hitstun=Math.max(t.hitstun,40); } } for(let i=0;i<22;i++){const a=i/22*Math.PI*2;puff(f.x+Math.cos(a)*R*0.5,f.y+Math.sin(a)*R*0.5,'#8fd0ff',5);}  },
   // Remote — the control-scramble is disruption, not damage; this bolt is his only kill option, so
@@ -7160,7 +7164,7 @@ function smashCost(f, cost){
 function smashTargets(f, cx, cy, rad){
   const out=[];
   for(const t of fighters){
-    if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
+    if(t.dead||t.idx===f.idx||t.team===f.team||(f._combo ? graceBlocks(t,f) : t.invuln>0)) continue;
     if(Math.hypot(t.x-cx,t.y-cy) < t.r+rad) out.push(t);
   }
   return out;
@@ -7191,7 +7195,7 @@ const SM_PAT = {
   // Dash THROUGH them and hit behind you — the target ends up on your other side. Naily's shape,
   // generalised: aimed by where you will END, not where you start.
   through(f,s,c){
-    f._sm = {pat:'through', t:s.dash[c], back:s.backAt||8, dmg:s.dmg[c], kb:s.kb[c], reach:f.r+(s.reach||26),
+    beginCombo(f); f._sm = {pat:'through', t:s.dash[c], back:s.backAt||8, dmg:s.dmg[c], kb:s.kb[c], reach:f.r+(s.reach||26),
       fx:s.effect, n:s.n, band:s.band, color:s.color||f.color, spd:s.spd||18, hit:false, up:s.up};
   },
   // Hop forward; the hit is the LANDING. A committed arc you can see coming and step out of.
@@ -7893,7 +7897,7 @@ function doSpecial(f){
         const inFront = (f.face>0 ? t.x > f.x-20 : t.x < f.x+20);   // roughly ahead of / on top of her
         if((dFront < 58+t.r || (dClose < 46+t.r && inFront))){
           // hit-grace i-frames (small) shouldn't block a committed launcher — only true invuln (spawn/dash) does
-          if(t.invuln>16) continue;
+          if(hardInvuln(t)) continue;
           applyHit(t, 14, f.face*14, -10, f);  landed=true;
         } }
       for(let i=0;i<8;i++) puff(cx,f.y,'#6fb7ff',5); f.spCd=97; break; }
@@ -8019,7 +8023,7 @@ function doSpecial(f){
       f._switchOn=true; f.flash=12; f.vx=f.face*12; f._dashing=10; applyDashVY(f,15,14);
       // blitz forward and grab the first enemy in the dash path
       let grabbed=null, gd=1e9;
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>16)continue;
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||hardInvuln(t))continue;
         const ahead=(f.face>0? t.x>f.x-20 : t.x<f.x+20);
         const d=Math.hypot(t.x-f.x,t.y-f.y);
         if(ahead && d<95 && d<gd){ gd=d; grabbed=t; } }   // reach 150 -> 95
@@ -8168,7 +8172,7 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band){
   let landed = 0;
   const b = band==null ? 1 : Math.abs(band), tip = band!=null && band<0;
   for(const t of fighters){
-    if(t.dead||t.idx===f.idx||t.invuln>0) continue;
+    if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : t.invuln>0)) continue;
     const d = Math.hypot(t.x-cx,t.y-cy);
     if(d<t.r+rad){
       // Golf Ball marks whatever she hits, so her bonus-vs-cursed payoff builds up on its own
@@ -8329,6 +8333,21 @@ function inOwnTeamZone(f){
   if(!z) return false;
   return f.x >= z.x && f.x <= z.x + z.w && f.y >= z.y && f.y <= z.y + z.h;
 }
+// SELF-GRACE. Hit-grace stops OTHER hits piling onto someone who was just hit: a projectile wall, a
+// second attacker, or the same attacker's next move. It must not break one move built to hit more
+// than once -- Naily's dash then back-jab, a spin that ticks, a dash-past that swings back. Those land
+// their later hits through the grace their OWN earlier hits opened, and nothing else does: the same
+// attacker, the same move (beginCombo marks where one starts, so a jab's grace still blocks the move
+// after it), and only while grace is all that is protecting them. _graceLeft is how much of invuln
+// is hit-grace; it runs down beside invuln, so respawn protection or a dodge still blocks everything.
+// Only the multi-hit sites ask graceBlocks.
+function beginCombo(f){ f._comboTok = (f._comboTok||0) + 1; }
+function graceBlocks(t, f){
+  return t.invuln > 0 && !(f && t._graceBy === f.idx && t._graceTok === (f._comboTok||0) && t.invuln <= (t._graceLeft||0));
+}
+// Two launchers ignore hit-grace by design, and told it apart by size alone: above 16, the old grace
+// cap, was real invulnerability. Grace reaches 24 now, so they keep that rule but never count grace.
+function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
 function applyHit(t, dmg, kbx, kby, from, opts){
   // SAFE IN YOUR OWN ZONE. Checked before anything else so no damage, knockback, burn or status
   // can be applied — a partial exemption would still let a fighter be juggled out of their spawn.
@@ -8430,14 +8449,19 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   t._hurt=90;   // any hit suppresses heal-over-time (Fern) for ~1.5s so aggression can break through
   // hit-grace scales with the hit's weight: light/fast pokes give little grace (so rapid pokes connect),
   // heavy hits give more (to stop projectile walls chain-stunning).
-  let grace = Math.round(4 + dmg*0.5);        // ~6 for a 5-dmg poke, ~13 for an 18-dmg hit, capped at 16
+  // More of it, on the owner's call. A light poke gave 6 frames, which is how a projectile wall or a
+  // fast multi-hit chained someone with no gap to answer in. Roughly doubled at the light end, and
+  // the cap raised so a big hit still buys more room than a small one.
+  let grace = Math.round(9 + dmg*0.6);        // ~12 for a 5-dmg poke, ~20 for an 18-dmg hit, capped at 24
   // Comeback scaling: a designated fighter's attacks impose less hit-grace (down to a floor),
   // so their pokes chain better the more they've died / KO'd.
   if(from && from.kit && COMEBACK[from.kit.special]){
     const reduce = comebackPoints(from);
     grace = Math.max(COMEBACK_IFRAME_FLOOR, grace - reduce);
   }
-  t.invuln=Math.max(t.invuln, Math.min(16, grace));
+  t.invuln=Math.max(t.invuln, Math.min(24, grace));
+  t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
+  t._graceLeft = Math.max(t._graceLeft||0, Math.min(24, grace));
   t.flash=8;
   puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,from?from.color:'#fff',4);
   if(t.you||from?.you) shake(dmg);
@@ -12862,6 +12886,19 @@ function drawFighter(f){
   const blink=f.invuln>0 && (f.invuln%8<4);
   ctx.globalAlpha=blink?0.4:1;
   drawAlpha=blink?0.4:1;   // sprites composite against this instead of reading back ctx.globalAlpha
+  // IFRAME INDICATOR. Invulnerability used to show only as the sprite blinking translucent, which is
+  // hard to read at a glance and easy to mistake for a rendering glitch. A bubble now sits around
+  // anyone who cannot be hit and fades as the window runs out; the last few frames flicker, so you
+  // can see the moment it is safe to swing. Render-only -- nothing here touches the simulation.
+  if(f.invuln>0){
+    const k = Math.min(1, f.invuln/24), ending = f.invuln < 8 && (f.invuln % 4 < 2);
+    ctx.save();
+    ctx.globalAlpha = ending ? 0.15 : 0.18 + 0.32*k;
+    ctx.fillStyle = '#bfe8ff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(0, 0, f.r + 14, 0, 7); ctx.fill();
+    ctx.globalAlpha = ending ? 0.3 : 0.55 + 0.4*k; ctx.stroke();
+    ctx.restore();
+  }
   // CIRCLE WIND-UP telegraph (see startWindup): a ring closing IN on the fighter, so the commitment
   // is readable before it lands. Drawn here rather than as sim puffs so it spends no simulation
   // randomness -- a seeded match replays identically whether or not it is on screen.
