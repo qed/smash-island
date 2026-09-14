@@ -161,7 +161,7 @@ describe('rival memory', () => {
 });
 
 describe('the learned style changes how the CPU actually fights', () => {
-  it('a learned long-range style makes the CPU attack from further out', () => {
+  it('a learned long-range style makes the CPU attack from further out', async () => {
     // The unit tests above prove the PROFILE changes. This proves the BEHAVIOUR does.
     //
     // Choosing the metric took three attempts, and the two rejects are worth recording:
@@ -170,31 +170,64 @@ describe('the learned style changes how the CPU actually fights', () => {
     //   · fraction of frames spent closing is confounded by the IDEAL RANGE itself — a CPU whose
     //     preferred range is short is already in position, so it closes less often.
     // Attack distance is what `range` directly drives, and it is not confounded by either.
-    const { window: w } = loadMonolith();
-    const attackGap = (style) => w.eval(`
-      (function(){
-        STYLE_DATA = ${JSON.stringify(style)};
-        SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=5; SETTINGS.itemRate=0;
-        beginMatchNow();
-        fighters.length = 0;
-        ['Firey','Ice Cube'].forEach(function(n,i){
-          var f = makeFighter(ROSTER.find(function(r){ return r.name===n; }), W*(0.3+0.4*i), H*0.5, i);
-          f.controller='ai'; f.you=false; fighters.push(f);
-        });
-        var sum=0, n=0;
-        for (var i=0;i<2500 && running;i++){
-          step();
-          var a=fighters[0], b=fighters[1];
-          if(!a||!b||a.dead||b.dead) continue;
-          if(a._atkAnim===ATK_ANIM){ sum += Math.abs(a.x-b.x); n++; }
-        }
-        return [n ? sum/n : 0, n];
-      })()`);
-    const [closeGap, closeN] = attackGap({ Firey: { n: 99, aggression: 1.0, range: 0.0, special: 0.0 } });
-    const [farGap, farN] = attackGap({ Firey: { n: 99, aggression: 0.0, range: 1.0, special: 0.9 } });
-    expect(closeN, 'enough attacks to mean something').toBeGreaterThan(20);
-    expect(farN, 'enough attacks to mean something').toBeGreaterThan(20);
-    expect(farGap, `long-range style attacked from ${Math.round(farGap)}px, close-range from ${Math.round(closeGap)}px`)
-      .toBeGreaterThan(closeGap + 20);
-  }, 180000);
+    //
+    // O15. This used to play ONE seeded match per style, back to back in the same window, and ask for
+    // a 20px gap. That was a coin flip: measured over 48 seeds the gap averages 28px with a standard
+    // deviation of 22, so one seed passed a build with NO style effect about a quarter of the time and
+    // failed the real one about a third of the time — it went pass, fail, fail, pass across three
+    // unrelated commits. Two things fix it. Each style now plays in its OWN window on the same seed,
+    // so both matches start from identical state: that removes the order bias (the no-effect gap falls
+    // from 5.6px to 0.5px) and nearly halves its spread. And the verdict is the MEAN of sixteen fixed
+    // seeds rather than one. Sixteen, not eight: the flow package changed how the CPU throws smashes and
+    // the effect shrank from about 29px to about 21.2px (sd 20.2), so eight seeds no longer told it
+    // from noise cleanly. Calibrated on the shipped build by resampling whole seeds from 32 real and
+    // 32 no-effect seeds (no-effect mean 2.2px, sd 10.9): a build with no style effect clears
+    // 10px about 0.2% of the time, and the shipped build misses it about 1.2%. The bar is a measurement,
+    // not a threshold to tune. If a change makes this fail, either the CPU stopped reading its own style
+    // or its style effect shrank again -- both worth knowing.
+    const SEEDS = [12648430, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    const CLOSE = { Firey: { n: 99, aggression: 1.0, range: 0.0, special: 0.0 } };
+    const FAR = { Firey: { n: 99, aggression: 0.0, range: 1.0, special: 0.9 } };
+
+    const attackGap = async (seed, style) => {
+      const { window: w } = loadMonolith(seed);
+      const out = w.eval(`
+        (function(){
+          STYLE_DATA = ${JSON.stringify(style)};
+          SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=5; SETTINGS.itemRate=0;
+          beginMatchNow();
+          fighters.length = 0;
+          ['Firey','Ice Cube'].forEach(function(n,i){
+            var f = makeFighter(ROSTER.find(function(r){ return r.name===n; }), W*(0.3+0.4*i), H*0.5, i);
+            f.controller='ai'; f.you=false; fighters.push(f);
+          });
+          var sum=0, n=0;
+          for (var i=0;i<2500 && running;i++){
+            step();
+            var a=fighters[0], b=fighters[1];
+            if(!a||!b||a.dead||b.dead) continue;
+            if(a._atkAnim===ATK_ANIM){ sum += Math.abs(a.x-b.x); n++; }
+          }
+          return [n ? sum/n : 0, n];
+        })()`);
+      // let the page's own async boot work (profile, daily card) finish while its document still
+      // exists; closing before that turns it into an unhandled rejection the suite counts against us
+      await w.eval('profileReady');
+      await new Promise((r) => setTimeout(r, 25));
+      try { w.close(); } catch { /* already gone */ }
+      return out;
+    };
+
+    const gaps = [], thin = [];
+    for (const seed of SEEDS) {
+      const [closeGap, closeN] = await attackGap(seed, CLOSE);
+      const [farGap, farN] = await attackGap(seed, FAR);
+      if (closeN <= 20 || farN <= 20) thin.push(`seed ${seed}: ${closeN} close / ${farN} far attacks`);
+      gaps.push(farGap - closeGap);
+    }
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+
+    expect(thin, 'seeds with too few attacks to mean anything').toEqual([]);
+    expect(mean, `per-seed gaps: ${gaps.map((g) => g.toFixed(1)).join(', ')}`).toBeGreaterThan(10);
+  }, 420000);
 });
