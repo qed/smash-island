@@ -4127,6 +4127,7 @@ function beginMatchNow(){
   resize();
   setupWorld();
   buildFighters();
+  LINEUP_MEMO = null;   // this lineup is now in play; the next preview, and the next match, roll fresh
   // audio is best-effort — never let an audio failure abort match setup (empty-map risk)
   try{ clutchReset(); sndInit(); startMusic(SETTINGS.mode==='boss' ? 'boss' : 'battle'); }catch(e){}
   try{ startRunRecording(); }catch(e){}   // every match records for replay on the result screen
@@ -4813,6 +4814,13 @@ function platRects(){
   return SPONGY_PLATS.length ? base.concat(SPONGY_PLATS) : base;
 }
 
+// LINEUP MEMO. The team-chat preview and the match itself both call buildFighters(), and each call used
+// to be its own random draw, so the teammates you planned with were never the ones you fought beside.
+// One draw per (mode, count, split, chosen fighter) is remembered here; beginMatchNow spends it, so the
+// next preview -- and the next match -- roll fresh. Netcode lineups are not memoised: the host's roster
+// is authoritative there.
+let LINEUP_MEMO = null;
+function lineupKey(N){ return [SETTINGS.mode, N, SETTINGS.teamKey||'', chosen ? chosen.name : ''].join('|'); }
 function buildFighters(){
   window.__p2Taken = false;   // reset the local-2P slot each time the roster is built
   fighters=[];
@@ -4853,10 +4861,16 @@ function buildFighters(){
     const fill=[...playAI,...road].slice(0, Math.max(0, N-humans.length)).map(p=>({...p, you:false}));
     all=[...humans, ...fill];
   } else {
-    const pool=ROSTER.filter(r=>r.name!==chosen.name);
-    const playAI=pool.filter(r=>r.play); const road=pool.filter(r=>!r.play);
-    shuffle(playAI); shuffle(road);
-    const picks=[...playAI, ...road].slice(0,N-1);
+    let picks;
+    if(LINEUP_MEMO && LINEUP_MEMO.key===lineupKey(N)){
+      picks = LINEUP_MEMO.names.map(nm => ROSTER.find(r=>r.name===nm)).filter(Boolean);
+    } else {
+      const pool=ROSTER.filter(r=>r.name!==chosen.name);
+      const playAI=pool.filter(r=>r.play); const road=pool.filter(r=>!r.play);
+      shuffle(playAI); shuffle(road);
+      picks=[...playAI, ...road].slice(0,N-1);
+      LINEUP_MEMO = { key: lineupKey(N), names: picks.map(p=>p.name), teamOf: null };
+    }
     all=[{...chosen, you:true}, ...picks.map(p=>({...p, you:false}))];
   }
 
@@ -4867,7 +4881,14 @@ function buildFighters(){
     const sizes = (split.reduce((a,b)=>a+b,0)===N) ? split : (teamSplitsFor(N)[0]||[N]);
     teamOf=[]; 
     for(let s=0;s<sizes.length;s++){ for(let k=0;k<sizes[s];k++){ teamOf.push(s); } }
-    if(!netRoster){ const rest=teamOf.slice(1); shuffle(rest); teamOf=[0,...rest]; }
+    if(!netRoster){
+      if(LINEUP_MEMO && LINEUP_MEMO.key===lineupKey(N) && LINEUP_MEMO.teamOf && LINEUP_MEMO.teamOf.length===teamOf.length){
+        teamOf = LINEUP_MEMO.teamOf.slice();
+      } else {
+        const rest=teamOf.slice(1); shuffle(rest); teamOf=[0,...rest];
+        if(LINEUP_MEMO && LINEUP_MEMO.key===lineupKey(N)) LINEUP_MEMO.teamOf = teamOf.slice();
+      }
+    }
   }
 
   all.forEach((r,i)=>{
