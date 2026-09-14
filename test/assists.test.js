@@ -130,6 +130,7 @@ describe('assist trophies — AI', () => {
         worldPlats = [{x:600, y:groundY()-160, w:200, h:16}];
         fighters[1].x = 700; fighters[1].y = groundY()-160-fighters[1].r;
         summons[0].x = 300; summons[0].y = groundY()-summons[0].r;
+        summons[0].life = 60*20;   // this measures the climb, not the tenure (six seconds since F18)
         var best = summons[0].y;
         for (var i=0;i<600;i++){ updateSummons(); if(!summons.length) break; best = Math.min(best, summons[0].y); }
         return { rose: (groundY()-summons[0].r) - best, alive: summons.length };
@@ -144,6 +145,7 @@ describe('assist trophies — AI', () => {
     const x = w.eval(`
       (function(){
         fighters[1].x = -4000;                       // bait it off the left blast line
+        summons[0].life = 60*20;                     // the walk, not the tenure (six seconds since F18)
         for (var i=0;i<400;i++){ updateSummons(); if(!summons.length) break; }
         return summons.length ? summons[0].x : null;
       })()`);
