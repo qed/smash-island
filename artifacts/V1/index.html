@@ -13153,11 +13153,84 @@ function drawSpriteBody(f, sp, anim){
   if(sp.face && !im) bfdiFace(f,R,sp.face);
 }
 
+// STATUS ICONS ("add buff/debuff icons"). One row per status a fighter can carry, each a small glyph
+// drawn in a row above the fighter's head. Buffs sit gold or blue, debuffs red or purple; stacks show a
+// count. Render-only: nothing here touches the simulation, and none of it spends randomness, so a
+// seeded replay is identical whether or not the icons are drawn.
+const STATUS_ICONS = [
+  { key:'burn',     on:f=>f.burn>0,                          glyph:'flame',  color:'#f0803a' },   // burning or poisoned (they share the timer)
+  { key:'bleed',    on:f=>f.bleed>0,                         glyph:'drop',   color:'#c0304a' },
+  { key:'frozen',   on:f=>f.frozen>0,                        glyph:'flake',  color:'#7ad0f0' },
+  { key:'slowed',   on:f=>f.slowed>0,                        glyph:'slow',   color:'#f2c84b' },
+  { key:'rooted',   on:f=>f.rooted>0,                        glyph:'root',   color:'#8a6a3a' },
+  { key:'ctrlRev',  on:f=>f.ctrlRev>0,                       glyph:'swap',   color:'#c04be0' },
+  { key:'weakened', on:f=>f.weakened>0,                      glyph:'down',   color:'#9aa7b0' },
+  { key:'curse',    on:f=>(f.curseStacks||0)>0,              glyph:'skull',  color:'#7a3ae0', count:f=>f.curseStacks },
+  { key:'define',   on:f=>(f.defineStacks||0)>0,             glyph:'book',   color:'#3a6ea5', count:f=>f.defineStacks },
+  { key:'infected', on:f=>f._infected>0,                     glyph:'bio',    color:'#9be02a' },
+  { key:'cloud',    on:f=>f.cloud>0,                         glyph:'cloud',  color:'#bfe8ff' },
+  { key:'armor',    on:f=>f.armor>0,                         glyph:'shield', color:'#c0c0c0' },
+  { key:'empower',  on:f=>f._empowerT>0 || f._empower>0,     glyph:'up',     color:'#ffd23f' },
+  { key:'haste',    on:f=>f._hasteT>0,                       glyph:'fast',   color:'#7ad0f0' },
+  { key:'bullet',   on:f=>f._bulletT>0,                      glyph:'bullet', color:'#7ad0f0' },
+  { key:'star',     on:f=>f._starT>0,                        glyph:'star',   color:'#ffd23f' },
+  { key:'yoyle',    on:f=>f._yoyleT>0,                       glyph:'metal',  color:'#8aa0b0' },
+  { key:'healing',  on:f=>f.healing>0,                       glyph:'plus',   color:'#6ff07a' },
+  { key:'reflect',  on:f=>f.reflecting>0,                    glyph:'mirror', color:'#e8e8e8' },
+  { key:'counter',  on:f=>f.countering>0,                    glyph:'parry',  color:'#f2e8b0' },
+];
+const STATUS_ICON_R = 6, STATUS_ICON_GAP = 3;
+function statusGlyph(c, g, r){
+  // every glyph is drawn in a box of radius r about (0,0); fill and stroke are already set
+  switch(g){
+    case 'flame':  c.beginPath(); c.moveTo(0,-r); c.quadraticCurveTo(r,-r*0.2,r*0.5,r*0.6); c.quadraticCurveTo(0,r,-r*0.5,r*0.6); c.quadraticCurveTo(-r,-r*0.2,0,-r); c.fill(); break;
+    case 'drop':   c.beginPath(); c.moveTo(0,-r); c.quadraticCurveTo(r,r*0.2,0,r); c.quadraticCurveTo(-r,r*0.2,0,-r); c.fill(); break;
+    case 'flake':  c.lineWidth=1.5; for(let i=0;i<3;i++){ const a=i*Math.PI/3; c.beginPath(); c.moveTo(Math.cos(a)*r,Math.sin(a)*r); c.lineTo(-Math.cos(a)*r,-Math.sin(a)*r); c.stroke(); } break;
+    case 'slow':   c.beginPath(); c.moveTo(-r*0.7,-r); c.lineTo(r*0.7,-r); c.lineTo(-r*0.7,r); c.lineTo(r*0.7,r); c.closePath(); c.fill(); break;
+    case 'root':   c.fillRect(-r*0.2,-r,r*0.4,r*1.6); c.fillRect(-r,r*0.6,r*2,r*0.4); break;
+    case 'swap':   c.lineWidth=2; c.beginPath(); c.moveTo(-r,-r*0.4); c.lineTo(r*0.4,-r*0.4); c.moveTo(r*0.4,-r*0.9); c.lineTo(r,-r*0.4); c.lineTo(r*0.4,r*0.1);
+                   c.moveTo(r,r*0.4); c.lineTo(-r*0.4,r*0.4); c.moveTo(-r*0.4,-r*0.1); c.lineTo(-r,r*0.4); c.lineTo(-r*0.4,r*0.9); c.stroke(); break;
+    case 'down':   c.beginPath(); c.moveTo(0,r); c.lineTo(-r,-r*0.2); c.lineTo(-r*0.35,-r*0.2); c.lineTo(-r*0.35,-r); c.lineTo(r*0.35,-r); c.lineTo(r*0.35,-r*0.2); c.lineTo(r,-r*0.2); c.closePath(); c.fill(); break;
+    case 'up':     c.beginPath(); c.moveTo(0,-r); c.lineTo(r,r*0.2); c.lineTo(r*0.35,r*0.2); c.lineTo(r*0.35,r); c.lineTo(-r*0.35,r); c.lineTo(-r*0.35,r*0.2); c.lineTo(-r,r*0.2); c.closePath(); c.fill(); break;
+    case 'skull':  c.beginPath(); c.arc(0,-r*0.15,r*0.85,0,7); c.fill(); c.fillRect(-r*0.5,r*0.3,r,r*0.6);
+                   c.fillStyle='#1c1c1c'; c.beginPath(); c.arc(-r*0.35,-r*0.2,r*0.22,0,7); c.arc(r*0.35,-r*0.2,r*0.22,0,7); c.fill(); break;
+    case 'book':   c.fillRect(-r,-r*0.8,r*2,r*1.6); c.fillStyle='#ffffff'; c.fillRect(-r*0.7,-r*0.5,r*0.6,r*1.0); c.fillRect(r*0.1,-r*0.5,r*0.6,r*1.0); break;
+    case 'bio':    c.lineWidth=2; for(let i=0;i<3;i++){ const a=i*Math.PI*2/3-Math.PI/2; c.beginPath(); c.arc(Math.cos(a)*r*0.45,Math.sin(a)*r*0.45,r*0.5,0,7); c.stroke(); } break;
+    case 'cloud':  c.beginPath(); c.arc(-r*0.45,r*0.2,r*0.5,0,7); c.arc(r*0.1,-r*0.1,r*0.62,0,7); c.arc(r*0.55,r*0.25,r*0.45,0,7); c.fill(); break;
+    case 'shield': c.beginPath(); c.moveTo(-r,-r*0.7); c.lineTo(r,-r*0.7); c.lineTo(r*0.8,r*0.3); c.quadraticCurveTo(0,r*1.1,-r*0.8,r*0.3); c.closePath(); c.fill(); break;
+    case 'fast':   c.lineWidth=2; c.beginPath(); c.moveTo(-r,-r*0.7); c.lineTo(-r*0.3,0); c.lineTo(-r,r*0.7); c.moveTo(0,-r*0.7); c.lineTo(r*0.7,0); c.lineTo(0,r*0.7); c.stroke(); break;
+    case 'bullet': c.beginPath(); c.arc(-r*0.4,0,r*0.5,0,7); c.fill(); c.lineWidth=2; c.beginPath(); c.moveTo(r*0.1,-r*0.7); c.lineTo(r*0.8,0); c.lineTo(r*0.1,r*0.7); c.stroke(); break;
+    case 'star':   c.beginPath(); for(let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, rr=i%2?r*0.45:r; c.lineTo(Math.cos(a)*rr,Math.sin(a)*rr); } c.closePath(); c.fill(); break;
+    case 'metal':  c.fillRect(-r*0.9,-r*0.9,r*1.8,r*1.8); c.fillStyle='rgba(255,255,255,0.5)'; c.fillRect(-r*0.9,-r*0.9,r*1.8,r*0.4); break;
+    case 'plus':   c.fillRect(-r*0.3,-r,r*0.6,r*2); c.fillRect(-r,-r*0.3,r*2,r*0.6); break;
+    case 'mirror': c.fillRect(-r*0.7,-r,r*1.4,r*2); c.strokeStyle='#1c1c1c'; c.lineWidth=1.5; c.beginPath(); c.moveTo(r*0.4,-r*0.8); c.lineTo(-r*0.4,r*0.8); c.stroke(); break;
+    case 'parry':  c.lineWidth=2; c.beginPath(); c.moveTo(-r,-r); c.lineTo(r,r); c.moveTo(r,-r); c.lineTo(-r,r); c.stroke(); break;
+    default:       c.beginPath(); c.arc(0,0,r*0.8,0,7); c.fill();
+  }
+}
+// Called from drawFighter with the context already translated to the fighter. Returns how many it drew.
+function drawStatusIcons(f, c){
+  const on = STATUS_ICONS.filter(s => { try { return !!s.on(f); } catch(e){ return false; } });
+  if(!on.length) return 0;
+  const r = STATUS_ICON_R, step = r*2 + STATUS_ICON_GAP, x0 = -((on.length-1) * step) / 2, y = -f.r - 30;
+  c.save();
+  on.forEach((s, i) => {
+    const x = x0 + i*step;
+    c.globalAlpha = 0.85; c.fillStyle = '#1c1c1c';
+    c.beginPath(); c.arc(x, y, r + 2.5, 0, 7); c.fill();
+    c.globalAlpha = 1; c.fillStyle = s.color; c.strokeStyle = s.color;
+    c.save(); c.translate(x, y); statusGlyph(c, s.glyph, r); c.restore();
+    if(s.count){ const n = s.count(f); if(n > 1){ c.fillStyle = '#ffffff'; c.font = 'bold 8px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(n), x + r + 1, y - r - 1); } }
+  });
+  c.restore();
+  return on.length;
+}
 function drawFighter(f){
   ctx.save(); ctx.translate(f.x,f.y);
   const blink=f.invuln>0 && (f.invuln%8<4);
   ctx.globalAlpha=blink?0.4:1;
   drawAlpha=blink?0.4:1;   // sprites composite against this instead of reading back ctx.globalAlpha
+  drawStatusIcons(f, ctx);   // buffs and debuffs, in a row above the head (see STATUS_ICONS)
   // IFRAME INDICATOR. Invulnerability used to show only as the sprite blinking translucent, which is
   // hard to read at a glance and easy to mistake for a rendering glitch. A bubble now sits around
   // anyone who cannot be hit and fades as the window runs out; the last few frames flicker, so you
