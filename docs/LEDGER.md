@@ -1,11 +1,10 @@
 # Work ledger — Battle for Smash Island
 
 Every task from this run, done or not. Grouped by where it came from, because that is the
-part that is easy to lose. Written 2026-09-03, extended 2026-09-10.
+part that is easy to lose. Written 2026-09-03, extended 2026-09-10 and 2026-09-11.
 
-`origin/main` is at PR #20. Everything below sits on twelve pushed branches, `pr1`..`pr12`,
-each stacked on the one before. Suite: **630 of 631 passing** (the one failure is a known
-flake, listed under OPEN).
+`origin/main` carries everything below. The stacked `pr1`..`pr14` branches were merged earlier, and
+the D and E sessions were pushed straight to `main` on 2026-09-11 at the owner's request (O1).
 
 ---
 
@@ -19,7 +18,7 @@ These are the four things typed into the CLI on 27 Aug, plus the order agreed th
 | A2 | `do a check to see if we have all features discussed in the design doc and adversial review` | **Done** | previous session |
 | A3 | `personalized smashes by charecters` | **Done** | pr5, pr7, pr8, pr12 |
 | A4 | `do an a b test of all stats to balance... hidden stats like weight, cooldown and ticks of effects` | **Done** | `22541cb` · pr4 |
-| A5 | Open the follow-up PR for the two orphaned commits | **Blocked** | pushed as pr1 |
+| A5 | Open the follow-up PR for the two orphaned commits | **Done** | in `main` (pr1 merged) |
 
 **A1 was real, and it was not Money.** A piercing shot damaged a boss once per *frame* instead
 of once. Any fighter with a piercing projectile melted bosses; Money was simply the one that got
@@ -45,7 +44,7 @@ which is why it stayed hidden.
 | B9 | `put some of our updates into a queue` | **Done** | `dc06220` · pr11 |
 | B10 | `do the 39` — author the remaining smashes | **Done** | `5101932` · pr12 |
 | B11 | `push with several prs` | **Done** | 12 branches |
-| B12 | `cant you just give me a "merge pr" button?` | **Blocked** | see O1 |
+| B12 | `cant you just give me a "merge pr" button?` | **Superseded** | pushed to main (O1) |
 
 **B2's cause.** 8-Ball and Pie were the only two assists that act at *range*. Every other one
 needed contact, and assists had no jumping and no platform collision at all — only a floor snap.
@@ -115,27 +114,123 @@ resolved with a design choice rather than a number nudge. SMASH_SPEC is 39 rows 
 
 ---
 
+## E · The 2026-09-11 session
+
+| | Task | Status | Landed in |
+|---|---|---|---|
+| E1 | `all of the ones that make a circle around you feel broken` | **Done** | `541372d` |
+| E2 | Stacked zoners stood still; a small stage's drop was a jump (found testing E1) | **Done** | `8748cc1` |
+| E3 | `the charge up smashes ... infinite projectile spam` | **Done** | `e9426ed` |
+| E4 | `adding GOOD sprites to all projectiles` | **Done** | `9237a88` |
+| E5 | `a kick andimation, or a punch animation, for attacks` | **Done** | `4af37bf` |
+| E6 | `add a small amount of iframes` / `an indicator of iframes` | **Done** | `b587e69` |
+| E7 | `each one should have a custom hitbox` -- size, shape, and hit kept apart from hurt | **Done** | `f178e00` |
+| E8 | `change TBs mechanic- he should have an assortement of gadgets` | **Done** | `7d42439` |
+| E9 | `do not change` -- Tree | **Kept** | untouched |
+| E10 | The golden fixture's unasserted fields had drifted (found) | **Done** | `87282f7` |
+| E11 | The A/B harness had refused every run since D, which is what blocked O6 (found) | **Done** | `18f4059` |
+| E12 | `you cant jump while chargin a smash` | **Done** | `be3f609` |
+| E13 | `money hasnt changed...` | **Done** | `be3f609` |
+| E14 | `buff TB's turret- it should have a health bar. buff the battery ...` | **Done** | `fefd2c5` |
+| E15 | `everything needs to flow better- right now you cant chain well` | **Done** | `42d07d5` |
+| E16 | `push to main for A` | **Done** | `15b60eb..18f4059` |
+| E17 | `also, buff all projectile survival time` | **Done** | `6883580` |
+| E18 | `remove tap smashes. if needed, just make the charge time short. but keep the charge time` | **Done** | `42d07d5` |
+| E19 | `ship and merge` | **Done** | fast-forwarded `main` |
+
+**E3 was one fighter, not the charge system.** Money's hand-written smash had no cost at all, so
+she fired 22 smashes in ten seconds against a roster norm of nine to eleven, and the other five
+hand-written bodies were free too. `LEGACY_SMASH_COST` prices all six. The heaviest AI projectile
+source left is Ice Cube's special ring, which predates this branch -- see O14.
+
+**E6 took three follow-ups, all found by the suite.** Longer grace blocked the moves built to hit
+twice (Naily's back-jab, a spin's later ticks, the dash-past swing-back); `graceBlocks` lets one
+move land its own later hits through the grace its earlier ones opened, and nothing else. Two
+launchers told grace from real invulnerability by size alone (> 16, the old cap); `_graceLeft`
+now tracks the grace share. Snowball's shot was the one E4 missed. One side effect is a buff:
+at 140px the dash-past smashes used to lose their swing-back to the old six frames of grace,
+so Leafy, Pin, Basketball, Lightning, Liy and Woody now land their whole smash at range, and
+Naily's back-jab lands there too. E15 is where the longer grace met chaining.
+
+**E7 moved no smash numbers** -- the golden fixture regenerates identically once its dummy is
+pinned to the old 24px target -- but it exposed Meteor Puff's payoff: the point-blank hit reached
+116px, so the real threshold was never the 90px `PLUNGE_HEIGHT` claims. Fixed in the same commit,
+which also carries O5: the long-range check in `playstyle-and-juice` read 30.1px on O4, 17.1 with
+hitboxes alone, 6.7 with angling alone and 38.7 with both, against a 20px bar, so neither half
+could land green by itself. O15 is what that check turned out to be measuring.
+
+**E8** is a rack, not a random hatch: ball, mine, turret, battery. The down-special steps it on
+an 18-frame cooldown, the special uses what is loaded, the smash fires a much stronger version,
+and the CPU loads for the range. `SMASH_SPEC` is 52 rows now; the test asserts that.
+
+**E11.** `patch()` rounded every knob to a whole number, and D wrote the first decimal full-charge
+values (Money's special, Barf Bag's splash), so the two tiered knobs stopped being a no-op at 1.0,
+`verify` failed, and `balance-ab` refused every run after it. The knobs keep two decimals now and
+`balance-knobs.test.js` runs the identity check on every change.
+
+**E12** was O5's doing: angling made up aim instead of jump while a smash charged. The charge already
+keeps building in the air, so the jump simply came back; up held at release still angles the smash.
+
+**E13: Money had changed; the game you could reach had not, and nothing she showed said so.** Until
+E16 the hosted build was `main` at `15b60eb`, which predates D4 -- anyone playing it played the old
+Money. On this branch her select-screen text and move card still called her C "Cha-Ching -> coins
+that hit harder on hurt foes", which described her old special, and every move of hers was the same
+gold before and after, so swapping which button threw the coins read as no change. Her C is "Make It
+Rain" now (the name the code already quoted as canon), the burst and her up-special coin are banknote
+green, and gold is only her smash's coins. The build label still read v68 on both builds; it moves
+with this session's last commit.
+
+**E14** makes the turret breakable (45 health, 70 from the smash, with a bar), a real threat in
+return (more, faster, further shots), and the battery a projectile-and-trap: it shocks if it hits and
+leaves acid if it misses. His smash costs 40 frames instead of 66; every gadget covers more ground.
+
+**E15 was measured before it was touched, and the measurement overturned the plan.** The hypothesis
+was that the longer iframes (E6) had closed the combo window. They had -- for every hit under 7.5
+damage there is no frame where a target is both stunned and hittable -- but that was never what
+stopped a follow-up. The jab's own 22-frame lockout outlasts the target's 9-15 frames of hitstun in
+every build, including the ones before the iframes: jab-to-jab had never chained. Restoring the old
+grace would have reopened projectile walls and fixed nothing. The other thing the audit found was
+not on anyone's list: smash costs pay in the attacker's own hitstun, which gates movement and
+jumping, so 24 of 59 fighters could not move for up to 34 frames after a tap smash. That is what
+"stuck" felt like.
+
+So the package is attacker-side. A jab or ground move that connects recovers in 12 / 16 frames
+instead of 22 / 26; the same attacker's next move may land through the grace their own hit opened
+while the target is still stunned, at most three times, each link stunning for 25% less, and only a
+NEW move may do it -- a lingering hitbox re-landing through its own grace was caught by the golden
+fixture (Puffball's Meteor Puff) and ruled out. Grace is unchanged for everyone else; projectiles
+never chain. Measured attacking every frame the rules allow: every fighter chains to exactly three,
+the worst continuous stun-lock is 20 frames where it had been 266, and the target is free to act
+for 162-185 of every 300 frames.
+
+Then the owner removed tap smashes. A press past the mis-press floor commits: the smash fires when
+its charge is full and the endlag has ended, held or not; holding past full waits for the release;
+a press during endlag comes out when both are done (the first attempt at buffering remembered a
+release for a fixed 12 frames, shorter than most endlags, and never fired -- found by a probe, not
+a test). The charge is 18-32 frames by weight, from 32-58; declared costs are scaled by 0.75,
+endlag is 26, self-stun 0.6x. Through the real key path no pattern beats one smash per
+charge-plus-cost: 149 per ten seconds over ten fighters, against 231 with taps and the flow
+package, 133-149 with the D gates, and 581 for the pre-D spam. Two rows pay no cooldown at all
+(Balloony's airleak, Bubble's float) and sit at the endlag's 22-23 -- see O17.
+
+Also found and fixed on the way: Money's special locked her jab for 62 frames (it paid its
+runSmashSpec cost into atkCd), and every neutral special paid 8 frames of input delay to the
+direction window (5 now). Every projectile lives 1.4x longer on the owner's call, through one door
+(addProj) that a test guards; on screen that is 1.43 -> 2.04 in CPU duels, not a wall.
+
+**E16** was a fast-forward of `origin/main` from `15b60eb` to `18f4059`, nineteen commits, after checking
+that every stacked `pr*` branch was already in `main`. Vercel reported the deploy complete. Nothing
+was force-pushed.
+
+---
+
 ## OPEN
 
-### O1 - Open the pull requests - **blocked on you**
+### O1 - Open the pull requests  [SUPERSEDED]
 
-One command, from PowerShell:
-
-```
-& "C:\Users\carad\Aardvark\smash-island\scripts\open-prs.ps1"
-```
-
-It opens your browser once for `gh auth login`, then creates all thirteen PRs stacked in order.
-Re-running is safe; anything that already exists is skipped. `-Dry` shows what it would do.
-
-Creating a PR is a write to your GitHub account. Pushing branches needs no credential handled here -
-git fetches one from Windows Credential Manager itself - but the API wants a token in a header, and
-the only way to supply one would be to pull your stored token out of the vault. That is the whole
-reason this step needs you. Closing it also closes A5 and B12.
-
-There is a bash twin at `scripts/open-prs.sh`. Two things to know if you edit either: `<` is a
-reserved operator in PowerShell 5.1, and a BOM-less `.ps1` is read as ANSI, so any non-ASCII in it
-is mis-decoded before the parser sees a single token.
+Every stacked branch (`pr1`..`pr14`) turned out to be in `main` already, and on 2026-09-11 the owner
+asked for this branch to go straight to `main` instead (E16). `scripts/open-prs.ps1` and its bash twin
+stay for any future stack. Closing this closes A5 and B12 with it.
 
 ### O3 - Re-run the A/B balance sweep  [DONE]
 
@@ -151,7 +246,11 @@ Doing it turned up that the sweep **could not see the newest 87 moves in the gam
 Read the low end with care: thirty matches over fifty-nine fighters is two matches per fighter, so
 the spread statistic is quantised and the ordering within the bottom eleven is not resolved.
 
-### O4 · Delete the 53 superseded bodies in `SMASHES`
+### O4 · Delete the 53 superseded bodies in `SMASHES`  [DONE]
+
+Done in `f5421ac`, from the parse tree: acorn finds each property of `SMASHES`, deletion is by whole
+lines, and the file is re-parsed with the same 749 top-level statements before it is written.
+21.6k characters went; the six below stayed.
 
 `doSmash` reads `SMASH_SPEC` first, so they are unreachable. A mechanical sweep of them orphaned
 the continuation lines of the multi-line ones and broke the file, so they are marked rather than
@@ -159,18 +258,44 @@ deleted. Wants doing one at a time with a parse check between each. Was 39; D7 a
 more rows and so superseded fourteen more bodies. The six still REACHABLE -- `counter`, `kick`,
 `debuff`, `spike`, `fly`, `payday` -- must survive any such sweep.
 
-### O5 · Angling a smash (up / down)
+### O5 · Angling a smash (up / down)  [DONE]
+
+Done in `f178e00`, together with E7 (see E7 for why). Held at release, up or down tilts the launch
+about 22 degrees at the same strength. Charging no longer takes the jump away (E12).
 
 The research called it the best depth-per-line available, and the engine already carries launch
 angle in `kbx`/`kby`.
 
-### O6 · `tick.buff` is unmeasurable by the A/B sweep
+### O6 · `tick.buff` is unmeasurable by the A/B sweep  [MEASURED: below the noise]
+
+Measured on 2026-09-11, once E11 let the harness run at all, with item pickups on (`--items 2`). The
+answer is that this harness cannot see it: buff length's effect on roster spread is smaller than the
+noise any change at all introduces.
+
+| Run | ×0.75 buffs | ×1.33 buffs |
+|---|---|---|
+| 24 matches, default slate | spread +0.0%, pace +2.0% | spread −7.9%, pace +10.6% |
+| 60 matches, default slate | spread +15.8%, pace −2.6% | spread +13.4%, pace +1.3% |
+| 60 matches, slate seed 7 | spread −12.1%, pace −10.3% | spread −5.0%, pace −4.6% |
+| **noise floor**: 60 matches, ×0.99 / ×1.01 | spread +5.6%, pace −6.1% | spread +43.1%, pace −2.7% |
+
+The last row is the one that decides it. Moving every buff by a single percent -- 300 frames to 297 or
+303 -- moved spread by up to 43%, more than either real arm; and the same factor changed sign between two
+slates. The null arm coming back IDENTICAL only proves the harness is deterministic: any change to the
+source reshuffles which fighter wins which match, and with four matches per fighter that reshuffle is
+most of what spread measures. Measuring a knob this small would take several slates per arm, read against
+a ×0.99/×1.01 floor measured the same way. See O16.
+
 
 The tournament harness disables items on purpose, so item-buff durations come back a clean
 `0.0000` — which reads exactly like "this does not affect balance" and means nothing of the kind.
 Needs an items-on variant.
 
-### O7 · `test/music.test.js` is flaky under load
+### O7 · `test/music.test.js` is flaky under load  [DONE]
+
+Done in `dad5747`: every wait in the file has a ceiling that load cannot overrun. It has not
+failed in any full run since. (One full run on 2026-09-11 lost a vitest worker outright -- the
+`unlock-ui` file's twelve tests never ran; the file passes on its own. Environmental, not this.)
 
 `test/music.test.js` "overlaps the two decks" fails in the full 643-test run and passes every
 time in isolation. A timing assumption in the test, not a regression in the game.
@@ -204,6 +329,9 @@ YOU, so `seek` does not apply to him -- restoring it means moving him back to `r
 the wind-up telegraph that suits a falling tree. That is a design call, not a bug fix.
 
 ### O10 · The golden fixture is re-baselined for sixteen fighters
+
+Since: `87282f7` caught up the fields it records but never asserts, and `7d42439` and `fefd2c5`
+re-measured Tennis Ball and no one else. See O13.
 
 `test/golden/smash-charge.json` exists to prove nobody drifted by accident. D4, D5 and D7 changed
 sixteen smashes on purpose, so those sixteen were re-measured and the other forty-three left
@@ -248,15 +376,68 @@ URI has to carry the w3.org SVG namespace to render, and `credential-strip` coun
 host in the file against a one-host allowlist. It counts hosts inside comments too -- the first
 draft of the explanatory comment failed the test by quoting the namespace it was explaining.
 
+### O13 · The golden fixture asserts only its 60px row
+
+`smash-charge` compares damage and launch at 60px. The fixture also records `atkCd`, `hitFrame`
+and a 140px row, and three commits in a row moved them without a failure -- including a real
+change in damage at range for seven fighters. Asserting the 140px row would have caught it.
+
+### O14 · Ice Cube's special ring is the heaviest AI projectile source
+
+Measured while chasing E3. It predates this branch and was not part of the complaint, so it was
+left alone; it is the first place to look if the projectile spam comes back.
+
+### O15 · The long-range check in `playstyle-and-juice` was a coin flip per seed  [DONE]
+
+Done in `6ebaf05`. It plays each style in its OWN window on the same seed -- both matches start from
+identical state, which removes the order bias (a no-effect gap of 5.6px becomes about 2.2px)
+and nearly halves the spread -- and the verdict is the mean over sixteen fixed seeds. The bar,
+10px, is derived from measured noise on the shipped build: the effect is about 21.2px
+(sd 20.2, 32 seeds) against a no-effect baseline of 2.2px (sd 10.9, 32 seeds); resampling
+whole seeds, a build with no style effect clears it about 0.2% of the time and the shipped build
+misses it about 1.2%. Eight seeds at 14px would have been 0.1% / 15.1% on this build.
+
+Worth recording: the effect was about 29px before E15 and about 21.2 after it. The flow package
+changed how the CPU throws smashes, and the metric counts a smash's lunge as an attack, so the
+long-range CPU's attacks now start from less further out than they did. The style is still read;
+it is just a smaller lever than it was, and the test now says so in its comment rather than
+flaking about it.
+
+### O16 · The A/B harness has no noise floor
+
+Found by O6. `balance-ab` compares each arm against a baseline on the same seeds and calls the harness
+sound when a x1.0 arm reproduces it -- which proves determinism, not signal. Any change to the source
+reshuffles match outcomes, and at 60 matches a single-percent nudge to buff lengths moved roster spread
+by up to 43%. Every sensitivity it reports, including O3's ranking, should be read against a x0.99 /
+x1.01 floor measured the same way, and across more than one slate. Until then its rankings are
+suggestions.
+
+### O17 · Two smash rows pay no cooldown at all
+
+Balloony's `airleak` ({back:3}) and Bubble's `float` ({self:6}) declare no `cd` and no `stun`, so the
+only wait between their smashes is the flat 26-frame endlag: through the real key path they reach 22-23
+smashes in ten seconds where everyone else sits at 11-16. Bubble pays 6% of her own health per throw,
+which limits her; Balloony pays nothing. The gates audit flagged them as where spam returns first. A
+`cd` in the band the other rows use (44-74, paid at 0.75x) would bring them in line; it is a design
+call for those two fighters, not a bug.
+
+### O18 · The tap tier in every SMASH_SPEC row is unreachable from input
+
+`dmg:[tap, full]` and `kb:[tap, full]` are still authored in all 52 rows and asserted by the fixture's
+tap/full ratio test, but since E18 no input path passes c=0 -- only direct calls in tests and probes do.
+The balance harness's `dmg.tiered` knob scales both tiers together, so nothing is wrong; it is dead data
+that a later pass could collapse to a single value, taking the ratio test with it.
+
 ---
 
 ## Scoreboard
 
 | | Count |
 |---|---|
-| Done | 38 |
-| Open | 7 |
-| Blocked on you | 1 (O1, which unblocks O2) |
+| Done | 59 |
+| Open | 6 (O8, O13, O14, O16, O17, O18) |
+| Superseded | 2 (O1, B12) |
+| Blocked on you | 0 |
 
-The D session added nine done and two open (O11 and O12 were opened and closed within it). Suite is **643 of 643 passing**; the O7 flake did
-not reproduce in any of the six full runs it took to land D1-D7.
+Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, O3-O7, O9-O12 and O15. Suite:
+**722 of 722 on the shipped file (55 files), with the O15 file re-run alone after its final edit**.
