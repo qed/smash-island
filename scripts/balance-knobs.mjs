@@ -122,11 +122,13 @@ export const KNOBS = {
     clamp: [0, 40], places: 2,   // D wrote decimal rows (Money's special, Barf Bag's splash)
   },
   'kb.tiered': {
-    doc: 'the up-special launch pairs — kb:[x,y], same reach as dmg.tiered',
-    find: /(kb:\[)([\d.]+)(,\s*)([\d.]+)(\])/g,
-    read: (m) => parseFloat(m[4]),
-    write: (m, v) => { const f = parseFloat(m[4]) ? v / parseFloat(m[4]) : 1;
-      return m[1] + trim(parseFloat(m[2]) * f) + m[3] + v + m[5]; },
+    // An up-special launches UP, so y is negative and x can be zero or negative (Tree flings you back
+    // over him). The knob reads |y|, scales x by the same ratio, and writes the signs back as found.
+    doc: 'the up-special launch pairs — kb:[x,y], both scaled together by |y|',
+    find: /(kb:\[)(-?[\d.]+)(,\s*)(-?[\d.]+)(\])/g,
+    read: (m) => Math.abs(parseFloat(m[4])),
+    write: (m, v) => { const y = parseFloat(m[4]), f = Math.abs(y) ? v / Math.abs(y) : 1;
+      return m[1] + trim(parseFloat(m[2]) * f) + m[3] + trim(y < 0 ? -v : v) + m[5]; },
     clamp: [0, 30], places: 2,
   },
 
