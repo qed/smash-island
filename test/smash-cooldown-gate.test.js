@@ -11,12 +11,18 @@ import { bootMonolith } from './helpers/smash-golden.js';
 //
 // Same family as the two already in the ledger: the dead `c*` charge terms, and `back` being
 // overwritten by whichever pattern set velocity.
+//
+// The flow package later scaled every declared cost by SMASH_CD_SCALE, so what a row DECLARES and what
+// a fighter PAYS are no longer the same number. The property here is unchanged -- a declared cost still
+// beats the flat endlag instead of being overwritten by it -- and the cases below read the scale rather
+// than a hard-coded 56 or 60, so tuning the scale cannot quietly turn this test into a no-op.
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
-/** Hold the smash key for `hold` frames, release, repeat — and count how many actually fired. */
-function tapSmash(w, name, { hold = 8, gap = 2, bursts = 3 } = {}) {
+/** Press the smash key for `hold` frames, release, repeat; then let `settle` frames pass, because a
+ *  committed smash comes out when its charge completes, up to 32 frames after the press. Count fires. */
+function tapSmash(w, name, { hold = 10, gap = 2, bursts = 3, settle = 24 } = {}) {
   return w.eval(`
     (function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
@@ -38,6 +44,7 @@ function tapSmash(w, name, { hold = 8, gap = 2, bursts = 3 } = {}) {
           down[KEYS.smash]=true;  for (var i=0;i<${hold};i++) tick();
           down[KEYS.smash]=false; for (var j=0;j<${gap};j++) tick();
         }
+        for (var s2=0;s2<${settle};s2++) tick();
       } finally { doSmash=_ds; }
       return { fires: fires, peakCd: peakCd, atkCd: A.atkCd };
     })()`);
@@ -45,27 +52,30 @@ function tapSmash(w, name, { hold = 8, gap = 2, bursts = 3 } = {}) {
 
 describe('a smash cannot be tapped out on repeat', () => {
   it('fires once across three rapid taps, not three times', () => {
-    // 8 frames held clears the tap floor so each burst is a legal TAP. Before the gate all three
-    // landed; Money's smash now costs 62 frames (LEGACY_SMASH_COST), so only the first may.
+    // 10 frames held clears every fighter's mis-press floor, so each press commits a smash. Before
+    // the gate all three landed; Money's smash declares 62 frames (LEGACY_SMASH_COST) and pays 47 of
+    // them after SMASH_CD_SCALE, longer than the 60 frames this takes, so only the first may come out.
     const r = tapSmash(W, 'Money');
     expect(r.fires).toBe(1);
   });
 
   it('lets the next one through once the cooldown has actually run out', () => {
-    // The gap has to outlast her declared cost, 62 frames, not just the 18-frame tap endlag.
-    const r = tapSmash(W, 'Money', { hold: 8, gap: 70, bursts: 3 });
+    // The gap has to outlast her paid cost (47 frames) plus the charge, not just the flat endlag.
+    const r = tapSmash(W, 'Money', { hold: 10, gap: 70, bursts: 3, settle: 40 });
     expect(r.fires).toBe(3);
   });
 });
 
 describe('a declared smash cost survives the endlag assignment', () => {
-  it('honours cost.cd instead of overwriting it with the flat 18/30', () => {
-    // Fries declares cost:{cd:56}. The endlag for a tap is 18 and for a full charge 30, so if the
-    // cost is being clobbered this comes back as one of those instead.
+  it('honours cost.cd instead of overwriting it with the flat endlag', () => {
+    // Fries declares cost:{cd:56} and pays it scaled. If the cost were being clobbered, what came back
+    // would be the flat tap endlag instead -- so the test is that the paid cost still beats it.
     const spec = W.eval("SMASH_SPEC['fry'] && SMASH_SPEC['fry'].cost && SMASH_SPEC['fry'].cost.cd");
+    const scale = W.eval('SMASH_CD_SCALE'), tapEndlag = W.eval('SMASH_ENDLAG');
     expect(spec, 'Fries should still declare a cd cost').toBe(56);
-    const r = tapSmash(W, 'Fries', { hold: 8, gap: 2, bursts: 1 });
-    expect(r.peakCd).toBeGreaterThanOrEqual(spec);
+    const r = tapSmash(W, 'Fries', { hold: 10, gap: 2, bursts: 1, settle: 40 });
+    expect(r.peakCd, 'the declared cost, scaled').toBe(Math.round(spec * scale));
+    expect(r.peakCd, 'and still longer than the flat endlag it used to be overwritten by').toBeGreaterThan(tapEndlag);
   });
 
   it('makes a legacy body pay its declared cost, not just the flat endlag', () => {
@@ -76,7 +86,9 @@ describe('a declared smash cost survives the endlag assignment', () => {
     // the code and wrong about the game.
     expect(W.eval("SMASH_SPEC['fly'] === undefined")).toBe(true);
     const cd = W.eval("LEGACY_SMASH_COST['fly'].cd");
-    const r = tapSmash(W, 'Puffball', { hold: 8, gap: 2, bursts: 1 });
-    expect(r.peakCd).toBe(cd);
+    const scale = W.eval('SMASH_CD_SCALE'), tapEndlag = W.eval('SMASH_ENDLAG');
+    const r = tapSmash(W, 'Puffball', { hold: 10, gap: 2, bursts: 1, settle: 40 });
+    expect(r.peakCd, 'her hand-written body pays the legacy cost, scaled').toBe(Math.round(cd * scale));
+    expect(r.peakCd, 'not just the flat endlag').toBeGreaterThan(tapEndlag);
   });
 });

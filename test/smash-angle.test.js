@@ -56,7 +56,9 @@ describe('the input', () => {
     var y0 = A.y, rose = false, held = 0, angle = null;
     down[KEYS.smash] = true;
     for (var i=0;i<14;i++){ if (i===3) down[KEYS.jump] = true; step(); if (A.y < y0 - 4) rose = true; if (A.smashHold > 0) held++; }
-    down[KEYS.smash] = false; step(); angle = A._smAngle;           // released with up still held
+    down[KEYS.smash] = false;                                      // let go early, with up still held
+    for (var j=0;j<48 && A._smQ;j++) step();                       // it fires when the charge completes
+    angle = A._smAngle;
     down[KEYS.jump] = false;
     return { rose: rose, held: held, angle: angle };
   })()`);

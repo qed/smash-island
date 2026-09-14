@@ -444,7 +444,7 @@
     <div class="foot" style="margin-top:4px">59 fighters · 9 bosses · 13 assists · no account, no ads, nothing to install</div>
     <div class="foot" style="margin-top:10px;opacity:0.7">An unofficial fan-made game. Not affiliated with or endorsed by jacknjellify; Battle for Dream Island and its characters belong to them. Made for fun, never sold.</div>
     <div class="foot" id="musicCredits" style="margin-top:6px;opacity:0.7">Music: "Chill/Calming Chiptune Loop" by Reganati · "8-Bit Chiptune Action Music for Video Games" by HauntSync · "Dark Orchestral Battle Tension" by Montogoronto · "Epic Orchestral Anthem Loop" by Sonican — free under the Pixabay Content License. Full credits: assets/music/CREDITS.md</div>
-    <div class="foot" style="margin-top:4px;opacity:0.7">build v68 · new teams arena "The Yoyle Crossing" — bigger, landmark-driven</div>
+    <div class="foot" style="margin-top:4px;opacity:0.7">build v69 · attacks chain, smashes are press-to-commit, Tennis Ball's gadget rack, every projectile drawn and longer-lived</div>
   </div>
 
   <!-- SETTINGS — one home for everything that used to crowd the title screen. Sound, the key map
@@ -801,7 +801,7 @@
     <div class="hudbar" id="hudbar"></div>
     <div class="standings" id="standings"></div>
     <div class="banner" id="banner"></div>
-    <div id="hint">BUILD v68 · ← → move · ↑ jump · X attack · ↓+X ranged · C special · ↑+C up · ↓+C down-sp · dir+↑/↓+C = angled dash · X+C finisher · hold V smash · Esc pause</div>
+    <div id="hint">BUILD v69 · ← → move · ↑ jump · X attack · ↓+X ranged · C special · ↑+C up · ↓+C down-sp · dir+↑/↓+C = angled dash · X+C finisher · hold V smash · Esc pause</div>
     <!-- TOUCH CONTROLS — phones and tablets. Hidden entirely unless the device has a touchscreen
          (or the player forces them on in Controls), so a desktop player never sees them. -->
     <div id="touchpad" class="touchpad" style="display:none">
@@ -2414,7 +2414,7 @@ function refreshSel(){
       ["↑+C", "Up special (recovery)"],
       ["↓+C", "Down special"],
       ["hold V", smashBlurb(chosen)],
-      ["charge", smashFullOf(chosen) + " frames to full · " + smashFloorOf(chosen) + "-frame tap · hold ↑/↓ to angle"],
+      ["charge", smashFullOf(chosen) + " frames to charge · hold ↑/↓ to angle"],
       ["X+C", "Finisher"],
     ];
     mc.innerHTML = `<div class="mc-head">${chosen.name} — moves</div>` +
@@ -6278,8 +6278,9 @@ function step(){
         doAttackSpecial(f); f.spCd=74; f.atkCd=40;
       } else {
         if(inp.attack && f.atkCd<=0){
-          if(inp.down){ doGroundMove(f); f.atkCd=26; }   // low-dmg ranged/AoE base move
-          else { doAttack(f); f.atkCd=22; }
+          // Land it and you recover sooner; whiff and you pay the full price (see JAB_HIT_CD).
+          if(inp.down){ f._confirm=0; doGroundMove(f); f.atkCd = f._confirm ? GROUND_HIT_CD : 26; }
+          else { f._confirm=0; doAttack(f); f.atkCd = f._confirm ? JAB_HIT_CD : 22; }
         }
         // SPECIAL. The direction used to be read on the exact frame special was pressed, so you
         // had to be ALREADY holding up: pressing special and THEN tilting gave the neutral every
@@ -6297,32 +6298,23 @@ function step(){
         }
         if(!inp.special) f._sp=false;   // must release & re-press special to fire again (no hold-to-spam)
       }
-      if(inp.smash){
-        // Winding up during endlag used to be allowed, and with the release now gated on atkCd the
-        // charge would simply be eaten on release — a wasted commitment the player never sees the
-        // reason for. Cheaper to refuse the wind-up than to swallow the swing.
-        if(f.atkCd<=0 && f.smashHold < smashHoldMaxOf(f)) f.smashHold++;   // build; past SMASH_FULL it is pure hold — does NOT auto-fire
-      } else {
-        // TWO TIERS. This used to fire only at a full 45-frame hold and discard anything shorter,
-        // so doSmash had exactly one caller passing 1.0 and every `c*` term in all 59 smash bodies
-        // was dead code. Now a release past a 6-frame floor is a TAP (c=0: about 0.72x, short
-        // endlag) and a release at or past full is FULL (c=1, long endlag). Nothing in between —
-        // the ring shows which you are about to get. Holding past full adds no power; the extra
-        // 90 frames are bluff time, the opponent deciding whether to approach.
-        // Two things were wrong here and they compounded. There was no cooldown GATE, so a release
-        // past the 6-frame floor fired no matter what atkCd said — tap, tap, tap, about one smash
-        // every seven frames. And the assignment below used to be `f.atkCd = full ? 30 : 18`, which
-        // runs AFTER doSmash and therefore overwrote the cost runSmashSpec had just applied: every
-        // `cost:{cd:...}` in SMASH_SPEC — 48, 54, 56, 74 — has been dead since it was written.
-        // Now the gate is real and the declared cost wins when it is longer than the endlag.
-        if(f.smashHold >= smashFloorOf(f) && f.atkCd<=0){
-          const full = f.smashHold >= smashFullOf(f);
-          f._smAngle = inp.up ? 1 : (inp.down ? -1 : 0);          // see SMASH_ANGLE_TILT
-          f._smAngleT = f._smAngle ? SMASH_ANGLE_FRAMES : 0;
-          doSmash(f, full ? 1 : 0);
-          f.atkCd = Math.max(f.atkCd||0, full ? 30 : 18);
-        }
-        f.smashHold=0;                                          // release (full or not) clears the charge
+      // SMASHES: PRESS TO COMMIT. There is no tap smash any more, on the owner's call ("remove tap
+      // smashes ... but keep the charge time"). A press starts the charge -- the ring -- and the smash
+      // fires the moment the charge is full AND the endlag has ended, whether or not the button is still
+      // held. Letting go early neither cancels nor weakens it: a smash is always the full one, and the
+      // only way to throw one is to commit to its wind-up. Holding past full delays it (bluff time, up to
+      // smashHoldMaxOf; it never fires on its own while held). A press during endlag is the buffer: it
+      // charges through the endlag and comes out when both are done. A second press while one is
+      // charging does nothing, so mashing the key is one smash, priced by its cost like any other.
+      // The mis-press floor survives as a CANCEL: let go before smashFloorOf and nothing was thrown,
+      // so a brushed key does not commit you to a smash; let go after it and the smash is coming.
+      if(inp.smash && !f._smP && !f._smQ){ f._smQ = { held:true }; f.smashHold = 0; }
+      f._smP = !!inp.smash;
+      if(f._smQ && !inp.smash && f.smashHold < smashFloorOf(f)){ f._smQ = null; f.smashHold = 0; }   // mis-press: nothing thrown
+      if(f._smQ){
+        if(!inp.smash) f._smQ.held = false;
+        if(f.smashHold < smashHoldMaxOf(f)) f.smashHold++;
+        if(f.smashHold >= smashFullOf(f) && f.atkCd<=0 && !f._smQ.held){ f._smQ = null; f.smashHold = 0; fireSmash(f, inp); }
       }
     }
 
@@ -6827,6 +6819,7 @@ const ATK_RECOVER = 1 - ATK_WINDUP - ATK_RELEASE;
 // is recorded alongside the countdown (a smash runs longer than a jab, and the phase split has to
 // scale with it rather than clipping).
 function armAtk(f, len, kind){
+  f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   // `kind` is what the limb does on the strike: 'punch' for the jab, 'kick' for the low ground move,
   // null for everything else (specials and smashes have their own silhouettes). Render-only.
   f._atkKind = kind || null;
@@ -7112,11 +7105,38 @@ const SM_FX = {
   knockdown:(t,f,n)=>{ t.onground=false; t.vy=Math.min(t.vy,-3); t.hitstun=Math.max(t.hitstun||0,(n||30)); },
 };
 // The cost, paid on activation whether the move connects or not. That is the point of it.
-function smashCost(f, cost){
+// FLOW. Landing a jab or a ground move cuts its own recovery (whiffing still pays full), a tap smash pays
+// half the self-stun a full one does, smash cooldowns are scaled, and a smash released during endlag is
+// remembered rather than swallowed. Grace is untouched: it is what still stops anyone machine-gunning a
+// single target, which is why cutting the attacker's lockouts is safe.
+const JAB_HIT_CD = 12, GROUND_HIT_CD = 16;        // on connect (whiff stays 22 / 26)
+const SMASH_ENDLAG = 26;                          // after any smash -- every smash is the full one now
+const SMASH_CD_SCALE = 0.75;                      // every declared smash cost, "reduce delay between smashes"
+const SELF_STUN_SCALE = 0.6;                      // cost.stun freezes movement too; 24 fighters sat out up to 34 frames
+
+// CHAINING. The same attacker may follow up through the grace their own hit opened, but only while the
+// target is still in hitstun, only with a swing (projectiles test invuln in their own loop, so a wall of
+// shots still cannot chain-stun), and only CHAIN_MAX times. Each link cuts the next hitstun by
+// CHAIN_DECAY and knockback grows with the target's damage, so a chain runs out on its own. A chained
+// hit has to come from a NEW move (_atkSeq): a hitbox that lingers over several frames, like Meteor
+// Puff's fall, may not re-land through the grace its own first hit opened -- the golden fixture is
+// what caught that.
+const CHAIN_MAX = 3, CHAIN_DECAY = 0.75;
+function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx && t._chainSeq !== f._atkSeq && (t._chain||0) < CHAIN_MAX; }
+// One place a smash actually goes off, so the buffered release and the live one cannot drift apart.
+function fireSmash(f, inp){
+  f._smAngle = inp && inp.up ? 1 : (inp && inp.down ? -1 : 0);   // see SMASH_ANGLE_TILT
+  f._smAngleT = f._smAngle ? SMASH_ANGLE_FRAMES : 0;
+  doSmash(f, 1);                                                  // there is no tap tier any more
+  f.atkCd = Math.max(f.atkCd||0, SMASH_ENDLAG);
+}
+function smashCost(f, cost, c){
   if(!cost) return;
-  if(cost.stun){ f.hitstun = Math.max(f.hitstun||0, cost.stun); f._selfStun = cost.stun; }
+  if(cost.stun){ const stun = Math.round(cost.stun*SELF_STUN_SCALE);
+    f.hitstun = Math.max(f.hitstun||0, stun); f._selfStun = stun; }
   if(cost.self){ f.pct += cost.self; }
-  if(cost.cd){ f.atkCd = Math.max(f.atkCd||0, cost.cd); f.spCd = Math.max(f.spCd||0, cost.cd); }
+  if(cost.cd){ const cd = Math.round(cost.cd*SMASH_CD_SCALE);
+    f.atkCd = Math.max(f.atkCd||0, cd); f.spCd = Math.max(f.spCd||0, cd); }
   // `back` is applied by runSmashSpec AFTER the pattern — see there. Setting it here would be
   // overwritten by any pattern that assigns f.vx, which is how it came to do nothing at all.
   if(cost.root){ f.rooted = Math.max(f.rooted||0, cost.root); }
@@ -7128,7 +7148,7 @@ function smashCost(f, cost){
 function smashTargets(f, cx, cy, rad){
   const out=[];
   for(const t of fighters){
-    if(t.dead||t.idx===f.idx||t.team===f.team||(f._combo ? graceBlocks(t,f) : t.invuln>0)) continue;
+    if(t.dead||t.idx===f.idx||t.team===f.team||(f._combo ? graceBlocks(t,f) : (t.invuln>0 && !chainOpen(t,f)))) continue;
     if(hurtGap(t, cx, cy) < rad) out.push(t);
   }
   return out;
@@ -7250,7 +7270,7 @@ const SM_PAT = {
 function runSmashSpec(f, s, c){
   f.flash = c ? 14 : 10;
   const cost = c ? s.cost : (s.costTap || s.cost);
-  smashCost(f, cost);
+  smashCost(f, cost, c);
   (SM_PAT[s.pat] || SM_PAT.lunge)(f, s, c);
   // Recoil LAST, so it eats into the momentum the pattern just granted instead of being erased by it.
   if(cost && cost.back){ f.vx -= f.face*cost.back; f.onground=false; }
@@ -7449,7 +7469,7 @@ function doSmash(f, charge){
   if(id && id.name && (f.you || f.you2)) banner(id.name, 700);
   const k=f.kit && f.kit.special;
   if(SMASH_SPEC[k]){ runSmashSpec(f, SMASH_SPEC[k], charge); return; }
-  if(SMASHES[k]){ SMASHES[k](f, charge); smashCost(f, LEGACY_SMASH_COST[k]); return; }
+  if(SMASHES[k]){ SMASHES[k](f, charge); smashCost(f, LEGACY_SMASH_COST[k], charge); return; }
   genericSmash(f, charge);
 }
 
@@ -7596,6 +7616,7 @@ function riseShape(f, s){
   puff(f.x, f.y+14, f.color, 6);
 }
 function doUpSpecial(f){
+  f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   armAtk(f, ATK_ANIM);      // render-only: a recovery is the fighter ACTING, not being hit
   const k=f.kit && f.kit.special;
   if(UPSPEC[k]){ riseShape(f, UPSPEC[k]); }
@@ -7715,6 +7736,7 @@ const DOWNSPECIALS = {
   glaze(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:14,color:'#d98a5a',life:220,trap:true,slow:true});  }, // Donut — sticky glaze puddle
 };
 function doDownSpecial(f){
+  f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   armAtk(f, ATK_ANIM);
   const k=f.kit && f.kit.special;
   if(DOWNSPECIALS[k]) DOWNSPECIALS[k](f);
@@ -7750,6 +7772,7 @@ const ATKSPECIALS = {
   anvil(f){ f.flash=14; let tgt=null,best=1e9; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.abs(t.x-f.x); if(d<best){best=d;tgt=t;} } const ax=tgt?tgt.x:f.x+f.face*60; dropProj(f, ax, tgt?tgt.y+tgt.r:feetY(f), {dmg:16,kb:10,r:18,color:'#3a3a3a',life:150});  },
 };
 function doAttackSpecial(f){
+  f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
@@ -7775,7 +7798,7 @@ const PAYDAY_SPECIAL = {pat:'burst', frames:8, r0:26, rad:74, grow:20, dmg:[5.8,
 // How long a pressed special waits to find out which way you meant. Eight frames is about 130ms —
 // long enough to catch "special, then up" as one motion, short enough that a neutral special with
 // no direction held does not feel like it lags.
-const SPECIAL_DIR_WINDOW = 8;
+const SPECIAL_DIR_WINDOW = 5;
 
 // One special, routed by whichever direction is held at the moment it actually fires. Split out of
 // the input block so the instant path and the deferred path cannot drift apart.
@@ -7986,6 +8009,7 @@ function batteryShape(c, r){
 }
 
 function doSpecial(f){
+  f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
@@ -8171,7 +8195,11 @@ function doSpecial(f){
       // Money: the burst that used to be her smash, now her special. Both charge tiers hold the
       // same number on purpose — a special never charges, so the tap value IS the value, and the
       // whole thing is cut well below the smash it came from.
-      runSmashSpec(f, PAYDAY_SPECIAL, 0); f.flash=8; break; }
+      runSmashSpec(f, PAYDAY_SPECIAL, 0); f.flash=8;
+      // A special routed through runSmashSpec pays its cost into atkCd as well, which locked Money's
+      // jab for 62 frames. She is the only special that goes through it; her C is not her smash.
+      f.atkCd = Math.min(f.atkCd, 14);
+      break; }
     case "thorn": { // Rose: tether that yanks the nearest foe toward her
       let tgt=null,best=300; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} }
       if(tgt){ const dir=Math.sign(f.x-tgt.x)||1; tgt.vx=dir*10; tgt.vy=-3; if(tgt.invuln<=0) applyHit(tgt,7,dir*2,-4,f);
@@ -8308,7 +8336,7 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band){
   let landed = 0;
   const b = band==null ? 1 : Math.abs(band), tip = band!=null && band<0;
   for(const t of fighters){
-    if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : t.invuln>0)) continue;
+    if(t.dead||t.idx===f.idx||(f._combo ? graceBlocks(t,f) : (t.invuln>0 && !chainOpen(t,f)))) continue;
     const d = hurtGap(t, cx, cy);   // to the hurtbox EDGE, so the old t.r is already inside it
     if(d<rad){
       // Golf Ball marks whatever she hits, so her bonus-vs-cursed payoff builds up on its own
@@ -8318,7 +8346,7 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band){
       const dmg = sweet ? dmgHigh : dmgLow;
       const k = (dmgHigh>0 && dmg!==dmgHigh) ? dmg/dmgHigh : 1;
       applyHit(t, dmg, kbx*k, kby*k, f);   // counter handled inside applyHit
-      if(t.team!==f.team) landed++;
+      if(t.team!==f.team){ landed++; f._confirm = 1; }   // a SWING that lands recovers sooner (see JAB_HIT_CD); a shot landing this frame does not count
     }
   }
   if(summons.length) damageSummons(f, cx, cy, rad, dmgHigh);
@@ -8584,7 +8612,10 @@ function applyHit(t, dmg, kbx, kby, from, opts){
     kbx = sx*L*Math.cos(a); kby = L*Math.sin(a);
   }
   knock(t, kbx*scale, kby*scale - t.pct*0.025);
-  t.hitstun=Math.min(24, 6+dmg);
+  // Each link of a chain stuns for less, so a chain ends even before CHAIN_MAX (see chainOpen).
+  const chained = (from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
+  t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1;
+  t.hitstun = Math.max(4, Math.round(Math.min(24, 6+dmg) * Math.pow(CHAIN_DECAY, chained)));
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
@@ -8660,6 +8691,7 @@ function eliminate(f){
   lastKoFrame = hazardT;                              // reset the stalemate-breaker timer on any KO
   try{ teamAiKoSignal(); }catch(e){}                  // a KO is worth re-planning for — see teamAiTick
   f._falls = (f._falls||0)+1;                       // universal: stocks this fighter has lost
+  f._smQ = null; f.smashHold = 0;                   // a smash charging at the moment of death dies with it
   if(killer && killer!==f && !killer.dead){ killer._kos=(killer._kos||0)+1; }  // universal: KOs scored
   // Comeback scaling: credit the killer with a KO, and the victim with a death (only for designated fighters)
   if(killer && killer!==f && !killer.dead && killer.kit && COMEBACK[killer.kit.special]){
@@ -10977,8 +11009,8 @@ function deformAboutFeet(ctx, R, ang, sx, sy){
 // they all peak on the same frame the shared rig's lunge does.
 function atkPulse(f){ return f._atkAnim > 0 ? Math.sin((f._atkAnim/ATK_ANIM)*Math.PI) : 0; }
 // How far a held smash has charged, 0 -> 1.
-const SMASH_FULL = 45;       // BASELINE frames to a full charge — see smashFullOf
-const SMASH_HOLD_MAX = 135;  // baseline hold ceiling; power stops at the fighter's full
+const SMASH_FULL = 24;       // BASELINE frames to a full charge — see smashFullOf (was 45 while taps existed)
+const SMASH_HOLD_MAX = 72;   // baseline hold ceiling; power stops at the fighter's full
 const SMASH_FLOOR = 6;       // baseline mis-press floor
 
 // One wind-up length for all fifty-nine said that a 46kg balloon and a 138kg television commit
@@ -10991,7 +11023,9 @@ const SMASH_FLOOR = 6;       // baseline mis-press floor
 // direction moves. The tilt applies to hits from the smasher for SMASH_ANGLE_FRAMES after release,
 // which covers every pattern's active window and ends well inside the smash's own endlag.
 const SMASH_ANGLE_FRAMES = 24, SMASH_ANGLE_TILT = 0.38;   // ~22 degrees either way
-function smashFullOf(f){ const w = (f && f.w) || 90; return Math.max(32, Math.min(58, Math.round(45 + (w - 90) * 0.30))); }
+// Shortened when the tap tier went (a smash has to be charged to be thrown at all now): 18..32 by
+// weight, a median fighter in 24 frames. It was 32..58.
+function smashFullOf(f){ const w = (f && f.w) || 90; return Math.max(18, Math.min(32, Math.round(24 + (w - 90) * 0.16))); }
 // The mis-press floor scales the same way: a heavy fighter's tap is a heavier commitment, so it
 // takes slightly longer before the game agrees you meant it.
 function smashFloorOf(f){ const w = (f && f.w) || 90; return Math.max(4, Math.min(9, Math.round(6 + (w - 90) * 0.04))); }

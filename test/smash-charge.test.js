@@ -76,7 +76,13 @@ describe('a tap is a real, cheaper smash', () => {
 
 // The input path — the part the fixture cannot see, because doSmash does not set endlag; the
 // release site does. Drive a local fighter through the real key state.
-function holdAndRelease(w, frames) {
+//
+// PRESS TO COMMIT. The tap tier is gone, on the owner's call ("remove tap smashes ... but keep the
+// charge time"). A press past the mis-press floor throws the FULL smash the moment its charge is
+// complete, whether or not the key is still down; letting go early neither cancels nor weakens it.
+// Holding past full waits for the release. A press during endlag charges through it and comes out
+// when both are done. Below the floor a press is still a mis-press and throws nothing.
+function pressSmash(w, { hold, wait = 60, mash = 0 } = {}) {
   return w.eval(`
     (function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
@@ -87,40 +93,63 @@ function holdAndRelease(w, frames) {
       [A,D].forEach(function(f){ f.stocks=9; f.invuln=0; });
       fighters=[A,D]; step(); A.pct=0; D.pct=0; A.atkCd=0; A.invuln=0; D.invuln=0;
       for (var k in down) down[k]=false;
-      down[KEYS.smash]=true;  for (var i=0;i<${frames};i++) step();
-      var held = A.smashHold;
-      down[KEYS.smash]=false; step();
-      return { held:held, fired: D.pct>0, atkCd:A.atkCd, holdAfter:A.smashHold };
+      var fires=0, _ds=doSmash; doSmash=function(f,c){ fires++; return _ds(f,c); };
+      var peakCd=0, fireFrame=-1, frame=0, pct30=-1;
+      var tick=function(){ step(); frame++; peakCd=Math.max(peakCd, A.atkCd); if(fires>0 && fireFrame<0) fireFrame=frame; if(fireFrame>0 && frame===fireFrame+30) pct30=D.pct; };
+      try {
+        down[KEYS.smash]=true;  for (var i=0;i<${hold};i++) tick();
+        var held = A.smashHold, firedWhileHeld = fires>0;
+        down[KEYS.smash]=false;
+        // a mash is a 10-frame press and a 2-frame gap: long enough to clear every fighter's floor
+        for (var m=0;m<${mash};m++){ down[KEYS.smash]=true; for (var a=0;a<10;a++) tick(); down[KEYS.smash]=false; tick(); tick(); }
+        for (var j=0;j<${wait};j++) tick();
+      } finally { doSmash=_ds; }
+      return { fires:fires, pct:+D.pct.toFixed(2), pct30:+pct30.toFixed(2), held:held, firedWhileHeld:firedWhileHeld, fireFrame:fireFrame,
+               peakCd:peakCd, holdAfter:A.smashHold, queued: !!A._smQ,
+               full: smashFullOf(A), floor: smashFloorOf(A), holdMax: smashHoldMaxOf(A), endlag: SMASH_ENDLAG };
     })()`);
 }
 
 describe('the release site', () => {
-  it('a 3-frame press is a mis-press, not a smash', async () => {
-    const r = holdAndRelease(await boot(), 3);
-    expect(r.fired).toBe(false);
+  it('a press shorter than the floor is a mis-press, not a smash', async () => {
+    const r = pressSmash(await boot(), { hold: 3 });
+    expect(r.floor, 'the floor has to be above 3 for this to test anything').toBeGreaterThan(3);
+    expect(r.fires).toBe(0);
+    expect(r.queued).toBe(false);
     expect(r.holdAfter).toBe(0);
   });
-  it('a 6-frame tap fires as tier one, with tap endlag', async () => {
-    const r = holdAndRelease(await boot(), 6);
-    expect(r.fired).toBe(true);
-    expect(r.atkCd).toBe(18);
+  it('a press past the floor commits: let go early and the smash still comes out, at full charge', async () => {
+    const r = pressSmash(await boot(), { hold: 10 });
+    expect(r.floor).toBeLessThanOrEqual(10);
+    expect(r.full, 'released before full, or this is not an early release').toBeGreaterThan(10);
+    expect(r.fires).toBe(1);
+    expect(r.fireFrame, 'it fires when the charge completes, not when the key is let go').toBeGreaterThanOrEqual(r.full);
+    expect(r.fireFrame).toBeLessThanOrEqual(r.full + 1);
+    expect(r.peakCd, 'Coiny declares no cost, so the endlag is the flat one').toBe(r.endlag);
   });
-  it('a 30-frame hold is STILL tier one — there is nothing between tap and full', async () => {
-    const r = holdAndRelease(await boot(), 30);
-    expect(r.fired).toBe(true);
-    expect(r.atkCd).toBe(18);
+  it('there is no tap tier: let go early or hold to full, it is the same smash', async () => {
+    const early = pressSmash(await boot(), { hold: 10 });
+    const late = pressSmash(await boot(), { hold: 40 });   // 40 is past every fighter's full (18..32)
+    expect(early.pct30, 'damage 30 frames after the hit, so damage-over-time counts the same for both').toBeGreaterThan(0);
+    expect(late.pct30).toBe(early.pct30);
+    expect(late.peakCd).toBe(early.peakCd);
   });
-  it('a full hold fires with full endlag', async () => {
-    const r = holdAndRelease(await boot(), 45);
-    expect(r.fired).toBe(true);
-    expect(r.atkCd).toBe(30);
+  it('holding past full waits for the release, and never fires on its own', async () => {
+    const r = pressSmash(await boot(), { hold: 130, wait: 5 });
+    expect(r.holdMax, 'held past the ceiling, or this proves nothing').toBeLessThan(130);
+    expect(r.firedWhileHeld).toBe(false);
+    expect(r.held, 'the hold stops building at the ceiling').toBe(r.holdMax);
+    expect(r.fires, 'and the release is what fires it').toBe(1);
   });
-  it('holding past full keeps charging the hold, not the power, and fires at 1.0', async () => {
+  it('a press during endlag comes out once the endlag ends, and mashing adds nothing', async () => {
+    // hold 40 fires on release; the three mashes land inside its endlag and charge: one comes out
+    const r = pressSmash(await boot(), { hold: 40, mash: 3, wait: 60 });
+    expect(r.fires).toBe(2);
+  });
+  it('the baseline constants describe the charge that ships', async () => {
     const w = await boot();
-    const r = holdAndRelease(w, 120);
-    expect(r.held).toBe(120);
-    expect(r.fired).toBe(true);
-    expect(r.atkCd).toBe(30);
-    expect(w.eval('SMASH_HOLD_MAX')).toBe(135);
+    expect(w.eval('SMASH_FULL')).toBe(24);
+    expect(w.eval('SMASH_HOLD_MAX')).toBe(72);
+    expect(w.eval('SMASH_HOLD_MAX')).toBe(w.eval('SMASH_FULL') * 3);
   });
 });
