@@ -16,6 +16,7 @@ const STATUSES = {
   weakened: 'weakened', curse: 'curseStacks', define: 'defineStacks', infected: '_infected', cloud: 'cloud',
   armor: 'armor', empower: '_empowerT', haste: '_hasteT', bullet: '_bulletT', star: '_starT', yoyle: '_yoyleT',
   healing: 'healing', reflect: 'reflecting', counter: 'countering',
+  grasstree: '_grasstree', reserve: '_noBattery',
 };
 
 const countingCtx = `new Proxy({}, { get:function(_t,p){
