@@ -54,7 +54,7 @@ describe('a multi-hit jab', () => {
 });
 
 describe('the eight', () => {
-  const ROWS = { Needle: [3, 1.5], Gelatin: [3, 2.8], Woody: [3, 3.1], 'Barf Bag': [2, 5.2], Toothpaste: [2, 5.7], Bubble: [3, 2.1], Grassy: [3, 2.2] };
+  const ROWS = { Needle: [3, 2], Gelatin: [3, 2.8], Woody: [3, 3.1], 'Barf Bag': [2, 5.2], Toothpaste: [2, 5.7], Bubble: [3, 2.1], Grassy: [3, 2.2] };   // 2 since the Needle buff (F19): three pricks for six
   for (const [name, [hits, dmg]] of Object.entries(ROWS)) {
     it(`${name}: ${hits} x ${dmg}`, () => {
       const r = jab(name, 40);
