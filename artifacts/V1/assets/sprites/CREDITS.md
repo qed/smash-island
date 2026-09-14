@@ -197,3 +197,17 @@ non-commercial fan game.
 | Woody | `woody.png` | 167×200 | 0.02 | https://static.wikia.nocookie.net/battlefordreamisland/images/6/64/Woody_in_TPOT_%28fair_enough%29.png/revision/latest?cb=20260701141213 |
 | Yellow Face | `yellow-face.png` | 194×200 | -0.059 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/Yellowface.png/revision/latest?cb=20190908174021 |
 <!-- RENDER-INVENTORY-END -->
+
+## Attack art
+
+What a fighter THROWS, in the show's own art, fetched by scripts/fetch-attack-sprites.mjs from the
+same wiki, cropped to the alpha box and downscaled to 56px tall, RGBA with verified alpha. Only art
+that is the thrown thing itself is used: renders of the character were rejected on sight.
+
+- Ice Cube (shatter.png): her shatter — File:Ice Cube's Shatter.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/54/Ice_Cube%27s_Shatter.png/revision/latest?cb=20170818055658
+- Cake (slice.png): a slice of cake — File:Cake slice.png — https://static.wikia.nocookie.net/battlefordreamisland/images/e/e8/Cake_slice.png/revision/latest?cb=20200331160339
+- Pencil (van.png): the Supervan — File:SuperVAN!2340001.png — https://static.wikia.nocookie.net/battlefordreamisland/images/e/e0/SuperVAN%212340001.png/revision/latest?cb=20240726151857
+- Bubble (bubble.png): a bubble — File:Bubble's asset.png — https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Bubble%27s_asset.png/revision/latest?cb=20180311133454
+- Pen (cap.png): his cap — File:Pen Cap.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/fe/Pen_Cap.png/revision/latest?cb=20171204165618
+- Price Tag (tag.png): a price tag — File:Price Tag S2 Asset.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/8f/Price_Tag_S2_Asset.png/revision/latest?cb=20250629215323
+- Ruler (measure.png): the ruler itself — File:Ruler's Asset.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cf/Ruler%27s_Asset.png/revision/latest?cb=20200704043629

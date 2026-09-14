@@ -10476,6 +10476,8 @@ function drawProjectile(pr){
     {
       const kit = pr.ownerObj && pr.ownerObj.kit;
       const sp = kit && kit.special;
+      const key = pr.shape || sp, im = attackImage(key);
+      if(im){ drawAttackSprite(ctx, pr, key, im); return; }   // the show's own art (ATTACK_SPRITES); the glyph until it loads
       const shape = PROJ_SHAPE[pr.shape] || PROJ_SHAPE[sp];   // a shot may name its own shape (Tennis Ball's gadgets)
       if(shape){
         const ang = Math.atan2(pr.vy||0, pr.vx||0);
@@ -13431,6 +13433,44 @@ function visualFace(f){
 // applies, or the player cannot tell a burn from a freeze mid-fight.
 //   `spin` tumbles the shape; otherwise it is aimed along its own velocity.
 // Drawn in local space with the projectile already translated to, and rotated about, its position.
+// ATTACK ART. The show's own art for what a fighter throws (scripts/fetch-attack-sprites.mjs; sources in
+// assets/sprites/CREDITS.md). Keyed the way the draw looks shapes up: the shot's own `shape`, else the
+// owner's kit. Drawn in place of the PROJ_SHAPE glyph once the image has loaded -- until then, and for
+// every kit without one, the glyph stays, so a headless boot draws exactly what it always did. `h` is
+// the drawn height at r=8 and scales with the shot; `spin` tumbles it, `aim` turns it along its travel,
+// `flipX` mirrors it when it travels left (a van has a front). Tennis Ball is left out on purpose.
+const ATTACK_SPRITES = {
+  shatter:  { src:'assets/sprites/attacks/shatter.png', h:22, spin:true },            // Ice Cube -- her shatter
+  atstake:  { src:'assets/sprites/attacks/slice.png',   h:24, spin:true },            // Cake -- a slice
+  van:      { src:'assets/sprites/attacks/van.png',     h:20, flipX:true },           // Pencil -- the Supervan
+  float:    { src:'assets/sprites/attacks/bubble.png',  h:20 },                       // Bubble -- a bubble
+  cap:      { src:'assets/sprites/attacks/cap.png',     h:22, aim:true },             // Pen -- his cap
+  pricetag: { src:'assets/sprites/attacks/tag.png',     h:18, spin:true },            // a price tag
+  measure:  { src:'assets/sprites/attacks/measure.png', h:30, aim:true },             // Ruler -- the ruler itself
+};
+const ATTACK_IMG = {};
+// The image for a key, or null until it has loaded (or where there is none). Lazy: the first shot of a
+// kind asks for it, so a boot pays nothing for kits that never throw.
+function attackImage(key){
+  const e = ATTACK_SPRITES[key];
+  if(!e) return null;
+  let im = ATTACK_IMG[key];
+  if(im === undefined){
+    im = null;
+    try{ if(typeof Image === 'function'){ im = new Image(); im.src = e.src; } }catch(err){ im = null; }
+    ATTACK_IMG[key] = im;
+  }
+  return (im && im.complete && im.naturalWidth > 0) ? im : null;
+}
+// Draw a loaded attack sprite for a shot, on any context (the test hands in a counting one).
+function drawAttackSprite(c, pr, key, im){
+  const e = ATTACK_SPRITES[key], h = e.h * (pr.r/8), w = h * (im.naturalWidth / im.naturalHeight);
+  c.save(); c.translate(pr.x, pr.y);
+  if(e.spin) c.rotate(hazardT*0.35 + pr.x*0.01); else if(e.aim) c.rotate(Math.atan2(pr.vy||0, pr.vx||0));
+  if(e.flipX && (pr.vx||0) < 0) c.scale(-1, 1);
+  c.drawImage(im, -w/2, -h/2, w, h);
+  c.restore();
+}
 const PROJ_SHAPE = {
   // --- fire: a flame licking backwards from the direction of travel
   ember:   { draw(c,r){ flameShape(c,r); } },
@@ -13481,7 +13521,7 @@ const PROJ_SHAPE = {
   float:    { spin:true, draw(c,r){ bubbleShape(c, r); } },            // Bubble -- her cascade of blobs
   debuff:   { spin:true, draw(c,r){ golfShape(c, r); } },
   tackle:   { spin:true, draw(c,r){ snowballShape(c, r); } },          // Snowball -- packed snow              // Golf Ball
-  fly:      { spin:true, draw(c,r){ puffShape(c, r); } },              // Puffball -- a puff of her
+  fly:      { draw(c,r){ rainbowShape(c, r); } },                     // Puffball -- her rainbow vomit, as the show draws it
   ring:     { draw(c,r,pr){ chimeShape(c, r, pr.color); } },           // Bell -- a struck note
   gust:     { draw(c,r,pr){ gustShape(c, r, pr.color); } },            // Fanny -- air
   pricetag: { draw(c,r){ tagShape(c, r); } },                          // Profily -- a price tag
@@ -13665,6 +13705,17 @@ function golfShape(c, r){
   c.fillStyle = 'rgba(0,0,0,0.16)';
   const dimples = [[-0.4,-0.3],[0.1,-0.5],[0.45,-0.1],[-0.1,0.1],[0.3,0.35],[-0.45,0.3],[0,0.55]];
   for(const d of dimples){ c.beginPath(); c.arc(d[0]*r, d[1]*r, r*0.12, 0, 7); c.fill(); }
+}
+function rainbowShape(c, r){
+  // Puffball's rainbow vomit: a striped stream, red at the edges through to violet in the middle, that
+  // trails behind a rainbow-arc head. No outline -- the show's rainbow has none. Drawn along travel.
+  const cols = ['#ff3a3a', '#ff9a2a', '#ffe23f', '#5fd04b', '#3a8ee0', '#8a4be0'];
+  const bands = cols.concat(cols.slice(0, -1).reverse()), n = bands.length, H = r*1.9, band = H/n;
+  for(let i=0;i<n;i++){ c.fillStyle = bands[i]; c.fillRect(-r*2.4, -H/2 + i*band, r*2.4, band + 0.5); }
+  for(let i=0;i<cols.length;i++){
+    const rr = H/2 - i*band; if(rr <= 0) break;
+    c.fillStyle = cols[i]; c.beginPath(); c.arc(0, 0, rr, -Math.PI/2, Math.PI/2); c.closePath(); c.fill();
+  }
 }
 function puffShape(c, r){
   // a puff of Puffball: three soft lobes and no hard outline, because she has none
