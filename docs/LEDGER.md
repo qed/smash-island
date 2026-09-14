@@ -1,7 +1,7 @@
 # Work ledger — Battle for Smash Island
 
 Every task from this run, done or not. Grouped by where it came from, because that is the
-part that is easy to lose. Written 2026-09-03, extended 2026-09-10 and 2026-09-11.
+part that is easy to lose. Written 2026-09-03, extended 2026-09-10, 2026-09-11 and 2026-09-14.
 
 `origin/main` carries everything below. The stacked `pr1`..`pr14` branches were merged earlier, and
 the D and E sessions were pushed straight to `main` on 2026-09-11 at the owner's request (O1).
@@ -224,6 +224,78 @@ was force-pushed.
 
 ---
 
+## F · The 2026-09-14 session
+
+| | Task | Status | Landed in |
+|---|---|---|---|
+| F1 | `team members never do anything but ram straight ... in 4tdm, some go up as well` | **Done** | `57eab9b` |
+| F2 | `do a winrates pass` | **Done** | `930e176` |
+| F3 | `add a new degree of precision to damage: 0.1 ... buff some charecters by adding multihitting` | **Done** | `930e176` |
+| F4 | `nerf the turrets accuracy on tb` | **Done** | `34408ec` |
+| F5 | `add buff/debuff icons` | **Done** | `03220ec` |
+| F6 | `the characters in the preview dont match the ones I actually am with` | **Done** | `b1c082b` |
+| F7 | `add sprites from the actual show ... if it doesnt make sense, change the ability` | **Done** | `c5a1654` (art), `0767b6d` (Grassy, Remote); Taco and Roboty stay O19 |
+| F8 | `ship and merge` / `just push it when they pass` | **Done** | pushed to `main` |
+| F9 | `change Grassy, and remote` / `doesnt grassy have something going for him in tpot? also, remote uses batteries` | **Done** | `0767b6d` |
+
+**F1 was measured before it was believed.** A first probe staged `count=4` in team mode and got
+four one-fighter teams (`1v1v1v1` is the first split the game offers), so nobody had a teammate and
+nothing changed. With a real split -- `2v2` and `2v2v2v2` -- the odd slot of each team now steers at
+a point two pad rows above its target while far from it and drops on it once overhead. The second
+teammate is a full pad row above the first 43% of the time in 2v2, up from 24%, and 35% in the
+four-team split, up from 26%; damage dealt and KOs per match held. A flanker at kill percent leaves
+the high road to danger mode. The behavioural control in the test was itself confounded by the
+arena (in FFA the same fighter still hops a bluff), so the test asserts the structural fact the code
+relies on instead: in FFA every fighter is its own team and nobody is ever slot 1.
+
+**F2 and F3 are one pass, because the second decides where the first's buffs go.** 128 real matches
+in eight brackets: Ruby 50%, then Fanny, Leafy, Sidewalky at 42%; Puffball, Toothpaste, Grassy,
+Bubble, Barf Bag, Woody, Gelatin and Needle 0-for-8. `auto-balance` nerfs the top seven (six points
+of weight, one of jab damage, knockback and reach); with one run its dead band is wide, so the
+bottom clears it nowhere. The bottom eight are buffed by multi-hit: a profile row may declare
+`multi:{hits, every}`, the jab lands its first hit and the rest at that interval through the grace
+its own earlier hit opened (the designed multi-hit path, not the chain window), a hit on the
+attacker cancels the rest, and per-hit damage is authored to a tenth -- which the HUD now shows.
+Puffball's jab is a shot, so hers ticks three times where it lands. The engine had always carried
+fractional damage; burn ticks 0.04 a frame. Two profile rows were mislabelled for years: `barf` is
+Rocky's, and the first draft of this buff went to him until the test said Barf Bag's `multi` was
+null. Her special is `splash`. Verified by a second tournament pair: **not conclusive.** Roster spread (sigma of win rates) went 0.114 before to 0.132 after, wider by 16%, with a bootstrap 95% interval of [-0.026, 0.047] over the four runs and P(tighter) 31.5%; KOs per game held at 1.71, so nothing got blunter. The nerfs landed where aimed (Ruby, 50% before, went 0-for-8 in one after run), but the roster did not get flatter at this sample size. O20 and O21 carry it.
+
+**F4.** The turret aimed with atan2 and never missed; each shot now carries an error that grows with
+range (about 4.6 degrees point blank, ten at 400px), the smash-built turret 40% tighter, from the
+game's own seeded RNG so replays hold.
+
+**F5 and F6** are a table of glyphs above the head, render-only and randomness-free by test, and a
+one-draw memo for the lineup: `refreshTeamChat` and the match both called `buildFighters()`, two
+random draws, so the teammates you planned with were never the ones you got. Starting the match
+spends the memo, so the next preview rolls fresh; netcode lineups stay the host's.
+
+**F7 was an inventory before it was art.** Every kit's attack was searched on the wiki the fighter
+renders came from; nineteen files came through the fetcher's guarantees (a real PNG, transparent,
+substantial), and then they were LOOKED at. Twelve were the character -- Firey, Donut, Lollipop,
+Match, Fries, Bomby, Gelatin holding her syringes, Bracelety holding her sign -- or unreadable at
+20px. Seven are the thrown thing itself and are in: Ice Cube's shatter, Cake's slice, the Supervan,
+Bubble's bubble, Pen's cap, the price tag, the ruler. Puffball's rainbow vomit has no clean asset
+and is drawn as the show draws it. The art loads lazily and draws only once loaded, so the headless
+suite sees no change and the goldens do not move. Money's coins keep their glyph: the wiki's only
+coin art is a pile. Tennis Ball is excluded on purpose.
+
+**F9 changed the two abilities F7 could not draw.** Grassy's mower and Remote's signal bolt had no
+counterpart in the show, and you named the counterparts: in TPOT 16 and 17 Grassy pilots Tree's
+body, and Remote is battery-powered -- she spent half an episode unconscious without one. Grassy's
+special is now Grasstree: four seconds up a tree, armoured on every frame, his jab at 1.4x damage,
+1.3x knockback and 14px longer, walking at 0.85, with Tree's own sprite drawn behind him (Tree
+himself is untouched). Remote's is Battery Swap: she hurls her battery -- heavy, bouncing, a
+30-frame stun where it lands -- and runs on reserve power until a fresh one clicks in 150 frames
+later, at 0.75 speed with specials refused before their cooldown is spent; the new battery heals
+three. Her smash "Backwards Day" stays; his rolling wave is "Overgrowth" now. The keys were renamed
+in every table (`mower` to `grasstree`, `hack` to `battery`), and `canon-abilities` checks each
+effect frame by frame, its wearing off, and that no table still knows an old name. The F2
+verification pair ran on the build before this change, so its Grassy and Remote are the old ones
+(O21).
+
+---
+
 ## OPEN
 
 ### O1 - Open the pull requests  [SUPERSEDED]
@@ -428,16 +500,40 @@ tap/full ratio test, but since E18 no input path passes c=0 -- only direct calls
 The balance harness's `dmg.tiered` knob scales both tiers together, so nothing is wrong; it is dead data
 that a later pass could collapse to a single value, taking the ratio test with it.
 
+### O19 · Which non-canon abilities to change
+
+"if it doesnt make sense, change the ability." Grassy and Remote are done (F9). The kits whose
+attack still has no counterpart in the show are thematic rather than from an episode: Taco's salsa
+(her episodes are about the jawbreaker and her leaving, not a projectile), Roboty's morse bolts (he
+speaks morse, so these already make sense), Golf Ball's curse aura. Swapping a move for a canon one
+is a design call per fighter, not an art fix. Say which, and they change.
+
+### O20 · The bottom eight's second tournament pair
+
+F2's verdict is recorded above from two tournament pairs. Eight matches per fighter per run is still
+thin at the bottom -- 0-for-8 is what a 128-match bracket says about a bad fighter AND about an
+unlucky one -- so a fighter that stays at 0% across all four runs is real, and one that moves is
+noise. Across the four runs only Needle never won a match. Bubble and Gelatin were 0-for-16 before the pass and won after it; Cake, Teardrop and Liy were 0-for-16 after it and had won before. Treat the multi-hit numbers as a first step sized to be safe (+15% to +40% on the
+jab), not a finished balance.
+
+### O21 · Grasstree and Battery Swap have no tournament yet
+
+The F2 verification pair ran on the balance of `c5a1654`, before F9. In its first run the old
+Remote won 64.7% of her matches and two brackets, the best of anyone, with a signal bolt that no
+longer exists; the new Remote is a strong throw with a 150-frame price, the new Grassy a stat buff
+on a 90-frame cooldown, and neither has a bracket behind it. A pair of runs on the F9 build is the
+next balance step; until then the win rates above describe a roster two fighters out of date.
+
 ---
 
 ## Scoreboard
 
 | | Count |
 |---|---|
-| Done | 59 |
-| Open | 6 (O8, O13, O14, O16, O17, O18) |
+| Done | 68 |
+| Open | 9 (O8, O13, O14, O16, O17, O18, O19, O20, O21) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 0 |
 
-Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, O3-O7, O9-O12 and O15. Suite:
-**722 of 722 on the shipped file (55 files), with the O15 file re-run alone after its final edit**.
+Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F9, O3-O7, O9-O12 and O15.
+Suite: **762 of 762 on the shipped file (62 files)**.
