@@ -284,15 +284,16 @@ describe('My Stats replaces the developer balance table', () => {
     ]);
   });
 
-  it('caps the list at the player top five', () => {
+  it('lists every fighter the player has held, most-played first (a top-five cap once hid the rest; "add my winrates")', () => {
     const { window: w } = loadMonolith();
     const log = [];
     for (let i = 0; i < 7; i++) {
       for (let n = 0; n <= i; n++) log.push({ fighters: [{ name: 'F' + i, you: true, won: n === 0 }] });
     }
-    const mains = JSON.parse(w.eval(`JSON.stringify(myMains(${JSON.stringify(log)}))`));
-    expect(mains).toHaveLength(5);
+    const mains = JSON.parse(w.eval(`JSON.stringify(myMains(${JSON.stringify(log)}, 0))`));
+    expect(mains).toHaveLength(7);
     expect(mains[0].name, 'most-played first').toBe('F6');
+    expect(JSON.parse(w.eval(`JSON.stringify(myMains(${JSON.stringify(log)}, 5))`)), 'a limit still limits').toHaveLength(5);
   });
 
   it('marks the player in every new record, which is what rival memory reads', async () => {

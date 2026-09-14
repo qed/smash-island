@@ -585,8 +585,10 @@
     <div class="tag" id="statsSummary">No matches recorded yet.</div>
     <div id="statsTable" class="statswrap"></div>
     <div class="foot" id="statsRival" style="margin-top:6px;text-align:center"></div>
+    <div id="statsCopy" style="margin-top:6px;text-align:center"></div>
     <div class="row" style="margin-top:14px">
       <button class="btn ghost sm" onclick="go('options')">◀ Back</button>
+      <button class="btn ghost sm" onclick="copyMyStats(this)">📋 Copy my stats</button>
       <button class="btn ghost sm" onclick="resetStats()">🗑 Reset my stats</button>
     </div>
   </div>
@@ -3467,6 +3469,12 @@ async function hydrateRatings(){
     RATING_TALLIES = raw ? JSON.parse(raw) : null;
   }catch(e){ RATING_TALLIES = null; }   // ratings must never break the tournament
 }
+// The bot's bracket win rate for a fighter, exactly as baked -- no local blend -- and its rank in
+// that table. MY STATS shows this beside the PLAYER's own rate for the same fighter, because the two
+// are different numbers: the brackets measure how the AI drives a kit, and the owner's 81% on
+// Puffball sits next to the bot's 11% with her ("add my winrates").
+function bakedWinRate(name){ return (FIGHTER_WINRATE[name] !== undefined) ? FIGHTER_WINRATE[name] : FIGHTER_WINRATE_MEAN; }
+const BAKED_RANK = (function(){ const rows = Object.entries(FIGHTER_WINRATE).sort(function(a,b){ return b[1]-a[1] || a[0].localeCompare(b[0]); }); const m = {}; rows.forEach(function(r,i){ m[r[0]] = i+1; }); m._n = rows.length; return m; })();
 // Measured win rate for a fighter, in 0..1. Baked baseline, refined by local play once there is
 // enough of it. Deterministic: the same fighter and the same tallies always give the same number.
 function fighterWinRate(name){
@@ -15362,9 +15370,57 @@ function myMains(log, limit){
     const a = by[me.name] || (by[me.name]={name:me.name, games:0, wins:0, kos:0});
     a.games++; if(me.won) a.wins++; a.kos += (me.kos||0);
   }
-  return Object.values(by)
-    .sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name))
-    .slice(0, limit||5);
+  const out = Object.values(by)
+    .sort((a,b)=> (b.games-a.games) || (b.wins-a.wins) || a.name.localeCompare(b.name));
+  return limit ? out.slice(0, limit) : out;   // limit 0: every fighter the player has held
+}
+let MY_STATS_CACHE = [];   // what MY STATS last rendered, for the Copy button
+// The table as text, for the clipboard: the player's number and the bot's, per fighter.
+function myStatsText(mains){
+  const day = new Date().toISOString().slice(0,10);
+  const lines = ["Battle for Smash Island — my stats ("+day+")", "fighter | games | my win% | AI bracket win% (rank)"];
+  const json = {};
+  for(const r of mains){
+    const pct = r.games ? Math.round(r.wins/r.games*100) : 0;
+    lines.push(r.name+" | "+r.games+" | "+pct+"% | "+Math.round(bakedWinRate(r.name)*100)+"% (#"+(BAKED_RANK[r.name]||"?")+" of "+BAKED_RANK._n+")");
+    json[r.name] = { games:r.games, wins:r.wins, kos:r.kos||0 };
+  }
+  lines.push("json: "+JSON.stringify(json));
+  return lines.join("\n");
+}
+function copyMyStats(btn){
+  const text = myStatsText(MY_STATS_CACHE);
+  const done = ()=>{ if(btn){ const t=btn.textContent; btn.textContent='✓ Copied!'; setTimeout(()=>{ btn.textContent=t; }, 1600); } };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, done); return; }
+  }catch(e){}
+  // no clipboard on an insecure origin: leave it selectable instead
+  const host = document.getElementById('statsCopy');
+  if(host){ host.innerHTML=''; const ta=document.createElement('textarea'); ta.readOnly=true; ta.value=text; ta.rows=Math.min(12, 3+MY_STATS_CACHE.length); ta.style.width='96%'; ta.onclick=function(){ this.select(); }; host.appendChild(ta); }
+}
+// The rows. Split from openStats so the table can be rendered from any list of mains (the test
+// hands it one; openStats hands it the match log's).
+function renderMyStats(mains){
+  const table=document.getElementById('statsTable');
+  if(!table) return;
+  table.innerHTML='';
+  MY_STATS_CACHE = mains;
+  const head=document.createElement('div'); head.className='statrow head';
+  head.innerHTML='<span class="statname">Fighter</span><span class="statnum">Games</span><span class="statnum">Win%</span><span class="statnum" title="the bot\'s win rate with this fighter in scripted brackets">AI</span><span style="width:120px">Wins</span>';
+  table.appendChild(head);
+  for(const r of mains){
+    const pct = r.games ? Math.round(r.wins/r.games*100) : 0;
+    const d=document.createElement('div'); d.className='statrow';
+    const nm=document.createElement('span'); nm.className='statname'; nm.textContent=r.name;
+    const g=document.createElement('span'); g.className='statnum'; g.textContent=r.games;
+    const wr=document.createElement('span'); wr.className='statnum'; wr.textContent=pct+'%';
+    const ai=document.createElement('span'); ai.className='statnum ai'; ai.textContent=Math.round(bakedWinRate(r.name)*100)+'%'; ai.title='AI bracket rank #'+(BAKED_RANK[r.name]||'?')+' of '+BAKED_RANK._n;
+    const bar=document.createElement('span'); bar.className='statbar';
+    const fill=document.createElement('i'); fill.style.width=pct+'%'; if(pct>=60) fill.className='hi';
+    bar.appendChild(fill);
+    d.appendChild(nm); d.appendChild(g); d.appendChild(wr); d.appendChild(ai); d.appendChild(bar);
+    table.appendChild(d);
+  }
 }
 async function openStats(){
   go('stats');
@@ -15375,29 +15431,15 @@ async function openStats(){
   if(!BStore.available()){ summary.textContent="Match recording isn't available in this environment."; return; }
   let log=[];
   const rawL=await BStore.get('balance:matchlog'); if(rawL){ try{log=JSON.parse(rawL);}catch(e){} }
-  const mains = myMains(log, 5);
+  const mains = myMains(log, 0);
   if(!mains.length){
-    summary.textContent="No matches yet. Play a few and your best fighters turn up here.";
+    summary.textContent="No matches yet. Play a few and your fighters turn up here.";
     return;
   }
   const played = mains.reduce((a,m)=>a+m.games,0);
-  summary.textContent = "Your top "+mains.length+" fighter"+(mains.length===1?"":"s")+" · "
-    + played+" match"+(played===1?"":"es")+" played with them";
-  const head=document.createElement('div'); head.className='statrow head';
-  head.innerHTML='<span class="statname">Fighter</span><span class="statnum">Games</span><span class="statnum">Win%</span><span style="width:120px">Wins</span>';
-  table.appendChild(head);
-  for(const r of mains){
-    const pct = r.games ? Math.round(r.wins/r.games*100) : 0;
-    const d=document.createElement('div'); d.className='statrow';
-    const nm=document.createElement('span'); nm.className='statname'; nm.textContent=r.name;
-    const g=document.createElement('span'); g.className='statnum'; g.textContent=r.games;
-    const wr=document.createElement('span'); wr.className='statnum'; wr.textContent=pct+'%';
-    const bar=document.createElement('span'); bar.className='statbar';
-    const fill=document.createElement('i'); fill.style.width=pct+'%'; if(pct>=60) fill.className='hi';
-    bar.appendChild(fill);
-    d.appendChild(nm); d.appendChild(g); d.appendChild(wr); d.appendChild(bar);
-    table.appendChild(d);
-  }
+  summary.textContent = "Your "+mains.length+" fighter"+(mains.length===1?"":"s")+" · "
+    + played+" match"+(played===1?"":"es")+" played with them · AI = the bot's bracket rate with the same fighter";
+  renderMyStats(mains);
   if(rivalLine && RIVAL_NAME){
     rivalLine.textContent = "Your rival: "+RIVAL_NAME+" has knocked you out more than anyone else.";
   }
