@@ -9852,6 +9852,14 @@ function nearestSafeIsland(f){
   for(const z of spawnZones){ if(z.kind!=="safe")continue; const d=Math.abs((z.x+z.w/2)-f.x); if(d<bd){bd=d;best=z;} }
   return best;
 }
+// TEAM FLANK. Every CPU on a team used to take the same straight line at the nearest enemy, so
+// teammates rammed in shoulder to shoulder along the floor. The odd slots of a team take the high
+// road instead: while far from the target and level with it or above, they steer at a point two pad
+// rows above it and close along the pad field; once nearly overhead, the ordinary "target below" drop
+// lands them. Which member flanks is its slot within the team, not a roll.
+const FLANK_X = 240;      // closer than this, stop flanking and just fight
+const FLANK_RISE = 264;   // two pad rows: PAD_STEP is 132 on the teams arena
+function teamSlotOf(f){ let n = 0; for(const o of fighters){ if(o.team === f.team){ if(o === f) return n; n++; } } return 0; }
 function aiThink(f){
   f.aiTimer--;
   let targets=fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team);
@@ -9974,6 +9982,19 @@ function aiThink(f){
   // Uses full-map knowledge of the target's position (like reading the minimap) rather than
   // only reacting when they're on-screen — this is what makes fighters find each other on
   // the huge arenas instead of milling around near spawn.
+  // TEAM FLANK (see teamSlotOf): the high road, until close enough that the drop logic takes over.
+  // Not at kill percent -- danger mode below owns that -- and not when the target is well above already.
+  if(SETTINGS.mode==='teams' && isBig() && teamSlotOf(f) % 2 === 1 && adx > FLANK_X && dy > -FLANK_RISE*0.5
+     && f.pct < f.koCap*0.7){
+    const above = { x: t.x, y: t.y - FLANK_RISE, r: t.r };
+    if(adx > 30){ if(dx < 0) inp.left = true; else inp.right = true; }
+    if(f.y > above.y + 40){
+      const climbing = steerClimb(f, above, inp);
+      if(!climbing && !f.onground && f.jumps <= 0 && f.spCd <= 0 && rn < 0.5){ inp.special = true; inp.up = true; }
+    }
+    if(isZoner && f.spCd <= 0 && adx < 300 && rn < react*0.5) inp.special = true;   // poke from the high road
+    return finishAI(f, inp, sp);
+  }
   if(scrolls() && dist > W*0.75){
     const wantDir = dx<0 ? -1 : 1;
     // if a SOLID block sits between us and the target, hop it or route around its edge

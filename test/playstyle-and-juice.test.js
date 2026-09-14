@@ -229,5 +229,5 @@ describe('the learned style changes how the CPU actually fights', () => {
 
     expect(thin, 'seeds with too few attacks to mean anything').toEqual([]);
     expect(mean, `per-seed gaps: ${gaps.map((g) => g.toFixed(1)).join(', ')}`).toBeGreaterThan(10);
-  }, 420000);
+  }, 900000);   // sixteen seeds, two windows each: about five minutes alone, more in a loaded suite
 });
