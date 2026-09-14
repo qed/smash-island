@@ -1043,7 +1043,7 @@ describe('background music — the music-only toggle', () => {
     expect(three.w.eval('SND.musicOn')).toBe(true);
     three.gesture(); await lands(three.plays, 'assets/music/menu.mp3');
     expect(three.plays().at(-1)).toBe('assets/music/menu.mp3');
-  });
+  }, 20000);   // a second boot inside one test: it timed out at the 5 s default on every loaded run of 2026-09-14
 
   it('survives a realm where localStorage itself throws', () => {
     // Chrome with site data blocked throws from the localStorage GETTER, not from getItem.

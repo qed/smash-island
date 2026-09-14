@@ -6774,7 +6774,7 @@ const RANGE_PROFILE = {
   anvil:{reach:8,dmg:9,kb:10,  shock:"aoe",  shockR:67, shockDmg:5},  // Blocky (9%->75%->21%; settling between my two overshoots)
   van:{reach:10,dmg:10,kb:10,   shock:"aoe",  shockR:64, shockDmg:5},  // Pencil (buffed)
   // counters / technicians: balanced medium
-  counter:{reach:12,dmg:2,kb:5,shock:"aoe",  shockR:52, shockDmg:4, multi:{hits:3, every:4}},  // Needle -- three pricks at a needle's reach, 6.0 (was 4.5 at 6px: 0-for-32 over four runs)
+  counter:{reach:12,dmg:2,kb:6,shock:"aoe",  shockR:52, shockDmg:4, multi:{hits:3, every:4}},  // Needle -- three pricks at a needle's reach, 6.0 (was 4.5 at 6px: 0-for-32 over four runs)
   float:{reach:4,dmg:2.1,kb:5, shock:"aoe",  shockR:50, shockDmg:3, multi:{hits:3, every:4}},  // Bubble -- had no row: the default 5. Three pops, 6.3 (0-for-8)
   grasstree:{reach:6,dmg:2.2,kb:6, shock:"aoe",  shockR:50, shockDmg:3, multi:{hits:3, every:4}},  // Grassy -- had no row: the default 5. Three swipes, 6.6 (0-for-8)
   flip:{reach:6,dmg:6,kb:7,   shock:"aoe",  shockR:56, shockDmg:5},  // Nickel (buff overshot to 75% — pulled back)
@@ -7589,7 +7589,7 @@ const DROP_RIDERS = { burn:{burn:true}, poison:{poison:true}, freeze:{freeze:tru
 const UPSPEC = {
   // --- hops: rise and swing. The band and the angle are the whole identity. ---
   serve:    {shape:'hop', power:-13, hit:{off:-14, reach:26, dmg:[5,11], band:-0.6, kb:[4,-10]}},                 // Tennis Ball — the tip of the racket
-  counter:  {shape:'hop', power:-12, hit:{off:-16, reach:18, dmg:[3,8],  band:-0.65,kb:[0,-11]}},                // Needle — a pin, straight up, only the point counts
+  counter:  {shape:'hop', power:-12, hit:{off:-16, reach:18, dmg:[4,10], band:-0.65,kb:[3,-14]}},               // Needle — a pin, straight up, only the point counts; it LAUNCHES since her buff's second step (1-for-17 after the first)
   pierce:   {shape:'hop', power:-13, hit:{off:-18, reach:16, dmg:[4,10], band:-0.7, kb:[0,-12]}},                // Pin — javelin
   measure:  {shape:'hop', power:-13, hit:{off:-12, reach:26, dmg:[3,9],  band:-0.75,kb:[2,-8]}},                 // Ruler — measure twice: long, precise, tip only
   thorn:    {shape:'hop', power:-14, hit:{off:-16, reach:20, dmg:[4,7],  band:-0.6, kb:[-6,-6]}},                // Rose — the lash PULLS you in
@@ -9811,6 +9811,31 @@ const AI_CLASS = {
 // punish for a buff you could have taken at any time. (Teardrop's cloud, Golf Ball's curse aura,
 // Needle's riposte stance — the last of which the AI already times properly off the foe's attack.)
 const BUFF_SMASHES = new Set(["kick","zapshooter","counter"]);
+// ---- KIT LESSONS. Class-independent reads for the kits the archetype rules never learned. --------
+// Every kit whose down-special is a counter stance (Leafy's parry is her neutral), every kit whose
+// down-special lays a trap (the DOWNSPECIALS entries that addProj with trap:true), and the flyer.
+const AI_COUNTER_KITS = new Set(["counter","dash","kick","slap","thorn","measure","shatter","zapshooter"]);
+const AI_COUNTER_REACH = 110;    // px beyond the two bodies: a swing that can reach us is worth answering
+const AI_TRAP_DOWN = new Set(["ember","bomb","anvil","cap","barf","fry","freeze","beam","dribble","splash","zap","spark","salsa","spike","sucker","ink","paste","emberjr","glaze"]);
+const AI_TRAP_SPACING = 90;      // px: no second trap on top of one already laid
+function aiKitLessons(f, t, inp, dx, dy, dist, adx, rn){
+  const sp = f.kit && f.kit.special;
+  if(AI_COUNTER_KITS.has(sp) && f.spCd<=0 && dist < f.r+t.r+AI_COUNTER_REACH
+     && (t.smashHold>0 || !!t._windup || (t._atkAnim>0 && t.atkCd>12))){
+    inp.special=true; inp.down=(sp!=="dash");    // the stance goes up while their swing is still coming
+  }
+  if(AI_TRAP_DOWN.has(sp) && f.spCd<=0 && f.onground){
+    const laid = projectiles.some(p=>p.trap && p.owner===f.idx && Math.abs(p.x-f.x)<AI_TRAP_SPACING);
+    const approaching = dx*(t.vx||0) < -0.5;     // they are coming this way
+    if(!laid && dist>70 && dist<260 && (approaching || t.hitstun>0) && rn<0.6){ inp.special=true; inp.down=true; }
+  }
+  if(sp==="fly"){
+    if(dy < -70 && !f.onground && f.jumps<=0 && f.spCd<=0){ inp.special=true; inp.up=true; }                       // climb to a foe above
+    else if(dist>220 && dx*(t.vx||0) > 0.5 && f.spCd<=0 && rn<0.5){ inp.jump=true; inp.special=true; inp.up=true; }   // a chase being lost goes vertical
+    if(f.flying>0 && adx<50 && dy>40 && f.atkCd<=0 && f.spCd<=0){ inp.attack=true; inp.special=true; }               // over them: dive
+  }
+  return inp;
+}
 function aiClass(f){
   if(f._aiClass) return f._aiClass;
   const a = f.arch || (ROSTER.find(r=>r.name===f.name)?.arch) || "";
@@ -10307,6 +10332,7 @@ function aiThink(f){
     }
   }
 
+  aiKitLessons(f, t, inp, dx, dy, dist, adx, rn);   // the counter, trap and flying reads (see AI_COUNTER_KITS)
   if(rn < aggro){
     // finisher when the target is at kill percent and close
     if(t.pct>90 && inMelee && f.spCd<=0 && f.atkCd<=0 && rn<0.4){
@@ -10314,7 +10340,8 @@ function aiThink(f){
     }
     else if(cls==="trap"){
       // TRAPPER: proactively lay traps/zones even without a target in range, then poke
-      if(f.spCd<=0 && rn<prof.trapHappy){ inp.special=true; if(sp==="paste"||sp==="salsa") inp.down=Math.random()<0.5; }
+      // lob at range, drop at the feet when close, and never onto a trap already near the target
+      if(f.spCd<=0 && rn<prof.trapHappy && dist>90 && dist<280 && !projectiles.some(p=>p.trap && p.owner===f.idx && Math.abs(p.x-t.x)<120)){ inp.special=true; inp.down = AI_TRAP_DOWN.has(sp) && dist<150; }
       else if(inMelee && f.atkCd<=0) inp.attack=true;
       else if(inZone && f.atkCd<=0 && rn<0.5){ inp.attack=true; inp.down=true; }
     }
