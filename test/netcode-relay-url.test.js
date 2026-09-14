@@ -16,13 +16,19 @@ const url = (w, { room = 'QXTR', addr = null, relay = null, loc = null } = {}) =
     return NET.wsURL(${JSON.stringify(addr)}, ${loc ? JSON.stringify(loc) : 'null'});
   })()`);
 
-describe('the build ships pointing at a relay', () => {
+describe('the build ships pointing at a relay (PARKED: the relay is down, see LEDGER O8)', () => {
   it('has a deployed wss:// endpoint baked in', () => {
     // If this is ever emptied, wsURL silently falls back to same-origin /api/ws — the endpoint that
     // has never existed — and Create Room / Join Room go back to failing with a 404.
     const { window: w } = loadMonolith();
     expect(w.eval('NET.RELAY'), 'no relay configured in the shipped build').toMatch(/^wss:\/\/.+/);
   });
+
+  // O8. The URL above is a FORMAT check: it proves the build points somewhere, not that anything
+  // answers. On 2026-09-14 the worker at RELAY_URL returned nothing (curl: 000), so Create Room and
+  // Join Room fail exactly as they did before the relay existed. Multiplayer is parked by the owner's
+  // call; this todo keeps the suite from reading as if it worked. Redeploy the worker, then write it.
+  it.todo('the relay answers a WebSocket handshake (the worker is down; multiplayer is parked)');
 });
 
 describe('a configured relay is what the game dials', () => {
