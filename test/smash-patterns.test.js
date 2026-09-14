@@ -13,10 +13,10 @@ import { bootMonolith } from './helpers/smash-golden.js';
 // The first test is the point of the exercise. The rest prove each pattern does what it says.
 
 const rowKey = (r) => [r.pat, r.effect || '-', r.band == null ? 'nb' : Math.sign(r.band),
-  r.dmg[1] > r.kb[1] ? 'racks' : r.dmg[1] < r.kb[1] ? 'kills' : 'even',
+  r.dmg > r.kb ? 'racks' : r.dmg < r.kb ? 'kills' : 'even',
   Object.keys(r.cost || {}).sort().join('+') || 'free'].join('|');
 
-const stage = (w, name, dummyAt, frames = 90, charge = 1) => w.eval(`
+const stage = (w, name, dummyAt, frames = 90) => w.eval(`
   (function(){
     SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
     worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
@@ -26,7 +26,7 @@ const stage = (w, name, dummyAt, frames = 90, charge = 1) => w.eval(`
     A.team=0; D.team=1; A.face=1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
     fighters=[A,D]; step(); A.invuln=0; D.invuln=0; A.pct=0; D.pct=0; A.hitstun=0; A.rooted=0;
     var x0=A.x, ownPct0=A.pct;
-    doSmash(A, ${charge});
+    doSmash(A);
     var stunned = A.hitstun, rooted = A.rooted, selfCost = A.pct - ownPct0;
     for (var i=0;i<${frames};i++){ step(); D.invuln=0; }
     return { pct:+D.pct.toFixed(2), dx:A.x-x0, stunned:stunned, rooted:rooted, selfCost:+selfCost.toFixed(2),
@@ -67,9 +67,9 @@ describe('no two of the 52 are the same move', () => {
     expect(free, 'a smash with no cost is not a choice').toEqual([]);
   });
 
-  it('every row has a real two-tier charge — the full version is stronger', async () => {
+  it('every row is a single full-charge number for damage and knockback (O18: the tap tier is gone)', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
-    const bad = w.eval('Object.entries(SMASH_SPEC).filter(function(e){ var r=e[1]; return !(r.dmg[1] > r.dmg[0]) || !(r.kb[1] >= r.kb[0]); }).map(function(e){ return e[0]; })');
+    const bad = w.eval('Object.entries(SMASH_SPEC).filter(function(e){ var r=e[1]; return !(typeof r.dmg === "number" && r.dmg > 0 && typeof r.kb === "number" && r.kb > 0) || (r.dash !== undefined && typeof r.dash !== "number"); }).map(function(e){ return e[0]; })');
     expect(bad).toEqual([]);
   });
 

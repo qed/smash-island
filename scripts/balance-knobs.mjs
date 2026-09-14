@@ -97,27 +97,24 @@ export const KNOBS = {
   // deliberate value (pure-damage shots that add no knockback) and clamping it to 1 would make a
   // 1.0 scale silently change the build.
   'dmg.all': {
-    doc: 'every damage literal: RANGE_PROFILE rows and the inline projectiles kits spawn',
-    find: /(dmg:)(\d+)/g,
-    read: (m) => int(m[2]), write: (m, v) => m[1] + v, clamp: [0, 40],
+    doc: 'every damage literal: RANGE_PROFILE rows, SMASH_SPEC rows (single numbers since O18) and the inline projectiles kits spawn',
+    find: /(dmg:)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0, 40], places: 2,
   },
   'kb.all': {
     doc: 'every knockback literal, same reach',
-    find: /(kb:)(\d+)/g,
-    read: (m) => int(m[2]), write: (m, v) => m[1] + v, clamp: [0, 30],
+    find: /(kb:)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0, 30], places: 2,
   },
 
-  // ---- TIERED DAMAGE / KNOCKBACK -----------------------------------------------------------
-  // dmg.all and kb.all match a digit straight after the colon, so they reach the scalar literals
-  // and nothing else. The 39 rebuilt smashes and the 48 rebuilt up-specials all write the two-tier
-  // form `dmg:[tap,full]` — which meant every number in the newest 87 moves in the game was
-  // invisible to the sweep, silently, exactly the way item buffs are. These reach them.
-  //
-  // The tap is scaled by the SAME ratio as the full rather than independently, because the two are
-  // not free of each other: the charge retune fixed a tap at 0.72x of full roster-wide so the dial
-  // stays learnable, and a sweep that drifted the two apart would be quietly undoing that.
+  // ---- PAIRED DAMAGE / KNOCKBACK -----------------------------------------------------------
+  // dmg.all and kb.all match a number straight after the colon (decimals included since O18, when
+  // the SMASH_SPEC rows became single full-charge numbers and joined them). The 48 rebuilt
+  // up-specials write pairs: `hit:{dmg:[low,high]}` is the band's two damages and `kb:[x,y]` a
+  // launch vector. These reach those, scaling both halves by one ratio so the band and the angle
+  // survive the sweep.
   'dmg.tiered': {
-    doc: 'two-tier damage on the rebuilt smashes and up-specials — dmg:[tap,full], both scaled together',
+    doc: 'the up-special band pairs — hit:{dmg:[low,high]}, both scaled together',
     find: /(dmg:\[)([\d.]+)(,\s*)([\d.]+)(\])/g,
     read: (m) => parseFloat(m[4]),
     write: (m, v) => { const f = parseFloat(m[4]) ? v / parseFloat(m[4]) : 1;
@@ -125,7 +122,7 @@ export const KNOBS = {
     clamp: [0, 40], places: 2,   // D wrote decimal rows (Money's special, Barf Bag's splash)
   },
   'kb.tiered': {
-    doc: 'two-tier knockback, same reach as dmg.tiered',
+    doc: 'the up-special launch pairs — kb:[x,y], same reach as dmg.tiered',
     find: /(kb:\[)([\d.]+)(,\s*)([\d.]+)(\])/g,
     read: (m) => parseFloat(m[4]),
     write: (m, v) => { const f = parseFloat(m[4]) ? v / parseFloat(m[4]) : 1;
@@ -144,6 +141,13 @@ export const KNOBS = {
   },
 };
 
+// Write a scaled literal with the decimals its author gave it: `dmg:2.0` stays `2.0` at a scale of
+// 1.0 (byte for byte, which verify demands) and `dmg:12` stays `12`. More decimals than the author
+// wrote are never added; the knob's `places` already rounded the value.
+function keepPlaces(literal, v) {
+  const d = (literal.split('.')[1] || '').length;
+  return d ? v.toFixed(d) : String(v);
+}
 // Render a scaled tap value the way it was written: no trailing zeros, at most two decimals.
 const trim = (x) => String(Math.round(x * 100) / 100);
 

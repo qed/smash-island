@@ -6,10 +6,10 @@ import { bootMonolith } from './helpers/smash-golden.js';
 //
 // The first smash authored in the shape every smash will take: a PATTERN (dash through, jab
 // back), an EFFECT (bleed), a damage/knockback RATIO (high damage, normal launch — it racks
-// percent rather than kills), and a COST (30 frames stuck). Charge sets the dash length; the
-// bleed decays rather than ticking flat.
+// percent rather than kills), and a COST (30 frames stuck). The bleed decays rather than ticking
+// flat. (There was a tap tier once; O18 removed it, every smash is the full charge.)
 
-const stage = (w, charge, dummies) => w.eval(`
+const stage = (w, dummies) => w.eval(`
   (function(){
     SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
     worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
@@ -19,7 +19,7 @@ const stage = (w, charge, dummies) => w.eval(`
       var d = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), x, groundY()-24, i+1);
       d.team=i+1; d.controller='still'; d.stocks=9; return d; });
     fighters=[N].concat(ds); step(); fighters.forEach(function(f){ f.invuln=0; f.pct=0; f.bleed=0; });
-    doSmash(N, ${charge});
+    doSmash(N);
     var stunAt=-1, endX=null;
     for (var i=0;i<40;i++){ step(); if (endX===null && !N._nail){ endX=N.x; stunAt=N.hitstun; } }
     return { endX:endX, stunAt:stunAt, startX:400,
@@ -29,7 +29,7 @@ const stage = (w, charge, dummies) => w.eval(`
 describe('I NAILED IT', () => {
   it('dashes through the target and jabs back into them: two hits, a bleed, and a self-stun', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
-    const r = stage(w, 1, [470]);
+    const r = stage(w, [470]);
     expect(r.endX, 'the dash never ended').not.toBeNull();
     expect(r.endX - r.startX, 'a full charge should carry her past the target').toBeGreaterThan(70);
     expect(r.pct[0], 'dash hit (7) plus back-jab (16) plus some bleed').toBeGreaterThanOrEqual(23);
@@ -37,17 +37,9 @@ describe('I NAILED IT', () => {
     expect(r.stunAt, 'she pays half a second on the frame the jab lands').toBeGreaterThanOrEqual(28);
   });
 
-  it('a tap is the same move, shorter and lighter', async () => {
-    const w = bootMonolith(); await w.eval('profileReady');
-    const full = stage(w, 1, [470]), tap = stage(w, 0, [470]);
-    expect(tap.endX - tap.startX).toBeLessThan(full.endX - full.startX);
-    expect(tap.pct[0]).toBeLessThan(full.pct[0]);
-    expect(tap.stunAt, 'the cost does not shrink with the charge').toBeGreaterThanOrEqual(28);
-  });
-
   it('someone well behind her start is not touched by either jab', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
-    const r = stage(w, 1, [470, 300]);
+    const r = stage(w, [470, 300]);
     expect(r.pct[1]).toBe(0);
     expect(r.bleed[1]).toBe(0);
   });

@@ -31,7 +31,7 @@ export function bootMonolith(seed = 5) {
   return dom.window;
 }
 
-export function measureSmash(w, name, charge, dist, seed = 5) {
+export function measureSmash(w, name, dist, seed = 5) {
   w.Math.random = mulberry32(seed);   // every measurement starts from the same dice
   return w.eval(`
     (function(){
@@ -48,7 +48,7 @@ export function measureSmash(w, name, charge, dist, seed = 5) {
       // marked grounded. Then re-zero anything that frame touched.
       step(); A.invuln=0; D.invuln=0; A.pct=0; D.pct=0; A.atkCd=0; A.spCd=0;
       var selfBefore = A.pct, p0 = D.pct;      // baseline BEFORE the swing — AoE bodies land inside doSmash itself
-      doSmash(A, ${charge});
+      doSmash(A);
       var atkCd = A.atkCd;
       var hitFrame=-1, kvx=0, kvy=0, dmg1=0, total=0;
       if (D.pct>p0){ hitFrame=0; kvx=D.vx; kvy=D.vy; dmg1=D.pct-p0; total=dmg1; }

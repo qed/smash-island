@@ -2,18 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { bootMonolith, measureSmash } from './helpers/smash-golden.js';
 
-// BATCH 1 OF THE MOVE REBUILD: charge becomes a dial.
-//
-// Before this, doSmash had exactly one caller, passing 1.0. The input block fired only at a full
-// 45-frame hold and discarded anything shorter, so every `c*` term in all 59 smash bodies was dead
-// code and a smash was a switch with a 45-frame delay. Now there are exactly two tiers: a release
-// past a 6-frame floor is a TAP (c=0), a release at or past 45 is FULL (c=1), and the hold runs to
-// 135 frames with no power past 45 — bluff time.
-//
-// The retune is the risky half: all 125 c-terms were rewritten from a 1.20x–2.00x spread to a
-// uniform 1.39x, with the FULL-charge value held exactly. test/golden/smash-charge.json is every
-// fighter's full-charge smash measured on the build BEFORE the retune, so this is not "does it
-// look right" — each fighter passes or fails against the number it used to produce.
+// THE SMASH FIXTURE. test/golden/smash-charge.json is every fighter's smash measured at 60px and
+// 140px -- first-hit damage, total damage, launch, the frame it connects, the cooldown it pays and
+// the self-damage it costs -- and each fighter passes or fails against the numbers it used to
+// produce. A smash is the full charge, always: E18 made the charge press-to-commit and O18 removed
+// the last of the tap tier's data, so `charge` is no longer a dial anywhere in the game.
 
 const GOLDEN = JSON.parse(readFileSync('test/golden/smash-charge.json', 'utf8'));
 const NAMES = Object.keys(GOLDEN);
@@ -30,7 +23,7 @@ describe('full charge is exactly what it was before the retune', () => {
     const w = await boot();
     const off = [];
     for (const n of LANDS) {
-      const g = GOLDEN[n][60], r = measureSmash(w, n, 1.0, 60);
+      const g = GOLDEN[n][60], r = measureSmash(w, n, 60);
       if (!close(r.dmg1, g.dmg1, 0.01)) off.push(`${n}: ${r.dmg1} vs golden ${g.dmg1}`);
     }
     expect(off, 'full-charge damage drifted').toEqual([]);
@@ -40,7 +33,7 @@ describe('full charge is exactly what it was before the retune', () => {
     const w = await boot();
     const off = [];
     for (const n of LANDS) {
-      const g = GOLDEN[n][60], r = measureSmash(w, n, 1.0, 60);
+      const g = GOLDEN[n][60], r = measureSmash(w, n, 60);
       if (!close(r.kvx, g.kvx, 0.02) || !close(r.kvy, g.kvy, 0.02)) off.push(`${n}: (${r.kvx},${r.kvy}) vs (${g.kvx},${g.kvy})`);
     }
     expect(off, 'full-charge knockback drifted').toEqual([]);
@@ -49,28 +42,38 @@ describe('full charge is exactly what it was before the retune', () => {
   it('the three self-buff smashes still land nothing', async () => {
     const w = await boot();
     for (const n of NAMES.filter((x) => !LANDS.includes(x))) {
-      expect(measureSmash(w, n, 1.0, 60).dmg1, n).toBe(0);
+      expect(measureSmash(w, n, 60).dmg1, n).toBe(0);
     }
   });
 });
 
-describe('a tap is a real, cheaper smash', () => {
-  it('c=0 lands 0.70x–0.75x of full for every fighter whose damage is charge-scaled', async () => {
+describe('the fixture holds at range and in time, too (O13)', () => {
+  // Three commits in a row moved the 140px row, hitFrame and atkCd without a failure -- including
+  // a real change in damage at range for seven fighters. Every recorded column is asserted now.
+  it('lands the same damage and knockback at 140px', async () => {
     const w = await boot();
     const off = [];
-    // Bomby is the one body where charge ALSO grows the blast radius, and his damage falls off with
-    // distance inside it — so at a fixed 60px the two compound and a tap lands ~0.67x. That is the
-    // design, not a missed term (his damage expression is retuned like everyone's).
-    const COMPOUND = { 'Bomby': 0.62 };
-    for (const n of LANDS) {
-      const full = measureSmash(w, n, 1.0, 60).dmg1, tap = measureSmash(w, n, 0.0, 60).dmg1;
-      if (tap === 0) continue;                                   // the tap whiffed at this spacing — reach shrank, which is allowed
-      const ratio = tap / full, floor = COMPOUND[n] || 0.70;
-      // A handful of bodies scale hitbox size or shot count with c rather than damage; those land
-      // at exactly 1.0x and are fine. Anything between 0.76 and 0.99 is a body the retune missed.
-      if (ratio < floor || (ratio > 0.76 && ratio < 0.995)) off.push(`${n}: tap ${tap} / full ${full} = ${ratio.toFixed(2)}`);
+    for (const n of NAMES) {
+      const g = GOLDEN[n][140], r = measureSmash(w, n, 140);
+      if (!close(r.dmg1, g.dmg1, 0.01) || !close(r.dmg, g.dmg, 0.01) || !close(r.kvx, g.kvx, 0.02) || !close(r.kvy, g.kvy, 0.02)) {
+        off.push(`${n}: ${r.dmg1}/${r.dmg} (${r.kvx},${r.kvy}) vs golden ${g.dmg1}/${g.dmg} (${g.kvx},${g.kvy})`);
+      }
     }
-    expect(off, 'tap/full ratio outside the retuned band').toEqual([]);
+    expect(off, 'the 140px row drifted').toEqual([]);
+  });
+
+  it('connects on the same frame, pays the same cooldown and the same self-damage', async () => {
+    const w = await boot();
+    const off = [];
+    for (const n of NAMES) {
+      for (const d of [60, 140]) {
+        const g = GOLDEN[n][d], r = measureSmash(w, n, d);
+        if (r.hitFrame !== g.hitFrame || r.atkCd !== g.atkCd || !close(r.self, g.self, 0.01)) {
+          off.push(`${n}@${d}: frame ${r.hitFrame} vs ${g.hitFrame}, cd ${r.atkCd} vs ${g.atkCd}, self ${r.self} vs ${g.self}`);
+        }
+      }
+    }
+    expect(off, 'timing or cost drifted').toEqual([]);
   });
 });
 

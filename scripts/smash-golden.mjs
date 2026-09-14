@@ -10,7 +10,7 @@ const names = w.eval('ROSTER.filter(function(r){return r.play;}).map(function(r)
 const out = {};
 for (const name of names) {
   out[name] = {};
-  for (const dist of GOLDEN_DISTS) out[name][dist] = measureSmash(w, name, 1.0, dist);
+  for (const dist of GOLDEN_DISTS) out[name][dist] = measureSmash(w, name, dist);
 }
 writeFileSync('test/golden/smash-charge.json', JSON.stringify(out, null, 1));
 let zero = 0;
