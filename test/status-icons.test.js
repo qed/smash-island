@@ -17,6 +17,7 @@ const STATUSES = {
   armor: 'armor', empower: '_empowerT', haste: '_hasteT', bullet: '_bulletT', star: '_starT', yoyle: '_yoyleT',
   healing: 'healing', reflect: 'reflecting', counter: 'countering',
   grasstree: '_grasstree', reserve: '_noBattery',
+  presence: 'curse', slick: 'iceUntil', reform: 'reform', flying: 'flying', swallowed: '_swallow',   // "some character buffs dont have icons"
 };
 
 const countingCtx = `new Proxy({}, { get:function(_t,p){
@@ -87,5 +88,37 @@ describe('drawing', () => {
       return calls;
     })()`);
     expect(n).toBe(1);
+  });
+});
+
+describe('the two icons that depend on who carries the state', () => {
+  // "some character buffs dont have icons": Pillow's per-KO passive is a number on her alone, and the
+  // comeback bonus is live only for a COMEBACK kit that is behind. Both are drawn, with their count.
+  it("draws Pillow's KO stacks, and nobody else's KO count", () => {
+    const r = W.eval(`(function(){
+      var n = 0, c = ${countingCtx};
+      var p = makeFighter(ROSTER.find(function(x){ return x.name==='Pillow'; }), 100, 100, 0); p.koCount = 3;
+      var o = makeFighter(ROSTER.find(function(x){ return x.play && x.name!=='Pillow' && x.name!=='Bubble'; }), 100, 100, 0); o.koCount = 3;
+      var pillow = drawStatusIcons(p, c), other = drawStatusIcons(o, c);
+      return { pillow: pillow, other: other, keys: STATUS_ICONS.filter(function(s){ return s.on(p); }).map(function(s){ return s.key; }), count: STATUS_ICONS.find(function(s){ return s.key==='fluff'; }).count(p) };
+    })()`);
+    expect(r.keys).toEqual(['fluff']);
+    expect(r.count).toBe(3);
+    expect(r.pillow).toBe(1);
+    expect(r.other, 'a KO count is not a buff for anyone else').toBe(0);
+  });
+
+  it('draws the comeback bonus for a comeback kit that is behind, and not for one that is level', () => {
+    const r = W.eval(`(function(){
+      var name = Object.keys(COMEBACK)[0];
+      var f = makeFighter(ROSTER.find(function(x){ return x.kit && x.kit.special===name; }), 100, 100, 0);
+      var level = STATUS_ICONS.filter(function(s){ return s.on(f); }).map(function(s){ return s.key; });
+      f.deaths = 2;
+      var behind = STATUS_ICONS.filter(function(s){ return s.on(f); }).map(function(s){ return s.key; });
+      return { kit: name, level: level, behind: behind, count: STATUS_ICONS.find(function(s){ return s.key==='comeback'; }).count(f) };
+    })()`);
+    expect(r.level).not.toContain('comeback');
+    expect(r.behind).toContain('comeback');
+    expect(r.count).toBeGreaterThanOrEqual(2);
   });
 });
