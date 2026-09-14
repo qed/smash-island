@@ -27,8 +27,8 @@ describe("Money's Make It Rain", () => {
       M.team=0; E.team=1; M.face=1; [M,E].forEach(function(f){ f.controller='still'; f.invuln=0; f.spCd=0; f.atkCd=0; f.stocks=9; });
       fighters=[M,E]; step(); E.invuln=0; E.pct=0; M.spCd=0;
       doSpecial(M);
-      var sm = M._sm && { r1: M._sm.r1, dmg: M._sm.dmg, kb: M._sm.kb };
-      for (var i=0;i<30;i++) step();
+      var sm = null;   // the burst starts after the circle wind-up, so read it the frame it appears
+      for (var i=0;i<30;i++){ step(); if (!sm && M._sm) sm = { r1: M._sm.r1, dmg: M._sm.dmg, kb: M._sm.kb }; }
       return { sm: sm, pct: E.pct, vx: E.vx, x: E.x, y: E.y };
     })()`);
     expect(r.sm, 'the special ran the burst pattern').not.toBeNull();
