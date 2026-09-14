@@ -47,13 +47,14 @@ const stage = (w, act) => w.eval(`
   })()`);
 
 describe('assist trophies — duration and durability', () => {
-  it('a persistent assist lives 20 seconds, not 8', async () => {
+  it('a persistent assist lives six seconds ("reduce assist time to 6s"; it was 20, and 8 before that)', async () => {
     const w = boot(); await settle(w);
     expect(stage(w, 'rush')).toBe(1);
-    expect(w.eval('summons[0].life')).toBe(60 * 20);
+    expect(w.eval('summons[0].life')).toBe(60 * 6);
+    expect(w.eval('ASSIST_DUR')).toBe(60 * 6);
   });
 
-  it('a one-shot waits for its moment, then gives up — it does not loiter for 20s', async () => {
+  it('a one-shot waits for its moment, then gives up — it does not loiter for the full tenure', async () => {
     const w = boot(); await settle(w);
     stage(w, 'flash');
     // Its act sets life=0 the moment it fires. The budget only matters when it never finds a target.
