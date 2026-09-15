@@ -1,7 +1,7 @@
 # Work ledger — Battle for Smash Island
 
 Every task from this run, done or not. Grouped by where it came from, because that is the
-part that is easy to lose. Written 2026-09-03, extended 2026-09-10, 2026-09-11 and 2026-09-14.
+part that is easy to lose. Written 2026-09-03, extended 2026-09-10, 2026-09-11, 2026-09-14 and 2026-09-15.
 
 `origin/main` carries everything below. The stacked `pr1`..`pr14` branches were merged earlier, and
 the D and E sessions were pushed straight to `main` on 2026-09-11 at the owner's request (O1).
@@ -237,6 +237,23 @@ was force-pushed.
 | F7 | `add sprites from the actual show ... if it doesnt make sense, change the ability` | **Done** | `c5a1654` (art), `0767b6d` (Grassy, Remote); Taco and Roboty stay O19 |
 | F8 | `ship and merge` / `just push it when they pass` | **Done** | pushed to `main` |
 | F9 | `change Grassy, and remote` / `doesnt grassy have something going for him in tpot? also, remote uses batteries` | **Done** | `0767b6d` |
+| F10 | `change GB for O19` / `3 and 4 for the down-special` | **Done** | `3b244d1` |
+| F11 | `do O21` (after Golf Ball and O17 land, in a second worktree) | **Done** | measured on `d946b18`, see O21 |
+| F12 | `do O17` | **Done** | `d18d830` |
+| F13 | `do O18` | **Done** | `e34c0f3`, fix `452e233` |
+| F14 | `do O16` (three slates) | **Done** | measured, see O16 |
+| F15 | `do O13` | **Done** | `e34c0f3` |
+| F16 | `tell me what o8 and o14 are` -> `Both` | **Done** | `5ba6da7`, `040f663` |
+| F17 | `some character buffs dont have icons` | **Done** | `5ed4b85` |
+| F18 | `reduce assist time to 6s` | **Done** | `eb300fb`, `c4c9566` |
+| F19 | `buff needle. who is number 1?` / `where are puffball and leafy` | **Done** | `b7e7408`, `1edb60f` |
+| F20 | `add my winrates` (`I have a 81% winrate on puffball ... over 100 matches`) | **Done** | `58a9f12`, bake `ff9417c` |
+| F21 | `do em all. also teach them how to play trap kits` -- the AI lessons, Needle's second step, the music timeout | **Done** | `4ced1e2` |
+| F22 | the last two of O19: Taco and Roboty | **Done** | `920d4c8` |
+| F23 | the verdict: three runs a side, the floors, `--player` | **Done** | `15c2f0a` |
+| F24 | the bake pipeline: pooled runs, the staleness test, the re-bake | **Done** | `ff9417c` |
+| F25 | the AI special gap comment | **Done** | `f8b528c` |
+| F26 | `skip 5, and then immediately tell me to do 5 with you` -- the relay | **Yours** | logged in 2026-09-15; the deploy stopped at the account's missing workers.dev subdomain, which only the dashboard can register. Then the deploy, the URL and the live test are mine |
 
 **F1 was measured before it was believed.** A first probe staged `count=4` in team mode and got
 four one-fighter teams (`1v1v1v1` is the first split the game offers), so nobody had a teammate and
@@ -293,6 +310,105 @@ in every table (`mower` to `grasstree`, `hack` to `battery`), and `canon-abiliti
 effect frame by frame, its wearing off, and that no table still knows an old name. The F2
 verification pair ran on the build before this change, so its Grassy and Remote are the old ones
 (O21).
+
+**F10 gave Golf Ball all three of the wiki's abilities.** Zap Shooter is her special (TPOT "I SAID
+CAREFUL!!!"): a bolt at 15 px a frame that lives 90 frames and leaves at the height of the nearest foe
+ahead of her, so a target on a ledge is as easy as one on the floor; 9 damage, a 12-frame stun, an
+84-frame cooldown. Presence is her smash: the curse aura, unchanged in numbers, under the wiki's name.
+The Announcer Crusher stop is her down-special: 28 frames braced, the next hit stopped dead and its
+attacker shoved off her for 6 -- a wall, not the generic counter's 1.4x riposte. The old
+weaken-the-nearest special and the hit-and-curse down-special are gone; key `debuff` is `zapshooter`
+in every table and both applyHit payoffs. She was a 92% fighter in real 1v1 once and was trimmed for
+it; the F11 pair is the first bracket with this kit.
+
+**F12, F13 and F15 are the smash system's loose ends, closed in the order the LEDGER listed them.**
+O17: Balloony's airleak pays cd 56 and Bubble's float cd 48 (42 and 36 frames at SMASH_CD_SCALE), the
+golden's only change; through the real key path Balloony went from 22 smashes in ten seconds to 14
+and Bubble from 22 to 17, against Coiny's 16 and Money's 13. O18: the 52 rows' `[tap, full]` pairs
+are single numbers, the pattern functions no longer index by charge, and the six hand-written bodies
+lost their c-terms with the full value held exactly -- the golden regenerated on the collapsed build
+is byte-identical to the one before it. That proof had a hole: Money's Make It Rain is the one caller
+of the pattern machinery that is not a row, and it ran the burst as the tap tier with its own
+`[5.8,5.8]` pairs. Collapsed rows, uncollapsed caller: a string of two numbers went into applyHit,
+two fighters sat at NaN,NaN where nothing could KO them, and map-generator's seeded cavern match ran
+its full 12,000 frames. The suite caught it, a probe bisected it to the commit in four runs, and
+`452e233` pins the row, the radius (74, as it always burst) and finite damage. The knobs `dmg.all` and `kb.all`
+see decimals now (the rows join them; RANGE_PROFILE's tenth-precision rows had been invisible to the
+sweep since F3), writing each literal back with its author's decimals so a scale of 1.0 stays a
+no-op. O13: smash-charge asserts the 140 px row, the connect frame, the cooldown and the self-damage
+at both distances, so the drift that motivated it cannot recur silently.
+
+**F16.** O8: the relay test's describe says PARKED and an `it.todo` names the handshake test to write
+once the worker is redeployed, so every run shows the gap instead of a green format check. O14 was
+measured first: an AI Ice Cube threw 69% of every projectile in a 4-way FFA, thirty rings a minute
+(six seeded matches, 18.8k frames). `AI_SPECIAL_HOLD` adds 240 frames to the AI's special gap for
+her kit alone; the gap counts down from the cast alongside the cooldown, so her wait is the longer
+of the two. After: 13.9 rings a minute, 108 projectiles a minute from 248, 43% of all projectiles.
+Players keep the plain cooldown and no other kit's gap moved (asserted).
+
+**F17 was an audit, then seven rows.** Every timed status on a fighter was read against the icon
+table; seven had no row: Golf Ball's own Presence (the aura on her -- the skull is the victim's
+stacks), the ice effect, Bubble's reform in hand, Puffball aloft, the boss's swallow, Pillow's
+per-KO passive and the comeback bonus a comeback kit carries while it is behind. The last three
+draw their count. Render-only like the rest; the checklist carries the five any fighter can hold,
+and the two that depend on who holds them are checked on Pillow and on a comeback kit.
+
+**F18.** ASSIST_DUR is six seconds, from twenty. The one-shot window (five seconds to find a moment)
+and Black Hole's own three were already under it. Two assist tests stepped 600 and 400 frames and
+read the assist afterwards -- at six seconds it had already left -- so they set their own tenure now;
+they measure the climb and the walk, not the stay.
+
+**F19.** Needle was 0-for-8 in six straight runs: everything she had was a stance and none of it
+hurt. Her jab reaches like a needle now (12 px, three pricks of 2, from 6 px and 4.5); the Reflex
+still takes a hit down to a quarter but puts 0.6 of it into the attacker as a prick, on a 90-frame
+cooldown instead of 110; and the Riposte Stance, her smash, is where the full 1.4x hit back lives
+-- one per stance, gone when it expires -- so the big punish is a committed read, as the owner's
+earlier call intended. Measured after that step (seeds 1234 and 777 on `b7e7408`): 45th with one win in nine, then 59th at 0-for-8, a third of a KO a game -- so F21 launched her pin. After both steps, in the final three runs, 2-for-26 (7.7%), half a KO a game (O22). Number 1 on this balance, pooled over the four runs since F2:
+Pencil at 48%, Remote 47%, Tennis Ball 46%. Leafy is 9th pooled over all six runs (33%), Puffball
+50th (11%): the next Needle, if asked.
+
+**F20 is the correction to every ranking above.** "what? I have a 81% winrate on puffball" -- over a
+hundred matches, where the bot's Puffball sits at 11% pooled. The brackets are the AI piloting a
+kit, and the AI never turns her movement vertical to win a chase, which is exactly how the owner
+plays her. So the owner's numbers are a different table, and the game now keeps it: MY STATS lists
+every fighter the player has held (the top-five cap hid the rest), the bot's bracket rate and rank
+beside the player's own for the same fighter, and a Copy button that puts the table on the
+clipboard as text -- the way those numbers reach this file. Two things follow. Puffball is not a
+balance flag, whatever the bot says. And the bracket table baked into the game for World Cup
+seeding was the old balance (Puffball 45%, Pencil 14% -- backwards against every run this session),
+so it is re-baked from the pooled runs on the shipped build: `ff9417c`, three runs of eight tournaments on the shipped build (seeds 1234, 777, 4242; 1,776 fighter-games): Fries 51%, Rose 48%, Roboty 43%, mean 0.202, Sidewalky 0. Owner's record on file:
+Puffball 81% over 100+ matches. The rest arrive when the Copy button is pressed.
+
+**F21 taught the bot three things it never learned from its archetype.** `aiKitLessons` runs
+before the class branches for every fighter, on reads and never on a timer, drawing no new random
+number so planless matches keep their recorded sequences: a counter stance goes up while a foe's
+swing is still coming (a smash charging, a circle winding up, an attack animation with the cooldown
+fresh) within reach, for all eight counter kits; a down-special trap goes at the feet when a foe is
+approaching or stunned at 70-260 px and never on top of one already laid, for all nineteen kits
+whose down-special lays one; Puffball climbs to a foe above her once her jumps are spent, takes to
+the air when a chase is being lost, and dives when she is over them. The trapper class no longer
+lays on a coin flip anywhere: it lobs at range, drops when close, never onto a trap already near the
+target. Needle's second step came with it -- her first left her 1-for-17 with a third of a KO a
+game, so her up-special pin launches (4/10, kb 3/-14) and her pricks push (kb 6) -- and the music
+test's double-boot case got 20 s after timing out at the 5 s default on every loaded run.
+
+**F22 closed O19.** Taco: JAWBREAKER, from BFB 2-3 where she was stuck inside one -- a heavy bouncing
+ball, whoever it hits rooted in it for 36 frames -- and HEATPROOF from the Character Guide's 1,000 C,
+so a burn never ticks on her; salsa stays as her smash, plunge and trap. Roboty: ANTENNA SPRING, from
+the Character Guide's line that his super-springy antenna gives his teammates lots of mobility --
+foes on him go up and away, teammates go high with their jumps back, he gets a little lift -- with
+morse kept as his smash and the armour stance kept because durability is canon too. Every kit's
+attack is from the show now.
+
+**F23 and F24 are the tooling.** The verdict refuses to be anything but "add runs" below three runs
+a side and says what it would have read; it prints the measured floors (O16, balance-noise) with
+every verdict; and `--player` takes the text MY STATS copies and prints the owner's record beside
+the bot's, marking a fighter with 30+ human games as measured by the player. auto-balance's dead
+band was already scaled from a measured 35pp swing and stays. `merge-rankings` pools runs into one
+ranking file, `baked-ratings` fails the suite when the baked table names a file that is gone, disagrees
+with it, or is older than the newest dated measurement on disk. `ff9417c` is the first bake through it: merge-rankings pooled the three final runs into `scripts/balance-ranking-2026-09-15-final.json`, and the test holds the table to that file.
+
+**F11 and F14 are the two machine-time items.** Both ran in spare worktrees beside the batch, and both were restarted once after the O18 hole was found, so no number here comes from a build that could not finish a match. F11 is O21: two tournament runs on `d946b18`. F14 is O16: three A/B slates on the same build. The final three runs on `15c2f0a` (seeds 1234, 777, 4242; 384 matches) are O22, and are what `ff9417c` bakes: against the four runs before them, sigma 0.124 to 0.108 (-13%), P(tighter) 88%, still inside the interval, KOs a game 1.70 to 1.73.
 
 ---
 
@@ -377,7 +493,9 @@ choice and honours it on the next load", a different case in the same file, and 
 on the next two full runs. Whatever the timing assumption is, it is shared across the file
 rather than local to the crossfade case.
 
-### O8 · `relay/` points at a dead server
+### O8 · `relay/` points at a dead server  [DONE: the test says so]
+
+**Closed** in F16 (`5ba6da7`): the describe is marked PARKED and an `it.todo` names the missing handshake test. The relay itself is F26: `npx wrangler login` is the owner's step, the deploy and the test are mine once it is done.
 
 `RELAY_URL` returns `000`. The guard test asserts the URL *format*, so the suite stays green
 while multiplayer cannot connect. Multiplayer is parked by your call — this is only the note
@@ -448,13 +566,17 @@ URI has to carry the w3.org SVG namespace to render, and `credential-strip` coun
 host in the file against a one-host allowlist. It counts hosts inside comments too -- the first
 draft of the explanatory comment failed the test by quoting the namespace it was explaining.
 
-### O13 · The golden fixture asserts only its 60px row
+### O13 · The golden fixture asserts only its 60px row  [DONE]
+
+**Closed** in F15 (`e34c0f3`): every recorded column is asserted at 60 and 140 px.
 
 `smash-charge` compares damage and launch at 60px. The fixture also records `atkCd`, `hitFrame`
 and a 140px row, and three commits in a row moved them without a failure -- including a real
 change in damage at range for seven fighters. Asserting the 140px row would have caught it.
 
-### O14 · Ice Cube's special ring is the heaviest AI projectile source
+### O14 · Ice Cube's special ring is the heaviest AI projectile source  [DONE]
+
+**Closed** in F16 (`040f663`): the AI holds her ring 240 frames; 30 rings a minute became 14, her share of all projectiles 69% became 43%.
 
 Measured while chasing E3. It predates this branch and was not part of the complaint, so it was
 left alone; it is the first place to look if the projectile spam comes back.
@@ -475,7 +597,9 @@ long-range CPU's attacks now start from less further out than they did. The styl
 it is just a smaller lever than it was, and the test now says so in its comment rather than
 flaking about it.
 
-### O16 · The A/B harness has no noise floor
+### O16 · The A/B harness has no noise floor  [MEASURED: 2026-09-14, three slates]
+
+Three seed slates on `d946b18`, 24 paired matches each, arms x0.99 / x1.0 / x1.01 on `tick.buff`. The null arm reproduced its baseline byte for byte on every slate. A one-percent nudge moved roster spread by -6.8% / -22.1% (slate 20260902), +0.0% / +23.6% (424242) and +7.3% / -16.5% (777777), and pace by 3-12%, with the sign unstable across slates. That is the floor: a 24-match A/B reading inside +/-24% on spread and +/-12% on pace is noise (the harness itself flags 24 matches as thin, 1.6 per fighter). The verdict prints this with every verdict (F23); auto-balance's dead band was already scaled from a measured 35pp swing and stands.
 
 Found by O6. `balance-ab` compares each arm against a baseline on the same seeds and calls the harness
 sound when a x1.0 arm reproduces it -- which proves determinism, not signal. Any change to the source
@@ -484,7 +608,9 @@ by up to 43%. Every sensitivity it reports, including O3's ranking, should be re
 x1.01 floor measured the same way, and across more than one slate. Until then its rankings are
 suggestions.
 
-### O17 · Two smash rows pay no cooldown at all
+### O17 · Two smash rows pay no cooldown at all  [DONE]
+
+**Closed** in F12 (`d18d830`): cd 56 and 48; cadence 22 -> 14 and 22 -> 17 in ten seconds.
 
 Balloony's `airleak` ({back:3}) and Bubble's `float` ({self:6}) declare no `cd` and no `stun`, so the
 only wait between their smashes is the flat 26-frame endlag: through the real key path they reach 22-23
@@ -493,20 +619,20 @@ which limits her; Balloony pays nothing. The gates audit flagged them as where s
 `cd` in the band the other rows use (44-74, paid at 0.75x) would bring them in line; it is a design
 call for those two fighters, not a bug.
 
-### O18 · The tap tier in every SMASH_SPEC row is unreachable from input
+### O18 · The tap tier in every SMASH_SPEC row is unreachable from input  [DONE]
+
+**Closed** in F13 (`e34c0f3`, and `452e233` for the one caller outside the rows): the rows are single numbers, the golden is byte-identical.
 
 `dmg:[tap, full]` and `kb:[tap, full]` are still authored in all 52 rows and asserted by the fixture's
 tap/full ratio test, but since E18 no input path passes c=0 -- only direct calls in tests and probes do.
 The balance harness's `dmg.tiered` knob scales both tiers together, so nothing is wrong; it is dead data
 that a later pass could collapse to a single value, taking the ratio test with it.
 
-### O19 · Which non-canon abilities to change
+### O19 · Which non-canon abilities to change  [DONE]
 
-"if it doesnt make sense, change the ability." Grassy and Remote are done (F9). The kits whose
-attack still has no counterpart in the show are thematic rather than from an episode: Taco's salsa
-(her episodes are about the jawbreaker and her leaving, not a projectile), Roboty's morse bolts (he
-speaks morse, so these already make sense), Golf Ball's curse aura. Swapping a move for a canon one
-is a design call per fighter, not an art fix. Say which, and they change.
+"if it doesnt make sense, change the ability." **Closed** in F22 (`920d4c8`): Grassy and Remote
+(F9), Golf Ball (F10), Taco and Roboty (F22). Every kit's attack is from the show now: the jawbreaker
+Taco was stuck in, the antenna Balloony used as a spring.
 
 ### O20 · The bottom eight's second tournament pair
 
@@ -516,7 +642,9 @@ unlucky one -- so a fighter that stays at 0% across all four runs is real, and o
 noise. Across the four runs only Needle never won a match. Bubble and Gelatin were 0-for-16 before the pass and won after it; Cake, Teardrop and Liy were 0-for-16 after it and had won before. Treat the multi-hit numbers as a first step sized to be safe (+15% to +40% on the
 jab), not a finished balance.
 
-### O21 · Grasstree and Battery Swap have no tournament yet
+### O21 · Grasstree and Battery Swap have no tournament yet  [MEASURED]
+
+Two runs on `d946b18` (the build with the O18 hole closed), seeds 1234 and 777, against the F2 pair: sigma 0.132 to 0.125 (-5.0%), bootstrap 95% interval [-0.035, 0.022], P(tighter) 76%, KOs a game 1.71 to 1.70 -- not conclusive. Golf Ball 12th then 38th, Remote 17th then 2nd, Grassy 36th then 43rd; Bubble, 0-for-16 before F2, 4th in the first run; Needle 0-for-8 in both. The three-run measurement that followed (O22) is the fuller read, and the verdict script now refuses two-run pairs outright (F23).
 
 The F2 verification pair ran on the balance of `c5a1654`, before F9. In its first run the old
 Remote won 64.7% of her matches and two brackets, the best of anyone, with a signal bolt that no
@@ -524,16 +652,30 @@ longer exists; the new Remote is a strong throw with a 150-frame price, the new 
 on a 90-frame cooldown, and neither has a bracket behind it. A pair of runs on the F9 build is the
 next balance step; until then the win rates above describe a roster two fighters out of date.
 
+### O22 · What the final three runs say, and why nothing was tuned on them
+
+Three runs on the shipped build (`ff9417c`'s table), pooled: Fries 51%, Rose 48%, Roboty 43%, Donut
+42%, Rocky 39% at the top; Sidewalky the only fighter with no win in all three. Two reads are
+consistent across the runs and are not acted on, on purpose. Roboty went 3rd / 11th / 2nd with the
+antenna spring -- a 70-frame-cooldown launch that also hits -- and Golf Ball went 50th / 52nd / 28th
+with her three abilities, where the bot now raises her Crusher stance on reads and may be holding
+it where a swing was the answer. Needle is 2-for-26 after both of her steps (pooled 7.7%, half a KO
+a game), Puffball 34th / 42nd / 3rd with the flying reads, Leafy 42nd. Every one of these sits
+inside the floors O16 measured, and the verdict script now refuses to call three runs conclusive
+per roster; per fighter, eight to sixteen games a run is thinner still. The next balance step is
+another three runs on the same build, not a knob: if Roboty and Golf Ball hold their places over
+six, they are real.
+
 ---
 
 ## Scoreboard
 
 | | Count |
 |---|---|
-| Done | 68 |
-| Open | 9 (O8, O13, O14, O16, O17, O18, O19, O20, O21) |
+| Done | 92 |
+| Open | 2 (O20, O22) |
 | Superseded | 2 (O1, B12) |
-| Blocked on you | 0 |
+| Blocked on you | 1 (F26: the workers.dev subdomain) |
 
-Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F9, O3-O7, O9-O12 and O15.
-Suite: **762 of 762 on the shipped file (62 files)**.
+Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F25, O3-O19 and O21.
+Suite: **798 passed and 1 todo on the shipped file (70 files), on `ff9417c`**.
