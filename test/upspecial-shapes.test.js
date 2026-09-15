@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { bootMonolith } from './helpers/smash-golden.js';
 
-// Fighters whose up-special is still a hand-written body rather than a row. Ten until the redesign lands
-// (Teardrop's Evaporate became a row with her taunt); then Puffball's flight alone.
-const UPSPEC_LEGACY_LEFT = 10;
+// Fighters whose up-special is still a hand-written body rather than a row: Puffball's flight, alone,
+// since the redesign ("movement is only good for pb").
+const UPSPEC_LEGACY_LEFT = 1;
 
 // "Most fighters don't have an up-C." They did — thirty of them had the same one (upLaunch plus a
 // hitCircle two integers apart), nineteen more had a hop plus one dropped projectile. UPSPEC gives
@@ -64,13 +64,16 @@ describe('the four shapes do what their names say', () => {
     const r = w.eval(`(function(){ var f=makeFighter(ROSTER.find(function(r){return r.name==='Leafy';}),400,groundY()-24,0); f.face=1; f._inRight=true; fighters=[f]; var x=f.x; doUpSpecial(f); return f.x-x; })()`);
     expect(r).toBeGreaterThan(50);
   });
-  it('plunge: David rises, hangs, and lands on whoever is under him', async () => {
+  it('plunge: Sidewalky rises, hangs, and lands on whoever is under him', async () => {
+    // (David's was the plunge until the redesign made his a hop; Sidewalky's wet-cement slam is one.)
     const w = bootMonolith(); await w.eval('profileReady');
-    const r = stage(w, 'David', 400);
+    const r = stage(w, 'Sidewalky', 400);
     expect(r.rose).toBeGreaterThan(40); expect(r.pct, 'the landing should hit').toBeGreaterThan(8);
   });
-  it('spin: Bell hits a neighbour more than once on the way up', async () => {
+  it('spin: Firey hits a neighbour more than once on the way up', async () => {
+    // A pure spin. (Bell's was, until the redesign gave hers an opening swing that slows and knocks the
+    // neighbour clear of the aura; that swing's payoff is checked in upspecial-payoffs.)
     const w = bootMonolith(); await w.eval('profileReady');
-    expect(stage(w, 'Bell', 430).hits).toBeGreaterThanOrEqual(2);
+    expect(stage(w, 'Firey', 430).hits).toBeGreaterThanOrEqual(2);
   });
 });
