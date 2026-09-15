@@ -124,7 +124,8 @@ describe('the waits', () => {
   });
 
   it("and the 55-frame floor on neutral specials no longer overrides the ball's shorter one", () => {
-    expect(arena(`A._gadget='ball'; fireSpecial(A, {}); return A.spCd;`)).toBe(W.eval('GADGET_SPECIAL_CD.ball'));
+    // the ball's own 40, through the door every special leaves by (SPECIAL_CD_SCALE, "reduce the time between specials")
+    expect(arena(`A._gadget='ball'; fireSpecial(A, {}); return A.spCd;`)).toBe(W.eval('Math.round(GADGET_SPECIAL_CD.ball * SPECIAL_CD_SCALE)'));
   });
 });
 

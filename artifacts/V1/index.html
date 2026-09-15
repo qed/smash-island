@@ -6098,6 +6098,7 @@ function step(){
     if(f.ctrlRev>0) f.ctrlRev--;
     if(f._revLock>0) f._revLock--;   // re-scramble immunity window
     if(f.slowed>0) f.slowed--;
+    if(f._taunted>0){ if(--f._taunted===0) f._tauntedBy=null; }   // Teardrop's mark wears off
     if(f._noBattery>0){ if(--f._noBattery===0){ f.pct=Math.max(0, f.pct-3); for(let i=0;i<8;i++) puff(f.x,f.y-8,'#f2d84b',4); if(f.you) banner("NEW BATTERY",500); } }   // it clicks in
     if(f._grasstree>0){ f._grasstree--; f.armor = Math.max(f.armor||0, 2); if(f._grasstree===0){ for(let i=0;i<8;i++) puff(f.x,f.y+f.r,'#8a6a3a',4); } }   // up the tree: armoured every frame
     // ITEM powerups
@@ -7588,6 +7589,7 @@ const DROP_RIDERS = { burn:{burn:true}, poison:{poison:true}, freeze:{freeze:tru
   scramble:{reverseCtrl:true}, trap:{trap:true,grav:true,life:40}, puddle:{landsPuddle:true,grav:true,life:40},
   bounce:{grav:true,bounce:true,life:60}, coin:{grav:true,bounce:true,life:60,maxBounces:2}, van:{van:true,kb:0}, plain:{} };
 const UPSPEC = {
+  kick:     {shape:'warp', dist:140, invuln:18, self:{jumps:1}, leave:'taunt', stunR:70},                          // Teardrop — Evaporate, as it was (140 up, 18 invuln, a jump back), and everyone near where she stood is TAUNTED
   // --- hops: rise and swing. The band and the angle are the whole identity. ---
   serve:    {shape:'hop', power:-13, hit:{off:-14, reach:26, dmg:[5,11], band:-0.6, kb:[4,-10]}},                 // Tennis Ball — the tip of the racket
   counter:  {shape:'hop', power:-12, hit:{off:-16, reach:18, dmg:[4,10], band:-0.65,kb:[3,-14]}},               // Needle — a pin, straight up, only the point counts; it LAUNCHES since her buff's second step (1-for-17 after the first)
@@ -7646,6 +7648,7 @@ const UPSPEC = {
 // optional drop, and whatever the row says it leaves behind.
 function riseShape(f, s){
   const dir = f._inLeft ? -1 : f._inRight ? 1 : 0;
+  f._castX=f.x; f._castY=f.y;   // where the cast happened (a warp moves before its leave is applied)
   if(s.shape==='warp'){
     f.y = Math.max(40, f.y - (s.dist||140)); f.x += dir*(s.dx||0); f.vy = -4; f.onground=false;
     f.invuln = Math.max(f.invuln, s.invuln||8);
@@ -7655,15 +7658,28 @@ function riseShape(f, s){
     if(s.shape==='spin'){ f._sawing = Math.max(f._sawing||0, s.frames||20); f._spinKb = s.spinKb||'out'; f._spinR = 56; }   // a rising aura is wider than Saw's grounded one, or it out-climbs its own hitbox
     if(s.shape==='plunge'){ f._stall = { phase:'rise', hang:s.hang||6, rad:s.rad||40, dmg:s.dmg||10, kb:s.kb||[6,-8], leave:s.leave||null, ram:s.ram||0, life:90 }; }
   }
+  // THE VOCABULARY ("they should actually DO stuff"): self{} buffs the caster at cast; hit.eff puts a
+  // status on everyone the swing hits; shot{} fires one projectile; leave:'taunt' is Teardrop's mark.
+  if(s.self){ const S=s.self;
+    if(S.armor) f.armor=Math.max(f.armor||0,S.armor); if(S.invuln) f.invuln=Math.max(f.invuln,S.invuln);
+    if(S.heal) f.pct=Math.max(0,f.pct-S.heal); if(S.healing) f.healing=Math.max(f.healing||0,S.healing);
+    if(S.haste) f._hasteT=Math.max(f._hasteT||0,S.haste); if(S.empower) f._empower=1;
+    if(S.cloud) f.cloud=Math.max(f.cloud||0,S.cloud); if(S.jumps) f.jumps=Math.max(f.jumps||0,S.jumps); }
   if(s.hit){
     const h=s.hit, cx=f.x+f.face*(h.fx||0), cy=f.y+(h.off==null?-14:h.off), reach=f.r+(h.reach||18);
     const n = hitCircle(f, cx, cy, reach, h.dmg[0], h.dmg[1], f.face*h.kb[0], h.kb[1], h.band==null?undefined:h.band);
     if(n>0 && s.leave==='lifesteal'){ f.pct=Math.max(0,f.pct-3); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#f5c88a',3); }
     if(n>0 && s.leave==='define'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, cx, cy)<reach){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5); } } }
+    if(n>0 && h.eff && SM_FX[h.eff]){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, cx, cy)<reach) SM_FX[h.eff](t, f, h.n); } }
   }
+  if(s.shot){ const P=s.shot;
+    spawnProj(f, Object.assign({}, P, {vx:f.face*(P.vx||8), vy:P.vy||0, grav:!!P.grav, dmg:P.dmg||6, kb:P.kb||5, r:P.r||8, color:P.color||f.color, life:P.life||60})); }
   if(s.leave==='stun'){ const R = s.hit ? f.r+(s.hit.reach||18) : (s.stunR||70);
     for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<R) t.hitstun=Math.max(t.hitstun,20); }
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*R*2-R),f.y+(Math.random()*40-20),'#fff',4); }
+  if(s.leave==='taunt'){ const R = s.stunR||70, x0=f._castX==null?f.x:f._castX, y0=f._castY==null?f.y:f._castY;   // Teardrop: from where she stood
+    for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, x0, y0)<R){ t._taunted=TAUNT_FRAMES; t._tauntedBy=f.idx; if(t.you) banner("TAUNTED",400); } }
+    for(let i=0;i<8;i++) puff(x0+(Math.random()*R*2-R),y0-10,'#6fb7ff',4); }
   if(s.drop){
     const D=s.drop, R=DROP_RIDERS[D.rider]||{}, n=D.count||1;
     for(let i=0;i<n;i++){
@@ -7857,6 +7873,9 @@ const PAYDAY_SPECIAL = {pat:'burst', frames:8, r0:26, rad:74, grow:0, dmg:5.8, k
 // long enough to catch "special, then up" as one motion, short enough that a neutral special with
 // no direction held does not feel like it lags.
 const SPECIAL_DIR_WINDOW = 5;
+// Teardrop's TAUNT: Evaporate marks everyone near where she stood (TAUNT_FRAMES), and her next hit on
+// a marked foe lands TAUNT_BONUS harder. "Buff it slightly ... taunting an enemy, like with Eraser."
+const TAUNT_BONUS = 0.5, TAUNT_FRAMES = 180;
 // Taco's JAWBREAKER: frames a foe it hits is stuck in it. And she is HEATPROOF (Official Character
 // Guide: 1,000 C), so a burn never ticks on her -- see the burn timer.
 const JAWBREAKER_STUCK = 36;
@@ -7879,8 +7898,17 @@ const GRASSTREE_FRAMES = 240;
 
 // One special, routed by whichever direction is held at the moment it actually fires. Split out of
 // the input block so the instant path and the deferred path cannot drift apart.
+// "reduce the time between specials": every special's cooldown, including the 55/60/64 floors the
+// three directions carry, is scaled by SPECIAL_CD_SCALE on the way out of fireSpecial. One number,
+// one door; the AI's own gap (aiSpecialGap) is separate and unchanged.
+const SPECIAL_CD_SCALE = 0.8;
 function fireSpecial(f, inp){
   if(f.spCd>0) return;
+  const before = f.spCd;
+  fireSpecialInner(f, inp);
+  if(f.spCd > before) f.spCd = Math.max(1, Math.round(f.spCd * SPECIAL_CD_SCALE));
+}
+function fireSpecialInner(f, inp){
   if(f._noBattery>0) return;   // Remote on reserve power (see BATTERY_OUT)
   // remember held directions so dash-type specials can go diagonally (up-dash / down-dash)
   f._inLeft=!!inp.left; f._inRight=!!inp.right; f._inUp=!!inp.up; f._inDown=!!inp.down;
@@ -8708,6 +8736,8 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // a long match left you permanently floored at 20% damage with no counterplay. Now it's capped
   // and decays, so it's real pressure you can recover from rather than a permanent crippling.
   if(from && from.curseStacks>0){ dmg *= Math.max(CURSE_FLOOR, 1 - 0.005*Math.min(CURSE_MAX_STACKS, from.curseStacks)); }
+  // Teardrop's TAUNT: her next hit on a foe her Evaporate marked lands TAUNT_BONUS harder, once.
+  if(from && from.kit && from.kit.special==="kick" && t._taunted>0 && t._tauntedBy===from.idx){ dmg += TAUNT_BONUS; t._taunted=0; t._tauntedBy=null; if(from.you) banner("TAUNTED!",400); }
   // Golf Ball payoff: SHE hits cursed targets harder — turns her debuffs into a solo win condition
   if(from && from.kit && from.kit.special==="zapshooter" && (t.curseStacks>0 || t.weakened>0)){
     const bonus = 1.0 + Math.min(0.22, (t.curseStacks||0)*0.014);   // up to ~1.22x — curse is now utility, not a kill combo
@@ -11210,8 +11240,10 @@ const SMASH_FLOOR = 6;       // baseline mis-press floor
 // which covers every pattern's active window and ends well inside the smash's own endlag.
 const SMASH_ANGLE_FRAMES = 24, SMASH_ANGLE_TILT = 0.38;   // ~22 degrees either way
 // Shortened when the tap tier went (a smash has to be charged to be thrown at all now): 18..32 by
-// weight, a median fighter in 24 frames. It was 32..58.
-function smashFullOf(f){ const w = (f && f.w) || 90; return Math.max(18, Math.min(32, Math.round(24 + (w - 90) * 0.16))); }
+// weight, a median fighter in 24 frames. It was 32..58. Then "nerf smash charge time (make it longer
+// for all short charge time characters)": nobody charges faster than the SMASH_FULL baseline now,
+// so the light half of the roster takes 24 like a median fighter and the heavy half still climbs to 32.
+function smashFullOf(f){ const w = (f && f.w) || 90; return Math.max(SMASH_FULL, Math.min(32, Math.round(24 + (w - 90) * 0.16))); }
 // The mis-press floor scales the same way: a heavy fighter's tap is a heavier commitment, so it
 // takes slightly longer before the game agrees you meant it.
 function smashFloorOf(f){ const w = (f && f.w) || 90; return Math.max(4, Math.min(9, Math.round(6 + (w - 90) * 0.04))); }
@@ -13309,6 +13341,7 @@ const STATUS_ICONS = [
   { key:'reflect',  on:f=>f.reflecting>0,                    glyph:'mirror', color:'#e8e8e8' },
   { key:'counter',  on:f=>f.countering>0,                    glyph:'parry',  color:'#f2e8b0' },
   { key:'reserve',  on:f=>f._noBattery>0,                    glyph:'lowbat', color:'#f2d84b' },   // Remote, battery out
+  { key:'taunted',  on:f=>f._taunted>0,                      glyph:'tongue', color:'#6fb7ff' },   // Teardrop's mark: her next hit lands harder
   { key:'grasstree', on:f=>f._grasstree>0,                   glyph:'tree',   color:'#7bc043' },   // Grassy, up the tree
   // "some character buffs dont have icons": the seven that had none.
   { key:'presence', on:f=>f.curse>0,                        glyph:'eye',    color:'#a78bfa' },   // Golf Ball, Presence up: every hit of hers curses
@@ -13345,6 +13378,7 @@ function statusGlyph(c, g, r){
     case 'plus':   c.fillRect(-r*0.3,-r,r*0.6,r*2); c.fillRect(-r,-r*0.3,r*2,r*0.6); break;
     case 'mirror': c.fillRect(-r*0.7,-r,r*1.4,r*2); c.strokeStyle='#1c1c1c'; c.lineWidth=1.5; c.beginPath(); c.moveTo(r*0.4,-r*0.8); c.lineTo(-r*0.4,r*0.8); c.stroke(); break;
     case 'parry':  c.lineWidth=2; c.beginPath(); c.moveTo(-r,-r); c.lineTo(r,r); c.moveTo(r,-r); c.lineTo(-r,r); c.stroke(); break;
+    case 'tongue': c.lineWidth=1.5; c.beginPath(); c.arc(0,-r*0.2,r*0.9,0.15*Math.PI,0.85*Math.PI); c.stroke(); c.fillStyle='#ff8aa0'; c.beginPath(); c.ellipse(0,r*0.45,r*0.32,r*0.5,0,0,7); c.fill(); break;
     case 'lowbat': c.lineWidth=1.5; c.strokeRect(-r,-r*0.55,r*1.7,r*1.1); c.fillRect(r*0.7,-r*0.25,r*0.3,r*0.5);
                    c.fillStyle='#e0503a'; c.fillRect(-r*0.85,-r*0.4,r*0.4,r*0.8); break;
     case 'tree':   c.fillStyle='#8a6a3a'; c.fillRect(-r*0.25, -r*0.1, r*0.5, r*1.1); c.fillStyle='#7bc043'; c.beginPath(); c.arc(0,-r*0.35,r*0.75,0,7); c.fill(); break;

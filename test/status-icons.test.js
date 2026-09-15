@@ -17,7 +17,8 @@ const STATUSES = {
   armor: 'armor', empower: '_empowerT', haste: '_hasteT', bullet: '_bulletT', star: '_starT', yoyle: '_yoyleT',
   healing: 'healing', reflect: 'reflecting', counter: 'countering',
   grasstree: '_grasstree', reserve: '_noBattery',
-  presence: 'curse', slick: 'iceUntil', reform: 'reform', flying: 'flying', swallowed: '_swallow',   // "some character buffs dont have icons"
+  presence: 'curse', slick: 'iceUntil', reform: 'reform', flying: 'flying', swallowed: '_swallow',
+  taunted: '_taunted',   // Teardrop's mark   // "some character buffs dont have icons"
 };
 
 const countingCtx = `new Proxy({}, { get:function(_t,p){

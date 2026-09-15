@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { bootMonolith } from './helpers/smash-golden.js';
 
+// Fighters whose up-special is still a hand-written body rather than a row. Ten until the redesign lands
+// (Teardrop's Evaporate became a row with her taunt); then Puffball's flight alone.
+const UPSPEC_LEGACY_LEFT = 10;
+
 // "Most fighters don't have an up-C." They did — thirty of them had the same one (upLaunch plus a
 // hitCircle two integers apart), nineteen more had a hop plus one dropped projectile. UPSPEC gives
 // each of those forty-eight a row: a rise SHAPE (hop / warp / plunge / spin), a sweet band, a
@@ -9,7 +13,9 @@ import { bootMonolith } from './helpers/smash-golden.js';
 
 const key = (r) => [r.shape, r.hit ? (r.hit.band == null ? 'nb' : r.hit.band) : '-',
   r.hit ? r.hit.kb.map(Math.sign).join('') : '-', r.kb ? r.kb.map(Math.sign).join('') : '-',
-  r.drop ? r.drop.rider + (r.drop.count || 1) : '-', r.leave || '-', r.spinKb || '-', r.dx ? 'dx' : '-', r.ram ? 'ram' : '-'].join('|');
+  r.drop ? r.drop.rider + (r.drop.count || 1) : '-', r.leave || '-', r.spinKb || '-', r.dx ? 'dx' : '-', r.ram ? 'ram' : '-',
+  // the vocabulary the redesign is written in: a status on the swing, buffs on the caster, a shot
+  r.hit && r.hit.eff ? r.hit.eff : '-', r.self ? Object.keys(r.self).sort().join('+') : '-', r.shot ? 'shot:' + (r.shot.fxTag || 'plain') : '-'].join('|');
 
 const stage = (w, name, dummyAt) => w.eval(`
   (function(){
@@ -32,7 +38,7 @@ describe('every UPSPEC row is a different move', () => {
     const seen = new Map(), dupes = [];
     for (const [k, r] of rows) { const id = key(r); if (seen.has(id)) dupes.push(`${k} = ${seen.get(id)} (${id})`); else seen.set(id, k); }
     expect(dupes, 'rows that are the same move').toEqual([]);
-    expect(rows.length).toBe(48);
+    expect(rows.length, 'every playable fighter has a row, less the hand-written bodies left').toBe(w.eval('ROSTER.filter(function(r){ return r.play; }).length') - UPSPEC_LEGACY_LEFT);
   });
   it('every playable fighter still has an up-special that rises', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
