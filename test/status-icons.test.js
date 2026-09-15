@@ -123,3 +123,62 @@ describe('the two icons that depend on who carries the state', () => {
     expect(r.count).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("where the row is, and the statuses that had none (\"momentum doesnt have a status icon, neither do effects on hit\")", () => {
+  // Rendered in a real match first: the player's row was drawn under their own name tag. It sits above
+  // the tag now, and is drawn after it.
+  it('sits above the name tag for the player and for everyone else, and is drawn after the tag', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; beginMatchNow();
+      var you = fighters.find(function(f){ return f.you; }), ai = fighters.find(function(f){ return !f.you; });
+      return { youY: statusIconY(you), youTagTop: -(you.r+28)-9, aiY: statusIconY(ai), aiTagTop: -(ai.r+16)-9, R: STATUS_ICON_R, src: drawFighter.toString() };
+    })()`);
+    expect(r.youY + r.R, 'the bottom of the player row clears their tag').toBeLessThan(r.youTagTop);
+    expect(r.aiY + r.R).toBeLessThan(r.aiTagTop);
+    // The canvas here is a stub that ignores patched methods, so the draw ORDER is read from the source:
+    // the normal path calls the row after the tag's fillText, and the tagless form calls it before its return.
+    const tag = r.src.indexOf('ctx.fillText(label'), calls = r.src.split('drawStatusIcons(f, ctx)').length - 1;
+    expect(tag, 'the name tag is drawn in drawFighter').toBeGreaterThan(0);
+    expect(r.src.lastIndexOf('drawStatusIcons(f, ctx)'), 'and the row after it').toBeGreaterThan(tag);
+    expect(calls, 'once after the tag, once in the tagless form').toBe(2);
+  });
+
+  const keysOf = (body) => W.eval(`(function(){
+    var f = makeFighter(ROSTER.find(function(x){ return x.name==='Leafy'; }), 100, 100, 0);
+    ${body}
+    return STATUS_ICONS.filter(function(s){ try { return s.on(f); } catch(e){ return false; } }).map(function(s){ return s.key; });
+  })()`);
+
+  it('Momentum is one icon, not haste and bullet; a longer haste from elsewhere still shows beside it', () => {
+    expect(keysOf('grantMomentum(f, 300);')).toEqual(['momentum']);
+    expect(keysOf('grantMomentum(f, 300); f._hasteT = 900;').sort()).toEqual(['haste', 'momentum']);
+    expect(keysOf('f._hasteT = 90;')).toEqual(['haste']);
+    expect(keysOf('grantMomentum(f, 300); f._hasteT = 0; f._bulletT = 0;'), 'the icon goes when the buffs do').toEqual([]);
+  });
+
+  it('an effect stun has an icon; the hitstun every hit carries does not', () => {
+    expect(keysOf('f.hitstun = 14;')).toEqual([]);
+    expect(keysOf('SM_FX.stun(f, null, 30);')).toEqual(['stunned']);
+    expect(keysOf('SM_FX.knockdown(f, null, 30);')).toEqual(['stunned']);
+    expect(keysOf('SM_FX.stun(f, null, 30); f.hitstun = 0;'), 'gone with the stun').toEqual([]);
+  });
+
+  it('poison has its own icon; fire keeps the flame; both show when both are on', () => {
+    expect(keysOf('SM_FX.poison(f, null, 80);')).toEqual(['poison']);
+    expect(keysOf('SM_FX.burn(f, null, 110);')).toEqual(['burn']);
+    expect(keysOf('SM_FX.poison(f, null, 80); SM_FX.burn(f, null, 200);').sort()).toEqual(['burn', 'poison']);
+  });
+
+  it('the stun, poison and momentum timers wear off with what they mark', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var f = makeFighter(ROSTER.find(function(x){ return x.name==='Leafy'; }), 400, groundY()-24, 0); f.controller='still'; f.stocks=9;
+      fighters=[f]; step();
+      SM_FX.stun(f, null, 10); SM_FX.poison(f, null, 12); grantMomentum(f, 14);
+      for (var i=0;i<20;i++) step();
+      return { stun: f._stunFx, poison: f._poisonT, momentum: f._momentumT, burn: f.burn };
+    })()`);
+    expect(r).toEqual({ stun: 0, poison: 0, momentum: 0, burn: 0 });
+  });
+});

@@ -34,7 +34,7 @@ const FLOOR_NOTE = 'floors: a 1% nudge moved a 24-match A/B spread by up to 24% 
 const argv0 = process.argv.slice(2);
 const pi = argv0.indexOf('--player');
 const playerFile = pi >= 0 ? argv0[pi + 1] : null;
-const argv = argv0.filter((a, i) => i !== pi && i !== pi + 1);
+const argv = pi < 0 ? argv0 : argv0.filter((a, i) => i !== pi && i !== pi + 1);   // with no --player, pi is -1 and pi+1 is 0: the filter used to drop the first token
 const cut = argv.indexOf('--after');
 const beforeFiles = argv.slice(argv.indexOf('--before') + 1, cut === -1 ? undefined : cut);
 const afterFiles = cut === -1 ? [] : argv.slice(cut + 1);

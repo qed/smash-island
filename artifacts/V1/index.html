@@ -6063,8 +6063,11 @@ function step(){
     if(f._ticks){ const k=f._ticks; if(f.dead) f._ticks=null; else if(--k.t<=0){ k.t=k.every;
       applyHit(f, k.dmg, k.dir*k.kb, -k.kb*0.6, k.by, {tick:true}); puff(f.x, f.y-8, '#e6a6e0', 3);
       if(--k.n<=0) f._ticks=null; } }
-    if(f.burn>0){ if(f.kit && f.kit.special==='jawbreaker'){ f.burn=0; if(f.you) banner("HEATPROOF",400); }   // Taco: 1,000 C, per the guide
-      else { f.burn--; f.pct+=0.04; if(f.burn%18===0) puff(f.x,f.y-10,'#f0803a',3); } }
+    // Taco is HEATPROOF (1,000 C, per the guide): fire never ticks on her. Poison shares the timer, so
+    // the part of it that is poison (_poisonT) is left running -- the fire above it is what goes.
+    if(f.burn>(f._poisonT||0) && f.kit && f.kit.special==='jawbreaker'){ f.burn=f._poisonT||0; if(f.you) banner("HEATPROOF",400); }
+    if(f.burn>0){ f.burn--; f.pct+=0.04; if(f.burn%18===0) puff(f.x,f.y-10,(f._poisonT>0?'#9bd24b':'#f0803a'),3); }
+    if(f._poisonT>0){ f._poisonT--; if(f.burn<=0) f._poisonT=0; }
     if(f.bleed>0){ f.pct += 0.02 + 0.05*(f.bleed/BLEED_FRAMES); f.bleed--; if(f.bleed%12===0) puff(f.x,f.y-6,'#c0304a',3); }
     // TRESPASS BLEED — see enemyZoneOf. Skipped while invulnerable so a fighter who was launched
     // into an enemy corner is not punished for their own i-frames.
@@ -6099,6 +6102,8 @@ function step(){
     if(f._revLock>0) f._revLock--;   // re-scramble immunity window
     if(f.slowed>0) f.slowed--;
     if(f._taunted>0){ if(--f._taunted===0) f._tauntedBy=null; }   // Teardrop's mark wears off
+    if(f._momentumT>0) f._momentumT--;
+    if(f._stunFx>0){ f._stunFx--; if(f.hitstun<=0) f._stunFx=0; }   // the icon goes when the stun does
     if(f._noBattery>0){ if(--f._noBattery===0){ f.pct=Math.max(0, f.pct-3); for(let i=0;i<8;i++) puff(f.x,f.y-8,'#f2d84b',4); if(f.you) banner("NEW BATTERY",500); } }   // it clicks in
     if(f._grasstree>0){ f._grasstree--; f.armor = Math.max(f.armor||0, 2); if(f._grasstree===0){ for(let i=0;i<8;i++) puff(f.x,f.y+f.r,'#8a6a3a',4); } }   // up the tree: armoured every frame
     // ITEM powerups
@@ -6138,7 +6143,7 @@ function step(){
         if(!f.onground){ f.vy=Math.max(f.vy,12); if(hazardT%2===0) puff(f.x,f.y-f.r,f.color,3); }
         else {
           hitCircle(f, f.x, f.y+f.r, f.r+st.rad, st.dmg, st.dmg, f.face*st.kb[0], st.kb[1]);
-          if(st.leave==='stun'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<f.r+st.rad) t.hitstun=Math.max(t.hitstun,20); } }
+          if(st.leave==='stun'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<f.r+st.rad) stunFx(t,20); } }
           else if(st.leave){ spawnProj(f, Object.assign({vx:0,vy:0,grav:true,dmg:4,kb:2,r:10,color:f.color,life:40}, DROP_RIDERS[st.leave]||{})); }
           for(let i=0;i<10;i++) puff(f.x+(Math.random()*60-30),f.y+f.r,f.color,4);
           if(st.ram){ f.vx=f.face*st.ram; f._dashing=0; }
@@ -6510,7 +6515,7 @@ function step(){
           if(pr.slow){ f.slowed=Math.max(f.slowed||0,8); }  // salsa: sluggish while in the puddle
           applyHit(f, pr.dmg, Math.sign(f.x-pr.x||1)*pr.kb, -pr.kb*0.7, pr.ownerObj);
           if(pr.burn) f.burn=Math.max(f.burn,110);
-          if(pr.poison) f.burn=Math.max(f.burn,80);
+          if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
           if(pr.freeze && f.pct>15){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
           puff(pr.x,pr.y,pr.color,10);
           if(pr.arm!==undefined || pr.dmg>=8){ pr.life=0; }  // mines/heavy traps detonate once; puddles linger
@@ -6635,7 +6640,7 @@ function step(){
         const ffBlocked = (pr.ownerObj && pr.ownerObj!==f && ownTeam===f.team && !pr.reflected);
         if(!ffBlocked){
           if(pr.burn) f.burn=Math.max(f.burn,110);
-          if(pr.poison) f.burn=Math.max(f.burn,80);
+          if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
           if(pr.freeze && f.pct>15){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); if(f.frozen>0) banner("FROZEN!",600); }
           if(pr.root){ f.rooted=Math.max(f.rooted||0,60); banner("STUCK!",500); }
           if(pr.reverseCtrl){ if(applyCtrlRev(f,70)) banner("SCRAMBLED!",600); }
@@ -7146,10 +7151,13 @@ const SMASHES = {
 //
 // Two tiers, as the charge system requires: a tap is the same PATTERN with reduced numbers, and
 // the cost does NOT shrink with the charge — committing badly is punished the same either way.
+// An EFFECT stun, as opposed to the hitstun every hit carries: it writes hitstun and marks it, so the
+// icon row can show that this fighter was stunned by something, not merely hit.
+function stunFx(t, n){ t.hitstun = Math.max(t.hitstun||0, n); t._stunFx = Math.max(t._stunFx||0, n); }
 const SM_FX = {
   bleed:   (t,f,n)=>{ t.bleed=Math.max(t.bleed||0, n||150); },
   burn:    (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||110); },
-  poison:  (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||80); },
+  poison:  (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||80); t._poisonT=Math.max(t._poisonT||0, n||80); },
   freeze:  (t,f,n)=>{ if(t.pct>15) applyFreeze(t, freezeDuration(t.pct,50)); },
   root:    (t,f,n)=>{ t.rooted=Math.max(t.rooted||0, n||60); },
   slow:    (t,f,n)=>{ t.slowed=Math.max(t.slowed||0, n||90); },
@@ -7158,10 +7166,10 @@ const SM_FX = {
   define:  (t,f,n)=>{ t.defined=Math.max(t.defined||0,600); t.defineStacks=Math.min((t.defineStacks||0)+(n||2),5); },
   weaken:  (t,f,n)=>{ t.weakened=Math.max(t.weakened||0, n||180); },
   scramble:(t,f,n)=>{ applyCtrlRev(t, n||70); },
-  stun:    (t,f,n)=>{ t.hitstun=Math.max(t.hitstun||0, n||22); },
+  stun:    (t,f,n)=>{ stunFx(t, n||22); },
   strip:   (t,f,n)=>{ t.armor=0; t.countering=0; t.reflecting=0; },   // answers the armour/counter/reflect stances
   drain:   (t,f,n)=>{ if(f && !f.dead) f.pct=Math.max(0, f.pct-(n||4)); },
-  knockdown:(t,f,n)=>{ t.onground=false; t.vy=Math.min(t.vy,-3); t.hitstun=Math.max(t.hitstun||0,(n||30)); },
+  knockdown:(t,f,n)=>{ t.onground=false; t.vy=Math.min(t.vy,-3); stunFx(t, n||30); },
 };
 // The cost, paid on activation whether the move connects or not. That is the point of it.
 // FLOW. Landing a jab or a ground move cuts its own recovery (whiffing still pays full), a tap smash pays
@@ -7675,7 +7683,7 @@ function riseShape(f, s){
   if(s.shot){ const P=s.shot;
     spawnProj(f, Object.assign({}, P, {vx:f.face*(P.vx||8), vy:P.vy||0, grav:!!P.grav, dmg:P.dmg||6, kb:P.kb||5, r:P.r||8, color:P.color||f.color, life:P.life||60})); }
   if(s.leave==='stun'){ const R = s.hit ? f.r+(s.hit.reach||18) : (s.stunR||70);
-    for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<R) t.hitstun=Math.max(t.hitstun,20); }
+    for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<R) stunFx(t,20); }
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*R*2-R),f.y+(Math.random()*40-20),'#fff',4); }
   if(s.leave==='taunt'){ const R = s.stunR||70, x0=f._castX==null?f.x:f._castX, y0=f._castY==null?f.y:f._castY;   // Teardrop: from where she stood
     for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, x0, y0)<R){ t._taunted=TAUNT_FRAMES; t._tauntedBy=f.idx; if(t.you) banner("TAUNTED",400); } }
@@ -7755,7 +7763,7 @@ const DOWNSPECIALS = {
   beam(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:6,kb:4,r:12,color:'#e0384b',life:220,trap:true});  }, // Ruby — gem trap
   gust(f){ f.flash=8; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.abs(t.y-f.y)<70 && Math.abs(t.x-f.x)<170){ t.vx += Math.sign(t.x-f.x||f.face)*7; t.onground=false; } } for(let i=0;i<10;i++) puff(f.x+(Math.random()*120-60),f.y,'#bfe8ff',4);  }, // Fanny — push everyone away
   reflect(f){ f.flash=10; f.reflecting=44; puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
-  ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b');  }, // Bell — brace + nearby stun
+  ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b');  }, // Bell — brace + nearby stun
   sign(f){ f.flash=8; f.armor=28; f._empower=1; puff(f.x,f.y-8,'#6fb7ff',6);  }, // Bracelety — self-empower next hit
   dribble(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:5,kb:8,r:13,color:'#e08a3a',life:220,trap:true,arm:24});  }, // Basketball — bouncy mine
   buynow(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ tgt.weakened=160; banner("PRICE CUT!",500);} }, // Yellow Face — weaken nearest
@@ -7768,7 +7776,7 @@ const DOWNSPECIALS = {
   jawbreaker(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x,y:groundY()-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:18,color:'#f2c84b',life:220,trap:true,slow:true});  }, // Taco — instant salsa puddle
   spike(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap
   sucker(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#c04be0',life:220,trap:true,root:true,arm:14});  }, // Lollipop — rooting trap
-  static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ t.hitstun=Math.max(t.hitstun,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff');  }, // TV — brace + nearby stun
+  static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff');  }, // TV — brace + nearby stun
   battery(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ if(applyCtrlRev(tgt,55)) banner("REMOTE JAM!",500);} }, // Remote — scramble nearest (capped, was an uncapped 120f)
   fluff(f){ f.flash=8; f.armor=40; f.vy=Math.min(f.vy,-3); puff(f.x,f.y-8,'#f2e0d0',6);  }, // Pillow — cushiony guard
   cool(f){ f.flash=8; f.armor=Math.max(f.armor,50); f.pct=Math.max(0,f.pct-8); puff(f.x,f.y-8,'#e8e8e8',6);  }, // Loser — armor + heal a little
@@ -7794,7 +7802,7 @@ const DOWNSPECIALS = {
   thorn(f){ f.flash=8; f.countering=28; puff(f.x,f.y-10,'#e0384b',6);  }, // Rose — counter
   fraidy(f){ f.flash=8; f.invuln=Math.max(f.invuln,20); f.vx=-f.face*8; for(let i=0;i<6;i++) puff(f.x,f.y-8,'#e8c84b',4);  }, // Woody — brief dodge
   paste(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:14,color:'#f0f0f0',life:260,trap:true,root:true,arm:12});  }, // Toothpaste — root trap
-  rant(f){ f.flash=6; f.armor=20; const cx=f.x+f.face*24; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<40){ t.hitstun=Math.max(t.hitstun,16);} } puff(f.x,f.y-8,'#f2a03a',5);  }, // Dora — jabby brace
+  rant(f){ f.flash=6; f.armor=20; const cx=f.x+f.face*24; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<40){ stunFx(t,16);} } puff(f.x,f.y-8,'#f2a03a',5);  }, // Dora — jabby brace
   seriously(f){ f.flash=8; f.armor=Math.max(f.armor,44); puff(f.x,f.y-8,'#4a90c0',6);  }, // David — big armor (trimmed)
   emberjr(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:3,kb:2,r:12,color:'#f0803a',life:220,trap:true,burn:true});  }, // Firey Jr. — small fire trap
   photo(f){ f.flash=8; f.healing=Math.max(f.healing||0,130); f.armor=20; for(let i=0;i<8;i++) puff(f.x,f.y-8,'#4b9c5a',5);  }, // Fern — strong regen stance
@@ -7917,7 +7925,7 @@ function fireSpecialInner(f, inp){
   if(dashKit && horiz && (inp.up||inp.down)){
     doSpecial(f); f.spCd=Math.max(f.spCd,55); return;   // diagonal dash: forward dash, angled
   }
-  f._aiSpGap = aiSpecialGap(f);   // read only by finishAI, so the human path is untouched
+  f._aiSpGap = aiSpecialGap(f, !inp.up && !inp.down);   // read only by finishAI, so the human path is untouched
   if(inp.up){
     // an up-special can only be used ONCE per airtime — on the ground it's always allowed,
     // in the air it's spent until you land again. Prevents jump→upB→jump→upB infinite floating.
@@ -7944,7 +7952,7 @@ function fireSpecialInner(f, inp){
 // game: 69% of every projectile in a 4-way FFA, thirty rings a minute (probe, six seeded matches).
 // Players keep the plain cooldown.
 const AI_SPECIAL_HOLD = { shatter: 240 };
-function aiSpecialGap(f){ const k = f.kit && f.kit.special; return 14 + (f.idx * 11) % 20 + (AI_SPECIAL_HOLD[k] || 0); }
+function aiSpecialGap(f, neutral){ const k = f.kit && f.kit.special; return 14 + (f.idx * 11) % 20 + (neutral === false ? 0 : (AI_SPECIAL_HOLD[k] || 0)); }   // the hold is for the neutral (Ice Cube's ring), not her stance or her hop
 
 // CIRCLE WIND-UP. A ring centred on you, hitting in every direction, used to come out on the frame
 // it was pressed. A jab and a lunge ALSO resolve on their press frame, so the ring won on reach
@@ -8224,7 +8232,7 @@ function doSpecial(f){
     case "fly": f._empower=1; f.flying=90; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#f2a6e8',5);  f.spCd=74; break; // Puffball: charge next shot + brief float
     case "beam": f._empower=1; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#ff8aa0',5);  f.spCd=67; break; // Ruby: charge next gem bolt
     case "buynow": { const cx=f.x+f.face*40; f.flash=8; const rr=66+comebackRange(f); // Yellow Face: stun cone
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr && Math.sign(t.x-f.x)===f.face){ applyHit(t,7,f.face*4,-3,f); t.hitstun=Math.max(t.hitstun,28); } }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr && Math.sign(t.x-f.x)===f.face){ applyHit(t,7,f.face*4,-3,f); stunFx(t,28); } }
       for(let i=0;i<8;i++) puff(cx,f.y,'#f2d84b',4);  f.spCd=46; break; }
     case "splash": { // Barf Bag: OUTBREAK — release an infection cloud; caught foes briefly turn (mirror her inputs, join her team)
       if(f._infected>0){ f.flash=8; break; }   // an infected puppet can't spread the outbreak further
@@ -8247,7 +8255,7 @@ function doSpecial(f){
       // It had no team check: applyHit refused an ally the damage, but the stun below was set
       // directly, so Bell froze her own teammates for 20 frames. It skips her side now.
       startWindup(f, CIRCLE_WINDUP, function(){
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+80){ applyHit(t,6,Math.sign(t.x-f.x||1)*5,-5,f); t.hitstun=Math.max(t.hitstun,20);} }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+80){ applyHit(t,6,Math.sign(t.x-f.x||1)*5,-5,f); stunFx(t,20);} }
       for(let i=0;i<14;i++){ const a=i/14*Math.PI*2; puff(f.x+Math.cos(a)*40,f.y+Math.sin(a)*40,'#f2c84b',3);}
       }, '#f2c84b');  f.spCd=69; break; }
     case "sign": spawnProj(f,{vx:f.face*10,vy:0,grav:false,boomerang:true,ownerFace:f.face,dmg:10,kb:8,r:9,color:'#6fb7ff',life:70}); f.flash=6; f.spCd=46; break; // Bracelety (buffed: weak)
@@ -8286,7 +8294,7 @@ function doSpecial(f){
       spawnProj(f,{vx:f.face*9,vy:0,grav:false,dmg:5,kb:2,r:9,color:'#c04be0',life:50,root:true}); f.flash=6; f.spCd=67; break; }
     case "static": { // TV: stunning burst around itself
       startWindup(f, CIRCLE_WINDUP, function(){
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+70){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-4,f); t.hitstun=Math.max(t.hitstun,30);} }
+      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+70){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-4,f); stunFx(t,30);} }
       for(let i=0;i<16;i++){ const a=i/16*Math.PI*2; puff(f.x+Math.cos(a)*(30+Math.random()*30),f.y+Math.sin(a)*(24+Math.random()*20),'#8fd0ff',4);}
       }, '#8fd0ff'); f.flash=10; f.spCd=74;  break; }
     case "battery": { // Remote: BATTERY SWAP. She pops her battery out and hurls it -- heavy, bouncing, it stuns
@@ -8372,7 +8380,7 @@ function doSpecial(f){
       f.flash=6; f.spCd=51; break; }
     case "slam": { // Sidewalky: lunging body-slam that stuns on hit
       f.vx=f.face*12; f.armor=20; f.flash=10;
-      const cx=f.x+f.face*30; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<44){ applyHit(t,10,f.face*8,-6,f); t.hitstun=Math.max(t.hitstun,30);} }
+      const cx=f.x+f.face*30; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(Math.hypot(t.x-cx,t.y-f.y)<44){ applyHit(t,10,f.face*8,-6,f); stunFx(t,30);} }
       for(let i=0;i<8;i++) puff(cx,feetY(f),'#9a9a9a',4);  f.spCd=103; break; }
     case "airleak": { // Balloony: release air to zip forward and shove foes aside
       f.vx = f.face*14; f.vy = -3; f.flash=8;
@@ -8525,6 +8533,7 @@ function grantMomentum(f, frames){
   const t = frames || MOMENTUM_FRAMES;
   f._hasteT  = Math.max(f._hasteT||0, t);
   f._bulletT = Math.max(f._bulletT||0, t);
+  f._momentumT = Math.max(f._momentumT||0, t);   // one icon for the pair (STATUS_ICONS 'momentum')
   if(f.you || f.you2) banner("MOMENTUM!", 700);
   for(let i=0;i<14;i++) puff(f.x, f.y-10, '#7ad0f0', 5);
 }
@@ -9860,7 +9869,7 @@ const AI_CLASS = {
 // Needle's riposte stance — the last of which the AI already times properly off the foe's attack.)
 const BUFF_SMASHES = new Set(["kick","zapshooter","counter"]);
 // ---- KIT LESSONS. Class-independent reads for the kits the archetype rules never learned. --------
-// Every kit whose down-special is a counter stance (Leafy's parry is her neutral), every kit whose
+// Every kit whose down-special is a counter stance (Leafy's parry is her down-special; her neutral is the dash), every kit whose
 // down-special lays a trap (the DOWNSPECIALS entries that addProj with trap:true), and the flyer.
 const AI_COUNTER_KITS = new Set(["counter","dash","kick","slap","thorn","measure","shatter","zapshooter"]);
 const AI_COUNTER_REACH = 110;    // px beyond the two bodies: a swing that can reach us is worth answering
@@ -9870,12 +9879,12 @@ function aiKitLessons(f, t, inp, dx, dy, dist, adx, rn){
   const sp = f.kit && f.kit.special;
   if(AI_COUNTER_KITS.has(sp) && f.spCd<=0 && dist < f.r+t.r+AI_COUNTER_REACH
      && (t.smashHold>0 || !!t._windup || (t._atkAnim>0 && t.atkCd>12))){
-    inp.special=true; inp.down=(sp!=="dash");    // the stance goes up while their swing is still coming
+    inp.special=true; inp.down=true; inp._kitRead=true;   // the stance goes up while their swing is still coming (every counter kit's stance is its down-special)
   }
   if(AI_TRAP_DOWN.has(sp) && f.spCd<=0 && f.onground){
     const laid = projectiles.some(p=>p.trap && p.owner===f.idx && Math.abs(p.x-f.x)<AI_TRAP_SPACING);
     const approaching = dx*(t.vx||0) < -0.5;     // they are coming this way
-    if(!laid && dist>70 && dist<260 && (approaching || t.hitstun>0) && rn<0.6){ inp.special=true; inp.down=true; }
+    if(!laid && dist>70 && dist<260 && (approaching || t.hitstun>0) && rn<0.6){ inp.special=true; inp.down=true; inp._kitRead=true; }
   }
   if(sp==="fly"){
     if(dy < -70 && !f.onground && f.jumps<=0 && f.spCd<=0){ inp.special=true; inp.up=true; }                       // climb to a foe above
@@ -10094,7 +10103,7 @@ function aiThink(f){
   const rn = Math.random();
 
   // --- kit awareness + ARCHETYPE profile ---
-  const ZONERS=["ember","cap","fry","barf","serve","freeze","beam","sign","splash","dribble","zapshooter","buynow","ring","fly","gust","zap","spark","jawbreaker","spike","sucker","battery","ink","payday","emberjr","measure","antenna","shatter","timber","pricetag"];
+  const ZONERS=["ember","cap","fry","barf","serve","freeze","beam","sign","splash","dribble","zapshooter","buynow","ring","fly","gust","zap","spark","jawbreaker","spike","sucker","battery","ink","payday","emberjr","measure","shatter","timber","pricetag"];
   const isZoner = ZONERS.includes(sp);
   const cls = aiClass(f);
   // The player's own habits with THIS fighter, blended into the archetype (Wave 5).
@@ -10228,6 +10237,7 @@ function aiThink(f){
       // up-special once the jumps are gone rather than drifting under them.
       if(f.jumps<=0 && !f.onground && dy<-120 && f.spCd<=0 && rn<0.5){ inp.special=true; inp.up=true; }
     }
+    if(sp==="fly") aiKitLessons(f, t, inp, dx, dy, dist, adx, rn);   // Puffball climbs to a foe above; this block returns before the lessons below
     if(isZoner && f.spCd<=0 && adx<220 && rn<react*0.5) inp.special=true;   // poke while climbing
     return finishAI(f,inp,sp);
   }
@@ -10509,6 +10519,9 @@ function finishAI(f,inp,sp){
   // across a 5-way FFA. This holds it off for a further 14-33 frames, so a special reads as a
   // decision rather than a metronome.
   if(inp.special && f._aiSpGap>0) inp.special=false;
+  // A kit read (aiKitLessons) chose a stance or a trap. The class branches may still have queued a jab
+  // on the same frame, and attack+special together is the ATKSPECIAL combo-ender, not the down-special.
+  if(inp._kitRead){ if(inp.special) inp.attack=false; delete inp._kitRead; }
   // difficulty handicap: lower levels drop offensive inputs & hesitate (movement still works so they don't look frozen)
   const lvl = (f._lvlCache!=null)?f._lvlCache:1;
   if(lvl===0){                       // easy: frequently fails to attack, sometimes wrong-foots itself
@@ -13320,8 +13333,10 @@ function drawSpriteBody(f, sp, anim){
 // count. Render-only: nothing here touches the simulation, and none of it spends randomness, so a
 // seeded replay is identical whether or not the icons are drawn.
 const STATUS_ICONS = [
-  { key:'burn',     on:f=>f.burn>0,                          glyph:'flame',  color:'#f0803a' },   // burning or poisoned (they share the timer)
+  { key:'burn',     on:f=>f.burn>0 && !((f._poisonT||0)>=f.burn), glyph:'flame', color:'#f0803a' },   // fire beyond any poison (they share the timer)
+  { key:'poison',   on:f=>f.burn>0 && (f._poisonT||0)>0,     glyph:'flask',  color:'#9bd24b' },   // poisoned
   { key:'bleed',    on:f=>f.bleed>0,                         glyph:'drop',   color:'#c0304a' },
+  { key:'stunned',  on:f=>f._stunFx>0 && f.hitstun>0,        glyph:'dizzy',  color:'#fff29a' },   // stunned by an effect, not just hit
   { key:'frozen',   on:f=>f.frozen>0,                        glyph:'flake',  color:'#7ad0f0' },
   { key:'slowed',   on:f=>f.slowed>0,                        glyph:'slow',   color:'#f2c84b' },
   { key:'rooted',   on:f=>f.rooted>0,                        glyph:'root',   color:'#8a6a3a' },
@@ -13333,8 +13348,9 @@ const STATUS_ICONS = [
   { key:'cloud',    on:f=>f.cloud>0,                         glyph:'cloud',  color:'#bfe8ff' },
   { key:'armor',    on:f=>f.armor>0,                         glyph:'shield', color:'#c0c0c0' },
   { key:'empower',  on:f=>f._empowerT>0 || f._empower>0,     glyph:'up',     color:'#ffd23f' },
-  { key:'haste',    on:f=>f._hasteT>0,                       glyph:'fast',   color:'#7ad0f0' },
-  { key:'bullet',   on:f=>f._bulletT>0,                      glyph:'bullet', color:'#7ad0f0' },
+  { key:'momentum', on:f=>f._momentumT>0 && (f._hasteT>0 || f._bulletT>0), glyph:'comet', color:'#7ad0f0' },   // a plunge from height: faster, and faster shots
+  { key:'haste',    on:f=>f._hasteT>0 && !((f._momentumT||0)>=f._hasteT),                       glyph:'fast',   color:'#7ad0f0' },
+  { key:'bullet',   on:f=>f._bulletT>0 && !((f._momentumT||0)>=f._bulletT),                      glyph:'bullet', color:'#7ad0f0' },
   { key:'star',     on:f=>f._starT>0,                        glyph:'star',   color:'#ffd23f' },
   { key:'yoyle',    on:f=>f._yoyleT>0,                       glyph:'metal',  color:'#8aa0b0' },
   { key:'healing',  on:f=>f.healing>0,                       glyph:'plus',   color:'#6ff07a' },
@@ -13353,6 +13369,10 @@ const STATUS_ICONS = [
   { key:'comeback', on:f=>comebackPoints(f)>0,              glyph:'rise',   color:'#ffb347', count:f=>Math.ceil(comebackPoints(f)) },   // a comeback kit, behind: its bonus is live
 ];
 const STATUS_ICON_R = 6, STATUS_ICON_GAP = 3;
+// The row sits ABOVE the name tag and is drawn after it. It used to sit at -r-30 and be drawn before
+// the body, and the player's tag (raised for the you arrow) is drawn last at -r-28: the row of the
+// fighter you play was covered by your own name. The tag's top is tagY-9; the row clears it by 5.
+function statusIconY(f){ return -(f.r + (f.you ? 28 : 16)) - 9 - STATUS_ICON_R - 5; }
 function statusGlyph(c, g, r){
   // every glyph is drawn in a box of radius r about (0,0); fill and stroke are already set
   switch(g){
@@ -13378,6 +13398,9 @@ function statusGlyph(c, g, r){
     case 'plus':   c.fillRect(-r*0.3,-r,r*0.6,r*2); c.fillRect(-r,-r*0.3,r*2,r*0.6); break;
     case 'mirror': c.fillRect(-r*0.7,-r,r*1.4,r*2); c.strokeStyle='#1c1c1c'; c.lineWidth=1.5; c.beginPath(); c.moveTo(r*0.4,-r*0.8); c.lineTo(-r*0.4,r*0.8); c.stroke(); break;
     case 'parry':  c.lineWidth=2; c.beginPath(); c.moveTo(-r,-r); c.lineTo(r,r); c.moveTo(r,-r); c.lineTo(-r,r); c.stroke(); break;
+    case 'comet':  c.beginPath(); c.arc(r*0.35,-r*0.35,r*0.5,0,7); c.fill(); c.lineWidth=1.5; c.beginPath(); c.moveTo(-r,r); c.lineTo(r*0.05,-r*0.05); c.moveTo(-r,r*0.35); c.lineTo(-r*0.2,-r*0.35); c.moveTo(-r*0.35,r); c.lineTo(r*0.35,r*0.2); c.stroke(); break;
+    case 'dizzy':  for(let i=0;i<3;i++){ const a=i*2.094-1.57, x=Math.cos(a)*r*0.62, y=Math.sin(a)*r*0.62; c.beginPath(); c.moveTo(x,y-r*0.36); c.lineTo(x+r*0.12,y-r*0.1); c.lineTo(x+r*0.36,y); c.lineTo(x+r*0.12,y+r*0.1); c.lineTo(x,y+r*0.36); c.lineTo(x-r*0.12,y+r*0.1); c.lineTo(x-r*0.36,y); c.lineTo(x-r*0.12,y-r*0.1); c.closePath(); c.fill(); } break;
+    case 'flask':  c.fillRect(-r*0.22,-r,r*0.44,r*0.7); c.beginPath(); c.arc(0,r*0.2,r*0.72,0,7); c.fill(); c.fillStyle='#1c1c1c'; c.beginPath(); c.arc(-r*0.22,r*0.1,r*0.14,0,7); c.arc(r*0.2,r*0.38,r*0.1,0,7); c.fill(); break;
     case 'tongue': c.lineWidth=1.5; c.beginPath(); c.arc(0,-r*0.2,r*0.9,0.15*Math.PI,0.85*Math.PI); c.stroke(); c.fillStyle='#ff8aa0'; c.beginPath(); c.ellipse(0,r*0.45,r*0.32,r*0.5,0,0,7); c.fill(); break;
     case 'lowbat': c.lineWidth=1.5; c.strokeRect(-r,-r*0.55,r*1.7,r*1.1); c.fillRect(r*0.7,-r*0.25,r*0.3,r*0.5);
                    c.fillStyle='#e0503a'; c.fillRect(-r*0.85,-r*0.4,r*0.4,r*0.8); break;
@@ -13396,7 +13419,7 @@ function statusGlyph(c, g, r){
 function drawStatusIcons(f, c){
   const on = STATUS_ICONS.filter(s => { try { return !!s.on(f); } catch(e){ return false; } });
   if(!on.length) return 0;
-  const r = STATUS_ICON_R, step = r*2 + STATUS_ICON_GAP, x0 = -((on.length-1) * step) / 2, y = -f.r - 30;
+  const r = STATUS_ICON_R, step = r*2 + STATUS_ICON_GAP, x0 = -((on.length-1) * step) / 2, y = statusIconY(f);
   c.save();
   on.forEach((s, i) => {
     const x = x0 + i*step;
@@ -13414,7 +13437,7 @@ function drawFighter(f){
   if(f._grasstree>0){   // Grasstree: Tree's body behind him (render-only). His own sprite if it has loaded, a trunk if not.
     const tsp = (typeof SPRITES !== 'undefined') && SPRITES['Tree'], tim = tsp && spriteImage(tsp);
     const th = f.r*3.4, tw = tim ? th * (tim.naturalWidth / tim.naturalHeight) : f.r*1.2;
-    ctx.save(); ctx.globalAlpha *= 0.9;
+    ctx.save(); ctx.translate(f.x, f.y); ctx.globalAlpha *= 0.9;   // it ran before drawFighter's own translate, so it drew at the world's corner
     if(tim){ if(tsp.flip) ctx.scale(-1,1); ctx.drawImage(tim, -tw/2, f.r - th, tw, th); }
     else { ctx.fillStyle='#8a6a3a'; ctx.fillRect(-f.r*0.35, f.r - th*0.6, f.r*0.7, th*0.6); ctx.fillStyle='#4a9c3a'; ctx.beginPath(); ctx.arc(0, f.r - th*0.62, f.r*1.1, 0, 7); ctx.fill(); }
     ctx.restore();
@@ -13423,7 +13446,6 @@ function drawFighter(f){
   const blink=f.invuln>0 && (f.invuln%8<4);
   ctx.globalAlpha=blink?0.4:1;
   drawAlpha=blink?0.4:1;   // sprites composite against this instead of reading back ctx.globalAlpha
-  drawStatusIcons(f, ctx);   // buffs and debuffs, in a row above the head (see STATUS_ICONS)
   // IFRAME INDICATOR. Invulnerability used to show only as the sprite blinking translucent, which is
   // hard to read at a glance and easy to mistake for a rendering glitch. A bubble now sits around
   // anyone who cannot be hit and fades as the window runs out; the last few frames flicker, so you
@@ -13464,6 +13486,7 @@ function drawFighter(f){
     // buff ring / you marker
     if(f.you){ ctx.fillStyle="#ffd23f"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
       ctx.beginPath(); ctx.moveTo(0,-f.r-18); ctx.lineTo(-7,-f.r-8); ctx.lineTo(7,-f.r-8); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    drawStatusIcons(f, ctx);   // this form draws no name tag, and returns before the one below
     ctx.globalAlpha=1; ctx.restore(); return;
   }
 
@@ -13573,6 +13596,7 @@ function drawFighter(f){
     ctx.fillText(label, 0, tagY+1);
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   }
+  drawStatusIcons(f, ctx);   // buffs and debuffs, above the name tag and after it, so nothing covers the row
   if(f.kit && f.kit.special === 'serve') drawGadgetBadge(f);   // what Tennis Ball has loaded
   ctx.restore();
 }
@@ -15478,12 +15502,13 @@ function myStatsText(mains){
 function copyMyStats(btn){
   const text = myStatsText(MY_STATS_CACHE);
   const done = ()=>{ if(btn){ const t=btn.textContent; btn.textContent='✓ Copied!'; setTimeout(()=>{ btn.textContent=t; }, 1600); } };
+  // no clipboard, or one that refuses (an unfocused page, a sandboxed frame): leave it selectable instead
+  const field = ()=>{ const host = document.getElementById('statsCopy');
+    if(host){ host.innerHTML=''; const ta=document.createElement('textarea'); ta.readOnly=true; ta.value=text; ta.rows=Math.min(12, 3+MY_STATS_CACHE.length); ta.style.width='96%'; ta.onclick=function(){ this.select(); }; host.appendChild(ta); } };
   try{
-    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, done); return; }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, field); return; }
   }catch(e){}
-  // no clipboard on an insecure origin: leave it selectable instead
-  const host = document.getElementById('statsCopy');
-  if(host){ host.innerHTML=''; const ta=document.createElement('textarea'); ta.readOnly=true; ta.value=text; ta.rows=Math.min(12, 3+MY_STATS_CACHE.length); ta.style.width='96%'; ta.onclick=function(){ this.select(); }; host.appendChild(ta); }
+  field();
 }
 // The rows. Split from openStats so the table can be rendered from any list of mains (the test
 // hands it one; openStats hands it the match log's).
@@ -15515,6 +15540,7 @@ async function openStats(){
   const summary=document.getElementById('statsSummary');
   const rivalLine=document.getElementById('statsRival');
   table.innerHTML=''; if(rivalLine) rivalLine.textContent='';
+  MY_STATS_CACHE=[]; { const cp=document.getElementById('statsCopy'); if(cp) cp.innerHTML=''; }   // nothing from the last visit survives an early return below
   if(!BStore.available()){ summary.textContent="Match recording isn't available in this environment."; return; }
   let log=[];
   const rawL=await BStore.get('balance:matchlog'); if(rawL){ try{log=JSON.parse(rawL);}catch(e){} }

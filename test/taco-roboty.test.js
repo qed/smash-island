@@ -53,8 +53,10 @@ describe("Roboty's Antenna Spring", () => {
     const r = W.eval(`(function(){ ${setup('Roboty', 'Leafy', 30)}
       var M = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 280, groundY()-24, 2); M.team=0; M.controller='still'; M.jumps=0; M.stocks=9;
       fighters=[A,E,M]; step(); E.invuln=0; E.pct=0;
-      doSpecial(A); step();
-      return { foeVy: E.vy, foePct: E.pct, allyVy: M.vy, allyJumps: M.jumps, allyPct: M.pct, selfVy: A.vy, cd: A.spCd };
+      M.jumps = 0; M.onground = false;   // the setup step landed her with 2; the spring has to be what gives them back
+      doSpecial(A); var allyJumps = M.jumps;   // read before a step can land her and refresh them
+      step();
+      return { foeVy: E.vy, foePct: E.pct, allyVy: M.vy, allyJumps: allyJumps, allyPct: M.pct, selfVy: A.vy, cd: A.spCd };
     })()`);
     expect(r.foePct, 'a foe on the antenna is hit').toBeGreaterThan(0);
     expect(r.foeVy, 'and launched upward').toBeLessThan(-8);
@@ -88,5 +90,22 @@ describe('the renames', () => {
       expect(r[n].old, `${n} still has an old key`).toEqual([false, false]);
       expect(r[n].now, `${n} is missing a new key`).toEqual([true, true]);
     }
+  });
+});
+
+describe('Taco is heatproof, not poison-proof', () => {
+  // Review finding: poison writes into burn's timer, so the heatproof clear cancelled poison too. It now
+  // clears only the fire above the poisoned part (_poisonT), and poison ticks on her like anyone.
+  it('poison ticks on her; fire applied on top of it does not', () => {
+    const r = W.eval(`(function(){ ${setup('Taco', 'Leafy', 120)}
+      SM_FX.poison(A, E, 60); var p0 = A.pct;
+      for (var i=0;i<20;i++) step();
+      var poisoned = A.pct - p0, left = A.burn;
+      SM_FX.burn(A, E, 200); step(); var afterFire = A.burn;
+      return { poisoned: poisoned, left: left, afterFire: afterFire, poisonT: A._poisonT };
+    })()`);
+    expect(r.poisoned, 'poison damage ticked').toBeGreaterThan(0.5);
+    expect(r.left).toBeGreaterThan(0);
+    expect(r.afterFire, 'the fire on top was cleared back to the poison').toBeLessThanOrEqual(r.poisonT + 1);
   });
 });

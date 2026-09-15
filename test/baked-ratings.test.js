@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { loadMonolith } from './helpers/load-monolith.js';
 
 // The FIGHTER_WINRATE table seeds the World Cup and is what MY STATS shows beside the player's own
@@ -36,7 +36,9 @@ describe('the baked rating table', () => {
 
   it('is baked from the newest dated measurement on disk, so it cannot go stale in silence', () => {
     const files = readdirSync('scripts').filter((f) => /^balance-ranking-.*\.json$/.test(f)).map((f) => 'scripts/' + f);
-    const newest = files.reduce((a, b) => (dateOf(b) > dateOf(a) ? b : a), files[0]);
+    // by the date in the name, and on a same-date tie by modification time (readdir order is alphabetical, not recency)
+    const newer = (a, b) => dateOf(b) > dateOf(a) || (dateOf(b) === dateOf(a) && statSync(b).mtimeMs > statSync(a).mtimeMs);
+    const newest = files.reduce((a, b) => (newer(a, b) ? b : a), files[0]);
     expect(source.replace(/\\/g, '/'), `baked from ${source}, but ${newest} is newer -- re-bake`).toBe(newest);
   });
 });

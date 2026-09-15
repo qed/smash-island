@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { bootMonolith } from './helpers/smash-golden.js';
 
 // "teach the bot to play stance and air kits" / "teach them how to play trap kits". Three reads in
@@ -97,5 +98,46 @@ describe('the flying read (Puffball)', () => {
     expect(r.chase).toBe(true);
     expect(r.still).toBe(false);
     expect(r.dive).toBe(true);
+  });
+});
+
+describe('review findings on the reads', () => {
+  it("Leafy's counter read raises her parry (the down-special), not her dash", () => {
+    const r = W.eval(`(function(){ ${pair('Leafy', 'Firey', 60)}
+      T.smashHold = 8; var i = read();
+      return { special: i.special, down: i.down };
+    })()`);
+    expect(r).toEqual({ special: true, down: true });
+  });
+
+  it('a kit read drops the jab queued on the same frame, so attack+special does not fire the combo-ender', () => {
+    const r = W.eval(`(function(){ ${pair('Golf Ball', 'Firey', 60)}
+      T.smashHold = 8; var i = read(); i.attack = true;       // the pre-block jab
+      F._aiSpGap = 0; F._lvlCache = 2;
+      var out = finishAI(F, i, F.kit.special);
+      var plain = { attack:true, special:false }; var out2 = finishAI(F, plain, F.kit.special);
+      return { attack: out.attack, special: out.special, down: out.down, marker: ('_kitRead' in out), plainAttack: out2.attack };
+    })()`);
+    expect(r.special).toBe(true);
+    expect(r.down).toBe(true);
+    expect(r.attack).toBe(false);
+    expect(r.marker, 'the marker never leaves finishAI').toBe(false);
+    expect(r.plainAttack, 'an ordinary jab is untouched').toBe(true);
+  });
+
+  it("Ice Cube's hold is for her ring only: her stance and her hop keep the plain gap", () => {
+    const r = W.eval(`(function(){
+      var f = makeFighter(ROSTER.find(function(x){ return x.kit && x.kit.special==='shatter'; }), 0, 0, 0);
+      return { ring: aiSpecialGap(f), neutral: aiSpecialGap(f, true), stance: aiSpecialGap(f, false), hold: AI_SPECIAL_HOLD.shatter };
+    })()`);
+    expect(r.ring - r.stance).toBe(r.hold);
+    expect(r.neutral).toBe(r.ring);
+  });
+
+  it("Roboty's spring is not in the AI's zoner list", () => {
+    const src = readFileSync('artifacts/V1/index.html', 'utf8');
+    const zoners = src.match(/const ZONERS=\[[^\]]*\]/)[0];
+    expect(zoners).not.toContain('"antenna"');
+    expect(zoners).toContain('"zapshooter"');
   });
 });

@@ -87,6 +87,19 @@ describe('the Riposte Stance (smash)', () => {
     expect(r.after, 'one riposte per stance').toBe(false);
   });
 
+  it('returns a big hit at RIPOSTE_MULT, above the 12-point floor', async () => {
+    // Leafy's jab (3) sits under the floor, so the test above cannot see the multiplier. A 20-point hit can.
+    const w = bootMonolith(); await w.eval('profileReady');
+    const r = w.eval(`(function(){ ${arena}
+      N.atkCd = 0; N.hitstun = 0; doSmash(N); E.pct = 0; E.invuln = 0; N.pct = 0;
+      applyHit(N, 20, -8, -6, E);
+      return { taken: N.pct, returned: E.pct, mult: RIPOSTE_MULT };
+    })()`);
+    expect(r.taken).toBe(0);
+    expect(r.returned, `20 x ${r.mult}`).toBeGreaterThanOrEqual(20 * r.mult * 0.95);
+    expect(r.returned).toBeGreaterThan(12);
+  });
+
   it('a stance that expires takes its riposte with it', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const r = w.eval(`(function(){ ${arena}

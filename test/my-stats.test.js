@@ -67,3 +67,28 @@ describe('MY STATS — the player beside the bot', () => {
     expect(r.holds).toBe(true);
   });
 });
+
+describe('MY STATS — review findings', () => {
+  it('a clipboard that refuses falls back to the selectable field instead of saying Copied', async () => {
+    const { window: w } = loadMonolith();
+    w.eval(`renderMyStats(myMains(${JSON.stringify(LOG)}, 0));
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: function(){ return Promise.reject(new Error('NotAllowedError')); } }, configurable: true });`);
+    const btn = w.eval(`(function(){ var b = document.querySelector('#stats button[onclick*="copyMyStats"]'); copyMyStats(b); return b.textContent; })()`);
+    await new Promise((res) => setTimeout(res, 20));
+    const r = w.eval(`({ field: !!document.querySelector('#statsCopy textarea'), btn: document.querySelector('#stats button[onclick*="copyMyStats"]').textContent })`);
+    expect(r.field).toBe(true);
+    expect(r.btn, 'no false Copied').not.toMatch(/Copied/);
+  });
+
+  it('opening the screen again clears the last visit: no stale field, no stale copy', async () => {
+    const { window: w } = loadMonolith();
+    await w.eval('profileReady');
+    w.eval(`renderMyStats(myMains(${JSON.stringify(LOG)}, 0));
+      Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+      copyMyStats(null);`);
+    expect(w.eval("!!document.querySelector('#statsCopy textarea')")).toBe(true);
+    await w.eval('openStats()');
+    expect(w.eval("!!document.querySelector('#statsCopy textarea')")).toBe(false);
+    expect(w.eval('MY_STATS_CACHE.length')).toBe(0);
+  });
+});

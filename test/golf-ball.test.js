@@ -71,16 +71,20 @@ describe("Golf Ball's Announcer Crusher stop", () => {
 
 describe("Golf Ball's Presence", () => {
   it('is her smash: five seconds in which every hit she lands curses', () => {
-    const r = W.eval(`(function(){ ${setup(40)}
-      doSmash(G);
+    const jab = (presence) => W.eval(`(function(){ ${setup(40)}
+      ${presence ? 'doSmash(G);' : ''}
       var curse = G.curse, name = SMASH_ID.zapshooter.name;
       G.atkCd = 0; doAttack(G);
       for (var i=0;i<10;i++){ pin(); step(); }
       return { curse: curse, name: name, stacks: E.curseStacks||0 };
     })()`);
+    // Her jab curses on its own (hitCircle marks what she hits), so the control is the same jab without
+    // Presence: the smash has to add stacks on top of that, or this proves nothing about Presence.
+    const plain = jab(false), r = jab(true);
     expect(r.name).toBe('Presence');
     expect(r.curse).toBeGreaterThanOrEqual(180);
-    expect(r.stacks, 'the jab under Presence cursed the target').toBeGreaterThan(0);
+    expect(plain.curse, 'the control has no Presence up').toBe(0);
+    expect(r.stacks, `Presence adds to the jab's own curse: ${r.stacks} vs ${plain.stacks}`).toBeGreaterThan(plain.stacks);
   });
 });
 
