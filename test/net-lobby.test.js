@@ -148,3 +148,31 @@ describe('what a client can see', () => {
     expect(r.err).toBe(null);
   });
 });
+
+describe('the panel does not wait for the relay', () => {
+  // "player 1 cant choose characters, or other settings" (player 1 being the host): the panel used to appear
+  // only when the relay's first roster message arrived, so a host whose relay was slow or unreachable saw a
+  // room code and nothing to set.
+  it('Create Room shows the host every option and the picker before any message arrives', () => {
+    const { window: w } = loadMonolith();
+    w.eval(`NET.RELAY = ''; localStorage.removeItem('bfsi:relay');   // no relay reachable at all
+      NET.myId = 'me'; NET.host();`);
+    const r = w.eval(`({ role: NET.role, panel: document.getElementById('lobbySettings').style.display,
+      picker: !!document.getElementById('lobbyFighter'), options: !!document.getElementById('lobbyStocks'), start: !!document.querySelector('#lobbyControls button') })`);
+    expect(r.role).toBe('host');
+    expect(r.panel).toBe('block');
+    expect(r.picker).toBe(true);
+    expect(r.options).toBe(true);
+    expect(r.start, 'and can start').toBe(true);
+  });
+
+  it('Join Room shows the picker at once, and the host's settings when they come', () => {
+    const { window: w } = loadMonolith();
+    w.eval(`NET.RELAY = ''; NET.myId = 'me'; NET.join('QXTR');`);
+    const r = w.eval(`({ role: NET.role, picker: !!document.getElementById('lobbyFighter'), options: !!document.getElementById('lobbyStocks'), summary: document.getElementById('lobbySummary').textContent })`);
+    expect(r.role).toBe('client');
+    expect(r.picker).toBe(true);
+    expect(r.options, 'a client does not set the match').toBe(false);
+    expect(r.summary).toMatch(/Waiting for the host/);
+  });
+});
