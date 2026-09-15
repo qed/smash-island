@@ -236,6 +236,10 @@
   .lobbyroster{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:12px 0; min-height:40px}
   .lobbyplayer{background:var(--panel); border:2px solid #1c1c1c; border-radius:10px; padding:6px 12px; font-weight:700; font-size:13px}
   .lobbyplayer.host{outline:3px solid var(--gold)}
+  .lobbysettings{background:var(--panel); border:3px solid #1c1c1c; border-radius:14px; padding:12px 16px; max-width:760px; margin:12px auto 0; text-align:left}
+  .lobbysettings .settings{margin:0}
+  .lobbyselect{font-size:14px; padding:4px 8px; min-width:180px}
+  .lobbysummary{font-weight:700; margin-top:6px}
   /* ---- balance stats ---- */
   .statswrap{max-height:52vh; overflow-y:auto; margin:12px auto; max-width:520px; text-align:left}
   .statrow{display:flex; align-items:center; gap:10px; padding:5px 10px; border-bottom:1px solid rgba(0,0,0,0.08); font-size:14px}
@@ -612,6 +616,7 @@
     </div>
     <div id="lobbyInvite" class="lobbyinvite" style="display:none"></div>
     <div id="lobbyRoster" class="lobbyroster"></div>
+    <div id="lobbySettings" class="lobbysettings" style="display:none"></div>
     <div class="row" id="lobbyControls" style="margin-top:12px"></div>
     <button class="btn ghost sm" onclick="NET.leave(); go('title')">◀ Back</button>
   </div>
@@ -14159,6 +14164,12 @@ function serializeState(){
     })),
     projectiles: projectiles.map(p=>({x:Math.round(p.x),y:Math.round(p.y),r:p.r,color:p.color,warn:p.warn,warnX:p.warnX,warnY:p.warnY})),
     beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life})),
+    // Items and summons (assists, bosses) were never sent, so a client saw no pickups, no assist trophies
+    // and no Boss Rush boss. These are the fields drawItem, drawSummon, drawBossSprite and drawBossBar read.
+    items: items.filter(it=>!it.taken).map(it=>({x:Math.round(it.x),y:Math.round(it.y),r:it.r,kind:it.kind})),
+    summons: summons.map(m=>({type:m.type,name:m.name,color:m.color,r:m.r,sprite:m.sprite,x:Math.round(m.x),y:Math.round(m.y),
+      hp:m.hp,maxHp:m.maxHp,face:m.face,flash:m.flash,homeX:m.homeX,_rage:m._rage,_tel:m._tel,_bossRush:m._bossRush})),
+    bossCleared: BOSSRUSH.cleared,
     particles: particles.slice(0,60).map(p=>({x:Math.round(p.x),y:Math.round(p.y),r:p.r,color:p.color,life:p.life})),
     banner: (window.__lastBanner && Date.now()-window.__lastBanner.at < 400) ? window.__lastBanner : null,
     over: !running,
@@ -14166,6 +14177,14 @@ function serializeState(){
 }
 
 // Client rebuilds the render-globals from a received snapshot (no simulation).
+// One line for the lobby: what the host has set.
+function lobbySummaryText(s){
+  const st=STAGES.find(x=>x.id===s.stage), size=(MAP_SIZES[s.mapSize]||MAP_SIZES.normal).label;
+  const mode = s.mode==='teams' ? (s.teamKey||'')+' Teams' : s.mode==='boss' ? 'Boss Rush' : 'Free-for-all';
+  const items=['no items','few items','normal items','lots of items'][s.itemRate] || 'normal items';
+  const ai=['Easy','Normal','Hard'][s.ai] || 'Normal';
+  return [(st?st.name:'Stadium'), mode, s.count+' contestants', s.stocks+' stocks', ai+' CPU', items, size+' map'].join(' · ');
+}
 function applySnapshot(s){
   if(!s) return;
   hazardT=s.t; WW=s.WW; WH=s.WH; camX=s.camX; camY=s.camY;
@@ -14179,6 +14198,9 @@ function applySnapshot(s){
   }));
   projectiles=(s.projectiles||[]).map(p=>({...p, ownerObj:null}));
   beams=(s.beams||[]);
+  items=(s.items||[]).map(it=>({...it, taken:false}));
+  summons=(s.summons||[]);
+  if(typeof s.bossCleared==='number') BOSSRUSH.cleared=s.bossCleared;
   particles=(s.particles||[]).map(p=>({...p, vx:0, vy:0}));
   if(s.banner) banner(s.banner.text, s.banner.ms);
   // each client follows ITS OWN fighter, not the host's camera
@@ -14306,7 +14328,8 @@ window.NET = {
   send(obj){ if(this.ws && this.ws.readyState===1) this.ws.send(JSON.stringify(obj)); },
 
   onMessage(m){
-    if(m.t==="roster"){ this.players=m.players; this.renderLobby();
+    if(m.t==="state" && m.lobby){ if(this.role==="client"){ this.lobby=m.lobby; this.renderLobbySettings(); } return; }   // the host's settings preview (no snapshot)
+    if(m.t==="roster"){ this.players=m.players; this.renderLobby(); this.pushLobby();   // a new player sees the host's settings at once
       // assign my fighter index by my position in the roster
       const me=this.players.findIndex(p=>p.id===this.myId);
       if(me>=0 && this.role==="client") this.myIdx=me;
@@ -14325,6 +14348,7 @@ window.NET = {
       d.textContent=(i+1)+". "+(p.name||"player")+(p.id===this.myId?" (you)":"");
       el.appendChild(d);
     });
+    this.renderLobbySettings();
     // host sees a Start button once ≥1 player
     const ctr=document.getElementById('lobbyControls'); if(!ctr) return; ctr.innerHTML='';
     if(this.role==="host"){
@@ -14333,6 +14357,71 @@ window.NET = {
     } else if(this.role==="client"){
       const s=document.createElement('div'); s.className='tag'; s.textContent='Waiting for host to start…'; ctr.appendChild(s);
     }
+  },
+
+  // ---- the main game's match options, in the lobby ----
+  // The host sets them here -- the same SETTINGS, stage and AI_LEVEL the select screen writes -- and the players
+  // waiting see every change. The relay forwards only hello/input/state/start, so the preview is a host `state`
+  // message carrying `lobby` and no snapshot. Each player picks their own fighter; the pick reaches the host as
+  // the `name` of a fresh hello, which the relay turns into a new roster for everyone.
+  lobby: null,
+  lobbySettings(){
+    return { mode:SETTINGS.mode, count:SETTINGS.count, stocks:SETTINGS.stocks, teamKey:SETTINGS.teamKey, mapSize:SETTINGS.mapSize,
+             stage: stage && stage.id, itemRate:SETTINGS.itemRate, ai:AI_LEVEL };
+  },
+  pushLobby(){ if(this.role==="host") this.send({t:"state", lobby:this.lobbySettings()}); },
+  pickFighter(name){
+    const r = ROSTER.find(x=>x.name===name && x.play); if(!r) return;
+    chosen = r;
+    this.send({t:"hello", id:this.myId, host:this.role==="host", name:r.name});
+    this.renderLobbySettings();
+  },
+  renderLobbySettings(){
+    const el=document.getElementById('lobbySettings'); if(!el) return;
+    el.innerHTML='';
+    if(this.role!=="host" && this.role!=="client"){ el.style.display='none'; return; }
+    el.style.display='block';
+    const wrap=document.createElement('div'); wrap.className='settings'; el.appendChild(wrap);
+    const group=(label)=>{ const g=document.createElement('div'); g.className='setgrp'; const l=document.createElement('label'); l.textContent=label; g.appendChild(l); wrap.appendChild(g); return g; };
+    // your fighter: every player picks their own
+    const fg=group('Your fighter');
+    const fs=document.createElement('select'); fs.className='netinput lobbyselect'; fs.id='lobbyFighter';
+    ROSTER.filter(r=>r.play && isUnlocked(r)).forEach(r=>{ const o=document.createElement('option'); o.value=r.name; o.textContent=r.name; if(chosen && chosen.name===r.name) o.selected=true; fs.appendChild(o); });
+    fs.onchange=()=>this.pickFighter(fs.value);
+    fg.appendChild(fs);
+    if(this.role==="client"){
+      const d=document.createElement('div'); d.className='foot lobbysummary'; d.id='lobbySummary';
+      d.textContent = this.lobby ? lobbySummaryText(this.lobby) : "Waiting for the host's match settings…";
+      el.appendChild(d); return;
+    }
+    // the host: the main game's options
+    const changed=()=>{ this.renderLobbySettings(); this.pushLobby(); };
+    const seg=(label, id, opts, cur, apply)=>{
+      const g=group(label); const sg=document.createElement('div'); sg.className='seg'; sg.id=id;
+      opts.forEach(([v, text])=>{ const b=document.createElement('button'); b.dataset.v=v; b.textContent=text; if(String(v)===String(cur)) b.classList.add('on');
+        b.onclick=()=>{ apply(v); changed(); }; sg.appendChild(b); });
+      g.appendChild(sg); return g;
+    };
+    const sg=group('Stadium'); const ss=document.createElement('select'); ss.className='netinput lobbyselect'; ss.id='lobbyStage';
+    STAGES.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.name + (st.big?' (big)':''); if(stage && stage.id===st.id) o.selected=true; ss.appendChild(o); });
+    ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; changed(); };
+    sg.appendChild(ss);
+    seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush']], SETTINGS.mode, v=>{ SETTINGS.mode=v; });
+    // contestants: the main game's choices for this mode, never fewer than the humans in the room
+    const humans=Math.max(1, this.players.length);
+    let counts=countOptions().filter(n=>n>=humans); if(!counts.length) counts=[humans];
+    if(!counts.includes(SETTINGS.count)) SETTINGS.count = SETTINGS.count > counts[counts.length-1] ? counts[counts.length-1] : counts[0];
+    seg('Contestants', 'lobbyCount', counts.map(n=>[n, String(n)]), SETTINGS.count, v=>{ SETTINGS.count=+v; });
+    seg('Stocks', 'lobbyStocks', [1,2,3,4,5].map(n=>[n, String(n)]), SETTINGS.stocks, v=>{ SETTINGS.stocks=+v; });
+    if(SETTINGS.mode==='teams'){
+      const splits=teamSplitsFor(SETTINGS.count).map(o=>o.join('v'));
+      if(!splits.includes(SETTINGS.teamKey)) SETTINGS.teamKey=splits[0];
+      seg('Team split', 'lobbyTeams', splits.map(k=>[k, k]), SETTINGS.teamKey, v=>{ SETTINGS.teamKey=v; });
+    }
+    seg('CPU Skill', 'lobbyAI', [[0,'Easy'],[1,'Normal'],[2,'Hard']], AI_LEVEL, v=>{ AI_LEVEL=+v; });
+    seg('Items', 'lobbyItems', [[0,'Off'],[1,'Low'],[2,'Normal'],[3,'High']], SETTINGS.itemRate, v=>{ SETTINGS.itemRate=+v; });
+    seg('Map Size', 'lobbyMapSize', [['compact','Compact'],['normal','Normal'],['tall','Tall'],['huge','Huge']], SETTINGS.mapSize, v=>{ SETTINGS.mapSize = MAP_SIZES[v] ? v : 'normal'; });
+    const sum=document.createElement('div'); sum.className='foot lobbysummary'; sum.id='lobbySummary'; sum.textContent=lobbySummaryText(this.lobbySettings()); el.appendChild(sum);
   },
 
   showAddress(){
@@ -14365,18 +14454,28 @@ window.NET = {
   // ---- match start (host decides settings & roster) ----
   startAsHost(){
     // build a roster: humans first (in lobby order), fill rest with AI up to SETTINGS.count
-    const humans=this.players.map(p=>p.fighter||"Firey");
-    // mapSize travels with the settings: host and clients must build the SAME arena geometry.
-    const settings={mode:SETTINGS.mode, count:Math.max(SETTINGS.count, this.players.length), stocks:SETTINGS.stocks, teamKey:SETTINGS.teamKey, mapSize:SETTINGS.mapSize};
+    // Each player's fighter is the `name` of their hello (the relay keeps no other field for it). This read
+    // `p.fighter`, which nothing ever set, so every human in an online match played Firey.
+    const humans=this.players.map(p=>{ const n=p.fighter||p.name; return ROSTER.some(r=>r.play && r.name===n) ? n : "Firey"; });
+    // Everything the lobby shows travels with the start: host and clients must build the SAME stadium and arena.
+    const settings=Object.assign(this.lobbySettings(), { count:Math.max(SETTINGS.count, this.players.length) });
     const roster=humans;
     this.send({t:"start", settings, roster});
     this.beginMatch(settings, roster);
   },
 
   beginMatch(settings, roster){
-    Object.assign(SETTINGS, settings);
-    // peer-supplied: never let an unknown key reach the arena math
-    if(!MAP_SIZES[SETTINGS.mapSize]) SETTINGS.mapSize='normal';
+    // Peer-supplied, every field of it: validate before anything reaches the arena math or the globals.
+    const s=settings||{}, int=(v,lo,hi,d)=>{ v=Math.round(+v); return Number.isFinite(v) ? Math.max(lo,Math.min(hi,v)) : d; };
+    SETTINGS.mode = ['ffa','teams','boss'].includes(s.mode) ? s.mode : 'ffa';
+    SETTINGS.count = int(s.count, 1, 20, SETTINGS.count||2);
+    SETTINGS.stocks = int(s.stocks, 1, 5, 3);
+    if(typeof s.teamKey==='string' && /^\d+(v\d+)*$/.test(s.teamKey)) SETTINGS.teamKey = s.teamKey;
+    SETTINGS.mapSize = MAP_SIZES[s.mapSize] ? s.mapSize : 'normal';
+    if(s.itemRate!=null) SETTINGS.itemRate = int(s.itemRate, 0, 3, 2);
+    if(s.ai!=null) AI_LEVEL = int(s.ai, 0, 2, 1);
+    { const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st; }
+    roster = (Array.isArray(roster)?roster:[]).map(n=>ROSTER.some(r=>r.play && r.name===n) ? n : "Firey");
     // mark which fighters are network-controlled
     window.__netRoster = roster;
     window.__netHumanCount = this.players.length;
