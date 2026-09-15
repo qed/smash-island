@@ -25,6 +25,15 @@ The relay is a forwarder. It speaks the message set the game already speaks and 
 `state` and `start` from a non-host are dropped — otherwise any peer in the room could force a
 match to start or overwrite everyone else's world.
 
+## Deployed
+
+`wss://smash-island-relay.caradoc-kuperman.workers.dev/ws`, deployed 2026-09-15. Check it end to end
+(two real sockets through the Durable Object, 17 checks) with:
+
+```bash
+npm run relay:live
+```
+
 ## Deploy
 
 You need a free Cloudflare account. From this directory:

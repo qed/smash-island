@@ -7,7 +7,7 @@ const HTTP = BASE.replace(/^ws/, 'http').replace(/\/ws$/, '');
 // Every wait scales by SLOW. Against a local wrangler dev the round trip is sub-millisecond; against
 // a deployed Worker it is a real network hop plus a Durable Object cold start, so the local timings
 // are far too tight and everything reads as "delivered nothing".
-const SLOW = Number(process.env.SLOW || 1);
+const SLOW = Number(process.env.SLOW || (BASE.startsWith('wss://') ? 6 : 1));   // a deployed Worker needs the slack; SLOW=6 passed on 2026-09-15
 const wait = ms => new Promise(r => setTimeout(r, ms * SLOW));
 let failures = 0;
 const check = (ok, label, detail) => {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { loadMonolith } from './helpers/load-monolith.js';
 
 // NET.wsURL — the function that decided multiplayer never connected.
@@ -16,7 +17,7 @@ const url = (w, { room = 'QXTR', addr = null, relay = null, loc = null } = {}) =
     return NET.wsURL(${JSON.stringify(addr)}, ${loc ? JSON.stringify(loc) : 'null'});
   })()`);
 
-describe('the build ships pointing at a relay (PARKED: the relay is down, see LEDGER O8)', () => {
+describe('the build ships pointing at the deployed relay', () => {
   it('has a deployed wss:// endpoint baked in', () => {
     // If this is ever emptied, wsURL silently falls back to same-origin /api/ws — the endpoint that
     // has never existed — and Create Room / Join Room go back to failing with a 404.
@@ -24,11 +25,18 @@ describe('the build ships pointing at a relay (PARKED: the relay is down, see LE
     expect(w.eval('NET.RELAY'), 'no relay configured in the shipped build').toMatch(/^wss:\/\/.+/);
   });
 
-  // O8. The URL above is a FORMAT check: it proves the build points somewhere, not that anything
-  // answers. On 2026-09-14 the worker at RELAY_URL returned nothing (curl: 000), so Create Room and
-  // Join Room fail exactly as they did before the relay existed. Multiplayer is parked by the owner's
-  // call; this todo keeps the suite from reading as if it worked. Redeploy the worker, then write it.
-  it.todo('the relay answers a WebSocket handshake (the worker is down; multiplayer is parked)');
+  // O8. The check above is a FORMAT check: it proves the build points somewhere, not that anything
+  // answers. On 2026-09-14 the old worker returned nothing. On 2026-09-15 the relay was redeployed to
+  // the owner's account, and this pins the build to THAT worker. Whether it answers is a network fact,
+  // so it is not asserted from inside the suite; `npm run relay:live` runs relay/test/e2e.mjs against it
+  // (two real sockets through the real Durable Object: health, 426 on a plain GET, roster order, input
+  // and snapshot routing, host-only start and state, one host per room). It passed 17/17 on deploy.
+  it("points at the worker deployed on the owner's account, which `npm run relay:live` checks end to end", () => {
+    const { window: w } = loadMonolith();
+    expect(w.eval('RELAY_URL')).toBe('wss://smash-island-relay.caradoc-kuperman.workers.dev/ws');
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+    expect(pkg.scripts['relay:live'], 'the live check is one command away').toContain(w.eval('RELAY_URL'));
+  });
 });
 
 describe('a configured relay is what the game dials', () => {
