@@ -936,7 +936,7 @@ const ROSTER = [
   {name:"Pen",w:100,color:"#3a6ea5",play:true,arch:"Zoner",
    kit:{special:"cap", desc:"Cap Shot → boomerang cap projectile"}},
   {name:"Pencil",w:100,color:"#f2d84b",play:true,arch:"Setup",
-   kit:{special:"van", desc:"Supervan → drives across the ground, ramming"}},
+   kit:{special:"van", desc:"Supervan → drives along any surface, ramming, and blows up when it runs off an edge"}},
   {name:"Golf Ball",w:108,color:"#dcdcdc",play:true,arch:"Dense tactician",
    kit:{special:"zapshooter", desc:"Zap Shooter → a sharpshooter's bolt at the nearest foe · ↓+special = the Announcer Crusher stop · Smash = Presence (5s: every hit curses)"}},
   {name:"Rocky",w:92,color:"#c98a4b",play:true,arch:"Compact heavy",
@@ -4812,6 +4812,63 @@ function platRectsSmall(){
   return plats;
 }
 // platforms used by physics — world platforms plus base tops (bases are solid ground)
+// ---- SUPERVAN --------------------------------------------------------------------------------------
+// A van that DRIVES: it rides the surface it is on. `drive` says what running off an edge does: 'edge'
+// explodes on the spot (the special), 'land' falls and explodes where it lands (the finisher).
+function vanProj(f, o){
+  const grounded = !!f.onground;
+  return { owner:f.idx, ownerObj:f, x:f.x+f.face*20, y: grounded ? feetY(f)-o.r : f.y, vx: grounded ? f.face*o.speed : 0, vy:0,
+           grav:false, dmg:o.dmg, kb:o.kb, r:o.r, color:'#f2d84b', life:o.life, van:true,
+           drive:o.drive, phase: grounded ? 'drive' : 'drop', driveVx: f.face*o.speed, rideTop: grounded ? feetY(f) : null };
+}
+// Every surface top under x: the floor (single-screen only; the tower has none), and each platform's top.
+function vanTopsAt(x){
+  const tops = [];
+  if(!isBig()) tops.push({ y: groundY(), solid:true });
+  for(const p of platRects()){ if(p.rot) continue; if(x > p.x-2 && x < p.x+p.w+2) tops.push({ y: p.y, solid: !!p.solid }); }
+  return tops;
+}
+// The first surface a falling van crossed this frame, or null.
+function vanLanding(x, bottomPrev, bottomNow){
+  let best = null;
+  for(const t of vanTopsAt(x)){ if(t.y >= bottomPrev - 2 && t.y <= bottomNow + 2 && (best===null || t.y < best)) best = t.y; }
+  return best;
+}
+function vanBoom(pr){
+  const o = pr.ownerObj;
+  for(const t of fighters){
+    if(t.dead || (t.invuln>0 && !(pr._rammed && pr._rammed[t.idx])) || (o && (t.idx===o.idx || t.team===o.team))) continue;   // a foe the van rammed is still in the blast
+    if(hurtGap(t, pr.x, pr.y) < VAN_BOOM_R){ const sx = Math.sign(t.x-pr.x) || 1; applyHit(t, VAN_BOOM_DMG, sx*VAN_BOOM_KB, -VAN_BOOM_KB*0.8, o); }
+  }
+  for(let i=0;i<18;i++){ const a=Math.random()*Math.PI*2, d=Math.random()*VAN_BOOM_R*0.7; puff(pr.x+Math.cos(a)*d, pr.y+Math.sin(a)*d, i%3 ? '#f2d84b' : '#f0803a', 7); }
+  pr.boomed = true; pr.life = 0;
+}
+function vanDrive(pr){
+  const bottomNow = pr.y + pr.r, bottomPrev = bottomNow - pr.vy;
+  if(pr.phase === 'drop' || pr.phase === 'fall'){
+    pr.vy = Math.min(14, pr.vy + 0.5);
+    const top = vanLanding(pr.x, bottomPrev, bottomNow);
+    if(top !== null){
+      pr.y = top - pr.r; pr.vy = 0;
+      if(pr.phase === 'fall'){ vanBoom(pr); return; }          // the finisher, off an edge: explodes where it lands
+      pr.phase = 'drive'; pr.rideTop = top; pr.vx = pr.driveVx; // dropped from the air: now it drives
+      return;
+    }
+    if(pr.y > WH + 200) pr.life = 0;                           // fell out of the world (the tower has no floor)
+    return;
+  }
+  // driving: hold to the surface; a wall ahead is a crash, no surface under it is an edge
+  pr.vy = 0; pr.y = pr.rideTop - pr.r;
+  for(const p of platRects()){
+    if(!p.solid || p.rot) continue;
+    const ph = p.h||16;
+    if(pr.x + pr.r*0.6 > p.x && pr.x - pr.r*0.6 < p.x+p.w && p.y < pr.rideTop - 3 && p.y + ph > pr.y - pr.r){ vanBoom(pr); return; }
+  }
+  const under = vanTopsAt(pr.x).some(t => Math.abs(t.y - pr.rideTop) <= 3);
+  if(under) return;
+  if(pr.drive === 'edge'){ vanBoom(pr); return; }              // the special: explodes the moment it leaves the surface
+  pr.phase = 'fall'; pr.life = Math.max(pr.life, 90);          // the finisher: it falls, and has the time to land
+}
 function platRects(){
   const base = isBigFFA() ? [...worldPlats, ...spawnPlatRects()]
              : !isBig()   ? worldPlats
@@ -6560,6 +6617,7 @@ function step(){
       }
     }
     if(pr.warn>0) pr.warn--;
+    if(pr.drive){ vanDrive(pr); if(pr.life<=0) continue; }   // the Supervan rides surfaces (see vanDrive)
     // bounce off any platform top, plus the ground in single-screen mode
     if(pr.bounce && pr.vy>0){
       let landed=false;
@@ -6617,6 +6675,7 @@ function step(){
         const ffOpts = {reflected: !!pr.reflected, bossAtk: pr.bossAtk};   // reflected shots ignore FF; bossAtk caps boss damage
         if(pr.van){
           const vx0=f.vx, vy0=f.vy;
+          (pr._rammed = pr._rammed || {})[f.idx] = true;   // the blast is not dodged by the i-frames this ram just gave (see vanBoom)
           applyHit(f, pr.dmg, 0, 0, pr.ownerObj, ffOpts);
           f.vx=vx0; f.vy=vy0;   // damage only — a piercing shot adds no knockback
         } else if(pr.pierce){
@@ -7824,7 +7883,7 @@ const ATKSPECIALS = {
   quake(f){ f.flash=14; const cx=f.x+f.face*30; hitCircle(f,cx,f.y,f.r+30,16,16,f.face*12,-9); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.abs(t.x-f.x)<120&&t.onground){ applyHit(t,6,Math.sign(t.x-f.x||1)*6,-11,f);} }  },
   serve(f){ f.flash=12; spawnProj(f,{vx:f.face*9,vy:-7,grav:true,bounce:true,dmg:14,kb:11,r:13,color:'#c9f24b',life:160});  },
   cap(f){ f.flash=12; for(let i=-1;i<=1;i++) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-6,vx:f.face*13,vy:i*2,grav:false,dmg:9,kb:8,r:8,color:'#3a6ea5',life:40});  },
-  van(f){ if(!f.onground){ f.flash=6; return; } f.flash=14; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-18,vx:f.face*15,vy:0,grav:false,dmg:16,kb:11,r:20,color:'#f2d84b',life:60,van:true});  },
+  van(f){ f.flash=14; addProj(vanProj(f, {speed:15, dmg:16, kb:11, r:20, life:60, drive:'land'}));  },   // Pencil — the finisher van: drives, falls off an edge, explodes where it lands
   zapshooter(f){ f.flash=12; const cx=f.x+f.face*44; hitCircle(f,cx,f.y,f.r+30,13,13,f.face*11,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&t.team!==f.team&&hurtGap(t, cx, f.y) < -HURT_R0 + f.r+34){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2);} }  },
   barf(f){ f.flash=12; spawnProj(f,{vx:f.face*8,vy:-4,grav:true,bounce:true,dmg:12,kb:9,r:11,color:'#8a9c3a',life:90,poison:true});  },
   define(f){ f.flash=12; const cx=f.x+f.face*28; hitCircle(f,cx,f.y,f.r+26,13,13,f.face*11,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&hurtGap(t, cx, f.y) < -HURT_R0 + f.r+30){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5);} }  },
@@ -7862,6 +7921,8 @@ const PAYDAY_SPECIAL = {pat:'burst', frames:8, r0:26, rad:74, grow:0, dmg:5.8, k
 // long enough to catch "special, then up" as one motion, short enough that a neutral special with
 // no direction held does not feel like it lags.
 const SPECIAL_DIR_WINDOW = 5;
+// Pencil's SUPERVAN, when it blows up (see vanDrive): a medium blast.
+const VAN_BOOM_R = 90, VAN_BOOM_DMG = 12, VAN_BOOM_KB = 11;
 // Teardrop's TAUNT: Evaporate marks everyone near where she stood (TAUNT_FRAMES), and her next hit on
 // a marked foe lands TAUNT_BONUS harder. "Buff it slightly ... taunting an enemy, like with Eraser."
 const TAUNT_BONUS = 0.5, TAUNT_FRAMES = 180;
@@ -8178,9 +8239,8 @@ function doSpecial(f){
         const fire=/Firey|Bomby/.test(t.name); applyHit(t, fire?13:9, f.face*9, -6, f); if(fire) banner("TAKE THAT, FIREY!",600);} }
       for(let i=0;i<4;i++) puff(cx,f.y,'#e8a33d',4); f.spCd=30; break; }
     case "cap": spawnProj(f,{vx:f.face*11,vy:0,grav:false,bounce:false,dmg:7,kb:6,r:8,color:"#3a6ea5",life:70,boomerang:true,homeX:f.x,ownerFace:f.face}); f.flash=6; f.spCd=51; break;
-    case "van": { // Pencil: Supervan rams along the ground
-      const vy = f.onground ? 0 : 4;   // if airborne, the van still spawns and settles down
-      addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-18,vx:f.face*13,vy,grav:!f.onground,dmg:15,kb:9,r:16,color:"#f2d84b",life:70,van:true});
+    case "van": { // Pencil: Supervan drives along whatever she is standing on, and blows up when it runs off an edge
+      addProj(vanProj(f, {speed:13, dmg:15, kb:9, r:16, life:70, drive:'edge'}));
       f.flash=8;  f.spCd=87; break; }
     case "zapshooter": { // Golf Ball: ZAP SHOOTER. A sharpshooter's bolt: it leaves at the height of the nearest foe
       // ahead of her (within ZAP_RANGE), so a target on a ledge or in the air is as easy as one on the floor.
