@@ -947,7 +947,7 @@ const ROSTER = [
   {name:"Rocky",w:92,color:"#c98a4b",play:true,arch:"Compact heavy",
    kit:{special:"barf", desc:"Barf → lobbed puddle projectile, poisons"}},
   {name:"Book",w:92,color:"#4b9c6a",play:true,arch:"Utility",
-   kit:{special:"define", desc:"Define → tags a foe to take +damage"}},
+   kit:{special:"define", desc:"Define → marks whoever last hit you (else a random foe) to take more from your hits"}},
   {name:"Fries",w:96,color:"#e04b3a",play:true,arch:"Ammo zoner",
    kit:{special:"fry", desc:"Fry Dart → rapid thrown fries"}},
   {name:"Gelatin",w:82,color:"#9ad24b",play:true,arch:"Trickster",
@@ -958,7 +958,7 @@ const ROSTER = [
   {name:"Puffball",w:46,color:"#e6a6e0",play:true,arch:"Flyer",
    kit:{special:"fly", desc:"Flight → free vertical movement for a few seconds"}},
   {name:"Ruby",w:93,color:"#e0384b",play:true,arch:"Durable brawler",
-   kit:{special:"beam", desc:"Refraction Beam → angled laser that bounces once"}},
+   kit:{special:"beam", desc:"Refraction Beam → charges your next gem bolt (X) into a piercing laser that bounces"}},
   {name:"Yellow Face",w:82,color:"#f2d84b",play:true,arch:"Disruptor",
    kit:{special:"buynow", desc:"BUY NOW! → soundwave stun cone"}},
   {name:"Barf Bag",w:88,color:"#c9c04b",play:true,arch:"Fluid zoner",
@@ -966,11 +966,11 @@ const ROSTER = [
   {name:"Basketball",w:103,color:"#e08a3a",play:true,arch:"Ricochet",
    kit:{special:"dribble", desc:"Self-Dribble → ricocheting ball that speeds up"}},
   {name:"Bell",w:112,color:"#f2c84b",play:true,arch:"Tether heavy",
-   kit:{special:"ring", desc:"RING → chargeable AoE stun"}},
+   kit:{special:"ring", desc:"RING → a stun burst all around you, after a short wind-up"}},
   {name:"Bracelety",w:70,color:"#6fb7ff",play:true,arch:"Support",
    kit:{special:"sign", desc:"Sign Wave → hurls a cheer sign that flies out and boomerangs back"}},
   {name:"Fanny",w:73,color:"#dcdcdc",play:true,arch:"Wind control",
-   kit:{special:"gust", desc:"Gust → windbox that shoves foes (no damage)"}},
+   kit:{special:"gust", desc:"Gust → charges your next air blast (X) to hit much harder"}},
   {name:"Gaty",w:101,color:"#e8e8e8",play:true,arch:"Reflector",
    kit:{special:"reflect", desc:"Swing Open → reflects projectiles back"}},
   {name:"Grassy",w:62,color:"#7bc043",play:true,arch:"Joke fighter",
@@ -2387,15 +2387,15 @@ const SMASH_EFFECT_TEXT = {
   burn:'sets them burning', bleed:'leaves them bleeding', stun:'stuns', poison:'poisons',
   freeze:'freezes', ice:'ices them over', slow:'slows them', root:'roots them in place',
   knockdown:'knocks them down', scramble:'scrambles their controls', strip:'strips armour and stances',
-  drain:'drains them', weaken:'leaves them taking more', define:'marks them to take more',
+  drain:'drains them', weaken:'weakens their hits', define:'marks them to take more',
 };
 const SMASH_BLURB_BESPOKE = {
   serve:   'fires a much stronger version of whatever gadget is loaded',
   fly:     'rises, then drops; a plunge from real height pays out Momentum',
-  spike:   'a nail-dash that hits everything it passes through',
+  spike:   'dashes through them, then jabs back behind her; both hits leave them bleeding',
   payday:  'three coins in a fan, worth more against a hurt target',
   counter: 'a stance that answers the next hit instead of throwing one',
-  kick:    'no hit at all: it leaves a cloud where you stood',
+  kick:    'no hit at all: she becomes a cloud for 12 seconds, taking 40% less damage and knockback',
   zapshooter: 'no hit at all: her presence, felt through walls -- every hit for five seconds curses',
 };
 function smashBlurb(f){
@@ -2404,7 +2404,7 @@ function smashBlurb(f){
   const row = (typeof SMASH_SPEC !== 'undefined' && SMASH_SPEC[sp]) || null;
   const name = id && id.name ? id.name : 'Smash';
   if(!row) return name + (SMASH_BLURB_BESPOKE[sp] ? ' — ' + SMASH_BLURB_BESPOKE[sp] : ' — hold to charge');
-  const what = SMASH_PATTERN_TEXT[row.pat] || 'hits hard';
+  const what = (row.pat==='walk' && !row.pierce) ? 'advances until it hits someone' : (SMASH_PATTERN_TEXT[row.pat] || 'hits hard');   // only a piercing roll goes through
   const eff  = SMASH_EFFECT_TEXT[row.effect];
   const kills = row.kb > row.dmg;                       // the ratio IS the move's job
   const job  = kills ? 'launches' : 'racks damage';
@@ -4840,6 +4840,12 @@ function vanTopsAt(x){
   for(const p of platRects()){ if(p.rot) continue; if(x > p.x-2 && x < p.x+p.w+2) tops.push({ y: p.y, solid: !!p.solid }); }
   return tops;
 }
+// The top of the first surface at or below y under x (the floor counts in single-screen mode), or null.
+function surfaceBelow(x, y){
+  let best = null;
+  for(const t of vanTopsAt(x)){ if(t.y >= y - 4 && (best === null || t.y < best)) best = t.y; }
+  return best;
+}
 // The first surface a falling van crossed this frame, or null.
 function vanLanding(x, bottomPrev, bottomNow){
   let best = null;
@@ -6407,7 +6413,7 @@ function step(){
         // time, which is why 48 authored up-specials effectively never fired for a human. Now a
         // press with a direction already held fires instantly as before, and a press with nothing
         // held arms the special for SPECIAL_DIR_WINDOW frames and takes the first direction to land.
-        if(inp.special && f.spCd<=0 && !f._sp){
+        if(inp.special && (f.spCd<=0 || (inp.down && f._grabbed!=null && f._grabTimer>0)) && !f._sp){   // Liy: down+C hurls inside the grab window
           f._sp=true;
           if(inp.up||inp.down) fireSpecial(f, inp);
           else f._spPend = SPECIAL_DIR_WINDOW;
@@ -6572,6 +6578,15 @@ function step(){
       }
     }
     if(pr.trap){
+      if(pr.falling){   // a laid trap on its way down (see addProj): it lands on the first surface, then arms
+        pr.vy = Math.min(14, pr.vy + 0.5);
+        const b0 = pr.y + pr._rest, b1 = b0 + pr.vy;
+        let top = null;
+        for(const t of vanTopsAt(pr.x)){ if(t.y >= b0 - 1 && t.y <= b1 + 1 && (top===null || t.y < top)) top = t.y; }
+        if(top !== null){ pr.y = top - pr._rest; pr.vy = 0; pr.falling = false; puff(pr.x, top, pr.color, 3); }
+        else { pr.y += pr.vy; if(pr.y > WH + 200) pr.life = 0; }
+        continue;
+      }
       if(pr.arm>0){ pr.arm--; }        // arming delay before it can trigger
       pr.life--;
       for(const f of fighters){ if(f.dead||f.idx===pr.owner||f.invuln>0)continue;
@@ -6586,6 +6601,9 @@ function step(){
           if(pr.burn) f.burn=Math.max(f.burn,110);
           if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
           if(pr.freeze && f.pct>15){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
+          // a trap's effect lands when it is stepped on, the way a thrown one's does (it never did here)
+          if(pr.fxTag && SM_FX[pr.fxTag]) SM_FX[pr.fxTag](f, pr.ownerObj, pr.fxN);
+          if(pr.root){ f.rooted=Math.max(f.rooted||0, 60); if(f.you) banner("STUCK!",500); }
           puff(pr.x,pr.y,pr.color,10);
           if(pr.arm!==undefined || pr.dmg>=8){ pr.life=0; }  // mines/heavy traps detonate once; puddles linger
         }
@@ -6630,6 +6648,19 @@ function step(){
     }
     if(pr.warn>0) pr.warn--;
     if(pr.drive){ vanDrive(pr); if(pr.life<=0) continue; }   // the Supervan rides surfaces (see vanDrive)
+    // A FALLING SHOT STOPS AT A SURFACE. Only bounce, landsPuddle and landsAcid shots ever tested for one, so a plain
+    // gravity shot sank through platforms and the floor and fell off the screen for the rest of its life. Now it
+    // ends with a puff on the first surface it reaches -- or, with `landsTrap`, settles there and waits. A drop
+    // (it has warnY) passes through surfaces above the spot its shadow marked, so it still lands on the mark.
+    if(pr.grav && !pr.bounce && !pr.landsPuddle && !pr.landsAcid && !pr.trap && !pr.turret && !pr.boomerang && pr.vy>0){
+      const bottomNow = pr.y + (pr.r||8)*0.5, bottomPrev = bottomNow - pr.vy;
+      let top = null;
+      for(const t of vanTopsAt(pr.x)){ if(pr.warnY!=null && t.y < pr.warnY - 6) continue; if(t.y >= bottomPrev - 1 && t.y <= bottomNow + 1 && (top===null || t.y < top)) top = t.y; }
+      if(top !== null){
+        if(pr.landsTrap){ pr.grav=false; pr.vx=0; pr.vy=0; pr.y=top-(pr.r||8)*0.6; pr.landsTrap=false; pr.trap=true; pr.arm=6; pr.life=Math.max(pr.life, 150); puff(pr.x, top, pr.color, 3); }
+        else { pr.y = top - (pr.r||8)*0.5; for(let i=0;i<4;i++) puff(pr.x, top-2, pr.color, 3); pr.life = 0; continue; }
+      }
+    }
     // bounce off any platform top, plus the ground in single-screen mode
     if(pr.bounce && pr.vy>0){
       let landed=false;
@@ -7342,6 +7373,7 @@ const SM_PAT = {
   // Falls from above onto a marked spot — telegraphed, so it is a trap rather than an ambush.
   rain(f,s){
     const n=s.count||1;
+    let aimFeet = feetY(f);   // the shadow goes on the surface under this height (the target's feet when it seeks)
     // `seek` is the homing the hand-written bodies had and the vocabulary did not: drop on the
     // nearest enemy within that many px instead of a fixed offset ahead. Falls back to the offset
     // when nobody is in range, so the move still does something rather than fizzling, and a row
@@ -7354,12 +7386,12 @@ const SM_PAT = {
         const d = Math.abs(t.x - f.x);
         if(d < best){ best = d; tgt = t; }
       }
-      if(tgt) ax = tgt.x;
+      if(tgt){ ax = tgt.x; aimFeet = feetY(tgt); }
     }
     const base = (ax !== null) ? ax : f.x + f.face*(s.at||90);
     for(let i=0;i<n;i++){
       const lx = base + f.face*i*(s.gap||70);
-      dropProj(f, lx, groundY(), Object.assign({dmg:s.dmg, kb:s.kb, r:s.r||12,
+      dropProj(f, lx, aimFeet, Object.assign({dmg:s.dmg, kb:s.kb, r:s.r||12,
         color:s.color||f.color, life:150, grav:true, fxTag:s.effect||null, fxN:s.n||0}, s.rider||{}), i>0);
     }
     f.dropCd = s.cd||70;
@@ -7367,7 +7399,8 @@ const SM_PAT = {
   // Plant something that stays and waits. One at a time — the cost is that it is not a hit.
   mine(f,s){
     projectiles = projectiles.filter(p=>!(p.owner===f.idx && p._mine));
-    addProj(Object.assign({owner:f.idx, ownerObj:f, x:f.x+f.face*(s.at||34), y:groundY()-8,
+    const mx = f.x+f.face*(s.at||34), mTop = surfaceBelow(mx, feetY(f));   // on the surface under the spot, not always the floor
+    addProj(Object.assign({owner:f.idx, ownerObj:f, x:mx, y:(mTop!==null ? mTop : groundY())-8,
       vx:0, vy:0, grav:false, dmg:s.dmg, kb:s.kb, r:s.r||14, color:s.color||f.color,
       life:s.life||360, trap:true, arm:24, _mine:true,
       fxTag:s.effect||null, fxN:s.n||0}, s.rider||{}));
@@ -7892,7 +7925,7 @@ const ATKSPECIALS = {
   bomb(f){ f.flash=16; const R=95; for(const t of fighters){ if(t.dead||t.idx===f.idx)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<R){ applyHit(t,18,Math.sign(t.x-f.x||1)*13,-9,f);} } f.pct+=4; for(let i=0;i<16;i++) puff(f.x,f.y,i%2?'#f0803a':'#3a3a3a',6);  },
   float(f){ f.flash=12; const cx=f.x+f.face*24; hitCircle(f,cx,f.y,f.r+30,13,13,f.face*13,-11); for(let i=0;i<8;i++) puff(cx,f.y,'#bfe8ff',5);  },
   kick(f){ f.flash=16; const cx=f.x+f.face*40; for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.hypot(t.x-cx,t.y-f.y)<52 && t.invuln<=0){ applyHit(t,18,f.face*18,-13,f); } } for(let i=0;i<8;i++) puff(cx,f.y,'#6fb7ff',6); },
-  quake(f){ f.flash=14; const cx=f.x+f.face*30; hitCircle(f,cx,f.y,f.r+30,16,16,f.face*12,-9); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.abs(t.x-f.x)<120&&t.onground){ applyHit(t,6,Math.sign(t.x-f.x||1)*6,-11,f);} }  },
+  quake(f){ f.flash=14; const cx=f.x+f.face*30; hitCircle(f,cx,f.y,f.r+30,16,16,f.face*12,-9); if(f.onground) for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.abs(t.x-f.x)<120&&t.onground){ applyHit(t,6,Math.sign(t.x-f.x||1)*6,-11,f);} }  },
   serve(f){ f.flash=12; spawnProj(f,{vx:f.face*9,vy:-7,grav:true,bounce:true,dmg:14,kb:11,r:13,color:'#c9f24b',life:160});  },
   cap(f){ f.flash=12; for(let i=-1;i<=1;i++) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-6,vx:f.face*13,vy:i*2,grav:false,dmg:9,kb:8,r:8,color:'#3a6ea5',life:40});  },
   van(f){ f.flash=14; addProj(vanProj(f, {speed:15, dmg:16, kb:11, r:20, life:60, drive:'land'}));  },   // Pencil — the finisher van: drives, falls off an edge, explodes where it lands
@@ -7965,7 +7998,7 @@ const GRASSTREE_FRAMES = 240;
 // one door; the AI's own gap (aiSpecialGap) is separate and unchanged.
 const SPECIAL_CD_SCALE = 0.8;
 function fireSpecial(f, inp){
-  if(f.spCd>0) return;
+  if(f.spCd>0 && !(inp && inp.down && f._grabbed!=null && f._grabTimer>0)) return;   // Liy's hurl is the grab's finish, inside its window
   const before = f.spCd;
   fireSpecialInner(f, inp);
   if(f.spCd > before) f.spCd = Math.max(1, Math.round(f.spCd * SPECIAL_CD_SCALE));
@@ -8055,13 +8088,15 @@ function fireGadget(f, strong, c){
     else spawnProj(f, {vx:f.face*(14+4*c), vy:-2, grav:false, dmg:15+6*c, kb:13+4*c, r:16, color:'#c9f24b', life:95});   // a rocket serve
   } else if(g === 'mine'){
     projectiles = projectiles.filter(pr => !(pr.owner === f.idx && pr._gadgetMine));   // one mine out at a time
-    addProj({owner:f.idx, ownerObj:f, x:f.x + f.face*30, y:feetY(f) - 8, vx:0, vy:0, grav:false,
+    const gx = f.x + f.face*30, gTop = surfaceBelow(gx, feetY(f));   // rests on the surface under it, from a ledge or the air
+    addProj({owner:f.idx, ownerObj:f, x:gx, y:(gTop!==null ? gTop : feetY(f)) - 8, vx:0, vy:0, grav:false,
       dmg: strong ? 19+7*c : 11, kb: strong ? 14+4*c : 9, r: strong ? 32 : 20, color:'#3a3a3a',
       life: strong ? 480 : 420, trap:true, arm:20, _gadgetMine:true, shape:'gadgetMine'});
   } else if(g === 'turret'){
     projectiles = projectiles.filter(pr => !(pr.owner === f.idx && pr.turret));        // one turret at a time
     const hp = strong ? 70 : 45;
-    addProj({owner:f.idx, ownerObj:f, x:f.x + f.face*26, y:f.y - 6, vx:0, vy:0, grav:false, dmg:0, kb:0,
+    const tx = f.x + f.face*26, tTop = surfaceBelow(tx, feetY(f));
+    addProj({owner:f.idx, ownerObj:f, x:tx, y:(tTop!==null ? tTop - f.r : f.y) - 6, vx:0, vy:0, grav:false, dmg:0, kb:0,
       r:12, color:'#8a8a8a', life: strong ? 320 : 260, shape:'gadgetTurret', hp:hp, hpMax:hp,
       turret:{ cd:12, every: strong ? 12 : 22, shots: strong ? 9 : 5, dmg: strong ? 8+3*c : 5, kb: strong ? 7+2*c : 3.5,
                range:620, aim: f.face > 0 ? 0 : Math.PI, spreadK: strong ? 0.6 : 1 }});
@@ -8257,13 +8292,13 @@ function doSpecial(f){
     case "zapshooter": { // Golf Ball: ZAP SHOOTER. A sharpshooter's bolt: it leaves at the height of the nearest foe
       // ahead of her (within ZAP_RANGE), so a target on a ledge or in the air is as easy as one on the floor.
       let tgt=null,best=ZAP_RANGE; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if((t.x-f.x)*f.face<20)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} }
-      let vy=0; if(tgt){ const frames=Math.max(1, Math.abs(tgt.x-f.x)/ZAP_SPEED); vy=Math.max(-6, Math.min(6, (tgt.y-f.y)/frames)); }
-      spawnProj(f,{vx:f.face*ZAP_SPEED,vy:vy,grav:false,dmg:9,kb:8,r:6,color:'#fff45c',life:ZAP_LIFE,fxTag:'stun',fxN:12,shape:'zapshooter',noAim:true});
+      let vx=f.face*ZAP_SPEED, vy=0; if(tgt){ const dx=tgt.x-f.x, dy=tgt.y-f.y, d=Math.hypot(dx,dy)||1; vx=dx/d*ZAP_SPEED; vy=dy/d*ZAP_SPEED; }   // along the line to them: a ledge is in reach
+      spawnProj(f,{vx:vx,vy:vy,grav:false,dmg:9,kb:8,r:6,color:'#fff45c',life:ZAP_LIFE,fxTag:'stun',fxN:12,shape:'zapshooter',noAim:true});
       f.flash=8; f.spCd=84; break; }
     case "barf": spawnProj(f,{vx:f.face*6,vy:-3,grav:true,bounce:true,dmg:7,kb:5,r:9,color:"#8a9c3a",life:90,poison:true}); f.flash=6; break;
     case "define": { // Book: mark whoever last hit her (random if none); stacks +15% each
       let tgt = f.lastHitBy && !f.lastHitBy.dead ? f.lastHitBy : null;
-      if(!tgt){ const foes=fighters.filter(t=>!t.dead&&t.idx!==f.idx); tgt=foes[Math.random()*foes.length|0]; }
+      if(!tgt){ const foes=fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team); tgt=foes[Math.random()*foes.length|0]; }   // a random FOE, never a teammate
       if(tgt){ tgt.defined=600; tgt.defineStacks=Math.min((tgt.defineStacks||0)+1, 5);
         banner("DEFINED ×"+tgt.defineStacks, 700);
         for(let i=0;i<6;i++) puff(tgt.x,tgt.y-12,'#4b9c6a',4); }
@@ -8326,7 +8361,7 @@ function doSpecial(f){
       for(let n=0;n<hops;n++){ let tgt=null,best=260; for(const t of fighters){ if(t.dead||hitset.has(t.idx)||t.team===f.team)continue; const d=Math.hypot(t.x-src.x,t.y-src.y); if(d<best){best=d;tgt=t;} }
         if(!tgt)break; applyHit(tgt, 8-n*1.5, Math.sign(tgt.x-src.x||f.face)*6, -5, f); chain.push([src.x,src.y,tgt.x,tgt.y]); hitset.add(tgt.idx); src=tgt; }
       for(const c of chain){ for(let i=0;i<6;i++){ const t=i/6; puff(c[0]+(c[2]-c[0])*t, c[1]+(c[3]-c[1])*t, '#f2e84b', 3); } }
-      f.flash=8; f.spCd=74; if(chain.length)  break; }
+      f.flash=8; f.spCd=74; break; }   // with nobody in range it fizzles; it used to fall through into Match's fireballs
     case "spark": { // Match: three-way fireball spread
       for(const dy of [-4,-1.5,1]){ spawnProj(f,{vx:f.face*8,vy:dy,grav:true,dmg:6,kb:5,r:8,color:'#e04b8a',burn:true,life:55}); }
       f.flash=8; f.spCd=57; break; }
@@ -8406,7 +8441,7 @@ function doSpecial(f){
       f.flash=8; f.spCd=69; break; }
     case "fraidy": { // Woody: panic-dash backward, dropping fear splinters that damage pursuers
       f.vx=-f.face*20; f._dashing=Math.max(f._dashing||0,10); f.invuln=Math.max(f.invuln,10); f.flash=10; applyDashVY(f,16,14);
-      for(let i=0;i<3;i++) spawnProj(f,{vx:f.face*(2-i),vy:-2,grav:true,dmg:5,kb:4,r:7,color:'#e8c84b',life:70});  f.spCd=60; break; }
+      for(let i=0;i<3;i++) spawnProj(f,{vx:f.face*(2-i),vy:-2,grav:true,dmg:5,kb:4,r:7,color:'#e8c84b',life:70,landsTrap:true});  f.spCd=60; break; }   // the splinters settle where they land and wait for pursuers
     case "paste": { // Toothpaste: fling a sticky glob that roots on hit, and leave a trap (+comeback reach)
       spawnProj(f,{vx:f.face*10,vy:-1,grav:false,dmg:12,kb:6,r:12+comebackRange(f)*0.4,color:'#f0f0f0',life:50,root:true});   // stronger active rooting projectile
       addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#f0f0f0',life:220,trap:true,root:true,arm:14});
@@ -8455,7 +8490,7 @@ function doSpecial(f){
     case "timber": { // Tree: drop a heavy branch onto the nearest foe (telegraphed)
       let tgt=null,best=260; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.abs(t.x-f.x); if(d<best){best=d;tgt=t;} }
       const lx = tgt?tgt.x:f.x+f.face*80;
-      dropProj(f, lx, groundY(), {vx:0,vy:7,grav:true,dmg:11,kb:9,r:15,color:'#5a3a1a',life:120});  f.flash=10; f.spCd=110; break; }
+      dropProj(f, lx, tgt ? feetY(tgt) : feetY(f), {vx:0,vy:7,grav:true,dmg:11,kb:9,r:15,color:'#5a3a1a',life:120});  f.flash=10; f.spCd=110; break; }
     case "shatter": { // Ice Cube: burst an icy shard ring; can freeze at high %
       startWindup(f, CIRCLE_WINDUP, function(){
       for(let a=0;a<8;a++){ const ang=a/8*Math.PI*2; spawnProj(f,{vx:Math.cos(ang)*9,vy:Math.sin(ang)*9,grav:false,dmg:5,kb:5,r:7,color:'#cdeeff',life:70,freeze:true,noAim:true}); }
@@ -8475,6 +8510,17 @@ function doSpecial(f){
 const PROJ_LIFE = 1.4;
 function addProj(p){
   if(p && p.life) p.life = Math.round(p.life * PROJ_LIFE);
+  // TRAPS FALL. "traps should FALL, not appear" and "traps cant fall on platforms": a trap a fighter places used
+  // to be created at its resting spot and never moved again (the trap branch skips all movement), so it popped
+  // into place, hung in midair when laid from the air, and Taco's puddle was pinned to the main floor. Now it
+  // starts at the fighter's hands and drops to the first surface under it -- a platform or the floor -- keeping
+  // the stand-off it was authored with, and it neither arms nor triggers until it has landed (see the trap branch).
+  if(p && p.trap && !p.turret && !p.noFall && p.ownerObj && typeof p.ownerObj.y === 'number'){
+    const surf = surfaceBelow(p.x, p.y);
+    p._rest = surf !== null ? Math.max(2, Math.min(12, surf - p.y)) : 6;
+    p.y = Math.min(p.y, p.ownerObj.y);
+    p.falling = true; p.vy = Math.max(p.vy||0, 1); p.grav = false;
+  }
   projectiles.push(p);
   return p;
 }
@@ -8493,8 +8539,9 @@ function dropProj(f, lx, landY, o, burst){
   if(f.dropCd>0 && !burst) return;              // shared throttle: no rapid-fire drops (special OR smash)
   if(!burst) f.dropCd = 70;                     // a burst volley sets its own cooldown once, outside this call
   const spawnY = camY - 30;                    // just above the top of the current view
+  const onTop = surfaceBelow(lx, landY);             // the shadow sits on the surface under the spot, not always the floor
   addProj({ owner:f.idx, ownerObj:f, x:lx, y:spawnY, vx:0, vy:5, grav:true,
-    warnX:lx, warnY:landY, warn:26, ...o });
+    warnX:lx, warnY: onTop!==null ? onTop : landY, warn:26, ...o });
 }
 
 function damageSummons(f, cx, cy, rad, dmg){
@@ -8813,7 +8860,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // Book: +15% per stack — but ONLY for Book herself. This used to apply to ANY attacker, so every
   // other fighter (notably Golf Ball, who also debuffs) freeloaded up to +75% damage off Book's mark.
   // Define is Book's win condition, not a global damage aura.
-  if(t.defined>0 && from && from.kit && from.kit.special==="define"){
+  if(t.defined>0 && from && from.kit && (from.kit.special==="define" || from.kit.special==="pricetag")){   // Profily's price tag is this mark too, and pays out for him
     const mult=1 + 0.15*(t.defineStacks||1); dmg*=mult;
   }
   if(t.cloud>0){ dmg*=0.6; kbx*=0.6; kby*=0.6; }   // Teardrop cloud form: -40% dmg & knockback
