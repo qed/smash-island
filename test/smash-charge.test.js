@@ -80,11 +80,10 @@ describe('the fixture holds at range and in time, too (O13)', () => {
 // The input path — the part the fixture cannot see, because doSmash does not set endlag; the
 // release site does. Drive a local fighter through the real key state.
 //
-// PRESS TO COMMIT. The tap tier is gone, on the owner's call ("remove tap smashes ... but keep the
-// charge time"). A press past the mis-press floor throws the FULL smash the moment its charge is
-// complete, whether or not the key is still down; letting go early neither cancels nor weakens it.
-// Holding past full waits for the release. A press during endlag charges through it and comes out
-// when both are done. Below the floor a press is still a mis-press and throws nothing.
+// PRESS ONCE. "Smashes still feel overcomplicated and hard to use": a press -- any press, a one-frame tap
+// included -- starts the charge, and the FULL smash goes off by itself the moment the charge is complete.
+// Holding the key does not delay it and letting go does not cancel it; there is no mis-press floor and no
+// hold-for-release any more. A press during endlag charges through it and comes out when both are done.
 function pressSmash(w, { hold, wait = 60, mash = 0 } = {}) {
   return w.eval(`
     (function(){
@@ -109,50 +108,52 @@ function pressSmash(w, { hold, wait = 60, mash = 0 } = {}) {
       } finally { doSmash=_ds; }
       return { fires:fires, pct:+D.pct.toFixed(2), pct30:+pct30.toFixed(2), held:held, firedWhileHeld:firedWhileHeld, fireFrame:fireFrame,
                peakCd:peakCd, holdAfter:A.smashHold, queued: !!A._smQ,
-               full: smashFullOf(A), floor: smashFloorOf(A), holdMax: smashHoldMaxOf(A), endlag: SMASH_ENDLAG };
+               full: smashFullOf(A), endlag: SMASH_ENDLAG };
     })()`);
 }
 
 describe('the release site', () => {
-  it('a press shorter than the floor is a mis-press, not a smash', async () => {
-    const r = pressSmash(await boot(), { hold: 3 });
-    expect(r.floor, 'the floor has to be above 3 for this to test anything').toBeGreaterThan(3);
-    expect(r.fires).toBe(0);
+  it('a one-frame tap is a smash: the full one, when the charge completes', async () => {
+    const r = pressSmash(await boot(), { hold: 1 });
+    expect(r.fires, 'a tap used to be a mis-press that threw nothing').toBe(1);
+    expect(r.fireFrame, 'it goes off when the charge completes, not when the key is let go').toBeGreaterThanOrEqual(r.full);
+    expect(r.fireFrame).toBeLessThanOrEqual(r.full + 1);
     expect(r.queued).toBe(false);
     expect(r.holdAfter).toBe(0);
   });
-  it('a press past the floor commits: let go early and the smash still comes out, at full charge', async () => {
+  it('let go early and the smash still comes out, at full charge', async () => {
     const r = pressSmash(await boot(), { hold: 10 });
-    expect(r.floor).toBeLessThanOrEqual(10);
     expect(r.full, 'released before full, or this is not an early release').toBeGreaterThan(10);
     expect(r.fires).toBe(1);
-    expect(r.fireFrame, 'it fires when the charge completes, not when the key is let go').toBeGreaterThanOrEqual(r.full);
+    expect(r.fireFrame).toBeGreaterThanOrEqual(r.full);
     expect(r.fireFrame).toBeLessThanOrEqual(r.full + 1);
     expect(r.peakCd, 'Coiny declares no cost, so the endlag is the flat one').toBe(r.endlag);
   });
-  it('there is no tap tier: let go early or hold to full, it is the same smash', async () => {
+  it('a tap, an early release and a long hold are the same smash', async () => {
+    const tap = pressSmash(await boot(), { hold: 1 });
     const early = pressSmash(await boot(), { hold: 10 });
-    const late = pressSmash(await boot(), { hold: 40 });   // 40 is past every fighter's full (18..32)
-    expect(early.pct30, 'damage 30 frames after the hit, so damage-over-time counts the same for both').toBeGreaterThan(0);
+    const late = pressSmash(await boot(), { hold: 40 });   // 40 is past every fighter's full (24..32)
+    expect(early.pct30, 'damage 30 frames after the hit, so damage-over-time counts the same for all three').toBeGreaterThan(0);
+    expect(tap.pct30).toBe(early.pct30);
     expect(late.pct30).toBe(early.pct30);
     expect(late.peakCd).toBe(early.peakCd);
+    expect(late.fireFrame, 'holding does not delay it').toBe(early.fireFrame);
   });
-  it('holding past full waits for the release, and never fires on its own', async () => {
+  it('holding the key does not delay it: it goes off at full with the key still down, once', async () => {
     const r = pressSmash(await boot(), { hold: 130, wait: 5 });
-    expect(r.holdMax, 'held past the ceiling, or this proves nothing').toBeLessThan(130);
-    expect(r.firedWhileHeld).toBe(false);
-    expect(r.held, 'the hold stops building at the ceiling').toBe(r.holdMax);
-    expect(r.fires, 'and the release is what fires it').toBe(1);
+    expect(r.firedWhileHeld, 'there is no waiting for the release any more').toBe(true);
+    expect(r.fireFrame).toBeLessThanOrEqual(r.full + 1);
+    expect(r.fires, 'a key held down is one press, so one smash').toBe(1);
   });
   it('a press during endlag comes out once the endlag ends, and mashing adds nothing', async () => {
     // hold 40 fires on release; the three mashes land inside its endlag and charge: one comes out
     const r = pressSmash(await boot(), { hold: 40, mash: 3, wait: 60 });
     expect(r.fires).toBe(2);
   });
-  it('the baseline constants describe the charge that ships', async () => {
+  it("the charge is the only gate: the owner's 24-frame baseline, no floor, no hold ceiling", async () => {
     const w = await boot();
     expect(w.eval('SMASH_FULL')).toBe(24);
-    expect(w.eval('SMASH_HOLD_MAX')).toBe(72);
-    expect(w.eval('SMASH_HOLD_MAX')).toBe(w.eval('SMASH_FULL') * 3);
+    expect(w.eval('typeof smashFloorOf'), 'the mis-press floor is gone').toBe('undefined');
+    expect(w.eval('typeof smashHoldMaxOf'), 'and so is the hold-for-release ceiling').toBe('undefined');
   });
 });

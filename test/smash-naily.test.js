@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { bootMonolith } from './helpers/smash-golden.js';
 
 // Naily's smash, to the owner's spec: a dash-jab forward, then a jab BACK — "I nailed it!" — with
-// a bleed, extra damage at ordinary knockback, and half a second of self-stun.
+// a bleed, extra damage at ordinary knockback, and half a second of self-stun. Since "if it says your gonna
+// dash ... if you connect, the effect and damage will apply", running into her is the 16 and the jab back
+// is the extra 7 (it was the other way round, so the dash that connected did less than half the move).
 //
 // The first smash authored in the shape every smash will take: a PATTERN (dash through, jab
 // back), an EFFECT (bleed), a damage/knockback RATIO (high damage, normal launch — it racks
@@ -20,9 +22,9 @@ const stage = (w, dummies) => w.eval(`
       d.team=i+1; d.controller='still'; d.stocks=9; return d; });
     fighters=[N].concat(ds); step(); fighters.forEach(function(f){ f.invuln=0; f.pct=0; f.bleed=0; });
     doSmash(N);
-    var stunAt=-1, endX=null;
-    for (var i=0;i<40;i++){ step(); if (endX===null && !N._nail){ endX=N.x; stunAt=N.hitstun; } }
-    return { endX:endX, stunAt:stunAt, startX:400,
+    var stunAt=-1, endX=null, first=null;
+    for (var i=0;i<40;i++){ step(); if (first===null && ds[0].pct>0) first=ds[0].pct; if (endX===null && !N._nail){ endX=N.x; stunAt=N.hitstun; } }
+    return { endX:endX, stunAt:stunAt, startX:400, first:first,
              pct:ds.map(function(d){ return +d.pct.toFixed(2); }), bleed:ds.map(function(d){ return d.bleed; }) };
   })()`);
 
@@ -32,7 +34,8 @@ describe('I NAILED IT', () => {
     const r = stage(w, [470]);
     expect(r.endX, 'the dash never ended').not.toBeNull();
     expect(r.endX - r.startX, 'a full charge should carry her past the target').toBeGreaterThan(70);
-    expect(r.pct[0], 'dash hit (7) plus back-jab (16) plus some bleed').toBeGreaterThanOrEqual(23);
+    expect(r.first, 'running into her is the 16').toBeGreaterThanOrEqual(16);
+    expect(r.pct[0], 'dash hit (16) plus back-jab (7) plus some bleed').toBeGreaterThanOrEqual(23);
     expect(r.bleed[0], 'the target should be bleeding').toBeGreaterThan(0);
     expect(r.stunAt, 'she pays half a second on the frame the jab lands').toBeGreaterThanOrEqual(28);
   });

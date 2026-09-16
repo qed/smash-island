@@ -25,11 +25,12 @@ const stage = (w, name, dummyAt, frames = 90) => w.eval(`
     D.hurt = null;   // the band distances below were chosen against the standard 24px target
     A.team=0; D.team=1; A.face=1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
     fighters=[A,D]; step(); A.invuln=0; D.invuln=0; A.pct=0; D.pct=0; A.hitstun=0; A.rooted=0;
-    var x0=A.x, ownPct0=A.pct;
+    var x0=A.x, ownPct0=A.pct, launch=0;
     doSmash(A);
     var stunned = A.hitstun, rooted = A.rooted, selfCost = A.pct - ownPct0;
-    for (var i=0;i<${frames};i++){ step(); D.invuln=0; }
-    return { pct:+D.pct.toFixed(2), dx:A.x-x0, stunned:stunned, rooted:rooted, selfCost:+selfCost.toFixed(2),
+    launch = Math.hypot(D.vx, D.vy);
+    for (var i=0;i<${frames};i++){ step(); D.invuln=0; launch = Math.max(launch, Math.hypot(D.vx, D.vy)); }
+    return { pct:+D.pct.toFixed(2), dx:A.x-x0, stunned:stunned, rooted:rooted, selfCost:+selfCost.toFixed(2), launch:+launch.toFixed(2),
              burn:D.burn|0, bleed:D.bleed|0, rootedFoe:D.rooted|0, slowed:D.slowed|0, frozen:D.frozen|0,
              weakened:D.weakened|0, ctrlRev:D.ctrlRev|0, defined:D.defineStacks|0, projs:projectiles.length };
   })()`);
@@ -81,18 +82,30 @@ describe('no two of the 52 are the same move', () => {
 });
 
 describe('each pattern does what its name says', () => {
-  it('lunge — Gaty is sweet at the latch and sour at the hinge', async () => {
+  it('lunge — Gaty launches harder from the latch than the hinge, and both land the whole hit', async () => {
+    // "if you connect, the effect and damage will apply": the sweet spot used to cost a sour hit 45% of its
+    // damage. Now the band only decides the launch.
     const w = bootMonolith(); await w.eval('profileReady');
-    const tip = stage(w, 'Gaty', 514, 6).pct;    // ~70px out: past the band, so the latch
-    const hilt = stage(w, 'Gaty', 454, 6).pct;   // ~10px out: inside it, so the hinge
-    expect(tip, 'the latch should hit harder than the hinge').toBeGreaterThan(hilt);
+    const tip = stage(w, 'Gaty', 514, 6);    // ~70px out: past the band, so the latch
+    const hilt = stage(w, 'Gaty', 454, 6);   // ~10px out: inside it, so the hinge
+    const dmg = w.eval("SMASH_SPEC['reflect'].dmg");
+    expect(tip.pct, 'the latch lands the whole hit').toBeCloseTo(dmg, 1);
+    expect(hilt.pct, 'and so does the hinge').toBeCloseTo(dmg, 1);
+    expect(tip.launch, 'the latch should launch harder than the hinge').toBeGreaterThan(hilt.launch * 1.4);
   });
 
-  it('through — Lightning ends up past the target', async () => {
+  it('lunge — Coiny actually moves forward, and reaches a target the old step never could', async () => {
+    const w = bootMonolith(); await w.eval('profileReady');
+    const r = stage(w, 'Coiny', 540, 14);   // 140px: the old 3px step and single swing landed nothing here
+    expect(r.dx, 'a lunge moves you').toBeGreaterThan(50);
+    expect(r.pct).toBeGreaterThanOrEqual(w.eval("SMASH_SPEC['slap'].dmg"));
+  });
+
+  it('through — Lightning dashes past the target, and running into him is the whole hit', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const r = stage(w, 'Lightning', 450, 40);
     expect(r.dx, 'the dash should carry him past').toBeGreaterThan(60);
-    expect(r.pct).toBeGreaterThan(0);
+    expect(r.pct, 'the contact lands the row, not 30% of it').toBeCloseTo(w.eval("SMASH_SPEC['zap'].dmg"), 1);
   });
 
   it('leap — Flower leaves the ground and buries on landing', async () => {

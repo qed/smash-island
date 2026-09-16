@@ -81,7 +81,7 @@ describe('the launchers that ignore grace', () => {
 });
 
 describe('the moves it has to leave alone', () => {
-  it("a tapped dash-past smash still lands its swing back through the pass's grace", () => {
+  it('a dash-past smash lands its whole hit once, on contact, and never again through its own grace', () => {
     const r = W.eval(`(function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
@@ -95,7 +95,9 @@ describe('the moves it has to leave alone', () => {
       doSmash(A, 0);
       var hits = 0, last = 0;
       for (var i=0; i<30 && (A._sm || i<2); i++){ step(); if (D.pct > last + 0.01){ hits++; last = D.pct; } }
-      return { name: who.name, hits: hits }; })()`);
-    expect(r.hits, `${r.name}: the pass, then the swing back`).toBe(2);
+      return { name: who.name, hits: hits, pct: D.pct, dmg: SMASH_SPEC[who.kit.special].dmg }; })()`);
+    // The swing back went ("if you connect, the effect and damage will apply"): running into them is the hit.
+    expect(r.hits, `${r.name}: one hit, the contact`).toBe(1);
+    expect(r.pct, `${r.name}: and it is the whole row`).toBeGreaterThanOrEqual(r.dmg - 0.01);
   });
 });
