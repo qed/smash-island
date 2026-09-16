@@ -186,7 +186,7 @@ describe('5: the words say what the moves do', () => {
     expect(r.weaken).toBe('weakens their hits');
     expect(r.kick).toMatch(/becomes a cloud/);
     expect(r.spike).toMatch(/jabs back/);
-    expect([r.sign, r.reflect], 'author-written names stand (smash-identity); the moves are the owner's call').toEqual(['Cheer Boomerang', 'Mirror Field']);
+    expect([r.sign, r.reflect], "author-written names stand (smash-identity); the moves are the owner's call").toEqual(['Cheer Boomerang', 'Mirror Field']);
     expect(r.marker, 'a roll that stops at the first foe does not claim to go through').toMatch(/until it hits someone/);
     expect(r.fanny).toMatch(/charges your next/);
     expect(r.ruby).toMatch(/charges your next/);

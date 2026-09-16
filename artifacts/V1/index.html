@@ -951,7 +951,7 @@ const ROSTER = [
   {name:"Fries",w:96,color:"#e04b3a",play:true,arch:"Ammo zoner",
    kit:{special:"fry", desc:"Fry Dart → rapid thrown fries"}},
   {name:"Gelatin",w:82,color:"#9ad24b",play:true,arch:"Trickster",
-   kit:{special:"freeze", desc:"Freeze Syringe → freezes at high %"}},
+   kit:{special:"freeze", desc:"Freeze Syringe → freezes a foe past 40%, longer the higher they are"}},
   {name:"Nickel",w:90,color:"#b0b0b0",play:true,arch:"Gambler",
    kit:{special:"flip", desc:"Heads or Tails → random buff or self-launch"}},
   // --- roadmap (dim). listed to mirror the board; kits added over time ---
@@ -4868,8 +4868,8 @@ function vanDrive(pr){
     const top = vanLanding(pr.x, bottomPrev, bottomNow);
     if(top !== null){
       pr.y = top - pr.r; pr.vy = 0;
-      if(pr.phase === 'fall'){ vanBoom(pr); return; }          // the finisher, off an edge: explodes where it lands
-      pr.phase = 'drive'; pr.rideTop = top; pr.vx = pr.driveVx; // dropped from the air: now it drives
+      if(pr.phase === 'fall' && pr.drive !== 'roll'){ vanBoom(pr); return; }   // the finisher, off an edge: explodes where it lands
+      pr.phase = 'drive'; pr.rideTop = top; pr.vx = pr.driveVx; // dropped from the air, or a roller off a ledge: it drives on
       return;
     }
     if(pr.y > WH + 200) pr.life = 0;                           // fell out of the world (the tower has no floor)
@@ -4880,11 +4880,14 @@ function vanDrive(pr){
   for(const p of platRects()){
     if(!p.solid || p.rot) continue;
     const ph = p.h||16;
-    if(pr.x + pr.r*0.6 > p.x && pr.x - pr.r*0.6 < p.x+p.w && p.y < pr.rideTop - 3 && p.y + ph > pr.y - pr.r){ vanBoom(pr); return; }
+    if(pr.x + pr.r*0.6 > p.x && pr.x - pr.r*0.6 < p.x+p.w && p.y < pr.rideTop - 3 && p.y + ph > pr.y - pr.r){
+      if(pr.drive === 'roll'){ for(let i=0;i<5;i++) puff(pr.x, pr.y, pr.color, 3); pr.life = 0; return; }   // a roller stops at a wall
+      vanBoom(pr); return; }
   }
   const under = vanTopsAt(pr.x).some(t => Math.abs(t.y - pr.rideTop) <= 3);
   if(under) return;
   if(pr.drive === 'edge'){ vanBoom(pr); return; }              // the special: explodes the moment it leaves the surface
+  if(pr.drive === 'roll'){ pr.vx = 0; }                          // a roller falls straight down and rolls on where it lands
   pr.phase = 'fall'; pr.life = Math.max(pr.life, 90);          // the finisher: it falls, and has the time to land
 }
 function platRects(){
@@ -6073,6 +6076,7 @@ function step(){
   const pad=pollPad();
   const gy=groundY(), plats=platRects();
   let grav=GRAV; if(stage.hazard==='lowgrav') grav*=0.7;
+  const gravFor = function(f){ if(f._floatT>0){ f._floatT--; return grav*0.35; } return grav; };   // Bubble's Thermal Rise
 
   for(const f of fighters){
     if(f.dead) continue;
@@ -6299,6 +6303,13 @@ function step(){
     }
     // the rest of a multi-hit jab (see doAttack): same move, same combo token, so it lands through the
     // grace its first hit opened; anything that hits the attacker ends it
+    if(f._rant){   // Dora's flurry (see case "rant"): one jab every `every` frames until n are thrown; a hit on her ends it
+      if(f.hitstun>0 || f.dead){ f._rant=null; }
+      else if(--f._rant.t<=0){ const m=f._rant, cx=f.x+f.face*32; m.t=m.every;
+        f._combo=true; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f))continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + m.reach){ applyHit(t, m.dmg, f.face*(m.n===1?7:2), m.n===1?-4:-1, f); } } f._combo=false;
+        for(let i=0;i<3;i++) puff(cx+Math.random()*18-9,f.y+Math.random()*18-9,'#f2a03a',3);
+        if(--m.n<=0) f._rant=null; }
+    }
     if(f._multi){
       if(f.hitstun>0 || f.dead){ f._multi=null; }
       else if(--f._multi.t<=0){
@@ -6350,9 +6361,9 @@ function step(){
     // Leafy — Sharp Shadow dash: stay fast + invincible, damage anyone passed through (once each)
     if(f._dashing>0){
       f._dashing--;
-      f.vx = f.face*22;                      // dash speed set here; movement block skips the clamp while dashing
+      f.vx = f.face*(f._dashSpeed||22);      // dash speed set here; movement block skips the clamp while dashing
       if(f._dashVY){ f.vy = f._dashVY; }     // diagonal dash: up-dash / down-dash hold vertical speed
-      f.invuln = Math.max(f.invuln, 2);      // stay invincible for the whole dash
+      if(!f._dashArmored) f.invuln = Math.max(f.invuln, 2);      // stay invincible for the whole dash (an armored charge is not)
       for(let i=0;i<2;i++) puff(f.x-f.face*(4+i*8), f.y+(Math.random()*20-10), '#8ed24b', 3);  // shadow trail
       for(const t of fighters){
         if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
@@ -6365,7 +6376,7 @@ function step(){
           for(let i=0;i<6;i++) puff(t.x,t.y,'#8ed24b',5);
         }
       }
-      if(f._dashing===0 && f._dashHits){ f._dashHits=null; f._dashDmg=0; f._dashVY=0; }
+      if(f._dashing===0 && f._dashHits){ f._dashHits=null; f._dashDmg=0; f._dashVY=0; f._dashSpeed=0; f._dashArmored=false; }
       // dash also sweeps through bosses/hostile summons (they live in a separate array from fighters)
       if(summons.length){
         for(const s of summons){
@@ -6391,7 +6402,7 @@ function step(){
       if(inp.right){ f.vx+=mv; f.face=f.ctrlRev>0?-1:1; }
       if(!inp.left&&!inp.right && f.onground) f.vx*=(f.iceUntil>0?0.99:FRICTION);
       if(f.iceUntil>0) f.iceUntil--;
-      if(f._dashing>0){ f.vx=f.face*22; }   // dash overrides normal movement/clamp
+      if(f._dashing>0){ f.vx=f.face*(f._dashSpeed||22); }   // dash overrides normal movement/clamp
       else if(f._nail){ }                    // Naily's dash holds its own speed (see the _nail block)
       else { const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*(f._hasteT>0?1.4:1)*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
       // jump
@@ -6527,6 +6538,9 @@ function step(){
     }
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
     if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
+    // SLAM, THEN HIT: a ground move used in the air drops the fighter fast and goes off on landing (David's
+    // Aw Seriously, Snowball's Ground Pound, Rocky's Toxic Wave). The owner's call: "slam, then hit".
+    if(f._slam){ if(f.onground){ const fire=f._slam.fire; f._slam=null; fire(); } else if(--f._slam.life<=0) f._slam=null; }
     // --- effect zones (glue/ice/bounce/damage/heal/wind) ---
     if(worldZones && worldZones.length){
       for(const z of worldZones){
@@ -6600,7 +6614,7 @@ function step(){
           applyHit(f, pr.dmg, Math.sign(f.x-pr.x||1)*pr.kb, -pr.kb*0.7, pr.ownerObj);
           if(pr.burn) f.burn=Math.max(f.burn,110);
           if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
-          if(pr.freeze && f.pct>15){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
+          if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
           // a trap's effect lands when it is stepped on, the way a thrown one's does (it never did here)
           if(pr.fxTag && SM_FX[pr.fxTag]) SM_FX[pr.fxTag](f, pr.ownerObj, pr.fxN);
           if(pr.root){ f.rooted=Math.max(f.rooted||0, 60); if(f.you) banner("STUCK!",500); }
@@ -6652,7 +6666,7 @@ function step(){
     // gravity shot sank through platforms and the floor and fell off the screen for the rest of its life. Now it
     // ends with a puff on the first surface it reaches -- or, with `landsTrap`, settles there and waits. A drop
     // (it has warnY) passes through surfaces above the spot its shadow marked, so it still lands on the mark.
-    if(pr.grav && !pr.bounce && !pr.landsPuddle && !pr.landsAcid && !pr.trap && !pr.turret && !pr.boomerang && pr.vy>0){
+    if(((pr.grav && !pr.bounce && !pr.landsPuddle && !pr.landsAcid && !pr.trap && !pr.turret && !pr.boomerang) || pr.breaksOnSurface) && pr.vy>0){
       const bottomNow = pr.y + (pr.r||8)*0.5, bottomPrev = bottomNow - pr.vy;
       let top = null;
       for(const t of vanTopsAt(pr.x)){ if(pr.warnY!=null && t.y < pr.warnY - 6) continue; if(t.y >= bottomPrev - 1 && t.y <= bottomNow + 1 && (top===null || t.y < top)) top = t.y; }
@@ -6743,7 +6757,7 @@ function step(){
         if(!ffBlocked){
           if(pr.burn) f.burn=Math.max(f.burn,110);
           if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
-          if(pr.freeze && f.pct>15){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); if(f.frozen>0) banner("FROZEN!",600); }
+          if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); if(f.frozen>0) banner("FROZEN!",600); }
           if(pr.root){ f.rooted=Math.max(f.rooted||0,60); banner("STUCK!",500); }
           if(pr.reverseCtrl){ if(applyCtrlRev(f,70)) banner("SCRAMBLED!",600); }
           // A smash whose PATTERN is a projectile (walk / rain / mine) carries its row's effect as
@@ -7228,7 +7242,7 @@ const SMASHES = {
 
   kick(f){ f.cloud=720; f.flash=12; 
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*40-20),f.y+(Math.random()*30-15),'#dfefff',6); },
-  zapshooter(f){ f.curse=190; f.flash=12; f.spCd=173; 
+  zapshooter(f){ f.curse=300; f.flash=12; f.spCd=173; 
     for(let i=0;i<16;i++) puff(f.x+(Math.random()*50-25),f.y+(Math.random()*40-20),i%2?'#8b5cf6':'#4a2a6a',6); },
   payday(f){ f.flash=12; for(let i=0;i<3;i++) spawnProj(f,{vx:f.face*(9+i*2),vy:-4+i*2,grav:true,bounce:true,dmg:16,kb:11,r:9,color:'#ffd23f',life:100,payday:true,maxBounces:3});  },
 };
@@ -7260,7 +7274,7 @@ const SM_FX = {
   bleed:   (t,f,n)=>{ t.bleed=Math.max(t.bleed||0, n||150); },
   burn:    (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||110); },
   poison:  (t,f,n)=>{ t.burn=Math.max(t.burn||0, n||80); t._poisonT=Math.max(t._poisonT||0, n||80); },
-  freeze:  (t,f,n)=>{ if(t.pct>15) applyFreeze(t, freezeDuration(t.pct,50)); },
+  freeze:  (t,f,n)=>{ if(t.pct>freezePct(f)) applyFreeze(t, freezeDuration(t.pct,50)); },
   root:    (t,f,n)=>{ t.rooted=Math.max(t.rooted||0, n||60); },
   slow:    (t,f,n)=>{ t.slowed=Math.max(t.slowed||0, n||90); },
   ice:     (t,f,n)=>{ t.iceUntil=Math.max(t.iceUntil||0, n||120); },
@@ -7366,9 +7380,14 @@ const SM_PAT = {
   },
   // A hazard that walks away from you along the ground, hitting whatever it meets.
   walk(f,s){
-    spawnProj(f, Object.assign({vx:f.face*(s.spd||7), vy:0, grav:false, dmg:s.dmg, kb:s.kb,
+    const p = spawnProj(f, Object.assign({vx:f.face*(s.spd||7), vy:0, grav:false, dmg:s.dmg, kb:s.kb,
       r:s.r||13, color:s.color||f.color, life:s.life||90, pierce:!!s.pierce, van:!!s.van,
       fxTag:s.effect||null, fxN:s.n||0}, s.rider||{}));
+    // "a hazard that walks along the ground" -- a row with `ride` does: it rolls the surface under the caster,
+    // falls off an edge and keeps rolling where it lands, and stops at a wall (vanDrive, drive:'roll'). Cast
+    // in the air it drops to the surface below first. The owner's call for every rolling smash.
+    if(s.ride && p){ const r = p.r||13, g = !!f.onground; p.drive='roll'; p.phase = g ? 'drive' : 'drop'; p.driveVx = p.vx; p.rideTop = g ? feetY(f) : null;
+      if(g){ p.y = feetY(f) - r; } else { p.vx = 0; } }
   },
   // Falls from above onto a marked spot — telegraphed, so it is a trap rather than an ambush.
   rain(f,s){
@@ -7442,6 +7461,8 @@ function runSmashSpec(f, s){
   f.flash = 14;
   const cost = s.cost;
   smashCost(f, cost);
+  const k = f.kit && f.kit.special;
+  if(SLAM_ROWS.has(k) && !f.onground){ slamThen(f, function(){ (SM_PAT[s.pat] || SM_PAT.lunge)(f, s); }); return; }   // slam, then hit
   (SM_PAT[s.pat] || SM_PAT.lunge)(f, s);
   // Recoil LAST, so it eats into the momentum the pattern just granted instead of being erased by it.
   if(cost && cost.back){ f.vx -= f.face*cost.back; f.onground=false; }
@@ -7522,9 +7543,9 @@ const SMASH_SPEC = {
   // "FreeSmart Supervan: the van drives across the ground layer, ramming foes." Canon, verbatim.
   van:      {pat:'walk', spd:9,  r:16, life:110, pierce:true, dmg:12, kb:10, effect:'knockdown', cost:{cd:64}, color:'#f0d060'},
   // "Salsa Splat: lobbed puddle that slows." Slow-moving, slow-making — it is area denial that walks.
-  jawbreaker: {pat:'walk', spd:5,  r:15, life:130, dmg:11, kb:6,  effect:'slow', n:120, cost:{cd:58}, color:'#f2c84b'},
+  jawbreaker: {pat:'walk', ride:true, spd:5,  r:15, life:130, dmg:11, kb:6,  effect:'slow', n:120, cost:{cd:58}, color:'#f2c84b'},
   // "Scribble Shot: erratic ink." Ink weakens what it touches; MARKER SANDWICH.
-  ink:      {pat:'walk', spd:7,  r:13, life:100, dmg:13, kb:7,  effect:'weaken', n:190, cost:{cd:56}, color:'#4bb0c0'},
+  ink:      {pat:'walk', ride:true, spd:7,  r:13, life:100, dmg:13, kb:7,  effect:'weaken', n:190, cost:{cd:56}, color:'#4bb0c0'},
 
   // ---- RAIN: falls from above onto a marked spot. Telegraphed, so it is a trap, not an ambush. ----
   // "Warehouse Drop: a crate falls where he's looking." Canon, verbatim. ADVERTISEMENT!
@@ -7563,7 +7584,7 @@ const SMASH_SPEC = {
   battery:  {pat:'beam', len:900, wide:16, dmg:10, kb:7, effect:'scramble', n:80, cost:{stun:26}, color:'#4a4a4a'},
   // "The Plan: at full charge her next Neutral B is a screen-length beam." Her own doc entry asks
   // for this. Rapid-speech, so it racks percent and barely launches.
-  rant:     {pat:'beam', len:860, wide:14, dmg:17, kb:5, effect:'weaken', n:170, cost:{stun:32}, color:'#e8a0c0'},
+  rant:     {pat:'beam', len:120, wide:22, dmg:17, kb:5, effect:'weaken', n:170, cost:{stun:32}, color:'#e8a0c0'},   // Point Blank Earful: point blank, as it says (was a screen-length line)
 
   // ---- BURST: the old shape, kept only where it fits — now expanding, with a cost and an effect. ----
   // "Feather Puff: multi-hit fluff cloud." Soft: the weakest numbers here, and it puts you to sleep.
@@ -7605,11 +7626,11 @@ const SMASH_SPEC = {
 
   // Saw: the grind, walking forward through whoever is in the way. Was 40.0 total — the multi-hit
   // is the identity, so it keeps `pierce` and a long bleed and gives back the raw numbers instead.
-  saw:      {pat:'walk', spd:7, r:20, life:120, pierce:true, dmg:12, kb:7, effect:'bleed', n:150, cost:{cd:62}, color:'#d0d0d0'},
+  saw:      {pat:'walk', ride:true, spd:7, r:20, life:120, pierce:true, dmg:12, kb:7, effect:'bleed', n:150, cost:{cd:62}, color:'#d0d0d0'},
   // Donut: the same roll, sweeter and slower to recover.
-  glaze:    {pat:'walk', spd:8, r:18, life:100, pierce:true, dmg:11, kb:12, effect:'slow', n:110, cost:{cd:58}, color:'#f2c8d8'},
+  glaze:    {pat:'walk', ride:true, spd:8, r:18, life:100, pierce:true, dmg:11, kb:12, effect:'slow', n:110, cost:{cd:58}, color:'#f2c8d8'},
   // Grassy: a wave of grass rolls forward and roots what it passes over.
-  grasstree: {pat:'walk', spd:8, r:18, life:100, pierce:true, dmg:13, kb:8, effect:'root', n:60, cost:{cd:60}, color:'#8ed24b'},
+  grasstree: {pat:'walk', ride:true, spd:8, r:18, life:100, pierce:true, dmg:13, kb:8, effect:'root', n:60, cost:{cd:60}, color:'#8ed24b'},
 
   // Ruby: the prism fan, still the longest reach she had.
   beam:     {pat:'beam', len:900, wide:22, dmg:15, kb:8, effect:'burn', n:80, cost:{stun:32}, color:'#ff2a4a'},
@@ -7920,14 +7941,14 @@ const ATKSPECIALS = {
   ember(f){ f.flash=14; const cx=f.x+f.face*34; hitCircle(f,cx,f.y,f.r+34,16,16,f.face*9,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&hurtGap(t, cx, f.y) < -HURT_R0 + f.r+38) t.burn=Math.max(t.burn,140);} for(let i=0;i<10;i++) puff(cx,f.y,'#f0521f',6);  },
   dash(f){ f.flash=12; f.vx=f.face*18; f.invuln=14; hitCircle(f,f.x+f.face*24,f.y,f.r+24,14,14,f.face*12,-9);  },
   counter(f){ f.flash=14; const cx=f.x+f.face*30; hitCircle(f,cx,f.y,f.r+22,18,18,f.face*13,-10);  },
-  pierce(f){ f.flash=14; const cx=f.x+f.face*42; hitCircle(f,cx,f.y,32,17,17,f.face*13,-8); f.vx=f.face*7; for(const t of fighters){ if(!t.dead&&t.w<70&&Math.hypot(t.x-cx,t.y-f.y)<36){ applyHit(t,24,f.face*15,-9,f); } }  },
+  pierce(f){ f.flash=14; const cx=f.x+f.face*42; hitCircle(f,cx,f.y,32,17,17,f.face*13,-8); f.vx=f.face*7; for(const t of fighters){ if(!t.dead&&INFLATABLES.has(t.name)&&Math.hypot(t.x-cx,t.y-f.y)<36){ applyHit(t,24,f.face*15,-9,f); } }  },
   tackle(f){ f.flash=14; f.vx=f.face*17; f.armor=24; hitCircle(f,f.x+f.face*30,f.y,f.r+30,17,17,f.face*13,-9);  },
   bomb(f){ f.flash=16; const R=95; for(const t of fighters){ if(t.dead||t.idx===f.idx)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<R){ applyHit(t,18,Math.sign(t.x-f.x||1)*13,-9,f);} } f.pct+=4; for(let i=0;i<16;i++) puff(f.x,f.y,i%2?'#f0803a':'#3a3a3a',6);  },
   float(f){ f.flash=12; const cx=f.x+f.face*24; hitCircle(f,cx,f.y,f.r+30,13,13,f.face*13,-11); for(let i=0;i<8;i++) puff(cx,f.y,'#bfe8ff',5);  },
   kick(f){ f.flash=16; const cx=f.x+f.face*40; for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.hypot(t.x-cx,t.y-f.y)<52 && t.invuln<=0){ applyHit(t,18,f.face*18,-13,f); } } for(let i=0;i<8;i++) puff(cx,f.y,'#6fb7ff',6); },
-  quake(f){ f.flash=14; const cx=f.x+f.face*30; hitCircle(f,cx,f.y,f.r+30,16,16,f.face*12,-9); if(f.onground) for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.abs(t.x-f.x)<120&&t.onground){ applyHit(t,6,Math.sign(t.x-f.x||1)*6,-11,f);} }  },
+  quake(f){ f.flash=14; const cx=f.x+f.face*30; hitCircle(f,cx,f.y,f.r+30,16,16,f.face*12,-9); if(f.onground) for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&Math.abs(t.x-f.x)<120&&t.onground&&Math.abs(feetY(t)-feetY(f))<12){ applyHit(t,6,Math.sign(t.x-f.x||1)*6,-11,f);} }  },
   serve(f){ f.flash=12; spawnProj(f,{vx:f.face*9,vy:-7,grav:true,bounce:true,dmg:14,kb:11,r:13,color:'#c9f24b',life:160});  },
-  cap(f){ f.flash=12; for(let i=-1;i<=1;i++) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-6,vx:f.face*13,vy:i*2,grav:false,dmg:9,kb:8,r:8,color:'#3a6ea5',life:40});  },
+  cap(f){ f.flash=12; for(let i=-1;i<=1;i++) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-6,vx:f.face*13,vy:i*2,grav:false,dmg:9,kb:8,r:8,color:'#3a6ea5',life:40,breaksOnSurface:true});  },
   van(f){ f.flash=14; addProj(vanProj(f, {speed:15, dmg:16, kb:11, r:20, life:60, drive:'land'}));  },   // Pencil — the finisher van: drives, falls off an edge, explodes where it lands
   zapshooter(f){ f.flash=12; const cx=f.x+f.face*44; hitCircle(f,cx,f.y,f.r+30,13,13,f.face*11,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&t.team!==f.team&&hurtGap(t, cx, f.y) < -HURT_R0 + f.r+34){ t.curseStacks=Math.min(CURSE_MAX_STACKS,(t.curseStacks||0)+2);} }  },
   barf(f){ f.flash=12; spawnProj(f,{vx:f.face*8,vy:-4,grav:true,bounce:true,dmg:12,kb:9,r:11,color:'#8a9c3a',life:90,poison:true});  },
@@ -7966,6 +7987,13 @@ const PAYDAY_SPECIAL = {pat:'burst', frames:8, r0:26, rad:74, grow:0, dmg:5.8, k
 // long enough to catch "special, then up" as one motion, short enough that a neutral special with
 // no direction held does not feel like it lags.
 const SPECIAL_DIR_WINDOW = 5;
+// A ground move used in the air: slam down, and run `fire` the frame the fighter lands (see the land hook).
+function slamThen(f, fire){ f._slam = { fire: fire, life: 90 }; f.vy = Math.max(f.vy, 14); f.onground = false; }
+const SLAM_ROWS = new Set(["tackle", "barf"]);   // Snowball's Ground Pound and Rocky's Toxic Wave slam first when cast airborne
+// Pin's Point Pierce pops INFLATABLES, as its text says -- not "anyone under 70 weight".
+const INFLATABLES = new Set(["Balloony", "Bubble", "Puffball", "Basketball"]);
+// Gelatin's freeze needs the foe past this percent ("gelatin should freeze at 40%"); everyone else's freezes at 15.
+function freezePct(owner){ return (owner && owner.kit && owner.kit.special === 'freeze') ? 40 : 15; }
 // Pencil's SUPERVAN, when it blows up (see vanDrive): a medium blast.
 const VAN_BOOM_R = 90, VAN_BOOM_DMG = 12, VAN_BOOM_KB = 11;
 // Teardrop's TAUNT: Evaporate marks everyone near where she stood (TAUNT_FRAMES), and her next hit on
@@ -7975,7 +8003,7 @@ const TAUNT_BONUS = 0.5, TAUNT_FRAMES = 180;
 // Guide: 1,000 C), so a burn never ticks on her -- see the burn timer.
 const JAWBREAKER_STUCK = 36;
 // Roboty's ANTENNA SPRING: how hard the antenna launches a foe on him, and how high a teammate.
-const ANTENNA_FOE_VY = -15, ANTENNA_ALLY_VY = -16, ANTENNA_REACH = 70;
+const ANTENNA_FOE_VY = -24, ANTENNA_ALLY_VY = -16, ANTENNA_REACH = 70;   // applyHit scales a launch by weight and percent; -24 lands as about -15 on a mid-weight foe
 // Needle. The Reflex (special) takes the edge off a hit and puts REFLEX_PRICK of it into the attacker
 // as a prick; the Riposte Stance (smash) returns the whole hit at RIPOSTE_MULT. See applyHit.
 const REFLEX_PRICK = 0.6, RIPOSTE_MULT = 1.4;
@@ -8245,9 +8273,11 @@ function doSpecial(f){
     case "counter": f.countering=26; f._riposte=false; f.flash=12; f.spCd=90; puff(f.x,f.y-10,'#d94f6a',5);  break;   // Needle — The Reflex: minimises a hit and pricks back (see applyHit). Cooldown 110 -> 90 with the buff; it had been nerfed 48 -> 96: it was up too often to ever be a read
     case "pierce": { const cx=f.x+f.face*40; hitCircle(f,cx,f.y,30,11,11,f.face*11,-4); f.vx=f.face*6; f.flash=10;
       
-      for(const t of fighters){ if(!t.dead&&t.w<70&&Math.hypot(t.x-cx,t.y-f.y)<34){ applyHit(t,20,f.face*14,-8,f); } } break; }
-    case "tackle": f.vx=f.face*14; f.armor=16; f.flash=10;
-      hitCircle(f,f.x+f.face*30,f.y,34,10,10,f.face*11,-6); break;
+      for(const t of fighters){ if(!t.dead&&INFLATABLES.has(t.name)&&Math.hypot(t.x-cx,t.y-f.y)<34){ applyHit(t,20,f.face*14,-8,f); } } break; }   // pops inflatables
+    case "tackle": // Rage Tackle: an ARMORED CHARGE -- twelve frames at 14 px, armored (not invincible), running over
+      // whoever he meets. No opening swing: that gave the foe i-frames the charge itself then skipped.
+      f._dashing=12; f._dashSpeed=14; f._dashArmored=true; f._dashDmg=10; f._dashHits=new Set(); f.armor=Math.max(f.armor||0,18); f.flash=10;
+      break;
     case "bomb": { const cx=f.x, cy=f.y;
       // Was a 130px, 26-dmg omnidirectional nuke with no aim and no real cost — 85% win rate in real
       // 1v1s even after two profile trims, because the SPECIAL was the problem, not the numbers.
@@ -8256,7 +8286,7 @@ function doSpecial(f){
         if(d<110){ applyHit(t, 22-d*0.095, Math.sign(t.x-cx||1)*13, -9.5, f);} }
       f.pct+=14; knock(f,0,-4); for(let i=0;i<26;i++) puff(cx,cy,i%2?'#f0803a':'#3a3a3a',7); 
       f.spCd=Math.max(f.spCd,69); break; }
-    case "float": f.vy=-7; f.jumps=2; puff(f.x,f.y+16,'#bfe8ff',6); break;
+    case "float": f.vy=-7; f.jumps=2; f._floatT=60; puff(f.x,f.y+16,'#bfe8ff',6); break;   // Thermal Rise: a long float -- gravity at a third for a second (see the gravity line)
     case "kick": { const cx=f.x+f.face*38; f.flash=12; let landed=false;
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team) continue;
         // hit if the target is near the kick's forward point OR stacked right on Teardrop (point-blank),
@@ -8272,7 +8302,8 @@ function doSpecial(f){
       for(let i=0;i<8;i++) puff(cx,f.y,'#6fb7ff',5); f.spCd=97; break; }
     case "quake": if(f.onground){ f.vy=-3;
       for(const t of fighters){ if(t.dead||t.idx===f.idx||!t.onground)continue;
-        if(Math.abs(t.x-f.x)<170){ applyHit(t, 14, Math.sign(t.x-f.x||1)*12, -16, f);} }   // super-strength: bigger range + launch
+        // a shockwave through HER surface, not through open air to other platforms
+        if(Math.abs(t.x-f.x)<170 && Math.abs(feetY(t)-feetY(f))<12){ applyHit(t, 14, Math.sign(t.x-f.x||1)*12, -16, f);} }   // super-strength: bigger range + launch
       for(let i=0;i<16;i++) puff(f.x+(Math.random()*320-160),f.y+20,'#ff6fae',5);  f.spCd=74; } break;
     case "serve": fireGadget(f, false, 0); f.spCd = GADGET_SPECIAL_CD[gadgetOf(f)]; break;   // Tennis Ball: whatever is loaded
     // ---- new playable kits ----
@@ -8295,7 +8326,7 @@ function doSpecial(f){
       let vx=f.face*ZAP_SPEED, vy=0; if(tgt){ const dx=tgt.x-f.x, dy=tgt.y-f.y, d=Math.hypot(dx,dy)||1; vx=dx/d*ZAP_SPEED; vy=dy/d*ZAP_SPEED; }   // along the line to them: a ledge is in reach
       spawnProj(f,{vx:vx,vy:vy,grav:false,dmg:9,kb:8,r:6,color:'#fff45c',life:ZAP_LIFE,fxTag:'stun',fxN:12,shape:'zapshooter',noAim:true});
       f.flash=8; f.spCd=84; break; }
-    case "barf": spawnProj(f,{vx:f.face*6,vy:-3,grav:true,bounce:true,dmg:7,kb:5,r:9,color:"#8a9c3a",life:90,poison:true}); f.flash=6; break;
+    case "barf": spawnProj(f,{vx:f.face*6,vy:-3,grav:true,landsPuddle:true,dmg:7,kb:5,r:9,color:"#8a9c3a",life:90,poison:true}); f.flash=6; break;   // a lobbed PUDDLE: it settles where it lands and poisons whoever steps in
     case "define": { // Book: mark whoever last hit her (random if none); stacks +15% each
       let tgt = f.lastHitBy && !f.lastHitBy.dead ? f.lastHitBy : null;
       if(!tgt){ const foes=fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team); tgt=foes[Math.random()*foes.length|0]; }   // a random FOE, never a teammate
@@ -8314,7 +8345,7 @@ function doSpecial(f){
       if(Math.random()<0.7){ f.armor=44; f.flash=12; banner("HEADS!",600);
         spawnProj(f,{vx:f.face*10,vy:-2,grav:true,bounce:true,dmg:12,kb:10,r:9,color:'#ffd23f',life:90,maxBounces:3});
         for(let i=0;i<8;i++) puff(f.x,f.y,'#ffd23f',4); }
-      else { f.pct+=3; f.flash=8; banner("TAILS!",600); for(let i=0;i<6;i++) puff(f.x,f.y,'#b0b0b0',4);}
+      else { f.pct+=3; f.vx=-f.face*5; f.vy=-8; f.onground=false; f.flash=8; banner("TAILS!",600); for(let i=0;i<6;i++) puff(f.x,f.y,'#b0b0b0',4);}   // the self-launch the text promises
       f.spCd=41; break; }
     // ---- new playable kits ----
     case "fly": f._empower=1; f.flying=90; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#f2a6e8',5);  f.spCd=74; break; // Puffball: charge next shot + brief float
@@ -8446,14 +8477,16 @@ function doSpecial(f){
       spawnProj(f,{vx:f.face*10,vy:-1,grav:false,dmg:12,kb:6,r:12+comebackRange(f)*0.4,color:'#f0f0f0',life:50,root:true});   // stronger active rooting projectile
       addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#f0f0f0',life:220,trap:true,root:true,arm:14});
       f.flash=8;  f.spCd=55; break; }
-    case "rant": { // Dora: rapid flurry of many tiny fast jabs (+comeback reach)
-      const cx=f.x+f.face*32; f.flash=4; const rr=52+comebackRange(f);
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.invuln>0||t.team===f.team)continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + rr){ applyHit(t,12,f.face*7,-4,f);} }
-      for(let i=0;i<6;i++) puff(cx+Math.random()*18-9,f.y+Math.random()*18-9,'#f2a03a',3); f.spCd=23; break; }
-    case "seriously": { // David: heavy ground-pound shockwave (only meaningful grounded)
-      const cx=f.x; f.flash=12;
-      for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; const d=Math.hypot(t.x-cx,t.y-f.y); if(d<140){ applyHit(t, 13-d*0.05, Math.sign(t.x-cx||1)*10, -8, f);} }
-      f.vy=-2; for(let i=0;i<16;i++) puff(cx+Math.random()*120-60,feetY(f),'#4a90c0',5);  f.spCd=138; break; }
+    case "rant": { // Dora: RAPID RANT, a machine-gun flurry: four jabs of 3.5, four frames apart, the same 12 in all
+      const rr=52+comebackRange(f); f.flash=4;
+      beginCombo(f); f._rant = { n:4, every:4, t:0, dmg:3.5, reach:rr };
+      f.spCd=23; break; }
+    case "seriously": { // David: heavy ground-pound shockwave. In the air he slams down and it goes off on landing.
+      const pound = function(){ const cx=f.x; f.flash=12;
+        for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; const d=Math.hypot(t.x-cx,t.y-f.y); if(d<140){ applyHit(t, 13-d*0.05, Math.sign(t.x-cx||1)*10, -8, f);} }
+        f.vy=-2; for(let i=0;i<16;i++) puff(cx+Math.random()*120-60,feetY(f),'#4a90c0',5); };
+      if(f.onground) pound(); else slamThen(f, pound);
+      f.spCd=138; break; }
     case "emberjr": { // Firey Jr.: fast, weaker flame bursts (rapid) (+comeback shots)
       const n=1+comebackShots(f);
       for(let i=0;i<n;i++) spawnProj(f,{vx:f.face*13,vy:-1+(i-(n-1)/2)*1.3,grav:true,dmg:7,kb:6,r:8,color:'#f0803a',burn:true,life:55});
@@ -8481,7 +8514,7 @@ function doSpecial(f){
       const cx=f.x, cy=f.y-f.r*0.6;
       hitCircle(f, cx, cy, f.r+ANTENNA_REACH, 8, 8, f.face*4, ANTENNA_FOE_VY);
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team!==f.team) continue; if(Math.hypot(t.x-cx,t.y-cy) < f.r+ANTENNA_REACH){ t.vy=ANTENNA_ALLY_VY; t.onground=false; t.jumps=2; if(t.you) banner("SPRING!",400); } }
-      f.vy=Math.min(f.vy,-11); f.onground=false;
+      f.vy=Math.min(f.vy,-6); f.onground=false;   // a little lift for him; the launch is for whoever is on him
       for(let i=0;i<8;i++) puff(cx, cy-10, i%2?'#c23a2a':'#ffffff', 4);
       f.flash=8; f.spCd=70; break; }
     case "pricetag": { // Profily: slap a price sticker — target takes +30% damage for a while
@@ -8493,7 +8526,7 @@ function doSpecial(f){
       dropProj(f, lx, tgt ? feetY(tgt) : feetY(f), {vx:0,vy:7,grav:true,dmg:11,kb:9,r:15,color:'#5a3a1a',life:120});  f.flash=10; f.spCd=110; break; }
     case "shatter": { // Ice Cube: burst an icy shard ring; can freeze at high %
       startWindup(f, CIRCLE_WINDUP, function(){
-      for(let a=0;a<8;a++){ const ang=a/8*Math.PI*2; spawnProj(f,{vx:Math.cos(ang)*9,vy:Math.sin(ang)*9,grav:false,dmg:5,kb:5,r:7,color:'#cdeeff',life:70,freeze:true,noAim:true}); }
+      for(let a=0;a<8;a++){ const ang=a/8*Math.PI*2; spawnProj(f,{vx:Math.cos(ang)*9,vy:Math.sin(ang)*9,grav:false,dmg:5,kb:5,r:7,color:'#cdeeff',life:70,freeze:true,noAim:true,breaksOnSurface:true}); }
       for(let i=0;i<12;i++) puff(f.x,f.y,'#cdeeff',4);
       }, '#cdeeff');  f.flash=10; f.spCd=87; break; }
     case "atstake": { // Cake: lob a slice; Cake heals a little when it connects
@@ -8531,7 +8564,7 @@ function spawnProj(f,o){
   if(f._bulletT>0){ if(p.vx) p.vx*=1.5; if(p.vy) p.vy*=1.25; }
   if(p.bounce && p.aimWindow===undefined && !p.noAim) p.aimWindow=30;   // bouncing shots are arc-aimable for ~0.5s
   visLaunch(f, p);          // render-only: draw its first frames coming OUT of the fighter
-  addProj(p);
+  return addProj(p);   // the caller may want the shot it just made (SM_PAT.walk tags a roller)
 }
 // Drop a projectile from just above the visible area onto (lx) with a warning shadow at landing spot,
 // so "downpour" moves are reactable instead of ambushing from the world ceiling.
@@ -13463,7 +13496,7 @@ const STATUS_ICONS = [
   { key:'presence', on:f=>f.curse>0,                        glyph:'eye',    color:'#a78bfa' },   // Golf Ball, Presence up: every hit of hers curses
   { key:'slick',    on:f=>f.iceUntil>0,                     glyph:'ice',    color:'#bfe8ff' },   // on ice: no friction
   { key:'reform',   on:f=>(f.reform||0)>0,                  glyph:'bubble', color:'#7fdfff', count:f=>f.reform },   // Bubble: a reform in hand
-  { key:'flying',   on:f=>f.flying>0,                       glyph:'wing',   color:'#e6a6e0' },   // Puffball aloft
+  { key:'flying',   on:f=>f.flying>0 || f._floatT>0,                       glyph:'wing',   color:'#e6a6e0' },   // Puffball aloft
   { key:'swallowed',on:f=>f._swallow>0,                     glyph:'mouth',  color:'#e0a050' },   // in the boss's stomach
   { key:'fluff',    on:f=>(f.koCount||0)>0 && !!f.kit && f.kit.special==='fluff', glyph:'ko', color:'#ffd23f', count:f=>f.koCount },   // Pillow: +1% damage per KO, permanent
   { key:'comeback', on:f=>comebackPoints(f)>0,              glyph:'rise',   color:'#ffb347', count:f=>Math.ceil(comebackPoints(f)) },   // a comeback kit, behind: its bonus is live

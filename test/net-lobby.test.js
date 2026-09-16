@@ -166,7 +166,7 @@ describe('the panel does not wait for the relay', () => {
     expect(r.start, 'and can start').toBe(true);
   });
 
-  it('Join Room shows the picker at once, and the host's settings when they come', () => {
+  it("Join Room shows the picker at once, and the host's settings when they come", () => {
     const { window: w } = loadMonolith();
     w.eval(`NET.RELAY = ''; NET.myId = 'me'; NET.join('QXTR');`);
     const r = w.eval(`({ role: NET.role, picker: !!document.getElementById('lobbyFighter'), options: !!document.getElementById('lobbyStocks'), summary: document.getElementById('lobbySummary').textContent })`);

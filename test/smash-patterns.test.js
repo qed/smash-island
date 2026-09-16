@@ -151,11 +151,18 @@ describe('each pattern does what its name says', () => {
     expect(r.bleed, 'thorns bleed').toBeGreaterThan(0);
   });
 
-  it('beam — Dora reaches across the stage on the activation frame', async () => {
+  it('beam — Ruler reaches across the stage on the activation frame', async () => {
+    // (This was Dora's, until her Point Blank Earful was cut to a point-blank 120 px to match its name.)
     const w = bootMonolith(); await w.eval('profileReady');
-    const r = stage(w, 'Dora', 1000, 2);
+    const r = stage(w, 'Ruler', 1000, 2);
     expect(r.pct, 'a beam has no travel time').toBeGreaterThan(0);
     expect(r.weakened).toBeGreaterThan(0);
+  });
+
+  it("beam — Dora's Point Blank Earful is point blank: close reaches, far does not", async () => {
+    const w = bootMonolith(); await w.eval('profileReady');
+    expect(stage(w, 'Dora', 460, 2).pct, 'point blank lands').toBeGreaterThan(0);
+    expect(stage(w, 'Dora', 1000, 2).pct, 'across the stage does not').toBe(0);
   });
 
   it('burst — Fries’ ring expands, so a distant target is caught later', async () => {
