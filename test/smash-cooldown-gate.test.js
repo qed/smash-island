@@ -38,7 +38,7 @@ function tapSmash(w, name, { hold = 10, gap = 2, bursts = 3, settle = 24 } = {})
       // caller after doSmash returns, so a legacy body with no cost still reads 0 from in there.
       var fires=0, peakCd=0;
       var _ds=doSmash; doSmash=function(f,c){ fires++; return _ds(f,c); };
-      var tick=function(){ step(); peakCd=Math.max(peakCd, A.atkCd); };
+      var tick=function(){ step(); peakCd=Math.max(peakCd, A.smCd); };
       try {
         for (var b=0; b<${bursts}; b++){
           down[KEYS.smash]=true;  for (var i=0;i<${hold};i++) tick();
@@ -46,7 +46,7 @@ function tapSmash(w, name, { hold = 10, gap = 2, bursts = 3, settle = 24 } = {})
         }
         for (var s2=0;s2<${settle};s2++) tick();
       } finally { doSmash=_ds; }
-      return { fires: fires, peakCd: peakCd, atkCd: A.atkCd };
+      return { fires: fires, peakCd: peakCd, smCd: A.smCd };
     })()`);
 }
 
@@ -90,5 +90,53 @@ describe('a declared smash cost survives the endlag assignment', () => {
     const r = tapSmash(W, 'Puffball', { hold: 10, gap: 2, bursts: 1, settle: 40 });
     expect(r.peakCd, 'her hand-written body pays the legacy cost, scaled').toBe(Math.round(cd * scale));
     expect(r.peakCd, 'not just the flat endlag').toBeGreaterThan(tapEndlag);
+  });
+});
+
+describe('three cooldowns: attacks, specials and smashes never wait on each other', () => {
+  // "Specials and smashes should have seperate cooldowns, and also attacks."
+  const setup = (name) => `
+    SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+    worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+    var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(name)}; }), 400, groundY()-24, 0);
+    var D = makeFighter(ROSTER.find(function(r){ return r.name==='Leafy'; }), 900, groundY()-24, 1);
+    A.team=0; D.team=1; A.face=1; A.controller='local'; A.you=true; D.controller='still'; fighters=[A,D];
+    for (var k in down) delete down[k];
+    step(); A.atkCd=0; A.spCd=0; A.smCd=0; A.smashHold=0;`;
+
+  it("a smash's cooldown is its own: X and C stay ready", () => {
+    const r = W.eval(`(function(){ ${setup('Fries')}
+      down[KEYS.smash]=true; step(); down[KEYS.smash]=false;
+      for (var i=0;i<40 && A.smCd<=0;i++) step();
+      return { smCd: A.smCd, atkCd: A.atkCd, spCd: A.spCd };
+    })()`);
+    expect(r.smCd, 'Fries paid her smash cost').toBeGreaterThan(0);
+    expect(r.atkCd, 'her jab is not locked by it').toBe(0);
+    expect(r.spCd, 'nor her special').toBe(0);
+  });
+
+  it('a jab or a special in cooldown does not hold a smash back', () => {
+    const r = W.eval(`(function(){ ${setup('Coiny')}
+      A.atkCd = 200; A.spCd = 200;
+      var fired = -1, _ds = doSmash; doSmash = function(f){ if (f===A && fired<0) fired = i; return _ds.apply(this, arguments); };
+      try { for (var i=0;i<60 && fired<0;i++){ down[KEYS.smash] = i===0; step(); } } finally { doSmash = _ds; down[KEYS.smash]=false; }
+      return { fired: fired, full: smashFullOf(A) };
+    })()`);
+    expect(r.fired, 'it goes off when its own charge is full').toBeGreaterThanOrEqual(r.full - 1);
+    expect(r.fired).toBeLessThanOrEqual(r.full + 1);
+  });
+
+  it("Money's C pays the special's cooldown only, and Golf Ball's Presence prices the smash, not her special", () => {
+    const r = W.eval(`(function(){ ${setup('Money')}
+      fireSpecial(A, {}); var money = { spCd: A.spCd, smCd: A.smCd, atkCd: A.atkCd };
+      ${setup('Golf Ball')}
+      doSmash(A); var golf = { spCd: A.spCd, smCd: A.smCd };
+      return { money: money, golf: golf };
+    })()`);
+    expect(r.money.spCd).toBeGreaterThan(0);
+    expect(r.money.smCd).toBe(0);
+    expect(r.money.atkCd).toBe(0);
+    expect(r.golf.spCd).toBe(0);
+    expect(r.golf.smCd).toBeGreaterThanOrEqual(173);
   });
 });

@@ -68,8 +68,8 @@ describe('the fixture holds at range and in time, too (O13)', () => {
     for (const n of NAMES) {
       for (const d of [60, 140]) {
         const g = GOLDEN[n][d], r = measureSmash(w, n, d);
-        if (r.hitFrame !== g.hitFrame || r.atkCd !== g.atkCd || !close(r.self, g.self, 0.01)) {
-          off.push(`${n}@${d}: frame ${r.hitFrame} vs ${g.hitFrame}, cd ${r.atkCd} vs ${g.atkCd}, self ${r.self} vs ${g.self}`);
+        if (r.hitFrame !== g.hitFrame || r.smCd !== g.smCd || !close(r.self, g.self, 0.01)) {
+          off.push(`${n}@${d}: frame ${r.hitFrame} vs ${g.hitFrame}, cd ${r.smCd} vs ${g.smCd}, self ${r.self} vs ${g.self}`);
         }
       }
     }
@@ -97,7 +97,7 @@ function pressSmash(w, { hold, wait = 60, mash = 0 } = {}) {
       for (var k in down) down[k]=false;
       var fires=0, _ds=doSmash; doSmash=function(f,c){ fires++; return _ds(f,c); };
       var peakCd=0, fireFrame=-1, frame=0, pct30=-1;
-      var tick=function(){ step(); frame++; peakCd=Math.max(peakCd, A.atkCd); if(fires>0 && fireFrame<0) fireFrame=frame; if(fireFrame>0 && frame===fireFrame+30) pct30=D.pct; };
+      var tick=function(){ step(); frame++; peakCd=Math.max(peakCd, A.smCd); if(fires>0 && fireFrame<0) fireFrame=frame; if(fireFrame>0 && frame===fireFrame+30) pct30=D.pct; };
       try {
         down[KEYS.smash]=true;  for (var i=0;i<${hold};i++) tick();
         var held = A.smashHold, firedWhileHeld = fires>0;

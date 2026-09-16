@@ -341,6 +341,40 @@ async function cmdRun(tournaments, args) {
   return { rows, wall, doneMatches, timeouts };
 }
 
+// QUICK: the owner's testing tournament ("just do 15 matches for testing(this is the new "tournament")", 2026-09-16).
+// The roster is shuffled into --matches heats (15 by default: 59 fighters in heats of four, one of three), every
+// fighter plays exactly once, and the ranking is the usual table. One win or loss a fighter is a smoke test of a
+// change, not a measurement -- compare two builds on the same --seed, and use `full` when a number has to hold.
+async function cmdQuick(args) {
+  const roster = await getPlayableRoster();
+  const n = args.matches ? parseInt(args.matches, 10) : 15;
+  const baseSeed = args.seed ? (parseInt(args.seed, 10) >>> 0) : 1234;
+  const stocks = args.stocks ? parseInt(args.stocks, 10) : 2;
+  const aiLevel = args.ai ? parseInt(args.ai, 10) : 2;
+  const maxFrames = args.frames ? parseInt(args.frames, 10) : 6000;
+  const field = seededShuffle(roster, deriveSeed(baseSeed, 0, 0x5EED));
+  const heats = Array.from({ length: n }, () => []);
+  field.forEach((name, i) => heats[i % n].push(name));
+  const t0 = Date.now(), matches = [];
+  let timeouts = 0;
+  for (let h = 0; h < heats.length; h++) {
+    if (heats[h].length < 2) continue;
+    const res = await runMatch(heats[h], { seed: deriveSeed(baseSeed, 0, 0, h), stocks, aiLevel, maxFrames });
+    if (res.timedOut) timeouts++;
+    matches.push(res);
+  }
+  const wall = Date.now() - t0, rows = aggregate(matches);
+  console.log(`== QUICK: ${matches.length} matches, ${roster.length} fighters, seed ${baseSeed}   timeouts: ${timeouts}   wall: ${(wall / 1000).toFixed(1)} s`);
+  console.log(`winners: ${matches.map((m) => m.winner).join(', ')}`);
+  const kos = rows.reduce((a, r) => a + r.kos, 0) / Math.max(1, rows.reduce((a, r) => a + r.games, 0));
+  console.log(`KOs a fighter-game: ${kos.toFixed(2)}`);
+  if (args.out) {
+    const fs = await import('node:fs');
+    fs.writeFileSync(args.out, JSON.stringify({ quick: true, matches: matches.length, baseSeed, stocks, aiLevel, wallMs: wall, winners: matches.map((m) => m.winner), ranking: rows }, null, 2));
+  }
+  return { rows, matches };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const cmd = args._[0] || 'help';
@@ -348,7 +382,8 @@ async function main() {
   if (cmd === 'pilot') return cmdRun(args.tournaments ? parseInt(args.tournaments, 10) : 2, args);
   if (cmd === 'full') return cmdRun(args.tournaments ? parseInt(args.tournaments, 10) : 8, args);
   if (cmd === 'run') return cmdRun(args.tournaments ? parseInt(args.tournaments, 10) : 1, args);
-  console.log('usage: node scripts/balance-tournament.mjs <smoke|pilot|full|run> [--tournaments N] [--seed N] [--heat 5] [--stocks 2] [--ai 2] [--frames 6000] [--out file.json]');
+  if (cmd === 'quick') return cmdQuick(args);
+  console.log('usage: node scripts/balance-tournament.mjs <quick|smoke|pilot|full|run> [--matches 15] [--tournaments N] [--seed N] [--heat 5] [--stocks 2] [--ai 2] [--frames 6000] [--out file.json]');
 }
 
 // Run as CLI only (importing for runMatch/runTournament won't trigger this).

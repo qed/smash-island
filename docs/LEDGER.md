@@ -433,6 +433,8 @@ with it, or is older than the newest dated measurement on disk. `ff9417c` is the
 | G15 | Roboty and Gelatin: `Tune both` | **Done** | `0f4b7dc` |
 | G16 | The review of `329d7bc`: 32 confirmed findings | **Done** | `0f4b7dc` |
 | G17 | `how many lines of code does this project have?` | **Answered** | 31,541: the game 15,721, tests 13,303, scripts 2,227, relay 290 |
+| G18 | `Specials and smashes should have seperate cooldowns, and also attacks` | **Done** | this commit: X waits on atkCd, C on spCd, V on smCd, and none touches the others |
+| G19 | `just do 15 matches for testing(this is the new "tournament")` | **Done** | `node scripts/balance-tournament.mjs quick`: every fighter once, 15 heats |
 
 **G10 was measured before and after.** Every smash was pressed through the real keys against a dummy
 that stood at 70 and 150 px, walked away, walked in from 300 px, walked past from 90 px, and hopped.
@@ -767,10 +769,10 @@ six, they are real.
 
 | | Count |
 |---|---|
-| Done | 109 |
+| Done | 111 |
 | Open | 2 (O20, O22) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
-Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G17, O3-O19 and O21.
-Suite: **917 passed (80 files) on the shipped file, on `0f4b7dc`**.
+Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G19, O3-O19 and O21.
+Suite: **920 passed (80 files) on the shipped file, with G18**.

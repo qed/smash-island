@@ -5288,7 +5288,7 @@ function makeFighter(r,x,y,idx){
     koCap: Math.round(150 + w),   // per-character damage-death threshold (heavier = tougher)
     x, y, vx:0, vy:0, face:1, onground:false,
     pct:0, stocks:3, alive:true, dead:false, team:idx,
-    atkCd:0, spCd:0, _spPend:0, _aiSpGap:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null, _stall:null, _spinKb:null, _sm:null, _selfStun:0,
+    atkCd:0, spCd:0, smCd:0, _spPend:0, _aiSpGap:0, smashHold:0, hitstun:0, invuln:0, jumps:2, bleed:0, _nail:null, _stall:null, _spinKb:null, _sm:null, _selfStun:0,
     reform:r.name==="Bubble"?1:0, burn:0, armor:0, countering:0, cloud:0,
     weakened:0, defined:0, defineStacks:0, frozen:0, _freezeLock:0, lastHitBy:null, curse:0, curseStacks:0,
     flying:0, reflecting:0, dropping:0, dropCd:0, _empower:0, _dashing:0, _dashVY:0, _landSquash:0, _switchOn:false, _grabbed:null, _grabTimer:0,
@@ -6286,6 +6286,7 @@ function step(){
     f._atkProg  = atkPhaseK(f);
     if(f._hurtAnim>0) f._hurtAnim--; // render-only took-a-hit timer (spriteRig / bespoke anims)
     if(f.atkCd>0) f.atkCd--;
+    if(f.smCd>0) f.smCd--;   // smashes have their own cooldown: X and C never wait on it, and it never waits on them
     if(f.spCd>0) f.spCd--;
     if(f._aiSpGap>0) f._aiSpGap--;
     if(f._smAngleT>0 && !(f._sm || (f._windup && f._windup.smash) || f._slam || f._nail || f._plunge)) f._smAngleT--;
@@ -6618,7 +6619,7 @@ function step(){
       if(f._smQ && !(f.frozen>0)){
         const full = smashFullOf(f);
         if(f.smashHold < full) f.smashHold++;
-        if(f.smashHold >= full && f.atkCd<=0){
+        if(f.smashHold >= full && f.smCd<=0){
           const dir = inp.up ? 1 : (inp.down ? -1 : 0);
           if(dir && f.controller!=='ai' && f._smQ.wait < SMASH_WAIT_MAX){ f._smQ.angle = dir; f._smQ.wait++; }
           else { const a = dir || f._smQ.angle; f._smQ = null; f.smashHold = 0; fireSmash(f, inp, a); }
@@ -7415,7 +7416,7 @@ const SMASHES = {
 
   kick(f){ f.cloud=720; f.flash=12; 
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*40-20),f.y+(Math.random()*30-15),'#dfefff',6); },
-  zapshooter(f){ f.curse=300; f.flash=12; f.spCd=173; 
+  zapshooter(f){ f.curse=300; f.flash=12; f.smCd=Math.max(f.smCd||0, 173); 
     for(let i=0;i<16;i++) puff(f.x+(Math.random()*50-25),f.y+(Math.random()*40-20),i%2?'#8b5cf6':'#4a2a6a',6); },
   payday(f){ f.flash=12; for(let i=0;i<3;i++) spawnProj(f,{vx:f.face*(9+i*2),vy:-4+i*2,grav:true,bounce:true,dmg:16,kb:11,r:9,color:'#ffd23f',life:100,payday:true,maxBounces:3});  },
 };
@@ -7517,15 +7518,19 @@ function fireSmash(f, inp, angle){
   f._smAngle = angle != null ? angle : (inp && inp.up ? 1 : (inp && inp.down ? -1 : 0));   // see SMASH_ANGLE_TILT
   f._smAngleT = f._smAngle ? SMASH_ANGLE_FRAMES : 0;
   doSmash(f);
-  f.atkCd = Math.max(f.atkCd||0, SMASH_ENDLAG);
+  f.smCd = Math.max(f.smCd||0, SMASH_ENDLAG);
 }
-function smashCost(f, cost){
+// THREE COOLDOWNS ("Specials and smashes should have seperate cooldowns, and also attacks"): X and ↓+X wait on atkCd,
+// C, ↑+C and ↓+C on spCd, V on smCd, and nothing one of them does touches the others. A smash's declared cd used to
+// land on atkCd and spCd both, and its endlag on atkCd, so throwing one locked your jab and your special for up to
+// a second, and a jab delayed a charged smash. `pool` is 'special' only for a special built from this vocabulary.
+function smashCost(f, cost, pool){
   if(!cost) return;
   if(cost.stun){ const stun = Math.round(cost.stun*SELF_STUN_SCALE);
     f.hitstun = Math.max(f.hitstun||0, stun); f._selfStun = stun; }
   if(cost.self){ f.pct += cost.self; }
   if(cost.cd){ const cd = Math.round(cost.cd*SMASH_CD_SCALE);
-    f.atkCd = Math.max(f.atkCd||0, cd); f.spCd = Math.max(f.spCd||0, cd); }
+    if(pool === 'special') f.spCd = Math.max(f.spCd||0, cd); else f.smCd = Math.max(f.smCd||0, cd); }
   // `back` is applied by runSmashSpec AFTER the pattern — see there. Setting it here would be
   // overwritten by any pattern that assigns f.vx, which is how it came to do nothing at all.
   if(cost.root){ f.rooted = Math.max(f.rooted||0, cost.root); }
@@ -7701,10 +7706,10 @@ const SM_PAT = {
     return n;
   },
 };
-function runSmashSpec(f, s){
+function runSmashSpec(f, s, pool){
   f.flash = 14;
   const cost = s.cost;
-  smashCost(f, cost);
+  smashCost(f, cost, pool);
   const k = f.kit && f.kit.special;
   if(SLAM_ROWS.has(k) && !f.onground){ slamThen(f, function(){ (SM_PAT[s.pat] || SM_PAT.lunge)(f, s); }); return; }   // slam, then hit
   (SM_PAT[s.pat] || SM_PAT.lunge)(f, s);
@@ -8708,10 +8713,7 @@ function doSpecial(f){
       // Money: the burst that used to be her smash, now her special. Both charge tiers hold the
       // same number on purpose — a special never charges, so the tap value IS the value, and the
       // whole thing is cut well below the smash it came from.
-      runSmashSpec(f, PAYDAY_SPECIAL); f.flash=8;
-      // A special routed through runSmashSpec pays its cost into atkCd as well, which locked Money's
-      // jab for 62 frames. She is the only special that goes through it; her C is not her smash.
-      f.atkCd = Math.min(f.atkCd, 14);
+      runSmashSpec(f, PAYDAY_SPECIAL, 'special'); f.flash=8;   // her C pays the special's cooldown, and only that
       break; }
     case "thorn": { // Rose: tether that yanks the nearest foe toward her
       let tgt=null,best=300; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} }
@@ -10758,7 +10760,7 @@ function aiThink(f){
   // the AI would stand next to a foe doing nothing. This guarantees that when a fighter is actually
   // in range with its cooldowns up and isn't fleeing for its life, it commits to an attack.
   if(!danger && t.invuln<=0 && f.hitstun<=0){
-    const canSmash = inMelee && f.smashHold===0 && f.atkCd<=0;
+    const canSmash = inMelee && f.smashHold===0 && f.smCd<=0;
     // punish a vulnerable target hard: charge a smash or fire a special
     if(inMelee && targetVulnerable){
       if(f.spCd<=0 && !isZoner) inp.special=true;      // melee special as a punish
@@ -10896,7 +10898,7 @@ function finishAI(f,inp,sp){
     inp.attack=false;
     if(f._smQ) f._aiSmSent = true;
     inp.smash = !f._aiSmSent;
-    if(f.atkCd<=0) f._aiCharging--;
+    if(f.smCd<=0) f._aiCharging--;
     if(f._aiSmSent && !f._smQ){ f._aiCharging = 0; f._aiSmSent = false; }
   }
   else f._aiSmSent = false;

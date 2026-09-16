@@ -49,7 +49,7 @@ export function measureSmash(w, name, dist, seed = 5) {
       step(); A.invuln=0; D.invuln=0; A.pct=0; D.pct=0; A.atkCd=0; A.spCd=0;
       var selfBefore = A.pct, p0 = D.pct;      // baseline BEFORE the swing — AoE bodies land inside doSmash itself
       doSmash(A);
-      var atkCd = A.atkCd;
+      var smCd = A.smCd;
       var hitFrame=-1, kvx=0, kvy=0, dmg1=0, total=0;
       if (D.pct>p0){ hitFrame=0; kvx=D.vx; kvy=D.vy; dmg1=D.pct-p0; total=dmg1; }
       var dx0=D.x, dy0=D.y;
@@ -62,6 +62,6 @@ export function measureSmash(w, name, dist, seed = 5) {
         D.x=dx0; D.y=dy0; D.vx=0; D.vy=0; D.dead=false;
       }
       return { dmg1:+dmg1.toFixed(2), dmg:+total.toFixed(2), kvx:+kvx.toFixed(2), kvy:+kvy.toFixed(2),
-               hitFrame:hitFrame, atkCd:atkCd, self:+(A.pct-selfBefore).toFixed(2) };
+               hitFrame:hitFrame, smCd:smCd, self:+(A.pct-selfBefore).toFixed(2) };
     })()`);
 }
