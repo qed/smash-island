@@ -1,7 +1,7 @@
 # Work ledger — Battle for Smash Island
 
 Every task from this run, done or not. Grouped by where it came from, because that is the
-part that is easy to lose. Written 2026-09-03, extended 2026-09-10, 2026-09-11, 2026-09-14 and 2026-09-15.
+part that is easy to lose. Written 2026-09-03, extended 2026-09-10, 2026-09-11, 2026-09-14, 2026-09-15 and 2026-09-16.
 
 `origin/main` carries everything below. The stacked `pr1`..`pr14` branches were merged earlier, and
 the D and E sessions were pushed straight to `main` on 2026-09-11 at the owner's request (O1).
@@ -253,7 +253,7 @@ was force-pushed.
 | F23 | the verdict: three runs a side, the floors, `--player` | **Done** | `15c2f0a` |
 | F24 | the bake pipeline: pooled runs, the staleness test, the re-bake | **Done** | `ff9417c` |
 | F25 | the AI special gap comment | **Done** | `f8b528c` |
-| F26 | `skip 5, and then immediately tell me to do 5 with you` -- the relay | **Yours** | logged in 2026-09-15; the deploy stopped at the account's missing workers.dev subdomain, which only the dashboard can register. Then the deploy, the URL and the live test are mine |
+| F26 | `skip 5, and then immediately tell me to do 5 with you` -- the relay | **Done** | `eda2644`: a Cloudflare Worker with a Durable Object per room at `wss://smash-island-relay.caradoc-kuperman.workers.dev/ws`, `npm run relay:live` 17/17 |
 
 **F1 was measured before it was believed.** A first probe staged `count=4` in team mode and got
 four one-fighter teams (`1v1v1v1` is the first split the game offers), so nobody had a teammate and
@@ -409,6 +409,101 @@ ranking file, `baked-ratings` fails the suite when the baked table names a file 
 with it, or is older than the newest dated measurement on disk. `ff9417c` is the first bake through it: merge-rankings pooled the three final runs into `scripts/balance-ranking-2026-09-15-final.json`, and the test holds the table to that file.
 
 **F11 and F14 are the two machine-time items.** Both ran in spare worktrees beside the batch, and both were restarted once after the O18 hole was found, so no number here comes from a build that could not finish a match. F11 is O21: two tournament runs on `d946b18`. F14 is O16: three A/B slates on the same build. The final three runs on `15c2f0a` (seeds 1234, 777, 4242; 384 matches) are O22, and are what `ff9417c` bakes: against the four runs before them, sigma 0.124 to 0.108 (-13%), P(tighter) 88%, still inside the interval, KOs a game 1.70 to 1.73.
+
+---
+
+## G · The 2026-09-15 and 2026-09-16 sessions
+
+| | Task | Status | Landed in |
+|---|---|---|---|
+| G1 | `nerf smash charge time(make it longer for all "short" charge time characters) and reduce the time between specials` | **Done** | `8f73657` |
+| G2 | `Change the up-specials to custom ones ... They should actually DO stuff. I like teardrop tho. Buff it slightly` | **Done** | `86e11a7`, `8f73657` |
+| G3 | `momentum doesnt have a status icon, neither do effects on hit` | **Done** | `c11688c` |
+| G4 | `ship, push, and merge all changes` | **Done** | pushed to `main` |
+| G5 | `supervan can be shot in air but not on platforms ... do a check on specials and smashes to see if gravity and wording are changing my interntions` | **Done** | `ff96a87`; the audit's 41 bugs `306ee6d`, its 22 questions `8c22717` |
+| G6 | `order the characters by appearance in the show. add the options of the main game to multiplayer.` | **Done** | `9e77a0d`, `25abf39` |
+| G7 | `add attack descriptions to everything` (`Full lines like the smash`) | **Done** | smash lines `329d7bc`; the other six inputs `0f4b7dc` |
+| G8 | `traps cant fall on platforms. also, traps should FALL, not appear.` | **Done** | `306ee6d` |
+| G9 | `player 1 cant choose characters, or other settings` (`player 1 being the host`) | **Done** | `dcee25e` |
+| G10 | `Smashes still feel overcomplicated and hard to use, especially against enemies with movetech. make instructions in the main menu clearer. if it says your gonna dash, the smash should make you dash, and if you connect, the effect and damage will apply.` | **Done** | `329d7bc` |
+| G11 | The Cloudflare MCP server in Claude Code | **Yours** | it needs `/mcp` in an interactive `claude` session; the relay itself (F26) does not depend on it |
+| G12 | `run the tournament. Anything that should be changed? ask questions in a question box. tell me about flags in that` | **Done** | 15 runs (6 before, 6 after, 3 tuned); four questions, the flags in them |
+| G13 | `if you angle it, you can also wait and see when you come down and THEn fire it` | **Done** | `0f4b7dc` |
+| G14 | Dash damage: `Wait for 6 runs, then decide` | **Done** | the drop did not hold (18.5% -> 18.2% over 6 runs a side); dashes unchanged |
+| G15 | Roboty and Gelatin: `Tune both` | **Done** | `0f4b7dc` |
+| G16 | The review of `329d7bc`: 32 confirmed findings | **Done** | `0f4b7dc` |
+| G17 | `how many lines of code does this project have?` | **Answered** | 31,541: the game 15,721, tests 13,303, scripts 2,227, relay 290 |
+
+**G10 was measured before and after.** Every smash was pressed through the real keys against a dummy
+that stood at 70 and 150 px, walked away, walked in from 300 px, walked past from 90 px, and hopped.
+Before: 50 / 28 / 7 / 32 / 18 / 17 of 59 landed. Five things were in the way, and none of them were on a
+screen. A dash did 30% of its number on contact and the real hit was a swing *behind* you after the
+dash; a lunge was a 3 px nudge and one swing on the press frame; a hop was a fixed arc that landed
+only on someone who stood still for the whole of it; four of the five falling smashes dropped at a
+fixed spot; and a lunge with a sweet spot dealt 55% of its damage anywhere else. The input had a
+mis-press floor that threw nothing and a hold that waited for the release, and the menu said
+"hold V". After: 50 / 38 / 7 / 45 / 41 / 23, and not one smash lands less than its stated number.
+
+What changed: press V once, and the smash goes off by itself when the charge is full (the owner's 24-32
+frame charge is untouched); it turns to the nearest foe unless ← or → is held (Puffball's Meteor Puff
+is not turned); a lunge moves you and hits the first foe it touches; a dash's contact is the whole
+hit; a hop steers at the nearest foe and stomps; every falling smash seeks, with a volley starting on
+the target; a sweet spot only changes the launch; Naily's dash contact is the 16 and the jab back the
+7. A lunge stops at a ledge and a hop only steers at a foe over something it can land on. Tree's
+TIMBER is the row it was. The move card names the kind (Lunge, Dash, Hop, Pull, Ring, Root & blast,
+Roller, Beam, Drop, Trap), the reach, the damage and the effect, and How to Play explains the press,
+the charge, the aim and all ten kinds -- readably, which the old light-on-light text was not.
+
+Two bugs came out of it. A key held through a smash's own self-stun read as released on the stun's
+last frame and came back as a new press: one hold, four smashes, for players and for the AI, which
+holds nine frames past full. That one is why Ice Cube's AI hold test failed on the first run. And the
+How to Play card grid was 470 px wide on a 375 px phone. Walking straight away at full speed from the
+moment the key is pressed still escapes almost everything (7 of 59), and that is left alone: half a
+second of charge is the owner's.
+
+**G12 is the tournament and what it flagged.** Six runs of `8c22717` against six of `329d7bc` (seeds 1234, 777,
+4242, 99, 2026, 31337): sigma 0.114 -> 0.106 (-7.2%, P(tighter) 73%, not conclusive), KOs a game 1.69 -> 1.70.
+By smash kind the Beam (15.9% -> 24.0%) and Roller (20.1% -> 24.2%) rose with aim, Lunge rose (19.7% -> 22.3%),
+the Shockwave (18.7% -> 13.5%) and Pull (28.6% -> 20.3%) fell back as everything else started landing, and the Dash
+did not move (18.5% -> 18.2%), which is G14. Roboty (71.4% / 62.1%) and Gelatin (2.0% / 2.0%) sat at the two
+ends on both builds, far outside the 20pp per-fighter floor, which is G15. The review workflow on `329d7bc` (four
+lenses, each finding put to a skeptic) confirmed 32 findings, several found by more than one lens, and refuted 4; G16 is the fixes.
+
+**G13: a charged smash waits.** Once the charge is full, holding ↑ or ↓ keeps it waiting (up to 1.5 s, SMASH_WAIT_MAX)
+and letting go fires it at the angle that was held, so a smash can be carried through a jump and thrown on the way
+down. The AI does not wait. The angle now belongs to the smash rather than to a 24-frame clock: it lasts as long
+as the move that carries it (a lunge, dash, hop, wind-up, Naily's dash, Puffball's dive), and a drop, trap or
+roller the smash threw carries its own, so a drop lands angled 45 frames after it was thrown. Before, ↑/↓ did
+nothing to Drops, Traps, Tree's smash, the slower Hops and far Rollers, and the card's "hold ↑ to aim" made you
+jump into a miss.
+
+**G15: one change each, measured before it was chosen.** Forty instrumented 5-way matches per fighter credited every
+point of damage and every knockout to the move that dealt it. Roboty: 154 of his 182 knockouts came from Antenna
+Spring (a special scores 5% of everyone else's), used nine times a match and landing every time, 26 wins in 40. A
+shorter reach (70 -> 30) only took him to 23; a softer launch (ANTENNA_FOE_VY -24 -> -16) took him to 19 and 2.9
+KOs a match, and that is the change. Gelatin dealt normal damage (168 a match against 188) and took normal damage,
+but scored 0.45 knockouts a match: every move she has launches weakly. The third syringe jab now launches
+(RANGE_PROFILE multi.finalKb 18; tested 12, 16 and 20: 0.82, 1.27 and 1.70 KOs a match). Three tournament runs on
+the tuned build: Roboty 62.1% -> 51.2% (still first; Ruler 45%), Gelatin 2.0% -> 17.2% and 0.31 -> 1.31 KOs a
+game, the best-to-worst spread 60.1 -> 47.2 points, sigma not yet conclusive over three runs.
+
+**G16: the review's findings, fixed.** Lunges and dashes had stopped hurting bosses, assists and turrets (the contact
+check looked only at fighters); holding a direction during a hop sped it up without limit (Bubble reached 35 px a
+frame and flew off the stage); aim turned dashes and hops toward a foe past a ledge, a dash had no ledge stop, and a
+lunge that ended on the ground slid off one through its self-stun; aim ranked foes by horizontal gap only, so a foe on
+a platform overhead won over one in front; a V press still held when a stun ended was dropped; the drop smashes could
+drop nothing while the special's shared drop cooldown ran; a lunge's sweet spot could never be hit travelling in, so
+"launches far" was false for the four hilt lunges; the easy AI threw two smashes a decision and every AI held V for nine
+dead frames; the tutorial's smash step needed 28% on the dummy; a frozen fighter's charge still fired and moved it. The
+words: Puffball's card said she rises (she dives), "freezes" left out that it needs 15% (40% for Gelatin), Drops and
+Hops gave no reach, the van does not ride surfaces, "Ring" meant both the charge and a kind (the kind is Shockwave now),
+the roller reach said the whole stage at 650 px, and How to Play pushed its buttons below the fold. Each has a test in
+`test/smash-simple` that fails on `329d7bc`.
+
+**G7: every move in words.** A workflow wrote one line for each of the 354 other inputs (59 fighters x X, ↓+X, C, ↑+C,
+↓+C, X+C) from the move's code and a measurement of every move at 40, 110 and 220 px, and a second reader checked each
+line against both and corrected 39. `test/move-text` measures every move again and holds each line's first-hit
+number to what the move lands, and every "no hit:" line to landing nothing.
 
 ---
 
@@ -672,10 +767,10 @@ six, they are real.
 
 | | Count |
 |---|---|
-| Done | 92 |
+| Done | 109 |
 | Open | 2 (O20, O22) |
 | Superseded | 2 (O1, B12) |
-| Blocked on you | 1 (F26: the workers.dev subdomain) |
+| Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
-Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F25, O3-O19 and O21.
-Suite: **798 passed and 1 todo on the shipped file (70 files), on `ff9417c`**.
+Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G17, O3-O19 and O21.
+Suite: **917 passed (80 files) on the shipped file, on `0f4b7dc`**.
