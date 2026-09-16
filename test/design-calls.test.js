@@ -185,8 +185,10 @@ describe('the moves now do what their text says', () => {
     const r = W.eval(`(function(){ ${arena('Roboty', { plat: false, foe: { x: 445 } })}
       fireSpecial(A, {}); return { self: A.vy, foe: D.vy };
     })()`);
-    expect(r.foe, 'the foe goes up hard').toBeLessThan(-10);
+    // -24 landed about -15 here; "Tune both" (2026-09-16, test/balance-outliers) took it to -16, which lands about -10.
+    expect(r.foe, 'the foe goes up hard').toBeLessThan(-9);
     expect(r.self, 'he does not').toBeGreaterThan(r.foe);
+    expect(r.foe - r.self, 'and far harder than his own little bounce').toBeLessThan(-3);
   });
 
   it("Puffball's Meteor Puff is untouched (the owner kept its timing)", () => {

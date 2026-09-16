@@ -193,15 +193,16 @@ describe('a smash never carries you off the stage by itself', () => {
 });
 
 describe('the words', () => {
-  const VERB = { lunge: 'lunges forward', through: 'dashes forward', leap: 'hops at the nearest foe', burst: 'ring bursts out',
-    walk: 'along the ground', beam: 'instant beam', rain: 'drops it from the sky onto the nearest foe', mine: 'sets a trap',
+  const VERB = { lunge: 'lunges forward', through: 'dashes forward', leap: 'hops at the nearest foe', burst: 'shockwave bursts out',
+    walk: /along the ground|driving straight ahead/, beam: 'instant beam', rain: 'drops it from the sky onto the nearest foe', mine: 'sets a trap',
     plant: 'roots you in place', reel: 'pulls nearby foes in' };
 
   it('every smash row names its motion, its whole damage and its effect', () => {
     const blurbs = W.eval(`ROSTER.filter(function(r){ return r.play && SMASH_SPEC[r.kit.special]; }).map(function(r){
       var s = SMASH_SPEC[r.kit.special], A = makeFighter(r, 0, 0, 0);
       return { name:r.name, pat:s.pat, dmg:s.dmg, eff: s.effect ? SMASH_EFFECT_TEXT[s.effect] : null, id: SMASH_ID[r.kit.special] ? SMASH_ID[r.kit.special].name : null, text: smashBlurb(A) }; })`);
-    const bad = blurbs.filter((b) => !b.text.includes(VERB[b.pat]) || !b.text.includes(`On hit: ${b.dmg}%`)
+    const says = (t, v) => (v instanceof RegExp ? v.test(t) : t.includes(v));
+    const bad = blurbs.filter((b) => !says(b.text, VERB[b.pat]) || !b.text.includes(`On hit: ${b.dmg}%`)
       || (b.eff && !b.text.includes(b.eff)) || (b.id && !b.text.startsWith(b.id))
       || /from behind|steps in|hold/i.test(b.text)).map((b) => `${b.name}: ${b.text}`);
     expect(bad).toEqual([]);
@@ -232,6 +233,120 @@ describe('the words', () => {
     for (const k of r.kinds) expect(r.text, k).toContain(k);
     for (const s of [r.text, r.hint, r.steps]) expect(s).not.toMatch(/hold V/i);
     for (const key of ['↑ + C', '↓ + C', 'X + C']) expect(r.text, key).toContain(key);
+  });
+});
+
+describe('the review of the change (2026-09-16)', () => {
+  it('a lunge and a dash hurt a boss, as they did before the change', () => {
+    const r = W.eval(`(function(){
+      var out = {};
+      ['Coiny','Leafy'].forEach(function(n){
+        SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+        worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+        var A = makeFighter(ROSTER.find(function(r){ return r.name===n; }), 400, groundY()-24, 0);
+        A.team=0; A.face=1; A.controller='still'; fighters=[A]; step(); A.atkCd=0;
+        var boss = { type:'boss', team:9, x:470, y:groundY()-40, r:30, hp:500, maxHp:500, vx:0, vy:0 };
+        summons.push(boss);
+        doSmash(A);
+        for (var i=0;i<30;i++){ step(); boss.x = 470; boss.vx = 0; }
+        out[n] = 500 - boss.hp;
+        summons = [];
+      });
+      return out;
+    })()`);
+    expect(r.Coiny, 'the lunge').toBeGreaterThan(0);
+    expect(r.Leafy, 'the dash').toBeGreaterThan(0);
+    expect(r.Leafy, 'the dash strikes a boss once, not every frame it is inside it').toBeLessThanOrEqual(W.eval("SMASH_SPEC.dash.dmg") + 0.01);
+  });
+
+  it('holding a direction during a hop cannot speed it past its cap', () => {
+    const r = arena('Bubble', -500, `
+      A.controller='local'; A.you=true; A._smAngle = 0;
+      doSmash(A); var top = 0;
+      for (var i=0;i<60 && A._sm;i++){ down[KEYS.right] = true; step(); top = Math.max(top, Math.abs(A.vx)); }
+      down[KEYS.right] = false;
+      return { top: top, cap: Math.max(SMASH_SPEC.float.fwd*2, SMASH_HOP_VMAX) };`);
+    expect(r.top).toBeLessThanOrEqual(r.cap + 1);
+  });
+
+  it('a dash stops at a ledge, and nothing that moves you turns toward a foe past the edge', () => {
+    const r = arena('Leafy', 0, `
+      A.x = WW - 150; A.face = 1; D.x = 100;
+      doSmash(A); var maxX = A.x;
+      for (var i=0;i<20;i++){ step(); maxX = Math.max(maxX, A.x); }
+      var dash = { maxX: maxX, edge: WW - 30 };
+      A.x = 200; A.face = 1; A._sm = null; A.vx = 0; D.x = 10; D.y = A.y;   // a foe past the left edge, behind
+      smashAim(A, {});
+      return { dash: dash, face: A.face };`);
+    expect(r.dash.maxX, 'the dash teeters').toBeLessThan(r.dash.edge);
+    expect(r.face, 'aim did not turn toward the foe past the edge').toBe(1);
+  });
+
+  it('aim weighs height: a foe level with you beats one overhead that is a little closer across', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=3; SETTINGS.items=false; running=true;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var A = makeFighter(ROSTER.find(function(r){ return r.name==='Coiny'; }), 400, groundY()-24, 0);
+      var G = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 475, groundY()-24, 1);
+      var P = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 370, groundY()-194, 2);
+      [A,G,P].forEach(function(f,i){ f.team=i; f.controller='still'; }); fighters=[A,G,P]; A.face=-1;
+      smashAim(A, {});
+      return A.face;
+    })()`);
+    expect(r).toBe(1);
+  });
+
+  it("a drop is never eaten by the special's shared drop cooldown", () => {
+    const r = arena('Blocky', 120, `
+      A.dropCd = 50;   // as if the special had just dropped something
+      var p0 = projectiles.length; doSmash(A);
+      return projectiles.length - p0;`);
+    expect(r).toBeGreaterThan(0);
+  });
+
+  it('a V press still held when a stun ends is not lost', () => {
+    const r = arena('Coiny', 900, `
+      A.controller='local'; A.you=true; A.hitstun = 20;
+      var fired = -1, _ds = doSmash; doSmash = function(f){ if (f===A && fired<0) fired = i; return _ds.apply(this, arguments); };
+      try { for (var i=0;i<80 && fired<0;i++){ down[KEYS.smash] = i >= 5 && i < 30; step(); } }
+      finally { doSmash = _ds; down[KEYS.smash] = false; }
+      return fired;`);
+    expect(r, 'pressed during the stun, still held when it ended: it charges and goes off').toBeGreaterThan(0);
+  });
+
+  it('the angle stays with a smash whose hit comes late: a drop lands angled', () => {
+    const vs = [1, 0].map((ang) => arena('Blocky', 60, `
+      A._smAngle = ${ang}; A._smAngleT = ${ang ? 24 : 0};
+      doSmash(A);
+      var v = null;
+      for (var i=0;i<120 && !v;i++){ step(); D.x = 460; if (D.pct > 50.5) v = { vx: D.vx, vy: D.vy }; }
+      return v;`));
+    expect(vs[0] && vs[1], 'both drops land').toBeTruthy();
+    const steep = (v) => -v.vy / Math.abs(v.vx || 0.001);
+    expect(steep(vs[0]), 'angled up lands steeper, 45 frames after it was thrown').toBeGreaterThan(steep(vs[1]));
+  });
+
+  it('the easy AI throws one smash per decision, not two', () => {
+    const r = arena('Coiny', 900, `
+      A.controller='ai'; A._lvlCache = 0; A._aiCharging = aiChargeDepth(A, 'slap', true);
+      var fires = 0, _ds = doSmash; doSmash = function(f){ if (f===A) fires++; return _ds.apply(this, arguments); };
+      var _think = aiThink; aiThink = function(f){ return finishAI(f, { left:false, right:false, jump:false, up:false, down:false, attack:false, special:false, smash:false }, 'slap'); };
+      try { for (var i=0;i<300;i++) step(); } finally { doSmash = _ds; aiThink = _think; }
+      return fires;`);
+    expect(r).toBe(1);
+  });
+
+  it('the tutorial smash step finishes on one smash that lands', () => {
+    const r = W.eval(`(function(){
+      var s = TUT_STEPS.find(function(x){ return /SMASH/.test(x.text); });
+      TUT.smashPct = 12; var hit = s.check({}, { pct: 26 }); var none = s.check({}, { pct: 13 });
+      TUT.smashPct = null; var never = s.check({}, { pct: 90 });
+      return { hit: hit, none: none, never: never, text: s.text };
+    })()`);
+    expect(r.hit).toBe(true);
+    expect(r.none).toBe(false);
+    expect(r.never, 'no smash thrown, no step').toBe(false);
+    expect(r.text.length, 'short enough for the prompt box on a phone').toBeLessThan(35);
   });
 });
 

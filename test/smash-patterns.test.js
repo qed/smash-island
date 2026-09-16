@@ -97,7 +97,9 @@ describe('each pattern does what its name says', () => {
   it('lunge — Coiny actually moves forward, and reaches a target the old step never could', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const r = stage(w, 'Coiny', 540, 14);   // 140px: the old 3px step and single swing landed nothing here
-    expect(r.dx, 'a lunge moves you').toBeGreaterThan(50);
+    // It stops where it touches them (no slide through the self-stun), so the distance is the gap it closed: the old
+    // step moved about 3px and landed nothing from here.
+    expect(r.dx, 'a lunge moves you to them').toBeGreaterThan(30);
     expect(r.pct).toBeGreaterThanOrEqual(w.eval("SMASH_SPEC['slap'].dmg"));
   });
 

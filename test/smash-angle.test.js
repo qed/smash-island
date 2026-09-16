@@ -4,7 +4,8 @@ import { bootMonolith } from './helpers/smash-golden.js';
 // ANGLED SMASHES.
 //
 // Holding up or down as a smash goes off tilts its launch -- up steeper, down flatter -- without changing
-// how hard it hits. Charging does not take the jump away: an earlier version made up aim instead of jump
+// how hard it hits. Since "if you angle it, you can also wait and see when you come down and THEn fire it", holding
+// up or down once the charge is full keeps the smash waiting, and letting go fires it at the angle that was held. Charging does not take the jump away: an earlier version made up aim instead of jump
 // while a smash charged, and the owner's verdict was "you cant jump while chargin a smash".
 
 let W;
@@ -57,10 +58,14 @@ describe('the input', () => {
     down[KEYS.smash] = true;
     for (var i=0;i<14;i++){ if (i===3) down[KEYS.jump] = true; step(); if (A.y < y0 - 4) rose = true; if (A.smashHold > 0) held++; }
     down[KEYS.smash] = false;                                      // let go early, with up still held
-    for (var j=0;j<48 && A._smQ;j++) step();                       // it fires when the charge completes
-    angle = A._smAngle;
-    down[KEYS.jump] = false;
-    return { rose: rose, held: held, angle: angle };
+    var fires = 0, _ds = doSmash; doSmash = function(f){ if (f===A) fires++; return _ds.apply(this, arguments); };
+    try {
+      for (var j=0;j<48;j++) step();                               // charged, and up still held: it waits
+      var waiting = !!A._smQ && fires === 0;
+      down[KEYS.jump] = false; step();                             // let go of up: it goes off
+      angle = A._smAngle;
+    } finally { doSmash = _ds; }
+    return { rose: rose, held: held, angle: angle, waiting: waiting, fires: fires, fired: fires === 1 };
   })()`);
 
   it('you can still jump while a smash is charging', () => {
@@ -69,7 +74,36 @@ describe('the input', () => {
     expect(r.held, 'and the charge should keep building through the jump').toBeGreaterThan(8);
   });
 
-  it('up held as the smash goes off still angles it up', () => {
-    expect(drive().angle).toBe(1);
+  it('once charged, holding up keeps it waiting; letting go fires it, angled up', () => {
+    const r = drive();
+    expect(r.waiting, 'charged and up held: still waiting 48 frames later').toBe(true);
+    expect(r.fired, 'letting go of up is what fires it').toBe(true);
+    expect(r.angle, 'at the angle that was held').toBe(1);
+  });
+
+  it('it will not wait forever, and the AI never waits', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var out = {};
+      ['local','ai'].forEach(function(ctrl){
+        var A = makeFighter(ROSTER.find(function(r){ return r.name==='Coiny'; }), 400, groundY()-24, 0);
+        var D = makeFighter(ROSTER.find(function(r){ return r.name==='Leafy'; }), 900, groundY()-24, 1);
+        A.team=0; D.team=1; A.controller='still'; D.controller='still'; fighters=[A,D]; step(); A.atkCd=0;
+        A.controller = ctrl; A._smQ = { angle:0, wait:0 }; A.smashHold = smashFullOf(A);
+        var fired = -1, _ds = doSmash; doSmash = function(f){ if (f===A && fired<0) fired = i; return _ds.apply(this, arguments); };
+        var _ai = aiThink; if (ctrl==='ai') aiThink = function(){ return { down:true, smash:false }; };
+        for (var k in down) delete down[k];
+        down[KEYS.down] = true;
+        try { for (var i=0; i<200 && fired<0; i++){ if (ctrl==='local') down[KEYS.down] = true; step(); } }
+        finally { doSmash = _ds; aiThink = _ai; for (var k2 in down) delete down[k2]; }
+        out[ctrl] = { fired: fired, angle: A._smAngle };
+      });
+      return { out: out, max: SMASH_WAIT_MAX };
+    })()`);
+    expect(r.out.local.fired, 'a player holding down waits, but only up to SMASH_WAIT_MAX').toBeGreaterThanOrEqual(r.max - 1);
+    expect(r.out.local.fired).toBeLessThanOrEqual(r.max + 2);
+    expect(r.out.local.angle, 'and it goes off angled down').toBe(-1);
+    expect(r.out.ai.fired, 'the AI does not wait').toBeLessThanOrEqual(1);
   });
 });
