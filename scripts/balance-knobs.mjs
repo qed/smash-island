@@ -21,8 +21,8 @@ const int = (s) => parseInt(s, 10);
 export const KNOBS = {
   // ---- COOLDOWNS ---------------------------------------------------------------------------
   'cd.attack': {
-    doc: 'every attack cooldown: jab 22, ground move 26, smash 30, finisher 40',
-    find: /f\.atkCd\s*=\s*(\d+)/g,
+    doc: 'every attack cooldown on a whiff: jab 22, ground move 26 (smashes have smCd and the finisher fnCd since G18)',
+    find: /f\.atkCd\s*=\s*(?:f\._confirm\s*\?\s*[A-Z_]+\s*:\s*)?(\d+)/g,
     read: (m) => int(m[1]), write: (m, v) => m[0].replace(/\d+/, v), clamp: [6, 120],
   },
   'cd.special': {

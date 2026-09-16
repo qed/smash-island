@@ -34,7 +34,7 @@ const jab = (name, frames = 30, hitBack = -1) => W.eval(`(function(){
 describe('a multi-hit jab', () => {
   it("lands every hit it declares, through the target's own grace, and its damage adds to hits x dmg", () => {
     const r = jab('Needle');
-    expect(r.multi, 'Needle declares a multi').toEqual({ hits: 3, every: 4 });
+    expect(r.multi, 'Needle declares a multi; the third prick launches since the 2026-09-16 buff').toEqual({ hits: 3, every: 4, finalKb: 16 });
     expect(r.hits).toBe(3);
     expect(r.pct).toBeCloseTo(3 * r.rowDmg, 1);
     expect(r.left, 'nothing queued once the last hit has landed').toBe(false);

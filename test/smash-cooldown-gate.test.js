@@ -140,3 +140,30 @@ describe('three cooldowns: attacks, specials and smashes never wait on each othe
     expect(r.golf.smCd).toBeGreaterThanOrEqual(173);
   });
 });
+
+describe('the finisher has its own cooldown too', () => {
+  it('X+C locks neither X nor C, and a held C does not spill into a special after it', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var A = makeFighter(ROSTER.find(function(r){ return r.name==='Coiny'; }), 400, groundY()-24, 0);
+      var D = makeFighter(ROSTER.find(function(r){ return r.name==='Leafy'; }), 900, groundY()-24, 1);
+      A.team=0; D.team=1; A.face=1; A.controller='local'; A.you=true; D.controller='still'; fighters=[A,D];
+      for (var k in down) delete down[k];
+      step(); A.atkCd=0; A.spCd=0; A.smCd=0; A.fnCd=0;
+      var fin = 0, sp = 0, _f = doAttackSpecial, _s = doSpecial;
+      doAttackSpecial = function(f){ if (f===A) fin++; return _f.apply(this, arguments); };
+      doSpecial = function(f){ if (f===A) sp++; return _s.apply(this, arguments); };
+      try {
+        down[KEYS.attack] = true; down[KEYS.special] = true; step();
+        var after = { fnCd: A.fnCd, spCd: A.spCd };
+        for (var i=0;i<20;i++) step();          // both keys still held
+      } finally { doAttackSpecial = _f; doSpecial = _s; for (var k2 in down) delete down[k2]; }
+      return { fin: fin, sp: sp, after: after };
+    })()`);
+    expect(r.fin).toBe(1);
+    expect(r.after.fnCd).toBeGreaterThan(0);
+    expect(r.after.spCd, 'the special is not locked by it').toBe(0);
+    expect(r.sp, 'a held C is not a special press').toBe(0);
+  });
+});

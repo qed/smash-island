@@ -435,6 +435,9 @@ with it, or is older than the newest dated measurement on disk. `ff9417c` is the
 | G17 | `how many lines of code does this project have?` | **Answered** | 31,541: the game 15,721, tests 13,303, scripts 2,227, relay 290 |
 | G18 | `Specials and smashes should have seperate cooldowns, and also attacks` | **Done** | this commit: X waits on atkCd, C on spCd, V on smCd, and none touches the others |
 | G19 | `just do 15 matches for testing(this is the new "tournament")` | **Done** | `node scripts/balance-tournament.mjs quick`: every fighter once, 15 heats |
+| G20 | Roboty: `Longer special cooldown` | **Done** | Antenna Spring about 1.5 s (spCd 70 -> 112) |
+| G21 | `Probe and buff the bottom 4` | **Done** | Needle and Woody: the third jab launches (16, 14); Nickel jab reach 6 -> 14; Pillow's shockwave 7 -> 16. 15 probed matches each, same seeds |
+| G22 | Finisher: `Its own cooldown` | **Done** | fnCd; and a drop smash no longer blocks a drop special (the last shared timer) |
 
 **G10 was measured before and after.** Every smash was pressed through the real keys against a dummy
 that stood at 70 and 150 px, walked away, walked in from 300 px, walked past from 90 px, and hopped.
@@ -769,10 +772,10 @@ six, they are real.
 
 | | Count |
 |---|---|
-| Done | 111 |
+| Done | 114 |
 | Open | 2 (O20, O22) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
-Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G19, O3-O19 and O21.
-Suite: **920 passed (80 files) on the shipped file, with G18**.
+Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G22, O3-O19 and O21.
+Suite: **924 passed (80 files) on the shipped file, with G22**.

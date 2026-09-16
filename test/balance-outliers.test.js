@@ -50,3 +50,25 @@ describe("Gelatin's third syringe jab is a launcher", () => {
     expect(W.eval('RANGE_PROFILE.splash.multi.finalKb === undefined')).toBe(true);
   });
 });
+
+describe('the second pass (2026-09-16): Roboty waits longer, the bottom four get what they were missing', () => {
+  it("Roboty's Antenna Spring waits about 1.5 s", () => {
+    const r = arena('Roboty', 300, `fireSpecial(A, {}); return A.spCd;`);
+    expect(r).toBeGreaterThanOrEqual(88);
+  });
+
+  it("Needle's and Woody's third jab launches; Nickel's jab reaches further; Pillow's shockwave hits for 16", () => {
+    const r = W.eval(`({ needle: RANGE_PROFILE.counter.multi.finalKb, woody: RANGE_PROFILE.fraidy.multi.finalKb, nickel: RANGE_PROFILE.flip.reach })`);
+    expect(r).toEqual({ needle: 16, woody: 14, nickel: 14 });
+    const pillow = arena('Pillow', 40, `D.pct = 30; fireSpecial(A, {}); for (var i=0;i<20;i++){ step(); D.x = 440; } return +(D.pct - 30).toFixed(1);`);
+    expect(pillow).toBeGreaterThanOrEqual(16);
+  });
+
+  it("a drop smash does not hold Blocky's drop special back", () => {
+    const r = arena('Blocky', 120, `
+      doSmash(A); var afterSmash = projectiles.length;
+      A.spCd = 0; fireSpecial(A, {});
+      return projectiles.length - afterSmash;`);
+    expect(r, 'the special still drops its anvil').toBeGreaterThan(0);
+  });
+});
