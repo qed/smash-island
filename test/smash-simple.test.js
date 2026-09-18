@@ -16,11 +16,11 @@ let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
 const ROWS = () => W.eval(`ROSTER.filter(function(r){ return r.play && SMASH_SPEC[r.kit.special]; })
-  .map(function(r){ var s = SMASH_SPEC[r.kit.special]; return { name:r.name, key:r.kit.special, pat:s.pat, dmg:s.dmg, effect:s.effect||null, at:s.at||34, len:s.len||900 }; })`);
+  .map(function(r){ var s = SMASH_SPEC[r.kit.special]; return { name:r.name, key:r.kit.special, pat:s.pat, dmg:smashRowAsFired(s).dmg, effect:s.effect||null, at:s.at||34, len:s.len||900 }; })`);
 
 // A fighter and a dummy on a flat floor. `body` runs inside with A (caster) and D (dummy) in scope.
 const arena = (name, dx, body, { pct = 50 } = {}) => W.eval(`(function(){
-  SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+  SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true;
   worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
   var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(name)}; }), 400, groundY()-24, 0);
   var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), ${400 + dx}, groundY()-24, 1);
@@ -200,7 +200,7 @@ describe('the words', () => {
   it('every smash row names its motion, its whole damage and its effect', () => {
     const blurbs = W.eval(`ROSTER.filter(function(r){ return r.play && SMASH_SPEC[r.kit.special]; }).map(function(r){
       var s = SMASH_SPEC[r.kit.special], A = makeFighter(r, 0, 0, 0);
-      return { name:r.name, pat:s.pat, dmg:s.dmg, eff: s.effect ? SMASH_EFFECT_TEXT[s.effect] : null, id: SMASH_ID[r.kit.special] ? SMASH_ID[r.kit.special].name : null, text: smashBlurb(A) }; })`);
+      return { name:r.name, pat:s.pat, dmg:smashRowAsFired(s).dmg, eff: s.effect ? SMASH_EFFECT_TEXT[s.effect] : null, id: SMASH_ID[r.kit.special] ? SMASH_ID[r.kit.special].name : null, text: smashBlurb(A) }; })`);
     const says = (t, v) => (v instanceof RegExp ? v.test(t) : t.includes(v));
     const bad = blurbs.filter((b) => !says(b.text, VERB[b.pat]) || !b.text.includes(`On hit: ${b.dmg}%`)
       || (b.eff && !b.text.includes(b.eff)) || (b.id && !b.text.startsWith(b.id))
@@ -241,7 +241,7 @@ describe('the review of the change (2026-09-16)', () => {
     const r = W.eval(`(function(){
       var out = {};
       ['Coiny','Leafy'].forEach(function(n){
-        SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+        SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true;
         worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
         var A = makeFighter(ROSTER.find(function(r){ return r.name===n; }), 400, groundY()-24, 0);
         A.team=0; A.face=1; A.controller='still'; fighters=[A]; step(); A.atkCd=0;
@@ -256,7 +256,7 @@ describe('the review of the change (2026-09-16)', () => {
     })()`);
     expect(r.Coiny, 'the lunge').toBeGreaterThan(0);
     expect(r.Leafy, 'the dash').toBeGreaterThan(0);
-    expect(r.Leafy, 'the dash strikes a boss once, not every frame it is inside it').toBeLessThanOrEqual(W.eval("SMASH_SPEC.dash.dmg") + 0.01);
+    expect(r.Leafy, 'the dash strikes a boss once, not every frame it is inside it').toBeLessThanOrEqual(W.eval("smashRowAsFired(SMASH_SPEC.dash).dmg") + 0.01);
   });
 
   it('holding a direction during a hop cannot speed it past its cap', () => {
@@ -284,7 +284,7 @@ describe('the review of the change (2026-09-16)', () => {
 
   it('aim weighs height: a foe level with you beats one overhead that is a little closer across', () => {
     const r = W.eval(`(function(){
-      SETTINGS.mode='ffa'; SETTINGS.count=3; SETTINGS.items=false; running=true;
+      SETTINGS.mode='ffa'; SETTINGS.count=3; SETTINGS.itemRate=0; running=true;
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
       var A = makeFighter(ROSTER.find(function(r){ return r.name==='Coiny'; }), 400, groundY()-24, 0);
       var G = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 475, groundY()-24, 1);

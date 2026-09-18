@@ -18,7 +18,7 @@ const rowKey = (r) => [r.pat, r.effect || '-', r.band == null ? 'nb' : Math.sign
 
 const stage = (w, name, dummyAt, frames = 90) => w.eval(`
   (function(){
-    SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+    SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true;
     worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
     var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(name)}; }), 400, groundY()-24, 0);
     var D = makeFighter(ROSTER.find(function(r){ return r.name==='Golf Ball'; }), ${dummyAt}, groundY()-24, 1);
@@ -88,7 +88,7 @@ describe('each pattern does what its name says', () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const tip = stage(w, 'Gaty', 514, 6);    // ~70px out: past the band, so the latch
     const hilt = stage(w, 'Gaty', 454, 6);   // ~10px out: inside it, so the hinge
-    const dmg = w.eval("SMASH_SPEC['reflect'].dmg");
+    const dmg = w.eval("smashRowAsFired(SMASH_SPEC['reflect']).dmg");
     expect(tip.pct, 'the latch lands the whole hit').toBeCloseTo(dmg, 1);
     expect(hilt.pct, 'and so does the hinge').toBeCloseTo(dmg, 1);
     expect(tip.launch, 'the latch should launch harder than the hinge').toBeGreaterThan(hilt.launch * 1.4);
@@ -100,14 +100,14 @@ describe('each pattern does what its name says', () => {
     // It stops where it touches them (no slide through the self-stun), so the distance is the gap it closed: the old
     // step moved about 3px and landed nothing from here.
     expect(r.dx, 'a lunge moves you to them').toBeGreaterThan(30);
-    expect(r.pct).toBeGreaterThanOrEqual(w.eval("SMASH_SPEC['slap'].dmg"));
+    expect(r.pct).toBeGreaterThanOrEqual(w.eval("smashRowAsFired(SMASH_SPEC['slap']).dmg"));
   });
 
   it('through — Lightning dashes past the target, and running into him is the whole hit', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const r = stage(w, 'Lightning', 450, 40);
     expect(r.dx, 'the dash should carry him past').toBeGreaterThan(60);
-    expect(r.pct, 'the contact lands the row, not 30% of it').toBeCloseTo(w.eval("SMASH_SPEC['zap'].dmg"), 1);
+    expect(r.pct, 'the contact lands the row, not 30% of it').toBeCloseTo(w.eval("smashRowAsFired(SMASH_SPEC['zap']).dmg"), 1);
   });
 
   it('leap — Flower leaves the ground and buries on landing', async () => {
