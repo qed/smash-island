@@ -48,7 +48,8 @@ describe('Unit 9 — the drip cadence is reachable by a losing player', () => {
 
   it('the drip order plus starters covers the whole roster exactly once', async () => {
     const w = boot(); await settle(w);
-    expect(w.eval('new Set(UNLOCK_ORDER.concat(STARTERS)).size')).toBe(w.eval('ROSTER.length'));
+    // A DLC pack (r.dlc) arrives whole and is never on the drip, so the drip plus the starters is the BFDI cast.
+    expect(w.eval('new Set(UNLOCK_ORDER.concat(STARTERS)).size')).toBe(w.eval('ROSTER.filter(function(r){ return !r.dlc; }).length'));
   });
 });
 

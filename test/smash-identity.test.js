@@ -39,7 +39,7 @@ describe('every fighter has a smash identity', () => {
         var orphan  = Object.keys(SMASH_ID).filter(function(k){ return keys.indexOf(k) < 0; });
         return { fighters: keys.length, missing: missing, orphan: orphan };
       })()`);
-    expect(r.fighters).toBe(59);
+    expect(r.fighters, '59 BFDI fighters and the five Inanimate Insanity DLC fighters of batch 1').toBe(64);
     expect(r.missing, 'fighters with no smash identity').toEqual([]);
     expect(r.orphan, 'identities for a fighter that does not exist').toEqual([]);
   });

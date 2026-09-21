@@ -21,7 +21,9 @@ describe('the fighters are shown in the order they appear in the show', () => {
     expect(order.slice(0, 4)).toEqual(['Match', 'Pencil', 'Flower', 'Ice Cube']);
     expect(order.indexOf('Golf Ball'), 'the original twenty come first').toBeLessThan(order.indexOf('Yellow Face'));
     expect(order.indexOf('Puffball'), 'BFDIA before BFB').toBeLessThan(order.indexOf('Liy'));
-    expect(order.slice(-2)).toEqual(['Money', 'Fern']);
+    // The BFDI cast ends on its newest debuts; the Inanimate Insanity DLC follows it, in its own season-one order.
+    const bfdi = w.eval('SHOW_ORDER.filter(function(n){ var r = ROSTER.find(function(x){ return x.name===n; }); return r && !r.dlc; })');
+    expect(bfdi.slice(-2)).toEqual(['Money', 'Fern']);
   });
 
   it('the select board lists them in that order, in every view', async () => {
