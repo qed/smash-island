@@ -843,6 +843,17 @@
 
   <!-- RESULT -->
   <!-- TOURNAMENT SETUP -->
+  <!-- BOSS RUSH VICTORY: shown over the paused match when Four falls -->
+  <div id="rushVictory" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,10,20,0.55);z-index:60">
+    <div style="background:#fff;border:3px solid #1c1c1c;border-radius:14px;padding:18px 22px;max-width:420px;text-align:center;color:#1c1c1c">
+      <div style="font-weight:900;font-size:28px">VICTORY!</div>
+      <div id="rushVicSub" style="margin:8px 0 14px;font-size:14px"></div>
+      <div class="row" style="justify-content:center;gap:10px">
+        <button class="btn" onclick="rushKeepGoing()">Keep Going ▶</button>
+        <button class="btn ghost sm" onclick="rushFinish()">Finish</button>
+      </div>
+    </div>
+  </div>
   <!-- TUTORIAL -->
   <div id="tutorial" class="screen">
     <div class="brand" style="color:var(--gold)">First Time?</div>
@@ -4249,8 +4260,27 @@ function spawnBossRushBoss(){
   banner((BOSSRUSH.loop>0?("LOOP "+(BOSSRUSH.loop+1)+" · "):"")+"BOSS: "+b.name+"!", 1600);
 }
 let BOSS_ARENA = null;
+function showRushVictory(){
+  paused = true;
+  const el = document.getElementById('rushVictory'); if(!el) return;
+  const secs = Math.round((BOSSRUSH.frames||0)/60);
+  document.getElementById('rushVicSub').textContent = (BOSSRUSH.loop>0 ? "Loop " + (BOSSRUSH.loop+1) + " cleared" : "All nine bosses beaten") +
+    " in " + Math.floor(secs/60) + ":" + String(secs%60).padStart(2,'0') + ". Keep going and the gauntlet starts again, hitting twice as hard.";
+  el.style.display = 'flex';
+}
+function rushKeepGoing(){ const el = document.getElementById('rushVictory'); if(el) el.style.display = 'none'; paused = false; loop(); }
+function rushFinish(){
+  const el = document.getElementById('rushVictory'); if(el) el.style.display = 'none';
+  running = false; paused = false; BOSSRUSH.active = false;
+  document.getElementById('resultTitle').textContent = "Victory!";
+  document.getElementById('resultSub').textContent = "Boss Rush beaten · bosses cleared: " + BOSSRUSH.cleared;
+  const box = document.getElementById('scorecard'); if(box) box.innerHTML = "";
+  try{ stopRunRecording(()=>showRunReview()); }catch(e){}
+  go('result'); try{ showRunReview(); }catch(e){}
+}
 function bossRushCheck(){
   if(!BOSSRUSH.active) return;
+  BOSSRUSH.frames = (BOSSRUSH.frames||0) + 1;
   const boss = summons.find(s=>s.type==="boss" && s._bossRush);
   const anyAlive = fighters.some(f=>!f.dead);
   // lose: all fighters out
@@ -4277,6 +4307,8 @@ function bossRushCheck(){
     fighters.forEach(f=>{ if(!f.dead){ f.stocks = Math.min(cap, f.stocks+1); f.pct=Math.max(0, f.pct-30); } });
     banner("BOSS DOWN! +1 stock · Cleared: "+BOSSRUSH.cleared, 1700);
     if(wasFour){
+      // "Victory, then an optional loop": the run stops here with a victory card; Keep Going starts the next loop.
+      showRushVictory();
       // beat the final boss → loop the gauntlet from the top, doubling boss damage each loop
       BOSSRUSH.loop++; BOSSRUSH.dmgMult *= 2; BOSSRUSH.bossIdx = 0;
       try{ awardRushLoop(BOSSRUSH.loop+1); }catch(e){}
@@ -5689,14 +5721,17 @@ function updateBossAttack(s, tgt){
   if(s._tel>0){
     s._tel--;
     if(s._tel%6<3) s.flash=1; else s.flash=0;
-    if(s._tel<=0){ fireBossAttack(s, tgt); s.flash=0; s._atkTimer = bossAtkGap(s); }
+    if(s._tel<=0){ if(s._telKind && s._telKind !== s.attack && BOSS_MOVES[s._telKind]) BOSS_MOVES[s._telKind](s, tgt); else fireBossAttack(s, tgt); s.flash=0; s._atkTimer = bossAtkGap(s); }
     return;
   }
   // count down to the next attack; when ready, begin a telegraph
   s._atkTimer--;
   if(s._atkTimer<=0){
     s._tel = bossTelLen(s);
-    s._telKind = s.attack;
+    // "bosses should have varied attacks": the signature attack, then one of its second moves, in turn
+    s._moveN = (s._moveN||0) + 1;
+    const extra = BOSS_EXTRA[s.name] || [];
+    s._telKind = (extra.length && s._moveN % 2 === 0) ? extra[((s._moveN >> 1) - 1) % extra.length] : s.attack;
     // aim/snapshot the target position for telegraphed placement
     s._telX = tgt ? tgt.x : s.x;
     banner(bossTelName(s), 700, 'boss');
@@ -5769,7 +5804,32 @@ function bossTelLen(s){
   return 36;                                     // other bosses telegraph faster now (was 45)
 }
 
+// SECOND MOVES. Each boss had one attack (with phase variants), so a fight was the same read every time. These are the
+// shared shapes a boss throws between its signature attacks, dressed in its colour; which ones a boss uses is BOSS_EXTRA.
+const BOSS_EXTRA = {
+  "Announcer": ["rain", "ring"], "Puffball Speaker Box": ["slam", "rain"], "Firey Speaker Box": ["rain", "slam"],
+  "The Bug Swarm": ["seekers", "rain"], "Purple Face": ["ring", "rain"], "Purple Dragon": ["slam", "rain"],
+  "Evil Leafy": ["seekers", "slam"], "Two": ["seekers", "ring"], "Four": ["rain", "seekers"],
+};
+const BOSS_MOVE_NAME = { rain:"INCOMING!", ring:"SHOCK RING!", slam:"GROUND POUND!", seekers:"SEEKERS!" };
+function bossShot(s, o){ return Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:bossDmg()*0.8, kb:8, r:11, color:s.color, life:120, noAim:true }, o); }
+const BOSS_MOVES = {
+  // five drops over where the target was when the warning started, each with a shadow on the floor
+  rain(s, tgt){ const id = ++BOSS_ATK_ID, cx = s._telX != null ? s._telX : (tgt ? tgt.x : s.x);
+    for(let k=-2;k<=2;k++){ const x = cx + k*70; addProj(bossShot(s, { x, y:camY-30, vx:0, vy:5, grav:true, warnX:x, warnY:groundY(), warn:26, bossAtk:id, life:150 })); } },
+  // a ring of twelve shots from the body, slow enough to weave through
+  ring(s, tgt){ const id = ++BOSS_ATK_ID;
+    for(let a=0;a<12;a++){ const ang = a/12*Math.PI*2; addProj(bossShot(s, { x:s.x, y:s.y, vx:Math.cos(ang)*6.5, vy:Math.sin(ang)*6.5, bossAtk:id })); } shake(4); },
+  // a stomp: a low wave runs along the floor both ways -- jump it
+  slam(s, tgt){ const id = ++BOSS_ATK_ID, y = groundY() - 12;
+    for(const d of [-1, 1]) addProj(bossShot(s, { x:s.x + d*s.r*0.6, y, vx:d*8, vy:0, r:14, bossAtk:id, life:140 })); shake(8);
+    for(let i=0;i<14;i++) puff(s.x+(Math.random()*s.r*2-s.r), groundY()-4, s.color, 5); },
+  // three slow seekers that curve after the nearest fighter
+  seekers(s, tgt){ const id = ++BOSS_ATK_ID;
+    for(let k=0;k<3;k++){ const ang = -Math.PI/2 + (k-1)*0.7; addProj(bossShot(s, { x:s.x, y:s.y-s.r*0.5, vx:Math.cos(ang)*5, vy:Math.sin(ang)*5, homing:0.05, life:160, bossAtk:id })); } },
+};
 function bossTelName(s){
+  if(s._telKind && s._telKind !== s.attack && BOSS_MOVE_NAME[s._telKind]) return BOSS_MOVE_NAME[s._telKind];
   if(s.attack==="four") return s._phase===2 ? "SCREECHY!!" : "SCREECHY!";
   if(s.attack==="announcer") return s._phase===2 ? "BUDGET CUTS!" : "CAKE AT STAKE!";
   if(s.attack==="evilleafy") return "TENDRILS!";
@@ -5798,11 +5858,12 @@ function fireBossAttack(s, tgt){
       // They all share this attack's bossAtk id, so the per-attack damage cap still applies (the
       // wall can't stack damage) — its job is to be a genuine wall you must find a gap in.
       // Safe gaps shrink hard by phase: P1 leaves 3 gaps, P2 leaves 2, P3 leaves a single seam.
-      const gaps = s._phase>=3 ? 1 : (s._phase===2 ? 2 : 3);
-      const gapHalf = s._phase>=3 ? 0.13 : (s._phase===2 ? 0.17 : 0.22);   // radians each side of the gap centre
+      // "screechy should move more slowly and have more gaps" (2026-09-21): 5/4/3 gaps (were 3/2/1), each wider.
+      const gaps = s._phase>=3 ? 3 : (s._phase===2 ? 4 : 5);
+      const gapHalf = s._phase>=3 ? 0.18 : (s._phase===2 ? 0.21 : 0.24);   // radians each side of the gap centre (were 0.13-0.22)
       const gapCenters = []; for(let g=0; g<gaps; g++) gapCenters.push(Math.random()*Math.PI*2);
       const N = 360;                                     // one per degree
-      const spd = s._phase>=3 ? 10.5 : (s._phase===2 ? 9.5 : 8.5);   // was 5.5-6.5: trivially outrun
+      const spd = s._phase>=3 ? 7.5 : (s._phase===2 ? 6.8 : 6);   // slower again (was 8.5-10.5), with the extra gaps so it is not outrun for free
       for(let i=0;i<N;i++){
         const ang = (i/N)*Math.PI*2;
         let safe=false;
@@ -5915,7 +5976,7 @@ function fireBossAttack(s, tgt){
     // PHASE 3 — GRAB & CARRY (design doc): a strafing pass that hurls the target toward the blast zone.
     if(ph>=3 && tgt && Math.hypot(tgt.x-s.x,tgt.y-s.y) < s.r+150){
       const away = Math.sign(tgt.x - WW/2)||1;
-      applyHit(tgt, bossDmg()*0.6, away*22, -9, null, {bossAtk:atkId});
+      applyHit(tgt, bossDmg()*0.6, away*14, -9, null, {bossAtk:atkId});   // 22 threw anyone into the blast zone: 2.25 stocks a try at 59% taken
       banner("GRAB & CARRY!",800,'boss');
       for(let i=0;i<12;i++) puff(tgt.x,tgt.y,'#b06ad0',5);
     }
@@ -5969,7 +6030,7 @@ function fireBossAttack(s, tgt){
   }
 }
 // Every boss attack deals a consistent 30% to a fighter's damage meter (x2 each gauntlet loop).
-const BOSS_DMG_BASE = 30;
+const BOSS_DMG_BASE = 22;   // was 30: 12 of 15 solo runs died inside 55 s ("Lower every boss hit", 2026-09-21)
 function bossDmg(){ return BOSS_DMG_BASE * ((typeof BOSSRUSH!=='undefined' && BOSSRUSH.dmgMult) || 1); }
 // Purple Face SWALLOW: grab the nearest fighter into a stomach zone. They take 10%/sec there and
 // must deal 50 damage to the exposed tongue to be spat back out.
@@ -7026,9 +7087,14 @@ const COMEBACK_IFRAME_FLOOR = 3;
 // how many "comeback points" a fighter has earned: deaths count full, kills count a quarter.
 // Hard-capped so the bonus can't scale without limit (e.g. infinite-stock boss rush).
 const COMEBACK_MAX_POINTS = 5;
+// Boss Rush caps it lower: every death there is permanent, bosses stand still for the extra shots, and uncapped it
+// carried Gelatin through 14 bosses in 85 s (11 freeze shots a cast into a boss's body). "just cap it, but make it
+// decently high. fries is okay, bcs his damage is pretty low" -- so Fries keeps the full bonus.
+const BOSS_COMEBACK_MAX = 3;
 function comebackPoints(f){
   if(!f.kit || !COMEBACK[f.kit.special]) return 0;
-  return Math.min(COMEBACK_MAX_POINTS, (f.deaths||0) + 0.25*(f.killCount||0));
+  const cap = (SETTINGS.mode==='boss' && f.kit.special!=='fry') ? BOSS_COMEBACK_MAX : COMEBACK_MAX_POINTS;
+  return Math.min(cap, (f.deaths||0) + 0.25*(f.killCount||0));
 }
 // personalized comeback bonus, scaled by comeback points, tuned to each fighter's identity.
 // Returns a number whose meaning depends on the fighter's flavor (see call sites).
