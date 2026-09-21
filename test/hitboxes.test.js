@@ -38,16 +38,39 @@ describe('the hurtbox model', () => {
     expect(r.inside).toBeLessThan(0);
   });
 
-  it('every playable fighter has a box from their art, and the median keeps the old area', () => {
+  it("every playable fighter's hurtbox is their outline, traced from their render (HURT_POLY)", () => {
+    // "the hurtboxes and hitboxes should be their actual shape and size, not an approximation" (2026-09-21).
+    // Each polygon sits inside the box the renderer fits the image to (feet on R+12, width imgW*R at most)
+    // and fills a silhouette's share of it: not a sliver, not a rectangle.
     const r = W.eval(`(function(){
-      var a = ROSTER.filter(function(x){ return x.play; }).map(function(x){
-        var f = makeFighter(x, 0, 0, 0); return f.hurt ? f.hurt.rx * f.hurt.ry : -1; });
-      a.sort(function(p, q){ return p - q; });
-      return { missing: a.filter(function(v){ return v < 0; }).length, median: a[Math.floor(a.length/2)], n: a.length };
+      var bad = [];
+      ROSTER.filter(function(x){ return x.play; }).forEach(function(x){
+        var f = makeFighter(x, 0, 0, 0), p = f.hurt && f.hurt.poly, sp = SPRITES[x.name] || {};
+        if(!p || p.length < 32){ bad.push(x.name + ': no traced outline'); return; }
+        var area = 0, minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9;
+        for (var i=0;i<p.length;i+=2){ var j=(i+2)%p.length; area += p[i]*p[j+1] - p[j]*p[i+1];
+          minX=Math.min(minX,p[i]); maxX=Math.max(maxX,p[i]); minY=Math.min(minY,p[i+1]); maxY=Math.max(maxY,p[i+1]); }
+        area = Math.abs(area)/2; var box = (maxX-minX)*(maxY-minY);
+        if(maxY > f.r + 12 + 1) bad.push(x.name + ': below the feet');
+        if(maxX - minX > (sp.imgW||2.3)*f.r + 1) bad.push(x.name + ': wider than the render box');
+        if(area < 0.35*box || area > 0.99*box) bad.push(x.name + ': fills ' + Math.round(100*area/box) + '% of its box');
+      });
+      return bad;
     })()`);
-    expect(r.missing, 'fighters with no hurtbox').toBe(0);
-    expect(r.median).toBeGreaterThan(576 * 0.93);
-    expect(r.median).toBeLessThan(576 * 1.07);
+    expect(r).toEqual([]);
+  });
+
+  it('a hit lands where the art is, and misses where it is not', () => {
+    // Needle is a 42px-wide render: a point 14px beside her centre is air; the same point on Blocky is body.
+    const r = W.eval(`(function(){
+      var mk = function(n){ var f = makeFighter(ROSTER.find(function(x){ return x.name===n; }), 300, 300, 0); f.face = 1; return f; };
+      var N = mk('Needle'), B = mk('Blocky');
+      return { needleSide: hurtGap(N, 314, 300), blockySide: hurtGap(B, 314, 300), needleHead: hurtGap(N, 300, 300 - 30), needleAbove: hurtGap(N, 300, 300 - 60) };
+    })()`);
+    expect(r.needleSide, '14px beside Needle is outside her').toBeGreaterThan(0);
+    expect(r.blockySide, 'and inside Blocky').toBeLessThan(0);
+    expect(r.needleHead, '30px up is still Needle').toBeLessThan(0);
+    expect(r.needleAbove, '60px up is above her head').toBeGreaterThan(0);
   });
 
   it('the hurtbox is not the body: f.r, which sizes the art and the ground contact, does not move', () => {

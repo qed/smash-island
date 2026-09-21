@@ -67,10 +67,13 @@ describe('the words match the moves', () => {
   it("a line's first-hit number is what the move lands at some range", () => {
     const bad = [];
     for (const name of LINES.names) for (const move of Object.keys(MOVES)) {
-      const line = LINES.text[name][move], m = line.match(/On hit: (?:\d+ hits? of )?(\d+(?:\.\d+)?)%/);
+      const line = LINES.text[name][move], m = line.match(/On hit: (.*)$/);
       if (!m || /no hit:/i.test(line)) continue;
-      const n = +m[1], landed = MEASURED[name][move].filter((x) => x.first > 0).map((x) => x.first);
-      if (landed.length && !landed.some((d) => Math.abs(d - n) <= Math.max(1.05, n * 0.12))) bad.push(`${name} ${move}: says ${n}%, lands ${landed.join(' / ')} :: ${line}`);
+      // every number the hit clause names -- a sweet-spot line gives two ("3% (7% at the tip)") and either is a true hit
+      const nums = [...m[1].matchAll(/(\d+(?:\.\d+)?)%/g)].map((x) => +x[1]);
+      if (!nums.length) continue;
+      const landed = MEASURED[name][move].filter((x) => x.first > 0).map((x) => x.first);
+      if (landed.length && !landed.some((d) => nums.some((n) => Math.abs(d - n) <= Math.max(1.05, n * 0.12)))) bad.push(`${name} ${move}: says ${nums.join('/')}%, lands ${landed.join(' / ')} :: ${line}`);
     }
     expect(bad).toEqual([]);
   });

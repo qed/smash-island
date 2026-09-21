@@ -211,3 +211,19 @@ that is the thrown thing itself is used: renders of the character were rejected 
 - Pen (cap.png): his cap — File:Pen Cap.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/fe/Pen_Cap.png/revision/latest?cb=20171204165618
 - Price Tag (tag.png): a price tag — File:Price Tag S2 Asset.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/8f/Price_Tag_S2_Asset.png/revision/latest?cb=20250629215323
 - Ruler (measure.png): the ruler itself — File:Ruler's Asset.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cf/Ruler%27s_Asset.png/revision/latest?cb=20200704043629
+
+
+## Inanimate Insanity DLC
+
+Inanimate Insanity, its characters and designs are the property of **AnimationEpic** (Adam Katz and Taylor
+Grodin). Same footing as above: an unaffiliated, non-commercial fan game, no formal license, used under
+fan-work norms. Fetched with `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity`, the 2024 pose set,
+downscaled to 200px tall, alpha verified, facing measured.
+
+| Fighter | File | Source |
+|---|---|---|
+| Balloon | `balloon.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cd/Balloon2024Pose.png |
+| Bomb | `bomb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fc/Bomb2024Pose.png |
+| Knife | `knife.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/97/Knife2024Pose.png |
+| Lightbulb | `lightbulb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/db/Lightbulb2024Pose.png |
+| Paintbrush | `paintbrush.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/3f/Paintbrush2024Pose.png |

@@ -22,10 +22,13 @@
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { PNG } from 'pngjs';
 
-const WIKI = 'https://battlefordreamisland.fandom.com';
+// --wiki=<fandom subdomain> fetches from another show's wiki: the Inanimate Insanity DLC's renders come from
+// inanimateinsanity.fandom.com (AnimationEpic's designs), on the same footing and with the same checks.
+const WIKI_SUB = (process.argv.find(a => a.startsWith('--wiki=')) || '--wiki=battlefordreamisland').slice(7);
+const WIKI = `https://${WIKI_SUB}.fandom.com`;
 const UA = { 'User-Agent': 'smash-island-fan-game/1.0 (personal fan project)' };
 const OUT_DIR = 'artifacts/V1/assets/sprites';
-const MANIFEST = 'scripts/sprite-manifest.json';
+const MANIFEST = WIKI_SUB === 'battlefordreamisland' ? 'scripts/sprite-manifest.json' : `scripts/sprite-manifest-${WIKI_SUB}.json`;
 const TARGET_H = 200;
 
 export function slug(name) {
