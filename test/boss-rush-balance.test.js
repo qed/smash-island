@@ -22,6 +22,30 @@ describe('Boss Rush balance', () => {
     expect(r).toEqual({ bossGelatin: 3, bossFries: 5, ffaGelatin: 5 });
   });
 
+  it('a stock comes every third boss, not every boss, and the heal comes every time', () => {
+    // "you only gain 1 stock per 3 bosses" (2026-09-22). A stock a boss refilled the bar as fast as the gauntlet
+    // emptied it, so a healthy run never got harder. The heal stays every time.
+    const r = W.eval(`(function(){
+      var prevMode = SETTINGS.mode, prevStocks = SETTINGS.stocks;
+      SETTINGS.mode='boss'; SETTINGS.stocks=99; running=true;
+      BOSSRUSH.active=true; BOSSRUSH.cleared=0; BOSSRUSH.bossIdx=0; BOSSRUSH.loop=0; BOSSRUSH.dmgMult=1;
+      var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 400, groundY()-24, 0);
+      f.stocks=3; f.pct=80; f.controller='still'; f.team=0; f.dead=false; fighters=[f];
+      var stocks=[], pcts=[];
+      for (var i=0;i<6;i++){
+        f.pct = 80;
+        summons=[{type:'boss', name:'Bot', color:'#fff', hp:0, maxHp:100, x:400, y:300, r:40, _bossRush:true, team:-1}];
+        bossRushCheck();
+        stocks.push(f.stocks); pcts.push(f.pct);
+      }
+      BOSSRUSH.active=false; running=false; SETTINGS.mode=prevMode; SETTINGS.stocks=prevStocks; summons=[];
+      return { every: BOSS_STOCK_EVERY, stocks: stocks, healedEvery: pcts.every(function(p){ return p < 80; }) };
+    })()`);
+    expect(r.every).toBe(3);
+    expect(r.stocks, 'a stock on the third, the sixth, and nowhere else').toEqual([3, 3, 4, 4, 4, 5]);
+    expect(r.healedEvery, 'but every boss heals').toBe(true);
+  });
+
   it('boss hits are 22 (were 30) and the Dragon grab throws at 14 (was 22)', () => {
     expect(W.eval('BOSS_DMG_BASE')).toBe(22);
     expect(W.eval('String(fireBossAttack)')).toMatch(/away\*14, -9/);

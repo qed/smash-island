@@ -227,3 +227,15 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Knife | `knife.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/97/Knife2024Pose.png |
 | Lightbulb | `lightbulb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/db/Lightbulb2024Pose.png |
 | Paintbrush | `paintbrush.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/3f/Paintbrush2024Pose.png |
+| Taco (II) | `taco-ii.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/8f/Taco2024PoseAlt.png |
+| Bow | `bow.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d5/Bow2024Pose.png |
+| Marshmallow | `marshmallow.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/51/Marshmallow2024Pose.png |
+| Apple | `apple.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/48/Apple2024Pose.png |
+| Baseball | `baseball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/db/Baseball2024Pose.png |
+| Pickle | `pickle.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e5/Pickle2024Pose.png |
+| Nickel (II) | `nickel-ii.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/Nickel2024Pose.png |
+| Paper | `paper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/82/Paper2024Pose.png |
+| Microphone | `microphone.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/04/Microphone2018Pose.png |
+| Salt | `salt.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d3/Salt2024Pose.png |
+| Pepper (Salt's partner) | `pepper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b7/Pepper2024Pose.png |
+| Test Tube | `test-tube.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Blue_Ray_Test_Tube_S4.png |

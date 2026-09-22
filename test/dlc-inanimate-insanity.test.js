@@ -19,30 +19,36 @@ const arena = (name, body, foeX = 460) => W.eval(`(function(){
   ${body}
 })()`);
 
-describe('the Inanimate Insanity DLC, batch 1', () => {
+describe('the Inanimate Insanity DLC', () => {
   it('arrives unlocked, in its own labelled group after the BFDI cast, with no one from the OSC', () => {
     const r = W.eval(`(function(){ PROFILE.viewMode='unlocked'; buildBoard();
       var dlc = ROSTER.filter(function(x){ return x.dlc; }).map(function(x){ return x.name; });
       return { dlc: dlc, open: dlc.every(function(n){ return isUnlocked(ROSTER.find(function(x){ return x.name===n; })); }),
                head: !!document.querySelector('#board .dlchead'), osc: ['OJ','Suitcase','Cabby'].filter(function(n){ return ROSTER.some(function(x){ return x.name===n; }); }) };
     })()`);
-    expect(r.dlc).toEqual(['Balloon', 'Bomb', 'Knife', 'Lightbulb', 'Paintbrush']);
+    expect(r.dlc).toEqual(['Balloon', 'Bomb', 'Knife', 'Lightbulb', 'Paintbrush',
+      'Taco (II)', 'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube']);
     expect(r.open).toBe(true);
     expect(r.head).toBe(true);
     expect(r.osc).toEqual([]);
   });
 
-  it("Knife's Bag of Tricks pulls each of its four tricks", () => {
-    const r = [0.1, 0.3, 0.6, 0.9].map((roll) => arena('Knife', `
-      var _r = Math.random; Math.random = function(){ return ${roll}; };
-      try { doSpecial(A); } finally { Math.random = _r; }
-      var shots = projectiles.filter(function(p){ return p.owner===A.idx; });
-      for (var i=0;i<6;i++) step();
-      return { stunned: D._stunFx > 0, blade: shots.some(function(p){ return p.boomerang; }), caltrops: shots.some(function(p){ return p.trap; }), pulled: D.x < 460 };`));
-    expect(r[0].stunned, 'smoke bomb').toBe(true);
-    expect(r[1].blade, 'boomerang blade').toBe(true);
-    expect(r[2].caltrops, 'caltrops').toBe(true);
-    expect(r[3].pulled, 'grappling hook').toBe(true);
+  it("Knife's Bag of Tricks comes out in a fixed order, and the smoke is a ring that spreads", () => {
+    // "knife should have an order to the abilities he uses from his bag of tricks" (2026-09-22). It used to roll
+    // a die every press, so you could not plan with it. Smoke, blade, caltrops, hook, and back to the smoke.
+    const r = arena('Knife', `
+      var seen = [];
+      for (var n=0; n<5; n++){
+        projectiles = []; D._stunFx = 0; D.invuln = 0; A.spCd = 0; D.x = 900;   // out of reach, so nothing is eaten on contact
+        doSpecial(A);
+        var ring = projectiles.find(function(p){ return p.shape==='smokering'; });
+        var blade = projectiles.some(function(p){ return p.boomerang; });
+        var trap = projectiles.some(function(p){ return p.trap; });
+        if (ring){ var r0 = ring.r; for (var i=0;i<8;i++) step(); seen.push('smoke:' + (ring.r > r0 ? 'grew' : 'flat')); }
+        else { seen.push(blade ? 'blade' : (trap ? 'caltrops' : 'hook')); for (var j=0;j<8;j++) step(); }
+      }
+      return seen;`);
+    expect(r).toEqual(['smoke:grew', 'blade', 'caltrops', 'hook', 'smoke:grew']);
   });
 
   it('Balloon rockets through foes, falls slowly, and his insults weaken', () => {
@@ -88,5 +94,117 @@ describe('the Inanimate Insanity DLC, batch 1', () => {
     expect(r.hit).toBeGreaterThanOrEqual(18);
     expect(r.self).toBeGreaterThanOrEqual(3);
     expect(r.up).toBe('spin');
+  });
+});
+
+// Batch 2 (2026-09-22): "add the next set of 12 ii characters, based on canon." Eleven playable and Pepper, who is
+// Salt's partner. The owner's calls: Pickle is the glass cannon AND the injury tank; Paper's Evil meter fills when he
+// HITS people, and Evil Paper drops Idiotic Island debris; Nickel is Sarcasm Is An Art; Microphone is Loud and Proud.
+describe('the Inanimate Insanity DLC, batch 2', () => {
+  it('Pepper follows Salt, echoes her, can be knocked out alone, and comes back with Salt\'s next stock', () => {
+    const r = arena('Salt', `
+      for (var i=0;i<20;i++) step();
+      var p = pepperOf(A);
+      var near = p ? Math.abs(p.x - A.x) : 999;
+      D.x = 3000; E.x = 3200;                        // nothing for the shots to hit, so they are all still in the air
+      projectiles = []; doSpecial(A);
+      var mine = projectiles.filter(function(q){ return q.owner===A.idx; }).length;
+      for (var j=0;j<PEPPER_LAG+3;j++) step();
+      var afterEcho = projectiles.filter(function(q){ return q.owner===A.idx; }).length;
+      p.hp = 0; step();
+      var gone = !pepperOf(A), flagged = !!A._pepperDown;
+      A.stocks = 3; eliminate(A);                      // a lost stock brings her back
+      for (var k=0;k<4;k++) step();
+      return { near: near, mine: mine, afterEcho: afterEcho, gone: gone, flagged: flagged, back: !!pepperOf(A) };`);
+    expect(r.near, 'she walks a step behind her').toBeLessThan(60);
+    expect(r.afterEcho, 'Pepper throws after Salt does').toBeGreaterThan(r.mine);
+    expect(r.gone && r.flagged, 'she can go down on her own').toBe(true);
+    expect(r.back, 'and she is back for the next stock').toBe(true);
+  });
+
+  it("Paper's meter fills when he LANDS hits, and a full meter brings Evil Paper out", () => {
+    const r = arena('Paper', `
+      var m0 = A._evilM||0;
+      for (var i=0;i<6;i++){ A.atkCd=0; D.invuln=0; doAttack(A); }
+      var afterHitting = A._evilM||0;
+      A._evilM = 0; applyHit(A, 20, 0, 0, D);
+      var afterBeingHit = A._evilM||0;
+      A._evilM = 100; A.spCd = 0; doSpecial(A);
+      var evil = A._evil > 0;
+      D.pct = 30; D.invuln = 0; A.atkCd = 0; doAttack(A); var angry = D.pct - 30;
+      return { m0: m0, afterHitting: afterHitting, afterBeingHit: afterBeingHit, evil: evil, angry: angry };`, 440);
+    expect(r.m0).toBe(0);
+    expect(r.afterHitting, 'landing hits is what fills it').toBeGreaterThan(20);
+    expect(r.afterBeingHit, 'taking one does not').toBe(0);
+    expect(r.evil, 'C at a full meter fronts Evil Paper').toBe(true);
+    expect(r.angry, 'and Evil Paper hits harder').toBeGreaterThan(7);
+  });
+
+  it('Pickle hits harder the worse he is hurt, and a dive that touches nobody splats him', () => {
+    const r = arena('Pickle', `
+      A.pct = 0; D.pct = 30; D.invuln = 0; A.atkCd = 0; doAttack(A); var fresh = D.pct - 30;
+      A.pct = 120; D.pct = 30; D.invuln = 0; A.atkCd = 0; doAttack(A); var hurt = D.pct - 30;
+      A.pct = 0; A.spCd = 0; D.x = 2000; E.x = 2200; doSpecial(A);   // nobody in the way: the dive has to miss
+      for (var i=0;i<40;i++) step();
+      return { fresh: fresh, hurt: hurt, splat: A.hitstun > 0 || projectiles.some(function(p){ return p.owner===A.idx && p.trap; }) };`);
+    expect(r.hurt, 'the most injured contestant on the wiki').toBeGreaterThan(r.fresh * 1.2);
+    expect(r.splat, 'he lands in it').toBe(true);
+  });
+
+  it("Nickel's sarcasm lands harder on someone who has taken more, and the waffles snap him back", () => {
+    const r = arena('Nickel (II)', `
+      D.pct = 10; D.invuln = 0; A.atkCd = 0; doAttack(A); var calm = D.pct - 10;
+      D.pct = 150; D.invuln = 0; A.atkCd = 0; doAttack(A); var rattled = D.pct - 150;
+      var x0 = A.x; doDownSpecial(A); var split = !!A._nsplit;
+      A.x = x0 + 260; A._nsplit.t = 1; step();
+      return { calm: calm, rattled: rattled, split: split, home: Math.abs(A.x - x0) < 2 };`);
+    expect(r.rattled, 'the more they have taken, the more it lands').toBeGreaterThan(r.calm * 1.2);
+    expect(r.split).toBe(true);
+    expect(r.home, 'Dark Nickel snaps back to where Light Nickel stood').toBe(true);
+  });
+
+  it("Marshmallow's time machine puts her back where she stood", () => {
+    const r = arena('Marshmallow', `
+      for (var i=0;i<60;i++) step();
+      var x0 = A.x;
+      A.x = x0 + 300; A.pct = 40; for (var j=0;j<3;j++) step();
+      doDownSpecial(A);
+      return { back: A.x < x0 + 300, healed: A.pct < 40 };`);
+    expect(r.back).toBe(true);
+    expect(r.healed).toBe(true);
+  });
+
+  it("Microphone's button switches Loud and Quiet, and Loud hits harder", () => {
+    const r = arena('Microphone', `
+      A._loud = false; D.pct = 30; D.invuln = 0; A.atkCd = 0; doAttack(A); var quiet = D.pct - 30;
+      doDownSpecial(A); var nowLoud = !!A._loud;
+      D.pct = 30; D.invuln = 0; A.atkCd = 0; doAttack(A); var loud = D.pct - 30;
+      return { quiet: quiet, loud: loud, nowLoud: nowLoud };`);
+    expect(r.nowLoud).toBe(true);
+    expect(r.loud).toBeGreaterThan(r.quiet);
+  });
+
+  it("Bow's chair catch gives her a jump back when it connects, Taco's arms drag a foe in, Apple's doodle goes through", () => {
+    const bow = arena('Bow', `A.jumps = 0; D.x = A.x + 20; D.y = feetY(A); D.invuln = 0; doDownSpecial(A);
+      return { jumps: A.jumps, hit: D.pct > 30 };`);
+    expect(bow.hit && bow.jumps > 0, 'catching someone with it is the recovery').toBe(true);
+    const taco = arena('Taco (II)', `var x0 = D.x; doDownSpecial(A); for (var i=0;i<8;i++) step(); return { pulled: D.x < x0 };`, 540);
+    expect(taco.pulled).toBe(true);
+    const apple = arena('Apple', `doSpecial(A);
+      for (var i=0;i<40 && !(D.pct>30 && E.pct>30);i++){ step(); D.x=460; E.x=560; D.invuln=0; E.invuln=0; }
+      return { both: D.pct > 30 && E.pct > 30 };`, 460);
+    expect(apple.both, 'the doodle tears through the first one and keeps going').toBe(true);
+  });
+
+  it('Test Tube shatters into poison when struck with the glass up, and Baseball plants himself', () => {
+    const tt = arena('Test Tube', `doDownSpecial(A); var up = A._shatter > 0;
+      D.x = 440; D._poisonT = 0; applyHit(A, 8, 0, 0, D);
+      return { up: up, spent: A._shatter === 0, poisoned: (D._poisonT||0) > 0 };`, 440);
+    expect(tt.up && tt.spent).toBe(true);
+    expect(tt.poisoned, 'everything near her is poisoned').toBe(true);
+    const bb = arena('Baseball', `var x0 = D.x; doSpecial(A); step();
+      return { armor: A.armor > 0, shoved: D.x > x0, dmg: D.pct - 30 };`, 440);
+    expect(bb.armor && bb.shoved).toBe(true);
+    expect(bb.dmg, 'Too Heavy is a shove, not a hit').toBe(0);
   });
 });
