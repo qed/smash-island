@@ -7,7 +7,7 @@ import { bootMonolith } from './helpers/smash-golden.js';
 // what some range actually lands, and a "no hit:" move must land nothing at any of them.
 
 let W, LINES, MEASURED;
-const MOVES = { jab: 'A.atkCd=0; doAttack(A)', ranged: 'A.atkCd=0; doGroundMove(A)', special: 'fireSpecial(A, {})',
+const MOVES = { jab: 'A.atkCd=0; doAttack(A)', ranged: 'A.atkCd=0; doGroundMove(A)', utilt: 'A.atkCd=0; doUpTilt(A)', special: 'fireSpecial(A, {})',
   up: 'fireSpecial(A, {up:true})', down: 'fireSpecial(A, {down:true})', finisher: 'doAttackSpecial(A)' };
 
 beforeAll(async () => {
@@ -40,7 +40,7 @@ beforeAll(async () => {
 }, 480000);
 
 describe('every move has its words', () => {
-  it('every playable fighter has a line for all six inputs, named, readable and short', () => {
+  it('every playable fighter has a line for all seven inputs, named, readable and short', () => {
     const bad = [];
     for (const name of LINES.names) {
       const t = LINES.text[name];
@@ -89,12 +89,14 @@ describe('the words match the moves', () => {
     expect(bad).toEqual([]);
   });
 
-  it('the move card shows all seven lines for the chosen fighter', () => {
+  it('the move card shows all eight lines for the chosen fighter (up+X joined it: the uppercut)', () => {
     const t = W.eval(`(function(){ chosen = ROSTER.find(function(r){ return r.name==='Gelatin'; }); refreshSel();
       return Array.prototype.map.call(document.querySelectorAll('#moveCard .mc-row'), function(e){ return e.textContent; }); })()`);
-    expect(t.length).toBe(7);
+    expect(t.length).toBe(8);
     expect(t[0]).toMatch(/^X.*syringe jabs.*the third one launches/);
-    expect(t[4]).toMatch(/Freeze Mine/);
-    expect(t[5]).toMatch(/^V.*Trap · Ice Breaker/);
+    expect(t[1]).toMatch(/^↓\+X.*Low Sweep/);
+    expect(t[2]).toMatch(/^↑\+X.*Uppercut/);
+    expect(t[5]).toMatch(/Freeze Mine/);
+    expect(t[6]).toMatch(/^V.*Trap · Ice Breaker/);
   });
 });

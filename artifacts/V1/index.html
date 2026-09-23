@@ -2638,7 +2638,8 @@ function refreshSel(){
     const mt = MOVE_TEXT[chosen.name] || null, esc = (t)=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
     const rows = [
       ["X", mt ? esc(mt.jab) : "Attack", !!mt],
-      ["↓+X", mt ? esc(mt.ranged) : "Ranged", !!mt],
+      ["↓+X", mt ? esc(mt.ranged) : "Low sweep", !!mt],
+      ["↑+X", mt ? esc(mt.utilt || "Uppercut") : "Uppercut", !!mt],
       ["C", mt ? esc(mt.special) : (chosen.kit ? chosen.kit.desc.split("→")[0].trim() : "Special"), !!mt],
       ["↑+C", mt ? esc(mt.up) : "Up special (recovery)", !!mt],
       ["↓+C", mt ? esc(mt.down) : "Down special", !!mt],
@@ -6898,6 +6899,8 @@ function step(){
         if(inp.attack && f.atkCd<=0){
           // Land it and you recover sooner; whiff and you pay the full price (see JAB_HIT_CD).
           if(inp.down){ f._confirm=0; doGroundMove(f); f.atkCd = f._confirm ? GROUND_HIT_CD : 26; }
+          // up+X is the uppercut -- except while Puffball is flying, where holding up is how she climbs
+          else if(inp.up && !(f.flying>0)){ f._confirm=0; doUpTilt(f); f.atkCd = f._confirm ? JAB_HIT_CD : 24; }
           else { f._confirm=0; doAttack(f); f.atkCd = f._confirm ? JAB_HIT_CD : 22; }
         }
         // SPECIAL. The direction used to be read on the exact frame special was pressed, so you
@@ -8510,28 +8513,50 @@ function doUpSpecial(f){
 // ============================================================
 //  GROUND MOVE (down+attack): low-damage, but RANGE or AoE
 // ============================================================
+// ============================================================
+//  DIRECTIONAL ATTACKS -- X, down+X and up+X, the way Smash does its tilts
+// ============================================================
+// "down-attacks shouldnt be projectiles", then "no, like how up attacks in smash are uppercuts, make it like that",
+// and "the hitbox should appear in 1 directions (the one held down or facing.)" (2026-09-23). The KIND of attack is set
+// by the direction held, the same for everyone: X swings forward, down+X sweeps low at the feet straight ahead and pops
+// them up, up+X is an uppercut that launches them straight up. Each hits only the way it is aimed. What used to be
+// down+X was one of two things for all 75: the same little shot for 40 of them, the same two-way ankle sweep for 35.
+// The fighter's own numbers (RANGE_PROFILE) still set how far and how hard.
+function dtiltStats(f){
+  const P = rangeProfile(f);
+  return { reach: f.r + 22 + Math.max(0, P.reach||0)*0.7,
+           dmg: P.shock === 'poke' ? (P.shockDmg||4) + 2 : (P.shockDmg||4) };   // the old shot kits trade their range for damage
+}
+function utiltStats(f){
+  const P = rangeProfile(f);
+  return { reach: f.r*0.9 + 14 + Math.max(0, P.reach||0)*0.4, dmg: Math.max(5, Math.round((P.dmg||6) + 1)) };
+}
 function doGroundMove(f){
   f.flash=5;
-  // It never armed the swing timeline, so the low move played no animation of any kind. It sweeps the
-  // feet, so it kicks.
-  armAtk(f, ATK_ANIM, 'kick');
-  const P = rangeProfile(f);
-  if(P.shock==="poke"){
-    // long, fast, ranged poke projectile — reach scales with the fighter's attack reach
-    const speed=10 + Math.max(0,P.reach)*0.15;
-    addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y+4,vx:f.face*speed,vy:0,grav:false,
-      dmg:P.shockDmg,kb:3,r:6,color:f.color,life:40});
-    puff(f.x+f.face*18,f.y+4,f.color,3);
-  } else {
-    // AoE / WIDE shockwave sweep around the feet
-    const rad = P.shockR||50;
-    // a low wave along the floor, both ways: a capsule at ankle height each side
-    const fy = feetY(f) - 8;
-    for(const d of [-1, 1]) hitShape(f, { kind:'capsule', x1:f.x + d*f.r*0.5, y1:fy, x2:f.x + d*rad, y2:fy, r:10 }, P.shockDmg, P.shockDmg, d*4, -3);
-    const spread=rad*1.6;
-    for(let i=0;i<8;i++) puff(f.x+(Math.random()*spread-spread/2),f.y+16,f.color,4);
-  }
+  armAtk(f, ATK_ANIM, 'kick');   // a low kick along the floor, forward only
+  const S = dtiltStats(f), fy = feetY(f) - 10;
+  hitShape(f, { kind:'capsule', x1:f.x + f.face*f.r*0.3, y1:fy, x2:f.x + f.face*S.reach, y2:fy, r:11 }, S.dmg, S.dmg, f.face*3, -6);
+  for(let i=0;i<5;i++) puff(f.x + f.face*(f.r*0.4 + i*S.reach/6), fy + 4, f.color, 3);
 }
+// up+X: the uppercut. An arc from just above straight ahead round to just past straight up -- it catches someone
+// standing in front on its way up, and anyone above.
+function doUpTilt(f){
+  if(inOwnTeamZone(f)) return;
+  f.flash=5;
+  armAtk(f, ATK_ANIM, 'uppercut');
+  const S = utiltStats(f);
+  hitShape(f, { kind:'fan', cx:f.x, cy:f.y, r0:f.r*0.3, r1:S.reach + f.r*0.6, a0:-1.75, a1:-0.2, face:f.face }, S.dmg, S.dmg, f.face*1.5, -10);
+}
+// The directional attacks are the same kind for everyone, so their words are written from their numbers at boot and
+// cannot drift away from them (test/move-text measures every one).
+(function(){
+  const pct = (d)=> (Math.round(d*10)/10) + '%';
+  for(const r of ROSTER){ if(!r.play) continue; const t = MOVE_TEXT[r.name]; if(!t) continue;
+    const f = { r:24, kit:r.kit }, d = dtiltStats(f), u = utiltStats(f);
+    t.ranged = "Low Sweep — a quick sweep at the feet straight ahead that pops them up (short reach). On hit: " + pct(d.dmg) + ".";
+    t.utilt  = "Uppercut — a rising swing over the head that launches them straight up (short reach). On hit: " + pct(u.dmg) + ".";
+  }
+})();
 
 // ============================================================
 //  DOWN-SPECIALS (Down+Special): traps, counters, stances, defense
@@ -11640,6 +11665,8 @@ function aiThink(f){
   }
 
   aiKitLessons(f, t, inp, dx, dy, dist, adx, rn);   // the counter, trap and flying reads (see AI_COUNTER_KITS)
+  // ANTI-AIR: up+X is an uppercut now, so a foe above and close gets one.
+  if(f.atkCd<=0 && !(f.flying>0) && dy < -24 && adx < f.r + 40 && dist < 130 && rn < 0.7 && !inp.special){ inp.attack=true; inp.up=true; inp.down=false; }
   if(rn < aggro){
     // finisher when the target is at kill percent and close
     if(t.pct>90 && inMelee && f.fnCd<=0 && rn<0.4){
@@ -11650,7 +11677,7 @@ function aiThink(f){
       // lob at range, drop at the feet when close, and never onto a trap already near the target
       if(f.spCd<=0 && rn<prof.trapHappy && dist>90 && dist<280 && !projectiles.some(p=>p.trap && p.owner===f.idx && Math.abs(p.x-t.x)<120)){ inp.special=true; inp.down = AI_TRAP_DOWN.has(sp) && dist<150; }
       else if(inMelee && f.atkCd<=0) inp.attack=true;
-      else if(inZone && f.atkCd<=0 && rn<0.5){ inp.attack=true; inp.down=true; }
+      else if(inMelee && t.onground && f.atkCd<=0 && rn<0.5){ inp.attack=true; inp.down=true; }   // the low sweep is melee now
     }
     else if(cls==="rush"){
       // RUSHDOWN: stay glued to target, weave attacks & specials constantly
@@ -11679,7 +11706,7 @@ function aiThink(f){
       // HEAVY: patient — armor through, commit big when target is close/vulnerable
       if(inMelee){ if(targetVulnerable && f.spCd<=0) inp.special=true;
         else if(f.atkCd<=0) inp.attack=true; }
-      else if(dist<idealRange+120 && f.atkCd<=0 && rn<0.35){ inp.attack=true; inp.down=true; }
+      else if(inMelee && t.onground && f.atkCd<=0 && rn<0.35){ inp.attack=true; inp.down=true; }   // was a poke from idealRange+120
     }
     else if(cls==="evade"){
       // EVASIVE: bait & counter — hold counter/reflect when target commits, else space & poke
@@ -11696,7 +11723,7 @@ function aiThink(f){
         else if(r2<0.9 && f.spCd<=0){ inp.special=true; inp.down=true; }
         else if(f.smashHold<=0 && !f._aiCharging && (t.hitstun>10||t.frozen>0)) f._aiCharging=aiChargeDepth(f, sp, true);
       }
-      else if(dist<idealRange+120 && f.atkCd<=0 && rn<prof.poke){ inp.attack=true; inp.down=true; }
+      else if(inMelee && t.onground && f.atkCd<=0 && rn<prof.poke){ inp.attack=true; inp.down=true; }   // was a poke from idealRange+120
     }
     // SMASH COMMITMENT when the target is locked down.
     //
@@ -13950,9 +13977,12 @@ function drawAttackLimb(f, R, im, sp, dw, dh){
   if(ext <= 0.02) return;
   const fwd = (im && sp.flip) ? -1 : 1;
   const halfW = im ? dw/2 : R*0.9, halfH = im ? dh/2 : R;
-  const kick = f._atkKind === 'kick';
+  const kick = f._atkKind === 'kick', upper = f._atkKind === 'uppercut';
   const x0 = fwd*halfW*0.55, y0 = kick ? halfH*0.6 : -halfH*0.02;   // hip for a kick, chest for a punch
-  const x1 = x0 + fwd*(kick ? 1.0 : 0.85)*R*ext, y1 = y0 - (kick ? R*0.18*ext : 0);
+  // an uppercut sweeps from level up past vertical as it releases
+  const ua = upper ? (-0.3 - 1.25*ext) : 0;
+  const x1 = upper ? x0 + fwd*Math.cos(ua)*0.9*R : x0 + fwd*(kick ? 1.0 : 0.85)*R*ext;
+  const y1 = upper ? y0 + Math.sin(ua)*0.9*R : y0 - (kick ? R*0.18*ext : 0);
   ctx.save();
   ctx.strokeStyle = '#1c1c1c'; ctx.fillStyle = '#1c1c1c';
   ctx.lineWidth = Math.max(3, R*0.13); ctx.lineCap = 'round';
