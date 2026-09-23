@@ -16,11 +16,15 @@ let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
 const KEPT = ['dash', 'kick'];
+// Bow's chair slam gains no height on purpose -- "bow shouldnt go higher in her up-special" (2026-09-22).
+// Her recovery is her DOWN special, which hands her a jump back when the chair catches someone. Only the rise
+// assertion is skipped for her; every payoff her row declares is still checked.
+const NO_RISE = ['chair'];
 
 describe('every up-special DOES something', () => {
   it('each payoff a row declares happens, for every row', () => {
     const r = W.eval(`(function(){
-      var KEPT = ${JSON.stringify(KEPT)};
+      var KEPT = ${JSON.stringify(KEPT)}, NO_RISE = ${JSON.stringify(NO_RISE)};
       // what each status leaves on a fighter, so "the swing put eff on the dummy" is observable
       var EFF = { bleed:'bleed', burn:'burn', poison:'_poisonT', root:'rooted', slow:'slowed', ice:'iceUntil', curse:'curseStacks',
                   define:'defineStacks', weaken:'weakened', scramble:'ctrlRev', stun:'_stunFx', knockdown:'_stunFx', freeze:'frozen' };
@@ -103,7 +107,7 @@ describe('every up-special DOES something', () => {
             riders = projectiles.slice(pBefore).length + projectiles.filter(function(p){ return p.owner === A.idx; }).length;
           }
         }
-        if (!(y0 - minY > 20)) bad('it did not rise (' + (y0 - minY).toFixed(0) + ' px)');
+        if (NO_RISE.indexOf(key) < 0 && !(y0 - minY > 20)) bad('it did not rise (' + (y0 - minY).toFixed(0) + ' px)');
         if (row.shape === 'plunge'){
           payoffs++;
           if (!landed) bad('the plunge never landed');

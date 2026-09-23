@@ -122,20 +122,25 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(r.back, 'and she is back for the next stock').toBe(true);
   });
 
-  it("Paper's meter fills when he LANDS hits, and a full meter brings Evil Paper out", () => {
+  it("Paper's meter fills mostly from LANDING hits, a little from taking them, and a full one brings Evil Paper out", () => {
+    // "except its when he hits ppl" -- and then, after a balance pass found Evil Paper came out 15 times in 16 games,
+    // "1 and 3": it fills faster from his hits, and a little when he is hit.
     const r = arena('Paper', `
       var m0 = A._evilM||0;
       for (var i=0;i<6;i++){ A.atkCd=0; D.invuln=0; doAttack(A); }
       var afterHitting = A._evilM||0;
-      A._evilM = 0; applyHit(A, 20, 0, 0, D);
+      A._evilM = 0; applyHit(A, 10, 0, 0, D);
       var afterBeingHit = A._evilM||0;
+      A._evilM = 0; D.invuln = 0; D.pct = 30; applyHit(D, 10, 0, 0, A);
+      var afterLanding = A._evilM||0;
       A._evilM = 100; A.spCd = 0; doSpecial(A);
       var evil = A._evil > 0;
       D.pct = 30; D.invuln = 0; A.atkCd = 0; doAttack(A); var angry = D.pct - 30;
-      return { m0: m0, afterHitting: afterHitting, afterBeingHit: afterBeingHit, evil: evil, angry: angry };`, 440);
+      return { m0: m0, afterHitting: afterHitting, afterBeingHit: afterBeingHit, afterLanding: afterLanding, evil: evil, angry: angry };`, 440);
     expect(r.m0).toBe(0);
     expect(r.afterHitting, 'landing hits is what fills it').toBeGreaterThan(20);
-    expect(r.afterBeingHit, 'taking one does not').toBe(0);
+    expect(r.afterBeingHit, 'taking a hit fills it a little').toBeGreaterThan(0);
+    expect(r.afterLanding, 'but landing the same hit fills it much more').toBeGreaterThan(r.afterBeingHit * 2);
     expect(r.evil, 'C at a full meter fronts Evil Paper').toBe(true);
     expect(r.angry, 'and Evil Paper hits harder').toBeGreaterThan(7);
   });
@@ -147,7 +152,10 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       A.pct = 0; A.spCd = 0; D.x = 2000; E.x = 2200; doSpecial(A);   // nobody in the way: the dive has to miss
       for (var i=0;i<40;i++) step();
       return { fresh: fresh, hurt: hurt, splat: A.hitstun > 0 || projectiles.some(function(p){ return p.owner===A.idx && p.trap; }) };`);
-    expect(r.hurt, 'the most injured contestant on the wiki').toBeGreaterThan(r.fresh * 1.2);
+    // The bonus was +45%, then +25%, then +10% over three balance rounds (he won 63%, 58%, 67% of his games).
+    // Badly hurt, he swings exactly 10% harder: still the most injured contestant on the wiki, no longer the scariest.
+    expect(r.hurt, 'the most injured contestant on the wiki').toBeGreaterThan(r.fresh * 1.05);
+    expect(r.hurt / r.fresh, 'and the bonus stops at +10%').toBeCloseTo(1.10, 2);
     expect(r.splat, 'he lands in it').toBe(true);
   });
 
@@ -163,15 +171,72 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(r.home, 'Dark Nickel snaps back to where Light Nickel stood').toBe(true);
   });
 
-  it("Marshmallow's time machine puts her back where she stood", () => {
-    const r = arena('Marshmallow', `
-      for (var i=0;i<60;i++) step();
-      var x0 = A.x;
-      A.x = x0 + 300; A.pct = 40; for (var j=0;j<3;j++) step();
-      doDownSpecial(A);
-      return { back: A.x < x0 + 300, healed: A.pct < 40 };`);
-    expect(r.back).toBe(true);
-    expect(r.healed).toBe(true);
+  it("Marshmallow's scream shatters glass, fire heals her, and she cannot use gravity", () => {
+    // The Wall-Mart shopping list was mostly other people's purchases, and the time machine is the one thing canon
+    // says she CANNOT use. What the wiki gives her is a body and a voice: Apple told her that her voice "didn't
+    // shatter any glass", so she shattered Test Tube to pieces -- the only contestant to kill another with her voice.
+    const glass = arena('Marshmallow', `
+      var T = makeFighter(ROSTER.find(function(x){ return x.name==='Test Tube'; }), A.x + 60, groundY()-24, 5);
+      T.team=5; T.controller='still'; T.invuln=0; T.pct=30; fighters.push(T);
+      D.x = A.x + 60; D.invuln = 0; D.pct = 30;
+      doSpecial(A); var soft = D.pct - 30; A.spCd = 0;
+      D.x = 3000; T.invuln = 0; doSpecial(A);
+      return { soft: +soft.toFixed(1), glass: +(T.pct-30).toFixed(1) };`);
+    expect(glass.soft, 'anyone else just gets shouted at').toBeGreaterThan(0);
+    expect(glass.glass, 'Test Tube goes to pieces').toBeGreaterThan(glass.soft * 1.5);
+
+    const fire = arena('Marshmallow', `
+      A.pct = 40; D.pct = 40; A.burn = 60; D.burn = 60;
+      var p0 = A.pct, q0 = D.pct;
+      for (var i=0;i<40;i++){ step(); A.invuln = 9; D.invuln = 9; }   // burn ticks through invuln; nothing else lands
+      return { marsh: +(A.pct - p0).toFixed(2), pen: +(D.pct - q0).toFixed(2) };`);
+    expect(fire.marsh, "Knife roasted her into a s'more and she healed it off herself").toBeLessThan(0);
+    expect(fire.pen, 'everyone else just burns').toBeGreaterThan(0);
+
+    const drift = arena('Marshmallow', `
+      A.onground = false; A.y = groundY() - 300; A.vx = 5; A.vy = 0;
+      for (var i=0;i<20;i++){ step(); A.y = groundY() - 300; A.vy = 0; }
+      return +A.vx.toFixed(2);`);
+    expect(drift, 'she steps off a cliff and goes sideways').toBeGreaterThanOrEqual(5);
+  });
+
+  it("Bow possesses the foe in front, and loses them the moment she is hit", () => {
+    // "Possession works with marionette-like strings; anything Bow does or says transfers to the possessed;
+    // it ends if she is distracted" (Kick the Bucket). And what she rides destroys itself as she leaves it.
+    const r = arena('Bow', `
+      E.x = A.x - 50; D.x = A.x + 70; D.invuln = 0;        // Coiny is nearer, but behind her
+      doSpecial(A);
+      var got = { front: D._infected > 0, behind: E._infected > 0, mine: D.team === A.team, held: A._possessing };
+      var pct0 = D.pct;
+      applyHit(A, 8, 0, 0, E);                              // someone distracts her
+      got.ended = !(D._infected > 0);
+      got.theirTeam = D.team;
+      got.selfDestruct = D.pct > pct0;
+      got.released = A._possessing == null;
+      return got;`);
+    expect(r.front, 'the one she is facing, not the nearer one behind').toBe(true);
+    expect(r.behind).toBe(false);
+    expect(r.mine, 'while she rides them they are hers').toBe(true);
+    expect(r.ended && r.released, 'it ends the moment she is hit').toBe(true);
+    expect(r.theirTeam, 'and they go back to their own side').not.toBe(0);
+    expect(r.selfDestruct, 'what she was riding destroys itself on the way out').toBe(true);
+  });
+
+  it("Bow's chair slam gains no height, and Pepper echoes Salt's jab as well as her special", () => {
+    expect(W.eval('UPSPEC.chair.power'), '"bow shouldnt go higher in her up-special"').toBe(0);
+    const rise = arena('Bow', `var y0 = A.y, minY = A.y; doUpSpecial(A);
+      for (var i=0;i<40;i++){ step(); minY = Math.min(minY, A.y); } return +(y0 - minY).toFixed(0);`);
+    expect(rise, 'no lift at all').toBeLessThan(10);
+
+    const echo = arena('Salt', `
+      for (var i=0;i<20;i++) step();
+      D.x = A.x + 26; D.invuln = 0; D.pct = 30;
+      var p = pepperOf(A); p.x = A.x - 20;
+      A.atkCd = 0; doAttack(A);
+      var queued = p.q.length;
+      for (var j=0;j<PEPPER_LAG+3;j++){ step(); D.invuln = 0; }
+      return { queued: queued, hit: D.pct > 30 };`);
+    expect(echo.queued, 'the jab is echoed too, not just the special').toBeGreaterThan(0);
   });
 
   it("Microphone's button switches Loud and Quiet, and Loud hits harder", () => {

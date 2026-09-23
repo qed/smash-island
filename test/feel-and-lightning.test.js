@@ -82,3 +82,19 @@ describe('Lightning', () => {
     expect(r.dash, 'the dash was over in 8 frames and landed 3 times in 20 matches').toBeGreaterThanOrEqual(11);
   });
 });
+
+describe('Gelatin freezes, then breaks the ice', () => {
+  it('her first hit on a frozen foe shatters it: more damage, more launch, and the freeze is spent', () => {
+    // Balance round 3: her syringe froze people 161 times in 24 games and never once led to a knockout. The old
+    // bonus against a frozen foe was 25% more damage and the ice held. Her smash was always called Ice Breaker.
+    const r = run(`
+      D.x = A.x + 30; D.pct = 60; D.frozen = 0; D.invuln = 0;
+      applyHit(D, 10, 6, -6, A); var plain = +(D.pct - 60).toFixed(2), plainKb = Math.hypot(D.vx, D.vy);
+      D.pct = 60; D.vx = 0; D.vy = 0; D.frozen = 90; D.invuln = 0;
+      applyHit(D, 10, 6, -6, A); var broke = +(D.pct - 60).toFixed(2), brokeKb = Math.hypot(D.vx, D.vy);
+      return { plain: plain, broke: broke, plainKb: plainKb, brokeKb: brokeKb, thawed: D.frozen === 0 };`, 'Gelatin');
+    expect(r.broke, 'the shatter hits much harder').toBeGreaterThan(r.plain * 1.4);
+    expect(r.brokeKb, 'and launches further').toBeGreaterThan(r.plainKb * 1.3);
+    expect(r.thawed, 'and the ice is gone').toBe(true);
+  });
+});

@@ -44,7 +44,10 @@ describe('every UPSPEC row is a different move', () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const names = w.eval('ROSTER.filter(function(r){return r.play;}).map(function(r){return r.name;})');
     const stuck = [];
-    for (const n of names) { const r = stage(w, n, 900); if (!(r.rose > 20)) stuck.push(`${n} rose ${r.rose.toFixed(0)}`); }
+    // Bow's chair slam gains no height on purpose: "bow shouldnt go higher in her up-special" (2026-09-22). Her
+    // recovery is her down special. Every other fighter's still has to rise.
+    const NO_RISE = ['Bow'];
+    for (const n of names) { if (NO_RISE.includes(n)) continue; const r = stage(w, n, 900); if (!(r.rose > 20)) stuck.push(`${n} rose ${r.rose.toFixed(0)}`); }
     expect(stuck).toEqual([]);
   });
 });

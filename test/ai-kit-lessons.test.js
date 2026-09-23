@@ -141,3 +141,19 @@ describe('review findings on the reads', () => {
     expect(zoners).toContain('"zapshooter"');
   });
 });
+
+describe('the shatter read', () => {
+  it("Gelatin closes on a frozen foe and breaks the ice, and leaves an unfrozen one to her usual game", () => {
+    // Balance round 3: her hits shatter a frozen foe, and her bot was not using it (16 follow-ups on 91 freezes).
+    const r = W.eval(`(function(){ ${pair('Gelatin', 'Firey', 150)}
+      var loose = read();
+      T.frozen = 60; var far = read();
+      T.x = F.x + 40; dx=T.x-F.x; adx=Math.abs(dx); dist=Math.hypot(dx,dy);
+      var near = aiKitLessons(F, T, inp(), dx, dy, dist, adx, 0);
+      return { looseWalk: !!(loose.left || loose.right), farRight: far.right, farLeft: far.left, nearAttack: near.attack };
+    })()`);
+    expect(r.looseWalk, 'an unfrozen foe does not pull her in (her trap read may still fire; it does not move her)').toBe(false);
+    expect(r.farRight && !r.farLeft, 'she walks in on a frozen one').toBe(true);
+    expect(r.nearAttack, 'and swings when she gets there').toBe(true);
+  });
+});
