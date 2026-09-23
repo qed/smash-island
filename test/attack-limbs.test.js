@@ -34,9 +34,12 @@ describe('the swing knows what it is', () => {
     expect(f._atkAnim).toBeGreaterThan(0);
   });
 
-  it('specials and smashes do not grow a limb', () => {
-    expect(stage('Money', 'doSpecial(f);')._atkKind).toBe(null);
-    expect(stage('Bell', 'doSmash(f, 1);')._atkKind).toBe(null);
+  it('specials and smashes name what the body does, and a render never grows a stick limb', () => {
+    // "these should have animations with the arms, not spawning arms randomly" (2026-09-23): every move names a kind
+    // now (see LIMB ANIMATION), and a render swings its OWN painted limb -- the stick is the vector art's alone.
+    expect(stage('Money', 'doSpecial(f);')._atkKind).toBeTruthy();
+    expect(stage('Bell', 'doSmash(f, 1);')._atkKind).toBeTruthy();
+    expect(w.eval('String(drawSpriteBody)'), 'the stick limb is drawn only when there is no render').toMatch(/if\(!im && \(f\._atkKind/);
   });
 });
 
