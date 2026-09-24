@@ -69,14 +69,18 @@ describe('Unit 8 — no existing player is ever demoted', () => {
     // "Reset" is otherwise indistinguishable from a brand-new one.
     const w = boot({ seed: { 'bfsi:tutorialDone': '1' } });
     await settle(w);
-    expect(w.eval('PROFILE.unlocked.length')).toBe(w.eval('ROSTER.length'));
+    // Every fighter but the Vault's. Vault fighters "can ONLY be opened by a code" (the owner, on the Vault), which beats
+    // this fallback as it beats the "everything" view; a code needs no storage, so no one is left without a way on.
+    expect(w.eval('PROFILE.unlocked.length')).toBe(w.eval('ROSTER.length - VAULT_FIGHTERS.size'));
+    expect(w.eval('ROSTER.every(function(r){ return VAULT_FIGHTERS.has(r.name) !== (PROFILE.unlocked.indexOf(r.name)>=0); })')).toBe(true);
     expect(w.eval('PROFILE.migratedFrom')).toBeTruthy();
   });
 
   it('grandfathers on levels:custom too, not just balance:*', async () => {
     const w = boot({ seed: { 'levels:custom': '{"my level":{}}' } });
     await settle(w);
-    expect(w.eval('PROFILE.unlocked.length')).toBe(w.eval('ROSTER.length'));
+    expect(w.eval('PROFILE.unlocked.length')).toBe(w.eval('ROSTER.length - VAULT_FIGHTERS.size'));
+    expect(w.eval('ROSTER.every(function(r){ return VAULT_FIGHTERS.has(r.name) !== (PROFILE.unlocked.indexOf(r.name)>=0); })')).toBe(true);
   });
 
   it('runs the migration heuristic once, then never again', async () => {
@@ -93,7 +97,8 @@ describe('Unit 8 — no existing player is ever demoted', () => {
     // check entirely and silently drop a returning player from 59 fighters to 8.
     const w = boot({ seed: { 'profile:v1': '{ this is not json', 'bfsi:tutorialDone': '1' } });
     await settle(w);
-    expect(w.eval('PROFILE.unlocked.length')).toBe(w.eval('ROSTER.length'));
+    expect(w.eval('PROFILE.unlocked.length')).toBe(w.eval('ROSTER.length - VAULT_FIGHTERS.size'));
+    expect(w.eval('ROSTER.every(function(r){ return VAULT_FIGHTERS.has(r.name) !== (PROFILE.unlocked.indexOf(r.name)>=0); })')).toBe(true);
   });
 
   it('unlocks everything when storage is unavailable', async () => {
@@ -101,7 +106,10 @@ describe('Unit 8 — no existing player is ever demoted', () => {
     // with no error. Degrade open, never closed.
     const w = boot({ breakStorage: true });
     await settle(w);
-    expect(w.eval('PROFILE.unlocked.length')).toBe(w.eval('ROSTER.length'));
+    // Every fighter but the Vault's. Vault fighters "can ONLY be opened by a code" (the owner, on the Vault), which beats
+    // this fallback as it beats the "everything" view; a code needs no storage, so no one is left without a way on.
+    expect(w.eval('PROFILE.unlocked.length')).toBe(w.eval('ROSTER.length - VAULT_FIGHTERS.size'));
+    expect(w.eval('ROSTER.every(function(r){ return VAULT_FIGHTERS.has(r.name) !== (PROFILE.unlocked.indexOf(r.name)>=0); })')).toBe(true);
     expect(w.eval('PROFILE_STORAGE_OK')).toBe(false);
   });
 });

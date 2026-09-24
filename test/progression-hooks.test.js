@@ -48,7 +48,9 @@ describe('Unit 9 — the drip cadence is reachable by a losing player', () => {
 
   it('the drip order plus starters covers the whole roster exactly once', async () => {
     const w = boot(); await settle(w);
-    // A DLC pack (r.dlc) arrives whole and is never on the drip, so the drip plus the starters is the BFDI cast.
+    // A DLC pack (r.dlc) is never on the drip (it arrives open, bar the Vault fighters, which only a code opens), so
+    // the reveal order plus the starters is the BFDI cast. Bubble left the starters for the Vault ("Yoyle cake should
+    // be for bubble") and so sits in UNLOCK_ORDER; DRIP_ORDER is what leaves her out (test/vault.test.js).
     expect(w.eval('new Set(UNLOCK_ORDER.concat(STARTERS)).size')).toBe(w.eval('ROSTER.filter(function(r){ return !r.dlc; }).length'));
   });
 });
