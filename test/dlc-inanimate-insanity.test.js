@@ -20,15 +20,20 @@ const arena = (name, body, foeX = 460) => W.eval(`(function(){
 })()`);
 
 describe('the Inanimate Insanity DLC', () => {
-  it('arrives unlocked, in its own labelled group after the BFDI cast, with no one from the OSC', () => {
+  it('arrives unlocked bar its Vault fighters, in its own labelled group after the BFDI cast, with no one from the OSC', () => {
+    // The pack used to arrive whole. Then the owner put some of it in the Vault (2026-09-24): "Wal-mart is for
+    // marshmallow", then "add more dlc codes". Those seven open only with their code (test/vault.test.js opens each
+    // one); the other nine are still open on a fresh save.
     const r = W.eval(`(function(){ PROFILE.viewMode='unlocked'; buildBoard();
       var dlc = ROSTER.filter(function(x){ return x.dlc; }).map(function(x){ return x.name; });
-      return { dlc: dlc, open: dlc.every(function(n){ return isUnlocked(ROSTER.find(function(x){ return x.name===n; })); }),
+      var isOpen = function(n){ return isUnlocked(ROSTER.find(function(x){ return x.name===n; })); };
+      return { dlc: dlc, open: dlc.filter(isOpen), shut: dlc.filter(function(n){ return !isOpen(n); }),
                head: !!document.querySelector('#board .dlchead'), osc: ['OJ','Suitcase','Cabby'].filter(function(n){ return ROSTER.some(function(x){ return x.name===n; }); }) };
     })()`);
     expect(r.dlc).toEqual(['Balloon', 'Bomb', 'Knife', 'Lightbulb', 'Paintbrush',
       'Taco (II)', 'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube']);
-    expect(r.open).toBe(true);
+    expect(r.open).toEqual(['Bomb', 'Knife', 'Paintbrush', 'Apple', 'Baseball', 'Nickel (II)', 'Paper', 'Salt', 'Test Tube']);
+    expect(r.shut).toEqual(['Balloon', 'Lightbulb', 'Taco (II)', 'Bow', 'Marshmallow', 'Pickle', 'Microphone']);
     expect(r.head).toBe(true);
     expect(r.osc).toEqual([]);
   });

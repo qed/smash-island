@@ -43,7 +43,8 @@ describe('Unit 10 — the roster board respects unlock state', () => {
   it('everything mode shows the full roster with locked cells that teach', async () => {
     const w = boot(); await settle(w);
     w.eval('setViewMode("everything")');
-    // Locked cells still render in "everything" — but isUnlocked returns true in that mode, so
+    // Locked cells still render in "everything" — but isUnlocked returns true in that mode (except
+    // for Vault fighters, which only their code opens: "Yoyle cake should be for bubble"), so
     // check the criterion text is derivable regardless of the current view.
     // Use a fighter that is genuinely on the drip, not one claimed by a trophy — Naily, for
     // instance, is the reward for beating 2 bosses solo, so its hint names that deed instead.
