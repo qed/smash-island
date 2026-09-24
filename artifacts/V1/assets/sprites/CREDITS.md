@@ -250,3 +250,9 @@ recreation, so the render was fetched by name: `node scripts/fetch-sprites.mjs -
 | Boss | File | Source |
 |---|---|---|
 | MePhone4 | `mephone4.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c8/2024_II_MePhone4.png/revision/latest?cb=20250628192616 |
+| MePhone4S | `mephone4s.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/8a/Yeyeye.png/revision/latest?cb=20241130080859 |
+
+MePhone4S, Boss 9. His page's default image is the Season 4 art, cropped so tight the art touches its bottom edge,
+so the render was fetched by name: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "MePhone4S=Yeyeye.png"`,
+the "Late II2" tab of his infobox (also under Poses in his gallery), downscaled to 135×200, alpha verified (transparent
+on every edge), facing measured (0.013, not flipped).

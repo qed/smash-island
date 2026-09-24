@@ -460,7 +460,7 @@
       <button class="btn ghost sm" onclick="go('options')">⚙ Settings</button>
     </div>
     <div class="foot" style="margin-top:26px">A cartoon platform fighter starring the Battle for Dream Island cast. Knock your friends off the stage.</div>
-    <div class="foot" style="margin-top:4px">59 fighters · 10 bosses · 13 assists · no account, no ads, nothing to install</div>
+    <div class="foot" style="margin-top:4px">59 fighters · 11 bosses · 13 assists · no account, no ads, nothing to install</div>
     <div class="foot" style="margin-top:10px;opacity:0.7">An unofficial fan-made game. Not affiliated with or endorsed by jacknjellify; Battle for Dream Island and its characters belong to them; Inanimate Insanity and its characters belong to AnimationEpic. Made for fun, never sold.</div>
     <div class="foot" id="musicCredits" style="margin-top:6px;opacity:0.7">Music: "Chill/Calming Chiptune Loop" by Reganati · "8-Bit Chiptune Action Music for Video Games" by HauntSync · "Dark Orchestral Battle Tension" by Montogoronto · "Epic Orchestral Anthem Loop" by Sonican — free under the Pixabay Content License. Full credits: assets/music/CREDITS.md</div>
     <div class="foot" style="margin-top:4px;opacity:0.7">build v69 · attacks chain, smashes are press-to-commit, Tennis Ball's gadget rack, every projectile drawn and longer-lived</div>
@@ -4361,7 +4361,9 @@ function bossRushCheck(){
     for(let i=0;i<40;i++) puff(boss.x,boss.y,boss.color,8);
     const wasFour = (boss.name==="Four");
     // clear any leftover swallow state so nobody stays trapped when the boss dies
-    fighters.forEach(f=>{ f._swallow=0; });
+    fighters.forEach(f=>{ f._swallow=0; f._cookieT=0; });
+    // MePhone4S's cookies go with him: a cookie eaten after he fell would start a collapse in the next boss's fight.
+    projectiles = projectiles.filter(p=>p.fxTag!=='cookie');
     // MePhone4's hostile assists leave with him. A gameplay rule, not canon: none of them carries over into the
     // 1.5 s gap or the next boss's fight. (updateSummons also drops any add left with no boss standing.)
     for(const m of summons) if(m.hostile) for(let i=0;i<10;i++) puff(m.x, m.y, m.color, 4);
@@ -5766,7 +5768,13 @@ const BOSS_ROSTER = [
   // HP 240, under the Dragon's 250: his adds are health you have to chew through as well.
   {name:"MePhone4",            color:"#4fb8e8", hp:240, big:2.5, attack:"mephone",   arena:"melife",  stationary:true,  sprite:"mephone"},     // Boss 7
   {name:"Evil Leafy",          color:"#123a12", hp:185, big:2.4, attack:"evilleafy", arena:"forest",  stationary:false, sprite:"evilleafy"},   // Boss 8
-  {name:"Two",                 color:"#c8a020", hp:285, big:2.6, attack:"two",       arena:"void",    stationary:false, sprite:"two"},         // Boss 9
+  // Boss 9 -- MePhone4S, "The Terminator" ("mephone should be a boss, alongside 4s, and cobs"). After MePhone4, whom he
+  // beat (he shot him dead in 4Seeing The Future), and before Four, because the loop ends when the boss NAMED Four dies
+  // and anything after him is never reached. Mobile: a gunslinger who walks you down and stops at S4.standoff to shoot.
+  // HP 260, between the Dragon's 250 and Two's 285. The studio: he took over hosting (4Seeing The Future) and forced his
+  // way into co-hosting (The Tile Divide).
+  {name:"MePhone4S",           color:"#c8102e", hp:260, big:2.5, attack:"mephone4s", arena:"studio",  stationary:false, sprite:"mephone4s"},   // Boss 9
+  {name:"Two",                 color:"#c8a020", hp:285, big:2.6, attack:"two",       arena:"void",    stationary:false, sprite:"two"},         // Boss 10
   {name:"Four",                color:"#3a6ad0", hp:340, big:2.8, attack:"four",      arena:"void",    stationary:true,  sprite:"four"},         // FINAL BOSS
 ];
 const ITEM_KINDS = ["heal","marmalade","throw","power","assist","yoyle","boss"];
@@ -5991,9 +5999,11 @@ function updateBossAttack(s, tgt){
     const dx = tgt.x - s.x;
     s.face = Math.sign(dx) || s.face;
     // accelerate toward the target, keeping a small standoff so it doesn't sit exactly on top
-    if(Math.abs(dx) > 60){ s.vx += Math.sign(dx) * 0.55; }
+    if(s.attack==="mephone4s" && s._s4Gun && s._tel>0){ s.vx *= 0.5; }   // MePhone4S stops walking to aim
+    else if(Math.abs(dx) > (s.attack==="mephone4s" ? S4.standoff : 60)){ s.vx += Math.sign(dx) * 0.55; }   // a gunslinger keeps his distance
     s.vx = clamp(s.vx, -5.5, 5.5);
   }
+  if(s.attack==="mephone4s") s4TrackSight(s);   // MePhone4S: the sight follows its mark, then locks
 
   // 3-PHASE system: phase 1 (>66% HP), phase 2 (33–66%), phase 3 (<33%). Each escalates.
   const newPhase = s.hp > s.maxHp*0.66 ? 1 : (s.hp > s.maxHp*0.33 ? 2 : 3);
@@ -6017,11 +6027,14 @@ function updateBossAttack(s, tgt){
     s._tel = bossTelLen(s);
     // "bosses should have varied attacks": the signature attack, then one of its second moves, in turn
     s._moveN = (s._moveN||0) + 1;
-    const extra = BOSS_EXTRA[s.name] || [];
+    // The item version of a boss (summonBoss) has no attack of its own and no phases, so MePhone4S's cookies (a four-second
+    // collapse) and chainsaws stay in the gauntlet and his item version only lunges. Every other boss's list is untouched.
+    const extra = (BOSS_EXTRA[s.name] || []).filter(k => s.attack || !BOSS_RUSH_ONLY.has(k));
     s._telKind = (extra.length && s._moveN % 2 === 0) ? extra[((s._moveN >> 1) - 1) % extra.length] : s.attack;
     // aim/snapshot the target position for telegraphed placement
     s._telX = tgt ? tgt.x : s.x;
     s._telY = tgt ? tgt.y : s.y;   // and the height: MePhone4's glove punches along the row you stood in, his portal opens there
+    if(s.attack==="mephone4s") s4BeginTelegraph(s, tgt);   // gun or car, and whom the gun is drawn on (before the banner names it)
     banner(bossTelName(s), 700, 'boss');
   }
 }
@@ -6087,12 +6100,14 @@ function bossPhaseName(s, ph){
     two:        {2:"Size Shift", 3:"Power Ungrounded — ground it to damage them!"},
     four:       {2:"Zap to Dust", 3:"Reality Buckles"},
     mephone:    {2:"Back and Forth", 3:"Glitching"},   // Double Digit Desert (the glove kept punching Bow); Hatching the Plan (he glitches)
+    mephone4s:  {2:"I'll Be Back", 3:"Super Death Trap"},   // Sugar Rush ("I'll be back", then the red car); The Tile Divide (his death trap)
   };
   return (P[A] && P[A][ph]) || "Enraged";
 }
 function bossTelLen(s){
   if(s.attack==="evilleafy") return 45;          // Evil Leafy keeps her current warning window
   if(s.attack==="four") return 50;               // the 360-ring still gets a readable wind-up
+  if(s.attack==="mephone4s") return 42;          // MePhone4S: 28 frames of the sight following you, then S4.lock locked
   return 36;                                     // other bosses telegraph faster now (was 45)
 }
 
@@ -6103,9 +6118,20 @@ const BOSS_EXTRA = {
   "The Bug Swarm": ["seekers", "rain"], "Purple Face": ["ring", "rain"], "Purple Dragon": ["slam", "rain"],
   "Evil Leafy": ["seekers", "slam"], "Two": ["seekers", "ring"], "Four": ["rain", "seekers"],
   "MePhone4": ["melife", "portal"],   // his own, not the shared shapes: so his turns run glove, MeLife, glove, portal
+  "MePhone4S": ["cookies", "chainsaws"],   // his own too: gun, cookies, gun (a car from phase 2), chainsaws
 };
 const BOSS_MOVE_NAME = { rain:"INCOMING!", ring:"SHOCK RING!", slam:"GROUND POUND!", seekers:"SEEKERS!",
-  melife:"MELIFE DOWNLOAD!", portal:"REJECTION PORTAL!" };
+  melife:"MELIFE DOWNLOAD!", portal:"REJECTION PORTAL!", cookies:"POISONED COOKIES!", chainsaws:"CHAINSAWS!" };
+const BOSS_RUSH_ONLY = new Set(["cookies", "chainsaws"]);   // second moves an item boss never throws (see updateBossAttack)
+// MePhone4S (Boss 9). One table, so the tuning and the tests read the same numbers.
+//   lock      frames the sight stays locked before the shot (the last part of the 42-frame wind-up)
+//   bullet    shot speed; spread the fan's gap in radians; standoff how close he walks before he stops
+//   car       the car's speed; carKb its knockback (under Four's zap's 14: it reaches the whole floor); carDelay the revving
+//             at the edge before it drives; carGap how long after the first the phase-3 second car goes
+//   fuse      the cookie's four seconds; poison its poison (the fire bosses' 110 frames, no more); collapse the stun after
+//   cookieGap the spacing of the five cookies; spikeGap the spacing of the phase-3 platform spikes
+const S4 = { lock:14, bullet:18, spread:0.07, standoff:180, car:14, carKb:11, carDelay:30, carGap:50,
+             fuse:240, poison:110, collapse:30, cookieGap:90, spikeGap:40 };
 function bossShot(s, o){ return Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:bossDmg()*0.8, kb:8, r:11, color:s.color, life:120, noAim:true }, o); }
 const BOSS_MOVES = {
   // five drops over where the target was when the warning started, each with a shadow on the floor
@@ -6132,6 +6158,23 @@ const BOSS_MOVES = {
   portal(s, tgt){ const ph = s._phase||1, T = ph>=3 ? 36 : (ph===2 ? 42 : 48), q = portalSpot(s, tgt);
     s._portal = { x:q.x, y:q.y, t:T, T:T, id:++BOSS_ATK_ID, hit:{} };
     for(let i=0;i<14;i++) puff(q.x, q.y, s.color, 5); shake(5); },
+  // POISONED COOKIES (MePhone4S; 4Seeing The Future: he tells Pickle his cookie was poisoned and he has 4 seconds, and
+  // Pickle collapses). Five in a row over where you stood, each with a shadow; the row is kept clear of the walls so no
+  // two land on one spot. A cookie that lands waits on the floor and is eaten on the first touch (SM_FX.cookie). The
+  // whole volley shares one attack id and is capped like one boss hit however long it lies there (`volley`).
+  cookies(s, tgt){ const id = ++BOSS_ATK_ID, g = S4.cookieGap, c0 = s._telX != null ? s._telX : (tgt ? tgt.x : s.x);
+    const cx = clamp(c0, 40 + 2*g, WW - 40 - 2*g);
+    for(let k=-2;k<=2;k++){ const x = cx + k*g;
+      addProj(bossShot(s, { x, y:camY-30, vx:0, vy:4, grav:true, warnX:x, warnY:groundY(), warn:30, bossAtk:id, volley:true, life:140,
+        dmg:bossDmg()*0.3, kb:4, r:12, color:'#c8904a', shape:'cookie', landsTrap:true, _mine:true, fxTag:'cookie', fxN:S4.fuse })); } },
+  // CHAINSAWS (MePhone4S; The Tile Divide: he offered chainsaws as a prize and threw them, and a thrown one cut Taco in
+  // half). Three, lobbed onto and either side of where you stood. Each lands, hops once more and stops -- the hop is the
+  // engine's, not the show's -- and a cut bleeds (60 frames, about 1.8% more).
+  chainsaws(s, tgt){ const id = ++BOSS_ATK_ID, cx = s._telX != null ? s._telX : (tgt ? tgt.x : s.x), hy = s.y - s.r*0.4;
+    for(const off of [-110, 0, 110]){ const vx = clamp((cx + off - s.x)/66, -9, 9);
+      addProj(bossShot(s, { x:s.x, y:hy, vx, vy:-9.5, grav:true, bounce:true, maxBounces:2, r:14, kb:9, bossAtk:id, life:170,
+        color:'#b8c0c8', shape:'saw', fxTag:'bleed', fxN:60 })); }
+    shake(4); },
 };
 // ---- MEPHONE4 (Boss 7) ----------------------------------------------------------------------------------------------
 // "mephone should be a boss, alongside 4s, and cobs. mephone should spawn hostile assist trophies." The II wiki files
@@ -6208,6 +6251,52 @@ function updateRejectionPortal(s){
   if(hazardT%3===0){ const a = hazardT*0.3; puff(P.x + Math.cos(a)*core, P.y + Math.sin(a)*core*1.3, s.color, 3); }
   if(P.t<=0) s._portal = null;
 }
+// ---- MEPHONE4S (Boss 9) ---------------------------------------------------------------------------------------------
+// "mephone should be a boss, alongside 4s, and cobs." The II wiki calls him "The Terminator": MePhone4's successor model
+// and Season 1's main antagonist. Every attack is one of his from the wiki -- the gun (4Seeing The Future), the red car
+// (Sugar Rush), the poisoned cookie (4Seeing The Future), the thrown chainsaws and the death trap (The Tile Divide). The
+// Fist Thingy, the talking hand, portals and MeLife are MePhone4's, so they stay his.
+//
+// THE GUN. At the start of each signature turn he picks a mark and draws on it. For 28 frames the sight follows the mark;
+// for the last S4.lock frames it is locked, and the shot goes where it locked. Stepping off the line inside that window
+// is the dodge. From phase 2 the mark is whoever ate a cookie and will collapse soonest -- "PUT THAT COOKIE DOWN, NOW!"
+// is the line he fired on, so this is the engine's reading of it, not a scene (the cookie he shot over was a lure, not
+// poisoned). In phase 1 it is simply the nearest fighter, so a cookie and a shot do not line up on the first read.
+// THE CAR. From phase 2 the signature turn right after the cookies is the car instead: the cookies are on the floor when
+// it comes, and the platform is the answer to both -- until phase 3's death trap spikes the platforms on the car's turn.
+function s4BeginTelegraph(s, tgt){
+  s._s4Gun = false; s._s4Car = false; s._aimIdx = -1; s._aimX = null; s._aimY = null; s._aimLock = false;
+  if(s._telKind !== s.attack) return;                      // a second move is winding up
+  const ph = s._phase||1;
+  s._s4Car = ph >= 2 && s._moveN % 4 === 3;                // signature turns are odd; 3 mod 4 is the one after the cookies
+  if(s._s4Car) return;
+  s._s4Gun = true;
+  let pick = null;
+  if(ph >= 2) for(const f of fighters){ if(!f.dead && f._cookieT>0 && (!pick || f._cookieT < pick._cookieT)) pick = f; }
+  if(!pick && tgt && !tgt.dead) pick = tgt;
+  s._aimIdx = pick ? pick.idx : -1;
+  s._aimX = pick ? pick.x : s.x + (s.face||1)*300; s._aimY = pick ? pick.y : s.y;
+}
+function s4TrackSight(s){
+  if(!(s._s4Gun && s._tel>0)) return;
+  s._aimLock = s._tel <= S4.lock;
+  const f = fighters.find(q=>q.idx===s._aimIdx);
+  if(!s._aimLock && f && !f.dead){ s._aimX = f.x; s._aimY = f.y; }
+  if(typeof s._aimX==='number') s.face = Math.sign(s._aimX - s.x) || s.face;   // his gun hand is on the side he faces
+}
+// SUPER DEATH TRAP, phase 3. An adaptation: his death trap in The Tile Divide had a platform that turned over onto
+// spikes; here every platform's top turns to spikes -- a shadow for 40 frames, then they jump up. Each leans a little
+// away from its platform's middle, so it knocks you off the nearer edge instead of always to the right.
+function s4DeathTrap(s, atkId){
+  let n = 0;
+  for(const p of worldPlats){ const mid = p.x + p.w/2;
+    for(let x = p.x + 18; x < p.x + p.w - 10; x += S4.spikeGap){
+      addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x, y:p.y-4, bossAtk:atkId, vx:(x < mid ? -1 : 1)*0.6, vy:-7, grav:false,
+        dmg:bossDmg()*0.8, kb:11, r:10, color:'#c8c8d0', life:10, noAim:true, shape:'spike', delay:40, warn:40, warnX:x, warnY:p.y });
+      n++; } }
+  if(n) banner("SUPER DEATH TRAP!", 800, 'boss');
+  return n;
+}
 function bossTelName(s){
   if(s._telKind && s._telKind !== s.attack && BOSS_MOVE_NAME[s._telKind]) return BOSS_MOVE_NAME[s._telKind];
   if(s.attack==="four") return s._phase===2 ? "SCREECHY!!" : "SCREECHY!";
@@ -6220,6 +6309,7 @@ function bossTelName(s){
   if(s.attack==="dragon") return "STRAFING RUN!";
   if(s.attack==="two") return "MIND READ!";
   if(s.attack==="mephone") return s._phase>=2 ? "FIST THINGY COMBO!" : "FIST THINGY!";
+  if(s.attack==="mephone4s") return s._s4Car ? "I'LL BE BACK!" : "PUT THAT COOKIE DOWN!";
   return "!";
 }
 function fireBossAttack(s, tgt){
@@ -6426,6 +6516,34 @@ function fireBossAttack(s, tgt){
       glove({ y:oy, vx:Math.cos(a)*15, vy:Math.sin(a)*15, delay:52, dmg:bossDmg()*0.35, kb:10, smAngle:2 });
     }
     for(let i=0;i<8;i++) puff(ox, row, '#d8302a', 4); shake(ph>=3 ? 8 : 5);
+  }
+  else if(s.attack==="mephone4s"){
+    const ph = s._phase||1;
+    if(s._s4Car){
+      // I'LL BE BACK (Sugar Rush: "I'll be back", and he runs Cheesy over in his red car). It revs at the edge farther
+      // from you for S4.carDelay frames -- a second warning -- then drives the whole floor toward you, hitting each
+      // fighter once. Jump it. Its life comes from the arena's width, so it reaches the far wall on a wide screen too.
+      const fromLeft = tgt ? tgt.x > WW*0.5 : (s.face||1) < 0, life = Math.ceil((WW-80)/S4.car/PROJ_LIFE) + 4;
+      const lanes = ph>=3 ? [fromLeft, !fromLeft] : [fromLeft];     // phase 3: a second car from the other edge (engine escalation)
+      lanes.forEach((L, i) => { const dir = L ? 1 : -1;
+        addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x: L ? 40 : WW-40, y: gy-24, bossAtk:atkId, vx:dir*S4.car, vy:0, grav:false,
+          dmg:bossDmg(), kb:S4.carKb, r:26, color:'#d01818', life, noAim:true, pierce:true, shape:'redcar', delay:S4.carDelay + i*S4.carGap }); });
+      if(ph>=3) s4DeathTrap(s, atkId);   // the same attack id: the whole turn is still one boss hit
+      shake(8);
+    } else {
+      // PUT THAT COOKIE DOWN, NOW! (4Seeing The Future: the line, then the shot that killed MePhone4; he shoots MePhone5
+      // in Journey Through Memory Lane Part 1). The rounds leave his hand for the point the sight locked on: one in
+      // phase 1, a fan of two, then three, five frames apart. One attack id, so a volley is one boss hit at most.
+      const hx = s.x + (s.face||1)*s.r*0.75, hy = s.y - s.r*0.15;
+      const ax = s._aimX != null ? s._aimX : (tgt ? tgt.x : hx + (s.face||1)*300);
+      const ay = s._aimY != null ? s._aimY : (tgt ? tgt.y : hy);
+      const base = Math.atan2(ay-hy, ax-hx), rounds = ph>=3 ? 3 : (ph===2 ? 2 : 1);
+      for(let i=0;i<rounds;i++){ const ang = base + (i-(rounds-1)/2)*S4.spread;
+        addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x:hx, y:hy, bossAtk:atkId, vx:Math.cos(ang)*S4.bullet, vy:Math.sin(ang)*S4.bullet,
+          grav:false, dmg:bossDmg(), kb:12, r:8, color:'#ff3a2a', life:60, noAim:true, beamShot:true, breaksOnSurface:true, delay:i*5 }); }
+      for(let i=0;i<8;i++) puff(hx, hy, '#ffd23f', 4);   // muzzle flash
+      shake(6);
+    }
   }
   else {
     // basic: a lunge/stomp shockwave toward the target
@@ -6796,6 +6914,10 @@ function step(){
       else f.pct+=0.04;
       if(f.burn%18===0) puff(f.x,f.y-10,(f._poisonT>0?'#9bd24b':(f.kit&&f.kit.special==='wallmart'?'#ffd9a0':'#f0803a')),3); }
     if(f._poisonT>0){ f._poisonT--; if(f.burn<=0) f._poisonT=0; }
+    // MePhone4S's poisoned cookie: four seconds, then the collapse (4Seeing The Future). Its own timer, so it still runs
+    // out after the short poison has worn off; a respawn or his defeat clears it. A stun on the spot, no hop.
+    if(f._cookieT>0){ if(f.dead) f._cookieT=0;
+      else if(--f._cookieT<=0){ stunFx(f, S4.collapse); for(let i=0;i<10;i++) puff(f.x,f.y,'#9bd24b',5); if(f.you) banner("COLLAPSED!",700); } }
     if(f.bleed>0){ f.pct += 0.02 + 0.05*(f.bleed/BLEED_FRAMES); f.bleed--; if(f.bleed%12===0) puff(f.x,f.y-6,'#c0304a',3); }
     // TRESPASS BLEED — see enemyZoneOf. Skipped while invulnerable so a fighter who was launched
     // into an enemy corner is not punished for their own i-frames.
@@ -7334,7 +7456,10 @@ function step(){
           if(pr.ownerObj && pr.ownerObj!==f && ownTeam===f.team) continue;
           if(pr.slick){ f.vx += Math.sign(f.vx||1)*1.4; continue; }  // ink slick: slippery, no expire
           if(pr.slow){ f.slowed=Math.max(f.slowed||0,8); }  // salsa: sluggish while in the puddle
-          applyHit(f, pr._mine ? pr.dmg : Math.round(pr.dmg*TRAP_DMG_MULT), Math.sign(f.x-pr.x||1)*pr.kb, -pr.kb*0.7, pr.ownerObj);
+          // A boss's trap (MePhone4S's cookies) carries its attack id, so it is capped like every other boss hit. No
+          // fighter's or assist's trap has one, so theirs land exactly as before.
+          applyHit(f, pr._mine ? pr.dmg : Math.round(pr.dmg*TRAP_DMG_MULT), Math.sign(f.x-pr.x||1)*pr.kb, -pr.kb*0.7, pr.ownerObj,
+                   pr.bossAtk!=null ? {bossAtk:pr.bossAtk, volley:pr.volley} : undefined);
           if(pr.burn) f.burn=Math.max(f.burn,110);
           if(pr.poison){ f.burn=Math.max(f.burn,80); f._poisonT=Math.max(f._poisonT||0,80); }
           if(pr.freeze && f.pct>freezePct(pr.ownerObj)){ applyFreeze(f, freezeDuration(f.pct,50) + comebackFlavor(pr.ownerObj||{}, "freeze")); }
@@ -7479,7 +7604,7 @@ function step(){
         if(f.reflecting>0 && f.team!==(pr.ownerObj?pr.ownerObj.team:-1)){
           pr.vx*=-1; pr.vy*=-0.5; pr.owner=f.idx; pr.ownerObj=f; pr.reflected=true; f.flash=8; puff(pr.x,pr.y,'#e8e8e8',5); continue;
         }
-        const ffOpts = {reflected: !!pr.reflected, bossAtk: pr.bossAtk};   // reflected shots ignore FF; bossAtk caps boss damage
+        const ffOpts = {reflected: !!pr.reflected, bossAtk: pr.bossAtk, volley: pr.volley};   // reflected shots ignore FF; bossAtk caps boss damage
         if(pr.van){
           const vx0=f.vx, vy0=f.vy;
           (pr._rammed = pr._rammed || {})[f.idx] = true;   // the blast is not dodged by the i-frames this ram just gave (see vanBoom)
@@ -8186,6 +8311,10 @@ const SM_FX = {
   strip:   (t,f,n)=>{ t.armor=0; t.countering=0; t.reflecting=0; },   // answers the armour/counter/reflect stances
   drain:   (t,f,n)=>{ if(f && !f.dead) f.pct=Math.max(0, f.pct-(n||4)); },
   knockdown:(t,f,n)=>{ t.onground=false; t.vy=Math.min(t.vy,-3); stunFx(t, n||30); },
+  // MePhone4S's poisoned cookie (4Seeing The Future: "your cookie was poisoned... you have 4 seconds"). A short poison,
+  // and its own collapse timer (see the fighter tick), which a second cookie does not restart.
+  cookie:  (t,f,n)=>{ t.burn=Math.max(t.burn||0, S4.poison); t._poisonT=Math.max(t._poisonT||0, S4.poison);
+                      if(!(t._cookieT>0)){ t._cookieT = n||S4.fuse; if(t.you) banner("POISONED! 4 SECONDS", 900); } },
 };
 // The cost, paid on activation whether the move connects or not. That is the point of it.
 // FLOW. Landing a jab or a ground move cuts its own recovery (whiffing still pays full), a tap smash pays
@@ -10242,7 +10371,15 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(from && from !== t && inOwnTeamZone(from)) return;
   // BOSS DAMAGE CAP: any single boss attack can deal at most bossDmg() to a fighter total,
   // even if it's made of many projectiles (e.g. Four's Screechy ring). Tracked per attack ID.
-  if(opts && opts.bossAtk!=null){
+  if(opts && opts.bossAtk!=null && opts.volley){
+    // A LINGERING VOLLEY. MePhone4S's cookies lie on the floor through his next attack, and the one id remembered below
+    // forgets a volley the moment any other boss hit lands -- five cookies could then deal 5 x 6.6. So a volley keeps its
+    // own running total per attack id, capped the same way. Only a shot marked `volley` comes here.
+    const L = t._volleyDmg || (t._volleyDmg = {}), already = L[opts.bossAtk] || 0;
+    if(already >= bossDmg()) return;
+    dmg = Math.min(dmg, bossDmg() - already); L[opts.bossAtk] = already + dmg;
+    for(const k in L) if(+k < opts.bossAtk - 32) delete L[k];   // long-gone volleys
+  } else if(opts && opts.bossAtk!=null){
     if(t._bossHitId===opts.bossAtk){
       const already = t._bossHitDmg||0;
       if(already>=bossDmg()) return;                 // already took the full 30% from this attack
@@ -10459,13 +10596,13 @@ function eliminate(f){
   }
   // Test mode: nobody is ever KO'd for good — just respawn at center
   if(TESTMODE.active){
-    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0;
+    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0;
     puff(W*0.5, 40, f.color, 12);
     return;
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0;
     for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6); banner("YOYLEBERRY REFORM!", 900);
     return;
   }
@@ -10526,7 +10663,7 @@ function eliminate(f){
     // you back in where you can see, instead of at the roof of a world three screens tall.
     f.x=camX+W*0.5; f.y=camY-40;
   }
-  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0;
+  f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0;
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
 
@@ -12703,6 +12840,7 @@ const BOSS_SPRITE_SRC = {
   two:          "assets/sprites/two.png",
   four:         "assets/sprites/four.png",
   mephone:      "assets/sprites/mephone4.png",   // File:2024 II MePhone4.png, the II wiki's 2024 pose (see CREDITS.md)
+  mephone4s:    "assets/sprites/mephone4s.png",  // File:Yeyeye.png, the "Late II2" tab of his II wiki infobox (see CREDITS.md)
 };
 // Measured by scripts/fetch-sprites.mjs, same interior-ink method as the fighters.
 const BOSS_SPRITE_FLIP = { speaker:true, face:true, four:true };
@@ -12727,6 +12865,13 @@ function drawBossSprite(s){
     ctx.strokeStyle = s._telKind==="melife" ? "#5ad85a" : "#ffd23f"; ctx.lineWidth=4;   // MeLife: his screen goes green while he generates (Mazed and Confused)
     ctx.beginPath(); ctx.arc(0,0,R+10+p*14,0,7); ctx.stroke();
     ctx.globalAlpha=1;
+  }
+  // MePhone4S's gun sight, from his hand on past the point it is on: red while it follows its mark, white once it has
+  // locked. The telegraph, not a detail from the wiki. Drawn before the art, so it shows with the render too.
+  if(s._tel>0 && typeof s._aimX==='number' && typeof s._aimY==='number'){
+    const hx=(s.face||1)*R*0.75, hy=-R*0.15, dx=s._aimX-s.x-hx, dy=s._aimY-s.y-hy, k=1600/(Math.hypot(dx,dy)||1);
+    ctx.save(); ctx.globalAlpha = s._aimLock ? 0.9 : 0.45; ctx.strokeStyle = s._aimLock ? "#ffffff" : "#ff2a2a"; ctx.lineWidth = s._aimLock ? 3 : 2;
+    ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx+dx*k, hy+dy*k); ctx.stroke(); ctx.restore();
   }
   // MePhone4's Rejection Portal lives on him, so it is drawn relative to him: open, or during its telegraph a faint
   // mark where it is about to open (the spot you stood on when he flashed).
@@ -12820,6 +12965,12 @@ function drawBossSprite(s){
       ctx.fillStyle = "#1c1c1c"; ctx.beginPath(); ctx.arc(-R*0.2+jx,-R*0.3,R*0.08,0,7); ctx.arc(R*0.2+jx,-R*0.3,R*0.08,0,7); ctx.fill();
       ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(jx,-R*0.1,R*0.22,0.2,Math.PI-0.2); ctx.stroke();
       ctx.strokeStyle = "#6a6a6a"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0,R*0.82,R*0.09,0,7); ctx.stroke();
+      break; }
+    case "mephone4s": {   // MePhone4S: a black Meeple phone, the red glowing wallpaper, square sunglasses, the white Meeple logo
+      ctx.fillStyle = flash ? "#fff" : "#141414"; ctx.beginPath(); ctx.rect(-R*0.6,-R,R*1.2,R*2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = flash ? "#ffd0d0" : "#c8102e"; ctx.fillRect(-R*0.48,-R*0.8,R*0.96,R*1.45);
+      ctx.fillStyle = "#101010"; ctx.fillRect(-R*0.4,-R*0.42,R*0.34,R*0.24); ctx.fillRect(R*0.06,-R*0.42,R*0.34,R*0.24); ctx.fillRect(-R*0.08,-R*0.36,R*0.16,R*0.06);
+      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,R*0.35,R*0.09,0,7); ctx.fill();
       break; }
     case "face": {        // Purple Face: round purple with a wide grin
       ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
@@ -15481,6 +15632,16 @@ const PROJ_SHAPE = {
   fistthingy:{ draw(c,r){ c.fillStyle='#9aa0a8'; c.fillRect(-r*3.4,-r*0.2,r*2.6,r*0.4); c.fillStyle='#f4f4f4'; c.fillRect(-r,-r*0.62,r*0.36,r*1.24);
     c.fillStyle='#d8302a'; c.beginPath(); c.ellipse(r*0.15,0,r*0.85,r*0.72,0,0,7); c.fill(); c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.14; c.stroke();
     c.beginPath(); c.ellipse(r*0.05,-r*0.62,r*0.34,r*0.22,0,0,7); c.fill(); c.stroke(); } },
+  // --- MePhone4S: a poisoned cookie (4Seeing The Future), chocolate chips and a sickly green rim
+  cookie:  { draw(c,r){ c.beginPath(); c.arc(0,0,r,0,7); c.fillStyle='#d9a15a'; c.fill(); c.strokeStyle='#7a4a1e'; c.lineWidth=r*0.18; c.stroke();
+    c.fillStyle='#3a2414'; for(const [x,y] of [[-0.4,-0.3],[0.35,-0.4],[0.1,0.1],[-0.3,0.45],[0.45,0.35]]){ c.beginPath(); c.arc(x*r,y*r,r*0.14,0,7); c.fill(); }
+    c.strokeStyle='#8fd14b'; c.lineWidth=r*0.1; c.beginPath(); c.arc(0,0,r*1.12,0,7); c.stroke(); } },
+  // --- MePhone4S's red car (Sugar Rush). The shape is turned to its heading, so driving left it is flipped back upright.
+  redcar:  { draw(c,r,pr){ if(pr && pr.vx<0) c.scale(1,-1);
+    c.fillStyle='#d01818'; c.fillRect(-r*1.3,-r*0.35,r*2.6,r*0.7); c.fillRect(-r*0.6,-r*0.8,r*1.3,r*0.5);
+    c.fillStyle='#bfe8ff'; c.fillRect(-r*0.45,-r*0.72,r*0.45,r*0.36); c.fillRect(r*0.08,-r*0.72,r*0.5,r*0.36);
+    c.fillStyle='#1c1c1c'; c.beginPath(); c.arc(-r*0.75,r*0.38,r*0.3,0,7); c.arc(r*0.75,r*0.38,r*0.3,0,7); c.fill();
+    c.fillStyle='#ffe98a'; c.fillRect(r*1.2,-r*0.25,r*0.14,r*0.2); } },
   // --- fire: a flame licking backwards from the direction of travel
   ember:   { draw(c,r){ flameShape(c,r); } },
   emberjr: { draw(c,r){ flameShape(c,r*0.85); } },
@@ -15952,8 +16113,9 @@ function serializeState(){
       kit:{special:f.kit&&f.kit.special}
     })),
     projectiles: projectiles.map(p=>({x:Math.round(p.x),y:Math.round(p.y),r:p.r,color:p.color,warn:p.warn,warnX:p.warnX,warnY:p.warnY,
-      // a boss shot that names its shape (MePhone4's glove) sends it and its heading, so a client does not see a red dot
-      ...(p.owner===-2 && p.shape ? {shape:p.shape, vx:Math.round(p.vx*10)/10, vy:Math.round(p.vy*10)/10} : null)})),
+      // a boss shot that names its shape (MePhone4's glove, MePhone4S's car and cookies) or is a streak (his bullets)
+      // sends it and its heading, so a client does not see a red dot
+      ...(p.owner===-2 && (p.shape || p.beamShot) ? {shape:p.shape, beamShot:p.beamShot, vx:Math.round(p.vx*10)/10, vy:Math.round(p.vy*10)/10} : null)})),
     beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life})),
     // Items and summons (assists, bosses) were never sent, so a client saw no pickups, no assist trophies
     // and no Boss Rush boss. These are the fields drawItem, drawSummon, drawBossSprite and drawBossBar read.
@@ -15962,6 +16124,10 @@ function serializeState(){
       hp:m.hp,maxHp:m.maxHp,face:m.face,flash:m.flash,homeX:m.homeX,_rage:m._rage,_tel:m._tel,_bossRush:m._bossRush,
       // MePhone4: his adds' side and download, his green MeLife tell, and his portal
       hostile:m.hostile,_dl:m._dl,_telKind:m._telKind,
+      _aimX:m._aimX,_aimY:m._aimY,_aimLock:m._aimLock,   // MePhone4S's gun sight
+      // and which boss it is, so the client's wind-up ring and swell run over that boss's own wind-up (his is 42 frames,
+      // not the default 36) instead of starting below zero. A client never simulates, so this only draws.
+      attack:m.attack,
       _portal:m._portal?{x:Math.round(m._portal.x),y:Math.round(m._portal.y),t:m._portal.t,T:m._portal.T}:undefined})),
     bossCleared: BOSSRUSH.cleared,
     particles: particles.slice(0,60).map(p=>({x:Math.round(p.x),y:Math.round(p.y),r:p.r,color:p.color,life:p.life})),
