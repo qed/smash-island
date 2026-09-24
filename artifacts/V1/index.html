@@ -460,7 +460,7 @@
       <button class="btn ghost sm" onclick="go('options')">⚙ Settings</button>
     </div>
     <div class="foot" style="margin-top:26px">A cartoon platform fighter starring the Battle for Dream Island cast. Knock your friends off the stage.</div>
-    <div class="foot" style="margin-top:4px">59 fighters · 11 bosses · 13 assists · no account, no ads, nothing to install</div>
+    <div class="foot" style="margin-top:4px">59 fighters · 12 bosses · 13 assists · no account, no ads, nothing to install</div>
     <div class="foot" style="margin-top:10px;opacity:0.7">An unofficial fan-made game. Not affiliated with or endorsed by jacknjellify; Battle for Dream Island and its characters belong to them; Inanimate Insanity and its characters belong to AnimationEpic. Made for fun, never sold.</div>
     <div class="foot" id="musicCredits" style="margin-top:6px;opacity:0.7">Music: "Chill/Calming Chiptune Loop" by Reganati · "8-Bit Chiptune Action Music for Video Games" by HauntSync · "Dark Orchestral Battle Tension" by Montogoronto · "Epic Orchestral Anthem Loop" by Sonican — free under the Pixabay Content License. Full credits: assets/music/CREDITS.md</div>
     <div class="foot" style="margin-top:4px;opacity:0.7">build v69 · attacks chain, smashes are press-to-commit, Tennis Ball's gadget rack, every projectile drawn and longer-lived</div>
@@ -4322,8 +4322,8 @@ function showRushVictory(){
   paused = true;
   const el = document.getElementById('rushVictory'); if(!el) return;
   const secs = Math.round((BOSSRUSH.frames||0)/60);
-  // "mephone should be a boss, alongside 4s, and cobs": the gauntlet is ten long now and the other two II bosses will
-  // lengthen it again, so the count is read off the roster instead of being written into the sentence.
+  // "mephone should be a boss, alongside 4s, and cobs": the three II bosses made the gauntlet twelve long, so the count is
+  // read off the roster instead of being written into the sentence.
   const n = BOSS_ROSTER.length, NUM_WORDS = ["zero","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve","thirteen","fourteen","fifteen"];
   document.getElementById('rushVicSub').textContent = (BOSSRUSH.loop>0 ? "Loop " + (BOSSRUSH.loop+1) + " cleared" : "All " + (NUM_WORDS[n] || n) + " bosses beaten") +
     " in " + Math.floor(secs/60) + ":" + String(secs%60).padStart(2,'0') + ". Keep going and the gauntlet starts again, hitting twice as hard.";
@@ -4362,8 +4362,9 @@ function bossRushCheck(){
     const wasFour = (boss.name==="Four");
     // clear any leftover swallow state so nobody stays trapped when the boss dies
     fighters.forEach(f=>{ f._swallow=0; f._cookieT=0; });
-    // MePhone4S's cookies go with him: a cookie eaten after he fell would start a collapse in the next boss's fight.
-    projectiles = projectiles.filter(p=>p.fxTag!=='cookie');
+    // MePhone4S's cookies go with him: a cookie eaten after he fell would start a collapse in the next boss's fight. So do
+    // Steve Cobs's buried arrows: one that came up in the gap would hit someone who had already beaten him.
+    projectiles = projectiles.filter(p=>p.fxTag!=='cookie' && !p.cobsTrap);
     // MePhone4's hostile assists leave with him. A gameplay rule, not canon: none of them carries over into the
     // 1.5 s gap or the next boss's fight. (updateSummons also drops any add left with no boss standing.)
     for(const m of summons) if(m.hostile) for(let i=0;i<10;i++) puff(m.x, m.y, m.color, 4);
@@ -5775,6 +5776,12 @@ const BOSS_ROSTER = [
   // way into co-hosting (The Tile Divide).
   {name:"MePhone4S",           color:"#c8102e", hp:260, big:2.5, attack:"mephone4s", arena:"studio",  stationary:false, sprite:"mephone4s"},   // Boss 9
   {name:"Two",                 color:"#c8a020", hp:285, big:2.6, attack:"two",       arena:"void",    stationary:false, sprite:"two"},         // Boss 10
+  // Boss 11 -- Steve Cobs ("mephone should be a boss, alongside 4s, and cobs"). The II wiki calls him "the overall main
+  // antagonist of the Inanimate Insanity series": he made MePhone4 and every Meeple device, so he comes after both
+  // MePhones -- and before Four, because the loop ends when the boss NAMED Four dies and anything after him is never
+  // reached. HP 330, between Two's 285 and Four's 340 (the design's 310 made him the shortest fight of the last four:
+  // see COBS for the measurement); big 2.6, the same as Two. Stationary until his phase 3 (see onBossPhaseChange). The MeCloud: where he "welcomes the contestants" in Theft and Battery, his first episode.
+  {name:"Steve Cobs",          color:"#f0d010", hp:330, big:2.6, attack:"cobs",      arena:"meeple",  stationary:true,  sprite:"cobs"},        // Boss 11
   {name:"Four",                color:"#3a6ad0", hp:340, big:2.8, attack:"four",      arena:"void",    stationary:true,  sprite:"four"},         // FINAL BOSS
 ];
 const ITEM_KINDS = ["heal","marmalade","throw","power","assist","yoyle","boss"];
@@ -5988,6 +5995,13 @@ function updateBossAttack(s, tgt){
       }
     }
   }
+  // STEVE COBS: the second punch of SCREEN CRACKER comes COBS.punchGap frames after the first (see cobsPunch), and in
+  // phase 3 his arm smokes -- the Prime Shimmer "quickly acts by burning Cobs' arm with his light orbs" just before he is
+  // "now enraged" (Objects in Mirror).
+  if(s.attack==="cobs"){
+    if(s._punchT>0 && --s._punchT===0) cobsPunch(s, s._punchId, false);
+    if((s._phase||1)>=3 && hazardT%8===0) puff(s.x - (s.face||1)*s.r*0.45, s.y - s.r*0.1, '#6a6a6a', 3);
+  }
   // movement: mobile bosses actively chase the target; stationary ones slowly shift toward
   // the target's side (so even "anchored" bosses press the player instead of ignoring them).
   if(s.stationary){
@@ -5999,9 +6013,13 @@ function updateBossAttack(s, tgt){
     const dx = tgt.x - s.x;
     s.face = Math.sign(dx) || s.face;
     // accelerate toward the target, keeping a small standoff so it doesn't sit exactly on top
+    const lunging = s.attack==="cobs" && s._lungeT>0;
     if(s.attack==="mephone4s" && s._s4Gun && s._tel>0){ s.vx *= 0.5; }   // MePhone4S stops walking to aim
+    else if(lunging){ s._lungeT--; s.vx = s._lungeDir*COBS.lunge; s.face = s._lungeDir; }   // Steve Cobs: the punch carries him in
+    else if(s.attack==="cobs" && s._cobsPunch && s._tel>0){ s.vx *= 0.5; }   // ...and he plants his feet to wind it up
     else if(Math.abs(dx) > (s.attack==="mephone4s" ? S4.standoff : 60)){ s.vx += Math.sign(dx) * 0.55; }   // a gunslinger keeps his distance
-    s.vx = clamp(s.vx, -5.5, 5.5);
+    s.vx = lunging ? clamp(s.vx, -COBS.lunge, COBS.lunge) : clamp(s.vx, -5.5, 5.5);
+    if(lunging) s.x = clamp(s.x, s.r*0.5, WW - s.r*0.5);   // a lunge does not carry him out of the arena
   }
   if(s.attack==="mephone4s") s4TrackSight(s);   // MePhone4S: the sight follows its mark, then locks
 
@@ -6035,6 +6053,7 @@ function updateBossAttack(s, tgt){
     s._telX = tgt ? tgt.x : s.x;
     s._telY = tgt ? tgt.y : s.y;   // and the height: MePhone4's glove punches along the row you stood in, his portal opens there
     if(s.attack==="mephone4s") s4BeginTelegraph(s, tgt);   // gun or car, and whom the gun is drawn on (before the banner names it)
+    if(s.attack==="cobs") cobsBeginTelegraph(s);            // TICK TOCK or SCREEN CRACKER, fixed now so a phase change cannot swap it
     banner(bossTelName(s), 700, 'boss');
   }
 }
@@ -6059,6 +6078,7 @@ function budgetCutPlatform(){
 function bossAtkGap(s){
   // Evil Leafy keeps her existing (fair) pacing — every other boss presses harder.
   if(s.attack==="evilleafy"){ return s._phase===3 ? 70 : (s._phase===2 ? 95 : 130); }
+  if(s.attack==="cobs") return COBS.gaps[Math.min(3, s._phase||1)];   // Steve Cobs presses harder (see COBS)
   let g = s._phase===3 ? 52 : (s._phase===2 ? 72 : 100);   // was 70/95/130
   if(s._rage) g=42;
   return g;
@@ -6086,6 +6106,10 @@ function onBossPhaseChange(s, ph){
   // MEPHONE4, PHASE 3 "Glitching" (Hatching the Plan: glitching, he accidentally generates random items): one free
   // download as he crosses into it. No banner of its own -- banner() has one line, and a second would wipe the phase name.
   if(s.attack==="mephone" && ph===3 && hostileCount() < MELIFE_CAP[3]) meLifeDownload(s, -(s.face||1));
+  // STEVE COBS, PHASE 3 "The Most Painful Way": "Cobs, now enraged and starts threatening MePhone, saying he will kill him
+  // in the most painful way he can" (Objects in Mirror). He stops holding his spot and comes for you. `>=` so one burst of
+  // damage that skips phase 2 still gets here. A telegraph already running keeps the move it was drawn as.
+  if(s.attack==="cobs" && ph>=3) s.stationary = false;
 }
 function bossPhaseName(s, ph){
   const A = s.attack;
@@ -6101,6 +6125,7 @@ function bossPhaseName(s, ph){
     four:       {2:"Zap to Dust", 3:"Reality Buckles"},
     mephone:    {2:"Back and Forth", 3:"Glitching"},   // Double Digit Desert (the glove kept punching Bow); Hatching the Plan (he glitches)
     mephone4s:  {2:"I'll Be Back", 3:"Super Death Trap"},   // Sugar Rush ("I'll be back", then the red car); The Tile Divide (his death trap)
+    cobs:       {2:"Appalled", 3:"The Most Painful Way"},   // his page: "Appalled, Cobs hits a button"; Objects in Mirror: "in the most painful way he can"
   };
   return (P[A] && P[A][ph]) || "Enraged";
 }
@@ -6119,9 +6144,11 @@ const BOSS_EXTRA = {
   "Evil Leafy": ["seekers", "slam"], "Two": ["seekers", "ring"], "Four": ["rain", "seekers"],
   "MePhone4": ["melife", "portal"],   // his own, not the shared shapes: so his turns run glove, MeLife, glove, portal
   "MePhone4S": ["cookies", "chainsaws"],   // his own too: gun, cookies, gun (a car from phase 2), chainsaws
+  "Steve Cobs": ["knife", "kernels"],       // his own: TICK TOCK, knife, TICK TOCK, kernels (phase 3: every other TICK TOCK is SCREEN CRACKER)
 };
 const BOSS_MOVE_NAME = { rain:"INCOMING!", ring:"SHOCK RING!", slam:"GROUND POUND!", seekers:"SEEKERS!",
-  melife:"MELIFE DOWNLOAD!", portal:"REJECTION PORTAL!", cookies:"POISONED COOKIES!", chainsaws:"CHAINSAWS!" };
+  melife:"MELIFE DOWNLOAD!", portal:"REJECTION PORTAL!", cookies:"POISONED COOKIES!", chainsaws:"CHAINSAWS!",
+  knife:"MEEPLE KNIFE!", kernels:"KERNEL STOMP!" };
 const BOSS_RUSH_ONLY = new Set(["cookies", "chainsaws"]);   // second moves an item boss never throws (see updateBossAttack)
 // MePhone4S (Boss 9). One table, so the tuning and the tests read the same numbers.
 //   lock      frames the sight stays locked before the shot (the last part of the 42-frame wind-up)
@@ -6175,6 +6202,21 @@ const BOSS_MOVES = {
       addProj(bossShot(s, { x:s.x, y:hy, vx, vy:-9.5, grav:true, bounce:true, maxBounces:2, r:14, kb:9, bossAtk:id, life:170,
         color:'#b8c0c8', shape:'saw', fxTag:'bleed', fxN:60 })); }
     shake(4); },
+  // MEEPLE KNIFE (Steve Cobs; Objects in Mirror: he "stabbed The Prime Shimmer with a MeKnife", and he "grabs his blade"
+  // and lunges at MePad). One stab at where you stood when he drew it, the way the other second moves read: about 290 px
+  // of reach from his middle, so the answer is to be further away than that, or somewhere else, when it comes.
+  knife(s, tgt){ const id = ++BOSS_ATK_ID;
+    const tx = s._telX != null ? s._telX : (tgt ? tgt.x : s.x + (s.face||1)*200), ty = s._telY != null ? s._telY : (tgt ? tgt.y : s.y);
+    const ang = Math.atan2(ty - s.y, tx - s.x), dir = Math.sign(Math.cos(ang)) || s.face || 1;
+    s.face = dir; s.vx = dir*11;   // the lunge is for show: a stationary boss eases back to his spot
+    addProj(bossShot(s, { x:s.x + Math.cos(ang)*s.r*0.7, y:s.y + Math.sin(ang)*s.r*0.7, vx:Math.cos(ang)*15, vy:Math.sin(ang)*15,
+      kb:12, r:18, life:11, color:'#dfe4ea', shape:'meepleknife', bossAtk:id }));
+    for(let i=0;i<8;i++) puff(s.x + dir*s.r*0.8, s.y, '#dfe4ea', 4); shake(5); },
+  // KERNEL STOMP (Steve Cobs; Objects in Mirror: Dough possesses his kernels, "causing Cobs to take out his kernels and stomp
+  // on it"). The shared stomp's two floor waves, as his own kernels -- jump them.
+  kernels(s, tgt){ const id = ++BOSS_ATK_ID, y = groundY() - 12;
+    for(const d of [-1, 1]) addProj(bossShot(s, { x:s.x + d*s.r*0.6, y, vx:d*8, vy:0, r:14, bossAtk:id, life:140, color:'#f0d010', shape:'kernel' }));
+    shake(8); for(let i=0;i<14;i++) puff(s.x + (Math.random()*2-1)*s.r*0.8, groundY()-6, '#f0d010', 4); },
 };
 // ---- MEPHONE4 (Boss 7) ----------------------------------------------------------------------------------------------
 // "mephone should be a boss, alongside 4s, and cobs. mephone should spawn hostile assist trophies." The II wiki files
@@ -6297,6 +6339,102 @@ function s4DeathTrap(s, atkId){
   if(n) banner("SUPER DEATH TRAP!", 800, 'boss');
   return n;
 }
+// ---- STEVE COBS (Boss 11) -------------------------------------------------------------------------------------------
+// "mephone should be a boss, alongside 4s, and cobs." The II wiki: "the overall main antagonist of the Inanimate Insanity
+// series", Meeple's founder and CEO, who made MePhone4 and every Meeple device. Every attack is his, from the wiki:
+//   TICK TOCK       his page: "Cobs repeatedly states "tick tock" in order to emphasize the latest Meeple gadget, the
+//                   Meeple Watch. Balloon doubts its significance ... Appalled, Cobs hits a button and a contraption
+//                   appears from the floor that pops Balloon" -- "a arrow on a stick" (Theft and Battery).
+//   SCREEN CRACKER  Objects in Mirror: "MePhone makes a snarky comment until Cobs punches, MePhone cracking his screen",
+//                   then "Cobs continues to punch MePhone". Once he is "now enraged" (phase 3) it takes every other
+//                   signature turn; he still has his button, so TICK TOCK takes the rest.
+//   MEEPLE KNIFE, KERNEL STOMP   Objects in Mirror (see BOSS_MOVES).
+// Left out on purpose: the MeTag guards and the MePhoneX deletions come from scenes the owner's standing rule keeps out
+// (nobody from the OSC, and no move built on a moment that depends on them), and so do his death and the fight to the
+// death. He summons nothing (the adds are MePhone4's) and has no gun, car or chainsaw (MePhone4S's).
+//
+// One table, so the tuning and the tests read the same numbers.
+//   slots     arrows either side of the middle one, by phase: 5 in phase 1, 7 from phase 2 ("Appalled")
+//   gap       px between arrows, by phase. 84 in phase 1, a pattern narrow enough to run clear of in the wind-up; 96 from
+//             phase 2, where it is not, so the dodge is to stand in a 64 px gap between two, to step into a TICK slot that
+//             has fired before its TOCK neighbours come up, or to jump -- an arrow rises about 101 px, for 7 frames
+//   tick      frames the TICK arrows wait under their shadows after the wind-up; beat how much later the TOCK arrows come
+//   rise      how fast an arrow comes up, px a frame (slower under a platform, so it never reaches its top: cobsTrapArrow)
+//   clear     how far under a platform's top an arrow's head stops: every traced hurtbox hangs 12 px below the circle a
+//             fighter stands on (the art is drawn down to r+12), so 12 and a margin of 6
+//   kb, sm    an arrow's knockback, and how far its launch is tilted up (smAngle, SMASH_ANGLE_TILT a step): 1 sends you up
+//             and away from him at about 53 degrees. At 2 (about 75, nearly straight up) a popped fighter came back down
+//             on the stage, and more knockback did not make him kill: kb 10 to 14 all lost 0.5 to 0.8 lives a run
+//   gaps      frames between his attacks, by phase, against the usual 100/72/52: he is the last boss before Four
+//   lunge     his speed on SCREEN CRACKER and lungeT for how long; punch the fist's speed, punchLife its life, fistR its
+//             size, punchGap the frames to the second punch -- past the 24-frame hit grace, so the first cannot swallow it
+// Measured with one AI fighter started at him, 30 runs (15 fighters, two seeds), against the bosses either side on the
+// same harness (15 runs each). The design's numbers (hp 310, usual gaps, kb 10, straight up): 15/15 beaten, 0.33 lives
+// lost -- easier than MePhone4S (13/15, 0.93) two bosses earlier. These: 24/30 beaten in 19.8 s, 1.00 lives lost, next to
+// Four (12/15, 21.7 s, 1.13) and short of Two (6/15, 21.7 s, 2.27). TICK TOCK deals about 70% of what he does.
+const COBS = { gaps:[0,84,64,48], slots:[0,2,3,3], gap:[0,84,96,96], tick:30, beat:24, rise:17, r:16, clear:18, kb:14, sm:1,
+               lunge:9, lungeT:18, punch:14, punchLife:8, fistR:20, punchGap:26 };
+// The signature is fixed when the wind-up starts and fired as it was drawn: crossing into phase 3 halfway through a TICK
+// TOCK wind-up used to fire a punch nobody had been warned of. SCREEN CRACKER goes along the row you stood in when he
+// drew it, toward the side you were on -- out of his body, so it can reach a fighter standing on the platform over him.
+function cobsBeginTelegraph(s){
+  s._telPh = s._phase || 1;
+  // In phase 3 his signature turns go punch, TICK TOCK, punch...: he "continues to punch", and the trap stays, because
+  // the punch alone rarely lands (the fists dealt under 5% of his damage in the balance runs). Counted from the phase,
+  // not from _moveN, so the first signature of phase 3 is always the new move its banner has just announced.
+  const sig = s._telKind === s.attack && s._telPh >= 3;
+  if(sig) s._p3Sig = (s._p3Sig||0) + 1;
+  s._cobsPunch = sig && s._p3Sig % 2 === 1;
+  s._punchDir = s._cobsPunch ? (Math.sign((s._telX != null ? s._telX : s.x) - s.x) || s.face || 1) : 0;
+  s._punchY = s._cobsPunch ? clamp(s._telY != null ? s._telY : s.y, s.y - s.r*0.9, groundY() - 16) : null;
+}
+function cobsPunchReach(){ return COBS.punch * Math.round(COBS.punchLife*PROJ_LIFE) + COBS.fistR; }   // how far past his hand the first fist can hit
+// TICK TOCK. Every arrow is placed at once under its shadow, around where you stood when he started: the TICKs (the even
+// slots, the middle one among them) come up COBS.tick frames later, the TOCKs COBS.beat after that. They rise out of the
+// surface under the spot -- the platform top when you were standing on it, so it is not a free camp -- and the whole
+// cast is one attack id and a `volley`, so however many land it is one boss hit, even with another hit landing between
+// the TICK and the TOCK (the one-id memory in applyHit forgets an attack the moment another lands).
+function cobsTickTock(s, tgt, atkId){
+  const ph = Math.min(3, s._telPh || s._phase || 1), n = COBS.slots[ph], g = COBS.gap[ph], gy = groundY();
+  const cx = s._telX != null ? s._telX : (tgt ? tgt.x : s.x), footY = s._telY != null ? s._telY : gy;
+  let made = 0;
+  for(let k=-n; k<=n; k++){
+    const x = cx + k*g; if(x < 24 || x > WW - 24) continue;
+    const top = surfaceBelow(x, footY);
+    cobsTrapArrow(s, x, top !== null ? top : gy, (k%2===0) ? COBS.tick : COBS.tick + COBS.beat, atkId); made++;
+  }
+  for(let i=0;i<6;i++) puff(s.x + (s.face||1)*s.r*0.6, s.y - s.r*0.2, '#f4f4f8', 3);   // he hits the button
+  shake(3);
+  return made;
+}
+// One arrow on a stick. A delayed shot neither moves, hits nor ages, and `warn` only counts down once it moves, so
+// warn:1 keeps its shadow up for exactly as long as it is buried. Its head rises COBS.rise px a frame for its 7 frames
+// of life; under a platform its head stops COBS.clear under the platform's top, so someone standing up there is never
+// hit by an arrow meant for the floor, on any screen height. The tiny vx sends a hit away from him, and smAngle
+// tilts the launch up the way MePhone4's uppercut is tilted: it pops you up and away, "an arrow on a stick" popping
+// Balloon (COBS.kb, COBS.sm).
+function cobsTrapArrow(s, x, surfY, delay, atkId){
+  const frames = Math.round(5*PROJ_LIFE);
+  let ceil = null;
+  for(const t of vanTopsAt(x)) if(t.y < surfY - 4 && (ceil === null || t.y > ceil)) ceil = t.y;
+  const v = ceil === null ? COBS.rise : Math.max(4, Math.min(COBS.rise, (surfY + 18 - COBS.r - COBS.clear - ceil)/frames));
+  return addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x, y:surfY + 18, vx:(Math.sign(x - s.x)||1)*0.01, vy:-v, grav:false,
+    dmg:bossDmg(), kb:COBS.kb, smAngle:COBS.sm, r:COBS.r, color:'#d83a3a', life:5, delay, warn:1, warnX:x, warnY:surfY,
+    bossAtk:atkId, volley:true, noAim:true, cobsTrap:true });
+}
+// SCREEN CRACKER, phase 3. He lunges along the row and punches, and COBS.punchGap frames later punches again from where
+// the lunge took him ("Cobs continues to punch MePhone"): half a boss hit each, one attack id and a volley, so both
+// landing is one boss hit. Out of his reach, or off the row -- over him, or onto the platform above his head -- is safe.
+function cobsPunch(s, atkId, first){
+  const dir = s._punchDir || s.face || 1, row = s._punchY != null ? s._punchY : s.y;
+  s.face = dir;
+  if(first){ s._lungeT = COBS.lungeT; s._lungeDir = dir; s._punchT = COBS.punchGap; s._punchId = atkId; }
+  addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x:s.x + dir*s.r*0.6, y:row, vx:dir*COBS.punch, vy:0, grav:false,
+    dmg:bossDmg()*0.5, kb:first ? 7 : 12, r:COBS.fistR, color:'#e8e8e8', life:COBS.punchLife, noAim:true, shape:'cobsfist',
+    bossAtk:atkId, volley:true });
+  for(let i=0;i<6;i++) puff(s.x + dir*s.r*0.7, row, '#f4f4f8', 4);
+  shake(first ? 5 : 8);
+}
 function bossTelName(s){
   if(s._telKind && s._telKind !== s.attack && BOSS_MOVE_NAME[s._telKind]) return BOSS_MOVE_NAME[s._telKind];
   if(s.attack==="four") return s._phase===2 ? "SCREECHY!!" : "SCREECHY!";
@@ -6310,6 +6448,7 @@ function bossTelName(s){
   if(s.attack==="two") return "MIND READ!";
   if(s.attack==="mephone") return s._phase>=2 ? "FIST THINGY COMBO!" : "FIST THINGY!";
   if(s.attack==="mephone4s") return s._s4Car ? "I'LL BE BACK!" : "PUT THAT COOKIE DOWN!";
+  if(s.attack==="cobs") return s._cobsPunch ? "SCREEN CRACKER!" : "TICK TOCK, TICK TOCK...";   // his own line (his page, Theft and Battery)
   return "!";
 }
 function fireBossAttack(s, tgt){
@@ -6544,6 +6683,10 @@ function fireBossAttack(s, tgt){
       for(let i=0;i<8;i++) puff(hx, hy, '#ffd23f', 4);   // muzzle flash
       shake(6);
     }
+  }
+  else if(s.attack==="cobs"){
+    // TICK TOCK, or in phase 3 every other time SCREEN CRACKER -- whichever the wind-up was drawn as (cobsBeginTelegraph)
+    if(s._cobsPunch) cobsPunch(s, atkId, true); else cobsTickTock(s, tgt, atkId);
   }
   else {
     // basic: a lunge/stomp shockwave toward the target
@@ -12357,6 +12500,24 @@ function drawProjectile(pr){
       ctx.globalAlpha=pulse*0.3; ctx.beginPath(); ctx.ellipse(pr.warnX,pr.warnY-4,pr.r*1.3,6,0,0,7); ctx.fill();
       ctx.globalAlpha=1;
     }
+    // TICK TOCK (Steve Cobs). Buried, only its shadow shows, with a clock whose hand winds round to twelve as it comes --
+    // what sets it apart from a rain of drops, which falls. Popped, it is "a arrow on a stick": a grey pole from the
+    // surface it came out of up to the red head, and the head is the part that hits.
+    if(pr.cobsTrap){
+      const base = pr.warnY != null ? pr.warnY : groundY();
+      if(pr.delay > 0){
+        const cy = base - 22, a = -Math.PI/2 + pr.delay*0.2;
+        ctx.globalAlpha = 0.85; ctx.fillStyle = '#f4f4f8'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(pr.x, cy, 9, 0, 7); ctx.fill(); ctx.stroke();
+        ctx.strokeStyle = pr.color; ctx.beginPath(); ctx.moveTo(pr.x, cy); ctx.lineTo(pr.x + Math.cos(a)*7, cy + Math.sin(a)*7); ctx.stroke();
+        ctx.globalAlpha = 1; return;
+      }
+      ctx.strokeStyle = '#9aa4b0'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(pr.x, base); ctx.lineTo(pr.x, pr.y); ctx.stroke();
+      ctx.fillStyle = pr.color; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(pr.x, pr.y - pr.r*1.3); ctx.lineTo(pr.x - pr.r*0.8, pr.y + pr.r*0.3); ctx.lineTo(pr.x + pr.r*0.8, pr.y + pr.r*0.3);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      return;
+    }
     if(pr.beamShot){
       // Ruby's charged beam: a glowing elongated streak along its travel direction
       const ang=Math.atan2(pr.vy,pr.vx), len=pr.r*3.4;
@@ -12735,6 +12896,7 @@ const BOSS_ARENA_SKY = {
   cave:   ["#1a1420","#0a0810"],   // dim cave
   void:   ["#0a0a2a","#02021a"],   // algebralian void (Four/Two)
   melife: ["#12304a","#060f18"],   // MePhone4's screen glow, kept dark so the shots stay the brightest thing on screen
+  meeple: ["#1c2433","#0c1119"],   // Steve Cobs's MeCloud: dark slate, so his red arrows and their shadows read
 };
 function drawArenaDecor(key){
   ctx.save();
@@ -12767,6 +12929,13 @@ function drawArenaDecor(key){
     ctx.fillStyle="rgba(150,215,255,0.18)"; ctx.fillRect(0,0,W,18);
     ctx.strokeStyle="rgba(150,215,255,0.5)"; ctx.lineWidth=2; ctx.strokeRect(W-56,3,32,12);
     ctx.fillStyle="rgba(150,215,255,0.5)"; ctx.fillRect(W-24,6,3,6); ctx.fillRect(W-54,5,22,8);
+  } else if(key==="meeple"){
+    // Steve Cobs fights in the MeCloud, where he "welcomes the contestants" (Theft and Battery): tall glass panes drifting
+    // past and strip lights overhead. Decoration, not a detail from the wiki -- and steady: nothing here flashes.
+    ctx.fillStyle="rgba(200,225,255,0.06)";
+    for(let i=0;i<8;i++){ const px=((i*170 - camX*0.3)%(W+170)+W+170)%(W+170)-85; ctx.fillRect(px, H*0.08, 110, H*0.62); }
+    ctx.fillStyle="rgba(235,245,255,0.18)";
+    for(let i=0;i<5;i++) ctx.fillRect((W/5)*i+30, 18, W/5-60, 4);
   }
   ctx.restore();
 }
@@ -12841,6 +13010,7 @@ const BOSS_SPRITE_SRC = {
   four:         "assets/sprites/four.png",
   mephone:      "assets/sprites/mephone4.png",   // File:2024 II MePhone4.png, the II wiki's 2024 pose (see CREDITS.md)
   mephone4s:    "assets/sprites/mephone4s.png",  // File:Yeyeye.png, the "Late II2" tab of his II wiki infobox (see CREDITS.md)
+  cobs:         "assets/sprites/steve-cobs.png", // File:SteveCobs2024PoseAlt.png, the "II2 16-18" tab of his II wiki infobox (see CREDITS.md)
 };
 // Measured by scripts/fetch-sprites.mjs, same interior-ink method as the fighters.
 const BOSS_SPRITE_FLIP = { speaker:true, face:true, four:true };
@@ -12879,6 +13049,13 @@ function drawBossSprite(s){
   else if(s._tel>0 && s._telKind==="portal" && typeof s._telX==='number'){ const q = portalSpot(s, null);
     ctx.globalAlpha = 0.3; ctx.strokeStyle = s.color || "#4fb8e8"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.ellipse(q.x - s.x, q.y - s.y, PORTAL_CORE, PORTAL_CORE*1.3, 0, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
+  // Steve Cobs's SCREEN CRACKER: while he winds it up, a pale band along the row it will go, as long as the first fist can
+  // hit -- the tell is the hitbox. The telegraph, not a detail from the wiki.
+  if(s.sprite==="cobs" && s._tel>0 && s._cobsPunch && typeof s._punchY==='number'){
+    const dir = s._punchDir || s.face || 1, reach = cobsPunchReach(), x0 = dir*R*0.6;
+    ctx.save(); ctx.globalAlpha = 0.18 + 0.14*Math.max(0, 1 - s._tel/bossTelLen(s)); ctx.fillStyle = "#f4f4f8";
+    ctx.fillRect(Math.min(x0, x0 + dir*reach), s._punchY - s.y - COBS.fistR, reach, COBS.fistR*2); ctx.restore();
+  }
   // ---- REAL BOSS ART, animated ----------------------------------------------------------------
   const img = bossImage(s.sprite);
   if(img){
@@ -12971,6 +13148,18 @@ function drawBossSprite(s){
       ctx.fillStyle = flash ? "#ffd0d0" : "#c8102e"; ctx.fillRect(-R*0.48,-R*0.8,R*0.96,R*1.45);
       ctx.fillStyle = "#101010"; ctx.fillRect(-R*0.4,-R*0.42,R*0.34,R*0.24); ctx.fillRect(R*0.06,-R*0.42,R*0.34,R*0.24); ctx.fillRect(-R*0.08,-R*0.36,R*0.16,R*0.06);
       ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0,R*0.35,R*0.09,0,7); ctx.fill();
+      break; }
+    case "cobs": {        // Steve Cobs: a yellow corn cob with rows of kernels, green husk leaves at his base, black-framed glasses
+      ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0,-R*0.1,R*0.45,R*0.95,0,0,7); ctx.fill(); ctx.stroke();
+      if(!flash){ ctx.fillStyle = "#c8a800";
+        for(let r2=-3;r2<=2;r2++) for(let c2=-1;c2<=1;c2++){ ctx.beginPath(); ctx.arc(c2*R*0.2 + (r2%2)*R*0.08, r2*R*0.24, R*0.05, 0, 7); ctx.fill(); } }
+      ctx.fillStyle = flash ? "#fff" : "#507030";
+      for(const [a,b,c2] of [[-0.5,-0.34,0.02],[-0.2,0,0.2],[-0.02,0.34,0.5]]){
+        ctx.beginPath(); ctx.moveTo(a*R, R*0.92); ctx.lineTo(b*R, R*0.02); ctx.lineTo(c2*R, R*0.92); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+      ctx.strokeStyle = "#101010"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.rect(-R*0.36,-R*0.52,R*0.28,R*0.18); ctx.rect(R*0.08,-R*0.52,R*0.28,R*0.18); ctx.moveTo(-R*0.08,-R*0.44); ctx.lineTo(R*0.08,-R*0.44); ctx.stroke();
+      // "a tag with the Meeple logo on it around his shoulders" (his page)
+      ctx.fillStyle = "#f4f4f8"; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0,-R*0.08,R*0.1,0,7); ctx.fill(); ctx.stroke();
       break; }
     case "face": {        // Purple Face: round purple with a wide grin
       ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
@@ -15642,6 +15831,14 @@ const PROJ_SHAPE = {
     c.fillStyle='#bfe8ff'; c.fillRect(-r*0.45,-r*0.72,r*0.45,r*0.36); c.fillRect(r*0.08,-r*0.72,r*0.5,r*0.36);
     c.fillStyle='#1c1c1c'; c.beginPath(); c.arc(-r*0.75,r*0.38,r*0.3,0,7); c.arc(r*0.75,r*0.38,r*0.3,0,7); c.fill();
     c.fillStyle='#ffe98a'; c.fillRect(r*1.2,-r*0.25,r*0.14,r*0.2); } },
+  // --- Steve Cobs: the Meeple Knife (Objects in Mirror) point first, his black fist on its arm, and one of his own kernels
+  meepleknife:{ draw(c,r){ c.fillStyle='#dfe4ea'; c.beginPath(); c.moveTo(r*1.4,0); c.lineTo(-r*0.3,-r*0.4); c.lineTo(-r*0.3,r*0.4); c.closePath(); c.fill();
+    c.strokeStyle='#6a7078'; c.lineWidth=r*0.1; c.stroke(); c.fillStyle='#1c1c1c'; c.fillRect(-r*1.1,-r*0.22,r*0.8,r*0.44); c.fillRect(-r*0.38,-r*0.55,r*0.12,r*1.1); } },
+  cobsfist:{ draw(c,r){ c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.18; c.beginPath(); c.moveTo(-r*0.7,0); c.lineTo(-r*2.2,0); c.stroke();
+    c.fillStyle='#1c1c1c'; c.beginPath(); c.arc(0,0,r*0.75,0,7); c.fill(); c.strokeStyle='#e8e8e8'; c.lineWidth=r*0.1; c.stroke();
+    c.beginPath(); for(let i=-1;i<=1;i++){ c.moveTo(r*0.25,i*r*0.28); c.lineTo(r*0.65,i*r*0.28); } c.stroke(); } },
+  kernel:  { spin:true, draw(c,r){ c.fillStyle='#f0d010'; c.beginPath(); c.moveTo(0,-r); c.quadraticCurveTo(r,-r*0.2,r*0.6,r*0.7); c.lineTo(-r*0.6,r*0.7);
+    c.quadraticCurveTo(-r,-r*0.2,0,-r); c.fill(); c.strokeStyle='#a88a00'; c.lineWidth=r*0.14; c.stroke(); } },
   // --- fire: a flame licking backwards from the direction of travel
   ember:   { draw(c,r){ flameShape(c,r); } },
   emberjr: { draw(c,r){ flameShape(c,r*0.85); } },
@@ -16115,7 +16312,9 @@ function serializeState(){
     projectiles: projectiles.map(p=>({x:Math.round(p.x),y:Math.round(p.y),r:p.r,color:p.color,warn:p.warn,warnX:p.warnX,warnY:p.warnY,
       // a boss shot that names its shape (MePhone4's glove, MePhone4S's car and cookies) or is a streak (his bullets)
       // sends it and its heading, so a client does not see a red dot
-      ...(p.owner===-2 && (p.shape || p.beamShot) ? {shape:p.shape, beamShot:p.beamShot, vx:Math.round(p.vx*10)/10, vy:Math.round(p.vy*10)/10} : null)})),
+      ...(p.owner===-2 && (p.shape || p.beamShot) ? {shape:p.shape, beamShot:p.beamShot, vx:Math.round(p.vx*10)/10, vy:Math.round(p.vy*10)/10} : null),
+      // Steve Cobs's TICK TOCK arrows: buried (a shadow and a clock) or up (the arrow on its stick)
+      ...(p.cobsTrap ? {cobsTrap:true, delay:p.delay} : null)})),
     beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life})),
     // Items and summons (assists, bosses) were never sent, so a client saw no pickups, no assist trophies
     // and no Boss Rush boss. These are the fields drawItem, drawSummon, drawBossSprite and drawBossBar read.
@@ -16125,11 +16324,14 @@ function serializeState(){
       // MePhone4: his adds' side and download, his green MeLife tell, and his portal
       hostile:m.hostile,_dl:m._dl,_telKind:m._telKind,
       _aimX:m._aimX,_aimY:m._aimY,_aimLock:m._aimLock,   // MePhone4S's gun sight
+      _cobsPunch:m._cobsPunch,_punchDir:m._punchDir,_punchY:m._punchY,   // Steve Cobs's SCREEN CRACKER tell
       // and which boss it is, so the client's wind-up ring and swell run over that boss's own wind-up (his is 42 frames,
       // not the default 36) instead of starting below zero. A client never simulates, so this only draws.
       attack:m.attack,
       _portal:m._portal?{x:Math.round(m._portal.x),y:Math.round(m._portal.y),t:m._portal.t,T:m._portal.T}:undefined})),
     bossCleared: BOSSRUSH.cleared,
+    // the boss's arena: a client never had it, so it drew every boss fight on the stage's own sky
+    arena: BOSS_ARENA,
     particles: particles.slice(0,60).map(p=>({x:Math.round(p.x),y:Math.round(p.y),r:p.r,color:p.color,life:p.life})),
     banner: (window.__lastBanner && Date.now()-window.__lastBanner.at < 400) ? window.__lastBanner : null,
     over: !running,
@@ -16162,6 +16364,7 @@ function applySnapshot(s){
   beams=(s.beams||[]);
   items=(s.items||[]).map(it=>({...it, taken:false}));
   summons=(s.summons||[]);
+  BOSS_ARENA = s.arena || null;   // ...and the arena it is fought in
   if(typeof s.bossCleared==='number') BOSSRUSH.cleared=s.bossCleared;
   particles=(s.particles||[]).map(p=>({...p, vx:0, vy:0}));
   if(s.banner) banner(s.banner.text, s.banner.ms);
