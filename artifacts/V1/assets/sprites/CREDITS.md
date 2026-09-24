@@ -239,3 +239,14 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Salt | `salt.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d3/Salt2024Pose.png |
 | Pepper (Salt's partner) | `pepper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b7/Pepper2024Pose.png |
 | Test Tube | `test-tube.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Blue_Ray_Test_Tube_S4.png |
+
+### Boss Rush
+
+MePhone4, Boss 7 of the gauntlet. Same wiki and footing as the table above. The page's default image is a fan
+recreation, so the render was fetched by name: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity
+"MePhone4=2024_II_MePhone4.png"`, from the 2024 pose set, downscaled to 117×200, alpha verified, facing measured
+(0.015, not flipped).
+
+| Boss | File | Source |
+|---|---|---|
+| MePhone4 | `mephone4.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c8/2024_II_MePhone4.png/revision/latest?cb=20250628192616 |

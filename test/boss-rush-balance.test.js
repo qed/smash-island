@@ -92,7 +92,12 @@ describe('Boss Rush balance', () => {
     })()`);
     expect(r.shown).toBe('flex');
     expect(r.wasPaused).toBe(true);
-    expect(r.sub).toMatch(/All nine bosses beaten in 2:05/);
+    // Was /All nine bosses beaten/. "mephone should be a boss, alongside 4s, and cobs" made the gauntlet ten long, and the
+    // other two II bosses lengthen it again, so the card counts the roster and this reads the count the same way.
+    const n = W.eval('BOSS_ROSTER.length');
+    const words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen'];
+    expect(n, 'nine, and MePhone4').toBeGreaterThanOrEqual(10);
+    expect(r.sub).toMatch(new RegExp(`All ${words[n]} bosses beaten in 2:05`));
     expect(r.resumed).toBe(true);
     expect(r.running).toBe(false);
     expect(r.title).toBe('Victory!');
