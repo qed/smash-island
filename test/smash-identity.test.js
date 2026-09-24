@@ -114,6 +114,7 @@ describe('a smash announces itself', () => {
         tone = function(f,d,t,g,w,to){ played.push({f:f,d:d,t:t}); };
         noise = function(){ played.push({noise:true}); };
         SFX.smash = function(){ generic++; };
+        window.__lastBanner = null;
         doSmash(fighters[0], 1.0);
         var banner = window.__lastBanner && window.__lastBanner.text;
         tone=_tone; noise=_noise; SFX.smash=_sfx; SND.on=false;
@@ -123,10 +124,12 @@ describe('a smash announces itself', () => {
     expect(r.generic, 'fell back to the generic smash sound').toBe(0);
     expect(r.layers, 'the smash made no sound at all').toBeGreaterThan(0);
     expect(r.firstFreq, 'played someone else\'s sound').toBe(r.expect);
-    expect(r.banner, 'the move did not announce its name').toBe('Resonance');
+    // "remove all text for smashes and specials." (2026-09-24): the name used to go up as a banner for the local player.
+    // The owner took the text away; the sound is the announcement now.
+    expect(r.banner, 'a smash puts no text on the screen').toBe(null);
   });
 
-  it('an AI smash is heard but does not spam the banner', async () => {
+  it('an AI smash is heard and puts no text up either', async () => {
     const w = await boot(); await settle(w);
     const r = w.eval(`
       (function(){
