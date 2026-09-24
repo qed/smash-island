@@ -201,8 +201,25 @@ non-commercial fan game.
 ## Attack art
 
 What a fighter THROWS, in the show's own art, fetched by scripts/fetch-attack-sprites.mjs from the
-same wiki, cropped to the alpha box and downscaled to 56px tall, RGBA with verified alpha. Only art
-that is the thrown thing itself is used: renders of the character were rejected on sight.
+same wiki (and, for the Inanimate Insanity DLC, from inanimateinsanity.fandom.com, AnimationEpic's
+designs), cropped to the alpha box and downscaled to 56px tall (never more than 128px on the long side),
+RGBA with verified alpha. Only art that is the thrown thing itself is used: renders of the character and
+episode screenshots were rejected on sight. scripts/attack-sprite-manifest.json records each file's
+size, source and the kit it is for.
+
+Four are CUT OUT of a larger picture, because the object exists nowhere on the wiki on its own; the
+cut is in the fetch script, so it reproduces exactly:
+- book.png: the remastered cover alone, lifted off the white prop sheet it shares with the season-1 cover.
+- shimmerorb.png: only the orb's near-white; Box, his face and his hands are gone, and the two bites
+  his hands left in its lower edge are closed with the orb's own flat white.
+- paintbomb.png: the page's only picture of a paint bomb is a small crop from the episode; its flat
+  green backdrop is keyed away and nothing else of the frame remains.
+- tpot7bolt.png: the owner asked for "the art from tpot 7". The strike that hits the Volcano in
+  "The Seven Wonders of Goiky" is lifted off its plain sky (brightness above the sky becomes alpha,
+  anything warm is dropped), so the bolt ships alone, with its glow, and none of the frame.
+
+Two fill their own canvas edge to edge, so they are not 12% clear and were passed by eye: Bracelety's
+sign (a board) and Remote's battery (a cell).
 
 - Ice Cube (shatter.png): her shatter — File:Ice Cube's Shatter.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/54/Ice_Cube%27s_Shatter.png/revision/latest?cb=20170818055658
 - Cake (slice.png): a slice of cake — File:Cake slice.png — https://static.wikia.nocookie.net/battlefordreamisland/images/e/e8/Cake_slice.png/revision/latest?cb=20200331160339
@@ -211,6 +228,45 @@ that is the thrown thing itself is used: renders of the character were rejected 
 - Pen (cap.png): his cap — File:Pen Cap.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/fe/Pen_Cap.png/revision/latest?cb=20171204165618
 - Price Tag (tag.png): a price tag — File:Price Tag S2 Asset.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/8f/Price_Tag_S2_Asset.png/revision/latest?cb=20250629215323
 - Ruler (measure.png): the ruler itself — File:Ruler's Asset.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cf/Ruler%27s_Asset.png/revision/latest?cb=20200704043629
+- Firey / Firey Jr. (fireball.png): a fireball (the BFDI 17 Fireball body, faceless) — File:17body fireball.png — https://static.wikia.nocookie.net/battlefordreamisland/images/9/9c/17body_fireball.png/revision/latest?cb=20190725180222
+- Bomby (landmine.png): a landmine — File:11body landmine.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/54/11body_landmine.png/revision/latest?cb=20250226003955
+- Flower / Fanny (poof.png): a puff cloud — File:Poof.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/ce/Poof.png/revision/latest?cb=20171206033639
+- Tennis Ball (tennisball.png): a served tennis ball (faceless, pink) — File:16body pinktennisball.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/8e/16body_pinktennisball.png/revision/latest?cb=20190722175753
+- Blocky (anvil.png): an anvil — File:2b anvil.png — https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/2b_anvil.png/revision/latest?cb=20190808181533
+- Golf Ball (zapbolt.png): a zap bolt — File:Lightning 2.png — https://static.wikia.nocookie.net/battlefordreamisland/images/d/dd/Lightning_2.png/revision/latest?cb=20180408173117
+- Rocky (barf.png): his barf stream (TPOT intro) — File:Rocky barf (TPOT Intro).png — https://static.wikia.nocookie.net/battlefordreamisland/images/b/bd/Rocky_barf_%28TPOT_Intro%29.png/revision/latest?cb=20230619005953
+- Fries (fry.png): one fry — File:Single Fry.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cc/Single_Fry.png/revision/latest?cb=20190807024659
+- Gelatin (syringe.png): a Freeze Juice syringe — File:Freeze Juice.png — https://static.wikia.nocookie.net/battlefordreamisland/images/4/4c/Freeze_Juice.png/revision/latest?cb=20191120233106
+- Nickel (coins.png): coins — File:Coins.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/f0/Coins.png/revision/latest?cb=20210412044300
+- Ruby (gem.png): a red gem — File:RedGemBFDIE.png — https://static.wikia.nocookie.net/battlefordreamisland/images/d/d5/RedGemBFDIE.png/revision/latest?cb=20260130170625
+- Yellow Face (star.png): a star (a BFB 21 gift item) — File:Star (BFB 21).png — https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Star_%28BFB_21%29.png/revision/latest?cb=20210211181436
+- Barf Bag (vomit.png): a splat of vomit — File:Leafy-ShapedVomit.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cf/Leafy-ShapedVomit.png/revision/latest?cb=20170905020203
+- Basketball (basketball.png): a basketball prop — File:Basketball prop (bfb 28)0001.png — https://static.wikia.nocookie.net/battlefordreamisland/images/a/a8/Basketball_prop_%28bfb_28%290001.png/revision/latest?cb=20210116222221
+- Bracelety (sign.png): her sign — File:Bracelety Sign Blank.png — https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/Bracelety_Sign_Blank.png/revision/latest?cb=20171204011136
+- Grassy (bush.png): a bush — File:Bush.png — https://static.wikia.nocookie.net/battlefordreamisland/images/a/a1/Bush.png/revision/latest?cb=20161105234307
+- Lollipop (candy.png): a piece of her candy — File:Lollipop Piece 5.png — https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Lollipop_Piece_5.png/revision/latest?cb=20210715132545
+- Marker (inkball.png): a ball of ink — File:16bb inkball.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/88/16bb_inkball.png/revision/latest?cb=20200409194604
+- Money (coin.png): one gold coin — File:28b linecoin.png — https://static.wikia.nocookie.net/battlefordreamisland/images/4/41/28b_linecoin.png/revision/latest?cb=20210118010346
+- Naily (nail.png): a nail (BFDI 11) — File:BFDI 11 Nail.png — https://static.wikia.nocookie.net/battlefordreamisland/images/3/36/BFDI_11_Nail.png/revision/latest?cb=20200311100209
+- Remote (battery.png): Remote's battery — File:Batteryremote.png — https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Batteryremote.png/revision/latest?cb=20250728054259
+- Saw (sawblade.png): a saw blade — File:Sawblade.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/ff/Sawblade.png/revision/latest?cb=20260203050959
+- Taco (jawbreaker.png): the jawbreaker — File:Jawbreaker better quality.png — https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Jawbreaker_better_quality.png/revision/latest?cb=20171217213634
+- Woody (woodchip.png): a chip of Woody — File:8B3728F4-AFD6-4BD3-A90D-AD47726D9235.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/fe/8B3728F4-AFD6-4BD3-A90D-AD47726D9235.png/revision/latest?cb=20191012181511
+- Toothpaste (toothpaste.png): a splat of toothpaste — File:Toothpaste Splat.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/56/Toothpaste_Splat.png/revision/latest?cb=20260205023536
+- Match (flame.png): a flame — File:2b fire0001.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/86/2b_fire0001.png/revision/latest?cb=20190808182350
+- Tree (branch.png): a leafy branch — File:21body twigy.png — https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/21body_twigy.png/revision/latest?cb=20190729232049
+- Donut (sprinkles.png): sprinkles — File:Bfdia 17body sprinkles.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/84/Bfdia_17body_sprinkles.png/revision/latest?cb=20250502025230
+- Puffball (rainbow.png): the rainbow barf (BFDIA) — File:Barf rainbow long.png — https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Barf_rainbow_long.png/revision/latest?cb=20180209063246
+- Roboty (beep.png): BEEP lettering — File:BEEP!.png — https://static.wikia.nocookie.net/battlefordreamisland/images/0/0c/BEEP%21.png/revision/latest?cb=20180331203345
+- Lightning (tpot7bolt.png): his TPOT 7 strike, lifted off the sky — File:Tpot7dpacas lightningrampage (25).png — https://static.wikia.nocookie.net/battlefordreamisland/images/6/61/Tpot7dpacas_lightningrampage_%2825%29.png/revision/latest?cb=20230917130637
+- Taco (II) (lemon.png): a lemon — File:Lemon.png — https://static.wikia.nocookie.net/inanimateinsanity/images/3/35/Lemon.png/revision/latest?cb=20180215211341
+- Bow (chair.png): a chair (S1 remaster design) — File:Chair Remaster.png — https://static.wikia.nocookie.net/inanimateinsanity/images/1/10/Chair_Remaster.png/revision/latest?cb=20260424195043
+- Baseball (book.png): his Twilight book (the remastered cover, off its white sheet) — File:Twilight Book II Remastered.png — https://static.wikia.nocookie.net/inanimateinsanity/images/f/f0/Twilight_Book_II_Remastered.png/revision/latest?cb=20260406075642
+- Apple (pencil.png): a pencil (Minor Items/Prizes) — File:Pencil Prize.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/49/Pencil_Prize.png/revision/latest?cb=20220817165350
+- Knife (fist.png): the Fist Thingy (the hook in his Bag of Tricks) — File:Fist Thingy II.png — https://static.wikia.nocookie.net/inanimateinsanity/images/0/0e/Fist_Thingy_II.png/revision/latest?cb=20230618141946
+- Knife (taser.png): the Temporary Paralyzer (the smoke in his Bag of Tricks) — File:Temp Paralyzer.png — https://static.wikia.nocookie.net/inanimateinsanity/images/e/ef/Temp_Paralyzer.png/revision/latest?cb=20190205224400
+- Lightbulb (shimmerorb.png): the Shimmer Orb, cut out of Box's hands — File:Box with Shimmer Orb (S2E18).png — https://static.wikia.nocookie.net/inanimateinsanity/images/c/c1/Box_with_Shimmer_Orb_%28S2E18%29.png/revision/latest?cb=20260513002327
+- Paintbrush (paintbomb.png): MePhone4's paint bomb, off its green backdrop — File:Paint Bombs.png — https://static.wikia.nocookie.net/inanimateinsanity/images/a/ab/Paint_Bombs.png/revision/latest?cb=20220206005836
 
 
 ## Inanimate Insanity DLC
@@ -239,3 +295,4 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Salt | `salt.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d3/Salt2024Pose.png |
 | Pepper (Salt's partner) | `pepper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b7/Pepper2024Pose.png |
 | Test Tube | `test-tube.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Blue_Ray_Test_Tube_S4.png |
+| Bot (Test Tube's robot, her summon) | `bot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/da/Bot2024PoseAlt.png |
