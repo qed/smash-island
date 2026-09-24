@@ -1900,7 +1900,7 @@ function clutchCondition(strict){
     // a Boss Rush boss on the ropes
     if(typeof summons!=='undefined' && summons){
       for(const s of summons){
-        if(s && s.type==='boss' && s._bossRush && s.maxHp>0 && s.hp>0 && (s.hp/s.maxHp) < bossGate) return true;
+        if(s && s.type==='boss' && (s._bossRush || s._oneFight) && s.maxHp>0 && s.hp>0 && (s.hp/s.maxHp) < bossGate) return true;
       }
     }
     if(typeof fighters==='undefined' || !fighters || !fighters.length) return false;
@@ -1918,7 +1918,7 @@ function clutchCondition(strict){
   return false;
 }
 function clutchBaseKind(){
-  return (typeof BOSSRUSH!=='undefined' && BOSSRUSH && BOSSRUSH.active) ? 'boss' : 'battle';
+  return ((typeof BOSSRUSH!=='undefined' && BOSSRUSH && BOSSRUSH.active) || ONEFIGHT.active) ? 'boss' : 'battle';
 }
 function clutchReset(){ CLUTCH.on=false; CLUTCH.ticks=0; }
 function clutchTick(){
@@ -2069,11 +2069,16 @@ let lastKoFrame=0;   // frame of the most recent KO — drives the anti-stalemat
 let WW=1100, WH=720, camX=0, camY=0, bases=[], worldPlats=[], floors=[], worldZones=[], spawnZones=[];
 // Pre-match co-op plan, keyed by team index: { focusName, stance:'aggressive'|'defensive'|'balanced', protectName }
 let TEAM_PLAN = {};
-function isBig(){ return SETTINGS.mode==='teams'; }   // team mode uses the big 4-floor tower
+// ONE'S FIGHT (see startOneFight). Declared with the world state, above isBig(), because her arena IS the teams map's
+// geometry: "you fight one on a teams-size map, but without the solid walls". While it is live the world answers isBig()
+// the way the teams map does (a floor slab with pits instead of an endless floor, drop-through, the climbing AI) and
+// SETTINGS.mode stays 'boss', so the boss logic keeps working.
+let ONEFIGHT = { active:false, story:false, won:false, over:false, frames:0, lineup:null, prev:null, onEnd:null, opts:null, retry:null, result:null };
+function isBig(){ return SETTINGS.mode==='teams' || ONEFIGHT.active; }   // team mode uses the big 4-floor tower (and so does One's arena)
 const CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big map is visible
 // Wide scrolling FFA/boss arena: any stage flagged `big`, plus small stages when the MAP SIZE
 // setting asks for extra height (those ride this same, proven scrolling path).
-function isBigFFA(){ return (SETTINGS.mode!=='teams') && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL; }
+function isBigFFA(){ return (SETTINGS.mode!=='teams') && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL && !ONEFIGHT.active; }
 function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any arena wider/taller than the screen
 
 // ---------- screen router ----------
@@ -2084,6 +2089,9 @@ function go(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('hud').classList.remove('active');
   running=false; cancelAnimationFrame(raf);
+  // Leaving One's fight puts the player's own mode, count, stage and pick back. Only her result screen keeps the Rematch,
+  // which fights her again ("Lose, and you can retry the fight directly").
+  if(id!=='_none_'){ if(ONEFIGHT.active) oneFightRestore(); if(id!=='result') ONEFIGHT.retry = null; }
   if(id==='title'){ TUT.active=false; TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false; BOSSRUSH.active=false; PENDING_TOURNEY=null; PENDING_CUSTOM=false;
     if(RUN_REC.recording) stopRunRecording();
     const rr=document.getElementById('runReview'); if(rr) rr.innerHTML='';
@@ -3320,6 +3328,7 @@ function resize(){ const r=cv.getBoundingClientRect();
 addEventListener('resize',()=>{ if(running){resize();} });
 
 function startMatch(){
+  if(ONEFIGHT.retry){ const r = ONEFIGHT.retry; startOneFight(r.lineup, r.opts); return; }   // Rematch from One's result screen
   // If a World Cup was queued (normal mode), the character you just picked becomes your team's leader.
   if(PENDING_TOURNEY){
     const pt=PENDING_TOURNEY; PENDING_TOURNEY=null;
@@ -4398,11 +4407,11 @@ function beginMatchNow(){
   window.__elimSeq=0; lastKoFrame=0;   // reset placement/elimination + stalemate timer for the new match
   try{ teamAiResetMatch(); }catch(e){}  // and the team-AI cost guard: call budget is per match
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
-  particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null;
+  particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null; oneFx=[];
   // BOSS RUSH: all fighters join forces (team 0) and a boss is summoned as the enemy.
   if(SETTINGS.mode==='boss'){
     fighters.forEach(f=>{ f._origTeam=0; f.team=0; });
-    startBossRush();
+    if(ONEFIGHT.active) spawnOneBoss(); else startBossRush();   // One is not a Boss Rush boss: no gauntlet, no BOSSRUSH
   }
   const you=fighters.find(f=>f.you)||fighters[0];
   camX = clamp(you.x - W/2, 0, Math.max(0,WW-W));
@@ -4585,7 +4594,7 @@ function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 // Y of the surface a fighter is standing on (their feet) — for placing traps/van on the current floor
 function feetY(f){ return f.y + f.r; }
 
-function groundY(){ return WH*(isBig()?0.86:0.82); }
+function groundY(){ return WH*(ONEFIGHT.active ? ONE_FLOOR_Y : (isBig()?0.86:0.82)); }   // One's arena: the teams map's own floor line
 function stageScale(){ return Math.max(0.85, Math.min(1.5, 0.7 + SETTINGS.count*0.04)); }
 
 // A double jump gains roughly this much height. Any vertical gap between successive platform
@@ -4692,6 +4701,7 @@ function climbLayers(){
 // Set up world dimensions, floors, and team bases for the current match.
 function setupWorld(){
   spawnZones=[];
+  if(ONEFIGHT.active){ buildOneArena(); return; }   // One's arena: the teams map without its walls (see buildOneArena)
   const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
   if(!isBig()){
     if(isBigFFA()){
@@ -5171,6 +5181,7 @@ function buildFighters(){
     });
     return;
   }
+  if(ONEFIGHT.active && ONEFIGHT.lineup){ buildOneFighters(); return; }   // exactly the lineup her fight was started with
   const cap = SETTINGS.mode==='teams'?MAX_TEAMS:MAX_FFA;
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
   const humanCount = netRoster ? netRoster.length : 0;
@@ -5639,7 +5650,7 @@ function updateStandings(){
         +`<span class="stdot" style="background:${r.color}"></span>`
         +`<span class="stname">Team ${r.t+1}</span><span class="ststk">${r.stocks}♥</span></div>`; });
   } else {
-    const rows=[...fighters].sort((a,b)=>rankScore(b)-rankScore(a));
+    const rows=[...fighters].filter(f=>!f._oneGhost).sort((a,b)=>rankScore(b)-rankScore(a));   // One's ghost is not a standing
     html='<div class="standings-title">STANDINGS</div>';
     rows.forEach((f,i)=>{ const mine=f.you;
       html+=`<div class="strow${i===0?' leader':''}${mine?' self':''}"><span class="stplace">${f.dead?'✕':(i+1)}</span>`
@@ -5916,6 +5927,7 @@ function summonBoss(owner){
 // Each boss runs a timer; when it fires, it enters a telegraph (_tel counts down, flashing
 // a warning), then executes the attack when the telegraph ends.
 function updateBossAttack(s, tgt){
+  if(s.attack==="one"){ updateOne(s, tgt); return; }   // One runs her own phases, rotation and movement (see updateOne)
   const gy=groundY();
   if(s.attack==="swallow"){ updateSwallow(s); }
   // TWO — GROUNDED POWER (design doc: "defeat is only possible while their power is grounded").
@@ -6073,6 +6085,7 @@ function bossPhaseName(s, ph){
   return (P[A] && P[A][ph]) || "Enraged";
 }
 function bossTelLen(s){
+  if(s.attack==="one") return ONE_TEL[s._telKind] || ONE_TEL4;   // so the wind-up ring fills over her real wind-up
   if(s.attack==="evilleafy") return 45;          // Evil Leafy keeps her current warning window
   if(s.attack==="four") return 50;               // the 360-ring still gets a readable wind-up
   return 36;                                     // other bosses telegraph faster now (was 45)
@@ -6307,6 +6320,635 @@ function fireBossAttack(s, tgt){
 const BOSS_STOCK_EVERY = 3;   // "you only gain 1 stock per 3 bosses" (2026-09-22): the gauntlet's reward rate
 const BOSS_DMG_BASE = 22;   // was 30: 12 of 15 solo runs died inside 55 s ("Lower every boss hit", 2026-09-21)
 function bossDmg(){ return BOSS_DMG_BASE * ((typeof BOSSRUSH!=='undefined' && BOSSRUSH.dmgMult) || 1); }
+// ============================================================
+//  ONE -- the secret boss. This is her fight; the unlock chain that leads to it calls startOneFight().
+// ============================================================
+// The owner, in order: "One is a secret boss ... you fight one on a teams-size map, but without the solid walls. after that
+// one is a permanent unlock to fight. One has all of the algebralien attacks but launched faster and with more damage, has
+// 2000 hp." / "also add a couple special attacks for one, with harder ones getting added every 500 hp, and the easier ones
+// getting removed." / "no not only as lightning once unlocked." / "also one follows you if you try to run away. teams size
+// map but keep the platforms. one can teleport if you are very far." / "number 5 should summon 1 ghost fighter with 100 hp
+// you must kill before continuing damage, and remember the attacks from 2 and 4? all 5 attacks should cycle, with harder
+// versions appearing for 3 random ones every phase. 3 tiers of attacks. things to change during the attacks: projectile
+// speed, projectile amount, damage, effects."
+//
+// She is NOT a BOSS_ROSTER row. The gauntlet walks that list and loops on Four, "All nine bosses beaten" counts it, the
+// item boss rolls from it, and a win against her must never count as a Boss Rush clear. So she has her own definition,
+// her own spawn, her own win check, and she never reads or writes BOSSRUSH.
+//
+// Canon (the BFDI wiki's One page): an armless light-blue numeral 1 who took almost all of Two's power and all of Four's in
+// "Last One Standing" (TPOT 19) -- which is why "all of the algebralien attacks" is exactly Four's and Two's here. They are
+// the only Algebraliens in the game.
+const ONE_BOSS = { name:"One", color:"#5D7AF2", hp:2000, big:2.6, attack:"one", arena:"onedim", sprite:"one" };
+const ONE_AURA = ["#8cf5c0", "#a8e6ff"];   // her stolen power shows as a bright green and light-blue aura (TPOT 19); the hex is ours
+const ONE_PHASE_HP = 500;          // "harder ones getting added every 500 hp": a new phase at 1500, 1000 and 500
+const ONE_DMG_MULT = 1.5;          // "more damage": 1.5x the base boss hit, 33 -- and never the Boss Rush loop multiplier
+const ONE_SPD = 1.35;              // "launched faster": every Four and Two shot flies 1.35x as fast, and homes 1.35x as hard
+const ONE_TEL_MULT = 0.7, ONE_GAP_MULT = 0.7;   // ...and winds up, and comes round again, in 0.7x the time
+const ONE_ACCEL = 0.55*ONE_SPD, ONE_CHASE_MAX = 5.5*ONE_SPD;   // Two's chase, faster: 7.4 px a frame against a fighter's 6.4 run
+const ONE_STANDOFF = 140;          // she closes to this far and stops pushing, so you can still walk in and hit her
+const ONE_TELE_DIST = 1000, ONE_TELE_HOLD = 30, ONE_TELE_CD = 180;   // "one can teleport if you are very far" (canon: she teleports, TPOT 12 on)
+const ONE_GHOST_HP = 100;          // "summon 1 ghost fighter with 100 hp you must kill before continuing damage"
+// ...and it takes a third of the knockback, so a hit keeps it in reach on a 5000px map instead of launching it away while she
+// is immune: its 100 HP is meant to be spent by hitting it. (A knockout still kills it, see eliminate.)
+const ONE_GHOST_KB = 0.35;
+const ONE_GHOST_HASTE_T = 1e9;     // a tier-3 ghost is hasted for as long as it stands (a name, so the balance knobs leave it be)
+// The fighters she erased from the timeline -- Gaty by contract in "Seasonal Shift" (TPOT 15), Barf Bag and Basketball in
+// "Last One Standing" (TPOT 19) -- are the ghosts she sends back. The ghost itself is the owner's idea, not a canon scene.
+const ONE_GHOST_POOL = ["Gaty", "Barf Bag", "Basketball"];
+const ONE_HAND_REACH = 150, ONE_KICK_REACH = 170;
+// Every Algebralien attack in the game: Four's two signatures and second moves, Two's two signatures and second moves.
+const ONE_DECK = ["zap", "screechy", "mindread", "rain", "seekers", "ring", "sizeshift", "ungrounded"];
+// Her five specials, in the order the owner numbered them. All five cycle, every one of them, all fight long.
+const ONE_SPECIALS = ["moonrocks", "eyelasers", "hands", "orbitkick", "ghost"];
+// THREE TIERS EACH ("things to change during the attacks: projectile speed, projectile amount, damage, effects"). n / offs /
+// fan are how many shots, spd how fast they fly, dmg is x oneDmg(), fx the status they carry (SM_FX) and fxN for how long.
+const ONE_SPECIAL_TIERS = {
+  // 1. MOON ROCKS. Canon: her telekinesis is star-shaped (the wiki's trivia); she hurled rocks at the Moon's cracks to break
+  //    out and threw a whole mountain ("Alone", TPOT 20). The rocks rise over her and fly at where you stood.
+  moonrocks: [ { n:3, spd:11,   dmg:0.8, fx:null },
+               { n:5, spd:13,   dmg:0.9, fx:'stun', fxN:18 },
+               { n:7, spd:15.5, dmg:1.0, fx:'knockdown', fxN:28 } ],
+  // 2. EYE LASERS. Canon: her main weapon -- planets destroyed ("Last One Standing", TPOT 19), single lasers and then a
+  //    "flurry of lasers simultaneously" ("Homeward Bound!", TPOT 23). The aim tracks you, LOCKS, then both eyes fire.
+  eyelasers: [ { n:1, fan:1, spd:20, dmg:0.9,  fx:null,   lock:24 },
+               { n:2, fan:1, spd:25, dmg:1.0,  fx:'burn', fxN:90,  lock:20 },
+               { n:3, fan:3, spd:30, dmg:1.15, fx:'burn', fxN:130, lock:16 } ],
+  // 3. HANDS FROM THE GROUND. Canon: One-coloured hands burst out of the ground, pop Bubble and drag Ruby and Lightning under
+  //    ("All For One", TPOT 25). Cracks open under everyone during the wind-up; the hands come up through them.
+  hands:     [ { offs:[0],                 spd:10, dmg:0.8, fx:'slow', fxN:70 },
+               { offs:[0,-90,90],          spd:13, dmg:0.9, fx:'root', fxN:40 },
+               { offs:[0,-80,80,-160,160], spd:16, dmg:1.0, fx:'root', fxN:62 } ],
+  // 4. OUT OF ORBIT. Canon: she compressed Earth and kicked it out of orbit ("Last One Standing", TPOT 19) and kicked the Moon
+  //    into deep space ("Alone", TPOT 20); she has no arms, so kicks are her melee. A kick down the marked lane, then planets.
+  orbitkick: [ { n:1, spd:9,  dmg:1.0, fx:null,        kb:16 },
+               { n:2, spd:11, dmg:1.1, fx:'stun',      fxN:20, kb:18 },
+               { n:3, spd:13, dmg:1.2, fx:'knockdown', fxN:30, kb:20 } ],
+  // 5. THE GHOST FIGHTER. Always ONE ghost and always 100 HP, as asked; the tiers change what comes with it -- a ring of
+  //    ghost-fire when it arrives (n, spd), how hard it hits (hit), what its hits do (fx), and how fast it moves: it drifts
+  //    at tier 1, runs at a fighter's speed at tier 2 and is hasted at tier 3.
+  ghost:     [ { n:0, spd:0, hit:1.0, fx:null, drift:true },
+               { n:4, spd:6, hit:1.2, fx:'slow', fxN:45 },
+               { n:8, spd:8, hit:1.4, fx:'slow', fxN:70, haste:true } ],
+};
+// Wind-ups: Four's 50 and Two's 36, x0.7, for the attacks she inherited; the specials each get their own read.
+const ONE_TEL4 = Math.round(50*ONE_TEL_MULT), ONE_TEL2 = Math.round(36*ONE_TEL_MULT);   // 35 and 25
+const ONE_TEL = { zap:ONE_TEL4, screechy:ONE_TEL4, rain:ONE_TEL4, mindread:ONE_TEL2, seekers:ONE_TEL2, ring:ONE_TEL2, sizeshift:ONE_TEL2, ungrounded:ONE_TEL2,
+                  moonrocks:40, eyelasers:50, hands:36, orbitkick:48, ghost:30 };
+const ONE_MOVE_NAME = { zap:"ZAP TO DUST!", screechy:"SCREECHY!", mindread:"MIND READ!", rain:"INCOMING!", seekers:"SEEKERS!",
+  ring:"SHOCK RING!", sizeshift:"ONE GROWS GIANT!", ungrounded:"POWER UNGROUNDED!", moonrocks:"MOON ROCKS!", eyelasers:"EYE LASERS!",
+  hands:"HANDS FROM THE GROUND!", orbitkick:"OUT OF ORBIT!", ghost:"GHOST FIGHTER!" };
+let oneFx = [];   // render-only strokes for her attacks (zap columns, drain tethers, the kick); ticked by updateOne
+
+function oneDmg(){ return Math.round(BOSS_DMG_BASE*ONE_DMG_MULT); }   // 33: reads no BOSSRUSH, so a Boss Rush loop cannot leak in
+// Her shots carry their own per-attack cap (bossCap), because applyHit's cap is otherwise the global bossDmg() and would
+// clamp "more damage" straight back to 22.
+function oneShot(s, o){ return Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:oneDmg()*0.8, bossCap:oneDmg(), kb:8, r:11, color:ONE_AURA[0], life:120, noAim:true }, o); }
+function oneHit(f, dmg, kx, ky, id, cap){ applyHit(f, dmg, kx, ky, null, { bossAtk:id, bossCap:(cap!=null ? cap : dmg) }); }
+function oneFoes(){ return fighters.filter(f=>!f.dead && !f._oneGhost); }   // her ghost is on her side
+function onePhase(s){ return Math.min(3, 1 + (s._marks||0)); }             // Four's and Two's phase values: 2000-1501 is 1, 1500-1001 is 2, then 3
+function oneGap(s){ return Math.round([100, 72, 52, 52][Math.min(3, s._marks||0)]*ONE_GAP_MULT); }   // bossAtkGap's 100/72/52, x0.7: 70/50/36
+function oneTier(s, k){ return ONE_SPECIAL_TIERS[k][((s._spTier && s._spTier[k]) || 1) - 1]; }
+function oneSurf(x, y){ const t = surfaceBelow(x, y); return t!==null ? t : groundY(); }
+function oneGhostAlive(s){ return !!(s && s._ghost && !s._ghost.dead); }
+function oneRoman(t){ return ["", "", " II", " III"][t] || ""; }
+function oneSpecialLabel(s, k){ return ONE_MOVE_NAME[k].replace(/!$/, "") + oneRoman(s._spTier[k]); }
+function oneMoveLabel(s, k){ return (ONE_SPECIAL_TIERS[k] && s._spTier[k] > 1) ? oneSpecialLabel(s, k) + "!" : ONE_MOVE_NAME[k]; }
+
+// THE ARENA ("you fight one on a teams-size map, but without the solid walls" / "teams size map but keep the platforms").
+// The teams map's own box -- its size formula at the default four fighters and Normal map size, so it is the same map
+// however many come -- and its floor slab with the open pits at both ends, so running or being knocked off either side is a
+// knockout. The plus of solid walls is gone, and with it everything that only existed because of the walls (the doorway
+// steps, the shaft rungs), and so are the raised home ledges; there are no bases, spawn pads or safe zones in a one-team
+// fight. The floating platforms are the teams map's own field, laid with nothing in the way now, so it fills the room the
+// cross used to take instead of leaving a cross-shaped hole.
+const ONE_ARENA_COUNT = 4, ONE_FLOOR_Y = 0.912;
+const ONE_ARENA_STAGE = { id:"onearena", name:"The Open Crossing", blurb:"The teams map with its walls gone.",
+  sky:["#0b1540","#02061a"], ground:"#565a73", plats:[], hazard:null };
+function buildOneArena(){
+  WW = Math.round(W * Math.min(3.6, 2.9 + ONE_ARENA_COUNT*0.11) * 1.5);
+  WH = Math.round(H * 2.5 * 1.5);
+  camX = 0; camY = 0; bases = []; spawnZones = []; worldZones = [];
+  const marginX = WW*0.03, floorW = WW - marginX*2, botY = WH*ONE_FLOOR_Y;
+  floors = [{ level:0, y:botY, x:marginX, w:floorW }];
+  worldPlats = [{ x:marginX, y:botY, w:floorW, h:46, solid:true, floor:0 }];
+  worldPlats = worldPlats.concat(scatterPlatforms({
+    x0: marginX, x1: marginX+floorW, top: WH*0.10, bot: botY-TEAM_ROW_GAP, colW: FIELD_COL_W(), rowGap: TEAM_ROW_GAP,
+    existing: worldPlats, blockers: worldPlats.filter(p=>p.solid),
+  }));
+  worldPlats = worldPlats.concat(fillClimbGaps(climbLayers(), WW));
+}
+
+// THE ENTRY POINT. The unlock chain calls startOneFight(["Lightning"], { story:true, onEnd }) for the first fight, and the
+// permanent unlock calls it with any lineup ("no not only as lightning once unlocked"). lineup: fighter names, player 1
+// first; the rest are AI allies, or player 2 on a shared keyboard. opts.story: the quest fight -- the first name alone and a
+// flat 2000 HP. opts.onEnd(won, result): called when the fight is decided; return true to take over the screen afterwards,
+// otherwise the result screen shows and its Rematch fights her again ("Lose, and you can retry the fight directly").
+// Local play only. Returns false if the fight could not start.
+function startOneFight(lineup, opts){
+  opts = opts || {};
+  if(inNetSession()) return false;
+  const names = (Array.isArray(lineup) && lineup.length) ? lineup : [chosen && chosen.name];
+  let rows = names.map(n => (n && typeof n==='object') ? n : ROSTER.find(r=>r.name===n)).filter(r=>r && r.play).slice(0, MAX_FFA);
+  if(!rows.length) return false;
+  if(opts.story) rows = rows.slice(0, 1);
+  const prev = (ONEFIGHT.active && ONEFIGHT.prev) ? ONEFIGHT.prev : { mode:SETTINGS.mode, count:SETTINGS.count, stage, chosen };
+  ONEFIGHT = { active:true, story:!!opts.story, won:false, over:false, frames:0, lineup:rows.map(r=>r.name), prev,
+    onEnd:(typeof opts.onEnd==='function' ? opts.onEnd : null), opts, retry:null, result:null };
+  TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false; BOSSRUSH.active=false;
+  CUSTOM_LEVEL=null; PENDING_TOURNEY=null; TUT.active=false;
+  SETTINGS.mode = 'boss'; SETTINGS.count = rows.length;
+  chosen = rows[0];
+  stage = ONE_ARENA_STAGE;
+  beginMatchNow();
+  return true;
+}
+// Leaving the fight (to the result screen or anywhere else) puts the player's own mode, count, stage and pick back.
+function oneFightRestore(){
+  const p = ONEFIGHT.prev;
+  ONEFIGHT.active = false;
+  if(p){ SETTINGS.mode = p.mode; SETTINGS.count = p.count; if(p.stage) stage = p.stage; if(p.chosen) chosen = p.chosen; ONEFIGHT.prev = null; }
+  BOSS_ARENA = null;
+}
+// Exactly the lineup the fight was started with, on one side, spread along the middle of the floor.
+function buildOneFighters(){
+  const rows = ONEFIGHT.lineup.map(n=>ROSTER.find(r=>r.name===n)).filter(Boolean);
+  const floorY = WH*ONE_FLOOR_Y;
+  rows.forEach((r,i)=>{
+    const f = makeFighter({ ...r, you:i===0 }, WW*0.5 - 240 - i*70, floorY - 60, i);
+    f.stocks = SETTINGS.stocks; f.team = 0; f._origTeam = 0; f.homeBase = null;
+    if(i===0) f.controller = "local";
+    else if(LOCAL_PLAYERS>=2 && !ONEFIGHT.story && !window.__p2Taken){ f.controller = "local2"; f.you2 = true; window.__p2Taken = true; }
+    else f.controller = "ai";
+    fighters.push(f);
+  });
+}
+function spawnOneBoss(){
+  const foes = oneFoes(), n = foes.length || 1, you = foes.find(f=>f.you) || foes[0];
+  const r = Math.round(34*ONE_BOSS.big);
+  const x = clamp((you ? you.x : WW*0.5) + 420, r, WW - r), y = (you ? you.y : groundY()) - 200;
+  const s = { type:"boss", name:ONE_BOSS.name, color:ONE_BOSS.color, team:-1, owner:-1,
+    x, y, vx:0, vy:0, r, _baseR:r, hp:ONE_BOSS.hp, maxHp:ONE_BOSS.hp, life:1e9, face:-1, _cd:0,
+    _oneFight:true, hover:true, attack:ONE_BOSS.attack, sprite:ONE_BOSS.sprite, stationary:false, homeX:x,
+    // 2000 HP. Flat in the story fight; once she is unlocked, allies make every hit count for less -- the same effective
+    // HP Boss Rush's hp x (1+(n-1)*0.6) gives -- so the bar still reads 2000 and the phases stay at 1500, 1000 and 500.
+    _dmgTakenMult: ONEFIGHT.story ? 1 : 1/(1 + (n-1)*0.6),
+    _tel:0, _telKind:null, _phase:1, _marks:0, _atkTimer:150, _moveN:0, _spN:0, _bag:[], _lastCard:null,
+    _spTier:{ moonrocks:1, eyelasers:1, hands:1, orbitkick:1, ghost:1 }, _lastUp:[],
+    _giantT:0, _ungrounded:false, _ungroundT:0, _groundT:0, _grounded:false, _ghost:null,
+    _farT:0, _teleCd:0, _dying:0, _introT:45, _rage:false, flash:0 };
+  summons.push(s);
+  BOSS_ARENA = ONE_BOSS.arena;
+  return s;
+}
+
+// EVERY DAMAGE PATH INTO HER comes through here: melee (damageSummons), shots, dashes and Lightning's Chain Bolt. Two's
+// Power Ungrounded is only honoured on melee for Two; hers holds on all of them, and so does the ghost's shield.
+function oneTakeDamage(s, dmg){
+  if(!s || s._dying>0 || s.hp<=0) return 0;
+  if(oneGhostAlive(s)){ oneNoDamage(s, "KILL THE GHOST FIRST — One takes no damage!"); return 0; }
+  if(s._ungrounded && !s._grounded){ oneNoDamage(s, "POWER UNGROUNDED — no damage!"); return 0; }
+  const d = dmg * (s._dmgTakenMult || 1);
+  s.hp = Math.max(0, s.hp - d); s.flash = Math.max(s.flash||0, 6);
+  return d;
+}
+function oneNoDamage(s, msg){
+  for(let i=0;i<3;i++) puff(s.x + (Math.random()*40-20), s.y, '#888', 3);
+  if(!s._noDmgBanner || hazardT - s._noDmgBanner > 90){ banner(msg, 700, 'boss'); s._noDmgBanner = hazardT; }
+}
+// Lightning's Chain Bolt linking into a boss ("Lightning's Chain Bolt can hit bosses EVERYWHERE, Boss Rush included"): One by
+// her own rules, Two's Power Ungrounded blocks it the way it blocks a punch, any other boss just takes it.
+function chainBoltBoss(s, dmg){
+  let d = 0;
+  if(s._oneFight) d = oneTakeDamage(s, dmg);
+  else if(s._ungrounded && !s._grounded){ for(let i=0;i<3;i++) puff(s.x, s.y, '#888', 3); }
+  else { s.hp -= dmg; d = dmg; }
+  for(let i=0;i<5;i++) puff(s.x + (Math.random()*30-15), s.y + (Math.random()*30-15), '#f2e84b', 4);
+  return d;
+}
+
+// THE GHOST FIGHTER: a real fighter, with its own kit and the AI driving it, on One's side (team -1, the boss team, so her
+// own shots pass through it and it cannot hurt her). It has 100 HP instead of stocks: 100 damage, or one KO, and it is gone.
+function spawnOneGhost(s, T){
+  const pool = ONE_GHOST_POOL.map(n=>ROSTER.find(r=>r.name===n && r.play)).filter(Boolean);
+  const row = pool.length ? pool[Math.floor(Math.random()*pool.length)] : ROSTER.find(r=>r.play);
+  const x = clamp(s.x - (s.face||1)*(s.r + 60), 60, WW - 60), y = s.y;
+  const g = makeFighter({ ...row, you:false }, x, y, fighters.length);
+  Object.assign(g, { _oneGhost:true, team:-1, _origTeam:-1, controller:'ai', you:false, you2:false, stocks:1, homeBase:null,
+    _ghostHp:ONE_GHOST_HP, _ghostMax:ONE_GHOST_HP, _ghostHit:T.hit || 1, _ghostFx:T.fx || null, _ghostFxN:T.fxN || 0,
+    _ghostLeash:0, invuln:30 });
+  if(T.haste) g._hasteT = ONE_GHOST_HASTE_T;
+  g._ghostDrift = !!T.drift;   // held slowed for as long as it stands (see oneGhostLeash)
+  if(g._ghostDrift) g.slowed = 2;
+  fighters.push(g); s._ghost = g;
+  for(let i=0;i<24;i++) puff(x + (Math.random()*60-30), y + (Math.random()*60-30), '#dfe8ff', 6);
+  banner("A GHOST FIGHTER! Kill it (" + ONE_GHOST_HP + " HP) to hurt One again", 1800, 'boss');
+  return g;
+}
+function oneGhostHurt(g, dmg){
+  g._ghostHp = Math.max(0, (g._ghostHp||0) - dmg);
+  if(g._ghostHp <= 0){ oneGhostDown(g); return true; }
+  return false;
+}
+function oneGhostDown(g, quiet){
+  if(!g || g.dead) return;
+  g.dead = true; g.alive = false; g.stocks = 0; g._ghostHp = 0; g.vx = 0; g.vy = 0;
+  for(let i=0;i<26;i++) puff(g.x + (Math.random()*50-25), g.y + (Math.random()*50-25), '#dfe8ff', 6);
+  const s = summons.find(o=>o._oneFight && o._ghost===g); if(s) s._ghost = null;
+  if(!quiet) banner("GHOST DOWN — One can be hurt again!", 1400, 'boss');
+}
+
+// ---- HER BRAIN, once a frame (from updateBossAttack) ----
+function updateOne(s, tgt){
+  if(oneFx.length){ for(const e of oneFx) e.life--; oneFx = oneFx.filter(e=>e.life>0); }
+  if(s._dying>0){
+    // Canon: Three's laser makes her value flicker and crumble, and she shatters ("All For One", TPOT 25).
+    s.flash = (s._dying % 8 < 4) ? 1 : 0;
+    if(--s._dying <= 0){
+      for(let i=0;i<40;i++) puff(s.x + (Math.random()*2-1)*s.r, s.y + (Math.random()*2-1)*s.r, i%2 ? ONE_BOSS.color : '#7E95F9', 7);
+      s.life = 0; ONEFIGHT.won = true; banner("ONE SHATTERS!", 1800, 'boss'); shake(12);
+    }
+    return;
+  }
+  if(s.hp <= 0){ oneBeginShatter(s); return; }
+  if(s._introT > 0 && --s._introT === 0) banner("Hey guys!", 1600, 'boss');   // her first canon line, climbing out of the Moon (TPOT 9)
+  while((s._marks||0) < 3 && s.hp <= s.maxHp - ONE_PHASE_HP*((s._marks||0) + 1)) onePhaseUp(s);
+  s._phase = onePhase(s); s._rage = s._marks >= 3;
+  if(s._giantT > 0 && --s._giantT === 0){ s.r = s._baseR; for(let i=0;i<14;i++) puff(s.x, s.y, ONE_AURA[1], 5); }
+  // TWO'S POWER UNGROUNDED, as a turn she takes: no damage until someone stays close long enough to ground it
+  if(s._ungrounded){
+    const near = oneFoes().some(f=>Math.hypot(f.x-s.x, f.y-s.y) < s.r + 130);
+    s._groundT = near ? Math.min(120, s._groundT + 1) : Math.max(0, s._groundT - 2);
+    const was = s._grounded; s._grounded = s._groundT >= 60;
+    if(s._grounded && !was) banner("GROUNDED — hit them NOW!", 900, 'boss');
+    if(s._grounded) puff(s.x + (Math.random()*40-20), s.y + s.r, '#f0d24b', 3);
+    if(--s._ungroundT <= 0){ s._ungrounded = false; s._grounded = false; s._groundT = 0; }
+  }
+  oneGhostLeash(s, tgt);
+  oneMove(s, tgt);
+  if(s._tel > 0){
+    s._tel--; s.flash = (s._tel % 6 < 3) ? 1 : 0;
+    // the eye lasers track you, then LOCK for the tier's last frames: the lock is the cue to step off the line
+    if(s._telKind==="eyelasers" && tgt && s._tel > oneTier(s, 'eyelasers').lock){ s._aimX = tgt.x; s._aimY = hurtCY(tgt); }
+    if(s._tel <= 0){ s.flash = 0; const k = s._telKind; ONE_MOVES[k](s, tgt, ++BOSS_ATK_ID); s._atkTimer = oneGap(s); }
+    return;
+  }
+  if(s.flash > 0) s.flash--;
+  if(--s._atkTimer <= 0 && tgt){
+    const k = oneNextMove(s);
+    s._telKind = k; s._tel = ONE_TEL[k];
+    s._telX = tgt.x; s._telY = hurtCY(tgt); s._telDir = Math.sign(tgt.x - s.x) || s.face || 1;
+    s._aimX = tgt.x; s._aimY = hurtCY(tgt); s._kickY = hurtCY(tgt);
+    if(k==="hands") s._handSpots = oneFoes().map(f=>({ x:f.x, y:oneSurf(f.x, feetY(f) - 4) }));
+    banner(oneMoveLabel(s, k), 700, 'boss');
+  }
+}
+function oneBeginShatter(s){
+  s._dying = 60; s._tel = 0; s._telKind = null; s.vx = 0; s.vy = 0;
+  projectiles = projectiles.filter(p=>p.owner!==-2); oneFx = [];
+  if(oneGhostAlive(s)) oneGhostDown(s._ghost, true);
+}
+// A NEW PHASE at 1500, 1000 and 500: "harder versions appearing for 3 random ones every phase" -- three of the five specials
+// that are not at tier 3 yet go up one tier, and their easier version is gone for good. If fewer than three can still
+// climb, every one that can does.
+function onePhaseUp(s){
+  s._marks = (s._marks||0) + 1;
+  const open = ONE_SPECIALS.filter(k=>s._spTier[k] < 3);
+  shuffle(open);
+  const up = open.slice(0, 3);
+  for(const k of up) s._spTier[k]++;
+  s._lastUp = up;
+  try{ SFX.bossPhase(); }catch(e){}
+  shake(10);
+  for(let i=0;i<24;i++) puff(s.x, s.y, i%2 ? ONE_AURA[0] : ONE_AURA[1], 7);
+  banner((s.maxHp - ONE_PHASE_HP*s._marks) + " HP — harder: " + up.map(k=>oneSpecialLabel(s, k)).join(", "), 2200, 'boss');
+  return up;
+}
+// THE ROTATION: two of Four's and Two's attacks, then the next of her five specials, in turn, round and round ("all 5 attacks
+// should cycle"). The inherited attacks come out of a shuffled bag, so each of the eight turns up once per eight draws.
+function oneNextMove(s){
+  s._moveN = (s._moveN||0) + 1;
+  if(s._moveN % 3 === 0){
+    for(let tries=0; tries<ONE_SPECIALS.length; tries++){
+      const k = ONE_SPECIALS[(s._spN++) % ONE_SPECIALS.length];
+      if(k==="ghost" && oneGhostAlive(s)) continue;   // "1 ghost fighter": never a second while one stands
+      return k;
+    }
+  }
+  for(let tries=0; tries<ONE_DECK.length*2; tries++){
+    if(!s._bag.length){ s._bag = ONE_DECK.slice(); shuffle(s._bag); if(s._bag[0]===s._lastCard) s._bag.push(s._bag.shift()); }
+    const k = s._bag.shift();
+    if((k==="sizeshift" && s._giantT>0) || (k==="ungrounded" && s._ungrounded)){ s._bag.push(k); continue; }
+    s._lastCard = k; return k;
+  }
+  return "zap";
+}
+// "one follows you if you try to run away": she flies (canon), closes on you faster than you can run, stops pushing once
+// she is close so you can still walk into her, and "one can teleport if you are very far".
+function oneMove(s, tgt){
+  const cap = ONE_CHASE_MAX * (s._giantT > 0 ? 0.8 : 1);
+  if(tgt){
+    const dx = tgt.x - s.x;
+    if(Math.abs(dx) > ONE_STANDOFF) s.vx += Math.sign(dx)*ONE_ACCEL; else s.vx *= 0.85;
+    if(s._tel <= 0) s.face = Math.sign(dx) || s.face;   // a wind-up keeps its facing, so a kick lane stays where it was shown
+    s.vy = clamp((tgt.y - s.r*0.5 - s.y)*0.06, -cap, cap);
+    const far = Math.hypot(dx, tgt.y - s.y) > ONE_TELE_DIST;
+    s._farT = far ? s._farT + 1 : 0;
+    if(s._teleCd > 0) s._teleCd--;
+    if(s._farT >= ONE_TELE_HOLD && s._teleCd <= 0 && s._tel <= 0 && !s._ungrounded) oneTeleport(s, tgt);
+  } else { s.vx *= 0.9; s.vy *= 0.9; }
+  s.vx = clamp(s.vx, -cap, cap);
+  s.x += s.vx; s.y += s.vy;
+  s.x = clamp(s.x, s.r, WW - s.r);
+  s.y = Math.max(s.r + 10, s.y);
+  const fl = worldPlats.find(p=>p.solid && p.floor===0 && s.x > p.x && s.x < p.x + p.w);
+  if(fl && s.y > fl.y - s.r - 4) s.y = fl.y - s.r - 4;   // she hovers over the floor, never sinks into it
+}
+function oneTeleport(s, tgt){
+  for(let i=0;i<18;i++) puff(s.x + (Math.random()*60-30), s.y + (Math.random()*60-30), i%2 ? ONE_AURA[0] : '#1a2a6a', 6);
+  const side = (tgt.x < WW*0.5) ? 1 : -1;   // come in on the side with more room
+  s.x = clamp(tgt.x + side*300, s.r, WW - s.r); s.y = Math.max(s.r + 10, tgt.y - s.r*0.5);
+  s.vx = 0; s.vy = 0; s._farT = 0; s._teleCd = ONE_TELE_CD;
+  for(let i=0;i<18;i++) puff(s.x + (Math.random()*60-30), s.y + (Math.random()*60-30), i%2 ? ONE_AURA[1] : '#1a2a6a', 6);
+}
+// A ghost the fighters cannot reach would make her immune for good, so one that is far from everyone for two seconds is
+// brought back beside the target.
+function oneGhostLeash(s, tgt){
+  const g = s._ghost;
+  if(!g || g.dead) return;
+  if(g._ghostDrift) g.slowed = Math.max(g.slowed||0, 2);
+  if(!tgt) return;
+  const near = oneFoes().reduce((m,f)=>Math.min(m, Math.hypot(f.x-g.x, f.y-g.y)), 1e9);
+  g._ghostLeash = near > 1100 ? (g._ghostLeash||0) + 1 : 0;
+  if(g._ghostLeash > 120){
+    g.x = clamp(tgt.x + (tgt.x < WW*0.5 ? 1 : -1)*200, 60, WW - 60); g.y = tgt.y - 60; g.vx = 0; g.vy = 0; g._ghostLeash = 0;
+    for(let i=0;i<14;i++) puff(g.x, g.y, '#dfe8ff', 5);
+  }
+}
+
+const ONE_MOVES = {
+  // ---- FOUR ----
+  // ZAP TO DUST, as the column Four's own comment describes: it comes down on the spot you stood on when the wind-up began,
+  // from high above down to the surface under it. (Four's zap is one dot at his height, which a grounded fighter walks under.)
+  zap(s, tgt, id){
+    const bx = s._telX!=null ? s._telX : (tgt ? tgt.x : s.x);
+    const bot = oneSurf(bx, (s._telY!=null ? s._telY : s.y) - 10) + 6, top = bot - 1100;
+    for(const f of oneFoes()){
+      if(Math.abs(f.x - bx) < 26 + hurtRX(f) && f.y > top && f.y - f.r < bot) oneHit(f, oneDmg(), (Math.sign(f.x - bx) || 1)*14, -12, id);
+    }
+    oneFx.push({ kind:'column', x:bx, y0:top, y1:bot, w:26, life:14, max:14 });
+    for(let i=0;i<20;i++) puff(bx, bot - Math.random()*300, '#aef0ff', 5); shake(12);
+  },
+  // SCREECHY: Four's 360-degree ring, one shot a degree with safe gaps, 1.35x as fast. One attack id, so it caps at one hit.
+  screechy(s, tgt, id){
+    const ph = onePhase(s), gaps = [5,4,3][ph-1], gapHalf = [0.24,0.21,0.18][ph-1], spd = [6,6.8,7.5][ph-1]*ONE_SPD;
+    const centers = []; for(let g=0; g<gaps; g++) centers.push(Math.random()*Math.PI*2);
+    for(let i=0;i<360;i++){
+      const ang = i/360*Math.PI*2;
+      if(centers.some(gc=>Math.abs(((ang - gc + Math.PI*3) % (Math.PI*2)) - Math.PI) < gapHalf)) continue;
+      addProj(oneShot(s, { x:s.x, y:s.y, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd, dmg:oneDmg(), kb:9, r:7, life:95, ring:true, bossAtk:id, color:(i%2 ? ONE_AURA[0] : ONE_AURA[1]) }));
+    }
+    for(let i=0;i<24;i++) puff(s.x, s.y, ONE_AURA[1], 6); shake(12);
+  },
+  // Four's second moves: five drops over where you were (the shadow sits on the surface under each), and three seekers.
+  rain(s, tgt, id){
+    const cx = s._telX!=null ? s._telX : (tgt ? tgt.x : s.x), ty = s._telY!=null ? s._telY : s.y;
+    for(let k=-2;k<=2;k++){ const x = cx + k*70;
+      addProj(oneShot(s, { x, y:ty - 650, vx:0, vy:5*ONE_SPD, grav:true, warnX:x, warnY:oneSurf(x, ty - 10), warn:26, bossAtk:id, life:150, color:'#3a6ad0' })); }
+  },
+  seekers(s, tgt, id){
+    for(let k=0;k<3;k++){ const ang = -Math.PI/2 + (k-1)*0.7;
+      addProj(oneShot(s, { x:s.x, y:s.y - s.r*0.5, vx:Math.cos(ang)*5*ONE_SPD, vy:Math.sin(ang)*5*ONE_SPD, homing:0.05*ONE_SPD, life:160, bossAtk:id })); }
+  },
+  // ---- TWO ----
+  // MIND READ and POWER DRAIN, one attack as Two throws them: led, homing copies of the read (from phase 2), then a drain
+  // that saps everyone near her and heals her -- never back over a phase line she has already crossed.
+  mindread(s, tgt, id){
+    const ph = onePhase(s);
+    if(tgt){
+      banner("MIND READ: " + String(tgt._lastSpecialKind || "orb").toUpperCase() + "!", 700, 'boss');
+      const px = tgt.x + (tgt.vx||0)*20*0.35, py = tgt.y + (tgt.vy||0)*10*0.35, a2 = Math.atan2(py - s.y, px - s.x);
+      const shots = [1,2,3][ph-1];
+      for(let i=0;i<shots;i++){ const spread = (i - (shots-1)/2)*0.16;
+        addProj(oneShot(s, { x:s.x, y:s.y, vx:Math.cos(a2+spread)*13*ONE_SPD, vy:Math.sin(a2+spread)*13*ONE_SPD, dmg:oneDmg(), kb:10, r:12, life:80, color:'#f0d24b', homing:(ph>=2 ? 0.06*ONE_SPD : 0), bossAtk:id })); }
+    }
+    let drained = 0; const R = ph>=3 ? 340 : 260;
+    for(const f of oneFoes()){ if(f.invuln>0) continue;
+      if(hurtGap(f, s.x, s.y) < -HURT_R0 + R){
+        f.pct += 6*ONE_DMG_MULT; drained += 6*ONE_DMG_MULT;
+        for(let i=0;i<5;i++) puff(f.x + (Math.random()*30-15), f.y - 8, '#f0d24b', 4);
+        oneFx.push({ kind:'tether', x1:s.x, y1:s.y, x2:f.x, y2:f.y, life:12, max:12 });
+      }
+    }
+    // Two heals 0.6 of the drain out of 285; the same share of a 2000 bar is 2.8x
+    if(drained > 0){ s.hp = Math.min(s.maxHp - ONE_PHASE_HP*(s._marks||0), s.hp + Math.round(drained*2.8)); banner("POWER DRAIN!", 600, 'boss'); }
+    shake(7);
+  },
+  // Two's second move: a ring of twelve.
+  ring(s, tgt, id){
+    for(let a=0;a<12;a++){ const ang = a/12*Math.PI*2;
+      addProj(oneShot(s, { x:s.x, y:s.y, vx:Math.cos(ang)*6.5*ONE_SPD, vy:Math.sin(ang)*6.5*ONE_SPD, bossAtk:id })); }
+    shake(4);
+  },
+  // SIZE SHIFT, her way round: Two shrinks, but canon One grows GIANT -- chasing the Announcer Transportation Device
+  // ("Homeward Bound!", TPOT 23) and crushing Match under a giant foot ("All For One", TPOT 25). Bigger, and a little slower.
+  sizeshift(s){ s.r = Math.round(s._baseR*1.4); s._giantT = 360; for(let i=0;i<20;i++) puff(s.x, s.y, ONE_AURA[0], 7); shake(8); },
+  // POWER UNGROUNDED, Two's phase-3 state, as a turn: seven seconds of no damage unless someone grounds it by staying close.
+  ungrounded(s){ s._ungrounded = true; s._ungroundT = 420; s._groundT = 0; s._grounded = false; banner("POWER UNGROUNDED — get close to ground it!", 1600, 'boss'); },
+
+  // ---- HER FIVE SPECIALS ----
+  moonrocks(s, tgt, id){
+    const T = oneTier(s, 'moonrocks'), dmg = oneDmg()*T.dmg;
+    const ax = tgt ? tgt.x : s.x + (s.face||1)*300, ay = tgt ? hurtCY(tgt) : s.y;
+    for(let i=0;i<T.n;i++){
+      const off = i - (T.n-1)/2, x = s.x + off*44, y = s.y - s.r - 30 - Math.abs(off)*10, a = Math.atan2(ay - y, ax - x);
+      addProj(oneShot(s, { x, y, vx:Math.cos(a)*T.spd, vy:Math.sin(a)*T.spd, dmg, bossCap:dmg, kb:10, r:18, life:110, delay:i*6,
+        shape:'moonrock', color:'#b8b8c0', bossAtk:id, fxTag:T.fx, fxN:T.fxN }));
+    }
+    for(let i=0;i<12;i++) puff(s.x + (Math.random()*80-40), s.y - s.r - 30, ONE_AURA[0], 4);
+  },
+  eyelasers(s, tgt, id){
+    const T = oneTier(s, 'eyelasers'), dmg = oneDmg()*T.dmg, R = s.r;
+    const ax = s._aimX!=null ? s._aimX : (tgt ? tgt.x : s.x), ay = s._aimY!=null ? s._aimY : (tgt ? hurtCY(tgt) : s.y);
+    for(let v=0; v<T.n; v++) for(const ex of [-0.28, 0.28]) for(let k=0; k<T.fan; k++){   // her eyes are set far apart (the wiki)
+      const x = s.x + ex*R, y = s.y - 0.05*R, a = Math.atan2(ay - y, ax - x) + (k - (T.fan-1)/2)*0.12;
+      addProj(oneShot(s, { x, y, vx:Math.cos(a)*T.spd, vy:Math.sin(a)*T.spd, dmg, bossCap:dmg, kb:9, r:8, life:70, delay:v*9,
+        shape:'onelaser', color:ONE_AURA[0], bossAtk:id, fxTag:T.fx, fxN:T.fxN }));
+    }
+    shake(6);
+  },
+  hands(s, tgt, id){
+    const T = oneTier(s, 'hands'), dmg = oneDmg()*T.dmg;
+    const spots = (s._handSpots && s._handSpots.length) ? s._handSpots : oneFoes().map(f=>({ x:f.x, y:oneSurf(f.x, feetY(f) - 4) }));
+    for(const sp of spots){
+      for(const o of T.offs){
+        const p = addProj(oneShot(s, { x:sp.x + o, y:sp.y + 8, vx:0, vy:-T.spd, dmg, bossCap:dmg, kb:6, r:22, life:10,
+          shape:'onehand', color:ONE_BOSS.color, bossAtk:id, fxTag:T.fx, fxN:T.fxN }));
+        p.life = Math.ceil(ONE_HAND_REACH / T.spd);   // up ONE_HAND_REACH px and gone, however fast it rises
+      }
+      for(let i=0;i<8;i++) puff(sp.x + (Math.random()*120-60), sp.y - 2, '#3a2a1a', 4);
+    }
+    s._handSpots = null; shake(7);
+  },
+  orbitkick(s, tgt, id){
+    const T = oneTier(s, 'orbitkick'), dmg = oneDmg()*T.dmg, dir = s._telDir || s.face || 1, y = s._kickY!=null ? s._kickY : s.y;
+    // the kick: her foot stretches (it grew to grab Fanny, "What's Up Bell's String?", TPOT 12) and sweeps the marked lane
+    for(const f of oneFoes()){ const along = dir*(f.x - s.x);
+      if(along > -s.r*0.3 && along < s.r + ONE_KICK_REACH && Math.abs(hurtCY(f) - y) < 40 + hurtRY(f)) oneHit(f, dmg, dir*T.kb, -9, id, dmg); }
+    // ...and the planets she kicked out of orbit fly on down it
+    for(let i=0;i<T.n;i++){ const a = i===0 ? 0 : (i%2 ? -1 : 1)*0.22*Math.ceil(i/2);
+      addProj(oneShot(s, { x:s.x + dir*(s.r + 20), y, vx:dir*Math.cos(a)*T.spd, vy:Math.sin(a)*T.spd, dmg, bossCap:dmg, kb:T.kb*0.7, r:24, life:140,
+        shape:'oneplanet', color:'#3a7ad0', bossAtk:id, fxTag:T.fx, fxN:T.fxN })); }
+    s.vx = dir*4;
+    oneFx.push({ kind:'foot', x:s.x, y, dir, len:s.r + ONE_KICK_REACH, life:16, max:16 });
+    shake(10);
+  },
+  ghost(s, tgt, id){
+    if(oneGhostAlive(s)) return;
+    const T = oneTier(s, 'ghost'), g = spawnOneGhost(s, T), wd = oneDmg()*0.6;
+    for(let i=0;i<T.n;i++){ const a = i/T.n*Math.PI*2;   // the ghost-fire it arrives in
+      addProj(oneShot(s, { x:g.x, y:g.y, vx:Math.cos(a)*T.spd, vy:Math.sin(a)*T.spd, dmg:wd, bossCap:wd, kb:6, r:10, life:90, shape:'onewisp', color:'#dfe8ff', bossAtk:id })); }
+  },
+};
+
+// Win and lose, from checkWin once a frame. Never awardBossCleared, never BOSSRUSH: she is not a Boss Rush boss.
+function oneFightCheck(){
+  if(!ONEFIGHT.active || ONEFIGHT.over || !running) return;
+  ONEFIGHT.frames++;
+  if(!fighters.some(f=>!f.dead && !f._oneGhost)) endOneFight(false);
+  else if(ONEFIGHT.won) endOneFight(true);
+}
+function endOneFight(won){
+  const s = summons.find(o=>o._oneFight);
+  running = false; ONEFIGHT.over = true; ONEFIGHT.won = !!won;
+  const secs = Math.round(ONEFIGHT.frames/60), mmss = Math.floor(secs/60) + ":" + String(secs%60).padStart(2,'0');
+  const left = won ? 0 : (s ? Math.max(0, Math.ceil(s.hp)) : 0);
+  ONEFIGHT.result = { won:!!won, secs, hpLeft:left, lineup:ONEFIGHT.lineup.slice(), story:ONEFIGHT.story };
+  ONEFIGHT.retry = { lineup:ONEFIGHT.lineup.slice(), opts:ONEFIGHT.opts };
+  const t = document.getElementById('resultTitle'), sub = document.getElementById('resultSub'), box = document.getElementById('scorecard');
+  if(t) t.textContent = won ? "One is beaten!" : "One wins";
+  if(sub) sub.textContent = won ? ("She shattered in " + mmss + ".") : ("She still had " + left + " HP. Rematch to fight her again.");
+  if(box) box.innerHTML = "";
+  let handled = false;
+  try{ if(ONEFIGHT.onEnd) handled = ONEFIGHT.onEnd(!!won, ONEFIGHT.result) === true; }catch(e){ console.error("One fight onEnd:", e); }
+  try{ stopRunRecording(()=>showRunReview()); }catch(e){}
+  if(!handled) setTimeout(()=>{ if(!running){ go('result'); try{ showRunReview(); }catch(e){} } }, 900);
+}
+
+// ---- DRAWING ----
+// Wind-up previews and her strokes, in world space, so every attack reads before it lands (the arena scrolls, which is
+// why the single-screen Boss Rush never needed them).
+function drawOneFx(){
+  const s = summons.find(o=>o._oneFight);
+  ctx.save();
+  if(s && s._tel > 0 && s._telKind){
+    const k = s._telKind, pulse = 0.3 + 0.25*Math.sin(hazardT*0.5), last = s._tel < 12;
+    ctx.lineCap = 'round';
+    if(k==="zap" && s._telX!=null){
+      const bot = oneSurf(s._telX, (s._telY!=null ? s._telY : s.y) - 10) + 6;
+      ctx.globalAlpha = last ? 0.55 : pulse; ctx.fillStyle = '#aef0ff'; ctx.fillRect(s._telX - 26, bot - 1100, 52, 1100);
+    } else if(k==="eyelasers"){
+      const locked = s._tel <= oneTier(s, 'eyelasers').lock;
+      ctx.strokeStyle = locked ? '#ff3a3a' : '#ff9a9a'; ctx.lineWidth = locked ? 3 : 1.5; ctx.globalAlpha = locked ? (0.5 + 0.4*Math.sin(hazardT*0.9)) : 0.5;
+      for(const ex of [-0.28, 0.28]){ const x = s.x + ex*s.r, y = s.y - 0.05*s.r;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (s._aimX - x)*1.6, y + (s._aimY - y)*1.6); ctx.stroke(); }
+    } else if(k==="hands" && s._handSpots){
+      const T = oneTier(s, 'hands');
+      ctx.strokeStyle = '#1c1008'; ctx.lineWidth = 3; ctx.globalAlpha = 0.5 + pulse;
+      for(const sp of s._handSpots) for(const o of T.offs){ const x = sp.x + o, y = sp.y;
+        ctx.beginPath(); ctx.moveTo(x - 20, y - 2); ctx.lineTo(x - 7, y - 7); ctx.lineTo(x + 2, y - 1); ctx.lineTo(x + 12, y - 8); ctx.lineTo(x + 20, y - 2); ctx.stroke(); }
+    } else if(k==="orbitkick"){
+      const dir = s._telDir || s.face || 1, y = s._kickY!=null ? s._kickY : s.y;
+      ctx.globalAlpha = s._tel < 15 ? 0.45 : 0.18 + pulse*0.3; ctx.fillStyle = '#ff5a4a';
+      ctx.fillRect(dir > 0 ? s.x : s.x - 1400, y - 35, 1400, 70);
+    } else if(k==="moonrocks"){
+      const T = oneTier(s, 'moonrocks');
+      ctx.globalAlpha = 0.8; ctx.fillStyle = '#b8b8c0'; ctx.strokeStyle = ONE_AURA[0]; ctx.lineWidth = 3;
+      for(let i=0;i<T.n;i++){ const off = i - (T.n-1)/2, x = s.x + off*44, rise = (1 - s._tel/ONE_TEL.moonrocks)*(30 + Math.abs(off)*10);
+        ctx.beginPath(); ctx.arc(x, s.y - s.r - rise, 14, 0, 7); ctx.fill(); ctx.stroke(); }
+    } else if(k==="ghost"){
+      ctx.globalAlpha = 0.35 + pulse; ctx.strokeStyle = '#dfe8ff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(s.x - (s.face||1)*(s.r + 60), s.y, 30 + (1 - s._tel/ONE_TEL.ghost)*20, 0, 7); ctx.stroke();
+    }
+  }
+  for(const e of oneFx){
+    const a = Math.max(0, e.life/(e.max||14));
+    ctx.globalAlpha = a;
+    if(e.kind==='column'){ ctx.fillStyle = '#ffffff'; ctx.fillRect(e.x - e.w, e.y0, e.w*2, e.y1 - e.y0); ctx.fillStyle = '#aef0ff'; ctx.fillRect(e.x - e.w*1.4, e.y0, e.w*0.4, e.y1 - e.y0); }
+    else if(e.kind==='tether'){ ctx.strokeStyle = '#f0d24b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(e.x1, e.y1); ctx.lineTo(e.x2, e.y2); ctx.stroke(); }
+    else if(e.kind==='foot'){ const out = e.len*Math.min(1, (e.max - e.life + 1)/5);
+      ctx.strokeStyle = '#000001'; ctx.lineWidth = 22; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.dir*out, e.y); ctx.stroke();
+      ctx.strokeStyle = '#7E95F9'; ctx.lineWidth = 16; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.dir*out, e.y); ctx.stroke(); }   // her legs are Malibu blue
+  }
+  ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+  ctx.restore();
+}
+// Her ghost fighter: a pale glow, and how much of its 100 HP is left.
+function drawOneGhostAura(g){
+  ctx.save();
+  ctx.globalAlpha = 0.28 + 0.1*Math.sin(hazardT*0.2); ctx.fillStyle = '#dfe8ff';
+  ctx.beginPath(); ctx.ellipse(g.x, g.y, g.r + 18, g.r + 24, 0, 0, 7); ctx.fill();
+  ctx.globalAlpha = 0.9; ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(g.x - 28, g.y - g.r - 40, 56, 6);
+  ctx.fillStyle = '#dfe8ff'; ctx.fillRect(g.x - 28, g.y - g.r - 40, 56*Math.max(0, g._ghostHp||0)/(g._ghostMax||ONE_GHOST_HP), 6);
+  ctx.restore();
+}
+// The aura of the power she stole, stronger each phase, with the dark-blue sparkles the wiki describes (TPOT 19).
+function drawOneAura(s){
+  const k = [0.25, 0.35, 0.45, 0.6][Math.min(3, s._marks||0)], R = s.r;
+  ctx.save();
+  ctx.globalAlpha = k*(0.8 + 0.2*Math.sin(hazardT*0.12)); ctx.fillStyle = ONE_AURA[0];
+  ctx.beginPath(); ctx.arc(0, 0, R*1.25, 0, 7); ctx.fill();
+  ctx.globalAlpha = k; ctx.fillStyle = ONE_AURA[1];
+  ctx.beginPath(); ctx.arc(0, 0, R*1.1, 0, 7); ctx.fill();
+  ctx.globalAlpha = Math.min(1, k + 0.3); ctx.fillStyle = '#1a2a8a';
+  for(let i=0;i<6;i++){ const a = hazardT*0.04 + i*1.047; ctx.fillRect(Math.cos(a)*R*1.15 - 2, Math.sin(a)*R*1.15 - 2, 4, 4); }
+  if(s._ungrounded && !s._grounded){ ctx.globalAlpha = 0.6; ctx.strokeStyle = '#f0d24b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, R*1.3, 0, 7); ctx.stroke(); }
+  ctx.restore();
+}
+// One crack per phase crossed: the brittle, cracked One of "All For One" (TPOT 25), just before she shatters.
+function drawOneCracks(s, dw, dh){
+  const n = Math.min(3, s._marks||0);
+  if(!n) return;
+  ctx.save(); ctx.strokeStyle = 'rgba(0,0,20,0.7)'; ctx.lineWidth = 2.5;
+  const C = [[-0.12,-0.34, 0.02,-0.12, -0.08,0.06], [0.14,-0.05, 0.02,0.12, 0.12,0.28], [-0.18,0.1, -0.04,0.2, -0.16,0.36]];
+  for(let i=0;i<n;i++){ const c = C[i]; ctx.beginPath(); ctx.moveTo(c[0]*dw, c[1]*dh); ctx.lineTo(c[2]*dw, c[3]*dh); ctx.lineTo(c[4]*dw, c[5]*dh); ctx.stroke(); }
+  ctx.restore();
+}
+// Her bar: 2000 HP with the phase lines at 1500, 1000 and 500, her five specials at their current tiers, the ghost's HP
+// while one stands, and a marker on the screen edge whenever she is off-screen (it turns yellow while she winds up).
+function drawOneBar(){
+  const s = summons.find(o=>o._oneFight);
+  if(!s) return;
+  const bw = Math.min(560, W*0.7), bh = 20, bx = (W - bw)/2, by = 54, frac = Math.max(0, s.hp/(s.maxHp||1));
+  ctx.save();
+  ctx.font = "800 13px 'Baloo 2', system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const state = oneGhostAlive(s) ? "  ·  KILL THE GHOST FIRST" : (s._ungrounded && !s._grounded ? "  ·  UNGROUNDED" : "");
+  ctx.fillStyle = "#fff"; ctx.fillText("ONE  ·  phase " + (1 + (s._marks||0)) + state, W/2, by - 12);
+  ctx.fillStyle = "#2a2438"; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.rect(bx, by, bw, bh); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = oneGhostAlive(s) ? "#8a8ab0" : ONE_BOSS.color; ctx.fillRect(bx + 2, by + 2, (bw - 4)*frac, bh - 4);
+  ctx.fillStyle = "#1c1c1c";
+  for(let v = s.maxHp - ONE_PHASE_HP; v > 0; v -= ONE_PHASE_HP) ctx.fillRect(bx + bw*(v/s.maxHp) - 1, by, 3, bh);
+  ctx.fillStyle = "#fff"; ctx.fillText(Math.max(0, Math.round(s.hp)) + " HP", W/2, by + bh/2);
+  ctx.font = "700 10px 'Baloo 2', system-ui";
+  ONE_SPECIALS.forEach((k, i)=>{ ctx.fillStyle = ["#fff", "#fff", "#ffd23f", "#ff7a5a"][s._spTier[k]];
+    ctx.fillText(oneSpecialLabel(s, k), bx + bw*(i + 0.5)/ONE_SPECIALS.length, by + bh + 12); });
+  const g = s._ghost;
+  if(g && !g.dead){
+    ctx.fillStyle = "#2a2438"; ctx.fillRect(W/2 - 110, by + bh + 22, 220, 12);
+    ctx.fillStyle = "#dfe8ff"; ctx.fillRect(W/2 - 109, by + bh + 23, 218*Math.max(0, g._ghostHp)/(g._ghostMax||ONE_GHOST_HP), 10);
+    ctx.fillStyle = "#1c1c1c"; ctx.fillText("GHOST " + g.name.toUpperCase() + "  " + Math.ceil(g._ghostHp) + " HP", W/2, by + bh + 28);
+  }
+  const z = scrolls() ? CAM_ZOOM : 1, sx = (s.x - camX - W/2)*z + W/2, sy = (s.y - camY - H/2)*z + H/2;
+  if(sx < 0 || sx > W || sy < 0 || sy > H){
+    const ex = clamp(sx, 22, W - 22), ey = clamp(sy, 96, H - 22);
+    ctx.fillStyle = s._tel > 0 ? "#ffd23f" : ONE_BOSS.color; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(ex, ey, 14, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#1c1c1c"; ctx.font = "800 15px 'Baloo 2', system-ui"; ctx.fillText("1", ex, ey + 1);
+  }
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.restore();
+}
 // Purple Face SWALLOW: grab the nearest fighter into a stomach zone. They take 10%/sec there and
 // must deal 50 damage to the exposed tongue to be spat back out.
 const STOMACH = { x: 0, y: 0, r: 120 };   // recomputed at swallow time
@@ -6374,6 +7016,7 @@ function updateSummons(){
     // gravity + ground — an assist gets the fighter-grade body (platforms, jumps, world edges);
     // a boss keeps the floor-snap it was tuned against.
     if(s.type==="assist"){ stepAssistBody(s, gy); }
+    else if(s.hover){ }   // One flies (canon): no gravity and no floor snap, oneMove steers her
     else {
       s.vy += 0.6; s.y += s.vy; s.x += s.vx; s.vx*=0.9;
       if(s.y > gy - s.r){ s.y = gy - s.r; s.vy=0; }
@@ -6382,12 +7025,13 @@ function updateSummons(){
     let tgt=null, best=1e9;
     for(const f of fighters){ if(f.dead) continue;
       if(s.type==="assist" && f.team===s.team) continue;   // assists only hit enemies of their owner
+      if(s.type==="boss" && f.team===s.team) continue;     // One's ghost fighter is on her side
       const d=Math.hypot(f.x-s.x, f.y-s.y); if(d<best){best=d;tgt=f;}
     }
     // BOSS: telegraphed attack system (Silksong-style wind-up before each attack)
     if(s.type==="boss"){
       updateBossAttack(s, tgt);
-      if(s.hp<=0){ s.life=0; banner("BOSS DOWN!",700); for(let i=0;i<30;i++) puff(s.x,s.y,s.color,7); }
+      if(s.hp<=0 && !s._oneFight){ s.life=0; banner("BOSS DOWN!",700); for(let i=0;i<30;i++) puff(s.x,s.y,s.color,7); }
       continue;
     }
     if(s.type==="pepper"){
@@ -6936,7 +7580,7 @@ function step(){
           const withinX = (s.x > Math.min(f.x, f.x-f.vx) - (f.r+s.r+8)) && (s.x < Math.max(f.x, f.x-f.vx) + (f.r+s.r+8));
           if(withinX && Math.abs(s.y-f.y) < f.r+s.r+20){
             const dd = f._dashDmg||12;
-            if(s.type==="boss"){ s.hp -= dd; for(let i=0;i<5;i++) puff(s.x,s.y,'#8ed24b',5); }
+            if(s.type==="boss"){ if(s._oneFight) oneTakeDamage(s, dd); else s.hp -= dd; for(let i=0;i<5;i++) puff(s.x,s.y,'#8ed24b',5); }
             else { s.life -= 30; }
             (f._dashSummonHits = f._dashSummonHits || new Set()).add(s);
           }
@@ -7320,7 +7964,7 @@ function step(){
         if(f.reflecting>0 && f.team!==(pr.ownerObj?pr.ownerObj.team:-1)){
           pr.vx*=-1; pr.vy*=-0.5; pr.owner=f.idx; pr.ownerObj=f; pr.reflected=true; f.flash=8; puff(pr.x,pr.y,'#e8e8e8',5); continue;
         }
-        const ffOpts = {reflected: !!pr.reflected, bossAtk: pr.bossAtk};   // reflected shots ignore FF; bossAtk caps boss damage
+        const ffOpts = {reflected: !!pr.reflected, bossAtk: pr.bossAtk, bossCap: pr.bossCap};   // reflected shots ignore FF; bossAtk caps boss damage
         if(pr.van){
           const vx0=f.vx, vy0=f.vy;
           (pr._rammed = pr._rammed || {})[f.idx] = true;   // the blast is not dodged by the i-frames this ram just gave (see vanBoom)
@@ -7384,7 +8028,7 @@ function step(){
             if(pr._sHit.indexOf(s) >= 0) continue;    // already went through this one — pass on
             pr._sHit.push(s);
           }
-          if(s.type==="boss"){ s.hp -= pr.dmg; for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }
+          if(s.type==="boss"){ if(s._oneFight) oneTakeDamage(s, pr.dmg); else s.hp -= pr.dmg; for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }
           else { s.vx += Math.sign(pr.vx||1)*2; }   // assists are immune (see damageSummons) — shots shove, never kill
           if(!pr.pierce && !pr.van) pr.life=0;
           break;
@@ -9405,6 +10049,16 @@ function doSpecial(f){
           if(Math.sign(t.x - f.x) !== f.face && Math.abs(t.x - f.x) > f.r) continue;
           const d=Math.hypot(t.x-src.x,t.y-src.y); if(d<best){best=d;tgt=t;} } }
         if(!tgt) for(const t of fighters){ if(t.dead||hitset.has(t.idx)||t.team===f.team)continue; const d=Math.hypot(t.x-src.x,t.y-src.y); if(d<best){best=d;tgt=t;} }
+        // A BOSS IS A LINK ("Lightning's Chain Bolt can hit bosses EVERYWHERE, Boss Rush included"). The bolt only ever searched
+        // `fighters`, and a boss lives in `summons`, so against every boss it fizzled. The nearest hostile boss whose body is in
+        // reach takes the link when it is nearer than any fighter; the first link still goes the way she is facing, and turns
+        // round only when nothing is in front, the same rule the fighters get.
+        if(summons.length){ let boss=null;
+          const bossPass = (facing)=>{ for(const s of summons){ if(s.type!=="boss"||s.team===f.team||s.hp<=0||hitset.has(s)) continue;
+            if(facing && Math.sign(s.x - f.x) !== f.face && Math.abs(s.x - f.x) > f.r + s.r) continue;
+            const d=Math.max(0, Math.hypot(s.x-src.x,s.y-src.y)-s.r); if(d<best){ best=d; boss=s; } } };
+          bossPass(n===0); if(!boss && !tgt && n===0) bossPass(false);
+          if(boss){ chainBoltBoss(boss, 8-n*1.5); chain.push([src.x,src.y,boss.x,boss.y]); hitset.add(boss); src=boss; continue; } }
         if(!tgt)break; applyHit(tgt, 8-n*1.5, Math.sign(tgt.x-src.x||f.face)*6, -5, f); chain.push([src.x,src.y,tgt.x,tgt.y]); hitset.add(tgt.idx); src=tgt; }
       for(const c of chain){ for(let i=0;i<6;i++){ const t=i/6; puff(c[0]+(c[2]-c[0])*t, c[1]+(c[3]-c[1])*t, '#f2e84b', 3); } }
       if(chain.length>=3 && (f.you||f.you2)) banner("ARC CASCADE!", 600);
@@ -9756,6 +10410,8 @@ function damageSummons(f, cx, cy, rad, dmg){
     }
     if(Math.hypot(s.x-cx, s.y-cy) < s.r+rad){
       if(s.type==="boss"){
+        // ONE: her ghost fighter and her Power Ungrounded both shield her (see oneTakeDamage)
+        if(s._oneFight){ if(oneTakeDamage(s, dmg) > 0){ s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4); } continue; }
         // TWO: while their power is ungrounded they are immune — you must ground it first.
         if(s._ungrounded && !s._grounded){
           for(let i=0;i<3;i++) puff(s.x,s.y,'#888',3);
@@ -10094,13 +10750,16 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // BOSS DAMAGE CAP: any single boss attack can deal at most bossDmg() to a fighter total,
   // even if it's made of many projectiles (e.g. Four's Screechy ring). Tracked per attack ID.
   if(opts && opts.bossAtk!=null){
+    // One's hits carry their own cap (see oneShot): with the global bossDmg() here, "more damage" was clamped back to 22.
+    // Every other boss passes no bossCap and is capped exactly as before.
+    const cap = (opts.bossCap!=null) ? opts.bossCap : bossDmg();
     if(t._bossHitId===opts.bossAtk){
       const already = t._bossHitDmg||0;
-      if(already>=bossDmg()) return;                 // already took the full 30% from this attack
-      dmg = Math.min(dmg, bossDmg() - already);       // clamp the remainder
+      if(already>=cap) return;                 // already took the full 30% from this attack
+      dmg = Math.min(dmg, cap - already);       // clamp the remainder
       t._bossHitDmg = already + dmg;
     } else {
-      t._bossHitId = opts.bossAtk; t._bossHitDmg = Math.min(dmg, bossDmg()); dmg = t._bossHitDmg;
+      t._bossHitId = opts.bossAtk; t._bossHitDmg = Math.min(dmg, cap); dmg = t._bossHitDmg;
     }
   }
   // OUTBREAK (FFA): an infected puppet is disoriented — its own attacks rebound onto itself
@@ -10180,7 +10839,10 @@ function applyHit(t, dmg, kbx, kby, from, opts){
     if(from.you||from.you2) banner("SHATTERED!", 600);
   }
   // Pillow passive: +1% damage per KO she has scored this match (permanent, no cap)
-  if(from && from.kit && from.kit.special==="fluff" && from.koCount>0){ dmg *= (1 + 0.03*from.koCount); }   // +3% a KO (was +1%, round 2)
+  if(from && from.kit && from.kit.special==="fluff" && from.koCount>0){ dmg *= (1 + 0.03*from.koCount); }
+  // ONE'S GHOST FIGHTER hits harder in its later tiers, and there its hits slow you too (ONE_SPECIAL_TIERS.ghost).
+  if(from && from._oneGhost && from !== t){ dmg *= (from._ghostHit||1); if(from._ghostFx && SM_FX[from._ghostFx]) SM_FX[from._ghostFx](t, from, from._ghostFxN); }
+  if(t._oneGhost){ kbx *= ONE_GHOST_KB; kby *= ONE_GHOST_KB; }   // it stays in the fight to be finished (see ONE_GHOST_KB)   // +3% a KO (was +1%, round 2)
   // Paintbrush's RAGE ("rage meter should give bonus base attack damage"): up to +50% on their hits, and at half rage
   // their bristles burn, so their hits set foes burning. It fills from the hits they take (below).
   if(from && from !== t && from.kit && from.kit.special==="fury" && (from._fury||0) > 0){ dmg *= 1 + Math.min(0.5, from._fury/200); if(from._fury >= 50) t.burn = Math.max(t.burn||0, 60); }
@@ -10231,6 +10893,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(t._yoyleT>0){ dmg*=0.45; kbx*=0.6; kby*=0.6; }              // ITEM: Yoyleberry — metal, takes less damage
   if(TESTMODE.active && !TESTMODE.damage){ dmg=0; }   // test mode: damage toggle off = no % buildup
   t.pct+=dmg;
+  if(t._oneGhost && oneGhostHurt(t, dmg)) return;   // "1 ghost fighter with 100 hp": 100 damage and it is gone
   if(dmg>0) SFX.hit(dmg);
   // TEST MODE DPS: tally damage the local player deals to dummies
   if(TESTMODE.active && dmg>0 && from && from.controller==="local" && t.controller!=="local" && t.controller!=="local2"){ TESTMODE.dpsDmg += dmg; }
@@ -10303,6 +10966,7 @@ function applyZone(f, z){
 let shakeAmt=0; function shake(n){ shakeAmt=Math.min(12,shakeAmt+n*0.4); }
 
 function eliminate(f){
+  if(f._oneGhost){ oneGhostDown(f); return; }   // One's ghost fighter has no stocks to lose: a knockout is the kill
   SFX.ko();
   // if an infected puppet is KO'd, revert it to its real team immediately
   if(f._infected>0){ f.team=f._origTeam; f._infected=0; f._infectedBy=null; }
@@ -10388,6 +11052,7 @@ function eliminate(f){
 
 function checkWin(){
   if(TESTMODE.active) return;   // test mode never ends — it's a sandbox
+  if(ONEFIGHT.active){ oneFightCheck(); return; }   // One's fight has its own win and loss, and is never a Boss Rush clear
   if(SETTINGS.mode==='boss'){ bossRushCheck(); return; }   // boss rush has its own win/lose logic
   const alive=fighters.filter(f=>!f.dead);
   const teamsAlive=[...new Set(alive.map(f=> f._infected>0 ? f._origTeam : f.team))];
@@ -11545,9 +12210,12 @@ function aiThink(f){
   let targets=fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team);
   const inp={left:false,right:false,jump:false,down:false,attack:false,special:false,smash:false,up:false};
   // BOSS RUSH: the boss is the enemy — treat it as a target so allies actually attack it.
-  if(SETTINGS.mode==='boss'){
+  if(SETTINGS.mode==='boss' && !f._oneGhost){
     const boss = summons.find(s=>s.type==="boss");
-    if(boss){ targets = [{ x:boss.x, y:boss.y, r:boss.r, dead:false, team:-1, idx:-9,
+    // ONE'S GHOST FIGHTER: she takes nothing while it stands, so an ally goes for the ghost first.
+    const ghost = fighters.find(g=>g._oneGhost && !g.dead);
+    if(ghost){ targets = [ghost]; }
+    else if(boss){ targets = [{ x:boss.x, y:boss.y, r:boss.r, dead:false, team:-1, idx:-9,
       pct:40, hitstun:0, frozen:0, invuln:0, vx:0, atkCd:0, _isBoss:true }]; }
   }
   if(!targets.length) return inp;
@@ -12275,6 +12943,7 @@ function draw(){
   for(const it of items){ if(it.taken) continue; drawItem(it); }
   // active summons (assists & bosses)
   for(const s of summons){ drawSummon(s); }
+  if(ONEFIGHT.active) drawOneFx();
   if(tendrils.length) drawTendrils();
   // swallow stomach zone + tongue target
   const swBoss = summons.find(s=>s.type==="boss" && s.attack==="swallow" && s._tongueHp>0);
@@ -12326,7 +12995,7 @@ function draw(){
     }
   }
   // fighters
-  for(const f of fighters){ if(f.dead) continue; drawFighter(f); }
+  for(const f of fighters){ if(f.dead) continue; if(f._oneGhost) drawOneGhostAura(f); drawFighter(f); }
   if(SHOW_HITBOXES) drawHitboxOverlay();
 
   // …and the shots still coming OUT of a fighter, drawn last so the launch is on top of the
@@ -12344,6 +13013,7 @@ function draw(){
   if(scrolls()) drawMinimap();
   drawOffscreenArrows();
   if(SETTINGS.mode==='boss' && BOSSRUSH.active) drawBossBar();
+  if(ONEFIGHT.active) drawOneBar();
   drawTutorialPrompt();
   // TEST MODE: DPS readout so you can measure damage output on an anchored dummy
   if(TESTMODE.active){
@@ -12453,6 +13123,7 @@ const BOSS_ARENA_SKY = {
   forest: ["#0a1a0a","#050d05"],   // evil forest (Evil Leafy)
   cave:   ["#1a1420","#0a0810"],   // dim cave
   void:   ["#0a0a2a","#02021a"],   // algebralian void (Four/Two)
+  onedim: ["#0b1540","#02061a"],   // One's dimension: a dark-blue Starry Night sky (the wiki's One's Dimension)
 };
 function drawArenaDecor(key){
   ctx.save();
@@ -12472,6 +13143,19 @@ function drawArenaDecor(key){
     ctx.fillStyle="rgba(40,30,50,0.5)";
     for(let i=0;i<7;i++){ const sx2=((i*180 - camX*0.5)%(W+180)+W+180)%(W+180)-90;
       ctx.beginPath(); ctx.moveTo(sx2,-20); ctx.lineTo(sx2-16,110); ctx.lineTo(sx2+16,110); ctx.closePath(); ctx.fill(); }   // stalactites
+  } else if(key==="onedim"){
+    // stars, a few slow Starry Night swirls, and the cracked Moon she climbed out of (Lightning's bolt cracked it, TPOT 7)
+    ctx.fillStyle="rgba(220,230,255,0.7)";
+    for(let i=0;i<48;i++){ const gx=((i*131 - camX*0.15)%(W+40)+W+40)%(W+40)-20; const gy=(i*97)%H; ctx.fillRect(gx,gy,2,2); }
+    ctx.strokeStyle="rgba(140,170,255,0.18)"; ctx.lineWidth=6;
+    for(let i=0;i<3;i++){ const cx=((i*420+180 - camX*0.08)%(W+300)+W+300)%(W+300)-150, cy=H*(0.22+i*0.18);
+      ctx.beginPath(); ctx.arc(cx,cy,60+i*14,hazardT*0.004+i,hazardT*0.004+i+4.2); ctx.stroke(); }
+    const mx=W*0.82 - camX*0.03, my=H*0.2, mr=Math.min(W,H)*0.09;
+    ctx.fillStyle="#d8d8d0"; ctx.beginPath(); ctx.arc(mx,my,mr,0,7); ctx.fill();
+    ctx.fillStyle="#b4b4ae"; ctx.beginPath(); ctx.arc(mx-mr*0.35,my-mr*0.2,mr*0.22,0,7); ctx.arc(mx+mr*0.3,my+mr*0.35,mr*0.16,0,7); ctx.fill();
+    ctx.fillStyle="#141420"; ctx.beginPath(); ctx.arc(mx+mr*0.15,my-mr*0.05,mr*0.28,0,7); ctx.fill();
+    ctx.strokeStyle="#141420"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(mx+mr*0.15,my-mr*0.05); ctx.lineTo(mx-mr*0.5,my+mr*0.5);
+    ctx.moveTo(mx+mr*0.15,my-mr*0.05); ctx.lineTo(mx+mr*0.8,my-mr*0.4); ctx.moveTo(mx+mr*0.15,my-mr*0.05); ctx.lineTo(mx+mr*0.1,my-mr*0.9); ctx.stroke();
   } else if(key==="void"){
     // drifting algebralian glyphs / stars
     ctx.fillStyle="rgba(180,180,255,0.5)";
@@ -12534,6 +13218,7 @@ const BOSS_SPRITE_SRC = {
   evilleafy:    "assets/sprites/evil-leafy.png",
   two:          "assets/sprites/two.png",
   four:         "assets/sprites/four.png",
+  one:          "assets/sprites/one.png",   // File:One_TPOT_19.png, see CREDITS.md
 };
 // Measured by scripts/fetch-sprites.mjs, same interior-ink method as the fighters.
 const BOSS_SPRITE_FLIP = { speaker:true, face:true, four:true };
@@ -12551,6 +13236,7 @@ function bossImage(key){
 }
 function drawBossSprite(s){
   const R=s.r;
+  if(s.sprite==="one") drawOneAura(s);   // the power she stole shows round her (TPOT 19), stronger each phase
   // telegraph aura: pulsing warning ring while winding up (Silksong-style tell)
   if(s._tel>0){
     const p = 1 - s._tel/bossTelLen(s);
@@ -12590,6 +13276,7 @@ function drawBossSprite(s){
       ctx.drawImage(tintedBossSprite(s.sprite, img), -dw/2, -dh/2, dw, dh);
       ctx.globalAlpha = 1;
     }
+    if(s.sprite==="one") drawOneCracks(s, dw, dh);
     ctx.restore();
     return;
   }
@@ -12609,6 +13296,16 @@ function drawBossSprite(s){
       ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.fillStyle="#eaffea"; ctx.beginPath(); ctx.arc(-R*0.3,-R*0.1,R*0.2,0,7); ctx.arc(R*0.3,-R*0.1,R*0.2,0,7); ctx.fill();
       ctx.fillStyle="#0a1a0a"; ctx.beginPath(); ctx.arc(-R*0.3,-R*0.1,R*0.09,0,7); ctx.arc(R*0.3,-R*0.1,R*0.09,0,7); ctx.fill();
+      break; }
+    case "one": {         // One: an armless light-blue numeral 1, upper serif further left than the lower, two legs, wide-set eyes
+      ctx.fillStyle="#7E95F9"; ctx.fillRect(-R*0.28,R*0.7,R*0.16,R*0.3); ctx.fillRect(R*0.12,R*0.7,R*0.16,R*0.3);
+      ctx.fillStyle=flash?"#fff":"#5D7AF2"; ctx.strokeStyle="#000001"; ctx.beginPath();
+      ctx.moveTo(-R*0.18,-R); ctx.lineTo(R*0.22,-R); ctx.lineTo(R*0.22,R*0.45); ctx.lineTo(R*0.55,R*0.45); ctx.lineTo(R*0.55,R*0.72);
+      ctx.lineTo(-R*0.5,R*0.72); ctx.lineTo(-R*0.5,R*0.45); ctx.lineTo(-R*0.18,R*0.45); ctx.lineTo(-R*0.18,-R*0.55); ctx.lineTo(-R*0.62,-R*0.4); ctx.lineTo(-R*0.62,-R*0.68); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      const ey = s._rage ? R*0.07 : R*0.12;   // enraged, her eyes go slimmer (the wiki)
+      ctx.fillStyle="#fff"; ctx.beginPath(); ctx.ellipse(-R*0.2,-R*0.1,R*0.14,ey,0,0,7); ctx.ellipse(R*0.26,-R*0.1,R*0.14,ey,0,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-R*0.2,-R*0.1,R*0.05,0,7); ctx.arc(R*0.26,-R*0.1,R*0.05,0,7); ctx.fill();
       break; }
     case "four": {        // blue algebralian: a tall '4' shape with a sharp mouth
       ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
@@ -15059,8 +15756,9 @@ function drawFighter(f){
   }
   ctx.translate(f.x,f.y);
   const blink=f.invuln>0 && (f.invuln%8<4);
-  ctx.globalAlpha=blink?0.4:1;
-  drawAlpha=blink?0.4:1;   // sprites composite against this instead of reading back ctx.globalAlpha
+  const ghostA = f._oneGhost ? 0.55 : 1;   // One's ghost fighter is a ghost: you can see through it
+  ctx.globalAlpha=(blink?0.4:1)*ghostA;
+  drawAlpha=(blink?0.4:1)*ghostA;   // sprites composite against this instead of reading back ctx.globalAlpha
   // IFRAME INDICATOR. Invulnerability used to show only as the sprite blinking translucent, which is
   // hard to read at a glance and easy to mistake for a rendering glitch. A bubble now sits around
   // anyone who cannot be hit and fades as the window runs out; the last few frames flicker, so you
@@ -15297,6 +15995,12 @@ const PROJ_SHAPE = {
   mic:     { draw(c,r){ c.beginPath(); c.arc(0,0,r,0,7); c.fillStyle='#e8e2d0'; c.fill(); c.strokeStyle='#8a8272'; c.lineWidth=r*0.2; c.stroke(); c.beginPath(); c.arc(0,0,r*0.5,0,7); c.stroke(); } },   // Microphone: the ball she yells at
   saltpepper:{ draw(c,r){ c.fillStyle='#e9e9ef'; for(let i=0;i<4;i++){ const a=i*1.7; c.beginPath(); c.arc(Math.cos(a)*r*0.5, Math.sin(a)*r*0.5, r*0.32, 0, 7); c.fill(); } } },   // Salt: grains
   testtube:{ draw(c,r){ c.beginPath(); c.moveTo(-r*0.5,-r); c.lineTo(r*0.5,-r); c.lineTo(r*0.7,r*0.8); c.lineTo(-r*0.7,r*0.8); c.closePath(); c.fillStyle='rgba(159,230,216,0.9)'; c.fill(); c.strokeStyle='#4aa08f'; c.lineWidth=r*0.18; c.stroke(); } },   // Test Tube: a flask
+  // --- One, the secret boss: her specials' shots
+  moonrock:  { spin:true, draw(c,r){ c.fillStyle='#b8b8c0'; c.beginPath(); for(let i=0;i<7;i++){ const a=i/7*Math.PI*2, rr=r*(i%2?0.8:1); c.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } c.closePath(); c.fill(); c.strokeStyle='#5a5a66'; c.lineWidth=r*0.14; c.stroke(); c.fillStyle='#8a8a96'; c.beginPath(); c.arc(-r*0.3,-r*0.2,r*0.22,0,7); c.arc(r*0.3,r*0.25,r*0.16,0,7); c.fill(); } },   // a piece of the Moon
+  onelaser:  { draw(c,r){ c.lineCap='round'; c.strokeStyle='#8cf5c0'; c.lineWidth=r*1.4; c.beginPath(); c.moveTo(-r*3.2,0); c.lineTo(r*1.2,0); c.stroke(); c.strokeStyle='#e8fff4'; c.lineWidth=r*0.5; c.beginPath(); c.moveTo(-r*2.6,0); c.lineTo(r*1.1,0); c.stroke(); c.lineCap='butt'; } },   // her green and light-blue eye laser
+  onehand:   { draw(c,r){ c.fillStyle='#5D7AF2'; c.strokeStyle='#000001'; c.lineWidth=r*0.12; c.beginPath(); c.ellipse(-r*0.2,0,r*0.7,r*0.55,0,0,7); c.fill(); c.stroke(); for(let i=-1.5;i<=1.5;i++){ c.beginPath(); c.ellipse(r*0.6,i*r*0.28,r*0.34,r*0.11,0,0,7); c.fill(); c.stroke(); } } },   // a One-coloured hand, fingers first
+  oneplanet: { spin:true, draw(c,r){ c.fillStyle='#3a7ad0'; c.beginPath(); c.arc(0,0,r,0,7); c.fill(); c.fillStyle='#5cc85c'; c.beginPath(); c.arc(-r*0.3,-r*0.2,r*0.35,0,7); c.arc(r*0.35,r*0.3,r*0.28,0,7); c.fill(); c.strokeStyle='#1c1c1c'; c.lineWidth=2; c.beginPath(); c.arc(0,0,r,0,7); c.stroke(); } },   // Earth, kicked out of orbit
+  onewisp:   { draw(c,r){ c.fillStyle='rgba(223,232,255,0.9)'; c.beginPath(); c.arc(0,0,r*0.8,0,7); c.fill(); c.beginPath(); c.moveTo(-r*0.6,-r*0.5); c.lineTo(-r*2,0); c.lineTo(-r*0.6,r*0.5); c.closePath(); c.fill(); } },   // ghost-fire
   airrel:  { draw(c,r){ c.beginPath(); c.arc(0,0,r*0.9,0,7); c.fillStyle='rgba(255,226,206,0.85)'; c.fill(); c.strokeStyle='#e0702a'; c.lineWidth=r*0.25; c.stroke(); } },   // Balloon: a puff of air
   collide: { draw(c,r){ c.beginPath(); c.arc(0,0,r,0,7); c.fillStyle='#2e3448'; c.fill(); c.fillStyle='#ffcc40'; c.beginPath(); c.arc(r*0.6,-r*0.8,r*0.35,0,7); c.fill(); } },   // Bomb: a little bomb, fuse lit
   smokering: { draw(c,r){ c.strokeStyle='rgba(138,143,150,0.75)'; c.lineWidth=Math.max(2,r*0.22); c.beginPath(); c.arc(0,0,r*0.92,0,7); c.stroke();

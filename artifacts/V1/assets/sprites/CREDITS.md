@@ -198,6 +198,24 @@ non-commercial fan game.
 | Yellow Face | `yellow-face.png` | 194×200 | -0.059 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/Yellowface.png/revision/latest?cb=20190908174021 |
 <!-- RENDER-INVENTORY-END -->
 
+## One (the secret boss)
+
+One is not a roster fighter, so her render sits outside the generated inventory above (a re-run of
+`scripts/wire-sprites.mjs` would otherwise wire her into the fighter registry). Same provenance:
+jacknjellify's character artwork, via battlefordreamisland.fandom.com; no formal license, used under
+fan-work norms in a disclaimed, non-commercial fan game.
+
+| Boss | File | Size | Facing | Source |
+|---|---|---|---|---|
+| One | `one.png` | 148×200 | 0.041 | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b8/One_TPOT_19.png/revision/latest?cb=20250817043721 |
+
+- `File:One_TPOT_19.png`, front-facing, full body with both legs and her eyes. Chosen over the One page's
+  infobox image (`File:OneTPOT20PromoArt.png`) because that file's upload history carries two troll
+  uploads, and the bytes served for it did not match the sha1 the wiki reports; this one's did
+  (a0e2e97aba3bed4f711b6ed461815198a7cc92d5), and its three revisions are all by one uploader.
+- Scaled server-side to 200px tall (`scale-to-height-down/200`, `format=original`), all four corners
+  alpha 0, 686 near-zero-alpha halo pixels erased, facing measured the fetch-sprites.mjs way.
+
 ## Attack art
 
 What a fighter THROWS, in the show's own art, fetched by scripts/fetch-attack-sprites.mjs from the
