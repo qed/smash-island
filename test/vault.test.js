@@ -66,6 +66,19 @@ const HINT_CODES = {
 };
 const WRONG = "Aw, seriously? That code doesn't do anything.";
 const norm = (s) => s.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, '');
+const HTML = readFileSync('artifacts/V1/index.html', 'utf8');
+
+// The Daily's draw exactly as it was before the Vault (names in, names out), kept here to prove that keeping YOU off a
+// Vault fighter changed no other day's pairing.
+function oldDaily(pool, seed) {
+  let h = seed >>> 0;
+  const nxt = () => { h = (Math.imul(h ^ (h >>> 15), 1 | h) + 0x6D2B79F5) >>> 0; return h / 4294967296; };
+  const a = pool[Math.floor(nxt() * pool.length) % pool.length];
+  let b = pool[Math.floor(nxt() * pool.length) % pool.length];
+  let guard = 0;
+  while (b === a && guard++ < 20) b = pool[Math.floor(nxt() * pool.length) % pool.length];
+  return [a, b];
+}
 
 describe('the Vault: codes', () => {
   it('ignores case, spaces and punctuation, a phone\'s curly apostrophe included', async () => {
@@ -147,7 +160,13 @@ describe('the Vault: codes', () => {
     expect(got[3]).toContain('the Daily Match puts you on Lightning');
     expect(got[4]).toMatch(/^ONE - STEP 4 OF 7: THE WORLD CUP\./);
     expect(got[4]).toContain('Win the World Cup as Lightning');
-    expect(got[4]).toContain('there is no code for them');
+    // Steps 5 to 7 have no clue of their own, and the clue says what they are: only the Moon (5) plays by itself; then
+    // One has to be fought (6) and beaten (7). She never unlocks by herself.
+    expect(got[4]).toContain('Step 5 plays by itself right after.');
+    expect(got[4]).toContain('Then you fight One, solo, as Lightning (step 6)');
+    expect(got[4]).toContain('and you must beat her (step 7)');
+    expect(got[4]).toContain('There is no code for steps 5 to 7.');
+    expect(got[4]).not.toMatch(/on their own/i);
     // "you dont need the last 3 codes for One": the dropped codes do nothing.
     for (const s of ['HEY GUYS', 'Hey guys!', 'DOWN TO MAKE A DEAL', 'THE MOON', 'ONE', 'Needle', 'yoyle', '1234', 'walmartt']) {
       const r = w.eval(`vaultSubmit(${J(s)})`);
@@ -155,6 +174,13 @@ describe('the Vault: codes', () => {
       expect(r.reply).toBe(WRONG);
     }
     expect(w.eval('vaultSubmit("   ").kind')).toBe('empty');
+    expect(w.eval('vaultSubmit("").kind')).toBe('empty');
+    // Something typed with no letter or digit in it is a guess, not a blank box.
+    for (const s of ['!!!', '???', '\u{1F510}', '\u2014 \u2013']) {
+      const r = w.eval(`vaultSubmit(${J(s)})`);
+      expect(r.kind, s).toBe('wrong');
+      expect(r.reply).toBe(WRONG);
+    }
     expect(w.eval('PROFILE.vault.found.slice().sort()')).toEqual(['ALL FOR ONE', 'BRAKE AT FLAKE', 'LAST ONE STANDING', 'SO TO CLARIFY']);
   });
 });
@@ -223,7 +249,7 @@ describe('the Vault: the unlock model', () => {
     const w = boot({ seed: { 'profile:v1': J(prior) } }); await settle(w);
     expect(w.eval('isUnlocked(ROSTER.find(function(r){ return r.name==="Bubble"; }))')).toBe(true);
     expect(w.eval('isUnlocked(ROSTER.find(function(r){ return r.name==="Marshmallow"; }))')).toBe(true);
-    expect(w.eval('PROFILE.vault.found')).toEqual([]);   // an old save gains the field, empty
+    expect(w.eval('vaultState().found')).toEqual([]);   // an old save gains the record, empty, where it is read
     w.eval('openVault()');
     const open = [...w.document.querySelectorAll('#vaultFighters .vcell.open')].map((c) => c.textContent);
     expect(open.sort()).toEqual(['Bubble', 'Marshmallow']);
@@ -234,31 +260,123 @@ describe('the Vault: the unlock model', () => {
     expect(r.reply).toMatch(/already yours/);
   });
 
-  it('with no storage everything is still open, Vault fighters too, and the Vault still takes codes', async () => {
+  it('with no storage every fighter but the Vault\'s is open, and a code still opens one for the session', async () => {
+    // Degrade open, never around a code: a Vault fighter "can ONLY be opened by a code", and a code needs no storage.
     const w = boot({ breakStorage: true }); await settle(w);
     expect(w.eval('PROFILE_STORAGE_OK')).toBe(false);
-    expect(w.eval('Array.from(VAULT_FIGHTERS).every(function(n){ return isUnlocked(ROSTER.find(function(r){ return r.name===n; })); })')).toBe(true);
+    expect(w.eval('ROSTER.filter(function(r){ return !isUnlocked(r); }).map(function(r){ return r.name; }).sort()')).toEqual(Object.keys(FIGHTER_CODES).sort());
     expect(w.eval('vaultSubmit("so to clarify").kind')).toBe('hint');
     expect(w.eval('vaultFound("SO TO CLARIFY")')).toBe(true);
+    const r = w.eval('vaultSubmit("2763")');
+    expect(r.kind).toBe('fighter');
+    expect(r.fresh).toBe(true);
+    expect(w.eval('isUnlocked(ROSTER.find(function(r){ return r.name==="Pillow"; }))')).toBe(true);
   });
 
-  it('the Daily still starts on a fresh save when its fighter is in the Vault, and grants nothing', async () => {
-    // The pairing is the same for everyone, so it is left alone: it lends the day's fighter for one match, as it
-    // already did with a fighter still on the drip.
+  it('grandfathering an install from before progression opens every fighter but the Vault\'s', async () => {
+    const w = boot({ seed: { 'bfsi:tutorialDone': '1' } }); await settle(w);
+    expect(w.eval('PROFILE.migratedFrom')).toBe('pre-A');
+    expect(w.eval('ROSTER.filter(function(r){ return !isUnlocked(r); }).map(function(r){ return r.name; }).sort()')).toEqual(Object.keys(FIGHTER_CODES).sort());
+    w.eval('openVault()');
+    expect(w.document.querySelectorAll('#vaultFighters .vcell.open').length).toBe(0);
+  });
+
+});
+
+describe('the Vault: the Daily Match', () => {
+  it('never puts you on a Vault fighter, and every other day keeps the pairing it always had', async () => {
+    // A Vault fighter "can ONLY be opened by a code", so not even the Daily hands you one for a match. The pairing is
+    // the same for everyone, so only the days that drew a Vault fighter for you change: that fighter becomes the foe.
+    const w = boot(); await settle(w);
+    const pool = w.eval('ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })');
+    const vault = new Set(Object.keys(FIGHTER_CODES));
+    let swapped = 0;
+    for (let d = 0; d < 730; d++) {
+      const seed = w.eval(`dailySeed(new Date(Date.UTC(2026, 8, ${24 + d})))`);
+      const now = w.eval(`(function(){ var m = dailyMatchup(${seed}); return [m.you.name, m.foe.name]; })()`);
+      const was = oldDaily(pool, seed);
+      expect(vault.has(now[0]), `${seed}: you on ${now[0]}`).toBe(false);
+      expect(now[0], `${seed}: nobody fights themselves`).not.toBe(now[1]);
+      if (!vault.has(was[0])) expect(now, `${seed} keeps its pairing`).toEqual(was);
+      else if (!vault.has(was[1])) { expect(now, `${seed} swaps seats`).toEqual([was[1], was[0]]); swapped++; }
+      else expect(now[1], `${seed} keeps its foe`).toBe(was[1]);
+    }
+    expect(swapped, 'some days did draw a Vault fighter for you').toBeGreaterThan(0);
+    // The day the review found: 2026-12-01 drew Pillow for you. She is the opponent now.
+    expect(oldDaily(pool, 20261201)[0]).toBe('Pillow');
+    expect(w.eval('dailyMatchup(20261201).foe.name')).toBe('Pillow');
+    expect(w.eval('VAULT_FIGHTERS.has(dailyMatchup(20261201).you.name)')).toBe(false);
+  });
+
+  it('lends its fighter for that one match: after it, Rematch, Start Match, the World Cup and the lobby are on your own pick', async () => {
     const w = boot(); await settle(w);
     const r = w.eval(`(function(){
       var s = 20260101, m = null;
-      for (var i = 0; i < 4000; i++){ m = dailyMatchup(s + i); if (VAULT_FIGHTERS.has(m.you.name)) { s = s + i; break; } }
+      for (var i = 0; i < 4000; i++){ m = dailyMatchup(s + i); if (!isUnlocked(m.you)) { s = s + i; break; } }
       dailySeed = function(){ return s; };
-      loop = function(){};   // the match is built, not played: this canvas stub cannot draw a frame
+      loop = function(){};   // matches are built, not played: this canvas stub cannot draw a frame
+      var out = { day: m.you.name, dayOpen: isUnlocked(m.you), before: chosen.name };
       startDailyMatch();
       var you = fighters.find(function(f){ return f.you; });
-      running = false;
-      return { day: m.you.name, you: you && you.name, n: fighters.length, open: PROFILE.unlocked.indexOf(m.you.name)>=0 };
+      out.playing = you.name;
+      you.dead = true; checkWin();   // the Daily is lost
+      out.after = chosen.name; out.afterOpen = isUnlocked(chosen); out.active = DAILY_ACTIVE; out.pending = PENDING_DAILY; out.loan = DAILY_LOAN;
+      var foe = fighters.find(function(f){ return !f.you; });
+      showResult([foe], foe.team);
+      out.resultSub = document.getElementById('resultSub').textContent;
+      startMatch();   // Rematch
+      out.rematch = fighters.find(function(f){ return f.you; }).name; running = false;
+      go('select');
+      var sel = document.querySelector('#board .cell.sel');
+      out.selCell = sel ? sel.textContent : null; out.selName = document.getElementById('selName').textContent;
+      startMatch();   // Start Match
+      out.start = fighters.find(function(f){ return f.you; }).name; running = false;
+      TOURNEY_SETUP_MODE = 'normal'; TOURNEY_SETUP_SIZE = 1; kickOffTournament(); startMatch();
+      out.cup = TOURNEY.myTeam.members[0].name;
+      go('title'); openLobby();
+      out.lobby = chosen.name;
+      return out;
     })()`);
-    expect(r.you).toBe(r.day);
-    expect(r.n).toBe(2);
-    expect(r.open).toBe(false);
+    await w.eval('new Promise(function(res){ setTimeout(res, 20); })');   // the attempt is written asynchronously
+    expect(r.dayOpen, 'the day\'s fighter is one this fresh save has not unlocked').toBe(false);
+    expect(r.playing).toBe(r.day);
+    expect(r.after).toBe(r.before);
+    expect(r.afterOpen).toBe(true);
+    expect(r.active).toBe(false);
+    expect(r.pending).toBe(null);
+    expect(r.loan).toBe(null);
+    expect(r.resultSub, 'the result still names who you played').toContain(r.day);
+    for (const k of ['rematch', 'selCell', 'selName', 'start', 'cup', 'lobby']) expect(r[k], k).toBe(r.before);
+    expect(w.localStorage.getItem('daily:v1'), 'the attempt itself was recorded').toBeTruthy();
+  });
+
+  it('a Daily left part-way hands its fighter back, and the next match is not recorded as today\'s attempt', async () => {
+    const w = boot(); await settle(w);
+    const r = w.eval(`(function(){
+      var s = 20260101, m = null;
+      for (var i = 0; i < 4000; i++){ m = dailyMatchup(s + i); if (!isUnlocked(m.you)) { s = s + i; break; } }
+      dailySeed = function(){ return s; };
+      loop = function(){};
+      var before = chosen.name;
+      startDailyMatch();
+      var playing = fighters.find(function(f){ return f.you; }).name;
+      go('title');   // left before it finished
+      var out = { day: m.you.name, playing: playing, before: before, after: chosen.name, active: DAILY_ACTIVE, pending: PENDING_DAILY, loan: DAILY_LOAN };
+      startMatch();
+      out.next = fighters.find(function(f){ return f.you; }).name;
+      var foe = fighters.find(function(f){ return !f.you; });
+      foe.dead = true; checkWin();
+      running = false;
+      return out;
+    })()`);
+    await w.eval('new Promise(function(res){ setTimeout(res, 20); })');
+    expect(r.playing).toBe(r.day);
+    expect(r.after).toBe(r.before);
+    expect(r.next).toBe(r.before);
+    expect(r.active).toBe(false);
+    expect(r.pending).toBe(null);
+    expect(r.loan).toBe(null);
+    expect(w.localStorage.getItem('daily:v1'), 'an ordinary match is not the Daily').toBe(null);
   });
 });
 
@@ -318,6 +436,9 @@ describe('the Vault: the screen', () => {
     btn.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
     expect(w.document.getElementById('vault').classList.contains('active'), 'Enter on the link opens it').toBe(true);
     w.eval("go('title')");
+    btn.dispatchEvent(new w.KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+    expect(w.document.getElementById('vault').classList.contains('active'), 'Space on the link opens it too').toBe(true);
+    w.eval("go('title')");
     btn.click();
     expect(w.document.getElementById('vault').classList.contains('active')).toBe(true);
     const cells = [...w.document.querySelectorAll('#vaultFighters .vcell')];
@@ -359,6 +480,27 @@ describe('the Vault: the screen', () => {
     box.value = 'WAL MART'; enter();
     expect(reply.textContent).toMatch(/already found/);
     expect(w.document.getElementById('vaultCount').textContent).toBe('2 of 17 codes found');
+  });
+
+  it('a right code typed before the save has loaded waits in the box, and records nothing until it has', async () => {
+    const w = boot();   // not settled: BStore.get has not answered yet
+    expect(w.eval('PROFILE')).toBe(null);
+    const early = w.eval('vaultSubmit("2763")');
+    expect(early.kind).toBe('wait');
+    expect(early.reply).not.toMatch(/already|yours/);
+    expect(w.eval('vaultSubmit("hey guys").kind'), 'a wrong code needs no save to be wrong').toBe('wrong');
+    w.eval('openVault()');
+    const box = w.document.getElementById('vaultCode');
+    box.value = '2763'; w.document.getElementById('vaultEnterBtn').click();
+    expect(w.document.getElementById('vaultReply').textContent).toMatch(/still opening/);
+    expect(box.value, 'the code stays in the box').toBe('2763');
+    await settle(w);
+    expect(w.eval('isUnlocked(ROSTER.find(function(r){ return r.name==="Pillow"; }))')).toBe(false);
+    expect(w.eval('vaultFound("2763")')).toBe(false);
+    w.document.getElementById('vaultEnterBtn').click();
+    expect(w.document.getElementById('vaultReply').textContent).toContain('Pillow is out of the Vault');
+    expect(box.value).toBe('');
+    expect(w.eval('isUnlocked(ROSTER.find(function(r){ return r.name==="Pillow"; }))')).toBe(true);
   });
 
   it('typing in the box sets off no game hotkey', async () => {
@@ -408,5 +550,61 @@ describe('the Vault: the screen', () => {
     expect(css).toMatch(/\.vaultgrid\{[^}]*flex-wrap:wrap/);
     expect(css).toMatch(/\.vaulthints\{[^}]*flex-direction:column[^}]*width:min\(560px,100%\)/);
     expect(css).toMatch(/\.vtext\{[^}]*overflow-wrap:anywhere/);
+  });
+});
+
+// The clues say, in plain words, what One's chain asks for. That chain is built on another branch; once it is merged
+// into this build, these tie each clue to the code that decides the step, so the two cannot drift apart unnoticed.
+const HAS_ONE = /\bconst ONE_RATE_GAMES\b/.test(HTML);
+describe.skipIf(!HAS_ONE)('the Vault\'s clues agree with One\'s chain', () => {
+  it('step 1: at least 20 matches as Lightning, MORE than 70% won -- 15 of 20 opens it, 14 of 20 does not', async () => {
+    const w = boot(); await settle(w);
+    expect(w.eval('ONE_RATE_GAMES')).toBe(20);
+    expect(w.eval('ONE_RATE_MIN')).toBe(0.7);
+    const ok = (g, wins) => w.eval(`(function(){ PROFILE.fighterStats = { Lightning:{ g:${g}, w:${wins} } }; return oneRateOk(); })()`);
+    expect(ok(20, 15)).toBe(true);
+    expect(ok(20, 14)).toBe(false);
+    expect(ok(19, 19)).toBe(false);
+    expect(w.eval('VAULT.hints[0].text')).toContain('15 wins out of 20 opens it; 14 out of 20 does not');
+  });
+
+  it('step 2: Boss Rush loop 2, and Four has to fall while YOUR Lightning is still standing', async () => {
+    const w = boot(); await settle(w);
+    const rush = (loop, name, dead) => w.eval(`(function(){
+      PROFILE.one = { stage:0, erased:[], rushLightning:false, wins:0, bestSecs:0 };
+      fighters = [{ you:true, name:${J(name)}, dead:${dead} }];
+      oneRushHook(${loop});
+      return oneQ().rushLightning;
+    })()`);
+    expect(rush(2, 'Lightning', false)).toBe(true);
+    expect(rush(1, 'Lightning', false)).toBe(false);
+    expect(rush(2, 'Lightning', true)).toBe(false);
+    expect(rush(2, 'Firey', false)).toBe(false);
+  });
+
+  it('step 3: Gaty, then Barf Bag, then Basketball, then your most-played fighters -- never a Vault fighter still shut', async () => {
+    const w = boot(); await settle(w);
+    expect(w.eval('ONE_CANON_ERASED')).toEqual(['Gaty', 'Barf Bag', 'Basketball']);
+    const next = () => w.eval('oneNextErased()');
+    w.eval(`PROFILE.one = { stage:${w.eval('ONE_STAGE.ERASING')}, erased:[], rushLightning:true, wins:0, bestSecs:0 };
+            PROFILE.fighterStats = { Pillow:{ g:99, w:0 }, Bubble:{ g:98, w:0 }, Firey:{ g:5, w:0 } };`);
+    expect(next()).toBe('Gaty');
+    w.eval('PROFILE.one.erased = ["Gaty","Barf Bag","Basketball"]');
+    expect(next(), 'the most-played fighter you can pick, not a Vault fighter you cannot').toBe('Firey');
+    w.eval('vaultSubmit("2763")');
+    expect(next(), 'once her code is in, she can be erased like anyone').toBe('Pillow');
+    expect(w.eval('oneDailyMatchup(dailyMatchup(dailySeed())).you.name'), 'the Daily puts you on Lightning').toBe('Lightning');
+  });
+
+  it('step 4: winning the World Cup as Lightning is what brings the Moon', async () => {
+    const w = boot(); await settle(w);
+    const cup = (lead) => w.eval(`(function(){
+      PROFILE.one = { stage:ONE_STAGE.ALONE, erased:[], rushLightning:true, wins:0, bestSecs:0 };
+      TOURNEY.myTeam = { members:[ROSTER.find(function(r){ return r.name===${J(lead)}; })] };
+      oneWorldCupHook();
+      return oneQ().stage === ONE_STAGE.MOON;
+    })()`);
+    expect(cup('Firey')).toBe(false);
+    expect(cup('Lightning')).toBe(true);
   });
 });

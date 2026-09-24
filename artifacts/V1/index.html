@@ -102,8 +102,11 @@
 
   /* ---- the Vault ---- */
   /* Everything wraps and nothing has a fixed width wider than a phone: the code box shrinks
-     (min-width:0, or a flex item refuses to go below its content), the fighters wrap four to a
-     row at 375px, and the clues are one column that breaks long words rather than scroll. */
+     (min-width:0, or a flex item refuses to go below its content), the fighters wrap, and the
+     clues are one column that breaks long words rather than scroll. Four 72px cells and three 6px
+     gaps take 306px. Measured in Electron: a 375px window, even with a 17px desktop scrollbar
+     (the screen scrolls), rows them 4, 4, 4, 1; a 360px window with that scrollbar gets three to
+     a row. A phone's scrollbar floats over the page, so 360px and 375px phones both get four. */
   #vault{align-items:center; text-align:center}
   .vaultdoor{margin-top:12px; font-size:14px; font-weight:700}
   .vaultentry{display:flex; gap:8px; width:min(460px,100%); margin:12px auto 0}
@@ -2153,6 +2156,9 @@ function go(id){
   }   // leaving to title exits test/tournament/boss mode
   if(id==='title'||id==='lobby' || (id==='select' && !PENDING_CUSTOM)) CUSTOM_LEVEL=null;   // navigation clears custom level, unless we're queuing one for character select
   if(id!=='select') PENDING_CUSTOM=false;   // consumed once we leave the select screen into a match
+  // A Daily left part-way (to the menu, the lobby...) is over: its fighter goes back, and the next ordinary match is not
+  // recorded as today's attempt against the Daily's opponent. Matches ('_none_') and the result screen keep it.
+  if(id!=='_none_' && id!=='result'){ try{ returnDailyLoan(); }catch(e){} }
   const el=document.getElementById(id);
   if(el){el.classList.add('active');}
   if(id==='select'){ buildBoard(); syncModeUI(); }
@@ -2181,9 +2187,13 @@ const STARTERS = ["Firey","Leafy","Pencil","Blocky","Ice Cube","Match","Pen"];
 // to fight One." The codes are "Just knowledge(like a code could be 2763, YOYLE CAKE, or Wal-mart)":
 // each is a line the BFDI or Inanimate Insanity wiki gives that character (a catchphrase, a
 // trademark line, a phone number), so a fan can work it out and the game never prints it.
-// These are "Vault-only fighters": they are off the drip, off the starters, no deed grants them,
-// and isUnlocked() keeps them shut even in the "everything" view, which would otherwise open all
-// of them with one click. A save that already holds one keeps it -- nothing earned is taken away.
+// These are "Vault-only fighters", which "can ONLY be opened by a code": they are off the drip, off
+// the starters, no deed grants them, isUnlocked() keeps them shut even in the "everything" view
+// (which would otherwise open all of them with one click), openProfile() leaves them out, and the
+// Daily never hands one to you. A save whose `unlocked` list already names one keeps it: saves
+// only ever merge by union, so a fighter won or started with (Bubble, from when she was a starter)
+// stays. The seven Vault DLC fighters are the exception for a player who had the pack before:
+// the pack was open by rule and never written into a save, so they close until their codes.
 // The clues about One are steps 1-4 of how she is unlocked, and only those: "you dont need the
 // last 3 codes for One." `accepts` are other spellings. Every spelling is compared after
 // vaultNorm() (lowercase, nothing but a-z and 0-9) by EXACT equality, never as a substring, so
@@ -2227,14 +2237,18 @@ const VAULT = {
     // BFDI wiki, Catchphrases, Four: "It's time for Brake at Flake!" -- the step where Four has to fall.
     { step:2, code:"BRAKE AT FLAKE", accepts:["It's time for Brake at Flake!","BRAKEATFLAKE","ITS TIME FOR BRAKE AT FLAKE"],
       text:"ONE - STEP 2 OF 7: BOSS RUSH. Take Lightning into Boss Rush and reach loop 2. Four has to fall while your Lightning is still standing." },
-    // "for step 3, it should be last one standing". BFDI wiki, Last One Standing (TPOT 19): One erases
-    // Gaty, Barf Bag and Basketball, in that order -- the three the erasures take first.
+    // "for step 3, it should be last one standing". BFDI wiki: One erased Gaty in "Seasonal Shift" (TPOT 15; the
+    // Gaty page notes it "wouldn't be confirmed ... until 'Last One Standing'"), then Barf Bag and Basketball in
+    // "Last One Standing" (TPOT 19), whose deaths list ends Gaty, Barf Bag, Basketball (erased) -- the three the
+    // erasures take first, in that order.
     { step:3, code:"LAST ONE STANDING", accepts:["Last 1 Standing","LASTONESTANDING","The Last One Standing"],
       text:"ONE - STEP 3 OF 7: THE ERASURES. From then on, every WIN erases ONE fighter (player 1 can no longer pick them): Gaty, then Barf Bag, then Basketball, then your most-played fighters, until only Lightning is left. While this is on, the Daily Match puts you on Lightning." },
     // "for 4, it should be all for One." BFDI wiki, All For One (TPOT 25): the episode where Lightning faces One.
-    // The last sentence is there so nobody goes hunting for codes the owner said are not needed.
+    // The rest says what 5 to 7 are without a clue of their own ("you dont need the last 3 codes for One"), so nobody
+    // goes hunting for codes that do not exist -- or thinks One unlocks by herself: only step 5, the Moon, plays by
+    // itself; then she has to be fought and beaten.
     { step:4, code:"ALL FOR ONE", accepts:["All 4 One","ALLFORONE","All For 1"],
-      text:"ONE - STEP 4 OF 7: THE WORLD CUP. Win the World Cup as Lightning. No one else is left to pick. Steps 5 to 7 happen on their own; there is no code for them." },
+      text:"ONE - STEP 4 OF 7: THE WORLD CUP. Win the World Cup as Lightning. No one else is left to pick. Step 5 plays by itself right after. Then you fight One, solo, as Lightning (step 6), and you must beat her (step 7). There is no code for steps 5 to 7." },
   ],
   wrong: "Aw, seriously? That code doesn't do anything.",
 };
@@ -10521,6 +10535,7 @@ function checkWin(){
     awardMatchProgress(winTeam);   // profile + unlock delta, computed synchronously
     recordMatch(winTeam);    // log the result for balance analysis
     if(DAILY_ACTIVE){ try{ recordDaily(winTeam===0); }catch(e){} DAILY_ACTIVE=false; PENDING_DAILY=null; }
+    returnDailyLoan();   // the Daily's fighter was lent for that match only (showResult names who you played)
     try{ commitPlaystyles(); }catch(e){}   // …and fold this match into the play-style profile
     setTimeout(()=>showResult(winners, winTeam),700);
   }
@@ -10591,18 +10606,21 @@ function freshProfile(){
   // soloBosses: which bosses you have beaten with NO teammate on the stage, keyed by name so
   // it counts distinct bosses rather than repeat kills of the easiest one. loadProfile runs
   // Object.assign(freshProfile(), stored), so an existing save gains the field on next load.
-  // vault.found: the Vault codes this player has typed (by their `code`), so a found fighter and a
-  // found clue about One are still found after a reload. Same Object.assign route for old saves.
+  // vault.found (the Vault codes this player has typed) is not listed here: vaultState() makes it on
+  // first use, the same way for a new player and an old save, and repairs a broken one, and every
+  // save writes it (mergeProfiles). So nothing reads PROFILE.vault except through vaultState().
   return { version:1, matches:0, wins:0, kos:0, bossesCleared:{}, soloBosses:{}, bestRushLoop:0,
-           wcTitles:0, unlocked:[...STARTERS], viewMode:'starters', migratedFrom:null, vault:{ found:[] } };
+           wcTitles:0, unlocked:[...STARTERS], viewMode:'starters', migratedFrom:null };
 }
 // Everything unlocked — used when storage is unavailable and when grandfathering an existing
 // install. Degrading OPEN is deliberate: a blocked-storage Chromebook must never leave a player
-// stuck at 7 starters with no way forward and no error. That includes the Vault fighters: the
-// codes still work on such an install, but nobody is left behind waiting for one.
+// stuck at 7 starters with no way forward and no error. Everything except the Vault fighters,
+// which "can ONLY be opened by a code": that beats this fallback as it beats the "everything"
+// view. It strands nobody, because a code is itself the way forward and needs no storage: it
+// opens its fighter at once, for the session, even where nothing can be saved.
 function openProfile(from){
   const p = freshProfile();
-  p.unlocked = ROSTER.map(r=>r.name);
+  p.unlocked = ROSTER.filter(r=>!VAULT_FIGHTERS.has(r.name)).map(r=>r.name);
   p.migratedFrom = from || 'no-storage';
   return p;
 }
@@ -10990,18 +11008,27 @@ function dailySeed(d){
   return (t.getUTCFullYear()*10000 + (t.getUTCMonth()+1)*100 + t.getUTCDate()) >>> 0;
 }
 function dailyMatchup(seed){
-  // Vault fighters stay in the pool on purpose. The Daily lends the day's fighter for that one match and
-  // grants nothing (it always did this with fighters still on the drip), so a code is still the only way
-  // to KEEP one; and dropping them would reshuffle every day's pairing for everyone.
   const pool = ROSTER.filter(r=>r.play);
   if(!pool.length) return null;
   // mulberry-style hash so the same day gives the same pair everywhere, with no stored state
   let h = seed >>> 0;
   const nxt = ()=>{ h = (Math.imul(h ^ (h>>>15), 1 | h) + 0x6D2B79F5) >>> 0; return h / 4294967296; };
-  const a = pool[Math.floor(nxt()*pool.length) % pool.length];
+  let a = pool[Math.floor(nxt()*pool.length) % pool.length];
   let b = pool[Math.floor(nxt()*pool.length) % pool.length];
   let guard = 0;
   while(b === a && guard++ < 20) b = pool[Math.floor(nxt()*pool.length) % pool.length];
+  // A Vault fighter "can ONLY be opened by a code", so the Daily never puts YOU on one, not even for one match. It
+  // can still be the opponent (the CPU plays every fighter). Fixed after the draw rather than by shrinking the pool,
+  // so every other day keeps the pairing it always had: a Vault fighter drawn for you swaps seats with the foe, and
+  // only when both are Vault fighters is your seat drawn again. Still the same for everyone.
+  if(VAULT_FIGHTERS.has(a.name)){
+    if(!VAULT_FIGHTERS.has(b.name)){ const t = a; a = b; b = t; }
+    else {
+      let g = 0;
+      do { a = pool[Math.floor(nxt()*pool.length) % pool.length]; } while((a === b || VAULT_FIGHTERS.has(a.name)) && g++ < 200);
+      if(a === b || VAULT_FIGHTERS.has(a.name)) a = pool.find(r=>r !== b && !VAULT_FIGHTERS.has(r.name)) || a;
+    }
+  }
   return { you:a, foe:b, seed };
 }
 async function dailyResult(){
@@ -11048,6 +11075,9 @@ function startDailyMatch(){
   const m = dailyMatchup(dailySeed());
   if(!m) return;
   DAILY_ACTIVE = true;
+  // Lent for this one match. returnDailyLoan() gives the player's own pick back the moment it ends or is left, so
+  // Rematch, Start Match, the World Cup and the lobby never go on with a fighter that is still locked.
+  if(!DAILY_LOAN) DAILY_LOAN = chosen;
   chosen = m.you;
   SETTINGS.mode = 'ffa'; SETTINGS.count = 2; SETTINGS.stocks = 2; SETTINGS.itemRate = 0;
   // Same pairing for everyone: the opponent is fixed rather than drawn by buildFighters.
@@ -11055,6 +11085,13 @@ function startDailyMatch(){
   beginMatchNow();
 }
 let PENDING_DAILY = null;
+let DAILY_LOAN = null;   // the pick the Daily borrowed from, until it is handed back
+function returnDailyLoan(){
+  DAILY_ACTIVE = false; PENDING_DAILY = null;
+  if(!DAILY_LOAN) return;
+  const prev = DAILY_LOAN; DAILY_LOAN = null;
+  chosen = isUnlocked(prev) ? prev : (ROSTER.find(r=>r.play && isUnlocked(r)) || prev);
+}
 async function recordDaily(won){
   try{
     if(!BStore.available()) return;
@@ -11223,7 +11260,7 @@ function showResult(winners, winTeam){
     const who = teams ? `Team ${winTeam+1} (${winners.map(f=>f.name).join(" & ")})` : winners[0].name;
     document.getElementById('resultTitle').textContent = (teams?"Team ":"")+ (winners[0]?winners[0].name:"") + (teams?" & co. win":" wins");
     document.getElementById('resultTitle').textContent = who+" wins";
-    document.getElementById('resultSub').innerHTML=`You (${chosen.name}) were eliminated. Rematch?`;
+    document.getElementById('resultSub').innerHTML=`You (${(you||chosen).name}) were eliminated. Rematch?`;
   } else {
     document.getElementById('resultTitle').textContent="Draw"; document.getElementById('resultSub').textContent="";
   }
@@ -17444,9 +17481,13 @@ function vaultFound(code){ return vaultState().found.indexOf(code)>=0; }
 // code unlocks through unlockFighter, into PROFILE.unlocked, which every save unions -- for good.
 function vaultSubmit(raw){
   const key = vaultNorm(raw);
-  if(!key) return { kind:'empty', reply:'Type a code, then press Enter.' };
+  // Only a blank box is "empty". Something typed that holds no letter or digit ("!!!", an emoji) is a guess, and wrong.
+  if(!key) return String(raw==null ? '' : raw).trim() ? { kind:'wrong', reply:VAULT.wrong } : { kind:'empty', reply:'Type a code, then press Enter.' };
   const v = VAULT_CODES.get(key);
   if(!v) return { kind:'wrong', reply:VAULT.wrong };
+  // A right code in the moment before the save has loaded would be recorded nowhere, and "already yours" would be a
+  // lie, so it waits: the box keeps it and Enter tries again.
+  if(!PROFILE) return { kind:'wait', reply:'The Vault is still opening. Press Enter again in a moment.' };
   const hint = v.step != null;
   const st = vaultState();
   if(st.found.indexOf(v.code)>=0){
@@ -17472,13 +17513,14 @@ function openVault(){
   const inp = document.getElementById('vaultCode'); if(inp) inp.value='';
   go('vault');   // go() calls buildVault()
 }
-// The Enter button, and Enter in the box. A wrong guess stays in the box so a typo can be fixed.
+// The Enter button, and Enter in the box. A wrong guess stays in the box so a typo can be fixed, and so does a code
+// that has to wait for the save to load.
 function vaultEnter(){
   const inp = document.getElementById('vaultCode');
   const res = vaultSubmit(inp ? inp.value : '');
   const r = document.getElementById('vaultReply');
   if(r){ r.textContent = res.reply; r.className = 'vaultreply '+res.kind; }
-  if(inp && res.kind!=='wrong' && res.kind!=='empty') inp.value='';
+  if(inp && (res.kind==='fighter' || res.kind==='hint' || res.kind==='again')) inp.value='';
   buildVault();
   return res;
 }
