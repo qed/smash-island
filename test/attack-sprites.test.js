@@ -19,6 +19,8 @@ import { mulberry32 } from './helpers/prng.js';
 // Paintbrush MePhone4's paint bombs, Roboty's beep is BEEP lettering, Lightning strikes with the TPOT 7 bolt; and
 // Microphone, Salt, Pepper, Knife's blade and caltrops, Paper's paper cut, Test Tube's flask and the Heat Explosion
 // are drawn. Every file in assets/sprites/attacks/ is drawn by some entry here, on the shot it depicts and no other.
+// Then the review of that build: Paper's smash drops the season-1 grand piano, lifted out of its only file (Ep2
+// Piano.png), and Lightning's TPOT 7 strike keeps its glow and gets a halo so it reads on a light stage.
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
@@ -57,7 +59,7 @@ const KEYS = ['shatter', 'atstake', 'van', 'float', 'cap', 'pricetag', 'measure'
   'ember', 'emberjr', 'spark', 'bomb', 'quake', 'gust', 'serve', 'anvil', 'zapshooter', 'barfglob', 'fry', 'freeze',
   'flip', 'beam', 'buynow', 'splash', 'dribble', 'sign', 'grasstree', 'sucker', 'ink', 'payday', 'spike', 'battery',
   'saw', 'jawball', 'fraidy', 'paste', 'timber', 'sprinkles', 'fly', 'beep', 'zap', 'zaptrap',
-  'lemon', 'chair', 'heavy', 'split', 'smokering', 'hook', 'eball', 'fury'];
+  'lemon', 'chair', 'heavy', 'evilpaper', 'split', 'smokering', 'hook', 'eball', 'fury'];
 
 describe('the registry', () => {
   it('names only shapes the game draws, and every file exists', () => {
@@ -72,7 +74,7 @@ describe('the registry', () => {
   it('every file in the attack folder is drawn by some entry -- none is dead weight', () => {
     const drawn = new Set(W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src.split("/").pop(); })'));
     const onDisk = readdirSync('artifacts/V1/assets/sprites/attacks').filter((f) => f.endsWith('.png'));
-    expect(onDisk.length).toBe(46);
+    expect(onDisk.length).toBe(47);
     expect(onDisk.filter((f) => !drawn.has(f))).toEqual([]);
   });
 
@@ -110,7 +112,7 @@ describe('the registry', () => {
 
   it('every size and motion is one the draw understands, and nothing is drawn bigger than a projectile', () => {
     const rows = W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return [k, ATTACK_SPRITES[k]]; })');
-    const known = new Set(['src', 'h', 'spin', 'aim', 'rot', 'rest', 'flipX', 'cap', 'fixed', 'glow', 'glyph']);
+    const known = new Set(['src', 'h', 'spin', 'aim', 'rot', 'rest', 'flipX', 'cap', 'fixed', 'glow', 'glyph', 'halo']);
     for (const [k, e] of rows) {
       expect(Object.keys(e).filter((f) => !known.has(f)), `${k} has a field the draw ignores`).toEqual([]);
       expect(e.h, `${k}: h`).toBeGreaterThanOrEqual(6);
@@ -162,6 +164,7 @@ describe("what each fighter throws draws as the owner's file", () => {
     ['Donut', 'up', 'sprinkles.png'], ['Puffball', 'jab', 'rainbow.png'], ['Roboty', 'up', 'beep.png'],
     ['Lightning', 'up', 'tpot7bolt.png'], ['Lightning', 'down', 'tpot7bolt.png'],
     ['Taco (II)', 'special', 'lemon.png'], ['Bow', 'smash', 'chair.png'], ['Baseball', 'down', 'book.png'],
+    ['Paper', 'smash', 'piano.png'],     // "There is a grand piano from the unremastered s1"
     ['Apple', 'special', 'pencil.png'], ['Knife', 'special', 'taser.png'], ['Lightbulb', 'special', 'shimmerorb.png'],
     ['Lightbulb', 'up', 'shimmerorb.png'], ['Paintbrush', 'special', 'paintbomb.png'],
   ];
@@ -177,6 +180,26 @@ describe("what each fighter throws draws as the owner's file", () => {
     expect(e[1].h).toBeLessThan(e[0].h);
     expect(W.eval("ROSTER.find(function(r){ return r.name==='Lightning'; }).kit.special")).toBe('zap');
   });
+
+  it('the bolt glows round its own outline, strike and trap alike, so it reads on a light stage', () => {
+    const r = W.eval(`(function(){
+      function drawn(key, pr){ var set = {}; var c = new Proxy({}, { get:function(_t,p){ return function(){}; }, set:function(_t,p,v){ set[p] = v; return true; } });
+        drawAttackSprite(c, pr, key, { complete:true, naturalWidth:128, naturalHeight:88 }); return set; }
+      return { strike: drawn('zap', { x:0, y:0, vx:0, vy:12, r:6 }), trap: drawn('zaptrap', { x:0, y:0, vx:0, vy:0, r:13 }),
+               plain: drawn('fury', { x:0, y:0, vx:6, vy:0, r:9 }) };
+    })()`);
+    for (const k of ['strike', 'trap']) {
+      expect(r[k].shadowColor, `${k}: a blue halo`).toMatch(/^rgba\(70,160,255/);
+      expect(r[k].shadowBlur, `${k}: a halo you can see`).toBeGreaterThanOrEqual(4);
+    }
+    expect(r.plain.shadowBlur, 'no halo on art that did not ask for one').toBeUndefined();
+  });
+
+  it("Paper's piano and paper cut: the piano is the season-1 file, the paper cut stays drawn", () => {
+    expect(W.eval('ATTACK_SPRITES.evilpaper.src')).toBe('assets/sprites/attacks/piano.png');
+    expect(W.eval('!!ATTACK_SPRITES.papercut')).toBe(false);
+    expect(W.eval('!!PROJ_SHAPE.evilpaper'), 'the keys glyph until the art loads').toBe(true);
+  });
 });
 
 describe("one kit's two different things draw as two different things", () => {
@@ -184,7 +207,6 @@ describe("one kit's two different things draw as two different things", () => {
   const APART = [
     ['Donut', 'smash', 'glaze'], ['Donut', 'down', 'glaze'],             // his donut and his glaze, not the sprinkles
     ['Rocky', 'up', 'barf'], ['Rocky', 'down', 'barf'],                 // his red balls and his puddle, not his barf
-    ['Paper', 'smash', 'evilpaper'],                                    // the piano: its season-1 file is a screenshot, so it stays drawn
     ['Paper', 'special', 'papercut'],                                   // the paper cut, drawn
     ['Roboty', 'smash', 'antenna'],                                     // his dots and dashes, not BEEP
     ['Taco', 'down', 'jawbreaker'], ['Taco', 'smash', 'jawbreaker'],     // her salsa, not the jawbreaker
@@ -454,6 +476,32 @@ describe("the owner's drawn calls, in the show's style", () => {
     expect(during.images, 'the glove on the end of its arm').toBe(1);
     expect(during.fills, 'the burst').toBeGreaterThanOrEqual(3);
     expect(after).toBe(0);
+  });
+
+  it("the Heat Explosion's fire puffs fire again, and both instant effects reach a net client", () => {
+    // The burst's comment once swallowed the 24 puffs on the same line: locally only the drawn burst showed, and a net
+    // client -- which gets particles but not the burst -- saw nothing at all. Now the puffs fire, and the two render-only
+    // stamps cross the wire as heatFx and hookFx (no underscore: nothing render-only named _x leaks) and come back.
+    const r = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var K = makeFighter(ROSTER.find(function(r){ return r.name==='Knife'; }), 400, groundY()-24, 0);
+      var P = makeFighter(ROSTER.find(function(r){ return r.name==='Paintbrush'; }), 700, groundY()-24, 1);
+      K.team=0; P.team=1; K.face=1; K.controller='still'; P.controller='still'; K.stocks=9; P.stocks=9; fighters=[K,P]; step();
+      particles=[]; P._fury = 100; P.spCd = 0; P.face = -1; doSpecial(P);
+      var fire = particles.filter(function(p){ return p.color==='#ff6a2a' || p.color==='#ffd24b'; }).length;
+      K._trickN = 3; K.spCd = 0; P.x = 560; P.invuln = 0; doSpecial(K);
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      var wire = snap.fighters.map(function(f){ return { heat: f.heatFx, hook: f.hookFx }; });
+      applySnapshot(snap);
+      var back = fighters.map(function(f){ return { heat: f._heatFx, hook: f._hookFx ? f._hookFx.t : null }; });
+      return { fire: fire, t: hazardT, wire: wire, back: back };
+    })()`);
+    expect(r.fire, 'the fire puffs: 24 of them, seven sparks each').toBe(24 * 7);
+    expect(r.wire[1].heat).toBe(r.t);
+    expect(r.wire[0].hook && r.wire[0].hook.t).toBe(r.t);
+    expect(r.back[1].heat, 'the client draws the burst').toBe(r.t);
+    expect(r.back[0].hook, 'and the arm').toBe(r.t);
   });
 
   it('the new words: a pencil, the Paralyzer and the Fist Thingy, paint bombs', () => {

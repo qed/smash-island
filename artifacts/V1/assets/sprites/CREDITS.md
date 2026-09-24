@@ -207,19 +207,27 @@ RGBA with verified alpha. Only art that is the thrown thing itself is used: rend
 episode screenshots were rejected on sight. scripts/attack-sprite-manifest.json records each file's
 size, source and the kit it is for.
 
-Four are CUT OUT of a larger picture, because the object exists nowhere on the wiki on its own; the
+Five are CUT OUT of a larger picture, because the object exists nowhere on the wiki on its own; the
 cut is in the fetch script, so it reproduces exactly:
 - book.png: the remastered cover alone, lifted off the white prop sheet it shares with the season-1 cover.
 - shimmerorb.png: only the orb's near-white; Box, his face and his hands are gone, and the two bites
   his hands left in its lower edge are closed with the orb's own flat white.
-- paintbomb.png: the page's only picture of a paint bomb is a small crop from the episode; its flat
-  green backdrop is keyed away and nothing else of the frame remains.
+- paintbomb.png: the page's only picture of a paint bomb is a small crop from the episode, the blue
+  balloon over dark streaks, a black shadow and a green backdrop. Only the balloon is kept (its blue
+  fill, its shine and its dark-blue outline, as one piece); the streaks, the shadow and the green go.
+- piano.png: the owner: "There is a grand piano from the unremastered s1." Its only season-1 file is a
+  frame of Episode 2, the piano where it landed on Paper against the pole. The piano is lifted out: its
+  wood and gold, and the keys and insides the wood closes round. Paper, the pole and the grass go.
 - tpot7bolt.png: the owner asked for "the art from tpot 7". The strike that hits the Volcano in
   "The Seven Wonders of Goiky" is lifted off its plain sky (brightness above the sky becomes alpha,
-  anything warm is dropped), so the bolt ships alone, with its glow, and none of the frame.
+  anything warm is dropped, and so are the sky's pale shards, a white wash where the glow is cyan), so the bolt
+  ships alone, with its cyan glow, and none of the frame.
 
-Two fill their own canvas edge to edge, so they are not 12% clear and were passed by eye: Bracelety's
-sign (a board) and Remote's battery (a cell).
+One fills its own canvas edge to edge, so it is not 12% clear and was passed by eye: Remote's battery
+(his own cell, from the BFB accessories). Bracelety's blank board was the same, and no richer than a
+drawn rectangle, so her ICY sign (BFB 1) ships instead: tilted, lettered, 9% clear round its edges.
+Nickel's first pick, a stack of copper pennies, read as a brown cylinder at the size a coin is drawn,
+so the TPOT yellow token ships instead.
 
 - Ice Cube (shatter.png): her shatter — File:Ice Cube's Shatter.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/54/Ice_Cube%27s_Shatter.png/revision/latest?cb=20170818055658
 - Cake (slice.png): a slice of cake — File:Cake slice.png — https://static.wikia.nocookie.net/battlefordreamisland/images/e/e8/Cake_slice.png/revision/latest?cb=20200331160339
@@ -237,12 +245,12 @@ sign (a board) and Remote's battery (a cell).
 - Rocky (barf.png): his barf stream (TPOT intro) — File:Rocky barf (TPOT Intro).png — https://static.wikia.nocookie.net/battlefordreamisland/images/b/bd/Rocky_barf_%28TPOT_Intro%29.png/revision/latest?cb=20230619005953
 - Fries (fry.png): one fry — File:Single Fry.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cc/Single_Fry.png/revision/latest?cb=20190807024659
 - Gelatin (syringe.png): a Freeze Juice syringe — File:Freeze Juice.png — https://static.wikia.nocookie.net/battlefordreamisland/images/4/4c/Freeze_Juice.png/revision/latest?cb=20191120233106
-- Nickel (coins.png): coins — File:Coins.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/f0/Coins.png/revision/latest?cb=20210412044300
+- Nickel (coins.png): a coin (the TPOT yellow token) — File:YellowToken.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/8d/YellowToken.png/revision/latest?cb=20220621111213
 - Ruby (gem.png): a red gem — File:RedGemBFDIE.png — https://static.wikia.nocookie.net/battlefordreamisland/images/d/d5/RedGemBFDIE.png/revision/latest?cb=20260130170625
 - Yellow Face (star.png): a star (a BFB 21 gift item) — File:Star (BFB 21).png — https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Star_%28BFB_21%29.png/revision/latest?cb=20210211181436
 - Barf Bag (vomit.png): a splat of vomit — File:Leafy-ShapedVomit.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cf/Leafy-ShapedVomit.png/revision/latest?cb=20170905020203
 - Basketball (basketball.png): a basketball prop — File:Basketball prop (bfb 28)0001.png — https://static.wikia.nocookie.net/battlefordreamisland/images/a/a8/Basketball_prop_%28bfb_28%290001.png/revision/latest?cb=20210116222221
-- Bracelety (sign.png): her sign — File:Bracelety Sign Blank.png — https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/Bracelety_Sign_Blank.png/revision/latest?cb=20171204011136
+- Bracelety (sign.png): her ICY sign (BFB 1) — File:ICY Sign (Bracelety) (BFB 1).png — https://static.wikia.nocookie.net/battlefordreamisland/images/e/ef/ICY_Sign_%28Bracelety%29_%28BFB_1%29.png/revision/latest?cb=20210619191443
 - Grassy (bush.png): a bush — File:Bush.png — https://static.wikia.nocookie.net/battlefordreamisland/images/a/a1/Bush.png/revision/latest?cb=20161105234307
 - Lollipop (candy.png): a piece of her candy — File:Lollipop Piece 5.png — https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Lollipop_Piece_5.png/revision/latest?cb=20210715132545
 - Marker (inkball.png): a ball of ink — File:16bb inkball.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/88/16bb_inkball.png/revision/latest?cb=20200409194604
@@ -266,7 +274,8 @@ sign (a board) and Remote's battery (a cell).
 - Knife (fist.png): the Fist Thingy (the hook in his Bag of Tricks) — File:Fist Thingy II.png — https://static.wikia.nocookie.net/inanimateinsanity/images/0/0e/Fist_Thingy_II.png/revision/latest?cb=20230618141946
 - Knife (taser.png): the Temporary Paralyzer (the smoke in his Bag of Tricks) — File:Temp Paralyzer.png — https://static.wikia.nocookie.net/inanimateinsanity/images/e/ef/Temp_Paralyzer.png/revision/latest?cb=20190205224400
 - Lightbulb (shimmerorb.png): the Shimmer Orb, cut out of Box's hands — File:Box with Shimmer Orb (S2E18).png — https://static.wikia.nocookie.net/inanimateinsanity/images/c/c1/Box_with_Shimmer_Orb_%28S2E18%29.png/revision/latest?cb=20260513002327
-- Paintbrush (paintbomb.png): MePhone4's paint bomb, off its green backdrop — File:Paint Bombs.png — https://static.wikia.nocookie.net/inanimateinsanity/images/a/ab/Paint_Bombs.png/revision/latest?cb=20220206005836
+- Paintbrush (paintbomb.png): MePhone4's paint bomb, the balloon alone — File:Paint Bombs.png — https://static.wikia.nocookie.net/inanimateinsanity/images/a/ab/Paint_Bombs.png/revision/latest?cb=20220206005836
+- Paper (piano.png): the season-1 grand piano (Episode 2), lifted out of the frame — File:Ep2 Piano.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/47/Ep2_Piano.png/revision/latest?cb=20110504235029
 
 
 ## Inanimate Insanity DLC

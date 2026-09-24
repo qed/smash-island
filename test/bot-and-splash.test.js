@@ -82,18 +82,56 @@ describe("Test Tube's special summons Bot", () => {
     expect(r.trophy, 'he is her special, not an assist trophy').toBe(false);
   });
 
+  it('in Boss Rush he punches the boss -- a boss is a summon, not a fighter, and the flask could hit one', () => {
+    const r = W.eval(`(function(){
+      var prevMode = SETTINGS.mode, prevStocks = SETTINGS.stocks;
+      SETTINGS.mode='boss'; SETTINGS.stocks=9; running=true;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      BOSSRUSH.active=true; BOSSRUSH.cleared=0; BOSSRUSH.bossIdx=0; BOSSRUSH.loop=0; BOSSRUSH.dmgMult=1;
+      var A = makeFighter(ROSTER.find(function(x){ return x.name==='Test Tube'; }), 300, groundY()-24, 0);
+      A.team=0; A.face=1; A.controller='still'; A.stocks=9; fighters=[A]; step();
+      spawnBossRushBoss(); var B = summons.find(function(s){ return s.type==='boss'; });
+      B.x = A.x + 170; B.homeX = B.x; B.stationary = true; B._atkTimer = 1e9; var hp0 = B.hp;
+      A.spCd = 0; fireSpecial(A, {});
+      for (var i=0;i<200;i++){ A.invuln = 60; A.x = 300; B._atkTimer = 1e9; B._tel = 0; step(); }
+      var lost = hp0 - B.hp;
+      BOSSRUSH.active=false; running=false; SETTINGS.mode=prevMode; SETTINGS.stocks=prevStocks; summons=[]; BOSS_ARENA=null;
+      return { lost: lost };
+    })()`);
+    expect(r.lost, 'Bot lands punches on the boss').toBeGreaterThanOrEqual(12);
+    expect(r.lost % 6, 'six a punch').toBe(0);
+  });
+
   it('her move card says so, and her smash and up-special still leave flasks', () => {
     const r = W.eval(`({ text: MOVE_TEXT['Test Tube'].special, desc: ROSTER.find(function(x){ return x.name==='Test Tube'; }).kit.desc,
       smash: SMASH_SPEC.testtube.pat, up: !!UPSPEC.testtube.shot })`);
     expect(r.text).toMatch(/^Summon Bot — /);
     expect(r.text).toMatch(/Bow/);
     expect(r.desc).toMatch(/Bot/);
+    expect(r.desc, 'Bot is her robot copy of Bow -- Bow is not her robot').not.toMatch(/her robot Bow/);
     expect(r.smash).toBe('mine');
     expect(r.up).toBe(true);
   });
 });
 
 describe("Bot's body", () => {
+  it('is a partner, not a crowd cameo or a spawn marker: the level editor never shows him, or Pepper', () => {
+    const r = W.eval(`(function(){
+      var names = edSpriteNames(), picks = {};
+      for (var i=0;i<400;i++) picks[edMakeDeco('cameo', 0.5, 0.8).n] = 1;
+      var fighters = ROSTER.filter(function(x){ return SPRITES[x.name]; }).map(function(x){ return x.name; });
+      return { names: names, picks: Object.keys(picks), first: names[0], missing: fighters.filter(function(n){ return names.indexOf(n) < 0; }),
+               inSprites: !!SPRITES.Bot && !!SPRITES.Pepper };
+    })()`);
+    expect(r.inSprites, 'their renders still load through the registry').toBe(true);
+    expect(r.names).not.toContain('Bot');
+    expect(r.names).not.toContain('Pepper');
+    expect(r.picks).not.toContain('Bot');
+    expect(r.picks).not.toContain('Pepper');
+    expect(r.missing, 'every fighter is still in the pool').toEqual([]);
+    expect(W.eval('ROSTER.some(function(x){ return x.name===' + JSON.stringify(r.first) + '; })'), 'spawn marker 0 is a fighter').toBe(true);
+  });
+
   it('is his II render, loaded through the sprite registry like Pepper, facing the way it was measured', () => {
     const r = W.eval('({ src: SPRITES.Bot.src, flip: SPRITES.Bot.flip, path: typeof SPRITES.Bot.path, draw: typeof SPRITES.Bot.draw })');
     expect(r.src).toBe('assets/sprites/bot.png');
@@ -134,6 +172,22 @@ describe("Bot's body", () => {
     expect(vector.images).toBe(0);
     expect(vector.fills, 'the bow-shaped vector').toBeGreaterThan(0);
   });
+});
+
+// The owner, since this build started: "remove all text for smashes and specials." -- so the moves this build touched put
+// no words up: Bot's summon, Pickle's splash, Knife's four tricks, the Heat Explosion. Played as YOU, where a banner showed.
+describe('no words on screen for the moves this build changed', () => {
+  const quiet = (name, body) => arena(name, `
+    A.you = true; window.__lastBanner = null;
+    ${body}
+    for (var i=0;i<40;i++) step();
+    return window.__lastBanner ? window.__lastBanner.text : null;`);
+  it("Test Tube's Summon Bot", () => { expect(quiet('Test Tube', 'fireSpecial(A, {});')).toBe(null); });
+  it("Pickle's missed dive", () => { expect(quiet('Pickle', 'D.x = 2000; doSpecial(A);')).toBe(null); });
+  it("Knife's Bag of Tricks, all four", () => {
+    expect(quiet('Knife', 'for (var k=0;k<4;k++){ A._trickN = k; A.spCd = 0; doSpecial(A); }')).toBe(null);
+  });
+  it("Paintbrush's Heat Explosion", () => { expect(quiet('Paintbrush', 'A._fury = 100; doSpecial(A);')).toBe(null); });
 });
 
 describe("Pickle's missed dive is just a splash", () => {
