@@ -323,3 +323,17 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Pepper (Salt's partner) | `pepper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b7/Pepper2024Pose.png |
 | Test Tube | `test-tube.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Blue_Ray_Test_Tube_S4.png |
 | Bot (Test Tube's robot, her summon) | `bot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/da/Bot2024PoseAlt.png |
+<!-- @b3:g1 Box, Trophy, Goo, Lifering -->
+
+<!-- @b3:g2 Bonesaw, Spikey, Candle, Cammy -->
+
+<!-- @b3:g3 Cheesy, Dough, Fan, Soap -->
+
+<!-- @b3:g4 Tissues, Yin-Yang, Starfruit -->
+
+<!-- @b3:g5 Blueberry, Cherries, Clover, Jack -->
+
+<!-- @b3:g6 Magnet, MeTag, Poppy, Silver Spoon -->
+
+<!-- @b3:g7 Tapey, Tea Kettle, Teddy Bear -->
+
