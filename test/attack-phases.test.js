@@ -353,10 +353,18 @@ describe('the launch anchor is purely visual', () => {
         projectiles.length = 0;
         doSpecial(f);
         var s = serializeState();
-        return {proj: Object.keys(s.projectiles[0]||{}), fig: Object.keys(s.fighters[0]||{})};
+        var row = s.pj.a[0];
+        return {row: row, proj: (row && row.length > 8 && typeof row[8] === 'object') ? Object.keys(row[8]) : [],
+          fig: Object.keys(s.fighters[0]||{}), wire: JSON.stringify(s)};
       })()`);
-    expect(keys.proj, 'the projectile whitelist is untouched')
-      .toEqual(['x', 'y', 'r', 'color', 'warn', 'warnX', 'warnY']);
+    // A shot's wire format changed on purpose for "camera is weird on multiplayer, there is an input delay sometimes"
+    // (2026-09-27; test/net-feel.test.js): it is a compact row now, with the id a client glides it by and the speed and
+    // owner its trail and art are drawn from. It is still an exact whitelist -- [id, x, y, r, vx, vy, colour index,
+    // owner slot], all numbers, and for a plain shot like this one nothing else -- and the launch anchor is still
+    // nowhere in it.
+    expect(keys.row, 'the projectile row is exactly the documented fields').toHaveLength(8);
+    expect(keys.row.every((v) => typeof v === 'number'), 'all of them numbers').toBe(true);
+    expect(keys.wire, 'the launch anchor never reaches the wire').not.toMatch(/_vis|visOrigin|visFrames|visAnchor/);
     expect(keys.proj.concat(keys.fig).filter((k) => /^_/.test(k)),
       'no render-only field leaks onto the wire').toEqual([]);
   });

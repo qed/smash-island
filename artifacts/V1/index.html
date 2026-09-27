@@ -2133,6 +2133,22 @@ const CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the bi
 // setting asks for extra height (those ride this same, proven scrolling path).
 function isBigFFA(){ return (SETTINGS.mode!=='teams') && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL; }
 function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any arena wider/taller than the screen
+// ---- what an online CLIENT draws with ----
+// "camera is weird on multiplayer, there is an input delay sometimes. I think this is what was happening on boss rush
+// before." (2026-09-27). A client never runs step(), and step() is where updateCamera() lives, so a client drew with
+// the HOST's camera: in FFA and Boss Rush it watched the host's fighter (a client's own fighter was on its screen 0% of
+// the time on Grand Plains), and only Teams re-centred -- with a zoom-1 clamp, no smoothing, in 20 Hz jumps. And a
+// client decided whether the arena scrolls by comparing the host's world with its OWN window, so whenever the two
+// windows differed a single-screen arena (all of Boss Rush) was drawn zoomed, off-centre, with the floor cut off, or
+// small in one corner. NET_VIEW is the client's own view: the host's scroll decision, the zoom, the camera it runs on
+// its own fighter, and the timing it uses to glide between snapshots. See clientFrame and test/net-feel.test.js.
+const NET_VIEW = { applied:null, at:0, gap:33, lastArrive:0, lerp:false, ft:0, tt:0, lastFrame:0, frameDt:1000/60,
+                   scroll:false, z:1, camReady:false, follow:null, bannerAt:0 };
+function isNetClient(){ return !!(window.NET && window.NET.role==='client'); }
+function viewScrolls(){ return isNetClient() ? NET_VIEW.scroll : scrolls(); }
+function viewZoom(){ return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : 1); }
+// The buttons an online input message carries (NET.sendInput, NET.onMessage, netRemoteInput).
+const NET_BUTTONS = ['left','right','jump','down','attack','special','smash'];
 
 // ---------- screen router ----------
 function go(id){
@@ -2843,8 +2859,9 @@ addEventListener('keydown',e=>{
   if(e.code===KEYS.pause && running){ paused=!paused; if(!paused) loop(); }
   if(e.code==='KeyR' && (running||!document.getElementById('result').classList.contains('active')===false)) {}
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+  netInputChanged();
 });
-addEventListener('keyup',e=>{down[e.code]=false;});
+addEventListener('keyup',e=>{down[e.code]=false; netInputChanged();});
 
 // ============================================================
 //  TOUCH CONTROLS
@@ -2880,6 +2897,7 @@ function touchSet(act, isDown){
   const code = KEYS[act];
   if(!code) return;
   down[code] = !!isDown;
+  netInputChanged();
 }
 function bindTouchControls(){
   if(TOUCH.bound) return;
@@ -2945,7 +2963,8 @@ function syncTouchButton(){
   b.textContent = '📱 Touch controls: '+label;
 }
 try{ const m = localStorage.getItem(TOUCH_MODE_KEY); if(m) TOUCH.mode = m; }catch(e){}
-addEventListener('keydown',e=>{ if(e.code==='KeyR' && running){ if(TESTMODE.active) resetTest(); else startMatch(); }});
+// (Not on an online client: it restarted a match of its own under the host's, and with it another recorder.)
+addEventListener('keydown',e=>{ if(e.code==='KeyR' && running && !isNetClient()){ if(TESTMODE.active) resetTest(); else startMatch(); }});
 
 // gamepad polling (face buttons auto-mapped)
 function pollPad(){
@@ -4140,23 +4159,46 @@ let BOSSRUSH = { active:false, bossIdx:0, cleared:0, defeated:false };
 // ============================================================
 //  BOSS RUSH RUN RECORDER — auto-captures your run to review afterward (like a snipping tool for gameplay)
 // ============================================================
-let RUN_REC = { rec:null, chunks:[], url:null, supported:false, recording:false };
+let RUN_REC = { rec:null, stream:null, chunks:[], url:null, supported:false, recording:false, skipped:false };
 function recorderSupported(){
   return !!(window.MediaRecorder && cv && cv.captureStream);
 }
+function runRecStopTracks(stream){ try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch(e){} }
+// A recorder still running is stopped and its footage thrown away (it belongs to a match that is being replaced).
+function runRecDiscard(){
+  const r = RUN_REC.rec;
+  if(r && r.state !== 'inactive'){
+    try{ r.ondataavailable = null; r.onstop = null; r.stop(); }catch(e){}
+    runRecStopTracks(RUN_REC.stream);
+  }
+  RUN_REC.rec = null; RUN_REC.stream = null; RUN_REC.recording = false;
+}
 function startRunRecording(){
+  // One recorder at a time. Pressing R mid-match started another and never stopped the one before: after three
+  // restarts four 4 Mbit/s encoders were running at once, the game fell to 30 fps with multi-hundred-ms hitches, and
+  // on a host every player felt it.
+  runRecDiscard();
+  RUN_REC.skipped = false;
   RUN_REC.supported = recorderSupported();
   if(!RUN_REC.supported) return;   // gracefully skip if the browser can't capture
+  if(RUN_REC.url){ try{ URL.revokeObjectURL(RUN_REC.url); }catch(e){} RUN_REC.url=null; }
+  RUN_REC.chunks = [];
+  // Not in an online match. Capturing and encoding the canvas was the largest stall measured in one on the owner's
+  // laptop ("there is an input delay sometimes"): on its own it took the extra time a press needed to reach the screen
+  // from 33 ms to 71 ms (median; 89 to 194 ms at worst), and with the clip readback below a host managed 32-34 sim
+  // steps a second instead of 58. Online, a slow frame on the host is a slow frame for every player. The result screen
+  // still gets the KO replay and the GIF, which come from the clip ring.
+  if(inNetSession()){ RUN_REC.skipped = true; return; }
   try{
-    if(RUN_REC.url){ URL.revokeObjectURL(RUN_REC.url); RUN_REC.url=null; }
-    RUN_REC.chunks = [];
     const stream = cv.captureStream(30);   // 30fps capture of the game canvas
-    // pick a supported mime type
+    // pick a supported mime type -- VP8 first: the same replay for much less encoding work than VP9, at a bitrate a
+    // 30 fps cartoon has no use for more than
     let mime = "";
-    for(const m of ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"]){
+    for(const m of ["video/webm;codecs=vp8","video/webm;codecs=vp9","video/webm"]){
       if(MediaRecorder.isTypeSupported(m)){ mime=m; break; }
     }
-    RUN_REC.rec = new MediaRecorder(stream, mime ? {mimeType:mime, videoBitsPerSecond:4000000} : undefined);
+    RUN_REC.stream = stream;
+    RUN_REC.rec = new MediaRecorder(stream, mime ? {mimeType:mime, videoBitsPerSecond:2500000} : undefined);
     RUN_REC.rec.ondataavailable = e=>{ if(e.data && e.data.size>0) RUN_REC.chunks.push(e.data); };
     RUN_REC.rec.start(1000);   // gather data every second so long runs don't lose everything
     RUN_REC.recording = true;
@@ -4164,7 +4206,9 @@ function startRunRecording(){
 }
 function stopRunRecording(onReady){
   if(!RUN_REC.recording || !RUN_REC.rec){ if(onReady) onReady(null); return; }
+  const stream = RUN_REC.stream;
   RUN_REC.rec.onstop = ()=>{
+    runRecStopTracks(stream);   // the canvas capture kept running after the match it was recording had ended
     RUN_REC.recording = false;
     const blob = new Blob(RUN_REC.chunks, {type:"video/webm"});
     RUN_REC.url = URL.createObjectURL(blob);
@@ -4177,6 +4221,18 @@ function showRunReview(){
   const host = document.getElementById('runReview');
   if(!host) return;
   try{ stopReplay(); }catch(e){}   // this rewrites the panel; nothing may keep drawing into it
+  if(RUN_REC.skipped){
+    // an online match: no video (see startRunRecording), but the KO replay and the GIF, both from the clip ring
+    host.innerHTML =
+      '<div id="rrReplay" class="rr-replay-box"></div>'
+      + '<div class="rr-actions">'
+      + '<button class="btn sm" id="rrGif" onclick="shareMakeGif()">🎞 Make GIF</button>'
+      + '<button class="btn ghost sm" onclick="shareCopyLink(this)">🔗 Copy Link</button>'
+      + '</div>'
+      + '<div id="rrShare" class="rr-share"></div>';
+    try{ startReplay(document.getElementById('rrReplay')); }catch(e){}
+    return;
+  }
   if(!RUN_REC.supported){
     host.innerHTML = '<div class="rr-note">Run recording isn\'t supported in this browser.</div>';
     return;
@@ -4281,31 +4337,73 @@ const CLIP = {
   busy:false, url:null, blob:null,
 };
 function clipReset(){
+  CLIP.gen = (CLIP.gen||0) + 1;   // a frame still being scaled for the last match must not land in this one
+  for(const f of CLIP.frames) clipDrop(f);
   CLIP.frames = []; CLIP.head = 0; CLIP.tick = 0;
   if(CLIP.url){ try{ URL.revokeObjectURL(CLIP.url); }catch(e){} CLIP.url = null; CLIP.blob = null; }
 }
+function clipDrop(f){ try{ if(f && typeof f.close === 'function') f.close(); }catch(e){} }
+function clipPush(f){
+  if(CLIP.frames.length < CLIP.MAX) CLIP.frames.push(f);
+  else { clipDrop(CLIP.frames[CLIP.head]); CLIP.frames[CLIP.head] = f; CLIP.head = (CLIP.head + 1) % CLIP.MAX; }
+}
+function clipCanvas(){
+  if(!CLIP.cv){
+    // Created on first use, never at eval time — a headless boot must not construct media.
+    CLIP.cv = document.createElement('canvas');
+    CLIP.cv.width = CLIP.W; CLIP.cv.height = CLIP.H;
+    CLIP.ctx = CLIP.cv.getContext('2d');
+  }
+  return !!CLIP.ctx;
+}
 // Called once per rendered frame. Must stay cheap — it runs inside the game loop.
+//
+// It was not cheap. getImageData is a synchronous GPU readback, and on the owner's laptop it blocked 26-65 ms (median)
+// every 5th frame -- on a host, on every client, and in solo, in every mode. loop() runs one step() per frame, so the
+// sim, the snapshot and the input send all waited behind it: a hitch 12 times a second, worst in a busy Boss Rush
+// ("there is an input delay sometimes ... what was happening on boss rush before"). Where the browser has
+// createImageBitmap, the frame is scaled down on the GPU and handed back later, off the frame, and its pixels are read
+// only when a GIF or the replay is actually made (clipFrames). Browsers without it keep the old synchronous path.
 function clipCapture(){
   if(typeof document === 'undefined') return;
   if((CLIP.tick++ % CLIP.EVERY) !== 0) return;
   try{
-    if(!CLIP.cv){
-      // Created on first use, never at eval time — a headless boot must not construct media.
-      CLIP.cv = document.createElement('canvas');
-      CLIP.cv.width = CLIP.W; CLIP.cv.height = CLIP.H;
-      CLIP.ctx = CLIP.cv.getContext('2d');
+    if(typeof createImageBitmap === 'function' && !CLIP.noBitmap && cv && cv.width){
+      if((CLIP.pending||0) >= 2) return;   // the GPU is behind: skip this frame rather than queue more
+      const gen = CLIP.gen;
+      CLIP.pending = (CLIP.pending||0) + 1;
+      createImageBitmap(cv, { resizeWidth: CLIP.W, resizeHeight: CLIP.H, resizeQuality: 'low' }).then(
+        (bm)=>{
+          CLIP.pending--;
+          // a browser that ignores the resize options hands back a full-size frame, and 48 of those is ~180 MB:
+          // it goes back to the old path instead
+          if(bm && bm.width > CLIP.W*1.5){ clipDrop(bm); CLIP.noBitmap = true; return; }
+          if(gen === CLIP.gen) clipPush(bm); else clipDrop(bm);
+        },
+        ()=>{ CLIP.pending--; });
+      return;
     }
-    if(!CLIP.ctx || !cv || !cv.width) return;
+    if(!clipCanvas() || !cv || !cv.width) return;
     CLIP.ctx.drawImage(cv, 0, 0, CLIP.W, CLIP.H);
-    const img = CLIP.ctx.getImageData(0, 0, CLIP.W, CLIP.H);
-    if(CLIP.frames.length < CLIP.MAX) CLIP.frames.push(img);
-    else { CLIP.frames[CLIP.head] = img; CLIP.head = (CLIP.head + 1) % CLIP.MAX; }
+    clipPush(CLIP.ctx.getImageData(0, 0, CLIP.W, CLIP.H));
   }catch(e){ /* capture is a nicety; never let it break a frame */ }
 }
-// Ring -> chronological order.
+// Ring -> chronological order, as pixels. A frame still held as a bitmap is read back here, once, and kept as pixels:
+// this runs on the result screen, where a readback costs nothing anyone can feel.
 function clipFrames(){
-  if(CLIP.frames.length < CLIP.MAX) return CLIP.frames.slice();
-  return CLIP.frames.slice(CLIP.head).concat(CLIP.frames.slice(0, CLIP.head));
+  for(let i=0;i<CLIP.frames.length;i++){
+    const f = CLIP.frames[i];
+    if(!f || f.data || !clipCanvas()) continue;
+    try{
+      CLIP.ctx.clearRect(0, 0, CLIP.W, CLIP.H);
+      CLIP.ctx.drawImage(f, 0, 0, CLIP.W, CLIP.H);
+      CLIP.frames[i] = CLIP.ctx.getImageData(0, 0, CLIP.W, CLIP.H);
+      clipDrop(f);
+    }catch(e){}
+  }
+  const ring = (CLIP.frames.length < CLIP.MAX) ? CLIP.frames.slice()
+    : CLIP.frames.slice(CLIP.head).concat(CLIP.frames.slice(0, CLIP.head));
+  return ring.filter(f=>f && f.data);
 }
 
 // ---- colour quantisation (median cut) --------------------------------------------------------
@@ -4557,8 +4655,10 @@ function beginMatchNow(){
     startBossRush();
   }
   const you=fighters.find(f=>f.you)||fighters[0];
-  camX = clamp(you.x - W/2, 0, Math.max(0,WW-W));
-  camY = clamp(you.y - H/2, 0, Math.max(0,WH-H));
+  // Start where updateCamera() is heading. The zoom-1 clamp this used opened every scrolling match on a strip of empty
+  // backdrop (117 px across, 90 px down on Grand Plains) that took ~0.7 s to slide away.
+  if(scrolls()){ const t=camTarget(you.x, you.y, CAM_ZOOM); camX=t.x; camY=t.y; } else { camX=0; camY=0; }
+  netViewReset();
   if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }
   banner("GO!", 900);
   buildHUD();
@@ -5834,9 +5934,11 @@ function loop(){
   try{
     const role = window.NET ? window.NET.role : "solo";
     if(role==="client"){
-      // clients never simulate — they render the latest snapshot from the host and send their input
+      // Clients never simulate. They send their input (key presses leave the moment they happen -- netInputChanged;
+      // this catches a gamepad and sends a slow heartbeat), then draw the host's snapshots: glided between, through
+      // a camera of their own (clientFrame).
       window.NET.sendInput();
-      if(window.NET.snapshot) applySnapshot(window.NET.snapshot);
+      clientFrame();
       // A client never runs step(), and step() was the only thing that refreshed the HUD, so a client's stock and
       // damage cards froze at the numbers they started with ("stocks only render on the hosts side").
       try{ updateHUD(); }catch(e){}
@@ -6765,7 +6867,7 @@ function step(){
       inp.special=down[K.special]||gp?.special;
       inp.smash =down[K.smash]||gp?.smash;
     } else if(ctrl==="remote"){
-      const r = (window.NET && window.NET.inputs[f.idx]) || null;   // input relayed from that player's device
+      const r = netRemoteInput(f.idx);   // input relayed from that player's device, a press since the last frame latched in
       if(r){ inp.left=!!r.left; inp.right=!!r.right; inp.jump=!!r.jump; inp.up=!!r.jump;
         inp.down=!!r.down; inp.attack=!!r.attack; inp.special=!!r.special; inp.smash=!!r.smash; }
     } else if(ctrl==="still"){
@@ -12230,20 +12332,25 @@ function finishAI(f,inp,sp){
 // ============================================================
 //  RENDER
 // ============================================================
+// Where the camera goes to put world point (x,y) at the centre of a W x H screen drawn at zoom z, kept inside the world.
+// With the zoom transform, the world x at screen-centre is (camX + W/2); the visible half-width in world units is
+// (W/2)/z. The host's camera and every client's camera use this one function, so they cannot disagree about the maths
+// -- the Teams client camera clamped as if the zoom were 1 and showed 140 px of empty backdrop under the floor at
+// 1280x720, and 249 px past the side wall in 2v2. A world narrower (or shorter) than the zoomed view is centred rather
+// than pinned to one edge, which a client with a bigger window than the host's can meet.
+function camTarget(x, y, z){
+  const halfW=(W/2)/z, halfH=(H/2)/z;
+  const cx = (WW <= 2*halfW) ? WW/2 : clamp(x, halfW, WW-halfW);
+  const cy = (WH <= 2*halfH) ? WH/2 : clamp(y, halfH, WH-halfH);
+  return { x: cx - W/2, y: cy - H/2 };
+}
 function updateCamera(){
   if(!scrolls()){ camX=0; camY=0; return; }
   const you=fighters.find(f=>f.you&&!f.dead) || fighters.find(f=>!f.dead);
   if(!you) return;
-  const z = CAM_ZOOM;
-  // With the zoom transform, the world x at screen-center is (camX + W/2), so center the player there.
-  // Visible half-width in world units is (W/2)/z; keep the view inside [0, WW].
-  const halfW=(W/2)/z, halfH=(H/2)/z;
-  const cx = you.x;                     // world point we want at screen center
-  const cy = you.y;
-  const tx = clamp(cx, halfW, WW-halfW) - W/2;   // convert desired center -> camX
-  const ty = clamp(cy, halfH, WH-halfH) - H/2;
-  camX += (tx-camX)*0.12;   // smooth follow
-  camY += (ty-camY)*0.12;
+  const t = camTarget(you.x, you.y, CAM_ZOOM);
+  camX += (t.x-camX)*0.12;   // smooth follow
+  camY += (t.y-camY)*0.12;
 }
 // ONE projectile, drawn where it says it is. Split out of draw()'s loop so the launch lerp
 // (projVisLerp) can wrap the whole thing in a single transform: every branch below — the
@@ -12360,7 +12467,8 @@ function draw(){
   // ---- world space: everything below is offset by the camera ----
   ctx.save();
   // On scrolling arenas, zoom OUT so you can see more of the (now bigger) map at once.
-  const zoom = scrolls() ? CAM_ZOOM : 1;
+  // (a client uses the zoom its own view chose -- see viewZoom and clientCamera; the host's is unchanged)
+  const zoom = viewZoom();
   if(zoom!==1){
     // zoom about the screen center, keeping the followed fighter roughly centered
     ctx.translate(W/2, H/2); ctx.scale(zoom, zoom); ctx.translate(-W/2, -H/2);
@@ -12370,7 +12478,9 @@ function draw(){
   const gy=groundY();
   if(!isBig()){
     // single-screen: solid ground
-    ctx.fillStyle=stage.ground; ctx.fillRect(-20,gy,WW+40,WH-gy+80);
+    // down a full screen below the world, not 80 px: a client fitting a wider host arena into a taller window sees
+    // below the world's bottom edge, and it should see more ground there, not sky
+    ctx.fillStyle=stage.ground; ctx.fillRect(-20,gy,WW+40,WH-gy+H);
     ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-20,gy); ctx.lineTo(WW+20,gy); ctx.stroke();
     if(stage.hazard==='lava' && (hazardT%260)<70){ ctx.fillStyle="#f0521f88"; ctx.fillRect(-20,gy-8,WW+40,10); }
   } else {
@@ -12539,7 +12649,7 @@ function draw(){
   ctx.restore();   // end world space
 
   // ---- screen-space overlays ----
-  if(scrolls()) drawMinimap();
+  if(viewScrolls()) drawMinimap();
   drawOffscreenArrows();
   if(SETTINGS.mode==='boss' && BOSSRUSH.active) drawBossBar();
   drawTutorialPrompt();
@@ -12607,16 +12717,21 @@ function drawMinimap(){
     ctx.fillRect(px-1.5,py-1.5, f.you?4:3, f.you?4:3);
     if(f.you){ ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.strokeRect(px-2.5,py-2.5,5,5); }
   }
-  // camera viewport box
-  ctx.strokeStyle="#ffffffaa"; ctx.lineWidth=1; ctx.strokeRect(mx+camX*sxr,my+camY*syr,W*sxr,H*syr);
+  // camera viewport box: what is really on screen at this zoom. It was drawn one zoom-1 screen wide -- 72% of the
+  // view on a scrolling map, and shifted -- so the box never matched the picture.
+  const vz=viewZoom(), vw=W/vz, vh=H/vz, vx=camX+W/2-vw/2, vy=camY+H/2-vh/2;
+  ctx.strokeStyle="#ffffffaa"; ctx.lineWidth=1; ctx.strokeRect(mx+vx*sxr,my+vy*syr,vw*sxr,vh*syr);
   ctx.restore();
 }
 
 // Arrows pointing to off-screen teammates/enemies in the big arena
 function drawOffscreenArrows(){
   if(!isBig()) return;
+  const z=viewZoom();
   for(const f of fighters){ if(f.dead||f.you)continue;
-    const sx=f.x-camX, sy=f.y-camY;
+    // where it is drawn on screen at this zoom: tested at zoom 1, a fighter in the outer 19% of the view on either
+    // side was on screen AND got an edge dot
+    const sx=W/2+z*(f.x-camX-W/2), sy=H/2+z*(f.y-camY-H/2);
     if(sx>=0&&sx<=W&&sy>=0&&sy<=H) continue;   // on screen
     const ex=clamp(sx,16,W-16), ey=clamp(sy,74,H-16);
     ctx.fillStyle = TEAM_COLORS[f.team%TEAM_COLORS.length]; ctx.globalAlpha=0.7;
@@ -16129,27 +16244,106 @@ function roundBlob(x,y,r){ ctx.beginPath();
 
 // ---------- netcode state sync ----------
 // Host serializes a compact snapshot of everything the client needs to render.
-function serializeState(){
+//
+// Rebuilt for "camera is weird on multiplayer, there is an input delay sometimes" (2026-09-27). What changed, and why
+// (the sizes are measured in test/net-feel.test.js):
+// - The WORLD GEOMETRY (floors, platforms, team bases) does not change during a match, but it went out in every
+//   snapshot and was most of it: 8.3 of 10.4 KB in a Teams 2v2, 16.5 of 22.5 KB on a 5v5 Huge map, 20 times a second.
+//   It now goes out when it changes (a new match) and again every few seconds in case a client missed it (`geo`).
+// - PARTICLES are cosmetic and move by one fixed rule (the end of step()), so each is sent once, in the snapshot after
+//   it is born, and the client moves it itself (`pb`). The OLDEST 60 used to be sent every time, which in a busy fight
+//   cut the newest -- the sparks of the hit that just landed.
+// - Projectiles travel as compact rows with an id (`pj`), so a client can glide each shot between snapshots and draw
+//   its trail, shape and art; they used to arrive as flat dots with no speed and no owner.
+// - A fighter carries what drawFighter needs to show a press -- speed, footing, the swing, the smash charge, the hurt
+//   pose. A client pressing attack used to see nothing happen to its own fighter, only the target reacting.
+// - `sc` is the HOST's decision on whether the arena scrolls (see viewScrolls).
+const NET_GEO_EVERY = 3000;        // ms between repeats of the world geometry
+const NET_PARTICLE_BIRTHS = 48;    // new particles per snapshot, at most (the newest)
+const NET_SENT = new WeakSet();    // particles already sent -- tracked here, never as a field on the sim's own objects
+const NET_PROJ_ID = new WeakMap(); // projectile -> the id a client glides it by
+let NET_PROJ_SEQ = 0;
+const nr1 = v => Math.round((+v||0)*10)/10;
+function worldGeo(){
   return {
-    t: hazardT,
-    WW, WH, camX:Math.round(camX), camY:Math.round(camY),
-    stage: stage.id,
-    // static-ish world (small; sent each frame for simplicity on LAN)
     floors: floors.map(fl=>({level:fl.level,y:Math.round(fl.y),x:Math.round(fl.x),w:Math.round(fl.w)})),
-    // `solid` was missing here, so on a client every stone landmark rendered as a thin ledge;
-    // `field` keeps the client's minimap filtering out the scatter grid the way the host's does.
-    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field})),
-    bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color})),
+    // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
+    // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
+    worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot})),
+    bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
+      spawns: b.spawns ? b.spawns.map(sp=>({x:Math.round(sp.x),y:Math.round(sp.y)})) : undefined})),
+  };
+}
+// A cheap fingerprint of the geometry, so the host can tell it changed without building and stringifying all of it
+// 30 times a second.
+function worldGeoKey(){
+  let h = (WW*31 + WH) | 0;
+  const mix = (v)=>{ h = (Math.imul(h, 33) + (v|0)) | 0; };
+  for(const p of worldPlats){ mix(p.x); mix(p.y); mix(p.w); mix(p.h); mix(p.solid?1:0); mix((p.rot||0)*100); }
+  for(const fl of floors){ mix(fl.x); mix(fl.y); mix(fl.w); }
+  for(const b of bases){ mix(b.x); mix(b.y); mix(b.w); }
+  return stage.id + ':' + worldPlats.length + ':' + floors.length + ':' + bases.length + ':' + h;
+}
+// The flags drawFighter reads. One at its resting value (0, false, null) is left out and arrives as undefined, which
+// every check on these reads the same way (truthiness and `> 0` tests).
+const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering','flying','smashHold','burn'];
+function netFighter(f){
+  const o = { idx:f.idx, name:f.name, color:f.color, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
+    pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks), koCap:f.koCap, dead:f.dead, team:f.team,
+    vx:nr1(f.vx), vy:nr1(f.vy), onground:!!f.onground,   // the run cycle, the lean, the jump stretch, the run dust
+    kit:{special:f.kit&&f.kit.special} };
+  for(const k of NET_FIGHTER_FLAGS){ if(f[k]) o[k] = f[k]; }
+  // The swing, the hurt pose and the smash charge: the sim's own render-only timers, so on the wire they go by names
+  // without the underscore, like heatFx and hookFx -- nothing named _x leaves as it is. applySnapshot maps them back.
+  if(f._atkAnim > 0){
+    o.swing = f._atkAnim;
+    if(f._atkKind) o.swingKind = f._atkKind;   // what the body does: punch, kick, uppercut...
+    if(f._atkLen) o.swingLen = f._atkLen;      // a smash runs longer than a jab; the beats scale with it
+  }
+  if(f._hurtAnim != null) o.hurtT = f._hurtAnim;   // sent whenever set: wasHit tells 0 from "never set"
+  if(f._heatFx) o.heatFx = f._heatFx;   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
+  if(f._hookFx) o.hookFx = f._hookFx;
+  if(f._windup) o.charge = { t:f._windup.t, t0:f._windup.t0, color:f._windup.color };   // the smash charge ring
+  return o;
+}
+// [id, x, y, r, vx, vy, colour index, owner's slot in fighters (-1: none), {rare fields}?]
+function netProjectiles(){
+  const c = [], ci = {};
+  const a = projectiles.map(p=>{
+    let id = NET_PROJ_ID.get(p); if(!id){ id = ++NET_PROJ_SEQ; NET_PROJ_ID.set(p, id); }
+    let k = ci[p.color]; if(k === undefined){ k = ci[p.color] = c.length; c.push(p.color); }
+    const row = [id, Math.round(p.x), Math.round(p.y), nr1(p.r), nr1(p.vx), nr1(p.vy), k, p.ownerObj ? fighters.indexOf(p.ownerObj) : -1];
+    let x = null;
+    if(p.warn>0){ x = {warn:p.warn, warnX:Math.round(p.warnX||0), warnY:Math.round(p.warnY||0)}; }
+    if(p.shape){ x = x || {}; x.shape = p.shape; }
+    if(p.beamShot){ x = x || {}; x.beamShot = 1; }
+    if(p.orbit){ x = x || {}; x.orbit = 1; x.orbitAngle = Math.round((p.orbitAngle||0)*100)/100; }
+    if(x) row.push(x);
+    return row;
+  });
+  return { c, a };
+}
+// Particles born since the last snapshot, newest last: [x, y, vx, vy, life, r, colour]. More than the cap in one go
+// (a boss going down puffs 320) and the oldest of them are dropped, never queued for later.
+function netParticleBirths(){
+  const fresh = [];
+  for(let i=particles.length-1; i>=0; i--){
+    const p = particles[i];
+    if(NET_SENT.has(p)) break;             // particles only ever join at the end, so the unsent ones are the tail
+    NET_SENT.add(p);
+    if(fresh.length < NET_PARTICLE_BIRTHS) fresh.push(p);
+  }
+  return fresh.reverse().map(p=>[Math.round(p.x), Math.round(p.y), nr1(p.vx), nr1(p.vy), Math.round(p.life), nr1(p.r), p.color]);
+}
+function serializeState(withGeo){
+  const s = {
+    t: hazardT,
+    WW, WH,
+    sc: scrolls() ? 1 : 0,
+    stage: stage.id,
     mode: SETTINGS.mode,
-    fighters: fighters.map(f=>({
-      idx:f.idx,name:f.name,color:f.color,x:Math.round(f.x),y:Math.round(f.y),r:f.r,face:f.face,
-      pct:Math.round(f.pct*10)/10,stocks:(f.stocks===Infinity?-1:f.stocks),koCap:f.koCap,dead:f.dead,team:f.team,you:f.you,
-      flash:f.flash,invuln:f.invuln,cloud:f.cloud,frozen:f.frozen,armor:f.armor,
-      countering:f.countering,flying:f.flying,smashHold:f.smashHold,burn:f.burn,
-      heatFx:f._heatFx, hookFx:f._hookFx,   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
-      kit:{special:f.kit&&f.kit.special}
-    })),
-    projectiles: projectiles.map(p=>({x:Math.round(p.x),y:Math.round(p.y),r:p.r,color:p.color,warn:p.warn,warnX:p.warnX,warnY:p.warnY})),
+    fighters: fighters.map(netFighter),
+    pj: netProjectiles(),
     beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life})),
     // Items and summons (assists, bosses) were never sent, so a client saw no pickups, no assist trophies
     // and no Boss Rush boss. These are the fields drawItem, drawSummon, drawBossSprite and drawBossBar read.
@@ -16157,10 +16351,17 @@ function serializeState(){
     summons: summons.map(m=>({type:m.type,name:m.name,color:m.color,r:m.r,sprite:m.sprite,x:Math.round(m.x),y:Math.round(m.y),
       hp:m.hp,maxHp:m.maxHp,face:m.face,flash:m.flash,homeX:m.homeX,_rage:m._rage,_tel:m._tel,_bossRush:m._bossRush})),
     bossCleared: BOSSRUSH.cleared,
-    particles: particles.slice(0,60).map(p=>({x:Math.round(p.x),y:Math.round(p.y),r:p.r,color:p.color,life:p.life})),
+    pb: netParticleBirths(),
     banner: (window.__lastBanner && Date.now()-window.__lastBanner.at < 400) ? window.__lastBanner : null,
     over: !running,
   };
+  // Boss Rush's backdrop: a client set it from ITS OWN boss 1 and kept that sky for the whole run
+  if(BOSS_ARENA) s.arena = BOSS_ARENA;
+  // big-FFA safe islands and claim pads: a client drew the ones its own setupWorld built for ITS window size, away
+  // from the host's platforms, and never saw a pad change hands. [claim?, x, y, w, h, owner (-1: none), progress]
+  if(isBigFFA() && spawnZones.length) s.zones = spawnZones.map(z=>[z.kind==='safe'?0:1, Math.round(z.x), Math.round(z.y), Math.round(z.w), z.h, z.owner==null?-1:z.owner, Math.round(z.progress||0)]);
+  if(withGeo !== false) s.geo = worldGeo();   // called bare, it is a whole snapshot; broadcastState decides when to send the geometry
+  return s;
 }
 
 // Client rebuilds the render-globals from a received snapshot (no simulation).
@@ -16172,34 +16373,178 @@ function lobbySummaryText(s){
   const ai=['Easy','Normal','Hard'][s.ai] || 'Normal';
   return [(st?st.name:'Stadium'), mode, s.count+' contestants', s.stocks+' stocks', ai+' CPU', items, size+' map'].join(' · ');
 }
+// A snapshot has landed (NET.onMessage). Only the newest is ever drawn, so the one-shot parts of an older one the
+// client never got to -- the world geometry, particle births, a banner -- are carried into the newer one.
+function netSnapshotArrived(N, s){
+  const prev = N.snapshot, now = performance.now();
+  if(prev && prev !== NET_VIEW.applied){
+    if(!s.geo && prev.geo) s.geo = prev.geo;
+    if(Array.isArray(prev.pb) && prev.pb.length) s.pb = prev.pb.concat(Array.isArray(s.pb) ? s.pb : []).slice(-2*NET_PARTICLE_BIRTHS);
+    if(!s.banner && prev.banner) s.banner = prev.banner;
+  }
+  if(NET_VIEW.lastArrive){ const g = now - NET_VIEW.lastArrive; if(g >= 0 && g < 400) NET_VIEW.gap += (g - NET_VIEW.gap)*0.15; }
+  NET_VIEW.lastArrive = now;
+  N.snapshot = s;
+}
+// Client rebuilds the render-globals from a received snapshot (no simulation).
+// Every moving thing remembers where it was on screen (_fx,_fy) and where the snapshot puts it (_tx,_ty);
+// netInterpolate glides between the two, frame by frame, until the next snapshot lands.
+const NET_TELEPORT = 240;   // px in one snapshot: a respawn or a carry. Cut to it rather than smear across the map.
+function netGlide(e, prev){
+  e._tx = e.x; e._ty = e.y;
+  const near = !!prev && Math.abs(prev.x - e.x) + Math.abs(prev.y - e.y) < NET_TELEPORT;
+  e._fx = near ? prev.x : e.x; e._fy = near ? prev.y : e.y;
+}
 function applySnapshot(s){
   if(!s) return;
-  hazardT=s.t; WW=s.WW; WH=s.WH; camX=s.camX; camY=s.camY;
+  const N = window.NET, myIdx = N ? N.myIdx : null;
+  const fresh = NET_VIEW.applied == null;   // the first snapshot of a match: nothing on screen yet to glide from
+  const wasF = new Map(), wasP = new Map(), wasS = fresh ? [] : summons;
+  if(!fresh){ for(const f of fighters) wasF.set(f.idx, f); for(const p of projectiles) if(p.i != null) wasP.set(p.i, p); }
+  NET_VIEW.ft = (fresh || !(s.t >= hazardT) || s.t - hazardT > 60) ? s.t : hazardT; NET_VIEW.tt = s.t;
+  hazardT=s.t; WW=s.WW; WH=s.WH;
   const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st;
   SETTINGS.mode=s.mode;
-  floors=s.floors||[]; worldPlats=s.worldPlats||[];
-  bases=(s.bases||[]).map(b=>({...b, color:b.color}));
-  fighters=(s.fighters||[]).map(fd=>({
-    ...fd, stocks:(fd.stocks===-1 ? Infinity : fd.stocks), kit:fd.kit||{special:"basic"}, homeBase:null,
-    reform:0, defineStacks:0, curse:0, curseStacks:0, weakened:0, reflecting:0, dropping:0,
-    _heatFx:fd.heatFx, _hookFx:fd.hookFx
-  }));
-  const lineup = fighters.map(f=>f.idx+':'+f.name).join('|');
+  const geo = s.geo || (s.worldPlats ? s : null);   // (before the geometry was split out, it sat at the top level)
+  if(geo){ floors=geo.floors||[]; worldPlats=geo.worldPlats||[]; bases=(geo.bases||[]).map(b=>({...b})); }
+  NET_VIEW.scroll = (s.sc != null) ? !!s.sc : scrolls();
+  BOSS_ARENA = (typeof s.arena === 'string' && Object.prototype.hasOwnProperty.call(BOSS_ARENA_SKY, s.arena)) ? s.arena : null;
+  if(Array.isArray(s.zones)) spawnZones = s.zones.map(z=>({ kind: z[0] ? 'claim' : 'safe', x:z[1], y:z[2], w:z[3], h:z[4], owner: z[5] >= 0 ? z[5] : null, progress: z[6]||0 }));
+  fighters=(s.fighters||[]).map(fd=>{
+    const f = {
+      ...fd, stocks:(fd.stocks===-1 ? Infinity : fd.stocks), kit:fd.kit||{special:"basic"}, homeBase:null,
+      reform:0, defineStacks:0, curse:0, curseStacks:0, weakened:0, reflecting:0, dropping:0,
+      _heatFx:fd.heatFx, _hookFx:fd.hookFx,
+      _atkAnim: fd.swing || 0, _atkKind: fd.swingKind || null, _atkLen: fd.swingLen, _hurtAnim: fd.hurtT,
+      _windup: (fd.charge && typeof fd.charge === 'object') ? fd.charge : null,
+      _atk0: fd.swing || 0,   // the swing timer as the snapshot has it (netSwing counts it down between snapshots)
+      // THIS device's fighter is the one it plays, not the one the host marked (the host's own). The gold marker, the
+      // HUD's "you" card and the minimap highlight all pointed at the host's fighter on every client.
+      you: (myIdx != null) ? fd.idx === myIdx : !!fd.you,
+    };
+    netGlide(f, wasF.get(fd.idx));
+    return f;
+  });
+  const lineup = fighters.map(f=>f.idx+':'+f.name).join('|') + '#' + myIdx;
   if(lineup !== window.__hudLineup){ window.__hudLineup = lineup; try{ buildHUD(); }catch(e){} }
-  projectiles=(s.projectiles||[]).map(p=>({...p, ownerObj:null}));
+  if(s.pj){
+    const cols = s.pj.c || [];
+    projectiles = (s.pj.a || []).map(r=>{
+      const x = (r[8] && typeof r[8] === 'object') ? r[8] : {};
+      const p = { ...x, i:r[0], x:r[1], y:r[2], r:r[3], vx:r[4], vy:r[5], color:cols[r[6]], ownerObj:(r[7] >= 0 && fighters[r[7]]) || null };
+      netGlide(p, wasP.get(p.i));
+      return p;
+    });
+  } else projectiles=(s.projectiles||[]).map(p=>({...p, ownerObj:null}));
   beams=(s.beams||[]);
   items=(s.items||[]).map(it=>({...it, taken:false}));
-  summons=(s.summons||[]);
+  summons=(s.summons||[]).map((m,i)=>{ const e={...m}, p=wasS[i]; netGlide(e, (p && p.name===m.name && p.type===m.type) ? p : null); return e; });
   if(typeof s.bossCleared==='number') BOSSRUSH.cleared=s.bossCleared;
-  particles=(s.particles||[]).map(p=>({...p, vx:0, vy:0}));
-  if(s.banner) banner(s.banner.text, s.banner.ms);
-  // each client follows ITS OWN fighter, not the host's camera
-  const myIdx = window.NET && window.NET.myIdx;
-  if(myIdx!=null && SETTINGS.mode==="teams"){
-    const me=fighters.find(f=>f.idx===myIdx && !f.dead) || fighters.find(f=>!f.dead);
-    if(me){ camX=clamp(me.x-W/2,0,Math.max(0,WW-W)); camY=clamp(me.y-H/2,0,Math.max(0,WH-H)); }
-  }
+  if(Array.isArray(s.pb)){
+    for(const b of s.pb) if(Array.isArray(b)) particles.push({x:b[0], y:b[1], vx:b[2], vy:b[3], life:b[4], r:b[5], color:b[6]});
+    if(particles.length > 400) particles = particles.slice(-400);
+  } else if(s.particles) particles=s.particles.map(p=>({...p, vx:0, vy:0}));
+  // once per banner (it rides in every snapshot for 400 ms, and each one restarted it)
+  if(s.banner && s.banner.at !== NET_VIEW.bannerAt){ NET_VIEW.bannerAt = s.banner.at; banner(s.banner.text, s.banner.ms, s.banner.kind); }
+  // The glide is timed from the frame that first draws this snapshot, not from when it arrived: it lands between two
+  // frames, and timed from the arrival a snapshot that landed just after a frame was already 1 frame "old" when first
+  // drawn, jumped straight to its target, and sat there.
+  NET_VIEW.applied = s; NET_VIEW.at = performance.now(); NET_VIEW.lerp = !fresh;
 }
+// Snapshots come 30 times a second (20 when big) and a client used to hold each one for every frame until the next,
+// so everything on its screen moved in 2-3 frame steps -- and with network jitter, stood still for up to 150 ms and
+// then jumped, which reads as input delay even when the input was on time. Now each moving thing glides from where
+// it is on screen to where the newest snapshot puts it, over one snapshot interval, reaching it a frame early so no
+// frame repeats. It never runs past the snapshot: nothing is guessed, and a hit is shown only when the host has it.
+function netInterpolate(now){
+  const a = NET_VIEW.lerp ? clamp((now - NET_VIEW.at + NET_VIEW.frameDt) / clamp(NET_VIEW.gap, NET_VIEW.frameDt, 100), 0, 1) : 1;
+  hazardT = Math.round(NET_VIEW.ft + (NET_VIEW.tt - NET_VIEW.ft)*a);
+  const at = (e)=>{ if(e._tx === undefined) return; e.x = e._fx + (e._tx - e._fx)*a; e.y = e._fy + (e._ty - e._fy)*a; };
+  for(const f of fighters){ at(f); netSwing(f); }
+  for(const m of summons) at(m);
+  for(const p of projectiles) at(p);
+}
+// The swing, like the positions. The host counts the swing timer down once a frame; a client held one value for 2-3
+// frames, so its gather-strike-settle moved in steps -- and it never drew the striking limb at all, because that reads
+// the beat (_atkPhase) the host works out each frame and never sent. Worked out here from the timer instead, at the
+// moment the glide is showing (hazardT, a frame or two behind the newest snapshot, so the timer is a little higher).
+function netSwing(f){
+  if(!(f._atk0 > 0)) return;
+  f._atkAnim = Math.min(f._atkLen || ATK_ANIM, f._atk0 + Math.max(0, NET_VIEW.tt - hazardT));
+  f._atkPhase = atkPhase(f); f._atkProg = atkPhaseK(f);
+}
+// The same rule step() moves particles by, run by the client on the births the host sent.
+function netStepParticles(){
+  if(!particles.length) return;
+  for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }
+  particles=particles.filter(p=>p.life>0);
+}
+// Who this client's camera follows: its own fighter. While that fighter is out, the teammate nearest the view, else
+// the fighter nearest it -- not the lowest index still standing, which could be an enemy across the map.
+function clientFollow(){
+  const me = fighters.find(f=>f.idx===window.NET.myIdx);
+  if(me && !me.dead){ NET_VIEW.follow = me.idx; return me; }
+  const kept = fighters.find(f=>f.idx===NET_VIEW.follow && !f.dead && f !== me);
+  if(kept) return kept;
+  const cx = camX + W/2, cy = camY + H/2, alive = fighters.filter(f=>!f.dead);
+  const mates = me ? alive.filter(f=>f.team===me.team) : [];
+  let best = null, bd = Infinity;
+  for(const f of (mates.length ? mates : alive)){ const d = Math.hypot(f.x-cx, f.y-cy); if(d < bd){ bd = d; best = f; } }
+  if(best) NET_VIEW.follow = best.idx;
+  return best;
+}
+// The client's own camera, every frame, in every mode: the host's zoom-aware maths (camTarget) and the host's 0.12
+// easing, on this client's fighter, with this client's window size. A respawn or a carry is a pan, as on the host.
+function clientCamera(){
+  if(!NET_VIEW.scroll){
+    // The host's arena is one screen -- the HOST's screen. Fit all of it into this one, centred. Equal windows: zoom 1,
+    // camera 0, exactly as before. (A 1920x1080 host on a 1280x720 client used to put the floor below the screen.)
+    NET_VIEW.z = Math.min(W/Math.max(1,WW), H/Math.max(1,WH));
+    camX = WW/2 - W/2; camY = WH/2 - H/2;
+    return;
+  }
+  NET_VIEW.z = CAM_ZOOM;
+  const f = clientFollow();
+  if(!f) return;
+  const t = camTarget(f.x, f.y, CAM_ZOOM);
+  if(!NET_VIEW.camReady){ camX = t.x; camY = t.y; NET_VIEW.camReady = true; return; }   // a match opens on you
+  camX += (t.x-camX)*0.12;
+  camY += (t.y-camY)*0.12;
+}
+function clientFrame(){
+  const N = window.NET, s = N && N.snapshot, now = performance.now();
+  if(NET_VIEW.lastFrame){ const d = now - NET_VIEW.lastFrame; if(d > 0 && d < 100) NET_VIEW.frameDt += (d - NET_VIEW.frameDt)*0.1; }
+  NET_VIEW.lastFrame = now;
+  if(s && s !== NET_VIEW.applied) applySnapshot(s);
+  netInterpolate(now);
+  netStepParticles();
+  clientCamera();
+}
+// A new match (beginMatchNow, on host and client alike).
+function netViewReset(){
+  Object.assign(NET_VIEW, { applied:null, lerp:false, camReady:false, follow:null, z:1, scroll:false, lastArrive:0, gap:33, lastFrame:0, frameDt:1000/60 });
+  if(window.NET) window.NET._geoKey = null;   // the host sends its world again with the first snapshot
+}
+// The input step() uses for a remote player this frame: what they hold now, plus any button pressed since the last
+// frame even if it has been let go again. step() reads input once a frame, and a tap whose press and release both
+// arrived between two frames used to never happen.
+function netRemoteInput(idx){
+  const N = window.NET; if(!N) return null;
+  const r = N.inputs[idx] || null, L = N.latch && N.latch[idx];
+  if(!L) return r;
+  N.latch[idx] = null;
+  // A press is for the frame after it arrived. One older than that was never read -- step() skips a KO'd fighter --
+  // and firing it now would swing on the respawn frame at a button mashed while waiting.
+  if(hazardT - L.at > 1) return r;
+  const out = Object.assign({}, r);
+  for(const b of NET_BUTTONS) if(L.b[b]) out[b] = true;
+  return out;
+}
+// A client's key went down or up (the key and touch handlers): send it now, not at the next frame.
+function netInputChanged(){ try{ if(window.NET && window.NET.role==='client') window.NET.sendInput(); }catch(e){} }
+// and a client whose tab is hidden lets go of everything (sendInput sends nothing held while hidden): the host kept
+// its last input, running right forever, until the tab came back
+addEventListener('visibilitychange', netInputChanged);
 
 // ============================================================
 //  NETCODE — LAN multiplayer over WebSocket relay
@@ -16231,6 +16576,7 @@ window.NET = {
   myIdx: null,           // which fighter index this device controls
   players: [],           // lobby roster [{id,name,fighter,ready,isHost}]
   inputs: {},            // idx -> latest input (host reads these for remote fighters)
+  latch: {},             // idx -> buttons pressed since the host's last step (netRemoteInput)
   snapshot: null,        // latest state (client renders this)
   myId: Math.random().toString(36).slice(2,8),
   lastInputSent: 0,
@@ -16330,8 +16676,19 @@ window.NET = {
       const me=this.players.findIndex(p=>p.id===this.myId);
       if(me>=0 && this.role==="client") this.myIdx=me;
     }
-    else if(m.t==="input" && this.role==="host"){ this.inputs[m.idx]=m.input; }
-    else if(m.t==="state" && this.role==="client"){ this.snapshot=m.s; }
+    else if(m.t==="input" && this.role==="host"){
+      // idx is peer-supplied: a fighter slot and nothing else ("__proto__" would reach Object.prototype via the latch)
+      const idx=m.idx, inp=m.input;
+      if(!Number.isInteger(idx) || idx<0 || idx>=64 || !inp || typeof inp!=='object') return;
+      const was = this.inputs[idx] || {};
+      this.inputs[idx]=inp;
+      // latch a PRESS (up -> down), stamped with the host frame it came after; a key held through a heartbeat is not one
+      for(const b of NET_BUTTONS) if(inp[b] && !was[b]){
+        const L = this.latch[idx] || (this.latch[idx] = { at:hazardT, b:{} });
+        L.at = hazardT; L.b[b] = true;
+      }
+    }
+    else if(m.t==="state" && this.role==="client"){ if(m.s && typeof m.s==='object') netSnapshotArrived(this, m.s); }
     else if(m.t==="start"){ this.beginMatch(m.settings, m.roster); }
     else if(m.t==="status"){ this.status(m.msg); }
   },
@@ -16475,6 +16832,8 @@ window.NET = {
     // mark which fighters are network-controlled
     window.__netRoster = roster;
     window.__netHumanCount = this.players.length;
+    // nothing from the last match: a held key it left behind, or a snapshot of its world
+    this.inputs = {}; this.latch = {}; this.snapshot = null; this._inputKey = null;
     startMatch();   // handles screen switch + starts the loop (net-aware buildFighters)
   },
 
@@ -16482,21 +16841,40 @@ window.NET = {
   broadcastState(){
     if(!this.ws || this.ws.readyState!==1) return;
     const now=performance.now();
-    if(now - (this._lastBroadcast||0) < 45) return;    // ~22 snapshots/sec (plenty for LAN, easy on the CPU)
-    // if the socket is backing up, skip this frame so we don't flood the buffer and freeze the tab
-    if(this.ws.bufferedAmount > 200000) return;
+    // 30 snapshots a second while they are small (every 2nd frame at 60 fps). It was 20 always -- the 45 ms gate lands
+    // on every 3rd frame, so a client held each picture for 3 frames. A big one waits longer, holding the host's upload
+    // near 200 KB/s: Four's Screechy ring (300 shots, ~9.5 KB a snapshot) goes out 20 times a second, the old rate.
+    // Sized without the world geometry, which rides along only now and then.
+    if(now - (this._lastBroadcast||0) < clamp((this._rateBytes||0)/200, 25, 66)) return;
+    // A backed-up socket drops this snapshot rather than queue it behind the others. The old 200 KB allowance let ~9
+    // queue up -- half a second of stale picture at full speed, 1.6 s on a 1 Mbit/s uplink -- and every client saw the
+    // match that far in the past until it drained ("there is an input delay sometimes").
+    if(this.ws.bufferedAmount > Math.max(24000, 2*(this._lastBytes||0))) return;
     this._lastBroadcast=now;
-    this.send({t:"state", s:serializeState()});
+    const s = serializeState(false), key = worldGeoKey();
+    if(key !== this._geoKey || now - (this._geoAt||0) > NET_GEO_EVERY){ s.geo = worldGeo(); this._geoKey = key; this._geoAt = now; }
+    const text = JSON.stringify({t:"state", s});
+    this._lastBytes = text.length;
+    if(!s.geo) this._rateBytes = text.length;
+    this.ws.send(text);
+  },
+  // What this client holds right now: its keys, and its gamepad (a client could not play with one before). Nothing
+  // while paused or hidden, so the host does not keep playing the last thing held.
+  readInput(){
+    const inp = {}, idle = paused || (typeof document!=='undefined' && document.hidden), pad = idle ? null : pollPad();
+    for(const b of NET_BUTTONS) inp[b] = !idle && !!(down[KEYS[b]] || (pad && pad[b]));
+    return inp;
   },
   sendInput(){
-    const now=performance.now();
-    if(now-this.lastInputSent < 16) return;   // ~60/s cap
-    this.lastInputSent=now;
-    const inp={
-      left: !!(down[KEYS.left]), right:!!(down[KEYS.right]),
-      jump: !!(down[KEYS.jump]), down:!!(down[KEYS.down]),
-      attack:!!(down[KEYS.attack]), special:!!(down[KEYS.special]), smash:!!(down[KEYS.smash])
-    };
+    if(this.role!=="client" || !running) return;
+    const now=performance.now(), inp=this.readInput();
+    const key = NET_BUTTONS.map(b=>inp[b]?1:0).join('');
+    // Sent the moment it changes -- the key handlers call this (netInputChanged) -- and otherwise twice a second as a
+    // heartbeat. It used to go every frame, sampled from the keys at that instant: a press waited up to a frame for the
+    // next loop() before it left, a tap shorter than a frame was never sent at all, and an idle player still sent 60
+    // messages a second through the relay.
+    if(key === this._inputKey && now - this.lastInputSent < 500) return;
+    this._inputKey = key; this.lastInputSent = now;
     this.send({t:"input", idx:this.myIdx, input:inp});
   },
 
