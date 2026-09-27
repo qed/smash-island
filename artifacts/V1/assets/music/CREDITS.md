@@ -5,10 +5,13 @@ source page, licence, and the attribution the licence requires. All four were do
 Pixabay and the licence line **"Free for use under the Pixabay Content License"** was verified on
 each track's own page before download.
 
-None of this music is from, or a cover of, any commercial soundtrack. The brief asked for an
-"Undertale-ish" menu/battle feel and a "Hollow Knight / Silksong-ish" boss feel — these are
-independent style-alike tracks chosen to evoke that mood. No Toby Fox or Christopher Larkin
-composition (or any arrangement, rip, or fan re-upload of one) is included anywhere in this repo.
+The five `.mp3` defaults are not from, or covers of, any commercial soundtrack. The brief asked for an
+"Undertale-ish" menu/battle feel and a "Hollow Knight / Silksong-ish" boss feel — those are
+independent style-alike tracks chosen to evoke that mood.
+
+**Owner-supplied tracks (2026-09-27).** The ten `.ogg` files in this directory were added by the owner
+("i added the music"). They are tracks from Toby Fox's *Deltarune* soundtrack (and arrangements of it)
+and are NOT under the Pixabay licence: see "Owner-supplied Deltarune tracks" at the end of this file.
 
 ---
 
@@ -163,3 +166,26 @@ replacement at the same path and it is picked up with no code change. If a file 
 fails to decode, the game falls back to its built-in WebAudio synth loop for that context rather
 than going silent — so a bad file degrades, it does not break. Update this file and the
 `#musicCredits` line on the title screen whenever a track changes.
+
+---
+
+## Owner-supplied Deltarune tracks
+
+Added by the owner on 2026-09-27. Composer: Toby Fox (*Deltarune*), unless the file is an arrangement
+by someone else. They are not covered by the Pixabay Content License above; the rights stay with their
+owners, and whether they may be shipped publicly is the owner's decision and responsibility.
+
+| File | Track |
+|---|---|
+| `Flowerman_Arrangement.ogg` | an arrangement (source and arranger not recorded) |
+| `ch4_extra_boss.ogg` | Deltarune Chapter 4, extra boss |
+| `joker.ogg` | Deltarune |
+| `knight.ogg` | Deltarune |
+| `pink.ogg` | Deltarune |
+| `pumpkin_boss.ogg` | Deltarune |
+| `queen_boss.ogg` | Deltarune |
+| `spamton_neo_mix_ex_wip.ogg` | a Spamton NEO mix (work in progress; arranger not recorded) |
+| `tenna_battle.ogg` | Deltarune |
+| `titan_battle.ogg` | Deltarune |
+
+Not yet wired into the game: MUSIC_FILES still plays only the five `.mp3` defaults.
