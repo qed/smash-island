@@ -19,6 +19,11 @@ The filename **is** the wiring. Use exactly these names, all lowercase, `.mp3`:
 
 Resolution order for every context: `custom/<name>.mp3` → `../<name>.mp3` → synth loop.
 
+**`battle` has a shipped playlist between the two.** The owner's ten tracks (listed in
+`../CREDITS.md`) sit after `custom/battle.mp3` and before `../battle.mp3`: with this slot empty, each
+match plays one of them, and `../battle.mp3` plays only if none of them will load. A
+`custom/battle.mp3` still beats the whole playlist, and it loops like every other slot.
+
 **`title` is the exception, and it has no shipped default.** There is no `../title.mp3` in the
 repo, so its order is `custom/title.mp3` → `../title.mp3` → *the whole `menu` chain* → synth loop.
 Leave the slot empty and the title screen plays the menu bed, which is exactly what it did before

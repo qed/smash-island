@@ -505,7 +505,7 @@
     <div class="foot" style="margin-top:26px">A cartoon platform fighter starring the Battle for Dream Island cast. Knock your friends off the stage.</div>
     <div class="foot" style="margin-top:4px">59 fighters · 9 bosses · 13 assists · no account, no ads, nothing to install</div>
     <div class="foot" style="margin-top:10px;opacity:0.7">An unofficial fan-made game. Not affiliated with or endorsed by jacknjellify; Battle for Dream Island and its characters belong to them; Inanimate Insanity and its characters belong to AnimationEpic. Made for fun, never sold.</div>
-    <div class="foot" id="musicCredits" style="margin-top:6px;opacity:0.7">Music: "Chill/Calming Chiptune Loop" by Reganati · "8-Bit Chiptune Action Music for Video Games" by HauntSync · "Dark Orchestral Battle Tension" by Montogoronto · "Epic Orchestral Anthem Loop" by Sonican — free under the Pixabay Content License. Full credits: assets/music/CREDITS.md</div>
+    <div class="foot" id="musicCredits" style="margin-top:6px;opacity:0.7">Music: "Chill/Calming Chiptune Loop" by Reganati · "8-Bit Chiptune Action Music for Video Games" by HauntSync · "Dark Orchestral Battle Tension" by Montogoronto · "Epic Orchestral Anthem Loop" by Sonican — free under the Pixabay Content License. Battle playlist: DELTARUNE music by Toby Fox (rights administrator: Materia Music Publishing) and arrangements of it, supplied by the owner. Full credits: assets/music/CREDITS.md</div>
     <div class="foot" style="margin-top:4px;opacity:0.7">build v69 · attacks chain, smashes are press-to-commit, Tennis Ball's gadget rack, every projectile drawn and longer-lived</div>
   </div>
 
@@ -1418,6 +1418,8 @@ const SND = {
   _userPick:{},       // kind -> the blob: URL currently chosen out of that playlist
   _userLast:{},       // kind -> index of the last pick, so a re-roll avoids an instant repeat
   _keepPick:false,    // one-shot: the caller already chose a track; startMusic must not re-roll
+  _shipPick:{},       // kind -> the SHIPPED playlist track chosen for this start (see MUSIC_PLAYLISTS)
+  _shipLast:{},       // kind -> the shipped playlist track loaded last, so the next pick avoids it
 };
 function sndInit(){
   if(SND.ctx || !SND.on) return;
@@ -1492,7 +1494,9 @@ const SFX = {
 //  A sixth context, `title`, is a slot with NO shipped file — see MUSIC_FALLBACK below.
 //
 //  Source order per context: assets/music/custom/<context>.mp3 (the owner's own legally acquired
-//  track, if they dropped one in) -> the shipped default -> the synth bed.
+//  track, if they dropped one in) -> the shipped default -> the synth bed. `battle` has a shipped
+//  PLAYLIST in front of its default (see MUSIC_PLAYLISTS), so a match shuffles through the owner's
+//  tracks and battle.mp3 is only what plays if every one of them fails.
 //
 //  Design rules this block has to honour:
 //   * NO Audio element is constructed at load time — the headless jsdom harness boots this file
@@ -1530,19 +1534,46 @@ const MUSIC_UNSHIPPED = { title: 'assets/music/title.mp3' };
 // the player loaded into their own menu playlist. That is the whole "changes nothing by default"
 // guarantee, and it is one line rather than a special case sprinkled through startMusic().
 const MUSIC_FALLBACK = { title: 'menu' };
+// SHIPPED PLAYLISTS. The owner added ten tracks to assets/music ("i added the music to smash-art")
+// and, asked how they should be used, answered "Battle playlist": normal matches shuffle through
+// the ten instead of the one battle track, and Boss Rush and the menus stay as they are. So only
+// `battle` has one. It sits BELOW the two things players and the owner already rely on — a track
+// the player loaded into their own battle playlist, then assets/music/custom/battle.mp3 — and ABOVE
+// battle.mp3, which is now only the file that plays when every playlist track fails to load.
+// Each match picks one (never the one that played last, when there is a choice), and a playlist
+// track does not loop: when it ends mid-match the next one is picked (see musicTrackEnded).
+// Credits: assets/music/CREDITS.md, "Owner-supplied Deltarune tracks".
+const MUSIC_PLAYLISTS = {
+  battle: [
+    'assets/music/Flowerman_Arrangement.ogg',
+    'assets/music/ch4_extra_boss.ogg',
+    'assets/music/joker.ogg',
+    'assets/music/knight.ogg',
+    'assets/music/pink.ogg',
+    'assets/music/pumpkin_boss.ogg',
+    'assets/music/queen_boss.ogg',
+    'assets/music/spamton_neo_mix_ex_wip.ogg',
+    'assets/music/tenna_battle.ogg',
+    'assets/music/titan_battle.ogg',
+  ],
+};
 // Ordered candidate sources for a context, best first, minus any that already failed:
 //   1. a track THIS PLAYER loaded from their own device (blob: URL, kept in IndexedDB)
 //   2. assets/music/custom/<context>.mp3 — the site owner's own shipped override
-//   3. the shipped Pixabay default (or the unshipped-but-probed path, for `title`)
-//   4. …then, for a context with a MUSIC_FALLBACK, that context's whole chain, recursively
+//   3. the shipped playlist, for a context that has one (`battle`): this start's pick first, then
+//      the rest of the playlist, so a track that fails to load steps to another playlist track
+//   4. the shipped Pixabay default (or the unshipped-but-probed path, for `title`)
+//   5. …then, for a context with a MUSIC_FALLBACK, that context's whole chain, recursively
 // ...and startMusic() falls through to the synth bed when every one of them is unusable.
 function musicSources(kind, _seen){
   const def = MUSIC_FILES[kind] || MUSIC_UNSHIPPED[kind];
   const next = MUSIC_FALLBACK[kind];
-  if(!def && !next) return [];
+  const ship = MUSIC_PLAYLISTS[kind];
+  if(!def && !next && !ship) return [];
   const out = [];
   if(SND._userPick[kind]) out.push(SND._userPick[kind]);
   out.push(MUSIC_CUSTOM_DIR + kind + '.mp3');
+  if(ship) for(const s of musicShippedOrder(kind)) out.push(s);
   if(def) out.push(def);
   // `_seen` makes a mis-typed cycle in MUSIC_FALLBACK a no-op instead of a stack overflow.
   const seen = _seen || [kind];
@@ -1587,6 +1618,9 @@ function musicDeck(i){
     // 404, decode failure, unsupported codec. This is the ordinary path for a custom/ slot the
     // owner has not filled, so it steps to the next source rather than giving up on the context.
     el.addEventListener('error', ()=>{ musicSourceFailed(i); });
+    // Only a shipped playlist track is played with loop=false, so only it ever ends: the next
+    // playlist track follows instead of the same one starting over.
+    el.addEventListener('ended', ()=>{ musicTrackEnded(i); });
   }catch(e){ return null; }
   SND._decks[i] = el;
   return el;
@@ -1665,7 +1699,9 @@ function startMusicFile(kind){
   // title <-> menu hop, which resolve to the same file whenever the title slot is empty — without
   // it, every step of title -> select -> controls -> title would restart the menu loop.
   const cur = musicActiveEl();
-  if(cur && SND._deckSrc[SND._deck]===sources[0] && !cur.paused){
+  // `!cur.ended` too: a playlist track that just finished is not "already playing", even in a
+  // browser that leaves `paused` false at the end — adopting it would leave the match silent.
+  if(cur && SND._deckSrc[SND._deck]===sources[0] && !cur.paused && !cur.ended){
     SND._deckKind[SND._deck] = kind;
     musicFileTookOver(kind);        // this deck is already audible — nothing may sit under it
     musicFadeTo(SND._deck, (MUSIC_VOLUME[kind]!=null) ? MUSIC_VOLUME[kind] : 0.32);
@@ -1682,7 +1718,9 @@ function startMusicFile(kind){
     el.src = src;
     SND._deckSrc[next] = src;
     SND._deckKind[next] = kind;
-    el.loop = true;
+    // A shipped playlist track plays once and hands over to the next one (musicTrackEnded);
+    // everything else — the player's own tracks, custom/ slots, the defaults — loops as it always has.
+    el.loop = !musicShippedNote(kind, src);
     try{ el.currentTime = 0; }catch(e){}
     try{ el.volume = 0; }catch(e){}
     const p = el.play();
@@ -1729,9 +1767,13 @@ function startMusic(kind){
   // a fresh pick from this context's playlist, if it has one (unless a caller already chose)
   if(!SND._keepPick){
     musicRollUserTrack(kind);
+    musicRollShippedTrack(kind);      // every new match, and every return from clutch time, picks afresh
     // Fallback chains only get a pick when they do not already have one. Re-rolling them here
     // would let a walk onto the title screen silently change which menu track is playing.
-    for(const k of musicChainKinds(kind).slice(1)) if(!SND._userPick[k]) musicRollUserTrack(k);
+    for(const k of musicChainKinds(kind).slice(1)){
+      if(!SND._userPick[k]) musicRollUserTrack(k);
+      if(!SND._shipPick[k]) musicRollShippedTrack(k);
+    }
   }
   if(startMusicFile(kind)) return;
   musicSilenceDecks();
@@ -1775,7 +1817,8 @@ const MUSIC_CONTEXTS = ['title','menu','battle','boss','tourney','intense'];
 const MUSIC_CONTEXT_LABEL = { title:'Title screen', menu:'Menus', battle:'Battles', boss:'Boss Rush', tourney:'World Cup', intense:'Clutch time' };
 // What a slot plays when the player has loaded nothing into it. Every context has a shipped file
 // except `title`, which borrows the menu bed — say so, or an empty Title row reads as "silence".
-const MUSIC_CONTEXT_EMPTY = { title:'menu track' };
+// `battle` plays the owner's shipped playlist, not one default track, so its row says that.
+const MUSIC_CONTEXT_EMPTY = { title:'menu track', battle:'battle playlist ('+MUSIC_PLAYLISTS.battle.length+' tracks)' };
 const MUSIC_MAX_BYTES = 30*1024*1024;   // a sanity cap; well past any sensible loop
 const MStore = {
   DB:'bfsi-music', STORE:'tracks', _db:null,
@@ -1879,15 +1922,69 @@ function musicRollUserTrack(kind){
   const list = SND._userList[kind];
   if(!list || !list.length){ delete SND._userPick[kind]; return null; }
   const last = (SND._userLast[kind]!=null) ? SND._userLast[kind] : -1;
-  let i = Math.floor(Math.random()*list.length);
-  // Bounded retry, then a deterministic step. An unbounded do/while would hang forever against a
-  // stubbed Math.random that returns a constant — which is exactly what the golden harness does.
-  for(let tries=0; tries<8 && i===last && list.length>1; tries++) i = Math.floor(Math.random()*list.length);
-  if(i===last && list.length>1) i = (last+1) % list.length;
-  if(i<0 || i>=list.length) i = 0;
+  const i = musicRollIndex(list.length, last);
   SND._userLast[kind] = i;
   SND._userPick[kind] = list[i].url;
   return SND._userPick[kind];
+}
+// A random index in [0, n) that is not `last` whenever n > 1. Shared by the player's playlists and
+// the shipped one, so "never the same track twice running" means one thing everywhere.
+// Bounded retry, then a deterministic step. An unbounded do/while would hang forever against a
+// stubbed Math.random that returns a constant — which is exactly what the golden harness does.
+function musicRollIndex(n, last){
+  const roll = ()=>{ const r = Math.floor(Math.random()*n); return (r>=0 && r<n) ? r : 0; };
+  let i = roll();
+  for(let tries=0; tries<8 && i===last && n>1; tries++) i = roll();
+  if(i===last && n>1) i = (last+1) % n;
+  return i;
+}
+// Pick this start's track out of a context's SHIPPED playlist ("Battle playlist", the owner).
+// Files that already failed this session are out of the draw, and the track loaded last is avoided
+// whenever anything else is left — the same rule the player's own playlists follow.
+function musicRollShippedTrack(kind){
+  const list = MUSIC_PLAYLISTS[kind];
+  if(!list || !list.length) return null;
+  const usable = list.filter(s=>!SND._badSrc[s]);
+  if(!usable.length){ delete SND._shipPick[kind]; return null; }
+  const i = musicRollIndex(usable.length, usable.indexOf(SND._shipLast[kind]));
+  SND._shipPick[kind] = usable[i];
+  return usable[i];
+}
+// The shipped playlist in the order musicSources() tries it: this start's pick, then the rest of the
+// list after it, with the track that played last moved to the very end — so a pick that fails to
+// load steps to another playlist track, and only lands on a repeat when nothing else will play.
+function musicShippedOrder(kind){
+  const list = MUSIC_PLAYLISTS[kind];
+  if(!list || !list.length) return [];
+  const at = Math.max(0, list.indexOf(SND._shipPick[kind]));
+  const last = SND._shipLast[kind];
+  const out = [];
+  for(let j=0;j<list.length;j++){ const s = list[(at+j) % list.length]; if(s!==last || j===0) out.push(s); }
+  if(last && out.indexOf(last) < 0 && list.indexOf(last) >= 0) out.push(last);
+  return out;
+}
+// A deck is about to load `src` for `kind`. If that is a shipped playlist track, remember it as the
+// one played last (for the no-repeat rule) and report which context's playlist it belongs to.
+function musicShippedNote(kind, src){
+  for(const k of musicChainKinds(kind)){
+    const list = MUSIC_PLAYLISTS[k];
+    if(list && list.indexOf(src) >= 0){ SND._shipLast[k] = src; return k; }
+  }
+  return null;
+}
+// A playlist track reached its end mid-match: pick the next one and play it, instead of silence or
+// the same track again. Only the LIVE deck counts — one that is fading out, or that belonged to a
+// bed the game has since left (a menu, the clutch bed), finishing is not a reason to change music.
+function musicTrackEnded(i){
+  const kind = SND._deckKind[i], src = SND._deckSrc[i];
+  if(!kind || SND._kind!==kind || SND._deck!==i || !musicAllowed()) return;
+  let owner = null;
+  for(const k of musicChainKinds(kind)){ const l = MUSIC_PLAYLISTS[k]; if(l && l.indexOf(src) >= 0){ owner = k; break; } }
+  if(!owner) return;
+  musicRollShippedTrack(owner);     // avoids `src`: musicShippedNote recorded it as the last one
+  SND._kind = null;                 // so startMusic's "already on this bed" check lets it through
+  SND._keepPick = true;             // the pick above is the one we want; do not roll it away
+  try{ startMusic(kind); } finally { SND._keepPick = false; }
 }
 // Force a fresh pick mid-context. Boss Rush calls this on every boss spawn so a gauntlet walks
 // through the owner's boss/miniboss themes instead of looping one of them all run.
