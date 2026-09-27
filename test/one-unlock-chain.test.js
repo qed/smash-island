@@ -12,6 +12,9 @@ import { mulberry32 } from './helpers/prng.js';
 // most-played fighters); ONE fighter erased per WIN; the bans lift and One unlocks permanently ONLY AFTER YOU BEAT HER, and
 // a loss is retried directly; "No way out"; the Moon PLAYS BY ITSELF straight after the World Cup win (TPOT 7: Lightning's
 // strike cracks it; TPOT 9: One climbs out of the hole and says "Hey guys!").
+// And the adversarial review's fixes: every won match erases, the World Cup's and Boss Rush's bosses included; the chain is
+// as long as your own roster whatever the board's view; a merged record is a record one tab really had; the tutorial never
+// counts; the final crowns you and the Moon follows with nothing to press; and the title keeps its six buttons at every step.
 
 const HTML = readFileSync('artifacts/V1/index.html', 'utf8');
 function boot(seed = {}) {
@@ -227,7 +230,8 @@ describe('step 4: the bans', () => {
       return { a:[a.you.name, a.foe.name], b:[b.you.name, b.foe.name], you:you };
     })()`);
     expect(daily.a, 'the Daily puts your side on Lightning').toEqual(['Lightning', 'Pin']);
-    expect(daily.b, 'and if Lightning was today\'s opponent, your fighter takes that seat').toEqual(['Lightning', 'Firey']);
+    // The review: handing your erased fighter the foe's seat changed the one thing the Daily keeps the same for everyone.
+    expect(daily.b, 'and if Lightning was today\'s opponent, the foe stays today\'s: a mirror match').toEqual(['Lightning', 'Lightning']);
     expect(daily.you).toBe('Lightning');
 
     const lobby = W.eval(`(function(){
@@ -332,16 +336,21 @@ describe('step 6: the Moon', () => {
           return function(){ log.push([p].concat([].slice.call(arguments))); }; },
         set: function(t, p, v){ log.push(['=' + p, v]); return true; } });
       var M = { ctx:rec, w:1100, h:720 };
+      var R = Math.min(1100, 720)*0.30, hx = 1100*0.5 + MOON_GEO.hit.x*R, hy = 720*0.46 + MOON_GEO.hit.y*R;
       var at = function(t){ log = []; drawMoonFrame(M, t);
         var has = function(k, v){ return log.some(function(e){ return e[0]===k && e[1]===v; }); };
         return { bolt:has('=strokeStyle', '#f2e84b'), crack:has('=strokeStyle', '#2a2a33'), hole:has('=fillStyle', '#05060f'),
+                 moonHit:log.some(function(e){ return e[0]==='lineTo' && Math.abs(e[1]-hx) < 0.5 && Math.abs(e[2]-hy) < 0.5; }),
+                 bolts:log.filter(function(e){ return e[0]==='=strokeStyle' && e[1]==='#f2e84b'; }).length,
                  one:has('=fillStyle', '#5D7AF2'), hey:log.some(function(e){ return e[0]==='fillText' && e[1]==='Hey guys!'; }),
                  stars:has('=fillStyle', '#9FE8FF') }; };
       return { t05:at(0.5), t12:at(1.2), t20:at(2.0), t33:at(3.3), t70:at(7.0), t95:at(9.5), t120:at(12.0),
                same:JSON.stringify(MOON_GEO)===JSON.stringify(moonGeometry(7)) };
     })()`);
-    expect(beats.t05).toMatchObject({ bolt: false, crack: false, hole: false, hey: false });
-    expect(beats.t12, 'TPOT 7: the strike, in Lightning\'s yellow').toMatchObject({ bolt: true, crack: false });
+    // TPOT 7 (the wiki's plot): Lightning "unleashes a thunderstorm" and it hits "the moon with One inside of it by accident"
+    expect(beats.t05, 'the storm first: bolts, all going down to the ground, none at the Moon').toMatchObject({ bolt: true, moonHit: false, crack: false, hole: false, hey: false });
+    expect(beats.t12, '...and the stray that hits the Moon, in Lightning\'s yellow').toMatchObject({ bolt: true, moonHit: true, crack: false });
+    expect(beats.t12.bolts, 'it is one bolt among the storm\'s').toBeGreaterThan(1);
     expect(beats.t20, '...and the crack it leaves').toMatchObject({ bolt: false, crack: true, hole: false });
     expect(beats.t33, 'knocks from inside, as her star-shaped telekinesis').toMatchObject({ stars: true, hole: false });
     expect(beats.t70, 'TPOT 9: it cracks open').toMatchObject({ hole: true });
@@ -376,10 +385,13 @@ describe('step 6: the Moon', () => {
   it('never plays before its time, and leaving mid-scene stops it without skipping it', async () => {
     await fresh(W, `PROFILE.one.stage = 2;`);
     expect(W.eval('playMoonScene()')).toBe(false);
-    W.eval(`PROFILE.one.stage = 3; playMoonScene(); go('title');`);
+    W.eval(`ONE_TITLE_MOON_DELAY = 30; PROFILE.one.stage = 3; playMoonScene(); go('title');`);
     expect(W.eval('MOON.raf')).toBe(0);
     expect(W.eval('PROFILE.one.stage'), 'a refresh or a quit mid-scene plays it again').toBe(3);
-    expect(W.eval(`document.getElementById('oneEntry').textContent`)).toBe('🌕 Something is wrong with the Moon…');
+    expect(W.eval(`!!document.getElementById('oneEntry')`), 'no button for it: the title keeps its six').toBe(false);
+    await sleep(W, 90);
+    expect(W.eval(`document.getElementById('moonScene').classList.contains('active')`), 'it plays again by itself').toBe(true);
+    W.eval(`stopMoonScene(); PROFILE.one.stage = 0; go('title'); ONE_TITLE_MOON_DELAY = 900;`);
   });
 
   it('there is no way out of the chain anywhere on the page', () => {
@@ -387,6 +399,33 @@ describe('step 6: the Moon', () => {
     expect(buttons).not.toMatch(/abandon|give up|forfeit/i);
     expect(HTML).not.toMatch(/function\s+\w*(abandon|giveUp)\w*/i);
   });
+
+  it('no way out, walked: every control on her card, her result screen and the title leaves every ban in place', async () => {
+    // The review: "No way out" was only tested by grepping. So press everything the player can press between the Moon and
+    // a win -- One's card, the result screen after a loss, and the title's own buttons -- and check the chain after each.
+    await fresh(W, ARM + ` PROFILE.one.stage = 4; PROFILE.one.erased = ['Gaty','Barf Bag','Basketball','Firey']; unlockFighter('Lightning');`);
+    const held = `(PROFILE.one.stage === 4 && oneBanned(ROSTER.find(function(r){ return r.name==='Firey'; })) && oneBanned(ROSTER.find(function(r){ return r.name==='Gaty'; })))`;
+    const card = W.eval(`go('moonScene'); document.getElementById('moonCard').style.display = 'flex';
+      [].slice.call(document.querySelectorAll('#moonScene button')).filter(function(b){ return b.style.display !== 'none'; }).map(function(b){ return b.textContent; })`);
+    expect(card, 'her card: the fight and nothing else').toEqual(['Fight ▸']);
+    W.eval(`oneStoryFight(); fighters.forEach(function(f){ f.dead = true; }); running = true; oneFightCheck();`);
+    await sleep(W, 950);
+    const labels = W.eval(`[].slice.call(document.querySelectorAll('#result .row button')).map(function(b){ return b.textContent; })`);
+    expect(labels).toEqual(['Rematch ↻', 'Change fighter', 'Title']);
+    for (let i = 0; i < labels.length; i++) {
+      W.eval(`oneStoryFight(); fighters.forEach(function(f){ f.dead = true; }); running = true; oneFightCheck();`);
+      await sleep(W, 950);
+      const after = W.eval(`document.querySelectorAll('#result .row button')[${i}].click(); var h = ${held}; running = false; h`);
+      expect(after, `after "${labels[i]}"`).toBe(true);
+    }
+    W.eval(`go('title')`);
+    const title = W.eval(`[].slice.call(document.querySelectorAll('#title button')).map(function(b){ return b.textContent; })`);
+    expect(title.join(' | ')).not.toMatch(/abandon|give up|forfeit|skip/i);
+    expect(W.eval(held), 'and the title changes nothing').toBe(true);
+    expect(W.eval(`chosen = ROSTER.find(function(r){ return r.name==='Firey'; }); SETTINGS.mode='ffa'; SETTINGS.count=2; startMatch(); var n = fighters.find(function(f){ return f.you; }).name; running = false; n`),
+      'a match from the title is still Lightning').toBe('Lightning');
+    W.eval(`go('title')`);
+  }, 30000);
 });
 
 describe('step 7: the story fight', () => {
@@ -434,27 +473,33 @@ describe('step 7: the story fight', () => {
     expect(r.best).toBe(95);
     expect(r.bans, 'everyone she erased is back (TPOT 25)').toBe(false);
     expect(r.note).toMatch(/^★ ONE UNLOCKED! Everyone she erased is back\./);
+    expect(r.note, 'and where to find her: under Boss Rush, where the bosses live').toMatch(/Boss Rush ▸ 🌕 One\.$/);
     await sleep(W, 950);
     expect(stored(W).one).toMatchObject({ stage: 5, wins: 1, bestSecs: 95 });
     W.eval(`go('title')`);
-    expect(W.eval(`document.getElementById('oneEntry').textContent`)).toBe('🌕 Fight One');
+    expect(W.eval(`!!document.getElementById('oneEntry')`), 'the title is everyone\'s title again: six buttons').toBe(false);
   });
 });
 
 describe('step 8: One for good, with any fighter', () => {
-  it('the title opens Boss Rush with One picked, and she takes any fighter with AI allies', async () => {
+  it('Boss Rush ▸ One: picked on the select screen, she takes any fighter with AI allies', async () => {
+    // She used to have a title button of her own for good, a seventh; the title's rule is six (see the step above).
     await fresh(W, `PROFILE.one.stage = 5; PROFILE.one.wins = 1; go('title');`);
     const r = W.eval(`(function(){
-      var row = document.getElementById('oneEntryRow').style.display;
-      document.getElementById('oneEntry').click();
+      var row = !document.getElementById('oneEntry') ? 'none' : 'shown';
+      go('select');
+      document.querySelector('#segMode button[data-v="boss"]').click();
+      var shown = document.getElementById('bossPickRow').style.display;
+      document.querySelector('#segBossPick button[data-v="one"]').click();
       var pick = document.querySelector('#segBossPick button.on');
-      var out = { row:row, select:document.getElementById('select').classList.contains('active'), mode:SETTINGS.mode, bossPick:SETTINGS.bossPick,
+      var out = { row:row, shown:shown, select:document.getElementById('select').classList.contains('active'), mode:SETTINGS.mode, bossPick:SETTINGS.bossPick,
         pickRow:document.getElementById('bossPickRow').style.display, on:pick && pick.dataset.v, summary:document.getElementById('matchSummary').textContent };
       chosen = ROSTER.find(function(r){ return r.name==='Pen'; }); SETTINGS.count = 3; startMatch();
       var one = summons.find(function(s){ return s._oneFight; });
       out.fight = { active:ONEFIGHT.active, story:ONEFIGHT.story, lineup:ONEFIGHT.lineup.slice(), n:fighters.length, rush:BOSSRUSH.active, mult:one._dmgTakenMult };
       return out; })()`);
-    expect(r.row).toBe('flex');
+    expect(r.row, 'no title button').toBe('none');
+    expect(r.shown, 'the pick appears under Boss Rush once she is beaten').toBe('flex');
     expect(r.select).toBe(true);
     expect([r.mode, r.bossPick, r.pickRow, r.on]).toEqual(['boss', 'one', 'flex', 'one']);
     expect(r.summary).toMatch(/vs One \(2000 HP\)/);
@@ -491,7 +536,11 @@ describe('the chain survives a reload at every step', () => {
       { one:{ stage:1, erased:['Gaty','Firey'], rushLightning:true, wins:0, bestSecs:120 }, fighterStats:{ Lightning:{ g:31, w:24 }, Pen:{ g:2, w:1 } }, fighterStatsSeeded:false }))`);
     const p = JSON.parse(m);
     expect(p.one).toEqual({ stage: 5, erased: ['Gaty', 'Firey'], rushLightning: true, wins: 1, bestSecs: 90 });
-    expect(p.fighterStats).toEqual({ Lightning: { g: 31, w: 25 }, Pen: { g: 2, w: 1 } });
+    // Whole records, the one with more games (the review): taking g and w separately wrote {g:31,w:25}, a record neither tab
+    // had, and it inflated the win rate that opens the chain.
+    expect(p.fighterStats).toEqual({ Lightning: { g: 31, w: 24 }, Pen: { g: 2, w: 1 } });
+    const tie = W.eval(`JSON.stringify(mergeFighterStats({ L:{ g:31, w:24 } }, { L:{ g:31, w:25 } }))`);
+    expect(JSON.parse(tie), 'on the same number of games, the better one -- still a record one tab had').toEqual({ L: { g: 31, w: 25 } });
     expect(p.fighterStatsSeeded).toBe(true);
     expect(W.eval(`(function(){ var keep = PROFILE; PROFILE = JSON.parse(${JSON.stringify(m)}); var b = oneBanned(ROSTER.find(function(r){ return r.name==='Firey'; })); PROFILE = keep; return b; })()`),
       'a stale list after her defeat bans nobody').toBe(false);
@@ -510,16 +559,30 @@ describe('the chain survives a reload at every step', () => {
   it('a secret stays secret: before the Moon cracks the title has no One button at all, and keeps its six', async () => {
     const w = boot({ 'profile:v1': profileAt({ stage: 2, erased: ['Gaty'] }) });
     await w.eval('profileReady'); await sleep(w, 0);
-    const r = w.eval(`({ entry:!!document.getElementById('oneEntry'), row:document.getElementById('oneEntryRow').style.display,
+    const r = w.eval(`({ entry:!!document.getElementById('oneEntry'),
       n:[].slice.call(document.querySelectorAll('#title button')).filter(function(b){ return !b.closest('#dailyCard'); }).length })`);
-    expect(r).toEqual({ entry: false, row: 'none', n: 6 });
+    expect(r).toEqual({ entry: false, n: 6 });
   });
+
+  it('keeps the title\'s six buttons at every step of the chain, with at most one more on its one card', async () => {
+    // The UI pass: "at most six buttons" (test/ui-simplify). A One row made it seven for everyone from the Moon on, and for
+    // good once she was beaten; the review caught it because that test only ever boots a fresh profile.
+    for (const stage of [0, 1, 2, 3, 4, 5]) {
+      const w = boot({ 'profile:v1': profileAt({ stage, erased: stage ? ['Gaty'] : [], wins: stage === 5 ? 1 : 0 }) });
+      await w.eval('profileReady'); await sleep(w, 0);
+      const r = w.eval(`({ row:[].slice.call(document.querySelectorAll('#title button')).filter(function(b){ return !b.closest('#dailyCard'); }).length,
+        card:document.querySelectorAll('#dailyCard button').length })`);
+      expect(r.row, `stage ${stage}`).toBeLessThanOrEqual(6);
+      expect(r.card, `stage ${stage}`).toBeLessThanOrEqual(1);
+      w.eval(`clearTimeout(ONE_MOON_TIMER)`);
+    }
+  }, 60000);
 
   it('erasing: the board still shows who is gone, and your pick is Lightning', async () => {
     const w = boot({ 'profile:v1': profileAt({ stage: 1, erased: ['Gaty', 'Barf Bag', 'Basketball', 'Firey'] }) });
     await w.eval('profileReady'); await sleep(w, 0);
-    const r = w.eval(`go('select'); ({ chosen:chosen.name, firey:!!document.querySelector('#board .cell.erased'), entry:document.getElementById('oneEntryRow').style.display })`);
-    expect(r).toEqual({ chosen: 'Lightning', firey: true, entry: 'none' });
+    const r = w.eval(`go('select'); ({ chosen:chosen.name, firey:!!document.querySelector('#board .cell.erased'), entry:!!document.getElementById('oneEntry') })`);
+    expect(r).toEqual({ chosen: 'Lightning', firey: true, entry: false });
   });
 
   it('only Lightning left: still only Lightning', async () => {
@@ -528,27 +591,33 @@ describe('the chain survives a reload at every step', () => {
     expect(w.eval(`ROSTER.filter(onePickable).map(function(r){ return r.name; })`)).toEqual(['Lightning']);
   });
 
-  it('the Moon not yet seen: the title brings it back, and it plays', async () => {
+  it('the Moon not yet seen: the title brings it back, and it plays by itself', async () => {
     const w = boot({ 'profile:v1': profileAt({ stage: 3 }) });
     await w.eval('profileReady'); await sleep(w, 0);
-    const r = w.eval(`(function(){ var row = document.getElementById('oneEntryRow').style.display, t = document.getElementById('oneEntry').textContent;
-      document.getElementById('oneEntry').click(); return { row:row, t:t, moon:document.getElementById('moonScene').classList.contains('active') }; })()`);
-    expect(r).toEqual({ row: 'flex', t: '🌕 Something is wrong with the Moon…', moon: true });
+    const before = w.eval(`({ title:document.getElementById('title').classList.contains('active'), entry:!!document.getElementById('oneEntry') })`);
+    expect(before, 'the title first, with nothing to press').toEqual({ title: true, entry: false });
+    await sleep(w, 1000);
+    expect(w.eval(`document.getElementById('moonScene').classList.contains('active')`), 'then the Moon, by itself').toBe(true);
+    w.eval(`stopMoonScene()`);
   });
 
   it('One not yet beaten: the title faces her, as solo Lightning', async () => {
     const w = boot({ 'profile:v1': profileAt({ stage: 4, erased: ['Gaty', 'Firey'] }) });
     await w.eval('profileReady'); await sleep(w, 0);
-    const r = w.eval(`(function(){ var t = document.getElementById('oneEntry').textContent; document.getElementById('oneEntry').click();
-      return { t:t, story:ONEFIGHT.story, names:fighters.map(function(f){ return f.name; }) }; })()`);
-    expect(r).toEqual({ t: '🌕 Face One', story: true, names: ['Lightning'] });
+    const r = w.eval(`(function(){ var b = document.getElementById('oneEntry'), t = b.textContent, inCard = !!b.closest('#dailyCard'),
+      card = document.getElementById('dailyCard').textContent; b.click();
+      return { t:t, inCard:inCard, card:/ONE IS WAITING/.test(card) && !/DAILY/.test(card), story:ONEFIGHT.story, names:fighters.map(function(f){ return f.name; }) }; })()`);
+    expect(r, 'her card, in the Daily card\'s place').toEqual({ t: 'Face One ▶', inCard: true, card: true, story: true, names: ['Lightning'] });
   });
 
   it('One beaten: no bans, and she is there to fight', async () => {
     const w = boot({ 'profile:v1': profileAt({ stage: 5, erased: ['Gaty', 'Barf Bag', 'Basketball', 'Firey'], wins: 1, bestSecs: 200 }) });
     await w.eval('profileReady'); await sleep(w, 0);
-    const r = w.eval(`({ t:document.getElementById('oneEntry').textContent, banned:ROSTER.filter(oneBanned).length, live:oneQuestLive() })`);
-    expect(r).toEqual({ t: '🌕 Fight One', banned: 0, live: false });
+    const r = w.eval(`({ entry:!!document.getElementById('oneEntry'), daily:/DAILY/.test(document.getElementById('dailyCard').textContent),
+      banned:ROSTER.filter(oneBanned).length, live:oneQuestLive() })`);
+    expect(r, 'the Daily is back in its place, and she is under Boss Rush').toEqual({ entry: false, daily: true, banned: 0, live: false });
+    const pick = w.eval(`go('select'); SETTINGS.mode = 'boss'; syncModeUI(); document.getElementById('bossPickRow').style.display`);
+    expect(pick).toBe('flex');
   });
 
   it('a Lightning main who already has both conditions starts the chain on first boot, from the match log', async () => {
@@ -558,5 +627,120 @@ describe('the chain survives a reload at every step', () => {
       'profile:v1': profileAt({ stage: 0, rushLightning: true }, { fighterStats: {}, fighterStatsSeeded: false }) });
     await w.eval('profileReady'); await w.eval('seedFighterStats()'); await sleep(w, 0);
     expect(w.eval(`({ stage:PROFILE.one.stage, erased:PROFILE.one.erased.length })`), 'started, but a win has to take the first').toEqual({ stage: 1, erased: 0 });
+  });
+});
+
+describe('the review\'s fixes to the chain', () => {
+  it('a World Cup match you win erases one, and the hub says who; a lost or drawn one erases no one', async () => {
+    // "ONE fighter erased per WIN", with no mode left out: the cup's matches never reach awardMatchProgress.
+    await fresh(W, ARM + ` PROFILE.one.stage = 1; unlockFighter('Lightning'); chosen = oneLightning(); PENDING_TOURNEY = { size:1, mode:'normal' }; startMatch();`);
+    const play1 = (kosMine, kosTheirs) => W.eval(`(function(){
+      var fx = TOURNEY.fixtures.find(function(f){ return !f.played && (f.a===TOURNEY.myTeam || f.b===TOURNEY.myTeam); });
+      if(!fx){ TOURNEY.round = 0; buildGroupFixtures(); fx = TOURNEY.fixtures.find(function(f){ return f.a===TOURNEY.myTeam || f.b===TOURNEY.myTeam; }); }
+      watchFixture(fx, true);
+      var you = fighters.find(function(f){ return f.you; });
+      fighters.forEach(function(f){ f._kos = (f.team===you.team) ? ${kosMine} : ${kosTheirs}; });
+      finishWatchedGroup(fx);
+      return { erased:PROFILE.one.erased.slice(), hub:document.getElementById('tourneyHubBody').textContent, you:you.name };
+    })()`);
+    const won = play1(2, 0);
+    expect(won.you).toBe('Lightning');
+    expect(won.erased).toEqual(['Gaty']);
+    expect(won.hub).toMatch(/ERASED FROM THE TIMELINE: Gaty/);
+    expect(play1(0, 2).erased, 'a loss').toEqual(['Gaty']);
+    expect(play1(1, 1).erased, 'a draw').toEqual(['Gaty']);
+    await sleep(W, 0);
+    expect(stored(W).one.erased, 'saved at the win').toEqual(['Gaty']);
+    W.eval(`endTournament(); go('title');`);
+  });
+
+  it('the final crowns you on the spot, and the Moon follows with nothing pressed (the real flow, not advanceKnockout)', async () => {
+    // The review: after the final the hub waited for "Sim rest & Continue" before the champions and the Moon.
+    await fresh(W, ARM + ` PROFILE.one.stage = 2; unlockFighter('Lightning'); chosen = oneLightning(); ONE_MOON_DELAY = 400;
+      PENDING_TOURNEY = { size:1, mode:'normal' }; startMatch();`);
+    W.eval(`(function(){
+      var t = TOURNEY.myTeam, other = TOURNEY.teams.find(function(x){ return x!==t; });
+      var fin = { kind:'ko', a:t, b:other, played:false, result:null };
+      TOURNEY.stage = 'knockout'; TOURNEY.knockoutRound = 4; TOURNEY.bracket = [[], [], [], [], [fin]]; TOURNEY.fixtures = [fin]; TOURNEY.fxIndex = 0;
+      watchFixture(fin, true);
+      var you = fighters.find(function(f){ return f.you; });
+      fighters.forEach(function(f){ if(f.team!==you.team){ f.dead = true; f.stocks = 0; } });
+      checkWin();
+    })()`);
+    await sleep(W, 1500);
+    const champ = W.eval(`({ champ:TOURNEY.champion===TOURNEY.myTeam, stage:PROFILE.one.stage, hub:document.getElementById('tourneyHubBody').textContent,
+      moon:document.getElementById('moonScene').classList.contains('active') })`);
+    expect(champ.champ, 'crowned without a click').toBe(true);
+    expect(champ.stage).toBe(3);
+    expect(champ.hub, "the champions' screen first").toMatch(/YOU win the World Cup!/);
+    expect(champ.moon).toBe(false);
+    await sleep(W, 500);
+    expect(W.eval(`document.getElementById('moonScene').classList.contains('active')`), 'and the Moon plays by itself').toBe(true);
+    W.eval(`stopMoonScene(); PROFILE.one.stage = 0; go('title'); ONE_MOON_DELAY = 2000;`);
+  });
+
+  it('every boss felled in Boss Rush is a win too, once the chain has started -- never before it', async () => {
+    await fresh(W, ARM + ` PROFILE.one.stage = 1; unlockFighter('Lightning'); SETTINGS.mode = 'boss'; SETTINGS.count = 1; chosen = oneLightning();`);
+    const fell = () => W.eval(`(function(){
+      var b = summons.find(function(s){ return s.type==='boss' && s._bossRush; }); b.hp = 0; bossRushCheck();
+      return PROFILE.one.erased.slice(); })()`);
+    W.eval(`startMatch();`);
+    expect(fell()).toEqual(['Gaty']);
+    W.eval(`spawnBossRushBoss();`);
+    expect(fell()).toEqual(['Gaty', 'Barf Bag']);
+    W.eval(`running = false; BOSSRUSH.active = false; PROFILE.one.stage = 0; PROFILE.one.erased = []; startMatch();`);
+    expect(fell(), 'a locked chain: a boss is just a boss').toEqual([]);
+    W.eval(`running = false; BOSSRUSH.active = false; go('title');`);
+  });
+
+  it('is as long as your own roster whatever the board shows, and the view toggle cannot hand an erased-out fighter back', async () => {
+    // The review: the queue read isUnlocked, which is true for everyone in the "show everything" view -- about 74 wins
+    // there against 38 in the other, and switching mid-chain changed how many were left.
+    await fresh(W, ARM + ` PROFILE.one.stage = 1; PROFILE.one.erased = ['Gaty','Barf Bag','Basketball']; unlockFighter('Lightning');`);
+    const r = W.eval(`(function(){
+      var left = function(){ return ROSTER.filter(function(r){ return r.play && r.name!=='Lightning' && PROFILE.one.erased.indexOf(r.name)<0 && oneOwns(r); }).length; };
+      var pickable = function(){ return ROSTER.filter(onePickable).length; };
+      PROFILE.viewMode = 'starters'; var a = { left:left(), next:oneNextErased(), pick:pickable() };
+      PROFILE.viewMode = 'everything'; var b = { left:left(), next:oneNextErased(), pick:pickable() };
+      var notMine = ROSTER.find(function(r){ return r.play && !oneOwns(r); });
+      var banned = notMine ? oneBanned(notMine) : true;
+      PROFILE.viewMode = 'starters';
+      return { a:a, b:b, banned:banned, name:notMine && notMine.name };
+    })()`);
+    expect(r.b, 'the same chain in either view').toEqual(r.a);
+    expect(r.banned, `a fighter you do not have (${r.name}) cannot be picked while she erases`).toBe(true);
+  });
+
+  it('the Daily is played against today\'s foe -- before, only Test Mode ever did -- and under the bans you play it as Lightning', async () => {
+    // Found on the bug pass: since Wave 3.5 the fixed opponent went only into the Test Mode lineup, so a real Daily drew
+    // its opponent at random and was never "the same seeded matchup for everyone" -- the thing the chain's default keeps.
+    const day = (setup) => W.eval(`(function(){ var ds = dailySeed, out = [];
+      try { [11, 222, 3333, 44444, 555555].forEach(function(S){
+        dailySeed = function(){ return S; };
+        var m = oneDailyMatchup(dailyMatchup(S)); ${setup}
+        startDailyMatch();
+        out.push({ got:[fighters[0].name, fighters[1].name], want:[m.you.name, m.foe.name] });
+        running = false; DAILY_ACTIVE = false; PENDING_DAILY = null; }); }
+      finally { dailySeed = ds; }
+      return out; })()`);
+    await fresh(W);
+    day('').forEach(d => expect(d.got).toEqual(d.want));
+    await fresh(W, ARM + ` PROFILE.one.stage = 1; PROFILE.one.erased = ['Gaty']; unlockFighter('Lightning');`);
+    day('').forEach(d => { expect(d.got[0]).toBe('Lightning'); expect(d.got).toEqual(d.want); });
+    const mirror = W.eval(`(function(){ chosen = oneLightning(); DAILY_ACTIVE = true; PENDING_DAILY = oneLightning();
+      SETTINGS.mode = 'ffa'; SETTINGS.count = 2; beginMatchNow(); var n = fighters.map(function(f){ return f.name; });
+      running = false; DAILY_ACTIVE = false; PENDING_DAILY = null; return n; })()`);
+    expect(mirror, 'when today\'s foe is Lightning: a mirror match').toEqual(['Lightning', 'Lightning']);
+    W.eval(`go('title')`);
+  });
+
+  it('the one-time backfill leaves the tutorial out, as live recording always has', async () => {
+    const rec = (name, won, dummy) => ({ ts: 1, mode: 'ffa', count: 2, stage: 'goiky',
+      fighters: [{ name, you: true, controller: 'local', won }, dummy ? { name: 'Dummy', you: false, controller: 'still', won: !won }
+        : { name: 'Leafy', you: false, controller: 'ai', won: !won }] });
+    const log = [rec('Firey', true, true), rec('Firey', true, true), rec('Firey', false, false)];
+    const w = boot({ 'balance:matchlog': JSON.stringify(log) });
+    await w.eval('profileReady'); await w.eval('seedFighterStats()'); await sleep(w, 0);
+    expect(w.eval(`PROFILE.fighterStats.Firey`), 'two tutorial runs against the Dummy do not count').toEqual({ g: 1, w: 0 });
   });
 });

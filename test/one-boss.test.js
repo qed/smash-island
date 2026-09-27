@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { bootMonolith } from './helpers/smash-golden.js';
+import { mulberry32 } from './helpers/prng.js';
+import { JSDOM } from 'jsdom';
 
 // ONE, the secret boss: her fight. The owner, in order: "One is a secret boss ... you fight one on a teams-size map, but
 // without the solid walls ... One has all of the algebralien attacks but launched faster and with more damage, has 2000 hp."
@@ -65,7 +67,9 @@ describe('One is her own boss', () => {
     expect([f.hp, f.max, f.mult]).toEqual([2000, 2000, 1]);
     expect(f.bosses).toBe(1);
     expect(f.rush, 'no gauntlet state touched').toEqual([false, 3, 7, 2]);
-    expect(f.arena).toBe('onedim');
+    // Her arena's sky is the night sky with the cracked Moon in it ('onemoon'). It was keyed 'onedim', One's Dimension, and
+    // the review's canon pass flagged that: canon puts her dimension outside space-time, not under the Moon she left.
+    expect(f.arena).toBe('onemoon');
   });
 
   it('once unlocked takes any lineup ("no not only as lightning"): allies scale each hit, never the 2000 bar', () => {
@@ -168,7 +172,7 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.shot, "the shared shapes hit at 0.8 of hers, as bossShot does of Four's").toBeCloseTo(26.4, 6);
   });
 
-  it('flies 1.35x as fast, winds up and comes round again in 0.7x the time', () => {
+  it('flies 1.35x as fast, and winds up and comes round again at Four\'s and Two\'s own pace', () => {
     const r = W.eval(`(function(){
       projectiles = [];
       var s = { x:500, y:300, r:88, face:1, _marks:0, maxHp:2000, hp:2000, _spTier:{ moonrocks:1, eyelasers:1, hands:1, orbitkick:1, ghost:1 } };
@@ -202,8 +206,12 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.mr2[0][1]).toBeCloseTo(0.081, 6);
     expect(r.rain.length).toBe(5);
     r.rain.forEach(v => expect(v).toBeCloseTo(6.75, 6));
-    expect(r.tel, "Four's 50 and Two's 36, x0.7").toEqual([35, 35, 35, 25, 25, 25, 25, 25]);
-    expect(r.gaps, "bossAtkGap's 100/72/52, x0.7").toEqual([70, 50, 36, 36]);
+    // "Launched faster" is the shots above, 1.35x. The wind-ups and the gaps between attacks were 0.7x of Four's and Two's
+    // too, which was the design's reading and not the owner's words, and with it nobody could beat her: the bans lift only
+    // when she is beaten and there is "No way out" (the review's permanent-lock finding). The scripted player in
+    // test/one-winnable.test.js won 0 of its 8 story fights at 0.7x and wins some at Four's and Two's own pace.
+    expect(r.tel, "Four's 50 and Two's 36").toEqual([50, 50, 50, 36, 36, 36, 36, 36]);
+    expect(r.gaps, "bossAtkGap's own 100/72/52").toEqual([100, 72, 52, 52]);
   });
 
   it('carries every Algebralien attack, and each one does what it did for Four or Two', () => {
@@ -444,8 +452,12 @@ describe('special 5: one ghost fighter with 100 HP, and One takes nothing until 
       you.pct = 0; you.invuln = 0; applyHit(you, 10, 1, -1, g); out.onYou = you.pct;
       // an ally goes for the ghost first
       var ally = fighters[1]; ally.aiTarget = null; ally.aiTimer = 0; aiThink(ally); out.allyTarget = ally.aiTarget === g;
-      // 100 damage and it is gone; then she can be hurt again
+      // 100 HP and it is gone; then she can be hurt again. With an ally beside you each hit on it counts for 1/1.6, as
+      // every hit on her does (the review: its 100 did not scale with allies, so it was no shield for a full side), so
+      // two 60s leave it standing on 25 and a third finishes it.
       g.invuln = 0; applyHit(g, 60, 1, -1, you); g.invuln = 0; applyHit(g, 60, 1, -1, you);
+      out.twoHits = { dead: g.dead, hp: g._ghostHp };
+      g.invuln = 0; applyHit(g, 60, 1, -1, you);
       out.dead = g.dead; out.cleared = one._ghost === null;
       var hp2 = one.hp; damageSummons(you, one.x, one.y, 10, 20); out.after = hp2 - one.hp;
       return out;`);
@@ -460,6 +472,8 @@ describe('special 5: one ghost fighter with 100 HP, and One takes nothing until 
     expect(r.ghostOnOne).toBe(0);
     expect(r.onYou).toBeGreaterThan(0);
     expect(r.allyTarget).toBe(true);
+    expect(r.twoHits.dead).toBe(false);
+    expect(r.twoHits.hp).toBeCloseTo(100 - 120 / 1.6, 6);
     expect(r.dead && r.cleared).toBe(true);
     expect(r.after, 'damage lands again once it is dead').toBeCloseTo(20 / 1.6, 6);
   });
@@ -577,12 +591,252 @@ describe('the whole fight, headless', () => {
         maxShots = Math.max(maxShots, projectiles.filter(function(p){ return p.owner===-2; }).length);
         if (one._ghost && !one._ghost.dead && i % 11 === 0){ try { drawOneGhostAura(one._ghost); drawFighter(one._ghost); } catch(e){ drawErr = String(e && e.stack || e); } }
       }
-      try { drawArenaDecor('onedim'); } catch(e){ drawErr = String(e && e.stack || e); }
+      try { drawArenaDecor('onemoon'); } catch(e){ drawErr = String(e && e.stack || e); }
       return { err: err, drawErr: drawErr, kinds: Object.keys(kinds), loopErr: !!window.__loopErrLogged, maxShots: maxShots,
         hp: Math.round(one.hp), frames: ONEFIGHT.frames };`);
     expect(r.err).toBe(null);
     expect(r.drawErr).toBe(null);
     expect(r.kinds.length, 'most of her moves came out').toBeGreaterThan(8);
     expect(r.maxShots).toBeGreaterThan(0);
+  }, 120000);
+});
+
+// THE ADVERSARIAL REVIEW'S FINDINGS ON HER FIGHT, each pinned where it was found.
+describe("the review's fixes to her fight", () => {
+  it('the Chain Bolt goes the way Lightning faces: a boss in front takes the first link over a foe behind', () => {
+    // G28 is "the first link goes the way she is facing". The fighters' any-direction fallback used to run before the boss
+    // pass, so Firey 60px behind took the link while Four stood 220px in front (the review's probe).
+    const r = W.eval(`(function(){
+      go('title'); SETTINGS.mode='ffa'; running=true;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var L = makeFighter(ROSTER.find(function(x){ return x.name==='Lightning'; }), 400, groundY()-24, 0);
+      var F = makeFighter(ROSTER.find(function(x){ return x.name==='Firey'; }), 340, groundY()-24, 1);
+      L.team=0; F.team=1; L.face=1; [L,F].forEach(function(f){ f.controller='still'; f.invuln=0; f.pct=0; }); fighters=[L,F];
+      var four = { type:'boss', name:'Four', attack:'four', team:-1, x:620, y:groundY()-95, r:95, hp:340, maxHp:340 };
+      summons=[four]; L.spCd=0; doSpecial(L);
+      var out = { four: 340 - four.hp, firey: F.pct };
+      summons=[]; F.pct=0; F.invuln=0; L.spCd=0; doSpecial(L); out.turned = F.pct;
+      running=false; summons=[]; fighters=[]; SETTINGS.mode='ffa';
+      return out; })()`);
+    expect(r.four, 'Four, in front, took the first link').toBe(8);
+    expect(r.firey, 'Firey, behind her, was never the first link').toBe(0);
+    expect(r.turned, 'with nothing in front it still turns round for the foe behind').toBeGreaterThan(0);
+  });
+
+  it('...and One in front takes the first link over her own ghost behind', () => {
+    const r = fight(['Lightning'], { story: true }, `
+      one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
+      ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID);
+      var g = one._ghost; g.invuln = 0; g.controller = 'still';
+      you.face = 1; one.x = you.x + 200; one.y = you.y; g.x = you.x - 40; g.y = you.y; g.vx = 0; g.vy = 0;
+      var order = [], ah = applyHit, cb = chainBoltBoss;
+      applyHit = function(t){ order.push(t._oneGhost ? 'ghost' : t.name); return ah.apply(this, arguments); };
+      chainBoltBoss = function(s){ order.push(s.name); return cb.apply(this, arguments); };
+      try { you.spCd = 0; doSpecial(you); } finally { applyHit = ah; chainBoltBoss = cb; }
+      return order;`);
+    expect(r[0], 'the first link goes the way she faces').toBe('One');
+  });
+
+  it('R mid-fight starts her from the top: her 2000, the clock, and the time on the result', () => {
+    // The keydown handler calls startMatch while running; it used to respawn her at 2000 with the clock still counting,
+    // so the abandoned attempt went into "She shattered in m:ss" and the best time.
+    const r = fight(['Lightning'], { story: true }, `
+      one._atkTimer = 1e9; for (var i=0; i<601; i++) step();
+      one.hp = 1500; var before = ONEFIGHT.frames;
+      window.dispatchEvent(new KeyboardEvent('keydown', { code:'KeyR' }));
+      var again = summons.find(function(s){ return s._oneFight; }); again._atkTimer = 1e9;
+      for (var j=0; j<120; j++) step();
+      var mid = { frames: ONEFIGHT.frames, hp: again.hp, fresh: again !== one, story: ONEFIGHT.story, active: ONEFIGHT.active,
+        names: fighters.map(function(f){ return f.name; }), stocks: fighters[0].stocks };
+      again.hp = 0; var k = 0; while (running && k < 200){ step(); k++; }
+      return { before: before, mid: mid, k: k, won: ONEFIGHT.won, secs: ONEFIGHT.result && ONEFIGHT.result.secs };`);
+    // (the fight's first frame is counted as it starts, so 601 steps read 602: the same one frame after R)
+    const lead = r.before - 601;
+    expect(lead).toBeLessThanOrEqual(1);
+    expect(r.mid).toEqual({ frames: 120 + lead, hp: 2000, fresh: true, story: true, active: true, names: ['Lightning'], stocks: 3 });
+    expect(r.won).toBe(true);
+    expect(r.secs, 'the result times the fight that was won, not the one before R').toBe(Math.round((120 + lead + r.k) / 60));
+  });
+
+  it('chases and teleports toward YOU, not the ally standing beside her; with no human left, the nearest', () => {
+    // "one follows you if you try to run away" / "one can teleport if you are very far". updateSummons hands a boss the
+    // NEAREST fighter, so with an ally 200px from her and you 1400px away she sat by the ally (the review's probe).
+    const r = fight(['Firey', 'Leafy'], {}, `
+      one._atkTimer = 1e9; var ally = fighters[1];
+      [you, ally].forEach(function(f){ f.controller = 'still'; });
+      var x0 = WW*0.5; one.x = x0; one.y = groundY() - 150; one.vx = 0; one._teleCd = 0; one._farT = 0;
+      var tele = false;
+      for (var i=0; i<120; i++){ ally.x = x0 + 200; you.x = x0 - 1400; ally.vx = 0; you.vx = 0; step(); if (one._teleCd > 0) tele = true; }
+      var toYou = Math.abs(one.x - you.x), toAlly = Math.abs(one.x - ally.x);
+      you.dead = true; var nearest = oneChaseTarget(one, ally) === ally; you.dead = false;
+      return { tele: tele, toYou: toYou, toAlly: toAlly, nearest: nearest };`);
+    expect(r.tele, 'she teleported').toBe(true);
+    expect(r.toYou, 'to you').toBeLessThan(500);
+    expect(r.toAlly, 'and left the ally behind').toBeGreaterThan(900);
+    expect(r.nearest).toBe(true);
+  });
+
+  it('the story fight is the same for everyone: three stocks and no items, whatever the match settings', () => {
+    // It inherited SETTINGS.stocks and itemRate: one stock, or heals and invincibility stars, by the player's own settings.
+    const r = W.eval(`(function(){
+      SETTINGS.stocks = 1; SETTINGS.itemRate = 3; LOCAL_PLAYERS = 1;
+      startOneFight(['Lightning'], { story:true, onEnd:function(){ return true; } });
+      var one = summons.find(function(s){ return s._oneFight; }); one._atkTimer = 1e9;
+      var story = { stocks: fighters[0].stocks, every: itemSpawnInterval() };
+      for (var i=0; i<900; i++) step();
+      story.items = items.length;
+      running = false;
+      startOneFight(['Lightning', 'Firey'], { onEnd:function(){ return true; } });
+      var free = { stocks: fighters[0].stocks, every: itemSpawnInterval() };
+      running = false; SETTINGS.stocks = 3; SETTINGS.itemRate = 0;
+      return { story: story, free: free }; })()`);
+    expect(r.story).toEqual({ stocks: 3, every: 0, items: 0 });
+    expect(r.free.stocks, 'once she is unlocked, your own settings').toBe(1);
+    expect(r.free.every).toBeGreaterThan(0);
+  });
+
+  it('burn and bleed wear down the ghost\'s 100 HP too', () => {
+    // Damage over time adds to pct without passing through applyHit, so 600 frames of burn and bleed on it came to +63%
+    // and 0 HP (the review's probe), and Firey, Match, Pencil and Gelatin could not break the shield with it.
+    const r = fight(['Firey'], { story: true }, `
+      one._atkTimer = 1e9;
+      ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID);
+      var g = one._ghost; g.controller = 'still'; you.controller = 'still'; you.x = g.x - 600;
+      var p0 = g.pct; g.burn = 600; g.bleed = 600;
+      for (var i=0; i<300 && !g.dead; i++) step();
+      return { gained: g.pct - p0, hp: g._ghostHp, dead: g.dead };`);
+    expect(r.gained).toBeGreaterThan(5);
+    expect(r.hp, 'every point of it').toBeCloseTo(100 - r.gained, 6);
+  });
+
+  it('nothing turns her ghost: a possession or an outbreak changes neither its side nor its shield', () => {
+    // Bow's special and Barf Bag's Outbreak switch a fighter's team for a while. On the ghost that made your side's hits on
+    // it friendly fire (so she stayed shielded) and let her own shots hurt it.
+    const r = fight(['Bow'], {}, `
+      one._atkTimer = 1e9;
+      ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID);
+      var g = one._ghost; g.controller = 'still'; g.invuln = 0;
+      you.controller = 'still'; you.x = g.x - 60; you.y = g.y; you.face = 1; you.spCd = 0;
+      doSpecial(you);
+      var after = { team: g.team, infected: g._infected };
+      g.team = 0; g._infected = 99; g._origTeam = 0;
+      var set = { team: g.team, infected: g._infected };
+      var hp0 = g._ghostHp; g.invuln = 0; applyHit(g, 20, 1, -1, you); var hurt = hp0 - g._ghostHp;
+      var hp1 = g._ghostHp; g.invuln = 0; projectiles = [];
+      addProj(oneShot(one, { x:g.x, y:g.y, vx:0, vy:0, life:5, bossAtk:++BOSS_ATK_ID })); step();
+      return { after: after, set: set, hurt: hurt, ownShot: hp1 - g._ghostHp };`);
+    expect(r.after, 'after her special').toEqual({ team: -1, infected: 0 });
+    expect(r.set, 'set directly').toEqual({ team: -1, infected: 0 });
+    expect(r.hurt, 'your hits still break it').toBeGreaterThan(0);
+    expect(r.ownShot, 'her shots still pass through it').toBe(0);
+  });
+
+  it('Power Drain heals her scaled like every hit on her, so allies never make it out-heal the fight', () => {
+    // It healed the raw 2.8x of what it drained while every hit on her was divided by the allies (_dmgTakenMult): with
+    // five fighters one drain restored up to 350 effective HP.
+    const drain = (lineup) => fight(lineup, {}, `
+      one._atkTimer = 1e9; for (var w=0; w<5; w++) step();
+      one.hp = 1700; one.x = WW*0.5; one.y = groundY() - 150;
+      fighters.forEach(function(f, i){ f.x = one.x - 60 + i*30; f.y = groundY() - 24; f.vx = 0; f.vy = 0; f.invuln = 0; });
+      var h0 = one.hp; ONE_MOVES.mindread(one, null, ++BOSS_ATK_ID);
+      return { healed: one.hp - h0, mult: one._dmgTakenMult };`);
+    const solo = drain(['Firey']);
+    const four = drain(['Firey', 'Leafy', 'Bubble', 'Pencil']);
+    expect(solo.healed, "Two's share of the drain on a 2000 bar: 2.8x the 9 it took").toBe(Math.round(9 * 2.8));
+    expect(four.mult).toBeCloseTo(1 / 2.8, 6);
+    expect(four.healed, 'four drained, scaled like the hits').toBe(Math.round(36 * 2.8 * four.mult));
+  });
+
+  it('each phase line she crosses heals your side and hands back a lost stock, never past the stocks you started with', () => {
+    const r = fight(['Lightning'], { story: true }, `
+      one._atkTimer = 1e9;
+      you.pct = 100; you.stocks = 2; one.hp = 1490; step();
+      var first = { pct: you.pct, stocks: you.stocks, marks: one._marks };
+      you.pct = 30; one.hp = 990; step();
+      return { first: first, second: { pct: you.pct, stocks: you.stocks, marks: one._marks } };`);
+    expect(r.first.pct).toBeCloseTo(100 - 64, 0);
+    expect([r.first.stocks, r.first.marks]).toEqual([3, 1]);
+    expect(r.second, 'three was the start: no fourth').toEqual({ pct: 0, stocks: 3, marks: 2 });
+  });
+
+  it('keeps the teams map\'s own floating platforms, every one where the teams builder laid it', () => {
+    // "keep the platforms": it used to throw the teams map away and scatter a new field, dropping its spawn pads, doorway
+    // steps and shaft rungs. Now the real teams builder runs and only its walls and home ledges are taken away.
+    const r = fight(['Lightning'], { story: true }, `
+      var tm = oneTeamsMap, laid = null;
+      oneTeamsMap = function(){ tm(); laid = worldPlats.filter(function(p){ return !p.solid; }).map(function(p){ return [p.x, p.y, p.w]; }); };
+      try { buildOneArena(); } finally { oneTeamsMap = tm; }
+      var have = worldPlats.filter(function(p){ return !p.solid; });
+      var missing = laid.filter(function(q){ return !have.some(function(p){ return p.x===q[0] && p.y===q[1] && p.w===q[2]; }); }).length;
+      return { laid: laid.length, missing: missing, solids: worldPlats.filter(function(p){ return p.solid; }).length };`);
+    expect(r.laid).toBeGreaterThan(10);
+    expect(r.missing).toBe(0);
+    expect(r.solids, 'the floor alone').toBe(1);
+  });
+
+  it("her result screen never shows a fighter's victory line left from an earlier win", async () => {
+    const r = W.eval(`(function(){
+      go('title'); SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; chosen = ROSTER.find(function(x){ return x.name==='Firey'; });
+      startMatch(); running = false;
+      var you = fighters.find(function(f){ return f.you; });
+      showResult([you], you.team);
+      var q = document.getElementById('resultQuip'), won = q.style.display;
+      startOneFight(['Lightning'], { story:true, onEnd:function(){ return true; } });
+      var one = summons.find(function(s){ return s._oneFight; }); one._atkTimer = 1e9;
+      fighters[0].stocks = 1; eliminate(fighters[0]); step();
+      return { won: won, after: q.style.display, text: q.textContent, title: document.getElementById('resultTitle').textContent }; })()`);
+    expect(r.won, 'the win showed its quip').toBe('block');
+    expect(r).toMatchObject({ after: 'none', text: '', title: 'One wins' });
+    W.eval(`go('title')`);
+  });
+});
+
+// The whole draw() of her fight. bootMonolith's canvas returns nothing from createLinearGradient, so draw() threw at the
+// sky before it ever reached her tells or her bar, and the suite only ever called those sub-draws by hand.
+describe('the whole fight, drawn', () => {
+  it('draw() runs through a long AI fight, her tells, her bar and her ghost included, without an error', async () => {
+    const dom = new JSDOM(readFileSync('artifacts/V1/index.html', 'utf8'), {
+      url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+      beforeParse(window) {
+        const grad = { addColorStop() {} };
+        window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
+          get: (_t, p) => (p === 'measureText' ? () => ({ width: 0 })
+            : p === 'canvas' ? { width: 1100, height: 720 }
+            : p === 'getImageData' ? () => ({ data: [] })
+            : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') ? () => grad : () => {}),
+          set: () => true,
+        });
+        window.Math.random = mulberry32(11);
+        window.requestAnimationFrame = () => 0;
+        window.cancelAnimationFrame = () => {};
+      },
+    });
+    const w = dom.window;
+    await w.eval('profileReady');
+    const r = w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startOneFight(['Lightning', 'Firey'], { onEnd:function(){ return true; } });
+      var one = summons.find(function(s){ return s._oneFight; });
+      fighters.forEach(function(f){ f.controller = 'ai'; });
+      var n = { fx:0, bar:0 }, fx = drawOneFx, bar = drawOneBar;
+      drawOneFx = function(){ n.fx++; return fx.apply(this, arguments); };
+      drawOneBar = function(){ n.bar++; return bar.apply(this, arguments); };
+      var err = null, draws = 0, ghost = 0, tells = 0;
+      for (var i = 0; i < 3000 && running; i++){
+        try {
+          step();
+          if (i % 3 === 0){ draw(); draws++; if (one._ghost && !one._ghost.dead) ghost++; if (one._tel > 0) tells++; }
+        } catch(e){ err = String(e && e.stack || e); break; }
+      }
+      drawOneFx = fx; drawOneBar = bar; running = false;
+      return { err: err, draws: draws, n: n, ghost: ghost, tells: tells, loopErr: !!window.__loopErrLogged };
+    })()`);
+    expect(r.err).toBe(null);
+    expect(r.loopErr).toBe(false);
+    expect(r.draws).toBeGreaterThan(500);
+    expect(r.n.fx, 'every draw reached her tells').toBe(r.draws);
+    expect(r.n.bar, '...and her bar').toBe(r.draws);
+    expect(r.tells, 'with wind-ups on screen').toBeGreaterThan(20);
+    expect(r.ghost, 'and her ghost').toBeGreaterThan(0);
   }, 120000);
 });

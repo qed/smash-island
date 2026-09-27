@@ -450,7 +450,8 @@
     </div>
     <h1>BATTLE FOR<br>SMASH ISLAND</h1>
     <div class="tag">5-contestant free-for-all · percent & knockback · v1</div>
-    <!-- DAILY MATCH (Wave 3.5): the same seeded matchup for everyone, one attempt a day. -->
+    <!-- DAILY MATCH (Wave 3.5): the same seeded matchup for everyone, one attempt a day. While One waits to be fought, her
+         card has this place instead (oneTitleCard), so the title keeps its six buttons. -->
     <div id="dailyCard" class="dailycard" style="display:none"></div>
     <!-- Three tiers, biggest first: one thing to press if you have never been here, the three big
          modes under it, and the quiet stuff last. Everything that used to sit in this row as a
@@ -463,9 +464,6 @@
       <button class="btn alt sm" onclick="openLobby()">🌐 Play with Friends</button>
       <button class="btn alt sm" onclick="openEditor()">🛠 Level Creator</button>
     </div>
-    <!-- ONE. Empty until the Moon has cracked; refreshOneEntry then puts ONE button here (the Moon, then her fight, then her
-         for good). Built only when it is needed, so the title everyone else sees keeps its six buttons. -->
-    <div class="row" id="oneEntryRow" style="margin-top:10px;display:none"></div>
     <div class="row" style="margin-top:10px">
       <button class="btn ghost sm" onclick="openTutorial()">🎓 How to Play</button>
       <button class="btn ghost sm" onclick="go('options')">⚙ Settings</button>
@@ -3375,6 +3373,9 @@ addEventListener('resize',()=>{ if(running){resize();} });
 
 function startMatch(){
   if(ONEFIGHT.retry){ const r = ONEFIGHT.retry; startOneFight(r.lineup, r.opts); return; }   // Rematch from One's result screen
+  // R mid-fight (the keydown handler calls startMatch while running): the same fight from the top, through the one entry
+  // point, so the clock, the result and her 2000 all start again instead of the abandoned attempt counting toward the time.
+  if(ONEFIGHT.active && ONEFIGHT.lineup){ startOneFight(ONEFIGHT.lineup, ONEFIGHT.opts); return; }
   // One's bans are on player 1's pick, and every way into a match comes through here -- the World Cup pick and Test mode
   // included -- so a fighter she has erased can never start one. (The tutorial always plays Firey and counts for nothing.)
   if(!TUT.active) oneCoercePick();
@@ -3946,6 +3947,8 @@ function finishWatchedGroup(fx){
   const sb = teamB.reduce((s,f)=>s+(f._kos||0),0);   // KOs team B scored
   fx.result={sa,sb}; fx.played=true; applyGroupResult(fx.a, fx.b, sa, sb);
   running=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false;
+  const you = fighters.find(f=>f.you);
+  try{ if(you) oneCupMatchWon(you.team===0 ? sa>sb : sb>sa); }catch(e){}   // One's chain: a won cup match is a win
   showTourneyHub();
 }
 function finishWatchedKnockout(fx, winTeam){
@@ -3954,6 +3957,13 @@ function finishWatchedKnockout(fx, winTeam){
   fx.result = { sa: winTeam===0?1:0, sb: winTeam===1?1:0 };
   fx.played=true;
   running=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false;
+  const you = fighters.find(f=>f.you);
+  try{ if(you) oneCupMatchWon(you.team===winTeam); }catch(e){}   // One's chain: a won cup match is a win
+  // YOUR FINAL decides the cup, and there is nothing left in the round to sim, so it is crowned on the spot. It used to wait
+  // on the hub for "Sim rest & Continue", which was one required click between winning the cup and the Moon that "PLAYS BY
+  // ITSELF straight after the World Cup win".
+  const mine = TOURNEY.mode==="normal" && TOURNEY.myTeam && (fx.a===TOURNEY.myTeam || fx.b===TOURNEY.myTeam);
+  if(mine && TOURNEY.stage==="knockout" && TOURNEY.fixtures.length===1 && TOURNEY.fixtures.every(f=>f.played)){ advanceKnockout(); return; }
   showTourneyHub();
 }
 function endTournament(){ TOURNEY.active=false; TOURNEY_WATCHING=null; }
@@ -3971,7 +3981,7 @@ function showTourneyHub(){
     title.textContent="🏆 "+TOURNEY.champion.name;
     // ONE'S CHAIN: the cup that is won with only Lightning left cracks the Moon, and the Moon plays by itself (oneMoonAuto).
     const moon = won && oneQ().stage===ONE_STAGE.MOON;
-    body.innerHTML = '<div class="tourney-champ">'+(won?"YOU win the World Cup! 🎉":TOURNEY.champion.name+' win the World Cup!')+'</div>'
+    body.innerHTML = oneHubNote() + '<div class="tourney-champ">'+(won?"YOU win the World Cup! 🎉":TOURNEY.champion.name+' win the World Cup!')+'</div>'
       + (moon ? '<div class="tourney-champ" style="font-size:16px;opacity:.85">…something up there just cracked.</div>' : '');
     if(moon){ proceed.textContent="Look up 🌕"; proceed.onclick=()=>{ endTournament(); playMoonScene(); }; oneMoonAuto(); }
     else { proceed.textContent="Back to Title"; proceed.onclick=()=>{ endTournament(); go('title'); }; }
@@ -3990,6 +4000,7 @@ function showTourneyHub(){
     title.textContent=names[TOURNEY.knockoutRound]||("Round "+(TOURNEY.knockoutRound+1));
     body.innerHTML = renderKnockoutHub();
   }
+  body.innerHTML = oneHubNote() + body.innerHTML;   // who One erased with the match just won
   if(myFx){
     proceed.textContent="▶ Play My Match";
     proceed.onclick=()=>watchFixture(myFx, true);   // true = you control team A/B
@@ -4461,6 +4472,7 @@ function beginMatchNow(){
   try{ for(const k in STYLE_REC) delete STYLE_REC[k]; }catch(e){}   // fresh play-style sample
   try{ syncTouchControls(); }catch(e){}   // reveal the on-screen pad for a touch device
   running=true; paused=false; hazardT=0;
+  if(ONEFIGHT.active){ ONEFIGHT.frames = 0; ONEFIGHT.over = false; ONEFIGHT.won = false; ONEFIGHT.result = null; ONEFIGHT.retry = null; }   // her clock starts at zero
   window.__elimSeq=0; lastKoFrame=0;   // reset placement/elimination + stalemate timer for the new match
   try{ teamAiResetMatch(); }catch(e){}  // and the team-AI cost guard: call budget is per match
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
@@ -5266,6 +5278,10 @@ function buildFighters(){
       LINEUP_MEMO = { key: lineupKey(N), names: picks.map(p=>p.name), teamOf: null };
     }
     all=[{...chosen, you:true}, ...picks.map(p=>({...p, you:false}))];
+    // THE DAILY'S FOE. "The same seeded matchup for everyone" -- and since Wave 3.5 the fixed opponent was only ever put in
+    // the Test Mode lineup above, so a real Daily drew slot 1 at random like any match (found on the bug pass: a Daily of
+    // Lightning vs Pin came out Lightning vs Yellow Face, Ruler, Pencil). It is today's foe, a mirror match included.
+    if(PENDING_DAILY && all.length > 1) all[1] = { ...PENDING_DAILY, you:false };
   }
 
   // team assignment
@@ -5829,6 +5845,7 @@ const ITEM_KINDS = ["heal","marmalade","throw","power","assist","yoyle","boss"];
 
 function itemSpawnInterval(){
   // frames between spawns, driven by the Items rate setting (0=off)
+  if(ONEFIGHT.active && ONEFIGHT.story) return 0;   // One's story fight has no items, whatever the setting (see ONE_STORY_STOCKS)
   switch(SETTINGS.itemRate){ case 1: return 780; case 2: return 460; case 3: return 260; default: return 0; }
 }
 function spawnItem(){
@@ -6396,12 +6413,14 @@ function bossDmg(){ return BOSS_DMG_BASE * ((typeof BOSSRUSH!=='undefined' && BO
 // Canon (the BFDI wiki's One page): an armless light-blue numeral 1 who took almost all of Two's power and all of Four's in
 // "Last One Standing" (TPOT 19) -- which is why "all of the algebralien attacks" is exactly Four's and Two's here. They are
 // the only Algebraliens in the game.
-const ONE_BOSS = { name:"One", color:"#5D7AF2", hp:2000, big:2.6, attack:"one", arena:"onedim", sprite:"one" };
+const ONE_BOSS = { name:"One", color:"#5D7AF2", hp:2000, big:2.6, attack:"one", arena:"onemoon", sprite:"one" };   // Cornflower Blue: the wiki's colour box (BFB 25+)
 const ONE_AURA = ["#8cf5c0", "#a8e6ff"];   // her stolen power shows as a bright green and light-blue aura (TPOT 19); the hex is ours
 const ONE_PHASE_HP = 500;          // "harder ones getting added every 500 hp": a new phase at 1500, 1000 and 500
 const ONE_DMG_MULT = 1.5;          // "more damage": 1.5x the base boss hit, 33 -- and never the Boss Rush loop multiplier
 const ONE_SPD = 1.35;              // "launched faster": every Four and Two shot flies 1.35x as fast, and homes 1.35x as hard
-const ONE_TEL_MULT = 0.7, ONE_GAP_MULT = 0.7;   // ...and winds up, and comes round again, in 0.7x the time
+// ...but she winds up, and comes round again, at Four's and Two's own pace. It was 0.7x of both, and with everything below
+// that made a fight nobody won (see WHY SHE CAN BE BEATEN). "Launched faster" is the shots, and they still are.
+const ONE_TEL_MULT = 1.0, ONE_GAP_MULT = 1.0;
 const ONE_ACCEL = 0.55*ONE_SPD, ONE_CHASE_MAX = 5.5*ONE_SPD;   // Two's chase, faster: 7.4 px a frame against a fighter's 6.4 run
 const ONE_STANDOFF = 140;          // she closes to this far and stops pushing, so you can still walk in and hit her
 const ONE_TELE_DIST = 1000, ONE_TELE_HOLD = 30, ONE_TELE_CD = 180;   // "one can teleport if you are very far" (canon: she teleports, TPOT 12 on)
@@ -6410,6 +6429,26 @@ const ONE_GHOST_HP = 100;          // "summon 1 ghost fighter with 100 hp you mu
 // is immune: its 100 HP is meant to be spent by hitting it. (A knockout still kills it, see eliminate.)
 const ONE_GHOST_KB = 0.35;
 const ONE_GHOST_HASTE_T = 1e9;     // a tier-3 ghost is hasted for as long as it stands (a name, so the balance knobs leave it be)
+// WHY SHE CAN BE BEATEN. The bans lift only when she is beaten and there is "No way out", so a fight nobody can win locks a
+// player to Lightning for good. The review's runs never won one: Lightning dealt 161 damage in 72 seconds, and a scripted
+// player that reads every wind-up (test/one-boss.test.js, "can be won") lost all three stocks before she was a third down.
+// What was wrong and what changed -- none of it touches what the owner set: 2000 HP, the 100-HP ghost, all of Four's and
+// Two's attacks, 1.5x their damage and 1.35x their shot speed.
+//  - She attacked 1.43x as often as Four and Two, on 0.7x of their wind-ups. The pace and the tells are theirs again
+//    (ONE_TEL_MULT, ONE_GAP_MULT); "launched faster" stays in the shots.
+//  - Her launches, not her damage, ended stocks: with the walls gone one hit carried Lightning off the map at 80-150%, far
+//    short of her 204% cap. Everything on One's side knocks back at ONE_KB of the bosses' own, so a stock lasts to near the
+//    cap and it is her damage that wins.
+//  - The ghost made nearly half the fight a fight you could not gain ground in, and she kept attacking at full pace
+//    through it while it hit harder than a fighter. She holds back while it stands (ONE_GHOST_LULL), and its hits step up
+//    with the tiers but never past the fighter it was (ONE_SPECIAL_TIERS.ghost).
+//  - 2000 HP is the whole gauntlet's worth -- its nine bosses come to 2110 -- and the gauntlet heals 30% a boss and hands
+//    back a stock every third. So her phase lines pay what the gauntlet pays over the same HP (onePhaseReward).
+// With all four the scripted player beats her in about half its runs, in three to four minutes; the same player falls to
+// the gauntlet by its fourth boss, and everyone who reaches her has cleared it with Lightning.
+const ONE_KB = 0.6;
+const ONE_GHOST_LULL = 2;          // her attacks come round half as often while her ghost fights for her
+const ONE_PHASE_HEAL = 64;         // the gauntlet heals 30% at each of its nine bosses, 270% over 2110 HP: 64% for each 500
 // The fighters she erased from the timeline -- Gaty by contract in "Seasonal Shift" (TPOT 15), Barf Bag and Basketball in
 // "Last One Standing" (TPOT 19) -- are the ghosts she sends back. The ghost itself is the owner's idea, not a canon scene.
 const ONE_GHOST_POOL = ["Gaty", "Barf Bag", "Basketball"];
@@ -6443,13 +6482,15 @@ const ONE_SPECIAL_TIERS = {
                { n:3, spd:13, dmg:1.2, fx:'knockdown', fxN:30, kb:20 } ],
   // 5. THE GHOST FIGHTER. Always ONE ghost and always 100 HP, as asked; the tiers change what comes with it -- a ring of
   //    ghost-fire when it arrives (n, spd), how hard it hits (hit), what its hits do (fx), and how fast it moves: it drifts
-  //    at tier 1, runs at a fighter's speed at tier 2 and is hasted at tier 3.
-  ghost:     [ { n:0, spd:0, hit:1.0, fx:null, drift:true },
-               { n:4, spd:6, hit:1.2, fx:'slow', fxN:45 },
-               { n:8, spd:8, hit:1.4, fx:'slow', fxN:70, haste:true } ],
+  //    at tier 1, runs at a fighter's speed at tier 2 and is hasted at tier 3. Its hits climb a quarter a tier and top out
+  //    under the fighter it was: it is the shield she hides behind, not a second boss (it was 1.0/1.2/1.4, see WHY SHE CAN
+  //    BE BEATEN).
+  ghost:     [ { n:0, spd:0, hit:0.6,  fx:null, drift:true },
+               { n:4, spd:6, hit:0.75, fx:'slow', fxN:45 },
+               { n:8, spd:8, hit:0.9,  fx:'slow', fxN:70, haste:true } ],
 };
-// Wind-ups: Four's 50 and Two's 36, x0.7, for the attacks she inherited; the specials each get their own read.
-const ONE_TEL4 = Math.round(50*ONE_TEL_MULT), ONE_TEL2 = Math.round(36*ONE_TEL_MULT);   // 35 and 25
+// Wind-ups: Four's 50 and Two's 36 for the attacks she inherited; the specials each get their own read.
+const ONE_TEL4 = Math.round(50*ONE_TEL_MULT), ONE_TEL2 = Math.round(36*ONE_TEL_MULT);   // 50 and 36
 const ONE_TEL = { zap:ONE_TEL4, screechy:ONE_TEL4, rain:ONE_TEL4, mindread:ONE_TEL2, seekers:ONE_TEL2, ring:ONE_TEL2, sizeshift:ONE_TEL2, ungrounded:ONE_TEL2,
                   moonrocks:40, eyelasers:50, hands:36, orbitkick:48, ghost:30 };
 const ONE_MOVE_NAME = { zap:"ZAP TO DUST!", screechy:"SCREECHY!", mindread:"MIND READ!", rain:"INCOMING!", seekers:"SEEKERS!",
@@ -6460,11 +6501,16 @@ let oneFx = [];   // render-only strokes for her attacks (zap columns, drain tet
 function oneDmg(){ return Math.round(BOSS_DMG_BASE*ONE_DMG_MULT); }   // 33: reads no BOSSRUSH, so a Boss Rush loop cannot leak in
 // Her shots carry their own per-attack cap (bossCap), because applyHit's cap is otherwise the global bossDmg() and would
 // clamp "more damage" straight back to 22.
-function oneShot(s, o){ return Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:oneDmg()*0.8, bossCap:oneDmg(), kb:8, r:11, color:ONE_AURA[0], life:120, noAim:true }, o); }
-function oneHit(f, dmg, kx, ky, id, cap){ applyHit(f, dmg, kx, ky, null, { bossAtk:id, bossCap:(cap!=null ? cap : dmg) }); }
+// Every shot and every hit of hers launches at ONE_KB of what it is written as (the bosses' own numbers).
+function oneShot(s, o){
+  const p = Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:oneDmg()*0.8, bossCap:oneDmg(), kb:8, r:11, color:ONE_AURA[0], life:120, noAim:true }, o);
+  p.kb = (p.kb || 0) * ONE_KB;
+  return p;
+}
+function oneHit(f, dmg, kx, ky, id, cap){ applyHit(f, dmg, kx*ONE_KB, ky*ONE_KB, null, { bossAtk:id, bossCap:(cap!=null ? cap : dmg) }); }
 function oneFoes(){ return fighters.filter(f=>!f.dead && !f._oneGhost); }   // her ghost is on her side
 function onePhase(s){ return Math.min(3, 1 + (s._marks||0)); }             // Four's and Two's phase values: 2000-1501 is 1, 1500-1001 is 2, then 3
-function oneGap(s){ return Math.round([100, 72, 52, 52][Math.min(3, s._marks||0)]*ONE_GAP_MULT); }   // bossAtkGap's 100/72/52, x0.7: 70/50/36
+function oneGap(s){ return Math.round([100, 72, 52, 52][Math.min(3, s._marks||0)]*ONE_GAP_MULT); }   // bossAtkGap's own 100/72/52
 function oneTier(s, k){ return ONE_SPECIAL_TIERS[k][((s._spTier && s._spTier[k]) || 1) - 1]; }
 function oneSurf(x, y){ const t = surfaceBelow(x, y); return t!==null ? t : groundY(); }
 function oneGhostAlive(s){ return !!(s && s._ghost && !s._ghost.dead); }
@@ -6472,26 +6518,44 @@ function oneRoman(t){ return ["", "", " II", " III"][t] || ""; }
 function oneSpecialLabel(s, k){ return ONE_MOVE_NAME[k].replace(/!$/, "") + oneRoman(s._spTier[k]); }
 function oneMoveLabel(s, k){ return (ONE_SPECIAL_TIERS[k] && s._spTier[k] > 1) ? oneSpecialLabel(s, k) + "!" : ONE_MOVE_NAME[k]; }
 
-// THE ARENA ("you fight one on a teams-size map, but without the solid walls" / "teams size map but keep the platforms").
-// The teams map's own box -- its size formula at the default four fighters and Normal map size, so it is the same map
-// however many come -- and its floor slab with the open pits at both ends, so running or being knocked off either side is a
-// knockout. The plus of solid walls is gone, and with it everything that only existed because of the walls (the doorway
-// steps, the shaft rungs), and so are the raised home ledges; there are no bases, spawn pads or safe zones in a one-team
-// fight. The floating platforms are the teams map's own field, laid with nothing in the way now, so it fills the room the
-// cross used to take instead of leaving a cross-shaped hole.
-const ONE_ARENA_COUNT = 4, ONE_FLOOR_Y = 0.912;
+// THE ARENA ("you fight one on a teams-size map, but without the solid walls" / "teams size map but keep the platforms";
+// and on the details: the solid walls AND the raised home ledges go, the floating platforms STAY, and falling off either
+// side is a knockout). It IS the teams map: the real teams builder runs, at the default four fighters (2v2) and Normal map
+// size so it is the same map however many come, and then exactly what was taken away is taken away -- the plus of solid
+// walls and the two raised home ledges. Every floating platform it laid stays where it was: the field, the spawn pads
+// (plain platforms now; there are no teams to spawn on them), the steps in the doorways and the rungs up the shaft. The
+// only solid left is the floor slab, with the open pits past both ends, so running or being knocked off either side is a
+// knockout. With the walls gone the field is carried on into the room they took, on the teams map's own grid, so the cross
+// is not left as a cross-shaped hole in the sky. No bases and no safe zones: it is a one-team fight.
+const ONE_ARENA_COUNT = 4, ONE_ARENA_TEAMS = "2v2", ONE_FLOOR_Y = 0.912;
+// The story fight is the same fight for everyone, whatever the player's own match settings: three stocks (the game's
+// default) and no items (itemSpawnInterval). Once she is unlocked, the player's own stocks and items apply.
+const ONE_STORY_STOCKS = 3;
 const ONE_ARENA_STAGE = { id:"onearena", name:"The Open Crossing", blurb:"The teams map with its walls gone.",
   sky:["#0b1540","#02061a"], ground:"#565a73", plats:[], hazard:null };
+// The teams map, built by the teams builder itself (setupWorld's teams branch), whatever the player's own settings are.
+function oneTeamsMap(){
+  const keep = { mode:SETTINGS.mode, count:SETTINGS.count, teamKey:SETTINGS.teamKey, mapSize:SETTINGS.mapSize, active:ONEFIGHT.active };
+  try{
+    ONEFIGHT.active = false;
+    SETTINGS.mode = 'teams'; SETTINGS.count = ONE_ARENA_COUNT; SETTINGS.teamKey = ONE_ARENA_TEAMS; SETTINGS.mapSize = 'normal';
+    setupWorld();
+  } finally {
+    SETTINGS.mode = keep.mode; SETTINGS.count = keep.count; SETTINGS.teamKey = keep.teamKey; SETTINGS.mapSize = keep.mapSize;
+    ONEFIGHT.active = keep.active;
+  }
+}
 function buildOneArena(){
-  WW = Math.round(W * Math.min(3.6, 2.9 + ONE_ARENA_COUNT*0.11) * 1.5);
-  WH = Math.round(H * 2.5 * 1.5);
+  oneTeamsMap();
+  const botY = WH*ONE_FLOOR_Y;
+  const slab = worldPlats.find(p=>p.solid && !p.wall && Math.abs(p.y - botY) < 1);
+  const kept = worldPlats.filter(p=>!p.solid).map(p=>{ const q = Object.assign({}, p); delete q.pad; return q; });
   camX = 0; camY = 0; bases = []; spawnZones = []; worldZones = [];
-  const marginX = WW*0.03, floorW = WW - marginX*2, botY = WH*ONE_FLOOR_Y;
-  floors = [{ level:0, y:botY, x:marginX, w:floorW }];
-  worldPlats = [{ x:marginX, y:botY, w:floorW, h:46, solid:true, floor:0 }];
+  floors = [{ level:0, y:botY, x:slab.x, w:slab.w }];
+  worldPlats = [slab].concat(kept);
   worldPlats = worldPlats.concat(scatterPlatforms({
-    x0: marginX, x1: marginX+floorW, top: WH*0.10, bot: botY-TEAM_ROW_GAP, colW: FIELD_COL_W(), rowGap: TEAM_ROW_GAP,
-    existing: worldPlats, blockers: worldPlats.filter(p=>p.solid),
+    x0: slab.x, x1: slab.x + slab.w, top: WH*0.10, bot: botY - TEAM_ROW_GAP, colW: FIELD_COL_W(), rowGap: TEAM_ROW_GAP,
+    existing: worldPlats, blockers: [slab],
   }));
   worldPlats = worldPlats.concat(fillClimbGaps(climbLayers(), WW));
 }
@@ -6509,7 +6573,7 @@ function startOneFight(lineup, opts){
   let rows = names.map(n => (n && typeof n==='object') ? n : ROSTER.find(r=>r.name===n)).filter(r=>r && r.play).slice(0, MAX_FFA);
   if(!rows.length) return false;
   if(opts.story) rows = rows.slice(0, 1);
-  const prev = (ONEFIGHT.active && ONEFIGHT.prev) ? ONEFIGHT.prev : { mode:SETTINGS.mode, count:SETTINGS.count, stage, chosen };
+  const prev = (ONEFIGHT.active && ONEFIGHT.prev) ? ONEFIGHT.prev : { mode:SETTINGS.mode, count:SETTINGS.count, stage, chosen, customLevel:CUSTOM_LEVEL };
   ONEFIGHT = { active:true, story:!!opts.story, won:false, over:false, frames:0, lineup:rows.map(r=>r.name), prev,
     onEnd:(typeof opts.onEnd==='function' ? opts.onEnd : null), opts, retry:null, result:null };
   TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false; BOSSRUSH.active=false;
@@ -6520,11 +6584,13 @@ function startOneFight(lineup, opts){
   beginMatchNow();
   return true;
 }
-// Leaving the fight (to the result screen or anywhere else) puts the player's own mode, count, stage and pick back.
+// Leaving the fight (to the result screen or anywhere else) puts the player's own mode, count, stage, pick and custom level back.
 function oneFightRestore(){
   const p = ONEFIGHT.prev;
   ONEFIGHT.active = false;
-  if(p){ SETTINGS.mode = p.mode; SETTINGS.count = p.count; if(p.stage) stage = p.stage; if(p.chosen) chosen = p.chosen; ONEFIGHT.prev = null; }
+  if(p){ SETTINGS.mode = p.mode; SETTINGS.count = p.count; if(p.stage) stage = p.stage; if(p.chosen) chosen = p.chosen;
+    if('customLevel' in p) CUSTOM_LEVEL = p.customLevel;   // startOneFight cleared it; a level you had loaded is still yours
+    ONEFIGHT.prev = null; }
   BOSS_ARENA = null;
 }
 // Exactly the lineup the fight was started with, on one side, spread along the middle of the floor.
@@ -6533,7 +6599,7 @@ function buildOneFighters(){
   const floorY = WH*ONE_FLOOR_Y;
   rows.forEach((r,i)=>{
     const f = makeFighter({ ...r, you:i===0 }, WW*0.5 - 240 - i*70, floorY - 60, i);
-    f.stocks = SETTINGS.stocks; f.team = 0; f._origTeam = 0; f.homeBase = null;
+    f.stocks = ONEFIGHT.story ? ONE_STORY_STOCKS : SETTINGS.stocks; f._oneStocks0 = f.stocks; f.team = 0; f._origTeam = 0; f.homeBase = null;
     if(i===0) f.controller = "local";
     else if(LOCAL_PLAYERS>=2 && !ONEFIGHT.story && !window.__p2Taken){ f.controller = "local2"; f.you2 = true; window.__p2Taken = true; }
     else f.controller = "ai";
@@ -6594,6 +6660,11 @@ function spawnOneGhost(s, T){
   Object.assign(g, { _oneGhost:true, team:-1, _origTeam:-1, controller:'ai', you:false, you2:false, stocks:1, homeBase:null,
     _ghostHp:ONE_GHOST_HP, _ghostMax:ONE_GHOST_HP, _ghostHit:T.hit || 1, _ghostFx:T.fx || null, _ghostFxN:T.fxN || 0,
     _ghostLeash:0, invuln:30 });
+  // She holds it: nothing turns it. Barf Bag's Outbreak and Bow's Possession both work by switching a fighter's team for a
+  // while, and on the ghost that made your side's hits friendly fire (so she stayed shielded) and let her own shots hit it.
+  // Its side and its infection are fixed instead: they can be set, and nothing happens.
+  Object.defineProperty(g, 'team', { get(){ return -1; }, set(){}, configurable:true, enumerable:true });
+  Object.defineProperty(g, '_infected', { get(){ return 0; }, set(){}, configurable:true, enumerable:true });
   if(T.haste) g._hasteT = ONE_GHOST_HASTE_T;
   g._ghostDrift = !!T.drift;   // held slowed for as long as it stands (see oneGhostLeash)
   if(g._ghostDrift) g.slowed = 2;
@@ -6603,7 +6674,11 @@ function spawnOneGhost(s, T){
   return g;
 }
 function oneGhostHurt(g, dmg){
-  g._ghostHp = Math.max(0, (g._ghostHp||0) - dmg);
+  // Allies make every hit on it count for less, exactly as they do on her (_dmgTakenMult): her HP "scales with allies the way
+  // Boss Rush does once unlocked", and a 100-HP shield that five fighters shred in a second is not that. Its bar still
+  // reads 100. In the story fight the multiplier is 1.
+  const s = summons.find(o=>o._oneFight && o._ghost===g);
+  g._ghostHp = Math.max(0, (g._ghostHp||0) - dmg*((s && s._dmgTakenMult) || 1));
   if(g._ghostHp <= 0){ oneGhostDown(g); return true; }
   return false;
 }
@@ -6628,8 +6703,8 @@ function updateOne(s, tgt){
     return;
   }
   if(s.hp <= 0){ oneBeginShatter(s); return; }
-  if(s._introT > 0 && --s._introT === 0) banner("Hey guys!", 1600, 'boss');   // her first canon line, climbing out of the Moon (TPOT 9)
-  while((s._marks||0) < 3 && s.hp <= s.maxHp - ONE_PHASE_HP*((s._marks||0) + 1)) onePhaseUp(s);
+  if(s._introT > 0 && --s._introT === 0) banner("Hey guys!", 1600, 'boss');   // her first canon line, as the Moon cracks open (TPOT 9 transcript, verbatim)
+  while((s._marks||0) < 3 && s.hp <= s.maxHp - ONE_PHASE_HP*((s._marks||0) + 1)){ onePhaseUp(s); onePhaseReward(); }
   s._phase = onePhase(s); s._rage = s._marks >= 3;
   if(s._giantT > 0 && --s._giantT === 0){ s.r = s._baseR; for(let i=0;i<14;i++) puff(s.x, s.y, ONE_AURA[1], 5); }
   // TWO'S POWER UNGROUNDED, as a turn she takes: no damage until someone stays close long enough to ground it
@@ -6641,13 +6716,14 @@ function updateOne(s, tgt){
     if(s._grounded) puff(s.x + (Math.random()*40-20), s.y + s.r, '#f0d24b', 3);
     if(--s._ungroundT <= 0){ s._ungrounded = false; s._grounded = false; s._groundT = 0; }
   }
-  oneGhostLeash(s, tgt);
-  oneMove(s, tgt);
+  const chase = oneChaseTarget(s, tgt);   // she follows YOU (see oneChaseTarget); her attacks still go at whoever is nearest
+  oneGhostLeash(s, chase);
+  oneMove(s, chase);
   if(s._tel > 0){
     s._tel--; s.flash = (s._tel % 6 < 3) ? 1 : 0;
     // the eye lasers track you, then LOCK for the tier's last frames: the lock is the cue to step off the line
     if(s._telKind==="eyelasers" && tgt && s._tel > oneTier(s, 'eyelasers').lock){ s._aimX = tgt.x; s._aimY = hurtCY(tgt); }
-    if(s._tel <= 0){ s.flash = 0; const k = s._telKind; ONE_MOVES[k](s, tgt, ++BOSS_ATK_ID); s._atkTimer = oneGap(s); }
+    if(s._tel <= 0){ s.flash = 0; const k = s._telKind; ONE_MOVES[k](s, tgt, ++BOSS_ATK_ID); s._atkTimer = oneGap(s) * (oneGhostAlive(s) ? ONE_GHOST_LULL : 1); }
     return;
   }
   if(s.flash > 0) s.flash--;
@@ -6681,6 +6757,16 @@ function onePhaseUp(s){
   banner((s.maxHp - ONE_PHASE_HP*s._marks) + " HP — harder: " + up.map(k=>oneSpecialLabel(s, k)).join(", "), 2200, 'boss');
   return up;
 }
+// ...and the other side of each line: everyone still in the fight on your side heals ONE_PHASE_HEAL and gets a stock back, up
+// to the stocks they started with -- over her 2000 HP, the gauntlet's nine heals and three stocks (see WHY SHE CAN BE BEATEN).
+function onePhaseReward(){
+  for(const f of oneFoes()){
+    f.pct = Math.max(0, f.pct - ONE_PHASE_HEAL);
+    const cap = (f._oneStocks0 != null) ? f._oneStocks0 : f.stocks;
+    if(f.stocks < cap) f.stocks++;
+    for(let i=0;i<8;i++) puff(f.x + (Math.random()*30-15), f.y - 10, '#7bc043', 4);
+  }
+}
 // THE ROTATION: two of Four's and Two's attacks, then the next of her five specials, in turn, round and round ("all 5 attacks
 // should cycle"). The inherited attacks come out of a shuffled bag, so each of the eight turns up once per eight draws.
 function oneNextMove(s){
@@ -6699,6 +6785,17 @@ function oneNextMove(s){
     s._lastCard = k; return k;
   }
   return "zap";
+}
+// "one follows you if you try to run away" -- YOU. updateSummons hands every boss the NEAREST fighter, and with an AI ally
+// beside her that meant you could run the length of the map and she stayed with the ally (the review's probe: 1498px from
+// the player after two seconds, and no teleport). So she chases, and teleports toward, the nearest HUMAN player -- you, or
+// player 2 on a shared keyboard -- and only with no human left standing does she take the nearest fighter. Her attacks
+// still aim at whoever is nearest, so an ally beside her is never safe either.
+function oneChaseTarget(s, nearest){
+  let best = null, bd = 1e9;
+  for(const f of oneFoes()){ if(!(f.you || f.you2)) continue;
+    const d = Math.hypot(f.x - s.x, f.y - s.y); if(d < bd){ bd = d; best = f; } }
+  return best || nearest || null;
 }
 // "one follows you if you try to run away": she flies (canon), closes on you faster than you can run, stops pushing once
 // she is close so you can still walk into her, and "one can teleport if you are very far".
@@ -6797,8 +6894,10 @@ const ONE_MOVES = {
         oneFx.push({ kind:'tether', x1:s.x, y1:s.y, x2:f.x, y2:f.y, life:12, max:12 });
       }
     }
-    // Two heals 0.6 of the drain out of 285; the same share of a 2000 bar is 2.8x
-    if(drained > 0){ s.hp = Math.min(s.maxHp - ONE_PHASE_HP*(s._marks||0), s.hp + Math.round(drained*2.8)); banner("POWER DRAIN!", 600, 'boss'); }
+    // Two heals 0.6 of the drain out of 285; the same share of a 2000 bar is 2.8x. With allies it is scaled by _dmgTakenMult
+    // like every hit on her: four drained fighters is four times the drain, and Boss Rush's Two, whose HP grows with the
+    // fighters, heals that raw -- the same curve. (Unscaled, five fighters restored up to 350 effective HP a drain.)
+    if(drained > 0){ s.hp = Math.min(s.maxHp - ONE_PHASE_HP*(s._marks||0), s.hp + Math.round(drained*2.8*(s._dmgTakenMult || 1))); banner("POWER DRAIN!", 600, 'boss'); }
     shake(7);
   },
   // Two's second move: a ring of twelve.
@@ -6886,6 +6985,7 @@ function endOneFight(won){
   if(t) t.textContent = won ? "One is beaten!" : "One wins";
   if(sub) sub.textContent = won ? ("She shattered in " + mmss + ".") : ("She still had " + left + " HP. Rematch to fight her again.");
   if(box) box.innerHTML = "";
+  const quip = document.getElementById('resultQuip'); if(quip){ quip.style.display = 'none'; quip.textContent = ''; }   // no fighter's victory line left over from an earlier win
   let handled = false;
   try{ if(ONEFIGHT.onEnd) handled = ONEFIGHT.onEnd(!!won, ONEFIGHT.result) === true; }catch(e){ console.error("One fight onEnd:", e); }
   try{ stopRunRecording(()=>showRunReview()); }catch(e){}
@@ -6935,7 +7035,7 @@ function drawOneFx(){
     else if(e.kind==='tether'){ ctx.strokeStyle = '#f0d24b'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(e.x1, e.y1); ctx.lineTo(e.x2, e.y2); ctx.stroke(); }
     else if(e.kind==='foot'){ const out = e.len*Math.min(1, (e.max - e.life + 1)/5);
       ctx.strokeStyle = '#000001'; ctx.lineWidth = 22; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.dir*out, e.y); ctx.stroke();
-      ctx.strokeStyle = '#7E95F9'; ctx.lineWidth = 16; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.dir*out, e.y); ctx.stroke(); }   // her legs are Malibu blue
+      ctx.strokeStyle = '#7E95F9'; ctx.lineWidth = 16; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.dir*out, e.y); ctx.stroke(); }   // her legs are Malibu #7E95F9, the outline #000001 (the wiki's colour box)
   }
   ctx.globalAlpha = 1; ctx.lineCap = 'butt';
   ctx.restore();
@@ -7356,12 +7456,16 @@ function step(){
     // MARSHMALLOW IS MADE OF MARSHMALLOW. Knife roasted her alive into a s'more and she healed it off on her own,
     // with no help from MePhone4, so fire does not hurt her -- it toasts her, and she comes back better for it.
     // Poison still works: she is soft, not immune.
+    const _dotP0 = f.pct;   // One's ghost fighter: what the ticks below add comes off its 100 HP too (after the bleed)
     if(f.burn>0){ f.burn--;
       if(f.kit && f.kit.special==='wallmart' && !(f._poisonT>0)) f.pct = Math.max(0, f.pct - 0.05);
       else f.pct+=0.04;
       if(f.burn%18===0) puff(f.x,f.y-10,(f._poisonT>0?'#9bd24b':(f.kit&&f.kit.special==='wallmart'?'#ffd9a0':'#f0803a')),3); }
     if(f._poisonT>0){ f._poisonT--; if(f.burn<=0) f._poisonT=0; }
     if(f.bleed>0){ f.pct += 0.02 + 0.05*(f.bleed/BLEED_FRAMES); f.bleed--; if(f.bleed%12===0) puff(f.x,f.y-6,'#c0304a',3); }
+    // Burn, bleed and poison add to pct directly and never pass through applyHit, so the ghost's pool never moved: 600
+    // frames of burn and bleed on it came to +63% and 0 HP. They count now, so Firey, Match, Pencil and Gelatin can break it.
+    if(f._oneGhost && f.pct > _dotP0) oneGhostHurt(f, f.pct - _dotP0);
     // TRESPASS BLEED — see enemyZoneOf. Skipped while invulnerable so a fighter who was launched
     // into an enemy corner is not punished for their own i-frames.
     if(f.invuln<=0){
@@ -10099,23 +10203,23 @@ function doSpecial(f){
     // ---- next 10 characters ----
     case "zap": { // Lightning: chain bolt that arcs to nearest foe then jumps to another
       let chain=[], src=f, hops=3, hitset=new Set([f.idx]);
-      for(let n=0;n<hops;n++){ let tgt=null,best=260;
+      for(let n=0;n<hops;n++){ let tgt=null, boss=null, best=260;
         // the first link goes where she is FACING. It used to take the nearest foe in any direction, so a press
         // with someone in front of you zapped whoever happened to be behind you (G28).
-        if(n===0){ for(const t of fighters){ if(t.dead||hitset.has(t.idx)||t.team===f.team)continue;
-          if(Math.sign(t.x - f.x) !== f.face && Math.abs(t.x - f.x) > f.r) continue;
-          const d=Math.hypot(t.x-src.x,t.y-src.y); if(d<best){best=d;tgt=t;} } }
-        if(!tgt) for(const t of fighters){ if(t.dead||hitset.has(t.idx)||t.team===f.team)continue; const d=Math.hypot(t.x-src.x,t.y-src.y); if(d<best){best=d;tgt=t;} }
         // A BOSS IS A LINK ("Lightning's Chain Bolt can hit bosses EVERYWHERE, Boss Rush included"). The bolt only ever searched
-        // `fighters`, and a boss lives in `summons`, so against every boss it fizzled. The nearest hostile boss whose body is in
-        // reach takes the link when it is nearer than any fighter; the first link still goes the way she is facing, and turns
-        // round only when nothing is in front, the same rule the fighters get.
-        if(summons.length){ let boss=null;
-          const bossPass = (facing)=>{ for(const s of summons){ if(s.type!=="boss"||s.team===f.team||s.hp<=0||hitset.has(s)) continue;
+        // `fighters`, and a boss lives in `summons`, so against every boss it fizzled. Fighters and hostile bosses (whose body
+        // is in reach) are one search: the nearest takes the link. The first link looks only the way she is facing, fighters
+        // AND bosses together, and turns round only when nothing at all is in front. (The two used to be searched one after
+        // the other, so the any-direction pass for fighters ran first: a foe behind her took the link over a boss in front.)
+        const pass = (facing)=>{
+          for(const t of fighters){ if(t.dead||hitset.has(t.idx)||t.team===f.team)continue;
+            if(facing && Math.sign(t.x - f.x) !== f.face && Math.abs(t.x - f.x) > f.r) continue;
+            const d=Math.hypot(t.x-src.x,t.y-src.y); if(d<best){ best=d; tgt=t; boss=null; } }
+          for(const s of summons){ if(s.type!=="boss"||s.team===f.team||s.hp<=0||hitset.has(s)) continue;
             if(facing && Math.sign(s.x - f.x) !== f.face && Math.abs(s.x - f.x) > f.r + s.r) continue;
-            const d=Math.max(0, Math.hypot(s.x-src.x,s.y-src.y)-s.r); if(d<best){ best=d; boss=s; } } };
-          bossPass(n===0); if(!boss && !tgt && n===0) bossPass(false);
-          if(boss){ chainBoltBoss(boss, 8-n*1.5); chain.push([src.x,src.y,boss.x,boss.y]); hitset.add(boss); src=boss; continue; } }
+            const d=Math.max(0, Math.hypot(s.x-src.x,s.y-src.y)-s.r); if(d<best){ best=d; boss=s; tgt=null; } } };
+        pass(n===0); if(!tgt && !boss && n===0) pass(false);
+        if(boss){ chainBoltBoss(boss, 8-n*1.5); chain.push([src.x,src.y,boss.x,boss.y]); hitset.add(boss); src=boss; continue; }
         if(!tgt)break; applyHit(tgt, 8-n*1.5, Math.sign(tgt.x-src.x||f.face)*6, -5, f); chain.push([src.x,src.y,tgt.x,tgt.y]); hitset.add(tgt.idx); src=tgt; }
       for(const c of chain){ for(let i=0;i<6;i++){ const t=i/6; puff(c[0]+(c[2]-c[0])*t, c[1]+(c[3]-c[1])*t, '#f2e84b', 3); } }
       if(chain.length>=3 && (f.you||f.you2)) banner("ARC CASCADE!", 600);
@@ -10896,10 +11000,10 @@ function applyHit(t, dmg, kbx, kby, from, opts){
     if(from.you||from.you2) banner("SHATTERED!", 600);
   }
   // Pillow passive: +1% damage per KO she has scored this match (permanent, no cap)
-  if(from && from.kit && from.kit.special==="fluff" && from.koCount>0){ dmg *= (1 + 0.03*from.koCount); }
+  if(from && from.kit && from.kit.special==="fluff" && from.koCount>0){ dmg *= (1 + 0.03*from.koCount); }   // +3% a KO (was +1%, round 2)
   // ONE'S GHOST FIGHTER hits harder in its later tiers, and there its hits slow you too (ONE_SPECIAL_TIERS.ghost).
-  if(from && from._oneGhost && from !== t){ dmg *= (from._ghostHit||1); if(from._ghostFx && SM_FX[from._ghostFx]) SM_FX[from._ghostFx](t, from, from._ghostFxN); }
-  if(t._oneGhost){ kbx *= ONE_GHOST_KB; kby *= ONE_GHOST_KB; }   // it stays in the fight to be finished (see ONE_GHOST_KB)   // +3% a KO (was +1%, round 2)
+  if(from && from._oneGhost && from !== t){ dmg *= (from._ghostHit||1); kbx *= ONE_KB; kby *= ONE_KB; if(from._ghostFx && SM_FX[from._ghostFx]) SM_FX[from._ghostFx](t, from, from._ghostFxN); }   // ...and launches as she does (ONE_KB)
+  if(t._oneGhost){ kbx *= ONE_GHOST_KB; kby *= ONE_GHOST_KB; }   // it stays in the fight to be finished (see ONE_GHOST_KB)
   // Paintbrush's RAGE ("rage meter should give bonus base attack damage"): up to +50% on their hits, and at half rage
   // their bristles burn, so their hits set foes burning. It fills from the hits they take (below).
   if(from && from !== t && from.kit && from.kit.special==="fury" && (from._fury||0) > 0){ dmg *= 1 + Math.min(0.5, from._fury/200); if(from._fury >= 50) t.burn = Math.max(t.burn||0, 60); }
@@ -11385,6 +11489,7 @@ function soloRun(solo){
 function awardBossCleared(name, solo){
   if(!PROFILE) return [];
   PROFILE.bossesCleared[name] = true;
+  try{ oneRushKill(); }catch(e){}   // One's chain: a boss felled is a win too ("ONE fighter erased per WIN")
   const fresh = awardTrophy('boss:'+name);
   if(soloRun(solo)){
     PROFILE.soloBosses = PROFILE.soloBosses || {};
@@ -11463,11 +11568,14 @@ function mergeOne(a, b){
   return { stage:Math.max(a.stage|0, b.stage|0), erased, rushLightning:!!(a.rushLightning || b.rushLightning),
            wins:Math.max(a.wins|0, b.wins|0), bestSecs:best.length ? Math.min(...best) : 0 };
 }
+// Each fighter's record merges WHOLE: the side with more games wins (on a tie, more wins), so it only ever moves upward.
+// Taking the larger g and the larger w separately wrote a record neither tab had -- {g:30,w:25} and {g:31,w:24} became
+// {g:31,w:25} -- and that inflated the very Lightning win rate that opens the chain.
 function mergeFighterStats(a, b){
   const out = {};
   for(const src of [a||{}, b||{}]) for(const n in src){
-    const s = src[n] || {}, o = out[n] || (out[n] = { g:0, w:0 });
-    o.g = Math.max(o.g, s.g|0); o.w = Math.max(o.w, s.w|0);
+    const s = src[n] || {}, g = s.g|0, w = Math.min(s.w|0, g), o = out[n];
+    if(!o || g > o.g || (g === o.g && w > o.w)) out[n] = { g, w };
   }
   return out;
 }
@@ -11487,14 +11595,16 @@ function recordFighterGame(name, won){
 function lightningRecord(){ const s = PROFILE && PROFILE.fighterStats && PROFILE.fighterStats.Lightning; return { g:s ? s.g|0 : 0, w:s ? s.w|0 : 0 }; }
 function oneRateOk(){ const r = lightningRecord(); return r.g >= ONE_RATE_GAMES && r.w/r.g > ONE_RATE_MIN; }
 // "Lifetime": the matches played before this record existed are still in the match log (its last 500), so they are
-// counted in once, the first time this build boots. Level-editor playtests never counted as progression, so they stay out.
+// counted in once, the first time this build boots. Level-editor playtests and the tutorial never counted as progression,
+// so they stay out. (checkWin logs the tutorial's match too; it is the one with the input-less "Dummy" in it.)
 async function seedFighterStats(){
   if(!PROFILE || PROFILE.fighterStatsSeeded) return false;
   let log = [];
   try{ if(BStore.available()){ const raw = await BStore.get('balance:matchlog'); if(raw) log = JSON.parse(raw); } }catch(e){ log = []; }
   if(!Array.isArray(log)) log = [];
   const fs = PROFILE.fighterStats || (PROFILE.fighterStats = {});
-  for(const row of myMains(log.filter(m=>m && m.stage!=='custom' && m.mode!=='boss'), 0)){
+  const tutorial = m=>Array.isArray(m.fighters) && m.fighters.some(p=>p && p.name==='Dummy' && p.controller==='still');
+  for(const row of myMains(log.filter(m=>m && m.stage!=='custom' && m.mode!=='boss' && !tutorial(m)), 0)){
     const cur = fs[row.name] || (fs[row.name] = { g:0, w:0 });
     cur.g = Math.max(cur.g|0, row.games); cur.w = Math.max(cur.w|0, row.wins);
   }
@@ -11514,7 +11624,8 @@ function oneRushHook(loop){
   const q = oneQ(), fresh = !q.rushLightning;
   q.rushLightning = true;
   // Only the TRIGGER can happen here. Felling Four is the win that completes both conditions, so it takes the first
-  // fighter; after that fighters go one per won match (awardMatchProgress), never one per boss.
+  // fighter. After that every boss felled is a win like any won match (oneRushKill, from awardBossCleared -- which runs for
+  // Four just before this, while the chain was still locked, so the trigger's win is never counted twice).
   const now = q.stage===ONE_STAGE.LOCKED ? oneQuestStep(true) : [];
   if(fresh || now.length) saveProfile();
   const n = document.getElementById('rushQuestNote');
@@ -11529,24 +11640,30 @@ function oneRushHook(loop){
 // ---- STEPS 3-4: the trigger, then the bans ----
 // A ban is "erased from the timeline" -- One's own power in canon. It is on PLAYER 1's pick only: AI opponents, the World
 // Cup's other sides, your 2v2 teammate and a second player at the keyboard are drawn as they always were.
+// The fighters you actually HAVE: every DLC fighter (a pack arrives whole) and everyone your profile has unlocked. Never the
+// board's view toggle -- the "show everything" view hands you every fighter to pick, and reading it made the chain about
+// 74 wins long in that view and 38 in the other, and switching views mid-chain changed how many were left.
+function oneOwns(r){ return !!r && (!!r.dlc || !PROFILE || (PROFILE.unlocked||[]).indexOf(r.name) >= 0); }
 function oneBanned(r){
   if(!r || !PROFILE || r.name==='Lightning') return false;
   const q = oneQ();
   if(q.stage < ONE_STAGE.ERASING || q.stage >= ONE_STAGE.FREE) return false;
   if(q.stage >= ONE_STAGE.ALONE) return true;   // "until you can fight only with lightning": everyone, even a fighter unlocked since
-  return q.erased.indexOf(r.name) >= 0;
+  // ...and while she erases, a fighter you do not have is out of reach too, so the view toggle cannot hand one back
+  return q.erased.indexOf(r.name) >= 0 || !oneOwns(r);
 }
 function onePickable(r){ return !!r && !!r.play && isUnlocked(r) && !oneBanned(r); }
 function oneLightning(){ return ROSTER.find(r=>r.name==='Lightning') || null; }
 function oneCoercePick(){ if(chosen && oneBanned(chosen)){ const L = oneLightning(); if(L) chosen = L; } }
-// Who goes next ("1, then 2"): the canon three first, then YOUR most-played fighters by the lifetime record, ties in the
-// order the show introduced them. After the three, only fighters you could actually pick are queued -- erasing one you
-// never had would spend a win on nothing -- so the chain moves on the moment Lightning is the only fighter you can pick.
+// Who goes next ("1, then 2"): the canon three first -- always, in the owner's order, because that is the story beat she is
+// replaying (TPOT 15, TPOT 19), whether or not you have them yet -- then YOUR most-played fighters by the lifetime record,
+// ties in the order the show introduced them. After the three, only fighters you HAVE are queued (oneOwns), so the chain is
+// as long as your own roster whatever the board's view shows, and moves on the moment Lightning is the only one left.
 function oneNextErased(){
   const q = oneQ(), gone = new Set(q.erased);
   for(const n of ONE_CANON_ERASED) if(!gone.has(n) && ROSTER.some(r=>r.name===n && r.play)) return n;
   const st = (PROFILE && PROFILE.fighterStats) || {}, games = n=>(st[n] && st[n].g)|0;
-  const left = ROSTER.filter(r=>r.play && r.name!=='Lightning' && !gone.has(r.name) && isUnlocked(r));
+  const left = ROSTER.filter(r=>r.play && r.name!=='Lightning' && !gone.has(r.name) && oneOwns(r));
   left.sort((a,b)=> (games(b.name) - games(a.name)) || byShowOrder(a, b));
   return left.length ? left[0].name : null;
 }
@@ -11574,16 +11691,49 @@ function oneAfterMatch(won){
   return now;
 }
 function clearEraseNote(){ const n = document.getElementById('eraseNote'); if(n){ n.style.display='none'; n.textContent=''; } }
-// The result screen's line, drained so Rematch cannot announce the same erasure twice.
-function showErasedNote(){
-  const n = document.getElementById('eraseNote'); if(!n) return;
+// The line for everyone erased since it was last shown, drained so Rematch cannot announce the same erasure twice.
+function oneDrainErased(){
   const fresh = [...new Set(PENDING_ERASED)], alone = PENDING_ALONE;
   PENDING_ERASED.length = 0; PENDING_ALONE = false;
-  if(!fresh.length && !alone){ clearEraseNote(); return; }
+  if(!fresh.length && !alone) return "";
   let t = fresh.length ? "✖ ERASED FROM THE TIMELINE: " + fresh.join(", ") : "";
   if(alone) t += (t ? " · " : "") + "Only Lightning is left. Win the World Cup.";
   else if(oneQ().erased.length === fresh.length) t += " · Every win, another fighter vanishes.";
+  return t;
+}
+// ...on the result screen,
+function showErasedNote(){
+  const n = document.getElementById('eraseNote'); if(!n) return;
+  const t = oneDrainErased();
+  if(!t){ clearEraseNote(); return; }
   n.textContent = t; n.style.display = 'block';
+}
+// ...and on the World Cup hub, whose matches never reach the result screen. Escaped: it sits in the hub's innerHTML.
+function oneHubNote(){
+  const t = oneDrainErased(); if(!t) return "";
+  const d = document.createElement('div'); d.textContent = t;
+  return '<div class="unlock-note erase-note" style="display:block">' + d.innerHTML + '</div>';
+}
+// "ONE fighter erased per WIN", and the owner named no mode that does not count. Two kinds of win never reach
+// awardMatchProgress, because they are not part of the win RATE (FFA, Teams, the Daily and net matches): a World Cup match
+// you play and your side wins (from the hub's own finish), and a boss felled in Boss Rush (from awardBossCleared). Both
+// erase exactly as a won match does.
+function oneCupMatchWon(sideWon){
+  if(!sideWon || !fighters.some(f=>f.you)) return [];
+  const now = oneAfterMatch(true);
+  if(now.length) saveProfile();
+  return now;
+}
+function oneRushKill(){
+  if(!BOSSRUSH.active || oneQ().stage !== ONE_STAGE.ERASING || !fighters.some(f=>f.you)) return [];
+  const now = oneQuestStep(true);
+  if(now.length){
+    saveProfile();
+    const msg = "✖ " + now.join(", ") + " was erased from the timeline" + (oneQ().stage===ONE_STAGE.ALONE ? ". Only Lightning is left." : "");
+    // banner() is one line: this waits for "BOSS DOWN!" and the next boss's own banner to be read first
+    setTimeout(()=>{ if(running && BOSSRUSH.active) banner(msg, 2200); }, 3200);
+  }
+  return now;
 }
 // What a tapped erased cell says: where the chain stands, and what to do next. One is not named until the Moon opens.
 function oneEraseHint(){
@@ -11597,12 +11747,13 @@ function oneLegend(){
   const q = oneQ();
   return q.stage >= ONE_STAGE.ALONE ? "Only Lightning is left" : (q.erased.length + " erased from the timeline");
 }
-// "the Daily Match puts your side on Lightning while bans are on". The pairing stays today's: if Lightning was today's
-// opponent, the fighter you were meant to play takes that seat instead.
+// "the Daily Match puts your side on Lightning while bans are on". The foe stays today's foe -- the one thing the Daily keeps
+// the same for everyone -- even when that foe is Lightning, which makes it a mirror match. (Handing your erased fighter the
+// foe's seat instead changed the matchup everyone else was playing.)
 function oneDailyMatchup(m){
   if(!m || !oneQuestLive()) return m;
   const L = oneLightning(); if(!L || m.you === L) return m;
-  return { you:L, foe:(m.foe === L ? m.you : m.foe), seed:m.seed };
+  return { you:L, foe:m.foe, seed:m.seed };
 }
 
 // ---- STEP 5: the World Cup ----
@@ -11615,10 +11766,10 @@ function oneWorldCupHook(){
   q.stage = ONE_STAGE.MOON; saveProfile();
   return true;
 }
-let ONE_MOON_DELAY = 2500;   // ms the champions' screen shows first, so "YOU win the World Cup!" is read before the sky goes
+let ONE_MOON_DELAY = 2000;   // ms the champions' screen shows first, so "YOU win the World Cup!" is read before the sky goes
 let ONE_MOON_TIMER = 0;
 // The Moon "PLAYS BY ITSELF straight after the World Cup win": nothing needs pressing, Look up only starts it sooner. Left
-// for the title before it starts, it waits there (refreshOneEntry) -- it is never skipped.
+// for the title before it starts, it plays there by itself instead (refreshOneEntry) -- it is never skipped.
 function oneMoonAuto(){
   clearTimeout(ONE_MOON_TIMER);
   ONE_MOON_TIMER = setTimeout(()=>{
@@ -11628,12 +11779,25 @@ function oneMoonAuto(){
 }
 
 // ---- STEP 6: THE MOON ----
-// Canon, as the owner gave it: in TPOT 7 Lightning's strike cracks the Moon; in TPOT 9 the crack gives way and One climbs
-// out of the hole and says "Hey guys!". So the Moon cracks OPEN and keeps its shape -- a hole, not an explosion -- and the
+// Canon, as the owner gave it: in TPOT 7 Lightning's strike cracks the Moon (his thunderstorm, by accident: see MOON_STORM);
+// in TPOT 9 the crack gives way and One climbs out and says "Hey guys!" (the "Outbreak At Stake" transcript: "The moon
+// slowly cracks open, revealing One", then her line, verbatim). So the Moon cracks OPEN and keeps its shape -- a hole, not an explosion -- and the
 // knocks from inside burst as stars, because her telekinesis is star-shaped (the wiki). Procedural and seeded, so the Moon
 // breaks the same way every time; One is her real render once it has loaded, and the drawn numeral until then. It runs on
 // its own animation frame, because go() stops the match loop, and go() stops this one too (stopMoonScene).
 const MOON_T = { bolt:1.0, crack:1.5, knocks:[3.2, 4.0, 4.7, 5.3], brk:6.4, rise:7.6, line:9.2, flare:11.2, end:12.6 };
+// TPOT 7, the wiki's plot of "The Seven Wonders of Goiky": enraged, Lightning "unleashes a thunderstorm" over Goiky that
+// wrecks the Hotel's roof, the oven, the volcano ... and "the moon with One inside of it by accident". So the scene opens on
+// the storm -- bolts all over the sky, in Lightning's own yellow, all of them going down to the ground -- and the one that
+// hits the Moon at MOON_T.bolt is just the stray that went that way. Seeded, so it is the same storm every time.
+const MOON_STORM = (()=>{ const rnd = moonRng(19), out = [];
+  for(let i=0;i<9;i++) out.push({ t:0.2 + i*0.15 + rnd()*0.06, x0:0.04 + rnd()*0.92, x1:0.04 + rnd()*0.92, y1:0.88 + rnd()*0.12 });
+  return out; })();
+function moonBolt(c, x0, y0, x1, y1, lw){
+  c.save(); c.strokeStyle = '#f2e84b'; c.lineWidth = lw; c.shadowColor = '#fff6a0'; c.shadowBlur = 18; c.beginPath(); c.moveTo(x0, y0);
+  for(let i=1;i<=7;i++){ const f = i/7; c.lineTo(x0 + (x1 - x0)*f + (i < 7 ? ((i % 2) ? 28 : -22) : 0), y0 + (y1 - y0)*f); }
+  c.stroke(); c.restore();
+}
 const MOON = { raf:0, t0:0, ctx:null, w:0, h:0, skipT:0, safeT:0, t:0 };
 function moonRng(seed){ let a = seed>>>0; return ()=>{ a = (a + 0x6D2B79F5)|0; let t = Math.imul(a ^ (a>>>15), 1|a); t = (t + Math.imul(t ^ (t>>>7), 61|t)) ^ t; return ((t ^ (t>>>14))>>>0)/4294967296; }; }
 function moonGeometry(seed){   // unit-circle coordinates: the crack tree, the hole it opens into, and the pieces blown out
@@ -11737,12 +11901,8 @@ function drawMoonFrame(M, t){
     drawOneRising(c, hx, feet, oh, t < T.line - 0.6 ? 0 : k(T.line - 0.6, T.line - 0.35), t >= T.flare);
     c.restore();
   }
-  if(t >= T.bolt && t < T.bolt + 0.6){   // Lightning's strike, in Lightning's own yellow
-    c.save(); c.strokeStyle = '#f2e84b'; c.lineWidth = 7; c.shadowColor = '#fff6a0'; c.shadowBlur = 18; c.beginPath();
-    const tx = mx + hx, ty = my + hy, x0 = w*0.06; c.moveTo(x0, -10);
-    for(let i=1;i<=7;i++){ const f = i/7; c.lineTo(x0 + (tx - x0)*f + (i < 7 ? ((i % 2) ? 28 : -22) : 0), -10 + (ty + 10)*f); }
-    c.stroke(); c.restore();
-  }
+  for(const b of MOON_STORM) if(t >= b.t && t < b.t + 0.2) moonBolt(c, b.x0*w, -10, b.x1*w, b.y1*h, 5);   // the storm (TPOT 7)
+  if(t >= T.bolt && t < T.bolt + 0.6) moonBolt(c, w*0.06, -10, mx + hx, my + hy, 7);   // ...and the stray that hits the Moon
   for(const q of T.knocks) if(t >= q && t < q + 0.35){ const a = k(q, q + 0.35); drawMoonStars(c, mx + hx, my + hy, R*(0.12 + 0.3*a), 1 - a); }
   if(t >= T.brk && t < T.brk + 2.2){   // the pieces blown out of the hole
     const a = k(T.brk, T.brk + 2.2);
@@ -11842,7 +12002,7 @@ function oneFightEnded(won, result){
   const n = document.getElementById('unlockNote');
   if(n){
     n.textContent = first
-      ? "★ ONE UNLOCKED! Everyone she erased is back. Fight her any time, with any fighter: 🌕 Fight One on the title screen, or Boss Rush ▸ One."
+      ? "★ ONE UNLOCKED! Everyone she erased is back. Fight her any time, with any fighter: Boss Rush ▸ 🌕 One."
       : "★ One beaten " + q.wins + " time" + (q.wins===1 ? "" : "s") + " · best " + oneMmss(q.bestSecs);
     n.style.display = 'block';
   }
@@ -11859,21 +12019,33 @@ function awardOneDefeated(secs){
   saveProfile();
   return first;
 }
-// The title screen's way back into the chain after a reload: the Moon if it has not finished, then her fight, then her for good.
+// The title's way back into the chain after a reload, inside the title's own rule -- at most six buttons (the UI pass,
+// test/ui-simplify). A seventh row for One broke it for every player from the Moon on, and for good once she was beaten:
+//   the Moon (stage 3), not yet seen through: it simply plays again, by itself, a moment after the title shows;
+//   One waiting (stage 4): her card takes the Daily card's place -- the title's one card -- until she is beaten;
+//   One beaten (stage 5): she lives where the bosses live, Boss Rush ▸ One, and the title is everyone's title again.
+let ONE_TITLE_MOON_DELAY = 900;
 function refreshOneEntry(){
-  const row = document.getElementById('oneEntryRow');
-  if(!row) return;
   const s = oneQ().stage;
-  const e = s === ONE_STAGE.MOON ? ["🌕 Something is wrong with the Moon…", playMoonScene]
-          : s === ONE_STAGE.CHALLENGE ? ["🌕 Face One", oneStoryFight]
-          : s >= ONE_STAGE.FREE ? ["🌕 Fight One", oneOpenSelect] : null;
-  row.innerHTML = '';
-  row.style.display = e ? 'flex' : 'none';
-  if(!e) return;
-  const b = document.createElement('button');
-  b.className = 'btn alt sm'; b.id = 'oneEntry'; b.style.background = '#5D7AF2'; b.style.color = '#fff';
-  b.textContent = e[0]; b.onclick = ()=>{ e[1](); };
-  row.appendChild(b);
+  clearTimeout(ONE_MOON_TIMER);
+  if(s === ONE_STAGE.MOON){
+    ONE_MOON_TIMER = setTimeout(()=>{
+      const t = document.getElementById('title');
+      if(oneQ().stage === ONE_STAGE.MOON && t && t.classList.contains('active')) playMoonScene();
+    }, ONE_TITLE_MOON_DELAY);
+  }
+  try{ refreshDailyCard(); }catch(e){}
+}
+// One's card, in the Daily card's place, while she waits to be fought. True when it drew it.
+function oneTitleCard(el){
+  if(!el || oneQ().stage !== ONE_STAGE.CHALLENGE) return false;
+  el.style.display = 'block'; el.innerHTML = '';
+  const title = document.createElement('div'); title.className = 'daily-title'; title.textContent = '🌕 ONE IS WAITING';
+  const line = document.createElement('div'); line.className = 'daily-line'; line.textContent = 'Lightning  vs  One · 2000 HP';
+  const b = document.createElement('button'); b.className = 'btn alt sm'; b.id = 'oneEntry';
+  b.style.background = '#5D7AF2'; b.style.color = '#fff'; b.textContent = 'Face One ▶'; b.onclick = ()=>{ oneStoryFight(); };
+  el.appendChild(title); el.appendChild(line); el.appendChild(b);
+  return true;
 }
 
 async function recordMatch(winTeam){
@@ -12081,9 +12253,12 @@ let DAILY_ACTIVE = false;   // this match is the daily attempt, so its result ge
 async function refreshDailyCard(){
   const el = document.getElementById('dailyCard');
   if(!el) return;
+  if(oneTitleCard(el)) return;   // One is waiting: her card has this place until she is beaten
+  if(el.querySelector('#oneEntry')){ el.innerHTML = ''; el.style.display = 'none'; }   // ...and once she is, it goes at once
   const m = oneDailyMatchup(dailyMatchup(dailySeed()));   // on Lightning while One's bans are on
   if(!m){ el.style.display='none'; return; }
   const done = await dailyResult();
+  if(oneTitleCard(el)) return;   // ...and the profile may have loaded while this waited
   el.style.display = 'block';
   el.innerHTML = '';
   const title = document.createElement('div');
@@ -12268,6 +12443,8 @@ function showResult(winners, winTeam){
   const you=fighters.find(f=>f.you);
   const youWon = you && winTeam!==undefined && you.team===winTeam;
   const teams = SETTINGS.mode==='teams';
+  // The quip is shown for a win and was never hidden again, so a loss (or One's screen) read the last win's victory line.
+  const _quip = document.getElementById('resultQuip'); if(_quip){ _quip.style.display='none'; _quip.textContent=''; }
   if(youWon){
     document.getElementById('resultTitle').textContent="🏆 YOU WIN!";
     if(teams){ const mates=winners.map(f=>f.name).join(" & ");
@@ -13648,7 +13825,7 @@ const BOSS_ARENA_SKY = {
   forest: ["#0a1a0a","#050d05"],   // evil forest (Evil Leafy)
   cave:   ["#1a1420","#0a0810"],   // dim cave
   void:   ["#0a0a2a","#02021a"],   // algebralian void (Four/Two)
-  onedim: ["#0b1540","#02061a"],   // One's dimension: a dark-blue Starry Night sky (the wiki's One's Dimension)
+  onemoon: ["#0b1540","#02061a"],  // the night sky over One's arena, with the cracked Moon in it (see drawArenaDecor)
 };
 function drawArenaDecor(key){
   ctx.save();
@@ -13668,13 +13845,13 @@ function drawArenaDecor(key){
     ctx.fillStyle="rgba(40,30,50,0.5)";
     for(let i=0;i<7;i++){ const sx2=((i*180 - camX*0.5)%(W+180)+W+180)%(W+180)-90;
       ctx.beginPath(); ctx.moveTo(sx2,-20); ctx.lineTo(sx2-16,110); ctx.lineTo(sx2+16,110); ctx.closePath(); ctx.fill(); }   // stalactites
-  } else if(key==="onedim"){
-    // stars, a few slow Starry Night swirls, and the cracked Moon she climbed out of (Lightning's bolt cracked it, TPOT 7)
+  } else if(key==="onemoon"){
+    // The night sky over the crossing, and the Moon she was sealed in: Lightning's thunderstorm cracked it by accident
+    // ("The Seven Wonders of Goiky", TPOT 7) and it cracked open and let her out ("Outbreak At Stake", TPOT 9), so it
+    // hangs there with the hole in it. The Moon orbits Earth; One's Dimension is somewhere else (outside space-time, the
+    // wiki), so this is not that sky, and it has none of its Starry Night swirls.
     ctx.fillStyle="rgba(220,230,255,0.7)";
     for(let i=0;i<48;i++){ const gx=((i*131 - camX*0.15)%(W+40)+W+40)%(W+40)-20; const gy=(i*97)%H; ctx.fillRect(gx,gy,2,2); }
-    ctx.strokeStyle="rgba(140,170,255,0.18)"; ctx.lineWidth=6;
-    for(let i=0;i<3;i++){ const cx=((i*420+180 - camX*0.08)%(W+300)+W+300)%(W+300)-150, cy=H*(0.22+i*0.18);
-      ctx.beginPath(); ctx.arc(cx,cy,60+i*14,hazardT*0.004+i,hazardT*0.004+i+4.2); ctx.stroke(); }
     const mx=W*0.82 - camX*0.03, my=H*0.2, mr=Math.min(W,H)*0.09;
     ctx.fillStyle="#d8d8d0"; ctx.beginPath(); ctx.arc(mx,my,mr,0,7); ctx.fill();
     ctx.fillStyle="#b4b4ae"; ctx.beginPath(); ctx.arc(mx-mr*0.35,my-mr*0.2,mr*0.22,0,7); ctx.arc(mx+mr*0.3,my+mr*0.35,mr*0.16,0,7); ctx.fill();
