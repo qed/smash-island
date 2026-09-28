@@ -12,6 +12,7 @@ independent style-alike tracks chosen to evoke that mood.
 **Owner-supplied tracks (2026-09-27).** The ten `.ogg` files in this directory were added by the owner
 ("i added the music"). They are tracks from Toby Fox's *Deltarune* soundtrack (and arrangements of it)
 and are NOT under the Pixabay licence: see "Owner-supplied Deltarune tracks" at the end of this file.
+They are the game's battle playlist: normal matches play them instead of `battle.mp3`.
 
 ---
 
@@ -42,6 +43,11 @@ Warm, unhurried chiptune — the cosy-town register the brief asked for.
 | **Length / size** | 1:36 · 2.9 MB · MP3 256 kbps 48 kHz |
 
 Driving, upbeat 8-bit with a melodic lead — energetic without drowning the hit SFX.
+
+Since 2026-09-27 this is the battle context's fallback: matches play the owner's battle playlist (the
+ten `.ogg` files at the end of this file), and this track plays only when none of them will load, or
+on a browser that cannot play Ogg Vorbis at all (some Safari versions; on an iPhone or iPad every
+browser uses Safari's engine), which skips the playlist and plays this instead.
 
 ## 3. `boss.mp3` — Boss Rush
 
@@ -161,10 +167,12 @@ the game, not only in this file.
 
 ## If you replace a track
 
-`artifacts/V1/index.html` maps contexts to filenames in the `MUSIC_FILES` object. Drop a
-replacement at the same path and it is picked up with no code change. If a file is missing or
-fails to decode, the game falls back to its built-in WebAudio synth loop for that context rather
-than going silent — so a bad file degrades, it does not break. Update this file and the
+`artifacts/V1/index.html` maps contexts to filenames in the `MUSIC_FILES` object, and the battle
+playlist's ten files in the `MUSIC_PLAYLISTS` object. Drop a replacement at the same path and it is
+picked up with no code change. If a file is missing or fails to decode, the game moves on to the next
+source for that context (for the battle playlist, another playlist track, then `battle.mp3`) and in
+the end to its built-in WebAudio synth loop rather than going silent — so a bad file degrades, it
+does not break. Update this file and the
 `#musicCredits` line on the title screen whenever a track changes.
 
 ---
@@ -188,4 +196,12 @@ owners, and whether they may be shipped publicly is the owner's decision and res
 | `tenna_battle.ogg` | Deltarune |
 | `titan_battle.ogg` | Deltarune |
 
-Not yet wired into the game: MUSIC_FILES still plays only the five `.mp3` defaults.
+Wired into the game as the **battle playlist** (`MUSIC_PLAYLISTS.battle` in `index.html`), because the
+owner, asked how the ten tracks should be used, answered "Battle playlist". Each normal match (FFA, 1v1,
+teams, World Cup fixtures, the tutorial, and a restart with R) picks one of them, never the one that
+played last when there is a choice (a file that fails to load does not count as played), and when a
+track ends mid-match the next one plays. A browser that cannot play Ogg Vorbis skips the playlist and
+plays `battle.mp3`. Boss Rush, the menus, the World Cup setup
+and hub, the title screen and clutch time keep their own tracks. Order for the battle context: a track
+the player loaded into their own battle playlist → `custom/battle.mp3` → this playlist → `battle.mp3`
+→ the synth loop. They are credited on the title screen (`#musicCredits`) as well as here.

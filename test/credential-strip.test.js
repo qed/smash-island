@@ -92,6 +92,18 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     expect(PUBLISHED_FILES.slice().sort()).toEqual([
       `${MUSIC_DIR}/CREDITS.md`,
       `${MUSIC_DIR}/battle.mp3`,
+      // The owner's ten tracks, wired as the battle playlist ("Battle playlist", the owner, 2026-09-27)
+      // and credited in CREDITS.md. Pinned by name, like every other track, so a stray file still fails.
+      `${MUSIC_DIR}/Flowerman_Arrangement.ogg`,
+      `${MUSIC_DIR}/ch4_extra_boss.ogg`,
+      `${MUSIC_DIR}/joker.ogg`,
+      `${MUSIC_DIR}/knight.ogg`,
+      `${MUSIC_DIR}/pink.ogg`,
+      `${MUSIC_DIR}/pumpkin_boss.ogg`,
+      `${MUSIC_DIR}/queen_boss.ogg`,
+      `${MUSIC_DIR}/spamton_neo_mix_ex_wip.ogg`,
+      `${MUSIC_DIR}/tenna_battle.ogg`,
+      `${MUSIC_DIR}/titan_battle.ogg`,
       `${MUSIC_DIR}/boss.mp3`,
       `${MUSIC_DIR}/custom/README.md`,
       `${MUSIC_DIR}/intense.mp3`,
@@ -187,6 +199,25 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
       const isMp3 = bytes[0] === 0xff || bytes.slice(0, 3).toString('latin1') === 'ID3';
       expect(isMp3, `${rel} does not start with MP3 data`).toBe(true);
     }
+  });
+
+  it('ships a real Ogg file for every battle-playlist track, and no .ogg the playlist does not play', () => {
+    // The owner's "Battle playlist" lives in MUSIC_PLAYLISTS, not MUSIC_FILES. The same two hazards
+    // apply: a typo'd path degrades silently at runtime, and an unreferenced file is dead weight on
+    // the deploy that nobody hears.
+    const src = readFileSync(SOURCE, 'utf8');
+    const block = src.slice(src.indexOf('const MUSIC_PLAYLISTS'));
+    const paths = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']*\.ogg)'/g)].map((m) => m[1]);
+    expect(paths.length).toBe(10);
+    for (const rel of paths) {
+      const abs = join(PUBLISH_ROOT, rel).replace(/\\/g, '/');
+      expect(PUBLISHED_FILES).toContain(abs);
+      const bytes = readFileSync(abs);
+      expect(bytes.length).toBeGreaterThan(100_000);
+      expect(bytes.subarray(0, 4).toString('latin1'), `${rel} does not start with an Ogg page`).toBe('OggS');
+    }
+    const shippedOgg = PUBLISHED_FILES.filter((f) => f.startsWith(`${MUSIC_DIR}/`) && f.endsWith('.ogg'));
+    expect(shippedOgg.sort()).toEqual(paths.map((p) => join(PUBLISH_ROOT, p).replace(/\\/g, '/')).sort());
   });
 
   it('credits every shipped track with a licence', () => {

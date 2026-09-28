@@ -25,6 +25,16 @@ import { JSDOM } from 'jsdom';
 const SRC = 'artifacts/V1/index.html';
 const PUB = 'artifacts/V1';
 const DEFAULTS = ['menu', 'battle', 'boss', 'tourney', 'intense'].map((k) => `assets/music/${k}.mp3`);
+// The owner's ten tracks. "i added the music to smash-art." -- and, asked how they should be used,
+// "Battle playlist": a normal match shuffles through these instead of the one battle track, and
+// battle.mp3 is only what plays when every one of them fails. They are real files on the deploy,
+// so the fake server below serves them like the defaults; a test that wants one to fail deletes it
+// from `existing`.
+const PLAYLIST = [
+  'Flowerman_Arrangement', 'ch4_extra_boss', 'joker', 'knight', 'pink', 'pumpkin_boss',
+  'queen_boss', 'spamton_neo_mix_ex_wip', 'tenna_battle', 'titan_battle',
+].map((n) => `assets/music/${n}.ogg`);
+const isBattleTrack = (s) => PLAYLIST.includes(s);
 
 const tick = (n = 3) => new Promise((r) => setTimeout(r, n));
 // IndexedDB work crosses several macrotask hops, so sleeping a fixed number of ms is a flake
@@ -46,6 +56,9 @@ async function until(fn, ms = 10000) {
 // menu.mp3 — and every 404 is its own macrotask hop, so "sleep 3ms and assert" is a flake waiting
 // to happen. Wait for the source that should win.
 const lands = (plays, src, ms = 10000) => until(() => plays().at(-1) === src, ms);
+// A match used to land on one file, battle.mp3. Since the owner's "Battle playlist" it lands on
+// whichever of the ten tracks was picked, so wait for "a playlist track" instead of one name.
+const landsBattle = (plays, ms = 10000) => until(() => isBattleTrack(plays().at(-1)), ms);
 
 function fakeNode() {
   const ramp = { value: 0, setValueAtTime() {}, exponentialRampToValueAtTime() {} };
@@ -93,8 +106,8 @@ function fakeIndexedDB(seed = {}) {
 function bootWithAudio(opts = {}) {
   const html = readFileSync(SRC, 'utf8');
   const events = [];
-  const state = { gestureFired: false, constructedEarly: 0, idbTouchedAtBoot: false, oscillators: 0 };
-  const existing = new Set([...DEFAULTS, ...(opts.existing || [])]);
+  const state = { gestureFired: false, constructedEarly: 0, idbTouchedAtBoot: false, oscillators: 0, canPlayAsked: [] };
+  const existing = new Set([...DEFAULTS, ...PLAYLIST, ...(opts.existing || [])]);
   let blobN = 0;
   // Flipped by a test to model the OTHER reason play() rejects: an autoplay policy refusing a
   // source that is perfectly loadable. That one really does deserve the synth cover.
@@ -189,9 +202,17 @@ function bootWithAudio(opts = {}) {
             return new Promise((_res, rej) => setTimeout(() => rej(err), opts.rejectDelay));
           }
           this.paused = false;
+          this.ended = false;
           return Promise.resolve();
         }
         pause() { this.paused = true; events.push(['pause', this._src]); }
+        // A real element answers "can you play this type?". Every browser this game targets plays
+        // MP3 and most play Ogg Vorbis, so the default is yes; opts.noOgg models a WebKit build
+        // without Vorbis (some Safari versions; on an iPhone or iPad, every browser), which answers ''.
+        canPlayType(type) {
+          state.canPlayAsked.push(type);
+          return (opts.noOgg && /ogg/i.test(type)) ? '' : 'maybe';
+        }
       };
     },
   });
@@ -290,6 +311,13 @@ describe('background music — the file layer', () => {
     for (const kind of ['menu', 'battle', 'boss', 'tourney', 'intense']) {
       w.eval(`startMusic('${kind}')`);
       await tick();
+      if (kind === 'battle') {
+        // The owner's decision, 2026-09-27: "Battle playlist". Battles play one of the ten shipped
+        // tracks; battle.mp3 is now only the fallback when all of them fail.
+        await landsBattle(plays);
+        expect(isBattleTrack(plays().at(-1)), `battle should end up on a playlist track, got ${plays().at(-1)}`).toBe(true);
+        continue;
+      }
       expect(plays().at(-1), `${kind} should end up on its default`).toBe(`assets/music/${kind}.mp3`);
     }
   });
@@ -300,8 +328,8 @@ describe('background music — the file layer', () => {
     await tick();
     w.eval("go('tourneyHub')"); await tick();
     expect(plays().at(-1)).toBe('assets/music/tourney.mp3');
-    w.eval('startMatch()'); await tick();
-    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    w.eval('startMatch()'); await landsBattle(plays);
+    expect(PLAYLIST, 'a match plays the owner\'s "Battle playlist"').toContain(plays().at(-1));
     w.eval("SETTINGS.mode='boss'; beginMatchNow()"); await tick();
     expect(plays().at(-1)).toBe('assets/music/boss.mp3');
   });
@@ -324,7 +352,7 @@ describe('background music — the source priority chain', () => {
     gesture(); await lands(plays, 'assets/music/menu.mp3');
     const asked = () => plays().filter((s) => s === 'assets/music/custom/menu.mp3').length;
     expect(asked()).toBe(1);
-    w.eval("startMusic('battle')"); await lands(plays, 'assets/music/battle.mp3');
+    w.eval("startMusic('battle')"); await landsBattle(plays);
     w.eval("startMusic('menu')"); await lands(plays, 'assets/music/menu.mp3');
     expect(asked()).toBe(1);                                  // still just the one probe
   });
@@ -617,6 +645,428 @@ describe('background music — playlists', () => {
   });
 });
 
+// The owner: "i added the music to smash-art." Asked how the ten tracks should be used: "Battle
+// playlist". Normal matches shuffle through the ten instead of the one battle track; Boss Rush and
+// the menus stay as they are. The precedence players and the owner already rely on is kept: the
+// player's own battle playlist, then assets/music/custom/battle.mp3, then the shipped playlist,
+// then battle.mp3 (only when every playlist file fails), then the synth bed.
+describe('background music — the shipped battle playlist', () => {
+  /** Boot, unlock, and start a 3-stock FFA on its playlist track. */
+  async function inMatch(opts = {}) {
+    const h = bootWithAudio(opts);
+    h.gesture(); await lands(h.plays, 'assets/music/menu.mp3');
+    h.w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    await landsBattle(h.plays); await tick(20);
+    return h;
+  }
+  /** Deck `i` (default: the live one) reaches the end of its track, the way a browser reports it. */
+  const endDeck = (w, i) => w.eval(`(function(){ var el = SND._decks[${i == null ? 'SND._deck' : i}];
+    el.paused = true; el.ended = true; (el._on.ended || []).forEach(function(f){ f(); }); })()`);
+  const liveLoop = (w) => w.eval('SND._decks[SND._deck].loop');
+
+  it("ships the owner's ten tracks as the battle playlist, and gives no other context one", () => {
+    const { w } = bootWithAudio();
+    const lists = JSON.parse(w.eval('JSON.stringify(MUSIC_PLAYLISTS)'));
+    expect(Object.keys(lists), 'Boss Rush and the menus stay as they are').toEqual(['battle']);
+    expect(lists.battle.slice().sort()).toEqual(PLAYLIST.slice().sort());
+    for (const rel of lists.battle) {
+      const bytes = readFileSync(`${PUB}/${rel}`);
+      expect(bytes.length, `${rel} is too small to be a track`).toBeGreaterThan(100_000);
+      expect(bytes.subarray(0, 4).toString('latin1'), `${rel} is not an Ogg file`).toBe('OggS');
+    }
+    // battle.mp3 stays shipped and mapped: it is what plays when every playlist file fails.
+    expect(w.eval('MUSIC_FILES.battle')).toBe('assets/music/battle.mp3');
+  });
+
+  it('plays one of the ten in a normal match, after the custom/ probe, and does not loop it', async () => {
+    const { w, plays } = await inMatch();
+    expect(PLAYLIST).toContain(plays().at(-1));
+    expect(plays(), 'battle.mp3 is only the fallback now').not.toContain('assets/music/battle.mp3');
+    const probe = plays().indexOf('assets/music/custom/battle.mp3');
+    expect(probe, "the owner's custom/battle.mp3 is still asked first").toBeGreaterThanOrEqual(0);
+    expect(probe).toBeLessThan(plays().length - 1);
+    expect(liveLoop(w), 'a playlist track hands over to the next one when it ends').toBe(false);
+    expectOneBed(w, plays().at(-1));
+  });
+
+  it('picks a different track from the one that played last, match after match', async () => {
+    const { w, plays } = await inMatch();
+    const picks = [plays().at(-1)];
+    for (let i = 0; i < 12; i += 1) {
+      w.eval("go('select')"); await lands(plays, 'assets/music/menu.mp3');
+      w.eval('startMatch()'); await landsBattle(plays);
+      picks.push(plays().at(-1));
+    }
+    for (let i = 1; i < picks.length; i += 1) {
+      expect(picks[i], `match ${i} repeated ${picks[i]}`).not.toBe(picks[i - 1]);
+    }
+    expect(new Set(picks).size, 'and it really does shuffle').toBeGreaterThan(2);
+  });
+
+  it('survives a Math.random that never changes', async () => {
+    // The same bounded retry + deterministic step the player's playlists use: a constant
+    // Math.random (the golden harness stubs it) must neither hang nor repeat.
+    const { w, plays } = await inMatch();
+    w.eval('Math.random = () => 0.5;');
+    const picks = [plays().at(-1)];
+    for (let i = 0; i < 6; i += 1) {
+      const n = plays().length;
+      w.eval("stopMusic(); startMusic('battle')");
+      await until(() => plays().length > n);
+      picks.push(plays().at(-1));
+    }
+    for (const p of picks) expect(PLAYLIST).toContain(p);
+    for (let i = 1; i < picks.length; i += 1) expect(picks[i]).not.toBe(picks[i - 1]);
+  });
+
+  it('plays the next playlist track when one ends mid-match, instead of looping it', async () => {
+    const { w, plays } = await inMatch();
+    const seen = [plays().at(-1)];
+    for (let i = 0; i < 6; i += 1) {
+      const n = plays().length;
+      endDeck(w);
+      await until(() => plays().length > n);
+      seen.push(plays().at(-1));
+      expect(PLAYLIST).toContain(seen.at(-1));
+      expect(seen.at(-1), 'the track that just ended started over').not.toBe(seen.at(-2));
+      expect(w.eval('SND._kind'), 'still the battle bed').toBe('battle');
+      expect(liveLoop(w)).toBe(false);
+      await tick(10);
+      expectOneBed(w, seen.at(-1));
+    }
+  });
+
+  it('ignores a track ending anywhere but the live battle bed', async () => {
+    const { w, plays } = await inMatch();
+    // The player has left for the menus: the battle deck finishing behind them changes nothing.
+    let battleDeck = w.eval('SND._deck');
+    w.eval("go('select')"); await lands(plays, 'assets/music/menu.mp3'); await tick(10);
+    let n = plays().length;
+    endDeck(w, battleDeck); await tick(20);
+    expect(plays(), 'a battle deck that ended in the menus restarted the battle bed').toHaveLength(n);
+    expect(w.eval('SND._kind')).toBe('menu');
+    expectOneBed(w, 'assets/music/menu.mp3');
+    // Clutch time owns the music: same for the battle deck it faded out. The custom/intense.mp3
+    // probe is settled first so the switch is one hop — with it pending, the 404 bounces the chain
+    // onto the other deck and intense.mp3 lands on the very deck the battle track was playing on.
+    w.eval("SND._badSrc['assets/music/custom/intense.mp3']=true");
+    w.eval('startMatch()'); await landsBattle(plays); await tick(10);
+    w.eval('fighters[0].stocks = 1; clutchTick()');
+    await lands(plays, 'assets/music/intense.mp3'); await tick(10);
+    battleDeck = w.eval(`SND._deckSrc.findIndex(function(s){ return ${JSON.stringify(PLAYLIST)}.indexOf(s) >= 0; })`);
+    expect(battleDeck, 'the faded-out battle deck').toBeGreaterThanOrEqual(0);
+    expect(battleDeck).not.toBe(w.eval('SND._deck'));
+    n = plays().length;
+    endDeck(w, battleDeck); await tick(20);
+    expect(plays(), 'a faded-out battle deck ended and pushed the clutch bed aside').toHaveLength(n);
+    expectOneBed(w, 'assets/music/intense.mp3');
+    // And with music switched off, an ended event starts nothing.
+    w.eval('startMatch()'); await landsBattle(plays); await tick(10);
+    w.eval('toggleMusic()');
+    n = plays().length;
+    endDeck(w); await tick(20);
+    expect(plays()).toHaveLength(n);
+    expect(w.eval('SND._kind')).toBe(null);
+  });
+
+  it('comes back from clutch time to a battle playlist track', async () => {
+    const { w, plays } = await inMatch();
+    w.eval('fighters[0].stocks = 1; clutchTick()');
+    await lands(plays, 'assets/music/intense.mp3');
+    expect(liveLoop(w), 'the clutch bed itself is unchanged and still loops').toBe(true);
+    w.eval('fighters.forEach(f=>{f.stocks=3;f.pct=0;});');
+    for (let i = 0; i <= w.eval('CLUTCH_MIN_HOLD'); i += 1) w.eval('clutchTick()');
+    await landsBattle(plays); await tick(20);
+    expect(w.eval('CLUTCH.on')).toBe(false);
+    expect(PLAYLIST).toContain(plays().at(-1));
+    expect(liveLoop(w)).toBe(false);
+    expectOneBed(w, plays().at(-1));
+  });
+
+  it("keeps the precedence: the player's track, then custom/battle.mp3, then the playlist, then battle.mp3", async () => {
+    const { w, plays, gesture } = bootWithAudio({ existing: ['assets/music/custom/battle.mp3'] });
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    w.eval("startMusic('battle')");
+    await lands(plays, 'assets/music/custom/battle.mp3');
+    expect(plays().filter(isBattleTrack), "the owner's custom/battle.mp3 beats the whole playlist").toEqual([]);
+    expect(liveLoop(w), 'and loops, as it always has').toBe(true);
+    const order = JSON.parse(w.eval("JSON.stringify(musicSources('battle'))"));
+    expect(order[0]).toBe('assets/music/custom/battle.mp3');
+    expect(order[1], "this start's pick comes first of the playlist").toBe(w.eval("SND._shipPick['battle']"));
+    expect(order.slice(1, 11).sort(), 'then every other playlist track').toEqual(PLAYLIST.slice().sort());
+    expect(order.at(-1), 'battle.mp3 is the last file before the synth').toBe('assets/music/battle.mp3');
+    expect(order).toHaveLength(12);
+    // A track the player loaded into their own battle playlist still wins over all of it.
+    w.eval("musicSetUserTrack('battle', new Blob(['x']), 'mine.mp3')");
+    await until(() => /^blob:/.test(plays().at(-1)));
+    expect(plays().at(-1)).toMatch(/^blob:/);
+    expect(liveLoop(w), "a player's own track loops, as it always has").toBe(true);
+    expect(JSON.parse(w.eval("JSON.stringify(musicSources('battle'))"))[0]).toMatch(/^blob:/);
+    // ...and clearing it hands the battle bed back to the owner's override, not straight to the playlist.
+    w.eval("musicClearUserTracks('battle')");
+    await lands(plays, 'assets/music/custom/battle.mp3');
+    expect(plays().at(-1)).toBe('assets/music/custom/battle.mp3');
+  });
+
+  it('skips a playlist file that fails to load, for the rest of the session', async () => {
+    const { w, plays, gesture, existing } = bootWithAudio();
+    const broken = PLAYLIST[3];
+    existing.delete(broken);                      // a file missing from the deploy: it 404s
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    // Force the draw onto the broken file (index 3 of 10) for this one start only — a constant
+    // Math.random left in place through match setup would be testing the game, not the music.
+    w.eval("var __rnd = Math.random; Math.random = () => 0.35; try { startMusic('battle'); } finally { Math.random = __rnd; }");
+    await until(() => isBattleTrack(plays().at(-1)) && plays().at(-1) !== broken);
+    expect(plays(), 'the pick really was the broken file').toContain(broken);
+    expect(PLAYLIST, 'it stepped to another playlist track...').toContain(plays().at(-1));
+    expect(plays(), '...not to battle.mp3').not.toContain('assets/music/battle.mp3');
+    expect(w.eval(`!!SND._badSrc[${JSON.stringify(broken)}]`)).toBe(true);
+    expect(w.eval("!!SND._fileBad['battle']"), 'one bad file does not write off the context').toBe(false);
+    await tick(20);
+    expectOneBed(w, plays().at(-1));
+    // Never asked for again this session: not by a new match, and not by a track ending.
+    for (let i = 0; i < 25; i += 1) {
+      w.eval("stopMusic(); startMusic('battle')");
+      await tick(2);
+      if (i % 5 === 0) { const n = plays().length; endDeck(w); await until(() => plays().length > n); }
+    }
+    expect(plays().filter((s) => s === broken)).toHaveLength(1);
+  });
+
+  /** Run `js` with the draw forced to `r`, restored straight after -- match setup must never run on a
+   *  constant Math.random. With n usable tracks, r = (i + 0.5) / n lands on usable index i. */
+  const forced = (w, r, js) => w.eval(`var __rnd = Math.random; Math.random = () => ${r};
+    try { ${js} } finally { Math.random = __rnd; }`);
+
+  it('never replays the track that just played when the next pick fails to load', async () => {
+    // The review's probe: pink played, the next draw landed on knight, knight 404'd -- and pink came
+    // straight back with eight other tracks available, because knight took pink's place as "the one
+    // that played last" the moment it was TRIED, then dropped out of the draw as a bad file. The
+    // owner's rule ("never the same track twice running when there is an alternative") is about what
+    // the player HEARD, so only a track that really played may hold that place.
+    const { w, plays, gesture, existing } = bootWithAudio();
+    const [joker, knight, pink, pumpkin] = [PLAYLIST[2], PLAYLIST[3], PLAYLIST[4], PLAYLIST[5]];
+    existing.delete(joker);
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    // 1. A new match. knight plays; the next match's draw lands on joker, the track just before it
+    //    in the list, and joker 404s.
+    forced(w, 0.35, "startMusic('battle')");               // 10 usable -> index 3, knight
+    await lands(plays, knight); await tick(20);
+    expect(w.eval('SND._shipLast.battle'), 'knight really played').toBe(knight);
+    w.eval("go('select')"); await lands(plays, 'assets/music/menu.mp3');
+    let n = plays().length;
+    forced(w, 0.25, "startMusic('battle')");               // 10 usable -> index 2, joker
+    await until(() => plays().slice(n).includes(joker) && isBattleTrack(plays().at(-1)) && plays().at(-1) !== joker);
+    expect(plays().slice(n), 'the new match stepped past the dead file to a DIFFERENT track').toEqual([joker, pink]);
+    await tick(20);
+    expectOneBed(w, pink);
+    expect(w.eval('SND._shipLast.battle'), 'a file that failed never counts as played').toBe(pink);
+    // 2. A track ending mid-match. pink ends, the draw lands on knight, and knight is now gone too.
+    existing.delete(knight);
+    n = plays().length;
+    // joker is out of the draw now: 9 usable -> index 2, knight
+    forced(w, 0.25, `(function(){ var el = SND._decks[SND._deck];
+      el.paused = true; el.ended = true; (el._on.ended || []).forEach(function(f){ f(); }); })()`);
+    await until(() => plays().slice(n).includes(knight) && isBattleTrack(plays().at(-1)) && plays().at(-1) !== knight);
+    expect(plays().slice(n), 'the track that just ended came straight back').toEqual([knight, pumpkin]);
+    await tick(20);
+    expectOneBed(w, pumpkin);
+  }, 20000);   // several steps after the boot: past the 5 s default on a loaded machine
+
+  it('steps on when a track fails partway through, with one bed even when the rejection comes late', async () => {
+    // rejectDelay: the dead file's play() rejection lands only after the chain has moved on.
+    const { w, plays, existing } = await inMatch({ rejectDelay: 40 });
+    const first = plays().at(-1);
+    // A network drop partway through: the deck that is playing reports an error.
+    existing.delete(first);
+    let n = plays().length;
+    w.eval('(function(){ var el = SND._decks[SND._deck]; el.paused = true; (el._on.error || []).forEach(function(f){ f(); }); })()');
+    await until(() => plays().length > n && isBattleTrack(plays().at(-1)));
+    const second = plays().at(-1);
+    expect(second, 'the track that broke started over').not.toBe(first);
+    expect(w.eval(`!!SND._badSrc[${JSON.stringify(first)}]`)).toBe(true);
+    await tick(20);
+    expectOneBed(w, second);
+    // A later pick that 404s, rejecting 40ms after its error event: still exactly one bed.
+    const usable = PLAYLIST.filter((s) => s !== first);
+    const target = usable.find((s) => s !== second);
+    existing.delete(target);
+    w.eval("go('select')"); await lands(plays, 'assets/music/menu.mp3');
+    n = plays().length;
+    forced(w, (usable.indexOf(target) + 0.5) / usable.length, "startMusic('battle')");
+    await until(() => plays().slice(n).includes(target) && isBattleTrack(plays().at(-1)) && plays().at(-1) !== target);
+    await tick(120);                                        // well past the late rejection
+    expect(plays().at(-1), 'and never back to the track that played last').not.toBe(second);
+    expectOneBed(w, plays().at(-1));
+    expect(w.eval('SND._pendingKind'), 'no stale retry parked by the late rejection').toBe(null);
+  }, 20000);   // several steps after the boot: past the 5 s default on a loaded machine
+
+  it('picks a new track when R restarts the match, as Rematch already did', async () => {
+    // R mid-fight restarts the match from the top. A restart is a new match, and the owner's
+    // "Battle playlist" shuffles per match -- it used to keep the old track, because the battle bed
+    // was still playing and startMusic() read that as "already on this bed".
+    const pressR = (w) => w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyR' }));
+    const { w, plays } = await inMatch();
+    const picks = [plays().at(-1)];
+    for (let i = 0; i < 4; i += 1) {
+      const n = plays().length;
+      pressR(w);
+      await until(() => plays().length > n && isBattleTrack(plays().at(-1)));
+      await tick(10);
+      expect(w.eval('running'), 'R restarted the match').toBe(true);
+      picks.push(plays().at(-1));
+      expect(picks.at(-1), `restart ${i + 1} kept ${picks.at(-2)}`).not.toBe(picks.at(-2));
+      expect(w.eval('SND._kind')).toBe('battle');
+      expectOneBed(w, picks.at(-1));
+    }
+    // Rematch from the result screen picks a new one too, as it already did.
+    w.eval('showResult([fighters[0]], fighters[0].team)');
+    let n = plays().length;
+    w.eval('startMatch()');
+    await until(() => plays().length > n && isBattleTrack(plays().at(-1)));
+    expect(plays().at(-1)).not.toBe(picks.at(-1));
+    expectOneBed(w, plays().at(-1));
+  }, 20000);   // four restarts and a result screen: past the 5 s default on a loaded machine
+
+  it('leaves the Boss Rush bed and a single-track battle bed alone on R', async () => {
+    const pressR = (w) => w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyR' }));
+    // Boss Rush has no shipped playlist: R keeps the boss bed exactly as it did.
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    w.eval("SETTINGS.mode='boss'; beginMatchNow()"); await lands(plays, 'assets/music/boss.mp3'); await tick(10);
+    let n = plays().length;
+    pressR(w); await tick(30);
+    expect(plays().slice(n), 'R in Boss Rush restarted or changed the boss bed').toEqual([]);
+    expectOneBed(w, 'assets/music/boss.mp3');
+    // A re-roll that cannot change anything does not restart anything: custom/battle.mp3 carries on.
+    const c = bootWithAudio({ existing: ['assets/music/custom/battle.mp3'] });
+    c.gesture(); await lands(c.plays, 'assets/music/menu.mp3');
+    c.w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    await lands(c.plays, 'assets/music/custom/battle.mp3'); await tick(10);
+    n = c.plays().length;
+    pressR(c.w); await tick(30);
+    expect(c.w.eval('running')).toBe(true);
+    expect(c.plays().slice(n), "R restarted the owner's custom/battle.mp3").toEqual([]);
+    expectOneBed(c.w, 'assets/music/custom/battle.mp3');
+  }, 20000);   // a second boot inside one test, like the one-bed suite's
+
+  it('plays one playlist track for a match started before the first gesture, and afresh after Sound off and on', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    expect(plays(), 'nothing may play before the gesture').toEqual([]);
+    expect(w.eval('SND._pendingKind')).toBe('battle');
+    gesture();
+    await landsBattle(plays); await tick(20);
+    expect(plays(), "the owner's custom/battle.mp3 probe, then ONE playlist track")
+      .toEqual(['assets/music/custom/battle.mp3', plays().at(-1)]);
+    expectOneBed(w, plays().at(-1));
+    // The master Sound toggle, off and on mid-match: a fresh pick, not the track it cut off.
+    const before = plays().at(-1);
+    w.eval('toggleSound()'); await tick(10);
+    expect(beds(w).decks).toEqual([]);
+    const n = plays().length;
+    w.eval('toggleSound()');
+    await until(() => plays().length > n && isBattleTrack(plays().at(-1)));
+    await tick(20);
+    expect(plays().at(-1)).not.toBe(before);
+    expectOneBed(w, plays().at(-1));
+  }, 20000);   // several steps after the boot: past the 5 s default on a loaded machine
+
+  it('goes straight to battle.mp3 on a browser that cannot play Ogg Vorbis', async () => {
+    // The ten files are Ogg Vorbis. Without this check a Safari without Vorbis (on an iPhone or iPad,
+    // every browser) tried custom/battle.mp3 and then all ten -- eleven failed loads, a deck switch for
+    // each -- before battle.mp3, and the match opened on a gap of silence.
+    const { w, plays, gesture, events, state } = bootWithAudio({ noOgg: true });
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    await lands(plays, 'assets/music/battle.mp3'); await tick(20);
+    expect(events.filter((e) => e[0] === 'src' && e[1].endsWith('.ogg')), 'not one .ogg was even requested').toEqual([]);
+    expect(plays().slice(plays().indexOf('assets/music/custom/battle.mp3')))
+      .toEqual(['assets/music/custom/battle.mp3', 'assets/music/battle.mp3']);
+    expect(state.canPlayAsked, 'asked once, with the codec the ten files use').toEqual(['audio/ogg; codecs="vorbis"']);
+    expect(liveLoop(w), 'battle.mp3 loops, as it always has').toBe(true);
+    expectOneBed(w, 'assets/music/battle.mp3');
+    // The next match goes straight there as well, without asking again.
+    w.eval("go('select')"); await lands(plays, 'assets/music/menu.mp3');
+    const n = plays().length;
+    w.eval('startMatch()'); await lands(plays, 'assets/music/battle.mp3');
+    expect(plays().slice(n)).toEqual(['assets/music/battle.mp3']);
+    expect(state.canPlayAsked).toHaveLength(1);
+    // And the Controls row does not promise ten tracks this browser will never play.
+    w.eval("go('controls')");
+    const row = w.document.querySelectorAll('#customMusic .musicrow')[2];   // title, menu, battle
+    expect(row.textContent).not.toContain('battle playlist');
+    expect(row.textContent).toContain('default track');
+  }, 20000);   // several steps after the boot: past the 5 s default on a loaded machine
+
+  it('falls back to battle.mp3 only when every playlist file fails, then to the synth bed', async () => {
+    const { w, plays, gesture, existing } = bootWithAudio();
+    for (const s of PLAYLIST) existing.delete(s);
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    w.eval("startMusic('battle')");
+    await lands(plays, 'assets/music/battle.mp3');
+    for (const s of PLAYLIST) expect(plays(), `${s} was never tried`).toContain(s);
+    expect(liveLoop(w), 'battle.mp3 loops, as it always has').toBe(true);
+    await tick(20);
+    expectOneBed(w, 'assets/music/battle.mp3');
+    // The next match does not walk the ten dead files again.
+    const n = plays().length;
+    w.eval("stopMusic(); startMusic('battle')"); await tick(20);
+    expect(plays().slice(n)).toEqual(['assets/music/battle.mp3']);
+    // And with battle.mp3 gone as well: the synth bed, never silence.
+    w.eval("SND._badSrc['assets/music/battle.mp3']=true; stopMusic(); startMusic('battle')");
+    await tick(20);
+    expect(w.eval('!!SND._musicTimer')).toBe(true);
+    expect(w.eval('SND._kind')).toBe('battle');
+  });
+
+  it('leaves Boss Rush, the menus, the World Cup setup and hub, the title and clutch time as they were', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    for (const kind of ['title', 'menu', 'boss', 'tourney', 'intense']) {
+      const chain = JSON.parse(w.eval(`JSON.stringify(musicSources('${kind}'))`));
+      expect(chain.filter((s) => s.endsWith('.ogg')), `${kind} must not reach the battle playlist`).toEqual([]);
+    }
+    expect(liveLoop(w), 'the title/menu bed still loops').toBe(true);
+    w.eval("go('tourneySetup')"); await lands(plays, 'assets/music/tourney.mp3');
+    expect(liveLoop(w)).toBe(true);
+    w.eval("go('tourneyHub')"); await tick(20);
+    expect(plays().at(-1), 'setup -> hub is one unbroken anthem').toBe('assets/music/tourney.mp3');
+    w.eval("go('title')"); await lands(plays, 'assets/music/menu.mp3');
+    w.eval("SETTINGS.mode='boss'; beginMatchNow()"); await lands(plays, 'assets/music/boss.mp3');
+    expect(liveLoop(w)).toBe(true);
+    w.eval('spawnBossRushBoss()'); await tick(20);
+    expect(plays().at(-1), 'a Boss Rush spawn keeps the boss bed').toBe('assets/music/boss.mp3');
+    w.eval("startMusic('intense')"); await lands(plays, 'assets/music/intense.mp3');
+    expect(liveLoop(w)).toBe(true);
+    expect(plays().filter(isBattleTrack), 'no playlist track played outside a battle').toEqual([]);
+  });
+
+  it('says so in the Controls row for an empty battle slot', () => {
+    const { w } = bootWithAudio();
+    w.eval("go('controls')");
+    const row = w.document.querySelectorAll('#customMusic .musicrow')[2];   // title, menu, battle
+    expect(row.textContent).toContain('Battles');
+    expect(row.textContent).toContain('battle playlist (10 tracks)');
+  });
+
+  it('plays a playlist track locally for an online client, and puts nothing about it on the wire', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    w.eval(`(function(){
+      NET.role = 'client'; NET.myId = 'me'; NET.room = 'QXTR'; NET.sent = [];
+      NET.ws = { readyState: 1, send: function(t){ NET.sent.push(t); }, close: function(){} };
+      NET.players = [{ id: 'h', isHost: true }, { id: 'me' }]; NET.myIdx = 1;
+      NET.beginMatch({ mode: 'ffa', count: 2, stocks: 3 }, ['Firey', 'Leafy']);
+    })()`);
+    await landsBattle(plays);
+    expect(PLAYLIST).toContain(plays().at(-1));
+    expect(w.eval('SND._kind')).toBe('battle');
+    expect(w.eval('JSON.stringify(NET.sent)')).not.toMatch(/\.ogg|music/i);
+    expect(w.eval('JSON.stringify(serializeState())')).not.toMatch(/\.ogg|music/i);
+  });
+});
+
 describe('background music — the player\'s own files stay on their machine', () => {
   it('hydrates saved playlists from IndexedDB on the first gesture, not before', async () => {
     const { w, plays, gesture, state } = bootWithAudio({
@@ -726,7 +1176,7 @@ describe('background music — clutch time', () => {
 
   it('switches to the intense bed when a fighter reaches their last stock', async () => {
     const { w, plays } = await inMatch();
-    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    expect(PLAYLIST, 'the match starts on the "Battle playlist"').toContain(plays().at(-1));
     w.eval('fighters[0].stocks = 1; clutchTick()');
     await tick();
     expect(w.eval('CLUTCH.on')).toBe(true);
@@ -763,7 +1213,7 @@ describe('background music — clutch time', () => {
     w.eval('clutchTick()');                              // hold satisfied, condition clear
     await tick();
     expect(w.eval('CLUTCH.on')).toBe(false);
-    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    expect(PLAYLIST, 'back to a "Battle playlist" track').toContain(plays().at(-1));
   });
 
   it('uses a looser threshold to leave than to enter, so it cannot flap', async () => {
@@ -789,7 +1239,7 @@ describe('background music — clutch time', () => {
     w.eval("SETTINGS.stocks=1; fighters.forEach(f=>{f.stocks=1;f.pct=0;}); clutchTick()");
     await tick();
     expect(w.eval('CLUTCH.on')).toBe(false);
-    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    expect(PLAYLIST, 'still the "Battle playlist", not the clutch bed').toContain(plays().at(-1));
   });
 
   it('is driven from the game loop, not from a timer', async () => {
@@ -820,7 +1270,7 @@ describe('background music — clutch time', () => {
     w.eval('startMatch()');
     await tick();
     expect(w.eval('CLUTCH.on')).toBe(false);
-    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    expect(PLAYLIST, 'the new fight starts on the "Battle playlist"').toContain(plays().at(-1));
   });
 });
 
@@ -947,7 +1397,7 @@ describe('background music — the music-only toggle', () => {
 
   it('stops the bed the moment it is switched off, mid-match, without touching SFX', async () => {
     const { w, plays, state } = await inMatch();
-    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    expect(PLAYLIST, 'a "Battle playlist" track is the match bed').toContain(plays().at(-1));
     w.eval('toggleMusic()');
     expect(w.eval('SND.musicOn')).toBe(false);
     expect(w.eval('SND._decks.every(d=>!d || d.paused)')).toBe(true);   // BOTH crossfade decks
@@ -1000,7 +1450,7 @@ describe('background music — the music-only toggle', () => {
     w.eval('toggleMusic()'); await tick();
     expect(w.eval('SND.musicOn')).toBe(true);
     expect(plays().length).toBeGreaterThan(n);
-    expect(plays().at(-1)).toBe('assets/music/battle.mp3');
+    expect(PLAYLIST, 'the match bed is a "Battle playlist" track').toContain(plays().at(-1));
     // ...and the menu bed, not the battle one, when the player is back on a screen.
     w.eval('toggleMusic()');
     w.eval("go('title')");
@@ -1152,8 +1602,9 @@ describe('background music — exactly one bed is ever audible', () => {
     w.eval("go('select')"); await tick(20);
     expectOneBed(w, 'assets/music/menu.mp3');
     w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
-    await lands(plays, 'assets/music/battle.mp3'); await tick(20);
-    expectOneBed(w, 'assets/music/battle.mp3');
+    await landsBattle(plays); await tick(20);
+    expectOneBed(w, plays().at(-1));                    // the "Battle playlist" track just picked
+    expect(PLAYLIST).toContain(plays().at(-1));
     w.eval("SETTINGS.mode='boss'; beginMatchNow()");
     await lands(plays, 'assets/music/boss.mp3'); await tick(20);
     expectOneBed(w, 'assets/music/boss.mp3');
@@ -1187,16 +1638,17 @@ describe('background music — exactly one bed is ever audible', () => {
     const { w, plays, gesture } = bootWithAudio({ fadeMs: 0 });
     gesture(); await tick();
     w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
-    await lands(plays, 'assets/music/battle.mp3'); await tick(20);
+    await landsBattle(plays); await tick(20);
     w.eval('fighters[0].stocks = 1; clutchTick()');
     await lands(plays, 'assets/music/intense.mp3'); await tick(20);
     expect(w.eval('CLUTCH.on')).toBe(true);
     expectOneBed(w, 'assets/music/intense.mp3');
     w.eval('fighters.forEach(f=>{f.stocks=3;f.pct=0;});');
     for (let i = 0; i <= w.eval('CLUTCH_MIN_HOLD'); i += 1) w.eval('clutchTick()');
-    await lands(plays, 'assets/music/battle.mp3'); await tick(20);
+    await landsBattle(plays); await tick(20);
     expect(w.eval('CLUTCH.on')).toBe(false);
-    expectOneBed(w, 'assets/music/battle.mp3');
+    expectOneBed(w, plays().at(-1));                    // back on a "Battle playlist" track, alone
+    expect(PLAYLIST).toContain(plays().at(-1));
   });
 
   it('re-rolls a playlist onto one bed, not two', async () => {
@@ -1305,6 +1757,18 @@ describe('background music — credits', () => {
     for (const author of ['Reganati', 'HauntSync', 'Montogoronto', 'Sonican']) {
       expect(line).toContain(author);
     }
+  });
+
+  it("credits the owner's ten battle-playlist tracks, in CREDITS.md and on the title screen", () => {
+    // They are wired now, so every visitor hears them: the record must say so, and name each file.
+    const owner = credits.split('## Owner-supplied Deltarune tracks')[1] || '';
+    for (const rel of PLAYLIST) expect(owner).toContain('`' + rel.split('/').pop() + '`');
+    expect(owner, 'the tracks are wired now').not.toMatch(/not yet wired/i);
+    expect(owner).toMatch(/battle playlist/i);
+    const html = readFileSync(SRC, 'utf8');
+    const line = html.split('\n').find((l) => l.includes('id="musicCredits"')) || '';
+    expect(line).toMatch(/Toby Fox/);
+    expect(line).toMatch(/Materia Music Publishing/);
   });
 
   it('carries a ready-to-use credit template for owner-supplied Undertale/Deltarune music', () => {
