@@ -208,6 +208,8 @@ fan-work norms in a disclaimed, non-commercial fan game.
 | Boss | File | Size | Facing | Source |
 |---|---|---|---|---|
 | One | `one.png` | 148×200 | 0.041 | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b8/One_TPOT_19.png/revision/latest?cb=20250817043721 |
+| Announcer (Boss 1) | `announcer.png` | 141×200 | front view | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b8/Announcer_Front_Vibrating0001.png/revision/latest |
+| Purple Dragon (Boss 6) | `purple-dragon.png` | 149×200 | -0.065 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Polished_Dragon..%3F.png/revision/latest?cb=20231007202646 |
 
 - `File:One_TPOT_19.png`, front-facing, full body with both legs and her eyes. Chosen over the One page's
   infobox image (`File:OneTPOT20PromoArt.png`) because that file's upload history carries two troll
