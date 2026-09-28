@@ -373,6 +373,18 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Starfruit: Mangosteen of Spoiled Lemon, jumping in for the chorus -- attack art (slmangosteen.png), File:SL Mangosteen Pose.png | `attacks/slmangosteen.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f8/SL_Mangosteen_Pose.png/revision/latest?cb=20160620193929 |
 
 <!-- @b3:g5 Blueberry, Cherries, Clover, Jack -->
+| Blueberry | `blueberry.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/85/Blueberry2024Pose.png |
+| Cherries | `cherries.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/39/Cherries2024Pose.png |
+| Clover | `clover.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7a/Clover2024Pose.png |
+| Jack | `jack.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/46/Jack.png |
+
+What they throw and set down (scripts/fetch-attack-sprites.mjs; Q1 "Cut from the frames" for the rock, the slick and the pager):
+- Blueberry (oatcookie.png): the season-3 cookie (Q7: the Oatmeal Raisin smash sets it down; the show's S3 cookie, not a fan edit) — File:Cookie Season 3.png — https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/Cookie_Season_3.png/revision/latest?cb=20240419100816
+- Cherries (marsrock.png): the huge rock that sent Marshmallow to Mars, lifted off its frame (Marsh on Mars) — File:MarshmallowHitByRock.png — https://static.wikia.nocookie.net/inanimateinsanity/images/2/2b/MarshmallowHitByRock.png/revision/latest?cb=20130515224832
+- Cherries (oliveoil.png): their olive-oil slick, lifted off the floor they slipped on (Fan the Flames) — File:S4E4 The Cherries slip.png — https://static.wikia.nocookie.net/inanimateinsanity/images/d/df/S4E4_The_Cherries_slip.png/revision/latest?cb=20251210031204
+- Clover (butterfly.png): one of Clover's butterflies — File:Butterfly.png — https://static.wikia.nocookie.net/inanimateinsanity/images/1/10/Butterfly.png/revision/latest?cb=20260527102905
+- Clover (bananapeel.png): a banana peel (Q8: her luck puts it under a foe) — File:Banana Peel.png — https://static.wikia.nocookie.net/inanimateinsanity/images/5/5a/Banana_Peel.png/revision/latest?cb=20260307100357
+- Jack (pager.png): his pager in flight, lifted off its frame (Cob Mentality: it hits Bot's leg) — File:S04E02 Pager hits Bot's leg.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/45/S04E02_Pager_hits_Bot%27s_leg.png/revision/latest?cb=20260122023843
 
 <!-- @b3:g6 Magnet, MeTag, Poppy, Silver Spoon -->
 
