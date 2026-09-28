@@ -298,6 +298,25 @@ so the TPOT yellow token ships instead.
 - Paper (piano.png): the season-1 grand piano (Episode 2), lifted out of the frame — File:Ep2 Piano.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/47/Ep2_Piano.png/revision/latest?cb=20110504235029
 
 
+## Item art
+
+The pickups, in the show's own art: the owner asked to "make items look better" and chose "Show art +
+polish". Fetched by scripts/fetch-item-sprites.mjs from the same wiki (jacknjellify's designs), cropped
+to the alpha box and downscaled to 64px tall (never more than 128px on the long side), RGBA with verified
+alpha (every one is at least 12% clear). scripts/item-sprite-manifest.json records each file's size and
+source. Only art that is the thing itself is used: renders with faces and legs, and flat crate faces with
+no clear pixel round them, were turned down on sight (listed at the bottom of the fetch script).
+
+Two kinds have no art and are drawn in the game instead: marmalade (no file of it exists on either wiki;
+the only jam there is Yoyleberry Jam, which is purple) and the boss capsule (a summons, not a thing from
+the show).
+
+- heal (heal.png): a heart (the BFDI 4 asset) — File:4b heart.png — https://static.wikia.nocookie.net/battlefordreamisland/images/2/29/4b_heart.png/revision/latest?cb=20190808214339
+- throw (throw.png): a wooden crate (BFDI 9) — File:Crate (BFDI 9).png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/52/Crate_%28BFDI_9%29.png/revision/latest?cb=20210315233126
+- power (power.png): a Win Token — File:Win Token.png — https://static.wikia.nocookie.net/battlefordreamisland/images/7/7f/Win_Token.png/revision/latest?cb=20180414091907
+- assist (assist.png): a gold trophy (faceless) — File:Trophy.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cd/Trophy.png/revision/latest?cb=20170208184213
+- yoyle (yoyle.png): a Yoyleberry (faceless) — File:2b yoyleberry.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cc/2b_yoyleberry.png/revision/latest?cb=20190808184325
+
 ## Inanimate Insanity DLC
 
 Inanimate Insanity, its characters and designs are the property of **AnimationEpic** (Adam Katz and Taylor
