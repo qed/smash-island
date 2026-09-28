@@ -557,3 +557,132 @@ describe('the title', () => {
     expect(badge.textContent).toBe('1');
   });
 });
+
+// THE SECOND LOOK. What an adversarial read of the first build found, each pinned so it cannot come back: an empty badge
+// that showed on every title screen, KO effects no online client ever saw, a jab (or a burn tick) scored as a landed
+// smash, and a tab that loaded before another tab spent spending the same Win Tokens again.
+describe('the second look', () => {
+  it('the Quests badge is really hidden while nothing is ready to claim, and shows when something is', async () => {
+    const w = await ready();
+    const badge = w.document.getElementById('questBadge');
+    // The badge's own `display` used to beat the `hidden` attribute (an author rule outranks the browser's
+    // [hidden]{display:none}), so the empty pill was always on screen.
+    expect(badge.hidden).toBe(true);
+    expect(w.getComputedStyle(badge).display, 'hidden means not drawn').toBe('none');
+    w.eval(`SHOP_CLOCK = ${DAY}; questState().dp[questsFor('daily')[0].id] = 999; go('title');`);
+    expect(badge.hidden).toBe(false);
+    expect(w.getComputedStyle(badge).display).not.toBe('none');
+    // The support link, hidden the same way, stays hidden in fact as well as in name.
+    expect(w.getComputedStyle(w.document.getElementById('supportRow')).display).toBe('none');
+  });
+
+  it('an online client draws the KO burst the host sent, though its clock runs just behind that snapshot', async () => {
+    // The host: a KO scored in a KO effect, and the two snapshots either side of it, through JSON as the relay carries them.
+    const h = await ready();
+    const snaps = JSON.parse(h.eval(`(function(){
+      walletEarn(1000); buyCosmetic('ko_stars'); equipCos('ko', 'ko_stars');
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=3; chosen = ROSTER.find(function(x){ return x.name==='Firey'; }); LINEUP_MEMO=null;
+      startMatch(); step();
+      NET.role = 'host';
+      var s0 = serializeState(true);
+      for (var i = 0; i < 4; i++) step();
+      var you = fighters.find(function(f){ return f.you; }), foe = fighters.find(function(f){ return !f.you; });
+      foe.lastHitBy = you; eliminate(foe); step();
+      var s1 = serializeState(false);
+      NET.role = 'solo'; running = false;
+      return JSON.stringify([s0, s1]); })()`));
+    expect(snaps[1].ko).toHaveLength(1);
+    // The client: applies both and draws its frames. Its clock glides from the first snapshot's time to the second's, so the
+    // first frame after the burst arrives stands BEFORE the burst's stamp -- the frame the old filter threw it away on.
+    const c = await ready();
+    const r = c.eval(`(function(){
+      var S = ${JSON.stringify(snaps)};
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=3; chosen = ROSTER.find(function(x){ return x.name==='Pen'; }); LINEUP_MEMO=null;
+      startMatch(); running = false;
+      NET.role = 'client'; NET.myIdx = 1;
+      var drawn = 0, kb = drawKoBurst; drawKoBurst = function(){ drawn++; return kb.apply(this, arguments); };
+      applySnapshot(S[0]); NET_VIEW.gap = 33;
+      applySnapshot(S[1]);
+      var clock = [];
+      for (var i = 0; i < 8; i++){ netInterpolate(NET_VIEW.at + i*16); clock.push(hazardT); draw(); }
+      NET.role = 'solo';
+      return { t0: S[1].t, clock: clock, drawn: drawn, err: COS_DRAW_ERR ? String(COS_DRAW_ERR) : null }; })()`);
+    expect(r.clock[0], 'the first frame stands before the burst').toBeLessThan(r.t0);
+    expect(r.drawn, 'the burst was drawn on the client').toBeGreaterThan(0);
+    expect(r.err).toBe(null);
+    // A burst stamped far ahead of the clock (a clock that started again) is dropped, not kept for ever.
+    expect(c.eval(`(function(){ COS_KO_FX = []; hazardT = 10; cosKoPush(50, 50, 'ko_zap', 5000); drawCosKoFx(); return COS_KO_FX.length; })()`)).toBe(0);
+  });
+
+  it('a KO effect plays only for a KO its wearer is credited with', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){
+      walletEarn(1000); buyCosmetic('ko_confetti'); equipCos('ko', 'ko_confetti');
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=3; chosen = ROSTER.find(function(x){ return x.name==='Firey'; }); LINEUP_MEMO=null;
+      startMatch(); step();
+      var you = fighters.find(function(f){ return f.you; }), foe = fighters.find(function(f){ return !f.you; });
+      you.dead = true; foe.lastHitBy = you; var kos0 = you._kos | 0; eliminate(foe);
+      var down = { bursts: COS_KO_FX.length, kos: (you._kos | 0) - kos0 };
+      you.dead = false; foe.lastHitBy = you; eliminate(foe);
+      var up = { bursts: COS_KO_FX.length, kos: (you._kos | 0) - kos0 };
+      running = false;
+      return { down: down, up: up }; })()`);
+    expect(r.down, 'a killer already down scores no KO, and gets no burst').toEqual({ bursts: 0, kos: 0 });
+    expect(r.up).toEqual({ bursts: 1, kos: 1 });
+  });
+
+  it('a landed smash is that smash\'s own hit: not the jab after a miss, not a burn tick', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=3; chosen = ROSTER.find(function(x){ return x.name==='Firey'; }); LINEUP_MEMO=null;
+      startMatch(); step();
+      var you = fighters.find(function(f){ return f.you; }), foe = fighters.find(function(f){ return !f.you; });
+      var out = {};
+      doSmash(you); doAttack(you); applyHit(foe, 5, 1, -1, you); out.jabAfterMiss = QSTAT.smashes;
+      doSmash(you); applyHit(foe, 3, 0, 0, you, { tick: true }); out.tick = QSTAT.smashes;
+      applyHit(foe, 9, 2, -3, you); out.landed = QSTAT.smashes;
+      applyHit(foe, 9, 2, -3, you); out.twice = QSTAT.smashes;
+      doSmash(you); hazardT += 91; applyHit(foe, 9, 2, -3, you); out.late = QSTAT.smashes;
+      running = false;
+      return out; })()`);
+    expect(r.jabAfterMiss, 'a jab thrown after a smash that missed').toBe(0);
+    expect(r.tick, 'a burn tick is not a hit').toBe(0);
+    expect(r.landed, 'the smash itself landing').toBe(1);
+    expect(r.twice, 'one smash lands once').toBe(1);
+    expect(r.late, 'past the second and a half').toBe(1);
+  });
+
+  it('a stale tab cannot spend Win Tokens another tab already spent, and takes in the other tab\'s saves at once', async () => {
+    const w = await ready();
+    await w.eval(`(async function(){ SHOP_CLOCK = ${DAY}; walletEarn(150); await saveProfile(); })()`);
+    // The other tab, loaded from the same save, spends all 150 on the top hat and saves. This tab still holds 150 in memory.
+    const other = JSON.parse(w.localStorage.getItem('profile:v1'));
+    other.wallet.owned = { hat_top: 150 }; other.wallet.spent = 150;
+    w.localStorage.setItem('profile:v1', JSON.stringify(other));
+    const r = await w.eval(`(async function(){
+      var mem = PROFILE.wallet.earned - PROFILE.wallet.spent;
+      var buy = buyCosmetic('sk_evil');   // 150 too
+      await saveProfile();
+      var st = JSON.parse(localStorage.getItem('profile:v1')).wallet;
+      return { mem: mem, buy: buy.ok ? 'bought' : buy.why, top: ownsCos('hat_top'), evil: ownsCos('sk_evil'), owed: st.spent - st.earned, bal: walletBalance() }; })()`);
+    expect(r.mem, 'this tab had not seen the purchase').toBe(150);
+    expect(r.buy, 'the same 150 tokens are not spent twice').toBe('tokens');
+    expect(r.evil).toBe(false);
+    expect(r.top, 'the other tab\'s look is this tab\'s too').toBe(true);
+    expect(r.owed, 'the wallet never owes').toBeLessThanOrEqual(0);
+    expect(r.bal).toBe(0);
+    // A quest claimed in the other tab shows up here without a reload: the balance, the Store, and the quest as claimed.
+    w.eval(`go('store')`);
+    const o2 = JSON.parse(w.localStorage.getItem('profile:v1'));
+    const q = w.eval(`(function(){ var q = questsFor('daily')[0]; return { id: q.id, reward: q.reward, key: 'd' + dailySeed(shopNow()) + ':' + q.id }; })()`);
+    o2.wallet.earned += q.reward;
+    o2.quests = Object.assign({}, o2.quests, { claims: Object.assign({}, (o2.quests || {}).claims, { [q.key]: q.reward }) });
+    w.localStorage.setItem('profile:v1', JSON.stringify(o2));
+    w.dispatchEvent(new w.StorageEvent('storage', { key: 'profile:v1', newValue: JSON.stringify(o2) }));
+    expect(w.document.querySelector('#store .walletAmt').textContent).toBe(String(q.reward));
+    expect(w.document.querySelector('#title .walletAmt').textContent).toBe(String(q.reward));
+    w.eval(`questState().dp[${JSON.stringify(q.id)}] = 999`);
+    expect(w.eval(`claimQuest(${JSON.stringify(q.id)}).why`), 'claimed in the other tab').toBe('claimed');
+    expect(w.eval('walletBalance()'), 'and paid once').toBe(q.reward);
+  });
+});

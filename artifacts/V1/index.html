@@ -475,6 +475,10 @@
   .shopdoor .wallet{font-size:13px}
   .qbadge{display:inline-block; min-width:18px; padding:0 5px; margin-left:4px; border-radius:9px; background:var(--host);
     color:#fff; font-size:11px; font-weight:800; line-height:18px; text-align:center}
+  /* `hidden` has to win over the display above: an author rule outranks the browser's own [hidden]{display:none}, so without
+     this an empty pill sat beside "Quests" on every title screen, as if something were waiting -- the tokens are meant to be
+     noticed, never to shout (see the title's WIN TOKENS note). */
+  .qbadge[hidden]{display:none}
   #quests,#store,#wardrobe{align-items:center; text-align:center}
   .shoptag{font-size:14px; color:#2a4a12; font-weight:600; max-width:560px; margin:4px 0 10px}
   .shopsec{font-size:11px; font-weight:800; color:#555; text-transform:uppercase; letter-spacing:.08em; margin:14px 0 6px}
@@ -2512,6 +2516,7 @@ function go(id){
   if(id==='select'){ buildBoard(); syncModeUI(); }
   if(id==='controls'){ buildMaps(); buildCustomMusic(); }
   if(id==='vault'){ try{ buildVault(); }catch(e){} }
+  if(id==='quests' || id==='store' || id==='wardrobe'){ try{ shopPeek(); }catch(e){} }   // the balance another tab left, not this one's old copy
   if(id==='quests'){ try{ buildQuests(); }catch(e){} }
   if(id==='store'){ try{ storeReply(''); buildStore(); }catch(e){} }
   if(id==='wardrobe'){ try{ buildWardrobe(); }catch(e){} }
@@ -10434,7 +10439,7 @@ function doSmash(f){
   if(inOwnTeamZone(f)) return;
 
   armAtk(f, ATK_ANIM+5, animKindOf(f, 'smash'));    // a smash lunges longer than a jab — the phase split scales with it
-  if(f.you) questSmashArm();   // Win Tokens: the "land smashes" quests (a tally outside the fighter; see QSTAT)
+  if(f.you) questSmashArm(f);   // Win Tokens: the "land smashes" quests (a tally outside the fighter; see QSTAT)
   if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'smash');
   // Announce it. The sound fires for everyone; the name banner only for the local player, because
   // in a 5-way FFA four AI smashes a second would make the banner unreadable.
@@ -12163,7 +12168,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(TESTMODE.active && dmg>0 && from && from.controller==="local" && t.controller!=="local" && t.controller!=="local2"){ TESTMODE.dpsDmg += dmg; }
   t._dmgTaken=(t._dmgTaken||0)+dmg;
   if(from && from!==t){ from._dmgDealt=(from._dmgDealt||0)+dmg; }
-  if(from && from!==t && from.you && dmg>0) questSmashHit();   // ...which this hit may complete
+  if(from && from!==t && from.you && dmg>0) questSmashHit(from, opts);   // ...which this hit may complete
   // knockback scales with target pct and inverse weight; ramps up harder past 100%
   const ramp = t.pct>100 ? 1 + (t.pct-100)*0.006 : 1;   // extra launch at high %
   const weightK = Math.min(1.7, 100/t.w);   // cap the featherweight knockback penalty (was up to 2.4x for Bubble)
@@ -20857,10 +20862,30 @@ function walletState(){
 function walletBalance(){ const w = walletState(); return Math.max(0, w.earned - w.spent); }
 function ownsCos(id){ const w = PROFILE && PROFILE.wallet; return !!(w && w.owned && typeof w.owned === 'object' && _own(w.owned, id)); }
 function walletEarn(n){ const w = walletState(); w.earned += Math.max(0, Math.floor(+n || 0)); return w.earned; }
+// CATCHING UP WITH ANOTHER TAB. mergeWallet keeps every purchase two tabs make, so a tab that loaded before the other one
+// spent could spend the same tokens again, and the two looks would leave the wallet owing (earned below spent). So before a
+// purchase or a claim, and whenever another tab saves (the 'storage' event, initShop), this tab folds the stored wallet and
+// quests into its own -- upward only, by the same merges a save uses -- and decides on the real balance.
+function shopCatchUp(stored){
+  if(!PROFILE || !stored || typeof stored !== 'object' || Array.isArray(stored)) return false;
+  const quests = mergeQuests(stored.quests, PROFILE.quests);
+  PROFILE.wallet = mergeWallet(stored.wallet, PROFILE.wallet, stored.quests, PROFILE.quests);   // both ledgers, before either is merged
+  PROFILE.quests = quests;
+  return true;
+}
+// Synchronous where the store is (localStorage, what the site and the desktop app use), so the check and the spend are one
+// step. The async host store (window.storage) is caught up by the next save instead, as it always was.
+function shopPeek(){
+  try{
+    if(!PROFILE || !PROFILE_STORAGE_OK || (typeof window !== 'undefined' && window.storage) || typeof localStorage === 'undefined') return false;
+    return shopCatchUp(parseProfile(localStorage.getItem(PROFILE_KEY)));
+  }catch(e){ return false; }
+}
 // The only way anything leaves the wallet, and all it can buy is a look.
 function buyCosmetic(id){
   const c = cosItem(id);
   if(!c || !PROFILE) return { ok:false, why:'unknown' };
+  shopPeek();   // what another tab bought or claimed counts before this one decides (see shopCatchUp)
   if(ownsCos(id)) return { ok:false, why:'owned' };
   const bal = walletBalance();
   if(bal < c.price) return { ok:false, why:'tokens', need: c.price - bal };
@@ -21041,14 +21066,21 @@ function questMatchEnd(you, won, now){
   if(won && SETTINGS.mode === 'teams') questAdd('teamwin', 1, now);
   if(won && (you._falls | 0) === 0) questAdd('flawless', 1, now);
 }
-// LANDED SMASHES. A smash you commit (doSmash) arms the tally; the first time you hurt someone within the next second and
-// a half, that smash landed. Kept in QSTAT, never on the fighter, so the sim's own objects are untouched.
-const QSTAT = { smashes:0, armed:false, until:-1 };
-function questSmashArm(){ QSTAT.armed = true; QSTAT.until = hazardT + 90; }
-function questSmashHit(){ if(QSTAT.armed && hazardT <= QSTAT.until){ QSTAT.armed = false; QSTAT.smashes++; } }
+// LANDED SMASHES. A smash you commit (doSmash) arms the tally; the first time THAT SMASH hurts someone within the next second
+// and a half, it landed. "That smash" is the move it was (_atkSeq, which every new move bumps -- see chainOpen): a jab or a
+// special thrown after a smash that missed is a new move, and its hit is not a landed smash. A burn or bleed tick is not a
+// hit at all. Kept in QSTAT, never on the fighter: the fighter is only read, so the sim's own objects are untouched.
+const QSTAT = { smashes:0, armed:false, until:-1, seq:-1 };
+function questSmashArm(f){ QSTAT.armed = true; QSTAT.until = hazardT + 90; QSTAT.seq = f ? f._atkSeq : -1; }
+function questSmashHit(from, opts){
+  if(!QSTAT.armed || hazardT > QSTAT.until || (opts && opts.tick)) return;
+  if(!from || from._atkSeq !== QSTAT.seq) return;
+  QSTAT.armed = false; QSTAT.smashes++;
+}
 function claimQuest(id, now){
   const t = now || shopNow();
   if(!PROFILE) return { ok:false, why:'profile' };
+  shopPeek();   // a quest another tab already claimed shows as claimed here too
   const row = questRows('daily', t).concat(questRows('weekly', t)).find(r=>r.quest.id === id);
   if(!row) return { ok:false, why:'not-now' };
   if(!row.done) return { ok:false, why:'unfinished' };
@@ -21264,6 +21296,7 @@ function drawCosTrail(c, id, f, a0){
 let COS_KO_FX = [];    // {x, y, id, t0}: live bursts, render-only
 let COS_KO_OUT = [];   // a host's bursts since its last snapshot, [x, y, which]: they ride that snapshot once (s.ko)
 const COS_KO_LIFE = 48;
+const COS_KO_WAIT = 120;   // how far ahead of the clock a burst may be stamped and still wait for it (see drawCosKoFx)
 function cosKoPush(x, y, id, t0){
   if(!cosItem(id) || !Number.isFinite(x) || !Number.isFinite(y)) return;
   COS_KO_FX.push({ x, y, id, t0: t0 | 0 });
@@ -21271,7 +21304,7 @@ function cosKoPush(x, y, id, t0){
 }
 function cosKoBurst(victim){
   const killer = victim && victim.lastHitBy;
-  if(!killer || killer === victim) return;
+  if(!killer || killer === victim || killer.dead) return;   // the same test eliminate uses to credit the KO
   const c = cosOf(killer), id = c && c.ko;
   if(!id) return;
   // On the stage, where the eye is: a KO happens past the blast line, off the edge of the view.
@@ -21328,11 +21361,18 @@ function drawKoBurst(c, id, x, y, t){
 }
 function drawCosKoFx(){
   if(!COS_KO_FX.length) return;
-  COS_KO_FX = COS_KO_FX.filter(e=>hazardT >= e.t0 && hazardT - e.t0 < COS_KO_LIFE);
-  for(const e of COS_KO_FX){ try{ drawKoBurst(ctx, e.id, e.x, e.y, hazardT - e.t0); }catch(err){ cosDrawFail(err); } }
+  // A burst that has not started yet WAITS. An online client stamps a burst with the time of the snapshot that carried it
+  // (cosKoFromNet), while its own clock glides from the snapshot before towards that one (netInterpolate), so for a frame
+  // or two every burst it is sent lies just ahead of it; dropping those dropped every KO effect a client was ever sent.
+  // Only a burst that is over, or stamped absurdly far ahead (a clock that started again), is thrown away.
+  COS_KO_FX = COS_KO_FX.filter(e=>hazardT - e.t0 < COS_KO_LIFE && e.t0 - hazardT <= COS_KO_WAIT);
+  for(const e of COS_KO_FX){
+    if(hazardT < e.t0) continue;
+    try{ drawKoBurst(ctx, e.id, e.x, e.y, hazardT - e.t0); }catch(err){ cosDrawFail(err); }
+  }
 }
 // A new match (beginMatchNow): nothing of the last one's bursts or tallies carries over.
-function shopMatchReset(){ QSTAT.smashes = 0; QSTAT.armed = false; QSTAT.until = -1; COS_KO_FX = []; COS_KO_OUT = []; QUEST_NOTE.length = 0; }
+function shopMatchReset(){ QSTAT.smashes = 0; QSTAT.armed = false; QSTAT.until = -1; QSTAT.seq = -1; COS_KO_FX = []; COS_KO_OUT = []; QUEST_NOTE.length = 0; }
 
 // ---- screens ----
 function openQuests(){ go('quests'); }
@@ -21577,6 +21617,19 @@ function initShop(){
   applySupportLink();
   refreshWallets();
   if(profileReady) profileReady.then(()=>{ try{ refreshWallets(); }catch(e){} });
+  // Another tab saved: take in its wallet and quests now, so this tab's balance, badge and Store are the real ones.
+  if(typeof window !== 'undefined' && !initShop._storageWired){
+    initShop._storageWired = true;
+    window.addEventListener('storage', e=>{
+      if(!e || e.key !== PROFILE_KEY) return;
+      try{
+        if(!shopCatchUp(parseProfile(e.newValue))) return;
+        refreshWallets();
+        const on = document.querySelector('.screen.active'), id = on && on.id;
+        if(id === 'quests') buildQuests(); else if(id === 'store') buildStore(); else if(id === 'wardrobe') buildWardrobe();
+      }catch(err){}
+    });
+  }
 }
 
 // ---------- boot ----------
