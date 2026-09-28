@@ -11,6 +11,76 @@ let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
 describe('Boss Rush balance', () => {
+  // The review: bossRushCheck ran from step() and again from checkWin(), so BOSSRUSH.frames counted two a frame and the
+  // victory card showed about double the real run time.
+  it('the run clock counts one a frame, so the victory card shows the real time', () => {
+    const r = W.eval(`(function(){
+      var prevMode = SETTINGS.mode, prevStocks = SETTINGS.stocks;
+      SETTINGS.mode='boss'; SETTINGS.stocks=3; SETTINGS.items=false; SETTINGS.itemRate=0; running=true; paused=false;
+      var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 200, groundY()-24, 0);
+      f.controller='still'; f.team=0; f.stocks=3; fighters=[f];
+      BOSSRUSH = { active:true, bossIdx:0, cleared:0, defeated:false, loop:0, dmgMult:1, frames:0 };
+      summons=[]; projectiles=[]; worldPlats=[];
+      spawnBossRushBoss(); summons[0]._atkTimer = 1e9;
+      for (var i=0;i<300;i++) step();
+      var frames = BOSSRUSH.frames;
+      BOSSRUSH.active=false; running=false; summons=[]; projectiles=[]; SETTINGS.mode=prevMode; SETTINGS.stocks=prevStocks;
+      return frames;
+    })()`);
+    expect(r, 'five seconds is 300 frames, not 600').toBe(300);
+  });
+
+  // The review: banner() has one line, and a popup (a status, a hit, an item) that arrived during a boss's wind-up
+  // replaced his attack warning. A warning now stays up until another boss line, a phase or the gauntlet replaces it.
+  it("a popup cannot wipe a boss's attack warning off the screen; the game's own lines still can", () => {
+    const r = W.eval(`(function(){
+      var el = document.getElementById('banner'), text = function(){ return el.textContent; }, out = {};
+      banner("I'LL BE BACK!", 700, 'boss');
+      banner('+HEAL', 500); banner('8.', 600); banner('POPPED!', 600); banner("KO'd! − a stock", 1100);
+      out.popups = text(); out.style = el.classList.contains('banner-boss');
+      banner('CHAINSAWS!', 700, 'boss'); out.boss = text();
+      banner('MePhone4S — PHASE 3: Super Death Trap', 1800, 'sys'); out.phase = text(); out.style2 = el.classList.contains('banner-boss');
+      banner('+HEAL', 500); out.after = text();
+      el.classList.remove('show'); el.classList.remove('banner-boss');
+      return out;
+    })()`);
+    expect(r.popups, 'every popup was dropped').toBe("I'LL BE BACK!");
+    expect(r.style).toBe(true);
+    expect(r.boss, 'another boss line replaces it').toBe('CHAINSAWS!');
+    expect(r.phase, 'so does a phase announcement').toMatch(/PHASE 3/);
+    expect(r.style2).toBe(false);
+    expect(r.after, 'and once no warning is up, popups show as before').toBe('+HEAL');
+  });
+
+  // The host sends its last banner in the snapshot; a client used to show it without its kind, so a boss's warning was a
+  // plain line there, and anything the client showed itself could replace it.
+  it("a netcode client shows a boss's warning as one, and its own popups cannot wipe it either", () => {
+    const r = W.eval(`(function(){
+      var el = document.getElementById('banner');
+      banner("FIST THINGY!", 700, 'boss');
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      el.classList.remove('show'); el.classList.remove('banner-boss'); el.textContent = '';
+      applySnapshot(snap);
+      var out = { sent: snap.banner && snap.banner.kind, text: el.textContent, style: el.classList.contains('banner-boss') };
+      banner('+HEAL', 500); out.after = el.textContent;
+      el.classList.remove('show'); el.classList.remove('banner-boss');
+      return out;
+    })()`);
+    expect(r.sent).toBe('boss');
+    expect(r.text).toBe('FIST THINGY!');
+    expect(r.style, 'the yellow warning style').toBe(true);
+    expect(r.after).toBe('FIST THINGY!');
+  });
+
+  it("the title screen's boss count is the roster's", () => {
+    // Typed in by hand, and the reviews called it out as going stale without anyone noticing.
+    const n = W.eval('BOSS_ROSTER.length');
+    const foot = W.eval(`[].map.call(document.querySelectorAll('.foot'), function(e){ return e.textContent; }).join(' | ')`);
+    const m = foot.match(/(\d+) bosses/);
+    expect(m, 'the footer names a boss count').not.toBe(null);
+    expect(Number(m[1])).toBe(n);
+  });
+
   it('the comeback bonus is capped at 3 points in Boss Rush, Fries excepted, and untouched elsewhere', () => {
     const r = W.eval(`(function(){
       var mk = function(n){ var f = makeFighter(ROSTER.find(function(r){ return r.name===n; }), 100, 100, 0); f.deaths = 9; return f; };
@@ -92,12 +162,11 @@ describe('Boss Rush balance', () => {
     })()`);
     expect(r.shown).toBe('flex');
     expect(r.wasPaused).toBe(true);
-    // Was /All nine bosses beaten/. "mephone should be a boss, alongside 4s, and cobs" made the gauntlet ten long, and the
-    // other two II bosses lengthen it again, so the card counts the roster and this reads the count the same way.
-    const n = W.eval('BOSS_ROSTER.length');
-    const words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen'];
-    expect(n, 'nine, and MePhone4').toBeGreaterThanOrEqual(10);
-    expect(r.sub).toMatch(new RegExp(`All ${words[n]} bosses beaten in 2:05`));
+    // Was /All nine bosses beaten/. "mephone should be a boss, alongside 4s, and cobs" made the gauntlet twelve long (the
+    // three II bosses). The card counts the roster; this pins the number itself, so a roster change has to come here too
+    // (building the word from BOSS_ROSTER.length with the code's own table only checked the code against itself).
+    expect(W.eval('BOSS_ROSTER.length'), 'nine, and MePhone4, MePhone4S and Steve Cobs').toBe(12);
+    expect(r.sub).toMatch(/^All twelve bosses beaten in 2:05/);
     expect(r.resumed).toBe(true);
     expect(r.running).toBe(false);
     expect(r.title).toBe('Victory!');

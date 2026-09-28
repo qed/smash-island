@@ -69,7 +69,8 @@ describe('MePhone4S joins the gauntlet', () => {
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug', 'seekers+rain', 'swarm seekers swarm rain', 36, 'Second Wave', 'Swarm Frenzy'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face', 'ring+rain', 'swallow ring swallow rain', 36, 'Ad Overload', 'Segment Split'],
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon', 'slam+rain', 'dragon slam dragon rain', 36, 'Strafing Runs', 'Grab & Carry'],
-      ['MePhone4', '#4fb8e8', 240, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
+      // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
+      ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'seekers+slam', 'evilleafy seekers evilleafy slam', 45, 'No Refuge', 'Vine Coverage'],
     ]);
   });
@@ -188,16 +189,19 @@ describe('the gun: PUT THAT COOKIE DOWN, NOW!', () => {
     expect(r.out[2].delays).toEqual([0, 5, 10]);
   });
 
-  it('the sight follows its mark for 28 frames, locks for the last 14, and the shot goes where it locked', () => {
+  // S4.lock is 18, was 14: backing off from anyone who walks up (the review's fix) made him press harder, and more time
+  // on a locked sight is the fairest give-back (where he sits: test/boss-rush-order.test.js).
+  it('the sight follows its mark for 24 frames, locks for the last 18, and the shot goes where it locked', () => {
+    expect(W.eval('S4.lock')).toBe(18);
     const r = W.eval(`(function(){ ${STAGE(820)}
       b._atkTimer = 1; step();
       var out = { kind: b._telKind, tel: b._tel, follow: true, held: true, lockedLate: true, lockedEarly: false, shot: null };
       var AP = addProj; addProj = function(p){ if (p && p.owner===-2 && p.beamShot && !out.shot) out.shot = { x:p.x, y:p.y, vx:p.vx, vy:p.vy }; return AP(p); };
       try {
-        for (var i=0;i<28;i++){ f.x = 820 + (i+1)*4; f.vx = 0; step();
+        for (var i=0;i<24;i++){ f.x = 820 + (i+1)*4; f.vx = 0; step();
           if (b._aimX !== f.x) out.follow = false; if (b._aimLock) out.lockedEarly = true; }
         var lx = b._aimX, ly = b._aimY;
-        for (var j=0;j<14;j++){ f.x = 700 - j*6; f.vx = 0; step();
+        for (var j=0;j<18;j++){ f.x = 700 - j*6; f.vx = 0; step();
           if (b._aimX !== lx || b._aimY !== ly) out.held = false; if (!b._aimLock) out.lockedLate = false; }
         out.lx = lx; out.ly = ly;
       } finally { addProj = AP; }
@@ -224,6 +228,22 @@ describe('the gun: PUT THAT COOKIE DOWN, NOW!', () => {
     expect(r.near, 'inside 180 px he does not come closer').toBe(0);
     expect(r.far).toBeGreaterThan(0);
     expect(r.aiming, 'halved every frame of the wind-up, never pushed').toBe(2);
+  });
+
+  // The review: "MePhone4S never backs away ... a melee player can walk right up to him." Inside S4.backoff he steps back.
+  it('he backs off from anyone who walks up to him, and holds between S4.backoff and S4.standoff', () => {
+    const r = W.eval(`(function(){
+      var tgt = { x:0, y:groundY()-24, dead:false, idx:0 };
+      var mk = function(dx){ var s = ${S('_atkTimer:1e9')}; tgt.x = s.x + dx; updateBossAttack(s, tgt); return s.vx; };
+      var walk = ${S('_atkTimer:1e9')}, x0 = walk.x;
+      for (var i=0;i<60;i++){ tgt.x = x0 + 60; updateBossAttack(walk, tgt); walk.x += walk.vx; walk.vx *= 0.9; }   // his body's own step (updateSummons)
+      return { close: mk(80), closeLeft: mk(-80), hold: mk(150), backoff: S4.backoff, standoff: S4.standoff, gap: Math.abs(walk.x - (x0 + 60)) };
+    })()`);
+    expect(r.close, 'someone 80 px to his right: he steps left').toBeLessThan(0);
+    expect(r.closeLeft, 'and the other way round').toBeGreaterThan(0);
+    expect(r.hold, 'between the two he holds').toBe(0);
+    expect(r.backoff).toBeLessThan(r.standoff);
+    expect(r.gap, 'walked up to, he ends up out at his backoff distance').toBeGreaterThanOrEqual(r.backoff - 10);
   });
 
   it('from phase 2 he draws on whoever ate a cookie; in phase 1 on whoever is nearest', () => {
@@ -253,6 +273,34 @@ describe("the car: I'LL BE BACK", () => {
     expect(r.p1.filter(k => k.startsWith('car')), 'six signature turns, no car').toEqual([]);
     expect(r.p2.slice(0, 8)).toEqual(['gun:PUT THAT COOKIE DOWN!', 'cookies', "car:I'LL BE BACK!", 'chainsaws',
       'gun:PUT THAT COOKIE DOWN!', 'cookies', "car:I'LL BE BACK!", 'chainsaws']);
+  });
+
+  // The review: MePhone4 and MePhone4S read the phase when the attack fired, not when its wind-up started, so an "I'LL BE
+  // BACK!" drawn in phase 2 could fire with phase 3's second car and spikes if a hit crossed the threshold mid-wind-up.
+  it('a car drawn in phase 2 is one car and no spikes, and a gun drawn in phase 1 is one round, even if phase 3 starts during the wind-up', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ['car', 'gun'].forEach(function(which){
+        ${STAGE(800)}
+        worldPlats = [{ x:300, y:400, w:300, h:16 }];
+        if (which === 'car'){ b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._moveN = 2; }
+        b._atkTimer = 1; step();
+        var drawn = { phase: b._telPh, car: b._s4Car, name: document.getElementById('banner').textContent };
+        var seen = { car:0, spike:0, round:0 }, AP = addProj;
+        addProj = function(p){ if (p && p.shape==='redcar') seen.car++; if (p && p.shape==='spike') seen.spike++; if (p && p.beamShot) seen.round++; return AP(p); };
+        try {
+          b.hp = b.maxHp*0.2;
+          for (var i=0;i<46;i++){ step(); f.x = 800; f.vx = 0; }
+          out[which] = { drawn: drawn, phase: b._phase, seen: seen };
+        } finally { addProj = AP; summons = []; projectiles = []; worldPlats = []; }
+      });
+      return out;
+    })()`);
+    expect(r.car.drawn).toEqual({ phase: 2, car: true, name: "I'LL BE BACK!" });
+    expect(r.car.phase).toBe(3);
+    expect(r.car.seen, 'one car, as drawn: no second car and no spikes nobody was warned of').toEqual({ car: 1, spike: 0, round: 0 });
+    expect(r.gun.drawn).toMatchObject({ phase: 1, car: false, name: 'PUT THAT COOKIE DOWN!' });
+    expect(r.gun.phase).toBe(3);
+    expect(r.gun.seen.round, "phase 1's one round").toBe(1);
   });
 
   it('revs at the edge farther from you, then drives the whole floor -- even on a 1920 px screen', () => {
@@ -333,13 +381,13 @@ describe('the poisoned cookies', () => {
     expect(new Set(r[0].xs).size).toBe(5);
   });
 
-  it('a cookie gives four seconds and a short poison; a second does not restart them; then you collapse on the spot', () => {
+  it('a cookie gives four seconds and a short poison; a second restarts neither; then you collapse on the spot', () => {
     const r = W.eval(`(function(){ ${STAGE(700)}
       summons = []; f.pct = 0;
       SM_FX.cookie(f, null, 240);
       var out = { cookieT: f._cookieT, poison: f._poisonT, burn: f.burn };
       for (var i=0;i<100;i++) step();
-      SM_FX.cookie(f, null, 240); out.after2nd = f._cookieT;
+      var burnBefore = f.burn; SM_FX.cookie(f, null, 240); out.after2nd = f._cookieT; out.burnKept = f.burn === burnBefore;
       var at = -1;
       for (var j=0;j<200;j++){ step(); if (!(f._cookieT > 0)){ at = j; out.hitstun = f.hitstun; out.stunFx = f._stunFx; out.vy = f.vy; break; } }
       out.at = 100 + at + 1; out.pct = f.pct; projectiles = []; return out;
@@ -348,11 +396,14 @@ describe('the poisoned cookies', () => {
     expect(r.poison, 'the fire bosses\' 110 frames, no more').toBe(110);
     expect(r.burn).toBe(110);
     expect(r.after2nd, 'the timer never restarts').toBe(140);
+    // and neither does the poison: every cookie eaten used to top it up, which with the chainsaws' bleed made damage over
+    // time a big share of what he dealt, outside the per-hit cap (the review)
+    expect(r.burnKept, 'a second cookie does not top the poison up').toBe(true);
     expect(r.at, 'four seconds').toBe(240);
     expect(r.hitstun).toBeGreaterThan(0);
     expect(r.stunFx).toBeGreaterThan(0);
     expect(r.vy, 'a collapse, not a hop').toBeGreaterThanOrEqual(0);
-    expect(r.pct, 'two short poisons: about 4.4% + 4%, nothing else').toBeLessThan(9);
+    expect(r.pct, 'one short poison, about 4.4%, and nothing else').toBeLessThan(5);
   });
 
   it('a respawn clears it, even with a frame to go', () => {
@@ -393,6 +444,32 @@ describe('the poisoned cookies', () => {
     expect(r.taken, 'five cookies would be 33 uncapped').toBeLessThanOrEqual(r.full + 5 * 0.04 + 1e-6);
     expect(r.taken).toBeGreaterThan(r.full - 1e-6);
     expect(r.trapDmg).toBe(Math.round(6 * r.mult));
+  });
+});
+
+describe('his warnings stay up', () => {
+  // The review's probe: the cookie's "POISONED! 4 SECONDS" popup replaced "I'LL BE BACK!" two frames into the car's
+  // 42-frame wind-up -- and the car is always the turn after the cookies, while they still lie on the floor. The popups
+  // are gone ("remove item popups"), and banner() drops any popup while a boss warning is up.
+  it("eating a cookie, or collapsing, during the car's wind-up leaves I'LL BE BACK! on screen", () => {
+    const r = W.eval(`(function(){ ${STAGE(700)}
+      f.you = true;
+      b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._moveN = 2;
+      b._atkTimer = 1; step();
+      var name = document.getElementById('banner').textContent;
+      projectiles.push({ owner:-2, ownerObj:{team:-1, idx:-2}, trap:true, arm:0, x:f.x, y:f.y, r:30, dmg:bossDmg()*0.3, kb:4, life:150,
+        color:'#c8904a', shape:'cookie', _mine:true, bossAtk:++BOSS_ATK_ID, volley:true, fxTag:'cookie', fxN:240 });
+      step(); var ate = f._cookieT > 0, afterCookie = document.getElementById('banner').textContent;
+      f._cookieT = 1; step(); var afterCollapse = document.getElementById('banner').textContent;
+      f.you = false; summons = []; projectiles = [];
+      return { name: name, ate: ate, afterCookie: afterCookie, afterCollapse: afterCollapse };
+    })()`);
+    expect(r.name).toBe("I'LL BE BACK!");
+    expect(r.ate, 'the cookie was eaten').toBe(true);
+    expect(r.afterCookie).toBe("I'LL BE BACK!");
+    expect(r.afterCollapse).toBe("I'LL BE BACK!");
+    const src = W.eval('String(SM_FX.cookie) + String(step)');
+    expect(src, 'no poison or collapse popup at all').not.toMatch(/POISONED|COLLAPSED/);
   });
 });
 

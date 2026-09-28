@@ -267,6 +267,32 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(r.aimed, 'aimed at him, not just thrown flat ahead').toBe(true);
   });
 
+  // The review's probe: with Bow standing under MePhone4 and facing AWAY from him, all three held snowballs hit him for 15
+  // on the first frame and were used up, never held -- the shots-hit-summons loop did not skip held ones, though the
+  // projectile step says "held: no travel, no life lost, no hits". An add beside her ate them the same way.
+  it("Bow's held snowballs touch no boss and no add either: standing under MePhone4, or beside one of his adds", () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
+      BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var A = makeFighter(ROSTER.find(function(r){ return r.name==='Bow'; }), 300, groundY()-24, 0);
+      A.team=0; A.controller='still'; A.stocks=9; fighters=[A];
+      spawnBossRushBoss();
+      var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
+      step(); A.invuln=0; A.spCd=0; A.x = b.x + 20; A.face = 1;          // under him, facing away
+      var a = meLifeDownload(b, 1); a._dl = 0; a.x = A.x + 10; a.y = A.y - 54; a.vx = 0; a.vy = 0;
+      var hp0 = b.hp, ahp0 = a.hp; doSpecial(A);
+      for (var i=0;i<8;i++){ step(); A.x = b.x + 20; A.face = 1; a.x = A.x + 10; a.y = A.y - 54; a.vx = 0; a.vy = 0; }
+      var sb = projectiles.filter(function(p){ return p.shape==='snowball'; });
+      var out = { boss: hp0 - b.hp, add: ahp0 - a.hp, held: sb.length, allHeld: sb.every(function(p){ return p.tkHold > 0; }) };
+      summons = []; projectiles = []; return out;
+    })()`);
+    expect(r.held, 'all three are still up there').toBe(3);
+    expect(r.allHeld).toBe(true);
+    expect(r.boss, 'MePhone4 takes nothing from snowballs she is still holding').toBe(0);
+    expect(r.add, 'nor does his add').toBe(0);
+  });
+
   it("Bow's chair slam gains no height, and Pepper echoes Salt's jab as well as her special", () => {
     expect(W.eval('UPSPEC.chair.power'), '"bow shouldnt go higher in her up-special"').toBe(0);
     const rise = arena('Bow', `var y0 = A.y, minY = A.y; doUpSpecial(A);

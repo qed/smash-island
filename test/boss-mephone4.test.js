@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { loadMonolith } from './helpers/load-monolith.js';
 
 // "mephone should be a boss, alongside 4s, and cobs. mephone should spawn hostile assist trophies." MePhone4 is Boss 7 of
 // the gauntlet, between the Purple Dragon and Evil Leafy. Everything he throws is a host power the II wiki gives him: the
-// Fist Thingy, the Rejection Portal (opened with a finger snap; it flings people in, it does not pull), and MeLife, which
+// Fist Thingy, the Rejection Portal (opened with a finger snap; on the show it flings people in, it does not pull -- here it
+// hits whoever touches it and knocks them away, since the game has nowhere to send them), and MeLife, which
 // here downloads assist trophies from the existing roster that fight on HIS side, capped, on a cadence, and gone when he
 // falls. Assists take their summoner's team, so his are summoned by a proxy owner on the boss's team, -1.
 
@@ -46,7 +48,9 @@ describe('MePhone4 joins the gauntlet', () => {
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face'],
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon'],
-      ['MePhone4', '#4fb8e8', 240, 2.5, 'mephone', 'melife', true, 'mephone'],
+      // 255, was 240: under the Dragon's 250 before him, and measured easier than the Dragon (the review; see
+      // test/boss-rush-order.test.js)
+      ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone'],
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy'],
       ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s'],
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two'],
@@ -91,7 +95,8 @@ describe('MePhone4 joins the gauntlet', () => {
                 color:'#4fb8e8', face:1, homeX:550, stationary:true };
       var kinds = [], names = [];
       for (var i=0;i<4;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
-      s._phase = 2; s._telKind = 'mephone';
+      // a glove wound up in phase 2: the warning names the phase the wind-up was drawn in (_telPh), not the one it ends in
+      s._phase = 2; s._telPh = 2; s._telKind = 'mephone';
       return { kinds: kinds, names: names, combo: bossTelName(s), p2: bossPhaseName(s, 2), p3: bossPhaseName(s, 3),
                moves: ['melife','portal'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + !!BOSS_MOVE_NAME[k]; }) };
     })()`);
@@ -188,13 +193,89 @@ describe('the Fist Thingy', () => {
     expect(r.total).toBeGreaterThan(r.full * 0.9);
   });
 
+  // The review's probe: at 80% the first glove of a combo launched the fighter out of its row and the rest whiffed -- phase 2
+  // landed 12.1 of 22, phase 3 7.7 at knockback 9 -- while phase 1's single glove dealt the whole 22 at 13. So his
+  // signature hit softer the further the fight went. The early punches are jabs now (MEPHONE_GLOVE).
+  it('at 80%, a free-standing fighter takes the whole combo in every phase, and the finisher launches as hard as phase 1', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2, 3].forEach(function(ph){ [250, 500].forEach(function(d){
+        ${STAGE(700)}
+        summons = []; f.x = 300 + d; f.pct = 80; var x0 = f.x, y0 = f.y, st = f.stocks;
+        var s = { name:'MePhone4', attack:'mephone', x:300, y:groundY()-85, r:85, color:'#4fb8e8', face:1, _phase:ph, _telPh:ph, _telX:x0, _telY:y0 };
+        fireBossAttack(s, null);
+        var hits = 0, last = f.pct, dealt = 0, launch = 0;
+        for (var i=0;i<160;i++){ step(); if (f.stocks < st) break;
+          if (f.pct > last + 1e-9){ hits++; dealt += f.pct - last; launch = Math.hypot(f.vx, f.vy); } last = f.pct; }
+        out[ph + '/' + d] = { hits: hits, dealt: dealt, launch: launch };
+        projectiles = [];
+      }); });
+      return { out: out, full: bossDmg(), jab: MEPHONE_GLOVE.jab.slice(2), kbs: [MEPHONE_GLOVE.jabKb, MEPHONE_GLOVE.kb] };
+    })()`);
+    for (const d of [250, 500]) {
+      expect(r.out['1/' + d].hits).toBe(1);
+      expect(r.out['2/' + d].hits, 'both punches of phase 2 land').toBe(2);
+      expect(r.out['3/' + d].hits, 'all three of phase 3 land').toBe(3);
+      for (const ph of [1, 2, 3]) expect(r.out[ph + '/' + d].dealt, `phase ${ph} at ${d} px deals the whole boss hit`).toBeCloseTo(r.full, 5);
+      expect(r.out['2/' + d].launch, 'the phase-2 finisher launches as hard as phase 1\'s glove').toBeGreaterThanOrEqual(r.out['1/' + d].launch - 1e-6);
+    }
+    expect(r.kbs[0], 'a jab is light').toBeLessThan(r.kbs[1] / 2);
+  });
+
+  it('a wind-up drawn in phase 1 fires phase 1\'s single glove, even if a hit crosses into phase 3 during it', () => {
+    const r = W.eval(`(function(){ ${STAGE(800)}
+      summons = summons.filter(function(s){ return s.type==='boss'; });
+      b._atkTimer = 1; step();
+      var name = document.getElementById('banner').textContent, kind = b._telKind;
+      var gloves = 0, AP = addProj;
+      addProj = function(p){ if (p && p.shape==='fistthingy') gloves++; return AP(p); };
+      try {
+        b.hp = b.maxHp*0.2;
+        for (var i=0;i<40;i++){ step(); f.x = 800; f.vx = 0; }
+        return { name: name, kind: kind, phase: b._phase, gloves: gloves };
+      } finally { addProj = AP; summons = []; projectiles = []; }
+    })()`);
+    expect(r.kind).toBe('mephone');
+    expect(r.name).toBe('FIST THINGY!');
+    expect(r.phase).toBe(3);
+    expect(r.gloves, 'one glove, as announced -- not the phase-3 combo').toBe(1);
+  });
+
+  // The glove row used to be fixed where you stood when he flashed, so whoever was mid-jump then was never in it; with
+  // his turns at the usual gaps he measured easier than the Dragon before him (the review). The row follows you now, drawn
+  // as a band, and holds for the last MEPHONE_GLOVE.lock frames.
+  it('the glove row follows you through the wind-up, holds for its last MEPHONE_GLOVE.lock frames, and the glove goes along it', () => {
+    const r = W.eval(`(function(){ ${STAGE(800)}
+      summons = summons.filter(function(s){ return s.type==='boss'; });
+      b._atkTimer = 1; step();
+      var lock = MEPHONE_GLOVE.lock, follow = 0, held = 0, broke = [], lockedX = null, lockedY = null, glove = null, AP = addProj;
+      addProj = function(p){ if (p && p.shape==='fistthingy' && !glove) glove = { y: p.y, vx: p.vx }; return AP(p); };
+      try {
+        for (var i=0; i<40 && !glove; i++){
+          var prev = b._tel; f.x = 800 + i*3; f.vx = 0;
+          if (prev === lock) { f.y = groundY() - 140; f.onground = false; f.vy = 0; }   // she jumps: the last row it takes
+          step();
+          if (glove) break;
+          if (prev >= lock){ if (b._telX === f.x) follow++; else broke.push(i); if (prev === lock){ lockedX = b._telX; lockedY = b._telY; } }
+          else { if (b._telX === lockedX && b._telY === lockedY) held++; else broke.push(i); }
+          if (prev < lock) { f.y = groundY() - 24; f.vy = 0; }                          // and lands: it holds anyway
+        }
+        return { follow: follow, held: held, broke: broke, lock: lock, glove: glove, lockedY: lockedY, row: clamp(lockedY, 60, groundY()-16) };
+      } finally { addProj = AP; summons = []; projectiles = []; }
+    })()`);
+    expect(r.broke, 'the row followed, then held, every frame').toEqual([]);
+    expect(r.follow, 'following through the wind-up').toBe(36 - r.lock + 1);
+    expect(r.held, 'held for the frames after it locked (the last of them is the punch)').toBe(r.lock - 2);
+    expect(r.glove, 'the glove came').not.toBe(null);
+    expect(r.glove.y, 'along the row it locked on, not where she landed').toBe(r.row);
+  });
+
   it('the uppercut launches upward, inside the boss knockback band', () => {
     const r = W.eval(`(function(){
       function launch(tilt){ ${STAGE(600)}
         summons = [];
         var s = { name:'MePhone4', attack:'mephone', x:300, y:groundY()-85, r:85, color:'#4fb8e8', face:1, _phase:3, _telX:f.x, _telY:f.y };
         fireBossAttack(s, null);
-        var up = projectiles.filter(function(p){ return p.smAngle; })[0];
+        var up = projectiles.filter(function(p){ return p.smAngle > 0; })[0];   // the jabs are tilted too, flat (smAngle -1)
         projectiles = [up]; up.delay = 0; up.x = f.x - 30; up.y = f.y; up.vx = 15; up.vy = 0; if (!tilt) up.smAngle = 0;
         for (var i=0;i<6 && f.pct===0;i++) step();
         var v = { vx: f.vx, vy: f.vy, hit: f.pct > 0 }; projectiles = []; return v;
@@ -227,24 +308,35 @@ describe('MeLife: hostile assist trophies', () => {
     expect(r.far, 'out past his body, not a wall in front of him').toBeGreaterThan(150);
   });
 
-  it('at the cap he glitches and throws the ring instead; P3 downloads two, and the cap holds', () => {
+  // Was "at the cap he glitches and throws the ring instead", fired from inside the MeLife turn: its warning said MELIFE
+  // DOWNLOAD! and showed the green MeLife tell, and the ring was named only as it went off (the review). The glitch is its
+  // own turn now, decided when the wind-up starts, with its own warning.
+  it('at the cap his MeLife turn is drawn as GLITCH, and throws the ring; P3 downloads two, and the cap holds', () => {
     const r = W.eval(`(function(){ ${STAGE(900)}
       b._phase = 1; BOSS_MOVES.melife(b, f);
       var n1 = summons.length; projectiles = [];
-      BOSS_MOVES.melife(b, f);
+      b._moveN = 1; b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f);     // turn 2: the MeLife turn
+      var kind = b._telKind, warn = document.getElementById('banner').textContent;
+      b._tel = 1; updateBossAttack(b, f);                                   // the wind-up ends and it fires
       var id = BOSS_ATK_ID, ring = projectiles.filter(function(p){ return p.owner===-2 && p.bossAtk===id; }).length;
+      // MeLife itself, with no room left (an add arrived during its wind-up): it fizzles, and throws nothing unannounced
+      projectiles = []; var n1b = summons.length; b._telPh = 1; BOSS_MOVES.melife(b, f);
+      var fizzle = { thrown: projectiles.length, adds: summons.length - n1b };
       var n2 = summons.length;
       summons = summons.filter(function(s){ return !s.hostile; });
-      b._phase = 3; BOSS_MOVES.melife(b, f);
+      b._phase = 3; b._telPh = 3; BOSS_MOVES.melife(b, f);
       var p3 = summons.filter(function(s){ return s.hostile; });
       var sides = p3.map(function(a){ return Math.sign(a.x - b.x); }).sort();
       BOSS_MOVES.melife(b, f);
       var capped = summons.filter(function(s){ return s.hostile; }).length;
       summons = []; projectiles = [];
-      return { n1: n1, n2: n2, ring: ring, p3: p3.length, sides: sides, capped: capped, caps: MELIFE_CAP.slice(1) };
+      return { n1: n1, n2: n2, ring: ring, p3: p3.length, sides: sides, capped: capped, caps: MELIFE_CAP.slice(1), kind: kind, warn: warn, fizzle: fizzle };
     })()`);
     expect(r.n2, 'no second add in P1').toBe(r.n1);
-    expect(r.ring, 'GLITCH: the ring fires instead').toBe(12);
+    expect(r.kind, 'the turn is the glitch').toBe('glitch');
+    expect(r.warn, 'and its warning says so, not MELIFE DOWNLOAD!').toBe('GLITCH!');
+    expect(r.ring, 'GLITCH: the ring').toBe(12);
+    expect(r.fizzle, 'a MeLife with no room left fizzles').toEqual({ thrown: 0, adds: 0 });
     expect(r.p3).toBe(2);
     expect(r.sides, 'one either side of him').toEqual([-1, 1]);
     expect(r.capped).toBe(2);
@@ -285,7 +377,9 @@ describe('MeLife: hostile assist trophies', () => {
     expect(r.wrongTeam, 'and still takes its summoner\'s team').toBe(0);
   });
 
-  it('a hostile 8-Ball waits out its download, then hits the player -- at half a cameo hit -- and never the boss', () => {
+  // At three quarters of a cameo hit, was half: the review found him easier than the Dragon before him, and the adds are
+  // what the owner asked him for (HOSTILE_ADD_DMG; test/boss-rush-order.test.js).
+  it('a hostile 8-Ball waits out its download, then hits the player -- at three quarters of a cameo hit -- and never the boss', () => {
     const r = W.eval(`(function(){
       function run(hostile){ ${STAGE('WW*0.5+300')}
         f.x = b.x + 300; var bossHp = b.hp, a;
@@ -311,7 +405,9 @@ describe('MeLife: hostile assist trophies', () => {
     expect(r.hostile.total, 'it attacks the player').toBeGreaterThan(0);
     expect(r.hostile.bossHit, 'and never the boss').toBe(false);
     expect(r.normal.first, 'a normal 8-Ball is untouched').toBeGreaterThan(0);
-    expect(r.hostile.first / r.normal.first).toBeCloseTo(0.5, 5);
+    expect(W.eval('HOSTILE_ADD_DMG')).toBe(0.75);
+    expect(r.hostile.first / r.normal.first).toBeCloseTo(0.75, 5);
+    expect(r.hostile.first, 'still under half a boss hit').toBeLessThan(W.eval('bossDmg()') / 2);
   });
 
   it('a hostile Pie\'s lobs hit the player and pass the boss by', () => {
@@ -383,7 +479,7 @@ describe('MeLife: hostile assist trophies', () => {
 });
 
 describe('the Rejection Portal', () => {
-  it('opens where you stood when he flashed, flings you in once, spares anyone clear of it, then shuts', () => {
+  it('opens where you stood when he flashed, hits you once and knocks you away from it, spares anyone clear of it, then shuts', () => {
     const r = W.eval(`(function(){ ${STAGE(700)}
       summons = [];
       var g = makeFighter(ROSTER.find(function(r){ return r.name==='Leafy'; }), 1000, groundY()-24, 0); g.team=0; g.controller='still';
@@ -404,12 +500,12 @@ describe('the Rejection Portal', () => {
     })()`);
     expect([r.t, r.T]).toEqual([48, 48]);
     expect({ x: r.x, y: r.y }).toEqual(r.want);
-    expect(r.hits, 'flung once, not every frame').toBe(1);
+    expect(r.hits, 'hit once, not every frame').toBe(1);
     expect(r.dmg).toBeLessThanOrEqual(r.cap + 1e-6);
     expect(r.vy, 'sent up and away').toBeLessThan(0);
     expect(r.spared).toBe(true);
     expect(r.shut).toBe(true);
-    expect(r.pulls, 'it flings, it does not pull').toBe(false);
+    expect(r.pulls, 'it knocks you away, it does not pull').toBe(false);
   });
 
   it('opens faster to shut as he loses HP', () => {
@@ -421,6 +517,23 @@ describe('the Rejection Portal', () => {
   });
 });
 
+describe('the item version', () => {
+  // summonBoss is not in spawnItem's pool today, so this code does not run in a match. If it comes back, an add downloaded
+  // by an item boss (team -1) would attack its own summoner, and so would the portal -- so they are Boss Rush only.
+  it('an item MePhone4 never downloads an add or opens a portal', () => {
+    const r = W.eval(`(function(){ summons = []; projectiles = [];
+      var s = { type:'boss', name:'MePhone4', color:'#4fb8e8', x:550, y:300, r:70, hp:200, vx:0, vy:0, face:1, _atkTimer:1, _tel:0 };
+      var out = []; for (var i=0;i<4;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); out.push(String(s._telKind)); s._tel = 1; updateBossAttack(s, null); }
+      var r = { kinds: out, adds: summons.filter(function(m){ return m.hostile; }).length, portal: !!s._portal, only: ['melife', 'portal'].map(function(k){ return BOSS_RUSH_ONLY.has(k); }) };
+      summons = []; projectiles = []; return r;
+    })()`);
+    expect(r.kinds).toEqual(['undefined', 'undefined', 'undefined', 'undefined']);
+    expect(r.adds).toBe(0);
+    expect(r.portal).toBe(false);
+    expect(r.only).toEqual([true, true]);
+  });
+});
+
 describe('what the player sees', () => {
   it('draws him, his portal, his green MeLife tell and his downloading adds without throwing', () => {
     const err = W.eval(`(function(){
@@ -428,6 +541,8 @@ describe('what the player sees', () => {
         var base = { type:'boss', name:'MePhone4', color:'#4fb8e8', sprite:'mephone', r:60, x:100, y:100, face:1, hp:100, maxHp:100,
                      _tel:0, _telKind:null, _phase:1, _rage:false, flash:0, homeX:100, attack:'mephone' };
         var states = [{}, { _portal:{ x:0, y:0, t:10, T:48 } }, { _telKind:'melife', _tel:20 }, { _telKind:'portal', _tel:20, _telX:500, _telY:400 },
+                      { _telKind:'mephone', _tel:20, _telX:500, _telY:400 }, { _telKind:'mephone', _tel:4, _telX:-300, _telY:120 },
+                      { _telKind:'glitch', _tel:10 },
                       { _phase:3, flash:6, face:-1 }, { _portal:{ x:40, y:40, t:0, T:48 } }];
         states.forEach(function(st){ var s = Object.assign({}, base, st); ctx.save(); drawBossSprite(s); ctx.restore(); });
         var a = { type:'assist', name:'Pie', color:'#e8c060', r:26, x:200, y:200, hostile:true, _dl:20, hp:40, maxHp:40, flash:0 };
@@ -462,6 +577,18 @@ describe('what the player sees', () => {
       String(fireBossAttack), String(drawRejectionPortal), MEPHONE_POOL.join(' '), BOSS_MOVE_NAME.melife, BOSS_MOVE_NAME.portal,
       bossPhaseName({attack:'mephone'}, 2), bossPhaseName({attack:'mephone'}, 3)].join('\\n')`);
     expect(src).not.toMatch(/\bOJ\b|Suitcase|Cabby|Hotel|A-OJ/i);
+    // and every line of the game or the credits about him -- his whole section (the block comment over MEPHONE_POOL
+    // included), his roster row and its comment, his CREDITS.md row -- as the MePhone4S and Steve Cobs guards check theirs
+    const html = readFileSync('artifacts/V1/index.html', 'utf8'), credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const section = html.slice(html.indexOf('// ---- MEPHONE4 (Boss 7)'), html.indexOf('// ---- MEPHONE4S (Boss 9)'));
+    expect(section.length, 'his section is found').toBeGreaterThan(2000);
+    const rosterAt = html.indexOf('{name:"MePhone4",'), roster = html.slice(html.lastIndexOf('// Boss 7 --', rosterAt), html.indexOf('\n', rosterAt));
+    expect(roster, 'his roster row and the comment over it').toMatch(/^\/\/ Boss 7 --[\s\S]*hp:/);
+    const aboutHim = (l) => /MePhone4(?!S)|\bmephone\b|MeLife|MELIFE|MEPHONE_|Fist Thingy|Rejection Portal/.test(l);
+    const lines = [...section.split('\n'), ...roster.split('\n'), ...html.split('\n').filter(aboutHim), ...credits.split('\n').filter(aboutHim)];
+    expect(lines.length).toBeGreaterThan(100);
+    expect(credits.split('\n').filter(aboutHim).length, 'his CREDITS.md row is scanned').toBeGreaterThan(0);
+    expect(lines.filter(l => /\bOJ\b|Suitcase|Cabby|Hotel OJ|A-OJ/.test(l))).toEqual([]);
   });
 });
 
@@ -471,7 +598,8 @@ describe('a netcode client sees him', () => {
     const r = w.eval(`(function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
       summons = [{ type:'boss', name:'MePhone4', color:'#4fb8e8', r:85, sprite:'mephone', x:500, y:300, hp:80, maxHp:120, face:-1, flash:0,
-                   homeX:500, _rage:false, _tel:12, _telKind:'melife', _bossRush:true, attack:'mephone', _portal:{ x:640.4, y:420.6, t:20, T:48, id:3, hit:{} } },
+                   homeX:500, _rage:false, _tel:12, _telKind:'melife', _bossRush:true, attack:'mephone', _portal:{ x:640.4, y:420.6, t:20, T:48, id:3, hit:{} },
+                   _telX:700.6, _telY:410.2, _phase:3 },
                  { type:'assist', name:'Pie', color:'#e8c060', r:26, x:300, y:400, hp:30, maxHp:40, face:1, flash:0, hostile:true, _dl:12, team:-1, owner:-1 }];
       projectiles = [{ x:200, y:300, vx:15, vy:0, r:22, color:'#d8302a', shape:'fistthingy', owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:9, life:80 },
                      { x:220, y:300, vx:6, vy:0, r:9, color:'#fff', owner:0, life:40 }];
@@ -484,6 +612,7 @@ describe('a netcode client sees him', () => {
     expect(r.err).toBe(null);
     expect(r.boss._telKind).toBe('melife');
     expect(r.boss._portal).toEqual({ x: 640, y: 421, t: 20, T: 48 });
+    expect(r.boss, 'where the wind-up is aimed (his glove row, his portal mark) and his phase').toMatchObject({ _telX: 701, _telY: 410, _phase: 3 });
     expect(r.add).toMatchObject({ hostile: true, _dl: 12, hp: 30, maxHp: 40 });
     expect(r.glove).toMatchObject({ shape: 'fistthingy', vx: 15, vy: 0 });
     expect(r.plain.shape, 'a fighter\'s shot is sent as it was').toBeUndefined();

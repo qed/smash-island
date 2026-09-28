@@ -6,10 +6,12 @@ import { loadMonolith } from './helpers/load-monolith.js';
 
 // "mephone should be a boss, alongside 4s, and cobs." Steve Cobs -- "the overall main antagonist of the Inanimate Insanity
 // series" on the II wiki, Meeple's CEO, who made MePhone4 and every Meeple device -- is Boss 11 of the gauntlet, after Two
-// and before Four. Every attack is his from the wiki: the floor trap he sets off when Balloon calls the Meeple Watch dumb
-// (his page; Theft and Battery), and from Objects in Mirror the punches that cracked MePhone4's screen, the Meeple Knife,
-// and the kernels he stomped. Nothing is built on a scene from the OSC, so the MeTags and MePhoneX the first design used
-// are not in it, and a test below checks every line about him.
+// and before Four. Every attack is his from the wiki: the contraption he sets off when Balloon calls the Meeple Watch dumb
+// (his page; Theft and Battery), and from Objects in Mirror the punches that cracked MePhone4's screen, the MeKnife, and
+// the kernels he stomped. Nothing is built on a scene from the OSC, so the MeTags and MePhoneX the first design used are
+// not in it, and a test below checks every line about him. The trap was first built as "TICK TOCK", after the chant; the
+// review found that the Theft and Battery page has the chant begin as an OSC member's line, which he only continues, so
+// it is named for the contraption now (the owner's standing rule: no move built on a moment that depends on them).
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
@@ -49,7 +51,8 @@ describe('Steve Cobs joins the gauntlet', () => {
     expect(r.four, 'Four is still last').toBe(W.eval('BOSS_ROSTER.length') - 1);
     expect(r.first).toBe('Announcer');
     expect(r.extra).toEqual(['knife', 'kernels']);
-    expect(r.moves).toEqual(['function/MEEPLE KNIFE!', 'function/KERNEL STOMP!']);
+    // "MEKNIFE!", not "MEEPLE KNIFE!": his page says he "stabbed The Prime Shimmer with a MeKnife"
+    expect(r.moves).toEqual(['function/MEKNIFE!', 'function/KERNEL STOMP!']);
     expect(r.row.hp, "between Two's 285 and Four's 340").toBeGreaterThan(285);
     expect(r.row.hp).toBeLessThan(340);
   });
@@ -73,7 +76,8 @@ describe('Steve Cobs joins the gauntlet', () => {
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug', 'seekers+rain', 'swarm seekers swarm rain', 36, 'Second Wave', 'Swarm Frenzy'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face', 'ring+rain', 'swallow ring swallow rain', 36, 'Ad Overload', 'Segment Split'],
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon', 'slam+rain', 'dragon slam dragon rain', 36, 'Strafing Runs', 'Grab & Carry'],
-      ['MePhone4', '#4fb8e8', 240, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
+      // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
+      ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'seekers+slam', 'evilleafy seekers evilleafy slam', 45, 'No Refuge', 'Vine Coverage'],
       ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s', 'cookies+chainsaws', 'mephone4s cookies mephone4s chainsaws', 42, "I'll Be Back", 'Super Death Trap'],
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two', 'seekers+ring', 'two seekers two ring', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],
@@ -118,7 +122,7 @@ describe('Steve Cobs joins the gauntlet', () => {
     expect(r.card, 'the victory card counts twelve').toMatch(/^All twelve bosses beaten/);
   });
 
-  it('takes turns: TICK TOCK, knife, TICK TOCK, kernels, each named, with the 36-frame wind-up, and names his phases', () => {
+  it('takes turns: the Contraption, MeKnife, the Contraption, kernels, each named, with the 36-frame wind-up, and names his phases', () => {
     const r = W.eval(`(function(){
       var s = ${S()};
       var kinds = [], names = [];
@@ -128,9 +132,9 @@ describe('Steve Cobs joins the gauntlet', () => {
       return { kinds: kinds, names: names, n3: n3, tel: bossTelLen(s), p2: bossPhaseName(s, 2), p3: bossPhaseName(s, 3) };
     })()`);
     expect(r.kinds).toEqual(['cobs', 'knife', 'cobs', 'kernels']);
-    expect(r.names).toEqual(['TICK TOCK, TICK TOCK...', 'MEEPLE KNIFE!', 'TICK TOCK, TICK TOCK...', 'KERNEL STOMP!']);
+    expect(r.names).toEqual(['CONTRAPTION!', 'MEKNIFE!', 'CONTRAPTION!', 'KERNEL STOMP!']);
     expect(r.n3, 'phase 3: the punch takes every other signature turn, starting with the first').toEqual(
-      ['SCREEN CRACKER!', 'MEEPLE KNIFE!', 'TICK TOCK, TICK TOCK...', 'KERNEL STOMP!']);
+      ['SCREEN CRACKER!', 'MEKNIFE!', 'CONTRAPTION!', 'KERNEL STOMP!']);
     expect(r.tel).toBe(36);
     expect(r.p2, 'his page: "Appalled, Cobs hits a button"').toBe('Appalled');
     expect(r.p3, 'Objects in Mirror: "in the most painful way he can"').toBe('The Most Painful Way');
@@ -154,6 +158,27 @@ describe('Steve Cobs joins the gauntlet', () => {
     expect(r.closed, 'he walks you down').toBeGreaterThan(150);
   });
 
+  // He used to walk right up to you in phase 3, and a boss on top of you is the easiest one to hit: the fight went by so
+  // fast that it was shorter than MePhone4S's, and he measured level with MePhone4S, two bosses earlier (the review asked
+  // for the curve to climb; test/boss-rush-order.test.js). Now he keeps a boxer's range and the lunge closes it.
+  it('in phase 3 he walks in to COBS.approach, steps back from anyone inside COBS.backoff, and SCREEN CRACKER reaches from there', () => {
+    const r = W.eval(`(function(){
+      var tgt = { x:0, y:groundY()-24, dead:false, idx:0 };
+      var mk = function(dx){ var s = ${S('_phase:3, stationary:false, hp:20, _atkTimer:1e9')}; tgt.x = s.x + dx; updateBossAttack(s, tgt); return s.vx; };
+      var walk = ${S('_phase:3, stationary:false, hp:20, _atkTimer:1e9')}, x0 = walk.x;
+      for (var i=0;i<90;i++){ tgt.x = x0 - 60; updateBossAttack(walk, tgt); walk.x += walk.vx; walk.vx *= 0.9; }   // his body's own step (updateSummons)
+      return { far: mk(-500), close: mk(-100), closeRight: mk(100), hold: mk(-200), gap: Math.abs(walk.x - (x0 - 60)),
+               approach: COBS.approach, backoff: COBS.backoff, reach: 88*0.6 + cobsPunchSpan() };
+    })()`);
+    expect(r.far, 'far off, he comes for you').toBeLessThan(0);
+    expect(r.close, 'inside his backoff, he steps away from you').toBeGreaterThan(0);
+    expect(r.closeRight, 'either side').toBeLessThan(0);
+    expect(r.hold, 'between the two he holds').toBe(0);
+    expect(r.backoff).toBeLessThan(r.approach);
+    expect(r.gap, 'walked up to, he ends up out at his backoff distance').toBeGreaterThanOrEqual(r.backoff - 10);
+    expect(r.reach, "SCREEN CRACKER's band reaches past the range he keeps").toBeGreaterThan(r.approach + 60);
+  });
+
   it('left to fight, he sets off his traps, stabs and stomps; in phase 3 he punches as well', () => {
     const r = W.eval(`(function(){ ${STAGE(700, true)}
       var seen = { trap:0, knife:0, kernel:0, fist:0 }, AP = addProj;
@@ -175,13 +200,13 @@ describe('Steve Cobs joins the gauntlet', () => {
     expect(r.p1.fist, 'no punches before phase 3').toBe(0);
     expect(r.phase).toBe(3);
     expect(r.p3.fist, 'two punches, two fists each').toBeGreaterThanOrEqual(4);
-    expect(r.p3.trap, 'and TICK TOCK between them, seven arrows a cast').toBeGreaterThanOrEqual(7);
+    expect(r.p3.trap, 'and the Contraption between them, seven arrows a cast').toBeGreaterThanOrEqual(7);
     expect(r.p3.knife + r.p3.kernel, 'his second moves carry on').toBeGreaterThanOrEqual(3);
   });
 });
 
-describe('TICK TOCK: the floor trap', () => {
-  it('lays five arrows around where you stood, TICK then TOCK, each a whole boss hit under one volley id; seven, wider, from phase 2', () => {
+describe('THE CONTRAPTION: the floor trap', () => {
+  it('lays five arrows around where you stood, in two waves, each a whole boss hit under one volley id; seven, wider, from phase 2', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2].forEach(function(ph){ projectiles = [];
         var s = ${S('_phase:ph, _telPh:ph, _telX:500, _telY:groundY()-24')};
@@ -198,7 +223,7 @@ describe('TICK TOCK: the floor trap', () => {
     })()`);
     expect(r[1].n).toBe(5);
     expect(r[1].xs).toEqual([332, 416, 500, 584, 668]);
-    expect(r[1].delays, 'TICK on the middle and the ends, TOCK 24 frames later').toEqual([30, 54, 30, 54, 30]);
+    expect(r[1].delays, 'the first wave on the middle and the ends, the second 24 frames later').toEqual([30, 54, 30, 54, 30]);
     expect(r[1].ok).toBe(true);
     expect(r[1].ids, 'one attack id a cast').toBe(1);
     expect(r[1].all, 'nothing else is thrown').toBe(5);
@@ -229,7 +254,7 @@ describe('TICK TOCK: the floor trap', () => {
     expect(r.vx, 'and away from him (he stands to the right): straight up, nobody ever left the stage').toBeLessThan(0);
   });
 
-  it('is one boss hit a cast, even when another boss hit lands between the TICK and the TOCK', () => {
+  it('is one boss hit a cast, even when another boss hit lands between the two waves', () => {
     const r = W.eval(`(function(){ ${STAGE(600)}
       var s = ${S('_telPh:1, _telX:600, _telY:groundY()-24')};
       fireBossAttack(s, null);
@@ -243,9 +268,9 @@ describe('TICK TOCK: the floor trap', () => {
       var out = { afterTick: afterTick, taken: taken, full: bossDmg(), tockY: tock.y, tockLife: tock.life, surf: groundY() };
       projectiles = []; summons = []; return out;
     })()`);
-    expect(r.afterTick, 'the TICK lands a whole boss hit').toBeCloseTo(r.full, 5);
+    expect(r.afterTick, 'the first wave lands a whole boss hit').toBeCloseTo(r.full, 5);
     expect(r.tockLife).toBe(0);
-    expect(r.tockY, 'the TOCK reached him (it broke on him low, not at the top of its rise)').toBeGreaterThan(r.surf - 60);
+    expect(r.tockY, 'the second wave reached him (it broke on him low, not at the top of its rise)').toBeGreaterThan(r.surf - 60);
     expect(r.taken, 'and adds nothing: 44 uncapped').toBeLessThanOrEqual(r.full + 1e-6);
   });
 
@@ -343,7 +368,56 @@ describe('SCREEN CRACKER: phase 3', () => {
     expect(r.taken, 'both landing is one boss hit').toBeLessThanOrEqual(r.full + 1e-6);
   });
 
-  it('a wind-up drawn as TICK TOCK fires TICK TOCK even if phase 3 starts during it; the next signature is the punch', () => {
+  // The review's probe: the band ended about 227 px from him, the first fist's reach, and fighters at 260, 320 and 380 px --
+  // all outside it -- each took 11% from the second fist, thrown from wherever the lunge had carried him.
+  it('the wind-up band reaches as far as either punch can hit: inside it you are hit, a step outside it you are safe', () => {
+    const r = W.eval(`(function(){ var out = [];
+      [300, 380, 'in', 'out'].forEach(function(d){
+        ${STAGE(900)}
+        b.hp = b.maxHp*0.2; updateBossAttack(b, f); b._atkTimer = 1e9;
+        b.x = 400; b.vx = 0;
+        var end = b.r*0.6 + cobsPunchSpan();                     // where the band stops, from his middle
+        var at = d === 'in' ? end + HURT_R0 - 12 : d === 'out' ? end + HURT_R0 + 6 : d;
+        f.x = 400 + at; f.pct = 0; var fx = f.x;
+        b._atkTimer = 1; step();
+        var taken = 0, p0, bx0 = b.x, bxLunge = null, bxSecond = null, AP = addProj;
+        addProj = function(p){ if (p && p.shape==='cobsfist'){ if (bxLunge === null) bxLunge = b.x; else bxSecond = b.x; } return AP(p); };
+        try {
+          for (var i=0;i<90;i++){ p0 = f.pct; step(); taken += f.pct - p0; f.x = fx; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; }
+        } finally { addProj = AP; }
+        out.push({ d: d, at: at, taken: taken, end: end, first: b.r*0.6 + cobsPunchReach(), punched: bxSecond !== null, moved: bxSecond - bxLunge });
+        summons = []; projectiles = [];
+      });
+      return out;
+    })()`);
+    const [p300, p380, inside, outside] = r;
+    expect(inside.end, 'the band covers the lunge as well as the first fist').toBeGreaterThan(inside.first + 100);
+    expect(p300.at, 'the review\'s fighters stood past the first fist').toBeGreaterThan(p300.first);
+    for (const p of [p300, p380, inside]) {
+      expect(p.punched).toBe(true);
+      expect(p.taken, `a fighter ${Math.round(p.at)} px out, inside the band, is hit`).toBeGreaterThan(0);
+    }
+    expect(outside.taken, 'a fighter whose body is just outside the band is safe').toBe(0);
+    expect(inside.moved, 'he lunges in before the second punch').toBeGreaterThan(100);
+  });
+
+  it('he holds where the lunge stopped until the second punch has gone, so it comes from where the band said', () => {
+    const r = W.eval(`(function(){ ${STAGE(900)}
+      b.hp = b.maxHp*0.2; updateBossAttack(b, f); b._atkTimer = 1e9;
+      b.x = 400; b.vx = 0; f.x = 1000; var fx = f.x;
+      b._atkTimer = 1; step();
+      var xs = [], AP = addProj, fists = [];
+      addProj = function(p){ if (p && p.shape==='cobsfist') fists.push(b.x); return AP(p); };
+      try { for (var i=0;i<90;i++){ step(); xs.push(b.x); f.x = fx; f.vx = 0; f.invuln = 0; } } finally { addProj = AP; }
+      summons = []; projectiles = [];
+      return { fists: fists, lunge: COBS.lunge*COBS.lungeT };
+    })()`);
+    expect(r.fists).toHaveLength(2);
+    expect(r.fists[1] - r.fists[0], 'the whole lunge, and no further').toBeLessThanOrEqual(r.lunge + 1e-6);
+    expect(r.fists[1] - r.fists[0]).toBeGreaterThan(r.lunge - 20);
+  });
+
+  it('a wind-up drawn as the Contraption fires the Contraption even if phase 3 starts during it; the next signature is the punch', () => {
     const r = W.eval(`(function(){ ${STAGE(700)}
       b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._atkTimer = 1; step();
       var out = { kind: b._telKind, punch: b._cobsPunch, name: document.getElementById('banner').textContent };
@@ -360,7 +434,7 @@ describe('SCREEN CRACKER: phase 3', () => {
     })()`);
     expect(r.kind).toBe('cobs');
     expect(r.punch).toBe(false);
-    expect(r.name).toMatch(/TICK TOCK/);
+    expect(r.name).toMatch(/CONTRAPTION!/);
     expect(r.phase).toBe(3);
     expect(r.shots.fist, 'no punch nobody was warned of').toBe(0);
     expect(r.shots.trap, 'the arrows it was drawn as, seven of them (phase 2)').toBe(7);
@@ -370,7 +444,7 @@ describe('SCREEN CRACKER: phase 3', () => {
 });
 
 describe('the second moves', () => {
-  it('MEEPLE KNIFE: one stab at speed 15 at where you stood when he drew it, and he lunges that way', () => {
+  it('MEKNIFE: one stab at speed 15 at where you stood when he drew it, and he lunges that way', () => {
     const r = W.eval(`(function(){ projectiles = [];
       var s = ${S('_telX:600, _telY:groundY()-24')};
       BOSS_MOVES.knife(s, null);
@@ -454,13 +528,19 @@ describe('what the player sees', () => {
   });
 
   it("nothing of his names anyone from the OSC -- no code, no string, no comment", () => {
-    const src = W.eval(`[String(cobsBeginTelegraph), String(cobsTickTock), String(cobsTrapArrow), String(cobsPunch), String(BOSS_MOVES.knife),
+    const src = W.eval(`[String(cobsBeginTelegraph), String(cobsContraption), String(cobsTrapArrow), String(cobsPunch), String(BOSS_MOVES.knife),
       String(BOSS_MOVES.kernels), String(fireBossAttack), String(updateBossAttack), String(onBossPhaseChange), String(bossTelName),
       String(drawBossSprite), String(drawArenaDecor), String(drawProjectile), String(PROJ_SHAPE.meepleknife.draw), String(PROJ_SHAPE.cobsfist.draw),
       String(PROJ_SHAPE.kernel.draw), BOSS_MOVE_NAME.knife, BOSS_MOVE_NAME.kernels, bossPhaseName({attack:'cobs'}, 2), bossPhaseName({attack:'cobs'}, 3),
       bossTelName({attack:'cobs', _cobsPunch:true}), bossTelName({attack:'cobs'}), BOSS_ROSTER.map(function(b){ return b.name; }).join(',')].join('\\n')`);
     // case-sensitive and whole-word: "addProj" and "dropProj" contain "oj"
     expect(src).not.toMatch(/\bOJ\b|Suitcase|Cabby/);
+    // Nothing he shows on screen is the "tick tock" chant: on the Theft and Battery page it begins as an OSC member's line
+    // during that member's scene, and he only continues it. The trap is named for the contraption now.
+    const said = W.eval(`[BOSS_MOVE_NAME.knife, BOSS_MOVE_NAME.kernels, bossPhaseName({attack:'cobs'}, 2), bossPhaseName({attack:'cobs'}, 3),
+      bossTelName({attack:'cobs', _cobsPunch:true}), bossTelName({attack:'cobs'})].join('\\n')`);
+    expect(said).not.toMatch(/tick|tock/i);
+    expect(W.eval('typeof cobsTickTock'), 'the move is not called that in the code either').toBe('undefined');
     const lines = [readFileSync('artifacts/V1/index.html', 'utf8'), readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8')]
       .join('\n').split('\n').filter(l => /Steve Cobs|\bCobs\b|cobs|COBS/.test(l));
     expect(lines.length).toBeGreaterThan(30);
