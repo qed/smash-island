@@ -1,12 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { loadMonolith } from './helpers/load-monolith.js';
 import { spyMediaConstructors } from './helpers/harness.js';
 
 // Boss renders. Same contract the fighter registry follows, and the same rule about art:
-// no art beats WRONG art. The Announcer, the Bug Swarm and the Purple Dragon keep their
-// hand-drawn procedural bodies — the Announcer's only transparent wiki candidate turned out to
-// be a cropped speaker cone, and the other two are not wiki characters at all.
+// no art beats WRONG art. "also, give a sprite to purple dragon and announcer." -- the Announcer is the BFDI Speaker
+// Box's front view and the Purple Dragon is TPOT's Dragon; the Bug Swarm, not a wiki character, keeps its drawn body.
 
 describe('boss sprites', () => {
   it('points every entry at a file that exists', () => {
@@ -15,6 +14,18 @@ describe('boss sprites', () => {
     expect(srcs.length, 'some bosses have real art').toBeGreaterThan(3);
     const missing = srcs.filter(([, src]) => !existsSync(`artifacts/V1/${src}`));
     expect(missing, 'boss art pointing at files that are not there').toEqual([]);
+  });
+
+  it('dresses the Announcer and the Purple Dragon in their wiki renders, credited', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`({ a: BOSS_SPRITE_SRC.announcer, d: BOSS_SPRITE_SRC.dragon, flip: !!BOSS_SPRITE_FLIP.dragon })`);
+    expect(r.a).toBe('assets/sprites/announcer.png');
+    expect(r.d).toBe('assets/sprites/purple-dragon.png');
+    expect(r.flip, 'the Dragon faces left in the render').toBe(true);
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const row = (file) => credits.split('\n').find((l) => l.includes('`' + file + '`')) || '';
+    expect(row('announcer.png')).toContain('Announcer_Front_Vibrating0001.png');
+    expect(row('purple-dragon.png')).toContain('Polished_Dragon');
   });
 
   it('gives every boss in the roster a usable sprite key', () => {
