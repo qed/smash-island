@@ -318,7 +318,7 @@ describe('the per-match capture stays off the frame', () => {
     expect(r.n).toBe(20);
     expect(r.pixels).toBe(20);
     expect(r.isPixels).toBe(true);
-  });
+  }, 30000);   // a fresh boot plus 100 macrotask hops: 6.1 s on a loaded machine ran past vitest's 5 s default
 
   it('one recorder at a time, and none in an online match', () => {
     const { window: w } = loadMonolith();
