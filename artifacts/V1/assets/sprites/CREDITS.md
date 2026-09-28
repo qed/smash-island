@@ -336,4 +336,9 @@ downscaled to 200px tall, alpha verified, facing measured.
 <!-- @b3:g6 Magnet, MeTag, Poppy, Silver Spoon -->
 
 <!-- @b3:g7 Tapey, Tea Kettle, Teddy Bear -->
+| Tapey | `tapey.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/2b/TapeyII4StickerSheet.png/revision/latest?cb=20250714194652 |
+| Tea Kettle | `tea-kettle.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/41/Tea_Kettle_IIS4.png/revision/latest?cb=20260517165422 |
+| Teddy Bear (TB.png, the owner's Q4) | `teddy-bear.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6e/TB.png/revision/latest?cb=20250721214107 |
+| Tea Kettle's hors d'oeuvres tray (File:Hors d'oeuvres.png) | `attacks/horstray.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a4/Hors_d%27oeuvres.png/revision/latest?cb=20220819192319 |
+| Teddy Bear's paintball: the pink paint in her gun's hopper, cut from the frame and masked round (File:S1RE6 Teddy grabs a paintball gun.png) | `attacks/paintball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7b/S1RE6_Teddy_grabs_a_paintball_gun.png/revision/latest?cb=20260326141622 |
 
