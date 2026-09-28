@@ -120,6 +120,10 @@ const PICKS = {
   // people, so neither throws a thing of their own; Trophy's camera and Lifering's whistle have no clean file and are drawn
   // (PROJ_SHAPE, the owner's Q2). The shark is the show's: "Called in a Favor" (Seas the Day), Minor Characters' Shark.
   shark:      { who: 'Lifering',    kits: ['lifeguard'],  wiki: 'ii', file: 'Shark Shorts.png',     note: 'the shark he called in a favor from (Seas the Day)' },
+  // Spikey (batch 3): no file of a lone spike exists. The owner's call (Q3, "Crop from their art"): one spike cut from his
+  // own body asset -- the top one, above where the ball begins, so none of the body comes with it -- and turned per
+  // direction in the game (ATTACK_SPRITES.spikeburst aims it, point first).
+  spike:      { who: 'Spikey',      kits: ['spikeburst'], wiki: 'ii', file: 'Spikey Body Front.png', note: 'one spike, cut from his body asset (the top one)', region: [389, 0, 618, 248], srcH: 400, h: 40 },
 };
 
 async function api(wiki, params) {
