@@ -106,7 +106,7 @@ function fakeIndexedDB(seed = {}) {
 function bootWithAudio(opts = {}) {
   const html = readFileSync(SRC, 'utf8');
   const events = [];
-  const state = { gestureFired: false, constructedEarly: 0, idbTouchedAtBoot: false, oscillators: 0 };
+  const state = { gestureFired: false, constructedEarly: 0, idbTouchedAtBoot: false, oscillators: 0, canPlayAsked: [] };
   const existing = new Set([...DEFAULTS, ...PLAYLIST, ...(opts.existing || [])]);
   let blobN = 0;
   // Flipped by a test to model the OTHER reason play() rejects: an autoplay policy refusing a
@@ -206,6 +206,13 @@ function bootWithAudio(opts = {}) {
           return Promise.resolve();
         }
         pause() { this.paused = true; events.push(['pause', this._src]); }
+        // A real element answers "can you play this type?". Every browser this game targets plays
+        // MP3 and most play Ogg Vorbis, so the default is yes; opts.noOgg models a WebKit build
+        // without Vorbis (some Safari versions; on an iPhone or iPad, every browser), which answers ''.
+        canPlayType(type) {
+          state.canPlayAsked.push(type);
+          return (opts.noOgg && /ogg/i.test(type)) ? '' : 'maybe';
+        }
       };
     },
   });
@@ -825,6 +832,172 @@ describe('background music — the shipped battle playlist', () => {
     }
     expect(plays().filter((s) => s === broken)).toHaveLength(1);
   });
+
+  /** Run `js` with the draw forced to `r`, restored straight after -- match setup must never run on a
+   *  constant Math.random. With n usable tracks, r = (i + 0.5) / n lands on usable index i. */
+  const forced = (w, r, js) => w.eval(`var __rnd = Math.random; Math.random = () => ${r};
+    try { ${js} } finally { Math.random = __rnd; }`);
+
+  it('never replays the track that just played when the next pick fails to load', async () => {
+    // The review's probe: pink played, the next draw landed on knight, knight 404'd -- and pink came
+    // straight back with eight other tracks available, because knight took pink's place as "the one
+    // that played last" the moment it was TRIED, then dropped out of the draw as a bad file. The
+    // owner's rule ("never the same track twice running when there is an alternative") is about what
+    // the player HEARD, so only a track that really played may hold that place.
+    const { w, plays, gesture, existing } = bootWithAudio();
+    const [joker, knight, pink, pumpkin] = [PLAYLIST[2], PLAYLIST[3], PLAYLIST[4], PLAYLIST[5]];
+    existing.delete(joker);
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    // 1. A new match. knight plays; the next match's draw lands on joker, the track just before it
+    //    in the list, and joker 404s.
+    forced(w, 0.35, "startMusic('battle')");               // 10 usable -> index 3, knight
+    await lands(plays, knight); await tick(20);
+    expect(w.eval('SND._shipLast.battle'), 'knight really played').toBe(knight);
+    w.eval("go('select')"); await lands(plays, 'assets/music/menu.mp3');
+    let n = plays().length;
+    forced(w, 0.25, "startMusic('battle')");               // 10 usable -> index 2, joker
+    await until(() => plays().slice(n).includes(joker) && isBattleTrack(plays().at(-1)) && plays().at(-1) !== joker);
+    expect(plays().slice(n), 'the new match stepped past the dead file to a DIFFERENT track').toEqual([joker, pink]);
+    await tick(20);
+    expectOneBed(w, pink);
+    expect(w.eval('SND._shipLast.battle'), 'a file that failed never counts as played').toBe(pink);
+    // 2. A track ending mid-match. pink ends, the draw lands on knight, and knight is now gone too.
+    existing.delete(knight);
+    n = plays().length;
+    // joker is out of the draw now: 9 usable -> index 2, knight
+    forced(w, 0.25, `(function(){ var el = SND._decks[SND._deck];
+      el.paused = true; el.ended = true; (el._on.ended || []).forEach(function(f){ f(); }); })()`);
+    await until(() => plays().slice(n).includes(knight) && isBattleTrack(plays().at(-1)) && plays().at(-1) !== knight);
+    expect(plays().slice(n), 'the track that just ended came straight back').toEqual([knight, pumpkin]);
+    await tick(20);
+    expectOneBed(w, pumpkin);
+  }, 20000);   // several steps after the boot: past the 5 s default on a loaded machine
+
+  it('steps on when a track fails partway through, with one bed even when the rejection comes late', async () => {
+    // rejectDelay: the dead file's play() rejection lands only after the chain has moved on.
+    const { w, plays, existing } = await inMatch({ rejectDelay: 40 });
+    const first = plays().at(-1);
+    // A network drop partway through: the deck that is playing reports an error.
+    existing.delete(first);
+    let n = plays().length;
+    w.eval('(function(){ var el = SND._decks[SND._deck]; el.paused = true; (el._on.error || []).forEach(function(f){ f(); }); })()');
+    await until(() => plays().length > n && isBattleTrack(plays().at(-1)));
+    const second = plays().at(-1);
+    expect(second, 'the track that broke started over').not.toBe(first);
+    expect(w.eval(`!!SND._badSrc[${JSON.stringify(first)}]`)).toBe(true);
+    await tick(20);
+    expectOneBed(w, second);
+    // A later pick that 404s, rejecting 40ms after its error event: still exactly one bed.
+    const usable = PLAYLIST.filter((s) => s !== first);
+    const target = usable.find((s) => s !== second);
+    existing.delete(target);
+    w.eval("go('select')"); await lands(plays, 'assets/music/menu.mp3');
+    n = plays().length;
+    forced(w, (usable.indexOf(target) + 0.5) / usable.length, "startMusic('battle')");
+    await until(() => plays().slice(n).includes(target) && isBattleTrack(plays().at(-1)) && plays().at(-1) !== target);
+    await tick(120);                                        // well past the late rejection
+    expect(plays().at(-1), 'and never back to the track that played last').not.toBe(second);
+    expectOneBed(w, plays().at(-1));
+    expect(w.eval('SND._pendingKind'), 'no stale retry parked by the late rejection').toBe(null);
+  }, 20000);   // several steps after the boot: past the 5 s default on a loaded machine
+
+  it('picks a new track when R restarts the match, as Rematch already did', async () => {
+    // R mid-fight restarts the match from the top. A restart is a new match, and the owner's
+    // "Battle playlist" shuffles per match -- it used to keep the old track, because the battle bed
+    // was still playing and startMusic() read that as "already on this bed".
+    const pressR = (w) => w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyR' }));
+    const { w, plays } = await inMatch();
+    const picks = [plays().at(-1)];
+    for (let i = 0; i < 4; i += 1) {
+      const n = plays().length;
+      pressR(w);
+      await until(() => plays().length > n && isBattleTrack(plays().at(-1)));
+      await tick(10);
+      expect(w.eval('running'), 'R restarted the match').toBe(true);
+      picks.push(plays().at(-1));
+      expect(picks.at(-1), `restart ${i + 1} kept ${picks.at(-2)}`).not.toBe(picks.at(-2));
+      expect(w.eval('SND._kind')).toBe('battle');
+      expectOneBed(w, picks.at(-1));
+    }
+    // Rematch from the result screen picks a new one too, as it already did.
+    w.eval('showResult([fighters[0]], fighters[0].team)');
+    let n = plays().length;
+    w.eval('startMatch()');
+    await until(() => plays().length > n && isBattleTrack(plays().at(-1)));
+    expect(plays().at(-1)).not.toBe(picks.at(-1));
+    expectOneBed(w, plays().at(-1));
+  }, 20000);   // four restarts and a result screen: past the 5 s default on a loaded machine
+
+  it('leaves the Boss Rush bed and a single-track battle bed alone on R', async () => {
+    const pressR = (w) => w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyR' }));
+    // Boss Rush has no shipped playlist: R keeps the boss bed exactly as it did.
+    const { w, plays, gesture } = bootWithAudio();
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    w.eval("SETTINGS.mode='boss'; beginMatchNow()"); await lands(plays, 'assets/music/boss.mp3'); await tick(10);
+    let n = plays().length;
+    pressR(w); await tick(30);
+    expect(plays().slice(n), 'R in Boss Rush restarted or changed the boss bed').toEqual([]);
+    expectOneBed(w, 'assets/music/boss.mp3');
+    // A re-roll that cannot change anything does not restart anything: custom/battle.mp3 carries on.
+    const c = bootWithAudio({ existing: ['assets/music/custom/battle.mp3'] });
+    c.gesture(); await lands(c.plays, 'assets/music/menu.mp3');
+    c.w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    await lands(c.plays, 'assets/music/custom/battle.mp3'); await tick(10);
+    n = c.plays().length;
+    pressR(c.w); await tick(30);
+    expect(c.w.eval('running')).toBe(true);
+    expect(c.plays().slice(n), "R restarted the owner's custom/battle.mp3").toEqual([]);
+    expectOneBed(c.w, 'assets/music/custom/battle.mp3');
+  }, 20000);   // a second boot inside one test, like the one-bed suite's
+
+  it('plays one playlist track for a match started before the first gesture, and afresh after Sound off and on', async () => {
+    const { w, plays, gesture } = bootWithAudio();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    expect(plays(), 'nothing may play before the gesture').toEqual([]);
+    expect(w.eval('SND._pendingKind')).toBe('battle');
+    gesture();
+    await landsBattle(plays); await tick(20);
+    expect(plays(), "the owner's custom/battle.mp3 probe, then ONE playlist track")
+      .toEqual(['assets/music/custom/battle.mp3', plays().at(-1)]);
+    expectOneBed(w, plays().at(-1));
+    // The master Sound toggle, off and on mid-match: a fresh pick, not the track it cut off.
+    const before = plays().at(-1);
+    w.eval('toggleSound()'); await tick(10);
+    expect(beds(w).decks).toEqual([]);
+    const n = plays().length;
+    w.eval('toggleSound()');
+    await until(() => plays().length > n && isBattleTrack(plays().at(-1)));
+    await tick(20);
+    expect(plays().at(-1)).not.toBe(before);
+    expectOneBed(w, plays().at(-1));
+  }, 20000);   // several steps after the boot: past the 5 s default on a loaded machine
+
+  it('goes straight to battle.mp3 on a browser that cannot play Ogg Vorbis', async () => {
+    // The ten files are Ogg Vorbis. Without this check a Safari without Vorbis (on an iPhone or iPad,
+    // every browser) tried custom/battle.mp3 and then all ten -- eleven failed loads, a deck switch for
+    // each -- before battle.mp3, and the match opened on a gap of silence.
+    const { w, plays, gesture, events, state } = bootWithAudio({ noOgg: true });
+    gesture(); await lands(plays, 'assets/music/menu.mp3');
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
+    await lands(plays, 'assets/music/battle.mp3'); await tick(20);
+    expect(events.filter((e) => e[0] === 'src' && e[1].endsWith('.ogg')), 'not one .ogg was even requested').toEqual([]);
+    expect(plays().slice(plays().indexOf('assets/music/custom/battle.mp3')))
+      .toEqual(['assets/music/custom/battle.mp3', 'assets/music/battle.mp3']);
+    expect(state.canPlayAsked, 'asked once, with the codec the ten files use').toEqual(['audio/ogg; codecs="vorbis"']);
+    expect(liveLoop(w), 'battle.mp3 loops, as it always has').toBe(true);
+    expectOneBed(w, 'assets/music/battle.mp3');
+    // The next match goes straight there as well, without asking again.
+    w.eval("go('select')"); await lands(plays, 'assets/music/menu.mp3');
+    const n = plays().length;
+    w.eval('startMatch()'); await lands(plays, 'assets/music/battle.mp3');
+    expect(plays().slice(n)).toEqual(['assets/music/battle.mp3']);
+    expect(state.canPlayAsked).toHaveLength(1);
+    // And the Controls row does not promise ten tracks this browser will never play.
+    w.eval("go('controls')");
+    const row = w.document.querySelectorAll('#customMusic .musicrow')[2];   // title, menu, battle
+    expect(row.textContent).not.toContain('battle playlist');
+    expect(row.textContent).toContain('default track');
+  }, 20000);   // several steps after the boot: past the 5 s default on a loaded machine
 
   it('falls back to battle.mp3 only when every playlist file fails, then to the synth bed', async () => {
     const { w, plays, gesture, existing } = bootWithAudio();

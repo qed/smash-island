@@ -1419,7 +1419,8 @@ const SND = {
   _userLast:{},       // kind -> index of the last pick, so a re-roll avoids an instant repeat
   _keepPick:false,    // one-shot: the caller already chose a track; startMusic must not re-roll
   _shipPick:{},       // kind -> the SHIPPED playlist track chosen for this start (see MUSIC_PLAYLISTS)
-  _shipLast:{},       // kind -> the shipped playlist track loaded last, so the next pick avoids it
+  _shipLast:{},       // kind -> the shipped playlist track that last actually PLAYED, so the next pick avoids it
+  _oggOk:null,        // can this browser play the playlist's Ogg Vorbis? null = not asked yet (musicPlaylistPlayable)
 };
 function sndInit(){
   if(SND.ctx || !SND.on) return;
@@ -1543,6 +1544,9 @@ const MUSIC_FALLBACK = { title: 'menu' };
 // Each match picks one (never the one that played last, when there is a choice), and a playlist
 // track does not loop: when it ends mid-match the next one is picked (see musicTrackEnded).
 // Credits: assets/music/CREDITS.md, "Owner-supplied Deltarune tracks".
+// The ten files are Ogg Vorbis. A browser that says it cannot play that (some Safari versions, and on
+// an iPhone or iPad every browser runs Safari's engine) skips the playlist and goes straight to
+// battle.mp3: see musicPlaylistPlayable.
 const MUSIC_PLAYLISTS = {
   battle: [
     'assets/music/Flowerman_Arrangement.ogg',
@@ -1562,6 +1566,7 @@ const MUSIC_PLAYLISTS = {
 //   2. assets/music/custom/<context>.mp3 — the site owner's own shipped override
 //   3. the shipped playlist, for a context that has one (`battle`): this start's pick first, then
 //      the rest of the playlist, so a track that fails to load steps to another playlist track
+//      (left out entirely on a browser that cannot play Ogg Vorbis — see musicPlaylistPlayable)
 //   4. the shipped Pixabay default (or the unshipped-but-probed path, for `title`)
 //   5. …then, for a context with a MUSIC_FALLBACK, that context's whole chain, recursively
 // ...and startMusic() falls through to the synth bed when every one of them is unusable.
@@ -1573,7 +1578,7 @@ function musicSources(kind, _seen){
   const out = [];
   if(SND._userPick[kind]) out.push(SND._userPick[kind]);
   out.push(MUSIC_CUSTOM_DIR + kind + '.mp3');
-  if(ship) for(const s of musicShippedOrder(kind)) out.push(s);
+  if(ship && musicPlaylistPlayable()) for(const s of musicShippedOrder(kind)) out.push(s);
   if(def) out.push(def);
   // `_seen` makes a mis-typed cycle in MUSIC_FALLBACK a no-op instead of a stack overflow.
   const seen = _seen || [kind];
@@ -1720,7 +1725,8 @@ function startMusicFile(kind){
     SND._deckKind[next] = kind;
     // A shipped playlist track plays once and hands over to the next one (musicTrackEnded);
     // everything else — the player's own tracks, custom/ slots, the defaults — loops as it always has.
-    el.loop = !musicShippedNote(kind, src);
+    const ship = musicShippedOwner(kind, src);
+    el.loop = !ship;
     try{ el.currentTime = 0; }catch(e){}
     try{ el.volume = 0; }catch(e){}
     const p = el.play();
@@ -1729,7 +1735,14 @@ function startMusicFile(kind){
         // The file is making sound now. Anything that was covering for it while the chain was
         // still resolving — the synth bed an earlier 404 in this same chain started, and the retry
         // that 404 parked — is stale and would otherwise loop on underneath it forever.
-        if(live()) musicFileTookOver(kind);
+        if(!live()) return;
+        musicFileTookOver(kind);
+        // Only now, with the track really playing, is it "the one that played last" for the owner's
+        // no-repeat rule. Recording it when the load was merely TRIED let a file that failed take
+        // that place: the failed file then dropped out of the draw, the track the player had just
+        // heard was no longer held back to the end of the queue, and it could come straight back
+        // with eight other tracks available (the review's probe: pink -> knight 404 -> pink).
+        if(ship) SND._shipLast[ship] = src;
       }, ()=>{
         // TWO different failures reject play(), and they need opposite responses. A source that
         // 404s rejects here AND fires the deck's `error` event, and that event owns the retry:
@@ -1741,6 +1754,10 @@ function startMusicFile(kind){
         SND._pendingKind = kind;
         startSynthMusic(kind);
       });
+    } else if(ship){
+      // An old browser whose play() returns no promise never says "it started", so the try is the
+      // best record there is.
+      SND._shipLast[ship] = src;
     }
     // crossfade: old deck out, new deck in
     musicFadeTo(SND._deck, 0);
@@ -1767,7 +1784,7 @@ function startMusic(kind){
   // a fresh pick from this context's playlist, if it has one (unless a caller already chose)
   if(!SND._keepPick){
     musicRollUserTrack(kind);
-    musicRollShippedTrack(kind);      // every new match, and every return from clutch time, picks afresh
+    musicRollShippedTrack(kind);      // every new match (R restarts too: musicNewMatch) and every return from clutch time picks afresh
     // Fallback chains only get a pick when they do not already have one. Re-rolling them here
     // would let a walk onto the title screen silently change which menu track is playing.
     for(const k of musicChainKinds(kind).slice(1)){
@@ -1963,14 +1980,33 @@ function musicShippedOrder(kind){
   if(last && out.indexOf(last) < 0 && list.indexOf(last) >= 0) out.push(last);
   return out;
 }
-// A deck is about to load `src` for `kind`. If that is a shipped playlist track, remember it as the
-// one played last (for the no-repeat rule) and report which context's playlist it belongs to.
-function musicShippedNote(kind, src){
+// Which context's shipped playlist `src` belongs to, among the chains feeding `kind` (null for any
+// other file). No side effect: a track becomes "the one that played last" only once it really plays
+// (the play() handler in startMusicFile) or plays to its end (musicTrackEnded), never when it is tried.
+function musicShippedOwner(kind, src){
   for(const k of musicChainKinds(kind)){
     const list = MUSIC_PLAYLISTS[k];
-    if(list && list.indexOf(src) >= 0){ SND._shipLast[k] = src; return k; }
+    if(list && list.indexOf(src) >= 0) return k;
   }
   return null;
+}
+// Can this browser play the playlist at all? The ten files are Ogg Vorbis. A WebKit build without it
+// (some Safari versions; on an iPhone or iPad, every browser) would otherwise try custom/battle.mp3 and then
+// all ten, eleven failed loads in a row and a deck switch for each, before settling on battle.mp3; the
+// first switch cuts the menu track's fade short, so the match opened on a gap of silence.
+// Asked once, of a deck that already exists. NO Audio element may be built just to ask (the rule at
+// the top of this block), and none needs to be: a playlist file can only be first in line once
+// custom/battle.mp3 has failed, and finding that out took a deck, so the answer is in before any
+// playlist file can be tried. Unknown (no deck yet, no canPlayType) counts as yes, and a file that
+// then fails still steps down the chain as it always has.
+function musicPlaylistPlayable(){
+  if(SND._oggOk!=null) return SND._oggOk;
+  const el = SND._decks[0] || SND._decks[1];
+  if(!el || typeof el.canPlayType!=='function') return true;
+  let ok = true;
+  try{ ok = el.canPlayType('audio/ogg; codecs="vorbis"') !== ''; }catch(e){}
+  SND._oggOk = ok;
+  return ok;
 }
 // A playlist track reached its end mid-match: pick the next one and play it, instead of silence or
 // the same track again. Only the LIVE deck counts — one that is fading out, or that belonged to a
@@ -1981,10 +2017,24 @@ function musicTrackEnded(i){
   let owner = null;
   for(const k of musicChainKinds(kind)){ const l = MUSIC_PLAYLISTS[k]; if(l && l.indexOf(src) >= 0){ owner = k; break; } }
   if(!owner) return;
-  musicRollShippedTrack(owner);     // avoids `src`: musicShippedNote recorded it as the last one
+  SND._shipLast[owner] = src;       // it played to its end: the next pick must avoid it
+  musicRollShippedTrack(owner);
   SND._kind = null;                 // so startMusic's "already on this bed" check lets it through
   SND._keepPick = true;             // the pick above is the one we want; do not roll it away
   try{ startMusic(kind); } finally { SND._keepPick = false; }
+}
+// A NEW MATCH picks a new playlist track even when the battle bed is already playing. R mid-fight
+// restarts the match from the top without passing a menu, so a plain startMusic('battle') found the
+// battle bed still playing and kept the old track, while a Rematch from the result screen (which stops
+// the music first) picked a new one. The owner's "Battle playlist" shuffles per match, and a restart
+// is a new match. A player's own multi-track battle playlist re-rolls too, just as it does on Rematch.
+// What a re-roll cannot change is left exactly as it was: a single track of the player's own, or
+// custom/battle.mp3, resolves to the file already playing and startMusicFile adopts the live deck
+// rather than restarting it. Boss Rush has no shipped playlist ("Boss Rush and the menus stay as they
+// are"), so for it this is plain startMusic.
+function musicNewMatch(kind){
+  if(MUSIC_PLAYLISTS[kind] && SND._kind===kind && musicAllowed()) SND._kind = null;
+  startMusic(kind);
 }
 // Force a fresh pick mid-context. Boss Rush calls this on every boss spawn so a gauntlet walks
 // through the owner's boss/miniboss themes instead of looping one of them all run.
@@ -2033,10 +2083,13 @@ function buildCustomMusic(){
   if(!host) return;
   host.innerHTML = MUSIC_CONTEXTS.map(kind=>{
     const id = 'mfile_'+kind, list = SND._userList[kind] || [];
+    // The empty battle row names the owner's playlist, except where it cannot play
+    // (musicPlaylistPlayable): there battle.mp3 is what the player hears, so say "default track".
+    const empty = (MUSIC_PLAYLISTS[kind] && !musicPlaylistPlayable()) ? null : MUSIC_CONTEXT_EMPTY[kind];
     const tracks = list.length
       ? list.map((t,i)=>'<span class="mtrack">'+esc(t.name)
           + '<button class="mx" title="Remove" onclick="musicRemoveSlotTrack(\''+kind+'\','+i+')">✕</button></span>').join('')
-      : '<span class="mname">'+(MUSIC_CONTEXT_EMPTY[kind] || 'default track')+'</span>';
+      : '<span class="mname">'+(empty || 'default track')+'</span>';
     return '<div class="musicrow">'
       + '<div class="mhead"><span class="mlbl">'+MUSIC_CONTEXT_LABEL[kind]+'</span>'
       + '<input type="file" accept="audio/*" multiple id="'+id+'" style="display:none" onchange="musicPickFile(\''+kind+'\',this)">'
@@ -3718,7 +3771,7 @@ function startTutorial(){
   });
   running=true; paused=false; hazardT=0;
   particles=[]; projectiles=[]; beams=[]; items=[]; summons=[]; tendrils=[]; itemTimer=1e9;  // no items during the tutorial
-  try{ clutchReset(); sndInit(); startMusic('battle'); }catch(e){}
+  try{ clutchReset(); sndInit(); musicNewMatch('battle'); }catch(e){}
   buildHUD(); banner(TUT_STEPS[0].text, 2600); loop();
 }
 // Called each frame while the tutorial runs.
@@ -4175,7 +4228,7 @@ function finishWatchSetup(fx, youPlay, size){
   camX=0; camY=0;
   // A World Cup fixture is an arena match — swap the hub's anthem for the battle bed. (Without
   // this the regal hub loop kept playing straight through every fight.)
-  try{ clutchReset(); sndInit(); startMusic('battle'); }catch(e){}
+  try{ clutchReset(); sndInit(); musicNewMatch('battle'); }catch(e){}
   banner((fx.kind==="group"?"GROUP ":"KNOCKOUT ")+fx.a.name+" vs "+fx.b.name, 1600);
   buildHUD(); loop();
 }
@@ -4715,7 +4768,9 @@ function beginMatchNow(){
   buildFighters();
   LINEUP_MEMO = null;   // this lineup is now in play; the next preview, and the next match, roll fresh
   // audio is best-effort — never let an audio failure abort match setup (empty-map risk)
-  try{ clutchReset(); sndInit(); startMusic(SETTINGS.mode==='boss' ? 'boss' : 'battle'); }catch(e){}
+  // musicNewMatch, not startMusic: R mid-fight comes back through here with the battle bed still
+  // playing, and a new match is a new pick from the owner's "Battle playlist".
+  try{ clutchReset(); sndInit(); musicNewMatch(SETTINGS.mode==='boss' ? 'boss' : 'battle'); }catch(e){}
   try{ startRunRecording(); }catch(e){}   // every match records for replay on the result screen
   try{ clipReset(); }catch(e){}       // and a fresh ring for the shareable GIF
   try{ for(const k in STYLE_REC) delete STYLE_REC[k]; }catch(e){}   // fresh play-style sample

@@ -45,7 +45,9 @@ Warm, unhurried chiptune — the cosy-town register the brief asked for.
 Driving, upbeat 8-bit with a melodic lead — energetic without drowning the hit SFX.
 
 Since 2026-09-27 this is the battle context's fallback: matches play the owner's battle playlist (the
-ten `.ogg` files at the end of this file), and this track plays only when none of them will load.
+ten `.ogg` files at the end of this file), and this track plays only when none of them will load, or
+on a browser that cannot play Ogg Vorbis at all (some Safari versions; on an iPhone or iPad every
+browser uses Safari's engine), which skips the playlist and plays this instead.
 
 ## 3. `boss.mp3` — Boss Rush
 
@@ -196,8 +198,10 @@ owners, and whether they may be shipped publicly is the owner's decision and res
 
 Wired into the game as the **battle playlist** (`MUSIC_PLAYLISTS.battle` in `index.html`), because the
 owner, asked how the ten tracks should be used, answered "Battle playlist". Each normal match (FFA, 1v1,
-teams, World Cup fixtures, the tutorial) picks one of them, never the one that played last when there is
-a choice, and when a track ends mid-match the next one plays. Boss Rush, the menus, the World Cup setup
+teams, World Cup fixtures, the tutorial, and a restart with R) picks one of them, never the one that
+played last when there is a choice (a file that fails to load does not count as played), and when a
+track ends mid-match the next one plays. A browser that cannot play Ogg Vorbis skips the playlist and
+plays `battle.mp3`. Boss Rush, the menus, the World Cup setup
 and hub, the title screen and clutch time keep their own tracks. Order for the battle context: a track
 the player loaded into their own battle playlist → `custom/battle.mp3` → this playlist → `battle.mp3`
 → the synth loop. They are credited on the title screen (`#musicCredits`) as well as here.
