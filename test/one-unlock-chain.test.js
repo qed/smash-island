@@ -161,19 +161,54 @@ describe('step 3: the trigger', () => {
     expect(W.eval('PROFILE.unlocked.indexOf("Lightning") >= 0'), 'the last fighter is pickable in every board view').toBe(true);
   });
 
-  it('fires when loop 2 comes last: felling Four is that win, and the victory card says so', async () => {
+  // The victory card used to spell the erasure out in red (#rushQuestNote). The owner: "remove the hint when you beat
+  // loop 2." So the card says nothing about it -- but the trigger, the erasure and its save are exactly as before.
+  const LOOP2_HINT = /erased|timeline|Moon|vanish|Only Lightning/i;
+  it('fires when loop 2 comes last: felling Four is that win, and the victory card gives no hint of it', async () => {
     await fresh(W, `PROFILE.fighterStats = { Lightning:{ g:20, w:15 } };`);
     expect(play(W, 'Lightning', true), 'no loop 2 yet: nothing').toEqual([]);
     expect(W.eval('PROFILE.one.stage')).toBe(0);
     const r = W.eval(`(function(){ showRushVictory(); fighters = [{ name:'Lightning', you:true, team:0 }]; var now = oneRushHook(2);
-      var n = document.getElementById('rushQuestNote'); var out = { now:now, stage:PROFILE.one.stage, shown:n.style.display, text:n.textContent };
-      document.getElementById('rushVictory').style.display = 'none'; paused = false; return out; })()`);
+      var card = document.getElementById('rushVictory');
+      var out = { now:now, stage:PROFILE.one.stage, erased:PROFILE.one.erased.slice(), note:!!document.getElementById('rushQuestNote'),
+        text:card.textContent };
+      card.style.display = 'none'; paused = false; return out; })()`);
     expect(r.now).toEqual(['Gaty']);
     expect(r.stage).toBe(1);
-    expect(r.shown).toBe('block');
-    expect(r.text).toMatch(/Gaty was erased from the timeline/);
+    expect(r.erased).toEqual(['Gaty']);
+    expect(r.note, 'the note element is gone from the card').toBe(false);
+    expect(r.text, 'no erasure hint anywhere on the card').not.toMatch(LOOP2_HINT);
+    await sleep(W, 0);
+    expect(stored(W).one.erased, 'the erasure is still saved').toEqual(['Gaty']);
+    expect(stored(W).one.stage).toBe(1);
     // the next loop is not another erasure: after the trigger, fighters go per won MATCH
     expect(W.eval(`fighters = [{ name:'Lightning', you:true, team:0 }]; oneRushHook(3); PROFILE.one.erased.length`)).toBe(1);
+  });
+
+  it('through the real gauntlet: Four falling to your Lightning triggers the chain, and the card still gives no hint', async () => {
+    await fresh(W, `PROFILE.fighterStats = { Lightning:{ g:20, w:15 } };
+      SETTINGS.mode = 'boss'; SETTINGS.count = 1; chosen = ROSTER.find(function(r){ return r.name==='Lightning'; });`);
+    const r = W.eval(`(function(){
+      startMatch();
+      BOSSRUSH.bossIdx = BOSS_ROSTER.findIndex(function(b){ return b.name==='Four'; });
+      summons = summons.filter(function(s){ return s.type!=='boss'; });
+      summons.push({ type:'boss', _bossRush:true, name:'Four', color:'#3a6ad0', x:WW/2, y:groundY()-80, r:80, hp:0, maxHp:500, team:-1 });
+      bossRushCheck();
+      var card = document.getElementById('rushVictory');
+      var out = { loop:BOSSRUSH.loop, card:card.style.display, text:card.textContent, stage:PROFILE.one.stage,
+        erased:PROFILE.one.erased.slice(), rush:PROFILE.one.rushLightning };
+      running = false; BOSSRUSH.active = false; card.style.display = 'none'; paused = false;
+      return out; })()`);
+    expect(r.loop).toBe(1);
+    expect(r.card, 'the victory card still shows').toBe('flex');
+    expect(r.rush).toBe(true);
+    expect(r.stage, 'the chain still triggers').toBe(1);
+    expect(r.erased, 'and the first fighter is still erased').toEqual(['Gaty']);
+    expect(r.text).toMatch(/VICTORY!/);
+    expect(r.text).toMatch(/Loop 2 cleared|Keep going/i);
+    expect(r.text, 'the owner: "remove the hint when you beat loop 2."').not.toMatch(LOOP2_HINT);
+    await sleep(W, 0);
+    expect(stored(W).one.erased, 'saved').toEqual(['Gaty']);
   });
 
   it('a trigger on a loss erases no one', async () => {
