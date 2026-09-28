@@ -245,13 +245,31 @@ function expectOneBed(w, src) {
 }
 
 describe('background music — the file layer', () => {
-  it('declares five contexts, each backed by a real default file on disk', () => {
+  it('declares six contexts, each backed by a real default file on disk', () => {
+    // Five, until One got her own bed ("actually, ones music should be joker.").
     const { w } = bootWithAudio();
     const map = JSON.parse(w.eval('JSON.stringify(MUSIC_FILES)'));
-    expect(Object.keys(map).sort()).toEqual(['battle', 'boss', 'intense', 'menu', 'tourney']);
+    expect(Object.keys(map).sort()).toEqual(['battle', 'boss', 'intense', 'menu', 'one', 'tourney']);
     for (const rel of Object.values(map)) {
       expect(existsSync(`${PUB}/${rel}`), `${rel} is missing`).toBe(true);
     }
+  });
+
+  it("One's fight has its own bed, joker.ogg, from her card through the fight and back from clutch time", () => {
+    // "ones music should be titan." -> "actually, ones music should be joker."
+    const { w } = bootWithAudio();
+    expect(w.eval('MUSIC_FILES.one')).toBe('assets/music/joker.ogg');
+    const r = w.eval(`(function(){
+      var was = ONEFIGHT.active; ONEFIGHT.active = true; BOSSRUSH.active = false;
+      var base = clutchBaseKind(); ONEFIGHT.active = was;
+      var boss = (function(){ var b = BOSSRUSH.active; BOSSRUSH.active = true; var k = clutchBaseKind(); BOSSRUSH.active = b; return k; })();
+      return { base: base, boss: boss, card: String(finishMoonScene).indexOf("startMusic('one')") >= 0,
+               start: String(beginMatchNow).indexOf("ONEFIGHT.active ? 'one'") >= 0 };
+    })()`);
+    expect(r.base, "her fight's bed").toBe('one');
+    expect(r.boss, 'Boss Rush keeps its own').toBe('boss');
+    expect(r.card, 'it starts on her card').toBe(true);
+    expect(r.start, 'and the fight itself picks it').toBe(true);
   });
 
   it('touches no audio and no storage at boot', () => {
