@@ -173,7 +173,11 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.shot, "the shared shapes hit at 0.8 of hers, as bossShot does of Four's").toBeCloseTo(26.4, 6);
   });
 
-  it('flies 1.35x as fast, and winds up and comes round again at Four\'s and Two\'s own pace', () => {
+  // The owner, later: "make mind read move slower. eye lasers should have two bursts. make all attacks except ghost fighter
+  // harder(not more damage tho)." So the numbers below are no longer Four's and Two's x1.35 for every attack: Mind Read's
+  // copy flies at 8 instead of Two's 13, and the rest fly faster and come in more (and tighter) than theirs -- but every
+  // shot still hits for the 33 it did.
+  it('flies faster than Four and Two, harder but never harder-hitting; Mind Read slower; and winds up and comes round again at their pace', () => {
     const r = W.eval(`(function(){
       projectiles = [];
       var s = { x:500, y:300, r:88, face:1, _marks:0, maxHp:2000, hp:2000, _spTier:{ moonrocks:1, eyelasers:1, hands:1, orbitkick:1, ghost:1 } };
@@ -185,28 +189,34 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
       ONE_MOVES.seekers(s, null, 4); var seek = own().map(function(p){ return [spd(p), p.homing]; }); projectiles = [];
       var tgt = { x:900, y:300, vx:0, vy:0 };
       fighters = [];
-      ONE_MOVES.mindread(s, tgt, 5); var mr1 = own().map(function(p){ return [spd(p), p.homing, p.dmg]; }); projectiles = [];
+      ONE_MOVES.mindread(s, tgt, 5); var mr1 = own().map(function(p){ return [spd(p), p.homing, p.dmg, p.life]; }); projectiles = [];
       s._marks = 1; ONE_MOVES.mindread(s, tgt, 6); var mr2 = own().map(function(p){ return [spd(p), p.homing]; }); projectiles = [];
       s._marks = 0; s._telX = 500; s._telY = 300; ONE_MOVES.rain(s, tgt, 7); var rain = own().map(function(p){ return p.vy; }); projectiles = [];
-      return { scr1:scr1, scr4:scr4, scrDmg:scrDmg, ring:ring, seek:seek, mr1:mr1, mr2:mr2, rain:rain,
+      var dmgs = [];
+      ['screechy', 'ring', 'seekers', 'rain'].forEach(function(k){ ONE_MOVES[k](s, tgt, 8); own().forEach(function(p){ dmgs.push(p.dmg); }); projectiles = []; });
+      return { scr1:scr1, scr4:scr4, scrDmg:scrDmg, ring:ring, seek:seek, mr1:mr1, mr2:mr2, rain:rain, maxDmg:Math.max.apply(null, dmgs), pl:PROJ_LIFE,
         tel:[ONE_TEL.zap, ONE_TEL.screechy, ONE_TEL.rain, ONE_TEL.mindread, ONE_TEL.seekers, ONE_TEL.ring, ONE_TEL.sizeshift, ONE_TEL.ungrounded],
         gaps:[0,1,2,3].map(function(m){ return oneGap({ _marks:m }); }) };
     })()`);
-    expect(r.scr1, "Four's 6").toBeCloseTo(8.1, 6);
-    expect(r.scr4, "Four's 7.5").toBeCloseTo(10.125, 6);
+    expect(r.scr1, "Four's 6, now 6.8 (harder)").toBeCloseTo(6.8 * 1.35, 6);
+    expect(r.scr4, "Four's 7.5, now 8.4").toBeCloseTo(8.4 * 1.35, 6);
     expect(r.scrDmg).toBe(33);
-    expect(r.ring.length).toBe(12);
-    r.ring.forEach(v => expect(v, "Two's ring at 6.5").toBeCloseTo(8.775, 6));
-    expect(r.seek.length).toBe(3);
-    r.seek.forEach(([v, h]) => { expect(v).toBeCloseTo(6.75, 6); expect(h, 'the same turning circle').toBeCloseTo(0.0675, 6); });
+    expect(r.ring.length, "Two's twelve, now fourteen").toBe(14);
+    r.ring.forEach(v => expect(v, "Two's ring at 6.5, now 7.5").toBeCloseTo(7.5 * 1.35, 6));
+    expect(r.seek.length, "Four's three seekers, now five").toBe(5);
+    r.seek.forEach(([v, h]) => { expect(v).toBeCloseTo(5.6 * 1.35, 6); expect(h, 'homing grows with the speed: the same turning circle').toBeCloseTo(0.056 * 1.35, 6); });
     expect(r.mr1.length).toBe(1);
-    expect(r.mr1[0][0], "Two's 13").toBeCloseTo(17.55, 6);
+    expect(r.mr1[0][0], '"make mind read move slower": 8 where Two threw it at 13').toBeCloseTo(8 * 1.35, 6);
+    expect(r.mr1[0][0], 'slower than it was').toBeLessThan(13 * 1.35);
     expect(r.mr1[0][1]).toBe(0);
     expect(r.mr1[0][2]).toBe(33);
+    // (addProj stretches every shot's life by PROJ_LIFE, the old 80 frames included)
+    expect(r.mr1[0][0] * r.mr1[0][3], 'and still reaches as far (80 frames at 17.55)').toBeCloseTo(Math.round(80 * r.pl) * 13 * 1.35, -1);
     expect(r.mr2.length).toBe(2);
-    expect(r.mr2[0][1]).toBeCloseTo(0.081, 6);
-    expect(r.rain.length).toBe(5);
-    r.rain.forEach(v => expect(v).toBeCloseTo(6.75, 6));
+    expect(r.mr2[0][1], 'its homing slowed with it, so it curves along the same line').toBeCloseTo(0.081 * 8 / 13, 6);
+    expect(r.rain.length, "Four's five drops, now seven").toBe(7);
+    r.rain.forEach(v => expect(v, "falling at 6, not Four's 5").toBeCloseTo(6 * 1.35, 6));
+    expect(r.maxDmg, '"not more damage tho": nothing hits past her 33').toBeLessThanOrEqual(33);
     // "Launched faster" is the shots above, 1.35x. The wind-ups and the gaps between attacks were 0.7x of Four's and Two's
     // too, which was the design's reading and not the owner's words, and with it nobody could beat her: the bans lift only
     // when she is beaten and there is "No way out" (the review's permanent-lock finding). The scripted player in
@@ -230,21 +240,40 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
       return { deck: ONE_DECK.slice(), out: out, base: one._baseR };`);
     expect(r.deck).toEqual(['zap', 'screechy', 'mindread', 'rain', 'seekers', 'ring', 'sizeshift', 'ungrounded']);
     expect(r.out.zap.pct, 'the zap column reaches a fighter standing on the floor').toBe(33);
-    expect(r.out.zap.fx).toContain('column');
+    expect(r.out.zap.fx.filter(k => k === 'column').length, 'the aimed column and its two copies near her (phase 1)').toBe(3);
     expect(r.out.screechy.shots).toBeGreaterThan(200);
     expect(r.out.mindread.shots).toBe(1);
     expect(r.out.mindread.pct, "Power Drain's 6, x1.5").toBe(9);
     expect(r.out.mindread.healed, 'and it heals her').toBe(25);
-    expect(r.out.rain.shots).toBe(5);
-    expect(r.out.seekers.shots).toBe(3);
-    expect(r.out.ring.shots).toBe(12);
+    // "make all attacks except ghost fighter harder(not more damage tho)": more of each, never a harder hit
+    expect(r.out.rain.shots, "Four's five, now seven").toBe(7);
+    expect(r.out.seekers.shots, "Four's three, now five").toBe(5);
+    expect(r.out.ring.shots, "Two's twelve, now fourteen").toBe(14);
     expect(r.out.sizeshift.r, 'canon One grows GIANT (TPOT 23, 25)').toBe(Math.round(r.base * 1.4));
     expect(r.out.ungrounded.ung).toBe(true);
+  });
+
+  it('Size Shift and Power Ungrounded are harder too: longer, a giant One no slower, and Power Ungrounded slower to ground', () => {
+    // "make all attacks except ghost fighter harder(not more damage tho)": neither hits at all, so harder is time -- Size Shift
+    // was 360 frames at 0.8x her speed, Power Ungrounded 420 frames and grounded after 60 close.
+    const r = fight(['Firey'], { story: true }, `
+      one._atkTimer = 1e9; you.controller = 'still';
+      ONE_MOVES.sizeshift(one); var giantT = one._giantT;
+      one.x = you.x + 900; one.y = groundY() - 200; one.vx = 0; one.vy = 0; one._orbitA = null;
+      var top = 0; for (var i=0; i<40; i++){ updateOne(one, you); top = Math.max(top, Math.hypot(one.vx, one.vy)); }
+      ONE_MOVES.ungrounded(one);
+      return { giantT: giantT, top: top, max: ONE_CHASE_MAX, ungT: one._ungroundT, groundT: ONE_GROUND_T };`);
+    expect(r.giantT, 'giant for longer').toBeGreaterThan(360);
+    expect(r.top, 'and no slower for it').toBeCloseTo(r.max, 6);
+    expect(r.ungT, 'ungrounded for longer').toBeGreaterThan(420);
+    expect(r.groundT, 'and it takes longer close by to ground it').toBeGreaterThan(60);
   });
 
   it("her zap misses a fighter who moved off the spot, and Power Drain never heals her back over a phase line", () => {
     const r = fight(['Firey'], { story: true }, `
       one._atkTimer = 1e9; for (var w=0; w<30; w++) step();
+      // (her copies come down near HER, so she is well away here: this is the aimed column's miss)
+      one.x = you.x + 900; one.y = you.y - 100;
       one._telX = you.x + 120; one._telY = hurtCY(you); you.pct = 0; you.invuln = 0;
       ONE_MOVES.zap(one, you, ++BOSS_ATK_ID); var aside = you.pct;
       one.hp = 1495; updateOne(one, you);            // into phase 2
@@ -357,10 +386,16 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
       expect(c.dmg, `${k}: harder at tier 3`).toBeGreaterThan(a.dmg);
       expect(c.fx, `${k}: a different effect at the top`).not.toBe(a.fx);
     }
-    expect([r[1].moonrocks.n, r[2].moonrocks.n, r[3].moonrocks.n]).toEqual([3, 5, 7]);
-    expect([r[1].eyelasers.n, r[2].eyelasers.n, r[3].eyelasers.n], 'a pair, two pairs, then a flurry').toEqual([2, 4, 18]);
-    expect([r[1].hands.n, r[2].hands.n, r[3].hands.n], 'hands under the fighter').toEqual([1, 3, 5]);
-    expect([r[1].orbitkick.n, r[2].orbitkick.n, r[3].orbitkick.n], 'planets kicked out of orbit').toEqual([1, 2, 3]);
+    // "make all attacks except ghost fighter harder(not more damage tho)": a rock more a tier (it was 3/5/7), two hands more
+    // (1/3/5), and Out of Orbit's planets (1/2/3 a lane) now fly down the aimed lane and its 2/3/4 copies ("more of the same")
+    expect([r[1].moonrocks.n, r[2].moonrocks.n, r[3].moonrocks.n]).toEqual([4, 6, 8]);
+    expect([r[1].eyelasers.n, r[2].eyelasers.n, r[3].eyelasers.n], 'a pair, two pairs, then a flurry (a burst; there are two)').toEqual([2, 4, 18]);
+    expect([r[1].hands.n, r[2].hands.n, r[3].hands.n], 'hands under the fighter').toEqual([3, 5, 7]);
+    expect([r[1].orbitkick.n, r[2].orbitkick.n, r[3].orbitkick.n], 'planets kicked out of orbit, down 3, 4 and 5 lanes').toEqual([1 * 3, 2 * 4, 3 * 5]);
+    for (const k of ['moonrocks', 'hands', 'orbitkick']) {
+      expect([r[1][k].dmg, r[2][k].dmg, r[3][k].dmg], `${k}: harder, not harder-hitting`)
+        .toEqual({ moonrocks: [0.8, 0.9, 1.0], hands: [0.8, 0.9, 1.0], orbitkick: [1.0, 1.1, 1.2] }[k].map(m => +(33 * m).toFixed(3)));
+    }
     expect([r[1].ghost.n, r[2].ghost.n, r[3].ghost.n], 'ghost-fire with it').toEqual([0, 4, 8]);
     expect([r[1].ghost.hp, r[2].ghost.hp, r[3].ghost.hp], 'always one ghost with 100 HP').toEqual([100, 100, 100]);
     expect(r[3].ghost.hit).toBeGreaterThan(r[1].ghost.hit);
@@ -370,25 +405,41 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect([r[1].ghost.haste, r[2].ghost.haste, r[3].ghost.haste], 'and is hasted at tier 3').toEqual([false, false, true]);
   });
 
-  it('eye lasers track you, then lock: the bolts go where you were at the lock', () => {
+  // ...and "eye lasers should have two bursts": after the first volley her eyes track you again, lock again, and fire again.
+  it('eye lasers track you, then lock: the bolts go where you were at the lock -- and then again, a second burst', () => {
     const r = fight(['Firey'], { story: true }, `
       one._atkTimer = 1e9; one._spTier.eyelasers = 1; for (var w=0; w<20; w++) step();
       you.controller = 'still'; one.x = you.x + 400; one.y = you.y - 40;
-      one._telKind = 'eyelasers'; one._tel = ONE_TEL.eyelasers; projectiles = [];
-      var lockAt = null;
-      while (one._tel > 0){
+      one._telKind = 'eyelasers'; one._tel = ONE_TEL.eyelasers; one._eyeBurst = 0; one._atkTimer = 1e9; projectiles = [];
+      var LOCK = ONE_SPECIAL_TIERS.eyelasers[0].lock, locks = [], bursts = [], wasLocked = false, n0 = 0, guard = 0;
+      while (one._tel > 0 && guard++ < 400){
         you.x += 4;
-        var before = one._tel; updateOne(one, you);
-        if (lockAt===null && one._tel <= ONE_SPECIAL_TIERS.eyelasers[0].lock) lockAt = { x: you.x, aim: one._aimX };
-        if (one._tel <= 3) you.x += 30;
+        updateOne(one, you);
+        var locked = one._tel > 0 && one._tel <= LOCK;
+        if (locked && !wasLocked) locks.push({ x: you.x, aim: one._aimX });
+        wasLocked = locked;
+        var bolts = projectiles.filter(function(p){ return p.shape==='onelaser'; });
+        if (bolts.length > n0){
+          var fresh = bolts.slice(n0), aim = locks[locks.length - 1].aim;
+          bursts.push({ n: fresh.length, ids: fresh.map(function(p){ return p.bossAtk; }), timer: one._atkTimer,
+            err: Math.max.apply(null, fresh.map(function(p){ var t = (aim - p.x)/p.vx; return Math.abs(p.y + p.vy*t - one._aimY); })) });
+          n0 = bolts.length;
+        }
+        if (one._tel > 0 && one._tel <= 3) you.x += 30;
       }
-      var bolts = projectiles.filter(function(p){ return p.shape==='onelaser'; });
-      var aimErr = bolts.map(function(p){ var t = (lockAt.aim - p.x)/p.vx; return Math.abs(p.y + p.vy*t - one._aimY); });
-      return { lock: lockAt, aimNow: one._aimX, youNow: you.x, bolts: bolts.length, err: Math.max.apply(null, aimErr) };`);
-    expect(r.bolts).toBe(2);
-    expect(r.aimNow, 'the aim stopped following once it locked').toBe(r.lock.aim);
+      return { locks: locks, bursts: bursts, aimNow: one._aimX, youNow: you.x, gap: oneGap(one) };`);
+    expect(r.bursts.length, '"eye lasers should have two bursts"').toBe(2);
+    expect(r.locks.length, 'each one tracks and then locks').toBe(2);
+    r.bursts.forEach(b => {
+      expect(b.n, 'a pair at tier 1, each burst').toBe(2);
+      expect(b.err, 'the bolts go where you were at that lock').toBeLessThan(1);
+    });
+    expect(r.locks[1].aim - r.locks[0].aim, 'between the bursts the aim followed you again').toBeGreaterThan(40);
+    expect(r.bursts[0].ids[0], 'the second burst is its own attack, so it can land after the first did').not.toBe(r.bursts[1].ids[0]);
+    expect(r.bursts[0].timer, 'the first burst does not start the clock to her next attack').toBe(1e9);
+    expect(r.bursts[1].timer, 'the second one does').toBe(r.gap);
+    expect(r.aimNow, 'the aim stopped following once it locked').toBe(r.locks[1].aim);
     expect(r.youNow - r.aimNow, 'so stepping off the line after the lock is the dodge').toBeGreaterThan(60);
-    expect(r.err).toBeLessThan(1);
   });
 
   it('hands come up through the surface you stand on, not the floor, and drag you under', () => {
@@ -405,28 +456,37 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
       var baseY = hands[0].y;
       for (var j=0;j<3;j++){ one.x = you.x + 500; step(); }
       return { baseY: baseY, platY: p.y, floorY: floor.y, n: hands.length, pct: you.pct, rooted: you.rooted };`);
-    expect(r.n).toBe(3);
+    // "make all attacks except ghost fighter harder(not more damage tho)": five hands at tier 2 where there were three
+    expect(r.n).toBe(5);
     expect(r.baseY, 'out of the platform you are on').toBeCloseTo(r.platY + 8, 0);
     expect(r.baseY).toBeLessThan(r.floorY - 100);
     expect(r.pct).toBeGreaterThan(0);
     expect(r.rooted, 'dragged under: rooted').toBeGreaterThan(0);
   });
 
-  it('Out of Orbit kicks down the marked lane only, then the planets fly on', () => {
+  // The marked lane, and -- "zap to dust and out of orbit are too easy- they should spawn 2-4 pillars near her" / "no, like
+  // same attack, more of the same" -- copies of the kick in lanes beside it, every one the way she kicked.
+  it('Out of Orbit kicks down the marked lane and its copies beside it, never behind her, then the planets fly on', () => {
     const r = fight(['Firey', 'Leafy'], {}, `
       one._atkTimer = 1e9; one._spTier.orbitkick = 1; for (var w=0; w<10; w++) step();
       var B = fighters[1];
       one.x = WW*0.5; one.y = groundY() - 150;
       you.x = one.x + 150; B.x = one.x - 220;
       [you, B].forEach(function(f){ f.pct = 0; f.invuln = 0; f.vx = 0; f.y = one.y + 20; });
-      one._telDir = 1; one._kickY = hurtCY(you); projectiles = [];
+      one._telDir = 1; one._kickY = hurtCY(you); one._kickLanes = null; projectiles = [];
       ONE_MOVES.orbitkick(one, you, ++BOSS_ATK_ID);
-      return { you: you.pct, youVx: you.vx, behind: B.pct, planets: projectiles.filter(function(p){ return p.shape==='oneplanet'; }).map(function(p){ return p.vx; }) };`);
+      var ps = projectiles.filter(function(p){ return p.shape==='oneplanet'; });
+      return { you: you.pct, youVx: you.vx, behind: B.pct, planets: ps.map(function(p){ return p.vx; }), ys: ps.map(function(p){ return p.y; }),
+        y0: hurtCY(you), gap: ONE_LANE_GAP, floor: groundY() };`);
     expect(r.you).toBe(33);
     expect(r.youVx, 'sent the way she kicked').toBeGreaterThan(0);
     expect(r.behind, 'nobody behind her').toBe(0);
-    expect(r.planets.length).toBe(1);
-    expect(r.planets[0]).toBeGreaterThan(0);
+    expect(r.planets.length, 'a planet down the marked lane and down each of its two copies (tier 1)').toBe(3);
+    r.planets.forEach(vx => expect(vx, 'every lane kicked the same way').toBeGreaterThan(0));
+    expect(r.ys[0], 'the first is the marked lane').toBeCloseTo(r.y0, 6);
+    const ys = [...r.ys].sort((a, b) => a - b);
+    for (let i = 1; i < ys.length; i++) expect(ys[i] - ys[i - 1], 'lanes a gap apart').toBeGreaterThanOrEqual(r.gap);
+    ys.forEach(y => expect(y, 'never under the floor').toBeLessThan(r.floor));
   });
 });
 
@@ -488,27 +548,221 @@ describe('special 5: one ghost fighter with 100 HP, and One takes nothing until 
       return { dead: g.dead, cleared: one._ghost === null, stocks: you.stocks === stocks, active: ONEFIGHT.active, running: running };`);
     expect(r).toEqual({ dead: true, cleared: true, stocks: true, active: true, running: true });
   });
+
+  // "remove attacks while ghost fighter is active". She used to come round at half pace while it stood (ONE_GHOST_LULL); now
+  // nothing comes from her at all until it is down -- she keeps circling -- and then her attacks pick up where they were.
+  it('while it stands she does not attack at all -- she only moves -- and her attacks come back once it is down', () => {
+    const r = fight(['Firey'], { story: true }, `
+      you.controller = 'still';
+      one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
+      ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID);
+      var g = one._ghost; g.controller = 'still';
+      projectiles = []; oneFx = []; one._atkTimer = 1;
+      var tel = 0, path = 0, px = one.x, py = one.y;
+      for (var i=0; i<900; i++){ updateOne(one, you); if (one._tel > 0) tel++; path += Math.hypot(one.x - px, one.y - py); px = one.x; py = one.y; }
+      var shots = projectiles.filter(function(p){ return p.owner===-2; }).length, timer = one._atkTimer, fx = oneFx.length;
+      // a wind-up already under way while it stands is dropped, and nothing fires
+      one._telKind = 'zap'; one._tel = 5; one._telX = you.x; one._telY = hurtCY(you); you.pct = 0; you.invuln = 0;
+      for (var j=0; j<10; j++) updateOne(one, you);
+      var dropped = { tel: one._tel, fx: oneFx.length, pct: you.pct };
+      oneGhostDown(g, true);
+      var back = -1; for (var k=0; k<60 && back < 0; k++){ updateOne(one, you); if (one._tel > 0) back = k; }
+      return { tel: tel, shots: shots, fx: fx, path: path, timer: timer, dropped: dropped, back: back, lull: typeof ONE_GHOST_LULL };`);
+    expect(r.tel, 'no wind-up while it stands').toBe(0);
+    expect(r.shots, 'and nothing fired').toBe(0);
+    expect(r.fx).toBe(0);
+    expect(r.path, 'but she keeps moving').toBeGreaterThan(1000);
+    expect(r.timer, 'the clock to her next attack waits for it').toBe(1);
+    expect(r.dropped).toEqual({ tel: 0, fx: 0, pct: 0 });
+    expect(r.back, 'once it is down she attacks again').toBe(0);
+    expect(r.lull, 'the half-pace lull is gone with it').toBe('undefined');
+  });
 });
 
-describe('she follows you, and teleports when you are very far', () => {
-  it('outruns a fighter running away, stops pushing once close, and teleports beside you from far off', () => {
+// "zap to dust and out of orbit are too easy- they should spawn 2-4 pillars near her" -- and asked what pillars, "no, like
+// same attack, more of the same." So each fires copies of itself near her: 2 at tier 1, 3 at tier 2, 4 at tier 3 (Zap to
+// Dust has no tier of its own, so it goes by her phase), spaced so there is still a gap to find, under the one attack id.
+describe('Zap to Dust and Out of Orbit come with copies of themselves near her', () => {
+  it('2, 3 and 4 copies by tier, near her, and a gap between every two that a fighter fits in', () => {
+    const r = fight(['Lightning'], { story: true }, `
+      one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
+      one.x = WW*0.5; one.y = groundY() - 250;
+      var out = { zap: [], kick: [] };
+      [0,1,2].forEach(function(m){
+        one._marks = m; one._spTier.orbitkick = m + 1;
+        var bx = one.x + 700, cols = oneZapCopies(one, bx);
+        out.zap.push({ n: cols.length, xs: [bx].concat(cols.map(function(c){ return c.x; })),
+          far: Math.max.apply(null, cols.map(function(c){ return Math.abs(c.x - one.x); })) });
+        var y0 = groundY() - 60, lanes = oneKickLanes(one, y0);
+        out.kick.push({ n: lanes.length, ys: [y0].concat(lanes) });
+      });
+      out.rx = hurtRX(you); out.ry = hurtRY(you); out.floor = groundY(); out.zg = ONE_ZAP_GAP; out.lg = ONE_LANE_GAP;
+      return out;`);
+    expect(r.zap.map(z => z.n), 'more zap columns: 2, 3, 4').toEqual([2, 3, 4]);
+    expect(r.kick.map(k => k.n), 'more Out of Orbit lanes: 2, 3, 4').toEqual([2, 3, 4]);
+    const minGap = (vs) => { const a = [...vs].sort((x, y) => x - y); let m = 1e9; for (let i = 1; i < a.length; i++) m = Math.min(m, a[i] - a[i - 1]); return m; };
+    for (const z of r.zap) {
+      expect(z.far, 'near her').toBeLessThanOrEqual(r.zg * 2);
+      // a column hits within 26 + hurtRX of its line, so between two lines there is room left for a fighter to stand
+      expect(minGap(z.xs) - 2 * (26 + r.rx), 'a safe gap between every two columns').toBeGreaterThan(40);
+    }
+    for (const k of r.kick) {
+      expect(minGap(k.ys) - 2 * (40 + r.ry), 'a safe gap between every two lanes').toBeGreaterThan(40);
+      k.ys.forEach(y => expect(y, 'never under the floor').toBeLessThan(r.floor));
+    }
+  });
+
+  it('a copy hits like the one aimed at you, the gap between them is safe, and all of them together hit once', () => {
+    const r = fight(['Lightning'], { story: true }, `
+      one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
+      worldPlats = worldPlats.filter(function(p){ return p.solid; });   // nothing between her and the floor to stop a column
+      you.controller = 'still'; one._marks = 0; one._spTier.orbitkick = 1;
+      one.x = WW*0.5; one.y = groundY() - 250;
+      var zapAt = function(x, aimX, cols){ you.x = x; you.y = groundY() - 24; you.pct = 0; you.invuln = 0;
+        one._telX = aimX; one._telY = hurtCY(you); one._zapCols = cols || null; oneFx = [];
+        ONE_MOVES.zap(one, you, ++BOSS_ATK_ID); return { pct: you.pct, cols: oneFx.filter(function(e){ return e.kind==='column'; }).length }; };
+      var out = {};
+      out.underCopy = zapAt(one.x + ONE_ZAP_GAP, one.x + 900);   // her copies at her spot and one gap out; aimed far off
+      out.inGap = zapAt(one.x + ONE_ZAP_GAP/2, one.x + 900);
+      out.twice = zapAt(one.x + 600, one.x + 600, [{ x: one.x + 600, bot: groundY() + 6 }]);   // under two at once
+      var kickAt = function(dy){ you.x = one.x + 150; you.y = one.y + 20; you.pct = 0; you.invuln = 0; you.vx = 0;
+        one._telDir = 1; one._kickY = hurtCY(you) + dy; one._kickLanes = null; projectiles = [];
+        ONE_MOVES.orbitkick(one, you, ++BOSS_ATK_ID); return you.pct; };
+      out.kickCopy = kickAt(ONE_LANE_GAP);        // the aimed lane below you: its copy runs through you
+      out.kickGap = kickAt(ONE_LANE_GAP/2);       // you between the aimed lane and its copy
+      return out;`);
+    expect(r.underCopy.pct, 'a copy column hits for her 33').toBe(33);
+    expect(r.underCopy.cols, 'the aimed column and its two copies').toBe(3);
+    expect(r.inGap.pct, 'between two columns is safe').toBe(0);
+    expect(r.twice.pct, '"not more damage": under two columns, still one hit').toBe(33);
+    expect(r.kickCopy, 'a copy lane kicks for the same').toBe(33);
+    expect(r.kickGap, 'between two lanes is safe').toBe(0);
+  });
+
+  it('every copy is laid out as the wind-up starts, so the tell shows each one, and those are the ones that come down', () => {
+    const r = fight(['Lightning'], { story: true }, `
+      one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
+      you.controller = 'still'; one._marks = 1; one._spTier.orbitkick = 3;
+      var next = oneNextMove, out = {};
+      try {
+        ['zap', 'orbitkick'].forEach(function(k){
+          oneNextMove = function(){ return k; };
+          one._tel = 0; one._atkTimer = 1; oneFx = []; projectiles = [];
+          updateOne(one, you);
+          var shown = k==='zap' ? one._zapCols.map(function(c){ return Math.round(c.x); }) : one._kickLanes.map(Math.round);
+          one._atkTimer = 1e9; while (one._tel > 0) updateOne(one, you);
+          var landed = k==='zap' ? oneFx.filter(function(e){ return e.kind==='column'; }).slice(1).map(function(e){ return Math.round(e.x); })
+                                 : oneFx.filter(function(e){ return e.kind==='foot'; }).slice(1).map(function(e){ return Math.round(e.y); });
+          out[k] = { shown: shown, landed: landed, cleared: k==='zap' ? one._zapCols : one._kickLanes };
+        });
+      } finally { oneNextMove = next; }
+      return out;`);
+    expect(r.zap.shown.length, 'phase 2: three copies').toBe(3);
+    expect(r.zap.landed, 'the columns shown are the columns that come down').toEqual(r.zap.shown);
+    expect(r.orbitkick.shown.length, 'tier 3: four copies').toBe(4);
+    expect(r.orbitkick.landed, 'the lanes shown are the lanes kicked').toEqual(r.orbitkick.shown);
+    expect([r.zap.cleared, r.orbitkick.cleared], 'and they are spent with the attack').toEqual([null, null]);
+  });
+});
+
+// The owner first: "one follows you if you try to run away" / "one can teleport if you are very far". Then: "One follows you
+// too well- they should try to circle you", and asked how, "Orbit, then swoop". So she no longer closes to 140px and sits on
+// you: she circles you at mid range, turning back now and then, closes in only to strike and backs out again -- and she
+// still outflies a fighter running away, and still teleports when you are very far, never mid wind-up.
+describe('she circles you ("Orbit, then swoop"), and teleports when you are very far', () => {
+  it('outflies a fighter, then circles over you at mid range, both ways round, turning back now and then, and never sits on you', () => {
+    const r = fight(['Firey'], { story: true }, `
+      one._atkTimer = 1e9; you.controller = 'still';
+      you.x = WW*0.5; you.y = groundY() - 24; you.vx = 0; you.vy = 0;
+      one.x = you.x + 700; one.y = groundY() - 150; one.vx = 0; one.vy = 0; one._orbitA = null;
+      var cy = hurtCY(you), x0 = one.x;
+      for (var i=0;i<30;i++) updateOne(one, you);
+      var chase = { moved: x0 - one.x, v: Math.hypot(one.vx, one.vy) };
+      for (var w=0; w<240; w++) updateOne(one, you);
+      var ds = [], left = 0, right = 0, above = 0, turns = 0, midTurns = 0, lastD = 0, prevA = one._orbitA;
+      var lo = -Math.PI + ONE_ORBIT_END, hi = -ONE_ORBIT_END, N = 1200;
+      for (var k=0; k<N; k++){
+        updateOne(one, you);
+        ds.push(Math.hypot(one.x - you.x, one.y - cy));
+        if (one.x < you.x - 100) left++; if (one.x > you.x + 100) right++; if (one.y < cy) above++;
+        var dA = one._orbitA - prevA; prevA = one._orbitA;
+        if (dA !== 0){ var d = Math.sign(dA); if (lastD && d !== lastD){ turns++; if (one._orbitA > lo + 0.05 && one._orbitA < hi - 0.05) midTurns++; } lastD = d; }
+      }
+      // put her right on top of you: with no strike coming she backs out to the orbit again
+      one.x = you.x + 60; one.y = cy - 60; one.vx = 0; one.vy = 0;
+      for (var b=0; b<90; b++) updateOne(one, you);
+      return { chase: chase, maxvx: MAXVX, R: ONE_ORBIT_R, minD: Math.min.apply(null, ds), maxD: Math.max.apply(null, ds),
+        left: left/N, right: right/N, above: above/N, turns: turns, midTurns: midTurns, backOut: Math.hypot(one.x - you.x, one.y - cy) };`);
+    expect(r.chase.moved, 'she closed in').toBeGreaterThan(150);
+    expect(r.chase.v, 'faster than a fighter can run').toBeGreaterThan(r.maxvx);
+    expect(r.minD, 'mid range: never in on you without a strike').toBeGreaterThan(r.R * 0.8);
+    expect(r.maxD, '...and never far off').toBeLessThan(r.R * 1.2);
+    expect(r.left, 'round one side of you').toBeGreaterThan(0.2);
+    expect(r.right, 'and the other').toBeGreaterThan(0.2);
+    expect(r.above, 'over your head (she hovers; the floor cuts off the lower half)').toBeGreaterThan(0.95);
+    expect(r.turns, 'she switches direction').toBeGreaterThanOrEqual(4);
+    expect(r.midTurns, 'now and then in the middle, not only at the ends').toBeGreaterThanOrEqual(1);
+    expect(r.backOut, 'she does not sit on you').toBeGreaterThan(r.R * 0.75);
+  });
+
+  it('swoops in only to strike -- over the end of a wind-up and just after -- then backs out; never for Size Shift', () => {
+    const r = fight(['Firey'], { story: true }, `
+      one._atkTimer = 1e9; you.controller = 'still';
+      you.x = WW*0.5; you.y = groundY() - 24; you.vx = 0; you.vy = 0;
+      one.x = you.x + 300; one.y = groundY() - 300; one._orbitA = null;
+      for (var w=0; w<240; w++) updateOne(one, you);
+      var cy = hurtCY(you), dist = function(){ return Math.hypot(one.x - you.x, one.y - cy); };
+      var strike = function(kind){
+        one._telKind = kind; one._tel = ONE_TEL[kind]; one._swoopT = 0;
+        var a0 = one._orbitA, held = true, before = 1e9, swoop = 1e9, after = 0;
+        while (one._tel > 0){
+          if (one._tel === ONE_SWOOP_LEAD + 1) before = dist();
+          updateOne(one, you);
+          if (one._orbitA !== a0) held = false;
+          if (one._tel <= ONE_SWOOP_LEAD) swoop = Math.min(swoop, dist());
+        }
+        one._atkTimer = 1e9; projectiles = [];
+        for (var h=0; h<ONE_SWOOP_HOLD; h++){ updateOne(one, you); swoop = Math.min(swoop, dist()); }
+        for (var o=0; o<90; o++) updateOne(one, you);
+        after = dist();
+        if (one._giantT > 0){ one._giantT = 1; updateOne(one, you); }
+        return { held: held, before: before, swoop: swoop, after: after };
+      };
+      return { ring: strike('ring'), zap: strike('zap'), size: strike('sizeshift'), R: ONE_ORBIT_R, S: ONE_SWOOP_R };`);
+    for (const k of ['ring', 'zap']) {
+      expect(r[k].held, `${k}: a wind-up holds her place on the circle`).toBe(true);
+      expect(r[k].before, `${k}: out on the orbit until the strike is close`).toBeGreaterThan(r.R * 0.8);
+      expect(r[k].swoop, `${k}: in to strike`).toBeLessThan(r.S + 25);
+      expect(r[k].after, `${k}: and back out`).toBeGreaterThan(r.R * 0.8);
+    }
+    expect(r.size.swoop, 'Size Shift is not a strike: no swoop').toBeGreaterThan(r.R * 0.8);
+  });
+
+  it('while Power Ungrounded is up she circles close enough to be grounded', () => {
+    // It is grounded by staying within s.r+130 of her ("get close to ground it"); an orbit that keeps its distance from you
+    // would make it ungroundable, so while it is up she circles inside that.
+    const r = fight(['Firey'], { story: true }, `
+      one._atkTimer = 1e9; you.controller = 'still';
+      you.x = WW*0.5; you.y = groundY() - 24; you.vx = 0; you.vy = 0;
+      one.x = you.x + 300; one.y = groundY() - 300; one._orbitA = null;
+      for (var w=0; w<120; w++) updateOne(one, you);
+      ONE_MOVES.ungrounded(one);
+      var at = -1; for (var i=0; i<400 && at < 0; i++){ updateOne(one, you); if (one._grounded) at = i; }
+      return { at: at, need: ONE_GROUND_T };`);
+    expect(r.at, 'grounded by standing your ground').toBeGreaterThan(0);
+  });
+
+  it('teleports beside you from very far off, never mid wind-up', () => {
     const r = fight(['Firey'], { story: true }, `
       one._atkTimer = 1e9; you.controller = 'still';
       one.x = WW*0.5; one.y = groundY() - 150; one.vx = 0;
       you.x = one.x - 700; you.y = groundY() - 24;
-      var x0 = one.x; for (var i=0;i<30;i++) updateOne(one, you);
-      var chase = { moved: x0 - one.x, vx: one.vx };
-      one.x = you.x + 60; one.vx = -2; for (var j=0;j<20;j++) updateOne(one, you);
-      var close = Math.abs(one.vx);
       one._telKind = 'ring'; one._tel = 100; one._teleCd = 0; one._farT = 0; one.x = WW*0.5; you.x = one.x - 1500;
       for (var k=0;k<40;k++) updateOne(one, you);
       var busy = Math.abs(one.x - you.x);
-      one._tel = 0; one._telKind = null; one._farT = 0; one.x = WW*0.5; you.x = one.x - 1500; one.vx = 0;
+      one._tel = 0; one._telKind = null; one._farT = 0; one.x = WW*0.5; you.x = one.x - 1500; one.vx = 0; one.vy = 0;
       var frames = 0; while (Math.abs(one.x - you.x) > 400 && frames < 60){ updateOne(one, you); frames++; }
-      return { chase: chase, maxvx: MAXVX, close: close, busy: busy, frames: frames, gap: Math.abs(one.x - you.x), cd: one._teleCd };`);
-    expect(r.chase.moved, 'she closed in').toBeGreaterThan(150);
-    expect(Math.abs(r.chase.vx), 'faster than a fighter can run').toBeGreaterThan(r.maxvx);
-    expect(r.close, 'no kiting: you can walk into her').toBeLessThan(1);
+      return { busy: busy, frames: frames, gap: Math.abs(one.x - you.x), cd: one._teleCd };`);
     expect(r.busy, 'never mid wind-up').toBeGreaterThan(1000);
     expect(r.frames, 'half a second of being very far').toBe(30);
     expect(r.gap).toBeCloseTo(300, 0);
@@ -544,7 +798,56 @@ describe("Lightning's Chain Bolt hits bosses everywhere", () => {
       one.x = you.x + 200; one.y = you.y; you.face = 1; you.spCd = 0; var hp0 = one.hp;
       doSpecial(you);
       return hp0 - one.hp;`);
-    expect(r).toBe(8);
+    // its 8, doubled: "lightnings damage should be higher, but only in the One fight" -- "Double" (see below)
+    expect(r).toBe(16);
+  });
+});
+
+// "lightnings damage should be higher, but only in the One fight" -- and asked how much, "Double". On One and on her ghost,
+// on every path a hit reaches them by, and nowhere else.
+describe("Lightning hits twice as hard in One's fight, and only there", () => {
+  it("doubles every Lightning hit on One -- melee, shots, dashes -- and on her ghost; nobody else's", () => {
+    const r = fight(['Lightning', 'Firey'], {}, `
+      one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
+      var F = fighters[1], m = one._dmgTakenMult, out = { m: m };
+      [you, F].forEach(function(f){ f.controller = 'still'; });
+      var took = function(fn){ var h = one.hp; fn(); return (h - one.hp) / m; };
+      out.meleeL = took(function(){ damageSummons(you, one.x, one.y, 10, 20); });
+      out.meleeF = took(function(){ damageSummons(F, one.x, one.y, 10, 20); });
+      out.shotL = took(function(){ projectiles = [{ owner:you.idx, ownerObj:you, x:one.x, y:one.y, vx:0, vy:0, dmg:10, kb:5, r:10, life:10 }]; step(); });
+      out.shotF = took(function(){ projectiles = [{ owner:F.idx, ownerObj:F, x:one.x, y:one.y, vx:0, vy:0, dmg:10, kb:5, r:10, life:10 }]; step(); });
+      projectiles = [];
+      out.dashL = took(function(){ you._dashing = 5; you._dashDmg = 12; you._dashSummonHits = null; you.x = one.x - 10; you.y = one.y; step(); you._dashing = 0; });
+      you.x = one.x - 600; you.y = groundY() - 60; you.vx = 0; you.vy = 0;
+      ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID); projectiles = [];
+      var g = one._ghost; g.controller = 'still';
+      var hp0 = g._ghostHp; g.invuln = 0; applyHit(g, 10, 1, -1, you); out.ghostL = (hp0 - g._ghostHp) / m;
+      var hp1 = g._ghostHp; g.invuln = 0; applyHit(g, 10, 1, -1, F); out.ghostF = (hp1 - g._ghostHp) / m;
+      return out;`);
+    expect(r.meleeL, 'a Lightning hit counts twice').toBeCloseTo(40, 6);
+    expect(r.meleeF, "Firey's the same as ever").toBeCloseTo(20, 6);
+    expect(r.shotL).toBeCloseTo(20, 6);
+    expect(r.shotF).toBeCloseTo(10, 6);
+    expect(r.dashL).toBeCloseTo(24, 6);
+    expect(r.ghostL, 'and on her ghost').toBeCloseTo(20, 6);
+    expect(r.ghostF).toBeCloseTo(10, 6);
+  });
+
+  it('outside her fight Lightning hits exactly as she did: fighters, and every other boss', () => {
+    const r = W.eval(`(function(){
+      go('title'); SETTINGS.mode='boss'; running=true;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var L = makeFighter(ROSTER.find(function(x){ return x.name==='Lightning'; }), 400, groundY()-24, 0);
+      var F = makeFighter(ROSTER.find(function(x){ return x.name==='Firey'; }), 460, groundY()-24, 1);
+      L.team=0; F.team=1; [L,F].forEach(function(f){ f.controller='still'; f.invuln=0; f.pct=0; }); fighters=[L,F];
+      applyHit(F, 10, 1, -1, L); var fighter = F.pct;
+      var four = { type:'boss', name:'Four', attack:'four', team:-1, x:600, y:groundY()-95, r:95, hp:340, maxHp:340 };
+      summons=[four]; damageSummons(L, four.x, four.y, 10, 20); var boss = 340 - four.hp;
+      running=false; summons=[]; fighters=[]; SETTINGS.mode='ffa';
+      return { fighter: fighter, boss: boss, mult: oneLightningMult(L), none: oneLightningMult(F) }; })()`);
+    expect(r.fighter, 'a fighter takes the 10').toBeCloseTo(10, 6);
+    expect(r.boss, 'Four takes the 20').toBe(20);
+    expect([r.mult, r.none], 'the double is read only by One and her ghost').toEqual([2, 1]);
   });
 });
 

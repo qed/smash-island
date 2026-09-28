@@ -14,6 +14,13 @@ import { mulberry32 } from './helpers/prng.js';
 // fight on fixed dice. It has to win some of them, and lose some: she is the secret boss, not a formality. And the two
 // numbers the review asked to be tracked: how much of the fight she cannot be hurt (her ghost, Power Ungrounded), and the
 // damage a minute a player gets through.
+//
+// THE BOT IS NOT THE BAR FOR HER DIFFICULTY. The owner then made her harder on purpose -- she circles and swoops, Zap to Dust
+// and Out of Orbit come with copies, Eye Lasers fire twice, every attack but the ghost fighter is harder "(not more damage
+// tho)" -- and on tuning her to what a bot can beat: "dont tune, cuz thats an agent, not a player." With
+// all of that in, the bot still wins some (its runs are logged below). If a later change the owner asks for stops it
+// winning, it is the bot's assertion that gives way -- to the second test, which pins that she stays beatable in principle
+// -- never her difficulty.
 
 const BOT = readFileSync('test/helpers/one-bot.page.js', 'utf8');
 const SEEDS = [3, 5, 7, 9, 11, 13, 15, 17];
@@ -59,4 +66,62 @@ describe('One can be beaten', () => {
     expect(mean('ung'), 'Power Ungrounded for a small part of it').toBeLessThanOrEqual(0.15);
     expect(mean('perMin'), 'damage a minute').toBeGreaterThanOrEqual(400);
   }, 900000);   // about 75 s alone; under a loaded full-suite run it has taken nearly 10 minutes
+
+  // BEATABLE IN PRINCIPLE, whatever a bot manages: with no ghost up every damage path reaches her, the ghost can be killed,
+  // her phases run all the way down to 0 HP and she shatters, and a player's hits -- a jab when she swoops in, a Chain Bolt
+  // out on her orbit -- land on her in the real fight.
+  it('stays beatable in principle: every hit reaches her with no ghost up, the ghost dies, her phases run to 0, and hits land', () => {
+    W.Math.random = mulberry32(21);
+    const r = W.eval(`(function(){
+      SETTINGS.itemRate = 0; LOCAL_PLAYERS = 1;
+      startOneFight(['Lightning'], { story:true, onEnd:function(){ return true; } });
+      var one = summons.find(function(s){ return s._oneFight; }), L = fighters[0], out = {};
+      one._atkTimer = 1e9; L.controller = 'still';
+      for (var w=0; w<10; w++) step();
+      var took = function(fn){ var h = one.hp; fn(); return h - one.hp; };
+      one.x = L.x + 200; one.y = L.y;
+      out.melee = took(function(){ damageSummons(L, one.x, one.y, 10, 10); });
+      out.shot = took(function(){ projectiles = [{ owner:L.idx, ownerObj:L, x:one.x, y:one.y, vx:0, vy:0, dmg:5, kb:5, r:10, life:10 }]; step(); });
+      projectiles = [];
+      out.dash = took(function(){ L._dashing = 5; L._dashDmg = 6; L._dashSummonHits = null; var x = L.x, y = L.y; L.x = one.x - 10; L.y = one.y; step(); L._dashing = 0; L.x = x; L.y = y; });
+      L.face = Math.sign(one.x - L.x) || 1; L.spCd = 0;
+      out.chain = took(function(){ doSpecial(L); });
+      // the ghost: its 100 HP can be spent, and then she can be hurt again
+      ONE_MOVES.ghost(one, L, ++BOSS_ATK_ID); projectiles = [];
+      var g = one._ghost, shielded = took(function(){ damageSummons(L, one.x, one.y, 10, 10); }), hits = 0;
+      while (!g.dead && hits < 20){ g.invuln = 0; applyHit(g, 10, 1, -1, L); hits++; }
+      out.ghost = { shielded: shielded, dead: g.dead, hits: hits, after: took(function(){ damageSummons(L, one.x, one.y, 10, 10); }) };
+      // the phases: hit her all the way down
+      var marks = [];
+      for (var i=0; i<400 && one.hp > 0; i++){ oneTakeDamage(one, 10, L); updateOne(one, L); if (marks[marks.length-1] !== one._marks) marks.push(one._marks); }
+      var frames = 0; while (running && frames < 200){ step(); frames++; }
+      out.phases = { marks: marks, won: ONEFIGHT.won };
+      return out; })()`);
+    expect(r.melee, 'a jab').toBeGreaterThan(0);
+    expect(r.shot, 'a shot').toBeGreaterThan(0);
+    expect(r.dash, 'a dash').toBeGreaterThan(0);
+    expect(r.chain, 'the Chain Bolt').toBeGreaterThan(0);
+    expect(r.ghost.shielded, 'nothing while the ghost stands').toBe(0);
+    expect(r.ghost.dead, 'the ghost can be killed').toBe(true);
+    expect(r.ghost.after, 'and then she can be hurt again').toBeGreaterThan(0);
+    expect(r.phases.marks, 'every phase, down to 0 HP').toEqual([0, 1, 2, 3]);
+    expect(r.phases.won, 'and she shatters').toBe(true);
+
+    // ...and in the real fight, circling and swooping, a player's hits land: the scripted Lightning's jabs and smashes (when
+    // she swoops in) and its Chain Bolts (from her orbit) over the first minute and a half.
+    W.Math.random = mulberry32(3);
+    const live = W.eval(`(function(){
+      SETTINGS.itemRate = 0; LOCAL_PLAYERS = 1;
+      startOneFight(['Lightning'], { story:true, onEnd:function(){ return true; } });
+      var one = summons.find(function(s){ return s._oneFight; }), L = fighters[0];
+      L.controller = 'remote'; NET.inputs = NET.inputs || {};
+      var got = { melee:0, bolt:0 }, ds = damageSummons, cb = chainBoltBoss;
+      damageSummons = function(f){ var h = one.hp, r = ds.apply(this, arguments); if (f === L && one.hp < h) got.melee += h - one.hp; return r; };
+      chainBoltBoss = function(s){ var h = one.hp, r = cb.apply(this, arguments); if (s === one && one.hp < h) got.bolt += h - one.hp; return r; };
+      try { for (var i = 0; i < 60*90 && running; i++){ NET.inputs[0] = window.__oneBot(L, one); step(); } }
+      finally { damageSummons = ds; chainBoltBoss = cb; running = false; }
+      return got; })()`);
+    expect(live.melee, 'close-in hits land when she swoops').toBeGreaterThan(0);
+    expect(live.bolt, 'and Chain Bolts reach her on her orbit').toBeGreaterThan(0);
+  }, 300000);
 });
