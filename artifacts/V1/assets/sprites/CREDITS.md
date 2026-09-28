@@ -326,6 +326,15 @@ downscaled to 200px tall, alpha verified, facing measured.
 <!-- @b3:g1 Box, Trophy, Goo, Lifering -->
 
 <!-- @b3:g2 Bonesaw, Spikey, Candle, Cammy -->
+| Bonesaw | `bonesaw.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/02/Bonesaw.png/revision/latest?cb=20260801002710 |
+| Spikey | `spikey.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/70/SpikeyII4StickerSheet.png/revision/latest?cb=20250714194652 |
+| Spikey, bald after Can't Hold It In | `spikey-spikeless.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Spikey_without_the_spikes.png/revision/latest?cb=20260907153932 |
+| Candle | `candle.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/89/CandleII4Placeholder.png/revision/latest?cb=20260812150503 |
+| Candle, Inner-Flame (special, smash) | `candle-inner-flame.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/56/Candle_Flame.png/revision/latest?cb=20240129222317 |
+| Candle, flame punched out | `candle-flame-out.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/Candle_Weak.png/revision/latest?cb=20260426185548 |
+| Cammy | `cammy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a8/Cammy.png/revision/latest?cb=20260802161706 |
+| Cammy, pop-up flash (white-balanced by scripts/fix-cammy-flash.mjs) | `cammy-flash.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/Cammy_Flash.png/revision/latest?cb=20260419233749 |
+| Spikey's spike (attack art: the top spike cut from his body asset, `node scripts/fetch-attack-sprites.mjs <out> spike`) | `attacks/spike.png` — File:Spikey Body Front.png | https://static.wikia.nocookie.net/inanimateinsanity/images/5/54/Spikey_Body_Front.png/revision/latest?cb=20260801170935 |
 
 <!-- @b3:g3 Cheesy, Dough, Fan, Soap -->
 

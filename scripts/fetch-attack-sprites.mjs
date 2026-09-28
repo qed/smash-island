@@ -116,6 +116,10 @@ const PICKS = {
   // piano where it landed on Paper, against the pole. The piano is lifted out of it (key 'piano'); Paper, the pole and
   // the grass go. Same footing as the TPOT 7 strike: the owner named this piece of the show's art.
   piano:      { who: 'Paper',       kits: ['evilpaper'],  wiki: 'ii', file: 'Ep2 Piano.png',        note: 'the season-1 grand piano (Episode 2), lifted out of the frame', key: 'piano', region: [470, 240, 1010, 670], srcH: 700, h: 72 },
+  // Spikey (batch 3): no file of a lone spike exists. The owner's call (Q3, "Crop from their art"): one spike cut from his
+  // own body asset -- the top one, above where the ball begins, so none of the body comes with it -- and turned per
+  // direction in the game (ATTACK_SPRITES.spikeburst aims it, point first).
+  spike:      { who: 'Spikey',      kits: ['spikeburst'], wiki: 'ii', file: 'Spikey Body Front.png', note: 'one spike, cut from his body asset (the top one)', region: [389, 0, 618, 248], srcH: 400, h: 40 },
 };
 
 async function api(wiki, params) {
