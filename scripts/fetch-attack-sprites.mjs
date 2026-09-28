@@ -176,6 +176,12 @@ const PICKS = {
   ghostvacuum: { who: 'Poppy',     kits: ['vacuum'],     wiki: 'ii', file: 'S4E5 Poppy uses a vacuum to trap Gnife.png', note: 'the ghost-hunting vacuum (All Play and No Work), lifted out of the frame', key: 'vacuum', region: [694, 318, 786, 434], srcH: 477, h: 56 },
   capturepod:  { who: 'Poppy',     kits: ['vacuum'],     wiki: 'ii', file: 'S4E5 Poppy and Paper in ghost hunting gear.png', note: 'a capture pod from the vacuum (All Play and No Work), lifted out of the hand of Paper', key: 'pod', region: [426, 200, 506, 278], srcH: 477, h: 48 },
   immunitycookie: { who: 'Silver Spoon', kits: ['glowgold'], wiki: 'ii', file: 'Immunitycookie.png', note: 'the Immunity Cookie (III)', h: 40 },
+  // ---- batch 3, group 7 (Tapey, Tea Kettle, Teddy Bear) ----
+  // Tea Kettle: her hors d'oeuvres tray (Minor Items/Food), already a clean transparent file on the II wiki.
+  horstray:   { who: 'Tea Kettle',  kits: ['hors'],       wiki: 'ii', file: "Hors d'oeuvres.png",  note: "her hors d'oeuvres tray", srcH: 269 },
+  // Teddy Bear: the owner's Q1, "Cut from the frames". The only paintballs are the pink ones in her gun's hopper in the
+  // remaster frame (War De Guacamole, S1RE6); the pink paint is keyed out of the hopper window and masked round (key 'paintball').
+  paintball:  { who: 'Teddy Bear',  kits: ['paintball'],  wiki: 'ii', file: 'S1RE6 Teddy grabs a paintball gun.png', note: "a paintball: the pink paint in her gun's hopper (War De Guacamole remaster), cut from the frame", key: 'paintball', region: [472, 186, 528, 242], srcH: 477, h: 40 },
 };
 
 async function api(wiki, params) {
@@ -505,6 +511,19 @@ function keyVacuum(png) { keyLargest(png, (d, i) => (d[i] - d[i + 1] > 28 && d[i
 // 'pod': the capture pod in Paper's hand is a pale silver ball against a dark wall; his hand under it is black.
 function keyPod(png) { keyLargest(png, (d, i) => lum(d, i) > 72); }
 Object.assign(KEYS, { vacuum: keyVacuum, pod: keyPod });
+// 'paintball': Teddy's paintballs exist only as the pink paint inside her gun's hopper in an episode frame. Pink pixels
+// (red and blue over green) are the paint; a disc inscribed in their box is kept whole -- a paintball is round -- and
+// everything outside it (the hopper's grey frame, the sky, her paw) goes.
+function keyPaintball(png) {
+  const { width: w, height: h, data: d } = png;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4;
+    if (d[i] - d[i + 1] > 30 && d[i + 2] - d[i + 1] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.min(x1 - x0, y1 - y0) / 2;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, r = Math.hypot(x - cx, y - cy);
+    d[i + 3] = r <= R - 1 ? 255 : r <= R ? 128 : 0; }
+}
+const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano, paintball: keyPaintball };
 
 const outDir = process.argv[2];
 if (!outDir) { console.error('usage: node fetch-attack-sprites.mjs <outDir> [name ...]'); process.exit(1); }
