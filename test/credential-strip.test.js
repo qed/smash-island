@@ -126,8 +126,10 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     // Fighters reference their art through SPRITES; BOSSES reference theirs through
     // BOSS_SPRITE_SRC; what fighters THROW is in ATTACK_SPRITES; a pose a move swaps in (batch 3:
     // Box's flaps, Candle's Inner-Flame, Tissues' nap...) is a renderSprite on the fighter's FIGHTER_ANIM
-    // entry, directly or under `poses`. All four count as "used", or every boss render, thrown thing and
-    // pose would look like dead weight.
+    // entry, directly or under `poses`; and the pickups wear theirs through ITEM_ART (the owner: "make
+    // items look better", with the show's own art). All five count as "used", or every boss render, thrown
+    // thing, pose and item would look like dead weight -- and a stray file in items/ that ITEM_ART does not
+    // name still fails here.
     const referenced = new Set(
       w.eval(`Object.keys(SPRITES).map(function(k){ return SPRITES[k].src||''; })
               .concat(Object.keys(BOSS_SPRITE_SRC).map(function(k){ return BOSS_SPRITE_SRC[k]; }))
@@ -136,6 +138,7 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
                 var vals = Object.keys(e).map(function(p){ return e[p]; });
                 if(e.poses) vals = vals.concat(Object.keys(e.poses).map(function(p){ return e.poses[p]; }));
                 vals.forEach(function(v){ if(v && typeof v === 'object' && typeof v.src === 'string') a.push(v.src); }); return a; }, []))
+              .concat(Object.keys(ITEM_ART).map(function(k){ return ITEM_ART[k].src; }))
               .filter(Boolean)`)
         .map(src => `${PUBLISH_ROOT}/${src}`.replace(/\\/g, '/')));
     const orphans = published.map(f => f.replace(/\\/g, '/')).filter(f => !referenced.has(f));
@@ -194,16 +197,18 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     const block = src.slice(src.indexOf('const MUSIC_FILES'));
     const paths = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']*\.(?:mp3|ogg))'/g)]
       .map((m) => m[1]);
-    expect(paths.length).toBe(5);
+    expect(paths.length).toBe(6);   // six since One got her own bed ("actually, ones music should be joker.")
     for (const rel of paths) {
       const abs = join(PUBLISH_ROOT, rel);
       expect(PUBLISHED_FILES).toContain(abs.replace(/\\/g, '/'));
       // A 0-byte or HTML-error-page "download" is worse than a missing file: it plays as silence.
       const bytes = readFileSync(abs);
       expect(bytes.length).toBeGreaterThan(100_000);
-      // MP3 frame sync or an ID3 tag — proof this is audio, not a saved error page.
+      // MP3 frame sync or an ID3 tag, or an Ogg page header (One's bed is the owner's joker.ogg) — proof this is
+      // audio, not a saved error page.
       const isMp3 = bytes[0] === 0xff || bytes.slice(0, 3).toString('latin1') === 'ID3';
-      expect(isMp3, `${rel} does not start with MP3 data`).toBe(true);
+      const isOgg = bytes.slice(0, 4).toString('latin1') === 'OggS';
+      expect(isMp3 || isOgg, `${rel} does not start with MP3 or Ogg data`).toBe(true);
     }
   });
 

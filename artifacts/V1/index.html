@@ -15986,26 +15986,132 @@ function drawOffscreenArrows(){
   }
 }
 
-function drawItem(it){
-  ctx.save(); ctx.translate(it.x, it.y);
-  const bob = Math.sin(hazardT*0.1)*3;
-  ctx.translate(0, bob);
-  const ICON = {
-    heal:{c:"#6ff07a", s:"♥"}, marmalade:{c:"#f0a83a", s:"🍯"}, throw:{c:"#b07a4a", s:"▣"},
-    power:{c:"#ffd23f", s:"★"}, assist:{c:"#7ac0e8", s:"?"}, yoyle:{c:"#8aa0b0", s:"●"}, boss:{c:"#c03a3a", s:"!"}
-  };
-  const ic = ICON[it.kind]||ICON.power;
-  // glow
-  ctx.globalAlpha=0.35; ctx.fillStyle=ic.c; ctx.beginPath(); ctx.arc(0,0,it.r+7,0,7); ctx.fill();
-  ctx.globalAlpha=1;
-  // capsule body
-  ctx.fillStyle="#fff"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2.5;
-  ctx.beginPath(); ctx.arc(0,0,it.r,0,7); ctx.fill(); ctx.stroke();
-  ctx.fillStyle=ic.c; ctx.beginPath(); ctx.arc(0,0,it.r*0.6,0,7); ctx.fill();
-  ctx.fillStyle="#1c1c1c"; ctx.font="700 14px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.fillText(ic.s, 0, 1);
-  ctx.textAlign="left"; ctx.textBaseline="alphabetic";
-  ctx.restore();
+// ITEM ART. The owner: "make items look better." Asked how, they chose "Show art + polish": each pickup wears the
+// show's own art where it exists, with a soft glow in its colour and a gentle bob, and a clean drawn icon where no art
+// exists. scripts/fetch-item-sprites.mjs fetches the art (scripts/item-sprite-manifest.json is its record; CREDITS.md,
+// "Item art", credits every file with its source). Like the attack art it loads lazily, and the drawn icon stands in
+// until it has -- so a headless boot draws the icons, and a slow or failed load never leaves an item invisible.
+//   heal    a heart (the BFDI 4 asset)    throw   a wooden crate (BFDI 9)    power   a Win Token
+//   assist  a gold trophy                 yoyle   a Yoyleberry
+// marmalade and boss are drawn only: no marmalade exists on either wiki (the only jam there is Yoyleberry Jam, purple),
+// and the boss capsule is not a thing from the show but a summons.
+// The old capsule wrote a text glyph on every item (a heart, a honey-pot emoji, a star, "?", "!"). The owner asked to
+// "remove item popups", and an item now says nothing at all: every icon below is drawn with paths, never with text.
+// This is drawing only. What a pickup DOES is pickUpItem's, and it is untouched.
+//   h   the drawn height of the art, in item radii (an item is r=16)
+const ITEM_ART = {
+  heal:   { src:'assets/sprites/items/heal.png',   h:1.9 },   // 72x64: a little wider than tall
+  throw:  { src:'assets/sprites/items/throw.png',  h:2.0 },
+  power:  { src:'assets/sprites/items/power.png',  h:1.9 },
+  assist: { src:'assets/sprites/items/assist.png', h:2.1 },   // the cup's handles make it wide; the stem wants the height
+  yoyle:  { src:'assets/sprites/items/yoyle.png',  h:2.2 },   // tall and narrow: the leaves on top
+};
+// A rounded rectangle by arcTo (ctx.roundRect is newer than some of the browsers this runs in).
+function itemRoundRect(c, x, y, w, h, rad){
+  c.beginPath(); c.moveTo(x+rad, y); c.arcTo(x+w, y, x+w, y+h, rad); c.arcTo(x+w, y+h, x, y+h, rad);
+  c.arcTo(x, y+h, x, y, rad); c.arcTo(x, y, x+w, y, rad); c.closePath();
+}
+// Every kind has a drawn icon, in the game's own style (flat colour, a dark ink outline, one shine), and a colour: the
+// colour of its art, which is the colour of its glow. The caller sets the ink (strokeStyle, lineWidth) and the origin.
+const ITEM_ICON = {
+  // a red heart
+  heal:      { c:"#ff4d5e", draw(c, r){
+    c.beginPath(); c.moveTo(0, r*0.85);
+    c.bezierCurveTo(-r*1.25, r*0.05, -r*0.85, -r*0.95, 0, -r*0.4);
+    c.bezierCurveTo(r*0.85, -r*0.95, r*1.25, r*0.05, 0, r*0.85); c.closePath();
+    c.fillStyle="#f22a3a"; c.fill(); c.stroke();
+    c.fillStyle="rgba(255,255,255,0.6)"; c.beginPath(); c.ellipse(-r*0.42, -r*0.32, r*0.2, r*0.11, -0.6, 0, 7); c.fill(); } },
+  // a glass jar of orange marmalade: gold lid, paper label, shreds of peel
+  marmalade: { c:"#f0a83a", draw(c, r){
+    itemRoundRect(c, -r*0.7, -r*0.45, r*1.4, r*1.3, r*0.28); c.fillStyle="#f08a1c"; c.fill(); c.stroke();
+    c.save(); c.strokeStyle="#c05a08"; c.lineWidth=Math.max(1, r*0.08); c.beginPath();
+    c.moveTo(-r*0.45, -r*0.25); c.lineTo(-r*0.25, -r*0.15); c.moveTo(r*0.2, -r*0.3); c.lineTo(r*0.42, -r*0.2);
+    c.moveTo(-r*0.4, r*0.62); c.lineTo(-r*0.2, r*0.7); c.moveTo(r*0.18, r*0.66); c.lineTo(r*0.4, r*0.58); c.stroke(); c.restore();
+    c.fillStyle="#fff4d8"; c.fillRect(-r*0.5, -r*0.02, r*1.0, r*0.44);
+    c.save(); c.lineWidth=Math.max(1, r*0.07); c.strokeRect(-r*0.5, -r*0.02, r*1.0, r*0.44); c.restore();
+    itemRoundRect(c, -r*0.8, -r*0.82, r*1.6, r*0.4, r*0.1); c.fillStyle="#d8a42a"; c.fill(); c.stroke();
+    c.fillStyle="rgba(255,255,255,0.45)"; c.fillRect(-r*0.58, -r*0.3, r*0.14, r*0.9); } },
+  // a wooden crate: plank frame and a brace
+  throw:     { c:"#d89a5a", draw(c, r){
+    c.fillStyle="#b9824e"; c.fillRect(-r*0.8, -r*0.8, r*1.6, r*1.6); c.strokeRect(-r*0.8, -r*0.8, r*1.6, r*1.6);
+    c.save(); c.strokeStyle="#7a4f2a"; c.lineWidth=Math.max(1, r*0.09);
+    c.strokeRect(-r*0.58, -r*0.58, r*1.16, r*1.16);
+    c.beginPath(); c.moveTo(-r*0.58, r*0.58); c.lineTo(r*0.58, -r*0.58); c.stroke(); c.restore();
+    c.fillStyle="rgba(255,255,255,0.25)"; c.fillRect(-r*0.74, -r*0.74, r*1.48, r*0.12); } },
+  // a Win Token: a green coin with a raised rim
+  power:     { c:"#4fd04f", draw(c, r){
+    c.fillStyle="#2fae3a"; c.beginPath(); c.arc(0, 0, r*0.85, 0, 7); c.fill(); c.stroke();
+    c.save(); c.strokeStyle="#1f7a28"; c.lineWidth=Math.max(1, r*0.1); c.beginPath(); c.arc(0, 0, r*0.6, 0, 7); c.stroke(); c.restore();
+    c.fillStyle="rgba(255,255,255,0.45)"; c.beginPath(); c.ellipse(-r*0.3, -r*0.38, r*0.26, r*0.12, -0.5, 0, 7); c.fill(); } },
+  // a gold trophy: cup, handles, stem, base
+  assist:    { c:"#ffd23f", draw(c, r){
+    c.beginPath(); c.arc(-r*0.58, -r*0.42, r*0.28, Math.PI*0.5, Math.PI*1.5); c.stroke();
+    c.beginPath(); c.arc(r*0.58, -r*0.42, r*0.28, -Math.PI*0.5, Math.PI*0.5); c.stroke();
+    c.fillStyle="#f2c230";
+    c.beginPath(); c.moveTo(-r*0.62, -r*0.78); c.lineTo(r*0.62, -r*0.78);
+    c.quadraticCurveTo(r*0.62, r*0.12, 0, r*0.18); c.quadraticCurveTo(-r*0.62, r*0.12, -r*0.62, -r*0.78); c.closePath(); c.fill(); c.stroke();
+    c.fillRect(-r*0.1, r*0.18, r*0.2, r*0.34); c.strokeRect(-r*0.1, r*0.18, r*0.2, r*0.34);
+    c.fillRect(-r*0.46, r*0.52, r*0.92, r*0.28); c.strokeRect(-r*0.46, r*0.52, r*0.92, r*0.28);
+    c.fillStyle="rgba(255,255,255,0.5)"; c.fillRect(-r*0.4, -r*0.66, r*0.13, r*0.5); } },
+  // a Yoyleberry: a purple berry under a crown of leaves
+  yoyle:     { c:"#a86af0", draw(c, r){
+    c.fillStyle="#8a3ad0"; c.beginPath(); c.arc(0, r*0.18, r*0.72, 0, 7); c.fill(); c.stroke();
+    c.fillStyle="#5a1f9a"; c.beginPath(); c.moveTo(-r*0.48, -r*0.36); c.lineTo(-r*0.38, -r*0.78); c.lineTo(-r*0.14, -r*0.5);
+    c.lineTo(0, -r*0.95); c.lineTo(r*0.14, -r*0.5); c.lineTo(r*0.38, -r*0.78); c.lineTo(r*0.48, -r*0.36); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle="rgba(255,255,255,0.45)"; c.beginPath(); c.ellipse(-r*0.3, r*0.0, r*0.16, r*0.1, -0.6, 0, 7); c.fill(); } },
+  // the boss capsule: a red orb with a gold crown on it
+  boss:      { c:"#e0403a", draw(c, r){
+    c.fillStyle="#c03a3a"; c.beginPath(); c.arc(0, 0, r*0.85, 0, 7); c.fill(); c.stroke();
+    c.fillStyle="#ffd23f"; c.beginPath(); c.moveTo(-r*0.5, r*0.3); c.lineTo(-r*0.5, -r*0.25); c.lineTo(-r*0.25, r*0.02);
+    c.lineTo(0, -r*0.42); c.lineTo(r*0.25, r*0.02); c.lineTo(r*0.5, -r*0.25); c.lineTo(r*0.5, r*0.3); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle="rgba(255,255,255,0.4)"; c.beginPath(); c.ellipse(-r*0.4, -r*0.45, r*0.18, r*0.1, -0.6, 0, 7); c.fill(); } },
+};
+const ITEM_IMG = {};
+// The art for an item kind, or null until it has loaded (or where there is none). Lazy, like attackImage: the first
+// item of a kind asks for it, so a boot pays nothing for kinds that never drop.
+function itemImage(kind){
+  const e = ITEM_ART[kind];
+  if(!e) return null;
+  let im = ITEM_IMG[kind];
+  if(im === undefined){
+    im = null;
+    try{ if(typeof Image === 'function'){ im = new Image(); im.src = e.src; } }catch(err){ im = null; }
+    ITEM_IMG[kind] = im;
+  }
+  return (im && im.complete && im.naturalWidth > 0) ? im : null;
+}
+// Draw one loose item, on any context (the test hands in a recording one).
+function drawItem(it, c){
+  c = c || ctx;
+  const ic = ITEM_ICON[it.kind] || ITEM_ICON.power;
+  const r = it.r || 16;                  // the boss capsule spawns with r:0; it is drawn at a pickup's size all the same
+  const ph = (it.x||0)*0.037;           // each item bobs on its own beat, so a row of them does not bounce in step
+  const bob = Math.sin(hazardT*0.08 + ph)*3;
+  c.save(); c.translate(it.x, it.y);
+  // A soft contact shadow once it has landed: it anchors the item on a light stage, and is faint on a dark one.
+  if(it._land !== false){
+    c.globalAlpha = 0.22; c.fillStyle = "#000";
+    c.beginPath(); c.ellipse(0, r*0.95, r*(0.75 - bob*0.03), r*0.2, 0, 0, 7); c.fill();
+  }
+  c.translate(0, bob - 2);
+  // The soft glow in the item's colour: three faint discs, breathing slowly. It carries the item on a dark stage.
+  const pulse = 0.85 + 0.15*Math.sin(hazardT*0.12 + ph);
+  c.fillStyle = ic.c;
+  c.globalAlpha = 0.12*pulse; c.beginPath(); c.arc(0, 0, r*1.6, 0, 7); c.fill();
+  c.globalAlpha = 0.18*pulse; c.beginPath(); c.arc(0, 0, r*1.28, 0, 7); c.fill();
+  c.globalAlpha = 0.26*pulse; c.beginPath(); c.arc(0, 0, r*0.98, 0, 7); c.fill();
+  c.globalAlpha = 1;
+  const im = itemImage(it.kind);
+  if(im){
+    const h = r*ITEM_ART[it.kind].h, w = h*(im.naturalWidth/im.naturalHeight);
+    // a dark rim that follows the art's own outline, so a gold trophy or a pale crate still reads on a bright sky
+    c.shadowColor = "rgba(0,0,0,0.45)"; c.shadowBlur = 4;
+    c.drawImage(im, -w/2, -h/2, w, h);
+  } else {
+    c.strokeStyle = "#1c1c1c"; c.lineWidth = Math.max(1.5, r*0.14); c.lineJoin = "round";
+    ic.draw(c, r);
+  }
+  c.restore();
 }
 // Boss arena backdrops: themed sky palette + simple parallax decor per arena key.
 const BOSS_ARENA_SKY = {
