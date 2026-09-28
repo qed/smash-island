@@ -324,6 +324,17 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Test Tube | `test-tube.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Blue_Ray_Test_Tube_S4.png |
 | Bot (Test Tube's robot, her summon) | `bot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/da/Bot2024PoseAlt.png |
 <!-- @b3:g1 Box, Trophy, Goo, Lifering -->
+| Box | `box.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9e/Box_Idle_Pose_%282024%29.png/revision/latest?cb=20260309074606 |
+| Box, flaps open (Everything Packed; Box with Open Flaps 1 (S4E6).png) | `box-open-flaps.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f6/Box_with_Open_Flaps_1_%28S4E6%29.png/revision/latest?cb=20260815023812 |
+| Box's lifeless body (Lifeless Body; Box2024Pose.png) | `box-lifeless.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b3/Box2024Pose.png/revision/latest?cb=20250628193515 |
+| Trophy | `trophy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/91/Trophy2024Pose.png/revision/latest?cb=20250628193516 |
+| Goo | `goo.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/aa/Goo2024Pose.png/revision/latest?cb=20250628202009 |
+| Goo, giant (Puffed Up; GiantGoo.png) | `goo-giant.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c0/GiantGoo.png/revision/latest?cb=20260111024514 |
+| Goo, a puddle (Meltdown; Puddle Goo (S3E5).png) | `goo-puddle.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f9/Puddle_Goo_%28S3E5%29.png/revision/latest?cb=20260111024728 |
+| Lifering | `lifering.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/3a/Lifering2024Pose.png/revision/latest?cb=20250628202009 |
+| Lifering, diving (We've Got a Sinker!; Liferingdive.png) | `lifering-dive.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/bf/Liferingdive.png/revision/latest?cb=20241208154131 |
+| Lifering, kneeling (First Aid; Liferingpulselonely.png) | `lifering-first-aid.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c2/Liferingpulselonely.png/revision/latest?cb=20241208154241 |
+| Lifering's shark, Called in a Favor (shark.png): the Seas the Day shark, File:Shark Shorts.png | `attacks/shark.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/Shark_Shorts.png/revision/latest?cb=20260219040927 |
 
 <!-- @b3:g2 Bonesaw, Spikey, Candle, Cammy -->
 

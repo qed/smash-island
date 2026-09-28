@@ -116,6 +116,10 @@ const PICKS = {
   // piano where it landed on Paper, against the pole. The piano is lifted out of it (key 'piano'); Paper, the pole and
   // the grass go. Same footing as the TPOT 7 strike: the owner named this piece of the show's art.
   piano:      { who: 'Paper',       kits: ['evilpaper'],  wiki: 'ii', file: 'Ep2 Piano.png',        note: 'the season-1 grand piano (Episode 2), lifted out of the frame', key: 'piano', region: [470, 240, 1010, 670], srcH: 700, h: 72 },
+  // --- Inanimate Insanity DLC, batch 3 (g1: Box, Trophy, Goo, Lifering). Box packs other people's shots and Goo swallows
+  // people, so neither throws a thing of their own; Trophy's camera and Lifering's whistle have no clean file and are drawn
+  // (PROJ_SHAPE, the owner's Q2). The shark is the show's: "Called in a Favor" (Seas the Day), Minor Characters' Shark.
+  shark:      { who: 'Lifering',    kits: ['lifeguard'],  wiki: 'ii', file: 'Shark Shorts.png',     note: 'the shark he called in a favor from (Seas the Day)' },
 };
 
 async function api(wiki, params) {
