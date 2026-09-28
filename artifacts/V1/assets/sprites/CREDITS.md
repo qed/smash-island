@@ -330,6 +330,19 @@ downscaled to 200px tall, alpha verified, facing measured.
 <!-- @b3:g3 Cheesy, Dough, Fan, Soap -->
 
 <!-- @b3:g4 Tissues, Yin-Yang, Starfruit -->
+| Tissues | `tissues.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0e/Tissues2024Pose.png/revision/latest?cb=20250628193516 |
+| Tissues, asleep (his Nap, TissuesSittingIdle.png) | `tissues-nap.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4c/TissuesSittingIdle.png/revision/latest?cb=20130406034752 |
+| Yin-Yang | `yin-yang.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/YinYang2024Pose.png/revision/latest?cb=20250628193516 |
+| Yin-Yang: Yang alone, while Yin is thrown (Yang III.png) | `yin-yang-yang.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/16/Yang_III.png/revision/latest?cb=20260420040832 |
+| Yin-Yang: Yang in full control, Mindful Positioning (Yangyang.png) | `yin-yang-mindful.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/3b/Yangyang.png/revision/latest?cb=20260420040803 |
+| Starfruit | `starfruit.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6c/Starfruit2024.png/revision/latest?cb=20250228032703 |
+| Tissues: his snot jet, cut out of his sneezing pose (Q3: crop from their art) -- attack art (snot.png), File:Tissues Sneezing.png | `attacks/snot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e9/Tissues_Sneezing.png/revision/latest?cb=20230204200710 |
+| Yin-Yang: Yin, the half Yang throws (Tri Your Best) -- attack art (yin.png), File:Yin III.png | `attacks/yin.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/ab/Yin_III.png/revision/latest?cb=20260420040819 |
+| Starfruit: Pineapple of Spoiled Lemon, jumping in for the chorus -- attack art (slpineapple.png), File:SL Pineapple Pose.png | `attacks/slpineapple.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a4/SL_Pineapple_Pose.png/revision/latest?cb=20160620194207 |
+| Starfruit: Lemon of Spoiled Lemon, jumping in for the chorus -- attack art (sllemon.png), File:SL Lemon Pose.png | `attacks/sllemon.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/92/SL_Lemon_Pose.png/revision/latest?cb=20160620194452 |
+| Starfruit: Tomato of Spoiled Lemon, jumping in for the chorus -- attack art (sltomato.png), File:SL Tomato Pose.png | `attacks/sltomato.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/95/SL_Tomato_Pose.png/revision/latest?cb=20160620193248 |
+| Starfruit: Guava of Spoiled Lemon, jumping in for the chorus -- attack art (slguava.png), File:SL Guava Pose.png | `attacks/slguava.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/dc/SL_Guava_Pose.png/revision/latest?cb=20160620193105 |
+| Starfruit: Mangosteen of Spoiled Lemon, jumping in for the chorus -- attack art (slmangosteen.png), File:SL Mangosteen Pose.png | `attacks/slmangosteen.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f8/SL_Mangosteen_Pose.png/revision/latest?cb=20160620193929 |
 
 <!-- @b3:g5 Blueberry, Cherries, Clover, Jack -->
 

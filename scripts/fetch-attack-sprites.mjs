@@ -116,6 +116,19 @@ const PICKS = {
   // piano where it landed on Paper, against the pole. The piano is lifted out of it (key 'piano'); Paper, the pole and
   // the grass go. Same footing as the TPOT 7 strike: the owner named this piece of the show's art.
   piano:      { who: 'Paper',       kits: ['evilpaper'],  wiki: 'ii', file: 'Ep2 Piano.png',        note: 'the season-1 grand piano (Episode 2), lifted out of the frame', key: 'piano', region: [470, 240, 1010, 670], srcH: 700, h: 72 },
+
+  // ---- batch 3, group 4: Tissues, Yin-Yang, Starfruit ("add the last set of dlc fighters")
+  // Tissues' snot exists only inside his sneezing pose; the owner's call (Q3) was "Crop from their art": the region is
+  // the green jet from its tip to just short of his box, so none of the teal body or its outline comes with it.
+  snot:        { who: 'Tissues',   kits: ['condishawn'], wiki: 'ii', file: 'Tissues Sneezing.png',   note: 'his snot jet, cut out of his sneezing pose (Q3: crop from their art)', region: [18, 250, 184, 346], srcH: 408, h: 60 },
+  // Yin-Yang: Yang picks Yin up and throws him (Tri Your Best) -- the thrown thing IS Yin, his own III half render.
+  yin:         { who: 'Yin-Yang',  kits: ['yinyang'],    wiki: 'ii', file: 'Yin III.png',            note: 'Yin, the half Yang throws (Tri Your Best)' },
+  // Starfruit's smash: the reunited Spoiled Lemon jump in for the chorus (Mazed and Confused), each on their own SL pose.
+  slpineapple: { who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Pineapple Pose.png',  note: 'Pineapple of Spoiled Lemon, jumping in for the chorus' },
+  sllemon:     { who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Lemon Pose.png',      note: 'Lemon of Spoiled Lemon, jumping in for the chorus' },
+  sltomato:    { who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Tomato Pose.png',     note: 'Tomato of Spoiled Lemon, jumping in for the chorus' },
+  slguava:     { who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Guava Pose.png',      note: 'Guava of Spoiled Lemon, jumping in for the chorus' },
+  slmangosteen:{ who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Mangosteen Pose.png', note: 'Mangosteen of Spoiled Lemon, jumping in for the chorus' },
 };
 
 async function api(wiki, params) {
