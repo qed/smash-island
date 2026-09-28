@@ -7,6 +7,10 @@ import { bootMonolith } from './helpers/smash-golden.js';
 // and each damaging act lands through the boss's own damage path (assistHitSummon -> damageSummons, as Bot's punch does),
 // for the number it deals a fighter; the acts whose cadence against fighters is the knockback land once an
 // ASSIST_BOSS_GAP per target. Effects that make no sense on a boss are skipped, and listed at the bottom.
+//
+// The numbers here are the trophies' x1.5 ("assist trophies should be stronger" -- "Hit harder and stay longer";
+// ASSIST_TROPHY_DMG, pinned old -> new in test/assists-stronger.test.js): 8-Ball 15 (was 10), Spongy 21 (14), Pie 12 (8),
+// Blender 4.5 (3), the cart 12+ (8+), the ball 9 (6), the staple 6 (4), a mine 27 (18), the chip 1.5 (1).
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
@@ -35,7 +39,7 @@ const RUN = (idx, act, dx, n) => `(function(){
 
 const MEPHONE4 = 6, FOUR = 11;
 // act -> [the number it deals a fighter, how far from the boss Firey stands when it is summoned]
-const HURTS = { rush: [10, 60], crush: [14, 60], bolt: [8, 150], vortex: [3, 60], cart: [8, 60], bounce: [6, 60], staple: [4, 120], mines: [18, 40], pull: [1, 60] };
+const HURTS = { rush: [15, 60], crush: [21, 60], bolt: [12, 150], vortex: [4.5, 60], cart: [12, 60], bounce: [9, 60], staple: [6, 120], mines: [27, 40], pull: [1.5, 60] };
 
 describe('assist trophies hurt the boss', () => {
   for (const [idx, who] of [[MEPHONE4, 'MePhone4'], [FOUR, 'Four']]) {
@@ -51,19 +55,20 @@ describe('assist trophies hurt the boss', () => {
     });
   }
 
-  it('lands the same number on a boss it deals a fighter: 8-Ball 10 a roll, Spongy 14 a slam, Stapy 4 a staple, a mine 18', () => {
+  it('lands the same number on a boss it deals a fighter: 8-Ball 15 a roll, Spongy 21 a slam, Stapy 6 a staple, a mine 27', () => {
     const r = {};
     for (const act of ['rush', 'crush', 'staple', 'mines']) {
       const o = W.eval(RUN(MEPHONE4, act, HURTS[act][1], 240));
       r[act] = o.hits.length ? +(o.dmg / o.hits.length).toFixed(3) : 0;
       if (act === 'mines') r.mineHits = o.hits.length;
     }
-    // each frame that took HP took exactly one hit's worth -- except a mine patch, where two can go off on one frame
-    expect(r.rush).toBe(10);
-    expect(r.crush).toBe(14);
-    expect(r.staple).toBe(4);
-    expect(W.eval('Math.round(12*TRAP_DMG_MULT)')).toBe(18);
-    expect(r.mines % 18, 'mines land the trap number a fighter takes').toBe(0);
+    // each frame that took HP took exactly one hit's worth -- except a mine patch, where two can go off on one frame.
+    // The trophies' x1.5 ("assist trophies should be stronger"): 10, 14, 4 and 18 before.
+    expect(r.rush).toBe(15);
+    expect(r.crush).toBe(21);
+    expect(r.staple).toBe(6);
+    expect(W.eval('Math.round(12*ASSIST_TROPHY_DMG*TRAP_DMG_MULT)')).toBe(27);
+    expect(r.mines % 27, 'mines land the trap number a fighter takes').toBe(0);
   });
 
   it('the cap: the vortex, the cart and the ball land once an ASSIST_BOSS_GAP per boss; 8-Ball keeps his own cooldown', () => {
@@ -74,9 +79,9 @@ describe('assist trophies hurt the boss', () => {
       expect(o.hits.length, `${o.name} landed more than once`).toBeGreaterThanOrEqual(2);
       for (let i = 1; i < o.hits.length; i++) expect(o.hits[i] - o.hits[i - 1], `${o.name}: frames between hits`).toBeGreaterThanOrEqual(cd);
     }
-    // Blender against a boss standing in it for its whole tenure: 3 a gap, not 3 every tenth frame
+    // Blender against a boss standing in it for its whole tenure: 4.5 a gap (3 x1.5, "stronger"), not 4.5 every tenth frame
     const v = W.eval(RUN(MEPHONE4, 'vortex', 0, 400));
-    expect(v.dmg).toBeLessThanOrEqual(3 * Math.ceil(W.eval('ASSIST_DUR') / gap));
+    expect(v.dmg).toBeLessThanOrEqual(4.5 * Math.ceil(W.eval('ASSIST_DUR') / gap));
   });
 
   it('a boss shielded by its own rule stays shielded: Two ungrounded takes nothing from an assist', () => {
@@ -135,7 +140,7 @@ describe('assist trophies and MePhone4\'s adds', () => {
       add._cd = 0; add.face = 1; a.x = add.x + 100; a.y = add.y;   // the add looks right, at the camera
       var bossHp = b.hp, tel = b._tel;
       updateSummons();
-      var out = { held: add._cd >= 50, fired: summons.indexOf(a) < 0, bossHp: b.hp === bossHp, bossTel: b._tel === tel };
+      var out = { held: add._cd >= FLASH_STUN - 1, fired: summons.indexOf(a) < 0, bossHp: b.hp === bossHp, bossTel: b._tel === tel };   // 75 now (was 50): "stronger"
       summons = []; running = false; return out;
     })()`);
     expect(r).toEqual({ held: true, fired: true, bossHp: true, bossTel: true });
@@ -165,7 +170,7 @@ describe('what is skipped on a boss, and why', () => {
       addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x:S.b.x, y:S.b.y, vx:3, vy:0, grav:false, dmg:5, kb:3, r:8, color:'#fff', life:200 });
       var hp0 = S.b.hp; step(); S.b._atkTimer = 1e9;
       out.erase = { fired: summons.indexOf(S.a) < 0, wiped: projectiles.length === 0, yoyle: items.filter(function(i){ return i.kind==='yoyle'; }).length, bossHp: S.b.hp === hp0 };
-      S = stage('rewind'); hp0 = S.b.hp; step();
+      S = stage('rewind'); S.f.pct = 50; hp0 = S.b.hp; step();   // from 50: the Clock rewinds 30 now (was 20; "stronger"), and 30 would read as "all of it"
       out.rewind = { fired: summons.indexOf(S.a) < 0, healed: S.f.pct, bossHp: S.b.hp === hp0 };
       S = stage('steal'); hp0 = S.b.hp; for (var i=0;i<120;i++){ step(); S.b._atkTimer = 1e9; }
       out.steal = { bossHp: S.b.hp === hp0 };
@@ -174,7 +179,7 @@ describe('what is skipped on a boss, and why', () => {
       summons = []; projectiles = []; items = []; running = false; return out;
     })()`);
     expect(r.erase).toEqual({ fired: true, wiped: true, yoyle: 3, bossHp: true });
-    expect(r.rewind).toEqual({ fired: true, healed: 10, bossHp: true });
+    expect(r.rewind).toEqual({ fired: true, healed: 20, bossHp: true });
     expect(r.steal).toEqual({ bossHp: true });
     expect(r.flash).toEqual({ fired: true, bossHp: true });
   });
@@ -204,10 +209,11 @@ describe('what is skipped on a boss, and why', () => {
       out.staple = hp0 - b.hp; out.rooted = !!b.rooted;
       summons = []; running = false; return out;
     })()`);
-    expect(r.chip, 'the chip, once a second of its three').toBeGreaterThanOrEqual(2);
-    expect(r.chip).toBeLessThanOrEqual(3);
+    // the chip is 1.5 a tick now (1 x1.5: "assist trophies should be stronger"), and the staple 6 (was 4)
+    expect(r.chip, 'the chip, once a second over the three seconds watched').toBeGreaterThanOrEqual(3);
+    expect(r.chip).toBeLessThanOrEqual(4.5);
     expect(r.withHole, 'the boss was not dragged toward the hole').toBeGreaterThanOrEqual(r.control - 5);
-    expect(r.staple).toBe(4);
+    expect(r.staple).toBe(6);
     expect(r.rooted).toBe(false);
   });
 });
@@ -236,14 +242,15 @@ describe('a normal match is untouched', () => {
       expect(r[act].foes, `${act}: no summon foes in a normal match`).toBe(0);
       expect(r[act].stamped, `${act}: a fighter is never gap-stamped`).toBe(false);
     }
-    // the numbers each act has always dealt a fighter
-    expect(r.rush.first).toBe(10);
-    expect(r.crush.first).toBe(14);
-    expect(r.bounce.first).toBe(6);
-    expect(r.staple.first).toBe(4);
-    expect(r.vortex.first).toBe(3);
-    expect(r.bolt.first).toBe(8);
-    expect(r.mines.first).toBe(18);
-    expect(r.cart.first).toBeGreaterThan(0);
+    // the numbers each act deals a fighter: the ones it always dealt, x1.5 ("assist trophies should be stronger" --
+    // "Hit harder"; 10, 14, 6, 4, 3, 8 and 18 before)
+    expect(r.rush.first).toBe(15);
+    expect(r.crush.first).toBe(21);
+    expect(r.bounce.first).toBe(9);
+    expect(r.staple.first).toBe(6);
+    expect(r.vortex.first).toBe(4.5);
+    expect(r.bolt.first).toBe(12);
+    expect(r.mines.first).toBe(27);
+    expect(r.cart.first).toBeGreaterThanOrEqual(12);   // 8 x1.5 at a standstill, more the faster it plows
   });
 });

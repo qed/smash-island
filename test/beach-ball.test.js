@@ -67,30 +67,31 @@ const watch = (w, n, pin) => w.eval(`
   })()`);
 
 describe('the Beach Ball ricochets', () => {
-  it('crosses the whole stage, wall to wall, at full speed for its six seconds -- it no longer stops at the first wall', async () => {
+  // Nine seconds now, not six: "assist trophies should be stronger" -- "stay longer" (ASSIST_TROPHY_TIME; test/assists-stronger.test.js).
+  it('crosses the whole stage, wall to wall, at full speed for its nine seconds -- it no longer stops at the first wall', async () => {
     const w = boot(); await settle(w);
     // the enemy up on a high ledge, out of the ball's path, so nothing but the walls turns it round
     stage(w, `worldPlats=[{x:640, y:groundY()-320, w:120, h:16}]; fighters[1].x = 700; fighters[1].y = groundY()-320-fighters[1].r;`);
     const r = watch(w, 600, true);
     expect(r.minX, 'it reached the left wall').toBeLessThanOrEqual(20);
     expect(r.maxX, 'it reached the right wall').toBeGreaterThanOrEqual(r.WW - 20);
-    expect(r.flips, 'it turned round at wall after wall (three and a half crossings in six seconds)').toBeGreaterThanOrEqual(3);
+    expect(r.flips, 'it turned round at wall after wall (five crossings in nine seconds)').toBeGreaterThanOrEqual(3);
     // Before the fix: 240 frames at vx 0, parked at x=20. A ricochet never has a zero speed.
     expect(r.zero, 'frames with no horizontal speed').toBe(0);
     expect(r.offSpeed, 'frames off BEACH_BALL_SPEED (it keeps its speed: no friction, no steering)').toBe(0);
     expect(r.floor, 'frames sat on the floor').toBe(0);
     expect(r.minY, 'it bounces well clear of the floor').toBeLessThan(r.floorY - 60);
     expect(r.maxY, 'and never sinks into it').toBeLessThanOrEqual(r.floorY + 1e-6);
-    expect(r.gone, 'it expires on its six-second tenure, no sooner').toBeGreaterThanOrEqual(w.eval('ASSIST_DUR') - 2);
+    expect(r.gone, 'it expires on its nine-second tenure, no sooner').toBeGreaterThanOrEqual(w.eval('ASSIST_DUR') - 2);
     expect(r.gone).toBeLessThanOrEqual(w.eval('ASSIST_DUR'));
   });
 
-  it('hits a fighter in its path for 6 a touch, and goes on ricocheting after', async () => {
+  it('hits a fighter in its path for 9 a touch (its 6, x1.5: "assist trophies should be stronger"), and goes on ricocheting after', async () => {
     const w = boot(); await settle(w);
     stage(w, '');
     const r = watch(w, 600, true);
     expect(r.hits.length, 'touches on the enemy').toBeGreaterThanOrEqual(2);
-    for (const h of r.hits) expect(h).toBe(6);
+    for (const h of r.hits) expect(h).toBe(9);
     expect(r.zero).toBe(0);
     expect(r.flips, 'the enemy and the wall both turn it round').toBeGreaterThanOrEqual(4);
   });
