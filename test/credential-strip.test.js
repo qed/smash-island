@@ -124,12 +124,18 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     expect(published.filter(f => !f.endsWith('.png')), 'non-PNG files in the sprite directory').toEqual([]);
     const { window: w } = loadMonolith();
     // Fighters reference their art through SPRITES; BOSSES reference theirs through
-    // BOSS_SPRITE_SRC; what fighters THROW is in ATTACK_SPRITES. All three count as "used", or every
-    // boss render and every thrown thing would look like dead weight.
+    // BOSS_SPRITE_SRC; what fighters THROW is in ATTACK_SPRITES; a pose a move swaps in (batch 3:
+    // Box's flaps, Candle's Inner-Flame, Tissues' nap...) is a renderSprite on the fighter's FIGHTER_ANIM
+    // entry, directly or under `poses`. All four count as "used", or every boss render, thrown thing and
+    // pose would look like dead weight.
     const referenced = new Set(
       w.eval(`Object.keys(SPRITES).map(function(k){ return SPRITES[k].src||''; })
               .concat(Object.keys(BOSS_SPRITE_SRC).map(function(k){ return BOSS_SPRITE_SRC[k]; }))
               .concat(Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src; }))
+              .concat(Object.keys(FIGHTER_ANIM).reduce(function(a, k){ var e = FIGHTER_ANIM[k]; if(!e || typeof e !== 'object') return a;
+                var vals = Object.keys(e).map(function(p){ return e[p]; });
+                if(e.poses) vals = vals.concat(Object.keys(e.poses).map(function(p){ return e.poses[p]; }));
+                vals.forEach(function(v){ if(v && typeof v === 'object' && typeof v.src === 'string') a.push(v.src); }); return a; }, []))
               .filter(Boolean)`)
         .map(src => `${PUBLISH_ROOT}/${src}`.replace(/\\/g, '/')));
     const orphans = published.map(f => f.replace(/\\/g, '/')).filter(f => !referenced.has(f));

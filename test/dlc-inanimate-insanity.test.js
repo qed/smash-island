@@ -30,13 +30,24 @@ describe('the Inanimate Insanity DLC', () => {
       var dlc = ROSTER.filter(function(x){ return x.dlc; }).map(function(x){ return x.name; });
       var isOpen = function(n){ return isUnlocked(ROSTER.find(function(x){ return x.name===n; })); };
       return { dlc: dlc, open: dlc.filter(isOpen), shut: dlc.filter(function(n){ return !isOpen(n); }),
-               head: !!document.querySelector('#board .dlchead'), osc: ['OJ','Suitcase','Cabby'].filter(function(n){ return ROSTER.some(function(x){ return x.name===n; }); }) };
+               head: !!document.querySelector('#board .dlchead'), osc: ['OJ','Suitcase','Cabby','The Floor','Floor'].filter(function(n){ return ROSTER.some(function(x){ return x.name===n; }); }),
+               heads: document.querySelectorAll('#board .dlchead').length,
+               afterHead: (function(){ var out = [], on = false; Array.prototype.forEach.call(document.getElementById('board').children, function(c){
+                 if (c.classList.contains('dlchead')) on = true; else if (on) out.push(c.querySelector('.cellname').textContent); }); return out; })() };
     })()`);
+    // "add the last set of dlc fighters." (2026-09-27): batch 3 adds these 26 after the first sixteen (this list pinned the
+    // older sixteen-fighter decision). All 26 arrive unlocked; none is a Vault fighter.
+    const BATCH3 = ['Box', 'Trophy', 'Goo', 'Lifering', 'Bonesaw', 'Spikey', 'Candle', 'Cammy', 'Cheesy', 'Dough', 'Fan', 'Soap',
+      'Tissues', 'Yin-Yang', 'Starfruit', 'Blueberry', 'Cherries', 'Clover', 'Jack', 'Magnet', 'MeTag', 'Poppy', 'Silver Spoon',
+      'Tapey', 'Tea Kettle', 'Teddy Bear'];
     expect(r.dlc).toEqual(['Balloon', 'Bomb', 'Knife', 'Lightbulb', 'Paintbrush',
-      'Taco (II)', 'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube']);
-    expect(r.open).toEqual(['Bomb', 'Knife', 'Paintbrush', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube']);
+      'Taco (II)', 'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube', ...BATCH3]);
+    expect(r.open).toEqual(['Bomb', 'Knife', 'Paintbrush', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube', ...BATCH3]);
     expect(r.shut).toEqual(['Balloon', 'Lightbulb', 'Taco (II)', 'Bow', 'Marshmallow']);
     expect(r.head).toBe(true);
+    expect(r.heads, 'one DLC group on the board').toBe(1);
+    expect(r.afterHead.filter((n) => !r.dlc.includes(n)), 'only DLC fighters after the DLC label').toEqual([]);
+    expect(BATCH3.filter((n) => !r.afterHead.includes(n)), 'batch 3 sits in the DLC group with the rest').toEqual([]);
     expect(r.osc).toEqual([]);
   });
 

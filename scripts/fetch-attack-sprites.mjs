@@ -40,6 +40,11 @@ const MAX_SIDE = 128;   // test/attack-sprites.test.js: projectile-sized
 //           'orb'   -- keep only the near-white orb, and close the bites a hand left in it
 //           'balloon' -- keep only the blue balloon (fill, shine, dark-blue outline): its largest connected piece
 //           'piano' -- keep what is wood and gold, and what the wood closes round (the keys, its insides)
+//           'prop'  -- a prop that exists only inside an episode frame (the owner's call: "Cut from the frames"): keep the
+//                      pixels the pick's own `keep(r, g, b)` passes, then only their largest connected piece, so the
+//                      room behind the prop goes and the gaps in it (a cage's bars) stay clear
+//           'ball'  -- a ball on a flat green backdrop: the green key, then everything outside the ball's own disc
+//   png     the wiki file is a JPEG: Vignette converts it (format=png) so it can be keyed; the key makes the alpha
 //   srcH    download height (default 400; larger where a key needs the detail)
 //   h       output height (default TARGET_H)
 //   solid   the object is itself a rectangle that fills its own canvas edge to edge (Remote's battery cell), so it
@@ -116,6 +121,67 @@ const PICKS = {
   // piano where it landed on Paper, against the pole. The piano is lifted out of it (key 'piano'); Paper, the pole and
   // the grass go. Same footing as the TPOT 7 strike: the owner named this piece of the show's art.
   piano:      { who: 'Paper',       kits: ['evilpaper'],  wiki: 'ii', file: 'Ep2 Piano.png',        note: 'the season-1 grand piano (Episode 2), lifted out of the frame', key: 'piano', region: [470, 240, 1010, 670], srcH: 700, h: 72 },
+  // --- Inanimate Insanity DLC, batch 3 (g1: Box, Trophy, Goo, Lifering). Box packs other people's shots and Goo swallows
+  // people, so neither throws a thing of their own; Trophy's camera and Lifering's whistle have no clean file and are drawn
+  // (PROJ_SHAPE, the owner's Q2). The shark is the show's: "Called in a Favor" (Seas the Day), Minor Characters' Shark.
+  shark:      { who: 'Lifering',    kits: ['lifeguard'],  wiki: 'ii', file: 'Shark Shorts.png',     note: 'the shark he called in a favor from (Seas the Day)' },
+  // Spikey (batch 3): no file of a lone spike exists. The owner's call (Q3, "Crop from their art"): one spike cut from his
+  // own body asset -- the top one, above where the ball begins, so none of the body comes with it -- and turned per
+  // direction in the game (ATTACK_SPRITES.spikeburst aims it, point first).
+  spike:      { who: 'Spikey',      kits: ['spikeburst'], wiki: 'ii', file: 'Spikey Body Front.png', note: 'one spike, cut from his body asset (the top one)', region: [389, 0, 618, 248], srcH: 400, h: 40 },
+  // ---- Inanimate Insanity DLC, batch 3 (Cheesy, Dough, Soap: Fan throws nothing) ----
+  // Cheesy: the soccer ball from 'A Kick in the Right Direction'. The only file is a JPEG on flat green, uploaded the day
+  // S2E5 aired and drawn in the show's style.
+  soccerball: { who: 'Cheesy',      kits: ['pun'],        wiki: 'ii', file: 'Soccer Ball.JPG', png: true, key: 'ball', srcH: 108, h: 40, note: "the soccer ball (A Kick in the Right Direction), off its green" },
+  // Dough: the Loser Cage exists only in S4E5's frames ("I already owned this!"). The cage is navy with pale trim; the
+  // purple wallpaper and the floor between its bars are not, so they key away and the bars stay see-through.
+  losercage:  { who: 'Dough',       kits: ['copycat'],    wiki: 'ii', file: 'S4E5 "I already owned this!".png', key: 'prop', region: [140, 14, 574, 462], srcH: 477, h: 64,
+    keep: (r, g, b) => (b >= r + 6 && b >= g - 4) || (r >= 150 && g >= 110 && b >= 95 && r - b < 90), note: 'the Loser Cage, lifted out of the S4E5 frame' },
+  // Soap: her portable vacuum, whole in one S2E6 frame (Let 'Er R.I.P.): the red body, the grey hose and nozzle, the brown
+  // handles, the wheels. The dark room and Bow's pink ghost are none of those.
+  vacuum:     { who: 'Soap',        kits: ['disinfect'],  wiki: 'ii', file: 'S2e6 bow escapes out of the vacuum.png', key: 'prop', region: [98, 412, 562, 724], srcH: 768, h: 56,
+    // the frame is dark: the body is (125,15,0), the hose, nozzle and wheels a NEUTRAL grey, the handles a lighter tan, the
+    // outline near-black -- and the room is a warm brown throughout, which none of those are
+    keep: (r, g, b) => (r >= 80 && r > g + 50 && r > b + 60) || (Math.max(r, g, b) - Math.min(r, g, b) < 13 && g >= 45)
+      || (r >= 90 && r - g >= 20 && r - g <= 70 && g >= 55 && b >= 30 && b < g) || Math.max(r, g, b) < 32,
+    note: "her portable vacuum, lifted out of the S2E6 frame" },
+  // Soap: the small blue cloth she scrubs everything with, off her SoapPro render (her hand and arm are not blue).
+  cloth:      { who: 'Soap',        kits: ['disinfect'],  wiki: 'ii', file: 'SoapPro.png', key: 'prop', region: [0, 640, 130, 910], srcH: 1142, h: 40,
+    keep: (r, g, b) => b > r + 60 && b > 150, note: 'her blue cleaning cloth, off the SoapPro render' },
+
+  // ---- batch 3, group 4: Tissues, Yin-Yang, Starfruit ("add the last set of dlc fighters")
+  // Tissues' snot exists only inside his sneezing pose; the owner's call (Q3) was "Crop from their art": the region is
+  // the green jet from its tip to just short of his box, so none of the teal body or its outline comes with it.
+  snot:        { who: 'Tissues',   kits: ['condishawn'], wiki: 'ii', file: 'Tissues Sneezing.png',   note: 'his snot jet, cut out of his sneezing pose (Q3: crop from their art)', region: [18, 250, 184, 346], srcH: 408, h: 60 },
+  // Yin-Yang: Yang picks Yin up and throws him (Tri Your Best) -- the thrown thing IS Yin, his own III half render.
+  yin:         { who: 'Yin-Yang',  kits: ['yinyang'],    wiki: 'ii', file: 'Yin III.png',            note: 'Yin, the half Yang throws (Tri Your Best)' },
+  // Starfruit's smash: the reunited Spoiled Lemon jump in for the chorus (Mazed and Confused), each on their own SL pose.
+  slpineapple: { who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Pineapple Pose.png',  note: 'Pineapple of Spoiled Lemon, jumping in for the chorus' },
+  sllemon:     { who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Lemon Pose.png',      note: 'Lemon of Spoiled Lemon, jumping in for the chorus' },
+  sltomato:    { who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Tomato Pose.png',     note: 'Tomato of Spoiled Lemon, jumping in for the chorus' },
+  slguava:     { who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Guava Pose.png',      note: 'Guava of Spoiled Lemon, jumping in for the chorus' },
+  slmangosteen:{ who: 'Starfruit', kits: ['onehit'],     wiki: 'ii', file: 'SL Mangosteen Pose.png', note: 'Mangosteen of Spoiled Lemon, jumping in for the chorus' },
+  // --- batch 3 (g5): Blueberry, Cherries, Clover, Jack. Q1 "Cut from the frames": the Cherries' rock and olive-oil slick
+  // and Jack's pager exist only inside episode frames, so each is the show's own pixels lifted off its frame by a key
+  // below (rock, slick, pager). The cookie, the butterfly and the peel are transparent files already.
+  oatcookie:  { who: 'Blueberry',   kits: ['blueberry'],  wiki: 'ii', file: 'Cookie Season 3.png',  note: "the season-3 cookie (Q7: the Oatmeal Raisin smash sets it down; the show's S3 cookie, not a fan edit)" },
+  marsrock:   { who: 'Cherries',    kits: ['cherries'],   wiki: 'ii', file: 'MarshmallowHitByRock.png', note: 'the huge rock that sent Marshmallow to Mars, lifted off its frame (Marsh on Mars)', key: 'rock', region: [110, 85, 440, 415], srcH: 448 },
+  oliveoil:   { who: 'Cherries',    kits: ['cherries'],   wiki: 'ii', file: 'S4E4 The Cherries slip.png', note: 'their olive-oil slick, lifted off the floor they slipped on (Fan the Flames)', key: 'slick', region: [0, 340, 653, 480], srcH: 480, h: 24 },
+  butterfly:  { who: 'Clover',      kits: ['clover'],     wiki: 'ii', file: 'Butterfly.png',        note: "one of Clover's butterflies" },
+  bananapeel: { who: 'Clover',      kits: ['clover'],     wiki: 'ii', file: 'Banana Peel.png',      note: 'a banana peel (Q8: her luck puts it under a foe)' },
+  pager:      { who: 'Jack',        kits: ['jack'],       wiki: 'ii', file: "S04E02 Pager hits Bot's leg.png", note: "his pager in flight, lifted off its frame (Cob Mentality: it hits Bot's leg)", key: 'pager', region: [750, 170, 1110, 400], srcH: 1080 },
+  // --- batch 3, group 6 (Magnet, MeTag, Poppy, Silver Spoon). The owner, Q1: "Cut from the frames" -- Poppy's ghost
+  // vacuum and capture pod exist only inside All Play and No Work (S4E5), so the show's own pixels are lifted out of the
+  // two frames the plan names. The Immunity Cookie has its own clean file.
+  ghostvacuum: { who: 'Poppy',     kits: ['vacuum'],     wiki: 'ii', file: 'S4E5 Poppy uses a vacuum to trap Gnife.png', note: 'the ghost-hunting vacuum (All Play and No Work), lifted out of the frame', key: 'vacuum', region: [694, 318, 786, 434], srcH: 477, h: 56 },
+  capturepod:  { who: 'Poppy',     kits: ['vacuum'],     wiki: 'ii', file: 'S4E5 Poppy and Paper in ghost hunting gear.png', note: 'a capture pod from the vacuum (All Play and No Work), lifted out of the hand of Paper', key: 'pod', region: [426, 200, 506, 278], srcH: 477, h: 48 },
+  immunitycookie: { who: 'Silver Spoon', kits: ['glowgold'], wiki: 'ii', file: 'Immunitycookie.png', note: 'the Immunity Cookie (III)', h: 40 },
+  // ---- batch 3, group 7 (Tapey, Tea Kettle, Teddy Bear) ----
+  // Tea Kettle: her hors d'oeuvres tray (Minor Items/Food), already a clean transparent file on the II wiki.
+  horstray:   { who: 'Tea Kettle',  kits: ['hors'],       wiki: 'ii', file: "Hors d'oeuvres.png",  note: "her hors d'oeuvres tray", srcH: 269 },
+  // Teddy Bear: the owner's Q1, "Cut from the frames". The only paintballs are the pink ones in her gun's hopper in the
+  // remaster frame (War De Guacamole, S1RE6); the pink paint is keyed out of the hopper window and masked round (key 'paintball').
+  paintball:  { who: 'Teddy Bear',  kits: ['paintball'],  wiki: 'ii', file: 'S1RE6 Teddy grabs a paintball gun.png', note: "a paintball: the pink paint in her gun's hopper (War De Guacamole remaster), cut from the frame", key: 'paintball', region: [472, 186, 528, 242], srcH: 477, h: 40 },
 };
 
 async function api(wiki, params) {
@@ -131,12 +197,12 @@ async function fileUrl(wiki, title) {
 }
 // `?format=original` is load-bearing (see fetch-sprites.mjs): Wikia content-negotiates to WebP even when
 // the URL ends in .png. scale-to-height-down has the server shrink giant renders before they travel.
-function originalUrl(url, h) {
+function originalUrl(url, h, png) {
   const base = url.split('/revision/')[0];
-  return `${base}/revision/latest/scale-to-height-down/${h}?format=original`;
+  return `${base}/revision/latest/scale-to-height-down/${h}?format=${png ? 'png' : 'original'}`;
 }
-async function download(url, h) {
-  const r = await fetch(originalUrl(url, h), { headers: UA });
+async function download(url, h, png) {
+  const r = await fetch(originalUrl(url, h, png), { headers: UA });
   if (!r.ok) throw new Error(`download ${r.status}`);
   return Buffer.from(await r.arrayBuffer());
 }
@@ -349,7 +415,113 @@ function keyPiano(png) {
   const biggest = Math.max(0, ...pieces.map((p) => p.length));
   for (const p of pieces) if (p.length < biggest / 10) for (const k of p) d[k * 4 + 3] = 0;
 }
-const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano };
+function keyProp(png, pick) {
+  const { width: w, height: h, data: d } = png, N = w * h, m = new Uint8Array(N);
+  for (let k = 0; k < N; k++) { const i = k * 4; m[k] = d[i + 3] >= 128 && pick.keep(d[i], d[i + 1], d[i + 2]) ? 1 : 0; }
+  const comp = new Int32Array(N).fill(-1); let best = -1, bestN = 0, id = 0;
+  for (let k0 = 0; k0 < N; k0++) { if (!m[k0] || comp[k0] >= 0) continue;
+    let n = 0; const stack = [k0]; comp[k0] = id;
+    while (stack.length) { const k = stack.pop(), x = k % w; n++;
+      for (const q of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, k - w, k + w]) if (q >= 0 && q < N && m[q] && comp[q] < 0) { comp[q] = id; stack.push(q); } }
+    if (n > bestN) { bestN = n; best = id; } id++; }
+  for (let k = 0; k < N; k++) if (comp[k] !== best) d[k * 4 + 3] = 0;
+}
+function keyBall(png) {
+  keyGreen(png);
+  const box = alphaBox(png), cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2, rad = Math.min(box.x1 - box.x0, box.y1 - box.y0) / 2 - 0.5;
+  for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) {
+    const i = (y * png.width + x) * 4, dd = Math.hypot(x - cx, y - cy);
+    if (dd > rad + 0.5) png.data[i + 3] = 0; else if (dd > rad - 0.5) png.data[i + 3] = Math.round(png.data[i + 3] * (rad + 0.5 - dd));
+    else png.data[i + 3] = 255;   // inside the disc the ball is whole: the green key must not eat its JPEG-soft seams
+  }
+}
+const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano, prop: keyProp, ball: keyBall, paintball: keyPaintball };
+// ---- batch 3 (g5): the rock, the slick and the pager, cut out of their frames (Q1 "Cut from the frames"). One PIECE key does
+// all three: a test says how much a pixel looks like the object, the biggest connected piece that passes is the object,
+// what it closes round stays (the rock's spots, the pager's screen and buttons), and its edge is as soft as the test.
+//   rock   the rock is flat grey with a darker grey outline; the grass, the sky, the impact flash and the rope are all
+//          coloured or bright, so none of it is grey and dark at once
+//   pager  the pager's body is a dark purple (blue and red over green); the backdrop is a grey-green that never is
+//   slick  the oil is olive (red and green well over blue); the planks are brown (green barely over blue) and the
+//          Cherries red. They sit ON the slick, so their bites out of it are filled with the slick's own mean colour,
+//          out to its hull -- the show's pixels wherever the oil shows, the oil's colour where a cherry covered it.
+function keyPiece(png, score, o = {}) {
+  const { width: w, height: h, data: d } = png, N = w * h;
+  const m = new Uint8Array(N); for (let k = 0; k < N; k++) m[k] = score(d, k * 4) > 0.5 ? 1 : 0;
+  const comp = new Int32Array(N).fill(-1), sizes = [];
+  for (let k0 = 0; k0 < N; k0++) { if (!m[k0] || comp[k0] >= 0) continue;
+    const id = sizes.length, stack = [k0]; let n = 0; comp[k0] = id;
+    while (stack.length) { const k = stack.pop(), x = k % w; n++;
+      for (const q of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, k - w, k + w]) if (q >= 0 && q < N && m[q] && comp[q] < 0) { comp[q] = id; stack.push(q); } }
+    sizes.push(n); }
+  const big = Math.max(0, ...sizes), keepId = sizes.map((n) => o.minPiece ? n >= big * o.minPiece : n === big);
+  const keep = new Uint8Array(N); for (let k = 0; k < N; k++) keep[k] = comp[k] >= 0 && keepId[comp[k]] ? 1 : 0;
+  if (o.hull) {
+    const pts = []; let sr = 0, sg = 0, sb = 0;
+    for (let k = 0; k < N; k++) if (keep[k]) { pts.push([k % w, (k / w) | 0]); sr += d[k * 4]; sg += d[k * 4 + 1]; sb += d[k * 4 + 2]; }
+    const n = pts.length, fill = [sr / n, sg / n, sb / n];
+    pts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const lower = [], upper = [];
+    for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+    for (let k = n - 1; k >= 0; k--) { const p = pts[k]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+    const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+    const inside = (x, y) => { for (let k = 0; k < hull.length; k++) if (cross(hull[k], hull[(k + 1) % hull.length], [x, y]) < 0) return false; return true; };
+    for (let k = 0; k < N; k++) { if (keep[k]) continue; const x = k % w, y = (k / w) | 0;
+      if (inside(x, y)) { d[k * 4] = fill[0]; d[k * 4 + 1] = fill[1]; d[k * 4 + 2] = fill[2]; d[k * 4 + 3] = 255; keep[k] = 2; } }
+  }
+  const outside = floodBorder(keep.map((v) => v ? 0 : 1), w, h);
+  for (let k = 0; k < N; k++) {
+    const i = k * 4;
+    if (keep[k] === 2) continue;                                                // a bite, filled with the object's colour
+    if (keep[k]) { d[i + 3] = Math.round(255 * Math.min(1, score(d, i) * 1.5)); continue; }
+    if (!outside[k]) { d[i + 3] = 255; continue; }                             // closed round by the object
+    d[i + 3] = touches(keep, k, w, N) ? Math.round(255 * score(d, i)) : 0;
+  }
+}
+const ROCK_GREY = (d, i) => lum(d, i) > 165 ? 0 : clamp01((34 - (Math.max(d[i], d[i + 1], d[i + 2]) - minC(d, i))) / 12);
+const PAGER_PURPLE = (d, i) => clamp01(Math.min((d[i + 2] - d[i + 1] - 8) / 20, (d[i] - d[i + 1] + 10) / 20));
+const OIL_OLIVE = (d, i) => (d[i] - d[i + 1] > 50) ? 0 : clamp01((d[i + 1] - d[i + 2] - 10) / 12);
+Object.assign(KEYS, { rock: (png) => keyPiece(png, ROCK_GREY), pager: (png) => keyPiece(png, PAGER_PURPLE), slick: (png) => keyPiece(png, OIL_OLIVE, { hull: true, minPiece: 0.03 }) });
+// ---- batch 3, group 6: two more keys for frame cuts, added beside KEYS so no shared line changes ----
+// Keep the largest connected piece of what `test` calls the object, everything it closes round, and a soft one-pixel
+// edge. `lift` brightens what is kept: the S4E5 frames are the haunted house at night, and a prop that dark would
+// read as a smudge on a daylight stage.
+function keyLargest(png, test, lift) {
+  const { width: w, height: h, data: d } = png, N = w * h;
+  const m = new Uint8Array(N); for (let k = 0; k < N; k++) m[k] = test(d, k * 4) ? 1 : 0;
+  const comp = new Int32Array(N).fill(-1); let best = -1, bestN = 0, id = 0;
+  for (let k0 = 0; k0 < N; k0++) { if (!m[k0] || comp[k0] >= 0) continue;
+    let n = 0; const stack = [k0]; comp[k0] = id;
+    while (stack.length) { const k = stack.pop(), x = k % w; n++;
+      for (const q of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, k - w, k + w]) if (q >= 0 && q < N && m[q] && comp[q] < 0) { comp[q] = id; stack.push(q); } }
+    if (n > bestN) { bestN = n; best = id; } id++; }
+  const keep = new Uint8Array(N); for (let k = 0; k < N; k++) keep[k] = comp[k] === best ? 1 : 0;
+  const outside = floodBorder(keep.map((v) => 1 - v), w, h);
+  for (let k = 0; k < N; k++) {
+    const i = k * 4, inside = keep[k] || !outside[k];
+    d[i + 3] = inside ? 255 : (touches(keep, k, w, N) ? 110 : 0);
+    if (lift && d[i + 3]) for (let c = 0; c < 3; c++) d[i + c] = Math.min(255, Math.round(d[i + c] * lift));
+  }
+}
+// 'vacuum': Poppy's canister vacuum on the floorboards. Its body is a dark red (red well over green and blue), its base,
+// hose and wheel a slate blue (blue well over red); the floor is a purple-brown that is neither.
+function keyVacuum(png) { keyLargest(png, (d, i) => (d[i] - d[i + 1] > 28 && d[i] - d[i + 2] > 14) || (d[i + 2] - d[i] > 22), 1.6); }
+// 'pod': the capture pod in Paper's hand is a pale silver ball against a dark wall; his hand under it is black.
+function keyPod(png) { keyLargest(png, (d, i) => lum(d, i) > 72); }
+Object.assign(KEYS, { vacuum: keyVacuum, pod: keyPod });
+// 'paintball': Teddy's paintballs exist only as the pink paint inside her gun's hopper in an episode frame. Pink pixels
+// (red and blue over green) are the paint; a disc inscribed in their box is kept whole -- a paintball is round -- and
+// everything outside it (the hopper's grey frame, the sky, her paw) goes.
+function keyPaintball(png) {
+  const { width: w, height: h, data: d } = png;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4;
+    if (d[i] - d[i + 1] > 30 && d[i + 2] - d[i + 1] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = Math.min(x1 - x0, y1 - y0) / 2;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, r = Math.hypot(x - cx, y - cy);
+    d[i + 3] = r <= R - 1 ? 255 : r <= R ? 128 : 0; }
+}
 
 const outDir = process.argv[2];
 if (!outDir) { console.error('usage: node fetch-attack-sprites.mjs <outDir> [name ...]'); process.exit(1); }
@@ -366,8 +538,8 @@ for (const [name, pick] of Object.entries(PICKS)) {
   for (const cand of candidates) { if (done) break; try {
     const info = await fileUrl(wiki, cand);
     if (!info) { line(`skip: no such file "${cand}" on ${wiki}`); continue; }
-    if (info.mime !== 'image/png') { line(`REJECT: ${info.mime}, not a PNG`); continue; }
-    const buf = await download(info.url, pick.srcH || 400);
+    if (info.mime !== 'image/png' && !pick.png) { line(`REJECT: ${info.mime}, not a PNG`); continue; }
+    const buf = await download(info.url, pick.srcH || 400, pick.png);
     let png = PNG.sync.read(buf);
     if (pick.region) {
       const s = png.width / info.w, [x0, y0, x1, y1] = pick.region;

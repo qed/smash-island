@@ -102,9 +102,10 @@ describe('transparency: an object, never a rectangle pasted over the stage', () 
     }
   });
 
-  it('the five cut out of a bigger picture carry nothing of it', () => {
+  it('the ones cut out of a bigger picture carry nothing of it', () => {
     const keyed = entries.filter((e) => e.key).map((e) => e.file).sort();
-    expect(keyed).toEqual(['book.png', 'paintbomb.png', 'piano.png', 'shimmerorb.png', 'tpot7bolt.png']);
+    expect(keyed).toEqual(['book.png', 'capturepod.png', 'cloth.png', 'ghostvacuum.png', 'losercage.png', 'marsrock.png', 'oliveoil.png',   // the first five, plus batch 3's ten
+      'pager.png', 'paintball.png', 'paintbomb.png', 'piano.png', 'shimmerorb.png', 'soccerball.png', 'tpot7bolt.png', 'vacuum.png']);
     for (const f of keyed) expect(clearOf(read(f)), `${f} kept its backdrop`).toBeGreaterThan(0.15);
     const opaque = (png, test) => { const bad = []; for (let i = 0; i < png.data.length; i += 4)
       if (png.data[i + 3] >= 128 && test(png.data[i], png.data[i + 1], png.data[i + 2])) bad.push(i >> 2); return bad.length; };

@@ -325,6 +325,76 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Pepper (Salt's partner) | `pepper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b7/Pepper2024Pose.png |
 | Test Tube | `test-tube.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Blue_Ray_Test_Tube_S4.png |
 | Bot (Test Tube's robot, her summon) | `bot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/da/Bot2024PoseAlt.png |
+| Box | `box.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9e/Box_Idle_Pose_%282024%29.png/revision/latest?cb=20260309074606 |
+| Box, flaps open (Everything Packed; Box with Open Flaps 1 (S4E6).png) | `box-open-flaps.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f6/Box_with_Open_Flaps_1_%28S4E6%29.png/revision/latest?cb=20260815023812 |
+| Box's lifeless body (Lifeless Body; Box2024Pose.png) | `box-lifeless.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b3/Box2024Pose.png/revision/latest?cb=20250628193515 |
+| Trophy | `trophy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/91/Trophy2024Pose.png/revision/latest?cb=20250628193516 |
+| Goo | `goo.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/aa/Goo2024Pose.png/revision/latest?cb=20250628202009 |
+| Goo, giant (Puffed Up; GiantGoo.png) | `goo-giant.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c0/GiantGoo.png/revision/latest?cb=20260111024514 |
+| Goo, a puddle (Meltdown; Puddle Goo (S3E5).png) | `goo-puddle.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f9/Puddle_Goo_%28S3E5%29.png/revision/latest?cb=20260111024728 |
+| Lifering | `lifering.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/3a/Lifering2024Pose.png/revision/latest?cb=20250628202009 |
+| Lifering, diving (We've Got a Sinker!; Liferingdive.png) | `lifering-dive.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/bf/Liferingdive.png/revision/latest?cb=20241208154131 |
+| Lifering, kneeling (First Aid; Liferingpulselonely.png) | `lifering-first-aid.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c2/Liferingpulselonely.png/revision/latest?cb=20241208154241 |
+| Lifering's shark, Called in a Favor (shark.png): the Seas the Day shark, File:Shark Shorts.png | `attacks/shark.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/Shark_Shorts.png/revision/latest?cb=20260219040927 |
+| Bonesaw | `bonesaw.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/02/Bonesaw.png/revision/latest?cb=20260801002710 |
+| Spikey | `spikey.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/70/SpikeyII4StickerSheet.png/revision/latest?cb=20250714194652 |
+| Spikey, bald after Can't Hold It In | `spikey-spikeless.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Spikey_without_the_spikes.png/revision/latest?cb=20260907153932 |
+| Candle | `candle.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/89/CandleII4Placeholder.png/revision/latest?cb=20260812150503 |
+| Candle, Inner-Flame (special, smash) | `candle-inner-flame.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/56/Candle_Flame.png/revision/latest?cb=20240129222317 |
+| Candle, flame punched out | `candle-flame-out.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/Candle_Weak.png/revision/latest?cb=20260426185548 |
+| Cammy | `cammy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a8/Cammy.png/revision/latest?cb=20260802161706 |
+| Cammy, pop-up flash (white-balanced by scripts/fix-cammy-flash.mjs) | `cammy-flash.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/Cammy_Flash.png/revision/latest?cb=20260419233749 |
+| Spikey's spike (spike.png): attack art, the top spike cut from his body asset (`node scripts/fetch-attack-sprites.mjs <out> spike`) | `attacks/spike.png` — File:Spikey Body Front.png | https://static.wikia.nocookie.net/inanimateinsanity/images/5/54/Spikey_Body_Front.png/revision/latest?cb=20260801170935 |
+| Cheesy | `cheesy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0f/Cheesy2024Pose.png/revision/latest?cb=20250628193516 |
+| Dough (official S4 art; the owner: "change 4" -- the banner render was a fan rebuild) | `dough.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0e/Dough_II_S4_.png/revision/latest |
+| Fan | `fan.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1e/Fan2024PoseAlt.png/revision/latest?cb=20250628193516 |
+| Soap | `soap.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/Soap2024Pose.png/revision/latest?cb=20250628193841 |
+| Cheesy's soccer ball (soccerball.png): A Kick in the Right Direction, off its green -- File:Soccer Ball.JPG | `attacks/soccerball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c9/Soccer_Ball.JPG/revision/latest?cb=20131103220257 |
+| Dough's Loser Cage (losercage.png), cut from the S4E5 frame (owner: "Cut from the frames") -- File:S4E5 "I already owned this!".png | `attacks/losercage.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/3e/S4E5_%22I_already_owned_this%21%22.png/revision/latest?cb=20260407144512 |
+| Soap's portable vacuum (vacuum.png), cut from the S2E6 frame (owner: "Cut from the frames") -- File:S2e6 bow escapes out of the vacuum.png | `attacks/vacuum.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/61/S2e6_bow_escapes_out_of_the_vacuum.png/revision/latest?cb=20170827172834 |
+| Soap's blue cleaning cloth (cloth.png), off her render -- File:SoapPro.png | `attacks/cloth.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/5f/SoapPro.png/revision/latest?cb=20130526185952 |
+| Tissues | `tissues.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0e/Tissues2024Pose.png/revision/latest?cb=20250628193516 |
+| Tissues, asleep (his Nap, TissuesSittingIdle.png) | `tissues-nap.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4c/TissuesSittingIdle.png/revision/latest?cb=20130406034752 |
+| Yin-Yang | `yin-yang.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/YinYang2024Pose.png/revision/latest?cb=20250628193516 |
+| Yin-Yang: Yang alone, while Yin is thrown (Yang III.png) | `yin-yang-yang.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/16/Yang_III.png/revision/latest?cb=20260420040832 |
+| Yin-Yang: Yang in full control, Mindful Positioning (Yangyang.png) | `yin-yang-mindful.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/3b/Yangyang.png/revision/latest?cb=20260420040803 |
+| Starfruit | `starfruit.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6c/Starfruit2024.png/revision/latest?cb=20250228032703 |
+| Tissues: his snot jet, cut out of his sneezing pose (Q3: crop from their art) -- attack art (snot.png), File:Tissues Sneezing.png | `attacks/snot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e9/Tissues_Sneezing.png/revision/latest?cb=20230204200710 |
+| Yin-Yang: Yin, the half Yang throws (Tri Your Best) -- attack art (yin.png), File:Yin III.png | `attacks/yin.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/ab/Yin_III.png/revision/latest?cb=20260420040819 |
+| Starfruit: Pineapple of Spoiled Lemon, jumping in for the chorus -- attack art (slpineapple.png), File:SL Pineapple Pose.png | `attacks/slpineapple.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a4/SL_Pineapple_Pose.png/revision/latest?cb=20160620194207 |
+| Starfruit: Lemon of Spoiled Lemon, jumping in for the chorus -- attack art (sllemon.png), File:SL Lemon Pose.png | `attacks/sllemon.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/92/SL_Lemon_Pose.png/revision/latest?cb=20160620194452 |
+| Starfruit: Tomato of Spoiled Lemon, jumping in for the chorus -- attack art (sltomato.png), File:SL Tomato Pose.png | `attacks/sltomato.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/95/SL_Tomato_Pose.png/revision/latest?cb=20160620193248 |
+| Starfruit: Guava of Spoiled Lemon, jumping in for the chorus -- attack art (slguava.png), File:SL Guava Pose.png | `attacks/slguava.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/dc/SL_Guava_Pose.png/revision/latest?cb=20160620193105 |
+| Starfruit: Mangosteen of Spoiled Lemon, jumping in for the chorus -- attack art (slmangosteen.png), File:SL Mangosteen Pose.png | `attacks/slmangosteen.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f8/SL_Mangosteen_Pose.png/revision/latest?cb=20160620193929 |
+| Blueberry | `blueberry.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/85/Blueberry2024Pose.png |
+| Cherries | `cherries.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/39/Cherries2024Pose.png |
+| Clover | `clover.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7a/Clover2024Pose.png |
+| Jack | `jack.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/46/Jack.png |
+| Magnet | `magnet.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/81/MagnetII4Pose.png/revision/latest?cb=20250717171143 |
+| MeTag | `metag.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1d/MeTag_II4_No_Sash.png/revision/latest?cb=20260803171640 |
+| Poppy | `poppy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1f/PoppyPose.png/revision/latest?cb=20250910153655 |
+| Silver Spoon | `silver-spoon.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e7/Silver2024Pose.png/revision/latest?cb=20250628202009 |
+| Tapey | `tapey.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/2b/TapeyII4StickerSheet.png/revision/latest?cb=20250714194652 |
+| Tea Kettle | `tea-kettle.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/41/Tea_Kettle_IIS4.png/revision/latest?cb=20260517165422 |
+| Teddy Bear (official sticker art; the owner: "change 4" -- TB.png had no source) | `teddy-bear.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/56/TeddyII4StickerSheeeeeeeeet.png/revision/latest?cb=20250716005652 |
+| Tea Kettle's hors d'oeuvres tray (horstray.png), File:Hors d'oeuvres.png | `attacks/horstray.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a4/Hors_d%27oeuvres.png/revision/latest?cb=20220819192319 |
+| Teddy Bear's paintball (paintball.png): the pink paint in her gun's hopper, cut from the frame and masked round (File:S1RE6 Teddy grabs a paintball gun.png) | `attacks/paintball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7b/S1RE6_Teddy_grabs_a_paintball_gun.png/revision/latest?cb=20260326141622 |
+
+What they throw and set down (scripts/fetch-attack-sprites.mjs; Q1 "Cut from the frames" for the rock, the slick and the pager):
+- Blueberry (oatcookie.png): the season-3 cookie (Q7: the Oatmeal Raisin smash sets it down; the show's S3 cookie, not a fan edit) — File:Cookie Season 3.png — https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/Cookie_Season_3.png/revision/latest?cb=20240419100816
+- Cherries (marsrock.png): the huge rock that sent Marshmallow to Mars, lifted off its frame (Marsh on Mars) — File:MarshmallowHitByRock.png — https://static.wikia.nocookie.net/inanimateinsanity/images/2/2b/MarshmallowHitByRock.png/revision/latest?cb=20130515224832
+- Cherries (oliveoil.png): their olive-oil slick, lifted off the floor they slipped on (Fan the Flames) — File:S4E4 The Cherries slip.png — https://static.wikia.nocookie.net/inanimateinsanity/images/d/df/S4E4_The_Cherries_slip.png/revision/latest?cb=20251210031204
+- Clover (butterfly.png): one of Clover's butterflies — File:Butterfly.png — https://static.wikia.nocookie.net/inanimateinsanity/images/1/10/Butterfly.png/revision/latest?cb=20260527102905
+- Clover (bananapeel.png): a banana peel (Q8: her luck puts it under a foe) — File:Banana Peel.png — https://static.wikia.nocookie.net/inanimateinsanity/images/5/5a/Banana_Peel.png/revision/latest?cb=20260307100357
+- Jack (pager.png): his pager in flight, lifted off its frame (Cob Mentality: it hits Bot's leg) — File:S04E02 Pager hits Bot's leg.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/45/S04E02_Pager_hits_Bot%27s_leg.png/revision/latest?cb=20260122023843
+
+Attack art for Magnet, MeTag, Poppy and Silver Spoon (rebuilt by `node scripts/fetch-attack-sprites.mjs <out> ghostvacuum capturepod immunitycookie`).
+The owner, Q1: "Cut from the frames" -- Poppy's vacuum and pod exist only inside All Play and No Work (S4E5), so they are
+lifted out of the two frames the plan names (keys `vacuum` and `pod`; the vacuum is brightened, the frame is the haunted
+house at night). MeTag's barrier is drawn in code (Q2); Magnet throws nothing.
+- Poppy (ghostvacuum.png): the ghost-hunting vacuum (All Play and No Work), lifted out of the frame — File:S4E5 Poppy uses a vacuum to trap Gnife.png — https://static.wikia.nocookie.net/inanimateinsanity/images/2/25/S4E5_Poppy_uses_a_vacuum_to_trap_Gnife.png/revision/latest?cb=20260427153322
+- Poppy (capturepod.png): a capture pod from the vacuum (All Play and No Work), lifted out of the hand of Paper — File:S4E5 Poppy and Paper in ghost hunting gear.png — https://static.wikia.nocookie.net/inanimateinsanity/images/9/94/S4E5_Poppy_and_Paper_in_ghost_hunting_gear.png/revision/latest?cb=20260427153647
+- Silver Spoon (immunitycookie.png): the Immunity Cookie (III) — File:Immunitycookie.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/46/Immunitycookie.png/revision/latest?cb=20240204231843
 
 ### Boss Rush
 

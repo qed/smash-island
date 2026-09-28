@@ -59,7 +59,9 @@ const KEYS = ['shatter', 'atstake', 'van', 'float', 'cap', 'pricetag', 'measure'
   'ember', 'emberjr', 'spark', 'bomb', 'quake', 'gust', 'serve', 'anvil', 'zapshooter', 'barfglob', 'fry', 'freeze',
   'flip', 'beam', 'buynow', 'splash', 'dribble', 'sign', 'grasstree', 'sucker', 'ink', 'payday', 'spike', 'battery',
   'saw', 'jawball', 'fraidy', 'paste', 'timber', 'sprinkles', 'fly', 'beep', 'zap', 'zaptrap',
-  'lemon', 'chair', 'heavy', 'evilpaper', 'split', 'smokering', 'hook', 'eball', 'fury'];
+  'lemon', 'chair', 'heavy', 'evilpaper', 'split', 'smokering', 'hook', 'eball', 'fury',
+  // Inanimate Insanity DLC batch 3 ("add the last set of dlc fighters.")
+  'lifeguard', 'spikeburst', 'soccerball', 'losercage', 'soapvacuum', 'cloth', 'condishawn', 'yinyang', 'slpineapple', 'sllemon', 'sltomato', 'slguava', 'slmangosteen', 'oatcookie', 'cherries', 'oliveoil', 'clover', 'bananapeel', 'jack', 'ghostvacuum', 'capturepod', 'immunitycookie', 'horstray', 'paintball'];
 
 describe('the registry', () => {
   it('names only shapes the game draws, and every file exists', () => {
@@ -74,7 +76,7 @@ describe('the registry', () => {
   it('every file in the attack folder is drawn by some entry -- none is dead weight', () => {
     const drawn = new Set(W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src.split("/").pop(); })'));
     const onDisk = readdirSync('artifacts/V1/assets/sprites/attacks').filter((f) => f.endsWith('.png'));
-    expect(onDisk.length).toBe(47);
+    expect(onDisk.length).toBe(71);   // 47, plus batch 3's 24
     expect(onDisk.filter((f) => !drawn.has(f))).toEqual([]);
   });
 

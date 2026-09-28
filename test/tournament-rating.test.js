@@ -147,7 +147,9 @@ describe('tournament feel — a better fighter wins more, and upsets stay routin
   function upsetRate(w, loFrac, hiFrac, loFrac2, hiFrac2, n) {
     return w.eval(`
       (function(){
-        var R = ROSTER.filter(function(r){return r.play;})
+        // Only fighters with a measured (baked) rate: the 42 DLC fighters have none yet and all sit on the mean, so with
+        // batch 3 they filled the middle bands with near-equal pairs and turned the spread into a coin flip (47%).
+        var R = ROSTER.filter(function(r){return r.play && FIGHTER_WINRATE[r.name] !== undefined;})
                       .sort(function(a,b){ return fighterWinRate(b.name)-fighterWinRate(a.name); });
         function band(lo,hi){ return R.slice(Math.floor(R.length*lo), Math.floor(R.length*hi)); }
         var A = band(${loFrac},${hiFrac}), B = band(${loFrac2},${hiFrac2});
