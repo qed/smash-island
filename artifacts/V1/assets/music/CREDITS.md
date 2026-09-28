@@ -10,7 +10,7 @@ The five `.mp3` defaults are not from, or covers of, any commercial soundtrack. 
 independent style-alike tracks chosen to evoke that mood.
 
 **Owner-supplied tracks (2026-09-27).** The ten `.ogg` files in this directory were added by the owner
-("i added the music"). They are tracks from Toby Fox's *Deltarune* soundtrack (and arrangements of it)
+("i added the music"). They are tracks from Toby Fox's *Deltarune* soundtrack, two of them his collaborations with Camellia
 and are NOT under the Pixabay licence: see "Owner-supplied Deltarune tracks" at the end of this file.
 They are the game's battle playlist: normal matches play them instead of `battle.mp3`.
 
@@ -179,20 +179,20 @@ does not break. Update this file and the
 
 ## Owner-supplied Deltarune tracks
 
-Added by the owner on 2026-09-27. Composer: Toby Fox (*Deltarune*), unless the file is an arrangement
-by someone else. They are not covered by the Pixabay Content License above; the rights stay with their
+Added by the owner on 2026-09-27. Composer: Toby Fox (*Deltarune*); two tracks are Toby Fox's collaborations with Camellia
+(the owner: "those are just toby fox colabs with Camelia"). They are not covered by the Pixabay Content License above; the rights stay with their
 owners, and whether they may be shipped publicly is the owner's decision and responsibility.
 
 | File | Track |
 |---|---|
-| `Flowerman_Arrangement.ogg` | an arrangement (source and arranger not recorded) |
+| `Flowerman_Arrangement.ogg` | Toby Fox with Camellia |
 | `ch4_extra_boss.ogg` | Deltarune Chapter 4, extra boss |
 | `joker.ogg` | Deltarune |
 | `knight.ogg` | Deltarune |
 | `pink.ogg` | Deltarune |
 | `pumpkin_boss.ogg` | Deltarune |
 | `queen_boss.ogg` | Deltarune |
-| `spamton_neo_mix_ex_wip.ogg` | a Spamton NEO mix (work in progress; arranger not recorded) |
+| `spamton_neo_mix_ex_wip.ogg` | Spamton NEO mix, Toby Fox with Camellia |
 | `tenna_battle.ogg` | Deltarune |
 | `titan_battle.ogg` | Deltarune |
 
