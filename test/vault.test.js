@@ -9,6 +9,10 @@ import { mulberry32 } from './helpers/prng.js';
 // for marshmallow." And then: "add more dlc codes. you dont need the last 3 codes for One. for step 3, it should be
 // last one standing, and for 4, it should be all for One." Nothing here may put a banner on screen: "remove all text
 // for smashes and specials." and "remove item popups."
+// Then, in order: "there are more dlc fighters in the vault then normal fighters." -- "no, just remove dlc codes. and also,
+// I mean making the clues more cryptic." -- "remove pickle and paintbrush." (Paintbrush was never in the Vault; asked
+// again, the owner chose Microphone) -- "also remove proof of existence of one codes until you enter them. just show that
+// you havent seen all the codes to pique their curiosity."
 
 // A real origin, so localStorage exists and saves are exercised (same boot as profile-store.test.js).
 function boot({ seed = {}, breakStorage = false } = {}) {
@@ -53,11 +57,16 @@ const FIGHTER_CODES = {
   Balloon: ["OH C'MON", "Oh, c'mon!", 'OH CMON', 'Oh, come on!', 'OH COME ON'],
   Lightbulb: ['OMGA', 'OMGA!', 'OMGAH', 'OMGAH!'],
   'Taco (II)': ['SOUR CREAM', 'SOUR CREAM!', 'SOURCREAM', 'Sour-cream', 'MAERC RUOS'],
-  Pickle: ["OKAY, LET'S DO THIS", "Okay, let's do this!", 'OKAY LETS DO THIS', 'OK LETS DO THIS', "OK, let's do this!"],
   Bow: ['BUY A CHAIR', 'Buy a chair!', 'BUYACHAIR', 'buy-a-chair'],
+};
+const VAULT_BFDI = ['Needle', 'Gelatin', 'Fanny', 'Pillow', 'Toothpaste', 'Bubble'];
+const VAULT_DLC = ['Marshmallow', 'Balloon', 'Lightbulb', 'Taco (II)', 'Bow'];
+// "remove pickle and paintbrush." -- with Microphone in Paintbrush's place, since Paintbrush never was in the Vault. Their
+// old codes, every spelling they used to take, are ordinary wrong guesses now.
+const FORMER_CODES = {
+  Pickle: ["OKAY, LET'S DO THIS", "Okay, let's do this!", 'OKAY LETS DO THIS', 'OK LETS DO THIS', "OK, let's do this!"],
   Microphone: ["I'M NOT THAT LOUD", "I'M NOT THAT LOUD!!!!!!!", 'IM NOT THAT LOUD', 'I AM NOT THAT LOUD'],
 };
-const VAULT_DLC = ['Marshmallow', 'Balloon', 'Lightbulb', 'Taco (II)', 'Pickle', 'Bow', 'Microphone'];
 const HINT_CODES = {
   1: ['SO TO CLARIFY', 'So, to clarify...', 'SOTOCLARIFY', 'So to clarify?'],
   2: ['BRAKE AT FLAKE', "It's time for Brake at Flake!", 'BRAKEATFLAKE', 'ITS TIME FOR BRAKE AT FLAKE'],
@@ -96,6 +105,7 @@ describe('the Vault: codes', () => {
     for (const [name, spellings] of Object.entries(FIGHTER_CODES)) for (const s of spellings) expect(find(s), s).toBe(name);
     for (const [step, spellings] of Object.entries(HINT_CODES)) for (const s of spellings) expect(find(s), s).toBe('step' + step);
     for (const s of ['yoyle', 'omgaomga', 'x yoyle cake', 'walmarts', 'sour', 'all for', 'ONE']) expect(find(s), s).toBe(null);
+    for (const spellings of Object.values(FORMER_CODES)) for (const s of spellings) expect(find(s), `${s} left with its fighter`).toBe(null);
   });
 
   it('every normalised code is distinct, none is a fighter\'s name, and nobody from the OSC is in any of it', async () => {
@@ -142,33 +152,41 @@ describe('the Vault: codes', () => {
       const r = w.eval(`vaultSubmit(${J(HINT_CODES[step][1])})`);
       expect(r.kind).toBe('hint');
       expect(r.step).toBe(step);
+      // The reply names the clue's place in the order and nothing more: never "of 7", never her name.
+      expect(r.reply).toBe(`★ A whisper through the crack: step ${step}.`);
       got[step] = r.text;
     }
-    // What the chain actually asks for, in plain words.
-    expect(got[1]).toMatch(/^ONE - STEP 1 OF 7: LIGHTNING'S RECORD\./);
-    expect(got[1]).toContain('at least 20 matches as Lightning');
-    expect(got[1]).toContain('MORE than 70%');
-    expect(got[1]).toContain('15 wins out of 20 opens it; 14 out of 20 does not');
-    expect(got[1]).toContain('FFA, Teams, the Daily and net-host matches all count');
-    expect(got[2]).toMatch(/^ONE - STEP 2 OF 7: BOSS RUSH\./);
-    expect(got[2]).toContain('loop 2');
-    expect(got[2]).toContain('Four has to fall while your Lightning is still standing');
-    expect(got[3]).toMatch(/^ONE - STEP 3 OF 7: THE ERASURES\./);
-    expect(got[3]).toContain('every WIN erases ONE fighter');
-    expect(got[3]).toContain('Gaty, then Barf Bag, then Basketball, then your most-played fighters');
-    expect(got[3]).toContain('until only Lightning is left');
-    expect(got[3]).toContain('the Daily Match puts you on Lightning');
-    expect(got[4]).toMatch(/^ONE - STEP 4 OF 7: THE WORLD CUP\./);
-    expect(got[4]).toContain('Win the World Cup as Lightning');
-    // Steps 5 to 7 have no clue of their own, and the clue says what they are: only the Moon (5) plays by itself; then
-    // One has to be fought (6) and beaten (7). She never unlocks by herself.
-    expect(got[4]).toContain('Step 5 plays by itself right after.');
-    expect(got[4]).toContain('Then you fight One, solo, as Lightning (step 6)');
-    expect(got[4]).toContain('and you must beat her (step 7)');
-    expect(got[4]).toContain('There is no code for steps 5 to 7.');
-    expect(got[4]).not.toMatch(/on their own/i);
+    // "and also, I mean making the clues more cryptic." Each is a riddle, but a TRUE one: what the chain asks for is in it,
+    // encoded. Step 1: at least 20 matches ("a score") as Lightning ("the bolt who cracked my Moon", TPOT 7), won MORE than
+    // 70% ("more than seven times in every ten").
+    expect(got[1]).toContain('The bolt who cracked my Moon');
+    expect(got[1]).toContain('a score of battles at the least');
+    expect(got[1]).toContain('won more than seven times in every ten');
+    // Step 2: Boss Rush ("the gauntlet of bosses") to loop 2 ("until it starts over"); Four falls while Lightning stands.
+    expect(got[2]).toContain('lead the bolt through the gauntlet of bosses until it starts over');
+    expect(got[2]).toContain('Four must fall to end the first lap, and the bolt must still be standing when he does');
+    // Step 3: one fighter per win -- the canon three first, in order, then your most-played -- until only Lightning is left.
+    expect(got[3]).toContain('Every victory feeds me a name from the timeline');
+    expect(got[3]).toContain('first the three I took before, in the order I took them (the gate, the bag, the ball)');
+    expect(got[3]).toContain('then the names your hands choose most');
+    expect(got[3]).toContain('until the bolt is all that remains');
+    // Step 4: with only Lightning left, win the World Cup.
+    expect(got[4]).toContain('When the bolt is all that remains, the cup the whole world fights for must be his');
+    for (const step of [1, 2, 3, 4]) {
+      const t = got[step];
+      // Cryptic: its numbers encoded, never a digit or a percent; no plain name for the fighter, the mode or the cup; not
+      // the old plain wording.
+      expect(t, `step ${step}`).not.toMatch(/\d|%/);
+      expect(t, `step ${step}`).not.toMatch(/Lightning|Boss Rush|World Cup|\bloop\b|Gaty|Barf Bag|Basketball|most-played|\bplay at least\b/i);
+      // "Never use the name One": not even the word.
+      expect(t, `step ${step}`).not.toMatch(/\bone\b/i);
+      // Nothing after step 4: no later step, no count of steps, no Moon breaking, no fight with her.
+      expect(t, `step ${step}`).not.toMatch(/step|of 7|\bseven steps\b|hey guys|break(s|ing)? open|fight her|beat her|unlock/i);
+    }
+    expect(got[4], 'the fourth does not say what follows it').not.toMatch(/moon|crack|then|after|look up|next/i);
     // "you dont need the last 3 codes for One": the dropped codes do nothing.
-    for (const s of ['HEY GUYS', 'Hey guys!', 'DOWN TO MAKE A DEAL', 'THE MOON', 'ONE', 'Needle', 'yoyle', '1234', 'walmartt']) {
+    for (const s of ['HEY GUYS', 'Hey guys!', 'DOWN TO MAKE A DEAL', 'THE MOON', 'ONE', 'Needle', 'yoyle', '1234', 'walmartt',
+      ...Object.values(FORMER_CODES).flat()]) {
       const r = w.eval(`vaultSubmit(${J(s)})`);
       expect(r.kind, s).toBe('wrong');
       expect(r.reply).toBe(WRONG);
@@ -281,6 +299,65 @@ describe('the Vault: the unlock model', () => {
     expect(w.document.querySelectorAll('#vaultFighters .vcell.open').length).toBe(0);
   });
 
+  it('is six BFDI fighters and five DLC: Pickle and Microphone are ordinary DLC fighters again', async () => {
+    // "there are more dlc fighters in the vault then normal fighters." -- "no, just remove dlc codes." -- "remove pickle and
+    // paintbrush." (Microphone in Paintbrush's place: Paintbrush was never in the Vault.)
+    const w = boot(); await settle(w);
+    const r = w.eval(`(function(){
+      var byName = function(n){ return ROSTER.find(function(x){ return x.name===n; }); };
+      var names = VAULT.fighters.map(function(v){ return v.name; });
+      var open = openProfile('no-storage');
+      return { names: names, dlc: names.filter(function(n){ return !!byName(n).dlc; }),
+        inVault: ['Pickle','Microphone'].filter(function(n){ return VAULT_FIGHTERS.has(n); }),
+        unlocked: ['Pickle','Microphone'].map(function(n){ return isUnlocked(byName(n)); }),
+        dlcTag: ['Pickle','Microphone'].map(function(n){ return byName(n).dlc; }),
+        hint: ['Pickle','Microphone'].map(function(n){ return unlockHint(n); }),
+        openProfile: ['Pickle','Microphone'].every(function(n){ return open.unlocked.indexOf(n) >= 0; }),
+        pickable: ['Pickle','Microphone'].every(function(n){ return onePickable(byName(n)); }) };
+    })()`);
+    expect(r.names.filter((n) => !r.dlc.includes(n))).toEqual(VAULT_BFDI);
+    expect(r.dlc).toEqual(VAULT_DLC);
+    expect(r.names.length - r.dlc.length, 'no more DLC in the Vault than BFDI fighters').toBeGreaterThan(r.dlc.length);
+    expect(r.inVault).toEqual([]);
+    expect(r.unlocked, 'open from the start, like the rest of the pack').toEqual([true, true]);
+    expect(r.dlcTag).toEqual(['Inanimate Insanity', 'Inanimate Insanity']);
+    for (const h of r.hint) expect(h).not.toMatch(/Vault/);
+    expect(r.openProfile, 'openProfile opens them').toBe(true);
+    expect(r.pickable).toBe(true);
+    w.eval('openVault()');
+    const cells = [...w.document.querySelectorAll('#vaultFighters .vcell')];
+    expect(cells.length).toBe(11);
+    expect(cells.map((c) => c.title).join(' '), 'no Vault cell for either').not.toMatch(/Pickle|Microphone/);
+    // Their codes are ordinary wrong guesses, and change nothing.
+    for (const s of Object.values(FORMER_CODES).flat()) {
+      const res = w.eval(`vaultSubmit(${J(s)})`);
+      expect(res.kind, s).toBe('wrong');
+      expect(res.reply).toBe(WRONG);
+    }
+    expect(w.eval('vaultState().found')).toEqual([]);
+  });
+
+  it('a save that recorded Pickle\'s or Microphone\'s code as found still loads, and the Vault still works', async () => {
+    const prior = { version: 1, matches: 3, wins: 1, kos: 2, bossesCleared: {}, bestRushLoop: 0, wcTitles: 0,
+      unlocked: ['Firey', 'Leafy', 'Pencil', 'Blocky', 'Ice Cube', 'Match', 'Pen', 'Pickle', 'Microphone'], viewMode: 'starters',
+      migratedFrom: null, vault: { found: ["OKAY, LET'S DO THIS", "I'M NOT THAT LOUD"] } };
+    const w = boot({ seed: { 'profile:v1': J(prior) } }); await settle(w);
+    expect(w.eval('isUnlocked(ROSTER.find(function(r){ return r.name==="Pickle"; })) && isUnlocked(ROSTER.find(function(r){ return r.name==="Microphone"; }))')).toBe(true);
+    w.eval('openVault()');
+    expect(w.document.querySelectorAll('#vaultFighters .vcell.open').length, 'neither old code opens a cell').toBe(0);
+    expect(w.document.getElementById('vaultMissing').textContent).toBe(w.eval('VAULT.missing'));
+    expect(w.document.getElementById('vaultHints').children.length).toBe(0);
+    expect(w.eval(`vaultSubmit("I'm not that loud").kind`), 'recorded once, still a wrong guess now').toBe('wrong');
+    expect(w.eval('vaultSubmit("omga").kind')).toBe('fighter');
+    // Every code of today's Vault in: the line goes, whatever old entries the save still holds.
+    for (const c of [...Object.values(FIGHTER_CODES).map((s) => s[0]), ...Object.values(HINT_CODES).map((s) => s[0])]) w.eval(`vaultSubmit(${J(c)})`);
+    w.eval('buildVault()');
+    expect(w.document.getElementById('vaultMissing').hidden).toBe(true);
+    expect(w.document.getElementById('vaultMissing').textContent).toBe('');
+    await w.eval('saveProfile()');
+    expect(JSON.parse(w.localStorage.getItem('profile:v1')).unlocked).toEqual(expect.arrayContaining(['Pickle', 'Microphone', 'Lightbulb']));
+  });
+
 });
 
 describe('the Vault: the Daily Match', () => {
@@ -290,11 +367,12 @@ describe('the Vault: the Daily Match', () => {
     const w = boot(); await settle(w);
     const pool = w.eval('ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })');
     const vault = new Set(Object.keys(FIGHTER_CODES));
-    let swapped = 0;
+    let swapped = 0, former = 0;
     for (let d = 0; d < 730; d++) {
       const seed = w.eval(`dailySeed(new Date(Date.UTC(2026, 8, ${24 + d})))`);
       const now = w.eval(`(function(){ var m = dailyMatchup(${seed}); return [m.you.name, m.foe.name]; })()`);
       const was = oldDaily(pool, seed);
+      if (now[0] in FORMER_CODES) former++;
       expect(vault.has(now[0]), `${seed}: you on ${now[0]}`).toBe(false);
       expect(now[0], `${seed}: nobody fights themselves`).not.toBe(now[1]);
       if (!vault.has(was[0])) expect(now, `${seed} keeps its pairing`).toEqual(was);
@@ -302,6 +380,7 @@ describe('the Vault: the Daily Match', () => {
       else expect(now[1], `${seed} keeps its foe`).toBe(was[1]);
     }
     expect(swapped, 'some days did draw a Vault fighter for you').toBeGreaterThan(0);
+    expect(former, 'Pickle and Microphone are out of the Vault, so the Daily can hand you either').toBeGreaterThan(0);
     // The day the review found: 2026-12-01 drew Pillow for you. She is the opponent now.
     expect(oldDaily(pool, 20261201)[0]).toBe('Pillow');
     expect(w.eval('dailyMatchup(20261201).foe.name')).toBe('Pillow');
@@ -393,7 +472,10 @@ describe('the Vault: saving', () => {
     expect(w2.eval('vaultFound("YOYLE CAKE") && vaultFound("ALL FOR ONE")')).toBe(true);
     w2.eval('openVault()');
     expect([...w2.document.querySelectorAll('#vaultFighters .vcell.open')].map((c) => c.textContent)).toEqual(['Bubble']);
-    expect(w2.document.querySelectorAll('#vaultHints .vhint')[3].textContent).toContain('THE WORLD CUP');
+    // Only the clue found is on screen: step 4's, with its number.
+    const rows = [...w2.document.querySelectorAll('#vaultHints .vhint')];
+    expect(rows.map((h) => h.querySelector('.vstep').textContent)).toEqual(['4']);
+    expect(rows[0].textContent).toContain('the cup the whole world fights for');
     expect(w2.eval('vaultSubmit("yoylecake").kind')).toBe('again');
   });
 
@@ -426,7 +508,7 @@ describe('the Vault: saving', () => {
 });
 
 describe('the Vault: the screen', () => {
-  it('is on the main menu from the start, and shows every Vault fighter and clue as ??? on a fresh save', async () => {
+  it('is on the main menu from the start, shows every Vault fighter as ??? on a fresh save, and nothing at all about clues', async () => {
     const w = boot(); await settle(w);
     const btn = w.document.querySelector('#title #vaultBtn');
     expect(btn).toBeTruthy();
@@ -442,12 +524,22 @@ describe('the Vault: the screen', () => {
     btn.click();
     expect(w.document.getElementById('vault').classList.contains('active')).toBe(true);
     const cells = [...w.document.querySelectorAll('#vaultFighters .vcell')];
-    expect(cells.length).toBe(13);
+    expect(cells.length).toBe(11);
     expect(cells.every((c) => c.classList.contains('shut') && c.textContent === '???')).toBe(true);
-    const hints = [...w.document.querySelectorAll('#vaultHints .vhint')];
-    expect(hints.map((h) => h.querySelector('.vstep').textContent)).toEqual(['1', '2', '3', '4']);
-    expect(hints.every((h) => h.classList.contains('shut') && /\?\?\?/.test(h.textContent))).toBe(true);
-    expect(w.document.getElementById('vaultCount').textContent).toBe('0 of 17 codes found');
+    // "also remove proof of existence of one codes until you enter them": no clue section, no ??? rows, no count.
+    const screen = w.document.getElementById('vault');
+    expect(screen.querySelectorAll('.vhint, .vstep').length).toBe(0);
+    expect(w.document.getElementById('vaultHints').hidden).toBe(true);
+    expect(w.document.getElementById('vaultCluesHead').hidden).toBe(true);
+    expect(w.document.getElementById('vaultCluesHead').textContent).toBe('');
+    expect(w.document.getElementById('vaultCount'), 'the old "N of 17 codes found" count is gone').toBe(null);
+    expect(screen.textContent).not.toMatch(/clue|hint|secret|whisper|step|unlock|\d+ of \d+|codes found/i);
+    expect(screen.textContent).not.toContain(w.eval('VAULT.cluesHeading'));
+    // "just show that you havent seen all the codes to pique their curiosity": one line, no numbers, no kinds of code.
+    const miss = w.document.getElementById('vaultMissing');
+    expect(miss.hidden).toBe(false);
+    expect(miss.textContent).toBe("You haven't found every code yet.");
+    expect(miss.textContent).not.toMatch(/\d|fighter|clue/i);
     expect(w.document.getElementById('vaultCode')).toBeTruthy();
     expect(w.document.getElementById('vaultEnterBtn')).toBeTruthy();
   });
@@ -466,11 +558,21 @@ describe('the Vault: the screen', () => {
     expect(marsh && marsh.classList.contains('open')).toBe(true);
     expect(w.eval('isUnlocked(ROSTER.find(function(r){ return r.name==="Marshmallow"; }))')).toBe(true);
 
+    // A fighter code says nothing about clues: still no heading, no row.
+    expect(w.document.getElementById('vaultCluesHead').hidden).toBe(true);
+    expect(w.document.querySelectorAll('#vaultHints .vhint').length).toBe(0);
+
     box.value = 'brake at flake'; w.document.getElementById('vaultEnterBtn').click();
-    expect(reply.textContent).toMatch(/step 2 of 7/);
-    const row2 = w.document.querySelectorAll('#vaultHints .vhint')[1];
-    expect(row2.classList.contains('open')).toBe(true);
-    expect(row2.textContent).toContain('Four has to fall while your Lightning is still standing');
+    expect(reply.textContent).toBe('★ A whisper through the crack: step 2.');
+    // The first clue found brings the heading, and its own row with its step number -- and only that row.
+    const head = w.document.getElementById('vaultCluesHead');
+    expect(head.hidden).toBe(false);
+    expect(head.textContent).toBe('Whispers through the crack');
+    const rows = [...w.document.querySelectorAll('#vaultHints .vhint')];
+    expect(rows.length).toBe(1);
+    expect(rows[0].querySelector('.vstep').textContent).toBe('2');
+    expect(rows[0].classList.contains('open')).toBe(true);
+    expect(rows[0].textContent).toContain('Four must fall to end the first lap');
 
     box.value = 'hey guys'; enter();
     expect(reply.textContent).toBe(WRONG);
@@ -479,7 +581,10 @@ describe('the Vault: the screen', () => {
 
     box.value = 'WAL MART'; enter();
     expect(reply.textContent).toMatch(/already found/);
-    expect(w.document.getElementById('vaultCount').textContent).toBe('2 of 17 codes found');
+    box.value = 'so, to clarify...'; enter(); box.value = 'Brake at flake'; enter();
+    expect(reply.textContent).toBe('You already found that whisper: step 2.');
+    expect([...w.document.querySelectorAll('#vaultHints .vstep')].map((s) => s.textContent), 'found clues in step order').toEqual(['1', '2']);
+    expect(w.document.getElementById('vaultMissing').textContent).toBe("You haven't found every code yet.");
   });
 
   it('a right code typed before the save has loaded waits in the box, and records nothing until it has', async () => {
@@ -538,9 +643,64 @@ describe('the Vault: the screen', () => {
     expect(w.eval('window.__banners')).toBe(0);
     expect(w.eval('window.__lastBanner')).toBeUndefined();
     expect(w.document.getElementById('banner').classList.contains('show')).toBe(false);
-    expect(w.document.getElementById('vaultCount').textContent).toBe('17 of 17 codes found');
+    // Every code in: the "not every code" line has gone.
+    expect(w.document.getElementById('vaultMissing').hidden).toBe(true);
+    expect(w.document.getElementById('vaultMissing').textContent).toBe('');
     expect(w.eval(`${J(VAULT_DLC)}.every(function(n){ return isUnlocked(ROSTER.find(function(r){ return r.name===n; })); })`),
       'every Vault DLC fighter is open once its code is in').toBe(true);
+  });
+
+  it('the "not every code" line stays while any code is unfound, fighter or clue, and goes when the last is in', async () => {
+    const w = boot(); await settle(w);
+    w.eval('openVault()');
+    const miss = () => { const m = w.document.getElementById('vaultMissing'); return m.hidden ? null : m.textContent; };
+    const LINE = "You haven't found every code yet.";
+    // Every fighter code in, no clue code: the fighters are all out, but the line stays -- and still nothing about clues.
+    for (const s of Object.values(FIGHTER_CODES)) w.eval(`vaultSubmit(${J(s[0])})`);
+    w.eval('buildVault()');
+    expect(w.document.querySelectorAll('#vaultFighters .vcell.open').length).toBe(11);
+    expect(miss()).toBe(LINE);
+    expect(w.document.getElementById('vaultCluesHead').hidden).toBe(true);
+    expect(w.document.querySelectorAll('#vaultHints .vhint').length).toBe(0);
+    // Clues found out of order show in step order, each with its number.
+    for (const step of [4, 1, 3]) w.eval(`vaultSubmit(${J(HINT_CODES[step][0])})`);
+    w.eval('buildVault()');
+    expect([...w.document.querySelectorAll('#vaultHints .vstep')].map((s) => s.textContent)).toEqual(['1', '3', '4']);
+    expect(miss(), 'one clue still out').toBe(LINE);
+    w.eval(`vaultSubmit(${J(HINT_CODES[2][0])})`); w.eval('buildVault()');
+    expect(miss()).toBe(null);
+    expect([...w.document.querySelectorAll('#vaultHints .vstep')].map((s) => s.textContent), 'nothing after step 4').toEqual(['1', '2', '3', '4']);
+
+    // And every clue in but one fighter code out: the line is back for that one.
+    const w2 = boot(); await settle(w2);
+    w2.eval('openVault()');
+    for (const s of Object.values(HINT_CODES)) w2.eval(`vaultSubmit(${J(s[0])})`);
+    for (const [name, s] of Object.entries(FIGHTER_CODES)) if (name !== 'Bow') w2.eval(`vaultSubmit(${J(s[0])})`);
+    w2.eval('buildVault()');
+    expect(w2.document.getElementById('vaultMissing').textContent).toBe(LINE);
+  });
+
+  it('none of the Vault\'s own words name One, and none says what comes after step 4', async () => {
+    // "Never use the name One": the codes a player types may hold it (ALL FOR ONE), the Vault's own text may not.
+    const w = boot(); await settle(w);
+    const texts = [w.eval('VAULT.cluesHeading'), w.eval('VAULT.missing'), w.eval('VAULT.wrong'), ...w.eval('VAULT.hints.map(function(h){ return h.text; })')];
+    const replies = [];
+    w.eval('openVault()');
+    const screens = [w.document.getElementById('vault').textContent];
+    for (const c of [...Object.values(FIGHTER_CODES).map((s) => s[0]), ...Object.values(HINT_CODES).map((s) => s[0])]) {
+      replies.push(w.eval(`vaultSubmit(${J(c)}).reply`), w.eval(`vaultSubmit(${J(c)}).reply`));   // found, then found again
+    }
+    replies.push(w.eval('vaultSubmit("nope").reply'), w.eval('vaultSubmit("").reply'));
+    w.eval('buildVault()');
+    screens.push(w.document.getElementById('vault').textContent);
+    const titles = [...w.document.querySelectorAll('#vault [title]')].map((e) => e.title);
+    const early = boot();   // before the save has loaded: the "wait" reply
+    replies.push(early.eval('vaultSubmit("2763").reply'));
+    for (const t of [...texts, ...replies, ...screens, ...titles]) {
+      expect(t, t).not.toMatch(/\bone\b/i);
+      expect(t, t).not.toMatch(/\bstep\s*[5-9]\b|\bof\s*7\b|\bsteps?\s*5\b|hey guys/i);
+    }
+    expect(w.eval('VAULT.hints.map(function(h){ return h.step; })')).toEqual([1, 2, 3, 4]);
   });
 
   it('is built to fit a phone: the box shrinks, the fighters wrap, the clues are one column', async () => {
@@ -553,8 +713,8 @@ describe('the Vault: the screen', () => {
   });
 });
 
-// The clues say, in plain words, what One's chain asks for. That chain is built on another branch; once it is merged
-// into this build, these tie each clue to the code that decides the step, so the two cannot drift apart unnoticed.
+// The clues are riddles now ("I mean making the clues more cryptic"), but true ones. These tie each clue's encoded
+// requirement to the code that decides the step, so the two cannot drift apart unnoticed.
 const HAS_ONE = /\bconst ONE_RATE_GAMES\b/.test(HTML);
 describe.skipIf(!HAS_ONE)('the Vault\'s clues agree with One\'s chain', () => {
   it('step 1: at least 20 matches as Lightning, MORE than 70% won -- 15 of 20 opens it, 14 of 20 does not', async () => {
@@ -565,7 +725,12 @@ describe.skipIf(!HAS_ONE)('the Vault\'s clues agree with One\'s chain', () => {
     expect(ok(20, 15)).toBe(true);
     expect(ok(20, 14)).toBe(false);
     expect(ok(19, 19)).toBe(false);
-    expect(w.eval('VAULT.hints[0].text')).toContain('15 wins out of 20 opens it; 14 out of 20 does not');
+    // "a score of battles at the least" is 20 or more; "more than seven times in every ten" is strictly above 70%.
+    const t = w.eval('VAULT.hints[0].text');
+    expect(t).toContain('a score of battles at the least');
+    expect(t).toContain('more than seven times in every ten');
+    expect(t, 'the bolt: Lightning, whose storm cracked the Moon in TPOT 7').toContain('The bolt who cracked my Moon');
+    expect(20 * 7 / 10, 'score times seven-in-ten is exactly the bar, which 14 of 20 sits on and does not pass').toBe(14);
   });
 
   it('step 2: Boss Rush loop 2, and Four has to fall while YOUR Lightning is still standing', async () => {
@@ -580,6 +745,11 @@ describe.skipIf(!HAS_ONE)('the Vault\'s clues agree with One\'s chain', () => {
     expect(rush(1, 'Lightning', false)).toBe(false);
     expect(rush(2, 'Lightning', true)).toBe(false);
     expect(rush(2, 'Firey', false)).toBe(false);
+    // "until it starts over" is loop 2; "Four must fall ... the bolt must still be standing" is the dead check above.
+    const t = w.eval('VAULT.hints[1].text');
+    expect(t).toContain('the gauntlet of bosses until it starts over');
+    expect(t).toContain('Four must fall to end the first lap, and the bolt must still be standing when he does');
+    expect(w.eval('BOSS_ROSTER[BOSS_ROSTER.length - 1].name'), 'Four is the boss that ends the first lap').toBe('Four');
   });
 
   it('step 3: Gaty, then Barf Bag, then Basketball, then your most-played fighters -- never a Vault fighter still shut', async () => {
@@ -594,6 +764,15 @@ describe.skipIf(!HAS_ONE)('the Vault\'s clues agree with One\'s chain', () => {
     w.eval('vaultSubmit("2763")');
     expect(next(), 'once her code is in, she can be erased like anyone').toBe('Pillow');
     expect(w.eval('oneDailyMatchup(dailyMatchup(dailySeed())).you.name'), 'the Daily puts you on Lightning').toBe('Lightning');
+    // "the gate, the bag, the ball" are Gaty, Barf Bag and Basketball, "in the order I took them"; then "the names your
+    // hands choose most"; "until the bolt is all that remains". A win takes a name: oneQuestStep erases one per win.
+    const t = w.eval('VAULT.hints[2].text');
+    expect(t).toContain('first the three I took before, in the order I took them (the gate, the bag, the ball)');
+    expect(t).toContain('then the names your hands choose most');
+    expect(t).toContain('Every victory feeds me a name from the timeline');
+    expect(t).toContain('until the bolt is all that remains');
+    // Gaty is a gate; Barf Bag a bag; Basketball a ball -- in the chain's own order.
+    expect(w.eval('ONE_CANON_ERASED').map((n) => ({ Gaty: 'gate', 'Barf Bag': 'bag', Basketball: 'ball' })[n])).toEqual(['gate', 'bag', 'ball']);
   });
 
   it('step 4: winning the World Cup as Lightning is what brings the Moon', async () => {
@@ -606,5 +785,6 @@ describe.skipIf(!HAS_ONE)('the Vault\'s clues agree with One\'s chain', () => {
     })()`);
     expect(cup('Firey')).toBe(false);
     expect(cup('Lightning')).toBe(true);
+    expect(w.eval('VAULT.hints[3].text')).toBe('When the bolt is all that remains, the cup the whole world fights for must be his.');
   });
 });

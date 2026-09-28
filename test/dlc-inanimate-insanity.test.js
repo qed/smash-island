@@ -22,8 +22,10 @@ const arena = (name, body, foeX = 460) => W.eval(`(function(){
 describe('the Inanimate Insanity DLC', () => {
   it('arrives unlocked bar its Vault fighters, in its own labelled group after the BFDI cast, with no one from the OSC', () => {
     // The pack used to arrive whole. Then the owner put some of it in the Vault (2026-09-24): "Wal-mart is for
-    // marshmallow", then "add more dlc codes". Those seven open only with their code (test/vault.test.js opens each
-    // one); the other nine are still open on a fresh save.
+    // marshmallow", then "add more dlc codes". Then "there are more dlc fighters in the vault then normal fighters." --
+    // "no, just remove dlc codes." -- "remove pickle and paintbrush." (Microphone in Paintbrush's place: Paintbrush never
+    // was in the Vault). So five open only with their code (test/vault.test.js opens each one); the other eleven,
+    // Pickle and Microphone among them again, are open on a fresh save.
     const r = W.eval(`(function(){ PROFILE.viewMode='unlocked'; buildBoard();
       var dlc = ROSTER.filter(function(x){ return x.dlc; }).map(function(x){ return x.name; });
       var isOpen = function(n){ return isUnlocked(ROSTER.find(function(x){ return x.name===n; })); };
@@ -32,8 +34,8 @@ describe('the Inanimate Insanity DLC', () => {
     })()`);
     expect(r.dlc).toEqual(['Balloon', 'Bomb', 'Knife', 'Lightbulb', 'Paintbrush',
       'Taco (II)', 'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube']);
-    expect(r.open).toEqual(['Bomb', 'Knife', 'Paintbrush', 'Apple', 'Baseball', 'Nickel (II)', 'Paper', 'Salt', 'Test Tube']);
-    expect(r.shut).toEqual(['Balloon', 'Lightbulb', 'Taco (II)', 'Bow', 'Marshmallow', 'Pickle', 'Microphone']);
+    expect(r.open).toEqual(['Bomb', 'Knife', 'Paintbrush', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube']);
+    expect(r.shut).toEqual(['Balloon', 'Lightbulb', 'Taco (II)', 'Bow', 'Marshmallow']);
     expect(r.head).toBe(true);
     expect(r.osc).toEqual([]);
   });

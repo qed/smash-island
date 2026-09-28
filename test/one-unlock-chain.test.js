@@ -744,3 +744,235 @@ describe('the review\'s fixes to the chain', () => {
     expect(w.eval(`PROFILE.fighterStats.Firey`), 'two tutorial runs against the Dummy do not count').toEqual({ g: 1, w: 0 });
   });
 });
+
+// The owner, after the chain shipped: "also, make it so that the ais also dont have access to the fighters that have been
+// erased. until the world cup, ofc." So from the first erasure until One is beaten, no fighter the computer drives is drawn
+// from the erased list -- FFA and Teams opponents and teammates, the Daily's foe, Boss Rush allies, Test mode's dummies, a
+// net host's AI fill -- while the World Cup's sides are drawn as they always were, and so is a second human's fighter.
+describe('the erased are gone for the AI too ("the ais also dont have access to the fighters that have been erased")', () => {
+  const J = JSON.stringify;
+  // Two thirds of the roster erased -- the canon three first, as the chain always does -- so every draw has to skip plenty.
+  const BIG = `(function(){ var e = ['Gaty','Barf Bag','Basketball'];
+    ROSTER.forEach(function(r, i){ if(r.play && r.name!=='Lightning' && e.indexOf(r.name)<0 && i % 3 !== 2) e.push(r.name); });
+    return e; })()`;
+  const ERASING = (stage = 1, erased = BIG) => ARM + ` PROFILE.one.stage = ${stage}; unlockFighter('Lightning'); PROFILE.one.erased = ${erased};
+    chosen = oneLightning(); TOURNEY_MATCH_ACTIVE = false; TOURNEY_WATCHING = null; window.__netRoster = null; SETTINGS.teamKey = '';`;
+  // One match's lineup, built the way every match builds it, on its own seed.
+  const draw = (mode, count, seed, extra = '') => {
+    W.Math.random = mulberry32(seed);
+    return W.eval(`(function(){
+      SETTINGS.mode = ${J(mode)}; SETTINGS.count = ${count}; LINEUP_MEMO = null; ${extra}
+      resize(); setupWorld(); buildFighters();
+      return fighters.map(function(f){ return { name:f.name, c:f.controller, you:!!f.you }; });
+    })()`);
+  };
+  const erasedNow = () => new Set(W.eval('PROFILE.one.erased.slice()'));
+  const done = () => { W.Math.random = mulberry32(7); W.eval(`LOCAL_PLAYERS = 1; TESTMODE.active = false; window.__netRoster = null; LINEUP_MEMO = null; go('title');`); };
+
+  it('FFA and Teams: across hundreds of seeded matches no AI opponent or teammate is ever an erased fighter', async () => {
+    let ai = 0; const seen = new Set();
+    for (const stage of [1, 2, 4]) {   // erasing, only Lightning left, and One waiting: all before she is beaten
+      await fresh(W, ERASING(stage));
+      const erased = erasedNow();
+      expect(erased.size).toBeGreaterThan(30);
+      for (let s = 0; s < (stage === 1 ? 50 : 12); s++) {
+        for (const [mode, count] of [['ffa', 2], ['ffa', 5], ['teams', 4], ['teams', 8], ['teams', 20]]) {
+          const f = draw(mode, count, 1000 * stage + s);
+          expect(f.length, `${mode} ${count}`).toBe(count);
+          expect(f[0]).toMatchObject({ name: 'Lightning', you: true, c: 'local' });
+          for (const x of f.filter((y) => y.c === 'ai')) {
+            ai++; seen.add(x.name);
+            expect(erased.has(x.name), `stage ${stage} ${mode} ${count} seed ${s}: AI drew erased ${x.name}`).toBe(false);
+          }
+        }
+      }
+    }
+    expect(ai).toBeGreaterThan(1500);
+    expect(seen.size, 'drawn from everyone who is not erased, not a fixed few').toBeGreaterThan(15);
+    done();
+  }, 60000);
+
+  it('the team huddle\'s preview is the same lineup, and a remembered lineup with an erased AI in it is drawn again', async () => {
+    await fresh(W, ERASING());
+    const erased = erasedNow();
+    W.Math.random = mulberry32(99);
+    const r = W.eval(`(function(){
+      SETTINGS.mode = 'teams'; SETTINGS.count = 8; LINEUP_MEMO = null;
+      refreshTeamChat(); var preview = fighters.map(function(f){ return f.name; });
+      buildFighters(); var match = fighters.map(function(f){ return f.name; });
+      // a lineup remembered from before an erasure (the memo is keyed on mode, count, split and pick, not on the chain)
+      LINEUP_MEMO = { key:lineupKey(8), names:['Gaty','Barf Bag','Basketball','Pen','Pin','Leafy','Rocky'], teamOf:null };
+      buildFighters(); var redrawn = fighters.filter(function(f){ return f.controller==='ai'; }).map(function(f){ return f.name; });
+      return { preview:preview, match:match, redrawn:redrawn };
+    })()`);
+    expect(r.match, 'the teammates you planned with are the ones you fight beside').toEqual(r.preview);
+    for (const n of [...r.preview.slice(1), ...r.redrawn]) expect(erased.has(n), n).toBe(false);
+    expect(r.redrawn.length).toBe(7);
+    done();
+  });
+
+  it('Boss Rush allies are never erased either', async () => {
+    await fresh(W, ERASING());
+    const erased = erasedNow();
+    let allies = 0;
+    for (let s = 0; s < 80; s++) {
+      const f = draw('boss', 5, 5000 + s);
+      for (const x of f.filter((y) => y.c === 'ai')) { allies++; expect(erased.has(x.name), `seed ${s}: ally ${x.name}`).toBe(false); }
+    }
+    expect(allies).toBe(80 * 4);
+    // ...and the real gauntlet: Start in Boss Rush.
+    const real = W.eval(`SETTINGS.mode = 'boss'; SETTINGS.count = 5; startMatch();
+      var o = fighters.map(function(f){ return { name:f.name, c:f.controller, team:f.team }; }); running = false; BOSSRUSH.active = false; o`);
+    expect(real[0].name).toBe('Lightning');
+    for (const x of real.slice(1)) { expect(x.c).toBe('ai'); expect(x.team).toBe(0); expect(erased.has(x.name), x.name).toBe(false); }
+    done();
+  });
+
+  it('the Daily: its foe is never erased, and a stand-in is the same every time for that date', async () => {
+    await fresh(W, ERASING());
+    const r = W.eval(`(function(){ var out = { replaced:0, kept:0, bad:[], unstable:0, day:null };
+      for (var d = 0; d < 730; d++){
+        var seed = dailySeed(new Date(Date.UTC(2026, 8, 28 + d)));
+        var raw = dailyMatchup(seed), m = oneDailyMatchup(raw), again = oneDailyMatchup(dailyMatchup(seed));
+        if (m.you.name !== 'Lightning') out.bad.push(seed + ': you on ' + m.you.name);
+        if (PROFILE.one.erased.indexOf(m.foe.name) >= 0) out.bad.push(seed + ': foe ' + m.foe.name + ' is erased');
+        if (again.foe !== m.foe || again.you !== m.you) out.unstable++;
+        if (m.foe === raw.foe) out.kept++;
+        else {
+          out.replaced++;
+          if (PROFILE.one.erased.indexOf(raw.foe.name) < 0) out.bad.push(seed + ': replaced ' + raw.foe.name + ', who is not erased');
+          if (m.foe.name === 'Lightning') out.bad.push(seed + ': a stand-in mirror with others left');
+          if (!out.day) out.day = { seed:seed, raw:raw.foe.name, foe:m.foe.name };
+        }
+      }
+      return out; })()`);
+    expect(r.bad).toEqual([]);
+    expect(r.unstable, 'deterministic: the same date gives the same foe').toBe(0);
+    expect(r.replaced, 'erased foes were stood in for').toBeGreaterThan(100);
+    expect(r.kept, 'a foe who is not erased stays today\'s foe').toBeGreaterThan(100);
+    // More erasures change a stand-in only if they take the stand-in itself.
+    const moved = W.eval(`(function(){ var S = ${r.day.seed}, a = oneDailyMatchup(dailyMatchup(S)).foe.name;
+      var other = ROSTER.find(function(x){ return x.play && x.name!=='Lightning' && x.name!==a && PROFILE.one.erased.indexOf(x.name)<0; }).name;
+      PROFILE.one.erased.push(other); var b = oneDailyMatchup(dailyMatchup(S)).foe.name;
+      PROFILE.one.erased.push(b); var c = oneDailyMatchup(dailyMatchup(S)).foe.name;
+      return { a:a, b:b, c:c, cErased:PROFILE.one.erased.indexOf(c) >= 0 }; })()`);
+    expect(moved.b).toBe(moved.a);
+    expect(moved.c).not.toBe(moved.a);
+    expect(moved.cErased).toBe(false);
+    W.eval(`PROFILE.one.erased = ${BIG};`);
+    // The real match, and the title's card, on that day.
+    const real = W.eval(`(function(){ var ds = dailySeed; dailySeed = function(){ return ${r.day.seed}; };
+      try { startDailyMatch(); return fighters.map(function(f){ return { name:f.name, c:f.controller }; }); }
+      finally { running = false; returnDailyLoan(); dailySeed = ds; } })()`);
+    expect(real).toEqual([{ name: 'Lightning', c: 'local' }, { name: r.day.foe, c: 'ai' }]);
+    W.eval(`window.__ds = dailySeed; dailySeed = function(){ return ${r.day.seed}; };`);
+    await W.eval('refreshDailyCard()');
+    expect(W.eval(`document.querySelector('#dailyCard .daily-line').textContent`)).toBe(`Lightning  vs  ${r.day.foe}`);
+    W.eval('dailySeed = window.__ds;');
+    done();
+  });
+
+  it('Test mode\'s dummies, a net host\'s AI fill and the tutorial\'s dummy skip the erased too', async () => {
+    await fresh(W, ERASING(1, `(function(){ var e = ${BIG};
+      ROSTER.filter(function(r){ return r.play; }).slice(1, 5).forEach(function(r){ if(r.name!=='Lightning' && e.indexOf(r.name)<0) e.push(r.name); });
+      return e; })()`));
+    const erased = erasedNow();
+    const usual = W.eval(`ROSTER.filter(function(r){ return r.play; }).slice(1, 5).map(function(r){ return r.name; })`);
+    expect(usual.filter((n) => n !== 'Lightning').every((n) => erased.has(n)), 'the usual dummies are all erased here').toBe(true);
+    for (const mode of ['still', 'live']) {
+      const f = draw('ffa', 2, 1, `TESTMODE.active = true; TESTMODE.dummies = 4; TESTMODE.dummyMode = ${J(mode)};`);
+      expect(f.length).toBe(5);
+      for (const x of f.slice(1)) expect(erased.has(x.name), `${mode} dummy ${x.name}`).toBe(false);
+    }
+    W.eval('TESTMODE.active = false;');
+    for (let s = 0; s < 30; s++) {
+      const f = draw('ffa', 5, 7000 + s, `window.__netRoster = ['Lightning', 'Gaty'];`);
+      expect(f[1].name, 'a human\'s pick in the room is theirs').toBe('Gaty');
+      for (const x of f.slice(2)) { expect(x.c).toBe('ai'); expect(erased.has(x.name), `net fill ${x.name}`).toBe(false); }
+    }
+    W.eval('window.__netRoster = null;');
+    W.Math.random = mulberry32(3);
+    const dummy = W.eval(`startTutorial(); var d = fighters[1]; var o = { color:d.color, kit:d.kit && d.kit.special }; running = false; TUT.active = false; o`);
+    const erasedLooks = W.eval(`PROFILE.one.erased.map(function(n){ var r = ROSTER.find(function(x){ return x.name===n; }); return r.color + '|' + r.kit.special; })`);
+    expect(erasedLooks).not.toContain(`${dummy.color}|${dummy.kit}`);
+    done();
+  });
+
+  it('a second player at the keyboard is not an AI: their fighter is drawn exactly as it always was', async () => {
+    await fresh(W, ERASING() + ' LOCAL_PLAYERS = 2;');
+    const erased = erasedNow();
+    let p2Erased = 0;
+    for (let s = 0; s < 60; s++) {
+      W.eval('PROFILE.one.stage = 1;');
+      const now = draw('ffa', 4, 9000 + s);
+      W.eval('PROFILE.one.stage = 0;');   // the same seed with the chain not started: the draw as it always was
+      const before = draw('ffa', 4, 9000 + s);
+      const p2 = now.find((x) => x.c === 'local2');
+      expect(p2.name, `seed ${s}`).toBe(before.find((x) => x.c === 'local2').name);
+      if (erased.has(p2.name)) p2Erased++;
+      for (const x of now.filter((y) => y.c === 'ai')) expect(erased.has(x.name), `seed ${s}: AI ${x.name}`).toBe(false);
+    }
+    expect(p2Erased, 'so a second human can still be handed an erased fighter').toBeGreaterThan(0);
+    done();
+  });
+
+  it('the World Cup is the exception ("until the world cup, ofc"): its sides are drawn as they always were', async () => {
+    await fresh(W, ERASING());
+    const erased = erasedNow();
+    W.Math.random = mulberry32(11);
+    const r = W.eval(`(function(){
+      startTournament(1, 'normal');
+      var others = TOURNEY.teams.filter(function(t){ return t !== TOURNEY.myTeam; });
+      var onSides = others.filter(function(t){ return PROFILE.one.erased.indexOf(t.members[0].name) >= 0; }).length;
+      var fx = TOURNEY.fixtures.find(function(f){ return f.a !== TOURNEY.myTeam && f.b !== TOURNEY.myTeam
+        && (PROFILE.one.erased.indexOf(f.a.members[0].name) >= 0 || PROFILE.one.erased.indexOf(f.b.members[0].name) >= 0); });
+      watchFixture(fx, false);
+      var inMatch = fighters.map(function(f){ return { name:f.name, c:f.controller }; });
+      var want = [fx.a.members[0].name, fx.b.members[0].name];
+      var aiRuleOff = oneAiBanned(ROSTER.find(function(x){ return x.name==='Gaty'; }));
+      running = false; TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false;
+      var aiRuleBack = oneAiBanned(ROSTER.find(function(x){ return x.name==='Gaty'; }));
+      endTournament();
+      return { onSides:onSides, inMatch:inMatch, want:want, lead:TOURNEY.myTeam.members[0].name, aiRuleOff:aiRuleOff, aiRuleBack:aiRuleBack };
+    })()`);
+    expect(r.lead).toBe('Lightning');
+    expect(r.onSides, 'erased fighters still lead other sides').toBeGreaterThan(10);
+    expect(r.inMatch.map((x) => x.name)).toEqual(r.want);
+    expect(r.inMatch.some((x) => x.c === 'ai' && erased.has(x.name)), 'and the computer plays them in the cup\'s matches').toBe(true);
+    expect(r.aiRuleOff, 'not during a World Cup match').toBe(false);
+    expect(r.aiRuleBack, '...and back after it').toBe(true);
+    done();
+  });
+
+  it('once One is beaten the erased come back for the AI, as they do for you', async () => {
+    await fresh(W, ERASING(5));
+    const erased = erasedNow();
+    let back = 0;
+    for (let s = 0; s < 40; s++) back += draw('ffa', 5, 11000 + s).filter((x) => x.c === 'ai' && erased.has(x.name)).length;
+    expect(back, 'erased fighters are drawn again').toBeGreaterThan(40);
+    const daily = W.eval(`(function(){ var same = 0; for (var d = 0; d < 200; d++){ var S = 20261001 + d, raw = dailyMatchup(S), m = oneDailyMatchup(raw);
+      if (m === raw) same++; } return same; })()`);
+    expect(daily, 'the Daily is everyone\'s Daily again').toBe(200);
+    expect(W.eval(`oneAiBanned(ROSTER.find(function(x){ return x.name==='Gaty'; }))`)).toBe(false);
+    done();
+  });
+
+  it('before the chain starts nothing changes: the same seed draws the same lineup', async () => {
+    await fresh(W, `chosen = oneLightning(); TOURNEY_MATCH_ACTIVE = false; PROFILE.one.erased = ['Gaty'];`);   // stage 0: a stale list bans nobody
+    const a = draw('teams', 8, 12345), b = draw('teams', 8, 12345);
+    expect(a).toEqual(b);
+    W.eval('PROFILE.one.stage = 1; PROFILE.one.erased = [];');   // started on a loss: nobody erased yet
+    expect(draw('teams', 8, 12345), 'nobody erased yet: the same lineup').toEqual(a);
+    done();
+  });
+
+  it('with nobody left who is not erased, an AI seat falls back to Lightning, never an erased fighter or an empty seat', async () => {
+    await fresh(W, ERASING(2, `ROSTER.filter(function(r){ return r.play && r.name!=='Lightning'; }).map(function(r){ return r.name; })`));
+    const f = draw('ffa', 5, 1);
+    expect(f.map((x) => x.name)).toEqual(['Lightning', 'Lightning', 'Lightning', 'Lightning', 'Lightning']);
+    expect(W.eval(`oneDailyMatchup(dailyMatchup(20261225)).foe.name`)).toBe('Lightning');
+    const t = draw('ffa', 2, 1, 'TESTMODE.active = true; TESTMODE.dummies = 3;');
+    expect(t.map((x) => x.name)).toEqual(['Lightning', 'Lightning', 'Lightning', 'Lightning']);
+    done();
+  });
+});
