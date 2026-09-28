@@ -116,6 +116,15 @@ const PICKS = {
   // piano where it landed on Paper, against the pole. The piano is lifted out of it (key 'piano'); Paper, the pole and
   // the grass go. Same footing as the TPOT 7 strike: the owner named this piece of the show's art.
   piano:      { who: 'Paper',       kits: ['evilpaper'],  wiki: 'ii', file: 'Ep2 Piano.png',        note: 'the season-1 grand piano (Episode 2), lifted out of the frame', key: 'piano', region: [470, 240, 1010, 670], srcH: 700, h: 72 },
+  // --- batch 3 (g5): Blueberry, Cherries, Clover, Jack. Q1 "Cut from the frames": the Cherries' rock and olive-oil slick
+  // and Jack's pager exist only inside episode frames, so each is the show's own pixels lifted off its frame by a key
+  // below (rock, slick, pager). The cookie, the butterfly and the peel are transparent files already.
+  oatcookie:  { who: 'Blueberry',   kits: ['blueberry'],  wiki: 'ii', file: 'Cookie Season 3.png',  note: "the season-3 cookie (Q7: the Oatmeal Raisin smash sets it down; the show's S3 cookie, not a fan edit)" },
+  marsrock:   { who: 'Cherries',    kits: ['cherries'],   wiki: 'ii', file: 'MarshmallowHitByRock.png', note: 'the huge rock that sent Marshmallow to Mars, lifted off its frame (Marsh on Mars)', key: 'rock', region: [110, 85, 440, 415], srcH: 448 },
+  oliveoil:   { who: 'Cherries',    kits: ['cherries'],   wiki: 'ii', file: 'S4E4 The Cherries slip.png', note: 'their olive-oil slick, lifted off the floor they slipped on (Fan the Flames)', key: 'slick', region: [0, 340, 653, 480], srcH: 480, h: 24 },
+  butterfly:  { who: 'Clover',      kits: ['clover'],     wiki: 'ii', file: 'Butterfly.png',        note: "one of Clover's butterflies" },
+  bananapeel: { who: 'Clover',      kits: ['clover'],     wiki: 'ii', file: 'Banana Peel.png',      note: 'a banana peel (Q8: her luck puts it under a foe)' },
+  pager:      { who: 'Jack',        kits: ['jack'],       wiki: 'ii', file: "S04E02 Pager hits Bot's leg.png", note: "his pager in flight, lifted off its frame (Cob Mentality: it hits Bot's leg)", key: 'pager', region: [750, 170, 1110, 400], srcH: 1080 },
 };
 
 async function api(wiki, params) {
@@ -350,6 +359,53 @@ function keyPiano(png) {
   for (const p of pieces) if (p.length < biggest / 10) for (const k of p) d[k * 4 + 3] = 0;
 }
 const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano };
+// ---- batch 3 (g5): the rock, the slick and the pager, cut out of their frames (Q1 "Cut from the frames"). One PIECE key does
+// all three: a test says how much a pixel looks like the object, the biggest connected piece that passes is the object,
+// what it closes round stays (the rock's spots, the pager's screen and buttons), and its edge is as soft as the test.
+//   rock   the rock is flat grey with a darker grey outline; the grass, the sky, the impact flash and the rope are all
+//          coloured or bright, so none of it is grey and dark at once
+//   pager  the pager's body is a dark purple (blue and red over green); the backdrop is a grey-green that never is
+//   slick  the oil is olive (red and green well over blue); the planks are brown (green barely over blue) and the
+//          Cherries red. They sit ON the slick, so their bites out of it are filled with the slick's own mean colour,
+//          out to its hull -- the show's pixels wherever the oil shows, the oil's colour where a cherry covered it.
+function keyPiece(png, score, o = {}) {
+  const { width: w, height: h, data: d } = png, N = w * h;
+  const m = new Uint8Array(N); for (let k = 0; k < N; k++) m[k] = score(d, k * 4) > 0.5 ? 1 : 0;
+  const comp = new Int32Array(N).fill(-1), sizes = [];
+  for (let k0 = 0; k0 < N; k0++) { if (!m[k0] || comp[k0] >= 0) continue;
+    const id = sizes.length, stack = [k0]; let n = 0; comp[k0] = id;
+    while (stack.length) { const k = stack.pop(), x = k % w; n++;
+      for (const q of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, k - w, k + w]) if (q >= 0 && q < N && m[q] && comp[q] < 0) { comp[q] = id; stack.push(q); } }
+    sizes.push(n); }
+  const big = Math.max(0, ...sizes), keepId = sizes.map((n) => o.minPiece ? n >= big * o.minPiece : n === big);
+  const keep = new Uint8Array(N); for (let k = 0; k < N; k++) keep[k] = comp[k] >= 0 && keepId[comp[k]] ? 1 : 0;
+  if (o.hull) {
+    const pts = []; let sr = 0, sg = 0, sb = 0;
+    for (let k = 0; k < N; k++) if (keep[k]) { pts.push([k % w, (k / w) | 0]); sr += d[k * 4]; sg += d[k * 4 + 1]; sb += d[k * 4 + 2]; }
+    const n = pts.length, fill = [sr / n, sg / n, sb / n];
+    pts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const lower = [], upper = [];
+    for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+    for (let k = n - 1; k >= 0; k--) { const p = pts[k]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+    const hull = lower.slice(0, -1).concat(upper.slice(0, -1));
+    const inside = (x, y) => { for (let k = 0; k < hull.length; k++) if (cross(hull[k], hull[(k + 1) % hull.length], [x, y]) < 0) return false; return true; };
+    for (let k = 0; k < N; k++) { if (keep[k]) continue; const x = k % w, y = (k / w) | 0;
+      if (inside(x, y)) { d[k * 4] = fill[0]; d[k * 4 + 1] = fill[1]; d[k * 4 + 2] = fill[2]; d[k * 4 + 3] = 255; keep[k] = 2; } }
+  }
+  const outside = floodBorder(keep.map((v) => v ? 0 : 1), w, h);
+  for (let k = 0; k < N; k++) {
+    const i = k * 4;
+    if (keep[k] === 2) continue;                                                // a bite, filled with the object's colour
+    if (keep[k]) { d[i + 3] = Math.round(255 * Math.min(1, score(d, i) * 1.5)); continue; }
+    if (!outside[k]) { d[i + 3] = 255; continue; }                             // closed round by the object
+    d[i + 3] = touches(keep, k, w, N) ? Math.round(255 * score(d, i)) : 0;
+  }
+}
+const ROCK_GREY = (d, i) => lum(d, i) > 165 ? 0 : clamp01((34 - (Math.max(d[i], d[i + 1], d[i + 2]) - minC(d, i))) / 12);
+const PAGER_PURPLE = (d, i) => clamp01(Math.min((d[i + 2] - d[i + 1] - 8) / 20, (d[i] - d[i + 1] + 10) / 20));
+const OIL_OLIVE = (d, i) => (d[i] - d[i + 1] > 50) ? 0 : clamp01((d[i + 1] - d[i + 2] - 10) / 12);
+Object.assign(KEYS, { rock: (png) => keyPiece(png, ROCK_GREY), pager: (png) => keyPiece(png, PAGER_PURPLE), slick: (png) => keyPiece(png, OIL_OLIVE, { hull: true, minPiece: 0.03 }) });
 
 const outDir = process.argv[2];
 if (!outDir) { console.error('usage: node fetch-attack-sprites.mjs <outDir> [name ...]'); process.exit(1); }
