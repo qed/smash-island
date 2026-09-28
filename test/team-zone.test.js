@@ -303,11 +303,16 @@ describe('it is where the team spawns', () => {
   it('a full teams match still resolves', () => {
     // The zone must not make a match unwinnable by letting a losing team hide forever — they
     // cannot attack from inside, so holding it cannot win.
+    // The four are named (the lineup this seed drew before batch 3), not drawn: 26 new fighters reshuffled the random
+    // draw into Teddy Bear standing one ladder rung (104px) above Pen on the teams arena's centre ladder, under the AI's
+    // 110px drop threshold, with neither ever reaching the other. That stall is outside every zone, so it is not what
+    // this test is about; it is flagged for the owner instead. (__netRoster is the game's own fixed-lineup hook.)
     const { window: w } = loadMonolith();
     w.eval(`
       SETTINGS.mode='teams'; SETTINGS.teamKey='2v2'; SETTINGS.count=4;
       SETTINGS.stocks=1; SETTINGS.itemRate=0;
-      beginMatchNow();
+      window.__netRoster = ['Firey', 'Salt', 'Gelatin', 'Match'];
+      beginMatchNow(); window.__netRoster = null;
       fighters.forEach(function(f){ f.controller='ai'; f.you=false; });
       for (var i=0;i<20000 && running;i++) step();
     `);

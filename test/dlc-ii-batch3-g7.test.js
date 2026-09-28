@@ -253,12 +253,13 @@ describe('the standing rules', () => {
   }, 120000);
 
   it('nothing in this group\'s rows names the OSC (OJ, Suitcase, Cabby) or The Floor, and none of it calls banner()', () => {
-    const html = readFileSync('artifacts/V1/index.html', 'utf8').replace(/\r\n/g, '\n');
-    const slots = html.split('// @b3:g7 Tapey, Tea Kettle, Teddy Bear\n').slice(1).map((s) => s.split('\n\n')[0]);
-    expect(slots.length).toBe(19);
-    const mine = slots.join('\n');
+    // The @b3 slot markers were removed at integration, so this reads the whole file: the only OSC names in it are in
+    // the one comment that says they are left out.
+    const HTML_LINES = readFileSync('artifacts/V1/index.html', 'utf8').split(/\r?\n/);
+    const oscLines = HTML_LINES.filter((l) => /\b(OJ|Suitcase|Cabby|Orange Juice|The Floor)\b/.test(l) && !/No one from the OSC/.test(l));
+    expect(oscLines).toEqual([]);
+    const mine = HTML_LINES.filter((l) => /Tapey|Tea Kettle|Teddy Bear|\btape\b|\bhors\b|\bpaintball\b/.test(l)).join('\n');
     expect(mine.length).toBeGreaterThan(5000);
-    expect(mine).not.toMatch(/\bOJ\b|Suitcase|Cabby|The Floor/);
     expect(mine).not.toMatch(/banner\(/);
     const quips = W.eval(`${JSON.stringify(NAMES)}.map(function(n){ return JSON.stringify(ROSTER.find(function(r){ return r.name===n; })) + JSON.stringify(MOVE_TEXT[n]); }).join(' ')`);
     expect(quips).not.toMatch(/\bOJ\b|Suitcase|Cabby/);

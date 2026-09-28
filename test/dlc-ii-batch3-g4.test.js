@@ -47,10 +47,14 @@ describe('the three arrive', () => {
 
   it('with no one from the OSC in any of their rows, and no text put on the screen', () => {
     const html = readFileSync('artifacts/V1/index.html', 'utf8').split(/\r?\n/);
-    const mine = [];
-    html.forEach((l, i) => { if (l.trim() === '// @b3:g4 Tissues, Yin-Yang, Starfruit') for (let j = i + 1; html[j] && html[j].trim(); j++) mine.push(html[j]); });
-    expect(mine.length).toBeGreaterThan(60);
-    expect(mine.filter((l) => /\b(OJ|Suitcase|Cabby)\b/.test(l))).toEqual([]);
+    // The @b3 slot markers were removed at integration, so this reads the whole file: the only OSC names in it are in
+    // the one comment that says they are left out.
+    const HTML_LINES = html;
+    const oscLines = HTML_LINES.filter((l) => /\b(OJ|Suitcase|Cabby|Orange Juice|The Floor)\b/.test(l) && !/No one from the OSC/.test(l));
+    expect(oscLines).toEqual([]);
+    // and no text on screen: no line naming these three or their kits calls banner() or fillText
+    const mine = html.filter((l) => /Tissues|Yin-Yang|Starfruit|condishawn|yinyang|onehit/.test(l));
+    expect(mine.length).toBeGreaterThan(40);
     expect(mine.filter((l) => /banner\(|fillText/.test(l))).toEqual([]);
   });
 });

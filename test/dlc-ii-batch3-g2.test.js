@@ -57,10 +57,11 @@ describe('batch 3, group 2: the roster', () => {
   });
 
   it('none of this group\'s rows names anyone from the OSC', () => {
-    const html = readFileSync('artifacts/V1/index.html', 'utf8').replace(/\r/g, '');
-    const blocks = html.split('// @b3:g2 Bonesaw, Spikey, Candle, Cammy\n').slice(1).map((b) => b.split(/\/\/ @b3:g3 /)[0]);
-    expect(blocks.length).toBe(19);
-    for (const b of blocks) expect(b).not.toMatch(/\bOJ\b|Suitcase|Cabby/);
+    // The @b3 slot markers were removed at integration, so this reads the whole file: the only OSC names in it are in
+    // the one comment that says they are left out.
+    const HTML_LINES = readFileSync('artifacts/V1/index.html', 'utf8').split(/\r?\n/);
+    const oscLines = HTML_LINES.filter((l) => /\b(OJ|Suitcase|Cabby|Orange Juice|The Floor)\b/.test(l) && !/No one from the OSC/.test(l));
+    expect(oscLines).toEqual([]);
   });
 });
 

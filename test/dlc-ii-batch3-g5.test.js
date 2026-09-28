@@ -293,15 +293,13 @@ describe('no text, no OSC, and the show\'s art on everything thrown', () => {
   }, 60000);
 
   it('nothing in their rows names OJ, Suitcase or Cabby', () => {
-    // every slot this group wrote into: the lines between the g5 marker and the blank line after it
-    const slots = [];
-    const lines = HTML.split(/\r?\n/);
-    lines.forEach((l, i) => { if (l.includes('@b3:g5 Blueberry, Cherries, Clover, Jack')) { let j = i + 1; while (j < lines.length && lines[j].trim() !== '') slots.push(lines[j++]); } });
-    expect(slots.length).toBeGreaterThan(40);
+    // The @b3 slot markers were removed at integration, so this reads the whole file: the only OSC names in it are in
+    // the one comment that says they are left out.
+    const HTML_LINES = HTML.split(/\r?\n/);
+    const oscLines = HTML_LINES.filter((l) => /\b(OJ|Suitcase|Cabby|Orange Juice|The Floor)\b/.test(l) && !/No one from the OSC/.test(l));
+    expect(oscLines).toEqual([]);
     const osc = /\b(OJ|Suitcase|Cabby)\b/;
-    expect(slots.filter((l) => osc.test(l))).toEqual([]);
-    const credits = CREDITS.split(/\r?\n/), c0 = credits.findIndex((l) => l.includes('@b3:g5'));
-    expect(credits.slice(c0, c0 + 14).filter((l) => osc.test(l))).toEqual([]);
+    expect(CREDITS.split(/\r?\n/).filter((l) => osc.test(l) && /Blueberry|Cherries|Clover|Jack/.test(l))).toEqual([]);
   });
 
   it('every thing they throw or set down draws as the show\'s art, has a glyph behind it, and the files are clean cut-outs', () => {

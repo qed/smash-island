@@ -63,7 +63,7 @@ describe('batch 3, group 3: the roster rows and the renders', () => {
 
   it('the attack art exists, is transparent and projectile-sized, is credited, and every file has an entry and a glyph', () => {
     const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
-    for (const k of ['soccerball', 'losercage', 'vacuum', 'cloth']) {
+    for (const k of ['soccerball', 'losercage', 'soapvacuum', 'cloth']) {
       const src = W.eval(`ATTACK_SPRITES.${k}.src`);
       expect(existsSync(`artifacts/V1/${src}`)).toBe(true);
       const png = PNG.sync.read(readFileSync(`artifacts/V1/${src}`));

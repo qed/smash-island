@@ -83,10 +83,11 @@ describe('batch 3 (g1): the roster rows and the art', () => {
 
   it('nothing from the OSC in any g1 row', () => {
     const html = readFileSync('artifacts/V1/index.html', 'utf8').split(/\r?\n/);
-    const slots = [];
-    html.forEach((l, i) => { if (l.trim() === '// @b3:g1 Box, Trophy, Goo, Lifering') { let j = i + 1; while (j < html.length && html[j].trim() !== '') slots.push(html[j++]); } });
-    expect(slots.length).toBeGreaterThan(60);
-    expect(slots.filter((l) => /\b(OJ|Suitcase|Cabby)\b/.test(l))).toEqual([]);
+    // The @b3 slot markers were removed at integration, so this reads the whole file: the only OSC names in it are in
+    // the one comment that says they are left out.
+    const HTML_LINES = html;
+    const oscLines = HTML_LINES.filter((l) => /\b(OJ|Suitcase|Cabby|Orange Juice|The Floor)\b/.test(l) && !/No one from the OSC/.test(l));
+    expect(oscLines).toEqual([]);
     const words = W.eval(`JSON.stringify(${JSON.stringify(NAMES)}.map(function(n){ var r = ROSTER.find(function(x){ return x.name===n; }); return [r, MOVE_TEXT[n], SMASH_ID[r.kit.special]]; }))`);
     expect(words).not.toMatch(/\b(OJ|Suitcase|Cabby)\b/);
   });

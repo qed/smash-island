@@ -435,8 +435,7 @@ function keyBall(png) {
     else png.data[i + 3] = 255;   // inside the disc the ball is whole: the green key must not eat its JPEG-soft seams
   }
 }
-const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano, prop: keyProp, ball: keyBall };
-const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano };
+const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano, prop: keyProp, ball: keyBall, paintball: keyPaintball };
 // ---- batch 3 (g5): the rock, the slick and the pager, cut out of their frames (Q1 "Cut from the frames"). One PIECE key does
 // all three: a test says how much a pixel looks like the object, the biggest connected piece that passes is the object,
 // what it closes round stays (the rock's spots, the pager's screen and buttons), and its edge is as soft as the test.
@@ -523,7 +522,6 @@ function keyPaintball(png) {
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, r = Math.hypot(x - cx, y - cy);
     d[i + 3] = r <= R - 1 ? 255 : r <= R ? 128 : 0; }
 }
-const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano, paintball: keyPaintball };
 
 const outDir = process.argv[2];
 if (!outDir) { console.error('usage: node fetch-attack-sprites.mjs <outDir> [name ...]'); process.exit(1); }

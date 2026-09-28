@@ -74,10 +74,11 @@ describe('group 6 joins the Inanimate Insanity DLC', () => {
   });
 
   it('no one from the OSC in any group-6 row', () => {
-    const lines = HTML.split(/\r?\n/), rows = [];
-    lines.forEach((l, i) => { if (l.includes('@b3:g6 ')) { for (let j = i + 1; j < lines.length && lines[j].trim(); j++) rows.push(lines[j]); } });
-    expect(rows.length).toBeGreaterThan(40);
-    expect(rows.filter((l) => /\bOJ\b|Suitcase|Cabby|Orange Juice/.test(l))).toEqual([]);
+    // The @b3 slot markers were removed at integration, so this reads the whole file: the only OSC names in it are in
+    // the one comment that says they are left out.
+    const HTML_LINES = HTML.split(/\r?\n/);
+    const oscLines = HTML_LINES.filter((l) => /\b(OJ|Suitcase|Cabby|Orange Juice|The Floor)\b/.test(l) && !/No one from the OSC/.test(l));
+    expect(oscLines).toEqual([]);
   });
 });
 

@@ -290,7 +290,7 @@ describe('the Vault: the Daily Match', () => {
     const w = boot(); await settle(w);
     const pool = w.eval('ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })');
     const vault = new Set(Object.keys(FIGHTER_CODES));
-    let swapped = 0;
+    let swapped = 0, example = null;
     for (let d = 0; d < 730; d++) {
       const seed = w.eval(`dailySeed(new Date(Date.UTC(2026, 8, ${24 + d})))`);
       const now = w.eval(`(function(){ var m = dailyMatchup(${seed}); return [m.you.name, m.foe.name]; })()`);
@@ -298,14 +298,16 @@ describe('the Vault: the Daily Match', () => {
       expect(vault.has(now[0]), `${seed}: you on ${now[0]}`).toBe(false);
       expect(now[0], `${seed}: nobody fights themselves`).not.toBe(now[1]);
       if (!vault.has(was[0])) expect(now, `${seed} keeps its pairing`).toEqual(was);
-      else if (!vault.has(was[1])) { expect(now, `${seed} swaps seats`).toEqual([was[1], was[0]]); swapped++; }
+      else if (!vault.has(was[1])) { expect(now, `${seed} swaps seats`).toEqual([was[1], was[0]]); swapped++; example = example || { seed, you: was[0] }; }
       else expect(now[1], `${seed} keeps its foe`).toBe(was[1]);
     }
     expect(swapped, 'some days did draw a Vault fighter for you').toBeGreaterThan(0);
-    // The day the review found: 2026-12-01 drew Pillow for you. She is the opponent now.
-    expect(oldDaily(pool, 20261201)[0]).toBe('Pillow');
-    expect(w.eval('dailyMatchup(20261201).foe.name')).toBe('Pillow');
-    expect(w.eval('VAULT_FIGHTERS.has(dailyMatchup(20261201).you.name)')).toBe(false);
+    // The review found 2026-12-01 drawing Pillow for you. Batch 3's 26 DLC fighters ("add the last set of dlc
+    // fighters.") grew the pool, which redraws every day, so the check now takes the first day that drew a Vault
+    // fighter for you: that fighter is the opponent now, and you are not on one.
+    expect(vault.has(example.you)).toBe(true);
+    expect(w.eval(`dailyMatchup(${example.seed}).foe.name`)).toBe(example.you);
+    expect(w.eval(`VAULT_FIGHTERS.has(dailyMatchup(${example.seed}).you.name)`)).toBe(false);
   });
 
   it('lends its fighter for that one match: after it, Rematch, Start Match, the World Cup and the lobby are on your own pick', async () => {

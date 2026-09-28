@@ -41,7 +41,7 @@ describe('no two of the 52 are the same move', () => {
   it('every row differs in pattern, effect, band, ratio or cost', async () => {
     const w = bootMonolith(); await w.eval('profileReady');
     const rows = w.eval('Object.entries(SMASH_SPEC)');
-    expect(rows.length, '52, the five Inanimate Insanity DLC rows of batch 1 and the eleven of batch 2').toBe(68);
+    expect(rows.length, '52, the five Inanimate Insanity DLC rows of batch 1, the eleven of batch 2 and the twenty-six of batch 3').toBe(94);
     const seen = new Map(), dupes = [];
     for (const [k, r] of rows) {
       const id = rowKey(r);
