@@ -404,9 +404,11 @@ describe('MeLife: hostile assist trophies', () => {
     expect(r.hostile.firstAt).toBeGreaterThanOrEqual(40);
     expect(r.hostile.total, 'it attacks the player').toBeGreaterThan(0);
     expect(r.hostile.bossHit, 'and never the boss').toBe(false);
-    expect(r.normal.first, 'a normal 8-Ball is untouched').toBeGreaterThan(0);
+    // A player's 8-Ball rolls for 15 now -- its 10 at the trophies' x1.5 ("assist trophies should be stronger" -- "Hit
+    // harder"). The add is not a trophy, it is his attack, so it keeps three quarters of the cameo's own 10: 7.5, not 11.25.
+    expect(r.normal.first, 'a player\'s 8-Ball hits at the trophy number').toBeCloseTo(10 * W.eval('ASSIST_TROPHY_DMG'), 5);
     expect(W.eval('HOSTILE_ADD_DMG')).toBe(0.75);
-    expect(r.hostile.first / r.normal.first).toBeCloseTo(0.75, 5);
+    expect(r.hostile.first, 'the add is untouched by the trophies\' buff').toBeCloseTo(0.75 * 10, 5);
     expect(r.hostile.first, 'still under half a boss hit').toBeLessThan(W.eval('bossDmg()') / 2);
   });
 

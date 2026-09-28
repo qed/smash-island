@@ -439,3 +439,50 @@ from the same 2024 pose set as Knife2024Pose.png: `node scripts/fetch-sprites.mj
 history was checked first: the current revision is the original 1457×3717 upload, byte for byte the same size.
 Downscaled to 78×200, alpha verified (transparent corners; the tall, tight crop touches the edges in a few places),
 facing measured (0.041, not flipped).
+
+## Assist trophies
+
+"sprites for assist trophies." The thirteen assists of ASSIST_ROSTER are BFDI characters; twelve have a render on
+`battlefordreamisland.fandom.com`, fetched with `node scripts/fetch-sprites.mjs "Eraser" "Spongy" "8-Ball" "Black Hole"
+"Clock" "Cloudy" "Pie" "Stapy" "Blender" "Shopping Cart" "Beach Ball"` (each page's own image) and
+`"Grotato=Grotatoes!_Transparent.png"` (by name, see below): alpha verified, a face found (or, for Black Hole, the whole
+body counted as ink), facing measured, downscaled to 200px tall. Every one was looked at before it was kept. Same
+provenance as the table at the top: jacknjellify's character artwork via the BFDI wiki, used under fan-work norms in a
+disclaimed, non-commercial fan game. Drawn by `drawAssistRender` from the `ASSIST_SPRITE_SRC` registry in index.html,
+keyed by the assist's name; MePhone4's hostile adds wear the same art.
+
+| Assist | File | Source |
+|---|---|---|
+| Eraser | `eraser.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c9/Tpot_renders0037.png/revision/latest?cb=20241226163559 |
+| Spongy | `spongy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/41/Spongy_tpot25.png/revision/latest?cb=20260903003643 |
+| 8-Ball | `8-ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Tpot_renders0044.png/revision/latest?cb=20241208104355 |
+| Black Hole | `black-hole.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/75/Black_Hole_New_Body.png/revision/latest?cb=20250122024816 |
+| Clock | `clock.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Tpot_renders0028.png/revision/latest?cb=20210113224052 |
+| Cloudy | `cloudy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/13/Tpot_renders0024.png/revision/latest?cb=20210113223940 |
+| Grotato (the Grotatoes page; Grotatoes! Transparent.png) | `grotato.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Grotatoes%21_Transparent.png/revision/latest?cb=20240401034516 |
+| Pie | `pie.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/Tpot_renders0005.png/revision/latest?cb=20210113223416 |
+| Stapy | `stapy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Tpot_renders0053.png/revision/latest?cb=20240622133301 |
+| Blender | `blender.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5a/BlenderTPOT14.png/revision/latest?cb=20251018182459 |
+| Shopping Cart | `shopping-cart.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0f/ShoppingcartTPOT14.png/revision/latest?cb=20251018183502 |
+| Beach Ball | `beach-ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3b/Elswerebeachball.png/revision/latest?cb=20260102211016 |
+
+### Notes on individual renders
+
+- **`black-hole.png`** -- Black Hole has no face: the render is the black disc with its coloured halo (475x200, the
+  halo is what makes it wide). The fetch script accepted it on its own because the whole disc counts as interior ink;
+  it was still looked at. Drawn centred on the body (`mid`) and fit by width, so the halo does not tower.
+- **`spongy.png`** and **`shopping-cart.png`** are drawn mirrored (`flip`): Spongy's face sits left of his middle
+  (facing -0.032). The cart measured -0.018, under the script's -0.02 line, and was flipped by eye: its face is on the
+  basket, at the left end of the render, and the basket is the end that leads when it is pushed.
+- **`grotato.png`** -- "Grotato" on the wiki redirects to **Grotatoes**, whose page image is the TPOT 22 shot of the
+  seed packet at an angle with rough edges (`Grotatoestpot22.png`, fetched first, 198x200). The page's gallery has the
+  same packet as a clean cut-out, `Grotatoes! Transparent.png` (5593x7000, 160x200 here), which reads at gameplay scale
+  where the angled one is a green blob, so it was fetched by name instead. `Grotato.png` on the same page is an
+  annotated diagram of a single grotato with an arrow and a caption ("dash of Yoyle"), not a render, and
+  `GrotatoSprout.png` is the seedling: both looked at and passed over.
+- **Selfie Stick has no render.** There is no Selfie Stick page on the BFDI wiki: the only selfie stick in the show is
+  the one Pin holds Camera on in "PointyPointyPointy" (the Camera and Pin pages), and the one file by that name,
+  `Selfie_Stick_AnonymousUser.png`, is a user's own drawing posted on a blog, not jacknjellify's. Per the rule at the top
+  of this file (no art beats wrong art), it keeps the drawn body every assist had before.
+- **`beach-ball.png`** -- the Beach Ball page's own image, `Elswerebeachball.png`: the ball with its face, arms and legs.
+  Drawn centred on the body, and squashed for a few frames on each ricochet.

@@ -6584,15 +6584,23 @@ const POINTED = new Set(["Pin","Needle","Naily"]);   // canon: the Beach Ball di
 //              Not a nerf — Eraser wiping the screen twice is not the Eraser.
 //   mortal   — can be removed by a fighter. ONLY Beach Ball, and only to a pointed one, because
 //              the doc is explicit that it "canonically dies to everything sharp".
-const ASSIST_DUR = 60*6;              // six seconds for every persistent assist ("reduce assist time to 6s"; was 20)
+// "assist trophies should be stronger." Asked how: "Hit harder and stay longer." Every assist that comes out of the item
+// hits for ASSIST_TROPHY_DMG times its number (addDmg: on a fighter and on the boss's side alike) and stays
+// ASSIST_TROPHY_TIME times as long (ASSIST_DUR, and Black Hole's own 3 s). Trophies ONLY: MePhone4's hostile adds are a
+// boss attack, not trophies (they keep HOSTILE_ADD_DMG and MELIFE_LIFE), and Bot is Test Tube's special, never an item
+// (BOT_DMG, BOT_ASSIST.dur). The one-shots cannot hit harder or stay longer, so each does more of its one thing instead
+// (CLOCK_REWIND, FLASH_STUN, GROTATO_MINES, and the Eraser's hand-wipe: see below the roster).
+const ASSIST_TROPHY_DMG = 1.5, ASSIST_TROPHY_TIME = 1.5;
+const ASSIST_DUR = Math.round(60*6*ASSIST_TROPHY_TIME);   // nine seconds for every persistent trophy: six ("reduce assist time to 6s"; was 20), then "stay longer"
+const BEACH_BALL_SPEED = 11, BEACH_BALL_HOP = 11;   // the Beach Ball's ricochet: the speed it is launched at and keeps, and its bounce off the floor (see stepAssistBody)
 const ASSIST_ONESHOT_WINDOW = 60*5;   // how long a one-shot waits for its moment before giving up
 const ASSIST_ROSTER = [
-  {name:"Eraser",       color:"#e8b0a0", act:"erase",  oneShot:true},   // wipes all projectiles/traps, drops shields
+  {name:"Eraser",       color:"#e8b0a0", act:"erase",  oneShot:true},   // wipes all projectiles/traps and the throwable in a foe's hand, drops shields
   {name:"Spongy",       color:"#e8d84b", act:"crush"},   // falls as a bounce platform, occasionally flattens
   {name:"8-Ball",       color:"#222222", act:"rush"},    // announces "8", rolls a heavy line through nearest foe
   // The doc pins Black Hole at "3 s of gentle pull" — he is in Death P.A.C.T. and was always going
   // to hold back. Twenty seconds of even a gentle pull is a different, much worse item.
-  {name:"Black Hole",   color:"#1a1a2a", act:"pull",   dur:60*3},       // NERFED: gentle pull + chip, NO KO (Death P.A.C.T.)
+  {name:"Black Hole",   color:"#1a1a2a", act:"pull",   dur:Math.round(60*3*ASSIST_TROPHY_TIME)},   // NERFED: gentle pull + chip, NO KO (Death P.A.C.T.); his own 3 s, and "stay longer" like the rest
   {name:"Clock",        color:"#d8c46a", act:"rewind", oneShot:true},   // rewinds the summoner's damage
   {name:"Cloudy",       color:"#dfeaf5", act:"steal"},   // steals enemy-held items for the summoner
   {name:"Grotato",      color:"#4a9c6a", act:"mines",  oneShot:true},   // plants a patch of grotato mines
@@ -6603,6 +6611,15 @@ const ASSIST_ROSTER = [
   {name:"Shopping Cart",color:"#c85a5a", act:"cart"},    // rideable rampage cart for the summoner
   {name:"Beach Ball",   color:"#e85a8a", act:"bounce", mortal:true},    // ricochets as a physics hazard
 ];
+// THE ONE-SHOTS ("assist trophies should be stronger" -- "Hit harder and stay longer"): a thing that fires once and leaves
+// cannot hit harder or stay longer, so each does more of its one thing. Every number is the old one at the trophy knob it
+// answers to, so they move together: Clock rewinds 30 of the summoner's damage (was 20; still capped at all of it), the
+// flash stuns for 75 frames and freezes for 45 (were 50 and 30; an add's act is held FLASH_STUN too), Grotato plants six
+// mines 60 px apart, a 300 px patch (was four, 50 apart, 150 px). The Eraser already wipes every shot and trap; it now also
+// erases the throwable in a foe's hand (see its act).
+const CLOCK_REWIND = Math.round(20*ASSIST_TROPHY_DMG);
+const FLASH_STUN = Math.round(50*ASSIST_TROPHY_TIME), FLASH_FREEZE = Math.round(30*ASSIST_TROPHY_TIME);
+const GROTATO_MINES = Math.round(4*ASSIST_TROPHY_DMG), GROTATO_GAP = 60;
 // BOT: Test Tube's special ("change the ability" -> "Summon Bot"). Not an assist trophy -- he never comes out of an item
 // -- but he rides the same machinery: summoned beside her, the fighter-grade assist body, a few seconds' tenure, unkillable
 // like every assist. He walks to the nearest foe and punches. When she is out of the match, so is he.
@@ -6729,6 +6746,41 @@ function popAssist(s, by){
   for(let i=0;i<18;i++) puff(s.x,s.y,s.color,5);
   s.life=0; return true;
 }
+// ---- ASSISTS AGAINST THE BOSS'S SIDE ----------------------------------------------------------------------------------
+// "they dont work on bosses." A boss is a summon, not a fighter, and so is one of MePhone4's adds; every act looked for its
+// targets in `fighters` and never saw either. These are what the acts use for that side instead of touching a boss directly.
+//   assistFoes(s)          the bosses and hostile adds on the other side from this assist. Never its own side: a hostile
+//                          add is on the boss's team (-1), so it lists neither the boss nor its fellow adds, and a player's
+//                          assist never lists a player's other cameos (they are neither bosses nor hostile).
+//   assistHitSummon(...)   lands a hit through the boss's own damage path -- damageSummons, aimed at that one summon: Two's
+//                          grounding and One's ghost still shield them, and an add goes through hurtHostileAdd -- the way
+//                          Bot's punch does. The damage number is the one the act deals a fighter.
+//   ASSIST_BOSS_GAP        the cap. A boss attack is capped per attack (applyHit's bossAtk); an assist's hit on a boss is
+//                          capped per act cooldown, and for the acts whose cadence against fighters IS the knockback --
+//                          the cart plows every 8 frames, the vortex ticks every 10, the ball reverses every 6, and a
+//                          fighter is thrown clear each time -- a boss that does not budge would take every one, so those
+//                          (`gapped`) land once per ASSIST_BOSS_GAP frames per target. 8-Ball's 40, Spongy's 70 and
+//                          Stapy's 90 are cooldowns already; Pie's lobs and Grotato's mines are shots, spent when they land.
+const ASSIST_BOSS_GAP = 40;
+function isAssistFoe(t){ return !!t && (t.type==="boss" || !!t.hostile); }
+function assistFoes(s){
+  const out = [];
+  for(const b of summons){
+    if(b===s || b.team===s.team || b.life<=0 || !(b.hp>0)) continue;
+    if(b.type==="boss" || b.hostile) out.push(b);
+  }
+  return out;
+}
+function assistHitSummon(s, t, dmg, gapped){
+  if(!isAssistFoe(t) || t.team===s.team || !(t.hp>0)) return false;
+  if(gapped){
+    const L = t._assistHitT || (t._assistHitT = {});
+    if(hazardT - (L[s.act]==null ? -1e9 : L[s.act]) < ASSIST_BOSS_GAP) return false;
+    L[s.act] = hazardT;
+  }
+  damageSummons({team:s.team, idx:-2}, t.x, t.y, 1, dmg, t);
+  return true;
+}
 
 // ---- ASSIST BODY & AI -------------------------------------------------------------------------
 // An assist used to be a floor-bound puck: gravity, a snap to groundY(), and one steering line
@@ -6751,6 +6803,14 @@ function refreshSpongyPlats(){
 function stepAssistBody(s, gy){
   // Blender "opens at center stage" — it is a placed trap, not a chaser. It holds its ground.
   if(s.fixed){ s.vx=0; s.vy=0; if(s.y > gy - s.r) s.y = gy - s.r; s.onground=true; return; }
+  // THE BEACH BALL IS A BODY, NOT AN ACT ("beach ball is broken"). Its launch, its walls and its floor used to sit in
+  // the act, behind `if(tgt)` and a six-frame cooldown, AFTER this step had run -- and this step's world-edge clamp
+  // zeroed its speed at the first wall it reached, so the act's wall check then reversed a zero. Watched for 600
+  // frames it crossed the stage once, stopped dead at x=20 and bobbed in the corner for the rest of its tenure; with
+  // no enemy in `fighters` (Boss Rush) it never launched at all. Now the ricochet is here, every frame, and the act
+  // is only the hits. BEACH_BALL_SPEED is the speed it keeps (no friction below, no steering in navAssist).
+  const ball = s.act==="bounce";
+  if(ball && !s._launched){ s._launched=1; s.vx = (s.face||1)*BEACH_BALL_SPEED; s.vy = -9; }
   s.vy += 0.6;
   s.y += s.vy; s.x += s.vx;
   // Beach Ball is a RICOCHET: ground friction and steering would both bleed away the speed that
@@ -6770,24 +6830,30 @@ function stepAssistBody(s, gy){
       const fromTop=(p.y-(s.y+s.r)), fromBottom=((p.y+ph)-(s.y-s.r));
       const ax = Math.abs(fromLeft)<Math.abs(fromRight)?fromLeft:fromRight;
       const ay = Math.abs(fromTop)<Math.abs(fromBottom)?fromTop:fromBottom;
-      if(Math.abs(ax)<Math.abs(ay)){ s.x+=ax; s.vx=0; }
-      else { s.y+=ay; if(ay<0){ s.vy=Math.min(0,s.vy); s.onground=true; } else s.vy=Math.max(0,s.vy); }
+      if(Math.abs(ax)<Math.abs(ay)){ s.x+=ax; s.vx = ball ? -s.vx : 0; }   // the ball ricochets off a solid's side
+      else { s.y+=ay; if(ay<0){ s.vy=Math.min(0,s.vy); s.onground=true; } else s.vy = ball ? Math.abs(s.vy) : Math.max(0,s.vy); }
     } else if(s.vy>=0 && s.x>p.x-4 && s.x<p.x+p.w+4){
       const top=p.y;
       if(s.y+s.r>=top && s.y+s.r<=top+18+s.vy){ s.y=top-s.r; s.vy=0; s.onground=true; }
     }
   }
   if(s.onground) s.jumps=1;
-  // An assist that removes itself is worse than one that does nothing: keep it inside the world.
+  // The ball never settles: the floor and every platform top throw it back up (it was `if(s.onground && s.vy===0)` in
+  // the act, so it could sit for the cooldown's six frames first). `_squash` is render-only: drawSummon squashes it.
+  if(ball && s.onground){ s.vy = -BEACH_BALL_HOP; s.onground = false; s._squash = 8; }
+  // An assist that removes itself is worse than one that does nothing: keep it inside the world. The ball is kept in
+  // by reflecting it -- zeroing its speed here is what stuck it in the corner.
   const AW = (typeof WW==='number' ? WW : W);
-  if(s.x < 20){ s.x = 20; if(s.vx<0) s.vx=0; }
-  if(s.x > AW-20){ s.x = AW-20; if(s.vx>0) s.vx=0; }
+  if(s.x < 20){ s.x = 20; if(s.vx<0){ s.vx = ball ? -s.vx : 0; if(ball) s._squash = 8; } }
+  if(s.x > AW-20){ s.x = AW-20; if(s.vx>0){ s.vx = ball ? -s.vx : 0; if(ball) s._squash = 8; } }
 }
 // Steering: the horizontal half is the old line, tuned up; the vertical half is new.
 function navAssist(s, tgt, dx){
   if(s.fixed || s.act==="bounce") return;   // a placed trap does not chase; a ricochet does not aim
   if(Math.abs(dx) > 34){ s.vx += Math.sign(dx)*0.75; s.vx = clamp(s.vx, -7.5, 7.5); }
-  const dy = tgt.y - s.y;
+  // A boss is as tall as its radius and stands on the floor: aim at its feet, not its centre, or an assist beside one
+  // hops at a body it is already touching (Spongy's slam needs him grounded first, and beside a boss he never was).
+  const dy = (tgt.type==="boss" ? tgt.y + tgt.r : tgt.y) - s.y;
   // Target overhead: hop. `jumps` refills on landing, so this is one hop per touchdown, not a jetpack.
   if(dy < -50 && s.onground && s.jumps>0 && Math.abs(dx) < 260){ s.vy = -13.5; s.jumps--; s.onground=false; }
   // Pinned against geometry with the target still far away: hop to clear the lip.
@@ -7124,7 +7190,10 @@ const BOSS_MOVES = {
 // shreds centre stage, Grotato's mines outlive the fight, Shopping Cart has no rider, and Black Hole is a second portal.
 const MEPHONE_POOL = ["8-Ball", "Pie", "Beach Ball", "Spongy"];
 const MELIFE_DL = 40;                             // frames an add spends downloading, inert: the arrival tell
-const MELIFE_LIFE = Math.round(ASSIST_DUR*0.6);   // frames it then fights -- under one MeLife cycle, so adds come and go
+// Frames it then fights -- under one MeLife cycle, so adds come and go. Three fifths of the SIX-second tenure it was tuned
+// at (216; scripts/boss-rush-balance.json): the trophies' "stay longer" (ASSIST_TROPHY_TIME) is not his, an add is a boss
+// attack, so the trophy knob is divided back out.
+const MELIFE_LIFE = Math.round(ASSIST_DUR/ASSIST_TROPHY_TIME*0.6);
 const MELIFE_HP = 40;                             // one player's worth; under Purple Face's 50-HP tongue and Pepper's 60
 const MELIFE_CAP = [0, 1, 1, 2];                  // adds standing at once, by phase
 // The Fist Thingy, by phase (see fireBossAttack). One table, so the tuning and the tests read the same numbers.
@@ -7154,7 +7223,16 @@ const MELIFE_SPREAD = 220;                        // spawned this far out, so an
 // him the owner asked for ("mephone should spawn hostile assist trophies") -- at half they chipped. The biggest add hit,
 // Spongy's crush at 14, is 10.5 now: still under half a boss hit (BOSS_DMG_BASE 22).
 const HOSTILE_ADD_DMG = 0.75;
-function addDmg(s, d){ return s.hostile ? d*HOSTILE_ADD_DMG*((typeof BOSSRUSH!=='undefined' && BOSSRUSH.dmgMult) || 1) : d; }
+// ...and a TROPHY hits at ASSIST_TROPHY_DMG times its number ("assist trophies should be stronger" -- "Hit harder"). This is
+// the one place the knob lives, so every damaging act routes its number through here -- for a fighter and for the boss's
+// side alike (rush, crush, bolt, mines, vortex, cart, bounce, the staple, Black Hole's chip). Not a trophy, so not
+// multiplied: a hostile add (his attack: three quarters, as above) and Bot (Test Tube's special, BOT_DMG: he never comes
+// out of the item).
+function isTrophy(s){ return !!s && s.type==="assist" && !s.hostile && s.act!=="bot"; }
+function addDmg(s, d){
+  if(s.hostile) return d*HOSTILE_ADD_DMG*((typeof BOSSRUSH!=='undefined' && BOSSRUSH.dmgMult) || 1);
+  return isTrophy(s) ? d*ASSIST_TROPHY_DMG : d;
+}
 function hostileCount(){ let n = 0; for(const m of summons) if(m.hostile && m.life>0) n++; return n; }
 // HOW AN ASSIST FIGHTS ON HIS SIDE. An assist takes its summoner's team, and a boss has no fighter index, so the add is
 // summoned by a proxy owner on team -1, the boss's own team. No fighter is ever on team -1 (Boss Rush puts every fighter
@@ -8566,9 +8644,12 @@ function updateSummons(){
       const d=Math.hypot(f.x-s.x, f.y-s.y); if(d<best){best=d;tgt=f;}
     }
     // Bot fights for Test Tube against a boss too: in Boss Rush the boss is a summon, not a fighter, and the flask his
-    // special replaced could hit one. (A boss's reach adds its own radius where he punches, below.)
-    if(s.act==="bot"){ for(const b of summons){ if(b.type!=="boss" || b.team===s.team || !(b.hp>0) || b.life<=0) continue;
-      const d=Math.hypot(b.x-s.x, b.y-s.y) - b.r; if(d<best){ best=d; tgt=b; } } }
+    // special replaced could hit one. (A boss's reach adds its own radius where he punches, below.) Every assist does
+    // now ("they dont work on bosses"): in Boss Rush a trophy's only enemies are the boss and his adds, and with nothing
+    // in `fighters` to aim at every act sat inside `if(tgt)` and never fired. A hostile add is on the boss's own team,
+    // so its foes are still only the players (see assistFoes).
+    if(s.type==="assist"){ for(const b of assistFoes(s)){
+      const d=Math.hypot(b.x-s.x, b.y-s.y) - (b.type==="boss" ? b.r : 0); if(d<best){ best=d; tgt=b; } } }
     // BOSS: telegraphed attack system (Silksong-style wind-up before each attack)
     if(s.type==="boss"){
       updateBossAttack(s, tgt);
@@ -8591,6 +8672,7 @@ function updateSummons(){
       continue;
     }
     if(s.act==="bot"){ const own = fighters[s.owner]; if(!own || own.dead){ s.life = 0; continue; } }   // Bot goes when Test Tube does
+    if(s._squash>0) s._squash--;   // render-only: the Beach Ball's squash on a ricochet (drawSummon reads it)
     if(tgt && !(s._dl>0)){   // an add is inert while it downloads
       s.face = Math.sign(tgt.x - s.x)||s.face;
       const dx=tgt.x-s.x;
@@ -8627,14 +8709,20 @@ function updateSummons(){
           for(const f of fighters){ if(f.dead||f.team===s.team) continue;
             if(hurtGap(f, s.x, s.y) < -HURT_R0 + s.r+26){
               const spd=Math.abs(s.vx);
-              applyHit(f, 8+spd*0.9, Math.sign(f.x-s.x||1)*(9+spd*0.5), -9, {team:s.team,idx:-2});
+              applyHit(f, addDmg(s, 8+spd*0.9), Math.sign(f.x-s.x||1)*(9+spd*0.5), -9, {team:s.team,idx:-2});   // the trophy's x1.5 ("Hit harder")
             } }
+          // ...and into the boss's side ("they dont work on bosses"), the same hit, once an ASSIST_BOSS_GAP per target
+          for(const b of assistFoes(s)){ if(Math.hypot(b.x-s.x, b.y-s.y) < b.r + s.r + 26) assistHitSummon(s, b, addDmg(s, 8+Math.abs(s.vx)*0.9), true); }
           s._cd=8;
         } else if(act==="rush"){                        // 8-Ball (doc): announces "8", then rolls a
           // heavy line through the nearest foe. Ask again later.
           if(!s._announced){ s._announced=true; }
           s.vx += Math.sign(dx||1)*0.5; s.vx = clamp(s.vx,-9,9);
-          if(Math.abs(dx)<s.r+34 && Math.abs(tgt.y-s.y)<s.r+30){ applyHit(tgt, addDmg(s, 10), s.face*11, -9, {team:s.team,idx:-2}); s._cd=40; }
+          const big = tgt.type==="boss" ? tgt.r : 0;   // a boss is as wide as its radius (Bot's rule)
+          if(Math.abs(dx)<s.r+34+big && Math.abs(tgt.y-s.y)<s.r+30+big){
+            if(isAssistFoe(tgt)) assistHitSummon(s, tgt, addDmg(s, 10), false);   // the boss's side: through its own damage path
+            else applyHit(tgt, addDmg(s, 10), s.face*11, -9, {team:s.team,idx:-2});
+            s._cd=40; }
         } else if(act==="pull"){                 // Black Hole (NERFED): strong pull + 1%/s chip, NO KO
           // Exempt from the 20-second tenure: the doc pins him at 3 s, and he is in Death P.A.C.T.
           // But three seconds of the OLD pull was three seconds of nothing — a flat 0.8 nudge inside
@@ -8654,8 +8742,22 @@ function updateSummons(){
               f.vy += (dy/d)*grip*0.7;                 // enough lift to lose your footing, not to launch
               if(!f.onground) f.vy -= 0.12;            // once airborne you hang in it
               f.vx = clamp(f.vx, -14, 14); f.vy = clamp(f.vy, -12, 12);
-              if(hazardT%60===0) f.pct+=1;             // the chip stays exactly as the doc has it
+              if(hazardT%60===0) f.pct+=addDmg(s, 1);   // the doc's 1%/s chip, at the trophy's x1.5 ("Hit harder")
             }
+          }
+          // The boss's side ("they dont work on bosses"): an add is an assist body, so it is dragged like a fighter. A boss
+          // is NOT pulled -- its place is its own attack pattern's (a stationary boss holds his spot, a chaser walks you
+          // down), and a pull on it would only jitter against that each frame. Both take the doc's chip, on the same tick.
+          // (The fighters' chip above is the doc's line at the trophy knob. This act runs every eighth frame, so whether
+          // `hazardT%60` ever lands on one of its frames is the luck of the frame it was summoned on; the boss's side
+          // keeps the tick itself, once a second.)
+          const chip = hazardT - (s._chipAt==null ? -1e9 : s._chipAt) >= 60; if(chip) s._chipAt = hazardT;
+          for(const b of assistFoes(s)){
+            const bx=s.x-b.x, by=s.y-b.y, d=Math.hypot(bx,by);
+            if(d>=320 || d<=1) continue;
+            if(b.type!=="boss"){ const grip = 2.6 * (1 - d/320); b.vx += (bx/d)*grip; b.vy += (by/d)*grip*0.7;
+              b.vx = clamp(b.vx, -14, 14); b.vy = clamp(b.vy, -12, 12); }
+            if(chip) assistHitSummon(s, b, addDmg(s, 1), false);
           }
           if(hazardT%2===0){ const a=hazardT*0.2; const rr=40+((hazardT*3)%80);
             puff(s.x+Math.cos(a)*rr, s.y+Math.sin(a)*rr*0.7, '#4a3a6a', 3); }
@@ -8663,11 +8765,17 @@ function updateSummons(){
         } else if(act==="steal"){                // Cloudy: steal enemy-held items for the summoner
           for(const f of fighters){ if(f.dead||f.team===s.team) continue; if(f._holding && Math.hypot(f.x-s.x,f.y-s.y)<160){ if(owner&&!owner.dead){ owner._holding=f._holding; } f._holding=null; puff(f.x,f.y-8,'#dfeaf5',5); } } s._cd=20;
         } else if(act==="rewind"){               // Clock: rewind the summoner's damage
-          if(owner&&!owner.dead){ owner.pct=Math.max(0, owner.pct-20); for(let i=0;i<8;i++) puff(owner.x,owner.y-8,'#d8c46a',4); } s.life=0;   // one-shot
+          // CLOCK_REWIND of it (was 20: "assist trophies should be stronger"), capped at all of it as before
+          if(owner&&!owner.dead){ owner.pct=Math.max(0, owner.pct-CLOCK_REWIND); for(let i=0;i<8;i++) puff(owner.x,owner.y-8,'#d8c46a',4); } s.life=0;   // one-shot
         } else if(act==="erase"){                // Eraser (doc): erases EVERY projectile and trap on
           // screen — including the summoner's own — then drops a few shields as pickups.
           const wiped = projectiles.length + tendrils.length;
           projectiles = []; tendrils = [];
+          // ...and the throwable in a foe's hand ("assist trophies should be stronger": the Eraser already wipes every shot
+          // and trap, so its more is one more thing). A shot that has not been thrown yet is still a shot, and the wipe used
+          // to stop at the ones in flight. The summoner's side keeps theirs: the buff is the summoner's.
+          for(const f of fighters){ if(f.dead || f.team===s.team || !f._holding) continue;
+            f._holding=null; for(let i=0;i<6;i++) puff(f.x,f.y-8,'#e8b0a0',4); }
           // yoyle is the defensive pickup (damage reduction) — the closest thing to a shield
           for(let i=0;i<3;i++) items.push({kind:"yoyle", x:s.x+(i-1)*70, y:groundY()-16, vx:0, vy:0, r:16, taken:false, life:60*20, _land:true});
           for(let i=0;i<14;i++) puff(s.x+Math.random()*120-60, s.y, '#e8b0a0', 4); s.life=0;   // one-shot
@@ -8676,19 +8784,33 @@ function updateSummons(){
           // and s.r+80 is a range a floor-bound assist could rarely close. Stapy is a thrown
           // fastener: he fires at the target he has, from a range he can actually reach.
           if(tgt && Math.abs(dx)<300 && Math.abs(tgt.y-s.y)<160){
-            tgt.rooted=Math.max(tgt.rooted||0,180);
-            applyHit(tgt, 4, 0, 0, {team:s.team,idx:-2});
+            // A boss is not stapled down: its place is its attack pattern's, and `rooted` is a fighter's field that
+            // nothing on a boss or an add reads. The staple still lands its 4 on either ("they dont work on bosses") -- at
+            // the trophy's x1.5 ("Hit harder"), so 6.
+            if(isAssistFoe(tgt)) assistHitSummon(s, tgt, addDmg(s, 4), false);
+            else { tgt.rooted=Math.max(tgt.rooted||0,180); applyHit(tgt, addDmg(s, 4), 0, 0, {team:s.team,idx:-2}); }
             for(let i=0;i<8;i++) puff(tgt.x, tgt.y, '#d0483a', 4);
           }
           s._cd=90;
         } else if(act==="mines"){                // Grotato: plant a patch of mines
-          for(let i=0;i<4;i++){ addProj({owner:-2, ownerObj:{team:s.team,idx:-2}, x:s.x+(i-1.5)*50, y:groundY()-8, vx:0, vy:0, grav:false, dmg:12, kb:11, r:12, color:'#4a9c6a', life:60*8, trap:true, arm:30}); } s.life=0;
+          // `assist`: a mine is an assist's shot, so it can land on the boss's side too (the projectile-vs-summon loop)
+          // GROTATO_MINES mines, GROTATO_GAP apart ("assist trophies should be stronger": a one-shot does more of its one thing),
+          // each at the trophy number (addDmg). The patch is slid to fit inside the walls: at 300 px wide, a Grotato summoned
+          // at the edge would otherwise plant half of it off the stage, where nothing ever steps.
+          const half = (GROTATO_MINES-1)*GROTATO_GAP*0.5, mx = clamp(s.x, 30+half, WW-30-half);
+          for(let i=0;i<GROTATO_MINES;i++){ addProj({owner:-2, ownerObj:{team:s.team,idx:-2}, x:mx+(i-(GROTATO_MINES-1)*0.5)*GROTATO_GAP, y:groundY()-8, vx:0, vy:0, grav:false, dmg:addDmg(s, 12), kb:11, r:12, color:'#4a9c6a', life:60*8, trap:true, arm:30, assist:true}); } s.life=0;
         } else if(act==="vortex"){               // Blender: multi-hit vortex trap, held at centre stage
           // It no longer chases (see `fixed`), so it needs the reach of a placed trap rather than
           // the 70px of a thing that was expected to walk up to you.
           for(const f of fighters){ if(f.dead||f.team===s.team) continue;
             const d=Math.hypot(f.x-s.x,f.y-s.y);
-            if(d<120){ f.vx += Math.sign(s.x-f.x)*1.1; f.vy -= 0.35; applyHit(f, 3, 0, -2, {team:s.team,idx:-2}); } }
+            if(d<120){ f.vx += Math.sign(s.x-f.x)*1.1; f.vy -= 0.35; applyHit(f, addDmg(s, 3), 0, -2, {team:s.team,idx:-2}); } }   // the trophy's x1.5 ("Hit harder")
+          // The boss's side ("they dont work on bosses"): the blades land once an ASSIST_BOSS_GAP per target (it opens at
+          // centre stage, where a stationary boss stands, and he would otherwise eat every tick for the whole tenure); an
+          // add is drawn in like a fighter, a boss is not (its place is its attack pattern's).
+          for(const b of assistFoes(s)){ if(Math.hypot(b.x-s.x,b.y-s.y) < 120 + (b.type==="boss" ? b.r : 0)){
+            if(b.type!=="boss"){ b.vx += Math.sign(s.x-b.x)*1.1; b.vy -= 0.35; }
+            assistHitSummon(s, b, addDmg(s, 3), true); } }
           if(hazardT%4===0){ const a=hazardT*0.3; puff(s.x+Math.cos(a)*60, s.y+Math.sin(a)*40, '#9ac0d8', 4); }
           s._cd=10;
         } else if(act==="flash"){                // Selfie Stick: flash photo — the doc is specific that
@@ -8696,7 +8818,12 @@ function updateSummons(){
           // both wrong and unreadable: there was no way to play around a flash you cannot look away from.
           for(const f of fighters){ if(f.dead||f.team===s.team) continue;
             if(Math.hypot(f.x-s.x,f.y-s.y)<260 && Math.sign(s.x-f.x)===Math.sign(f.face||1)){
-              f.hitstun=Math.max(f.hitstun,50); f.frozen=Math.max(f.frozen,30); } }
+              f.hitstun=Math.max(f.hitstun,FLASH_STUN); f.frozen=Math.max(f.frozen,FLASH_FREEZE); } }   // 75 and 45 (were 50 and 30): "stronger"
+          // A boss cannot be stunned: nothing on a boss reads hitstun or frozen, and its attack timer runs regardless, so
+          // the flash passes it by. An add facing the camera is an assist body whose every act waits on `_cd`, so the
+          // flash holds its act for the stun's FLASH_STUN frames -- its act, not its feet.
+          for(const b of assistFoes(s)){ if(b.type==="boss") continue;
+            if(Math.hypot(b.x-s.x,b.y-s.y)<260 && Math.sign(s.x-b.x)===Math.sign(b.face||1)) b._cd = Math.max(b._cd||0, FLASH_STUN); }
           for(let i=0;i<20;i++) puff(s.x,s.y,'#fff',6); s.life=0;
         } else if(act==="crush"){                // Spongy: bounce platform that occasionally flattens
           // This only ever hit fighters BELOW Spongy — while Spongy sat on the floor, where nothing
@@ -8709,6 +8836,13 @@ function updateSummons(){
                 applyHit(f, addDmg(s, 14), Math.sign(f.x-s.x||1)*4, -13, {team:s.team,idx:-2});
                 for(let i=0;i<8;i++) puff(f.x,f.y,'#e8d84b',5);
                 s._crushing=0; s._cd=70;
+              } }
+            // ...or on the boss's side ("they dont work on bosses"): a boss is as wide as its radius, the slam is the same
+            for(const b of assistFoes(s)){ if(!s._crushing) break; const big = b.type==="boss" ? b.r : 0;
+              if(Math.abs(b.x-s.x)<s.r+14+big && Math.abs(b.y-s.y)<s.r+34+big){
+                assistHitSummon(s, b, addDmg(s, 14), false);
+                for(let i=0;i<8;i++) puff(b.x,b.y+big*0.5,'#e8d84b',5);
+                s._crushing=0; s._cd=70;
               } } }
           if(s.onground && s._crushing){ s._crushing=0; s._cd=70; for(let i=0;i<6;i++) puff(s.x,s.y+s.r,'#e8d84b',4); }
         } else if(act==="bounce"){               // Beach Ball (doc): ricochets as a physics hazard, but is
@@ -8716,26 +8850,35 @@ function updateSummons(){
           // everything sharp." Pointed fighters pop it on contact regardless of whose team it is.
           // "Ricochets around AT HIGH SPEED as a physics hazard" — it was inheriting the shared
           // chase steering instead, which is the opposite of a ricochet: it homed, slowly.
-          if(!s._launched){ s._launched=1; s.vx = (s.face||1)*11; s.vy = -9; }
-          if(s.onground && s.vy===0) s.vy = -11;                       // never settles
-          const BW = (typeof WW==='number' ? WW : W);
-          if(s.x<=22 || s.x>=BW-22) s.vx = -s.vx;                      // walls
+          // The launch, the walls and the floor are in stepAssistBody now, every frame ("beach ball is broken": see
+          // there). This branch is only the hits -- checked every frame too (it was every sixth: at 11 px a frame it
+          // could clip a fighter between two checks and pass through). A fighter it has just hit is in hit grace
+          // (applyHit's invuln) while it flies off, so one touch is one hit.
           for(const f of fighters){ if(f.dead) continue;
             if(hurtGap(f, s.x, s.y) < -HURT_R0 + s.r+20){
               if(POINTED.has(f.name)){ for(let i=0;i<18;i++) puff(s.x,s.y,'#e85a8a',5); s.life=0; break; }
-              if(f.team===s.team) continue;
-              applyHit(f, addDmg(s, 6), Math.sign(f.x-s.x||1)*10, -8, {team:s.team,idx:-2}); s.vx=-s.vx; s.vy=-8;
-            } } s._cd=6;
+              if(f.team===s.team || f.invuln>0) continue;
+              applyHit(f, addDmg(s, 6), Math.sign(f.x-s.x||1)*10, -8, {team:s.team,idx:-2}); s.vx=-s.vx; s.vy=-8; s._squash=8;
+            } }
+          // ...and a boss or an add on the other side is a wall that takes the hit ("they dont work on bosses"): it
+          // ricochets off the touch -- on the frame it touches, not every frame it overlaps a body that wide (`_touch`)
+          // -- and lands its 6 once an ASSIST_BOSS_GAP (a boss does not fly off the way a fighter does).
+          let touch = null;
+          for(const b of assistFoes(s)){ if(Math.hypot(b.x-s.x, b.y-s.y) < b.r + s.r + 6){ touch = b;
+            if(s._touch !== b){ assistHitSummon(s, b, addDmg(s, 6), true); s.vx=-s.vx; s.vy=-8; s._squash=8; } } }
+          s._touch = touch;
+          s._cd=0;
         } else if(act==="bot"){                  // Bot (Test Tube's special): walks up to the nearest foe and punches
           const big = tgt.type==="boss" ? tgt.r : 0;   // a boss is as wide as its radius
           if(Math.abs(dx) < s.r + BOT_REACH + big && Math.abs(tgt.y - s.y) < s.r + 34 + big){
-            if(big) damageSummons({team:s.team, idx:-2}, tgt.x, tgt.y, 1, BOT_DMG);   // the boss's own hit path (Two's grounding and all)
+            if(isAssistFoe(tgt)) assistHitSummon(s, tgt, BOT_DMG, false);   // the boss's own hit path (Two's grounding and all); an add's too
             else applyHit(tgt, BOT_DMG, s.face*BOT_KB, -6, {team:s.team,idx:-2});
             for(let i=0;i<5;i++) puff(tgt.x - s.face*8, tgt.y - 6, '#cfe8d8', 3);
             s._cd = BOT_CD;
           }
         } else if(act==="bolt"){                 // Pie: lobs arcing dessert ordnance
-          if(Math.abs(dx)<340){ addProj({owner:-2, ownerObj:{team:s.team,idx:-2}, x:s.x, y:s.y, vx:s.face*4, vy:-6, grav:true, bounce:true, dmg:addDmg(s, 8), kb:7, r:9, color:s.color, life:100}); s._cd=55; }
+          // `assist`: a lob is an assist's shot, so it can land on the boss's side too (the projectile-vs-summon loop)
+          if(Math.abs(dx)<340){ addProj({owner:-2, ownerObj:{team:s.team,idx:-2}, x:s.x, y:s.y, vx:s.face*4, vy:-6, grav:true, bounce:true, dmg:addDmg(s, 8), kb:7, r:9, color:s.color, life:100, assist:true}); s._cd=55; }
         }
       }
     }
@@ -9594,10 +9737,18 @@ function step(){
       // Bow's HELD snowballs (tkHold) skip this loop too: "held: no travel, no life lost, no hits" (see the projectile step),
       // and the fighter loop already honoured that -- but this one did not, so a boss or an add standing where they hover
       // ate all three on the first frame, before she had let go of any.
-      if(pr.life<=0 || pr.delay>0 || pr.owner<0 || pr.tkHold>0) continue;   // skip expired, delayed, summon-owned or held shots
+      // An assist's shot (Pie's lob, a Grotato mine: `assist`) comes through for the boss's side only ("they dont work on
+      // bosses"): it lands on an enemy boss or add exactly as a fighter's shot does, and never shoves a cameo. A boss's own
+      // shots and every other summon-owned kind still skip this loop as before. A mine arms first, as it does for a fighter,
+      // and lands the trap number a fighter takes (TRAP_DMG_MULT); a fighter's own trap on a boss is untouched.
+      const fromAssist = pr.owner<0 && !!pr.assist;
+      if(pr.life<=0 || pr.delay>0 || (pr.owner<0 && !fromAssist) || pr.tkHold>0) continue;   // skip expired, delayed, summon-owned or held shots
+      if(fromAssist && pr.trap && (pr.arm>0 || pr.falling)) continue;
+      const pd = (fromAssist && pr.trap) ? Math.round(pr.dmg*TRAP_DMG_MULT) : pr.dmg;
       const o=pr.ownerObj;
       for(const s of summons){
         if(s.team===(o?o.team:0)) continue;                  // don't hit your own assist
+        if(fromAssist && !(s.type==="boss" || s.hostile)) continue;
         if(Math.hypot(s.x-pr.x, s.y-pr.y) < s.r+pr.r){
           // A pierce/van shot is deliberately NOT consumed on contact (see below) — but this loop,
           // unlike the fighter loop above, had no per-target guard to go with that. So a piercing
@@ -9610,8 +9761,8 @@ function step(){
             if(pr._sHit.indexOf(s) >= 0) continue;    // already went through this one — pass on
             pr._sHit.push(s);
           }
-          if(s.type==="boss"){ if(s._oneFight) oneTakeDamage(s, pr.dmg, o); else s.hp -= pr.dmg; for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }
-          else if(s.hostile){ hurtHostileAdd(s, pr.dmg, Math.sign(pr.vx||1)*2, null); }   // MePhone4's adds can be shot down
+          if(s.type==="boss"){ if(s._oneFight) oneTakeDamage(s, pd, o); else s.hp -= pd; for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }
+          else if(s.hostile){ hurtHostileAdd(s, pd, Math.sign(pr.vx||1)*2, null); }   // MePhone4's adds can be shot down
           else { s.vx += Math.sign(pr.vx||1)*2; }   // assists are immune (see damageSummons) — shots shove, never kill
           if(!pr.pierce && !pr.van) pr.life=0;
           break;
@@ -12759,9 +12910,12 @@ const PEPPER_DO = {
   smash(f, p){ for(const t of fighters){ if(t.dead||t.team===p.team) continue; if(hurtGap(t, p.x, p.y) < 46) applyHit(t, 6, p.face*9, -7, f); } },
   down(f, p){ for(const t of fighters){ if(t.dead||t.team===p.team) continue; if(hurtGap(t, p.x, p.y) < 52) applyHit(t, 5, Math.sign(t.x-p.x||1)*6, -5, f); } },
 };
-function damageSummons(f, cx, cy, rad, dmg){
-  // fighters can damage hostile bosses (and knock assists away)
+function damageSummons(f, cx, cy, rad, dmg, only){
+  // fighters can damage hostile bosses (and knock assists away). `only`: this one summon and no other -- an assist's act
+  // aims at the boss or add it found (assistHitSummon), and a point at that one's centre would otherwise also land on
+  // anything else whose body covers it. Every fighter's call leaves it out and sweeps the circle as before.
   for(const s of summons){
+    if(only && s!==only) continue;
     if(s.team===f.team) continue;                    // don't hit your own assist
     // SWALLOW: a swallowed fighter's hits go into the tongue, not the boss body
     if(s.type==="boss" && s.attack==="swallow" && f._swallow>0 && s._tongueHp>0){
@@ -16370,6 +16524,11 @@ function drawSummon(s){
   }
   // body
   ctx.fillStyle = (s.hostile && s.flash>0) ? "#ffffff" : s.color; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3;
+  // An assist trophy wears its wiki render once it has loaded ("sprites for assist trophies"): ASSIST_SPRITE_SRC, keyed by
+  // the name, which is what crosses the net snapshot (`act` does not). The drawn ball and face stay underneath for the
+  // frames before it loads and for anyone without a row (Selfie Stick: see the registry). A hostile add wears the same
+  // art, under its red tag and bar, and its download silhouette above is untouched.
+  const asp = (s.type==="assist") ? ASSIST_SPRITE_SRC[s.name] : null, aim = asp ? assistImage(s.name) : null;
   if(s.type==="pepper"){
     const R=s.r, sp = SPRITES.Pepper, im = (typeof spriteImage==='function') ? spriteImage(sp) : null;
     if(im && im.naturalHeight){
@@ -16388,11 +16547,14 @@ function drawSummon(s){
     // how much of her is left, so a player knows when she is about to go
     ctx.fillStyle="rgba(0,0,0,0.35)"; ctx.fillRect(-R*0.6, -R*1.5, R*1.2, 4);
     ctx.fillStyle="#7fd67f"; ctx.fillRect(-R*0.6, -R*1.5, R*1.2*Math.max(0,s.hp)/s.maxHp, 4);
-  } else {
+  } else if(aim){ drawAssistRender(s, aim, asp); }
+  else {
   ctx.beginPath(); ctx.arc(0,0,s.r,0,7); ctx.fill(); ctx.stroke(); }
-  // simple face
+  // simple face (a render brings its own)
+  if(!aim){
   ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-s.r*0.3,-s.r*0.15,s.r*0.16,0,7); ctx.arc(s.r*0.3,-s.r*0.15,s.r*0.16,0,7); ctx.fill();
   ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-s.r*0.3,-s.r*0.15,s.r*0.08,0,7); ctx.arc(s.r*0.3,-s.r*0.15,s.r*0.08,0,7); ctx.fill();
+  }
   // nametag
   ctx.font="700 12px 'Baloo 2', system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
   const w=ctx.measureText(s.name).width+12;
@@ -16463,6 +16625,57 @@ function drawHookFx(f, age){
   ctx.translate(len, 0);
   if(im){ ctx.scale(-1, 1); ctx.drawImage(im, -gw*0.08, -gh/2, gw, gh); }
   else PROJ_SHAPE.hook.draw(ctx, 9, null);
+  ctx.restore();
+}
+// Official renders for the assist trophies ("sprites for assist trophies"). Each is a BFDI character on the BFDI wiki,
+// fetched by scripts/fetch-sprites.mjs (alpha and a face checked, facing measured, scaled to 200px tall) and credited with
+// its source in assets/sprites/CREDITS.md. Keyed by the assist's NAME, which is what crosses the net snapshot. Selfie
+// Stick has no row: there is no such character on the wiki (Pin holds Camera on a selfie stick in PointyPointyPointy; the
+// one file by that name is a user's own drawing on a blog), and no art beats wrong art, so it keeps its drawn body.
+//   flip   the render natively faces LEFT (its face sits left of its body's middle, per the fetch script's measurement,
+//          or by eye: the cart's face is at the basket end, which leads), so it is mirrored to face right
+//   h, w   how tall the art stands, in body radii, and the widest it may go before it is shrunk to fit -- wide renders
+//          (Black Hole's halo, Pie's dish) are fit by width so they do not tower over the body
+//   mid    centred on the body instead of standing on its feet: the balls and the hole, which ARE the body
+const ASSIST_SPRITE_SRC = {
+  "Eraser":        { src:"assets/sprites/eraser.png",        h:2.9, w:3.2 },               // File:Tpot renders0037.png, 187x200, facing 0.055
+  "Spongy":        { src:"assets/sprites/spongy.png",        h:2.6, w:3.8, flip:true },    // File:Spongy tpot25.png, 283x200, facing -0.032
+  "8-Ball":        { src:"assets/sprites/8-ball.png",        h:2.2, w:2.2, mid:true },     // File:Tpot renders0044.png, 199x200
+  "Black Hole":    { src:"assets/sprites/black-hole.png",    h:2.6, w:5.2, mid:true },     // File:Black Hole New Body.png, 475x200: the hole and its halo, no face
+  "Clock":         { src:"assets/sprites/clock.png",         h:2.9, w:3.0 },               // File:Tpot renders0028.png, 191x200, facing 0.04
+  "Cloudy":        { src:"assets/sprites/cloudy.png",        h:2.4, w:3.8, mid:true },     // File:Tpot renders0024.png, 302x200, facing 0.043
+  "Grotato":       { src:"assets/sprites/grotato.png",       h:2.8, w:2.4 },               // File:Grotatoes! Transparent.png, 160x200 (the Grotatoes page; see CREDITS.md)
+  "Pie":           { src:"assets/sprites/pie.png",           h:2.4, w:4.2 },               // File:Tpot renders0005.png, 396x200, facing 0.022
+  "Stapy":         { src:"assets/sprites/stapy.png",         h:2.6, w:3.8 },               // File:Tpot renders0053.png, 286x200, facing 0.049
+  "Blender":       { src:"assets/sprites/blender.png",       h:3.0, w:2.2 },               // File:BlenderTPOT14.png, 128x200, facing 0.04
+  "Shopping Cart": { src:"assets/sprites/shopping-cart.png", h:2.7, w:3.8, flip:true },    // File:ShoppingcartTPOT14.png, 270x200, facing -0.018: basket (and face) on the left
+  "Beach Ball":    { src:"assets/sprites/beach-ball.png",    h:2.3, w:2.4, mid:true },     // File:Elswerebeachball.png, 210x200, facing 0.034
+};
+// Lazily constructed on FIRST DRAW, never at eval time -- the same contract bossImage and the fighter registry follow.
+const ASSIST_SPRITE_IMG = {};
+function assistImage(name){
+  const sp = ASSIST_SPRITE_SRC[name];
+  if(!sp) return null;
+  let im = ASSIST_SPRITE_IMG[name];
+  if(im === undefined){
+    try{ im = new Image(); im.src = sp.src; ASSIST_SPRITE_IMG[name] = im; }
+    catch(e){ ASSIST_SPRITE_IMG[name] = null; return null; }
+  }
+  return (im && im.complete && im.naturalWidth) ? im : null;
+}
+// The render, in local space (drawSummon has translated to the assist): fit by height, shrunk to the row's width when it
+// is wider than that, mirrored to face the way the assist is going, standing on its feet or centred on the body (`mid`).
+// The one pose an act asks for is kept simple: the Beach Ball squashes on a ricochet (`_squash`, set and counted down in
+// the sim, only read here), and a struck hostile add blinks the way Pepper's render does.
+function drawAssistRender(s, im, sp){
+  const R = s.r, ar = im.naturalWidth/im.naturalHeight;
+  let dh = (sp.h||2.8)*R, dw = dh*ar;
+  const maxW = (sp.w||3.4)*R; if(dw > maxW){ dw = maxW; dh = dw/ar; }
+  ctx.save();
+  if(((s.face||1) < 0) !== !!sp.flip) ctx.scale(-1, 1);
+  if(s.hostile && s.flash>0) ctx.globalAlpha = 0.6;
+  if(s._squash>0){ const k = Math.min(1, s._squash/8); ctx.scale(1+0.22*k, 1-0.22*k); }
+  if(sp.mid) ctx.drawImage(im, -dw/2, -dh/2, dw, dh); else ctx.drawImage(im, -dw/2, R - dh, dw, dh);
   ctx.restore();
 }
 // Procedural boss "sprites" — each boss drawn distinctly. Sprite hook: if BOSS_SPRITE_IMG[s.sprite]
@@ -20433,7 +20646,7 @@ function serializeState(withGeo){
     summons: summons.map(m=>({type:m.type,name:m.name,color:m.color,r:m.r,sprite:m.sprite,x:Math.round(m.x),y:Math.round(m.y),
       hp:m.hp,maxHp:m.maxHp,face:m.face,flash:m.flash,homeX:m.homeX,_rage:m._rage,_tel:m._tel,_bossRush:m._bossRush,
       // MePhone4: his adds' side and download, his green MeLife tell, and his portal
-      hostile:m.hostile,_dl:m._dl,_telKind:m._telKind,
+      hostile:m.hostile,_dl:m._dl,_telKind:m._telKind,_squash:m._squash,   // ...and the Beach Ball's squash on a ricochet (drawAssistRender)
       // where the wind-up is aimed (MePhone4's glove row and portal mark) and the phase (his phase-3 glitching face)
       _telX:typeof m._telX==='number'?Math.round(m._telX):undefined,_telY:typeof m._telY==='number'?Math.round(m._telY):undefined,_phase:m._phase,
       _aimX:m._aimX,_aimY:m._aimY,_aimLock:m._aimLock,   // MePhone4S's gun sight

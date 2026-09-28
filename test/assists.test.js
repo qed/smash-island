@@ -47,11 +47,13 @@ const stage = (w, act) => w.eval(`
   })()`);
 
 describe('assist trophies — duration and durability', () => {
-  it('a persistent assist lives six seconds ("reduce assist time to 6s"; it was 20, and 8 before that)', async () => {
+  // Nine seconds: the six of "reduce assist time to 6s" (it was 20, and 8 before that) at the trophies' x1.5 -- "assist
+  // trophies should be stronger", asked how: "Hit harder and stay longer" (ASSIST_TROPHY_TIME; test/assists-stronger.test.js).
+  it('a persistent assist lives nine seconds: the six of "reduce assist time to 6s", x1.5 to "stay longer"', async () => {
     const w = boot(); await settle(w);
     expect(stage(w, 'rush')).toBe(1);
-    expect(w.eval('summons[0].life')).toBe(60 * 6);
-    expect(w.eval('ASSIST_DUR')).toBe(60 * 6);
+    expect(w.eval('summons[0].life')).toBe(60 * 9);
+    expect(w.eval('ASSIST_DUR')).toBe(60 * 9);
   });
 
   it('a one-shot waits for its moment, then gives up — it does not loiter for the full tenure', async () => {
@@ -62,10 +64,10 @@ describe('assist trophies — duration and durability', () => {
     expect(w.eval('summons[0].oneShot')).toBe(true);
   });
 
-  it('Black Hole is exempt — 3 seconds, per the design doc', async () => {
+  it('Black Hole keeps his own tenure — the design doc\'s 3 seconds, x1.5 like every trophy ("stay longer")', async () => {
     const w = boot(); await settle(w);
     stage(w, 'pull');
-    expect(w.eval('summons[0].life')).toBe(60 * 3);
+    expect(w.eval('summons[0].life')).toBe(Math.round(60 * 3 * 1.5));   // 270; was 180
   });
 
   it('Black Hole pulls hard enough to be felt — and only ever inward', async () => {
