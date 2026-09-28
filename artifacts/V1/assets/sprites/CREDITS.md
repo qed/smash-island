@@ -334,6 +334,18 @@ downscaled to 200px tall, alpha verified, facing measured.
 <!-- @b3:g5 Blueberry, Cherries, Clover, Jack -->
 
 <!-- @b3:g6 Magnet, MeTag, Poppy, Silver Spoon -->
+| Magnet | `magnet.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/81/MagnetII4Pose.png/revision/latest?cb=20250717171143 |
+| MeTag | `metag.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1d/MeTag_II4_No_Sash.png/revision/latest?cb=20260803171640 |
+| Poppy | `poppy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1f/PoppyPose.png/revision/latest?cb=20250910153655 |
+| Silver Spoon | `silver-spoon.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e7/Silver2024Pose.png/revision/latest?cb=20250628202009 |
+
+Attack art for Magnet, MeTag, Poppy and Silver Spoon (rebuilt by `node scripts/fetch-attack-sprites.mjs <out> ghostvacuum capturepod immunitycookie`).
+The owner, Q1: "Cut from the frames" -- Poppy's vacuum and pod exist only inside All Play and No Work (S4E5), so they are
+lifted out of the two frames the plan names (keys `vacuum` and `pod`; the vacuum is brightened, the frame is the haunted
+house at night). MeTag's barrier is drawn in code (Q2); Magnet throws nothing.
+- Poppy (ghostvacuum.png): the ghost-hunting vacuum (All Play and No Work), lifted out of the frame — File:S4E5 Poppy uses a vacuum to trap Gnife.png — https://static.wikia.nocookie.net/inanimateinsanity/images/2/25/S4E5_Poppy_uses_a_vacuum_to_trap_Gnife.png/revision/latest?cb=20260427153322
+- Poppy (capturepod.png): a capture pod from the vacuum (All Play and No Work), lifted out of the hand of Paper — File:S4E5 Poppy and Paper in ghost hunting gear.png — https://static.wikia.nocookie.net/inanimateinsanity/images/9/94/S4E5_Poppy_and_Paper_in_ghost_hunting_gear.png/revision/latest?cb=20260427153647
+- Silver Spoon (immunitycookie.png): the Immunity Cookie (III) — File:Immunitycookie.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/46/Immunitycookie.png/revision/latest?cb=20240204231843
 
 <!-- @b3:g7 Tapey, Tea Kettle, Teddy Bear -->
 

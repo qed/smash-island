@@ -116,6 +116,12 @@ const PICKS = {
   // piano where it landed on Paper, against the pole. The piano is lifted out of it (key 'piano'); Paper, the pole and
   // the grass go. Same footing as the TPOT 7 strike: the owner named this piece of the show's art.
   piano:      { who: 'Paper',       kits: ['evilpaper'],  wiki: 'ii', file: 'Ep2 Piano.png',        note: 'the season-1 grand piano (Episode 2), lifted out of the frame', key: 'piano', region: [470, 240, 1010, 670], srcH: 700, h: 72 },
+  // --- batch 3, group 6 (Magnet, MeTag, Poppy, Silver Spoon). The owner, Q1: "Cut from the frames" -- Poppy's ghost
+  // vacuum and capture pod exist only inside All Play and No Work (S4E5), so the show's own pixels are lifted out of the
+  // two frames the plan names. The Immunity Cookie has its own clean file.
+  ghostvacuum: { who: 'Poppy',     kits: ['vacuum'],     wiki: 'ii', file: 'S4E5 Poppy uses a vacuum to trap Gnife.png', note: 'the ghost-hunting vacuum (All Play and No Work), lifted out of the frame', key: 'vacuum', region: [694, 318, 786, 434], srcH: 477, h: 56 },
+  capturepod:  { who: 'Poppy',     kits: ['vacuum'],     wiki: 'ii', file: 'S4E5 Poppy and Paper in ghost hunting gear.png', note: 'a capture pod from the vacuum (All Play and No Work), lifted out of the hand of Paper', key: 'pod', region: [426, 200, 506, 278], srcH: 477, h: 48 },
+  immunitycookie: { who: 'Silver Spoon', kits: ['glowgold'], wiki: 'ii', file: 'Immunitycookie.png', note: 'the Immunity Cookie (III)', h: 40 },
 };
 
 async function api(wiki, params) {
@@ -350,6 +356,33 @@ function keyPiano(png) {
   for (const p of pieces) if (p.length < biggest / 10) for (const k of p) d[k * 4 + 3] = 0;
 }
 const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano };
+// ---- batch 3, group 6: two more keys for frame cuts, added beside KEYS so no shared line changes ----
+// Keep the largest connected piece of what `test` calls the object, everything it closes round, and a soft one-pixel
+// edge. `lift` brightens what is kept: the S4E5 frames are the haunted house at night, and a prop that dark would
+// read as a smudge on a daylight stage.
+function keyLargest(png, test, lift) {
+  const { width: w, height: h, data: d } = png, N = w * h;
+  const m = new Uint8Array(N); for (let k = 0; k < N; k++) m[k] = test(d, k * 4) ? 1 : 0;
+  const comp = new Int32Array(N).fill(-1); let best = -1, bestN = 0, id = 0;
+  for (let k0 = 0; k0 < N; k0++) { if (!m[k0] || comp[k0] >= 0) continue;
+    let n = 0; const stack = [k0]; comp[k0] = id;
+    while (stack.length) { const k = stack.pop(), x = k % w; n++;
+      for (const q of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, k - w, k + w]) if (q >= 0 && q < N && m[q] && comp[q] < 0) { comp[q] = id; stack.push(q); } }
+    if (n > bestN) { bestN = n; best = id; } id++; }
+  const keep = new Uint8Array(N); for (let k = 0; k < N; k++) keep[k] = comp[k] === best ? 1 : 0;
+  const outside = floodBorder(keep.map((v) => 1 - v), w, h);
+  for (let k = 0; k < N; k++) {
+    const i = k * 4, inside = keep[k] || !outside[k];
+    d[i + 3] = inside ? 255 : (touches(keep, k, w, N) ? 110 : 0);
+    if (lift && d[i + 3]) for (let c = 0; c < 3; c++) d[i + c] = Math.min(255, Math.round(d[i + c] * lift));
+  }
+}
+// 'vacuum': Poppy's canister vacuum on the floorboards. Its body is a dark red (red well over green and blue), its base,
+// hose and wheel a slate blue (blue well over red); the floor is a purple-brown that is neither.
+function keyVacuum(png) { keyLargest(png, (d, i) => (d[i] - d[i + 1] > 28 && d[i] - d[i + 2] > 14) || (d[i + 2] - d[i] > 22), 1.6); }
+// 'pod': the capture pod in Paper's hand is a pale silver ball against a dark wall; his hand under it is black.
+function keyPod(png) { keyLargest(png, (d, i) => lum(d, i) > 72); }
+Object.assign(KEYS, { vacuum: keyVacuum, pod: keyPod });
 
 const outDir = process.argv[2];
 if (!outDir) { console.error('usage: node fetch-attack-sprites.mjs <outDir> [name ...]'); process.exit(1); }
