@@ -46,7 +46,7 @@ export function bootRealm(w, h, seed, clock) {
 
 export async function makePair(opts = {}) {
   const { hostW = 1280, hostH = 720, cliW = 1280, cliH = 720, mode = 'ffa', stageId = 'goiky', mapSize = 'normal',
-    count = 2, latency = 0, jitter = 0, stocks = 3, teamKey = null, hostFighter = 'Pen', cliFighter = 'Firey' } = opts;
+    count = 2, latency = 0, jitter = 0, stocks = 3, teamKey = null, hostFighter = 'Pen', cliFighter = 'Firey', phantoms = [] } = opts;
   const clock = { T: 0 };
   let jr = 12345; const rnd = () => { jr = (jr * 1103515245 + 12345) & 0x7fffffff; return jr / 0x7fffffff; };
   const lastAt = { C: 0, H: 0 };
@@ -56,10 +56,13 @@ export async function makePair(opts = {}) {
   await Hh.eval('profileReady'); await Cc.eval('profileReady');
   const q = [];
   const wire = { state: [], input: [], inputAt: [] };
-  const players = [{ id: 'h', name: hostFighter, isHost: true }, { id: 'c', name: cliFighter, isHost: false }];
+  // `phantoms`: extra humans seated between the host and the client (they never send input), for tests about a room of
+  // three or more -- who a client is after someone leaves, for one.
+  const players = [{ id: 'h', name: hostFighter, isHost: true }, ...phantoms.map((p) => ({ isHost: false, ...p })), { id: 'c', name: cliFighter, isHost: false }];
+  const cliIdx = players.length - 1;
   Hh.__out = (s) => { if (s.startsWith('{"t":"state"') && s.indexOf('"lobby"') < 0) wire.state.push(s.length); q.push({ at: arrive('C'), to: 'C', data: s }); };
   Cc.__out = (s) => { if (s.startsWith('{"t":"input"')) { wire.input.push(s); wire.inputAt.push(clock.T); } q.push({ at: arrive('H'), to: 'H', data: s }); };
-  for (const [w, role, idx] of [[Hh, 'host', 0], [Cc, 'client', 1]]) {
+  for (const [w, role, idx] of [[Hh, 'host', 0], [Cc, 'client', cliIdx]]) {
     w.eval(`chosen = ROSTER.find(function(r){ return r.name===${JSON.stringify(role === 'host' ? hostFighter : cliFighter)}; });
       NET.role=${JSON.stringify(role)}; NET.myIdx=${idx}; NET.players=${JSON.stringify(players)};
       NET.myId=${JSON.stringify(role === 'host' ? 'h' : 'c')};

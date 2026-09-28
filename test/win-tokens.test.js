@@ -383,7 +383,9 @@ describe('online', () => {
     expect(start.roster).toEqual(['Leafy', 'Pencil', 'Rocky']);
     expect(start.cos).toEqual(['', code, '']);
     const c = w.eval(`(function(){ var s = startMatch; startMatch = function(){};
-      NET.beginMatch({ mode:'ffa', count:3, stocks:3 }, ['Leafy','Pencil','Rocky'], ${JSON.stringify(['0200', code, 'zzzz'])});
+      // beginMatch(settings, roster, ids, cos): the seats (ids) come from the bug pass's fix for players leaving mid-match; the
+      // looks (cos) ride after them.
+      NET.beginMatch({ mode:'ffa', count:3, stocks:3 }, ['Leafy','Pencil','Rocky'], ['h','me','c'], ${JSON.stringify(['0200', code, 'zzzz'])});
       startMatch = s;
       return { host: cosOf({ idx: 0, you: false }), me: cosOf({ idx: 1, you: true, name: 'Pencil' }), rocky: cosOf({ idx: 2, you: false }), ai: cosOf({ idx: 3, you: false }) }; })()`);
     expect(c.host).toEqual({ skin: null, hat: 'hat_top', trail: null, ko: null });
