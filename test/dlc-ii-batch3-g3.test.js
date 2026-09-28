@@ -57,8 +57,9 @@ describe('batch 3, group 3: the roster rows and the renders', () => {
       expect(credits).toContain(man[n].source.split('/revision/')[0]);
       expect(W.eval(`!!HURT_POLY[${JSON.stringify(n)}] && !!LIMB_RIG[${JSON.stringify(n)}] && !!hurtboxFor(${JSON.stringify(n)}).poly`)).toBe(true);
     }
-    // the owner's pick for Dough: the ghost with a tail, his infobox image (Q4)
-    expect(man.Dough.source).toContain('GhostDoughBannerPose.png');
+    // Dough's render is his official S4 art now: the banner render (the Q4 pick) was a fan rebuild, and the owner said
+    // "change 4" once told so.
+    expect(man.Dough.source).toContain('Dough_II_S4_.png');
   });
 
   it('the attack art exists, is transparent and projectile-sized, is credited, and every file has an entry and a glyph', () => {

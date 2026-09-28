@@ -344,7 +344,7 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Cammy, pop-up flash (white-balanced by scripts/fix-cammy-flash.mjs) | `cammy-flash.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/Cammy_Flash.png/revision/latest?cb=20260419233749 |
 | Spikey's spike (spike.png): attack art, the top spike cut from his body asset (`node scripts/fetch-attack-sprites.mjs <out> spike`) | `attacks/spike.png` — File:Spikey Body Front.png | https://static.wikia.nocookie.net/inanimateinsanity/images/5/54/Spikey_Body_Front.png/revision/latest?cb=20260801170935 |
 | Cheesy | `cheesy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0f/Cheesy2024Pose.png/revision/latest?cb=20250628193516 |
-| Dough (the owner's pick: GhostDoughBannerPose, the ghost with a tail, his infobox image) | `dough.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/ec/GhostDoughBannerPose.png/revision/latest?cb=20260617153251 |
+| Dough (official S4 art; the owner: "change 4" -- the banner render was a fan rebuild) | `dough.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0e/Dough_II_S4_.png/revision/latest |
 | Fan | `fan.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1e/Fan2024PoseAlt.png/revision/latest?cb=20250628193516 |
 | Soap | `soap.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/Soap2024Pose.png/revision/latest?cb=20250628193841 |
 | Cheesy's soccer ball (soccerball.png): A Kick in the Right Direction, off its green -- File:Soccer Ball.JPG | `attacks/soccerball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c9/Soccer_Ball.JPG/revision/latest?cb=20131103220257 |
@@ -374,7 +374,7 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Silver Spoon | `silver-spoon.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e7/Silver2024Pose.png/revision/latest?cb=20250628202009 |
 | Tapey | `tapey.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/2b/TapeyII4StickerSheet.png/revision/latest?cb=20250714194652 |
 | Tea Kettle | `tea-kettle.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/41/Tea_Kettle_IIS4.png/revision/latest?cb=20260517165422 |
-| Teddy Bear (TB.png, the owner's Q4) | `teddy-bear.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6e/TB.png/revision/latest?cb=20250721214107 |
+| Teddy Bear (official sticker art; the owner: "change 4" -- TB.png had no source) | `teddy-bear.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/56/TeddyII4StickerSheeeeeeeeet.png/revision/latest?cb=20250716005652 |
 | Tea Kettle's hors d'oeuvres tray (horstray.png), File:Hors d'oeuvres.png | `attacks/horstray.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a4/Hors_d%27oeuvres.png/revision/latest?cb=20220819192319 |
 | Teddy Bear's paintball (paintball.png): the pink paint in her gun's hopper, cut from the frame and masked round (File:S1RE6 Teddy grabs a paintball gun.png) | `attacks/paintball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7b/S1RE6_Teddy_grabs_a_paintball_gun.png/revision/latest?cb=20260326141622 |
 

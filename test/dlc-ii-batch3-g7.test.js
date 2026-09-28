@@ -47,7 +47,7 @@ describe('the roster rows and renders', () => {
 
   it('each render is a real transparent cut-out at most 200px tall, facing measured, and credited', () => {
     const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
-    for (const [file, flip] of [['tapey.png', true], ['tea-kettle.png', false], ['teddy-bear.png', true]]) {
+    for (const [file, flip] of [['tapey.png', true], ['tea-kettle.png', false], ['teddy-bear.png', false]]) {
       const png = PNG.sync.read(readFileSync(`artifacts/V1/assets/sprites/${file}`));
       let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) clear++;
       expect(png.height).toBeLessThanOrEqual(200);
@@ -56,7 +56,9 @@ describe('the roster rows and renders', () => {
       const name = NAMES[['tapey.png', 'tea-kettle.png', 'teddy-bear.png'].indexOf(file)];
       expect(W.eval(`SPRITES[${JSON.stringify(name)}].flip`)).toBe(flip);
     }
-    expect(credits).toContain('TB.png');   // Teddy's render is the one the owner picked (Q4)
+    // Teddy's render is her official sticker art now: TB.png (the Q4 pick) had no source, and the owner said "change 4".
+    // The official art faces right, so it is not flipped.
+    expect(credits).toContain('TeddyII4StickerSheeeeeeeeet.png');
   });
 
   it('each has a traced hurtbox and limb rig, like every other render', () => {
