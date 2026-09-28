@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { makePair } from './helpers/net-pair.js';
 import { loadMonolith } from './helpers/load-monolith.js';
+import { mulberry32 } from './helpers/prng.js';
 
 // "run a pass on every feature to check if anything bugs." (2026-09-28) -- one test per bug the pass reproduced and
 // fixed, each written to fail on the build it was found in. See the commit for the list.
@@ -146,10 +147,12 @@ describe('no text on screen from a move, and no blank line wiping the one that i
     expect(b.nb).toBeGreaterThan(0);
     expect(b.banner).toBeFalsy();
   });
-  it('an AI cured of Outbreak, or spat out, puts up no empty banner', () => {
+  it('an AI cured of Outbreak, or spat out, puts up no empty banner -- and since round 2, no line at all', () => {
     expect(W.eval('String(step)')).not.toMatch(/banner\(f\.you\?"Cured!":""/);
     expect(W.eval('String(freeFromStomach)')).not.toMatch(/banner\(f\.you\?"Spat out!":""/);
-    expect(W.eval('String(freeFromStomach)')).toMatch(/if\(f\.you\) banner\("Spat out!"/);
+    // Round 1 kept "Spat out!" for the local player. Asked about the passives' lines, the owner ruled "Remove them all"
+    // (round 2), so freeFromStomach says nothing now; test/no-move-popups.test.js drives the swallow and the escape.
+    expect(W.eval('String(freeFromStomach)')).not.toMatch(/banner\(/);
   });
 });
 
@@ -496,4 +499,106 @@ describe("One's chain", () => {
   it('Boss Rush loop 2 puts no quest line on the banner mid-match', () => {
     expect(W.eval('String(oneRushKill)')).not.toMatch(/banner\(/);
   });
+});
+
+// ============================================================ round 2 ============================================================
+// Round 1 left a long tail of hand-rolled specials whose hit code loops over `fighters` only. A probe (every playable fighter x
+// special / up / down / smash / X+C beside a parked boss, 40 and 120 px off, 150 frames) found 60 moves whose card promises a hit
+// but which never touched the boss: every 'beam' smash, every 'spin' up-special and Saw's aura, Naily's dash, two finishers, and
+// ~40 specials and down-specials. Each now goes through the boss path the rest of the game uses (damageSummons, or damageSummon
+// on the one target a grab or a lash picks -- nearestSummon), so Two's grounding and One's ghost still apply. A multi-hit move
+// hits the boss on its own cadence (the aura's six-frame tick, a jab per rant, once per beam), never every frame.
+describe('Boss Rush, round 2: every move whose card promises a hit reaches the boss', () => {
+  const BOSS2 = (name, move, dx) => `(function(){
+    SETTINGS.mode='boss'; SETTINGS.items=false; running=true; TESTMODE.active=false; BOSSRUSH={active:false,bossIdx:0,cleared:0,defeated:false,loop:0,dmgMult:1};
+    worldPlats=[]; summons=[]; projectiles=[]; items=[]; particles=[]; beams=[]; tendrils=[];
+    var A=makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(name)}; }),400,groundY()-24,0);
+    A.team=0; A.controller='still'; A.stocks=99; A.face=1; A.you=true; fighters=[A];
+    spawnBossRushBoss(); var b=summons[0]; b._atkTimer=1e9; b.x=400+${dx}; b.hp=b.maxHp=5000; step(); A.smCd=0; A.spCd=0; A.atkCd=0; A.invuln=0; A.hitstun=0;
+    var by0=b.y, frames=0;
+    ${move};
+    for(var i=0;i<150;i++){ var h=b.hp; step(); b.x=400+${dx}; b.y=by0; b.vx=0; b.vy=0; if(b.hp<h) frames++; }
+    return { dealt:+(5000-b.hp).toFixed(2), frames:frames }; })()`;
+  const M = { special: 'fireSpecial(A,{})', up: 'fireSpecial(A,{up:true})', down: 'fireSpecial(A,{down:true})', smash: 'doSmash(A)', xc: 'doAttackSpecial(A)' };
+  // [fighter, move]: every one of these dealt 0 to the boss at both distances on e887265. Beside each, the fix that routes it.
+  const NOW_HIT = [
+    ['Firey', 'up'], ['Flower', 'up'], ['Match', 'up'], ['Balloony', 'up'], ['Donut', 'up'], ['Bomb', 'up'],          // the 'spin' aura (_sawing)
+    ['Saw', 'special'], ['Saw', 'down'], ['Donut', 'special'],                                                          // the same aura, on the ground
+    ['Ruby', 'smash'], ['Remote', 'smash'], ['TV', 'smash'], ['Dora', 'smash'], ['Ruler', 'smash'], ['Lightbulb', 'smash'],
+    ['Nickel (II)', 'smash'], ['Cammy', 'smash'], ['Tissues', 'smash'], ['Tapey', 'smash'],                             // SM_PAT.beam
+    ['Naily', 'smash'],                                                                                                 // the _nail dash and the jab back
+    ['Bomby', 'xc'], ['Teardrop', 'xc'],                                                                                // ATKSPECIALS.bomb / .kick
+    ['Flower', 'special'], ['Flower', 'down'], ['Coiny', 'special'], ['Yellow Face', 'special'], ['Bell', 'special'], ['Gaty', 'special'],
+    ['Marker', 'special'], ['TV', 'special'], ['Dora', 'special'], ['David', 'special'], ['Fern', 'special'], ['Sidewalky', 'special'],
+    ['Balloony', 'special'], ['Marshmallow', 'special'], ['Marshmallow', 'down'], ['Nickel (II)', 'special'], ['Cammy', 'special'],
+    ['Cammy', 'down'], ['Blueberry', 'special'], ['Apple', 'down'], ['Salt', 'down'], ['Tissues', 'down'],              // damageSummons beside the fighter loop
+    ['Rose', 'special'], ['Taco (II)', 'down'], ['Magnet', 'special'], ['Liy', 'special'], ['Goo', 'special'], ['Candle', 'special'],
+    ['Spikey', 'down'], ['Tea Kettle', 'down'], ['Soap', 'down'],                                                       // one target: nearestSummon + damageSummon
+    ['Cherries', 'special'],                                                                                            // the oil's owner:-1 read as summon-owned
+  ];
+  it('the table: each lands, and never once a frame', () => {
+    const misses = [], sprays = [];
+    for (const [name, mv] of NOW_HIT) {
+      const r40 = W.eval(BOSS2(name, M[mv], 40)), r120 = W.eval(BOSS2(name, M[mv], 120));
+      const best = r40.dealt >= r120.dealt ? r40 : r120;
+      if (!(best.dealt > 0)) misses.push(`${name} ${mv}`);
+      if (best.dealt >= 60 || best.frames > 12) sprays.push(`${name} ${mv}: ${best.dealt} over ${best.frames} frames`);   // a burst ring is one hit; an aura ticks every six frames
+    }
+    expect(misses).toEqual([]);
+    expect(sprays).toEqual([]);
+  }, 240000);
+  it("Two's grounding and One's ghost still shield them from the rerouted hits", () => {
+    // A single-target hit (Rose's lash) and a beam (Ruby's smash) go through damageSummon / damageSummons like everything else.
+    const r = W.eval(`(function(){ var out={};
+      ['Rose','Ruby'].forEach(function(nm){ var mv = nm==='Rose' ? 'fireSpecial(A,{})' : 'doSmash(A)';
+        SETTINGS.mode='boss'; SETTINGS.items=false; running=true; TESTMODE.active=false; BOSSRUSH={active:false,bossIdx:0,cleared:0,defeated:false,loop:0,dmgMult:1};
+        worldPlats=[]; summons=[]; projectiles=[]; items=[]; particles=[]; beams=[]; tendrils=[];
+        var A=makeFighter(ROSTER.find(function(r){ return r.name===nm; }),400,groundY()-24,0); A.team=0; A.controller='still'; A.stocks=99; A.face=1; fighters=[A];
+        spawnBossRushBoss(); var b=summons[0]; b._atkTimer=1e9; b.x=440; b.hp=b.maxHp=5000; b._ungrounded=true; b._grounded=false;   // Two's state
+        step(); A.smCd=0; A.spCd=0; var by0=b.y; eval(mv); for(var i=0;i<40;i++){ step(); b.x=440; b.y=by0; b.vx=0; b.vy=0; }
+        out[nm]=5000-b.hp; });
+      return out; })()`);
+    expect(r).toEqual({ Rose: 0, Ruby: 0 });
+  });
+  it('a move that by design has no hit on a boss still has none', () => {
+    // Barf Bag's Outbreak (no damage: it turns fighters), the stun-only braces (Bell, TV, Dora), Remote's jam (a scramble),
+    // Woody's Scream (a flinch) and Liy's Hurl (it throws the fighter her Flip Switch holds) -- nothing to land.
+    for (const [name, mv] of [['Barf Bag', 'special'], ['Bell', 'down'], ['TV', 'down'], ['Dora', 'down'], ['Remote', 'down'], ['Woody', 'up'], ['Liy', 'down']]) {
+      expect(W.eval(BOSS2(name, M[mv], 40)).dealt, `${name} ${mv}`).toBe(0);
+    }
+  });
+});
+
+describe('Boss Rush, round 2: the fighter-vs-fighter numbers of the rerouted moves are unchanged', () => {
+  // Measured on e887265, before the fix, in a fresh boot with Math.random reseeded before every measurement (so the moves that
+  // roll -- Apple's seven, Tissues's condishawn -- roll the same): [fighter, move, damage to a still Pen at 40, 60 and 120 px].
+  const BEFORE = [['Firey','up',8,4,0],['Flower','up',11,7,0],['Match','up',8,4,0],['Balloony','up',4,4,0],['Donut','up',11,7,0],['Bomb','up',8,4,0],['Bell','up',10,6,0],['Spikey','up',14,4,0],
+    ['Saw','special',28,24,0],['Saw','down',0,0,0],['Donut','special',24,20,0],['Naily','smash',42.28,42.22,41.81],['Ruby','smash',26.2,26.2,26.2],['Remote','smash',15,15,15],['TV','smash',18,18,18],
+    ['Dora','smash',26,26,26],['Ruler','smash',18,18,18],['Lightbulb','smash',20,20,20],['Nickel (II)','smash',23.86,23.86,23.86],['Cammy','smash',20,20,20],['Tissues','smash',20,20,20],['Tapey','smash',20,20,20],
+    ['Bomby','xc',18,18,0],['Teardrop','xc',18,18,0],['Flower','special',14,14,14],['Flower','down',5,5,0],['Coiny','special',9,0,0],['Yellow Face','special',7,7,0],['Bell','special',6,6,0],['Gaty','special',5,0,0],
+    ['Marker','special',9,9,0],['Rose','special',7,7,7],['TV','special',7,7,0],['Dora','special',15,15,0],['David','special',11,10,7],['Fern','special',8,8,0],['Sidewalky','special',10,0,0],['Balloony','special',10,10,0],
+    ['Marshmallow','special',8,8,8],['Marshmallow','down',9,9,0],['Nickel (II)','special',7.95,7.95,7.95],['Goo','special',8,8,0],['Candle','special',9,9,9],['Cammy','special',0,0,4],['Cammy','down',5,5,0],
+    ['Blueberry','special',10,10,0],['Cherries','special',4,4,0],['Magnet','special',3,3,3],['Liy','special',54,66,60],['Taco (II)','down',6,6,6],['Apple','down',6,6,0],['Salt','down',7,7,0],['Spikey','down',8,8,0],
+    ['Soap','down',9,0,0],['Tissues','down',8,8,0],['Tea Kettle','down',8,0,0],['Nickel','special',12,12,12]];
+  const M = { special: 'fireSpecial(A, {})', up: 'fireSpecial(A, {up:true})', down: 'fireSpecial(A, {down:true})', smash: 'doSmash(A)', xc: 'doAttackSpecial(A)' };
+  const FFA = (name, move, dx) => `(function(){
+    SETTINGS.mode='ffa'; SETTINGS.items=false; SETTINGS.count=2; running=true; TESTMODE.active=false;
+    worldPlats=[]; summons=[]; projectiles=[]; items=[]; particles=[]; beams=[]; tendrils=[];
+    var A=makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(name)}; }),400,groundY()-24,0);
+    var D=makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }),400+${dx},groundY()-24,1);
+    A.team=0; D.team=1; A.controller='still'; D.controller='still'; A.stocks=99; D.stocks=99; A.face=1; D.face=-1; A.you=true; fighters=[A,D];
+    step(); A.smCd=0; A.spCd=0; A.atkCd=0; A.invuln=0; A.hitstun=0; A.pct=30; D.invuln=0; D.pct=30; D.hitstun=0;
+    var dx0=D.x, dy0=D.y, p0=D.pct;
+    ${move};
+    for(var i=0;i<150;i++){ step(); D.x=dx0; D.y=dy0; D.vx=0; D.vy=0; D.dead=false; D.invuln=0; D.hitstun=0; }
+    return +(D.pct-p0).toFixed(2); })()`;
+  it('every rerouted move does to Pen exactly what it did before', async () => {
+    const F = bootMonolith(); await F.eval('profileReady');   // a fresh boot, as the numbers were taken
+    const diffs = [];
+    for (const [name, mv, ...want] of BEFORE) {
+      const got = [40, 60, 120].map((dx) => { F.Math.random = mulberry32(5); return F.eval(FFA(name, M[mv], dx)); });
+      if (got.some((g, i) => Math.abs(g - want[i]) > 0.01)) diffs.push(`${name} ${mv}: ${JSON.stringify(got)} was ${JSON.stringify(want)}`);
+    }
+    expect(diffs).toEqual([]);
+  }, 240000);
 });
