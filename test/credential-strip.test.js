@@ -127,12 +127,14 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     // BOSS_SPRITE_SRC; what fighters THROW is in ATTACK_SPRITES; a pose a move swaps in (batch 3:
     // Box's flaps, Candle's Inner-Flame, Tissues' nap...) is a renderSprite on the fighter's FIGHTER_ANIM
     // entry, directly or under `poses`; and the pickups wear theirs through ITEM_ART (the owner: "make
-    // items look better", with the show's own art). All five count as "used", or every boss render, thrown
-    // thing, pose and item would look like dead weight -- and a stray file in items/ that ITEM_ART does not
-    // name still fails here.
+    // items look better", with the show's own art); and the assist trophies wear theirs through
+    // ASSIST_SPRITE_SRC (the owner: "sprites for assist trophies"). All six count as "used", or every boss
+    // render, thrown thing, pose, item and cameo would look like dead weight -- and a stray file in items/
+    // that ITEM_ART does not name, or a render no assist wears, still fails here.
     const referenced = new Set(
       w.eval(`Object.keys(SPRITES).map(function(k){ return SPRITES[k].src||''; })
               .concat(Object.keys(BOSS_SPRITE_SRC).map(function(k){ return BOSS_SPRITE_SRC[k]; }))
+              .concat(Object.keys(ASSIST_SPRITE_SRC).map(function(k){ return ASSIST_SPRITE_SRC[k].src; }))
               .concat(Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src; }))
               .concat(Object.keys(FIGHTER_ANIM).reduce(function(a, k){ var e = FIGHTER_ANIM[k]; if(!e || typeof e !== 'object') return a;
                 var vals = Object.keys(e).map(function(p){ return e[p]; });
