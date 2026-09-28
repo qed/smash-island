@@ -328,6 +328,14 @@ downscaled to 200px tall, alpha verified, facing measured.
 <!-- @b3:g2 Bonesaw, Spikey, Candle, Cammy -->
 
 <!-- @b3:g3 Cheesy, Dough, Fan, Soap -->
+| Cheesy | `cheesy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0f/Cheesy2024Pose.png/revision/latest?cb=20250628193516 |
+| Dough (the owner's pick: GhostDoughBannerPose, the ghost with a tail, his infobox image) | `dough.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/ec/GhostDoughBannerPose.png/revision/latest?cb=20260617153251 |
+| Fan | `fan.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1e/Fan2024PoseAlt.png/revision/latest?cb=20250628193516 |
+| Soap | `soap.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/cf/Soap2024Pose.png/revision/latest?cb=20250628193841 |
+| Cheesy's soccer ball (A Kick in the Right Direction), off its green -- File:Soccer Ball.JPG | `attacks/soccerball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c9/Soccer_Ball.JPG/revision/latest?cb=20131103220257 |
+| Dough's Loser Cage, cut from the S4E5 frame (owner: "Cut from the frames") -- File:S4E5 "I already owned this!".png | `attacks/losercage.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/3e/S4E5_%22I_already_owned_this%21%22.png/revision/latest?cb=20260407144512 |
+| Soap's portable vacuum, cut from the S2E6 frame (owner: "Cut from the frames") -- File:S2e6 bow escapes out of the vacuum.png | `attacks/vacuum.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/61/S2e6_bow_escapes_out_of_the_vacuum.png/revision/latest?cb=20170827172834 |
+| Soap's blue cleaning cloth, off her render -- File:SoapPro.png | `attacks/cloth.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/5f/SoapPro.png/revision/latest?cb=20130526185952 |
 
 <!-- @b3:g4 Tissues, Yin-Yang, Starfruit -->
 

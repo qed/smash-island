@@ -40,6 +40,11 @@ const MAX_SIDE = 128;   // test/attack-sprites.test.js: projectile-sized
 //           'orb'   -- keep only the near-white orb, and close the bites a hand left in it
 //           'balloon' -- keep only the blue balloon (fill, shine, dark-blue outline): its largest connected piece
 //           'piano' -- keep what is wood and gold, and what the wood closes round (the keys, its insides)
+//           'prop'  -- a prop that exists only inside an episode frame (the owner's call: "Cut from the frames"): keep the
+//                      pixels the pick's own `keep(r, g, b)` passes, then only their largest connected piece, so the
+//                      room behind the prop goes and the gaps in it (a cage's bars) stay clear
+//           'ball'  -- a ball on a flat green backdrop: the green key, then everything outside the ball's own disc
+//   png     the wiki file is a JPEG: Vignette converts it (format=png) so it can be keyed; the key makes the alpha
 //   srcH    download height (default 400; larger where a key needs the detail)
 //   h       output height (default TARGET_H)
 //   solid   the object is itself a rectangle that fills its own canvas edge to edge (Remote's battery cell), so it
@@ -116,6 +121,25 @@ const PICKS = {
   // piano where it landed on Paper, against the pole. The piano is lifted out of it (key 'piano'); Paper, the pole and
   // the grass go. Same footing as the TPOT 7 strike: the owner named this piece of the show's art.
   piano:      { who: 'Paper',       kits: ['evilpaper'],  wiki: 'ii', file: 'Ep2 Piano.png',        note: 'the season-1 grand piano (Episode 2), lifted out of the frame', key: 'piano', region: [470, 240, 1010, 670], srcH: 700, h: 72 },
+  // ---- Inanimate Insanity DLC, batch 3 (Cheesy, Dough, Soap: Fan throws nothing) ----
+  // Cheesy: the soccer ball from 'A Kick in the Right Direction'. The only file is a JPEG on flat green, uploaded the day
+  // S2E5 aired and drawn in the show's style.
+  soccerball: { who: 'Cheesy',      kits: ['pun'],        wiki: 'ii', file: 'Soccer Ball.JPG', png: true, key: 'ball', srcH: 108, h: 40, note: "the soccer ball (A Kick in the Right Direction), off its green" },
+  // Dough: the Loser Cage exists only in S4E5's frames ("I already owned this!"). The cage is navy with pale trim; the
+  // purple wallpaper and the floor between its bars are not, so they key away and the bars stay see-through.
+  losercage:  { who: 'Dough',       kits: ['copycat'],    wiki: 'ii', file: 'S4E5 "I already owned this!".png', key: 'prop', region: [140, 14, 574, 462], srcH: 477, h: 64,
+    keep: (r, g, b) => (b >= r + 6 && b >= g - 4) || (r >= 150 && g >= 110 && b >= 95 && r - b < 90), note: 'the Loser Cage, lifted out of the S4E5 frame' },
+  // Soap: her portable vacuum, whole in one S2E6 frame (Let 'Er R.I.P.): the red body, the grey hose and nozzle, the brown
+  // handles, the wheels. The dark room and Bow's pink ghost are none of those.
+  vacuum:     { who: 'Soap',        kits: ['disinfect'],  wiki: 'ii', file: 'S2e6 bow escapes out of the vacuum.png', key: 'prop', region: [98, 412, 562, 724], srcH: 768, h: 56,
+    // the frame is dark: the body is (125,15,0), the hose, nozzle and wheels a NEUTRAL grey, the handles a lighter tan, the
+    // outline near-black -- and the room is a warm brown throughout, which none of those are
+    keep: (r, g, b) => (r >= 80 && r > g + 50 && r > b + 60) || (Math.max(r, g, b) - Math.min(r, g, b) < 13 && g >= 45)
+      || (r >= 90 && r - g >= 20 && r - g <= 70 && g >= 55 && b >= 30 && b < g) || Math.max(r, g, b) < 32,
+    note: "her portable vacuum, lifted out of the S2E6 frame" },
+  // Soap: the small blue cloth she scrubs everything with, off her SoapPro render (her hand and arm are not blue).
+  cloth:      { who: 'Soap',        kits: ['disinfect'],  wiki: 'ii', file: 'SoapPro.png', key: 'prop', region: [0, 640, 130, 910], srcH: 1142, h: 40,
+    keep: (r, g, b) => b > r + 60 && b > 150, note: 'her blue cleaning cloth, off the SoapPro render' },
 };
 
 async function api(wiki, params) {
@@ -131,12 +155,12 @@ async function fileUrl(wiki, title) {
 }
 // `?format=original` is load-bearing (see fetch-sprites.mjs): Wikia content-negotiates to WebP even when
 // the URL ends in .png. scale-to-height-down has the server shrink giant renders before they travel.
-function originalUrl(url, h) {
+function originalUrl(url, h, png) {
   const base = url.split('/revision/')[0];
-  return `${base}/revision/latest/scale-to-height-down/${h}?format=original`;
+  return `${base}/revision/latest/scale-to-height-down/${h}?format=${png ? 'png' : 'original'}`;
 }
-async function download(url, h) {
-  const r = await fetch(originalUrl(url, h), { headers: UA });
+async function download(url, h, png) {
+  const r = await fetch(originalUrl(url, h, png), { headers: UA });
   if (!r.ok) throw new Error(`download ${r.status}`);
   return Buffer.from(await r.arrayBuffer());
 }
@@ -349,7 +373,27 @@ function keyPiano(png) {
   const biggest = Math.max(0, ...pieces.map((p) => p.length));
   for (const p of pieces) if (p.length < biggest / 10) for (const k of p) d[k * 4 + 3] = 0;
 }
-const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano };
+function keyProp(png, pick) {
+  const { width: w, height: h, data: d } = png, N = w * h, m = new Uint8Array(N);
+  for (let k = 0; k < N; k++) { const i = k * 4; m[k] = d[i + 3] >= 128 && pick.keep(d[i], d[i + 1], d[i + 2]) ? 1 : 0; }
+  const comp = new Int32Array(N).fill(-1); let best = -1, bestN = 0, id = 0;
+  for (let k0 = 0; k0 < N; k0++) { if (!m[k0] || comp[k0] >= 0) continue;
+    let n = 0; const stack = [k0]; comp[k0] = id;
+    while (stack.length) { const k = stack.pop(), x = k % w; n++;
+      for (const q of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, k - w, k + w]) if (q >= 0 && q < N && m[q] && comp[q] < 0) { comp[q] = id; stack.push(q); } }
+    if (n > bestN) { bestN = n; best = id; } id++; }
+  for (let k = 0; k < N; k++) if (comp[k] !== best) d[k * 4 + 3] = 0;
+}
+function keyBall(png) {
+  keyGreen(png);
+  const box = alphaBox(png), cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2, rad = Math.min(box.x1 - box.x0, box.y1 - box.y0) / 2 - 0.5;
+  for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) {
+    const i = (y * png.width + x) * 4, dd = Math.hypot(x - cx, y - cy);
+    if (dd > rad + 0.5) png.data[i + 3] = 0; else if (dd > rad - 0.5) png.data[i + 3] = Math.round(png.data[i + 3] * (rad + 0.5 - dd));
+    else png.data[i + 3] = 255;   // inside the disc the ball is whole: the green key must not eat its JPEG-soft seams
+  }
+}
+const KEYS = { white: keyWhite, green: keyGreen, glow: keyGlow, orb: keyOrb, balloon: keyBalloon, piano: keyPiano, prop: keyProp, ball: keyBall };
 
 const outDir = process.argv[2];
 if (!outDir) { console.error('usage: node fetch-attack-sprites.mjs <outDir> [name ...]'); process.exit(1); }
@@ -366,8 +410,8 @@ for (const [name, pick] of Object.entries(PICKS)) {
   for (const cand of candidates) { if (done) break; try {
     const info = await fileUrl(wiki, cand);
     if (!info) { line(`skip: no such file "${cand}" on ${wiki}`); continue; }
-    if (info.mime !== 'image/png') { line(`REJECT: ${info.mime}, not a PNG`); continue; }
-    const buf = await download(info.url, pick.srcH || 400);
+    if (info.mime !== 'image/png' && !pick.png) { line(`REJECT: ${info.mime}, not a PNG`); continue; }
+    const buf = await download(info.url, pick.srcH || 400, pick.png);
     let png = PNG.sync.read(buf);
     if (pick.region) {
       const s = png.width / info.w, [x0, y0, x1, y1] = pick.region;
