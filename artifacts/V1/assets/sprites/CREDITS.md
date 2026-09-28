@@ -323,3 +323,28 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Pepper (Salt's partner) | `pepper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b7/Pepper2024Pose.png |
 | Test Tube | `test-tube.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Blue_Ray_Test_Tube_S4.png |
 | Bot (Test Tube's robot, her summon) | `bot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/da/Bot2024PoseAlt.png |
+
+### Boss Rush
+
+MePhone4, Boss 7 of the gauntlet. Same wiki and footing as the table above. The page's default image is a fan
+recreation, so the render was fetched by name: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity
+"MePhone4=2024_II_MePhone4.png"`, from the 2024 pose set, downscaled to 117×200, alpha verified, facing measured
+(0.015, not flipped).
+
+| Boss | File | Source |
+|---|---|---|
+| MePhone4 | `mephone4.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c8/2024_II_MePhone4.png/revision/latest?cb=20250628192616 |
+| MePhone4S | `mephone4s.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/8a/Yeyeye.png/revision/latest?cb=20241130080859 |
+| Steve Cobs | `steve-cobs.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c9/SteveCobs2024PoseAlt.png/revision/latest?cb=20250830175628 |
+
+MePhone4S, Boss 9. His page's default image is the Season 4 art, cropped so tight the art touches its bottom edge,
+so the render was fetched by name: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "MePhone4S=Yeyeye.png"`,
+the "Late II2" tab of his infobox (also under Poses in his gallery), downscaled to 135×200, alpha verified (transparent
+on every edge), facing measured (0.013, not flipped).
+
+Steve Cobs, Boss 11. File:SteveCobs2024PoseAlt.png, the lead "II2 16-18" tab of his infobox and his page's own image,
+from the same 2024 pose set as Knife2024Pose.png: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity
+"Steve Cobs=SteveCobs2024PoseAlt.png"`. The file was overwritten twice on 2025-08-30 and reverted the same day, so its
+history was checked first: the current revision is the original 1457×3717 upload, byte for byte the same size.
+Downscaled to 78×200, alpha verified (transparent corners; the tall, tight crop touches the edges in a few places),
+facing measured (0.041, not flipped).

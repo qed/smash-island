@@ -205,26 +205,97 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(drift, 'she steps off a cliff and goes sideways').toBeGreaterThanOrEqual(5);
   });
 
-  it("Bow possesses the foe in front, and loses them the moment she is hit", () => {
-    // "Possession works with marionette-like strings; anything Bow does or says transfers to the possessed;
-    // it ends if she is distracted" (Kick the Bucket). And what she rides destroys itself as she leaves it.
+  // Bow's special was Possession (2026-09-22, "a bit more to do with her abilities as a ghost. this is for the special
+  // only"). The owner has since said "change possession to a different thing" (2026-09-24), so the test that pinned
+  // Possession now pins what replaced it: TELEKINESIS, still a ghost power -- "In "Snow Bow", Bow was able to levitate
+  // snowballs without touching them" (the II wiki, Abilities: As a Ghost).
+  it("Bow's special is Telekinesis: three snowballs hang over her touching no one, then go at the foe she faces", () => {
     const r = arena('Bow', `
-      E.x = A.x - 50; D.x = A.x + 70; D.invuln = 0;        // Coiny is nearer, but behind her
+      E.x = A.x - 60; D.x = A.x + 250;                      // Coiny is nearer, but behind her
       doSpecial(A);
-      var got = { front: D._infected > 0, behind: E._infected > 0, mine: D.team === A.team, held: A._possessing };
-      var pct0 = D.pct;
-      applyHit(A, 8, 0, 0, E);                              // someone distracts her
-      got.ended = !(D._infected > 0);
-      got.theirTeam = D.team;
-      got.selfDestruct = D.pct > pct0;
-      got.released = A._possessing == null;
+      for (var i=0;i<8;i++) step();
+      var sb = projectiles.filter(function(p){ return p.shape==='snowball'; });
+      var got = { n: sb.length, held: sb.every(function(p){ return p.tkHold > 0 && p.vx === 0; }),
+                  over: sb.every(function(p){ return p.y < A.y - 30; }), hurtWhileHeld: D.pct + E.pct - 60,
+                  sides: [D.team, E.team], possession: typeof endPossession !== 'undefined' };
+      for (var j=0;j<70;j++) step();
+      got.front = +(D.pct - 30).toFixed(2); got.behind = +(E.pct - 30).toFixed(2);
+      got.left = projectiles.filter(function(p){ return p.shape==='snowball'; }).length;
+      got.card = MOVE_TEXT['Bow'].special; got.desc = A.kit.desc;
       return got;`);
-    expect(r.front, 'the one she is facing, not the nearer one behind').toBe(true);
-    expect(r.behind).toBe(false);
-    expect(r.mine, 'while she rides them they are hers').toBe(true);
-    expect(r.ended && r.released, 'it ends the moment she is hit').toBe(true);
-    expect(r.theirTeam, 'and they go back to their own side').not.toBe(0);
-    expect(r.selfDestruct, 'what she was riding destroys itself on the way out').toBe(true);
+    expect(r.n, 'three snowballs').toBe(3);
+    expect(r.held && r.over, 'held up over her head, not thrown yet').toBe(true);
+    expect(r.hurtWhileHeld, 'while held they touch no one -- that is the tell').toBe(0);
+    expect(r.sides, 'nobody changes sides any more').toEqual([1, 2]);
+    expect(r.possession, 'Possession and its machinery are gone').toBe(false);
+    expect(r.front, 'all three land on the one she faces, 5% each').toBeCloseTo(15, 5);
+    expect(r.behind, 'not the nearer one behind her').toBe(0);
+    expect(r.left).toBe(0);
+    expect(r.card).toMatch(/^Telekinesis — /);
+    expect(r.desc).toMatch(/^Telekinesis/);
+    expect(r.card + r.desc).not.toMatch(/possess/i);
+  });
+
+  it("Bow's snowballs aim wherever she faces when each is let go, and fall if she goes down holding them", () => {
+    const r = arena('Bow', `
+      D.x = A.x + 250; E.x = A.x - 250;
+      doSpecial(A);
+      for (var i=0;i<4;i++) step();
+      A.face = -1;                                           // she turns before any of them goes
+      for (var j=0;j<70;j++) step();
+      var turned = { front: +(D.pct - 30).toFixed(2), behind: +(E.pct - 30).toFixed(2) };
+      projectiles = []; A.spCd = 0; A.face = 1; doSpecial(A);
+      for (var k=0;k<4;k++) step();
+      eliminate(A); step();
+      return { turned: turned, afterFall: projectiles.filter(function(p){ return p.shape==='snowball'; }).length };`);
+    expect(r.turned.behind, 'the one she turned to face gets them').toBeGreaterThan(0);
+    expect(r.turned.front).toBe(0);
+    expect(r.afterFall, 'nothing is holding them up').toBe(0);
+  });
+
+  it("in Boss Rush Bow's snowballs go at the boss, since there is no one else to throw at", () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
+      BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var A = makeFighter(ROSTER.find(function(r){ return r.name==='Bow'; }), 300, groundY()-24, 0);
+      A.team=0; A.controller='still'; A.stocks=9; fighters=[A];
+      spawnBossRushBoss();
+      var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
+      step(); A.invuln=0; A.spCd=0; A.x = b.x - 260; A.face = 1;
+      var hp0 = b.hp; doSpecial(A);
+      var aimed = 0;
+      for (var i=0;i<80;i++){ step(); projectiles.forEach(function(p){ if(p.shape==='snowball' && !(p.tkHold>0) && p.vy !== 0) aimed++; }); }
+      return { hurt: hp0 - b.hp, aimed: aimed > 0 };
+    })()`);
+    expect(r.hurt, 'MePhone4 takes the snowballs').toBeGreaterThan(0);
+    expect(r.aimed, 'aimed at him, not just thrown flat ahead').toBe(true);
+  });
+
+  // The review's probe: with Bow standing under MePhone4 and facing AWAY from him, all three held snowballs hit him for 15
+  // on the first frame and were used up, never held -- the shots-hit-summons loop did not skip held ones, though the
+  // projectile step says "held: no travel, no life lost, no hits". An add beside her ate them the same way.
+  it("Bow's held snowballs touch no boss and no add either: standing under MePhone4, or beside one of his adds", () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
+      BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var A = makeFighter(ROSTER.find(function(r){ return r.name==='Bow'; }), 300, groundY()-24, 0);
+      A.team=0; A.controller='still'; A.stocks=9; fighters=[A];
+      spawnBossRushBoss();
+      var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
+      step(); A.invuln=0; A.spCd=0; A.x = b.x + 20; A.face = 1;          // under him, facing away
+      var a = meLifeDownload(b, 1); a._dl = 0; a.x = A.x + 10; a.y = A.y - 54; a.vx = 0; a.vy = 0;
+      var hp0 = b.hp, ahp0 = a.hp; doSpecial(A);
+      for (var i=0;i<8;i++){ step(); A.x = b.x + 20; A.face = 1; a.x = A.x + 10; a.y = A.y - 54; a.vx = 0; a.vy = 0; }
+      var sb = projectiles.filter(function(p){ return p.shape==='snowball'; });
+      var out = { boss: hp0 - b.hp, add: ahp0 - a.hp, held: sb.length, allHeld: sb.every(function(p){ return p.tkHold > 0; }) };
+      summons = []; projectiles = []; return out;
+    })()`);
+    expect(r.held, 'all three are still up there').toBe(3);
+    expect(r.allHeld).toBe(true);
+    expect(r.boss, 'MePhone4 takes nothing from snowballs she is still holding').toBe(0);
+    expect(r.add, 'nor does his add').toBe(0);
   });
 
   it("Bow's chair slam gains no height, and Pepper echoes Salt's jab as well as her special", () => {
