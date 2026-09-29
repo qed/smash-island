@@ -431,6 +431,7 @@ recreation, so the render was fetched by name: `node scripts/fetch-sprites.mjs -
 | Springy (unvitational) | `springy-unvitational.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6a/Springy0.png/revision/latest?cb=20240128145914 |
 | Springy (falling) | `springy-falling.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/dd/Springitfalling.png/revision/latest?cb=20231014092920 |
 | Springy (angry) | `springy-angry.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/10/Springypissedoff.png/revision/latest?cb=20230801191401 |
+| Steve Cobs (hurt) | `steve-cobs-hurt.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/19/CobsAFTERAPAINFULDROP.png/revision/latest?cb=20241027001954 |
 
 MePhone4S, Boss 9. His page's default image is the Season 4 art, cropped so tight the art touches its bottom edge,
 so the render was fetched by name: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "MePhone4S=Yeyeye.png"`,
@@ -446,6 +447,12 @@ facing measured (0.041, not flipped).
 
 Steve Cobs left Boss 11 on 2026-09-28 ("replace him with springy": he is the second secret boss now); his render stays,
 keyed `cobs`, for that fight.
+
+Steve Cobs (hurt), the secret fight's second look. File:CobsAFTERAPAINFULDROP.png from his II wiki gallery -- the
+broken glasses and the bruise after the drop -- fetched by name: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity
+"Steve Cobs (hurt)=CobsAFTERAPAINFULDROP.png"`, downscaled to 80x200, alpha verified (469 halo pixels cleaned), facing
+measured (0.026, not flipped), looked at. Keyed `cobshurt`; `cobsLook` puts it on once his glasses break in the Keynote
+rage (60% HP) and for Popping Point (under 20% HP), per the owner's "Both in" (cobs-decisions.md).
 
 Springy, Boss 11 ("replace him with springy"). Four looks of one boss, all from his II wiki page and gallery, fetched by
 name with `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "Springy=Springy.png"` and the three below it, each

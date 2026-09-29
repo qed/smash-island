@@ -549,8 +549,11 @@ describe('what the player sees', () => {
       bossTelName({attack:'cobs', _cobsPunch:true}), bossTelName({attack:'cobs'}), BOSS_ROSTER.map(function(b){ return b.name; }).join(',')].join('\\n')`);
     // case-sensitive and whole-word: "addProj" and "dropProj" contain "oj"
     expect(src).not.toMatch(/\bOJ\b|Suitcase|Cabby/);
-    // Nothing he shows on screen is the "tick tock" chant: on the Theft and Battery page it begins as an OSC member's line
-    // during that member's scene, and he only continues it. The trap is named for the contraption now.
+    // Nothing the Boss-11 kit shows on screen is the "tick tock" chant: on the Theft and Battery page it begins as an OSC member's
+    // line during that member's scene, and he only continues it. The trap is named for the contraption now. (The SECRET fight is
+    // another matter: the owner picked "Tick, Tock" for it -- round 1, "1 and 2", cobs-decisions.md -- so COBS_MOVE_NAME.ticktock
+    // says TICK, TOCK! there, on his own Meeple Watch line from the same transcript; test/cobs-fight.test.js covers it. This
+    // check stays about the Boss-11 strings, and about the code never having a cobsTickTock of its own.)
     const said = W.eval(`[BOSS_MOVE_NAME.knife, BOSS_MOVE_NAME.kernels, bossPhaseName({attack:'cobs'}, 2), bossPhaseName({attack:'cobs'}, 3),
       bossTelName({attack:'cobs', _cobsPunch:true}), bossTelName({attack:'cobs'})].join('\\n')`);
     expect(said).not.toMatch(/tick|tock/i);
