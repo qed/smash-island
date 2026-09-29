@@ -494,15 +494,19 @@ describe('what the player sees', () => {
 });
 
 describe('the ending: lava, then MeLife revival', () => {
-  it('when he falls in Boss Rush he drops into his hole, comes back in a MeLife fill and springs off the top; the gauntlet\'s cards keep the banner', () => {
+  it('when he falls in Boss Rush he drops into his hole, comes back in a MeLife fill and springs off the top; his line comes first, then the BOSS DOWN card', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
-      var st = setTimeout; setTimeout = function(){ return 0; };
+      var st = setTimeout, timers = []; setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };
       try {
         BOSSRUSH.active = true; var gy = groundY(), out = {};
         b.hp = 0; bossRushCheck();
         var e = summons.find(function(s){ return s.type==='springyend'; }), h = projectiles.find(function(p){ return p.springHole; });
         out.has = !!e; out.r = e ? e.r : null; out.drawR = e ? e._r : null; out.hole = h ? { x: h.x, delay: h.delay } : null; out.x = e ? e.x : null; out.bx = b.x;
         out.banner0 = document.getElementById('banner').textContent;
+        out.timerMs = timers.map(function(t){ return t.ms; });
+        var down = timers.find(function(t){ return t.ms === SPRINGY_SQUARE_MS && String(t.fn).indexOf('downCard') >= 0; }), run0 = running;   // (the banner's own hide timer is also 1 s)
+        running = true; if (down) down.fn(); running = run0;
+        out.bannerDown = document.getElementById('banner').textContent;
         var below = false, back = false, up = false, banners = {}, frames = 0;
         for (var i=0;i<SPRINGY_END.total + 10 && summons.indexOf(e) >= 0;i++){
           step(); frames++;
@@ -525,10 +529,12 @@ describe('the ending: lava, then MeLife revival', () => {
     expect(r.up, 'and off the top: [Boing]').toBe(true);
     expect(r.gone, 'then gone').toBe(true);
     expect(r.frames).toBeLessThanOrEqual(W.eval('SPRINGY_END.total') + 2);
-    // "no text on screen during a match except GO!, KOs, boss telegraphs and Boss Rush cards": his line is not printed, the
-    // gauntlet's own cards keep the banner through the two seconds
-    expect(r.banner0).toMatch(/BOSS DOWN!/);
-    expect(r.banners.join('|')).not.toMatch(/square/i);
+    // "Show it first" (the owner, 2026-09-29): his line for a second, then the gauntlet's card; the next boss waits that
+    // second longer (1.5 s + 1 s) so the card keeps its full time.
+    expect(r.banner0).toBe("We're square.");
+    expect(r.timerMs).toContain(1000);
+    expect(r.timerMs).toContain(2500);
+    expect(r.bannerDown).toMatch(/BOSS DOWN!/);
   });
 });
 

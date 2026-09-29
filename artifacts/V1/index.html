@@ -5431,6 +5431,7 @@ function bossRushCheck(){
   BOSSRUSH.frames = (BOSSRUSH.frames||0) + 1;
   const boss = summons.find(s=>s.type==="boss" && s._bossRush);
   const anyAlive = fighters.some(f=>!f.dead);
+  try{ cobsPendTick(boss); }catch(e){}   // Cobs's chain: knocked out by the boss after the one you felled (cobsPendKill)
   // lose: all fighters out
   if(!anyAlive){
     running=false; BOSSRUSH.active=false;
@@ -5447,6 +5448,7 @@ function bossRushCheck(){
   // boss down: clear it, advance to the next (endless gauntlet)
   if(boss && boss.hp<=0){
     BOSSRUSH.cleared++;
+    if(BOSSRUSH.cobsPend && BOSSRUSH.cobsPend.next === boss.name) BOSSRUSH.cobsPend = null;   // you beat the next one too: "one but not two"
     try{ awardBossCleared(boss.name); }catch(e){}   // persist at the deed, not at run end
     for(let i=0;i<40;i++) puff(boss.x,boss.y,boss.color,8);
     const wasFour = (boss.name==="Four");
@@ -5469,8 +5471,13 @@ function bossRushCheck(){
     const cap = SETTINGS.stocks;
     const owed = BOSSRUSH.cleared % BOSS_STOCK_EVERY, stockNow = owed === 0;
     fighters.forEach(f=>{ if(!f.dead){ if(stockNow) f.stocks = Math.min(cap, f.stocks+1); f.pct=Math.max(0, f.pct-30); } });
-    banner(stockNow ? ("BOSS DOWN! +1 stock · Cleared: "+BOSSRUSH.cleared)
+    // Springy says his line first ("Show it first", the owner, 2026-09-29): "We're square." for a second as he goes down
+    // into his hole, then the BOSS DOWN card, and the next boss waits that second longer so the card keeps its full time.
+    const square = boss.attack==="springy";
+    const downCard = ()=>banner(stockNow ? ("BOSS DOWN! +1 stock · Cleared: "+BOSSRUSH.cleared)
                     : ("BOSS DOWN! Cleared: "+BOSSRUSH.cleared+" · stock in "+(BOSS_STOCK_EVERY-owed)), 1700, 'sys');
+    if(square){ banner("We're square.", SPRINGY_SQUARE_MS, 'boss'); setTimeout(()=>{ if(BOSSRUSH.active && running) downCard(); }, SPRINGY_SQUARE_MS); }
+    else downCard();
     if(wasFour){
       // "Victory, then an optional loop": the run stops here with a victory card; Keep Going starts the next loop.
       showRushVictory();
@@ -5482,7 +5489,7 @@ function bossRushCheck(){
     } else {
       BOSSRUSH.bossIdx = (BOSSRUSH.bossIdx+1) % BOSS_ROSTER.length;
     }
-    setTimeout(()=>{ if(BOSSRUSH.active && running) spawnBossRushBoss(); }, 1500);
+    setTimeout(()=>{ if(BOSSRUSH.active && running) spawnBossRushBoss(); }, 1500 + (square ? SPRINGY_SQUARE_MS : 0));
   }
 }
 function beginMatchNow(){
@@ -7622,7 +7629,7 @@ const MELIFE_CAP = [0, 1, 1, 2];                  // adds standing at once, by p
 //           band, and turns white and holds for the last `lock` frames -- the dodge is to leave the row inside them (the
 //           way MePhone4S's sight locks). 8, and the glove still has to cross the stage at 15 px a frame after that: a
 //           fighter 300 px out has 8 + 20 frames to jump out of the row. At 12 he measured level with the Dragon before him
-const MEPHONE_GLOVE = { kb:13, up:10, jab:[0, 1, 0.45, 0.3], jabKb:5, gap:26, lock:8 };
+const MEPHONE_GLOVE = { kb:13, up:10, jab:[0, 1, 0.45, 0.3], jabKb:5, gap:26, lock:8, r:44 };   // r: the glove, twice its first 22 ("buff fist thingy's size" -> "2x", the owner, 2026-09-29); the tell's band is as tall
 // Frames between his turns, by phase, against the usual 100/72/52: half his turns are an add or a portal, so the glove
 // that KOs comes every other turn, and at the usual gaps it came too seldom for him to be a step past the Dragon (the
 // review measured him easier than the Dragon; scripts/boss-rush-balance.json has him now). His whole cycle -- glove,
@@ -7910,7 +7917,7 @@ function cobsPunch(s, atkId, first){
 //   padW      the exit room's white spring, a bounce pad on the right edge ("The exit room contains a white spring")
 const SPRINGY = { gaps:[0,96,72,54], slams:[0,1,2,3], launch:-30, hang:26, lock:10, drop:22, slamR:96, slamKb:12,
                   holeW:88, holeT:[0,180,180,300], pit:44, hop:-7, approach:220, backoff:140,
-                  armLen:0.5, armSpd:24, armR:22, armKb:14, blinkEvery:480, blink:320, fence:48, fenceEvery:45,
+                  armLen:0.5, armSpd:24, armR:22, armKb:14, blinkEvery:480, blink:320, fence:48, fenceEvery:60,
                   boxes:[0.2,0.5,0.8], boxY:0.12, boxW:110, boxHgt:64, boxLife:240, quake:120, padW:90 };
 const SPRINGY_BOX_COLORS = ["#f2c230", "#3a86e0", "#ff5fa8"];   // "three gigantic Springtastic cereal boxes in yellow, blue, and pink" (Floating Cereal Boxes)
 const SPRINGY_PAYLOADS = ["box", "clone", "toy"];              // in this order; the toy joins from phase 2 (BOSS_MOVES.boxdrop)
@@ -8093,8 +8100,9 @@ function updateSpringy(s, tgt){
 // drops into his own hole, the volcano's glow at the bottom of it; the MeLife fill draws him back in from the floor up (the
 // MeLife download look, drawSummon), he glitches, and springs off the top of the screen. A summon of its own kind, not a
 // boss (no HP, no target, radius 0 so no shot is spent on it), drawn by drawSpringyEnd; it rides the snapshot to clients
-// like any summon. His line is not printed: the gauntlet's own cards ("BOSS DOWN!", the next boss) own the banner in these
-// two seconds, and a boss's line dropped on top of them would take the stock count off the screen. The animation is the note.
+// like any summon. His line, "We're square.", shows first ("Show it first", the owner, 2026-09-29): bossRushCheck holds the
+// BOSS DOWN card back SPRINGY_SQUARE_MS for it, and the next boss that much longer, so neither line covers the other.
+const SPRINGY_SQUARE_MS = 1000;
 function springyEnding(b){
   const gy = groundY();
   springyHole(b.x, 1, ++BOSS_ATK_ID).delay = SPRINGY_END.lava + 4;   // the hole he goes down, closed again once the lava has him
@@ -8332,7 +8340,7 @@ function fireBossAttack(s, tgt){
     const tx = s._telX!=null ? s._telX : (tgt ? tgt.x : s.x + (s.face||1)*200), dir = Math.sign(tx - s.x) || s.face || 1;
     const ox = s.x + dir*s.r*0.25;   // out of his body, so nobody hugging him stands behind the glove
     const glove = o => addProj(Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:atkId, grav:false, noAim:true,
-      r:22, color:'#d8302a', shape:'fistthingy', life:60, x:ox, y:row, vx:dir*15, vy:0 }, o));
+      r:MEPHONE_GLOVE.r, color:'#d8302a', shape:'fistthingy', life:60, x:ox, y:row, vx:dir*15, vy:0 }, o));
     const MG = MEPHONE_GLOVE, jab = MG.jab[ph];
     if(ph===1) glove({ dmg:bossDmg(), kb:MG.kb });
     else {
@@ -16212,7 +16220,7 @@ function awardBossCleared(name, solo){
   if(!PROFILE) return [];
   PROFILE.bossesCleared[name] = true;
   try{ syncPrizeRoster(true); }catch(e){}   // Steve Cobs's prize: if this fall opened the gate, the three winners join the roster and the result screen says so
-  try{ if(cobsRecordKill(name)) saveProfile(); }catch(e){}   // Cobs's chain: WHICH fighter in your hands felled it ("beating certain bosses on certain characters"), saved at the deed
+  try{ cobsPendKill(name); }catch(e){}   // Cobs's chain: a boss felled by the fighter in your hands is a kill in waiting, counted once the very next boss knocks you out (cobsPendKill)
   try{ questAdd('boss', 1); }catch(e){}   // Win Tokens: a boss felled counts toward the Boss Rush quests
   try{ oneRushKill(); }catch(e){}   // One's chain: a boss felled is a win too ("ONE fighter erased per WIN")
   const fresh = awardTrophy('boss:'+name);
@@ -16839,8 +16847,8 @@ function oneTitleCard(el){
 //
 // Everything lives in PROFILE and is saved the moment it happens, so the chain survives a reload at any point:
 //   vault.found    his four codes, in the Vault's own record with everyone else's (vaultState)
-//   bossKills      { boss: [fighters in YOUR hands, still standing, that felled it] } -- written for EVERY boss by
-//                  awardBossCleared, so a kill made before his code was typed counts ("in any order, at any time")
+//   bossKills      { boss: [fighters in YOUR hands that felled it and were then knocked out by the very next boss] } --
+//                  written for EVERY boss (cobsPendKill), so a kill made before his code was typed counts ("in any order")
 //   cobs.stage     0 locked, 1 live (C0B5 in; a wrong code answers "Tick, tock."), 2 the door (he waits on the title), 3 beaten
 //   cobs.cups      the World Cup run so far, a prefix of Knife, Balloon, Taco (II); a loss or another winner in between empties it
 //   cobs.race      RUNNING! won as Knife
@@ -16896,6 +16904,8 @@ const COBS_VAULT = {
   // chain is live -- and the door code typed before the deeds are done. Before the chain opens, a wrong code is as wrong as
   // ever (VAULT.wrong), so nothing gives the second secret away.
   wrong: "Tick, tock.",
+  // The first code typed before every other one is heard ("Say 'not yet'", the owner, 2026-09-29): cryptic, never his name.
+  notYet: "Static... not yet. Every other code in here comes first.",
 };
 // Every way of reading the wire's digits as letters: 3/E, 0/O, 5/S in every combination (32 spellings of "PH3N0M53 VK0CH").
 function cobsWireLookalikes(code){
@@ -16914,7 +16924,10 @@ function cobsWireLookalikes(code){
 // One's codes and is asked first, so none of his spellings may collide with one of those (the test checks).
 const COBS_CODES = new Map();
 for(const s of COBS_VAULT.steps){
-  const list = [s.code].concat(s.accepts || [], s.step===3 ? cobsWireLookalikes(s.code) : []);
+  // The plate and the wire read either way: C0B5 as COBS, C0BS or COB5 ("Accept lookalikes", the owner, 2026-09-29), the wire's
+  // digits as letters too.
+  const base = [s.code].concat(s.accepts || []);   // (cobsWireLookalikes returns the other spellings, not the one it was given)
+  const list = s.step===1 ? base.concat(...base.map(cobsWireLookalikes)) : base.concat(s.step===3 ? cobsWireLookalikes(s.code) : []);
   for(const sp of list){ const k = vaultNorm(sp); if(k && !COBS_CODES.has(k) && !VAULT_CODES.has(k)) COBS_CODES.set(k, s); }
 }
 
@@ -16955,19 +16968,47 @@ function cobsChainLive(){ const s = cobsQ().stage; return s >= COBS_STAGE.LIVE &
 function cobsBeaten(){ return cobsQ().beaten; }
 function cobsStep(n){ const s = COBS_VAULT.steps[n - 1]; return !!s && vaultFound(s.code); }
 // "Both": the chain opens only once EVERY existing Vault code is found -- the eleven fighters' and One's four clues.
-function cobsGateOpen(){ return !!PROFILE && VAULT.fighters.concat(VAULT.hints).every(v=>vaultFound(v.code)); }
+// A Vault fighter counts as heard when its code is in OR the fighter is already open in the save -- exactly what the Vault
+// shows (buildVault): a long-played save holds fighters opened before they moved into the Vault (the old unlock drip, Bubble
+// from when she was a starter, the DLC pack from when it arrived whole), and "steve cobs codes dont work" (the owner,
+// 2026-09-29) was such a save, its Vault full while three of the codes had never been typed.
+function cobsGateOpen(){ return !!PROFILE && VAULT.fighters.concat(VAULT.hints).every(vaultHeard); }
 
 // ---- STEP 2: the three pairs ----
 // From awardBossCleared, for every boss that falls: the fighter in YOUR hands, if it is still standing (a Knife out of stocks
 // while allies finish MePhone4 did not beat him: One's "the bolt must still be standing" rule), solo or not.
-function cobsRecordKill(boss){
-  if(!PROFILE || !boss || !Array.isArray(fighters)) return false;
+// WHEN A KILL COUNTS (the owner, 2026-09-29): "you must kill the boss, but then die to the next one. ai can be there." -- "its
+// like how knife was able to beat one but not two metags." A boss felled while the fighter in your hands still stands is a
+// kill IN WAITING (BOSSRUSH.cobsPend, so every run starts clean). It is written to bossKills only when that fighter is then
+// knocked out of the run -- every stock -- by the very next boss of the gauntlet (cobsPendTick, from bossRushCheck). Beat the
+// next boss too, fall in the gap between them, or leave the run, and the chance is gone. AI allies may fight beside you;
+// only your fighter's kill is recorded.
+function cobsPendKill(boss){
+  if(!PROFILE || !boss || !Array.isArray(fighters) || !BOSSRUSH) return false;
   const you = fighters.find(f=>f.you);
   if(!you || you.dead || !you.name) return false;
+  const i = BOSS_ROSTER.findIndex(b=>b.name===boss), next = i >= 0 ? BOSS_ROSTER[(i + 1) % BOSS_ROSTER.length] : null;
+  BOSSRUSH.cobsPend = { boss, fighter:you.name, next:next ? next.name : null };
+  return true;
+}
+// Every Boss Rush frame: the moment your fighter is out of the run, the kill in waiting counts if the boss on the stage is the
+// very next one, and is gone otherwise.
+function cobsPendTick(boss){
+  const p = BOSSRUSH && BOSSRUSH.cobsPend;
+  if(!p) return false;
+  const you = Array.isArray(fighters) ? fighters.find(f=>f.you) : null;
+  if(!you || !you.dead) return false;
+  BOSSRUSH.cobsPend = null;
+  if(!boss || boss.name !== p.next || you.name !== p.fighter) return false;   // out in the gap, or to another boss
+  if(cobsRecordKill(p.boss, p.fighter)) saveProfile();
+  return true;
+}
+function cobsRecordKill(boss, name){
+  if(!PROFILE || !boss || !name) return false;
   const bk = (PROFILE.bossKills && typeof PROFILE.bossKills==='object') ? PROFILE.bossKills : (PROFILE.bossKills = {});
   const l = Array.isArray(bk[boss]) ? bk[boss] : (bk[boss] = []);
-  if(l.indexOf(you.name) >= 0) return false;
-  l.push(you.name);
+  if(l.indexOf(name) >= 0) return false;
+  l.push(name);
   return true;
 }
 function cobsKilled(fighter, boss){ const bk = PROFILE && PROFILE.bossKills; return !!(bk && Array.isArray(bk[boss]) && bk[boss].indexOf(fighter) >= 0); }
@@ -17028,14 +17069,15 @@ function cobsCupLost(){
 function cobsDoorReady(){ return cobsChainLive() && cobsStep(2) && cobsStep(3) && cobsPairsDone() && cobsQ().race && cobsCupsDone(); }
 // The Vault's side of the chain, from vaultSubmit once the Vault's own map has missed `key`. Returns the verdict, or null for
 // "nothing of his": the Vault then answers as it always has. Before the chain opens every one of his codes but the first is
-// null too, so nothing on the screen betrays them; from C0B5 on, a wrong code -- or the door before its time -- is "Tick, tock."
+// null too, so nothing on the screen betrays them; the first, typed before every other code is heard, says "not yet"
+// (COBS_VAULT.notYet: the owner's "Say 'not yet'"); from C0B5 on, a wrong code -- or the door before its time -- is "Tick, tock."
 function cobsVaultSubmit(key){
   const c = COBS_CODES.get(key);
   if(!c) return cobsChainLive() ? { kind:'wrong', reply:COBS_VAULT.wrong } : null;
   if(!PROFILE) return { kind:'wait', reply:'The Vault is still opening. Press Enter again in a moment.' };   // like the Vault's own codes: never recorded nowhere
   const q = cobsQ(), st = vaultState();
   if(vaultFound(c.code)) return { kind:'again', step:c.step, text:c.text, cobs:true, reply:COBS_VAULT.again + c.step + '.' };
-  if(c.step===1){ if(!cobsGateOpen()) return null; if(q.stage < COBS_STAGE.LIVE) q.stage = COBS_STAGE.LIVE; }
+  if(c.step===1){ if(!cobsGateOpen()) return { kind:'wrong', reply:COBS_VAULT.notYet }; if(q.stage < COBS_STAGE.LIVE) q.stage = COBS_STAGE.LIVE; }   // "Say 'not yet'"
   else if(!cobsChainLive()) return null;
   else if(c.step===4){ if(!cobsDoorReady()) return { kind:'wrong', reply:COBS_VAULT.wrong }; if(q.stage < COBS_STAGE.DOOR) q.stage = COBS_STAGE.DOOR; }
   st.found.push(c.code);
@@ -19511,7 +19553,7 @@ function drawBossSprite(s){
     const dir = Math.sign(s._telX - s.x) || s.face || 1, locked = s._tel < MEPHONE_GLOVE.lock, x0 = dir*R*0.25, len = 1600;
     const row = clamp(s._telY, 60, groundY() - 16) - s.y;
     ctx.save(); ctx.globalAlpha = locked ? 0.3 : 0.14; ctx.fillStyle = locked ? "#ffffff" : "#d8302a";
-    ctx.fillRect(Math.min(x0, x0 + dir*len), row - 22, len, 44); ctx.restore();
+    ctx.fillRect(Math.min(x0, x0 + dir*len), row - MEPHONE_GLOVE.r, len, MEPHONE_GLOVE.r*2); ctx.restore();   // the band is the glove's height
   }
   // Steve Cobs's SCREEN CRACKER: while he winds it up, a pale band along the row it will go, as far as either fist can hit
   // -- the lunge and the second punch from where it stops (cobsPunchSpan), brighter over the first fist's reach. The tell
@@ -25437,6 +25479,9 @@ function vaultState(){
   return PROFILE.vault;
 }
 function vaultFound(code){ return vaultState().found.indexOf(code)>=0; }
+// One Vault entry as the Vault shows it: a whisper (or one of the second secret's steps) by its code, a fighter by its code or
+// by being open in the save already.
+function vaultHeard(v){ return !!v && (vaultFound(v.code) || !!(v.name && PROFILE && PROFILE.unlocked.indexOf(v.name)>=0)); }
 // Reads one code and says what happened. The screen and the tests read the same verdict. A fighter
 // code unlocks through unlockFighter, into PROFILE.unlocked, which every save unions -- for good.
 function vaultSubmit(raw){
@@ -25549,7 +25594,7 @@ function buildVault(){
   // in. Only today's codes are asked about, so a save that still lists Pickle's or Microphone's old code changes nothing.
   const miss = document.getElementById('vaultMissing');
   if(miss){
-    const left = VAULT.fighters.concat(VAULT.hints, COBS_VAULT.steps).some(v=>!vaultFound(v.code));
+    const left = VAULT.fighters.concat(VAULT.hints, COBS_VAULT.steps).some(v=>!vaultHeard(v));
     miss.textContent = left ? VAULT.missing : ''; miss.hidden = !left;
   }
 }

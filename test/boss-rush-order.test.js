@@ -21,6 +21,8 @@ const at = (name) => B.bosses.find((b) => b.boss === name);
 const harder = (a, b) => a.livesLost > b.livesLost || (a.livesLost === b.livesLost && a.beaten < b.beaten);
 const RUNS = 240;
 const tell = (b) => `${b.boss} (${b.livesLost} lives, +/-${b.livesLostSE}, beaten ${b.beaten}/${b.of})`;
+// Level: the two measure the same within the harness's noise (two standard errors of the difference).
+const level = (a, b) => Math.abs(a.livesLost - b.livesLost) <= 2 * Math.hypot(a.livesLostSE, b.livesLostSE);
 
 let W;
 beforeAll(async () => { W = bootMonolith(7); await W.eval('profileReady'); });
@@ -56,10 +58,15 @@ describe('Boss Rush difficulty, as measured', () => {
   // holes and stands against the ELECTRIC FENCE (a quarter of his damage, 'boss-other'), and measured 1.69 lives to Four's
   // 1.37, and "dont tune, cuz thats an agent, not a player" -- nothing of his was tuned to that number. (Was: Steve Cobs
   // between MePhone4S and Four, the claim the review made of HIS kit.)
-  it('the II bosses climb with the gauntlet: the Dragon, then MePhone4, MePhone4S, and Four hardest of them; Springy over MePhone4S', () => {
+  it('the II bosses climb with the gauntlet: the Dragon, then MePhone4, MePhone4S (level with him since the 2x glove), and Four hardest of them; Springy over MePhone4S', () => {
     const line = ['Purple Dragon', 'MePhone4', 'MePhone4S', 'Four'].map(at);
     for (let i = 1; i < line.length; i++) {
-      expect(harder(line[i], line[i - 1]), `${tell(line[i])} is harder than ${tell(line[i - 1])}`).toBe(true);
+      // MePhone4 -> MePhone4S: the owner doubled the Fist Thingy ("buff fist thingy's size" -> "2x", 2026-09-29), which left the
+      // two level for the solo bot; asked, the owner chose "Accept level" over shrinking the glove for the bot ("dont tune, cuz
+      // thats an agent, not a player"), until the boss overhaul re-measures every boss. Level or harder passes; easier beyond the
+      // noise still fails.
+      const ok = harder(line[i], line[i - 1]) || (line[i].boss === 'MePhone4S' && level(line[i], line[i - 1]));
+      expect(ok, `${tell(line[i])} is harder than ${tell(line[i - 1])}`).toBe(true);
     }
     expect(harder(at('Springy'), at('MePhone4S')), `${tell(at('Springy'))} is harder than ${tell(at('MePhone4S'))}`).toBe(true);
     const hp = JSON.parse(W.eval('JSON.stringify(BOSS_ROSTER.map(function(b){ return [b.name, b.hp]; }))'));

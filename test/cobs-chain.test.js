@@ -56,19 +56,24 @@ async function fresh(w, js = '') {
 }
 // The owner's codes, pinned by hand, each with every spelling it must take (the wire's lookalikes: "PHENOM53 VKOCH-style").
 const CODES = {
-  1: ['C0B5', 'C085', 'c0b5', 'C-0B5', 'c 0 b 5', 'C-085'],
+  1: ['C0B5', 'C085', 'c0b5', 'C-0B5', 'c 0 b 5', 'C-085', 'COBS', 'C0BS', 'COB5', 'cobs'],   // the plate reads either way ("Accept lookalikes")
   2: ['MISTAH PHONE', 'MISTAHPHONE', 'MISTER PHONE', 'MISTA PHONE', 'Mistah Phone!', 'mistah phone', 'mister-phone'],
   3: ['PH3N0M53 VK0CH', 'PH3N0M53VK0CH', 'PH3N0M53 VK0cH', 'PHENOM53 VKOCH', 'PH3NOM53 VK0CH', 'PHEN0M53 VK0CH', 'PH3N0MS3 VK0CH', 'PHENOMSE VKOCH', 'Model PH3N0M53 VK0cH'],
   4: ['THE FUTURE IS SO YESTERDAY', 'The future is so yesterday!', 'THEFUTUREISSOYESTERDAY', 'where the future is so yesterday', 'future is so yesterday'],
 };
 const WRONG = "Aw, seriously? That code doesn't do anything.";
+const NOT_YET = "Static... not yet. Every other code in here comes first.";   // "Say 'not yet'" (the owner, 2026-09-29)
 const TICK = 'Tick, tock.';
 const LINE = "You haven't found every code yet.";
 // Every existing Vault code in: the gate ("Both").
 const ALL_EXISTING = `for(const v of VAULT.fighters.concat(VAULT.hints)) vaultSubmit(v.code);`;
 const sub = (w, s) => w.eval(`vaultSubmit(${J(s)})`);
-// One boss felled, the way bossRushCheck reports it: `fighters` on the stage, awardBossCleared(name).
-const kill = (w, you, boss, extra = '') => w.eval(`fighters = [${J(you)}, { name:'Leafy', team:0 }]; awardBossCleared(${J(boss)}); ${extra} (PROFILE.bossKills[${J(boss)}] || []).slice()`);
+// One boss felled, the way bossRushCheck reports it (`fighters` on the stage, awardBossCleared(name)), and then -- "you must
+// kill the boss, but then die to the next one" (the owner, 2026-09-29) -- your fighter knocked out by the very next boss.
+const kill = (w, you, boss, extra = '') => w.eval(`fighters = [${J(you)}, { name:'Leafy', team:0 }]; awardBossCleared(${J(boss)});
+  fighters.forEach(function(f){ if(f.you) f.dead = true; });
+  var _i = BOSS_ROSTER.findIndex(function(b){ return b.name===${J(boss)}; }); cobsPendTick({ type:'boss', name:BOSS_ROSTER[(_i+1)%BOSS_ROSTER.length].name });
+  ${extra} (PROFILE.bossKills[${J(boss)}] || []).slice()`);
 // One World Cup won in Normal mode, the way advanceKnockout awards it: your side is the champion.
 const cup = (w, lead, mode = 'normal') => w.eval(`TOURNEY = { active:true, mode:${J(mode)}, myTeam:{ name:'Mine', members:[ROSTER.find(function(r){ return r.name===${J(lead)}; })] }, eliminated:false, awarded:false };
   awardWorldCup(TOURNEY.myTeam); cobsQ().cups.slice()`);
@@ -89,14 +94,15 @@ describe('the codes ("directly", "Both")', () => {
     const r = W.eval(`(function(){
       var out = { steps:{}, inVault:[], size:VAULT_CODES.size, look:cobsWireLookalikes("PH3N0M53 VK0CH").length, plain:[] };
       ${J(Object.values(CODES).flat())}.forEach(function(s){ var k = vaultNorm(s), c = COBS_CODES.get(k); out.steps[s] = c ? c.step : null; if(VAULT_CODES.has(k)) out.inVault.push(s); });
-      ['COBS','STEVE COBS','MEEPLE','TICK TOCK',"I DON'T REMEMBER IT BLINKING",'C0B','C0B55','MISTAH','PHONE','THE FUTURE'].forEach(function(s){ if(COBS_CODES.get(vaultNorm(s)) || VAULT_CODES.get(vaultNorm(s))) out.plain.push(s); });
+      // (COBS itself opens step 1 now: the plate reads either way, "Accept lookalikes", the owner, 2026-09-29; CODES[1] checks it)
+      ['STEVE COBS','MEEPLE','TICK TOCK',"I DON'T REMEMBER IT BLINKING",'C0B','C0B55','MISTAH','PHONE','THE FUTURE'].forEach(function(s){ if(COBS_CODES.get(vaultNorm(s)) || VAULT_CODES.get(vaultNorm(s))) out.plain.push(s); });
       var collide = []; COBS_CODES.forEach(function(v, k){ if(VAULT_CODES.has(k)) collide.push(k); });
       out.collide = collide; out.codes = COBS_VAULT.steps.map(function(s){ return s.code; }); out.nums = COBS_VAULT.steps.map(function(s){ return s.step; });
       return out; })()`);
     for (const [step, spellings] of Object.entries(CODES)) for (const s of spellings) expect(r.steps[s], s).toBe(+step);
     expect(r.inVault, 'none is one of the Vault\'s own codes').toEqual([]);
     expect(r.collide).toEqual([]);
-    expect(r.plain, 'his name, TICK TOCK and the dropped fourth code open nothing').toEqual([]);
+    expect(r.plain, 'his full name, TICK TOCK and the dropped fourth code open nothing').toEqual([]);
     expect(r.look, 'every reading of the wire\'s digits as letters (3/E, 0/O, 5/S)').toBe(31);
     expect(r.codes).toEqual(['C0B5', 'MISTAH PHONE', 'PH3N0M53 VK0CH', 'THE FUTURE IS SO YESTERDAY']);
     expect(r.nums).toEqual([1, 2, 3, 4]);
@@ -104,13 +110,13 @@ describe('the codes ("directly", "Both")', () => {
     expect(r.size).toBe(W.eval(`(function(){ var n = 0, seen = {}; VAULT.fighters.concat(VAULT.hints).forEach(function(v){ [v.code].concat(v.accepts||[]).forEach(function(s){ var k = vaultNorm(s); if(!seen[k]){ seen[k] = 1; n++; } }); }); return n; })()`));
   });
 
-  it('"all existing codes first": every one of his codes is just wrong until the eleven fighters\' and One\'s four are all in; then C0B5 opens the chain', async () => {
+  it('"all existing codes first": his first code says "not yet" and the rest are just wrong until the eleven fighters\' and One\'s four are all in; then C0B5 opens the chain', async () => {
     await fresh(W);
-    for (const s of Object.values(CODES).flat()) { const r = sub(W, s); expect(r.kind, s).toBe('wrong'); expect(r.reply, s).toBe(WRONG); }
+    for (const [step, list] of Object.entries(CODES)) for (const s of list) { const r = sub(W, s); expect(r.kind, s).toBe('wrong'); expect(r.reply, s).toBe(step === '1' ? NOT_YET : WRONG); }
     expect(W.eval('({ stage:cobsQ().stage, gate:cobsGateOpen(), live:cobsChainLive() })')).toEqual({ stage: 0, gate: false, live: false });
     // Every code but one in: still shut, whichever is missing.
     W.eval(`for(const v of VAULT.fighters.concat(VAULT.hints)) if(v.code!=='OMGA') vaultSubmit(v.code);`);
-    expect(sub(W, 'C0B5')).toEqual({ kind: 'wrong', reply: WRONG });
+    expect(sub(W, 'C0B5')).toEqual({ kind: 'wrong', reply: NOT_YET });
     expect(W.eval('cobsGateOpen()')).toBe(false);
     W.eval(`vaultSubmit('OMGA')`);
     expect(W.eval('cobsGateOpen()')).toBe(true);
@@ -123,6 +129,23 @@ describe('the codes ("directly", "Both")', () => {
     await sleep(W, 0);
     expect(stored(W).cobs.stage, 'saved at the deed').toBe(1);
     expect(stored(W).vault.found).toContain('C0B5');
+  });
+
+  it('the gate reads the Vault as it shows: a fighter already open in the save counts as heard, code typed or not ("steve cobs codes dont work")', async () => {
+    await fresh(W);
+    // A long-played save: Needle, Bubble and Balloon opened before they were Vault fighters (the old unlock drip, the starters,
+    // the DLC pack arriving whole), their codes never typed; every other code typed.
+    W.eval(`PROFILE.unlocked.push('Needle', 'Bubble', 'Balloon');
+      for(const v of VAULT.fighters.concat(VAULT.hints)) if(['Needle','Bubble','Balloon'].indexOf(v.name) < 0) vaultSubmit(v.code);`);
+    expect(W.eval(`VAULT.fighters.filter(function(v){ return ['Needle','Bubble','Balloon'].indexOf(v.name) >= 0; }).map(function(v){ return vaultFound(v.code); })`), 'three codes never typed').toEqual([false, false, false]);
+    expect(W.eval('cobsGateOpen()'), 'the Vault shows all fifteen, so the gate is open').toBe(true);
+    const r = sub(W, 'COBS');
+    expect([r.kind, r.step]).toEqual(['hint', 1]);
+    // A whisper still has to be typed: One's four show only once their codes are in.
+    await fresh(W);
+    W.eval(`for(const v of VAULT.fighters.concat(VAULT.hints)) if(v.code!=='ALL FOR ONE') vaultSubmit(v.code);`);
+    expect(W.eval('cobsGateOpen()')).toBe(false);
+    expect(sub(W, 'C0B5')).toEqual({ kind: 'wrong', reply: NOT_YET });
   });
 
   it('a wrong code while his chain is live answers "Tick, tock."; before it, and once he is beaten, a wrong code is as wrong as ever', async () => {
@@ -180,7 +203,7 @@ describe('the codes ("directly", "Both")', () => {
 });
 
 describe('the boss pairs ("Three pairs")', () => {
-  it('awardBossCleared records WHICH fighter in your hands felled each boss -- standing, solo or not -- and never an AI or a fallen one', async () => {
+  it('awardBossCleared records WHICH fighter in your hands felled each boss -- standing, then out to the next boss, solo or not -- and never an AI or a fallen one', async () => {
     await fresh(W);
     expect(kill(W, { name: 'Knife', you: true, team: 0 }, 'MePhone4')).toEqual(['Knife']);
     expect(kill(W, { name: 'Knife', you: true, team: 0 }, 'MePhone4'), 'once per fighter').toEqual(['Knife']);
@@ -209,6 +232,44 @@ describe('the boss pairs ("Three pairs")', () => {
     expect(done(), '...and the code completes the step').toEqual({ pairs: true, step: true });
     expect(W.eval('COBS_PAIRS')).toEqual([['Knife', 'MePhone4'], ['Balloon', 'Springy'], ['Fan', 'MePhone4']]);
     expect(W.eval(`BOSS_ROSTER.filter(function(b){ return b.name==='MePhone4' || b.name==='Springy'; }).length`), 'both bosses are in the gauntlet to be felled').toBe(2);
+  });
+
+  it('a kill counts only once the very next boss knocks your fighter out of the run -- "you must kill the boss, but then die to the next one. ai can be there."', async () => {
+    await fresh(W);
+    // "its like how knife was able to beat one but not two metags." Driven through bossRushCheck, as a run plays it.
+    const r = W.eval(`(function(){
+      var out = {}, st = setTimeout; setTimeout = function(){ return 0; };
+      var ally = { name:'Leafy', team:0 };
+      var boss = function(n, hp){ return { type:'boss', _bossRush:true, name:n, hp:hp, maxHp:100, x:400, y:300, r:60, color:'#888', face:1 }; };
+      var run = function(you){ BOSSRUSH = { active:true, bossIdx:0, cleared:0, defeated:false, loop:0, dmgMult:1 }; running = true; fighters = [you, ally]; };
+      try {
+        // Knife fells MePhone4 (AI ally beside him), then Evil Leafy -- the very next boss -- knocks him out: it counts.
+        run({ name:'Knife', you:true, team:0, stocks:1 }); summons = [boss('MePhone4', 0)]; bossRushCheck();
+        out.pend = BOSSRUSH.cobsPend && [BOSSRUSH.cobsPend.boss, BOSSRUSH.cobsPend.fighter, BOSSRUSH.cobsPend.next];
+        out.before = (PROFILE.bossKills.MePhone4 || []).slice();
+        summons = [boss('Evil Leafy', 100)]; fighters[0].dead = true; bossRushCheck();
+        out.one = (PROFILE.bossKills.MePhone4 || []).slice();
+        // Fan fells MePhone4 and beats Evil Leafy too: MePhone4's chance is gone and Evil Leafy's waits; MePhone4S then knocks
+        // him out, which counts for Evil Leafy alone.
+        run({ name:'Fan', you:true, team:0, stocks:1 }); summons = [boss('MePhone4', 0)]; bossRushCheck();
+        summons = [boss('Evil Leafy', 0)]; bossRushCheck();
+        out.pend2 = BOSSRUSH.cobsPend && [BOSSRUSH.cobsPend.boss, BOSSRUSH.cobsPend.next];
+        summons = [boss('MePhone4S', 100)]; fighters[0].dead = true; bossRushCheck();
+        out.two = { m4:(PROFILE.bossKills.MePhone4 || []).slice(), leafy:(PROFILE.bossKills['Evil Leafy'] || []).slice() };
+        // Balloon fells Springy and is knocked out in the gap, before Four arrives: gone.
+        run({ name:'Balloon', you:true, team:0, stocks:1 }); summons = [boss('Springy', 0)]; bossRushCheck();
+        summons = []; fighters[0].dead = true; bossRushCheck();
+        out.three = (PROFILE.bossKills.Springy || []).slice();
+        return out;
+      } finally { setTimeout = st; BOSSRUSH = { active:false, bossIdx:0, cleared:0, defeated:false }; summons = []; projectiles = []; running = false; }
+    })()`);
+    expect(r.pend, 'a kill in waiting, with the boss that has to finish him').toEqual(['MePhone4', 'Knife', 'Evil Leafy']);
+    expect(r.before, 'not yet: he still has to go down to the next one').toEqual([]);
+    expect(r.one, 'beat one, then out to the next').toEqual(['Knife']);
+    expect(r.pend2).toEqual(['Evil Leafy', 'MePhone4S']);
+    expect(r.two, 'beating two means the first does not count').toEqual({ m4: ['Knife'], leafy: ['Fan'] });
+    expect(r.three, 'out in the gap is not out to the next boss').toEqual([]);
+    expect(W.eval('String(startBossRush)')).toMatch(/BOSSRUSH = \{ active:true/);   // a new run is a new BOSSRUSH: nothing waits over from the last
   });
 });
 
@@ -522,7 +583,7 @@ describe('the profile: reload and two tabs', () => {
     await w3.eval('profileReady');
     expect(w3.eval(`({ q:cobsQ(), kills:PROFILE.bossKills, beaten:cobsBeaten(), live:cobsChainLive() })`))
       .toEqual({ q: { stage: 0, cups: [], race: false, beaten: false, wins: 0, bestSecs: 0 }, kills: {}, beaten: false, live: false });
-    expect(w3.eval(`vaultSubmit('C0B5')`), 'and a chain that has not opened answers as it always did').toEqual({ kind: 'wrong', reply: WRONG });
+    expect(w3.eval(`vaultSubmit('C0B5')`), 'and a chain that has not opened says not yet').toEqual({ kind: 'wrong', reply: NOT_YET });
   });
 
   it('a kill, a cup and a code found in another tab survive this tab\'s save', async () => {
