@@ -77,7 +77,7 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
       });
     })()`);
     expect(r).toEqual([
-      ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'studio', false, 'announcer', 'rain+ring', 'announcer rain announcer ring', 36, 'Budget Cuts', 'Crusher Arm'],
+      ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'cakeatstake', false, 'announcer', 'annlaser+annacid+annballoon', 'announcer annlaser announcer annacid', 36, 'Budget Cuts', 'Crusher Arm'],   // rebuilt (boss overhaul, Round 9): see test/boss-announcer.test.js
       ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'studio', false, 'speaker', 'slam+rain', 'soundwave slam soundwave rain', 36, 'Double Speakers', 'Feedback Overload'],
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'studio', false, 'speakerfirey', 'rain+slam', 'firewall rain firewall slam', 36, 'Flame Surge', 'RAGE MODE'],
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug', 'seekers+rain', 'swarm seekers swarm rain', 36, 'Second Wave', 'Swarm Frenzy'],

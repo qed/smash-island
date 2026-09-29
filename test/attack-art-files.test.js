@@ -95,7 +95,7 @@ describe('transparency: an object, never a rectangle pasted over the stage', () 
     // (Bracelety's blank board did too, and was no richer than a drawn rectangle: her ICY sign ships now.)
     const firstSeven = ['shatter.png', 'slice.png', 'van.png', 'bubble.png', 'cap.png', 'tag.png', 'measure.png'];
     const solid = entries.filter((e) => e.solid).map((e) => e.file).sort();
-    expect(solid).toEqual(['battery.png']);
+    expect(solid, "Remote's battery cell and the Announcer's press (a block cut out of the crusher's asset) fill their own canvas").toEqual(['annpress.png', 'battery.png']);
     for (const e of entries) {
       if (firstSeven.includes(e.file) || e.solid) continue;
       expect(clearOf(read(e.file)), `${e.file} has no real transparency`).toBeGreaterThan(0.05);
@@ -104,7 +104,7 @@ describe('transparency: an object, never a rectangle pasted over the stage', () 
 
   it('the ones cut out of a bigger picture carry nothing of it', () => {
     const keyed = entries.filter((e) => e.key).map((e) => e.file).sort();
-    expect(keyed).toEqual(['book.png', 'capturepod.png', 'casebomb.png', 'cloth.png', 'ghostvacuum.png', 'losercage.png', 'marsrock.png', 'ojshard.png', 'oliveoil.png',   // the first five, batch 3's ten,
+    expect(keyed).toEqual(['annacid.png', 'book.png', 'capturepod.png', 'casebomb.png', 'cloth.png', 'ghostvacuum.png', 'losercage.png', 'marsrock.png', 'ojshard.png', 'oliveoil.png',   // the first five, batch 3's ten,
       'pager.png', 'paintball.png', 'paintbomb.png', 'piano.png', 'shimmerorb.png', 'soccerball.png', 'tpot7bolt.png', 'vacuum.png', 'wrench.png']);   // and Steve Cobs's prize's three (test/dlc-ii-prize.test.js)
     for (const f of keyed) expect(clearOf(read(f)), `${f} kept its backdrop`).toBeGreaterThan(0.15);
     const opaque = (png, test) => { const bad = []; for (let i = 0; i < png.data.length; i += 4)

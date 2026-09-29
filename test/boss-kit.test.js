@@ -455,7 +455,10 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     expect(r.hold).toBe(true);
     expect(r.line).toBe("We're square.");
     expect(r.begin).toBe(true);
-    expect(r.keys, 'the early six get theirs in their ENDING slots').toEqual(['springy']);
+    // "Endings: 'All of them'" (the owner, 2026-09-29): the early six put theirs in their ENDING slots as they are rebuilt (the Announcer's is
+    // 'announcer'; test/boss-announcer.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
+    expect(r.keys[0], "Springy's is first").toBe('springy');
+    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
