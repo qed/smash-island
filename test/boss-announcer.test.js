@@ -364,7 +364,7 @@ describe('the phases', () => {
 
 describe('CRUSHER ARM!: the wire pulls taut, the circle follows you and locks, the press drops', () => {
   // phase 3, with the entry beat (the circle and the first press) cleared away so it is his signature alone
-  const P3 = `b.hp = b.maxHp*0.2; keep(3); projectiles = []; b._q = []; b._pr = null; b._tel = 0; impactFxClear();`;
+  const P3 = `b.hp = b.maxHp*0.2; keep(3); projectiles = []; b._q = []; b._prs = []; b._tel = 0; impactFxClear();`;
 
   it('the circle follows you for the wind-up and holds for its last 12 frames; the press falls on the spot it locked on, a piston (no drift), 36 px a frame', () => {
     const r = W.eval(`(function(){ ${STAGE(200)}

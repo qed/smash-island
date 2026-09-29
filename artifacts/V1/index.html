@@ -7944,7 +7944,7 @@ const BOSS_MOVES = {
 // ================================================================================================================================
 const ANN = {
   gaps:[0, 112, 84, 62],                       // frames between his turns by phase (default 100/72/52): eased, the crusher is the hazard
-  pods:[[0.020, 0.135, 64], [0.150, 0.270, 108], [0.715, 0.815, 108]],   // the podiums: x0, x1 (fractions of the arena) and their height over the floor -- "3 steps leading up"
+  pods:[[0.020, 0.135, 4/9], [0.150, 0.270, 3/4], [0.715, 0.815, 3/4]],   // the podiums: x0, x1 (fractions of the arena) and their height as a fraction of the centre platform's (64, 108 and 108 px up on the usual screen) -- "3 steps leading up"
   cylH:92,                                     // the centre cylinder ("a small cylinder in the middle") the tosser stands on
   prizes:[ { k:'annslice', color:'#f7a1a8', r:16, T:1,    kb:11 },                     // BFDI 2: regular cake
            { k:'annlime',  color:'#c9e35a', r:16, T:0.8,  kb:11 },                     // BFDI 3: key lime pie -- quicker
@@ -7988,7 +7988,8 @@ function annDress(boss){
   const c = worldPlats.filter(p=>!p._springy && p.w > WW*0.3).sort((a,b)=>b.w - a.w)[0];
   boss._c0 = c ? { x:c.x, w:c.w } : null;
   if(c) c._annC = true;
-  for(const d of ANN.pods){ const w = Math.max(90, WW*(d[1] - d[0])); worldPlats.push({ x:WW*d[0], y:gy - d[2], w:w, h:14, _ann:true }); }
+  const up0 = c ? gy - c.y : 144;   // the steps are in proportion to the platform they lead to, on any screen
+  for(const d of ANN.pods){ const w = Math.max(90, WW*(d[1] - d[0])); worldPlats.push({ x:WW*d[0], y:gy - Math.round(up0*d[2]), w:w, h:14, _ann:true }); }
   boss._ent = 0;   // he falls in from the sky: a picture only (the TELL slot draws it), and the landing is annTick's
   boss._hz = { nx:ANN.crush.first, pz:0, py:ANN.crush.hang, cr:0, bo:0, n:0, cs:0, ct:0, cuts:0, st:[] };
 }
@@ -8143,7 +8144,7 @@ function annPress(s, x, id, o){
   const p = addProj(bossShot(s, { x:x, y:-40, vx:0, vy:C.fall, grav:false, breaksOnSurface:true, noDrift:true, pierce:true, warnX:x, warnY:sy, warn:0, r:34,
     dmg:bossDmg(), kb:16, color:'#8a8f98', shape:'annpress', life:70, bossAtk:id, delay:delay,
     landImpact:{ shake:14, dust:2, debris:8, scar:true, r:90, color:'#c8c8b8' } }));
-  s._pr = { p:p };
+  (s._prs || (s._prs = [])).push({ p:p });
   for(const d of [-1, 1]) addProj(bossShot(s, { x:x, y:sy - 12, vx:d*9, vy:0, r:12, dmg:bossDmg(), kb:12, color:'#b8bcc4', life:42, bossAtk:id, delay:delay + fall }));
   if(o.plate){ annQ(s, delay + fall, { k:'plate', x:x, sy:sy, id:id }); annMark('plate', x, sy, delay + fall + 26, { mA:delay + fall }); }
   return p;
@@ -8335,7 +8336,7 @@ function annTick(s, tgt){
   const gone = (p) => p.life <= 0 || projectiles.indexOf(p) < 0;
   const sweep = (arr, fn) => { if(!arr || !arr.length) return arr; const keep = []; for(const e of arr){ if(gone(e.p)) fn(s, e); else keep.push(e); } return keep; };
   s._ck = sweep(s._ck, annCakeEnd); s._ad = sweep(s._ad, annPuddle); s._bl2 = sweep(s._bl2, annSplash);
-  if(s._pr && gone(s._pr.p)){ s._pr = null; annCrack(s, H); }
+  s._prs = sweep(s._prs, (b, e) => annCrack(b, H));   // every press that has come down cracks the crusher
   annBeamHits();
   // was anyone hit by the last volley? (a volley nobody was hit by is one the contestants "reject": ACID TEARS! follows it)
   const lc = s._lastCake; if(lc && !lc.hit && fighters.some(f=>f._bossHitId === lc.id)) lc.hit = true;
@@ -8395,10 +8396,11 @@ function annDrawProps(b, H, layer){
   if(!b) return;
   const gy = groundY(), cx = WW*0.5, ph = b._phase || 1;
   if(layer === 'under'){
-    // the great white cylinder and the platforms' bodies
+    // the great white cylinder and the platforms' bodies (the highest platform is the centre one; the lower ones are podiums, standing on the floor)
     ctx.lineJoin = 'round';
+    let topY = 1e9; for(const p of worldPlats) if(p.y < topY) topY = p.y;
     for(const p of worldPlats){
-      const col = p.w < WW*0.2;
+      const col = p.y > topY + 8;
       if(col){   // a cylindrical podium standing on the floor
         ctx.fillStyle = '#f2f2ee'; ctx.fillRect(p.x + 5, p.y + 4, p.w - 10, gy - p.y - 4);
         ctx.fillStyle = '#d8d8d0'; ctx.fillRect(p.x + p.w - 20, p.y + 4, 15, gy - p.y - 4);
@@ -8432,6 +8434,7 @@ function annDrawProps(b, H, layer){
   } else {
     annDrawMachine(b, H, gy, true);
     annDrawClaw(b, H, gy);
+    if(b._tel > 0 && b.attack === 'announcer') annDrawTell(b);   // his wind-up tells (rings on the floor, guide lines, emitters, spouts) over everything, so he cannot stand on one and hide it
   }
 }
 // The tosser: an arm on a swivel on top of the centre cylinder, the blade at its end (the show's File:Cake Tosser.png). It winds back while he winds up,
@@ -8510,7 +8513,8 @@ function annDrawMachine(b, H, gy, pressLayer){
 }
 // The wire from the crusher's foot, across the floor, to the remote in his hand -- slack on the floor, pulled taut while a press winds up (the tell).
 function annDrawWire(b, H, gy){
-  const hx = b.x + (b.face||1)*b.r*0.6, hy = b.y + b.r*0.15, sx = WW - 60, sy = gy - 8;
+  const ent = (b._ent != null && b._ent < ANN.ent) ? -(1 - (b._ent/ANN.ent)*(b._ent/ANN.ent))*(gy + b.r*1.2) : 0;   // the wire goes to the remote in his hand, up in the sky as he falls in
+  const hx = b.x + (b.face||1)*b.r*0.6, hy = b.y + b.r*0.15 + ent, sx = WW - 60, sy = gy - 8;
   const len = (typeof bossTelLen === 'function') ? bossTelLen(b) : 36;
   const taut = annCrushTurn(b) ? Math.min(1, (1 - b._tel/len)*1.6) : (H.pz === 1 ? 1 - (H.pt||0)/ANN.crush.tell : 0);
   const dist = Math.hypot(hx - sx, hy - sy), sag = (1 - taut)*Math.min(120, dist*0.28) + 6;
@@ -8527,9 +8531,9 @@ function annDrawClaw(b, H, gy){
   const sell = b._sl;
   if(annCakeTurn(b) && (b._telPh || b._phase || 1) === 2 && sell){
     const k = Math.min(1, (1 - b._tel/len)*1.4);
-    if(sell > 0){ const p = worldPlats.find(q=>q.w < WW*0.2 && Math.abs(q.x + q.w/2 - sell) < 3); if(p){ x = p.x + p.w/2; y = -30 + (p.y - 50)*k; } }
+    if(sell > 0){ const p = worldPlats.find(q=>Math.abs(q.x + q.w/2 - sell) < 3); if(p){ x = p.x + p.w/2; y = -30 + (p.y - 50)*k; } }
     else if(sell === -1){ x = WW*0.5 - 150; y = -30 + (gy - 130)*k; }
-    else if(sell === -2){ const c = worldPlats.find(q=>q._annC); if(c){ x = c.x + 6; y = -30 + (c.y - 40)*k; } }
+    else if(sell === -2){ const c = worldPlats.find(q=>q._annC || q.w > WW*0.3); if(c){ x = c.x + 6; y = -30 + (c.y - 40)*k; } }
   } else if(H.lt != null && hazardT - H.lt >= 0 && hazardT - H.lt < 64){
     const a = hazardT - H.lt; x = H.lx + H.lw/2; y = H.ly - 50 - (a*a*0.16 + a*1.5); open = 0;
   }
@@ -8642,7 +8646,7 @@ function annDrawTell(s){
     }
     if(ph === 2 && s._sl){   // what is about to be sold, outlined
       ctx.globalAlpha = 0.5 + 0.4*pulse; ctx.strokeStyle = '#ff3a2a'; ctx.lineWidth = 4;
-      if(s._sl > 0){ const p = worldPlats.find(q=>q.w < WW*0.2 && Math.abs(q.x + q.w/2 - s._sl) < 3); if(p) ctx.strokeRect(p.x - 4, p.y - 5, p.w + 8, gy - p.y + 5); }
+      if(s._sl > 0){ const p = worldPlats.find(q=>Math.abs(q.x + q.w/2 - s._sl) < 3); if(p) ctx.strokeRect(p.x - 4, p.y - 5, p.w + 8, gy - p.y + 5); }
       else if(s._sl === -1) ctx.strokeRect(cx - 150 - 44, gy - 82, 88, 82);
       else if(s._sl === -2){ const c = worldPlats.find(q=>q._annC || q.w > WW*0.3); if(c) ctx.strokeRect(c.x - 4, c.y - 5, c.w + 8, c.h + 9); }
     }
@@ -21223,7 +21227,7 @@ function drawBossSprite(s){
   // @boss:announcer:begin tell
   if(s.attack==="announcer" && s._ent != null && s._ent < ANN.ent){ const u = s._ent/ANN.ent; ctx.translate(0, -(1 - u*u)*(groundY() + s.r*1.2)); }   // his entrance: he falls from the sky onto the centre (a picture only; drawSummon restores it)
   if(s.attack==="announcer" && s._tel>0){
-    ctx.save(); ctx.translate(-s.x, -s.y); annDrawTell(s); ctx.restore();   // his wind-ups: rings, guide lines, emitters, spouts
+    // his wind-up tells (rings, guide lines, emitters, spouts) are drawn over everything, in his arena's hazard layer, so he cannot stand on one and hide it (annDrawProps)
     if(s._telKind==="annacid"){ const k = Math.max(0, 1 - s._tel/bossTelLen(s)); ctx.translate(0, R*0.05*k); ctx.scale(1 + 0.05*k, 1 - 0.09*k); }   // ACID TEARS!: his cone sags (drawSummon restores it)
   }
   // @boss:announcer:end tell
