@@ -494,6 +494,24 @@ measured (0.116 / 0.017 / 0.115 / 0.157: all facing right, none flipped). Drawn 
 <!-- @boss:swarm:end credits -->
 
 <!-- @boss:purpleface:begin credits -->
+Purple Face, Boss 5, rebuilt (the boss overhaul, 2026-09-29). Every file below is the show's own art, from the BFDI wiki, looked at
+before it was kept. His arena, Yellow Face's Warehouse, is drawn in code from the BFB 21 warehouse (its shelves, mustard posts, mint,
+teal and blue boxes, cables and concrete: File:BFB2197.PNG and the screenshots on the Yellow Face's Warehouse page were the reference,
+none is shipped); the Beryllium Fortress is drawn, its warning as a scribble and never as letters. The attack art was fetched with
+`node scripts/fetch-attack-sprites.mjs <out> pfacebug pfacetotem pfacetotemw pfaceshoe pfacestar pfacemagnet` (its PICKS, in the
+`purpleface` slot); the boss render with `node scripts/fetch-sprites.mjs "Purple Face Gape=Purple Face - blowing bugs.png"`.
+
+- `purple-face-gape.png` -- File:Purple Face - blowing bugs.png, 193x200, facing -0.23 (flipped): the pose with the mouth wide open, worn
+  in AD BREAK!'s wind-up and run, TORTURE TIME!'s blow and on the rap's beat (`bossLook`, `pfaceLook`). https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/Purple_Face_-_blowing_bugs.png/revision/latest?cb=20210623012333
+
+| Purple Face's art | File | Source |
+|---|---|---|
+| Purple Face's TORTURE TIME! bug (pfacebug.png): the Purple-spotted Bug (the Bugs page: BFDI 22, BFDIA 3+), hundreds of which Purple Face drops into Flower's tank in TORTURE TIME! (SOS (Save Our Show): "Purple Face releases the bugs into Flower's tank.") -- File:Purple bug.png | `attacks/pfacebug.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/Purple_bug.png/revision/latest?cb=20240517152428 |
+| Purple Face's black totem (THANK YOU FOR COMING!) (pfacetotem.png): a black totem, rolled out by THANK YOU FOR COMING! (The Tweested Temple: "A totem emerges from the floor." / "The totem rolls away") -- File:Black totem (teardrop).png | `attacks/pfacetotem.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/46/Black_totem_%28teardrop%29.png/revision/latest?cb=20210105043510 |
+| Purple Face's white totem (THANK YOU FOR COMING!) (pfacetotemw.png): a white totem, rolled out beside the black one (The Tweested Temple's totem set) -- File:White totem -lollipop-.png | `attacks/pfacetotemw.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/White_totem_-lollipop-.png/revision/latest?cb=20210105043452 |
+| Purple Face's Total Slip Shoes So Wah (TOTAL SLIP SHOES!) (pfaceshoe.png): Purple Face's "Total Slip Shoes So Wah", lobbed by TOTAL SLIP SHOES! (Catch These Hands: "Purple Face puts some clown shoes on Yellow Face.") -- File:Total Slip Shoe So Wah.png | `attacks/pfaceshoe.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/98/Total_Slip_Shoe_So_Wah.png/revision/latest?cb=20250119185358 |
+| Purple Face's pointy star (the big beat of FREESTYLE RAP!) (pfacestar.png): a pointy star (the BFDI assets), the spark on the big beat of FREESTYLE RAP! -- File:Pointy Star.png | `attacks/pfacestar.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/Pointy_Star.png/revision/latest?cb=20161105202603 |
+| the World's Strongest Magnet over Yellow Face's Warehouse (Purple Face's arena hazard) (pfacemagnet.png): the World's Strongest Magnet over Yellow Face's Warehouse (Fishes and Dishes: "forced the shelves from other sides to fall on top of the team") -- File:World's Strongest Magnet (TPOT 5).png | `attacks/pfacemagnet.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d9/World%27s_Strongest_Magnet_%28TPOT_5%29.png/revision/latest?cb=20240616170341 |
 <!-- @boss:purpleface:end credits -->
 
 <!-- @boss:dragon:begin credits -->

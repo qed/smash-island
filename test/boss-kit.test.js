@@ -455,7 +455,9 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     expect(r.hold).toBe(true);
     expect(r.line).toBe("We're square.");
     expect(r.begin).toBe(true);
-    expect(r.keys, 'the early six get theirs in their ENDING slots').toEqual(['springy']);
+    // "Endings: 'All of them'" (the owner, 2026-09-29): the early six get theirs in their ENDING slots, so the list grows as they land
+    // (Purple Face's is `swallow`); Springy's is the one that was there before.
+    expect(r.keys, 'the early six get theirs in their ENDING slots').toContain('springy');
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
@@ -574,8 +576,9 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
           window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
           projectiles = []; f.invuln = 0; b._tel = 1; updateBossAttack(b, f);
-          out.shots.push(projectiles.filter(function(p){ return p.owner===-2; }).length + (f._swallow > 0 ? 100 : 0));
+          out.shots.push(projectiles.filter(function(p){ return p.owner===-2; }).length + (f._swallow > 0 ? 100 : 0) + (b._pf && b._pf.lunge ? 1000 : 0));
           fighters.forEach(function(q){ q._swallow = 0; });
+          if (b._pf) b._pf.lunge = null;   // Purple Face's AD BREAK! is a lunge that outlasts its turn (a lunge under way counts as landing: 1000) and the next wind-up waits for it; this test fires turn after turn, so it ends each one as it starts
         }
         window.__lastBanner = null; b.hp = b.maxHp*0.5; b._tel = 0; b._atkTimer = 999; updateBossAttack(b, f);
         out.phase = window.__lastBanner && window.__lastBanner.text;

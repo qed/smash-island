@@ -63,7 +63,9 @@ const KEYS = ['shatter', 'atstake', 'van', 'float', 'cap', 'pricetag', 'measure'
   // Inanimate Insanity DLC batch 3 ("add the last set of dlc fighters.")
   'lifeguard', 'spikeburst', 'soccerball', 'losercage', 'soapvacuum', 'cloth', 'condishawn', 'yinyang', 'slpineapple', 'sllemon', 'sltomato', 'slguava', 'slmangosteen', 'oatcookie', 'cherries', 'oliveoil', 'clover', 'bananapeel', 'jack', 'ghostvacuum', 'capturepod', 'immunitycookie', 'horstray', 'paintball',
   // Steve Cobs's prize (OJ, Suitcase, Cabby): the shards, the bomb, the wrench, the file (test/dlc-ii-prize.test.js)
-  'ojshard', 'casebomb', 'wrench', 'file'];
+  'ojshard', 'casebomb', 'wrench', 'file',
+  // Purple Face, rebuilt (the boss overhaul, 2026-09-29): the show's art for his bug, totems, shoes, star and the warehouse's magnet (test/boss-purple-face.test.js)
+  'pfacebug', 'pfacetotem', 'pfacetotemw', 'pfaceshoe', 'pfacestar', 'pfacemagnet'];
 
 describe('the registry', () => {
   it('names only shapes the game draws, and every file exists', () => {
@@ -78,7 +80,7 @@ describe('the registry', () => {
   it('every file in the attack folder is drawn by some entry -- none is dead weight', () => {
     const drawn = new Set(W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src.split("/").pop(); })'));
     const onDisk = readdirSync('artifacts/V1/assets/sprites/attacks').filter((f) => f.endsWith('.png'));
-    expect(onDisk.length).toBe(75);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4
+    expect(onDisk.length).toBe(81);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus Purple Face's 6
     expect(onDisk.filter((f) => !drawn.has(f))).toEqual([]);
   });
 
