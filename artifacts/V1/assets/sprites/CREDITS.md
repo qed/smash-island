@@ -343,7 +343,7 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Salt | `salt.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d3/Salt2024Pose.png |
 | Pepper (Salt's partner) | `pepper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b7/Pepper2024Pose.png |
 | Test Tube | `test-tube.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/00/Blue_Ray_Test_Tube_S4.png |
-| Bot (Test Tube's robot, her summon) | `bot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/da/Bot2024PoseAlt.png |
+| Bot (they/them, a playable fighter; the season-4 look, File:Bot Bandaged S4.png -- the owner: "1, but s4 look.") | `bot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/98/Bot_Bandaged_S4.png/revision/latest?cb=20260301143149 |
 | Box | `box.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9e/Box_Idle_Pose_%282024%29.png/revision/latest?cb=20260309074606 |
 | Box, flaps open (Everything Packed; Box with Open Flaps 1 (S4E6).png) | `box-open-flaps.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f6/Box_with_Open_Flaps_1_%28S4E6%29.png/revision/latest?cb=20260815023812 |
 | Box's lifeless body (Lifeless Body; Box2024Pose.png) | `box-lifeless.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b3/Box2024Pose.png/revision/latest?cb=20250628193515 |

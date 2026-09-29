@@ -359,7 +359,7 @@ describe('screens: every mode gives back what it took, and every match can be le
   });
   it('the title counts the fighters and bosses off the rosters', () => {
     expect(w.eval("document.getElementById('titleFighters').textContent")).toBe(String(w.eval('ROSTER.length')));
-    expect(w.eval('ROSTER.length')).toBe(101);
+    expect(w.eval('ROSTER.length'), '101, and Bot ("oh, and bot should get their own kit.")').toBe(102);
     expect(w.eval("document.getElementById('titleBosses').textContent")).toBe(String(w.eval('BOSS_ROSTER.length')));
   });
   it('phone width: the move card, the scorecard and the editor tools fit the screen', () => {

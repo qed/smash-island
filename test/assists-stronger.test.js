@@ -4,7 +4,9 @@ import { bootMonolith } from './helpers/smash-golden.js';
 // "and assist trophies should be stronger." Asked how: "Hit harder and stay longer." Every assist that comes out of the item
 // now deals ASSIST_TROPHY_DMG (1.5) times its number -- on a fighter and on the boss's side alike, through addDmg -- and stays
 // ASSIST_TROPHY_TIME (1.5) times as long; the one-shots, which cannot hit harder or stay longer, each do more of their one
-// thing. Trophies only: MePhone4's hostile adds are his attack and Bot is Test Tube's special, and both keep their numbers.
+// thing. Trophies only: MePhone4's hostile adds are his attack and keep their numbers. (Bot used to be the other exception, as Test
+// Tube's summon; that summon is retired -- "oh, and bot should get their own kit."; asked what happens to Test Tube's summon,
+// "New move for Test Tube" -- so its four lines here are gone with it, and one line below pins that nothing of it is left.)
 // Old -> new, pinned here against the build before this change (a43b614).
 
 let W;
@@ -194,43 +196,32 @@ describe('the one-shots do more of their one thing', () => {
 });
 
 describe('not a trophy, not touched', () => {
-  it("MePhone4's adds keep three quarters of the cameo's own number and their 216-frame tenure; Bot keeps his 6 and his four seconds", () => {
+  it("MePhone4's adds keep three quarters of the cameo's own number and their 216-frame tenure", () => {
     const r = W.eval(`(function(){
       BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
-      var add = { type:'assist', hostile:true, act:'rush' }, trophy = { type:'assist', act:'rush' }, bot = { type:'assist', act:'bot' };
+      var add = { type:'assist', hostile:true, act:'rush' }, trophy = { type:'assist', act:'rush' };
       return { add: [addDmg(add, 10), addDmg(add, 14), addDmg(add, 8), addDmg(add, 6)],
                trophy: [addDmg(trophy, 10), addDmg(trophy, 14), addDmg(trophy, 8), addDmg(trophy, 6)],
-               isTrophy: [isTrophy(trophy), isTrophy(add), isTrophy(bot)],
-               bot: addDmg(bot, 6), botDmg: BOT_DMG, botDur: BOT_ASSIST.dur, addLife: MELIFE_LIFE, addDl: MELIFE_DL, hostileMult: HOSTILE_ADD_DMG };
+               isTrophy: [isTrophy(trophy), isTrophy(add)],
+               addLife: MELIFE_LIFE, addDl: MELIFE_DL, hostileMult: HOSTILE_ADD_DMG };
     })()`);
     expect(r.add, '0.75 x 10, 14, 8, 6: as before').toEqual([7.5, 10.5, 6, 4.5]);
     expect(r.trophy).toEqual([15, 21, 12, 9]);
-    expect(r.isTrophy).toEqual([true, false, false]);
-    expect(r.bot).toBe(6); expect(r.botDmg).toBe(6); expect(r.botDur, 'four seconds, as before').toBe(240);
+    expect(r.isTrophy).toEqual([true, false]);
     expect(r.addLife, 'three fifths of the six seconds it was tuned at').toBe(216);
     expect(r.hostileMult).toBe(0.75);
   });
 
-  it("Bot's punch still lands 6 on a fighter, and a downloaded add still stands its 216 + 40 frames", () => {
+  it('a downloaded add still stands its 216 + 40 frames, and Test Tube\'s Bot summon is gone: nothing of it is left to pin', () => {
     const r = W.eval(`(function(){
-      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
+      var out = { gone: [typeof BOT_ASSIST, typeof BOT_DMG, typeof BOT_KB, typeof BOT_REACH, typeof BOT_CD, typeof BOT_SPECIAL_CD, typeof drawBotSummon] };
+      SETTINGS.mode='boss'; SETTINGS.stocks=99; SETTINGS.items=false; running=true; BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
-      var A = makeFighter(ROSTER.find(function(r){ return r.name==='Test Tube'; }), 400, groundY()-24, 0);
-      var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 470, groundY()-24, 1);
-      A.team=0; D.team=1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9; fighters=[A,D];
-      step(); A.pct=0; D.pct=0; A.invuln=0; D.invuln=0;
-      var bot = summonAssistNamed(A, BOT_ASSIST); var life = bot.life;
-      D.x = bot.x + 30; D.y = bot.y; bot._cd = 0; updateSummons();
-      var out = { punch: +D.pct.toFixed(6), life: life, name: bot.name };
-      // and one of MePhone4's adds
-      SETTINGS.mode='boss'; SETTINGS.stocks=99; BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
-      summons=[]; var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), WW*0.5+300, groundY()-24, 0); f.team=0; f.controller='still'; fighters=[f];
+      var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), WW*0.5+300, groundY()-24, 0); f.team=0; f.controller='still'; fighters=[f];
       spawnBossRushBoss(); var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
       var add = meLifeDownload(b, 1); out.addLife = add.life; out.addHostile = !!add.hostile;
       summons = []; running = false; return out; })()`);
-    expect(r.name).toBe('Bot');
-    expect(r.punch, 'BOT_DMG, as before').toBe(6);
-    expect(r.life).toBe(240);
+    expect(r.gone, "BOT_ASSIST, BOT_DMG, BOT_KB, BOT_REACH, BOT_CD, BOT_SPECIAL_CD and drawBotSummon went with the summon (\"New move for Test Tube\")").toEqual(Array(7).fill('undefined'));
     expect(r.addHostile).toBe(true);
     expect(r.addLife, 'MELIFE_LIFE + MELIFE_DL, as before').toBe(216 + 40);
   });

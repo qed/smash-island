@@ -625,5 +625,5 @@ console.log(`\n${Object.keys(manifest).length} sprites written to ${outDir}`);
 //   files are characters with faces, or fan art. Hence the keyed-out strike above.
 // Where Babies Come From II Remastered.png (Baseball's other book): two episode screenshots side by side,
 //   with Baseball's face behind the book. The Twilight book sheet is the clean one.
-// Bot, Test Tube's summon, is a character render, so it is fetched the way every II render is:
-//   node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "Bot=Bot2024PoseAlt.png"
+// Bot (a playable fighter now, they/them, the season-4 look) is a character render, so it is fetched the way every II render is:
+//   node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "Bot=Bot Bandaged S4.png"

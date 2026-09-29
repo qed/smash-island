@@ -47,8 +47,8 @@ describe('the gate, shut', () => {
     W.eval(`PROFILE.cobs = null; delete PROFILE.bossesCleared['Steve Cobs']`);
   });
 
-  it('shut, the three are nowhere: ROSTER is the 101 it was, and no table keyed by fighter or kit has them', () => {
-    expect(closeGate()).toBe(101);
+  it('shut, the three are nowhere: ROSTER is the 102 it is (the 101 it was, and Bot: "oh, and bot should get their own kit."), and no table keyed by fighter or kit has them', () => {
+    expect(closeGate()).toBe(102);
     const r = W.eval(`({ rows: ROSTER.filter(function(r){ return ${JSON.stringify(NAMES)}.indexOf(r.name) >= 0 || r.prize; }).length,
       mt: ${JSON.stringify(NAMES)}.filter(function(n){ return MOVE_TEXT[n]; }), quips: ${JSON.stringify(NAMES)}.filter(function(n){ return VICTORY_QUIPS[n]; }),
       sprites: ${JSON.stringify(NAMES)}.filter(function(n){ return SPRITES[n]; }), hurt: ${JSON.stringify(NAMES)}.filter(function(n){ return HURTBOX[n]; }), anim: ${JSON.stringify(NAMES)}.filter(function(n){ return FIGHTER_ANIM[n]; }),
@@ -69,8 +69,8 @@ describe('the gate, shut', () => {
       expect(names.filter((n) => /^\?+$/.test(n.trim())), `${mode}: no mystery cell either`).toEqual([]);
       expect(names.filter((n) => /Show all|unlocked/.test(n)).join(' '), `${mode}: the toggle's count`).not.toMatch(/10[4-9]/);
     }
-    expect(W.eval(`document.getElementById('rosterLegend').textContent`)).toMatch(/\b101\b/);
-    expect(W.eval(`document.getElementById('titleFighters').textContent`)).toBe('101');
+    expect(W.eval(`document.getElementById('rosterLegend').textContent`)).toMatch(/\b102\b/);
+    expect(W.eval(`document.getElementById('titleFighters').textContent`)).toBe('102');
     expect(W.eval(`document.querySelectorAll('#board .dlchead').length`), 'one DLC group').toBe(1);
   });
 
@@ -99,8 +99,8 @@ describe('the gate, shut', () => {
 });
 
 describe('the gate, open', () => {
-  it('open, the three join the END of ROSTER (104), unlocked, and sit in the DLC group on the board like any other DLC fighter', () => {
-    expect(openGate()).toBe(104);
+  it('open, the three join the END of ROSTER (105, with Bot), unlocked, and sit in the DLC group on the board like any other DLC fighter', () => {
+    expect(openGate()).toBe(105);
     const r = W.eval(`({ last: ROSTER.slice(-3).map(function(r){ return r.name; }), open: PRIZE_ROSTER.map(function(r){ return [isUnlocked(r), onePickable(r), r.dlc, r.prize]; }),
       heads: document.querySelectorAll('#board .dlchead').length, legend: document.getElementById('rosterLegend').textContent, title: document.getElementById('titleFighters').textContent,
       afterHead: (function(){ var out = [], on = false; Array.prototype.forEach.call(document.getElementById('board').children, function(c){
@@ -112,8 +112,8 @@ describe('the gate, open', () => {
     expect(NAMES.filter((n) => !r.afterHead.includes(n)), 'all three in the DLC group').toEqual([]);
     expect(r.afterHead.slice(-3), 'shown last, in the order they won').toEqual(NAMES);
     expect(r.locked).toBe(0);
-    expect(r.legend).toMatch(/\b104\b/);
-    expect(r.title).toBe('104');
+    expect(r.legend).toMatch(/\b105\b/);
+    expect(r.title).toBe('105');
   });
 
   it('open, every table has its rows: seven lines, a smash identity, a spec, an up shape, a down, a quip, a hurtbox, an AI class, a render', () => {
@@ -148,11 +148,11 @@ describe('the gate, open', () => {
   it('the gate shutting again (a profile reset) takes them back out, tables and all, and never leaves the pick on one of them', () => {
     openGate();
     W.eval(`chosen = ROSTER.find(function(r){ return r.name==='OJ'; });`);
-    expect(closeGate()).toBe(101);
+    expect(closeGate()).toBe(102);
     const r = W.eval(`({ chosen: chosen.name, mt: !!MOVE_TEXT.OJ, sid: !!SMASH_ID.spill, up: !!UPSPEC.voices, sp: !!SPRITES.Cabby, title: document.getElementById('titleFighters').textContent })`);
     expect(r.chosen).not.toBe('OJ');
     expect([r.mt, r.sid, r.up, r.sp]).toEqual([false, false, false, false]);
-    expect(r.title).toBe('101');
+    expect(r.title).toBe('102');
   });
 
   it("the result screen's unlock note is the prize's only UI: the three are announced once, the moment the gate opens", () => {

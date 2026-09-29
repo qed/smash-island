@@ -80,9 +80,9 @@ describe('the owner\'s calls, kit by kit', () => {
     expect(byFile['coins.png'].skipped).toEqual(['Coins.png']);
   });
 
-  it('the kits drawn in code have no file: Pickle, Microphone, Salt, Test Tube\'s flask', () => {
-    // Pickle's missed dive is only a splash now; the dodgeball, the sound waves, the salt and pepper and the flask are
-    // drawn. (Paper's paper cut is drawn too, but his piano is a file, so his kit is covered.)
+  it('the kits drawn in code have no file: Pickle, Microphone, Salt, Test Tube\'s flask and dart', () => {
+    // Pickle's missed dive is only a splash now; the dodgeball, the sound waves, the salt and pepper, the flask and Test Tube's
+    // tranquilizer dart are drawn. (Paper's paper cut is drawn too, but his piano is a file, so his kit is covered.)
     const covered = new Set(entries.flatMap((e) => e.kits));
     expect(['pickle', 'mic', 'saltpepper', 'testtube'].filter((k) => covered.has(k))).toEqual([]);
   });
@@ -147,16 +147,21 @@ describe('transparency: an object, never a rectangle pasted over the stage', () 
   });
 });
 
-describe('Bot, Test Tube\'s summon', () => {
-  it('is fetched like every II render: on-model, transparent, 200px tall, credited, facing measured', () => {
+// Bot was Test Tube's summon (Bot2024PoseAlt.png); "oh, and bot should get their own kit." made them a fighter, and "1, but s4 look."
+// gave them the season-4 render, File:Bot Bandaged S4.png, fetched with the same pipeline (scripts/fetch-sprites.mjs --wiki=inanimateinsanity).
+describe('Bot, a playable fighter', () => {
+  it('is fetched like every II render: the S4 look, on-model, transparent, 200px tall, credited, facing measured', () => {
     expect(existsSync('artifacts/V1/assets/sprites/bot.png')).toBe(true);
     const png = PNG.sync.read(readFileSync('artifacts/V1/assets/sprites/bot.png'));
     expect(png.height).toBe(200);
     expect(clearOf(png)).toBeGreaterThan(0.2);
     const ii = JSON.parse(readFileSync('scripts/sprite-manifest-inanimateinsanity.json', 'utf8'));
     expect(ii.Bot && ii.Bot.ok).toBe(true);
-    expect(ii.Bot.source).toMatch(/inanimateinsanity\/images\/.*Bot2024PoseAlt\.png/);
+    expect(ii.Bot.source).toMatch(/inanimateinsanity\/images\/.*Bot_Bandaged_S4\.png/);
+    expect(ii.Bot.source, 'not the summon\'s old Bot2024PoseAlt').not.toMatch(/Bot2024PoseAlt/);
     expect(typeof ii.Bot.facing).toBe('number');
     expect(credits).toContain('`bot.png`');
+    expect(credits).toContain('Bot_Bandaged_S4.png');
+    expect(credits).not.toContain('her summon');
   });
 });
