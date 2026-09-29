@@ -482,6 +482,30 @@ measured (0.116 / 0.017 / 0.115 / 0.157: all facing right, none flipped). Drawn 
 <!-- The boss overhaul (2026-09-29), CREDITS SLOTS: each early-six builder credits its bosses' new art between its own two
      markers and nowhere else (artifacts/V1/index.html, BOSS SLOTS, has the rule and the list). -->
 <!-- @boss:announcer:begin credits -->
+### The Announcer (Boss 1), the boss overhaul (2026-09-29)
+
+The show's own art for what the Announcer throws and stands beside, fetched by `node scripts/fetch-attack-sprites.mjs <out> annslice annlime annice annpie anntosser annballoon annacid annspark annpress` (his PICKS slot) from battlefordreamisland.fandom.com,
+jacknjellify's designs, used under fan-work norms in a disclaimed, non-commercial fan game. Every file is a clean standalone wiki asset except the two cut out of a bigger picture (the acid glob and the press: the owner, "Yes, cut or draw"),
+each looked at before it was kept. Drawn in the game where the show has no clean file: the cake splats, the puddles, the water balloon splash, the laser beams, the crusher and its wire, the podiums, the vote counter and the claw.
+
+- `attacks/annslice.png` (annslice.png): the strawberry slice CAKE AT STAKE! tosses (Cake at Stake, BFDI 2: "Regular cake") -- File:Cake Slice Strawberry side.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/5/55/Cake_Slice_Strawberry_side.png/revision/latest?cb=20191019060048
+- `attacks/annlime.png` (annlime.png): the key lime slice (Cake at Stake, BFDI 3: "Key lime pie") -- File:Cake Lime Slice.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/b/b4/Cake_Lime_Slice.png/revision/latest?cb=20130802130617
+- `attacks/annice.png` (annice.png): the chunk of ice (Cake at Stake, BFDI 4: "Ice chunks used") -- File:Ice Slice.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/8/8b/Ice_Slice.png/revision/latest?cb=20130802130650
+- `attacks/annpie.png` (annpie.png): the explosive blueberry pie (Cake at Stake, BFDI 16: "the pie slices explode upon contact") -- File:One slice of pie.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/e/ea/One_slice_of_pie.png/revision/latest?cb=20240305031040
+- `attacks/anntosser.png` (anntosser.png): the Cake Tosser, the arm the cakes come out of (Cake at Stake; Barriers and Pitfalls: "Cake tosser tosses cake at Leafy") -- File:Cake Tosser.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/1/14/Cake_Tosser.png/revision/latest?cb=20130910153247
+- `attacks/annballoon.png` (annballoon.png): a water balloon (A Leg Up in the Race: "Ha, ha, water balloons."), from the BFDI Assets/Accessories page -- File:Water balloon.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/b/b1/Water_balloon.png/revision/latest?cb=20170505030249
+- `attacks/annacid.png` (annacid.png): the acid he cries (Announcer trivia: "Announcer cries acid instead of tears"), cut out of the glob in File:Thats crying or barfing.png (Speaker Box (species), Scenes) -- File:Thats crying or barfing.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/5/58/Thats_crying_or_barfing.png/revision/latest?cb=20140725033444
+- `attacks/annspark.png` (annspark.png): a sparkle along the QUADRUPLE LASER!'s beams (Laser Powered Teleportation Device), File:Pointy Star.png -- File:Pointy Star.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/Pointy_Star.png/revision/latest?cb=20161105202603
+- `attacks/annpress.png` (annpress.png): the crusher's press, the grey block under its arm, cut out of the BFDI 2 asset (Announcer Crusher, File:Old announcer crusher.png); a block, so it fills its own canvas -- File:Old announcer crusher.png -- https://static.wikia.nocookie.net/battlefordreamisland/images/5/57/Old_announcer_crusher.png/revision/latest?cb=20240530043506
+
+His ending, "Announcer gets crushed by Spongy" (Don't Pierce My Flesh), wears the Spongy render already credited under Assist trophies (`spongy.png`); his phase-3 look is File:Bittenspeakerfront0006.png ("Flower ... chomped off a piece of Announcer", Return of the Hang Glider), credited below.
+
+| Boss | File | Size | Facing | Source |
+|---|---|---|---|---|
+| Announcer (bitten, phase 3) | `announcer-bitten.png` | 141×200 | front view | https://static.wikia.nocookie.net/battlefordreamisland/images/a/af/Bittenspeakerfront0006.png/revision/latest?cb=20171028161550 |
+
+`announcer-bitten.png` is File:Bittenspeakerfront0006.png, "Announcer after getting bitten by Flower" (his page's Designs gallery), the same front view as `announcer.png` with the piece Flower chomped
+off his top-left corner in Return of the Hang Glider. Scaled server-side to 200 px tall (`scale-to-height-down/200`, `format=original`) like every boss render, the bite transparent, looked at.
 <!-- @boss:announcer:end credits -->
 
 <!-- @boss:puffball:begin credits -->

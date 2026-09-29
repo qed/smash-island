@@ -187,6 +187,23 @@ const PICKS = {
   // ---- the boss overhaul (2026-09-29): PICKS SLOTS -- each early-six builder adds its bosses' shot art between its own two
   // markers and nowhere else (artifacts/V1/index.html, BOSS SLOTS, has the rule and the list) ----
   // @boss:announcer:begin picks
+  // ---- ANNOUNCER (Boss 1): the Cake at Stake show's own art for what he throws and what he stands beside. Every file is a clean
+  // standalone asset on the BFDI wiki except the acid glob and the press, which are cut out of a scene and an asset sheet.
+  // Sources (battlefordreamisland.fandom.com): the Cake at Stake page's prizes -- a slice (BFDI 2), key lime pie (BFDI 3), ice
+  // chunks (BFDI 4), the explosive blueberry pie (BFDI 16); the Cake Tosser (the arm he gives cakes with); the water balloons of
+  // "A Leg Up in the Race"; the acid he cries (Announcer trivia: "Announcer cries acid instead of tears"; Speaker Box (species):
+  // File:Thats crying or barfing.png); the crusher's press (Announcer Crusher, File:Old announcer crusher.png, BFDI 2); and the
+  // sparkle round the Laser Powered Teleportation Device's beam (File:Pointy Star.png).
+  annslice:   { who: 'Announcer (CAKE AT STAKE!)',   kits: ['annslice'],   file: 'Cake Slice Strawberry side.png', note: 'the strawberry slice he tosses (Cake at Stake, BFDI 2)' },
+  annlime:    { who: 'Announcer (CAKE AT STAKE!)',   kits: ['annlime'],    file: 'Cake Lime Slice.png',            note: 'the key lime slice (Cake at Stake, BFDI 3)' },
+  annice:     { who: 'Announcer (CAKE AT STAKE!)',   kits: ['annice'],     file: 'Ice Slice.png',                  note: 'the chunk of ice (Cake at Stake, BFDI 4)' },
+  annpie:     { who: 'Announcer (CAKE AT STAKE!)',   kits: ['annpie'],     file: 'One slice of pie.png',           note: 'the explosive blueberry pie (Cake at Stake, BFDI 16)' },
+  anntosser:  { who: 'Announcer (CAKE AT STAKE!)',   kits: ['anntosser'],  file: 'Cake Tosser.png',                note: 'the Cake Tosser, the arm cakes come out of', h: 40 },
+  annballoon: { who: 'Announcer (WATER BALLOONS!)',  kits: ['annballoon'], file: 'Water balloon.png',              note: 'a water balloon (A Leg Up in the Race: "Ha, ha, water balloons.")' },
+  annacid:    { who: 'Announcer (ACID TEARS!)',      kits: ['annacid'],    file: 'Thats crying or barfing.png',    note: 'the acid he cries, cut out of the glob in its scene (Speaker Box (species), Scenes)', key: 'prop', region: [375, 118, 556, 234], srcH: 347, h: 40,
+    keep: (r, g, b) => g >= r + 45 && g >= b + 35 },
+  annspark:   { who: 'Announcer (QUADRUPLE LASER!)', kits: ['annspark'],   file: 'Pointy Star.png',                note: "a sparkle along the Laser Powered Teleportation Device's beam" },
+  annpress:   { who: 'Announcer (CRUSHER ARM!)',     kits: ['annpress'],   file: 'Old announcer crusher.png',      note: "the crusher's press, the grey block under its arm (Announcer Crusher, BFDI 2), cut from the asset (a block: it fills its own canvas)", region: [100, 505, 1800, 1990], srcH: 400, h: 56, solid: true },
   // @boss:announcer:end picks
 
   // @boss:puffball:begin picks
