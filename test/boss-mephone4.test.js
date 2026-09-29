@@ -44,7 +44,7 @@ describe('MePhone4 joins the gauntlet', () => {
     })()`);
     expect(r.rows).toEqual([
       ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'studio', false, 'announcer'],
-      ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'studio', false, 'speaker'],
+      ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'clubhouse', false, 'speaker'],   // the Clubhouse of Awesomeness (test/boss-puffball.test.js)
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'studio', false, 'speakerfirey'],
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face'],
@@ -59,7 +59,7 @@ describe('MePhone4 joins the gauntlet', () => {
       ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four'],
     ]);
     expect(r.extra).toEqual({
-      'Announcer': ['rain', 'ring'], 'Puffball Speaker Box': ['slam', 'rain'], 'Firey Speaker Box': ['rain', 'slam'],
+      'Announcer': ['rain', 'ring'], 'Puffball Speaker Box': ['consequences', 'rainbowbarf', 'private'], 'Firey Speaker Box': ['rain', 'slam'],
       'The Bug Swarm': ['seekers', 'rain'], 'Purple Face': ['ring', 'rain'], 'Purple Dragon': ['slam', 'rain'],
       'MePhone4': ['melife', 'portal'],
       'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],

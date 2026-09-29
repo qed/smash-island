@@ -82,6 +82,9 @@ describe('Springy takes Boss 11', () => {
           order.push(b.name);
           if (b.name==='Springy'){
             var padBefore = worldPlats.filter(function(p){ return p._springy && p.bouncy; }).length;
+            // the bosses before him have each played an ending ("Endings: 'All of them'", the owner, 2026-09-29): a scene that runs over frames, and this walk steps none --
+            // clear what they left on the stage, so the count below is Springy's own
+            projectiles = [];
             springyHole(300, 1, ++BOSS_ATK_ID); springyPlaceBox(600, groundY());
             projectiles.push({ owner:-2, springMark:true, springy:true, delay:1e6, x:300, y:800, r:1, life:1 },
                              { owner:-2, springy:true, shape:'springtoy', x:500, y:500, r:18, life:50 },
