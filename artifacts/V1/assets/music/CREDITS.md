@@ -1,18 +1,17 @@
 # Music credits — Battle for Smash Island
 
 Every background-music file shipped in this directory is listed below with its title, author,
-source page, licence, and the attribution the licence requires. All four were downloaded from
+source page, licence, and the attribution the licence requires. All five were downloaded from
 Pixabay and the licence line **"Free for use under the Pixabay Content License"** was verified on
 each track's own page before download.
 
-The five `.mp3` defaults are not from, or covers of, any commercial soundtrack. The brief asked for an
+The five `.mp3` files are not from, or covers of, any commercial soundtrack. The brief asked for an
 "Undertale-ish" menu/battle feel and a "Hollow Knight / Silksong-ish" boss feel — those are
 independent style-alike tracks chosen to evoke that mood.
 
-**Owner-supplied tracks (2026-09-27).** The ten `.ogg` files in this directory were added by the owner
-("i added the music"). They are tracks from Toby Fox's *Deltarune* soundtrack, two of them his collaborations with Camellia
-and are NOT under the Pixabay licence: see "Owner-supplied Deltarune tracks" at the end of this file.
-They are the game's battle playlist: normal matches play them instead of `battle.mp3`.
+**Nothing else ships.** The ten Ogg Vorbis tracks from Toby Fox's *Deltarune* soundtrack that the
+owner supplied on 2026-09-27 were removed from the public site and the installer on 2026-09-29: see
+"Music that is not shipped" at the end of this file.
 
 ---
 
@@ -44,10 +43,9 @@ Warm, unhurried chiptune — the cosy-town register the brief asked for.
 
 Driving, upbeat 8-bit with a melodic lead — energetic without drowning the hit SFX.
 
-Since 2026-09-27 this is the battle context's fallback: matches play the owner's battle playlist (the
-ten `.ogg` files at the end of this file), and this track plays only when none of them will load, or
-on a browser that cannot play Ogg Vorbis at all (some Safari versions; on an iPhone or iPad every
-browser uses Safari's engine), which skips the playlist and plays this instead.
+It is the bed for every arena match. (For a few days after 2026-09-27 matches played a shipped
+playlist of the owner's own tracks instead and this file was only its fallback; that playlist is gone —
+see "Music that is not shipped" — so this is the battle bed again, exactly as it was before.)
 
 ## 3. `boss.mp3` — Boss Rush
 
@@ -140,68 +138,38 @@ matching block below and fill it in. See `custom/README.md` for the rules.
 
 -->
 
-<!-- TEMPLATE (Undertale / Deltarune — e.g. "Big Shot" from the Deltarune Chapter 2 soundtrack):
-Toby Fox's music is administered by Materia Music Publishing, whose non-commercial policy permits
-fan use WHEN PROPERLY CREDITED. Both lines below are required — naming the composer alone is not
-enough, because Materia is the party granting the permission. The track must have been legally
-acquired (official Bandcamp release), and the game must stay non-commercial.
-
-## C1. `custom/intense.mp3` — clutch time
-
-| | |
-|---|---|
-| **Title** | Big Shot |
-| **Composer** | Toby Fox |
-| **Rights administrator** | Materia Music Publishing |
-| **Source** | Deltarune Chapter 2 OST, purchased from the official Bandcamp release |
-| **Licence** | Materia Music Publishing non-commercial fan-use policy, with credit |
-| **Attribution required?** | Yes — both lines below, together |
-| **Attribution used** | Music: "Big Shot" — Composer: Toby Fox · Rights administrator: Materia Music Publishing |
-| **Length / size** | <m:ss · N MB> |
-
-Also add that same credit line to the `#musicCredits` element in `index.html` so it is visible in
-the game, not only in this file.
--->
-
 ---
 
 ## If you replace a track
 
-`artifacts/V1/index.html` maps contexts to filenames in the `MUSIC_FILES` object, and the battle
-playlist's ten files in the `MUSIC_PLAYLISTS` object. Drop a replacement at the same path and it is
-picked up with no code change. If a file is missing or fails to decode, the game moves on to the next
-source for that context (for the battle playlist, another playlist track, then `battle.mp3`) and in
-the end to its built-in WebAudio synth loop rather than going silent — so a bad file degrades, it
-does not break. Update this file and the
+`artifacts/V1/index.html` maps contexts to filenames in the `MUSIC_FILES` object. Drop a replacement
+at the same path and it is picked up with no code change. If a file is missing or fails to decode, the
+game moves on to the next source for that context and in the end to its built-in WebAudio synth loop
+rather than going silent — so a bad file degrades, it does not break. Update this file and the
 `#musicCredits` line on the title screen whenever a track changes.
+
+Several contexts can point at the same file, so a credit above covers every place its track plays.
+A player can load their own track into any context under Settings → Controls → Custom Music; it
+stays on their device.
 
 ---
 
-## Owner-supplied Deltarune tracks
+## Music that is not shipped
 
-Added by the owner on 2026-09-27. Composer: Toby Fox (*Deltarune*); two tracks are Toby Fox's collaborations with Camellia
-(the owner: "those are just toby fox colabs with Camelia"). They are not covered by the Pixabay Content License above; the rights stay with their
-owners, and whether they may be shipped publicly is the owner's decision and responsibility.
+**No *Deltarune* or *Undertale* music ships with this game.** On 2026-09-27 the owner added ten
+*Deltarune* tracks (Toby Fox, two of them his collaborations with Camellia) and the game used them
+as its battle playlist and as the music of two further fights. On 2026-09-29 they were removed from
+the public site and the installer — the owner, asked "Remove them from the public site and
+installer?", answered "ok :(" — because the rights holders' published terms rule out shipping them:
 
-| File | Track |
-|---|---|
-| `Flowerman_Arrangement.ogg` | Toby Fox with Camellia |
-| `ch4_extra_boss.ogg` | Deltarune Chapter 4, extra boss |
-| `joker.ogg` | Deltarune |
-| `knight.ogg` | Deltarune |
-| `pink.ogg` | Deltarune |
-| `pumpkin_boss.ogg` | Deltarune |
-| `queen_boss.ogg` | Deltarune |
-| `spamton_neo_mix_ex_wip.ogg` | Spamton NEO mix, Toby Fox with Camellia |
-| `tenna_battle.ogg` | Deltarune |
-| `titan_battle.ogg` | Deltarune |
+- the *Deltarune* FAQ asks "Please don't re-upload the soundtracks anywhere.", which serving the
+  files to every visitor is;
+- Materia Music Publishing's licensing page does not permit its music "in conjunction with any AI
+  content or AI personas/vtubers/agents, on any platform", and this game has an AI teammate.
 
-Wired into the game as the **battle playlist** (`MUSIC_PLAYLISTS.battle` in `index.html`), because the
-owner, asked how the ten tracks should be used, answered "Battle playlist". Each normal match (FFA, 1v1,
-teams, World Cup fixtures, the tutorial, and a restart with R) picks one of them, never the one that
-played last when there is a choice (a file that fails to load does not count as played), and when a
-track ends mid-match the next one plays. A browser that cannot play Ogg Vorbis skips the playlist and
-plays `battle.mp3`. Boss Rush, the menus, the World Cup setup
-and hub, the title screen and clutch time keep their own tracks. Order for the battle context: a track
-the player loaded into their own battle playlist → `custom/battle.mp3` → this playlist → `battle.mp3`
-→ the synth loop. They are credited on the title screen (`#musicCredits`) as well as here.
+The ten files, the credit lines and the battle playlist that played them are gone, and this folder
+must not get them back: not here, and not in `custom/` (which is published to every visitor too).
+
+A player who owns a copy can still hear it in their own game. Settings → Controls → Custom Music
+takes a file for any context and keeps it in that browser only: it is never uploaded, never sent to
+another player, and never part of the deploy.

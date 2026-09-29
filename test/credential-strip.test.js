@@ -92,18 +92,11 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     expect(PUBLISHED_FILES.slice().sort()).toEqual([
       `${MUSIC_DIR}/CREDITS.md`,
       `${MUSIC_DIR}/battle.mp3`,
-      // The owner's ten tracks, wired as the battle playlist ("Battle playlist", the owner, 2026-09-27)
-      // and credited in CREDITS.md. Pinned by name, like every other track, so a stray file still fails.
-      `${MUSIC_DIR}/Flowerman_Arrangement.ogg`,
-      `${MUSIC_DIR}/ch4_extra_boss.ogg`,
-      `${MUSIC_DIR}/joker.ogg`,
-      `${MUSIC_DIR}/knight.ogg`,
-      `${MUSIC_DIR}/pink.ogg`,
-      `${MUSIC_DIR}/pumpkin_boss.ogg`,
-      `${MUSIC_DIR}/queen_boss.ogg`,
-      `${MUSIC_DIR}/spamton_neo_mix_ex_wip.ogg`,
-      `${MUSIC_DIR}/tenna_battle.ogg`,
-      `${MUSIC_DIR}/titan_battle.ogg`,
+      // The ten DELTARUNE .ogg tracks (the owner's battle playlist, 2026-09-27) are NOT here any more: the owner,
+      // asked "Remove them from the public site and installer?", answered "ok :(" on 2026-09-29. The DELTARUNE FAQ
+      // says "Please don't re-upload the soundtracks anywhere." and Materia's licensing page does not permit its music
+      // "in conjunction with any AI content or AI personas/vtubers/agents" (the Teams-mode teammate is one). Pinned by
+      // name like every other track, so a file that comes back fails here -- see the "no DELTARUNE music" test below.
       `${MUSIC_DIR}/boss.mp3`,
       `${MUSIC_DIR}/custom/README.md`,
       `${MUSIC_DIR}/intense.mp3`,
@@ -201,38 +194,41 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     const block = src.slice(src.indexOf('const MUSIC_FILES'));
     const paths = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']*\.(?:mp3|ogg))'/g)]
       .map((m) => m[1]);
-    expect(paths.length).toBe(7);   // six since One got her own bed ("actually, ones music should be joker."), seven with Steve Cobs's ("use big shot.")
+    expect(paths.length).toBe(7);   // the five shared beds plus the two secret-fight beds (one, cobs), which borrow tourney.mp3 and boss.mp3
+    // "ok :(" (the owner, 2026-09-29): no DELTARUNE .ogg ships, so every context maps to a cleared .mp3.
+    expect(paths.filter((p) => p.endsWith('.ogg')), 'a context still points at an .ogg').toEqual([]);
     for (const rel of paths) {
       const abs = join(PUBLISH_ROOT, rel);
       expect(PUBLISHED_FILES).toContain(abs.replace(/\\/g, '/'));
       // A 0-byte or HTML-error-page "download" is worse than a missing file: it plays as silence.
       const bytes = readFileSync(abs);
       expect(bytes.length).toBeGreaterThan(100_000);
-      // MP3 frame sync or an ID3 tag, or an Ogg page header (One's bed is the owner's joker.ogg) — proof this is
-      // audio, not a saved error page.
+      // MP3 frame sync or an ID3 tag — proof this is audio, not a saved error page.
       const isMp3 = bytes[0] === 0xff || bytes.slice(0, 3).toString('latin1') === 'ID3';
-      const isOgg = bytes.slice(0, 4).toString('latin1') === 'OggS';
-      expect(isMp3 || isOgg, `${rel} does not start with MP3 or Ogg data`).toBe(true);
+      expect(isMp3, `${rel} does not start with MP3 data`).toBe(true);
     }
   });
 
-  it('ships a real Ogg file for every battle-playlist track, and no .ogg the playlist does not play', () => {
-    // The owner's "Battle playlist" lives in MUSIC_PLAYLISTS, not MUSIC_FILES. The same two hazards
-    // apply: a typo'd path degrades silently at runtime, and an unreferenced file is dead weight on
-    // the deploy that nobody hears.
+  it('ships no DELTARUNE music: no .ogg on the deploy, no playlist, no credit line for it', () => {
+    // "ok :(" -- the owner's answer, 2026-09-29, to "Remove them from the public site and installer?". The
+    // DELTARUNE FAQ says "Please don't re-upload the soundtracks anywhere."; Materia's licensing page does not
+    // permit its music "in conjunction with any AI content or AI personas/vtubers/agents", and the Teams-mode
+    // teammate is one. This replaces the gate that used to require the ten files to ship: it now fails if any
+    // of them, or any .ogg at all, comes back to the publish root (the installer packages the same folder).
+    const TEN = ['Flowerman_Arrangement', 'ch4_extra_boss', 'joker', 'knight', 'pink', 'pumpkin_boss',
+      'queen_boss', 'spamton_neo_mix_ex_wip', 'tenna_battle', 'titan_battle'].map((n) => `${n}.ogg`);
+    const shippedOgg = PUBLISHED_FILES.filter((f) => /\.(ogg|oga|opus)$/i.test(f));
+    expect(shippedOgg, 'an .ogg is on the deploy').toEqual([]);
+    for (const n of TEN) expect(PUBLISHED_FILES.filter((f) => f.endsWith(`/${n}`)), `${n} is back on the deploy`).toEqual([]);
     const src = readFileSync(SOURCE, 'utf8');
-    const block = src.slice(src.indexOf('const MUSIC_PLAYLISTS'));
-    const paths = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']*\.ogg)'/g)].map((m) => m[1]);
-    expect(paths.length).toBe(10);
-    for (const rel of paths) {
-      const abs = join(PUBLISH_ROOT, rel).replace(/\\/g, '/');
-      expect(PUBLISHED_FILES).toContain(abs);
-      const bytes = readFileSync(abs);
-      expect(bytes.length).toBeGreaterThan(100_000);
-      expect(bytes.subarray(0, 4).toString('latin1'), `${rel} does not start with an Ogg page`).toBe('OggS');
-    }
-    const shippedOgg = PUBLISHED_FILES.filter((f) => f.startsWith(`${MUSIC_DIR}/`) && f.endsWith('.ogg'));
-    expect(shippedOgg.sort()).toEqual(paths.map((p) => join(PUBLISH_ROOT, p).replace(/\\/g, '/')).sort());
+    expect(src, 'the shipped battle playlist is gone').not.toMatch(/MUSIC_PLAYLISTS/);
+    for (const n of TEN) expect(src, `index.html still names ${n}`).not.toContain(n);
+    // ...and neither the page's credit line nor CREDITS.md credits music that no longer ships.
+    const line = src.split('\n').find((l) => l.includes('id="musicCredits"')) || '';
+    expect(line, 'the title-screen credit line still credits DELTARUNE').not.toMatch(/Deltarune|Toby Fox|Camellia|Materia/i);
+    const credits = readFileSync(`${MUSIC_DIR}/CREDITS.md`, 'utf8');
+    expect(credits, 'CREDITS.md still lists the ten files as shipped').not.toMatch(/Owner-supplied Deltarune tracks/);
+    for (const n of TEN) expect(credits, `CREDITS.md still lists ${n}`).not.toContain(n);
   });
 
   it('credits every shipped track with a licence', () => {
