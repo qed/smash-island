@@ -19,12 +19,6 @@ The filename **is** the wiring. Use exactly these names, all lowercase, `.mp3`:
 
 Resolution order for every context: `custom/<name>.mp3` → `../<name>.mp3` → synth loop.
 
-**`battle` has a shipped playlist between the two.** The owner's ten tracks (listed in
-`../CREDITS.md`) sit after `custom/battle.mp3` and before `../battle.mp3`: with this slot empty, each
-match plays one of them, and `../battle.mp3` plays only if none of them will load (or the browser
-cannot play Ogg Vorbis, in which case it skips the playlist). A
-`custom/battle.mp3` still beats the whole playlist, and it loops like every other slot.
-
 **`title` is the exception, and it has no shipped default.** There is no `../title.mp3` in the
 repo, so its order is `custom/title.mp3` → `../title.mp3` → *the whole `menu` chain* → synth loop.
 Leave the slot empty and the title screen plays the menu bed, which is exactly what it did before
@@ -50,7 +44,9 @@ Before adding a track:
    official label shop, etc.). A YouTube rip, a fan re-upload, or a file from a lyrics/converter
    site is not a legitimate copy no matter where you found it.
 2. **Check that the rights holder permits non-commercial fan use**, and follow their terms. Buying
-   a copy gives you a licence to *listen*, not automatically a licence to *redistribute*.
+   a copy gives you a licence to *listen*, not automatically a licence to *redistribute*. Read what
+   they say about re-uploading, and about use alongside AI features (this game has an AI teammate):
+   several publishers forbid both.
 3. **Credit it** — in `../CREDITS.md` and in the `#musicCredits` line on the title screen in
    `index.html`. `../CREDITS.md` has a commented-out template block ready to uncomment.
 4. **Keep the game non-commercial.** It is already an unofficial fan work; the moment money is
@@ -58,25 +54,17 @@ Before adding a track:
 
 If you cannot satisfy all four for a track, leave the slot empty. The default is good.
 
-### Undertale / Deltarune music specifically
+### Undertale / Deltarune music: do not put it here
 
-Toby Fox's music (Undertale, Deltarune — including "Big Shot" from the Deltarune Chapter 2
-soundtrack) is administered by **Materia Music Publishing**, who permit non-commercial fan use
-provided the work is properly credited. Buy the soundtrack from the official Bandcamp release, and
-then credit **both** of these, together, wherever the music is credited:
+Toby Fox's music (Undertale, Deltarune) does not belong in this folder, whatever copy you own. Two
+published rules rule it out for a public deploy: the Deltarune FAQ asks "Please don't re-upload the
+soundtracks anywhere.", and Materia Music Publishing, who administers the music, does not permit it
+"in conjunction with any AI content or AI personas/vtubers/agents", which this game's AI teammate
+is. The ten Deltarune tracks the owner had supplied were taken off the deploy on 2026-09-29 for
+exactly this reason.
 
-```
-Composer: Toby Fox
-Rights administrator: Materia Music Publishing
-```
-
-Both lines are required — the composer alone is not enough, because Materia is the party whose
-policy is granting the permission. If Materia's published policy changes, that policy wins over
-this README; check it before you publish.
-
-Note the scope: this covers using the *recording* as a fan work with credit. It does not cover
-selling anything, monetising a video of the game, or claiming any association with Toby Fox,
-Materia, or the games.
+To hear one in your own game, load it under Settings → Controls → Custom Music instead. That keeps
+the file in your browser only: nothing is uploaded and nothing reaches the deploy.
 
 ## After adding a track
 
