@@ -50,17 +50,24 @@ describe('Boss Rush difficulty, as measured', () => {
 
   // The review: "MePhone4 (Boss 7) has 240 HP, below the Dragon's 250 before him, and the agents measured him at 0.40
   // lives lost against the Dragon's 0.87 ... MePhone4S (Boss 9) 15/15 ... Steve Cobs presses harder than the final boss."
-  it('the II bosses climb with the gauntlet: the Dragon, then MePhone4, MePhone4S, Steve Cobs, and Four hardest of them', () => {
-    const line = ['Purple Dragon', 'MePhone4', 'MePhone4S', 'Steve Cobs', 'Four'].map(at);
+  // Boss 11 is Springy now ("replace him with springy", 2026-09-28; Cobs is the second secret boss), in the same slot and HP
+  // class. The climb through the MePhones to Four is as it was, and Springy is measured harder than MePhone4S before him.
+  // Whether he sits UNDER Four is left to the owner, the way Evil Leafy and Two are (below): the solo bot falls into his
+  // holes and stands against the ELECTRIC FENCE (a quarter of his damage, 'boss-other'), and measured 1.69 lives to Four's
+  // 1.37, and "dont tune, cuz thats an agent, not a player" -- nothing of his was tuned to that number. (Was: Steve Cobs
+  // between MePhone4S and Four, the claim the review made of HIS kit.)
+  it('the II bosses climb with the gauntlet: the Dragon, then MePhone4, MePhone4S, and Four hardest of them; Springy over MePhone4S', () => {
+    const line = ['Purple Dragon', 'MePhone4', 'MePhone4S', 'Four'].map(at);
     for (let i = 1; i < line.length; i++) {
       expect(harder(line[i], line[i - 1]), `${tell(line[i])} is harder than ${tell(line[i - 1])}`).toBe(true);
     }
+    expect(harder(at('Springy'), at('MePhone4S')), `${tell(at('Springy'))} is harder than ${tell(at('MePhone4S'))}`).toBe(true);
     const hp = JSON.parse(W.eval('JSON.stringify(BOSS_ROSTER.map(function(b){ return [b.name, b.hp]; }))'));
     const H = Object.fromEntries(hp);
     expect(H['MePhone4'], 'more HP than the Dragon before him').toBeGreaterThan(H['Purple Dragon']);
     expect(H['MePhone4S']).toBeGreaterThan(H['MePhone4']);
-    expect(H['Steve Cobs']).toBeGreaterThan(H['MePhone4S']);
-    expect(H['Four'], 'and the final boss has the most').toBeGreaterThan(H['Steve Cobs']);
+    expect(H['Springy']).toBeGreaterThan(H['MePhone4S']);
+    expect(H['Four'], 'and the final boss has the most').toBeGreaterThan(H['Springy']);
   });
 
   // Evil Leafy (Boss 8) and Two (Boss 10) are not this branch's, and the solo AI does far worse against them than against
@@ -81,13 +88,17 @@ describe('Boss Rush difficulty, as measured', () => {
     expect(s.dot || 0).toBeLessThan(s.gun);
   });
 
-  // The review: "TICK TOCK carries about 70-72% of his damage" at knockback 14, with gaps faster than Four's. The move is
-  // the Contraption now (the chant it was named for is out: see test/boss-steve-cobs.test.js), his gaps 90/66/48, and in
-  // phase 3 he keeps a boxer's range (COBS.approach): walking onto you, he measured level with MePhone4S.
-  it('Steve Cobs is short of Four, and the rest of his kit still lands', () => {
-    const c = at('Steve Cobs'), f = at('Four');
-    expect(harder(f, c), `${tell(f)} is harder than ${tell(c)}`).toBe(true);
-    expect((c.share.meepleknife || 0) + (c.share.kernel || 0) + (c.share.cobsfist || 0), 'the knife, kernels and punches').toBeGreaterThan(20);
+  // Was 'Steve Cobs is short of Four, and the rest of his kit still lands' (the review: "TICK TOCK carries about 70-72% of
+  // his damage"). Boss 11 is Springy ("replace him with springy"): the same question of his kit -- the slam is not the
+  // whole fight -- and that the fight is beatable in principle: a majority of the 240 solo bots beat him, with no bot in
+  // mind when he was built. His relation to Four is the owner's call (above).
+  it("Springy is beaten more often than not, the slam is under half of what he deals, and the rest of his kit lands", () => {
+    const s = at('Springy');
+    expect(s.beaten/s.of, `${tell(s)}: beatable`).toBeGreaterThan(0.5);
+    expect(s.share.slam || 0, 'the slam and its holes').toBeGreaterThan(15);
+    expect(s.share.slam || 0).toBeLessThan(50);
+    expect((s.share.mitten || 0) + (s.share.springclone || 0) + (s.share.springtoy || 0) + (s.share.cerealbox || 0) + (s.share.springwave || 0),
+      'the punch, the drops and the phase-3 waves').toBeGreaterThan(20);
   });
 
   // "4S 260 HP, Two 285, Cobs 330, Four 340, with no extra life between Boss 9 and Boss 12 ... nothing measures a run
@@ -96,6 +107,6 @@ describe('Boss Rush difficulty, as measured', () => {
   it('a run through the last four bosses is measured, and every run is accounted for', () => {
     const r = B.run, ended = Object.values(r.endedAt).reduce((a, n) => a + n, 0);
     expect(r.won + ended).toBe(r.of);
-    for (const k of Object.keys(r.endedAt)) expect(['MePhone4S', 'Two', 'Steve Cobs', 'Four']).toContain(k);
+    for (const k of Object.keys(r.endedAt)) expect(['MePhone4S', 'Two', 'Springy', 'Four']).toContain(k);
   });
 });

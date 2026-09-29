@@ -12,19 +12,25 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // not in it, and a test below checks every line about him. The trap was first built as "TICK TOCK", after the chant; the
 // review found that the Theft and Battery page has the chant begin as an OSC member's line, which he only continues, so
 // it is named for the contraption now (the owner's standing rule: no move built on a moment that depends on them).
+//
+// 2026-09-28: "Cobs should also be a secret boss ... replace him with springy." He is OFF the Boss Rush roster -- Springy
+// holds Boss 11 (test/boss-springy.test.js) -- and every piece of his code is kept for the secret fight being built on it.
+// The roster pins below were rewritten for that: his row is COBS_ROW now, and the tests that drive his moves spawn him from
+// it the way the gauntlet used to (makeBossSummon). Everything that tests his attack code is as it was.
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
 // A still Firey on the floor at `x`, in Boss Rush with the gauntlet logic off (BOSSRUSH.active false), and Steve Cobs
-// spawned the way the gauntlet spawns him. His attack timer is parked unless `live` is set.
+// spawned from COBS_ROW the way the gauntlet spawned him when he was Boss 11 (makeBossSummon, 330 HP for one fighter).
+// His attack timer is parked unless `live` is set.
 const STAGE = (x, live) => `
   SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
-  BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='Steve Cobs'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
+  BOSSRUSH = { active:false, bossIdx:0, cleared:0, defeated:false, loop:0, dmgMult:1 };
   worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
   var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), ${x}, groundY()-24, 0);
   f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
-  spawnBossRushBoss();
+  BOSS_ARENA = COBS_ROW.arena; summons.push(makeBossSummon(COBS_ROW, COBS_ROW.hp));
   var b = summons.find(function(s){ return s.type==='boss'; });
   ${live ? '' : 'b._atkTimer = 1e9;'}
   step(); f.pct=0; f.invuln=0;
@@ -34,30 +40,31 @@ const S = (o = '') => `{ name:'Steve Cobs', attack:'cobs', x:900, y:groundY()-88
   color:'#f0d010', face:-1, homeX:900, stationary:true, vx:0, vy:0 ${o ? ',' + o : ''} }`;
 const ids = (list) => `${list}.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v)===i; }).length`;
 
-describe('Steve Cobs joins the gauntlet', () => {
-  it('is Boss 11, after Two and before Four, with his signature, his second moves and his art', () => {
+describe('Steve Cobs, off the gauntlet, his kit whole', () => {
+  // Was 'is Boss 11, after Two and before Four'. "replace him with springy" (2026-09-28): he is not a roster row any more
+  // -- never spawned by the gauntlet, never rolled by the item boss -- and Springy holds Boss 11. His row is COBS_ROW, whole,
+  // and his second moves, their names and his functions are all still there for the secret fight.
+  it('is not a Boss Rush boss any more; COBS_ROW is his old row, his second moves and his code are kept', () => {
     const r = W.eval(`(function(){
-      var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='Steve Cobs'; }), b = BOSS_ROSTER[i];
       var idx = function(n){ return BOSS_ROSTER.findIndex(function(b){ return b.name===n; }); };
-      return { i: i, row: b, two: idx('Two'), mephone: idx('MePhone4'), s4: idx('MePhone4S'), four: idx('Four'), first: BOSS_ROSTER[0].name,
-               extra: BOSS_EXTRA['Steve Cobs'], moves: BOSS_EXTRA['Steve Cobs'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k]; }) };
+      return { i: idx('Steve Cobs'), springy: idx('Springy'), four: idx('Four'), n: BOSS_ROSTER.length, first: BOSS_ROSTER[0].name, row: COBS_ROW,
+               extra: BOSS_EXTRA['Steve Cobs'], moves: BOSS_EXTRA['Steve Cobs'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k]; }),
+               fns: [typeof cobsBeginTelegraph, typeof cobsContraption, typeof cobsTrapArrow, typeof cobsPunch, typeof cobsPunchSpan, typeof COBS, typeof BOSS_SPRITE_SRC.cobs, bossPhaseName({attack:'cobs'}, 3)] };
     })()`);
+    expect(r.i, 'off the roster').toBe(-1);
+    expect(r.springy, 'Springy is Boss 11 in his place').toBe(10);
+    expect(r.four, 'Four is still last').toBe(r.n - 1);
+    expect(r.n, 'the gauntlet is still twelve long').toBe(12);
+    expect(r.first).toBe('Announcer');
     // hp 330, not the design's 310: at 310 he was the easiest of the last four bosses (see COBS in index.html)
     expect(r.row).toEqual({ name: 'Steve Cobs', color: '#f0d010', hp: 330, big: 2.6, attack: 'cobs', arena: 'meeple', stationary: true, sprite: 'cobs' });
-    expect(r.i, 'Boss 11').toBe(10);
-    expect(r.i).toBeGreaterThan(r.two);
-    expect(r.i, 'after both MePhones, which he made').toBeGreaterThan(Math.max(r.mephone, r.s4));
-    expect(r.i, 'before Four, or he is never reached').toBe(r.four - 1);
-    expect(r.four, 'Four is still last').toBe(W.eval('BOSS_ROSTER.length') - 1);
-    expect(r.first).toBe('Announcer');
     expect(r.extra).toEqual(['knife', 'kernels']);
     // "MEKNIFE!", not "MEEPLE KNIFE!": his page says he "stabbed The Prime Shimmer with a MeKnife"
     expect(r.moves).toEqual(['function/MEKNIFE!', 'function/KERNEL STOMP!']);
-    expect(r.row.hp, "between Two's 285 and Four's 340").toBeGreaterThan(285);
-    expect(r.row.hp).toBeLessThan(340);
+    expect(r.fns).toEqual(['function', 'function', 'function', 'function', 'function', 'object', 'string', 'The Most Painful Way']);
   });
 
-  it('every other boss is exactly as it was: its row, its second moves, its turns, its wind-up and its phases', () => {
+  it('every boss of the gauntlet is exactly as it was, Springy in his slot: its row, its second moves, its turns, its wind-up and its phases', () => {
     const r = W.eval(`(function(){
       return BOSS_ROSTER.filter(function(b){ return b.name!=='Steve Cobs'; }).map(function(b){
         var s = { name:b.name, attack:b.attack, x:550, y:300, r:80, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0, color:b.color,
@@ -81,11 +88,15 @@ describe('Steve Cobs joins the gauntlet', () => {
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'seekers+slam', 'evilleafy seekers evilleafy slam', 45, 'No Refuge', 'Vine Coverage'],
       ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s', 'cookies+chainsaws', 'mephone4s cookies mephone4s chainsaws', 42, "I'll Be Back", 'Super Death Trap'],
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two', 'seekers+ring', 'two seekers two ring', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],
+      // Boss 11: Springy, in his place ("replace him with springy"; test/boss-springy.test.js has the fight)
+      ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop', 'springy longarm springy boxdrop', 40, 'Glitching', 'Unvitational'],
       ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four', 'rain+seekers', 'four rain four seekers', 50, 'Zap to Dust', 'Reality Buckles'],
     ]);
   });
 
-  it('walking the gauntlet spawns him eleventh; beating him moves on to Four, and his buried arrows go with him', () => {
+  // Was 'walking the gauntlet spawns him eleventh'. It spawns Springy there now; a buried arrow of his left on the stage when
+  // any boss falls is still swept (the filter in bossRushCheck is kept with the rest of his code).
+  it('walking the gauntlet never spawns him -- Springy is eleventh -- and a buried arrow is still swept when a boss falls', () => {
     const r = W.eval(`(function(){
       var st = setTimeout; setTimeout = function(){ return 0; };   // bossRushCheck queues the next spawn; this walk spawns by hand
       try {
@@ -98,27 +109,30 @@ describe('Steve Cobs joins the gauntlet', () => {
           spawnBossRushBoss();
           var b = summons.find(function(s){ return s.type==='boss'; });
           order.push(b.name);
-          if (b.name==='Steve Cobs'){
+          if (b.name==='Springy'){
             projectiles = [{ owner:-2, cobsTrap:true, delay:20, warn:1, x:300, y:600, r:16, life:7 }, { owner:-2, x:0, y:0, r:8, life:50 }];
             var idx0 = BOSSRUSH.bossIdx;
             b.hp = 0; bossRushCheck();
-            atHim = { arrowsLeft: projectiles.filter(function(p){ return p.cobsTrap; }).length, othersLeft: projectiles.length,
+            // (Springy's ending opens the hole he goes down after the sweep: not "something else", his -- the springy flag)
+            atHim = { arrowsLeft: projectiles.filter(function(p){ return p.cobsTrap; }).length, othersLeft: projectiles.filter(function(p){ return !p.springy; }).length,
                       advanced: BOSSRUSH.bossIdx - idx0, victory: document.getElementById('rushVictory').style.display };
+            summons = summons.filter(function(s){ return s.type!=='springyend'; });
             continue;
           }
           b.hp = 0; bossRushCheck();
           if (b.name==='Four'){ card = document.getElementById('rushVicSub').textContent; break; }
         }
         return { order: order, atHim: atHim, card: card };
-      } finally { setTimeout = st; BOSSRUSH.active=false; running=false; paused=false; summons=[]; projectiles=[];
+      } finally { setTimeout = st; BOSSRUSH.active=false; running=false; paused=false; summons=[]; projectiles=[]; worldPlats=[];
                   document.getElementById('rushVictory').style.display='none'; }
     })()`);
     expect(r.order).toEqual(['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face',
-      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Steve Cobs', 'Four']);
-    expect(r.atHim.arrowsLeft, 'nothing of his comes up after he is gone').toBe(0);
+      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Springy', 'Four']);
+    expect(r.order, 'the gauntlet never spawns him').not.toContain('Steve Cobs');
+    expect(r.atHim.arrowsLeft, 'a buried arrow never comes up after a boss is gone').toBe(0);
     expect(r.atHim.othersLeft, 'nothing else is swept').toBe(1);
     expect(r.atHim.advanced).toBe(1);
-    expect(r.atHim.victory, 'he is not the last boss').not.toBe('flex');
+    expect(r.atHim.victory, 'Boss 11 is not the last boss').not.toBe('flex');
     expect(r.card, 'the victory card counts twelve').toMatch(/^All twelve bosses beaten/);
   });
 
@@ -150,7 +164,7 @@ describe('Steve Cobs joins the gauntlet', () => {
       out.closed = d0 - Math.abs(b.x - f.x);
       summons = []; return out;
     })()`);
-    expect(r.hp, '330 for one fighter').toBe(330);
+    expect(r.hp, '330 for one fighter (COBS_ROW)').toBe(330);
     expect([r.p1, r.p2, r.p3]).toEqual([1, 2, 3]);
     expect(r.b2).toMatch(/PHASE 2: Appalled/);
     expect(r.b3).toMatch(/PHASE 3: The Most Painful Way/);

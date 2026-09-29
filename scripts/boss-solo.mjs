@@ -4,7 +4,7 @@
 // this is the one harness, committed, and scripts/boss-rush-balance.json holds what it printed. Run from the repo root.
 //
 //   node scripts/boss-solo.mjs                           every boss from the Dragon (Boss 6) to Four, and the run below
-//   BOSSES='["Steve Cobs"]' node scripts/boss-solo.mjs   just these bosses (and no run)
+//   BOSSES='["Springy"]' node scripts/boss-solo.mjs      just these bosses (and no run)
 //   FROM='Two' node scripts/boss-solo.mjs                just a run, starting at that boss
 //   WRITE=1 node scripts/boss-solo.mjs                   also rewrite scripts/boss-rush-balance.json (the full default only)
 //   TWEAK='S4.backoff=100' node scripts/boss-solo.mjs    try a retune without editing the game: run in every copy after it
@@ -19,7 +19,8 @@
 // the first stored numbers were, for the Dragon, MePhone4S and Four (Bosses 6, 9 and 12), and each read about 0.8 of a
 // life easier than it was.
 // A RUN (FROM, default MePhone4S -- "4S 260 HP, Two 285, Cobs 330, Four 340, with no extra life between Boss 9 and Boss
-// 12", as the review put it): start at that boss with 3 stocks and play on through the gauntlet's own clear logic (the
+// 12", as the review put it of the roster then; Springy holds Boss 11 at 330 now, "replace him with springy"): start at
+// that boss with 3 stocks and play on through the gauntlet's own clear logic (the
 // heal every boss, the stock every third) until Four falls or the fighter is out. RUN_SEEDS runs per fighter (2: 30 runs).
 //
 // Every run boots its own copy of the game and seeds its own dice (mulberry32 of the run's seed), so a run does not depend
@@ -47,12 +48,13 @@ const SETUP = (name, boss, run) => `
   startBossRush(); summons=[];
   BOSSRUSH.bossIdx = BOSS_ROSTER.findIndex(function(b){ return b.name===${JSON.stringify(boss)}; });
   // A run counts as if every boss before it had been beaten, so the stock every third boss falls where a whole run's would
-  // (a run from MePhone4S earns one for clearing him, Boss 9, and none after until the loop -- not one for clearing Steve
-  // Cobs). A solo fight does not: it is scored the frame the boss falls, and that stock would come off its lives lost.
+  // (a run from MePhone4S earns one for clearing him, Boss 9, and none after until the loop -- not one for clearing Boss
+  // 11, Springy). A solo fight does not: it is scored the frame the boss falls, and that stock would come off its lives lost.
   ${run ? 'BOSSRUSH.cleared = BOSSRUSH.bossIdx;' : ''}
   spawnBossRushBoss();
   var AP = addProj, AH = applyHit, depth = 0, kinds = {}, src = {};
-  addProj = function(p){ if(p && p.owner===-2 && p.bossAtk!=null) kinds[p.bossAtk] = p.cobsTrap ? 'contraption' : p.beamShot ? 'gun' : (p.shape || 'shot'); return AP(p); };
+  // Springy's slam has no shot of its own: its mark and its hole carry the slam's id, so its damage files under 'slam'.
+  addProj = function(p){ if(p && p.owner===-2 && p.bossAtk!=null) kinds[p.bossAtk] = p.cobsTrap ? 'contraption' : (p.springMark || p.springHole) ? 'slam' : p.beamShot ? 'gun' : (p.shape || 'shot'); return AP(p); };
   applyHit = function(t, dmg, kx, ky, from, opts){ var p0 = t.pct; depth++; try { return AH(t, dmg, kx, ky, from, opts); } finally { depth--;
     if(depth===0 && t.pct > p0){ var k = opts && opts.bossAtk!=null ? (kinds[opts.bossAtk] || 'boss-other') : (from && (from.hostile || from.idx===-2) ? 'add' : 'other');
       src[k] = (src[k]||0) + (t.pct - p0); t._bsAcc = (t._bsAcc||0) + (t.pct - p0); } } };

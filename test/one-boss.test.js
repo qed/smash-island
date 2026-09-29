@@ -33,7 +33,8 @@ describe('One is her own boss', () => {
   it('stays out of the Boss Rush roster, has 2000 HP, and wears a real transparent render no taller than 200px', () => {
     const r = W.eval(`({ n: BOSS_ROSTER.length, inRoster: BOSS_ROSTER.some(function(b){ return b.name==='One'; }), hp: ONE_BOSS.hp,
       src: BOSS_SPRITE_SRC.one, drawn: String(drawBossSprite).indexOf('case "one"') >= 0 })`);
-    // Nine until the II bosses joined (MePhone4, MePhone4S and Steve Cobs, "start the bosses"); One is still not one of them.
+    // Nine until the II bosses joined (MePhone4, MePhone4S and Steve Cobs, "start the bosses"); Springy took Cobs's slot one for
+    // one ("replace him with springy", 2026-09-28: Cobs is the second secret boss); One is still not one of them.
     expect(r.n, 'the gauntlet keeps its twelve').toBe(12);
     expect(r.inRoster).toBe(false);
     expect(r.hp).toBe(2000);
