@@ -46,7 +46,9 @@ describe('MePhone4 joins the gauntlet', () => {
       ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'studio', false, 'announcer'],
       ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'studio', false, 'speaker'],
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'studio', false, 'speakerfirey'],
-      ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug'],
+      // The Bug Swarm, rebuilt in the boss overhaul (2026-09-29): "the bosses should have more attacks the later they get.
+      // starting from bug swarm, they should have 5" -- his own five, in the Bug Hive, in the wiki's purple (test/boss-bug-swarm.test.js)
+      ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face'],
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon'],
       // 255, was 240: under the Dragon's 250 before him, and measured easier than the Dragon (the review; see
@@ -60,7 +62,7 @@ describe('MePhone4 joins the gauntlet', () => {
     ]);
     expect(r.extra).toEqual({
       'Announcer': ['rain', 'ring'], 'Puffball Speaker Box': ['slam', 'rain'], 'Firey Speaker Box': ['rain', 'slam'],
-      'The Bug Swarm': ['seekers', 'rain'], 'Purple Face': ['ring', 'rain'], 'Purple Dragon': ['slam', 'rain'],
+      'The Bug Swarm': ['dodgepattern', 'swarmseek', 'dodgeball', 'eggsac'], 'Purple Face': ['ring', 'rain'], 'Purple Dragon': ['slam', 'rain'],
       'MePhone4': ['melife', 'portal'],
       'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
       'Four': ['rain', 'seekers'],

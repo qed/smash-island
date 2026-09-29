@@ -81,6 +81,7 @@ describe('Springy takes Boss 11', () => {
           var b = summons.find(function(s){ return s.type==='boss'; });
           order.push(b.name);
           if (b.name==='Springy'){
+            projectiles = [];   // (the walk does not step, so an earlier boss's ending scene -- a shot that plays out over frames -- is still there: this counts what THIS test lays down)
             var padBefore = worldPlats.filter(function(p){ return p._springy && p.bouncy; }).length;
             springyHole(300, 1, ++BOSS_ATK_ID); springyPlaceBox(600, groundY());
             projectiles.push({ owner:-2, springMark:true, springy:true, delay:1e6, x:300, y:800, r:1, life:1 },

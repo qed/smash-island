@@ -66,7 +66,8 @@ describe('MePhone4S joins the gauntlet', () => {
       ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'studio', false, 'announcer', 'rain+ring', 'announcer rain announcer ring', 36, 'Budget Cuts', 'Crusher Arm'],
       ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'studio', false, 'speaker', 'slam+rain', 'soundwave slam soundwave rain', 36, 'Double Speakers', 'Feedback Overload'],
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'studio', false, 'speakerfirey', 'rain+slam', 'firewall rain firewall slam', 36, 'Flame Surge', 'RAGE MODE'],
-      ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug', 'seekers+rain', 'swarm seekers swarm rain', 36, 'Second Wave', 'Swarm Frenzy'],
+      // The Bug Swarm, rebuilt in the boss overhaul (2026-09-29): "starting from bug swarm, they should have 5" (test/boss-bug-swarm.test.js)
+      ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug', 'dodgepattern+swarmseek+dodgeball+eggsac', 'swarm dodgepattern swarm swarmseek', 36, 'Second Wave', 'Swarm Frenzy'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face', 'ring+rain', 'swallow ring swallow rain', 36, 'Ad Overload', 'Segment Split'],
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon', 'slam+rain', 'dragon slam dragon rain', 36, 'Strafing Runs', 'Grab & Carry'],
       // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)

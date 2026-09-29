@@ -455,7 +455,9 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     expect(r.hold).toBe(true);
     expect(r.line).toBe("We're square.");
     expect(r.begin).toBe(true);
-    expect(r.keys, 'the early six get theirs in their ENDING slots').toEqual(['springy']);
+    // "Endings: 'All of them' -- every boss gets a short canon exit scene when beaten" (the owner, 2026-09-29): the Bug Swarm's is
+    // in (his Delete Bugs scene, test/boss-bug-swarm.test.js); the rest of the early six add theirs to this list as they land
+    expect(r.keys, 'the early six get theirs in their ENDING slots').toEqual(['springy', 'swarm']);
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
@@ -471,8 +473,9 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
         var card = timers.find(function(t){ return t.ms === 800; }), run0 = running;
         running = true; if (card) card.fn(); running = run0;
         var out = { swept: swept, fell: fell, scene: summons.some(function(s){ return s.type==='__endfx'; }), ms: ms, saidNow: saidNow, after: said.slice(saidNow.length), bx: b.x };
-        // and a boss with no ending: the card at once, the next boss after 1.5 s, as it always was
-        ${STAGE('The Bug Swarm', 300)} timers = []; said = []; BOSSRUSH.active = true; b.hp = 0; bossRushCheck();
+        // and a boss with no ending: the card at once, the next boss after 1.5 s, as it always was. (This was the Bug Swarm until
+        // he got his -- "Endings: 'All of them'" -- so it is any boss whose attack has no BOSS_ENDINGS row, whichever those are.)
+        ${STAGE('Purple Face', 300)} b.attack = '__plain'; timers = []; said = []; BOSSRUSH.active = true; b.hp = 0; bossRushCheck();
         out.plainMs = timers.map(function(t){ return t.ms; }); out.plainSaid = said.slice();
         return out;
       } finally { setTimeout = st; banner = _b; delete BOSS_ENDINGS.__end; BOSSRUSH.active = false; summons = []; projectiles = []; }
