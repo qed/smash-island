@@ -349,9 +349,13 @@ describe('the Vault: the unlock model', () => {
     expect(w.document.getElementById('vaultHints').children.length).toBe(0);
     expect(w.eval(`vaultSubmit("I'm not that loud").kind`), 'recorded once, still a wrong guess now').toBe('wrong');
     expect(w.eval('vaultSubmit("omga").kind')).toBe('fighter');
-    // Every code of today's Vault in: the line goes, whatever old entries the save still holds.
+    // Every code of today's Vault in: the line goes, whatever old entries the save still holds. Since the second secret boss
+    // (cobs-decisions.md, "Both": four more codes, found only after these), "every code" is these AND his four -- so the line
+    // stays once the fifteen are in, and goes with the last of his (test/cobs-chain.test.js walks the chain that finds them).
     for (const c of [...Object.values(FIGHTER_CODES).map((s) => s[0]), ...Object.values(HINT_CODES).map((s) => s[0])]) w.eval(`vaultSubmit(${J(c)})`);
     w.eval('buildVault()');
+    expect(w.document.getElementById('vaultMissing').textContent, 'the fifteen in: his four are still out').toBe(w.eval('VAULT.missing'));
+    w.eval('vaultState().found.push.apply(vaultState().found, COBS_VAULT.steps.map(function(s){ return s.code; })); buildVault()');
     expect(w.document.getElementById('vaultMissing').hidden).toBe(true);
     expect(w.document.getElementById('vaultMissing').textContent).toBe('');
     await w.eval('saveProfile()');
@@ -645,7 +649,10 @@ describe('the Vault: the screen', () => {
     expect(w.eval('window.__banners')).toBe(0);
     expect(w.eval('window.__lastBanner')).toBeUndefined();
     expect(w.document.getElementById('banner').classList.contains('show')).toBe(false);
-    // Every code in: the "not every code" line has gone.
+    // Every code in: the "not every code" line has gone -- "every" counting the second secret boss's four as well (cobs-decisions.md,
+    // "Both"), which these fifteen only unlock the way to; here they are put in the record by hand.
+    expect(w.document.getElementById('vaultMissing').hidden, 'the fifteen in: his four are still out').toBe(false);
+    w.eval('vaultState().found.push.apply(vaultState().found, COBS_VAULT.steps.map(function(s){ return s.code; })); buildVault()');
     expect(w.document.getElementById('vaultMissing').hidden).toBe(true);
     expect(w.document.getElementById('vaultMissing').textContent).toBe('');
     expect(w.eval(`${J(VAULT_DLC)}.every(function(n){ return isUnlocked(ROSTER.find(function(r){ return r.name===n; })); })`),
@@ -670,6 +677,11 @@ describe('the Vault: the screen', () => {
     expect([...w.document.querySelectorAll('#vaultHints .vstep')].map((s) => s.textContent)).toEqual(['1', '3', '4']);
     expect(miss(), 'one clue still out').toBe(LINE);
     w.eval(`vaultSubmit(${J(HINT_CODES[2][0])})`); w.eval('buildVault()');
+    // The fifteen in. Since the second secret boss (cobs-decisions.md, "Both": his four codes open only after these), the line
+    // stays for his four -- still with no number and no kind of code -- and goes with the last of them.
+    expect(miss(), 'his four still out').toBe(LINE);
+    expect(w.document.getElementById('vaultWireHead').hidden, 'and still nothing about them').toBe(true);
+    w.eval('vaultState().found.push.apply(vaultState().found, COBS_VAULT.steps.map(function(s){ return s.code; })); buildVault()');
     expect(miss()).toBe(null);
     expect([...w.document.querySelectorAll('#vaultHints .vstep')].map((s) => s.textContent), 'nothing after step 4').toEqual(['1', '2', '3', '4']);
 

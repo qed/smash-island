@@ -759,6 +759,12 @@
     <div id="vaultFighters" class="vaultgrid"></div>
     <div class="vaultsec" id="vaultCluesHead" hidden></div>
     <div id="vaultHints" class="vaulthints" hidden></div>
+    <!-- THE SECOND SECRET'S SECTION (cobs-decisions.md: the codes are "Both" -- every code above found first, then four new
+         ones that ARE the steps). The same discretion as One's: nothing here until one of his codes is in, his rows show as
+         they are found (buildVault, COBS_VAULT), the "not every code" line above counts his four too, and none of the screen's
+         own words name him. -->
+    <div class="vaultsec" id="vaultWireHead" hidden></div>
+    <div id="vaultWire" class="vaulthints" hidden></div>
     <div class="row" style="margin-top:14px">
       <button class="btn ghost sm" onclick="go('title')">◀ Back</button>
     </div>
@@ -893,6 +899,8 @@
         <div class="seg" id="segBossPick">
           <button data-v="rush" class="on">Gauntlet</button>
           <button data-v="one">🌕 One</button>
+          <!-- Steve Cobs, the same way, once his chain is done ("Anyone", the owner: fightable with any fighter after the win). -->
+          <button data-v="cobs" style="display:none">🌽 Steve Cobs</button>
         </div>
       </div>
       <div class="setgrp">
@@ -2976,7 +2984,7 @@ function buildSettings(){
     if(v==='teams') buildTeamSplits();
     updateSummary();
   });
-  bindSeg('segBossPick', v=>{ SETTINGS.bossPick = (v==='one') ? 'one' : 'rush'; updateSummary(); });
+  bindSeg('segBossPick', v=>{ SETTINGS.bossPick = (v==='one' || v==='cobs') ? v : 'rush'; updateSummary(); });
   bindSeg('segStocks', v=>{ SETTINGS.stocks=+v; updateSummary(); });
   bindSeg('segItems', v=>{ SETTINGS.itemRate=+v; updateSummary(); });
   bindSeg('segLocalPlayers', v=>{
@@ -3012,11 +3020,16 @@ function syncModeUI(opts){
   if(row) row.style.display = isTeams ? 'flex' : 'none';
   const seg=document.getElementById('segMode');
   if(seg) seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===SETTINGS.mode));
-  // One's pick sits under Boss Rush once she is beaten -- local play only, like her fight.
+  // One's pick sits under Boss Rush once she is beaten -- local play only, like her fight -- and Steve Cobs's beside it once his
+  // chain is done (cobsBeaten). Each button shows only for the boss that has been beaten, so neither secret is given away.
   const bpRow=document.getElementById('bossPickRow');
-  if(bpRow) bpRow.style.display = (SETTINGS.mode==='boss' && oneUnlocked() && !inNetSession()) ? 'flex' : 'none';
+  if(bpRow) bpRow.style.display = (SETTINGS.mode==='boss' && (oneUnlocked() || cobsBeaten()) && !inNetSession()) ? 'flex' : 'none';
   const bpSeg=document.getElementById('segBossPick');
-  if(bpSeg) bpSeg.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===(SETTINGS.bossPick==='one' ? 'one' : 'rush')));
+  if(bpSeg) bpSeg.querySelectorAll('button').forEach(b=>{
+    b.classList.toggle('on', b.dataset.v===bossPickKey());
+    if(b.dataset.v==='one') b.style.display = oneUnlocked() ? '' : 'none';
+    if(b.dataset.v==='cobs') b.style.display = cobsBeaten() ? '' : 'none';
+  });
   // the inline Team Strategy & Chat panel only exists for local team matches
   const panel=document.getElementById('teamChatPanel');
   if(panel){
@@ -3107,6 +3120,7 @@ function updateSummary(){
   const size = (MAP_SIZES[SETTINGS.mapSize]||MAP_SIZES.normal).label;
   if(SETTINGS.mode==='teams'){ el.textContent=`${SETTINGS.teamKey} teams · ${SETTINGS.stocks} stocks · ${ai} AI · ${size} map`; }
   else if(SETTINGS.mode==='boss' && SETTINGS.bossPick==='one' && oneUnlocked() && !inNetSession()){ el.textContent=`One · ${SETTINGS.count} fighter${SETTINGS.count>1?'s':''} vs One (2000 HP) · ${SETTINGS.stocks} stocks`; }
+  else if(cobsWanted()){ el.textContent=`Steve Cobs · ${SETTINGS.count} fighter${SETTINGS.count>1?'s':''} vs Steve Cobs (${COBS_BOSS.hp} HP) · ${SETTINGS.stocks} stocks`; }
   else if(SETTINGS.mode==='boss'){ el.textContent=`Boss Rush · ${SETTINGS.count} fighter${SETTINGS.count>1?'s':''} vs a boss · ${SETTINGS.stocks} stocks`; }
   else { el.textContent=`${SETTINGS.count}-player FFA · ${SETTINGS.stocks} stocks · ${ai} AI · ${size} map`; }
   // In local team mode the Start button opens the strategy huddle first — label it so it's expected.
@@ -4028,6 +4042,8 @@ function startMatch(){
   }
   // One, for good: Boss Rush with One picked fights her with whoever you chose, and AI allies up to the count.
   if(oneWanted()){ startOneFight(oneLineup(), { onEnd:oneFightEnded }); return; }
+  // Steve Cobs, for good, the same way: "Anyone" once his chain is done (cobsBeaten), your pick with AI allies up to the count.
+  if(cobsWanted()){ startCobsFight(oneLineup(), { onEnd:cobsFightEnded }); return; }
   // The huddle's own controls are the plan the match STARTS with — read synchronously, so pressing
   // Start always starts a match at once. The CPU teams' opening plan is then requested in the
   // background, AFTER beginMatchNow has built the real roster and reset the per-match cost guard;
@@ -4506,6 +4522,10 @@ function advanceKnockout(){
   const winners = cur.map(fx=> fx.winner);
   if(winners.length===1){ TOURNEY.champion=winners[0]; TOURNEY.stage="done";
     try{ awardWorldCup(TOURNEY.champion); }catch(e){}   // award AT assignment, guarded + idempotent
+    // Cobs's chain, "no losing, or you have to do it all again": a FINAL you were in and LOST is decided here -- finishWatchedKnockout
+    // crowns your final on the spot, never passing simRestOfRound's eliminated site -- so the run empties here too. (Out earlier?
+    // The run was already emptied where you went out; cobsCupLost on an empty run is nothing.)
+    if(TOURNEY.mode==="normal" && TOURNEY.champion!==TOURNEY.myTeam){ try{ cobsCupLost(); }catch(e){} }
     showTourneyHub(); return; }
   const next=[];
   for(let i=0;i<winners.length;i+=2){ next.push({ kind:"ko", a:winners[i], b:winners[i+1], played:false, result:null }); }
@@ -4523,7 +4543,7 @@ function simRestOfRound(){
   // track knockout elimination for the player's team
   if(TOURNEY.mode==="normal" && !TOURNEY.eliminated && TOURNEY.stage==="knockout"){
     const myFx = TOURNEY.fixtures.find(fx=>fx.a===TOURNEY.myTeam||fx.b===TOURNEY.myTeam);
-    if(myFx && myFx.winner && myFx.winner!==TOURNEY.myTeam){ TOURNEY.eliminated=true; }
+    if(myFx && myFx.winner && myFx.winner!==TOURNEY.myTeam){ TOURNEY.eliminated=true; try{ cobsCupLost(); }catch(e){} }   // Cobs's chain: "no losing, or you have to do it all again"
   }
   proceedAfterRound();
 }
@@ -4534,6 +4554,7 @@ function proceedAfterRound(){
       // normal mode: if your team didn't qualify, you're out — spectate the rest
       if(TOURNEY.mode==="normal" && TOURNEY.bracketTeams && !TOURNEY.bracketTeams.includes(TOURNEY.myTeam)){
         TOURNEY.eliminated=true; banner("Your team was eliminated in the group stage.", 2000);
+        try{ cobsCupLost(); }catch(e){}   // Cobs's chain: a cup lost in the group stage is a cup lost
       }
       showTourneyHub();
     }
@@ -15261,6 +15282,10 @@ function freshProfile(){
            // log yet, and the chain itself.
            fighterStats:{}, fighterStatsSeeded:false,
            one:{ stage:0, erased:[], rushLightning:false, wins:0, bestSecs:0 },
+           // Steve Cobs's chain (see COBS_STAGE): which fighter in YOUR hands felled which boss (every boss, for the "three
+           // pairs"), and the chain itself -- its stage, the World Cup sequence so far, RUNNING! won, and the prize flag.
+           bossKills:{},
+           cobs:{ stage:0, cups:[], race:false, beaten:false, wins:0, bestSecs:0 },
            // WIN TOKENS (see that block): tokens earned and spent (two totals that only rise; the balance is the
            // difference), the cosmetics bought (id -> price paid), this day's and week's quests, and what is worn.
            wallet:{ earned:0, spent:0, owned:{} },
@@ -15303,6 +15328,8 @@ function mergeProfiles(stored, mine){
   out.fighterStats = mergeFighterStats(stored.fighterStats, mine.fighterStats);
   out.fighterStatsSeeded = !!(stored.fighterStatsSeeded || mine.fighterStatsSeeded);
   out.one = mergeOne(stored.one, mine.one);   // only ever upward: a stale tab cannot bring One's bans back
+  out.bossKills = mergeBossKills(stored.bossKills, mine.bossKills);   // a kill is a kill in either tab (union per boss)
+  out.cobs = mergeCobs(stored.cobs, mine.cobs);   // upward too: stage and counts by max, flags by OR, the cups by the longer run
   // Win Tokens (see that block). Earned and spent are totals that only rise, and each merges to the larger side PLUS what
   // the other side has that it does not -- a quest it was paid for, a cosmetic it bought -- so a stale tab can neither undo
   // a purchase nor lose a payout, and nothing is counted twice. Owned cosmetics are a set (union); what is worn follows mine.
@@ -15354,6 +15381,11 @@ async function saveProfile(){
   }catch(e){ PROFILE_STORAGE_OK=false; return false; }
 }
 function isUnlocked(r){
+  // COBS'S PRIZE -- HOOK FOR THE HIDDEN FIGHTERS' LANE. The owner: beating Steve Cobs "unlocks the winners of each season" --
+  // OJ, Suitcase and Cabby -- "3, but only after you beat cobs." Those three are built by another lane and are HIDDEN until
+  // PROFILE records him beaten: not on the board, in no AI pool, no Vault code, no Daily. The flag is cobsBeaten() (PROFILE.cobs
+  // .beaten, set by awardCobsDefeated); that lane's roster filter hooks in HERE (a row it flags as his prize is unlocked only
+  // when cobsBeaten()) and wherever ROSTER.filter(r=>r.play) draws a fighter for the computer. Nothing of them is built here.
   // A Vault fighter "can ONLY be opened by a code", which beats both the rules below it: the DLC
   // pack arriving whole ("Wal-mart is for marshmallow", "add more dlc codes") and the "everything"
   // view's escape hatch, which would otherwise open every one of them with a single click.
@@ -15467,6 +15499,7 @@ function soloRun(solo){
 function awardBossCleared(name, solo){
   if(!PROFILE) return [];
   PROFILE.bossesCleared[name] = true;
+  try{ if(cobsRecordKill(name)) saveProfile(); }catch(e){}   // Cobs's chain: WHICH fighter in your hands felled it ("beating certain bosses on certain characters"), saved at the deed
   try{ questAdd('boss', 1); }catch(e){}   // Win Tokens: a boss felled counts toward the Boss Rush quests
   try{ oneRushKill(); }catch(e){}   // One's chain: a boss felled is a win too ("ONE fighter erased per WIN")
   const fresh = awardTrophy('boss:'+name);
@@ -15499,6 +15532,7 @@ function awardWorldCup(team){
   TOURNEY.awarded = true;
   PROFILE.wcTitles++;
   try{ oneWorldCupHook(); }catch(e){}   // One's chain: "then you have to win the world cup"
+  try{ cobsCupWon(); }catch(e){}   // Cobs's chain: "winning the world cup as all 2nd place characters in ii" -- in order, no losing
   return awardTrophy('wc');
 }
 
@@ -16076,6 +16110,282 @@ function oneTitleCard(el){
   return true;
 }
 
+// ============================================================
+//  STEVE COBS -- THE UNLOCK CHAIN. His fight is startCobsFight; this is the road to it, beside One's, and the way back to him.
+// ============================================================
+// The owner (cobs-decisions.md): "Cobs should also be a secret boss ... The way you unlock him should involve vault codes
+// directly, beating certain bosses on certain characters, and RUNNING! also winning the world cup as all 2nd place characters
+// in ii(taco, knife, and balloon). He should be harder, and unlocks the winners of each season. you can only fight him as
+// knife." Their answers: the chain starts "alongside One's, from a fresh profile"; the codes are "Both" -- every existing Vault
+// code found first, THEN four new codes that ARE the steps ("Typing a code is itself the step"): C0B5 opens the chain, MISTAH
+// PHONE unlocks the boss step, PH3N0M53 VK0CH unlocks RUNNING!, THE FUTURE IS SO YESTERDAY is the door; "Three pairs" of
+// bosses on fighters (Knife beats MePhone4, Balloon beats Springy, Fan beats MePhone4); RUNNING! is the Red Line lane, run as
+// Knife; the cups are "knife, balloon, taco. no losing, or you have to do it all again"; the story fight is Knife alone, then
+// "Anyone" like One; a loss is retried directly; and the prize -- the season winners, "3, but only after you beat cobs" -- is
+// another lane's, which reads cobsBeaten() (see isUnlocked).
+//
+// Everything lives in PROFILE and is saved the moment it happens, so the chain survives a reload at any point:
+//   vault.found    his four codes, in the Vault's own record with everyone else's (vaultState)
+//   bossKills      { boss: [fighters in YOUR hands, still standing, that felled it] } -- written for EVERY boss by
+//                  awardBossCleared, so a kill made before his code was typed counts ("in any order, at any time")
+//   cobs.stage     0 locked, 1 live (C0B5 in; a wrong code answers "Tick, tock."), 2 the door (he waits on the title), 3 beaten
+//   cobs.cups      the World Cup run so far, a prefix of Knife, Balloon, Taco (II); a loss or another winner in between empties it
+//   cobs.race      RUNNING! won as Knife
+//   cobs.beaten    the prize flag (cobsBeaten)
+// Everything merges upward (mergeCobs, mergeBossKills), so a second tab can never undo a step; and like One's chain, the
+// Vault's own words never name him.
+const COBS_STAGE = { LOCKED:0, LIVE:1, DOOR:2, FREE:3 };
+// "Three pairs", [the fighter in your hands, the boss it fells], with the canon the research gave them (II wiki): Knife --
+// "See, MePhone didn't just make the show. He made you." (Steve Cobs/Quotes): the finalist fells his maker before the maker's
+// maker; Balloon -- Cobs "hits a button and a contraption appears from the floor that pops Balloon" (Steve Cobs), and Springy
+// holds the Boss Rush seat Cobs left; Fan -- Cobs's whole plot was Fan's egg, which ends "inside MePhone4" (Steve Cobs).
+const COBS_PAIRS = [["Knife", "MePhone4"], ["Balloon", "Springy"], ["Fan", "MePhone4"]];
+// "knife, balloon, taco. no losing, or you have to do it all again": the II runner-ups, in the owner's order. Wiki: "beating out
+// the runner-up, Taco" (Inanimate Insanity (Season 1)); "Knife is eliminated via losing the contest" (Inanimate Insanity II);
+// Balloon second by the jury's vote (You Can't Do This Forever).
+const COBS_CUP_ORDER = ["Knife", "Balloon", "Taco (II)"];
+// His codes -- the Vault's second hidden section -- each a step, each canon (cobs-decisions.md, rounds 3 and 3b):
+//   1 C0B5: the leetspeak plate on the Meeple van, "C0B5" (Steve Cobs, trivia) or "C085" (Everything's A-OJ): both are taken.
+//   2 MISTAH PHONE: Toilet's name for MePhone4 -- "Mistah Phone" (Toilet; Theft and Battery/Transcript; Kick the Bucket/
+//     Transcript). The owner's accepted spellings: MISTAHPHONE, MISTER PHONE, MISTA PHONE.
+//   3 PH3N0M53 VK0CH: "Wire (Model PH3N0M53 VK0cH)" (Meeple Incorporated), the wire from MeCloud into MePhone4 -- "once you
+//     put that wire from MeCloud into 4, I was able to hijack MeLife" (Through No Choice of Your Own/Transcript). Every
+//     reading of its digits as the letters they look like (PHENOM53 VKOCH, PH3NOM53 VK0CH...) is taken too (cobsWireLookalikes):
+//     a model number read off a wire is easy to misread, and the owner asked for lookalikes "as you judge".
+//   4 THE FUTURE IS SO YESTERDAY: "Welcome to Meeple, where the future is so yesterday!" (Meeple Incorporated) -- the door,
+//     accepted only once the pairs, the race and the three cups are all done (cobsDoorReady); before that it is "Tick, tock."
+// The texts are in his voice and cryptic like One's ("making the clues more cryptic"), but TRUE: each says what the next step
+// asks and hints the next code without spelling it. His name is in none of them -- nor his company's, nor a fighter's or a
+// mode's plain name, nor a digit -- and the Vault never says who is speaking (test/cobs-chain.test.js pins all of this).
+const COBS_VAULT = {
+  steps: [
+    // Decodes to: the chain is open; the next code is Toilet's name for MePhone4 ("the name his toilet called him by").
+    { step:1, code:"C0B5", accepts:["C085", "C-0B5", "C 0 B 5", "C-085"],
+      text:"You read the plate off my van. I like an attentive customer. The phone that made your show had a name too, the name his toilet called him by; say it here, and we'll talk about who beats whom." },
+    // Decodes to: the three pairs -- Knife ("the blade") fells MePhone4 ("the phone that made him"), Balloon fells Springy ("the
+    // spring that sits in my old seat": Boss 11 was Cobs's), Fan fells MePhone4 ("the phone with his egg inside") -- then the
+    // next code, the wire's model number.
+    { step:2, code:"MISTAH PHONE", accepts:["MISTAHPHONE", "MISTER PHONE", "MISTA PHONE", "Mistah Phone!", "MR PHONE"],
+      text:"He didn't just make the show. He made them, and I made him. So show me they're more than his: the blade fells the phone that made him; the balloon fells the spring that sits in my old seat; the fan fells the phone with his egg inside. Then read me the model number off my wire." },
+    // Decodes to: RUNNING! as Knife (the Red Line lane: the line that never stops, Marshmallow slung over the last gap on the
+    // hook, then cross), and three World Cups in order as Knife, Balloon, Taco (II) with no loss between; then the door code,
+    // the words over Meeple's door.
+    { step:3, code:"PH3N0M53 VK0CH", accepts:["PH3N0M53VK0CH", "PH3N0M53 VK0cH", "MODEL PH3N0M53 VK0CH"],
+      text:"That wire went from the cloud into the phone, and through it I hijacked the afterlife. Now run its lane as the blade: the line behind you never stops, and the marshmallow goes over the last gap on the hook before you cross. And the cup the whole world fights for, three times, as the three who came second: the blade, then the balloon, then the taco, with no loss between. Then tell me where the future is. It's written over my door." },
+    // Decodes to: the door is open -- his card has the title's Daily place (cobsTitleCard), and the fight is Knife's.
+    { step:4, code:"THE FUTURE IS SO YESTERDAY", accepts:["THE FUTURE IS SO YESTERDAY!", "THEFUTUREISSOYESTERDAY", "WHERE THE FUTURE IS SO YESTERDAY", "FUTURE IS SO YESTERDAY"],
+      text:"Welcome. The door is open, and I've kept a seat for the blade. Look to the title." },
+  ],
+  heading: "Static on the line",   // the found steps' heading: a phone line, a wire -- never his name
+  again: "You already heard that: step ",
+  found: "★ Static on the line: step ",
+  // "Tick, tock, tick, tock, tick, tock..." (Theft and Battery/Transcript; the Meeple Watch): what a wrong code gets while his
+  // chain is live -- and the door code typed before the deeds are done. Before the chain opens, a wrong code is as wrong as
+  // ever (VAULT.wrong), so nothing gives the second secret away.
+  wrong: "Tick, tock.",
+};
+// Every way of reading the wire's digits as letters: 3/E, 0/O, 5/S in every combination (32 spellings of "PH3N0M53 VK0CH").
+function cobsWireLookalikes(code){
+  let out = [String(code)];
+  for(const [d, l] of [["3", "E"], ["0", "O"], ["5", "S"]]){
+    const more = [];
+    for(const s of out){
+      const idx = []; for(let i=0;i<s.length;i++) if(s[i]===d) idx.push(i);
+      for(let m=1; m<(1<<idx.length); m++){ const a = s.split(""); idx.forEach((p, k)=>{ if(m & (1<<k)) a[p] = l; }); more.push(a.join("")); }
+    }
+    out = out.concat(more);
+  }
+  return out.slice(1);
+}
+// Every accepted spelling, normalised, to its step. Its OWN map: the Vault's map (VAULT_CODES) holds exactly the fighters' and
+// One's codes and is asked first, so none of his spellings may collide with one of those (the test checks).
+const COBS_CODES = new Map();
+for(const s of COBS_VAULT.steps){
+  const list = [s.code].concat(s.accepts || [], s.step===3 ? cobsWireLookalikes(s.code) : []);
+  for(const sp of list){ const k = vaultNorm(sp); if(k && !COBS_CODES.has(k) && !VAULT_CODES.has(k)) COBS_CODES.set(k, s); }
+}
+
+function cobsQ(){
+  if(!PROFILE) return { stage:0, cups:[], race:false, beaten:false, wins:0, bestSecs:0 };
+  const q = (PROFILE.cobs && typeof PROFILE.cobs==='object') ? PROFILE.cobs : (PROFILE.cobs = {});
+  q.stage = Math.max(0, Math.min(COBS_STAGE.FREE, q.stage|0));
+  q.cups = cobsCupPrefix(q.cups);
+  q.race = !!q.race; q.beaten = !!q.beaten || q.stage >= COBS_STAGE.FREE; q.wins = q.wins|0; q.bestSecs = q.bestSecs|0;
+  return q;
+}
+// The run as far as it follows the order: a stale or hand-edited save cannot hold "Taco, Knife" as two cups.
+function cobsCupPrefix(list){
+  const out = [];
+  if(Array.isArray(list)) for(let i=0; i<list.length && i<COBS_CUP_ORDER.length; i++){ if(list[i]!==COBS_CUP_ORDER[i]) break; out.push(list[i]); }
+  return out;
+}
+// Upward only, like mergeOne: the stage and the counts by max, the flags by OR, the cups by the longer run. (A reset lost to a
+// stale tab is the one thing this forgives: the run still has to be finished in order without a loss from wherever it stands.)
+function mergeCobs(a, b){
+  a = a || {}; b = b || {};
+  const ca = cobsCupPrefix(a.cups), cb = cobsCupPrefix(b.cups);
+  const best = [a.bestSecs|0, b.bestSecs|0].filter(x=>x>0);
+  const stage = Math.max(a.stage|0, b.stage|0);
+  return { stage, cups: ca.length >= cb.length ? ca : cb, race:!!(a.race || b.race), beaten:!!(a.beaten || b.beaten) || stage >= COBS_STAGE.FREE,
+           wins:Math.max(a.wins|0, b.wins|0), bestSecs:best.length ? Math.min(...best) : 0 };
+}
+function mergeBossKills(a, b){
+  const out = {};
+  for(const src of [a, b]) if(src && typeof src==='object') for(const boss in src){
+    const l = out[boss] || (out[boss] = []);
+    for(const n of (Array.isArray(src[boss]) ? src[boss] : [])) if(typeof n==='string' && l.indexOf(n) < 0) l.push(n);
+  }
+  return out;
+}
+function cobsChainLive(){ const s = cobsQ().stage; return s >= COBS_STAGE.LIVE && s < COBS_STAGE.FREE; }
+// THE PRIZE FLAG (isUnlocked has the hook): true once he has been beaten as Knife.
+function cobsBeaten(){ return cobsQ().beaten; }
+function cobsStep(n){ const s = COBS_VAULT.steps[n - 1]; return !!s && vaultFound(s.code); }
+// "Both": the chain opens only once EVERY existing Vault code is found -- the eleven fighters' and One's four clues.
+function cobsGateOpen(){ return !!PROFILE && VAULT.fighters.concat(VAULT.hints).every(v=>vaultFound(v.code)); }
+
+// ---- STEP 2: the three pairs ----
+// From awardBossCleared, for every boss that falls: the fighter in YOUR hands, if it is still standing (a Knife out of stocks
+// while allies finish MePhone4 did not beat him: One's "the bolt must still be standing" rule), solo or not.
+function cobsRecordKill(boss){
+  if(!PROFILE || !boss || !Array.isArray(fighters)) return false;
+  const you = fighters.find(f=>f.you);
+  if(!you || you.dead || !you.name) return false;
+  const bk = (PROFILE.bossKills && typeof PROFILE.bossKills==='object') ? PROFILE.bossKills : (PROFILE.bossKills = {});
+  const l = Array.isArray(bk[boss]) ? bk[boss] : (bk[boss] = []);
+  if(l.indexOf(you.name) >= 0) return false;
+  l.push(you.name);
+  return true;
+}
+function cobsKilled(fighter, boss){ const bk = PROFILE && PROFILE.bossKills; return !!(bk && Array.isArray(bk[boss]) && bk[boss].indexOf(fighter) >= 0); }
+function cobsPairsDone(){ return COBS_PAIRS.every(([f, b])=>cobsKilled(f, b)); }
+function cobsPairsStepDone(){ return cobsStep(2) && cobsPairsDone(); }   // the code unlocked the step; the pairs complete it
+
+// ---- STEP 3: RUNNING! ----
+// The race mode is another lane's: startRunningRace({ onEnd(won) }), the Red Line lane run as Knife (cobs-decisions.md: "a
+// continuously moving line and obstacles you must go through", Marshmallow slung over the final gap with the modified hook,
+// then Knife crosses). The chain's step is the Run button in the Vault, under his third whisper, for as long as the race is
+// open and the mode exists in this build (cobsRaceAvailable). HOOK FOR THE MERGE: nothing but that function's name is assumed.
+function cobsRaceOpen(){ return cobsChainLive() && cobsStep(3) && !cobsQ().race; }
+function cobsRaceAvailable(){ return cobsRaceOpen() && typeof startRunningRace === 'function'; }
+function cobsStartRace(){
+  if(!cobsRaceAvailable()) return false;
+  return startRunningRace({ onEnd:cobsRaceEnded }) !== false;
+}
+// Its onEnd: the step completes when the race is WON as Knife. The race runs Knife by its own rule; should the runner in your
+// hands be anyone else, it is just a race.
+function cobsRaceEnded(won){
+  if(!won || !PROFILE) return false;
+  const you = Array.isArray(fighters) ? fighters.find(f=>f.you) : null;
+  if(you && you.name && you.name !== COBS_STORY_FIGHTER) return false;
+  return cobsRaceWon();
+}
+// The race lane may call this from its own entry too: a race won as Knife counts whenever it was run, like the pairs.
+function cobsRaceWon(){ if(!PROFILE) return false; const q = cobsQ(); if(q.race) return false; q.race = true; saveProfile(); return true; }
+
+// ---- STEP 4: three World Cups, in order, without a loss ----
+function cobsCupsDone(){ return cobsQ().cups.length === COBS_CUP_ORDER.length; }
+// From awardWorldCup, so only a real win in Normal mode with your own side gets here. The winner is the fighter leading your
+// side -- your pick (what awardWorldCup and One's hook already read). The next in the order extends the run; anyone else
+// empties it ("or you have to do it all again"), except Knife, who starts a fresh run. A finished run is never touched again.
+function cobsCupWon(){
+  if(!PROFILE || cobsCupsDone()) return false;
+  const q = cobsQ();
+  const lead = TOURNEY && TOURNEY.myTeam && TOURNEY.myTeam.members && TOURNEY.myTeam.members[0], name = lead ? lead.name : null;
+  if(name === COBS_CUP_ORDER[q.cups.length]) q.cups.push(name);
+  else q.cups = name === COBS_CUP_ORDER[0] ? [name] : [];
+  saveProfile();
+  return true;
+}
+// "no losing": from the two places a Normal-mode cup is decided against your side (out in the group stage, beaten in the
+// knockout). A cup left unfinished is not a loss; only a decided one empties the run.
+function cobsCupLost(){
+  if(!PROFILE || !TOURNEY || TOURNEY.mode!=="normal" || !TOURNEY.myTeam) return false;
+  const q = cobsQ();
+  if(cobsCupsDone() || !q.cups.length) return false;
+  q.cups = []; saveProfile();
+  return true;
+}
+
+// ---- THE DOOR ----
+// THE FUTURE IS SO YESTERDAY is accepted only when the boss step (its code and the pairs), the race (its code and the win) and
+// the three cups are all done.
+function cobsDoorReady(){ return cobsChainLive() && cobsStep(2) && cobsStep(3) && cobsPairsDone() && cobsQ().race && cobsCupsDone(); }
+// The Vault's side of the chain, from vaultSubmit once the Vault's own map has missed `key`. Returns the verdict, or null for
+// "nothing of his": the Vault then answers as it always has. Before the chain opens every one of his codes but the first is
+// null too, so nothing on the screen betrays them; from C0B5 on, a wrong code -- or the door before its time -- is "Tick, tock."
+function cobsVaultSubmit(key){
+  const c = COBS_CODES.get(key);
+  if(!c) return cobsChainLive() ? { kind:'wrong', reply:COBS_VAULT.wrong } : null;
+  if(!PROFILE) return { kind:'wait', reply:'The Vault is still opening. Press Enter again in a moment.' };   // like the Vault's own codes: never recorded nowhere
+  const q = cobsQ(), st = vaultState();
+  if(vaultFound(c.code)) return { kind:'again', step:c.step, text:c.text, cobs:true, reply:COBS_VAULT.again + c.step + '.' };
+  if(c.step===1){ if(!cobsGateOpen()) return null; if(q.stage < COBS_STAGE.LIVE) q.stage = COBS_STAGE.LIVE; }
+  else if(!cobsChainLive()) return null;
+  else if(c.step===4){ if(!cobsDoorReady()) return { kind:'wrong', reply:COBS_VAULT.wrong }; if(q.stage < COBS_STAGE.DOOR) q.stage = COBS_STAGE.DOOR; }
+  st.found.push(c.code);
+  saveProfile();
+  return { kind:'hint', step:c.step, text:c.text, cobs:true, reply:COBS_VAULT.found + c.step + '.' };
+}
+
+// ---- THE FIGHT, AND STEVE COBS FOR GOOD ----
+// His card, in the Daily card's place while he waits (stage 2), exactly as One's takes it -- hers first when both are pending,
+// since her chain came first ("alongside One's"). This is the first place his name appears: "like One's 'ONE IS WAITING',
+// never naming him before the card". True when it drew it.
+function cobsTitleCard(el){
+  if(!el || cobsQ().stage !== COBS_STAGE.DOOR) return false;
+  el.style.display = 'block'; el.innerHTML = '';
+  const title = document.createElement('div'); title.className = 'daily-title'; title.textContent = '🌽 STEVE COBS IS WAITING';
+  const line = document.createElement('div'); line.className = 'daily-line'; line.textContent = COBS_STORY_FIGHTER + '  vs  ' + COBS_BOSS.name + ' · ' + COBS_BOSS.hp + ' HP';
+  const b = document.createElement('button'); b.className = 'btn alt sm'; b.id = 'cobsEntry';
+  b.style.background = COBS_BOSS.color; b.style.color = '#1c1c1c'; b.textContent = 'Face Cobs ▶'; b.onclick = ()=>{ cobsStoryFight(); };
+  el.appendChild(title); el.appendChild(line); el.appendChild(b);
+  return true;
+}
+// The story fight is Knife alone ("you can only fight him as knife"); a loss goes to his result screen, whose Rematch fights
+// him again straight away ("retry directly"), and his card stays on the title until he is beaten. Once beaten, the select.
+function cobsStoryFight(){
+  const s = cobsQ().stage;
+  if(s < COBS_STAGE.DOOR) return false;
+  if(s >= COBS_STAGE.FREE) return cobsOpenSelect();
+  clearUnlockNote();
+  return startCobsFight([COBS_STORY_FIGHTER], { story:true, onEnd:cobsFightEnded });
+}
+// "Anyone" after the win, like One: the select screen on Boss Rush with him picked, any fighter and any allies.
+function cobsOpenSelect(){
+  if(!cobsBeaten()) return false;
+  SETTINGS.mode = 'boss'; SETTINGS.bossPick = 'cobs';
+  go('select');
+  return true;
+}
+function cobsWanted(){ return SETTINGS.mode==='boss' && SETTINGS.bossPick==='cobs' && cobsBeaten() && !inNetSession() && !TESTMODE.active && !CUSTOM_LEVEL; }
+// The pick the select screen's Boss row shows as chosen: a secret boss only once it is fightable, else the gauntlet.
+function bossPickKey(){ const p = SETTINGS.bossPick; return ((p==='one' && oneUnlocked()) || (p==='cobs' && cobsBeaten())) ? p : 'rush'; }
+// startCobsFight's onEnd, for the story fight and every fight after. Returns false: his own result screen always shows.
+function cobsFightEnded(won, result){
+  if(!won){ clearUnlockNote(); return false; }
+  const first = awardCobsDefeated(result ? result.secs : 0), q = cobsQ();
+  const n = document.getElementById('unlockNote');
+  if(n){
+    n.textContent = first
+      ? "★ STEVE COBS UNLOCKED! Fight him any time, with any fighter: Boss Rush ▸ 🌽 Steve Cobs."
+      : "★ Steve Cobs beaten " + q.wins + " time" + (q.wins===1 ? "" : "s") + " · best " + oneMmss(q.bestSecs);
+    n.style.display = 'block';
+  }
+  return false;
+}
+// The win: stage 3 and the prize flag, for good. True the first time.
+function awardCobsDefeated(secs){
+  if(!PROFILE) return false;
+  const q = cobsQ();
+  if(q.stage < COBS_STAGE.DOOR) return false;
+  const first = q.stage < COBS_STAGE.FREE;
+  q.stage = COBS_STAGE.FREE; q.beaten = true; q.wins++;
+  secs = secs|0; if(secs > 0 && (!q.bestSecs || secs < q.bestSecs)) q.bestSecs = secs;
+  saveProfile();
+  return first;
+}
+
 async function recordMatch(winTeam){
   try{
     if(!BStore.available()) return;
@@ -16294,7 +16604,8 @@ async function refreshDailyCard(){
   const el = document.getElementById('dailyCard');
   if(!el) return;
   if(oneTitleCard(el)) return;   // One is waiting: her card has this place until she is beaten
-  if(el.querySelector('#oneEntry')){ el.innerHTML = ''; el.style.display = 'none'; }   // ...and once she is, it goes at once
+  if(cobsTitleCard(el)) return;  // ...then Steve Cobs's, in the same place ("alongside One's": hers first, her chain came first)
+  if(el.querySelector('#oneEntry, #cobsEntry')){ el.innerHTML = ''; el.style.display = 'none'; }   // ...and once beaten, it goes at once
   const m = oneDailyMatchup(dailyMatchup(dailySeed()));   // on Lightning while One's bans are on
   if(!m){ el.style.display='none'; return; }
   const done = await dailyResult();
@@ -16303,6 +16614,7 @@ async function refreshDailyCard(){
   // whole worker down -- the balance harness could not finish a run on this build until it was guarded.
   if(typeof document === 'undefined' || !document) return;
   if(oneTitleCard(el)) return;   // ...and the profile may have loaded while this waited
+  if(cobsTitleCard(el)) return;
   el.style.display = 'block';
   el.innerHTML = '';
   const title = document.createElement('div');
@@ -24336,9 +24648,11 @@ function vaultFound(code){ return vaultState().found.indexOf(code)>=0; }
 function vaultSubmit(raw){
   const key = vaultNorm(raw);
   // Only a blank box is "empty". Something typed that holds no letter or digit ("!!!", an emoji) is a guess, and wrong.
-  if(!key) return String(raw==null ? '' : raw).trim() ? { kind:'wrong', reply:VAULT.wrong } : { kind:'empty', reply:'Type a code, then press Enter.' };
+  if(!key) return String(raw==null ? '' : raw).trim() ? { kind:'wrong', reply:cobsChainLive() ? COBS_VAULT.wrong : VAULT.wrong } : { kind:'empty', reply:'Type a code, then press Enter.' };
   const v = VAULT_CODES.get(key);
-  if(!v) return { kind:'wrong', reply:VAULT.wrong };
+  // Not one of the Vault's own: the second secret's turn (cobsVaultSubmit) -- his codes are steps of his chain, a wrong code
+  // while it is live is "Tick, tock.", and null means nothing of his, wrong as ever.
+  if(!v) return cobsVaultSubmit(key) || { kind:'wrong', reply:VAULT.wrong };
   // A right code in the moment before the save has loaded would be recorded nowhere, and "already yours" would be a
   // lie, so it waits: the box keeps it and Enter tries again.
   if(!PROFILE) return { kind:'wait', reply:'The Vault is still opening. Press Enter again in a moment.' };
@@ -24416,12 +24730,32 @@ function buildVault(){
       row.appendChild(n); row.appendChild(t); hw.appendChild(row);
     }
   }
+  // The second secret's section (COBS_VAULT), the same way: nothing until one of his codes is in, then his heading and the
+  // steps found, in order -- and, while RUNNING! is open and the race exists in this build, the one button that starts it.
+  const got2 = COBS_VAULT.steps.filter(h=>vaultFound(h.code)).sort((a,b)=>a.step-b.step);
+  const head2 = document.getElementById('vaultWireHead');
+  if(head2){ head2.textContent = got2.length ? COBS_VAULT.heading : ''; head2.hidden = !got2.length; }
+  const ww = document.getElementById('vaultWire');
+  if(ww){
+    ww.innerHTML=''; ww.hidden = !got2.length;
+    for(const h of got2){
+      const row = document.createElement('div'); row.className = 'vhint open';
+      const n = document.createElement('div'); n.className='vstep'; n.textContent = String(h.step);
+      const t = document.createElement('div'); t.className='vtext'; t.textContent = h.text;
+      row.appendChild(n); row.appendChild(t); ww.appendChild(row);
+    }
+    if(cobsRaceAvailable()){
+      const b = document.createElement('button'); b.className = 'btn alt sm'; b.id = 'cobsRunBtn'; b.textContent = 'Run ▶';
+      b.onclick = ()=>{ cobsStartRace(); };
+      ww.appendChild(b);
+    }
+  }
   // "just show that you havent seen all the codes to pique their curiosity": one line, with no number and no kind of code,
-  // for as long as ANY code -- fighter or clue -- is still unfound. It goes once the last is in. Only today's codes are asked
-  // about, so a save that still lists Pickle's or Microphone's old code changes nothing.
+  // for as long as ANY code -- fighter, clue, or one of the second secret's four -- is still unfound. It goes once the last is
+  // in. Only today's codes are asked about, so a save that still lists Pickle's or Microphone's old code changes nothing.
   const miss = document.getElementById('vaultMissing');
   if(miss){
-    const left = VAULT.fighters.concat(VAULT.hints).some(v=>!vaultFound(v.code));
+    const left = VAULT.fighters.concat(VAULT.hints, COBS_VAULT.steps).some(v=>!vaultFound(v.code));
     miss.textContent = left ? VAULT.missing : ''; miss.hidden = !left;
   }
 }
