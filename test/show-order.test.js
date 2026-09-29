@@ -10,9 +10,14 @@ import { loadMonolith } from './helpers/load-monolith.js';
 describe('the fighters are shown in the order they appear in the show', () => {
   it('SHOW_ORDER names every playable fighter exactly once', () => {
     const { window: w } = loadMonolith();
-    const r = w.eval('({ order: SHOW_ORDER, play: ROSTER.filter(function(x){ return x.play; }).map(function(x){ return x.name; }) })');
+    const r = w.eval('({ order: SHOW_ORDER, prize: PRIZE_NAMES.slice(), play: ROSTER.filter(function(x){ return x.play; }).map(function(x){ return x.name; }) })');
     expect(r.order.length).toBe(new Set(r.order).size);
-    expect([...r.order].sort()).toEqual([...r.play].sort());
+    // Steve Cobs's prize ("3, but only after you beat cobs."): SHOW_ORDER lists the three season winners (display only) and
+    // ROSTER gains them the moment he is beaten, so with the gate shut the order is everyone else, and open it is everyone.
+    expect(r.prize).toEqual(['OJ', 'Suitcase', 'Cabby']);
+    expect(r.order.filter((n) => !r.prize.includes(n)).sort()).toEqual([...r.play].sort());
+    const open = w.eval('PROFILE = PROFILE || {}; PROFILE.cobs = { stage:3, beaten:true }; syncPrizeRoster(); ROSTER.filter(function(x){ return x.play; }).map(function(x){ return x.name; })');
+    expect([...r.order].sort()).toEqual([...open].sort());
   });
 
   it('opens on the first scene of BFDI 1 and closes on the newest debuts', () => {
