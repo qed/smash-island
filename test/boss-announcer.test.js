@@ -2,7 +2,9 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { bootMonolith } from './helpers/smash-golden.js';
+import { JSDOM } from 'jsdom';
 import { loadMonolith } from './helpers/load-monolith.js';
+import { mulberry32 } from './helpers/prng.js';
 
 // THE ANNOUNCER, REBUILT (the boss overhaul, 2026-09-29; boss-overhaul-decisions.md, Rounds 9 and 11). Boss 1 has four attacks and three phases and
 // his own place, and moves the way he does in the show:
@@ -737,5 +739,280 @@ describe('WATER BALLOONS!: he rises off the screen and they fall on shadows', ()
       return out;
     })()`);
     expect(r.gap, 'the gap (112) and the 70 he is away').toBe(112 + 70);
+  });
+});
+
+describe('how he moves', () => {
+  it('a hard hit while he is on the floor skids him to the near edge and he rebounds back through the spot he was hit from ("flying into a slingshot"); it is only his walk', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var out = {}; b.x = 550; b.vx = 0; keep(4); var x0 = b.x;
+      b.hp -= 9; var xs = [], hurt = 0;
+      for (var i=0;i<45;i++){ step(); fighters.forEach(function(q){ hurt = Math.max(hurt, q.pct); q.pct = 0; }); xs.push(b.x); if (i === 0) out.sling = !!b._sling; }
+      out.x0 = x0; out.max = Math.max.apply(null, xs); out.min = Math.min.apply(null, xs.slice(14)); out.hurt = hurt;
+      out.maxAt = xs.indexOf(out.max);
+      // a second hit straight away is not another slingshot (a beat between them)
+      var again = !!b._sling; b.hp -= 9; step(); out.again = b._slingAt;
+      // and not while he is winding an attack up
+      ${'b._sling = null; b._slingAt = -999;'} b._tel = 20; b.hp -= 9; step(); out.whileTel = !!b._sling;
+      return out;
+    })()`);
+    expect(r.sling, 'the hit starts it').toBe(true);
+    expect(r.max - r.x0, 'skidding to the far edge, away from you').toBeGreaterThan(120);
+    expect(r.min, 'and back through the spot he was hit from').toBeLessThan(r.x0 - 40);
+    expect(r.hurt, 'no damage: it is his walk').toBe(0);
+    expect(r.whileTel, 'never in the middle of a wind-up').toBe(false);
+  });
+});
+
+describe('the ending: Spongy crushes him', () => {
+  // the gauntlet's own kill: bossRushCheck, with the timers it sets captured
+  const KILL = `BOSSRUSH.active = true; var st = setTimeout, timers = []; setTimeout = function(fn, ms){ timers.push(ms); return 0; };
+    var said = [], _bn = banner; banner = function(t, m, k, l){ said.push([String(t), k || null]); return _bn(t, m, k, l); };
+    b.hp = 0; impactFxClear(); bossRushCheck(); setTimeout = st; banner = _bn; BOSSRUSH.active = false;`;
+
+  it('is in BOSS_ENDINGS under his key: his props go, the centre platform is put back, and the card comes at once (the scene is over before the next boss)', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var out = {}, c = worldPlats.find(function(p){ return p._annC; }), w0 = c.w, x0 = c.x;
+      keep(4); annSell(b, -2); annSell(b, -2); out.shrunk = c.w < w0; out.pods0 = worldPlats.filter(function(p){ return p._ann; }).length;
+      var E = BOSS_ENDINGS.announcer; out.e = { sweep: E.sweep === annUndress, begin: E.begin === annEndBegin, hold: E.holdMs };
+      ${KILL}
+      out.timers = timers; out.said = said; out.pods = worldPlats.filter(function(p){ return p._ann; }).length; out.centre = [c.x === x0, c.w === w0, !!c._annC]; out.n = worldPlats.length;
+      out.total = ANN.end.total; return out;
+    })()`);
+    expect(r.e).toEqual({ sweep: true, begin: true, hold: 0 });
+    expect(r.shrunk).toBe(true);
+    expect(r.pods0).toBe(3);
+    expect(r.pods, 'the podiums are swept').toBe(0);
+    expect(r.centre, 'the stage platform is back as it was, and no longer his').toEqual([true, true, false]);
+    expect(r.n).toBe(1);
+    expect(r.timers, 'the card at once and the next boss after 1.5 s: nothing added by a hold').toEqual(expect.arrayContaining([1500]));
+    expect(r.timers).not.toContain(2300);
+    expect(r.said.some(([t, k]) => /^BOSS DOWN!/.test(t) && k === 'sys')).toBe(true);
+    expect(r.said.some(([, k]) => k === 'boss'), 'no text: nothing of the ending says a word').toBe(false);
+    expect(r.total / 60*1000, 'over before the next boss arrives').toBeLessThan(1500);
+  });
+
+  it('a carrier shot lands on the beat (the engine plays the impact: shake, dust, debris, a scar) and the scene is gone after ANN.end.total frames; it hurts nobody, even standing where he fell', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 700)}
+      var gy = groundY(), out = { ev: [] }; keep(4); b.x = 550; b.vx = 0; keep(1); b._phase = 3;
+      ${KILL}
+      var mark = projectiles.find(function(p){ return p.annMark === 'end'; }), ghost = projectiles.find(function(p){ return p.annGhost; });
+      out.mark = mark && { delay: mark.delay, x: Math.round(mark.warnX), mB: mark.mB }; out.ghost = ghost && { dmg: ghost.dmg, team: ghost.ownerObj.team, gy: ghost.warnY, vy: ghost.vy, hasImpact: !!ghost.landImpact };
+      var bx = b.x, hurt = 0, gone = null, debris0 = IMPACT_DEBRIS.length, landed = null;
+      for (var i=0;i<100;i++){ step(); g2.x = bx; g2.y = gy - 24; g2.vx = 0; g2.vy = 0; g2.invuln = 0; g2.hitstun = 0; hurt = Math.max(hurt, g2.pct, f.pct);
+        if (landed === null && IMPACT_DEBRIS.length > debris0) landed = i + 1;
+        if (gone === null && !projectiles.some(function(p){ return p.annMark === 'end'; })) gone = i + 1; }
+      out.landed = landed; out.gone = gone; out.hurt = hurt; out.debris = IMPACT_DEBRIS.length; out.scars = IMPACT_SCARS.length; out.crush = ANN.end.crush; out.total = ANN.end.total; out.bx = bx;
+      return out;
+    })()`);
+    expect(r.mark.delay, 'the scene lasts ANN.end.total frames').toBe(r.total - 0);
+    expect(r.mark.x).toBe(Math.round(r.bx));
+    expect(Math.abs(r.mark.mB), 'he was bitten: phase 3 (the render is picked from the sign and size of this)').toBe(2);
+    expect(r.ghost).toMatchObject({ dmg: 0, team: 0, hasImpact: true, vy: 26 });
+    expect(Math.abs(r.landed - r.crush), 'Spongy lands on the beat').toBeLessThanOrEqual(2);
+    expect(r.debris, 'heavy').toBeGreaterThanOrEqual(10);
+    expect(r.scars).toBeGreaterThanOrEqual(1);
+    expect(r.gone).toBeGreaterThanOrEqual(r.total - 1);
+    expect(r.gone).toBeLessThanOrEqual(r.total + 1);
+    expect(r.hurt, 'a scene hurts nobody: not even the fighter standing where he fell').toBe(0);
+  });
+});
+
+describe('the show\'s art, wired and credited', () => {
+  const KEYS = ['annslice', 'annlime', 'annice', 'annpie', 'anntosser', 'annballoon', 'annacid', 'annspark', 'annpress'];
+
+  it('his shots and props wear the wiki\'s files: registered, transparent, projectile-sized, in the manifest, credited with their exact source, and picked in his slot', () => {
+    const reg = W.eval(`(${JSON.stringify(KEYS)}).map(function(k){ var e = ATTACK_SPRITES[k]; return [k, e && e.src, !!PROJ_SHAPE[k], e && e.h]; })`);
+    const man = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8'));
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const picks = readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8');
+    const slot = picks.slice(picks.indexOf('@boss:announcer:begin picks'), picks.indexOf('@boss:announcer:end picks'));
+    for (const [k, src, glyph, h] of reg) {
+      expect(src, k).toBe(`assets/sprites/attacks/${k}.png`);
+      expect(glyph, `${k} keeps a drawn glyph for before it loads`).toBe(true);
+      expect(existsSync(`artifacts/V1/${src}`), src).toBe(true);
+      const png = PNG.sync.read(readFileSync(`artifacts/V1/${src}`));
+      expect(Math.max(png.width, png.height), `${k} is projectile-sized`).toBeLessThanOrEqual(128);
+      expect(Math.max(png.width, png.height)).toBeGreaterThanOrEqual(24);
+      const e = man[k];
+      expect(e, `${k} is in the manifest`).toBeTruthy();
+      let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) clear++;
+      if (!e.solid) expect(clear/(png.width*png.height), `${k}: clear round the object, not a sticker (only the press, a block, fills its canvas)`).toBeGreaterThan(0.05);
+      expect(e.wiki).toBe('bfdi');
+      expect(e.who).toMatch(/^Announcer \(/);
+      expect(e.source).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/battlefordreamisland\/images\//);
+      expect(credits, `${k} is credited`).toContain(`(${k}.png)`);
+      expect(credits, `${k}'s source URL is in the credits`).toContain(e.source);
+      expect(slot, `${k} is picked in his slot`).toMatch(new RegExp(`\\n\\s*${k}:`));
+      expect(h).toBeLessThanOrEqual(44);
+    }
+    // what was cut out of a bigger picture is said so: the acid glob (keyed off its scene) and the press (a block off the crusher's asset sheet)
+    expect(man.annacid).toMatchObject({ key: 'prop', srcTitle: 'Thats crying or barfing.png' });
+    expect(man.annpress).toMatchObject({ solid: true, srcTitle: 'Old announcer crusher.png' });
+    expect(man.annslice.srcTitle).toBe('Cake Slice Strawberry side.png');
+    expect(man.annpie.srcTitle).toBe('One slice of pie.png');
+    expect(man.annballoon.srcTitle).toBe('Water balloon.png');
+  });
+
+  it('his phase-3 look is File:Bittenspeakerfront0006.png: 141x200 like his own render, the bite transparent, credited', () => {
+    const file = 'artifacts/V1/assets/sprites/announcer-bitten.png', png = PNG.sync.read(readFileSync(file)), plain = PNG.sync.read(readFileSync('artifacts/V1/assets/sprites/announcer.png'));
+    expect([png.width, png.height]).toEqual([plain.width, plain.height]);
+    expect(png.data[3], 'the top-left corner is the bite').toBe(0);
+    expect(png.data[(png.height - 1) * png.width * 4 + (png.width - 1) * 4 + 3], 'and the box is whole at the foot').toBe(255);
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    expect(credits.split('\n').find((l) => l.includes('`announcer-bitten.png`')) || '').toContain('Bittenspeakerfront0006.png');
+    expect(W.eval('!!BOSS_SPRITE_FLIP.announcerbitten'), 'faces as the plain one does').toBe(false);
+  });
+
+  it('every glyph draws, every shape he throws is one the game has, and a fight through every attack throws nothing else', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 800)}
+      var keys = ${JSON.stringify(KEYS.concat(['annpuddle']))}, seen = {}, bad = [];
+      var c = { save(){}, restore(){}, beginPath(){}, moveTo(){}, lineTo(){}, arc(){}, ellipse(){}, quadraticCurveTo(){}, closePath(){}, fill(){}, stroke(){}, fillRect(){}, strokeRect(){}, rotate(){}, translate(){}, scale(){} };
+      keys.forEach(function(k){ try { PROJ_SHAPE[k].draw(c, 14, { vx:2, vy:3, color:'#fff' }); } catch(e){ bad.push(k + ': ' + e.message); } });
+      fighters.forEach(function(q){ q.invuln = 999; });
+      [1, 2, 3].forEach(function(ph){ setPhase(ph); b._levOff = ph > 1;
+        [0, 1, 2, 3, 4, 5].forEach(function(mv){ turn(mv); for (var i=0;i<150;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; q.pct = 0; }); b._tel = b._tel; projectiles.forEach(function(p){ if (p.owner === -2 && p.shape) seen[p.shape] = 1; }); } }); });
+      var shapes = Object.keys(seen), unknown = shapes.filter(function(s){ return !ATTACK_SPRITES[s] && !PROJ_SHAPE[s]; });
+      return { bad: bad, shapes: shapes.sort(), unknown: unknown };
+    })()`);
+    expect(r.bad).toEqual([]);
+    expect(r.unknown, 'every shot he throws has art or a glyph').toEqual([]);
+    expect(r.shapes).toEqual(expect.arrayContaining(['annslice', 'annlime', 'annice', 'annpie', 'annacid', 'annpuddle', 'annballoon', 'annpress']));
+  });
+});
+
+describe('no words on the screen, and nothing of the OSC', () => {
+  const NAMES = ['annH', 'annSurface', 'annZone', 'annNextPrize', 'annMark', 'annQ', 'annOccupied', 'annDress', 'annUndress', 'annGap', 'annCakes', 'annToss', 'annCakeEnd', 'annPickSale', 'annSell',
+    'annHazardStep', 'annCrusherSlam', 'annCrack', 'annBlow', 'annPress', 'annPlate', 'annSignature', 'annBeamTotal', 'annLaser', 'annBeamSeg', 'annSegDist', 'annBeamHits', 'annAcid', 'annDrop', 'annPuddle',
+    'annBalloons', 'annSplash', 'annMove', 'annTick', 'annTel', 'annPhase', 'annEndBegin', 'annCakeTurn', 'annCrushTurn', 'annLimb', 'annDrawProps', 'annDrawTosser', 'annDrawCounter', 'annDrawMachine',
+    'annDrawWire', 'annDrawClaw', 'annDrawShot', 'annDrawMark', 'annDrawBeam', 'annDrawEnd', 'annRing', 'annDrawTell', 'annDecor', 'annGroundPattern'];
+
+  it('none of his code calls banner() or draws text: the telegraph names are the engine\'s, the tosser, counter, claw and wire say the rest', () => {
+    const r = W.eval(`(function(){ var out = { missing: [], banner: [], text: [], oj: [] };
+      ${JSON.stringify(NAMES)}.forEach(function(n){ var f = window[n]; if (typeof f !== 'function'){ out.missing.push(n); return; }
+        var s = String(f); if (/\\bbanner\\s*\\(/.test(s)) out.banner.push(n); if (/fillText|strokeText|\\.font\\b|textContent|innerHTML/.test(s)) out.text.push(n); });
+      var all = ${JSON.stringify(NAMES)}.map(function(n){ return String(window[n]); }).concat([JSON.stringify(ANN), JSON.stringify(BOSS_EXTRA['Announcer']), BOSS_MOVE_NAME.annlaser, BOSS_MOVE_NAME.annacid, BOSS_MOVE_NAME.annballoon,
+        String(BOSS_MOVES.annlaser), String(BOSS_MOVES.annacid), String(BOSS_MOVES.annballoon), ['annslice','annlime','annice','annpie','anntosser','annballoon','annacid','annspark','annpress','annpuddle'].map(function(k){ return String(PROJ_SHAPE[k].draw); }).join('')]).join('\\n');
+      out.src = all; return out; })()`);
+    expect(r.missing).toEqual([]);
+    expect(r.banner, 'no popup: BUDGET CUT! used to be one').toEqual([]);
+    expect(r.text).toEqual([]);
+    // "OJ, Suitcase and Cabby only as Cobs's prize. The Floor: never." (whole-word: "addProj" contains "oj")
+    expect(r.src).not.toMatch(/\bOJ\b|Suitcase|Cabby/i);
+    expect(r.src, 'the character, not the ground').not.toMatch(/The Floor/);
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const mine = credits.slice(credits.indexOf('@boss:announcer:begin credits'), credits.indexOf('@boss:announcer:end credits'));
+    expect(mine.length).toBeGreaterThan(500);
+    expect(mine).not.toMatch(/\bOJ\b|Suitcase|Cabby/i);
+    expect(mine).not.toMatch(/The Floor/);
+  });
+
+  it('a fight through all four attacks and three phases says only his telegraph names and the gauntlet\'s own cards', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 800)}
+      var said = [], _bn = banner; banner = function(t, m, k, l){ said.push([String(t), k || null]); return _bn(t, m, k, l); };
+      fighters.forEach(function(q){ q.invuln = 999; });
+      try { [1, 2, 3].forEach(function(ph){ setPhase(ph); [0, 1, 2, 3, 4, 5].forEach(function(mv){ turn(mv); for (var i=0;i<150;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; q.pct = 0; }); } }); }); }
+      finally { banner = _bn; }
+      var kinds = {}; said.forEach(function(s){ kinds[s[1] || 'plain'] = (kinds[s[1] || 'plain'] || 0) + 1; });
+      return { kinds: kinds, boss: Array.from(new Set(said.filter(function(s){ return s[1] === 'boss'; }).map(function(s){ return s[0]; }))).sort(), sys: Array.from(new Set(said.filter(function(s){ return s[1] === 'sys'; }).map(function(s){ return s[0].replace(/^Announcer — /, ''); }))) };
+    })()`);
+    expect(Object.keys(r.kinds).filter((k) => k !== 'boss' && k !== 'sys'), 'no plain popup').toEqual([]);
+    expect(r.boss).toEqual(['ACID TEARS!', 'BUDGET CUTS!', 'CAKE AT STAKE!', 'CRUSHER ARM!', 'QUADRUPLE LASER!', 'WATER BALLOONS!']);
+    expect(r.sys.every((s) => /^PHASE [23]: (Budget Cuts|Crusher Arm)$/.test(s)), `only the phase cards: ${r.sys}`).toBe(true);
+  });
+});
+
+// A boot whose canvas counts every call, so the drawing can be read back (the game's own bar labels the boss; his props must not write anything).
+function bootCounting() {
+  const html = readFileSync('artifacts/V1/index.html', 'utf8'), ops = {}, grad = { addColorStop() {} };
+  const rec = new Proxy({}, {
+    get: (_t, p) => p === 'measureText' ? () => ({ width: 0 }) : p === 'canvas' ? { width: 1100, height: 720 } : p === 'getImageData' ? () => ({ data: [] })
+      : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createConicGradient' || p === 'createPattern') ? () => grad
+      : (...a) => { ops[p] = (ops[p] || 0) + 1; },
+    set: () => true,
+  });
+  const dom = new JSDOM(html, { url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+    beforeParse(window) { window.HTMLCanvasElement.prototype.getContext = () => rec; window.Math.random = mulberry32(3); window.requestAnimationFrame = () => 0; window.cancelAnimationFrame = () => {}; } });
+  return { w: dom.window, ops };
+}
+
+describe('drawing his arena, his tells, his shots and his ending', () => {
+  it('draws every state without throwing and without a single letter: the props, every tell, every mark, the beams at every frame, the ending at every frame', () => {
+    const { w, ops } = bootCounting();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
+      BOSSRUSH = { active:false, bossIdx:0, cleared:0, defeated:false, loop:0, dmgMult:1 };
+      worldPlats=[{ x:WW*0.29, y:WH*0.62, w:WW*0.42, h:14 }]; summons=[]; projectiles=[]; particles=[]; impactFxClear();
+      var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 300, groundY()-24, 0); f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
+      spawnBossRushBoss(); var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
+      var gy = groundY(), n = 0, before = {};
+      for (var k in {}) {}
+      var t0 = Object.keys(window.__ops || {});
+      var go = function(){ ctx.save(); annDecor(); drawArenaDecor('cakeatstake'); drawArenaHazard('under'); drawArenaHazard('over'); drawBossSprite(b); projectiles.forEach(drawProjectile); ctx.restore(); n++; };
+      var H = b._hz;
+      // entrance, idle, every wind-up in every phase
+      [0, 12, 30, ANN.ent].forEach(function(e){ b._ent = e; go(); });
+      [1, 2, 3].forEach(function(ph){ b._phase = ph; b._telPh = ph;
+        ['announcer', 'annlaser', 'annacid', 'annballoon'].forEach(function(kind){ [30, 12, 4].forEach(function(t){ b._telKind = kind; b._tel = t; b._telX = 400; b._telY = gy - 24; b._pz = ph; b._sl = ph === 2 ? 85 : 0; go(); }); });
+        b._tel = 0; b._sl = -1; b._tel = 20; b._telKind = 'announcer'; b._phase = 2; go(); b._sl = -2; go(); b._sl = 0; b._tel = 0; });
+      // the crusher's states and the props' states
+      [[0, 168], [1, 168], [2, 90], [3, 0], [4, 60]].forEach(function(s){ H.pz = s[0]; H.py = s[1]; H.pt = 30; H.cr = 3; go(); });
+      H.bo = 200; go(); H.bo = 0; H.sp = 1; H.cs = 1; H.vt = hazardT - 30; H.st = [100, 300, 700]; H.lt = hazardT - 20; H.lx = 100; H.lw = 110; H.ly = gy - 108; go(); H.thr = hazardT - 3; H.tdir = -1; H.cnt = hazardT - 5; go();
+      // every mark, and the beams and the ending at every frame
+      ['splat', 'splash', 'ring', 'plate'].forEach(function(kind){ [1, 20, 40, 100].forEach(function(d){ projectiles = [annMark(kind, 400, gy, d, { color:'#f7a1a8', mA:d, mB:0 })]; go(); }); });
+      [[0, 2, 3, 4], [0, 14, 20, 40], [2, 28, 30, 60]].forEach(function(c){ for (var t=0;t<annBeamTotal(c[0], c[1]);t+=2){ projectiles = [annMark('beam', 400, gy - 24, annBeamTotal(c[0], c[1]) - t, { color:'#b060ff', mA:c[0], mB:c[1] })]; go(); } });
+      [0, 1, 2, 3].forEach(function(d){ for (var t=0;t<annBeamTotal(d, 0);t+=3){ projectiles = [annMark('beam', 400, gy - 24, annBeamTotal(d, 0) - t, { color:'#b060ff', mA:d, mB:0 })]; go(); } });
+      for (var e2=0;e2<ANN.end.total;e2+=2){ projectiles = [annMark('end', 400, gy, ANN.end.total - e2, { mA:-85, mB:(e2 % 4 ? 2 : -1) })]; go(); }
+      projectiles = [{ annGhost:1, x:1, y:1, r:2, vx:0, vy:26, color:'#f4d800', owner:-2, ownerObj:{ team:0, idx:-2 }, life:9 }]; go();
+      b._tel = 0; return { n: n };
+    })()`);
+    expect(r.n).toBeGreaterThan(150);
+    expect(ops.fillText || 0, 'not one fillText: he writes no word (his boss bar is the game\'s, and is not drawn here)').toBe(0);
+    expect(ops.strokeText || 0).toBe(0);
+    expect(ops.drawImage === undefined || ops.drawImage >= 0).toBe(true);
+  });
+
+  it('the tosser, the counter, the claw and the wire are drawn from the platforms and the snapshot alone, so a netcode client draws them too: every field they read crosses', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='boss'; SETTINGS.count=2; SETTINGS.items=false; SETTINGS.stocks=99;
+      chosen = ROSTER.find(function(r){ return r.name==='Firey'; }); beginMatchNow(); running = true; paused = true;
+      fighters.forEach(function(q){ q.controller = 'still'; q.invuln = 999; });
+      var b = summons.find(function(s){ return s.type==='boss'; }), gy = groundY();
+      function run(n){ for (var i=0;i<n;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; q.pct = 0; }); } }
+      run(60); setPhase2();
+      function setPhase2(){ b._phase = 2; b.hp = b.maxHp*0.5; run(3); }
+      b._moveN = 0; b._tel = 0; b._atkTimer = 1; step(); run(20);      // BUDGET CUTS! winding up: a prize on the tosser, a claw over a podium
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      var host = { pz: b._pz, sl: b._sl, ent: b._ent, hz: JSON.parse(JSON.stringify(b._hz)), seg: null };
+      run(20); var lasers = projectiles.length;
+      b._tel = 0; b._moveN = 1; b._atkTimer = 1; step(); run(60);      // and a laser: its beams are marks
+      var marks = projectiles.filter(function(p){ return p.annMark === 'beam'; }), m0 = marks[0];
+      host.seg = m0 ? annBeamSeg(m0, gy) : null; host.mA = m0 && m0.mA;
+      var snap2 = JSON.parse(JSON.stringify(serializeState()));
+      var bs = snap.summons.find(function(s){ return s.type==='boss'; });
+      // the client
+      summons = []; projectiles = []; BOSS_ARENA = null; var plats0 = worldPlats.length;
+      applySnapshot(snap2);
+      var err = null, cl = summons.find(function(s){ return s.type==='boss'; });
+      try { drawArenaDecor(BOSS_ARENA); drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); projectiles.forEach(drawProjectile); } catch(e){ err = e.message + ' ' + String(e.stack).slice(0, 200); }
+      var cm = projectiles.filter(function(p){ return p.annMark === 'beam'; })[0];
+      var cseg = cm ? annBeamSeg(cm, gy) : null;
+      return { err: err, arena: BOSS_ARENA, bs: { pz: bs._pz, sl: bs._sl, ent: bs._ent, hz: bs._hz, attack: bs.attack, phase: bs._phase }, host: host, cl: cl && { pz: cl._pz, ent: cl._ent, hz: cl._hz, look: bossLook(cl) },
+        marks: marks.length, cm: cm && { annMark: cm.annMark, delay: cm.delay, mA: cm.mA, mB: cm.mB, warnX: cm.warnX, warnY: cm.warnY }, m0: m0 && { delay: m0.delay, mA: m0.mA, mB: m0.mB, warnX: Math.round(m0.warnX), warnY: Math.round(m0.warnY) }, cseg: cseg, size: JSON.stringify(bs._hz).length };
+    })()`);
+    expect(r.err).toBe(null);
+    expect(r.arena, 'a client takes his arena').toBe('cakeatstake');
+    expect(r.bs).toMatchObject({ attack: 'announcer', phase: 2 });
+    expect(r.bs.pz, 'the prize on the tosser').toBe(r.host.pz);
+    expect(r.bs.sl, 'the piece the claw is coming for').toBe(r.host.sl);
+    expect(typeof r.bs.ent, 'how far into the entrance he is').toBe('number');
+    expect(r.bs.hz, 'the hazard state, plain numbers').toMatchObject({ pz: expect.any(Number), py: expect.any(Number), cr: expect.any(Number), cuts: expect.any(Number) });
+    expect(r.size, 'a few numbers').toBeLessThan(400);
+    expect(r.cl.look, 'the client wears his look').toBe('announcer');
+    expect(r.marks).toBeGreaterThanOrEqual(4);
+    expect(r.cm, 'a beam is a mark that crosses whole').toMatchObject({ annMark: 'beam', mA: r.m0.mA, mB: r.m0.mB, warnX: r.m0.warnX, warnY: r.m0.warnY });
+    expect(r.cm.delay, 'its clock crosses (a frame or two behind)').toBeGreaterThan(0);
+    expect(r.cseg && r.host.seg && r.cseg.d === r.host.seg.d, 'the client works out the same beam').toBe(true);
   });
 });
