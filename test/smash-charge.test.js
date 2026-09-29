@@ -62,6 +62,10 @@ describe('the fixture holds at range and in time, too (O13)', () => {
     expect(off, 'the 140px row drifted').toEqual([]);
   });
 
+  // Match's hitFrame in the fixture is 46, not the 45 it was measured at: the owner's "add momentum to falling objects(they
+  // should move horizontaly while falling)" -- "everything. bosses, characters, whatever." -- "The way it was thrown"
+  // (2026-09-29) makes a rain smash's drop come down on a slant (FALL_DRIFT), and his spark reaches the dummy one frame later.
+  // His damage and knockback, both ranges, are unchanged; no other fighter's row moved.
   it('connects on the same frame, pays the same cooldown and the same self-damage', async () => {
     const w = await boot();
     const off = [];

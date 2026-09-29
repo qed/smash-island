@@ -334,11 +334,14 @@ describe('the second moves', () => {
   });
 
   it('A TOY IN EVERY BOX: the box nearest your spot drops a clone, then a box, then (phase 2) the toy too, in turn; phase 3 drops two', () => {
+    // Where a drop comes down is its shadow, warnX. It was also where it started, until the owner's "add momentum to falling
+    // objects(they should move horizontaly while falling)" -- "everything. bosses, characters, whatever." -- "The way it was
+    // thrown" (2026-09-29): a drop now starts back along its drift and lands on the shadow (FALL_DRIFT; boss-kit.test.js).
     const r = W.eval(`(function(){ var out = {}, top = WH*SPRINGY.boxY + 40;
       var run = function(ph, turns){ projectiles = []; var kinds = [], xs = [];
         var s = ${S('_telX:500')}; s._phase = ph; s._telPh = ph; s._boxX = 500;
         for (var t=0;t<turns;t++){ var before = projectiles.length; s._boxX = 500; BOSS_MOVES.boxdrop(s, null);
-          projectiles.slice(before).forEach(function(p){ kinds.push(p.shape); xs.push(p.x); }); }
+          projectiles.slice(before).forEach(function(p){ kinds.push(p.shape); xs.push(p.warnX); }); }
         return { kinds: kinds, xs: xs, fromTop: projectiles.every(function(p){ return p.y===top && p.grav && p.warn>0 && p.springy; }), ids: projectiles.map(function(p){ return p.bossAtk; }) }; };
       out[1] = run(1, 3); out[2] = run(2, 3); out[3] = run(3, 1);
       projectiles = []; var s2 = ${S('_telX:500')}; s2._phase = 2; s2._telPh = 2;
@@ -372,9 +375,10 @@ describe('the second moves', () => {
       var c = projectiles.find(function(p){ return p.shape==='springclone'; }); out.clone = { toward: Math.sign(c.vx), bounce: !!c.bounce, max: c.maxBounces };
       // the toy: lands, then lunges at the nearest fighter
       projectiles = []; b._telPh = 2; b._boxN = 1; b._boxX = 800; BOSS_MOVES.boxdrop(b, null);
-      var t = projectiles.find(function(p){ return p.shape==='springtoy'; }); out.toy0 = { vx: t.vx, max: t.maxBounces };
-      var lunged = null; for (var k=0;k<160 && t.life>0;k++){ step(); f.x = 300; f.vx = 0; if (lunged===null && t._lunged) lunged = { vx: t.vx, k: k }; }
-      out.lunged = lunged;
+      var t = projectiles.find(function(p){ return p.shape==='springtoy'; });
+      out.toy0 = { drifts: t.vx !== 0 && Math.sign(t.vx) === Math.sign(b.face || 1), max: t.maxBounces, shadow: t.warnX };
+      var lunged = null, landX = null; for (var k=0;k<160 && t.life>0;k++){ step(); f.x = 300; f.vx = 0; if (landX===null && (t.bounces||0) >= 1) landX = t.x; if (lunged===null && t._lunged) lunged = { vx: t.vx, k: k }; }
+      out.lunged = lunged; out.toyLand = landX;
       summons = []; projectiles = []; worldPlats = []; return out;
     })()`);
     expect(r.boxKind).toBe(true);
@@ -385,7 +389,11 @@ describe('the second moves', () => {
     expect(r.wall.y).toBe(W.eval('groundY()') - 64);
     expect(r.wallGone, 'four seconds later it is gone').toBe(true);
     expect(r.clone, 'the clone hops your way').toEqual({ toward: -1, bounce: true, max: 5 });
-    expect(r.toy0, 'the toy drops straight down').toEqual({ vx: 0, max: 2 });
+    // It dropped straight down until the owner's "add momentum to falling objects(they should move horizontaly while falling)"
+    // -- "everything. bosses, characters, whatever." -- "The way it was thrown" (2026-09-29): it falls on a slant the way he
+    // faces (FALL_DRIFT) and still comes down on its shadow.
+    expect(r.toy0, 'the toy drifts the way he faces as it drops').toEqual({ drifts: true, max: 2, shadow: 800 });
+    expect(Math.abs(r.toyLand - 800), 'and lands on its shadow').toBeLessThan(1);
     expect(r.lunged, 'and lunges at you once it has landed').not.toBe(null);
     expect(r.lunged.vx).toBe(-13);
   });

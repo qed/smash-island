@@ -364,11 +364,14 @@ describe("the car: I'LL BE BACK", () => {
 
 describe('the poisoned cookies', () => {
   it('drops five with shadows, kept off the walls, that settle as traps', () => {
+    // xs are where the cookies come down: their shadows (warnX). A cookie also started there until the owner's "add momentum
+    // to falling objects(they should move horizontaly while falling)" -- "everything. bosses, characters, whatever." -- "The
+    // way it was thrown" (2026-09-29): now it starts back along its drift and lands on its shadow (FALL_DRIFT; boss-kit.test.js).
     const r = W.eval(`(function(){ var out = {};
       [600, 0].forEach(function(tx){ projectiles = [];
         var s = ${S('_telX:tx')}; BOSS_MOVES.cookies(s, null);
         var c = projectiles.filter(function(p){ return p.owner===-2; });
-        out[tx] = { n: c.length, xs: c.map(function(p){ return p.x; }),
+        out[tx] = { n: c.length, xs: c.map(function(p){ return p.warnX; }),
           ok: c.every(function(p){ return p.shape==='cookie' && p.fxTag==='cookie' && p.fxN===240 && p.landsTrap && p._mine && p.volley && p.warn > 0; }),
           ids: c.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v)===i; }).length };
       });
