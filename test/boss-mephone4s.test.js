@@ -65,7 +65,7 @@ describe('MePhone4S joins the gauntlet', () => {
     expect(r).toEqual([
       ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'studio', false, 'announcer', 'rain+ring', 'announcer rain announcer ring', 36, 'Budget Cuts', 'Crusher Arm'],
       ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'studio', false, 'speaker', 'slam+rain', 'soundwave slam soundwave rain', 36, 'Double Speakers', 'Feedback Overload'],
-      ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'studio', false, 'speakerfirey', 'rain+slam', 'firewall rain firewall slam', 36, 'Flame Surge', 'RAGE MODE'],
+      ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'volcano', false, 'speakerfirey', 'furnace+youmust', 'firewall furnace firewall youmust', 44, 'Flame Surge', 'RAGE MODE'],   // the owner cut FIRE WALL! for THE TLC NEEDS TO BE FIXED! (boss-plan-early.md 5, Round 9; test/boss-firey-sb.test.js): his signature turns alternate ROCKET BOARD! and the TLC, his second moves are FURNACE! and YOU MUST!; the wind-up is 44 in phase 1
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug', 'seekers+rain', 'swarm seekers swarm rain', 36, 'Second Wave', 'Swarm Frenzy'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face', 'ring+rain', 'swallow ring swallow rain', 36, 'Ad Overload', 'Segment Split'],
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon', 'slam+rain', 'dragon slam dragon rain', 36, 'Strafing Runs', 'Grab & Carry'],
