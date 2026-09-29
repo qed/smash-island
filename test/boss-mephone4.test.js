@@ -47,7 +47,8 @@ describe('MePhone4 joins the gauntlet', () => {
       ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'studio', false, 'speaker'],
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'volcano', false, 'speakerfirey'],   // the volcano now, and four attacks of his own: the owner cut FIRE WALL! for THE TLC NEEDS TO BE FIXED! (boss-plan-early.md 5, Round 9; test/boss-firey-sb.test.js)
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug'],
-      ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face'],
+      // rebuilt (the boss overhaul, 2026-09-29): the warehouse is his arena ("yellow faces warehouse.") and he moves ("Only if canon moves"); test/boss-purple-face.test.js has the fight
+      ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face'],
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon'],
       // 255, was 240: under the Dragon's 250 before him, and measured easier than the Dragon (the review; see
       // test/boss-rush-order.test.js)
@@ -60,7 +61,7 @@ describe('MePhone4 joins the gauntlet', () => {
     ]);
     expect(r.extra).toEqual({
       'Announcer': ['annlaser', 'annacid', 'annballoon'], 'Puffball Speaker Box': ['slam', 'rain'], 'Firey Speaker Box': ['furnace', 'youmust'],
-      'The Bug Swarm': ['seekers', 'rain'], 'Purple Face': ['ring', 'rain'], 'Purple Dragon': ['slam', 'rain'],
+      'The Bug Swarm': ['seekers', 'rain'], 'Purple Face': ['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes'], 'Purple Dragon': ['slam', 'rain'],
       'MePhone4': ['melife', 'portal'],
       'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
       'Four': ['rain', 'seekers'],

@@ -1,0 +1,908 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { readFileSync, existsSync } from 'node:fs';
+import { JSDOM } from 'jsdom';
+import { PNG } from 'pngjs';
+import { bootMonolith } from './helpers/smash-golden.js';
+import { loadMonolith } from './helpers/load-monolith.js';
+import { mulberry32 } from './helpers/prng.js';
+
+// PURPLE FACE, Boss 5, REBUILT (the boss overhaul, 2026-09-29: boss-overhaul-decisions.md, Rounds 10-13). The owner's approved kit:
+//   AD BREAK!      the signature, redone: "the swallow becomes a lunge you can dodge" (it grabbed the nearest fighter from anywhere); the
+//                  stomach, its acid and its tongue stay as they were
+//   FREESTYLE RAP! "2 should be uninterruptable." -- the beat cannot be stopped, and three pulses roll across the floor every time
+//   TORTURE TIME!  a glass tank closes over your spot, one bug inside becomes hundreds, then the tank bursts
+//   THANK YOU FOR COMING!  he pops up beside you, grows a leg and kicks, and totems roll out
+//   TOTAL SLIP SHOES!      clown shoes on the marked fighter: their footing turns slippery for 3 s -- a status, no damage
+// His arena is Yellow Face's Warehouse ("yellow faces warehouse.": the owner turned the TV studio down), with the owner's rule "if it
+// makes sense for a hazard, reduce boss difficulty and add a hazard." (the World's Strongest Magnet drops the end shelves; his turns are
+// a shade slower). "Only if canon moves": he pops up beside you and he runs. "Harder, same damage". His stomach used to draw "TONGUE
+// n%" as words -- "and remember the thing abt no attack titles onscreen." -- and draws a wordless meter now.
+
+let W;
+beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+
+const ROW = { name: 'Purple Face', color: '#7a3a8a', hp: 235, big: 2.6, attack: 'swallow', arena: 'warehouse', stationary: false, sprite: 'face' };
+
+// A still Firey on the floor at `x`, Boss Rush with the gauntlet off, and Purple Face spawned the way the gauntlet spawns him, his attack
+// timer parked (unless `live`) and the warehouse's hazard parked too (unless `hz`), so a test sees only the thing it asks about.
+const STAGE = (x, live, hz) => `
+  SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
+  BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='Purple Face'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
+  worldPlats=platRectsSmall(); summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[]; impactFxClear();
+  var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), ${x}, groundY()-24, 0);
+  f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
+  spawnBossRushBoss();
+  var b = summons.find(function(s){ return s.type==='boss'; });
+  ${live ? '' : 'b._atkTimer = 1e9;'}
+  ${hz ? '' : 'b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };'}
+  step(); f.pct=0; f.invuln=0;
+`;
+// Start this boss's next wind-up as `kind` (the turns alternate: signature, extra 0, signature, extra 1, signature, extra 2, ...).
+const TURN = { swallow: 0, pfaceRap: 1, pfaceTorture: 3, pfaceThanks: 5, pfaceShoes: 7 };
+const BEGIN = (kind) => `b._moveN = ${TURN[kind]}; b._tel = 0; b._atkTimer = 1; step(); f.invuln = 0;`;
+// A bare boss for driving his functions directly.
+const S = (o = '') => `{ name:'Purple Face', attack:'swallow', x:550, y:groundY()-88.4, r:88.4, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0,
+  color:'#7a3a8a', face:-1, homeX:550, stationary:false, vx:0, vy:0 ${o ? ',' + o : ''} }`;
+
+describe('Purple Face is Boss 5, rebuilt', () => {
+  it('is still the fifth boss and the same HP, with the warehouse as his arena, no longer stationary, and his own four second moves', () => {
+    const r = W.eval(`(function(){
+      var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='Purple Face'; });
+      return { i: i, row: BOSS_ROSTER[i], n: BOSS_ROSTER.length, prev: BOSS_ROSTER[i-1].name, next: BOSS_ROSTER[i+1].name,
+               extra: BOSS_EXTRA['Purple Face'], names: BOSS_EXTRA['Purple Face'].map(function(k){ return BOSS_MOVE_NAME[k]; }),
+               fns: BOSS_EXTRA['Purple Face'].map(function(k){ return typeof BOSS_MOVES[k]; }),
+               rushOnly: BOSS_EXTRA['Purple Face'].every(function(k){ return BOSS_RUSH_ONLY.has(k); }),
+               tel: PFACE.tel, gaps: PFACE.gaps, p2: bossPhaseName({ attack:'swallow' }, 2), p3: bossPhaseName({ attack:'swallow' }, 3) };
+    })()`);
+    expect(r.row).toEqual(ROW);
+    expect(r.i, 'Boss 5').toBe(4);
+    expect([r.prev, r.next]).toEqual(['The Bug Swarm', 'Purple Dragon']);
+    expect(r.n, 'the gauntlet is still twelve long').toBe(12);
+    expect(r.extra).toEqual(['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes']);
+    expect(r.names).toEqual(['FREESTYLE RAP!', 'TORTURE TIME!', 'THANK YOU FOR COMING!', 'TOTAL SLIP SHOES!']);
+    expect(r.fns).toEqual(['function', 'function', 'function', 'function']);
+    expect(r.rushOnly, 'an item boss (no wind-up fields, no arena) never throws them').toBe(true);
+    expect(r.gaps.slice(1), 'eased a shade from the default 100/72/52: the magnet is the difference').toEqual([116, 86, 64]);
+    expect(r.p2).toBe('Running Loops');   // "Running loops in Yellow Face's warehouse" (File:Running loops in Yellow Face's warehouse.gif)
+    expect(r.p3).toBe('Broken Value');     // "Purple Face with a broken value" (BFB 28)
+  });
+
+  it('takes turns: AD BREAK!, the rap, AD BREAK!, the tank, AD BREAK!, the kick, AD BREAK!, the shoes -- each named, each with its own wind-up', () => {
+    const r = W.eval(`(function(){
+      fighters = []; projectiles = [];
+      var s = ${S()}, kinds = [], names = [], tel = [];
+      for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; window.__lastBanner = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tel.push(s._tel); s._tel = 0; s._pf = null; }
+      return { kinds: kinds, names: names, tel: tel, lens: [1,2,3].map(function(ph){ return ['swallow','pfaceRap','pfaceTorture','pfaceThanks','pfaceShoes'].map(function(k){ return bossTelLen({ attack:'swallow', _telKind:k, _phase:ph }); }); }) };
+    })()`);
+    expect(r.kinds).toEqual(['swallow', 'pfaceRap', 'swallow', 'pfaceTorture', 'swallow', 'pfaceThanks', 'swallow', 'pfaceShoes']);
+    expect(r.names).toEqual(['AD BREAK!', 'FREESTYLE RAP!', 'AD BREAK!', 'TORTURE TIME!', 'AD BREAK!', 'THANK YOU FOR COMING!', 'AD BREAK!', 'TOTAL SLIP SHOES!']);
+    expect(r.tel, 'the wind-up the engine set from the last turn is set again from this turn\'s own kind').toEqual([46, 72, 46, 66, 46, 44, 46, 42]);
+    expect(r.lens).toEqual([[46, 72, 66, 44, 42], [42, 66, 60, 40, 38], [40, 60, 54, 36, 34]]);
+  });
+});
+
+describe('AD BREAK!: a lunge you can dodge', () => {
+  it('the wind-up fixes the lane -- from the far wall, across the floor, toward the side you are on -- and he pops there; nothing is swallowed yet', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      ${BEGIN('swallow')}
+      var L = b._pf.lunge, out = { kind: b._telKind, tel: b._tel, L: { st: L.st, dir: L.dir, x0: L.x0, x1: L.x1, n: L.n }, bx: b.x, banner: document.getElementById('banner').textContent, wall: 88.4*0.9 + 2, WW: WW };
+      for (var i=0;i<30;i++) step();
+      out.stillThere = b.x; out.swallowed = f._swallow; out.faces = b.face;
+      return out;
+    })()`);
+    expect(r.kind).toBe('swallow');
+    expect(r.tel).toBe(46);
+    expect(r.banner).toBe('AD BREAK!');
+    expect(r.L).toMatchObject({ st: 'tell', dir: -1, n: 1 });
+    expect(r.L.x0, 'he starts by the right wall').toBeCloseTo(r.WW - r.wall, 3);
+    expect(r.L.x1, 'and the lane ends at the left wall').toBeCloseTo(r.wall, 3);
+    expect(r.bx, 'he pops to the start of the lane').toBeCloseTo(r.WW - r.wall, 3);
+    expect(r.stillThere, 'planted for the whole wind-up').toBeCloseTo(r.WW - r.wall, 3);
+    expect(r.swallowed, 'nobody is grabbed from across the floor any more').toBe(0);
+    expect(r.faces).toBe(-1);
+  });
+
+  it('then he runs the floor at 17 px a frame and swallows whoever his mouth reaches, into the same stomach: 10% a second, a 50-point tongue', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      ${BEGIN('swallow')}
+      for (var i=0;i<60 && b._tel>0;i++) step();
+      var x0 = b.x, xs = [];
+      for (var j=0;j<120 && !(f._swallow>0);j++){ step(); f.x = 300; f.vx = 0; xs.push(b.x); }
+      var caughtAt = b.x, L = b._pf.lunge;
+      var out = { swallowed: f._swallow > 0, at: caughtAt, x0: x0, speed: xs.length > 2 ? xs[1] - xs[0] : 0, frames: xs.length, st: L && L.st, tongue: b._tongueHp, stomach: { x: STOMACH.x, y: STOMACH.y, r: STOMACH.r }, gy: groundY(),
+                  fx: f.x, fy: f.y, swallow: f._swallow, sx: b._stX, sy: b._stY, tx: b._tongueX, ty: b._tongueY };
+      var p0 = f.pct; for (var k=0;k<61;k++){ step(); f.invuln = 0; } out.acid = f.pct - p0;
+      return out;
+    })()`);
+    expect(r.swallowed).toBe(true);
+    expect(r.speed, 'a steady 17 px a frame in phase 1').toBeCloseTo(-17, 5);
+    expect(r.at, 'caught with his mouth (out front of him) on the fighter').toBeGreaterThan(300 + 30);
+    expect(r.at).toBeLessThan(300 + 88.4*0.85 + 46 + 24 + 20);
+    expect(r.st, 'he chews for a moment, and the turn is over').toBe('gulp');
+    expect(r.tongue).toBe(50);
+    expect(r.stomach, 'the stomach opens where he caught you').toEqual({ x: r.at, y: r.gy - 140, r: 120 });
+    expect([r.sx, r.sy], 'and a client is told where').toEqual([r.at, r.gy - 140]);
+    expect([r.tx, r.ty], 'the tongue above its middle').toEqual([r.at, r.gy - 170]);
+    expect(r.swallow, 'up to eight seconds').toBeGreaterThan(470);
+    expect(r.acid, '10% a second in the stomach, as it was').toBeCloseTo(10, 5);
+  });
+
+  it('a fighter airborne as the mouth passes is not swallowed; nor is one on the platform; he runs on into the wall', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [['air', 300, 140], ['platform', 550, null]].forEach(function(c){
+        ${STAGE(300)}
+        f.x = c[1]; var plat = worldPlats[0], y = c[2] != null ? groundY() - 24 - c[2] : plat.y - 24;
+        f.y = y; f.vy = 0; f.onground = true;
+        ${BEGIN('swallow')}
+        // the fighter's side decides the lane: put him on the left half so he runs leftward from the right wall
+        for (var i=0;i<60 && b._tel>0;i++){ step(); f.y = y; f.vy = 0; f.x = c[1]; }
+        var minY = 1e9;
+        for (var j=0;j<140 && b._pf.lunge && b._pf.lunge.st !== 'crash';j++){ step(); f.y = y; f.vy = 0; f.x = c[1]; f.vx = 0; f.invuln = 0; }
+        out[c[0]] = { swallowed: f._swallow > 0, st: b._pf.lunge && b._pf.lunge.st, x: b.x, pct: f.pct };
+      });
+      return out;
+    })()`);
+    for (const k of ['air', 'platform']) {
+      expect(r[k].swallowed, `${k}: not swallowed`).toBe(false);
+      expect(r[k].st, `${k}: he ran the whole floor and hit the wall`).toBe('crash');
+      expect(r[k].x, `${k}: at the wall`).toBeCloseTo(k === 'air' ? 88.4*0.9 + 2 : W.eval('WW') - 88.4*0.9 - 2, 3);
+      expect(r[k].pct, `${k}: the lunge itself deals nothing`).toBe(0);
+    }
+  });
+
+  it('a miss ends in the wall: heavy impact (a scar), a squeak, and he is stuck for 45 frames -- a real opening -- before the next turn', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      f.y = groundY() - 24 - 200; f.vy = 0;   // out of the way
+      ${BEGIN('swallow')}
+      for (var i=0;i<60 && b._tel>0;i++){ step(); f.y = groundY() - 224; f.vy = 0; f.x = 300; }
+      var scars0 = IMPACT_SCARS.length, sh0 = shakeAmt, crashAt = null, stuck = 0, t0 = null;
+      for (var j=0;j<200;j++){ step(); f.y = groundY() - 224; f.vy = 0; f.x = 300;
+        var L = b._pf.lunge;
+        if (L && L.st === 'crash'){ if (crashAt === null){ crashAt = j; } stuck++; }
+        if (crashAt !== null && !(L && L.st === 'crash')){ t0 = j; break; } }
+      var out = { crashAt: crashAt, stuck: stuck, scars: IMPACT_SCARS.length - scars0, x: b.x, timer: b._atkTimer, lunge: b._pf.lunge, debris: IMPACT_DEBRIS.length, rk: b._hz.rk, rs: b._hz.rs };
+      var walls = IMPACT_SCARS.map(function(s){ return s.x; }); out.scarX = walls[walls.length - 1];
+      return out;
+    })()`);
+    expect(r.crashAt).not.toBe(null);
+    expect(r.stuck, 'stuck for 45 frames').toBe(45);
+    expect(r.scars, 'the wall takes a scar').toBeGreaterThan(0);
+    expect(r.scarX, 'at the wall he ran into').toBe(0);
+    expect(r.debris).toBeGreaterThan(3);
+    expect(r.lunge, 'and then the turn is over').toBe(null);
+    expect(W.eval('(function(){ var s = ' + '{ _atkTimer:0, _phase:1 }' + '; pfaceLungeEnd(s); return s._atkTimer; })()'), 'and the next wind-up waits PFACE.after frames from the end of it').toBe(40);
+    expect([r.rk, r.rs], 'the end shelf on that side rattles').toEqual([expect.any(Number), 1]);
+  });
+
+  it('phase 2: two lunges, the second back from the wall after a re-tell; phase 3: he comes in from off the screen, and both are faster', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [2, 3].forEach(function(ph){
+        ${STAGE(300)}
+        b.hp = b.maxHp*(ph===2 ? 0.5 : 0.2); updateBossAttack(b, f); b._atkTimer = 1e9; b._quakeT = 0;
+        f.y = groundY() - 224; f.vy = 0;
+        ${BEGIN('swallow')}
+        var L = b._pf.lunge, o = { n: L.n, dir0: L.dir, x0: L.x0, tel: b._tel, bx: b.x, ph: L.ph };
+        var seen = [], spd = [], last = null, dirs = [];
+        for (var i=0;i<600 && b._pf.lunge;i++){
+          var px = b.x; step(); f.y = groundY() - 224; f.vy = 0; f.x = 300; f.vx = 0;
+          var l = b._pf.lunge; if (!l) break;
+          if (l.st !== last){ seen.push(l.st); dirs.push(l.dir); last = l.st; }
+          if (l.st === 'run') spd.push(Math.abs(Math.round((b.x - px)*100)/100));
+        }
+        o.seen = seen; o.dirs = dirs; o.spd = spd;
+        out[ph] = o;
+      });
+      return out;
+    })()`);
+    expect(r[2].n).toBe(2);
+    expect(r[2].tel, 'a shade quicker wind-up').toBe(42);
+    expect(r[2].seen, 'run, crash, the re-tell, run, crash').toEqual(['tell', 'run', 'crash', 'retell', 'run', 'crash']);
+    expect(r[2].dirs, 'the second lunge goes back the way he came').toEqual([-1, -1, -1, 1, 1, 1]);
+    expect(Math.max.apply(null, r[2].spd), 'phase 2 speed').toBe(19);
+    expect(r[3].n).toBe(2);
+    expect(Math.max.apply(null, r[3].spd), 'phase 3 speed').toBe(21);
+    expect(r[3].bx, 'phase 3: he vanishes -- he is past the screen edge for the wind-up').toBeGreaterThan(W.eval('WW'));
+    expect(r[3].tel).toBe(40);
+  });
+});
+
+describe('FREESTYLE RAP!: a beat nothing can interrupt', () => {
+  it('he plants at centre for a 72-frame intro; then three pulses of notes roll out along the floor both ways, thirty frames apart, the third the big one, all one attack id', () => {
+    const r = W.eval(`(function(){ ${STAGE(200)}
+      ${BEGIN('pfaceRap')}
+      var out = { kind: b._telKind, tel: b._tel, bx: b.x, banner: document.getElementById('banner').textContent, shotsDuring: 0, WW: WW };
+      for (var i=0;i<80 && b._tel>1;i++){ step(); f.x = 200; f.vx = 0; out.shotsDuring += projectiles.filter(function(p){ return p.owner===-2; }).length; }
+      step(); f.x = 200; f.vx = 0;
+      var k = projectiles.filter(function(p){ return p.owner===-2; });
+      out.n = k.length; out.shapes = k.map(function(p){ return p.shape; }); out.delays = k.map(function(p){ return p.delay; }); out.vx = k.map(function(p){ return p.vx; });
+      out.r = k.map(function(p){ return p.r; }); out.ids = k.map(function(p){ return p.bossAtk; }); out.dmg = k.map(function(p){ return +(p.dmg/bossDmg()).toFixed(2); }); out.full = bossDmg();
+      out.y = k.map(function(p){ return +(groundY() - p.y - p.r).toFixed(1); }); out.x = k.map(function(p){ return Math.round(p.x); });
+      out.gap = b._atkTimer;
+      return out;
+    })()`);
+    expect(r.kind).toBe('pfaceRap');
+    expect(r.tel, 'the intro: 72 frames').toBe(72);
+    expect(r.banner).toBe('FREESTYLE RAP!');
+    expect(r.bx, 'planted at centre').toBe(550);
+    expect(r.shotsDuring, 'nothing flies during the intro').toBe(0);
+    expect(r.n, 'three pulses, two ways each').toBe(6);
+    expect(r.shapes.filter((s) => s === 'pfacenote')).toHaveLength(4);
+    expect(r.shapes.filter((s) => s === 'pfacestar'), 'the big one wears the pointy star').toHaveLength(2);
+    // read on the frame it fired, which has already counted each waiting pulse down once
+    expect(r.delays.slice().sort((a, b) => a - b), 'thirty frames apart').toEqual([0, 0, 29, 29, 59, 59]);
+    expect(W.eval('PFACE.rap.delays[1]'), 'the table: thirty frames apart').toEqual([0, 30, 60]);
+    expect(r.vx.filter((v) => v > 0)).toHaveLength(3);
+    expect(r.vx.filter((v) => v < 0)).toHaveLength(3);
+    expect(Math.abs(r.vx[0]), 'phase 1 speed').toBe(8);
+    expect(Math.max(...r.r), 'the third is the big one').toBe(26);
+    expect(new Set(r.ids).size, 'one attack id: the whole rap is one boss hit').toBe(1);
+    expect(r.dmg.slice().sort((a, b) => a - b)).toEqual([0.35, 0.35, 0.35, 0.35, 1, 1]);
+    expect(r.y.every((y) => y === 0), 'they roll along the floor').toBe(true);
+    expect(r.gap, 'the next turn is timed from the fire').toBe(116);
+  });
+
+  it('"2 should be uninterruptable.": hit him as hard as you like during the intro, and the beat still drops -- all three pulses, every time', () => {
+    const r = W.eval(`(function(){ ${STAGE(200)}
+      ${BEGIN('pfaceRap')}
+      var hp0 = b.hp, hits = 0;
+      for (var i=0;i<80 && b._tel>1;i++){ step(); f.x = 200; f.vx = 0; if (i % 6 === 0){ damageSummons(f, b.x, b.y, 200, 5); hits++; f.invuln = 0; } }
+      var telAt = b._tel, kind = b._telKind, hpMid = b.hp;
+      step(); f.x = 200; f.vx = 0;
+      var k = projectiles.filter(function(p){ return p.owner===-2; });
+      var out = { hits: hits, hpLost: hp0 - b.hp, kind: kind, telAt: telAt, pulses: k.length, flung: b.x, delays: k.map(function(p){ return p.delay; }).sort(function(a,c){ return a-c; }), banner: document.getElementById('banner').textContent };
+      // ...and the same when the hits land while he is winding up in phase 3, with the tongue and everything else in play
+      ${STAGE(200)}
+      b.hp = b.maxHp*0.32; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
+      ${BEGIN('pfaceRap')}
+      var hp3 = b.hp;
+      for (var j=0;j<70 && b._tel>1;j++){ step(); f.x = 200; f.vx = 0; if (j % 5 === 0) damageSummons(f, b.x, b.y, 200, 2); f.invuln = 0; }
+      out.p3hits = hp3 - b.hp;
+      step();
+      out.p3 = projectiles.filter(function(p){ return p.owner===-2; }).length; out.p3kind = b._telKind;
+      return out;
+    })()`);
+    expect(r.hpLost, 'the hits landed').toBeGreaterThan(30);
+    expect(r.kind, 'and he is still rapping').toBe('pfaceRap');
+    expect(r.pulses, 'the beat dropped: all three pulses').toBe(6);
+    expect(r.delays).toEqual([0, 0, 29, 29, 59, 59]);
+    expect(Math.abs(r.flung - 550), 'nobody flings him off the screen mid-rap (his canon weakness is not taken): a hit shoves him a couple of px, no more').toBeLessThan(40);
+    expect(r.p3hits, 'phase 3: the hits landed').toBeGreaterThan(10);
+    expect(r.p3, 'phase 3 the same').toBe(6);
+  });
+
+  it('a pulse hits whoever stands on the floor in its way, the phase-2 third is late (off the beat), and the whole rap costs at most one boss hit', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${STAGE(250)}
+      ${BEGIN('pfaceRap')}
+      for (var i=0;i<75 && b._tel>0;i++){ step(); f.x = 250; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 0; }
+      var hits = 0, last = 0; b._atkTimer = 1e9;
+      for (var j=0;j<260;j++){ step(); f.x = 250; f.vx = 0; f.y = groundY() - 24; f.vy = 0; if (f.pct > last + 0.001){ hits++; last = f.pct; } f.invuln = 0; }
+      out.floor = { pct: f.pct, hits: hits, cap: bossDmg() };
+      // a fighter in the air over the small ones is not hit by them
+      ${STAGE(250)}
+      ${BEGIN('pfaceRap')}
+      for (var i=0;i<75 && b._tel>0;i++){ step(); f.x = 250; f.y = groundY() - 24; f.invuln = 0; }
+      var air = 0;
+      for (var j=0;j<40;j++){ step(); f.x = 250; f.vx = 0; f.y = groundY() - 24 - 70; f.vy = 0; f.invuln = 0; }
+      out.air = f.pct;
+      // phase 2
+      ${STAGE(200)}
+      b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
+      ${BEGIN('pfaceRap')}
+      for (var i=0;i<70 && b._tel>0;i++){ step(); f.x = 200; }
+      out.p2 = { delays: projectiles.filter(function(p){ return p.owner===-2 && p.vx > 0; }).map(function(p){ return p.delay; }).sort(function(a,c){ return a-c; }), spd: Math.abs(projectiles.find(function(p){ return p.owner===-2; }).vx) };
+      return out;
+    })()`);
+    expect(r.floor.hits, 'the floor is dangerous').toBeGreaterThan(0);
+    expect(r.floor.pct, 'a fighter who takes every pulse still takes one boss hit at most').toBeLessThanOrEqual(r.floor.cap + 1e-6);
+    expect(r.air, 'a jump clears the small notes').toBe(0);
+    expect(r.p2.delays, 'the third comes late in phase 2: off the beat').toEqual([0, 29, 71]);
+    expect(W.eval('PFACE.rap.delays[2]')).toEqual([0, 30, 72]);
+    expect(r.p2.spd, 'and quicker').toBe(9.5);
+  });
+});
+
+describe('TORTURE TIME!: the tank', () => {
+  it('the panes slide in round your spot and lock after 24 frames; nobody inside can leave, nobody outside can walk in; then it bursts for one boss hit', () => {
+    const r = W.eval(`(function(){ ${STAGE(400)}
+      ${BEGIN('pfaceTorture')}
+      var TK = b._pf.tk[0], out = { kind: b._telKind, tel: b._tel, x: TK.x, n: b._pf.tk.length, close: TK.close, bx: b.x, banner: document.getElementById('banner').textContent };
+      for (var i=0;i<30;i++){ step(); f.x = 400; f.vx = 0; }   // stay put through the closing
+      out.age = TK.age; out.inside = f._pfIn === TK.id;
+      // try to walk out: the glass holds you in
+      f.vx = 12; for (var j=0;j<10;j++){ step(); f.vx = 12; } out.walkedTo = f.x; out.hw = 100;
+      // a second fighter outside cannot walk in
+      var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 400 + 320, groundY()-24, 0); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+      for (var k=0;k<20;k++){ g.x -= 15; g.vx = -15; step(); }
+      out.outsideAt = g.x; out.outsideDx = g.x - TK.x;
+      // the burst
+      f.x = 400; f.pct = 0; f.invuln = 0; g.pct = 0; g.invuln = 0;
+      var before = projectiles.length;
+      while (b._tel > 1){ step(); f.x = 400; f.vx = 0; f.invuln = 0; g.invuln = 0; if (g.x < TK.x + 100 + 24) g.x = TK.x + 100 + 24 + 5; }
+      var pctBefore = f.pct; step();
+      out.burst = f.pct - pctBefore; out.full = bossDmg(); out.tankGone = !b._pf.tk; out.freed = f._pfIn == null;
+      out.bugs = projectiles.filter(function(p){ return p.shape === 'pfacebug'; }).length; out.scars = IMPACT_SCARS.length;
+      return out;
+    })()`);
+    expect(r.kind).toBe('pfaceTorture');
+    expect(r.tel, 'the wind-up is the tank closing: 66 frames').toBe(66);
+    expect(r.banner).toBe('TORTURE TIME!');
+    expect(r.x, 'over your spot').toBe(400);
+    expect(r.n).toBe(1);
+    expect(r.close, 'the panes take 24 frames in phase 1').toBe(24);
+    expect(r.bx, 'he hosts from the far side').toBeGreaterThan(900);
+    expect(r.age).toBeGreaterThanOrEqual(24);
+    expect(r.inside, 'you were inside when it shut').toBe(true);
+    expect(Math.abs(r.walkedTo - 400), 'the glass holds you in').toBeLessThan(r.hw);
+    expect(r.outsideDx, 'and keeps everyone else out').toBeGreaterThanOrEqual(r.hw + 14);
+    expect(r.burst, 'the burst is one whole boss hit').toBeCloseTo(r.full, 5);
+    expect(r.tankGone).toBe(true);
+    expect(r.freed).toBe(true);
+    expect(r.bugs, 'and throws its bugs').toBe(18);
+    expect(r.scars).toBeGreaterThan(0);
+  });
+
+  it('you can leave in the first 24 frames and then the burst misses you; phase 2 closes in 18 and phase 3 has a second tank', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${STAGE(400)}
+      ${BEGIN('pfaceTorture')}
+      var TK = b._pf.tk[0];
+      for (var i=0;i<24;i++){ step(); f.x += 8; f.vx = 8; f.y = groundY() - 24; }   // straight out of it: 24 frames at 8 px
+      var x = f.x;
+      for (var j=0;j<70 && b._tel>0;j++){ step(); f.invuln = 0; }
+      out.out = { x: x - TK.x, inside: f._pfIn === TK.id, pct: f.pct, bugsInFlight: projectiles.filter(function(p){ return p.shape === 'pfacebug'; }).length };
+      [2, 3].forEach(function(ph){
+        ${STAGE(400)}
+        b.hp = b.maxHp*(ph===2 ? 0.5 : 0.2); updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
+        f.vx = 5; ${BEGIN('pfaceTorture')}
+        out[ph] = { close: b._pf.tk[0].close, tanks: b._pf.tk.map(function(t){ return Math.round(t.x); }), tel: b._tel, hw: 100 };
+      });
+      return out;
+    })()`);
+    expect(r.out.x, 'you were clear of the glass').toBeGreaterThan(100 + 24);
+    expect(r.out.inside).toBe(false);
+    expect(r.out.pct, 'the burst missed you (the bugs are its spray)').toBeLessThan(22);
+    expect(r[2].close).toBe(18);
+    expect(r[2].tanks).toHaveLength(1);
+    expect(r[3].tanks, 'a second tank where you would run').toHaveLength(2);
+    expect(Math.abs(r[3].tanks[1] - r[3].tanks[0]), 'not on top of the first').toBeGreaterThanOrEqual(200);
+    expect([r[2].tel, r[3].tel]).toEqual([60, 54]);
+  });
+});
+
+describe('THANK YOU FOR COMING!: the kick', () => {
+  it('a ring shows where he will pop up beside you; he pops in 20 frames before the kick, grows a leg, and kicks you toward the wall; two totems roll out, one boss hit in all', () => {
+    const r = W.eval(`(function(){ ${STAGE(700)}
+      ${BEGIN('pfaceThanks')}
+      var ring = b._pf.ring, out = { kind: b._telKind, tel: b._tel, ring: ring.x, ringDir: ring.dir, bx0: b.x, banner: document.getElementById('banner').textContent };
+      var popped = null, kickAt = null, hitAt = null, seenTotems = null, pct0 = f.pct;
+      for (var i=0;i<60;i++){
+        step();
+        if (hitAt === null && f.pct > pct0){ hitAt = { pct: f.pct - pct0, vx: f.vx }; }
+        f.x = 700; f.vx = 0; f.y = groundY() - 24; f.vy = 0;
+        if (popped === null && Math.abs(b.x - ring.x) < 1 && b._tel < 40) popped = b._tel;
+        if (kickAt === null && b._pf.kick) kickAt = { tel: b._tel, dir: b._pf.kick.dir };
+        if (b._tel === 0 && seenTotems === null){ seenTotems = projectiles.filter(function(p){ return p.shape === 'pfacetotem' || p.shape === 'pfacetotemw'; }).map(function(p){ return [p.shape, p.vx, p.r, p.bossAtk]; }); }
+      }
+      out.popped = popped; out.kickAt = kickAt; out.hitAt = hitAt; out.totems = seenTotems; out.total = f.pct - pct0; out.full = bossDmg(); out.bx = b.x; out.kickId = null;
+      return out;
+    })()`);
+    expect(r.kind).toBe('pfaceThanks');
+    expect(r.tel).toBe(44);
+    expect(r.banner).toBe('THANK YOU FOR COMING!');
+    expect(r.ring, 'beside you, on the side toward the middle').toBe(700 - 170);
+    expect(r.popped, 'he pops in when 20 frames of wind-up are left (seen a frame later: 19)').toBe(19);
+    expect(r.bx).toBeCloseTo(r.ring, 3);
+    expect(r.kickAt, 'and kicks toward you').toMatchObject({ dir: 1 });
+    expect(r.hitAt, 'the kick lands').not.toBe(null);
+    expect(r.hitAt.pct, '0.7 of a boss hit').toBeCloseTo(r.full*0.7, 5);
+    expect(r.hitAt.vx, 'toward the wall behind you').toBeGreaterThan(5);
+    expect(r.totems, 'a black one and a white one, out to both walls').toHaveLength(2);
+    expect(r.totems.map((t) => t[0]).sort()).toEqual(['pfacetotem', 'pfacetotemw']);
+    expect(r.totems.map((t) => t[1]).sort((a, b) => a - b)).toEqual([-7, 7]);
+    expect(new Set(r.totems.map((t) => t[3])).size).toBe(1);
+    expect(r.total, 'the kick and the totems together are still one boss hit at most').toBeLessThanOrEqual(r.full + 1e-6);
+  });
+
+  it('the kick is low and short: a jump clears it, and so does standing back; the totems are jumped too; phase 3 rolls out a second pair', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [['jump', 700, 130, 700], ['far', 700, 0, 1010]].forEach(function(c){
+        ${STAGE(700)}
+        f.x = c[1]; ${BEGIN('pfaceThanks')}
+        var ring = b._pf.ring.x, py = groundY() - 24 - c[2];
+        for (var i=0;i<52;i++){ step(); f.x = c[3]; f.vx = 0; f.y = py; f.vy = 0; f.invuln = 0; }
+        out[c[0]] = { pct: f.pct, ring: ring };
+      });
+      ${STAGE(700)}
+      b.hp = b.maxHp*0.2; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
+      f.y = groundY() - 224; ${BEGIN('pfaceThanks')}
+      for (var i=0;i<60 && b._tel>0;i++){ step(); f.y = groundY() - 224; f.vy = 0; }
+      out.p3 = projectiles.filter(function(p){ return p.shape === 'pfacetotem' || p.shape === 'pfacetotemw'; }).map(function(p){ return [p.delay, Math.abs(p.vx)]; }).sort(function(a, c){ return a[0] - c[0]; });
+      return out;
+    })()`);
+    expect(r.jump.pct, 'airborne over the leg').toBe(0);
+    expect(r.far.pct, 'out of its reach').toBe(0);
+    expect(r.p3.map((t) => t[0]), 'two pairs, sixteen frames apart (read on the frame they fired)').toEqual([0, 0, 15, 15]);
+    expect(r.p3[0][1], 'and quicker').toBe(9);
+  });
+});
+
+describe('TOTAL SLIP SHOES!: a status, no damage', () => {
+  it('the mark follows the marked fighter until the last 12 frames; the shoes are lobbed; where they land they go on: three seconds of slip, and not a point of damage', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      ${BEGIN('pfaceShoes')}
+      var A = b._pf.aim, out = { kind: b._telKind, tel: b._tel, idx: A.idx, fidx: f.idx, bx: b.x, banner: document.getElementById('banner').textContent };
+      for (var i=0;i<28;i++){ f.x = 300 + i*4; step(); f.vx = 0; }   // walk: the mark follows...
+      out.followed = b._pf.aim.x; out.tel2 = b._tel;
+      while (b._tel > 8){ f.x = 700; step(); f.vx = 0; }   // ...and holds once the last 12 frames are here
+      out.locked = b._pf.aim.x; var lockedAt = b._pf.aim.x;
+      f.x = lockedAt; while (b._tel > 1){ step(); f.x = lockedAt; f.vx = 0; }
+      step();
+      var sh = projectiles.filter(function(p){ return p.shape === 'pfaceshoe'; });
+      out.shoes = sh.length; out.dmg = sh[0].dmg; out.kb = sh[0].kb; out.warnX = sh[0].warnX; out.inert = sh[0].delay > 0; out.warn = sh[0].warn > 0; out.T = sh[0].pfaceFly.T;
+      var pct0 = f.pct, hs0 = f.hitstun, k = 0;
+      while (projectiles.some(function(p){ return p.pfaceFly && p.life > 0; }) && k < 80){ step(); f.x = lockedAt; f.vx = 0; f.y = groundY() - 24; k++; }
+      out.airFrames = k; out.pct = f.pct - pct0; out.ice = f.iceUntil; out.worn = Object.keys(b._pf.shoes); out.hitstun = f.hitstun; out.invuln = f.invuln;
+      return out;
+    })()`);
+    expect(r.kind).toBe('pfaceShoes');
+    expect(r.tel).toBe(42);
+    expect(r.banner).toBe('TOTAL SLIP SHOES!');
+    expect(r.idx, 'the marked fighter').toBe(r.fidx);
+    expect(r.bx, 'he stands across the floor from you: it is a lob').toBeGreaterThan(700);
+    expect(r.followed, 'the mark follows you...').toBeGreaterThan(300 + 20*4 - 10);
+    expect(r.locked, '...and holds').toBe(700);
+    expect(r.shoes).toBe(1);
+    expect(r.dmg, 'no damage').toBe(0);
+    expect(r.kb).toBe(0);
+    expect(r.warnX, 'the landing shadow is on the locked spot').toBe(700);
+    expect(r.inert && r.warn).toBe(true);
+    expect(r.T, 'thirty-four frames in the air').toBe(34);
+    expect(r.airFrames).toBeLessThanOrEqual(36);
+    expect(r.pct, 'a status, no damage').toBe(0);
+    expect(r.ice, 'three seconds of slip: the engine\'s own (iceUntil)').toBeGreaterThanOrEqual(178);
+    expect(r.ice).toBeLessThanOrEqual(180);
+    expect(r.worn).toEqual([String(W.eval('fighters[0].idx'))]);
+    expect(r.hitstun, 'it does not stagger you either').toBe(0);
+  });
+
+  it('their footing really is slippery: a shod fighter slides on where a plain one stops; you can dodge the lob by moving; the shoes wear off', () => {
+    const r = W.eval(`(function(){ var out = {};
+      // slide: the same shove, with and without the shoes
+      [false, true].forEach(function(shod){
+        ${STAGE(300)}
+        f.onground = true; f.y = groundY() - 24; if (shod) pfaceShoesOn(b, f);
+        f.vx = 6; for (var i=0;i<30;i++){ step(); }
+        out[shod ? 'shod' : 'plain'] = { vx: f.vx, dx: f.x - 300 };
+      });
+      // dodge: step out of the mark after it locks
+      ${STAGE(300)}
+      ${BEGIN('pfaceShoes')}
+      while (b._tel > 1){ step(); f.x = 300; f.vx = 0; }
+      step(); var landX = b._pf.aim ? b._pf.aim.x : projectiles.find(function(p){ return p.pfaceFly; }).warnX;
+      for (var k=0;k<50;k++){ step(); f.x = 300 - 160; f.vx = 0; }
+      out.dodged = { ice: f.iceUntil, landX: landX };
+      // wear off
+      ${STAGE(300)}
+      pfaceShoesOn(b, f); f.iceUntil = 3; for (var j=0;j<10;j++) step();
+      out.off = { worn: Object.keys(b._pf.shoes).length, ice: f.iceUntil };
+      // phase 3: a second pair
+      ${STAGE(300)}
+      b.hp = b.maxHp*0.2; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
+      ${BEGIN('pfaceShoes')}
+      var seen = new Set(); for (var m=0;m<75;m++){ step(); f.x = 300; f.vx = 0; projectiles.forEach(function(p){ if (p.shape === 'pfaceshoe') seen.add(p); }); }
+      out.p3 = seen.size;
+      return out;
+    })()`);
+    expect(r.plain.dx, 'a plain fighter stops within a few strides').toBeLessThan(60);
+    expect(r.shod.dx, 'a shod one is still sliding after half a second').toBeGreaterThan(r.plain.dx*3);
+    expect(r.shod.vx).toBeGreaterThan(3);
+    expect(r.dodged.ice, 'moved out of the mark: no shoes').toBe(0);
+    expect(r.off, 'when the slip ends the shoes come off').toEqual({ worn: 0, ice: 0 });
+    expect(r.p3, 'phase 3 lobs a second pair').toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("Yellow Face's Warehouse: the arena and its hazard", () => {
+  it('is his arena, with its own sky, its own concrete ground and its own decor -- and it is a boss arena a netcode client knows', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var G = arenaGround();
+      return { arena: BOSS_ARENA, sky: BOSS_ARENA_SKY.warehouse, ground: G && { fill: G.fill, line: G.line, pattern: typeof G.pattern }, hazard: Object.keys(BOSS_ARENA_HAZARD[BOSS_ARENA] || {}),
+               studioGround: BOSS_ARENA_GROUND.studio, decorKeys: String(drawArenaDecor).indexOf('key==="warehouse"') >= 0, roster: b.name };
+    })()`);
+    expect(r.arena).toBe('warehouse');
+    expect(r.sky, 'a client only takes a key it has').toEqual(['#4d4d5a', '#292934']);
+    expect(r.ground).toEqual({ fill: '#6a6a7c', line: '#1c1c24', pattern: 'function' });
+    expect(r.hazard.sort()).toEqual(['draw', 'step']);
+    expect(r.studioGround, "the TV studio is not his any more, and nobody laid it a ground").toBe(undefined);
+    expect(r.decorKeys).toBe(true);
+    expect(W.eval('BOSS_ROSTER.filter(function(b){ return b.arena === "warehouse"; }).map(function(b){ return b.name; })'), 'his alone').toEqual(['Purple Face']);
+  });
+
+  it('THE MAGNET: it hums up, the shelf leans, the floor under it is striped, then it falls for one boss hit -- phase 1 one side at a time, then both', () => {
+    const r = W.eval(`(function(){ var out = {};
+      var mk = function(name, x){ var g = makeFighter(ROSTER.find(function(r){ return r.name===name; }), x, groundY()-24, 0); g.team = 0; g.controller = 'still'; g.stocks = 9; return g; };
+      ${STAGE(200, false, true)}
+      var mid = mk('Pen', 550), right = mk('Coiny', 900), plat = mk('Bow', 360); plat.y = worldPlats[0].y - 24; fighters.push(mid, right, plat);
+      var G = pfaceShelves(); out.geo = { sw: G.sw, sh: G.sh, z0: G.z[0], z1: G.z[1] };
+      b._hz = { st:0, n:2, k:0, c:0, sd:0 };
+      var seen = [], pcts = function(){ return fighters.map(function(q){ return q.pct; }); };
+      var pin = function(){ f.x = 200; mid.x = 550; right.x = 900; plat.x = 360; plat.y = worldPlats[0].y - 24; fighters.forEach(function(q){ q.vx = 0; q.vy = 0; q.invuln = 0; q.pct = q.pct; }); };
+      for (var i=0;i<400;i++){ step(); pin(); var H = b._hz; if (seen[seen.length-1] !== H.st) seen.push(H.st); if (H.st === 3 && !out.landed){ out.landed = { sd: H.sd, k: H.k }; out.pcts1 = pcts(); out.scars = IMPACT_SCARS.length; } }
+      out.seen = seen; out.after = { st: b._hz.st, n: b._hz.n };
+      out.full = bossDmg();
+      // phase 2: both shelves
+      fighters.forEach(function(q){ q.pct = 0; });
+      b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:2, k:0, c:0, sd:0 };
+      for (var j=0;j<300;j++){ step(); pin(); if (b._hz.st === 3 && !out.landed2){ out.landed2 = { sd: b._hz.sd }; out.pcts2 = pcts(); } }
+      out.snapHz = JSON.parse(JSON.stringify(b._hz));
+      return out;
+    })()`);
+    expect(r.geo.z0.x1 - r.geo.z0.x0, 'a shelf lands a shelf-length (about 0.95 of its height) from its foot').toBeCloseTo(r.geo.sh*0.95 - 6, 3);
+    expect(r.seen, 'idle, hum and lean, fall, lying, idle').toEqual([0, 1, 2, 3, 0]);
+    expect(r.landed.sd, 'phase 1: the left shelf first').toBe(1);
+    // fighters, in order: f at 200 (under the left shelf), Pen 550 (the safe middle), Coiny 900 (under the RIGHT one), Bow on the platform at 360 (its left end is under the fall)
+    expect(r.pcts1[0], 'under it: one boss hit at 0.75').toBeCloseTo(r.full*0.75, 5);
+    expect(r.pcts1[1], 'the middle is safe').toBe(0);
+    expect(r.pcts1[2], 'the far side is safe in phase 1').toBe(0);
+    expect(r.pcts1[3], 'the platform is not all safe: its left end is under the fall').toBeCloseTo(r.full*0.75, 5);
+    expect(r.scars, 'a heavy landing: the floor is scarred').toBeGreaterThan(0);
+    expect(r.after.st).toBe(0);
+    expect(r.after.n, 'the next one comes in a cycle (14 s in phase 1)').toBeGreaterThan(300);
+    expect(r.landed2.sd, 'phase 2 drops both').toBe(3);
+    expect(r.pcts2[0]).toBeCloseTo(r.full*0.75, 5);
+    expect(r.pcts2[2], 'and now the far side is under one too').toBeCloseTo(r.full*0.75, 5);
+    expect(r.pcts2[1]).toBe(0);
+    expect(Object.values(r.snapHz).every((v) => typeof v === 'number'), 'its state is a few plain numbers').toBe(true);
+  });
+
+  it('it is one boss hit however long you stand in it, it never fires without its boss, and it comes sooner each phase', () => {
+    const r = W.eval(`(function(){ ${STAGE(200, false, true)}
+      var H = b._hz = { st:0, n:1, k:0, c:0, sd:0 }, hits = 0, last = 0;
+      for (var i=0;i<300;i++){ step(); f.x = 200; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 0; if (f.pct > last + 0.001){ hits++; last = f.pct; } }
+      var out = { pct: f.pct, cap: bossDmg(), cycles: PFACE.hz.cycle, warns: PFACE.hz.warn };
+      b.hp = 0; var n0 = b._hz.k; arenaHazardStep(b, f); out.dead = b._hz.k === n0;
+      return out;
+    })()`);
+    expect(r.pct, 'one hit however long you stand there').toBeLessThanOrEqual(r.cap*0.75 + 1e-6);
+    expect(r.pct).toBeGreaterThan(0);
+    expect(r.dead, 'a fallen boss\'s hazard stops').toBe(true);
+    expect(r.cycles.slice(1)).toEqual([840, 660, 540]);
+    expect(r.warns.slice(1), 'a shorter warning each phase').toEqual([74, 66, 56]);
+  });
+
+  it('every part of the set draws, in every phase and every state of the hazard, without throwing and without a word', () => {
+    const err = W.eval(`(function(){
+      try {
+        var gy = groundY(), calls = 0;
+        var boss = function(ph, o){ return Object.assign({ type:'boss', name:'Purple Face', color:'#7a3a8a', sprite:'face', r:88.4, x:550, y:gy-88.4, face:1, hp:100, maxHp:235, _tel:0, _telKind:null, _phase:ph, _rage:false, flash:0, homeX:550, attack:'swallow' }, o || {}); };
+        [1, 2, 3].forEach(function(ph){ summons = [boss(ph)]; drawArenaDecor('warehouse'); calls++; });
+        summons = [];
+        [{}, { st:0 }, { st:1, k:30, sd:1 }, { st:1, k:70, sd:3 }, { st:2, k:10, sd:2 }, { st:3, k:40, sd:1 }, { st:3, k:110, sd:3 }, { st:0, rk:12, rs:1 }, { st:0, rk:12, rs:2 }].forEach(function(H){
+          [1, 2, 3].forEach(function(ph){ ['under', 'over'].forEach(function(layer){ ctx.save(); pfaceHazardDraw(ph === 1 ? null : boss(ph), H, layer); ctx.restore(); calls++; }); }); });
+        var states = [{}, { _tel:20, _telKind:'swallow', _pf:{ st:'tell', dir:-1, x0:1018, x1:82, t:0 } }, { _pf:{ st:'run', dir:1, x0:80, x1:1018, t:5 }, x:300 }, { _pf:{ st:'crash', dir:-1, x0:1018, x1:82, t:3 }, x:82 },
+          { _pf:{ st:'retell', dir:1, x0:82, x1:1018, t:4 } }, { _tel:30, _telKind:'pfaceRap' }, { _tel:9, _telKind:'pfaceRap', _phase:3 }, { _pf:{ kick:[1, 4] } }, { _pf:{ kick:[-1, 12] } }, { _pf:{ sq:8, pop:5, gl:40 } },
+          { _phase:3, hp:20, flash:6, _pf:{ gl:90 } }, { _tel:40, _telKind:'pfaceTorture' }, { _tel:40, _telKind:'pfaceShoes' }, { _tel:20, _telKind:'pfaceThanks', _pf:{ ring:400 } }, { x:1300, _phase:3, _tel:30, _telKind:'swallow', _pf:{ st:'tell', dir:-1, x0:1300, x1:82 } }];
+        states.forEach(function(st){ ctx.save(); ctx.translate(550, gy-88); drawBossSprite(boss(1, st)); ctx.restore(); calls++; });
+        var fighter = fighters[0] || makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 400, gy-24, 0); fighters = [fighter]; fighter._swallow = 100;
+        [{ _tongueHp:50, _tongueX:400, _tongueY:gy-170, _stX:400, _stY:gy-140 }, { _tongueHp:12, _tongueX:400, _tongueY:gy-170 }, { _tongueHp:1 }].forEach(function(o){
+          var bb = Object.assign(boss(1, { _pf:{ tk:[[300, 3, 24], [300, 30, 24], [300, 60, 24], [700, 64, 18]], ring:500, shoe:[fighter.idx] } }), o);
+          pfaceDrawFx(bb); pfaceDrawOver(bb); calls++; });
+        fighter._swallow = 0;
+        [0, 6, 13, 14, 20, 31, 36, 58, 90, 107, 108].forEach(function(dl){ pfaceDrawEnding({ x:500, delay: 108 - dl, face:-1 }); calls++; });
+        var shapes = ['pfacenote','pfacebug','pfacetotem','pfacetotemw','pfaceshoe','pfacestar','pfacemagnet'];
+        shapes.forEach(function(k){ drawProjectile({ x:300, y:300, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:k, r:20, vx:-6, vy:1, color:'#ff9ad8', pfaceNote:1, delay:0 }); calls++; });
+        drawProjectile({ x:300, y:300, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:'pfacenote', r:16, vx:8, vy:0, color:'#ff9ad8', pfaceNote:1, delay:20 });
+        drawProjectile({ x:300, y:gy+260, owner:-2, ownerObj:{ team:-1, idx:-2 }, r:1, pfaceEnd:1, delay:80, face:1, color:'#7a3a8a' });
+        shapes.forEach(function(k){ ctx.save(); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#000'; PROJ_SHAPE[k].draw(ctx, 16, { vx:-5, vy:0, color:'#fff' }); ctx.restore(); });
+        pfaceDrawShoes(ctx, Object.assign({}, fighter, { vx:5 }));
+        return 'ok ' + calls;
+      } catch(e){ return e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+    })()`);
+    expect(err).toMatch(/^ok \d+/);
+    // and not one word in any of it
+    const src = W.eval(`[pfaceDrawTell, pfaceDrawFx, pfaceDrawOver, pfaceDrawStomach, pfaceDrawTank, pfaceDrawRing, pfaceDrawShoes, pfaceDrawEnding, pfaceDrawBossAt, pfaceDecor, pfaceHazardDraw,
+      pfaceDrawMagnet, pfaceDrawFortress, pfaceShelfArt, pfaceDrawShelf, pfaceGroundPattern, pfaceStar, pfaceLook].map(String).join('\\n')`);
+    expect(src, 'no text is drawn by any of it').not.toMatch(/fillText|strokeText|\.font\s*=/);
+  });
+});
+
+describe('the ending: put back in the box', () => {
+  it('when he falls the Beryllium Fortress comes down over him and the creature inside jumps twice; his shots and the slip go with him; the card waits, and there is no text', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var st = setTimeout, timers = [], said = [], _b = banner;
+      setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };
+      banner = function(t, m, k, l){ said.push([String(t), k || null]); return _b(t, m, k, l); };
+      try {
+        BOSSRUSH.active = true; var gy = groundY(), out = {};
+        pfaceShoesOn(b, f);
+        projectiles.push({ owner:-2, pface:true, shape:'pfacetotem', x:100, y:500, r:20, life:50, vx:5, vy:0 }, { owner:-2, x:0, y:0, r:8, life:50, vx:0, vy:0 });
+        b.x = 420; b.hp = 0; bossRushCheck();
+        var end = projectiles.filter(function(p){ return p.pfaceEnd; });
+        out.end = end.map(function(p){ return { x: p.x, delay: p.delay, dmg: p.dmg, life: p.life, below: p.y > gy }; });
+        out.others = projectiles.filter(function(p){ return !p.pfaceEnd; }).length; out.iceAfter = f.iceUntil; out.bossLeft = summons.filter(function(s){ return s.type==='boss'; }).length;
+        out.saidNow = said.slice(); out.ms = timers.map(function(t){ return t.ms; });
+        var card = timers.find(function(t){ return t.ms === 1000 && String(t.fn).indexOf('downCard') >= 0; }), run0 = running;
+        running = true; if (card) card.fn(); running = run0;
+        out.after = said.slice(out.saidNow.length);
+        var slam = timers.find(function(t){ return t.ms === 240; }); var sc0 = IMPACT_SCARS.length; running = true; if (slam) slam.fn(); out.slamScar = IMPACT_SCARS.length - sc0;
+        // the scene plays out from its delay, and is gone when it is over: nothing hurts anyone
+        var pct0 = f.pct; f.x = 420; for (var i=0;i<PFACE.end.total + 3;i++){ step(); f.x = 420; f.invuln = 0; } out.left = projectiles.filter(function(p){ return p.pfaceEnd; }).length; out.pct = f.pct - pct0;
+        return out;
+      } finally { setTimeout = st; banner = _b; BOSSRUSH.active = false; summons = []; projectiles = []; }
+    })()`);
+    expect(r.end, 'one scene, where he fell, that hurts nobody').toEqual([{ x: 420, delay: 108, dmg: 0, life: 1, below: true }]);
+    expect(r.others, 'his shots are swept and everyone else\'s stay').toBe(1);
+    expect(r.iceAfter, 'the slip is gone with him').toBe(0);
+    expect(r.bossLeft).toBe(0);
+    expect(r.saidNow.some(([, k]) => k === 'boss'), 'no text: nothing but the card, and it waits').toBe(false);
+    expect(r.saidNow.some(([t]) => /BOSS DOWN/.test(t))).toBe(false);
+    expect(r.ms, 'the card after his second; the next boss after 1.5 s and that second').toEqual(expect.arrayContaining([1000, 2500]));
+    expect(r.after.some(([t, k]) => /^BOSS DOWN!/.test(t) && k === 'sys')).toBe(true);
+    expect(r.slamScar, 'the box lands with a heavy impact').toBeGreaterThan(0);
+    expect(r.left, 'over before the next boss').toBe(0);
+    expect(r.pct, 'a scene hurts nobody').toBe(0);
+  });
+});
+
+describe('three phases, each changing the fight', () => {
+  it('phase 2 (Running Loops) and 3 (Broken Value) are announced, pop him to the middle, and answer with the warehouse; phase 3 tears his render', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, false, true)}
+      var out = { p1: b._phase, st: b.stationary };
+      b.x = 900; b.homeX = 900; b._hz = { st:0, n:1000, k:0, c:0, sd:0 };
+      b.hp = b.maxHp*0.5; updateBossAttack(b, f);
+      out.p2 = { phase: b._phase, banner: document.getElementById('banner').textContent, x: b.x, n: b._hz.n, gl: b._pf.gl };
+      b.x = 900; b._hz.n = 1000;
+      b.hp = b.maxHp*0.2; updateBossAttack(b, f);
+      out.p3 = { phase: b._phase, banner: document.getElementById('banner').textContent, x: b.x, n: b._hz.n, gl: b._pf.gl, shake: shakeAmt };
+      return out;
+    })()`);
+    expect(r.p1).toBe(1);
+    expect(r.st, 'he moves').toBe(false);
+    expect(r.p2.phase).toBe(2);
+    expect(r.p2.banner).toBe('Purple Face — PHASE 2: Running Loops');
+    expect(r.p2.x, 'he pops to the middle of the floor').toBe(550);
+    expect(r.p2.n, 'and the next shelf is soon').toBeLessThanOrEqual(300);
+    expect(r.p2.gl).toBe(0);
+    expect(r.p3.phase).toBe(3);
+    expect(r.p3.banner).toBe('Purple Face — PHASE 3: Broken Value');
+    expect(r.p3.x).toBe(550);
+    expect(r.p3.gl, 'the render tears for two seconds').toBeGreaterThan(100);
+  });
+
+  it('each phase is harder without a point more damage: shorter wind-ups and gaps, faster pulses and lunges, more lunges, tanks and totems -- and every hit is still one boss hit', () => {
+    const r = W.eval(`(function(){
+      var P = PFACE;
+      return { tel: [1,2,3].map(function(p){ return Object.keys(P.tel).map(function(k){ return P.tel[k][p]; }); }), gaps: P.gaps, run: P.run, lunges: P.lunges, rap: P.rap.spd, tank: P.tank.close, bugs: P.tank.bugs,
+               waves: P.thanks.waves, fly: P.shoes.fly, lock: P.shoes.lock, warn: P.hz.warn, cyc: P.hz.cycle, hit: P.hz.hit };
+    })()`);
+    for (let k = 0; k < 5; k++) { expect(r.tel[0][k]).toBeGreaterThan(r.tel[1][k]); expect(r.tel[1][k]).toBeGreaterThan(r.tel[2][k]); }
+    expect(r.gaps.slice(1)).toEqual([116, 86, 64]);
+    expect(r.run.slice(1)).toEqual([17, 19, 21]);
+    expect(r.lunges.slice(1)).toEqual([1, 2, 2]);
+    expect(r.rap.slice(1)).toEqual([8, 9.5, 11]);
+    expect(r.tank.slice(1), 'the panes close quicker').toEqual([24, 18, 18]);
+    expect(r.waves.slice(1)).toEqual([1, 1, 2]);
+    expect(r.fly.slice(1), 'the shoes fly faster').toEqual([34, 28, 24]);
+    expect(r.lock.slice(1), 'and the mark stops following you sooner').toEqual([12, 16, 20]);
+    expect(r.cyc.slice(1)).toEqual([840, 660, 540]);
+    expect(r.hit, 'a shelf is 0.75 of a boss hit, as a hazard is: capped by its one id').toBe(0.75);
+  });
+
+  it('a whole fight: every one of his five moves is named once, in turn, and nothing is said but the telegraphs and the phase cards', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, true, true)}
+      var seen = [], tap = [], _b = banner; banner = function(t, m, k, l){ tap.push([String(t), k || null]); return _b(t, m, k, l); };
+      try {
+        for (var i=0;i<3000;i++){
+          if (i === 1000) b.hp = b.maxHp*0.5; if (i === 2000) b.hp = b.maxHp*0.2;
+          step(); f.invuln = 0; f.pct = Math.min(f.pct, 40); f.dead = false;
+          if (b._tel > 0 && b._tel === PFACE.tel[b._telKind][b._phase] - 0) seen.push(b._telKind);
+        }
+      } finally { banner = _b; }
+      return { tap: tap, hp: b.hp, alive: summons.indexOf(b) >= 0 };
+    })()`);
+    const names = new Set(['AD BREAK!', 'FREESTYLE RAP!', 'TORTURE TIME!', 'THANK YOU FOR COMING!', 'TOTAL SLIP SHOES!']);
+    const boss = r.tap.filter(([, k]) => k === 'boss'), sys = r.tap.filter(([, k]) => k === 'sys');
+    expect(r.alive).toBe(true);
+    expect(boss.every(([t]) => names.has(t)), `only his five telegraph names: ${[...new Set(boss.map(([t]) => t))]}`).toBe(true);
+    expect(new Set(boss.map(([t]) => t)), 'and all five came up').toEqual(names);
+    expect(sys.map(([t]) => t), 'and the two phase cards').toEqual(['Purple Face — PHASE 2: Running Loops', 'Purple Face — PHASE 3: Broken Value']);
+    expect(r.tap.filter(([, k]) => k !== 'boss' && k !== 'sys'), 'nothing else is said: no move, status or hit puts a word on the screen').toEqual([]);
+  });
+});
+
+// A boot whose canvas records every call, so a test can see what draw() painted (as test/boss-kit.test.js does).
+function bootRecording() {
+  const html = readFileSync('artifacts/V1/index.html', 'utf8');
+  const log = [], state = { fillStyle: '#000000', strokeStyle: '#000000' }, grad = { addColorStop() {} };
+  const rec = new Proxy({}, {
+    get: (_t, p) => {
+      if (p === 'measureText') return () => ({ width: 0 });
+      if (p === 'canvas') return { width: 1100, height: 720 };
+      if (p === 'getImageData') return () => ({ data: [] });
+      if (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createConicGradient' || p === 'createPattern') return () => grad;
+      if (Object.prototype.hasOwnProperty.call(state, p)) return state[p];
+      return (...args) => { log.push({ op: String(p), args, fill: state.fillStyle, stroke: state.strokeStyle }); };
+    },
+    set: (_t, p, v) => { state[p] = v; return true; },
+  });
+  const dom = new JSDOM(html, {
+    url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+    beforeParse(window) {
+      window.HTMLCanvasElement.prototype.getContext = () => rec;
+      window.Math.random = mulberry32(3);
+      window.requestAnimationFrame = () => 0;
+      window.cancelAnimationFrame = () => {};
+    },
+  });
+  return { w: dom.window, log };
+}
+
+describe('no words on screen: the stomach\'s meter is wordless', () => {
+  it('a swallowed fighter\'s stomach draws the tongue and a ring round it that empties as it is beaten -- and not one "TONGUE n%"', () => {
+    const { w, log } = bootRecording();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
+    const at = (hp) => {
+      w.eval(`${STAGE(300)} fireSwallow(b, f, 1); b._tongueHp = ${hp}; running = false;`);
+      log.length = 0; w.eval('draw()');
+      return log.slice();
+    };
+    for (const hp of [50, 13]) {
+      const ops = at(hp);
+      const texts = ops.filter((e) => e.op === 'fillText' || e.op === 'strokeText').map((e) => String(e.args[0]));
+      expect(texts.filter((t) => /TONGUE|%|\d/.test(t)), `no words for the tongue at ${hp}: ${texts}`).toEqual([]);
+      const rings = ops.filter((e) => e.op === 'arc' && e.args[2] === 44);
+      expect(rings, 'the meter: a track and its fill').toHaveLength(2);
+      expect(rings[1].args[4], `a ring swept ${hp}/50 of the way round`).toBeCloseTo(-Math.PI/2 + (hp/50)*Math.PI*2, 5);
+    }
+    expect(w.eval('String(pfaceDrawStomach)')).not.toMatch(/fillText|strokeText/);
+  });
+
+  it('every hit on the tongue shakes him, and with a quarter of it left he hiccups; beaten, it lets the fighter go, as it always did', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      fireSwallow(b, f, 1); b._tongueHp = 50; var out = {};
+      step(); shakeAmt = 0;
+      damageSummons(f, b.x, b.y, 10, 10); step();
+      out.after1 = { tongue: b._tongueHp, sq: b._pf.sq, shake: shakeAmt, pop: b._pf.pop };
+      damageSummons(f, b.x, b.y, 10, 28); step();
+      out.after2 = { tongue: b._tongueHp, pop: b._pf.pop };
+      damageSummons(f, b.x, b.y, 10, 20); step();
+      out.freed = !(f._swallow > 0); out.tongueGone = b._tongueHp <= 0;
+      return out;
+    })()`);
+    expect(r.after1.tongue).toBe(40);
+    expect(r.after1.sq, 'he is shaken by it').toBeGreaterThan(0);
+    expect(r.after1.shake).toBeGreaterThan(0);
+    expect(r.after1.pop, 'no hiccup yet').toBe(0);
+    expect(r.after2.tongue).toBe(12);
+    expect(r.after2.pop, 'at a quarter left: the hiccup').toBeGreaterThan(0);
+    expect(r.freed).toBe(true);
+  });
+
+  it('the warehouse lays its own concrete, with a yellow safety line, and the dust of a heavy hit takes the color of the concrete', () => {
+    const { w, log } = bootRecording();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false; BOSS_ARENA = 'warehouse';`);
+    const gy = w.eval('groundY()');
+    log.length = 0; w.eval('draw()');
+    const fills = log.filter((e) => e.op === 'fillRect' && e.args[0] === -20 && e.args[1] === gy).map((e) => e.fill);
+    expect(fills, 'the floor is the warehouse concrete, not Goiky green').toEqual(['#6a6a7c']);
+    const line = log.filter((e) => e.op === 'fillRect' && e.fill === '#d8b410' && e.args[3] === 5);
+    expect(line.length, 'the yellow safety line of the walkway').toBe(1);
+    expect(line[0].args[1], 'just under the floor line').toBe(gy + 10);
+    expect(log.some((e) => e.op === 'stroke' && e.stroke === '#1c1c24'), 'and its own floor line').toBe(true);
+    expect(w.eval('impactGroundColor() !== impactTint(stage.ground, 0.35)'), 'the dust of impact() takes the ground of the arena').toBe(true);
+  });
+
+  it('nothing of his in the source puts a word on the screen, calls banner(), or names the owner\'s forbidden four', () => {
+    const html = readFileSync('artifacts/V1/index.html', 'utf8').split(/\r?\n/);
+    const mine = []; let inside = false;
+    for (const l of html) { if (/@boss:purpleface:begin /.test(l)) { inside = true; continue; } if (/@boss:purpleface:end /.test(l)) { inside = false; continue; } if (inside) mine.push(l); }
+    const text = mine.join('\n');
+    expect(mine.length, 'his slots are the bulk of it').toBeGreaterThan(500);
+    expect(text).not.toMatch(/fillText|strokeText|\.font\s*=/);
+    expect(text, 'no banner: only the engine names his wind-ups, and only the phase cards say the rest').not.toMatch(/\bbanner\(/);
+    expect(text).not.toMatch(/\bOJ\b|Suitcase|Cabby|The Floor/);
+    const extra = ['scripts/fetch-attack-sprites.mjs', 'artifacts/V1/assets/sprites/CREDITS.md', 'test/boss-purple-face.test.js'].map((f) => {
+      const src = readFileSync(f, 'utf8').split(/\r?\n/); let on = false, out = [];
+      for (const l of src) { if (/@boss:purpleface:begin /.test(l)) { on = true; continue; } if (/@boss:purpleface:end /.test(l)) { on = false; continue; } if (on) out.push(l); }
+      return f.endsWith('.test.js') ? '' : out.join('\n');
+    }).join('\n');
+    expect(extra).not.toMatch(/\bOJ\b|Suitcase|Cabby|The Floor/);
+  });
+});
+
+describe('the show\'s art, wired and credited', () => {
+  const ART = ['pfacebug', 'pfacetotem', 'pfacetotemw', 'pfaceshoe', 'pfacestar', 'pfacemagnet'];
+  const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+  const manifest = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8'));
+  const picks = readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8');
+
+  it('his shots and props each wear a wiki file: registered, a glyph under it, a transparent PNG of projectile size, in the manifest, in the picks and in the credits with its source', () => {
+    for (const k of ART) {
+      const e = W.eval(`ATTACK_SPRITES.${k}`);
+      expect(e, k).toBeTruthy();
+      expect(e.src).toBe(`assets/sprites/attacks/${k}.png`);
+      expect(e.h, `${k}: drawn between 6 and 44`).toBeGreaterThanOrEqual(6);
+      expect(e.h).toBeLessThanOrEqual(44);
+      expect(W.eval(`typeof PROJ_SHAPE.${k}.draw`), `${k} has a glyph until its art loads`).toBe('function');
+      const file = `artifacts/V1/${e.src}`;
+      expect(existsSync(file), file).toBe(true);
+      const png = PNG.sync.read(readFileSync(file));
+      let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) clear++;
+      expect(clear/(png.width*png.height), `${k} is transparent`).toBeGreaterThan(0.12);
+      expect(Math.max(png.width, png.height), `${k} is projectile-sized`).toBeLessThanOrEqual(128);
+      expect(Math.max(png.width, png.height)).toBeGreaterThanOrEqual(24);
+      const m = manifest[k];
+      expect(m, `${k} is in scripts/attack-sprite-manifest.json`).toMatchObject({ who: 'Purple Face', kits: [k], file: `${k}.png`, wiki: 'bfdi' });
+      expect(m.source).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/battlefordreamisland\/images\//);
+      expect([m.width, m.height]).toEqual([png.width, png.height]);
+      expect(credits, `${k} is credited`).toContain(`(${k}.png)`);
+      expect(credits, `${k}'s source URL is in CREDITS.md`).toContain(m.source);
+      expect(picks, `${k} has its pick`).toMatch(new RegExp(`^\\s+${k}:\\s+\\{ who: 'Purple Face'`, 'm'));
+    }
+    const src = (k) => manifest[k].srcTitle;
+    expect(src('pfacebug')).toBe('Purple bug.png');
+    expect(src('pfaceshoe'), 'his Total Slip Shoes So Wah').toBe('Total Slip Shoe So Wah.png');
+    expect(src('pfacetotem')).toMatch(/^Black totem/);
+    expect(src('pfacetotemw')).toBe('White totem -lollipop-.png');
+    expect(src('pfacemagnet')).toBe("World's Strongest Magnet (TPOT 5).png");
+  });
+
+  it('his open-mouth render is a wiki pose, transparent, at most 200 px tall, credited, flipped like his other render, with a drawn face under it; the look follows what he is doing', () => {
+    expect(W.eval('BOSS_SPRITE_SRC.facegape')).toBe('assets/sprites/purple-face-gape.png');
+    const file = 'artifacts/V1/assets/sprites/purple-face-gape.png';
+    expect(existsSync(file)).toBe(true);
+    const png = PNG.sync.read(readFileSync(file));
+    expect(png.height).toBeLessThanOrEqual(200);
+    const alpha = (x, y) => png.data[(y*png.width + x)*4 + 3];
+    expect([alpha(0, 0), alpha(png.width - 1, 0), alpha(0, png.height - 1), alpha(png.width - 1, png.height - 1)], 'transparent, not a sticker').toEqual([0, 0, 0, 0]);
+    expect(credits).toContain('`purple-face-gape.png`');
+    expect(credits).toContain('Purple_Face_-_blowing_bugs.png');
+    expect(W.eval('!!BOSS_SPRITE_FLIP.facegape && !!BOSS_SPRITE_FLIP.face')).toBe(true);
+    expect(W.eval(`String(drawBossSprite).indexOf('case "facegape"') >= 0`), 'a drawn fallback').toBe(true);
+    const looks = W.eval(`(function(){
+      var s = function(o){ return Object.assign({ attack:'swallow', sprite:'face', _tel:0, _telKind:null, _phase:1 }, o); };
+      return [s({}), s({ _tel:20, _telKind:'swallow' }), s({ _tel:20, _telKind:'pfaceTorture' }), s({ _tel:20, _telKind:'pfaceThanks' }), s({ _tel:40, _telKind:'pfaceRap' }), s({ _tel:30, _telKind:'pfaceRap' }),
+              s({ _pf:{ st:'run', dir:1 } }), s({ _pf:{ st:'crash', dir:1 } }), s({ _pf:{ st:'tell', dir:1 } })].map(function(x){ return bossLook(x); });
+    })()`);
+    expect(looks, 'mouth open for AD BREAK!, the tank and the rap\'s off-beats; shut at rest, when he is stuck in the wall and for the kick').toEqual(['face', 'facegape', 'facegape', 'face', 'facegape', 'face', 'facegape', 'face', 'facegape']);
+  });
+});
+
+describe('a netcode client sees him', () => {
+  it('his lunge, tanks, kick, ring, shoes, tongue meter, stomach, hazard, rap pulses and ending cross the snapshot and draw on the client', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
+      BOSS_ARENA = 'warehouse'; var gy = groundY(), me = fighters[0];
+      var pf = { lunge:{ st:'run', dir:-1, x0:1018, x1:82, t:7, ph:2, n:2, id:1 }, tk:[{ id:1, x:300, age:40, close:24 }], ring:{ x:500, dir:1 }, kick:{ dir:1, t:5, id:2, hit:{} },
+                 shoes:{}, later:[], tid:1, sq:6, gl:30, pop:0, aim:null, hp:100 };
+      pf.shoes[me.idx] = 1e9;
+      summons = [{ type:'boss', name:'Purple Face', color:'#7a3a8a', r:88.4, sprite:'face', x:500, y:gy-88, hp:80, maxHp:235, face:-1, flash:0, homeX:500, _rage:false, _tel:10, _telKind:'pfaceThanks', _bossRush:true,
+                   attack:'swallow', _phase:2, _pf:pf, _tongueHp:30, _tongueX:400, _tongueY:gy-170, _stX:400, _stY:gy-140, _hz:{ st:1, k:20, sd:3, n:0, c:1 } }];
+      projectiles = [{ x:300, y:gy-16, vx:8, vy:0, r:16, color:'#ff9ad8', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:5, life:50, delay:20, shape:'pfacenote', pfaceNote:1 },
+                     { x:420, y:gy+260, vx:0, vy:0, r:1, color:'#7a3a8a', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:6, life:1, delay:60, pfaceEnd:1, face:-1 },
+                     { x:600, y:300, vx:1, vy:0, r:26, color:'#a86bff', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:7, life:9999, delay:1e6, warn:99, warnX:640, warnY:gy, shape:'pfaceshoe' }];
+      me._swallow = 100; me.iceUntil = 120;
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      summons = []; projectiles = []; BOSS_ARENA = null;
+      applySnapshot(snap);
+      var err = null;
+      try { summons.forEach(drawSummon); projectiles.forEach(drawProjectile); drawBossBar(); drawArenaDecor(BOSS_ARENA); drawArenaHazard('under'); drawArenaHazard('over'); pfaceDrawFx(summons[0]); }
+      catch(e){ err = e.message; }
+      return { boss: snap.summons[0], pj: snap.pj.a.map(function(row){ return row[8]; }), arena: BOSS_ARENA, err: err, look: pfaceLook(summons[0]), swallowed: fighters[0]._swallow, ice: fighters[0].iceUntil,
+               got: { pf: summons[0]._pf, hz: summons[0]._hz, tongue: [summons[0]._tongueHp, summons[0]._stX], notes: projectiles.filter(function(p){ return p.pfaceNote; }).map(function(p){ return p.delay; }), end: projectiles.filter(function(p){ return p.pfaceEnd; }).length } };
+    })()`);
+    expect(r.err).toBe(null);
+    expect(r.boss._pf).toMatchObject({ st: 'run', dir: -1, x1: 82, tk: [[300, 40, 24]], ring: 500, kick: [1, 5], shoe: [expect.any(Number)], sq: 6, gl: 30 });
+    expect(r.boss).toMatchObject({ _tongueHp: 30, _tongueX: 400, _stX: 400, _hz: { st: 1, k: 20, sd: 3 }, attack: 'swallow', _phase: 2, _telKind: 'pfaceThanks' });
+    expect(r.got.pf, 'the client\'s boss carries the compact view itself').toMatchObject({ st: 'run', tk: [[300, 40, 24]], ring: 500 });
+    expect(r.got.tongue).toEqual([30, 400]);
+    expect(r.got.notes, 'a pulse waiting its turn is still waiting on the client').toEqual([20]);
+    expect(r.got.end).toBe(1);
+    expect(r.arena, 'a client draws the boss arena').toBe('warehouse');
+    expect(r.look, 'and picks the open-mouth render from the lunge').toBe('facegape');
+    expect(r.swallowed, 'the stomach flag rides the fighter').toBeGreaterThan(0);
+    expect(r.ice, 'and so does the slip').toBe(120);
+  });
+});

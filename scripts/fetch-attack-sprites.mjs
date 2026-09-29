@@ -234,6 +234,21 @@ const PICKS = {
   // @boss:swarm:end picks
 
   // @boss:purpleface:begin picks
+  // Purple Face (Boss 5), the boss overhaul: the show's own art for what he throws and what stands in his warehouse. Every file is the
+  // thing itself from the show -- a transparent PNG on the BFDI wiki -- and each note says the moment it is from. Names are prefixed
+  // `pface` so no other boss's pick can share one.
+  pfacebug:    { who: 'Purple Face', kits: ['pfacebug'],    file: 'Purple bug.png', h: 40,
+    note: "the Purple-spotted Bug (the Bugs page: BFDI 22, BFDIA 3+), hundreds of which Purple Face drops into Flower's tank in TORTURE TIME! (SOS (Save Our Show): \"Purple Face releases the bugs into Flower's tank.\")" },
+  pfacetotem:  { who: 'Purple Face', kits: ['pfacetotem'],  file: ['Black totem (teardrop).png', 'Black totem.png'], h: 56,
+    note: 'a black totem, rolled out by THANK YOU FOR COMING! (The Tweested Temple: "A totem emerges from the floor." / "The totem rolls away")' },
+  pfacetotemw: { who: 'Purple Face', kits: ['pfacetotemw'], file: 'White totem -lollipop-.png', h: 56,
+    note: "a white totem, rolled out beside the black one (The Tweested Temple's totem set)" },
+  pfaceshoe:   { who: 'Purple Face', kits: ['pfaceshoe'],   file: 'Total Slip Shoe So Wah.png', h: 44,
+    note: "Purple Face's \"Total Slip Shoes So Wah\", lobbed by TOTAL SLIP SHOES! (Catch These Hands: \"Purple Face puts some clown shoes on Yellow Face.\")" },
+  pfacestar:   { who: 'Purple Face', kits: ['pfacestar'],   file: 'Pointy Star.png', h: 40,
+    note: "a pointy star (the BFDI assets), the spark on the big beat of FREESTYLE RAP!" },
+  pfacemagnet: { who: 'Purple Face', kits: ['pfacemagnet'], file: "World's Strongest Magnet (TPOT 5).png", h: 96,
+    note: "the World's Strongest Magnet over Yellow Face's Warehouse (Fishes and Dishes: \"forced the shelves from other sides to fall on top of the team\")" },
   // @boss:purpleface:end picks
 
   // @boss:dragon:begin picks
