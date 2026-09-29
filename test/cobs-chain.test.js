@@ -652,7 +652,8 @@ describe('the Vault never names him, and One\'s chain is untouched', () => {
     // Her trigger still fires on a counted match, and his chain does not move for it.
     W.eval(`PROFILE.fighterStats = { Lightning:{ g:20, w:15 } }; PROFILE.one.rushLightning = true;
       fighters = [{ name:'Lightning', you:true, team:0, killCount:0 }, { name:'Firey', team:1, killCount:0 }]; awardMatchProgress(0);`);
-    expect(W.eval('({ one:PROFILE.one.stage, erased:PROFILE.one.erased, cobs:PROFILE.cobs.stage })')).toEqual({ one: 1, erased: ['Gaty'], cobs: 2 });
+    // "3 fighters should be erased every time, not just 1." (the owner, 2026-09-29): a win erases three (ONE_ERASE_PER_WIN).
+    expect(W.eval('({ one:PROFILE.one.stage, erased:PROFILE.one.erased, cobs:PROFILE.cobs.stage })')).toEqual({ one: 1, erased: ['Gaty', 'Barf Bag', 'Basketball'], cobs: 2 });
     W.eval(`PROFILE.one = { stage:0, erased:[], rushLightning:false, wins:0, bestSecs:0 }; go('title')`);
   });
 });

@@ -154,9 +154,10 @@ describe('step 2: Boss Rush loop 2 with Lightning', () => {
 });
 
 describe('step 3: the trigger', () => {
-  it('fires when the win rate comes last, and the win that completes it erases Gaty', async () => {
+  it('fires when the win rate comes last, and the win that completes it erases the canon three', async () => {
+    // "3 fighters should be erased every time, not just 1." (the owner, 2026-09-29): a win erases three (ONE_ERASE_PER_WIN).
     await fresh(W, `PROFILE.fighterStats = { Lightning:{ g:19, w:14 } }; PROFILE.one.rushLightning = true;`);
-    expect(play(W, 'Lightning', true)).toEqual(['Gaty']);
+    expect(play(W, 'Lightning', true)).toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     expect(W.eval('PROFILE.one.stage')).toBe(1);
     expect(W.eval('PROFILE.unlocked.indexOf("Lightning") >= 0'), 'the last fighter is pickable in every board view').toBe(true);
   });
@@ -173,16 +174,17 @@ describe('step 3: the trigger', () => {
       var out = { now:now, stage:PROFILE.one.stage, erased:PROFILE.one.erased.slice(), note:!!document.getElementById('rushQuestNote'),
         text:card.textContent };
       card.style.display = 'none'; paused = false; return out; })()`);
-    expect(r.now).toEqual(['Gaty']);
+    // "3 fighters should be erased every time, not just 1." (the owner, 2026-09-29): a win erases three (ONE_ERASE_PER_WIN).
+    expect(r.now).toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     expect(r.stage).toBe(1);
-    expect(r.erased).toEqual(['Gaty']);
+    expect(r.erased).toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     expect(r.note, 'the note element is gone from the card').toBe(false);
     expect(r.text, 'no erasure hint anywhere on the card').not.toMatch(LOOP2_HINT);
     await sleep(W, 0);
-    expect(stored(W).one.erased, 'the erasure is still saved').toEqual(['Gaty']);
+    expect(stored(W).one.erased, 'the erasure is still saved').toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     expect(stored(W).one.stage).toBe(1);
     // the next loop is not another erasure: after the trigger, fighters go per won MATCH
-    expect(W.eval(`fighters = [{ name:'Lightning', you:true, team:0 }]; oneRushHook(3); PROFILE.one.erased.length`)).toBe(1);
+    expect(W.eval(`fighters = [{ name:'Lightning', you:true, team:0 }]; oneRushHook(3); PROFILE.one.erased.length`)).toBe(3);
   });
 
   it('through the real gauntlet: Four falling to your Lightning triggers the chain, and the card still gives no hint', async () => {
@@ -203,12 +205,12 @@ describe('step 3: the trigger', () => {
     expect(r.card, 'the victory card still shows').toBe('flex');
     expect(r.rush).toBe(true);
     expect(r.stage, 'the chain still triggers').toBe(1);
-    expect(r.erased, 'and the first fighter is still erased').toEqual(['Gaty']);
+    expect(r.erased, 'and the first three are still erased').toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     expect(r.text).toMatch(/VICTORY!/);
     expect(r.text).toMatch(/Loop 2 cleared|Keep going/i);
     expect(r.text, 'the owner: "remove the hint when you beat loop 2."').not.toMatch(LOOP2_HINT);
     await sleep(W, 0);
-    expect(stored(W).one.erased, 'saved').toEqual(['Gaty']);
+    expect(stored(W).one.erased, 'saved').toEqual(['Gaty', 'Barf Bag', 'Basketball']);
   });
 
   it('a trigger on a loss erases no one', async () => {
@@ -219,16 +221,17 @@ describe('step 3: the trigger', () => {
 });
 
 describe('step 4: the bans', () => {
-  it('erases the canon three first, then your most-played, ONE per WIN and none per loss', async () => {
+  it('erases the canon three first, then your most-played, THREE per WIN and none per loss', async () => {
+    // "3 fighters should be erased every time, not just 1." (the owner, 2026-09-29): a win erases three (ONE_ERASE_PER_WIN).
     await fresh(W, ARM + ` PROFILE.fighterStats.Pen = { g:30, w:10 }; PROFILE.fighterStats.Firey = { g:12, w:3 }; PROFILE.fighterStats.Leafy = { g:12, w:9 };`);
     const seen = [];
     for (let i = 0; i < 6; i++) {
       seen.push(play(W, 'Lightning', true).length);
       seen.push(play(W, 'Lightning', false).length);
     }
-    expect(seen, 'one more after each win, none after each loss').toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6]);
+    expect(seen, 'three more after each win, none after each loss').toEqual([3, 3, 6, 6, 9, 9, 12, 12, 15, 15, 18, 18]);
     // Pen is played most; Firey and Leafy are tied, so the show's order breaks it (Leafy debuts first)
-    expect(W.eval('PROFILE.one.erased')).toEqual(['Gaty', 'Barf Bag', 'Basketball', 'Pen', 'Leafy', 'Firey']);
+    expect(W.eval('PROFILE.one.erased.slice(0, 6)')).toEqual(['Gaty', 'Barf Bag', 'Basketball', 'Pen', 'Leafy', 'Firey']);
   });
 
   it('holds on player 1\'s pick everywhere: the board, Start, the World Cup pick, the Daily and the lobby', async () => {
@@ -283,7 +286,7 @@ describe('step 4: the bans', () => {
     let prev = 0, each = true;
     for (let i = 0; i < 200 && W.eval('PROFILE.one.stage') < 2; i++) {
       const n = play(W, 'Lightning', true).length;
-      if (n !== prev + 1 && W.eval('PROFILE.one.stage') < 2) each = false;
+      if (n !== prev + 3 && W.eval('PROFILE.one.stage') < 2) each = false;   // three a win until the queue runs dry (the last win may take fewer)
       prev = n;
     }
     const r = W.eval(`(function(){
@@ -301,7 +304,7 @@ describe('step 4: the bans', () => {
         open:open, legend:document.getElementById('rosterLegend').textContent, trio:PROFILE.one.erased.slice(0,3) };
     })()`);
     expect(r.stage).toBe(2);
-    expect(each, 'exactly one fighter per win all the way').toBe(true);
+    expect(each, "exactly three fighters per win all the way").toBe(true);
     expect(r.trio).toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     expect(r.allGone).toBe(true);
     expect(r.pickable).toEqual(['Lightning']);
@@ -319,7 +322,7 @@ describe('step 4: the bans', () => {
       shown:document.getElementById('eraseNote').style.display })`);
     expect(r.screen).toBe(true);
     expect(r.shown).toBe('block');
-    expect(r.note).toMatch(/^✖ ERASED FROM THE TIMELINE: Gaty · Every win, another fighter vanishes\./);
+    expect(r.note).toMatch(/^✖ ERASED FROM THE TIMELINE: Gaty, Barf Bag, Basketball · Every win, three more fighters vanish\./);
     W.eval(`showErasedNote()`);
     expect(W.eval(`document.getElementById('eraseNote').style.display`), 'drained: a Rematch does not repeat it').toBe('none');
   });
@@ -588,7 +591,7 @@ describe('the chain survives a reload at every step', () => {
     const w2 = boot({ 'profile:v1': W.localStorage.getItem('profile:v1') });
     await w2.eval('profileReady');
     expect(w2.eval(`({ stage:PROFILE.one.stage, erased:PROFILE.one.erased, L:PROFILE.fighterStats.Lightning, rush:PROFILE.one.rushLightning })`))
-      .toEqual({ stage: 1, erased: ['Gaty'], L: { g: 20, w: 15 }, rush: true });
+      .toEqual({ stage: 1, erased: ['Gaty', 'Barf Bag', 'Basketball'], L: { g: 20, w: 15 }, rush: true });   // three a win (the owner, 2026-09-29)
   });
 
   it('a secret stays secret: before the Moon cracks the title has no One button at all, and keeps its six', async () => {
@@ -666,7 +669,8 @@ describe('the chain survives a reload at every step', () => {
 });
 
 describe('the review\'s fixes to the chain', () => {
-  it('a World Cup match you win erases one, and the hub says who; a lost or drawn one erases no one', async () => {
+  it('a World Cup match you win erases three, and the hub says who; a lost or drawn one erases no one', async () => {
+    // "3 fighters should be erased every time, not just 1." (the owner, 2026-09-29): a win erases three (ONE_ERASE_PER_WIN).
     // "ONE fighter erased per WIN", with no mode left out: the cup's matches never reach awardMatchProgress.
     await fresh(W, ARM + ` PROFILE.one.stage = 1; unlockFighter('Lightning'); chosen = oneLightning(); PENDING_TOURNEY = { size:1, mode:'normal' }; startMatch();`);
     const play1 = (kosMine, kosTheirs) => W.eval(`(function(){
@@ -680,12 +684,12 @@ describe('the review\'s fixes to the chain', () => {
     })()`);
     const won = play1(2, 0);
     expect(won.you).toBe('Lightning');
-    expect(won.erased).toEqual(['Gaty']);
-    expect(won.hub).toMatch(/ERASED FROM THE TIMELINE: Gaty/);
-    expect(play1(0, 2).erased, 'a loss').toEqual(['Gaty']);
-    expect(play1(1, 1).erased, 'a draw').toEqual(['Gaty']);
+    expect(won.erased).toEqual(['Gaty', 'Barf Bag', 'Basketball']);
+    expect(won.hub).toMatch(/ERASED FROM THE TIMELINE: Gaty, Barf Bag, Basketball/);
+    expect(play1(0, 2).erased, 'a loss').toEqual(['Gaty', 'Barf Bag', 'Basketball']);
+    expect(play1(1, 1).erased, 'a draw').toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     await sleep(W, 0);
-    expect(stored(W).one.erased, 'saved at the win').toEqual(['Gaty']);
+    expect(stored(W).one.erased, 'saved at the win').toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     W.eval(`endTournament(); go('title');`);
   });
 
@@ -720,9 +724,12 @@ describe('the review\'s fixes to the chain', () => {
       var b = summons.find(function(s){ return s.type==='boss' && s._bossRush; }); b.hp = 0; bossRushCheck();
       return PROFILE.one.erased.slice(); })()`);
     W.eval(`startMatch();`);
-    expect(fell()).toEqual(['Gaty']);
+    // "3 fighters should be erased every time, not just 1." (the owner, 2026-09-29): a win erases three (ONE_ERASE_PER_WIN).
+    expect(fell()).toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     W.eval(`spawnBossRushBoss();`);
-    expect(fell()).toEqual(['Gaty', 'Barf Bag']);
+    const two = fell();
+    expect(two.length, 'three more for the second boss').toBe(6);
+    expect(two.slice(0, 3)).toEqual(['Gaty', 'Barf Bag', 'Basketball']);
     W.eval(`running = false; BOSSRUSH.active = false; PROFILE.one.stage = 0; PROFILE.one.erased = []; startMatch();`);
     expect(fell(), 'a locked chain: a boss is just a boss').toEqual([]);
     W.eval(`running = false; BOSSRUSH.active = false; go('title');`);
