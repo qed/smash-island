@@ -227,6 +227,7 @@ describe("one kit's two different things draw as two different things", () => {
     ['Microphone', 'special', 'mic'], ['Microphone', 'up', 'soundwave'], // the dodgeball and Feedback, drawn
     ['Salt', 'special', 'saltpepper'],                                  // salt, drawn
     ['Test Tube', 'up', 'testtube'], ['Test Tube', 'smash', 'testtube'], // her flask, drawn
+    ['Test Tube', 'special', 'dart'],                                    // her tranquilizer dart, drawn ("New move for Test Tube": the wiki shows the blaster, never the dart)
   ];
   it.each(APART)('%s, %s: %s', (name, move, key) => {
     const got = thrown(name, move);

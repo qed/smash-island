@@ -40,14 +40,17 @@ describe('the Inanimate Insanity DLC', () => {
     const BATCH3 = ['Box', 'Trophy', 'Goo', 'Lifering', 'Bonesaw', 'Spikey', 'Candle', 'Cammy', 'Cheesy', 'Dough', 'Fan', 'Soap',
       'Tissues', 'Yin-Yang', 'Starfruit', 'Blueberry', 'Cherries', 'Clover', 'Jack', 'Magnet', 'MeTag', 'Poppy', 'Silver Spoon',
       'Tapey', 'Tea Kettle', 'Teddy Bear'];
+    // "oh, and bot should get their own kit." (2026-09-29): Bot, who was only Test Tube's summon, is a playable II fighter after batch 3,
+    // "With the II DLC": open from the start like the rest of the pack, and not a Vault fighter.
+    const BOT = ['Bot'];
     expect(r.dlc).toEqual(['Balloon', 'Bomb', 'Knife', 'Lightbulb', 'Paintbrush',
-      'Taco (II)', 'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube', ...BATCH3]);
-    expect(r.open).toEqual(['Bomb', 'Knife', 'Paintbrush', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube', ...BATCH3]);
+      'Taco (II)', 'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube', ...BATCH3, ...BOT]);
+    expect(r.open).toEqual(['Bomb', 'Knife', 'Paintbrush', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)', 'Paper', 'Microphone', 'Salt', 'Test Tube', ...BATCH3, ...BOT]);
     expect(r.shut).toEqual(['Balloon', 'Lightbulb', 'Taco (II)', 'Bow', 'Marshmallow']);
     expect(r.head).toBe(true);
     expect(r.heads, 'one DLC group on the board').toBe(1);
     expect(r.afterHead.filter((n) => !r.dlc.includes(n)), 'only DLC fighters after the DLC label').toEqual([]);
-    expect(BATCH3.filter((n) => !r.afterHead.includes(n)), 'batch 3 sits in the DLC group with the rest').toEqual([]);
+    expect([...BATCH3, ...BOT].filter((n) => !r.afterHead.includes(n)), 'batch 3 and Bot sit in the DLC group with the rest').toEqual([]);
     expect(r.osc).toEqual([]);
   });
 
