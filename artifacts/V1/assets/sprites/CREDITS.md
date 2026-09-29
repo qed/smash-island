@@ -441,6 +441,11 @@ recreation, so the render was fetched by name: `node scripts/fetch-sprites.mjs -
 | MePhone4 | `mephone4.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c8/2024_II_MePhone4.png/revision/latest?cb=20250628192616 |
 | MePhone4S | `mephone4s.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/8a/Yeyeye.png/revision/latest?cb=20241130080859 |
 | Steve Cobs | `steve-cobs.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c9/SteveCobs2024PoseAlt.png/revision/latest?cb=20250830175628 |
+| Springy | `springy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c8/Springy.png/revision/latest?cb=20230709173730 |
+| Springy (unvitational) | `springy-unvitational.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6a/Springy0.png/revision/latest?cb=20240128145914 |
+| Springy (falling) | `springy-falling.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/dd/Springitfalling.png/revision/latest?cb=20231014092920 |
+| Springy (angry) | `springy-angry.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/10/Springypissedoff.png/revision/latest?cb=20230801191401 |
+| Steve Cobs (hurt) | `steve-cobs-hurt.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/19/CobsAFTERAPAINFULDROP.png/revision/latest?cb=20241027001954 |
 
 MePhone4S, Boss 9. His page's default image is the Season 4 art, cropped so tight the art touches its bottom edge,
 so the render was fetched by name: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "MePhone4S=Yeyeye.png"`,
@@ -453,6 +458,26 @@ from the same 2024 pose set as Knife2024Pose.png: `node scripts/fetch-sprites.mj
 history was checked first: the current revision is the original 1457×3717 upload, byte for byte the same size.
 Downscaled to 78×200, alpha verified (transparent corners; the tall, tight crop touches the edges in a few places),
 facing measured (0.041, not flipped).
+
+Steve Cobs left Boss 11 on 2026-09-28 ("replace him with springy": he is the second secret boss now); his render stays,
+keyed `cobs`, for that fight.
+
+Steve Cobs (hurt), the secret fight's second look. File:CobsAFTERAPAINFULDROP.png from his II wiki gallery -- the
+broken glasses and the bruise after the drop -- fetched by name: `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity
+"Steve Cobs (hurt)=CobsAFTERAPAINFULDROP.png"`, downscaled to 80x200, alpha verified (469 halo pixels cleaned), facing
+measured (0.026, not flipped), looked at. Keyed `cobshurt`; `cobsLook` puts it on once his glasses break in the Keynote
+rage (60% HP) and for Popping Point (under 20% HP), per the owner's "Both in" (cobs-decisions.md).
+
+Springy, Boss 11 ("replace him with springy"). Four looks of one boss, all from his II wiki page and gallery, fetched by
+name with `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "Springy=Springy.png"` and the three below it, each
+looked at before it was kept, downscaled to 200 px tall, alpha verified (transparent corners on every one), facing
+measured (0.116 / 0.017 / 0.115 / 0.157: all facing right, none flipped). Drawn by `drawBossSprite` through
+`springyLook`, which picks the key by his state:
+- `springy.png` -- File:Springy.png, his page's own image: the clean III design, a grey spring with the red mittens.
+- `springy-unvitational.png` -- File:Springy0.png, the mangled Unvitational-Committee design of the III finale (S3E18-19),
+  worn in his phase 3.
+- `springy-falling.png` -- File:Springitfalling.png, the falling pose, worn on the way down in TRY NOT TO FALL.
+- `springy-angry.png` -- File:Springypissedoff.png, worn while he winds up from phase 2 on.
 
 ## Assist trophies
 

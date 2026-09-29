@@ -245,11 +245,11 @@ function expectOneBed(w, src) {
 }
 
 describe('background music — the file layer', () => {
-  it('declares six contexts, each backed by a real default file on disk', () => {
-    // Five, until One got her own bed ("actually, ones music should be joker.").
+  it('declares seven contexts, each backed by a real default file on disk', () => {
+    // Five, until One got her own bed ("actually, ones music should be joker."), and Steve Cobs his ("use big shot.").
     const { w } = bootWithAudio();
     const map = JSON.parse(w.eval('JSON.stringify(MUSIC_FILES)'));
-    expect(Object.keys(map).sort()).toEqual(['battle', 'boss', 'intense', 'menu', 'one', 'tourney']);
+    expect(Object.keys(map).sort()).toEqual(['battle', 'boss', 'cobs', 'intense', 'menu', 'one', 'tourney']);
     for (const rel of Object.values(map)) {
       expect(existsSync(`${PUB}/${rel}`), `${rel} is missing`).toBe(true);
     }
@@ -270,6 +270,25 @@ describe('background music — the file layer', () => {
     expect(r.boss, 'Boss Rush keeps its own').toBe('boss');
     expect(r.card, 'it starts on her card').toBe(true);
     expect(r.start, 'and the fight itself picks it').toBe(true);
+  });
+
+  it("Steve Cobs's fight has its own bed, BIG SHOT, from his title card through the fight and back from clutch time", () => {
+    // "use big shot." -- the Spamton NEO mix, one of the owner's own tracks (already in the battle playlist)
+    const { w } = bootWithAudio();
+    expect(w.eval('MUSIC_FILES.cobs')).toBe('assets/music/spamton_neo_mix_ex_wip.ogg');
+    const r = w.eval(`(function(){
+      var was = COBSFIGHT.active; COBSFIGHT.active = true; BOSSRUSH.active = false;
+      var base = clutchBaseKind(); COBSFIGHT.active = was;
+      var P0 = PROFILE; PROFILE = { cobs:{ stage:COBS_STAGE.DOOR }, one:{} };
+      var due = cobsCardDue(); PROFILE.cobs.stage = COBS_STAGE.FREE; var after = cobsCardDue(); PROFILE = P0;
+      return { base: base, start: String(beginMatchNow).indexOf("COBSFIGHT.active ? 'cobs'") >= 0,
+               title: String(go).indexOf("(id==='title' && cobsCardDue()) ? 'cobs'") >= 0, due: due, after: after };
+    })()`);
+    expect(r.base, "his fight's bed").toBe('cobs');
+    expect(r.start, 'the fight itself picks it').toBe(true);
+    expect(r.title, 'the title plays it while his card is up').toBe(true);
+    expect(r.due, 'his card is due while the door is open').toBe(true);
+    expect(r.after, 'and not once he is beaten').toBe(false);
   });
 
   it('touches no audio and no storage at boot', () => {

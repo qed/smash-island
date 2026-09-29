@@ -165,7 +165,8 @@ describe('Boss Rush balance', () => {
     // Was /All nine bosses beaten/. "mephone should be a boss, alongside 4s, and cobs" made the gauntlet twelve long (the
     // three II bosses). The card counts the roster; this pins the number itself, so a roster change has to come here too
     // (building the word from BOSS_ROSTER.length with the code's own table only checked the code against itself).
-    expect(W.eval('BOSS_ROSTER.length'), 'nine, and MePhone4, MePhone4S and Steve Cobs').toBe(12);
+    // ...and "replace him with springy" (2026-09-28) swapped Steve Cobs for Springy at Boss 11, one for one: still twelve.
+    expect(W.eval('BOSS_ROSTER.length'), 'nine, and MePhone4, MePhone4S and Springy').toBe(12);
     expect(r.sub).toMatch(/^All twelve bosses beaten in 2:05/);
     expect(r.resumed).toBe(true);
     expect(r.running).toBe(false);

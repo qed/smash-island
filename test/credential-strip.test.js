@@ -201,7 +201,7 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     const block = src.slice(src.indexOf('const MUSIC_FILES'));
     const paths = [...block.slice(0, block.indexOf('};')).matchAll(/'([^']*\.(?:mp3|ogg))'/g)]
       .map((m) => m[1]);
-    expect(paths.length).toBe(6);   // six since One got her own bed ("actually, ones music should be joker.")
+    expect(paths.length).toBe(7);   // six since One got her own bed ("actually, ones music should be joker."), seven with Steve Cobs's ("use big shot.")
     for (const rel of paths) {
       const abs = join(PUBLISH_ROOT, rel);
       expect(PUBLISHED_FILES).toContain(abs.replace(/\\/g, '/'));

@@ -33,8 +33,9 @@ const download = (name, side) => `(function(){ var R = Math.random; Math.random 
 
 describe('MePhone4 joins the gauntlet', () => {
   // The roster pins below were written when he made it ten. The same request -- "mephone should be a boss, alongside 4s,
-  // and cobs" -- then put MePhone4S in as Boss 9, after Evil Leafy, and Steve Cobs in as Boss 11, after Two, so their rows
-  // are in them now; nothing else moved.
+  // and cobs" -- then put MePhone4S in as Boss 9, after Evil Leafy, and Steve Cobs in as Boss 11, after Two. Then "replace
+  // him with springy" (2026-09-28): Cobs became the second secret boss and Springy took Boss 11, so that row is Springy's
+  // now (test/boss-springy.test.js); nothing else moved.
   it('is Boss 7, before Four, and the bosses around him are exactly as they were', () => {
     const r = W.eval(`(function(){
       var rows = BOSS_ROSTER.map(function(b){ return [b.name, b.color, b.hp, b.big, b.attack, b.arena, b.stationary, b.sprite]; });
@@ -54,14 +55,14 @@ describe('MePhone4 joins the gauntlet', () => {
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy'],
       ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s'],
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two'],
-      ['Steve Cobs', '#f0d010', 330, 2.6, 'cobs', 'meeple', true, 'cobs'],
+      ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy'],
       ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four'],
     ]);
     expect(r.extra).toEqual({
       'Announcer': ['rain', 'ring'], 'Puffball Speaker Box': ['slam', 'rain'], 'Firey Speaker Box': ['rain', 'slam'],
       'The Bug Swarm': ['seekers', 'rain'], 'Purple Face': ['ring', 'rain'], 'Purple Dragon': ['slam', 'rain'],
       'MePhone4': ['melife', 'portal'],
-      'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Steve Cobs': ['knife', 'kernels'],
+      'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
       'Four': ['rain', 'seekers'],
     });
   });
@@ -86,7 +87,7 @@ describe('MePhone4 joins the gauntlet', () => {
       } finally { setTimeout = st; BOSSRUSH.active=false; running=false; summons=[]; }
     })()`);
     expect(order).toEqual(['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face',
-      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Steve Cobs', 'Four']);
+      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Springy', 'Four']);   // Springy at 11 ("replace him with springy")
   });
 
   it('takes turns: Fist Thingy, MeLife, Fist Thingy, Rejection Portal, each with its own warning, and names his phases', () => {

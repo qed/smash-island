@@ -103,10 +103,11 @@ describe('MePhone4S joins the gauntlet', () => {
         return { order: order, atHim: atHim };
       } finally { setTimeout = st; BOSSRUSH.active=false; running=false; summons=[]; projectiles=[]; }
     })()`);
-    // Steve Cobs, the third boss of the same request ("mephone should be a boss, alongside 4s, and cobs"), is Boss 11,
-    // between Two and Four; nothing before him moved.
+    // Steve Cobs, the third boss of the same request ("mephone should be a boss, alongside 4s, and cobs"), was Boss 11,
+    // between Two and Four; "replace him with springy" (2026-09-28) put Springy there and made Cobs the second secret boss.
+    // Nothing before Boss 11 moved.
     expect(r.order).toEqual(['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face',
-      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Steve Cobs', 'Four']);
+      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Springy', 'Four']);
     expect(r.atHim.cookieT, 'nobody collapses after he is gone').toBe(0);
     expect(r.atHim.cookiesLeft, 'his cookies go with him').toBe(0);
     expect(r.atHim.othersLeft, 'nothing else is swept').toBe(1);

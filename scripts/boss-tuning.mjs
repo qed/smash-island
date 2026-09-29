@@ -7,7 +7,7 @@ export const BOSS_TUNING_EXPR = `JSON.stringify({
   roster: BOSS_ROSTER.map(function(b){ return [b.name, b.hp, b.big, !!b.stationary]; }),
   dmgBase: BOSS_DMG_BASE, stockEvery: BOSS_STOCK_EVERY,
   mephone: { cap: MELIFE_CAP, hp: MELIFE_HP, life: MELIFE_LIFE, addDmg: HOSTILE_ADD_DMG, glove: MEPHONE_GLOVE, gaps: MEPHONE_GAPS },
-  s4: S4, cobs: COBS
+  s4: S4, springy: SPRINGY   // Springy took Boss 11 ("replace him with springy"); Steve Cobs is the secret boss now and his numbers no longer bear on the gauntlet
 })`;
 // ...and the harness's own code, the same way: the part of scripts/boss-solo.mjs that sets a fight up, plays it and scores
 // it (from FIGHTERS to the worker's entry point), comment lines and blank lines left out. The first stored numbers were
