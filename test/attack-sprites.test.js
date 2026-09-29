@@ -62,6 +62,8 @@ const KEYS = ['shatter', 'atstake', 'van', 'float', 'cap', 'pricetag', 'measure'
   'lemon', 'chair', 'heavy', 'evilpaper', 'split', 'smokering', 'hook', 'eball', 'fury',
   // Inanimate Insanity DLC batch 3 ("add the last set of dlc fighters.")
   'lifeguard', 'spikeburst', 'soccerball', 'losercage', 'soapvacuum', 'cloth', 'condishawn', 'yinyang', 'slpineapple', 'sllemon', 'sltomato', 'slguava', 'slmangosteen', 'oatcookie', 'cherries', 'oliveoil', 'clover', 'bananapeel', 'jack', 'ghostvacuum', 'capturepod', 'immunitycookie', 'horstray', 'paintball',
+  // The Announcer (the boss overhaul, Round 9): the cakes he tosses, the Cake Tosser's blade, a water balloon, the acid, a sparkle for the laser, the crusher's press (test/boss-announcer.test.js)
+  'annslice', 'annlime', 'annice', 'annpie', 'anntosser', 'annballoon', 'annacid', 'annspark', 'annpress',
   // Steve Cobs's prize (OJ, Suitcase, Cabby): the shards, the bomb, the wrench, the file (test/dlc-ii-prize.test.js)
   'ojshard', 'casebomb', 'wrench', 'file'];
 
@@ -78,7 +80,7 @@ describe('the registry', () => {
   it('every file in the attack folder is drawn by some entry -- none is dead weight', () => {
     const drawn = new Set(W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src.split("/").pop(); })'));
     const onDisk = readdirSync('artifacts/V1/assets/sprites/attacks').filter((f) => f.endsWith('.png'));
-    expect(onDisk.length).toBe(75);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4
+    expect(onDisk.length).toBe(84);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the Announcer's 9
     expect(onDisk.filter((f) => !drawn.has(f))).toEqual([]);
   });
 

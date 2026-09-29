@@ -43,7 +43,7 @@ describe('MePhone4 joins the gauntlet', () => {
       return { rows: rows, extra: extra };
     })()`);
     expect(r.rows).toEqual([
-      ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'studio', false, 'announcer'],
+      ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'cakeatstake', false, 'announcer'],   // his own place, the Cake at Stake place (boss overhaul, 'Each its own'; test/boss-announcer.test.js has the fight)
       ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'studio', false, 'speaker'],
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'studio', false, 'speakerfirey'],
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug'],
@@ -59,7 +59,7 @@ describe('MePhone4 joins the gauntlet', () => {
       ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four'],
     ]);
     expect(r.extra).toEqual({
-      'Announcer': ['rain', 'ring'], 'Puffball Speaker Box': ['slam', 'rain'], 'Firey Speaker Box': ['rain', 'slam'],
+      'Announcer': ['annlaser', 'annacid', 'annballoon'], 'Puffball Speaker Box': ['slam', 'rain'], 'Firey Speaker Box': ['rain', 'slam'],
       'The Bug Swarm': ['seekers', 'rain'], 'Purple Face': ['ring', 'rain'], 'Purple Dragon': ['slam', 'rain'],
       'MePhone4': ['melife', 'portal'],
       'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
