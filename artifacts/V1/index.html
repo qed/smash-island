@@ -5419,6 +5419,7 @@ function spawnBossRushBoss(){
   // @boss:purpleface:end spawn
 
   // @boss:dragon:begin spawn
+  if(b.attack==="dragon") dragonSpawn(boss);   // it flies in over the roof (DRAGON)
   // @boss:dragon:end spawn
 
   banner((BOSSRUSH.loop>0?("LOOP "+(BOSSRUSH.loop+1)+" · "):"")+"BOSS: "+b.name+"!", 1600, 'sys');
@@ -7094,7 +7095,7 @@ const BOSS_ROSTER = [
   // @boss:purpleface:end roster
 
   // @boss:dragon:begin roster
-  {name:"Purple Dragon",       color:"#6a3a9a", hp:250, big:2.7, attack:"dragon",    arena:"cave",    stationary:false, sprite:"dragon"},      // Boss 6
+  {name:"Purple Dragon",       color:"#6a3a9a", hp:250, big:2.7, attack:"dragon",    arena:"hotelroof", stationary:false, sprite:"dragon"},      // Boss 6 -- the hotel roof in the storm (Category One)
   // @boss:dragon:end roster
 
   // Boss 7 -- MePhone4, the Inanimate Insanity host ("mephone should be a boss, alongside 4s, and cobs. mephone should
@@ -7431,6 +7432,7 @@ function updateBossAttack(s, tgt){
   // @boss:purpleface:end move
 
   // @boss:dragon:begin move
+  if(s.attack==="dragon"){ dragonMove(s, tgt); moved = true; }   // it flies: no walk, no floor (dragonMove)
   // @boss:dragon:end move
 
   // movement: mobile bosses actively chase the target; stationary ones slowly shift toward
@@ -7544,6 +7546,7 @@ function updateBossAttack(s, tgt){
     // @boss:purpleface:end tel
 
     // @boss:dragon:begin tel
+    if(s.attack==="dragon") dragonBeginTelegraph(s, tgt);   // its aims, its side and its marks, fixed now
     // @boss:dragon:end tel
 
     banner(bossTelName(s), 700, 'boss');
@@ -7572,6 +7575,7 @@ function bossAtkGap(s){
   // @boss:purpleface:end gap
 
   // @boss:dragon:begin gap
+  if(s.attack==="dragon") return dragonGap(s);   // its own pacing, held while a move is in the air (DRAGON.gaps)
   // @boss:dragon:end gap
 
   let g = s._phase===3 ? 52 : (s._phase===2 ? 72 : 100);   // was 70/95/130
@@ -7629,6 +7633,7 @@ function onBossPhaseChange(s, ph){
   // @boss:purpleface:end phase
 
   // @boss:dragon:begin phase
+  if(s.attack==="dragon") dragonPhaseBeat(s, ph);   // thunder and wind; the second dragon and the broken parapet
   // @boss:dragon:end phase
 
 }
@@ -7693,6 +7698,7 @@ function bossTelLen(s){
   // @boss:purpleface:end tellen
 
   // @boss:dragon:begin tellen
+  if(s.attack==="dragon") return DRAGON.tel;   // one wind-up length for all five, so the ring and the swell agree from the first frame
   // @boss:dragon:end tellen
 
   return 36;                                     // other bosses telegraph faster now (was 45)
@@ -7722,7 +7728,7 @@ const BOSS_EXTRA = {
   // @boss:purpleface:end extra
 
   // @boss:dragon:begin extra
-  "Purple Dragon": ["slam", "rain"],
+  "Purple Dragon": ["dragonroar", "dragonchar", "dragonwind", "dragonropes"],   // its own five: STRAFING RUN!, FURIOUS ROAR!, STRAFING RUN!, CHAR!, STRAFING RUN!, WIND LOTTERY!, STRAFING RUN!, LIGHTNING ROPES! (see DRAGON)
   // @boss:dragon:end extra
 
   "Evil Leafy": ["seekers", "slam"], "Two": ["seekers", "ring"], "Four": ["rain", "seekers"],
@@ -7751,6 +7757,7 @@ const BOSS_MOVE_NAME = { rain:"INCOMING!", ring:"SHOCK RING!", slam:"GROUND POUN
   // @boss:purpleface:end movename
 
   // @boss:dragon:begin movename
+  dragonroar:"FURIOUS ROAR!", dragonchar:"CHAR!", dragonwind:"WIND LOTTERY!", dragonropes:"LIGHTNING ROPES!",   // "The dragon lets out a furious roar" (Category One); "The dragon chars Cake with fire breath" (The Great Goikian Bake-Off/Transcript); "based on the wind lottery" (Category One); "Lightning strikes Dora's stake" (Category One/Transcript)
   // @boss:dragon:end movename
 
 };
@@ -7772,6 +7779,7 @@ const BOSS_RUSH_ONLY = new Set([   // second moves an item boss never throws (se
   // @boss:purpleface:end rushonly
 
   // @boss:dragon:begin rushonly
+  "dragonroar", "dragonchar", "dragonwind", "dragonropes",   // they need its flight and its roof
   // @boss:dragon:end rushonly
 
 ]);
@@ -7899,6 +7907,10 @@ const BOSS_MOVES = {
   // @boss:purpleface:end moves
 
   // @boss:dragon:begin moves
+  dragonroar(s, tgt){ dragonRoar(s, tgt); },
+  dragonchar(s, tgt){ dragonChar(s, tgt); },
+  dragonwind(s, tgt){ dragonWind(s, tgt); },
+  dragonropes(s, tgt){ dragonRopes(s, tgt); },
   // @boss:dragon:end moves
 
 };
@@ -7978,6 +7990,747 @@ function freeFromStomach(f){
 // @boss:purpleface:end helpers
 
 // @boss:dragon:begin helpers
+// ---- PURPLE DRAGON (Boss 6), rebuilt in the boss overhaul (2026-09-29) -------------------------------------------------------
+// The hotel roof in the storm. "Two announces that today's Cake at Stake will be based on the wind lottery" (Category One); "two
+// dragons circle overhead" (Category One/Transcript); "Pillow walks out onto the roof with the flamethrower. The wind blows her
+// upwards, but the rope keeps her tethered." Five attacks, in turn (BOSS_EXTRA): STRAFING RUN! (phase 3: GRAB & CARRY!), FURIOUS
+// ROAR!, CHAR!, WIND LOTTERY!, LIGHTNING ROPES!. It FLIES (`hover`): a figure-eight over the roof, off the screen for a run, down
+// on the roof for a cough. Every part of one turn shares that turn's one attack id, so a fighter takes at most one boss hit from
+// it however many bolts, patches, sparks or objects it throws: "Harder, same damage" (the owner, 2026-09-29). Every shot of its
+// own carries `dragon` (the ending sweeps them) and, where it lingers or comes in a volley, `volley` (a running total per id).
+// The scene's state rides b._hz (the arena hazard's bag, sent to a netcode client as it is): a few plain numbers.
+//   tel, gaps      the wind-up (one length for all five: the ring and the swell agree from the first frame), and the frames
+//                  between turns, by phase
+//   band, sway     idle: the figure-eight's height (its centre floats this far over floor - radius: low, high) and half-width
+//   run*           STRAFING RUN: frames to cross the roof, the pass's height, frames the shadow leads it, frames between bursts,
+//                  passes a turn; a burst is three flames that land runLand px ahead of where it let go
+//   grab*, carry*  GRAB & CARRY: the swoop's speed, the grab's reach (of its radius), the ride's frames, the drop's inset
+//   roar*, dive*   FURIOUS ROAR: the shove's reach and distance, the eye's frames and how many it holds still, the dive's speed
+//   char*, jet*    CHAR: where it stands, the jet's frames and creep, how often the jet leaves a burning patch, the cough
+//   wind*, rope*   WIND LOTTERY: frames between objects; LIGHTNING ROPES: the anchors (of the roof's width), frames between
+//                  strikes, the crackle before a strike, the bolt's half-width, the spark's speed and length
+//   gust*          the storm's wind (phase 2 on): frames between gusts, its warning, its push, the drift (px a frame, squared)
+const DRAGON = { tel:44, gaps:[0, 100, 74, 54],
+  band:[24, 90], sway:[0, 140, 190, 240], eight:0.024, follow:0.012, weaveT:22, weaveAmp:42,
+  runFrames:[0, 52, 44, 0], runAlt:[0, 150, 128, 0], runLead:[0, 22, 18, 0], runEvery:[0, 12, 10, 0], runPasses:[0, 1, 2, 0],
+  runVy:10.5, runLand:[242, 302, 362], runR:13, turnT:12,
+  carryAlt:300, grabSpd:28, grabFreeze:12, grabR:0.6, carryMin:22, carryMax:44, carryDrop:90, rollT:22, carryHit:0.6,
+  roarRange:520, roarShove:[0, 300, 320, 340], roarT:14, roarLock:[0, 34, 30, 26], roarFreeze:12, diveSpd:[0, 27, 30, 33],
+  bodyHit:0.72, landT:26, tailL:1.55, tailR:44, tailT:14,
+  charStand:380, charAlt:190, charFreeze:10, jetT:[0, 40, 46, 52], jetCreep:[0, 2, 3, 3.5], jetSpd:20, jetR:10, jetPatch:10, coughT:40,
+  windGap:[0, 40, 34, 28], windDoor:0.09, paperN:[0, 0, 5, 7],
+  anchors:[0.16, 0.5, 0.84], ropeGap:[0, 28, 24, 20], crackT:30, boltW:46, sparkSpd:9, sparkLen:200,
+  gustEvery:420, gustWarn:50, gustPush:45, gustAcc:0.10,
+  patchLife:150, sootMax:14, endT:96, endHold:300 };
+function dragonHz(s){ return s._hz || (s._hz = {}); }
+function dragonPh(s){ return Math.min(3, Math.max(1, s._phase || 1)); }
+function dragonWrap(a){ a = (a + Math.PI) % (2*Math.PI); if(a < 0) a += 2*Math.PI; return a - Math.PI; }
+function dragonRound(v){ return Math.round(v*100)/100; }
+// Where the render's head is, from its middle, when it faces f (the art is a head at the upper left, a long tail below and to the right,
+// mirrored for the right): the mouth is that point of the drawn art. H.rot is the lean drawBossSprite gives the art this frame -- it
+// turns the head to the way it is going -- and dragonPt follows it, so a flame leaves the mouth wherever the head is.
+function dragonHead(f){ return Math.atan2(-0.38, (f < 0 ? -1 : 1)*0.53); }
+function dragonLean(s, ang, k){ dragonHz(s).rot = dragonRound(k*dragonWrap(ang - dragonHead(s.face))); }
+function dragonPt(s, lx, ly){ const a = (s._hz && s._hz.rot) || 0, c = Math.cos(a), n = Math.sin(a); return { x:s.x + c*lx - n*ly, y:s.y + n*lx + c*ly }; }
+function dragonMouth(s){ return dragonPt(s, (s.face < 0 ? -1 : 1)*0.53*s.r, -0.38*s.r); }
+function dragonGo(s, x, y, kx, ky){ s.x += (x - s.x)*kx; s.y += (y - s.y)*(ky == null ? kx : ky); }
+function dragonLive(f){ return !!f && !f.dead; }
+// The way one of its own direct hits knocks a fighter: away from where it struck -- but a fighter near a wall is knocked back toward the roof, not out of the world.
+function dragonAway(f, x){ let d = Math.sign(f.x - x) || 1; if(f.x + d*300 < 40 || f.x + d*300 > WW - 40) d = f.x < WW*0.5 ? 1 : -1; return d; }
+// A shot of its own: a full boss hit, in a volley under this turn's id (the cap holds across every kind of shot a turn throws).
+function dragonShot(s, id, o){
+  return bossShot(s, Object.assign({ dragon:true, dmg:bossDmg(), kb:8, r:DRAGON.runR, life:60, burn:true, volley:true, bossAtk:id, shape:'dragonflame', color:'#ff9a3a' }, o));
+}
+// Spawn: it flies in over the roof edge -- "flies in past the camera" -- and settles into its figure-eight (dragonIdle eases it there).
+function dragonSpawn(boss){
+  boss.hover = true; boss._homeX = WW*0.5; boss.x = WW + boss.r*1.2; boss.y = -boss.r*1.5; boss.face = -1; boss.vx = 0; boss.vy = 0;
+  const H = dragonHz(boss); H.par = 0; H.soot = [];
+}
+// Once a frame, from updateBossAttack (the move slot): it flies, so the engine's gravity and floor are off (`hover`) and the walk is
+// skipped. A scripted move (s._dr) flies itself; a wind-up plants it (or sends it where the move begins); else it circles.
+function dragonMove(s, tgt){
+  s.hover = true;
+  const H = dragonHz(s), gy = groundY();
+  if(s._hpSeen == null) s._hpSeen = s.hp;
+  if(s.hp < s._hpSeen && !s._dr && !(s._weaveT > 0)){ s._weaveT = DRAGON.weaveT; s._weaveDir = -(s._weaveDir || 1); }   // "the dragon skillfully dodges each attack": it weaves when hit
+  s._hpSeen = s.hp;
+  dragonFlutter();
+  if(s._dr || s._tel > 0) s.vx = 0;   // a hit's shove only nudges it while it circles (dragonIdle)
+  if(s._dr) dragonStep(s, tgt, s._dr, H);
+  else if(s._tel > 0) dragonWindup(s, tgt, H);
+  else dragonIdle(s, tgt);
+  if(!s._dr && s._telKind !== s.attack) s.y = Math.min(s.y, gy - s.r*0.9);   // never into the roof (a run leaves the screen; that is scripted)
+}
+// The figure-eight: "two dragons circle overhead". Its middle follows the fight; it stays over the roof, low enough to be hit.
+function dragonIdle(s, tgt){
+  const gy = groundY(), R = s.r, ph = dragonPh(s), H = dragonHz(s), t = s._fl = (s._fl || 0) + 1, w = DRAGON.eight;
+  if(!(s._homeX >= 0)) s._homeX = s.x;
+  if(dragonLive(tgt)) s._homeX += (clamp(tgt.x, R*0.9, WW - R*0.9) - s._homeX)*DRAGON.follow;
+  const lo = gy - R - DRAGON.band[0], hi = gy - R - DRAGON.band[1];
+  let ty = lo + (hi - lo)*(0.5 + 0.5*Math.sin(t*w*2 + 1.3));
+  if(s._weaveT > 0){ ty += (s._weaveDir || 1)*DRAGON.weaveAmp*Math.sin(Math.PI*(1 - s._weaveT/DRAGON.weaveT)); s._weaveT--; }
+  s.x += s.vx; s.vx *= 0.88;   // a hit's shove (damageSummon) settles
+  dragonGo(s, s._homeX + Math.sin(t*w)*DRAGON.sway[ph], ty, 0.06, 0.07);
+  if(dragonLive(tgt) && Math.abs(tgt.x - s.x) > 30) s.face = tgt.x > s.x ? 1 : -1;
+  dragonLean(s, s.face < 0 ? Math.PI : 0, 0.3);
+  H.roll = 0;
+}
+// The wind-up, by move: it goes where the move begins, and every tell of the turn is fixed by dragonBeginTelegraph (the tell is
+// the hitbox). The signature leaves the screen (a run from off its edge, a carry from a high corner).
+function dragonWindup(s, tgt, H){
+  const gy = groundY(), R = s.r, k = s._telKind, ph = s._telPh || dragonPh(s), left = s._tel;
+  let tx = s.x, ty = s.y, kk = 0.08, lean = s.face < 0 ? Math.PI : 0, lk = 0.35;
+  if(k === s.attack){
+    const dir = s._runDir || 1, ex = dir > 0 ? -R*1.4 : WW + R*1.4;
+    tx = ex; ty = ph >= 3 ? gy - R - DRAGON.carryAlt : gy - R - DRAGON.runAlt[ph]; kk = 0.09; s.face = dir; lean = Math.atan2(ty - s.y, tx - s.x); lk = 0.5;
+    if(ph >= 3){   // the row it will swoop along follows you until the last frames, white once it holds (the tell is the hitbox)
+      if(left > DRAGON.grabFreeze && dragonLive(tgt)) s._rowY = clamp(tgt.y, gy - 260, gy - 24);
+      H.row = [Math.round(s._rowY), left <= DRAGON.grabFreeze ? 1 : 0, dir];
+    } else if(left <= 20){ const u = 1 - left/20; H.sh = [Math.round(dir > 0 ? R*0.3 : WW - R*0.3), Math.round(R*0.85), dragonRound(0.1 + 0.32*u)]; }   // its shadow creeps in at the edge it will come from
+  } else if(k === 'dragonroar'){   // it rears: the inhale (the rain and the wind stop for a beat)
+    ty = gy - R - DRAGON.band[1] - 70; kk = 0.08; lean = s.face < 0 ? Math.PI + 1.0 : -1.0; lk = 0.7;
+    if(left <= 26) H.calm = hazardT + 3;
+  } else if(k === 'dragonchar'){   // it takes its stand, off to the side, high; the mark on the roof follows you and then holds
+    if(left > DRAGON.charFreeze && dragonLive(tgt)) s._aimX = tgt.x;
+    H.aim = [Math.round(s._aimX), left <= DRAGON.charFreeze ? 1 : 0];
+    tx = dragonCharStand(s); ty = gy - R - DRAGON.charAlt; s.face = s._charDir || s.face; lean = s.face < 0 ? Math.PI + 0.5 : -0.5; lk = 0.5;
+  } else if(k === 'dragonwind'){   // it hangs back at the parapet, wings up, and lets the storm have the door
+    tx = WW - R*1.0; ty = gy - R - 230; kk = 0.07; s.face = -1; lean = Math.PI + 0.7; lk = 0.5;
+  } else if(k === 'dragonropes'){   // it rises over the middle and roars at the sky
+    tx = WW*0.5; ty = gy - R - 250; kk = 0.07; lean = s.face < 0 ? Math.PI + 1.0 : -1.0; lk = 0.7; H.calm = hazardT + 3;
+  }
+  dragonGo(s, tx, ty, kk);
+  dragonLean(s, lean, lk);
+  H.roll = 0;
+}
+function dragonCharStand(s){
+  const R = s.r, aim = s._aimX, d = s._charDir || 1;
+  return clamp(aim - d*DRAGON.charStand, R*0.7, WW - R*0.7);
+}
+// The wind-up starts (the tel slot): fix this turn's aims, sides and marks now. `s._telKind` is the move.
+function dragonBeginTelegraph(s, tgt){
+  const H = dragonHz(s), gy = groundY(), R = s.r, k = s._telKind, live = dragonLive(tgt);
+  H.sh = null; H.eye = null; H.row = null; H.aim = null;
+  if(k === s.attack){
+    s._runDir = s.x < WW*0.5 ? 1 : -1;
+    s._rowY = live ? clamp(tgt.y, gy - 260, gy - 24) : gy - 24;
+  } else if(k === 'dragonchar'){
+    s._aimX = live ? tgt.x : s.x;
+    s._charDir = s.x <= s._aimX ? 1 : -1;
+    if(Math.abs(s._aimX - dragonCharStand(s)) < 220) s._charDir = -s._charDir;   // no room on this side: it takes the other
+  } else if(k === 'dragonwind'){
+    H.door = [hazardT + DRAGON.tel - 6, hazardT + DRAGON.tel + 400];
+  } else if(k === 'dragonropes'){
+    s._ropeDir = -(s._ropeDir || -1);
+    const ph = s._telPh || dragonPh(s), xs = DRAGON.anchors.map(f => Math.round(WW*f));
+    if(s._ropeDir < 0) xs.reverse();
+    const t0 = hazardT + DRAGON.tel, g = DRAGON.ropeGap[ph];
+    H.rope = [xs[0], xs[1], xs[2], t0, t0 + g, t0 + 2*g];
+  }
+}
+function dragonGap(s){ return s._dr ? 1e6 : DRAGON.gaps[dragonPh(s)]; }
+// A move ends: it is back at its figure-eight and the turn's gap runs from here.
+function dragonDone(s){
+  const H = dragonHz(s);
+  s._dr = null; H.sh = null; H.eye = null; H.row = null; H.aim = null; H.roll = 0;
+  s._atkTimer = bossAtkGap(s);
+}
+// Phase beats (the phase slot): the card, the flash and the shake are the engine's. Phase 2: thunder, the rain turns sideways and the
+// wind starts to gust. Phase 3: "there are two purple dragons shown near the start of the episode" -- the second drops in and circles
+// the other way, the parapet breaks, and the storm is at its worst. `>=`, so one burst of damage that skips phase 2 still gets both.
+function dragonPhaseBeat(s, ph){
+  const H = dragonHz(s), gy = groundY();
+  if(ph >= 2 && !H.thunder){ H.thunder = hazardT; shake(6); }
+  if(ph >= 3 && !H.d2){
+    H.d2 = hazardT; H.par = Math.max(H.par || 0, 3);
+    impact(WW - 70, gy, { shake:10, dust:2, debris:8, r:90 });
+  }
+}
+
+// ---- its moves -------------------------------------------------------------------------------------------------------------------
+// Every scripted move is s._dr = { k, id, ph, st, t, ... }, flown by dragonStep once a frame; `st` is its stage, `t` the frames in it,
+// `id` the turn's attack id, `ph` the phase the wind-up was drawn in. 'home' (every move ends there) flies it back to its figure-eight.
+function dragonStep(s, tgt, D, H){
+  if(D.st === 'home'){ dragonHomeStep(s, tgt, D); return; }
+  switch(D.k){
+    case 'run': dragonRunStep(s, tgt, D, H); break;
+    case 'carry': dragonCarryStep(s, tgt, D, H); break;
+    case 'roar': dragonRoarStep(s, tgt, D, H); break;
+    case 'char': dragonCharStep(s, tgt, D, H); break;
+    case 'wind': dragonWindStep(s, tgt, D, H); break;
+    case 'ropes': dragonRopesStep(s, tgt, D, H); break;
+    default: dragonDone(s);
+  }
+}
+function dragonHomeStep(s, tgt, D){
+  const gy = groundY(), R = s.r, H = dragonHz(s);
+  D.t++;
+  dragonGo(s, clamp(s._homeX >= 0 ? s._homeX : WW*0.5, R, WW - R), gy - R - DRAGON.band[1], 0.09);
+  dragonLean(s, s.face < 0 ? Math.PI : 0, 0.3);
+  H.roll = 0;
+  if(D.t >= 30) dragonDone(s);
+}
+function dragonToHome(D){ D.st = 'home'; D.t = 0; }
+// The signature is dragonFire (the fire slot): a run in phases 1 and 2, a carry in phase 3. It begins wherever the wind-up left it:
+// off the edge it will come from (dragonWindup sent it there); a move that was not wound up there flies to the edge first.
+function dragonFire(s, tgt, id){
+  const ph = s._telPh || dragonPh(s), R = s.r, gy = groundY();
+  const dir = s._runDir || (s.x < WW*0.5 ? 1 : -1);
+  if(ph >= 3) s._dr = { k:'carry', id, ph, dir, st:'in', t:0, row:s._rowY != null ? s._rowY : gy - 24, rider:null };
+  else s._dr = { k:'run', id, ph, dir, st:'in', t:0, pass:0, passes:DRAGON.runPasses[ph], spd:(WW + R*2.8)/DRAGON.runFrames[ph], alt:DRAGON.runAlt[ph] };
+  shake(4);
+}
+function dragonEntry(s, D){
+  const R = s.r, gy = groundY();
+  return { x: D.dir > 0 ? -R*1.4 : WW + R*1.4, y: D.k === 'carry' ? gy - R - DRAGON.carryAlt : gy - R - D.alt };
+}
+// STRAFING RUN! "The dragon flies past Just Not." "The dragon breathes fire in Just Not's direction." (The Great Goikian Bake-Off/
+// Transcript); "the shadow of the dragon quickly passing by" (The Great Goikian Bake-Off). A real flyby across the roof, its shadow
+// crossing the roof first (H.sh: the warning), breathing fire as it goes: a burst of three flames every runEvery frames, each burst
+// landing a cluster of runLand px ahead of where it let go, so there is a safe pocket between one cluster and the next; the middle
+// flame of each stays where it lands and burns the roof tiles (a patch, patchLife frames -- one boss hit a turn however long it burns).
+// Phase 2: two passes a turn (the second the other way, its bursts half a step off the first's): one attack id.
+function dragonRunStep(s, tgt, D, H){
+  const R = s.r, gy = groundY(), ph = D.ph, dir = D.dir;
+  if(D.st === 'in'){
+    const e = dragonEntry(s, D);
+    if(Math.abs(s.x - e.x) < R*0.6 && Math.abs(s.y - e.y) < 40){ D.st = 'pass'; D.t = 0; }
+    else { dragonGo(s, e.x, e.y, 0.25); s.face = dir; return; }
+  }
+  if(D.st === 'turn'){
+    D.t++; H.sh = null; dragonLean(s, dir > 0 ? 0 : Math.PI, 0.5);
+    if(D.t >= DRAGON.turnT){ D.dir = -dir; D.st = 'pass'; D.t = 0; D.alt = Math.max(60, D.alt - 24); }
+    return;
+  }
+  D.t++;
+  s.x += dir*D.spd; s.y = gy - R - D.alt + Math.sin(D.t*0.2)*6; s.face = dir;
+  dragonLean(s, dir > 0 ? 0 : Math.PI, 0.8);
+  H.sh = [Math.round(s.x + dir*DRAGON.runLead[ph]*D.spd), Math.round(R*0.85), 0.5];
+  const land = s.x + dir*DRAGON.runLand[1];   // a burst is for the roof: none whose flames would land off the screen
+  if(land > 20 && land < WW - 20 && (D.t - 1) % DRAGON.runEvery[ph] === (D.pass ? Math.floor(DRAGON.runEvery[ph]/2) : 0)) dragonBurst(s, D);
+  if((s.x - (dir > 0 ? WW + R*1.4 : -R*1.4))*dir >= 0){
+    H.sh = null;
+    if(++D.pass < D.passes){ D.st = 'turn'; D.t = 0; } else dragonToHome(D);
+  }
+}
+function dragonBurst(s, D){
+  const gy = groundY(), m = dragonMouth(s), hm = Math.max(60, gy - m.y), T = Math.max(6, (hm - 8)/DRAGON.runVy);
+  DRAGON.runLand.forEach((L, i) => {
+    const mid = i === 1;
+    addProj(dragonShot(s, D.id, Object.assign({ x:m.x, y:m.y, vx:D.dir*L/T, vy:DRAGON.runVy, breaksOnSurface:true, life:Math.ceil(T*1.4/PROJ_LIFE) + 6 },
+      mid ? { r:22, landsTrap:true, _mine:true, dragonPatch:true, landImpact:{ shake:2, dust:1, debris:2, r:44 } } : {})));
+  });
+  for(let i=0;i<5;i++) puff(m.x, m.y, '#ffb347', 4);
+}
+// GRAB & CARRY! (phase 3's signature) "they grab onto the dragon's back. It tries to shake them off." / "The dragon drops CloudYAY onto
+// the ground." (Category One/Transcript): a swoop along your row from a high corner (H.row is the band the swoop travels: red while it
+// follows you, white when it holds); whoever it catches in its reach rides its back, out of control, while it climbs and rolls to shake
+// them, and it drops them at the far edge for the old 0.6 of a hit. Nobody in reach: it flies on through.
+function dragonCarryStep(s, tgt, D, H){
+  const R = s.r, gy = groundY(), dir = D.dir;
+  if(D.st === 'in'){
+    const e = dragonEntry(s, D);
+    if(Math.abs(s.x - e.x) < R*0.6 && Math.abs(s.y - e.y) < 40){ D.st = 'swoop'; D.t = 0; D.x0 = s.x; D.y0 = s.y; D.yRow = Math.min(D.row - 0.25*R, gy - 0.85*R); }
+    else { dragonGo(s, e.x, e.y, 0.25); s.face = dir; return; }
+  }
+  if(D.st === 'swoop'){
+    D.t++;
+    const df = 16, u = Math.min(1, D.t/df), py = s.y;
+    s.x = D.x0 + dir*DRAGON.grabSpd*D.t; s.y = D.y0 + (D.yRow - D.y0)*u*u; s.face = dir;
+    dragonLean(s, Math.atan2(s.y - py, dir*DRAGON.grabSpd), 1);
+    H.row = [Math.round(D.row), 1, dir];
+    if(D.t >= df*0.6){
+      const gx = s.x + dir*R*0.3, gyy = s.y + R*0.25;
+      for(const f of fighters){
+        if(f.dead || f.invuln > 0 || f._carried > hazardT - 3) continue;
+        if(hurtGap(f, gx, gyy) < DRAGON.grabR*R){ dragonGrab(s, D, f, H); break; }
+      }
+    }
+    if(D.st === 'swoop' && (s.x - (dir > 0 ? WW + R*1.4 : -R*1.4))*dir >= 0){ H.row = null; dragonToHome(D); }
+    return;
+  }
+  if(D.st === 'carry'){
+    D.t++;
+    const f = D.rider;
+    s.x += D.vx; s.y += (gy - R - 210 - s.y)*0.12; s.face = dir;
+    H.roll = dragonRound(2*Math.PI*clamp((D.t - 8)/DRAGON.rollT, 0, 1));
+    dragonLean(s, dir > 0 ? 0 : Math.PI, 0.8);
+    if(!f || f.dead){ D.rider = null; D.st = 'exit'; return; }
+    dragonPin(s, D, f);
+    if(D.t >= D.carryT){ H.roll = 0; dragonDrop(s, D); D.st = 'exit'; D.t = 0; }
+    return;
+  }
+  D.t++;   // 'exit': on through the far edge
+  s.x += dir*DRAGON.grabSpd*0.7; s.face = dir; dragonLean(s, dir > 0 ? 0 : Math.PI, 0.6);
+  if((s.x - (dir > 0 ? WW + R*1.4 : -R*1.4))*dir >= 0 || D.t > 60) dragonToHome(D);
+}
+function dragonGrab(s, D, f, H){
+  const R = s.r, dir = D.dir, dropX = dir > 0 ? WW - DRAGON.carryDrop : DRAGON.carryDrop, dist = Math.max(0, (dropX - s.x)*dir);
+  D.rider = f; D.st = 'carry'; D.t = 0; H.row = null;
+  D.carryT = clamp(Math.round(dist/14), DRAGON.carryMin, DRAGON.carryMax); D.vx = dir*dist/D.carryT;
+  f._carried = hazardT; f._windup = null; f._sm = null;
+  for(let i=0;i<10;i++) puff(f.x, f.y, '#b06ad0', 4);
+  shake(5);
+  dragonPin(s, D, f);
+}
+// The rider sits on its back: no control (hitstun), no other boss hit while they ride (invuln), until it drops them.
+function dragonPin(s, D, f){
+  f.x = s.x - D.dir*s.r*0.1; f.y = s.y - s.r*0.62; f.vx = 0; f.vy = 0; f.onground = false; f.jumps = 0;
+  f.hitstun = Math.max(f.hitstun, 2); f.invuln = Math.max(f.invuln, 2); f._carried = hazardT;
+}
+function dragonDrop(s, D){
+  const f = D.rider, gy = groundY(), dir = D.dir; D.rider = null;
+  if(!f || f.dead) return;
+  f._carried = 0; f.hitstun = 0; f.invuln = 0;
+  f.x = clamp(s.x - dir*s.r*0.2, 70, WW - 70); f.y = Math.min(f.y, gy - 110); f.vx = dir*1.5; f.vy = 4; f.onground = false;
+  applyHit(f, bossDmg()*DRAGON.carryHit, -dir*2.5, -4, null, { bossAtk:D.id });
+  f.invuln = Math.max(f.invuln, 30);
+  for(let i=0;i<10;i++) puff(f.x, f.y, '#b06ad0', 5);
+}
+// FURIOUS ROAR! "The dragon lets out a furious roar, its eyes now locked onto CloudYAY, ready to retaliate." (Category One): it rears and
+// roars -- a shove that carries whoever is in front of it back (dragonShove: no damage, never out of the arena) -- then its eyes lock
+// on (H.eye: red while it follows you, white when it holds; the dive's own band from where it hangs to the spot) and it dives along
+// that line: the body, then the tail whip as it lands. One attack id; the shove puts you in the dive's path. The roof shakes, sheds
+// bricks, and the wind stops for a second (H.calm).
+function dragonRoar(s, tgt){
+  const id = ++BOSS_ATK_ID, ph = s._telPh || dragonPh(s), H = dragonHz(s), m = dragonMouth(s), dir = s.face < 0 ? -1 : 1;
+  s._dr = { k:'roar', id, ph, st:'roar', t:0, dir };
+  dragonShove(s, s._dr, m);
+  H.roar = [Math.round(m.x), Math.round(m.y), dir, hazardT]; H.calm = hazardT + 40; H.par = Math.min(8, (H.par || 0) + 1);
+  impact(WW - 70, groundY(), { shake:9, dust:1, debris:3, r:50 });
+  for(let i=0;i<10;i++) puff(m.x, m.y, '#e8dcf4', 5);
+}
+function dragonShove(s, D, m){
+  for(const f of fighters){
+    if(f.dead) continue;
+    const dx = f.x - m.x;
+    if(dx*D.dir < -60 || Math.hypot(dx, f.y - m.y) > DRAGON.roarRange) continue;
+    const sg = Math.sign(dx) || D.dir, dest = clamp(f.x + sg*DRAGON.roarShove[D.ph], 70, WW - 70), T = 14;
+    f._windup = null; f._sm = null;
+    f.vx = (dest - f.x)/T; f.vy = -3.5; f.onground = false; f.hitstun = Math.max(f.hitstun, T);
+  }
+}
+function dragonRoarStep(s, tgt, D, H){
+  const R = s.r, gy = groundY(), ph = D.ph;
+  if(D.st === 'roar'){
+    D.t++; dragonLean(s, s.face < 0 ? Math.PI + 1.0 : -1.0, 0.7);
+    if(D.t >= DRAGON.roarT){ D.st = 'lock'; D.t = 0; D.sx = s.x; D.sy = s.y; }
+    return;
+  }
+  if(D.st === 'lock'){
+    D.t++;
+    const left = DRAGON.roarLock[ph] - D.t, tf = dragonLive(tgt) ? tgt : null;
+    if(left > DRAGON.roarFreeze && tf){ D.px = tf.x; D.py = clamp(tf.y, gy - 260, gy - 24); }
+    if(!(D.px >= 0)){ D.px = tf ? tf.x : s.x; D.py = tf ? clamp(tf.y, gy - 260, gy - 24) : gy - 24; }
+    D.ex = clamp(D.px, R*0.6, WW - R*0.6); D.ey = gy - R*0.9;
+    H.eye = [Math.round(D.px), Math.round(D.py), left <= DRAGON.roarFreeze ? 1 : 0, Math.round(D.sx), Math.round(D.sy), Math.round(D.ex), Math.round(D.ey)];
+    dragonLean(s, Math.atan2(D.ey - s.y, D.ex - s.x), 0.6); s.face = D.ex >= s.x ? 1 : -1;
+    if(D.t >= DRAGON.roarLock[ph]){ D.st = 'dive'; D.t = 0; }
+    return;
+  }
+  if(D.st === 'dive'){
+    D.t++;
+    const dx = D.ex - s.x, dy = D.ey - s.y, d = Math.hypot(dx, dy), sp = DRAGON.diveSpd[ph];
+    s.face = dx >= 0 ? 1 : -1; D.dir = s.face;
+    dragonLean(s, Math.atan2(dy, dx), 1);
+    if(d <= sp){ s.x = D.ex; s.y = D.ey; dragonBodyHit(s, D); dragonTouchdown(s, D, H); return; }
+    s.x += dx/d*sp; s.y += dy/d*sp;
+    dragonBodyHit(s, D);
+    return;
+  }
+  D.t++;   // 'land': the tail whip, then a breath -- a punish window (it is low, on the roof)
+  dragonLean(s, D.dir > 0 ? 0.6 : Math.PI - 0.6, 0.5);
+  if(D.t <= DRAGON.tailT) dragonTailHit(s, D, H);
+  if(D.t >= DRAGON.landT) dragonToHome(D);
+}
+function dragonBodyHit(s, D){
+  for(const f of fighters){
+    if(f.dead || f.invuln > 0) continue;
+    if(hurtGap(f, s.x, s.y) < DRAGON.bodyHit*s.r) applyHit(f, bossDmg(), dragonAway(f, s.x)*12, -10, null, { bossAtk:D.id });
+  }
+}
+function dragonTouchdown(s, D, H){
+  const gy = groundY();
+  D.st = 'land'; D.t = 0; H.eye = null; H.tail = [Math.round(s.x), Math.round(gy), D.dir, hazardT];
+  impact(s.x, gy, { shake:12, dust:2, debris:6, scar:true, r:110 });
+  for(let i=0;i<14;i++) puff(s.x + (Math.random()*2 - 1)*s.r, gy - 6, '#c8bcdc', 5);
+}
+// The tail's tip, `u` frames into the whip: a circle that swings from behind the landing, up and over, to the front of it.
+function dragonTailTip(T, u, R){
+  const dir = T[2], a = Math.PI*clamp(u/DRAGON.tailT, 0, 1), L = DRAGON.tailL*R, rx = T[0] - dir*0.55*R, ry = T[1] - 0.3*R;
+  return { x:rx - dir*L*Math.cos(a), y:ry - L*Math.sin(a)*0.75, rx:rx, ry:ry };
+}
+function dragonTailHit(s, D, H){
+  if(!H.tail) return;
+  const tip = dragonTailTip(H.tail, D.t, s.r);
+  for(const f of fighters){
+    if(f.dead || f.invuln > 0) continue;
+    if(hurtGap(f, tip.x, tip.y) < DRAGON.tailR) applyHit(f, bossDmg(), dragonAway(f, H.tail[0])*12, -9, null, { bossAtk:D.id });
+  }
+}
+// CHAR! "The dragon chars Cake with fire breath, accidentally swallows him, then collapses on the ground, seemingly dead" ... "it's
+// clearly choking on something" (The Great Goikian Bake-Off/Transcript): its cheeks glow while a mark on the roof follows you and then
+// holds (H.aim); it takes its stand off to the side and breathes a narrow jet at the mark that creeps along the roof; every jetPatch
+// frames the jet leaves a patch that burns the tiles (a boss hit however long it burns -- the one id). Then it comes down on the roof
+// and coughs: a punish window, not more damage. Phase 3: "jets cross from both dragons" -- the second dragon breathes a jet of its own
+// from the other side.
+function dragonChar(s, tgt){
+  const id = ++BOSS_ATK_ID, ph = s._telPh || dragonPh(s), H = dragonHz(s);
+  if(!(s._aimX >= 0)) s._aimX = dragonLive(tgt) ? tgt.x : s.x;
+  if(!s._charDir) s._charDir = s.x <= s._aimX ? 1 : -1;
+  s._dr = { k:'char', id, ph, st:'jet', t:0, aim:s._aimX, dir:s._charDir, sx:s.x };
+  H.aim = [Math.round(s._aimX), 1];
+}
+function dragonJetBolt(s, D, m, jx, patch){
+  const gy = groundY(), dx = jx - m.x, dy = Math.max(30, gy - m.y), d = Math.hypot(dx, dy), sp = DRAGON.jetSpd;
+  addProj(dragonShot(s, D.id, Object.assign({ x:m.x, y:m.y, vx:dx/d*sp, vy:dy/d*sp, r:DRAGON.jetR, breaksOnSurface:true, life:Math.ceil(d/sp*1.5/PROJ_LIFE) + 4 },
+    patch ? { r:22, landsTrap:true, _mine:true, dragonPatch:true, landImpact:{ shake:2, dust:1, debris:2, r:40 } } : {})));
+}
+function dragonCharStep(s, tgt, D, H){
+  const R = s.r, gy = groundY(), ph = D.ph;
+  if(D.st === 'jet'){
+    const t = D.t++, creep = DRAGON.jetCreep[ph]*t*D.dir, m = dragonMouth(s), two = ph >= 3 && H.d2;
+    s.face = D.dir; dragonLean(s, Math.atan2(gy - m.y, D.aim - m.x), 0.7);
+    dragonJetBolt(s, D, m, D.aim - (two ? D.dir*50 : 0) + creep, t % DRAGON.jetPatch === 0);
+    if(two){
+      const p = dragon2At(H.d2, hazardT), m2 = dragon2Mouth(p, R);
+      if(p) dragonJetBolt(s, D, m2, D.aim + D.dir*50 - creep, t % DRAGON.jetPatch === 5);
+    }
+    if(t % 5 === 0) for(let i=0;i<3;i++) puff(m.x, m.y, '#ffb347', 4);
+    if(D.t >= DRAGON.jetT[ph]){ D.st = 'land'; D.t = 0; H.aim = null; }
+    return;
+  }
+  D.t++;   // 'land': down on the roof, and a cough
+  const down = gy - R*0.92;
+  s.y += (down - s.y)*0.16; s.x += (D.sx - s.x)*0.1; s.face = D.dir; dragonLean(s, s.face < 0 ? Math.PI : 0, 0.2);
+  if(D.t === 14) H.cough = hazardT + DRAGON.coughT;
+  if(D.t > 14 && D.t % 6 === 0){ const m = dragonMouth(s); for(let i=0;i<3;i++) puff(m.x, m.y, '#7d7488', 4); shake(1); }
+  if(D.t >= 14 + DRAGON.coughT){ H.cough = 0; dragonToHome(D); }
+}
+
+// WIND LOTTERY! "Two announces that today's Cake at Stake will be based on the wind lottery, meaning that those declared safe will get to keep
+// whatever flies through the door." (Category One): the storm's moment more than the dragon's -- it hangs back at the parapet while the
+// door housing bangs open and the storm throws what the show threw through that door, in the show's own order: "a missing Basketball
+// poster flies onto Golf Ball's face", "the logo for Gelatin's Steakhouse flies through the door", "the master key flies into the room",
+// "Yellow Face is hit by Two's couch", "They are hit by the recovery center", "a chainsaw flies in, sawing the couch in half", "Roboty
+// flies in". Each at its own height (a low one is jumped, a high one is walked under), one attack id for the lot. From phase 2 it starts
+// with a flurry of the missing posters (a sheet of paper is the first thing that flew) -- the storm's texture, a misfit pattern used
+// sparingly (never more damage: same id, same cap).
+const DRAGON_OBJ = {
+  sign:   { shape:'dragonsign',   h:92,  r:20, vx:11,  kb:9,  color:'#e60000' },
+  couch:  { shape:'dragoncouch',  h:30,  r:28, vx:7.5, kb:14, color:'#d9576b' },
+  rc:     { shape:'dragonrc',     h:58,  r:38, vx:8.5, kb:13, color:'#808080' },
+  saw:    { shape:'dragonsaw',    h:130, r:20, vx:9.5, kb:11, bounce:true, color:'#e0552a' },
+  roboty: { shape:'dragonroboty', h:56,  r:20, vx:16,  kb:11, color:'#c9ccd6' },
+  key:    { shape:'dragonkey',    h:138, r:11, vx:17,  kb:7,  color:'#e0b83a' } };
+function dragonWindList(ph){
+  const L = [];
+  if(ph >= 2) L.push('paper');
+  L.push('sign');
+  if(ph >= 3) L.push('key');
+  L.push('couch', 'rc');
+  if(ph >= 2) L.push('saw');
+  L.push('roboty');
+  return L;
+}
+function dragonWind(s, tgt){
+  const id = ++BOSS_ATK_ID, ph = s._telPh || dragonPh(s), H = dragonHz(s), g = DRAGON.windGap[ph];
+  const items = dragonWindList(ph).map((k, i) => ({ k:k, at:6 + i*g }));
+  s._dr = { k:'wind', id:id, ph:ph, st:'go', t:0, items:items, last:items[items.length - 1].at };
+  H.door = [hazardT - 2, hazardT + s._dr.last + 40];
+  shake(5);
+}
+function dragonWindStep(s, tgt, D, H){
+  const R = s.r, gy = groundY();
+  D.t++;
+  dragonGo(s, WW - R*1.0, gy - R - 230 + Math.sin(D.t*0.1)*8, 0.05); s.face = -1; dragonLean(s, Math.PI + 0.7, 0.5);
+  for(const it of D.items) if(it.at === D.t) dragonWindLaunch(s, D, it.k);
+  if(D.t >= D.last + 30) dragonToHome(D);
+}
+function dragonWindLaunch(s, D, k){
+  const gy = groundY(), dx = Math.round(WW*DRAGON.windDoor);
+  shake(2);
+  for(let i=0;i<6;i++) puff(dx, gy - 70, '#d8d0e8', 5);
+  if(k === 'paper'){
+    const n = DRAGON.paperN[D.ph];
+    for(let i=0;i<n;i++) addProj(dragonShot(s, D.id, { x:dx, y:gy - 100 - (i%3)*18, vx:9 + (i%3)*0.9, vy:0, r:9, dmg:bossDmg()*0.5, kb:5, burn:false, shape:'dragonpaper', color:'#f6f2e4',
+      dragonPaper:true, dragonObj:true, _vy0:(i - (n - 1)/2)*0.8, _ph:i*1.3, life:Math.ceil((WW + 160)/9/PROJ_LIFE) + 6 }));
+    return;
+  }
+  const o = DRAGON_OBJ[k];
+  addProj(dragonShot(s, D.id, Object.assign({ x:dx, y:gy - o.h, vx:o.vx, vy:0, r:o.r, kb:o.kb, burn:false, shape:o.shape, dragonObj:true, life:Math.ceil((WW + 160)/o.vx/PROJ_LIFE) + 6 },
+    o.bounce ? { bounce:true, maxBounces:8, vy:-3 } : {}, { color:o.color })));
+}
+// The paper flutters (its own vertical wobble, from the clock: a client sees the vy in the row).
+function dragonFlutter(){
+  for(const p of projectiles) if(p.dragonPaper) p.vy = dragonRound((p._vy0 || 0) + Math.sin((hazardT + (p._ph || 0))*0.22)*2.4);
+}
+// LIGHTNING ROPES! "Lightning strikes Dora's stake, and she falls off." / "lightning strikes her rope and she flies away into the storm"
+// (Category One/Transcript, Category One). Three rope anchors on the roof (the hotel's rope anchors, "the ropes tying them onto the hotel"):
+// each crackles for crackT frames, then a bolt (the TPOT 7 strike's art) comes down its column -- a boss hit for whoever is in it -- and a
+// spark runs along the roof sparkLen px each way from it (jump it). The order alternates from turn to turn and the crackles show it.
+// H.rope = [x, x, x, frame, frame, frame]: where the anchors are, in the order they strike, and the frames they strike on.
+function dragonRopes(s, tgt){
+  const id = ++BOSS_ATK_ID, ph = s._telPh || dragonPh(s), H = dragonHz(s), g = DRAGON.ropeGap[ph];
+  if(!H.rope || Math.abs(H.rope[3] - hazardT) > 1){ const xs = DRAGON.anchors.map(f => Math.round(WW*f)); H.rope = [xs[0], xs[1], xs[2], hazardT, hazardT + g, hazardT + 2*g]; }
+  s._dr = { k:'ropes', id:id, ph:ph, st:'go', t:0, done:[0, 0, 0] };
+  dragonRopesStep(s, tgt, s._dr, H);   // the first strike is now
+}
+function dragonRopesStep(s, tgt, D, H){
+  const R = s.r, gy = groundY();
+  D.t++;
+  dragonGo(s, WW*0.5, gy - R - 250 + Math.sin(D.t*0.12)*6, 0.06); dragonLean(s, s.face < 0 ? Math.PI + 1.0 : -1.0, 0.6);
+  for(let k=0;k<3;k++) if(!D.done[k] && hazardT >= H.rope[3 + k]){ D.done[k] = 1; dragonStrike(s, D, H, k); }
+  if(D.done[2] && hazardT >= H.rope[5] + 30) dragonToHome(D);
+}
+function dragonStrike(s, D, H, k){
+  const gy = groundY(), ax = H.rope[k];
+  for(const f of fighters){
+    if(f.dead || f.invuln > 0) continue;
+    if(Math.abs(f.x - ax) < DRAGON.boltW) applyHit(f, bossDmg(), dragonAway(f, ax)*10, -13, null, { bossAtk:D.id, volley:true });
+  }
+  impact(ax, gy, { shake:9, dust:2, debris:5, scar:true, r:80, color:'#3a3a4e' });
+  for(const d of [-1, 1]) addProj(dragonShot(s, D.id, { x:ax + d*26, y:gy - 14, vx:d*DRAGON.sparkSpd, vy:0, r:12, kb:9, burn:false, shape:'dragonspark', dragonSpark:true, color:'#9fd8ff',
+    life:Math.ceil(DRAGON.sparkLen/DRAGON.sparkSpd/PROJ_LIFE) }));
+  for(let i=0;i<10;i++) puff(ax + (Math.random()*2 - 1)*24, gy - Math.random()*120, '#bfe6ff', 4);
+}
+// ---- the storm (the hotel roof's hazard, BOSS_ARENA_HAZARD.hotelroof) ---------------------------------------------------------
+// Soot: every patch the fire leaves stays a char mark for the rest of the fight (the tiles scorch). The parapet loses a merlon to every
+// object that reaches it. Gusts (phase 2 on): "the wind blows them upwards", "sent flying through the intense wind" -- in the lull between
+// its turns a gust warns (streaks across the roof) and then pushes whoever is off the ground, gently, dragonGust frames; it never starts
+// or goes on during a wind-up or a move, so it is never on top of a tell. Nothing here hurts.
+function dragonSoot(H, x){ const a = H.soot || (H.soot = []); a.push(Math.round(x)); if(a.length > DRAGON.sootMax) a.shift(); }
+function dragonHazardStep(b, H, tgt){
+  const ph = dragonPh(b), lull = !(b._tel > 0) && !b._dr;
+  for(const p of projectiles){
+    if(p.dragonPatch && p.trap && !p._sooted){ p._sooted = true; dragonSoot(H, p.x); }
+    if(p.dragonObj && !p._wrecked && p.x > WW - 100 && p.vx > 0){ p._wrecked = true; H.par = Math.min(8, (H.par || 0) + 1); impact(WW - 70, groundY(), { shake:3, dust:1, debris:3, r:60 }); }
+  }
+  if(ph < 2) return;
+  if(H.gustNext == null) H.gustNext = hazardT + 240;
+  if(H.gust){
+    const g = H.gust;
+    if(!lull) H.gust = null;
+    else if(hazardT >= g[3]) H.gust = null;
+    else if(hazardT >= g[2] && !(H.calm > hazardT)) for(const f of fighters){ if(!f.dead && !f.onground) f.vx += g[0]*DRAGON.gustAcc; }
+  } else if(lull && hazardT >= H.gustNext){
+    H.gustDir = -(H.gustDir || -1);
+    H.gust = [H.gustDir, hazardT, hazardT + DRAGON.gustWarn, hazardT + DRAGON.gustWarn + DRAGON.gustPush];
+    H.gustNext = hazardT + DRAGON.gustEvery + DRAGON.gustWarn + DRAGON.gustPush;
+  }
+}
+// ---- its ending -------------------------------------------------------------------------------------------------------------------
+// "Bomby waves bye to the dragon, and the dragon waves back as it flies away." (The Great Goikian Bake-Off/Transcript). Its shots go with
+// it (fire patches, objects, sparks: `dragon`), and a rider it was carrying is let go. The scene is a delayed shot -- inert, far above the
+// screen, gone when its delay ends -- carrying where the dragon fell and when; drawDragonEnd draws the whole wave and flight from the clock
+// alone, so the host, a netcode client and a replay see the same scene. It hurts nobody, and it has no words.
+function dragonEndSweep(b){
+  projectiles = projectiles.filter(p => !p.dragon);
+  for(const f of fighters) if(f._carried){ f._carried = 0; f.hitstun = 0; }
+}
+function dragonEndBegin(b){
+  const H = dragonHz(b);
+  projectiles.push({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:b.x, y:-5000, vx:0, vy:0, r:0, dmg:0, kb:0, grav:false, color:b.color, life:1, delay:DRAGON.endT + 1,
+    noAim:true, dragon:true, dragonEnd:true, shape:'dragonend', et0:hazardT, ex:b.x, ey:b.y, ef:b.face < 0 ? -1 : 1, er:b.r, e2:H.d2 || 0 });
+}
+
+// ---- what the roof looks like ------------------------------------------------------------------------------------------------------
+// Everything below is drawn from the boss's fields and b._hz (which a netcode client gets as they are) and from hazardT (the host's
+// clock, which a client has too): no dice, no words, nothing that flashes harder than a soft glow that fades over a quarter of a second.
+// The palette is File:TPOT 13 (468).png's: teal-grey storm, lavender tiles, a dark door housing with two doors, a serrated parapet.
+function dragonRoofTiles(c, gy, x0, x1, bottom){
+  c.save(); c.strokeStyle = 'rgba(56,46,84,0.5)'; c.lineWidth = 2;
+  const cx = WW*0.5;
+  for(let x = -8*74; x <= WW + 8*74; x += 74){ c.beginPath(); c.moveTo(cx + (x - cx)*0.5, gy); c.lineTo(cx + (x - cx)*1.5, gy + 150); c.stroke(); }   // the joints run back to a point over the roof
+  for(const dy of [16, 38, 68, 108]){ c.beginPath(); c.moveTo(x0, gy + dy); c.lineTo(x1, gy + dy); c.stroke(); }
+  c.fillStyle = 'rgba(255,255,255,0.06)'; c.fillRect(x0, gy, x1 - x0, 7);
+  c.restore();
+}
+function dragonBoss(){ return summons.find(s => s.type === "boss" && s.attack === "dragon") || null; }
+function drawDragonDecor(){
+  const gy = groundY(), b = dragonBoss(), Z = (b && b._hz) || {}, ph = b ? Math.min(3, b._phase || 1) : 1, t = hazardT;
+  ctx.save();
+  // the storm's cloud banks drifting past, heavier as the fight goes
+  for(let i=0;i<3;i++){
+    const y = H*(0.05 + i*0.10), sp = (0.10 + i*0.07 + ph*0.03)*(1 + i*0.6);
+    ctx.fillStyle = 'rgba(22,36,46,' + (0.28 + 0.05*ph + i*0.05) + ')';
+    for(let k=0;k<5;k++){ const x = (((k*270 - t*sp) % (W + 320)) + W + 320) % (W + 320) - 160; ctx.beginPath(); ctx.ellipse(x, y + (k%2)*14, 150 + i*34, 30 + i*8, 0, 0, 7); ctx.fill(); }
+  }
+  // the door housing, at the left: two doors that swing open for the wind lottery, rattling in the wind-up
+  const dw = Math.min(230, W*0.2), dh = Math.min(200, H*0.28), rattle = (b && b._tel > 0 && b._telKind === 'dragonwind') ? Math.sin(t*1.7)*2 : 0;
+  let open = 0; if(Z.door) open = clamp((t - Z.door[0])/8, 0, 1)*(1 - clamp((t - Z.door[1])/10, 0, 1));
+  ctx.save(); ctx.translate(W*0.035 + rattle, gy - dh);
+  ctx.fillStyle = '#382f4b'; ctx.fillRect(0, 0, dw, dh);
+  ctx.fillStyle = '#2a2339'; ctx.fillRect(-6, -8, dw + 12, 12);
+  ctx.fillStyle = '#4b4262'; ctx.fillRect(dw*0.06, dh*0.1, dw*0.88, 9);
+  ctx.fillStyle = '#cfc8b0'; ctx.beginPath(); ctx.arc(dw*0.5, -8, 11, Math.PI, 0); ctx.fill();   // the lamp on the housing
+  for(const sx of [0.13, 0.58]){
+    const x = dw*sx, w = dw*0.28, y = dh*0.34, h = dh*0.66;
+    ctx.fillStyle = '#231d30'; ctx.fillRect(x, y, w, h);
+    if(open > 0){ ctx.fillStyle = 'rgba(255,232,184,' + 0.8*open + ')'; ctx.fillRect(x + 3, y + 3, w - 6, h - 3); }
+    ctx.fillStyle = '#5a5074'; ctx.fillRect(x, y, w*(1 - 0.72*open), h);   // the leaf, swung back
+    ctx.fillStyle = '#8f88a6'; ctx.fillRect(x + w*(1 - 0.72*open) - 7, y + h*0.5, 4, 12);
+  }
+  ctx.restore();
+  // the serrated parapet, at the right: it loses a merlon each time something hits it, and cracks in phase 3
+  const pw = Math.min(W*0.2, 260), px = W - pw, n = 9, mw = pw/n, gone = new Set([4, 1, 7, 3, 6, 0, 8, 2, 5].slice(0, Math.min(8, Z.par || 0)));
+  ctx.fillStyle = '#453b58'; ctx.fillRect(px, gy - 34, pw + 4, 34);
+  ctx.beginPath();
+  for(let i=0;i<n;i++){ const x = px + i*mw; ctx.moveTo(x, gy - 34); ctx.lineTo(x + mw*0.5, gy - (gone.has(i) ? 44 : 64)); ctx.lineTo(x + mw, gy - 34); }
+  ctx.fill();
+  // lightning's glow: soft, fading over about a quarter of a second, never a strobe
+  let glow = 0;
+  if(Z.thunder){ const a = t - Z.thunder; if(a >= 0 && a < 26) glow = Math.max(glow, 0.12*(1 - a/26)); }
+  if(Z.rope) for(let k=0;k<3;k++){ const a = t - Z.rope[3 + k]; if(a >= 0 && a < 14) glow = Math.max(glow, 0.09*(1 - a/14)); }
+  if(glow > 0){ ctx.fillStyle = 'rgba(205,228,255,' + glow + ')'; ctx.fillRect(0, 0, W, H); }
+  ctx.restore();
+}
+// The arena's hazard draw: 'under' is the roof itself (its anchors, soot and shadow and every tell that lies on it), 'over' is the rain
+// and the wind in front of everything. b is null between bosses and Z is then {}: the roof stays, and what the fight left on it is gone.
+function dragonAnchorDraw(x, gy, k){
+  ctx.fillStyle = '#2f2a3b'; ctx.fillRect(x - 6, gy - 20, 12, 22);
+  ctx.strokeStyle = '#a19bb4'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, gy - 25, 8, 0, 7); ctx.stroke();   // the eye bolt
+  ctx.strokeStyle = '#8a6a44'; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(x + 18, gy + 7, 22, 6, 0, 0, 7); ctx.stroke();   // its rope, coiled on the tiles
+  if(k > 0){
+    const g = ctx.createRadialGradient(x, gy - 25, 2, x, gy - 25, 44 + 30*k); g.addColorStop(0, 'rgba(210,240,255,' + (0.5 + 0.4*k) + ')'); g.addColorStop(1, 'rgba(210,240,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(x - 80, gy - 110, 160, 130);
+    ctx.strokeStyle = 'rgba(225,245,255,' + (0.6 + 0.4*k) + ')'; ctx.lineWidth = 2;
+    for(let i=0;i<4;i++){ const a = hazardT*0.9 + i*1.7, l = 18 + 26*k; ctx.beginPath(); ctx.moveTo(x, gy - 25);
+      ctx.lineTo(x + Math.cos(a)*l*0.5 + Math.sin(a*3.1)*6, gy - 25 + Math.sin(a)*l*0.5); ctx.lineTo(x + Math.cos(a + 0.3)*l, gy - 25 + Math.sin(a + 0.3)*l); ctx.stroke(); }
+  }
+}
+function dragonBoltDraw(x, gy, a){
+  const im = attackImage('dragonbolt'), w = 74, h = 56;
+  ctx.save(); ctx.globalAlpha = a;
+  if(im){ ctx.shadowColor = 'rgba(70,160,255,0.95)'; ctx.shadowBlur = 14;
+    for(let y = gy - h, i = 0; y > -h; y -= h*0.78, i++){ ctx.save(); ctx.translate(x, y + h*0.5); if(i%2) ctx.scale(-1, 1); ctx.drawImage(im, -w*0.5, -h*0.5, w, h); ctx.restore(); } }
+  else { ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 6; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(x, 0); for(let y = 0, i = 0; y < gy; y += 46, i++) ctx.lineTo(x + (i%2 ? 22 : -22), y + 46); ctx.lineTo(x, gy); ctx.stroke(); }
+  ctx.restore();
+}
+function dragonHazardDraw(b, Z, layer){
+  const gy = groundY(), t = hazardT, R = b ? b.r : 92, ph = b ? Math.min(3, b._phase || 1) : 1;
+  if(layer === 'under'){
+    // what the fire left: char marks on the tiles
+    if(Z.soot){ ctx.fillStyle = 'rgba(22,14,28,0.55)'; for(const x of Z.soot){ ctx.beginPath(); ctx.ellipse(x, gy + 5, 30, 6, 0, 0, 7); ctx.fill(); } }
+    // its shadow crossing the roof
+    if(Z.sh){ ctx.fillStyle = 'rgba(8,4,16,' + Z.sh[2] + ')'; ctx.beginPath(); ctx.ellipse(Z.sh[0], gy + 8, Z.sh[1], 11, 0, 0, 7); ctx.fill(); }
+    // the rope anchors, crackling before a strike; the column a bolt will come down is lit while they do
+    const rope = Z.rope;
+    DRAGON.anchors.forEach(f => {
+      const x = Math.round(WW*f); let k = 0, dt = 99;
+      if(rope) for(let r=0;r<3;r++) if(Math.abs(rope[r] - x) < 2){ dt = rope[3 + r] - t; if(dt > 0 && dt <= DRAGON.crackT) k = 1 - dt/DRAGON.crackT; }
+      if(k > 0){ ctx.fillStyle = 'rgba(190,230,255,' + (0.05 + 0.14*k) + ')'; ctx.fillRect(x - DRAGON.boltW, 0, DRAGON.boltW*2, gy); }
+      dragonAnchorDraw(x, gy, k);
+      if(rope) for(let r=0;r<3;r++) if(Math.abs(rope[r] - x) < 2){ const a = t - rope[3 + r]; if(a >= 0 && a < 10) dragonBoltDraw(x, gy, 1 - a/10); }
+    });
+    // CHAR!'s mark on the roof: red while it follows you, white once it holds
+    if(Z.aim){ const lk = Z.aim[1]; ctx.strokeStyle = lk ? 'rgba(255,255,255,0.9)' : 'rgba(255,70,50,0.75)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(Z.aim[0], gy - 2, 46, 9, 0, 0, 7); ctx.stroke(); ctx.fillStyle = lk ? 'rgba(255,255,255,0.18)' : 'rgba(255,70,50,0.14)'; ctx.fill(); }
+    // GRAB & CARRY!'s row: the band the swoop travels, as tall as its reach (the tell is the hitbox), chevrons showing the way
+    if(Z.row){ const lk = Z.row[1], y = Z.row[0], hh = DRAGON.grabR*R, dir = Z.row[2] || 1;
+      ctx.fillStyle = lk ? 'rgba(255,255,255,0.22)' : 'rgba(255,70,50,0.13)'; ctx.fillRect(-20, y - hh, WW + 40, hh*2);
+      ctx.strokeStyle = lk ? 'rgba(255,255,255,0.6)' : 'rgba(255,90,70,0.4)'; ctx.lineWidth = 4; ctx.beginPath();
+      for(let x = 60, i = 0; x < WW; x += 140, i++){ const cx = dir > 0 ? x : WW - x; ctx.moveTo(cx - dir*14, y - 16); ctx.lineTo(cx, y); ctx.lineTo(cx - dir*14, y + 16); } ctx.stroke(); }
+    // FURIOUS ROAR!'s eyes and the dive's band
+    if(Z.eye){ const e = Z.eye, lk = e[2], hw = DRAGON.bodyHit*R, dx = e[5] - e[3], dy = e[6] - e[4], d = Math.hypot(dx, dy) || 1, nx = -dy/d*hw, ny = dx/d*hw;
+      ctx.fillStyle = lk ? 'rgba(255,255,255,0.2)' : 'rgba(255,60,50,0.13)'; ctx.beginPath();
+      ctx.moveTo(e[3] + nx, e[4] + ny); ctx.lineTo(e[5] + nx, e[6] + ny); ctx.lineTo(e[5] - nx, e[6] - ny); ctx.lineTo(e[3] - nx, e[4] - ny); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.beginPath(); ctx.ellipse(e[5], gy - 2, DRAGON.tailL*R, 14, 0, 0, 7); ctx.fill();   // where the tail will reach
+      const pulse = 1 + 0.12*Math.sin(t*0.5); ctx.save(); ctx.translate(e[0], e[1]); ctx.scale(pulse, pulse);
+      ctx.strokeStyle = lk ? '#ffffff' : '#ff3a2a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 30, 0, 7); ctx.stroke();
+      ctx.fillStyle = '#e8e0f4'; ctx.beginPath(); ctx.ellipse(0, 0, 17, 10, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#1c1c1c'; ctx.beginPath(); ctx.arc(0, 0, 5, 0, 7); ctx.fill();
+      ctx.strokeStyle = lk ? '#ffffff' : '#ff3a2a'; ctx.beginPath(); ctx.moveTo(-20, -14); ctx.lineTo(0, -9); ctx.lineTo(20, -14); ctx.stroke(); ctx.restore(); }
+    return;
+  }
+  // 'over': the rain, and the wind
+  const calm = Z.calm > t;
+  if(!calm){
+    const slant = ph >= 2 ? 0.55 : 0.2;
+    ctx.strokeStyle = 'rgba(228,242,255,0.28)'; ctx.lineWidth = 1.2; ctx.beginPath();
+    for(let i=0;i<70;i++){
+      const sp = 15 + (i%5)*2, x = (((i*97.3 + t*sp*slant) % (WW + 240)) + WW + 240) % (WW + 240) - 120, y = (((i*53.9 + t*sp) % (WH + 120)) + WH + 120) % (WH + 120) - 60, l = 14 + (i%4)*4;
+      ctx.moveTo(x, y); ctx.lineTo(x - l*slant, y + l);
+    }
+    ctx.stroke();
+  }
+  if(Z.gust){
+    const g = Z.gust, push = t >= g[2], a = push ? 0.32 : 0.06 + 0.2*clamp((t - g[1])/(g[2] - g[1]), 0, 1);
+    ctx.strokeStyle = 'rgba(236,246,255,' + a + ')'; ctx.lineWidth = 2; ctx.beginPath();
+    for(let i=0;i<16;i++){ const y = 30 + ((i*47) % Math.max(60, gy - 40)), sp = 12 + (i%3)*5, x = (((i*131 + t*sp*g[0]) % (WW + 300)) + WW + 300) % (WW + 300) - 150; ctx.moveTo(x, y); ctx.lineTo(x + g[0]*(60 + (i%4)*22), y + 2); }
+    ctx.stroke();
+  }
+}
+// ---- over the boss, under the fighters -----------------------------------------------------------------------------------------------
+// The second dragon (phase 3), on a path that is only the clock and when it dropped in: it comes down off the top edge and circles the
+// other way, over the top of the screen. `p.r` is its size against the first's.
+function dragon2At(t0, t){
+  if(!(t0 > 0) || t < t0) return null;
+  const u = t - t0, drop = u < 40 ? Math.pow(1 - u/40, 2)*300 : 0;
+  const x = WW*(0.5 + 0.38*Math.cos(2.4 - 0.019*u)), xn = WW*(0.5 + 0.38*Math.cos(2.4 - 0.019*(u + 1)));
+  return { x:x, y:78 + 42*Math.sin(1.0 - 0.038*u) - drop, f:xn >= x ? 1 : -1, r:0.8 };
+}
+function dragon2Mouth(p, R){ return p ? { x:p.x + p.f*0.53*R*p.r, y:p.y - 0.38*R*p.r } : { x:WW*0.5, y:0 }; }
+const DRAGON_TINT = {};
+function dragonSprite(scale, face, dark){
+  const im = bossImage('dragon'), R = 91.8*scale;
+  if(im){
+    const ar = im.naturalWidth/im.naturalHeight, dh = R*2.15, dw = dh*ar;
+    if((face < 0) !== !!BOSS_SPRITE_FLIP.dragon) ctx.scale(-1, 1);
+    ctx.drawImage(dark ? tintedSprite(DRAGON_TINT, im, 'rgba(24,0,44,0.5)') : im, -dw/2, -dh/2, dw, dh);
+  } else { ctx.fillStyle = dark ? '#4a2470' : '#b858dc'; ctx.strokeStyle = '#5a2e6f'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, R*0.8, 0, 7); ctx.fill(); ctx.stroke(); }
+}
+function drawDragonFx(b){
+  const Z = b._hz || {}, t = hazardT, R = b.r, ph = Math.min(3, b._phase || 1), f = b.face < 0 ? -1 : 1;
+  ctx.save();
+  // phase 3: it burns -- an ember glow behind it and a red eye
+  if(ph >= 3 && b.hp > 0){
+    const p = 1 + 0.08*Math.sin(t*0.2), g = ctx.createRadialGradient(b.x, b.y, R*0.2, b.x, b.y, R*1.35*p); g.addColorStop(0, 'rgba(255,90,40,0.20)'); g.addColorStop(1, 'rgba(255,90,40,0)');
+    ctx.fillStyle = g; ctx.fillRect(b.x - R*1.5, b.y - R*1.5, R*3, R*3);
+    const e = dragonPt(b, f*0.35*R, -0.59*R); ctx.fillStyle = 'rgba(255,60,40,0.9)'; ctx.beginPath(); ctx.arc(e.x, e.y, 4.5, 0, 7); ctx.fill();
+  }
+  // the cheeks glow while it winds up CHAR!, and its mouth while the jet burns
+  if((b._tel > 0 && b._telKind === 'dragonchar') || Z.aim && Z.aim[1] === 1){
+    const k = b._tel > 0 ? 1 - b._tel/DRAGON.tel : 1, m = dragonMouth(b), g = ctx.createRadialGradient(m.x, m.y, 2, m.x, m.y, 20 + 30*k);
+    g.addColorStop(0, 'rgba(255,190,80,' + (0.35 + 0.5*k) + ')'); g.addColorStop(1, 'rgba(255,120,30,0)');
+    ctx.fillStyle = g; ctx.fillRect(m.x - 60, m.y - 60, 120, 120);
+  }
+  // the roar's rings, out from its mouth
+  if(Z.roar){ const a = t - Z.roar[3];
+    if(a >= 0 && a < 30){ ctx.lineWidth = 5; for(let i=0;i<3;i++){ const r = 30 + a*14 + i*26, ang = Z.roar[2] > 0 ? 0 : Math.PI;
+      ctx.strokeStyle = 'rgba(240,232,255,' + Math.max(0, 0.6*(1 - a/30) - i*0.1) + ')'; ctx.beginPath(); ctx.arc(Z.roar[0], Z.roar[1], r, ang - 0.9, ang + 0.9); ctx.stroke(); } } }
+  // the tail's whip as it lands
+  if(Z.tail){ const u = t - Z.tail[3];
+    if(u >= 0 && u <= DRAGON.tailT + 6){ const tip = dragonTailTip(Z.tail, u, R), mx = (tip.rx + tip.x)/2, my = Math.min(tip.ry, tip.y) - 18;
+      ctx.lineCap = 'round'; ctx.strokeStyle = '#5a2e6f'; ctx.lineWidth = 20; ctx.beginPath(); ctx.moveTo(tip.rx, tip.ry); ctx.quadraticCurveTo(mx, my, tip.x, tip.y); ctx.stroke();
+      ctx.strokeStyle = '#b858dc'; ctx.lineWidth = 14; ctx.stroke(); ctx.lineCap = 'butt'; } }
+  // the second dragon, darker and a little smaller, circling over the top of the screen
+  if(Z.d2){ const p = dragon2At(Z.d2, t); if(p){ ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(0.15*p.f); ctx.scale(p.r, p.r); dragonSprite(1, p.f, true); ctx.restore(); } }
+  ctx.restore();
+}
+// The art's lean (H.rot: the head turned to the way it is going) and roll (a barrel roll, seen edge-on as the render squashing), before the
+// render: they carry on to it on purpose, drawBossSprite ends with drawSummon's restore.
+function dragonTellDraw(s){
+  const Z = s._hz || {};
+  if(Z.rot) ctx.rotate(Z.rot);
+  if(Z.roll){ let c = Math.cos(Z.roll); if(Math.abs(c) < 0.15) c = c < 0 ? -0.15 : 0.15; ctx.scale(1, c); }
+}
+// Its ending, from the clock: it hangs where it fell and waves (the render swings side to side), then it flies away up and off the edge it
+// faces, smaller as it goes; the second dragon, if it had come, waves and leaves the other way. pr.et0 when it fell, ex/ey where, ef which
+// way it faced, er its radius, e2 when the second came (0: never).
+function drawDragonEnd(pr){
+  const u = hazardT - pr.et0, E = DRAGON.endT, half = Math.round(E*0.5);
+  if(!(u >= 0) || u > E) return;
+  const R = pr.er/91.8;
+  ctx.save();
+  if(u <= half) { ctx.translate(pr.ex, pr.ey + Math.sin(u*0.2)*5); ctx.rotate(Math.sin(u*0.42)*0.24); ctx.scale(R, R); }
+  else { const w = u - half; ctx.translate(pr.ex + pr.ef*w*9, pr.ey - w*w*0.16 - w*3); ctx.rotate(pr.ef*-0.5); ctx.scale(R*(1 - 0.5*w/(E - half)), R*(1 - 0.5*w/(E - half))); }
+  dragonSprite(1, pr.ef, false);
+  ctx.restore();
+  if(pr.e2){
+    const p = dragon2At(pr.e2, pr.et0), w = Math.max(0, u - half*0.6);
+    if(p){ ctx.save(); ctx.translate(p.x - p.f*w*7, p.y - w*w*0.1); ctx.rotate(-0.4*p.f); ctx.scale(p.r*R, p.r*R); dragonSprite(1, -p.f, true); ctx.restore(); }
+  }
+}
 // @boss:dragon:end helpers
 
 // ---- MEPHONE4 (Boss 7) ----------------------------------------------------------------------------------------------
@@ -8546,6 +9299,8 @@ const BOSS_ENDINGS = {
   // @boss:purpleface:end ending
 
   // @boss:dragon:begin ending
+  // Purple Dragon: "Bomby waves bye to the dragon, and the dragon waves back as it flies away." (The Great Goikian Bake-Off/Transcript)
+  dragon: { sweep: dragonEndSweep, begin: dragonEndBegin, holdMs: DRAGON.endHold },
   // @boss:dragon:end ending
 
 };
@@ -8584,6 +9339,7 @@ const BOSS_ARENA_HAZARD = {
   // @boss:purpleface:end hazard
 
   // @boss:dragon:begin hazard
+  hotelroof: { step: dragonHazardStep, draw: dragonHazardDraw },   // the storm: gusts (phase 2 on), the soot of what it burned, the rope anchors, its shadow, the rain
   // @boss:dragon:end hazard
 
 };
@@ -8634,7 +9390,7 @@ function bossTelName(s){
   // @boss:purpleface:end telname
 
   // @boss:dragon:begin telname
-  if(s.attack==="dragon") return "STRAFING RUN!";
+  if(s.attack==="dragon") return (s._telPh || s._phase || 1) >= 3 ? "GRAB & CARRY!" : "STRAFING RUN!";   // phase 3's signature is the carry
   // @boss:dragon:end telname
 
   if(s.attack==="evilleafy") return "TENDRILS!";
@@ -8756,24 +9512,7 @@ function fireBossAttack(s, tgt){
   // @boss:purpleface:end fire
 
   // @boss:dragon:begin fire
-  if(s.attack==="dragon"){
-    // Purple Dragon: a cone of flame breath aimed straight at the target (not just facing direction).
-    const ph=s._phase||1;
-    const baseAng = tgt ? Math.atan2(tgt.y-(s.y-10), tgt.x-s.x) : (s.face>0?0:Math.PI);
-    const cone = ph>=3 ? 13 : (ph===2 ? 11 : 9);
-    for(let i=0;i<cone;i++){ const ang = baseAng + (i-(cone-1)/2)*0.10;
-      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x+(s.face||1)*s.r, y:s.y-10, bossAtk:atkId,
-        vx:Math.cos(ang)*12, vy:Math.sin(ang)*12, grav:false, dmg:bossDmg(), kb:8, r:9, color:'#b06ad0', life:70, burn:true, noAim:true}); }
-    // PHASE 3 — GRAB & CARRY (design doc): a strafing pass that hurls the target toward the blast zone.
-    if(ph>=3 && tgt && Math.hypot(tgt.x-s.x,tgt.y-s.y) < s.r+150){
-      const away = Math.sign(tgt.x - WW/2)||1;
-      applyHit(tgt, bossDmg()*0.6, away*14, -9, null, {bossAtk:atkId});   // 22 threw anyone into the blast zone: 2.25 stocks a try at 59% taken
-      banner("GRAB & CARRY!",800,'boss');
-      for(let i=0;i<12;i++) puff(tgt.x,tgt.y,'#b06ad0',5);
-    }
-    shake(6);
-    return;
-  }
+  if(s.attack==="dragon"){ dragonFire(s, tgt, atkId); return; }   // STRAFING RUN! (phase 3: GRAB & CARRY!), all of it, in dragonFire
   // @boss:dragon:end fire
 
   if(s.attack==="four"){
@@ -19386,6 +20125,7 @@ function drawProjectile(pr){
     // @boss:purpleface:end shotdraw
 
     // @boss:dragon:begin shotdraw
+    if(pr.dragonEnd){ drawDragonEnd(pr); return; }   // its ending (dragonEndBegin): the wave and the flight away, drawn from the clock
     // @boss:dragon:end shotdraw
 
     // THE CONTRAPTION (Steve Cobs). Buried, only its shadow shows, with a watch face -- the Meeple Watch he was showing off
@@ -19663,6 +20403,7 @@ function draw(){
   // @boss:purpleface:end fx
 
   // @boss:dragon:begin fx
+  { const dragonB = summons.find(s=>s.type==="boss" && s.attack==="dragon"); if(dragonB) drawDragonFx(dragonB); }   // its marks, rings, tail, jets' glow and second dragon, over the roof and under the fighters
   // @boss:dragon:end fx
 
   try{ drawCrowd(); }catch(e){}   // Wave 3.5: benched characters watching from the back
@@ -19965,6 +20706,7 @@ const BOSS_ARENA_SKY = {
   // @boss:purpleface:end sky
 
   // @boss:dragon:begin sky
+  hotelroof: ["#27414c","#5b8089"],   // the storm over the hotel roof: teal-grey, as in TPOT 13's frames (File:TPOT 13 (468).png)
   // @boss:dragon:end sky
 
 };
@@ -19993,6 +20735,7 @@ const BOSS_ARENA_GROUND = {
   // @boss:purpleface:end ground
 
   // @boss:dragon:begin ground
+  hotelroof: { fill:"#8a83a2", line:"#2c2440", pattern: dragonRoofTiles },   // "The roof: lavender tile grid" (File:TPOT 13 (468).png)
   // @boss:dragon:end ground
 
 };
@@ -20105,6 +20848,7 @@ function drawArenaDecor(key){
   // @boss:purpleface:end decor
 
   // @boss:dragon:begin decor
+  if(key==="hotelroof") drawDragonDecor();   // storm clouds, the door housing at the left, the serrated parapet at the right (it breaks), lightning's glow
   // @boss:dragon:end decor
 
   ctx.restore();
@@ -20485,6 +21229,7 @@ function drawBossSprite(s){
   // @boss:purpleface:end tell
 
   // @boss:dragon:begin tell
+    if(s.attack==="dragon") dragonTellDraw(s);   // under the art: the dive's band, the swoop's row; then the art's lean and roll (they carry on to the render below on purpose)
   // @boss:dragon:end tell
 
   // ---- REAL BOSS ART, animated ----------------------------------------------------------------
@@ -23690,6 +24435,13 @@ const ATTACK_SPRITES = {
   // @boss:purpleface:end art
 
   // @boss:dragon:begin art
+  // Purple Dragon (Boss 6): the show's own art for what it throws. The flame is cut from File:Dragony3.png ("The dragon breathing fire"); moving it is aimed along
+  // the shot, landed on the roof it stands upright. Roboty is what the wind lottery threw through the door (Category One), in his book render; the bolt is the
+  // TPOT 7 strike, the same file Lightning strikes with (it is also the bolt down a rope anchor's column). The sign, Recovery Center, couch, chainsaw, paper and
+  // key of the same lottery are drawn (PROJ_SHAPE), the show's lettering being on the files.
+  dragonflame:  { src:'assets/sprites/attacks/dragonflame.png',  h:30, aim:true, rot:0, rest:0, cap:2 },
+  dragonroboty: { src:'assets/sprites/attacks/dragonroboty.png', h:24 },
+  dragonbolt:   { src:'assets/sprites/attacks/tpot7bolt.png',    h:44, halo:'rgba(70,160,255,0.95)' },
   // @boss:dragon:end art
 
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
@@ -23754,6 +24506,27 @@ const PROJ_SHAPE = {
   // @boss:purpleface:end shape
 
   // @boss:dragon:begin shape
+  // --- Purple Dragon (Boss 6): drawn glyphs, shown until the show's art loads (the flame, the sign, the Recovery Center, Roboty, the bolt) and for
+  // good where the show has no clean file (the couch, the chainsaw, the paper, the key, the spark, and the flurry)
+  dragonflame:{ draw(c,r){ flameShape(c,r); } },
+  dragonsign:{ draw(c,r){ c.fillStyle='#e60000'; c.fillRect(-r*1.5,-r*0.75,r*3,r*1.05); c.fillStyle='#ffcc00'; c.fillRect(-r*1.3,r*0.38,r*2.6,r*0.5);
+    c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.12; c.strokeRect(-r*1.5,-r*0.75,r*3,r*1.63); } },
+  dragonrc:{ draw(c,r){ c.fillStyle='#808080'; c.fillRect(-r*1.2,-r*0.85,r*2.4,r*1.7); c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.1; c.strokeRect(-r*1.2,-r*0.85,r*2.4,r*1.7);
+    c.fillStyle='#161616'; c.fillRect(r*0.15,-r*0.35,r*0.75,r*0.7); c.fillStyle='#4ccf5f'; c.beginPath(); c.arc(r*0.98,-r*0.05,r*0.14,0,7); c.fill(); } },
+  dragonroboty:{ draw(c,r){ c.fillStyle='#c9ccd6'; c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.12; c.fillRect(-r*0.6,-r*0.7,r*1.2,r*1.4); c.strokeRect(-r*0.6,-r*0.7,r*1.2,r*1.4);
+    c.fillStyle='#1c1c1c'; c.beginPath(); c.arc(-r*0.22,-r*0.25,r*0.14,0,7); c.arc(r*0.22,-r*0.25,r*0.14,0,7); c.fill(); c.fillRect(-r*0.3,r*0.15,r*0.6,r*0.1);
+    c.beginPath(); c.moveTo(0,-r*0.7); c.lineTo(0,-r*1.1); c.stroke(); } },
+  dragonbolt:{ draw(c,r){ c.strokeStyle='#bfe6ff'; c.lineWidth=r*0.5; c.lineJoin='round'; c.beginPath(); c.moveTo(-r*1.2,-r); c.lineTo(-r*0.2,-r*0.1); c.lineTo(-r*0.6,-r*0.1); c.lineTo(r*0.6,r); c.stroke(); } },
+  dragoncouch:{ draw(c,r){ c.fillStyle='#d9576b'; c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.1; c.fillRect(-r*1.3,-r*0.2,r*2.6,r*0.75); c.strokeRect(-r*1.3,-r*0.2,r*2.6,r*0.75);
+    c.fillRect(-r*1.3,-r*0.85,r*0.5,r*0.75); c.strokeRect(-r*1.3,-r*0.85,r*0.5,r*0.75); c.fillRect(r*0.8,-r*0.85,r*0.5,r*0.75); c.strokeRect(r*0.8,-r*0.85,r*0.5,r*0.75);
+    c.fillStyle='#b8404f'; c.fillRect(-r*0.75,-r*0.55,r*1.5,r*0.5); c.fillStyle='#1c1c1c'; c.fillRect(-r*1.1,r*0.55,r*0.18,r*0.25); c.fillRect(r*0.92,r*0.55,r*0.18,r*0.25); } },
+  dragonsaw:{ spin:true, draw(c,r){ c.fillStyle='#e0552a'; c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.1; c.fillRect(-r*1.1,-r*0.45,r*0.9,r*0.9); c.strokeRect(-r*1.1,-r*0.45,r*0.9,r*0.9);
+    c.fillStyle='#b0b6be'; c.fillRect(-r*0.2,-r*0.28,r*1.4,r*0.56); c.strokeRect(-r*0.2,-r*0.28,r*1.4,r*0.56);
+    c.fillStyle='#1c1c1c'; for(let i=0;i<6;i++){ c.fillRect(-r*0.1+i*r*0.22,-r*0.42,r*0.1,r*0.14); c.fillRect(-r*0.1+i*r*0.22,r*0.28,r*0.1,r*0.14); } } },
+  dragonpaper:{ draw(c,r){ c.fillStyle='#f6f2e4'; c.strokeStyle='#8a8574'; c.lineWidth=r*0.12; c.fillRect(-r*0.8,-r,r*1.6,r*2); c.strokeRect(-r*0.8,-r,r*1.6,r*2);
+    c.fillStyle='#b9b39c'; c.fillRect(-r*0.5,-r*0.6,r,r*0.14); c.fillRect(-r*0.5,-r*0.2,r,r*0.14); c.fillRect(-r*0.5,r*0.2,r*0.6,r*0.14); } },
+  dragonkey:{ draw(c,r){ c.strokeStyle='#e0b83a'; c.lineWidth=r*0.35; c.lineCap='round'; c.beginPath(); c.arc(-r*0.8,0,r*0.5,0,7); c.moveTo(-r*0.3,0); c.lineTo(r*1.2,0); c.moveTo(r*0.8,0); c.lineTo(r*0.8,r*0.6); c.moveTo(r*1.2,0); c.lineTo(r*1.2,r*0.5); c.stroke(); c.lineCap='butt'; } },
+  dragonspark:{ draw(c,r){ c.strokeStyle='#cfeeff'; c.lineWidth=r*0.35; c.lineJoin='round'; c.beginPath(); c.moveTo(-r*1.6,r*0.4); c.lineTo(-r*0.8,-r*0.5); c.lineTo(-r*0.1,r*0.5); c.lineTo(r*0.7,-r*0.5); c.lineTo(r*1.5,0); c.stroke(); } },
   // @boss:dragon:end shape
 
   // --- MePhone4's Fist Thingy (the Fist Thingy page): a red boxing glove on a gray pole, drawn pointing the way it flies
@@ -24549,6 +25322,7 @@ function netProjectiles(){
     // @boss:purpleface:end netshot
 
     // @boss:dragon:begin netshot
+    if(p.dragonEnd){ x = x || {}; x.dragonEnd = 1; x.et = p.et0; x.ex = Math.round(p.ex); x.ey = Math.round(p.ey); x.ef = p.ef; x.er = Math.round(p.er); x.e2 = p.e2 || 0; }   // its ending: a pure function of these and the clock (drawDragonEnd)
     // @boss:dragon:end netshot
 
     if(x) row.push(x);
