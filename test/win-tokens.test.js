@@ -10,15 +10,32 @@ import { mulberry32 } from './helpers/prng.js';
 // what draws takedowns: "remove the flags for 1 and 2" ... "add teh support the dev link." ... "remove the things that make
 // these flags." So these tests pin both halves: the system works (earn, spend, quests, all four kinds of cosmetic, online
 // too), and nothing in it is sold, charged, fetched or shouted over a match.
+//
+// And nothing in it hooks. The owner: "I dont want to hook ppl tho." Asked how: a finished quest is to "Pay the moment it's
+// done" (the tokens land by themselves, at the match's end, shown on the result screen -- no claim button, nothing to come
+// back for, nothing lost at midnight); the title badge that counted claimable quests: "Remove it"; the pace stays ("Keep 2-3
+// days": prices and rewards unchanged). The tests below pin each of those too.
 
 const SRC = readFileSync('artifacts/V1/index.html', 'utf8');
 // Comments may say what is NOT here ("no token packs"); code may not do it. So the code is searched with its comments cut.
-const CODE = SRC
+const stripComments = (src) => src
   .replace(/<!--[\s\S]*?-->/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split(/\r?\n/).map((l) => l.replace(/(^|[\s;,{}()])\/\/.*$/, '$1')).join('\n');
-const DAY = Date.UTC(2026, 8, 28, 12);   // Monday 2026-09-28, noon UTC
+const CODE = stripComments(SRC);
 const ONE_DAY = 86400000;
+// Monday 2026-09-28, noon UTC -- or, once the real calendar has passed it, the first Monday on or after today. The game stamps
+// the REAL day into the profile at boot (questState, saved at once), and when two tabs merge a later day beats an earlier one
+// (mergeQuests), rightly; so a test clock standing in the real past would see its own progress thrown away as stale. Every
+// test finds the days it needs from here (dayWith), so any Monday serves, and a Monday it must be: the weekly quests hold
+// from Monday to Sunday.
+const DAY = (() => {
+  const fixed = Date.UTC(2026, 8, 28, 12), now = new Date();
+  let t = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12);
+  if (t <= fixed) return fixed;
+  while (new Date(t).getUTCDay() !== 1) t += ONE_DAY;
+  return t;
+})();
 
 // A 2D context that draws nothing. `filter:true` gives it a canvas filter (a string, as a real browser's is), so both the
 // filter path and the wash path of the recolours get drawn.
@@ -189,34 +206,78 @@ describe('quests', () => {
     expect(w.eval('questState().dp.d_boss1 | 0'), 'a Boss Rush kill counts').toBe(1);
   });
 
-  it('claim once, for the tokens, then start again with the next day and the next week', async () => {
+  it('pays the moment it is done -- by itself, once -- then starts again with the next day and the next week', async () => {
+    // "I dont want to hook ppl tho": a finished quest is to "Pay the moment it's done". There is no claim step any more --
+    // the tokens land inside the count that finished the quest, and a quest never looked at is paid all the same.
     const w = await ready();
     const D = dayWith(w, 'd_play3', DAY);
     w.eval(`SHOP_CLOCK = ${D}`);
-    expect(w.eval(`claimQuest('d_play3').why`)).toBe('unfinished');
-    matchEnd(w); matchEnd(w); matchEnd(w, false);
-    const c1 = w.eval(`claimQuest('d_play3')`);
-    expect(c1.ok).toBe(true);
-    expect(c1.reward).toBe(15);
-    expect(w.eval(`claimQuest('d_play3').why`)).toBe('claimed');
-    expect(w.eval(`claimQuest('d_nosuch').why`)).toBe('not-now');
-    expect(w.eval('walletBalance()')).toBe(15);
+    expect(w.eval('typeof claimQuest'), 'no claim step').toBe('undefined');
+    const row = () => w.eval(`questRows('daily').filter(function(r){ return r.quest.id==='d_play3'; })[0]`);
+    matchEnd(w); matchEnd(w);
+    expect(w.eval('walletBalance()'), 'two of three: nothing yet').toBe(0);
+    expect(row()).toMatchObject({ prog: 2, done: false, paid: false });
+    matchEnd(w, false);
+    expect(w.eval('walletBalance()'), 'the third match pays, win or lose, with no one asking').toBe(15);
+    expect(row()).toMatchObject({ prog: 3, done: true, paid: true });
+    expect(w.eval(`questState().claims['d' + dailySeed(shopNow()) + ':d_play3']`), 'on the ledger in the same breath').toBe(15);
+    matchEnd(w);
+    expect(w.eval('walletBalance()'), 'a fourth match pays nothing more').toBe(15);
     const wk = w.eval('JSON.stringify(questState().wp)');
     expect(wk, 'the week counted the same matches').not.toBe('{}');
-    // The next day that has it again: fresh, and claimable once more.
+    // The next day that has it again: fresh, and paid once more when finished.
     const D2 = dayWith(w, 'd_play3', D + ONE_DAY);
     w.eval(`SHOP_CLOCK = ${D2}`);
-    const row = w.eval(`questRows('daily').filter(function(r){ return r.quest.id==='d_play3'; })[0]`);
-    expect(row.prog).toBe(0);
-    expect(row.claimed).toBe(false);
-    matchEnd(w); matchEnd(w); matchEnd(w);
-    expect(w.eval(`claimQuest('d_play3').ok`)).toBe(true);
+    expect(row()).toMatchObject({ prog: 0, done: false, paid: false });
+    matchEnd(w); matchEnd(w);
+    expect(w.eval('walletBalance()')).toBe(15);
+    matchEnd(w);
     expect(w.eval('walletBalance()')).toBe(30);
-    // The Monday after: the week's progress is gone too.
+    // The Monday after: the week's progress is gone too, and what was paid stays paid -- "nothing lost at midnight".
     const monday = (Math.floor((Math.floor(D2 / ONE_DAY) + 3) / 7) + 1) * 7 * ONE_DAY - 3 * ONE_DAY + 3600000;
     w.eval(`SHOP_CLOCK = ${monday}`);
     expect(w.eval('JSON.stringify(questState().wp)')).toBe('{}');
-    expect(w.eval('walletBalance()'), 'tokens already claimed are kept').toBe(30);
+    expect(w.eval('walletBalance()'), 'tokens already paid are kept').toBe(30);
+  });
+
+  it('two tabs finishing the same quest pay it once, through the real save path', async () => {
+    const w = await ready();
+    const D = dayWith(w, 'd_play3', DAY);
+    w.eval(`SHOP_CLOCK = ${D}`);
+    matchEnd(w); matchEnd(w);
+    await w.eval('saveProfile()');
+    // The other tab, loaded from this save two matches in, plays the third itself: paid there (+15, on the ledger), saved.
+    const other = JSON.parse(w.localStorage.getItem('profile:v1'));
+    const key = w.eval(`'d' + dailySeed(shopNow()) + ':d_play3'`);
+    expect(other.quests.dp.d_play3).toBe(2);
+    other.quests.dp.d_play3 = 3; other.quests.claims[key] = 15; other.wallet.earned = 15;
+    w.localStorage.setItem('profile:v1', JSON.stringify(other));
+    // ...and this tab, still holding two in memory, plays its own third match.
+    matchEnd(w);
+    await w.eval('saveProfile()');
+    const final = JSON.parse(w.localStorage.getItem('profile:v1'));
+    expect(w.eval('walletBalance()'), 'paid once').toBe(15);
+    expect(final.wallet.earned, 'one quest, finished in both tabs, paid once').toBe(15);
+    expect(final.quests.claims[key]).toBe(15);
+    expect(w.eval(`questRows('daily').filter(function(r){ return r.quest.id==='d_play3'; })[0]`)).toMatchObject({ prog: 3, done: true, paid: true });
+  });
+
+  it('a save from before -- a quest finished and left unclaimed -- is paid when the game loads, once', async () => {
+    // "Pay the moment it's done" reaches back too: nothing anyone finished is lost to a button that no longer exists.
+    const w = await ready();
+    const today = w.eval(`(function(){ var t = new Date(), q = questsFor('daily', t)[0];
+      return { day: 'd' + dailySeed(t), week: 'w' + shopWeekNo(t), id: q.id, reward: q.reward }; })()`);
+    const prior = w.eval('JSON.parse(JSON.stringify(PROFILE))');
+    prior.quests = { day: today.day, week: today.week, dp: { [today.id]: 999 }, wp: {}, wf: [], claims: {} };
+    const w2 = await ready({ storage: { 'profile:v1': JSON.stringify(prior) } });
+    await settle(w2);
+    expect(w2.eval('walletBalance()')).toBe(today.reward);
+    expect(w2.eval(`questState().claims[${JSON.stringify(today.day + ':' + today.id)}]`)).toBe(today.reward);
+    expect(w2.eval(`questRows('daily')[0]`)).toMatchObject({ done: true, paid: true });
+    await w2.eval('saveProfile()');
+    const w3 = await ready({ storage: { 'profile:v1': w2.localStorage.getItem('profile:v1') } });
+    await settle(w3);
+    expect(w3.eval('walletBalance()'), 'loading it again pays nothing more').toBe(today.reward);
   });
 
   it('show on the result screen, and never as words over the match', async () => {
@@ -232,17 +293,23 @@ describe('quests', () => {
       for (var i = 0; i < 9000 && running; i++){ step(); draw(); }
       banner = _b;
       var ended = !running;
+      var bal = walletBalance();
       showQuestNote();
-      return { ended: ended, said: said, note: document.getElementById('questNote').textContent,
+      return { ended: ended, said: said, note: document.getElementById('questNote').textContent, bal: bal,
+               paid: questState().claims['d' + dailySeed(shopNow()) + ':d_play3'],
                shown: document.getElementById('questNote').style.display, prog: questState().dp.d_play3 };
     })()`);
     expect(r.ended, 'the match finished').toBe(true);
     expect(r.prog).toBe(3);
     expect(r.said.filter((t) => /quest|token|claim|win token|\bW ?\d/i.test(t)), 'no quest or token text during the match').toEqual([]);
     expect(r.shown).toBe('block');
-    expect(r.note).toMatch(/Play 3 matches/);
-    expect(r.note).toMatch(/to claim/);
-    for (const fn of ['questMatchEnd', 'questAdd', 'claimQuest', 'buyCosmetic', 'equipCos', 'cosKoBurst', 'drawCosTrail', 'drawCosHat', 'drawKoBurst', 'showQuestNote', 'renderResultCard', 'questSmashArm', 'questSmashHit']) {
+    // Paid as the match ended ("Pay the moment it's done"), and the result screen says what and how much -- no claim, and no
+    // link to go and do one: "nothing to come back for".
+    expect(r.paid).toBe(15);
+    expect(r.bal, '1000 earned, 150 on Star Burst, 15 for the quest -- at least').toBeGreaterThanOrEqual(865);
+    expect(r.note).toMatch(/\+15 Win Tokens: Play 3 matches/);
+    expect(r.note).not.toMatch(/claim|Open Quests/i);
+    for (const fn of ['questMatchEnd', 'questAdd', 'questPay', 'questSettle', 'buyCosmetic', 'equipCos', 'cosKoBurst', 'drawCosTrail', 'drawCosHat', 'drawKoBurst', 'showQuestNote', 'renderResultCard', 'questSmashArm', 'questSmashHit']) {
       expect(w.eval(`String(${fn})`), `${fn} puts up no banner`).not.toMatch(/banner\(/);
     }
   }, 120000);
@@ -466,18 +533,18 @@ describe('the Store', () => {
       SHOP_CLOCK = ${DAY};
       questState().dp = { d_play3: 3, d_ko5: 5, d_dmg300: 300, d_daily: 1 };
       walletEarn(500);
-      go('quests'); [].slice.call(document.querySelectorAll('#quests button')).forEach(function(b){ if (/Claim/.test(b.textContent)) b.click(); });
+      go('quests'); [].slice.call(document.querySelectorAll('#quests button')).forEach(function(b){ if (!/Back|Store/.test(b.textContent)) b.click(); });
       go('store'); document.querySelector('#storeList .scell[data-id="ti_contestant"] button').click();
       go('wardrobe'); [].slice.call(document.querySelectorAll('#wardrobe .wchip')).forEach(function(b){ b.click(); });
       var imgs = document.querySelectorAll('#store img, #quests img').length;
       go('title');
       return { calls: calls, added: document.querySelectorAll('script,iframe,link,img').length - nodes0 - document.querySelectorAll('#wardrobe img').length, imgs: imgs,
-               claimed: walletBalance() };
+               paid: walletBalance() };
     })()`);
     expect(r.calls).toEqual([]);
     expect(r.imgs, 'the Store draws its previews; it fetches no pictures').toBe(0);
     expect(r.added).toBe(0);
-    expect(r.claimed).toBeGreaterThan(0);
+    expect(r.paid).toBeGreaterThan(0);
   });
 });
 
@@ -499,9 +566,9 @@ describe('nothing is sold', () => {
   it('keeps every price in Win Tokens, and Win Tokens come only from quests', async () => {
     const w = await ready();
     expect(w.eval('COSMETICS.every(function(c){ return Number.isInteger(c.price) && c.price > 0 && Object.keys(c).indexOf("usd") < 0; })')).toBe(true);
-    // The only callers that add to the wallet: a claimed quest (and walletEarn itself).
+    // The only caller that adds to the wallet: a finished quest paying itself (questPay), and walletEarn itself.
     const earners = SRC.split('\n').filter((l) => /walletEarn\(/.test(l) && !/function walletEarn/.test(l) && !/^\s*\/\//.test(l));
-    expect(earners.map((l) => l.trim())).toEqual(['walletEarn(row.quest.reward);']);
+    expect(earners.map((l) => l.trim())).toEqual(['walletEarn(quest.reward);']);
     expect(w.eval('Object.keys(window).filter(function(k){ return /^(buy|purchase|checkout)(tokens|pack|currency)/i.test(k); })')).toEqual([]);
   });
 
@@ -539,6 +606,51 @@ describe('nothing is sold', () => {
   });
 });
 
+// "I dont want to hook ppl tho." No streak, no limited-time item, no login bonus, no expiry, no countdown: nothing in the Win
+// Tokens block asks anyone to come back. Grepped with the comments cut, so a comment may name what is not here.
+describe('no hooks', () => {
+  const between = (from, to) => {
+    const a = SRC.indexOf(from), b = SRC.indexOf(to, a + 1);
+    expect(a, from).toBeGreaterThan(-1); expect(b, to).toBeGreaterThan(a);
+    return stripComments(SRC.slice(a, b));
+  };
+  const blocks = () => ({
+    script: between('//  WIN TOKENS -- quests earn them', '// ---------- boot ----------'),
+    screens: between('<!-- QUESTS, THE STORE AND THE WARDROBE', '<!-- MY STATS'),
+    doors: between('<div class="shopdoor"', "<!-- The Vault's door"),
+  });
+
+  it('has no streak, limited-time item, login, bonus or expiry anywhere in the Win Tokens block', () => {
+    for (const [name, block] of Object.entries(blocks())) {
+      const lines = block.split('\n');
+      // "Rainbow Streak" is a trail -- a streak of colour behind a fast fighter -- and the one such word in the catalogue.
+      expect(lines.filter((l) => /\bstreaks?\b/i.test(l) && !/'Rainbow Streak'/.test(l)), `${name}: a streak`).toEqual([]);
+      expect(lines.filter((l) => /\blimited\b/i.test(l)), `${name}: limited-time`).toEqual([]);
+      expect(lines.filter((l) => /\bexpires?\s+in\b|\bexpir(y|ing|ation)\b/i.test(l)), `${name}: an expiry`).toEqual([]);
+      expect(lines.filter((l) => /\blog-?in\b/i.test(l)), `${name}: a login`).toEqual([]);
+      expect(lines.filter((l) => /\bbonus(es)?\b/i.test(l)), `${name}: a bonus`).toEqual([]);
+    }
+  });
+
+  it('counts nothing down, and asks for no claim: the Quests screen tells, the result screen tells, and that is all', async () => {
+    const { script } = blocks();
+    expect(script).not.toMatch(/untilText|countdown|claimQuest|questsClaimable|hurry|last chance/i);
+    const w = await ready();
+    const r = w.eval(`(function(){
+      SHOP_CLOCK = ${DAY}; questState().dp[questsFor('daily')[0].id] = 999; go('quests');
+      var q = document.getElementById('quests');
+      return { text: q.textContent, buttons: [].slice.call(q.querySelectorAll('button')).map(function(b){ return b.textContent.trim(); }),
+               rows: [].slice.call(q.querySelectorAll('.quest')).length, paid: [].slice.call(q.querySelectorAll('.quest.paid .qreward')).map(function(e){ return e.textContent; }),
+               bal: walletBalance() }; })()`);
+    expect(r.rows, "the day's three and the week's three").toBe(6);
+    expect(r.buttons, 'Back and the Store, and nothing to press for tokens').toEqual(['◀ Back', '🛍 Store']);
+    expect(r.text).not.toMatch(/claim/i);
+    expect(r.text, 'no clock running down to the next set').not.toMatch(/\bin \d+\s?(h|m|min|hours?|minutes?|days?)\b/i);
+    expect(r.paid, 'the finished quest was paid on sight, and says so').toEqual(['Paid ✓']);
+    expect(r.bal).toBe(w.eval(`questsFor('daily')[0].reward`));
+  });
+});
+
 describe('the title', () => {
   it('shows the wallet and its doors as links, keeping its six buttons', async () => {
     const w = await ready();
@@ -552,11 +664,13 @@ describe('the title', () => {
       expect(w.eval(`MUSIC_SCREENS.${screen}`)).toBe('menu');
       expect(w.document.getElementById(screen).innerHTML, `${screen} leads back`).toContain("go('title')");
     }
-    // A finished quest shows as a count on the Quests door.
+    // No badge on the Quests door. One counted quests ready to claim; the owner -- "I dont want to hook ppl tho" -- said
+    // "Remove it". A finished quest changes nothing on the title but the wallet's number.
     w.eval(`SHOP_CLOCK = ${DAY}; questState().dp[questsFor('daily')[0].id] = 999; go('title');`);
-    const badge = w.document.getElementById('questBadge');
-    expect(badge.hidden).toBe(false);
-    expect(badge.textContent).toBe('1');
+    expect(w.document.getElementById('questBadge')).toBe(null);
+    expect(w.document.getElementById('questsBtn').children.length, 'a plain link').toBe(0);
+    expect(w.document.getElementById('questsBtn').textContent.trim()).toBe('🏅 Quests');
+    expect(SRC).not.toMatch(/qbadge|questBadge|questsClaimable/);
   });
 });
 
@@ -564,17 +678,16 @@ describe('the title', () => {
 // that showed on every title screen, KO effects no online client ever saw, a jab (or a burn tick) scored as a landed
 // smash, and a tab that loaded before another tab spent spending the same Win Tokens again.
 describe('the second look', () => {
-  it('the Quests badge is really hidden while nothing is ready to claim, and shows when something is', async () => {
+  it('the Quests door carries no badge at all, and the support link stays hidden in fact as well as in name', async () => {
+    // The first build's badge counted claimable quests, and once showed as an empty pill on every title screen (its own
+    // `display` beat the `hidden` attribute). Then the owner, asked about it: "Remove it" -- "I dont want to hook ppl tho".
+    // So there is nothing left to hide: with a quest finished or without, the door is one text link.
     const w = await ready();
-    const badge = w.document.getElementById('questBadge');
-    // The badge's own `display` used to beat the `hidden` attribute (an author rule outranks the browser's
-    // [hidden]{display:none}), so the empty pill was always on screen.
-    expect(badge.hidden).toBe(true);
-    expect(w.getComputedStyle(badge).display, 'hidden means not drawn').toBe('none');
+    expect(w.document.getElementById('questBadge')).toBe(null);
+    expect(w.document.querySelectorAll('#shopDoor .qbadge, #shopDoor [hidden]').length).toBe(0);
     w.eval(`SHOP_CLOCK = ${DAY}; questState().dp[questsFor('daily')[0].id] = 999; go('title');`);
-    expect(badge.hidden).toBe(false);
-    expect(w.getComputedStyle(badge).display).not.toBe('none');
-    // The support link, hidden the same way, stays hidden in fact as well as in name.
+    expect(w.document.getElementById('questsBtn').children.length).toBe(0);
+    // The support link, hidden by its attribute, stays hidden in fact as well as in name.
     expect(w.getComputedStyle(w.document.getElementById('supportRow')).display).toBe('none');
   });
 
@@ -673,7 +786,7 @@ describe('the second look', () => {
     expect(r.top, 'the other tab\'s look is this tab\'s too').toBe(true);
     expect(r.owed, 'the wallet never owes').toBeLessThanOrEqual(0);
     expect(r.bal).toBe(0);
-    // A quest claimed in the other tab shows up here without a reload: the balance, the Store, and the quest as claimed.
+    // A quest paid in the other tab shows up here without a reload: the balance, the Store, and the quest as paid.
     w.eval(`go('store')`);
     const o2 = JSON.parse(w.localStorage.getItem('profile:v1'));
     const q = w.eval(`(function(){ var q = questsFor('daily')[0]; return { id: q.id, reward: q.reward, key: 'd' + dailySeed(shopNow()) + ':' + q.id }; })()`);
@@ -683,8 +796,11 @@ describe('the second look', () => {
     w.dispatchEvent(new w.StorageEvent('storage', { key: 'profile:v1', newValue: JSON.stringify(o2) }));
     expect(w.document.querySelector('#store .walletAmt').textContent).toBe(String(q.reward));
     expect(w.document.querySelector('#title .walletAmt').textContent).toBe(String(q.reward));
-    w.eval(`questState().dp[${JSON.stringify(q.id)}] = 999`);
-    expect(w.eval(`claimQuest(${JSON.stringify(q.id)}).why`), 'claimed in the other tab').toBe('claimed');
-    expect(w.eval('walletBalance()'), 'and paid once').toBe(q.reward);
+    // This tab now finishes the same quest itself: the other tab's payout is on the ledger, so it pays nothing again.
+    const same = w.eval(`(function(){ var q = questsFor('daily')[0], moved = questAdd(q.goal, q.n), row = questRows('daily')[0];
+      return { moved: moved, done: row.done, paid: row.paid, bal: walletBalance() }; })()`);
+    expect(same.moved, 'the progress counted').toBeGreaterThanOrEqual(1);
+    expect(same).toMatchObject({ done: true, paid: true });
+    expect(same.bal, 'and paid once').toBe(q.reward);
   });
 });
