@@ -398,6 +398,13 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Teddy Bear (official sticker art; the owner: "change 4" -- TB.png had no source) | `teddy-bear.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/56/TeddyII4StickerSheeeeeeeeet.png/revision/latest?cb=20250716005652 |
 | Tea Kettle's hors d'oeuvres tray (horstray.png), File:Hors d'oeuvres.png | `attacks/horstray.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a4/Hors_d%27oeuvres.png/revision/latest?cb=20220819192319 |
 | Teddy Bear's paintball (paintball.png): the pink paint in her gun's hopper, cut from the frame and masked round (File:S1RE6 Teddy grabs a paintball gun.png) | `attacks/paintball.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/7b/S1RE6_Teddy_grabs_a_paintball_gun.png/revision/latest?cb=20260326141622 |
+| OJ (Steve Cobs's prize; the owner: "Classic orange", File:OJ2024Pose.png) | `oj.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/32/OJ2024Pose.png/revision/latest?cb=20250628193515 |
+| Suitcase (Steve Cobs's prize; File:Suitcase2024PoseCropped.png, faces left) | `suitcase.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/Suitcase2024PoseCropped.png/revision/latest?cb=20260531033720 |
+| Cabby (Steve Cobs's prize; File:Cabby2024Pose.png, drawers shut) | `cabby.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/de/Cabby2024Pose.png/revision/latest?cb=20250628202008 |
+| OJ's glass shards (ojshard.png): cropped out of File:Shattered.png where they stand stuck in the cave floor (the owner: "crop the shards that were stuck ... in shattered") | `attacks/ojshard.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f5/Shattered.png/revision/latest?cb=20220226105132 |
+| Suitcase's bomb (casebomb.png): the bomb Cobs took out of her, cut from the Objects in Mirror frame where he holds it up (File:II218 140.jpeg; the owner: "cut from an Objects in Mirror frame") | `attacks/casebomb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f6/II218_140.jpeg/revision/latest?cb=20241208023932 |
+| Suitcase's wrench (wrench.png): hand-masked out of the Marsh on Mars frame (File:S2e2 wow, this should make this challenge a walk in the park!.png; the owner: "cut from the Marsh on Mars frame") | `attacks/wrench.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/64/S2e2_wow%2C_this_should_make_this_challenge_a_walk_in_the_park%21.png/revision/latest?cb=20170706203146 |
+| Cabby's file (file.png): File:Cabby file pose.png, a clean standalone folder | `attacks/file.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/aa/Cabby_file_pose.png/revision/latest?cb=20230807161956 |
 
 What they throw and set down (scripts/fetch-attack-sprites.mjs; Q1 "Cut from the frames" for the rock, the slick and the pager):
 - Blueberry (oatcookie.png): the season-3 cookie (Q7: the Oatmeal Raisin smash sets it down; the show's S3 cookie, not a fan edit) — File:Cookie Season 3.png — https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/Cookie_Season_3.png/revision/latest?cb=20240419100816
@@ -414,6 +421,13 @@ house at night). MeTag's barrier is drawn in code (Q2); Magnet throws nothing.
 - Poppy (ghostvacuum.png): the ghost-hunting vacuum (All Play and No Work), lifted out of the frame — File:S4E5 Poppy uses a vacuum to trap Gnife.png — https://static.wikia.nocookie.net/inanimateinsanity/images/2/25/S4E5_Poppy_uses_a_vacuum_to_trap_Gnife.png/revision/latest?cb=20260427153322
 - Poppy (capturepod.png): a capture pod from the vacuum (All Play and No Work), lifted out of the hand of Paper — File:S4E5 Poppy and Paper in ghost hunting gear.png — https://static.wikia.nocookie.net/inanimateinsanity/images/9/94/S4E5_Poppy_and_Paper_in_ghost_hunting_gear.png/revision/latest?cb=20260427153647
 - Silver Spoon (immunitycookie.png): the Immunity Cookie (III) — File:Immunitycookie.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/46/Immunitycookie.png/revision/latest?cb=20240204231843
+
+Steve Cobs's prize (2026-09-29, "3, but only after you beat cobs."): OJ, Suitcase and Cabby, the three II winners, hidden until Steve
+Cobs is beaten. Their renders are the same '2024Pose' family as the rest of the pack (scripts/fetch-sprites.mjs
+--wiki=inanimateinsanity). Their art (rebuilt by `node scripts/fetch-attack-sprites.mjs <out> ojshard casebomb wrench file`):
+OJ's puddle is drawn, per the owner; his shards are cut from File:Shattered.png (key `shard`); Suitcase's bomb is cut from the
+Objects in Mirror frame where Cobs holds it up (a JPEG, so `png` + key `orb`); her wrench is hand-masked (`poly`) and keyed
+grey out of the Marsh on Mars frame; Cabby's file is the wiki's own folder. The voices are drawn (nothing to cut).
 
 ### Boss Rush
 

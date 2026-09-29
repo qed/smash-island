@@ -23,6 +23,8 @@ const R = 24;                // f.r: every fighter's body radius; the fit depend
 const FEET = R + 12;         // where the render's bottom lands (drawFighter)
 
 const w = loadMonolith().window;
+// Steve Cobs's prize fighters are in ROSTER only once he is beaten; for the trace the gate is opened, so they are traced too.
+w.eval("if(typeof syncPrizeRoster==='function'){ PROFILE = Object.assign({}, PROFILE, { cobs:{ beaten:true } }); syncPrizeRoster(); }");
 const roster = w.eval('ROSTER.filter(function(r){ return r.play; }).map(function(r){ var s = SPRITES[r.name] || {}; return { name:r.name, src:s.src||null, imgH:s.imgH==null?2.8:s.imgH, imgW:s.imgW==null?2.3:s.imgW, flip:!!s.flip }; })');
 
 function trace(png) {

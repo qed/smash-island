@@ -26,6 +26,8 @@ const NO_ARMS = new Set(['Flower']);
 
 const HTML = 'artifacts/V1/index.html';
 const w = loadMonolith().window;
+// Steve Cobs's prize fighters are in ROSTER only once he is beaten; for the trace the gate is opened, so they are traced too.
+w.eval("if(typeof syncPrizeRoster==='function'){ PROFILE = Object.assign({}, PROFILE, { cobs:{ beaten:true } }); syncPrizeRoster(); }");
 const list = w.eval("ROSTER.filter(function(r){return r.play;}).map(function(r){ var s=SPRITES[r.name]||{}; return {name:r.name, src:s.src||null, flip:!!s.flip, arms:s.arms!==false}; })")
   .filter((r) => r.src).map((r) => ({ name: r.name, path: 'artifacts/V1/' + r.src, flip: r.flip, armsFlag: r.arms }));
 try { w.close(); } catch {}

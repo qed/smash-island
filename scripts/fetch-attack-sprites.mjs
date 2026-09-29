@@ -33,6 +33,8 @@ const MAX_SIDE = 128;   // test/attack-sprites.test.js: projectile-sized
 //   wiki    'bfdi' (default) or 'ii'
 //   crop    a stream asset: keep only its first N rows (its head)
 //   region  [x0, y0, x1, y1] in the ORIGINAL file's pixels: cut this out before anything else
+//   poly    [[x, y], ...] in the ORIGINAL file's pixels: a hand mask -- everything outside this polygon is made clear before
+//           the key runs (a prop that lies across another prop, where no colour test can part them)
 //   key     'white' -- flood the border's near-white away (a prop sheet on white paper)
 //           'green' -- chroma-key a flat green backdrop away
 //           'glow'  -- a glowing bolt on a flat sky: brightness above the sky becomes alpha (`floor`: how far
@@ -182,6 +184,28 @@ const PICKS = {
   // Teddy Bear: the owner's Q1, "Cut from the frames". The only paintballs are the pink ones in her gun's hopper in the
   // remaster frame (War De Guacamole, S1RE6); the pink paint is keyed out of the hopper window and masked round (key 'paintball').
   paintball:  { who: 'Teddy Bear',  kits: ['paintball'],  wiki: 'ii', file: 'S1RE6 Teddy grabs a paintball gun.png', note: "a paintball: the pink paint in her gun's hopper (War De Guacamole remaster), cut from the frame", key: 'paintball', region: [472, 186, 528, 242], srcH: 477, h: 40 },
+  // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
+  // The three II winners, allowed in only as Steve Cobs's prize ("3, but only after you beat cobs."). The owner's art answers
+  // (2026-09-29): OJ's shards -- "crop the shards that were stuck to book in shattered." -- come out of File:Shattered.png (Mine
+  // Your Own Business): the two glass shards standing stuck in the cave floor, right of the shovel; yellow glass and its olive
+  // outline over blue-grey rock, which is neither (key 'shard'). His juice puddle is DRAWN (a flat orange puddle with a paler
+  // rim), per the owner, so it has no pick. Nothing in the frame is a book: the shards stuck upright are the nearest thing.
+  ojshard:  { who: 'OJ',        kits: ['spill'],  wiki: 'ii', file: 'Shattered.png', note: 'glass shards, cropped out of the frame where they stand stuck in the ground (the owner: "crop the shards that were stuck ... in shattered")', key: 'shard', region: [1520, 712, 1830, 958], srcH: 1069, h: 40 },
+  // Suitcase's bomb -- "cut from an Objects in Mirror frame" (find the frame where the bomb is clearest, hand-mask it): the
+  // episode's frames are JPEGs (II218_1..189); II218_140 is Cobs holding the bomb up against the sky in his two black hands,
+  // the clearest of them. Flat white with a pale shade: the near-white is kept and the bites his fingers left are closed with
+  // its own colour (key 'orb', the Shimmer Orb's), so what ships is the bomb alone. The game adds the glow.
+  casebomb: { who: 'Suitcase',  kits: ['voices'], wiki: 'ii', file: 'II218 140.jpeg', png: true, note: 'the bomb Cobs took out of her (Objects in Mirror), cut from the frame where he holds it up', key: 'orb', region: [1545, 705, 2290, 1430], srcH: 1080, h: 44 },
+  // Suitcase's wrench -- "cut from the Marsh on Mars frame": File:S2e2 wow, this should make this challenge a walk in the park!.png,
+  // where she stands open with a wrench, a hammer and a ruler inside. The wrench lies across the hammer's handle and under its
+  // claw, so it is hand-masked first (poly, in the frame's own pixels: the open jaw and the handle up to the claw) and then keyed
+  // grey (key 'prop'): the case's brown interior, the sunflower straps and what is left of the hammer go.
+  wrench:   { who: 'Suitcase',  kits: ['voices'], wiki: 'ii', file: 'S2e2 wow, this should make this challenge a walk in the park!.png', note: 'the wrench from inside her (Marsh on Mars), hand-masked out of the frame', key: 'prop', region: [1028, 552, 1104, 604], srcH: 768, h: 40,
+    poly: [[1037, 557], [1062, 557], [1075, 560], [1075, 571], [1100, 571], [1100, 589], [1075, 589], [1074, 592], [1061, 599], [1039, 599], [1034, 595], [1039, 584], [1051, 577], [1039, 564], [1034, 560]],
+    keep: (r, g, b) => Math.max(r, g, b) - Math.min(r, g, b) < 30 },
+  // Cabby's file: File:Cabby file pose.png is a clean, transparent manila folder on its own.
+  file:     { who: 'Cabby',     kits: ['files'],  wiki: 'ii', file: 'Cabby file pose.png', note: 'a file from her drawer (File:Cabby file pose.png)', h: 40 },
+  // ---- Steve Cobs's prize: end ----
 };
 
 async function api(wiki, params) {
@@ -241,6 +265,16 @@ function cut(png, [x0, y0, x1, y1]) {
   const w = x1 - x0, h = y1 - y0, out = new PNG({ width: w, height: h });
   for (let y = 0; y < h; y++) png.data.copy(out.data, y * w * 4, ((y0 + y) * png.width + x0) * 4, ((y0 + y) * png.width + x1) * 4);
   return out;
+}
+// A hand mask (`poly`): the polygon is drawn in the ORIGINAL file's pixels; `region` is where the cut began and `s` the scale
+// the download came back at. Ray casting, one pixel at a time: outside becomes air.
+function maskPoly(png, poly, region, s) {
+  const { width: w, height: h, data: d } = png;
+  const inside = (x, y) => { let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c; }
+    return c; };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!inside(region[0] + (x + 0.5) / s, region[1] + (y + 0.5) / s)) d[(y * w + x) * 4 + 3] = 0;
 }
 const minC = (d, i) => Math.min(d[i], d[i + 1], d[i + 2]);
 const lum = (d, i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
@@ -483,6 +517,11 @@ const ROCK_GREY = (d, i) => lum(d, i) > 165 ? 0 : clamp01((34 - (Math.max(d[i], 
 const PAGER_PURPLE = (d, i) => clamp01(Math.min((d[i + 2] - d[i + 1] - 8) / 20, (d[i] - d[i + 1] + 10) / 20));
 const OIL_OLIVE = (d, i) => (d[i] - d[i + 1] > 50) ? 0 : clamp01((d[i + 1] - d[i + 2] - 10) / 12);
 Object.assign(KEYS, { rock: (png) => keyPiece(png, ROCK_GREY), pager: (png) => keyPiece(png, PAGER_PURPLE), slick: (png) => keyPiece(png, OIL_OLIVE, { hull: true, minPiece: 0.03 }) });
+// 'shard' (Steve Cobs's prize, OJ): the shards in File:Shattered.png are yellow glass with an olive outline (red and green well
+// over blue); the cave floor is blue-grey, the eyepatch black. Every yellow piece at least a fifth the size of the biggest is
+// kept -- the two shards standing stuck in the ground -- so a chip of another does not ride along.
+const SHARD_YELLOW = (d, i) => clamp01(Math.min((d[i] - d[i + 2] - 50) / 40, (d[i + 1] - d[i + 2] - 30) / 40));
+Object.assign(KEYS, { shard: (png) => keyPiece(png, SHARD_YELLOW, { minPiece: 0.2 }) });
 // ---- batch 3, group 6: two more keys for frame cuts, added beside KEYS so no shared line changes ----
 // Keep the largest connected piece of what `test` calls the object, everything it closes round, and a soft one-pixel
 // edge. `lift` brightens what is kept: the S4E5 frames are the haunted house at night, and a prop that dark would
@@ -545,6 +584,7 @@ for (const [name, pick] of Object.entries(PICKS)) {
       const s = png.width / info.w, [x0, y0, x1, y1] = pick.region;
       png = cut(png, [Math.round(x0 * s), Math.round(y0 * s), Math.round(x1 * s), Math.round(y1 * s)]);
     }
+    if (pick.poly) maskPoly(png, pick.poly, pick.region || [0, 0, info.w, info.h], png.width / ((pick.region ? pick.region[2] - pick.region[0] : info.w)));   // hand mask: outside the polygon is air
     if (pick.key) KEYS[pick.key](png, pick);
     const box = alphaBox(png);
     if (box.x1 < 0) { line(`skip ${cand}: fully transparent`); continue; }
