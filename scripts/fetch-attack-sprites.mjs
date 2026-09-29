@@ -231,6 +231,24 @@ const PICKS = {
   // @boss:firey:end picks
 
   // @boss:swarm:begin picks
+  // The Bug Swarm (Boss 4): the Bugs page's own assets ("The swarm and every bug wear the wiki's Bugs art"). Every one is a
+  // clean transparent PNG of the thing itself on the wiki (the Bugs page's Assets/Poses gallery and infobox), so none needs a
+  // key: the purple- and red-spotted bugs, the stinger bug, the egg and the egg sac, the crushed bug's adhesive, the big bug,
+  // the Host Bug, the mutated bug of TPOT 21-23, the larva and the Queen. The Bugs page says of them: "a sticky adhesive
+  // that can come in colors of grey, green, and purple", "a bug with poison stingers", "A big bug", "A bag of 10 million Bug
+  // Larvae". Their drawings are crude scribbles by design (the wiki files them under Poorly Drawn Characters).
+  bugpurple: { who: 'The Bug Swarm', kits: ['bugpurple'], file: 'Purple bug.png',  note: 'a purple-spotted bug, the Bugs page asset (BFDIA 3+)' },
+  bugred:    { who: 'The Bug Swarm', kits: ['bugred'],    file: 'Red bug.png',     note: 'a red-spotted bug, the Bugs page asset (BFDIA 3+)' },
+  bugcool:   { who: 'The Bug Swarm', kits: ['bugcool'],   file: 'Cool bug.png',    note: "a purple-spotted bug (BFDI 24, BFDIA 12), the swarm's other drawing of one", srcH: 436 },
+  bugsting:  { who: 'The Bug Swarm', kits: ['bugsting'],  file: 'Bug stinger.png', note: 'a bug with poison stingers, the Bugs page asset', srcH: 167 },
+  bugegg:    { who: 'The Bug Swarm', kits: ['bugegg'],    file: 'Bug egg.png',     note: 'a bug egg, the Bugs page asset' },
+  bugeggs:   { who: 'The Bug Swarm', kits: ['bugeggs'],   file: 'Bug eggs.png',    note: "multiple bug eggs: the egg sac Flower throws (Insectophobe's Nightmare 2)" },
+  bugsplat:  { who: 'The Bug Swarm', kits: ['bugsplat'],  file: 'Bug Crushed.png', note: 'a crushed bug and its sticky adhesive, the Bugs page asset', srcH: 400 },
+  bugbig:    { who: 'The Bug Swarm', kits: ['bugbig'],    file: 'Big buggy.png',   note: "a big bug, the Bugs page asset (the swarm's core)", h: 128 },
+  bughost:   { who: 'The Bug Swarm', kits: ['bughost'],   file: 'Bug.png',         note: "the Host Bug (Insectophobe's Nightmare 4), the Host Bug page's image", h: 128 },
+  bugmutant: { who: 'The Bug Swarm', kits: ['bugmutant'], file: 'GiantInsectMonsterBug.png', note: "the mutated bug (TPOT 21-23), the Bugs page infobox's Monstrous", h: 128 },
+  buglarva:  { who: 'The Bug Swarm', kits: ['buglarva'],  file: 'Freakywormcritter.png', note: "a bug as a larva (BFB 21), the Bugs page infobox's Larvae" },
+  bugqueen:  { who: 'The Bug Swarm', kits: ['bugqueen'],  file: 'Screenshot 2024-05-16 6.37.23 PM-removebg-preview.png', note: "the Queen Bug (BFDIA 12), 15 pinkish spots, the Bugs page infobox's Queen", srcH: 103 },
   // @boss:swarm:end picks
 
   // @boss:purpleface:begin picks

@@ -457,9 +457,10 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     expect(r.begin).toBe(true);
     // "Endings: 'All of them'" (the owner, 2026-09-29): the early six put theirs in their ENDING slots as they are rebuilt (the Announcer's is
     // 'announcer', test/boss-announcer.test.js; Firey Speaker Box's is 'firewall', "broken into 7 pieces", test/boss-firey-sb.test.js; Purple
-    // Face's is 'swallow', test/boss-purple-face.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
+    // Face's is 'swallow', test/boss-purple-face.test.js; the Bug Swarm's is 'swarm', the Delete Bugs scene, test/boss-bug-swarm.test.js) --
+    // so Springy's stays first and nothing but the early six's attack keys joins it.
     expect(r.keys[0], "Springy's is first").toBe('springy');
-    expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow']));
+    expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm']));
     expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
   });
 
@@ -476,8 +477,9 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
         var card = timers.find(function(t){ return t.ms === 800; }), run0 = running;
         running = true; if (card) card.fn(); running = run0;
         var out = { swept: swept, fell: fell, scene: summons.some(function(s){ return s.type==='__endfx'; }), ms: ms, saidNow: saidNow, after: said.slice(saidNow.length), bx: b.x };
-        // and a boss with no ending: the card at once, the next boss after 1.5 s, as it always was
-        ${STAGE('The Bug Swarm', 300)} timers = []; said = []; BOSSRUSH.active = true; b.hp = 0; bossRushCheck();
+        // and a boss with no ending: the card at once, the next boss after 1.5 s, as it always was. (This was the Bug Swarm until
+        // he got his -- "Endings: 'All of them'" -- so it is any boss whose attack has no BOSS_ENDINGS row, whichever those are.)
+        ${STAGE('Purple Face', 300)} b.attack = '__plain'; timers = []; said = []; BOSSRUSH.active = true; b.hp = 0; bossRushCheck();
         out.plainMs = timers.map(function(t){ return t.ms; }); out.plainSaid = said.slice();
         return out;
       } finally { setTimeout = st; banner = _b; delete BOSS_ENDINGS.__end; BOSSRUSH.active = false; summons = []; projectiles = []; }

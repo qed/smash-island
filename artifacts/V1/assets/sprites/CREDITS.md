@@ -529,6 +529,25 @@ kept: a real PNG, transparent, projectile-sized) and recorded in scripts/attack-
 <!-- @boss:firey:end credits -->
 
 <!-- @boss:swarm:begin credits -->
+The Bug Swarm, Boss 4 (the boss overhaul, 2026-09-29; the owner: "Give the swarm a sprite."). Twelve assets from the Bugs page (its infobox and its Assets/Poses gallery)
+and the Host Bug page, each a clean transparent PNG of the thing itself, fetched by `node scripts/fetch-attack-sprites.mjs <dir> bugpurple bugred bugcool bugsting bugegg
+bugeggs bugsplat bugbig bughost bugmutant buglarva bugqueen` (its `swarm` picks in that script) and looked at before they were kept: alpha verified, at most 128 px on the long
+side. They draw the swarm itself (a cloud of them round the Host Bug, the mutated bug in phase 3) and everything it throws: its tide, its pattern, its seekers, its ball, its egg
+sac and the hatchlings (`assets/sprites/attacks/`, drawn from ATTACK_SPRITES and swarmDrawBody in index.html). The wiki files its bugs under "Poorly Drawn Characters": they are
+crude scribbles by design. The hive and its pitcher plant are drawn in code (Bug Hive), and so is the Delete Bugs button of its ending, not the wiki file.
+
+- The Bug Swarm (bugpurple.png): a purple-spotted bug, the Bugs page asset (BFDIA 3+) — File:Purple bug.png — https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/Purple_bug.png/revision/latest?cb=20240517152428
+- The Bug Swarm (bugred.png): a red-spotted bug, the Bugs page asset (BFDIA 3+) — File:Red bug.png — https://static.wikia.nocookie.net/battlefordreamisland/images/7/72/Red_bug.png/revision/latest?cb=20240517152230
+- The Bug Swarm (bugcool.png): a purple-spotted bug (BFDI 24, BFDIA 12), the swarm's other drawing of one — File:Cool bug.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/5e/Cool_bug.png/revision/latest?cb=20191217155221
+- The Bug Swarm (bugsting.png): a bug with poison stingers, the Bugs page asset — File:Bug stinger.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/5c/Bug_stinger.png/revision/latest?cb=20191217155229
+- The Bug Swarm (bugegg.png): a bug egg, the Bugs page asset — File:Bug egg.png — https://static.wikia.nocookie.net/battlefordreamisland/images/7/7d/Bug_egg.png/revision/latest?cb=20191217155153
+- The Bug Swarm (bugeggs.png): multiple bug eggs: the egg sac Flower throws (Insectophobe's Nightmare 2) — File:Bug eggs.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cc/Bug_eggs.png/revision/latest?cb=20191217155105
+- The Bug Swarm (bugsplat.png): a crushed bug and its sticky adhesive, the Bugs page asset — File:Bug Crushed.png — https://static.wikia.nocookie.net/battlefordreamisland/images/d/d1/Bug_Crushed.png/revision/latest?cb=20200823173955
+- The Bug Swarm (bugbig.png): a big bug, the Bugs page asset (the swarm's core) — File:Big buggy.png — https://static.wikia.nocookie.net/battlefordreamisland/images/6/61/Big_buggy.png/revision/latest?cb=20191217155445
+- The Bug Swarm (bughost.png): the Host Bug (Insectophobe's Nightmare 4), the Host Bug page's image — File:Bug.png — https://static.wikia.nocookie.net/battlefordreamisland/images/7/7d/Bug.png/revision/latest?cb=20190927010440
+- The Bug Swarm (bugmutant.png): the mutated bug (TPOT 21-23), the Bugs page infobox's Monstrous — File:GiantInsectMonsterBug.png — https://static.wikia.nocookie.net/battlefordreamisland/images/a/a1/GiantInsectMonsterBug.png/revision/latest?cb=20260131191314
+- The Bug Swarm (buglarva.png): a bug as a larva (BFB 21), the Bugs page infobox's Larvae — File:Freakywormcritter.png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/8a/Freakywormcritter.png/revision/latest?cb=20241226221947
+- The Bug Swarm (bugqueen.png): the Queen Bug (BFDIA 12), 15 pinkish spots, the Bugs page infobox's Queen — File:Screenshot 2024-05-16 6.37.23 PM-removebg-preview.png — https://static.wikia.nocookie.net/battlefordreamisland/images/4/47/Screenshot_2024-05-16_6.37.23_PM-removebg-preview.png/revision/latest?cb=20241226225010
 <!-- @boss:swarm:end credits -->
 
 <!-- @boss:purpleface:begin credits -->
