@@ -2555,11 +2555,14 @@ let TEAM_PLAN = {};
 // the way the teams map does (a floor slab with pits instead of an endless floor, drop-through, the climbing AI) and
 // SETTINGS.mode stays 'boss', so the boss logic keeps working.
 let ONEFIGHT = { active:false, story:false, won:false, over:false, frames:0, lineup:null, prev:null, onEnd:null, opts:null, retry:null, result:null };
-function isBig(){ return SETTINGS.mode==='teams' || ONEFIGHT.active; }   // team mode uses the big 4-floor tower (and so does One's arena)
+// RUNNING! (see startRunningRace): the Red Line Game's lane is a floor slab with gaps, so while it is live the world answers
+// isBig() the way the teams map does (no endless floor: a fall is a fall) and groundY() is the lane's own floor line.
+let RACE = raceFresh();
+function isBig(){ return SETTINGS.mode==='teams' || ONEFIGHT.active || RACE.active; }   // team mode uses the big 4-floor tower (and so does One's arena)
 const CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big map is visible
 // Wide scrolling FFA/boss arena: any stage flagged `big`, plus small stages when the MAP SIZE
 // setting asks for extra height (those ride this same, proven scrolling path).
-function isBigFFA(){ return (SETTINGS.mode!=='teams') && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL && !ONEFIGHT.active; }
+function isBigFFA(){ return (SETTINGS.mode!=='teams') && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL && !ONEFIGHT.active && !RACE.active; }
 function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any arena wider/taller than the screen
 // ---- what an online CLIENT draws with ----
 // "camera is weird on multiplayer, there is an input delay sometimes. I think this is what was happening on boss rush
@@ -2592,6 +2595,9 @@ function go(id){
   // Leaving One's fight puts the player's own mode, count, stage and pick back. Only her result screen keeps the Rematch,
   // which fights her again ("Lose, and you can retry the fight directly").
   if(id!=='_none_'){ if(ONEFIGHT.active) oneFightRestore(); if(id!=='result') ONEFIGHT.retry = null; }
+  // RUNNING! the same way: its result screen keeps the Retry (the Rematch button, relabelled), and every other screen drops it.
+  if(id!=='_none_'){ if(RACE.active) raceRestore(); if(id!=='result') RACE.retry = null;
+    const _rb = document.getElementById('resultRematch'); if(_rb) _rb.textContent = RACE.retry ? "Retry \u21bb" : "Rematch \u21bb"; }
   if(id==='title'){ TUT.active=false; TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null; try{ tourneyRestore(); tutorialRestore(); }catch(e){} TOURNEY_MATCH_ACTIVE=false; BOSSRUSH.active=false; PENDING_TOURNEY=null; PENDING_CUSTOM=false;
     if(RUN_REC.recording) stopRunRecording();
     const rr=document.getElementById('runReview'); if(rr) rr.innerHTML='';
@@ -4008,6 +4014,8 @@ function rematch(){
 }
 function startMatch(){
   { const rb=document.getElementById('resultRematch'); if(rb) rb.style.display=''; }
+  if(RACE.retry){ startRunningRace(RACE.retry.opts); return; }          // Retry from RUNNING!'s result screen
+  if(RACE.active){ startRunningRace(RACE.opts); return; }              // R mid-race: the same race from the top
   if(ONEFIGHT.retry){ const r = ONEFIGHT.retry; startOneFight(r.lineup, r.opts); return; }   // Rematch from One's result screen
   // R mid-fight (the keydown handler calls startMatch while running): the same fight from the top, through the one entry
   // point, so the clock, the result and her 2000 all start again instead of the abandoned attempt counting toward the time.
@@ -5232,6 +5240,7 @@ function beginMatchNow(){
     fighters.forEach(f=>{ f._origTeam=0; f.team=0; });
     if(ONEFIGHT.active) spawnOneBoss(); else startBossRush();   // One is not a Boss Rush boss: no gauntlet, no BOSSRUSH
   }
+  if(RACE.active) raceMatchBegin();   // RUNNING!: the line goes back behind the start
   const you=fighters.find(f=>f.you)||fighters[0];
   // Start where updateCamera() is heading. The zoom-1 clamp this used opened every scrolling match on a strip of empty
   // backdrop (117 px across, 90 px down on Grand Plains) that took ~0.7 s to slide away.
@@ -5415,7 +5424,7 @@ function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 // Y of the surface a fighter is standing on (their feet) — for placing traps/van on the current floor
 function feetY(f){ return f.y + f.r; }
 
-function groundY(){ return WH*(ONEFIGHT.active ? ONE_FLOOR_Y : (isBig()?0.86:0.82)); }   // One's arena: the teams map's own floor line
+function groundY(){ return RACE.active ? RACE.floorY : WH*(ONEFIGHT.active ? ONE_FLOOR_Y : (isBig()?0.86:0.82)); }   // RUNNING!: its lane's floor line; One's arena: the teams map's own
 function stageScale(){ return Math.max(0.85, Math.min(1.5, 0.7 + SETTINGS.count*0.04)); }
 
 // A double jump gains roughly this much height. Any vertical gap between successive platform
@@ -5523,6 +5532,7 @@ function climbLayers(){
 function setupWorld(){
   spawnZones=[];
   if(ONEFIGHT.active){ buildOneArena(); return; }   // One's arena: the teams map without its walls (see buildOneArena)
+  if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
   if(!isBig()){
     if(isBigFFA()){
@@ -6005,6 +6015,7 @@ function buildFighters(){
     return;
   }
   if(ONEFIGHT.active && ONEFIGHT.lineup){ buildOneFighters(); return; }   // exactly the lineup her fight was started with
+  if(RACE.active){ buildRaceRunners(); return; }   // RUNNING!: you, Marshmallow and the MeAfterlife group
   const cap = SETTINGS.mode==='teams'?MAX_TEAMS:MAX_FFA;
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
   const humanCount = netRoster ? netRoster.length : 0;
@@ -6538,6 +6549,7 @@ function buildHUD(){
 // Order key: alive first, then more stocks, then more KOs, then fewer falls.
 function updateStandings(){
   const box=document.getElementById('standings'); if(!box) return;
+  if(RACE.active){ box.innerHTML=''; return; }   // RUNNING!: no ladder; the progress bar is the standing
   const you=fighters.find(f=>f.you);
   const rankScore = f => (f.dead?0:1e6) + (f.stocks===Infinity ? (f._kos||0)*1000 : (f.stocks||0)*1000) + (f.killCount||0)*10 - (f.deaths||0);
   let html='';
@@ -6734,6 +6746,7 @@ const ITEM_KINDS = ["heal","marmalade","throw","power","assist","yoyle","boss"];
 function itemSpawnInterval(){
   // frames between spawns, driven by the Items rate setting (0=off)
   if(ONEFIGHT.active && ONEFIGHT.story) return 0;   // One's story fight has no items, whatever the setting (see ONE_STORY_STOCKS)
+  if(RACE.active) return 0;   // RUNNING!: "attacks allowed", no items
   switch(SETTINGS.itemRate){ case 1: return 780; case 2: return 460; case 3: return 260; default: return 0; }
 }
 function spawnItem(){
@@ -8591,6 +8604,384 @@ function drawOneCracks(s, dw, dh){
 }
 // Her bar: 2000 HP with the phase lines at 1500, 1000 and 500, her five specials at their current tiers, the ghost's HP
 // while one stands, and a marker on the screen edge whenever she is off-screen (it turns yellow while she winds up).
+// ============================================================
+//  RUNNING! -- the Red Line Game, a one-off race (see startRunningRace)
+// ============================================================
+// The RUNNING! step of Steve Cobs's unlock chain. The owner: "1, and there will be a continuously moving line and obstacles
+// you must go through." / "attacks allowed" / "and you have to throw marshmallow with a modified grappling hook at the end
+// to sling her over." / "Then Knife crosses too": a bridge or platform appears once she lands and he must cross before the
+// moving line catches him. The wiki (MeAfterlife): "a blue, purgatory-like void located inside of MePhone4's hardware", with
+// "a running lane with a finish line called the Red Line Game. If someone runs on it, a red line will appear and chase after
+// them. If they reach the finish line, MePhone4 will be able to recover them. If the red line reaches them before they make
+// it, the line "deletes" them." Objects in Mirror (Inanimate Insanity II, season 2, episode 18): the contestants "are running
+// at the running lane in MeAfterlife"; three who stopped got "hit by the red line, therefore deleting them permanently"; at
+// the end "Knife looks across and sees Marshmallow, stuck and unable to move on the ground, as the line is about to nearly
+// hit her ... he throws Marsh across the finish line. Knife notices to line very close to him, and jumps towards the finish
+// line". The throw is his bag-of-tricks hook here (case "tricks", k===3: the Fist Thingy that yanks a foe in), MODIFIED for
+// the race: at the edge it grabs her and slings her over instead. Standing rules: nothing on screen but GO! and the result;
+// the line is never tuned for a bot ("dont tune, cuz thats an agent, not a player") -- when the scripted runner in
+// test/running-race.test.js cannot finish, it is the course's fairness (spacing, hazards) that is fixed, never the line.
+//
+// THE COURSE. A long horizontal lane, seven screens wide, laid out from a fixed seed so it is the same every time:
+//   gap     a hole in the floor to jump (170-240 px; a running jump carries about 258 px, a double jump about 490)
+//   wall    a low solid block to hop (70-100 px tall; a jump rises 126)
+//   bar     a beam hanging from the sky over a raised ledge you are hopped onto by a step: a fighter (48 px tall) does not
+//           fit under it on the ledge, so you DROP under it -- DOWN alone on the ledge drops you (raceTick), and so does
+//           the game's own down+jump -- and run under on the floor
+//   piston  a moving hazard: a block that pounds the lane on its own cycle; it bumps whoever it lands on (a hit, a shove
+//           back) and never kills by itself
+// The lane ends at a gap no runner can jump (RACE_FINAL_GAP), then the landing with the finish line on it.
+//
+// THE LINE ("the finale's chasing red line"): starts behind everyone at GO! and advances RACE_LINE_SPEED a frame, two thirds
+// of a sprint (MAXVX): a good runner outruns it only by keeping moving. It never stops, never slows. Touching it is a loss
+// ("The line caught you", Retry). An AI runner it reaches is deleted on the spot and gone.
+//
+// THE RUNNERS: you run as Knife (the chain forces it; startRunningRace's `fighter` option is the hidden entry the tests use
+// to run as someone else). Marshmallow runs at your side: she is always among the runners, cannot be caught before the end
+// and keeps pace with you (raceMarshCatchUp). The rest are the MeAfterlife group who ran in Objects in Mirror -- "Fan and
+// Test Tube with the help of Microphone, then Mic and Taco crosses the finish line"; Tissues, whom "Soap grabs ... and the
+// two run off together" -- each on its own side, so attacks land ("attacks allowed"); no items.
+const RACE_SEED = 20241124;                       // the fixed seed: Objects in Mirror's air date (its page), and the same course every run
+const RACE_LEN = 7700;                            // the lane, world x 0 to the edge: seven screens
+const RACE_START_X = 520;                         // where you stand at GO!
+const RACE_FINAL_GAP = 620;                       // the last gap: past any double jump
+const RACE_FAR_W = 520;                           // the landing on the far side, with the finish line on it
+const RACE_WH_MULT = 1.3, RACE_FLOOR_Y = 0.78;    // the lane's world box and its floor line
+const RACE_FLOOR_H = 60;
+const RACE_LINE_SPEED = 4.2;                      // px a frame. "It never stops, never slows."
+const RACE_LINE_START = 520;                      // how far behind the start line it begins
+const RACE_SLING_ZONE = 140;                      // how close to the edge the modified hook works
+const RACE_SLING_REACH = 420;                     // how far the modified hook reaches for her (the Fist Thingy's is 260)
+const RACE_SLING_FRAMES = 44, RACE_SLING_PEAK = 230, RACE_BRIDGE_DELAY = 12;
+const RACE_CAM_LEAD = 200;                        // the camera looks ahead of the runner
+const RACE_MARSH_LEASH = 260;                     // she is never further behind you than this
+const RACE_RUNNERS = ["Fan", "Test Tube", "Microphone", "Tissues", "Soap", "Taco"];
+const RACE_RUNNER_SKILL = [1.0, 0.9, 0.75, 0.6, 0.45, 0.35];   // how much of the time each holds right: below about 0.6 the line wins, so some are caught
+const RACE_ATTACK_GRACE = 120;                    // frames after GO! before a runner throws a jab: the start is a crowd
+const RACE_MEMORY_EVERY = 300, RACE_MEMORY_STOP = 30;   // a runner who is not perfect stops at a projected memory now and then (Tissues, Microphone did)
+const RACE_STAGE = { id:"meafterlife", name:"MeAfterlife", blurb:"The running lane inside MePhone4.",
+  sky:["#eef4fb","#c3d5e8"], ground:"#b9c6d6", plats:[], hazard:null };   // "a blue, purgatory-like void", pale: the owner's "pale void backdrop"
+function raceFresh(){ return { active:false, over:false, won:false, frames:0, fighter:"Knife", opts:null, prev:null, retry:null, onEnd:null, result:null,
+  lineX:0, startX:0, edge:0, farX:0, finishX:0, floorY:0, obstacles:[], hazards:[], bridge:null, bridgeIn:0, sling:null, marshOver:false, lossWhy:null }; }
+// mulberry32: the course's own dice, so Math.random (seeded differently by every test and never by a player) has no say in it
+function raceRng(seed){ let a = seed >>> 0; return function(){ a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+// THE ENTRY POINT. The unlock chain calls startRunningRace({ onEnd }); onEnd(won, result) is called when the race is decided
+// (return true to take over the screen afterwards, otherwise the result screen shows and its Retry runs it again). opts.fighter
+// (a playable name, not Marshmallow) is the hidden entry the tests use to run as someone other than Knife. Local play only.
+function startRunningRace(opts){
+  opts = opts || {};
+  if(inNetSession()) return false;
+  const want = typeof opts.fighter === 'string' ? ROSTER.find(r=>r.name===opts.fighter && r.play) : null;
+  const name = (want && want.name !== "Marshmallow") ? want.name : "Knife";
+  const prev = (RACE.active && RACE.prev) ? RACE.prev : { mode:SETTINGS.mode, count:SETTINGS.count, stage, chosen, customLevel:CUSTOM_LEVEL };
+  RACE = Object.assign(raceFresh(), { active:true, fighter:name, opts, prev, onEnd:(typeof opts.onEnd==='function' ? opts.onEnd : null) });
+  TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null; TOURNEY_MATCH_ACTIVE=false; BOSSRUSH.active=false;
+  CUSTOM_LEVEL=null; PENDING_TOURNEY=null; TUT.active=false;
+  if(ONEFIGHT.active) oneFightRestore(); ONEFIGHT.retry = null;
+  SETTINGS.mode = 'ffa'; SETTINGS.count = 2 + RACE_RUNNERS.length;
+  chosen = ROSTER.find(r=>r.name===name);
+  stage = RACE_STAGE;
+  beginMatchNow();
+  return true;
+}
+// Leaving the race (to the result screen or anywhere else) puts the player's own mode, count, stage, pick and custom level back.
+function raceRestore(){
+  const p = RACE.prev;
+  RACE.active = false;
+  if(p){ SETTINGS.mode = p.mode; SETTINGS.count = p.count; if(p.stage) stage = p.stage; if(p.chosen) chosen = p.chosen;
+    if('customLevel' in p) CUSTOM_LEVEL = p.customLevel; RACE.prev = null; }
+}
+// beginMatchNow, once the world and the runners are built: the line goes back behind the start, the sling and the bridge are
+// unmade, and the clock is at zero.
+function raceMatchBegin(){
+  RACE.frames = 0; RACE.over = false; RACE.won = false; RACE.result = null; RACE.retry = null; RACE.lossWhy = null;
+  RACE.lineX = RACE_START_X - RACE_LINE_START; RACE.bridge = null; RACE.bridgeIn = 0; RACE.sling = null; RACE.marshOver = false;
+}
+
+// THE LANE (setupWorld's race branch). Pure: every position comes from RACE_SEED, none from Math.random.
+function buildRaceLane(){
+  const rnd = raceRng(RACE_SEED);
+  WW = RACE_LEN + RACE_FINAL_GAP + RACE_FAR_W; WH = Math.round(H*RACE_WH_MULT);
+  camX = 0; camY = 0; bases = []; spawnZones = []; worldZones = [];
+  const fy = Math.round(WH*RACE_FLOOR_Y);
+  RACE.floorY = fy; RACE.startX = RACE_START_X; RACE.edge = RACE_LEN; RACE.farX = RACE_LEN + RACE_FINAL_GAP; RACE.finishX = RACE.farX + 60;
+  floors = [{ level:0, y:fy, x:0, w:RACE_LEN }];
+  const obs = [], haz = [], gaps = [], solids = [], ledges = [];
+  // a clear run first, then obstacles with a run-up of 240-460 px between them, up to the last stretch before the edge
+  let x = RACE_START_X + 700, last = null;
+  while(x < RACE_LEN - 460){
+    const r = rnd();
+    let k = obs.length === 0 ? 'gap' : (r < 0.34 ? 'gap' : r < 0.62 ? 'wall' : r < 0.78 ? 'bar' : 'piston');   // the first is the one everybody knows
+    if(k === last && k !== 'gap') k = 'gap';   // never the same trick twice running
+    if(k === 'gap'){
+      const w = 170 + Math.round(rnd()*70);
+      obs.push({ k, x0:x, x1:x + w }); gaps.push([x, x + w]); x += w;
+    } else if(k === 'wall'){
+      const w = 50 + Math.round(rnd()*30), h = 70 + Math.round(rnd()*30);
+      solids.push({ x, y:fy - h, w, h, solid:true, raceWall:true });
+      obs.push({ k, x0:x, x1:x + w, top:fy - h }); x += w;
+    } else if(k === 'bar'){
+      // the step (a 90 px wall) hops you onto the ledge; the beam hangs to 40 px over the ledge; the floor under the ledge
+      // has 78 px of headroom
+      const ledgeY = fy - 90, stepW = 40, ledgeW = 300, barX = x + stepW + 140, barW = 60;
+      solids.push({ x, y:ledgeY, w:stepW, h:90, solid:true, raceStep:true });
+      ledges.push({ x:x + stepW, y:ledgeY, w:ledgeW, h:12, raceLedge:true });
+      solids.push({ x:barX, y:ledgeY - 40 - 700, w:barW, h:700, solid:true, raceBar:true });
+      obs.push({ k, x0:x, x1:x + stepW + ledgeW, stepX:x, ledgeY, barX0:barX, barX1:barX + barW }); x += stepW + ledgeW;
+    } else {
+      // up, its underside is 118 px over the floor (a fighter is 48); down, it is on the floor
+      const w = 56, h = 120, period = 84 + Math.round(rnd()*44), phase = rnd();
+      haz.push({ x, w, h, upY:fy - h - 118, downY:fy - h, period, phase });
+      obs.push({ k, x0:x, x1:x + w }); x += w;
+    }
+    last = k;
+    x += 240 + Math.round(rnd()*220);   // the run-up to the next one
+  }
+  // the floor: solid slabs between the gaps, from the world's left edge to the edge of the lane, then the landing
+  const slabs = []; let at = 0;
+  for(const [g0, g1] of gaps){ if(g0 > at) slabs.push({ x:at, y:fy, w:g0 - at, h:RACE_FLOOR_H, solid:true, floor:0, raceFloor:true }); at = g1; }
+  slabs.push({ x:at, y:fy, w:RACE_LEN - at, h:RACE_FLOOR_H, solid:true, floor:0, raceFloor:true });
+  slabs.push({ x:RACE.farX, y:fy, w:RACE_FAR_W, h:RACE_FLOOR_H, solid:true, floor:0, raceFar:true });
+  worldPlats = slabs.concat(solids, ledges);
+  RACE.obstacles = obs; RACE.hazards = haz;
+}
+// THE RUNNERS (buildFighters' race branch): you, Marshmallow at your side (your team, so nothing of yours hits her), then the
+// MeAfterlife group, each its own team. One stock each: the line, a fall or a knockout is the end.
+function buildRaceRunners(){
+  const fy = RACE.floorY, names = [RACE.fighter, "Marshmallow"].concat(RACE_RUNNERS.filter(n=>n!==RACE.fighter));
+  const rows = names.map(n=>ROSTER.find(r=>r.name===n)).filter(Boolean);
+  rows.forEach((r, i)=>{
+    const x = i===0 ? RACE_START_X : i===1 ? RACE_START_X - 50 : RACE_START_X - 140 + (i-2)*44;
+    const f = makeFighter({ ...r, you:i===0 }, x, fy - 60, i);
+    f.stocks = 1; f.homeBase = null; f.team = f._origTeam = (i<=1 ? 0 : i); f.face = 1;
+    f.controller = i===0 ? 'local' : 'ai';
+    if(i===1) f._marsh = true;
+    if(i>=1){ f._runner = true; f._raceSkill = i===1 ? 1 : RACE_RUNNER_SKILL[(i-2) % RACE_RUNNER_SKILL.length]; }
+    fighters.push(f);
+  });
+}
+
+// ---- EVERY FRAME (step, before the camera) ----
+function racePistonY(h){ const ph = ((hazardT/h.period) + h.phase) % 1; return h.upY + (h.downY - h.upY)*(0.5 - 0.5*Math.cos(ph*Math.PI*2)); }
+function raceOnLedge(f){ return worldPlats.some(p=>p.raceLedge && f.x > p.x - 4 && f.x < p.x + p.w + 4 && Math.abs(f.y + f.r - p.y) < 3); }
+function raceTick(){
+  if(!RACE.active || RACE.over || !running) return;
+  RACE.frames++;
+  RACE.lineX += RACE_LINE_SPEED;   // "a continuously moving line": every frame, never stopping, never slowing
+  const you = fighters.find(f=>f.you), marsh = fighters.find(f=>f._marsh && !f.dead);
+  // the sling: she flies the arc, lands on the far side, and the bridge follows
+  if(RACE.sling){
+    const s = RACE.sling, m = fighters.find(f=>f.idx===s.who);
+    if(m){
+      s.t++; const k = Math.min(1, s.t/s.n);
+      m.x = s.x0 + (s.x1 - s.x0)*k; m.y = s.y0 + (s.y1 - s.y0)*k - RACE_SLING_PEAK*Math.sin(Math.PI*k);
+      m.vx = 0; m.vy = 0; m.hitstun = 2; m.invuln = 2; m.onground = false; m.dropping = 0; m.face = 1;
+      if(hazardT%2===0) puff(m.x, m.y, '#fff', 2);
+      if(k >= 1){
+        m._slung = false; m.hitstun = 0; m.onground = true; m.jumps = 2; m.y = s.y1;
+        RACE.sling = null; RACE.marshOver = true; RACE.bridgeIn = RACE_BRIDGE_DELAY;
+        for(let i=0;i<14;i++) puff(m.x + (Math.random()*40-20), m.y + m.r, '#ffe9f2', 5);
+      }
+    } else RACE.sling = null;
+  }
+  if(RACE.bridgeIn > 0 && --RACE.bridgeIn === 0){
+    RACE.bridge = { x:RACE.edge, y:RACE.floorY, w:RACE_FINAL_GAP, h:14, raceBridge:true };
+    worldPlats.push(RACE.bridge);
+    for(let i=0;i<24;i++) puff(RACE.edge + RACE_FINAL_GAP*(i/24), RACE.floorY, '#fff', 3);
+  }
+  // the pistons: whoever is under one when it comes down is bumped -- a hit and a shove back, once, then a moment's grace
+  for(const h of RACE.hazards){
+    const y = racePistonY(h);
+    for(const f of fighters){
+      if(f.dead || f._slung || (f._raceBumpT||0) > 0) continue;
+      if(f.x + f.r > h.x && f.x - f.r < h.x + h.w && f.y + f.r > y && f.y - f.r < y + h.h){
+        applyHit(f, 5, -7, -5, null); f._raceBumpT = 30;
+        for(let i=0;i<8;i++) puff(f.x, f.y, '#9aa4b0', 4);
+      }
+    }
+  }
+  for(const f of fighters){
+    if(f._raceBumpT > 0) f._raceBumpT--;
+    // "duck or drop under": DOWN alone on a ledge drops you through it (the game's own down+jump still does too)
+    if(!f.dead && f.onground && !(f.dropping > 0) && f._lastInput && f._lastInput.down && raceOnLedge(f)){
+      f.dropping = 10; f.vy = 5; f.onground = false; f.y += f.r*0.6;
+    }
+  }
+  // Marshmallow keeps pace: fallen behind, about to be caught, or fallen in, she is back at your side
+  if(marsh && you && !you.dead && !RACE.sling && !RACE.marshOver){
+    if(marsh.x < you.x - RACE_MARSH_LEASH || marsh.x - marsh.r*0.5 < RACE.lineX + 60 || marsh.y > RACE.floorY + 120) raceMarshCatchUp(marsh, you);
+  }
+  // the line catches: you lose; a runner is deleted
+  for(const f of fighters){
+    if(f.dead || f._marsh || f._slung) continue;
+    if(f.x - f.r*0.5 <= RACE.lineX){
+      if(f.you){ endRace(false, 'caught'); return; }
+      raceDelete(f);
+    }
+  }
+}
+function raceMarshCatchUp(m, you){
+  let sx = you.x - 70, top = null;
+  for(let dx = 70; dx <= 400; dx += 20){
+    const cx = you.x - dx; if(cx <= RACE.lineX + 90) break;
+    const t = surfaceBelow(cx, RACE.floorY - 400); if(t !== null){ sx = cx; top = t; break; }
+  }
+  if(top === null){ const t = surfaceBelow(you.x, RACE.floorY - 400); top = t !== null ? t : RACE.floorY; sx = you.x - 70; }
+  m.x = sx; m.y = top - m.r; m.vx = 0; m.vy = 0; m.hitstun = 0; m.dropping = 0; m.dead = false; m.alive = true; m.stocks = 1; m.invuln = 30; m._gravSaved = false;
+  for(let i=0;i<10;i++) puff(m.x, m.y, '#ffe9f2', 4);
+}
+// A runner the line reached, or one knocked out: deleted, "and are gone". No stock, no KO line, no ceremony.
+function raceDelete(f){
+  if(f.dead) return;
+  f.dead = true; f.alive = false; f.stocks = 0; f._sm = null; f._windup = null;
+  try{ dropInFlightMoves(f); }catch(e){}
+  for(let i=0;i<16;i++) puff(f.x, Math.max(20, Math.min(WH-20, f.y)), i%2 ? '#ff5a5a' : '#fff', 5);
+}
+// eliminate()'s race branch: a fall (the blast zone) or a knockout (koCap). Marshmallow is never lost; you are.
+function raceEliminate(f){
+  if(RACE.over){ f.dead = true; return; }
+  if(f._marsh){
+    const you = fighters.find(q=>q.you);
+    if(RACE.marshOver){ f.x = RACE.farX + 90; f.y = RACE.floorY - f.r; f.vx = 0; f.vy = 0; f.hitstun = 0; return; }
+    if(you && !you.dead){ raceMarshCatchUp(f, you); return; }
+    f.dead = true; return;
+  }
+  if(f.you){ RACE.lossWhy = f.y > RACE.floorY ? 'fell' : 'ko'; f.dead = true; f.alive = false; endRace(false, RACE.lossWhy); return; }
+  raceDelete(f);
+}
+// Win and lose, from checkWin once a frame. Never awardMatchProgress, never recordMatch: a race is not a match.
+function raceCheck(){
+  if(!RACE.active || RACE.over || !running) return;
+  const you = fighters.find(f=>f.you);
+  if(!you || you.dead){ endRace(false, RACE.lossWhy || 'fell'); return; }
+  if(RACE.marshOver && you.onground && you.x > RACE.finishX) endRace(true, 'crossed');   // "Then Knife crosses too"
+}
+function endRace(won, why){
+  if(RACE.over) return;
+  running = false; RACE.over = true; RACE.won = !!won;
+  const secs = Math.round(RACE.frames/60), mmss = Math.floor(secs/60) + ":" + String(secs%60).padStart(2,'0');
+  RACE.result = { won:!!won, why:(won ? 'crossed' : (why || 'caught')), secs, fighter:RACE.fighter };
+  RACE.retry = { opts:RACE.opts };
+  const t = document.getElementById('resultTitle'), sub = document.getElementById('resultSub'), box = document.getElementById('scorecard');
+  if(t) t.textContent = won ? "RUNNING! cleared" : (why==='fell' ? "You fell" : why==='ko' ? "You were knocked out" : "The line caught you");
+  if(sub) sub.textContent = won ? ("Marshmallow slung over, and " + RACE.fighter + " across the line in " + mmss + ".") : "The line never stops. Retry to run it again.";
+  if(box) box.innerHTML = "";
+  const quip = document.getElementById('resultQuip'); if(quip){ quip.style.display = 'none'; quip.textContent = ''; }
+  const rb = document.getElementById('resultRematch'); if(rb) rb.textContent = "Retry ↻";
+  let handled = false;
+  try{ if(RACE.onEnd) handled = RACE.onEnd(!!won, RACE.result) === true; }catch(e){ console.error("RUNNING! onEnd:", e); }
+  try{ stopRunRecording(()=>showRunReview()); }catch(e){}
+  if(!handled) setTimeout(()=>{ if(!running){ go('result'); try{ showRunReview(); }catch(e){} } }, 900);
+}
+
+// THE MODIFIED HOOK (fireSpecialInner's race branch, for the player only). At the edge, with Marshmallow in reach, the special
+// hooks her and slings her over the last gap; anywhere else the special is the bag of tricks as usual. True when it fired.
+function raceSling(f){
+  if(!RACE.active || RACE.over || RACE.sling || RACE.marshOver) return false;
+  if(!f.onground || f.x < RACE.edge - RACE_SLING_ZONE || f.x > RACE.edge + 10) return false;   // only at the edge
+  const m = fighters.find(q=>q._marsh && !q.dead);
+  if(!m || Math.abs(m.x - f.x) > RACE_SLING_REACH || Math.abs(m.y - f.y) > 200) return false;   // only Marshmallow, and only in reach
+  RACE.sling = { t:0, n:RACE_SLING_FRAMES, x0:m.x, y0:m.y, x1:RACE.farX + 90, y1:RACE.floorY - m.r, who:m.idx };
+  m._slung = true; m.hitstun = 2; m.invuln = 2; m.vx = 0; m.vy = 0; m.face = 1; m._sm = null; m._windup = null; m._spPend = 0;
+  f._hookFx = { t:hazardT, to:m.idx, face:(Math.sign(m.x - f.x) || 1) };   // the Fist Thingy's arm shoots out to her (drawHookFx)
+  f.face = 1; f.flash = 8; f.spCd = 90;
+  for(let i=0;i<10;i++){ const q = i/10; puff(f.x + (m.x - f.x)*q, f.y + (m.y - f.y)*q, '#6b5a45', 3); }
+  return true;
+}
+
+// THE RUNNERS' AI (aiThink's race branch). Run right, jump the gaps and the walls, hop the step and drop under the bar, stop
+// short of the edge no one can jump. A runner's skill is how much of the time it holds right, so some fall behind and are
+// caught. They are not your friends: a jab when you are right there ("attacks allowed").
+function raceRunnerAi(f){
+  const inp = {left:false,right:false,jump:false,down:false,attack:false,special:false,smash:false,up:false};
+  if(RACE.over || f._slung) return inp;
+  const you = fighters.find(q=>q.you), fy = RACE.floorY, ahead = f.x + f.r;
+  if(f._marsh){
+    if(RACE.marshOver) return inp;                          // over, and done
+    if(you && !you.dead && f.x > you.x + 120) return inp;   // at your side: she waits when she is well ahead of you
+  }
+  if(ahead > RACE.edge - 80){ if(f.onground && f.vx > 1) inp.left = true; return inp; }   // the edge: brake and stop short of it
+  const skill = f._raceSkill != null ? f._raceSkill : 1;
+  const hold = skill >= 1 || ((hazardT + f.idx*37) % 20) < Math.round(20*skill);
+  inp.right = hold;
+  const o = RACE.obstacles.find(ob=>ob.x1 > f.x - 20);
+  // "Tissues seems to stop and gets flashbacks"; "Mic ... stops" (Objects in Mirror): a runner short of perfect stands still at a
+  // memory now and then -- on the ground, and never with an obstacle right ahead, so the stop itself is never a fall
+  if(skill < 1 && f.onground && ((hazardT + f.idx*53) % RACE_MEMORY_EVERY) < RACE_MEMORY_STOP && !(o && o.x0 - ahead < 120)){ inp.right = false; return inp; }
+  if(o){
+    const lead = 34 + Math.max(0, f.vx)*3;
+    if(o.k==='gap'){
+      if(f.onground && o.x0 - ahead < lead && o.x0 - ahead > -60) inp.jump = true;
+      else if(!f.onground && f.vy > 0 && f.jumps > 0 && f.x > o.x0 && f.x < o.x1 && f.y + f.r > fy - 30) inp.jump = true;   // the second jump, when the first will not carry
+    } else if(o.k==='wall'){
+      if(f.onground && o.x0 - ahead < 70 + Math.max(0, f.vx)*2 && o.x0 - ahead > -10) inp.jump = true;
+      else if(!f.onground && f.jumps > 0 && f.vy > 0 && f.x < o.x1 && f.y + f.r > o.top - 6) inp.jump = true;
+    } else if(o.k==='bar'){
+      if(f.onground && Math.abs(f.y + f.r - o.ledgeY) < 3){ if(o.barX0 - ahead < 70) inp.down = true; }   // on the ledge: drop under the beam
+      else if(f.onground && o.stepX - ahead < 70 + Math.max(0, f.vx)*2 && o.stepX - ahead > -10) inp.jump = true;
+      else if(!f.onground && f.jumps > 0 && f.vy > 0 && f.x < o.stepX + 40 && f.y + f.r > o.ledgeY - 6) inp.jump = true;
+    } else if(o.k==='piston' && o.x0 - ahead < 110 && o.x0 - ahead > -10 && f.onground){
+      // time it: the block is highest at the top of its cycle (phase 0), lowest at half, and clears a fighter only past 0.72
+      // on the way up (and until 0.28 on the way down), so a runner right before it waits for the late rise and goes; one
+      // that just runs in is pounded back every cycle (measured: the slow ones sat under the first piston for 400 frames)
+      const h = RACE.hazards.find(z=>z.x===o.x0), ph = h ? (((hazardT/h.period) + h.phase) % 1) : 0.9;
+      if(ph <= 0.78){ inp.right = false; return inp; }
+    }
+  }
+  if(!f._marsh && RACE.frames > RACE_ATTACK_GRACE && you && !you.dead && hold && Math.abs(you.x - f.x) < 64 && Math.abs(you.y - f.y) < 40 && ((hazardT + f.idx*11) % 50) === 0){ inp.attack = true; f.face = Math.sign(you.x - f.x) || 1; }
+  if(inp.jump && f._raceJumpHeld) inp.jump = false;   // a jump needs the key let go between presses
+  f._raceJumpHeld = inp.jump;
+  return inp;
+}
+
+// ---- DRAWING ----
+// World space: the void's projected panes, the pistons, the bridge, the finish line, the hook's rope, and THE LINE -- a wall
+// of red behind everyone, its edge lit, its stripes sliding forward so it reads as coming. No text.
+function drawRaceFx(){
+  ctx.save();
+  ctx.fillStyle = 'rgba(120,150,200,0.10)';   // "traumatic, embarrassing or regretful memories will be projected": faint panes, nothing on them
+  for(let i=0;i<14;i++){ const px = (i*710 + 300) % WW, py = 80 + (i*137)%300 + Math.sin(hazardT*0.01 + i)*12; ctx.fillRect(px, py, 120, 76); }
+  for(const h of RACE.hazards){
+    const y = racePistonY(h), low = (y - h.upY)/(h.downY - h.upY);
+    ctx.fillStyle = '#9aa4b0'; ctx.fillRect(h.x + h.w/2 - 6, -600, 12, y + 600);
+    ctx.fillStyle = low > 0.6 ? '#c8102e' : '#6b6f78'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3;
+    ctx.fillRect(h.x, y, h.w, h.h); ctx.strokeRect(h.x, y, h.w, h.h);
+  }
+  if(RACE.bridge){ ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(RACE.bridge.x, RACE.bridge.y - 3, RACE.bridge.w, 5); }
+  { const fx = RACE.finishX; ctx.fillStyle = '#1c1c1c'; ctx.fillRect(fx - 3, RACE.floorY - 150, 6, 150);
+    for(let i=0;i<6;i++){ ctx.fillStyle = i%2 ? '#1c1c1c' : '#ffffff'; ctx.fillRect(fx + 3, RACE.floorY - 150 + i*10, 44, 10); } }
+  if(RACE.sling){
+    const you = fighters.find(f=>f.you), m = fighters.find(f=>f.idx===RACE.sling.who);
+    if(you && m){ ctx.strokeStyle = '#a3a8ad'; ctx.lineWidth = 3; ctx.globalAlpha = Math.max(0, 1 - RACE.sling.t/RACE.sling.n);
+      ctx.beginPath(); ctx.moveTo(you.x + you.r*0.7, you.y - 6); ctx.lineTo(m.x, m.y); ctx.stroke(); ctx.globalAlpha = 1; }
+  }
+  const lx = RACE.lineX, top = -2000, hh = WH + 4000;
+  ctx.fillStyle = '#c8102e'; ctx.fillRect(lx - 6000, top, 6000, hh);
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  for(let s = -6000; s < 0; s += 90) ctx.fillRect(lx + s + ((hazardT*2) % 90), top, 30, hh);
+  ctx.fillStyle = 'rgba(255,90,90,0.35)'; ctx.fillRect(lx, top, 70, hh);
+  ctx.fillStyle = 'rgba(255,90,90,0.15)'; ctx.fillRect(lx + 70, top, 90, hh);
+  ctx.fillStyle = '#ff6a6a'; ctx.fillRect(lx - 5, top, 6, hh);
+  ctx.restore();
+}
+// Screen space: a small progress bar -- the lane from the start to the finish, the red behind you, the last gap, Marshmallow's
+// dot and yours. No text ("a small distance/progress bar is fine (not text popups)").
+function drawRaceBar(){
+  const you = fighters.find(f=>f.you); if(!you) return;
+  const bw = Math.min(560, W*0.7), bh = 10, bx = (W - bw)/2, by = 58, span = Math.max(1, RACE.finishX - RACE.startX);
+  const frac = v => Math.max(0, Math.min(1, (v - RACE.startX)/span));
+  ctx.save();
+  ctx.globalAlpha = 0.75; ctx.fillStyle = "#1c1c1c"; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4); ctx.globalAlpha = 1;
+  ctx.fillStyle = "#dfe8f2"; ctx.fillRect(bx, by, bw, bh);
+  ctx.fillStyle = "#c8102e"; ctx.fillRect(bx, by, bw*frac(RACE.lineX), bh);
+  ctx.fillStyle = "#1c1c1c"; ctx.fillRect(bx + bw*frac(RACE.edge), by, Math.max(2, bw*RACE_FINAL_GAP/span), bh);
+  const m = fighters.find(f=>f._marsh && !f.dead);
+  if(m){ ctx.fillStyle = m.color; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(bx + bw*frac(m.x), by + bh/2, 5, 0, 7); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle = you.color; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bx + bw*frac(you.x), by + bh/2, 7, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
 function drawOneBar(){
   const s = summons.find(o=>o._oneFight);
   if(!s) return;
@@ -9849,6 +10240,7 @@ function step(){
   for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }
   particles=particles.filter(p=>p.life>0);
 
+  if(RACE.active) raceTick();   // RUNNING!: the line advances, the sling flies, the pistons pound (see raceTick)
   updateCamera();
   updateHUD();
   checkWin();
@@ -11895,6 +12287,7 @@ function fireSpecial(f, inp){
 }
 function fireSpecialInner(f, inp){
   if(f._noBattery>0) return;   // Remote on reserve power (see BATTERY_OUT)
+  if(RACE.active && f.you && raceSling(f)) return;   // RUNNING!: at the edge, the modified hook slings Marshmallow over (see raceSling)
   // remember held directions so dash-type specials can go diagonally (up-dash / down-dash)
   f._inLeft=!!inp.left; f._inRight=!!inp.right; f._inUp=!!inp.up; f._inDown=!!inp.down;
   const dashKit = DASH_KITS.has(f.kit&&f.kit.special);
@@ -13661,6 +14054,7 @@ function dropInFlightMoves(f){
   f._hasBeen=false;   // Starfruit's One-Hit Wonder comes back with the stock; the render read the stale flag and drew him grey and slumped on the spawn point
 }
 function eliminate(f){
+  if(RACE.active){ raceEliminate(f); return; }   // RUNNING!: a fall or a knockout ends your race; a runner is deleted, Marshmallow is put back
   if(f._oneGhost){ oneGhostDown(f); return; }   // One's ghost fighter has no stocks to lose: a knockout is the kill
   SFX.ko();
   // if an infected puppet is KO'd, revert it to its real team immediately
@@ -13748,6 +14142,7 @@ function eliminate(f){
 function checkWin(){
   if(TESTMODE.active) return;   // test mode never ends — it's a sandbox
   if(ONEFIGHT.active){ oneFightCheck(); return; }   // One's fight has its own win and loss, and is never a Boss Rush clear
+  if(RACE.active){ raceCheck(); return; }   // RUNNING! has its own too, and is never a recorded match
   if(SETTINGS.mode==='boss'){ bossRushCheck(); return; }   // boss rush has its own win/lose logic
   const alive=fighters.filter(f=>!f.dead);
   const teamsAlive=[...new Set(alive.map(f=> f._infected>0 ? f._origTeam : f.team))];
@@ -15576,6 +15971,7 @@ const FLANK_X = 240;      // closer than this, stop flanking and just fight
 const FLANK_RISE = 264;   // two pad rows: PAD_STEP is 132 on the teams arena
 function teamSlotOf(f){ let n = 0; for(const o of fighters){ if(o.team === f.team){ if(o === f) return n; n++; } } return 0; }
 function aiThink(f){
+  if(RACE.active && f._runner) return raceRunnerAi(f);   // RUNNING!: the runners run (see raceRunnerAi)
   f.aiTimer--;
   let targets=fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team);
   const inp={left:false,right:false,jump:false,down:false,attack:false,special:false,smash:false,up:false};
@@ -16094,7 +16490,7 @@ function updateCamera(){
   if(!scrolls()){ camX=0; camY=0; return; }
   const you=fighters.find(f=>f.you&&!f.dead) || fighters.find(f=>!f.dead);
   if(!you) return;
-  const t = camTarget(you.x, you.y, CAM_ZOOM);
+  const t = camTarget(you.x + (RACE.active ? RACE_CAM_LEAD : 0), you.y, CAM_ZOOM);   // RUNNING!: the camera looks ahead of the runner
   camX += (t.x-camX)*0.12;   // smooth follow
   camY += (t.y-camY)*0.12;
 }
@@ -16347,6 +16743,7 @@ function draw(){
   // active summons (assists & bosses)
   for(const s of summons){ drawSummon(s); }
   if(ONEFIGHT.active) drawOneFx();
+  if(RACE.active) drawRaceFx();   // RUNNING!: the line, the pistons, the bridge, the finish
   if(tendrils.length) drawTendrils();
   // swallow stomach zone + tongue target
   const swBoss = summons.find(s=>s.type==="boss" && s.attack==="swallow" && s._tongueHp>0);
@@ -16416,10 +16813,11 @@ function draw(){
   ctx.restore();   // end world space
 
   // ---- screen-space overlays ----
-  if(viewScrolls()) drawMinimap();
+  if(viewScrolls() && !RACE.active) drawMinimap();   // the race has its progress bar instead (drawRaceBar)
   drawOffscreenArrows();
   if(SETTINGS.mode==='boss' && BOSSRUSH.active) drawBossBar();
   if(ONEFIGHT.active) drawOneBar();
+  if(RACE.active) drawRaceBar();
   drawTutorialPrompt();
   // TEST MODE: DPS readout so you can measure damage output on an anchored dummy
   if(TESTMODE.active){
