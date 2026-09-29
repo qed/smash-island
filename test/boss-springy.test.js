@@ -99,6 +99,7 @@ describe('Springy takes Boss 11', () => {
             continue;
           }
           b.hp = 0; bossRushCheck();
+          projectiles = [];   // "Endings: 'All of them'" (2026-09-29): a boss's exit scene is made of shots, and this walk gives none of them time to finish
           if (b.name==='Four'){ card = document.getElementById('rushVicSub').textContent; break; }
         }
         return { order: order, atHim: atHim, card: card };
