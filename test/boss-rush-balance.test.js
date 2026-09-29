@@ -116,9 +116,13 @@ describe('Boss Rush balance', () => {
     expect(r.healedEvery, 'but every boss heals').toBe(true);
   });
 
-  it('boss hits are 22 (were 30) and the Dragon grab throws at 14 (was 22)', () => {
+  it('boss hits are 22 (were 30) and the Dragon no longer throws anyone: GRAB & CARRY! drops you for 0.6 of a hit with a shove of 2.5 (the old grab threw at 14, was 22)', () => {
+    // "Harder, same damage" (the owner, 2026-09-29): the grab is redone as a swoop that carries you on its back and drops you at the far edge ("The dragon drops
+    // CloudYAY onto the ground", Category One/Transcript) -- the same 0.6 of a hit, and no throw toward the blast zone at all.
     expect(W.eval('BOSS_DMG_BASE')).toBe(22);
-    expect(W.eval('String(fireBossAttack)')).toMatch(/away\*14, -9/);
+    expect(W.eval('DRAGON.carryHit')).toBe(0.6);
+    expect(W.eval('String(dragonDrop)')).toMatch(/-dir\*2\.5, -4/);
+    expect(W.eval('String(fireBossAttack)')).not.toMatch(/away\*14, -9/);
   });
 
   it('every boss has second moves, and its attacks take turns: signature, second move, signature', () => {
@@ -130,7 +134,7 @@ describe('Boss Rush balance', () => {
       return { missing: missing, kinds: kinds };
     })()`);
     expect(r.missing).toEqual([]);
-    expect(r.kinds).toEqual(['dragon', 'slam', 'dragon']);
+    expect(r.kinds, 'the Dragon: its signature, FURIOUS ROAR!, its signature (its own five, no shared shape)').toEqual(['dragon', 'dragonroar', 'dragon']);
   });
 
   it('a second move fires real boss shots', () => {

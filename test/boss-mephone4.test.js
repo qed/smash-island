@@ -48,7 +48,7 @@ describe('MePhone4 joins the gauntlet', () => {
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'studio', false, 'speakerfirey'],
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face'],
-      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon'],
+      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon'],   // the hotel roof in the storm, no longer the shared cave ("Each its own", the owner, 2026-09-29)
       // 255, was 240: under the Dragon's 250 before him, and measured easier than the Dragon (the review; see
       // test/boss-rush-order.test.js)
       ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone'],
@@ -60,7 +60,7 @@ describe('MePhone4 joins the gauntlet', () => {
     ]);
     expect(r.extra).toEqual({
       'Announcer': ['rain', 'ring'], 'Puffball Speaker Box': ['slam', 'rain'], 'Firey Speaker Box': ['rain', 'slam'],
-      'The Bug Swarm': ['seekers', 'rain'], 'Purple Face': ['ring', 'rain'], 'Purple Dragon': ['slam', 'rain'],
+      'The Bug Swarm': ['seekers', 'rain'], 'Purple Face': ['ring', 'rain'], 'Purple Dragon': ['dragonroar', 'dragonchar', 'dragonwind', 'dragonropes'],
       'MePhone4': ['melife', 'portal'],
       'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
       'Four': ['rain', 'seekers'],

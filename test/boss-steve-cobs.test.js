@@ -82,7 +82,8 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'studio', false, 'speakerfirey', 'rain+slam', 'firewall rain firewall slam', 36, 'Flame Surge', 'RAGE MODE'],
       ['The Bug Swarm', '#8a3a3a', 225, 2.3, 'swarm', 'cave', false, 'bug', 'seekers+rain', 'swarm seekers swarm rain', 36, 'Second Wave', 'Swarm Frenzy'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'studio', true, 'face', 'ring+rain', 'swallow ring swallow rain', 36, 'Ad Overload', 'Segment Split'],
-      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon', 'slam+rain', 'dragon slam dragon rain', 36, 'Strafing Runs', 'Grab & Carry'],
+      // the Dragon's own five and its own wind-up (44), on the hotel roof: "the bosses should have more attacks the later they get" (Bug Swarm on: 5), "Each its own"
+      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragon dragonchar', 44, 'Strafing Runs', 'Grab & Carry'],
       // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
       ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'seekers+slam', 'evilleafy seekers evilleafy slam', 45, 'No Refuge', 'Vine Coverage'],

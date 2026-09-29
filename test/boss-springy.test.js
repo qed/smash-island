@@ -91,7 +91,7 @@ describe('Springy takes Boss 11', () => {
             // the sweep, then the ending opens the one hole he goes down (springyEnding): that is the only thing of his left
             var left = projectiles.filter(function(p){ return p.springy; });
             atHim = { padBefore: padBefore, box: box, hisLeft: left.length, endingHole: left.length === 1 && !!left[0].springHole && left[0].x === b.x && left[0].delay === SPRINGY_END.lava + 4,
-                      othersLeft: projectiles.filter(function(p){ return !p.springy; }).length,
+                      othersLeft: projectiles.filter(function(p){ return !p.springy && !p.dragonEnd; }).length,   // (the Dragon's ending, playing since it fell earlier in this walk, is its own scene: "Endings: 'All of them'")
                       propsLeft: worldPlats.filter(function(p){ return p._springy; }).length, platsLeft: worldPlats.length,
                       ending: summons.filter(function(s){ return s.type==='springyend'; }).length, bossLeft: summons.filter(function(s){ return s.type==='boss'; }).length,
                       advanced: BOSSRUSH.bossIdx - idx0, victory: document.getElementById('rushVictory').style.display };

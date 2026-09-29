@@ -104,8 +104,8 @@ describe('transparency: an object, never a rectangle pasted over the stage', () 
 
   it('the ones cut out of a bigger picture carry nothing of it', () => {
     const keyed = entries.filter((e) => e.key).map((e) => e.file).sort();
-    expect(keyed).toEqual(['book.png', 'capturepod.png', 'casebomb.png', 'cloth.png', 'ghostvacuum.png', 'losercage.png', 'marsrock.png', 'ojshard.png', 'oliveoil.png',   // the first five, batch 3's ten,
-      'pager.png', 'paintball.png', 'paintbomb.png', 'piano.png', 'shimmerorb.png', 'soccerball.png', 'tpot7bolt.png', 'vacuum.png', 'wrench.png']);   // and Steve Cobs's prize's three (test/dlc-ii-prize.test.js)
+    expect(keyed).toEqual(['book.png', 'capturepod.png', 'casebomb.png', 'cloth.png', 'dragonflame.png', 'ghostvacuum.png', 'losercage.png', 'marsrock.png', 'ojshard.png', 'oliveoil.png',   // the first five, batch 3's ten,
+      'pager.png', 'paintball.png', 'paintbomb.png', 'piano.png', 'shimmerorb.png', 'soccerball.png', 'tpot7bolt.png', 'vacuum.png', 'wrench.png']);   // Steve Cobs's prize's three (test/dlc-ii-prize.test.js), and the Purple Dragon's flame, cut out of File:Dragony3.png (test/boss-dragon.test.js)
     for (const f of keyed) expect(clearOf(read(f)), `${f} kept its backdrop`).toBeGreaterThan(0.15);
     const opaque = (png, test) => { const bad = []; for (let i = 0; i < png.data.length; i += 4)
       if (png.data[i + 3] >= 128 && test(png.data[i], png.data[i + 1], png.data[i + 2])) bad.push(i >> 2); return bad.length; };

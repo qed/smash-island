@@ -455,7 +455,9 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     expect(r.hold).toBe(true);
     expect(r.line).toBe("We're square.");
     expect(r.begin).toBe(true);
-    expect(r.keys, 'the early six get theirs in their ENDING slots').toEqual(['springy']);
+    // "Endings: 'All of them'" (the owner, 2026-09-29): every boss gets a short canon exit scene, in its ENDING slot. The Purple Dragon's (it waves
+    // back and flies away: test/boss-dragon.test.js) is the first of the early six.
+    expect(r.keys, 'the early six get theirs in their ENDING slots').toEqual(['springy', 'dragon']);
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
@@ -565,7 +567,9 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
 
   // With every slot still holding only what was there, the six fight exactly as they did: each signature and each second
   // move fires real boss shots (or, for Purple Face, swallows), a wind-up names the move, and a phase is announced.
-  for (const name of ['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face', 'Purple Dragon']) {
+  // (The Purple Dragon is not in this loop any more: "the bosses should have more attacks the later they get" -- its five are flights and scenes, a roar's shove
+  // and dive, a run's shadow, a lottery's door, that land no shot on the frame the wind-up ends. test/boss-dragon.test.js reads each one over its whole length.)
+  for (const name of ['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face']) {
     it(`${name} still fights as it did, through its slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], shots: [], phase: null };
