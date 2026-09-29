@@ -13,7 +13,7 @@ import { bootMonolith } from './helpers/smash-golden.js';
 // The owner's kit answers: OJ = "Classic orange" (File:OJ2024Pose.png), Juice Spill / Shattered Again / Across the Line / Cork;
 // Suitcase = Full of Voices / Something Glowing Inside (THE BOMB) / Rocket to Mars / All the Tools We Need (the wrench);
 // Cabby = File:Cabby2024Pose.png and the files, the Drawer Slam, Off the Cliff, the drawer ride. Art: OJ's puddle DRAWN; his
-// shards cropped from File:Shattered.png; Suitcase's bomb cut from an Objects in Mirror frame; her wrench cut from the Marsh on
+// a shard cropped from BFDIA 23 (File:BookSmashesThroughtheGlass.png); Suitcase's bomb cut from an Objects in Mirror frame; her wrench cut from the Marsh on
 // Mars frame; Cabby's folder is File:Cabby file pose.png. No text on screen from any move; nothing of theirs leaks into anyone else.
 
 let W;
@@ -500,21 +500,22 @@ describe('the standing rules', () => {
       const e = manifest[k];
       expect(e && e.file).toBe(file);
       expect([png.width, png.height]).toEqual([e.width, e.height]);
-      expect(e.source).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/inanimateinsanity\/images\//);
+      // the shard is BFDI art (BFDIA 23, the owner's episode); the rest are the II wiki's
+      expect(e.source).toMatch(k === 'ojshard' ? /^https:\/\/static\.wikia\.nocookie\.net\/battlefordreamisland\/images\// : /^https:\/\/static\.wikia\.nocookie\.net\/inanimateinsanity\/images\//);
       expect(credits).toContain(`(${file})`);
       expect(credits).toContain(e.source);
     }
-    // the owner's sources, exactly: the shards out of Shattered.png, the bomb out of an Objects in Mirror frame, the wrench out of the
+    // the owner's sources, exactly: the shard out of BFDIA 23 ("the episode bfdia 23.": Book smashing through the glass), the bomb out of an Objects in Mirror frame, the wrench out of the
     // Marsh on Mars frame, the folder as-is
-    expect(manifest.ojshard.srcTitle).toBe('Shattered.png');
-    expect(manifest.ojshard.key).toBe('shard');
+    expect(manifest.ojshard.srcTitle).toBe('BookSmashesThroughtheGlass.png');
+    expect(manifest.ojshard.key).toBe('glass');
     expect(manifest.casebomb.srcTitle).toMatch(/^II218 \d+\.jpeg$/);
     expect(manifest.wrench.srcTitle).toBe('S2e2 wow, this should make this challenge a walk in the park!.png');
     expect(manifest.file.srcTitle).toBe('Cabby file pose.png');
-    // the cuts carry nothing of their frames: no cave blue in the shards, no case brown in the wrench, no sky in the bomb
+    // the cuts carry nothing of their frames: no sky blue in the shard, no case brown in the wrench, no sky in the bomb
     const solid = (f, test) => { const p = PNG.sync.read(readFileSync(`artifacts/V1/assets/sprites/attacks/${f}`)); let n = 0;
       for (let i = 0; i < p.data.length; i += 4) if (p.data[i + 3] >= 128 && test(p.data[i], p.data[i + 1], p.data[i + 2])) n++; return n; };
-    expect(solid('ojshard.png', (r0, g, b) => b > r0 + 20), 'the cave').toBe(0);
+    expect(solid('ojshard.png', (r0, g, b) => b - r0 > 55 && b > 190 && g > 150), 'the sky').toBe(0);
     expect(solid('wrench.png', (r0, g, b) => r0 - b > 45), 'the case').toBe(0);
     expect(solid('casebomb.png', (r0, g, b) => Math.min(r0, g, b) < 180), 'the sky or the hands').toBe(0);
   });

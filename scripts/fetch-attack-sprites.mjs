@@ -186,11 +186,12 @@ const PICKS = {
   paintball:  { who: 'Teddy Bear',  kits: ['paintball'],  wiki: 'ii', file: 'S1RE6 Teddy grabs a paintball gun.png', note: "a paintball: the pink paint in her gun's hopper (War De Guacamole remaster), cut from the frame", key: 'paintball', region: [472, 186, 528, 242], srcH: 477, h: 40 },
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
   // The three II winners, allowed in only as Steve Cobs's prize ("3, but only after you beat cobs."). The owner's art answers
-  // (2026-09-29): OJ's shards -- "crop the shards that were stuck to book in shattered." -- come out of File:Shattered.png (Mine
-  // Your Own Business): the two glass shards standing stuck in the cave floor, right of the shovel; yellow glass and its olive
-  // outline over blue-grey rock, which is neither (key 'shard'). His juice puddle is DRAWN (a flat orange puddle with a paler
-  // rim), per the owner, so it has no pick. Nothing in the frame is a book: the shards stuck upright are the nearest thing.
-  ojshard:  { who: 'OJ',        kits: ['spill'],  wiki: 'ii', file: 'Shattered.png', note: 'glass shards, cropped out of the frame where they stand stuck in the ground (the owner: "crop the shards that were stuck ... in shattered")', key: 'shard', region: [1520, 712, 1830, 958], srcH: 1069, h: 40 },
+  // (2026-09-29): OJ's shards -- "crop the shards that were stuck to book in shattered." and then "the episode bfdia 23." --
+  // come out of BFDIA 23 ("Shattered!", the BFDI wiki), File:BookSmashesThroughtheGlass.png: Book bursting up through the pane,
+  // its shards flying round him. The cut is the long shard at his right shoulder: pale rainbow glass with a dark outline over
+  // saturated sky blue, which the glass never is (key 'glass'). His juice puddle is DRAWN (a flat orange puddle with a paler
+  // rim), per the owner, so it has no pick.
+  ojshard:  { who: 'OJ',        kits: ['spill'],  file: 'BookSmashesThroughtheGlass.png', note: 'a glass shard, cropped out of the BFDIA 23 (Shattered!) frame where Book smashes up through the glass (the owner: "crop the shards that were stuck to book in shattered", "the episode bfdia 23.")', key: 'glass', region: [835, 212, 962, 296], srcH: 598, h: 40 },
   // Suitcase's bomb -- "cut from an Objects in Mirror frame" (find the frame where the bomb is clearest, hand-mask it): the
   // episode's frames are JPEGs (II218_1..189); II218_140 is Cobs holding the bomb up against the sky in his two black hands,
   // the clearest of them. Flat white with a pale shade: the near-white is kept and the bites his fingers left are closed with
@@ -517,11 +518,16 @@ const ROCK_GREY = (d, i) => lum(d, i) > 165 ? 0 : clamp01((34 - (Math.max(d[i], 
 const PAGER_PURPLE = (d, i) => clamp01(Math.min((d[i + 2] - d[i + 1] - 8) / 20, (d[i] - d[i + 1] + 10) / 20));
 const OIL_OLIVE = (d, i) => (d[i] - d[i + 1] > 50) ? 0 : clamp01((d[i + 1] - d[i + 2] - 10) / 12);
 Object.assign(KEYS, { rock: (png) => keyPiece(png, ROCK_GREY), pager: (png) => keyPiece(png, PAGER_PURPLE), slick: (png) => keyPiece(png, OIL_OLIVE, { hull: true, minPiece: 0.03 }) });
-// 'shard' (Steve Cobs's prize, OJ): the shards in File:Shattered.png are yellow glass with an olive outline (red and green well
-// over blue); the cave floor is blue-grey, the eyepatch black. Every yellow piece at least a fifth the size of the biggest is
-// kept -- the two shards standing stuck in the ground -- so a chip of another does not ride along.
-const SHARD_YELLOW = (d, i) => clamp01(Math.min((d[i] - d[i + 2] - 50) / 40, (d[i + 1] - d[i + 2] - 30) / 40));
-Object.assign(KEYS, { shard: (png) => keyPiece(png, SHARD_YELLOW, { minPiece: 0.2 }) });
+// 'glass' (Steve Cobs's prize, OJ): the shard in File:BookSmashesThroughtheGlass.png is pale rainbow glass with a dark outline;
+// the sky round it is a saturated blue (blue well over red, bright), which neither the glass nor its outline is. The biggest
+// piece that is not sky is the shard. The glass is see-through, so the sky shows inside its outline too; that stays
+// see-through (a faint pane: anything near sky blue inside the outline) and the stage shows through it instead.
+const SKY_BLUE = (d, i) => clamp01(Math.min((d[i + 2] - d[i] - 45) / 20, (d[i + 2] - 180) / 20, (d[i + 1] - 140) / 20));
+function keyGlass(png) {
+  keyPiece(png, (d, i) => 1 - SKY_BLUE(d, i));
+  const d = png.data; for (let i = 0; i < d.length; i += 4) if (d[i + 3] && SKY_BLUE(d, i) > 0.25) d[i + 3] = Math.min(d[i + 3], 90);
+}
+Object.assign(KEYS, { glass: keyGlass });
 // ---- batch 3, group 6: two more keys for frame cuts, added beside KEYS so no shared line changes ----
 // Keep the largest connected piece of what `test` calls the object, everything it closes round, and a soft one-pixel
 // edge. `lift` brightens what is kept: the S4E5 frames are the haunted house at night, and a prop that dark would

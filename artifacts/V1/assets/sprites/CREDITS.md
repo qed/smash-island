@@ -401,7 +401,7 @@ downscaled to 200px tall, alpha verified, facing measured.
 | OJ (Steve Cobs's prize; the owner: "Classic orange", File:OJ2024Pose.png) | `oj.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/32/OJ2024Pose.png/revision/latest?cb=20250628193515 |
 | Suitcase (Steve Cobs's prize; File:Suitcase2024PoseCropped.png, faces left) | `suitcase.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/Suitcase2024PoseCropped.png/revision/latest?cb=20260531033720 |
 | Cabby (Steve Cobs's prize; File:Cabby2024Pose.png, drawers shut) | `cabby.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/de/Cabby2024Pose.png/revision/latest?cb=20250628202008 |
-| OJ's glass shards (ojshard.png): cropped out of File:Shattered.png where they stand stuck in the cave floor (the owner: "crop the shards that were stuck ... in shattered") | `attacks/ojshard.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f5/Shattered.png/revision/latest?cb=20220226105132 |
+| OJ's glass shard (ojshard.png): cropped out of File:BookSmashesThroughtheGlass.png, BFDIA 23 "Shattered!" -- the shard flying at Book's shoulder as he smashes up through the glass (the owner: "crop the shards that were stuck to book in shattered", "the episode bfdia 23.") | `attacks/ojshard.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/43/BookSmashesThroughtheGlass.png/revision/latest?cb=20251205004922 |
 | Suitcase's bomb (casebomb.png): the bomb Cobs took out of her, cut from the Objects in Mirror frame where he holds it up (File:II218 140.jpeg; the owner: "cut from an Objects in Mirror frame") | `attacks/casebomb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f6/II218_140.jpeg/revision/latest?cb=20241208023932 |
 | Suitcase's wrench (wrench.png): hand-masked out of the Marsh on Mars frame (File:S2e2 wow, this should make this challenge a walk in the park!.png; the owner: "cut from the Marsh on Mars frame") | `attacks/wrench.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/64/S2e2_wow%2C_this_should_make_this_challenge_a_walk_in_the_park%21.png/revision/latest?cb=20170706203146 |
 | Cabby's file (file.png): File:Cabby file pose.png, a clean standalone folder | `attacks/file.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/aa/Cabby_file_pose.png/revision/latest?cb=20230807161956 |
@@ -425,7 +425,7 @@ house at night). MeTag's barrier is drawn in code (Q2); Magnet throws nothing.
 Steve Cobs's prize (2026-09-29, "3, but only after you beat cobs."): OJ, Suitcase and Cabby, the three II winners, hidden until Steve
 Cobs is beaten. Their renders are the same '2024Pose' family as the rest of the pack (scripts/fetch-sprites.mjs
 --wiki=inanimateinsanity). Their art (rebuilt by `node scripts/fetch-attack-sprites.mjs <out> ojshard casebomb wrench file`):
-OJ's puddle is drawn, per the owner; his shards are cut from File:Shattered.png (key `shard`); Suitcase's bomb is cut from the
+OJ's puddle is drawn, per the owner; his shard is cut from the BFDI wiki's File:BookSmashesThroughtheGlass.png (BFDIA 23, key `glass`); Suitcase's bomb is cut from the
 Objects in Mirror frame where Cobs holds it up (a JPEG, so `png` + key `orb`); her wrench is hand-masked (`poly`) and keyed
 grey out of the Marsh on Mars frame; Cabby's file is the wiki's own folder. The voices are drawn (nothing to cut).
 

@@ -130,7 +130,8 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     // items look better", with the show's own art); and the assist trophies wear theirs through
     // ASSIST_SPRITE_SRC (the owner: "sprites for assist trophies"). All six count as "used", or every boss
     // render, thrown thing, pose, item and cameo would look like dead weight -- and a stray file in items/
-    // that ITEM_ART does not name, or a render no assist wears, still fails here.
+    // that ITEM_ART does not name, or a render no assist wears, still fails here. Steve Cobs's prize (OJ, Suitcase, Cabby)
+    // keeps its renders in PRIZE_KIT.SPRITES until he is beaten ("3, but only after you beat cobs."), so that table counts too.
     const referenced = new Set(
       w.eval(`Object.keys(SPRITES).map(function(k){ return SPRITES[k].src||''; })
               .concat(Object.keys(BOSS_SPRITE_SRC).map(function(k){ return BOSS_SPRITE_SRC[k]; }))
@@ -141,6 +142,7 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
                 if(e.poses) vals = vals.concat(Object.keys(e.poses).map(function(p){ return e.poses[p]; }));
                 vals.forEach(function(v){ if(v && typeof v === 'object' && typeof v.src === 'string') a.push(v.src); }); return a; }, []))
               .concat(Object.keys(ITEM_ART).map(function(k){ return ITEM_ART[k].src; }))
+              .concat(Object.keys(PRIZE_KIT.SPRITES).map(function(k){ return PRIZE_KIT.SPRITES[k].src; }))
               .filter(Boolean)`)
         .map(src => `${PUBLISH_ROOT}/${src}`.replace(/\\/g, '/')));
     const orphans = published.map(f => f.replace(/\\/g, '/')).filter(f => !referenced.has(f));
