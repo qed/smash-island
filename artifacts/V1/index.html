@@ -615,6 +615,15 @@
           <button class="btn ghost sm" id="musicToggle" onclick="toggleMusic()">🎵 Music: On</button>
         </div>
       </div>
+      <!-- "Screen shake: Add a toggle" (the owner, 2026-09-29): on by default, off here. toggleShake() flips it and
+           syncShakeToggle() labels it; it is saved like the music switch (SHAKE_PREF_KEY). -->
+      <div class="optgrp">
+        <div class="optlabel">Screen</div>
+        <div class="row">
+          <button class="btn ghost sm" id="shakeToggle" onclick="toggleShake()">📳 Screen shake: On</button>
+        </div>
+        <div class="opthint">Heavy hits shake the screen. Turn it off to keep the picture still.</div>
+      </div>
       <div class="optgrp">
         <div class="optlabel">Controls</div>
         <div class="row">
@@ -5389,8 +5398,29 @@ function spawnBossRushBoss(){
   const nFighters = fighters.filter(f=>!f.dead).length || 1;
   const hp = Math.round((b.hp||130) * (1 + (nFighters-1)*0.6));
   BOSS_ARENA = b.arena || null;   // set the custom arena backdrop for this boss
-  summons.push(makeBossSummon(b, hp));
+  const boss = makeBossSummon(b, hp);
+  summons.push(boss);
   if(b.attack==="springy") springyDressArena();   // the exit room's white spring, a bounce pad on the right edge (SPRINGY.padW)
+  // SPAWN SLOTS (see BOSS SLOTS): dress the arena as the boss arrives -- props into worldPlats, as springyDressArena does.
+  // `b` is the roster row, `boss` the summon just made.
+  // @boss:announcer:begin spawn
+  // @boss:announcer:end spawn
+
+  // @boss:puffball:begin spawn
+  // @boss:puffball:end spawn
+
+  // @boss:firey:begin spawn
+  // @boss:firey:end spawn
+
+  // @boss:swarm:begin spawn
+  // @boss:swarm:end spawn
+
+  // @boss:purpleface:begin spawn
+  // @boss:purpleface:end spawn
+
+  // @boss:dragon:begin spawn
+  // @boss:dragon:end spawn
+
   banner((BOSSRUSH.loop>0?("LOOP "+(BOSSRUSH.loop+1)+" · "):"")+"BOSS: "+b.name+"!", 1600, 'sys');
 }
 // A gauntlet boss from its roster row, at `hp`. Factored out of spawnBossRushBoss so a boss that is NOT a roster row --
@@ -5458,9 +5488,12 @@ function bossRushCheck(){
     // Steve Cobs's buried arrows: one that came up in the gap would hit someone who had already beaten him (his code stays
     // for the secret fight), and everything of Springy's (`springy`): his open holes, his landing mark, a toy still hopping.
     projectiles = projectiles.filter(p=>p.fxTag!=='cookie' && !p.cobsTrap && !p.springy);
-    // Springy's landed boxes and the exit room's spring leave with him, and his ending plays out where he fell
-    // ("Lava, then MeLife revival", the owner's pick: see springyEnding).
-    if(boss.attack==="springy"){ worldPlats = worldPlats.filter(p=>!p._springy); springyEnding(boss); }
+    // EVERY BOSS'S ENDING ("Endings: 'All of them'", the owner, 2026-09-29): its props go and its exit scene plays where it
+    // fell (BOSS_ENDINGS, keyed by its attack). Springy's is "Lava, then MeLife revival", the owner's pick: his landed boxes
+    // and the exit room's spring leave with him, and springyEnding plays. `ending.hold` is how long the scene holds the BOSS
+    // DOWN card and the next boss back; `ending.line` his "We're square.", the one line an ending has.
+    const ending = bossEndingBegin(boss);
+    impactFxClear(true);   // the fight's floor scars fade out with it (impact)
     // MePhone4's hostile assists leave with him. A gameplay rule, not canon: none of them carries over into the
     // 1.5 s gap or the next boss's fight. (updateSummons also drops any add left with no boss standing.)
     for(const m of summons) if(m.hostile) for(let i=0;i<10;i++) puff(m.x, m.y, m.color, 4);
@@ -5471,12 +5504,12 @@ function bossRushCheck(){
     const cap = SETTINGS.stocks;
     const owed = BOSSRUSH.cleared % BOSS_STOCK_EVERY, stockNow = owed === 0;
     fighters.forEach(f=>{ if(!f.dead){ if(stockNow) f.stocks = Math.min(cap, f.stocks+1); f.pct=Math.max(0, f.pct-30); } });
-    // Springy says his line first ("Show it first", the owner, 2026-09-29): "We're square." for a second as he goes down
-    // into his hole, then the BOSS DOWN card, and the next boss waits that second longer so the card keeps its full time.
-    const square = boss.attack==="springy";
+    // An ending with a length holds the card back by it (bossEndingBegin). Springy says his line first ("Show it first", the
+    // owner, 2026-09-29): "We're square." for a second (SPRINGY_SQUARE_MS) as he goes down into his hole, then the BOSS DOWN
+    // card, and the next boss waits that second longer so the card keeps its full time.
     const downCard = ()=>banner(stockNow ? ("BOSS DOWN! +1 stock · Cleared: "+BOSSRUSH.cleared)
                     : ("BOSS DOWN! Cleared: "+BOSSRUSH.cleared+" · stock in "+(BOSS_STOCK_EVERY-owed)), 1700, 'sys');
-    if(square){ banner("We're square.", SPRINGY_SQUARE_MS, 'boss'); setTimeout(()=>{ if(BOSSRUSH.active && running) downCard(); }, SPRINGY_SQUARE_MS); }
+    if(ending.hold > 0){ if(ending.line) banner(ending.line, ending.hold, 'boss'); setTimeout(()=>{ if(BOSSRUSH.active && running) downCard(); }, ending.hold); }
     else downCard();
     if(wasFour){
       // "Victory, then an optional loop": the run stops here with a victory card; Keep Going starts the next loop.
@@ -5489,7 +5522,7 @@ function bossRushCheck(){
     } else {
       BOSSRUSH.bossIdx = (BOSSRUSH.bossIdx+1) % BOSS_ROSTER.length;
     }
-    setTimeout(()=>{ if(BOSSRUSH.active && running) spawnBossRushBoss(); }, 1500 + (square ? SPRINGY_SQUARE_MS : 0));
+    setTimeout(()=>{ if(BOSSRUSH.active && running) spawnBossRushBoss(); }, 1500 + ending.hold);
   }
 }
 function beginMatchNow(){
@@ -5514,6 +5547,7 @@ function beginMatchNow(){
   try{ teamAiResetMatch(); }catch(e){}  // and the team-AI cost guard: call budget is per match
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
   particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null; oneFx=[]; cobsFx=[];
+  impactFxClear();   // no dust, debris or floor scar carries over from the last match (impact)
   try{ shopMatchReset(); }catch(e){}   // Win Tokens: this match's smash tally, KO bursts and quest line start empty
   // BOSS RUSH: all fighters join forces (team 0) and a boss is summoned as the enemy.
   if(SETTINGS.mode==='boss'){
@@ -6992,16 +7026,77 @@ const GROTATO_MINES = Math.round(4*ASSIST_TROPHY_DMG), GROTATO_GAP = 60;
 const BOT_ASSIST = { name:"Bot", color:"#cfe8d8", act:"bot", dur:60*4 };
 const BOT_DMG = 6, BOT_KB = 7, BOT_REACH = 22, BOT_CD = 45;   // a punch every three quarters of a second, in reach of his arms
 const BOT_SPECIAL_CD = 420;   // before SPECIAL_CD_SCALE: a new Bot about every 5.6 s, so he is out four seconds in every five and a half
+// ==== BOSS SLOTS (the boss overhaul, 2026-09-29) =========================================================================
+// The early six are rebuilt by six builders at once, and their work has to merge without a conflict. THE RULE: a builder
+// edits only inside its own markers, and adds nothing outside them. A marker pair is
+//     // @boss:<boss>:begin <slot>        ...the builder's lines...        // @boss:<boss>:end <slot>
+// with <boss> one of (gauntlet order) announcer, puffball (Puffball Speaker Box), firey (Firey Speaker Box), swarm (The Bug
+// Swarm), purpleface (Purple Face), dragon (Purple Dragon). Every slot below has one pair per boss, in that order, each pair
+// on its own lines and a blank line between pairs, so an edit inside one pair never touches a line of another. The slots:
+//   roster     BOSS_ROSTER: the boss's row (its arena key, sprite key...)
+//   extra      BOSS_EXTRA: its second moves, in turn order
+//   rushonly   BOSS_RUSH_ONLY: second moves an item boss never throws
+//   movename   BOSS_MOVE_NAME: a second move's telegraph banner
+//   moves      BOSS_MOVES: the second moves (fired when the wind-up ends)
+//   helpers    free space below BOSS_MOVES for the boss's own constants, tables and functions
+//   spawn      spawnBossRushBoss: dress the arena as it arrives (props into worldPlats, like springyDressArena)
+//   move       updateBossAttack: its own movement -- set `moved = true` to skip the default walk (or return, to skip the frame)
+//   tick       updateBossAttack: every frame after the phase check -- passives, props, rage
+//   tel        updateBossAttack: the wind-up starts -- fix aims, rows and spots now (as springyBeginTelegraph does)
+//   fire       fireBossAttack: the signature attack, all of it, ending in return
+//   gap        bossAtkGap: frames between its attacks
+//   tellen     bossTelLen: the wind-up's length
+//   phase      onBossPhaseChange: one-time effects as a phase starts
+//   phasename  bossPhaseName: its phase names (the Boss Rush card)
+//   telname    bossTelName: its signature's telegraph banner
+//   ending     BOSS_ENDINGS: its exit scene when it is beaten
+//   hazard     BOSS_ARENA_HAZARD: its arena's hazard
+//   netshot    netProjectiles: a shot's own fields a netcode client needs to draw it
+//   net        serializeState's summons: the boss's own fields a client needs
+//   shotdraw   drawProjectile: how its marks, holes and shadows draw (a shot with a `shape` uses PROJ_SHAPE / ATTACK_SPRITES)
+//   fx         draw(): its world-space drawing over the arena and the bosses, under the fighters (Purple Face's stomach)
+//   look       bossLook: which render shows (a phase, a wind-up, a fall)
+//   tell       drawBossSprite: its wind-up tells, drawn round it before its art (the tell is the hitbox)
+//   body       drawBossSprite: its drawn body, before the render loads (keep a `case` for every sprite key it wears)
+//   sky        BOSS_ARENA_SKY: its arena's sky (a new arena key must be here too, or a netcode client drops it)
+//   ground     BOSS_ARENA_GROUND: its arena's ground
+//   decor      drawArenaDecor: its arena's backdrop -- write `if(key==="yourkey"){ ... }`
+//   sprite     BOSS_SPRITE_SRC: its renders
+//   flip       BOSS_SPRITE_FLIP: its renders that face left
+//   shape      PROJ_SHAPE: drawn glyphs for its shots
+//   art        ATTACK_SPRITES: the show's art for its shots
+// Outside this file: `picks` in scripts/fetch-attack-sprites.mjs and `credits` in assets/sprites/CREDITS.md.
+// The kit every boss shares, no slot needed: impact() for a heavy hit (shake, dust, debris, a floor scar; `landImpact` on a
+// falling shot plays one where it lands), the fall drift on anything dropped from above (FALL_DRIFT), BOSS_ARENA_GROUND,
+// BOSS_ARENA_HAZARD with arenaHazardHit, and BOSS_ENDINGS. test/boss-kit.test.js checks every pair.
 // Bosses (design doc Section 7 — Boss Rush order is intended difficulty order; HP bars, not percent).
 // attack: which telegraphed attack pattern this boss uses. arena: custom stage backdrop key.
 // stationary: boss holds position instead of chasing. sprite: procedural body drawer key.
 const BOSS_ROSTER = [
+  // @boss:announcer:begin roster
   {name:"Announcer",           color:"#3a4a6a", hp:175, big:2.5, attack:"announcer", arena:"studio",  stationary:false, sprite:"announcer"},   // Boss 1
+  // @boss:announcer:end roster
+
+  // @boss:puffball:begin roster
   {name:"Puffball Speaker Box",color:"#c0b0d0", hp:200, big:2.5, attack:"soundwave", arena:"studio",  stationary:false, sprite:"speaker"},     // Boss 2
+  // @boss:puffball:end roster
+
+  // @boss:firey:begin roster
   {name:"Firey Speaker Box",   color:"#d0402a", hp:215, big:2.5, attack:"firewall",  arena:"studio",  stationary:false, sprite:"speakerfirey"},// Boss 3 — its OWN key: it shared "speaker" with Boss 2, so both would have worn the same art
+  // @boss:firey:end roster
+
+  // @boss:swarm:begin roster
   {name:"The Bug Swarm",       color:"#8a3a3a", hp:225, big:2.3, attack:"swarm",     arena:"cave",    stationary:false, sprite:"bug"},         // Boss 4
+  // @boss:swarm:end roster
+
+  // @boss:purpleface:begin roster
   {name:"Purple Face",         color:"#7a3a8a", hp:235, big:2.6, attack:"swallow",   arena:"studio",  stationary:true,  sprite:"face"},        // Boss 5
+  // @boss:purpleface:end roster
+
+  // @boss:dragon:begin roster
   {name:"Purple Dragon",       color:"#6a3a9a", hp:250, big:2.7, attack:"dragon",    arena:"cave",    stationary:false, sprite:"dragon"},      // Boss 6
+  // @boss:dragon:end roster
+
   // Boss 7 -- MePhone4, the Inanimate Insanity host ("mephone should be a boss, alongside 4s, and cobs. mephone should
   // spawn hostile assist trophies."). Before Four, because the loop ends when the boss NAMED Four dies and anything
   // after him is never reached; after the Dragon, so the first boss with adds is met on the stock that clearing Boss 6
@@ -7045,8 +7140,21 @@ function spawnItem(){
   // weight the pool: healing/marmalade common, powerups & throwables medium, assist/yoyle rarer, boss rarest
   const pool = ["heal","heal","marmalade","marmalade","throw","throw","power","power","assist","assist","yoyle","yoyle"];
   const kind = pool[Math.floor(Math.random()*pool.length)];
-  items.push({ kind, x, y:-40, vx:0, vy:0, r: kind==="boss"?0:16, taken:false, life: 60*30, _land:false });
+  items.push(itemFallDrift({ kind, x, y:-40, vx:0, vy:0, r: kind==="boss"?0:16, taken:false, life: 60*30, _land:false }, gy));
   // boss/assist "capsules" resolve on pickup; others sit until grabbed
+}
+// FALL DRIFT for a loose item from the sky (the rule is FALL_DRIFT's, by addProj): it comes down on a slant, FALL_DRIFT px
+// across for every px down, toward the middle of the stage -- nobody threw it -- and still lands on the spot it was rolled
+// for, so its start moves back along the drift. updateItems moves it by the item physics (its vx eases x0.98 a frame) and
+// stops the drift the frame it lands. No dice: the item draws exactly what it drew before.
+function itemFallDrift(it, gy){
+  const land = gy - (it.r||0), dir = it.x < WW*0.5 ? 1 : -1;
+  let y = it.y, vy = it.vy||0, t = 0, sum = 0, k = 1;
+  while(y <= land && t < 600){ vy += 0.5; y += vy; sum += k; k *= 0.98; t++; }
+  if(!(sum > 0) || !(land > it.y)) return it;
+  const dist = FALL_DRIFT*(land - it.y);
+  it.vx = dir*dist/sum; it.x -= dir*dist;
+  return it;
 }
 function updateItems(){
   if(!running) return;
@@ -7059,7 +7167,7 @@ function updateItems(){
     if(it.taken) continue;
     it.vy += 0.5; it.y += it.vy; it.x += it.vx; it.vx*=0.98;
     // land on ground
-    if(it.y > gy - it.r){ it.y = gy - it.r; it.vy=0; it._land=true; }
+    if(it.y > gy - it.r){ it.y = gy - it.r; it.vy=0; it.vx=0; it._land=true; }   // landed: the fall's drift stops here (itemFallDrift)
     it.life--;
     // pickup: any living fighter overlapping grabs it
     for(const f of fighters){
@@ -7243,7 +7351,6 @@ function updateBossAttack(s, tgt){
   if(s.attack==="one"){ updateOne(s, tgt); return; }   // One runs her own phases, rotation and movement (see updateOne)
   if(s.attack==="cobsfight"){ updateCobs(s, tgt); return; }   // Steve Cobs, the second secret boss, runs his own tiers, rotation and orbit (see updateCobs)
   const gy=groundY();
-  if(s.attack==="swallow"){ updateSwallow(s); }
   if(s._portal) updateRejectionPortal(s);   // MePhone4's Rejection Portal stays open for a moment after the snap
   // TWO — GROUNDED POWER (design doc: "defeat is only possible while their power is grounded").
   // In phase 3 Two's power ungrounds: they take NO damage until a fighter stands close enough for
@@ -7305,9 +7412,31 @@ function updateBossAttack(s, tgt){
   // landed toys and boxes), and while a slam is in the air he flies it himself: no walk, no phase check, no new wind-up
   // until he is back on the floor (see updateSpringy).
   if(s.attack==="springy" && updateSpringy(s, tgt)) return;
+  // MOVE SLOTS (see BOSS SLOTS): a boss that moves itself does it here and sets `moved`, and the default walk below is
+  // skipped; one that has to skip the whole frame (a slam in the air, as Springy's) returns.
+  let moved = false;
+  // @boss:announcer:begin move
+  // @boss:announcer:end move
+
+  // @boss:puffball:begin move
+  // @boss:puffball:end move
+
+  // @boss:firey:begin move
+  // @boss:firey:end move
+
+  // @boss:swarm:begin move
+  // @boss:swarm:end move
+
+  // @boss:purpleface:begin move
+  // @boss:purpleface:end move
+
+  // @boss:dragon:begin move
+  // @boss:dragon:end move
+
   // movement: mobile bosses actively chase the target; stationary ones slowly shift toward
   // the target's side (so even "anchored" bosses press the player instead of ignoring them).
-  if(s.stationary){
+  if(moved){ /* it moved itself, above */ }
+  else if(s.stationary){
     // drift the home anchor a little toward the target so the boss isn't a sitting statue
     if(tgt){ const want = clamp(tgt.x, WW*0.2, WW*0.8); s.homeX += (want - s.homeX)*0.02; }
     s.x += (s.homeX - s.x)*0.05;
@@ -7337,8 +7466,30 @@ function updateBossAttack(s, tgt){
     s._phase = newPhase;
     onBossPhaseChange(s, newPhase);   // announce + apply per-boss phase behavior
   }
+  // The arena's hazard, while its Boss Rush boss stands (BOSS_ARENA_HAZARD; none yet).
+  if(s._bossRush) arenaHazardStep(s, tgt);
+  s._rage = false;   // a boss's own tick raises it (Firey Speaker Box's rage mode, below)
+  // TICK SLOTS (see BOSS SLOTS): every frame, after the phase check and before the wind-up counts down.
+  // @boss:announcer:begin tick
+  // @boss:announcer:end tick
+
+  // @boss:puffball:begin tick
+  // @boss:puffball:end tick
+
+  // @boss:firey:begin tick
   // Firey Speaker Box: rage mode in the final phase — attacks come faster and hotter
-  s._rage = (s.attack==="firewall" && s._phase>=3);
+  if(s.attack==="firewall" && s._phase>=3) s._rage = true;
+  // @boss:firey:end tick
+
+  // @boss:swarm:begin tick
+  // @boss:swarm:end tick
+
+  // @boss:purpleface:begin tick
+  if(s.attack==="swallow"){ updateSwallow(s); }   // whoever AD BREAK swallowed is held in the stomach (updateSwallow)
+  // @boss:purpleface:end tick
+
+  // @boss:dragon:begin tick
+  // @boss:dragon:end tick
 
   // telegraph in progress → flash, then fire when it hits 0
   if(s._tel>0){
@@ -7376,26 +7527,27 @@ function updateBossAttack(s, tgt){
     if(s.attack==="mephone4s") s4BeginTelegraph(s, tgt);   // gun or car, and whom the gun is drawn on (before the banner names it)
     if(s.attack==="cobs") cobsBeginTelegraph(s);            // the Contraption or SCREEN CRACKER, fixed now so a phase change cannot swap it
     if(s.attack==="springy") springyBeginTelegraph(s, tgt); // the phase-2 blink, the punch's rows, the box's spot -- fixed now, and drawn as the tell
+    // TEL SLOTS (see BOSS SLOTS): the wind-up starts -- `s._telKind` is this turn's move and `s._telPh` its phase.
+    // @boss:announcer:begin tel
+    // @boss:announcer:end tel
+
+    // @boss:puffball:begin tel
+    // @boss:puffball:end tel
+
+    // @boss:firey:begin tel
+    // @boss:firey:end tel
+
+    // @boss:swarm:begin tel
+    // @boss:swarm:end tel
+
+    // @boss:purpleface:begin tel
+    // @boss:purpleface:end tel
+
+    // @boss:dragon:begin tel
+    // @boss:dragon:end tel
+
     banner(bossTelName(s), 700, 'boss');
   }
-}
-function budgetCutPlatform(){
-  if(!worldPlats.length) return;
-  // a platform is "occupied" if a living fighter is standing on it or hovering just above it
-  const occupied = (p) => fighters.some(f=>{
-    if(f.dead) return false;
-    const onX = f.x > p.x - 20 && f.x < p.x + p.w + 20;                // within the platform span (+margin)
-    const nearY = f.y + f.r > p.y - 60 && f.y + f.r < p.y + p.h + 30;  // resting on or just above it
-    return onX && nearY;
-  });
-  // never delete the last platform — always leave something to stand on
-  const removable = worldPlats.filter(p => !occupied(p));
-  if(removable.length <= 0 || worldPlats.length <= 1) return;
-  const victim = removable[Math.floor(Math.random()*removable.length)];
-  // dramatic crumble effect at the platform, then remove it
-  for(let i=0;i<16;i++) puff(victim.x + Math.random()*victim.w, victim.y, '#8a7a4a', 5);
-  worldPlats = worldPlats.filter(p => p !== victim);
-  banner("BUDGET CUT!", 700, 'sys');
 }
 function bossAtkGap(s){
   // Evil Leafy keeps her existing (fair) pacing — every other boss presses harder.
@@ -7403,6 +7555,25 @@ function bossAtkGap(s){
   if(s.attack==="cobs") return COBS.gaps[Math.min(3, s._phase||1)];   // Steve Cobs has his own (see COBS)
   if(s.attack==="springy") return SPRINGY.gaps[Math.min(3, s._phase||1)];   // and so does Springy (see SPRINGY): his slam is long in the air
   if(s.attack==="mephone") return MEPHONE_GAPS[Math.min(3, s._phase||1)];   // and so does MePhone4 (see MEPHONE_GAPS)
+  // GAP SLOTS (see BOSS SLOTS): a boss with its own pacing returns it here.
+  // @boss:announcer:begin gap
+  // @boss:announcer:end gap
+
+  // @boss:puffball:begin gap
+  // @boss:puffball:end gap
+
+  // @boss:firey:begin gap
+  // @boss:firey:end gap
+
+  // @boss:swarm:begin gap
+  // @boss:swarm:end gap
+
+  // @boss:purpleface:begin gap
+  // @boss:purpleface:end gap
+
+  // @boss:dragon:begin gap
+  // @boss:dragon:end gap
+
   let g = s._phase===3 ? 52 : (s._phase===2 ? 72 : 100);   // was 70/95/130
   if(s._rage) g=42;
   return g;
@@ -7441,16 +7612,53 @@ function onBossPhaseChange(s, ph){
   // gets here. Phase 2 needs no one-time effect: the blink and the ELECTRIC FENCE read the phase (springyBeginTelegraph,
   // updateSpringy).
   if(s.attack==="springy" && ph>=3){ s._quakeT = SPRINGY.quake; const t = springyNearest(s.x); if(t) springyHole(clamp(t.x, 60, WW - 60), 3, ++BOSS_ATK_ID); }
+  // PHASE SLOTS (see BOSS SLOTS): one-time effects as phase `ph` starts (the flash, the shake and the card are above).
+  // @boss:announcer:begin phase
+  // @boss:announcer:end phase
+
+  // @boss:puffball:begin phase
+  // @boss:puffball:end phase
+
+  // @boss:firey:begin phase
+  // @boss:firey:end phase
+
+  // @boss:swarm:begin phase
+  // @boss:swarm:end phase
+
+  // @boss:purpleface:begin phase
+  // @boss:purpleface:end phase
+
+  // @boss:dragon:begin phase
+  // @boss:dragon:end phase
+
 }
 function bossPhaseName(s, ph){
   const A = s.attack;
   const P = {
+    // @boss:announcer:begin phasename
     announcer:  {2:"Budget Cuts", 3:"Crusher Arm"},
+    // @boss:announcer:end phasename
+
+    // @boss:puffball:begin phasename
     soundwave:  {2:"Double Speakers", 3:"Feedback Overload"},
+    // @boss:puffball:end phasename
+
+    // @boss:firey:begin phasename
     firewall:   {2:"Flame Surge", 3:"RAGE MODE"},
+    // @boss:firey:end phasename
+
+    // @boss:swarm:begin phasename
     swarm:      {2:"Second Wave", 3:"Swarm Frenzy"},
+    // @boss:swarm:end phasename
+
+    // @boss:purpleface:begin phasename
     swallow:    {2:"Ad Overload", 3:"Segment Split"},
+    // @boss:purpleface:end phasename
+
+    // @boss:dragon:begin phasename
     dragon:     {2:"Strafing Runs", 3:"Grab & Carry"},
+    // @boss:dragon:end phasename
+
     evilleafy:  {2:"No Refuge", 3:"Vine Coverage"},
     two:        {2:"Size Shift", 3:"Power Ungrounded — ground it to damage them!"},
     four:       {2:"Zap to Dust", 3:"Reality Buckles"},
@@ -7468,14 +7676,55 @@ function bossTelLen(s){
   if(s.attack==="four") return 50;               // the 360-ring still gets a readable wind-up
   if(s.attack==="mephone4s") return 42;          // MePhone4S: the sight follows you, then S4.lock frames locked
   if(s.attack==="springy") return 40;            // Springy compresses for two thirds of a second before he leaves the floor: the "long tell" of the research
+  // TELLEN SLOTS (see BOSS SLOTS): a boss with its own wind-up length returns it here (drawBossSprite's ring reads it too).
+  // @boss:announcer:begin tellen
+  // @boss:announcer:end tellen
+
+  // @boss:puffball:begin tellen
+  // @boss:puffball:end tellen
+
+  // @boss:firey:begin tellen
+  // @boss:firey:end tellen
+
+  // @boss:swarm:begin tellen
+  // @boss:swarm:end tellen
+
+  // @boss:purpleface:begin tellen
+  // @boss:purpleface:end tellen
+
+  // @boss:dragon:begin tellen
+  // @boss:dragon:end tellen
+
   return 36;                                     // other bosses telegraph faster now (was 45)
 }
 
 // SECOND MOVES. Each boss had one attack (with phase variants), so a fight was the same read every time. These are the
 // shared shapes a boss throws between its signature attacks, dressed in its colour; which ones a boss uses is BOSS_EXTRA.
 const BOSS_EXTRA = {
-  "Announcer": ["rain", "ring"], "Puffball Speaker Box": ["slam", "rain"], "Firey Speaker Box": ["rain", "slam"],
-  "The Bug Swarm": ["seekers", "rain"], "Purple Face": ["ring", "rain"], "Purple Dragon": ["slam", "rain"],
+  // @boss:announcer:begin extra
+  "Announcer": ["rain", "ring"],
+  // @boss:announcer:end extra
+
+  // @boss:puffball:begin extra
+  "Puffball Speaker Box": ["slam", "rain"],
+  // @boss:puffball:end extra
+
+  // @boss:firey:begin extra
+  "Firey Speaker Box": ["rain", "slam"],
+  // @boss:firey:end extra
+
+  // @boss:swarm:begin extra
+  "The Bug Swarm": ["seekers", "rain"],
+  // @boss:swarm:end extra
+
+  // @boss:purpleface:begin extra
+  "Purple Face": ["ring", "rain"],
+  // @boss:purpleface:end extra
+
+  // @boss:dragon:begin extra
+  "Purple Dragon": ["slam", "rain"],
+  // @boss:dragon:end extra
+
   "Evil Leafy": ["seekers", "slam"], "Two": ["seekers", "ring"], "Four": ["rain", "seekers"],
   "MePhone4": ["melife", "portal"],   // his own, not the shared shapes: so his turns run glove, MeLife, glove, portal
   "MePhone4S": ["cookies", "chainsaws"],   // his own too: gun, cookies, gun (a car from phase 2), chainsaws
@@ -7485,8 +7734,47 @@ const BOSS_EXTRA = {
 const BOSS_MOVE_NAME = { rain:"INCOMING!", ring:"SHOCK RING!", slam:"GROUND POUND!", seekers:"SEEKERS!",
   melife:"MELIFE DOWNLOAD!", glitch:"GLITCH!", portal:"REJECTION PORTAL!", cookies:"POISONED COOKIES!", chainsaws:"CHAINSAWS!",
   knife:"MEKNIFE!", kernels:"KERNEL STOMP!",
-  longarm:"JUST WANTED A HAND!", boxdrop:"A TOY IN EVERY BOX!" };   // Springy: "I thought you just wanted a hand." (A Jury of Your Fears/Transcript); "Each box claims to have a spring toy in them" (Springtastic)
-const BOSS_RUSH_ONLY = new Set(["melife", "portal", "cookies", "chainsaws"]);   // second moves an item boss never throws (see updateBossAttack)
+  longarm:"JUST WANTED A HAND!", boxdrop:"A TOY IN EVERY BOX!",   // Springy: "I thought you just wanted a hand." (A Jury of Your Fears/Transcript); "Each box claims to have a spring toy in them" (Springtastic)
+  // @boss:announcer:begin movename
+  // @boss:announcer:end movename
+
+  // @boss:puffball:begin movename
+  // @boss:puffball:end movename
+
+  // @boss:firey:begin movename
+  // @boss:firey:end movename
+
+  // @boss:swarm:begin movename
+  // @boss:swarm:end movename
+
+  // @boss:purpleface:begin movename
+  // @boss:purpleface:end movename
+
+  // @boss:dragon:begin movename
+  // @boss:dragon:end movename
+
+};
+const BOSS_RUSH_ONLY = new Set([   // second moves an item boss never throws (see updateBossAttack)
+  "melife", "portal", "cookies", "chainsaws",
+  // @boss:announcer:begin rushonly
+  // @boss:announcer:end rushonly
+
+  // @boss:puffball:begin rushonly
+  // @boss:puffball:end rushonly
+
+  // @boss:firey:begin rushonly
+  // @boss:firey:end rushonly
+
+  // @boss:swarm:begin rushonly
+  // @boss:swarm:end rushonly
+
+  // @boss:purpleface:begin rushonly
+  // @boss:purpleface:end rushonly
+
+  // @boss:dragon:begin rushonly
+  // @boss:dragon:end rushonly
+
+]);
 // MePhone4S (Boss 9). One table, so the tuning and the tests read the same numbers.
 //   lock      frames the sight stays locked before the shot (the last part of the 42-frame wind-up). 18, was 14: backing
 //             off from anyone who walks up made him press harder, and more time on a locked sight is the fairest give-back
@@ -7499,7 +7787,8 @@ const BOSS_RUSH_ONLY = new Set(["melife", "portal", "cookies", "chainsaws"]);   
 //   cookieGap the spacing of the five cookies; spikeGap the spacing of the phase-3 platform spikes
 const S4 = { lock:18, bullet:18, gunKb:12, spread:0.07, standoff:180, backoff:100, car:14, carKb:11, carDelay:30, carGap:50,
              fuse:240, poison:110, collapse:30, cookieGap:90, spikeGap:40 };
-function bossShot(s, o){ return Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:bossDmg()*0.8, kb:8, r:11, color:s.color, life:120, noAim:true }, o); }
+// _dropFace/_dropVx: the way he faced and moved as he threw it -- a DROP of his drifts that way as it falls (FALL_DRIFT).
+function bossShot(s, o){ return Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:bossDmg()*0.8, kb:8, r:11, color:s.color, life:120, noAim:true, _dropFace:s.face, _dropVx:s.vx }, o); }
 const BOSS_MOVES = {
   // five drops over where the target was when the warning started, each with a shadow on the floor
   rain(s, tgt){ const id = ++BOSS_ATK_ID, cx = s._telX != null ? s._telX : (tgt ? tgt.x : s.x);
@@ -7592,7 +7881,105 @@ const BOSS_MOVES = {
       springyDrop(s, x, kinds[(s._boxN = (s._boxN||0) + 1) % kinds.length], id);
     }
     s._boxX = null; },
+  // MOVES SLOTS (see BOSS SLOTS): a second move is `key(s, tgt){ ... }`, named in BOSS_MOVE_NAME and listed in BOSS_EXTRA.
+  // Every part of one move shares one attack id (++BOSS_ATK_ID), so the whole move is at most one boss hit.
+  // @boss:announcer:begin moves
+  // @boss:announcer:end moves
+
+  // @boss:puffball:begin moves
+  // @boss:puffball:end moves
+
+  // @boss:firey:begin moves
+  // @boss:firey:end moves
+
+  // @boss:swarm:begin moves
+  // @boss:swarm:end moves
+
+  // @boss:purpleface:begin moves
+  // @boss:purpleface:end moves
+
+  // @boss:dragon:begin moves
+  // @boss:dragon:end moves
+
 };
+// ---- THE EARLY SIX: each boss's own helpers (the HELPERS slots, see BOSS SLOTS) ------------------------------------------
+// Free space for a boss's constants, tables and functions. What is here already is that boss's own: the Announcer's budget
+// cut, and Purple Face's stomach for AD BREAK (the stomach itself is drawn in his FX slot, in draw()).
+// @boss:announcer:begin helpers
+function budgetCutPlatform(){
+  if(!worldPlats.length) return;
+  // a platform is "occupied" if a living fighter is standing on it or hovering just above it
+  const occupied = (p) => fighters.some(f=>{
+    if(f.dead) return false;
+    const onX = f.x > p.x - 20 && f.x < p.x + p.w + 20;                // within the platform span (+margin)
+    const nearY = f.y + f.r > p.y - 60 && f.y + f.r < p.y + p.h + 30;  // resting on or just above it
+    return onX && nearY;
+  });
+  // never delete the last platform — always leave something to stand on
+  const removable = worldPlats.filter(p => !occupied(p));
+  if(removable.length <= 0 || worldPlats.length <= 1) return;
+  const victim = removable[Math.floor(Math.random()*removable.length)];
+  // dramatic crumble effect at the platform, then remove it
+  for(let i=0;i<16;i++) puff(victim.x + Math.random()*victim.w, victim.y, '#8a7a4a', 5);
+  worldPlats = worldPlats.filter(p => p !== victim);
+  banner("BUDGET CUT!", 700, 'sys');
+}
+// @boss:announcer:end helpers
+
+// @boss:puffball:begin helpers
+// @boss:puffball:end helpers
+
+// @boss:firey:begin helpers
+// @boss:firey:end helpers
+
+// @boss:swarm:begin helpers
+// @boss:swarm:end helpers
+
+// @boss:purpleface:begin helpers
+// Purple Face SWALLOW: grab the nearest fighter into a stomach zone. They take 10%/sec there and
+// must deal 50 damage to the exposed tongue to be spat back out.
+const STOMACH = { x: 0, y: 0, r: 120 };   // recomputed at swallow time
+function fireSwallow(s, tgt, atkId){
+  if(!tgt) return;
+  // find the actual fighter object matching the target snapshot
+  let victim=null, best=1e9;
+  for(const f of fighters){ if(f.dead||f._swallow>0) continue; const d=Math.hypot(f.x-s.x,f.y-s.y); if(d<best){best=d;victim=f;} }
+  if(!victim) return;
+  STOMACH.x = clamp(s.x, 200, WW-200); STOMACH.y = groundY() - 140; STOMACH.r = 120;
+  victim._swallow = 60*8;            // up to 8 seconds trapped (or until they free themselves)
+  victim._swallowTick = 0;
+  victim.x = STOMACH.x; victim.y = STOMACH.y;
+  s._tongueHp = 50;                  // 50 damage to the tongue frees the victim
+  s._tongueX = STOMACH.x; s._tongueY = STOMACH.y - 30;
+  for(let i=0;i<20;i++) puff(victim.x,victim.y,'#7a3a8a',6);   // no "SWALLOWED!" line ("Remove them all"): the stomach zone and the tongue are drawn
+}
+// Called each frame from updateBossAttack for Purple Face.
+function updateSwallow(s){
+  const trapped = fighters.filter(f=>!f.dead && f._swallow>0);
+  if(!trapped.length){ s._tongueHp=0; return; }
+  for(const f of trapped){
+    f._swallow--;
+    // pin the victim inside the stomach zone
+    f.x += (STOMACH.x - f.x)*0.15; f.y += (STOMACH.y - f.y)*0.15;
+    // 10% per second of stomach acid
+    f._swallowTick=(f._swallowTick||0)+1;
+    if(f._swallowTick>=60){ f._swallowTick=0; f.pct += 10; }
+    // the victim's own attacks chip the tongue (tracked via _tongueHit flag set in applyHit-adjacent)
+    if(f._swallow<=0){ freeFromStomach(f); }
+  }
+  // keep the tongue positioned; if beaten, free everyone
+  if(s._tongueHp<=0){ for(const f of trapped) freeFromStomach(f); }
+}
+function freeFromStomach(f){
+  f._swallow=0; f.invuln=Math.max(f.invuln,40);
+  f.x=clamp(f.x,120,WW-120); f.y=groundY()-f.r-40; f.vy=-8;
+  for(let i=0;i<12;i++) puff(f.x,f.y,'#7a3a8a',5);   // no "Spat out!" line ("Remove them all"); the puffs say it
+}
+// @boss:purpleface:end helpers
+
+// @boss:dragon:begin helpers
+// @boss:dragon:end helpers
+
 // ---- MEPHONE4 (Boss 7) ----------------------------------------------------------------------------------------------
 // "mephone should be a boss, alongside 4s, and cobs. mephone should spawn hostile assist trophies." The II wiki files
 // him under Heroes: he is the host, so every attack is a power the wiki gives the host -- the Fist Thingy (his
@@ -8128,16 +8515,129 @@ function springyLook(s){
   if(s._tel > 0 && (s._phase||1) >= 2) return "springyangry";
   return "springy";
 }
+// ---- BOSS ENDINGS ------------------------------------------------------------------------------------------------------
+// "Endings: 'All of them' -- every boss gets a short canon exit scene when beaten, no text (Springy's line is the one
+// exception)" (the owner, 2026-09-29). Keyed by the boss's `attack`. When a Boss Rush boss falls, bossRushCheck calls
+// bossEndingBegin(boss), after the gauntlet's own sweep (cookies, Cobs's arrows, `springy` shots) and before the card:
+//   sweep(b)   optional: take the boss's props away first (its platforms, marks, walls)
+//   begin(b)   the scene, where it fell: a summon of its own kind that steps and draws itself (radius 0 and no HP, so no shot
+//              is spent on it and nothing targets it -- Springy's 'springyend'), or shots, or the arena changing
+//   holdMs     how long the scene holds back the BOSS DOWN card, and the next boss with it (1.5 s + holdMs); 0 or none: the
+//              card comes at once, as it always did
+//   line       Springy's alone ("We're square."): shown as the scene starts, for holdMs
+// A scene hurts nobody and is over before the next boss arrives.
+const BOSS_ENDINGS = {
+  // Springy: "Lava, then MeLife revival" (the owner's pick). His landed boxes and the exit room's spring go with him, and he
+  // drops into his hole; his line first, then the card ("Show it first").
+  springy: { sweep(){ worldPlats = worldPlats.filter(p=>!p._springy); }, begin: springyEnding, holdMs: SPRINGY_SQUARE_MS, line: "We're square." },
+  // @boss:announcer:begin ending
+  // @boss:announcer:end ending
+
+  // @boss:puffball:begin ending
+  // @boss:puffball:end ending
+
+  // @boss:firey:begin ending
+  // @boss:firey:end ending
+
+  // @boss:swarm:begin ending
+  // @boss:swarm:end ending
+
+  // @boss:purpleface:begin ending
+  // @boss:purpleface:end ending
+
+  // @boss:dragon:begin ending
+  // @boss:dragon:end ending
+
+};
+// Runs a fallen boss's ending and says how long it holds the card: { hold (ms), line }.
+function bossEndingBegin(b){
+  const E = (b && Object.prototype.hasOwnProperty.call(BOSS_ENDINGS, b.attack)) ? BOSS_ENDINGS[b.attack] : null;
+  if(!E) return { hold:0, line:null };
+  if(typeof E.sweep === 'function') E.sweep(b);
+  if(typeof E.begin === 'function') E.begin(b);
+  return { hold: Math.max(0, Math.round(+E.holdMs || 0)), line: (typeof E.line === 'string' && E.line) ? E.line : null };
+}
+// ---- ARENA HAZARDS -----------------------------------------------------------------------------------------------------
+// The owner, verbatim: "if it makes sense for a hazard, reduce boss difficulty and add a hazard." An arena key may name a
+// hazard -- the lava, the lead-paint lake, the crusher -- as { step(b, H, tgt), draw(b, H, layer) }:
+//   step   once a frame from updateBossAttack, while that arena's Boss Rush boss stands (after its phase check): b the boss,
+//          H its hazard state (b._hz, fresh for every boss; it rides the snapshot to netcode clients as it is, so keep it a
+//          few plain numbers), tgt the fighter it is after
+//   draw   in world space, twice a frame: layer 'under' (after the platforms, under the shots and fighters) and 'over'
+//          (over the fighters, with the particles). b is null between bosses, H then {}
+// A hazard hurts ONLY through arenaHazardHit: a boss hit of bossDmg() x frac, carrying an attack id, so applyHit's per-attack
+// cap holds -- one id for one burst (a lava flare, a crusher drop) is at most one boss hit however long you stand in it.
+const BOSS_ARENA_HAZARD = {
+  // @boss:announcer:begin hazard
+  // @boss:announcer:end hazard
+
+  // @boss:puffball:begin hazard
+  // @boss:puffball:end hazard
+
+  // @boss:firey:begin hazard
+  // @boss:firey:end hazard
+
+  // @boss:swarm:begin hazard
+  // @boss:swarm:end hazard
+
+  // @boss:purpleface:begin hazard
+  // @boss:purpleface:end hazard
+
+  // @boss:dragon:begin hazard
+  // @boss:dragon:end hazard
+
+};
+function arenaHazardOf(key){ return (typeof key === 'string' && Object.prototype.hasOwnProperty.call(BOSS_ARENA_HAZARD, key)) ? BOSS_ARENA_HAZARD[key] : null; }
+function arenaHazardStep(b, tgt){
+  const H = arenaHazardOf(BOSS_ARENA);
+  if(!H || typeof H.step !== 'function' || !b || !(b.hp > 0)) return;
+  if(!b._hz || typeof b._hz !== 'object') b._hz = {};
+  H.step(b, b._hz, tgt);
+}
+function drawArenaHazard(layer){
+  const H = arenaHazardOf(BOSS_ARENA);
+  if(!H || typeof H.draw !== 'function') return;
+  const b = summons.find(s=>s.type==="boss" && s._bossRush) || null;
+  ctx.save(); H.draw(b, (b && b._hz) || {}, layer); ctx.restore();
+}
+// The one way a hazard hurts: a boss hit through applyHit, bossDmg() x frac, under attack id `id` (a new one if none is
+// given). A fighter in their grace is skipped, as every boss hit skips them. True when it landed.
+function arenaHazardHit(f, frac, kbx, kby, id){
+  if(!f || f.dead || f.invuln > 0) return false;
+  const before = f.pct;
+  applyHit(f, bossDmg()*(+frac || 0), kbx || 0, kby || 0, null, { bossAtk: id != null ? id : ++BOSS_ATK_ID });
+  return f.pct > before;
+}
 function bossTelName(s){
   if(s._telKind && s._telKind !== s.attack && BOSS_MOVE_NAME[s._telKind]) return BOSS_MOVE_NAME[s._telKind];
   if(s.attack==="four") return s._phase===2 ? "SCREECHY!!" : "SCREECHY!";
-  if(s.attack==="announcer") return s._phase===2 ? "BUDGET CUTS!" : "CAKE AT STAKE!";
-  if(s.attack==="evilleafy") return "TENDRILS!";
+  // TELNAME SLOTS (see BOSS SLOTS): the signature's banner.
+  // @boss:announcer:begin telname
+  // Phase 3 is CRUSHER ARM (fireBossAttack); its banner said "CAKE AT STAKE!" (boss-plan-early.md 2.1).
+  if(s.attack==="announcer") return (s._phase||1) >= 3 ? "CRUSHER ARM!" : (s._phase===2 ? "BUDGET CUTS!" : "CAKE AT STAKE!");
+  // @boss:announcer:end telname
+
+  // @boss:puffball:begin telname
   if(s.attack==="soundwave") return "SONIC BLAST!";
+  // @boss:puffball:end telname
+
+  // @boss:firey:begin telname
   if(s.attack==="firewall") return s._rage ? "RAGE FLAMES!" : "FIRE WALL!";
+  // @boss:firey:end telname
+
+  // @boss:swarm:begin telname
   if(s.attack==="swarm") return "SWARM WAVE!";
+  // @boss:swarm:end telname
+
+  // @boss:purpleface:begin telname
   if(s.attack==="swallow") return "AD BREAK!";
+  // @boss:purpleface:end telname
+
+  // @boss:dragon:begin telname
   if(s.attack==="dragon") return "STRAFING RUN!";
+  // @boss:dragon:end telname
+
+  if(s.attack==="evilleafy") return "TENDRILS!";
   if(s.attack==="two") return "MIND READ!";
   if(s.attack==="mephone") return (s._telPh || s._phase) >= 2 ? "FIST THINGY COMBO!" : "FIST THINGY!";   // the phase it will fire in (_telPh)
   if(s.attack==="mephone4s") return s._s4Car ? "I'LL BE BACK!" : "PUT THAT COOKIE DOWN!";
@@ -8148,6 +8648,134 @@ function bossTelName(s){
 function fireBossAttack(s, tgt){
   const gy=groundY();
   const atkId = ++BOSS_ATK_ID;   // one shared ID for this whole attack (caps stacked damage)
+  // FIRE SLOTS (see BOSS SLOTS): each boss's signature, whole, ending in return. `atkId` is this attack's one id.
+  // @boss:announcer:begin fire
+  if(s.attack==="announcer"){
+    const ph=s._phase||1;
+    if(ph>=3){
+      // PHASE 3 — CRUSHER ARM (design doc): a fast slam directly onto the target's position, with
+      // a shockwave. Distinct attack, not just "more cakes". A piston driven straight down, not a fall: noDrift.
+      if(tgt){
+        const bx=tgt.x;
+        dropProj({idx:-2,face:1,x:bx,y:0}, bx, gy,
+          {vx:0,vy:26,grav:false,dmg:bossDmg(),kb:16,r:34,color:'#5a6a8a',life:40,ownerObj:{team:-1,idx:-2},owner:-2,bossAtk:atkId,noDrift:true}, false);
+        // ground shockwave rolling both ways from the impact
+        for(const dir of [-1,1]){
+          addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:bx, y:gy-12, bossAtk:atkId,
+            vx:dir*10, vy:0, grav:false, dmg:bossDmg(), kb:12, r:14, color:'#8a9ab0', life:60, noAim:true});
+        }
+        for(let i=0;i<20;i++) puff(bx, gy, '#8a9ab0', 6);
+      }
+      budgetCutPlatform();
+      shake(14);
+    } else {
+      // PHASE 1 — CAKE AT STAKE. PHASE 2 adds BUDGET CUTS on top. He tosses the cakes: they drift the way he faces (the fall drift).
+      const extra = ph>=2 ? 3 : 2;
+      for(const f of fighters){ if(f.dead) continue;
+        for(let k=0;k<extra;k++){
+          dropProj({idx:-2,face:s.face||1,x:s.x,y:0}, f.x + (Math.random()*130-65), gy,
+            {vx:0,vy:13,grav:true,dmg:bossDmg(),kb:11,r:16,color:'#f0c060',life:130,ownerObj:{team:-1,idx:-2},owner:-2,bossAtk:atkId}, false);
+        }
+      }
+      if(ph>=2){ budgetCutPlatform(); }
+      shake(6);
+    }
+    return;
+  }
+  // @boss:announcer:end fire
+
+  // @boss:puffball:begin fire
+  if(s.attack==="soundwave"){
+    // Puffball Speaker Box: sound rings — denser toward the target's side so it presses the player.
+    const ph=s._phase||1;
+    const rows = ph>=3 ? 5 : (ph===2 ? 4 : 3);
+    const tdir = tgt ? (Math.sign(tgt.x - s.x)||1) : 1;
+    const dirs = tgt ? [tdir, tdir, -tdir] : [-1,1];   // two waves toward you, one behind
+    for(let di=0; di<dirs.length; di++){ const dir=dirs[di];
+      for(let h=0;h<rows;h++){
+        addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x, y:s.y - 30 + h*36, bossAtk:atkId,
+          vx:dir*(9.5+h*1.2), vy:0, grav:false, dmg:bossDmg(), kb:9, r:12, color:'#d0c0e0', life:150, noAim:true}); } }
+    // PHASE 3 — HOPPING CRUSH (design doc): she leaps at the target and slams, a melee threat that
+    // punishes camping at range while the rings cover the ground.
+    if(ph>=3 && tgt){
+      s.vy=-16; s.vx=Math.sign(tgt.x-s.x||1)*9;
+      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:tgt.x, y:gy-20, bossAtk:atkId,
+        vx:0, vy:0, grav:false, dmg:bossDmg(), kb:14, r:30, color:'#e0d0f0', life:26, noAim:true});
+      for(let i=0;i<14;i++) puff(tgt.x, gy, '#e0d0f0', 5);
+    }
+    shake(7);
+    return;
+  }
+  // @boss:puffball:end fire
+
+  // @boss:firey:begin fire
+  if(s.attack==="firewall"){
+    // Firey Speaker Box: a wall of flame pillars marching across toward the fighters (they drift the way he faces: the fall drift)
+    const ph=s._phase||1;
+    const dir = tgt ? (Math.sign(tgt.x - s.x)||1) : 1;
+    const n = ph>=3 ? 8 : (ph===2 ? 6 : 5);
+    for(let i=0;i<n;i++){ const px = s.x + dir*(70 + i*76);
+      dropProj({idx:-2,face:s.face||1,x:s.x,y:0}, px, gy, {vx:0,vy:15,grav:true,dmg:bossDmg(),kb:10,r:14,color:'#f0632a',life:120,burn:true,ownerObj:{team:-1,idx:-2},owner:-2,bossAtk:atkId}, false); }
+    // PHASE 3 / RAGE — a rolling flame wave sweeps the floor in both directions (new attack)
+    if(ph>=3){
+      for(const d of [-1,1]){
+        addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x, y:gy-16, bossAtk:atkId,
+          vx:d*11, vy:0, grav:false, dmg:bossDmg(), kb:12, r:18, color:'#ff8a3a', life:90, burn:true, noAim:true});
+      }
+    }
+    shake(6);
+    return;
+  }
+  // @boss:firey:end fire
+
+  // @boss:swarm:begin fire
+  if(s.attack==="swarm"){
+    // The Bug Swarm: a scatter of bugs raining from above, drifting toward the target
+    const ph=s._phase||1;
+    const n = ph>=3 ? 14 : (ph===2 ? 10 : 7);
+    for(let i=0;i<n;i++){ const px = s.x + (Math.random()*500-250); const aimX = tgt ? (tgt.x-px)*0.02 : 0;
+      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:px, y:s.y-120, bossAtk:atkId,
+        vx:aimX*4 + (Math.random()*2-1), vy:6.5+Math.random()*2.5, grav:false, dmg:bossDmg(), kb:6, r:7, color:'#8a3a3a', life:130, noAim:true}); }
+    // PHASE 2+ — SWARM ALPHA (design doc): a bigger, homing bug that hunts you down.
+    if(ph>=2 && tgt){
+      const a=Math.atan2(tgt.y-(s.y-100), tgt.x-s.x);
+      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x, y:s.y-100, bossAtk:atkId,
+        vx:Math.cos(a)*7, vy:Math.sin(a)*7, grav:false, dmg:bossDmg(), kb:11, r:15, color:'#c04a3a',
+        life:150, noAim:true, homing:ph>=3?0.075:0.045});
+      banner("SWARM ALPHA!",600,'boss');
+    }
+    return;
+  }
+  // @boss:swarm:end fire
+
+  // @boss:purpleface:begin fire
+  if(s.attack==="swallow"){
+    fireSwallow(s, tgt, atkId);
+    return;
+  }
+  // @boss:purpleface:end fire
+
+  // @boss:dragon:begin fire
+  if(s.attack==="dragon"){
+    // Purple Dragon: a cone of flame breath aimed straight at the target (not just facing direction).
+    const ph=s._phase||1;
+    const baseAng = tgt ? Math.atan2(tgt.y-(s.y-10), tgt.x-s.x) : (s.face>0?0:Math.PI);
+    const cone = ph>=3 ? 13 : (ph===2 ? 11 : 9);
+    for(let i=0;i<cone;i++){ const ang = baseAng + (i-(cone-1)/2)*0.10;
+      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x+(s.face||1)*s.r, y:s.y-10, bossAtk:atkId,
+        vx:Math.cos(ang)*12, vy:Math.sin(ang)*12, grav:false, dmg:bossDmg(), kb:8, r:9, color:'#b06ad0', life:70, burn:true, noAim:true}); }
+    // PHASE 3 — GRAB & CARRY (design doc): a strafing pass that hurls the target toward the blast zone.
+    if(ph>=3 && tgt && Math.hypot(tgt.x-s.x,tgt.y-s.y) < s.r+150){
+      const away = Math.sign(tgt.x - WW/2)||1;
+      applyHit(tgt, bossDmg()*0.6, away*14, -9, null, {bossAtk:atkId});   // 22 threw anyone into the blast zone: 2.25 stocks a try at 59% taken
+      banner("GRAB & CARRY!",800,'boss');
+      for(let i=0;i<12;i++) puff(tgt.x,tgt.y,'#b06ad0',5);
+    }
+    shake(6);
+    return;
+  }
+  // @boss:dragon:end fire
+
   if(s.attack==="four"){
     // Four alternates SCREECHY (bullet ring) with a ZAP-TO-DUST beam (canon: zapped Pin to dust).
     s._fourAlt = !s._fourAlt;
@@ -8180,114 +8808,11 @@ function fireBossAttack(s, tgt){
       for(let i=0;i<24;i++) puff(s.x,s.y,'#7ad0ff',6); shake(12);
     }
   }
-  else if(s.attack==="announcer"){
-    const ph=s._phase||1;
-    if(ph>=3){
-      // PHASE 3 — CRUSHER ARM (design doc): a fast slam directly onto the target's position, with
-      // a shockwave. Distinct attack, not just "more cakes".
-      if(tgt){
-        const bx=tgt.x;
-        dropProj({idx:-2,face:1,x:bx,y:0}, bx, gy,
-          {vx:0,vy:26,grav:false,dmg:bossDmg(),kb:16,r:34,color:'#5a6a8a',life:40,ownerObj:{team:-1,idx:-2},owner:-2,bossAtk:atkId}, false);
-        // ground shockwave rolling both ways from the impact
-        for(const dir of [-1,1]){
-          addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:bx, y:gy-12, bossAtk:atkId,
-            vx:dir*10, vy:0, grav:false, dmg:bossDmg(), kb:12, r:14, color:'#8a9ab0', life:60, noAim:true});
-        }
-        for(let i=0;i<20;i++) puff(bx, gy, '#8a9ab0', 6);
-      }
-      budgetCutPlatform();
-      shake(14);
-    } else {
-      // PHASE 1 — CAKE AT STAKE. PHASE 2 adds BUDGET CUTS on top.
-      const extra = ph>=2 ? 3 : 2;
-      for(const f of fighters){ if(f.dead) continue;
-        for(let k=0;k<extra;k++){
-          dropProj({idx:-2,face:1,x:f.x,y:0}, f.x + (Math.random()*130-65), gy,
-            {vx:0,vy:13,grav:true,dmg:bossDmg(),kb:11,r:16,color:'#f0c060',life:130,ownerObj:{team:-1,idx:-2},owner:-2,bossAtk:atkId}, false);
-        }
-      }
-      if(ph>=2){ budgetCutPlatform(); }
-      shake(6);
-    }
-  }
   else if(s.attack==="evilleafy"){
     // TENDRILS (late-BFDIA): reaching vines sweep up from the ground toward fighters.
     for(const f of fighters){ if(f.dead) continue;
       spawnTendril(f.x + (Math.random()*120-60), atkId);
     }
-  }
-  else if(s.attack==="soundwave"){
-    // Puffball Speaker Box: sound rings — denser toward the target's side so it presses the player.
-    const ph=s._phase||1;
-    const rows = ph>=3 ? 5 : (ph===2 ? 4 : 3);
-    const tdir = tgt ? (Math.sign(tgt.x - s.x)||1) : 1;
-    const dirs = tgt ? [tdir, tdir, -tdir] : [-1,1];   // two waves toward you, one behind
-    for(let di=0; di<dirs.length; di++){ const dir=dirs[di];
-      for(let h=0;h<rows;h++){
-        addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x, y:s.y - 30 + h*36, bossAtk:atkId,
-          vx:dir*(9.5+h*1.2), vy:0, grav:false, dmg:bossDmg(), kb:9, r:12, color:'#d0c0e0', life:150, noAim:true}); } }
-    // PHASE 3 — HOPPING CRUSH (design doc): she leaps at the target and slams, a melee threat that
-    // punishes camping at range while the rings cover the ground.
-    if(ph>=3 && tgt){
-      s.vy=-16; s.vx=Math.sign(tgt.x-s.x||1)*9;
-      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:tgt.x, y:gy-20, bossAtk:atkId,
-        vx:0, vy:0, grav:false, dmg:bossDmg(), kb:14, r:30, color:'#e0d0f0', life:26, noAim:true});
-      for(let i=0;i<14;i++) puff(tgt.x, gy, '#e0d0f0', 5);
-    }
-    shake(7);
-  }
-  else if(s.attack==="firewall"){
-    // Firey Speaker Box: a wall of flame pillars marching across toward the fighters
-    const ph=s._phase||1;
-    const dir = tgt ? (Math.sign(tgt.x - s.x)||1) : 1;
-    const n = ph>=3 ? 8 : (ph===2 ? 6 : 5);
-    for(let i=0;i<n;i++){ const px = s.x + dir*(70 + i*76);
-      dropProj({idx:-2,face:1,x:px,y:0}, px, gy, {vx:0,vy:15,grav:true,dmg:bossDmg(),kb:10,r:14,color:'#f0632a',life:120,burn:true,ownerObj:{team:-1,idx:-2},owner:-2,bossAtk:atkId}, false); }
-    // PHASE 3 / RAGE — a rolling flame wave sweeps the floor in both directions (new attack)
-    if(ph>=3){
-      for(const d of [-1,1]){
-        addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x, y:gy-16, bossAtk:atkId,
-          vx:d*11, vy:0, grav:false, dmg:bossDmg(), kb:12, r:18, color:'#ff8a3a', life:90, burn:true, noAim:true});
-      }
-    }
-    shake(6);
-  }
-  else if(s.attack==="swarm"){
-    // The Bug Swarm: a scatter of bugs raining from above, drifting toward the target
-    const ph=s._phase||1;
-    const n = ph>=3 ? 14 : (ph===2 ? 10 : 7);
-    for(let i=0;i<n;i++){ const px = s.x + (Math.random()*500-250); const aimX = tgt ? (tgt.x-px)*0.02 : 0;
-      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:px, y:s.y-120, bossAtk:atkId,
-        vx:aimX*4 + (Math.random()*2-1), vy:6.5+Math.random()*2.5, grav:false, dmg:bossDmg(), kb:6, r:7, color:'#8a3a3a', life:130, noAim:true}); }
-    // PHASE 2+ — SWARM ALPHA (design doc): a bigger, homing bug that hunts you down.
-    if(ph>=2 && tgt){
-      const a=Math.atan2(tgt.y-(s.y-100), tgt.x-s.x);
-      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x, y:s.y-100, bossAtk:atkId,
-        vx:Math.cos(a)*7, vy:Math.sin(a)*7, grav:false, dmg:bossDmg(), kb:11, r:15, color:'#c04a3a',
-        life:150, noAim:true, homing:ph>=3?0.075:0.045});
-      banner("SWARM ALPHA!",600,'boss');
-    }
-  }
-  else if(s.attack==="dragon"){
-    // Purple Dragon: a cone of flame breath aimed straight at the target (not just facing direction).
-    const ph=s._phase||1;
-    const baseAng = tgt ? Math.atan2(tgt.y-(s.y-10), tgt.x-s.x) : (s.face>0?0:Math.PI);
-    const cone = ph>=3 ? 13 : (ph===2 ? 11 : 9);
-    for(let i=0;i<cone;i++){ const ang = baseAng + (i-(cone-1)/2)*0.10;
-      addProj({owner:-2, ownerObj:{team:-1,idx:-2}, x:s.x+(s.face||1)*s.r, y:s.y-10, bossAtk:atkId,
-        vx:Math.cos(ang)*12, vy:Math.sin(ang)*12, grav:false, dmg:bossDmg(), kb:8, r:9, color:'#b06ad0', life:70, burn:true, noAim:true}); }
-    // PHASE 3 — GRAB & CARRY (design doc): a strafing pass that hurls the target toward the blast zone.
-    if(ph>=3 && tgt && Math.hypot(tgt.x-s.x,tgt.y-s.y) < s.r+150){
-      const away = Math.sign(tgt.x - WW/2)||1;
-      applyHit(tgt, bossDmg()*0.6, away*14, -9, null, {bossAtk:atkId});   // 22 threw anyone into the blast zone: 2.25 stocks a try at 59% taken
-      banner("GRAB & CARRY!",800,'boss');
-      for(let i=0;i<12;i++) puff(tgt.x,tgt.y,'#b06ad0',5);
-    }
-    shake(6);
-  }
-  else if(s.attack==="swallow"){
-    fireSwallow(s, tgt, atkId);
   }
   else if(s.attack==="two"){
     // TWO — per design doc: "reads minds (copies your last special back at you), shifts size
@@ -8583,7 +9108,7 @@ function oneDmg(){ return Math.round(BOSS_DMG_BASE*ONE_DMG_MULT); }   // 33: rea
 // clamp "more damage" straight back to 22.
 // Every shot and every hit of hers launches at ONE_KB of what it is written as (the bosses' own numbers).
 function oneShot(s, o){
-  const p = Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:oneDmg()*0.8, bossCap:oneDmg(), kb:8, r:11, color:ONE_AURA[0], life:120, noAim:true }, o);
+  const p = Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:oneDmg()*0.8, bossCap:oneDmg(), kb:8, r:11, color:ONE_AURA[0], life:120, noAim:true, _dropFace:s.face, _dropVx:s.vx }, o);   // the way she threw it, for the fall drift (FALL_DRIFT)
   p.kb = (p.kb || 0) * ONE_KB;
   return p;
 }
@@ -9841,7 +10366,7 @@ function cobsUnits(){ return summons.filter(m=>m.type==="mephoneunit" && m.life 
 // His shots: One's shape (oneShot) with his cap. Every one carries its own bossCap, because applyHit's cap is otherwise the
 // global bossDmg() and would clamp "hitting harder" straight back to 22; and launches at COBS_KB of what it is written as.
 function cobsShot(s, o){
-  const p = Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:cobsDmg()*0.8, bossCap:cobsDmg(), kb:8, r:11, color:COBS_BOSS.color, life:120, noAim:true, cobs:true }, o);
+  const p = Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:cobsDmg()*0.8, bossCap:cobsDmg(), kb:8, r:11, color:COBS_BOSS.color, life:120, noAim:true, cobs:true, _dropFace:s.face, _dropVx:s.vx }, o);   // the way he threw it, for the fall drift (FALL_DRIFT)
   p.kb = (p.kb || 0)*COBS_KB;
   return p;
 }
@@ -10691,46 +11216,6 @@ function drawCobsBar(){
   ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   ctx.restore();
 }
-// Purple Face SWALLOW: grab the nearest fighter into a stomach zone. They take 10%/sec there and
-// must deal 50 damage to the exposed tongue to be spat back out.
-const STOMACH = { x: 0, y: 0, r: 120 };   // recomputed at swallow time
-function fireSwallow(s, tgt, atkId){
-  if(!tgt) return;
-  // find the actual fighter object matching the target snapshot
-  let victim=null, best=1e9;
-  for(const f of fighters){ if(f.dead||f._swallow>0) continue; const d=Math.hypot(f.x-s.x,f.y-s.y); if(d<best){best=d;victim=f;} }
-  if(!victim) return;
-  STOMACH.x = clamp(s.x, 200, WW-200); STOMACH.y = groundY() - 140; STOMACH.r = 120;
-  victim._swallow = 60*8;            // up to 8 seconds trapped (or until they free themselves)
-  victim._swallowTick = 0;
-  victim.x = STOMACH.x; victim.y = STOMACH.y;
-  s._tongueHp = 50;                  // 50 damage to the tongue frees the victim
-  s._tongueX = STOMACH.x; s._tongueY = STOMACH.y - 30;
-  for(let i=0;i<20;i++) puff(victim.x,victim.y,'#7a3a8a',6);   // no "SWALLOWED!" line ("Remove them all"): the stomach zone and the tongue are drawn
-}
-// Called each frame from updateBossAttack for Purple Face.
-function updateSwallow(s){
-  const trapped = fighters.filter(f=>!f.dead && f._swallow>0);
-  if(!trapped.length){ s._tongueHp=0; return; }
-  for(const f of trapped){
-    f._swallow--;
-    // pin the victim inside the stomach zone
-    f.x += (STOMACH.x - f.x)*0.15; f.y += (STOMACH.y - f.y)*0.15;
-    // 10% per second of stomach acid
-    f._swallowTick=(f._swallowTick||0)+1;
-    if(f._swallowTick>=60){ f._swallowTick=0; f.pct += 10; }
-    // the victim's own attacks chip the tongue (tracked via _tongueHit flag set in applyHit-adjacent)
-    if(f._swallow<=0){ freeFromStomach(f); }
-  }
-  // keep the tongue positioned; if beaten, free everyone
-  if(s._tongueHp<=0){ for(const f of trapped) freeFromStomach(f); }
-}
-function freeFromStomach(f){
-  f._swallow=0; f.invuln=Math.max(f.invuln,40);
-  f.x=clamp(f.x,120,WW-120); f.y=groundY()-f.r-40; f.vy=-8;
-  for(let i=0;i<12;i++) puff(f.x,f.y,'#7a3a8a',5);   // no "Spat out!" line ("Remove them all"); the puffs say it
-}
-
 let BOSS_ATK_ID = 0;   // increments each boss attack so multi-projectile attacks share one damage cap
 // Evil Leafy tendril: a vine that grows up from the ground at x, damaging anyone it reaches (once).
 let tendrils=[];
@@ -11787,6 +12272,8 @@ function step(){
       let top = null;
       for(const t of vanTopsAt(pr.x)){ if(pr.warnY!=null && t.y < pr.warnY - 6) continue; if(t.y >= bottomPrev - 1 && t.y <= bottomNow + 1 && (top===null || t.y < top)) top = t.y; }
       if(top !== null){
+        if(pr.warnX != null && Math.abs(pr.x - pr.warnX) < 0.5) pr.x = pr.warnX;   // a drifted drop lands on its shadow to the pixel (FALL_DRIFT)
+        if(pr.landImpact){ impact(pr.x, top, pr.landImpact); pr.landImpact = null; }   // a heavy drop lands heavily: shake, dust, debris, a scar (impact)
         if(pr.landsTrap){ pr.grav=false; pr.vx=0; pr.vy=0; pr.y=top-(pr.r||8)*0.6; pr.landsTrap=false; pr.trap=true; pr.arm=6; pr.life=Math.max(pr.life, 150); puff(pr.x, top, pr.color, 3); }
         else { pr.y = top - (pr.r||8)*0.5; for(let i=0;i<4;i++) puff(pr.x, top-2, pr.color, 3); if(pr.springBox) springyPlaceBox(pr.x, top); if(pr.cobsPane) cobsPlacePane(pr.x, top, pr._paneT); if(pr.cobsKernel) cobsKernelLand(pr, top); pr.life = 0; continue; }   // Springy's box lands as a wall; Steve Cobs's pane as footing, his kernel as a sticky puddle
       }
@@ -11940,6 +12427,7 @@ function step(){
   beams=beams.filter(b=>b.life>0);
   for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }
   particles=particles.filter(p=>p.life>0);
+  stepImpactFx();   // impact's dust, debris and floor scars (render-only)
 
   if(RACE.active) raceTick();   // RUNNING!: the line advances, the sling flies, the pistons pound (see raceTick)
   updateCamera();
@@ -15141,7 +15629,54 @@ function addProj(p){
     p.y = Math.min(p.y, p.ownerObj.y);
     p.falling = true; p.vy = Math.max(p.vy||0, 1); p.grav = false;
   }
+  if(p && p.warnX != null) fallDrift(p);   // a drop comes down on a slant and lands on its shadow (FALL_DRIFT)
   projectiles.push(p);
+  return p;
+}
+// ---- FALL DRIFT ----------------------------------------------------------------------------------------------------------
+// The owner, verbatim: "add momentum to falling objects(they should move horizontaly while falling)"; asked what it covers:
+// "everything. bosses, characters, whatever."; asked which way: "The way it was thrown" -- the way the thrower was facing or
+// moving, not toward the target and never at random. ONE RULE for every DROP in the game -- a shot that comes down from
+// above onto a shadow (warnX, warnY): a boss's sky drop, a fighter's dropped anvil or branch, a smash that rains, a cookie:
+//   - it moves sideways the whole way down, FALL_DRIFT px across for every px it falls -- a steady sideways speed, a fifth
+//     of its average fall speed, so it arcs in like a thing that was thrown;
+//   - the way it was thrown: the way its thrower faced as it threw (_dropFace: dropProj's thrower, bossShot's boss; else
+//     the owner fighter), or for a thrower with no facing, the way it was moving (_dropVx); nobody threw it (an item), toward
+//     the middle of the stage;
+//   - and it still lands exactly where it was aimed: its start moves back along the drift, so the shadow is where it comes
+//     down. A drop that already moves sideways (the Spring! Clone's hop) keeps its own speed, its start moved the same way.
+// Not drops, so untouched: a trap or mine set down to wait (TRAPS FALL, above), a turret, anything that rises or hangs (a
+// mark, a hole, an arrow out of the floor), lobs and shots with no shadow (they move sideways already), and `noDrift` (a
+// piston driven straight down, the Announcer's crusher). Loose items from the sky drift the same way (itemFallDrift). Damage
+// is untouched; a drop's knockback goes the way it is moving, as every shot's does.
+const FALL_DRIFT = 0.2;
+const FALL_DRIFT_KEEP = new Set(["Tree"]);   // Tree is left exactly as he is (a standing rule of this overhaul): his branch drops straight
+// Frames until the drop reaches the surface its shadow is on, by the projectile step's own rules (move, then gravity; a
+// falling shot stops when its bottom reaches the surface, a bouncing one when its centre is 6 px above it). 0: never.
+function fallFrames(p, landY){
+  const g = (p.grav || p.bounce) ? 0.34 : 0, reach = p.bounce ? landY - 6 : landY - (p.r||8)*0.5 - 1;
+  let y = p.y, vy = p.vy || 0, t = 0;
+  while(y < reach){ if(vy <= 0 && g <= 0) return 0; y += vy; vy += g; if(++t > 900) return 0; }
+  return t;
+}
+function isDrop(p){
+  return !!p && p.warnX != null && p.warnY != null && !p.trap && !p.turret && !p.drive && !p.orbit && !p.noDrift
+    && (p.vy || 0) >= 0 && !!(p.grav || p.bounce || (p.vy || 0) > 0) && p.y < p.warnY - 40
+    && !(p.ownerObj && FALL_DRIFT_KEEP.has(p.ownerObj.name));
+}
+function fallDrift(p){
+  if(!isDrop(p)) return p;
+  const T = fallFrames(p, p.warnY);
+  if(T <= 0) return p;
+  let vx = p.vx || 0;
+  if(!vx){
+    const o = p.ownerObj || {};
+    let dir = Math.sign(+(p._dropFace != null ? p._dropFace : o.face) || 0);                // the way it faced as it threw
+    if(!dir) dir = Math.sign(+(p._dropVx != null ? p._dropVx : o.vx) || 0);                 // ...or was moving
+    if(!dir) dir = p.warnX < WW*0.5 ? 1 : -1;                                               // nobody threw it
+    vx = dir * FALL_DRIFT * (p.warnY - p.y) / T;
+  }
+  p.vx = vx; p.x = p.warnX - vx*T;
   return p;
 }
 function spawnProj(f,o){
@@ -15163,7 +15698,7 @@ function dropProj(f, lx, landY, o, burst){
   if(!burst) f.dropCd = 70;                     // a burst volley sets its own cooldown once, outside this call
   const spawnY = camY - 30;                    // just above the top of the current view
   const onTop = surfaceBelow(lx, landY);             // the shadow sits on the surface under the spot, not always the floor
-  addProj({ owner:f.idx, ownerObj:f, x:lx, y:spawnY, vx:0, vy:5, grav:true,
+  addProj({ owner:f.idx, ownerObj:f, x:lx, y:spawnY, vx:0, vy:5, grav:true, _dropFace:f.face, _dropVx:f.vx,   // the way it was thrown, for the fall drift
     warnX:lx, warnY: onTop!==null ? onTop : landY, warn:26, ...o });
 }
 
@@ -15795,7 +16330,178 @@ function applyZone(f, z){
   }
 }
 
-let shakeAmt=0; function shake(n){ shakeAmt=Math.min(12,shakeAmt+n*0.4); }
+// SCREEN SHAKE is a setting: "Screen shake: 'Add a toggle' -- on by default, an off switch in settings" (the owner,
+// 2026-09-29). Saved the way the music switch is (SHAKE_PREF_KEY; the default is implicit, never written) and read at eval
+// time, wrapped, because with site data blocked the getter itself throws. Off, shake() does nothing -- nor does impact()'s
+// shake, which goes through it -- and whatever shake was running stops at once.
+const SHAKE_PREF_KEY = 'bfsi:shake';
+function shakePrefLoad(){ try{ return localStorage.getItem(SHAKE_PREF_KEY) !== '0'; }catch(e){ return true; } }   // default ON
+function shakePrefSave(v){ try{ localStorage.setItem(SHAKE_PREF_KEY, v ? '1' : '0'); }catch(e){} }
+let SHAKE_ON = shakePrefLoad();
+let shakeAmt=0; function shake(n){ if(!SHAKE_ON) return; shakeAmt=Math.min(12,shakeAmt+n*0.4); }
+function toggleShake(){
+  SHAKE_ON = !SHAKE_ON; shakePrefSave(SHAKE_ON);
+  if(!SHAKE_ON) shakeAmt = 0;
+  try{ if(SND.on) SFX.ui(); }catch(e){}
+  syncShakeToggle();
+}
+function syncShakeToggle(){
+  const el = document.getElementById('shakeToggle');
+  if(el) el.textContent = SHAKE_ON ? "📳 Screen shake: On" : "📳 Screen shake: Off";
+}
+// ---- IMPACT ------------------------------------------------------------------------------------------------------------
+// "Hits feel heavy: screen shake, dust, debris on big impacts" (the owner's "immersive", 2026-09-29). One call for a heavy
+// hit: impact(x, y, o), y the surface it hit (the floor line, a platform's top). Every option has a default:
+//   o.shake   screen shake, as shake() takes it: 8; up to 30, which is shake()'s 12 px cap
+//   o.dust    the dust ring: 1; 0 for none, up to 3 -- flat puffs rolling out both ways along the surface, low and slow,
+//             hanging most of a second
+//   o.debris  chunks: 4; 0 for none, up to 12 -- turning polygons thrown up that fall, bounce once, lie there and fade;
+//             never more than IMPACT_FX.debrisMax alive (the oldest go first)
+//   o.scar    a floor scar where it hit: none; true, or its width in px -- a dark crack that stays IMPACT_FX.scarLife frames
+//             and fades; never more than IMPACT_FX.scarMax (the oldest goes); gone when a match starts, fading when a boss
+//             falls
+//   o.r       how far the dust rolls and how wide a scar is by default: 60
+//   o.color   the dust's and the chunks' colour: the arena's ground, lightened
+// Render-only: nothing here touches a fighter, a hitbox or Math.random -- its dice come from the spot and the frame, as the
+// KO bursts' do -- so the host, a netcode client and a replay all draw the same impact. The host sends each one once, in its
+// next snapshot (s.imp, at most IMPACT_FX.netMax), and a client plays it through impactFx, shake included (its own setting).
+// Frames: a chunk lives long enough to fly, bounce and lie still a moment (its last 20 fade); a scar 20 s, its last 3 fading.
+const IMPACT_FX = { debrisMax:60, scarMax:24, scarLife:1200, scarFade:180, dustLife:[34, 56], debrisLife:[80, 120], netMax:8 };
+let IMPACT_DUST = [], IMPACT_DEBRIS = [], IMPACT_SCARS = [], IMPACT_OUT = [];
+function impactRand(seed){
+  let s = (seed | 0) ^ 0x9e3779b9;
+  return function(){ s = Math.imul(s ^ (s >>> 15), 0x2c1b3c6d); s = Math.imul(s ^ (s >>> 12), 0x297a2d39); s ^= s >>> 15; return (s >>> 0) / 4294967296; };
+}
+function impactNum(v, d, lo, hi){
+  const n = (v === undefined || v === null || v === true) ? d : (v === false ? 0 : +v);
+  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d;
+}
+// The options, clamped: { shake, dust, debris, scar (-1 none, 0 the default width, else px), r, color (null: the ground's) }.
+function impactOpts(o){
+  o = o || {};
+  return { shake: impactNum(o.shake, 8, 0, 30), dust: impactNum(o.dust, 1, 0, 3), debris: Math.round(impactNum(o.debris, 4, 0, 12)),
+           scar: o.scar ? (o.scar === true ? 0 : impactNum(o.scar, 0, 0, 400)) : -1, r: impactNum(o.r, 60, 10, 300),
+           color: (typeof o.color === 'string' && o.color.length < 32) ? o.color : null };
+}
+function impactTint(c, k){
+  if(typeof c !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(c)) return c || '#c8b89a';
+  const n = parseInt(c.slice(1), 16), mix = (v) => Math.round(v + (255 - v)*k);
+  return 'rgb(' + mix(n >> 16) + ',' + mix((n >> 8) & 255) + ',' + mix(n & 255) + ')';
+}
+function impactGroundColor(){ const G = arenaGround(); return impactTint((G && G.fill) || (stage && stage.ground) || '#7bc043', 0.35); }
+function impact(x, y, o){
+  if(!Number.isFinite(x) || !Number.isFinite(y)) return;
+  x = Math.round(x*10)/10; y = Math.round(y*10)/10;   // to a tenth of a pixel, the way it is sent: the client's is the same impact
+  const q = impactOpts(o);
+  impactFx(x, y, q, hazardT);
+  if(window.NET && window.NET.role === 'host'){
+    IMPACT_OUT.push([x, y, q.shake, q.dust, q.debris, q.scar, q.r, q.color, hazardT]);
+    if(IMPACT_OUT.length > IMPACT_FX.netMax) IMPACT_OUT.shift();
+  }
+}
+// The impact itself, from clamped options and the frame it happened on (the host's clock, so a client's is the same).
+function impactFx(x, y, q, t0){
+  if(q.shake > 0) shake(q.shake);
+  const rnd = impactRand(Math.imul(Math.round(x), 73856093) ^ Math.imul(Math.round(y), 19349663) ^ Math.imul(t0 | 0, 83492791));
+  const col = q.color || impactGroundColor();
+  const nd = Math.round(8*q.dust);
+  for(let i=0;i<nd;i++){
+    const side = i%2 ? 1 : -1, sp = (0.8 + rnd()*1.6)*(0.6 + 0.4*q.dust)*(q.r/60);
+    const L = IMPACT_FX.dustLife[0] + rnd()*(IMPACT_FX.dustLife[1] - IMPACT_FX.dustLife[0]);
+    IMPACT_DUST.push({ x: x + side*rnd()*q.r*0.2, y: y - 2 - rnd()*4, vx: side*sp, vy: -0.15 - rnd()*0.25, r: 6 + rnd()*6*(0.7 + 0.3*q.dust), life: L, max: L, color: col });
+  }
+  for(let i=0;i<q.debris;i++){
+    const a = -Math.PI/2 + (rnd()*2 - 1)*1.1, sp = 3.5 + rnd()*4.5, n = 3 + Math.floor(rnd()*3), pts = [];
+    for(let k=0;k<n;k++) pts.push(0.6 + rnd()*0.4);
+    const L = IMPACT_FX.debrisLife[0] + rnd()*(IMPACT_FX.debrisLife[1] - IMPACT_FX.debrisLife[0]);
+    IMPACT_DEBRIS.push({ x, y: y - 4, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, rot: rnd()*6.28, vr: (rnd()*2 - 1)*0.35, s: 4 + rnd()*5, pts,
+      bounced: false, rest: false, life: L, max: L, color: col });
+  }
+  if(IMPACT_DEBRIS.length > IMPACT_FX.debrisMax) IMPACT_DEBRIS.splice(0, IMPACT_DEBRIS.length - IMPACT_FX.debrisMax);
+  if(q.scar >= 0){
+    const w = q.scar > 0 ? q.scar : q.r*1.4, cracks = [], n = 3 + Math.floor(rnd()*3);
+    for(let k=0;k<n;k++) cracks.push([(rnd()*2 - 1)*w*0.5, 2 + rnd()*6]);
+    IMPACT_SCARS.push({ x, y, w, cracks, life: IMPACT_FX.scarLife, max: IMPACT_FX.scarLife });
+    if(IMPACT_SCARS.length > IMPACT_FX.scarMax) IMPACT_SCARS.splice(0, IMPACT_SCARS.length - IMPACT_FX.scarMax);
+  }
+}
+// Once a frame (step on the host, clientFrame on a client). A chunk falls onto whatever surface it crosses (vanLanding), so
+// one that flew off a platform's edge lands on the floor.
+function stepImpactFx(){
+  if(IMPACT_DUST.length){
+    for(const d of IMPACT_DUST){ d.x += d.vx; d.y += d.vy; d.vx *= 0.94; d.vy *= 0.96; d.r += 0.12; d.life--; }
+    IMPACT_DUST = IMPACT_DUST.filter(d=>d.life>0);
+  }
+  if(IMPACT_DEBRIS.length){
+    for(const c of IMPACT_DEBRIS){
+      c.life--;
+      if(c.rest) continue;
+      c.vy += 0.4; c.x += c.vx; c.y += c.vy; c.rot += c.vr;
+      if(c.vy > 0){
+        const top = vanLanding(c.x, c.y - c.vy, c.y);
+        if(top !== null){
+          c.y = top;
+          if(!c.bounced){ c.bounced = true; c.vy = -c.vy*0.35; c.vx *= 0.55; c.vr *= 0.5; }
+          else { c.rest = true; c.vx = 0; c.vy = 0; c.vr = 0; }
+        } else if(c.y > WH + 200) c.life = 0;
+      }
+    }
+    IMPACT_DEBRIS = IMPACT_DEBRIS.filter(c=>c.life>0);
+  }
+  if(IMPACT_SCARS.length){
+    for(const s of IMPACT_SCARS) s.life--;
+    IMPACT_SCARS = IMPACT_SCARS.filter(s=>s.life>0);
+  }
+}
+// A new match: all gone. A fallen boss (`fade`): the scars fade out over a second, and a client is told to do the same.
+function impactFxClear(fade){
+  if(fade){
+    const t = Math.round(IMPACT_FX.scarFade/3);
+    for(const s of IMPACT_SCARS) s.life = Math.min(s.life, t);
+    if(window.NET && window.NET.role === 'host'){ IMPACT_OUT.push(['fade']); if(IMPACT_OUT.length > IMPACT_FX.netMax) IMPACT_OUT.shift(); }
+    return;
+  }
+  IMPACT_DUST = []; IMPACT_DEBRIS = []; IMPACT_SCARS = []; IMPACT_OUT = [];
+}
+// A client plays the host's impacts from the snapshot (s.imp), each exactly as the host drew it.
+function impactFromNet(list){
+  if(!Array.isArray(list)) return;
+  for(const e of list.slice(-IMPACT_FX.netMax)){
+    if(!Array.isArray(e)) continue;
+    if(e[0] === 'fade'){ impactFxClear(true); continue; }
+    const x = +e[0], y = +e[1];
+    if(!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const q = impactOpts({ shake: e[2], dust: e[3], debris: e[4], r: e[6], color: e[7] });
+    q.scar = (Number.isFinite(+e[5]) && +e[5] >= 0) ? Math.min(400, +e[5]) : -1;
+    impactFx(x, y, q, +e[8] || 0);
+  }
+}
+// World space, after the platforms: the scars lie on the surface they were made on.
+function drawImpactScars(){
+  if(!IMPACT_SCARS.length) return;
+  ctx.save(); ctx.fillStyle = '#1a120c'; ctx.strokeStyle = '#1a120c'; ctx.lineWidth = 2;
+  for(const s of IMPACT_SCARS){
+    ctx.globalAlpha = 0.55*Math.min(1, s.life/IMPACT_FX.scarFade);
+    ctx.beginPath(); ctx.ellipse(s.x, s.y + 2, s.w*0.5, 4, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); for(const c of s.cracks){ ctx.moveTo(s.x + c[0]*0.4, s.y + 1); ctx.lineTo(s.x + c[0], s.y + c[1]); } ctx.stroke();
+  }
+  ctx.restore();
+}
+// World space, with the particles: the dust, then the chunks over it.
+function drawImpactFx(){
+  if(!IMPACT_DUST.length && !IMPACT_DEBRIS.length) return;
+  ctx.save();
+  for(const d of IMPACT_DUST){ ctx.globalAlpha = Math.max(0, 0.5*d.life/d.max); ctx.fillStyle = d.color;
+    ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r, d.r*0.45, 0, 0, 7); ctx.fill(); }
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1.5;
+  for(const c of IMPACT_DEBRIS){
+    ctx.save(); ctx.globalAlpha = Math.min(1, c.life/20); ctx.translate(c.x, c.y - c.s*0.5); ctx.rotate(c.rot); ctx.fillStyle = c.color;
+    ctx.beginPath(); const n = c.pts.length;
+    for(let i=0;i<n;i++){ const a = i/n*Math.PI*2, r = c.s*c.pts[i]; if(i) ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r); else ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r); }
+    ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+  ctx.restore();
+}
 
 // A KO ends every move that was in flight. The respawn resets below cleared the nail, the stall, the swing and the
 // wind-up, but not the dash (Leafy came back from the blast line still at vx 22 and shot from the spawn point to the
@@ -18662,6 +19368,26 @@ function drawProjectile(pr){
       for(let k=0;k<3;k++){ const yy = gy - 30 - k*8 + ((hazardT*3)%16); ctx.moveTo(mx - 10, yy); ctx.lineTo(mx + 10, yy - 4); } ctx.stroke();
       ctx.restore(); return;
     }
+    // SHOTDRAW SLOTS (see BOSS SLOTS): a boss's own marks, holes and shadows, drawn here and `return`ed; a flag they carry
+    // must cross the snapshot (its NETSHOT slot) for a client to draw them.
+    // @boss:announcer:begin shotdraw
+    // @boss:announcer:end shotdraw
+
+    // @boss:puffball:begin shotdraw
+    // @boss:puffball:end shotdraw
+
+    // @boss:firey:begin shotdraw
+    // @boss:firey:end shotdraw
+
+    // @boss:swarm:begin shotdraw
+    // @boss:swarm:end shotdraw
+
+    // @boss:purpleface:begin shotdraw
+    // @boss:purpleface:end shotdraw
+
+    // @boss:dragon:begin shotdraw
+    // @boss:dragon:end shotdraw
+
     // THE CONTRAPTION (Steve Cobs). Buried, only its shadow shows, with a watch face -- the Meeple Watch he was showing off
     // when he hit the button (his page) -- whose hand winds round to twelve as it comes: what sets it apart from a rain of
     // drops, which falls. Popped, it is "a arrow on a stick": a grey pole from the
@@ -18793,8 +19519,11 @@ function draw(){
     // single-screen: solid ground
     // down a full screen below the world, not 80 px: a client fitting a wider host arena into a taller window sees
     // below the world's bottom edge, and it should see more ground there, not sky
-    ctx.fillStyle=stage.ground; ctx.fillRect(-20,gy,WW+40,WH-gy+H);
-    ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-20,gy); ctx.lineTo(WW+20,gy); ctx.stroke();
+    // A boss arena may lay its own ground (BOSS_ARENA_GROUND); every other stage, and an arena with no entry, is as it was.
+    const arenaG = arenaGround();
+    ctx.fillStyle=(arenaG && arenaG.fill) || stage.ground; ctx.fillRect(-20,gy,WW+40,WH-gy+H);
+    if(arenaG && typeof arenaG.pattern === 'function'){ ctx.save(); arenaG.pattern(ctx, gy, -20, WW+20, WH+H, arenaG); ctx.restore(); }
+    ctx.strokeStyle=(arenaG && arenaG.line) || "#1c1c1c"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-20,gy); ctx.lineTo(WW+20,gy); ctx.stroke();
     if(stage.hazard==='lava' && (hazardT%260)<70){ ctx.fillStyle="#f0521f88"; ctx.fillRect(-20,gy-8,WW+40,10); }
   } else {
     // tower: dark blast pit at the very bottom (visual danger cue)
@@ -18834,6 +19563,8 @@ function draw(){
   const platStyle = { yoyle: stage.hazard==='yoyle',
                       leafy: (stage.id==='goiky'||stage.id==='custom'), shadow: isBig() };
   for(const p of worldPlats) paintPlat(ctx, p, platStyle);
+  drawImpactScars();          // impact's floor scars, on the surfaces they were made on
+  drawArenaHazard('under');   // a boss arena's hazard, under the shots and the fighters (BOSS_ARENA_HAZARD)
 
   // spawn zones (big FFA): safe islands + claimable points
   if(isBigFFA() && spawnZones.length){
@@ -18898,6 +19629,20 @@ function draw(){
   if(RACE.active) drawRaceFx();   // RUNNING!: the line, the pistons, the bridge, the finish
   if(COBSFIGHT.active) drawCobsFx();
   if(tendrils.length) drawTendrils();
+  // FX SLOTS (see BOSS SLOTS): a boss's own world-space drawing, over the arena and under the fighters and particles.
+  // @boss:announcer:begin fx
+  // @boss:announcer:end fx
+
+  // @boss:puffball:begin fx
+  // @boss:puffball:end fx
+
+  // @boss:firey:begin fx
+  // @boss:firey:end fx
+
+  // @boss:swarm:begin fx
+  // @boss:swarm:end fx
+
+  // @boss:purpleface:begin fx
   // swallow stomach zone + tongue target
   const swBoss = summons.find(s=>s.type==="boss" && s.attack==="swallow" && s._tongueHp>0);
   if(swBoss && fighters.some(f=>f._swallow>0)){
@@ -18915,6 +19660,10 @@ function draw(){
     ctx.textAlign="left";
     ctx.restore();
   }
+  // @boss:purpleface:end fx
+
+  // @boss:dragon:begin fx
+  // @boss:dragon:end fx
 
   try{ drawCrowd(); }catch(e){}   // Wave 3.5: benched characters watching from the back
   // TEAM ZONES — the safe column above each base. Drawn UNDER the fighters so nobody is obscured,
@@ -18961,6 +19710,8 @@ function draw(){
   for(const p of particles){ ctx.globalAlpha=Math.max(0,p.life/22); ctx.fillStyle=p.color;
     ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill(); }
   ctx.globalAlpha=1;
+  drawImpactFx();            // impact's dust rings and debris
+  drawArenaHazard('over');   // and a boss arena's hazard, over the fighters
   drawCosKoFx();   // cosmetic KO bursts (see WIN TOKENS): drawn from their own list, never from `particles`
 
   ctx.restore();   // end world space
@@ -19197,7 +19948,55 @@ const BOSS_ARENA_SKY = {
   meeple: ["#1c2433","#0c1119"],   // Steve Cobs's MeCloud: dark slate, so his red arrows and their shadows read
   cerealbox: ["#2c1e4e","#100a22"], // Springy's Floating Cereal Boxes over Paradise: dusk purple, so the yellow mark and the red mittens read
   meeplehq: ["#182236","#0a0e18"],  // Steve Cobs's secret fight: Meeple Headquarters, "a large building situated on a cloud above Inanimate Island" (see drawArenaDecor)
+  // SKY SLOTS (see BOSS SLOTS): key: [top, bottom]. A new arena key must be here: a netcode client only takes a key it has.
+  // @boss:announcer:begin sky
+  // @boss:announcer:end sky
+
+  // @boss:puffball:begin sky
+  // @boss:puffball:end sky
+
+  // @boss:firey:begin sky
+  // @boss:firey:end sky
+
+  // @boss:swarm:begin sky
+  // @boss:swarm:end sky
+
+  // @boss:purpleface:begin sky
+  // @boss:purpleface:end sky
+
+  // @boss:dragon:begin sky
+  // @boss:dragon:end sky
+
 };
+// ...and the ground under a boss arena. Every arena kept Goiky's green floor (stage.ground: boss-plan-early.md 2.4) and
+// changed only the sky and the decor; an entry here lays its own. key: { fill, line, pattern }:
+//   fill      the ground's colour (the stage's green without one)
+//   line      the floor line's stroke (black without one)
+//   pattern   optional, pattern(ctx, gy, x0, x1, bottom, G): drawn over the fill in world space before the floor line's
+//             stroke -- tiles, planks, cracks, lava. Nothing clips it, so it draws between gy and bottom only
+// An arena with no entry, and every stage that is not a boss arena, draws exactly what it always did. The dust of impact()
+// takes the arena's ground colour.
+const BOSS_ARENA_GROUND = {
+  // @boss:announcer:begin ground
+  // @boss:announcer:end ground
+
+  // @boss:puffball:begin ground
+  // @boss:puffball:end ground
+
+  // @boss:firey:begin ground
+  // @boss:firey:end ground
+
+  // @boss:swarm:begin ground
+  // @boss:swarm:end ground
+
+  // @boss:purpleface:begin ground
+  // @boss:purpleface:end ground
+
+  // @boss:dragon:begin ground
+  // @boss:dragon:end ground
+
+};
+function arenaGround(){ return (typeof BOSS_ARENA === 'string' && Object.prototype.hasOwnProperty.call(BOSS_ARENA_GROUND, BOSS_ARENA)) ? BOSS_ARENA_GROUND[BOSS_ARENA] : null; }
 function drawArenaDecor(key){
   ctx.save();
   if(key==="studio"){
@@ -19288,6 +20087,26 @@ function drawArenaDecor(key){
     ctx.strokeStyle="#f4f4f8"; ctx.lineWidth=6; ctx.lineCap="round"; ctx.beginPath();
     for(let k=0;k<4;k++){ const yy=gy-4-k*6; ctx.moveTo(px-22, yy); ctx.bezierCurveTo(px-22, yy-8, px+22, yy-2, px+22, yy-6); } ctx.stroke(); ctx.lineCap="butt";   // the white spring
   }
+  // DECOR SLOTS (see BOSS SLOTS): `if(key==="yourkey"){ ... }`, in screen space, behind everything; read the boss's phase
+  // the way the cerealbox reads Springy's.
+  // @boss:announcer:begin decor
+  // @boss:announcer:end decor
+
+  // @boss:puffball:begin decor
+  // @boss:puffball:end decor
+
+  // @boss:firey:begin decor
+  // @boss:firey:end decor
+
+  // @boss:swarm:begin decor
+  // @boss:swarm:end decor
+
+  // @boss:purpleface:begin decor
+  // @boss:purpleface:end decor
+
+  // @boss:dragon:begin decor
+  // @boss:dragon:end decor
+
   ctx.restore();
 }
 function drawSummon(s){
@@ -19488,9 +20307,29 @@ const BOSS_SPRITE_IMG = {};
 // Purple Dragon is TPOT's Dragon (the wiki's Dragon page, "Purple Dragon" tab: File:Polished_Dragon..?.png). The Bug
 // Swarm is still not a wiki character and keeps its drawn art -- same rule as the fighters, no art beats wrong art.
 const BOSS_SPRITE_SRC = {
+  // @boss:announcer:begin sprite
+  announcer:    "assets/sprites/announcer.png",      // File:Announcer Front Vibrating0001.png, see CREDITS.md
+  // @boss:announcer:end sprite
+
+  // @boss:puffball:begin sprite
   speaker:      "assets/sprites/puffball-speaker-box.png",
+  // @boss:puffball:end sprite
+
+  // @boss:firey:begin sprite
   speakerfirey: "assets/sprites/firey-speaker-box.png",
+  // @boss:firey:end sprite
+
+  // @boss:swarm:begin sprite
+  // @boss:swarm:end sprite
+
+  // @boss:purpleface:begin sprite
   face:         "assets/sprites/purple-face.png",
+  // @boss:purpleface:end sprite
+
+  // @boss:dragon:begin sprite
+  dragon:       "assets/sprites/purple-dragon.png",  // File:Polished_Dragon..?.png, see CREDITS.md
+  // @boss:dragon:end sprite
+
   evilleafy:    "assets/sprites/evil-leafy.png",
   two:          "assets/sprites/two.png",
   four:         "assets/sprites/four.png",
@@ -19506,11 +20345,32 @@ const BOSS_SPRITE_SRC = {
   springy3:     "assets/sprites/springy-unvitational.png",
   springyfall:  "assets/sprites/springy-falling.png",
   springyangry: "assets/sprites/springy-angry.png",
-  announcer:    "assets/sprites/announcer.png",      // File:Announcer Front Vibrating0001.png, see CREDITS.md
-  dragon:       "assets/sprites/purple-dragon.png",  // File:Polished_Dragon..?.png, see CREDITS.md
 };
 // Measured by scripts/fetch-sprites.mjs, same interior-ink method as the fighters.
-const BOSS_SPRITE_FLIP = { speaker:true, face:true, four:true, dragon:true };   // the Dragon's head is on the left (facing -0.065)
+const BOSS_SPRITE_FLIP = {
+  four:true,
+  // @boss:announcer:begin flip
+  // @boss:announcer:end flip
+
+  // @boss:puffball:begin flip
+  speaker:true,
+  // @boss:puffball:end flip
+
+  // @boss:firey:begin flip
+  // @boss:firey:end flip
+
+  // @boss:swarm:begin flip
+  // @boss:swarm:end flip
+
+  // @boss:purpleface:begin flip
+  face:true,
+  // @boss:purpleface:end flip
+
+  // @boss:dragon:begin flip
+  dragon:true,   // the Dragon's head is on the left (facing -0.065)
+  // @boss:dragon:end flip
+
+};
 // Lazily constructed on FIRST DRAW, never at eval time — a headless boot must not touch a media
 // constructor while the script parses, which is the same contract the fighter registry follows.
 function bossImage(key){
@@ -19522,6 +20382,32 @@ function bossImage(key){
     catch(e){ BOSS_SPRITE_IMG[key] = null; return null; }
   }
   return (im && im.complete && im.naturalWidth) ? im : null;
+}
+// Which render a boss wears this frame: Springy's four looks (springyLook), Steve Cobs's two in his secret fight (cobsLook),
+// else its own sprite key. LOOK SLOTS (see BOSS SLOTS): return another key -- a phase's look, a wind-up's, a fall's -- that
+// has a render (its SPRITE slot) and a drawn `case` (its BODY slot). A client has the snapshot's fields to go on.
+function bossLook(s){
+  if(s.sprite==="springy") return springyLook(s);
+  if(s._cobsFight) return cobsLook(s);
+  // @boss:announcer:begin look
+  // @boss:announcer:end look
+
+  // @boss:puffball:begin look
+  // @boss:puffball:end look
+
+  // @boss:firey:begin look
+  // @boss:firey:end look
+
+  // @boss:swarm:begin look
+  // @boss:swarm:end look
+
+  // @boss:purpleface:begin look
+  // @boss:purpleface:end look
+
+  // @boss:dragon:begin look
+  // @boss:dragon:end look
+
+  return s.sprite;
 }
 function drawBossSprite(s){
   const R=s.r;
@@ -19581,8 +20467,28 @@ function drawBossSprite(s){
     ctx.beginPath(); ctx.moveTo(bx - 30 - s.x, top - s.y); ctx.lineTo(bx + 30 - s.x, top - s.y); ctx.lineTo(s._boxX + 44 - s.x, gy - s.y); ctx.lineTo(s._boxX - 44 - s.x, gy - s.y); ctx.closePath(); ctx.fill();
     ctx.restore();
   }
+  // TELL SLOTS (see BOSS SLOTS): a boss's wind-up tells, in its own frame (translated to it: subtract s.x, s.y from a world
+  // spot), drawn before its art so they show with the render too. The tell is the hitbox.
+  // @boss:announcer:begin tell
+  // @boss:announcer:end tell
+
+  // @boss:puffball:begin tell
+  // @boss:puffball:end tell
+
+  // @boss:firey:begin tell
+  // @boss:firey:end tell
+
+  // @boss:swarm:begin tell
+  // @boss:swarm:end tell
+
+  // @boss:purpleface:begin tell
+  // @boss:purpleface:end tell
+
+  // @boss:dragon:begin tell
+  // @boss:dragon:end tell
+
   // ---- REAL BOSS ART, animated ----------------------------------------------------------------
-  const look = s.sprite==="springy" ? springyLook(s) : (s._cobsFight ? cobsLook(s) : s.sprite);   // Springy has four renders for one sprite key; Steve Cobs two in his secret fight (cobsLook)
+  const look = bossLook(s);   // Springy has four renders for one sprite key; Steve Cobs two in his secret fight (cobsLook); the LOOK slots
   const img = bossImage(look);
   if(img){
     // CONTAIN-fit on the image's own aspect ratio. The old hook stretched art into a square
@@ -19622,11 +20528,54 @@ function drawBossSprite(s){
   const body = flash ? "#fff" : s.color;
   ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=4;
   switch(s.sprite){
+    // BODY SLOTS (see BOSS SLOTS): a boss's drawn body for each key it wears (`case "key": { ...; break; }`), shown until
+    // its render loads. test/boss-sprites.test.js wants a case for every BOSS_SPRITE_SRC key.
+    // @boss:announcer:begin body
     case "announcer": {   // tall dark rectangular host box with a single glowing eye
       ctx.fillStyle=body; ctx.beginPath(); ctx.rect(-R*0.7,-R,R*1.4,R*2); ctx.fill(); ctx.stroke();
       ctx.fillStyle=flash?"#1c1c1c":"#ffd23f"; ctx.beginPath(); ctx.arc(0,-R*0.2,R*0.28,0,7); ctx.fill();
       ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(0,-R*0.2,R*0.12,0,7); ctx.fill();
       break; }
+    // @boss:announcer:end body
+
+    // @boss:puffball:begin body
+    case "speaker": {     // speaker box: rounded rect with grille dots
+      ctx.fillStyle=body; ctx.beginPath(); ctx.rect(-R*0.8,-R*0.9,R*1.6,R*1.8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#1c1c1c"; for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){ ctx.beginPath(); ctx.arc(a*R*0.35,b*R*0.35,R*0.08,0,7); ctx.fill(); }
+      break; }
+    // @boss:puffball:end body
+
+    // @boss:firey:begin body
+    case "speakerfirey": {   // the Puffball box's drawn body, its own copy so each builder owns its own; only the render differs
+      ctx.fillStyle=body; ctx.beginPath(); ctx.rect(-R*0.8,-R*0.9,R*1.6,R*1.8); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#1c1c1c"; for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){ ctx.beginPath(); ctx.arc(a*R*0.35,b*R*0.35,R*0.08,0,7); ctx.fill(); }
+      break; }
+    // @boss:firey:end body
+
+    // @boss:swarm:begin body
+    case "bug": {         // bug swarm alpha: round with mandibles and red eyes
+      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#ff5a4a"; ctx.beginPath(); ctx.arc(-R*0.3,-R*0.2,R*0.16,0,7); ctx.arc(R*0.3,-R*0.2,R*0.16,0,7); ctx.fill();
+      ctx.strokeStyle="#1c1c1c"; ctx.beginPath(); ctx.moveTo(-R*0.5,R*0.4); ctx.lineTo(-R*0.9,R*0.7); ctx.moveTo(R*0.5,R*0.4); ctx.lineTo(R*0.9,R*0.7); ctx.stroke();
+      break; }
+    // @boss:swarm:end body
+
+    // @boss:purpleface:begin body
+    case "face": {        // Purple Face: round purple with a wide grin
+      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(0,R*0.1,R*0.55,0.1,Math.PI-0.1); ctx.fill();
+      ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-R*0.3,-R*0.25,R*0.16,0,7); ctx.arc(R*0.3,-R*0.25,R*0.16,0,7); ctx.fill();
+      break; }
+    // @boss:purpleface:end body
+
+    // @boss:dragon:begin body
+    case "dragon": {      // purple dragon: body + snout + wing
+      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(R*0.4,-R*0.2); ctx.lineTo(R*1.3,0); ctx.lineTo(R*0.4,R*0.3); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#e0d0f0"; ctx.beginPath(); ctx.moveTo(-R*0.2,-R*0.4); ctx.lineTo(-R*1.1,-R*1.1); ctx.lineTo(-R*0.1,-R*0.9); ctx.closePath(); ctx.fill();
+      break; }
+    // @boss:dragon:end body
+
     case "evilleafy": {   // jagged dark-green leaf with hollow white eyes
       ctx.fillStyle=flash?"#fff":"#0f3a0f"; ctx.beginPath();
       for(let i=0;i<11;i++){ const a=i/11*Math.PI*2; const rr=R*(i%2?0.7:1.05); ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); }
@@ -19650,21 +20599,6 @@ function drawBossSprite(s){
       ctx.fillText("4", 0, -R*0.05);
       ctx.strokeStyle="#0a1a3a"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(-R*0.4,R*0.45); ctx.lineTo(R*0.4,R*0.45); ctx.stroke();
       ctx.textAlign="left"; ctx.textBaseline="alphabetic";
-      break; }
-    case "speakerfirey":  // shares the drawn fallback with the Puffball box; only the render differs
-    case "speaker": {     // speaker box: rounded rect with grille dots
-      ctx.fillStyle=body; ctx.beginPath(); ctx.rect(-R*0.8,-R*0.9,R*1.6,R*1.8); ctx.fill(); ctx.stroke();
-      ctx.fillStyle="#1c1c1c"; for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){ ctx.beginPath(); ctx.arc(a*R*0.35,b*R*0.35,R*0.08,0,7); ctx.fill(); }
-      break; }
-    case "dragon": {      // purple dragon: body + snout + wing
-      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(R*0.4,-R*0.2); ctx.lineTo(R*1.3,0); ctx.lineTo(R*0.4,R*0.3); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle="#e0d0f0"; ctx.beginPath(); ctx.moveTo(-R*0.2,-R*0.4); ctx.lineTo(-R*1.1,-R*1.1); ctx.lineTo(-R*0.1,-R*0.9); ctx.closePath(); ctx.fill();
-      break; }
-    case "bug": {         // bug swarm alpha: round with mandibles and red eyes
-      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
-      ctx.fillStyle="#ff5a4a"; ctx.beginPath(); ctx.arc(-R*0.3,-R*0.2,R*0.16,0,7); ctx.arc(R*0.3,-R*0.2,R*0.16,0,7); ctx.fill();
-      ctx.strokeStyle="#1c1c1c"; ctx.beginPath(); ctx.moveTo(-R*0.5,R*0.4); ctx.lineTo(-R*0.9,R*0.7); ctx.moveTo(R*0.5,R*0.4); ctx.lineTo(R*0.9,R*0.7); ctx.stroke();
       break; }
     case "two": {         // Two: yellow '2' algebralian
       ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
@@ -19698,11 +20632,6 @@ function drawBossSprite(s){
       ctx.beginPath(); ctx.rect(-R*0.36,-R*0.52,R*0.28,R*0.18); ctx.rect(R*0.08,-R*0.52,R*0.28,R*0.18); ctx.moveTo(-R*0.08,-R*0.44); ctx.lineTo(R*0.08,-R*0.44); ctx.stroke();
       // "a tag with the Meeple logo on it around his shoulders" (his page)
       ctx.fillStyle = "#f4f4f8"; ctx.strokeStyle = "#1c1c1c"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0,-R*0.08,R*0.1,0,7); ctx.fill(); ctx.stroke();
-      break; }
-    case "face": {        // Purple Face: round purple with a wide grin
-      ctx.fillStyle=body; ctx.beginPath(); ctx.arc(0,0,R,0,7); ctx.fill(); ctx.stroke();
-      ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(0,R*0.1,R*0.55,0.1,Math.PI-0.1); ctx.fill();
-      ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-R*0.3,-R*0.25,R*0.16,0,7); ctx.arc(R*0.3,-R*0.25,R*0.16,0,7); ctx.fill();
       break; }
     case "springy3": case "springyfall": case "springyangry":   // the same drawn body under each of Springy's renders
     case "springy": { drawSpringyBody(ctx, R, flash); break; }
@@ -22743,6 +23672,26 @@ const ATTACK_SPRITES = {
   immunitycookie: { src:'assets/sprites/attacks/immunitycookie.png', h:18, fixed:true },   // Silver Spoon -- the Immunity Cookie
   horstray:  { src:'assets/sprites/attacks/horstray.png',  h:9 },    // Tea Kettle -- her hors d'oeuvres tray (Minor Items/Food), skidding flat
   paintball: { src:'assets/sprites/attacks/paintball.png', h:12 },   // Teddy Bear -- a paintball: the pink paint in her gun's hopper, cut from the War De Guacamole remaster
+  // ART SLOTS (see BOSS SLOTS): the show's art for a boss's shots, keyed by the shot's `shape` (the file in its PICKS slot,
+  // scripts/fetch-attack-sprites.mjs, and its credit in its CREDITS slot).
+  // @boss:announcer:begin art
+  // @boss:announcer:end art
+
+  // @boss:puffball:begin art
+  // @boss:puffball:end art
+
+  // @boss:firey:begin art
+  // @boss:firey:end art
+
+  // @boss:swarm:begin art
+  // @boss:swarm:end art
+
+  // @boss:purpleface:begin art
+  // @boss:purpleface:end art
+
+  // @boss:dragon:begin art
+  // @boss:dragon:end art
+
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
   ojshard:  { src:'assets/sprites/attacks/ojshard.png',  h:14, spin:true },   // OJ -- a glass shard, cropped out of BFDIA 23 (File:BookSmashesThroughtheGlass.png: Book smashing up through the glass; the owner: "the episode bfdia 23."); flown by FIGHTER_ANIM
   casebomb: { src:'assets/sprites/attacks/casebomb.png', h:18, glow:'rgba(255,246,190,0.55)' },   // Suitcase -- the bomb Cobs took out of her, cut from the Objects in Mirror frame where he holds it up (II218_140); "something glowing inside", so it glows
@@ -22787,6 +23736,26 @@ function drawAttackSprite(c, pr, key, im){
   c.restore();
 }
 const PROJ_SHAPE = {
+  // SHAPE SLOTS (see BOSS SLOTS): a drawn glyph for a boss's shot, `key: { draw(c, r, pr){ ... } }` (add spin:true to tumble
+  // it), shown until its ATTACK_SPRITES art loads, and for good where it has none.
+  // @boss:announcer:begin shape
+  // @boss:announcer:end shape
+
+  // @boss:puffball:begin shape
+  // @boss:puffball:end shape
+
+  // @boss:firey:begin shape
+  // @boss:firey:end shape
+
+  // @boss:swarm:begin shape
+  // @boss:swarm:end shape
+
+  // @boss:purpleface:begin shape
+  // @boss:purpleface:end shape
+
+  // @boss:dragon:begin shape
+  // @boss:dragon:end shape
+
   // --- MePhone4's Fist Thingy (the Fist Thingy page): a red boxing glove on a gray pole, drawn pointing the way it flies
   fistthingy:{ draw(c,r){ c.fillStyle='#9aa0a8'; c.fillRect(-r*3.4,-r*0.2,r*2.6,r*0.4); c.fillStyle='#f4f4f4'; c.fillRect(-r,-r*0.62,r*0.36,r*1.24);
     c.fillStyle='#d8302a'; c.beginPath(); c.ellipse(r*0.15,0,r*0.85,r*0.72,0,0,7); c.fill(); c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.14; c.stroke();
@@ -23563,6 +24532,25 @@ function netProjectiles(){
     if(p.springHole){ x = x || {}; x.springHole = 1; x.delay = p.delay; x.warnY = Math.round(p.warnY||0); }   // Springy's hole: open while delay > 0, drawn at the floor line it broke
     if(p.springMark){ x = x || {}; x.springMark = 1; x.warnX = Math.round(p.warnX||0); x.warnY = Math.round(p.warnY||0); }   // ...and his landing mark
     if(p.armX0 != null){ x = x || {}; x.armX0 = Math.round(p.armX0); x.armY0 = Math.round(p.armY0 != null ? p.armY0 : p.y); }   // the mitten's arm reaches back to where he threw it
+    // NETSHOT SLOTS (see BOSS SLOTS): `if(p.flag){ x = x || {}; x.flag = 1; }` -- a few small fields; a client spreads them back.
+    // @boss:announcer:begin netshot
+    // @boss:announcer:end netshot
+
+    // @boss:puffball:begin netshot
+    // @boss:puffball:end netshot
+
+    // @boss:firey:begin netshot
+    // @boss:firey:end netshot
+
+    // @boss:swarm:begin netshot
+    // @boss:swarm:end netshot
+
+    // @boss:purpleface:begin netshot
+    // @boss:purpleface:end netshot
+
+    // @boss:dragon:begin netshot
+    // @boss:dragon:end netshot
+
     if(x) row.push(x);
     return row;
   });
@@ -23607,13 +24595,35 @@ function serializeState(withGeo){
       // and which boss it is, so the client's wind-up ring and swell run over that boss's own wind-up (his is 42 frames,
       // not the default 36) instead of starting below zero. A client never simulates, so this only draws.
       attack:m.attack,
-      _portal:m._portal?{x:Math.round(m._portal.x),y:Math.round(m._portal.y),t:m._portal.t,T:m._portal.T}:undefined})),
+      _portal:m._portal?{x:Math.round(m._portal.x),y:Math.round(m._portal.y),t:m._portal.t,T:m._portal.T}:undefined,
+      _hz:m._hz,   // the arena hazard's state (BOSS_ARENA_HAZARD): a few plain numbers, drawn from on the client
+      // NET SLOTS (see BOSS SLOTS): `_field:m._field,` -- what a client needs to draw the boss and its tells; keep it small.
+      // @boss:announcer:begin net
+      // @boss:announcer:end net
+
+      // @boss:puffball:begin net
+      // @boss:puffball:end net
+
+      // @boss:firey:begin net
+      // @boss:firey:end net
+
+      // @boss:swarm:begin net
+      // @boss:swarm:end net
+
+      // @boss:purpleface:begin net
+      // @boss:purpleface:end net
+
+      // @boss:dragon:begin net
+      // @boss:dragon:end net
+
+    })),
     bossCleared: BOSSRUSH.cleared,
     pb: netParticleBirths(),
     banner: (window.__lastBanner && Date.now()-window.__lastBanner.at < 400) ? window.__lastBanner : null,
     over: !running,
   };
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
+  if(IMPACT_OUT.length) s.imp = IMPACT_OUT.splice(0);  // impacts since the last snapshot (impact), at most IMPACT_FX.netMax: a client plays them
   // Evil Forest's Evil Leafy and her tendrils were never sent: a client kept its own Evil Leafy standing in the corner
   // while the host's chased and hit players from nowhere, and was launched by vines it could not see.
   if(evil) s.evil = [Math.round(evil.x), Math.round(evil.y)];
@@ -23648,6 +24658,7 @@ function netSnapshotArrived(N, s){
     if(Array.isArray(prev.pb) && prev.pb.length) s.pb = prev.pb.concat(Array.isArray(s.pb) ? s.pb : []).slice(-2*NET_PARTICLE_BIRTHS);
     if(!s.banner && prev.banner) s.banner = prev.banner;
     if(Array.isArray(prev.ko) && prev.ko.length) s.ko = prev.ko.concat(Array.isArray(s.ko) ? s.ko : []).slice(-8);
+    if(Array.isArray(prev.imp) && prev.imp.length) s.imp = prev.imp.concat(Array.isArray(s.imp) ? s.imp : []).slice(-IMPACT_FX.netMax);
   }
   if(NET_VIEW.lastArrive){ const g = now - NET_VIEW.lastArrive; if(g >= 0 && g < 400) NET_VIEW.gap += (g - NET_VIEW.gap)*0.15; }
   NET_VIEW.lastArrive = now;
@@ -23720,6 +24731,7 @@ function applySnapshot(s){
   // once per banner (it rides in every snapshot for 400 ms, and each one restarted it)
   if(s.banner && s.banner.at !== NET_VIEW.bannerAt){ NET_VIEW.bannerAt = s.banner.at; banner(s.banner.text, s.banner.ms, s.banner.kind); }
   if(Array.isArray(s.ko)) cosKoFromNet(s.ko, s.t);   // the host's cosmetic KO bursts, drawn here as there
+  if(Array.isArray(s.imp)) impactFromNet(s.imp);     // and its impacts: dust, debris, scars and the shake (this device's setting)
   // The glide is timed from the frame that first draws this snapshot, not from when it arrived: it lands between two
   // frames, and timed from the arrival a snapshot that landed just after a frame was already 1 frame "old" when first
   // drawn, jumped straight to its target, and sat there.
@@ -23827,6 +24839,7 @@ function clientFrame(){
   if(s && s !== NET_VIEW.applied) applySnapshot(s);
   netInterpolate(now);
   netStepParticles();
+  stepImpactFx();   // the impacts the host sent, stepped by the host's own rule
   clientCamera();
 }
 // A new match (beginMatchNow, on host and client alike).
@@ -26596,6 +27609,7 @@ buildBoard();
 // Both music buttons ship labelled "On"; a player who muted music last session must not be shown
 // "On" over a silent game. Pure DOM text — no audio is touched here.
 try{ syncMusicToggle(); }catch(e){}
+try{ syncShakeToggle(); }catch(e){}   // and the shake button, likewise: "Off" for a player who switched it off last session
 try{ syncTouchButton(); }catch(e){}
 try{ initVault(); }catch(e){}
 try{ initShop(); }catch(e){}    // Win Tokens: the title's wallet and doors, and the support link (hidden while unset)

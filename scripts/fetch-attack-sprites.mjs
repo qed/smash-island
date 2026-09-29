@@ -184,6 +184,26 @@ const PICKS = {
   // Teddy Bear: the owner's Q1, "Cut from the frames". The only paintballs are the pink ones in her gun's hopper in the
   // remaster frame (War De Guacamole, S1RE6); the pink paint is keyed out of the hopper window and masked round (key 'paintball').
   paintball:  { who: 'Teddy Bear',  kits: ['paintball'],  wiki: 'ii', file: 'S1RE6 Teddy grabs a paintball gun.png', note: "a paintball: the pink paint in her gun's hopper (War De Guacamole remaster), cut from the frame", key: 'paintball', region: [472, 186, 528, 242], srcH: 477, h: 40 },
+  // ---- the boss overhaul (2026-09-29): PICKS SLOTS -- each early-six builder adds its bosses' shot art between its own two
+  // markers and nowhere else (artifacts/V1/index.html, BOSS SLOTS, has the rule and the list) ----
+  // @boss:announcer:begin picks
+  // @boss:announcer:end picks
+
+  // @boss:puffball:begin picks
+  // @boss:puffball:end picks
+
+  // @boss:firey:begin picks
+  // @boss:firey:end picks
+
+  // @boss:swarm:begin picks
+  // @boss:swarm:end picks
+
+  // @boss:purpleface:begin picks
+  // @boss:purpleface:end picks
+
+  // @boss:dragon:begin picks
+  // @boss:dragon:end picks
+
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
   // The three II winners, allowed in only as Steve Cobs's prize ("3, but only after you beat cobs."). The owner's art answers
   // (2026-09-29): OJ's shards -- "crop the shards that were stuck to book in shattered." and then "the episode bfdia 23." --

@@ -29,7 +29,10 @@ function dropX(w, name, dist, row) {
       projectiles.length = 0;
       if (ROW){ SMASH_SPEC.__probe = ROW; A.kit = Object.assign({}, A.kit, { special:'__probe' }); }
       try { doSmash(A, 1); } finally { delete SMASH_SPEC.__probe; }
-      var xs = projectiles.map(function(p){ return Math.round(p.x); });
+      // Where a drop lands is its shadow, warnX. It was also where it started, until the owner's "add momentum to falling
+      // objects(they should move horizontaly while falling)" -- "everything. bosses, characters, whatever." -- "The way it was
+      // thrown" (2026-09-29): a drop now starts back along its drift and comes down on its shadow (FALL_DRIFT; boss-kit.test.js).
+      var xs = projectiles.map(function(p){ return Math.round(p.warnX != null ? p.warnX : p.x); });
       return { selfX: A.x, targetX: D.x, drops: xs };
     })()`);
 }

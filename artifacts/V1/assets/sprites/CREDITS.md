@@ -479,6 +479,26 @@ measured (0.116 / 0.017 / 0.115 / 0.157: all facing right, none flipped). Drawn 
 - `springy-falling.png` -- File:Springitfalling.png, the falling pose, worn on the way down in TRY NOT TO FALL.
 - `springy-angry.png` -- File:Springypissedoff.png, worn while he winds up from phase 2 on.
 
+<!-- The boss overhaul (2026-09-29), CREDITS SLOTS: each early-six builder credits its bosses' new art between its own two
+     markers and nowhere else (artifacts/V1/index.html, BOSS SLOTS, has the rule and the list). -->
+<!-- @boss:announcer:begin credits -->
+<!-- @boss:announcer:end credits -->
+
+<!-- @boss:puffball:begin credits -->
+<!-- @boss:puffball:end credits -->
+
+<!-- @boss:firey:begin credits -->
+<!-- @boss:firey:end credits -->
+
+<!-- @boss:swarm:begin credits -->
+<!-- @boss:swarm:end credits -->
+
+<!-- @boss:purpleface:begin credits -->
+<!-- @boss:purpleface:end credits -->
+
+<!-- @boss:dragon:begin credits -->
+<!-- @boss:dragon:end credits -->
+
 ## Assist trophies
 
 "sprites for assist trophies." The thirteen assists of ASSIST_ROSTER are BFDI characters; twelve have a render on
