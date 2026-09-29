@@ -362,7 +362,7 @@ downscaled to 200px tall, alpha verified, facing measured.
 | Candle, Inner-Flame (special, smash) | `candle-inner-flame.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/56/Candle_Flame.png/revision/latest?cb=20240129222317 |
 | Candle, flame punched out | `candle-flame-out.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/eb/Candle_Weak.png/revision/latest?cb=20260426185548 |
 | Cammy | `cammy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a8/Cammy.png/revision/latest?cb=20260802161706 |
-| Cammy, pop-up flash (white-balanced by scripts/fix-cammy-flash.mjs) | `cammy-flash.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/Cammy_Flash.png/revision/latest?cb=20260419233749 |
+| Cammy, pop-up flash (the wiki cut-out's night-sky rim peeled back by scripts/clean-cammy-flash.mjs, then white-balanced by scripts/fix-cammy-flash.mjs) | `cammy-flash.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fa/Cammy_Flash.png/revision/latest?cb=20260419233749 |
 | Spikey's spike (spike.png): attack art, the top spike cut from his body asset (`node scripts/fetch-attack-sprites.mjs <out> spike`) | `attacks/spike.png` — File:Spikey Body Front.png | https://static.wikia.nocookie.net/inanimateinsanity/images/5/54/Spikey_Body_Front.png/revision/latest?cb=20260801170935 |
 | Cheesy | `cheesy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0f/Cheesy2024Pose.png/revision/latest?cb=20250628193516 |
 | Dough (official S4 art; the owner: "change 4" -- the banner render was a fan rebuild) | `dough.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/0e/Dough_II_S4_.png/revision/latest |
