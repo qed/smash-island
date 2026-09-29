@@ -792,7 +792,22 @@ describe('the ending: Spongy crushes him', () => {
     expect(r.total / 60*1000, 'over before the next boss arrives').toBeLessThan(1500);
   });
 
-  it('a carrier shot lands on the beat (the engine plays the impact: shake, dust, debris, a scar) and the scene is gone after ANN.end.total frames; it hurts nobody, even standing where he fell', () => {
+  it('everything of his still in the air or lying on the floor goes with him: no puddle, beam, balloon or press hurts anyone after he is beaten, or lingers into the next fight -- only the scene is left', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var gy = groundY(); keep(4);
+      var id = ++BOSS_ATK_ID; annPuddle(b, { p:{ x:300, warnY:gy, life:0 }, id:id }); annLaser(b, f, id, 2); annAcid(b, f, id, 2); annBalloons(b, f, id, 2); annCakes(b, f, id, 2); annPress(b, 300, id, {});
+      var fighterShot = addProj({ owner:-2, ownerObj:{ team:0, idx:-2 }, assist:true, x:900, y:100, vx:0, vy:0, r:8, dmg:5, life:50 });   // an assist trophy's shot is not his
+      var before = projectiles.length;
+      ${KILL}
+      var left = projectiles.filter(function(p){ return p.owner === -2 && !p.assist; }).map(function(p){ return p.annMark || p.annGhost || p.shape; }).sort();
+      return { before: before, left: left, kept: projectiles.indexOf(fighterShot) >= 0 };
+    })()`);
+    expect(r.before, 'plenty of it about').toBeGreaterThan(8);
+    expect(r.left, 'only the ending\'s own scene: its mark and the carrier that plays the landing').toEqual([1, 'end']);
+    expect(r.kept, 'a fighter\'s own assist shot is left alone').toBe(true);
+  });
+
+  it('a carrier shot lands on the beat (the engine plays the impact: shake, dust, debris) and the scene is gone after ANN.end.total frames; it hurts nobody, even standing where he fell', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 700)}
       var gy = groundY(), out = { ev: [] }; keep(4); b.x = 550; b.vx = 0; keep(1); b._phase = 3;
       ${KILL}
@@ -811,7 +826,7 @@ describe('the ending: Spongy crushes him', () => {
     expect(r.ghost).toMatchObject({ dmg: 0, team: 0, hasImpact: true, vy: 26 });
     expect(Math.abs(r.landed - r.crush), 'Spongy lands on the beat').toBeLessThanOrEqual(2);
     expect(r.debris, 'heavy').toBeGreaterThanOrEqual(10);
-    expect(r.scars).toBeGreaterThanOrEqual(1);
+    expect(r.scars, 'no scar: the next boss\'s floor is not his').toBe(0);
     expect(r.gone).toBeGreaterThanOrEqual(r.total - 1);
     expect(r.gone).toBeLessThanOrEqual(r.total + 1);
     expect(r.hurt, 'a scene hurts nobody: not even the fighter standing where he fell').toBe(0);
