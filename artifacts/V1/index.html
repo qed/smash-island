@@ -277,6 +277,7 @@
   .mc-d{opacity:.85;min-width:0}
   .mc-wide{grid-column:1/-1}
   .mc-sub{opacity:.8;font-size:11px;margin-top:2px}
+  .mc-sponsor{grid-column:1/-1;opacity:.65;font-size:11px;font-style:italic;margin-top:2px}   /* "Sponsor a fighter": small and quiet, never a callout */
   .dlchead{flex:0 0 auto;display:flex;align-items:center;justify-content:center;padding:0 10px;min-width:84px;border-radius:12px;background:rgba(255,138,58,0.16);outline:2px dashed #ff8a3a;font-weight:800;font-size:12px;color:#1c1c1c}
   .cell.rostertoggle{background:rgba(255,210,63,0.14);outline:2px dashed var(--gold);font-weight:800;justify-content:center}
   .pcard.dead{opacity:.35}
@@ -630,6 +631,12 @@
           <button class="btn ghost sm" onclick="openStats()">📊 My Stats</button>
         </div>
         <div class="opthint">Your best fighters — how many matches you've played with each, and how often you won.</div>
+      </div>
+      <!-- SPONSORS ("Sponsor a fighter": a donor's name in the credits, no gameplay, no cosmetics). buildSponsorsUI
+           (near SUPPORT_URL) fills this and un-hides it; while SPONSORS is empty it stays hidden -- no empty heading. -->
+      <div class="optgrp" id="sponsorsGrp" style="display:none">
+        <div class="optlabel">Sponsors</div>
+        <div id="sponsorsList" class="opthint"></div>
       </div>
     </div>
     <div class="row" style="margin-top:16px">
@@ -2612,6 +2619,7 @@ function go(id){
   if(id==='quests'){ try{ buildQuests(); }catch(e){} }
   if(id==='store'){ try{ storeReply(''); buildStore(); }catch(e){} }
   if(id==='wardrobe'){ try{ buildWardrobe(); }catch(e){} }
+  if(id==='options'){ try{ buildSponsorsUI(); }catch(e){} }
   if(id==='title'){ try{ refreshWallets(); }catch(e){} }
   if(id==='result'){ try{ showQuestNote(); refreshWallets(); }catch(e){} }   // Boss Rush reaches its result screen through here
   // Screen music. Matches use go('_none_') and start their own bed, so they are not listed;
@@ -3311,8 +3319,11 @@ function refreshSel(){
       ["V", esc((smashKindOf(chosen) ? smashKindOf(chosen) + " · " : "") + smashBlurb(chosen)) + '<div class="mc-sub">' + esc(smashHowText(chosen)) + '</div>', true],
       ["X+C", mt ? esc(mt.finisher) : "Finisher", !!mt],
     ];
+    // "Sponsor a fighter": one quiet, escaped line under the kit -- '' (nothing rendered) when this fighter has none.
+    const spLine = sponsorLineHtml(chosen.name);
     mc.innerHTML = `<div class="mc-head">${chosen.name} — moves</div>` +
-      rows.map(r=>`<div class="mc-row${r[2]?' mc-wide':''}"><span class="mc-k">${r[0]}</span><span class="mc-d">${r[1]}</span></div>`).join("");
+      rows.map(r=>`<div class="mc-row${r[2]?' mc-wide':''}"><span class="mc-k">${r[0]}</span><span class="mc-d">${r[1]}</span></div>`).join("") +
+      (spLine ? `<div class="mc-sponsor">${spLine}</div>` : '');
   }
 }
 function buildStages(){
@@ -5133,7 +5144,9 @@ function rushFinish(){
   const el = document.getElementById('rushVictory'); if(el) el.style.display = 'none';
   running = false; paused = false; BOSSRUSH.active = false; BOSSRUSH.card = false;
   document.getElementById('resultTitle').textContent = "Victory!";
-  document.getElementById('resultSub').textContent = "Boss Rush beaten · bosses cleared: " + BOSSRUSH.cleared;
+  // "Sponsor a fighter": Four is the boss whose fall just won the run (wasFour, above) -- her/his sponsor line here.
+  { const sp = sponsorLineHtml('Boss:Four');
+    document.getElementById('resultSub').innerHTML = "Boss Rush beaten \u00b7 bosses cleared: " + BOSSRUSH.cleared + (sp?' \u00b7 '+sp:''); }
   const box = document.getElementById('scorecard'); if(box) box.innerHTML = "";
   try{ stopRunRecording(()=>showRunReview()); }catch(e){}
   go('result'); try{ showRunReview(); }catch(e){}
@@ -5147,7 +5160,10 @@ function bossRushCheck(){
   if(!anyAlive){
     running=false; BOSSRUSH.active=false;
     document.getElementById('resultTitle').textContent="Defeated";
-    document.getElementById('resultSub').textContent="The boss won. Bosses cleared: "+BOSSRUSH.cleared;
+    // "Sponsor a fighter": whoever chipped in for the boss that beat you, one quiet line, after the match ends --
+    // resultSub is read only once running is already false, so this can never show mid-fight.
+    { const sp = boss ? sponsorLineHtml('Boss:'+boss.name) : '';
+      document.getElementById('resultSub').innerHTML = "The boss won. Bosses cleared: "+BOSSRUSH.cleared + (sp?' \u00b7 '+sp:''); }
     const box=document.getElementById('scorecard'); if(box) box.innerHTML="";
     stopRunRecording(()=>showRunReview());   // finalize the recording and offer a replay
     setTimeout(()=>{ go('result'); showRunReview(); }, 800);
@@ -22860,6 +22876,43 @@ function applySupportLink(){
   a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer';   // a new tab that cannot reach back into the game
   row.hidden = false;
   return true;
+}
+
+// SPONSORS. The owner: "I really want to be able to pay off costs of using you" -- of the options offered, they
+// picked "Sponsor a fighter": a donor's name in the credits next to a fighter or boss they chipped in for. No
+// gameplay, no cosmetics, nothing sold -- this table is never read by step(), the AI or a hit, only by the three
+// quiet spots that draw it below (the character select move card, a Boss Rush result, and the Sponsors list in
+// Settings). There is no support page yet, so it ships EMPTY and the owner fills it by hand once someone donates
+// through whatever channel they end up using -- nothing here handles money or asks for it (see SUPPORT_URL above).
+//
+// To add a line: the key is a fighter's name exactly as ROSTER spells it, or "Boss:<name>" exactly as BOSS_ROSTER
+// spells it, and the value is a list of the names to show, e.g.
+//   const SPONSORS = { "Firey": ["Jane D."], "Boss:Four": ["Jane D.", "The Smith Family"] };
+// Plain text only -- no links, no HTML. Whatever is typed here is HTML-escaped (esc, above) before it reaches the
+// page, so a name can never inject a tag or carry a clickable address.
+const SPONSORS = {};
+function sponsorNames(key){
+  const list = SPONSORS[key];
+  return Array.isArray(list) ? list.filter(n=>typeof n==='string' && n.trim()) : [];
+}
+// One escaped, ready-for-innerHTML line, or '' when nobody sponsored this key -- callers show nothing at all then,
+// never an empty heading or an empty 'Sponsored by'.
+function sponsorLineHtml(key){
+  const names = sponsorNames(key);
+  return names.length ? 'Sponsored by ' + names.map(esc).join(', ') : '';
+}
+// The Settings screen's Sponsors list (this game's credits/about section): every SPONSORS entry, one per line.
+// Called from go('options'). Hidden, with no heading, while there is nothing to list.
+function buildSponsorsUI(){
+  const grp = document.getElementById('sponsorsGrp'), list = document.getElementById('sponsorsList');
+  if(!grp || !list) return;
+  const keys = Object.keys(SPONSORS).filter(k=>sponsorNames(k).length);
+  if(!keys.length){ grp.style.display = 'none'; list.innerHTML = ''; return; }
+  list.innerHTML = keys.map(k=>{
+    const label = k.indexOf('Boss:')===0 ? k.slice(5)+' (boss)' : k;
+    return '<div>'+esc(label)+': '+sponsorNames(k).map(esc).join(', ')+'</div>';
+  }).join('');
+  grp.style.display = '';
 }
 
 // ---- the catalogue ----
