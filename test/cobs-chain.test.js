@@ -49,7 +49,7 @@ async function fresh(w, js = '') {
     running = false; paused = false; BOSSRUSH.active = false; TOURNEY = { active:false }; PENDING_TOURNEY = null;
     CUSTOM_LEVEL = null; TESTMODE.active = false; TUT.active = false; DAILY_ACTIVE = false; PENDING_DAILY = null;
     ONEFIGHT.retry = null; if(ONEFIGHT.active) oneFightRestore(); COBSFIGHT.retry = null; if(COBSFIGHT.active) cobsFightRestore();
-    LOCAL_PLAYERS = 1; delete window.startRunningRace; window.__raceOpts = null;
+    LOCAL_PLAYERS = 1; if(window.__origRace) window.startRunningRace = window.__origRace; else delete window.startRunningRace; window.__raceOpts = null;
     SETTINGS.mode = 'ffa'; SETTINGS.count = 2; SETTINGS.stocks = 3; SETTINGS.itemRate = 0; SETTINGS.bossPick = 'rush';
     chosen = ROSTER.find(function(r){ return r.name==='Firey'; });
     ${js}`);
@@ -218,26 +218,35 @@ describe('RUNNING!', () => {
     sub(W, 'C0B5'); sub(W, 'MISTAH PHONE');
     expect(W.eval('({ open:cobsRaceOpen(), avail:cobsRaceAvailable(), start:cobsStartRace() })'), 'no code, no race').toEqual({ open: false, avail: false, start: false });
     sub(W, 'PH3N0M53 VK0CH');
-    // The race lane's mode is not in this build yet: the step is open but has no door, and the Vault shows no button.
-    expect(W.eval('({ open:cobsRaceOpen(), avail:cobsRaceAvailable(), start:cobsStartRace() })')).toEqual({ open: true, avail: false, start: false });
-    W.eval('openVault()');
-    expect(W.document.getElementById('cobsRunBtn')).toBe(null);
-    // The lane merged (stubbed): the button appears, and pressing it starts the race with the chain's onEnd.
-    W.eval(`window.startRunningRace = function(o){ window.__raceOpts = o; return true; }; buildVault();`);
+    // Without the race lane's mode in the build (this worktree; the lanes merge later) the step is open but has no door, and
+    // the Vault shows no button; with it merged, the door is there at once. The step's own state is the same either way.
+    const HAS_RACE = W.eval(`typeof startRunningRace === 'function'`);
+    expect(W.eval('({ open:cobsRaceOpen(), avail:cobsRaceAvailable() })')).toEqual({ open: true, avail: HAS_RACE });
+    if (!HAS_RACE) {
+      expect(W.eval('cobsStartRace()'), 'no mode, no race').toBe(false);
+      W.eval('openVault()');
+      expect(W.document.getElementById('cobsRunBtn')).toBe(null);
+    }
+    // The lane's entry, stubbed so no race runs here: the button appears, and pressing it starts the race with the chain's onEnd.
+    W.eval(`window.__origRace = window.startRunningRace; window.startRunningRace = function(o){ window.__raceOpts = o; return true; }; openVault();`);
     const btn = W.document.getElementById('cobsRunBtn');
     expect(btn && btn.textContent).toBe('Run ▶');
     btn.onclick();
     expect(W.eval('!!window.__raceOpts && typeof window.__raceOpts.onEnd')).toBe('function');
     expect(W.eval(`window.__raceOpts.onEnd(false); cobsQ().race`), 'a lost race is just a race').toBe(false);
     expect(W.eval(`fighters = [{ name:'Firey', you:true, team:0 }]; window.__raceOpts.onEnd(true); cobsQ().race`), 'won as anyone but Knife: no step').toBe(false);
-    expect(W.eval(`fighters = [{ name:'Knife', you:true, team:0 }]; window.__raceOpts.onEnd(true); cobsQ().race`)).toBe(true);
+    // The race lane's endRace hands onEnd(won, result) with result.fighter, the runner's name: that word wins over the stage.
+    expect(W.eval(`fighters = [{ name:'Knife', you:true, team:0 }]; window.__raceOpts.onEnd(true, { won:true, why:'crossed', secs:40, fighter:'Firey' }); cobsQ().race`), 'the result says another runner: no step').toBe(false);
+    expect(W.eval(`fighters = []; window.__raceOpts.onEnd(true, { won:true, why:'crossed', secs:40, fighter:'Knife' }); cobsQ().race`), 'the result says Knife: the step, with no fighter left on the stage').toBe(true);
     expect(W.eval(`window.__raceOpts.onEnd(true); cobsRaceWon()`), 'once').toBe(false);
+    W.eval(`PROFILE.cobs.race = false;`);
+    expect(W.eval(`fighters = [{ name:'Knife', you:true, team:0 }]; window.__raceOpts.onEnd(true); cobsQ().race`), 'no result given: the fighter in your hands').toBe(true);
     W.eval('buildVault()');
     expect(W.document.getElementById('cobsRunBtn'), 'the button goes with the step').toBe(null);
     expect(W.eval('cobsRaceOpen()')).toBe(false);
     await sleep(W, 0);
     expect(stored(W).cobs.race, 'saved at the deed').toBe(true);
-    W.eval(`delete window.startRunningRace; go('title')`);
+    W.eval(`if(window.__origRace) window.startRunningRace = window.__origRace; else delete window.startRunningRace; go('title')`);
   });
 });
 
@@ -432,6 +441,37 @@ describe('the fight, and Steve Cobs for good', () => {
     expect(src).toMatch(/OJ, Suitcase and Cabby/);
     expect(W.eval(`ROSTER.filter(function(r){ return /^(OJ|Suitcase|Cabby)$/.test(r.name); }).length`), 'no such fighter in this lane').toBe(0);
     expect(W.eval(`typeof cobsBeaten`)).toBe('function');
+    // ...and the moment the gate opens, that lane's installer is asked for by name, guarded, so a build without it is unmoved.
+    expect(W.eval('String(awardCobsDefeated)')).toMatch(/typeof syncPrizeRoster === 'function'\) syncPrizeRoster\(true\)/);
+    expect(W.eval('String(cobsFightEnded)')).toMatch(/PENDING_UNLOCKS/);
+  });
+
+  it('the prize lane\'s hook: the win asks syncPrizeRoster(true) when the build has it, and what it queues rides his result note, once', async () => {
+    await arm(W);
+    sub(W, 'THE FUTURE IS SO YESTERDAY');
+    // That lane's installer, stubbed (this worktree has none; a merged build has the real one, overridden here the same way):
+    // it records every call and, asked to announce once the gate is open, queues its rows in PENDING_UNLOCKS as the real one does.
+    W.eval(`window.__origPrize = window.syncPrizeRoster; window.__prizeCalls = []; window.__prizeDone = false;
+      window.syncPrizeRoster = function(announce){ window.__prizeCalls.push(announce);
+        if(announce && cobsBeaten() && !window.__prizeDone){ window.__prizeDone = true; PENDING_UNLOCKS.push('Prize A', 'Prize B', 'Prize A'); } };
+      go('title'); document.getElementById('cobsEntry').click();`);
+    expect(W.eval(`window.__prizeCalls.filter(function(a){ return a===true; }).length`), 'nothing before the win').toBe(0);
+    const r = W.eval(`COBSFIGHT.won = true; COBSFIGHT.frames = 60*70; running = true; cobsFightCheck();
+      ({ calls:window.__prizeCalls.filter(function(a){ return a===true; }).length, note:document.getElementById('unlockNote').textContent, pending:PENDING_UNLOCKS.length, beaten:cobsBeaten() })`);
+    expect(r.calls, 'asked to announce, at the win, with the gate already open').toBe(1);
+    expect(r.beaten).toBe(true);
+    expect(r.note).toMatch(/^★ STEVE COBS UNLOCKED! .*Boss Rush ▸ 🌽 Steve Cobs\. New fighters: Prize A, Prize B!$/);
+    expect(r.pending, 'drained: a Rematch cannot announce them twice').toBe(0);
+    await sleep(W, 950);
+    // Beaten again from his result screen's Rematch: the installer is asked again (its own call is idempotent), nothing is
+    // queued, and the note is his alone.
+    const again = W.eval(`go('result'); startMatch(); COBSFIGHT.won = true; COBSFIGHT.frames = 60*80; running = true; cobsFightCheck();
+      ({ calls:window.__prizeCalls.filter(function(a){ return a===true; }).length, note:document.getElementById('unlockNote').textContent, pending:PENDING_UNLOCKS.length })`);
+    expect(again.calls).toBe(2);
+    expect(again.note).toBe('★ Steve Cobs beaten 2 times · best 1:10');
+    expect(again.pending).toBe(0);
+    await sleep(W, 950);
+    W.eval(`if(window.__origPrize) window.syncPrizeRoster = window.__origPrize; else delete window.syncPrizeRoster; go('title')`);
   });
 });
 
