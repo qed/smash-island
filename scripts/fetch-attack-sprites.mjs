@@ -210,6 +210,24 @@ const PICKS = {
   // @boss:puffball:end picks
 
   // @boss:firey:begin picks
+  // Firey Speaker Box (Boss 3; the boss overhaul, 2026-09-29). The show's own files, no key needed (each is already a transparent
+  // PNG on the wiki), for what he throws and what a beaten one leaves. Boss art that is a render (his hoverboard, his metal look)
+  // is in CREDITS.md's table beside the other renders, and the fire he throws is the fireball and the flame already above.
+  //   fsbarm       YOU MUST!: "Pin's limbs are removed by mechanical hands from the Speaker Box" (Get in the Van/Transcript); the
+  //                arm is File:Fsb arm.png on his Gallery ("Firey speaker box's Arm")
+  //   firemonster  the volcano's Fire Monster, which "eats Flower when she runs into it" (Don't Pierce My Flesh/Transcript) and
+  //                lives in the magma (Volcano, Trivia); the hazard at the arena's two edges draws it
+  //   fsbpart1-7   "broken into 7 pieces" (Firey Speaker Box, Designs: Fireyspeakerboxparts.png, and Gallery: Fsb 1-7.png): his
+  //                ending. Each is its own file, torn wiring and all, drawn as one of seven pieces flung out of him
+  fsbarm:      { who: 'Firey Speaker Box', kits: ['fsbarm'], file: 'Fsb arm.png', note: "his arm, the mechanical hands of YOU MUST! (File:Fsb arm.png)", srcH: 400, h: 120 },
+  firemonster: { who: 'Firey Speaker Box', kits: ['fsbmonster'], file: 'Fire Monster.png', note: "the Fire Monster that lives in the volcano (File:Fire Monster.png)", srcH: 300, h: 128 },
+  fsbpart1:    { who: 'Firey Speaker Box', kits: ['fsbpart1'], file: 'Fsb 1.png', note: 'piece 1 of the seven he was broken into (File:Fsb 1.png)', h: 120 },
+  fsbpart2:    { who: 'Firey Speaker Box', kits: ['fsbpart2'], file: 'Fsb 2.png', note: 'piece 2 of the seven he was broken into (File:Fsb 2.png)', h: 120 },
+  fsbpart3:    { who: 'Firey Speaker Box', kits: ['fsbpart3'], file: 'Fsb 3.png', note: 'piece 3 of the seven he was broken into (File:Fsb 3.png)', h: 120 },
+  fsbpart4:    { who: 'Firey Speaker Box', kits: ['fsbpart4'], file: 'Fsb 4.png', note: 'piece 4 of the seven he was broken into (File:Fsb 4.png)', h: 120 },
+  fsbpart5:    { who: 'Firey Speaker Box', kits: ['fsbpart5'], file: 'Fsb 5.png', note: 'piece 5 of the seven he was broken into (File:Fsb 5.png)', h: 120 },
+  fsbpart6:    { who: 'Firey Speaker Box', kits: ['fsbpart6'], file: 'Fsb 6.png', note: 'piece 6 of the seven he was broken into (File:Fsb 6.png)', h: 120 },
+  fsbpart7:    { who: 'Firey Speaker Box', kits: ['fsbpart7'], file: 'Fsb 7.png', note: 'piece 7 of the seven he was broken into (File:Fsb 7.png)', h: 120 },
   // @boss:firey:end picks
 
   // @boss:swarm:begin picks

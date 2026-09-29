@@ -456,8 +456,10 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     expect(r.line).toBe("We're square.");
     expect(r.begin).toBe(true);
     // "Endings: 'All of them'" (the owner, 2026-09-29): the early six put theirs in their ENDING slots as they are rebuilt (the Announcer's is
-    // 'announcer'; test/boss-announcer.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
+    // 'announcer', test/boss-announcer.test.js; Firey Speaker Box's is 'firewall', "broken into 7 pieces", test/boss-firey-sb.test.js) --
+    // so Springy's stays first and nothing but the early six's attack keys joins it.
     expect(r.keys[0], "Springy's is first").toBe('springy');
+    expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall']));
     expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
   });
 
@@ -574,6 +576,7 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
         var out = { tel: [], shots: [], phase: null };
         b.x = 350; b._atkTimer = 1; b._moveN = 0;
         for (var t=0;t<3;t++){
+          b._fs = null; b._fsQ = 0;   // Firey Speaker Box's moves run for seconds (fsbMove) and the next wind-up waits for the last: each turn here starts from a settled boss, as the game's do
           window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
           projectiles = []; f.invuln = 0; b._tel = 1; updateBossAttack(b, f);

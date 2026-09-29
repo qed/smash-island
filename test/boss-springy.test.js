@@ -81,6 +81,7 @@ describe('Springy takes Boss 11', () => {
           var b = summons.find(function(s){ return s.type==='boss'; });
           order.push(b.name);
           if (b.name==='Springy'){
+            projectiles = [];   // "Endings: 'All of them' -- every boss gets a short canon exit scene when beaten" (the owner): the boss before him left its scene's shots (Firey Speaker Box's 7 pieces) and this walk steps no frame; a scene is over before the next boss arrives
             var padBefore = worldPlats.filter(function(p){ return p._springy && p.bouncy; }).length;
             springyHole(300, 1, ++BOSS_ATK_ID); springyPlaceBox(600, groundY());
             projectiles.push({ owner:-2, springMark:true, springy:true, delay:1e6, x:300, y:800, r:1, life:1 },
