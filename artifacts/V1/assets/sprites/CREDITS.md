@@ -620,3 +620,70 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
   of this file (no art beats wrong art), it keeps the drawn body every assist had before.
 - **`beach-ball.png`** -- the Beach Ball page's own image, `Elswerebeachball.png`: the ball with its face, arms and legs.
   Drawn centred on the body, and squashed for a few frames on each ricochet.
+
+## Per-fighter skins (Wardrobe)
+
+25 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`. They are loaded only when
+worn, never at boot, and the fighter's own render above is unchanged. Each was fetched with the same pipeline as every render
+above: `node scripts/fetch-sprites.mjs --wiki=<subdomain> --out-dir=artifacts/V1/assets/sprites/skins
+--manifest=scripts/sprite-manifest-skins.json "Skin Name=File.png@Fighter"`, so each one is genuinely transparent, has a face,
+was scaled server-side to 200px tall and had its invisible halo erased; and each was looked at before it was kept: one character,
+a visible face, no lettering added to the art, nobody else in the shot. The rows (skin, fighter, wiki, File: name, exact source
+URL) are in `scripts/sprite-manifest-skins.json`, deliberately NOT in `scripts/sprite-manifest.json`, which
+`scripts/wire-sprites.mjs` regenerates the fighter block from, so a re-run of that script never wires a skin in. The Store's
+thumbnails of them (56px at most, embedded in index.html) are downscaled copies of the same files. The wiki file names are the
+wiki's own; they are recorded here and in the manifest and nowhere else.
+
+### Battle for Dream Island wiki skins
+
+Same provenance as the twelve above: jacknjellify's character artwork, via battlefordreamisland.fandom.com; no formal license --
+used under fan-work norms in a disclaimed, non-commercial fan game.
+
+| Skin | Fighter | File | Size | Wiki file | Source |
+|---|---|---|---|---|---|
+| Broken Fries | Fries | `skins/broken-fries.png` | 124×200 | `File:Empty damaged Fries BFDIA 18.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Empty_damaged_Fries_BFDIA_18.png/revision/latest?cb=20250327225508 |
+| Robot Pin | Pin | `skins/robot-pin.png` | 171×200 | `File:WirelessPin is Good.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f5/WirelessPin_is_Good.png/revision/latest?cb=20250810010917 |
+| Mech Firey | Firey | `skins/mech-firey.png` | 148×200 | `File:FireyMech.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/06/FireyMech.png/revision/latest?cb=20260518190524 |
+| Mech Woody | Woody | `skins/mech-woody.png` | 250×200 | `File:Mech Woody.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c6/Mech_Woody.png/revision/latest?cb=20260911072052 |
+| Robo Coiny | Coiny | `skins/robo-coiny.png` | 151×200 | `File:Robo Coiny.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1c/Robo_Coiny.png/revision/latest?cb=20251029225401 |
+| Upgraded TV | TV | `skins/upgraded-tv.png` | 193×200 | `File:UpgradedTV.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/75/UpgradedTV.png/revision/latest?cb=20240914194347 |
+| Glow Fries | Fries | `skins/glow-fries.png` | 141×200 | `File:FriesBFDIA16.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b2/FriesBFDIA16.png/revision/latest?cb=20250129154150 |
+| Zombieball | Snowball | `skins/zombieball.png` | 200×200 | `File:Zombie snowball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Zombie_snowball.png/revision/latest?cb=20240507170928 |
+| Cracked Golf Ball | Golf Ball | `skins/cracked-golf-ball.png` | 159×200 | `File:CrackedGB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/93/CrackedGB.png/revision/latest?cb=20250509223836 |
+| Shattered Book | Book | `skins/shattered-book.png` | 195×200 | `File:BookGlass.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a6/BookGlass.png/revision/latest?cb=20251206143042 |
+| Bandaged Bomby | Bomby | `skins/bandaged-bomby.png` | 196×200 | `File:BMBO1.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c7/BMBO1.png/revision/latest?cb=20190704163912 |
+| Knight Match | Match | `skins/knight-match.png` | 102×200 | `File:MatchHelmet.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/MatchHelmet.png/revision/latest?cb=20240615092905 |
+| Chef Grassy | Grassy | `skins/chef-grassy.png` | 134×200 | `File:Chef Grassy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/Chef_Grassy.png/revision/latest?cb=20260629095836 |
+
+### Inanimate Insanity wiki skins
+
+Inanimate Insanity, its characters and designs are the property of **AnimationEpic** (Adam Katz and Taylor Grodin). Same
+footing as above: an unaffiliated, non-commercial fan game, no formal license, used under fan-work norms. From
+inanimateinsanity.fandom.com.
+
+| Skin | Fighter | File | Size | Wiki file | Source |
+|---|---|---|---|---|---|
+| Rockstar Poppy | Poppy | `skins/rockstar-poppy.png` | 196×200 | `File:KISS poppy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/ba/KISS_poppy.png/revision/latest?cb=20260331024508 |
+| Rockstar Paper | Paper | `skins/rockstar-paper.png` | 174×200 | `File:KISS paper.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/KISS_paper.png/revision/latest?cb=20260331024124 |
+| Rockstar Tapey | Tapey | `skins/rockstar-tapey.png` | 237×200 | `File:KISS tapey.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9b/KISS_tapey.png/revision/latest?cb=20260331024423 |
+| Rockstar Starfruit | Starfruit | `skins/rockstar-starfruit.png` | 194×200 | `File:KISS starfruit.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f3/KISS_starfruit.png/revision/latest?cb=20260331024322 |
+| Rockstar Lightbulb | Lightbulb | `skins/rockstar-lightbulb.png` | 124×200 | `File:KISS lightbulb.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/2e/KISS_lightbulb.png/revision/latest?cb=20260331024012 |
+| Battered Fan | Fan | `skins/battered-fan.png` | 170×200 | `File:HealedFan.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/ec/HealedFan.png/revision/latest?cb=20260803183634 |
+| Tattered Jack | Jack | `skins/tattered-jack.png` | 171×200 | `File:Jack Hurt.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1f/Jack_Hurt.png/revision/latest?cb=20260403164336 |
+| Tattered Bow | Bow | `skins/tattered-bow.png` | 208×200 | `File:Tattered Bow (Season 2).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fe/Tattered_Bow_%28Season_2%29.png/revision/latest?cb=20260325034805 |
+| Snazzy Nickel | Nickel (II) | `skins/snazzy-nickel.png` | 141×200 | `File:Nicklesnazzy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1e/Nicklesnazzy.png/revision/latest?cb=20160808213230 |
+| Lab-Coat Test Tube | Test Tube | `skins/lab-coat-test-tube.png` | 86×200 | `File:Lab Coat Test Tube (S2E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4d/Lab_Coat_Test_Tube_%28S2E3%29.png/revision/latest?cb=20260317124319 |
+| Detective Yin-Yang | Yin-Yang | `skins/detective-yin-yang.png` | 184×200 | `File:Yin-Yang's Detective Disguise (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/86/Yin-Yang%27s_Detective_Disguise_%28S4E4%29.png/revision/latest?cb=20260315063438 |
+| Investigator Lifering | Lifering | `skins/investigator-lifering.png` | 184×200 | `File:Investigator's Top Hat Lifering (S3E15).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e7/Investigator%27s_Top_Hat_Lifering_%28S3E15%29.png/revision/latest?cb=20260315063442 |
+
+### Notes on individual skins
+
+- **`skins/tattered-jack.png`** -- the card's own "J" and spade index shows in two corners, exactly as on the fighter's
+  `jack.png`; it is the character's design, not lettering added by the skin.
+- **`skins/detective-yin-yang.png`** -- the script measured facing -0.076 (flip), but that is the black half pulling the ink
+  centroid left. Read by eye it is front-on, so it is not flipped.
+- **`skins/knight-match.png`** -- the wiki's helmet pose: the knight's helmet is lifted overhead in both hands, not yet worn.
+- **`skins/broken-fries.png`** -- the wiki's empty, damaged Fries (torn corner, no fries). The other damaged-Fries files on the
+  wiki (`Ripped Fries.png`, `RottenRippedFriesAsset.png`) are faceless and were ruled out before fetching.
+- **`skins/robot-pin.png`** -- the wiki's Mech Pin design (tank treads and a battery), fetched as `WirelessPin is Good.png`.
+- **`skins/snazzy-nickel.png`** -- his eyes are behind sunglasses; the face is the glasses and the flat mouth.

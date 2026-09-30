@@ -7,6 +7,16 @@
 //
 //   node scripts/fetch-sprites.mjs Needle Pin Snowball ...      # fetch these fighters
 //   node scripts/fetch-sprites.mjs --audit                      # re-measure facing for what exists
+//   node scripts/fetch-sprites.mjs --wiki=inanimateinsanity ... # another show's wiki (AnimationEpic's designs)
+//   node scripts/fetch-sprites.mjs --out-dir=<dir> --manifest=<file> ...
+//        # write the PNGs to <dir> and the manifest rows to <file>, instead of artifacts/V1/assets/sprites and
+//        # scripts/sprite-manifest[-<wiki>].json. Nothing else changes: same checks, same 200px, same halo erase.
+//   spec "Skin Name=File.png@Fighter"   # the row key and output name (slug(Skin Name).png); the wiki File: to fetch
+//        # instead of the page's own image; and, optionally, the roster fighter it is for (stored as `fighter`).
+//        # Given --out-dir or --manifest, every row also records `wiki` (the subdomain) and `sourceFile`.
+//        # The per-fighter skins (Wardrobe) use this, from BOTH wikis, into one manifest that
+//        # scripts/wire-sprites.mjs never reads (it rebuilds the fighter block from every accepted row of sprite-manifest.json):
+//        #   --out-dir=artifacts/V1/assets/sprites/skins --manifest=scripts/sprite-manifest-skins.json
 //
 // WHAT IT GUARANTEES (a render that fails any of these is REJECTED, never shipped):
 //   · genuinely transparent — a render with an opaque rectangular background reads as a sticker
@@ -19,7 +29,7 @@
 // dark ink (eyes/brows/mouth) against the centroid of the body silhouette. Negative means the face
 // sits left of the body's middle, i.e. the art natively faces LEFT and needs `flip:true`.
 
-import { writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { PNG } from 'pngjs';
 
 // --wiki=<fandom subdomain> fetches from another show's wiki: the Inanimate Insanity DLC's renders come from
@@ -27,8 +37,12 @@ import { PNG } from 'pngjs';
 const WIKI_SUB = (process.argv.find(a => a.startsWith('--wiki=')) || '--wiki=battlefordreamisland').slice(7);
 const WIKI = `https://${WIKI_SUB}.fandom.com`;
 const UA = { 'User-Agent': 'smash-island-fan-game/1.0 (personal fan project)' };
-const OUT_DIR = 'artifacts/V1/assets/sprites';
-const MANIFEST = WIKI_SUB === 'battlefordreamisland' ? 'scripts/sprite-manifest.json' : `scripts/sprite-manifest-${WIKI_SUB}.json`;
+// --out-dir=<dir> / --manifest=<file> redirect the PNGs / the manifest rows (the per-fighter skins, see the top).
+const flag = k => { const a = process.argv.find(x => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : ''; };
+const OUT_ARG = flag('out-dir'), MANIFEST_ARG = flag('manifest');
+const TAGGED = !!(OUT_ARG || MANIFEST_ARG);   // only then do rows also record `wiki` and `sourceFile`
+const OUT_DIR = OUT_ARG || 'artifacts/V1/assets/sprites';
+const MANIFEST = MANIFEST_ARG || (WIKI_SUB === 'battlefordreamisland' ? 'scripts/sprite-manifest.json' : `scripts/sprite-manifest-${WIKI_SUB}.json`);
 const TARGET_H = 200;
 
 export function slug(name) {
@@ -174,8 +188,14 @@ function clean(png) {
 
 // ---- main -------------------------------------------------------------------------------------
 async function fetchOne(spec) {
-  const [name, overrideFile] = spec.split("=");
+  const [name, rest] = spec.split("=");
+  // "Skin Name=File.png@Fighter": the @Fighter tail is optional (the roster fighter this render is for)
+  const at = rest ? rest.lastIndexOf('@') : -1;
+  const overrideFile = at >= 0 ? rest.slice(0, at) : rest;
+  const fighter = at >= 0 ? rest.slice(at + 1) : '';
   const row = { name, slug: slug(name) };
+  if (fighter) row.fighter = fighter;
+  if (TAGGED) { row.wiki = WIKI_SUB; if (overrideFile) row.sourceFile = overrideFile; }
   try {
     const src = await findRender(name, overrideFile);
     if (!src) return { ...row, ok: false, reason: 'no infobox render on the wiki page' };
@@ -189,6 +209,7 @@ async function fetchOne(spec) {
     if (bad.length) return { ...row, ok: false, reason: bad[0], analysis: a };
 
     const cleaned = clean(png);
+    if (OUT_ARG) mkdirSync(OUT_DIR, { recursive: true });
     writeFileSync(`${OUT_DIR}/${row.slug}.png`, PNG.sync.write(png));
     return {
       ...row, ok: true, file: `${row.slug}.png`,

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { basename } from 'node:path';
 import { JSDOM } from 'jsdom';
+import { PNG } from 'pngjs';
 import { mulberry32 } from './helpers/prng.js';
 
 // WIN TOKENS -- quests earn them, the Store spends them on looks, the Wardrobe wears them.
@@ -69,17 +71,18 @@ function rec2d() {
       (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createConicGradient' || p === 'createPattern') ? () => grad
         : p === 'measureText' ? () => ({ width: 0 })
         : p === 'canvas' ? { width: 1100, height: 720 }
+        : p === 'getImageData' ? () => ({ data: [] })
         : (...a) => { log.push([String(p), a]); }),
     set: (_t, p, v) => { (sets[p] = sets[p] || []).push(v); return true; },
   });
   return { ctx, log, sets };
 }
-function boot({ storage = {}, transform, rng = 7, filter = false } = {}) {
+function boot({ storage = {}, transform, rng = 7, filter = false, ctx2d } = {}) {
   let html = SRC; if (transform) html = transform(html);
   const dom = new JSDOM(html, {
     url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(window) {
-      window.HTMLCanvasElement.prototype.getContext = () => stub2d(filter);
+      window.HTMLCanvasElement.prototype.getContext = () => (ctx2d ? ctx2d() : stub2d(filter));
       window.Math.random = mulberry32(rng);
       window.requestAnimationFrame = () => 0;
       window.cancelAnimationFrame = () => {};
@@ -395,7 +398,8 @@ describe('quests', () => {
 
 describe('cosmetics', () => {
   // Every playable fighter wears one of each kind in a real match -- running both ways, hit, KO'ing a foe -- on a render
-  // (a decoded image) and on the vector art, with and without a canvas filter. Every cosmetic is worn by several fighters.
+  // (a decoded image) and on the vector art, with and without a canvas filter. Every cosmetic is worn by several fighters, except a
+  // skin, which is worn by the one fighter it belongs to (on its own decoded picture for half of them) and by nobody else.
   it('every cosmetic draws on every fighter, render and vector alike, through a match', async () => {
     const run = async (filter, parity) => {
       const w = await ready({ filter });
@@ -407,12 +411,17 @@ describe('cosmetics', () => {
           if (i % 2 !== ${parity}) return;
           var r = ROSTER.find(function(x){ return x.name===name; });
           var at = function(k){ var l = K(k); return l[i % l.length].id; };   // each kind round and round, so every look is worn by several fighters
-          var pick = { skin: at('skin'), hat: at('hat'), trail: at('trail'), ko: at('ko'), pose: at('pose'), card: at('card'), title: at('title') };
-          equipCos('skin', pick.skin, name); equipCos('hat', pick.hat, name);
-          ['trail','ko','pose','card','title'].forEach(function(k){ equipCos(k, pick[k]); });
-          Object.keys(pick).forEach(function(k){ used[pick[k]] = 1; });
-          var render = ((i >> 1) % 2 === 0) && SPRITES[name];
+          var own = K('skin').filter(function(c){ return c.fighter === name; }), washes = K('skin').filter(function(c){ return !c.fighter; });
+          // a fighter with skins puts each on in turn (Fries has two); one without wears an old recolour, if any are left
+          (own.length ? own : [washes.length ? washes[i % washes.length] : null]).forEach(function(skin){
+          var pick = { hat: at('hat'), trail: at('trail'), ko: at('ko'), pose: at('pose'), card: at('card'), title: at('title') };
+          if (skin) pick.skin = skin.id;
+          if (skin && equipCos('skin', skin.id, name)) used[skin.id] = 1;
+          if (equipCos('hat', pick.hat, name)) used[pick.hat] = 1;
+          ['trail','ko','pose','card','title'].forEach(function(k){ if (equipCos(k, pick[k])) used[pick[k]] = 1; });
+          var render = ((i >> 1) % 2 === 0) && SPRITES[name], skinSp = render && skin && skin.src ? cosSkinSprite(skin, name) : null;
           if (render){ SPRITES[name]._req = true; SPRITES[name].img = { complete: true, naturalWidth: 120, naturalHeight: 160 }; }
+          if (skinSp){ skinSp._req = true; skinSp.img = { complete: true, naturalWidth: 150, naturalHeight: 160 }; }
           try {
             chosen = r; SETTINGS.mode = 'ffa'; SETTINGS.count = 2; SETTINGS.stocks = 3; LINEUP_MEMO = null;
             startMatch();
@@ -424,6 +433,8 @@ describe('cosmetics', () => {
             n++;
           } catch (e) { errs.push(name + ': ' + (e && e.message)); }
           if (render) SPRITES[name].img = null;
+          if (skinSp) skinSp.img = null;
+          });
         });
         running = false;
         return { n: n, errs: errs, used: Object.keys(used), bursts: bursts, drawErr: COS_DRAW_ERR ? String(COS_DRAW_ERR.stack || COS_DRAW_ERR) : null,
@@ -451,14 +462,17 @@ describe('cosmetics', () => {
         SETTINGS.mode = 'ffa'; SETTINGS.count = 4; SETTINGS.stocks = 2; SETTINGS.itemRate = 2; LINEUP_MEMO = null;
         chosen = ROSTER.find(function(x){ return x.name==='Firey'; });
         var drawn = { hat: 0, trail: 0, skin: 0, ko: 0 };
+        // Firey's render is decoded in both worlds, so the dressed one draws his skin's picture where the plain one draws his own.
+        SPRITES.Firey._req = true; SPRITES.Firey.img = { complete: true, naturalWidth: 150, naturalHeight: 200 };
         if (${dressed}) {
           walletEarn(100000); COSMETICS.forEach(function(c){ buyCosmetic(c.id); });
-          equipCos('skin', 'sk_gold', 'Firey'); equipCos('hat', 'hat_crown', 'Firey'); equipCos('trail', 'tr_rainbow'); equipCos('ko', 'ko_confetti');
+          equipCos('skin', 'sk_firey_mech', 'Firey'); equipCos('hat', 'hat_crown', 'Firey'); equipCos('trail', 'tr_rainbow'); equipCos('ko', 'ko_confetti');
           equipCos('pose', 'po_spin'); equipCos('card', 'cd_dream'); equipCos('title', 'ti_legend');
-          var h = drawCosHat, tr = drawCosTrail, sk = cosSkinOn, kb = drawKoBurst;
+          var skinSp = cosSkinSprite(cosItem('sk_firey_mech'), 'Firey'); skinSp._req = true; skinSp.img = { complete: true, naturalWidth: 148, naturalHeight: 200 };
+          var h = drawCosHat, tr = drawCosTrail, sk = cosSkinSprite, kb = drawKoBurst;
           drawCosHat = function(){ drawn.hat++; return h.apply(this, arguments); };
           drawCosTrail = function(){ drawn.trail++; return tr.apply(this, arguments); };
-          cosSkinOn = function(s){ if (s) drawn.skin++; return sk.apply(this, arguments); };
+          cosSkinSprite = function(){ var r = sk.apply(this, arguments); if (r && spriteImage(r)) drawn.skin++; return r; };
           drawKoBurst = function(){ drawn.ko++; return kb.apply(this, arguments); };
         }
         Math.random = (${mulberry32.toString()})(4242);   // the same dice from here, in both worlds
@@ -473,7 +487,7 @@ describe('cosmetics', () => {
     };
     const plain = await play(false), dressed = await play(true);
     expect(dressed.drawn.hat, 'the crown was drawn').toBeGreaterThan(0);
-    expect(dressed.drawn.skin, 'the recolour was drawn').toBeGreaterThan(0);
+    expect(dressed.drawn.skin, 'the skin\'s picture was drawn').toBeGreaterThan(0);
     expect(dressed.drawn.trail, 'the trail was drawn').toBeGreaterThan(0);
     expect(dressed.end).toEqual(plain.end);
     expect(dressed.frames).toBe(plain.frames);
@@ -610,6 +624,250 @@ describe('the canon looks', () => {
   });
 });
 
+// THE SKINS. "the skins should be by-fighter(like rockstar poppy, broken fries, robot pin)": a skin is a second render of ONE fighter, from
+// the show's own wikis, worn only by that fighter. Twenty-five, all approved ("Rockstar Poppy; Broken Fries; Robot Pin (the wiki's Mech
+// Pin)..."), sold for Win Tokens at the tier the plan gave each.
+describe('the skins', () => {
+  // [id, fighter, name, price]: in the owner's order, after the seven recolours they replace (whose places in the online code they keep).
+  const SKINS = [
+    ['sk_poppy_rock', 'Poppy', 'Rockstar Poppy', 150], ['sk_fries_broken', 'Fries', 'Broken Fries', 115], ['sk_pin_robot', 'Pin', 'Robot Pin', 150],
+    ['sk_firey_mech', 'Firey', 'Mech Firey', 150], ['sk_woody_mech', 'Woody', 'Mech Woody', 150], ['sk_coiny_robo', 'Coiny', 'Robo Coiny', 150],
+    ['sk_paper_rock', 'Paper', 'Rockstar Paper', 150], ['sk_tapey_rock', 'Tapey', 'Rockstar Tapey', 150],
+    ['sk_starfruit_rock', 'Starfruit', 'Rockstar Starfruit', 115], ['sk_lightbulb_rock', 'Lightbulb', 'Rockstar Lightbulb', 115],
+    ['sk_tv_upgraded', 'TV', 'Upgraded TV', 150], ['sk_fries_glow', 'Fries', 'Glow Fries', 115], ['sk_snowball_zombie', 'Snowball', 'Zombieball', 115],
+    ['sk_golfball_cracked', 'Golf Ball', 'Cracked Golf Ball', 75], ['sk_book_shattered', 'Book', 'Shattered Book', 75],
+    ['sk_fan_battered', 'Fan', 'Battered Fan', 115], ['sk_jack_tattered', 'Jack', 'Tattered Jack', 75], ['sk_bow_tattered', 'Bow', 'Tattered Bow', 115],
+    ['sk_bomby_bandaged', 'Bomby', 'Bandaged Bomby', 75], ['sk_match_knight', 'Match', 'Knight Match', 75], ['sk_grassy_chef', 'Grassy', 'Chef Grassy', 75],
+    ['sk_nickel_snazzy', 'Nickel (II)', 'Snazzy Nickel', 75], ['sk_testtube_labcoat', 'Test Tube', 'Lab-Coat Test Tube', 75],
+    ['sk_yinyang_detective', 'Yin-Yang', 'Detective Yin-Yang', 75], ['sk_lifering_invest', 'Lifering', 'Investigator Lifering', 75],
+  ];
+  const ids = SKINS.map((r) => r[0]);
+
+  it('are in the shop: twenty-five, each for one playable fighter, at its tier, after the old recolours', async () => {
+    const w = await ready();
+    const rows = w.eval("cosOfKind('skin').map(function(c){ return { id: c.id, fighter: c.fighter || null, name: c.name, price: c.price, src: c.src || null, flip: !!c.flip, imgH: c.imgH, imgW: c.imgW }; })");
+    for (const [id, fighter, name, price] of SKINS) expect(rows.find((r) => r.id === id), id).toMatchObject({ id, fighter, name, price });
+    expect(rows.filter((r) => r.fighter)).toHaveLength(25);
+    expect(rows.slice(-25).map((r) => r.id), 'after everything the kind already held, in the owner\'s order').toEqual(ids);
+    const playable = w.eval("ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })");
+    for (const r of rows.filter((x) => x.fighter)) {
+      expect(playable, `${r.id}: ${r.fighter} is a playable fighter`).toContain(r.fighter);
+      expect(r.id).toMatch(/^[a-z][a-z0-9_]{0,23}$/);
+      expect(r.imgH, `${r.id} is fitted into a box`).toBeGreaterThan(2);
+      expect(r.imgW).toBeGreaterThan(2);
+    }
+    // the tiers: a mech suit, a guitar or a new base is large (150); makeup or a change of colour or form, medium (115); a hat, a coat or a scuff, small (75)
+    expect(new Set(rows.filter((r) => r.fighter).map((r) => r.price))).toEqual(new Set([75, 115, 150]));
+    expect(rows.filter((r) => r.fighter && r.fighter === 'Fries').map((r) => r.name), 'one fighter may have two').toEqual(['Broken Fries', 'Glow Fries']);
+    for (const c of w.eval("COSMETICS.map(function(c){ return c.id; })")) expect(c).toMatch(/^[a-z][a-z0-9_]{0,23}$/);
+  });
+
+  it('each has its own picture: a transparent 200 px render in assets/sprites/skins/, in the manifest, in CREDITS.md, and a thumbnail for the Store', async () => {
+    const w = await ready();
+    const rows = w.eval("cosOfKind('skin').filter(function(c){ return c.fighter; }).map(function(c){ return { id: c.id, fighter: c.fighter, name: c.name, src: c.src, flip: !!c.flip }; })");
+    const manifest = JSON.parse(readFileSync('scripts/sprite-manifest-skins.json', 'utf8'));
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const thumbs = w.eval('COS_SKIN_THUMBS');
+    expect(Object.keys(thumbs).sort()).toEqual(ids.slice().sort());
+    expect(Object.keys(manifest).sort(), 'the manifest holds these 25 and nothing else').toEqual(rows.map((r) => r.name).sort());
+    for (const r of rows) {
+      const file = `artifacts/V1/${r.src}`, m = manifest[r.name];
+      expect(r.src, r.id).toMatch(/^assets\/sprites\/skins\/[a-z0-9-]+\.png$/);
+      expect(existsSync(file), `${r.id}: ${file} exists`).toBe(true);
+      const png = PNG.sync.read(readFileSync(file));
+      expect(png.height, `${r.id} is 200 px tall, like every render`).toBe(200);
+      let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] === 0) clear++;
+      expect(clear / (png.width * png.height), `${r.id} is a cut-out with a transparent background`).toBeGreaterThan(0.15);
+      expect(png.data[3], 'the corner is clear').toBe(0);
+      expect(m, `${r.id} is in scripts/sprite-manifest-skins.json`).toBeTruthy();
+      expect(m).toMatchObject({ ok: true, fighter: r.fighter, file: basename(r.src), width: png.width, height: 200 });
+      expect(m.source, r.id).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/(battlefordreamisland|inanimateinsanity)\/images\//);
+      expect(credits, `${r.id}'s source URL is credited in CREDITS.md`).toContain(m.source);
+      expect(credits).toContain(`skins/${basename(r.src)}`);
+      expect(!!m.flipEye, `${r.id}: which way it faces was read by eye, not by the script's centroid`).toBe(r.flip);
+      // the thumbnail: a PNG data: URI, at most 56 px on a side and a few KB, so the Store can show the skin without fetching anything
+      const t = thumbs[r.id];
+      expect(t, r.id).toMatch(/^data:image\/png;base64,/);
+      const tp = PNG.sync.read(Buffer.from(t.split(',')[1], 'base64'));
+      expect(Math.max(tp.width, tp.height), `${r.id}'s thumbnail`).toBeLessThanOrEqual(56);
+      expect(t.length, `${r.id}'s thumbnail is small`).toBeLessThan(6500);
+    }
+    // nothing else in the folder: every file is one of the 25
+    expect(readdirSync('artifacts/V1/assets/sprites/skins').sort()).toEqual(rows.map((r) => basename(r.src)).sort());
+  });
+
+  it('are worn by their own fighter and nobody else, from the Wardrobe, a save or a join code alike', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){
+      walletEarn(10000); COSMETICS.forEach(function(c){ buyCosmetic(c.id); });
+      var out = {};
+      out.onOther = equipCos('skin', 'sk_pin_robot', 'Firey');            // Pin's skin on Firey
+      out.onNobody = equipCos('skin', 'sk_pin_robot');
+      out.onOwn = equipCos('skin', 'sk_pin_robot', 'Pin');
+      out.worn = [wornCos('skin', 'Pin'), wornCos('skin', 'Firey')];
+      // a save (or another tab) that says otherwise does not dress Firey in it
+      PROFILE.cos.f.Firey = { skin: 'sk_pin_robot' };
+      out.saved = wornCos('skin', 'Firey');
+      out.mine = myCos('Firey');
+      // Fries has two, one at a time
+      equipCos('skin', 'sk_fries_broken', 'Fries'); equipCos('skin', 'sk_fries_glow', 'Fries');
+      out.fries = wornCos('skin', 'Fries');
+      out.sprite = [cosSkinSprite(cosItem('sk_pin_robot'), 'Pin') ? 'pin' : null, cosSkinSprite(cosItem('sk_pin_robot'), 'Firey') ? 'firey' : null];
+      return out; })()`);
+    expect(r.onOther, 'Pin\'s skin will not go on Firey').toBe(false);
+    expect(r.onNobody, 'a skin needs its fighter named').toBe(false);
+    expect(r.onOwn).toBe(true);
+    expect(r.worn).toEqual(['sk_pin_robot', null]);
+    expect(r.saved, 'a save that says Firey wears it: he does not').toBe(null);
+    expect(r.mine ? r.mine.skin : null).toBe(null);
+    expect(r.fries, 'one skin at a time, the last put on').toBe('sk_fries_glow');
+    expect(r.sprite).toEqual(['pin', null]);
+  });
+
+  it('swap the render: the skin\'s picture is drawn in place of the plain one, once it has decoded, and only on its fighter', async () => {
+    const rec = rec2d();
+    const w = await ready({ ctx2d: () => rec.ctx });
+    const scene = (name, setup) => {
+      rec.log.length = 0;
+      w.eval(`(function(){ ${setup};
+        chosen = ROSTER.find(function(x){ return x.name === ${JSON.stringify(name)}; }); SETTINGS.mode = 'ffa'; SETTINGS.count = 2; SETTINGS.stocks = 3; LINEUP_MEMO = null;
+        startMatch(); for (var i = 0; i < 3; i++){ step(); draw(); } running = false; })()`);
+      return rec.log.filter((e) => e[0] === 'drawImage' && e[1][0] && e[1][0].tag).map((e) => e[1][0].tag);
+    };
+    w.eval(`walletEarn(10000); COSMETICS.forEach(function(c){ buyCosmetic(c.id); });
+      window.__img = function(tag){ return { complete: true, naturalWidth: 171, naturalHeight: 200, tag: tag }; };
+      SPRITES.Pin._req = true; SPRITES.Pin.img = __img('base');
+      var sk = cosSkinSprite(cosItem('sk_pin_robot'), 'Pin'); sk._req = true; sk.img = __img('skin');`);
+    const wear = "equipCos('skin', 'sk_pin_robot', 'Pin')", bare = "equipCos('skin', null, 'Pin')";
+    const worn = scene('Pin', wear);
+    expect(worn, 'Robot Pin is drawn').toContain('skin');
+    expect(worn, 'and the plain render is not').not.toContain('base');
+    expect(scene('Pin', bare), 'without it, the plain render').toEqual(expect.arrayContaining(['base']));
+    expect(scene('Pin', bare)).not.toContain('skin');
+    // not yet decoded (or never: a 404): the plain render stays, never the blob
+    const pending = scene('Pin', wear + "; COS_SKIN_SPRITES.sk_pin_robot.img = null");
+    expect(pending).toContain('base');
+    expect(pending).not.toContain('skin');
+    w.eval("COS_SKIN_SPRITES.sk_pin_robot.img = __img('skin')");
+    // another fighter handed Pin's skin -- a stale save, another player's join code -- does not wear it
+    w.eval("SPRITES.Firey._req = true; SPRITES.Firey.img = __img('firey')");
+    const spoofed = scene('Firey', "cosOf = function(f){ return f.you ? { skin: 'sk_pin_robot', hat: null, trail: null, ko: null } : null; }");
+    expect(spoofed).toContain('firey');
+    expect(spoofed).not.toContain('skin');
+  }, 120000);
+
+  it('give way while worn: no painted limb rig (it was measured on the plain picture) and none of the fighter\'s own pose swaps', async () => {
+    const rec = rec2d();
+    const w = await ready({ ctx2d: () => rec.ctx });
+    const r = w.eval(`(function(){
+      walletEarn(10000); COSMETICS.forEach(function(c){ buyCosmetic(c.id); });
+      var img = function(){ return { complete: true, naturalWidth: 171, naturalHeight: 200 }; }, calls = { rig: 0, body: 0 };
+      var lm = limbMoves; limbMoves = function(){ calls.rig++; return lm.apply(this, arguments); };
+      var swaps = {};
+      ['Lifering', 'Yin-Yang'].forEach(function(n){ var a = FIGHTER_ANIM[n], b = a.body; swaps[n] = 0; a.body = function(){ swaps[n]++; return b.apply(this, arguments); }; });
+      var play = function(name, skinId){
+        SPRITES[name]._req = true; SPRITES[name].img = img();
+        var sk = cosSkinSprite(cosItem(skinId), name); sk._req = true; sk.img = img();
+        chosen = ROSTER.find(function(x){ return x.name === name; }); SETTINGS.mode = 'ffa'; SETTINGS.count = 2; SETTINGS.stocks = 3; LINEUP_MEMO = null;
+        startMatch(); for (var i = 0; i < 3; i++){ step(); draw(); } running = false;
+      };
+      var out = {};
+      equipCos('skin', null, 'Pin'); calls.rig = 0; play('Pin', 'sk_pin_robot'); out.rigPlain = calls.rig;
+      equipCos('skin', 'sk_pin_robot', 'Pin'); calls.rig = 0; play('Pin', 'sk_pin_robot'); out.rigSkin = calls.rig;
+      out.body = {};
+      [['Lifering', 'sk_lifering_invest'], ['Yin-Yang', 'sk_yinyang_detective']].forEach(function(p){
+        equipCos('skin', null, p[0]); swaps[p[0]] = 0; play(p[0], p[1]); var plain = swaps[p[0]];
+        equipCos('skin', p[1], p[0]); swaps[p[0]] = 0; play(p[0], p[1]); out.body[p[0]] = [plain, swaps[p[0]]];
+      });
+      return out; })()`);
+    expect(r.rigPlain, 'the plain Pin asks the rig for her limbs').toBeGreaterThan(0);
+    expect(r.rigSkin, 'Robot Pin does not').toBe(0);
+    for (const [name, [plain, skin]] of Object.entries(r.body)) {
+      expect(plain, `${name}'s pose swaps run on the plain render`).toBeGreaterThan(0);
+      expect(skin, `${name}'s skin stays put while it is worn`).toBe(0);
+    }
+  }, 120000);
+
+  it('ride the online join as one character, like every look, and every kind still fits the code', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){
+      var out = { rt: [], counts: {} };
+      COS_KINDS.slice(0, 4).forEach(function(kind){
+        out.counts[kind] = cosOfKind(kind).length;
+        cosOfKind(kind).forEach(function(it){
+          var c = {}; c[kind] = it.id; var code = cosNetCode(c), back = cosNetDecode(code);
+          out.rt.push([it.id, code.length, back && back[kind]]);
+        });
+      });
+      return out; })()`);
+    for (const [id, len, back] of r.rt) { expect(len, id).toBe(4); expect(back, `${id} comes back as itself`).toBe(id); }
+    // One base-36 character per kind, 0 meaning none: a kind holds 35 looks, and the skins' 25 fit.
+    for (const [kind, count] of Object.entries(r.counts)) expect(count, `${kind} stays within one character`).toBeLessThanOrEqual(35);
+    expect(r.counts.skin).toBeLessThanOrEqual(35);
+    // A code for a fighter that cannot wear the skin never dresses that fighter (the drawing asks again), and a garbled one dresses no one.
+    expect(w.eval("cosNetDecode('zzzz')")).toBe(null);
+  });
+
+  it('are shown in the Store by their own thumbnail (no <img>, no request), name their fighter, wear on that fighter, and keep Vault fighters secret', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){
+      var srcs = [], OI = window.Image;
+      window.Image = function(){ var im = new OI(); Object.defineProperty(im, 'src', { set: function(v){ srcs.push(String(v)); }, get: function(){ return ''; } }); return im; };
+      walletEarn(100000); COSMETICS.forEach(function(c){ buyCosmetic(c.id); });
+      go('store');
+      var cell = function(id){ return document.querySelector('#storeList .scell[data-id="' + id + '"]'); };
+      var out = { imgs: document.querySelectorAll('#store img').length, canvases: cell('sk_pin_robot').querySelectorAll('canvas').length,
+        caption: cell('sk_pin_robot').querySelector('.sfor').textContent,
+        listed: cosOfKind('skin').filter(function(c){ return c.fighter && cell(c.id); }).length,
+        secret: ['sk_lightbulb_rock', 'sk_bow_tattered'].map(function(id){ return !!cell(id); }),
+        text: document.getElementById('storeList').textContent.indexOf('Lightbulb') + document.getElementById('storeList').textContent.indexOf('Tattered Bow') };
+      out.srcs = srcs.filter(function(u){ return !/^data:image\\/png;base64,/.test(u); }).length;
+      out.thumbs = srcs.length;
+      // Wear from the Store: it goes on the skin's own fighter, not on whoever is picked
+      chosen = ROSTER.find(function(x){ return x.name === 'Bubble'; });
+      cell('sk_pin_robot').querySelector('button').click();
+      out.worn = [wornCos('skin', 'Pin'), wornCos('skin', 'Bubble')];
+      // a code opens a Vault fighter: then that fighter's skin is in the Store
+      PROFILE.unlocked.push('Lightbulb'); go('store');
+      out.afterLightbulb = [!!cell('sk_lightbulb_rock'), !!cell('sk_bow_tattered')];
+      PROFILE.unlocked.push('Bow'); go('store');
+      out.afterBow = !!cell('sk_bow_tattered');
+      window.Image = OI;
+      return out; })()`);
+    expect(r.imgs, 'the Store puts no picture on the page').toBe(0);
+    expect(r.canvases, 'a skin\'s preview is a canvas').toBe(1);
+    expect(r.thumbs, 'one thumbnail decoded for each skin the Store listed, at least').toBeGreaterThanOrEqual(23);
+    expect(r.srcs, 'and every one is a data: URI: nothing is fetched').toBe(0);
+    expect(r.caption).toBe('for Pin');
+    expect(r.listed, 'the 23 skins of fighters anyone may know of').toBe(23);
+    expect(r.secret, 'the Vault fighters\' skins are not in the Store while those fighters are locked').toEqual([false, false]);
+    expect(r.text, 'and the Store does not name either fighter').toBe(-2);
+    expect(r.worn).toEqual(['sk_pin_robot', null]);
+    expect(r.afterLightbulb, 'Lightbulb opened: his skin appears, Bow\'s still does not').toEqual([true, false]);
+    expect(r.afterBow).toBe(true);
+  }, 60000);
+
+  it('are offered in the Wardrobe to the fighter they belong to, among their own', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){
+      walletEarn(100000); COSMETICS.forEach(function(c){ buyCosmetic(c.id); });
+      PROFILE.unlocked.push('Fries', 'Pin');
+      var chips = function(name){ WARDROBE_PICK = name; go('wardrobe');
+        var secs = [].slice.call(document.querySelectorAll('#wardFighterSlots .shopsec')), sk = secs.filter(function(s){ return s.textContent === 'Skins'; })[0];
+        return sk ? [].slice.call(sk.nextElementSibling.querySelectorAll('.wchip')).filter(function(b){ return !b.dataset.id || cosItem(b.dataset.id).fighter; }).map(function(b){ return b.textContent; }) : null; };
+      var out = { fries: chips('Fries'), pin: chips('Pin'), firey: chips('Firey') };
+      WARDROBE_PICK = 'Pin'; go('wardrobe');
+      var chip = [].slice.call(document.querySelectorAll('#wardFighterSlots .wchip')).filter(function(b){ return b.textContent === 'Robot Pin'; })[0];
+      chip.click();
+      out.worn = wornCos('skin', 'Pin');
+      return out; })()`);
+    expect(r.fries, 'Fries wears either of his two').toEqual(['None', 'Broken Fries', 'Glow Fries']);
+    expect(r.pin).toEqual(['None', 'Robot Pin']);
+    expect(r.firey).toEqual(['None', 'Mech Firey']);
+    expect(r.worn).toBe('sk_pin_robot');
+  }, 60000);
+});
+
 describe('online', () => {
   const wire = (w, role, players) => w.eval(`(function(){
     NET.role = ${JSON.stringify(role)}; NET.myId = 'me'; NET.room = 'QXTR';
@@ -618,36 +876,40 @@ describe('online', () => {
 
   it('a look rides the join as four small ids, once, and reaches every screen', async () => {
     const w = await ready();
-    w.eval(`walletEarn(5000); ['sk_gold','hat_crown','tr_spark','ko_zap'].forEach(buyCosmetic);
-      equipCos('skin','sk_gold','Pencil'); equipCos('hat','hat_crown','Pencil'); equipCos('trail','tr_spark'); equipCos('ko','ko_zap');`);
-    wire(w, 'client', [{ id: 'h', name: 'Leafy', isHost: true }, { id: 'me', name: 'Pencil' }]);
-    const hello = w.eval(`(function(){ NET.sent = []; NET.pickFighter('Pencil'); return NET.sent; })()`);
+    w.eval(`walletEarn(5000); ['sk_firey_mech','hat_crown','tr_spark','ko_zap'].forEach(buyCosmetic);
+      equipCos('skin','sk_firey_mech','Firey'); equipCos('hat','hat_crown','Firey'); equipCos('trail','tr_spark'); equipCos('ko','ko_zap');`);
+    wire(w, 'client', [{ id: 'h', name: 'Leafy', isHost: true }, { id: 'me', name: 'Firey' }]);
+    const hello = w.eval(`(function(){ NET.sent = []; NET.pickFighter('Firey'); return NET.sent; })()`);
     expect(hello).toHaveLength(1);
     expect(hello[0].t).toBe('hello');
     const [fighter, code] = hello[0].name.split('~');
-    expect(fighter).toBe('Pencil');
+    expect(fighter).toBe('Firey');
     expect(code).toMatch(/^[0-9a-z]{4}$/);
-    expect(w.eval(`cosNetDecode(${JSON.stringify(code)})`)).toEqual({ skin: 'sk_gold', hat: 'hat_crown', trail: 'tr_spark', ko: 'ko_zap' });
+    // A look is its position in its kind, one character each, and those positions are the protocol: Mech Firey is the eleventh skin
+    // (the seven old recolours hold the first seven places for ever), the crown the eighth hat, the sparkles the first trail,
+    // Thunderclap the fifth KO effect.
+    expect(code).toBe('b815');
+    expect(w.eval(`cosNetDecode(${JSON.stringify(code)})`)).toEqual({ skin: 'sk_firey_mech', hat: 'hat_crown', trail: 'tr_spark', ko: 'ko_zap' });
     // The relay keeps 24 characters of a name: the longest fighter with a full code still fits.
     expect(w.eval(`Math.max.apply(null, ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name.length; }))`) + 5).toBeLessThanOrEqual(24);
     // The lobby shows the fighter, never the code.
-    w.eval(`NET.onMessage({ t: 'roster', players: [{ id: 'h', name: 'Leafy~1100', isHost: true }, { id: 'me', name: 'Pencil~' + ${JSON.stringify(code)} }] })`);
+    w.eval(`NET.onMessage({ t: 'roster', players: [{ id: 'h', name: 'Leafy~1100', isHost: true }, { id: 'me', name: 'Firey~' + ${JSON.stringify(code)} }] })`);
     const roster = w.document.getElementById('lobbyRoster').textContent;
-    expect(roster).toContain('Leafy'); expect(roster).toContain('Pencil (you)'); expect(roster).not.toContain('~');
+    expect(roster).toContain('Leafy'); expect(roster).toContain('Firey (you)'); expect(roster).not.toContain('~');
 
     // The host copies each player's code into the start; the client dresses each slot from it.
     const h = await ready();
-    wire(h, 'host', [{ id: 'me', name: 'Leafy', isHost: true }, { id: 'b', name: 'Pencil~' + code }, { id: 'c', name: 'Rocky' }]);
+    wire(h, 'host', [{ id: 'me', name: 'Leafy', isHost: true }, { id: 'b', name: 'Firey~' + code }, { id: 'c', name: 'Rocky' }]);
     const start = h.eval(`(function(){ NET.beginMatch = function(){}; SETTINGS.mode='ffa'; SETTINGS.count=3; NET.startAsHost();
       return NET.sent.filter(function(m){ return m.t==='start'; })[0]; })()`);
-    expect(start.roster).toEqual(['Leafy', 'Pencil', 'Rocky']);
+    expect(start.roster).toEqual(['Leafy', 'Firey', 'Rocky']);
     expect(start.cos).toEqual(['', code, '']);
     const c = w.eval(`(function(){ var s = startMatch; startMatch = function(){};
       // beginMatch(settings, roster, ids, cos): the seats (ids) come from the bug pass's fix for players leaving mid-match; the
       // looks (cos) ride after them.
-      NET.beginMatch({ mode:'ffa', count:3, stocks:3 }, ['Leafy','Pencil','Rocky'], ['h','me','c'], ${JSON.stringify(['0200', code, 'zzzz'])});
+      NET.beginMatch({ mode:'ffa', count:3, stocks:3 }, ['Leafy','Firey','Rocky'], ['h','me','c'], ${JSON.stringify(['0200', code, 'zzzz'])});
       startMatch = s;
-      return { host: cosOf({ idx: 0, you: false }), me: cosOf({ idx: 1, you: true, name: 'Pencil' }), rocky: cosOf({ idx: 2, you: false }), ai: cosOf({ idx: 3, you: false }) }; })()`);
+      return { host: cosOf({ idx: 0, you: false }), me: cosOf({ idx: 1, you: true, name: 'Firey' }), rocky: cosOf({ idx: 2, you: false }), ai: cosOf({ idx: 3, you: false }) }; })()`);
     expect(c.host).toEqual({ skin: null, hat: 'hat_top', trail: null, ko: null });
     expect(c.me.hat).toBe('hat_crown');
     expect(c.rocky, 'a code that is not in the catalogue dresses no one').toBe(null);
@@ -655,7 +917,7 @@ describe('online', () => {
     // Nothing wearing nothing: a player with no looks sends exactly the hello they always did.
     const bare = await ready();
     wire(bare, 'client', [{ id: 'h', name: 'Leafy', isHost: true }, { id: 'me', name: 'Bubble' }]);
-    expect(bare.eval(`(function(){ NET.sent = []; NET.pickFighter('Pencil'); return NET.sent[0].name; })()`)).toBe('Pencil');
+    expect(bare.eval(`(function(){ NET.sent = []; NET.pickFighter('Firey'); return NET.sent[0].name; })()`)).toBe('Firey');
   });
 
   it('adds nothing to the snapshots but a KO burst, once, on the snapshot after the KO', async () => {
@@ -700,7 +962,9 @@ describe('the Store', () => {
       return { n: cells.length, total: COSMETICS.length, every: every, poor: poor, rich: rich, worn: worn,
                wallet: document.querySelector('#store .walletAmt').textContent, title: (go('title'), document.querySelector('#title .walletAmt').textContent) };
     })()`);
-    expect(r.n).toBe(r.total);
+    // Every look but the skins of the two Vault fighters (Lightbulb, Bow), who "can ONLY be opened by a code": until a code opens
+    // one, the Store does not say that fighter exists (see the skins block).
+    expect(r.n).toBe(r.total - 2);
     expect(r.every, 'every price is in Win Tokens').toBe(true);
     expect(r.poor.owned).toBe(false);
     expect(r.poor.reply).toMatch(/need 75 more Win Tokens/);
