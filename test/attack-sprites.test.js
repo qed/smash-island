@@ -71,7 +71,9 @@ const KEYS = ['shatter', 'atstake', 'van', 'float', 'cap', 'pricetag', 'measure'
   // Purple Face, rebuilt (the boss overhaul, 2026-09-29): the show's art for his bug, totems, shoes, star and the warehouse's magnet (test/boss-purple-face.test.js)
   'pfacebug', 'pfacetotem', 'pfacetotemw', 'pfaceshoe', 'pfacestar', 'pfacemagnet',
   // The Bug Swarm's bugs (the boss overhaul, "Give the swarm a sprite."): the Bugs page's assets (test/boss-bug-swarm.test.js)
-  'bugpurple', 'bugred', 'bugcool', 'bugsting', 'bugegg', 'bugeggs', 'bugsplat', 'bugbig', 'bughost', 'bugmutant', 'buglarva', 'bugqueen'];
+  'bugpurple', 'bugred', 'bugcool', 'bugsting', 'bugegg', 'bugeggs', 'bugsplat', 'bugbig', 'bughost', 'bugmutant', 'buglarva', 'bugqueen',
+  // Puffball Speaker Box's knives (CONSEQUENCES!, and the one in her back) and PRIVATE!'s notes (test/boss-puffball.test.js)
+  'psbknife', 'psbnote'];
 
 describe('the registry', () => {
   it('names only shapes the game draws, and every file exists', () => {
@@ -86,7 +88,7 @@ describe('the registry', () => {
   it('every file in the attack folder is drawn by some entry -- none is dead weight', () => {
     const drawn = new Set(W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src.split("/").pop(); })'));
     const onDisk = readdirSync('artifacts/V1/assets/sprites/attacks').filter((f) => f.endsWith('.png'));
-    expect(onDisk.length).toBe(111);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the boss overhaul's: the Announcer's 9, Firey Speaker Box's 9, Purple Face's 6, the Bug Swarm's 12
+    expect(onDisk.length).toBe(113);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the boss overhaul's: the Announcer's 9, Firey Speaker Box's 9, Purple Face's 6, the Bug Swarm's 12, Puffball Speaker Box's 2
     expect(onDisk.filter((f) => !drawn.has(f))).toEqual([]);
   });
 

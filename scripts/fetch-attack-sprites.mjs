@@ -207,6 +207,11 @@ const PICKS = {
   // @boss:announcer:end picks
 
   // @boss:puffball:begin picks
+  // Puffball Speaker Box. Catch These Hands: "Puffball Speaker Box slices Book to pieces with several knives" -- the Cake at Stake knife
+  // (File:One knife.png: the wiki's own clean, transparent file of it) is what CONSEQUENCES! throws, and the one stuck in her back from phase 2.
+  // PRIVATE!'s notes are the BFDIA 14 note body (faceless, like the other NNbody props above). The sound rings and the lake are drawn.
+  psbknife: { who: 'Puffball Speaker Box', kits: ['psbknife'], file: 'One knife.png', note: 'one of the knives that slice Book to pieces (Catch These Hands: "slices Book to pieces with several knives"), the Cake at Stake knife; the same knife is the one stuck in her back', h: 100 },
+  psbnote:  { who: 'Puffball Speaker Box', kits: ['psbnote'],  file: 'Bfdia 14body musicnote.png', note: 'a note of her song in PRIVATE! (the BFDIA 14 note body, faceless)' },
   // @boss:puffball:end picks
 
   // @boss:firey:begin picks

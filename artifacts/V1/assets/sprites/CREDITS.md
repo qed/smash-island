@@ -509,6 +509,21 @@ off his top-left corner in Return of the Hang Glider. Scaled server-side to 200 
 <!-- @boss:announcer:end credits -->
 
 <!-- @boss:puffball:begin credits -->
+Puffball Speaker Box, Boss 2 (rebuilt in the boss overhaul, 2026-09-29). Her shots wear the show's art where the wiki has a clean file
+of the thing, fetched by `node scripts/fetch-attack-sprites.mjs <out> psbknife psbnote` (the picks are in that script's Puffball Speaker Box
+slot), and are drawn in code where it has none ("Yes, cut or draw"); scripts/attack-sprite-manifest.json records both files:
+- the knives CONSEQUENCES! throws ("Puffball Speaker Box slices Book to pieces with several knives", Catch These Hands/Transcript), and the
+  knife stuck in her back from phase 2 (the blade hidden behind her render): the Cake at Stake knife, File:One knife.png (`psbknife.png`);
+- the notes of her song in PRIVATE! ("I'll let you sort those out in PRIVATE!"): the BFDIA 14 note body (`psbnote.png`);
+- the rainbow stream of RAINBOW BARF! is the rainbow substance that is already `rainbow.png` (File:Barf rainbow long.png, credited above under
+  Puffball), laid along each shot's flight;
+- SONIC BLAST!'s rings (arcs of sound in the rainbow substance's six colours), the disco floor, the lead-paint lake, the shutters and the
+  Clubhouse's backdrop are drawn: File:Sound Wave.png is the Sound Wave character, not a ring, so no file of a sound wave was used;
+- her ending's Spongy is the existing assist render (`spongy.png`, credited under Assist trophies); her own render is unchanged
+  (`puffball-speaker-box.png`, File:Newpsb.png, in the table at the top).
+
+- Puffball Speaker Box (psbknife.png): one of the knives that slice Book to pieces (Catch These Hands: "slices Book to pieces with several knives"), the Cake at Stake knife; the same knife is the one stuck in her back — File:One knife.png — https://static.wikia.nocookie.net/battlefordreamisland/images/7/73/One_knife.png/revision/latest?cb=20200617113300
+- Puffball Speaker Box (psbnote.png): a note of her song in PRIVATE! (the BFDIA 14 note body, faceless) — File:Bfdia 14body musicnote.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/f5/Bfdia_14body_musicnote.png/revision/latest?cb=20250417032420
 <!-- @boss:puffball:end credits -->
 
 <!-- @boss:firey:begin credits -->

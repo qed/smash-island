@@ -44,7 +44,7 @@ describe('MePhone4 joins the gauntlet', () => {
     })()`);
     expect(r.rows).toEqual([
       ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'cakeatstake', false, 'announcer'],   // his own place, the Cake at Stake place (boss overhaul, 'Each its own'; test/boss-announcer.test.js has the fight)
-      ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'studio', false, 'speaker'],
+      ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'clubhouse', false, 'speaker'],   // the Clubhouse of Awesomeness (test/boss-puffball.test.js)
       ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'volcano', false, 'speakerfirey'],   // the volcano now, and four attacks of his own: the owner cut FIRE WALL! for THE TLC NEEDS TO BE FIXED! (boss-plan-early.md 5, Round 9; test/boss-firey-sb.test.js)
       // The Bug Swarm, rebuilt in the boss overhaul (2026-09-29): "the bosses should have more attacks the later they get.
       // starting from bug swarm, they should have 5" -- his own five, in the Bug Hive, in the wiki's purple (test/boss-bug-swarm.test.js)
@@ -62,7 +62,7 @@ describe('MePhone4 joins the gauntlet', () => {
       ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four'],
     ]);
     expect(r.extra).toEqual({
-      'Announcer': ['annlaser', 'annacid', 'annballoon'], 'Puffball Speaker Box': ['slam', 'rain'], 'Firey Speaker Box': ['furnace', 'youmust'],
+      'Announcer': ['annlaser', 'annacid', 'annballoon'], 'Puffball Speaker Box': ['consequences', 'rainbowbarf', 'private'], 'Firey Speaker Box': ['furnace', 'youmust'],
       'The Bug Swarm': ['dodgepattern', 'swarmseek', 'dodgeball', 'eggsac'], 'Purple Face': ['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes'], 'Purple Dragon': ['slam', 'rain'],
       'MePhone4': ['melife', 'portal'],
       'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
