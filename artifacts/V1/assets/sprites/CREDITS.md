@@ -587,6 +587,13 @@ none is shipped); the Beryllium Fortress is drawn, its warning as a scribble and
 <!-- @boss:purpleface:end credits -->
 
 <!-- @boss:dragon:begin credits -->
+Purple Dragon (Boss 6), the hotel roof in the storm. What it throws wears the show's art, cut by `scripts/fetch-attack-sprites.mjs` (its `dragonflame` and
+`dragonroboty` picks) into `assets/sprites/attacks/`, alpha verified, looked at before it was kept. Its lightning is the TPOT 7 strike already credited above
+(`tpot7bolt.png`, the file Lightning strikes with), drawn again down the column of a rope anchor. Everything else the wind lottery throws -- the Gelatin's
+Steakhouse sign, the Recovery Center, Two and Gaty's couch, the chainsaw, the missing poster, the master key -- is drawn in code (`PROJ_SHAPE`), because the
+sign's and the Recovery Center's files have their lettering baked in and a match shows no words. Its own render is unchanged (`purple-dragon.png`, above).
+- Purple Dragon (dragonflame.png): the flame of its breath (Dragon page: "The dragon breathing fire"), lifted out of the frame — File:Dragony3.png — https://static.wikia.nocookie.net/battlefordreamisland/images/9/90/Dragony3.png/revision/latest?cb=20230729190206
+- Purple Dragon (dragonroboty.png): Roboty, who "flies in" through the door in the wind lottery (Category One) — File:Roboty book.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/Roboty_book.png/revision/latest?cb=20190908174044
 <!-- @boss:dragon:end credits -->
 
 ## Assist trophies

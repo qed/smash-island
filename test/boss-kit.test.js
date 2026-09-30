@@ -458,9 +458,9 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     // "Endings: 'All of them'" (the owner, 2026-09-29): the early six put theirs in their ENDING slots as they are rebuilt (the Announcer's is
     // 'announcer', test/boss-announcer.test.js; Firey Speaker Box's is 'firewall', "broken into 7 pieces", test/boss-firey-sb.test.js; Purple
     // Face's is 'swallow', test/boss-purple-face.test.js; the Bug Swarm's is 'swarm', test/boss-bug-swarm.test.js; Puffball Speaker Box's is
-    // 'soundwave', test/boss-puffball.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
+    // 'soundwave', test/boss-puffball.test.js; the Purple Dragon's is 'dragon', it waves back and flies away, test/boss-dragon.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
     expect(r.keys[0], "Springy's is first").toBe('springy');
-    expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm', 'soundwave']));
+    expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm', 'soundwave', 'dragon']));
     expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
   });
 
@@ -572,7 +572,9 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
 
   // With every slot still holding only what was there, the six fight exactly as they did: each signature and each second
   // move fires real boss shots (or, for Purple Face, swallows), a wind-up names the move, and a phase is announced.
-  for (const name of ['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face', 'Purple Dragon']) {
+  // (The Purple Dragon is not in this loop any more: "the bosses should have more attacks the later they get" -- its five are flights and scenes, a roar's shove
+  // and dive, a run's shadow, a lottery's door, that land no shot on the frame the wind-up ends. test/boss-dragon.test.js reads each one over its whole length.)
+  for (const name of ['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face']) {
     it(`${name} still fights as it did, through its slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], shots: [], phase: null };

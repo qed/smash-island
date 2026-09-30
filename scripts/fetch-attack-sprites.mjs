@@ -275,6 +275,14 @@ const PICKS = {
   // @boss:purpleface:end picks
 
   // @boss:dragon:begin picks
+  // ---- Purple Dragon (Boss 6): what it throws. The flame: File:Dragony3.png (Dragon page gallery: "The dragon breathing fire") is a frame of the Fishes and Dishes dragon
+  // on a plain sky, the fire a swirl of orange and yellow in front of its mouth; the pixels that are fire are kept, the largest piece of them, and the sky in the ring stays clear.
+  // Roboty is his book render (the one his fighter wears): "Roboty flies in" through the door in the wind lottery (Category One). The Steakhouse sign, the Recovery Center, the
+  // couch, the chainsaw, the paper and the key the wind lottery threw are DRAWN (PROJ_SHAPE): the sign's and the Recovery Center's files have their lettering baked in, and a match
+  // shows no words -- "Yes, cut or draw" (the owner, 2026-09-29).
+  dragonflame:  { who: 'Purple Dragon', kits: ['dragon'], file: 'Dragony3.png', key: 'prop', region: [668, 340, 860, 500], srcH: 767, h: 44,
+    keep: (r, g, b) => r >= 200 && g >= 120 && b <= 175 && r - b >= 70, note: 'the flame of its breath (Dragon page: "The dragon breathing fire"), lifted out of the frame' },
+  dragonroboty: { who: 'Purple Dragon', kits: ['dragon'], file: 'Roboty book.png', h: 64, note: 'Roboty, who "flies in" through the door in the wind lottery (Category One)' },
   // @boss:dragon:end picks
 
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----

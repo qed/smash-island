@@ -51,7 +51,7 @@ describe('MePhone4 joins the gauntlet', () => {
       ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug'],
       // rebuilt (the boss overhaul, 2026-09-29): the warehouse is his arena ("yellow faces warehouse.") and he moves ("Only if canon moves"); test/boss-purple-face.test.js has the fight
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face'],
-      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'cave', false, 'dragon'],
+      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon'],   // the hotel roof in the storm, no longer the shared cave ("Each its own", the owner, 2026-09-29)
       // 255, was 240: under the Dragon's 250 before him, and measured easier than the Dragon (the review; see
       // test/boss-rush-order.test.js)
       ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone'],
@@ -63,7 +63,7 @@ describe('MePhone4 joins the gauntlet', () => {
     ]);
     expect(r.extra).toEqual({
       'Announcer': ['annlaser', 'annacid', 'annballoon'], 'Puffball Speaker Box': ['consequences', 'rainbowbarf', 'private'], 'Firey Speaker Box': ['furnace', 'youmust'],
-      'The Bug Swarm': ['dodgepattern', 'swarmseek', 'dodgeball', 'eggsac'], 'Purple Face': ['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes'], 'Purple Dragon': ['slam', 'rain'],
+      'The Bug Swarm': ['dodgepattern', 'swarmseek', 'dodgeball', 'eggsac'], 'Purple Face': ['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes'], 'Purple Dragon': ['dragonroar', 'dragonchar', 'dragonwind', 'dragonropes'],
       'MePhone4': ['melife', 'portal'],
       'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
       'Four': ['rain', 'seekers'],
