@@ -4726,10 +4726,6 @@ function advanceKnockout(){
   const winners = cur.map(fx=> fx.winner);
   if(winners.length===1){ TOURNEY.champion=winners[0]; TOURNEY.stage="done";
     try{ awardWorldCup(TOURNEY.champion); }catch(e){}   // award AT assignment, guarded + idempotent
-    // Cobs's chain, "no losing, or you have to do it all again": a FINAL you were in and LOST is decided here -- finishWatchedKnockout
-    // crowns your final on the spot, never passing simRestOfRound's eliminated site -- so the run empties here too. (Out earlier?
-    // The run was already emptied where you went out; cobsCupLost on an empty run is nothing.)
-    if(TOURNEY.mode==="normal" && TOURNEY.champion!==TOURNEY.myTeam){ try{ cobsCupLost(); }catch(e){} }
     showTourneyHub(); return; }
   const next=[];
   for(let i=0;i<winners.length;i+=2){ next.push({ kind:"ko", a:winners[i], b:winners[i+1], played:false, result:null }); }
@@ -4747,7 +4743,7 @@ function simRestOfRound(){
   // track knockout elimination for the player's team
   if(TOURNEY.mode==="normal" && !TOURNEY.eliminated && TOURNEY.stage==="knockout"){
     const myFx = TOURNEY.fixtures.find(fx=>fx.a===TOURNEY.myTeam||fx.b===TOURNEY.myTeam);
-    if(myFx && myFx.winner && myFx.winner!==TOURNEY.myTeam){ TOURNEY.eliminated=true; try{ cobsCupLost(); }catch(e){} }   // Cobs's chain: "no losing, or you have to do it all again"
+    if(myFx && myFx.winner && myFx.winner!==TOURNEY.myTeam){ TOURNEY.eliminated=true; }
   }
   proceedAfterRound();
 }
@@ -4758,7 +4754,6 @@ function proceedAfterRound(){
       // normal mode: if your team didn't qualify, you're out — spectate the rest
       if(TOURNEY.mode==="normal" && TOURNEY.bracketTeams && !TOURNEY.bracketTeams.includes(TOURNEY.myTeam)){
         TOURNEY.eliminated=true; banner("Your team was eliminated in the group stage.", 2000);
-        try{ cobsCupLost(); }catch(e){}   // Cobs's chain: a cup lost in the group stage is a cup lost
       }
       showTourneyHub();
     }
@@ -5417,7 +5412,6 @@ function bossRushCheck(){
   BOSSRUSH.frames = (BOSSRUSH.frames||0) + 1;
   const boss = summons.find(s=>s.type==="boss" && s._bossRush);
   const anyAlive = fighters.some(f=>!f.dead);
-  try{ cobsPendTick(boss); }catch(e){}   // Cobs's chain: knocked out by the boss after the one you felled (cobsPendKill)
   // lose: all fighters out
   if(!anyAlive){
     running=false; BOSSRUSH.active=false;
@@ -5431,7 +5425,6 @@ function bossRushCheck(){
   // boss down: clear it, advance to the next (endless gauntlet)
   if(boss && boss.hp<=0){
     BOSSRUSH.cleared++;
-    if(BOSSRUSH.cobsPend && BOSSRUSH.cobsPend.next === boss.name) BOSSRUSH.cobsPend = null;   // you beat the next one too: "one but not two"
     try{ awardBossCleared(boss.name); }catch(e){}   // persist at the deed, not at run end
     for(let i=0;i<40;i++) puff(boss.x,boss.y,boss.color,8);
     const wasFour = (boss.name==="Four");
@@ -21983,7 +21976,7 @@ function mergeProfiles(stored, mine){
   out.fighterStatsSeeded = !!(stored.fighterStatsSeeded || mine.fighterStatsSeeded);
   out.one = mergeOne(stored.one, mine.one);   // only ever upward: a stale tab cannot bring One's bans back
   out.bossKills = mergeBossKills(stored.bossKills, mine.bossKills);   // a kill is a kill in either tab (union per boss)
-  out.cobs = mergeCobs(stored.cobs, mine.cobs);   // upward too: stage and counts by max, flags by OR, the cups by the longer run
+  out.cobs = mergeCobs(stored.cobs, mine.cobs);   // upward too: stage and counts by max, flags by OR, the cups by union
   // Win Tokens (see that block). Earned and spent are totals that only rise, and each merges to the larger side PLUS what
   // the other side has that it does not -- a quest it was paid for, a cosmetic it bought -- so a stale tab can neither undo
   // a purchase nor lose a payout, and nothing is counted twice. Owned cosmetics are a set (union); what is worn follows mine.
@@ -22152,7 +22145,7 @@ function awardBossCleared(name, solo){
   if(!PROFILE) return [];
   PROFILE.bossesCleared[name] = true;
   try{ syncPrizeRoster(true); }catch(e){}   // Steve Cobs's prize: if this fall opened the gate, the three winners join the roster and the result screen says so
-  try{ cobsPendKill(name); }catch(e){}   // Cobs's chain: a boss felled by the fighter in your hands is a kill in waiting, counted once the very next boss knocks you out (cobsPendKill)
+  try{ cobsBossFell(name); }catch(e){}   // Cobs's chain: the fighter in your hands, still standing as the boss falls, has beaten it -- recorded and saved at the fall (cobsBossFell)
   try{ questAdd('boss', 1); }catch(e){}   // Win Tokens: a boss felled counts toward the Boss Rush quests
   try{ oneRushKill(); }catch(e){}   // One's chain: a boss felled is a win too ("ONE fighter erased per WIN")
   const fresh = awardTrophy('boss:'+name);
@@ -22185,7 +22178,7 @@ function awardWorldCup(team){
   TOURNEY.awarded = true;
   PROFILE.wcTitles++;
   try{ oneWorldCupHook(); }catch(e){}   // One's chain: "then you have to win the world cup"
-  try{ cobsCupWon(); }catch(e){}   // Cobs's chain: "winning the world cup as all 2nd place characters in ii" -- in order, no losing
+  try{ cobsCupWon(); }catch(e){}   // Cobs's chain: "winning the world cup as all 2nd place characters in ii" -- each of the three once, in any order
   return awardTrophy('wc');
 }
 
@@ -22775,16 +22768,21 @@ function oneTitleCard(el){
 // code found first, THEN four new codes that ARE the steps ("Typing a code is itself the step"): C0B5 opens the chain, MISTAH
 // PHONE unlocks the boss step, PH3N0M53 VK0CH unlocks RUNNING!, THE FUTURE IS SO YESTERDAY is the door; "Three pairs" of
 // bosses on fighters (Knife beats MePhone4, Balloon beats Springy, Fan beats MePhone4); RUNNING! is the Red Line lane, run as
-// Knife; the cups are "knife, balloon, taco. no losing, or you have to do it all again"; the story fight is Knife alone, then
-// "Anyone" like One; a loss is retried directly; and the prize -- the season winners, "3, but only after you beat cobs" -- is
-// another lane's, which reads cobsBeaten() (see isUnlocked).
+// Knife; the cups are "knife, balloon, taco"; the story fight is Knife alone, then "Anyone" like One; a loss is retried
+// directly; and the prize -- the season winners, "3, but only after you beat cobs" -- is another lane's, which reads
+// cobsBeaten() (see isUnlocked).
+//
+// EASIER, 2026-09-30: "cobs could be easier to access." Asked which parts, the owner chose "Easier boss pairs" and "Fewer World
+// Cups". The pairs, "No dying needed": a pair counts THE MOMENT you beat that boss as that fighter (your fighter still standing
+// as it falls), the way it worked before 2026-09-29. The cups, "No reset on a loss": still Knife, Balloon and Taco (II), but in
+// ANY order, and losing a cup (or winning one as anyone else) no longer wipes the cups already won.
 //
 // Everything lives in PROFILE and is saved the moment it happens, so the chain survives a reload at any point:
 //   vault.found    his four codes, in the Vault's own record with everyone else's (vaultState)
-//   bossKills      { boss: [fighters in YOUR hands that felled it and were then knocked out by the very next boss] } --
-//                  written for EVERY boss (cobsPendKill), so a kill made before his code was typed counts ("in any order")
+//   bossKills      { boss: [fighters in YOUR hands that were still standing when it fell] } -- written for EVERY boss
+//                  (cobsBossFell), so a kill made before his code was typed counts ("in any order")
 //   cobs.stage     0 locked, 1 live (C0B5 in; a wrong code answers "Tick, tock."), 2 the door (he waits on the title), 3 beaten
-//   cobs.cups      the World Cup run so far, a prefix of Knife, Balloon, Taco (II); a loss or another winner in between empties it
+//   cobs.cups      the World Cups won so far: a unique subset of Knife, Balloon, Taco (II), whichever order they came in
 //   cobs.race      RUNNING! won as Knife
 //   cobs.beaten    the prize flag (cobsBeaten)
 // Everything merges upward (mergeCobs, mergeBossKills), so a second tab can never undo a step; and like One's chain, the
@@ -22795,9 +22793,10 @@ const COBS_STAGE = { LOCKED:0, LIVE:1, DOOR:2, FREE:3 };
 // maker; Balloon -- Cobs "hits a button and a contraption appears from the floor that pops Balloon" (Steve Cobs), and Springy
 // holds the Boss Rush seat Cobs left; Fan -- Cobs's whole plot was Fan's egg, which ends "inside MePhone4" (Steve Cobs).
 const COBS_PAIRS = [["Knife", "MePhone4"], ["Balloon", "Springy"], ["Fan", "MePhone4"]];
-// "knife, balloon, taco. no losing, or you have to do it all again": the II runner-ups, in the owner's order. Wiki: "beating out
-// the runner-up, Taco" (Inanimate Insanity (Season 1)); "Knife is eliminated via losing the contest" (Inanimate Insanity II);
-// Balloon second by the jury's vote (You Can't Do This Forever).
+// "knife, balloon, taco": the three II runner-ups, each of whom has to win the World Cup once -- in ANY order, and a cup lost
+// (or won as anyone else) takes nothing already won away ("No reset on a loss", the owner, 2026-09-30). The list is the set, and
+// the order the cups are kept in. Wiki: "beating out the runner-up, Taco" (Inanimate Insanity (Season 1)); "Knife is eliminated
+// via losing the contest" (Inanimate Insanity II); Balloon second by the jury's vote (You Can't Do This Forever).
 const COBS_CUP_ORDER = ["Knife", "Balloon", "Taco (II)"];
 // His codes -- the Vault's second hidden section -- each a step, each canon (cobs-decisions.md, rounds 3 and 3b):
 //   1 C0B5: the leetspeak plate on the Meeple van, "C0B5" (Steve Cobs, trivia) or "C085" (as a later II episode shows the plate): both are taken.
@@ -22823,10 +22822,10 @@ const COBS_VAULT = {
     { step:2, code:"MISTAH PHONE", accepts:["MISTAHPHONE", "MISTER PHONE", "MISTA PHONE", "Mistah Phone!", "MR PHONE"],
       text:"He didn't just make the show. He made them, and I made him. So show me they're more than his: the blade fells the phone that made him; the balloon fells the spring that sits in my old seat; the fan fells the phone with his egg inside. Then read me the model number off my wire." },
     // Decodes to: RUNNING! as Knife (the Red Line lane: the line that never stops, Marshmallow slung over the last gap on the
-    // hook, then cross), and three World Cups in order as Knife, Balloon, Taco (II) with no loss between; then the door code,
-    // the words over Meeple's door.
+    // hook, then cross), and the World Cup won once as each of Knife, Balloon and Taco (II) -- "the blade, the balloon and the
+    // taco", with no order and no clean run asked for; then the door code, the words over Meeple's door.
     { step:3, code:"PH3N0M53 VK0CH", accepts:["PH3N0M53VK0CH", "PH3N0M53 VK0cH", "MODEL PH3N0M53 VK0CH"],
-      text:"That wire went from the cloud into the phone, and through it I hijacked the afterlife. Now run its lane as the blade: the line behind you never stops, and the marshmallow goes over the last gap on a long, charged throw before you cross. And the cup the whole world fights for, three times, as the three who came second: the blade, then the balloon, then the taco, with no loss between. Then tell me where the future is. It's written over my door." },
+      text:"That wire went from the cloud into the phone, and through it I hijacked the afterlife. Now run its lane as the blade: the line behind you never stops, and the marshmallow goes over the last gap on a long, charged throw before you cross. And the cup the whole world fights for: take it home three times over, once as each of the three who came second, the blade, the balloon and the taco. Then tell me where the future is. It's written over my door." },
     // Decodes to: the door is open -- his card has the title's Daily place (cobsTitleCard), and the fight is Knife's.
     { step:4, code:"THE FUTURE IS SO YESTERDAY", accepts:["THE FUTURE IS SO YESTERDAY!", "THEFUTUREISSOYESTERDAY", "WHERE THE FUTURE IS SO YESTERDAY", "FUTURE IS SO YESTERDAY"],
       text:"Welcome. The door is open, and I've kept a seat for the blade. Look to the title." },
@@ -22869,24 +22868,22 @@ function cobsQ(){
   if(!PROFILE) return { stage:0, cups:[], race:false, beaten:false, wins:0, bestSecs:0 };
   const q = (PROFILE.cobs && typeof PROFILE.cobs==='object') ? PROFILE.cobs : (PROFILE.cobs = {});
   q.stage = Math.max(0, Math.min(COBS_STAGE.FREE, q.stage|0));
-  q.cups = cobsCupPrefix(q.cups);
+  q.cups = cobsCupSubset(q.cups);
   q.race = !!q.race; q.beaten = !!q.beaten || q.stage >= COBS_STAGE.FREE; q.wins = q.wins|0; q.bestSecs = q.bestSecs|0;
   return q;
 }
-// The run as far as it follows the order: a stale or hand-edited save cannot hold "Taco, Knife" as two cups.
-function cobsCupPrefix(list){
-  const out = [];
-  if(Array.isArray(list)) for(let i=0; i<list.length && i<COBS_CUP_ORDER.length; i++){ if(list[i]!==COBS_CUP_ORDER[i]) break; out.push(list[i]); }
-  return out;
+// The cups as a save may hold them: a unique subset of the three, in any order they were won. Each real cup is kept once, in
+// COBS_CUP_ORDER's order (so two saves with the same cups hold the same list); a stranger, a repeat or a non-list is dropped.
+function cobsCupSubset(list){
+  return Array.isArray(list) ? COBS_CUP_ORDER.filter(n=>list.indexOf(n) >= 0) : [];
 }
-// Upward only, like mergeOne: the stage and the counts by max, the flags by OR, the cups by the longer run. (A reset lost to a
-// stale tab is the one thing this forgives: the run still has to be finished in order without a loss from wherever it stands.)
+// Upward only, like mergeOne: the stage and the counts by max, the flags by OR, the cups by union (a cup won in either tab is
+// won; nothing is ever taken away, so a stale tab has nothing to undo).
 function mergeCobs(a, b){
   a = a || {}; b = b || {};
-  const ca = cobsCupPrefix(a.cups), cb = cobsCupPrefix(b.cups);
   const best = [a.bestSecs|0, b.bestSecs|0].filter(x=>x>0);
   const stage = Math.max(a.stage|0, b.stage|0);
-  return { stage, cups: ca.length >= cb.length ? ca : cb, race:!!(a.race || b.race), beaten:!!(a.beaten || b.beaten) || stage >= COBS_STAGE.FREE,
+  return { stage, cups: cobsCupSubset(cobsCupSubset(a.cups).concat(cobsCupSubset(b.cups))), race:!!(a.race || b.race), beaten:!!(a.beaten || b.beaten) || stage >= COBS_STAGE.FREE,
            wins:Math.max(a.wins|0, b.wins|0), bestSecs:best.length ? Math.min(...best) : 0 };
 }
 function mergeBossKills(a, b){
@@ -22911,30 +22908,16 @@ function cobsGateOpen(){ return !!PROFILE && VAULT.fighters.concat(VAULT.hints).
 // ---- STEP 2: the three pairs ----
 // From awardBossCleared, for every boss that falls: the fighter in YOUR hands, if it is still standing (a Knife out of stocks
 // while allies finish MePhone4 did not beat him: One's "the bolt must still be standing" rule), solo or not.
-// WHEN A KILL COUNTS (the owner, 2026-09-29): "you must kill the boss, but then die to the next one. ai can be there." -- "its
-// like how knife was able to beat one but not two metags." A boss felled while the fighter in your hands still stands is a
-// kill IN WAITING (BOSSRUSH.cobsPend, so every run starts clean). It is written to bossKills only when that fighter is then
-// knocked out of the run -- every stock -- by the very next boss of the gauntlet (cobsPendTick, from bossRushCheck). Beat the
-// next boss too, fall in the gap between them, or leave the run, and the chance is gone. AI allies may fight beside you;
-// only your fighter's kill is recorded.
-function cobsPendKill(boss){
-  if(!PROFILE || !boss || !Array.isArray(fighters) || !BOSSRUSH) return false;
+// A KILL COUNTS AT THE FALL ("No dying needed", the owner, 2026-09-30, after "cobs could be easier to access."): the moment the
+// boss goes down with your fighter still standing, the pair is written to bossKills and saved -- the way it worked before
+// 2026-09-29. What happens to your fighter afterwards (the next boss, the gap between them, leaving the run) changes nothing.
+// AI allies may fight beside you; only your fighter's kill is recorded.
+function cobsBossFell(boss){
+  if(!PROFILE || !boss || !Array.isArray(fighters)) return false;
   const you = fighters.find(f=>f.you);
   if(!you || you.dead || !you.name) return false;
-  const i = BOSS_ROSTER.findIndex(b=>b.name===boss), next = i >= 0 ? BOSS_ROSTER[(i + 1) % BOSS_ROSTER.length] : null;
-  BOSSRUSH.cobsPend = { boss, fighter:you.name, next:next ? next.name : null };
-  return true;
-}
-// Every Boss Rush frame: the moment your fighter is out of the run, the kill in waiting counts if the boss on the stage is the
-// very next one, and is gone otherwise.
-function cobsPendTick(boss){
-  const p = BOSSRUSH && BOSSRUSH.cobsPend;
-  if(!p) return false;
-  const you = Array.isArray(fighters) ? fighters.find(f=>f.you) : null;
-  if(!you || !you.dead) return false;
-  BOSSRUSH.cobsPend = null;
-  if(!boss || boss.name !== p.next || you.name !== p.fighter) return false;   // out in the gap, or to another boss
-  if(cobsRecordKill(p.boss, p.fighter)) saveProfile();
+  if(!cobsRecordKill(boss, you.name)) return false;
+  saveProfile();
   return true;
 }
 function cobsRecordKill(boss, name){
@@ -22973,27 +22956,20 @@ function cobsRaceEnded(won, result){
 // The race lane may call this from its own entry too: a race won as Knife counts whenever it was run, like the pairs.
 function cobsRaceWon(){ if(!PROFILE) return false; const q = cobsQ(); if(q.race) return false; q.race = true; saveProfile(); return true; }
 
-// ---- STEP 4: three World Cups, in order, without a loss ----
-function cobsCupsDone(){ return cobsQ().cups.length === COBS_CUP_ORDER.length; }
+// ---- STEP 4: the World Cup won as each of the three runner-ups, in any order ----
+// Done once all three have been won; a loss, a cup as anyone else or the same cup twice changes nothing already won.
+function cobsCupsDone(){ const q = cobsQ(); return COBS_CUP_ORDER.every(n=>q.cups.indexOf(n) >= 0); }
 // From awardWorldCup, so only a real win in Normal mode with your own side gets here. The winner is the fighter leading your
-// side -- your pick (what awardWorldCup and One's hook already read). The next in the order extends the run; anyone else
-// empties it ("or you have to do it all again"), except Knife, who starts a fresh run. A finished run is never touched again.
+// side -- your pick (what awardWorldCup and One's hook already read). If that is Knife, Balloon or Taco (II) and its cup is not
+// in yet, it goes in, whatever came before it. Anyone else's cup changes nothing -- and neither does a cup lost, so nothing
+// calls here for one ("No reset on a loss", the owner, 2026-09-30). True when a new cup went in.
 function cobsCupWon(){
-  if(!PROFILE || cobsCupsDone()) return false;
+  if(!PROFILE) return false;
   const q = cobsQ();
   const lead = TOURNEY && TOURNEY.myTeam && TOURNEY.myTeam.members && TOURNEY.myTeam.members[0], name = lead ? lead.name : null;
-  if(name === COBS_CUP_ORDER[q.cups.length]) q.cups.push(name);
-  else q.cups = name === COBS_CUP_ORDER[0] ? [name] : [];
+  if(COBS_CUP_ORDER.indexOf(name) < 0 || q.cups.indexOf(name) >= 0) return false;
+  q.cups = cobsCupSubset(q.cups.concat(name));
   saveProfile();
-  return true;
-}
-// "no losing": from the two places a Normal-mode cup is decided against your side (out in the group stage, beaten in the
-// knockout). A cup left unfinished is not a loss; only a decided one empties the run.
-function cobsCupLost(){
-  if(!PROFILE || !TOURNEY || TOURNEY.mode!=="normal" || !TOURNEY.myTeam) return false;
-  const q = cobsQ();
-  if(cobsCupsDone() || !q.cups.length) return false;
-  q.cups = []; saveProfile();
   return true;
 }
 

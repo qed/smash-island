@@ -10,9 +10,13 @@ import { mulberry32 } from './helpers/prng.js';
 // fresh profile"; the codes are "Both" -- every existing Vault code found first, THEN four new codes that ARE the steps
 // ("Typing a code is itself the step"): C0B5 opens the chain, MISTAH PHONE ("accept MISTAHPHONE / MISTER PHONE / MISTA PHONE")
 // the boss step, PH3N0M53 VK0CH unlocks RUNNING!, THE FUTURE IS SO YESTERDAY is the door; "Three pairs" -- Knife beats
-// MePhone4, Balloon beats Springy, Fan beats MePhone4; the cups are "knife, balloon, taco. no losing, or you have to do it all
-// again"; a loss is retried directly; after the win "Anyone", like One; and the prize (the season winners, "3, but only after
-// you beat cobs") is another lane's, reading cobsBeaten(). The Vault keeps One's discretion: none of its own words name him.
+// MePhone4, Balloon beats Springy, Fan beats MePhone4; the cups are "knife, balloon, taco"; a loss is retried directly; after
+// the win "Anyone", like One; and the prize (the season winners, "3, but only after you beat cobs") is another lane's, reading
+// cobsBeaten(). The Vault keeps One's discretion: none of its own words name him.
+// EASIER (2026-09-30), the owner: "cobs could be easier to access." Asked which parts, they chose "Easier boss pairs" and "Fewer
+// World Cups": a pair counts THE MOMENT you beat that boss as that fighter ("No dying needed", the way it worked before
+// 2026-09-29), and the three cups -- still Knife, Balloon and Taco (II) -- come in ANY order, a loss (or a cup won as anyone
+// else) taking nothing already won away ("No reset on a loss"), the cups of two tabs merging as a union.
 // NOTHING HERE IS A BAR FOR HIS DIFFICULTY ("dont tune, cuz thats an agent, not a player"): the fight's end is driven by hand.
 
 const HTML = readFileSync('artifacts/V1/index.html', 'utf8');
@@ -68,16 +72,25 @@ const LINE = "You haven't found every code yet.";
 // Every existing Vault code in: the gate ("Both").
 const ALL_EXISTING = `for(const v of VAULT.fighters.concat(VAULT.hints)) vaultSubmit(v.code);`;
 const sub = (w, s) => w.eval(`vaultSubmit(${J(s)})`);
-// One boss felled, the way bossRushCheck reports it (`fighters` on the stage, awardBossCleared(name)), and then -- "you must
-// kill the boss, but then die to the next one" (the owner, 2026-09-29) -- your fighter knocked out by the very next boss.
-const kill = (w, you, boss, extra = '') => w.eval(`fighters = [${J(you)}, { name:'Leafy', team:0 }]; awardBossCleared(${J(boss)});
-  fighters.forEach(function(f){ if(f.you) f.dead = true; });
-  var _i = BOSS_ROSTER.findIndex(function(b){ return b.name===${J(boss)}; }); cobsPendTick({ type:'boss', name:BOSS_ROSTER[(_i+1)%BOSS_ROSTER.length].name });
-  ${extra} (PROFILE.bossKills[${J(boss)}] || []).slice()`);
+// One boss felled, the way bossRushCheck reports it (`fighters` on the stage, awardBossCleared(name)). "No dying needed" (the
+// owner, 2026-09-30): the pair counts at the fall, so nothing follows it here -- no next boss, no knockout.
+const kill = (w, you, boss) => w.eval(`fighters = [${J(you)}, { name:'Leafy', team:0 }]; awardBossCleared(${J(boss)});
+  (PROFILE.bossKills[${J(boss)}] || []).slice()`);
 // One World Cup won in Normal mode, the way advanceKnockout awards it: your side is the champion.
 const cup = (w, lead, mode = 'normal') => w.eval(`TOURNEY = { active:true, mode:${J(mode)}, myTeam:{ name:'Mine', members:[ROSTER.find(function(r){ return r.name===${J(lead)}; })] }, eliminated:false, awarded:false };
   awardWorldCup(TOURNEY.myTeam); cobsQ().cups.slice()`);
-const lost = (w) => w.eval(`TOURNEY = { active:true, mode:'normal', myTeam:{ name:'Mine', members:[] }, eliminated:true }; cobsCupLost(); cobsQ().cups.slice()`);
+// Your World Cup final through the real knockout flow, the way the game plays it: one fixture left in the knockout, you in it as
+// `lead`, finishWatchedKnockout crowning it on the spot (the flow One's Moon relies on), with no "Sim & Continue" in between.
+// winTeam 0 is your side, 1 is theirs; what comes back is the run afterwards, the champion and whether the cup counted as yours.
+const playFinal = (w, lead, winTeam) => w.eval(`(function(){
+  var mine = { name:'Mine', members:[ROSTER.find(function(r){ return r.name===${J(lead)}; })] }, them = { name:'Them', members:[ROSTER.find(function(r){ return r.name==='Firey'; })] };
+  var fx = { kind:'ko', a:mine, b:them, played:false, result:null };
+  TOURNEY = { active:true, mode:'normal', myTeam:mine, eliminated:false, awarded:false, stage:'knockout', bracket:[[fx]], knockoutRound:0, fixtures:[fx], fxIndex:0, round:0 };
+  fighters = [{ name:${J(lead)}, you:true, team:0 }, { name:'Firey', you:false, team:1 }];
+  var wc = PROFILE.wcTitles;
+  finishWatchedKnockout(fx, ${winTeam});
+  return { cups:cobsQ().cups.slice(), champ:TOURNEY.champion && TOURNEY.champion.name, stage:TOURNEY.stage, won:PROFILE.wcTitles - wc };
+})()`);
 // Everything but the door: the gate, his first three codes, the pairs, the race and the cups.
 const PAIRS = `PROFILE.bossKills = { MePhone4:['Knife','Fan'], Springy:['Balloon'] };`;
 async function arm(w) {
@@ -175,8 +188,16 @@ describe('the codes ("directly", "Both")', () => {
     expect(r3.text).toContain('run its lane as the blade');
     expect(r3.text).toContain('the line behind you never stops');
     expect(r3.text).toContain('the marshmallow goes over the last gap on a long, charged throw before you cross');   // the throw is a charged smash now ("Charged smash", 2026-09-30)
-    expect(r3.text).toContain('the cup the whole world fights for, three times, as the three who came second: the blade, then the balloon, then the taco, with no loss between');
+    // The cups are "Fewer World Cups" now (the owner, 2026-09-30): the cup once as each of the three who came second, nothing
+    // said of an order or of a loss.
+    expect(r3.text).toContain('the cup the whole world fights for: take it home three times over, once as each of the three who came second, the blade, the balloon and the taco');
     expect(r3.text).toContain("It's written over my door");
+    // "cobs could be easier to access." -- neither whisper asks for a death, an order or a clean run any more: the pairs are
+    // "No dying needed", the cups "No reset on a loss" and in any order.
+    for (const t of [r2.text, r3.text]) {
+      expect(t, t).not.toMatch(/\b(die|dies|died|dying|dead|death|lose|loses|lost|loss|order)\b/i);
+      expect(t, t).not.toMatch(/then the (balloon|taco)|in turn|no loss|all again|in a row/i);
+    }
     for (const s of CODES[3]) expect(sub(W, s), s).toMatchObject({ kind: 'again', step: 3 });
     for (const s of CODES[4]) expect(sub(W, s), `${s}: the door before its time`).toEqual({ kind: 'wrong', reply: TICK });
     expect(W.eval('({ stage:cobsQ().stage, s2:cobsStep(2), s3:cobsStep(3), s4:cobsStep(4), pairs:cobsPairsStepDone(), race:cobsRaceOpen() })'))
@@ -203,7 +224,7 @@ describe('the codes ("directly", "Both")', () => {
 });
 
 describe('the boss pairs ("Three pairs")', () => {
-  it('awardBossCleared records WHICH fighter in your hands felled each boss -- standing, then out to the next boss, solo or not -- and never an AI or a fallen one', async () => {
+  it('awardBossCleared records WHICH fighter in your hands felled each boss -- standing as it fell, solo or not -- and never an AI or a fallen one', async () => {
     await fresh(W);
     expect(kill(W, { name: 'Knife', you: true, team: 0 }, 'MePhone4')).toEqual(['Knife']);
     expect(kill(W, { name: 'Knife', you: true, team: 0 }, 'MePhone4'), 'once per fighter').toEqual(['Knife']);
@@ -234,42 +255,49 @@ describe('the boss pairs ("Three pairs")', () => {
     expect(W.eval(`BOSS_ROSTER.filter(function(b){ return b.name==='MePhone4' || b.name==='Springy'; }).length`), 'both bosses are in the gauntlet to be felled').toBe(2);
   });
 
-  it('a kill counts only once the very next boss knocks your fighter out of the run -- "you must kill the boss, but then die to the next one. ai can be there."', async () => {
+  it('a kill counts at the fall: no dying needed -- beat the boss as that fighter and the pair is in, whatever happens to him after', async () => {
     await fresh(W);
-    // "its like how knife was able to beat one but not two metags." Driven through bossRushCheck, as a run plays it.
+    // "cobs could be easier to access." -> "Easier boss pairs" -> "No dying needed" (the owner, 2026-09-30): a pair counts THE
+    // MOMENT you beat that boss as that fighter, the way it worked before 2026-09-29, when "you must kill the boss, but then die
+    // to the next one" was tried. Driven through bossRushCheck, as a run plays it.
     const r = W.eval(`(function(){
       var out = {}, st = setTimeout; setTimeout = function(){ return 0; };
       var ally = { name:'Leafy', team:0 };
       var boss = function(n, hp){ return { type:'boss', _bossRush:true, name:n, hp:hp, maxHp:100, x:400, y:300, r:60, color:'#888', face:1 }; };
       var run = function(you){ BOSSRUSH = { active:true, bossIdx:0, cleared:0, defeated:false, loop:0, dmgMult:1 }; running = true; fighters = [you, ally]; };
+      var kills = function(n){ return (PROFILE.bossKills[n] || []).slice(); };
       try {
-        // Knife fells MePhone4 (AI ally beside him), then Evil Leafy -- the very next boss -- knocks him out: it counts.
+        // Knife fells MePhone4 with an AI ally beside him and is still standing: it counts on the spot -- no next boss has come.
         run({ name:'Knife', you:true, team:0, stocks:1 }); summons = [boss('MePhone4', 0)]; bossRushCheck();
-        out.pend = BOSSRUSH.cobsPend && [BOSSRUSH.cobsPend.boss, BOSSRUSH.cobsPend.fighter, BOSSRUSH.cobsPend.next];
-        out.before = (PROFILE.bossKills.MePhone4 || []).slice();
+        out.atFall = kills('MePhone4');
+        // Then Evil Leafy, the very next boss, knocks him out: nothing is taken away, and nothing more is needed.
         summons = [boss('Evil Leafy', 100)]; fighters[0].dead = true; bossRushCheck();
-        out.one = (PROFILE.bossKills.MePhone4 || []).slice();
-        // Fan fells MePhone4 and beats Evil Leafy too: MePhone4's chance is gone and Evil Leafy's waits; MePhone4S then knocks
-        // him out, which counts for Evil Leafy alone.
+        out.afterKo = kills('MePhone4');
+        // Fan fells MePhone4 and beats Evil Leafy too: both count -- beating the next boss takes nothing from the first.
         run({ name:'Fan', you:true, team:0, stocks:1 }); summons = [boss('MePhone4', 0)]; bossRushCheck();
         summons = [boss('Evil Leafy', 0)]; bossRushCheck();
-        out.pend2 = BOSSRUSH.cobsPend && [BOSSRUSH.cobsPend.boss, BOSSRUSH.cobsPend.next];
-        summons = [boss('MePhone4S', 100)]; fighters[0].dead = true; bossRushCheck();
-        out.two = { m4:(PROFILE.bossKills.MePhone4 || []).slice(), leafy:(PROFILE.bossKills['Evil Leafy'] || []).slice() };
-        // Balloon fells Springy and is knocked out in the gap, before Four arrives: gone.
+        out.two = { m4:kills('MePhone4'), leafy:kills('Evil Leafy') };
+        // Balloon fells Springy and is out in the gap before Four arrives: already counted at the fall.
         run({ name:'Balloon', you:true, team:0, stocks:1 }); summons = [boss('Springy', 0)]; bossRushCheck();
         summons = []; fighters[0].dead = true; bossRushCheck();
-        out.three = (PROFILE.bossKills.Springy || []).slice();
+        out.gap = kills('Springy');
+        // A Knife already out of stocks when the ally finishes Springy did not beat him (the bolt must still be standing).
+        run({ name:'Knife', you:true, team:0, stocks:0, dead:true }); summons = [boss('Springy', 0)]; bossRushCheck();
+        out.outFirst = kills('Springy');
         return out;
       } finally { setTimeout = st; BOSSRUSH = { active:false, bossIdx:0, cleared:0, defeated:false }; summons = []; projectiles = []; running = false; }
     })()`);
-    expect(r.pend, 'a kill in waiting, with the boss that has to finish him').toEqual(['MePhone4', 'Knife', 'Evil Leafy']);
-    expect(r.before, 'not yet: he still has to go down to the next one').toEqual([]);
-    expect(r.one, 'beat one, then out to the next').toEqual(['Knife']);
-    expect(r.pend2).toEqual(['Evil Leafy', 'MePhone4S']);
-    expect(r.two, 'beating two means the first does not count').toEqual({ m4: ['Knife'], leafy: ['Fan'] });
-    expect(r.three, 'out in the gap is not out to the next boss').toEqual([]);
-    expect(W.eval('String(startBossRush)')).toMatch(/BOSSRUSH = \{ active:true/);   // a new run is a new BOSSRUSH: nothing waits over from the last
+    expect(r.atFall, 'counted the moment it fell').toEqual(['Knife']);
+    expect(r.afterKo, 'and dying to the next boss changes nothing').toEqual(['Knife']);
+    expect(r.two, 'beating two counts both').toEqual({ m4: ['Knife', 'Fan'], leafy: ['Fan'] });
+    expect(r.gap, 'out in the gap after the fall is already counted').toEqual(['Balloon']);
+    expect(r.outFirst, 'out of the run before it fell is not a kill').toEqual(['Balloon']);
+    await sleep(W, 0);
+    expect(stored(W).bossKills, 'saved at the fall').toEqual({ MePhone4: ['Knife', 'Fan'], 'Evil Leafy': ['Fan'], Springy: ['Balloon'] });
+    // The kill in waiting is gone: no state on the run, no rule in the loop, nothing for a new run to reset.
+    expect(W.eval('typeof cobsPendKill + typeof cobsPendTick')).toBe('undefinedundefined');
+    expect(W.eval('String(bossRushCheck)')).not.toMatch(/cobsPend/);
+    expect(W.eval('String(startBossRush)')).not.toMatch(/cobsPend/);
   });
 });
 
@@ -311,61 +339,72 @@ describe('RUNNING!', () => {
   });
 });
 
-describe('the three World Cups ("knife, balloon, taco. no losing, or you have to do it all again")', () => {
-  it('the sequence: a cup as Knife starts it, Balloon then Taco (II) follow; a loss, or a cup as anyone else in between, empties it; a finished run stays', async () => {
+describe('the three World Cups ("knife, balloon, taco": "Fewer World Cups", "No reset on a loss")', () => {
+  it('any order: each of Knife, Balloon and Taco (II) counts once; a cup as anyone else or a repeat changes nothing; a cup lost takes nothing away; a spectated cup is nobody\'s win', async () => {
     await fresh(W);
+    // "cobs could be easier to access." -> "Fewer World Cups" -> "No reset on a loss" (the owner, 2026-09-30): still Knife,
+    // Balloon and Taco (II), but in ANY order, and losing a cup (or winning one as anyone else) no longer wipes what is won.
     expect(W.eval('COBS_CUP_ORDER')).toEqual(['Knife', 'Balloon', 'Taco (II)']);
-    expect(cup(W, 'Balloon'), 'not Knife first: nothing').toEqual([]);
-    expect(cup(W, 'Knife')).toEqual(['Knife']);
-    expect(cup(W, 'Taco (II)'), 'Taco before Balloon: all again').toEqual([]);
-    expect(cup(W, 'Knife')).toEqual(['Knife']);
-    expect(cup(W, 'Balloon')).toEqual(['Knife', 'Balloon']);
-    expect(cup(W, 'Firey'), 'anyone else in between: all again').toEqual([]);
-    expect(cup(W, 'Knife')).toEqual(['Knife']);
-    expect(cup(W, 'Knife'), 'Knife again is a fresh start, not a loss').toEqual(['Knife']);
-    expect(cup(W, 'Balloon')).toEqual(['Knife', 'Balloon']);
-    expect(lost(W), 'a lost cup: all again').toEqual([]);
-    expect(W.eval('({ done:cobsCupsDone(), wc:PROFILE.wcTitles, one:PROFILE.one.stage })'), 'the cup count and One\'s chain are as they were').toEqual({ done: false, wc: 9, one: 0 });
-    expect(cup(W, 'Knife', 'spectate'), 'a spectated cup is nobody\'s win').toEqual([]);
-    expect(cup(W, 'Knife')).toEqual(['Knife']);
-    expect(cup(W, 'Balloon')).toEqual(['Knife', 'Balloon']);
-    expect(cup(W, 'Taco (II)')).toEqual(['Knife', 'Balloon', 'Taco (II)']);
+    expect(cup(W, 'Taco (II)'), 'Taco first: no Knife needed to start').toEqual(['Taco (II)']);
+    expect(cup(W, 'Firey'), 'a cup as anyone else takes nothing away').toEqual(['Taco (II)']);
+    expect(cup(W, 'Taco (II)'), 'the same cup twice is one cup').toEqual(['Taco (II)']);
+    expect(cup(W, 'Knife', 'spectate'), 'a spectated cup is nobody\'s win').toEqual(['Taco (II)']);
+    expect(playFinal(W, 'Balloon', 1), 'a cup lost as Balloon: what is won stays and nothing is added').toEqual({ cups: ['Taco (II)'], champ: 'Them', stage: 'done', won: 0 });
+    expect(cup(W, 'Knife'), 'kept in the list\'s order, whichever came first').toEqual(['Knife', 'Taco (II)']);
+    expect(W.eval('({ done:cobsCupsDone(), wc:PROFILE.wcTitles, one:PROFILE.one.stage })'), 'two of three; the cup count and One\'s chain are as they were').toEqual({ done: false, wc: 4, one: 0 });
+    expect(playFinal(W, 'Balloon', 0), 'the cup lost as Balloon is won next time: the third, and the run is done').toEqual({ cups: ['Knife', 'Balloon', 'Taco (II)'], champ: 'Mine', stage: 'done', won: 1 });
     expect(W.eval('cobsCupsDone()')).toBe(true);
     await sleep(W, 0);
     expect(stored(W).cobs.cups, 'saved at the deed').toEqual(['Knife', 'Balloon', 'Taco (II)']);
-    expect(lost(W), 'a finished run is never emptied').toEqual(['Knife', 'Balloon', 'Taco (II)']);
-    expect(cup(W, 'Firey')).toEqual(['Knife', 'Balloon', 'Taco (II)']);
+    expect(cup(W, 'Firey'), 'a finished run stays').toEqual(['Knife', 'Balloon', 'Taco (II)']);
+    // Every order of the three gets there, and only the third cup does.
+    for (const order of [['Knife', 'Balloon', 'Taco (II)'], ['Knife', 'Taco (II)', 'Balloon'], ['Balloon', 'Knife', 'Taco (II)'], ['Balloon', 'Taco (II)', 'Knife'], ['Taco (II)', 'Knife', 'Balloon'], ['Taco (II)', 'Balloon', 'Knife']]) {
+      await fresh(W);
+      expect(order.map((n) => { cup(W, n); return W.eval('cobsCupsDone()'); }), order.join(', ')).toEqual([false, false, true]);
+    }
+    W.eval(`TOURNEY = { active:false }; go('title')`);
   });
 
-  it('is hooked where a cup is won and where a Normal-mode cup is lost -- out in the group stage, beaten in the knockout, and a final lost on the spot', () => {
+  it('a save holds a unique subset of the three: repeats, strangers and non-lists are cleaned, the real cups kept whatever order they came in', async () => {
+    await fresh(W);
+    expect(W.eval(`JSON.stringify([['Taco (II)', 'Knife'], ['Balloon', 'Balloon', 'Knife'], ['Knife', 'Firey', 3, null, 'Taco (II)'], 'Knife', {}, null, undefined, []].map(function(l){ return cobsCupSubset(l); }))`))
+      .toBe(J([['Knife', 'Taco (II)'], ['Knife', 'Balloon'], ['Knife', 'Taco (II)'], [], [], [], [], []]));
+    // The same through the profile: cobsQ() cleans a hand-edited or stale save in place, and "done" means all three, not three entries.
+    expect(W.eval(`PROFILE.cobs = { cups:['Taco (II)', 'Taco (II)', 'Zed', 'Balloon'] }; cobsQ().cups`)).toEqual(['Balloon', 'Taco (II)']);
+    expect(W.eval(`PROFILE.cobs = { cups:'Knife' }; cobsQ().cups`), 'a string is no list').toEqual([]);
+    expect(W.eval(`PROFILE.cobs = { cups:['Knife', 'Knife', 'Balloon'] }; cobsCupsDone()`), 'three entries are not three cups').toBe(false);
+    expect(W.eval(`PROFILE.cobs = { cups:['Taco (II)', 'Balloon', 'Knife', 'Knife'] }; ({ cups:cobsQ().cups, done:cobsCupsDone() })`)).toEqual({ cups: ['Knife', 'Balloon', 'Taco (II)'], done: true });
+  });
+
+  it('the door follows the third cup whatever order the three came in', async () => {
+    await arm(W);
+    W.eval(`PROFILE.cobs.cups = [];`);
+    expect(W.eval('cobsDoorReady()'), 'everything but the cups').toBe(false);
+    cup(W, 'Taco (II)'); cup(W, 'Knife');
+    expect(W.eval('({ cups:cobsCupsDone(), door:cobsDoorReady() })'), 'the taco and the blade').toEqual({ cups: false, door: false });
+    cup(W, 'Balloon');
+    expect(W.eval('({ cups:cobsCupsDone(), door:cobsDoorReady() })'), 'and the balloon last').toEqual({ cups: true, door: true });
+    expect(sub(W, 'The future is so yesterday!')).toMatchObject({ kind: 'hint', step: 4 });
+    W.eval(`go('title')`);
+  });
+
+  it('is hooked where a cup is won and nowhere a cup is lost -- out in the group stage, beaten in the knockout and a final lost on the spot leave the chain alone', () => {
     const src = W.eval('({ won:String(awardWorldCup), sim:String(simRestOfRound), group:String(proceedAfterRound), adv:String(advanceKnockout) })');
     expect(src.won).toMatch(/cobsCupWon\(\)/);
-    expect(src.sim).toMatch(/TOURNEY\.eliminated=true;\s*try\{ cobsCupLost\(\); \}/);
-    expect(src.group).toMatch(/eliminated in the group stage\.", 2000\);\s*try\{ cobsCupLost\(\); \}/);
-    expect(src.adv, 'the final you played goes finishWatchedKnockout -> advanceKnockout, never through simRestOfRound').toMatch(/TOURNEY\.champion!==TOURNEY\.myTeam\)\{ try\{ cobsCupLost\(\); \}/);
-    // ...and cobsCupLost only ever empties YOUR unfinished run in Normal mode.
-    expect(W.eval(`PROFILE.cobs.cups = ['Knife']; TOURNEY = { active:true, mode:'spectate', myTeam:null }; cobsCupLost(); cobsQ().cups`)).toEqual(['Knife']);
-    expect(W.eval(`TOURNEY = { active:true, mode:'normal', myTeam:{ members:[] } }; cobsCupLost(); cobsQ().cups`)).toEqual([]);
+    // "No reset on a loss" (the owner, 2026-09-30): the three places that decide a Normal-mode cup against your side used to
+    // empty the run. None of them asks the chain anything now, and the function they called is gone.
+    expect(src.sim, 'beaten in a simmed knockout round').not.toMatch(/cobs/i);
+    expect(src.group, 'out in the group stage').not.toMatch(/cobs/i);
+    expect(src.adv, 'the final you played goes finishWatchedKnockout -> advanceKnockout, never through simRestOfRound').not.toMatch(/cobs/i);
+    expect(W.eval('typeof cobsCupLost')).toBe('undefined');
   });
 
-  it('the final, through the real knockout flow: lost as Taco (II) with two cups in hand, all again; won, the run is finished', async () => {
+  it('the final, through the real knockout flow: lost as Taco (II) with two cups in hand, the two stay; won, the run is finished', async () => {
     await fresh(W);
-    // Your final, the way the game plays it: one fixture left in the knockout, you in it, finishWatchedKnockout crowning it on the
-    // spot (the flow One's Moon relies on), with no "Sim & Continue" in between.
-    const FINAL = (winTeam) => W.eval(`(function(){
-      var mine = { name:'Mine', members:[ROSTER.find(function(r){ return r.name==='Taco (II)'; })] }, them = { name:'Them', members:[ROSTER.find(function(r){ return r.name==='Firey'; })] };
-      var fx = { kind:'ko', a:mine, b:them, played:false, result:null };
-      TOURNEY = { active:true, mode:'normal', myTeam:mine, eliminated:false, awarded:false, stage:'knockout', bracket:[[fx]], knockoutRound:0, fixtures:[fx], fxIndex:0, round:0 };
-      fighters = [{ name:'Taco (II)', you:true, team:0 }, { name:'Firey', you:false, team:1 }];
-      var wc = PROFILE.wcTitles;
-      finishWatchedKnockout(fx, ${winTeam});
-      return { cups:cobsQ().cups.slice(), champ:TOURNEY.champion && TOURNEY.champion.name, stage:TOURNEY.stage, won:PROFILE.wcTitles - wc };
-    })()`);
     W.eval(`PROFILE.cobs.cups = ['Knife', 'Balloon'];`);
-    expect(FINAL(1), 'the final lost: decided here, not at an eliminated site, and the run empties').toEqual({ cups: [], champ: 'Them', stage: 'done', won: 0 });
-    W.eval(`PROFILE.cobs.cups = ['Knife', 'Balloon'];`);
-    expect(FINAL(0), 'the final won as Taco (II): the third cup').toEqual({ cups: ['Knife', 'Balloon', 'Taco (II)'], champ: 'Mine', stage: 'done', won: 1 });
-    expect(FINAL(1), 'a finished run is never emptied, even by a lost final').toMatchObject({ cups: ['Knife', 'Balloon', 'Taco (II)'], champ: 'Them' });
+    expect(playFinal(W, 'Taco (II)', 1), 'the final lost: decided here, not at an eliminated site, and the two cups in hand stay').toEqual({ cups: ['Knife', 'Balloon'], champ: 'Them', stage: 'done', won: 0 });
+    expect(playFinal(W, 'Taco (II)', 0), 'the final won as Taco (II): the third cup').toEqual({ cups: ['Knife', 'Balloon', 'Taco (II)'], champ: 'Mine', stage: 'done', won: 1 });
+    expect(playFinal(W, 'Taco (II)', 1), 'a lost final after the third changes nothing').toMatchObject({ cups: ['Knife', 'Balloon', 'Taco (II)'], champ: 'Them' });
     await sleep(W, 0);
     expect(stored(W).cobs.cups).toEqual(['Knife', 'Balloon', 'Taco (II)']);
     W.eval(`TOURNEY = { active:false }; go('title')`);
@@ -546,7 +585,7 @@ describe('the fight, and Steve Cobs for good', () => {
 });
 
 describe('the profile: reload and two tabs', () => {
-  it('merges upward -- stage, wins and the flags by max/OR, the cups by the longer run, the kills by union -- and copes with saves that have none of it', () => {
+  it('merges upward -- stage, wins and the flags by max/OR, the cups and the kills by union -- and copes with saves that have none of it', () => {
     const m = W.eval(`JSON.stringify(mergeProfiles(
       { cobs:{ stage:2, cups:['Knife'], race:false, beaten:false, wins:0, bestSecs:0 }, bossKills:{ MePhone4:['Knife'] }, one:{ stage:1, erased:['Gaty'] } },
       { cobs:{ stage:1, cups:['Knife','Balloon'], race:true, beaten:false, wins:1, bestSecs:120 }, bossKills:{ MePhone4:['Fan'], Springy:['Balloon'] }, one:{ stage:0, erased:[] } }))`);
@@ -555,7 +594,11 @@ describe('the profile: reload and two tabs', () => {
     expect(p.bossKills).toEqual({ MePhone4: ['Knife', 'Fan'], Springy: ['Balloon'] });
     expect(p.one, 'One\'s merge is untouched').toEqual({ stage: 1, erased: ['Gaty'], rushLightning: false, wins: 0, bestSecs: 0 });
     expect(W.eval(`mergeCobs({ stage:3 }, { beaten:false }).beaten`), 'stage FREE is the flag too').toBe(true);
-    expect(W.eval(`mergeCobs({ cups:['Taco (II)','Knife'] }, { cups:'junk' }).cups`), 'a run that does not follow the order is no run').toEqual([]);
+    // "No reset on a loss" (the owner, 2026-09-30): the cups of two tabs are a union, in any order -- not the longer run.
+    expect(W.eval(`mergeCobs({ cups:['Taco (II)'] }, { cups:['Knife','Balloon'] }).cups`), 'the union, not the longer list').toEqual(['Knife', 'Balloon', 'Taco (II)']);
+    expect(W.eval(`mergeCobs({ cups:['Knife','Balloon'] }, { cups:['Taco (II)'] }).cups`), 'whichever tab is which').toEqual(['Knife', 'Balloon', 'Taco (II)']);
+    expect(W.eval(`mergeCobs({ cups:['Taco (II)','Knife'] }, { cups:'junk' }).cups`), 'any order is a set of cups, and junk is none').toEqual(['Knife', 'Taco (II)']);
+    expect(W.eval(`mergeCobs({ cups:['Balloon','Balloon','Zed'] }, { cups:['Balloon'] }).cups`), 'a repeat or a stranger is cleaned').toEqual(['Balloon']);
     expect(W.eval(`mergeCobs({ bestSecs:200 }, { bestSecs:95 }).bestSecs`)).toBe(95);
     const bare = W.eval(`JSON.stringify(mergeProfiles({ unlocked:[] }, { unlocked:[] }))`);
     expect(JSON.parse(bare).cobs).toEqual({ stage: 0, cups: [], race: false, beaten: false, wins: 0, bestSecs: 0 });
@@ -567,12 +610,12 @@ describe('the profile: reload and two tabs', () => {
     await fresh(W, ALL_EXISTING);
     sub(W, 'C0B5'); sub(W, 'MISTAH PHONE');
     kill(W, { name: 'Knife', you: true, team: 0 }, 'MePhone4');
-    cup(W, 'Knife'); W.eval('cobsRaceWon()');
+    cup(W, 'Taco (II)'); W.eval('cobsRaceWon()');   // the first cup is Taco (II): any order is kept across a reload
     await sleep(W, 0);
     const w2 = boot({ 'profile:v1': W.localStorage.getItem('profile:v1') });
     await w2.eval('profileReady');
     expect(w2.eval(`({ stage:PROFILE.cobs.stage, cups:PROFILE.cobs.cups, race:PROFILE.cobs.race, kills:PROFILE.bossKills, live:cobsChainLive(), s2:cobsStep(2), s3:cobsStep(3), gate:cobsGateOpen() })`))
-      .toEqual({ stage: 1, cups: ['Knife'], race: true, kills: { MePhone4: ['Knife'] }, live: true, s2: true, s3: false, gate: true });
+      .toEqual({ stage: 1, cups: ['Taco (II)'], race: true, kills: { MePhone4: ['Knife'] }, live: true, s2: true, s3: false, gate: true });
     expect(w2.eval(`vaultSubmit('nope').reply`), 'live after the reload: "Tick, tock."').toBe(TICK);
     expect(w2.eval(`vaultSubmit('mistah phone').kind`)).toBe('again');
     w2.eval('openVault()');
@@ -597,12 +640,13 @@ describe('the profile: reload and two tabs', () => {
     other.cobs = Object.assign({}, other.cobs, { cups: ['Knife'] });
     other.vault = { found: [...other.vault.found, 'MISTAH PHONE'] };
     W.localStorage.setItem('profile:v1', J(other));
-    // This tab saves again from its own stale copy, after a kill of its own.
+    // This tab saves again from its own stale copy, after a kill and a cup of its own (Taco (II): any order).
     kill(W, { name: 'Fan', you: true, team: 0 }, 'MePhone4');
+    cup(W, 'Taco (II)');
     await W.eval('saveProfile()');
     const final = stored(W);
     expect(final.bossKills).toEqual({ MePhone4: ['Knife', 'Fan'], Springy: ['Balloon'] });
-    expect(final.cobs.cups).toEqual(['Knife']);
+    expect(final.cobs.cups, 'the cups of both tabs, a union').toEqual(['Knife', 'Taco (II)']);
     expect(final.vault.found).toContain('MISTAH PHONE');
     expect(W.eval('cobsStep(2) && cobsKilled("Balloon","Springy")'), 'and the tab in memory has them too').toBe(true);
   });
@@ -635,7 +679,7 @@ describe('the Vault never names him, and One\'s chain is untouched', () => {
       for (const s of Object.values(CODES).flat()) expect(W.eval(`vaultNorm(${J(t)})`), `${s} in ${t}`).not.toContain(W.eval(`vaultNorm(${J(s)})`));
     }
     expect(screen).toContain('Static on the line');
-    expect(W.eval('JSON.stringify(COBS_VAULT)')).not.toMatch(/\bOJ\b|Suitcase|Cabby/);
+    expect(W.eval('JSON.stringify(COBS_VAULT)')).not.toMatch(/\bOJ\b|Suitcase|Cabby|The Floor/);
     // A game-wide rule kept: nothing here ever puts a banner over a match.
     expect(W.eval('window.__vb'), 'no banner from any code, right or wrong').toBe(0);
     W.eval(`banner = window.__origBanner; go('title')`);
