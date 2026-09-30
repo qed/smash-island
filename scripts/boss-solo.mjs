@@ -113,7 +113,9 @@ if (process.env.BOSS_SOLO_WORKER) {
   const tuning = JSON.parse(W.eval(BOSS_TUNING_EXPR));
   W.close();
   const full = !process.env.BOSSES && !process.env.FROM;
-  const BOSSES = process.env.BOSSES ? JSON.parse(process.env.BOSSES) : process.env.FROM ? [] : ALL.slice(ALL.indexOf('Purple Dragon'));
+  // The bosses measured: from MePhone4 to the end -- the same seven as before the Purple Dragon moved from Boss 6 to Boss 9
+  // ("just move purple dragon!!!", the owner, 2026-09-30), when the list started at the Dragon.
+  const BOSSES = process.env.BOSSES ? JSON.parse(process.env.BOSSES) : process.env.FROM ? [] : ALL.slice(ALL.indexOf('MePhone4'));
   const FROM = process.env.FROM || (full ? RUN_FROM : '');
   // Run k of a boss is fighter k % 15 on seed 100 + k, so adding seeds adds runs without changing the old ones.
   const tasks = [];

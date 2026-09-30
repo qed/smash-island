@@ -31,7 +31,7 @@ const S = (o = '') => `{ name:'MePhone4S', attack:'mephone4s', x:550, y:groundY(
   color:'#c8102e', face:1, homeX:550, stationary:false, vx:0, vy:0 ${o ? ',' + o : ''} }`;
 
 describe('MePhone4S joins the gauntlet', () => {
-  it('is Boss 9, after Evil Leafy and before Four, with his signature, his second moves and his art', () => {
+  it('is Boss 8 (was 9 until the Dragon moved after him), after Evil Leafy and before Four, with his signature, his second moves and his art', () => {
     const r = W.eval(`(function(){
       var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }), b = BOSS_ROSTER[i];
       var idx = function(n){ return BOSS_ROSTER.findIndex(function(b){ return b.name===n; }); };
@@ -39,7 +39,7 @@ describe('MePhone4S joins the gauntlet', () => {
                extra: BOSS_EXTRA['MePhone4S'], moves: BOSS_EXTRA['MePhone4S'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k]; }) };
     })()`);
     expect(r.row).toEqual({ name: 'MePhone4S', color: '#c8102e', hp: 260, big: 2.5, attack: 'mephone4s', arena: 'studio', stationary: false, sprite: 'mephone4s' });
-    expect(r.i, 'Boss 9').toBe(8);
+    expect(r.i, 'Boss 8 ("just move purple dragon!!!" (the owner, 2026-09-30))').toBe(7);
     expect(r.i).toBeGreaterThan(r.leafy);
     expect(r.i, 'after MePhone4, whom he beat').toBeGreaterThan(r.mephone);
     expect(r.i, 'before Four, or he is never reached').toBeLessThan(r.four);
@@ -69,8 +69,6 @@ describe('MePhone4S joins the gauntlet', () => {
       // The Bug Swarm, rebuilt in the boss overhaul (2026-09-29): "starting from bug swarm, they should have 5" (test/boss-bug-swarm.test.js)
       ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug', 'dodgepattern+swarmseek+dodgeball+eggsac', 'swarm dodgepattern swarm swarmseek', 36, 'Second Wave', 'Swarm Frenzy'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face', 'pfaceRap+pfaceTorture+pfaceThanks+pfaceShoes', 'swallow pfaceRap swallow pfaceTorture', 46, 'Running Loops', 'Broken Value'],   // rebuilt (the boss overhaul): test/boss-purple-face.test.js
-      // the Dragon's own five and its own wind-up (44), on the hotel roof: "the bosses should have more attacks the later they get" (Bug Swarm on: 5), "Each its own"
-      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragon dragonchar', 44, 'Strafing Runs', 'Grab & Carry'],
       // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
       ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'seekers+slam', 'evilleafy seekers evilleafy slam', 45, 'No Refuge', 'Vine Coverage'],
@@ -109,7 +107,7 @@ describe('MePhone4S joins the gauntlet', () => {
     // between Two and Four; "replace him with springy" (2026-09-28) put Springy there and made Cobs the second secret boss.
     // Nothing before Boss 11 moved.
     expect(r.order).toEqual(['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face',
-      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Springy', 'Four']);
+      'MePhone4', 'Evil Leafy', 'MePhone4S', 'Purple Dragon', 'Two', 'Springy', 'Four']);   // the Dragon at 9 ("just move purple dragon!!!" (the owner, 2026-09-30))
     expect(r.atHim.cookieT, 'nobody collapses after he is gone').toBe(0);
     expect(r.atHim.cookiesLeft, 'his cookies go with him').toBe(0);
     expect(r.atHim.othersLeft, 'nothing else is swept').toBe(1);

@@ -17,7 +17,7 @@ beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 // spawned the way the gauntlet spawns him. His attack timer is parked unless `live` is set.
 const STAGE = (x, live) => `
   SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
-  BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+  BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
   worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
   var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), ${x}, groundY()-24, 0);
   f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
@@ -36,7 +36,7 @@ describe('MePhone4 joins the gauntlet', () => {
   // and cobs" -- then put MePhone4S in as Boss 9, after Evil Leafy, and Steve Cobs in as Boss 11, after Two. Then "replace
   // him with springy" (2026-09-28): Cobs became the second secret boss and Springy took Boss 11, so that row is Springy's
   // now (test/boss-springy.test.js); nothing else moved.
-  it('is Boss 7, before Four, and the bosses around him are exactly as they were', () => {
+  it('is Boss 6 (was 7 until the Dragon moved to 9: "just move purple dragon!!!" (the owner, 2026-09-30)), before Four, and the bosses around him are exactly as they were', () => {
     const r = W.eval(`(function(){
       var rows = BOSS_ROSTER.map(function(b){ return [b.name, b.color, b.hp, b.big, b.attack, b.arena, b.stationary, b.sprite]; });
       var extra = {}; BOSS_ROSTER.forEach(function(b){ extra[b.name] = BOSS_EXTRA[b.name]; });
@@ -51,12 +51,12 @@ describe('MePhone4 joins the gauntlet', () => {
       ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug'],
       // rebuilt (the boss overhaul, 2026-09-29): the warehouse is his arena ("yellow faces warehouse.") and he moves ("Only if canon moves"); test/boss-purple-face.test.js has the fight
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face'],
-      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon'],   // the hotel roof in the storm, no longer the shared cave ("Each its own", the owner, 2026-09-29)
-      // 255, was 240: under the Dragon's 250 before him, and measured easier than the Dragon (the review; see
+      // 255, was 240: under the Dragon's 250 when the Dragon came before him (it moved to Boss 9 on 2026-09-30; see
       // test/boss-rush-order.test.js)
       ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone'],
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy'],
       ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s'],
+      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon'],   // the hotel roof in the storm, no longer the shared cave ("Each its own", the owner, 2026-09-29)
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two'],
       ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy'],
       ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four'],
@@ -90,7 +90,7 @@ describe('MePhone4 joins the gauntlet', () => {
       } finally { setTimeout = st; BOSSRUSH.active=false; running=false; summons=[]; }
     })()`);
     expect(order).toEqual(['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face',
-      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Springy', 'Four']);   // Springy at 11 ("replace him with springy")
+      'MePhone4', 'Evil Leafy', 'MePhone4S', 'Purple Dragon', 'Two', 'Springy', 'Four']);   // the Dragon at 9 ("just move purple dragon!!!", the owner, 2026-09-30)
   });
 
   it('takes turns: Fist Thingy, MeLife, Fist Thingy, Rejection Portal, each with its own warning, and names his phases', () => {
@@ -464,7 +464,7 @@ describe('MeLife: hostile assist trophies', () => {
       var st = setTimeout; setTimeout = function(){ return 0; };
       try {
         SETTINGS.mode='boss'; SETTINGS.stocks=99; running=true;
-        BOSSRUSH = { active:true, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+        BOSSRUSH = { active:true, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
         var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 200, groundY()-24, 0);
         f.team=0; f.controller='still'; f.stocks=3; fighters=[f]; summons=[]; projectiles=[];
         spawnBossRushBoss(); var b = summons.find(function(s){ return s.type==='boss'; });
@@ -480,7 +480,7 @@ describe('MeLife: hostile assist trophies', () => {
         return out;
       } finally { setTimeout = st; BOSSRUSH.active=false; running=false; summons=[]; }
     })()`);
-    expect(r).toEqual({ name: 'MePhone4', before: 2, hostile: 0, normalKept: true, boss: false, next: 7, orphanGone: true });
+    expect(r).toEqual({ name: 'MePhone4', before: 2, hostile: 0, normalKept: true, boss: false, next: 6, orphanGone: true });   // next: Evil Leafy, now index 6 (the Dragon moved to Boss 9, 2026-09-30)
   });
 });
 
@@ -586,10 +586,10 @@ describe('what the player sees', () => {
     // and every line of the game or the credits about him -- his whole section (the block comment over MEPHONE_POOL
     // included), his roster row and its comment, his CREDITS.md row -- as the MePhone4S and Steve Cobs guards check theirs
     const html = readFileSync('artifacts/V1/index.html', 'utf8'), credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
-    const section = html.slice(html.indexOf('// ---- MEPHONE4 (Boss 7)'), html.indexOf('// ---- MEPHONE4S (Boss 9)'));
+    const section = html.slice(html.indexOf('// ---- MEPHONE4 (Boss 6)'), html.indexOf('// ---- MEPHONE4S (Boss 8)'));
     expect(section.length, 'his section is found').toBeGreaterThan(2000);
-    const rosterAt = html.indexOf('{name:"MePhone4",'), roster = html.slice(html.lastIndexOf('// Boss 7 --', rosterAt), html.indexOf('\n', rosterAt));
-    expect(roster, 'his roster row and the comment over it').toMatch(/^\/\/ Boss 7 --[\s\S]*hp:/);
+    const rosterAt = html.indexOf('{name:"MePhone4",'), roster = html.slice(html.lastIndexOf('// Boss 6 --', rosterAt), html.indexOf('\n', rosterAt));
+    expect(roster, 'his roster row and the comment over it').toMatch(/^\/\/ Boss 6 --[\s\S]*hp:/);
     const aboutHim = (l) => /MePhone4(?!S)|\bmephone\b|MeLife|MELIFE|MEPHONE_|Fist Thingy|Rejection Portal/.test(l);
     const lines = [...section.split('\n'), ...roster.split('\n'), ...html.split('\n').filter(aboutHim), ...credits.split('\n').filter(aboutHim)];
     expect(lines.length).toBeGreaterThan(100);

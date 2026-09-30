@@ -39,21 +39,21 @@ const FIRE = (k) => `b._moveN = ${k === 0 ? 0 : 2*k - 1}; b._atkTimer = 1; step(
   for (var w=0; w<60 && b._tel>0; w++){ step(); f.x = f.x; }`;
 
 describe('Purple Dragon takes the hotel roof', () => {
-  it('is Boss 6, its own arena and its five attacks in turn: signature, roar, signature, char, signature, wind, signature, ropes', () => {
+  it('is Boss 9 (moved from 6: "just move purple dragon!!!" (the owner, 2026-09-30)), its own arena and its five attacks in turn: signature, roar, signature, char, signature, wind, signature, ropes', () => {
     const r = W.eval(`(function(){
       var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='Purple Dragon'; });
       var s = ${S()}, kinds = [], names = [];
       for (var k=0;k<8;k++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       var p3 = ${S('_phase:3, _telPh:3')};
-      return { i: i, row: BOSS_ROSTER[i], mp4: BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), extra: BOSS_EXTRA['Purple Dragon'], kinds: kinds, names: names,
+      return { i: i, row: BOSS_ROSTER[i], mp4: BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }), extra: BOSS_EXTRA['Purple Dragon'], kinds: kinds, names: names,
                tel: bossTelLen({ attack:'dragon' }), sig3: bossTelName(p3), p2: bossPhaseName({ attack:'dragon' }, 2), p3n: bossPhaseName({ attack:'dragon' }, 3),
                gaps: [1,2,3].map(function(ph){ var q = ${S()}; q._phase = ph; return bossAtkGap(q); }), held: (function(){ var q = ${S()}; q._dr = { k:'run' }; return bossAtkGap(q); })(),
                rushOnly: ['dragonroar','dragonchar','dragonwind','dragonropes'].map(function(k){ return BOSS_RUSH_ONLY.has(k); }),
                moves: BOSS_EXTRA['Purple Dragon'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k]; }) };
     })()`);
     expect(r.row).toEqual(ROW);
-    expect(r.i, 'Boss 6, before MePhone4').toBe(5);
-    expect(r.mp4).toBe(6);
+    expect(r.i, 'Boss 9, right after MePhone4S').toBe(8);
+    expect(r.mp4, 'MePhone4S is Boss 8').toBe(7);
     expect(r.extra).toEqual(['dragonroar', 'dragonchar', 'dragonwind', 'dragonropes']);
     expect(r.kinds).toEqual(['dragon', 'dragonroar', 'dragon', 'dragonchar', 'dragon', 'dragonwind', 'dragon', 'dragonropes']);
     // the wind-up names each move: the show's own words -- "The dragon lets out a furious roar" (Category One), "The dragon chars Cake with fire breath"

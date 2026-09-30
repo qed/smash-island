@@ -109,7 +109,7 @@ describe('Springy takes Boss 11', () => {
                   document.getElementById('rushVictory').style.display='none'; }
     })()`);
     expect(r.order).toEqual(['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face',
-      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Springy', 'Four']);
+      'MePhone4', 'Evil Leafy', 'MePhone4S', 'Purple Dragon', 'Two', 'Springy', 'Four']);   // the Dragon at 9 ("just move purple dragon!!!" (the owner, 2026-09-30))
     expect(r.order, 'the gauntlet never spawns Steve Cobs').not.toContain('Steve Cobs');
     expect(r.atHim.padBefore, 'the exit room\'s spring was placed with him').toBe(1);
     expect(r.atHim.box, 'and a landed box stood').toBe(1);

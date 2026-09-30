@@ -83,12 +83,12 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
       // The Bug Swarm, rebuilt in the boss overhaul (2026-09-29): "starting from bug swarm, they should have 5" (test/boss-bug-swarm.test.js)
       ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug', 'dodgepattern+swarmseek+dodgeball+eggsac', 'swarm dodgepattern swarm swarmseek', 36, 'Second Wave', 'Swarm Frenzy'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face', 'pfaceRap+pfaceTorture+pfaceThanks+pfaceShoes', 'swallow pfaceRap swallow pfaceTorture', 46, 'Running Loops', 'Broken Value'],   // rebuilt (the boss overhaul): test/boss-purple-face.test.js
-      // the Dragon's own five and its own wind-up (44), on the hotel roof: "the bosses should have more attacks the later they get" (Bug Swarm on: 5), "Each its own"
-      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragon dragonchar', 44, 'Strafing Runs', 'Grab & Carry'],
       // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
       ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'seekers+slam', 'evilleafy seekers evilleafy slam', 45, 'No Refuge', 'Vine Coverage'],
       ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s', 'cookies+chainsaws', 'mephone4s cookies mephone4s chainsaws', 42, "I'll Be Back", 'Super Death Trap'],
+      // the Dragon's own five and its own wind-up (44), on the hotel roof: "the bosses should have more attacks the later they get" (Bug Swarm on: 5), "Each its own"
+      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragon dragonchar', 44, 'Strafing Runs', 'Grab & Carry'],
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two', 'seekers+ring', 'two seekers two ring', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],
       // Boss 11: Springy, in his place ("replace him with springy"; test/boss-springy.test.js has the fight)
       ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop', 'springy longarm springy boxdrop', 40, 'Glitching', 'Unvitational'],
@@ -129,7 +129,7 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
                   document.getElementById('rushVictory').style.display='none'; }
     })()`);
     expect(r.order).toEqual(['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face',
-      'Purple Dragon', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Springy', 'Four']);
+      'MePhone4', 'Evil Leafy', 'MePhone4S', 'Purple Dragon', 'Two', 'Springy', 'Four']);   // the Dragon at 9 ("just move purple dragon!!!" (the owner, 2026-09-30))
     expect(r.order, 'the gauntlet never spawns him').not.toContain('Steve Cobs');
     expect(r.atHim.arrowsLeft, 'a buried arrow never comes up after a boss is gone').toBe(0);
     expect(r.atHim.othersLeft, 'nothing else is swept').toBe(1);
