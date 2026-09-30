@@ -22,9 +22,10 @@ import { mulberry32 } from './helpers/prng.js';
 // Tokens, about five cheap looks, drew: "increase the WT cost in the shop... you can get 5 cosmetics in one day. ... make
 // cosmetics more personalized." Then: "1, but reduce prices as well, and add more personalized cosmetics. reduce prices less
 // then quest reductions". So the quests pay about 40% less (daily 9, 12, 18; weekly 36, 54, 72), every price about 25% less
-// (45, 75, 115, 150, 190), and the catalogue holds 20 more canon looks and 25 looks for one fighter each (the last two "Skins"
-// and "Removing the seven washes" blocks below). "the skins should be by-fighter(like rockstar poppy, broken fries, robot pin)"
-// and, asked about the old recolours, "Remove all seven".
+// (45, 75, 115, 150, 190), and the catalogue holds 20 more canon looks and 25 skins for one fighter each (the "canon looks" and
+// "skins" blocks below). "the skins should be by-fighter(like rockstar poppy, broken fries, robot pin)" and, asked what became of the
+// old colour washes any fighter could wear, "Remove all seven": the "seven old recolours" block below pins that they are gone, that
+// whoever bought one has its Win Tokens back, once, and that a worn one is taken off.
 
 const SRC = readFileSync('artifacts/V1/index.html', 'utf8');
 // Comments may say what is NOT here ("no token packs"); code may not do it. So the code is searched with its comments cut.
@@ -47,8 +48,8 @@ const DAY = (() => {
   return t;
 })();
 
-// A 2D context that draws nothing. `filter:true` gives it a canvas filter (a string, as a real browser's is), so both the
-// filter path and the wash path of the recolours get drawn.
+// A 2D context that draws nothing. `filter:true` gives it a canvas filter (a string, as a real browser's is), so the one fighter
+// who sets a filter on her own (Starfruit, greyed while she is a Has-Been) draws that way as well as without.
 function stub2d(filter) {
   const grad = { addColorStop() {} };
   const state = { filter: 'none' };
@@ -127,13 +128,13 @@ describe('the wallet', () => {
 
   it('survives a reload, with what is worn', async () => {
     const w = await ready();
-    await w.eval(`(async function(){ walletEarn(300); buyCosmetic('sk_gold'); equipCos('skin', 'sk_gold', 'Leafy'); equipCos('title', null); await saveProfile(); })()`);
+    await w.eval(`(async function(){ walletEarn(300); buyCosmetic('sk_firey_mech'); equipCos('skin', 'sk_firey_mech', 'Firey'); equipCos('title', null); await saveProfile(); })()`);
     const stored = w.localStorage.getItem('profile:v1');
     const w2 = await ready({ storage: { 'profile:v1': stored } });
     expect(w2.eval('walletBalance()')).toBe(150);
-    expect(w2.eval('ownsCos("sk_gold")')).toBe(true);
-    expect(w2.eval('wornCos("skin", "Leafy")')).toBe('sk_gold');
-    expect(w2.eval('wornCos("skin", "Firey")'), 'a recolour is worn per fighter').toBe(null);
+    expect(w2.eval('ownsCos("sk_firey_mech")')).toBe(true);
+    expect(w2.eval('wornCos("skin", "Firey")')).toBe('sk_firey_mech');
+    expect(w2.eval('wornCos("skin", "Pin")'), 'a skin is worn by its own fighter only').toBe(null);
   });
 
   it('an old save gains the wallet, the quests and the wardrobe, empty (and an open profile gets no free tokens)', async () => {
@@ -411,9 +412,9 @@ describe('cosmetics', () => {
           if (i % 2 !== ${parity}) return;
           var r = ROSTER.find(function(x){ return x.name===name; });
           var at = function(k){ var l = K(k); return l[i % l.length].id; };   // each kind round and round, so every look is worn by several fighters
-          var own = K('skin').filter(function(c){ return c.fighter === name; }), washes = K('skin').filter(function(c){ return !c.fighter; });
-          // a fighter with skins puts each on in turn (Fries has two); one without wears an old recolour, if any are left
-          (own.length ? own : [washes.length ? washes[i % washes.length] : null]).forEach(function(skin){
+          var own = K('skin').filter(function(c){ return c.fighter === name; });
+          // a fighter with skins puts each on in turn (Fries has two); one without has none to wear
+          (own.length ? own : [null]).forEach(function(skin){
           var pick = { hat: at('hat'), trail: at('trail'), ko: at('ko'), pose: at('pose'), card: at('card'), title: at('title') };
           if (skin) pick.skin = skin.id;
           if (skin && equipCos('skin', skin.id, name)) used[skin.id] = 1;
@@ -617,7 +618,8 @@ describe('the canon looks', () => {
 
   it('every look\'s Store preview draws without a fault', async () => {
     const w = await ready();
-    const r = w.eval(`(function(){ go('store'); return { cells: document.querySelectorAll('#storeList .scell').length, total: COSMETICS.length,
+    // (with the two Vault fighters opened, so the Store lists their skins too: every look has a cell)
+    const r = w.eval(`(function(){ PROFILE.unlocked.push('Lightbulb', 'Bow'); go('store'); return { cells: document.querySelectorAll('#storeList .scell').length, total: COSMETICS.length,
       err: COS_DRAW_ERR ? String(COS_DRAW_ERR.stack || COS_DRAW_ERR) : null }; })()`);
     expect(r.err).toBe(null);
     expect(r.cells).toBe(r.total);
@@ -628,7 +630,7 @@ describe('the canon looks', () => {
 // the show's own wikis, worn only by that fighter. Twenty-five, all approved ("Rockstar Poppy; Broken Fries; Robot Pin (the wiki's Mech
 // Pin)..."), sold for Win Tokens at the tier the plan gave each.
 describe('the skins', () => {
-  // [id, fighter, name, price]: in the owner's order, after the seven recolours they replace (whose places in the online code they keep).
+  // [id, fighter, name, price]: in the owner's order. They replace the seven colour washes, whose places in the online code they leave empty.
   const SKINS = [
     ['sk_poppy_rock', 'Poppy', 'Rockstar Poppy', 150], ['sk_fries_broken', 'Fries', 'Broken Fries', 115], ['sk_pin_robot', 'Pin', 'Robot Pin', 150],
     ['sk_firey_mech', 'Firey', 'Mech Firey', 150], ['sk_woody_mech', 'Woody', 'Mech Woody', 150], ['sk_coiny_robo', 'Coiny', 'Robo Coiny', 150],
@@ -643,12 +645,13 @@ describe('the skins', () => {
   ];
   const ids = SKINS.map((r) => r[0]);
 
-  it('are in the shop: twenty-five, each for one playable fighter, at its tier, after the old recolours', async () => {
+  it('are in the shop: twenty-five, each for one playable fighter, at its tier, and the kind holds nothing else', async () => {
     const w = await ready();
     const rows = w.eval("cosOfKind('skin').map(function(c){ return { id: c.id, fighter: c.fighter || null, name: c.name, price: c.price, src: c.src || null, flip: !!c.flip, imgH: c.imgH, imgW: c.imgW }; })");
     for (const [id, fighter, name, price] of SKINS) expect(rows.find((r) => r.id === id), id).toMatchObject({ id, fighter, name, price });
+    expect(rows, 'the kind is the 25 skins: no colour wash is left').toHaveLength(25);
     expect(rows.filter((r) => r.fighter)).toHaveLength(25);
-    expect(rows.slice(-25).map((r) => r.id), 'after everything the kind already held, in the owner\'s order').toEqual(ids);
+    expect(rows.map((r) => r.id), 'in the owner\'s order').toEqual(ids);
     const playable = w.eval("ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })");
     for (const r of rows.filter((x) => x.fighter)) {
       expect(playable, `${r.id}: ${r.fighter} is a playable fighter`).toContain(r.fighter);
@@ -854,7 +857,7 @@ describe('the skins', () => {
       PROFILE.unlocked.push('Fries', 'Pin');
       var chips = function(name){ WARDROBE_PICK = name; go('wardrobe');
         var secs = [].slice.call(document.querySelectorAll('#wardFighterSlots .shopsec')), sk = secs.filter(function(s){ return s.textContent === 'Skins'; })[0];
-        return sk ? [].slice.call(sk.nextElementSibling.querySelectorAll('.wchip')).filter(function(b){ return !b.dataset.id || cosItem(b.dataset.id).fighter; }).map(function(b){ return b.textContent; }) : null; };
+        return sk ? [].slice.call(sk.nextElementSibling.querySelectorAll('.wchip')).map(function(b){ return b.textContent; }) : null; };
       var out = { fries: chips('Fries'), pin: chips('Pin'), firey: chips('Firey') };
       WARDROBE_PICK = 'Pin'; go('wardrobe');
       var chip = [].slice.call(document.querySelectorAll('#wardFighterSlots .wchip')).filter(function(b){ return b.textContent === 'Robot Pin'; })[0];
@@ -866,6 +869,162 @@ describe('the skins', () => {
     expect(r.firey).toEqual(['None', 'Mech Firey']);
     expect(r.worn).toBe('sk_pin_robot');
   }, 60000);
+});
+
+// THE SEVEN OLD RECOLOURS. Colour washes any fighter could wear: Yoylestone, Yoyleberry, Frostbite, Goiky Green, Cake Frosting, Evil Twin and
+// Win Token Gold. The owner, on the global washes once the skins were by-fighter: "Remove all seven". They leave the shop; whoever bought
+// one gets its Win Tokens back, once, when the game loads (the price they paid, whatever the price is now); one being worn is taken off.
+describe('the seven old recolours', () => {
+  // id -> what a player paid for it under the first prices (100, 100, 100, 100, 100, 150, 200) and under the reduced ones (75, 75, 75, 75, 75, 115, 150)
+  const SEVEN = { sk_yoyle: 100, sk_berry: 100, sk_frost: 100, sk_goiky: 100, sk_frosting: 100, sk_evil: 150, sk_gold: 200 };
+  const oldSave = async (owned, extra = {}) => {
+    // a save as the last build wrote it, taken through the real loader
+    const w0 = await ready();
+    const p = w0.eval('JSON.parse(JSON.stringify(PROFILE))');
+    p.wallet = { earned: 1000, spent: Object.values(owned).reduce((a, b) => a + b, 0) + (extra.spent || 0), owned };
+    if (extra.cos) p.cos = extra.cos;
+    return JSON.stringify(p);
+  };
+
+  it('are not in the shop: no row, nothing to buy, nothing to wear, no cell in the Store, nothing that draws a wash', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){
+      walletEarn(10000);
+      var ids = ${JSON.stringify(Object.keys(SEVEN))}, out = { buy: [], wear: [], item: [], cells: 0 };
+      ids.forEach(function(id){ out.buy.push(buyCosmetic(id).why); out.wear.push(equipCos('skin', id, 'Firey')); out.item.push(cosItem(id)); });
+      go('store'); out.cells = ids.filter(function(id){ return !!document.querySelector('#storeList .scell[data-id="' + id + '"]'); }).length;
+      out.names = COSMETICS.filter(function(c){ return ['Yoylestone','Yoyleberry','Frostbite','Goiky Green','Cake Frosting','Evil Twin','Win Token Gold'].indexOf(c.name) >= 0; }).length;
+      out.filtered = COSMETICS.filter(function(c){ return c.filter || c.wash; }).length;
+      out.owned = ids.filter(ownsCos).length;
+      return out; })()`);
+    expect(r.buy).toEqual(Array(7).fill('unknown'));
+    expect(r.wear).toEqual(Array(7).fill(false));
+    expect(r.item).toEqual(Array(7).fill(null));
+    expect(r.cells).toBe(0);
+    expect(r.names, 'not under their names either').toBe(0);
+    expect(r.filtered, 'no look carries a filter or a wash').toBe(0);
+    expect(r.owned, 'and buying them left nothing behind').toBe(0);
+    expect(w.eval("COS_RETIRED && Object.keys(COS_RETIRED)")).toEqual(Object.keys(SEVEN));
+    // and nothing in the game's code draws a recolour any more
+    expect(CODE).not.toMatch(/cosSkinOn|cosFilterOk|\.wash\b|wash:'/);
+  });
+
+  it('a save that owned some is paid back what it paid, once, when the game loads, and stays paid across reloads', async () => {
+    const save = await oldSave({ sk_gold: 200, sk_yoyle: 100, hat_party: 75 }, { cos: { f: {}, trail: null, ko: null, pose: null, card: null, title: null } });
+    const w = await ready({ storage: { 'profile:v1': save } });
+    await settle(w);
+    // 1000 earned, 375 spent; 300 of it comes back
+    expect(w.eval('walletBalance()')).toBe(1000 - 375 + 300);
+    const stored = JSON.parse(w.localStorage.getItem('profile:v1'));
+    expect(stored.wallet.earned, 'and it is saved at once, not at the next purchase').toBe(1300);
+    expect(stored.wallet.spent, 'what was spent stays spent').toBe(375);
+    expect(stored.wallet.owned, 'the marks, beside the looks').toEqual({ sk_gold: 200, sk_yoyle: 100, hat_party: 75, refunded_sk_gold: 0, refunded_sk_yoyle: 0 });
+    expect(w.eval('ownsCos("hat_party")'), 'a look that stays is untouched').toBe(true);
+    // reload, reload: paid once
+    let again = w, raw = w.localStorage.getItem('profile:v1');
+    for (let i = 0; i < 3; i++) {
+      again = await ready({ storage: { 'profile:v1': raw } });
+      await settle(again);
+      expect(again.eval('walletBalance()'), `load ${i + 2}`).toBe(1000 - 375 + 300);
+      await again.eval('saveProfile()');
+      raw = again.localStorage.getItem('profile:v1');
+      expect(JSON.parse(raw).wallet.earned).toBe(1300);
+    }
+    // one that was never bought pays nothing
+    const none = await ready({ storage: { 'profile:v1': await oldSave({ hat_party: 75 }) } });
+    await settle(none);
+    expect(none.eval('walletBalance()')).toBe(1000 - 75);
+  }, 120000);
+
+  it('every one of the seven is paid back at what it cost, all together', async () => {
+    const save = await oldSave(SEVEN);
+    const w = await ready({ storage: { 'profile:v1': save } });
+    await settle(w);
+    const paid = Object.values(SEVEN).reduce((a, b) => a + b, 0);   // 850
+    expect(paid).toBe(850);
+    expect(w.eval('walletBalance()')).toBe(1000 - paid + paid);
+    expect(Object.keys(JSON.parse(w.localStorage.getItem('profile:v1')).wallet.owned).filter((k) => k.startsWith('refunded_')).sort()).toEqual(Object.keys(SEVEN).map((k) => 'refunded_' + k).sort());
+  }, 60000);
+
+  it('a worn one is taken off, in memory and in the save, whichever tab wrote it last', async () => {
+    const cos = { f: { Leafy: { skin: 'sk_gold', hat: 'hat_party' }, Pin: { skin: 'sk_yoyle' }, Firey: { skin: 'sk_firey_mech' } }, trail: null, ko: null, pose: null, card: null, title: null };
+    const save = await oldSave({ sk_gold: 200, sk_yoyle: 100, hat_party: 75, sk_firey_mech: 150 }, { cos });
+    const w = await ready({ storage: { 'profile:v1': save } });
+    await settle(w);
+    expect(w.eval('wornCos("skin", "Leafy")')).toBe(null);
+    expect(w.eval('wornCos("hat", "Leafy")'), 'her hat stays').toBe('hat_party');
+    expect(w.eval('wornCos("skin", "Pin")')).toBe(null);
+    expect(w.eval('wornCos("skin", "Firey")'), 'a skin that is not retired stays on').toBe('sk_firey_mech');
+    const f = JSON.parse(w.localStorage.getItem('profile:v1')).cos.f;
+    expect(f.Leafy).toEqual({ hat: 'hat_party' });
+    expect(f.Pin).toEqual({});
+    expect(f.Firey).toEqual({ skin: 'sk_firey_mech' });
+    // another tab that still has one on and saves last does not put it back
+    await w.eval(`(async function(){ PROFILE.cos.f.Leafy.skin = 'sk_gold'; await saveProfile(); })()`);
+    expect(JSON.parse(w.localStorage.getItem('profile:v1')).cos.f.Leafy.skin).toBeUndefined();
+    expect(w.eval('mergeCos({ f: { Pin: { skin: "sk_evil" } } }, { f: { Leafy: { skin: "sk_berry" } } }).f')).toEqual({ Pin: {}, Leafy: {} });
+  }, 120000);
+
+  it('two tabs loading the same old save pay it back once, however they save, and so does a stale tab that knows nothing of it', async () => {
+    const save = await oldSave({ sk_gold: 200, sk_evil: 150 });   // 350 paid
+    // Two tabs, both from the raw old save, each paying it back in its own memory (loading does), each saving
+    const a = await ready({ storage: { 'profile:v1': save } }), b = await ready({ storage: { 'profile:v1': save } });
+    await a.eval('profileReady');
+    await settle(a); await settle(b);
+    expect(a.eval('walletBalance()')).toBe(1000 - 350 + 350);
+    expect(b.eval('walletBalance()')).toBe(1000 - 350 + 350);
+    // they share one store in a browser; here the second's save lands on the first's
+    b.localStorage.setItem('profile:v1', a.localStorage.getItem('profile:v1'));
+    await b.eval('saveProfile()');
+    const merged = JSON.parse(b.localStorage.getItem('profile:v1')).wallet;
+    expect(merged.earned, 'two tabs paid it back; the save holds it once').toBe(1350);
+    expect(merged.spent).toBe(350);
+    // A stale tab -- the build before this one, or this one before it loaded -- still holds the raw wallet. Merging it in neither
+    // loses the refund nor pays it twice, in either order.
+    const rawOld = JSON.parse(save).wallet;
+    const m1 = a.eval(`mergeWallet(${JSON.stringify(rawOld)}, ${JSON.stringify(merged)}, null, null)`);
+    const m2 = a.eval(`mergeWallet(${JSON.stringify(merged)}, ${JSON.stringify(rawOld)}, null, null)`);
+    for (const m of [m1, m2]) { expect(m.earned).toBe(1350); expect(m.spent).toBe(350); expect(m.owned.refunded_sk_gold).toBe(0); }
+    // A tab running the build before this one keeps the marks whole (it keeps every id in `owned`) and never lowers `earned`: what it
+    // writes back merges to the same thing
+    const fromOldBuild = { earned: 1350, spent: 350, owned: { sk_gold: 200, sk_evil: 150, refunded_sk_gold: 0, refunded_sk_evil: 0 } };
+    expect(a.eval(`mergeWallet(${JSON.stringify(fromOldBuild)}, ${JSON.stringify(rawOld)}, null, null)`).earned).toBe(1350);
+    // and through the real save path, from a tab holding the raw old wallet in memory
+    await a.eval(`(async function(){ PROFILE.wallet = ${JSON.stringify(rawOld)}; await saveProfile(); })()`);
+    expect(JSON.parse(a.localStorage.getItem('profile:v1')).wallet.earned).toBe(1350);
+    expect(a.eval('walletBalance()')).toBe(1000);
+  }, 120000);
+
+  it('are explained to a player who had some -- one line in the Store, nowhere else -- and to nobody else', async () => {
+    const plain = await ready();
+    plain.eval("go('store')");
+    expect(plain.document.getElementById('storeNote').style.display, 'a player who had none sees nothing').toBe('none');
+    expect(plain.document.getElementById('storeNote').textContent).toBe('');
+    const w = await ready({ storage: { 'profile:v1': await oldSave({ sk_gold: 200, sk_yoyle: 100 }) } });
+    await settle(w);
+    w.eval("go('store')");
+    const note = w.document.getElementById('storeNote');
+    expect(note.style.display).toBe('');
+    expect(note.textContent).toMatch(/Yoylestone, Win Token Gold were yours, so the 300 Win Tokens you paid for them are back in your wallet/);
+    for (const id of ['title', 'quests', 'wardrobe']) {
+      const el = w.document.getElementById(id);
+      if (el) expect(el.textContent, id).not.toMatch(/old recolours/);
+    }
+  }, 60000);
+
+  it('keep their places in the online code, so every skin keeps its position; a code for one dresses no one', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){
+      var out = { first: cosNetCode({ skin: cosOfKind('skin')[0].id }), last: cosNetCode({ skin: cosOfKind('skin')[24].id }),
+        old: ['1000', '2000', '3000', '4000', '5000', '6000', '7000'].map(function(c){ return cosNetDecode(c); }),
+        firstReal: cosNetDecode('8000'), reserved: COS_NET_RESERVED, skins: cosOfKind('skin').length };
+      return out; })()`);
+    expect(r.first, 'Rockstar Poppy is the eighth place: the seven before it are spoken for').toBe('8000');
+    expect(r.last, 'and the 25th skin the 32nd').toBe('w000');
+    expect(r.old, 'what an older build sent for a wash dresses no one').toEqual(Array(7).fill(null));
+    expect(r.firstReal).toEqual({ skin: 'sk_poppy_rock', hat: null, trail: null, ko: null });
+    expect(r.reserved.skin + r.skins, 'the skins still fit the one character').toBeLessThanOrEqual(35);
+  });
 });
 
 describe('online', () => {
@@ -1020,12 +1179,18 @@ describe('nothing is sold', () => {
     expect(code).not.toMatch(/PaymentRequest|navigator\.pay|google\.payments|ApplePaySession/);
   });
 
-  it('keeps every price in Win Tokens, and Win Tokens come only from quests', async () => {
+  it('keeps every price in Win Tokens, and Win Tokens come only from quests (and a retired look\'s price paid back, once)', async () => {
     const w = await ready();
     expect(w.eval('COSMETICS.every(function(c){ return Number.isInteger(c.price) && c.price > 0 && Object.keys(c).indexOf("usd") < 0; })')).toBe(true);
     // The only caller that adds to the wallet: a finished quest paying itself (questPay), and walletEarn itself.
     const earners = SRC.split('\n').filter((l) => /walletEarn\(/.test(l) && !/function walletEarn/.test(l) && !/^\s*\/\//.test(l));
     expect(earners.map((l) => l.trim())).toEqual(['walletEarn(quest.reward);']);
+    // The one other way the total rises is the owner's "Remove all seven": the price of a look taken out of the shop goes back onto
+    // `earned` (walletNorm), once, for a look that was bought. Nothing else in the file adds to `earned`.
+    const adds = CODE.split('\n').filter((l) => /\bearned \+= /.test(l)).map((l) => l.trim());
+    expect(adds).toHaveLength(2);
+    expect(adds.filter((l) => /^function walletEarn\(n\)/.test(l)), 'the quests\' own path').toHaveLength(1);
+    expect(adds.filter((l) => /earned \+= owned\[id\]; owned\[mark\] = 0;/.test(l)), 'the refund of a retired look, which marks itself paid').toHaveLength(1);
     expect(w.eval('Object.keys(window).filter(function(k){ return /^(buy|purchase|checkout)(tokens|pack|currency)/i.test(k); })')).toEqual([]);
   });
 

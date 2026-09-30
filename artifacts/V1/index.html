@@ -823,6 +823,7 @@
     <h1 style="font-size:34px">STORE</h1>
     <div class="tag shoptag">Looks only: nothing here changes how a fighter plays. Everything costs Win Tokens, and Win Tokens only come from quests.</div>
     <div class="wallet"><span class="wtok" aria-hidden="true">W</span><b class="walletAmt">0</b>&nbsp;Win Tokens</div>
+    <div id="storeNote" class="foot" style="display:none"></div>
     <div id="storeReply" class="vaultreply" role="status" aria-live="polite"></div>
     <div id="storeList" class="storelist"></div>
     <div class="row shoprow">
@@ -19922,7 +19923,8 @@ function freshProfile(){
            bossKills:{},
            cobs:{ stage:0, cups:[], race:false, beaten:false, wins:0, bestSecs:0 },
            // WIN TOKENS (see that block): tokens earned and spent (two totals that only rise; the balance is the
-           // difference), the cosmetics bought (id -> price paid), this day's and week's quests, and what is worn.
+           // difference), the cosmetics bought (id -> price paid; a retired recolour paid back has a 0 beside it,
+           // 'refunded_<id>', see walletNorm), this day's and week's quests, and what is worn.
            wallet:{ earned:0, spent:0, owned:{} },
            quests:{ day:'', week:'', dp:{}, wp:{}, wf:[], claims:{} },
            cos:{ f:{}, trail:null, ko:null, pose:null, card:null, title:null } };
@@ -26476,10 +26478,8 @@ function drawSpriteBody(f, sp, anim){
     else ctx.drawImage(im,-dw/2,-dh/2,dw,dh);
   }
   else if(sp.draw) sp.draw(ctx,R,f);
-  // COSMETICS (see WIN TOKENS): the recolour stops at the art, so the state tints below keep their meaning; where a browser
-  // has no canvas filter the recolour is washed over the silhouette instead, the way those tints are.
-  const _cos = cosOf(f), _skin = _cos && _cos.skin ? cosItem(_cos.skin) : null;
-  if(_skin && cosFilterOk()) ctx.filter = 'none';
+  // COSMETICS (see WIN TOKENS): the hat below; a skin is the picture itself (drawFighter passes this function the skin's sprite).
+  const _cos = cosOf(f);
   // state tints, clipped to the silhouette
   const tint = f.flash>0 ? ["#ffffff",0.88]
              : f._yoyleT>0 ? ["#9aa7b0",0.72]
@@ -26490,7 +26490,6 @@ function drawSpriteBody(f, sp, anim){
     else if(sp.path){ sp.path(ctx,R,f); ctx.fillStyle=col; ctx.fill(); }
     ctx.globalAlpha = a0;
   };
-  if(_skin && _skin.wash && !cosFilterOk()) lay(_skin.wash, 0.42);
   if(tint) lay(tint[0],tint[1]);
   if(f.burn>0) lay("#f0521f",0.30);
   if(f.bleed>0) lay("#c0304a",0.22);            // bleed: a darker red under the burn tint             // burn reads on top of any other state, as on the blob
@@ -26502,7 +26501,6 @@ function drawSpriteBody(f, sp, anim){
   // The hat on a render rides everything the art does: the rig, the bespoke deform and the facing mirror.
   if(im && _cos && _cos.hat){ try{ drawCosHat(ctx, _cos.hat, R/24, -dh/2 + 2, -dh/2 + dh*0.3); }catch(e){ cosDrawFail(e); } }
   ctx.restore();
-  if(_skin && cosFilterOk()) ctx.filter = 'none';
   // face last and UNFLIPPED, so eyes read identically across the whole cast — vector art only;
   // a render already carries its own face (see the note at the top of this function)
   if(sp.face && !im) bfdiFace(f,R,sp.face);
@@ -26651,7 +26649,7 @@ function drawFighter(f){
     ctx.save(); ctx.globalAlpha=0.35+0.5*(1-k); ctx.strokeStyle=wu.color; ctx.lineWidth=3;
     ctx.beginPath(); ctx.arc(0,0,rr,0,7); ctx.stroke(); ctx.restore();
   }
-  // COSMETICS (see WIN TOKENS): whatever this fighter wears. The trail goes behind the body; the recolour and the hat are
+  // COSMETICS (see WIN TOKENS): whatever this fighter wears. The trail goes behind the body; the skin and the hat are
   // put on with the body below. Looks only: nothing here is read back by the sim.
   const cos = cosOf(f), skin = cos && cos.skin ? cosItem(cos.skin) : null;
   // A skin is a second render of ONE fighter: it draws on that fighter and no other, and only once its picture has decoded (until then
@@ -26687,7 +26685,7 @@ function drawFighter(f){
   // PRE-BODY pass: runs in raw center space; returning true REPLACES the default body
   // (and opts out of the universal squash/stretch — the move owns its own deform).
   let handled = false;
-  if(anim && anim.body && !skinLive){ ctx.save(); cosSkinOn(skin); handled = (anim.body(f, ctx) === true); ctx.restore(); }
+  if(anim && anim.body && !skinLive){ ctx.save(); handled = (anim.body(f, ctx) === true); ctx.restore(); }
   // A body that replaces the default one keeps the hat too, on top of it and facing the same way.
   if(handled && cos && cos.hat){ ctx.save(); ctx.scale(visualFace(f),1); try{ drawCosHat(ctx, cos.hat, f.r/24, -f.r, -f.r*0.2); }catch(e){ cosDrawFail(e); } ctx.restore(); }
 
@@ -26719,9 +26717,8 @@ function drawFighter(f){
     if(sx!==1||sy!==1||shear){
       ctx.translate(0,f.r); ctx.scale(sx,sy); if(shear) ctx.transform(1,0,shear,1,0,0); ctx.translate(0,-f.r);
     }
-    cosSkinOn(skin);   // a recolour is a filter over the body alone: the name tag, rings and icons keep their colours
     // ---- BODY: real character art when this fighter has a sprite, else the generic blob ----
-    // Both paths render inside the squash/stretch transform above, so the deform is identical.
+    // Both paths render inside the squash/stretch transform above, so the deform is identical. A skin is that fighter's second render.
     const sprite = skinLive ? skinSp : SPRITES[f.name];
     if(sprite){ drawSpriteBody(f, sprite, anim); }
     else{
@@ -26734,13 +26731,11 @@ function drawFighter(f){
       ctx.fill(); ctx.stroke();
       // burn tint
       if(f.burn>0){ ctx.fillStyle="#f0521f44"; roundBlob(0,0,f.r); ctx.fill(); }
-      if(skin && skin.wash && !cosFilterOk()){ ctx.globalAlpha=drawAlpha*0.42; ctx.fillStyle=skin.wash; roundBlob(0,0,f.r); ctx.fill(); ctx.globalAlpha=drawAlpha; }   // no canvas filter: wash it instead
       // eyes — same visual facing a render would use, so blob and sprite fighters never disagree
       const vfb = visualFace(f);
       ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(-6*vfb+vfb*2,-4,6,0,7); ctx.arc(6*vfb+vfb*2,-4,6,0,7); ctx.fill();
       ctx.fillStyle="#1c1c1c"; ctx.beginPath(); ctx.arc(-6*vfb+vfb*3,-4,2.6,0,7); ctx.arc(6*vfb+vfb*3,-4,2.6,0,7); ctx.fill();
-      if(cos && cos.hat){ if(skin && cosFilterOk()) ctx.filter='none';
-        ctx.save(); ctx.scale(vfb,1); try{ drawCosHat(ctx, cos.hat, f.r/24, -f.r, -4); }catch(e){ cosDrawFail(e); } ctx.restore(); }
+      if(cos && cos.hat){ ctx.save(); ctx.scale(vfb,1); try{ drawCosHat(ctx, cos.hat, f.r/24, -f.r, -4); }catch(e){ cosDrawFail(e); } ctx.restore(); }
     }
     ctx.restore();
   }
@@ -30086,16 +30081,20 @@ const COS_KIND_NAMES = { skin:'Skins',     hat:'Hats & accessories', trail:'Trai
 const COS_PER_FIGHTER = { skin:true, hat:true };                 // worn per fighter; every other kind is one slot for all
 const COS_GLOBAL_SLOTS = ['trail','ko','pose','card','title'];
 const COS_ID = /^[a-z][a-z0-9_]{0,23}$/;
+// THE SEVEN OLD RECOLOURS ARE GONE. They were colour washes any fighter could wear (Yoylestone, Yoyleberry, Frostbite, Goiky Green, Cake
+// Frosting, Evil Twin, Win Token Gold). The owner: "the skins should be by-fighter(like rockstar poppy, broken fries, robot pin)" and, asked what
+// became of the washes, "Remove all seven". So they are no rows of COSMETICS: not in the Store or the Wardrobe, not for sale, not
+// wearable, and nothing draws a recolour any more. Two things still remember them, and this table is the memory:
+//   * the online code. A look travels as its position in its kind (cosNetCode) and these seven held the first seven places among the
+//     skins, so those places stay spoken for (COS_NET_RESERVED): every skin keeps the position it has had since it was added, and a friend
+//     on an older build is never shown the wrong look. A code for one of the seven dresses no one.
+//   * the wallet. Whoever bought one is paid what they paid back, once, when their profile loads (walletNorm), and one they were wearing
+//     is taken off (cosNorm). The tokens come back; the look does not.
+const COS_RETIRED = { sk_yoyle:'Yoylestone', sk_berry:'Yoyleberry', sk_frost:'Frostbite', sk_goiky:'Goiky Green', sk_frosting:'Cake Frosting',
+                      sk_evil:'Evil Twin', sk_gold:'Win Token Gold' };
+const COS_NET_RESERVED = { skin: Object.keys(COS_RETIRED).length };   // places in a kind's online code that no look holds now
+const COS_REFUND_MARK = 'refunded_';   // wallet.owned['refunded_sk_gold'] = 0: that look's price has been paid back (see walletNorm)
 const COSMETICS = [
-  // RECOLOURS: a palette shift of the fighter's OWN colours, so each one works on every fighter -- a render and the vector
-  // art alike. `filter` is a canvas/CSS filter; `wash` is the colour laid over the silhouette where a browser has none.
-  { id:'sk_yoyle',    kind:'skin', name:'Yoylestone',      price:75, filter:'grayscale(1) brightness(1.08) contrast(1.15)', wash:'#9aa7b0' },
-  { id:'sk_berry',    kind:'skin', name:'Yoyleberry',      price:75, filter:'hue-rotate(250deg) saturate(1.35)',           wash:'#6a4ad0' },
-  { id:'sk_frost',    kind:'skin', name:'Frostbite',       price:75, filter:'hue-rotate(185deg) saturate(0.75) brightness(1.15)', wash:'#7ad0f0' },
-  { id:'sk_goiky',    kind:'skin', name:'Goiky Green',     price:75, filter:'hue-rotate(95deg) saturate(1.2)',             wash:'#7bc043' },
-  { id:'sk_frosting', kind:'skin', name:'Cake Frosting',   price:75, filter:'saturate(0.45) brightness(1.22)',             wash:'#ffd6e8' },
-  { id:'sk_evil',     kind:'skin', name:'Evil Twin',       price:115, filter:'brightness(0.55) contrast(1.25) saturate(1.3)', wash:'#1c1c2a' },
-  { id:'sk_gold',     kind:'skin', name:'Win Token Gold',  price:150, filter:'sepia(1) saturate(2.6) brightness(1.1)',      wash:'#ffd23f' },
   // SKINS: a second render of ONE fighter, worn only by that fighter. The owner: "the skins should be by-fighter(like rockstar poppy,
   // broken fries, robot pin)". Each names its fighter and its picture (assets/sprites/skins/, fetched by scripts/fetch-sprites.mjs, recorded
   // in scripts/sprite-manifest-skins.json, credited in assets/sprites/CREDITS.md, loaded only when worn), which way that picture faces
@@ -30214,13 +30213,29 @@ function shopWeekNo(now){
 // ---- the wallet ----
 // PROFILE.wallet = { earned, spent, owned:{id: price paid} }. The balance is earned - spent. Both totals only ever go UP,
 // and owned only ever grows, which is what lets two tabs merge without undoing anything (mergeWallet).
+//
+// A RETIRED LOOK IS PAID BACK, ONCE (COS_RETIRED: the owner said "Remove all seven", and whoever bought one gets its Win Tokens back).
+// It is done here, in the one function every wallet passes through -- loading, the merge of two tabs, the Store's balance -- so there
+// is no path that skips it, and it is written so that it cannot be done twice:
+//   * what was spent stays spent and the look stays in \`owned\` (owned only ever grows, and taking it out would let a stale tab's merge
+//     put it back and charge for it again); the price paid goes onto \`earned\`, and the look's entry gets a 0 beside it,
+//     owned['refunded_<id>'] = 0, the mark that it has been paid back;
+//   * the mark lives in \`owned\`, which every tab -- even one still running the build before this -- keeps whole and merges by union,
+//     and a 0 adds nothing when mergeWallet counts what one side holds that the other does not;
+//   * a tab that has not seen the mark pays the look back itself, and the merge (the larger \`earned\`, plus the other side's quests)
+//     takes the one payout, not two. Loading again, in this tab or another, finds the mark and pays nothing.
 function walletNorm(w){
   w = (w && typeof w === 'object') ? w : {};
   const owned = {};
   if(w.owned && typeof w.owned === 'object' && !Array.isArray(w.owned)){
     for(const k in w.owned) if(_own(w.owned, k) && COS_ID.test(k)) owned[k] = Math.max(0, Math.floor(+w.owned[k] || 0));
   }
-  return { earned: Math.max(0, Math.floor(+w.earned || 0)), spent: Math.max(0, Math.floor(+w.spent || 0)), owned };
+  let earned = Math.max(0, Math.floor(+w.earned || 0));
+  for(const id in COS_RETIRED){
+    const mark = COS_REFUND_MARK + id;
+    if(_own(owned, id) && !_own(owned, mark)){ earned += owned[id]; owned[mark] = 0; }
+  }
+  return { earned, spent: Math.max(0, Math.floor(+w.spent || 0)), owned };
 }
 function walletState(){
   if(!PROFILE) return walletNorm(null);
@@ -30321,7 +30336,8 @@ const QUESTS = {
 // 201: a medium look and a small one, or one large one, not five. Finishing everything, every day, is 435 a week (62 a day).
 // Someone who plays five days a week and finishes the two easier dailies on those days (21 each) and two of the weeklies
 // (90) earns 195 a week -- about 28 a day -- so a 75-token look is three days' play, a 115 one four, a 150 one five and
-// the 190 crown a week. Never more than about a look a day, even for someone who finishes every quest.
+// the 190 crown a week. Never more than about a look a day, even for someone who finishes every quest (and then only the four
+// 45-token titles). The whole catalogue is 78 looks for 8,620: 139 days of every quest, every day; most of a year at the typical rate.
 const QUEST_REWARD = { daily:[9, 12, 18], weekly:[36, 54, 72] };
 const QUEST_CLAIM_KEY = /^[dw]\d{1,9}:[a-z][a-z0-9_]{0,23}$/;
 function questHash(seed, salt){
@@ -30485,7 +30501,8 @@ function questSettle(now){
 
 // ---- what you wear ----
 // PROFILE.cos = { f:{ fighter: {skin, hat} }, trail, ko, pose, card, title }. Worn only if owned, checked at every read,
-// so nothing can be worn that was not bought with tokens.
+// so nothing can be worn that was not bought with tokens. A retired recolour that was being worn is taken off here (COS_RETIRED), in
+// every load, save and merge alike, so no tab can put it back.
 function cosNorm(c){
   c = (c && typeof c === 'object') ? c : {};
   const f = {};
@@ -30493,7 +30510,7 @@ function cosNorm(c){
     for(const n in c.f){
       if(!_own(c.f, n) || n === '__proto__' || n.length > 32) continue;
       const e = c.f[n], o = {};
-      if(e && typeof e === 'object') for(const k of ['skin', 'hat']) if(typeof e[k] === 'string' && COS_ID.test(e[k])) o[k] = e[k];
+      if(e && typeof e === 'object') for(const k of ['skin', 'hat']) if(typeof e[k] === 'string' && COS_ID.test(e[k]) && !_own(COS_RETIRED, e[k])) o[k] = e[k];
       f[n] = o;
     }
   }
@@ -30553,14 +30570,16 @@ function cosOf(f){
 // ONLINE: small ids only, sent once. A look travels as one character per slot (its position in its kind, base 36, 0 for
 // none) appended to the fighter name in the join `hello` -- "Firey~2400" -- because the relay passes that name through to
 // the room's roster and keeps no other field. The host copies each player's code into the match start. Nothing is added to
-// the snapshots a match streams, and a player wearing nothing sends exactly what they always did.
+// the snapshots a match streams, and a player wearing nothing sends exactly what they always did. One character holds 35 looks, so
+// a kind may never hold more than that (COS_NET_RESERVED counts: the seven retired recolours still hold the first seven places among
+// the skins, so the skins start at 8 and a code below that dresses no one).
 const COS_NET_KINDS = ['skin', 'hat', 'trail', 'ko'];
 function cosNetCode(c){
   if(!c) return '';
   let s = '', any = false;
   for(const k of COS_NET_KINDS){
     const i = c[k] ? cosOfKind(k).findIndex(x=>x.id === c[k]) : -1;
-    s += i >= 0 ? (i + 1).toString(36) : '0';
+    s += i >= 0 ? (i + 1 + (COS_NET_RESERVED[k] | 0)).toString(36) : '0';
     if(i >= 0) any = true;
   }
   return any ? s : '';
@@ -30568,7 +30587,7 @@ function cosNetCode(c){
 function cosNetDecode(s){
   if(typeof s !== 'string' || !/^[0-9a-z]{4}$/.test(s)) return null;
   const out = {}; let any = false;
-  COS_NET_KINDS.forEach((k, i)=>{ const n = parseInt(s[i], 36), it = n > 0 ? cosOfKind(k)[n - 1] : null; out[k] = it ? it.id : null; if(it) any = true; });
+  COS_NET_KINDS.forEach((k, i)=>{ const n = parseInt(s[i], 36) - (COS_NET_RESERVED[k] | 0), it = n > 0 ? cosOfKind(k)[n - 1] : null; out[k] = it ? it.id : null; if(it) any = true; });
   return any ? out : null;
 }
 function netHelloName(name){ const code = cosNetCode(myCos(name)); return code ? name + '~' + code : name; }
@@ -30591,15 +30610,13 @@ function cosNetList(list, n){
 // ---- drawing: all render-only ----
 let COS_DRAW_ERR = null;   // the first thing a cosmetic threw while drawing (tests read it); drawing carries on without it
 function cosDrawFail(e){ if(!COS_DRAW_ERR) COS_DRAW_ERR = e; }
-function cosFilterOk(){ return typeof ctx.filter === 'string'; }   // a browser without canvas filters gets the wash instead
-function cosSkinOn(skin){ if(skin && skin.filter && cosFilterOk()) ctx.filter = skin.filter; }
 // A SKIN is a second render of one fighter, drawn by drawSpriteBody in place of the base render while it is worn. Its sprite entry is
 // made on first use, like every render's Image (spriteImage), from the catalogue row: its picture, which way it faces and the box it
 // fits (the same fields a SPRITES entry has). `skin:true` tells drawSpriteBody that LIMB_RIG, which was measured on the BASE picture,
 // has no business cutting limbs out of this one.
 const COS_SKIN_SPRITES = {};
 function cosSkinSprite(it, name){
-  if(!it || it.kind !== 'skin' || !it.src || it.fighter !== name) return null;   // another fighter's skin, or an old recolour: no picture
+  if(!it || it.kind !== 'skin' || !it.src || it.fighter !== name) return null;   // another fighter's skin: no picture
   let sp = COS_SKIN_SPRITES[it.id];
   if(!sp){
     sp = COS_SKIN_SPRITES[it.id] = renderSprite('', { flip: it.flip, imgH: it.imgH, imgW: it.imgW });
@@ -30608,6 +30625,17 @@ function cosSkinSprite(it, name){
   return sp;
 }
 function cosSkinPreload(id){ try{ const it = cosItem(id), sp = it && cosSkinSprite(it, it.fighter); if(sp) spriteImage(sp); }catch(e){} }
+// Once the profile is in, the seven retired recolours are dealt with (COS_RETIRED): what was paid for one goes back onto the wallet,
+// once (walletNorm), and one that was being worn is taken off (cosNorm). True when that changed the profile, so the caller saves it.
+function cosRetireSweep(){
+  if(!PROFILE) return false;
+  const marks = ()=>{ const o = PROFILE.wallet && PROFILE.wallet.owned; return (o && typeof o === 'object') ? Object.keys(o).filter(k=>k.indexOf(COS_REFUND_MARK) === 0).length : 0; };
+  const worn = ()=>{ const f = PROFILE.cos && PROFILE.cos.f; let n = 0; if(f && typeof f === 'object') for(const k in f) if(_own(f, k) && f[k] && typeof f[k] === 'object' && _own(COS_RETIRED, f[k].skin)) n++; return n; };
+  const m0 = marks(), w0 = worn();
+  walletState();
+  PROFILE.cos = cosNorm(PROFILE.cos);
+  return marks() !== m0 || worn() !== w0;
+}
 function cosPreloadWorn(){   // every skin this player wears, once the profile is in
   const f = PROFILE && PROFILE.cos && PROFILE.cos.f;
   if(f && typeof f === 'object') for(const n in f) if(_own(f, n) && f[n] && f[n].skin) cosSkinPreload(wornCos('skin', n));
@@ -31069,7 +31097,7 @@ function cosPreview(it, colour){
       const g = cv.getContext && cv.getContext('2d');
       if(g){ try{ const im = new Image(); im.onload = ()=>{ try{ g.drawImage(im, Math.round((64 - im.naturalWidth) / 2), Math.round((64 - im.naturalHeight) / 2)); }catch(e){ cosDrawFail(e); } }; im.src = COS_SKIN_THUMBS[it.id]; }catch(e){ cosDrawFail(e); } }
       box.appendChild(cv);
-    } else { const d = dot(); d.style.filter = it.filter; box.appendChild(d); }
+    } else box.appendChild(dot());   // no thumbnail for it: the fighter's blob in their colour
   }
   else if(it.kind === 'pose'){ const d = dot(); d.classList.add('pose-' + it.id); box.appendChild(d); }
   else if(it.kind === 'card'){ box.style.background = it.bg; }
@@ -31116,9 +31144,20 @@ function cosListed(it){
   const r = ROSTER.find(x=>x.name === it.fighter);
   return !!r && isUnlocked(r);
 }
+// For a player who had one of the seven retired recolours: which, and what came back (their own marks, in their own wallet). Nobody
+// else sees a word of it.
+function retiredNote(){
+  const w = walletState(), got = Object.keys(COS_RETIRED).filter(id=>_own(w.owned, id) && _own(w.owned, COS_REFUND_MARK + id));
+  if(!got.length) return '';
+  const paid = got.reduce((a, id)=>a + w.owned[id], 0), many = got.length > 1;
+  return 'The old recolours are gone: skins belong to one fighter each now. ' + got.map(id=>COS_RETIRED[id]).join(', ') + (many ? ' were' : ' was')
+    + ' yours, so the ' + paid + ' Win Tokens you paid for ' + (many ? 'them are' : 'it is') + ' back in your wallet.';
+}
 function buildStore(){
   refreshWallets();
   const box = document.getElementById('storeList'); if(!box) return;
+  const note = document.getElementById('storeNote');
+  if(note){ const t = retiredNote(); note.textContent = t; note.style.display = t ? '' : 'none'; }
   box.innerHTML = '';
   const bal = walletBalance(), who = chosen && chosen.name;
   for(const kind of COS_KINDS){
@@ -31144,7 +31183,7 @@ function buildStore(){
     box.appendChild(grid);
   }
 }
-// THE PLAYER CARD: a fighter in your recolour and hat, on your card, with your title -- striking your victory pose when you
+// THE PLAYER CARD: a fighter in your skin and hat, on your card, with your title -- striking your victory pose when you
 // have just won. The Wardrobe shows it as a preview and the result screen shows it after a match.
 function renderPlayerCard(el, name, opts){
   if(!el) return null;
@@ -31169,7 +31208,6 @@ function renderPlayerCard(el, name, opts){
     pic = document.createElement('img'); pic.alt = ''; pic.draggable = false; pic.src = sp.src;
     const ar = im.naturalWidth / im.naturalHeight; h = ar < 1 ? 96 : 96 / ar; top = 96 - h;
   } else { pic = document.createElement('div'); pic.className = 'cosdot'; pic.style.background = safeColor(r.color); h = 62; top = 34; }
-  if(skin && skin.filter) pic.style.filter = skin.filter;
   art.appendChild(pic);
   if(hat){
     const cv = document.createElement('canvas'); cv.className = 'pcx-hat'; cv.width = 96; cv.height = 128;
@@ -31265,9 +31303,10 @@ function initShop(){
   }
   applySupportLink();
   refreshWallets();
-  // Once the profile is in: a quest finished under an older build and never claimed is paid now (questSettle), then the
-  // wallets show the real number, and the skins the player wears start to load so the first match already shows them.
-  if(profileReady) profileReady.then(()=>{ try{ if(questSettle()) saveProfile(); refreshWallets(); cosPreloadWorn(); }catch(e){} });
+  // Once the profile is in: a quest finished under an older build and never claimed is paid now (questSettle), the seven retired
+  // recolours are paid back and taken off (cosRetireSweep: once, whatever the tab or the reload), then the wallets show the real
+  // number, and the skins the player wears start to load so the first match already shows them.
+  if(profileReady) profileReady.then(()=>{ try{ const paid = questSettle(), swept = cosRetireSweep(); if(paid || swept) saveProfile(); refreshWallets(); cosPreloadWorn(); }catch(e){} });
   // Another tab saved: take in its wallet and quests now, so this tab's balance and Store are the real ones.
   if(typeof window !== 'undefined' && !initShop._storageWired){
     initShop._storageWired = true;
