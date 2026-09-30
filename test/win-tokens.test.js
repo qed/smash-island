@@ -13,8 +13,16 @@ import { mulberry32 } from './helpers/prng.js';
 //
 // And nothing in it hooks. The owner: "I dont want to hook ppl tho." Asked how: a finished quest is to "Pay the moment it's
 // done" (the tokens land by themselves, at the match's end, shown on the result screen -- no claim button, nothing to come
-// back for, nothing lost at midnight); the title badge that counted claimable quests: "Remove it"; the pace stays ("Keep 2-3
-// days": prices and rewards unchanged). The tests below pin each of those too.
+// back for, nothing lost at midnight); the title badge that counted claimable quests: "Remove it". The tests below pin each
+// of those too.
+//
+// THE PACE, changed on 2026-09-29. It was "Keep 2-3 days" (prices and rewards unchanged) until a first day that paid 335 Win
+// Tokens, about five cheap looks, drew: "increase the WT cost in the shop... you can get 5 cosmetics in one day. ... make
+// cosmetics more personalized." Then: "1, but reduce prices as well, and add more personalized cosmetics. reduce prices less
+// then quest reductions". So the quests pay about 40% less (daily 9, 12, 18; weekly 36, 54, 72), every price about 25% less
+// (45, 75, 115, 150, 190), and the catalogue holds 20 more canon looks and 25 looks for one fighter each (the last two "Skins"
+// and "Removing the seven washes" blocks below). "the skins should be by-fighter(like rockstar poppy, broken fries, robot pin)"
+// and, asked about the old recolours, "Remove all seven".
 
 const SRC = readFileSync('artifacts/V1/index.html', 'utf8');
 // Comments may say what is NOT here ("no token packs"); code may not do it. So the code is searched with its comments cut.
@@ -84,21 +92,21 @@ describe('the wallet', () => {
   it('earns, spends on a look, refuses what it cannot afford, and never sells twice', async () => {
     const w = await ready();
     const r = w.eval(`(function(){
-      var start = walletBalance(); walletEarn(120);
+      var start = walletBalance(); walletEarn(120);   // 75 for the party hat, 190 for the crown
       var buy = buyCosmetic('hat_party'), again = buyCosmetic('hat_party'), poor = buyCosmetic('hat_crown'), junk = buyCosmetic('__proto__');
       return { start: start, bal: walletBalance(), buy: buy.ok, again: again.why, poor: poor.why, need: poor.need, junk: junk.why,
                party: ownsCos('hat_party'), crown: ownsCos('hat_crown'), wallet: PROFILE.wallet };
     })()`);
     expect(r.start, 'a fresh player starts with nothing').toBe(0);
     expect(r.buy).toBe(true);
-    expect(r.bal).toBe(20);
+    expect(r.bal).toBe(45);
     expect(r.again).toBe('owned');
     expect(r.poor).toBe('tokens');
-    expect(r.need).toBe(230);
+    expect(r.need).toBe(145);
     expect(r.junk).toBe('unknown');
     expect(r.party).toBe(true);
     expect(r.crown).toBe(false);
-    expect(r.wallet).toEqual({ earned: 120, spent: 100, owned: { hat_party: 100 } });
+    expect(r.wallet).toEqual({ earned: 120, spent: 75, owned: { hat_party: 75 } });
   });
 
   it('survives a reload, with what is worn', async () => {
@@ -106,7 +114,7 @@ describe('the wallet', () => {
     await w.eval(`(async function(){ walletEarn(300); buyCosmetic('sk_gold'); equipCos('skin', 'sk_gold', 'Leafy'); equipCos('title', null); await saveProfile(); })()`);
     const stored = w.localStorage.getItem('profile:v1');
     const w2 = await ready({ storage: { 'profile:v1': stored } });
-    expect(w2.eval('walletBalance()')).toBe(100);
+    expect(w2.eval('walletBalance()')).toBe(150);
     expect(w2.eval('ownsCos("sk_gold")')).toBe(true);
     expect(w2.eval('wornCos("skin", "Leafy")')).toBe('sk_gold');
     expect(w2.eval('wornCos("skin", "Firey")'), 'a recolour is worn per fighter').toBe(null);
@@ -119,6 +127,63 @@ describe('the wallet', () => {
     expect(w.eval('!!PROFILE.quests && !!PROFILE.cos')).toBe(true);
     expect(w.eval('JSON.stringify(openProfile("no-storage").wallet)')).toBe('{"earned":0,"spent":0,"owned":{}}');
     expect(w.eval('Object.keys(freshProfile()).filter(function(k){ return ["wallet","quests","cos"].indexOf(k)>=0; }).length')).toBe(3);
+  });
+});
+
+// THE PACE. "increase the WT cost in the shop... you can get 5 cosmetics in one day." Then "1, but reduce prices as well, and add
+// more personalized cosmetics. reduce prices less then quest reductions". Quests about -40%, prices about -25%, and a first day
+// (the dailies and the weeklies) worth one or two ordinary looks, where it was worth five cheap ones.
+describe('the pace', () => {
+  // What the quests paid, and what the 33 looks that have stayed in the shop cost, before the owner asked for a slower shop.
+  const OLD_REWARD = { daily: [15, 20, 30], weekly: [60, 90, 120] };
+  const OLD_PRICE = {
+    hat_party: 100, hat_top: 150, hat_leaf: 100, hat_cake: 150, hat_halo: 150, acc_shades: 150, acc_bow: 100, hat_crown: 250,
+    tr_spark: 150, tr_ember: 150, tr_bubble: 150, tr_leaf: 150, tr_rainbow: 200,
+    ko_confetti: 150, ko_stars: 150, ko_berry: 200, ko_token: 200, ko_zap: 200,
+    po_hop: 100, po_spin: 150, po_wave: 100, po_flip: 200,
+    cd_goiky: 100, cd_dream: 150, cd_yoyle: 100, cd_cake: 100, cd_canyon: 150,
+    ti_contestant: 60, ti_dreamer: 60, ti_yoyle: 60, ti_survivor: 100, ti_collector: 100, ti_legend: 200,
+  };
+  const sum = (a) => a.reduce((x, y) => x + y, 0);
+
+  it('pays about 40% less, prices about 25% less, and the prices fell by less than the quests', async () => {
+    const w = await ready();
+    const reward = w.eval('QUEST_REWARD'), price = w.eval('(function(){ var o = {}; COSMETICS.forEach(function(c){ o[c.id] = c.price; }); return o; })()');
+    expect(reward.daily).toEqual([9, 12, 18]);
+    expect(reward.weekly).toEqual([36, 54, 72]);
+    for (const kind of ['daily', 'weekly']) for (let t = 0; t < 3; t++) {
+      const r = reward[kind][t] / OLD_REWARD[kind][t];
+      expect(r, `${kind} quest ${t}`).toBeGreaterThanOrEqual(0.58);
+      expect(r, `${kind} quest ${t}`).toBeLessThanOrEqual(0.62);
+    }
+    for (const [id, old] of Object.entries(OLD_PRICE)) {
+      expect(price[id], `${id} is still in the shop`).toBeGreaterThan(0);
+      const r = price[id] / old;
+      expect(r, `${id}: ${old} -> ${price[id]}`).toBeGreaterThanOrEqual(0.74);
+      expect(r, `${id}: ${old} -> ${price[id]}`).toBeLessThanOrEqual(0.78);
+    }
+    const cutQuests = 1 - sum([...reward.daily, ...reward.weekly]) / sum([...OLD_REWARD.daily, ...OLD_REWARD.weekly]);
+    const cutPrices = 1 - sum(Object.keys(OLD_PRICE).map((id) => price[id])) / sum(Object.values(OLD_PRICE));
+    expect(cutPrices, 'prices cut by less than the quests').toBeLessThan(cutQuests);
+    expect(cutQuests).toBeCloseTo(0.4, 1);
+    expect(cutPrices).toBeCloseTo(0.25, 1);
+  });
+
+  it('a first day, dailies and weeklies, buys one or two ordinary looks; nobody earns a look a day', async () => {
+    const w = await ready();
+    const reward = w.eval('QUEST_REWARD'), prices = w.eval('COSMETICS.map(function(c){ return c.price; })').sort((a, b) => a - b);
+    const median = prices[Math.floor(prices.length / 2)];
+    const day = sum(reward.daily), week = sum(reward.weekly);
+    expect(day).toBe(39);
+    expect(week).toBe(162);
+    expect(day + week, 'a first day with every quest done, the weeklies too (it was 335)').toBe(201);
+    const looks = (day + week) / median;
+    expect(looks, `201 tokens at the median price of ${median}`).toBeGreaterThanOrEqual(1);
+    expect(looks).toBeLessThanOrEqual(2);
+    // Finishing every quest, every day, for a week: about 62 a day, under the price of an ordinary look.
+    expect((day * 7 + week) / 7, 'a day, weeklies spread over the week').toBeLessThan(median);
+    // The typical week: five days of the two easier dailies and two weeklies, about 28 a day.
+    expect((5 * (reward.daily[0] + reward.daily[1]) + reward.weekly[0] + reward.weekly[1]) / 7).toBeLessThan(median / 3);
   });
 });
 
@@ -152,19 +217,19 @@ describe('two tabs', () => {
 
   it('through the real save path: the other tab\'s purchase and this tab\'s both stand', async () => {
     const w = await ready();
-    await w.eval(`(async function(){ walletEarn(400); await saveProfile(); })()`);
+    await w.eval(`(async function(){ walletEarn(305); await saveProfile(); })()`);
     const before = JSON.parse(w.localStorage.getItem('profile:v1'));
-    await w.eval(`(async function(){ buyCosmetic('hat_top'); await saveProfile(); })()`);   // this tab: 150
-    // The other tab hydrated BEFORE that purchase, then bought the crown (250) and saved.
+    await w.eval(`(async function(){ buyCosmetic('hat_top'); await saveProfile(); })()`);   // this tab: 115
+    // The other tab hydrated BEFORE that purchase, then bought the crown (190) and saved.
     const other = JSON.parse(JSON.stringify(before));
-    other.wallet.owned = { hat_crown: 250 }; other.wallet.spent = 250;
+    other.wallet.owned = { hat_crown: 190 }; other.wallet.spent = 190;
     w.localStorage.setItem('profile:v1', JSON.stringify(other));
     // ...and this tab, from its own copy, saves again.
     await w.eval(`(async function(){ equipCos('hat', 'hat_top', 'Firey'); await saveProfile(); })()`);
     const final = JSON.parse(w.localStorage.getItem('profile:v1'));
-    expect(final.wallet.owned).toEqual({ hat_top: 150, hat_crown: 250 });
-    expect(final.wallet.spent, 'both purchases are paid for').toBe(400);
-    expect(final.wallet.earned).toBe(400);
+    expect(final.wallet.owned).toEqual({ hat_top: 115, hat_crown: 190 });
+    expect(final.wallet.spent, 'both purchases are paid for').toBe(305);
+    expect(final.wallet.earned).toBe(305);
     expect(w.eval('walletBalance()')).toBe(0);
   });
 });
@@ -180,8 +245,8 @@ describe('quests', () => {
     expect(pa.d).toEqual(pb.d);
     expect(pa.k).toEqual(pb.k);
     expect(pa.tiers).toEqual([0, 1, 2]);
-    expect(pa.rd).toEqual([15, 20, 30]);
-    expect(pa.rk).toEqual([60, 90, 120]);
+    expect(pa.rd, "the owner's cut: about 40% off 15, 20, 30").toEqual([9, 12, 18]);
+    expect(pa.rk, 'and off 60, 90, 120').toEqual([36, 54, 72]);
     expect(pa.dice, 'no dice: the date decides').toBe(0);
     expect(pick(a, DAY + 3 * 3600000).d, 'the same all day long').toEqual(pa.d);
     const sets = new Set(); for (let i = 0; i < 14; i++) sets.add(pick(a, DAY + i * ONE_DAY).d.join());
@@ -218,11 +283,11 @@ describe('quests', () => {
     expect(w.eval('walletBalance()'), 'two of three: nothing yet').toBe(0);
     expect(row()).toMatchObject({ prog: 2, done: false, paid: false });
     matchEnd(w, false);
-    expect(w.eval('walletBalance()'), 'the third match pays, win or lose, with no one asking').toBe(15);
+    expect(w.eval('walletBalance()'), 'the third match pays, win or lose, with no one asking').toBe(9);
     expect(row()).toMatchObject({ prog: 3, done: true, paid: true });
-    expect(w.eval(`questState().claims['d' + dailySeed(shopNow()) + ':d_play3']`), 'on the ledger in the same breath').toBe(15);
+    expect(w.eval(`questState().claims['d' + dailySeed(shopNow()) + ':d_play3']`), 'on the ledger in the same breath').toBe(9);
     matchEnd(w);
-    expect(w.eval('walletBalance()'), 'a fourth match pays nothing more').toBe(15);
+    expect(w.eval('walletBalance()'), 'a fourth match pays nothing more').toBe(9);
     const wk = w.eval('JSON.stringify(questState().wp)');
     expect(wk, 'the week counted the same matches').not.toBe('{}');
     // The next day that has it again: fresh, and paid once more when finished.
@@ -230,14 +295,14 @@ describe('quests', () => {
     w.eval(`SHOP_CLOCK = ${D2}`);
     expect(row()).toMatchObject({ prog: 0, done: false, paid: false });
     matchEnd(w); matchEnd(w);
-    expect(w.eval('walletBalance()')).toBe(15);
+    expect(w.eval('walletBalance()')).toBe(9);
     matchEnd(w);
-    expect(w.eval('walletBalance()')).toBe(30);
+    expect(w.eval('walletBalance()')).toBe(18);
     // The Monday after: the week's progress is gone too, and what was paid stays paid -- "nothing lost at midnight".
     const monday = (Math.floor((Math.floor(D2 / ONE_DAY) + 3) / 7) + 1) * 7 * ONE_DAY - 3 * ONE_DAY + 3600000;
     w.eval(`SHOP_CLOCK = ${monday}`);
     expect(w.eval('JSON.stringify(questState().wp)')).toBe('{}');
-    expect(w.eval('walletBalance()'), 'tokens already paid are kept').toBe(30);
+    expect(w.eval('walletBalance()'), 'tokens already paid are kept').toBe(18);
   });
 
   it('two tabs finishing the same quest pay it once, through the real save path', async () => {
@@ -246,19 +311,19 @@ describe('quests', () => {
     w.eval(`SHOP_CLOCK = ${D}`);
     matchEnd(w); matchEnd(w);
     await w.eval('saveProfile()');
-    // The other tab, loaded from this save two matches in, plays the third itself: paid there (+15, on the ledger), saved.
+    // The other tab, loaded from this save two matches in, plays the third itself: paid there (+9, on the ledger), saved.
     const other = JSON.parse(w.localStorage.getItem('profile:v1'));
     const key = w.eval(`'d' + dailySeed(shopNow()) + ':d_play3'`);
     expect(other.quests.dp.d_play3).toBe(2);
-    other.quests.dp.d_play3 = 3; other.quests.claims[key] = 15; other.wallet.earned = 15;
+    other.quests.dp.d_play3 = 3; other.quests.claims[key] = 9; other.wallet.earned = 9;
     w.localStorage.setItem('profile:v1', JSON.stringify(other));
     // ...and this tab, still holding two in memory, plays its own third match.
     matchEnd(w);
     await w.eval('saveProfile()');
     const final = JSON.parse(w.localStorage.getItem('profile:v1'));
-    expect(w.eval('walletBalance()'), 'paid once').toBe(15);
-    expect(final.wallet.earned, 'one quest, finished in both tabs, paid once').toBe(15);
-    expect(final.quests.claims[key]).toBe(15);
+    expect(w.eval('walletBalance()'), 'paid once').toBe(9);
+    expect(final.wallet.earned, 'one quest, finished in both tabs, paid once').toBe(9);
+    expect(final.quests.claims[key]).toBe(9);
     expect(w.eval(`questRows('daily').filter(function(r){ return r.quest.id==='d_play3'; })[0]`)).toMatchObject({ prog: 3, done: true, paid: true });
   });
 
@@ -305,9 +370,9 @@ describe('quests', () => {
     expect(r.shown).toBe('block');
     // Paid as the match ended ("Pay the moment it's done"), and the result screen says what and how much -- no claim, and no
     // link to go and do one: "nothing to come back for".
-    expect(r.paid).toBe(15);
-    expect(r.bal, '1000 earned, 150 on Star Burst, 15 for the quest -- at least').toBeGreaterThanOrEqual(865);
-    expect(r.note).toMatch(/\+15 Win Tokens: Play 3 matches/);
+    expect(r.paid).toBe(9);
+    expect(r.bal, '1000 earned, 115 on Star Burst, 9 for the quest -- at least').toBeGreaterThanOrEqual(894);
+    expect(r.note).toMatch(/\+9 Win Tokens: Play 3 matches/);
     expect(r.note).not.toMatch(/claim|Open Quests/i);
     for (const fn of ['questMatchEnd', 'questAdd', 'questPay', 'questSettle', 'buyCosmetic', 'equipCos', 'cosKoBurst', 'drawCosTrail', 'drawCosHat', 'drawKoBurst', 'showQuestNote', 'renderResultCard', 'questSmashArm', 'questSmashHit']) {
       expect(w.eval(`String(${fn})`), `${fn} puts up no banner`).not.toMatch(/banner\(/);
@@ -498,7 +563,7 @@ describe('the Store', () => {
       var every = cells.every(function(c){ var b = c.querySelector('button'); return !!b && !!b.querySelector('.wtok'); });
       cells.filter(function(c){ return c.dataset.id==='hat_party'; })[0].querySelector('button').click();
       var poor = { reply: document.getElementById('storeReply').textContent, owned: ownsCos('hat_party') };
-      walletEarn(100);
+      walletEarn(75);
       document.querySelector('#storeList .scell[data-id="hat_party"] button').click();
       var cell = document.querySelector('#storeList .scell[data-id="hat_party"]');
       var rich = { reply: document.getElementById('storeReply').textContent, owned: ownsCos('hat_party'), mark: cell.classList.contains('owned'), btn: cell.querySelector('button').textContent, bal: walletBalance() };
@@ -510,7 +575,7 @@ describe('the Store', () => {
     expect(r.n).toBe(r.total);
     expect(r.every, 'every price is in Win Tokens').toBe(true);
     expect(r.poor.owned).toBe(false);
-    expect(r.poor.reply).toMatch(/need 100 more Win Tokens/);
+    expect(r.poor.reply).toMatch(/need 75 more Win Tokens/);
     expect(r.rich.owned).toBe(true);
     expect(r.rich.mark).toBe(true);
     expect(r.rich.btn).toBe('Wear');
@@ -769,20 +834,20 @@ describe('the second look', () => {
 
   it('a stale tab cannot spend Win Tokens another tab already spent, and takes in the other tab\'s saves at once', async () => {
     const w = await ready();
-    await w.eval(`(async function(){ SHOP_CLOCK = ${DAY}; walletEarn(150); await saveProfile(); })()`);
-    // The other tab, loaded from the same save, spends all 150 on the top hat and saves. This tab still holds 150 in memory.
+    await w.eval(`(async function(){ SHOP_CLOCK = ${DAY}; walletEarn(115); await saveProfile(); })()`);
+    // The other tab, loaded from the same save, spends all 115 on the top hat and saves. This tab still holds 115 in memory.
     const other = JSON.parse(w.localStorage.getItem('profile:v1'));
-    other.wallet.owned = { hat_top: 150 }; other.wallet.spent = 150;
+    other.wallet.owned = { hat_top: 115 }; other.wallet.spent = 115;
     w.localStorage.setItem('profile:v1', JSON.stringify(other));
     const r = await w.eval(`(async function(){
       var mem = PROFILE.wallet.earned - PROFILE.wallet.spent;
-      var buy = buyCosmetic('sk_evil');   // 150 too
+      var buy = buyCosmetic('hat_halo');   // 115 too
       await saveProfile();
       var st = JSON.parse(localStorage.getItem('profile:v1')).wallet;
-      return { mem: mem, buy: buy.ok ? 'bought' : buy.why, top: ownsCos('hat_top'), evil: ownsCos('sk_evil'), owed: st.spent - st.earned, bal: walletBalance() }; })()`);
-    expect(r.mem, 'this tab had not seen the purchase').toBe(150);
-    expect(r.buy, 'the same 150 tokens are not spent twice').toBe('tokens');
-    expect(r.evil).toBe(false);
+      return { mem: mem, buy: buy.ok ? 'bought' : buy.why, top: ownsCos('hat_top'), halo: ownsCos('hat_halo'), owed: st.spent - st.earned, bal: walletBalance() }; })()`);
+    expect(r.mem, 'this tab had not seen the purchase').toBe(115);
+    expect(r.buy, 'the same 115 tokens are not spent twice').toBe('tokens');
+    expect(r.halo).toBe(false);
     expect(r.top, 'the other tab\'s look is this tab\'s too').toBe(true);
     expect(r.owed, 'the wallet never owes').toBeLessThanOrEqual(0);
     expect(r.bal).toBe(0);
