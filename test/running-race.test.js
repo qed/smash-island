@@ -1,15 +1,31 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { loadMonolith } from './helpers/load-monolith.js';
 
+// A whole scripted run of the lane is thousands of frames of the real game loop; the file shares one such run between its
+// tests, and the tests that step the lane a hazard at a time are each hundreds of frames.
+vi.setConfig({ testTimeout: 300000 });
+
 // RUNNING!, the Red Line Game: a one-off race, the RUNNING! step of Steve Cobs's unlock chain (startRunningRace). The owner:
-// "1, and there will be a continuously moving line and obstacles you must go through." / "attacks allowed" / "and you have to
-// throw marshmallow with a modified grappling hook at the end to sling her over." / "Then Knife crosses too" (a bridge or
-// platform appears once she lands and he must cross before the moving line catches him). And the standing rule on the line:
-// never tune it for a bot -- "dont tune, cuz thats an agent, not a player". The scripted runner below holds right, jumps at
-// each gap and wall, drops under each bar and takes the pistons as they come; when it cannot finish, the course's fairness is
-// what gets fixed (obstacle spacing, hazards), never the line.
+// "1, and there will be a continuously moving line and obstacles you must go through." / "attacks allowed" / "Then Knife
+// crosses too" (a bridge or platform appears once she lands and he must cross before the moving line catches him). And the
+// standing rule on the line: never tune it for a bot -- "dont tune, cuz thats an agent, not a player". The scripted runner
+// below holds right and plays each obstacle the way a player reads it; when it cannot finish, the course's fairness (spacing,
+// windows, hazards) is what gets fixed, never the line.
 // The wiki (MeAfterlife): "a running lane with a finish line called the Red Line Game. If someone runs on it, a red line will
 // appear and chase after them ... If the red line reaches them before they make it, the line "deletes" them."
+//
+// THE OWNER'S DECISIONS OF 2026-09-29, which changed what this file pinned:
+//   "the run should be much longer, and the wall should move faster." -- the lane is 2.5 to 3 times the first version's
+//       7,700 px, and the wall is faster than its 4.2 px a frame (still slower than a sprint, or nobody could win).
+//   "harder obstacles that increase in strength" and "New hazards later" -- what stands on the lane grows with how far along
+//       it stands, and the back half brings hazards the first half does not have (piano, memory, voice: the episode's own).
+//   "you should throw marshmallow at the end with a looong charged smash" -- asked what the throw should be: "Charged smash".
+//       It replaced the modified grappling hook ("and you have to throw marshmallow with a modified grappling hook at the
+//       end to sling her over"): hold smash beside Marshmallow at the edge, up to about three seconds, longer = farther; too
+//       short and she lands in the gap and "You lose the run". A meter and a glow on Knife and an arc of where she will land:
+//       no words.
+//   The owner also said "actually, it works!!! just make it longer and harder": the race before these changes was not
+//       hunted for bugs, so nothing here pins a fix; only the new behaviour is pinned.
 
 let W;
 // loadMonolith's canvas shim hands back gradient objects, so the real draw() runs to completion under jsdom and the loop's
@@ -25,16 +41,38 @@ const race = (opts, body) => W.eval(`(function(){
   var __b0 = window.__banners.length;   // banners from this race's GO! on: window.__banners.slice(__b0)
   var __ok = startRunningRace(Object.assign(${JSON.stringify(opts || {})}, { onEnd:function(won, res){ window.__raceEnd = won; window.__raceResult = res; return true; } }));
   var you = fighters.find(function(f){ return f.you; }), marsh = fighters.find(function(f){ return f._marsh; });
-  var K = KEYS, hold = function(o){ down[K.left]=!!o.left; down[K.right]=!!o.right; down[K.jump]=!!o.jump; down[K.down]=!!o.down; down[K.special]=!!o.special; down[K.attack]=!!o.attack; };
+  var K = KEYS, hold = function(o){ down[K.left]=!!o.left; down[K.right]=!!o.right; down[K.jump]=!!o.jump; down[K.down]=!!o.down; down[K.special]=!!o.special; down[K.attack]=!!o.attack; down[K.smash]=!!o.smash; };
+  hold({});
   ${body}
 })()`);
-// THE SCRIPTED RUNNER (page code): holds right; jumps at each gap and wall (a second jump when the first will not carry);
-// drops under each bar by pressing DOWN on its ledge; brakes at the edge, fires the special once, waits for the bridge and
-// crosses. It never dodges a piston. It reads the course (RACE.obstacles), as a player reads the screen.
-const BOT = `var __bot = function(you){
-  var o = { right:true, jump:false, down:false, special:false }, fy = RACE.floorY, ahead = you.x + you.r;
-  if(RACE.bridge){ return o; }
-  if(ahead > RACE.edge - 80){ o.right = false; if(you.onground && Math.abs(you.vx) < 0.6 && !RACE.sling && !RACE.marshOver && !you._botFired){ o.special = true; you._botFired = true; } return o; }
+
+// The long loops below skip the HUD: under jsdom updateHUD (DOM work, display only) is about nine tenths of a frame's cost, and a
+// whole run of the lane is thousands of frames. Every short test runs the real thing, HUD and all, and so does the first frame of
+// every race here.
+const quick = (opts, body) => race(opts, `var __hud = updateHUD; updateHUD = function(){}; try { ${body} } finally { updateHUD = __hud; }`);
+
+// THE SCRIPTED RUNNER (page code): holds right and reads the lane the way a player reads the screen. Gaps: a jump at the
+// edge and, for the wide ones, the second jump late in the descent. Walls: one jump, or two for the tall ones (early, then
+// again ten frames on). Bars: hop the step, press DOWN on the ledge. Pistons: run in when the block is rising, wait in front
+// of it when it is not. Pianos: nothing -- keep running. Voices: one jump when the wave is a jump away. Memories: over
+// them, a jump and the second at the top. At the edge: stop, hold smash until the meter reads what it wants, let go; then
+// wait for the bridge and cross. Everything it reads is on the screen for a player too, and it never dodges an AI runner.
+const BOT = `var __opts = { charge:125 };
+var __bot = function(you){
+  var o = { right:true, jump:false, down:false, smash:false }, fy = RACE.floorY, ahead = you.x + you.r;
+  if(RACE.bridge) return o;
+  var m = fighters.find(function(q){ return q._marsh; });
+  if(ahead > RACE.edge - 80){
+    o.right = false;
+    if(RACE.thrown || RACE.marshOver) return o;
+    if(you.onground && Math.abs(you.vx) < 0.6 && m && Math.abs(m.x - you.x) < RACE_THROW_REACH){
+      if(RACE.charge) o.smash = RACE.charge.t < __opts.charge;   // holding, until the meter reads what I want
+      else o.smash = !you._smRaw;                                 // not charging: a fresh press (the key up for a frame first)
+    }
+    return o;
+  }
+  var wv = RACE.waves.find(function(w){ return w.x + w.th > ahead - you.r*2 && w.x - ahead < (MAXVX + w.sp)*18; });
+  if(wv && you.onground) o.jump = true;
   var ob = RACE.obstacles.find(function(b){ return b.x1 > you.x - 20; });
   if(!ob) return o;
   var lead = 34 + Math.max(0, you.vx)*3;
@@ -42,73 +80,221 @@ const BOT = `var __bot = function(you){
     if(you.onground && ob.x0 - ahead < lead && ob.x0 - ahead > -60) o.jump = true;
     else if(!you.onground && you.vy > 0 && you.jumps > 0 && you.x > ob.x0 && you.x < ob.x1 && you.y + you.r > fy - 30) o.jump = true;
   } else if(ob.k==='wall'){
-    if(you.onground && ob.x0 - ahead < 70 + Math.max(0, you.vx)*2 && ob.x0 - ahead > -10) o.jump = true;
-    else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 && you.y + you.r > ob.top - 6) o.jump = true;
+    if(fy - ob.top <= 105){
+      if(you.onground && ob.x0 - ahead < 70 + Math.max(0, you.vx)*2 && ob.x0 - ahead > -10) o.jump = true;
+      else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 && you.y + you.r > ob.top - 6) o.jump = true;
+    } else {   // a wall a single jump cannot top: jump early, and again ten frames later
+      if(you.onground && ob.x0 - you.x < 215 && ob.x0 - you.x > 20) o.jump = true;
+      else if(!you.onground && you.jumps > 0 && you.vy < -5 && you.vy > -7.2) o.jump = true;
+      else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 && you.y + you.r > ob.top - 6) o.jump = true;
+    }
   } else if(ob.k==='bar'){
     if(you.onground && Math.abs(you.y + you.r - ob.ledgeY) < 3){ if(ob.barX0 - ahead < 70) o.down = true; }
     else if(you.onground && ob.stepX - ahead < 70 + Math.max(0, you.vx)*2 && ob.stepX - ahead > -10) o.jump = true;
     else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.stepX + 40 && you.y + you.r > ob.ledgeY - 6) o.jump = true;
+  } else if(ob.k==='piston'){
+    var h = RACE.hazards.find(function(z){ return z.x===ob.x0; }), d = ob.x0 - ahead;
+    if(h && d > -10 && d < 260 && you.onground){
+      var P = h.period, tc = ((h.w + 2*you.r)/MAXVX + 3)/P;   // crossing it, and three frames to spare, as a part of its cycle
+      var eta = Math.max(0, d)/MAXVX + (you.vx < 3 ? 6 : 0), phE = (((hazardT + eta)/P) + h.phase) % 1;
+      if(!(phE >= 0.69 || phE <= 0.31 - tc) && d < 90){ o.right = false; return o; }
+    }
+  } else if(ob.k==='memory'){
+    if(you.onground && ob.x0 - ahead < 90 && ob.x0 - ahead > -10) o.jump = true;
+    else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 - 20) o.jump = true;
   }
   return o;
 };
-var __run = function(you, hold, maxFrames, every){
-  var log = [], minLead = 1e9, n = 0;
+var __run = function(you, hold, maxFrames){
+  var r = { frames:0, minLead:1e9, worst:-1e9, behindLine:0, lost:0, leadAtThrow:null, chargeMax:0, held:0 }, n = 0;
   for(; n < maxFrames && running; n++){
     hold(__bot(you)); step();
-    if(!you.dead) minLead = Math.min(minLead, you.x - RACE.lineX);
-    if(every && n % every === 0) log.push({ f:n, x:Math.round(you.x), line:Math.round(RACE.lineX), marsh:(function(){ var m = fighters.find(function(q){ return q._marsh; }); return m ? { x:Math.round(m.x), dead:m.dead, y:Math.round(m.y) } : null; })(), alive:fighters.filter(function(q){ return !q.dead; }).length });
+    var mm = fighters.find(function(q){ return q._marsh; });
+    if(!you.dead) r.minLead = Math.min(r.minLead, you.x - RACE.lineX);
+    if(mm.dead) r.lost++;
+    if(!RACE.marshOver && !RACE.thrown && !RACE.charge){ r.worst = Math.max(r.worst, you.x - mm.x); if(mm.x - mm.r*0.5 <= RACE.lineX) r.behindLine++; }
+    if(RACE.charge){ r.held++; r.chargeMax = Math.max(r.chargeMax, RACE.charge.t); if(r.leadAtThrow === null) r.leadAtThrow = you.x - RACE.lineX; }
   }
   hold({});
-  return { frames:n, minLead:Math.round(minLead), log:log };
+  r.frames = n;
+  return r;
 };`;
 
+// ---- the numbers the engine gives (measured, never assumed), and the lane as built ----
+// Run flat and full speed on an endless floor: how far one jump carries, how far the best double jump carries, how high
+// each rises, and for how many frames the feet are above a given height (the windows the hazards are judged against).
+let PH = null;
+const physics = (heights) => PH || (PH = quick({}, `
+  var fy = RACE.floorY;
+  worldPlats = [{ x:-4000, y:fy, w:90000, h:60, solid:true, floor:0 }];
+  fighters.forEach(function(f){ if(f!==you){ f.dead = true; } });
+  var hs = ${JSON.stringify(heights)};
+  function reset(){ you.controller='local'; you.x = 500; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun=0; you.invuln=0; you.dead=false; you.jumps=2; you.onground=false; you.slowed=0; hold({}); for(var i=0;i<3;i++){ RACE.lineX=-1e6; step(); } }
+  function jumpTest(tau2){
+    reset(); hold({right:true}); for(var i=0;i<12;i++){ RACE.lineX=-1e6; step(); }
+    var xj = you.x, t = 0, j2 = false, apex = 0, above = {};
+    hs.forEach(function(h){ above[h] = 0; });
+    hold({right:true, jump:true}); RACE.lineX=-1e6; step(); t++; hold({right:true});
+    while(!you.onground && t < 200){
+      var doJ = (tau2!==null && !j2 && t >= tau2);
+      hold({right:true, jump:doJ}); if(doJ) j2 = true;
+      RACE.lineX=-1e6; step(); t++; if(doJ) hold({right:true});
+      var ht = fy - you.r - you.y; apex = Math.max(apex, ht);
+      hs.forEach(function(h){ if(ht >= h) above[h]++; });
+    }
+    hold({});
+    return { dist:you.x - xj, frames:t, apex:apex, above:above };
+  }
+  var best = { dist:0, apex:0 };
+  for(var tau = 0; tau <= 38; tau += 4){ var j = jumpTest(tau); best.dist = Math.max(best.dist, j.dist); best.apex = Math.max(best.apex, j.apex); }
+  return { single:jumpTest(null), double18:jumpTest(18), best:best, maxvx:MAXVX, r:you.r };`));
+let LANE = null;
+const lane = () => LANE || (LANE = race({}, `return { obs:RACE.obstacles, haz:RACE.hazards, pianos:RACE.pianos, voices:RACE.voices, memories:RACE.memories, floor:RACE.floorY, edge:RACE.edge, farX:RACE.farX,
+  finishX:RACE.finishX, WW:WW, W:W, backX:RACE_BACK_X, len:RACE_LEN, lineSpeed:RACE_LINE_SPEED, maxvx:MAXVX, r:you.r, plats:JSON.stringify(worldPlats) };`));
+const third = (o) => (o.s < 1 / 3 ? 0 : o.s < 2 / 3 ? 1 : 2);
+const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+
+// ONE scripted run of the whole lane, shared by the tests below (a full run is the slow part of this file).
+let RUN = null;
+const fullRun = () => RUN || (RUN = quick({}, `${BOT}
+  var out = __run(you, hold, 8000);
+  var first = RACE.obstacles[0];
+  var seen = window.__banners.slice(__b0).map(function(b){ return b.text + '|' + (b.kind||''); });
+  var gone = fighters.filter(function(f){ return f._runner && !f._marsh && f.dead; });
+  var past = fighters.filter(function(f){ return f._runner && !f._marsh && (f.dead || f.x > first.x1 + 40); }).length;
+  return { run:out, over:RACE.over, won:RACE.won, end:window.__raceEnd, why:window.__raceResult && window.__raceResult.why, ranAs:window.__raceResult && window.__raceResult.fighter,
+    secs:window.__raceResult && window.__raceResult.secs, title:document.getElementById('resultTitle').textContent, sub:document.getElementById('resultSub').textContent,
+    youX:Math.round(you.x), finish:RACE.finishX, edge:RACE.edge, farX:RACE.farX, marshOver:RACE.marshOver, marshX:Math.round(marsh.x), marshAlive:!marsh.dead, floor:RACE.floorY, marshY:Math.round(marsh.y + marsh.r),
+    seen:seen, err:!!window.__loopErrLogged, gone:gone.map(function(f){ return f.name; }), past:past, speed:RACE_LINE_SPEED, leash:RACE_MARSH_LEASH, full:RACE_THROW_FULL,
+    lineAtEnd:Math.round(RACE.lineX) };`));
+
 describe('the course', () => {
-  it('is a long lane of gaps, walls, bars and pistons, laid from a fixed seed: the same every time', () => {
+  it('is a much longer lane of gaps, walls, bars, pistons and the episode\'s hazards, laid from a fixed seed: the same every time', () => {
     const a = race({}, `return { ok:__ok, WW:WW, W:W, obs:JSON.stringify(RACE.obstacles), plats:JSON.stringify(worldPlats), haz:JSON.stringify(RACE.hazards),
+      pianos:JSON.stringify(RACE.pianos), voices:JSON.stringify(RACE.voices), memories:JSON.stringify(RACE.memories), len:RACE_LEN,
       kinds:RACE.obstacles.map(function(o){ return o.k; }), edge:RACE.edge, far:RACE.farX, floor:RACE.floorY, gy:groundY(), big:isBig(), scrolls:scrolls(), mode:SETTINGS.mode, items:itemSpawnInterval() };`);
-    const b = race({}, `return { obs:JSON.stringify(RACE.obstacles), plats:JSON.stringify(worldPlats), haz:JSON.stringify(RACE.hazards) };`);
+    const b = race({}, `return { obs:JSON.stringify(RACE.obstacles), plats:JSON.stringify(worldPlats), haz:JSON.stringify(RACE.hazards), pianos:JSON.stringify(RACE.pianos), voices:JSON.stringify(RACE.voices), memories:JSON.stringify(RACE.memories) };`);
     expect(a.ok).toBe(true);
-    expect(a.obs, 'the same obstacles').toBe(b.obs);
-    expect(a.plats, 'the same floor, walls, steps, ledges and beams').toBe(b.plats);
-    expect(a.haz, 'the same pistons on the same cycles').toBe(b.haz);
-    expect(a.WW, 'several screens wide').toBeGreaterThan(a.W * 6);
-    expect(a.kinds.length).toBeGreaterThanOrEqual(12);
-    for (const k of ['gap', 'wall', 'bar', 'piston']) expect(a.kinds, 'every kind of obstacle is on the course').toContain(k);
+    for (const k of ['obs', 'plats', 'haz', 'pianos', 'voices', 'memories']) expect(a[k], 'the same ' + k).toBe(b[k]);
+    // "the run should be much longer": the first version's lane was 7,700 px; now two and a half to three times that
+    expect(a.len / 7700, 'roughly 2.5-3x the first version').toBeGreaterThanOrEqual(2.5);
+    expect(a.len / 7700).toBeLessThanOrEqual(3);
+    expect(a.WW).toBe(a.len + 620 + 520);
+    expect(a.kinds.length, 'a long lane has a lot on it').toBeGreaterThanOrEqual(30);
+    for (const k of ['gap', 'wall', 'bar', 'piston', 'piano', 'memory', 'voice']) expect(a.kinds, 'every kind of obstacle is on the course').toContain(k);
     expect(a.kinds[0], 'the first obstacle is a gap to jump').toBe('gap');
     expect(a.far - a.edge, 'the last gap is past any jump').toBeGreaterThan(560);
     expect([a.gy, a.big, a.scrolls, a.mode]).toEqual([a.floor, true, true, 'ffa']);
     expect(a.items, 'no items, whatever the setting').toBe(0);
   });
 
-  it('every gap can be jumped, every wall hopped and every bar has room under it (the fairness the line is never tuned for)', () => {
-    const r = race({}, `return { obs:RACE.obstacles, plats:worldPlats.filter(function(p){ return p.raceLedge || p.raceBar; }), floor:RACE.floorY };`);
-    for (const o of r.obs) {
-      if (o.k === 'gap') expect(o.x1 - o.x0, 'a running jump carries about 258 px').toBeLessThanOrEqual(250);
-      if (o.k === 'wall') expect(r.floor - o.top, 'a jump rises 126 px').toBeLessThanOrEqual(100);
+  it('gets harder along the lane: gaps widen, walls rise, pistons quicken and widen and hit harder, bars lengthen (owner: "harder obstacles that increase in strength")', () => {
+    const L = lane(), by = (k) => L.obs.filter((o) => o.k === k);
+    const first = (a) => a.filter((o) => third(o) === 0), last = (a) => a.filter((o) => third(o) === 2);
+    const gaps = by('gap'), walls = by('wall'), bars = by('bar'), haz = L.haz;
+    expect(Math.max(...last(gaps).map((o) => o.x1 - o.x0)), 'the widest gap of the last third is wider than the first third\'s').toBeGreaterThanOrEqual(Math.max(...first(gaps).map((o) => o.x1 - o.x0)) + 40);
+    expect(Math.max(...last(walls).map((o) => L.floor - o.top)), 'and the tallest wall').toBeGreaterThanOrEqual(Math.max(...first(walls).map((o) => L.floor - o.top)) + 25);
+    expect(mean(last(bars).map((o) => o.x1 - o.x0)), 'the ledges lengthen').toBeGreaterThan(mean(first(bars).map((o) => o.x1 - o.x0)));
+    const hf = haz.filter((h) => h.s < 1 / 3), hl = haz.filter((h) => h.s >= 2 / 3);
+    expect(hf.length).toBeGreaterThan(0); expect(hl.length).toBeGreaterThan(0);
+    expect(mean(hl.map((h) => h.period)), 'pistons pound faster').toBeLessThan(mean(hf.map((h) => h.period)) - 15);
+    expect(mean(hl.map((h) => h.w)), 'and are wider').toBeGreaterThan(mean(hf.map((h) => h.w)));
+    expect(mean(hl.map((h) => h.stun)), 'and stun longer').toBeGreaterThan(mean(hf.map((h) => h.stun)));
+    expect(mean(hl.map((h) => -h.kx)), 'and shove harder').toBeGreaterThan(mean(hf.map((h) => -h.kx)));
+    const runs = {}; for (const h of haz) runs[h.g] = (runs[h.g] || 0) + 1;
+    expect(Math.max(...Object.values(runs)), 'from part way in they come in runs of two and three').toBeGreaterThanOrEqual(3);
+    expect(Math.min(...haz.filter((h) => runs[h.g] > 1).map((h) => h.s)), 'but not in the first third').toBeGreaterThan(0.3);
+  });
+
+  it('the episode\'s hazards are all in the back half, never the front, and each grows in strength too (owner: "New hazards later")', () => {
+    const L = lane(), news = L.obs.filter((o) => ['piano', 'memory', 'voice'].includes(o.k));
+    expect(L.backX / L.len, 'the back half').toBeCloseTo(0.5, 1);
+    expect(news.length).toBeGreaterThanOrEqual(6);
+    for (const o of news) expect(o.x0, o.k + ' is in the back half').toBeGreaterThanOrEqual(L.backX);
+    for (const o of L.obs.filter((o) => o.x0 < L.backX)) expect(['gap', 'wall', 'bar', 'piston'], 'the front half is the four the first version had').toContain(o.k);
+    for (const k of ['piano', 'memory', 'voice']) expect(news.filter((o) => o.k === k).length, k + ' comes more than once').toBeGreaterThanOrEqual(2);
+    // later is never weaker (each reads its size from how far along it stands)
+    const inc = (arr, f) => { for (let i = 1; i < arr.length; i++) expect(f(arr[i]), 'later is never weaker').toBeGreaterThanOrEqual(f(arr[i - 1])); };
+    inc(L.pianos, (p) => p.w); inc(L.pianos, (p) => p.stun); inc(L.pianos, (p) => -p.T);
+    inc(L.memories, (m) => m.w); inc(L.memories, (m) => m.h); inc(L.memories, (m) => m.slow);
+    inc(L.voices, (v) => v.sp); inc(L.voices, (v) => v.h); inc(L.voices, (v) => v.stun);
+    expect(L.pianos[L.pianos.length - 1].w, 'and strictly stronger by the end').toBeGreaterThan(L.pianos[0].w);
+    expect(L.voices[L.voices.length - 1].sp).toBeGreaterThan(L.voices[0].sp);
+  });
+
+  it('every obstacle can be beaten with room to spare, judged against what the engine measures (the fairness the line is never tuned for)', () => {
+    const L0 = lane(), heights = [...new Set(L0.voices.map((v) => v.h).concat(L0.memories.map((m) => m.h)))];
+    const P = physics(heights), L = L0, r = P.r, v = P.maxvx;
+    expect(P.single.dist, 'a running jump carries about 256 px').toBeGreaterThan(240);
+    expect(P.best.dist, 'and a double jump about twice that').toBeGreaterThan(480);
+    expect(P.single.apex).toBeGreaterThan(110); expect(P.best.apex).toBeGreaterThan(230);
+    for (const o of L.obs) {
+      if (o.k === 'gap') {
+        const g = o.x1 - o.x0;
+        expect(g, 'a late second jump leaves a window of 10 frames or more at the take-off').toBeLessThanOrEqual(P.best.dist - 10 * v + 8);
+        if (o.s < 1 / 3) expect(g, 'the first third can be jumped once').toBeLessThanOrEqual(P.single.dist);
+      }
+      if (o.k === 'wall') {
+        const h = L.floor - o.top;
+        expect(h, 'a double jump tops it with room').toBeLessThanOrEqual(P.best.apex - 45);
+        if (o.s < 0.2) expect(h, 'the first fifth can be topped by one jump').toBeLessThanOrEqual(P.single.apex - 10);
+      }
       if (o.k === 'bar') {
-        expect(r.floor - o.ledgeY, 'the step onto the ledge is hoppable').toBeLessThanOrEqual(100);
-        expect(r.floor - o.ledgeY - 12, 'a fighter (48 px) fits under the ledge').toBeGreaterThanOrEqual(48);
-        const bar = r.plats.find((p) => p.raceBar && p.x === o.barX0);
+        const bar = JSON.parse(L.plats).find((p) => p.raceBar && p.x === o.barX0);
         expect(bar).toBeTruthy();
+        expect(L.floor - o.ledgeY, 'the step onto the ledge is hoppable').toBeLessThanOrEqual(100);
+        expect(L.floor - o.ledgeY - 12, 'a fighter (48 px) fits under the ledge').toBeGreaterThanOrEqual(48);
         expect(o.ledgeY - (bar.y + bar.h), 'and does not fit under the beam while on the ledge').toBeLessThan(48);
+        expect(o.barX0 - (o.stepX + 40), 'and there is ledge before the beam to see it coming').toBeGreaterThanOrEqual(80);
       }
     }
-    // the run-ups: nothing is placed within 240 px of the obstacle before it
-    for (let i = 1; i < r.obs.length; i++) expect(r.obs[i].x0 - r.obs[i - 1].x1).toBeGreaterThanOrEqual(240);
+    // a piston is clear of a fighter's head for most of its cycle: the entry window (frames) is the clear part less the crossing
+    for (const h of L.haz) {
+      const q = (L.floor - 2 * r - h.h - h.upY) / (h.downY - h.upY);   // how far down its travel the block reaches a fighter's head
+      const safe = Math.acos(1 - 2 * q) / Math.PI;                       // the part of its cycle (a cosine) that it is clear of him
+      expect(safe, 'clear of him for more than half of every cycle').toBeGreaterThan(0.55);
+      expect(h.period * safe - (h.w + 2 * r) / v, 'a runner can enter a piston with 10 frames of window').toBeGreaterThanOrEqual(10);
+      expect(h.downY, 'down, it is on the floor').toBe(L.floor - h.h);
+      expect(h.upY + h.h, 'up, its underside is a fighter and more above the floor').toBeLessThanOrEqual(L.floor - 2 * r - 60);
+    }
+    // ...and the blocks of one run leave a pocket to stand in between them
+    const byGroup = {}; for (const h of L.haz) (byGroup[h.g] = byGroup[h.g] || []).push(h);
+    for (const g of Object.values(byGroup)) for (let i = 1; i < g.length; i++) expect(g[i].x - (g[i - 1].x + g[i - 1].w) - 2 * r, 'a pocket of 60 px or more').toBeGreaterThanOrEqual(60);
+    // a piano lands where a runner at full speed has left its box, with frames to spare: keep running and you are through
+    for (const p of L.pianos) {
+      const lead = p.x + p.w / 2 - p.trig, leaves = (lead + p.w / 2 + r) / v;
+      expect(p.T - 2 - leaves, 'keep running: through before it lands, by 3 frames or more').toBeGreaterThanOrEqual(3);
+      expect(p.h, 'jump and you are over: it is shorter than a jump').toBeLessThan(P.single.apex);
+    }
+    // a voice's wave is jumpable once, from a wide window; the wave is where a runner meets it, inside the obstacle's own space
+    for (const w of L.voices) {
+      const jumpFrames = P.single.above[w.h];
+      expect((w.th + 2 * r) / (v + w.sp) + 6, 'one jump takes you over it with a window of 6 frames or more').toBeLessThanOrEqual(jumpFrames);
+      expect(w.sp, 'and it is slower than the fastest runner is fast').toBeLessThan(v * 1.4);
+      const ob = L.obs.find((o) => o.k === 'voice' && o.x0 === w.trig);
+      expect(w.trig + Math.ceil((w.x0 - w.trig) * v / (v + w.sp)), 'met inside its own space').toBeLessThan(ob.x1);
+    }
+    // a memory can be jumped with two jumps, from a window of 6 frames or more
+    for (const m of L.memories) expect((m.w + 2 * r) / v + 6, 'a double jump takes you over it').toBeLessThanOrEqual(P.double18.above[m.h]);
+    // the space between: a run-up of 240 px at least before everything (more after a gap, where a jump lands past the edge), and a clear last stretch
+    const gs = []; for (const o of L.obs) { const g = gs[gs.length - 1]; if (g && g.g === o.g) g.x1 = Math.max(g.x1, o.x1); else gs.push({ g: o.g, k: o.k, x0: o.x0, x1: o.x1 }); }
+    for (let i = 1; i < gs.length; i++) expect(gs[i].x0 - gs[i - 1].x1, 'the run-up').toBeGreaterThanOrEqual(gs[i - 1].k === 'gap' ? 360 : 240);
+    expect(L.edge - gs[gs.length - 1].x1, 'the last stretch is clear').toBeGreaterThanOrEqual(460);
   });
 });
 
 describe('the line', () => {
-  it('starts behind everyone and advances every frame, whether or not anyone moves; it never stops, never slows', () => {
+  it('is faster than it was and still slower than a sprint; it starts behind everyone and advances every frame, whether or not anyone moves; it never stops, never slows', () => {
     const r = race({}, `you.controller = 'still';
       var xs = [RACE.lineX], you0 = you.x; for (var i=0; i<90; i++){ step(); xs.push(RACE.lineX); }
       var d = []; for (var j=1; j<xs.length; j++) d.push(+(xs[j]-xs[j-1]).toFixed(6));
-      return { start:xs[0], behind:fighters.every(function(f){ return f.x > xs[0]; }), you0:you0, moved:you.x !== you0, steps:d, speed:RACE_LINE_SPEED, drawn:String(drawRaceFx).indexOf('RACE.lineX') >= 0 && String(draw).indexOf('drawRaceFx()') >= 0 };`);
+      return { start:xs[0], behind:fighters.every(function(f){ return f.x > xs[0]; }), you0:you0, moved:you.x !== you0, steps:d, speed:RACE_LINE_SPEED, maxvx:MAXVX, drawn:String(drawRaceFx).indexOf('RACE.lineX') >= 0 && String(draw).indexOf('drawRaceFx()') >= 0 };`);
     expect(r.behind).toBe(true);
     expect(r.moved, 'a still runner').toBe(false);
     expect(new Set(r.steps).size, 'the same step every frame').toBe(1);
     expect(r.steps[0]).toBe(r.speed);
-    expect(r.speed).toBeGreaterThan(0);
+    expect(r.speed, '"the wall should move faster": it was 4.2 px a frame').toBeGreaterThan(4.2);
+    expect(r.speed, 'but a runner who never stops must outrun it').toBeLessThan(r.maxvx * 0.9);
     expect(r.drawn, 'the line is drawn').toBe(true);
   });
 
@@ -119,7 +305,7 @@ describe('the line', () => {
         retry:!!RACE.retry, button:document.getElementById('resultRematch').textContent, caughtAt:Math.round(you.x - RACE.lineX) };
       // Retry: the result screen's button calls rematch() -> startMatch(), which runs the race again from the top
       startMatch();
-      out.again = { active:RACE.active, running:running, over:RACE.over, frames:RACE.frames, line:RACE.lineX, youX:fighters.find(function(f){ return f.you; }).x, alive:fighters.filter(function(f){ return !f.dead; }).length };
+      out.again = { active:RACE.active, running:running, over:RACE.over, frames:RACE.frames, line:RACE.lineX, youX:fighters.find(function(f){ return f.you; }).x, alive:fighters.filter(function(f){ return !f.dead; }).length, speed:RACE_LINE_SPEED };
       return out;`);
     expect(r.frames).toBeLessThan(2000);
     expect([r.over, r.won, r.end]).toEqual([true, false, false]);
@@ -129,7 +315,7 @@ describe('the line', () => {
     expect(r.button).toMatch(/^Retry/);
     expect(r.again.active && r.again.running && !r.again.over).toBe(true);
     expect(r.again.frames, 'from the top (beginMatchNow steps the first frame itself)').toBeLessThanOrEqual(1);
-    expect(r.again.line, 'the line is back behind the start').toBeCloseTo(r.again.youX - 520 + r.again.frames * 4.2, 6);
+    expect(r.again.line, 'the line is back behind the start').toBeCloseTo(r.again.youX - 520 + r.again.frames * r.again.speed, 6);
     expect(r.again.alive).toBe(8);
   });
 });
@@ -155,116 +341,448 @@ describe('the runners', () => {
     expect(r.n).toBe(8);
     expect(r.marsh).toBe(true);
     const m = race({ fighter: 'Marshmallow' }, `return { you:you.name };`);
-    expect(m.you, 'not as Marshmallow herself: she is the one who is slung').toBe('Knife');
+    expect(m.you, 'not as Marshmallow herself: she is the one who is thrown').toBe('Knife');
   });
 
   it('AI runners run right and clear the first gap; the slow ones fall behind, are caught, and are gone', () => {
-    const r = race({}, `${BOT}
-      var first = RACE.obstacles[0];
-      var out = __run(you, hold, 4000, 60);
-      var past = fighters.filter(function(f){ return f._runner && !f._marsh && (f.dead || f.x > first.x1 + 40); }).length;
-      var gone = fighters.filter(function(f){ return f._runner && !f._marsh && f.dead; });
-      return { frames:out.frames, won:RACE.won, past:past, gone:gone.map(function(f){ return f.name; }), goneX:gone.map(function(f){ return Math.round(f.x); }), line:Math.round(RACE.lineX) };`);
+    const r = fullRun();
     expect(r.won).toBe(true);
     expect(r.past, 'the runners jump the gap (or were lost later, past it)').toBe(6);
     expect(r.gone.length, 'some fall behind and are caught').toBeGreaterThan(0);
     expect(r.gone.length).toBeLessThan(6);
+  }, 300000);
+
+  it('the runners crowding the edge leave you to your throw, but jab you anywhere else ("attacks allowed")', () => {
+    const r = race({}, `you.controller = 'still'; var fan = fighters.find(function(f){ return f.name==='Fan'; });
+      RACE.frames = 300; fan.x = you.x + 30; fan.y = you.y; fan.vx = 0; fan.onground = true; hazardT = 500 - fan.idx*11;
+      var mid = raceRunnerAi(fan).attack;                                    // mid-lane, right beside you: a jab
+      you.x = RACE.edge - 100; you.y = RACE.floorY - you.r; fan.x = you.x - 40; fan.y = you.y; hazardT = 500 - fan.idx*11;
+      var atEdge = raceRunnerAi(fan).attack;                                 // at the edge: none
+      you.x = RACE.edge - RACE_THROW_ZONE - 100; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
+      var nearZone = raceRunnerAi(fan).attack;                               // just short of the throw's zone: none either
+      you.x = RACE.edge - RACE_THROW_ZONE - 800; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
+      var farBack = raceRunnerAi(fan).attack;                                // well before it: a jab again
+      return { mid:mid, atEdge:atEdge, nearZone:nearZone, farBack:farBack };`);
+    expect(r.mid).toBe(true);
+    expect(r.atEdge).toBe(false);
+    expect(r.nearZone).toBe(false);
+    expect(r.farBack).toBe(true);
   });
 });
 
 describe('the run', () => {
-  it('a scripted runner who holds right and jumps at each gap reaches the end: the course is completable in principle', () => {
-    const r = race({}, `${BOT}
-      var out = __run(you, hold, 4000, 120);
-      return { frames:out.frames, minLead:out.minLead, log:out.log, won:RACE.won, over:RACE.over, end:window.__raceEnd, why:window.__raceResult && window.__raceResult.why,
-        title:document.getElementById('resultTitle').textContent, secs:window.__raceResult && window.__raceResult.secs, youX:Math.round(you.x), finish:RACE.finishX };`);
+  it('a scripted runner who plays the whole lane reaches the end, throws Marshmallow over and crosses: the lane is completable, with room to spare', () => {
+    const r = fullRun();
     expect(r.over, 'the race was decided within the frame budget').toBe(true);
-    expect([r.won, r.end, r.why], JSON.stringify(r.log)).toEqual([true, true, 'crossed']);
+    expect([r.won, r.end, r.why], JSON.stringify(r.run)).toEqual([true, true, 'crossed']);
+    expect(r.ranAs, 'the chain\'s onEnd reads who ran').toBe('Knife');
     expect(r.title).toBe('RUNNING! cleared');
     expect(r.youX).toBeGreaterThan(r.finish);
-    expect(r.minLead, 'never touched by the line').toBeGreaterThan(0);
-    expect(r.secs).toBeGreaterThan(10);
-  });
+    expect(r.run.minLead, 'never touched by the line').toBeGreaterThan(0);
+    expect(r.secs, 'a long run: the lane is 2.7 times the first version\'s').toBeGreaterThan(50);
+    // "a runner who keeps up": when the charge starts there is time for a FULL three seconds of it, and the flight and the
+    // bridge, and a second of grace -- the throw is never rushed for someone who ran the lane well
+    expect(r.run.leadAtThrow, 'a lead at the edge').not.toBeNull();
+    expect(r.run.leadAtThrow, 'enough for a full charge and then some').toBeGreaterThan(r.speed * (r.full + 84) + 6.4 * 60);
+  }, 300000);
 
-  it('Marshmallow keeps pace: never far behind you, never behind the line, never lost -- and she is over the gap at the end', () => {
-    const r = race({}, `${BOT}
-      var worst = -1e9, behindLine = 0, lost = 0, n = 0;
-      for (; n < 4000 && running; n++){
-        hold(__bot(you)); step();
-        if (marsh.dead) lost++;
-        if (!RACE.marshOver && !RACE.sling){ worst = Math.max(worst, you.x - marsh.x); if (marsh.x - marsh.r*0.5 <= RACE.lineX) behindLine++; }
-      }
-      hold({});
-      return { won:RACE.won, worst:Math.round(worst), behindLine:behindLine, lost:lost, over:RACE.marshOver, marshX:Math.round(marsh.x), far:RACE.farX, leash:RACE_MARSH_LEASH, alive:!marsh.dead };`);
+  it('Marshmallow keeps pace: never far behind you, never behind the line, never lost -- and she is thrown across the gap at the end', () => {
+    const r = fullRun();
     expect(r.won).toBe(true);
-    expect(r.lost, 'never lost').toBe(0);
-    expect(r.behindLine, 'never caught').toBe(0);
-    expect(r.worst, 'at your side').toBeLessThanOrEqual(r.leash + 40);
-    expect(r.over && r.alive).toBe(true);
-    expect(r.marshX).toBeGreaterThan(r.far);
-  });
+    expect(r.run.lost, 'never lost').toBe(0);
+    expect(r.run.behindLine, 'never caught').toBe(0);
+    expect(r.run.worst, 'at your side').toBeLessThanOrEqual(r.leash + 40);
+    expect(r.marshOver && r.marshAlive).toBe(true);
+    expect(r.marshX, 'over the gap').toBeGreaterThan(r.farX);
+    expect(r.marshX, 'and onto the landing').toBeLessThan(r.farX + 520);
+    expect(Math.abs(r.marshY - r.floor), 'standing on it').toBeLessThan(2);
+  }, 300000);
+
+  it('no text during the run but GO!: a whole scripted run and a caught run say nothing else', () => {
+    const a = fullRun();
+    const b = race({}, `you.controller = 'still'; var b0 = window.__banners.length;
+      var n = 0; while (running && n < 2000){ step(); n++; }
+      return { seenB:window.__banners.slice(__b0).map(function(b){ return b.text + '|' + (b.kind||''); }), err:!!window.__loopErrLogged, why:window.__raceResult && window.__raceResult.why };`);
+    expect(a.won).toBe(true);
+    expect(a.seen, 'the winning run').toEqual(['GO!|']);
+    expect(b.seenB, 'the caught run').toEqual(['GO!|']);
+    expect(a.err || b.err, 'the loop never threw').toBe(false);
+  }, 300000);
 });
 
-describe('the finish: the modified hook', () => {
-  // Put you and Marshmallow on the floor at the lane's edge, the line far behind, and settle a frame.
-  const AT_EDGE = `you.controller = 'still'; you.x = RACE.edge - 40; you.y = RACE.floorY - you.r; you.vx = 0; you.vy = 0; marsh.x = you.x - 70; marsh.y = you.y; marsh.vx = 0; marsh.vy = 0;
-    RACE.lineX = you.x - 3000; step(); RACE.lineX = you.x - 3000; you.spCd = 0; you._sp = false;`;
+describe('the finish: the charged smash', () => {
+  // Put you and Marshmallow on the floor at the lane's edge, the line far behind, the others parked, and settle a frame.
+  // adv(n) steps n frames with the line kept far behind (so nothing but the throw is being tested).
+  const AT_EDGE = `fighters.forEach(function(f){ if(f!==you && f!==marsh){ f.dead = true; } }); marsh.controller = 'still'; marsh.invuln = 0;
+    you.x = RACE.edge - 60; you.y = RACE.floorY - you.r; you.vx = 0; you.vy = 0; you.face = 1; marsh.x = you.x - 50; marsh.y = you.y; marsh.vx = 0; marsh.vy = 0;
+    var adv = function(n){ for(var i=0;i<n;i++){ RACE.lineX = you.x - 3000; step(); } };
+    adv(3); you.spCd = 0;`;
+  // press smash, hold it n frames in all (the press frame is the first), let go, and read what happened
+  const CHARGE = (n) => `hold({smash:true}); adv(${n}); var __t = RACE.charge ? RACE.charge.t : -1; hold({}); adv(1);`;
 
-  it('the sling only works at the edge: mid-lane the special is the bag of tricks as usual', () => {
-    const r = race({}, `you.controller = 'still'; you.x = RACE.edge - 1200; you.y = RACE.floorY - you.r; marsh.x = you.x - 60; marsh.y = you.y; step(); you.spCd = 0;
-      var tricks0 = you._trickN||0, shots0 = projectiles.length;
-      fireSpecial(you, {});
-      return { sling:RACE.sling, slung:!!marsh._slung, tricks:(you._trickN||0) - tricks0, shots:projectiles.length - shots0 };`);
-    expect(r.sling).toBeNull();
-    expect(r.slung).toBe(false);
-    expect(r.tricks, 'the bag of tricks fired instead').toBe(1);
+  it('the hook is gone: at the edge the special is the bag of tricks as anywhere else, and never slings her', () => {
+    const r = race({}, `${AT_EDGE} var tricks0 = you._trickN||0, shots0 = projectiles.length;
+      hold({special:true}); adv(8); hold({});
+      return { fn:typeof raceSling, konst:typeof RACE_SLING_REACH, tricks:(you._trickN||0) - tricks0, shots:projectiles.length - shots0, charge:RACE.charge, thrown:RACE.thrown, held:!!marsh._raceHeld };`);
+    expect(r.fn).toBe('undefined');
+    expect(r.konst).toBe('undefined');
+    expect(r.tricks, 'the bag of tricks fired').toBe(1);
     expect(r.shots).toBeGreaterThan(0);
+    expect([r.charge, r.thrown, r.held]).toEqual([null, false, false]);
   });
 
-  it('and only on Marshmallow: with her out of reach and a runner at your side, nobody is slung', () => {
-    const r = race({}, `${AT_EDGE}
-      var fan = fighters.find(function(f){ return f.name==='Fan'; }); fan.x = you.x - 60; fan.y = you.y; fan.vx = 0; fan.vy = 0;
-      marsh.x = you.x - 900; marsh.y = you.y;   // beyond the hook's reach
-      fireSpecial(you, {});
-      return { sling:RACE.sling, fan:!!fan._slung, marsh:!!marsh._slung, reach:RACE_SLING_REACH };`);
-    expect(r.sling).toBeNull();
-    expect([r.fan, r.marsh]).toEqual([false, false]);
+  it('holding smash at the edge, beside Marshmallow, picks her up and charges -- it is not a smash, and he does not walk', () => {
+    const r = race({}, `${AT_EDGE} var x0 = you.x;
+      hold({smash:true, right:true}); adv(1); var t1 = RACE.charge && RACE.charge.t, held = !!marsh._raceHeld;
+      adv(59); var t60 = RACE.charge.t, hs = { x:marsh.x - you.x, y:you.y - marsh.y };
+      return { t1:t1, held:held, t60:t60, moved:Math.abs(you.x - x0), q:!!you._smQ, sh:you.smashHold, face:you.face, on:you.onground, hs:hs, full:RACE_THROW_FULL };`);
+    expect(r.t1).toBe(1);
+    expect(r.held).toBe(true);
+    expect(r.t60).toBe(60);
+    expect(r.moved, 'planted: a key held down does not walk him off the edge').toBeLessThan(0.5);
+    expect(r.q, 'no smash is charging').toBe(false);
+    expect(r.sh, 'the smash\'s own wind-back and ring show the charge').toBeGreaterThan(0);
+    expect(r.on).toBe(true);
+    expect(r.face, 'facing the far side').toBe(1);
+    expect(r.hs.y, 'she is on his shoulders').toBeGreaterThan(20);
+    expect(Math.abs(r.hs.x)).toBeLessThan(30);
+    expect(r.full, 'about three seconds').toBe(180);
   });
 
-  it('at the edge it hooks Marshmallow and slings her over in an arc; once she lands the bridge appears; crossing it wins', () => {
-    const r = race({}, `${AT_EDGE}
-      fireSpecial(you, {});
-      var out = { fired:!!RACE.sling, slung:!!marsh._slung, hook:you._hookFx && you._hookFx.to===marsh.idx, peakY:marsh.y, bridgeDuringFlight:false, landed:null, flew:[] };
-      var n = 0; while (RACE.sling && n < 200){ step(); out.peakY = Math.min(out.peakY, marsh.y); if (RACE.bridge) out.bridgeDuringFlight = true; if (n%10===0) out.flew.push(Math.round(marsh.x)); n++; }
-      out.flight = n; out.landed = { x:Math.round(marsh.x), y:Math.round(marsh.y + marsh.r), over:RACE.marshOver, far:RACE.farX, floor:RACE.floorY, bridge:!!RACE.bridge };
-      var m = 0; while (!RACE.bridge && m < 100){ step(); m++; }
+  it('anywhere else, or with her out of reach, the smash is Knife\'s smash: nothing is picked up', () => {
+    const r = quick({}, `${AT_EDGE}
+      you.x = RACE.edge - 1200; you.y = RACE.floorY - you.r; marsh.x = you.x - 50; marsh.y = you.y; adv(2);
+      hold({smash:true}); adv(2); var mid = { charge:RACE.charge, held:!!marsh._raceHeld, q:!!you._smQ }; hold({}); adv(60);
+      you.x = RACE.edge - 60; marsh.x = you.x - 50; marsh.y = you.y - 500; adv(1); marsh.y = you.y - 500; adv(1);   // at the edge but she is out of his reach (the leash keeps her within 260 px of him along the floor, never above him)
+      hold({smash:true}); adv(2); var far = { charge:RACE.charge, held:!!marsh._raceHeld, q:!!you._smQ }; hold({}); adv(60);
+      you.x = RACE.edge - RACE_THROW_ZONE - 60; marsh.x = you.x - 50; adv(2);   // in reach but short of the zone
+      hold({smash:true}); adv(2); var short = { charge:RACE.charge, q:!!you._smQ }; hold({});
+      return { mid:mid, far:far, short:short };`);
+    for (const k of ['mid', 'far', 'short']) { expect(r[k].charge, k + ': no charge').toBeNull(); expect(r[k].q, k + ': the smash charges').toBe(true); }
+    expect(r.mid.held).toBe(false); expect(r.far.held).toBe(false);
+  });
+
+  it('a slip of the finger (a short hold) throws nothing and loses nothing: she is put down and the race goes on', () => {
+    const r = quick({}, `${AT_EDGE} ${CHARGE(6)} adv(20);
+      return { charge:RACE.charge, flight:!!RACE.flight, thrown:RACE.thrown, held:!!marsh._raceHeld, running:running, over:RACE.over, min:RACE_THROW_MIN, t:__t, q:!!you._smQ, sh:you.smashHold };`);
+    expect(r.t).toBeLessThan(r.min);
+    expect([r.charge, r.flight, r.thrown, r.held, r.q]).toEqual([null, false, false, false, false]);
+    expect(r.sh).toBe(0);
+    expect(r.running && !r.over).toBe(true);
+  });
+
+  it('longer = farther: the landing grows with the charge, from in the gap to across; a full charge lands well onto the far side and never past it', () => {
+    const frames = [30, 90, 120, 150, 180, 240];
+    const xs = frames.map((n) => quick({}, `${AT_EDGE} ${CHARGE(n)} return { x1:RACE.flight.x1, clears:RACE.flight.clears, c:RACE.flight.c, far:RACE.farX, edge:RACE.edge, farW:RACE_FAR_W, t:__t };`));
+    for (let i = 1; i < xs.length - 1; i++) expect(xs[i].x1, 'each hold lands farther than the last').toBeGreaterThan(xs[i - 1].x1);
+    expect(xs[xs.length - 1].x1, 'past a full charge it goes no farther').toBe(xs[xs.length - 2].x1);
+    expect(xs[0].t).toBe(30);
+    expect(xs[xs.length - 1].t, 'the charge stops building at three seconds').toBe(180);
+    expect(xs[0].clears, 'half a second: in the gap').toBe(false);
+    expect(xs[1].clears, 'a second and a half: still in the gap').toBe(false);
+    expect(xs[2].clears, 'two seconds: across').toBe(true);
+    expect(xs[4].clears).toBe(true);
+    expect(xs[4].x1, 'a full charge lands on the landing, not past its end').toBeLessThan(xs[4].far + xs[4].farW - 30);
+    expect(xs[4].x1).toBeGreaterThan(xs[4].far + 200);
+    expect(xs[0].x1, 'a short throw lands in the gap, clear of the far edge').toBeLessThan(xs[0].far - 30 + 1);
+    expect(xs[0].x1).toBeGreaterThan(xs[0].edge);
+  });
+
+  it('"looong": the least charge that clears the gap is between a second and a half and two and a half; a full charge is three', () => {
+    const r = race({}, `${AT_EDGE} return { clearC:raceThrowClearC(), full:RACE_THROW_FULL, min:RACE_THROW_MIN };`);
+    const frames = r.clearC * r.full;
+    expect(r.full / 60, 'up to about three seconds').toBe(3);
+    expect(frames / 60).toBeGreaterThanOrEqual(1.5);
+    expect(frames / 60).toBeLessThanOrEqual(2.5);
+    expect(r.min, 'a tap is not a throw').toBeGreaterThan(10);
+  });
+
+  it('too short and she lands IN the gap, and the run is lost with its own why ("You lose the run")', () => {
+    const r = quick({}, `${AT_EDGE} var need = Math.ceil(raceThrowClearC()*RACE_THROW_FULL);
+      ${CHARGE('need - 8')}
+      var fl = { clears:RACE.flight.clears, x1:RACE.flight.x1 }, thrown = RACE.thrown;
+      var n = 0; while (running && n < 400){ adv(1); n++; }
+      return { fl:fl, thrown:thrown, need:need, t:__t, over:RACE.over, won:RACE.won, end:window.__raceEnd, why:window.__raceResult && window.__raceResult.why, ranAs:window.__raceResult && window.__raceResult.fighter,
+        title:document.getElementById('resultTitle').textContent, sub:document.getElementById('resultSub').textContent, marshOver:RACE.marshOver, bridge:!!RACE.bridge, retry:!!RACE.retry, x:Math.round(marsh.x), far:RACE.farX, edge:RACE.edge, youDead:you.dead, frames:n };`);
+    expect(r.t).toBe(r.need - 8);
+    expect(r.fl.clears).toBe(false);
+    expect(r.thrown).toBe(true);
+    expect(r.marshOver, 'she never got across').toBe(false);
+    expect(r.bridge, 'so there is no bridge').toBe(false);
+    expect(r.x, 'she is in the gap').toBeGreaterThan(r.edge);
+    expect(r.x).toBeLessThan(r.far);
+    expect([r.over, r.won, r.end]).toEqual([true, false, false]);
+    expect(r.why, 'its own why').toBe('short');
+    expect(r.ranAs, 'the chain\'s onEnd still reads who ran').toBe('Knife');
+    expect(r.title).toBe('Marshmallow fell short');
+    expect(r.sub).toMatch(/gap/);
+    expect(r.retry).toBe(true);
+    expect(r.youDead, 'Knife is fine: it is the run that is lost').toBe(false);
+    expect(r.frames, 'a moment after she lands, not long after').toBeLessThan(200);
+  });
+
+  it('the arc she flies is the arc the preview showed: the plan at a charge is the flight at that charge', () => {
+    const r = quick({}, `${AT_EDGE} hold({smash:true}); adv(120);
+      var plan = raceThrowPlan(you, marsh, RACE.charge.t/RACE_THROW_FULL), t = RACE.charge.t, pts = [];
+      hold({}); adv(1); var fl = RACE.flight; var same = { x0:fl.x0, y0:fl.y0, x1:fl.x1, y1:fl.y1, n:fl.n, peak:fl.peak, clears:fl.clears };
+      var seen = []; var k = 0; while (RACE.flight && k < 300){ adv(1); k++; if (RACE.flight){ var q = raceThrowPoint(fl, Math.min(1, fl.t/fl.n)); seen.push(Math.abs(marsh.x - q.x) + Math.abs(marsh.y - q.y)); } }
+      return { plan:{ x0:plan.x0, y0:plan.y0, x1:plan.x1, y1:plan.y1, n:plan.n, peak:plan.peak, clears:plan.clears }, same:same, t:t, off:Math.max.apply(null, seen), landed:{ x:marsh.x, y:marsh.y, over:RACE.marshOver }, peakY:Math.min(fl.y0, fl.y1) - fl.peak, floor:RACE.floorY };`);
+    expect(r.same, 'the same').toEqual(r.plan);
+    expect(r.off, 'she is where the arc says, every frame').toBeLessThan(1);
+    expect(r.landed.over).toBe(true);
+    expect(Math.abs(r.landed.x - r.plan.x1)).toBeLessThan(1);
+    expect(r.peakY, 'up and over').toBeLessThan(r.floor - 150);
+  });
+
+  it('enough charge carries her across in an arc; once she lands the bridge appears; crossing it wins', () => {
+    const r = quick({}, `${AT_EDGE} var need = Math.ceil(raceThrowClearC()*RACE_THROW_FULL) + 12;
+      ${CHARGE('need')}
+      var out = { t:__t, need:need, fired:!!RACE.flight, thrown:RACE.thrown, held:!!marsh._raceHeld, in:marsh._raceThrown, bridgeDuringFlight:false, flew:[], peakY:marsh.y, clears:RACE.flight.clears };
+      var n = 0; while (RACE.flight && n < 300){ adv(1); out.peakY = Math.min(out.peakY, marsh.y); if (RACE.bridge) out.bridgeDuringFlight = true; if (n%10===0) out.flew.push(Math.round(marsh.x)); n++; }
+      out.flight = n; out.landed = { x:Math.round(marsh.x), y:Math.round(marsh.y + marsh.r), over:RACE.marshOver, far:RACE.farX, floor:RACE.floorY, bridge:!!RACE.bridge, land:RACE.landX };
+      var m = 0; while (!RACE.bridge && m < 100){ adv(1); m++; }
       out.bridgeAfter = m; out.bridge = RACE.bridge ? { x:RACE.bridge.x, w:RACE.bridge.w, y:RACE.bridge.y, inWorld:worldPlats.indexOf(RACE.bridge) >= 0 } : null;
       // cross it
-      you.controller = 'local'; hold({ right:true }); var k = 0; while (running && k < 400){ RACE.lineX = Math.min(RACE.lineX, you.x - 1500); step(); k++; } hold({});
-      out.cross = { frames:k, won:RACE.won, end:window.__raceEnd, why:window.__raceResult && window.__raceResult.why, x:Math.round(you.x), finish:RACE.finishX, title:document.getElementById('resultTitle').textContent };
+      hold({ right:true }); var k = 0; while (running && k < 400){ adv(1); k++; } hold({});
+      out.cross = { frames:k, won:RACE.won, end:window.__raceEnd, why:window.__raceResult && window.__raceResult.why, x:Math.round(you.x), finish:RACE.finishX, title:document.getElementById('resultTitle').textContent, ranAs:window.__raceResult && window.__raceResult.fighter };
       return out;`);
-    expect([r.fired, r.slung, r.hook]).toEqual([true, true, true]);
-    expect(r.flight, 'an arc, over some frames').toBeGreaterThan(20);
+    expect([r.fired, r.thrown, r.clears]).toEqual([true, true, true]);
+    expect(r.held, 'she is let go of').toBe(false);
+    expect(r.flight, 'an arc, over some frames').toBeGreaterThan(40);
     expect(r.peakY, 'up and over').toBeLessThan(r.landed.floor - 150);
     expect(r.bridgeDuringFlight, 'no bridge before she lands').toBe(false);
     expect(r.landed.over).toBe(true);
-    expect(r.landed.x, 'on the far side').toBeGreaterThan(r.landed.far);
+    expect(r.landed.x, 'on the far side').toBeGreaterThan(r.landed.far + 30);
     expect(r.landed.y).toBeCloseTo(r.landed.floor, 0);
     expect(r.landed.bridge, 'the bridge follows her landing').toBe(false);
     expect(r.bridgeAfter).toBeGreaterThan(0);
     expect(r.bridge).toBeTruthy();
     expect([r.bridge.x, r.bridge.x + r.bridge.w, r.bridge.inWorld]).toEqual([r.landed.far - 620, r.landed.far, true]);
     expect([r.cross.won, r.cross.end, r.cross.why]).toEqual([true, true, 'crossed']);
+    expect(r.cross.ranAs).toBe('Knife');
     expect(r.cross.x).toBeGreaterThan(r.cross.finish);
     expect(r.cross.title).toBe('RUNNING! cleared');
   });
 
-  it('the line reaching you while you wait at the edge is still a loss', () => {
-    const r = race({}, `${AT_EDGE} fireSpecial(you, {}); RACE.lineX = you.x - 60;
+  it('a hit, a jump, or her wandering off drops the charge: she is put down, nothing is thrown, and he can start again', () => {
+    const r = quick({}, `${AT_EDGE}
+      hold({smash:true}); adv(40); var a0 = RACE.charge.t; you.hitstun = 6; adv(1);
+      var hit = { charge:RACE.charge, held:!!marsh._raceHeld, thrown:RACE.thrown };
+      hold({}); adv(4); you.hitstun = 0; you.invuln = 0; adv(30); you.x = RACE.edge - 60; you.y = RACE.floorY - you.r; you.vx = 0; adv(3);
+      hold({smash:true}); adv(30); var b0 = RACE.charge.t; hold({smash:true, jump:true}); adv(2);
+      var jump = { charge:RACE.charge, held:!!marsh._raceHeld, thrown:RACE.thrown, on:you.onground };
+      hold({}); adv(80); you.x = RACE.edge - 60; you.y = RACE.floorY - you.r; you.vx = 0; you.vy = 0; marsh.x = you.x - 50; marsh.y = you.y; marsh.vx = 0; marsh.vy = 0; adv(3);
+      hold({smash:true}); adv(50); var again = RACE.charge && RACE.charge.t;
+      return { a0:a0, hit:hit, b0:b0, jump:jump, again:again, running:running && !RACE.over };`);
+    expect(r.a0).toBe(40);
+    expect([r.hit.charge, r.hit.held, r.hit.thrown]).toEqual([null, false, false]);
+    expect(r.b0).toBe(30);
+    expect([r.jump.charge, r.jump.held, r.jump.thrown]).toEqual([null, false, false]);
+    expect(r.again, 'and start again').toBe(50);
+    expect(r.running).toBe(true);
+  });
+
+  it('the line reaching you while you charge is still a loss', () => {
+    const r = race({}, `${AT_EDGE} hold({smash:true}); adv(30); RACE.lineX = you.x - 60;
       var n = 0; while (running && n < 200){ step(); n++; }
-      return { end:window.__raceEnd, why:window.__raceResult && window.__raceResult.why, frames:n };`);
+      return { end:window.__raceEnd, why:window.__raceResult && window.__raceResult.why, frames:n, held:!!marsh._raceHeld };`);
     expect(r.end).toBe(false);
     expect(r.why).toBe('caught');
+    expect(r.held, 'and she is put down with the race over').toBe(false);
+  });
+
+  it('shows the charge and the landing with no words: a ring while it is on offer, then a meter, a glow and the arc; drawing never throws', () => {
+    const r = race({}, `${AT_EDGE} var out = { ready:!!raceThrowReady(you), errs:[] };
+      var d = function(tag){ try{ drawRaceFx(); drawRaceBar(); }catch(e){ out.errs.push(tag + ': ' + e); } };
+      d('ready'); hold({smash:true}); adv(50); out.c50 = RACE.charge.t; d('short'); adv(80); d('long');
+      hold({}); adv(1); d('flight'); adv(30); d('flight2'); var n = 0; while (RACE.flight && n < 200){ adv(1); n++; } d('landed');
+      out.src = String(drawRaceFx) + String(raceDrawThrow); out.bar = String(drawRaceBar);
+      return out;`);
+    expect(r.ready, 'the throw is on offer at the edge').toBe(true);
+    expect(r.errs).toEqual([]);
+    expect(r.c50).toBe(50);
+    expect(r.src, 'the throw is drawn in the world').toMatch(/raceDrawThrow\(\)/);
+    for (const needle of ['raceThrowPlan', 'raceThrowClearC', 'RACE.charge']) expect(r.src, 'draws from the plan and the charge: ' + needle).toContain(needle);
+    expect(r.src, 'no words on the meter').not.toMatch(/fillText|strokeText/);
+    expect(r.bar, 'the progress bar tints the back half, where the episode\'s hazards begin').toContain('RACE_BACK_X');
+    expect(r.bar, 'and has no words either').not.toMatch(/fillText|strokeText/);
+  });
+
+  it('the camera reaches for the far side as he nears the edge, so the gap and the landing are in view', () => {
+    const r = race({}, `you.controller = 'still'; var lead = function(x){ you.x = x; return raceCamLead(); };
+      return { early:lead(RACE.edge - 3000), near:lead(RACE.edge - 1000 + 350), edge:lead(RACE.edge - 60), base:RACE_CAM_LEAD };`);
+    expect(r.early).toBe(r.base);
+    expect(r.near).toBeGreaterThan(r.base);
+    expect(r.edge).toBeGreaterThan(r.near);
+    expect(r.edge - r.base).toBeGreaterThanOrEqual(240);
+  });
+});
+
+describe('the hazards', () => {
+  // The lane's own hazards, one at a time: a flat endless floor, nothing else on the lane, everyone else out of the way.
+  // only(kind, i) leaves just that piston, piano, voice or memory (armed again); put(x) stands you there; adv(n) steps n frames.
+  const ISOLATE = `fighters.forEach(function(f){ if(f!==you){ f.dead = true; } });
+    worldPlats = [{ x:-4000, y:RACE.floorY, w:90000, h:60, solid:true, floor:0 }];
+    var HZ = RACE.hazards.slice(), PI = RACE.pianos.slice(), VO = RACE.voices.slice(), ME = RACE.memories.slice(), fy = RACE.floorY;
+    var only = function(kind, i){ RACE.hazards = kind==='piston' ? [HZ[i]] : []; RACE.pianos = kind==='piano' ? [PI[i]] : []; RACE.voices = kind==='voice' ? [VO[i]] : []; RACE.memories = kind==='memory' ? [ME[i]] : [];
+      RACE.waves = []; RACE.pianos.forEach(function(p){ p.state = 'idle'; p.t = 0; }); RACE.voices.forEach(function(v){ v.fired = false; }); };
+    var put = function(x){ you.controller = 'local'; you.x = x; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.slowed = 0; you.dead = false; you.jumps = 2; you.onground = false; you.pct = 0; hold({});
+      for(var i=0;i<2;i++){ RACE.lineX = you.x - 5000; step(); } };
+    var adv = function(n){ for(var i=0;i<n;i++){ RACE.lineX = you.x - 5000; step(); } };
+    only('none', 0);`;
+
+  it('a piston bumps whoever it comes down on -- a shove back and a stun, no damage: the lane never kills by itself -- and harder the further along it stands', () => {
+    const r = quick({}, `${ISOLATE}
+      var out = [];
+      [0, HZ.length - 1].forEach(function(i){
+        var h = HZ[i]; only('piston', i);
+        put(h.x + h.w/2); you.controller = 'still'; hold({});
+        hazardT = Math.round(((0.5 - h.phase) % 1 + 1) % 1 * h.period);   // the bottom of its cycle
+        adv(1);
+        var a = { bump:you._raceBumpT, stun:you.hitstun, vx:you.vx, pct:you.pct, dead:you.dead, want:h.stun, kx:h.kx, s:h.s };
+        adv(60); a.after = { pct:you.pct, dead:you.dead, over:RACE.over }; out.push(a);
+      });
+      // and the same piston, raised: a runner under it is not touched
+      var h0 = HZ[0]; only('piston', 0); put(h0.x + h0.w/2); you.controller = 'still'; hazardT = Math.round(((0.0 - h0.phase) % 1 + 1) % 1 * h0.period);
+      adv(1); var raised = { bump:you._raceBumpT, stun:you.hitstun, y:racePistonY(h0), floor:fy };
+      return { out:out, raised:raised };`);
+    for (const a of r.out) {
+      expect(a.bump, 'bumped').toBeGreaterThan(0);
+      expect(a.stun, 'stunned for its stun').toBe(a.want);
+      expect(a.bump, 'and a moment of grace after it: the stun and 16 frames (this one already counted)').toBe(a.want + 16 - 1);
+      expect(a.vx, 'shoved back').toBe(a.kx);
+      expect(a.pct, 'no damage').toBe(0);
+      expect([a.after.pct, a.after.dead, a.after.over]).toEqual([0, false, false]);
+    }
+    expect(r.out[1].want, 'the last stuns longer than the first').toBeGreaterThan(r.out[0].want);
+    expect(r.out[1].kx, 'and shoves harder').toBeLessThan(r.out[0].kx);
+    expect(r.raised.bump, 'raised, it clears him').toBe(0);
+    expect(r.raised.y + 120, 'its underside is well over his head').toBeLessThan(r.raised.floor - 100);
+  });
+
+  it('a piano spawns when you cross its trigger and lands a fixed time later on whoever is under it -- crushed, not before; jump and you are over it; run and you are through', () => {
+    const r = quick({}, `${ISOLATE}
+      var out = { through:[], crushed:null, over:null, spawn:null };
+      PI.forEach(function(p, i){
+        only('piano', i); put(p.trig - 150); you.vx = 6.4; hold({right:true});
+        var bumped = false, n = 0; while(n < 90){ adv(1); n++; if(you._raceBumpT > 0) bumped = true; }
+        out.through.push({ bumped:bumped, past:you.x > p.x + p.w + you.r });
+      });
+      var p0 = PI[0];
+      only('piano', 0); put(p0.trig - 40); var before = p0.state; adv(1); hold({}); you.controller = 'still';   // he stands short of the trigger, then on it
+      var still = p0.state; put(p0.x + p0.w/2); you.controller = 'still'; adv(1); out.spawn = { before:before, still:still, after:p0.state, T:p0.T };
+      var early = null; for(var k = 0; k < p0.T - 3; k++){ adv(1); if(you._raceBumpT > 0){ early = k; break; } }
+      var landed = null; for(var m = 0; m < 12; m++){ adv(1); if(p0.state === 'crash'){ landed = you._raceBumpT > 0; break; } }
+      out.crushed = { early:early, landed:landed, state:p0.state, bump:you._raceBumpT, stun:you.hitstun, vx:you.vx, pct:you.pct, want:p0.stun };
+      only('piano', 0); put(p0.x + p0.w/2); adv(1); p0.t = p0.T - 1; you.y = fy - you.r - 220; you.vy = 0; adv(1);
+      out.over = { state:p0.state, bump:you._raceBumpT };
+      return out;`);
+    expect(r.through.length).toBeGreaterThanOrEqual(3);
+    for (const t of r.through) expect([t.bumped, t.past], 'keep running: through it').toEqual([false, true]);
+    expect(r.spawn.before).toBe('idle');
+    expect(r.spawn.still, 'not before the trigger').toBe('idle');
+    expect(r.spawn.after, 'on it').toBe('fall');
+    expect(r.crushed.early, 'not before it lands').toBeNull();
+    expect(r.crushed.landed, 'crushed as it lands').toBe(true);
+    expect(r.crushed.stun).toBeGreaterThan(r.crushed.want - 4);
+    expect(r.crushed.vx, 'and shoved back').toBeLessThan(0);
+    expect(r.crushed.pct, 'no damage').toBe(0);
+    expect([r.over.state, r.over.bump], 'over it, in the air').toEqual(['crash', 0]);
+  });
+
+  it('the voice\'s wave rolls at you along the floor from its trigger and stops dead whoever it catches on the ground; one jump takes you over it', () => {
+    const r = quick({}, `${ISOLATE}
+      var out = [], speeds = [];
+      VO.forEach(function(v, i){
+        only('voice', i); put(v.trig - 5); hold({right:true});
+        var stopped = false, stun = 0, vxAtStop = null, n = 0, xs = [];
+        while(n < 120){ adv(1); n++; if(RACE.waves.length && n < 8) xs.push(RACE.waves[0].x); if(you._raceBumpT > 0 && !stopped){ stopped = true; vxAtStop = you.vx; } if(you._raceBumpT > 0) stun = Math.max(stun, you.hitstun); }
+        only('voice', i); put(v.trig - 5); hold({right:true});
+        var hit = false, hopped = false; n = 0;
+        while(n < 120){
+          var w = RACE.waves.find(function(q){ return q.x + q.th > you.x + you.r - you.r*2 && q.x - (you.x + you.r) < (MAXVX + q.sp)*18; });
+          hold({right:true, jump:!!(w && you.onground)}); adv(1); n++; if(!you.onground) hopped = true; if(you._raceBumpT > 0) hit = true;
+        }
+        out.push({ stopped:stopped, vxAtStop:vxAtStop, stun:stun, want:v.stun, hit:hit, hopped:hopped, sp:v.sp, step:xs.length > 2 ? +(xs[1] - xs[2]).toFixed(3) : null });
+      });
+      return out;`);
+    expect(r.length).toBeGreaterThanOrEqual(2);
+    for (const v of r) {
+      expect(v.stopped, 'stopped').toBe(true);
+      expect(v.vxAtStop, 'dead').toBe(0);
+      expect(v.stun).toBeGreaterThanOrEqual(v.want - 2);
+      expect(v.hopped && !v.hit, 'jumped, and it rolled under him').toBe(true);
+      expect(v.step, 'it moves at its own speed, toward him').toBeCloseTo(v.sp, 2);
+    }
+  });
+
+  it('a memory slows whoever runs through it, and for a while after; a double jump takes you over it untouched', () => {
+    const r = quick({}, `${ISOLATE}
+      var out = [];
+      ME.forEach(function(m, i){
+        only('memory', i); put(m.x - 200); you.vx = 6.4; hold({right:true});
+        var inside = 9, seen = 0, n = 0;
+        while(n < 130){ adv(1); n++; if(you.x + you.r > m.x && you.x - you.r < m.x + m.w){ inside = Math.min(inside, you.vx); seen++; } }
+        var xThrough = you.x, slowLeft = you.slowed;
+        only('memory', i); put(m.x - 200); you.vx = 6.4; hold({right:true}); n = 0; var slowedOver = 0;
+        while(n < 130){
+          var j = (you.onground && m.x - (you.x + you.r) < 90 && m.x - (you.x + you.r) > -10) || (!you.onground && you.jumps > 0 && you.vy > 0 && you.x < m.x + m.w - 20);
+          hold({right:true, jump:!!j}); adv(1); n++; if(you.slowed > 0) slowedOver++;
+        }
+        out.push({ inside:inside, seen:seen, slowedOver:slowedOver, xThrough:xThrough, xOver:you.x, cap:MAXVX*0.55, slow:m.slow });
+      });
+      return out;`);
+    expect(r.length).toBeGreaterThanOrEqual(2);
+    for (const m of r) {
+      expect(m.seen).toBeGreaterThan(10);
+      expect(m.inside, 'slowed inside').toBeLessThanOrEqual(m.cap + 0.01);
+      expect(m.slowedOver, 'over it, untouched').toBe(0);
+      expect(m.xOver, 'and further on for it').toBeGreaterThan(m.xThrough + 40);
+    }
+  });
+
+  it('a restart (R, or Retry) arms every hazard afresh: no piano is left fallen, no wave rolling, no charge held', () => {
+    const r = quick({}, `${ISOLATE}
+      PI.forEach(function(p){ p.state = 'crash'; p.t = 9; }); VO.forEach(function(v){ v.fired = true; }); RACE.waves = [{ x:5000, sp:6, h:80, th:46, stun:30 }];
+      RACE.charge = { t:50, who:marsh ? marsh.idx : 1, x:0 }; RACE.thrown = true; RACE.short = true; RACE.marshOver = true; RACE.landX = 22000;
+      startMatch();
+      var after = { pianos:RACE.pianos.map(function(p){ return p.state + ':' + p.t; }), voices:RACE.voices.map(function(v){ return v.fired; }), waves:RACE.waves.length, charge:RACE.charge, thrown:RACE.thrown, short:RACE.short, over:RACE.marshOver, land:RACE.landX, running:running, frames:RACE.frames };
+      return after;`);
+    expect(r.pianos.every((p) => p.startsWith('idle:'))).toBe(true);
+    expect(r.voices.every((f) => f === false)).toBe(true);
+    expect([r.waves, r.charge, r.thrown, r.short, r.over, r.land]).toEqual([0, null, false, false, false, 0]);
+    expect(r.running).toBe(true);
+  });
+
+  it('the runners jump the voice\'s wave when it is a jump away, and not before', () => {
+    const r = race({}, `${ISOLATE}
+      var fan = fighters.find(function(f){ return f.name==='Fan'; }); fan.dead = false; fan.controller = 'ai'; fan.x = 4000; fan.y = fy - fan.r; fan.vx = 6; fan.vy = 0; fan.onground = true;
+      RACE.obstacles = []; RACE.frames = 10;
+      var far = (RACE.waves = [{ x:fan.x + 900, sp:6, h:80, th:46, stun:30 }], raceRunnerAi(fan).jump);
+      fan.onground = true; fan._raceJumpHeld = false;
+      var near = (RACE.waves = [{ x:fan.x + 150, sp:6, h:80, th:46, stun:30 }], raceRunnerAi(fan).jump);
+      fan.onground = false; fan._raceJumpHeld = false;
+      var air = (RACE.waves = [{ x:fan.x + 150, sp:6, h:80, th:46, stun:30 }], raceRunnerAi(fan).jump);
+      return { far:far, near:near, air:air };`);
+    expect(r.far, 'not yet').toBe(false);
+    expect(r.near, 'now').toBe(true);
+    expect(r.air, 'once, on the ground').toBe(false);
+  });
+
+  it('drawing every hazard live, in view, never throws', () => {
+    const r = race({}, `${ISOLATE} var out = { errs:[] };
+      var d = function(tag){ try{ drawRaceFx(); drawRaceBar(); }catch(e){ out.errs.push(tag + ': ' + e); } };
+      HZ.forEach(function(h){ RACE.hazards.push(h); }); PI.forEach(function(p){ RACE.pianos.push(p); }); VO.forEach(function(v){ RACE.voices.push(v); }); ME.forEach(function(m){ RACE.memories.push(m); });
+      RACE.pianos = PI; RACE.hazards = HZ; RACE.memories = ME;
+      PI.forEach(function(p, i){ p.state = ['fall', 'crash', 'idle', 'done'][i % 4]; p.t = 12; });
+      RACE.waves = VO.map(function(v){ return { x:v.x0, sp:v.sp, h:v.h, th:v.th, stun:v.stun }; });
+      var all = HZ.map(function(h){ return h.x; }).concat(PI.map(function(p){ return p.x; }), RACE.waves.map(function(w){ return w.x; }), ME.map(function(m){ return m.x; }));
+      all.forEach(function(x, i){ camX = x - W/2; camY = 0; you.x = x; d('at ' + Math.round(x)); });
+      out.n = all.length; out.src = String(drawRaceFx);
+      return out;`);
+    expect(r.errs).toEqual([]);
+    expect(r.n).toBeGreaterThanOrEqual(12);
+    expect(r.src, 'no words on the hazards').not.toMatch(/fillText|strokeText/);
   });
 });
 
@@ -291,19 +809,6 @@ describe('a fall, and what is said', () => {
     expect(r.marshPct).toBe(0);
     expect(r.banners).toEqual([]);
     expect(r.last).toBeNull();
-  });
-
-  it('no text during the run but GO!: a whole scripted run and a caught run say nothing else', () => {
-    const r = race({}, `${BOT}
-      var a = __run(you, hold, 4000, 0); var wonA = RACE.won;
-      var seenA = window.__banners.slice(__b0), b0 = window.__banners.length;
-      startRunningRace({ onEnd:function(){ return true; } }); you = fighters.find(function(f){ return f.you; }); you.controller = 'still';
-      var n = 0; while (running && n < 2000){ step(); n++; }
-      return { wonA:wonA, framesA:a.frames, seenA:seenA.map(function(b){ return b.text + '|' + (b.kind||''); }), seenB:window.__banners.slice(b0).map(function(b){ return b.text + '|' + (b.kind||''); }), err:!!window.__loopErrLogged };`);
-    expect(r.wonA).toBe(true);
-    expect(r.seenA, 'the winning run').toEqual(['GO!|']);
-    expect(r.seenB, 'the caught run').toEqual(['GO!|']);
-    expect(r.err, 'the loop never threw').toBe(false);
   });
 
   it('leaving the race puts the player\'s own mode, count, stage and pick back; only its result screen keeps the Retry', () => {
