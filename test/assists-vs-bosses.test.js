@@ -37,7 +37,7 @@ const RUN = (idx, act, dx, n) => `(function(){
   summons = []; projectiles = []; running = false; return out;
 })()`;
 
-const MEPHONE4 = 6, FOUR = 11;
+const MEPHONE4 = 5, FOUR = 11;   // MePhone4 is Boss 6 (index 5) since the Purple Dragon moved to Boss 9 ("just move purple dragon!!!", 2026-09-30)
 // act -> [the number it deals a fighter, how far from the boss Firey stands when it is summoned]
 const HURTS = { rush: [15, 60], crush: [21, 60], bolt: [12, 150], vortex: [4.5, 60], cart: [12, 60], bounce: [9, 60], staple: [6, 120], mines: [27, 40], pull: [1.5, 60] };
 
@@ -106,7 +106,7 @@ describe('assist trophies hurt the boss', () => {
 describe('assist trophies and MePhone4\'s adds', () => {
   const ADD = (name, pick) => `(function(){
     SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
-    BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+    BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
     worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
     var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), WW*0.5 + 300, groundY()-24, 0);
     f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
@@ -157,7 +157,7 @@ describe('what is skipped on a boss, and why', () => {
       var out = {};
       function stage(act){
         SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
-        BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+        BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
         worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
         var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), WW*0.5 + 200, groundY()-24, 0);
         f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
@@ -187,7 +187,7 @@ describe('what is skipped on a boss, and why', () => {
   it('Black Hole chips a boss but does not drag it; Stapy hits a boss but does not pin it', () => {
     const r = W.eval(`(function(){
       SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
-      BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+      BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
       var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), WW*0.5 + 200, groundY()-24, 0);
       f.team=0; f.controller='still'; f.stocks=9; fighters=[f];

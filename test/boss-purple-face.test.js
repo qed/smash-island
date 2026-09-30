@@ -56,7 +56,7 @@ describe('Purple Face is Boss 5, rebuilt', () => {
     })()`);
     expect(r.row).toEqual(ROW);
     expect(r.i, 'Boss 5').toBe(4);
-    expect([r.prev, r.next]).toEqual(['The Bug Swarm', 'Purple Dragon']);
+    expect([r.prev, r.next]).toEqual(['The Bug Swarm', 'MePhone4']);   // MePhone4 follows him since the Dragon moved to Boss 9 ("just move purple dragon!!!", 2026-09-30)
     expect(r.n, 'the gauntlet is still twelve long').toBe(12);
     expect(r.extra).toEqual(['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes']);
     expect(r.names).toEqual(['FREESTYLE RAP!', 'TORTURE TIME!', 'THANK YOU FOR COMING!', 'TOTAL SLIP SHOES!']);

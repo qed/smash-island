@@ -30,7 +30,7 @@ const FFA = (actJs) => `
 // assist is summoned for Firey and watched `n` frames, and every frame his HP dropped is recorded with the drop.
 const RUN = (act, dx, n) => `(function(){
   SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
-  BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+  BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
   worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
   var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), WW*0.5 + ${dx}, groundY()-24, 0);
   f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
@@ -198,7 +198,7 @@ describe('the one-shots do more of their one thing', () => {
 describe('not a trophy, not touched', () => {
   it("MePhone4's adds keep three quarters of the cameo's own number and their 216-frame tenure", () => {
     const r = W.eval(`(function(){
-      BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+      BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
       var add = { type:'assist', hostile:true, act:'rush' }, trophy = { type:'assist', act:'rush' };
       return { add: [addDmg(add, 10), addDmg(add, 14), addDmg(add, 8), addDmg(add, 6)],
                trophy: [addDmg(trophy, 10), addDmg(trophy, 14), addDmg(trophy, 8), addDmg(trophy, 6)],
@@ -215,7 +215,7 @@ describe('not a trophy, not touched', () => {
   it('a downloaded add still stands its 216 + 40 frames, and Test Tube\'s Bot summon is gone: nothing of it is left to pin', () => {
     const r = W.eval(`(function(){
       var out = { gone: [typeof BOT_ASSIST, typeof BOT_DMG, typeof BOT_KB, typeof BOT_REACH, typeof BOT_CD, typeof BOT_SPECIAL_CD, typeof drawBotSummon] };
-      SETTINGS.mode='boss'; SETTINGS.stocks=99; SETTINGS.items=false; running=true; BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
+      SETTINGS.mode='boss'; SETTINGS.stocks=99; SETTINGS.items=false; running=true; BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
       var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), WW*0.5+300, groundY()-24, 0); f.team=0; f.controller='still'; fighters=[f];
       spawnBossRushBoss(); var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
