@@ -61,6 +61,19 @@ function stub2d(filter) {
     set: (_t, p, v) => { if (p === 'filter') state.filter = v; return true; },
   });
 }
+// A 2D context that writes down what is drawn: every call with its arguments, every style it is given.
+function rec2d() {
+  const log = [], sets = {}, grad = { addColorStop() {} };
+  const ctx = new Proxy({}, {
+    get: (_t, p) => (
+      (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createConicGradient' || p === 'createPattern') ? () => grad
+        : p === 'measureText' ? () => ({ width: 0 })
+        : p === 'canvas' ? { width: 1100, height: 720 }
+        : (...a) => { log.push([String(p), a]); }),
+    set: (_t, p, v) => { (sets[p] = sets[p] || []).push(v); return true; },
+  });
+  return { ctx, log, sets };
+}
 function boot({ storage = {}, transform, rng = 7, filter = false } = {}) {
   let html = SRC; if (transform) html = transform(html);
   const dom = new JSDOM(html, {
@@ -393,8 +406,8 @@ describe('cosmetics', () => {
         names.forEach(function(name, i){
           if (i % 2 !== ${parity}) return;
           var r = ROSTER.find(function(x){ return x.name===name; });
-          var pick = { skin: K('skin')[i % 7].id, hat: K('hat')[i % 8].id, trail: K('trail')[i % 5].id, ko: K('ko')[i % 5].id,
-                       pose: K('pose')[i % 4].id, card: K('card')[i % 5].id, title: K('title')[i % 6].id };
+          var at = function(k){ var l = K(k); return l[i % l.length].id; };   // each kind round and round, so every look is worn by several fighters
+          var pick = { skin: at('skin'), hat: at('hat'), trail: at('trail'), ko: at('ko'), pose: at('pose'), card: at('card'), title: at('title') };
           equipCos('skin', pick.skin, name); equipCos('hat', pick.hat, name);
           ['trail','ko','pose','card','title'].forEach(function(k){ equipCos(k, pick[k]); });
           Object.keys(pick).forEach(function(k){ used[pick[k]] = 1; });
@@ -479,6 +492,121 @@ describe('cosmetics', () => {
     expect(r.you).toEqual({ skin: null, hat: 'hat_top', trail: 'tr_leaf', ko: null });
     expect(r.ai).toBe(null);
     expect(r.unowned, 'nothing can be worn that was not got with tokens').toBe(false);
+  });
+});
+
+// MORE CANON LOOKS. The owner: "make cosmetics more personalized." Asked what personalized means: "more canon items." Twenty
+// looks, all drawn in code (the Store may not fetch a picture): five hats, four trails, four KO effects, two poses, three cards
+// and two titles, each from the show (BFDI and Inanimate Insanity wikis), and the Yoylecake Hat redrawn in the cake's own colours.
+describe('the canon looks', () => {
+  // [id, kind, name, price]: the approved twenty, appended after the looks the shop already had.
+  const NEW_LOOKS = [
+    ['acc_headphones', 'hat', 'Revolutionary Headphones', 115], ['hat_regcake', 'hat', 'Regular Cake', 115], ['acc_wings', 'hat', 'Wings', 150],
+    ['hat_shimegg', 'hat', 'Shimmer Egg', 75], ['acc_reversal', 'hat', 'Reversal Sunglasses', 115],
+    ['tr_wintoken', 'trail', 'Win Token Trail', 150], ['tr_melife', 'trail', 'MeLife Download', 150], ['tr_candycorn', 'trail', 'Candy Corn Trail', 115],
+    ['tr_cherryjet', 'trail', 'Cherry Filling Jets', 115],
+    ['ko_cake', 'ko', 'Cake Toss', 115], ['ko_scoop', 'ko', 'Sender Scoop', 150], ['ko_fist', 'ko', 'Fist Thingy', 150], ['ko_balloons', 'ko', 'Balloon Lift-off', 115],
+    ['po_yoyledance', 'pose', 'Yoyle Dance', 115], ['po_melife', 'pose', 'MeLife Recovery', 150],
+    ['cd_yoyleflag', 'card', 'Flag of Yoyleland', 115], ['cd_idiotic', 'card', 'Idiotic Island', 75], ['cd_purgatory', 'card', 'Purgatory Mansion', 115],
+    ['ti_grandcake', 'title', 'Grand Cake Winner', 150], ['ti_idiotic', 'title', 'Idiotic Island Alumnus', 45],
+  ];
+  // The order a kind had before them. Append-only: an online look travels as its position in its kind (cosNetCode).
+  const OLD_ORDER = {
+    hat: ['hat_party', 'hat_top', 'hat_leaf', 'hat_cake', 'hat_halo', 'acc_shades', 'acc_bow', 'hat_crown'],
+    trail: ['tr_spark', 'tr_ember', 'tr_bubble', 'tr_leaf', 'tr_rainbow'],
+    ko: ['ko_confetti', 'ko_stars', 'ko_berry', 'ko_token', 'ko_zap'],
+    pose: ['po_hop', 'po_spin', 'po_wave', 'po_flip'],
+    card: ['cd_goiky', 'cd_dream', 'cd_yoyle', 'cd_cake', 'cd_canyon'],
+    title: ['ti_contestant', 'ti_dreamer', 'ti_yoyle', 'ti_survivor', 'ti_collector', 'ti_legend'],
+  };
+
+  it('are in the shop at the approved names and tiers, after everything the shop already had', async () => {
+    const w = await ready();
+    const rows = w.eval('COSMETICS.map(function(c){ return [c.id, c.kind, c.name, c.price]; })');
+    for (const [id, kind, name, price] of NEW_LOOKS) expect(rows.find((r) => r[0] === id), id).toEqual([id, kind, name, price]);
+    for (const [kind, old] of Object.entries(OLD_ORDER)) {
+      const added = NEW_LOOKS.filter((l) => l[1] === kind).map((l) => l[0]);
+      expect(w.eval(`cosOfKind('${kind}').map(function(c){ return c.id; })`), `${kind}: the old looks keep their places, the new ones follow`).toEqual(old.concat(added));
+    }
+    expect(NEW_LOOKS).toHaveLength(20);
+    for (const [kind, n] of [['hat', 13], ['trail', 9], ['ko', 9]]) expect(w.eval(`cosOfKind('${kind}').length`)).toBe(n);
+  });
+
+  it('are drawn in code: no picture, no lettering, on every hat, trail and KO effect', async () => {
+    const w = await ready();
+    const hats = NEW_LOOKS.filter((l) => l[1] === 'hat'), trails = NEW_LOOKS.filter((l) => l[1] === 'trail'), kos = NEW_LOOKS.filter((l) => l[1] === 'ko');
+    const check = (r, what) => {
+      expect(r.log.length, `${what} draws something`).toBeGreaterThan(0);
+      expect(r.log.filter((e) => /^(drawImage|fillText|strokeText|putImageData)$/.test(e[0])).map((e) => e[0]), `${what}: no picture and no lettering`).toEqual([]);
+    };
+    for (const [id] of hats) { const r = rec2d(); w.eval('drawCosHat')(r.ctx, id, 1, -24, -4); check(r, id); }
+    for (const [id] of trails) { const r = rec2d(); w.eval('drawCosTrail')(r.ctx, id, { vx: 8, vy: -2, r: 24 }, 1); check(r, id); }
+    for (const [id] of kos) for (const t of [2, 9, 16, 30, 47]) { const r = rec2d(); w.eval('drawKoBurst')(r.ctx, id, 100, 100, t); check(r, `${id} at frame ${t}`); }
+    // The pose and card kinds are CSS. Gradients only: no picture is fetched for a card.
+    for (const c of w.eval("cosOfKind('card').map(function(c){ return c.bg; })")) { expect(c).toMatch(/gradient\(/); expect(c).not.toMatch(/url\(/); }
+  });
+
+  it('the Win Token Trail is the show\'s GREEN token with no letters; the Yoylecake Hat is violet, neon green and custard yellow', async () => {
+    const w = await ready();
+    const trail = rec2d(); w.eval('drawCosTrail')(trail.ctx, 'tr_wintoken', { vx: 8, vy: -2, r: 24 }, 1);
+    expect(trail.sets.fillStyle).toEqual(expect.arrayContaining(['#008400', '#00b002']));
+    expect(trail.sets.strokeStyle).toContain('#155d09');
+    expect([].concat(trail.sets.fillStyle, trail.sets.strokeStyle).filter((c) => /^#(ffd23f|ffd700|f2c84b|e8a33d)$/i.test(c)), 'not gold: it is not money').toEqual([]);
+    const cake = rec2d(); w.eval('drawCosHat')(cake.ctx, 'hat_cake', 1, -24, -4);
+    expect(cake.sets.fillStyle).toEqual(expect.arrayContaining(['#9900fe', '#45ef0c', '#fefe67']));
+    expect(cake.sets.fillStyle, 'the old tan cake with its purple berry is gone').not.toContain('#f2d7a0');
+    expect(cake.sets.fillStyle).not.toContain('#6a4ad0');
+    const reg = rec2d(); w.eval('drawCosHat')(reg.ctx, 'hat_regcake', 1, -24, -4);
+    expect(reg.sets.fillStyle, 'the Regular Cake is pink under red icing and white cream').toEqual(expect.arrayContaining(['#ffc2c2', '#d64343', '#fdfdfd']));
+    const dl = rec2d(); w.eval('drawCosTrail')(dl.ctx, 'tr_melife', { vx: 8, vy: -2, r: 24 }, 1);
+    expect(dl.sets.fillStyle, 'MeLife green').toContain('#58ff78');
+  });
+
+  it('the wings, the headphones and the glasses sit on the eye line; hats sit on the top of the head', async () => {
+    const w = await ready();
+    const first = (id) => { const r = rec2d(); w.eval('drawCosHat')(r.ctx, id, 1, -24, -4); return r.log.find((e) => e[0] === 'translate')[1]; };
+    for (const id of ['acc_shades', 'acc_headphones', 'acc_wings', 'acc_reversal']) expect(first(id), id).toEqual([0, -4]);
+    for (const id of ['hat_party', 'hat_cake', 'hat_regcake', 'hat_shimegg', 'hat_crown']) expect(first(id), id).toEqual([0, -24]);
+  });
+
+  it('the Sender Scoop and the Fist Thingy work from the side of the KO point nearer the middle of the stage', async () => {
+    const w = await ready();
+    const WW = w.eval('WW');
+    const at = (id, x, t) => { const r = rec2d(); w.eval('drawKoBurst')(r.ctx, id, x, 100, t); return r; };
+    const glove = (x) => at('ko_fist', x, 3).log.filter((e) => e[0] === 'translate')[1][1][0];   // the first translate is the KO point itself
+    expect(Math.sign(glove(100)), 'a KO at the left edge: the glove comes from the right').toBe(1);
+    expect(Math.sign(glove(WW - 100)), 'a KO at the right edge: from the left').toBe(-1);
+    const arm = (x) => at('ko_scoop', x, 3).log.find((e) => e[0] === 'lineTo')[1][0];
+    expect(Math.sign(arm(100))).toBe(1);
+    expect(Math.sign(arm(WW - 100))).toBe(-1);
+    // Balloons rise: later frames are higher. The cake burst is fourteen pieces, in the existing loop.
+    const ys = (t) => Math.min(...at('ko_balloons', 100, t).log.filter((e) => e[0] === 'ellipse').map((e) => e[1][1]));
+    expect(ys(20)).toBeLessThan(ys(4));
+    expect(at('ko_cake', 100, 20).log.filter((e) => e[0] === 'rotate').length).toBe(14);
+  });
+
+  it('the two new poses are CSS, and stand still for anyone who asks for less motion', async () => {
+    for (const id of ['po_yoyledance', 'po_melife']) {
+      expect(SRC, id).toContain(`.pose-${id}{animation:`);
+    }
+    expect(SRC).toMatch(/@keyframes poseYoyleDance/);
+    expect(SRC).toMatch(/@keyframes poseMeLife\{[^}]*clip-path:inset\(100% 0 0 0\)/);
+    expect(SRC, 'the MeLife glow').toMatch(/poseMeLife[\s\S]{0,400}#58ff78/);
+    const w = await ready();
+    const poses = w.eval("cosOfKind('pose').map(function(c){ return c.id; })");
+    const reduced = SRC.match(/@media \(prefers-reduced-motion: reduce\)\{([^\n]*)\}/)[1];
+    for (const id of poses) {
+      expect(SRC, `${id} has its class`).toContain(`.pose-${id}{`);
+      expect(reduced, `${id} stops for reduced motion`).toContain(`.pose-${id}`);
+    }
+  });
+
+  it('every look\'s Store preview draws without a fault', async () => {
+    const w = await ready();
+    const r = w.eval(`(function(){ go('store'); return { cells: document.querySelectorAll('#storeList .scell').length, total: COSMETICS.length,
+      err: COS_DRAW_ERR ? String(COS_DRAW_ERR.stack || COS_DRAW_ERR) : null }; })()`);
+    expect(r.err).toBe(null);
+    expect(r.cells).toBe(r.total);
   });
 });
 
