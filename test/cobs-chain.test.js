@@ -174,7 +174,7 @@ describe('the codes ("directly", "Both")', () => {
     expect(r3).toMatchObject({ kind: 'hint', step: 3, reply: '★ Static on the line: step 3.' });
     expect(r3.text).toContain('run its lane as the blade');
     expect(r3.text).toContain('the line behind you never stops');
-    expect(r3.text).toContain('the marshmallow goes over the last gap on the hook before you cross');
+    expect(r3.text).toContain('the marshmallow goes over the last gap on a long, charged throw before you cross');   // the throw is a charged smash now ("Charged smash", 2026-09-30)
     expect(r3.text).toContain('the cup the whole world fights for, three times, as the three who came second: the blade, then the balloon, then the taco, with no loss between');
     expect(r3.text).toContain("It's written over my door");
     for (const s of CODES[3]) expect(sub(W, s), s).toMatchObject({ kind: 'again', step: 3 });
