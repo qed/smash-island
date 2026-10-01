@@ -9,7 +9,8 @@ import { mulberry32 } from './helpers/prng.js';
 // PURPLE FACE, Boss 5, REBUILT (the boss overhaul, 2026-09-29: boss-overhaul-decisions.md, Rounds 10-13). The owner's approved kit:
 //   AD BREAK!      the signature, redone: "the swallow becomes a lunge you can dodge" (it grabbed the nearest fighter from anywhere); the
 //                  stomach, its acid and its tongue stay as they were
-//   FREESTYLE RAP! "2 should be uninterruptable." -- the beat cannot be stopped, and three pulses roll across the floor every time
+//   FREESTYLE RAP! "2 should be uninterruptable." -- the beat cannot be stopped, and three pulses come every time -- and, 2026-10-01 (Round 17), "purple
+//                  faces notes should be in varied areas.": each pulse from a spot of its own, on the floor or the platform, drawn fresh every use
 //   TORTURE TIME!  a glass tank closes over your spot, one bug inside becomes hundreds, then the tank bursts
 //   THANK YOU FOR COMING!  he pops up beside you, grows a leg and kicks, and totems roll out
 //   TOTAL SLIP SHOES!      clown shoes on the marked fighter: their footing turns slippery for 3 s -- a status, no damage
@@ -206,18 +207,31 @@ describe('AD BREAK!: a lunge you can dodge', () => {
   });
 });
 
-describe('FREESTYLE RAP!: a beat nothing can interrupt', () => {
-  it('he plants at centre for a 72-frame intro; then three pulses of notes roll out along the floor both ways, thirty frames apart, the third the big one, all one attack id', () => {
+describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change', () => {
+  // The owner, verbatim, 2026-10-01 (Round 17): "purple faces notes should be in varied areas." The notes used to roll out of his feet along the floor, the same
+  // three pulses from the same place every time. Each pulse has its own spot now, chosen when the beat starts (pfacePlanRap): one pulse rides the platform, the
+  // other two the floor, in any order, from spots across the stage -- the notes' count (six), damage (0.35, 0.35, 1) and attack id (one) are what they were, and
+  // so are the speeds and the thirty-frame beat. The tests that pinned "they roll along the floor from his feet" are rewritten for it.
+  const rnd0 = `var rnd = (function(seed){ var a = seed >>> 0; return function(){ a |= 0; a = (a + 0x6d2b79f5) | 0; var t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })`;
+  // the plan, forced (a wind-up has chosen its own: a test that wants a particular one sets it before the beat drops)
+  const PLAN = (arr) => `b._pf.rap.p = ${JSON.stringify(arr.map(([row, x]) => ({ row, x })))};`;
+  // watch a rap from the frame it fires: every note, the frame it first MOVES (a floor note waits out its delay; a platform pulse is made when its turn comes)
+  const WATCH = (frames, hold) => `(function(){ var notes = [], seen = [], gy = groundY(), L = pfaceLedge(), t = 0;
+    var look = function(){ projectiles.forEach(function(p){ if (!p.pfaceNote || seen.indexOf(p) >= 0) return; if (!(p.pfaceLedge || p.delay <= 0)) return; seen.push(p);
+      notes.push({ at: t, pulse: p.pfaceNote, row: p.pfaceLedge ? 'ledge' : 'floor', x: p.x, y: p.y, vx: p.vx, r: p.r, shape: p.shape, id: p.bossAtk, dmg: +(p.dmg/bossDmg()).toFixed(2) }); }); };
+    look();
+    for (var j=0;j<${frames};j++){ step(); t++; ${hold || ''} look(); }
+    return { notes: notes, gy: gy, L: L }; })()`;
+
+  it('he plants at centre for a 72-frame intro, then the beat drops: three pulses, thirty frames apart, the third the big one, two notes each, six in all on one attack id', () => {
     const r = W.eval(`(function(){ ${STAGE(200)}
       ${BEGIN('pfaceRap')}
+      ${PLAN([['floor', 700], ['ledge', 520], ['floor', 250]])}
       var out = { kind: b._telKind, tel: b._tel, bx: b.x, banner: document.getElementById('banner').textContent, shotsDuring: 0, WW: WW };
       for (var i=0;i<80 && b._tel>1;i++){ step(); f.x = 200; f.vx = 0; out.shotsDuring += projectiles.filter(function(p){ return p.owner===-2; }).length; }
-      step(); f.x = 200; f.vx = 0;
-      var k = projectiles.filter(function(p){ return p.owner===-2; });
-      out.n = k.length; out.shapes = k.map(function(p){ return p.shape; }); out.delays = k.map(function(p){ return p.delay; }); out.vx = k.map(function(p){ return p.vx; });
-      out.r = k.map(function(p){ return p.r; }); out.ids = k.map(function(p){ return p.bossAtk; }); out.dmg = k.map(function(p){ return +(p.dmg/bossDmg()).toFixed(2); }); out.full = bossDmg();
-      out.y = k.map(function(p){ return +(groundY() - p.y - p.r).toFixed(1); }); out.x = k.map(function(p){ return Math.round(p.x); });
-      out.gap = b._atkTimer;
+      f.invuln = 1e9; step();   // the frame it fires
+      out.gap = b._atkTimer; out.full = bossDmg();
+      var w = ${WATCH(140, 'f.x = 200; f.vx = 0; f.y = gy - 24; f.vy = 0; f.invuln = 1e9;')}; out.w = w;
       return out;
     })()`);
     expect(r.kind).toBe('pfaceRap');
@@ -225,19 +239,30 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt', () => {
     expect(r.banner).toBe('FREESTYLE RAP!');
     expect(r.bx, 'planted at centre').toBe(550);
     expect(r.shotsDuring, 'nothing flies during the intro').toBe(0);
-    expect(r.n, 'three pulses, two ways each').toBe(6);
-    expect(r.shapes.filter((s) => s === 'pfacenote')).toHaveLength(4);
-    expect(r.shapes.filter((s) => s === 'pfacestar'), 'the big one wears the pointy star').toHaveLength(2);
-    // read on the frame it fired, which has already counted each waiting pulse down once
-    expect(r.delays.slice().sort((a, b) => a - b), 'thirty frames apart').toEqual([0, 0, 29, 29, 59, 59]);
+    const n = r.w.notes;
+    expect(n, 'three pulses, two ways each: six notes').toHaveLength(6);
+    expect(n.filter((q) => q.shape === 'pfacenote')).toHaveLength(4);
+    expect(n.filter((q) => q.shape === 'pfacestar'), 'the big one wears the pointy star').toHaveLength(2);
+    // when each pulse starts to move: 0, 30, 60 frames after the beat dropped (a platform pulse is made on its turn, so it can be a frame off)
+    const starts = [1, 2, 3].map((p) => Math.min(...n.filter((q) => q.pulse === p).map((q) => q.at)));
+    expect(starts[0]).toBeLessThanOrEqual(1);
+    expect(starts[1], 'thirty frames apart').toBeGreaterThanOrEqual(29); expect(starts[1]).toBeLessThanOrEqual(31);
+    expect(starts[2]).toBeGreaterThanOrEqual(59); expect(starts[2]).toBeLessThanOrEqual(61);
     expect(W.eval('PFACE.rap.delays[1]'), 'the table: thirty frames apart').toEqual([0, 30, 60]);
-    expect(r.vx.filter((v) => v > 0)).toHaveLength(3);
-    expect(r.vx.filter((v) => v < 0)).toHaveLength(3);
-    expect(Math.abs(r.vx[0]), 'phase 1 speed').toBe(8);
-    expect(Math.max(...r.r), 'the third is the big one').toBe(26);
-    expect(new Set(r.ids).size, 'one attack id: the whole rap is one boss hit').toBe(1);
-    expect(r.dmg.slice().sort((a, b) => a - b)).toEqual([0.35, 0.35, 0.35, 0.35, 1, 1]);
-    expect(r.y.every((y) => y === 0), 'they roll along the floor').toBe(true);
+    expect(n.filter((q) => q.vx > 0)).toHaveLength(3);
+    expect(n.filter((q) => q.vx < 0)).toHaveLength(3);
+    expect(Math.abs(n[0].vx), 'phase 1 speed').toBe(8);
+    expect(Math.max(...n.map((q) => q.r)), 'the third is the big one').toBe(26);
+    expect(new Set(n.map((q) => q.id)).size, 'one attack id: the whole rap is one boss hit').toBe(1);
+    expect(n.map((q) => q.dmg).sort((a, b) => a - b)).toEqual([0.35, 0.35, 0.35, 0.35, 1, 1]);
+    // the planned places: pulse 1 on the floor from 700, pulse 2 on the platform from 520, pulse 3 on the floor from 250 -- each note one `off` out from its spot
+    const off = W.eval('PFACE.rap.off');
+    for (const q of n) {
+      const plan = [['floor', 700], ['ledge', 520], ['floor', 250]][q.pulse - 1];
+      expect(q.row, `pulse ${q.pulse}'s row`).toBe(plan[0]);
+      expect(Math.abs(q.x - (plan[1] + Math.sign(q.vx) * off)), `pulse ${q.pulse}'s note starts ${off} px either side of its spot (it has moved a frame by the time it is seen)`).toBeLessThanOrEqual(Math.abs(q.vx) * 2);
+      expect(q.y, `pulse ${q.pulse} rides its row`).toBe(plan[0] === 'floor' ? r.w.gy - q.r : r.w.L.y - q.r);
+    }
     // PFACE.gaps[1] (116) times BOSS_PACE (1.2): "bosses should attack a bit slower" (the owner, 2026-09-30)
     expect(r.gap, 'the next turn is timed from the fire').toBe(139);
   });
@@ -248,58 +273,167 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt', () => {
       var hp0 = b.hp, hits = 0;
       for (var i=0;i<80 && b._tel>1;i++){ step(); f.x = 200; f.vx = 0; if (i % 6 === 0){ damageSummons(f, b.x, b.y, 200, 5); hits++; f.invuln = 0; } }
       var telAt = b._tel, kind = b._telKind, hpMid = b.hp;
-      step(); f.x = 200; f.vx = 0;
-      var k = projectiles.filter(function(p){ return p.owner===-2; });
-      var out = { hits: hits, hpLost: hp0 - b.hp, kind: kind, telAt: telAt, pulses: k.length, flung: b.x, delays: k.map(function(p){ return p.delay; }).sort(function(a,c){ return a-c; }), banner: document.getElementById('banner').textContent };
+      f.invuln = 1e9; step();
+      var out = { hits: hits, hpLost: hp0 - b.hp, kind: kind, telAt: telAt, flung: b.x, banner: document.getElementById('banner').textContent };
+      out.w = ${WATCH(130, 'f.x = 200; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 1e9;')};
       // ...and the same when the hits land while he is winding up in phase 3, with the tongue and everything else in play
       ${STAGE(200)}
       b.hp = b.maxHp*0.32; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
       ${BEGIN('pfaceRap')}
       var hp3 = b.hp;
       for (var j=0;j<70 && b._tel>1;j++){ step(); f.x = 200; f.vx = 0; if (j % 5 === 0) damageSummons(f, b.x, b.y, 200, 2); f.invuln = 0; }
-      out.p3hits = hp3 - b.hp;
-      step();
-      out.p3 = projectiles.filter(function(p){ return p.owner===-2; }).length; out.p3kind = b._telKind;
+      out.p3hits = hp3 - b.hp; f.invuln = 1e9; step();
+      out.p3 = ${WATCH(100, 'f.x = 200; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 1e9;')}.notes.length; out.p3kind = b._telKind;
       return out;
     })()`);
     expect(r.hpLost, 'the hits landed').toBeGreaterThan(30);
     expect(r.kind, 'and he is still rapping').toBe('pfaceRap');
-    expect(r.pulses, 'the beat dropped: all three pulses').toBe(6);
-    expect(r.delays).toEqual([0, 0, 29, 29, 59, 59]);
+    expect(r.w.notes.length, 'the beat dropped: all three pulses, six notes').toBe(6);
     expect(Math.abs(r.flung - 550), 'nobody flings him off the screen mid-rap (his canon weakness is not taken): a hit shoves him a couple of px, no more').toBeLessThan(40);
     expect(r.p3hits, 'phase 3: the hits landed').toBeGreaterThan(10);
     expect(r.p3, 'phase 3 the same').toBe(6);
   });
 
-  it('a pulse hits whoever stands on the floor in its way, the phase-2 third is late (off the beat), and the whole rap costs at most one boss hit', () => {
-    const r = W.eval(`(function(){ var out = {};
-      ${STAGE(250)}
+  it('a floor note hits whoever is on the floor in its way and a jump clears it; a note on the platform hits only whoever STANDS on the platform; a fighter on the other row is untouched, and the whole rap costs at most one boss hit', () => {
+    const run = (x, onPlat, plan, jump, ph) => W.eval(`(function(){ ${STAGE(x)}
+      var gy = groundY(), L = pfaceLedge();
+      ${ph > 1 ? `b.hp = b.maxHp*${ph === 2 ? 0.5 : 0.2}; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };` : ''}
       ${BEGIN('pfaceRap')}
-      for (var i=0;i<75 && b._tel>0;i++){ step(); f.x = 250; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 0; }
-      var hits = 0, last = 0; b._atkTimer = 1e9;
-      for (var j=0;j<260;j++){ step(); f.x = 250; f.vx = 0; f.y = groundY() - 24; f.vy = 0; if (f.pct > last + 0.001){ hits++; last = f.pct; } f.invuln = 0; }
-      out.floor = { pct: f.pct, hits: hits, cap: bossDmg() };
-      // a fighter in the air over the small ones is not hit by them
-      ${STAGE(250)}
-      ${BEGIN('pfaceRap')}
-      for (var i=0;i<75 && b._tel>0;i++){ step(); f.x = 250; f.y = groundY() - 24; f.invuln = 0; }
-      var air = 0;
-      for (var j=0;j<40;j++){ step(); f.x = 250; f.vx = 0; f.y = groundY() - 24 - 70; f.vy = 0; f.invuln = 0; }
-      out.air = f.pct;
-      // phase 2
-      ${STAGE(200)}
-      b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
-      ${BEGIN('pfaceRap')}
-      for (var i=0;i<70 && b._tel>0;i++){ step(); f.x = 200; }
-      out.p2 = { delays: projectiles.filter(function(p){ return p.owner===-2 && p.vx > 0; }).map(function(p){ return p.delay; }).sort(function(a,c){ return a-c; }), spd: Math.abs(projectiles.find(function(p){ return p.owner===-2; }).vx) };
-      return out;
-    })()`);
-    expect(r.floor.hits, 'the floor is dangerous').toBeGreaterThan(0);
-    expect(r.floor.pct, 'a fighter who takes every pulse still takes one boss hit at most').toBeLessThanOrEqual(r.floor.cap + 1e-6);
-    expect(r.air, 'a jump clears the small notes').toBe(0);
-    expect(r.p2.delays, 'the third comes late in phase 2: off the beat').toEqual([0, 29, 71]);
+      ${PLAN(plan)}
+      var y = ${onPlat ? 'L.y - 24' : 'groundY() - 24'}; f.x = ${x}; f.y = y; f.vx = 0; f.vy = 0; f.onground = true;
+      var hits = 0, last = 0, lows = 0;
+      for (var i=0;i<75 && b._tel>0;i++){ step(); f.x = ${x}; f.vx = 0; f.y = y; f.vy = 0; f.onground = true; f.invuln = 0; }
+      b._atkTimer = 1e9;
+      for (var j=0;j<260;j++){ step(); f.x = ${x}; f.vx = 0; f.y = ${jump ? 'y - 70' : 'y'}; f.vy = 0; f.onground = ${jump ? 'false' : 'true'}; if (f.pct > last + 0.001){ hits++; last = f.pct; } f.invuln = 0; }
+      return { pct: f.pct, hits: hits, cap: bossDmg() }; })()`);
+    const floorPlan = [['floor', 700], ['floor', 250], ['floor', 950]], ledgePlan = [['ledge', 420], ['ledge', 680], ['ledge', 560]];
+    const standing = run(100, false, floorPlan, false, 1);
+    expect(standing.hits, 'the floor is dangerous to someone standing on it').toBeGreaterThan(0);
+    expect(standing.pct, 'a fighter who takes every pulse still takes one boss hit at most').toBeLessThanOrEqual(standing.cap + 1e-6);
+    expect(run(100, false, floorPlan, true, 1).pct, 'a jump clears the floor notes').toBe(0);
+    expect(run(560, true, floorPlan, false, 1).pct, 'a fighter standing on the platform is not touched by notes that ride the floor').toBe(0);
+    expect(run(560, true, ledgePlan, false, 1).hits, 'a note on the platform hits whoever stands on it').toBeGreaterThan(0);
+    expect(run(560, true, ledgePlan, true, 1).pct, 'and a jump clears it').toBe(0);
+    expect(run(560, false, ledgePlan, false, 1).pct, 'a fighter on the floor under the platform is not touched by the notes above him, jumping or not').toBe(0);
+    expect(run(560, false, ledgePlan, true, 1).pct).toBe(0);
+    // phase 2 and 3: quicker notes, and the third pulse late (off the beat) in phase 2
+    const p2 = W.eval(`(function(){ ${STAGE(200)} b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
+      ${BEGIN('pfaceRap')} ${PLAN([['floor', 700], ['floor', 250], ['floor', 950]])}
+      for (var i=0;i<70 && b._tel>1;i++){ step(); f.x = 200; }
+      f.invuln = 1e9; step(); var w = ${WATCH(130, 'f.x = 200; f.vx = 0; f.invuln = 1e9;')};
+      return { starts: [1,2,3].map(function(p){ return Math.min.apply(null, w.notes.filter(function(q){ return q.pulse === p; }).map(function(q){ return q.at; })); }), spd: Math.abs(w.notes[0].vx) }; })()`);
+    expect(p2.starts[2], 'the third comes late in phase 2: off the beat').toBeGreaterThanOrEqual(71);
+    expect(p2.starts[2]).toBeLessThanOrEqual(73);
     expect(W.eval('PFACE.rap.delays[2]')).toEqual([0, 30, 72]);
-    expect(r.p2.spd, 'and quicker').toBe(9.5);
+    expect(p2.spd, 'and quicker').toBe(9.5);
+  });
+
+  it('the places vary: from one use to the next, and across a volley -- three spots a use, one on the platform and two on the floor, in any order, apart from each other, off the walls, across the stage', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)} var gy = groundY(), L = pfaceLedge(), uses = [], ledgeAt = {};
+      for (var i=0;i<60;i++){ var p = pfacePlanRap(b, 1); uses.push(p.map(function(q){ return [q.row, q.x]; })); ledgeAt[p.findIndex(function(q){ return q.row === 'ledge'; })] = 1; }
+      // the same dice give the same plan (the tests seed them; the game's bosses use Math.random)
+      ${rnd0}; var a1 = JSON.stringify(pfacePlanRap(b, 1, rnd(9))), a2 = JSON.stringify(pfacePlanRap(b, 1, rnd(9))), a3 = JSON.stringify(pfacePlanRap(b, 1, rnd(10)));
+      return { uses: uses, ledgeAt: Object.keys(ledgeAt).sort(), L: L, same: a1 === a2, other: a1 !== a3, WW: WW, R: PFACE.rap }; })()`);
+    const R = r.R;
+    for (const u of r.uses) {
+      expect(u.map((q) => q[0]).sort(), 'one pulse on the platform, two on the floor').toEqual(['floor', 'floor', 'ledge']);
+      for (const [row, x] of u) {
+        if (row === 'floor') { expect(x).toBeGreaterThanOrEqual(R.margin); expect(x, 'off the walls').toBeLessThanOrEqual(r.WW - R.margin); }
+        else { expect(x, 'on the platform').toBeGreaterThanOrEqual(r.L.x0 + R.ledgeMargin); expect(x).toBeLessThanOrEqual(r.L.x1 - R.ledgeMargin); }
+      }
+    }
+    expect(r.uses.filter((u) => { const xs = u.map((q) => q[1]); return xs.every((x, i) => xs.every((y, j) => i === j || Math.abs(x - y) >= R.sep)); }).length, 'the spots of a volley keep their distance (all but the rare use that could not find room)').toBeGreaterThanOrEqual(58);
+    const key = (u) => JSON.stringify(u);
+    expect(new Set(r.uses.map(key)).size, 'a new plan almost every use').toBeGreaterThanOrEqual(55);
+    expect(r.ledgeAt, 'the platform pulse can be the first, the second or the third').toEqual(['0', '1', '2']);
+    const floorXs = r.uses.flatMap((u) => u.filter((q) => q[0] === 'floor').map((q) => q[1]));
+    expect(Math.min(...floorXs), 'the floor spots reach the left of the stage').toBeLessThan(260);
+    expect(Math.max(...floorXs), 'and the right').toBeGreaterThan(r.WW - 260);
+    expect(new Set(floorXs.map((x) => Math.floor(x/100))).size, 'across the whole width, not a few favourite places').toBeGreaterThanOrEqual(7);
+    expect(r.same, 'seeded dice give the same plan twice').toBe(true);
+    expect(r.other, 'and other dice another').toBe(true);
+  });
+
+  it('a use really draws its own plan: three beats in a row start with three different plans, fixed when the wind-up starts and the same all the way to the last note', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)} var plans = [], notesAt = [];
+      for (var k=0;k<3;k++){
+        b._pf = null; ${BEGIN('pfaceRap')}
+        var plan0 = JSON.stringify(b._pf.rap.p), t0 = b._tel;
+        for (var i=0;i<80 && b._tel>1;i++){ step(); f.x = 300; f.invuln = 1e9; }
+        var plan1 = JSON.stringify(b._pf.rap.p); step();
+        var w = ${WATCH(100, 'f.x = 300; f.invuln = 1e9;')};
+        plans.push({ same: plan0 === plan1, t0: t0, notes: w.notes.map(function(q){ return [q.pulse, q.row, Math.round(q.x - Math.sign(q.vx)*PFACE.rap.off)]; }).sort(), plan: JSON.parse(plan0) });
+        b._tel = 0; projectiles = []; b._atkTimer = 1e9;
+      }
+      return plans; })()`);
+    expect(new Set(r.map((p) => JSON.stringify(p.plan))).size, 'three uses, three plans').toBe(3);
+    for (const p of r) {
+      expect(p.same, 'fixed at the wind-up\'s start').toBe(true);
+      expect(p.t0).toBe(72);
+      // every note came from a spot of the plan (the platform's notes are made a frame later than their turn and have moved a little: within two frames of travel)
+      for (const [pulse, row, x] of p.notes) expect(Math.abs(x - p.plan[pulse - 1].x), `pulse ${pulse} came from its spot`).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it('each note shows where it will be before it can hurt: the three lanes are in the view from the first frame of the intro -- row, spot, and the beat\'s clock -- a client gets them too, and they are drawn', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)} ${BEGIN('pfaceRap')}
+      var out = { tel: b._tel, kind: b._telKind, view: JSON.parse(JSON.stringify(pfaceView(b))), plan: JSON.parse(JSON.stringify(b._pf.rap.p)), L: pfaceLedge(), len: PFACE.tel.pfaceRap };
+      var snap = JSON.parse(JSON.stringify(pfaceNet(b)));
+      out.net = snap; return out; })()`);
+    expect(r.kind).toBe('pfaceRap');
+    expect(r.tel, 'the whole intro to read it in').toBe(72);
+    expect(r.len.slice(1).every((t) => t >= 36), 'in every phase the intro is at least the usual 36 frames').toBe(true);
+    expect(r.view.rap.k, 'not dropped yet').toBe(-1);
+    expect(r.view.rap.p, 'the row (1: the platform) and the spot of each pulse, as planned').toEqual(r.plan.map((q) => [q.row === 'ledge' ? 1 : 0, q.x]));
+    expect(r.view.rap.l, 'and the platform they ride').toEqual([r.L.x0, r.L.x1, r.L.y]);
+    expect(r.net.rap, 'a netcode client gets the same').toEqual(r.view.rap);
+    // drawn: the lanes' bands on the recording canvas, over the floor and on the platform's top, with no text
+    const { w, log } = bootRecording();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false; BOSS_ARENA = 'warehouse';`);
+    const gy = w.eval('groundY()'), L = w.eval('pfaceLedge()'), WWp = w.eval('WW');
+    const bands = (rap, tel) => { w.eval(`(function(){ var gy = groundY(); summons = [{ type:'boss', name:'Purple Face', attack:'swallow', sprite:'face', r:88, x:550, y:gy-88, face:1, hp:100, maxHp:235, _phase:1, flash:0, _bossRush:true, _tel:${tel}, _telKind:'pfaceRap', _pf:{ rap:${JSON.stringify(rap)} } }]; })()`);
+      log.length = 0; w.eval('pfaceDrawFx(summons[0])'); w.eval('summons = []');
+      return log.filter((e) => e.op === 'fillRect' && e.args[3] === 44).map((e) => [Math.round(e.args[0]), Math.round(e.args[1] + 44), Math.round(e.args[2])]); };
+    const rap = { p: [[0, 300], [1, 520], [0, 900]], k: -1, ph: 1, l: [L.x0, L.x1, L.y] };
+    const b0 = bands(rap, 72);
+    expect(b0, 'at the first frame of the intro: a floor lane, a platform lane and a second floor lane').toEqual([[0, Math.round(gy), WWp], [L.x0, L.y, L.x1 - L.x0], [0, Math.round(gy), WWp]]);
+    expect(bands({ ...rap, k: 40 }, 0).length, 'forty frames after the beat dropped: the first lane is fading (it fades for 60 frames) and the other two are lit or about to be').toBe(3);
+    expect(bands({ ...rap, k: 200 }, 0), 'long after the last pulse: the lanes are gone').toEqual([]);
+    expect(log.filter((e) => ['fillText', 'strokeText'].includes(e.op)), 'no words').toEqual([]);
+    w.eval('BOSS_ARENA = null');
+  });
+
+  it('there is always a gap: a fighter who reads the lanes -- stands in a pocket or well clear of where the notes appear, then jumps each note that comes -- is never hit, on the floor or on the platform, in any phase, across many plans', () => {
+    const sim = (fx, onPlat, ph, seed) => W.eval(`(function(){ ${STAGE(fx)} var gy = groundY(), L = pfaceLedge(), JUMP_V = -12.5;
+      ${ph > 1 ? `b.hp = b.maxHp*${ph === 2 ? 0.5 : 0.2}; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };` : ''}
+      ${rnd0}; var r0 = rnd(${seed}); var saved = Math.random; Math.random = r0;
+      ${BEGIN('pfaceRap')}
+      Math.random = saved;
+      var onP = ${onPlat}, fx = ${fx}; f.y = onP ? L.y - 24 : gy - 24; f.onground = true;
+      var spots = [], origins = [];
+      b._pf.rap.p.forEach(function(q){ if ((q.row === 'ledge') === !!onP){ origins.push(q.x); spots.push(q.x - PFACE.rap.off); spots.push(q.x + PFACE.rap.off); } });
+      var lo = onP ? L.x0 + 20 : 40, hi = onP ? L.x1 - 20 : WW - 40;
+      var okX = function(x){ return spots.every(function(sx){ return Math.abs(x - sx) >= 140; }) || origins.some(function(o){ return Math.abs(x - o) <= 30; }); };
+      var bestX = fx; if (!okX(fx)){ for (var d=4; d<900; d+=4){ if (fx + d <= hi && okX(fx + d)){ bestX = fx + d; break; } if (fx - d >= lo && okX(fx - d)){ bestX = fx - d; break; } } }
+      var step0 = Math.abs(bestX - fx); fx = bestX; f.x = fx;
+      var hit = null, jumps = 0;
+      for (var i=0;i<330;i++){
+        b._atkTimer = 1e9; var need = 0;
+        if (b._tel <= 0 && !b._pf.rap && !projectiles.some(function(p){ return p.pfaceNote; })) break;   // the rap is over: its last note has left
+        projectiles.forEach(function(p){
+          if (!p.pfaceNote || !(p.life > 0) || (!!p.pfaceLedge) !== !!onP || (!p.pfaceLedge && p.delay > 0) || (f.x - p.x)*p.vx <= 0) return;
+          var t = (Math.abs(f.x - p.x) - (p.r + 22))/Math.abs(p.vx); if (t >= 0 && t <= 12) need = 1; });
+        if (need && f.onground){ f.vy = JUMP_V; f.onground = false; jumps++; }
+        var pct0 = f.pct; step(); f.x = fx; f.vx = 0; if (f.pct > pct0 + 1e-6 && hit === null) hit = i; }
+      return { hit: hit, jumps: jumps, plan: b._pf.rap ? 1 : 0, step: step0 }; })()`);
+    let n = 0, hits = 0, maxStep = 0, jumped = 0;
+    // (twelve fights of about 300 frames: three phases, two plans each -- seeded, so the same plans every run -- a fighter on the floor and one on the platform)
+    for (const ph of [1, 2, 3]) for (let seed = 1; seed <= 2; seed++) for (const [x, plat] of [[300, false], [560, true]]) {
+      const o = sim(x, plat, ph, seed * 11 + ph); n++; if (o.hit !== null) hits++; maxStep = Math.max(maxStep, o.step); if (o.jumps > 0) jumped++;
+    }
+    expect(hits, `${n} runs, nobody who read the lanes was hit`).toBe(0);
+    expect(maxStep, 'and the step out of the way was never more than the 72-frame intro allows at a run').toBeLessThanOrEqual(6 * 72);
+    expect(jumped, 'and the notes did come: a third of the runs or more needed a jump').toBeGreaterThanOrEqual(n/3);
   });
 });
 
@@ -590,6 +724,10 @@ describe("Yellow Face's Warehouse: the arena and its hazard", () => {
           var bb = Object.assign(boss(1, { _pf:{ tk:[[300, 3, 24], [300, 30, 24], [300, 60, 24], [700, 64, 18]], ring:500, shoe:[fighter.idx] } }), o);
           pfaceDrawFx(bb); pfaceDrawOver(bb); calls++; });
         fighter._swallow = 0;
+        // the rap's lanes (FREESTYLE RAP!, "purple faces notes should be in varied areas."): in the intro, as each pulse starts, after it, with and without a platform
+        [-1, 0, 20, 45, 75, 140, 200].forEach(function(k){ [1, 2, 3].forEach(function(ph){
+          pfaceDrawFx(boss(ph, { _tel: k < 0 ? 40 : 0, _telKind: k < 0 ? 'pfaceRap' : 'swallow', _pf:{ rap:{ p:[[0, 300], [1, 520], [0, 900]], k:k, ph:ph, l:[342, 758, 446] } } })); calls++;
+          pfaceDrawFx(boss(ph, { _pf:{ rap:{ p:[[0, 100], [0, 550], [0, 1000]], k:k, ph:ph, l:null } } })); calls++; }); });
         [0, 6, 13, 14, 20, 31, 36, 58, 90, 107, 108].forEach(function(dl){ pfaceDrawEnding({ x:500, delay: 108 - dl, face:-1 }); calls++; });
         var shapes = ['pfacenote','pfacebug','pfacetotem','pfacetotemw','pfaceshoe','pfacestar','pfacemagnet'];
         shapes.forEach(function(k){ drawProjectile({ x:300, y:300, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:k, r:20, vx:-6, vy:1, color:'#ff9ad8', pfaceNote:1, delay:0 }); calls++; });
@@ -602,7 +740,7 @@ describe("Yellow Face's Warehouse: the arena and its hazard", () => {
     })()`);
     expect(err).toMatch(/^ok \d+/);
     // and not one word in any of it
-    const src = W.eval(`[pfaceDrawTell, pfaceDrawFx, pfaceDrawOver, pfaceDrawStomach, pfaceDrawTank, pfaceDrawRing, pfaceDrawShoes, pfaceDrawEnding, pfaceDrawBossAt, pfaceDecor, pfaceHazardDraw,
+    const src = W.eval(`[pfaceDrawTell, pfaceDrawFx, pfaceDrawRap, pfaceDrawOver, pfaceDrawStomach, pfaceDrawTank, pfaceDrawRing, pfaceDrawShoes, pfaceDrawEnding, pfaceDrawBossAt, pfaceDecor, pfaceHazardDraw,
       pfaceDrawMagnet, pfaceDrawFortress, pfaceShelfArt, pfaceDrawShelf, pfaceGroundPattern, pfaceStar, pfaceLook].map(String).join('\\n')`);
     expect(src, 'no text is drawn by any of it').not.toMatch(/fillText|strokeText|\.font\s*=/);
   });
@@ -877,13 +1015,15 @@ describe('a netcode client sees him', () => {
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
       BOSS_ARENA = 'warehouse'; var gy = groundY(), me = fighters[0];
       var pf = { lunge:{ st:'run', dir:-1, x0:1018, x1:82, t:7, ph:2, n:2, id:1 }, tk:[{ id:1, x:300, age:40, close:24 }], ring:{ x:500, dir:1 }, kick:{ dir:1, t:5, id:2, hit:{} },
-                 shoes:{}, later:[], tid:1, sq:6, gl:30, pop:0, aim:null, hp:100 };
+                 shoes:{}, later:[], tid:1, sq:6, gl:30, pop:0, aim:null, hp:100,
+                 rap:{ p:[{ row:'floor', x:300 }, { row:'ledge', x:520 }, { row:'floor', x:900 }], k:20, ph:2, l:[342, 758, 446], id:9, q:[] } };
       pf.shoes[me.idx] = 1e9;
       summons = [{ type:'boss', name:'Purple Face', color:'#7a3a8a', r:88.4, sprite:'face', x:500, y:gy-88, hp:80, maxHp:235, face:-1, flash:0, homeX:500, _rage:false, _tel:10, _telKind:'pfaceThanks', _bossRush:true,
                    attack:'swallow', _phase:2, _pf:pf, _tongueHp:30, _tongueX:400, _tongueY:gy-170, _stX:400, _stY:gy-140, _hz:{ st:1, k:20, sd:3, n:0, c:1 } }];
       projectiles = [{ x:300, y:gy-16, vx:8, vy:0, r:16, color:'#ff9ad8', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:5, life:50, delay:20, shape:'pfacenote', pfaceNote:1 },
                      { x:420, y:gy+260, vx:0, vy:0, r:1, color:'#7a3a8a', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:6, life:1, delay:60, pfaceEnd:1, face:-1 },
-                     { x:600, y:300, vx:1, vy:0, r:26, color:'#a86bff', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:7, life:9999, delay:1e6, warn:99, warnX:640, warnY:gy, shape:'pfaceshoe' }];
+                     { x:600, y:300, vx:1, vy:0, r:26, color:'#a86bff', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:7, life:9999, delay:1e6, warn:99, warnX:640, warnY:gy, shape:'pfaceshoe' },
+                     { x:600, y:430, vx:8, vy:0, r:16, color:'#ff9ad8', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:8, life:9999, delay:1e6, shape:'pfacenote', pfaceNote:2, pfaceLedge:{ x0:342, x1:758, y:446 } }];
       me._swallow = 100; me.iceUntil = 120;
       var snap = JSON.parse(JSON.stringify(serializeState()));
       summons = []; projectiles = []; BOSS_ARENA = null;
@@ -892,7 +1032,8 @@ describe('a netcode client sees him', () => {
       try { summons.forEach(drawSummon); projectiles.forEach(drawProjectile); drawBossBar(); drawArenaDecor(BOSS_ARENA); drawArenaHazard('under'); drawArenaHazard('over'); pfaceDrawFx(summons[0]); }
       catch(e){ err = e.message; }
       return { boss: snap.summons[0], pj: snap.pj.a.map(function(row){ return row[8]; }), arena: BOSS_ARENA, err: err, look: pfaceLook(summons[0]), swallowed: fighters[0]._swallow, ice: fighters[0].iceUntil,
-               got: { pf: summons[0]._pf, hz: summons[0]._hz, tongue: [summons[0]._tongueHp, summons[0]._stX], notes: projectiles.filter(function(p){ return p.pfaceNote; }).map(function(p){ return p.delay; }), end: projectiles.filter(function(p){ return p.pfaceEnd; }).length } };
+               got: { pf: summons[0]._pf, hz: summons[0]._hz, tongue: [summons[0]._tongueHp, summons[0]._stX], notes: projectiles.filter(function(p){ return p.pfaceNote && !p.pfaceLedge; }).map(function(p){ return p.delay; }), end: projectiles.filter(function(p){ return p.pfaceEnd; }).length,
+                      ledge: projectiles.filter(function(p){ return p.pfaceLedge; }).map(function(p){ return [Math.round(p.x), Math.round(p.y), p.vx, p.pfaceNote]; }) } };
     })()`);
     expect(r.err).toBe(null);
     expect(r.boss._pf).toMatchObject({ st: 'run', dir: -1, x1: 82, tk: [[300, 40, 24]], ring: 500, kick: [1, 5], shoe: [expect.any(Number)], sq: 6, gl: 30 });
@@ -900,6 +1041,9 @@ describe('a netcode client sees him', () => {
     expect(r.got.pf, 'the client\'s boss carries the compact view itself').toMatchObject({ st: 'run', tk: [[300, 40, 24]], ring: 500 });
     expect(r.got.tongue).toEqual([30, 400]);
     expect(r.got.notes, 'a pulse waiting its turn is still waiting on the client').toEqual([20]);
+    expect(r.boss._pf.rap, 'the rap\'s three lanes -- row (1: the platform) and spot, the beat\'s clock, the phase and the platform -- cross as the compact view').toEqual({ p: [[0, 300], [1, 520], [0, 900]], k: 20, ph: 2, l: [342, 758, 446] });
+    expect(r.got.pf.rap, 'and the client\'s boss carries them').toMatchObject({ p: [[0, 300], [1, 520], [0, 900]], k: 20, ph: 2 });
+    expect(r.got.ledge, 'a platform pulse\'s note (an inert shot the host moves, always drawn) arrives where the host has it, moving the way it moves').toEqual([[600, 430, 8, 2]]);
     expect(r.got.end).toBe(1);
     expect(r.arena, 'a client draws the boss arena').toBe('warehouse');
     expect(r.look, 'and picks the open-mouth render from the lunge').toBe('facegape');
