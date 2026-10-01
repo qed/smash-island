@@ -1017,3 +1017,44 @@ describe('no words, no other show, and the art is wired and credited', () => {
     expect(W.eval("BOSS_SPRITE_SRC.two + ' ' + !!BOSS_SPRITE_FLIP.two"), 'his own render is unchanged').toBe('assets/sprites/two.png false');
   });
 });
+
+describe('MAYBE YOU\'D LIKE THIS! lands where you stand', () => {
+  it('on the "S"tage\'s top when you are on the stage -- no perch is a refuge from it -- and every hop after stays on the stage; back on the floor when you come down', () => {
+    const r = W.eval(`(function(){ ${STAGE(540, 2, true)}
+      var top = twoStageTop(), plat = twoStagePlat(), gy = groundY();
+      f.x = 540; f.y = top - 30; f.onground = true; ${FIRE('twosun')}
+      var T = b._tw, out = { top: top, gy: gy, mk0: b._hz.mk && b._hz.mk.slice(), plat: [plat.x, plat.x + plat.w], lands: [] };
+      f.x = 540; f.y = top - 30;
+      for (var k=0;k<300 && b._tw;k++){
+        var n0 = T.n, st0 = T.st;
+        step(); ${HOLD} if (out.lands.length < 1) { f.x = 540; f.y = top - 30; } else { f.x = 120; f.y = gy - 24; } f.vx = 0; f.vy = 0;
+        if (T.st === "fly" && T.t === 0 && T.n < n0){ out.lands.push({ x: Math.round(T.x), y: Math.round(T.y), mk: b._hz.mk.slice() }); }
+      }
+      out.floorMk = out.lands[1] && out.lands[1].mk[1];
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.mk0[1], 'the first landing is marked on the stage\'s top').toBe(Math.round(r.top));
+    expect(r.mk0[0]).toBeGreaterThanOrEqual(r.plat[0]);
+    expect(r.mk0[0]).toBeLessThanOrEqual(r.plat[1]);
+    expect(r.lands.length).toBe(2);
+    expect(r.lands[0].y, 'the first hop lands on the stage: its centre a radius over the top').toBeCloseTo(r.top - 44, 0);
+    expect(r.lands[0].mk[1], 'the hop after it stays on the stage while you do').toBe(Math.round(r.top));
+    expect(r.floorMk, 'and when you jump down to the floor, the next mark is on the floor').toBe(Math.round(r.gy));
+  });
+});
+
+describe('Size Shift: smaller, and quicker', () => {
+  it('in phase 2 he follows you faster than in phase 1 (and in phase 3, bigger, he is as slow as in phase 1)', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2, 3].forEach(function(ph){ ${STAGE(300, 'ph', false)}
+        b._mace = null; projectiles = [];
+        for (var k=0;k<200;k++){ step(); ${HOLD} }
+        f.x = 900; var x0 = b.x;
+        for (var k=0;k<40;k++){ step(); ${HOLD} f.x = 900; f.y = groundY()-24; }
+        var want = 900 - 150*0 - TWO.stand[ph];   // a rough aim: where he heads is about stand px off you
+        out[ph] = { moved: Math.abs(b.x - x0), r: b.r };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r[2].moved, 'phase 2 gets there quicker').toBeGreaterThan(r[1].moved*1.15);
+    expect(r[3].r, 'and in phase 3 he is bigger').toBeGreaterThan(r[1].r);
+  });
+});

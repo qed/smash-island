@@ -12942,7 +12942,7 @@ function s4DeathTrap(s, atkId){
 // One table, so the tuning and the tests read the same numbers.
 const TWO = {
   tel:{ two:36, twosun:40, twopower:36, twoblocks:40, tworails:40, twoclap:36 },   // the wind-up of each move (bossTelLen)
-  hover:{ lo:24, hi:170, bob:9 }, stand:[0, 250, 200, 280], follow:0.03,            // how high it floats over the floor, how far it keeps from you (by phase), how fast it follows
+  hover:{ lo:24, hi:170, bob:9 }, stand:[0, 250, 200, 280], follow:[0, 0.03, 0.05, 0.034], glide:[0, 0.06, 0.09, 0.06],   // how high it floats over the floor, how far it keeps from you, how fast it follows and glides (by phase: phase 2's Size Shift is quicker)
   pop:{ out:9, inn:9, far:240 },                                                    // a pop: frames to go out and come in; a move that begins further than this away is a pop
   read:{ ring:176, lock:12, back:220, speed:13, lead:0.35, home:0.06, copies:[0, 1, 2, 3], r:12, kb:10, life:80, stagger:6, spread:0.16, drain:[0, 260, 260, 340], dim:{ max:3, hold:150 } },
   sun:{ r:44, g:0.34, leg:28, vmax:10.5, bounces:[0, 1, 2, 3], rise:30, kb:13, home:[0.8, 0.25, 0.5], mace:{ spd:0.034, k:1.6, kb:11, frac:0.8, enter:30 } },
@@ -12989,8 +12989,8 @@ function twoIdle(s, tgt){
     if(!s._side || Math.abs(tgt.x - s.x) > 170) s._side = (s.x <= tgt.x) ? -1 : 1;   // it keeps the side it is on
     want = clamp(tgt.x + s._side*TWO.stand[ph], R*0.8, WW - R*0.8);
   }
-  s._homeX += (want - s._homeX)*TWO.follow;
-  twoGo(s, s._homeX, twoBandY(s, tgt) + Math.sin(t*0.05)*TWO.hover.bob, 0.06, 0.05);
+  s._homeX += (want - s._homeX)*TWO.follow[ph];
+  twoGo(s, s._homeX, twoBandY(s, tgt) + Math.sin(t*0.05)*TWO.hover.bob, TWO.glide[ph], TWO.glide[ph]*0.85);
   if(twoLive(tgt) && Math.abs(tgt.x - s.x) > 24) s.face = tgt.x > s.x ? 1 : -1;
 }
 // A pop: it shrinks away (a lime ring where it was), is somewhere else, and swells back (a ring there).
@@ -13012,7 +13012,7 @@ function twoMove(s, tgt){
   s.x += s.vx; s.vx *= 0.88;   // a hit's shove (damageSummon) settles
   if(s._pop) twoPopStep(s);
   else if(s._dst && (s._tel > 0 || s._tw)){
-    twoGo(s, s._dst[0], s._dst[1] + Math.sin((s._fl = (s._fl || 0) + 1)*0.07)*5, 0.08);
+    twoGo(s, s._dst[0], s._dst[1] + Math.sin((s._fl = (s._fl || 0) + 1)*0.07)*5, TWO.glide[twoPh(s)]*1.3);
     if(twoLive(tgt) && Math.abs(tgt.x - s.x) > 24) s.face = tgt.x > s.x ? 1 : -1;
   } else { s._dst = null; twoIdle(s, tgt); }
   s.x = clamp(s.x, s.r*0.4, WW - s.r*0.4);
@@ -13042,7 +13042,8 @@ function twoBeginTelegraph(s, tgt){
   } else if(k === 'twosun'){
     const sky = twoSunHome(s);
     twoGoTo(s, clamp(sky.x - 200, R, WW - R), gy - R - 250);
-    H.mk = [Math.round(clamp(tx, TWO.sun.r + 20, WW - TWO.sun.r - 20)), Math.round(gy), hazardT + s._tel];
+    const mx = clamp(tx, TWO.sun.r + 20, WW - TWO.sun.r - 20), surf = twoSunSurface(mx, ty);
+    H.mk = [Math.round(twoSunClampX(mx, surf)), Math.round(surf), hazardT + s._tel];
   } else if(k === 'twopower'){
     twoGoTo(s, W2, gy - R - 90);
     H.pw = [twoRound(live ? Math.atan2(tgt.y - (gy - R - 90), tgt.x - W2) : 0), 0];
@@ -13146,7 +13147,7 @@ function twoReadCopies(s, tgt, id, ph, H){
 // The wind-up: Two's hand glows toward the sun, which grows spikes and turns red while the sky loses its light, and the ball's first landing is marked on
 // the floor where you stood. Then it drops from where the sun hangs, lands on its mark, and BASHES -- a low hop at a time across the floor, turning toward you
 // at every bounce (one, two, then three more by phase), the mark of the NEXT landing the only one shown -- and rises to be the sun again. So the dodge is a jump
-// on the beat, not a sidestep; the "S"tage is out of its reach. A full boss hit under one attack id. Phase 3's sun is Two's mace: it circles them (the mace), and
+// on the beat, not a sidestep; and it lands where you STAND, the "S"tage's top if that is where you are (no perch is a refuge from it). A full boss hit under one attack id. Phase 3's sun is Two's mace: it circles them (the mace), and
 // bashes from there, and goes back to circling.
 function twoSkySun(ph){ const h = TWO.sun.home; return { x:Math.round(WW*h[0]), y:Math.round(WH*h[ph >= 2 ? 2 : 1]) }; }
 // Where the sun is now / where it goes back to. Phase 3's sun is the mace's carrier; the rest of the evening it hangs in the sky.
@@ -13191,15 +13192,24 @@ function twoMaceStep(s, tgt, H){
     }
   }
 }
+// The surface the ball comes down on: where you stand -- the floor, or the "S"tage's top (or a step's) when you are on it or above it.
+function twoSunSurface(x, y){ const t = surfaceBelow(x, y); return t !== null ? t : groundY(); }
+// On the stage the ball stays on it (a landing off its edge would hang in the air).
+function twoSunClampX(x, surf){
+  if(surf >= groundY() - 2) return x;
+  const p = worldPlats.find(q => !q.solid && !q._two && Math.abs(q.y - surf) < 2.5 && x >= q.x - 40 && x <= q.x + q.w + 40);
+  return p ? clamp(x, p.x + TWO.sun.r*0.6, p.x + p.w - TWO.sun.r*0.6) : x;
+}
 // A leg of the ball's flight: N frames from (x1, y1) to (x2, y2) under gravity TWO.sun.g (the same sum the frame step makes, so it lands where it says).
 function twoLeg(T, x1, y1, x2, y2, N){
   T.N = N; T.t = 0; T.x2 = x2; T.y2 = y2;
   T.vx = (x2 - x1)/N; T.vy = ((y2 - y1) - TWO.sun.g*N*(N - 1)/2)/N;
 }
 function twoSunStart(s, tgt){
-  const id = ++BOSS_ATK_ID, ph = s._telPh || twoPh(s), H = twoHz(s), S = TWO.sun, gy = groundY(), fy = gy - S.r;
+  const id = ++BOSS_ATK_ID, ph = s._telPh || twoPh(s), H = twoHz(s), S = TWO.sun, gy = groundY();
   const from = twoSunHome(s), mace = ph >= 3 && !!s._mace && s._mace.life > 0;
-  const tx = clamp(s._telX != null ? s._telX : (twoLive(tgt) ? tgt.x : s.x), S.r + 20, WW - S.r - 20);
+  const tx0 = clamp(s._telX != null ? s._telX : (twoLive(tgt) ? tgt.x : s.x), S.r + 20, WW - S.r - 20), surf = twoSunSurface(tx0, s._telY != null ? s._telY : gy - 30);
+  const tx = twoSunClampX(tx0, surf), fy = surf - S.r;
   const p = mace ? s._mace : twoCarrier(s, { x:from.x, y:from.y, r:S.r, shape:'twosun', color:'#e8452c', twoSun:true });
   p.x = from.x; p.y = from.y; p.r = S.r;
   const dy = fy - from.y, v0 = 2, N = Math.max(18, Math.round((-v0 + Math.sqrt(v0*v0 + 2*S.g*Math.max(0, dy)))/S.g));   // dy = v0 N + g N^2 / 2: a drop with a hair of speed to begin with
@@ -13207,7 +13217,7 @@ function twoSunStart(s, tgt){
   twoLeg(T, from.x, from.y, tx, fy, N);
   s._tw = T;
   if(!mace){ H.so = hazardT; H.sb = 0; }                      // the sky sun is out (phase 3's night has none)
-  H.mk = [Math.round(tx), Math.round(gy), hazardT + N];
+  H.mk = [Math.round(tx), Math.round(surf), hazardT + N];
   shake(4);
 }
 function twoSunHit(s, T, p){
@@ -13238,14 +13248,14 @@ function twoSunStep(s, tgt, T, H){
   if(T.t < T.N) return;
   // it lands on its mark: the tiles crack where it comes down
   T.x = T.x2; T.y = T.y2; p.x = T.x; p.y = T.y;
-  impact(T.x, gy, { shake:7, dust:2, debris:5, scar:true, r:96 });
+  impact(T.x, T.y2 + S.r, { shake:7, dust:2, debris:5, scar:true, r:96 });
   twoSunHit(s, T, p);
   if(T.n > 0){
     T.n--;
-    const f = twoNearest(T.x), fy = gy - S.r, nx = f ? clamp(f.x, S.r + 20, WW - S.r - 20) : T.x;   // it turns toward you at every bounce
+    const f = twoNearest(T.x), surf = f ? twoSunSurface(f.x, f.y) : gy, nx = twoSunClampX(f ? clamp(f.x, S.r + 20, WW - S.r - 20) : T.x, surf);   // it turns toward you at every bounce, onto whatever you stand on
     const x2 = T.x + clamp(nx - T.x, -S.vmax*S.leg, S.vmax*S.leg);
-    twoLeg(T, T.x, fy, x2, fy, S.leg);
-    H.mk = [Math.round(x2), Math.round(gy), hazardT + S.leg];
+    twoLeg(T, T.x, T.y, x2, surf - S.r, S.leg);
+    H.mk = [Math.round(x2), Math.round(surf), hazardT + S.leg];
   } else { T.st = 'rise'; T.t = 0; T.rx = p.x; T.ry = p.y; H.mk = null; }
 }
 function twoSunEnd(s, T, H){
@@ -13613,13 +13623,13 @@ function twoDrawSunMarks(H){
   if(H.mk){
     const k = clamp(1 - (H.mk[2] - t)/60, 0, 1);
     ctx.save(); ctx.strokeStyle = 'rgba(255,90,60,' + (0.45 + 0.4*k) + ')'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(H.mk[0], gy - 3, r*1.1, 11, 0, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(H.mk[0], H.mk[1] - 3, r*1.1, 11, 0, 0, 7); ctx.stroke();
     ctx.globalAlpha = 0.12 + 0.2*k; ctx.fillStyle = '#ff5a3c'; ctx.fill(); ctx.restore();
   }
   for(const p of projectiles){
     if(!p.twoSun) continue;
-    const alt = clamp((gy - p.y)/520, 0, 1), w = p.r*(1.1 - 0.5*alt);
-    ctx.save(); ctx.globalAlpha = 0.34*(1 - 0.6*alt); ctx.fillStyle = '#12081e'; ctx.beginPath(); ctx.ellipse(p.x, gy - 2, w, 8*(1 - 0.4*alt), 0, 0, 7); ctx.fill(); ctx.restore();
+    const sy = surfaceBelow(p.x, p.y - 2), floor = sy === null ? gy : sy, alt = clamp((floor - p.y)/520, 0, 1), w = p.r*(1.1 - 0.5*alt);
+    ctx.save(); ctx.globalAlpha = 0.34*(1 - 0.6*alt); ctx.fillStyle = '#12081e'; ctx.beginPath(); ctx.ellipse(p.x, floor - 2, w, 8*(1 - 0.4*alt), 0, 0, 7); ctx.fill(); ctx.restore();
   }
 }
 // ---- his ending: the landing pad ---------------------------------------------------------------------------------------------------------
@@ -13748,14 +13758,16 @@ function twoDrawFerris(cx, cy, R, t, k){
   if(k <= 0.02) return;
   const foot = cy + R + 16, pal = ['#4cc86a', '#f4f4fa', '#8a90e8', '#f3df6a'];   // Green, White, Periwinkle, & Yellow
   ctx.save(); ctx.translate(cx, foot); ctx.scale(1, k); ctx.translate(-cx, -foot);
-  ctx.strokeStyle = '#5a5f9a'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - R*0.5, foot); ctx.moveTo(cx, cy); ctx.lineTo(cx + R*0.5, foot); ctx.stroke();
+  ctx.strokeStyle = '#5fbf6e'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - R*0.5, foot); ctx.moveTo(cx, cy); ctx.lineTo(cx + R*0.5, foot); ctx.stroke(); ctx.lineCap = 'butt';   // the green A-frame
   const rot = t*0.004;
-  ctx.strokeStyle = '#e8e8f4'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke(); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, R*0.62, 0, 7); ctx.stroke();
+  ctx.strokeStyle = '#9aa3f0'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke(); ctx.strokeStyle = '#e8e8f4'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, R*0.62, 0, 7); ctx.stroke();
   ctx.strokeStyle = '#f3df6a'; ctx.lineWidth = 3; ctx.beginPath();
   for(let i=0;i<8;i++){ const a = rot + i*Math.PI/4; ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a)*R, cy + Math.sin(a)*R); }
   ctx.stroke();
   ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2;
-  for(let i=0;i<8;i++){ const a = rot + i*Math.PI/4, gx = cx + Math.cos(a)*R, gy2 = cy + Math.sin(a)*R; ctx.fillStyle = pal[i % 4]; ctx.fillRect(gx - 10, gy2 - 4, 20, 16); ctx.strokeRect(gx - 10, gy2 - 4, 20, 16); }
+  for(let i=0;i<8;i++){ const a = rot + i*Math.PI/4, gx = cx + Math.cos(a)*R, gy2 = cy + Math.sin(a)*R;   // a white cup hanging from the rim, its lip in the palette
+    ctx.fillStyle = '#f4f4fa'; ctx.beginPath(); ctx.moveTo(gx - 11, gy2 - 2); ctx.lineTo(gx + 11, gy2 - 2); ctx.lineTo(gx + 7, gy2 + 13); ctx.lineTo(gx - 7, gy2 + 13); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = pal[i % 4]; ctx.fillRect(gx - 11, gy2 - 5, 22, 5); }
   ctx.fillStyle = TWO_LIME; ctx.beginPath(); ctx.arc(cx, cy, 16, 0, 7); ctx.fill(); ctx.stroke();   // the hub: a plain disc where the show paints Two
   ctx.restore();
 }
