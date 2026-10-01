@@ -59,14 +59,14 @@ describe('MePhone4 joins the gauntlet', () => {
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon'],   // the hotel roof in the storm, no longer the shared cave ("Each its own", the owner, 2026-09-29)
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two'],
       ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy'],
-      ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four'],
+      ['Four', '#3a6ad0', 340, 2.8, 'four', 'exitclass', false, 'four'],   // rebuilt (the boss overhaul, 2026-09-29): his own classroom, "Each its own" (the owner), and he floats -- "Only if canon moves" (Round 5): "Four can fly"; six attacks, the ones below (test/boss-four.test.js)
     ]);
     expect(r.extra).toEqual({
       'Announcer': ['annlaser', 'annacid', 'annballoon'], 'Puffball Speaker Box': ['consequences', 'rainbowbarf', 'private'], 'Firey Speaker Box': ['furnace', 'youmust'],
       'The Bug Swarm': ['dodgepattern', 'swarmseek', 'dodgeball', 'eggsac'], 'Purple Face': ['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes'], 'Purple Dragon': ['dragonroar', 'dragonchar', 'dragonwind', 'dragonropes'],
       'MePhone4': ['melife', 'portal'],
       'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
-      'Four': ['rain', 'seekers'],
+      'Four': ['fourbye', 'fourtower', 'fourido', 'fourhearts', 'fourcactus'],
     });
   });
 
