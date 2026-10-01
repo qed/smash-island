@@ -1130,6 +1130,22 @@ describe('his ending', () => {
     expect(r.left).toBe(0);
   });
 
+  it('the white platform disc stays under his ending and the gap after it (the arena hook is drawn with no boss), the swung-out discs go with him', () => {
+    const r = WC.eval(`(function(){ ${STAGE(300, 2)}
+      for (var i=0;i<30;i++){ step(); f.invuln = 99; }                           // phase 2: the two discs on stalks are out
+      var n = 0, D = mpDrawDisc; mpDrawDisc = function(){ n++; return D.apply(null, arguments); };
+      try {
+        mpArenaDress(b, 'under'); var alive = n; n = 0;
+        mpArenaDress(null, 'under'); var fallen = n; n = 0;
+        mpArenaDress(null, 'over'); var over = n;
+        return { alive: alive, fallen: fallen, over: over, out: mpSatOut(b) };
+      } finally { mpDrawDisc = D; } })()`);
+    expect(r.out, 'the satellites are out in phase 2').toBe(1);
+    expect(r.alive, 'the platform and both satellites while he stands').toBe(3);
+    expect(r.fallen, 'the platform alone once he has fallen: its ledges left with him (mpEndSweep)').toBe(1);
+    expect(r.over, 'and only under the shots').toBe(0);
+  });
+
   it('draws every frame of it without throwing, hurts nobody, and shows no word', () => {
     const r = WC.eval(`(function(){ ${STAGE(300, 3)}
       try {
