@@ -208,6 +208,7 @@ fan-work norms in a disclaimed, non-commercial fan game.
 | Boss | File | Size | Facing | Source |
 |---|---|---|---|---|
 | One | `one.png` | 148×200 | 0.041 | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b8/One_TPOT_19.png/revision/latest?cb=20250817043721 |
+| One (the Fish Monster, SCREECHY!'s scream) | `one-fish.png` | 230×200 | -0.077 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3a/One_as_fish_monster.png/revision/latest?cb=20260901081213 |
 | Announcer (Boss 1) | `announcer.png` | 141×200 | front view | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b8/Announcer_Front_Vibrating0001.png/revision/latest |
 | Purple Dragon (Boss 6) | `purple-dragon.png` | 149×200 | -0.065 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Polished_Dragon..%3F.png/revision/latest?cb=20231007202646 |
 
@@ -217,6 +218,16 @@ fan-work norms in a disclaimed, non-commercial fan game.
   (a0e2e97aba3bed4f711b6ed461815198a7cc92d5), and its three revisions are all by one uploader.
 - Scaled server-side to 200px tall (`scale-to-height-down/200`, `format=original`), all four corners
   alpha 0, 686 near-zero-alpha halo pixels erased, facing measured the fetch-sprites.mjs way.
+- `one-fish.png` -- `File:One_as_fish_monster.png`, the look she takes while she screams ("One appears as a fish monster, which screams at the pair", All For One): scaled server-side to 200px tall, corners alpha 0, facing measured the same way (the mouth is on the left, so it is drawn mirrored, `BOSS_SPRITE_FLIP.onefish`).
+
+One's attacks wear the show's art too (boss overhaul, 2026-09-30), cut by `scripts/fetch-attack-sprites.mjs` (its `onemoonrock`, `oneearth`, `oneweird` and `oneskate`
+picks, above the early-six slots) into `assets/sprites/attacks/`: standalone, transparent assets on the BFDI wiki (jacknjellify's art), looked at before they were kept.
+The knives of KNIFE FLURRY! are the Cake at Stake knife already credited under the Puffball Speaker Box (`psbknife.png`, File:One knife.png): the knife she duplicates
+("All For One"). Her hands, her eye lasers, the Vortex, her statues and the fold of FOLDING ISLAND! are drawn in her colours (Cornflower Blue #5D7AF2, outline #000001).
+- One (MOON ROCKS!) (onemoonrock.png): a piece of the Moon (TPOT 10 asset; she hurled Moon pieces and a mountain in "Alone") — File:Moonpeice11.png — https://static.wikia.nocookie.net/battlefordreamisland/images/3/32/Moonpeice11.png/revision/latest?cb=20240718185452
+- One (OUT OF ORBIT!) (oneearth.png): Earth, which she compressed and kicked out of orbit ("Last One Standing") — File:EarthTPOT4.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/f0/EarthTPOT4.png/revision/latest?cb=20251029162113
+- One (OUT OF ORBIT!) (oneweird.png): the Really Weird Planet in the Orion Nebula, which she destroyed ("Last One Standing") — File:Weirdplanettbig.png — https://static.wikia.nocookie.net/battlefordreamisland/images/0/0b/Weirdplanettbig.png/revision/latest?cb=20231002215154
+- One (OUT OF ORBIT!) (oneskate.png): the Skateboard Planet, left split into five pieces around its core — File:Nine's Planet.png — https://static.wikia.nocookie.net/battlefordreamisland/images/6/61/Nine%27s_Planet.png/revision/latest?cb=20260301122031
 
 ## Attack art
 
