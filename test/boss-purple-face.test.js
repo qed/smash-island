@@ -218,7 +218,7 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
   // watch a rap from the frame it fires: every note, the frame it first MOVES (a floor note waits out its delay; a platform pulse is made when its turn comes)
   const WATCH = (frames, hold) => `(function(){ var notes = [], seen = [], gy = groundY(), L = pfaceLedge(), t = 0;
     var look = function(){ projectiles.forEach(function(p){ if (!p.pfaceNote || seen.indexOf(p) >= 0) return; if (!(p.pfaceLedge || p.delay <= 0)) return; seen.push(p);
-      notes.push({ at: t, pulse: p.pfaceNote, row: p.pfaceLedge ? 'ledge' : 'floor', x: p.x, y: p.y, vx: p.vx, r: p.r, shape: p.shape, id: p.bossAtk, dmg: +(p.dmg/bossDmg()).toFixed(2) }); }); };
+      notes.push({ at: t, pulse: p.pfaceNote, row: p.pfaceLedge ? 'ledge' : (p.y < gy - 120 ? 'air' : 'floor'), x: p.x, y: p.y, vx: p.vx, r: p.r, shape: p.shape, id: p.bossAtk, dmg: +(p.dmg/bossDmg()).toFixed(2) }); }); };
     look();
     for (var j=0;j<${frames};j++){ step(); t++; ${hold || ''} look(); }
     return { notes: notes, gy: gy, L: L }; })()`;
@@ -328,30 +328,66 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     expect(p2.spd, 'and quicker').toBe(9.5);
   });
 
-  it('the places vary: from one use to the next, and across a volley -- three spots a use, one on the platform and two on the floor, in any order, apart from each other, off the walls, across the stage', () => {
-    const r = W.eval(`(function(){ ${STAGE(300)} var gy = groundY(), L = pfaceLedge(), uses = [], ledgeAt = {};
-      for (var i=0;i<60;i++){ var p = pfacePlanRap(b, 1); uses.push(p.map(function(q){ return [q.row, q.x]; })); ledgeAt[p.findIndex(function(q){ return q.row === 'ledge'; })] = 1; }
+  it('an air note flies across the whole stage at its height and hurts only whoever is up there: a fighter on the floor or on the platform is untouched, so is one at the top of a jump from the floor, and one hovering at its height is hit', () => {
+    // "for freestyle rap, they shouldnt just be on the ground." (the owner, 2026-10-01): the third row, in the air, above anyone standing and above a jump from the floor
+    const run = (place) => W.eval(`(function(){ ${STAGE(560)} var gy = groundY(), L = pfaceLedge(), air = ${JSON.stringify(place)};
+      ${BEGIN('pfaceRap')} b._pf.rap.p = [{ row:'air', x:300, h:260 }, { row:'air', x:800, h:260 }, { row:'air', x:550, h:260 }];
+      var yAt = { floor: gy - 24, plat: L.y - 24, apex: gy - 24 - 126, hover: gy - 260 }[air], ground = air === 'floor' || air === 'plat';
+      var pin = function(){ f.x = 560; f.vx = 0; f.y = yAt; f.vy = 0; f.onground = ground; };
+      pin(); for (var i=0;i<75 && b._tel>1;i++){ step(); pin(); f.invuln = 0; }
+      b._atkTimer = 1e9; var hits = 0, last = 0, notes = 0;
+      for (var j=0;j<200;j++){ step(); pin(); notes = Math.max(notes, projectiles.filter(function(p){ return p.pfaceNote && !p.pfaceLedge && p.y < gy - 200; }).length); if (f.pct > last + 0.001){ hits++; last = f.pct; } f.invuln = 0; }
+      return { pct: f.pct, hits: hits, notes: notes, cap: bossDmg(), y: gy - 260 }; })()`);
+    const floor = run('floor'), plat = run('plat'), apex = run('apex'), hover = run('hover');
+    expect(floor.notes, 'the air notes are there, flying high').toBeGreaterThanOrEqual(4);
+    expect(floor.pct, 'a fighter standing on the floor never feels them').toBe(0);
+    expect(plat.pct, 'nor one standing on the platform').toBe(0);
+    expect(apex.pct, 'nor one at the very top of a jump from the floor').toBe(0);
+    expect(hover.hits, 'one up in the air where they fly is hit').toBeGreaterThanOrEqual(1);
+    expect(hover.pct, 'for a note\'s share of one boss hit, and the whole rap is still one boss hit at most').toBeLessThanOrEqual(hover.cap + 1e-6);
+    expect(hover.pct).toBeGreaterThan(0);
+  });
+
+  it('the places vary: from one use to the next, and across a volley -- three spots a use, on the floor, the platform and in the air, in any order, apart from each other, off the walls, across the stage', () => {
+    // "purple faces notes should be in varied areas." and "for freestyle rap, they shouldnt just be on the ground." (the owner, 2026-10-01)
+    const r = W.eval(`(function(){ ${STAGE(300)} var gy = groundY(), L = pfaceLedge(), uses = [], at = { ledge: {}, air: {} };
+      for (var i=0;i<90;i++){ var p = pfacePlanRap(b, 1); uses.push(p.map(function(q){ return [q.row, q.x, q.h || 0]; }));
+        p.forEach(function(q, k){ if (q.row !== 'floor') at[q.row][k] = 1; }); }
       // the same dice give the same plan (the tests seed them; the game's bosses use Math.random)
       ${rnd0}; var a1 = JSON.stringify(pfacePlanRap(b, 1, rnd(9))), a2 = JSON.stringify(pfacePlanRap(b, 1, rnd(9))), a3 = JSON.stringify(pfacePlanRap(b, 1, rnd(10)));
-      return { uses: uses, ledgeAt: Object.keys(ledgeAt).sort(), L: L, same: a1 === a2, other: a1 !== a3, WW: WW, R: PFACE.rap }; })()`);
-    const R = r.R;
+      // with no platform on the stage there is no platform pulse: two on the floor and one in the air
+      var keep = worldPlats; worldPlats = []; var none = []; for (var j=0;j<20;j++) none.push(pfacePlanRap(b, 1).map(function(q){ return q.row; }).sort().join('+')); worldPlats = keep;
+      return { uses: uses, ledgeAt: Object.keys(at.ledge).sort(), airAt: Object.keys(at.air).sort(), L: L, same: a1 === a2, other: a1 !== a3, WW: WW, R: PFACE.rap, none: none }; })()`);
+    const R = r.R, mixes = new Set(['floor+floor+ledge', 'air+floor+floor', 'air+floor+ledge']);
+    const seen = new Set();
     for (const u of r.uses) {
-      expect(u.map((q) => q[0]).sort(), 'one pulse on the platform, two on the floor').toEqual(['floor', 'floor', 'ledge']);
-      for (const [row, x] of u) {
+      const mix = u.map((q) => q[0]).sort().join('+');
+      expect(mixes.has(mix), `a mix a use may have: ${mix}`).toBe(true);
+      seen.add(mix);
+      expect(u.some((q) => q[0] === 'floor'), 'always a floor pulse').toBe(true);
+      expect(u.some((q) => q[0] !== 'floor'), 'and always another height').toBe(true);
+      for (const [row, x, h] of u) {
         if (row === 'floor') { expect(x).toBeGreaterThanOrEqual(R.margin); expect(x, 'off the walls').toBeLessThanOrEqual(r.WW - R.margin); }
-        else { expect(x, 'on the platform').toBeGreaterThanOrEqual(r.L.x0 + R.ledgeMargin); expect(x).toBeLessThanOrEqual(r.L.x1 - R.ledgeMargin); }
+        else if (row === 'ledge') { expect(x, 'on the platform').toBeGreaterThanOrEqual(r.L.x0 + R.ledgeMargin); expect(x).toBeLessThanOrEqual(r.L.x1 - R.ledgeMargin); }
+        else { expect(x).toBeGreaterThanOrEqual(R.margin); expect(x).toBeLessThanOrEqual(r.WW - R.margin); expect(h, 'an air pulse flies at a height of its own').toBeGreaterThanOrEqual(R.air[0]); expect(h).toBeLessThanOrEqual(R.air[1]); }
       }
     }
-    expect(r.uses.filter((u) => { const xs = u.map((q) => q[1]); return xs.every((x, i) => xs.every((y, j) => i === j || Math.abs(x - y) >= R.sep)); }).length, 'the spots of a volley keep their distance (all but the rare use that could not find room)').toBeGreaterThanOrEqual(58);
+    expect([...seen].sort(), 'all three mixes come up').toEqual([...mixes].sort());
+    expect(r.uses.filter((u) => { const xs = u.map((q) => q[1]); return xs.every((x, i) => xs.every((y, j) => i === j || Math.abs(x - y) >= R.sep)); }).length, 'the spots of a volley keep their distance (all but the rare use that could not find room)').toBeGreaterThanOrEqual(86);
     const key = (u) => JSON.stringify(u);
-    expect(new Set(r.uses.map(key)).size, 'a new plan almost every use').toBeGreaterThanOrEqual(55);
+    expect(new Set(r.uses.map(key)).size, 'a new plan almost every use').toBeGreaterThanOrEqual(85);
     expect(r.ledgeAt, 'the platform pulse can be the first, the second or the third').toEqual(['0', '1', '2']);
+    expect(r.airAt, 'and so can the air one').toEqual(['0', '1', '2']);
     const floorXs = r.uses.flatMap((u) => u.filter((q) => q[0] === 'floor').map((q) => q[1]));
     expect(Math.min(...floorXs), 'the floor spots reach the left of the stage').toBeLessThan(260);
     expect(Math.max(...floorXs), 'and the right').toBeGreaterThan(r.WW - 260);
     expect(new Set(floorXs.map((x) => Math.floor(x/100))).size, 'across the whole width, not a few favourite places').toBeGreaterThanOrEqual(7);
+    const heights = r.uses.flatMap((u) => u.filter((q) => q[0] === 'air').map((q) => q[2]));
+    expect(new Set(heights).size, 'the air pulses fly at many different heights').toBeGreaterThanOrEqual(25);
+    expect(Math.max(...heights) - Math.min(...heights), 'from low to high in the range').toBeGreaterThanOrEqual(40);
     expect(r.same, 'seeded dice give the same plan twice').toBe(true);
     expect(r.other, 'and other dice another').toBe(true);
+    expect(new Set(r.none), 'no platform, no platform pulse').toEqual(new Set(['air+floor+floor']));
   });
 
   it('a use really draws its own plan: three beats in a row start with three different plans, fixed when the wind-up starts and the same all the way to the last note', () => {
@@ -384,7 +420,7 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     expect(r.tel, 'the whole intro to read it in').toBe(72);
     expect(r.len.slice(1).every((t) => t >= 36), 'in every phase the intro is at least the usual 36 frames').toBe(true);
     expect(r.view.rap.k, 'not dropped yet').toBe(-1);
-    expect(r.view.rap.p, 'the row (1: the platform) and the spot of each pulse, as planned').toEqual(r.plan.map((q) => [q.row === 'ledge' ? 1 : 0, q.x]));
+    expect(r.view.rap.p, 'the row (0 the floor, 1 the platform, 2 the air), the spot and the height of each pulse, as planned').toEqual(r.plan.map((q) => [q.row === 'ledge' ? 1 : (q.row === 'air' ? 2 : 0), q.x, q.h || 0]));
     expect(r.view.rap.l, 'and the platform they ride').toEqual([r.L.x0, r.L.x1, r.L.y]);
     expect(r.net.rap, 'a netcode client gets the same').toEqual(r.view.rap);
     // drawn: the lanes' bands on the recording canvas, over the floor and on the platform's top, with no text
@@ -394,11 +430,13 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     const bands = (rap, tel) => { w.eval(`(function(){ var gy = groundY(); summons = [{ type:'boss', name:'Purple Face', attack:'swallow', sprite:'face', r:88, x:550, y:gy-88, face:1, hp:100, maxHp:235, _phase:1, flash:0, _bossRush:true, _tel:${tel}, _telKind:'pfaceRap', _pf:{ rap:${JSON.stringify(rap)} } }]; })()`);
       log.length = 0; w.eval('pfaceDrawFx(summons[0])'); w.eval('summons = []');
       return log.filter((e) => e.op === 'fillRect' && e.args[3] === 44).map((e) => [Math.round(e.args[0]), Math.round(e.args[1] + 44), Math.round(e.args[2])]); };
-    const rap = { p: [[0, 300], [1, 520], [0, 900]], k: -1, ph: 1, l: [L.x0, L.x1, L.y] };
+    const rap = { p: [[0, 300, 0], [1, 520, 0], [0, 900, 0]], k: -1, ph: 1, l: [L.x0, L.x1, L.y] };
     const b0 = bands(rap, 72);
     expect(b0, 'at the first frame of the intro: a floor lane, a platform lane and a second floor lane').toEqual([[0, Math.round(gy), WWp], [L.x0, L.y, L.x1 - L.x0], [0, Math.round(gy), WWp]]);
     expect(bands({ ...rap, k: 40 }, 0).length, 'forty frames after the beat dropped: the first lane is fading (it fades for 60 frames) and the other two are lit or about to be').toBe(3);
     expect(bands({ ...rap, k: 200 }, 0), 'long after the last pulse: the lanes are gone').toEqual([]);
+    // an air lane is a band at the height its notes fly, the whole width of the stage
+    expect(bands({ ...rap, p: [[0, 300, 0], [2, 520, 260], [0, 900, 0]] }, 72), 'an air pulse: a band 260 px up').toEqual([[0, Math.round(gy), WWp], [0, Math.round(gy - 260 + 22), WWp], [0, Math.round(gy), WWp]]);
     expect(log.filter((e) => ['fillText', 'strokeText'].includes(e.op)), 'no words').toEqual([]);
     w.eval('BOSS_ARENA = null');
   });
@@ -421,7 +459,7 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
         b._atkTimer = 1e9; var need = 0;
         if (b._tel <= 0 && !b._pf.rap && !projectiles.some(function(p){ return p.pfaceNote; })) break;   // the rap is over: its last note has left
         projectiles.forEach(function(p){
-          if (!p.pfaceNote || !(p.life > 0) || (!!p.pfaceLedge) !== !!onP || (!p.pfaceLedge && p.delay > 0) || (f.x - p.x)*p.vx <= 0) return;
+          if (!p.pfaceNote || !(p.life > 0) || (!!p.pfaceLedge) !== !!onP || (!p.pfaceLedge && (p.delay > 0 || p.y < gy - 120)) || (f.x - p.x)*p.vx <= 0) return;   // (an air note is not his business: he keeps his feet down)
           var t = (Math.abs(f.x - p.x) - (p.r + 22))/Math.abs(p.vx); if (t >= 0 && t <= 12) need = 1; });
         if (need && f.onground){ f.vy = JUMP_V; f.onground = false; jumps++; }
         var pct0 = f.pct; step(); f.x = fx; f.vx = 0; if (f.pct > pct0 + 1e-6 && hit === null) hit = i; }
@@ -726,8 +764,8 @@ describe("Yellow Face's Warehouse: the arena and its hazard", () => {
         fighter._swallow = 0;
         // the rap's lanes (FREESTYLE RAP!, "purple faces notes should be in varied areas."): in the intro, as each pulse starts, after it, with and without a platform
         [-1, 0, 20, 45, 75, 140, 200].forEach(function(k){ [1, 2, 3].forEach(function(ph){
-          pfaceDrawFx(boss(ph, { _tel: k < 0 ? 40 : 0, _telKind: k < 0 ? 'pfaceRap' : 'swallow', _pf:{ rap:{ p:[[0, 300], [1, 520], [0, 900]], k:k, ph:ph, l:[342, 758, 446] } } })); calls++;
-          pfaceDrawFx(boss(ph, { _pf:{ rap:{ p:[[0, 100], [0, 550], [0, 1000]], k:k, ph:ph, l:null } } })); calls++; }); });
+          pfaceDrawFx(boss(ph, { _tel: k < 0 ? 40 : 0, _telKind: k < 0 ? 'pfaceRap' : 'swallow', _pf:{ rap:{ p:[[0, 300, 0], [1, 520, 0], [2, 700, 260]], k:k, ph:ph, l:[342, 758, 446] } } })); calls++;
+          pfaceDrawFx(boss(ph, { _pf:{ rap:{ p:[[0, 100, 0], [2, 550, 250], [0, 1000, 0]], k:k, ph:ph, l:null } } })); calls++; }); });
         [0, 6, 13, 14, 20, 31, 36, 58, 90, 107, 108].forEach(function(dl){ pfaceDrawEnding({ x:500, delay: 108 - dl, face:-1 }); calls++; });
         var shapes = ['pfacenote','pfacebug','pfacetotem','pfacetotemw','pfaceshoe','pfacestar','pfacemagnet'];
         shapes.forEach(function(k){ drawProjectile({ x:300, y:300, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:k, r:20, vx:-6, vy:1, color:'#ff9ad8', pfaceNote:1, delay:0 }); calls++; });
@@ -1016,7 +1054,7 @@ describe('a netcode client sees him', () => {
       BOSS_ARENA = 'warehouse'; var gy = groundY(), me = fighters[0];
       var pf = { lunge:{ st:'run', dir:-1, x0:1018, x1:82, t:7, ph:2, n:2, id:1 }, tk:[{ id:1, x:300, age:40, close:24 }], ring:{ x:500, dir:1 }, kick:{ dir:1, t:5, id:2, hit:{} },
                  shoes:{}, later:[], tid:1, sq:6, gl:30, pop:0, aim:null, hp:100,
-                 rap:{ p:[{ row:'floor', x:300 }, { row:'ledge', x:520 }, { row:'floor', x:900 }], k:20, ph:2, l:[342, 758, 446], id:9, q:[] } };
+                 rap:{ p:[{ row:'floor', x:300 }, { row:'ledge', x:520 }, { row:'air', x:700, h:260 }], k:20, ph:2, l:[342, 758, 446], id:9, q:[] } };
       pf.shoes[me.idx] = 1e9;
       summons = [{ type:'boss', name:'Purple Face', color:'#7a3a8a', r:88.4, sprite:'face', x:500, y:gy-88, hp:80, maxHp:235, face:-1, flash:0, homeX:500, _rage:false, _tel:10, _telKind:'pfaceThanks', _bossRush:true,
                    attack:'swallow', _phase:2, _pf:pf, _tongueHp:30, _tongueX:400, _tongueY:gy-170, _stX:400, _stY:gy-140, _hz:{ st:1, k:20, sd:3, n:0, c:1 } }];
@@ -1041,8 +1079,8 @@ describe('a netcode client sees him', () => {
     expect(r.got.pf, 'the client\'s boss carries the compact view itself').toMatchObject({ st: 'run', tk: [[300, 40, 24]], ring: 500 });
     expect(r.got.tongue).toEqual([30, 400]);
     expect(r.got.notes, 'a pulse waiting its turn is still waiting on the client').toEqual([20]);
-    expect(r.boss._pf.rap, 'the rap\'s three lanes -- row (1: the platform) and spot, the beat\'s clock, the phase and the platform -- cross as the compact view').toEqual({ p: [[0, 300], [1, 520], [0, 900]], k: 20, ph: 2, l: [342, 758, 446] });
-    expect(r.got.pf.rap, 'and the client\'s boss carries them').toMatchObject({ p: [[0, 300], [1, 520], [0, 900]], k: 20, ph: 2 });
+    expect(r.boss._pf.rap, 'the rap\'s three lanes -- row (0 the floor, 1 the platform, 2 the air), spot and height, the beat\'s clock, the phase and the platform -- cross as the compact view').toEqual({ p: [[0, 300, 0], [1, 520, 0], [2, 700, 260]], k: 20, ph: 2, l: [342, 758, 446] });
+    expect(r.got.pf.rap, 'and the client\'s boss carries them').toMatchObject({ p: [[0, 300, 0], [1, 520, 0], [2, 700, 260]], k: 20, ph: 2 });
     expect(r.got.ledge, 'a platform pulse\'s note (an inert shot the host moves, always drawn) arrives where the host has it, moving the way it moves').toEqual([[600, 430, 8, 2]]);
     expect(r.got.end).toBe(1);
     expect(r.arena, 'a client draws the boss arena').toBe('warehouse');
