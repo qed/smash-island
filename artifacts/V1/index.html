@@ -5375,6 +5375,8 @@ function spawnBossRushBoss(){
   // @boss:dragon:end spawn
 
   // @boss:mephone4:begin spawn
+  // (edit-tool CRLF probe line 1)
+  // (edit-tool CRLF probe line 2)
   // @boss:mephone4:end spawn
 
   // @boss:evilleafy:begin spawn
@@ -7408,6 +7410,7 @@ function updateBossAttack(s, tgt){
   // @boss:dragon:end move
 
   // @boss:mephone4:begin move
+  if(s.attack==="mephone") moved = mpMove(s, tgt);   // he does not chase: he steps through a portal to the side of the arena farther from you (mpMove)
   // @boss:mephone4:end move
 
   // @boss:evilleafy:begin move
@@ -7523,10 +7526,9 @@ function updateBossAttack(s, tgt){
   // @boss:dragon:end tick
 
   // @boss:mephone4:begin tick
-  if(s._portal) updateRejectionPortal(s);   // MePhone4's Rejection Portal stays open for a moment after the snap
-  // MePhone4's glove row follows its target until MEPHONE_GLOVE.lock frames before the punch, then holds (the band
-  // drawBossSprite draws turns white). The portal still opens where you stood when he flashed.
-  if(s.attack==="mephone" && s._tel>0 && s._telKind==="mephone" && s._tel >= MEPHONE_GLOVE.lock && tgt && !tgt.dead){ s._telX = tgt.x; s._telY = tgt.y; }
+  // MePhone4: the glove's row follows its target until MEPHONE_GLOVE.lock frames before the punch, then holds (the band drawBossSprite draws turns white); every glove, portal and
+  // the rest of what he has out moves here (mpTick).
+  if(s.attack==="mephone") mpTick(s, tgt);
   // @boss:mephone4:end tick
 
   // @boss:evilleafy:begin tick
@@ -7609,9 +7611,8 @@ function updateBossAttack(s, tgt){
     // @boss:dragon:end tel
 
     // @boss:mephone4:begin tel
-    // MePhone4 already at his cap: the turn is the glitch, and the warning says so. It used to say MELIFE DOWNLOAD! and show
-    // the green MeLife tell, then throw the ring, named only as it went off.
-    if(s._telKind==="melife" && hostileCount() >= (MELIFE_CAP[s._telPh] || 1)) s._telKind = "glitch";
+    // MePhone4: which move this turn is (already at his cap the turn is the glitch, and the warning says so), the hop, and every mark the tell draws -- fixed now (mpBeginTelegraph).
+    if(s.attack==="mephone") mpBeginTelegraph(s, tgt);
     // @boss:mephone4:end tel
 
     // @boss:evilleafy:begin tel
@@ -7677,7 +7678,7 @@ function bossAtkGapBase(s){
   // @boss:dragon:end gap
 
   // @boss:mephone4:begin gap
-  if(s.attack==="mephone") return MEPHONE_GAPS[Math.min(3, s._phase||1)];   // MePhone4's own pacing (see MEPHONE_GAPS)
+  if(s.attack==="mephone") return mpBusy(s) ? 1e6 : MEPHONE_GAPS[Math.min(3, s._phase||1)];   // MePhone4's own pacing (see MEPHONE_GAPS), held while a part of his turn is still to come (mpBusy; mpTick lets it go)
   // @boss:mephone4:end gap
 
   // @boss:evilleafy:begin gap
@@ -8139,10 +8140,8 @@ const BOSS_MOVES = {
   // GLITCH (MePhone4, at his cap; Hatching the Plan: glitching, random objects come out of him) -- the ring, as its own
   // turn with its own warning, so the MeLife turn is never free and never lies about what is coming.
   glitch(s, tgt){ for(let i=0;i<10;i++) puff(s.x, s.y, '#7ff0ff', 4); BOSS_MOVES.ring(s, tgt); },
-  // REJECTION PORTAL (MePhone4): snapped open where the target stood when he flashed (see updateRejectionPortal)
-  portal(s, tgt){ const ph = s._telPh || s._phase || 1, T = ph>=3 ? 36 : (ph===2 ? 42 : 48), q = portalSpot(s, tgt);
-    s._portal = { x:q.x, y:q.y, t:T, T:T, id:++BOSS_ATK_ID, hit:{} };
-    for(let i=0;i<14;i++) puff(q.x, q.y, s.color, 5); shake(5); },
+  // REJECTION PORTAL (MePhone4): snapped open where the target stood when he flashed, its exit across the arena; whoever touches it is flung there (mpPortalFire, mpPortalTick)
+  portal(s, tgt){ mpPortalFire(s, tgt); },
   // @boss:mephone4:end moves
 
   // @boss:evilleafy:begin moves
@@ -12739,9 +12738,11 @@ const MELIFE_CAP = [0, 1, 1, 2];                  // adds standing at once, by p
 //   lock    frames before the punch that the row it punches along stops following you. It used to be fixed where you stood
 //           when he flashed, so whoever happened to be mid-jump then was never in it; now it follows you, drawn as a red
 //           band, and turns white and holds for the last `lock` frames -- the dodge is to leave the row inside them (the
-//           way MePhone4S's sight locks). 8, and the glove still has to cross the stage at 15 px a frame after that: a
-//           fighter 300 px out has 8 + 20 frames to jump out of the row. At 12 he measured level with the Dragon before him
-const MEPHONE_GLOVE = { kb:13, up:10, jab:[0, 1, 0.45, 0.3], jabKb:5, gap:26, lock:8, r:44 };   // r: the glove, twice its first 22 ("buff fist thingy's size" -> "2x", the owner, 2026-09-29); the tell's band is as tall
+//           way MePhone4S's sight locks). 8, and the glove still has to cross the stage at `spd` px a frame after that. At 12 he
+//           measured level with the Dragon before him
+//   spd     px a frame, "at full speed" (the Fist Thingy page): 20, was 15 -- "Harder, same damage" (the owner, 2026-09-29): the wind-up and the 8-frame lock are
+//           as long as they were, so the read is the same and the dodge is quicker
+const MEPHONE_GLOVE = { kb:13, up:10, jab:[0, 1, 0.45, 0.3], jabKb:5, gap:26, lock:8, r:44, spd:20 };   // r: the glove, twice its first 22 ("buff fist thingy's size" -> "2x", the owner, 2026-09-29); the tell's band is as tall
 // Frames between his turns, by phase, against the usual 100/72/52: half his turns are an add or a portal, so the glove
 // that KOs comes every other turn, and at the usual gaps it came too seldom for him to be a step past the Dragon (the
 // review measured him easier than the Dragon; scripts/boss-rush-balance.json has him now). His whole cycle -- glove,
@@ -12789,33 +12790,340 @@ function hurtHostileAdd(s, dmg, shove, by){
   s.hp -= dmg; s.flash = 6; s.vx += shove;
   if(s.hp <= 0 || (by && popAssist(s, by))){ s.life = 0; for(let i=0;i<14;i++) puff(s.x, s.y, s.color, 5); }
 }
-// REJECTION PORTAL (the Rejection Portal page; Mine Your Own Business): he opens it instantly with a finger snap, and
-// on the show whoever goes in is flung in, screaming. It does not pull -- nothing on the wiki has it suck anyone in -- so
-// it is a spot to get out of: it opens where you stood when he flashed (the Fist Thingy's read), and whoever touches it
-// before it shuts is hit once and knocked up and AWAY from it -- not into it: the game has nowhere for a fighter to go --
-// and then it closes. Where it leads is never named.
+// The round core of the old Rejection Portal and its snap-shut, kept for Steve Cobs's PORTAL (his own attack reads them, and drawRejectionPortal draws it): MePhone4's own portal is
+// the wiki's oval now (MP4.portal, below).
 const PORTAL_CORE = 44;
-function portalSpot(s, tgt){
-  return { x: clamp(s._telX!=null ? s._telX : (tgt ? tgt.x : s.x), 90, WW-90),
-           y: clamp(s._telY!=null ? s._telY : groundY()-40, 80, groundY()-30) };
-}
 function portalCore(P){ return PORTAL_CORE * Math.min(1, Math.max(0, P.t/(P.T||1))*4); }   // full size, then it snaps shut over its last quarter
-function updateRejectionPortal(s){
-  const P = s._portal; if(!P) return;
-  P.t--;
-  if(!P.hit) P.hit = {};
-  const core = portalCore(P);
-  for(const f of fighters){
-    if(f.dead || f.invuln>0 || P.hit[f.idx]) continue;
-    if(hurtGap(f, P.x, P.y) < core){
-      P.hit[f.idx] = 1;
-      const away = Math.sign(f.x - P.x) || Math.sign(P.x - WW/2) || 1;
-      applyHit(f, bossDmg()*0.8, away*7, -12, null, {bossAtk:P.id});   // a second move's 0.8x; -12 is the top of the boss band (Evil Leafy's contact)
-      for(let i=0;i<12;i++) puff(f.x, f.y, s.color, 5);   // no popup: it would wipe his next warning in phase 3 (a 52-frame gap)
+// ---- THE REBUILD (the boss overhaul, 2026-09-29; boss-overhaul-decisions.md Rounds 8, 10, 11, 15) ---------------------------------------------------
+// Five attacks, in turn (BOSS_EXTRA, with mpBeginTelegraph deciding which): FIST THINGY! on every odd turn, and on the even ones MELIFE DOWNLOAD!, REJECTION PORTAL!, BOOMERANGS!
+// and A-MAZE-ING! -- phase 1 plays the first three, the maze joins in phase 2. His own place is the Great Escape's Elimination Area ("elimarea": a vote TV on two legs, the white
+// round platform, satellite discs on stalks). He does not stand still: "He is seen opening a portal and teleporting with it" (MePhone4; Rejection Portal: "In 'You Can't Do This
+// Forever', MePhone uses the rejection portal to teleport"), so he steps through a ring to the side of the arena farther from you (the hop), and the glove always crosses the whole
+// stage. "Harder, same damage" (the owner): every part of a turn shares that turn's one attack id, so a fighter takes at most one boss hit from it. The scene's state rides
+// b._hz (the bag a netcode client takes as it is): a few plain numbers. One table, so the tuning and the tests read the same numbers:
+//   hop      frames to go out through the ring, and to come in; the far side is `edge` of the arena in from its edge; already within `near` of it he stays
+//   fist     the glove's start (`edge`: how far in from the edge its centre starts, in glove radii), the wave goodbye and the slide back, the cuff, the uppercut's depth under the floor
+//   portal   open frames by phase; the oval's half-width and half-height (the hitbox IS the art); how far the exit is; the second entrance's wait and its lock; the third's stagger
+const MP4 = {
+  turns:['melife', 'portal', 'boomerang', 'maze'],
+  hop:{ out:9, inn:10, edge:0.14, near:0.18 },
+  fist:{ edge:0.5, wave:24, back:8, cuff:0.6, upDepth:80, pole:0.5,
+         slam:{ shake:8, dust:2, debris:6, scar:true, r:90 }, hit:{ shake:10, dust:2, debris:6, scar:true, r:80 } },
+  portal:{ T:[0, 48, 42, 36], rx:30, ry:62, far:340, wait:30, lock:14, stag:24, side:170, shut:10,
+           fling:{ dmg:0.8, rate:26, min:14, max:34, arc:36 } },
+};
+function mpHz(s){ return s._hz || (s._hz = {}); }
+function mpPh(s){ return Math.min(3, Math.max(1, s._phase || 1)); }
+function mpWallX(dir){ return dir > 0 ? WW - 26 : 26; }
+// THE HOP. Out through a ring where he stands, in through one at the side of the arena farther from you. `_hz.hop` is [frames so far, from, to]; he teleports on the frame he is gone.
+function mpHopTo(s, tgt){
+  const R = s.r, edge = clamp(WW*MP4.hop.edge, R, WW - R), right = tgt ? tgt.x < WW*0.5 : s.x < WW*0.5;
+  return right ? WW - edge : edge;
+}
+function mpBeginHop(s, tgt){
+  const H = mpHz(s), to = mpHopTo(s, tgt);
+  if(Math.abs(to - s.x) < WW*MP4.hop.near){ H.hop = null; s._hopTo = null; return false; }
+  H.hop = [0, Math.round(s.x), Math.round(to)]; s._hopTo = to;
+  return true;
+}
+// Once a frame (the move slot): the hop, then holding where he is. The default walk is skipped -- he does not chase.
+function mpMove(s, tgt){
+  const H = mpHz(s), M = MP4.hop;
+  if(H.hop){
+    const t = ++H.hop[0];
+    if(t === M.out){
+      for(let i=0;i<12;i++) puff(s.x, s.y, '#ff6aa0', 5);
+      s.x = s._hopTo != null ? s._hopTo : H.hop[2]; s.homeX = s.x; s.vx = 0;
+      for(let i=0;i<12;i++) puff(s.x, s.y, '#ffd23f', 5);
+      tone(520, 0.14, 'sine', 0.16, 0, 980);
+    }
+    if(t >= M.out + M.inn){ H.hop = null; s._hopTo = null; }
+  } else s.x += (s.homeX - s.x)*0.08;
+  if(tgt) s.face = Math.sign(tgt.x - s.x) || s.face;
+  return true;
+}
+// The wind-up starts (the tel slot): which move this turn is, where he hops, and every mark the tell will draw -- fixed now, so the tell is the hitbox.
+function mpBeginTelegraph(s, tgt){
+  const H = mpHz(s), ph = s._telPh || mpPh(s);
+  H.fd = 0; H.pw = null;
+  // MeLife with no room for another add: the turn is the ring's old GLITCH! until the rebuild's maze replaces it (A-MAZE-ING! "replaces the generic GLITCH! ring")
+  if(s._telKind === 'melife' && hostileCount() >= (MELIFE_CAP[ph] || 1)) s._telKind = 'glitch';
+  const k = s._telKind;
+  // the hop: FIST THINGY! starts every turn with it, so the glove crosses the whole stage; from phase 2 the other turns do too
+  if((k === s.attack || ph >= 2) && tgt && !tgt.dead) mpBeginHop(s, tgt); else { H.hop = null; s._hopTo = null; }
+  if(k === s.attack){ const far = s._hopTo != null ? s._hopTo : s.x; H.fd = Math.sign((tgt ? tgt.x : WW*0.5) - far) || s.face || 1; }
+  if(k === 'portal') H.pw = mpPortalPlan(s, tgt, ph);
+}
+// ---- FIST THINGY! ("the Fist Thingy ... shoots out and punches the contestant ... at full speed in the Elimination Area and sends them into Idiotic Island"; "a red boxing
+// glove ... attached to a gray or white pole") ---------------------------------------------------------------------------------------------------
+// The glove is BOLTED to the edge behind it: its pole slides in along the row you stood in (red while the row follows you, white for the last MEPHONE_GLOVE.lock frames),
+// then the glove flies the whole row at MEPHONE_GLOVE.spd ("at full speed"), through everyone on it (`pierce`, once each), slams the far wall (impact: shake, dust, debris,
+// a scar) and waves goodbye there ("it's seen waving goodbye with a tissue in hand", Out of Body Experience) before it slides back out. One attack id: the whole combo is at most one
+// boss hit. Phase 1 one glove; phase 2 "Back and Forth" (Double Digit Desert: "the Fist Thingy punches her once again ... for a third time"): a jab from his side, then the
+// finisher from the FAR edge, its row re-locking to you for the last frames before it flies -- being knocked flat by the jab is answered from behind; phase 3 "Glitching": a
+// jab from each edge, then the uppercut rising out of a floor mark where the second jab flew.
+function mpGloveShot(s, id, o){
+  const MG = MEPHONE_GLOVE, F = MP4.fist, dir = o.dir, ex = dir > 0 ? 0 : WW, x0 = ex + dir*MG.r*F.edge, wall = mpWallX(dir);
+  const life = Math.ceil(Math.abs(wall - x0)/MG.spd/PROJ_LIFE) + 6;
+  const q = Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:id, grav:false, noAim:true, pierce:true, mpGlove:1, mpDir:dir, r:MG.r, color:'#d8302a',
+    shape:'fistthingy', life, x:x0, vx:dir*MG.spd, vy:0, armX0:ex, armY0:o.y, mpD0:o.delay || 0, mpLk:MG.lock }, o);
+  delete q.dir;
+  return addProj(q);
+}
+function mpFist(s, tgt, id){
+  const ph = s._telPh || mpPh(s), gy = groundY(), MG = MEPHONE_GLOVE, F = MP4.fist, H = mpHz(s), spd = MG.spd;
+  const row = clamp(s._telY != null ? s._telY : (tgt ? tgt.y : s.y), 60, gy - 16);
+  const tx = s._telX != null ? s._telX : (tgt ? tgt.x : s.x + (s.face||1)*200), dir = H.fd || Math.sign(tx - s.x) || s.face || 1;
+  const jab = MG.jab[ph];
+  if(ph === 1) mpGloveShot(s, id, { dir, y:row, dmg:bossDmg(), kb:MG.kb });
+  else {
+    mpGloveShot(s, id, { dir, y:row, dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
+    // The second glove leaves the other edge, timed so it reaches your row MEPHONE_GLOVE.gap frames after the first would (past the 24-frame hit grace: a punch that lands is
+    // not swallowed by the one before it), and its row follows you until MEPHONE_GLOVE.lock frames before it flies (mpGloveTick).
+    const reach = (d) => Math.abs(tx - (d > 0 ? 0 : WW) - d*MG.r*F.edge)/spd;
+    const dB = clamp(Math.round(reach(dir) + MG.gap - reach(-dir)), MG.lock + 6, 90);
+    if(ph === 2) mpGloveShot(s, id, { dir:-dir, y:row, delay:dB, dmg:bossDmg()*(1 - jab), kb:MG.kb });
+    else {
+      mpGloveShot(s, id, { dir:-dir, y:row, delay:dB, dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
+      // The uppercut rises out of a mark on the floor under where the second jab flew (it follows you until the jab flies, then holds): it starts below the floor, so its glove
+      // breaks out of it, and its pole stays on the floor line.
+      const tC = (gy + F.upDepth - row)/spd, dC = Math.round(dB + reach(-dir) + MG.gap - tC);
+      mpGloveShot(s, id, { dir, y:gy + F.upDepth, x:clamp(tx, 60, WW - 60), delay:dC, vx:dir*4, vy:-Math.sqrt(spd*spd - 16), dmg:bossDmg()*(1 - 2*jab), kb:MG.up, smAngle:2,
+        mpUp:1, mpM:dC - dB, armX0:clamp(tx, 60, WW - 60), armY0:gy, life:Math.ceil((gy + F.upDepth + 120)/spd/PROJ_LIFE) + 6 });
     }
   }
-  if(hazardT%3===0){ const a = hazardT*0.3; puff(P.x + Math.cos(a)*core, P.y + Math.sin(a)*core*1.3, s.color, 3); }
-  if(P.t<=0) s._portal = null;
+  H.pu = hazardT;
+  for(let i=0;i<8;i++) puff(dir > 0 ? 40 : WW - 40, row, '#d8302a', 4);
+  shake(ph >= 3 ? 8 : 5);
+  tone(180, 0.2, 'sawtooth', 0.18, 0, 70);
+}
+// Once a frame (the tick slot): every glove. A waiting glove's row follows you until its last frames; a launched one is watched for the wall, and for a landed punch.
+function mpGloveTick(s, tgt){
+  const gy = groundY(), MG = MEPHONE_GLOVE, F = MP4.fist, H = mpHz(s);
+  for(const p of projectiles){
+    if(!p.mpGlove) continue;
+    if(p.mpWave > 0){ if(--p.mpWave <= 0) p.life = 0; continue; }           // slammed: it waves, slides back, and is gone
+    if(p.delay > 0){
+      if(p.mpUp){ if(p.delay > (p.mpM || 0) && tgt && !tgt.dead){ p.x = clamp(tgt.x, 60, WW - 60); p.armX0 = p.x; } }   // the mark is dropped, and holds, when the jab before it flies
+      else if(p.delay > (p.mpLk != null ? p.mpLk : MG.lock) && tgt && !tgt.dead){ p.y = clamp(tgt.y, 60, gy - 16); p.armY0 = p.y; }
+      p._lx = p.x;
+      continue;
+    }
+    if(!p._go){ p._go = 1; if(p.mpD0){ H.pu = hazardT; tone(180, 0.2, 'sawtooth', 0.16, 0, 70); } }   // a later glove flies: the TV flickers again
+    const n = p._hit ? Object.keys(p._hit).length : 0;
+    if(n > (p._mh || 0)){ p._mh = n; impact(p._lx != null ? p._lx : p.x, gy, F.hit); }   // a landed punch is heavy
+    p._lx = p.x;
+    if(!p.mpUp){
+      const wall = mpWallX(p.mpDir);
+      if((p.mpDir > 0 && p.x >= wall) || (p.mpDir < 0 && p.x <= wall)){
+        p.x = wall; p.vx = 0; p.delay = 1e9; p.mpWave = F.wave; p.life = Math.max(p.life, F.wave + 10);
+        impact(wall, gy, F.slam);
+        tone(90, 0.3, 'sine', 0.3, 0, 40);
+      }
+    }
+  }
+}
+// ---- the glove's drawing -------------------------------------------------------------------------------------------------------------------------
+// The pole: a grey bar with a light top and a dark underside, from (x0, y0) to (x1, y1).
+function mpPole(c, x0, y0, x1, y1, th){
+  const len = Math.hypot(x1 - x0, y1 - y0); if(len < 1) return;
+  c.save(); c.translate(x0, y0); c.rotate(Math.atan2(y1 - y0, x1 - x0));
+  c.fillStyle = '#9aa0a8'; c.fillRect(0, -th/2, len, th);
+  c.fillStyle = '#b8bec6'; c.fillRect(0, -th/2, len, th*0.3);
+  c.fillStyle = '#7e848c'; c.fillRect(0, th*0.2, len, th*0.3);
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(0, -th/2, len, th);
+  c.restore();
+}
+// The glove at (x, y), pointing the way `ang` says (0: right), the pole trailing behind it: the show's glove cut from File:Late II Fist Thingy.png (mp4glove), its cuff
+// and a BLANK band drawn beside it (the art's band carries the label, and a match shows no words). Drawn glove-left and mirrored for the right.
+function mpGloveArt(c, x, y, ang, r){
+  const im = attackImage('mp4glove'), h = r*2.18, w = im ? h*im.naturalWidth/im.naturalHeight : h*1.02, left = Math.cos(ang) < 0;
+  c.save(); c.translate(x, y);
+  if(left) c.rotate(ang - Math.PI); else { c.rotate(ang); c.scale(-1, 1); }   // native: pointing left, cuff and pole to the right
+  const cuffL = r*MP4.fist.cuff, cx0 = w/2 - 3, ch = h*0.56;
+  if(im) c.drawImage(im, -w/2, -h/2, w, h);
+  else { c.fillStyle = '#d8302a'; c.strokeStyle = '#7a1010'; c.lineWidth = 3; c.beginPath(); c.ellipse(-w*0.04, 0, w*0.46, h*0.46, 0, 0, 7); c.fill(); c.stroke();
+    c.beginPath(); c.ellipse(-w*0.18, -h*0.42, w*0.16, h*0.14, 0, 0, 7); c.fill(); c.stroke(); }
+  c.fillStyle = '#c01818'; c.fillRect(cx0, -ch/2, cuffL, ch);                  // the cuff
+  c.fillStyle = '#f4f4f4'; c.fillRect(cx0 + cuffL*0.14, -ch/2 - 2, cuffL*0.3, ch + 4);   // the band, with nothing written on it
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.strokeRect(cx0 + cuffL*0.14, -ch/2 - 2, cuffL*0.3, ch + 4); c.strokeRect(cx0, -ch/2, cuffL, ch);
+  c.restore();
+  return w/2 + cuffL;   // how far from its centre the pole begins
+}
+// The tell of a glove still to fly: the lane (its whole row), and its pole sliding in from the edge it is bolted to with the glove on the end, to where it starts. `u` is
+// how far along the wind-up is (0: hidden past the edge, 1: at its start).
+function mpGloveTell(c, dir, y, u, locked){
+  const MG = MEPHONE_GLOVE, F = MP4.fist, r = MG.r, ex = dir > 0 ? 0 : WW, x1 = ex + dir*r*F.edge, x0 = ex - dir*r*0.9, k = 1 - (1 - clamp(u, 0, 1))*(1 - clamp(u, 0, 1));
+  c.save();
+  c.globalAlpha = locked ? 0.3 : 0.14; c.fillStyle = locked ? '#ffffff' : '#d8302a'; c.fillRect(0, y - r, WW, r*2);   // the band is the glove's height
+  c.globalAlpha = 1;
+  const gx = x0 + (x1 - x0)*k, back = mpGloveArt(c, gx, y, dir > 0 ? 0 : Math.PI, r);
+  mpPole(c, ex - dir*40, y, gx - dir*back, y, r*F.pole);
+  c.restore();
+}
+// A glove shot (the shotdraw slot): waiting (its lane and pole, or for the uppercut its floor mark and the column it will break out along), flying (the pole to the edge it
+// is bolted to, the glove at the end), or slammed (waving, then sliding back). True when it drew.
+function mpDrawGlove(pr){
+  if(!pr.mpGlove) return false;
+  const c = ctx, MG = MEPHONE_GLOVE, F = MP4.fist, gy = groundY(), r = pr.r || MG.r, up = !!pr.mpUp, dir = pr.mpDir || (pr.vx < 0 ? -1 : 1);
+  const pending = pr.delay > 0 && pr.delay < 1e8 && !(pr.mpWave > 0), lk = pr.mpLk != null ? pr.mpLk : MG.lock;
+  if(pending){
+    if(up){
+      const m = pr.mpM || 0; if(pr.delay > m) return true;                       // the mark is not down yet
+      const locked = pr.delay <= lk, x = pr.x;
+      c.save(); c.globalAlpha = locked ? 0.2 : 0.08; c.fillStyle = locked ? '#ffffff' : '#d8302a'; c.fillRect(x - r, 0, r*2, gy);   // the column it will break out along
+      c.globalAlpha = locked ? 0.9 : 0.55; c.strokeStyle = locked ? '#ffffff' : '#ff4a3a'; c.lineWidth = 3; c.beginPath(); c.ellipse(x, gy - 3, r*1.05, 9, 0, 0, 7); c.stroke();
+      c.globalAlpha = locked ? 0.35 : 0.18; c.fillStyle = c.strokeStyle; c.fill();
+      c.restore(); return true;
+    }
+    const d0 = pr.mpD0 || 1;
+    mpGloveTell(c, dir, pr.y, 1 - pr.delay/d0, pr.delay <= lk);
+    return true;
+  }
+  const wave = pr.mpWave > 0;
+  c.save();
+  if(up){
+    c.beginPath(); c.rect(0, -400, WW, gy + 400); c.clip();                         // it comes out of the floor: nothing shows below the line
+    const back = mpGloveArt(c, pr.x, pr.y, -Math.PI/2, r);
+    mpPole(c, pr.x, pr.y + back, pr.x, gy + F.upDepth + 60, r*F.pole);
+    c.restore(); return true;
+  }
+  let x = pr.x, ang = dir > 0 ? 0 : Math.PI;
+  if(wave){
+    const t = F.wave - pr.mpWave;
+    if(t > 4) ang += Math.sin((t - 4)*0.55)*0.32*(dir > 0 ? -1 : 1);                 // the wave goodbye
+    if(pr.mpWave < F.back){ const u = 1 - pr.mpWave/F.back; x -= dir*u*u*260; }     // ...and it slides back out along its pole
+  }
+  const back = mpGloveArt(c, x, pr.y, ang, r);
+  mpPole(c, pr.armX0 - dir*40, pr.y, x - dir*Math.cos(ang - (dir > 0 ? 0 : Math.PI))*back, pr.y, r*F.pole);
+  if(wave && pr.mpWave < F.wave - 4 && pr.mpWave > F.back){   // the tissue in its hand
+    c.translate(x + dir*r*0.2, pr.y - r*1.05); c.rotate(Math.sin(hazardT*0.5)*0.4*dir);
+    c.fillStyle = '#ffffff'; c.strokeStyle = '#8a8f98'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(r*0.5*dir, -r*0.35, r*0.7*dir, -r*0.1); c.quadraticCurveTo(r*0.45*dir, r*0.25, 0, r*0.1); c.closePath(); c.fill(); c.stroke();
+  }
+  c.restore();
+  return true;
+}
+// ---- REJECTION PORTAL! ("a vertical, circular vortex ... It has yellow and pink on the inside and will fade away if an object enters it"; "MePhone4 ... seems to be able to
+// instantly do so just by snapping his fingers"; "has tossed Apple and pushed Fan (first time) into the portal") ---------------------------------------------------------
+// He snaps (the tell shows where the entrance will open AND, on the far side, the exit). A pink-and-yellow oval opens where you stood: touch it and you are hit once (0.8) and
+// FLUNG along a low arc from the entrance to the exit -- "sent flying ... off-guard" -- and the portal fades once it has flung someone. Where you will land is the exit's
+// ring, there from the first frame of the tell. Phase 2: a second entrance opens MP4.portal.wait frames later, where you have moved to (it follows you until MP4.portal.lock frames
+// before it opens); phase 3: three, staggered -- your spot, then one each side, all marked from the start. One attack id: only the first thing to land counts.
+// _hz.pt is [[x, y, exit x, frames to wait, frames open, frames in all, frame it flung someone, follows you], ...]; _hz.pw the plan the tell draws.
+function mpExitX(x){
+  const d = x < WW*0.5 ? 1 : -1;
+  return clamp(x + d*Math.max(MP4.portal.far, Math.abs(WW - 2*x)), 110, WW - 110);
+}
+function mpPortalPlan(s, tgt, ph){
+  const gy = groundY(), P = MP4.portal;
+  const x = clamp(s._telX != null ? s._telX : (tgt ? tgt.x : s.x), 90, WW - 90), y = clamp(s._telY != null ? s._telY : gy - 40, 80, gy - 30);
+  const xs = [x]; if(ph >= 3) xs.push(clamp(x - P.side, 90, WW - 90), clamp(x + P.side, 90, WW - 90));
+  return xs.map(v => [Math.round(v), Math.round(y), Math.round(mpExitX(v))]);
+}
+function mpPortalFire(s, tgt){
+  const H = mpHz(s), ph = s._telPh || mpPh(s), P = MP4.portal, T = P.T[ph], plan = (H.pw && H.pw.length) ? H.pw : mpPortalPlan(s, tgt, ph);
+  s._ptId = ++BOSS_ATK_ID; s._ptHit = {};
+  H.pt = plan.map((q, i) => [q[0], q[1], q[2], ph >= 3 ? P.stag*i : 0, T, T, 0, 0]);
+  if(ph === 2) H.pt.push([plan[0][0], plan[0][1], plan[0][2], P.wait, T, T, 0, 1]);   // the second entrance: where you have moved to
+  H.pw = null;
+  for(let i=0;i<14;i++) puff(plan[0][0], plan[0][1], '#ff6aa0', 5);
+  shake(5); tone(660, 0.1, 'triangle', 0.2, 0, 990); tone(990, 0.12, 'triangle', 0.18, 0.06, 1400);
+}
+function mpFling(f, q){
+  const P = MP4.portal.fling, gy = groundY(), x0 = f.x, y0 = f.y, x1 = clamp(q[2], 60, WW - 60), y1 = gy - f.r;
+  const T = clamp(Math.round(Math.abs(x1 - x0)/P.rate), P.min, P.max);
+  f._mpFl = { y0, y1, T, t:0, A:P.arc, vx:(x1 - x0)/T };
+  mpFlingStep(f);
+  for(let i=0;i<12;i++) puff(f.x, f.y, '#ff6aa0', 5);
+}
+// One frame of a flung fighter, before the fighters' own step: a constant sideways speed and a low arc that comes down at the exit (the step adds gravity, so it is taken off here).
+function mpFlingStep(f){
+  const F = f._mpFl, u = Math.min(1, ++F.t/F.T);
+  if(F.t > F.T){ f.vx = 0; f.vy = Math.min(f.vy, 0); f._mpFl = null; return; }   // it came down at the exit: the speed stops with it, and the hit-stun left over is the dizziness
+  f.vx = F.vx; f.vy = ((F.y1 - F.y0) - 4*F.A*(1 - 2*u))/F.T - GRAV; f.onground = false; f.hitstun = Math.max(f.hitstun || 0, 2);
+}
+function mpPortalTick(s, tgt){
+  const H = mpHz(s), P = MP4.portal, gy = groundY();
+  for(const f of fighters) if(f._mpFl){ if(f.dead) f._mpFl = null; else mpFlingStep(f); }
+  if(!H.pt) return;
+  const keep = [];
+  for(const q of H.pt){
+    if(q[3] > 0){                                           // still to open
+      q[3]--;
+      if(q[7] && q[3] > P.lock && tgt && !tgt.dead){ q[0] = Math.round(clamp(tgt.x, 90, WW - 90)); q[1] = Math.round(clamp(tgt.y, 80, gy - 30)); q[2] = Math.round(mpExitX(q[0])); }
+      if(q[3] === 0){ for(let i=0;i<10;i++) puff(q[0], q[1], '#ff6aa0', 4); tone(660, 0.1, 'triangle', 0.16, 0, 990); }
+      keep.push(q); continue;
+    }
+    q[4]--;
+    const k = Math.min(1, Math.max(0, q[4]/q[5])*4), rx = P.rx*k, ry = P.ry*k;
+    if(rx > 4) for(const f of fighters){
+      if(f.dead || f.invuln > 0 || (s._ptHit && s._ptHit[f.idx])) continue;
+      if(hurtGap(f, q[0], q[1] + clamp(f.y - q[1], -(ry - rx), ry - rx)) < rx){
+        const before = f.pct;
+        applyHit(f, bossDmg()*P.fling.dmg, 0, 0, null, { bossAtk:s._ptId });
+        if(f.pct > before){ if(s._ptHit) s._ptHit[f.idx] = 1; mpFling(f, q); q[4] = Math.min(q[4], P.shut); q[6] = hazardT; }
+      }
+    }
+    if(hazardT%3 === 0){ const a = hazardT*0.3; puff(q[0] + Math.cos(a)*rx, q[1] + Math.sin(a)*ry, '#ffd23f', 2); }
+    if(q[4] > 0) keep.push(q);
+  }
+  H.pt = keep.length ? keep : null;
+  if(!H.pt) s._ptHit = null;
+}
+// A portal's drawing (the world-space fx pass): the oval is the wiki's art, sized to its own hitbox; the exit is a fainter ring that lights when someone is flung.
+function mpDrawPortal(c, x, y, k, rot){
+  const P = MP4.portal, rx = P.rx*k, ry = P.ry*k, im = attackImage('mp4portal');
+  c.save();
+  if(im) c.drawImage(im, x - rx, y - ry, rx*2, ry*2);
+  else { c.fillStyle = '#ff4a74'; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 7); c.fill(); }
+  c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.globalAlpha = 0.7;
+  for(let i=0;i<3;i++){ const a = rot + i*2.1, m = 1 - i*0.22; c.beginPath(); c.ellipse(x, y, rx*m, ry*m, 0, a, a + 2.2); c.stroke(); }
+  c.restore();
+}
+function mpDrawPortals(b){
+  const H = b._hz; if(!H) return;
+  const c = ctx, P = MP4.portal, gy = groundY(), t = hazardT || 0;
+  const ring = (x, y, k, color, alpha, dash) => { c.save(); c.globalAlpha = alpha; c.strokeStyle = color; c.lineWidth = 2.5; if(dash) c.setLineDash(dash);
+    c.beginPath(); c.ellipse(x, y, P.rx*k, P.ry*k, 0, 0, 7); c.stroke(); c.restore(); };
+  if(Array.isArray(H.pw)) for(const q of H.pw){                     // the tell: where it opens, and where you land
+    const pul = 0.45 + 0.25*Math.sin(t*0.4);
+    ring(q[0], q[1], 1, '#ff6aa0', pul, [6, 5]); ring(q[2], gy - P.ry*0.8, 0.8, '#7ff0ff', pul*0.8, [4, 5]);
+  }
+  if(Array.isArray(H.pt)) for(const q of H.pt){
+    const ey = gy - P.ry*0.8, lit = q[6] > 0 && t - q[6] < 26;
+    if(q[3] > 0){ const lock = q[3] <= P.lock; ring(q[0], q[1], 1, lock ? '#ffffff' : '#ff6aa0', 0.35 + 0.35*Math.sin(t*(lock ? 0.9 : 0.4)), [6, 5]); }
+    else mpDrawPortal(c, q[0], q[1], Math.min(1, Math.max(0, q[4]/q[5])*4), t*0.12);
+    ring(q[2], ey, lit ? 1 : 0.8, lit ? '#ff6aa0' : '#7ff0ff', lit ? 0.95 : 0.35, lit ? null : [4, 5]);
+    if(lit){ c.save(); c.globalAlpha = 0.5*(1 - (t - q[6])/26); c.fillStyle = '#ff6aa0'; c.beginPath(); c.ellipse(q[2], ey, P.rx, P.ry*0.8, 0, 0, 7); c.fill(); c.restore(); }
+  }
+}
+// His tells, in the boss's own frame (the tell slot): the glove's lane and the pole sliding in.
+function mpDrawTell(s){
+  if(!(s._tel > 0)) return;
+  const c = ctx, gy = groundY(), MG = MEPHONE_GLOVE, H = s._hz || {};
+  c.save(); c.translate(-s.x, -s.y);                                // into world space
+  if(s._telKind === s.attack && typeof s._telX === 'number' && typeof s._telY === 'number'){
+    const dir = H.fd || Math.sign(s._telX - s.x) || s.face || 1;
+    mpGloveTell(c, dir, clamp(s._telY, 60, gy - 16), 1 - s._tel/bossTelLen(s), s._tel < MG.lock);
+  }
+  c.restore();
+}
+// The world-space pass (the fx slot): the portals, and what he is doing through them.
+function mpDrawFx(b){
+  mpDrawPortals(b);
+}
+// Is a part of this turn still to come? (The turn's gap is held until none is, so the next wind-up never starts under a combo, a second portal or a maze.)
+function mpBusy(s){
+  const H = s._hz;
+  if(H && Array.isArray(H.pt) && H.pt.some(q => q[3] > 0)) return true;
+  return projectiles.some(p => p.mpGlove && p.delay > 0 && p.delay < 1e8);
+}
+// Once a frame (the tick slot): the row follows you through the wind-up until its last frames, then every moving part.
+function mpTick(s, tgt){
+  if(s._tel > 0 && s._telKind === s.attack && s._tel >= MEPHONE_GLOVE.lock && tgt && !tgt.dead){ s._telX = tgt.x; s._telY = tgt.y; }
+  mpGloveTick(s, tgt);
+  mpPortalTick(s, tgt);
+  if(s._atkTimer > 1e5 && !mpBusy(s)) s._atkTimer = bossAtkGap(s);
 }
 // @boss:mephone4:end helpers
 
@@ -13510,33 +13818,11 @@ function fireBossAttack(s, tgt){
 
   // @boss:mephone4:begin fire
   if(s.attack==="mephone"){
-    // FIST THINGY (the Fist Thingy page: a red boxing glove on a pole that shoots out and punches at full speed; he
-    // debuted it in The Arena of Death). It punches along a ROW, the height the target was at when he flashed, so
-    // jumping or dropping during the telegraph dodges it and a platform does not. P1 is one punch. From P2 it keeps
-    // punching, as it did to Bow in Double Digit Desert: again from the same side 26 frames later -- past the 24-frame
-    // hit grace, so the first glove's grace cannot swallow the second -- and in P3 the last punch is the uppercut "that
-    // sent her far away", rising from his side, not out of the floor (that is Pickle's up-special).
-    // One atkId for the whole combo: however many land, it is one boss hit's worth (the fractions add to 1.0). The early
-    // punches of a combo are jabs (MEPHONE_GLOVE): they keep whoever they hit in the row, and the last punch launches.
-    const ph = s._telPh || s._phase || 1, row = clamp(s._telY!=null ? s._telY : (tgt ? tgt.y : s.y), 60, gy-16);
-    const tx = s._telX!=null ? s._telX : (tgt ? tgt.x : s.x + (s.face||1)*200), dir = Math.sign(tx - s.x) || s.face || 1;
-    const ox = s.x + dir*s.r*0.25;   // out of his body, so nobody hugging him stands behind the glove
-    const glove = o => addProj(Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:atkId, grav:false, noAim:true,
-      r:MEPHONE_GLOVE.r, color:'#d8302a', shape:'fistthingy', life:60, x:ox, y:row, vx:dir*15, vy:0 }, o));
-    const MG = MEPHONE_GLOVE, jab = MG.jab[ph];
-    if(ph===1) glove({ dmg:bossDmg(), kb:MG.kb });
-    else {
-      glove({ dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
-      if(ph===2) glove({ delay:MG.gap, dmg:bossDmg()*(1 - jab), kb:MG.kb });
-      else {
-        glove({ delay:MG.gap, dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
-        // The uppercut starts under the row and rises through the spot he aimed at. smAngle tilts its launch up the way
-        // an angled smash's shot is tilted (SMASH_ANGLE_TILT), to about (3, -11): the top of the boss band, not past it.
-        const oy = Math.min(row + 40, gy - 8), a = Math.atan2(row - oy, (tx - ox) || dir);
-        glove({ y:oy, vx:Math.cos(a)*15, vy:Math.sin(a)*15, delay:2*MG.gap, dmg:bossDmg()*(1 - 2*jab), kb:MG.up, smAngle:2 });
-      }
-    }
-    for(let i=0;i<8;i++) puff(ox, row, '#d8302a', 4); shake(ph>=3 ? 8 : 5);
+    // FIST THINGY (the Fist Thingy page: a red boxing glove on a pole that shoots out and punches at full speed; he debuted it in The Arena of Death). The glove is bolted to the
+    // edge behind it and flies a whole ROW, the height the target was at when its lock fell (MEPHONE_GLOVE.lock), so jumping or dropping during the telegraph dodges it and a
+    // platform does not. P1 one glove; P2 a jab, then the finisher from the far edge; P3 a jab from each edge, then the uppercut out of a floor mark (mpFist). One atkId for the
+    // whole combo: however many land, it is one boss hit's worth (the fractions add to 1.0).
+    mpFist(s, tgt, atkId);
     return;
   }
   // @boss:mephone4:end fire
@@ -24921,6 +25207,7 @@ function drawProjectile(pr){
     // @boss:dragon:end shotdraw
 
     // @boss:mephone4:begin shotdraw
+    if(pr.mpGlove && mpDrawGlove(pr)) return;   // the Fist Thingy: its lane and pole while it waits, the glove and its pole in flight, its wave goodbye at the wall (mpDrawGlove)
     // @boss:mephone4:end shotdraw
 
     // @boss:evilleafy:begin shotdraw
@@ -25201,6 +25488,7 @@ function draw(){
   // @boss:dragon:end fx
 
   // @boss:mephone4:begin fx
+  { const mp4B = summons.find(s=>s.type==="boss" && s.attack==="mephone"); if(mp4B) mpDrawFx(mp4B); }   // MePhone4's portals and the exits (mpDrawFx), over the arena and under the fighters
   // @boss:mephone4:end fx
 
   // @boss:evilleafy:begin fx
@@ -26127,20 +26415,9 @@ function drawBossSprite(s){
   // @boss:dragon:end tell
 
   // @boss:mephone4:begin tell
-  // MePhone4's Rejection Portal lives on him, so it is drawn relative to him: open, or during its telegraph a faint
-  // mark where it is about to open (the spot you stood on when he flashed).
-  if(s._portal && typeof s._portal.x==='number') drawRejectionPortal(s._portal.x - s.x, s._portal.y - s.y, s._portal, s.color);
-  else if(s._tel>0 && s._telKind==="portal" && typeof s._telX==='number'){ const q = portalSpot(s, null);
-    ctx.globalAlpha = 0.3; ctx.strokeStyle = s.color || "#4fb8e8"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(q.x - s.x, q.y - s.y, PORTAL_CORE, PORTAL_CORE*1.3, 0, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
-  // MePhone4's Fist Thingy: while he winds it up, a band along the row the glove will punch, out from his hand to the side
-  // you are on -- red while it follows you, white once it has locked (MEPHONE_GLOVE.lock). The telegraph, not the wiki.
-  if(s.attack==="mephone" && s._tel>0 && s._telKind==="mephone" && typeof s._telX==='number' && typeof s._telY==='number'){
-    const dir = Math.sign(s._telX - s.x) || s.face || 1, locked = s._tel < MEPHONE_GLOVE.lock, x0 = dir*R*0.25, len = 1600;
-    const row = clamp(s._telY, 60, groundY() - 16) - s.y;
-    ctx.save(); ctx.globalAlpha = locked ? 0.3 : 0.14; ctx.fillStyle = locked ? "#ffffff" : "#d8302a";
-    ctx.fillRect(Math.min(x0, x0 + dir*len), row - MEPHONE_GLOVE.r, len, MEPHONE_GLOVE.r*2); ctx.restore();   // the band is the glove's height
-  }
+  // MePhone4's tells, drawn in world space from his frame: the Fist Thingy's lane (red while it follows you, white once it has locked: MEPHONE_GLOVE.lock, the tell is the hitbox)
+  // with its pole sliding in from the edge it is bolted to (mpDrawTell). His portals, exits and what he opens are drawn by mpDrawFx.
+  if(s.attack==="mephone") mpDrawTell(s);
   // @boss:mephone4:end tell
 
   // @boss:evilleafy:begin tell
@@ -29465,6 +29742,11 @@ const ATTACK_SPRITES = {
   // @boss:dragon:end art
 
   // @boss:mephone4:begin art
+  // MePhone4 (Boss 6): the show's own art for what he throws and opens (his PICKS slot in scripts/fetch-attack-sprites.mjs, credited in CREDITS.md). `h` here is a nominal size: the glove
+  // and the portal are drawn at their own (mpGloveArt, mpDrawPortal), sized to their hitboxes.
+  mp4glove:  { src:'assets/sprites/attacks/mp4glove.png',  h:40, fixed:true },                // FIST THINGY! -- the red glove, cut before its labelled cuff band (the cuff, a blank band and the pole are drawn)
+  mp4portal: { src:'assets/sprites/attacks/mp4portal.png', h:40, fixed:true },                // REJECTION PORTAL! -- the wiki's pink oval with yellow rings
+  mp4boom:   { src:'assets/sprites/attacks/mp4boom.png',   h:18, spin:true, cap:3 },          // BOOMERANGS! -- the boomerang in his hand in the Great Escape remaster, tumbling
   // @boss:mephone4:end art
 
   // @boss:evilleafy:begin art
@@ -29639,6 +29921,12 @@ const PROJ_SHAPE = {
   fistthingy:{ draw(c,r){ c.fillStyle='#9aa0a8'; c.fillRect(-r*3.4,-r*0.2,r*2.6,r*0.4); c.fillStyle='#f4f4f4'; c.fillRect(-r,-r*0.62,r*0.36,r*1.24);
     c.fillStyle='#d8302a'; c.beginPath(); c.ellipse(r*0.15,0,r*0.85,r*0.72,0,0,7); c.fill(); c.strokeStyle='#1c1c1c'; c.lineWidth=r*0.14; c.stroke();
     c.beginPath(); c.ellipse(r*0.05,-r*0.62,r*0.34,r*0.22,0,0,7); c.fill(); c.stroke(); } },
+  // the drawn stand-ins for his art keys (shown until the art loads: mpGloveArt and mpDrawPortal draw them themselves; the boomerang goes through the shape path)
+  mp4glove:  { draw(c,r){ c.fillStyle='#d8302a'; c.strokeStyle='#7a1010'; c.lineWidth=r*0.12; c.beginPath(); c.ellipse(0,0,r*0.9,r*0.8,0,0,7); c.fill(); c.stroke(); } },
+  mp4portal: { draw(c,r){ c.fillStyle='#ff4a74'; c.strokeStyle='#ffd23f'; c.lineWidth=r*0.18; c.beginPath(); c.ellipse(0,0,r*0.6,r*1.2,0,0,7); c.fill(); c.stroke(); } },
+  mp4boom:   { spin:true, draw(c,r){ c.lineJoin='round'; c.fillStyle='#ffc882'; c.strokeStyle='#c8602a'; c.lineWidth=r*0.14;
+      c.beginPath(); c.moveTo(-r*0.9,-r*0.9); c.lineTo(r*0.1,r*0.1); c.lineTo(r*0.9,-r*0.9); c.lineTo(r*0.9,-r*0.5); c.lineTo(r*0.4,r*0.45); c.lineTo(-r*0.4,r*0.45); c.lineTo(-r*0.9,-r*0.5); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle='#d8302a'; c.beginPath(); c.arc(-r*0.85,-r*0.75,r*0.22,0,7); c.arc(r*0.85,-r*0.75,r*0.22,0,7); c.fill(); } },
   // @boss:mephone4:end shape
 
   // @boss:evilleafy:begin shape
@@ -30460,6 +30748,7 @@ function netProjectiles(){
     // @boss:dragon:end netshot
 
     // @boss:mephone4:begin netshot
+    if(p.mpGlove){ x = x || {}; x.mpGlove = 1; x.mpDir = p.mpDir; x.delay = p.delay; x.mpD0 = p.mpD0; x.mpLk = p.mpLk; if(p.mpWave) x.mpWave = p.mpWave; if(p.mpUp){ x.mpUp = 1; x.mpM = p.mpM; } }   // MePhone4's Fist Thingy: its side, how long it waits (its lane and pole are its tell), the wave goodbye, the uppercut's mark -- armX0/armY0 (above) are the edge its pole is bolted to
     // @boss:mephone4:end netshot
 
     // @boss:evilleafy:begin netshot
@@ -30545,7 +30834,7 @@ function serializeState(withGeo){
       // @boss:dragon:end net
 
       // @boss:mephone4:begin net
-      _portal:m._portal?{x:Math.round(m._portal.x),y:Math.round(m._portal.y),t:m._portal.t,T:m._portal.T}:undefined,
+      // MePhone4: everything a client draws of him rides _hz (above, as it is): his hop, the portals and their exits, the glove tell's side, the maze, the TV's beats -- plain numbers
       // @boss:mephone4:end net
 
       // @boss:evilleafy:begin net
