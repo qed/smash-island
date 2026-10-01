@@ -408,6 +408,25 @@ describe('BOSS_ARENA_GROUND: each arena its own ground', () => {
   });
 });
 
+describe('the stage\'s clouds stay out from under a roof', () => {
+  it('a roofed arena (BOSS_ARENA_ROOFED) draws none of the four drifting clouds; an open arena and a plain stage keep them', () => {
+    // Four's builder, after the late batch (2026-10-01): the stage's clouds drifted across Eternal Algebra Class, a room.
+    // Every arena still paints its own sky; only the generic clouds stop where there is no open sky.
+    const { w, log } = bootRecording();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
+    const clouds = () => log.filter((e) => e.op === 'ellipse' && e.fill === '#ffffff55' && e.args[2] === 40 && e.args[3] === 18).length;
+    log.length = 0; w.eval('draw()');
+    expect(clouds(), 'a plain stage').toBe(4);
+    for (const k of ['exitclass', 'fourest', 'warehouse', 'hive', 'meeplehq']) {
+      w.eval(`BOSS_ARENA = '${k}'`); log.length = 0; w.eval('draw()');
+      expect(clouds(), k).toBe(0);
+    }
+    w.eval(`BOSS_ARENA = 'volcano'`); log.length = 0; w.eval('draw()');
+    expect(clouds(), 'the volcano is outdoors').toBe(4);
+    w.eval('BOSS_ARENA = null');
+  });
+});
+
 describe('BOSS_ARENA_HAZARD: a clean way for an arena to run a hazard', () => {
   it('steps while its boss stands, draws under and over the fighters, and hurts only as a capped boss hit', () => {
     const r = W.eval(`(function(){ ${STAGE('Announcer', 500)}
