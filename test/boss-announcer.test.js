@@ -177,7 +177,7 @@ describe('CAKE AT STAKE!: the prize comes out of the Cake Tosser', () => {
       var out = { shots: [] }; b._phase = 2; b.hp = b.maxHp*0.5; fighters.forEach(function(q){ q.invuln = 999; });
       turn(0); out.name = document.getElementById('banner').textContent;
       var fire = null;
-      for (var i=0;i<175;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; });
+      for (var i=0;i<225;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; });
         if (i === 130){ f.x = 620; }   // after the flat throw has left, before the last lob does: that one is aimed where he has gone
         projectiles.filter(function(p){ return p.annCake != null && !p._seen; }).forEach(function(p){ p._seen = true; if (fire === null) fire = i;
           out.shots.push({ at: i - fire, w: p.grav ? 'lob' : 'flat', warnX: p.warnX == null ? null : Math.round(p.warnX), vx: +p.vx.toFixed(1), id: p.bossAtk }); }); }
@@ -185,11 +185,12 @@ describe('CAKE AT STAKE!: the prize comes out of the Cake Tosser', () => {
     })()`);
     expect(r.name).toBe('BUDGET CUTS!');
     expect(r.shots, 'three each for two fighters').toHaveLength(6);
-    // the lob lands 56 frames in; the flat leaves `calm` (30) after that; the last lob (40 frames in the air) lands `calm` after the flat has had time to cross the floor
-    // (flat.far, 36): so it is thrown at 56 + 30 + 36 + 30 - 40 = 112 (it used to follow the flat by 14 frames, and land 18 after the first lob)
-    expect(r.shots.map((s) => s.at + s.w)).toEqual(['0lob', '0lob', '85flat', '85flat', '112lob', '112lob']);
+    // the lob lands 56 frames in; the flat leaves `calm` (30) after that; the last lob LEAVES `calm` after the flat has had time to cross the floor (flat.far, 36), because
+    // its flight crosses the arena at the height of a fighter who has jumped the flat: 56 + 30 + 36 + 30 = 152 (it used to follow the flat by 14 frames, and land 18 after
+    // the first lob; at 112 it still met a fighter in the air over the flat)
+    expect(r.shots.map((s) => s.at + s.w)).toEqual(['0lob', '0lob', '85flat', '85flat', '152lob', '152lob']);
     expect(r.shots.filter((s) => s.w === 'lob').slice(0, 2).map((s) => s.warnX).sort((a, b) => a - b), 'the first lobs, one on each of you').toEqual([300, 800]);
-    const last = r.shots.filter((s) => s.at === 112).map((s) => s.warnX).sort((a, b) => a - b);
+    const last = r.shots.filter((s) => s.at === 152).map((s) => s.warnX).sort((a, b) => a - b);
     expect(last, 'the last, re-aimed: the fighter who moved is met where he went').toEqual([620, 800]);
     expect(new Set(r.shots.map((s) => s.id)).size, 'one attack id for the whole volley').toBe(1);
   });
@@ -730,7 +731,7 @@ describe('WATER BALLOONS!: he rises off the screen and they fall on shadows', ()
         for (var i=0;i<400;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; }); ys.push(b.y);
           if (b._tel === 0 && fireY === null && projectiles.some(function(p){ return p.shape === 'annballoon'; })){ fireY = b.y; fireAt = i; }
           projectiles.filter(function(p){ return p.shape === 'annballoon' && !p._seen; }).forEach(function(p){ p._seen = true; balloons.push({ warnX: Math.round(p.warnX), warnY: p.warnY, warn: p.warn, ring: p.annR, delay: p.delay, vx: p.vx, face: b.face, id: p.bossAtk, dmg: p.dmg }); });
-          projectiles.filter(function(p){ return p.annMark === 'spot' && !p._seen; }).forEach(function(p){ p._seen = true; spots.push({ x: Math.round(p.warnX), reach: p.mA, delay: p.delay, at: i }); });
+          if (fireAt === i) projectiles.filter(function(p){ return p.annMark === 'spot' && !p._seen; }).forEach(function(p){ p._seen = true; spots.push({ x: Math.round(p.warnX), reach: p.mA, delay: p.delay, at: i }); });   // (the balloons' own: made with them)
           projectiles.filter(function(p){ return p.annMark === 'splash' && !p._seen; }).forEach(function(p){ p._seen = true; lands.push(i); }); }
         out[ph] = { name: name, n: balloons.length, xs: balloons.map(function(x){ return x.warnX; }), b: balloons, fireY: fireY, r: b.r, minY: Math.min.apply(null, ys), endY: b.y, floor: gy - b.r, gap: null, bl: b._bl, full: bossDmg(), hover: !!b.hover,
           spots: spots, lands: lands, fireAt: fireAt, hit: ANN.balloon.hit };
@@ -800,6 +801,147 @@ describe('WATER BALLOONS!: he rises off the screen and they fall on shadows', ()
     expect(r.started, 'and his next wind-up began').not.toBeNull();
     expect(r.started - r.last, 'at least ANN_CALM after the last balloon').toBeGreaterThanOrEqual(ANN_CALM);
   });
+});
+
+// ---- THE WINDOW -------------------------------------------------------------------------------------------------------------------------------
+// The owner, 2026-10-01: "announcer causes unavoidable damage and without telegraphs." and, explaining it: "for the announcer "unavoidable hits", theyre unavoidable bcs
+// they barely have a moment where you can move to dodge." Every attack in every phase is played out below with a fighter nothing can hurt (so nothing is cut short), and
+// every damaging shot and mark of his is read back with the frame it was made and the frame it ended: each strike must have its tell up for ANN_CALM frames before it can
+// hurt, no two strikes may be closer than ANN_CALM (the ones that come together are one threat, in different places), and his next wind-up waits ANN_CALM after the last.
+describe('THE WINDOW: every threat is told in time, and no two come too close together', () => {
+  const TURN = (ph, mv) => `(function(){ ${STAGE(300)}
+    setPhase(${ph}); f.invuln = 999; var gy = groundY(), ev = [], seen = [], fr = 1, fire = null, starts = [];
+    turn(${mv}); var kind = b._telKind, name = document.getElementById('banner').textContent;
+    for (var i=0;i<420;i++){
+      var before = b._tel;
+      step(); fr++; f.invuln = 999; f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0;
+      if (fire === null && before === 1) fire = fr;
+      if (before === 0 && b._tel > 0) starts.push(fr);
+      projectiles.forEach(function(p){
+        if (p.owner !== -2 || p.annGhost || seen.indexOf(p) >= 0) return;
+        var k = p.annMark || p.shape || (p.annWave ? 'wave' : null); if (!k) return;
+        seen.push(p);
+        ev.push({ p:p, kind:k, born:fr, ended:null, delay:p.delay || 0, mA:p.mA, mB:p.mB, vx:p.vx, grav:!!p.grav, x:Math.round(p.warnX != null ? p.warnX : p.x), wave:!!p.annWave }); });
+      ev.forEach(function(e){ if (e.ended === null && (e.p.life <= 0 || projectiles.indexOf(e.p) < 0)) e.ended = fr; });
+    }
+    return { kind:kind, name:name, fire:fire, starts:starts, ev:ev.map(function(e){ var o = {}; for (var k in e) if (k !== 'p') o[k] = e[k]; return o; }),
+      C:{ lock:ANN.crush.lock, llock:ANN.laser.lock, far:ANN.flat.far, gv:ANN.laser.growV, gh:ANN.laser.growH, hold:ANN.laser.hold } };
+  })()`;
+  const CAKES = ['annslice', 'annlime', 'annice', 'annpie'];
+  // what each kind of strike is: when it can first hurt (s), when it is over (e), and how long its tell has been up by then (lead)
+  const strikesOf = (o) => {
+    const mine = o.ev.filter((e) => !o.starts.length || e.born < o.starts[0]);   // (his next turn begins within the run: its marks are not this turn's)
+    const out = [], first = (f) => mine.filter(f).sort((a, b) => a.born - b.born)[0];
+    for (const e of mine) {
+      if (CAKES.includes(e.kind) && e.grav) out.push({ t: 'lob', s: e.born, e: e.ended, lead: e.ended - e.born });   // a lob is a threat all through its flight (it crosses the arena where a fighter who has jumped is), and lands where its ring was
+      else if (CAKES.includes(e.kind)) {                                                                              // the flat throw: its lane has been lit since the wind-up began
+        const lane = first((l) => l.kind === 'lane' && l.mA === Math.sign(e.vx) && Math.abs(l.born + l.delay - e.born) <= 3);
+        out.push({ t: 'flat', s: e.born, e: e.born + o.C.far, lead: lane ? e.born - lane.born : 0 });
+      } else if (e.kind === 'annacid' || e.kind === 'annballoon') {                                                    // a drop lands on a spot that has been ringed since it was made
+        const sp = first((l) => l.kind === 'spot' && Math.abs(l.x - e.x) <= 1);
+        out.push({ t: e.kind, s: e.ended, e: e.ended, lead: sp ? e.ended - sp.born : 0 });
+      } else if (e.kind === 'annpress') out.push({ t: 'press', s: e.ended, e: e.ended, lead: e.ended - (o.fire - o.C.lock) });   // the circle locked `lock` frames before it left
+      else if (e.wave) out.push({ t: 'wave', s: e.born + e.delay, e: e.ended, lead: e.delay });                          // a wave's lane is lit from the moment the press is made
+      else if (e.kind === 'beam') out.push({ t: 'beam', s: e.born + e.mB, e: e.born + e.mB + (e.mA < 2 ? o.C.gv : o.C.gh) + o.C.hold, lead: e.mB === 0 ? o.C.llock : e.mB });
+    }
+    return out.sort((a, b) => a.s - b.s);
+  };
+  // strikes that start together (within 4 frames of one another) are one threat: in different places at once, with room between them
+  const threatsOf = (S) => { const T = []; for (const s of S) { const t = T[T.length - 1]; if (t && s.s - t.s0 <= 4) t.e = Math.max(t.e, s.e); else T.push({ s0: s.s, e: s.e }); } return T; };
+  const RUNS = [['CAKE AT STAKE!', 0, 1, 2], ['BUDGET CUTS!', 0, 2, 3], ['CRUSHER ARM!', 0, 3, 2], ['QUADRUPLE LASER!', 1, 1, 1], ['QUADRUPLE LASER!', 1, 2, 2], ['QUADRUPLE LASER!', 1, 3, 4],
+    ['ACID TEARS!', 3, 1, 2], ['ACID TEARS!', 3, 2, 3], ['ACID TEARS!', 3, 3, 4], ['WATER BALLOONS!', 5, 1, 3], ['WATER BALLOONS!', 5, 2, 4], ['WATER BALLOONS!', 5, 3, 5]];   // name, turn, phase, threats
+  let results;
+  beforeAll(() => { results = RUNS.map(([name, mv, ph]) => W.eval(TURN(ph, mv))); }, 120000);
+
+  it('every strike of every attack in every phase has its tell up for ANN_CALM frames or more before it can hurt (a lob its shadow, a flat throw its lane, a drop its ring, a beam its band or the locked cross, the press the locked circle, a wave its lane)', () => {
+    RUNS.forEach(([name, mv, ph], k) => {
+      const o = results[k], S = strikesOf(o);
+      expect(o.name, `${name} phase ${ph}`).toContain(name);
+      expect(S.length, `${name} phase ${ph} has strikes`).toBeGreaterThan(0);
+      for (const s of S) expect(s.lead, `${name} phase ${ph}: its ${s.t} at frame ${s.s} is told ${s.lead} frames ahead`).toBeGreaterThanOrEqual(ANN_CALM);
+    });
+  });
+
+  it('no two threats are closer than ANN_CALM: a fighter who dodges one has the time to get ready for the next (before: the flat throw 20 after the lob, the beams 14 apart, the drops 12, the balloons within 15, the press and its waves 0-11)', () => {
+    RUNS.forEach(([name, mv, ph, n], k) => {
+      const T = threatsOf(strikesOf(results[k]));
+      expect(T.length, `${name} phase ${ph}: ${n} threats`).toBe(n);
+      for (let j = 1; j < T.length; j++) expect(T[j].s0 - T[j - 1].e, `${name} phase ${ph}: threat ${j + 1} begins this long after threat ${j} is over`).toBeGreaterThanOrEqual(ANN_CALM - 1);
+    });
+  });
+
+  it('his next wind-up waits for the last of them and ANN_CALM more: the turns never run into one another', () => {
+    RUNS.forEach(([name, mv, ph], k) => {
+      const o = results[k], S = strikesOf(o), end = Math.max(...S.map((s) => s.e)), next = o.starts[0];
+      expect(next, `${name} phase ${ph}: his next turn did begin`).toBeDefined();
+      expect(next - end, `${name} phase ${ph}: it begins this long after his last strike is over`).toBeGreaterThanOrEqual(ANN_CALM - 1);
+    });
+  });
+});
+
+// A fighter who READS THE TELLS: he runs (4 px a frame, his top speed is 6.4) out of every zone that is lit, and jumps (the game's own jump) over every flat throw, wave and
+// row of the laser as it comes. Every attack in every phase, played out against him: he is never touched. The same turns do hurt one who stands still.
+describe('THE WINDOW: a fighter who reads the tells and moves can always avoid every threat', () => {
+  const DODGE = (ph, mv, bot) => `(function(){ ${STAGE(300)}
+    setPhase(${ph}); var gy = groundY(), JUMP_V = -12.5, RUN = 4, BOT = ${bot}, jumps = 0, moved = 0, hitAt = null, over = null, fired = false;
+    f.invuln = 0; f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0; f.pct = 0; f.onground = true; f.dead = false;
+    turn(${mv});
+    function zones(){
+      var Z = [];
+      projectiles.forEach(function(p){
+        if (p.owner !== -2) return;
+        if (p.annMark === 'spot' && p.delay > 0) Z.push([p.warnX, p.mA + 6]);                       // the ring of a lob, a drop or a balloon
+        if (p.shape === 'annpress' && p.life > 0) Z.push([p.warnX, 78]);                            // under the press
+        if (p.annMark === 'beam' && p.mA < 2 && p.delay > 0) Z.push([p.warnX, 36]);                 // the column of a cross
+      });
+      if (b._tel > 0 && b._telKind === 'annlaser' && b._tel <= ANN.laser.lock){ Z.push([b._telX, 36]); if (${ph} >= 3) Z.push([annCross2(b._telX), 36]); }   // the locked cross
+      if (b._tel > 0 && b._telKind === b.attack && ${ph} >= 3 && b._tel <= ANN.crush.lock) Z.push([b._telX, 78]);                                          // the locked circle
+      return Z;
+    }
+    function safeX(Z, x){
+      var ok = function(c){ return Z.every(function(z){ return Math.abs(c - z[0]) >= z[1]; }); };
+      if (ok(x)) return x;
+      for (var d=2; d<1100; d+=2){ if (x + d <= WW - 40 && ok(x + d)) return x + d; if (x - d >= 40 && ok(x - d)) return x - d; }
+      return x;
+    }
+    for (var i=0;i<460;i++){
+      if (BOT){
+        var Z = zones(), tx = safeX(Z, f.x);
+        if (Math.abs(tx - f.x) > 1){ var dx = Math.max(-RUN, Math.min(RUN, tx - f.x)); f.x += dx; moved += Math.abs(dx); }
+        var need = false;
+        projectiles.forEach(function(p){
+          if (p.owner !== -2 || !(p.life > 0)) return;
+          if ((p.annFlat || p.annWave) && !(p.delay > 0) && (f.x - p.x)*p.vx > 0 && Math.abs(f.x - p.x) < 150) need = true;   // along the floor toward him: jump as it comes
+          if (p.annMark === 'beam' && p.mA >= 2){ var until = p.delay - (annBeamTotal(p.mA, p.mB) - p.mB); if (until <= 8 && until >= -2) need = true; }   // a row about to start
+          if (p.annMark === 'lane' && p.delay > 0 && p.delay <= 9 && Math.sign(f.x - p.warnX) === p.mA && Math.abs(f.x - p.warnX) < 150 && Math.abs(f.y - p.warnY) < p.mB + 24) need = true;   // a lane about to fire, and he stands near where it starts: jump as it leaves
+        });
+        if (need && f.onground){ f.vy = JUMP_V; f.onground = false; jumps++; }
+      }
+      var before = f.pct, telB = b._tel; step(); if (BOT){ f.vx = 0; }
+      if (f.pct > before + 1e-6 && hitAt === null) hitAt = i;
+      if (telB > 0 && b._tel === 0) fired = true;
+      if (fired && !annBusy(b) && over === null){ over = i; break; }
+    }
+    return { hitAt:hitAt, pct:f.pct, jumps:jumps, moved:Math.round(moved), over:over, name:document.getElementById('banner').textContent };
+  })()`;
+  const SCEN = [['CAKE AT STAKE!', 0, 1], ['BUDGET CUTS!', 0, 2], ['CRUSHER ARM!', 0, 3], ['QUADRUPLE LASER!', 1, 1], ['QUADRUPLE LASER!', 1, 2], ['QUADRUPLE LASER!', 1, 3],
+    ['ACID TEARS!', 3, 1], ['ACID TEARS!', 3, 2], ['ACID TEARS!', 3, 3], ['WATER BALLOONS!', 5, 1], ['WATER BALLOONS!', 5, 2], ['WATER BALLOONS!', 5, 3]];
+
+  it('he runs out of the lit zones and jumps the lanes: every attack in every phase goes by without touching him', () => {
+    for (const [name, mv, ph] of SCEN) {
+      const r = W.eval(DODGE(ph, mv, true));
+      expect(r.name, `${name} phase ${ph}`).toContain(name);
+      expect(r.over, `${name} phase ${ph}: the turn ran its course`).not.toBeNull();
+      expect(r.hitAt, `${name} phase ${ph}: he was hit at frame ${r.hitAt} (moved ${r.moved} px, jumped ${r.jumps} times)`).toBeNull();
+    }
+  }, 180000);
+
+  it('and the same turns hurt a fighter who stands still, so the dodging is real: the cakes, the press, the cross, the drops and the balloons all find him', () => {
+    for (const [name, mv, ph] of [['CAKE AT STAKE!', 0, 1], ['BUDGET CUTS!', 0, 2], ['CRUSHER ARM!', 0, 3], ['QUADRUPLE LASER!', 1, 3], ['ACID TEARS!', 3, 3], ['WATER BALLOONS!', 5, 3]]) {
+      const r = W.eval(DODGE(ph, mv, false));
+      expect(r.hitAt, `${name} phase ${ph}: a fighter who stood still was hit`).not.toBeNull();
+    }
+  }, 120000);
 });
 
 describe('how he moves', () => {

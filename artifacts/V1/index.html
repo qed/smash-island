@@ -8356,6 +8356,19 @@ function annIdle(b){ return !(b._tel > 0) && !b._bl && (b._calm == null || b._ca
 // his own turns would leave it no gap at all), or phase 3's entry press is waiting for him to be idle: his next wind-up waits.
 function annHazardBusy(H){ return (H.pz > 0 && H.pz < 4) || (H.pz === 0 && !(H.bo > 0) && H.nx != null && H.nx <= 0) || (H.cc != null && H.cc < ANN.calm) || !!H.entry; }
 function annLobT(P, w){ return Math.max(20, Math.round((w === 'lob2' ? ANN.lob2 : ANN.lob)*P.T)); }
+// How far from where a lob lands it can hurt, measured on the fighter's middle: the cake's own width and a fighter's half, and a little over for the wider bodies. The ring on its
+// spot is this wide.
+function annLobReach(P){ return P.r + 32; }
+// A lob or a drop is thrown the usual way -- from the blade or the spout, up and over, to land in `T` frames -- but falls its last 90 px straight down: its last stretch is over its
+// spot, not slanting in from the side it came, so the ring on the spot is where it can hurt (a slanting arc clips a fighter standing just short of the ring, on the thrower's side,
+// a few frames early: further out the farther it was thrown). The vertical motion is the plain arc's, so it lands when it did; annTick stops its sideways motion on the way down
+// (`_stopY`). Returns its sideways speed, its first upward speed, and the height where it stops going sideways (null: it never falls that far above its spot).
+function annArc(ox, oy, x1, y1, T){
+  const g = 0.34, vy = ((y1 - oy) - g*T*(T - 1)/2)/T, stopY = y1 - 90;
+  let y = oy, v = vy;
+  for(let t=1; t<=T; t++){ y += v; v += g; if(v > 0 && y >= stopY) return { vx:(x1 - ox)/t, vy:vy, stopY:stopY }; }
+  return { vx:(x1 - ox)/T, vy:vy, stopY:null };
+}
 // CAKE AT STAKE!'s lanes, made as the wind-up starts: one a fighter, along the row he stands in, on the side of the tosser he stands on. It follows him until its
 // last `flat.lock` frames, then it holds, and when its clock runs out the flat throw leaves along it (annTick) -- `calm` after the lob has landed. The lane IS the
 // tell: a band a note's reach either side of the row, lit all through, brighter as the throw nears, white once locked.
@@ -8400,11 +8413,12 @@ function annCakes(s, tgt, id, ph){
   const lc = { id:id, hit:false, shots:[] };
   s._lastCake = lc; if(!s._ck) s._ck = [];
   // the volley, a fighter at a time, with a window between each strike (ANN.calm): the lob lands where you stood, `calm` frames later the flat throw leaves its lane
-  // (annTick), and (phase 2 on) the re-aimed lob lands `calm` after the flat throw has had time to reach anyone (`flat.far`)
-  const T1 = annLobT(P, 'lob'), T2 = annLobT(P, 'lob2'), land2 = T1 + ANN.calm + ANN.flat.far + ANN.calm;
+  // (annTick), and (phase 2 on) the re-aimed lob LEAVES `calm` after the flat throw has had time to reach anyone (`flat.far`) -- its flight is a threat too (it crosses the
+  // arena at the height of a fighter who has jumped the flat), so it does not begin while the flat's does
+  const T1 = annLobT(P, 'lob'), leave2 = T1 + ANN.calm + ANN.flat.far + ANN.calm;
   for(const f of list){
     annToss(s, { k:'toss', f:f.idx, w:'lob', id:id, pz:pz, ph:ph });
-    if(ph >= 2) annQ(s, land2 - T2, { k:'toss', f:f.idx, w:'lob2', id:id, pz:pz, ph:ph });
+    if(ph >= 2) annQ(s, leave2, { k:'toss', f:f.idx, w:'lob2', id:id, pz:pz, ph:ph });
   }
   H.cnt = hazardT;   // the vote counter comes out of the ground and shows the volley in cake icons (annDrawProps)
   shake(6);
@@ -8417,11 +8431,13 @@ function annToss(s, q){
   H.thr = hazardT; H.tdir = dir;   // the arm swings out (annDrawProps)
   const T = annLobT(P, q.w), lead = (q.w === 'lob2' && q.ph >= 2) ? 0.4 : 0;
   const x1 = clamp(f.x + (f.vx||0)*T*lead, 30, WW - 30), sy = annSurface(x1, feetY(f) - 8), y1 = sy - P.r*0.5;
-  const p = addProj(bossShot(s, { x:ox, y:ty, vx:(x1 - ox)/T, vy:((y1 - ty) - g*T*(T - 1)/2)/T, grav:true, noDrift:true, warnX:x1, warnY:sy, warn:T + 2,
+  const a = annArc(ox, ty, x1, y1, T);
+  const p = addProj(bossShot(s, { x:ox, y:ty, vx:a.vx, vy:a.vy, grav:true, noDrift:true, _stopY:a.stopY, warnX:x1, warnY:sy, warn:T + 2,
     r:P.r, dmg:bossDmg(), kb:P.kb, color:P.color, shape:P.k, life:T + 40, bossAtk:q.id, annCake:q.pz, annR:P.splash || 0, annLob:1,
     landImpact:P.land ? { shake:5, dust:1, debris:4, r:70, color:'#dff0ff' } : null }));
   if(s._lastCake && s._lastCake.id === q.id) s._lastCake.shots.push(p);
   (s._ck || (s._ck = [])).push({ p:p, pz:q.pz, id:q.id, lob:true });
+  annMark('spot', x1, sy, T, { color:P.color, mA:annLobReach(P), mB:2 });   // its landing ring (no drip), up from the moment it leaves, white for its last `calm` frames
   for(let i=0;i<5;i++) puff(ox, ty, P.color, 4);
 }
 // A cake that has ended (landed, or hit someone): a splat stays on the surface for two seconds ("Splats stay on the floor"), and the pie goes off.
@@ -8645,7 +8661,8 @@ function annSpray(s, ph){
 function annDrop(s, q){
   const A = ANN.acid, g = 0.34, cx = s._acx != null ? s._acx : s.x, ox = cx + q.d*s.r*0.85, oy = s.y - s.r*0.1, T = A.T;
   const x1 = q.x1, sy = q.sy, y1 = sy - 6;
-  const p = addProj(bossShot(s, { x:ox, y:oy, vx:(x1 - ox)/T, vy:((y1 - oy) - g*T*(T - 1)/2)/T, grav:true, noDrift:true, warnX:x1, warnY:sy, warn:T + 2, r:12,
+  const a = annArc(ox, oy, x1, y1, T);
+  const p = addProj(bossShot(s, { x:ox, y:oy, vx:a.vx, vy:a.vy, grav:true, noDrift:true, _stopY:a.stopY, warnX:x1, warnY:sy, warn:T + 2, r:12,
     dmg:bossDmg()*0.8, kb:7, color:'#4cff1c', shape:'annacid', life:T + 50, bossAtk:q.id, volley:true }));
   (s._ad || (s._ad = [])).push({ p:p, id:q.id });
   for(let i=0;i<4;i++) puff(ox, oy, '#4cff1c', 4);
@@ -8767,6 +8784,8 @@ function annTick(s, tgt){
     if(m.delay > ANN.flat.lock && f){ const dir = Math.sign(f.x - cx) || (s.face||1); m.warnX = cx + dir*44; m.warnY = clamp(f.y - 6, 40, gy - 14); m.mA = dir; }
     if(m.delay <= 1){ m._sent = true; annFlat(s, m); }
   }
+  // a lob or a drop that has fallen to its last 90 px goes straight down from here (annArc)
+  for(const p of projectiles){ if(p._stopY != null && p.vy > 0 && p.y >= p._stopY){ p.vx = 0; p._stopY = null; } }
   // what has ended: a cake lands (a splat, and the pie goes off), an acid drop becomes a puddle, a balloon bursts, the press cracks the crusher
   const gone = (p) => p.life <= 0 || projectiles.indexOf(p) < 0;
   const sweep = (arr, fn) => { if(!arr || !arr.length) return arr; const keep = []; for(const e of arr){ if(gone(e.p)) fn(s, e); else keep.push(e); } return keep; };
@@ -9027,7 +9046,7 @@ function annDrawMark(pr){
     const R = pr.mA, lit = Math.max(0, Math.min(1, 1 - d/70)), a = 0.22 + 0.5*lit;
     ctx.globalAlpha = a*0.45; ctx.fillStyle = pr.color; ctx.beginPath(); ctx.ellipse(x, y - 4, R, R*0.2, 0, 0, 7); ctx.fill();
     ctx.globalAlpha = Math.min(1, a + 0.2); ctx.strokeStyle = d <= ANN.calm ? '#ffffff' : pr.color; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.ellipse(x, y - 4, R, R*0.2, 0, 0, 7); ctx.stroke(); ctx.setLineDash([]);
-    ctx.globalAlpha = Math.min(1, a + 0.15); ctx.fillStyle = pr.color; ctx.beginPath(); ctx.arc(x, y - 18 - (1 - lit)*70, 4 + 3*lit, 0, 7); ctx.fill();
+    if(pr.mB !== 2){ ctx.globalAlpha = Math.min(1, a + 0.15); ctx.fillStyle = pr.color; ctx.beginPath(); ctx.arc(x, y - 18 - (1 - lit)*70, 4 + 3*lit, 0, 7); ctx.fill(); }   // (mB 2: a ring only, a lob's)
   } else if(k === 'beam'){ annDrawBeam(pr, gy); }
   else if(k === 'end'){ annDrawEnd(pr, gy); }
   ctx.restore();
@@ -9100,7 +9119,7 @@ function annDrawTell(s){
     // its shadow then holds the spot). The flat throw's lane is its own mark (annLanes), lit from the start.
     const P = ANN.prizes[s._pz != null ? s._pz : 0] || ANN.prizes[0];
     for(const f of fighters){ if(f.dead) continue;
-      annRing(f.x, annSurface(f.x, feetY(f) - 8), P.r + 28, P.color, 0.35 + 0.35*pulse);
+      annRing(f.x, annSurface(f.x, feetY(f) - 8), annLobReach(P), P.color, 0.35 + 0.35*pulse);
     }
     if(ph === 2 && s._sl){   // what is about to be sold, outlined
       ctx.globalAlpha = 0.5 + 0.4*pulse; ctx.strokeStyle = '#ff3a2a'; ctx.lineWidth = 4;
