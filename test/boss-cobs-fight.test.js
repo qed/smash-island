@@ -17,7 +17,9 @@ let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
 // Start his fight as the chain does and hand the body `s` (him), `you` (player 1, parked), `park()`, `floorAt(f, x)` and `shots()`.
-const fight = (body, lineup = ['Knife']) => W.eval(`(function(){
+// Every fight starts from the same dice (the window's one random stream would otherwise be wherever the tests before it left it, and an
+// orbit that flips a few frames earlier is a different average): a test's result never depends on which tests ran before it.
+const fight = (body, lineup = ['Knife']) => { W.Math.random = mulberry32(5); return W.eval(`(function(){
   SETTINGS.itemRate=0; SETTINGS.stocks=3; LOCAL_PLAYERS=1; window.__cobsEnd = undefined;
   var __ok = startCobsFight(${JSON.stringify(lineup)}, { story:true, onEnd:function(won){ window.__cobsEnd = won; return true; } });
   var s = summons.find(function(o){ return o._cobsFight; });
@@ -28,7 +30,43 @@ const fight = (body, lineup = ['Knife']) => W.eval(`(function(){
   var shots = function(){ return projectiles.filter(function(p){ return p.owner===-2 && p.life > 0; }); };
   var atTier = function(t){ s._marks = t - 1; s._hop = null; };
   ${body}
-})()`);
+})()`); };
+
+describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TIER 3', () => {
+  // [attack, field, which way is stronger]: 'up' = a bigger number is stronger; 'down' = a smaller one is (a quicker beat, a shorter wait)
+  const TWISTS = [
+    ['van', 'phone', 'up'], ['van', 'pspd', 'up'], ['chainsaws', 'lolli', 'down'], ['chainsaws', 'shards', 'up'], ['spikes', 'stag', 'down'], ['spikes', 'alt', 'up'],
+    ['deploy', 'blink', 'down'], ['deploy', 'pencil', 'up'], ['meknife', 'yank', 'up'], ['meknife', 'glint', 'down'], ['hands', 'rows2', 'up'], ['hands', 'rowDy', 'up'],
+    ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up'], ['device', 'pincer', 'up'], ['device', 'pgap', 'down'], ['portal', 'pull', 'up'], ['portal', 'pullR', 'up'],
+    ['springs', 'retract', 'up'], ['springs', 'reach', 'up'], ['memurder', 'track', 'up'], ['kernelpop', 'chain', 'down'], ['ticktock', 'bend', 'up'], ['plug', 'wave', 'down'],
+    ['keynote', 'cresc', 'up'], ['keynote', 'fin3', 'up'], ['metags', 'link', 'up'], ['metags', 'linkW', 'up'], ['cannon', 'rock', 'up'],
+  ];
+  it('every twist is 0 at tier 1, set at tier 2 and stronger at tier 3, and never weakens at tiers 4 and 5; seventeen attacks carry one in their table (the other two are his passives)', () => {
+    const rows = W.eval('COBS_TIERS');
+    const byAttack = {}; for (const [k, f, dir] of TWISTS) (byAttack[k] = byAttack[k] || []).push([f, dir]);
+    for (const [k, f, dir] of TWISTS) {
+      const v = rows[k].map((T) => T[f]);
+      expect(v[0], `${k}.${f} is OFF at tier 1`).toBe(0);
+      const better = (x, y) => (dir === 'up' ? x >= y : x <= y);   // x is at least as strong as y
+      expect(better(v[2], v[1]), `${k}.${f} is no weaker at tier 3 (${v})`).toBe(true);
+      expect(better(v[3], v[2]) && better(v[4], v[3]), `${k}.${f} never weakens again (${v})`).toBe(true);
+    }
+    for (const k of Object.keys(byAttack)) {
+      // ON at tier 2 (a field that only helps you read it, pgap, does not count), and stronger at tier 3 in something
+      expect(byAttack[k].some(([f]) => f !== 'pgap' && rows[k][1][f] > 0), `${k}: the twist is ON at tier 2`).toBe(true);
+      expect(byAttack[k].some(([f, dir]) => (dir === 'up' ? rows[k][2][f] > rows[k][1][f] : rows[k][2][f] < rows[k][1][f])), `${k}: tier 3 is stronger than tier 2 in something`).toBe(true);
+    }
+    expect(Object.keys(byAttack), 'seventeen attacks carry a table twist; the other two are his passives (rage on foot, Popping Point)').toHaveLength(17);
+  });
+
+  it('the two passive twists wait for their own lines: the rage on foot fights low only while he rages, and the ring only below 20% (tier 5)', () => {
+    const r = W.eval(`({ ring: COBS_POP_RING, hp: COBS_POP_HP, tierAtHp: Math.min(COBS_TIER_MAX, 1 + Math.floor((2500 - 2500*COBS_POP_HP)/COBS_PHASE_HP)), speech: COBS_SPEECH_HP, foot: COBS_FOOT })`);
+    expect(r.hp).toBe(0.2);
+    expect(r.tierAtHp, 'under 20% he is at tier 5: the ring is a tier-5 thing').toBe(5);
+    expect(r.speech, 'the rage is at 60%, a tier-3 line').toBe(0.6);
+    expect(r.ring).toBeGreaterThanOrEqual(6);
+  });
+});
 
 describe('BOOMERANGS! replaces SECURITY ROUNDS!', () => {
   it('is in his deck and his names under its own key; the old key and its rounds are gone', () => {
@@ -744,6 +782,18 @@ describe('PULL THE PLUG! -- the unplugging wave', () => {
     expect(r.hitAt, 'the moment the platform under him goes').toBe(r.goneAt);
     expect(r.pct).toBeCloseTo(r.shock, 3);
   });
+
+  it('a box the wave erases leaves nothing behind: no crumbs from what the slate took', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 600; s.y = you.y - 300; projectiles = []; s._track = []; var T = cobsT(s, 'samples');
+      var p = addProj(cobsShot(s, { x: you.x - 600, y: groundY() - 300, vx:0, vy:0.1, grav:false, r:12, life:900, bossAtk:1, shape:'meeplesample', cobsSample:true })); cobsTrack(s, p, 'sample', { T:T, dmg:10, cap:10 });
+      cobsFightTelegraph(s, 'plug', you); s._tel = 0; COBS_MOVES.plug(s, you, ++BOSS_ATK_ID); var P = s._plug, n = P.t + P.wave + 30;
+      for (var i=0;i<n;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); }
+      return { crumbs: projectiles.filter(function(q){ return q._crumb; }).length, track: s._track.length, boxAlive: projectiles.indexOf(p) >= 0 };`);
+    expect(r.boxAlive, 'the wave took the box').toBe(false);
+    expect(r.crumbs).toBe(0);
+    expect(r.track).toBe(0);
+  });
 });
 
 describe('THE FUTURE IS SO YESTERDAY! -- the crescendo', () => {
@@ -866,7 +916,9 @@ describe('KEYNOTE RAGE -- on foot (the low-hover version)', () => {
   it('in the rage he comes down off his cloud: a low hover 70 px over the floor, circling at 200 px, and each stride a footfall puts dust and shake 3 into the floor', () => {
     const calm = FOOT(false), rage = FOOT(true);
     expect(rage.foot).toMatchObject({ gap: 70, orbitR: 200 });
-    expect(calm.gap, 'not in rage: high on his cloud').toBeGreaterThan(150);
+    // (calm, his orbit sits 150 to 190 px over the floor on average, and which end depends on when the orbit happens to flip: the bar is the
+    // rage's own highest moment, not a number the orbit's dice can cross)
+    expect(calm.gap, 'not in rage: high on his cloud, clear above where the rage hovers').toBeGreaterThan(rage.maxGap);
     expect(rage.gap, 'in rage: about 70 px over the floor').toBeLessThan(110);
     expect(rage.gap).toBeGreaterThan(20);
     expect(rage.dist, 'and in close').toBeLessThan(calm.dist);
