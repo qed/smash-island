@@ -92,7 +92,7 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two', 'seekers+ring', 'two seekers two ring', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],
       // Boss 11: Springy, in his place ("replace him with springy"; test/boss-springy.test.js has the fight)
       ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop', 'springy longarm springy boxdrop', 40, 'Glitching', 'Unvitational'],
-      ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four', 'rain+seekers', 'four rain four seekers', 50, 'Zap to Dust', 'Reality Buckles'],
+      ['Four', '#3a6ad0', 340, 2.8, 'four', 'exitclass', false, 'four', 'fourbye+fourtower+fourido+fourhearts+fourcactus', 'four fourbye four fourtower', 50, 'Zap to Dust', 'Reality Buckles'],   // rebuilt (the boss overhaul, 2026-09-29): his own classroom, "Each its own" (the owner), and he floats -- "Only if canon moves" (Round 5): "Four can fly"; six attacks, the ones below (test/boss-four.test.js)
     ]);
   });
 
@@ -100,7 +100,7 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
   // any boss falls is still swept (the filter in bossRushCheck is kept with the rest of his code).
   it('walking the gauntlet never spawns him -- Springy is eleventh -- and a buried arrow is still swept when a boss falls', () => {
     const r = W.eval(`(function(){
-      var st = setTimeout; setTimeout = function(){ return 0; };   // bossRushCheck queues the next spawn; this walk spawns by hand
+      var st = setTimeout, timers = []; setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };   // bossRushCheck queues the next spawn; this walk spawns by hand
       try {
         SETTINGS.mode='boss'; SETTINGS.stocks=99; running=true;
         BOSSRUSH = { active:true, bossIdx:0, cleared:0, defeated:false, loop:0, dmgMult:1 };
@@ -122,7 +122,7 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
             continue;
           }
           b.hp = 0; bossRushCheck();
-          if (b.name==='Four'){ card = document.getElementById('rushVicSub').textContent; break; }
+          if (b.name==='Four'){ timers.filter(function(t){ return t.ms === BOSS_ENDINGS.four.holdMs; }).forEach(function(t){ t.fn(); }); card = document.getElementById('rushVicSub').textContent; break; }   // his ending holds the victory card back (bossRushCheck's hook): let its time pass
         }
         return { order: order, atHim: atHim, card: card };
       } finally { setTimeout = st; BOSSRUSH.active=false; running=false; paused=false; summons=[]; projectiles=[]; worldPlats=[];

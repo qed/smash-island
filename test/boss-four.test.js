@@ -665,3 +665,333 @@ describe('I DO THIS!', () => {
     expect(r.pair, 'two overlapping rings are still one boss hit').toBeCloseTo(17.6, 5);
   });
 });
+
+describe('his place changes with the fight', () => {
+  it('a phase change is announced and starts what the phase brings: a scream and the first burst tube in phase 2; the walls torn away onto The Fourest, and the floor buckling, in phase 3', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var out = { p1: b._phase, arena1: BOSS_ARENA, hz1: JSON.stringify(b._hz.tb || 0) };
+      impactFxClear(); var scars0 = IMPACT_SCARS.length;
+      b.hp = b.maxHp*0.5; step(); out.p2 = b._phase; out.b2 = document.getElementById('banner').textContent; out.tb = b._hz.tb; out.p2t = b._hz.p2 > 0; out.sh = b._hz.sh > 0; out.arena2 = BOSS_ARENA; out.scars2 = IMPACT_SCARS.length - scars0;
+      b.hp = b.maxHp*0.2; step(); out.p3 = b._phase; out.b3 = document.getElementById('banner').textContent; out.tear = b._hz.tear > 0; out.arena3 = BOSS_ARENA; out.q = b._hz.q && b._hz.q.length;
+      var scars1 = IMPACT_SCARS.length; for (var i=0;i<FOUR.quakeN*FOUR.quakeStep + 14;i++){ step(); b._atkTimer = 1e9; }
+      out.quakeScars = IMPACT_SCARS.length - scars1; out.qDone = b._hz.q;
+      // one burst of damage that skips phase 2 still gets both beats
+      summons = []; ${STAGE(300, 1)}
+      b.hp = b.maxHp*0.1; step(); out.skip = { phase: b._phase, p2: b._hz.p2 > 0, tb: b._hz.tb > 0, tear: b._hz.tear > 0, arena: BOSS_ARENA };
+      summons = []; projectiles = []; return out; })()`);
+    expect([r.p1, r.p2, r.p3]).toEqual([1, 2, 3]);
+    expect(r.arena1).toBe('exitclass');
+    expect(r.b2).toMatch(/PHASE 2: Zap to Dust/);
+    expect(r.b3).toMatch(/PHASE 3: Reality Buckles/);
+    expect(r.tb, 'a tube bursts as phase 2 starts').toBe(1 << 2);
+    expect(r.p2t && r.sh, 'the room shudders').toBe(true);
+    expect(r.scars2, 'the scream cracks the floor').toBeGreaterThan(0);
+    expect(r.arena2, 'phase 2 is still the classroom').toBe('exitclass');
+    expect(r.tear, 'the walls tear away').toBe(true);
+    expect(r.arena3, 'onto The Fourest').toBe('fourest');
+    expect(r.q, 'the floor buckles in a wave: six impacts, queued').toBe(6);
+    expect(r.quakeScars, 'and they play').toBeGreaterThanOrEqual(5);
+    expect(r.qDone).toBe(null);
+    expect(r.skip, 'a burst that skips phase 2 still gets both').toEqual({ phase: 3, p2: true, tb: true, tear: true, arena: 'fourest' });
+  });
+
+  it('a screech bursts a tube from phase 2 on, three at most, and the room dims a notch for each (never below 60%); phase 1 bursts none', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var out = {};
+      b._fr = null; fourScreechy(b, f, 1, 1); out.p1 = b._hz.tb | 0;
+      b._phase = 2; b._fr = null; var seen = [];
+      for (var i=0;i<5;i++){ projectiles = []; b._fr = null; fourScreechy(b, f, 2 + i, 2); seen.push(fourBurstCount(b._hz)); }
+      out.seen = seen; out.bits = b._hz.tb; out.dim = 0.2 + 0.05*3;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.p1, 'bright tubes in phase 1').toBe(0);
+    expect(r.seen, 'one more each screech until three').toEqual([1, 2, 3, 3, 3]);
+    expect(r.bits, 'tubes 2, 0 and 4 first').toBe((1 << 2) | 1 | (1 << 4));
+    expect(1 - r.dim, 'the room is never darker than 60% of itself').toBeGreaterThanOrEqual(0.6);
+  });
+
+  it('the EXIT door opens for GO BYE-BYE! and the room shudders for SCREECHY!: what the decor reads is in the hazard bag', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      f.x = 400; b._tel = 0; b._fr = null; b._moveN = 1; b._xN = 0; b._atkTimer = 1; step();
+      var out = { door: b._hz.door && b._hz.door.slice(), t: hazardT };
+      b._tel = 0; b._fr = null; fourScreechy(b, f, 3, 1); out.sh = b._hz.sh;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.door[0], 'it creaks open soon after the wind-up starts').toBeGreaterThan(r.t);
+    expect(r.door[1] - r.door[0], 'and stays open the whole move').toBeGreaterThan(150);
+    expect(r.sh, 'the screech marks the frame the desks start to rattle').toBeGreaterThan(0);
+  });
+
+  it('from phase 2 a burst tube spits a spark onto the floor beneath it: it flickers 44 frames, is live 10, hurts whoever stands on the floor there for 0.3 of a hit and nobody on the platform; phase 1 has none', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var gy = groundY(), out = {};
+      var g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 100, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+      for (var i=0;i<500;i++){ step(); f.invuln = 0; if (b._hz.sp) out.p1 = true; }
+      out.p1 = !!out.p1;
+      // phase 2: the spark waits for a lull, then comes at the burst tube's spot
+      summons = []; ${STAGE(300, 1)}
+      var g2 = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 100, gy-24, 1); g2.team = 0; g2.controller = 'still'; g2.stocks = 9; fighters.push(g2);
+      b.hp = b.maxHp*0.5; step();
+      var sp = null, hitAt = null, live = null, at = null;
+      for (var i=0;i<400;i++){
+        var p0 = f.pct; f.x = 550; f.y = gy - 24; f.vx = 0; f.vy = 0; f.onground = true; g2.x = 150; g2.y = gy - 24; step(); f.vx = 0;
+        if (b._hz.sp && !sp){ sp = b._hz.sp.slice(); at = hazardT; }
+        if (f.pct > p0 && hitAt === null){ hitAt = hazardT; out.dmg = f.pct - p0; }
+      }
+      out.sp = sp; out.hitAfter = hitAt - sp[1]; out.warn = FOUR.spWarn; out.other = g2.pct; out.live = [sp[2] - sp[1], sp[3] - sp[2]];
+      out.first = at;
+      // the platform is no place to be hit: a fighter standing on it in the spark's column is untouched
+      var plat = worldPlats.filter(function(p){ return !p.solid; }).sort(function(a, c){ return a.y - c.y; })[0];
+      b._hz.sp = [550, hazardT, hazardT, hazardT + 10, 9999]; f.pct = 0; f.invuln = 0;
+      for (var i=0;i<12;i++){ f.x = 550; f.y = plat.y - f.r; f.vy = 0; f.onground = true; f.invuln = 0; step(); }
+      out.plat = f.pct;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.p1, 'no sparks in phase 1').toBe(false);
+    expect(r.sp[0], 'under the burst tube: the middle one first').toBe(550);
+    expect(r.live, 'a warning of 44 frames, then 10 live').toEqual([44, 10]);
+    expect(r.hitAfter, 'the fighter standing in it is hit as it goes live').toBeGreaterThanOrEqual(44);
+    expect(r.dmg, 'for 0.3 of a boss hit').toBeCloseTo(6.6, 5);
+    expect(r.other, 'someone elsewhere is not').toBe(0);
+    expect(r.plat, 'and a fighter on the platform is out of reach of it').toBe(0);
+  });
+
+  it('a spark never starts over a wind-up or a move, and phase 3 moves them to The Fourest: three fixed places', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 2)}
+      var Z = b._hz; Z.spN = hazardT + 5; b._tel = 30; b._atkTimer = 1e9;
+      for (var i=0;i<20;i++){ step(); b._tel = 30; }
+      var during = !!Z.sp;
+      b._tel = 0; b._fr = { k:'screech', t:0, ph:2 };
+      for (var i=0;i<20;i++){ step(); b._fr = { k:'screech', t:0, ph:2 }; }
+      var duringMove = !!Z.sp;
+      b._fr = null; for (var i=0;i<10;i++) step();
+      var after = !!Z.sp;
+      var spots2 = fourSparkSpots({ tb:5 }).map(Math.round), spots3 = fourSparkSpots({ tear:1 }).map(Math.round);
+      summons = []; projectiles = []; return { during: during, duringMove: duringMove, after: after, spots2: spots2, spots3: spots3, WW: WW }; })()`);
+    expect(r.during, 'not over a wind-up').toBe(false);
+    expect(r.duringMove, 'not over a move').toBe(false);
+    expect(r.after, 'but in the lull after it').toBe(true);
+    expect(r.spots2, 'under burst tubes 0 and 2').toEqual([Math.round(r.WW*0.12), Math.round(r.WW*0.50)]);
+    expect(r.spots3, 'The Fourest: three places').toEqual([Math.round(r.WW*0.2), Math.round(r.WW*0.5), Math.round(r.WW*0.8)]);
+  });
+});
+
+describe('his six, in turn, phase by phase', () => {
+  it('the signature takes every other turn, in two forms; his extras are dealt out in order among the ones the phase has: GO BYE-BYE!, TAKE THE TOWER! and I DO THIS! from the start, LOVE HEARTS! from phase 2, DON\'T HUG THE CACTUS! in phase 3', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2, 3].forEach(function(ph){
+        var s = ${S()}; s._phase = ph; s.hp = [0, 100, 50, 20][ph]; var kinds = [];
+        for (var k=0;k<20;k++){ s._atkTimer = 1; s._tel = 0; s._fr = null; updateBossAttack(s, null); kinds.push(s._telKind + (s._telKind === 'four' ? ':' + s._hz.sig : '')); }
+        out[ph] = kinds;
+      });
+      out.moves = BOSS_EXTRA['Four'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k] + '/' + BOSS_RUSH_ONLY.has(k); });
+      out.extra = BOSS_EXTRA['Four']; return out; })()`);
+    const sig = (a) => a.filter((k, i) => i % 2 === 0), ext = (a) => a.filter((k, i) => i % 2 === 1);
+    for (const ph of [1, 2, 3]) {
+      expect(sig(r[ph]).every((k) => /^four:[sz]$/.test(k)), `phase ${ph}: the signature on every other turn`).toBe(true);
+      expect(sig(r[ph]).map((k) => k.slice(-1)).join(''), 'in two forms that alternate').toMatch(/^(sz)+s?$|^(zs)+z?$/);
+    }
+    expect(Array.from(new Set(ext(r[1]))).sort(), 'phase 1: three of his own').toEqual(['fourbye', 'fourido', 'fourtower']);
+    expect(Array.from(new Set(ext(r[2]))).sort(), 'phase 2: LOVE HEARTS! joins').toEqual(['fourbye', 'fourhearts', 'fourido', 'fourtower']);
+    expect(Array.from(new Set(ext(r[3]))).sort(), 'phase 3: DON\'T HUG THE CACTUS! joins').toEqual(['fourbye', 'fourcactus', 'fourhearts', 'fourido', 'fourtower']);
+    expect(ext(r[1]).slice(0, 4), 'in order, round and round').toEqual(['fourbye', 'fourtower', 'fourido', 'fourbye']);
+    expect(r.extra).toEqual(['fourbye', 'fourtower', 'fourido', 'fourhearts', 'fourcactus']);
+    expect(r.moves, 'each a function with its own banner, and an item boss never throws one').toEqual(['function/GO BYE-BYE!/true', 'function/TAKE THE TOWER!/true', 'function/I DO THIS!/true', 'function/LOVE HEARTS!/true', "function/DON'T HUG THE CACTUS!/true"]);
+    expect(r[1].every((k) => !/rain|seekers|ring|slam/.test(k)), 'none of the shared shapes is left').toBe(true);
+  });
+});
+
+describe('his ending: multiplied by zero', () => {
+  it('when he is beaten his shots and hills go and anyone he held is let go; a zero falls over him where he fell and lands once; the cards wait 1.7 s; it hurts nobody and says nothing', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3)}
+      var st = setTimeout, timers = [], said = [], _b = banner, impacts = [], _i = impact;
+      setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };
+      banner = function(t, m, k, l){ said.push([String(t), k || null]); return _b(t, m, k, l); };
+      impact = function(x, y, o){ impacts.push([Math.round(x), Math.round(y), o && o.shake]); return _i.apply(this, arguments); };
+      try {
+        BOSSRUSH.active = true;
+        var gy = groundY(), other = { owner:-2, x:0, y:0, r:8, life:50 };
+        projectiles.push(fourShot(b, 9, { x:300, y:400, vx:3, vy:0, fourRing:true, shape:'fourwave', life:100 }), fourShot(b, 9, { x:300, y:400, vx:3, vy:0, fourHeart:true, shape:'fourheart', life:100 }), other);
+        worldPlats.push({ x:200, y:gy - 70, w:70, h:70, solid:true, _four:true, _until:hazardT + 500 });
+        f._byeHeld = true; f.hitstun = 2; f.invuln = 3; var bx = b.x, by = b.y, pct0 = f.pct;
+        b.hp = 0; bossRushCheck();
+        var mine = projectiles.filter(function(p){ return p.four && !p.fourEnd && !p.fourGhost; }).length, scene = projectiles.filter(function(p){ return p.fourEnd; }), ghost = projectiles.filter(function(p){ return p.fourGhost; });
+        var out = { mine: mine, scene: scene.length, ghost: ghost.length, other: projectiles.indexOf(other) >= 0, plats: worldPlats.filter(function(p){ return p._four; }).length, held: f._byeHeld, hitstun: f.hitstun,
+                    ms: timers.map(function(t){ return t.ms; }).sort(function(a, c){ return a - c; }), boss: summons.filter(function(s){ return s.type === 'boss'; }).length, saidBoss: said.some(function(s){ return s[1] === 'boss'; }),
+                    at: scene[0] ? [Math.round(scene[0].ex), Math.round(scene[0].ey), scene[0].delay] : null, want: [Math.round(bx), Math.round(by)], loop: BOSSRUSH.loop };
+        var down = timers.find(function(t){ return t.ms === FOUR.endHold; }), run0 = running; running = true; if (down) down.fn(); running = run0;
+        out.card = said.some(function(s){ return /^BOSS DOWN!/.test(s[0]) && s[1] === 'sys'; });
+        impacts.length = 0; f.x = bx; f.y = gy - 24; var n = 0;
+        for (var i=0;i<FOUR.endT + 6;i++){ step(); f.x = bx; f.y = gy - 24; f.invuln = 0; n++; }
+        out.landing = impacts.filter(function(p){ return p[2] === 12; }).length; out.landAt = impacts.filter(function(p){ return p[2] === 12; })[0];
+        out.after = projectiles.filter(function(p){ return p.four; }).length; out.pct = f.pct - pct0; out.endT = FOUR.endT;
+        return out;
+      } finally { setTimeout = st; banner = _b; impact = _i; BOSSRUSH.active = false; summons = []; projectiles = []; }
+    })()`);
+    expect(r.mine, 'his shots are gone').toBe(0);
+    expect(r.other, 'a shot that is not his is not swept').toBe(true);
+    expect(r.plats, 'and his hills').toBe(0);
+    expect(r.held, 'whoever he was holding is let go').toBe(false);
+    expect(r.scene).toBe(1);
+    expect(r.ghost, 'the zero\'s landing: a shot that carries one impact').toBe(1);
+    expect(r.at.slice(0, 2), 'the scene is where he fell').toEqual(r.want);
+    expect(r.at[2], 'the scene lasts endT frames').toBe(r.endT + 1);
+    expect(r.ms, 'the BOSS DOWN card and the victory card 1.7 s late, the next boss 1.5 s after them').toEqual(expect.arrayContaining([1700, 1700, 3200]));
+    expect(r.card).toBe(true);
+    expect(r.saidBoss, 'no words').toBe(false);
+    expect(r.boss, 'he is gone from the stage').toBe(0);
+    expect(r.landing, 'the zero lands once, with the biggest impact of the scene').toBe(1);
+    expect(r.landAt[1], 'on the floor where he fell').toBe(Math.round(W.eval('groundY()')));
+    expect(r.after, 'the scene is over').toBe(0);
+    expect(r.pct, 'a scene hurts nobody').toBe(0);
+    expect(r.loop, 'the loop moved on at once').toBe(1);
+  });
+});
+
+describe('a netcode client sees his rooms, his moves and his ending', () => {
+  const HZ = `{ look:'fourscreech', rot:0.1, sx:1, sy:1, sig:'z', tl:54, mk:[[300, 560, 1, 0], [220, 560, 1, -1]], zp:[[300, 44, t + 4, t + 14, 380, 330]], inh:[400, 500, t - 5, t + 40, 520, 1], door:[t - 3, t + 90], hide:[[0, t + 10]],
+    hp:[[300, 126, 0], [520, 126, 1]], hl:[[700, 126, 70, t - 6, t + 200]], rp:[60, 1, t + 5, 6, 96, 10, 46], hg:[320], pile:[[100, t + 90], [400, t + 120]], cb:[800, t - 10], cac:[[760, -1, t - 30, t + 150]],
+    id:[[0, 300, 560, 1, 0], [-1, 500, 400, 0]], sn:[[300, 560, 0, t - 5]], sq:[[0, t + 20]], dc:[[300, t + 100]], sp:[550, t - 20, t + 20, t + 30, 3], tb:21, tbT:t - 30, sh:t - 10, lv:t - 10, p2:t - 300, tear:t - 50, ds:t - 5, q:[[t + 4, 300]] }`;
+  it('the hazard bag, the arena and the ending cross the snapshot whole, and draw on the client', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
+      BOSS_ARENA = 'fourest'; var gy = groundY(), t = hazardT;
+      var hz = ${HZ};
+      summons = [{ type:'boss', name:'Four', color:'#3a6ad0', r:95, sprite:'four', x:500, y:300, hp:80, maxHp:340, face:-1, flash:0, homeX:500, _rage:false, _tel:10, _telKind:'four', _bossRush:true, attack:'four', _phase:3, _hz:hz }];
+      projectiles = [{ x:300, y:400, vx:6, vy:9, r:18, color:'#ff6fae', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:9, life:20, shape:'fourheart', four:true, fourHeart:true },
+                     { x:310, y:400, vx:6, vy:0, r:7, color:'#7ad0ff', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:9, life:20, shape:'fourwave', four:true, fourRing:true },
+                     { x:9, y:-5000, vx:0, vy:0, r:0, color:'#3a6ad0', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:0, life:1, delay:90, shape:'fourend', four:true, fourEnd:true, et0:t - 10, ex:420, ey:400, ef:-1, er:95 },
+                     { x:9, y:gy - 8, vx:0, vy:14, r:2, color:'#3a6ad0', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:0, life:30, delay:26, shape:'fourghost', four:true, fourGhost:true }];
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      summons = []; projectiles = []; BOSS_ARENA = null;
+      applySnapshot(snap);
+      var err = null;
+      try { [BOSS_ARENA, 'exitclass'].forEach(function(k){ drawArenaDecor(k); }); drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); projectiles.forEach(drawProjectile); drawFourFx(summons[0]); drawBossBar(); draw(); }
+      catch(e){ err = e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+      var end = projectiles.find(function(p){ return p.fourEnd; });
+      return { err: err, arena: BOSS_ARENA, hz: JSON.stringify(summons[0]._hz), want: JSON.stringify(hz), boss: { attack: summons[0].attack, tel: summons[0]._tel, kind: summons[0]._telKind, phase: summons[0]._phase },
+               end: end ? { et0: end.et0, ex: end.ex, ey: end.ey, ef: end.ef, er: end.er, shape: end.shape } : null, ghost: !!projectiles.find(function(p){ return p.fourGhost; }), t: t,
+               shapes: projectiles.map(function(p){ return p.shape; }) };
+    })()`);
+    expect(r.err).toBe(null);
+    expect(r.arena, 'the client draws The Fourest').toBe('fourest');
+    expect(r.hz, 'every field of what he is doing arrives as it was sent').toBe(r.want);
+    expect(r.boss).toEqual({ attack: 'four', tel: 10, kind: 'four', phase: 3 });
+    expect(r.end, 'and so does the ending: where, when, which way, how big').toEqual({ et0: r.t - 10, ex: 420, ey: 400, ef: -1, er: 95, shape: 'fourend' });
+    expect(r.ghost, 'with the shot that carries its landing').toBe(true);
+    expect(r.shapes, 'the hearts and the wave are drawn from their shapes alone').toEqual(expect.arrayContaining(['fourheart', 'fourwave']));
+  });
+});
+
+describe('no words, no other show, and the art is wired and credited', () => {
+  // Every draw of his rooms, of him in every state and of everything he throws, on a canvas that records what it is asked to do: not one word.
+  function bootRecording(seed = 7) {
+    const html = readFileSync('artifacts/V1/index.html', 'utf8'), rec = [], grad = { addColorStop() {} };
+    const dom = new JSDOM(html, {
+      url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+      beforeParse(window) {
+        window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
+          get: (_t, p) => (p === 'measureText' ? () => ({ width: 0 }) : p === 'canvas' ? { width: 1100, height: 720 } : p === 'getImageData' ? () => ({ data: [] })
+            : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') ? () => grad : (...args) => { rec.push({ op: p, args }); }),
+          set: (_t, p, v) => { rec.push({ op: 'set:' + String(p), args: [v] }); return true; },
+        });
+        window.Math.random = mulberry32(seed); window.requestAnimationFrame = () => 0; window.cancelAnimationFrame = () => {};
+      },
+    });
+    return { w: dom.window, rec };
+  }
+  const HZ_ALL = `{ look:'fourscreech', rot:0.1, sx:1.04, sy:0.96, sig:'z', tl:54, mk:[[300, 560, 0, 0], [300, 560, 1, 0], [220, 560, 1, -1]], zp:[[300, 44, t - 2, t + 8, 380, 330], [500, 44, t + 4, t + 14, 380, 330]], inh:[400, 500, t - 5, t + 40, 520, 1],
+    door:[t - 3, t + 90], hide:[[0, t + 10]], hp:[[300, 126, 0], [520, 126, 1]], hl:[[700, 126, 70, t - 6, t + 200], [200, 126, 70, t - 60, t + 14]], rp:[60, 1, t - 20, 6, 96, 10, 46], hg:[320], pile:[[100, t + 90], [400, t + 20]], cb:[800, t - 10],
+    cac:[[760, -1, t - 40, t + 150], [300, 1, t - 5, t + 150], [500, 1, t - 300, t - 10]], id:[[0, 300, 560, 1, 0], [-1, 500, 400, 0], [0, 340, 560, 0]], sn:[[300, 560, 0, t - 5], [500, 400, -1, t - 20]], sq:[[0, t + 20]], dc:[[300, t + 100]],
+    sp:[550, t - 20, t + 20, t + 30, 3], tb:21, tbT:t - 30, sh:t - 10, lv:t - 10, p2:t - 300, tear:t - 50, ds:t - 5 }`;
+
+  it('draws both rooms, him in every look and everything he throws without a word of text', () => {
+    const { w, rec } = bootRecording();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running = false;");   // (the match's own HUD writes the fighters' names: not his business)
+    const n0 = rec.length;
+    const err = w.eval(`(function(){
+      try {
+        var gy = groundY(), t = hazardT + 100; hazardT = t;
+        var hz = ${HZ_ALL};
+        var base = { type:'boss', name:'Four', color:'#3a6ad0', sprite:'four', r:95, x:500, y:gy-200, face:-1, hp:100, maxHp:340, _tel:0, _telKind:null, _phase:3, _rage:false, flash:0, homeX:500, attack:'four', _bossRush:true, _hz:hz };
+        var looks = ['fourscreech', 'fourbye', 'fourzap', 'fourtower', 'fourlove', 'fourpuddle', 'fourmad', 'fournext', null];
+        [{}, { _tel:20, _telKind:'four' }, { _tel:20, _telKind:'fourbye' }, { _tel:20, _telKind:'fourido' }, { face:1, _phase:1 }, { flash:6 }, { _phase:2 }, { _hz:{} }].forEach(function(st, i){
+          looks.forEach(function(k){ summons = [Object.assign({}, base, st)]; summons[0]._hz = Object.assign({}, summons[0]._hz, { look:k }); ctx.save(); drawSummon(summons[0]); ctx.restore(); drawFourFx(summons[0]); });
+        });
+        ['exitclass', 'fourest'].forEach(function(arena){
+          BOSS_ARENA = arena;
+          [base, Object.assign({}, base, { _phase:1, _hz:{} }), Object.assign({}, base, { _phase:2, _hz:{ tb:5, p2:t - 100, sp:[400, t - 30, t + 10, t + 20, 1], door:[t - 20, t + 5] } })].forEach(function(bb){
+            summons = [bb]; drawArenaDecor(arena); drawArenaHazard('under'); drawArenaHazard('over'); drawFourFx(bb);
+          });
+          summons = []; drawArenaDecor(arena); drawArenaHazard('under'); drawArenaHazard('over');   // between bosses
+          arenaGround().pattern(ctx, gy, -20, WW + 20, WH + H, arenaGround());
+        });
+        ['fourwave', 'fourheart'].forEach(function(sh){
+          drawProjectile({ x:300, y:300, vx:8, vy:2, r:sh === 'fourwave' ? 7 : 18, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:sh, color:'#ff6fae' }); drawProjectile({ x:300, y:300, vx:0, vy:0, r:30, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:sh, color:'#ff6fae' }); });
+        [0, 6, 14, 22, 30, 40, 50, 58, 70, 80, 95, 104].forEach(function(u){ [0, 600].forEach(function(ex){ drawProjectile({ x:9, y:-5000, vx:0, vy:0, r:0, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:'fourend', fourEnd:true, et0:t - u, ex:420 + ex/4, ey:400, ef:-1, er:95, color:'#3a6ad0' }); }); });
+        drawProjectile({ x:9, y:gy - 8, vx:0, vy:14, r:2, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:'fourghost', fourGhost:true, color:'#3a6ad0' });
+        return null;
+      } catch(e){ return e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+    })()`);
+    expect(err).toBe(null);
+    const drawn = rec.slice(n0);
+    expect(drawn.length, 'the recording is live').toBeGreaterThan(2000);
+    expect(drawn.filter((r) => r.op === 'fillText' || r.op === 'strokeText').length, 'not a word on the canvas').toBe(0);
+  });
+
+  it("nothing of his says a word or names anyone from the OSC: his code (every slot of his) has no banner of its own but the engine's telegraph, no text drawing, no OJ, Suitcase, Cabby or The Floor", () => {
+    const L = readFileSync('artifacts/V1/index.html', 'utf8').split(/\r?\n/);
+    const inside = []; let on = false, n = 0;
+    for (const l of L) {
+      const m = l.match(/@boss:four:(begin|end) ([a-z]+)/);
+      if (m) { on = m[1] === 'begin'; if (m[1] === 'begin') n++; continue; }
+      if (on) inside.push(l);
+    }
+    const src = inside.join('\n'), code = inside.map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+    expect(n, 'his slots: one pair for each of the 32').toBe(32);
+    expect(src.length, 'and a lot of him').toBeGreaterThan(40000);
+    expect(src).not.toMatch(/\bOJ\b|Suitcase|Cabby|The Floor/);
+    expect(code, 'no banner of his own').not.toMatch(/banner\(/);
+    expect(code, 'no text on the canvas').not.toMatch(/fillText|strokeText/);
+    expect(code, 'no numeral of text on his body either (his drawn 4 is a shape)').not.toMatch(/ctx\.font/);
+  });
+
+  it("his hearts wear the show's art -- the BFB Love Heart, cut from File:Love hearts0001.png -- and everything else he throws is drawn; the file is a real PNG at projectile size, on the record and credited", () => {
+    const reg = W.eval(`({ heart: ATTACK_SPRITES.fourheart, glyph: !!PROJ_SHAPE.fourheart, wave: [!!PROJ_SHAPE.fourwave, !!ATTACK_SPRITES.fourwave] })`);
+    const manifest = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8'));
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const picks = readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8');
+    const file = 'artifacts/V1/' + reg.heart.src;
+    expect(existsSync(file), file).toBe(true);
+    const png = PNG.sync.read(readFileSync(file));
+    expect(Math.max(png.width, png.height), 'projectile size').toBeLessThanOrEqual(128);
+    const clear = (() => { let c = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) c++; return c / (png.width * png.height); })();
+    expect(clear, 'cut out, not a screenshot').toBeGreaterThan(0.12);
+    expect(reg.glyph, 'a drawn glyph to show until it loads').toBe(true);
+    expect(reg.wave, "the ring is drawn: no file of a sound wave that is not a character").toEqual([true, false]);
+    const m = manifest.fourheart;
+    expect(m, 'on the record').toMatchObject({ file: 'fourheart.png', kits: ['fourheart'], srcTitle: 'Love hearts0001.png', wiki: 'bfdi', width: png.width, height: png.height });
+    expect(m.source).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/battlefordreamisland\/images\//);
+    expect(credits, 'credited with its exact source').toContain('(`fourheart.png`');
+    expect(credits).toContain(m.source);
+    expect(picks, 'with its pick in his slot').toMatch(/fourheart:\s*\{ who: 'Four \(LOVE HEARTS!\)'/);
+  });
+
+  it("each of his renders is a real transparent PNG at render size, credited with its exact source, on the sprite manifest, and flipped exactly as the manifest measured its facing", () => {
+    const keys = ['four', 'fourscreech', 'fourbye', 'fourzap', 'fourtower', 'fourlove', 'fourpuddle', 'fourmad', 'fournext'];
+    const reg = W.eval(`(function(){ var o = {}; ${JSON.stringify(keys)}.forEach(function(k){ o[k] = [BOSS_SPRITE_SRC[k], !!BOSS_SPRITE_FLIP[k]]; }); return o; })()`);
+    const manifest = JSON.parse(readFileSync('scripts/sprite-manifest.json', 'utf8'));
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const names = { four: 'Four', fourscreech: 'Four (screech)', fourbye: 'Four (bye bye)', fourzap: 'Four (zap)', fourtower: 'Four (tower)', fourlove: 'Four (love)', fourpuddle: 'Four (puddle)', fourmad: 'Four (mad)', fournext: 'Four (next level mad)' };
+    for (const k of keys) {
+      const [src, flip] = reg[k], file = 'artifacts/V1/' + src, e = manifest[names[k]];
+      expect(existsSync(file), file).toBe(true);
+      const png = PNG.sync.read(readFileSync(file));
+      expect(png.height, k + ' is a render, at most 200 tall').toBeLessThanOrEqual(200);
+      let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) clear++;
+      expect(clear/(png.width*png.height), k + ' is transparent around him').toBeGreaterThan(0.1);
+      expect(e, k + ' is on the manifest').toMatchObject({ file: src.split('/').pop(), width: png.width, height: png.height });
+      expect(flip, k + ' faces as the manifest measured it (flip when the face sits left of the body)').toBe(!!e.flip);
+      expect(credits, k + ' is credited with its exact source').toContain(e.source);
+      expect(credits).toContain('`' + src.split('/').pop() + '`');
+    }
+  });
+});

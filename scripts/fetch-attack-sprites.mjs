@@ -298,6 +298,15 @@ const PICKS = {
   // @boss:two:end picks
 
   // @boss:four:begin picks
+  // ---- FOUR (Boss 12): what he throws. LOVE HEARTS!: the show's Love Heart -- "a type of item that Four shoots out of his body when he sees something he adores ... The hearts
+  // themselves appear to be solid, thus they can hurt someone" (the Love Hearts page; "Today's Very Special Episode": "Four spews out a flood of hearts. One hits Eraser and he flies
+  // off beyond the horizon"). File:Love hearts0001.png ("A bunch of Love Hearts. (BFB)", 500x500) is the wiki's own clean, transparent file of the BFB (pink) hearts, so it needs no key:
+  // the middle heart is cut out of it (File:BFB Heart.png holds a heart only 26 px across). Everything else he does is DRAWN, "Yes, cut or draw" (the owner, 2026-09-29): there is no
+  // file of a sound wave that is not a character (SCREECHY!'s ring); the beam of the Zappies page is an episode frame (File:FourEnergyBeam.png, 1920x1080, 0% clear) with no beam to
+  // cut; his hills and cactus are drawn in the show's colours after The Fourest's trees and the Four cactus of Chapter Complete (no file of either on the wiki); and I DO THIS!'s
+  // shards are drawn in the marked fighter's own colours ("only their color palette is intact": the files of a mutilation, File:Pin Mutilated.png and File:Foldy Mutilated.png,
+  // are of Pin and Foldy).
+  fourheart: { who: 'Four (LOVE HEARTS!)', kits: ['fourheart'], file: 'Love hearts0001.png', region: [190, 222, 299, 326], srcH: 500, h: 48, note: 'a Love Heart, the middle one of the wiki bunch of BFB hearts (Love Hearts page: "Four shoots out of his body when he sees something he adores")' },
   // @boss:four:end picks
 
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----

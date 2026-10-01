@@ -619,6 +619,10 @@ facing the way it did for the rest) from the BFDI wiki's Four/Gallery/Poses and 
 - Four (puddle) (`four-puddle.png`, 310×76, facing -0.006): the puddle he slithers as between his turns (Four page: "Four as a puddle (BFB 30, TPOT 18)"; "Regeneration: In 'Enter the Exit', Four reconstitutes himself from a liquid state") — File:Four puddle.png — https://static.wikia.nocookie.net/battlefordreamisland/images/0/01/Four_puddle.png/revision/latest?cb=20210421140945
 - Four (mad) (`four-mad.png`, 151×200, facing -0.033, flipped): his look from phase 2 (Mad Four, BFB 28) — File:Four - Mad Four 1 (BFB 28).png — https://static.wikia.nocookie.net/battlefordreamisland/images/8/8b/Four_-_Mad_Four_1_%28BFB_28%29.png/revision/latest?cb=20210303004248
 - Four (next level mad) (`four-next-level-mad.png`, 234×200, facing -0.012): his look in phase 3, "Reality Buckles" ("Next Level Mad Four") — File:Next Level Mad Four.png — https://static.wikia.nocookie.net/battlefordreamisland/images/6/6f/Next_Level_Mad_Four.png/revision/latest?cb=20200721194756
+- Four (LOVE HEARTS!) (`fourheart.png`, 51×48): a Love Heart, the middle one of the wiki bunch of BFB hearts (Love Hearts page: "Four shoots out of his body when he sees something he adores") — File:Love hearts0001.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/f0/Love_hearts0001.png/revision/latest?cb=20180106112358
+Everything else he throws or leaves behind is drawn in code, "Yes, cut or draw" (the owner): the wavefront of SCREECHY! (no file of a sound wave is not a character), the bolt of ZAPPIES! (the Zappies page has only an
+episode frame), the hills and the Four cactus, I DO THIS!'s shards (in the marked fighter's own colours), the zero of his ending (a ring in Donut's tan: "multiplied by Donut [zero]", the Four page), and both of his
+rooms -- Eternal Algebra Class and The Fourest, whose files are frames and backdrops, not assets.
 <!-- @boss:four:end credits -->
 
 ## Assist trophies

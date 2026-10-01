@@ -68,7 +68,7 @@ describe('Springy takes Boss 11', () => {
 
   it('walking the gauntlet spawns him eleventh; beating him sweeps his holes, mark, toys, boxes and pad, and moves on to Four', () => {
     const r = W.eval(`(function(){
-      var st = setTimeout; setTimeout = function(){ return 0; };   // bossRushCheck queues the next spawn; this walk spawns by hand
+      var st = setTimeout, timers = []; setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };   // bossRushCheck queues the next spawn; this walk spawns by hand
       try {
         SETTINGS.mode='boss'; SETTINGS.stocks=99; running=true;
         BOSSRUSH = { active:true, bossIdx:0, cleared:0, defeated:false, loop:0, dmgMult:1 };
@@ -102,7 +102,7 @@ describe('Springy takes Boss 11', () => {
           }
           b.hp = 0; bossRushCheck();
           projectiles = [];   // "Endings: 'All of them'" (2026-09-29): a boss's exit scene is made of shots, and this walk gives none of them time to finish
-          if (b.name==='Four'){ card = document.getElementById('rushVicSub').textContent; break; }
+          if (b.name==='Four'){ timers.filter(function(t){ return t.ms === BOSS_ENDINGS.four.holdMs; }).forEach(function(t){ t.fn(); }); card = document.getElementById('rushVicSub').textContent; break; }   // his ending holds the victory card back (bossRushCheck's hook): let its time pass
         }
         return { order: order, atHim: atHim, card: card };
       } finally { setTimeout = st; BOSSRUSH.active=false; running=false; paused=false; summons=[]; projectiles=[]; worldPlats=[];

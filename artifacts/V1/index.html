@@ -13365,8 +13365,6 @@ function fourTick(s, tgt){
     }
   }
 }
-function fourHazStep(b, Z, tgt){
-}
 // ---- what his moves look like in the room (the fx slot: world space, over the arena and the boss, under the fighters) ------------------------------
 // Everything is read from b._hz (which a netcode client has as it is) against hazardT, the host's clock: no dice, no words.
 function fourBoss(){ return summons.find(s => s.type === "boss" && s.attack === "four") || null; }
@@ -13441,8 +13439,9 @@ function fourDrawZaps(Z, t, gy){
     }
   }
 }
-// The arena hazard's draw: 'over' is what has to cover the fighters -- whoever he has swallowed (GO BYE-BYE!) is hidden behind him, and whoever he has mutilated (I DO THIS!) is a squiggle
+// The arena hazard's draw: the spark's flicker is the 'under' layer, its bolt the 'over'; and 'over' is what has to cover the fighters -- whoever he has swallowed (GO BYE-BYE!) is hidden behind him, and whoever he has mutilated (I DO THIS!) is a squiggle
 function fourHazDraw(b, Z, layer){
+  if(Z.sp) fourDrawSpark(Z, hazardT, groundY(), layer);
   if(layer !== 'over' || !b) return;
   if(Z.hide && Z.hide.some(h => h[1] > hazardT)) drawSummon(b);
   if(Z.sq) for(const q of Z.sq){ if(q[1] <= hazardT) continue; const f = fighters.find(p => p.idx === q[0] && !p.dead); if(f) fourSquiggle(ctx, f, hazardT); }
@@ -14040,6 +14039,130 @@ function fourDrawDecals(Z, t, gy){
     ctx.beginPath(); ctx.moveTo(d[0] - 18, gy - 1); ctx.lineTo(d[0] - 4, gy - 6); ctx.lineTo(d[0] + 10, gy - 1); ctx.lineTo(d[0] + 20, gy - 5); ctx.stroke(); ctx.restore();
   }
 }
+// ---- the arena's hazard: the sparks -----------------------------------------------------------------------------------------------------
+// "if it makes sense for a hazard, reduce boss difficulty and add a hazard" (the owner, Round 11). Four "can fire beams from their hands ... Electricity Generation"; the
+// classroom has "elongated fluorescent lights" on the ceiling -- and from phase 2 ("Zap to Dust") the tubes burst under his screech and hang there, wires live
+// (fourBurstTube). So from phase 2, in a lull (never over a wind-up or a move), a burst tube spits a spark onto the floor beneath it: the spot flickers for FOUR.spWarn
+// frames (the tell is the hitbox: the ellipse is FOUR.spR either side), then the bolt is live for FOUR.spLive frames and hurts whoever stands on the floor there
+// -- FOUR.spHit of a boss hit, through arenaHazardHit, one id a spark. They take turns, in order, one at a time, every FOUR.spEvery[phase] frames (230, then 180):
+// a rhythm, not dice. Phase 3's room is gone, so it is The Fourest's trees that arc, at three fixed places. The hazard is what eased his gaps (FOUR.gaps).
+//   H.sp  [x, from, live from, live to, id]: the spark that is on its way, H.spN when the next is due, H.spI which of the spots it is
+function fourSparkSpots(Z){
+  if(Z.tear != null) return [WW*0.2, WW*0.5, WW*0.8];
+  const xs = [];
+  for(let i=0;i<5;i++) if(((Z.tb | 0) >> i) & 1) xs.push(WW*(0.12 + i*0.19));
+  return xs.length ? xs : [WW*0.5];
+}
+function fourHazStep(b, Z, tgt){
+  const ph = fourPh(b), gy = groundY();
+  if(ph < 2) return;
+  if(Z.spN == null) Z.spN = hazardT + 150;
+  if(Z.sp){
+    const sp = Z.sp;
+    if(hazardT >= sp[2] && hazardT < sp[3]){
+      for(const f of fighters){
+        if(f.dead || f.invuln > 0) continue;
+        if(Math.abs(f.x - sp[0]) < FOUR.spR + f.r*0.5 && feetY(f) > gy - 60){ arenaHazardHit(f, FOUR.spHit, (Math.sign(f.x - sp[0]) || 1)*4, -11, sp[4]); for(let i=0;i<8;i++) puff(f.x, f.y, '#dff4ff', 4); }
+      }
+    }
+    if(hazardT >= sp[3]) Z.sp = null;
+    return;
+  }
+  const lull = !(b._tel > 0) && !(b._fr && b._fr.k !== 'slither');
+  if(lull && hazardT >= Z.spN){
+    const xs = fourSparkSpots(Z);
+    Z.spI = ((Z.spI | 0) + 1) % xs.length;
+    const x = Math.round(xs[Z.spI]);
+    Z.sp = [x, hazardT, hazardT + FOUR.spWarn, hazardT + FOUR.spWarn + FOUR.spLive, ++BOSS_ATK_ID];
+    Z.spN = hazardT + FOUR.spEvery[ph] + FOUR.spWarn + FOUR.spLive;
+  }
+}
+// The spark: from the tube (or, in The Fourest, from the dark overhead) down to a spot on the floor, flickering while it warns, white and jagged while it is live
+function fourDrawSpark(Z, t, gy, layer){
+  if(!Z.sp) return;
+  const x = Z.sp[0], t0 = Z.sp[1], tf = Z.sp[2], t1 = Z.sp[3], live = t >= tf && t < t1, warn = t >= t0 && t < tf;
+  if(!live && !warn) return;
+  const ceil = Z.tear != null ? -20 : Math.max(24, H*0.065)*0.6;
+  ctx.save();
+  if(layer === 'under'){
+    const k = warn ? (t - t0)/(tf - t0) : 1, fl = warn ? (0.35 + 0.65*(Math.sin(t*1.3) > 0 ? 1 : 0.3)) : 1;
+    ctx.globalAlpha = (0.2 + 0.5*k)*fl; ctx.fillStyle = '#bfe4ff'; ctx.beginPath(); ctx.ellipse(x, gy - 3, FOUR.spR*(0.7 + 0.5*k), 8 + 4*k, 0, 0, 7); ctx.fill();
+    ctx.globalAlpha = 0.5 + 0.4*k; ctx.strokeStyle = '#dff4ff'; ctx.lineWidth = 2; ctx.stroke();
+    if(warn){ ctx.globalAlpha = 0.25 + 0.45*k*fl; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, ceil); for(let y = ceil, i = 0; y < gy - 20; y += 34, i++) ctx.lineTo(x + (i % 2 ? 6 : -6)*(0.4 + 0.6*k), y + 17); ctx.stroke(); }   // the live wire's crackle
+  } else if(live){
+    ctx.globalAlpha = 1; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(x, ceil);
+    for(let y = ceil, i = 0; y < gy; y += 30, i++) ctx.lineTo(x + (i % 2 ? 1 : -1)*(10 + 6*Math.sin(t*2 + i)), y + 30);
+    ctx.lineTo(x, gy); ctx.stroke();
+    ctx.globalAlpha = 0.5; ctx.strokeStyle = '#7ad0ff'; ctx.lineWidth = 12; ctx.stroke();
+  }
+  ctx.restore();
+}
+// ---- his ending: multiplied by zero ------------------------------------------------------------------------------------------------------
+// "Four Goes Too Far: While Four was not officially killed, they were multiplied by Donut [zero], thus getting liquefied and trapped inside Donut." (Four page, Deaths);
+// "Simplification: Four becomes vulnerable if multiplied by 0, or anything resembling zero (e.g., Donut's insides). Contact with 0 liquefies Four" (the same page);
+// "Four's a number. Let's multiply him by zero!" (Four Goes Too Far, quoted on the Four page). He drops to the floor, a great pink zero falls over him and lands
+// (the one impact), he is pressed flat, goes to a puddle ("Four as a puddle"), and drains into the zero's hole -- the hole fills with blue, two eyes in it -- and the
+// zero rolls off the side of the screen, with him in it. No words; FOUR.endT frames, and BOSS_ENDINGS holds the victory card back for FOUR.endHold ms (bossRushCheck's
+// hook for Four). The scene is a delayed shot -- inert, far above the screen, gone when its delay ends -- carrying where he fell and when; drawFourEnd draws the whole
+// of it from the clock alone, so the host, a netcode client and a replay see the same scene. The landing's impact is a ghost of a shot that falls through the floor line on
+// the frame the zero lands (landImpact), and draws nothing. His shots and hills go first (fourEndSweep), and anyone he was holding is let go.
+function fourEndSweep(b){
+  projectiles = projectiles.filter(p => !p.four);
+  worldPlats = worldPlats.filter(p => !p._four);
+  for(const f of fighters){ if(f._byeHeld){ f._byeHeld = false; f.hitstun = 0; f.invuln = 0; } f._idoSkip = 0; }
+}
+function fourEndBegin(b){
+  const gy = groundY(), x = clamp(b.x, 60, WW - 60), base = { owner:-2, ownerObj:{ team:-1, idx:-2 }, vx:0, vy:0, dmg:0, kb:0, grav:false, color:b.color, noAim:true, four:true };
+  addProj(Object.assign({}, base, { x:x, y:-5000, r:0, life:1, delay:FOUR.endT + 1, shape:'fourend', fourEnd:true, et0:hazardT, ex:x, ey:b.y, ef:b.face < 0 ? -1 : 1, er:b.r }));
+  addProj(Object.assign({}, base, { x:x, y:gy - 8, vy:14, r:2, life:30, delay:26, breaksOnSurface:true, shape:'fourghost', fourGhost:true, landImpact:{ shake:12, dust:2, debris:8, scar:true, r:140 } }));
+}
+function fourSprite(c, key, R, face){
+  const im = bossImage(key);
+  if(im){
+    const ar = im.naturalWidth/im.naturalHeight, box = R*2.15;
+    let dh = box, dw = box*ar;
+    if(dw > box*1.25){ dw = box*1.25; dh = dw/ar; }
+    if((face < 0) !== !!BOSS_SPRITE_FLIP[key]) c.scale(-1, 1);
+    c.drawImage(im, -dw/2, -dh/2, dw, dh);
+  } else { c.fillStyle = '#3a6ad0'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, R*0.8, 0, 7); c.fill(); c.stroke(); }
+}
+// the zero: a ring in Donut's tan ("multiplied by Donut [zero]") with a lighter glaze and highlights that turn as it rolls, its hole open or, once he has drained into it, full of blue and two eyes
+function fourZero(c, cx, cy, zr, zi, spin, fill){
+  c.save(); c.translate(cx, cy);
+  c.lineJoin = 'round'; c.fillStyle = '#e8b866'; c.strokeStyle = '#6e4516'; c.lineWidth = 5;
+  c.beginPath(); c.arc(0, 0, zr, 0, 7); c.arc(0, 0, zi, 0, 7); c.fill('evenodd'); c.stroke();
+  c.beginPath(); c.arc(0, 0, zi, 0, 7); c.stroke();
+  c.fillStyle = '#f6d8a0'; c.beginPath(); c.arc(0, 0, zr - 9, 0, 7); c.arc(0, 0, zi + 9, 0, 7); c.fill('evenodd');
+  for(let i=0;i<10;i++){ const a = i/10*Math.PI*2 + spin, rr = (zr + zi)/2 + (i % 2 ? 7 : -7); c.save(); c.translate(Math.cos(a)*rr, Math.sin(a)*rr); c.rotate(a + Math.PI/2); c.fillStyle = i % 2 ? '#fff0c8' : '#c48a3c'; c.fillRect(-9, -2.5, 18, 5); c.restore(); }   // glaze highlights and shading: they turn as it rolls
+  if(fill > 0){
+    c.globalAlpha = fill; c.fillStyle = '#397dcc'; c.beginPath(); c.arc(0, 0, zi - 2, 0, 7); c.fill();
+    c.fillStyle = '#ffffff'; c.strokeStyle = '#101c34'; c.lineWidth = 3; c.beginPath(); c.arc(-zi*0.32, -zi*0.1, zi*0.2, 0, 7); c.arc(zi*0.32, -zi*0.1, zi*0.2, 0, 7); c.fill(); c.stroke();
+    c.fillStyle = '#0a1a3a'; c.beginPath(); c.arc(-zi*0.32, -zi*0.04, zi*0.08, 0, 7); c.arc(zi*0.32, -zi*0.04, zi*0.08, 0, 7); c.fill();
+  }
+  c.restore();
+}
+function drawFourEnd(pr){
+  const u = hazardT - pr.et0, E = FOUR.endT;
+  if(!(u >= 0) || u > E) return;
+  const c = ctx, gy = groundY(), R = pr.er, x = pr.ex, face = pr.ef || 1, zr = 118, zi = 74;
+  const drop = clamp(u/14, 0, 1), fy = pr.ey + (gy - R*0.92 - pr.ey)*drop*drop;
+  const press = fourEase((u - 26)/12), drain = fourEase((u - 40)/14);
+  // him: dropped to the floor, pressed flat under the zero, a puddle, drained
+  if(drain < 1){
+    c.save();
+    if(u < 26){ c.translate(x + Math.sin(u*1.3)*(u < 14 ? 4 : 1.5), fy); fourSprite(c, BOSS_SPRITE_SRC.fournext ? 'fournext' : 'four', R, face); }
+    else if(u < 40){ c.translate(x, gy - R*0.92*(1 - 0.78*press)); c.scale(1 + 0.45*press, 1 - 0.78*press); fourSprite(c, BOSS_SPRITE_SRC.fournext ? 'fournext' : 'four', R, face); }
+    else { c.translate(x, gy - FOUR.puddleY*0.9*(1 - drain*0.6)); c.scale(1 - 0.85*drain, 1 - 0.7*drain); fourSprite(c, 'fourpuddle', R, face); }
+    c.restore();
+  }
+  // the zero: it falls over him, lands (a little bounce), and when he is in it, it rolls off the side of the screen
+  const k = clamp((u - 4)/22, 0, 1), top = -zr - 40, land = gy - zr;
+  let zx = x, zy = top + (land - top)*k*k, spin = 0;
+  if(u >= 26 && u < 36) zy = land - 12*Math.sin((u - 26)/10*Math.PI);
+  if(u >= 36) zy = land;
+  if(u >= 58){ const dir = x < WW*0.5 ? -1 : 1, d = Math.pow(u - 58, 1.45)*2.4; zx = x + dir*d; spin = dir*d/zr; }
+  if(u >= 4) fourZero(c, zx, zy, zr, zi, spin, drain);
+}
 // @boss:four:end helpers
 
 // ---- STEVE COBS (the second secret boss; Boss 11 until "replace him with springy", 2026-09-28) -------------------------
@@ -14478,8 +14601,10 @@ const BOSS_ENDINGS = {
   // @boss:two:end ending
 
   // @boss:four:begin ending
-  // No ending yet. When Four has one, bossRushCheck holds the Boss Rush victory card back by its holdMs (showRushVictory pauses the game at once),
-  // so the scene plays before the card.
+  // Four: "Four Goes Too Far" -- multiplied by zero, thus getting liquefied and trapped inside Donut (Four page, Deaths). A zero falls over him, he goes to a puddle and drains into it, and it
+  // rolls away. No text; his shots and hills go first (fourEndSweep), the scene is fourEndBegin's. It holds the BOSS DOWN card, the Boss Rush victory card (bossRushCheck's hook for
+  // him) and the loop's with it for FOUR.endHold.
+  four: { sweep: fourEndSweep, begin: fourEndBegin, holdMs: FOUR.endHold },
   // @boss:four:end ending
 
 };
@@ -26056,6 +26181,8 @@ function drawProjectile(pr){
     // @boss:two:end shotdraw
 
     // @boss:four:begin shotdraw
+    if(pr.fourEnd){ drawFourEnd(pr); return; }   // his ending (fourEndBegin): the zero, drawn whole from the clock
+    if(pr.fourGhost) return;                      // the ghost of a shot that only carries the zero's landing impact: nothing to draw
     // @boss:four:end shotdraw
 
     // THE CONTRAPTION (Steve Cobs). Buried, only its shadow shows, with a watch face -- the Meeple Watch he was showing off
@@ -30622,6 +30749,10 @@ const ATTACK_SPRITES = {
   // @boss:two:end art
 
   // @boss:four:begin art
+  // Four (Boss 12): the show's own art for what he throws -- LOVE HEARTS!'s heart, the BFB Love Heart cut from the wiki's bunch (File:Love hearts0001.png; his PICKS slot in
+  // scripts/fetch-attack-sprites.mjs, credited in CREDITS.md). Upright whichever way it flies; the eyes' hearts draw at 36 px, the mouth's big one at 60. The rest of what he
+  // throws is drawn (PROJ_SHAPE): there is no file of it.
+  fourheart: { src:'assets/sprites/attacks/fourheart.png', h:16, cap:4 },
   // @boss:four:end art
 
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
@@ -31625,6 +31756,8 @@ function netProjectiles(){
     // @boss:two:end netshot
 
     // @boss:four:begin netshot
+    if(p.fourEnd){ x = x || {}; x.fourEnd = 1; x.et0 = p.et0; x.ex = Math.round(p.ex); x.ey = Math.round(p.ey); x.ef = p.ef; x.er = Math.round(p.er); }   // his ending: a pure function of these and the clock (drawFourEnd)
+    if(p.fourGhost){ x = x || {}; x.fourGhost = 1; }                                                                                              // the shot that carries its landing's impact draws nothing
     // @boss:four:end netshot
 
     if(x) row.push(x);

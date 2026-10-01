@@ -461,7 +461,7 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     // 'soundwave', test/boss-puffball.test.js; the Purple Dragon's is 'dragon', it waves back and flies away, test/boss-dragon.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
     expect(r.keys[0], "Springy's is first").toBe('springy');
     expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm', 'soundwave', 'dragon']));
-    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
+    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon', 'four'].includes(k)), 'only the early six and Four (multiplied by zero, test/boss-four.test.js) join him: ' + r.keys).toBe(true);
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
@@ -652,7 +652,7 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
   // What each of the five already had in a slot is inside its own pair now: the lines were moved, not changed.
   const HOLDS = {
     roster: { mephone4: ['attack:"mephone",'], evilleafy: ['attack:"evilleafy",'], mephone4s: ['attack:"mephone4s",'], two: ['attack:"two",'], four: ['attack:"four",'] },
-    extra: { mephone4: ['"MePhone4": ["melife", "portal"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["cookies", "chainsaws"]'], two: ['"Two": ["seekers", "ring"]'], four: ['"Four": ["rain", "seekers"]'] },
+    extra: { mephone4: ['"MePhone4": ["melife", "portal"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["cookies", "chainsaws"]'], two: ['"Two": ["seekers", "ring"]'] },   // (Four's is rebuilt: test/boss-four.test.js)
     rushonly: { mephone4: ['"melife", "portal"'], mephone4s: ['"cookies", "chainsaws"'] },
     movename: { mephone4: ['melife:"MELIFE DOWNLOAD!"', 'glitch:"GLITCH!"', 'portal:"REJECTION PORTAL!"'], mephone4s: ['cookies:"POISONED COOKIES!"', 'chainsaws:"CHAINSAWS!"'] },
     moves: { mephone4: ['melife(s, tgt){', 'glitch(s, tgt){', 'portal(s, tgt){'], mephone4s: ['cookies(s, tgt){', 'chainsaws(s, tgt){'] },
@@ -662,13 +662,13 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     tel: { mephone4: ['s._telKind = "glitch"'], mephone4s: ['s4BeginTelegraph(s, tgt)'] },
     fire: {
       mephone4: ['if(s.attack==="mephone"){', 'MEPHONE_GLOVE'], evilleafy: ['if(s.attack==="evilleafy"){', 'spawnTendril('], mephone4s: ['if(s.attack==="mephone4s"){', 's4DeathTrap('],
-      two: ['if(s.attack==="two"){', 'POWER DRAIN!'], four: ['if(s.attack==="four"){', 'noAim:true, ring:true'],
+      two: ['if(s.attack==="two"){', 'POWER DRAIN!'],
     },
     gap: { mephone4: ['MEPHONE_GAPS[Math.min(3, s._phase||1)]'], evilleafy: ['s._phase===3 ? 70 : (s._phase===2 ? 95 : 130)'] },
-    tellen: { evilleafy: ['return 45;'], mephone4s: ['return 42;'], four: ['return 50;'] },
+    tellen: { evilleafy: ['return 45;'], mephone4s: ['return 42;'] },
     phase: { mephone4: ['meLifeDownload(s, -(s.face||1))'], two: ['TWO SHRINKS!', 'POWER UNGROUNDED'] },
     phasename: { mephone4: ['mephone:'], evilleafy: ['evilleafy:'], mephone4s: ['mephone4s:'], two: ['two:'], four: ['four:'] },
-    telname: { mephone4: ['FIST THINGY COMBO!'], evilleafy: ['TENDRILS!'], mephone4s: ["I'LL BE BACK!"], two: ['MIND READ!'], four: ['SCREECHY!!'] },
+    telname: { mephone4: ['FIST THINGY COMBO!'], evilleafy: ['TENDRILS!'], mephone4s: ["I'LL BE BACK!"], two: ['MIND READ!'] },
     fx: { evilleafy: ['drawTendrils()'] },
     sky: { mephone4: ['melife:'], evilleafy: ['forest:'], mephone4s: ['studio:'] },
     decor: { mephone4: ['if(key==="melife"){'], evilleafy: ['if(key==="forest"){'], mephone4s: ['if(key==="studio"){'] },
@@ -691,7 +691,7 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
 
   it("and the slots they do not use yet hold no code at all: spawn, shotdraw, ground, look, art, netshot, hazard and ending (Four's ending is a note, for the victory card)", () => {
     const L = lines(), strip = (s) => s.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean);
-    for (const slot of ['spawn', 'shotdraw', 'ground', 'look', 'art', 'netshot', 'hazard', 'ending']) for (const boss of LATE) {
+    for (const slot of ['spawn', 'shotdraw', 'ground', 'look', 'art', 'netshot', 'hazard', 'ending']) for (const boss of LATE.filter((b) => b !== 'four')) {   // (Four is rebuilt: he uses every one of them)
       expect(strip(body(L, slot, boss)), `${slot}/${boss}`).toEqual([]);
     }
   });
@@ -709,12 +709,13 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     expect(r.evilleafy).toEqual({ base: [130, 95, 70], tel: 45, name1: 'TENDRILS!', name2: 'TENDRILS!', p2: 'No Refuge', p3: 'Vine Coverage', extra: ['seekers', 'slam'] });
     expect(r.mephone4s).toEqual({ base: [100, 72, 52], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['cookies', 'chainsaws'] });
     expect(r.two).toEqual({ base: [100, 72, 52], tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['seekers', 'ring'] });
-    expect(r.four).toEqual({ base: [100, 72, 52], tel: 50, name1: 'SCREECHY!', name2: 'SCREECHY!!', p2: 'Zap to Dust', p3: 'Reality Buckles', extra: ['rain', 'seekers'] });
+    // Four, rebuilt (the boss overhaul): his gaps eased a shade for the hills and sparks of his room ("if it makes sense for a hazard, reduce boss difficulty and add a hazard"), his own five
+    expect(r.four).toEqual({ base: [104, 78, 56], tel: 50, name1: 'SCREECHY!', name2: 'SCREECHY!!', p2: 'Zap to Dust', p3: 'Reality Buckles', extra: ['fourbye', 'fourtower', 'fourido', 'fourhearts', 'fourcactus'] });
   });
 
   // With every slot holding what was there, the five fight as they did: a wind-up names the move, each turn lands something (a shot, a tendril, an add, a
   // portal), and a phase begins. (The early six have their own tests: test/boss-announcer.test.js and the rest.)
-  for (const name of ['MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Four']) {
+  for (const name of ['MePhone4', 'Evil Leafy', 'MePhone4S', 'Two']) {   // (Four is rebuilt: test/boss-four.test.js reads each of his six over its whole length)
     it(`${name} still fights as he did, through his slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], landed: [], phase: null };
@@ -795,7 +796,7 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
     expect(leaks, 'no slot puts the pace on its own number').toEqual([]);
   });
 
-  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, and 100 x 1.2 for MePhone4S, Two and Four', () => {
+  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, 100 x 1.2 for MePhone4S and Two, and Four\'s own 104 x 1.2', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE('Four', 500)}
       ['MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Four'].forEach(function(name){
@@ -805,29 +806,29 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
         out[name] = b._atkTimer;
       });
       summons = []; projectiles = []; tendrils = []; return out; })()`);
-    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, MePhone4S: 120, Two: 120, Four: 120 });
+    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, MePhone4S: 120, Two: 120, Four: 125 });
   });
 });
 
 // ---- FOUR'S VICTORY CARD ---------------------------------------------------------------------------------------------------
-describe("Four's victory card waits for his ending (the hook: he has none yet)", () => {
+describe("Four's victory card waits for his ending (the hook; he has one of his own now, so this stands in a short one, and takes his away to see the card come at once)", () => {
   // showRushVictory pauses the game the moment it shows, so an ending for Four would play under it, frozen. When BOSS_ENDINGS.four exists the clear path
   // holds the card -- and the loop's own card with it -- back by its holdMs, the way it holds the BOSS DOWN card; the loop itself moves on at once.
   it('with no ending the card comes at once, as it always did; with one it comes after holdMs, naming the lap just beaten, and not at all if the run is over by then', async () => {
     const w = bootMonolith(); await w.eval('profileReady');   // its own page: the loop's awards write the profile
     const run = (ending, stillRunning) => w.eval(`(function(){ ${STAGE('Four', 500)}
-      var st = setTimeout, timers = [], said = [], _b = banner, el = document.getElementById('rushVictory');
+      var st = setTimeout, timers = [], said = [], _b = banner, el = document.getElementById('rushVictory'), real = BOSS_ENDINGS.four;
       setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };
       banner = function(t, m, k, l){ said.push(String(t)); return _b(t, m, k, l); };
       try {
         el.style.display = 'none'; paused = false; BOSSRUSH.active = true; BOSSRUSH.frames = 600;
-        ${ending ? 'BOSS_ENDINGS.four = { begin: function(boss){}, holdMs: 900 };' : ''}
+        ${ending ? 'BOSS_ENDINGS.four = { begin: function(boss){}, holdMs: 900 };' : 'delete BOSS_ENDINGS.four;'}
         b.hp = 0; bossRushCheck();
         var now = { paused: paused, card: !!BOSSRUSH.card, shown: el.style.display, loop: BOSSRUSH.loop, mult: BOSSRUSH.dmgMult, idx: BOSSRUSH.bossIdx, ms: timers.map(function(t){ return t.ms; }).sort(function(a, c){ return a - c; }),
           said: said.slice() };
         running = ${stillRunning}; timers.filter(function(t){ return t.ms === 900; }).forEach(function(t){ t.fn(); }); running = true;
         return { now: now, after: { paused: paused, card: !!BOSSRUSH.card, shown: el.style.display, sub: document.getElementById('rushVicSub').textContent, said: said.slice(now.said.length) } };
-      } finally { setTimeout = st; banner = _b; delete BOSS_ENDINGS.four; BOSSRUSH.active = false; paused = false; el.style.display = 'none'; summons = []; projectiles = []; }
+      } finally { setTimeout = st; banner = _b; BOSS_ENDINGS.four = real; BOSSRUSH.active = false; paused = false; el.style.display = 'none'; summons = []; projectiles = []; }
     })()`);
     const plain = run(false, true), held = run(true, true), over = run(true, false);
     // no ending: the card now, the loop's card now, the next boss after 1.5 s
