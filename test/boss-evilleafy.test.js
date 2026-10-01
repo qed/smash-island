@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { readFileSync, existsSync } from 'node:fs';
+import { PNG } from 'pngjs';
+import { JSDOM } from 'jsdom';
 import { loadMonolith } from './helpers/load-monolith.js';
+import { mulberry32 } from './helpers/prng.js';
 
 // Boss 7, Evil Leafy, rebuilt in the boss overhaul (2026-09-29): "make the bosses more like springy ... but dont make them like him! make the attacks feel more
 // immersive." The Evil Forest, FOUR attacks -- TENDRILS! (the signature, redone: "1 needs a better telegraph." -> BOTH tells: the tendrils coil above her pointing where
@@ -144,7 +148,7 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
     const gaps = r.times.slice(1).map((t, i) => t - r.times[i]);
     expect(gaps.every((g) => g === 6 || g === 18), `one every 6 frames (18 across the gap, three vines' worth): ${gaps}`).toBe(true);
     expect(Math.min(...r.hs), 'every vine grows past a single jump (126 px)').toBeGreaterThanOrEqual(184);
-    expect(r.life, 'grow (25 frames at 8 a frame), hold 14, fall 10').toBe(25 + 14 + 10);
+    expect(r.life, 'grow (20 frames at 10 a frame), hold 8, fall 10').toBe(20 + 8 + 10);
   });
 
   it('a vine is a full boss hit through the move\'s one id: standing in the row costs one hit however many vines come, standing in the lit gap costs nothing', () => {
@@ -193,26 +197,59 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
     expect(r.snapHz, 'a netcode client gets the tell whole').toBe(r.hz);
   });
 
-  it('phase 2 adds a second wave where you dodged to, its gap on your other side and its tell shorter; phase 3 brings it sooner and faster', () => {
+  it('phase 2 adds a second wave where you dodged to -- a short row of eleven vines that comes up toward its gap, its tell shorter, begun once the ground it covers is clear of the first wave; phase 3 is faster still', () => {
     const r = W.eval(`(function(){ var out = {};
       [2, 3].forEach(function(ph){
         var FX = 600; ${STAGE(600, 1, 100)}
         b.hp = b.maxHp*(ph === 3 ? ${HP[3]} : ${HP[2]});
         step(); f.x = 600;
         ${FIRE(0)}
-        var w1 = b._hz.tw[0].slice(), mid = (w1[4] + w1[5])/2, e0 = b._el ? b._el.t : -1;
-        for (var i=0;i<90;i++){ step(); f.x = 600; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999; if (b._hz.tw && b._hz.tw[1]) break; }
-        var w2 = b._hz.tw[1].slice(), mid2 = (w2[4] + w2[5])/2;
-        out[ph] = { w1: w1, w2: w2, side1: Math.sign(mid - 600), side2: Math.sign(mid2 - 600), tell2: w2[7] - w2[6], at: w2[6] - w1[7], waves: b._el.n, ev: EL.vEvery[ph] };
+        var w1 = b._hz.tw[0].slice(), T1 = hazardT, tellAt = null, live = null;
+        for (var i=0;i<260;i++){ step(); f.x = 600; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999;
+          if (b._hz.tw && b._hz.tw[1] && tellAt == null){ tellAt = hazardT; live = (b._hz.v || []).filter(function(v){ return Math.abs(v[0] - 600) < EL.win2R && elVineH(v, hazardT) >= EL.vMinH; }).length; }
+          if (!b._el) break; }
+        var w2 = (b._hz.tw && b._hz.tw[1]) ? b._hz.tw[1].slice() : null;
+        var vines2 = (b._hz.v || []).filter(function(v){ return w2 && v[1] > w2[7]; }).sort(function(p, q){ return p[1] - q[1]; });
+        out[ph] = { w1: w1, w2: w2, tell2: w2 && (w2[7] - w2[6]), after: tellAt - T1, live: live, waves: ph, ev: EL.vEvery[ph], nW: EL.waves[ph],
+                    slots: vines2.map(function(v){ return Math.round((v[0] - w2[0])/(w2[1]*EL.vSpace)) + 0; }), times: vines2.map(function(v){ return v[1] - vines2[0][1]; }),
+                    off: w2 && Math.abs((w2[4] + w2[5])/2 - 600), done: !b._el };
       });
       return out; })()`);
     for (const ph of [2, 3]) {
-      expect(r[ph].waves, `phase ${ph}: two waves`).toBe(2);
-      expect(r[ph].side2, `phase ${ph}: the second gap is on the other side of you`).toBe(-r[ph].side1);
-      expect(r[ph].at, `its tell begins 40 frames after the first wave went in`).toBe(40);
+      const o = r[ph], w2 = o.w2;
+      expect(o.nW, `phase ${ph}: two waves a turn`).toBe(2);
+      expect(w2, `phase ${ph}: the second wave came`).toBeTruthy();
+      expect(o.after, 'its tell begins no sooner than 40 frames after the first wave went in').toBeGreaterThanOrEqual(40);
+      expect(o.live, 'and on ground the first wave has left clear: no vine of it standing within reach of where you stand').toBe(0);
+      expect([w2[2], w2[3]], 'eleven vines, its gap the eighth and ninth').toEqual([11, 8]);
+      expect(w2[5] - w2[4], 'two vines wide').toBe(3*54 - 2*27);
+      expect(o.off, 'a few vines from where you stand: 189 px').toBe(189);
+      // the vines come up from the far end and run toward the gap: slots 0..7, then the last, 10, and the gap's neighbours last
+      expect(o.slots, 'every slot but the gap, in order').toEqual([0, 1, 2, 3, 4, 5, 6, 7, 10]);
+      expect(o.times[o.times.length - 1], 'the last is the farthest along').toBe(10*o.ev + 0);
+      expect(o.done, 'and then the move is over').toBe(true);
     }
-    expect([r[2].tell2, r[3].tell2], 'a shorter second tell, shorter again in phase 3').toEqual([34, 26]);
+    expect([r[2].tell2, r[3].tell2], 'a shorter second tell, shorter again in phase 3').toEqual([34, 30]);
     expect([r[2].ev, r[3].ev], 'the vines come every 5 frames, then 4').toEqual([5, 4]);
+  });
+
+  it('the second wave never puts its gap on top of her, off the stage, or across her from you (her touch is a hit of its own), and moves it a vine or two nearer or farther if that is the only way to one you can reach', () => {
+    const r = W.eval(`(function(){ var out = {}, bad = [], n = 0, shifted = 0, none = 0;
+      for (var bx = 100; bx <= 1000; bx += 150) for (var tx = 100; tx <= 1000; tx += 50){
+        if (Math.abs(tx - bx) < 140) continue;
+        [1, -1].forEach(function(pref){
+          var row = elRow2(tx, pref, bx); n++;
+          if (!row){ none++; return; }
+          var mid = (row.g0 + row.g1)/2, onStage = row.g0 >= EL.rowWall && row.g1 <= WW - EL.rowWall, across = Math.min(tx, mid) < bx + 118 && Math.max(tx, mid) > bx - 118, dist = Math.abs(mid - tx);
+          if (Math.abs(dist - 189) > 1) shifted++;
+          if (!onStage || across) bad.push([bx, tx, pref, row.g0, row.g1]);
+        });
+      }
+      out.n = n; out.bad = bad.slice(0, 8); out.badN = bad.length; out.shifted = shifted; out.none = none; return out; })()`);
+    expect(r.n).toBeGreaterThan(100);
+    expect(r.badN, 'no gap off the stage or behind her: ' + JSON.stringify(r.bad)).toBe(0);
+    expect(r.shifted, 'some had to be moved off 189 px, and none was not').toBeGreaterThan(0);
+    expect(r.none, 'and a fighter cornered between her and the wall gets no second wave (a few places in a hundred), not an unfair one').toBeLessThan(r.n*0.1);
   });
 });
 
@@ -477,5 +514,286 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
       return out; })()`);
     expect(r.err).toBe(null);
     expect(r.hz).toBe(r.snapHz);
+  });
+});
+
+// ==== THE EVIL FOREST ================================================================================================================================
+// A recording canvas context: every call it is asked for, with the arguments, and every colour stop a gradient is given.
+const REC = `var rec = function(){ var calls = [], stops = []; var c = new Proxy({}, { get: function(_t, p){
+    if (p === 'canvas') return { width:1100, height:720 };
+    if (p === 'measureText') return function(){ return { width:0 }; };
+    if (p === 'createRadialGradient' || p === 'createLinearGradient') return function(){ calls.push([p].concat([].slice.call(arguments))); return { addColorStop: function(pos, col){ stops.push(col); } }; };
+    return function(){ calls.push([p].concat([].slice.call(arguments))); }; }, set: function(){ return true; } }); return { c: c, calls: calls, stops: stops }; };`;
+describe('the Evil Forest: its sky and ground, the dark that follows her and widens by phase, the vine curtains of phase 3', () => {
+  it('has its sky, its dark-grass ground, its hazard, its decor and its ending, and the arena key a netcode client would take', () => {
+    const r = W.eval(`({ sky: BOSS_ARENA_SKY.forest, ground: BOSS_ARENA_GROUND.forest && [BOSS_ARENA_GROUND.forest.fill, BOSS_ARENA_GROUND.forest.line, typeof BOSS_ARENA_GROUND.forest.pattern],
+      hz: [typeof arenaHazardOf('forest').step, typeof arenaHazardOf('forest').draw], end: [typeof BOSS_ENDINGS.evilleafy.sweep, typeof BOSS_ENDINGS.evilleafy.begin, BOSS_ENDINGS.evilleafy.holdMs, BOSS_ENDINGS.evilleafy.line],
+      decor: String(drawArenaDecor).indexOf('elDecor()') >= 0, others: ['studio', 'cave', 'void', 'cerealbox', 'hotelroof', 'melife'].every(function(k){ return !!BOSS_ARENA_SKY[k]; }) })`);
+    expect(r.sky, 'a teal-green night, not the black it was').toEqual(['#1e4033', '#0e2218']);
+    expect(r.ground).toEqual(['#1f2f1a', '#3f5d33', 'function']);
+    expect(r.hz).toEqual(['function', 'function']);
+    expect(r.end, 'a short canon exit, no line of text').toEqual(['function', 'function', 1600, undefined]);
+    expect(r.decor).toBe(true);
+    expect(r.others, 'the other arenas are not touched').toBe(true);
+  });
+
+  it('the dark is a layer round HER, over the backdrop and the floor and under the shots and the fighters: a pool of 330 in phase 1, the arena in phase 2, a void in phase 3; and the floor line and the platform edge are redrawn over it', () => {
+    const r = W.eval(`(function(){ ${REC}
+      ${STAGE(700, 1, 300)}
+      var out = {}, gy = groundY();
+      [1, 2, 3].forEach(function(ph){
+        b._phase = ph; b._hz.p2 = hazardT - 500; b._hz.p3 = hazardT - 500; b._hz.born = hazardT - 500; b.x = 300; b.y = gy - b.r;
+        var R = rec(); elDarkDraw(R.c, b, b._hz);
+        var g = R.calls.filter(function(c){ return c[0] === 'createRadialGradient'; })[0];
+        var strokes = R.calls.filter(function(c){ return c[0] === 'moveTo'; }).map(function(c){ return [Math.round(c[1]), Math.round(c[2])]; });
+        out[ph] = { grad: g.slice(1).map(function(v){ return Math.round(v); }), alpha: +(/,([0-9.]+)\\)$/.exec(R.stops[0])[1]), strokes: strokes, rects: R.calls.filter(function(c){ return c[0] === 'fillRect'; }).length };
+      });
+      // arriving: the dark gathers over her first second; it follows her as she moves; and with nothing standing there is none
+      b._phase = 1; b._hz.born = hazardT - 30; var R1 = rec(); elDarkDraw(R1.c, b, b._hz); out.arrive = +(/,([0-9.]+)\\)$/.exec(R1.stops[0])[1]);
+      b._hz.born = hazardT - 500; b.x = 900; var R2 = rec(); elDarkDraw(R2.c, b, b._hz); out.follows = R2.calls.filter(function(c){ return c[0] === 'createRadialGradient'; })[0].slice(1, 3).map(Math.round);
+      b.hp = 0; var R3 = rec(); elDarkDraw(R3.c, b, b._hz); out.dead = R3.calls.length;
+      out.gy = Math.round(gy); out.cy = Math.round(gy - b.r); out.plat = elPlat().y; out.platX = elPlat().x;
+      return out; })()`);
+    expect(r[1].grad.slice(0, 2), 'centred on her').toEqual([300, r.cy]);
+    expect([r[1].grad[5], r[2].grad[5], r[3].grad[5]], 'a pool, the arena, the void: widening by phase').toEqual([330, 1000, 1400]);
+    expect(r[1].alpha, 'phase 1: strong at her middle').toBeCloseTo(0.76, 2);
+    expect(r[2].alpha).toBeCloseTo(0.62, 2);
+    expect(r[3].alpha).toBeCloseTo(0.64, 2);
+    expect(r.arrive, 'she arrives and it gathers: half strength after half a second').toBeCloseTo(0.64*0.5 + 0.12, 2);
+    expect(r.follows, 'it follows her').toEqual([900, r.cy]);
+    expect(r.dead, 'and is gone with her').toBe(0);
+    expect(r[1].strokes.some((s) => s[1] === r.gy), 'the floor line is drawn over it').toBe(true);
+    expect(r[1].strokes.some((s) => s[1] === Math.round(r.plat)), 'and the platform\'s edge').toBe(true);
+  });
+
+  it('phase 2 and 3 begin with their beat: the dark widens (2) and the curtains start to close in (3); one burst of damage that skips phase 2 gets both', () => {
+    const r = W.eval(`(function(){ ${STAGE(700, 1, 300)}
+      var out = { p1: b._phase, hz1: JSON.stringify(b._hz) };
+      b.hp = b.maxHp*${HP[2]}; step(); out.p2 = b._phase; out.b2 = document.getElementById('banner').textContent; out.p2t = b._hz.p2; out.cur2 = b._hz.cur;
+      b.hp = b.maxHp*${HP[3]}; step(); out.p3 = b._phase; out.b3 = document.getElementById('banner').textContent; out.p3t = b._hz.p3; out.cur3 = b._hz.cur; out.cw0 = b._hz.cw;
+      ${STAGE(700, 1, 300)}
+      b.hp = b.maxHp*0.1; step(); out.skip = { phase: b._phase, p2: b._hz.p2 != null, p3: b._hz.p3 != null, cur: b._hz.cur != null };
+      return out; })()`);
+    expect([r.p1, r.p2, r.p3]).toEqual([1, 2, 3]);
+    expect(r.b2).toMatch(/PHASE 2: No Refuge/);
+    expect(r.b3).toMatch(/PHASE 3: Vine Coverage/);
+    expect(r.p2t, 'phase 2: the dark begins to widen').toBeGreaterThan(0);
+    expect(r.cur2, 'and the curtains are not there yet').toBeUndefined();
+    expect(r.cur3, 'phase 3: the curtains begin').toBeGreaterThan(0);
+    expect(r.skip).toEqual({ phase: 3, p2: true, p3: true, cur: true });
+  });
+
+  it('the curtains creep in from both edges at 0.22 a frame, three times faster while a void is open, up to 11% of the arena a side; standing in one is a 0.4 boss hit thrown toward the middle, once every 60 frames; the middle is safe', () => {
+    const r = W.eval(`(function(){ var out = {};
+      // the width, growing: 0.22 a frame from the phase change
+      ${STAGE(550, 3, 300)}
+      var cw = []; for (var i=0;i<130;i++){ step(); f.x = 550; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999; if (i === 59 || i === 129) cw.push(b._hz.cw); }
+      out.cw = cw; out.rate = EL.curRate;
+      // a fighter pinned inside the left curtain: a hit, then another a second on, each thrown toward the middle
+      ${STAGE(550, 3, 300)}
+      for (var i=0;i<40;i++){ step(); f.x = 550; f.y = groundY()-24; f.onground = true; f.invuln = 9999; }
+      f.invuln = 0; f.pct = 0; var ev = [], last = 0;
+      for (var i=0;i<190;i++){ f.x = 3; f.y = groundY()-24; f.onground = true; step(); if (f.pct > last + 1e-9){ ev.push([i, f.pct - last, f.vx]); last = f.pct; } }
+      out.ev = ev; out.dmg = bossDmg();
+      // in the middle: nothing. And the width stops at 11% of the arena
+      ${STAGE(550, 3, 300)}
+      step(); b._cwf = 119; for (var i=0;i<60;i++){ step(); f.x = 550; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 0; }
+      out.mid = f.pct; out.capped = b._hz.cw; out.max = Math.round(WW*EL.curMax*10)/10;
+      // while a void is open they close three times as fast
+      var FX = 550; ${STAGE(550, 3, 300)}
+      ${FIRE(2)}
+      for (var i=0;i<30;i++){ step(); f.x = 550; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999; }
+      var w0 = b._hz.cw, st0 = b._el && b._el.st; for (var i=0;i<20;i++){ step(); f.x = 550; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999; }
+      out.holeGain = +(b._hz.cw - w0).toFixed(2); out.holeOpen = st0; out.holeRate = EL.curRate*EL.curHole*20;
+      return out; })()`);
+    expect(r.cw[0], 'it has begun').toBeGreaterThan(5);
+    expect(r.cw[1] - r.cw[0], 'steadily').toBeCloseTo(r.rate*70, 0);
+    expect(r.ev.length, 'ticks come a second apart, not every frame').toBeGreaterThan(1);
+    expect(r.ev[0][1], 'a 0.4 boss hit').toBeCloseTo(r.dmg*0.4, 4);
+    expect(r.ev[1][0] - r.ev[0][0], 'one every 60 frames').toBeGreaterThanOrEqual(60);
+    expect(r.ev[0][2], 'thrown toward the middle').toBeGreaterThan(3);
+    expect(r.mid, 'the middle of the stage is safe from it').toBe(0);
+    expect(r.capped, 'it stops at 11% of the arena a side').toBe(r.max);
+    expect(r.holeOpen).toBe('open');
+    expect(r.holeGain, 'three times faster while a void is open').toBeCloseTo(r.holeRate, 0);
+  });
+
+  it('she arrives in it: the dark gathers over her first second and her first teleport waits', () => {
+    const r = W.eval(`(function(){ ${STAGE(700, 1, 300)}
+      summons = []; hazardT = 123; spawnBossRushBoss(); var b2 = summons.find(function(s){ return s.type === 'boss'; });
+      return { born: b2._hz.born, t: hazardT, tele: b2._teleT, arena: BOSS_ARENA, atk: b2._atkTimer }; })()`);
+    expect(r.born).toBe(r.t);
+    expect(r.tele, 'her first teleport waits 90 frames').toBe(90);
+    expect(r.arena).toBe('forest');
+  });
+});
+
+// ==== HER ENDING =====================================================================================================================================
+describe('her ending: she freezes where she fell, a monitor comes in from the right, and she shatters', () => {
+  it('runs through BOSS_ENDINGS: a scene shot and a carrier, the card held 1600 ms, no line of text; it hurts nobody, the carrier lands on the beat of the hit and makes the engine\'s impact, and it is over in 100 frames', () => {
+    const r = W.eval(`(function(){ ${STAGE(500, 1, 500)}
+      projectiles = [{ el:true, life:5, x:0, y:0, r:1, vx:0, vy:0 }, { life:5, x:0, y:0, r:1, vx:0, vy:0 }];
+      var info = bossEndingBegin(b); summons = []; f.pct = 0; f.invuln = 0;
+      var shots = projectiles.filter(function(p){ return p.el; }), scene = shots.find(function(p){ return p.elEnd; }), carrier = shots.find(function(p){ return p.elGhost; });
+      var out = { info: info, n: shots.length, other: projectiles.filter(function(p){ return !p.el; }).length, gy: groundY(), t0: hazardT,
+        scene: scene && { et0: scene.et0, ex: scene.ex, ey: scene.ey, er: scene.er, r: scene.r, dmg: scene.dmg, y: scene.y },
+        carrier: carrier && { team: carrier.ownerObj.team, dmg: carrier.dmg, r: carrier.r } };
+      var debris0 = IMPACT_DEBRIS.length, hitAt = null, goneAt = null;
+      for (var i=0;i<130;i++){ step(); f.x = 500; f.y = groundY()-24; f.onground = true; f.vx = 0;
+        if (hitAt == null && IMPACT_DEBRIS.length >= debris0 + 8) hitAt = hazardT - out.t0;
+        if (goneAt == null && !projectiles.some(function(p){ return p.el; })) goneAt = hazardT - out.t0; }
+      out.hitAt = hitAt; out.goneAt = goneAt; out.pct = f.pct; out.endT = EL.endT;
+      projectiles = [{ el:true, life:5, x:0, y:0, r:1, vx:0, vy:0 }, { life:5, x:0, y:0, r:1, vx:0, vy:0 }]; elEndSweep(); out.swept = projectiles.length;
+      return out; })()`);
+    expect(r.info, 'the card waits 1.6 s for it, and there is no line').toEqual({ hold: 1600, line: null });
+    expect(r.n, 'the scene and its carrier, and the sweep took the one that was there').toBe(2);
+    expect(r.other, 'another boss\'s shot is not hers to take').toBe(1);
+    expect(r.swept, 'the sweep takes her shots and no others').toBe(1);
+    expect(r.scene, 'where she fell, when, and how big; inert and far off the screen').toMatchObject({ et0: r.t0, ex: 500, ey: Math.round(r.gy - 81.6), er: 82, r: 0, dmg: 0, y: -5000 });
+    expect(r.carrier, 'the carrier is on the fighters\' side, so it touches nobody').toEqual({ team: 0, dmg: 0, r: 2 });
+    expect(r.hitAt, 'the monitor hits on frame 64 and the shatter\'s impact (shake, dust, debris) comes with it').toBeGreaterThanOrEqual(60);
+    expect(r.hitAt).toBeLessThanOrEqual(68);
+    expect(r.goneAt, 'over in 100 frames, before the next boss').toBeLessThanOrEqual(r.endT + 2);
+    expect(r.pct, 'it hurt no one').toBe(0);
+  });
+
+  it('is drawn from the clock: she freezes (ice in from the left, then the frozen render), a monitor flies in, she shatters into shards that fall and fade -- with the art loaded or not -- and a client draws it from the snapshot', () => {
+    const r = W.eval(`(function(){ ${STAGE(500, 1, 500)}
+      var out = { err: null, calls: {} }, n = 0;
+      var run = function(tag){
+        try {
+          for (var u of [0, 5, 10, 17, 30, 46, 55, 63, 64, 66, 72, 85, 99, 100, 101]){
+            var pr = { x:500, y:-5000, vx:0, vy:0, r:0, color:'#ff0100', owner:-2, ownerObj:{ team:-1, idx:-2 }, life:1, delay:100, el:true, elEnd:true, et0:hazardT - u, ex:500, ey:Math.round(groundY() - 82), er:82, ef:1 };
+            drawProjectile(pr); n++;
+          }
+          drawProjectile({ x:500, y:300, vx:0, vy:25, r:2, color:'#bff3fb', owner:-2, ownerObj:{ team:0, idx:-2 }, el:true, elGhost:1 });   // the carrier draws nothing
+        } catch(e){ out.err = tag + ': ' + e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+      };
+      run('no art');
+      ATTACK_IMG.elfrozen = { complete:true, naturalWidth:71, naturalHeight:128 }; BOSS_SPRITE_IMG.evilleafy = { complete:true, naturalWidth:110, naturalHeight:200 };
+      run('art');
+      out.n = n; out.glyphs = ['elvine', 'elfrozen'].map(function(k){ return !!PROJ_SHAPE[k] && typeof PROJ_SHAPE[k].draw === 'function'; });
+      return out; })()`);
+    expect(r.err).toBe(null);
+    expect(r.n).toBe(30);
+    expect(r.glyphs, 'a drawn glyph for each of her art keys, for until the art loads').toEqual([true, true]);
+  });
+});
+
+describe('a netcode client sees the forest, her moves and her ending', () => {
+  it('everything she draws from rides the snapshot whole -- b._hz, and the ending\'s shots -- and it all draws on the client', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
+      BOSS_ARENA = 'forest'; var gy = groundY(), t = hazardT;
+      var hz = { born:t - 500, p2:t - 300, p3:t - 100, cur:t - 90, cw:40.6, tw:[[261, 1, 15, 4, 450, 558, t - 20, t + 20], [900, -1, 11, 8, 200, 308, t - 5, t + 25]],
+                 v:[[300, t - 5, 200, 7], [354, t + 3, 210, 7]], pos:[550, 446, t - 40, t - 6, t + 150, 342, 416, 700, 230], th:[[400, t + 10, 446], [800, t + 30, 590]],
+                 bh:[550, 544, t - 60, t - 6, t + 120, 42, 340], bt:[3, 473, t - 20, t + 30, 1, 903] };
+      summons = [{ type:'boss', name:'Evil Leafy', color:'#ff0100', r:82, sprite:'evilleafy', x:500, y:300, hp:90, maxHp:185, face:1, flash:0, homeX:500, _rage:false, _tel:10, _telKind:'elpossess',
+                   _bossRush:true, attack:'evilleafy', _phase:3, _hz:hz }];
+      projectiles = [{ x:420, y:-5000, vx:0, vy:0, r:0, color:'#ff0100', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:0, life:1, delay:90, noAim:true, el:true, elEnd:true, et0:t - 10, ex:420, ey:508, er:82, ef:1 },
+                     { x:420, y:gy - 150, vx:0, vy:25, r:2, color:'#bff3fb', owner:-2, ownerObj:{ team:0, idx:-2 }, bossAtk:0, life:90, delay:30, noAim:true, el:true, elGhost:1 }];
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      summons = []; projectiles = []; BOSS_ARENA = null;
+      applySnapshot(snap);
+      var err = null, drawn = null;
+      try { drawArenaDecor(BOSS_ARENA); drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); elFxDraw(summons[0]); projectiles.forEach(drawProjectile); drawBossBar(); draw(); drawn = true; }
+      catch(e){ err = e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+      var end = projectiles.find(function(p){ return p.elEnd; }), ghost = projectiles.find(function(p){ return p.elGhost; });
+      return { err: err, drawn: drawn, arena: BOSS_ARENA, hz: JSON.stringify(summons[0]._hz), want: JSON.stringify(hz),
+               end: end && { et0: end.et0, ex: end.ex, ey: end.ey, er: end.er, ef: end.ef }, ghost: !!ghost, t: t, boss: { attack: summons[0].attack, tel: summons[0]._tel, kind: summons[0]._telKind, phase: summons[0]._phase } };
+    })()`);
+    expect(r.err).toBe(null);
+    expect(r.arena, 'the client draws the Evil Forest').toBe('forest');
+    expect(r.hz, 'every field of the scene arrives as it was sent').toBe(r.want);
+    expect(r.boss).toEqual({ attack: 'evilleafy', tel: 10, kind: 'elpossess', phase: 3 });
+    expect(r.end, 'and so does the ending: where, when, how big, which way').toEqual({ et0: r.t - 10, ex: 420, ey: 508, er: 82, ef: 1 });
+    expect(r.ghost, 'with its carrier, which draws nothing').toBe(true);
+  });
+});
+
+describe('no words, no other show, and the art is wired and credited', () => {
+  // Every draw of the forest, her, and everything she throws, on a canvas that records what it is asked to do: not one word.
+  function bootRecording(seed = 7) {
+    const html = readFileSync('artifacts/V1/index.html', 'utf8'), rec = [], grad = { addColorStop() {} };
+    const dom = new JSDOM(html, {
+      url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+      beforeParse(window) {
+        window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
+          get: (_t, p) => (p === 'measureText' ? () => ({ width: 0 }) : p === 'canvas' ? { width: 1100, height: 720 } : p === 'getImageData' ? () => ({ data: [] })
+            : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') ? () => grad : (...args) => { rec.push({ op: p, args }); }),
+          set: (_t, p, v) => { rec.push({ op: 'set:' + String(p), args: [v] }); return true; },
+        });
+        window.Math.random = mulberry32(seed); window.requestAnimationFrame = () => 0; window.cancelAnimationFrame = () => {};
+      },
+    });
+    return { w: dom.window, rec };
+  }
+
+  it('draws the whole forest, her in every state and everything she throws, with the art loaded or not, without a word of text', () => {
+    const { w, rec } = bootRecording();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running = false;");   // (the match's own HUD writes the fighters' names: not the forest's business)
+    const n0 = rec.length;
+    const err = w.eval(`(function(){
+      try {
+        BOSS_ARENA = 'forest';
+        var gy = groundY(), t = hazardT + 200; hazardT = t;
+        var hz = { born:t - 500, p2:t - 300, p3:t - 100, cur:t - 90, cw:40.6, tw:[[261, 1, 15, 4, 450, 558, t - 20, t + 20], [900, -1, 11, 8, 200, 308, t - 5, t + 25]],
+                   v:[[300, t - 5, 200, 7], [354, t + 3, 210, 7], [408, t - 40, 190, 7], [462, t - 60, 190, 7]], pos:[550, 446, t - 40, t - 6, t + 150, 342, 416, 700, 230], th:[[400, t + 10, 446], [800, t - 6, 590], [460, t - 2, 446]],
+                   bh:[550, 544, t - 60, t - 6, t + 120, 42, 340], bt:[3, 473, t - 20, t + 30, 1, 903] };
+        var base = { type:'boss', name:'Evil Leafy', color:'#ff0100', sprite:'evilleafy', r:82, x:500, y:gy-82, face:1, hp:100, maxHp:185, _tel:0, _telKind:null, _phase:3, _rage:false, flash:0, homeX:500, attack:'evilleafy', _bossRush:true, _hz:hz };
+        var states = [{}, { _tel:20, _telKind:'evilleafy' }, { _tel:20, _telKind:'elpossess', y:gy-0 }, { _tel:20, _telKind:'elhole', y:300 }, { _tel:20, _telKind:'elbehind', y:gy+600 }, { face:-1, _phase:1 }, { _phase:2 }, { flash:6 }, { _hz:{} }];
+        var go = function(tag){ states.forEach(function(st){ summons = [Object.assign({}, base, st)]; ctx.save(); drawSummon(summons[0]); ctx.restore(); elFxDraw(summons[0]);
+            drawArenaDecor('forest'); drawArenaHazard('under'); drawArenaHazard('over'); }); };
+        go('no art');
+        ATTACK_IMG.elvine = { complete:true, naturalWidth:128, naturalHeight:117 }; ATTACK_IMG.elfrozen = { complete:true, naturalWidth:71, naturalHeight:128 }; BOSS_SPRITE_IMG.evilleafy = { complete:true, naturalWidth:110, naturalHeight:200 };
+        go('art');
+        summons = []; drawArenaDecor('forest'); drawArenaHazard('under'); drawArenaHazard('over');   // between bosses
+        arenaGround().pattern(ctx, gy, -20, WW + 20, WH + H, arenaGround());
+        ['elvine', 'elfrozen'].forEach(function(sh){ drawProjectile({ x:300, y:300, vx:8, vy:2, r:20, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:sh, color:'#ff0100' }); drawProjectile({ x:300, y:300, vx:0, vy:0, r:22, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:sh, color:'#ff0100', trap:true }); });
+        [0, 10, 17, 40, 50, 63, 64, 70, 90, 99].forEach(function(u){ drawProjectile({ x:9, y:-5000, vx:0, vy:0, r:0, owner:-2, ownerObj:{ team:-1, idx:-2 }, el:true, elEnd:true, et0:t - u, ex:420, ey:508, er:82, ef:1, color:'#ff0100' }); });
+        draw();
+        return null;
+      } catch(e){ return e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+    })()`);
+    expect(err).toBe(null);
+    const drawn = rec.slice(n0), names = w.eval('fighters.map(function(f){ return f.name; })');   // (the two fighters' own name tags are the match's, not the forest's)
+    expect(drawn.length, 'the recording is live').toBeGreaterThan(1000);
+    expect(drawn.filter((r) => (r.op === 'fillText' || r.op === 'strokeText') && !names.includes(r.args[0])).length, 'not a word on the canvas').toBe(0);
+  });
+
+  it("nothing of it says a word or names anyone from the OSC: its code has no banner of its own, no text drawing, no OJ, Suitcase, Cabby or The Floor", () => {
+    const fns = ['elHz', 'elPh', 'elBoss', 'elPlat', 'elRow', 'elRow2', 'elVineX', 'elVineMax', 'elVineLife', 'elVineH', 'elTell', 'elSpawnRow', 'elVineBirth', 'elVinesStep', 'elDone', 'elHidden', 'elIntangible',
+      'elTendrilsFire', 'elBeginPossess', 'elThrashPlan', 'elThrashH', 'elPossessFire', 'elBeginHole', 'elHoleScale', 'elHoleFire', 'elTreeX', 'elPickTree', 'elBeginBehind', 'elBurst', 'elBehindFire', 'elStep', 'elHold',
+      'elMove', 'elTick', 'elBeginTelegraph', 'elVineDraw', 'elCrackDraw', 'elStumpDraw', 'elTellFloor', 'elCoils', 'elBackVines', 'elTellDraw', 'elPosDraw', 'elEyes', 'elHoleDraw', 'elLaneDraw', 'elHazardDraw', 'elTreeH',
+      'elConifer', 'elDecor', 'elGroundPattern', 'elDarkDraw', 'elHazardStep', 'elCurtainDraw', 'elGlowDraw', 'elSpawn', 'elPhaseBeat', 'elEndSweep', 'elEndBegin', 'elMonitor', 'elEndDraw', 'elFxDraw'];
+    const src = W.eval(`[${fns.join(',')}].map(String).concat([JSON.stringify(EL), JSON.stringify(BOSS_EXTRA['Evil Leafy']), BOSS_MOVE_NAME.elpossess, BOSS_MOVE_NAME.elhole, BOSS_MOVE_NAME.elbehind, String(BOSS_MOVES.elpossess), String(BOSS_MOVES.elhole), String(BOSS_MOVES.elbehind)]).join('\\n')`);
+    expect(src).not.toMatch(/\bOJ\b|Suitcase|Cabby|The Floor/i);
+    expect(src, 'no banner of its own: the wind-up is named by the engine\'s telegraph and a phase by its card').not.toMatch(/banner\(/);
+    expect(src, 'no text on the canvas').not.toMatch(/fillText|strokeText/);
+  });
+
+  it("her vines and her ending wear the show's art -- the vine mass cut from File:Evil Leafy's Vines.png, the frozen leaf of File:Frozen Evil Leafy.png -- every file a real PNG at projectile size, on the record and credited; her own render is unchanged", () => {
+    const reg = W.eval(`(function(){ var o = {}; ['elvine', 'elfrozen'].forEach(function(k){ o[k] = { e: ATTACK_SPRITES[k], glyph: !!PROJ_SHAPE[k] }; }); return o; })()`);
+    const manifest = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8'));
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const picks = readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8');
+    for (const [name, wikiFile] of [['elvine', "Evil Leafy's Vines.png"], ['elfrozen', 'Frozen Evil Leafy.png']]) {
+      const e = reg[name].e, file = 'artifacts/V1/' + e.src;
+      expect(existsSync(file), file).toBe(true);
+      const png = PNG.sync.read(readFileSync(file));
+      expect(Math.max(png.width, png.height), name + ' at projectile size').toBeLessThanOrEqual(128);
+      const clear = (() => { let c = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) c++; return c / (png.width * png.height); })();
+      expect(clear, name + ' is cut out, not a screenshot').toBeGreaterThan(0.12);
+      expect(reg[name].glyph, name + ' has a drawn glyph to show until it loads').toBe(true);
+      const m = manifest[name];
+      expect(m, name + ' is on the record').toMatchObject({ file: name + '.png', kits: [name], srcTitle: wikiFile, wiki: 'bfdi', width: png.width, height: png.height });
+      expect(m.source).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/battlefordreamisland\/images\//);
+      expect(credits, name + ' is credited with its exact source').toContain('(' + name + '.png)');
+      expect(credits).toContain(m.source);
+      expect(picks, name + ' has its pick in the evilleafy slot').toMatch(new RegExp(name + ':\\s*\\{ who: \\x27Evil Leafy\\x27'));
+    }
+    expect(W.eval("BOSS_SPRITE_SRC.evilleafy + ' ' + !!BOSS_SPRITE_FLIP.evilleafy"), 'her own render is unchanged').toBe('assets/sprites/evil-leafy.png false');
+    expect(W.eval('BOSS_ROSTER.find(function(b){ return b.attack === "evilleafy"; }).color'), 'red, the wiki\'s leaf').toBe('#ff0100');
   });
 });

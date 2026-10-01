@@ -461,7 +461,8 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     // 'soundwave', test/boss-puffball.test.js; the Purple Dragon's is 'dragon', it waves back and flies away, test/boss-dragon.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
     expect(r.keys[0], "Springy's is first").toBe('springy');
     expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm', 'soundwave', 'dragon']));
-    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
+    // ...and the late five as THEY are rebuilt: Evil Leafy's is 'evilleafy', she freezes and shatters ("Golf Ball uses freeze juice to freeze Evil Leafy ... Coiny ... throws [a monitor] at her, shattering and killing her", She Deserves This; test/boss-evilleafy.test.js)
+    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon', 'evilleafy'].includes(k)), 'only the rebuilt ones join him: ' + r.keys).toBe(true);
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
