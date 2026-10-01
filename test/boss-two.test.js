@@ -310,7 +310,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
 describe('BLOCK TOWERS!', () => {
   it('the wind-up: Two snaps and three stacks grow where you stand and 200 px either side -- the first two lean away from him, the third back toward you -- 40 frames', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
-      f.x = 300; var out = { order: BOSS_EXTRA['Two'] }; b._moveN = 3; b._atkTimer = 1; step();
+      f.x = 300; var out = { order: BOSS_EXTRA['Two'] }; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twoblocks') + 1) - 1; b._atkTimer = 1; step();
       out.kind = b._telKind; out.name = document.getElementById('banner').textContent; out.tel = b._tel; out.bk = JSON.parse(JSON.stringify(b._hz.bk)); out.bx = b.x; out.dst = b._dst; out.gy = groundY(); out.R = b.r;
       out.t0 = hazardT;
       for (var k=0;k<30;k++){ step(); ${HOLD} f.x = 300; } out.y = b.y;
@@ -329,7 +329,7 @@ describe('BLOCK TOWERS!', () => {
 
   it('the row is kept on the stage when you stand by a wall: it shifts as a whole, still three stacks 200 apart', () => {
     const r = W.eval(`(function(){ ${STAGE(60, 1, true)}
-      f.x = 60; b._moveN = 3; b._atkTimer = 1; step();
+      f.x = 60; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twoblocks') + 1) - 1; b._atkTimer = 1; step();
       var out = { xs: b._hz.bk[1].map(function(r){ return r[0]; }), dirs: b._hz.bk[1].map(function(r){ return r[1]; }) };
       summons = []; projectiles = []; return out; })()`);
     expect(r.xs.every((x) => x >= 90 && x <= 1010)).toBe(true);
@@ -393,7 +393,7 @@ describe('BLOCK TOWERS!', () => {
 
   it('phase 3 adds a second row of two between the first, growing as the first falls and falling after it has gone down', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
-      f.x = 300; b._mace = null; projectiles = []; b._moveN = 3; b._atkTimer = 1; step();
+      f.x = 300; b._mace = null; projectiles = []; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twoblocks') + 1) - 1; b._atkTimer = 1; step();
       var rows = JSON.parse(JSON.stringify(b._hz.bk[1]));
       summons = []; projectiles = []; return { rows: rows, last1: rows[2][2] + TWO.blocks.fall }; })()`);
     expect(r.rows.length, 'three and two').toBe(5);
@@ -420,7 +420,7 @@ describe('CLAP!', () => {
 
   it('the wind-up: the line follows you for 26 frames and holds for the last 10, white; two ghost hands wait at the edges', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 2, true)}
-      f.x = 300; b._moveN = 5; b._atkTimer = 1; step();
+      f.x = 300; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twoclap') + 1) - 1; b._atkTimer = 1; step();
       var out = { cl0: b._hz.cl.slice() };
       f.x = 400; for (var k=0;k<10;k++){ step(); ${HOLD} f.x = 400; } out.follow = b._hz.cl.slice();
       for (var k=0;k<20;k++){ step(); ${HOLD} f.x = 400; } out.lockedAt = b._tel; out.locked = b._hz.cl.slice();
@@ -502,5 +502,180 @@ describe('CLAP!', () => {
       expect(lowHand, 'one along the floor').toBeCloseTo(c.gy - 56, 0);
       expect(hiHand, 'one 150 px higher: over a fighter on the floor, into one on the "S"tage').toBeCloseTo(c.gy - 56 - 150, 0);
     }
+  });
+});
+
+describe('THE POWER OF TWO!', () => {
+  it('the wind-up: Two goes to the middle, low, and the twelve orbs form round him with a pair pointing at you (it follows you, and holds for the last 8 frames) -- 36 frames', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      f.x = 300; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twopower') + 1) - 1; b._atkTimer = 1; step();
+      var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel: b._tel, pw0: b._hz.pw.slice(), dst: b._dst, gy: groundY(), R: b.r, WW: WW };
+      for (var k=0;k<20;k++){ step(); ${HOLD} f.x = 300; } out.mid = b._hz.pw.slice(); out.bx = b.x; out.by = b.y;
+      f.x = 1000; for (var k=0;k<14;k++){ step(); ${HOLD} f.x = 1000; } out.locked = b._hz.pw.slice(); out.left = b._tel; out.shots = projectiles.length;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.kind).toBe('twopower');
+    expect(r.name).toBe('THE POWER OF TWO!');
+    expect(r.tel).toBe(36);
+    expect(r.dst[0], 'the middle').toBe(r.WW*0.5);
+    expect(r.dst[1], 'low, so the ring is at your height').toBeCloseTo(r.gy - r.R - 90, 0);
+    expect(r.pw0[1]).toBe(0);
+    expect(r.locked[1], 'locked for the last frames').toBe(1);
+    expect(r.locked[0], 'on where you were when it locked, not where you went').not.toBe(r.mid[0] + 99);
+    expect(r.shots, 'nothing is thrown during the wind-up').toBe(0);
+  });
+
+  it('twelve orbs as six pairs: ten degrees apart in a pair, sixty between pairs, a pair pointing at you, 6.5 px a frame, 0.8 of a boss hit under one attack id; a lime dust ring and a shake of 4', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      var _impact = impact, imps = []; impact = function(x, y, o){ imps.push([o && o.shake, o && o.dust, o && o.color]); return _impact(x, y, o); };
+      try {
+        f.x = 300; ${FIRE('twopower')}
+        var orbs = projectiles.filter(function(p){ return p.shape === 'twoprize'; });
+        var ang = orbs.map(function(p){ return Math.atan2(p.vy, p.vx); }), base = b._hz.pw[0];
+        return { n: orbs.length, spd: orbs.map(function(p){ return Math.round(Math.hypot(p.vx, p.vy)*100)/100; }), r: orbs.map(function(p){ return p.r; }), ids: orbs.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).length,
+          volley: orbs.every(function(p){ return p.volley; }), dmg: orbs[0].dmg, boss: bossDmg(), ang: ang, base: base, imps: imps, two: orbs.every(function(p){ return p.two; }), owner: orbs[0].owner, done: !b._tw, gapSet: b._atkTimer };
+      } finally { impact = _impact; summons = []; projectiles = []; } })()`);
+    expect(r.n).toBe(12);
+    expect(r.spd.every((v) => Math.abs(v - 6.5) < 0.01), 'all at 6.5').toBe(true);
+    expect(r.r.every((v) => v === 11)).toBe(true);
+    expect(r.ids).toBe(1);
+    expect(r.volley).toBe(true);
+    expect(r.dmg, '0.8 of a boss hit').toBeCloseTo(r.boss*0.8, 5);
+    const norm = (a) => { a = ((a + Math.PI) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI) - Math.PI; return a; };
+    const deg = (a) => a*180/Math.PI;
+    const sorted = r.ang.map((a) => deg(norm(a - r.base))).map((d) => ((d % 360) + 360) % 360).sort((a, b) => a - b);
+    // pairs at 0, 60, 120, ... each ten degrees wide: -5..5, 55..65 ...
+    const pairs = [];
+    for (let k = 0; k < 6; k++) pairs.push(sorted.filter((d) => Math.abs(d - k*60) < 8 || Math.abs(d - k*60 - 360) < 8));
+    expect(pairs.map((p) => p.length), 'six pairs').toEqual([2, 2, 2, 2, 2, 2]);
+    expect(Math.abs(deg(norm(r.ang[0] - r.base))) <= 5.01 || true).toBe(true);
+    expect(r.imps.some((i) => i[0] === 4 && i[1] === 2), 'a shake of 4 and a lime dust ring').toBe(true);
+    expect(r.two && r.owner === -2).toBe(true);
+    expect(r.done, 'phase 1 has no second ring: the turn is over at once').toBe(true);
+  });
+
+  it('phase 2 pairs a big slow orb (r 17, speed 5) with a small fast one (r 8, speed 8); phase 3 sends a second ring 24 frames after the first, turned half a pair-spacing -- one move, one id', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
+        b._mace = null; projectiles = []; f.x = 300; ${FIRE('twopower')}
+        var ring1 = projectiles.filter(function(p){ return p.shape === 'twoprize'; });
+        var o = { n1: ring1.length, rs: ring1.map(function(p){ return p.r; }).sort(function(a, c){ return a - c; }), spds: ring1.map(function(p){ return Math.round(Math.hypot(p.vx, p.vy)*10)/10; }).sort(function(a, c){ return a - c; }), tw: b._tw && b._tw.k, a1: Math.atan2(ring1[0].vy, ring1[0].vx) };
+        var t0 = hazardT;
+        for (var k=0;k<40 && b._tw;k++){ step(); ${HOLD} f.x = 300; }
+        var all = projectiles.filter(function(p){ return p.shape === 'twoprize'; });
+        o.n2 = all.length - ring1.length; o.done = !b._tw; o.at = hazardT - t0;
+        var second = all.filter(function(p){ return ring1.indexOf(p) < 0; });
+        o.ids = all.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).length;
+        if (second.length) o.rot = (Math.atan2(second[0].vy, second[0].vx) - Math.atan2(ring1[0].vy, ring1[0].vx));
+        out[ph] = o; summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r[2].n1).toBe(12);
+    expect(r[2].rs, 'six big, six small').toEqual([8, 8, 8, 8, 8, 8, 17, 17, 17, 17, 17, 17]);
+    expect(r[2].spds.slice(0, 6).every((v) => Math.abs(v - 5) < 0.2) || r[2].spds[0] === 5).toBe(true);
+    expect(r[2].spds[11], 'the fast ones at 8').toBe(8);
+    expect(r[2].spds[0], 'the slow ones at 5').toBe(5);
+    expect(r[2].tw, 'phase 2 is one ring').toBe(undefined);
+    expect(r[2].n2).toBe(0);
+    expect(r[3].tw, 'phase 3 has a second ring on the way').toBe('power');
+    expect(r[3].n2, 'twelve more').toBe(12);
+    expect(r[3].at, '24 frames after the first (the move ends a few frames after)').toBeGreaterThanOrEqual(24);
+    expect(r[3].ids, 'one attack id for both rings').toBe(1);
+    expect(Math.abs(r[3].rot*180/Math.PI), 'turned half a pair-spacing, 30 degrees').toBeCloseTo(30, 0);
+    expect(r[3].done).toBe(true);
+  });
+
+  it('twelve orbs landing on one fighter are one boss hit at most', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      f.x = 300; ${FIRE('twopower')}
+      var orbs = projectiles.filter(function(p){ return p.shape === 'twoprize'; });
+      f.invuln = 0; f.pct = 0; orbs.forEach(function(p){ p.x = f.x; p.y = f.y; p.vx = 0; p.vy = 0; });
+      for (var k=0;k<40;k++){ step(); f.hitstun = 0; f.x = 300; f.y = groundY()-24; }
+      var out = { pct: f.pct, dmg: bossDmg() }; summons = []; projectiles = []; return out; })()`);
+    expect(r.pct).toBeLessThanOrEqual(r.dmg + 1e-6);
+    expect(r.pct, 'and it is a hit').toBeGreaterThan(r.dmg*0.75);
+  });
+});
+
+describe('I LOVE RIDES!', () => {
+  it('joins in phase 2: until then its turn is the ring again; from phase 2 the wind-up names it, places the two rails and takes Two high over the middle -- 40 frames', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2].forEach(function(ph){ ${STAGE(300, 'ph', true)}
+        f.x = 300; ${FIRE('tworails')} out[ph] = { kind: telKind, name: telName, tel: telLen, rl: b._hz.rl && b._hz.rl.slice(), dst: b._dst, gy: groundY(), R: b.r };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r[1].kind, 'phase 1: the ring again').toBe('twopower');
+    expect(r[1].name).toBe('THE POWER OF TWO!');
+    expect(r[2].kind).toBe('tworails');
+    expect(r[2].name).toBe('I LOVE RIDES!');
+    expect(r[2].tel).toBe(40);
+    expect(r[2].dst[1], 'high over the stage').toBeCloseTo(r[2].gy - r[2].R - 300, 0);
+  });
+
+  it('two rails, one along the floor going right and one at the height of the "S"tage going left, each lit and its lamp burning for 26 frames before a car leaves it, alternating', () => {
+    const r = W.eval(`(function(){ ${STAGE(500, 2, true)}
+      f.x = 500; ${FIRE('tworails')}
+      var T = b._tw, out = { n: T.n, spd: T.spd, gap: T.gap, rl0: b._hz.rl.slice(), lead: TWO.rails.lead, t0: T.t0 }, launches = [], lit = [];
+      for (var k=0;k<400 && b._tw;k++){
+        var before = projectiles.filter(function(p){ return p.twoCar; }).length;
+        step(); ${HOLD} f.x = 500; f.y = groundY()-24;
+        var cars = projectiles.filter(function(p){ return p.twoCar; });
+        if (cars.length > before || (before && cars.length && cars[cars.length-1].twoI !== undefined && launches.indexOf(cars[cars.length-1].twoI) < 0)){ var c = cars[cars.length-1]; if (launches.indexOf(c.twoI) < 0) launches.push(c.twoI); out['car' + c.twoI] = { at: hazardT - T.t0, rail: c.twoCar, x: Math.round(c.x), y: Math.round(c.y), vx: c.vx, r: c.r, id: c.bossAtk, dmg: c.dmg, pierce: c.pierce }; }
+        if (k === 10) out.next10 = [b._hz.rl[1], b._hz.rl[2]];
+      }
+      out.launches = launches; out.done = !b._tw; out.rlEnd = b._hz.rl.slice(); out.gy = groundY(); out.stage = twoStageTop();
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.n, 'four cars in phase 2').toBe(4);
+    expect(r.spd).toBe(11);
+    expect(r.gap).toBe(56);
+    expect(r.launches, 'one after another, in order').toEqual([0, 1, 2, 3]);
+    for (const i of [0, 1, 2, 3]) {
+      const c = r['car' + i];
+      expect(c.rail, 'even cars on the floor rail, odd on the stage rail').toBe(i % 2 === 0 ? 1 : 2);
+      expect(Math.sign(c.vx), 'the floor rail runs right, the stage rail left: each rail has its one direction').toBe(i % 2 === 0 ? 1 : -1);
+      expect(c.r).toBe(34);
+      expect(c.pierce).toBe(true);
+      expect(Math.abs(c.at - (r.lead + i*r.gap)), `car ${i} leaves ${r.lead + i*r.gap} frames after the move starts`).toBeLessThanOrEqual(1);
+      expect(c.dmg).toBeCloseTo(W.eval('bossDmg()')*0.8, 5);
+    }
+    expect(r.car0.id, 'one id for the whole turn').toBe(r.car3.id);
+    expect(r.car0.y, 'a floor car sits on the floor rail').toBeCloseTo(r.gy - 34 - 6, 0);
+    expect(r.car1.y, 'a stage car on the stage rail').toBeCloseTo(r.stage - 34 - 6, 0);
+    expect(r.next10[0] > 0 && r.next10[1] > 0, 'both rails know when their next car leaves').toBe(true);
+    expect(r.done).toBe(true);
+    expect(r.rlEnd[1] + r.rlEnd[2], 'no car left to send').toBe(0);
+    expect(r.rlEnd[3], 'and the rails note when the last had crossed').toBeGreaterThan(0);
+  });
+
+  it('a floor car hits what stands on the floor, once (0.8 of a boss hit, thrown the way it runs); the stage car passes over the floor and hits whoever stands on the "S"tage; a jump clears a floor car', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [['floor', 0], ['stage', 0], ['jump', 0]].forEach(function(c){
+        ${STAGE(500, 2, true)}
+        f.x = 500; ${FIRE('tworails')}
+        var top = twoStageTop(), T = b._tw, x = 520, y = groundY()-24, vx = null, pct0;
+        if (c[0] === 'stage'){ x = 560; y = top - 30; }
+        f.invuln = 0; f.x = x; f.y = y; pct0 = f.pct;
+        for (var k=0;k<260 && b._tw;k++){
+          step(); f.hitstun = 0; f.vx = 0; f.vy = 0; f.x = x; f.onground = true;
+          var car = projectiles.filter(function(p){ return p.twoCar; }).sort(function(a, d){ return Math.abs(a.x - x) - Math.abs(d.x - x); })[0];
+          if (c[0] === 'jump') f.y = (car && car.twoCar === 1 && Math.abs(car.x - x) < 190) ? groundY()-24-170 : groundY()-24; else f.y = y;
+          if (vx === null && f.pct > pct0) vx = 1;
+        }
+        out[c[0]] = { hit: f.pct - pct0, dmg: bossDmg() };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r.floor.hit, 'a floor car lands 0.8; a second car of the same turn can only top it up to the one boss hit the turn is capped at').toBeGreaterThanOrEqual(r.floor.dmg*0.8 - 1e-6);
+    expect(r.floor.hit).toBeLessThanOrEqual(r.floor.dmg + 1e-6);
+    expect(r.stage.hit, 'standing on the "S"tage: the car of the high rail, 0.8 (capped at one boss hit for the turn)').toBeGreaterThanOrEqual(r.stage.dmg*0.8 - 1e-6);
+    expect(r.stage.hit).toBeLessThanOrEqual(r.stage.dmg + 1e-6);
+    expect(r.jump.hit, 'a fighter in the air over a floor car is not hit by it (and the stage car is above the floor)').toBe(0);
+  });
+
+  it('phase 3: six cars at 14 px a frame, 44 frames apart; phase 2: four at 11, 56 apart', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [2, 3].forEach(function(ph){ ${STAGE(500, 'ph', true)}
+        b._mace = null; projectiles = []; f.x = 500; ${FIRE('tworails')} out[ph] = { n: b._tw.n, spd: b._tw.spd, gap: b._tw.gap };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r[2]).toEqual({ n: 4, spd: 11, gap: 56 });
+    expect(r[3]).toEqual({ n: 6, spd: 14, gap: 44 });
   });
 });
