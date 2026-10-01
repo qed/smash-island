@@ -461,7 +461,8 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     // 'soundwave', test/boss-puffball.test.js; the Purple Dragon's is 'dragon', it waves back and flies away, test/boss-dragon.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
     expect(r.keys[0], "Springy's is first").toBe('springy');
     expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm', 'soundwave', 'dragon']));
-    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
+    // ...and the late five's as they are rebuilt: MePhone4's is 'mephone', "Short-Circuited" while his Fist Thingy waves goodbye with a tissue (test/boss-mephone4.test.js)
+    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon', 'mephone'].includes(k)), 'only the rebuilt bosses join him: ' + r.keys).toBe(true);
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
@@ -652,14 +653,14 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
   // What each of the five already had in a slot is inside its own pair now: the lines were moved, not changed.
   const HOLDS = {
     roster: { mephone4: ['attack:"mephone",'], evilleafy: ['attack:"evilleafy",'], mephone4s: ['attack:"mephone4s",'], two: ['attack:"two",'], four: ['attack:"four",'] },
-    extra: { mephone4: ['"MePhone4": ["melife", "portal"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["cookies", "chainsaws"]'], two: ['"Two": ["seekers", "ring"]'], four: ['"Four": ["rain", "seekers"]'] },
-    rushonly: { mephone4: ['"melife", "portal"'], mephone4s: ['"cookies", "chainsaws"'] },
-    movename: { mephone4: ['melife:"MELIFE DOWNLOAD!"', 'glitch:"GLITCH!"', 'portal:"REJECTION PORTAL!"'], mephone4s: ['cookies:"POISONED COOKIES!"', 'chainsaws:"CHAINSAWS!"'] },
-    moves: { mephone4: ['melife(s, tgt){', 'glitch(s, tgt){', 'portal(s, tgt){'], mephone4s: ['cookies(s, tgt){', 'chainsaws(s, tgt){'] },
-    helpers: { mephone4: ['const MEPHONE_GLOVE = ', 'function meLifeDownload(', 'function updateRejectionPortal('], mephone4s: ['const S4 = ', 'function s4BeginTelegraph(', 'function s4DeathTrap('] },
+    extra: { mephone4: ['"MePhone4": ["melife", "portal", "boomerang", "maze"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["cookies", "chainsaws"]'], two: ['"Two": ["seekers", "ring"]'], four: ['"Four": ["rain", "seekers"]'] },
+    rushonly: { mephone4: ['"melife", "portal", "boomerang", "maze"'], mephone4s: ['"cookies", "chainsaws"'] },
+    movename: { mephone4: ['melife:"MELIFE DOWNLOAD!"', 'portal:"REJECTION PORTAL!"', 'boomerang:"BOOMERANGS!"', 'maze:"A-MAZE-ING!"'], mephone4s: ['cookies:"POISONED COOKIES!"', 'chainsaws:"CHAINSAWS!"'] },
+    moves: { mephone4: ['melife(s, tgt){', 'portal(s, tgt){', 'boomerang(s, tgt){', 'maze(s, tgt){'], mephone4s: ['cookies(s, tgt){', 'chainsaws(s, tgt){'] },
+    helpers: { mephone4: ['const MEPHONE_GLOVE = ', 'function meLifeDownload(', 'function mpPortalTick('], mephone4s: ['const S4 = ', 'function s4BeginTelegraph(', 'function s4DeathTrap('] },
     move: { evilleafy: ['if(s.attack==="evilleafy"){', 'spawnTendril(vx, ++BOSS_ATK_ID)', 'applyHit(f, bossDmg()*0.6'] },
-    tick: { mephone4: ['if(s._portal) updateRejectionPortal(s);', 'MEPHONE_GLOVE.lock'], mephone4s: ['s4TrackSight(s)'], two: ['if(s.attack==="two" && s._ungrounded){'] },
-    tel: { mephone4: ['s._telKind = "glitch"'], mephone4s: ['s4BeginTelegraph(s, tgt)'] },
+    tick: { mephone4: ['if(s.attack==="mephone") mpTick(s, tgt);', 'MEPHONE_GLOVE.lock'], mephone4s: ['s4TrackSight(s)'], two: ['if(s.attack==="two" && s._ungrounded){'] },
+    tel: { mephone4: ['mpBeginTelegraph(s, tgt)'], mephone4s: ['s4BeginTelegraph(s, tgt)'] },
     fire: {
       mephone4: ['if(s.attack==="mephone"){', 'MEPHONE_GLOVE'], evilleafy: ['if(s.attack==="evilleafy"){', 'spawnTendril('], mephone4s: ['if(s.attack==="mephone4s"){', 's4DeathTrap('],
       two: ['if(s.attack==="two"){', 'POWER DRAIN!'], four: ['if(s.attack==="four"){', 'noAim:true, ring:true'],
@@ -670,14 +671,14 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     phasename: { mephone4: ['mephone:'], evilleafy: ['evilleafy:'], mephone4s: ['mephone4s:'], two: ['two:'], four: ['four:'] },
     telname: { mephone4: ['FIST THINGY COMBO!'], evilleafy: ['TENDRILS!'], mephone4s: ["I'LL BE BACK!"], two: ['MIND READ!'], four: ['SCREECHY!!'] },
     fx: { evilleafy: ['drawTendrils()'] },
-    sky: { mephone4: ['melife:'], evilleafy: ['forest:'], mephone4s: ['studio:'] },
-    decor: { mephone4: ['if(key==="melife"){'], evilleafy: ['if(key==="forest"){'], mephone4s: ['if(key==="studio"){'] },
+    sky: { mephone4: ['elimarea:'], evilleafy: ['forest:'], mephone4s: ['studio:'] },
+    decor: { mephone4: ['if(key==="elimarea")'], evilleafy: ['if(key==="forest"){'], mephone4s: ['if(key==="studio"){'] },
     sprite: { mephone4: ['mephone:'], evilleafy: ['evilleafy:'], mephone4s: ['mephone4s:'], two: ['two:'], four: ['four:'] },
     flip: { four: ['four:true'] },
-    tell: { mephone4: ['drawRejectionPortal(', 'MEPHONE_GLOVE.r'], mephone4s: ["typeof s._aimX==='number'"] },
+    tell: { mephone4: ['mpDrawTell(s)', 'MEPHONE_GLOVE.lock'], mephone4s: ["typeof s._aimX==='number'"] },
     body: { mephone4: ['case "mephone": {'], evilleafy: ['case "evilleafy": {'], mephone4s: ['case "mephone4s": {'], two: ['case "two": {'], four: ['case "four": {'] },
     shape: { mephone4: ['fistthingy:'], mephone4s: ['cookie:', 'redcar:'] },
-    net: { mephone4: ['_portal:m._portal'], mephone4s: ['_aimX:m._aimX'] },
+    net: { mephone4s: ['_aimX:m._aimX'] },   // (MePhone4's everything rides _hz: his net slot is a note)
   };
 
   it('each pair holds what its boss already had in that slot', () => {
@@ -691,7 +692,7 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
 
   it("and the slots they do not use yet hold no code at all: spawn, shotdraw, ground, look, art, netshot, hazard and ending (Four's ending is a note, for the victory card)", () => {
     const L = lines(), strip = (s) => s.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean);
-    for (const slot of ['spawn', 'shotdraw', 'ground', 'look', 'art', 'netshot', 'hazard', 'ending']) for (const boss of LATE) {
+    for (const slot of ['spawn', 'shotdraw', 'ground', 'look', 'art', 'netshot', 'hazard', 'ending']) for (const boss of LATE.filter((b) => b !== 'mephone4')) {   // (MePhone4 is rebuilt: test/boss-mephone4.test.js)
       expect(strip(body(L, slot, boss)), `${slot}/${boss}`).toEqual([]);
     }
   });
@@ -705,7 +706,7 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
           p2: bossPhaseName({ attack:k }, 2), p3: bossPhaseName({ attack:k }, 3), extra: BOSS_EXTRA[A[k]] };
       });
       return out; })()`);
-    expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal'] });
+    expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal', 'boomerang', 'maze'] });
     expect(r.evilleafy).toEqual({ base: [130, 95, 70], tel: 45, name1: 'TENDRILS!', name2: 'TENDRILS!', p2: 'No Refuge', p3: 'Vine Coverage', extra: ['seekers', 'slam'] });
     expect(r.mephone4s).toEqual({ base: [100, 72, 52], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['cookies', 'chainsaws'] });
     expect(r.two).toEqual({ base: [100, 72, 52], tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['seekers', 'ring'] });

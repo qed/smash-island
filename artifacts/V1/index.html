@@ -12810,7 +12810,7 @@ function portalCore(P){ return PORTAL_CORE * Math.min(1, Math.max(0, P.t/(P.T||1
 const MP4 = {
   turns:['melife', 'portal', 'boomerang', 'maze'],
   hop:{ out:9, inn:10, edge:0.14, near:0.18 },
-  fist:{ edge:0.5, wave:24, back:8, cuff:0.6, upDepth:80, pole:0.5,
+  fist:{ edge:0.5, reach:400, wave:24, back:8, cuff:0.6, upDepth:80, pole:0.5,
          slam:{ shake:8, dust:2, debris:6, scar:true, r:90 }, hit:{ shake:10, dust:2, debris:6, scar:true, r:80 } },
   portal:{ T:[0, 48, 42, 36], rx:30, ry:62, far:340, wait:30, lock:14, stag:24, side:170, shut:10,
            fling:{ dmg:0.8, rate:26, min:14, max:34, arc:36 } },
@@ -12880,8 +12880,14 @@ function mpBeginTelegraph(s, tgt){
 // boss hit. Phase 1 one glove; phase 2 "Back and Forth" (Double Digit Desert: "the Fist Thingy punches her once again ... for a third time"): a jab from his side, then the
 // finisher from the FAR edge, its row re-locking to you for the last frames before it flies -- being knocked flat by the jab is answered from behind; phase 3 "Glitching": a
 // jab from each edge, then the uppercut rising out of a floor mark where the second jab flew.
+// Where a glove starts: out on its pole, MP4.fist.reach px before the spot it flies through (the pole is bolted to the edge behind it and reaches out to there), or at the edge
+// itself when that is nearer. It used to start at his hand a stage away on a stage-wide crossing; the glove's lock-to-landing time is its reach over MEPHONE_GLOVE.spd, as short as it was.
+function mpGloveStartX(dir, tx){
+  const MG = MEPHONE_GLOVE, F = MP4.fist, e = (dir > 0 ? 0 : WW) + dir*MG.r*F.edge;
+  return dir > 0 ? Math.max(e, tx - F.reach) : Math.min(e, tx + F.reach);
+}
 function mpGloveShot(s, id, o){
-  const MG = MEPHONE_GLOVE, F = MP4.fist, dir = o.dir, ex = dir > 0 ? 0 : WW, x0 = ex + dir*MG.r*F.edge, wall = mpWallX(dir);
+  const MG = MEPHONE_GLOVE, dir = o.dir, ex = dir > 0 ? 0 : WW, x0 = o.x != null ? o.x : mpGloveStartX(dir, WW*0.5), wall = mpWallX(dir);
   const life = Math.ceil(Math.abs(wall - x0)/MG.spd/PROJ_LIFE) + 6;
   const q = Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:id, grav:false, noAim:true, pierce:true, mpGlove:1, mpDir:dir, r:MG.r, color:'#d8302a',
     shape:'fistthingy', life, x:x0, vx:dir*MG.spd, vy:0, armX0:ex, armY0:o.y, mpD0:o.delay || 0, mpLk:MG.lock }, o);
@@ -12892,20 +12898,20 @@ function mpFist(s, tgt, id){
   const ph = s._telPh || mpPh(s), gy = groundY(), MG = MEPHONE_GLOVE, F = MP4.fist, H = mpHz(s), spd = MG.spd;
   const row = clamp(s._telY != null ? s._telY : (tgt ? tgt.y : s.y), 60, gy - 16);
   const tx = s._telX != null ? s._telX : (tgt ? tgt.x : s.x + (s.face||1)*200), dir = H.fd || Math.sign(tx - s.x) || s.face || 1;
-  const jab = MG.jab[ph];
-  if(ph === 1) mpGloveShot(s, id, { dir, y:row, dmg:bossDmg(), kb:MG.kb });
+  const jab = MG.jab[ph], xA = mpGloveStartX(dir, tx), xB = mpGloveStartX(-dir, tx);
+  if(ph === 1) mpGloveShot(s, id, { dir, y:row, x:xA, dmg:bossDmg(), kb:MG.kb });
   else {
-    mpGloveShot(s, id, { dir, y:row, dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
+    mpGloveShot(s, id, { dir, y:row, x:xA, dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
     // The second glove leaves the other edge, timed so it reaches your row MEPHONE_GLOVE.gap frames after the first would (past the 24-frame hit grace: a punch that lands is
-    // not swallowed by the one before it), and its row follows you until MEPHONE_GLOVE.lock frames before it flies (mpGloveTick).
-    const reach = (d) => Math.abs(tx - (d > 0 ? 0 : WW) - d*MG.r*F.edge)/spd;
-    const dB = clamp(Math.round(reach(dir) + MG.gap - reach(-dir)), MG.lock + 6, 90);
-    if(ph === 2) mpGloveShot(s, id, { dir:-dir, y:row, delay:dB, dmg:bossDmg()*(1 - jab), kb:MG.kb });
+    // not swallowed by the one before it), and its row (and where it starts) follows you until MEPHONE_GLOVE.lock frames before it flies (mpGloveTick).
+    const tA = Math.abs(tx - xA)/spd, tB = Math.abs(tx - xB)/spd;
+    const dB = clamp(Math.round(tA + MG.gap - tB), MG.lock + 6, 90);
+    if(ph === 2) mpGloveShot(s, id, { dir:-dir, y:row, x:xB, delay:dB, dmg:bossDmg()*(1 - jab), kb:MG.kb });
     else {
-      mpGloveShot(s, id, { dir:-dir, y:row, delay:dB, dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
-      // The uppercut rises out of a mark on the floor under where the second jab flew (it follows you until the jab flies, then holds): it starts below the floor, so its glove
-      // breaks out of it, and its pole stays on the floor line.
-      const tC = (gy + F.upDepth - row)/spd, dC = Math.round(dB + reach(-dir) + MG.gap - tC);
+      mpGloveShot(s, id, { dir:-dir, y:row, x:xB, delay:dB, dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
+      // The uppercut rises out of a mark on the floor, dropped when the second jab flies and following you like a row until its last MEPHONE_GLOVE.lock frames (red, then white):
+      // it starts below the floor, so its glove breaks out of it, and its pole stays on the floor line.
+      const tC = (gy + F.upDepth - row)/spd, dC = Math.round(dB + tB + MG.gap - tC);
       mpGloveShot(s, id, { dir, y:gy + F.upDepth, x:clamp(tx, 60, WW - 60), delay:dC, vx:dir*4, vy:-Math.sqrt(spd*spd - 16), dmg:bossDmg()*(1 - 2*jab), kb:MG.up, smAngle:2,
         mpUp:1, mpM:dC - dB, armX0:clamp(tx, 60, WW - 60), armY0:gy, life:Math.ceil((gy + F.upDepth + 120)/spd/PROJ_LIFE) + 6 });
     }
@@ -12922,8 +12928,8 @@ function mpGloveTick(s, tgt){
     if(!p.mpGlove) continue;
     if(p.mpWave > 0){ if(--p.mpWave <= 0) p.life = 0; continue; }           // slammed: it waves, slides back, and is gone
     if(p.delay > 0){
-      if(p.mpUp){ if(p.delay > (p.mpM || 0) && tgt && !tgt.dead){ p.x = clamp(tgt.x, 60, WW - 60); p.armX0 = p.x; } }   // the mark is dropped, and holds, when the jab before it flies
-      else if(p.delay > (p.mpLk != null ? p.mpLk : MG.lock) && tgt && !tgt.dead){ p.y = clamp(tgt.y, 60, gy - 16); p.armY0 = p.y; }
+      if(p.mpUp){ if(p.delay > (p.mpLk != null ? p.mpLk : MG.lock) && tgt && !tgt.dead){ p.x = clamp(tgt.x, 60, WW - 60); p.armX0 = p.x; } }   // the mark, dropped when the jab before it flies, follows you like a row until its last frames (red, then white)
+      else if(p.delay > (p.mpLk != null ? p.mpLk : MG.lock) && tgt && !tgt.dead){ p.y = clamp(tgt.y, 60, gy - 16); p.armY0 = p.y; p.x = mpGloveStartX(p.mpDir, tgt.x); }   // the row, and where the glove starts on its pole
       p._lx = p.x;
       continue;
     }
@@ -12970,8 +12976,8 @@ function mpGloveArt(c, x, y, ang, r){
 }
 // The tell of a glove still to fly: the lane (its whole row), and its pole sliding in from the edge it is bolted to with the glove on the end, to where it starts. `u` is
 // how far along the wind-up is (0: hidden past the edge, 1: at its start).
-function mpGloveTell(c, dir, y, u, locked){
-  const MG = MEPHONE_GLOVE, F = MP4.fist, r = MG.r, ex = dir > 0 ? 0 : WW, x1 = ex + dir*r*F.edge, x0 = ex - dir*r*0.9, k = 1 - (1 - clamp(u, 0, 1))*(1 - clamp(u, 0, 1));
+function mpGloveTell(c, dir, y, u, locked, x1){
+  const MG = MEPHONE_GLOVE, F = MP4.fist, r = MG.r, ex = dir > 0 ? 0 : WW, x0 = ex - dir*r*0.9, k = 1 - (1 - clamp(u, 0, 1))*(1 - clamp(u, 0, 1));
   c.save();
   c.globalAlpha = locked ? 0.3 : 0.14; c.fillStyle = locked ? '#ffffff' : '#d8302a'; c.fillRect(0, y - r, WW, r*2);   // the band is the glove's height
   c.globalAlpha = 1;
@@ -12995,7 +13001,7 @@ function mpDrawGlove(pr){
       c.restore(); return true;
     }
     const d0 = pr.mpD0 || 1;
-    mpGloveTell(c, dir, pr.y, 1 - pr.delay/d0, pr.delay <= lk);
+    mpGloveTell(c, dir, pr.y, 1 - pr.delay/d0, pr.delay <= lk, pr.x);
     return true;
   }
   const wave = pr.mpWave > 0;
@@ -13242,7 +13248,7 @@ function mpMazeTick(s, tgt){
     if(hazardT < z[2] - M.lock && tgt && !tgt.dead){ z[0] = Math.round(clamp(tgt.x, M.cmin, WW - M.cmin)); z[1] = Math.sign(z[0] - s.x) || z[1] || 1; }
     return;
   }
-  if(!s._mz){ H.mz = null; return; }                                        // a plan whose wind-up never reached its end
+  if(!s._mz){ if(hazardT > z[2]) H.mz = null; return; }                    // the frame the walls rise this tick comes before the move fires (the plan stands, held where it was marked); a plan whose wind-up never reached its end is dropped a frame later
   const t = hazardT - z[2], ph = z[3], T = mpMazeTimes(ph), G = mpMazeGeo(z[0], z[1]), id = s._mz.id, dir = z[1];
   const h = Math.max(1, Math.round(M.hh*mpMazeRise(t, T)));
   for(const p of worldPlats) if(p._mz){ p.h = h; p.y = gy - h; }            // the hedges grow, stand and wilt: the solid blocks are the platforms
@@ -13259,7 +13265,7 @@ function mpMazeTick(s, tgt){
     }
   }
   T.balls.forEach(tb => { if(t === tb){                                     // the cannonball, out of the far wall's face
-    addProj(bossShot(s, { x:G.farIn - M.ballR - 2, y:gy - M.ballR, vx:-dir*M.ballSpd, vy:0, r:M.ballR, kb:11, dmg:bossDmg()*M.dmg, pierce:true, shape:'mp4ball', color:'#2a2a30',
+    addProj(bossShot(s, { x:G.farIn - dir*(M.ballR + 2), y:gy - M.ballR, vx:-dir*M.ballSpd, vy:0, r:M.ballR, kb:11, dmg:bossDmg()*M.dmg, pierce:true, shape:'mp4ball', color:'#2a2a30',
       bossAtk:id, volley:true, mpBall:1, life:60 }));
     shake(3); for(let i=0;i<8;i++) puff(G.farIn - dir*8, gy - 24, '#c8c8c8', 4); tone(80, 0.3, 'sawtooth', 0.28, 0, 40);
   } });
@@ -13375,7 +13381,7 @@ function mpDrawTell(s){
   c.save(); c.translate(-s.x, -s.y);                                // into world space
   if(s._telKind === s.attack && typeof s._telX === 'number' && typeof s._telY === 'number'){
     const dir = H.fd || Math.sign(s._telX - s.x) || s.face || 1;
-    mpGloveTell(c, dir, clamp(s._telY, 60, gy - 16), 1 - s._tel/bossTelLen(s), s._tel < MG.lock);
+    mpGloveTell(c, dir, clamp(s._telY, 60, gy - 16), 1 - s._tel/bossTelLen(s), s._tel < MG.lock, mpGloveStartX(dir, s._telX));
   }
   if(s._telKind === 'boomerang' && typeof s._telX === 'number' && typeof s._telY === 'number'){
     const B = MP4.boom, bx = H.hop ? H.hop[2] : s.x, dir = Math.sign(s._telX - bx) || s.face || 1, reach = clamp(Math.abs(s._telX - bx) + B.over, B.min, B.max);
@@ -13548,7 +13554,7 @@ function mpDrawTV(c, x, y, w, h, b, ph, H, kind){
 function mpDrawTower(c, x, gy, glow){
   const top = gy - 250;
   c.save(); c.lineJoin = 'round';
-  if(glow){ const g = c.createRadialGradient(x, top + 10, 4, x, top + 10, 150); g.addColorStop(0, 'rgba(90,216,90,0.55)'); g.addColorStop(1, 'rgba(90,216,90,0)'); c.fillStyle = g; c.fillRect(x - 160, top - 140, 320, 320); }
+  if(glow){ c.fillStyle = '#5ad85a'; for(let i=0;i<5;i++){ c.globalAlpha = 0.07; c.beginPath(); c.arc(x, top + 10, 30 + i*26, 0, 7); c.fill(); } c.globalAlpha = 1; }   // steady green round the cabin, in rings (no flashing)
   c.strokeStyle = glow ? '#5ad85a' : '#7a3fc2'; c.lineWidth = 6;
   c.beginPath(); c.moveTo(x - 36, gy); c.lineTo(x - 13, top + 20); c.moveTo(x + 36, gy); c.lineTo(x + 13, top + 20); c.stroke();
   c.lineWidth = 3; c.beginPath();

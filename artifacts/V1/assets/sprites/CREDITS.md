@@ -597,6 +597,23 @@ sign's and the Recovery Center's files have their lettering baked in and a match
 <!-- @boss:dragon:end credits -->
 
 <!-- @boss:mephone4:begin credits -->
+MePhone4, Boss 6 (rebuilt in the boss overhaul, 2026-09-29): five attacks in the Great Escape's Elimination Area. What he throws and opens wears the II wiki's own art, cut by
+`scripts/fetch-attack-sprites.mjs` (its `mp4glove`, `mp4portal` and `mp4boom` picks) into `assets/sprites/attacks/`, alpha verified, looked at before it was kept; his phase-3 body is
+a render (the table below). Everything else is drawn in code ("Yes, cut or draw", the owner, 2026-09-29), after the frames the wiki has of it, and no word is ever drawn:
+- the Fist Thingy's cuff, its BLANK band and its grey pole (the wiki's file carries the label "Fist Thingy" on the band, and a match shows no words, so only the glove is cut), and the tissue it waves;
+- the maze's hedges (the colours and leaves of File:II Mazed and Confused Screenshot Hedge Maze.png), the rayguns and the cannon and its ball (the Mazed and Confused scene has no standalone frame of any);
+- the arena (File:S1RE14 Elimination area.png and File:S1RE8EliminationArea.png: the vote TV on its legs, the round white platforms and their lavender rim, the stalks; the radio tower of the Mazed and Confused frames),
+  and the MeLife grid on the TV (File:MeLifeInterfaceLS2.png and File:MeLife Extended.png: round coloured icons -- their "MeLife" title is not drawn).
+- MePhone4 (mp4glove.png): the red glove of the Fist Thingy, cut from File:Late II Fist Thingy.png before its labelled cuff band (the band and the pole are drawn) — File:Late II Fist Thingy.png — https://static.wikia.nocookie.net/inanimateinsanity/images/8/84/Late_II_Fist_Thingy.png/revision/latest?cb=20230618142937
+- MePhone4 (mp4portal.png): the Rejection Portal, pink with yellow rings (the wiki's isolated oval of it) — File:Rejection Portal (Bigger Version).png — https://static.wikia.nocookie.net/inanimateinsanity/images/8/81/Rejection_Portal_%28Bigger_Version%29.png/revision/latest?cb=20200709155512
+- MePhone4 (mp4boom.png): one of MePhone4's boomerangs, lifted out of his hand in the Great Escape remaster frame (The Great Escape/Transcript: "MePhone4 throws a boomerang at Party Hat, but before it can reach him, it rebounds and returns to MePhone4's hand") — File:S1RE14 MePhone's boomerangs.png — https://static.wikia.nocookie.net/inanimateinsanity/images/6/66/S1RE14_MePhone%27s_boomerangs.png/revision/latest?cb=20260728182417
+
+| Boss | File | Size | Facing | Source |
+|---|---|---|---|---|
+| MePhone4 (glitched, phase 3) | `mephone4-glitched.png` | 93×200 | +0.001 (not flipped) | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c5/Glitched_Mephone4.png/revision/latest?cb=20230409124025 |
+
+`mephone4-glitched.png` is File:Glitched Mephone4.png, his "Glitching" body (Hatching the Plan: "glitching, he accidentally generates random items"), worn from phase 3 on (`bossLook`).
+Fetched by `node scripts/fetch-sprites.mjs --wiki=inanimateinsanity "MePhone4 Glitched=Glitched_Mephone4.png"` like every render: alpha verified, facing measured, scaled to 200 px tall, looked at.
 <!-- @boss:mephone4:end credits -->
 
 <!-- @boss:evilleafy:begin credits -->
