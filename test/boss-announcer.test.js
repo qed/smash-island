@@ -23,6 +23,12 @@ import { mulberry32 } from './helpers/prng.js';
 // the crusher standing at the arena's edge is the hazard, and his own pace is eased for it. "Endings: 'All of them'": Spongy crushes him ("Announcer gets
 // crushed by Spongy", Don't Pierce My Flesh). And the standing rule: no text on screen in a match but GO!, KOs, boss telegraphs and Boss Rush cards.
 
+// THE WINDOW. The owner, 2026-10-01: "announcer causes unavoidable damage and without telegraphs." and, explaining it: "for the announcer "unavoidable hits",
+// theyre unavoidable bcs they barely have a moment where you can move to dodge." So every warning that has locked gives at least `calm` frames before it strikes,
+// and one threat is over at least that long before the next begins -- inside a turn, between his turns, and between his turns and the crusher. Damage per hit is
+// as it was. (About 30 frames is what the owner's coordinator asked for: a fighter's jump hangs in the air about 40, and his run is 6.4 px a frame.)
+const ANN_CALM = 30;
+
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
@@ -41,8 +47,9 @@ const STAGE = (x, x2) => `
   step(); fighters.forEach(function(q){ q.pct=0; q.invuln=0; });
   function run(n){ for (var i=0;i<n;i++){ step(); } }
   function keep(n){ for (var i=0;i<n;i++){ step(); fighters.forEach(function(q){ q.pct=0; q.invuln=0; q.dead=false; }); } }
-  function turn(moveN){ b._tel=0; projectiles=[]; b._q=[]; b._moveN=moveN; b._atkTimer=1; step(); }
-  function setPhase(ph){ b._phase = ph; b.hp = b.maxHp*[0, 0.9, 0.5, 0.2][ph]; keep(3); projectiles=[]; b._q=[]; b._tel=0; impactFxClear(); }
+  function calmed(){ b._lanes=null; b._bl=null; b._calm=999; b._hz.cc=999; }   // nothing of his is going, and has not been for a long while: his next turn may begin (the window the owner asked for is its own tests below)
+  function turn(moveN){ b._tel=0; projectiles=[]; b._q=[]; calmed(); b._moveN=moveN; b._atkTimer=1; step(); }
+  function setPhase(ph){ b._phase = ph; b.hp = b.maxHp*[0, 0.9, 0.5, 0.2][ph]; keep(3); projectiles=[]; b._q=[]; b._tel=0; calmed(); impactFxClear(); }
 `;
 // A bare Announcer for driving his functions directly.
 const BARE = (o = '') => `{ name:'Announcer', attack:'announcer', x:700, y:300, r:85, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0, color:'#3a4a6a',
@@ -76,7 +83,8 @@ describe('the Announcer, rebuilt', () => {
   it('takes turns: the signature, QUADRUPLE LASER!, the signature, ACID TEARS!, the signature, WATER BALLOONS!, each with its own warning', () => {
     const r = W.eval(`(function(){
       var s = ${BARE()}, kinds = [], names = [];
-      for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+      // (the turns are driven by hand: nobody is in the arena, so nothing of his is in the air -- but the balloons' hang is his own state, and his next turn waits for it)
+      for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; s._bl = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       return { kinds: kinds, names: names };
     })()`);
     expect(r.kinds).toEqual(['announcer', 'annlaser', 'announcer', 'annacid', 'announcer', 'annballoon', 'announcer', 'annlaser']);
@@ -136,11 +144,11 @@ describe('CAKE AT STAKE!: the prize comes out of the Cake Tosser', () => {
       var gy = groundY(), out = { shots: [] };
       f.invuln = 999; turn(0);
       out.name = document.getElementById('banner').textContent; out.kind = b._telKind; out.tel = b._tel;
-      for (var i=0;i<90;i++){ step(); f.invuln = 999;
+      for (var i=0;i<140;i++){ step(); f.invuln = 999;
         projectiles.filter(function(p){ return p.annCake != null && !p._seen; }).forEach(function(p){ p._seen = true;
           out.shots.push({ at: i, shape: p.shape, x: Math.round(p.x), y: Math.round(p.y), vx: +p.vx.toFixed(2), grav: !!p.grav, warnX: p.warnX == null ? null : Math.round(p.warnX), warnY: p.warnY,
-            id: p.bossAtk, dmg: p.dmg, r: p.r, owner: p.owner }); }); }
-      out.full = bossDmg(); out.gy = gy; out.cx = WW*0.5; out.cyl = ANN.cylH;
+            id: p.bossAtk, dmg: p.dmg, r: p.r, owner: p.owner, life: p.life }); }); }
+      out.full = bossDmg(); out.gy = gy; out.cx = WW*0.5; out.cyl = ANN.cylH; out.calm = ANN.calm;
       return out;
     })()`);
     expect(r.name).toBe('CAKE AT STAKE!');
@@ -155,7 +163,10 @@ describe('CAKE AT STAKE!: the prize comes out of the Cake Tosser', () => {
     expect(flat.grav, 'the flat throw does not arc').toBe(false);
     expect(flat.vx, 'fast, toward you').toBe(-15);
     expect(Math.abs(flat.y - (r.gy - 24 - 6)), 'along the row you stand in').toBeLessThan(2);
-    expect(flat.at - lob.at, 'twenty frames after the lob').toBe(20);
+    // the owner (2026-10-01): "for the announcer "unavoidable hits", theyre unavoidable bcs they barely have a moment where you can move to dodge." The flat throw
+    // used to leave 20 frames after the lob, 18 or fewer before the lob even landed; now it leaves `calm` (30) frames after the lob has landed (and its lane is lit from the wind-up)
+    expect(flat.at - lob.at, 'the lob lands (about 55 frames), and `calm` (30) frames later the flat throw leaves').toBeGreaterThanOrEqual(ANN_CALM + 54);
+    expect(flat.at - lob.at).toBeLessThanOrEqual(ANN_CALM + 58);
     expect(lob.id, 'one attack id: one boss hit however many land').toBe(flat.id);
     expect([lob.dmg, flat.dmg], 'damage unchanged: a whole boss hit each, capped as one').toEqual([r.full, r.full]);
     expect(lob.owner).toBe(-2);
@@ -166,17 +177,19 @@ describe('CAKE AT STAKE!: the prize comes out of the Cake Tosser', () => {
       var out = { shots: [] }; b._phase = 2; b.hp = b.maxHp*0.5; fighters.forEach(function(q){ q.invuln = 999; });
       turn(0); out.name = document.getElementById('banner').textContent;
       var fire = null;
-      for (var i=0;i<110;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; });
-        if (i === 60){ f.x = 620; }
+      for (var i=0;i<175;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; });
+        if (i === 130){ f.x = 620; }   // after the flat throw has left, before the last lob does: that one is aimed where he has gone
         projectiles.filter(function(p){ return p.annCake != null && !p._seen; }).forEach(function(p){ p._seen = true; if (fire === null) fire = i;
           out.shots.push({ at: i - fire, w: p.grav ? 'lob' : 'flat', warnX: p.warnX == null ? null : Math.round(p.warnX), vx: +p.vx.toFixed(1), id: p.bossAtk }); }); }
       return out;
     })()`);
     expect(r.name).toBe('BUDGET CUTS!');
     expect(r.shots, 'three each for two fighters').toHaveLength(6);
-    expect(r.shots.map((s) => s.at + s.w)).toEqual(['0lob', '0lob', '20flat', '20flat', '34lob', '34lob']);
+    // the lob lands 56 frames in; the flat leaves `calm` (30) after that; the last lob (40 frames in the air) lands `calm` after the flat has had time to cross the floor
+    // (flat.far, 36): so it is thrown at 56 + 30 + 36 + 30 - 40 = 112 (it used to follow the flat by 14 frames, and land 18 after the first lob)
+    expect(r.shots.map((s) => s.at + s.w)).toEqual(['0lob', '0lob', '85flat', '85flat', '112lob', '112lob']);
     expect(r.shots.filter((s) => s.w === 'lob').slice(0, 2).map((s) => s.warnX).sort((a, b) => a - b), 'the first lobs, one on each of you').toEqual([300, 800]);
-    const last = r.shots.filter((s) => s.at === 34).map((s) => s.warnX).sort((a, b) => a - b);
+    const last = r.shots.filter((s) => s.at === 112).map((s) => s.warnX).sort((a, b) => a - b);
     expect(last, 'the last, re-aimed: the fighter who moved is met where he went').toEqual([620, 800]);
     expect(new Set(r.shots.map((s) => s.id)).size, 'one attack id for the whole volley').toBe(1);
   });
@@ -220,13 +233,15 @@ describe('CAKE AT STAKE!: the prize comes out of the Cake Tosser', () => {
       var out = {}, gy = groundY(), far = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 470, gy-24, 2); far.team = 0; far.controller = 'still'; far.stocks = 9; fighters.push(far);
       f.invuln = 999;   // the cake is spent on nobody: this is the landing itself
       var id = ++BOSS_ATK_ID; projectiles = [];
-      annCakeEnd(b, { p:{ x:300, y:gy - 9, warnY:gy, life:0 }, pz:3, id:id });
+      annCakeEnd(b, { p:{ x:300, y:gy - 9, warnY:gy, life:0 }, pz:3, id:id, lob:true });
       out.g2 = g2.pct; out.far = far.pct; out.full = bossDmg(); out.f = f.pct;
       var splat = projectiles.find(function(p){ return p.annMark === 'splat'; });
       out.splat = splat ? { x: Math.round(splat.warnX), y: splat.warnY, delay: splat.delay, gy: gy, blue: splat.color } : null;
       out.scar = IMPACT_SCARS.length;
       // a slice does none of that
-      g2.pct = 0; projectiles = []; annCakeEnd(b, { p:{ x:300, y:gy - 9, warnY:gy, life:0 }, pz:0, id:++BOSS_ATK_ID }); out.slice = g2.pct;
+      g2.pct = 0; projectiles = []; annCakeEnd(b, { p:{ x:300, y:gy - 9, warnY:gy, life:0 }, pz:0, id:++BOSS_ATK_ID, lob:true }); out.slice = g2.pct;
+      // and only the LOB goes off, where its ring is drawn on its shadow: a flat pie that ends beside someone (it has no ring, only its lane) pops nobody
+      g2.pct = 0; projectiles = []; annCakeEnd(b, { p:{ x:300, y:gy - 9, warnY:gy, life:0 }, pz:3, id:++BOSS_ATK_ID, lob:false }); out.flatPie = g2.pct;
       return out;
     })()`);
     expect(r.g2, '0.7 of a boss hit for the fighter 60 px away').toBeCloseTo(r.full * 0.7, 3);
@@ -236,6 +251,7 @@ describe('CAKE AT STAKE!: the prize comes out of the Cake Tosser', () => {
     expect(r.splat.y).toBe(r.splat.gy);
     expect(r.scar, 'a scar on the floor where it went off').toBe(1);
     expect(r.slice, 'a slice only splats').toBe(0);
+    expect(r.flatPie, 'the flat pie has no ring to show where it would go off, so it does not: an untelegraphed hit beside someone it did not strike').toBe(0);
   });
 
   it('however many cakes of a volley land on you, it is one boss hit', () => {
@@ -535,13 +551,13 @@ describe('the crusher, the arena hazard', () => {
 describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wraps', () => {
   // the boss stands where the nearest fighter is the one at `x` (a still Firey), turn 2 is the laser
 
-  it('a ring on your spot follows you and locks for the last 12 frames; phase 1 sends two beams (up, then down), phase 2 four, phase 3 a second cross a step toward the middle', () => {
+  it('a ring on your spot follows you and locks for the last 30 frames of its wind-up; phase 1 sends two beams (up and down together), phase 2 four, phase 3 a second cross a step toward the middle', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2, 3].forEach(function(ph){ ${STAGE(200)}
         var gy = groundY(); setPhase(ph);
         f.invuln = 999; turn(1);
         var name = document.getElementById('banner').textContent, kind = b._telKind, xs = [], marks = [];
-        for (var i=0;i<60 && !marks.length;i++){ f.x = 200 + 6*(i+1); f.y = gy - 24; f.vx = 0; f.invuln = 999; step(); xs.push([b._tel, b._telX, b._telY]);
+        for (var i=0;i<80 && !marks.length;i++){ f.x = 200 + 6*(i+1); f.y = gy - 24; f.vx = 0; f.invuln = 999; step(); xs.push([b._tel, b._telX, b._telY]);
           marks = projectiles.filter(function(p){ return p.annMark === 'beam'; }); }
         out[ph] = { name: name, kind: kind, xs: xs, marks: marks.map(function(p){ return { d: p.mA, start: p.mB, x: Math.round(p.warnX), y: Math.round(p.warnY), id: p.bossAtk, delay: p.delay }; }), gy: gy };
       });
@@ -551,16 +567,26 @@ describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wr
       const o = r[ph];
       expect(o.name).toBe('QUADRUPLE LASER!');
       expect(o.kind).toBe('annlaser');
-      const follow = o.xs.filter(([t]) => t > 12).map(([, x]) => x), held = o.xs.filter(([t]) => t <= 12 && t > 0).map(([, x]) => x);
+      // the wind-up is 54 frames (it was 36, the cross locked for its last 12): the cross follows you for 24 of them and then holds for 30 -- a locked warning is a window
+      expect(o.xs[0][0], 'a 54-frame wind-up').toBeGreaterThanOrEqual(53);
+      const follow = o.xs.filter(([t]) => t > 30).map(([, x]) => x), held = o.xs.filter(([t]) => t <= 30 && t > 0).map(([, x]) => x);
       expect(new Set(follow).size, 'the ring follows you').toBeGreaterThan(5);
-      expect(new Set(held).size, 'and holds for the last 12 frames').toBe(1);
+      expect(new Set(held).size, 'and holds for the last 30 frames: ANN_CALM to move').toBe(1);
+      expect(held.length, 'the lock lasts at least ANN_CALM frames').toBeGreaterThanOrEqual(ANN_CALM - 1);
       expect(new Set(o.marks.map((m) => m.id)).size, 'one attack id for every beam').toBe(1);
     }
-    expect(r[1].marks.map((m) => [m.d, m.start]), '"one that goes up, and one that goes down": the up beam, then the down beam 14 frames later').toEqual([[0, 0], [1, 14]]);
-    expect(r[2].marks.map((m) => [m.d, m.start]), 'phase 2: "two more lasers moving horizontally", both from the walls, 28 frames in').toEqual([[0, 0], [1, 14], [2, 28], [3, 28]]);
+    // the owner (2026-10-01): "for the announcer "unavoidable hits", theyre unavoidable bcs they barely have a moment where you can move to dodge." The up beam and the
+    // down beam were 14 frames apart and the walls' beams 14 after that: three strikes in 28 frames, one step or jump each. Now the column ("one that goes up, and one
+    // that goes down") strikes together, and the row ("two more lasers moving horizontally") comes `rowAt` frames in, ANN_CALM after the column is over.
+    expect(r[1].marks.map((m) => [m.d, m.start]), 'the up beam and the down beam together: one column, one step aside').toEqual([[0, 0], [1, 0]]);
+    expect(r[2].marks.map((m) => [m.d, m.start]), 'phase 2: "two more lasers moving horizontally", both from the walls, 51 frames in').toEqual([[0, 0], [1, 0], [2, 51], [3, 51]]);
+    const colEnds = 7 + 14 + 5;   // the column grows (7), holds (14) and fades (5)
+    expect(r[2].marks[2].start - (7 + 14), 'the row begins ANN_CALM or more after the column has done its harm (grow + hold)').toBeGreaterThanOrEqual(ANN_CALM);
+    expect(colEnds).toBeLessThan(51);
     expect(r[3].marks, 'phase 3: a second cross').toHaveLength(8);
     const second = r[3].marks.slice(4);
-    expect(second.map((m) => m.start), 'a few frames after the first').toEqual([22, 36, 50, 50]);
+    expect(second.map((m) => m.start), 'the second cross: its column begins ANN_CALM after the row of the first cross is over (51 + 9 grow + 14 hold + 5 fade + 30 = 109)').toEqual([109, 109, 160, 160]);
+    expect(second[0].start - (51 + 9 + 14), 'a window of at least ANN_CALM between the two crosses').toBeGreaterThanOrEqual(ANN_CALM);
     const x1 = r[3].marks[0].x, x2 = second[0].x;
     expect(Math.abs(x2 - x1), 'a step toward the middle').toBe(220);
     expect(Math.abs(x2 - 550) < Math.abs(x1 - 550)).toBe(true);
@@ -571,7 +597,7 @@ describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wr
   it('NO wrap ("3 shouldnt have one go around the screen."): every beam starts at an edge, ends on the mark and stays on the screen the whole time', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       var gy = groundY(); setPhase(3);
-      f.invuln = 999; turn(1); for (var i=0;i<40;i++){ step(); f.invuln = 999; }
+      f.invuln = 999; turn(1); for (var i=0;i<60;i++){ step(); f.invuln = 999; }
       var marks = projectiles.filter(function(p){ return p.annMark === 'beam'; }), segs = [], edges = {}, bad = [], ends = [];
       marks.forEach(function(p){ var total = annBeamTotal(p.mA, p.mB), keep = p.delay;
         for (var t=0;t<total;t++){ p.delay = total - t; var sg = annBeamSeg(p, gy); if (!sg) continue;
@@ -612,16 +638,16 @@ describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wr
 });
 
 describe('ACID TEARS!: a sprinkler and puddles', () => {
-  it('two spouts a side: 2, 3 or 4 drops each by phase, each landing farther out than the last and a few frames after it, each leaving a puddle for three seconds', () => {
+  it('two spouts a side: 2, 3 or 4 drops each by phase, each landing farther out than the last and 36 frames after it, each leaving a puddle for three seconds', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2, 3].forEach(function(ph){ ${STAGE(150)}
         var gy = groundY(); b._phase = ph; b.hp = b.maxHp*[0, 0.9, 0.5, 0.2][ph]; keep(3); projectiles = []; b._q = []; b.x = 550; b.vx = 0; b._tel = 0;
         f.invuln = 999; turn(3);
-        var name = document.getElementById('banner').textContent, drops = [], fire = null, fx = null;
-        for (var i=0;i<140;i++){ step(); f.invuln = 999; if (b._tel === 0 && fire === null){ fire = i; fx = b.x; } b.vx = 0;
-          projectiles.filter(function(p){ return p.shape === 'annacid' && !p._seen; }).forEach(function(p){ p._seen = true; drops.push({ at: i - fire, warnX: Math.round(p.warnX), volley: !!p.volley, id: p.bossAtk, dmg: p.dmg, grav: !!p.grav }); }); }
-        var puddles = projectiles.filter(function(p){ return p.shape === 'annpuddle'; });
-        out[ph] = { fx: fx, name: name, drops: drops, puddles: puddles.length, ids: Array.from(new Set(puddles.map(function(p){ return p.bossAtk; }))), volley: puddles.every(function(p){ return p.volley && p.trap; }), life: puddles.map(function(p){ return p.life; }), full: bossDmg(), st: (b._hz.st||[]).length };
+        var name = document.getElementById('banner').textContent, drops = [], puds = [], fire = null, fx = null;
+        for (var i=0;i<230;i++){ step(); f.invuln = 999; if (b._tel === 0 && fire === null){ fire = i; fx = b._acx; } b.vx = 0;
+          projectiles.filter(function(p){ return p.shape === 'annacid' && !p._seen; }).forEach(function(p){ p._seen = true; drops.push({ at: i - fire, warnX: Math.round(p.warnX), volley: !!p.volley, id: p.bossAtk, dmg: p.dmg, grav: !!p.grav }); });
+          projectiles.filter(function(p){ return p.shape === 'annpuddle' && !p._seen; }).forEach(function(p){ p._seen = true; puds.push({ at: i - fire, life: p.life, id: p.bossAtk, vt: !!(p.volley && p.trap) }); }); }
+        out[ph] = { fx: fx, WW: WW, name: name, drops: drops, puddles: puds.length, ids: Array.from(new Set(puds.map(function(p){ return p.id; }))), volley: puds.every(function(p){ return p.vt; }), life: puds.map(function(p){ return p.life; }), at: puds.map(function(p){ return p.at; }), full: bossDmg(), st: (b._hz.st||[]).length };
       });
       return out;
     })()`);
@@ -630,15 +656,21 @@ describe('ACID TEARS!: a sprinkler and puddles', () => {
       expect(o.name).toBe('ACID TEARS!');
       expect(o.drops, `phase ${ph}: ${n} a side`).toHaveLength(n*2);
       const right = o.drops.filter((d) => d.warnX > o.fx).sort((a, b) => a.at - b.at), left = o.drops.filter((d) => d.warnX < o.fx).sort((a, b) => a.at - b.at);
-      expect(right.map((d) => d.warnX - Math.round(o.fx)), 'each landing farther out').toEqual(Array.from({ length: n }, (_, k) => 92 + 96*k));
-      expect(left.map((d) => Math.round(o.fx) - d.warnX)).toEqual(Array.from({ length: n }, (_, k) => 92 + 96*k));
-      expect(right.map((d) => d.at), 'a few frames after the last').toEqual(Array.from({ length: n }, (_, k) => 6*k));
+      // the spray used to land 92, 188, 284 px out and 12 frames apart (the drops left 6 frames apart and fell for 40 or so: two puddles to step over in the time of one jump);
+      // now every spot is 160 px from the one before (a puddle reaches 50: the lane between them is wide enough to stand in) and they land ANN.acid.every (36) frames apart
+      // (a spot that would be beyond the wall is held 24 px inside it: from the middle of the arena the fourth drop of phase 3 is that one)
+      expect(right.map((d) => d.warnX - Math.round(o.fx)), 'each landing farther out').toEqual(Array.from({ length: n }, (_, k) => Math.min(o.WW - 24 - Math.round(o.fx), 100 + 160*k)));
+      expect(left.map((d) => Math.round(o.fx) - d.warnX)).toEqual(Array.from({ length: n }, (_, k) => Math.min(Math.round(o.fx) - 24, 100 + 160*k)));
+      expect(right.map((d) => d.at), 'each one leaves 36 frames after the last, and flies for the same time: they land 36 apart').toEqual(Array.from({ length: n }, (_, k) => 36*k));
+      expect(36, 'a window of about ANN_CALM between landings').toBeGreaterThanOrEqual(ANN_CALM);
+      expect(160 - 2*50, 'and the lane between two puddles (reach 50) is wider than a fighter (his hurtbox is 48 across)').toBeGreaterThanOrEqual(48);
       expect(o.drops.every((d) => d.volley && d.grav && d.dmg === o.full*0.8), 'a drop is 0.8 of a boss hit, on the volley rule').toBe(true);
       expect(new Set(o.drops.map((d) => d.id)).size, 'one attack id').toBe(1);
       expect(o.puddles, 'a puddle for every drop').toBe(n*2);
       expect(o.ids, 'on the same id').toEqual([o.drops[0].id]);
       expect(o.volley).toBe(true);
       expect(o.life.every((l) => l > 100), 'they lie for a while (three seconds from landing)').toBe(true);
+      expect([...new Set(o.at)].sort((a, b) => a - b).map((t, k, all) => (k ? t - all[k - 1] : 36)), 'a puddle appears 36 frames after the last one: the drops land ANN.acid.every apart').toEqual(Array.from({ length: n }, () => 36));
       expect(o.st, 'and stain the floor for the phase').toBe(Math.min(6, n*2));
     }
     expect(r[3].drops.length).toBeGreaterThan(r[1].drops.length);
@@ -661,18 +693,25 @@ describe('ACID TEARS!: a sprinkler and puddles', () => {
   it('it comes straight after a cake volley nobody was hit by ("the contestants reject the cake"), takes the turn of the second move that was due, and that one is only put off', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       var out = {}, gy = groundY();
+      // his next turn comes by itself, once the volley is over and ANN.calm has passed (annTick holds it until then): this lets it, and says which turn it was
+      function nextTurn(g){ var fired = false;
+        for (var i=0;i<900;i++){ step(); if (g) g(); if (!fired && !(b._tel > 0)) fired = true;
+          if (fired && b._tel > 0) return { at: i, kind: b._telKind, name: document.getElementById('banner').textContent, moveN: b._moveN }; }
+        return null; }
+      var keepOn = function(){ f.invuln = 999; };
       // a volley nobody is hit by
-      f.invuln = 999; turn(0); for (var i=0;i<140;i++){ step(); f.invuln = 999; }
-      b._tel = 0; b._atkTimer = 1; step(); out.rejected = { kind: b._telKind, name: document.getElementById('banner').textContent, moveN: b._moveN };
+      f.invuln = 999; turn(0); var rej = nextTurn(keepOn); out.waited = rej && rej.at; out.rejected = rej;
       // the turns after: the signature, then the laser that was put off
-      var next = []; for (var k=0;k<2;k++){ b._tel = 0; b._atkTimer = 1; step(); next.push(b._telKind); }
+      // (each asked for by hand, the signature's volley not thrown: one that nobody is hit by would be rejected in just the same way)
+      var next = []; for (var k=0;k<2;k++){ b._tel = 0; calmed(); b._atkTimer = 1; step(); next.push(b._telKind); }
       out.next = next;
       // a volley that hits: no acid
-      var n = 0; ${STAGE(300)}
-      turn(0); var hit = false; for (var j=0;j<140;j++){ step(); f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; if (f.pct > 0) hit = true; }
-      b._tel = 0; b._atkTimer = 1; step(); out.hit = { was: hit, kind: b._telKind };
+      ${STAGE(300)}
+      turn(0); var hit = false; var nx = nextTurn(function(){ f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; if (f.pct > 0) hit = true; });
+      out.hit = { was: hit, kind: nx && nx.kind, waited: nx && nx.at };
       return out;
     })()`);
+    expect(r.waited, 'his next turn did come, once the volley was over').toBeGreaterThan(100);
     expect(r.rejected.kind, 'acid instead of the laser that was due').toBe('annacid');
     expect(r.rejected.name).toBe('ACID TEARS!');
     expect(r.next, 'then the signature, then the laser that was put off').toEqual(['announcer', 'annlaser']);
@@ -687,11 +726,14 @@ describe('WATER BALLOONS!: he rises off the screen and they fall on shadows', ()
       [1, 2, 3].forEach(function(ph){ ${STAGE(300, 800)}
         var gy = groundY(); b._phase = ph; b.hp = b.maxHp*[0, 0.9, 0.5, 0.2][ph]; b._levOff = true; keep(3); projectiles = []; b._q = []; b._tel = 0; b.x = 550; b.face = 1;
         fighters.forEach(function(q){ q.invuln = 999; });
-        turn(5); var name = document.getElementById('banner').textContent, ys = [], balloons = [], fireY = null;
+        turn(5); var name = document.getElementById('banner').textContent, ys = [], balloons = [], fireY = null, spots = [], lands = [], fireAt = null;
         for (var i=0;i<400;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; }); ys.push(b.y);
-          if (b._tel === 0 && fireY === null && projectiles.some(function(p){ return p.shape === 'annballoon'; })) fireY = b.y;
-          projectiles.filter(function(p){ return p.shape === 'annballoon' && !p._seen; }).forEach(function(p){ p._seen = true; balloons.push({ warnX: Math.round(p.warnX), warnY: p.warnY, warn: p.warn, ring: p.annR, delay: p.delay, vx: p.vx, face: b.face, id: p.bossAtk, dmg: p.dmg }); }); }
-        out[ph] = { name: name, n: balloons.length, xs: balloons.map(function(x){ return x.warnX; }), b: balloons, fireY: fireY, r: b.r, minY: Math.min.apply(null, ys), endY: b.y, floor: gy - b.r, gap: null, bl: b._bl, full: bossDmg(), hover: !!b.hover };
+          if (b._tel === 0 && fireY === null && projectiles.some(function(p){ return p.shape === 'annballoon'; })){ fireY = b.y; fireAt = i; }
+          projectiles.filter(function(p){ return p.shape === 'annballoon' && !p._seen; }).forEach(function(p){ p._seen = true; balloons.push({ warnX: Math.round(p.warnX), warnY: p.warnY, warn: p.warn, ring: p.annR, delay: p.delay, vx: p.vx, face: b.face, id: p.bossAtk, dmg: p.dmg }); });
+          projectiles.filter(function(p){ return p.annMark === 'spot' && !p._seen; }).forEach(function(p){ p._seen = true; spots.push({ x: Math.round(p.warnX), reach: p.mA, delay: p.delay, at: i }); });
+          projectiles.filter(function(p){ return p.annMark === 'splash' && !p._seen; }).forEach(function(p){ p._seen = true; lands.push(i); }); }
+        out[ph] = { name: name, n: balloons.length, xs: balloons.map(function(x){ return x.warnX; }), b: balloons, fireY: fireY, r: b.r, minY: Math.min.apply(null, ys), endY: b.y, floor: gy - b.r, gap: null, bl: b._bl, full: bossDmg(), hover: !!b.hover,
+          spots: spots, lands: lands, fireAt: fireAt, hit: ANN.balloon.hit };
       });
       return out;
     })()`);
@@ -701,9 +743,16 @@ describe('WATER BALLOONS!: he rises off the screen and they fall on shadows', ()
       expect(o.n, `phase ${ph}: ${n}`).toBe(n);
       expect(o.xs, 'one over each fighter').toEqual(expect.arrayContaining([300, 800]));
       expect(o.fireY + o.r, 'he is off the top of the screen when they fall').toBeLessThan(0);
-      expect(o.b.every((x) => x.warn > 10 && x.warnY > 0 && x.ring === 70), 'each with its shadow and its splash ring').toBe(true);
+      expect(o.b.every((x) => x.warn > 10 && x.warnY > 0), 'each with its shadow').toBe(true);
+      // the splash's ring is a mark on the spot (ANN.balloon.hit: how far the burst really reaches), made with the shot, one for every balloon, where it will land
+      expect(o.spots.map((x) => x.x).sort((a, b) => a - b), 'a ring for every balloon, on its shadow').toEqual(o.xs.slice().sort((a, b) => a - b));
+      expect(o.spots.every((x) => x.reach === o.hit), 'as wide as the burst reaches').toBe(true);
       expect(o.b.every((x) => x.vx !== 0 && Math.sign(x.vx) === Math.sign(x.face)), 'drifting the way he faces, as every drop does').toBe(true);
-      expect(o.b.map((x) => x.delay).sort((a, b) => a - b).slice(0, 3), 'a few frames apart (the first has already had a frame)').toEqual([0, 4, 9]);
+      // the owner (2026-10-01): "...they barely have a moment where you can move to dodge." They used to fall 4 and 5 frames apart (all five within 15): now each lands exactly
+      // ANN.balloon.every (36) frames after the one before, over a platform too (it waits the longer for having less far to fall), and the first has a long shadow
+      expect(o.lands, `phase ${ph}: every balloon lands and bursts`).toHaveLength(n);
+      expect(o.lands.slice(1).map((t, k) => t - o.lands[k]), 'landing 36 frames apart: a window ANN_CALM wide between every two').toEqual(Array.from({ length: n - 1 }, () => 36));
+      expect(o.lands[0] - o.fireAt, 'the first one is in the air long enough to read its shadow and move').toBeGreaterThanOrEqual(ANN_CALM);
       expect(new Set(o.b.map((x) => x.id)).size, 'one attack id').toBe(1);
       expect(o.endY, 'and he is back on the floor').toBeCloseTo(o.floor, 0);
       expect(o.bl, 'his descent is over').toBe(null);
@@ -733,15 +782,23 @@ describe('WATER BALLOONS!: he rises off the screen and they fall on shadows', ()
     expect(r.mark[2]).toBe(46);
   });
 
-  it('his next turn waits for him to come back: 70 frames longer than any other', () => {
+  it('his next turn waits for him to come back, for the last balloon, and for ANN_CALM more: his gap is his own, no longer padded by 70 frames', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
-      var out = {}; b._phase = 1; f.invuln = 999; turn(5);
-      for (var i=0;i<80 && !(b._tel === 0 && b._bl);i++){ step(); f.invuln = 999; }
-      out.timer = b._atkTimer; out.moveN = b._moveN; out.gap = bossAtkGap(b);
+      var out = {}; b._phase = 1; f.invuln = 999; turn(5); out.gap = bossAtkGap(b);
+      var started = null, last = null, fired = false;
+      for (var i=0;i<900 && started === null;i++){ step(); f.invuln = 999;
+        projectiles.filter(function(p){ return p.annMark === 'splash' && !p._seen; }).forEach(function(p){ p._seen = true; last = i; });
+        if (!fired && b._tel === 0 && projectiles.some(function(p){ return p.shape === 'annballoon'; })) fired = true;
+        if (fired && b._tel > 0){ started = i; } }
+      out.last = last; out.started = started; out.moveN = b._moveN; out.kind = b._telKind;
       return out;
     })()`);
-    // the pace ("bosses should attack a bit slower", the owner, 2026-09-30) multiplies the whole of it: the gap (112) and the 70 he is away, x 1.2
-    expect(r.gap, 'the gap (112) and the 70 he is away, paced').toBe(Math.round((112 + 70)*1.2));
+    // the pace ("bosses should attack a bit slower", the owner, 2026-09-30) multiplies his gap (112) by 1.2: the 70 he used to be given for being away is gone, because his next
+    // wind-up now waits for the thing itself -- he is back down, the last balloon has burst, and the window the owner asked for (2026-10-01) has passed
+    expect(r.gap, 'his gap, paced: nothing added for the balloons').toBe(Math.round(112*1.2));
+    expect(r.last, 'the last balloon burst').not.toBeNull();
+    expect(r.started, 'and his next wind-up began').not.toBeNull();
+    expect(r.started - r.last, 'at least ANN_CALM after the last balloon').toBeGreaterThanOrEqual(ANN_CALM);
   });
 });
 
@@ -1004,7 +1061,8 @@ describe('drawing his arena, his tells, his shots and his ending', () => {
       var snap = JSON.parse(JSON.stringify(serializeState()));
       var host = { pz: b._pz, sl: b._sl, ent: b._ent, hz: JSON.parse(JSON.stringify(b._hz)), seg: null };
       run(20); var lasers = projectiles.length;
-      b._tel = 0; b._moveN = 1; b._atkTimer = 1; step(); run(60);      // and a laser: its beams are marks
+      b._tel = 0; b._lanes = null; b._q = []; b._lastCake = null; b._calm = 999; b._hz.cc = 999; projectiles = [];   // (his next turn waits for the volley to be over and ANN.calm more: here it is)
+      b._moveN = 1; b._atkTimer = 1; step(); run(62);      // and a laser: its beams are marks
       var marks = projectiles.filter(function(p){ return p.annMark === 'beam'; }), m0 = marks[0];
       host.seg = m0 ? annBeamSeg(m0, gy) : null; host.mA = m0 && m0.mA;
       var snap2 = JSON.parse(JSON.stringify(serializeState()));
