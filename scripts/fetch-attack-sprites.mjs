@@ -326,6 +326,25 @@ const PICKS = {
   // @boss:evilleafy:end picks
 
   // @boss:mephone4s:begin picks
+  // MePhone4S (Boss 8): the show's own art for what he holds and drives (the boss overhaul, 2026-09-29: "Yes, cut or draw"). Every file is a frame of Inanimate
+  // Insanity on the II wiki, so each is cut out of its frame (key 'prop') by a hand mask round the object (`poly`, in the frame's own pixels) and a test that drops the
+  // backdrop's colours (`keep`); `srcH` is the frame's own height, so nothing is resampled before the cut. The glyphs the game draws until a file loads, and the
+  // sawblades, the crusher, the cage and the quicksand of his arena, are drawn in code in the show's style (PROJ_SHAPE and s4DrawDecor): the course's own frame
+  // (File:Mephone4sdeathtrap.jpg) is a JPEG on a pale sky, and the lemon, Taco, the Fist Thingy and the spikes are files the game already has.
+  //   s4gun    PUT THAT COOKIE DOWN!: "Put that cookie down! (pulls out a gun) Now!" (4Seeing The Future); File:S1RE8 MePhone4S pulls out his gun.png, the pistol alone
+  //   s4saw    ONE OF EACH!: "No! The prizes are chainsaws! (pulls out a chainsaw)" (The Tile Divide); the chainsaw in File:Screen shot 2012-09-02 at 12.25.17 PM.png
+  //   s4lolli  ...and MePhone4's "The prizes are lollipops! (pulls out a lollipop)": the lollipop in the same frame
+  //   redcar   I'LL BE BACK!: the red car he hit Cheesy with (Sugar Rush), File:MePhone4S's Car.jpg (a JPEG: converted, then keyed)
+  s4gun:   { who: 'MePhone4S (PUT THAT COOKIE DOWN!)', kits: ['s4gun'], wiki: 'ii', file: 'S1RE8 MePhone4S pulls out his gun.png', key: 'prop', region: [565, 268, 702, 396], srcH: 476, h: 64,
+    poly: [[573, 328], [585, 322.5], [593.75, 315.5], [622.5, 297.5], [652.5, 282], [676, 275], [683.75, 276.25], [690, 282.5], [695, 295], [693.75, 308], [670, 320], [642.5, 333.75], [643.75, 336.25], [645, 350], [640, 355], [632.5, 360], [631.25, 377.5], [620, 383.75], [602.5, 390], [598.75, 390], [593.75, 380], [586.25, 355], [582.5, 335]],
+    keep: (r, g, b) => !(g > r + 30 && g > b + 30) && !(r > 225 && g > 225 && b > 225), note: 'the pistol in his hand (4Seeing The Future: "Put that cookie down! (pulls out a gun) Now!"), hand-masked out of the remaster frame' },
+  s4saw:   { who: 'MePhone4S (ONE OF EACH!)', kits: ['s4saw'], wiki: 'ii', file: 'Screen shot 2012-09-02 at 12.25.17 PM.png', key: 'prop', region: [1340, 36, 1665, 610], srcH: 939, h: 96,
+    poly: [[1352.5, 522.5], [1356, 400], [1352.5, 321.5], [1359, 224], [1380, 152.5], [1416, 67.5], [1439, 47.5], [1465, 42.5], [1497.5, 45], [1532.5, 49], [1562.5, 49], [1590, 62.5], [1607.5, 62.5], [1645, 120], [1657.5, 179], [1646, 212.5], [1646, 255], [1632.5, 292.5], [1636, 352.5], [1620, 372.5], [1601, 436], [1564, 456], [1562.5, 585], [1540, 606], [1437.5, 597.5], [1436, 546], [1370, 546], [1350, 525]],
+    keep: (r, g, b) => !(b > r + 28 && b > 215) && !(g > r + 40 && g > b + 30) && !(r >= 246 && g >= 246 && b >= 246), note: 'the chainsaw MePhone4S holds up as the prize (The Tile Divide: "No! The prizes are chainsaws!"), hand-masked out of the frame; his hand is left behind' },
+  s4lolli: { who: 'MePhone4S (ONE OF EACH!)', kits: ['s4lolli'], wiki: 'ii', file: 'Screen shot 2012-09-02 at 12.25.17 PM.png', key: 'prop', region: [76, 183, 214, 417], srcH: 939, h: 64,
+    keep: (r, g, b) => (r >= 150 && r - g >= 30 && r - b >= 30) || (r >= 225 && g >= 190 && Math.abs(r - b) < 36 && Math.abs(r - g) < 36), note: 'the lollipop MePhone4 holds up (The Tile Divide: "The prizes are lollipops!"), cut from the same frame: the red ball and its stick' },
+  redcar:  { who: 'MePhone4S (I\'LL BE BACK!)', kits: ['redcar'], wiki: 'ii', file: "MePhone4S's Car.jpg", png: true, key: 'prop', region: [40, 60, 1075, 630], srcH: 656, h: 56,
+    keep: (r, g, b) => (r >= 40 && r - g >= 45) || (r < 24 && g < 12 && b < 14) || (r - g >= 14 && b - g >= 28 && r < 80 && g < 40) || (r > 240 && g > 240 && b > 240), note: 'his red car (Sugar Rush: "I\'ll be back. (MePhone4S walks towards a nearby car, which he then proceeds to hit Cheesy with.)"), cut from the frame of it on the night grass' },
   // @boss:mephone4s:end picks
 
   // @boss:two:begin picks

@@ -89,7 +89,9 @@ const KEYS = ['shatter', 'atstake', 'van', 'float', 'cap', 'pricetag', 'measure'
   // Two, rebuilt (the boss overhaul): the spiked sun, the prize's orbs, the glow a copy with no art of its own falls back to, and the four team blocks (test/boss-two.test.js)
   'twosun', 'twoprize', 'twoorb', 'twoblock0', 'twoblock1', 'twoblock2', 'twoblock3',
   // MePhone4, rebuilt (the boss overhaul, 2026-09-29): the Fist Thingy's glove, the Rejection Portal's oval and a boomerang (test/boss-mephone4.test.js)
-  'mp4glove', 'mp4portal', 'mp4boom'];
+  'mp4glove', 'mp4portal', 'mp4boom',
+  // MePhone4S, rebuilt (the boss overhaul, 2026-09-29): the pistol he draws (PUT THAT COOKIE DOWN!), the chainsaw and lollipop (ONE OF EACH!), the red car (I'LL BE BACK!) -- test/boss-mephone4s.test.js
+  'redcar', 's4gun', 's4saw', 's4lolli'];
 
 describe('the registry', () => {
   it('names only shapes the game draws, and every file exists', () => {
@@ -104,7 +106,7 @@ describe('the registry', () => {
   it('every file in the attack folder is drawn by some entry -- none is dead weight', () => {
     const drawn = new Set(W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src.split("/").pop(); })'));
     const onDisk = readdirSync('artifacts/V1/assets/sprites/attacks').filter((f) => f.endsWith('.png'));
-    expect(onDisk.length).toBe(139);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the boss overhaul's: the Announcer's 9, Firey Speaker Box's 9, Purple Face's 6, the Bug Swarm's 12, Puffball Speaker Box's 2, the Purple Dragon's 2, Steve Cobs's fight's 6, One's 4 (her knife is Puffball Speaker Box's file), Four's 1, Two's 7, Evil Leafy's 2, MePhone4's 3, Springy's Spring-Bot 1
+    expect(onDisk.length).toBe(143);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the boss overhaul's: the Announcer's 9, Firey Speaker Box's 9, Purple Face's 6, the Bug Swarm's 12, Puffball Speaker Box's 2, the Purple Dragon's 2, Steve Cobs's fight's 6, One's 4 (her knife is Puffball Speaker Box's file), Four's 1, Two's 7, Evil Leafy's 2, MePhone4's 3, Springy's Spring-Bot 1, MePhone4S's 4 (his pistol, chainsaw, lollipop and car)
     expect(onDisk.filter((f) => !drawn.has(f))).toEqual([]);
   });
 
