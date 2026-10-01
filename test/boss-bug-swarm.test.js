@@ -10,7 +10,10 @@ import { mulberry32 } from './helpers/prng.js';
 // "hey, I never said remove the projectiles. i only said remove the generic spam. I liked the old bug swarm. Give the swarm a
 // sprite." -- and, on how many attacks a boss gets, "the bosses should have more attacks the later they get. starting from bug
 // swarm, they should have 5" -- so SWARM WAVE! (the signature, redone: a tide out of the hive's wall cells along the floor that
-// chews the platform), DODGING PATTERN!, DODGEBALL!, SEEKERS! (his old seekers, kept: now real bugs) and EGG SAC!; three phases,
+// chews the platform), DODGING PATTERN!, DODGEBALL!, SEEKERS! (his old seekers, kept: now real bugs) and EGG SAC!. THEN, 2026-10-01 (Round
+// 17), the owner, verbatim: "remove the bug tunnel attack." and "nondestructible bug balls." -- the tunnel (DODGING PATTERN!) is gone, and
+// the newer request wins over the older count rule, so he has four attacks; and DODGEBALL!'s ball can no longer be destroyed by anything
+// a fighter does. Three phases,
 // each changing the fight; the Bug Hive for an arena ("if it makes sense for a hazard, reduce boss difficulty and add a hazard");
 // "Endings: 'All of them'" -- The Announcer presses a 'Delete Bugs' Button and the bugs vanish (Insectophobe's Nightmare
 // 2/Transcript); art from the Bugs page ("Yes, cut or draw"); "Harder, same damage": every move is ONE attack id and so at most
@@ -41,8 +44,8 @@ const FIRE = (kind) => `b._telKind = ${JSON.stringify(kind)}; b._tel = 0; swarmB
   if (b._telKind === 'swarm') fireBossAttack(b, f); else BOSS_MOVES[b._telKind](b, f);`;
 const MINE = 'projectiles.filter(function(p){ return p.swarm; })';
 
-describe('the Bug Swarm is Boss 4, with five attacks of his own', () => {
-  it('is in the Bug Hive, wears his own bugs, and has SWARM WAVE! and four second moves -- none of the shared four', () => {
+describe('the Bug Swarm is Boss 4, with four attacks of his own', () => {
+  it('is in the Bug Hive, wears his own bugs, and has SWARM WAVE! and three second moves -- none of the shared four', () => {
     const r = W.eval(`(function(){
       var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='The Bug Swarm'; });
       return { i: i, row: BOSS_ROSTER[i], prev: BOSS_ROSTER[i-1].name, next: BOSS_ROSTER[i+1].name, extra: BOSS_EXTRA['The Bug Swarm'],
@@ -55,9 +58,10 @@ describe('the Bug Swarm is Boss 4, with five attacks of his own', () => {
     expect(r.prev).toBe('Firey Speaker Box');
     expect(r.next).toBe('Purple Face');
     expect(r.row).toEqual({ name: 'The Bug Swarm', color: '#6a2ea0', hp: 225, big: 2.3, attack: 'swarm', arena: 'hive', stationary: false, sprite: 'bug' });
-    expect(r.extra, '"starting from bug swarm, they should have 5": the signature and four more').toEqual(['dodgepattern', 'swarmseek', 'dodgeball', 'eggsac']);
-    expect(r.moves).toEqual(['function/DODGING PATTERN!', 'function/SEEKERS!', 'function/DODGEBALL!', 'function/EGG SAC!']);
-    expect(r.rushOnly, 'an item boss has no hive for them').toEqual([true, true, true, true]);
+    // "starting from bug swarm, they should have 5" (2026-09-29) gave him five; "remove the bug tunnel attack." (the owner, 2026-10-01, Round 17) is newer and wins: the signature and three more
+    expect(r.extra).toEqual(['swarmseek', 'dodgeball', 'eggsac']);
+    expect(r.moves).toEqual(['function/SEEKERS!', 'function/DODGEBALL!', 'function/EGG SAC!']);
+    expect(r.rushOnly, 'an item boss has no hive for them').toEqual([true, true, true]);
     expect(r.sig).toBe('SWARM WAVE!');
     expect(r.shared, 'the generic INCOMING!, SHOCK RING, GROUND POUND and SEEKERS (the shared shape) are not his').toEqual([]);
     expect(r.sky).toHaveLength(2);
@@ -65,33 +69,32 @@ describe('the Bug Swarm is Boss 4, with five attacks of his own', () => {
     expect(r.hp, '"Harder, same damage": his health is not the dial').toBe(225);
   });
 
-  it('takes turns: the tide, the pattern, the tide, the seekers, the tide, the ball, the tide, the sac -- each named -- and names his phases', () => {
+  it('takes turns: the tide, the seekers, the tide, the ball, the tide, the sac, the tide, the seekers -- each named -- and names his phases', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       var kinds = [], names = [];
       for (var i=0;i<8;i++){ b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f); kinds.push(b._telKind); names.push(bossTelTextForTest()); }
       function bossTelTextForTest(){ return bossTelName(b); }
       return { kinds: kinds, names: names, p2: bossPhaseName(b, 2), p3: bossPhaseName(b, 3) };
     })()`);
-    expect(r.kinds).toEqual(['swarm', 'dodgepattern', 'swarm', 'swarmseek', 'swarm', 'dodgeball', 'swarm', 'eggsac']);
-    // "The TLC gets destroyed by the wave of bugs"; "Dodging pattern"; "Bug-Filled Dodgeball Insanity"; the egg sac Flower throws
-    expect(r.names).toEqual(['SWARM WAVE!', 'DODGING PATTERN!', 'SWARM WAVE!', 'SEEKERS!', 'SWARM WAVE!', 'DODGEBALL!', 'SWARM WAVE!', 'EGG SAC!']);
+    expect(r.kinds).toEqual(['swarm', 'swarmseek', 'swarm', 'dodgeball', 'swarm', 'eggsac', 'swarm', 'swarmseek']);
+    // "The TLC gets destroyed by the wave of bugs"; his old seekers; "Bug-Filled Dodgeball Insanity"; the egg sac Flower throws
+    expect(r.names).toEqual(['SWARM WAVE!', 'SEEKERS!', 'SWARM WAVE!', 'DODGEBALL!', 'SWARM WAVE!', 'EGG SAC!', 'SWARM WAVE!', 'SEEKERS!']);
     expect(r.p2).toBe('Second Wave');
     expect(r.p3).toBe('Swarm Frenzy');
   });
 
   it("his gaps are a little longer than the default 100 / 72 / 52 -- the goo and the maw are the hazards (\"reduce boss difficulty and add a hazard\") -- and longer after a move whose bugs are still crossing", () => {
     const r = W.eval(`(function(){ var out = {};
-      [1,2,3].forEach(function(ph){ out[ph] = ['swarm','dodgepattern','swarmseek','dodgeball','eggsac'].map(function(k){ return bossAtkGap({ attack:'swarm', _phase:ph, _telKind:k }); }); });
+      [1,2,3].forEach(function(ph){ out[ph] = ['swarm','swarmseek','dodgeball','eggsac'].map(function(k){ return bossAtkGap({ attack:'swarm', _phase:ph, _telKind:k }); }); });
       out.def = [1,2,3].map(function(ph){ return bossAtkGap({ attack:'other', _phase:ph }); });
       return out; })()`);
     expect(r.def, 'the shared pacing, unchanged (an attack no boss has is not a Boss Rush boss, so it is not paced)').toEqual([100, 72, 52]);
-    // Two decisions of the owner's (2026-09-30) move these. "bosses should attack a bit slower": every Boss Rush boss waits BOSS_PACE (1.2) times as long
-    // between attacks, so what was 134 / 170 / 110 / 150 / 140 in phase 1 is 161 / 228 / 132 / 180 / 168. And "the bullet pattern thing for the bug
-    // swarm(bug tunnel) is too hard": its bugs are a quarter slower now, so the wall takes a third longer to cross and the tail after DODGING PATTERN!
-    // is 80 (was 60): 110 + 80 and its 82 + 80 and 60 + 80 in phases 2 and 3, before the pace.
-    expect(r[1]).toEqual([161, 228, 132, 180, 168]);
-    expect(r[2]).toEqual([127, 194, 98, 146, 134]);
-    expect(r[3]).toEqual([101, 168, 72, 120, 108]);
+    // "bosses should attack a bit slower" (the owner, 2026-09-30): every Boss Rush boss waits BOSS_PACE (1.2) times as long between attacks, so what was
+    // 134 / 110 / 150 / 140 in phase 1 is 161 / 132 / 180 / 168. (The fifth, DODGING PATTERN!'s 110 + an 80-frame tail, went with the tunnel itself:
+    // "remove the bug tunnel attack.", the owner, 2026-10-01.)
+    expect(r[1]).toEqual([161, 132, 180, 168]);
+    expect(r[2]).toEqual([127, 98, 146, 134]);
+    expect(r[3]).toEqual([101, 72, 120, 108]);
   });
 });
 
@@ -227,152 +230,67 @@ describe('SWARM WAVE!: a tide out of the hive along the floor', () => {
   });
 });
 
-describe('DODGING PATTERN!: a wall of bugs with one channel through it', () => {
-  // the pattern as spawned: which (column, row) cells hold a bug, read off the shots themselves
-  const READ = `function readPattern(dir){
-      var gy = groundY(), wall = dir > 0 ? 0 : WW, P = SWARM.pat[ph], cells = {}, traps = [];
-      ${MINE}.forEach(function(p){
-        var col = Math.round((dir > 0 ? wall - p.x : p.x - wall)/P.dx - 20/P.dx), row = Math.round((gy - SWARM.row0 - p.y)/SWARM.rowStep);
-        if (p.swarmTrap) traps.push([col, row]); else cells[col + ',' + row] = 1;
-      });
-      return { cells: cells, traps: traps };
-    }`;
+describe('the bug tunnel is gone', () => {
+  // The owner, verbatim, 2026-10-01 (Round 17): "remove the bug tunnel attack." It was DODGING PATTERN! (attack key 'dodgepattern'): a wall of bugs with
+  // one channel through it. It had already been called too hard the day before ("the bullet pattern thing for the bug swarm(bug tunnel) is too hard.",
+  // 2026-09-30, when it was made wider, slower and longer to tell). The older attack-count rule -- "the bosses should have more attacks the later they
+  // get. starting from bug swarm, they should have 5" (2026-09-29, boss-overhaul-decisions.md Round 9), which gave the swarm the tunnel as its FIFTH
+  // attack -- is overruled by the newer request, so the swarm keeps four: SWARM WAVE!, SEEKERS!, DODGEBALL! and EGG SAC!. Its turn, its wind-up, its
+  // telegraph name, its code and its tests are all removed; none of its art is: the bugs it was made of are the tide's, the seekers' and the cloud's.
+  const GONE = ['dodgepattern', 'DODGING PATTERN!', 'swarmPattern', 'patTel', 'SWARM.pat', 'swarmTrap'];
 
-  it('the channel is the same each time and there all the way through: every column has its clear rows, a step at most one row up or one row down every two columns, and the entry is wider', () => {
-    const r = W.eval(`(function(){ var out = {};
-      [1,2,3].forEach(function(ph){
-        ${STAGE(300, 'ph')} var P = SWARM.pat[ph]; var once = [];
-        ${READ}
-        for (var t=0;t<2;t++){ projectiles = []; b._sw = { d:-1 }; BOSS_MOVES.dodgepattern(b, f); once.push(readPattern(-1)); }
-        var same = JSON.stringify(Object.keys(once[0].cells).sort()) === JSON.stringify(Object.keys(once[1].cells).sort());
-        var cols = P.path.length, open = [], steps = [];
-        for (var i=0;i<cols;i++){ var clear = []; for (var k=0;k<SWARM.rows;k++) if (!once[0].cells[i + ',' + k]) clear.push(k); open.push(clear); }
-        for (var i=1;i<cols;i++) steps.push(P.path[i] - P.path[i-1]);
-        out[ph] = { same: same, cols: cols, open: open, path: P.path, steps: steps, v: P.v, n: Object.keys(once[0].cells).length, traps: once[0].traps, rows: SWARM.rows };
-      });
-      return out; })()`);
-    for (const ph of [1, 2, 3]) {
-      const o = r[ph];
-      expect(o.same, `phase ${ph}: the same each time, so it can be learned`).toBe(true);
-      o.open.forEach((clear, i) => {
-        const contiguous = clear.every((k, j) => j === 0 || k === clear[j - 1] + 1);
-        expect(contiguous, `phase ${ph} column ${i}: one channel, no islands`).toBe(true);
-        expect(clear.length, `phase ${ph} column ${i}`).toBeGreaterThanOrEqual(3);
-        expect(clear, `phase ${ph} column ${i} is centred on the path`).toContain(o.path[i]);
-        // a column's channel meets the next one's: a fighter two columns wide fits through both
-        if (i > 0) expect(clear.filter((k) => o.open[i - 1].includes(k)).length, `phase ${ph} column ${i} meets the last`).toBeGreaterThanOrEqual(2);
-      });
-      o.steps.forEach((s, i) => {
-        expect(Math.abs(s), `phase ${ph} step ${i}: at most a row`).toBeLessThanOrEqual(1);
-        if (s < 0) expect(o.steps[i + 1] === undefined || o.steps[i + 1] >= 0, `phase ${ph} step ${i}: a fall is slower than a jump (never two rows down in a row)`).toBe(true);
-      });
-    }
-    // "the bullet pattern thing for the bug swarm(bug tunnel) is too hard." (the owner, 2026-09-30): the channel is a row wider above its centre --
-    // five clear rows in phase 1 (was four) and four in phases 2 and 3 (was three) -- and the bugs are a quarter slower (was 8 / 8.8 / 9.6).
-    expect(r[1].open[0], 'phase 1: five clear rows (was four), the floor first').toEqual([0, 1, 2, 3, 4]);
-    expect(r[1].traps).toEqual([]);
-    expect(r[2].open[3].length, 'phase 2: the entry is wider (one more clear row below, three above): that column is clear to the top...').toBe(8);
-    expect(r[3].open[3].length).toBe(7);
-    expect(r[2].open[6].length, '...and the rest of the channel is four (was three)').toBe(4);
-    expect(r[3].open[8].length).toBe(4);
-    expect([r[1].v, r[2].v, r[3].v], 'faster each phase, but a quarter slower than they were').toEqual([6, 6.6, 7.2]);
-    expect(r[3].n).toBeGreaterThan(r[2].n);
-    expect(r[2].n).toBeGreaterThan(r[1].n);
+  it('is in none of his tables: not a second move, a banner, an item-boss exclusion, a move, a tail or a wind-up', () => {
+    const r = W.eval(`(function(){
+      var ex = BOSS_EXTRA['The Bug Swarm'];
+      return { extra: ex, names: ex.map(function(k){ return BOSS_MOVE_NAME[k]; }), all: Object.keys(BOSS_MOVE_NAME).filter(function(k){ return /DODGING/.test(BOSS_MOVE_NAME[k]); }),
+        move: typeof BOSS_MOVES.dodgepattern, name: BOSS_MOVE_NAME.dodgepattern, rushOnly: BOSS_RUSH_ONLY.has('dodgepattern'),
+        swarmKeys: Object.keys(SWARM).sort(), tail: Object.keys(SWARM.tail), fn: typeof swarmPattern,
+        tel: [1,2,3].map(function(ph){ return bossTelLen({ attack:'swarm', _telKind:'dodgepattern', _phase:ph }); }), gap: bossAtkGap({ attack:'swarm', _phase:1, _telKind:'dodgepattern' }) };
+    })()`);
+    expect(r.extra, 'the signature and three more: four attacks').toEqual(['swarmseek', 'dodgeball', 'eggsac']);
+    expect(r.names).toEqual(['SEEKERS!', 'DODGEBALL!', 'EGG SAC!']);
+    expect(r.all, 'no banner anywhere says it').toEqual([]);
+    expect(r.move).toBe('undefined');
+    expect(r.name).toBeUndefined();
+    expect(r.rushOnly).toBe(false);
+    expect(r.tail, 'no tail after it').toEqual(['swarm', 'swarmseek', 'dodgeball', 'eggsac']);
+    for (const k of ['pat', 'patTel', 'rowStep', 'rows', 'row0']) expect(r.swarmKeys, `SWARM.${k} (the tunnel's table) is gone`).not.toContain(k);
+    expect(r.fn, 'and the function that built the wall').toBe('undefined');
+    expect(r.tel, 'a move of an unknown kind has the usual wind-up: the longer one it had is gone').toEqual([36, 36, 36]);
+    expect(r.gap, 'and the usual gap, with no 80-frame tail (110 x 1.2)').toBe(132);
   });
 
-  it('phase 2 and on: the extra bug -- one in phase 2, two in phase 3 -- pulses in the entry, and the entry lets you round it; phase 1 has none', () => {
-    const r = W.eval(`(function(){ var out = {};
-      [1,2,3].forEach(function(ph){
-        ${STAGE(300, 'ph')} var P = SWARM.pat[ph]; b._sw = { d:-1 }; BOSS_MOVES.dodgepattern(b, f);
-        var t = ${MINE}.filter(function(p){ return p.swarmTrap; });
-        var gy = groundY();
-        out[ph] = { n: t.length, shape: t.map(function(p){ return p.shape; }), r: t.map(function(p){ return p.r; }),
-          rows: t.map(function(p){ return Math.round((gy - SWARM.row0 - p.y)/SWARM.rowStep); }),
-          cols: t.map(function(p){ return Math.round((p.x - WW)/P.dx - 20/P.dx); }), path: P.path, entry: P.entry, traps: P.traps };
-      });
-      return out; })()`);
-    expect(r[1].n).toBe(0);
-    expect(r[2].n, '"there was an extra bug near the beginning"').toBe(1);
-    expect(r[3].n).toBe(2);
-    for (const ph of [2, 3]) {
-      r[ph].shape.forEach((s) => expect(s, 'the stinger bug: "a bug with poison stingers"').toBe('bugsting'));
-      r[ph].cols.forEach((c, i) => {
-        expect(c, 'in the entry, where the channel is wide').toBeLessThan(r[ph].entry);
-        expect(r[ph].rows[i], 'in the middle of the channel').toBe(r[ph].path[c]);
-      });
-    }
-    expect(r[2].cols).toEqual([2]);
-    expect(r[3].cols, 'three columns apart: a body two columns wide is never over both').toEqual([1, 4]);
+  it('nothing in the swarm\'s slots of the source calls it any more: the words are only ever in a comment', () => {
+    const html = readFileSync('artifacts/V1/index.html', 'utf8');
+    const marks = [...html.matchAll(/^[ \t]*\/\/ @boss:swarm:begin (\w+)\r?\n([\s\S]*?)^[ \t]*\/\/ @boss:swarm:end \1\r?$/gm)];
+    const code = marks.map((m) => m[2].split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '')).join('\n')).join('\n');
+    expect(code.length).toBeGreaterThan(20000);
+    for (const w of GONE) expect(code, `"${w}" outside a comment in his slots`).not.toContain(w);
+    // and nowhere else in the game either (the shared tables are slots too: this reads the whole file)
+    const whole = html.split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+    for (const w of ['dodgepattern', 'swarmPattern', 'patTel', 'swarmTrap']) expect(whole, `"${w}" in the code of the game`).not.toContain(w);
   });
 
-  it('a fighter who follows the channel is not touched; one who stands still on the floor is hit, once, for a whole boss hit; the wall is one attack id', () => {
-    // The follower: at each frame, at the height of the channel for the column(s) his body overlaps (the midpoint of the two, where he
-    // is between them) -- and over the extra bug where there is one, the one thing the channel's own centre does not do. A jump he
-    // could make is the tide's business; this is that the channel is there, the whole way, for a body that size.
-    const r = W.eval(`(function(){ var out = {};
+  it('a whole fight through all three phases never throws a wall of bugs with a channel: every turn is the tide, the seekers, the ball or the sac, and no shot is the old pattern\'s', () => {
+    const r = W.eval(`(function(){ var out = { kinds: [], swarms: {}, bad: 0 };
       [1,2,3].forEach(function(ph){
-        var P = SWARM.pat[ph], gy = groundY(), N = P.path.length;
-        ${STAGE(500, 'ph')} b._sw = { d:-1 }; projectiles = []; BOSS_MOVES.dodgepattern(b, f);
-        var ids = ${MINE}.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).length, pct0 = f.pct;
-        for (var n=0;n<420;n++){
-          var t = n + 1, rows = [], over = null;
-          for (var i=0;i<N;i++){ var xi = WW + 20 + i*P.dx - P.v*t; if (Math.abs(xi - f.x) < 42){ rows.push(P.path[i]); var tr = P.traps.filter(function(q){ return q[0] === i; })[0]; if (tr) over = P.path[i] + tr[1] + 2; } }   // (over the extra bug whenever his body is over its column)
-          var row = over != null ? over : (rows.length ? (Math.min.apply(null, rows) + Math.max.apply(null, rows))/2 : P.path[0]);
-          f.x = 500; f.vx = 0; f.vy = 0; f.y = gy - SWARM.row0 - row*SWARM.rowStep;
-          step();
+        ${STAGE(300, 'ph')} f.invuln = 1e9; b._moveN = 0;
+        for (var t=0;t<8;t++){
+          b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f); out.kinds.push(ph + ':' + b._telKind);
+          b._tel = 1; updateBossAttack(b, f);   // the wind-up ends: the move fires, as it does in the game
+          for (var k=0;k<40;k++){
+            step(); f.invuln = 1e9; f.x = 300; f.y = groundY() - 24;
+            ${MINE}.forEach(function(p){ out.swarms[p.swarm] = (out.swarms[p.swarm] || 0) + 1; if (p.swarm === 'pat' || p.swarmTrap) out.bad++; });
+          }
+          projectiles = []; b._sw = null; b._hz = {}; b._tel = 0; b._ball = null; b._tide = null;
         }
-        out[ph] = { followed: f.pct - pct0, ids: ids };
-        ${STAGE(500, 'ph')} b._sw = { d:-1 }; projectiles = []; BOSS_MOVES.dodgepattern(b, f);
-        var p1 = f.pct; for (var j=0;j<420;j++){ step(); f.x = 500; f.vx = 0; f.y = gy - 24; f.vy = 0; }
-        out[ph].still = f.pct - p1;
-      });
-      out.full = bossDmg(); return out; })()`);
-    for (const ph of [1, 2, 3]) {
-      expect(r[ph].ids, 'one attack id').toBe(1);
-      expect(r[ph].followed, `phase ${ph}: the channel is there, the whole way`).toBe(0);
-      expect(r[ph].still, `phase ${ph}: standing still costs a boss hit, no more`).toBeCloseTo(r.full, 5);
-    }
-  });
-
-  it('the bugs cross the arena at the phase\'s speed from the wall far from you, both ways, and are gone after; nothing of the pattern is left', () => {
-    const r = W.eval(`(function(){ var out = {};
-      [1,2,3].forEach(function(ph){
-        ${STAGE(300, 'ph')} b._phase = ph; b._telPh = ph; b._sw = { d:-1 };
-        BOSS_MOVES.dodgepattern(b, f);
-        var vs = ${MINE}.map(function(p){ return p.vx; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
-        var n = 0, xs0 = ${MINE}.map(function(p){ return p.x; });
-        var outSide = xs0.every(function(x){ return x > WW; });
-        for (var i=0;i<420;i++){ step(); f.x = 300; f.invuln = 1e9; }
-        out[ph] = { vs: vs, outSide: outSide, left: ${MINE}.length };
-        // and from the other wall
-        ${STAGE(900, 'ph')} b._phase = ph; b._telPh = ph; b._sw = { d:1 }; BOSS_MOVES.dodgepattern(b, f);
-        out[ph].other = ${MINE}.every(function(p){ return p.x < 0 && p.vx > 0; });
       });
       return out; })()`);
-    expect(r[1].vs, 'a quarter slower than they were (8 / 8.8 / 9.6): "too hard", the owner, 2026-09-30').toEqual([-6]);
-    expect(r[2].vs).toEqual([-6.6]);
-    expect(r[3].vs).toEqual([-7.2]);
-    for (const ph of [1, 2, 3]) {
-      expect(r[ph].outSide, 'they come in from past the wall').toBe(true);
-      expect(r[ph].other, 'and from the left wall when you are on the right').toBe(true);
-      expect(r[ph].left, 'gone').toBe(0);
-    }
-  });
-});
-
-describe('DODGING PATTERN!: the wind-up before the wall comes in is longer', () => {
-  it('60 frames, a second -- every other move of his takes 36 -- and the ring and the swell read the same length', () => {
-    // "the bullet pattern thing for the bug swarm(bug tunnel) is too hard." (the owner, 2026-09-30): a longer tell before the wall closes in
-    const r = W.eval(`(function(){ ${STAGE(300)}
-      var out = { lens: {}, turns: [] };
-      ['swarm','dodgepattern','swarmseek','dodgeball','eggsac'].forEach(function(k){ out.lens[k] = bossTelLen({ attack:'swarm', _telKind:k }); });
-      b._moveN = 0;
-      for (var t=0;t<4;t++){ b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f); out.turns.push([b._telKind, b._tel, bossTelLen(b)]); b._tel = 0; }
-
-      return out; })()`);
-    expect(r.lens).toEqual({ swarm: 36, dodgepattern: 60, swarmseek: 36, dodgeball: 36, eggsac: 36 });
-    expect(r.turns, 'each turn starts with its own length, and the ring reads the same one').toEqual([['swarm', 36, 36], ['dodgepattern', 60, 60], ['swarm', 36, 36], ['swarmseek', 36, 36]]);
-
+    expect(r.kinds.filter((k) => k.startsWith('1:')), 'phase 1: the tide, the seekers, the tide, the ball, the tide, the sac, the tide, the seekers').toEqual(['1:swarm', '1:swarmseek', '1:swarm', '1:dodgeball', '1:swarm', '1:eggsac', '1:swarm', '1:swarmseek']);
+    expect(new Set(r.kinds.map((k) => k.split(':')[1])), 'four attacks in every phase').toEqual(new Set(['swarm', 'swarmseek', 'dodgeball', 'eggsac']));
+    expect(r.bad, 'no shot of the old wall, and no pulsing extra bug').toBe(0);
+    expect(Object.keys(r.swarms), 'what he throws: the tide, the seekers, the ball and the sac').toEqual(expect.arrayContaining(['tide', 'seek', 'ball', 'sac']));
+    expect(Object.keys(r.swarms)).not.toContain('pat');
   });
 });
 
@@ -502,8 +420,95 @@ describe('DODGEBALL!: a ball of bugs that ricochets', () => {
     expect(r.crawlDx, 'the crawler heads for you (you are to its right)').toBeGreaterThan(50);
     expect(r.crawlY, 'along the floor').toBeGreaterThan(r.gy - 12);
   });
-});
 
+  // "nondestructible bug balls." (the owner, 2026-10-01, Round 17). The ball is a boss shot like any other, and every way the game lets a fighter get rid of
+  // an enemy shot is a place that asks the shot whether it may: a reflect (Gaty), a counter stance, a turret (Tennis Ball), Nickel's shred, Marshmallow's
+  // scream, Clover's butterflies, Box's packing, and the Eraser. The ball says `unbreakable`; a plain boss shot, as the control in each case, is still
+  // stopped. (A fighter's swing or shot never had a way to touch a shot: the projectile loop has no shot-on-shot test and a swing only meets bosses and
+  // turrets; the third case pins that, so a later change cannot give it one.) It flies until its own end: the one hit it deals, its last bounce, its life.
+  // NEW_BALL: Boss Rush against the swarm, fighter `who` (a code expression) at x = 300, and a ball thrown at him; `ctl`: the control, a ball that is breakable.
+  const NEW_BALL = (who, ctl) => `
+    ${STAGE(300, 1)} var gy = groundY(); worldPlats = [];
+    var c = makeFighter(ROSTER.find(function(r){ return r.name===${who}; }), 300, gy-24, 0); c.team=0; c.controller='still'; c.stocks=99; c.face=1; fighters=[c]; step(); c.pct = 0; c.invuln = 0;
+    b.x = 900; b.y = gy - b.r; b._sw = { b:[300, gy - 24] }; projectiles = []; BOSS_MOVES.dodgeball(b, c);
+    var ball = projectiles.find(function(p){ return p.swarm === 'ball'; }); if (${ctl}) ball.unbreakable = false;`;
+  // the ball, held still at (x, y)
+  const BALL_AT = (x, y) => `ball.x = ${x}; ball.y = ${y}; ball.vx = 0.001; ball.vy = 0;`;
+  const alive = 'projectiles.indexOf(ball) >= 0 && ball.life > 0';
+
+  it('survives a reflect, a counter stance, a turret and the Eraser: the reflecting fighter is hit, the counter does not nullify it, the turret does not break it, nothing wipes it -- a plain boss shot is stopped by each', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [false, true].forEach(function(ctl){ var o = out[ctl ? 'control' : 'ball'] = {};
+        // a reflect: Gaty's shield is up as it arrives
+        ${NEW_BALL(JSON.stringify('Gaty'), 'ctl')} for (var i=0;i<90 && ball.life > 0;i++){ c.reflecting = 30; c.x = 300; c.y = gy - 24; c.vx = 0; step(); b._atkTimer = 1e9; c.invuln = 0; }
+        o.reflect = { reflected: !!ball.reflected, owner: ball.owner, hurt: c.pct > 0 };
+        // a counter stance
+        ${NEW_BALL(JSON.stringify('Firey'), 'ctl')} for (var i=0;i<90 && ball.life > 0;i++){ c.countering = 30; c.x = 300; c.y = gy - 24; c.vx = 0; step(); b._atkTimer = 1e9; c.invuln = 0; }
+        o.counter = { hurt: c.pct > 0 };
+        // a turret in its way (Tennis Ball's)
+        ${NEW_BALL(JSON.stringify('Tennis Ball'), 'ctl')} c.invuln = 1e9; ${BALL_AT('c.x + 80', 'c.y')}
+        var turret = { life:200, hp:50, r:30, x:ball.x, y:ball.y, turret:true, ownerObj:c, owner:c.idx, _hitCd:0 };
+        o.turret = { broke: shotHitsTurret(ball, [turret]), life: ball.life };
+        // the Eraser: summoned, it wipes the screen as it fires
+        ${NEW_BALL(JSON.stringify('Firey'), 'ctl')} c.invuln = 1e9; ${BALL_AT('c.x + 200', 'c.y')}
+        var eraser = summonAssistNamed(c, ASSIST_ROSTER.find(function(x){ return x.act === 'erase'; }));
+        for (var j=0;j<90 && summons.indexOf(eraser) >= 0;j++){ step(); b._atkTimer = 1e9; c.invuln = 1e9; }
+        o.eraser = { fired: summons.indexOf(eraser) < 0, left: ${alive} };
+      });
+      return out; })()`);
+    expect(r.ball.reflect, 'Gaty\'s reflect does not turn it back: it is still the boss\'s, and it hit').toEqual({ reflected: false, owner: -2, hurt: true });
+    expect(r.control.reflect, 'the control: a plain boss shot is turned back, and nobody is hurt').toMatchObject({ reflected: true, hurt: false });
+    expect(r.control.reflect.owner, 'and it is the fighter\'s now').toBeGreaterThanOrEqual(0);
+    expect(r.ball.counter, 'a counter stance does not nullify it').toEqual({ hurt: true });
+    expect(r.control.counter, 'the control: a plain shot is nullified by it').toEqual({ hurt: false });
+    expect(r.ball.turret.broke, 'a turret does not break it').toBe(false);
+    expect(r.ball.turret.life).toBeGreaterThan(0);
+    expect(r.control.turret.broke, 'the control: a plain shot breaks on a turret').toBe(true);
+    expect(r.ball.eraser, 'the Eraser fires, and the ball is still flying').toEqual({ fired: true, left: true });
+    expect(r.control.eraser, 'the control: the Eraser wipes a plain shot').toEqual({ fired: true, left: false });
+  });
+
+  it('survives Nickel\'s shred, Marshmallow\'s scream, Clover\'s butterflies and Box\'s packing -- each a special that clears the enemy shots in reach -- and a plain boss shot in the same spot does not', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ['Nickel (II)', 'Marshmallow', 'Clover', 'Box'].forEach(function(who){
+        out[who] = {};
+        [false, true].forEach(function(ctl){
+          ${NEW_BALL('who', 'ctl')} c.invuln = 1e9; ${BALL_AT('c.x + 60', 'c.y')}
+          fireSpecial(c, {}); step(); b._atkTimer = 1e9;
+          out[who][ctl ? 'control' : 'ball'] = { alive: ${alive}, packed: !!c._packed, owner: ball.owner };
+        });
+      });
+      return out; })()`);
+    for (const who of ['Nickel (II)', 'Marshmallow', 'Clover', 'Box']) {
+      expect(r[who].ball, `${who}: the ball is still there, still the boss's, and not packed away`).toEqual({ alive: true, packed: false, owner: -2 });
+      expect(r[who].control.alive && !r[who].control.packed, `${who}: the control, a plain boss shot, is gone (or in her box)`).toBe(false);
+    }
+    expect(r.Box.control.packed, 'Box\'s control was caught').toBe(true);
+  });
+
+  it('a fighter\'s own swing and shot pass through it, and it flies on to its own end -- its three bounces -- while Nickel shreds the air beside it every few frames', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${NEW_BALL(JSON.stringify('Nickel (II)'), 'false')} c.invuln = 1e9; ${BALL_AT('c.x + 50', 'c.y')}
+      doAttack(c); spawnProj(c, { vx:12, vy:0, dmg:6, kb:4, r:10, color:'#f00', life:30 });
+      for (var i=0;i<6;i++){ step(); b._atkTimer = 1e9; c.invuln = 1e9; }
+      out.swing = ${alive};
+      // and the whole flight: three bounces, then it comes apart -- with a shred beside it as often as Nickel can
+      ${NEW_BALL(JSON.stringify('Nickel (II)'), 'false')} c.invuln = 1e9; var bounces = 0, casts = 0, orig = swarmBounce;
+      swarmBounce = function(p, s, hit){ bounces++; orig(p, s, hit); };
+      try {
+        for (var k=0;k<520 && ball.life > 0 && !ball.popped;k++){
+          if (k % 18 === 0){ c.x = ball.x - 40; c.y = ball.y; c.face = 1; c.spCd = 0; fireSpecial(c, {}); casts++; }
+          step(); b._atkTimer = 1e9; c.invuln = 1e9;
+        }
+      } finally { swarmBounce = orig; }
+      out.flight = { bounces: bounces, want: SWARM.ball[1].bounces, casts: casts, gone: !projectiles.some(function(p){ return p.swarm === 'ball'; }) };
+      return out; })()`);
+    expect(r.swing, 'a swing and a shot of a fighter are not in its way').toBe(true);
+    expect(r.flight.casts, 'Nickel shredded the air next to it again and again').toBeGreaterThan(5);
+    expect(r.flight.bounces, 'and it still ricocheted its three times').toBe(r.flight.want);
+    expect(r.flight.gone, 'and came apart on its own after the last').toBe(true);
+  });
+});
 describe('EGG SAC!: a lobbed sac, a crack, and hatchlings that swell', () => {
   it('is lobbed at where you stood -- onto the ledge if that is where you were -- harmless in flight and while it lies there, and cracks after 44 / 36 / 30 frames', () => {
     const r = W.eval(`(function(){ var out = {};
@@ -613,11 +618,11 @@ const DRAW_ALL = (stub) => `(function(){
       var s = { type:'boss', name:'The Bug Swarm', color:'#6a2ea0', sprite:'bug', attack:'swarm', r:78, x:500, y:gy-78, face:1, hp:100, maxHp:225, _phase:ph, _tel:0, _telKind:null, flash:0, _bossRush:true, homeX:500,
         _sw:{ d:1, f:hazardT - 5, ox:200, oy:gy-78, s:hazardT - 4, h:hazardT - 40, q:hazardT - 70, b:[300, gy-24] }, _hz:{ g:[[300, 60, 200, 0], [700, 40, 1e9, 1.4]], ps:1, pt:30 } };
       summons = [s];
-      [0, 18, 30].forEach(function(tel){ ['swarm','dodgepattern','swarmseek','dodgeball','eggsac'].forEach(function(k){ s._tel = tel; s._telKind = k;
+      [0, 18, 30].forEach(function(tel){ ['swarm','swarmseek','dodgeball','eggsac'].forEach(function(k){ s._tel = tel; s._telKind = k;
         ctx.save(); drawBossSprite(s); ctx.restore(); drawArenaDecor('hive'); swarmDrawFx(); }); });
       s._tel = 0; s.flash = 6; ctx.save(); drawBossSprite(s); ctx.restore(); s.flash = 0;
       drawArenaHazard('under'); drawArenaHazard('over');
-      var shots = [{ shape:'bugpurple', swarm:'tide' }, { shape:'bugred', swarm:'tide' }, { shape:'bugbig', swarm:'alpha', r:15 }, { shape:'bugsting', swarm:'seek', r:10 }, { shape:'bugsting', swarm:'pat', swarmTrap:true, r:11 },
+      var shots = [{ shape:'bugpurple', swarm:'tide' }, { shape:'bugred', swarm:'tide' }, { shape:'bugbig', swarm:'alpha', r:15 }, { shape:'bugsting', swarm:'seek', r:10 },
         { shape:'bugball', swarm:'ball', r:34 }, { shape:'bughatch', swarm:'hatch', r:6, ph:ph }, { shape:'bughatch', swarm:'hatch', r:20, ph:ph },
         { shape:'bugsac', swarm:'sac', tot:97, delay:90, lt:53, tx:300, ly:578 }, { shape:'bugsac', swarm:'sac', tot:97, delay:20, lt:53, tx:300, ly:578 }, { shape:'bugsac', swarm:'sac', tot:97, delay:2, lt:53, tx:300, ly:578 }];
       [0, 3, 5, 12, 25, 40, 60, 69].forEach(function(t){ shots.push({ shape:'bugend', swarm:'end', tot:70, delay:70 - t, ex:500, ey:gy-78, er:78 }); });
@@ -701,7 +706,7 @@ describe('the Bug Hive: the arena and its hazards', () => {
       return log.filter((e) => e.op === 'fill' && /^rgba\(255,90,210/.test(e.fill)).length; };
     expect(lit('_tel:0, _telKind:"swarm", _sw:{ d:1 }'), 'not winding up: none lit').toBe(0);
     expect(lit('_tel:20, _telKind:"swarm", _sw:{ d:1 }'), 'a tide about to come in at the left wall: its floor cell').toBe(1);
-    expect(lit('_tel:20, _telKind:"dodgepattern", _sw:{ d:-1 }'), 'a pattern about to come in at the right wall: all three of its cells').toBe(3);
+    expect(lit('_tel:20, _telKind:"dodgepattern", _sw:{ d:-1 }'), 'the bug tunnel is gone ("remove the bug tunnel attack.", 2026-10-01): nothing lights for it, let alone all three cells').toBe(0);
     expect(lit('_tel:20, _telKind:"swarmseek", _sw:{ d:1 }'), 'a move that comes from his body lights none').toBe(0);
     w.eval('BOSS_ARENA = null');
   });
@@ -756,7 +761,7 @@ describe('the Bug Hive: the arena and its hazards', () => {
     expect(r.p2.opened, 'it gapes for a beat before it snaps').toBeGreaterThan(100);
   });
 
-  it('the plant eats the bugs that come toward its maw -- a crest coming in from the left, a crawler -- from phase 2, but not the ones that come in at the right wall or the pattern\'s, and not while it sleeps', () => {
+  it('the plant eats the bugs that come toward its maw -- a crest coming in from the left, a crawler -- from phase 2, but not the ones that come in at the right wall, and not while it sleeps', () => {
     const r = W.eval(`(function(){ var out = {};
       var test = function(ph, o){ ${STAGE(300, 'ph')} var m = swarmMaw(), gy = groundY(); f.invuln = 1e9;
         var p = addProj(swarmShot(b, Object.assign({ x:(m.x0 + m.x1)/2, y:gy - 10, vx:0, vy:0, bossAtk:++BOSS_ATK_ID, life:200, lane:'floor', dy:0, bob:0, front:false, ph:1 }, o)));
@@ -764,14 +769,12 @@ describe('the Bug Hive: the arena and its hazards', () => {
       out.p1 = test(1, { swarm:'tide', dir:1 });
       out.crest = test(2, { swarm:'tide', dir:1 });
       out.fromRight = test(2, { swarm:'tide', dir:-1 });
-      out.pattern = test(2, { swarm:'pat', dir:1 });
       out.crawler = test(2, { swarm:'crawl', spd:0 });
       out.hatch = test(2, { swarm:'hatch', spd:0, r:9 });
       return out; })()`);
     expect(r.p1, 'asleep: nothing eaten').toBe(true);
     expect(r.crest, 'a crest coming toward it').toBe(false);
     expect(r.fromRight, 'the tide that comes in at the right wall starts beside the maw').toBe(true);
-    expect(r.pattern, 'the pattern is the same from either wall').toBe(true);
     expect(r.crawler).toBe(false);
     expect(r.hatch).toBe(false);
   });
@@ -785,7 +788,7 @@ describe('the ending: The Announcer presses a Delete Bugs Button and the bugs va
       banner = function(t, m, k, l){ said.push([String(t), k || null]); return _b(t, m, k, l); };
       try {
         BOSSRUSH.active = true; var pl = worldPlats[0], w0 = pl.w; pl._swx = { x:pl.x, w:w0 }; pl.w = w0 - 60; pl.x += 30;
-        b.x = 500; b.y = gy - b.r; b._sw = { d:-1 }; BOSS_MOVES.dodgepattern(b, f); addProj(swarmShot(b, { swarm:'hatch', shape:'bughatch', x:100, y:gy - 9, vx:1, vy:0, r:9, bossAtk:1, life:200 }));
+        b.x = 500; b.y = gy - b.r; b._sw = { d:-1 }; swarmWave(b, f, ++BOSS_ATK_ID); addProj(swarmShot(b, { swarm:'hatch', shape:'bughatch', x:100, y:gy - 9, vx:1, vy:0, r:9, bossAtk:1, life:200 }));
         var before = ${MINE}.length; b.hp = 0; var e0 = IMPACT_DUST.length; bossRushCheck();
         var scene = ${MINE}.filter(function(p){ return p.swarm === 'end'; });
         var out = { before: before, scene: scene.length, others: ${MINE}.filter(function(p){ return p.swarm !== 'end'; }).length, ex: scene[0].ex, er: scene[0].er, tot: scene[0].tot, delay: scene[0].delay, dmg: scene[0].dmg,
@@ -800,7 +803,7 @@ describe('the ending: The Announcer presses a Delete Bugs Button and the bugs va
     })()`);
     expect(r.scene, 'one scene').toBe(1);
     expect(r.others, 'his bugs are swept').toBe(0);
-    expect(r.before, 'a wall of them (45 in phase 1 now that the channel is a row wider: it was 60)').toBeGreaterThan(40);
+    expect(r.before, 'a tide of them (three crests of eight, and one hatchling)').toBeGreaterThan(20);
     expect([r.ex, r.er], 'where he fell, and how big he was').toEqual([500, 78]);
     expect(r.tot).toBe(70);
     expect(r.dmg, 'it hurts nobody').toBe(0);
@@ -864,14 +867,14 @@ describe("the Bug Swarm's art is the show's, wired, credited and picked", () => 
       expect(r[k][2]).toBeGreaterThanOrEqual(6);
       expect(r[k][2]).toBeLessThanOrEqual(44);
     }
-    // and the show's art is what each bug wears: the tide, the seekers and the pattern's extra bug draw with their art
+    // and the show's art is what each bug wears: the tide and the seekers draw with their art
     const shapes = W.eval(`({ tide: (function(){ ${STAGE(300, 1)} ${FIRE('swarm')} return ${MINE}[0].shape; })(), seek: (function(){ ${STAGE(300, 1)} BOSS_MOVES.swarmseek(b, f); return ${MINE}[0].shape; })() })`);
     expect(shapes).toEqual({ tide: 'bugpurple', seek: 'bugsting' });
   });
 });
 
 describe('no words on the screen, and nothing that is not his', () => {
-  it('a Boss Rush fight against him says only his five telegraph names and the phase cards', () => {
+  it('a Boss Rush fight against him says only his four telegraph names and the phase cards', () => {
     const { window: w } = loadMonolith();   // (a harness with gradients: beginMatchNow draws)
     const r = w.eval(`(function(){ var out = { banners: [] }; var _b = banner; banner = function(t, m, k, l){ out.banners.push({ text:String(t), kind:k || null }); return _b(t, m, k, l); };
       try {
@@ -882,7 +885,7 @@ describe('no words on the screen, and nothing that is not his', () => {
       } finally { banner = _b; }
       return out; })()`);
     const boss = r.banners.filter((b) => b.kind === 'boss').map((b) => b.text);
-    expect(new Set(boss)).toEqual(new Set(['SWARM WAVE!', 'DODGING PATTERN!', 'SEEKERS!', 'DODGEBALL!', 'EGG SAC!']));
+    expect(new Set(boss), 'four names: the tunnel\'s is gone ("remove the bug tunnel attack.", 2026-10-01)').toEqual(new Set(['SWARM WAVE!', 'SEEKERS!', 'DODGEBALL!', 'EGG SAC!']));
     const other = r.banners.filter((b) => b.kind !== 'boss' && !(b.text === 'GO!' || /^(KO'd!|You're out!|CAKE AT STAKE:)/.test(b.text) || b.kind === 'sys'));
     expect(other, 'no move popups, no status lines').toEqual([]);
     const sys = r.banners.filter((b) => b.kind === 'sys').map((b) => b.text);
@@ -903,7 +906,7 @@ describe('no words on the screen, and nothing that is not his', () => {
 });
 
 describe('a netcode client sees him', () => {
-  it('his wall and aim, his gathering, his goo and plant, his sac, his extra bug and the ending scene cross the snapshot, and the client draws them', () => {
+  it('his wall and aim, his gathering, his goo and plant, his sac and the ending scene cross the snapshot, and the client draws them', () => {
     const { window: w } = loadMonolith();
     const r = w.eval(`(function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
@@ -911,8 +914,7 @@ describe('a netcode client sees him', () => {
       summons = [{ type:'boss', name:'The Bug Swarm', color:'#6a2ea0', r:78, sprite:'bug', x:900, y:gy-78, hp:80, maxHp:225, face:-1, flash:0, homeX:900, _rage:false, _tel:20, _telKind:'dodgeball', _bossRush:true, attack:'swarm', _phase:3,
         _sw:{ d:-1, b:[300, gy-24], f:hazardT - 4, ox:200, oy:gy-78, s:hazardT - 2, h:hazardT - 200, q:hazardT - 100 }, _hz:{ g:[[300, 60, 200, 0], [700, 90, 1e9, 1.4]], ps:1, pt:30, sn:hazardT - 40 } }];
       var O = { owner:-2, ownerObj:{ team:-1, idx:-2 } };
-      projectiles = [Object.assign({ x:420, y:gy-30, vx:-8, vy:0, r:11, color:'#a05ae0', shape:'bugsting', swarm:'pat', swarmTrap:true, ph:2, bossAtk:5, life:50 }, O),
-        Object.assign({ x:390, y:gy-80, vx:0, vy:0, r:14, color:'#7fd63a', shape:'bugsac', swarm:'sac', tot:97, delay:40, lt:53, tx:300, ly:578, ph:2, bossAtk:6, life:1, dmg:0 }, O),
+      projectiles = [Object.assign({ x:390, y:gy-80, vx:0, vy:0, r:14, color:'#7fd63a', shape:'bugsac', swarm:'sac', tot:97, delay:40, lt:53, tx:300, ly:578, ph:2, bossAtk:6, life:1, dmg:0 }, O),
         Object.assign({ x:100, y:gy-9, vx:2, vy:0, r:14, color:'#a05ae0', shape:'bughatch', swarm:'hatch', ph:3, bossAtk:7, life:80 }, O),
         Object.assign({ x:500, y:gy+500, vx:0, vy:0, r:1, color:'#c02020', shape:'bugend', swarm:'end', tot:70, delay:35, ex:500, ey:gy-78, er:78, life:1, dmg:0 }, O)];
       var snap = JSON.parse(JSON.stringify(serializeState()));
@@ -920,16 +922,15 @@ describe('a netcode client sees him', () => {
       applySnapshot(snap);
       var err = null; try { summons.forEach(drawSummon); projectiles.forEach(drawProjectile); drawArenaDecor(BOSS_ARENA); drawArenaHazard('under'); drawArenaHazard('over'); swarmDrawFx(); } catch(e){ err = e.message; }
       return { boss: snap.summons[0], pj: snap.pj.a.map(function(r){ return r[8]; }), arena: BOSS_ARENA, err: err, n: projectiles.length, sac: projectiles.find(function(p){ return p.swarm === 'sac'; }), end: projectiles.find(function(p){ return p.swarm === 'end'; }),
-        trap: projectiles.find(function(p){ return p.swarmTrap; }), hz: summons[0]._hz };
+        hz: summons[0]._hz };
     })()`);
     expect(r.err).toBe(null);
     expect(r.arena, 'a client draws the hive').toBe('hive');
     expect(r.boss._sw, 'which wall, the ball\'s aim, when he gathered and was hit, the egg piles and the Queen').toMatchObject({ d: -1, b: [300, expect.any(Number)], ox: 200 });
     expect(r.boss._hz, 'the goo and the plant').toMatchObject({ g: [[300, 60, 200, 0], [700, 90, expect.any(Number), 1.4]], ps: 1, pt: 30 });
     expect(r.hz.g).toHaveLength(2);
-    expect(r.trap, 'the extra bug pulses on a client too').toMatchObject({ swarm: 'pat', swarmTrap: 1, shape: 'bugsting' });
     expect(r.sac, 'the sac, from its own timers').toMatchObject({ swarm: 'sac', tot: 97, delay: 40, lt: 53, tx: 300, ly: 578, shape: 'bugsac' });
     expect(r.end, 'and the Delete Bugs scene').toMatchObject({ swarm: 'end', tot: 70, delay: 35, ex: 500, er: 78, shape: 'bugend' });
-    expect(r.n).toBe(4);
+    expect(r.n).toBe(3);
   });
 });
