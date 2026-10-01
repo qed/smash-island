@@ -15603,9 +15603,11 @@ function spawnCobsBoss(){
     _tel:0, _telKind:null, _phase:1, _marks:0, _atkTimer:150, _moveN:0, _spN:0, _bag:[], _lastCard:null,
     _rings:[], _portals:[], _xs:[], _ship:null, _tick:null, _plug:null, _knife:null, _stompT:0, _burst:null, _track:[], _trail:[],
     _speechT:0, _speechHit:0, _spoke:false, _rageT:0, _glassesOff:0, _glassesBroken:false, _stuckT:0, _holdT:0, _lungeT:0, _redT:0, _popCd:0,
-    _dying:0, _introT:45, _rage:false, flash:0, _orbitA:null, _orbitDir:1, _orbitFlipT:0, _swoopT:0, _farT:0, _teleCd:0 };
+    _dying:0, _introT:45, _rage:false, flash:0, _orbitA:null, _orbitDir:1, _orbitFlipT:0, _swoopT:0, _farT:0, _teleCd:0,
+    _hop:{ ph:'gone', t:0, intro:true, x0:x, y0:y }, _tierT:-999, _elev:0 };   // the fight opens the way every tier line does: he comes in off the top of the screen
   summons.push(s);
   BOSS_ARENA = COBS_BOSS.arena;
+  cobsDecorReset();
   return s;
 }
 
@@ -15625,7 +15627,7 @@ function cobsTakeDamage(s, dmg, from){
   if(s.hp > 0 && s.hp <= s.maxHp*COBS_POP_HP) cobsPopKernels(s);
   return d;
 }
-// POPPING POINT: 1-3 kernels off him at the nearest fighter, 2% each, at most one pop every COBS_POP_CD frames so a
+// POPPING POINT: a ring of kernels off him (COBS_POP_RING), 2% each, at most one pop every COBS_POP_CD frames so a
 // multi-hit move is one pop, not a spray.
 function cobsPopKernels(s){
   if(s._popCd > 0) return;
@@ -15643,34 +15645,26 @@ function cobsPopKernels(s){
 function updateCobs(s, tgt){
   s._rings = s._rings || []; s._portals = s._portals || []; s._xs = s._xs || []; s._bag = s._bag || []; s._trail = s._trail || [];   // a boss built by hand (the tests) starts empty
   if(cobsFx.length){ for(const e of cobsFx){ e.life--; if(e.kind==='glasses'){ e.x += e.vx; e.y += e.vy; e.vy += 0.5; } else if(e.kind==='glass'){ e.x += e.vx; e.y += e.vy; e.vy = Math.min(14, e.vy + 0.25); } } cobsFx = cobsFx.filter(e=>e.life>0); }
-  if(s._dying>0){
-    // "[A big explosion starts, turning Steve Cobs into popcorn, killing him.]" (Objects in Mirror/Transcript)
-    s.flash = (s._dying % 8 < 4) ? 1 : 0;
-    if(s._dying % 5 === 0) puff(s.x + (Math.random()*2-1)*s.r*0.5, s.y + (Math.random()*2-1)*s.r*0.6, '#f0d010', 3);
-    if(--s._dying <= 0){
-      for(let i=0;i<60;i++) puff(s.x + (Math.random()*2-1)*s.r, s.y + (Math.random()*2-1)*s.r, i%3 ? '#fff8e0' : '#f0d010', 8);
-      s.life = 0; COBSFIGHT.won = true; shake(14);
-      banner("I DON'T REMEMBER IT BLINKING.", 1800, 'boss');   // his last words (Steve Cobs/Quotes), verbatim
-    }
-    return;
-  }
+  s._elev = (s._elev || 0) + (((s._tel > 0 && s._telKind==='keynote') || s._rings.length || s._burst ? 1 : 0) - (s._elev || 0))*0.06;   // the backdrop's elevator rises to the podium for the keynote, then lowers
+  if(cobsFx.length) cobsFxPhysics();
+  if(s._dying>0){ cobsEndStep(s); return; }   // his ending scene (COBS_END)
   if(s.hp <= 0){ cobsBeginDeath(s); return; }
   if(s._introT > 0 && --s._introT === 0) banner("GREETINGS.", 1400, 'boss');   // "Clock me in the face? How brutish... Anyway. Greetings." (Steve Cobs/Quotes)
   // THE TIER LINES: "All together, every 500" -- every attack a tier up at 2000, 1500, 1000 and 500, and each line pays your
   // side what One's pays (onePhaseReward: a heal and a stock back, up to what you started with).
-  while((s._marks||0) < COBS_TIER_MAX - 1 && s.hp <= s.maxHp - COBS_PHASE_HP*((s._marks||0) + 1)){ cobsTierUp(s); onePhaseReward(); }
+  while((s._marks||0) < COBS_TIER_MAX - 1 && s.hp <= s.maxHp - COBS_PHASE_HP*((s._marks||0) + 1)){ cobsTierUp(s); onePhaseReward(); }   // (his hop off the top rides each line, cobsHopStep)
   s._phase = cobsTier(s); s._rage = s._rageT > 0;
   if(s._rageT > 0) s._rageT--;
   if(s._glassesOff > 0) s._glassesOff--;
   if(s._popCd > 0) s._popCd--;
   if(s._redT > 0) s._redT--;
   // KEYNOTE RAGE at 60%: he stops for the speech; what you do to him during it decides the rage (COBS_SPEECH_STOP)
-  if(!s._spoke && s.hp <= s.maxHp*COBS_SPEECH_HP){
+  if(!s._spoke && s.hp <= s.maxHp*COBS_SPEECH_HP && !s._hop){   // (the 1500 line is a tier line too: he is back from the top first)
     s._spoke = true; s._speechT = COBS_SPEECH_T; s._speechHit = 0; s._tel = 0; s._telKind = null; s._holdT = 0;
     banner("NO. REGRETS.", 1600, 'boss');   // "So thanks for letting me have NO. Regrets." (Steve Cobs/Quotes)
   } else if(s._speechT > 0 && --s._speechT === 0){
     const rage = Math.round(COBS_RAGE_T*Math.max(0, 1 - (s._speechHit||0)/COBS_SPEECH_STOP));
-    if(rage > 0){ s._rageT = rage; s._glassesBroken = true; try{ SFX.bossPhase(); }catch(e){} shake(8);
+    if(rage > 0){ s._rageT = rage; s._glassesBroken = true; try{ SFX.bossPhase(); }catch(e){} cobsImpact(s.x, cobsFloor().y, { shake:14, dust:1.5, debris:5, scar:true, r:100 });
       for(let i=0;i<20;i++) puff(s.x, s.y, i%2 ? '#f0d010' : '#6a6a6a', 6);
       banner("THE MOST PAINFUL WAY!", 1600, 'boss'); }   // "I'm going to KILL YOU, in the most painful way I can." (Steve Cobs/Quotes)
     s._atkTimer = Math.min(s._atkTimer, 30);
@@ -15682,7 +15676,9 @@ function updateCobs(s, tgt){
   // stuck with his blade in the floor, or lunging.
   const chase = oneChaseTarget(s, tgt);
   const held = s._speechT > 0 || s._holdT > 0 || s._stuckT > 0;
-  if(s._dive){
+  if(s._hop){
+    cobsHopStep(s, chase);
+  } else if(s._dive){
     cobsDiveStep(s);
   } else if(s._lungeT > 0){
     s._lungeT--; s.x = clamp(s.x + s._lungeDir*s._lungeSpd, s.r*0.5, WW - s.r*0.5); s.vx = 0; s.vy = 0; s.face = s._lungeDir;
@@ -15707,7 +15703,7 @@ function updateCobs(s, tgt){
     return;
   }
   if(s.flash > 0) s.flash--;
-  if(--s._atkTimer <= 0 && tgt && !s._dive && !s._chain){   // (no new turn while he is diving or the puddles are bursting)
+  if(--s._atkTimer <= 0 && tgt && !s._dive && !s._chain && !s._hop){   // (no new turn while he is diving or the puddles are bursting)
     const k = cobsNextMove(s);
     cobsFightTelegraph(s, k, tgt);
     banner(cobsMoveLabel(s, k), 700, 'boss');
@@ -15730,9 +15726,9 @@ function cobsFightTelegraph(s, k, tgt){   // (not cobsBeginTelegraph: that is th
   s._vanFrom = k==="van" ? (a.x > WW*0.5) : null;
 }
 function cobsBeginDeath(s){
-  s._dying = 70; s._tel = 0; s._telKind = null; s.vx = 0; s.vy = 0; s._speechT = 0; s._holdT = 0; s._lungeT = 0;
+  s._dying = COBS_END.total; s._tel = 0; s._telKind = null; s.vx = 0; s.vy = 0; s._speechT = 0; s._holdT = 0; s._lungeT = 0;
   if(s._plug && s._plug.stash) cobsReplug(s, s._plug, true);
-  s._plug = null; s._ship = null; s._rings = []; s._portals = []; s._xs = []; s._tick = null; s._knife = null; s._stompT = 0; s._burst = null; s._track = []; s._rows = []; s._yank = null; s._trail = []; s._handRows = null; s._dive = null; s._chain = null; s._stompChain = false;
+  s._plug = null; s._ship = null; s._rings = []; s._portals = []; s._xs = []; s._tick = null; s._knife = null; s._stompT = 0; s._burst = null; s._track = []; s._rows = []; s._yank = null; s._trail = []; s._handRows = null; s._dive = null; s._chain = null; s._stompChain = false; s._hop = null;
   projectiles = projectiles.filter(p=>p.owner!==-2); cobsFx = [];
   for(const m of summons) if(m.type==="metag" || m.type==="mephoneunit"){ m.life = 0; for(let i=0;i<8;i++) puff(m.x, m.y, m.color, 4); }
   worldPlats = worldPlats.filter(p=>!p._cobsPane && !p._cobsWall && !p._springy);
@@ -15742,9 +15738,86 @@ function cobsBeginDeath(s){
 function cobsTierUp(s){
   s._marks = (s._marks||0) + 1;
   try{ SFX.bossPhase(); }catch(e){}
-  shake(10);
+  cobsImpact(s.x, s.y, { shake:20, dust:0, debris:0 });   // the building shudders: the glass cracks a tier further (the backdrop reads _tierT)
   for(let i=0;i<24;i++) puff(s.x, s.y, i%2 ? '#f0d010' : '#f4f4f8', 7);
+  s._tierT = hazardT; cobsDecorShed(cobsTier(s));
+  // BIGGER MOVEMENT: at each tier line he flies off the top of the screen on a cloud puff and comes back from the far edge; whatever
+  // he was winding up is dropped, and no turn starts until he is back
+  s._hop = { ph:'up', t:0, x0:s.x, y0:s.y };
+  s._tel = 0; s._telKind = null; s._lungeT = 0; s._stuckT = 0; s._yank = null; s._dive = null; s._atkTimer = Math.max(s._atkTimer, COBS_HOP.up + COBS_HOP.gone + COBS_HOP.in + 24);
   return cobsTier(s);
+}
+// ---- BIGGER MOVEMENT: off the top of the screen and back ----
+// Up and off the top (out the side he was on), a beat out of sight, then in from the screen's far edge, flying fast and settling on his orbit.
+const COBS_HOP = { up:16, gone:8, intro:22, in:26 };
+const COBS_MOVE_FAST = Object.assign({}, COBS_MOVE, { accel:COBS_MOVE.accel*2.2, max:COBS_MOVE.max*2.4 });
+function cobsHopStep(s, chase){
+  const H = s._hop, E = COBS_HOP, top = cobsTopY() - s.r*2.2;
+  H.t++;
+  if(H.ph === 'up'){
+    const u = Math.min(1, H.t/E.up);
+    s.y = H.y0 + (top - H.y0)*u*u; s.x = clamp(H.x0 + (chase ? (Math.sign(H.x0 - chase.x) || 1)*u*160 : 0), s.r, WW - s.r); s.vx = 0; s.vy = 0;
+    if(H.t%2 === 0) puff(s.x, s.y + s.r*0.7, '#f4f4f8', 5);
+    if(H.t >= E.up){ H.ph = 'gone'; H.t = 0; }
+  } else if(H.ph === 'gone'){
+    if(H.t === 1){   // the far edge of the screen from you
+      const z = viewZoom(), vl = camX + W/2 - (W/2)/z, vr = camX + W/2 + (W/2)/z, px = chase ? chase.x : (vl + vr)/2;
+      H.x1 = clamp((px - vl > vr - px) ? vl + 90 : vr - 90, s.r, WW - s.r);
+    }
+    s.x = H.x1 != null ? H.x1 : s.x; s.y = top; s.vx = 0; s.vy = 0;
+    if(H.t >= (H.intro ? E.intro : E.gone)){ H.ph = 'in'; H.t = 0; for(let i=0;i<10;i++) puff(s.x, s.y + s.r*0.5, '#f4f4f8', 6); }
+  } else {
+    oneMove(s, chase, COBS_MOVE_FAST);
+    if(H.t%2 === 0) puff(s.x, s.y + s.r*0.6, '#f4f4f8', 4);
+    if(H.t >= E.in) s._hop = null;
+  }
+}
+// ---- HIS ENDING (Round 15: "a short canon ending scene when he's beaten (no text)"; Round 11: "Endings: 'All of them'") ----
+// "[A big explosion starts, turning Steve Cobs into popcorn, killing him.]" (Objects in Mirror/Transcript); "His limbless remains are highly
+// burnt and darker. Many of his kernels are missing, popped, and/or charred" (his page). He is not in Boss Rush, so BOSS_ENDINGS never plays for him; this is
+// the same shape in his own fight flow: cobsBeginDeath sweeps his props and starts the clock (_dying, COBS_END.total frames), cobsEndStep is the scene, and
+// when it is over COBSFIGHT.won is set and the fight ends as it always did -- the prize reveal after it is unchanged. No text at all: the scene is silent.
+// Swelling and popping for COBS_END.boom frames, then the boom: he is gone, a hundred popped kernels burst out and bounce across the floor, and his burnt
+// husk falls where he hung and lies there.
+const COBS_END = { total:150, boom:34 };
+function cobsEndStep(s){
+  const E = COBS_END, d = E.total - s._dying;   // frames since he fell
+  s.vx = 0; s.vy = 0;
+  if(d < E.boom){
+    s._swell = 1 + 0.3*d/E.boom; s.flash = (d % 8 < 4) ? 1 : 0;
+    if(d % 4 === 0){ puff(s.x + (Math.random()*2-1)*s.r*0.5, s.y + (Math.random()*2-1)*s.r*0.6, '#f0d010', 3); cobsImpact(s.x, s.y, { shake:3, dust:0, debris:0 }); }
+  } else if(d === E.boom){
+    s._gone = true; s._swell = 1; s.flash = 0;
+    cobsImpact(s.x, s.y, { shake:30, dust:0, debris:0 });
+    cobsFx.push({ kind:'boom', x:s.x, y:s.y, life:26, max:26 });
+    for(let i=0;i<46;i++){ const a = Math.random()*Math.PI*2, v = 3 + Math.random()*8, L = 150 + Math.floor(Math.random()*60);
+      cobsFx.push({ kind:'corn', x:s.x + Math.cos(a)*s.r*0.3, y:s.y + Math.sin(a)*s.r*0.4, vx:Math.cos(a)*v, vy:Math.sin(a)*v - 5, rot:Math.random()*6.28, vr:(Math.random()*2 - 1)*0.3, sz:7 + Math.random()*8, life:L, max:L, rest:false, bounced:0, burnt:i%5 === 0 }); }
+    cobsFx.push({ kind:'husk', x:s.x, y:s.y, vx:(Math.random()*2 - 1)*2, vy:-8, rot:0, vr:0.07, sz:s.r, life:E.total, max:E.total, rest:false, bounced:0 });
+    for(let i=0;i<40;i++) puff(s.x + (Math.random()*2-1)*s.r, s.y + (Math.random()*2-1)*s.r, i%3 ? '#fff8e0' : '#f0d010', 8);
+  } else if(d % 12 === 0 && d < E.boom + 70){ puff(s.x + (Math.random()*2-1)*s.r*1.4, s.y - s.r*0.5, '#fff8e0', 4); }
+  if(--s._dying <= 0){ s.life = 0; COBSFIGHT.won = true; }   // the fight ends now, as it always did
+}
+// What falls in the scene (and the glass): popped kernels and the husk bounce off the surfaces under them, twice at most, and lie.
+function cobsFxPhysics(){
+  for(const e of cobsFx){
+    if(e.kind !== 'corn' && e.kind !== 'husk') continue;
+    if(e.rest) continue;
+    e.vy += 0.5; e.x += e.vx; e.y += e.vy; e.rot += e.vr;
+    if(e.vy > 0){
+      const top = vanLanding(e.x, e.y - e.vy, e.y + (e.kind === 'husk' ? e.sz*0.5 : 0));
+      if(top !== null){ e.y = top - (e.kind === 'husk' ? e.sz*0.5 : 0); e.vy = -e.vy*0.45; e.vx *= 0.7; e.vr *= 0.6;
+        if(++e.bounced >= 2 || Math.abs(e.vy) < 1.5){ e.rest = true; e.vx = 0; e.vy = 0; e.vr = 0; } }
+      else if(e.y > WH + 200) e.life = 0;
+    }
+  }
+}
+// A dark copy of his broken-glasses render (cached): the burnt husk.
+const COBS_BURNT = {};
+function cobsBurntSprite(key, im){
+  let c = COBS_BURNT[key];
+  if(!c){ c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0); g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(14,8,4,0.62)'; g.fillRect(0, 0, c.width, c.height); COBS_BURNT[key] = c; }
+  return c;
 }
 // THE ROTATION: two of the adapted set, then the next special, in the owner's order, round and round ("all 5 attacks should
 // cycle" was One's rule; his six do the same). The base attacks come out of a shuffled bag of thirteen. A special whose thing
@@ -15842,7 +15915,7 @@ function cobsPlacePane(x, top, paneT){
   const bx = clamp(x - COBS_PANE_W/2, 4, WW - COBS_PANE_W - 4);
   worldPlats.push({ x:bx, y:top - COBS_PANE_H, w:COBS_PANE_W, h:COBS_PANE_H, solid:true, _cobsPane:true, _until:hazardT + (paneT||300) });
   for(let i=0;i<10;i++) puff(x, top - 4, '#cfe8ff', 5);
-  shake(5);
+  cobsImpact(x, top, { shake:5, dust:0.5, debris:4, r:60, color:'#cfe8ff' });   // the glass lands: chips of it fly
 }
 // A MeTag's wall: "seemingly indestructible and transparent walls" -- a solid, see-through slab from the floor up, on the
 // far side of the fighter from him, so you are boxed on his side of the stage, for `wallT` frames.
@@ -15874,7 +15947,91 @@ function cobsSpawnUnit(s, T, side){
 // Every heavy hit of his goes through impact() (shake, dust, debris, a floor scar -- the boss engine kit); a big one also tells the
 // backdrop (cobsDecorHit: the cloud bank puffs, an old product falls off its shelf).
 function cobsImpact(x, y, o){ impact(x, y, o); if(o && o.shake >= 12) cobsDecorHit(); }
-function cobsDecorHit(){}
+// ---- THE BACKDROP REACTS (boss-plan-secret.md 3.2.3): the glass cracks tier by tier, the ad screens, the elevator, the cloud bank, the shelves ----
+// A building of glass on a cloud (Meeple Headquarters), drawn in screen space behind the stage (drawArenaDecor 'meeplehq' -> drawCobsDecor). It reads his tier and
+// his clocks (_tierT, _redT, _elev) and a little state of its own (COBS_DECOR: which products have been knocked off their shelves, the pieces falling off the
+// walls, when the cloud was last struck) -- all steady changes, nothing that flashes, and no text.
+let COBS_DECOR = { fallen:{}, shed:[], pulse:-999 };
+function cobsDecorReset(){ COBS_DECOR = { fallen:{}, shed:[], pulse:-999 }; }
+const COBS_SHELF = [ [0.04, 0.34, 'phone'], [0.09, 0.34, 'watch'], [0.14, 0.34, 'tablet'], [0.19, 0.34, 'phone'], [0.04, 0.50, 'tablet'], [0.09, 0.50, 'phone'], [0.14, 0.50, 'watch'], [0.19, 0.50, 'phone'],
+  [0.81, 0.34, 'tablet'], [0.86, 0.34, 'phone'], [0.91, 0.34, 'watch'], [0.96, 0.34, 'phone'], [0.81, 0.50, 'phone'], [0.86, 0.50, 'watch'], [0.91, 0.50, 'phone'], [0.96, 0.50, 'tablet'] ];
+function cobsDecorHit(){   // a big impact: the cloud under the floor puffs, and an old product is knocked off its shelf
+  const D = COBS_DECOR; D.pulse = hazardT;
+  const free = []; for(let i=0;i<COBS_SHELF.length;i++) if(!D.fallen[i]) free.push(i);
+  if(free.length){ const i = free[Math.floor(Math.random()*free.length)]; D.fallen[i] = { t0:hazardT, vx:(Math.random()*2 - 1)*1.6, rot:(Math.random()*2 - 1)*0.12 }; }
+}
+function cobsDecorShed(tier){   // a tier line: pieces come off the walls (glass from tier 2, the cloud's edge from tier 4)
+  const D = COBS_DECOR, n = [0, 0, 6, 10, 16, 26][tier] || 0;
+  for(let i=0;i<n;i++) D.shed.push({ k:'glass', x0:(Math.random()*0.9 + 0.05)*W, y0:H*(0.1 + Math.random()*0.5), vx:(Math.random()*2 - 1)*1.4, vy:Math.random()*2, t0:hazardT, rot:Math.random()*6.28 });
+  if(tier >= 4) for(let i=0;i<5;i++) D.shed.push({ k:'cloud', x0:(Math.random()*0.9 + 0.05)*W, y0:H*0.84, vx:(Math.random()*2 - 1)*1.2, vy:0.5, t0:hazardT, rot:0 });
+  if(D.shed.length > 70) D.shed.splice(0, D.shed.length - 70);
+}
+const cobsRnd = (a, b)=>{ const v = Math.sin(a*127.1 + b*311.7)*43758.5453; return v - Math.floor(v); };
+function cobsShelfItem(c, kind, x, y, a){
+  c.save(); c.translate(x, y); c.rotate(a || 0); c.fillStyle = 'rgba(20,26,40,0.32)'; c.strokeStyle = 'rgba(200,215,235,0.18)'; c.lineWidth = 1;
+  if(kind === 'phone'){ c.beginPath(); c.rect(-6, -22, 12, 22); c.fill(); c.stroke(); }
+  else if(kind === 'tablet'){ c.beginPath(); c.rect(-13, -18, 26, 18); c.fill(); c.stroke(); }
+  else { c.beginPath(); c.rect(-3, -22, 6, 22); c.fill(); c.beginPath(); c.arc(0, -11, 8, 0, 7); c.fill(); c.stroke(); }
+  c.restore();
+}
+function drawCobsDecor(){
+  const s = summons.find(o=>o._cobsFight), tier = s ? cobsTier(s) : 1, t = hazardT, D = COBS_DECOR;
+  const grow = s ? clamp((hazardT - (s._tierT || -999))/45, 0, 1) : 1, red = !!(s && s._redT > 0), elev = s ? (s._elev || 0) : 0;
+  let cr = 0, br = 0, gone = 0;   // what it draws this frame: cracks, broken panes, panes gone (D.last, read by the tests)
+  // the glass panes of the building: cracks tier by tier (hairline at 2, crazed at 3, some panes gone at 4, only cloud and sky at 5)
+  for(let i=0;i<8;i++){
+    const px = ((i*170 - camX*0.3)%(W+170)+W+170)%(W+170)-85, y0 = H*0.08, ph = H*0.62, pw = 110;
+    const broken = (tier === 4 && i%2 === 0);
+    if(tier >= 5){ ctx.fillStyle = 'rgba(20,28,44,0.35)'; ctx.fillRect(px - 2, y0, 4, ph); ctx.fillRect(px + pw - 2, y0, 4, ph); gone++; continue; }   // the frames stand, the glass is gone
+    ctx.fillStyle = 'rgba(200,225,255,0.06)';
+    if(broken){ br++; ctx.beginPath(); ctx.moveTo(px, y0 + ph); ctx.lineTo(px, y0 + ph*(0.45 + cobsRnd(i, 1)*0.25));
+      for(let k=1;k<=5;k++) ctx.lineTo(px + pw*k/5, y0 + ph*(0.40 + cobsRnd(i, k + 2)*0.35)); ctx.lineTo(px + pw, y0 + ph); ctx.closePath(); ctx.fill(); }
+    else ctx.fillRect(px, y0, pw, ph);
+    if(tier >= 2 && (tier >= 3 || i%3 === 0)){
+      const n = tier === 2 ? 3 : 7, ox = px + 24 + cobsRnd(i, 9)*62, oy = y0 + 70 + cobsRnd(i, 10)*(ph - 190);
+      ctx.strokeStyle = 'rgba(235,245,255,' + (tier === 2 ? 0.30 : 0.45) + ')'; ctx.lineWidth = 1; ctx.beginPath();
+      cr += n;
+      for(let k=0;k<n;k++){ const a = cobsRnd(i, 20 + k)*6.28, L = (40 + cobsRnd(i, 40 + k)*110)*(tier === 2 ? 1 : 1.2)*grow, mx = ox + Math.cos(a)*L*0.55 + (cobsRnd(i, 60 + k) - 0.5)*14, my = oy + Math.sin(a)*L*0.55 + (cobsRnd(i, 80 + k) - 0.5)*14;
+        ctx.moveTo(ox, oy); ctx.lineTo(mx, my); ctx.lineTo(ox + Math.cos(a)*L, oy + Math.sin(a)*L); }
+      ctx.stroke();
+    }
+  }
+  // the ad screens on the walls: Meeple products, cyan; red under DELETION's siren; dark at tier 5
+  for(let j=0;j<3;j++){
+    const ax = W*(0.13 + 0.37*j) - 75, ay = H*0.16, kind = ['phone', 'watch', 'tablet'][(Math.floor(t/420) + j)%3];
+    ctx.fillStyle = 'rgba(10,14,24,0.55)'; ctx.fillRect(ax - 4, ay - 4, 158, 96);
+    ctx.fillStyle = tier >= 5 ? 'rgba(8,8,12,0.75)' : (red ? 'rgba(255,50,50,0.34)' : 'rgba(80,190,255,' + (0.17 + 0.04*Math.sin(t*0.03 + j)) + ')'); ctx.fillRect(ax, ay, 150, 88);
+    if(tier < 5){ ctx.fillStyle = red ? 'rgba(255,200,200,0.28)' : 'rgba(220,245,255,0.26)';
+      if(kind === 'phone') ctx.fillRect(ax + 63, ay + 12, 24, 64); else if(kind === 'tablet') ctx.fillRect(ax + 38, ay + 20, 74, 48); else { ctx.fillRect(ax + 68, ay + 8, 14, 72); ctx.beginPath(); ctx.arc(ax + 75, ay + 44, 22, 0, 7); ctx.fill(); } }
+    else { ctx.strokeStyle = 'rgba(180,190,210,0.25)'; ctx.beginPath(); ctx.moveTo(ax + 20, ay); ctx.lineTo(ax + 60, ay + 50); ctx.lineTo(ax + 40, ay + 88); ctx.stroke(); }
+  }
+  // the cloud bank under the floor: it puffs where the building was struck, and from tier 4 sheds pieces of its edge
+  const pk = Math.max(0, 1 - (t - D.pulse)/26);
+  ctx.fillStyle = 'rgba(240,246,255,0.16)';
+  for(let i=0;i<9;i++){ const cx = ((i*150 - camX*0.12)%(W+150)+W+150)%(W+150)-75, cy = H*0.86 + (i%2)*14 - pk*16*(0.5 + cobsRnd(i, 5)); ctx.beginPath(); ctx.ellipse(cx, cy, 90 + pk*14, 26 + pk*8, 0, 0, 7); ctx.fill(); }
+  ctx.fillStyle = 'rgba(120,160,90,0.14)'; ctx.fillRect(0, H*0.95, W, H*0.05);   // the island, far below
+  ctx.fillStyle = 'rgba(244,244,248,0.35)'; ctx.strokeStyle = 'rgba(28,28,28,0.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(W*0.5 - camX*0.02, 44, 9, 0, 7); ctx.fill(); ctx.stroke();   // the Meeple tag
+  // the shelves: old products in silhouette, and the ones a big impact has knocked off (they fall, tumbling)
+  ctx.fillStyle = 'rgba(200,215,235,0.16)';
+  for(const yy of [0.34, 0.50]){ ctx.fillRect(W*0.02, H*yy, W*0.21, 3); ctx.fillRect(W*0.79, H*yy, W*0.21, 3); }
+  COBS_SHELF.forEach((it, i)=>{ const F = D.fallen[i], x = W*it[0], y = H*it[1];
+    if(!F){ cobsShelfItem(ctx, it[2], x, y, 0); return; }
+    const dt = t - F.t0, fy = y + 0.5*0.35*dt*dt;
+    if(fy < H + 40) cobsShelfItem(ctx, it[2], x + F.vx*dt, fy, F.rot*dt); });
+  // pieces off the walls: glass and cloud, falling
+  for(const p of D.shed){ const dt = t - p.t0; if(dt > 220) continue; const y = p.y0 + p.vy*dt + 0.5*0.2*dt*dt; if(y > H + 30) continue;
+    ctx.save(); ctx.translate(p.x0 + p.vx*dt, y); ctx.rotate(p.rot + dt*0.04);
+    if(p.k === 'glass'){ ctx.fillStyle = 'rgba(210,232,255,0.5)'; ctx.beginPath(); ctx.moveTo(-8, -3); ctx.lineTo(9, 0); ctx.lineTo(-3, 7); ctx.closePath(); ctx.fill(); }
+    else { ctx.fillStyle = 'rgba(240,246,255,0.3)'; ctx.beginPath(); ctx.ellipse(0, 0, 26, 12, 0, 0, 7); ctx.fill(); }
+    ctx.restore(); }
+  // the elevator: a car on its rails at the right, up at the podium's height for the keynote, down again after
+  D.last = { tier, cracks:cr, broken:br, gone, screens:tier >= 5 ? 'dark' : (red ? 'red' : 'cyan'), elev, fallen:Object.keys(D.fallen).length, shed:D.shed.length };
+  const ex = W*0.93, top = H*0.10, car = H*(0.62 - 0.30*elev);
+  ctx.fillStyle = 'rgba(20,28,44,0.30)'; ctx.fillRect(ex - 44, top, 5, H*0.72); ctx.fillRect(ex + 39, top, 5, H*0.72);
+  ctx.strokeStyle = 'rgba(200,215,235,0.22)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(ex, top); ctx.lineTo(ex, car); ctx.stroke();
+  ctx.fillStyle = 'rgba(210,225,245,0.20)'; ctx.fillRect(ex - 34, car, 68, 80); ctx.strokeStyle = 'rgba(28,28,28,0.45)'; ctx.strokeRect(ex - 34, car, 68, 80);
+  const gap = 4 + 22*clamp((elev - 0.85)/0.15, 0, 1); ctx.fillStyle = 'rgba(10,14,24,0.5)'; ctx.fillRect(ex - gap/2, car + 6, gap, 68);
+}
 
 // ---- HIS SHOTS' OWN BRAINS (cobsTickShots, once a frame from cobsTickEntities) ----
 // New projectile behaviour -- the boomerangs' turns, the crumbs' run along a surface, and (below, with their twists) the watches'
@@ -16137,7 +16294,7 @@ const COBS_MOVES = {
     for(let i=0;i<T.n;i++){ const x = clamp(x0 + (i===0 ? 0 : (i%2 ? -1 : 1)*Math.ceil(i/2)*150), 90, WW - 90);
       s._portals.push({ x, y:y0, t:T.T, T:T.T, id, dmg, kb:T.kb, hit:{}, pull:T.pull || 0, pullR:T.pullR || 0 });
       for(let j=0;j<12;j++) puff(x, y0, COBS_BOSS.color, 5); }
-    shake(5);
+    cobsImpact(s.x, s.y, { shake:5, dust:0, debris:0 });
   },
   // ---- Springy's kit, his ----
   springs(s, tgt, id){
@@ -16207,7 +16364,7 @@ const COBS_MOVES = {
     const T = cobsT(s, 'deletion'), dmg = cobsDmg()*T.dmg;
     const xs = (s._xs && s._xs.length) ? s._xs : (tgt ? cobsXSpots(s, tgt, T) : []);
     for(const X of xs){ X.live = true; X.t = 0; X.id = id; X.dmg = dmg; X.lock = T.lock; X.spd = T.spd; X.trail = T.trail || 0; X.trailDmg = T.trailDmg || 0; X.trailHit = {}; }
-    s._xs = xs; s._redT = 40; shake(8);
+    s._xs = xs; s._redT = 40; cobsImpact(s.x, s.y, { shake:8, dust:0, debris:0 });
     return xs.length;
   },
   ticktock(s, tgt, id){
@@ -16330,7 +16487,7 @@ function cobsTickEntities(s, tgt){
       const T = cobsT(s, 'ticktock'), id = ++BOSS_ATK_ID, dmg = cobsDmg()*T.dmg;
       cobsThrowWatches(s, tgt, id, T.volley, T, dmg, 0.3);
       if(T.pole && tgt) cobsPole(s, tgt.x, oneSurf(tgt.x, feetY(tgt) - 4), cobsT(s, 'memurder'), id, cobsDmg());
-      s._tick = null; s._tickBoom = 20; shake(8);
+      s._tick = null; s._tickBoom = 20; cobsImpact(s.x, s.y, { shake:8, dust:0, debris:0 });
     }
   }
   if(s._tickBoom > 0) s._tickBoom--;
@@ -16493,7 +16650,7 @@ function cobsStomp(s){
     for(let i=0;i<10;i++) puff(p.x, p.y - 4, i%2 ? '#fff8e0' : '#f0d010', 5);
     p.delay = 0; p.life = 0;
   }
-  if(n) shake(8);
+  if(n) cobsImpact(s.x, s.y + s.r, { shake:8, dust:0.6, debris:2, r:60, color:'#fff8e0' });
   for(let i=0;i<8;i++) puff(s.x, s.y + s.r*0.8, '#f4f4f8', 4);
   return n;
 }
@@ -16517,7 +16674,7 @@ function cobsPoof(s, P){
   for(const p of P.stash) for(let i=0;i<3;i++) puff(p.x + Math.random()*p.w, p.y, '#cfe8ff', 4);
   projectiles = projectiles.filter(p=>p.cobsPane);
   s._ship = null; s._track = [];   // what [POOF] erased leaves nothing behind (no crumbs from a box the slate took)
-  cobsFx.push({ kind:'poof', life:30, max:30 }); shake(10);
+  cobsFx.push({ kind:'poof', life:30, max:30 }); cobsImpact(s.x, s.y, { shake:10, dust:0, debris:0 });
 }
 // Where along the wave an x is: 0 at the front's start, 1 at its end (it travels P.dir from P.x0, P.span px).
 function cobsWaveK(P, x){ return clamp(((x - P.x0)*P.dir)/P.span, 0, 1); }
@@ -16765,6 +16922,18 @@ function drawCobsFx(){
       const im = attackImage('meepleknife');
       if(im){ const h = 76, w = h*(im.naturalWidth/im.naturalHeight); ctx.rotate(R90); ctx.drawImage(im, -w/2, 0, w, h); }
       else { ctx.fillStyle = '#dfe4ea'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-48, -6); ctx.lineTo(-48, 6); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#1c1c1c'; ctx.fillRect(-76, -7, 28, 14); }
+      ctx.restore(); }
+    else if(e.kind==='boom'){ ctx.globalAlpha = a*0.45; ctx.strokeStyle = '#fff8e0'; ctx.lineWidth = 16; ctx.beginPath(); ctx.arc(e.x, e.y, (1 - a)*520 + 40, 0, 7); ctx.stroke(); }
+    else if(e.kind==='corn'){ ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(e.rot); ctx.globalAlpha = Math.min(1, e.life/30);
+      const im = e.burnt ? null : attackImage('popcorn');
+      if(im){ const h = e.sz*2.2, w = h*(im.naturalWidth/im.naturalHeight); ctx.drawImage(im, -w/2, -h/2, w, h); }
+      else { ctx.fillStyle = e.burnt ? '#6a4a20' : '#fff8e0'; ctx.strokeStyle = e.burnt ? '#2a1a08' : '#c8a800'; ctx.lineWidth = 1.5; ctx.beginPath(); const r2 = e.sz;
+        ctx.arc(-r2*0.4, 0, r2*0.55, 0, 7); ctx.arc(r2*0.4, -r2*0.1, r2*0.5, 0, 7); ctx.arc(0, r2*0.4, r2*0.5, 0, 7); ctx.arc(0, -r2*0.5, r2*0.45, 0, 7); ctx.fill(); ctx.stroke(); }
+      ctx.restore(); }
+    else if(e.kind==='husk'){ ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(e.rot); ctx.globalAlpha = Math.min(1, e.life/40);
+      const im = bossImage('cobshurt');
+      if(im){ const ar = im.naturalWidth/im.naturalHeight, h = e.sz*1.9, w = Math.min(h*ar, e.sz*2.4); ctx.drawImage(cobsBurntSprite('cobshurt', im), -w/2, -h/2, w, h); }
+      else { ctx.fillStyle = '#3a2a10'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, 0, e.sz*0.55, e.sz*0.9, 0, 0, 7); ctx.fill(); ctx.stroke(); }
       ctx.restore(); }
     else if(e.kind==='flash'){ ctx.globalAlpha = a; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(e.x, e.y, (1 - a)*26 + 6, 0, 7); ctx.stroke(); ctx.fillStyle = '#7ff0ff'; ctx.beginPath(); ctx.arc(e.x, e.y, 5*a + 1, 0, 7); ctx.fill(); }
     else if(e.kind==='glass'){ ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(e.rot + (e.max - e.life)*0.12); ctx.globalAlpha = Math.min(1, a*1.6)*0.8; ctx.fillStyle = '#cfe8ff'; ctx.strokeStyle = '#f4f4f8'; ctx.lineWidth = 1;
@@ -25800,17 +25969,9 @@ function drawArenaDecor(key){
     ctx.fillStyle="rgba(235,245,255,0.18)";
     for(let i=0;i<5;i++) ctx.fillRect((W/5)*i+30, 18, W/5-60, 4);
   } else if(key==="meeplehq"){
-    // Steve Cobs's secret fight: Meeple Headquarters, "a large building situated on a cloud above Inanimate Island" (Meeple
-    // Headquarters). The MeCloud's glass panes and strip lights (the 'meeple' decor) over the cloud bank the building sits on,
-    // the island far below, the Meeple tag overhead. Decoration, not a detail from the wiki -- and steady: nothing here flashes.
-    ctx.fillStyle="rgba(200,225,255,0.06)";
-    for(let i=0;i<8;i++){ const px=((i*170 - camX*0.3)%(W+170)+W+170)%(W+170)-85; ctx.fillRect(px, H*0.08, 110, H*0.62); }
-    ctx.fillStyle="rgba(235,245,255,0.18)";
-    for(let i=0;i<5;i++) ctx.fillRect((W/5)*i+30, 18, W/5-60, 4);
-    ctx.fillStyle="rgba(240,246,255,0.16)";
-    for(let i=0;i<9;i++){ const cx=((i*150 - camX*0.12)%(W+150)+W+150)%(W+150)-75, cy=H*0.86 + (i%2)*14; ctx.beginPath(); ctx.ellipse(cx, cy, 90, 26, 0, 0, 7); ctx.fill(); }   // the cloud bank
-    ctx.fillStyle="rgba(120,160,90,0.14)"; ctx.fillRect(0, H*0.95, W, H*0.05);   // the island, far below
-    ctx.fillStyle="rgba(244,244,248,0.35)"; ctx.strokeStyle="rgba(28,28,28,0.5)"; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(W*0.5 - camX*0.02, 44, 9, 0, 7); ctx.fill(); ctx.stroke();   // the Meeple tag
+    // Steve Cobs's secret fight: Meeple Headquarters, "a large building situated on a cloud above Inanimate Island" (Meeple Headquarters): the glass building, its ad
+    // screens, its elevator and shelves, the cloud bank it sits on -- all of it reacting to the fight by tier (drawCobsDecor). Steady: nothing here flashes.
+    drawCobsDecor();
   } else if(key==="cerealbox"){
     // Springy fights under his Floating Cereal Boxes: "three gigantic Springtastic cereal boxes in yellow, blue, and pink
     // with Springy on the box holding a spoon above a red bowl ... There are spring-like shapes in the background of each
@@ -26157,6 +26318,7 @@ function bossLook(s){
 }
 function drawBossSprite(s){
   const R=s.r;
+  if(s._cobsFight && s._gone) return;   // his ending: after the boom he is popcorn, and a husk (cobsEndStep)
   if(s.sprite==="one") drawOneAura(s);   // the power she stole shows round her (TPOT 19), stronger each phase
   // telegraph aura: pulsing warning ring while winding up (Silksong-style tell)
   if(s._tel>0){
@@ -26265,7 +26427,8 @@ function drawBossSprite(s){
 
     ctx.save();
     ctx.rotate(Math.sin(t*0.7)*0.03 + tel*0.05);                 // a slow menacing list
-    ctx.scale(wind*hit*rage, breathe*wind*hit);
+    const swell = s._swell || 1;   // his ending: he swells before the boom
+    ctx.scale(wind*hit*rage*swell, breathe*wind*hit*swell);
     if((s.face < 0) !== !!BOSS_SPRITE_FLIP[look]) ctx.scale(-1, 1);
     ctx.drawImage(img, -dw/2, -dh/2, dw, dh);
     // white flash clipped to the art itself, matching how a struck fighter reads

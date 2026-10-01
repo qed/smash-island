@@ -21,6 +21,7 @@ const fight = (body, lineup = ['Knife']) => W.eval(`(function(){
   SETTINGS.itemRate=0; SETTINGS.stocks=3; LOCAL_PLAYERS=1; window.__cobsEnd = undefined;
   var __ok = startCobsFight(${JSON.stringify(lineup)}, { story:true, onEnd:function(won){ window.__cobsEnd = won; return true; } });
   var s = summons.find(function(o){ return o._cobsFight; });
+  s._hop = null;   // (the opening hop off the top is tested on its own: a test that places him itself starts with him home)
   var you = fighters[0];
   var park = function(){ s._atkTimer = 1e9; you.controller = 'still'; };
   var floorAt = function(f, x){ f.x = x; f.y = groundY() - f.r; f.vx = 0; f.vy = 0; f.pct = 0; f.invuln = 0; step(); f.pct = 0; f.invuln = 0; };
@@ -891,5 +892,227 @@ describe('POPPING POINT -- the burst ring', () => {
     expect(r.cap, 'the old cap: 3 kernels\' worth').toBe(6);
     expect(Math.abs(r.mean), 'a ring, not a line at you').toBeLessThan(0.5);
     expect(r.shape).toBe('kernel');
+  });
+});
+
+// ================= THE ANIMATION TREATMENT (Round 15): heavy hits, the backdrop by tier, bigger movement, the art, the ending =================
+// "ok. make one and cobs get the same animation treatement as the others."
+
+const RAW = (body, lineup = ['Knife']) => W.eval(`(function(){
+  SETTINGS.itemRate=0; SETTINGS.stocks=3; LOCAL_PLAYERS=1; window.__cobsEnd = undefined;
+  var __ok = startCobsFight(${JSON.stringify(lineup)}, { story:true, onEnd:function(won){ window.__cobsEnd = won; return true; } });
+  var s = summons.find(function(o){ return o._cobsFight; });
+  var you = fighters[0];
+  var floorAt = function(f, x){ f.x = x; f.y = groundY() - f.r; f.vx = 0; f.vy = 0; f.pct = 0; f.invuln = 0; };
+  ${body}
+})()`);
+
+describe('heavy hits go through impact()', () => {
+  it('no bare shake of 8 or more is left in his code: every heavy hit is an impact (shake, dust, debris, a floor scar), and the backdrop hears the big ones', () => {
+    const html = readFileSync('artifacts/V1/index.html', 'utf8').replace(/\r\n/g, '\n');
+    const a = html.indexOf('//  STEVE COBS -- the second secret boss'), b = html.indexOf('let BOSS_ATK_ID = 0;');
+    expect(a).toBeGreaterThan(0); expect(b).toBeGreaterThan(a);
+    const bare = [...html.slice(a, b).matchAll(/[^a-zA-Z.]shake\((\d+)\)/g)].map((m) => +m[1]).filter((n) => n >= 8);
+    expect(bare, 'bare shake() calls of 8 or more').toEqual([]);
+    const r = RAW(`
+      cobsDecorReset(); var before = Object.keys(COBS_DECOR.fallen).length; cobsImpact(500, 500, { shake:4, dust:0, debris:0 }); var small = Object.keys(COBS_DECOR.fallen).length;
+      cobsImpact(500, 500, { shake:14, dust:1, debris:3 }); return { before: before, small: small, big: Object.keys(COBS_DECOR.fallen).length, pulse: COBS_DECOR.pulse === hazardT };`);
+    expect(r.small, 'a small impact does not touch the shelves').toBe(0);
+    expect(r.big, 'a big one knocks a product off its shelf').toBe(1);
+    expect(r.pulse, 'and puffs the cloud').toBe(true);
+  });
+
+  it('the rage\'s start, the dive\'s landing, the keynote\'s CARE! and a tier line are the big ones: shake of 12 and more (the 12 px cap), and a crater where there is a floor', () => {
+    const r = RAW(`
+      s._hop = null; floorAt(you, WW*0.5); s._atkTimer = 1e9; you.controller = 'still'; var out = {}, big = [];
+      var ci = cobsImpact; cobsImpact = function(x, y, o){ big.push({ shake: o.shake, scar: !!o.scar }); return ci(x, y, o); };
+      s._spoke = true; s._speechT = 1; s._speechHit = 0; step(); out.rage = big.filter(function(b){ return b.shake >= 14 && b.scar; }).length;
+      big = []; s.hp = 2000; step(); out.tier = big.filter(function(b){ return b.shake >= 20; }).length;
+      big = []; s._burst = { t:1, dmg:20, id:1, hp0:s.hp }; step(); out.care = big.filter(function(b){ return b.shake >= 30; }).length;
+      cobsImpact = ci; return out;`);
+    expect(r.rage, 'the rage begins with a crater').toBeGreaterThanOrEqual(1);
+    expect(r.tier, 'a tier line shudders the building').toBeGreaterThanOrEqual(1);
+    expect(r.care, 'CARE!: shake(30)').toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('the backdrop: Meeple Headquarters reacts by tier', () => {
+  const DECOR = (t, extra = '') => RAW(`
+    s._hop = null; s._marks = ${t - 1}; s._tierT = -999; ${extra}
+    cobsDecorReset(); var err = null; try { drawArenaDecor('meeplehq'); } catch(e){ err = String(e && e.stack || e); } return { last: COBS_DECOR.last, err: err };`);
+
+  it('the glass cracks tier by tier: whole at 1, hairline cracks at 2, crazed at 3, some panes shattered at 4, only cloud and sky at 5', () => {
+    const d = [1, 2, 3, 4, 5].map((t) => DECOR(t));
+    for (const x of d) expect(x.err).toBe(null);
+    expect(d[0].last.cracks, 'tier 1: whole glass').toBe(0);
+    expect(d[1].last.cracks, 'tier 2: hairlines').toBeGreaterThan(0);
+    expect(d[2].last.cracks, 'tier 3: crazed: more').toBeGreaterThan(d[1].last.cracks*2);
+    expect(d[2].last.broken).toBe(0);
+    expect(d[3].last.broken, 'tier 4: some panes shattered').toBeGreaterThan(0);
+    expect(d[3].last.gone).toBe(0);
+    expect(d[4].last.gone, 'tier 5: the glass is gone: only the frames, cloud and sky').toBeGreaterThanOrEqual(7);
+    expect(d[4].last.cracks).toBe(0);
+  });
+
+  it('the ad screens are cyan, tint red under DELETION\'s siren, and go dark at tier 5; the elevator rises for the keynote and lowers after', () => {
+    expect(DECOR(2).last.screens).toBe('cyan');
+    expect(DECOR(2, 's._redT = 30;').last.screens, 'red under the siren').toBe('red');
+    expect(DECOR(5).last.screens, 'dark at tier 5').toBe('dark');
+    const e = RAW(`
+      s._hop = null; floorAt(you, WW*0.5); you.controller = 'still'; s._atkTimer = 1e9; s._marks = 2; s.x = you.x - 300; s.y = you.y - 120; var out = { rest: s._elev };
+      cobsFightTelegraph(s, 'keynote', you); for (var i=0;i<60;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); } out.up = s._elev;
+      s._tel = 0; s._rings = []; s._burst = null; s._holdT = 0; s._telKind = null; for (var i=0;i<120;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); } out.down = s._elev; return out;`);
+    expect(e.rest).toBe(0);
+    expect(e.up, 'up at the podium\'s height for the keynote').toBeGreaterThan(0.9);
+    expect(e.down, 'and lowered after').toBeLessThan(0.1);
+  });
+
+  it('a tier line sheds pieces off the walls (glass, and the cloud\'s edge from tier 4); the shelves empty as big impacts land; the cloud puffs', () => {
+    const r = RAW(`
+      s._hop = null; cobsDecorReset(); var out = { shed: [] }; [2, 3, 4, 5].forEach(function(t){ cobsDecorReset(); cobsDecorShed(t); out.shed.push([COBS_DECOR.shed.filter(function(p){ return p.k === 'glass'; }).length, COBS_DECOR.shed.filter(function(p){ return p.k === 'cloud'; }).length]); });
+      cobsDecorReset(); for (var i=0;i<40;i++) cobsDecorHit(); out.emptied = Object.keys(COBS_DECOR.fallen).length; out.shelves = COBS_SHELF.length;
+      var err = null; try { drawCobsDecor(); } catch(e){ err = String(e); } out.err = err; return out;`);
+    expect(r.shed.map((x) => x[0]), 'more glass each tier').toEqual([6, 10, 16, 26]);
+    expect(r.shed.map((x) => x[1]), 'the cloud sheds from tier 4').toEqual([0, 0, 5, 5]);
+    expect(r.emptied, 'a product off its shelf for every big impact, until the shelves are empty').toBe(r.shelves);
+    expect(r.err).toBe(null);
+  });
+});
+
+describe('BIGGER MOVEMENT -- off the top of the screen and back at every tier line, and the fight opens the same way', () => {
+  it('at a tier line he drops what he was winding up, flies off the top of the screen, and comes back in from the far edge of it; no turn starts until he is back', () => {
+    const r = RAW(`
+      s._hop = null; floorAt(you, WW*0.5); you.controller = 'still'; you.invuln = 99999; s.x = you.x + 200; s.y = you.y - 200; s._atkTimer = 1; projectiles = [];
+      cobsFightTelegraph(s, 'hands', you); var tel0 = s._tel; s.hp = 2000; step(); var hop0 = s._hop && s._hop.ph, tel1 = s._tel, atk = s._atkTimer;
+      var minY = 1e9, top = null, inX = null, phases = [hop0], turns = 0, back = null, prevPh = hop0;
+      for (var i=0;i<120;i++){ you.invuln = 99999; step(); var ph = s._hop ? s._hop.ph : '-'; if (ph !== prevPh){ phases.push(ph); prevPh = ph; }
+        if (s._hop){ minY = Math.min(minY, s.y); top = cobsTopY(); if (s._hop.ph === 'in' && inX === null) inX = s.x; } if (s._tel > 0 && s._hop) turns++; if (!s._hop && back === null) back = i; }
+      var z = viewZoom(), vl = camX + W/2 - (W/2)/z, vr = camX + W/2 + (W/2)/z;
+      return { tel0: tel0, tel1: tel1, hop0: hop0, atk: atk, minY: minY, top: top, inX: inX, vl: vl, vr: vr, you: you.x, phases: phases, turns: turns, back: back, dist: Math.hypot(s.x - you.x, s.y - you.y), tier: cobsTier(s) };`);
+    expect(r.tel0).toBeGreaterThan(0);
+    expect(r.tel1, 'the wind-up is dropped').toBe(0);
+    expect(r.tier).toBe(2);
+    expect(r.hop0).toBe('up');
+    expect(r.phases, 'up, out of sight, in, home').toEqual(['up', 'gone', 'in', '-']);
+    expect(r.minY, 'off the top of the screen').toBeLessThan(r.top);
+    const farFromYou = Math.abs(r.inX - r.you) > Math.abs((r.you - r.vl > r.vr - r.you ? r.vr : r.vl) - r.you) - 500;
+    expect(farFromYou, 'he comes back in at the screen\'s far edge from you').toBe(true);
+    expect(r.atk, 'no turn is due until he is back').toBeGreaterThan(60);
+    expect(r.turns, 'and none starts while he is away').toBe(0);
+    expect(r.back).toBeGreaterThan(40);
+    expect(r.back).toBeLessThan(75);
+    expect(r.dist, 'back on his orbit round you').toBeLessThan(900);
+  });
+
+  it('the fight opens from above: he comes in off the top as every tier line does, and says his GREETINGS once he is in view; the speech waits for the 1500 line\'s hop', () => {
+    const r = RAW(`
+      var out = { hop: s._hop && { ph: s._hop.ph, intro: !!s._hop.intro } }, minY = 1e9, top = null, phases = [], prev = '';
+      you.controller = 'still'; for (var i=0;i<100;i++){ you.invuln = 99999; step(); var ph = s._hop ? s._hop.ph : '-'; if (ph !== prev){ phases.push(ph); prev = ph; } if (s._hop){ minY = Math.min(minY, s.y); top = cobsTopY(); } }
+      out.phases = phases; out.minY = minY; out.top = top; out.banner = window.__lastBanner && window.__lastBanner.text;
+      s._atkTimer = 1e9; s.hp = 1500; step(); var spoke0 = s._spoke, hopped = !!s._hop; for (var i=0;i<100 && s._hop;i++){ step(); if (s._spoke) out.spokeDuringHop = true; } step(); out.spoke0 = spoke0; out.hopped = hopped; out.spokeAfter = s._spoke;
+      return out;`);
+    expect(r.hop).toEqual({ ph: 'gone', intro: true });
+    expect(r.phases, 'out of sight, then in, then home').toEqual(['gone', 'in', '-']);
+    expect(r.minY, 'from above the screen').toBeLessThan(r.top);
+    expect(r.hopped).toBe(true);
+    expect(r.spoke0, 'the speech is not said over the hop').toBe(false);
+    expect(r.spokeDuringHop).toBeUndefined();
+    expect(r.spokeAfter, 'it begins when he is back').toBe(true);
+  });
+
+  it('the hop is cancelled cleanly by his death, and his dive is not (the dive is its own move)', () => {
+    const r = RAW(`
+      s._hop = null; s.hp = 2000; step(); var hopping = !!s._hop; s.hp = 0; step(); return { hopping: hopping, hop: s._hop, dying: s._dying };`);
+    expect(r.hopping).toBe(true);
+    expect(r.hop, 'dead men do not hop').toBe(null);
+    expect(r.dying).toBe(150);
+  });
+});
+
+describe('HIS ENDING -- "[A big explosion starts, turning Steve Cobs into popcorn, killing him.]"', () => {
+  const END = (frames) => RAW(`
+    s._hop = null; floorAt(you, WW*0.5 - 400); you.controller = 'still'; s.x = WW*0.5; s.y = groundY() - 200; s._atkTimer = 1e9;
+    var said = []; if (!window.__endTap){ window.__endTap = true; var _b = banner; banner = function(t, m, k, l){ said.push(String(t)); return _b(t, m, k, l); }; }
+    s.hp = 0; var out = { swell: [], gone: null, corn: 0, husk: 0, boomAt: null, rest: 0 }; var f = 0;
+    for (var i=0;i<${frames} && running;i++){ you.invuln = 99999; step(); f++; if (s._swell) out.swell.push(Math.round(s._swell*100)/100);
+      if (s._gone && out.gone === null){ out.gone = f; out.boomAt = f; } }
+    out.corn = cobsFx.filter(function(e){ return e.kind === 'corn'; }).length; out.husk = cobsFx.filter(function(e){ return e.kind === 'husk'; }).length;
+    out.rest = cobsFx.filter(function(e){ return e.kind === 'corn' && e.rest; }).length; out.restHusk = cobsFx.filter(function(e){ return e.kind === 'husk' && e.rest; }).length;
+    out.won = COBSFIGHT.won; out.running = running; out.said = said; out.dying = s._dying; out.total = COBS_END.total; out.life = s.life;
+    var err = null; try { drawCobsFx(); drawBossSprite(s); drawArenaDecor('meeplehq'); } catch(e){ err = String(e && e.stack || e); } out.err = err;
+    return out;`);
+
+  it('he stops and swells, popping kernels, for the build-up; then the boom: he is gone, popcorn bursts out, and his burnt husk falls where he hung', () => {
+    const r = END(80);
+    expect(r.swell.length, 'swelling before the boom').toBeGreaterThan(25);
+    expect(Math.max(...r.swell), 'to a third again his size').toBeGreaterThan(1.2);
+    expect(r.gone, 'the boom after the build-up (the frame that notices he fell, then 34 of swelling)').toBe(34 + 2);
+    expect(r.corn, 'popped kernels burst out').toBeGreaterThanOrEqual(40);
+    expect(r.husk, 'and the husk falls').toBe(1);
+    expect(r.err).toBe(null);
+    expect(r.won, 'the fight is not over yet: the scene is still playing').toBe(false);
+  });
+
+  it('the popcorn and the husk fall, bounce twice at most, and lie on the surfaces under them; the scene is COBS_END.total frames, silent, and then the fight ends as it always did', () => {
+    const r = END(150 + 4);
+    expect(r.rest, 'the popcorn comes to rest').toBeGreaterThan(r.corn*0.6);
+    expect(r.restHusk, 'the husk lies where it fell').toBe(1);
+    expect(r.won, 'then the fight ends').toBe(true);
+    expect(r.said, 'NO TEXT: not a banner, not his last words').toEqual([]);
+    expect(r.running, 'the match is over').toBe(false);
+  });
+
+  it('his prize reveal still follows it, unchanged: the fight\'s onEnd gets (true, result) once, then the result screen reads "Steve Cobs is beaten!"', () => {
+    const r = RAW(`
+      s._hop = null; var calls = []; COBSFIGHT.onEnd = function(won, result){ calls.push([won, !!result, result && result.story]); return true; };
+      s.hp = 0; for (var i=0;i<160 && running;i++){ you.invuln = 99999; step(); }
+      return { calls: calls, title: document.getElementById('resultTitle').textContent, over: COBSFIGHT.over };`);
+    expect(r.calls).toEqual([[true, true, true]]);
+    expect(r.title).toBe('Steve Cobs is beaten!');
+    expect(r.over).toBe(true);
+  });
+
+  it('is not in BOSS_ENDINGS (he is not a Boss Rush boss): the ending plays in his own fight flow', () => {
+    const r = W.eval(`({ has: Object.prototype.hasOwnProperty.call(BOSS_ENDINGS, 'cobsfight'), keys: Object.keys(BOSS_ENDINGS), total: COBS_END.total })`);
+    expect(r.has).toBe(false);
+    expect(r.total, 'a short scene: two and a half seconds').toBeLessThanOrEqual(180);
+  });
+});
+
+describe('his shots wear the show\'s art, credited; nothing of his fight is online', () => {
+  const FILES = ['cobsknife', 'cobslolli1', 'cobslolli2', 'cobsboomerang', 'cobsvan', 'cobspopcorn'];
+  it('the six new files exist, are real PNGs at projectile size with air round them, and are in the manifest and the credits with their exact sources', () => {
+    const manifest = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8')), credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    for (const k of FILES) {
+      const path = `artifacts/V1/assets/sprites/attacks/${k}.png`;
+      expect(existsSync(path), k).toBe(true);
+      const png = PNG.sync.read(readFileSync(path));
+      expect(Math.max(png.width, png.height), `${k} projectile-sized`).toBeLessThanOrEqual(128);
+      expect(Math.max(png.width, png.height)).toBeGreaterThanOrEqual(24);
+      let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) clear++;
+      expect(clear / (png.width * png.height), `${k} is an object, not a rectangle`).toBeGreaterThan(0.1);
+      expect(manifest[k].source, k).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/inanimateinsanity\/images\//);
+      expect(credits).toContain(`(${k}.png)`); expect(credits).toContain(manifest[k].source);
+    }
+    expect(PNG.sync.read(readFileSync('artifacts/V1/assets/sprites/attacks/cobsknife.png')).height, 'the knife stands upright: tip up').toBeGreaterThan(PNG.sync.read(readFileSync('artifacts/V1/assets/sprites/attacks/cobsknife.png')).width*3);
+    const picks = readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8');
+    for (const k of FILES) expect(picks, `${k} has a pick`).toMatch(new RegExp(`\\n  ${k}:\\s+\\{`));
+  });
+
+  it('each is wired to the shot that throws it (ATTACK_SPRITES, by shape), with a drawn glyph to fall back on; the glove draws the Fist Thingy\'s art; his chainsaws keep Saw\'s blade', () => {
+    const r = W.eval(`(function(){ var k = { meepleknife:1, cobslolli1:1, cobslolli2:1, cobsboomerang:1, meeplevan:1, popcorn:1, cobspencil:1 }, out = {};
+      Object.keys(k).forEach(function(n){ out[n] = [!!ATTACK_SPRITES[n], !!PROJ_SHAPE[n], ATTACK_SPRITES[n] && ATTACK_SPRITES[n].src]; });
+      return { out: out, glove: typeof PROJ_SHAPE.cobsglove.draw, sawArt: ATTACK_SPRITES.saw.src, shapes: { boomerangs: 'cobsboomerang', glove: 'cobsglove' }, mp4: !!PROJ_SHAPE.fistthingy }; })()`);
+    for (const n of Object.keys(r.out)) { expect(r.out[n][0], `${n} art`).toBe(true); expect(r.out[n][1], `${n} glyph`).toBe(true); expect(existsSync(`artifacts/V1/${r.out[n][2]}`), `${n} file`).toBe(true); }
+    expect(r.glove).toBe('function');
+    expect(r.sawArt).toMatch(/sawblade\.png$/);
+    expect(r.mp4, 'MePhone4\'s glove keeps its own glyph').toBe(true);
+    const shots = W.eval(`(function(){ var T = cobsT({ _marks:2 }, 'boomerangs'); return { b: String(COBS_MOVES.boomerangs).indexOf("shape:'cobsboomerang'") >= 0, g: String(COBS_MOVES.device).indexOf("shape:'cobsglove'") >= 0, k: String(COBS_MOVES.meknife).indexOf("shape:'meepleknife'") >= 0, v: String(COBS_MOVES.van).indexOf("shape:'meeplevan'") >= 0 }; })()`);
+    expect(shots).toEqual({ b: true, g: true, k: true, v: true });
+  });
+
+  it('his fight is local only: a netcode session cannot start it, so nothing of it needs to ride the snapshot', () => {
+    const r = W.eval(`(function(){ var was = inNetSession; inNetSession = function(){ return true; }; var ok = startCobsFight(['Knife'], { story:true }); inNetSession = was; return ok; })()`);
+    expect(r).toBe(false);
   });
 });

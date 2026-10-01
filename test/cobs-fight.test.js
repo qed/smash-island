@@ -23,6 +23,7 @@ const fight = (lineup, opts, body) => W.eval(`(function(){
   SETTINGS.itemRate=0; SETTINGS.stocks=3; LOCAL_PLAYERS=1; window.__cobsEnd = undefined;
   var __ok = startCobsFight(${JSON.stringify(lineup)}, Object.assign(${JSON.stringify(opts || {})}, { onEnd:function(won){ window.__cobsEnd = won; return true; } }));
   var s = summons.find(function(o){ return o._cobsFight; });
+  s._hop = null;   // (the opening hop off the top is tested on its own: a test that places him itself starts with him home)
   var you = fighters[0];
   var park = function(){ s._atkTimer = 1e9; you.controller = 'still'; };
   var floorAt = function(f, x){ f.x = x; f.y = groundY() - f.r; f.vx = 0; f.vy = 0; f.pct = 0; f.invuln = 0; step(); f.pct = 0; f.invuln = 0; };
@@ -556,7 +557,8 @@ describe('the passives ("Both in")', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s.x = you.x + 300; s.y = you.y - 100;
       s.hp = 1501; step(); var before = { spoke:s._spoke, speech:s._speechT };
-      s.hp = 1500; step(); var at = { spoke:s._spoke, speech:s._speechT, tier:cobsTier(s), banner:window.__lastBanner && window.__lastBanner.text };
+      s.hp = 1500; step(); var hopped = !!s._hop; for (var i=0;i<100 && s._hop;i++) step(); step();   // (1500 is a tier line too: he is off the top of the screen and back before the speech begins, Round 15's bigger movement)
+      var at = { spoke:s._spoke, speech:s._speechT, tier:cobsTier(s), banner:window.__lastBanner && window.__lastBanner.text, hopped:hopped };
       s._atkTimer = 1; var tels = 0; for (var i=0;i<COBS_SPEECH_T - 2;i++){ step(); if (s._tel > 0) tels++; }
       var quiet = { tels:tels, speech:s._speechT };
       step(); step();
@@ -616,8 +618,8 @@ describe('beatable in principle -- whatever a bot manages', () => {
       hp = s.hp; addProj({ owner:you.idx, ownerObj:you, x:s.x, y:s.y, vx:0.1, vy:0, r:10, dmg:15, kb:1, life:5, color:'#fff' }); step(); out.shot = hp - s.hp;
       hp = s.hp; you._dashing = 3; you._dashDmg = 12; you.x = s.x - 10; you.y = s.y; you.vx = 8; step(); out.dash = hp - s.hp;
       hp = s.hp; chainBoltBoss(s, 12, you); out.bolt = hp - s.hp;
-      s.hp = 2001; step(); out.t1 = cobsTier(s); s.hp = 1; cobsTakeDamage(s, 5); out.zero = s.hp; step(); out.dying = s._dying;
-      for (var i=0;i<72 && running;i++) step();
+      s.hp = 2001; step(); out.t1 = cobsTier(s); s.hp = 1; cobsTakeDamage(s, 5); out.zero = s.hp; window.__lastBanner = null; step(); out.dying = s._dying; out.total = COBS_END.total;
+      for (var i=0;i<COBS_END.total + 6 && running;i++) step();
       out.won = COBSFIGHT.won; out.told = window.__cobsEnd; out.life = s.life; out.over = COBSFIGHT.over; out.banner = window.__lastBanner;
       out.rushCleared = (PROFILE.bossesCleared || {})['Steve Cobs'] || null; out.title = document.getElementById('resultTitle').textContent;
       return out;`);
@@ -627,10 +629,11 @@ describe('beatable in principle -- whatever a bot manages', () => {
     expect(r.bolt).toBe(12);
     expect(r.t1).toBe(1);
     expect(r.zero).toBe(0);
-    expect(r.dying, 'he pops over seventy frames').toBe(70);
+    expect(r.dying, 'his ending scene runs COBS_END.total frames before the fight ends').toBe(r.total);
     expect(r.won && r.told && r.over).toBe(true);
     expect(r.life).toBe(0);
-    expect(r.banner.kind, 'his last words are a boss line').toBe('boss');
+    // Round 15, verbatim: "a short canon ending scene when he's beaten (no text)" -- his last-words banner is gone: the scene says nothing (test/boss-cobs-fight.test.js)
+    expect(r.banner, 'no text in the ending').toBe(null);
     expect(r.title).toBe('Steve Cobs is beaten!');
   });
 
