@@ -970,7 +970,7 @@ describe('no words, no other show, and the art is wired and credited', () => {
     const m = manifest.fourheart;
     expect(m, 'on the record').toMatchObject({ file: 'fourheart.png', kits: ['fourheart'], srcTitle: 'Love hearts0001.png', wiki: 'bfdi', width: png.width, height: png.height });
     expect(m.source).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/battlefordreamisland\/images\//);
-    expect(credits, 'credited with its exact source').toContain('(`fourheart.png`');
+    expect(credits, 'credited with its exact source, in the form every attack file is (test/attack-art-files.test.js)').toContain('(fourheart.png)');
     expect(credits).toContain(m.source);
     expect(picks, 'with its pick in his slot').toMatch(/fourheart:\s*\{ who: 'Four \(LOVE HEARTS!\)'/);
   });
