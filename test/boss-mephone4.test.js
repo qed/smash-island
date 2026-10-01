@@ -41,31 +41,18 @@ const SLOTS = ['roster', 'extra', 'rushonly', 'movename', 'moves', 'helpers', 's
   'netshot', 'net', 'shotdraw', 'fx', 'look', 'tell', 'body', 'sky', 'ground', 'decor', 'sprite', 'flip', 'shape', 'art'];
 
 describe('MePhone4 joins the gauntlet', () => {
-  it('is Boss 6 (was 7 until the Dragon moved to 9: "just move purple dragon!!!" (the owner, 2026-09-30)), before Four, in his own arena -- and the bosses around him are exactly as they were', () => {
+  it('is Boss 6 (was 7 until the Dragon moved to 9: "just move purple dragon!!!" (the owner, 2026-09-30)), before Evil Leafy and Four, in his own arena', () => {
     const r = W.eval(`(function(){
       var rows = BOSS_ROSTER.map(function(b){ return [b.name, b.color, b.hp, b.big, b.attack, b.arena, b.stationary, b.sprite]; });
-      var extra = {}; BOSS_ROSTER.forEach(function(b){ extra[b.name] = BOSS_EXTRA[b.name]; });
-      return { rows: rows, extra: extra };
+      return { names: BOSS_ROSTER.map(function(b){ return b.name; }), rows: rows, extra: BOSS_EXTRA['MePhone4'] };
     })()`);
-    expect(r.rows).toEqual([
-      ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'cakeatstake', false, 'announcer'],   // his own place, the Cake at Stake place (boss overhaul, 'Each its own'; test/boss-announcer.test.js has the fight)
-      ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'clubhouse', false, 'speaker'],   // the Clubhouse of Awesomeness (test/boss-puffball.test.js)
-      ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'volcano', false, 'speakerfirey'],   // the volcano now, and four attacks of his own (test/boss-firey-sb.test.js)
-      ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug'],   // the Bug Hive, in the wiki's purple (test/boss-bug-swarm.test.js)
-      ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face'],   // rebuilt: the warehouse is his arena ("yellow faces warehouse.") and he moves ("Only if canon moves"); test/boss-purple-face.test.js
-      // 255, was 240: under the Dragon's 250 when the Dragon came before him (it moved to Boss 9 on 2026-09-30; see test/boss-rush-order.test.js). The Great Escape's Elimination Area now,
-      // no longer the shared 'melife' screen: "Each its own" (the owner, 2026-09-29; the plan's arena, approved in Round 8)
-      ROW,
-      ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy'],
-      ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s'],
-      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon'],   // the hotel roof in the storm ("Each its own", the owner, 2026-09-29)
-      ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two'],
-      ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy'],
-      ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four'],
-    ]);
+    // 255, was 240: under the Dragon's 250 when the Dragon came before him (it moved to Boss 9 on 2026-09-30; see test/boss-rush-order.test.js). The Great Escape's Elimination Area now,
+    // no longer the shared 'melife' screen: "Each its own" (the owner, 2026-09-29; the plan's arena, approved in Round 8). The other bosses' rows are theirs: their own tests pin them.
+    expect(r.rows.find((row) => row[0] === 'MePhone4')).toEqual(ROW);
+    expect(r.names.indexOf('MePhone4'), 'after Purple Face, before Evil Leafy').toBe(5);
+    expect(r.names.slice(4, 7)).toEqual(['Purple Face', 'MePhone4', 'Evil Leafy']);
     // the attack-count rule (the owner, 2026-09-29): "starting from bug swarm, they should have 5" -- his signature and four more
-    expect(r.extra['MePhone4']).toEqual(['melife', 'portal', 'boomerang', 'maze']);
-    expect(r.extra['Purple Dragon']).toEqual(['dragonroar', 'dragonchar', 'dragonwind', 'dragonropes']);
+    expect(r.extra).toEqual(['melife', 'portal', 'boomerang', 'maze']);
   });
 
   it('walking the gauntlet spawns him sixth, and Four is still the last boss', () => {
@@ -1009,13 +996,11 @@ describe('his arena: the Great Escape\'s Elimination Area', () => {
   // main one ... As always, a TV is attached to show the number of votes, and the Fist Thingy is used." (File:S1RE14 Elimination area.png; File:S1RE8EliminationArea.png.)
   it('has its own sky, lawn and backdrop, and a netcode client takes its key', () => {
     const r = W.eval(`({ sky: BOSS_ARENA_SKY.elimarea, ground: BOSS_ARENA_GROUND.elimarea && [BOSS_ARENA_GROUND.elimarea.fill, BOSS_ARENA_GROUND.elimarea.line, typeof BOSS_ARENA_GROUND.elimarea.pattern],
-      melife: [BOSS_ARENA_SKY.melife, BOSS_ARENA_GROUND.melife, String(drawArenaDecor).indexOf('"melife"')], row: BOSS_ROSTER[5].arena,
-      others: ['studio', 'forest', 'void', 'cerealbox', 'cakeatstake', 'hive', 'hotelroof'].every(function(k){ return !!BOSS_ARENA_SKY[k]; }) })`);
+      melife: [BOSS_ARENA_SKY.melife, BOSS_ARENA_GROUND.melife, String(drawArenaDecor).indexOf('"melife"')], row: BOSS_ROSTER[5].arena })`);
     expect(r.sky).toHaveLength(2);
     expect(r.ground).toEqual(['#3f8f48', '#1f4a28', 'function']);
     expect(r.melife, 'the old screen is gone from him').toEqual([undefined, undefined, -1]);
     expect(r.row).toBe('elimarea');
-    expect(r.others, 'nobody else\'s arena is touched').toBe(true);
   });
 
   it('has NO hazard -- nothing in the Great Escape\'s area hurts but the Fist Thingy -- and the entry it has dresses the platforms under the shots and stands the maze\'s hedges', () => {
