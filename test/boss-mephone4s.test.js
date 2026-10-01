@@ -424,3 +424,274 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
     expect(r.gun.seen.round, "phase 1's one round").toBe(1);
   });
 });
+
+
+describe("I'LL BE BACK! (the car)", () => {
+  // Sugar Rush: "MePhone4S: I'll be back. (MePhone4S walks towards a nearby car, which he then proceeds to hit Cheesy with.)" -- phase 2, "I'll Be Back".
+  it('he runs for the edge farther from you and is off the screen when the wind-up ends; the cars wait there, headlights on, for the rev', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[300, 800].map((fx) => `{ ${STAGE(fx, 2, true)}
+        b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+        var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, from: b._s4.from };
+        for (var w=0; w<80 && b._tel>0; w++){ f.x = ${fx}; f.vx = 0; step(); }
+        o.x = Math.round(b.x); o.y = Math.round(b.y); o.hover = b.hover; o.go = b._s4.go; o.st = b._s4.st; o.R = b.r; o.WW = WW; o.gy = groundY();
+        o.cars = projectiles.filter(function(p){ return p.s4 === 2; }).map(function(p){ return [Math.round(p.x), Math.sign(p.vx), p.delay > 0]; });
+        out.f${fx} = o; summons = []; projectiles = []; }`).join('\n')}
+      return out; })()`);
+    const a = r.f300, c = r.f800;
+    for (const o of [a, c]) {
+      expect(o.kind).toBe('s4car');
+      expect(o.name).toBe("I'LL BE BACK!");
+      expect(o.tel0).toBe(46);
+      expect(o.go, 'his own motion has taken over from the engine\'s wind-up').toBe(true);
+      expect(o.st).toBe('away');
+      expect(o.hover).toBe(true);
+      expect(o.y, 'on the floor line').toBeCloseTo(o.gy - o.R, 0);
+    }
+    expect(a.from, 'you are on the left: the edge farther from you is the right').toBe(1);
+    expect(a.x, 'and by the end of the wind-up he is off that edge').toBeGreaterThan(a.WW + a.R * 0.6);
+    expect(c.from, 'you are on the right: he leaves by the left').toBe(-1);
+    expect(c.x).toBeLessThan(-c.R * 0.6);
+    expect(a.cars, 'two cars waiting (the car and its return), the first at his edge, both still revving').toEqual([[1060, -1, true], [40, 1, true]]);
+    expect(c.cars).toEqual([[40, 1, true], [1060, -1, true]]);
+  });
+
+  it('the first car revs 30 frames then drives the whole floor at 14 px a frame -- a whole boss hit, kb 11, through anyone -- and "I\'ll be back" is literal: a second car comes back the other way, one attack id', () => {
+    const r = W.eval(`(function(){ var WW0 = WW, out = {};
+      try {
+        [1100, 1920].forEach(function(w){ WW = w; out[w] = {};
+          [2, 3].forEach(function(ph){ projectiles = []; worldPlats = [];
+            var s = ${S('_phase:2, _telPh:2')}; s._phase = ph; s._telPh = ph; s.x = WW*0.5;
+            BOSS_MOVES.s4car(s, { x: WW*0.8, y: groundY()-24, dead:false, idx:0 });
+            var c = projectiles.filter(function(p){ return p.s4 === 2; });
+            out[w]['p'+ph] = { cars: c.map(function(p){ return { x:p.x, vx:p.vx, r:p.r, dmg:p.dmg, kb:p.kb, pierce:!!p.pierce, delay:p.delay, shape:p.shape, span: p.vx*p.life, ground: p.y }; }),
+              ids: projectiles.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).length, q: JSON.stringify(s._s4q), end: s._s4.end, gy: groundY() };
+          });
+        });
+        projectiles = [];
+        var s2 = ${S('_phase:2, _telPh:2')}; WW = 1100; s2.x = 550; BOSS_MOVES.s4car(s2, { x: 200, y: groundY()-24, dead:false, idx:0 });
+        out.left = projectiles.filter(function(p){ return p.s4 === 2; }).map(function(p){ return { x:p.x, vx:p.vx }; });
+      } finally { WW = WW0; projectiles = []; }
+      return { out: out, full: bossDmg() }; })()`);
+    const T = Math.ceil((1100 - 80) / 14) + 2;   // frames to cross the floor
+    const p2 = r.out[1100].p2, p3 = r.out[1100].p3;
+    expect(p2.cars).toHaveLength(2);
+    // you are on the right (0.8 of the width): the edge farther from you is the left, and the first car starts there and drives at you
+    expect(p2.cars[0]).toMatchObject({ x: 40, vx: 14, r: 26, dmg: r.full, kb: 11, pierce: true, delay: 30, shape: 'redcar' });
+    expect(p2.cars[1], 'the car back: from the other edge, once the first has cleared the far one and 40 frames more').toMatchObject({ x: 1100 - 40, vx: -14, r: 26, dmg: r.full, kb: 11, pierce: true, delay: 30 + T + 40, shape: 'redcar' });
+    expect(p2.ids, 'one attack id for the whole turn').toBe(1);
+    expect(p2.q, 'phase 2 has no layer on top of the cars').toBe('[]');
+    // phase 3: the second car does not wait ("the whole course goes live")
+    expect(p3.cars[1]).toMatchObject({ x: 1100 - 40, vx: -14, delay: 30 + 50 });
+    expect(JSON.parse(p3.q).map((e) => [e.t, e.f]), 'the crusher at 150 frames, the platform\'s flip at 186').toEqual([[150, 'crush'], [186, 'flip']]);
+    for (const c of [...p2.cars, ...p3.cars]) expect(c.ground, 'the car is on the floor: a shot riding 24 px over it').toBeCloseTo(p2.gy - 24, 3);
+    for (const w of [1100, 1920]) for (const ph of ['p2', 'p3']) for (const c of r.out[w][ph].cars) expect(Math.abs(c.span), 'it lives long enough to drive the whole floor, even on a ' + w + ' px screen').toBeGreaterThanOrEqual(w - 80);
+    expect(r.out.left.map((c) => [c.x, c.vx]), 'you on the left: it comes from the right, and back from the left').toEqual([[1100 - 40, -14], [40, 14]]);
+  });
+
+  it('a car turn through the engine: both cars cross, he walks back in from the edge he left by 22 frames after the last has cleared, and the turn ends', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 2, true, true)}
+      b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+      for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; step(); }
+      var ev = [], last = '', backAt = -1, carsAtBack = -1, doneAt = -1, maxCars = 0, gone = -1;
+      for (var k=0;k<400;k++){
+        f.x = 300; f.y = groundY() - 400; f.vy = -1; f.vx = 0; f.invuln = 9999; step();
+        var A = b._s4, cars = projectiles.filter(function(p){ return p.s4 === 2; }).length;
+        maxCars = Math.max(maxCars, cars);
+        if (cars === 0 && maxCars > 0 && gone < 0) gone = k;
+        if (A && A.st === 'back' && backAt < 0){ backAt = k; carsAtBack = cars; }
+        if (!A && doneAt < 0){ doneAt = k; break; }
+      }
+      var out = { backAt: backAt, carsAtBack: carsAtBack, doneAt: doneAt, gone: gone, x: b.x, y: b.y, hover: b.hover, timer: b._atkTimer, maxCars: maxCars, gap: bossAtkGap(b), gy: groundY(), R: b.r, WW: WW, from: null };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.maxCars, 'the car and the car back: two on the road').toBeGreaterThanOrEqual(1);
+    expect(r.backAt, 'he waits out of sight until the last car is gone').toBeGreaterThanOrEqual(r.gone);
+    expect(r.carsAtBack).toBe(0);
+    expect(r.doneAt - r.backAt, 'the walk back takes S4.carIn = 22 frames').toBeGreaterThanOrEqual(21);
+    expect(r.doneAt - r.backAt).toBeLessThanOrEqual(24);
+    expect(r.x, 'he comes back in from the right edge (you were on the left) to his place there').toBeGreaterThan(r.WW * 0.5);
+    expect(r.x).toBeLessThan(r.WW * 0.9);
+    expect(r.y, 'on his feet').toBeCloseTo(r.gy - r.R, 0);
+    expect(r.hover).toBe(false);
+    expect(r.timer, 'and his next turn waits the usual gap').toBeGreaterThan(r.gap - 5);
+  });
+
+  it('both cars together are one boss hit: whoever stands on the floor is run over once, and whoever is in the air is not touched', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [['floor', 24], ['air', 200]].forEach(function(c){ ${STAGE(600, 2, true, false)}
+        b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+        var hits = 0, last = 0, gy = groundY(), n = 0;
+        for (var k=0;k<400;k++){
+          f.x = 600; f.y = gy - c[1]; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; step(); n++;
+          if (f.pct > last + 0.5){ hits++; last = f.pct; }
+          if (!b._s4 && k > 20) break;
+        }
+        out[c[0]] = { hits: hits, dmg: f.pct, n: n };
+        summons = []; projectiles = []; });
+      out.full = bossDmg(); return out; })()`);
+    expect(r.floor.hits, 'both passes, one hit').toBe(1);
+    expect(r.floor.dmg, 'a whole boss hit, no more').toBeCloseTo(r.full, 5);
+    expect(r.floor.n, 'both cars did cross (the turn ran its length)').toBeGreaterThan(200);
+    expect(r.air.dmg, 'jumping the cars is the whole fight against them').toBe(0);
+  });
+
+  it('phase 3 puts the whole course on the same turn: spikes shadowed 40 frames then up, the crusher on you at 150 frames (a whole hit), the big platform turned over at 186 -- one attack id', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3, true, true)}
+      var gy = groundY(), pl = worldPlats[0], ids = {};
+      b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+      var banners = [], _b = banner; banner = function(t, m, k, l){ banners.push([String(t), k || null]); return _b(t, m, k, l); };
+      var impacts = [], _imp = impact; impact = function(x, y, o){ impacts.push([hazardT, Math.round(x), Math.round(y), o && o.shake]); return _imp(x, y, o); };
+      try {
+        for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; step(); }
+        var spikes = projectiles.filter(function(p){ return p.s4 === 4; });
+        var out = { spikes: spikes.length, want: 0, spike: spikes.every(function(p){ return p.delay >= 38 && p.warn >= 38 && p.vy < 0 && p.warnX === p.x && p.warnY === pl.y; }),
+          away: spikes.every(function(p){ var mid = pl.x + pl.w/2; return Math.sign(p.vx) === (p.x < mid ? -1 : 1); }), dmg: spikes.map(function(p){ return p.dmg; }).filter(function(v, i, a){ return a.indexOf(v) === i; }), banner: banners.slice() };
+        for (var x = pl.x + 18; x < pl.x + pl.w - 10; x += S4.spikeGap) out.want++;
+        projectiles.forEach(function(p){ if (p.bossAtk != null) ids[p.bossAtk] = 1; });
+        var crush = null, crushAt = -1, flipAt = -1, rot180 = -1, rotBack = -1, surfGone = null, surfBack = null, shadow = null, hitAt = -1;
+        var pct0 = f.pct;
+        for (var k=0;k<420;k++){
+          f.x = 300; f.y = gy - 24 - (k < 140 ? 380 : 0); f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0;
+          if (k < 140) f.invuln = 9999;
+          step();
+          if (b._s4) projectiles.forEach(function(p){ if (p.bossAtk != null) ids[p.bossAtk] = 1; });
+          else b._atkTimer = 1e9;   // the turn is over: nothing else begins while the platform comes back
+          var c = projectiles.filter(function(p){ return p.s4 === 3; })[0];
+          if (c && crushAt < 0){ crushAt = k; crush = { warn: c.warn, warnX: c.warnX, warnY: c.warnY, delay: c.delay, dmg: c.dmg, kb: c.kb, x: c.x }; }
+          if (c && c.warn > 0 && !shadow) shadow = [c.warnX, c.warnY];
+          if (b._hz.flip && flipAt < 0) flipAt = k;
+          if ((pl.rot||0) === 180 && rot180 < 0){ rot180 = k; surfGone = surfaceBelow(pl.x + pl.w/2, pl.y - 30); }
+          if (rot180 >= 0 && (pl.rot||0) === 0 && rotBack < 0){ rotBack = k; surfBack = surfaceBelow(pl.x + pl.w/2, pl.y - 30); }
+          if (f.pct > pct0 + 0.5 && hitAt < 0) hitAt = k;
+          if (!b._s4 && rotBack >= 0) break;
+        }
+        out.crush = crush; out.crushAt = crushAt; out.flipAt = flipAt; out.rot180 = rot180; out.rotBack = rotBack; out.surfGone = surfGone; out.surfBack = surfBack; out.platY = pl.y; out.gy = gy;
+        out.ids = Object.keys(ids).length; out.shadow = shadow; out.hitAt = hitAt; out.taken = f.pct - pct0; out.full = bossDmg();
+        out.shakes = impacts.filter(function(i){ return i[3] >= 14; }).length; out.rotNow = pl.rot||0;
+        summons = []; projectiles = []; worldPlats = []; return out;
+      } finally { banner = _b; impact = _imp; }
+    })()`);
+    expect(r.spikes, 'a spike every 40 px along the platform').toBe(r.want);
+    expect(r.spikes).toBeGreaterThan(0);
+    expect(r.spike, 'a 40-frame shadow on the platform\'s top, then they jump up').toBe(true);
+    expect(r.away, 'each leans away from its platform\'s middle, so it does not always knock you right').toBe(true);
+    expect(r.banner.some(([t, k]) => t === 'SUPER DEATH TRAP!' && k === 'boss'), 'the trap is named when it goes live').toBe(true);
+    expect(r.crush, 'the crusher comes down where you stand (a shadow first)').toMatchObject({ warn: expect.any(Number), warnX: 300, delay: expect.any(Number) });
+    expect(r.shadow[0]).toBe(300);
+    expect(r.crush.dmg, 'a whole boss hit').toBe(r.full);
+    expect(r.crush.kb).toBe(14);
+    expect(r.crushAt, 'about 150 frames after the cars set off').toBeGreaterThan(130);
+    expect(r.crushAt).toBeLessThan(160);
+    expect(r.flipAt, 'the platform turns at 186').toBeGreaterThan(r.crushAt);
+    expect(r.rot180, 'turned over within ten frames').toBeGreaterThan(r.flipAt);
+    expect(r.rot180 - r.flipAt).toBeLessThanOrEqual(12);
+    expect(r.surfGone, 'a platform turned over has nothing to stand on: the floor is the surface under it').toBeCloseTo(r.gy, 0);
+    expect(r.rotBack - r.rot180, 'and it stays over for S4.flip.hold = 150 frames before it turns back').toBeGreaterThan(145);
+    expect(r.surfBack, 'back, it is a platform again').toBeCloseTo(r.platY, 0);
+    expect(r.rotNow).toBe(0);
+    expect(r.ids, 'cars, spikes and crusher are one attack: one id').toBe(1);
+    expect(r.hitAt, 'the crusher found the fighter standing under it').toBeGreaterThan(0);
+    expect(r.taken, 'and the whole turn is one boss hit at most').toBeLessThanOrEqual(r.full + 1e-6);
+    expect(r.shakes, 'the crusher shakes the floor').toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('ONE OF EACH! (the chainsaw and the lollipop)', () => {
+  // The Tile Divide: "No! The prizes are chainsaws! (pulls out a chainsaw)" ... "You know what? We'll give them one of each!" -- a chainsaw cuts someone in half, a
+  // lollipop is "thrown" and caught in the mouth; he holds both and throws them in turn.
+  it('he throws a pair -- the chainsaw lobbed at your feet and, twelve frames behind it, a lollipop flat at head height -- one pair, two, three by phase, twenty frames apart, one attack id', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
+        f.invuln = 9999;
+        ${FIRE('s4prizes')}
+        var gy = groundY(), ev = [], t = 0, seen = [];
+        var scan = function(){ projectiles.forEach(function(p){ if (p.s4 === 6 && seen.indexOf(p) < 0){ seen.push(p); ev.push({ t:t, shape:p.shape, x:Math.round(p.x), y:Math.round(p.y), vx:+p.vx.toFixed(2), vy:+p.vy.toFixed(2), r:p.r, kb:p.kb, atk:p.bossAtk, vol:!!p.volley, tag:p.fxTag, fxN:p.fxN, bounce:!!p.bounce, mb:p.maxBounces, dmg:p.dmg, fx:Math.round(f.x) }); } }); };
+        scan();
+        for (var k=0;k<200;k++){
+          t++; if (t > 6) f.x += 3; f.vx = 0; f.y = gy - 24; f.invuln = 9999; step(); scan();
+          projectiles.forEach(function(p){ if (p.s4 === 6 && p.shape === 's4saw' && (p.bounces||0) > (p._lb||0)){ p._lb = p.bounces; ev.push({ t:t, bounce:p.bounces, x:Math.round(p.x), y:Math.round(p.y) }); } });
+          if (!b._s4 && b._atkTimer > 5 && !projectiles.some(function(p){ return p.s4 === 6; })) break;
+        }
+        out.p${ph} = { kind: telKind, name: telName, tel0: tel0, ev: ev, gy: gy, timer: b._atkTimer, bx: b.x };
+        summons = []; projectiles = []; }`).join('\n')}
+      out.full = bossDmg(); return out; })()`);
+    for (const ph of [1, 2, 3]) {
+      const o = r['p' + ph], saws = o.ev.filter((e) => e.shape === 's4saw'), lollis = o.ev.filter((e) => e.shape === 's4lolli'), bounces = o.ev.filter((e) => e.bounce);
+      expect(o.kind).toBe('s4prizes');
+      expect(o.name).toBe('ONE OF EACH!');
+      expect(o.tel0).toBe(36);
+      expect(saws.length, 'a chainsaw a pair: ' + ph).toBe(ph);
+      expect(lollis.length, 'and a lollipop with it').toBe(ph);
+      expect(saws.map((e) => e.t), 'a pair every 20 frames').toEqual([0, 20, 40].slice(0, ph));
+      expect(lollis.map((e) => e.t), 'the lollipop 12 frames behind its chainsaw').toEqual([12, 32, 52].slice(0, ph));
+      expect(new Set(o.ev.filter((e) => e.shape).map((e) => e.atk)).size, 'one attack id for the turn').toBe(1);
+      expect(o.ev.filter((e) => e.shape).every((e) => e.vol), 'a volley: the pair is capped as one').toBe(true);
+      for (const s of saws) expect(s).toMatchObject({ r: 14, kb: 9, tag: 'bleed', fxN: 60, bounce: true, mb: 2 });
+      for (const e of o.ev.filter((x) => x.shape)) expect(e.dmg, 'each piece of a pair is a boss shot\'s 0.8 of a hit; the pair together is capped at one').toBeCloseTo(r.full * 0.8, 5);
+      for (const l of lollis) {
+        expect(l).toMatchObject({ r: 13, kb: 7, vy: 0 });
+        expect(Math.abs(l.vx), 'thrown flat and fast').toBe(12);
+        expect(l.y, 'at head height: 40 px over the floor').toBeCloseTo(o.gy - 40, 0);
+      }
+      // the first pair goes where you stood when he drew it (300), the chainsaw to the left of him at your feet, the lollipop the same way
+      expect(saws[0].vx).toBeLessThan(0);
+      expect(lollis[0].vx).toBeLessThan(0);
+      const land0 = bounces.find((e) => e.bounce === 1);
+      expect(Math.abs(land0.x - 300), 'the first chainsaw lands on the spot you stood on, though you walked on').toBeLessThanOrEqual(12);
+      expect(land0.y, 'at your feet').toBeGreaterThan(o.gy - 24);
+      if (ph > 1) {   // the next pairs go to where you are by then
+        const second = bounces.filter((e) => e.bounce === 1)[1];
+        expect(Math.abs(second.x - saws[1].fx), 'the second chainsaw lands where you were as it was thrown').toBeLessThanOrEqual(16);
+      }
+      expect(Math.abs(lollis[0].y - land0.y), 'the lollipop passes over the chainsaw\'s landing, the two dodges are different dodges').toBeGreaterThan(20);
+    }
+  });
+
+  it('standing in the pairs is one boss hit, never more: the lollipop and the chainsaw of a pair share it, and the cut bleeds a trickle', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
+      var gy = groundY();
+      ${FIRE('s4prizes')}
+      var hits = [], pct0 = f.pct, bleedSeen = 0, sawBounces = [], bleedAt = -1;
+      for (var k=0;k<260;k++){
+        f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; step();
+        if (f.pct - pct0 > 2){ hits.push([k, +(f.pct - pct0).toFixed(2)]); }   // a hit; the bleed is hundredths a frame
+        pct0 = f.pct;
+        if (f.bleed > 0 && bleedAt < 0) bleedAt = k;
+        projectiles.forEach(function(p){ if (p.s4 === 6 && p.shape === 's4saw') sawBounces.push(p.bounces||0); });
+        if (!b._s4 && b._atkTimer > 5 && !projectiles.some(function(p){ return p.s4 === 6; })) break;
+      }
+      var out = { hits: hits, total: f.pct, bleedAt: bleedAt, full: bossDmg(), maxB: Math.max.apply(null, sawBounces.concat([0])) };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.hits.reduce((a, h) => a + h[1], 0), 'three pairs on one fighter: the one boss hit').toBeCloseTo(r.full, 5);
+    expect(r.hits.length, 'the lollipop and the chainsaw of the first pair share it between them (17.6 and 4.4); the other pairs add nothing').toBeLessThanOrEqual(2);
+    expect(r.bleedAt, 'and the cut bleeds').toBeGreaterThan(0);
+    expect(r.total - r.full, 'the bleed is a trickle, not a second hit').toBeLessThan(4);
+  });
+
+  it('a chainsaw that lands is heavy: it shakes the floor and scars it where you stood', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      var imps = [], _imp = impact; impact = function(x, y, o){ imps.push([hazardT, Math.round(x), Math.round(y), o && o.shake, !!(o && o.scar)]); return _imp(x, y, o); };
+      try {
+        f.invuln = 9999;
+        ${FIRE('s4prizes')}
+        var firstLand = -1, goneAt = -1, seenSaw = false;
+        for (var k=0;k<260;k++){
+          f.x = 300; f.y = groundY() - 24; f.invuln = 9999; step();
+          var saw = projectiles.filter(function(p){ return p.s4 === 6 && p.shape === 's4saw'; })[0];
+          if (saw){ seenSaw = true; if ((saw.bounces||0) >= 1 && firstLand < 0) firstLand = k; }
+          else if (seenSaw && goneAt < 0) goneAt = k;
+          if (!b._s4 && b._atkTimer > 5 && !projectiles.some(function(p){ return p.s4 === 6; })) break;
+        }
+        return { imps: imps, gy: groundY(), firstLand: firstLand, goneAt: goneAt, left: projectiles.filter(function(p){ return p.s4 === 6; }).length };
+      } finally { impact = _imp; summons = []; projectiles = []; }
+    })()`);
+    const landings = r.imps.filter((i) => i[3] === 7);
+    expect(landings.length, 'a chainsaw\'s first landing shakes the floor (its second is its last, and the engine ends the shot in that step)').toBe(1);
+    expect(landings[0][4], 'and leaves a cut').toBe(true);
+    expect(r.firstLand, 'it landed').toBeGreaterThan(40);
+    expect(r.goneAt - r.firstLand, 'it hops once more (the better part of a second in the air) and its second landing is its last').toBeGreaterThan(40);
+    expect(r.goneAt - r.firstLand).toBeLessThan(140);
+    expect(r.left, 'and it is gone').toBe(0);
+    expect(Math.abs(landings[0][1] - 300), 'on the spot').toBeLessThanOrEqual(14);
+  });
+});
