@@ -317,26 +317,25 @@ describe('the fall drift: everything that falls moves sideways and lands on its 
     expect(Math.abs(r.clLand - r.clStart.warnX), 'and lands on its shadow (it used to land ~2.6 px a frame off it)').toBeLessThan(3);
   });
 
-  it("a MePhone4S cookie falls on a slant and waits on its shadow; a mine that waits, a rising spike and Springy's marks are not falling", () => {
+  // MePhone4S's POISONED COOKIES! fell on a slant and waited on their shadows; the owner cut them for HASTA LA VISTA! (boss-overhaul-decisions.md Round 8: "HASTA LA VISTA! (in place
+  // of the cut POISONED COOKIES!)"), so what is left of this one is the rule for what is NOT a drop: a mine that waits, his rising spikes and lobbed lemon, Springy's marks.
+  it("a mine that waits, a rising spike, MePhone4S's lobbed lemon and Springy's marks are not falling", () => {
     const r = W.eval(`(function(){ ${STAGE('MePhone4S', 300)} ${FOLLOW}
-      f.x = 100; f.invuln = 1e9; b.x = 200; b.face = 1; b._telX = 600; projectiles = [];
-      BOSS_MOVES.cookies(b, null); var c = projectiles[2], cStart = { vx:c.vx, warnX:c.warnX };
-      var ce = follow(c, 200);
-      var cookieRest = { x:c.x, vx:c.vx, trap:!!c.trap };
-      projectiles = [];
+      f.x = 100; f.invuln = 1e9; b.x = 200; b.face = 1; b._s4 = null; b.y = groundY() - b.r; projectiles = [];   // (he is still dropping in from above when the stage is set)
+      b._aimX = 600; b._aimY = groundY(); b._telPh = 1; b._s4 = { k:'vista' }; BOSS_MOVES.s4vista(b, null);
+      var lemon = projectiles.find(function(p){ return p.shape==='lemon'; }), lemonSlant = lemon.x + lemon.vx*S4.lemon.T, lemonVy = lemon.vy;
+      projectiles = []; b._s4 = null;
       var mine = addProj({ owner:f.idx, ownerObj:f, x:500, y:groundY()-10, vx:0, vy:0, trap:true, arm:24, _mine:true, r:14, life:100 });
       worldPlats = [{ x:300, y:groundY()-160, w:300, h:14 }];
       var spikes = []; s4DeathTrap(b, ++BOSS_ATK_ID); projectiles.forEach(function(p){ if (p.shape==='spike') spikes.push({ x:p.x, warnX:p.warnX, vx:p.vx }); });
       projectiles = []; springySlamStart(Object.assign({}, b, { attack:'springy', _telPh:1 }), { x:640, dead:false }, ++BOSS_ATK_ID);
       var mark = projectiles.find(function(p){ return p.springMark; }), hole = springyHole(333, 1, ++BOSS_ATK_ID);
-      var out = { cStart: cStart, cookieRest: cookieRest, mineVx: mine.vx, mineX: mine.x, spikes: spikes, mark: [mark.x, mark.vx], hole: [hole.x, hole.vx] };
+      var out = { lemonSlant: lemonSlant, lemonVy: lemonVy, mineVx: mine.vx, mineX: mine.x, spikes: spikes, mark: [mark.x, mark.vx], hole: [hole.x, hole.vx] };
       summons = []; projectiles = []; worldPlats = [];
       return out;
     })()`);
-    expect(r.cStart.vx).toBeGreaterThan(0);
-    expect(r.cookieRest.trap, 'it landed and waits').toBe(true);
-    expect(Math.abs(r.cookieRest.x - r.cStart.warnX), 'where its shadow was').toBeLessThan(1);
-    expect(r.cookieRest.vx, 'and waiting, it does not slide').toBe(0);
+    expect(r.lemonVy, 'thrown up and over, so no drop').toBeLessThan(0);
+    expect(r.lemonSlant, 'and it lands where it was aimed with no fall drift on it: its start plus its speed over its flight is the spot').toBeCloseTo(600, 4);
     expect([r.mineVx, r.mineX], 'a mine set down to wait stays put').toEqual([0, 500]);
     expect(r.spikes.length).toBeGreaterThan(0);
     expect(r.spikes.every((s) => s.x === s.warnX && Math.abs(s.vx) === 0.6), 'a spike that rises keeps its own lean').toBe(true);
@@ -460,8 +459,8 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     // Face's is 'swallow', test/boss-purple-face.test.js; the Bug Swarm's is 'swarm', test/boss-bug-swarm.test.js; Puffball Speaker Box's is
     // 'soundwave', test/boss-puffball.test.js; the Purple Dragon's is 'dragon', it waves back and flies away, test/boss-dragon.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
     expect(r.keys[0], "Springy's is first").toBe('springy');
-    expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm', 'soundwave', 'dragon']));
-    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
+    expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm', 'soundwave', 'dragon', 'mephone4s']));
+    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon', 'mephone4s'].includes(k)), 'only the rebuilt bosses join him (the early six, then the late five as each is rebuilt: MePhone4S so far, test/boss-mephone4s.test.js): ' + r.keys).toBe(true);
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
@@ -652,31 +651,31 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
   // What each of the five already had in a slot is inside its own pair now: the lines were moved, not changed.
   const HOLDS = {
     roster: { mephone4: ['attack:"mephone",'], evilleafy: ['attack:"evilleafy",'], mephone4s: ['attack:"mephone4s",'], two: ['attack:"two",'], four: ['attack:"four",'] },
-    extra: { mephone4: ['"MePhone4": ["melife", "portal"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["cookies", "chainsaws"]'], two: ['"Two": ["seekers", "ring"]'], four: ['"Four": ["rain", "seekers"]'] },
-    rushonly: { mephone4: ['"melife", "portal"'], mephone4s: ['"cookies", "chainsaws"'] },
-    movename: { mephone4: ['melife:"MELIFE DOWNLOAD!"', 'glitch:"GLITCH!"', 'portal:"REJECTION PORTAL!"'], mephone4s: ['cookies:"POISONED COOKIES!"', 'chainsaws:"CHAINSAWS!"'] },
-    moves: { mephone4: ['melife(s, tgt){', 'glitch(s, tgt){', 'portal(s, tgt){'], mephone4s: ['cookies(s, tgt){', 'chainsaws(s, tgt){'] },
+    extra: { mephone4: ['"MePhone4": ["melife", "portal"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["s4prizes", "s4vista", "s4popup", "s4car", "s4shove"]'], two: ['"Two": ["seekers", "ring"]'], four: ['"Four": ["rain", "seekers"]'] },
+    rushonly: { mephone4: ['"melife", "portal"'], mephone4s: ['"s4prizes", "s4vista", "s4popup", "s4car", "s4shove"'] },
+    movename: { mephone4: ['melife:"MELIFE DOWNLOAD!"', 'glitch:"GLITCH!"', 'portal:"REJECTION PORTAL!"'], mephone4s: ['s4prizes:"ONE OF EACH!"', 's4vista:"HASTA LA VISTA!"', 's4popup:"POP UP!"', 's4car:"I\'LL BE BACK!"', 's4shove:"QUICKSAND SHOVE!"'] },
+    moves: { mephone4: ['melife(s, tgt){', 'glitch(s, tgt){', 'portal(s, tgt){'], mephone4s: ['s4prizes(s, tgt){', 's4vista(s, tgt){', 's4popup(s, tgt){', 's4car(s, tgt){', 's4shove(s, tgt){'] },
     helpers: { mephone4: ['const MEPHONE_GLOVE = ', 'function meLifeDownload(', 'function updateRejectionPortal('], mephone4s: ['const S4 = ', 'function s4BeginTelegraph(', 'function s4DeathTrap('] },
     move: { evilleafy: ['if(s.attack==="evilleafy"){', 'spawnTendril(vx, ++BOSS_ATK_ID)', 'applyHit(f, bossDmg()*0.6'] },
-    tick: { mephone4: ['if(s._portal) updateRejectionPortal(s);', 'MEPHONE_GLOVE.lock'], mephone4s: ['s4TrackSight(s)'], two: ['if(s.attack==="two" && s._ungrounded){'] },
+    tick: { mephone4: ['if(s._portal) updateRejectionPortal(s);', 'MEPHONE_GLOVE.lock'], mephone4s: ['s4Tick(s, tgt)'], two: ['if(s.attack==="two" && s._ungrounded){'] },
     tel: { mephone4: ['s._telKind = "glitch"'], mephone4s: ['s4BeginTelegraph(s, tgt)'] },
     fire: {
-      mephone4: ['if(s.attack==="mephone"){', 'MEPHONE_GLOVE'], evilleafy: ['if(s.attack==="evilleafy"){', 'spawnTendril('], mephone4s: ['if(s.attack==="mephone4s"){', 's4DeathTrap('],
+      mephone4: ['if(s.attack==="mephone"){', 'MEPHONE_GLOVE'], evilleafy: ['if(s.attack==="evilleafy"){', 'spawnTendril('], mephone4s: ['if(s.attack==="mephone4s"){', 's4Gun('],
       two: ['if(s.attack==="two"){', 'POWER DRAIN!'], four: ['if(s.attack==="four"){', 'noAim:true, ring:true'],
     },
     gap: { mephone4: ['MEPHONE_GAPS[Math.min(3, s._phase||1)]'], evilleafy: ['s._phase===3 ? 70 : (s._phase===2 ? 95 : 130)'] },
-    tellen: { evilleafy: ['return 45;'], mephone4s: ['return 42;'], four: ['return 50;'] },
+    tellen: { evilleafy: ['return 45;'], mephone4s: ['s4TelLen(s)'], four: ['return 50;'] },
     phase: { mephone4: ['meLifeDownload(s, -(s.face||1))'], two: ['TWO SHRINKS!', 'POWER UNGROUNDED'] },
     phasename: { mephone4: ['mephone:'], evilleafy: ['evilleafy:'], mephone4s: ['mephone4s:'], two: ['two:'], four: ['four:'] },
-    telname: { mephone4: ['FIST THINGY COMBO!'], evilleafy: ['TENDRILS!'], mephone4s: ["I'LL BE BACK!"], two: ['MIND READ!'], four: ['SCREECHY!!'] },
+    telname: { mephone4: ['FIST THINGY COMBO!'], evilleafy: ['TENDRILS!'], mephone4s: ['PUT THAT COOKIE DOWN!'], two: ['MIND READ!'], four: ['SCREECHY!!'] },
     fx: { evilleafy: ['drawTendrils()'] },
-    sky: { mephone4: ['melife:'], evilleafy: ['forest:'], mephone4s: ['studio:'] },
-    decor: { mephone4: ['if(key==="melife"){'], evilleafy: ['if(key==="forest"){'], mephone4s: ['if(key==="studio"){'] },
+    sky: { mephone4: ['melife:'], evilleafy: ['forest:'], mephone4s: ['studio:', 'deathtrap:'] },
+    decor: { mephone4: ['if(key==="melife"){'], evilleafy: ['if(key==="forest"){'], mephone4s: ['if(key==="studio"){', 'if(key==="deathtrap")'] },
     sprite: { mephone4: ['mephone:'], evilleafy: ['evilleafy:'], mephone4s: ['mephone4s:'], two: ['two:'], four: ['four:'] },
     flip: { four: ['four:true'] },
     tell: { mephone4: ['drawRejectionPortal(', 'MEPHONE_GLOVE.r'], mephone4s: ["typeof s._aimX==='number'"] },
     body: { mephone4: ['case "mephone": {'], evilleafy: ['case "evilleafy": {'], mephone4s: ['case "mephone4s": {'], two: ['case "two": {'], four: ['case "four": {'] },
-    shape: { mephone4: ['fistthingy:'], mephone4s: ['cookie:', 'redcar:'] },
+    shape: { mephone4: ['fistthingy:'], mephone4s: ['s4gun:', 's4saw:', 's4lolli:', 'redcar:'] },
     net: { mephone4: ['_portal:m._portal'], mephone4s: ['_aimX:m._aimX'] },
   };
 
@@ -691,7 +690,10 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
 
   it("and the slots they do not use yet hold no code at all: spawn, shotdraw, ground, look, art, netshot, hazard and ending (Four's ending is a note, for the victory card)", () => {
     const L = lines(), strip = (s) => s.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean);
+    // (a rebuilt boss fills the slots it uses: MePhone4S's spawn, shotdraw, ground, art, netshot, hazard and ending, test/boss-mephone4s.test.js)
+    const IN_USE = { mephone4s: ['spawn', 'shotdraw', 'ground', 'art', 'netshot', 'hazard', 'ending'] };
     for (const slot of ['spawn', 'shotdraw', 'ground', 'look', 'art', 'netshot', 'hazard', 'ending']) for (const boss of LATE) {
+      if ((IN_USE[boss] || []).includes(slot)) continue;
       expect(strip(body(L, slot, boss)), `${slot}/${boss}`).toEqual([]);
     }
   });
@@ -707,7 +709,9 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
       return out; })()`);
     expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal'] });
     expect(r.evilleafy).toEqual({ base: [130, 95, 70], tel: 45, name1: 'TENDRILS!', name2: 'TENDRILS!', p2: 'No Refuge', p3: 'Vine Coverage', extra: ['seekers', 'slam'] });
-    expect(r.mephone4s).toEqual({ base: [100, 72, 52], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['cookies', 'chainsaws'] });
+    // rebuilt (the boss overhaul, Rounds 8 and 10): the gaps are a little longer than the usual 100/72/52 -- "if it makes sense for a hazard, reduce boss difficulty and add a hazard" (Round 11)
+    // -- and his five second moves are his own ("PUT THAT COOKIE DOWN! (redone), I'LL BE BACK!, ONE OF EACH!, HASTA LA VISTA!, POP UP!, QUICKSAND SHOVE!")
+    expect(r.mephone4s).toEqual({ base: [108, 78, 56], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['s4prizes', 's4vista', 's4popup', 's4car', 's4shove'] });
     expect(r.two).toEqual({ base: [100, 72, 52], tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['seekers', 'ring'] });
     expect(r.four).toEqual({ base: [100, 72, 52], tel: 50, name1: 'SCREECHY!', name2: 'SCREECHY!!', p2: 'Zap to Dust', p3: 'Reality Buckles', extra: ['rain', 'seekers'] });
   });
@@ -718,9 +722,9 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     it(`${name} still fights as he did, through his slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], landed: [], phase: null };
-        b.x = 350; b._atkTimer = 1; b._moveN = 0;
+        b.x = 350; b._atkTimer = 1; b._moveN = 0; b._s4 = null;   // (MePhone4S drops in from above and holds his timer for his scripted moves: each turn here starts from a settled one, as the game's do)
         for (var t=0;t<3;t++){
-          window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f);
+          window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; b._s4 = null; b.hover = false; b.y = groundY() - b.r; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
           projectiles = []; tendrils = []; summons = summons.filter(function(s){ return s.type==='boss'; }); f.invuln = 0; f.pct = 0;
           b._tel = 1; updateBossAttack(b, f);
@@ -795,7 +799,7 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
     expect(leaks, 'no slot puts the pace on its own number').toEqual([]);
   });
 
-  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, and 100 x 1.2 for MePhone4S, Two and Four', () => {
+  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, and 108 x 1.2 for MePhone4S (rebuilt: a little longer), 100 x 1.2 for Two and Four', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE('Four', 500)}
       ['MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Four'].forEach(function(name){
@@ -805,7 +809,7 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
         out[name] = b._atkTimer;
       });
       summons = []; projectiles = []; tendrils = []; return out; })()`);
-    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, MePhone4S: 120, Two: 120, Four: 120 });
+    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, MePhone4S: 130, Two: 120, Four: 120 });
   });
 });
 

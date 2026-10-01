@@ -86,7 +86,7 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
       // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
       ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
       ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'seekers+slam', 'evilleafy seekers evilleafy slam', 45, 'No Refuge', 'Vine Coverage'],
-      ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s', 'cookies+chainsaws', 'mephone4s cookies mephone4s chainsaws', 42, "I'll Be Back", 'Super Death Trap'],
+      ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'deathtrap', false, 'mephone4s', 's4prizes+s4vista+s4popup+s4car+s4shove', 'mephone4s s4prizes mephone4s s4vista', 42, "I'll Be Back", 'Super Death Trap'],   // rebuilt (the boss overhaul, Rounds 8 and 10): six attacks, his own arena (test/boss-mephone4s.test.js)
       // the Dragon's own five and its own wind-up (44), on the hotel roof: "the bosses should have more attacks the later they get" (Bug Swarm on: 5), "Each its own"
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragon dragonchar', 44, 'Strafing Runs', 'Grab & Carry'],
       ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two', 'seekers+ring', 'two seekers two ring', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],

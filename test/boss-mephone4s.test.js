@@ -1,81 +1,152 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { PNG } from 'pngjs';
-import { bootMonolith } from './helpers/smash-golden.js';
+import { JSDOM } from 'jsdom';
 import { loadMonolith } from './helpers/load-monolith.js';
+import { mulberry32 } from './helpers/prng.js';
 
-// "mephone should be a boss, alongside 4s, and cobs." MePhone4S -- "The Terminator" on the II wiki, MePhone4's successor
-// and Season 1's main antagonist -- is Boss 9 of the gauntlet, after Evil Leafy and before Two. Every attack is his from
-// the wiki: the gun he shot MePhone4 with after "Put that cookie down, now!" (4Seeing The Future), the red car he ran
-// Cheesy over with after "I'll be back" (Sugar Rush), the poisoned cookie that gave Pickle 4 seconds (4Seeing The
-// Future), and the chainsaws and death trap of The Tile Divide. Nobody from the OSC appears in any of it.
+// Boss 8, MePhone4S ("The Terminator"), rebuilt in the boss overhaul (2026-09-29). The owner's kit (boss-overhaul-decisions.md, Rounds 8 and 10):
+// "PUT THAT COOKIE DOWN! (redone: from P2 the volley freezes mid-air, then resumes), I'LL BE BACK!, ONE OF EACH!, HASTA LA VISTA! (in place of the cut
+// POISONED COOKIES!). Arena: his Super Death Trap over the quicksand." and "POP UP! (sinks into the quicksand, pops up under you; bubbles show where),
+// QUICKSAND SHOVE! (a charging tackle into a slowing quicksand strip)" -- six attacks, each a scene from the show, all of them through the boss engine's kit
+// (impact, the fall drift, the arena's ground and hazard, its ending). "Harder, same damage": every part of a turn shares that turn's one attack id, so a
+// fighter takes at most one boss hit from it. Never tuned for a bot: every number here is what the design says, and "Accept level" with MePhone4 (Round 11)
+// means neither is tuned to separate them.
 
 let W;
-beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+beforeAll(async () => { W = loadMonolith().window; await W.eval('profileReady'); });
 
-// A still Firey on the floor at `x`, in Boss Rush with the gauntlet logic off (BOSSRUSH.active false), and MePhone4S
-// spawned the way the gauntlet spawns him. His attack timer is parked unless `live` is set.
-const STAGE = (x, live) => `
+const ROW = { name: 'MePhone4S', color: '#c8102e', hp: 260, big: 2.5, attack: 'mephone4s', arena: 'deathtrap', stationary: false, sprite: 'mephone4s' };
+const EX = ['s4prizes', 's4vista', 's4popup', 's4car', 's4shove'];
+const HP = { 1: 1, 2: 0.5, 3: 0.2 };
+// A still Firey on the floor at `x` and MePhone4S spawned the way the gauntlet spawns him (BOSSRUSH.active false: the gauntlet logic off), his entrance over and
+// the phase beat of `ph` run out (what a hit that crosses a threshold starts), standing at 700 over the quicksand, his attack timer held unless `live`. `plats`
+// puts the stage's one platform back (the arena's flip and the platform-safe tests need it).
+const STAGE = (x, ph = 1, live = false, plats = false) => `
   SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
   BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
-  worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+  worldPlats=${plats ? 'platRectsSmall()' : '[]'}; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[]; hazardT=0;
   var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), ${x}, groundY()-24, 0);
   f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
   spawnBossRushBoss();
   var b = summons.find(function(s){ return s.type==='boss'; });
-  ${live ? '' : 'b._atkTimer = 1e9;'}
-  step(); f.pct=0; f.invuln=0;
+  b.hp = b.maxHp*${HP[ph]}; b._atkTimer = 1e9;
+  b._s4 = null; b.hover = false; b.x = 700; b.y = groundY() - b.r; b.vx = 0; b.vy = 0; b._homeX = 700; b.face = -1;
+  step(); step();
+  b._s4 = null; b._s4q = null; b._beatQ = 0; b._carDue = false; b.hover = false; b.vx = 0; b.vy = 0; b.x = 700; b.y = groundY() - b.r; b.face = -1; b._tel = 0; b._hz = {};
+  projectiles = []; hazardT = 0; ${live ? 'b._atkTimer = 1;' : ''}
+  f.pct = 0; f.invuln = 0; f.hitstun = 0; f.x = ${x}; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.onground = true;
 `;
 // A bare MePhone4S for driving his functions directly. `hp` out of 100 sets the phase updateBossAttack works out.
-const S = (o = '') => `{ name:'MePhone4S', attack:'mephone4s', x:550, y:groundY()-85, r:85, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0,
+const S = (o = '') => `{ name:'MePhone4S', attack:'mephone4s', type:'boss', x:550, y:groundY()-85, r:85, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0,
   color:'#c8102e', face:1, homeX:550, stationary:false, vx:0, vy:0 ${o ? ',' + o : ''} }`;
+// Begin move `kind` ('gun' or one of EX) of the boss `b` now and run its wind-up out: the frame the move fires is the last one this returns from.
+const FIRE = (kind) => `b._moveN = ${kind === 'gun' ? 0 : 2 * EX.indexOf(kind) + 1}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
+  for (var w=0; w<80 && b._tel>0; w++){ step(); }`;
 
-describe('MePhone4S joins the gauntlet', () => {
-  it('is Boss 8 (was 9 until the Dragon moved after him), after Evil Leafy and before Four, with his signature, his second moves and his art', () => {
+describe('MePhone4S takes his Super Death Trap', () => {
+  it('is Boss 8 (before the Dragon), his own arena, and his six attacks in turn: the gun between each of the five others, each named, each with its own wind-up', () => {
     const r = W.eval(`(function(){
-      var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }), b = BOSS_ROSTER[i];
+      var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; });
       var idx = function(n){ return BOSS_ROSTER.findIndex(function(b){ return b.name===n; }); };
-      return { i: i, row: b, leafy: idx('Evil Leafy'), mephone: idx('MePhone4'), four: idx('Four'), first: BOSS_ROSTER[0].name,
-               extra: BOSS_EXTRA['MePhone4S'], moves: BOSS_EXTRA['MePhone4S'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k]; }) };
+      var kinds = [], names = [], tels = [], s = ${S('_phase:2, hp:50')};
+      for (var k=0;k<10;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tels.push(s._tel); }
+      return { i: i, row: BOSS_ROSTER[i], leafy: idx('Evil Leafy'), mephone: idx('MePhone4'), dragon: idx('Purple Dragon'), two: idx('Two'), four: idx('Four'), n: BOSS_ROSTER.length, extra: BOSS_EXTRA['MePhone4S'],
+               kinds: kinds, names: names, tels: tels, p2: bossPhaseName({ attack:'mephone4s' }, 2), p3: bossPhaseName({ attack:'mephone4s' }, 3),
+               gaps: [1,2,3].map(function(ph){ var q = ${S()}; q._phase = ph; q.hp = [100, 50, 20][ph-1]; return bossAtkGap(q); }), held: (function(){ var q = ${S()}; q._s4 = { k:'pop', go:true }; return bossAtkGap(q); })(),
+               rushOnly: ${JSON.stringify(EX)}.map(function(k){ return BOSS_RUSH_ONLY.has(k); }),
+               moves: BOSS_EXTRA['MePhone4S'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k]; }),
+               telLens: ['mephone4s'].concat(${JSON.stringify(EX)}).map(function(k){ return bossTelLen({ attack:'mephone4s', _telKind:k }); }), telBare: bossTelLen({ attack:'mephone4s' }) };
     })()`);
-    expect(r.row).toEqual({ name: 'MePhone4S', color: '#c8102e', hp: 260, big: 2.5, attack: 'mephone4s', arena: 'studio', stationary: false, sprite: 'mephone4s' });
-    expect(r.i, 'Boss 8 ("just move purple dragon!!!" (the owner, 2026-09-30))').toBe(7);
+    expect(r.row).toEqual(ROW);
+    expect(r.i, 'Boss 8 ("just move purple dragon!!!" (the owner, 2026-09-30): the Dragon is 9)').toBe(7);
     expect(r.i).toBeGreaterThan(r.leafy);
     expect(r.i, 'after MePhone4, whom he beat').toBeGreaterThan(r.mephone);
-    expect(r.i, 'before Four, or he is never reached').toBeLessThan(r.four);
-    expect(r.four, 'Four is still last').toBe(W.eval('BOSS_ROSTER.length') - 1);
-    expect(r.first).toBe('Announcer');
-    expect(r.extra).toEqual(['cookies', 'chainsaws']);
-    expect(r.moves).toEqual(['function/POISONED COOKIES!', 'function/CHAINSAWS!']);
+    expect(r.dragon, 'the Dragon follows him').toBe(r.i + 1);
+    expect(r.i, 'before Two and Four').toBeLessThan(r.two);
+    expect(r.four, 'Four is still last').toBe(r.n - 1);
+    expect(r.extra, '"PUT THAT COOKIE DOWN! (redone), I\'LL BE BACK!, ONE OF EACH!, HASTA LA VISTA!" and the two the owner added').toEqual(EX);
+    // the signature on every odd turn, then the five in the order of the list
+    expect(r.kinds).toEqual(['mephone4s', 's4prizes', 'mephone4s', 's4vista', 'mephone4s', 's4popup', 'mephone4s', 's4car', 'mephone4s', 's4shove']);
+    // the names are the show's words: "Put that cookie down! ... Now!", "I'll be back", "We'll give them one of each!", "Hasta la vista, Blu-Ray...", "pops up from under"
+    expect(r.names).toEqual(['PUT THAT COOKIE DOWN!', 'ONE OF EACH!', 'PUT THAT COOKIE DOWN!', 'HASTA LA VISTA!', 'PUT THAT COOKIE DOWN!', 'POP UP!', 'PUT THAT COOKIE DOWN!', "I'LL BE BACK!", 'PUT THAT COOKIE DOWN!', 'QUICKSAND SHOVE!']);
+    expect(r.moves).toEqual(['function/ONE OF EACH!', 'function/HASTA LA VISTA!', 'function/POP UP!', "function/I'LL BE BACK!", 'function/QUICKSAND SHOVE!']);
+    expect(r.tels, 'each move reads out its own wind-up').toEqual([42, 36, 42, 46, 42, 46, 42, 46, 42, 46]);
+    expect(r.telLens, 'the gun 42, the props 36, the rest 46').toEqual([42, 36, 46, 46, 46, 46]);
+    expect(r.telBare, 'a bare boss with no move yet is the gun\'s').toBe(42);
+    expect([r.p2, r.p3]).toEqual(["I'll Be Back", 'Super Death Trap']);
+    // "bosses should attack a bit slower" (the owner, 2026-09-30): his own 108 / 78 / 56 (a little longer than the usual 100 / 72 / 52: his arena's sawblades and
+    // quicksand press as well -- "if it makes sense for a hazard, reduce boss difficulty and add a hazard", Round 11) times BOSS_PACE (1.2)
+    expect(r.gaps, 'his own pacing, paced, quicker each phase').toEqual([130, 94, 67]);
+    expect(r.held, 'held while a move runs').toBe(1e6);
+    expect(r.rushOnly, 'an item boss never throws them: they need his floor and his arena').toEqual([true, true, true, true, true]);
   });
 
-  it('every boss before him is exactly as it was: its row, its second moves, its turns, its wind-up and its phases', () => {
+  it('in phase 1 the car turn plays the next move instead; entering phase 2 makes the car the very next extra, and the order carries on', () => {
     const r = W.eval(`(function(){
-      var before = BOSS_ROSTER.slice(0, BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }));
-      return before.map(function(b){
-        var s = { name:b.name, attack:b.attack, x:550, y:300, r:80, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0, color:b.color,
-                  face:1, homeX:550, stationary:b.stationary, vx:0, vy:0 };
-        var turns = [];
-        for (var i=0;i<4;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); turns.push(s._telKind); }
-        summons = []; projectiles = [];
-        return [b.name, b.color, b.hp, b.big, b.attack, b.arena, b.stationary, b.sprite, BOSS_EXTRA[b.name].join('+'), turns.join(' '),
-                bossTelLen({ attack:b.attack }), bossPhaseName({ attack:b.attack }, 2), bossPhaseName({ attack:b.attack }, 3)];
-      });
+      var run = function(hp, ph, n){ var s = ${S('_phase:ph, hp:hp')}, out = [];
+        for (var k=0;k<n;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; s._beatQ = 0; updateBossAttack(s, null); out.push(s._telKind); } return out.join(' '); };
+      return { p1: run(100, 1, 12), p2: run(50, 2, 12), p3: run(20, 3, 12), enter: run(50, 1, 8) };
     })()`);
-    expect(r).toEqual([
-      ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'cakeatstake', false, 'announcer', 'annlaser+annacid+annballoon', 'announcer annlaser announcer annacid', 36, 'Budget Cuts', 'Crusher Arm'],   // rebuilt (boss overhaul, Round 9: his own QUADRUPLE LASER!, ACID TEARS!, WATER BALLOONS!; INCOMING! and SHOCK RING gone) -- test/boss-announcer.test.js
-      ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'clubhouse', false, 'speaker', 'consequences+rainbowbarf+private', 'soundwave consequences soundwave consequences', 44, 'Stuck in a Loop', 'Sinking Clubhouse'],   // rebuilt (test/boss-puffball.test.js): her own arena, her own four, her own wind-up; RAINBOW BARF! waits for phase 2, so phase 1 plays CONSEQUENCES! twice
-      ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'volcano', false, 'speakerfirey', 'furnace+youmust', 'firewall furnace firewall youmust', 44, 'Flame Surge', 'RAGE MODE'],   // the owner cut FIRE WALL! for THE TLC NEEDS TO BE FIXED! (boss-plan-early.md 5, Round 9; test/boss-firey-sb.test.js): his signature turns alternate ROCKET BOARD! and the TLC, his second moves are FURNACE! and YOU MUST!; the wind-up is 44 in phase 1
-      // The Bug Swarm, rebuilt in the boss overhaul (2026-09-29): "starting from bug swarm, they should have 5" (test/boss-bug-swarm.test.js)
-      ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug', 'dodgepattern+swarmseek+dodgeball+eggsac', 'swarm dodgepattern swarm swarmseek', 36, 'Second Wave', 'Swarm Frenzy'],
-      ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face', 'pfaceRap+pfaceTorture+pfaceThanks+pfaceShoes', 'swallow pfaceRap swallow pfaceTorture', 46, 'Running Loops', 'Broken Value'],   // rebuilt (the boss overhaul): test/boss-purple-face.test.js
-      // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
-      ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
-      ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'seekers+slam', 'evilleafy seekers evilleafy slam', 45, 'No Refuge', 'Vine Coverage'],
-    ]);
+    expect(r.p1, 'no car in phase 1: the fourth extra is the shove').toBe('mephone4s s4prizes mephone4s s4vista mephone4s s4popup mephone4s s4shove mephone4s s4prizes mephone4s s4vista');
+    expect(r.p2, 'phase 2: the car takes its place in the order').toBe('mephone4s s4prizes mephone4s s4vista mephone4s s4popup mephone4s s4car mephone4s s4shove mephone4s s4prizes');
+    expect(r.p3).toBe(r.p2);
+    expect(r.enter, 'a boss that has just entered phase 2 plays the car first ("I\'ll Be Back")').toBe('mephone4s s4car mephone4s s4vista mephone4s s4popup mephone4s s4car');
   });
 
-  it('walking the gauntlet spawns him ninth, and beating him moves on to Two -- he is not the last boss', () => {
+  it('gives the place its sky, its red beam over the quicksand, its hazard and its ending, and every arena key a netcode client would take; the studio is still the studio', () => {
+    const r = W.eval(`({ sky: BOSS_ARENA_SKY.deathtrap, ground: BOSS_ARENA_GROUND.deathtrap && [BOSS_ARENA_GROUND.deathtrap.fill, BOSS_ARENA_GROUND.deathtrap.line, typeof BOSS_ARENA_GROUND.deathtrap.pattern],
+      hz: [typeof arenaHazardOf('deathtrap').step, typeof arenaHazardOf('deathtrap').draw], end: [typeof BOSS_ENDINGS.mephone4s.sweep, typeof BOSS_ENDINGS.mephone4s.begin, BOSS_ENDINGS.mephone4s.holdMs, BOSS_ENDINGS.mephone4s.line],
+      others: ['studio','forest','void','cave','cerealbox','hotelroof'].every(function(k){ return !!BOSS_ARENA_SKY[k]; }), cave: BOSS_ARENA_SKY.cave.length,
+      decor: String(drawArenaDecor).indexOf('s4DrawDecor') >= 0, studio: String(drawArenaDecor).indexOf('key==="studio"') >= 0 })`);
+    expect(r.sky).toHaveLength(2);
+    expect(r.ground, 'the red beam: sand-yellow where the chasm shows, the beam\'s dark red for the line').toEqual(['#e6c880', '#7a0c00', 'function']);
+    expect(r.hz).toEqual(['function', 'function']);
+    expect(r.end, 'a short canon exit, held 1.5 s, no line of text').toEqual(['function', 'function', 1500, undefined]);
+    expect(r.others, 'the other arenas are not touched').toBe(true);
+    expect(r.cave).toBe(2);
+    expect(r.decor).toBe(true);
+    expect(r.studio, 'the studio decor (Cobs\'s, the item bosses\') is still there').toBe(true);
+  });
+
+  it('he drops in from above, lands heavily with the sky answering, and holds still for 80 frames before his first turn', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
+      BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
+      worldPlats=platRectsSmall(); summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[]; hazardT=0;
+      var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 300, groundY()-24, 0);
+      f.team=0; f.controller='still'; f.stocks=9; fighters=[f];
+      spawnBossRushBoss();
+      var b = summons.find(function(s){ return s.type==='boss'; });
+      var out = { y0: b.y, k0: b._s4 && b._s4.k, arena: BOSS_ARENA, hp: b.maxHp, R: b.r, gy: groundY() };
+      var _imp = impact, imps = [], tel = false;
+      impact = function(x, y, o){ imps.push([hazardT, Math.round(x), Math.round(y), o && o.shake]); return _imp(x, y, o); };
+      try {
+        var landed = -1, ys = [];
+        for (var k=0;k<200 && landed < 0;k++){ f.x = 300; f.invuln = 9999; step(); if (k%12 === 0) ys.push(Math.round(b.y)); if (b._s4 === null) landed = k; if (b._tel > 0) tel = true; }
+        out.landed = landed; out.ys = ys; out.imps = imps.slice(); out.by = b.y; out.timer = b._atkTimer; out.thunder = b._hz.thunder; out.tel = tel;
+        var first = -1; for (var j=0;j<200 && first < 0;j++){ f.x = 300; f.invuln = 9999; step(); if (b._tel > 0) first = j; }
+        out.first = first;
+      } finally { impact = _imp; summons = []; projectiles = []; }
+      return out;
+    })()`);
+    expect(r.y0, 'above the screen').toBeLessThan(0);
+    expect(r.k0, 'the entrance is a scripted state').toBe('enter');
+    expect(r.arena, 'the gauntlet puts him in his own arena').toBe('deathtrap');
+    expect(r.hp).toBe(260);
+    expect(r.ys.every((y, i, a) => i === 0 || y > a[i - 1]), 'he falls, the engine\'s own gravity, getting faster').toBe(true);
+    expect(r.landed).toBeGreaterThan(30);
+    expect(r.by, 'standing on the beam').toBeCloseTo(r.gy - r.R, 0);
+    expect(r.imps.length, 'one landing').toBe(1);
+    expect(r.imps[0][3], 'a heavy one: the floor shakes hard').toBeGreaterThanOrEqual(14);
+    expect(r.imps[0][2], 'on the floor line').toBeCloseTo(r.gy, 0);
+    expect(r.thunder, 'and the sky answers ("lightning strikes in the background")').toBeGreaterThanOrEqual(0);
+    expect(r.tel, 'he winds nothing up while he falls').toBe(false);
+    expect(r.first, 'his first wind-up begins about 80 frames after he lands').toBeGreaterThan(60);
+    expect(r.first).toBeLessThan(100);
+  });
+
+  it('walking the gauntlet spawns him eighth, and beating him sweeps his shots, hands over the arena and moves on to the Dragon', () => {
     const r = W.eval(`(function(){
       var st = setTimeout; setTimeout = function(){ return 0; };   // bossRushCheck queues the next spawn; this walk spawns by hand
       try {
@@ -90,12 +161,11 @@ describe('MePhone4S joins the gauntlet', () => {
           order.push(b.name);
           if (b.name==='Four') break;
           if (b.name==='MePhone4S'){
-            f._cookieT = 120;
-            projectiles = [{ owner:-2, fxTag:'cookie', trap:true, x:300, y:400, r:12, life:100 }, { owner:-2, x:0, y:0, r:8, life:50 }];
-            var idx0 = BOSSRUSH.bossIdx;
+            projectiles = [{ owner:-2, s4:1, x:300, y:400, r:8, life:100 }, { owner:-2, s4:2, shape:'redcar', x:300, y:560, r:26, life:100 }, { owner:-2, x:0, y:0, r:8, life:50 }];
+            var idx0 = BOSSRUSH.bossIdx, arena = BOSS_ARENA;
             b.hp = 0; bossRushCheck();
-            atHim = { cookieT: f._cookieT, cookiesLeft: projectiles.filter(function(p){ return p.fxTag==='cookie'; }).length,
-                      othersLeft: projectiles.length, advanced: BOSSRUSH.bossIdx - idx0, victory: document.getElementById('rushVictory').style.display };
+            atHim = { arena: arena, advanced: BOSSRUSH.bossIdx - idx0, s4Left: projectiles.filter(function(p){ return p.s4 === 1 || p.s4 === 2; }).length,
+                      othersLeft: projectiles.filter(function(p){ return !p.s4; }).length, victory: document.getElementById('rushVictory').style.display };
             continue;
           }
           b.hp = 0; bossRushCheck();
@@ -103,493 +173,254 @@ describe('MePhone4S joins the gauntlet', () => {
         return { order: order, atHim: atHim };
       } finally { setTimeout = st; BOSSRUSH.active=false; running=false; summons=[]; projectiles=[]; }
     })()`);
-    // Steve Cobs, the third boss of the same request ("mephone should be a boss, alongside 4s, and cobs"), was Boss 11,
-    // between Two and Four; "replace him with springy" (2026-09-28) put Springy there and made Cobs the second secret boss.
-    // Nothing before Boss 11 moved.
     expect(r.order).toEqual(['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face',
-      'MePhone4', 'Evil Leafy', 'MePhone4S', 'Purple Dragon', 'Two', 'Springy', 'Four']);   // the Dragon at 9 ("just move purple dragon!!!" (the owner, 2026-09-30))
-    expect(r.atHim.cookieT, 'nobody collapses after he is gone').toBe(0);
-    expect(r.atHim.cookiesLeft, 'his cookies go with him').toBe(0);
-    expect(r.atHim.othersLeft, 'nothing else is swept').toBe(1);
+      'MePhone4', 'Evil Leafy', 'MePhone4S', 'Purple Dragon', 'Two', 'Springy', 'Four']);
+    expect(r.atHim.arena, 'he fought in his own place').toBe('deathtrap');
     expect(r.atHim.advanced).toBe(1);
+    expect(r.atHim.s4Left, 'his rounds and his car go with him').toBe(0);
+    expect(r.atHim.othersLeft, 'nothing else is swept').toBe(1);
     expect(r.atHim.victory).not.toBe('flex');
   });
 
-  it('takes turns: gun, cookies, gun, chainsaws, each named, with a 42-frame wind-up, and names his phases', () => {
-    const r = W.eval(`(function(){
-      var s = ${S()};
-      var kinds = [], names = [];
-      for (var i=0;i<4;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
-      return { kinds: kinds, names: names, tel: bossTelLen(s), p2: bossPhaseName(s, 2), p3: bossPhaseName(s, 3) };
+  it('a phase change is announced, and starts what the phase brings: thunder and the car next in phase 2, a pop-up from under the floor near you with no hit in the beat, and the one burst that skips phase 2 gets both', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var out = { p1: b._phase };
+      b.hp = b.maxHp*0.5; b._atkTimer = 1e9; updateBossAttack(b, f); out.p2 = b._phase; out.b2 = document.getElementById('banner').textContent; out.thunder = b._hz.thunder; out.due = b._carDue; out.beat = b._beatQ;
+      // the beat, once he is idle: he sinks into the floor and comes up near you, and the pop does not hurt
+      f.x = 400; f.invuln = 0; f.pct = 0;
+      var seen = { st:[], k: null, x: null, beat: null }, hurt = 0;
+      for (var i=0;i<200;i++){
+        f.x = seen.x != null ? seen.x : 400; f.y = groundY()-24; f.vx = 0; f.invuln = 0; var p0 = f.pct; step();   // once he has picked his spot, you stand right on it
+        if (f.pct > p0) hurt++;
+        var A = b._s4; if (A && !seen.k){ seen.k = A.k; seen.beat = A.beat; seen.x = A.x; seen.sx = A.sx; }
+        if (A && seen.st[seen.st.length-1] !== A.st) seen.st.push(A.st);
+        if (!A && seen.k) break;
+      }
+      out.seen = seen; out.hurt = hurt; out.timer = b._atkTimer;
+      b.hp = b.maxHp*0.2; updateBossAttack(b, f); out.p3 = b._phase; out.b3 = document.getElementById('banner').textContent; out.due3 = b._carDue;
+      // one burst of damage that skips phase 2 still gets both
+      ${STAGE(300)}
+      b.hp = b.maxHp*0.1; updateBossAttack(b, f); out.skip = { phase: b._phase, thunder: b._hz.thunder != null, due: b._carDue, beat: b._beatQ };
+      summons = []; projectiles = []; return out;
     })()`);
-    expect(r.kinds).toEqual(['mephone4s', 'cookies', 'mephone4s', 'chainsaws']);
-    expect(r.names).toEqual(['PUT THAT COOKIE DOWN!', 'POISONED COOKIES!', 'PUT THAT COOKIE DOWN!', 'CHAINSAWS!']);
-    expect(r.tel).toBe(42);
-    expect(r.p2, 'Sugar Rush').toBe("I'll Be Back");
-    expect(r.p3, 'The Tile Divide').toBe('Super Death Trap');
-  });
-
-  it('his phases change as his HP falls, and each is announced', () => {
-    const r = W.eval(`(function(){ ${STAGE(800)}
-      var out = { p1: b._phase, hp: b.maxHp };
-      b.hp = b.maxHp*0.5; updateBossAttack(b, f); out.p2 = b._phase; out.b2 = document.getElementById('banner').textContent;
-      b.hp = b.maxHp*0.2; updateBossAttack(b, f); out.p3 = b._phase; out.b3 = document.getElementById('banner').textContent;
-      summons = []; return out;
-    })()`);
-    expect(r.hp, '260 for one fighter').toBe(260);
     expect([r.p1, r.p2, r.p3]).toEqual([1, 2, 3]);
     expect(r.b2).toMatch(/PHASE 2: I'll Be Back/);
     expect(r.b3).toMatch(/PHASE 3: Super Death Trap/);
-  });
-
-  it('left to fight, he shoots, drops cookies and throws chainsaws; from phase 2 his car comes', () => {
-    const r = W.eval(`(function(){ ${STAGE(820, true)}
-      var seen = { bullet:0, cookie:0, saw:0, car:0 }, AP = addProj;
-      addProj = function(p){ if (p && p.owner===-2){
-        if (p.beamShot) seen.bullet++; else if (p.shape==='cookie') seen.cookie++; else if (p.shape==='saw') seen.saw++; else if (p.shape==='redcar') seen.car++; }
-        return AP(p); };
-      try {
-        // The windows are a fifth longer than they were (600 and 700 held his four turns at the old gaps): "bosses should attack a bit slower" (the owner,
-        // 2026-09-30) -- every Boss Rush boss waits BOSS_PACE (1.2) times as long between attacks, so his fourth turn, the chainsaws, now comes at about 650.
-        for (var i=0;i<720;i++){ step(); f.x = 820; f.vx = 0; f.pct = 0; }
-        var p1 = Object.assign({}, seen);
-        b.hp = b.maxHp*0.5;
-        for (var j=0;j<840;j++){ step(); f.x = 820; f.vx = 0; f.pct = 0; }
-        return { p1: p1, all: seen, phase: b._phase };
-      } finally { addProj = AP; summons = []; projectiles = []; }
-    })()`);
-    expect(r.p1.bullet, 'the gun fires').toBeGreaterThan(0);
-    expect(r.p1.cookie, 'five cookies a volley').toBeGreaterThanOrEqual(5);
-    expect(r.p1.saw, 'three chainsaws a volley').toBeGreaterThanOrEqual(3);
-    expect(r.p1.car, 'no car in phase 1').toBe(0);
-    expect(r.phase).toBe(2);
-    expect(r.all.car, 'the car in phase 2').toBeGreaterThan(0);
+    expect(r.thunder, 'the sky answers').toBeGreaterThanOrEqual(0);
+    expect(r.due, 'the car is his next move').toBe(true);
+    expect(r.beat, 'and he will pop up from under the floor once he is idle').toBe(2);
+    expect(r.seen.k).toBe('pop');
+    expect(r.seen.beat, 'the beat\'s pop is marked').toBe(1);
+    expect(Math.abs(r.seen.x - 400), 'he picked a spot near you (150 px to the side), not under you').toBeGreaterThanOrEqual(100);
+    expect(r.seen.st.slice(0, 4), 'sink, dig, rise, fall: he goes under the floor and comes up').toEqual(['sink', 'dig', 'rise', 'fall']);
+    expect(r.hurt, 'a beat, not an attack: even standing where he comes up, nobody is hurt').toBe(0);
+    expect(r.timer, 'and he is back to his gaps afterwards').toBeGreaterThan(0);
+    expect(r.due3).toBe(true);
+    expect(r.skip).toEqual({ phase: 3, thunder: true, due: true, beat: 3 });
   });
 });
 
-describe('the gun: PUT THAT COOKIE DOWN, NOW!', () => {
-  it('fires one round, then a fan of two, then three, each a whole boss hit sharing one attack id', () => {
+describe('PUT THAT COOKIE DOWN! (the gun)', () => {
+  it('fires one round, then a fan of two, then three -- 18 px a frame, a whole boss hit, kb 12, one attack id -- each from his pistol\'s muzzle along the line it was aimed on', () => {
     const r = W.eval(`(function(){ var out = [];
-      for (var ph=1; ph<=3; ph++){ projectiles = [];
-        var s = ${S('_phase:ph, _s4Gun:true, _s4Car:false, _aimX:900, _aimY:groundY()-100')};
-        fireBossAttack(s, null);
-        var b = projectiles.filter(function(p){ return p.owner===-2; });
-        out.push({ n: b.length, spd: b.map(function(p){ return Math.hypot(p.vx, p.vy); }), dmg: b.map(function(p){ return p.dmg; }),
-          streak: b.every(function(p){ return p.beamShot && p.breaksOnSurface; }), ids: b.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v)===i; }).length,
-          delays: b.map(function(p){ return p.delay||0; }), cars: b.filter(function(p){ return p.shape==='redcar'; }).length,
-          spikes: b.filter(function(p){ return p.shape==='spike'; }).length });
-      }
-      projectiles = []; return { out: out, full: bossDmg() };
-    })()`);
-    expect(r.out.map(o => o.n)).toEqual([1, 2, 3]);
-    for (const o of r.out) {
-      for (const v of o.spd) expect(v).toBeCloseTo(18, 2);
-      for (const d of o.dmg) expect(d).toBe(r.full);
-      expect(o.streak).toBe(true);
+      ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
+        ${FIRE('gun')}
+        var rounds = projectiles.filter(function(p){ return p.s4 === 1; }), ay = groundY() - 24, last = rounds[rounds.length - 1];
+        out.push({ kind: telKind, name: telName, tel0: tel0, n: rounds.length, spd: rounds.map(function(p){ return Math.hypot(p.vx, p.vy); }), dmg: rounds.map(function(p){ return p.dmg; }), kb: rounds.map(function(p){ return p.kb; }),
+          ids: rounds.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).length, delays: rounds.map(function(p){ return p.delay||0; }),
+          ang: rounds.map(function(p){ return Math.atan2(p.vy, p.vx); }),
+          // the last round has not moved yet (it waits its delay at the muzzle), so the line from it to the mark is the line the fan is centred on
+          mid: Math.atan2(ay - last.y, 300 - last.x), muzzle: [last.x, last.y], mz: (function(){ var M = s4Muzzle(b, 300, ay); return [M.x, M.y]; })(),
+          streak: rounds.every(function(p){ return p.beamShot && p.breaksOnSurface && p.landImpact; }), full: bossDmg(),
+          others: projectiles.filter(function(p){ return p.s4 !== 1; }).length, thunder: b._hz.thunder != null });
+        summons = []; projectiles = []; }`).join('\n')}
+      return out; })()`);
+    expect(r.map((o) => o.n), 'one, two, three rounds').toEqual([1, 2, 3]);
+    for (const o of r) {
+      expect(o.kind).toBe('mephone4s');
+      expect(o.name).toBe('PUT THAT COOKIE DOWN!');
+      expect(o.tel0).toBe(42);
+      for (const v of o.spd) expect(v).toBeCloseTo(18, 1);
+      for (const d of o.dmg) expect(d, 'damage per hit unchanged').toBe(o.full);
+      for (const k of o.kb) expect(k).toBe(12);
+      expect(o.streak, 'a streak that chips the floor where it lands').toBe(true);
       expect(o.ids, 'one attack id per volley').toBe(1);
-      expect(o.cars + o.spikes, 'a gun turn is only the gun').toBe(0);
+      expect(o.others, 'a gun turn is only the gun').toBe(0);
     }
-    expect(r.out[2].delays).toEqual([0, 5, 10]);
+    // (read the frame after the shot: a waiting round's delay has ticked once, so the five-frame step between rounds, S4.fzStep, reads 0, 4, 9)
+    expect(r.map((o) => o.delays), 'each round a few frames behind the last (they all start from the muzzle)').toEqual([[0], [0, 4], [0, 4, 9]]);
+    expect(r[0].thunder, 'phase 1 keeps the sky quiet').toBe(false);
+    expect(r[1].thunder, '"lightning strikes in the background": from phase 2 each shot').toBe(true);
+    // the fan: neighbours a spread (0.07 rad) apart, centred on the line from the muzzle to the mark
+    const sp = r[2].ang;
+    expect(sp[1] - sp[0]).toBeCloseTo(0.07, 3);
+    expect(sp[2] - sp[1]).toBeCloseTo(0.07, 3);
+    expect(sp[1], 'the middle round is on the line').toBeCloseTo(r[2].mid, 2);
+    expect(Math.hypot(r[2].muzzle[0] - r[2].mz[0], r[2].muzzle[1] - r[2].mz[1]), 'the rounds leave from the pistol\'s muzzle, not from his middle').toBeLessThan(24);
   });
 
-  // S4.lock is 18, was 14: backing off from anyone who walks up (the review's fix) made him press harder, and more time
-  // on a locked sight is the fairest give-back (where he sits: test/boss-rush-order.test.js).
-  it('the sight follows its mark for 24 frames, locks for the last 18, and the shot goes where it locked', () => {
+  it('the sight follows its mark for the first 24 frames and locks for the last 18; the round goes where it locked, so stepping off the line is the dodge', () => {
     expect(W.eval('S4.lock')).toBe(18);
-    const r = W.eval(`(function(){ ${STAGE(820)}
-      b._atkTimer = 1; step();
-      var out = { kind: b._telKind, tel: b._tel, follow: true, held: true, lockedLate: true, lockedEarly: false, shot: null };
-      var AP = addProj; addProj = function(p){ if (p && p.owner===-2 && p.beamShot && !out.shot) out.shot = { x:p.x, y:p.y, vx:p.vx, vy:p.vy }; return AP(p); };
+    const r = W.eval(`(function(){ ${STAGE(820, 1, true)}
+      b._moveN = 0; b._atkTimer = 1; step();
+      var out = { kind: b._telKind, tel: b._tel, follow: true, held: true, lockedLate: true, lockedEarly: false, shot: null, face: true };
+      var AP = addProj; addProj = function(p){ if (p && p.owner===-2 && p.s4 === 1 && !out.shot) out.shot = { x:p.x, y:p.y, vx:p.vx, vy:p.vy }; return AP(p); };
       try {
-        for (var i=0;i<24;i++){ f.x = 820 + (i+1)*4; f.vx = 0; step();
-          if (b._aimX !== f.x) out.follow = false; if (b._aimLock) out.lockedEarly = true; }
+        for (var i=0;i<24;i++){ f.x = 820 + (i+1)*4; f.vx = 0; f.invuln = 9999; step();
+          if (b._aimX !== f.x) out.follow = false; if (b._aimLock) out.lockedEarly = true; if (b.face !== Math.sign(f.x - b.x)) out.face = false; }
         var lx = b._aimX, ly = b._aimY;
-        for (var j=0;j<18;j++){ f.x = 700 - j*6; f.vx = 0; step();
+        for (var j=0;j<18;j++){ f.x = 700 - j*6; f.vx = 0; f.invuln = 9999; step();
           if (b._aimX !== lx || b._aimY !== ly) out.held = false; if (!b._aimLock) out.lockedLate = false; }
-        out.lx = lx; out.ly = ly;
+        out.lx = lx; out.ly = ly; out.fxAfter = f.x;
       } finally { addProj = AP; }
-      summons = []; projectiles = []; return out;
+      // and the round misses a fighter who stepped off the line
+      var tx = out.shot ? out.shot.x : 0; summons = []; projectiles = []; return out;
     })()`);
     expect(r.kind).toBe('mephone4s');
     expect(r.tel).toBe(42);
     expect(r.follow, 'it follows you while it is red').toBe(true);
+    expect(r.face, 'he faces his mark: the pistol hand is on that side').toBe(true);
     expect(r.lockedEarly).toBe(false);
     expect(r.held, 'then it stays where it locked').toBe(true);
     expect(r.lockedLate).toBe(true);
-    expect(r.shot, 'and it fires on the last frame').not.toBe(null);
-    expect(Math.atan2(r.shot.vy, r.shot.vx)).toBeCloseTo(Math.atan2(r.ly - r.shot.y, r.lx - r.shot.x), 6);
+    expect(r.shot, 'and he fires on the last frame').not.toBe(null);
+    expect(Math.atan2(r.shot.vy, r.shot.vx), 'along the sight').toBeCloseTo(Math.atan2(r.ly - r.shot.y, r.lx - r.shot.x), 6);
   });
 
-  it('he stops walking to aim, and keeps his distance otherwise', () => {
+  it('a round hits whoever stands on the line and misses whoever stepped off it', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [['stays', 0], ['steps', 260]].forEach(function(c){ ${STAGE(300, 1, true)}
+        b._moveN = 0; b._atkTimer = 1; step();
+        for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); if (b._tel === 5) f.x = 300; }
+        f.x = 300 + c[1]; f.vx = 0; f.y = groundY()-24; f.invuln = 0; f.pct = 0;
+        for (var k=0;k<60;k++){ f.x = 300 + c[1]; f.vx = 0; f.y = groundY()-24; f.invuln = 0; f.hitstun = 0; step(); }
+        out[c[0]] = f.pct; summons = []; projectiles = []; });
+      out.full = bossDmg(); return out; })()`);
+    expect(r.stays, 'standing where he aimed: one whole boss hit').toBeCloseTo(r.full, 5);
+    expect(r.steps, '260 pixels off it: nothing').toBe(0);
+  });
+
+  it('from phase 2 the volley FREEZES mid-air and every round starts again together; phase 1 never freezes; a frozen round hurts nobody, and the same round hurts once it moves', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
+        ${FIRE('gun')}
+        var n = projectiles.filter(function(p){ return p.s4 === 1; }).length, held = [], resume = [], seenFz = false, allAt = -1, pts = null;
+        for (var i=0;i<n;i++){ held.push(0); resume.push(-1); }
+        for (var k=0;k<80;k++){
+          f.x = 300; f.vx = 0; f.invuln = 9999; step();
+          var rs = projectiles.filter(function(p){ return p.s4 === 1; });
+          if (rs.length < n) break;
+          rs.forEach(function(p, i){
+            if (p.s4fz && p.delay > 0){ held[i]++; seenFz = true; }
+            else if (held[i] > 0 && resume[i] < 0) resume[i] = k;
+          });
+          if (allAt < 0 && rs.every(function(p){ return p.s4fz && p.delay > 0; })){ allAt = k; pts = rs.map(function(p){ return [Math.round(p.x), Math.round(p.y)]; }); }
+        }
+        out.p${ph} = { n: n, seenFz: seenFz, held: held, resume: resume, allAt: allAt, pts: pts };
+        summons = []; projectiles = []; }`).join('\n')}
+      // a frozen round is inert: a fighter standing in the stopped volley takes nothing; the first frames after it moves on, the same fighter takes the hit
+      ${STAGE(300, 2, true)}
+      ${FIRE('gun')}
+      var stage = 0, dmgWhile = 0, dmgAfter = 0, framesWhile = 0, framesAfter = 0, at = null;
+      for (var q=0;q<90 && stage < 2;q++){
+        var rs2 = projectiles.filter(function(p){ return p.s4 === 1; });
+        var all = rs2.length > 0 && rs2.every(function(p){ return p.s4fz && p.delay > 0; });
+        f.vx = 0; f.vy = 0; f.hitstun = 0; f.invuln = 0;
+        if (all){ if (!at) at = [rs2[0].x, rs2[0].y]; f.x = at[0]; f.y = at[1]; var p0 = f.pct; step(); dmgWhile += f.pct - p0; framesWhile++; stage = 1; }
+        else if (stage === 1){ f.x = at[0]; f.y = at[1]; var p1 = f.pct; step(); dmgAfter += f.pct - p1; framesAfter++; if (framesAfter >= 4) stage = 2; }
+        else { f.x = 300; f.y = groundY()-24; step(); }
+      }
+      out.dmgWhile = dmgWhile; out.dmgAfter = dmgAfter; out.framesWhile = framesWhile; out.full = bossDmg(); out.fzFor = S4.fzFor;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.p1.n).toBe(1);
+    expect(r.p1.seenFz, 'phase 1: the round flies straight through').toBe(false);
+    for (const [ph, n] of [[2, 2], [3, 3]]) {
+      const o = r['p' + ph];
+      expect(o.n).toBe(n);
+      expect(o.seenFz, 'phase ' + ph + ': it stops in mid-air').toBe(true);
+      for (const h of o.held) expect(h, 'every round is stopped for S4.fzFor = 14 frames (the first is spent setting the hold)').toBeGreaterThanOrEqual(r.fzFor - 1);
+      expect(o.allAt, 'there is a moment when the whole volley hangs there').toBeGreaterThan(0);
+      for (const p of o.pts) expect(Math.hypot(p[0] - o.pts[0][0], p[1] - o.pts[0][1]), 'a tight group on one line, not scattered').toBeLessThan(30);
+      expect(new Set(o.resume).size, 'and they all start again on the same frame').toBe(1);
+      expect(o.resume[0]).toBeGreaterThan(o.allAt);
+    }
+    expect(r.framesWhile, 'there was a frozen volley to stand in').toBeGreaterThan(5);
+    expect(r.dmgWhile, 'a frozen round is inert').toBe(0);
+    expect(r.dmgAfter, 'and when it moves on, it is a whole boss hit').toBeCloseTo(r.full, 5);
+  });
+
+  it('a round stops about a third of the way to its mark (and at least 70 px out) before it freezes', () => {
+    const r = W.eval(`(function(){ ${STAGE(200, 2, true)}
+      ${FIRE('gun')}
+      var rs = projectiles.filter(function(p){ return p.s4 === 1; }), z = rs[0]._s4fz, d = z.d, x0 = z.x0, y0 = z.y0, at = null;
+      for (var k=0;k<60 && !at;k++){ f.x = 200; f.invuln = 9999; step(); var fz = projectiles.filter(function(p){ return p.s4fz && p.delay > 0; }); if (fz.length) at = [fz[0].x, fz[0].y]; }
+      var ax = b._aimX, ay = b._aimY, far = Math.hypot(ax - x0, ay - y0);
+      summons = []; projectiles = []; return { d: d, at: at, x0: x0, y0: y0, far: far, fzAt: S4.fzAt, fzMin: S4.fzMin }; })()`);
+    expect(r.d, 'a third of the way to the mark, or 70 px, whichever is more').toBeCloseTo(Math.max(r.fzMin, r.far * r.fzAt), 3);
+    expect(Math.hypot(r.at[0] - r.x0, r.at[1] - r.y0), 'it stops where it was meant to, give or take its last step').toBeGreaterThanOrEqual(r.d - 1);
+    expect(Math.hypot(r.at[0] - r.x0, r.at[1] - r.y0)).toBeLessThan(r.d + 19);
+    const close = W.eval(`(function(){ ${STAGE(560, 2, true)}
+      ${FIRE('gun')}
+      var z = projectiles.filter(function(p){ return p.s4 === 1; })[0]._s4fz; summons = []; projectiles = []; return z.d; })()`);
+    expect(close, 'a mark right in front of him: the round still freezes 70 px out').toBe(70);
+  });
+
+  it('from phase 2 he draws on whoever is carrying the most damage ("who cares?! I\'m the host now!"); in phase 1 on whoever is nearest', () => {
     const r = W.eval(`(function(){
-      var tgt = { x:0, y:groundY()-24, dead:false, idx:0 };
-      var mk = function(dx){ var s = ${S('_atkTimer:1e9')}; tgt.x = s.x + dx; updateBossAttack(s, tgt); return s.vx; };
-      var aim = ${S('_atkTimer:1e9, _s4Gun:true, _tel:20, vx:4, _aimIdx:-1, _aimX:900, _aimY:300')};
-      tgt.x = aim.x + 400; updateBossAttack(aim, tgt);
-      return { near: mk(150), far: mk(300), aiming: aim.vx };
+      var near = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 700, groundY()-24, 0);
+      var far = makeFighter(ROSTER.find(function(r){ return r.name==='Leafy'; }), 1000, groundY()-24, 1);
+      near.team = far.team = 0; fighters = [near, far]; near.pct = 10; far.pct = 80;
+      var out = {};
+      [1, 2, 3].forEach(function(ph){ var s = ${S('_phase:ph, _moveN:1, _telKind:"mephone4s"')}; s4BeginTelegraph(s, near); out['p'+ph] = s._aimIdx; });
+      near.pct = 90; var s2 = ${S('_phase:2, _moveN:1, _telKind:"mephone4s"')}; s4BeginTelegraph(s2, near); out.flip = s2._aimIdx;
+      return { out: out, near: near.idx, far: far.idx };
     })()`);
-    expect(r.near, 'inside 180 px he does not come closer').toBe(0);
-    expect(r.far).toBeGreaterThan(0);
-    expect(r.aiming, 'halved every frame of the wind-up, never pushed').toBe(2);
+    expect(r.out.p1).toBe(r.near);
+    expect(r.out.p2, 'the weakest link').toBe(r.far);
+    expect(r.out.p3).toBe(r.far);
+    expect(r.out.flip, 'it follows the damage, not the distance').toBe(r.near);
   });
 
-  // The review: "MePhone4S never backs away ... a melee player can walk right up to him." Inside S4.backoff he steps back.
-  it('he backs off from anyone who walks up to him, and holds between S4.backoff and S4.standoff', () => {
+  it('he stops walking to aim, keeps his distance otherwise, and backs off from anyone who walks up to him', () => {
     const r = W.eval(`(function(){
       var tgt = { x:0, y:groundY()-24, dead:false, idx:0 };
       var mk = function(dx){ var s = ${S('_atkTimer:1e9')}; tgt.x = s.x + dx; updateBossAttack(s, tgt); return s.vx; };
+      var aim = ${S('_atkTimer:1e9, _tel:20, vx:4')};
+      tgt.x = aim.x + 400; updateBossAttack(aim, tgt);
       var walk = ${S('_atkTimer:1e9')}, x0 = walk.x;
       for (var i=0;i<60;i++){ tgt.x = x0 + 60; updateBossAttack(walk, tgt); walk.x += walk.vx; walk.vx *= 0.9; }   // his body's own step (updateSummons)
-      return { close: mk(80), closeLeft: mk(-80), hold: mk(150), backoff: S4.backoff, standoff: S4.standoff, gap: Math.abs(walk.x - (x0 + 60)) };
+      return { near: mk(150), far: mk(300), close: mk(80), closeLeft: mk(-80), aiming: aim.vx, backoff: S4.backoff, standoff: S4.standoff, gap: Math.abs(walk.x - (x0 + 60)) };
     })()`);
+    expect(r.near, 'between 100 and 180 px he holds').toBe(0);
+    expect(r.far, 'farther than that he walks you down').toBeGreaterThan(0);
+    expect(r.aiming, 'halved every frame of the wind-up, never pushed').toBe(2);
     expect(r.close, 'someone 80 px to his right: he steps left').toBeLessThan(0);
     expect(r.closeLeft, 'and the other way round').toBeGreaterThan(0);
-    expect(r.hold, 'between the two he holds').toBe(0);
     expect(r.backoff).toBeLessThan(r.standoff);
     expect(r.gap, 'walked up to, he ends up out at his backoff distance').toBeGreaterThanOrEqual(r.backoff - 10);
   });
 
-  it('from phase 2 he draws on whoever ate a cookie; in phase 1 on whoever is nearest', () => {
-    const r = W.eval(`(function(){
-      var near = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 700, groundY()-24, 0);
-      var far = makeFighter(ROSTER.find(function(r){ return r.name==='Leafy'; }), 1000, groundY()-24, 1);
-      near.team = far.team = 0; fighters = [near, far]; far._cookieT = 100;
-      var out = {};
-      [1, 2].forEach(function(ph){ var s = ${S('_phase:ph, _moveN:1, _telKind:"mephone4s"')}; s4BeginTelegraph(s, near); out['p'+ph] = s._aimIdx; });
-      far._cookieT = 0; return { out: out, near: near.idx, far: far.idx };
-    })()`);
-    expect(r.out.p1).toBe(r.near);
-    expect(r.out.p2, '"PUT THAT COOKIE DOWN, NOW!"').toBe(r.far);
-  });
-});
-
-describe("the car: I'LL BE BACK", () => {
-  it('never comes in phase 1; from phase 2 it is the signature turn after the cookies, named before it drives', () => {
-    const r = W.eval(`(function(){
-      var tgt = { x:900, y:groundY()-24, dead:false, idx:0 };
-      var run = function(hp){ var s = ${S('_atkTimer:1')}; s.hp = hp; s._phase = hp > 66 ? 1 : (hp > 33 ? 2 : 3); var out = [];
-        for (var i=0;i<12;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, tgt);
-          out.push(s._telKind === 'mephone4s' ? (s._s4Car ? 'car:' : 'gun:') + bossTelName(s) : s._telKind); }
-        return out; };
-      return { p1: run(100), p2: run(50) };
-    })()`);
-    expect(r.p1.filter(k => k.startsWith('car')), 'six signature turns, no car').toEqual([]);
-    expect(r.p2.slice(0, 8)).toEqual(['gun:PUT THAT COOKIE DOWN!', 'cookies', "car:I'LL BE BACK!", 'chainsaws',
-      'gun:PUT THAT COOKIE DOWN!', 'cookies', "car:I'LL BE BACK!", 'chainsaws']);
-  });
-
-  // The review: MePhone4 and MePhone4S read the phase when the attack fired, not when its wind-up started, so an "I'LL BE
-  // BACK!" drawn in phase 2 could fire with phase 3's second car and spikes if a hit crossed the threshold mid-wind-up.
-  it('a car drawn in phase 2 is one car and no spikes, and a gun drawn in phase 1 is one round, even if phase 3 starts during the wind-up', () => {
+  // The review: he read the phase when the attack fired, not when its wind-up started, so a move drawn in one phase could fire as the next phase's if a hit
+  // crossed the threshold mid wind-up.
+  it('a gun drawn in phase 1 is one round, and a car drawn in phase 2 is the car and its return and no spikes, even if phase 3 starts during the wind-up', () => {
     const r = W.eval(`(function(){ var out = {};
-      ['car', 'gun'].forEach(function(which){
-        ${STAGE(800)}
-        worldPlats = [{ x:300, y:400, w:300, h:16 }];
-        if (which === 'car'){ b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._moveN = 2; }
-        b._atkTimer = 1; step();
-        var drawn = { phase: b._telPh, car: b._s4Car, name: document.getElementById('banner').textContent };
+      ${['car', 'gun'].map((which) => `{ ${STAGE(800, which === 'car' ? 2 : 1, false, true)}
+        b._atkTimer = 1; b._moveN = ${which === 'car' ? 2 * EX.indexOf('s4car') + 1 : 0}; step();
+        var drawn = { phase: b._telPh, name: document.getElementById('banner').textContent };
         var seen = { car:0, spike:0, round:0 }, AP = addProj;
-        addProj = function(p){ if (p && p.shape==='redcar') seen.car++; if (p && p.shape==='spike') seen.spike++; if (p && p.beamShot) seen.round++; return AP(p); };
+        addProj = function(p){ if (p && p.shape==='redcar') seen.car++; if (p && p.shape==='spike') seen.spike++; if (p && p.s4 === 1) seen.round++; return AP(p); };
         try {
           b.hp = b.maxHp*0.2;
-          for (var i=0;i<46;i++){ step(); f.x = 800; f.vx = 0; }
-          out[which] = { drawn: drawn, phase: b._phase, seen: seen };
-        } finally { addProj = AP; summons = []; projectiles = []; worldPlats = []; }
-      });
+          for (var i=0;i<50;i++){ step(); f.x = 800; f.vx = 0; f.invuln = 9999; }
+          out.${which} = { drawn: drawn, phase: b._phase, seen: seen };
+        } finally { addProj = AP; summons = []; projectiles = []; worldPlats = []; } }`).join('\n')}
       return out;
     })()`);
-    expect(r.car.drawn).toEqual({ phase: 2, car: true, name: "I'LL BE BACK!" });
+    expect(r.car.drawn).toEqual({ phase: 2, name: "I'LL BE BACK!" });
     expect(r.car.phase).toBe(3);
-    expect(r.car.seen, 'one car, as drawn: no second car and no spikes nobody was warned of').toEqual({ car: 1, spike: 0, round: 0 });
-    expect(r.gun.drawn).toMatchObject({ phase: 1, car: false, name: 'PUT THAT COOKIE DOWN!' });
+    expect(r.car.seen, 'the car and the car coming back, as drawn: no spikes nobody was warned of').toEqual({ car: 2, spike: 0, round: 0 });
+    expect(r.gun.drawn).toMatchObject({ phase: 1, name: 'PUT THAT COOKIE DOWN!' });
     expect(r.gun.phase).toBe(3);
     expect(r.gun.seen.round, "phase 1's one round").toBe(1);
-  });
-
-  it('revs at the edge farther from you, then drives the whole floor -- even on a 1920 px screen', () => {
-    const r = W.eval(`(function(){ var WW0 = WW, out = {};
-      try {
-        [1100, 1920].forEach(function(w){ WW = w; projectiles = [];
-          var s = ${S('_phase:2, _s4Car:true')}; s.x = WW*0.5;
-          fireBossAttack(s, { x: WW*0.8, y: groundY()-24 });
-          var c = projectiles.filter(function(p){ return p.shape==='redcar'; });
-          out[w] = c.map(function(p){ return { x:p.x, vx:p.vx, r:p.r, dmg:p.dmg, kb:p.kb, pierce:!!p.pierce, delay:p.delay, reach: p.x + p.life*p.vx }; });
-        });
-        projectiles = [];
-        var s2 = ${S('_phase:2, _s4Car:true')}; WW = 1100; s2.x = 550; fireBossAttack(s2, { x: 200, y: groundY()-24 });
-        out.left = projectiles.filter(function(p){ return p.shape==='redcar'; }).map(function(p){ return { x:p.x, vx:p.vx }; });
-      } finally { WW = WW0; projectiles = []; }
-      return { out: out, full: bossDmg() };
-    })()`);
-    const [c] = r.out[1100];
-    expect(r.out[1100]).toHaveLength(1);
-    expect(c).toMatchObject({ x: 40, vx: 14, r: 26, dmg: r.full, kb: 11, pierce: true, delay: 30 });
-    expect(r.out[1920][0].reach, 'reaches the far wall at 1920 px').toBeGreaterThanOrEqual(1920 - 60);
-    expect(r.out.left).toEqual([{ x: 1100 - 40, vx: -14 }]);
-  });
-
-  it('runs over each fighter once', () => {
-    const r = W.eval(`(function(){ ${STAGE('WW*0.8')}
-      f.x = WW*0.8; var s = ${S('_phase:2, _s4Car:true')}; s.x = WW*0.5;
-      fireBossAttack(s, f);
-      var hits = 0, last = 0;
-      for (var i=0;i<140 && projectiles.some(function(p){ return p.shape==='redcar' && p.life>0; });i++){
-        step(); if (f.pct > last + 1e-9){ hits++; last = f.pct; } f.invuln = 0; f.x = WW*0.8; f.y = groundY()-24; f.vx = 0; f.vy = 0;
-      }
-      var out = { hits: hits, dmg: f.pct, full: bossDmg() }; summons = []; projectiles = []; return out;
-    })()`);
-    expect(r.hits).toBe(1);
-    expect(r.dmg).toBeLessThanOrEqual(r.full + 1e-6);
-  });
-
-  it('phase 3: a second car from the other edge 50 frames later, and every platform turns to spikes on the same turn', () => {
-    const r = W.eval(`(function(){ var WP = worldPlats; projectiles = [];
-      worldPlats = [{ x:300, y:400, w:462, h:16 }, { x:820, y:300, w:200, h:16 }];
-      try {
-        var s = ${S('_phase:3, _s4Car:true')}; fireBossAttack(s, { x: 900, y: groundY()-24 });
-        var cars = projectiles.filter(function(p){ return p.shape==='redcar'; }), spikes = projectiles.filter(function(p){ return p.shape==='spike'; });
-        var want = 0; worldPlats.forEach(function(p){ for (var x = p.x + 18; x < p.x + p.w - 10; x += S4.spikeGap) want++; });
-        return { cars: cars.map(function(p){ return [Math.sign(p.vx), p.delay]; }), n: spikes.length, want: want,
-          spike: spikes.every(function(p){ return p.delay===40 && p.warn===40 && p.vy < 0; }),
-          away: spikes.every(function(p){ var q = worldPlats.find(function(w){ return p.x >= w.x && p.x <= w.x + w.w; }); return Math.sign(p.vx) === (p.x < q.x + q.w/2 ? -1 : 1); }),
-          ids: projectiles.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v)===i; }).length };
-      } finally { worldPlats = WP; projectiles = []; }
-    })()`);
-    expect(r.cars).toEqual([[1, 30], [-1, 80]]);
-    expect(r.n).toBe(r.want);
-    expect(r.n).toBeGreaterThan(0);
-    expect(r.spike, 'a 40-frame shadow, then they jump up').toBe(true);
-    expect(r.away, 'each leans away from its platform\'s middle, so it does not always knock you right').toBe(true);
-    expect(r.ids, 'the whole turn is one boss hit').toBe(1);
-  });
-});
-
-describe('the poisoned cookies', () => {
-  it('drops five with shadows, kept off the walls, that settle as traps', () => {
-    // xs are where the cookies come down: their shadows (warnX). A cookie also started there until the owner's "add momentum
-    // to falling objects(they should move horizontaly while falling)" -- "everything. bosses, characters, whatever." -- "The
-    // way it was thrown" (2026-09-29): now it starts back along its drift and lands on its shadow (FALL_DRIFT; boss-kit.test.js).
-    const r = W.eval(`(function(){ var out = {};
-      [600, 0].forEach(function(tx){ projectiles = [];
-        var s = ${S('_telX:tx')}; BOSS_MOVES.cookies(s, null);
-        var c = projectiles.filter(function(p){ return p.owner===-2; });
-        out[tx] = { n: c.length, xs: c.map(function(p){ return p.warnX; }),
-          ok: c.every(function(p){ return p.shape==='cookie' && p.fxTag==='cookie' && p.fxN===240 && p.landsTrap && p._mine && p.volley && p.warn > 0; }),
-          ids: c.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v)===i; }).length };
-      });
-      projectiles = []; return out;
-    })()`);
-    expect(r[600].n).toBe(5);
-    expect(r[600].ok).toBe(true);
-    expect(r[600].ids).toBe(1);
-    expect(r[600].xs).toEqual([420, 510, 600, 690, 780]);
-    expect(Math.min(...r[0].xs), 'none stacked against the wall').toBeGreaterThanOrEqual(40);
-    expect(new Set(r[0].xs).size).toBe(5);
-  });
-
-  it('a cookie gives four seconds and a short poison; a second restarts neither; then you collapse on the spot', () => {
-    const r = W.eval(`(function(){ ${STAGE(700)}
-      summons = []; f.pct = 0;
-      SM_FX.cookie(f, null, 240);
-      var out = { cookieT: f._cookieT, poison: f._poisonT, burn: f.burn };
-      for (var i=0;i<100;i++) step();
-      var burnBefore = f.burn; SM_FX.cookie(f, null, 240); out.after2nd = f._cookieT; out.burnKept = f.burn === burnBefore;
-      var at = -1;
-      for (var j=0;j<200;j++){ step(); if (!(f._cookieT > 0)){ at = j; out.hitstun = f.hitstun; out.stunFx = f._stunFx; out.vy = f.vy; break; } }
-      out.at = 100 + at + 1; out.pct = f.pct; projectiles = []; return out;
-    })()`);
-    expect(r.cookieT).toBe(240);
-    expect(r.poison, 'the fire bosses\' 110 frames, no more').toBe(110);
-    expect(r.burn).toBe(110);
-    expect(r.after2nd, 'the timer never restarts').toBe(140);
-    // and neither does the poison: every cookie eaten used to top it up, which with the chainsaws' bleed made damage over
-    // time a big share of what he dealt, outside the per-hit cap (the review)
-    expect(r.burnKept, 'a second cookie does not top the poison up').toBe(true);
-    expect(r.at, 'four seconds').toBe(240);
-    expect(r.hitstun).toBeGreaterThan(0);
-    expect(r.stunFx).toBeGreaterThan(0);
-    expect(r.vy, 'a collapse, not a hop').toBeGreaterThanOrEqual(0);
-    expect(r.pct, 'one short poison, about 4.4%, and nothing else').toBeLessThan(5);
-  });
-
-  it('a respawn clears it, even with a frame to go', () => {
-    const r = W.eval(`(function(){ ${STAGE(700)}
-      summons = []; f._cookieT = 1; f.burn = 50; f._poisonT = 50;
-      eliminate(f);
-      var cleared = f._cookieT;
-      for (var i=0;i<5;i++) step();
-      var out = { cleared: cleared, stun: f._stunFx || 0, stocks: f.stocks }; projectiles = []; return out;
-    })()`);
-    expect(r.cleared).toBe(0);
-    expect(r.stun, 'no collapse on respawn').toBe(0);
-  });
-
-  it('one volley is one boss hit, even eaten across his next attack; a fighter trap lands as it always did', () => {
-    const r = W.eval(`(function(){ ${STAGE(700)}
-      summons = [];
-      var id = ++BOSS_ATK_ID, taken = 0, hits = 0;
-      for (var k=0;k<5;k++){
-        projectiles.push({ owner:-2, ownerObj:{team:-1, idx:-2}, trap:true, arm:0, x:f.x, y:f.y, r:30, dmg:bossDmg()*0.3, kb:4, life:150,
-          color:'#c8904a', shape:'cookie', _mine:true, bossAtk:id, volley:true, fxTag:'cookie', fxN:240 });
-        f.burn = 0; f._poisonT = 0;                        // the poison is not the cookie's hit: keep it out of the count
-        var p0 = f.pct; step(); if (f.pct > p0 + 0.05) hits++; taken += f.pct - p0;
-        // another boss attack lands between the cookies: the old one-id memory forgot the volley right here
-        applyHit(f, 0, 0, 0, null, { bossAtk: ++BOSS_ATK_ID });
-        f.invuln = 0; f.x = 700; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.hitstun = 0;
-      }
-      var eaten = projectiles.filter(function(p){ return p.shape==='cookie' && p.life>0; }).length;
-      // a fighter's own trap (Naily's spike, as laid by her special): damage x TRAP_DMG_MULT, uncapped, as before
-      var g = makeFighter(ROSTER.find(function(r){ return r.name==='Naily'; }), 300, groundY()-24, 1); g.team = 1; g.controller='still';
-      fighters = [f, g]; f.pct = 0; f.burn = 0; f._poisonT = 0; f._cookieT = 0; f.invuln = 0; projectiles = [];
-      projectiles.push({ owner:g.idx, ownerObj:g, trap:true, arm:0, x:f.x, y:f.y, r:30, dmg:6, kb:5, life:220, color:'#c0c0c0', noFall:true });
-      step(); var trapDmg = f.pct;
-      projectiles = []; return { taken: taken, hits: hits, left: eaten, full: bossDmg(), trapDmg: trapDmg, mult: TRAP_DMG_MULT };
-    })()`);
-    expect(r.left, 'all five were stepped on and eaten').toBe(0);
-    expect(r.hits, 'four land before the volley is spent').toBe(4);
-    expect(r.taken, 'five cookies would be 33 uncapped').toBeLessThanOrEqual(r.full + 5 * 0.04 + 1e-6);
-    expect(r.taken).toBeGreaterThan(r.full - 1e-6);
-    expect(r.trapDmg).toBe(Math.round(6 * r.mult));
-  });
-});
-
-describe('his warnings stay up', () => {
-  // The review's probe: the cookie's "POISONED! 4 SECONDS" popup replaced "I'LL BE BACK!" two frames into the car's
-  // 42-frame wind-up -- and the car is always the turn after the cookies, while they still lie on the floor. The popups
-  // are gone ("remove item popups"), and banner() drops any popup while a boss warning is up.
-  it("eating a cookie, or collapsing, during the car's wind-up leaves I'LL BE BACK! on screen", () => {
-    const r = W.eval(`(function(){ ${STAGE(700)}
-      f.you = true;
-      b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._moveN = 2;
-      b._atkTimer = 1; step();
-      var name = document.getElementById('banner').textContent;
-      projectiles.push({ owner:-2, ownerObj:{team:-1, idx:-2}, trap:true, arm:0, x:f.x, y:f.y, r:30, dmg:bossDmg()*0.3, kb:4, life:150,
-        color:'#c8904a', shape:'cookie', _mine:true, bossAtk:++BOSS_ATK_ID, volley:true, fxTag:'cookie', fxN:240 });
-      step(); var ate = f._cookieT > 0, afterCookie = document.getElementById('banner').textContent;
-      f._cookieT = 1; step(); var afterCollapse = document.getElementById('banner').textContent;
-      f.you = false; summons = []; projectiles = [];
-      return { name: name, ate: ate, afterCookie: afterCookie, afterCollapse: afterCollapse };
-    })()`);
-    expect(r.name).toBe("I'LL BE BACK!");
-    expect(r.ate, 'the cookie was eaten').toBe(true);
-    expect(r.afterCookie).toBe("I'LL BE BACK!");
-    expect(r.afterCollapse).toBe("I'LL BE BACK!");
-    const src = W.eval('String(SM_FX.cookie) + String(step)');
-    expect(src, 'no poison or collapse popup at all').not.toMatch(/POISONED|COLLAPSED/);
-  });
-});
-
-describe('the chainsaws', () => {
-  it('throws three bleeding saws on and around where you stood, each landing, hopping once more and stopping', () => {
-    const r = W.eval(`(function(){ ${STAGE('WW-60')}
-      summons = []; f.x = WW-60;
-      var s = ${S('_telX:500')}; s.x = 500; s.y = groundY()-85;
-      BOSS_MOVES.chainsaws(s, null);
-      var saws = projectiles.filter(function(p){ return p.owner===-2; });
-      var out = { n: saws.length, ok: saws.every(function(p){ return p.shape==='saw' && p.bounce && p.maxBounces===2 && p.fxTag==='bleed' && p.fxN===60; }),
-        ids: saws.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v)===i; }).length,
-        vx: saws.map(function(p){ return Math.round(p.vx*100)/100; }) };
-      for (var i=0;i<300 && saws.some(function(p){ return p.life>0; });i++){ step(); f.x = WW-60; }
-      out.bounces = saws.map(function(p){ return p.bounces||0; }); out.gone = saws.every(function(p){ return p.life<=0; });
-      projectiles = []; return out;
-    })()`);
-    expect(r.n).toBe(3);
-    expect(r.ok).toBe(true);
-    expect(r.ids).toBe(1);
-    expect(r.vx).toEqual([-1.67, 0, 1.67]);
-    expect(r.gone).toBe(true);
-    expect(r.bounces, 'each expired on its second landing').toEqual([2, 2, 2]);
-  });
-});
-
-describe('the item version', () => {
-  it('an item MePhone4S never throws cookies or chainsaws; an item Announcer still throws its second moves', () => {
-    const r = W.eval(`(function(){
-      var run = function(name){ var s = { type:'boss', name:name, color:'#fff', x:550, y:300, r:70, hp:200, vx:0, vy:0, face:1, _atkTimer:1, _tel:0 };
-        var out = []; for (var i=0;i<4;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); out.push(String(s._telKind)); } return out; };
-      return { s4: run('MePhone4S'), ann: run('Announcer') };
-    })()`);
-    expect(r.s4).toEqual(['undefined', 'undefined', 'undefined', 'undefined']);
-    expect(r.ann, 'his own second moves now: the laser, then the acid (boss overhaul, Round 9)').toEqual(['undefined', 'annlaser', 'undefined', 'annacid']);
-  });
-});
-
-describe('what the player sees', () => {
-  it('his art is the II wiki render (File:Yeyeye.png), transparent, credited, flipped as measured, with a drawn fallback', () => {
-    const src = W.eval('BOSS_SPRITE_SRC.mephone4s');
-    expect(src).toBe('assets/sprites/mephone4s.png');
-    const file = 'artifacts/V1/' + src;
-    expect(existsSync(file)).toBe(true);
-    const png = PNG.sync.read(readFileSync(file));
-    expect([png.width, png.height]).toEqual([135, 200]);
-    const alpha = (x, y) => png.data[(y * png.width + x) * 4 + 3];
-    expect([alpha(0, 0), alpha(134, 0), alpha(0, 199), alpha(134, 199)], 'transparent, not a sticker').toEqual([0, 0, 0, 0]);
-    // every boss render fetched from the II wiki is flipped exactly as fetch-sprites measured it
-    const man = JSON.parse(readFileSync('scripts/sprite-manifest-inanimateinsanity.json', 'utf8'));
-    expect(man.MePhone4S).toMatchObject({ ok: true, file: 'mephone4s.png', source: expect.stringContaining('/Yeyeye.png/') });
-    const bossFlips = W.eval(`(function(){ var o = {}; for (var k in BOSS_SPRITE_SRC) o[BOSS_SPRITE_SRC[k].split('/').pop()] = !!BOSS_SPRITE_FLIP[k]; return o; })()`);
-    for (const row of Object.values(man)) if (row.ok && row.file in bossFlips) expect(bossFlips[row.file], row.name).toBe(!!row.flip);
-    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
-    expect(credits).toMatch(/\| MePhone4S \| `mephone4s\.png` \| https:\/\/static\.wikia\.nocookie\.net\/inanimateinsanity\/images\/8\/8a\/Yeyeye\.png/);
-    expect(W.eval(`String(drawBossSprite).indexOf('case "mephone4s"') >= 0`)).toBe(true);
-  });
-
-  it('draws him, his sight (following and locked), his car, cookies and bullets, without throwing', () => {
-    const err = W.eval(`(function(){
-      try {
-        var base = { type:'boss', name:'MePhone4S', color:'#c8102e', sprite:'mephone4s', r:60, x:100, y:100, face:1, hp:100, maxHp:100,
-                     _tel:0, _telKind:null, _phase:1, _rage:false, flash:0, homeX:100, attack:'mephone4s' };
-        var states = [{}, { _tel:30, _aimX:400, _aimY:120, _aimLock:false }, { _tel:8, _aimX:-300, _aimY:300, _aimLock:true, face:-1 },
-                      { _tel:20 }, { hp:50, flash:6 }, { _tel:10, _aimX:100, _aimY:100 }];
-        states.forEach(function(st){ var s = Object.assign({}, base, st); ctx.save(); drawBossSprite(s); ctx.restore(); });
-        [{ shape:'redcar', vx:14, vy:0, r:26, color:'#d01818' }, { shape:'redcar', vx:-14, vy:0, r:26, color:'#d01818' },
-         { shape:'cookie', vx:0, vy:4, r:12, color:'#c8904a', warn:10, warnX:300, warnY:500 }, { shape:'cookie', vx:0, vy:0, r:12, color:'#c8904a', trap:true },
-         { beamShot:true, vx:18, vy:-2, r:8, color:'#ff3a2a' }, { shape:'spike', vx:0.6, vy:-7, r:10, color:'#c8c8d0' }, { shape:'saw', vx:2, vy:-3, r:14, color:'#b8c0c8' }]
-          .forEach(function(p){ drawProjectile(Object.assign({ x:300, y:300, owner:-2, ownerObj:{team:-1, idx:-2} }, p)); });
-        return typeof PROJ_SHAPE.cookie.draw + '/' + typeof PROJ_SHAPE.redcar.draw;
-      } catch(e){ return e.message; }
-    })()`);
-    expect(err).toBe('function/function');
-  });
-
-  it("nothing of his names anyone from the OSC -- no code, no string, no comment", () => {
-    const src = W.eval(`[String(s4BeginTelegraph), String(s4TrackSight), String(s4DeathTrap), String(BOSS_MOVES.cookies), String(BOSS_MOVES.chainsaws),
-      String(fireBossAttack), String(SM_FX.cookie), String(bossTelName), String(drawBossSprite), String(PROJ_SHAPE.cookie.draw), String(PROJ_SHAPE.redcar.draw),
-      BOSS_MOVE_NAME.cookies, BOSS_MOVE_NAME.chainsaws, bossPhaseName({attack:'mephone4s'}, 2), bossPhaseName({attack:'mephone4s'}, 3),
-      bossTelName({attack:'mephone4s', _s4Car:true}), bossTelName({attack:'mephone4s'})].join('\\n')`);
-    expect(src).not.toMatch(/\bOJ\b|Suitcase|Cabby/);
-    // and every line of the game or the credits that is about him
-    const lines = [readFileSync('artifacts/V1/index.html', 'utf8'), readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8')]
-      .join('\n').split('\n').filter(l => /MePhone4S|mephone4s|\bS4\b|s4[A-Z]/.test(l));
-    expect(lines.length).toBeGreaterThan(20);
-    expect(lines.filter(l => /\bOJ\b|Suitcase|Cabby/.test(l))).toEqual([]);
-  });
-});
-
-describe('a netcode client sees him', () => {
-  it('his sight, his car, his cookies and his bullets cross the snapshot and draw on the client', () => {
-    const { window: w } = loadMonolith();   // the harness with gradients, as test/net-lobby.test.js uses: drawBossBar needs one
-    const r = w.eval(`(function(){
-      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
-      summons = [{ type:'boss', name:'MePhone4S', color:'#c8102e', r:85, sprite:'mephone4s', x:500, y:300, hp:80, maxHp:120, face:1, flash:0,
-                   homeX:500, _rage:false, _tel:10, _telKind:'mephone4s', _bossRush:true, attack:'mephone4s', _aimX:800, _aimY:420, _aimLock:true }];
-      projectiles = [{ x:40, y:600, vx:14, vy:0, r:26, color:'#d01818', shape:'redcar', owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:9, life:80, delay:12 },
-                     { x:300, y:200, vx:0, vy:4, r:12, color:'#c8904a', shape:'cookie', owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:10, life:80, warn:9, warnX:300, warnY:640 },
-                     { x:560, y:290, vx:17.6, vy:2.4, r:8, color:'#ff3a2a', beamShot:true, owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:11, life:80 }];
-      var snap = JSON.parse(JSON.stringify(serializeState()));
-      summons = []; projectiles = [];
-      applySnapshot(snap);
-      var err = null; try { summons.forEach(drawSummon); projectiles.forEach(drawProjectile); drawBossBar(); } catch(e){ err = e.message; }
-      // Shots now cross as compact rows (s.pj) -- the multiplayer fix -- so read the shots the CLIENT rebuilds.
-      return { boss: snap.summons[0], car: projectiles[0], cookie: projectiles[1], bullet: projectiles[2], err: err,
-               telLen: bossTelLen(summons[0]) };
-    })()`);
-    expect(r.err).toBe(null);
-    expect(r.boss).toMatchObject({ _aimX: 800, _aimY: 420, _aimLock: true, sprite: 'mephone4s', attack: 'mephone4s' });
-    expect(r.telLen, "the client's wind-up ring runs over his 42 frames, not the default 36").toBe(42);
-    expect(r.car).toMatchObject({ shape: 'redcar', vx: 14, vy: 0 });
-    expect(r.cookie).toMatchObject({ shape: 'cookie', warn: 9 });
-    expect(r.bullet).toMatchObject({ vx: 17.6, vy: 2.4 });
-    expect(!!r.bullet.beamShot, 'a streak (flagged 1 in the compact row)').toBe(true);
   });
 });
