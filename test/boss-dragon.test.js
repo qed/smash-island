@@ -63,7 +63,8 @@ describe('Purple Dragon takes the hotel roof', () => {
     expect(r.sig3, "phase 3's signature is the carry").toBe('GRAB & CARRY!');
     expect(r.tel, 'one wind-up length for all five').toBe(44);
     expect([r.p2, r.p3n]).toEqual(['Strafing Runs', 'Grab & Carry']);
-    expect(r.gaps, 'its own pacing, quicker each phase').toEqual([100, 74, 54]);
+    // "bosses should attack a bit slower" (the owner, 2026-09-30): its own 100 / 74 / 54 times BOSS_PACE (1.2), quicker each phase still
+    expect(r.gaps, 'its own pacing, paced, quicker each phase').toEqual([120, 89, 65]);
     expect(r.held, 'held while a move is in the air').toBe(1e6);
     expect(r.rushOnly, 'an item boss never throws them: they need its flight and its roof').toEqual([true, true, true, true]);
   });
@@ -164,8 +165,9 @@ describe('STRAFING RUN!', () => {
     }
     expect(r.patches, 'patches lie on the roof after the pass').toBeGreaterThanOrEqual(3);
     expect(r.soot, 'and the tiles stay charred').toBeGreaterThanOrEqual(3);
-    expect(r.gapReset, 'the gap is timed from the end of the move').toBeGreaterThanOrEqual(98);
-    expect(r.gapReset).toBeLessThanOrEqual(100);
+    // the gap is DRAGON.gaps[1] (100) times BOSS_PACE (1.2) -- "bosses should attack a bit slower" (the owner, 2026-09-30) -- less the frames since the move ended
+    expect(r.gapReset, 'the gap is timed from the end of the move').toBeGreaterThanOrEqual(118);
+    expect(r.gapReset).toBeLessThanOrEqual(120);
   });
 
   it('a patch burns 2.5 seconds; a fighter standing where the flames land takes one boss hit from the whole turn however many flames and patches meet it', () => {

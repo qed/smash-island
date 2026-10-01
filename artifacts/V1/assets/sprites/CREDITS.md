@@ -596,6 +596,21 @@ sign's and the Recovery Center's files have their lettering baked in and a match
 - Purple Dragon (dragonroboty.png): Roboty, who "flies in" through the door in the wind lottery (Category One) — File:Roboty book.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/f1/Roboty_book.png/revision/latest?cb=20190908174044
 <!-- @boss:dragon:end credits -->
 
+<!-- @boss:mephone4:begin credits -->
+<!-- @boss:mephone4:end credits -->
+
+<!-- @boss:evilleafy:begin credits -->
+<!-- @boss:evilleafy:end credits -->
+
+<!-- @boss:mephone4s:begin credits -->
+<!-- @boss:mephone4s:end credits -->
+
+<!-- @boss:two:begin credits -->
+<!-- @boss:two:end credits -->
+
+<!-- @boss:four:begin credits -->
+<!-- @boss:four:end credits -->
+
 ## Assist trophies
 
 "sprites for assist trophies." The thirteen assists of ASSIST_ROSTER are BFDI characters; twelve have a render on

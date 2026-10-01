@@ -514,40 +514,47 @@ describe("the Announcer's phase-3 banner", () => {
   });
 });
 
-describe('the slot markers: six builders, one file, no conflicts', () => {
-  const BOSSES = ['announcer', 'puffball', 'firey', 'swarm', 'purpleface', 'dragon'];
-  const SLOTS = ['roster', 'extra', 'rushonly', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen',
-    'phase', 'phasename', 'telname', 'ending', 'hazard', 'netshot', 'net', 'shotdraw', 'fx', 'look', 'tell', 'body', 'sky', 'ground',
-    'decor', 'sprite', 'flip', 'shape', 'art'];
-  const MARK = /@boss:([a-z]+):(begin|end) ([a-z]+)/;
+// THE SLOT MARKERS. The early six (the first batch) and the late five (the second: MePhone4, Evil Leafy, MePhone4S, Two and Four -- two of the names have
+// a digit in them, so a marker's boss is [a-z0-9]+).
+const EARLY = ['announcer', 'puffball', 'firey', 'swarm', 'purpleface', 'dragon'];
+const LATE = ['mephone4', 'evilleafy', 'mephone4s', 'two', 'four'];
+const SLOTS = ['roster', 'extra', 'rushonly', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen',
+  'phase', 'phasename', 'telname', 'ending', 'hazard', 'netshot', 'net', 'shotdraw', 'fx', 'look', 'tell', 'body', 'sky', 'ground',
+  'decor', 'sprite', 'flip', 'shape', 'art'];
+const MARK = /@boss:([a-z0-9]+):(begin|end) ([a-z]+)/;
 
-  function check(file, slots) {
-    const lines = readFileSync(file, 'utf8').split(/\r?\n/);
-    const marks = [];
-    lines.forEach((l, i) => { const m = l.match(MARK); if (m) marks.push({ i, boss: m[1], kind: m[2], slot: m[3], line: l.trim() }); });
-    const problems = [];
-    for (const m of marks) {
-      if (!BOSSES.includes(m.boss)) problems.push(`${file}:${m.i + 1} unknown boss ${m.boss}`);
-      if (!slots.includes(m.slot)) problems.push(`${file}:${m.i + 1} unknown slot ${m.slot}`);
-      if (!/^(\/\/|<!--) @boss:[a-z]+:(begin|end) [a-z]+( -->)?$/.test(m.line)) problems.push(`${file}:${m.i + 1} a marker is alone on its line: "${m.line}"`);
-    }
-    for (const slot of slots) {
-      let prevEnd = -1;
-      for (const boss of BOSSES) {
-        const b = marks.filter((m) => m.slot === slot && m.boss === boss && m.kind === 'begin');
-        const e = marks.filter((m) => m.slot === slot && m.boss === boss && m.kind === 'end');
-        if (b.length !== 1 || e.length !== 1) { problems.push(`${slot}/${boss}: ${b.length} begin, ${e.length} end`); continue; }
-        const bi = b[0].i, ei = e[0].i;
-        if (!(bi < ei)) problems.push(`${slot}/${boss}: end before begin`);
-        const inside = marks.filter((m) => m.i > bi && m.i < ei);
-        if (inside.length) problems.push(`${slot}/${boss}: another marker inside (${inside[0].line})`);
-        if (!(bi > prevEnd)) problems.push(`${slot}/${boss}: out of order`);
-        if (prevEnd >= 0 && bi - prevEnd < 2) problems.push(`${slot}/${boss}: no line between it and the pair before`);
-        prevEnd = ei;
-      }
-    }
-    return { problems, count: marks.length };
+// Every marker in `file` must be a known boss's and slot's, alone on its line; and for each slot the pairs of `bosses` (the early six unless said) must be
+// there once, begin before end, with no other marker inside, in the order given, and a line between a pair and the one before it.
+function check(file, slots, bosses = EARLY) {
+  const lines = readFileSync(file, 'utf8').split(/\r?\n/);
+  const marks = [];
+  lines.forEach((l, i) => { const m = l.match(MARK); if (m) marks.push({ i, boss: m[1], kind: m[2], slot: m[3], line: l.trim() }); });
+  const problems = [];
+  for (const m of marks) {
+    if (![...EARLY, ...LATE].includes(m.boss)) problems.push(`${file}:${m.i + 1} unknown boss ${m.boss}`);
+    if (!slots.includes(m.slot)) problems.push(`${file}:${m.i + 1} unknown slot ${m.slot}`);
+    if (!/^(\/\/|<!--) @boss:[a-z0-9]+:(begin|end) [a-z]+( -->)?$/.test(m.line)) problems.push(`${file}:${m.i + 1} a marker is alone on its line: "${m.line}"`);
   }
+  for (const slot of slots) {
+    let prevEnd = -1;
+    for (const boss of bosses) {
+      const b = marks.filter((m) => m.slot === slot && m.boss === boss && m.kind === 'begin');
+      const e = marks.filter((m) => m.slot === slot && m.boss === boss && m.kind === 'end');
+      if (b.length !== 1 || e.length !== 1) { problems.push(`${slot}/${boss}: ${b.length} begin, ${e.length} end`); continue; }
+      const bi = b[0].i, ei = e[0].i;
+      if (!(bi < ei)) problems.push(`${slot}/${boss}: end before begin`);
+      const inside = marks.filter((m) => m.i > bi && m.i < ei);
+      if (inside.length) problems.push(`${slot}/${boss}: another marker inside (${inside[0].line})`);
+      if (!(bi > prevEnd)) problems.push(`${slot}/${boss}: out of order`);
+      if (prevEnd >= 0 && bi - prevEnd < 2) problems.push(`${slot}/${boss}: no line between it and the pair before`);
+      prevEnd = ei;
+    }
+  }
+  return { problems, count: marks.filter((m) => bosses.includes(m.boss)).length };
+}
+
+describe('the slot markers: six builders, one file, no conflicts', () => {
+  const BOSSES = EARLY;   // the late five have their own describe below
 
   it('index.html: every slot has one pair per boss, balanced, in gauntlet order, each on its own lines with a line between pairs', () => {
     const r = check('artifacts/V1/index.html', SLOTS);
@@ -600,4 +607,251 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
       expect(r.phase).toMatch(new RegExp(`^${name} — PHASE 2: `));
     });
   }
+});
+
+// ---- THE LATE FIVE (the second batch: MePhone4, Evil Leafy, MePhone4S, Two and Four) ---------------------------------------
+// The same kit the early six were rebuilt on: a pair of markers in every slot, so five builders can work at once and their work
+// merges without a conflict. What each boss already had in a slot was moved inside its own pair and not otherwise touched.
+describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, ready to be rebuilt the way the early six were", () => {
+  const FILE = 'artifacts/V1/index.html';
+  const lines = () => readFileSync(FILE, 'utf8').split(/\r?\n/);
+  const at = (L, slot, boss, kind) => L.findIndex((l) => l.trim() === `// @boss:${boss}:${kind} ${slot}`);
+  const body = (L, slot, boss) => L.slice(at(L, slot, boss, 'begin') + 1, at(L, slot, boss, 'end')).join('\n');
+
+  it("every slot has one pair for each of the five, balanced, in the gauntlet's order, each on its own lines with a line between pairs -- after the early six's pairs", () => {
+    const r = check(FILE, SLOTS, LATE);
+    expect(r.problems).toEqual([]);
+    expect(r.count).toBe(SLOTS.length * LATE.length * 2);
+    expect(check(FILE, SLOTS, EARLY).count + r.count, 'the six, the five and nothing else').toBe(SLOTS.length * 11 * 2);
+    const L = lines();
+    for (const slot of SLOTS.filter((s) => s !== 'roster')) {
+      expect(at(L, slot, 'mephone4', 'begin'), `${slot}: the five come after the Dragon's pair`).toBeGreaterThan(at(L, slot, 'dragon', 'end'));
+    }
+    // BOSS_ROSTER is the gauntlet itself, so its pairs keep the gauntlet's order: the Dragon is Boss 9, between MePhone4S and Two
+    const gauntlet = ['announcer', 'puffball', 'firey', 'swarm', 'purpleface', 'mephone4', 'evilleafy', 'mephone4s', 'dragon', 'two', 'four'];
+    const rows = gauntlet.map((b) => at(L, 'roster', b, 'begin'));
+    expect(rows.every((n) => n > 0)).toBe(true);
+    expect(rows, "the roster's pairs sit in the gauntlet's order").toEqual([...rows].sort((a, c) => a - c));
+  });
+
+  it('the art manifest and the credits have their five pairs too', () => {
+    const a = check('scripts/fetch-attack-sprites.mjs', ['picks'], LATE);
+    const c = check('artifacts/V1/assets/sprites/CREDITS.md', ['credits'], LATE);
+    expect(a.problems).toEqual([]);
+    expect(c.problems).toEqual([]);
+    expect([a.count, c.count]).toEqual([10, 10]);
+  });
+
+  it('the header lists the five and what the gap slot is for', () => {
+    const html = readFileSync(FILE, 'utf8');
+    const head = html.slice(html.indexOf('// ==== BOSS SLOTS'), html.indexOf('const BOSS_ROSTER')).replace(/\r?\n\/\/\s*/g, ' ');
+    for (const w of ['mephone4 (MePhone4)', 'evilleafy (Evil Leafy)', 'mephone4s (MePhone4S)', 'two (Two)', 'four (Four)']) expect(head, `the header names ${w}`).toContain(w);
+    expect(head, 'the gap slot is in bossAtkGapBase; bossAtkGap is the paced one').toMatch(/gap\s+bossAtkGapBase: /);
+  });
+
+  // What each of the five already had in a slot is inside its own pair now: the lines were moved, not changed.
+  const HOLDS = {
+    roster: { mephone4: ['attack:"mephone",'], evilleafy: ['attack:"evilleafy",'], mephone4s: ['attack:"mephone4s",'], two: ['attack:"two",'], four: ['attack:"four",'] },
+    extra: { mephone4: ['"MePhone4": ["melife", "portal"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["cookies", "chainsaws"]'], two: ['"Two": ["seekers", "ring"]'], four: ['"Four": ["rain", "seekers"]'] },
+    rushonly: { mephone4: ['"melife", "portal"'], mephone4s: ['"cookies", "chainsaws"'] },
+    movename: { mephone4: ['melife:"MELIFE DOWNLOAD!"', 'glitch:"GLITCH!"', 'portal:"REJECTION PORTAL!"'], mephone4s: ['cookies:"POISONED COOKIES!"', 'chainsaws:"CHAINSAWS!"'] },
+    moves: { mephone4: ['melife(s, tgt){', 'glitch(s, tgt){', 'portal(s, tgt){'], mephone4s: ['cookies(s, tgt){', 'chainsaws(s, tgt){'] },
+    helpers: { mephone4: ['const MEPHONE_GLOVE = ', 'function meLifeDownload(', 'function updateRejectionPortal('], mephone4s: ['const S4 = ', 'function s4BeginTelegraph(', 'function s4DeathTrap('] },
+    move: { evilleafy: ['if(s.attack==="evilleafy"){', 'spawnTendril(vx, ++BOSS_ATK_ID)', 'applyHit(f, bossDmg()*0.6'] },
+    tick: { mephone4: ['if(s._portal) updateRejectionPortal(s);', 'MEPHONE_GLOVE.lock'], mephone4s: ['s4TrackSight(s)'], two: ['if(s.attack==="two" && s._ungrounded){'] },
+    tel: { mephone4: ['s._telKind = "glitch"'], mephone4s: ['s4BeginTelegraph(s, tgt)'] },
+    fire: {
+      mephone4: ['if(s.attack==="mephone"){', 'MEPHONE_GLOVE'], evilleafy: ['if(s.attack==="evilleafy"){', 'spawnTendril('], mephone4s: ['if(s.attack==="mephone4s"){', 's4DeathTrap('],
+      two: ['if(s.attack==="two"){', 'POWER DRAIN!'], four: ['if(s.attack==="four"){', 'noAim:true, ring:true'],
+    },
+    gap: { mephone4: ['MEPHONE_GAPS[Math.min(3, s._phase||1)]'], evilleafy: ['s._phase===3 ? 70 : (s._phase===2 ? 95 : 130)'] },
+    tellen: { evilleafy: ['return 45;'], mephone4s: ['return 42;'], four: ['return 50;'] },
+    phase: { mephone4: ['meLifeDownload(s, -(s.face||1))'], two: ['TWO SHRINKS!', 'POWER UNGROUNDED'] },
+    phasename: { mephone4: ['mephone:'], evilleafy: ['evilleafy:'], mephone4s: ['mephone4s:'], two: ['two:'], four: ['four:'] },
+    telname: { mephone4: ['FIST THINGY COMBO!'], evilleafy: ['TENDRILS!'], mephone4s: ["I'LL BE BACK!"], two: ['MIND READ!'], four: ['SCREECHY!!'] },
+    fx: { evilleafy: ['drawTendrils()'] },
+    sky: { mephone4: ['melife:'], evilleafy: ['forest:'], mephone4s: ['studio:'] },
+    decor: { mephone4: ['if(key==="melife"){'], evilleafy: ['if(key==="forest"){'], mephone4s: ['if(key==="studio"){'] },
+    sprite: { mephone4: ['mephone:'], evilleafy: ['evilleafy:'], mephone4s: ['mephone4s:'], two: ['two:'], four: ['four:'] },
+    flip: { four: ['four:true'] },
+    tell: { mephone4: ['drawRejectionPortal(', 'MEPHONE_GLOVE.r'], mephone4s: ["typeof s._aimX==='number'"] },
+    body: { mephone4: ['case "mephone": {'], evilleafy: ['case "evilleafy": {'], mephone4s: ['case "mephone4s": {'], two: ['case "two": {'], four: ['case "four": {'] },
+    shape: { mephone4: ['fistthingy:'], mephone4s: ['cookie:', 'redcar:'] },
+    net: { mephone4: ['_portal:m._portal'], mephone4s: ['_aimX:m._aimX'] },
+  };
+
+  it('each pair holds what its boss already had in that slot', () => {
+    const L = lines(), problems = [];
+    for (const slot of Object.keys(HOLDS)) for (const boss of Object.keys(HOLDS[slot])) {
+      const text = body(L, slot, boss);
+      for (const needle of HOLDS[slot][boss]) if (!text.includes(needle)) problems.push(`${slot}/${boss}: ${needle}`);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("and the slots they do not use yet hold no code at all: spawn, shotdraw, ground, look, art, netshot, hazard and ending (Four's ending is a note, for the victory card)", () => {
+    const L = lines(), strip = (s) => s.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean);
+    for (const slot of ['spawn', 'shotdraw', 'ground', 'look', 'art', 'netshot', 'hazard', 'ending']) for (const boss of LATE) {
+      expect(strip(body(L, slot, boss)), `${slot}/${boss}`).toEqual([]);
+    }
+  });
+
+  it('the numbers and names the five had are the ones they have: the gaps before the pace, the wind-ups, the banners, the phase names and the second moves', () => {
+    const r = W.eval(`(function(){
+      var A = { mephone:'MePhone4', evilleafy:'Evil Leafy', mephone4s:'MePhone4S', two:'Two', four:'Four' }, out = {};
+      Object.keys(A).forEach(function(k){
+        out[k] = { base: [1,2,3].map(function(ph){ return bossAtkGapBase({ attack:k, _phase:ph }); }), tel: bossTelLen({ attack:k, _phase:1 }),
+          name1: bossTelName({ attack:k, _phase:1, _telPh:1 }), name2: bossTelName({ attack:k, _phase:2, _telPh:2 }),
+          p2: bossPhaseName({ attack:k }, 2), p3: bossPhaseName({ attack:k }, 3), extra: BOSS_EXTRA[A[k]] };
+      });
+      return out; })()`);
+    expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal'] });
+    expect(r.evilleafy).toEqual({ base: [130, 95, 70], tel: 45, name1: 'TENDRILS!', name2: 'TENDRILS!', p2: 'No Refuge', p3: 'Vine Coverage', extra: ['seekers', 'slam'] });
+    expect(r.mephone4s).toEqual({ base: [100, 72, 52], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['cookies', 'chainsaws'] });
+    expect(r.two).toEqual({ base: [100, 72, 52], tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['seekers', 'ring'] });
+    expect(r.four).toEqual({ base: [100, 72, 52], tel: 50, name1: 'SCREECHY!', name2: 'SCREECHY!!', p2: 'Zap to Dust', p3: 'Reality Buckles', extra: ['rain', 'seekers'] });
+  });
+
+  // With every slot holding what was there, the five fight as they did: a wind-up names the move, each turn lands something (a shot, a tendril, an add, a
+  // portal), and a phase begins. (The early six have their own tests: test/boss-announcer.test.js and the rest.)
+  for (const name of ['MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Four']) {
+    it(`${name} still fights as he did, through his slots`, () => {
+      const r = W.eval(`(function(){ ${STAGE(name, 500)}
+        var out = { tel: [], landed: [], phase: null };
+        b.x = 350; b._atkTimer = 1; b._moveN = 0;
+        for (var t=0;t<3;t++){
+          window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f);
+          out.tel.push(window.__lastBanner && window.__lastBanner.text);
+          projectiles = []; tendrils = []; summons = summons.filter(function(s){ return s.type==='boss'; }); f.invuln = 0; f.pct = 0;
+          b._tel = 1; updateBossAttack(b, f);
+          out.landed.push(projectiles.filter(function(p){ return p.owner===-2; }).length + tendrils.length + summons.filter(function(s){ return s.hostile; }).length + (b._portal ? 1 : 0));
+          b._portal = null;
+        }
+        window.__lastBanner = null; b.hp = b.maxHp*0.5; b._tel = 0; b._atkTimer = 999; updateBossAttack(b, f);
+        out.phase = b._phase;
+        summons = []; projectiles = []; tendrils = []; return out;
+      })()`);
+      expect(r.tel.every((t) => typeof t === 'string' && /!$/.test(t)), `each wind-up is named: ${r.tel}`).toBe(true);
+      expect(r.landed.every((n) => n > 0), `each turn lands something: ${r.landed}`).toBe(true);
+      expect(r.phase).toBe(2);
+    });
+  }
+});
+
+// ---- BOSS_PACE -------------------------------------------------------------------------------------------------------------
+describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attacks', () => {
+  // The owner, 2026-09-30, verbatim: "bosses should attack a bit slower, the bullet pattern thing for the bug swarm(bug tunnel) is too hard. do the next batch."
+  it('"bosses should attack a bit slower": one constant, 1.2, on whatever bossAtkGapBase says -- for every boss in the gauntlet, in every phase, the ones whose gaps live in their own slots too', () => {
+    const r = W.eval(`(function(){
+      var rows = [];
+      BOSS_ROSTER.forEach(function(row){ [1,2,3].forEach(function(ph){
+        var base = bossAtkGapBase({ attack:row.attack, _phase:ph }), paced = bossAtkGap({ attack:row.attack, _phase:ph });
+        rows.push({ name:row.name, ph:ph, base:base, paced:paced, isPaced:bossPaced({ attack:row.attack }) });
+      }); });
+      return { pace: BOSS_PACE, rows: rows, held: bossAtkGap({ attack:'dragon', _phase:1, _dr:{ k:'run' } }) };
+    })()`);
+    expect(r.pace).toBe(1.2);
+    expect(r.rows.length, 'every boss, three phases each').toBe(3 * 12);
+    for (const x of r.rows) {
+      expect(x.isPaced, `${x.name} is a Boss Rush boss`).toBe(true);
+      expect(x.paced, `${x.name}, phase ${x.ph}: ${x.base} x 1.2`).toBe(Math.round(x.base * 1.2));
+      expect(x.paced / x.base, `${x.name}, phase ${x.ph}: about a fifth more`).toBeGreaterThan(1.18);
+      expect(x.paced / x.base).toBeLessThan(1.22);
+    }
+    expect(r.held, "a hold is no gap: the Dragon's 1e6 while a move is in the air is left as it is").toBe(1e6);
+  });
+
+  it('One and Steve Cobs are not Boss Rush bosses: they are not in the roster, run their own gaps, and are not slowed', () => {
+    const r = W.eval(`({
+      paced: ['one', 'cobs', 'cobsfight', 'basic', undefined].map(function(a){ return bossPaced({ attack:a }); }),
+      cobs: [1,2,3].map(function(ph){ return [bossAtkGap({ attack:'cobs', _phase:ph }), COBS.gaps[ph]]; }),
+      one: [0,1,2,3].map(function(m){ return [oneGap({ _marks:m }), [100, 72, 52, 52][m]]; }),
+      oneReads: String(updateOne).indexOf('bossAtkGap'), cobsReads: String(updateCobs).indexOf('bossAtkGap'),
+      inRoster: BOSS_ROSTER.some(function(r){ return r.attack === 'one' || r.attack === 'cobs' || r.attack === 'cobsfight'; })
+    })`);
+    expect(r.paced).toEqual([false, false, false, false, false]);
+    for (const [got, want] of r.cobs) expect(got, 'his old Boss-11 gaps (COBS.gaps) are as they were').toBe(want);
+    for (const [got, want] of r.one) expect(got, "One's own gaps are as they were").toBe(want);
+    expect(r.oneReads, 'updateOne never reads bossAtkGap').toBe(-1);
+    expect(r.cobsReads, 'updateCobs never reads bossAtkGap').toBe(-1);
+    expect(r.inRoster).toBe(false);
+  });
+
+  it("it is applied in one place, and in no slot: bossAtkGap multiplies, and nothing between a pair's markers mentions BOSS_PACE", () => {
+    const L = readFileSync('artifacts/V1/index.html', 'utf8').split(/\r?\n/);
+    const strip = (l) => l.replace(/\/\/.*$/, '');
+    const codeUses = L.filter((l) => /BOSS_PACE/.test(strip(l)));
+    expect(codeUses.map((l) => l.trim()), 'the constant and the one place it is used').toEqual([
+      'const BOSS_PACE = 1.2;',
+      'return (bossPaced(s) && g < 1e5) ? Math.round(g*BOSS_PACE) : g;',
+    ]);
+    let inside = null; const leaks = [];
+    L.forEach((l, i) => {
+      const m = l.match(MARK);
+      if (m && m[2] === 'begin') inside = m[1] + '/' + m[3];
+      else if (m && m[2] === 'end') inside = null;
+      else if (inside && /BOSS_PACE/.test(strip(l))) leaks.push(`${i + 1} (${inside})`);
+    });
+    expect(leaks, 'no slot puts the pace on its own number').toEqual([]);
+  });
+
+  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, and 100 x 1.2 for MePhone4S, Two and Four', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${STAGE('Four', 500)}
+      ['MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Four'].forEach(function(name){
+        BOSSRUSH.bossIdx = BOSS_ROSTER.findIndex(function(r){ return r.name === name; });
+        summons = []; spawnBossRushBoss(); b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9; b._tel = 1; b._telKind = null;
+        updateBossAttack(b, f);
+        out[name] = b._atkTimer;
+      });
+      summons = []; projectiles = []; tendrils = []; return out; })()`);
+    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, MePhone4S: 120, Two: 120, Four: 120 });
+  });
+});
+
+// ---- FOUR'S VICTORY CARD ---------------------------------------------------------------------------------------------------
+describe("Four's victory card waits for his ending (the hook: he has none yet)", () => {
+  // showRushVictory pauses the game the moment it shows, so an ending for Four would play under it, frozen. When BOSS_ENDINGS.four exists the clear path
+  // holds the card -- and the loop's own card with it -- back by its holdMs, the way it holds the BOSS DOWN card; the loop itself moves on at once.
+  it('with no ending the card comes at once, as it always did; with one it comes after holdMs, naming the lap just beaten, and not at all if the run is over by then', async () => {
+    const w = bootMonolith(); await w.eval('profileReady');   // its own page: the loop's awards write the profile
+    const run = (ending, stillRunning) => w.eval(`(function(){ ${STAGE('Four', 500)}
+      var st = setTimeout, timers = [], said = [], _b = banner, el = document.getElementById('rushVictory');
+      setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };
+      banner = function(t, m, k, l){ said.push(String(t)); return _b(t, m, k, l); };
+      try {
+        el.style.display = 'none'; paused = false; BOSSRUSH.active = true; BOSSRUSH.frames = 600;
+        ${ending ? 'BOSS_ENDINGS.four = { begin: function(boss){}, holdMs: 900 };' : ''}
+        b.hp = 0; bossRushCheck();
+        var now = { paused: paused, card: !!BOSSRUSH.card, shown: el.style.display, loop: BOSSRUSH.loop, mult: BOSSRUSH.dmgMult, idx: BOSSRUSH.bossIdx, ms: timers.map(function(t){ return t.ms; }).sort(function(a, c){ return a - c; }),
+          said: said.slice() };
+        running = ${stillRunning}; timers.filter(function(t){ return t.ms === 900; }).forEach(function(t){ t.fn(); }); running = true;
+        return { now: now, after: { paused: paused, card: !!BOSSRUSH.card, shown: el.style.display, sub: document.getElementById('rushVicSub').textContent, said: said.slice(now.said.length) } };
+      } finally { setTimeout = st; banner = _b; delete BOSS_ENDINGS.four; BOSSRUSH.active = false; paused = false; el.style.display = 'none'; summons = []; projectiles = []; }
+    })()`);
+    const plain = run(false, true), held = run(true, true), over = run(true, false);
+    // no ending: the card now, the loop's card now, the next boss after 1.5 s
+    expect(plain.now.paused && plain.now.card && plain.now.shown === 'flex', 'the card is up at once, over a paused match').toBe(true);
+    expect([plain.now.loop, plain.now.mult, plain.now.idx], 'the gauntlet starts again, twice as hard').toEqual([1, 2, 0]);
+    expect(plain.now.ms, 'the next boss after 1.5 s (the rest are banner hide timers)').toContain(1500);
+    expect(plain.now.ms.filter((m) => m === 900), 'and nothing waits').toEqual([]);
+    expect(plain.now.said.some((t) => /GAUNTLET LOOP 2/.test(t))).toBe(true);
+    expect(plain.after.paused, 'nothing was waiting').toBe(true);
+    expect(plain.after.sub).toMatch(/^All \w+ bosses beaten in 0:10\./);
+    // an ending of 900 ms: the match plays on under the scene, the loop is already counted, the cards wait, the next boss comes 1.5 s after them
+    expect(held.now.paused, 'the match is not paused while the scene plays').toBe(false);
+    expect(held.now.card).toBe(false);
+    expect(held.now.shown).toBe('none');
+    expect([held.now.loop, held.now.mult, held.now.idx], 'the loop moves on at once').toEqual([1, 2, 0]);
+    expect(held.now.ms.filter((m) => m === 900), 'the BOSS DOWN card and the victory card both wait for the ending').toEqual([900, 900]);
+    expect(held.now.ms, 'and the next boss comes 1.5 s after them, at 2400, not at 1500').toContain(2400);
+    expect(held.now.ms).not.toContain(1500);
+    expect(held.now.said.some((t) => /GAUNTLET LOOP|BOSS DOWN/.test(t)), 'no card yet').toBe(false);
+    expect(held.after.paused && held.after.card && held.after.shown === 'flex', 'then the victory card, over a paused match').toBe(true);
+    expect(held.after.sub, 'it names the lap just beaten, not the loop that has begun').toMatch(/^All \w+ bosses beaten in 0:10\./);
+    expect(held.after.said.some((t) => /^BOSS DOWN!/.test(t)) && held.after.said.some((t) => /GAUNTLET LOOP 2/.test(t))).toBe(true);
+    // the run ended while the scene played (a quit, a restart): no card over whatever came next
+    expect(over.after.paused, 'no card if the run is over').toBe(false);
+    expect(over.after.shown).toBe('none');
+  });
 });

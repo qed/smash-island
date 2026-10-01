@@ -285,6 +285,21 @@ const PICKS = {
   dragonroboty: { who: 'Purple Dragon', kits: ['dragon'], file: 'Roboty book.png', h: 64, note: 'Roboty, who "flies in" through the door in the wind lottery (Category One)' },
   // @boss:dragon:end picks
 
+  // @boss:mephone4:begin picks
+  // @boss:mephone4:end picks
+
+  // @boss:evilleafy:begin picks
+  // @boss:evilleafy:end picks
+
+  // @boss:mephone4s:begin picks
+  // @boss:mephone4s:end picks
+
+  // @boss:two:begin picks
+  // @boss:two:end picks
+
+  // @boss:four:begin picks
+  // @boss:four:end picks
+
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
   // The three II winners, allowed in only as Steve Cobs's prize ("3, but only after you beat cobs."). The owner's art answers
   // (2026-09-29): OJ's shards -- "crop the shards that were stuck to book in shattered." and then "the episode bfdia 23." --

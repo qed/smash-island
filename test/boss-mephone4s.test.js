@@ -149,10 +149,12 @@ describe('MePhone4S joins the gauntlet', () => {
         if (p.beamShot) seen.bullet++; else if (p.shape==='cookie') seen.cookie++; else if (p.shape==='saw') seen.saw++; else if (p.shape==='redcar') seen.car++; }
         return AP(p); };
       try {
-        for (var i=0;i<600;i++){ step(); f.x = 820; f.vx = 0; f.pct = 0; }
+        // The windows are a fifth longer than they were (600 and 700 held his four turns at the old gaps): "bosses should attack a bit slower" (the owner,
+        // 2026-09-30) -- every Boss Rush boss waits BOSS_PACE (1.2) times as long between attacks, so his fourth turn, the chainsaws, now comes at about 650.
+        for (var i=0;i<720;i++){ step(); f.x = 820; f.vx = 0; f.pct = 0; }
         var p1 = Object.assign({}, seen);
         b.hp = b.maxHp*0.5;
-        for (var j=0;j<700;j++){ step(); f.x = 820; f.vx = 0; f.pct = 0; }
+        for (var j=0;j<840;j++){ step(); f.x = 820; f.vx = 0; f.pct = 0; }
         return { p1: p1, all: seen, phase: b._phase };
       } finally { addProj = AP; summons = []; projectiles = []; }
     })()`);

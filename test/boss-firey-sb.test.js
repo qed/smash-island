@@ -96,7 +96,8 @@ describe('Firey Speaker Box takes his four attacks', () => {
       var gaps = [1,2,3].map(function(p){ return bossAtkGap({ attack:'firewall', _phase:p }); }), tels = [1,2,3].map(function(p){ return bossTelLen({ attack:'firewall', _phase:p }); });
       return { gaps: gaps, tels: tels, table: FSB, dmg: BOSS_DMG_BASE };
     })()`);
-    expect(r.gaps).toEqual([112, 92, 76]);
+    // "bosses should attack a bit slower" (the owner, 2026-09-30): his own 112 / 92 / 76 (FSB.gaps) times BOSS_PACE (1.2)
+    expect(r.gaps).toEqual([134, 110, 91]);
     r.gaps.forEach((g, i) => expect(g, `phase ${i + 1}'s gap`).toBeGreaterThan([100, 72, 52][i]));
     expect(r.tels).toEqual([44, 40, 36]);
     r.tels.forEach((t) => expect(t).toBeGreaterThanOrEqual(36));

@@ -238,7 +238,8 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt', () => {
     expect(new Set(r.ids).size, 'one attack id: the whole rap is one boss hit').toBe(1);
     expect(r.dmg.slice().sort((a, b) => a - b)).toEqual([0.35, 0.35, 0.35, 0.35, 1, 1]);
     expect(r.y.every((y) => y === 0), 'they roll along the floor').toBe(true);
-    expect(r.gap, 'the next turn is timed from the fire').toBe(116);
+    // PFACE.gaps[1] (116) times BOSS_PACE (1.2): "bosses should attack a bit slower" (the owner, 2026-09-30)
+    expect(r.gap, 'the next turn is timed from the fire').toBe(139);
   });
 
   it('"2 should be uninterruptable.": hit him as hard as you like during the intro, and the beat still drops -- all three pulses, every time', () => {
