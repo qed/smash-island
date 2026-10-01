@@ -981,3 +981,403 @@ describe('QUICKSAND SHOVE! (the charging tackle)', () => {
     }
   });
 });
+
+
+describe('the Super Death Trap (his arena and its hazard)', () => {
+  // The Tile Divide: "an obstacle course with sawblades, a crusher, and spikes above a pit of quicksand" -- "Each its own" (the owner, Round 8): the place reacts to the
+  // fight, and "if it makes sense for a hazard, reduce boss difficulty and add a hazard" (Round 11): the sawblades and the quicksand are the hazard, his gaps are longer.
+  it('the sawblades at each end of the beam: parked in phase 1 ("the trap idle"), patrolling a little in phase 2 and a lot in phase 3 ("the whole course goes live"), mirrored', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[1, 2, 3].map((ph) => `{ ${STAGE(600, ph)}
+        var mn = [1e9, 1e9], mx = [-1e9, -1e9], first = null;
+        for (var k=0;k<500;k++){ f.x = 600; f.invuln = 9999; step(); var sw = b._hz.saw; if (k === 0) first = sw.slice(); mn[0] = Math.min(mn[0], sw[0]); mx[0] = Math.max(mx[0], sw[0]); mn[1] = Math.min(mn[1], sw[1]); mx[1] = Math.max(mx[1], sw[1]); }
+        out.p${ph} = { first: first, mn: mn, mx: mx }; summons = []; projectiles = []; }`).join('\n')}
+      out.SW = S4.saw; out.WW = WW; return out; })()`);
+    const home = r.SW.home;
+    expect(r.p1.mn, 'phase 1: parked, a blade at each end of the beam').toEqual([home, r.WW - home]);
+    expect(r.p1.mx).toEqual([home, r.WW - home]);
+    for (const [ph, amp] of [[2, 36], [3, 64]]) {
+      const o = r['p' + ph];
+      expect(o.mn[0], 'phase ' + ph + ': it patrols ' + amp + ' px either side of where it sits').toBeCloseTo(home - amp, -1);
+      expect(o.mx[0]).toBeCloseTo(home + amp, -1);
+      expect(o.mn[1]).toBeCloseTo(r.WW - home - amp, -1);
+      expect(o.mx[1]).toBeCloseTo(r.WW - home + amp, -1);
+      expect(o.mn[0], 'never off the beam, never past its middle').toBeGreaterThan(0);
+      expect(o.mx[0]).toBeLessThan(r.WW / 2);
+    }
+  });
+
+  it('a blade is 0.3 of a boss hit, knocks you off it, bites again only every 40 frames, and is jumped: standing on the beam beside the quicksand is the risk, a hop is the answer', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var gy = groundY(), hits = [], pct1 = 0;
+      f.x = 70; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.pct = 0;
+      step(); var first = { pct: f.pct, vx: f.vx, vy: f.vy, hitstun: f.hitstun };
+      pct1 = f.pct;
+      for (var k=0;k<90;k++){ f.x = 70; f.y = gy - 24; f.invuln = 0; f.hitstun = 0; f.vx = 0; f.vy = 0; step(); if (f.pct > pct1 + 1e-9){ hits.push([k, +(f.pct - pct1).toFixed(2)]); pct1 = f.pct; } }
+      ${STAGE(300, 1)}
+      f.x = 70; f.y = gy - 100; f.invuln = 0; f.pct = 0;
+      for (var j=0;j<20;j++){ f.x = 70; f.y = gy - 100; f.invuln = 0; f.vx = 0; f.vy = 0; step(); }
+      var above = f.pct;
+      ${STAGE(300, 1)}
+      f.x = WW - 70; f.y = gy - 24; f.invuln = 0; f.pct = 0; f.vx = 0; step();
+      var right = { pct: f.pct, vx: f.vx };
+      var out = { first: first, again: hits, above: above, right: right, full: bossDmg(), gap: S4.saw.gap, frac: S4.saw.frac };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.first.pct, 'a fraction of a boss hit').toBeCloseTo(r.full * r.frac, 5);
+    expect(r.frac).toBe(0.3);
+    expect(r.first.vx, 'knocked away from the blade, off the beam toward the middle').toBeGreaterThan(3);
+    expect(r.first.vy, 'and up').toBeLessThan(0);
+    expect(r.first.hitstun).toBeGreaterThan(0);
+    expect(r.again.map((h) => h[0]), 'bites once every 40 frames you stay').toEqual([39, 79]);
+    expect(r.above, 'a hundred px up is clear of it').toBe(0);
+    expect(r.right.pct, 'the blade at the other end is the same').toBeCloseTo(r.full * r.frac, 5);
+    expect(r.right.vx, 'and knocks the other way').toBeLessThan(-3);
+  });
+
+  it('the sky reddens by phase and the lightning starts in phase 2 -- a bolt never closer than 6 s to the last, none at all in phase 1', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[1, 2, 3].map((ph) => `{ ${STAGE(600, ph)}
+        var bolts = [], last = null;
+        for (var k=0;k<1500;k++){ f.x = 600; f.invuln = 9999; step(); var th = b._hz.thunder; if (th != null && th !== last){ bolts.push(th); last = th; } }
+        out.p${ph} = { tint: b._hz.tint, bolts: bolts }; summons = []; projectiles = []; }`).join('\n')}
+      return out; })()`);
+    expect(r.p1.tint, 'phase 1: the clear blue sky').toBe(0);
+    expect(r.p1.bolts, 'and not a bolt').toEqual([]);
+    expect(r.p2.tint, 'phase 2: reddening, eased in, toward 0.55').toBeGreaterThan(0.5);
+    expect(r.p2.tint).toBeLessThanOrEqual(0.55);
+    expect(r.p3.tint, 'phase 3: toward full').toBeGreaterThan(0.9);
+    expect(r.p3.tint).toBeLessThanOrEqual(1);
+    for (const o of [r.p2, r.p3]) {
+      expect(o.bolts.length, 'a few bolts in 25 s').toBeGreaterThanOrEqual(3);
+      for (let i = 1; i < o.bolts.length; i++) expect(o.bolts[i] - o.bolts[i - 1], 'never closer than 6 s').toBeGreaterThanOrEqual(360);
+      expect(o.bolts[0], 'the first not before 4 s').toBeGreaterThanOrEqual(240);
+    }
+  });
+
+  it('a strip of quicksand slows whoever stands in it on the floor while it is live -- not before it opens, not once it has closed, not up in the air', () => {
+    const r = W.eval(`(function(){ ${STAGE(600, 1)}
+      var gy = groundY(), H = b._hz, t0 = hazardT, out = { in: [], out: [], air: [], before: [], after: [] };
+      H.sand = [[300, 90, t0 + 20, t0 + 60]];
+      for (var k=0;k<90;k++){
+        var t = hazardT;
+        f.x = 300; f.y = gy - 24; f.onground = true; f.vx = 0; f.vy = 0; f.invuln = 9999; step();
+        var s = f.slowed || 0;
+        (t < t0 + 19 ? out.before : (t < t0 + 59 ? out.in : out.after)).push(s);
+      }
+      f.slowed = 0; H.sand = [[300, 90, hazardT - 5, hazardT + 100]];
+      for (var j=0;j<10;j++){ f.x = 300; f.y = gy - 120; f.onground = false; f.vx = 0; f.vy = 0; step(); out.air.push(f.slowed || 0); }
+      f.slowed = 0;
+      for (var q=0;q<10;q++){ f.x = 600; f.y = gy - 24; f.onground = true; f.vx = 0; f.vy = 0; step(); out.out.push(f.slowed || 0); }
+      out.edge = (function(){ f.slowed = 0; H.sand = [[300, 90, hazardT - 5, hazardT + 100]]; f.x = 300 + 90 + f.r*0.3 - 1; f.y = gy - 24; f.onground = true; step(); var a = f.slowed || 0;
+                                 f.slowed = 0; f.x = 300 + 90 + f.r*0.3 + 3; f.y = gy - 24; f.onground = true; step(); return [a, f.slowed || 0]; })();
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.before.every((s) => s === 0), 'a strip that has not opened yet does nothing').toBe(true);
+    expect(r.in.slice(1).every((s) => s > 0), 'live: slowed').toBe(true);
+    expect(r.after.slice(7).every((s) => s === 0), 'closed: the slow wears off in a few frames').toBe(true);
+    expect(r.air.every((s) => s === 0), 'the quicksand does not reach you up in the air').toBe(true);
+    expect(r.out.every((s) => s === 0), 'nor outside it').toBe(true);
+    expect(r.edge[0], 'at its edge (the strip\'s half-width and a third of your width)').toBeGreaterThan(0);
+    expect(r.edge[1]).toBe(0);
+  });
+
+  it('SUPER DEATH TRAP! turns the big platform over: ten frames to turn, 150 over (nothing to stand on: whoever was on it falls), ten to turn back; the hazard keeps it', () => {
+    const r = W.eval(`(function(){ ${STAGE(550, 3, false, true)}
+      var gy = groundY(), pl = worldPlats[0], mid = pl.x + pl.w/2;
+      f.x = mid; f.y = pl.y - 24; f.vx = 0; f.vy = 0; f.onground = true; f.invuln = 9999;
+      var surf0 = surfaceBelow(mid, pl.y - 30);
+      s4Flip(b); var started = JSON.stringify(b._hz.flip), again = (function(){ var h = b._hz.flip.slice(); s4Flip(b); return JSON.stringify(b._hz.flip) === JSON.stringify(h); })();
+      var rots = [], fell = -1, rot180 = -1, back = -1, endAt = -1;
+      for (var k=0;k<400;k++){
+        f.x = mid; f.invuln = 9999; step();
+        var rot = pl.rot || 0; rots.push(rot);
+        if (rot === 180 && rot180 < 0) rot180 = k;
+        if (rot > 0 && f.y > pl.y && fell < 0 && !f.onground) fell = k;
+        if (rot180 >= 0 && rot === 0 && back < 0){ back = k; }
+        if (!b._hz.flip && endAt < 0){ endAt = k; break; }
+      }
+      var out = { surf0: surf0, started: started, again: again, rot180: rot180, back: back, endAt: endAt, surfAfter: surfaceBelow(mid, pl.y - 30), platY: pl.y, gy: gy, rot: pl.rot || 0, T: S4.flip.turn, hold: S4.flip.hold,
+                  mono: rots.slice(0, 12).every(function(v, i, a){ return i === 0 || v > a[i-1] || v === 180; }), fell: fell, fy: f.y };
+      summons = []; projectiles = []; worldPlats = []; return out; })()`);
+    expect(r.surf0, 'a platform before').toBeCloseTo(r.platY, 0);
+    expect(JSON.parse(r.started)[0], 'it turns the big platform').toBeGreaterThan(300);
+    expect(r.again, 'a second call does not restart a flip in progress').toBe(true);
+    expect(r.rot180, 'over in ten frames').toBeLessThanOrEqual(r.T);
+    expect(r.mono, 'turning steadily').toBe(true);
+    expect(r.fell, 'whoever stood on it falls as soon as it turns').toBeGreaterThanOrEqual(0);
+    expect(r.fell).toBeLessThan(10);
+    expect(r.endAt, 'ten to turn, 150 over, ten back').toBeGreaterThanOrEqual(2 * r.T + r.hold - 2);
+    expect(r.endAt).toBeLessThanOrEqual(2 * r.T + r.hold + 2);
+    expect(r.rot, 'and it is flat again').toBe(0);
+    expect(r.surfAfter, 'a platform once more').toBeCloseTo(r.platY, 0);
+  });
+
+  it('the hazard is his: with no boss standing it does nothing, and the arena\'s tint, blades and strips draw from his state alone', () => {
+    const r = W.eval(`(function(){ ${STAGE(600, 2)}
+      var H = b._hz; for (var k=0;k<30;k++){ f.x = 600; f.invuln = 9999; step(); }
+      var snap = JSON.stringify(H);
+      b.hp = 0; arenaHazardStep(b, f); arenaHazardStep(b, f);
+      var same = JSON.stringify(b._hz) === snap;
+      var out = { same: same, step: typeof arenaHazardOf('deathtrap').step, platformsOk: worldPlats.every(function(p){ return !p.rot; }) };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.same, 'a beaten boss\'s arena stops moving').toBe(true);
+    expect(r.platformsOk).toBe(true);
+  });
+});
+
+describe('his ending: the cage and the Fist Thingy', () => {
+  // The Tile Divide: "MePhone4 snaps his fingers and the camera pans to a cage ... MePhone4S: 'No! MePhone, you don't understand! He's coming, MePhone! Listen to me,
+  // he's co-' (gets punched into the cage by the Fist Thingy)." -- "Endings: 'All of them' -- every boss gets a short canon exit scene when beaten, no text."
+  it('when he is beaten his shots go with him and the flipped platform turns back; a scene plays where he fell, holds the BOSS DOWN card 1.5 s, hurts nobody and says nothing', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, false, true)}
+      var st = setTimeout, timers = [], said = [], _b = banner, gy = groundY();
+      setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };
+      banner = function(t, m, k, l){ said.push([String(t), k || null]); return _b(t, m, k, l); };
+      var _imp = impact, imps = [];
+      try {
+        BOSSRUSH.active = true;
+        var mk = function(o){ var p = Object.assign({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:300, y:300, vx:0, vy:0, r:10, life:100, dmg:0, kb:0 }, o); projectiles.push(p); return p; };
+        [[1, 'round'], [2, 'redcar'], [3, 's4crush'], [4, 'spike'], [6, 's4saw'], [7, 'lemon']].forEach(function(c){ mk({ s4: c[0], shape: c[1] }); });
+        var other = mk({ x:5, y:5 });
+        worldPlats[0].rot = 90; f._s4sawT = 999; f._carried = hazardT;
+        var bx = b.x, by = b.y, bf = b.face, br = b.r; f.x = bx; f.y = by; f.pct = 0;
+        b.hp = 0; bossRushCheck();
+        var left = projectiles.filter(function(p){ return p.s4; });
+        var scene = left.filter(function(p){ return p.shape === 's4end'; })[0], ghosts = left.filter(function(p){ return p.shape !== 's4end'; });
+        var out = { s4Left: left.length, scene: !!scene, ghosts: ghosts.length, other: projectiles.indexOf(other) >= 0, rot: worldPlats[0].rot, sawT: f._s4sawT, carried: f._carried,
+                    ms: timers.map(function(t){ return t.ms; }), boss: summons.filter(function(s){ return s.type === 'boss'; }).length, saidBoss: said.filter(function(s){ return s[1] === 'boss'; }).length };
+        out.scene_ = scene ? { delay: scene.delay, et0: scene.et0, ex: Math.round(scene.ex), ey: Math.round(scene.ey), ef: scene.ef, er: scene.er, cd: scene.cd, y: scene.y, dmg: scene.dmg, r: scene.r } : null;
+        out.want = [Math.round(bx), Math.round(by), bf, br, hazardT];
+        out.ghosts_ = ghosts.map(function(g){ return { x: Math.round(g.x), vy: g.vy, delay: g.delay, warnY: g.warnY, shake: g.landImpact && g.landImpact.shake, team: g.ownerObj.team, dmg: g.dmg }; });
+        var down = timers.slice().sort(function(a, b){ return a.ms - b.ms; })[0], run0 = running; running = true; if (down) down.fn(); running = run0;
+        out.card = said.some(function(s){ return /^BOSS DOWN!/.test(s[0]) && s[1] === 'sys'; });
+        // the scene runs its length and is gone, and nobody near it is touched
+        impact = function(x, y, o){ imps.push([hazardT, Math.round(x), Math.round(y), o && o.shake]); return _imp(x, y, o); };
+        var pct0 = f.pct, endAt = -1;
+        for (var i=0;i<S4.end.total + 6;i++){ step(); f.x = bx; f.y = gy - 24; f.invuln = 0; if (endAt < 0 && !projectiles.some(function(p){ return p.s4; })) endAt = i; }
+        out.endAt = endAt; out.pct = f.pct - pct0; out.imps = imps; out.total = S4.end.total; out.snap = S4.end.snap; out.glove = S4.end.glove; out.fly = S4.end.fly; out.WW = WW; out.ex = bx;
+        return out;
+      } finally { setTimeout = st; banner = _b; impact = _imp; BOSSRUSH.active = false; summons = []; projectiles = []; worldPlats = []; }
+    })()`);
+    expect(r.s4Left, 'his rounds, cars, crusher, spikes, prizes and lemons are swept; the scene and the two landings it throws are all that is left of his').toBe(3);
+    expect(r.scene).toBe(true);
+    expect(r.ghosts).toBe(2);
+    expect(r.other, 'a shot that is not his own is not swept').toBe(true);
+    expect(r.rot, 'the platform he turned over is turned back').toBe(0);
+    expect(r.sawT, 'and no blade\'s grace outlives him').toBe(0);
+    expect(r.carried).toBe(0);
+    expect(r.boss, 'he is gone from the stage').toBe(0);
+    expect(r.saidBoss, 'no words: not even a telegraph for an ending').toBe(0);
+    expect(r.ms, 'the card 1.5 s late (the scene is the 1.5 s), the next boss 1.5 s after it').toEqual(expect.arrayContaining([1500, 3000]));
+    expect(r.card, 'the BOSS DOWN card shows when the first timer runs').toBe(true);
+    const s = r.scene_;
+    expect([s.ex, s.ey, s.ef, s.er], 'the scene is where he fell, which way he faced, how big he was').toEqual([r.want[0], r.want[1], r.want[2], r.want[3]]);
+    expect(s.et0, 'and it began when he fell').toBe(r.want[4]);
+    expect(s.cd, 'the cage comes on the side toward the middle: he fell on the right').toBe(-1);
+    expect(s.delay, 'the scene lasts its length and a frame').toBe(r.total + 1);
+    expect(s.y, 'the shot is far above the screen: it only carries the scene').toBeLessThan(-1000);
+    expect(s.dmg).toBe(0);
+    expect(r.ghosts_.every((g) => g.team === 0 && g.dmg === 0 && g.vy === 30), 'the two landings are inert, nobody\'s team, and hurt nobody').toBe(true);
+    expect(r.ghosts_.map((g) => g.shake), 'the glove\'s landing 12, the cage door\'s 9').toEqual([12, 9]);
+    expect(r.ghosts_[0].x, 'the glove lands on him').toBe(r.want[0]);
+    expect(r.ghosts_[1].x, 'the door slams at the cage').toBe(Math.max(130, Math.min(r.WW - 130, r.want[0] + s.cd * 230)));
+    expect(r.endAt, 'the scene is over at its end').toBeGreaterThanOrEqual(r.total - 1);
+    expect(r.endAt).toBeLessThanOrEqual(r.total + 2);
+    const sh = r.imps.filter((i) => i[3] === 12 || i[3] === 9);
+    expect(sh.map((i) => i[3]), 'the glove lands, then the door').toEqual([12, 9]);
+    expect(sh[0][0], 'the glove at 34 frames').toBe(r.glove);
+    expect(sh[1][0], 'the door at 60').toBe(r.glove + r.fly);
+    expect(r.pct, 'a scene hurts nobody').toBe(0);
+  });
+
+  it('his ending has no line of text and holds the card back as the show does, 1.5 s', () => {
+    const r = W.eval(`({ ending: BOSS_ENDINGS.mephone4s, others: Object.keys(BOSS_ENDINGS), hold: S4.end.hold })`);
+    expect(r.ending.holdMs).toBe(1500);
+    expect(r.hold).toBe(1500);
+    expect(r.ending.line, 'no words').toBeUndefined();
+  });
+});
+
+describe('a netcode client sees his place, his moves and his ending', () => {
+  it('the trap\'s state, his turn and every shot of his cross the snapshot whole, and draw on the client', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
+      BOSS_ARENA = 'deathtrap'; var gy = groundY(), t = hazardT;
+      var hz = { sand:[[300, 90, t - 5, t + 100], [800, 120, t + 20, t + 150]], saw:[70, 1030], flip:[342, t - 20], tint:0.55, thunder:t - 3, nextBolt:t + 300 };
+      var s4 = { k:'pop', go:true, st:'dig', t:3, ph:3, id:7, n:3, i:1, sx:500, x:420, lock:1 };
+      summons = [{ type:'boss', name:'MePhone4S', color:'#c8102e', r:85, sprite:'mephone4s', x:500, y:300, hp:80, maxHp:260, face:-1, flash:0, homeX:500, _rage:false, _tel:10, _telKind:'s4popup',
+                   _bossRush:true, attack:'mephone4s', _phase:3, _hz:hz, _s4:s4, _aimX:410, _aimY:560, _aimLock:true }];
+      var own = { owner:-2, ownerObj:{ team:-1, idx:-2 } };
+      projectiles = [Object.assign({ x:300, y:400, vx:-12, vy:3, r:8, color:'#ff3a2a', bossAtk:9, life:20, beamShot:true, s4:1, delay:9, s4fz:1 }, own),
+                     Object.assign({ x:40, y:566, vx:14, vy:0, r:26, color:'#d01818', shape:'redcar', bossAtk:10, life:80, delay:20, s4:2 }, own),
+                     Object.assign({ x:300, y:100, vx:0, vy:34, r:34, color:'#e82010', shape:'s4crush', bossAtk:11, life:50, delay:12, warn:12, warnX:300, warnY:gy, s4:3 }, own),
+                     Object.assign({ x:9, y:-5000, vx:0, vy:0, r:0, color:'#c8102e', bossAtk:0, life:1, delay:90, shape:'s4end', s4:5, et0:t - 10, ex:420, ey:400, ef:-1, er:85, cd:1 }, own)];
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      summons = []; projectiles = []; BOSS_ARENA = null;
+      applySnapshot(snap);
+      var err = null, drawn = null;
+      try { drawArenaDecor(BOSS_ARENA); drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); summons.forEach(function(s){ if (s.attack === 'mephone4s') s4DrawFx(s); }); projectiles.forEach(drawProjectile); drawBossBar(); draw(); drawn = true; } catch(e){ err = e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+      var by = function(k){ return projectiles.find(function(p){ return p.s4 === k; }); };
+      var pick = function(p, ks){ var o = {}; ks.forEach(function(k){ o[k] = p ? p[k] : undefined; }); return o; };
+      return { err: err, drawn: drawn, arena: BOSS_ARENA, hz: JSON.stringify(summons[0]._hz), want: JSON.stringify(hz), s4: JSON.stringify(summons[0]._s4), wantS4: JSON.stringify(s4),
+               boss: { attack: summons[0].attack, tel: summons[0]._tel, kind: summons[0]._telKind, phase: summons[0]._phase, aim: [summons[0]._aimX, summons[0]._aimY, summons[0]._aimLock] },
+               round: pick(by(1), ['s4', 'delay', 's4fz', 'vx', 'vy']), car: pick(by(2), ['s4', 'delay', 'shape', 'vx']), crush: pick(by(3), ['s4', 'delay', 'warn', 'warnX', 'warnY', 'shape']),
+               end: pick(by(5), ['s4', 'delay', 'shape', 'et0', 'ex', 'ey', 'ef', 'er', 'cd']), t: t, gy: gy, telLen: bossTelLen(summons[0]) };
+    })()`);
+    expect(r.err).toBe(null);
+    expect(r.arena, 'the client draws the Super Death Trap').toBe('deathtrap');
+    expect(r.hz, 'the strips, the blades, the flip, the sky: every field arrives as it was sent').toBe(r.want);
+    expect(r.s4, 'his turn arrives as it was').toBe(r.wantS4);
+    expect(r.boss).toEqual({ attack: 'mephone4s', tel: 10, kind: 's4popup', phase: 3, aim: [410, 560, true] });
+    expect(r.telLen, 'the client\'s wind-up ring runs over the length of the move he is making, not the default').toBe(46);
+    expect(r.round, 'a frozen round: what it is, how long it holds, that it is frozen').toMatchObject({ s4: 1, delay: 9, s4fz: 1 });
+    expect(r.car, 'a car revving: what it is, how long until it goes').toMatchObject({ s4: 2, delay: 20, shape: 'redcar', vx: 14 });
+    expect(r.crush, 'the crusher\'s shadow: where, and for how long').toMatchObject({ s4: 3, delay: 12, warn: 12, warnX: 300, shape: 's4crush' });
+    expect(r.crush.warnY).toBeCloseTo(r.gy, 0);
+    expect(r.end, 'and so does the ending: where, when, which way, how big, which side the cage is').toEqual({ s4: 5, delay: 90, shape: 's4end', et0: r.t - 10, ex: 420, ey: 400, ef: -1, er: 85, cd: 1 });
+  });
+});
+
+describe('no words, no other show, and the art is wired and credited', () => {
+  // Every draw of his place, him and everything he throws, on a canvas that records what it is asked to do: not one word.
+  function bootRecording(seed = 7) {
+    const html = readFileSync('artifacts/V1/index.html', 'utf8'), rec = [], grad = { addColorStop() {} };
+    const dom = new JSDOM(html, {
+      url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+      beforeParse(window) {
+        window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
+          get: (_t, p) => (p === 'measureText' ? () => ({ width: 0 }) : p === 'canvas' ? { width: 1100, height: 720 } : p === 'getImageData' ? () => ({ data: [] })
+            : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') ? () => grad : (...args) => { rec.push({ op: p, args }); }),
+          set: (_t, p, v) => { rec.push({ op: 'set:' + String(p), args: [v] }); return true; },
+        });
+        window.Math.random = mulberry32(seed); window.requestAnimationFrame = () => 0; window.cancelAnimationFrame = () => {};
+      },
+    });
+    return { w: dom.window, rec };
+  }
+
+  it('draws his whole place, him in every state and everything he throws without a word of text', () => {
+    const { w, rec } = bootRecording();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running = false;");   // (the match's own HUD writes the fighters' names: not his place's business)
+    const n0 = rec.length;
+    const err = w.eval(`(function(){
+      try {
+        BOSS_ARENA = 'deathtrap';
+        var gy = groundY(), t = hazardT + 100; hazardT = t;
+        worldPlats = platRectsSmall();
+        var hz = { sand:[[300, 90, t - 5, t + 100], [800, 120, t + 20, t + 150]], saw:[70, 1030], flip:[342, t - 20], tint:0.55, thunder:t - 3, nextBolt:t + 300 };
+        var base = { type:'boss', name:'MePhone4S', color:'#c8102e', sprite:'mephone4s', r:85, x:500, y:gy-85, face:-1, hp:100, maxHp:260, _tel:0, _telKind:null, _phase:3, _rage:false, flash:0, homeX:500, attack:'mephone4s', _bossRush:true, _hz:hz };
+        var states = [{}, { _tel:30, _telKind:'mephone4s', _aimX:300, _aimY:gy-24, _aimLock:false, _s4:{ k:'gun' } }, { _tel:8, _telKind:'mephone4s', _aimX:900, _aimY:300, _aimLock:true, face:1, _s4:{ k:'gun' } },
+          { _tel:30, _telKind:'s4vista', _s4Vista:true, _aimX:300, _aimY:gy, _aimLock:false, _s4:{ k:'vista' } }, { _tel:6, _telKind:'s4vista', _s4Vista:true, _aimX:300, _aimY:gy, _aimLock:true, _s4:{ k:'vista' } },
+          { _tel:36, _telKind:'s4prizes', _s4:{ k:'prizes' } }, { _tel:12, _telKind:'s4prizes', _s4:{ k:'prizes' } }, { _tel:30, _telKind:'s4car', _s4:{ k:'car', from:1 } }, { _tel:30, _telKind:'s4car', _s4:{ k:'car', from:-1 } },
+          { _tel:30, _telKind:'s4popup', y:gy + 20, _s4:{ k:'pop', sx:500, x:300, lock:0, ph:2 } }, { _tel:4, _telKind:'s4popup', y:gy + 80, _s4:{ k:'pop', sx:500, x:300, lock:1, ph:2 } },
+          { _tel:30, _telKind:'s4shove', _s4:{ k:'shove', x:300, dir:-1, ph:2, lock:0 } }, { _tel:4, _telKind:'s4shove', face:1, _s4:{ k:'shove', x:900, dir:1, ph:3, lock:1 } },
+          { y:gy + 400, _s4:{ k:'pop', go:true, st:'dig', sx:500, x:300, t:3, ph:3, lock:1 } }, { _s4:{ k:'pop', go:true, st:'rise', sx:500, x:300, t:3, ph:3 } }, { _s4:{ k:'pop', go:true, st:'fall', sx:500, x:300, t:3, ph:3 } },
+          { _s4:{ k:'pop', go:true, st:'stand', sx:500, x:300, t:3, ph:3 } }, { _s4:{ k:'pop', go:true, st:'sink', sx:500, x:300, t:3, ph:3, beat:1 } },
+          { _s4:{ k:'shove', go:true, st:'run', dir:-1, x:300, end:240, cx:120, hw:90, ph:1, t:3, spd:15 } }, { _s4:{ k:'shove', go:true, st:'tel2', dir:1, x:700, ph:3, t:3, lock:0 } },
+          { _s4:{ k:'prizes', go:true, t:5, n:2, last:32 } }, { _s4:{ k:'vista', go:true, t:5, ax:300, ay:gy, n:2, last:18 } }, { _s4:{ k:'car', go:true, st:'away', t:10, from:1 }, x:-120 },
+          { flash:6 }, { hp:50, _phase:2, _hz:Object.assign({}, hz, { tint:0.2, flip:null, sand:null }) }, { _hz:{} }, { _s4:{ k:'enter', go:true }, y:-100 }];
+        states.forEach(function(st){ summons = [Object.assign({}, base, st)]; ctx.save(); drawSummon(summons[0]); ctx.restore(); s4DrawFx(summons[0]); });
+        summons = [Object.assign({}, base)]; drawArenaDecor('deathtrap'); drawArenaHazard('under'); drawArenaHazard('over');
+        [0, 0.55, 1].forEach(function(tint){ summons = [Object.assign({}, base, { _hz:Object.assign({}, hz, { tint:tint, thunder:t - 2 }) })]; drawArenaDecor('deathtrap'); drawArenaHazard('under'); });
+        summons = [Object.assign({}, base, { _phase:1, _hz:{} })]; drawArenaDecor('deathtrap'); drawArenaHazard('under'); drawArenaHazard('over');
+        summons = []; drawArenaDecor('deathtrap'); drawArenaHazard('under'); drawArenaHazard('over');   // between bosses
+        arenaGround().pattern(ctx, gy, -20, WW + 20, WH + H, arenaGround());
+        worldPlats[0].rot = 180; summons = [Object.assign({}, base)]; drawArenaHazard('under'); worldPlats[0].rot = 90; drawArenaHazard('under'); worldPlats = [];
+        var own = { owner:-2, ownerObj:{ team:-1, idx:-2 } };
+        [{ s4:1, beamShot:true, vx:-12, vy:3, r:8, color:'#ff3a2a' }, { s4:1, beamShot:true, vx:-12, vy:3, r:8, color:'#ff3a2a', s4fz:1, delay:10 },
+         { s4:2, shape:'redcar', vx:14, vy:0, r:26, color:'#d01818', delay:20 }, { s4:2, shape:'redcar', vx:-14, vy:0, r:26, color:'#d01818', delay:0 }, { s4:2, shape:'redcar', vx:14, vy:0, r:26, color:'#d01818', delay:70 },
+         { s4:3, shape:'s4crush', vx:0, vy:34, r:34, color:'#e82010', warn:20, warnX:300, warnY:gy, delay:20, x:300, y:-40 }, { s4:3, shape:'s4crush', vx:0, vy:34, r:34, color:'#e82010', warn:0, warnX:300, warnY:gy, delay:0, x:300, y:300 },
+         { s4:4, shape:'spike', vx:0.6, vy:-7, r:10, color:'#c8c8d0', delay:20, warn:20, warnX:300, warnY:446 }, { s4:6, shape:'s4saw', vx:2, vy:-3, r:14, color:'#b8c0c8' }, { s4:6, shape:'s4lolli', vx:-12, vy:0, r:13, color:'#e8202a' },
+         { s4:7, shape:'lemon', vx:-3, vy:-5, r:20, color:'#f2e23a', warnX:300, warnY:gy }, { s4:5, delay:5, vx:0, vy:30, r:2, color:'#c8102e' }].forEach(function(p){
+          drawProjectile(Object.assign({ x:300, y:300 }, own, p)); drawProjectile(Object.assign({ x:300, y:300 }, own, p, { trap:true })); });
+        ['s4gun', 's4saw', 's4lolli', 'redcar'].forEach(function(sh){ drawProjectile(Object.assign({ x:300, y:300, vx:8, vy:2, r:14, color:'#888' }, own, { shape:sh })); });
+        [0, 10, 34, 40, 60, 80, 95].forEach(function(u){ [1, -1].forEach(function(cd){ drawProjectile(Object.assign({ x:9, y:-5000, vx:0, vy:0, r:0, shape:'s4end', s4:5, et0:t - u, ex:420, ey:400, ef:-1, er:85, cd:cd, color:'#c8102e' }, own)); }); });
+        return null;
+      } catch(e){ return e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+    })()`);
+    expect(err).toBe(null);
+    const drawn = rec.slice(n0);
+    expect(drawn.length, 'the recording is live').toBeGreaterThan(1000);
+    expect(drawn.filter((r) => r.op === 'fillText' || r.op === 'strokeText').length, 'not a word on the canvas').toBe(0);
+  });
+
+  const FNS = ['s4Hz', 's4PhT', 's4Live', 's4Floor', 's4Hand', 's4Lob', 's4Mark', 's4BeginTelegraph', 's4TrackSight', 's4Muzzle', 's4Gun', 's4CarGo', 's4CarStep', 's4RunQueue', 's4Event', 's4PrizesGo', 's4PairAim',
+    's4ThrowSaw', 's4ThrowLolli', 's4Mouth', 's4VistaGo', 's4ThrowLemon', 's4DeathTrap', 's4Crusher', 's4Flip', 's4Done', 's4Walk', 's4Windup', 's4Move', 's4PopGo', 's4PopStart', 's4PopHit', 's4PopStep',
+    's4ShoveGo', 's4ShovePlan', 's4ShoveRun', 's4ShoveStep', 's4Step', 's4Tick', 's4TelLen', 's4Spawn', 's4PhaseBeat', 's4HazStep', 's4HazDraw', 's4DrawGirder', 's4DrawBlade', 's4GroundPattern', 's4Boss',
+    's4DrawDecor', 's4DrawSand', 's4DrawShot', 's4DrawFrozen', 's4DrawCar', 's4DrawCrusher', 's4DrawProp', 's4Beat', 's4PrizeProps', 's4DrawFx', 's4SandBlob', 's4Bubble', 's4DrawPop', 's4DrawShove', 's4DrawVista',
+    's4EndSweep', 's4EndBegin', 's4Sprite', 's4DrawCage', 's4DrawEnd'];
+  it("nothing of his says a word or names anyone from the OSC: his code has no banner but the trap's own name, no text drawing, no OJ, Suitcase, Cabby or The Floor", () => {
+    const src = W.eval(`[${FNS.join(',')}].map(String).concat([JSON.stringify(S4), JSON.stringify(BOSS_EXTRA['MePhone4S']), JSON.stringify(BOSS_MOVE_NAME), bossPhaseName({ attack:'mephone4s' }, 2),
+      bossPhaseName({ attack:'mephone4s' }, 3), bossTelName({ attack:'mephone4s' }), String(PROJ_SHAPE.s4gun.draw), String(PROJ_SHAPE.s4saw.draw), String(PROJ_SHAPE.s4lolli.draw), String(PROJ_SHAPE.redcar.draw)]).join('\\n')`);
+    expect(src).not.toMatch(/\bOJ\b|Suitcase|Cabby/i);
+    expect(src, 'The Floor, the contestant (the stage\'s floor is no one)').not.toMatch(/The Floor/);
+    expect((src.match(/banner\(/g) || []).length, 'one banner in all of it: the trap going live').toBe(1);
+    expect(src, 'and it is a boss telegraph, which no-move-popups allows').toMatch(/banner\("SUPER DEATH TRAP!", 800, 'boss'\)/);
+    expect(src, 'no text on the canvas').not.toMatch(/fillText|strokeText/);
+    // and every line of the game or the credits that is about him
+    const lines = [readFileSync('artifacts/V1/index.html', 'utf8'), readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8')]
+      .join('\n').split('\n').filter((l) => /MePhone4S|mephone4s|\bS4\b|s4[A-Z]/.test(l));
+    expect(lines.length).toBeGreaterThan(100);
+    expect(lines.filter((l) => /\bOJ\b|Suitcase|Cabby|The Floor/.test(l))).toEqual([]);
+  });
+
+  it("his props wear the show's art -- the pistol, the chainsaw, the lollipop and the car, each cut out of a frame of the show -- every file a real PNG at projectile size, on the record and credited; the lemon is the lemon it was", () => {
+    const reg = W.eval(`(function(){ var o = {}; ['s4gun', 's4saw', 's4lolli', 'redcar', 'lemon'].forEach(function(k){ o[k] = { e: ATTACK_SPRITES[k], glyph: !!PROJ_SHAPE[k] }; }); return o; })()`);
+    const manifest = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8'));
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const picks = readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8');
+    const WANT = { s4gun: 'S1RE8 MePhone4S pulls out his gun.png', s4saw: 'Screen shot 2012-09-02 at 12.25.17 PM.png', s4lolli: 'Screen shot 2012-09-02 at 12.25.17 PM.png', redcar: "MePhone4S's Car.jpg" };
+    for (const [k, wikiFile] of Object.entries(WANT)) {
+      const e = reg[k].e, file = 'artifacts/V1/' + e.src;
+      expect(e.src, k).toBe('assets/sprites/attacks/' + k + '.png');
+      expect(existsSync(file), file).toBe(true);
+      const png = PNG.sync.read(readFileSync(file));
+      expect(Math.max(png.width, png.height), k + ' at projectile size').toBeLessThanOrEqual(128);
+      expect(e.h, k + ' is drawn no taller than a boss shot').toBeLessThanOrEqual(44);
+      const clear = (() => { let c = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) c++; return c / (png.width * png.height); })();
+      expect(clear, k + ' is cut out, not a screenshot').toBeGreaterThan(0.12);
+      expect(reg[k].glyph, k + ' has a drawn glyph to show until it loads').toBe(true);
+      const m = manifest[k];
+      expect(m, k + ' is on the record').toMatchObject({ file: k + '.png', kits: [k], srcTitle: wikiFile, wiki: 'ii', key: 'prop', width: png.width, height: png.height });
+      expect(m.source).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/inanimateinsanity\/images\//);
+      expect(credits, k + ' is credited with its exact source').toContain('(' + k + '.png)');
+      expect(credits).toContain(m.source);
+      expect(picks, k + ' has its pick in his slot').toMatch(new RegExp(k + ":\\s*\\{ who: '(MePhone4S)"));
+    }
+    expect(reg.lemon.e.src, 'the lemon is the lemon the other bosses throw').toBe('assets/sprites/attacks/lemon.png');
+    expect(Object.keys(manifest).length, 'four more on the record than before him').toBeGreaterThanOrEqual(119);
+    expect(readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8')).toMatch(/MePhone4S \(Boss 8\), his Super Death Trap over the quicksand/);
+  });
+
+  it('his art is the II wiki render (File:Yeyeye.png), transparent, credited, flipped as measured, with a drawn fallback', () => {
+    const src = W.eval('BOSS_SPRITE_SRC.mephone4s');
+    expect(src).toBe('assets/sprites/mephone4s.png');
+    const file = 'artifacts/V1/' + src;
+    expect(existsSync(file)).toBe(true);
+    const png = PNG.sync.read(readFileSync(file));
+    expect([png.width, png.height]).toEqual([135, 200]);
+    const alpha = (x, y) => png.data[(y * png.width + x) * 4 + 3];
+    expect([alpha(0, 0), alpha(134, 0), alpha(0, 199), alpha(134, 199)], 'transparent, not a sticker').toEqual([0, 0, 0, 0]);
+    // every boss render fetched from the II wiki is flipped exactly as fetch-sprites measured it
+    const man = JSON.parse(readFileSync('scripts/sprite-manifest-inanimateinsanity.json', 'utf8'));
+    expect(man.MePhone4S).toMatchObject({ ok: true, file: 'mephone4s.png', source: expect.stringContaining('/Yeyeye.png/') });
+    const bossFlips = W.eval(`(function(){ var o = {}; for (var k in BOSS_SPRITE_SRC) o[BOSS_SPRITE_SRC[k].split('/').pop()] = !!BOSS_SPRITE_FLIP[k]; return o; })()`);
+    for (const row of Object.values(man)) if (row.ok && row.file in bossFlips) expect(bossFlips[row.file], row.name).toBe(!!row.flip);
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    expect(credits).toMatch(/\| MePhone4S \| `mephone4s\.png` \| https:\/\/static\.wikia\.nocookie\.net\/inanimateinsanity\/images\/8\/8a\/Yeyeye\.png/);
+    expect(W.eval(`String(drawBossSprite).indexOf('case "mephone4s"') >= 0`)).toBe(true);
+  });
+});
+
+describe('the item version', () => {
+  it('an item MePhone4S never throws his second moves; an item Announcer still throws his own', () => {
+    const r = W.eval(`(function(){
+      var run = function(name){ var s = { type:'boss', name:name, color:'#fff', x:550, y:300, r:70, hp:200, vx:0, vy:0, face:1, _atkTimer:1, _tel:0 };
+        var out = []; for (var i=0;i<4;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); out.push(String(s._telKind)); } return out; };
+      return { s4: run('MePhone4S'), ann: run('Announcer') };
+    })()`);
+    expect(r.s4).toEqual(['undefined', 'undefined', 'undefined', 'undefined']);
+    expect(r.ann, 'his own second moves now: the laser, then the acid (boss overhaul, Round 9)').toEqual(['undefined', 'annlaser', 'undefined', 'annacid']);
+  });
+});
