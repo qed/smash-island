@@ -289,6 +289,15 @@ const PICKS = {
   // @boss:mephone4:end picks
 
   // @boss:evilleafy:begin picks
+  // ---- Evil Leafy (Boss 7), the boss overhaul. "Colours: ... Evil Leafy red with black vines 'and add sprites for the tendrils'" (the owner, 2026-09-29): her vines wear the
+  // wiki's own art. Both files are clean transparent PNGs of the thing itself on the BFDI wiki, so neither needs a key.
+  //   elvine    File:Evil Leafy's Vines.png (Evil Leafy/Gallery; 1280x1170): the black thorny vine mass that "invades the whole screen" (She Deserves This/Transcript) -- the thicket
+  //             a TENDRILS! vine is built of, what a possessed platform thrashes, the curtain at the edge of the forest, and the rim of the BLACK HOLE! ("Her vines start to grow
+  //             again, until it turns into a black circle void that resembles a black hole"): the mass is a ring of vines round an empty heart, so it is the hole's rim as it is
+  //   elfrozen  File:Frozen Evil Leafy.png (Evil Leafy page): "Golf Ball uses freeze juice to freeze Evil Leafy ... Coiny grabs a computer monitor and throws it at her, shattering
+  //             and killing her" (She Deserves This) -- her ending
+  elvine:   { who: 'Evil Leafy', kits: ['elvine'],   file: "Evil Leafy's Vines.png", h: 120, note: "the black thorny vine mass of Evil Leafy's tendrils (Evil Leafy/Gallery; She Deserves This: her tentacles invade the whole screen)" },
+  elfrozen: { who: 'Evil Leafy', kits: ['elfrozen'], file: 'Frozen Evil Leafy.png',   h: 128, note: 'Evil Leafy frozen solid, the moment before she shatters (She Deserves This: Golf Ball freezes her, Coiny throws a monitor)' },
   // @boss:evilleafy:end picks
 
   // @boss:mephone4s:begin picks

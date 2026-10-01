@@ -600,6 +600,17 @@ sign's and the Recovery Center's files have their lettering baked in and a match
 <!-- @boss:mephone4:end credits -->
 
 <!-- @boss:evilleafy:begin credits -->
+Evil Leafy (Boss 7), the Evil Forest. Her vines wear the BFDI wiki's own art ("and add sprites for the tendrils", the owner, 2026-09-29), fetched by
+`node scripts/fetch-attack-sprites.mjs <out> elvine elfrozen` (her `picks` slot), each a clean transparent PNG of the thing itself, looked at before it was kept: alpha
+verified, at most 128 px on the long side, on the record in scripts/attack-sprite-manifest.json. `elvine.png` is the thorny vine mass: every TENDRILS! vine is built of
+it (a column of the mass, its tip drawn in code), a possessed platform thrashes it, the curtains at the forest's edge are tiled from it, and it is the rim of BLACK
+HOLE! ("Her vines start to grow again, until it turns into a black circle void that resembles a black hole", She Deserves This/Transcript). `elfrozen.png` is her
+ending: "Golf Ball uses freeze juice to freeze Evil Leafy ... Coiny grabs a computer monitor and throws it at her, shattering and killing her" (She Deserves This). Her
+own render is unchanged (`evil-leafy.png`, File:Evil Leafy Bfdia 6.png, in the table at the top). Everything else of hers is drawn in code (the forest's conifers, the
+Evil Canyon's far wall, the glowing eyes, the cracks, the BOOM rings, the monitor), in the show's flat style; File:The evil forest is a good place to make a picnic.png and
+File:Evilleafyvine(transparent).png were the references for the forest and for the thin black vines with thorns, and none of it is shipped.
+- Evil Leafy (elvine.png): the black thorny vine mass of Evil Leafy's tendrils (Evil Leafy/Gallery; She Deserves This: her tentacles invade the whole screen) — File:Evil Leafy's Vines.png — https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/Evil_Leafy%27s_Vines.png/revision/latest?cb=20260707220156
+- Evil Leafy (elfrozen.png): Evil Leafy frozen solid, the moment before she shatters (She Deserves This: Golf Ball freezes her, Coiny throws a monitor) — File:Frozen Evil Leafy.png — https://static.wikia.nocookie.net/battlefordreamisland/images/9/94/Frozen_Evil_Leafy.png/revision/latest?cb=20240525190601
 <!-- @boss:evilleafy:end credits -->
 
 <!-- @boss:mephone4s:begin credits -->
