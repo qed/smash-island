@@ -138,7 +138,8 @@ describe('Springy takes Boss 11', () => {
     expect(r.tel, 'he compresses for two thirds of a second').toBe(40);
     expect(r.p2, 'his page: "Whenever Springy is too excited, scared or enraged, they glitch constantly"').toBe('Glitching');
     expect(r.p3, '"a leader of The Unvitational Committee"').toBe('Unvitational');
-    expect(r.gaps, 'his own gaps, quicker each phase').toEqual([96, 72, 54]);
+    // "bosses should attack a bit slower" (the owner, 2026-09-30): his own 96 / 72 / 54 (SPRINGY.gaps) times BOSS_PACE (1.2)
+    expect(r.gaps, 'his own gaps, paced, quicker each phase').toEqual([115, 86, 65]);
   });
 
   it('his phases change as his HP falls and are announced; phase 3 shakes the arena and opens a hole under the nearest fighter', () => {
@@ -212,7 +213,8 @@ describe('TRY NOT TO FALL: the slam', () => {
     expect(r.hole.delay, 'for three seconds (read a frame or so after it opened)').toBeGreaterThanOrEqual(178);
     expect(r.hole.delay).toBeLessThanOrEqual(180);
     expect(r.markLeft, 'the mark is gone').toBe(0);
-    expect(r.gapReset, 'his next turn is timed from the floor').toBe(96);
+    // SPRINGY.gaps[1] (96) times BOSS_PACE (1.2): "bosses should attack a bit slower" (the owner, 2026-09-30)
+    expect(r.gapReset, 'his next turn is timed from the floor').toBe(115);
   });
 
   it("over an open hole the floor does not catch you; the pit pops you back out with 0.6 of a boss hit, never a KO; the hole closes after SPRINGY.holeT", () => {

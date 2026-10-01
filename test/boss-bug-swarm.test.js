@@ -84,10 +84,14 @@ describe('the Bug Swarm is Boss 4, with five attacks of his own', () => {
       [1,2,3].forEach(function(ph){ out[ph] = ['swarm','dodgepattern','swarmseek','dodgeball','eggsac'].map(function(k){ return bossAtkGap({ attack:'swarm', _phase:ph, _telKind:k }); }); });
       out.def = [1,2,3].map(function(ph){ return bossAtkGap({ attack:'other', _phase:ph }); });
       return out; })()`);
-    expect(r.def, 'the shared pacing, unchanged').toEqual([100, 72, 52]);
-    expect(r[1]).toEqual([134, 170, 110, 150, 140]);
-    expect(r[2]).toEqual([106, 142, 82, 122, 112]);
-    expect(r[3]).toEqual([84, 120, 60, 100, 90]);
+    expect(r.def, 'the shared pacing, unchanged (an attack no boss has is not a Boss Rush boss, so it is not paced)').toEqual([100, 72, 52]);
+    // Two decisions of the owner's (2026-09-30) move these. "bosses should attack a bit slower": every Boss Rush boss waits BOSS_PACE (1.2) times as long
+    // between attacks, so what was 134 / 170 / 110 / 150 / 140 in phase 1 is 161 / 228 / 132 / 180 / 168. And "the bullet pattern thing for the bug
+    // swarm(bug tunnel) is too hard": its bugs are a quarter slower now, so the wall takes a third longer to cross and the tail after DODGING PATTERN!
+    // is 80 (was 60): 110 + 80 and its 82 + 80 and 60 + 80 in phases 2 and 3, before the pace.
+    expect(r[1]).toEqual([161, 228, 132, 180, 168]);
+    expect(r[2]).toEqual([127, 194, 98, 146, 134]);
+    expect(r[3]).toEqual([101, 168, 72, 120, 108]);
   });
 });
 
@@ -263,13 +267,15 @@ describe('DODGING PATTERN!: a wall of bugs with one channel through it', () => {
         if (s < 0) expect(o.steps[i + 1] === undefined || o.steps[i + 1] >= 0, `phase ${ph} step ${i}: a fall is slower than a jump (never two rows down in a row)`).toBe(true);
       });
     }
-    expect(r[1].open[0], 'phase 1: four clear rows, the floor first').toEqual([0, 1, 2, 3]);
+    // "the bullet pattern thing for the bug swarm(bug tunnel) is too hard." (the owner, 2026-09-30): the channel is a row wider above its centre --
+    // five clear rows in phase 1 (was four) and four in phases 2 and 3 (was three) -- and the bugs are a quarter slower (was 8 / 8.8 / 9.6).
+    expect(r[1].open[0], 'phase 1: five clear rows (was four), the floor first').toEqual([0, 1, 2, 3, 4]);
     expect(r[1].traps).toEqual([]);
-    expect(r[2].open[3].length, 'phase 2: the entry is wider (one more clear row below, three above)...').toBe(7);
-    expect(r[3].open[3].length).toBe(6);
-    expect(r[2].open[6].length, '...and the rest of the channel is three').toBe(3);
-    expect(r[3].open[8].length).toBe(3);
-    expect([r[1].v, r[2].v, r[3].v], 'faster each phase').toEqual([8, 8.8, 9.6]);
+    expect(r[2].open[3].length, 'phase 2: the entry is wider (one more clear row below, three above): that column is clear to the top...').toBe(8);
+    expect(r[3].open[3].length).toBe(7);
+    expect(r[2].open[6].length, '...and the rest of the channel is four (was three)').toBe(4);
+    expect(r[3].open[8].length).toBe(4);
+    expect([r[1].v, r[2].v, r[3].v], 'faster each phase, but a quarter slower than they were').toEqual([6, 6.6, 7.2]);
     expect(r[3].n).toBeGreaterThan(r[2].n);
     expect(r[2].n).toBeGreaterThan(r[1].n);
   });
@@ -343,14 +349,30 @@ describe('DODGING PATTERN!: a wall of bugs with one channel through it', () => {
         out[ph].other = ${MINE}.every(function(p){ return p.x < 0 && p.vx > 0; });
       });
       return out; })()`);
-    expect(r[1].vs).toEqual([-8]);
-    expect(r[2].vs).toEqual([-8.8]);
-    expect(r[3].vs).toEqual([-9.6]);
+    expect(r[1].vs, 'a quarter slower than they were (8 / 8.8 / 9.6): "too hard", the owner, 2026-09-30').toEqual([-6]);
+    expect(r[2].vs).toEqual([-6.6]);
+    expect(r[3].vs).toEqual([-7.2]);
     for (const ph of [1, 2, 3]) {
       expect(r[ph].outSide, 'they come in from past the wall').toBe(true);
       expect(r[ph].other, 'and from the left wall when you are on the right').toBe(true);
       expect(r[ph].left, 'gone').toBe(0);
     }
+  });
+});
+
+describe('DODGING PATTERN!: the wind-up before the wall comes in is longer', () => {
+  it('60 frames, a second -- every other move of his takes 36 -- and the ring and the swell read the same length', () => {
+    // "the bullet pattern thing for the bug swarm(bug tunnel) is too hard." (the owner, 2026-09-30): a longer tell before the wall closes in
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var out = { lens: {}, turns: [] };
+      ['swarm','dodgepattern','swarmseek','dodgeball','eggsac'].forEach(function(k){ out.lens[k] = bossTelLen({ attack:'swarm', _telKind:k }); });
+      b._moveN = 0;
+      for (var t=0;t<4;t++){ b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f); out.turns.push([b._telKind, b._tel, bossTelLen(b)]); b._tel = 0; }
+
+      return out; })()`);
+    expect(r.lens).toEqual({ swarm: 36, dodgepattern: 60, swarmseek: 36, dodgeball: 36, eggsac: 36 });
+    expect(r.turns, 'each turn starts with its own length, and the ring reads the same one').toEqual([['swarm', 36, 36], ['dodgepattern', 60, 60], ['swarm', 36, 36], ['swarmseek', 36, 36]]);
+
   });
 });
 
@@ -778,7 +800,7 @@ describe('the ending: The Announcer presses a Delete Bugs Button and the bugs va
     })()`);
     expect(r.scene, 'one scene').toBe(1);
     expect(r.others, 'his bugs are swept').toBe(0);
-    expect(r.before).toBeGreaterThan(50);
+    expect(r.before, 'a wall of them (45 in phase 1 now that the channel is a row wider: it was 60)').toBeGreaterThan(40);
     expect([r.ex, r.er], 'where he fell, and how big he was').toEqual([500, 78]);
     expect(r.tot).toBe(70);
     expect(r.dmg, 'it hurts nobody').toBe(0);

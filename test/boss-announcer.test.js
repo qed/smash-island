@@ -67,7 +67,9 @@ describe('the Announcer, rebuilt', () => {
     expect(r.shared, 'INCOMING! and SHOCK RING are gone from him ("Mostly their own")').toEqual([]);
     expect([r.p2, r.p3]).toEqual(['Budget Cuts', 'Crusher Arm']);
     expect(r.tel, 'the standard wind-up: tells are not slowed').toBe(36);
-    expect(r.gaps, 'eased by the hazard in his arena ("reduce boss difficulty and add a hazard"): longer than the default 100/72/52').toEqual([112, 84, 62]);
+    // "bosses should attack a bit slower" (the owner, 2026-09-30): every Boss Rush boss waits BOSS_PACE (1.2) times as long between attacks, so his
+    // own 112 / 84 / 62 are 134 / 101 / 74 (test/boss-kit.test.js checks the pace for every boss).
+    expect(r.gaps, 'eased by the hazard in his arena ("reduce boss difficulty and add a hazard"): longer than the default 100/72/52, and paced (112 / 84 / 62 x 1.2)').toEqual([134, 101, 74]);
     expect(r.gaps.every((g, k) => g > [100, 72, 52][k])).toBe(true);
   });
 
@@ -738,7 +740,8 @@ describe('WATER BALLOONS!: he rises off the screen and they fall on shadows', ()
       out.timer = b._atkTimer; out.moveN = b._moveN; out.gap = bossAtkGap(b);
       return out;
     })()`);
-    expect(r.gap, 'the gap (112) and the 70 he is away').toBe(112 + 70);
+    // the pace ("bosses should attack a bit slower", the owner, 2026-09-30) multiplies the whole of it: the gap (112) and the 70 he is away, x 1.2
+    expect(r.gap, 'the gap (112) and the 70 he is away, paced').toBe(Math.round((112 + 70)*1.2));
   });
 });
 

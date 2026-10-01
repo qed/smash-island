@@ -96,7 +96,8 @@ describe('Puffball Speaker Box is Boss 2, with four attacks of her own', () => {
     expect(r.only, 'an item boss never throws them: they lean on her arena and her flight').toEqual([true, true, true]);
     expect(r.tel, 'each of her four has its own wind-up').toEqual({ soundwave: 44, consequences: 60, rainbowbarf: 40, private: 52 });
     // "if it makes sense for a hazard, reduce boss difficulty and add a hazard": longer than the shared 100 / 72 / 52
-    expect(r.gaps).toEqual([118, 96, 80]);
+    // and paced: "bosses should attack a bit slower" (the owner, 2026-09-30) -- her 118 / 96 / 80 times BOSS_PACE (1.2)
+    expect(r.gaps).toEqual([142, 115, 96]);
     expect(r.gaps[0]).toBeGreaterThan(100); expect(r.gaps[1]).toBeGreaterThan(72); expect(r.gaps[2]).toBeGreaterThan(52);
     // "When she got stabbed by Pin, her voice was stuck in a loop" (Puffball Speaker Box); the sinking Clubhouse (Catch These Hands)
     expect([r.p2, r.p3]).toEqual(['Stuck in a Loop', 'Sinking Clubhouse']);
