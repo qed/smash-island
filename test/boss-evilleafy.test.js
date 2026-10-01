@@ -291,3 +291,191 @@ describe('POSSESSED!: she sinks into the platform, it is hers for a few seconds,
     expect(r.dur, 'hers longer in phase 3').toBe(250);
   });
 });
+
+// ==== BLACK HOLE! ====================================================================================================================================
+describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle of the stage, and it pulls', () => {
+  it('the wind-up flies her up over the middle and lays the void out on the floor under the platform: core and reach by phase, and no pull yet', () => {
+    const r = W.eval(`(function(){ var out = {}, FX = 300;
+      [1, 2, 3].forEach(function(ph){
+        ${STAGE(300, 1, 200)}
+        b.hp = b.maxHp*(ph === 3 ? ${HP[3]} : (ph === 2 ? ${HP[2]} : 1)); step(); f.x = 300; f.y = groundY()-24; f.vx = 0; f.onground = true;
+        ${FIRE(2)}
+        var P = elPlat(), B = b._hz.bh.slice();
+        out[ph] = { kind: telKind, name: telName, tel0: tel0, bh: B, mid: Math.round(P.x + P.w/2), gy: Math.round(groundY()), b: [Math.round(b.x), Math.round(b.y), b.hover], fvx: f.vx };
+      });
+      return out; })()`);
+    expect(r[1].kind).toBe('elhole');
+    expect(r[1].name).toBe('BLACK HOLE!');
+    expect(r[1].tel0).toBe(54);
+    for (const ph of [1, 2, 3]) {
+      const B = r[ph].bh;
+      expect([B[0], B[1]], 'on the floor under the middle of the platform').toEqual([r[ph].mid, r[ph].gy - 46]);
+      expect(B[4] - B[3], 'open for 130 / 160 / 190 frames').toBe([0, 130, 160, 190][ph]);
+      expect([B[5], B[6]], 'core and reach by phase').toEqual([[34, 270], [42, 340], [50, 410]][ph - 1]);
+      expect(Math.abs(r[ph].b[0] - r[ph].mid), 'she has flown over the middle').toBeLessThan(40);
+      expect(r[ph].b[1], 'and up, over the platform').toBeLessThan(r[ph].gy - 200);
+      expect(r[ph].b[2], 'held in the air (hover)').toBe(true);
+      expect(Math.abs(r[ph].fvx), 'no pull in the wind-up').toBeLessThan(0.5);
+    }
+  });
+
+  it('it pulls fighters in -- gently, a runner out-accelerates it -- and the core is a 0.8 boss hit that throws them out of it, once however long they stay; the platform above is safe', () => {
+    const r = W.eval(`(function(){ var out = {};
+      var go = function(fx, onPlat, frames){ var FX = fx; ${STAGE(300, 1, 200)}
+        var P = elPlat(); f.x = fx; f.y = onPlat ? P.y - 24 : groundY() - 24; f.onground = true;
+        b._moveN = 3; b._atkTimer = 1; step(); var B = b._hz.bh, x0 = f.x, xAt = null, vxs = [];
+        for (var i=0;i<frames;i++){
+          step(); if (!onPlat){ f.y = groundY() - 24; f.onground = true; } else { f.y = P.y - 24; f.vy = 0; f.onground = true; }
+          if (hazardT === B[3] + 50) xAt = f.x;   // fifty frames after it opened, before a fighter left alone has reached the core
+          vxs.push(Math.abs(f.vx));
+        }
+        return { x: Math.round(xAt != null ? xAt : f.x), pct: f.pct, mid: B[0], rc: B[5], vmax: Math.max.apply(null, vxs.slice(0, 120)) }; };
+      out.near = go(400, false, 150);        // 150 from the middle, inside the reach (270): drifts in
+      out.far = go(100, false, 150);         // 450 away: outside it
+      out.plat = go(600, true, 190);         // standing on the platform the whole time
+      out.runPull = EL.holePull; out.move = MOVE;
+      out.dmg = bossDmg();
+      return out; })()`);
+    expect(r.near.x, 'a fighter inside the reach is drawn toward the middle').toBeGreaterThan(430);
+    expect(r.far.x, 'a fighter outside it is not').toBe(100);
+    expect(r.runPull.slice(1).every((g) => g < r.move), 'the pull at its hardest is under a fighter\'s own run acceleration (0.9): it can always be run out of').toBe(true);
+    expect(r.near.vmax, 'gentle: nowhere near a launch').toBeLessThan(8);
+    expect(r.plat.pct, 'on the platform, above the void: safe, and she is hanging over the middle').toBe(0);
+  });
+
+  it('the core is a boss hit of 0.8, thrown out of it; once however long you stay (one attack id); and the fighters\' shots curve in and are eaten at the core, hers are not', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${STAGE(550, 1, 200)}
+      b._moveN = 3; b._atkTimer = 1; step();
+      for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = 550; f.y = groundY()-24; f.vx = 0; f.onground = true; }
+      var B = b._hz.bh, first = null, last = 0;
+      f.pct = 0; f.invuln = 0;
+      for (var i=0;i<150;i++){ step(); f.x = B[0]; f.y = B[1]; f.vx = 0; f.vy = 0; f.invuln = Math.min(f.invuln, 0); if (f.pct > last + 0.01){ if (first == null) first = f.pct - last; last = f.pct; } }
+      out.pct = f.pct; out.first = first; out.dmg = bossDmg();   // (held in the core with no grace at all: every frame could hit)
+      // a fighter's shot aimed past the void bends toward it; one that reaches the core is eaten; a boss shot does not
+      ${STAGE(250, 1, 200)}
+      b._moveN = 3; b._atkTimer = 1; step(); for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = 250; f.y = groundY()-24; f.vx = 0; f.onground = true; }
+      var B2 = b._hz.bh, gy = groundY();
+      for (var w=0; w<30; w++) step();   // let it open
+      var mine = { x:B2[0] - 200, y:B2[1] - 90, vx:8, vy:0, r:8, owner:0, ownerObj:f, dmg:1, kb:1, life:200, color:'#fff', noAim:true }, boss = { x:B2[0] - 200, y:B2[1] - 90, vx:8, vy:0, r:8, owner:-2, ownerObj:{ team:-1, idx:-2 }, dmg:1, kb:1, life:200, color:'#f00', noAim:true };
+      projectiles = [mine, boss];
+      for (var j=0;j<20;j++) step();
+      out.mineVy = mine.vy; out.bossVy = boss.vy;
+      mine.x = B2[0] - 20; mine.y = B2[1]; mine.life = 100; step(); out.eaten = mine.life <= 0;
+      return out; })()`);
+    expect(r.first, 'the core is a 0.8 hit').toBeCloseTo(r.dmg*0.8, 5);
+    expect(r.pct, 'and a fighter held in it with no grace at all still takes no more than one boss hit from the whole move (one attack id)').toBeLessThanOrEqual(r.dmg + 1e-6);
+    expect(r.mineVy, 'the fighter\'s shot is bent toward the void (down: the void is lower)').toBeGreaterThan(0.2);
+    expect(r.bossVy, 'a boss shot is not pulled').toBe(0);
+    expect(r.eaten, 'what reaches the core is gone').toBe(true);
+  });
+
+  it('the void closes, she drops back where it was and lands, and her next turn is a paced gap away; the void and its pull rode the snapshot and are drawn from it', () => {
+    const r = W.eval(`(function(){ var FX = 700; ${STAGE(700, 1, 200)}
+      b._moveN = 3; b._atkTimer = 1; step();
+      var out = { err: null }, B, seen = false;
+      for (var i=0;i<400;i++){
+        step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999;
+        if (i === 80){ B = b._hz.bh.slice(); out.hz = JSON.stringify(b._hz.bh);
+          var snap = JSON.parse(JSON.stringify(serializeState())); out.snapHz = JSON.stringify(snap.summons.find(function(m){ return m.attack === 'evilleafy'; })._hz.bh);
+          try { drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); draw(); } catch(e){ out.err = e.message + ' ' + (e.stack||'').split('\\n')[1]; } }
+        if (B && !b._el && hazardT > B[4]){ out.landed = Math.abs(b.y - (groundY() - b.r)) < 1; out.timer = b._atkTimer; out.scale = elHoleScale(B, hazardT); break; }
+      }
+      out.scaleAtEnd = elHoleScale(B, B[4]); out.scaleOpen = elHoleScale(B, B[3] + EL.holeOpen); out.scaleBefore = elHoleScale(B, B[3]);
+      return out; })()`);
+    expect(r.err).toBe(null);
+    expect(r.hz, 'the void crosses the snapshot as it is').toBe(r.snapHz);
+    expect([r.scaleBefore, r.scaleOpen, r.scaleAtEnd], 'closed, open, closed').toEqual([0, 1, 0]);
+    expect(r.landed).toBe(true);
+    expect(r.timer, 'a paced gap away, one frame counted').toBeGreaterThanOrEqual(155);
+  });
+});
+
+// ==== BEHIND THE TREES! ==============================================================================================================================
+describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, then she bursts out and runs the lane', () => {
+  it('the wind-up picks a tree that puts the lane through you, lights her eyes behind it and takes her off the stage: nothing touches her and she touches no one', () => {
+    const r = W.eval(`(function(){ var FX = 700; ${STAGE(700)}
+      f.x = 700;
+      b._moveN = 5; b._atkTimer = 1; step();
+      var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, bt: b._hz.bt.slice(), hid: [] };
+      var tree = elTreeX(out.bt[0]);
+      // she is below the floor and at the tree's x for the whole wind-up; a fighter on that spot is touched by nothing
+      f.x = tree; f.pct = 0; f.invuln = 0;
+      for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = tree; f.y = groundY()-24; f.vx = 0; f.onground = true; if (w === 10) out.hid = [Math.round(b.x), Math.round(b.y), groundY()]; }
+      out.pctWindup = f.pct; out.L = EL.rushLen[1]; out.tree = tree; out.trees = EL.trees.map(function(q, k){ return elTreeX(k); });
+      return out; })()`);
+    expect(r.kind).toBe('elbehind');
+    expect(r.name).toBe('BEHIND THE TREES!');
+    expect(r.tel0).toBe(50);
+    const [k, x, ts, tf, dir, x1] = r.bt;
+    expect(x, 'the tree is one of the backdrop\'s').toBe(r.trees[k]);
+    expect(tf - ts).toBe(50);
+    expect(Math.abs(700 - x), 'the lane runs through you, and the burst is not on top of you').toBeGreaterThanOrEqual(200);
+    expect(Math.abs(700 - x), '...and reaches you').toBeLessThanOrEqual(r.L - 70);
+    expect(dir, 'toward you').toBe(Math.sign(700 - x));
+    expect(Math.abs(x1 - x), 'its length by phase (430 in phase 1), or to the wall').toBeLessThanOrEqual(r.L);
+    expect(r.hid[1], 'below the floor').toBeGreaterThan(r.hid[2]);
+    expect(r.hid[0], 'at the tree').toBe(x);
+    expect(r.pctWindup, 'touching nobody').toBe(0);
+  });
+
+  it('she bursts out on the frame the wind-up ends, runs the lane at 20 a frame, and is a 0.8 boss hit to a fighter in it, thrown the way she runs; not to one out of it, and not twice', () => {
+    const r = W.eval(`(function(){ var out = {};
+      var go = function(where){ var FX = 700; ${STAGE(700)}
+        b._moveN = 5; b._atkTimer = 1; step(); var B = b._hz.bt.slice(), x = elTreeX(B[0]), dir = B[4], x1 = B[5];
+        var fx = where === 'lane' ? Math.round(x + dir*(x1 - x)*dir*0.6) : (where === 'behind' ? x - dir*300 : x + dir*(Math.abs(x1 - x) + 200));
+        fx = clamp(fx, 40, WW - 40); f.x = fx; var first = null, last = 0, hits = 0, vx = 0;
+        for (var i=0;i<130;i++){
+          step(); f.y = groundY()-24; f.onground = true;
+          if (b._el && b._el.st === 'rush' && first == null) first = { x: Math.round(b.x), y: Math.round(b.y), at: i };
+          if (f.pct > last + 0.01){ hits++; last = f.pct; vx = f.vx; }
+          f.x = fx; f.vx = 0;   // (held where it stood: a fighter thrown ahead of her lands wherever it lands, and her contact hit is her own business)
+        }
+        return { pct: f.pct, hits: hits, first: first, x: x, x1: x1, dir: dir, end: Math.round(b.x), vx: vx }; };
+      out.lane = go('lane'); out.behind = go('behind'); out.past = go('past'); out.dmg = bossDmg();
+      return out; })()`);
+    expect(r.lane.first.x, 'out of the tree').toBe(r.lane.x);
+    expect(r.lane.first.y, 'on the floor').toBe(Math.round(r.lane.first.y));
+    expect(r.lane.pct, 'a 0.8 boss hit, and only that: her contact hit does not land on top of it').toBeCloseTo(r.dmg*0.8, 5);
+    expect(r.lane.hits).toBe(1);
+    expect(Math.sign(r.lane.vx), 'thrown the way she runs').toBe(r.lane.dir);
+    expect(r.behind.pct, 'a fighter behind the tree is not in the lane').toBe(0);
+    expect(r.past.pct, 'nor one beyond where it ends').toBe(0);
+    expect(r.lane.end, 'she stops where the lane ends').toBe(r.lane.x1);
+  });
+
+  it('from phase 2 a second tree follows at once, the other way if there is one, its eyes lit for a shorter tell; the trees come in turn, not the same one twice', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [2, 3].forEach(function(ph){
+        var FX = 700; ${STAGE(700, 1, 200)}
+        b.hp = b.maxHp*(ph === 3 ? ${HP[3]} : ${HP[2]}); step(); f.x = 700;
+        b._moveN = 5; b._atkTimer = 1; step();
+        var bt1 = b._hz.bt.slice(), seen = [];
+        for (var i=0;i<200;i++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999; if (b._el && b._el.st === 'tell' && !seen.length) seen.push(b._hz.bt.slice()); if (!b._el && seen.length) break; }
+        out[ph] = { bt1: bt1, bt2: seen[0], done: !b._el, nb: 0 };
+      });
+      // the trees come in turn
+      out.turn = []; for (var n=1;n<=4;n++) out.turn.push(elPickTree(700, 1, n, -1, 0).k);
+      return out; })()`);
+    for (const ph of [2, 3]) {
+      const a = r[ph].bt1, b = r[ph].bt2;
+      expect(b, `phase ${ph}: a second tree`).toBeTruthy();
+      expect(b[0], 'not the same tree').not.toBe(a[0]);
+      expect(b[4], 'the other way').toBe(-a[4]);
+      expect(b[3] - b[2], 'a shorter tell').toBe(ph === 3 ? 20 : 28);
+      expect(r[ph].done, 'and then she is done').toBe(true);
+    }
+    expect(new Set(r.turn).size, 'the trees come in turn').toBeGreaterThan(1);
+  });
+
+  it('the eyes, the lane and the trees are drawn and ride the snapshot: a client draws the same from b._hz', () => {
+    const r = W.eval(`(function(){ var FX = 700; ${STAGE(700)}
+      b._moveN = 5; b._atkTimer = 1; step(); for (var k=0;k<30;k++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; }
+      var out = { err: null }, snap = JSON.parse(JSON.stringify(serializeState()));
+      out.hz = JSON.stringify(b._hz.bt); out.snapHz = JSON.stringify(snap.summons.find(function(m){ return m.attack === 'evilleafy'; })._hz.bt);
+      try { drawArenaDecor('forest'); drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); draw(); } catch(e){ out.err = e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+      return out; })()`);
+    expect(r.err).toBe(null);
+    expect(r.hz).toBe(r.snapHz);
+  });
+});
