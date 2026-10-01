@@ -380,3 +380,182 @@ describe('MeKNIFE! -- YANK IT OUT', () => {
     expect(r).toBe(null);
   });
 });
+
+// ================= THE TWISTS, group 2: my own hands, the electric trail, the pincer, the vortex pull, the retract =================
+
+describe('MY OWN HANDS! -- two rows, marked', () => {
+  const HANDS = (t, up) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 99999; ${up ? 'you.y = groundY() - 400; you.vy = 0; you.onground = false;' : ''} s.x = you.x + 260; s.y = you.y - 20; s.face = -1; projectiles = [];
+    var gy = groundY(); cobsFightTelegraph(s, 'hands', you); var rows = s._handRows ? s._handRows.slice() : null, T = cobsT(s, 'hands'), tel = s._tel, scars0 = IMPACT_SCARS.length;
+    s._tel = 0; COBS_MOVES.hands(s, you, ++BOSS_ATK_ID);
+    var f = shots(), ys = f.map(function(p){ return Math.round(p.y); }), delays = f.map(function(p){ return p.delay; }), ids = new Set(f.map(function(p){ return p.bossAtk; })).size;
+    var shook = 0; for (var i=0;i<delays[delays.length-1] + 6;i++){ s._atkTimer = 1e9; step(); you.invuln = 99999; shook = Math.max(shook, shakeAmt); }
+    var err = null; cobsFightTelegraph(s, 'hands', you); s._tel = 14; try { drawCobsFx(); } catch(e){ err = String(e); }
+    return { rows: rows, T: T, ys: ys, delays: delays, ids: ids, gy: gy, shook: shook, scars: IMPACT_SCARS.length - scars0, err: err, n: f.length };`);
+
+  it('tier 1: every punch along your one row; tier 2: they alternate between your row and a second one, the gap between them longer', () => {
+    const t1 = HANDS(1), t2 = HANDS(2);
+    expect(t1.rows, 'tier 1: no second row to mark').toBe(null);
+    expect(new Set(t1.ys).size, 'all on one row').toBe(1);
+    expect(t2.rows, 'marked at the wind-up').toHaveLength(2);
+    expect(Math.abs(t2.rows[0] - t2.rows[1]), 'two rows, apart').toBeGreaterThanOrEqual(80);
+    expect(t2.ys.map((y, i) => y === Math.round(t2.rows[i % 2])), 'punch i goes down row i mod 2: the order that was marked').toEqual([true, true, true]);
+    expect(t2.delays, 'a longer gap, so the swap between rows can be made').toEqual([0, 21 + 8, 2*(21 + 8)]);
+    expect(t2.ids, 'one id').toBe(1);
+    expect(t2.err).toBe(null);
+  });
+
+  it('the second row is above you if you stand on the floor, the floor if you are up; it is farther off at tier 3 and the gap tighter', () => {
+    const t2 = HANDS(2), t3 = HANDS(3), up = HANDS(2, true);
+    expect(t2.rows[1], 'above the floor-standing row').toBeLessThan(t2.rows[0]);
+    expect(up.rows[1], 'the floor row when you are up in the air').toBeCloseTo(up.gy - 24, 0);
+    expect(Math.abs(t3.rows[0] - t3.rows[1]), 'stronger at tier 3: farther apart').toBeGreaterThan(Math.abs(t2.rows[0] - t2.rows[1]));
+    expect(t3.T.gap2, 'and tighter').toBeLessThan(t2.T.gap2);
+  });
+
+  it('each punch lands heavily: the ground shakes and a crack stays in the floor (impact)', () => {
+    const r = HANDS(2);
+    expect(r.shook, 'shake(10) is 4 px').toBeGreaterThan(2.5);
+    expect(r.scars, 'a crack under each punch').toBeGreaterThanOrEqual(r.n);
+  });
+});
+
+describe('MePHONE X: DELETION! -- an electric trail', () => {
+  const TRAIL = (t, turn) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.face = 1; you.spCd = 0; s.x = you.x + 500; s.y = you.y - 200; projectiles = [];
+    cobsFightTelegraph(s, 'deletion', you); var X = s._xs[0]; s._tel = 0; COBS_MOVES.deletion(s, you, ++BOSS_ATK_ID); ${turn ? 'you.face = -1;' : ''}
+    var T = cobsT(s, 'deletion'), out = { T: T, trail0: s._trail.length, nodes: 0, pctAtPass: null, zapped: null, ids: null, frames: [] };
+    for (var i=0;i<130;i++){ s._atkTimer = 1e9; you.invuln = 0; var p0 = you.pct; step(); out.nodes = Math.max(out.nodes, s._trail.length);
+      if (out.pctAtPass === null && !s._xs.length) out.pctAtPass = you.pct;
+      if (you.pct > p0) out.frames.push([i, Math.round((you.pct - p0)*10)/10]);
+      if (i === 24) out.ids = new Set(s._trail.map(function(n){ return n.id; })).size; }
+    out.pct = you.pct; out.id = X.id; out.dmg = X.dmg; out.left = s._trail.length; return out;`);
+
+  it('tier 1: nothing is left behind; tier 2: red electricity along the lunge, X running on through you if you turned away, armed after a beat, about a second long', () => {
+    const t1 = TRAIL(1, true), t2 = TRAIL(2, true);
+    expect(t1.nodes, 'tier 1: off').toBe(0);
+    expect(t1.pct, 'and a fighter who turned away is untouched').toBe(0);
+    expect(t2.nodes, 'a trail of nodes').toBeGreaterThan(10);
+    expect(t2.ids, 'on X\'s own id').toBe(1);
+    expect(t2.T.trail, 'about a second').toBe(60);
+    expect(t2.left, 'and it is gone again by the end').toBe(0);
+  });
+
+  it('the counter is not zapped the frame it is made: the electricity arms for COBS_TRAIL_ARM frames, then bites once for a part of X\'s hit (never both)', () => {
+    const t2 = TRAIL(2, true), t3 = TRAIL(3, true);
+    expect(t2.pctAtPass, 'X passes through a fighter who turned away: no hit').toBe(0);
+    expect(t2.frames.length, 'then one zap, once').toBe(1);
+    expect(t2.frames[0][1]).toBeCloseTo(33*1.6*0.3, 0);
+    expect(t3.frames[0][1], 'stronger at tier 3').toBeGreaterThan(t2.frames[0][1]);
+    expect(t2.pct, 'never more than X\'s own hit').toBeLessThanOrEqual(t2.dmg + 1e-6);
+    const hit = TRAIL(2, false);
+    expect(hit.pct, 'a fighter X caught takes its hit and the trail adds nothing (one id, one cap)').toBeLessThanOrEqual(hit.dmg + 1e-6);
+  });
+
+  it('draws the dim and the bright electricity without a throw', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); s.x = you.x + 500; s._trail = [];
+      for (var i=0;i<12;i++) s._trail.push({ x: you.x + i*14, y: you.y, t: 50, T: 60, arm: i < 6 ? 10 : 0, id: 3, dmg: 10, cap: 50, hit: {} });
+      var err = null; try { drawCobsFx(); } catch(e){ err = String(e && e.stack || e); } return err;`);
+    expect(r).toBe(null);
+  });
+});
+
+describe('THE FIST THINGY! -- the pincer', () => {
+  const PINCER = (t) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 500; s.y = you.y - 40; s.face = -1; projectiles = [];
+    cobsFightTelegraph(s, 'device', you); var tx = s._telX, T = cobsT(s, 'device'); s._tel = 0; COBS_MOVES.device(s, you, ++BOSS_ATK_ID);
+    var g = shots(), ox = s.x + (s._telDir||-1)*s.r*0.25;
+    var err = null; cobsFightTelegraph(s, 'device', you); s._tel = 18; try { drawCobsFx(); } catch(e){ err = String(e); }
+    return { T: T, n: g.length, x: g.map(function(p){ return Math.round(p.x); }), vx: g.map(function(p){ return p.vx; }), delay: g.map(function(p){ return p.delay; }), r: g.map(function(p){ return p.r; }), shape: g.map(function(p){ return p.shape; }),
+      ids: new Set(g.map(function(p){ return p.bossAtk; })).size, tx: tx, ox: Math.round(ox), kb: g.map(function(p){ return p.kb; }), err: err };`);
+
+  it('tier 1: every glove from his side; tier 2: the second glove from the far edge, flying back at him, a few frames later; tier 3: on the same beat', () => {
+    const t1 = PINCER(1), t2 = PINCER(2), t3 = PINCER(3);
+    expect(new Set(t1.vx.map(Math.sign)).size, 'tier 1: one direction').toBe(1);
+    expect(t2.n).toBe(2);
+    expect(Math.sign(t2.vx[0]), 'glove one toward you from his side').toBe(Math.sign(t2.tx - t2.ox));
+    expect(Math.sign(t2.vx[1]), 'glove two the other way').toBe(-Math.sign(t2.tx - t2.ox));
+    expect(Math.sign(t2.x[1] - t2.tx), 'from the far side of you').toBe(Math.sign(t2.tx - t2.ox));
+    expect(Math.abs(Math.abs(t2.x[1] - t2.tx) - Math.abs(t2.tx - t2.ox)), 'as far past you as he is before you').toBeLessThanOrEqual(2);
+    expect(t2.delay[1] - t2.delay[0], 'tier 2: a beat more to read it').toBe(t2.T.gap + t2.T.pgap);
+    expect(t3.delay[1] - t3.delay[0], 'stronger at tier 3: no extra beat').toBe(t3.T.gap);
+    expect(t2.ids, 'one id, the row keeps one cap').toBe(1);
+    expect(t2.shape.every((x) => x === 'cobsglove')).toBe(true);
+    expect(t2.r.every((x) => x === 22), 'his glove stays 1x (only MePhone4\'s is 2x)').toBe(true);
+    expect(t2.err).toBe(null);
+  });
+
+  it('the last glove launches you the way it flies: from the far edge that is back toward him', () => {
+    const t2 = PINCER(2);
+    expect(t2.kb[1], 'the last launches').toBeGreaterThan(t2.kb[0]);
+    expect(Math.sign(t2.vx[1])).toBe(-Math.sign(t2.vx[0]));
+  });
+});
+
+describe('MEEPLE PORTAL! -- the vortex pull', () => {
+  const PULL = (t, frames) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 99999; projectiles = [];
+    s._portals = [{ x: you.x + 130, y: you.y, t: 60, T: 60, id: ++BOSS_ATK_ID, dmg: 20, kb: 8, hit: {}, pull: cobsT(s, 'portal').pull, pullR: cobsT(s, 'portal').pullR }];
+    var x0 = you.x, maxV = 0, v0 = you.vx;
+    for (var i=0;i<${frames};i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); maxV = Math.max(maxV, Math.abs(you.vx)); }
+    return { dx: you.x - x0, maxV: maxV, T: cobsT(s, 'portal'), left: s._portals.length };`);
+
+  it('tier 1 does not pull; tier 2 drags a fighter in range toward the core; tier 3 harder -- and never to a standstill-lock: the drift is below a fighter\'s own run', () => {
+    const t1 = PULL(1, 12), t2 = PULL(2, 12), t3 = PULL(3, 12);
+    expect(Math.abs(t1.dx), 'tier 1: off').toBeLessThan(0.5);
+    expect(t2.dx, 'toward the portal, which is on the right').toBeGreaterThan(3);
+    expect(t3.dx, 'stronger at tier 3').toBeGreaterThan(t2.dx);
+    expect(t3.maxV, 'never a lock: below a fighter\'s run (6.4)').toBeLessThan(6.4);
+    expect([t2.T.pull, t3.T.pull]).toEqual([0.4, 0.5]);
+  });
+
+  it('a fighter out of range is left alone; the portal closes early once it has flung someone', () => {
+    const r = fight(`
+      park(); atTier(3); floorAt(you, WW*0.5); you.invuln = 99999; projectiles = []; var T = cobsT(s, 'portal');
+      s._portals = [{ x: you.x + T.pullR + 120, y: you.y, t: 60, T: 60, id: ++BOSS_ATK_ID, dmg: 20, kb: 8, hit: {}, pull: T.pull, pullR: T.pullR }];
+      var x0 = you.x; for (var i=0;i<20;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); } var far = you.x - x0;
+      you.invuln = 0; you.pct = 0; floorAt(you, WW*0.5); s._portals = [{ x: you.x + 5, y: you.y, t: 60, T: 60, id: ++BOSS_ATK_ID, dmg: 20, kb: 8, hit: {}, pull: T.pull, pullR: T.pullR }];
+      var P = s._portals[0]; for (var i=0;i<4;i++){ s._atkTimer = 1e9; you.invuln = 0; step(); }
+      return { far: far, hit: you.pct, t: P.t };`);
+    expect(Math.abs(r.far)).toBeLessThan(0.5);
+    expect(r.hit, 'flung').toBeGreaterThan(0);
+    expect(r.t, 'and it closes early').toBeLessThanOrEqual(10);
+  });
+});
+
+describe('SPRINGTASTIC! -- extend and retract', () => {
+  const SPRING = (t) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5 - 1500); you.invuln = 99999; s.x = WW*0.5; s.y = groundY() - 200; s.face = -1; projectiles = [];
+    cobsFightTelegraph(s, 'springs', you); s._tel = 0; var id = ++BOSS_ATK_ID; COBS_MOVES.springs(s, you, id);
+    var T = cobsT(s, 'springs'), ms = projectiles.filter(function(p){ return p.shape === 'mitten'; }), m = ms[0], vx0 = m.vx, x0 = m.x, armX0 = m.armX0, life0 = m.life;
+    var rev = null, gone = null, maxOut = 0;
+    for (var i=0;i<260;i++){ s._atkTimer = 1e9; you.invuln = 99999; var before = m.vx; step(); maxOut = Math.max(maxOut, Math.abs(m.x - x0));
+      if (rev === null && Math.sign(m.vx) !== Math.sign(before) && m.vx !== 0){ rev = { f: i, vx: m.vx, hitReset: !m._hit || Object.keys(m._hit).length === 0 }; }
+      if (gone === null && m.life <= 0){ gone = i; break; } }
+    return { T: T, n: ms.length, vx0: vx0, rev: rev, gone: gone, maxOut: maxOut, ids: new Set(ms.map(function(p){ return p.bossAtk; })).size, life0: life0, spr: !!m._spr };`);
+
+  it('tier 1 stretches the whole way and is gone; tier 2 stops at its reach, snaps back along the same row at its speed, and is gone at his hand', () => {
+    const t1 = SPRING(1), t2 = SPRING(2);
+    expect(t1.spr, 'tier 1: off').toBe(false);
+    expect(t1.rev, 'tier 1: it never comes back').toBe(null);
+    expect(t2.spr).toBe(true);
+    expect(t2.rev, 'the snap-back').not.toBe(null);
+    expect(Math.sign(t2.rev.vx), 'the other way').toBe(-Math.sign(t2.vx0));
+    expect(Math.abs(t2.rev.vx) / Math.abs(t2.vx0), 'at the tier\'s retract speed (1.0x at tier 2)').toBeCloseTo(1.0, 3);
+    expect(t2.maxOut, 'at full stretch').toBeGreaterThanOrEqual(900);
+    expect(t2.maxOut).toBeLessThan(900 + 40);
+    expect(t2.rev.hitReset, 'a second pass that can land').toBe(true);
+    expect(t2.gone, 'gone when it is back at his hand').not.toBe(null);
+    expect(t2.n).toBe(2);
+    expect(t2.ids, 'one id').toBe(1);
+  });
+
+  it('tier 3 snaps back faster (1.25x), and a mitten is never left flying after it should be home', () => {
+    const t2 = SPRING(2), t3 = SPRING(3);
+    expect(Math.abs(t3.rev.vx) / Math.abs(t3.vx0)).toBeCloseTo(1.25, 3);
+    expect(t3.rev.f - 0, 'out then back: the return begins after the reach is covered').toBeGreaterThan(20);
+    expect(t3.gone).not.toBe(null);
+    expect(t3.T.reach, 'stronger: a longer arm').toBeGreaterThan(t2.T.reach);
+  });
+});

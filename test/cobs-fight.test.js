@@ -342,7 +342,7 @@ describe('his four base melee', () => {
       cobsTakeDamage(s, 5); var glasses = s._glassesOff;
       s._tel = 0; COBS_MOVES.hands(s, you, ++BOSS_ATK_ID);
       var fists = shots(), T = cobsT(s, 'hands'), last = fists[fists.length-1];
-      var out = { telUp:telUp, glasses:glasses, n:fists.length, want:T.n, snap:last.fxTag, snapN:last.fxN, gaps:fists.map(function(p){ return p.delay; }), row: fists.every(function(p){ return Math.abs(p.y - fists[0].y) < 1; }) };
+      var out = { telUp:telUp, glasses:glasses, n:fists.length, want:T.n, snap:last.fxTag, snapN:last.fxN, gaps:fists.map(function(p){ return p.delay; }), row: fists.every(function(p, i){ return Math.abs(p.y - fists[i % 2].y) < 1; }), rows2: Math.abs(fists[0].y - fists[1].y) > 50 };
       var rowX = s.x - 120, rowY = fists[0].y - (hurtCY(you) - you.y);   // held in the fists' row (he drifts on his orbit; the fists do not)
       you.invuln = 0; var p0 = you.pct; for (var i=0;i<80;i++){ step(); you.invuln = 0; you.x = rowX; you.y = rowY; you.vx = 0; you.vy = 0; }
       out.hit = you.pct - p0; out.weakened = you.weakened;
@@ -355,8 +355,11 @@ describe('his four base melee', () => {
     expect(r.n).toBe(r.want);
     expect(r.snap).toBe('weaken');
     expect(r.snapN).toBe(120);
-    expect(r.gaps).toEqual([0, 21, 42]);
-    expect(r.row).toBe(true);
+    // Round 7, verbatim: "MY OWN HANDS: TWO ROWS, MARKED -- punches alternate between two rows, both lit at the start with their order": from tier 2 the
+    // punches alternate between two rows (this is tier 2) and each gap is gap2 = 8 frames longer so the swap can be made: 21 + 8 (test/boss-cobs-fight.test.js)
+    expect(r.gaps).toEqual([0, 29, 58]);
+    expect(r.row, 'punch i on row i mod 2').toBe(true);
+    expect(r.rows2).toBe(true);
     expect(r.hit).toBeGreaterThan(0);
     expect(r.weakened, 'the snap: your hits deal less for a while').toBeGreaterThan(0);
     expect(r.missAim, 'and with his glasses off he aims off').toBe(true);
