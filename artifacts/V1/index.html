@@ -8304,7 +8304,7 @@ function annMark(kind, x, y, delay, o){
   return addProj(Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, x:x, y:groundY() + 200, vx:0, vy:0, grav:false, dmg:0, kb:0, r:1, color:'#ffffff',
     life:1, delay:delay, warn:0, warnX:x, warnY:y, annMark:kind, noAim:true }, o || {}));
 }
-// Things that happen a few frames after the wind-up ends (the second and third throw, the plate under a press): `s._q`, host only.
+// Things that happen some frames after the wind-up ends (the re-aimed lob, the acid drops after the first, the plate under a press): `s._q`, host only.
 function annQ(s, t, o){ (s._q || (s._q = [])).push(Object.assign({ t:t }, o)); }
 // A fighter standing on, or hovering just over, a platform.
 function annOccupied(p){
@@ -8352,8 +8352,9 @@ function annBusy(s){
 }
 // He is idle: nothing of his is going, and has not been for `calm` frames. The crusher starts a press only then, and the entry press too.
 function annIdle(b){ return !(b._tel > 0) && !b._bl && (b._calm == null || b._calm >= ANN.calm); }
-// The crusher is going (its tell, its drop, its hold) or has just struck, or phase 3's entry press is waiting for him to be idle: his next wind-up waits.
-function annHazardBusy(H){ return (H.pz > 0 && H.pz < 4) || (H.cc != null && H.cc < ANN.calm) || !!H.entry; }
+// The crusher is going (its tell, its drop, its hold), has just struck, or is DUE (its rhythm has run out and it is waiting for him to be idle: he lets it in first, or
+// his own turns would leave it no gap at all), or phase 3's entry press is waiting for him to be idle: his next wind-up waits.
+function annHazardBusy(H){ return (H.pz > 0 && H.pz < 4) || (H.pz === 0 && !(H.bo > 0) && H.nx != null && H.nx <= 0) || (H.cc != null && H.cc < ANN.calm) || !!H.entry; }
 function annLobT(P, w){ return Math.max(20, Math.round((w === 'lob2' ? ANN.lob2 : ANN.lob)*P.T)); }
 // CAKE AT STAKE!'s lanes, made as the wind-up starts: one a fighter, along the row he stands in, on the side of the tosser he stands on. It follows him until its
 // last `flat.lock` frames, then it holds, and when its clock runs out the flat throw leaves along it (annTick) -- `calm` after the lob has landed. The lane IS the
@@ -8567,10 +8568,13 @@ function annSignature(s, tgt, id){
 // ---- QUADRUPLE LASER! ---------------------------------------------------------------------------------------------------------------------
 // "It functions similar to the Double Laser Powered Teleportation Device, but it has two more lasers moving horizontally" (Laser Powered
 // Teleportation Device); single: "starts at the foot of the contestant, then goes upward"; double: "one that goes up, and one that goes down. They
-// eventually meet in the center". So: a ring marks your spot (the wind-up follows you and locks), and the beams come in on it -- up from the floor,
-// down from the top 14 frames later and, from phase 2, in from both walls along your row 28 frames after that, so it is a step aside, then a jump.
+// eventually meet in the center". So: a ring marks your spot (the wind-up follows you and then locks for its last `lock` frames), and the beams come in on it --
+// up from the floor and down from the top together (a column: one step aside) and, from phase 2, in from both walls along your row `rowAt` frames in, `calm` after the
+// column is over (a row: a jump). The window is the owner's, 2026-10-01: "for the announcer "unavoidable hits", theyre unavoidable bcs they barely have a moment where
+// you can move to dodge." (The beams were 14 frames apart and the walls' 14 after that.)
 // The owner: "3 shouldnt have one go around the screen.": the fourth beam of the show, "reflected around the earth and back", is not in it: every beam
-// starts at an edge and ends on the mark, and stays on the screen. Phase 3 adds a second cross, a step toward the middle, a few frames later. Each beam is
+// starts at an edge and ends on the mark, and stays on the screen. Phase 3 adds a second cross, a step toward the middle, `cross2` frames in (`calm` after the first one's
+// row has faded). Each beam is
 // a mark (inert shot, annMark 'beam'): `mA` the way it comes (0 up, 1 down, 2 from the left, 3 from the right), `mB` when it starts, both on one attack id --
 // however many hit, it is one boss hit -- and a hit throws you to the far side of the arena (the show's "teleport").
 function annBeamTotal(d, start){ const L = ANN.laser; return start + (d < 2 ? L.growV : L.growH) + L.hold + L.fade; }
@@ -8615,9 +8619,10 @@ function annBeamHits(){
   }
 }
 // ---- ACID TEARS! ----------------------------------------------------------------------------------------------------------------------------
-// He sags and two spouts open at his sides: a sprinkler of acid, n a side (2, 3, 4 by phase), each landing farther out than the last and a few frames
+// He sags and two spouts open at his sides: a sprinkler of acid, n a side (2, 3, 4 by phase), each landing farther out than the last and `every` frames
 // after it, and every drop leaves a puddle for three seconds ("Announcer cries acid instead of tears."). A drop and its puddles are all `volley` on one attack
-// id, so a turn is one boss hit at most however long the puddles lie. The puddle also stains the floor for the rest of the phase (H.st).
+// id, so a turn is one boss hit at most however long the puddles lie. The puddle also stains the floor for the rest of the phase (H.st). Every spot is marked from
+// the start of the wind-up, and is `step` from the one before so that a lane between two puddles is wide enough to stand in.
 function annAcid(s, tgt, id, ph){
   const spots = s._spray || annSprayPlan(s, ph);
   for(const sp of spots){ const q = { k:'acid', d:sp.d, kk:sp.k, id:id, x1:sp.x, sy:sp.sy }; if(sp.k === 0) annDrop(s, q); else annQ(s, sp.k*ANN.acid.every, q); }
@@ -8657,9 +8662,9 @@ function annPuddle(s, e){
 }
 // ---- WATER BALLOONS! --------------------------------------------------------------------------------------------------------------------------
 // "(The Announcer drops the water balloons onto the contestants)" (A Leg Up in the Race). He rises off the top of the screen while he winds up (annMove),
-// and the balloons fall from up there onto shadows -- one over each fighter, the rest around the nearest -- each staggered a few frames, drifting the way
+// and the balloons fall from up there onto shadows -- one over each fighter, the rest around the nearest -- landing `every` frames apart, drifting the way
 // he faces as every drop does (the fall drift). Each bursts into a 70 px splash that also pops anyone beside it (the ring shows how far). His own sky
-// drop, not the shared INCOMING! rain. He comes back down after them.
+// drop, not the shared INCOMING! rain. He comes back down after the last one has burst (and his next turn waits `calm` more).
 function annBalloons(s, tgt, id, ph){
   const B = ANN.balloon, n = B.n[Math.min(3, ph)], alive = fighters.filter(f=>!f.dead), xs = alive.map(f=>clamp(f.x, 40, WW - 40));
   const base = tgt ? tgt.x : WW*0.5;
