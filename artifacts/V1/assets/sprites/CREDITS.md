@@ -490,6 +490,12 @@ measured (0.116 / 0.017 / 0.115 / 0.157: all facing right, none flipped). Drawn 
 - `springy-falling.png` -- File:Springitfalling.png, the falling pose, worn on the way down in TRY NOT TO FALL.
 - `springy-angry.png` -- File:Springypissedoff.png, worn while he winds up from phase 2 on.
 
+Springy's MY PURPOSE! (the boss overhaul, Round 10: "the bot toy"): Spring-Bot's own render from the II wiki's Spring-toys gallery, fetched by
+`node scripts/fetch-attack-sprites.mjs <out> springbot` (his pick is the one block at the end of the picks list: he has no slot there) into
+`assets/sprites/attacks/`, a clean transparent PNG so no cut or key, alpha verified, looked at before it was kept. `drawSpringBot` draws it (the
+drawn glyph until it loads). The shots the toy plays back are drawn as the special they copy, so they add no art.
+- Springy (springbot.png): Spring-Bot, the toy Springy programmed in the image of Bot (File:Springbot.png): the toy of MY PURPOSE!, whose speaker plays back the specials it hears — File:Springbot.png — https://static.wikia.nocookie.net/inanimateinsanity/images/8/8b/Springbot.png/revision/latest?cb=20240304133653
+
 <!-- The boss overhaul (2026-09-29), CREDITS SLOTS: each early-six builder credits its bosses' new art between its own two
      markers and nowhere else (artifacts/V1/index.html, BOSS SLOTS, has the rule and the list). -->
 <!-- @boss:announcer:begin credits -->

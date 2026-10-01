@@ -65,7 +65,7 @@ describe('MePhone4 joins the gauntlet', () => {
       'Announcer': ['annlaser', 'annacid', 'annballoon'], 'Puffball Speaker Box': ['consequences', 'rainbowbarf', 'private'], 'Firey Speaker Box': ['furnace', 'youmust'],
       'The Bug Swarm': ['dodgepattern', 'swarmseek', 'dodgeball', 'eggsac'], 'Purple Face': ['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes'], 'Purple Dragon': ['dragonroar', 'dragonchar', 'dragonwind', 'dragonropes'],
       'MePhone4': ['melife', 'portal'],
-      'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop'],
+      'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['seekers', 'ring'], 'Springy': ['longarm', 'boxdrop', 'springbot'],   // + MY PURPOSE!: "give him 1 more: the bot toy, which will copy the 1st 5 specials used after spawning 3 times." (the owner, 2026-09-29)
       'Four': ['rain', 'seekers'],
     });
   });
