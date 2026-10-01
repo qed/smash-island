@@ -461,7 +461,7 @@ describe('BOSS_ENDINGS: every boss gets an exit scene', () => {
     // 'soundwave', test/boss-puffball.test.js; the Purple Dragon's is 'dragon', it waves back and flies away, test/boss-dragon.test.js) -- so Springy's stays first and nothing but the early six's attack keys joins it.
     expect(r.keys[0], "Springy's is first").toBe('springy');
     expect(r.keys, 'the rebuilt ones have theirs').toEqual(expect.arrayContaining(['springy', 'announcer', 'firewall', 'swallow', 'swarm', 'soundwave', 'dragon']));
-    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon'].includes(k)), 'only the early six join him: ' + r.keys).toBe(true);
+    expect(r.keys.filter((k) => k !== 'springy').every((k) => ['announcer', 'soundwave', 'firewall', 'swarm', 'swallow', 'dragon', 'two'].includes(k)), 'only the rebuilt bosses join him (the early six, and Two: his landing pad, test/boss-two.test.js): ' + r.keys).toBe(true);
   });
 
   it('an ending sweeps, plays where the boss fell, and holds the BOSS DOWN card and the next boss back by its length -- with no text', () => {
@@ -652,7 +652,7 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
   // What each of the five already had in a slot is inside its own pair now: the lines were moved, not changed.
   const HOLDS = {
     roster: { mephone4: ['attack:"mephone",'], evilleafy: ['attack:"evilleafy",'], mephone4s: ['attack:"mephone4s",'], two: ['attack:"two",'], four: ['attack:"four",'] },
-    extra: { mephone4: ['"MePhone4": ["melife", "portal"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["cookies", "chainsaws"]'], two: ['"Two": ["seekers", "ring"]'], four: ['"Four": ["rain", "seekers"]'] },
+    extra: { mephone4: ['"MePhone4": ["melife", "portal"]'], evilleafy: ['"Evil Leafy": ["seekers", "slam"]'], mephone4s: ['"MePhone4S": ["cookies", "chainsaws"]'], two: ['"Two": ["twosun", "twopower", "twoblocks", "tworails", "twoclap"]'], four: ['"Four": ["rain", "seekers"]'] },
     rushonly: { mephone4: ['"melife", "portal"'], mephone4s: ['"cookies", "chainsaws"'] },
     movename: { mephone4: ['melife:"MELIFE DOWNLOAD!"', 'glitch:"GLITCH!"', 'portal:"REJECTION PORTAL!"'], mephone4s: ['cookies:"POISONED COOKIES!"', 'chainsaws:"CHAINSAWS!"'] },
     moves: { mephone4: ['melife(s, tgt){', 'glitch(s, tgt){', 'portal(s, tgt){'], mephone4s: ['cookies(s, tgt){', 'chainsaws(s, tgt){'] },
@@ -692,6 +692,7 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
   it("and the slots they do not use yet hold no code at all: spawn, shotdraw, ground, look, art, netshot, hazard and ending (Four's ending is a note, for the victory card)", () => {
     const L = lines(), strip = (s) => s.split('\n').map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean);
     for (const slot of ['spawn', 'shotdraw', 'ground', 'look', 'art', 'netshot', 'hazard', 'ending']) for (const boss of LATE) {
+      if (boss === 'two') continue;   // Two is rebuilt (the boss overhaul): every one of those is his now (test/boss-two.test.js)
       expect(strip(body(L, slot, boss)), `${slot}/${boss}`).toEqual([]);
     }
   });
@@ -708,7 +709,8 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal'] });
     expect(r.evilleafy).toEqual({ base: [130, 95, 70], tel: 45, name1: 'TENDRILS!', name2: 'TENDRILS!', p2: 'No Refuge', p3: 'Vine Coverage', extra: ['seekers', 'slam'] });
     expect(r.mephone4s).toEqual({ base: [100, 72, 52], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['cookies', 'chainsaws'] });
-    expect(r.two).toEqual({ base: [100, 72, 52], tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['seekers', 'ring'] });
+    // Two, rebuilt: his phase-3 gap is 60, not 52 (the derailed coaster is the park's hazard now: "if it makes sense for a hazard, reduce boss difficulty and add a hazard.", the owner, 2026-09-29), and his second moves are his own five
+    expect(r.two).toEqual({ base: [100, 72, 60], tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap'] });
     expect(r.four).toEqual({ base: [100, 72, 52], tel: 50, name1: 'SCREECHY!', name2: 'SCREECHY!!', p2: 'Zap to Dust', p3: 'Reality Buckles', extra: ['rain', 'seekers'] });
   });
 

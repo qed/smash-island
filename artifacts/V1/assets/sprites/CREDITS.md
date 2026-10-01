@@ -606,6 +606,17 @@ sign's and the Recovery Center's files have their lettering baked in and a match
 <!-- @boss:mephone4s:end credits -->
 
 <!-- @boss:two:begin credits -->
+Two (Boss 10), the A-twos-ment Park at sunset. What he throws, stacks and rides wears the show's art, cut by `scripts/fetch-attack-sprites.mjs` (its `twosun`, `twoprize`, `twoglow` and
+`twoblock0` to `twoblock3` picks) into `assets/sprites/attacks/`, alpha verified, looked at before it was kept: the spiked sun, the prize's orbs, the glow of his power (what a MIND READ! copy with no art of
+its own comes back as) and four of the team blocks that stack, fall, lie as steps and make up the carts of the rails. His hands (CLAP!), the rails and carts, the park behind him and the landing pad of his ending
+are drawn in code (`PROJ_SHAPE` and the arena's draw functions), because no file of them is clean. His own render is unchanged (`two.png`, above).
+- Two (twosun.png): the spiked sun he bashes with and circles himself with ("Two transforms the sun into a spiked ball", The Escape from Four) — File:Spike Ball aka Sun (BFB 16).png — https://static.wikia.nocookie.net/battlefordreamisland/images/1/15/Spike_Ball_aka_Sun_%28BFB_16%29.png/revision/latest?cb=20210202034310
+- Two (twoprize.png): the Power of Two's prize, the orbs of THE POWER OF TWO! (The Power of Two (prize): "Outside: Lime Green / Inside: Yellowish Green") — File:TPOT(prize).svg — https://static.wikia.nocookie.net/battlefordreamisland/images/8/83/TPOT%28prize%29.svg/revision/latest?cb=20240825012401
+- Two (twoglow.png): the green glow of Two's power, what a MIND READ! copy with no art of its own comes back as — File:Two's Powers.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/Two%27s_Powers.png/revision/latest?cb=20260516005603
+- Two (twoblock0.png): a red team block (The Strongest Team on Earth's): BLOCK TOWERS! and the carts of I LOVE RIDES! — File:TSTOE Block.png — https://static.wikia.nocookie.net/battlefordreamisland/images/1/1e/TSTOE_Block.png/revision/latest?cb=20250406025814
+- Two (twoblock1.png): a yellow team block (Just Not's): BLOCK TOWERS! and the carts of I LOVE RIDES! — File:JN Block.png — https://static.wikia.nocookie.net/battlefordreamisland/images/3/37/JN_Block.png/revision/latest?cb=20250406025815
+- Two (twoblock2.png): a periwinkle team block (The S!'s): BLOCK TOWERS! and the carts of I LOVE RIDES! — File:TheS Block.png — https://static.wikia.nocookie.net/battlefordreamisland/images/6/61/TheS_Block.png/revision/latest?cb=20250406025817
+- Two (twoblock3.png): a green team block (Are You Okay's): BLOCK TOWERS! and the carts of I LOVE RIDES! — File:AYO Block.png — https://static.wikia.nocookie.net/battlefordreamisland/images/d/d5/AYO_Block.png/revision/latest?cb=20250406025816
 <!-- @boss:two:end credits -->
 
 <!-- @boss:four:begin credits -->

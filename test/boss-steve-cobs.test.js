@@ -89,7 +89,7 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
       ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s', 'cookies+chainsaws', 'mephone4s cookies mephone4s chainsaws', 42, "I'll Be Back", 'Super Death Trap'],
       // the Dragon's own five and its own wind-up (44), on the hotel roof: "the bosses should have more attacks the later they get" (Bug Swarm on: 5), "Each its own"
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragon dragonchar', 44, 'Strafing Runs', 'Grab & Carry'],
-      ['Two', '#c8a020', 285, 2.6, 'two', 'void', false, 'two', 'seekers+ring', 'two seekers two ring', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],
+      ['Two', '#44C549', 285, 2.6, 'two', 'twopark', false, 'two', 'twosun+twopower+twoblocks+tworails+twoclap', 'two twosun two twopower', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],   // rebuilt (the boss overhaul): green, the A-twos-ment Park, his own six (test/boss-two.test.js)
       // Boss 11: Springy, in his place ("replace him with springy"; test/boss-springy.test.js has the fight)
       ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop', 'springy longarm springy boxdrop', 40, 'Glitching', 'Unvitational'],
       ['Four', '#3a6ad0', 340, 2.8, 'four', 'void', true, 'four', 'rain+seekers', 'four rain four seekers', 50, 'Zap to Dust', 'Reality Buckles'],

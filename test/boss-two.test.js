@@ -679,3 +679,341 @@ describe('I LOVE RIDES!', () => {
     expect(r[3]).toEqual({ n: 6, spd: 14, gap: 44 });
   });
 });
+
+describe('the turn order and the wind-ups: six attacks, the signature between each', () => {
+  it('his turns run MIND READ!, MAYBE YOU\'D LIKE THIS!, MIND READ!, THE POWER OF TWO!, MIND READ!, BLOCK TOWERS!, MIND READ!, I LOVE RIDES!, MIND READ!, CLAP! -- and until phase 2 the last two are the ring and the sun again', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2].forEach(function(ph){
+        var s = { name:'Two', attack:'two', type:'boss', x:700, y:420, r:88, hp:[0, 100, 50, 20][ph], maxHp:100, _phase:ph, _atkTimer:1, _tel:0, color:'#44C549', face:-1, homeX:700, stationary:false, vx:0, vy:0 };
+        var kinds = [], names = [], tels = [];
+        for (var k=0;k<10;k++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tels.push(s._tel); s._tw = null; }
+        out[ph] = { kinds: kinds, names: names, tels: tels };
+      });
+      out.extra = BOSS_EXTRA['Two']; out.rush = ['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap'].map(function(k){ return BOSS_RUSH_ONLY.has(k); });
+      out.moves = BOSS_EXTRA['Two'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k]; });
+      out.p2 = bossPhaseName({ attack:'two' }, 2); out.p3 = bossPhaseName({ attack:'two' }, 3);
+      out.row = BOSS_ROSTER.find(function(b){ return b.name === 'Two'; });
+      out.shared = ['seekers', 'ring'].map(function(k){ return BOSS_EXTRA['Two'].indexOf(k); });
+      return out; })()`);
+    expect(r.extra).toEqual(['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap']);
+    expect(r[2].kinds).toEqual(['two', 'twosun', 'two', 'twopower', 'two', 'twoblocks', 'two', 'tworails', 'two', 'twoclap']);
+    expect(r[1].kinds, 'phase 1: I LOVE RIDES! is the ring again and CLAP! is the sun again').toEqual(['two', 'twosun', 'two', 'twopower', 'two', 'twoblocks', 'two', 'twopower', 'two', 'twosun']);
+    expect(r[2].names, 'the show\'s own lines, and the owner\'s own rail design named for Two\'s ride').toEqual(['MIND READ!', "MAYBE YOU'D LIKE THIS!", 'MIND READ!', 'THE POWER OF TWO!', 'MIND READ!', 'BLOCK TOWERS!', 'MIND READ!', 'I LOVE RIDES!', 'MIND READ!', 'CLAP!']);
+    expect(r[2].tels, 'each has its own wind-up: 36, 40, 36, 36, 36, 40, 36, 40, 36, 36').toEqual([36, 40, 36, 36, 36, 40, 36, 40, 36, 36]);
+    expect(r.moves).toEqual(["function/MAYBE YOU'D LIKE THIS!", 'function/THE POWER OF TWO!', 'function/BLOCK TOWERS!', 'function/I LOVE RIDES!', 'function/CLAP!']);
+    expect(r.rush, 'an item boss never throws them: they need his flight, his tells and his park').toEqual([true, true, true, true, true]);
+    expect([r.p2, r.p3]).toEqual(['Size Shift', 'Power Ungrounded — ground it to damage them!']);
+    expect(r.shared, 'the shared SEEKERS! and SHOCK RING! are gone from him').toEqual([-1, -1]);
+    expect(r.row).toEqual(ROW);
+  });
+
+  it('the gap holds while a move of his is in the air and the gap starts when it ends: 100 / 72 / 60 (phase 3 eased for the hazard), paced 1.2 -- and the shared SEEKERS! and RING are still the shared ones other bosses use', () => {
+    const r = W.eval(`(function(){
+      var held = { attack:'two', _phase:1, _tw:{ k:'sun' } }, base = [1, 2, 3].map(function(ph){ return bossAtkGapBase({ attack:'two', _phase:ph }); });
+      var paced = [1, 2, 3].map(function(ph){ return bossAtkGap({ attack:'two', _phase:ph }); });
+      return { held: bossAtkGap(held), base: base, paced: paced, ring: typeof BOSS_MOVES.ring, seekers: typeof BOSS_MOVES.seekers, ringFour: BOSS_EXTRA['Four'] }; })()`);
+    expect(r.held, 'a hold is no gap').toBe(1e6);
+    expect(r.base, 'his own 100 / 72 and 60 in phase 3 ("if it makes sense for a hazard, reduce boss difficulty and add a hazard.")').toEqual([100, 72, 60]);
+    expect(r.paced, 'BOSS_PACE applied once, centrally').toEqual([120, 86, 72]);
+    expect([r.ring, r.seekers], 'the shared moves stay for the bosses that use them').toEqual(['function', 'function']);
+  });
+
+  it('a move that is still in the air holds the next wind-up back: nothing begins until twoDone, then the gap runs', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 2, true)}
+      f.x = 300; ${FIRE('twoclap')}
+      var T = b._tw, timers = [];
+      for (var k=0;k<30;k++){ step(); ${HOLD} f.x = 300; timers.push(b._atkTimer); }
+      var held = timers.every(function(t){ return t > 1e5; });
+      for (var k=0;k<40 && b._tw;k++){ step(); ${HOLD} f.x = 300; }
+      var out = { held: held, ended: !b._tw, gap: b._atkTimer, tel: b._tel };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.held).toBe(true);
+    expect(r.ended).toBe(true);
+    expect(r.gap, 'the gap counts down from the end of the move: 86 in phase 2').toBeLessThanOrEqual(86);
+    expect(r.gap).toBeGreaterThan(70);
+  });
+});
+
+describe('the A-twos-ment Park: sky, floor, backdrop and what the phases do to it', () => {
+  it('gives the park its dusk sky, its grey tile floor, its hazard and its ending, and every arena key a netcode client would take', () => {
+    const r = W.eval(`({ sky: BOSS_ARENA_SKY.twopark, ground: BOSS_ARENA_GROUND.twopark && [BOSS_ARENA_GROUND.twopark.fill, BOSS_ARENA_GROUND.twopark.line, typeof BOSS_ARENA_GROUND.twopark.pattern],
+      hz: [typeof arenaHazardOf('twopark').step, typeof arenaHazardOf('twopark').draw], end: [typeof BOSS_ENDINGS.two.sweep, typeof BOSS_ENDINGS.two.begin, BOSS_ENDINGS.two.holdMs, BOSS_ENDINGS.two.line],
+      void: BOSS_ARENA_SKY.void.length, others: ['studio','forest','cerealbox','hotelroof','cave','melife'].every(function(k){ return !!BOSS_ARENA_SKY[k]; }), four: BOSS_ROSTER.find(function(b){ return b.name === 'Four'; }).arena })`);
+    expect(r.sky).toHaveLength(2);
+    expect(r.ground).toEqual(['#8d8fa0', '#2c2c3c', 'function']);
+    expect(r.hz).toEqual(['function', 'function']);
+    expect(r.end, 'a short canon exit, no line of text').toEqual(['function', 'function', 600, undefined]);
+    expect(r.void, 'the void is not touched: Four still fights in it').toBe(2);
+    expect(r.four).toBe('void');
+    expect(r.others).toBe(true);
+  });
+
+  it('the evening falls with the phases: no night in phase 1, 0.3 in phase 2, 0.62 in phase 3, eased in over 90 frames from the phase\'s start -- and the ending keeps the last light', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, false)}
+      var out = { p1: twoNight(b, b._hz) };
+      b.hp = b.maxHp*0.5; step(); step(); out.p2start = twoNight(b, b._hz); for (var k=0;k<95;k++){ step(); ${HOLD} } out.p2 = twoNight(b, b._hz);
+      b.hp = b.maxHp*0.2; step(); out.p3start = twoNight(b, b._hz); for (var k=0;k<95;k++){ step(); ${HOLD} } out.p3 = twoNight(b, b._hz);
+      out.after = twoNight(null, {});
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.p1).toBe(0);
+    expect(r.p2start, 'it begins to fall as the phase starts').toBeLessThan(0.1);
+    expect(r.p2).toBeCloseTo(0.3, 2);
+    expect(r.p3start).toBeLessThan(0.5);
+    expect(r.p3).toBeCloseTo(0.62, 2);
+    expect(r.after, 'with no boss the last light stays').toBeCloseTo(0.62, 2);
+  });
+
+  it('phase 2 shrinks him to 0.72 and pops him to the middle; phase 3 makes him 1.5 times that, ungrounded, brings the mace out of the sky and opens the hazard -- and a burst of damage that skips phase 2 still gets both', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${STAGE(300, 1, false)}
+      var R0 = b.r; out.R0 = R0;
+      b.hp = b.maxHp*0.5; step(); out.p2 = { phase: b._phase, r: b.r, shift: b._sizeShift, pop: !!b._pop, p2: b._hz.p2, banner: document.getElementById('banner').textContent, ungrounded: !!b._ungrounded };
+      for (var k=0;k<30;k++){ step(); ${HOLD} } out.at2 = [Math.round(b.x), b._pop];
+      b.hp = b.maxHp*0.2; step(); out.p3 = { phase: b._phase, r: b.r, ungrounded: !!b._ungrounded, mace: !!b._mace, p3: !!b._hz.p3, banner: document.getElementById('banner').textContent, pop: !!b._pop };
+      ${STAGE(300, 1, false)}
+      b.hp = b.maxHp*0.1; step(); out.skip = { phase: b._phase, r: b.r, shift: b._sizeShift, ungrounded: !!b._ungrounded, mace: !!b._mace, p2: !!b._hz.p2, p3: !!b._hz.p3 };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.p2.phase).toBe(2);
+    expect(r.p2.r, 'x 0.72').toBe(Math.round(r.R0*0.72));
+    expect(r.p2.pop, 'the phase opens with a pop').toBe(true);
+    expect(r.p2.banner, 'the banner of phase 2').toBe('TWO SHRINKS!');
+    expect(r.p2.ungrounded).toBe(false);
+    expect(r.at2[1], 'the pop is over').toBe(null);
+    expect(r.p3.phase).toBe(3);
+    expect(r.p3.r, 'x 1.5 of that').toBe(Math.round(Math.round(r.R0*0.72)*1.5));
+    expect(r.p3.ungrounded).toBe(true);
+    expect(r.p3.mace).toBe(true);
+    expect(r.p3.pop).toBe(true);
+    expect(r.p3.banner).toMatch(/^POWER UNGROUNDED/);
+    expect(r.skip, 'skipping phase 2 still shrinks, then grows, and brings both beats').toMatchObject({ phase: 3, shift: 1, ungrounded: true, mace: true, p2: true, p3: true });
+    expect(r.skip.r).toBe(Math.round(Math.round(r.R0*0.72)*1.5));
+  });
+
+  it('phase 3: nothing can hurt him until a fighter stays within his radius + 130 for a second -- grounded; and it lapses once everyone backs off', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
+      b._mace = null; projectiles = []; b._atkTimer = 1e9;
+      var out = { grounded0: !!b._grounded };
+      var hp0 = b.hp; damageSummons({ team:0, idx:0 }, b.x, b.y, 10, 20, b); out.noDamage = hp0 - b.hp;
+      f.x = b.x - (b.r + 100); f.y = b.y;
+      for (var k=0;k<80;k++){ step(); ${HOLD} f.x = b.x - (b.r + 100); f.y = b.y; }
+      out.grounded1 = !!b._grounded; var hp1 = b.hp; damageSummons({ team:0, idx:0 }, b.x, b.y, 10, 20, b); out.damage = hp1 - b.hp;
+      f.x = 60; f.y = groundY() - 24; for (var k=0;k<90;k++){ step(); ${HOLD} f.x = 60; f.y = groundY() - 24; } out.lapsed = !b._grounded;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.grounded0).toBe(false);
+    expect(r.noDamage, 'ungrounded: immune').toBe(0);
+    expect(r.grounded1).toBe(true);
+    expect(r.damage, 'grounded: it lands').toBe(20);
+    expect(r.lapsed).toBe(true);
+  });
+
+  it('phase 3\'s hazard: every seven seconds in the lull between his turns a car of the derailed coaster flies off the broken track, lands on a mark that shows 50 frames ahead, and whoever stands there takes half a boss hit; never in phases 1 and 2, never on top of a tell', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${STAGE(300, 2, true)} b._atkTimer = 1e9; for (var k=0;k<400;k++){ step(); ${HOLD} } out.p2 = (b._hz.cr || []).length + (b._hz.crN || 0);
+      ${STAGE(550, 3, true)}
+      b._mace = null; projectiles = []; b._atkTimer = 1e9;
+      var imps = [], _impact = impact; impact = function(x, y, o){ imps.push([Math.round(x), o && o.scar]); return _impact(x, y, o); };
+      try {
+        var seen = null, hit = 0, pct0 = 0, launchAt = null, markAt = null;
+        for (var k=0;k<420 && hit === 0;k++){
+          step(); f.x = 550; f.y = groundY()-24; f.vx = 0; f.hitstun = 0; f.invuln = 0;
+          if (b._hz.cr && b._hz.cr.length && markAt === null){ markAt = hazardT; seen = b._hz.cr[0].slice(); }
+          if (f.pct > 0){ hit = f.pct; }
+        }
+        out.seen = seen; out.markAt = markAt; out.hit = hit; out.dmg = bossDmg(); out.imps = imps.length; out.crNext = b._hz.crNext;
+        // a wind-up in progress holds the next car back
+        var n0 = b._hz.crN; b._hz.crNext = hazardT + 1; b._tel = 20; b._telKind = 'twosun'; step(); step(); out.heldByTell = (b._hz.crN === n0);
+      } finally { impact = _impact; }
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.p2, 'no car in phase 2').toBe(0);
+    expect(r.seen[0], 'the first mark: the middle of the floor').toBe(550);
+    expect(r.hit, 'half a boss hit').toBeCloseTo(r.dmg*0.5, 4);
+    expect(r.imps, 'a landing is an impact()').toBeGreaterThanOrEqual(1);
+    expect(r.heldByTell, 'never on top of a tell').toBe(true);
+  });
+});
+
+describe('his ending: the landing pad', () => {
+  it('when he is beaten his shots and steps go with him, a scene plays where he fell -- the pad, two bounces, off the top -- holds the card back 0.6 s, hurts nobody and says nothing', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      var st = setTimeout, timers = [], said = [], _b = banner;
+      setTimeout = function(fn, ms){ timers.push({ fn: fn, ms: ms }); return 0; };
+      banner = function(t, m, k, l){ said.push([String(t), k || null]); return _b(t, m, k, l); };
+      try {
+        BOSSRUSH.active = true;
+        worldPlats.push({ x:100, y:540, w:200, h:50, solid:true, _two:true, _until:hazardT + 100 });
+        var other = { owner:-2, x:0, y:0, r:8, life:50 };
+        projectiles.push({ owner:-2, two:true, twoSun:true, x:300, y:300, r:44, life:50, delay:1e6 }, { owner:-2, two:true, twoCar:1, x:100, y:300, r:30, life:50, vx:5 }, other);
+        var bx = b.x, by = b.y, R = b.r;
+        b.hp = 0; bossRushCheck();
+        var scene = projectiles.filter(function(p){ return p.twoEnd; });
+        var out = { mine: projectiles.filter(function(p){ return p.two && !p.twoEnd; }).length, scene: scene.length, other: projectiles.indexOf(other) >= 0, steps: worldPlats.filter(function(p){ return p._two; }).length, ms: timers.map(function(t){ return t.ms; }),
+                    boss: summons.filter(function(s){ return s.type === 'boss'; }).length, saidBoss: said.some(function(s){ return s[1] === 'boss'; }), at: scene[0] ? [scene[0].ex, scene[0].ey, scene[0].er, scene[0].delay] : null, want: [Math.round(bx), Math.round(by), Math.round(R)] };
+        var down = timers.find(function(t){ return t.ms === 600; }), run0 = running; running = true; if (down) down.fn(); running = run0;
+        out.card = said.some(function(s){ return /^BOSS DOWN!/.test(s[0]) && s[1] === 'sys'; });
+        f.x = bx; f.y = by; var pct0 = f.pct;
+        for (var i=0;i<TWO.end.total + 4;i++){ step(); f.x = bx; f.y = groundY()-24; f.invuln = 0; }
+        out.after = projectiles.filter(function(p){ return p.twoEnd; }).length; out.pct = f.pct - pct0; out.total = TWO.end.total;
+        return out;
+      } finally { setTimeout = st; banner = _b; BOSSRUSH.active = false; summons = []; projectiles = []; }
+    })()`);
+    expect(r.mine, 'his shots are gone (and the scene is the one thing of his left)').toBe(0);
+    expect(r.scene).toBe(1);
+    expect(r.other, 'a shot that is not his is not swept').toBe(true);
+    expect(r.steps, 'his steps go').toBe(0);
+    expect(r.at.slice(0, 3), 'the scene is where he fell, as big as he was').toEqual(r.want);
+    expect(r.at[3], 'the scene lasts 112 frames').toBe(r.total + 1);
+    expect(r.ms, 'the card 0.6 s late, the next boss 1.5 s + 0.6 s').toEqual(expect.arrayContaining([600, 2100]));
+    expect(r.card).toBe(true);
+    expect(r.saidBoss, 'no words: only Springy has a line').toBe(false);
+    expect(r.boss, 'he is gone from the stage').toBe(0);
+    expect(r.after, 'and the scene is over before the next boss').toBe(0);
+    expect(r.pct, 'a scene hurts nobody').toBe(0);
+  });
+
+  it('the scene is drawn from the clock: the pad rises, he falls onto it, lands twice and is off the top of the screen', () => {
+    const r = W.eval(`(function(){ var out = [], gy = groundY(), E = TWO.end, rec = [], c2 = ctx;
+      var pr = { x:9, y:-5000, vx:0, vy:0, r:0, owner:-2, shape:'twoend', twoEnd:true, et0:hazardT, ex:469, ey:462, ef:-1, er:88, color:'#44C549' };
+      var _dm = twoSpriteDraw; var ys = [];
+      twoSpriteDraw = function(R, face){ var m = ctx.getTransform ? null : null; ys.push(1); return _dm(R, face); };
+      try { for (var u=0; u<=E.total + 2; u+=4){ hazardT = pr.et0 + u; ys = []; drawProjectile(pr); out.push([u, ys.length]); } } finally { twoSpriteDraw = _dm; }
+      return { out: out, total: E.total }; })()`);
+    expect(r.out.filter(([u, n]) => u <= r.total && n === 1).length, 'he is drawn every frame of the scene').toBeGreaterThan(20);
+    expect(r.out.filter(([u, n]) => u > r.total && n > 0).length, 'and not after it').toBe(0);
+  });
+});
+
+describe('a netcode client sees the park, Two and everything he throws', () => {
+  it('his tells, steps, rails, marks and ending cross the snapshot whole, and draw on the client', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
+      BOSS_ARENA = 'twopark'; var gy = groundY(), t = hazardT + 200; hazardT = t;
+      var hz = { pp:[[300, 400, t - 3], [600, 300, t - 12]], dm:[2, t - 40], so:t - 20, sb:0, p2:t - 300, p3:t - 20,
+                 rd:[420, 560, 1, 200, 540, t - 30, 0], mk:[600, Math.round(gy), t + 12], dr:[[430, 560, t - 4]],
+                 bk:[t - 40, [[300, -1, t + 10, t - 40], [500, -1, t + 20, t - 40], [700, 1, t + 30, t - 40], [450, -1, t + 90, t - 20], [550, 1, t + 100, t - 20]]],
+                 stp:[[100, Math.round(gy) - 50, 200, 50, 0, t + 100], [400, Math.round(gy) - 50, 200, 50, 1, t + 20]],
+                 cl:[520, 1, 2, t - 4], pw:[2.3, 1], rl:[t - 50, t + 20, t + 76, 0], cr:[[550, t + 20, 1, 7], [200, t - 10, 2, 8]], crNext:t + 300, crN:2 };
+      var base = { type:'boss', name:'Two', color:'#44C549', sprite:'two', r:64, x:500, y:300, face:-1, hp:80, maxHp:285, flash:0, homeX:500, _rage:false, _tel:10, _telKind:'twoclap', _bossRush:true, attack:'two', _phase:3, _hz:hz, _popK:0.5, _ungrounded:true, _grounded:false };
+      summons = [base];
+      projectiles = [
+        { x:300, y:400, vx:6, vy:9, r:13, color:'#44C549', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:9, life:20, shape:'ember', twoCopy:true, two:true },
+        { x:700, y:420, vx:0, vy:0, r:44, color:'#e8452c', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:0, life:1, delay:1e6, shape:'twosun', twoSun:true, two:true },
+        { x:200, y:550, vx:11, vy:0, r:34, color:'#74D275', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:9, life:20, shape:'twocar', twoCar:1, twoI:3, two:true },
+        { x:9, y:-5000, vx:0, vy:0, r:0, color:'#44C549', owner:-2, ownerObj:{ team:-1, idx:-2 }, bossAtk:0, life:1, delay:90, shape:'twoend', twoEnd:true, two:true, et0:t - 10, ex:420, ey:400, ef:-1, er:88 }];
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      summons = []; projectiles = []; BOSS_ARENA = null;
+      applySnapshot(snap);
+      var err = null, drawn = null;
+      try { drawArenaDecor(BOSS_ARENA); drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); projectiles.forEach(drawProjectile); drawBossBar(); draw(); drawn = true; } catch(e){ err = e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+      var end = projectiles.find(function(p){ return p.twoEnd; }), car = projectiles.find(function(p){ return p.shape === 'twocar'; });
+      return { err: err, drawn: drawn, arena: BOSS_ARENA, hz: JSON.stringify(summons[0]._hz), want: JSON.stringify(hz), row: snap.pj.a.map(function(a){ return a[8] || null; }),
+               end: end ? { et0: end.et0, ex: end.ex, ey: end.ey, ef: end.ef, er: end.er, shape: end.shape } : null, car: car && { twoI: car.twoI, shape: car.shape },
+               boss: { attack: summons[0].attack, tel: summons[0]._tel, kind: summons[0]._telKind, phase: summons[0]._phase, popK: summons[0]._popK, ung: summons[0]._ungrounded, gr: summons[0]._grounded }, t: t };
+    })()`);
+    expect(r.err).toBe(null);
+    expect(r.arena, 'the client draws the park').toBe('twopark');
+    expect(r.hz, 'every field of the scene arrives as it was sent').toBe(r.want);
+    expect(r.boss).toEqual({ attack: 'two', tel: 10, kind: 'twoclap', phase: 3, popK: 0.5, ung: true, gr: false });
+    expect(r.end, 'and so does the ending: where, when, which way, how big').toEqual({ et0: r.t - 10, ex: 420, ey: 400, ef: -1, er: 88, shape: 'twoend' });
+    expect(r.car, 'the car arrives with its number (its colours)').toEqual({ twoI: 3, shape: 'twocar' });
+    expect(r.row[0], 'a copy carries its halo flag').toMatchObject({ twoCopy: 1, shape: 'ember' });
+    expect(r.row[1], 'the sun carries its shadow flag').toMatchObject({ twoSun: 1, shape: 'twosun' });
+  });
+});
+
+describe('no words, no other show, and the art is wired and credited', () => {
+  // Every draw of the park, Two in every state and everything he throws, on a canvas that records what it is asked to do: not one word.
+  function bootRecording(seed = 7) {
+    const html = readFileSync('artifacts/V1/index.html', 'utf8'), rec = [], grad = { addColorStop() {} };
+    const dom = new JSDOM(html, {
+      url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+      beforeParse(window) {
+        window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
+          get: (_t, p) => (p === 'measureText' ? () => ({ width: 0 }) : p === 'canvas' ? { width: 1100, height: 720 } : p === 'getImageData' ? () => ({ data: [] })
+            : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') ? () => grad : (...args) => { rec.push({ op: p, args }); }),
+          set: (_t, p, v) => { rec.push({ op: 'set:' + String(p), args: [v] }); return true; },
+        });
+        window.Math.random = mulberry32(seed); window.requestAnimationFrame = () => 0; window.cancelAnimationFrame = () => {};
+      },
+    });
+    return { w: dom.window, rec };
+  }
+
+  it('draws the whole park, Two in every state and everything he throws without a word of text', () => {
+    const { w, rec } = bootRecording();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running = false;");   // (the match's own HUD writes the fighters' names: not the park's business)
+    const n0 = rec.length;
+    const err = w.eval(`(function(){
+      try {
+        BOSS_ARENA = 'twopark';
+        var gy = groundY(), t = hazardT + 300; hazardT = t;
+        var hz = { pp:[[300, 400, t - 3]], dm:[2, t - 40], so:t - 20, sb:0, p2:t - 300, p3:t - 20, rd:[420, 560, 1, 200, 540, t - 30, 0], mk:[600, Math.round(gy), t + 12], dr:[[430, 560, t - 4]],
+                   bk:[t - 40, [[300, -1, t + 10, t - 40], [500, -1, t - 5, t - 40], [700, 1, t + 30, t - 40], [450, -1, t - 30, t - 20], [550, 1, t + 100, t - 20]]],
+                   stp:[[100, Math.round(gy) - 50, 200, 50, 0, t + 100], [400, Math.round(gy) - 50, 200, 50, 1, t + 10]], cl:[520, 1, 2, t - 4], pw:[2.3, 1], rl:[t - 50, t + 20, t + 76, 0], cr:[[550, t + 20, 1, 7], [200, t - 10, 2, 8]] };
+        var base = { type:'boss', name:'Two', color:'#44C549', sprite:'two', r:88, x:500, y:gy-200, face:-1, hp:100, maxHp:285, _tel:0, _telKind:null, _phase:3, _rage:false, flash:0, homeX:500, attack:'two', _bossRush:true, _hz:hz, _ungrounded:true };
+        var states = [{}, { _tel:20, _telKind:'two' }, { _tel:20, _telKind:'twosun' }, { _tel:20, _telKind:'twopower' }, { _tel:20, _telKind:'twoblocks' }, { _tel:20, _telKind:'twoclap' }, { _tel:20, _telKind:'tworails' },
+                      { face:1, _phase:1 }, { flash:6 }, { _grounded:true }, { _popK:0.4 }, { _phase:2, r:64 }, { _hz:{} }];
+        states.forEach(function(st){ summons = [Object.assign({}, base, st)]; ctx.save(); drawSummon(summons[0]); ctx.restore(); drawArenaHazard('under'); drawArenaHazard('over'); });
+        [1, 2, 3].forEach(function(ph){ summons = [Object.assign({}, base, { _phase:ph })]; drawArenaDecor('twopark'); });
+        summons = [Object.assign({}, base, { _phase:1, _hz:{ so:t - 5, sb:0 }, _tel:10, _telKind:'twosun' })]; drawArenaDecor('twopark');
+        summons = [Object.assign({}, base, { _hz:{ stp:[[100, gy - 50, 200, 50, 0, t + 5]] } })]; drawArenaHazard('under');   // a step dissolving
+        summons = []; drawArenaDecor('twopark'); drawArenaHazard('under'); drawArenaHazard('over');   // between bosses
+        arenaGround().pattern(ctx, gy, -20, WW + 20, WH + H, arenaGround());
+        ['twosun', 'twoorb', 'twoprize', 'twohand', 'twocar', 'twoblock0', 'twoblock1', 'twoblock2', 'twoblock3'].forEach(function(sh){
+          drawProjectile({ x:300, y:300, vx:8, vy:2, r:20, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:sh, color:'#74D275', twoI:2 }); drawProjectile({ x:300, y:300, vx:-8, vy:0, r:22, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:sh, color:'#74D275', twoCopy:true, twoSun:true }); });
+        [0, 10, 24, 40, 60, 80, 100, 112].forEach(function(u){ drawProjectile({ x:9, y:-5000, vx:0, vy:0, r:0, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:'twoend', twoEnd:true, et0:t - u, ex:420, ey:400, ef:-1, er:88, color:'#44C549' }); });
+        return null;
+      } catch(e){ return e.message + ' ' + (e.stack||'').split('\\n')[1]; }
+    })()`);
+    expect(err).toBe(null);
+    const drawn = rec.slice(n0);
+    expect(drawn.length, 'the recording is live').toBeGreaterThan(500);
+    expect(drawn.filter((r) => r.op === 'fillText' || r.op === 'strokeText').length, 'not a word on the canvas').toBe(0);
+  });
+
+  it("nothing of his says a word or names anyone from the OSC: his code has no banner of its own, no text drawing, no OJ, Suitcase or Cabby, no The Floor", () => {
+    const fns = ['twoHz', 'twoPh', 'twoBoss', 'twoNearest', 'twoStagePlat', 'twoStageTop', 'twoShot', 'twoCarrier', 'twoGo', 'twoBandY', 'twoIdle', 'twoRing', 'twoPop', 'twoPopStep', 'twoMove', 'twoGoTo',
+      'twoBeginTelegraph', 'twoTrack', 'twoTick', 'twoStep', 'twoDone', 'twoGap', 'twoPhaseBeat', 'twoPlatsStep', 'twoReadTrack', 'twoCopyShape', 'twoReadCopies', 'twoSkySun', 'twoSunHome', 'twoSunRest',
+      'twoMaceSpot', 'twoMaceBegin', 'twoMaceStep', 'twoLeg', 'twoSunStart', 'twoSunHit', 'twoSunStep', 'twoSunEnd', 'twoBlocksPlan', 'twoStackAngle', 'twoBlocksStart', 'twoBlocksStep', 'twoBlocksLand',
+      'twoDrawStacks', 'twoClapStart', 'twoClapStep', 'twoHandGlyph', 'twoDrawClap', 'twoPowerRing', 'twoPowerFire', 'twoPowerStep', 'twoPrizeAt', 'twoDrawPowerTell', 'twoRailsStart', 'twoRailsDue', 'twoRailsCar',
+      'twoRailsStep', 'twoDrawRailOne', 'twoDrawRails', 'twoNight', 'twoHandAt', 'twoGlow', 'twoTellDraw', 'twoHazDraw', 'twoDrawRead', 'twoDrawSunMarks', 'twoSpawn', 'twoGroundPattern', 'twoDrawSkySun',
+      'twoDrawHills', 'twoDrawFence', 'twoPopK', 'twoDrawFerris', 'twoDrawStrength', 'twoCoasterPt', 'twoDrawCoaster', 'twoDecor', 'twoDrawStage', 'twoBlockAt', 'twoDrawSteps', 'twoHazStep', 'twoDrawCoasterHaz',
+      'twoBlockGlyph', 'twoEndSweep', 'twoEndBegin', 'twoSpriteDraw', 'twoDrawPad', 'drawTwoEnd'];
+    const src = W.eval(`[${fns.join(',')}].map(String).concat([JSON.stringify(TWO), JSON.stringify(BOSS_EXTRA['Two']), BOSS_MOVE_NAME.twosun, BOSS_MOVE_NAME.twopower, BOSS_MOVE_NAME.twoblocks, BOSS_MOVE_NAME.tworails, BOSS_MOVE_NAME.twoclap]).join('\\n')`);
+    expect(src, 'nor the place called The Floor (a plain "the floor" is the ground he floats over)').not.toMatch(/\bOJ\b|Suitcase|Cabby|The Floor/);
+    expect(src, 'no banner of his own: the engine names each wind-up').not.toMatch(/banner\(/);
+    expect(src, 'no text on the canvas').not.toMatch(/fillText|strokeText/);
+  });
+
+  it("his shots wear the show's art -- the spiked sun cut from File:Spike Ball aka Sun (BFB 16).png, the prize, the glow, four team blocks -- and the rest is drawn; every file is a real PNG at projectile size, on the record and credited", () => {
+    const reg = W.eval(`(function(){ var o = {}; ['twosun', 'twoprize', 'twoorb', 'twoblock0', 'twoblock1', 'twoblock2', 'twoblock3'].forEach(function(k){ o[k] = { e: ATTACK_SPRITES[k], glyph: !!PROJ_SHAPE[k] }; });
+      o.drawn = ['twohand', 'twocar'].map(function(k){ return [k, !!PROJ_SHAPE[k], !!ATTACK_SPRITES[k]]; }); return o; })()`);
+    const manifest = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8'));
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const picks = readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8');
+    const FILES = [['twosun', 'twosun', 'Spike Ball aka Sun (BFB 16).png'], ['twoprize', 'twoprize', 'TPOT(prize).svg'], ['twoorb', 'twoglow', "Two's Powers.png"],
+      ['twoblock0', 'twoblock0', 'TSTOE Block.png'], ['twoblock1', 'twoblock1', 'JN Block.png'], ['twoblock2', 'twoblock2', 'TheS Block.png'], ['twoblock3', 'twoblock3', 'AYO Block.png']];
+    for (const [k, name, wikiFile] of FILES) {
+      const e = reg[k].e, file = 'artifacts/V1/' + e.src;
+      expect(e.src, `${k} wears its cut`).toBe(`assets/sprites/attacks/${name}.png`);
+      expect(existsSync(file), file).toBe(true);
+      const png = PNG.sync.read(readFileSync(file));
+      expect(Math.max(png.width, png.height), k + ' at projectile size').toBeLessThanOrEqual(128);
+      expect(reg[k].glyph, k + ' has a drawn glyph to show until it loads').toBe(true);
+      const m = manifest[name];
+      expect(m, name + ' is on the record').toMatchObject({ file: name + '.png', kits: ['two'], srcTitle: wikiFile, wiki: 'bfdi', width: png.width, height: png.height });
+      expect(m.source).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/battlefordreamisland\/images\//);
+      expect(credits, k + ' is credited with its exact source').toContain('(' + name + '.png)');
+      expect(credits).toContain(m.source);
+      expect(picks, k + ' has its pick in his slot').toMatch(new RegExp(name + ":\\s*\\{ who: 'Two'"));
+    }
+    for (const n of ['twosun', 'twoprize', 'twoglow']) {
+      const png = PNG.sync.read(readFileSync(`artifacts/V1/assets/sprites/attacks/${n}.png`));
+      let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) clear++;
+      expect(clear/(png.width*png.height), n + ' is cut out, not a screenshot').toBeGreaterThan(0.12);
+    }
+    expect(manifest.twoblock0.solid && manifest.twoblock3.solid, 'the blocks are squares edge to edge, and the record says so').toBe(true);
+    expect(reg.drawn.every(([, glyph, art]) => glyph && !art), "the hands, the carts: drawn (no clean file of them)").toBe(true);
+    expect(W.eval("BOSS_SPRITE_SRC.two + ' ' + !!BOSS_SPRITE_FLIP.two"), 'his own render is unchanged').toBe('assets/sprites/two.png false');
+  });
+});
