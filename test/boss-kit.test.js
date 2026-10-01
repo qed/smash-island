@@ -609,6 +609,9 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
         b.x = 350; b._atkTimer = 1; b._moveN = 0;
         for (var t=0;t<3;t++){
           b._fs = null; b._fsQ = 0;   // Firey Speaker Box's moves run for seconds (fsbMove) and the next wind-up waits for the last: each turn here starts from a settled boss, as the game's do
+          // the Announcer's next wind-up waits for the last threat of the turn before and for 30 frames more (the owner, 2026-10-01: "for the announcer "unavoidable hits", theyre unavoidable bcs they
+          // barely have a moment where you can move to dodge."): this test fires turn after turn, so it settles him -- nothing of his going, and none for a long while -- as it does the two above
+          if (b.attack === 'announcer') { projectiles = []; b._lanes = null; b._bl = null; b._q = []; b._calm = 999; b._hz.cc = 999; }
           window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
           projectiles = []; f.invuln = 0; b._tel = 1; updateBossAttack(b, f);
