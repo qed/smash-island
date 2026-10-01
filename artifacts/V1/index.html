@@ -7936,7 +7936,7 @@ const BOSS_EXTRA = {
   // @boss:four:begin extra
   // his own five with the signature, not the shared shapes: SCREECHY!, GO BYE-BYE!, ZAPPIES!, TAKE THE TOWER!, SCREECHY!, LOVE HEARTS!, ZAPPIES!, I DO THIS! ... (the
   // signature alternates its two forms, and fourBeginTelegraph deals his extras out among the ones his phase has: FOUR.extras, FOUR.extraN)
-  "Four": ["fourbye"],
+  "Four": ["fourbye", "fourtower", "fourhearts"],
   // @boss:four:end extra
 
   "Steve Cobs": ["knife", "kernels"],       // his own: the Contraption, MeKnife, the Contraption, kernels (phase 3: every other Contraption is SCREEN CRACKER). Off the roster ("replace him with springy"); kept for the secret fight
@@ -8193,7 +8193,9 @@ const BOSS_MOVES = {
   // @boss:four:begin moves
   // FOUR's second moves: the wind-up (fourBeginTelegraph, FOUR_WIND) has fixed the aims; these start the move, which then runs as his own choreography (fourMove,
   // fourStep). Every part of one move shares one attack id.
-  fourbye(s, tgt){ fourBye(s, tgt); },   // GO BYE-BYE!: he inhales
+  fourbye(s, tgt){ fourBye(s, tgt); },           // GO BYE-BYE!: he inhales
+  fourtower(s, tgt){ fourTower(s, tgt); },       // TAKE THE TOWER!: three hills rise (and, in phase 3, a ripple runs the floor)
+  fourhearts(s, tgt){ fourHearts(s, tgt); },     // LOVE HEARTS!: a flood of solid hearts
   // @boss:four:end moves
 
 };
@@ -13323,7 +13325,8 @@ function fourSpit(s, f, F, h){
 }
 // ---- every frame (the tick slot) ------------------------------------------------------------------------------------------------------
 // A move in the air holds the next wind-up back (the turn's gap has been counting since the shot, so a short move costs no extra wait); the floor's
-// buckling in phase 3 plays its impacts; the ring stops at the floor and at a standing hill.
+// buckling in phase 3 plays its impacts; the hills stand and go; the ring stops at the floor and at a standing hill; the hearts bounce off the walls too
+// and leave their mark where they land.
 function fourTick(s, tgt){
   const H = fourHz(s), gy = groundY();
   if(s._fr && s._atkTimer < 8) s._atkTimer = 8;
@@ -13333,12 +13336,28 @@ function fourTick(s, tgt){
     }
     if(!H.q.length) H.q = null;
   }
+  if(worldPlats.some(p => p._four && p._until != null && p._until <= hazardT)){
+    for(const p of worldPlats) if(p._four && p._until != null && p._until <= hazardT) for(let i=0;i<8;i++) puff(p.x + Math.random()*p.w, p.y + 6, '#6a8ccc', 4);
+    worldPlats = worldPlats.filter(p => !(p._four && p._until != null && p._until <= hazardT));
+  }
+  if(H.hl){ H.hl = H.hl.filter(h => h[4] > hazardT); if(!H.hl.length) H.hl = null; }
+  if(H.pile){ H.pile = H.pile.filter(p => p[1] > hazardT); if(!H.pile.length) H.pile = null; }
   let hills = null;
   for(const p of worldPlats) if(p._four && p.solid) (hills || (hills = [])).push(p);
   for(const p of projectiles){
-    if(!p.four || !p.fourRing || p.delay > 0) continue;
-    if(p.y > gy - 3){ p.life = 0; continue; }
-    if(hills) for(const h of hills){ if(p.x > h.x && p.x < h.x + h.w && p.y > h.y){ p.life = 0; if(((p.x | 0) & 7) === 0) puff(p.x, p.y, '#7ad0ff', 2); break; } }
+    if(!p.four || p.delay > 0) continue;
+    if(p.fourRing){
+      if(p.y > gy - 3){ p.life = 0; continue; }
+      if(hills) for(const h of hills){ if(p.x > h.x && p.x < h.x + h.w && p.y > h.y){ p.life = 0; if(((p.x | 0) & 7) === 0) puff(p.x, p.y, '#7ad0ff', 2); break; } }
+    } else if(p.fourHeart){
+      if((p.x < p.r + 4 && p.vx < 0) || (p.x > WW - p.r - 4 && p.vx > 0)){       // a wall throws it back, and counts as one of its bounces
+        p.vx = -p.vx*0.92; p.bounces = (p.bounces || 0) + 1; puff(p.x, p.y, '#ff9ac8', 4);
+        if(p.bounces >= p.maxBounces) p.life = 0;
+      }
+      const nb = p.bounces || 0;
+      if(p._b == null) p._b = 0;
+      if(nb > p._b){ p._b = nb; if(p.y > gy - 22){ const a = H.pile || (H.pile = []); a.push([Math.round(p.x), hazardT + FOUR.pileLife]); if(a.length > FOUR.pileMax) a.shift(); } }
+    }
   }
 }
 function fourHazStep(b, Z, tgt){
@@ -13349,6 +13368,7 @@ function fourBoss(){ return summons.find(s => s.type === "boss" && s.attack === 
 function drawFourFx(b){
   const Z = b._hz || {}, t = hazardT, gy = groundY(), ph = Math.min(3, b._phase || 1);
   ctx.save();
+  fourDrawFloor(Z, t, gy, ph);
   fourDrawInhale(Z, t, gy);
   fourDrawMarks(Z, t, gy, ph);
   fourDrawZaps(Z, t, gy);
@@ -13460,6 +13480,7 @@ function drawFourClass(){
   c.fillStyle = 'rgba(8,16,34,0.6)'; c.fillRect(0, 0, W, ceil);                              // the ceiling
   c.fillStyle = 'rgba(8,16,34,0.3)'; c.fillRect(0, gy - skirt, W, skirt);                    // the skirting
   const shk = Z.sh != null && t - Z.sh < 44 ? 1 - (t - Z.sh)/44 : 0;
+  const paper = Math.max(shk, Z.lv != null && t - Z.lv < 60 ? 0.7*(1 - (t - Z.lv)/60) : 0);   // the posters flutter in a screech and in a flood of hearts
   const pull = Z.inh && t >= Z.inh[2] && t <= Z.inh[3] + 1 ? Math.min(1, (t - Z.inh[2] + 1)/12)*(Z.inh[5] == null ? 1 : Z.inh[5]) : 0, mx = Z.inh ? Z.inh[0] : W*0.5;
   // the chalkboard: axes, a parabola, a sine, a heart and a cube -- drawn, no words ("a message", "the quadratic formula" are never lettered)
   const bx = W*0.06, by = H*0.15, bw = W*0.30, bh = H*0.26;
@@ -13471,12 +13492,12 @@ function drawFourClass(){
   c.beginPath(); c.moveTo(bx + bw*0.74, by + bh*0.8); c.bezierCurveTo(bx + bw*0.62, by + bh*0.62, bx + bw*0.74, by + bh*0.54, bx + bw*0.74, by + bh*0.64); c.bezierCurveTo(bx + bw*0.74, by + bh*0.54, bx + bw*0.86, by + bh*0.62, bx + bw*0.74, by + bh*0.8); c.stroke();
   c.strokeRect(bx + bw*0.2, by + bh*0.74, bw*0.1, bh*0.16);
   if(Z.p2){ c.strokeStyle = 'rgba(8,16,30,0.8)'; c.lineWidth = 3; c.beginPath(); c.moveTo(bx + bw*0.3, by); c.lineTo(bx + bw*0.38, by + bh*0.3); c.lineTo(bx + bw*0.31, by + bh*0.52); c.lineTo(bx + bw*0.42, by + bh); c.stroke(); }   // the board cracks from phase 2
-  // corkboards with their papers; the papers flutter in a screech
+  // corkboards with their papers
   for(let k=0;k<2;k++){
     const cx = W*(0.42 + k*0.085), cy = H*0.18, cw = W*0.07, ch = H*0.17;
     c.fillStyle = '#7d6446'; c.fillRect(cx, cy, cw, ch); c.strokeStyle = '#3e2f1e'; c.lineWidth = 3; c.strokeRect(cx, cy, cw, ch);
     c.fillStyle = 'rgba(238,244,250,0.85)';
-    for(let i=0;i<4;i++){ const px = cx + cw*(0.1 + (i % 2)*0.46), py = cy + ch*(0.1 + (i >> 1)*0.45), rot = shk*Math.sin(t*0.9 + i + k*3)*0.2;
+    for(let i=0;i<4;i++){ const px = cx + cw*(0.1 + (i % 2)*0.46), py = cy + ch*(0.1 + (i >> 1)*0.45), rot = paper*Math.sin(t*0.9 + i + k*3)*0.2;
       c.save(); c.translate(px + cw*0.18, py + ch*0.18); c.rotate(rot); c.fillRect(-cw*0.18, -ch*0.18, cw*0.36, ch*0.36); c.restore(); }
   }
   // two long windows of pure white, by the door
@@ -13567,6 +13588,193 @@ function drawFourFourest(){
     c.fillStyle = '#243a5c'; c.fillRect(W*0.12, gy - 42, W*0.06, 8); c.fillRect(W*0.12 + 5, gy - 34, 5, 32); c.fillRect(W*0.18 - 10, gy - 34, 5, 32);
   }
   c.restore();
+}
+// ---- TAKE THE TOWER! -----------------------------------------------------------------------------------------------------------------
+// "Terraforming: In 'Take the Tower', Four raises hills beneath the teams' towers with a wave of his hand." (Four page). The wind-up: he waves (the render
+// "ayo watch me rise this tower"), the floor trembles at three spots and dashed hill outlines show them (H.hp): one under you, one beside you on the side
+// with more room, and a third that follows you until FOUR.hillLock frames before the end and then locks, white -- "the third hill rises where you stepped to".
+// Then they rise FOUR.hillGap frames apart: whoever stands on a spot as it rises is thrown up (FOUR.hillHit of a boss hit, one attack id, FOUR.hillKb), and
+// where it rises a hill stands for FOUR.hillLife frames as a solid mound -- footing, and cover: they stop the ring's shots (fourTick), so a hill
+// changes where SCREECHY!'s gaps are. The floor rises: no hole, and the mounds are cover, not damage. Phase 3 ("Reality Buckles"): after the third hill a
+// ripple of humps runs the length of the floor from the side farthest from you, one every FOUR.ripStep frames -- a rhythm: be in the air as the crest passes
+// -- and it throws whoever it finds on the floor, under the same id, so a fighter hit by a hill takes nothing more from it.
+FOUR_PLAN.fourtower = function(s, tgt, H, ph){
+  const tx = clamp(fourLive(tgt) ? tgt.x : s.x, 70, WW - 70), base = FOUR.hillBase[ph], side = (WW - tx) >= tx ? 1 : -1;
+  s._hl = [{ x:tx }, { x:clamp(tx + side*(base + 100), 70, WW - 70) }, { x:tx, follow:true }];
+  s._hlWho = fourLive(tgt) ? tgt.idx : -1;
+  H.hp = s._hl.map(h => [Math.round(h.x), base, 0]);
+};
+FOUR_WIND.fourtower = function(s, tgt, H, u, ph){
+  const gy = groundY(), base = FOUR.hillBase[ph], locked = s._tel <= FOUR.hillLock;
+  fourGo(s, s.x, gy - s.r - 56, 0.08);
+  H.look = u > 0.08 ? 'fourtower' : null;
+  H.rot = 0.1*Math.sin(u*Math.PI*6);
+  if(!locked){
+    const f = fighters.find(q => q.idx === s._hlWho && !q.dead) || fourNearest(s.x);
+    if(f){ s._hl[2].x = clamp(f.x, 70, WW - 70); s._hlWho = f.idx; }
+  }
+  H.hp = s._hl.map((h, i) => [Math.round(h.x), base, i === 2 && locked ? 1 : 0]);
+  if((s._tel & 5) === 0) for(const h of s._hl) puff(h.x + (Math.random()*2 - 1)*base*0.4, gy - 3, '#9ab4d8', 2);   // the floor trembles: dust
+};
+function fourTower(s, tgt){
+  const ph = s._telPh || fourPh(s), gap = FOUR.hillGap[ph], H = fourHz(s), gy = groundY();
+  const hills = (s._hl || []).map((h, i) => ({ x:h.x, t:i*gap + 2, up:false, set:false }));
+  const F = { k:'tower', id:++BOSS_ATK_ID, ph, t:0, hills, rip:null, keepFace:true };
+  if(ph >= 3){
+    const tx = fourLive(tgt) ? tgt.x : WW*0.5, dir = tx < WW*0.5 ? -1 : 1, n = Math.max(4, Math.ceil((WW - 120)/FOUR.ripSpace));   // from the side farthest from you
+    const x0 = dir < 0 ? WW - 60 : 60, t0 = hills[hills.length - 1].t + FOUR.ripBegin;
+    F.rip = { x0:x0, dir:dir, t0:t0, n:n, last:t0 + (n - 1)*FOUR.ripStep + 18, hit:{} };
+    H.rp = [x0, dir, hazardT + t0, FOUR.ripStep, FOUR.ripSpace, n, FOUR.ripH];
+  }
+  F.end = Math.max(hills[hills.length - 1].t + FOUR.hillRise, F.rip ? F.rip.last : 0) + 16;
+  s._fr = F;
+  shake(3); tone(80, 0.8, 'sawtooth', 0.25, 0, 40);
+}
+// A hill starts to rise: the throw, the dust, the plan's outline gone; its stone follows when the rise is done (fourSolidHill)
+function fourRaiseHill(s, F, hill){
+  const H = fourHz(s), gy = groundY(), base = FOUR.hillBase[F.ph], top = gy - FOUR.hillH;
+  hill.up = true;
+  for(const f of fighters){
+    if(f.dead || Math.abs(f.x - hill.x) >= base/2 + f.r*0.5 || feetY(f) < gy - 40) continue;
+    if(f.invuln <= 0) applyHit(f, bossDmg()*FOUR.hillHit, (Math.sign(f.x - hill.x) || 1)*3, -FOUR.hillKb, null, { bossAtk:F.id, volley:true });
+    f.y = Math.min(f.y, top - f.r - 2); f.onground = false;                       // lifted clear of the stone that is coming
+  }
+  (H.hl || (H.hl = [])).push([Math.round(hill.x), base, FOUR.hillH, hazardT, hazardT + FOUR.hillRise + FOUR.hillLife]);
+  H.hp = (H.hp || []).filter(h => Math.abs(h[0] - Math.round(hill.x)) > 1);
+  if(!H.hp.length) H.hp = null;
+  impact(hill.x, gy, { shake:8, dust:2, debris:5, scar:true, r:90 });
+  noise(0.3, 0.45, 600, 0, 150);
+}
+// ...and when it is up, its stone: a solid mound FOUR.hillW wide that stands FOUR.hillLife frames. Anyone standing in its place is set on top of it.
+function fourSolidHill(s, F, hill){
+  const gy = groundY(), top = gy - FOUR.hillH;
+  hill.set = true;
+  for(const f of fighters){
+    if(f.dead || Math.abs(f.x - hill.x) >= FOUR.hillW/2 + f.r || f.y + f.r < top + 4) continue;
+    f.y = top - f.r - 1; f.vy = Math.min(f.vy, 0); f.onground = true;
+  }
+  worldPlats.push({ x:hill.x - FOUR.hillW/2, y:top, w:FOUR.hillW, h:FOUR.hillH, solid:true, _four:true, _until:hazardT + FOUR.hillLife });
+}
+function fourTowerStep(s, tgt, F, H){
+  const gy = groundY();
+  F.t++;
+  s.y += ((gy - s.r - 56) - s.y)*0.08;
+  H.look = F.t < 30 ? 'fourtower' : null;
+  for(const h of F.hills){
+    if(!h.up && F.t >= h.t) fourRaiseHill(s, F, h);
+    if(h.up && !h.set && F.t >= h.t + FOUR.hillRise) fourSolidHill(s, F, h);
+  }
+  const R = F.rip;
+  if(R){
+    for(let i=0;i<R.n;i++){
+      const ti = R.t0 + i*FOUR.ripStep;
+      if(F.t !== ti) continue;
+      const x = R.x0 + R.dir*i*FOUR.ripSpace;
+      impact(x, gy, { shake:4, dust:1, debris:1, r:60 });
+      for(const f of fighters){
+        if(f.dead || f.invuln > 0 || Math.abs(f.x - x) >= 50 + f.r*0.5 || feetY(f) < gy - 30) continue;
+        applyHit(f, bossDmg()*FOUR.hillHit, (Math.sign(f.x - x) || -R.dir)*3, -FOUR.hillKb, null, { bossAtk:F.id, volley:true });
+      }
+    }
+  }
+  if(F.t >= F.end) fourDone(s, tgt);
+}
+// ---- LOVE HEARTS! ---------------------------------------------------------------------------------------------------------------------
+// "Love Hearts are a type of item that Four shoots out of his eyes and mouth when he sees something he adores." (Screechy); "The hearts themselves appear to be
+// solid, thus they can hurt someone"; "Four spews out a flood of hearts. One hits Eraser and he flies off beyond the horizon." (Today's Very Special Episode/
+// Transcript). The wind-up: his eyes turn to hearts (the love render), he bounces, and a pink glow rings the spot you stand on (H.hg). Then a flood in
+// FOUR.heartWaves fixed waves FOUR.heartGap frames apart: two high arcs from his eyes, left and right, and one big low heart from his mouth toward you. They are SOLID
+// and bounce off the floor, the platform and the walls FOUR.heartBounces times (they pop on the last), a hit knocks you FOUR.heartKb -- "flies off beyond the
+// horizon" -- for FOUR.heartHit of a boss hit, one attack id for the flood. The bounce heights are fixed by the launch, so the flood can be learned, not
+// dodged by luck: the eyes' arcs cover the jump, the mouth's heart the floor. From phase 2 (three waves; phase 3 four). Where they land, hearts pile on
+// the floor for FOUR.pileLife frames (H.pile) and the posters flutter (H.lv).
+FOUR_PLAN.fourhearts = function(s, tgt, H, ph){
+  s._hDir = fourLive(tgt) ? (Math.sign(tgt.x - s.x) || (s.face || 1)) : (s.face || 1);
+  H.hg = [fourLive(tgt) ? Math.round(tgt.x) : Math.round(s.x)];
+};
+FOUR_WIND.fourhearts = function(s, tgt, H, u, ph){
+  const gy = groundY(), f = fourLive(tgt) ? tgt : null;
+  fourGo(s, s.x, gy - s.r - 64 + Math.sin(u*Math.PI*8)*9, 0.1);
+  H.look = u > 0.08 ? 'fourlove' : null;
+  H.rot = 0.06*Math.sin(u*Math.PI*8);
+  if(f && H.hg) H.hg[0] = Math.round(f.x);
+};
+function fourHeart(s, id, o){
+  return fourShot(s, id, Object.assign({ dmg:bossDmg()*FOUR.heartHit, kb:FOUR.heartKb, bounce:true, maxBounces:FOUR.heartBounces, life:240, shape:'fourheart', fourHeart:true, color:'#ff6fae', noAim:true }, o));
+}
+function fourHearts(s, tgt){
+  const ph = s._telPh || fourPh(s), H = fourHz(s), id = ++BOSS_ATK_ID, n = FOUR.heartWaves[ph], dir = s._hDir || (s.face || 1);
+  const ex = s.r*0.17, ey = -s.r*0.2, boost = ph >= 3 ? 1.12 : 1;
+  for(let w=0; w<n; w++){
+    const d = w*FOUR.heartGap;
+    for(const side of [-1, 1]) addProj(fourHeart(s, id, { x:s.x + side*ex, y:s.y + ey, vx:side*(4.6 + 0.9*w)*boost, vy:-9.5*boost, r:FOUR.heartR, delay:d }));
+    addProj(fourHeart(s, id, { x:s.x + dir*s.r*0.1, y:s.y + s.r*0.1, vx:dir*(5.2 + 0.5*w)*boost, vy:-2.5, r:FOUR.heartBigR, delay:d }));
+  }
+  H.lv = hazardT; H.hg = null;
+  s._fr = { k:'hearts', t:0, id, ph, end:n*FOUR.heartGap + 34, keepFace:true };
+  tone(700, 0.4, 'triangle', 0.25, 0, 1200);
+  shake(3);
+}
+function fourHeartsStep(s, tgt, F, H){
+  F.t++;
+  s.y += ((groundY() - s.r - 64 + Math.sin(F.t*0.5)*7) - s.y)*0.12;
+  H.look = F.t < F.end - 10 ? 'fourlove' : null;
+  if(F.t >= F.end) fourDone(s, tgt);
+}
+// ---- what lies on the floor (the fx slot's first layer) -----------------------------------------------------------------------------------------
+function fourHeartPath(c, x, y, r){
+  c.beginPath(); c.moveTo(x, y + r*0.9); c.bezierCurveTo(x - r*1.6, y - r*0.1, x - r*0.8, y - r*1.1, x, y - r*0.4); c.bezierCurveTo(x + r*0.8, y - r*1.1, x + r*1.6, y - r*0.1, x, y + r*0.9); c.closePath();
+}
+function fourHillPoly(c, x, gy, base, hw, top){
+  c.beginPath(); c.moveTo(x - base/2, gy); c.lineTo(x - hw, top); c.lineTo(x + hw, top); c.lineTo(x + base/2, gy); c.closePath();
+}
+function fourDrawFloor(Z, t, gy, ph){
+  const c = ctx;
+  // TAKE THE TOWER!: where the hills will rise -- dashed, trembling, white once the third has locked (H.hp); the hills, rising and standing (H.hl); phase 3's ripple (H.rp)
+  if(Z.hp) for(const h of Z.hp){
+    const x = h[0], base = h[1], lock = h[2], trem = Math.sin(t*1.7 + x)*1.5;
+    c.save(); c.setLineDash([9, 7]); c.lineWidth = 3; c.strokeStyle = lock ? 'rgba(255,255,255,0.9)' : 'rgba(150,215,255,0.75)';
+    fourHillPoly(c, x, gy, base + trem*2, FOUR.hillW/2, gy - FOUR.hillH); c.stroke();
+    c.setLineDash([]); c.fillStyle = 'rgba(150,215,255,' + (lock ? 0.16 : 0.08) + ')'; c.fill();
+    c.strokeStyle = 'rgba(8,16,34,0.7)'; c.lineWidth = 2; c.beginPath(); c.moveTo(x - 20, gy + 2); c.lineTo(x - 8, gy + 14); c.lineTo(x + 4, gy + 6); c.lineTo(x + 18, gy + 16); c.stroke();
+    c.restore();
+  }
+  if(Z.hl) for(const h of Z.hl){
+    const x = h[0], base = h[1], hh = h[2], t0 = h[3], t1 = h[4];
+    if(t < t0 || t > t1) continue;
+    const k = Math.min(fourEase((t - t0)/FOUR.hillRise), clamp((t1 - t)/14, 0, 1));
+    if(k <= 0.01) continue;
+    const top = gy - hh*k, tw = FOUR.hillW/2*(0.55 + 0.45*k), bw = base/2*(0.7 + 0.3*k);
+    c.save(); c.lineJoin = 'round'; c.fillStyle = '#35538a'; c.strokeStyle = '#101c34'; c.lineWidth = 3;
+    fourHillPoly(c, x, gy, bw*2, tw, top); c.fill(); c.stroke();
+    c.fillStyle = '#5a84c4'; c.fillRect(x - tw, top, tw*2, 6*k);
+    c.strokeStyle = 'rgba(10,20,44,0.45)'; c.lineWidth = 2; c.beginPath();
+    for(let i=1;i<3;i++){ const yy = top + (gy - top)*i/3, ww = tw + (bw - tw)*i/3; c.moveTo(x - ww, yy); c.lineTo(x + ww, yy); }
+    c.stroke(); c.restore();
+  }
+  if(Z.rp){
+    const x0 = Z.rp[0], dir = Z.rp[1], t0 = Z.rp[2], step = Z.rp[3], space = Z.rp[4], n = Z.rp[5], hh = Z.rp[6];
+    for(let i=0;i<n;i++){
+      const u = (t - (t0 + i*step))/18;
+      if(u < 0 || u > 1) continue;
+      const x = x0 + dir*i*space, top = gy - hh*Math.sin(u*Math.PI);
+      c.save(); c.fillStyle = '#35538a'; c.strokeStyle = '#101c34'; c.lineWidth = 3; c.beginPath(); c.moveTo(x - 62, gy); c.quadraticCurveTo(x - 30, top, x, top); c.quadraticCurveTo(x + 30, top, x + 62, gy); c.closePath(); c.fill(); c.stroke(); c.restore();
+    }
+  }
+  // LOVE HEARTS!: the pink glow ringing the spot, and the hearts that have piled up on the floor
+  if(Z.hg){
+    const x = Z.hg[0], a = 0.35 + 0.2*Math.sin(t*0.3);
+    c.save(); c.strokeStyle = 'rgba(255,127,182,' + (a + 0.3) + ')'; c.lineWidth = 3; c.beginPath(); c.ellipse(x, gy - 3, 64 + 4*Math.sin(t*0.3), 10, 0, 0, 7); c.stroke();
+    c.fillStyle = 'rgba(255,127,182,' + a*0.35 + ')'; c.fill();
+    for(let i=0;i<3;i++){ const u = (t*0.02 + i/3) % 1; c.fillStyle = 'rgba(255,150,196,' + (1 - u)*0.9 + ')'; fourHeartPath(c, x + (i - 1)*28, gy - 14 - u*60, 7); c.fill(); }
+    c.restore();
+  }
+  if(Z.pile) for(const p of Z.pile){
+    const a = Math.min(1, (p[1] - t)/40);
+    if(!(a > 0)) continue;
+    c.save(); c.globalAlpha = a*0.9; c.fillStyle = '#ff6fae'; c.strokeStyle = '#7a1f4a'; c.lineWidth = 2;
+    fourHeartPath(c, p[0], gy - 8, 9); c.fill(); c.stroke(); fourHeartPath(c, p[0] + 12, gy - 5, 6); c.fill(); c.stroke(); c.restore();
+  }
 }
 // @boss:four:end helpers
 
@@ -30337,6 +30545,11 @@ const PROJ_SHAPE = {
   // Four (glyphs for what his art does not cover, and for the art until it loads): SCREECHY!'s ring is a short bar across its way, so a ring of a shot a degree reads as ONE wave of
   // sound with dark spaces in it, not three hundred dots; it turns to the heading and is drawn without an outline, so neighbours join up.
   fourwave: { draw(c, r, pr){ c.fillStyle = (pr && pr.color) || '#7ad0ff'; c.fillRect(-r*0.5, -r*1.25, r, r*2.5); c.fillStyle = '#e8f8ff'; c.fillRect(-r*0.18, -r*1.25, r*0.36, r*2.5); } },
+  // LOVE HEARTS!: a pink heart, upright whichever way it flies (his art, the BFB heart, takes over where it has loaded)
+  fourheart: { draw(c, r, pr){ if(pr) c.rotate(-Math.atan2(pr.vy||0, pr.vx||0));
+    c.lineJoin = 'round'; c.lineWidth = Math.max(2, r*0.14); c.fillStyle = '#ff6fae'; c.strokeStyle = '#7a1f4a';
+    c.beginPath(); c.moveTo(0, r*0.9); c.bezierCurveTo(-r*1.6, -r*0.1, -r*0.8, -r*1.1, 0, -r*0.4); c.bezierCurveTo(r*0.8, -r*1.1, r*1.6, -r*0.1, 0, r*0.9); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = 'rgba(255,255,255,0.55)'; c.beginPath(); c.ellipse(-r*0.4, -r*0.35, r*0.22, r*0.14, -0.6, 0, 7); c.fill(); } },
   // @boss:four:end shape
 
   // --- Steve Cobs: the MeKnife (Objects in Mirror) point first, his black fist on its arm, and one of his own kernels

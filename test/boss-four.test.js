@@ -353,3 +353,157 @@ describe('between his turns: the slither', () => {
     expect(r.free, 'free, it counts down').toBe(4);
   });
 });
+
+describe('TAKE THE TOWER!', () => {
+  it('he waves, dashed hill outlines show where the floor will rise -- under you, beside you, and a third that follows you and then locks', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      f.x = 400; b._tel = 0; b._fr = null; b._moveN = 1; b._xN = 1; b._atkTimer = 1; step();
+      var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel };
+      var marks = [];
+      for (var w=0; w<90 && b._tel>0; w++){ f.x = 400 + Math.min(w, 20)*4; step(); f.invuln = 0; marks.push(b._hz.hp && b._hz.hp.map(function(h){ return h.slice(); })); }
+      out.first = marks[0]; out.last = marks[marks.length - 2]; out.look = b._hz.look; out.fx = f.x;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.kind).toBe('fourtower');
+    expect(r.name).toBe('TAKE THE TOWER!');
+    expect(r.tel0).toBe(44);
+    expect(r.first, 'three outlines from the first frame').toHaveLength(3);
+    expect(r.first[0][0], 'one under you').toBeGreaterThan(395);
+    expect(Math.abs(r.first[1][0] - r.first[0][0]), 'one beside you, a base and a hundred away').toBeGreaterThan(150);
+    expect(r.first.map((h) => h[2]), 'none locked yet').toEqual([0, 0, 0]);
+    expect(r.last[2][2], 'the third, locked at the end').toBe(1);
+    expect(r.last[2][0], 'where you stepped to: it followed you').toBe(r.fx);
+    expect(r.last[0][0], 'the first stayed where you were').toBeLessThan(r.fx - 40);
+    expect(r.look, 'the "rise this tower" render').toBe('fourtower');
+  });
+
+  it('the hills rise 10 frames apart, throwing whoever stands in their place (0.8 of a hit, one id), and stand as solid mounds for 240 frames', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var gy = groundY(), g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 900, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+      b._fr = null; b._telPh = 1; b._hl = [{ x:300 }, { x:520 }, { x:700 }]; b._atkTimer = 1e9; b._hz.hp = [[300,110,0],[520,110,0],[700,110,1]];
+      f.x = 300; f.y = gy - 24; g.x = 900; g.y = gy - 24;
+      fourTower(b, f);
+      var F = b._fr, out = { ts: F.hills.map(function(h){ return h.t; }), id: F.id }, stones = [];
+      for (var i=0;i<60;i++){
+        f.invuln = 0; step(); b.x = 700;
+        if (i === 6){ out.pct = f.pct; out.vy = f.vy; out.fy = f.y; out.top = gy - FOUR.hillH; out.other = g.pct; }
+        stones.push(worldPlats.filter(function(p){ return p._four; }).length);
+      }
+      out.stones = [stones[2], stones[20], stones[40]]; out.plan = b._hz.hp;
+      var p = worldPlats.filter(function(q){ return q._four; })[0]; out.stone = p && [p.w, p.h, p.solid, Math.round(p.y + p.h)];
+      out.gy = gy;
+      for (var i=0;i<FOUR.hillLife + 20;i++){ step(); f.invuln = 0; b.x = 700; }
+      out.gone = worldPlats.filter(function(q){ return q._four; }).length; out.hlGone = b._hz.hl;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.ts, 'two frames to start, then 10 apart').toEqual([2, 12, 22]);
+    expect(r.pct, 'the fighter on the first spot is thrown, for 0.8 of a boss hit').toBeCloseTo(17.6, 5);
+    expect(r.other, 'one far from every spot is not').toBe(0);
+    expect(r.vy, 'thrown up').toBeLessThan(-3);
+    expect(r.fy, 'and lifted clear of the stone that follows').toBeLessThan(r.top);
+    expect(r.stones, 'no stone yet on frame 3; the first one 12 frames after its hill began to rise (frame 14); all three once the last has (frame 34)').toEqual([0, 1, 3]);
+    expect(r.stone, 'a solid block 70 by 70 standing on the floor').toEqual([70, 70, true, Math.round(r.gy)]);
+    expect(r.plan, 'the outlines are gone once the hills are up').toBe(null);
+    expect(r.gone, 'then the hills go').toBe(0);
+    expect(r.hlGone, 'and their picture with them').toBe(null);
+  });
+
+  it('a hill stops the ring: a shot of SCREECHY! that reaches a standing hill is gone, one that flies over it is not', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var gy = groundY();
+      worldPlats.push({ x:600 - 35, y:gy - 70, w:70, h:70, solid:true, _four:true, _until:hazardT + 500 });
+      projectiles = []; b._fr = null;
+      projectiles.push(fourShot(b, 5, { x:500, y:gy - 30, vx:6, vy:0, fourRing:true, shape:'fourwave', life:200 }));
+      projectiles.push(fourShot(b, 5, { x:500, y:gy - 120, vx:6, vy:0, fourRing:true, shape:'fourwave', life:200 }));
+      for (var i=0;i<30;i++){ step(); f.invuln = 0; f.x = 100; }
+      var alive = projectiles.filter(function(p){ return p.fourRing && p.life > 0; }).map(function(p){ return Math.round(p.y); });
+      summons = []; projectiles = []; return { alive: alive, high: Math.round(gy - 120) }; })()`);
+    expect(r.alive, 'the low shot hit the hill and is gone; the high one flew over it').toEqual([r.high]);
+  });
+
+  it('phase 3 adds the ripple: humps run the floor one every 6 frames from the side farthest from you, throwing whoever stands on it, never someone in the air, once (one id)', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3)}
+      var gy = groundY(), g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 900, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+      b._fr = null; b._telPh = 3; b._hl = [{ x:150 }, { x:250 }, { x:350 }]; b._atkTimer = 1e9;
+      f.x = 800; f.y = gy - 24; g.x = 820; g.y = gy - 150; g.vy = 0;
+      fourTower(b, f);
+      var F = b._fr, out = { rip: F.rip && { dir: F.rip.dir, x0: F.rip.x0, n: F.rip.n, t0: F.rip.t0 }, rp: b._hz.rp && b._hz.rp.slice() };
+      var hits = [];
+      for (var i=0;i<F.end + 4;i++){
+        var p0 = f.pct; f.invuln = 0; g.invuln = 0; g.y = gy - 150; g.vy = 0; g.onground = false; f.y = gy - 24; f.vx = 0; f.vy = 0; f.onground = true; f.x = 800;
+        step(); b.x = 700; if (f.pct > p0) hits.push([i, f.pct - p0]);
+      }
+      out.hits = hits; out.air = g.pct; out.end = F.end;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.rip.dir, 'you are on the right, so it comes from the left, running right').toBe(1);
+    expect(r.rip.x0, 'from the left wall').toBeLessThan(100);
+    expect(r.rip.n, 'enough humps to run the floor').toBeGreaterThanOrEqual(8);
+    expect(r.rp.length, 'seven numbers a client draws it from').toBe(7);
+    expect(r.hits.length, 'the fighter on the floor is thrown once by the ripple').toBe(1);
+    expect(r.hits[0][1], 'for 0.8 of a hit').toBeCloseTo(17.6, 5);
+    expect(r.air, 'the one in the air is untouched').toBe(0);
+  });
+});
+
+describe('LOVE HEARTS!', () => {
+  it('his eyes turn to hearts, he bounces, and a pink glow rings the spot you stand on', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 2)}
+      f.x = 400; b._tel = 0; b._fr = null; b._moveN = 1; b._xN = 2; b._atkTimer = 1; step();
+      var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel };
+      var ys = [], hgs = [], looks = [];
+      for (var w=0; w<90 && b._tel>0; w++){ f.x = 400 + Math.min(w, 15)*5; step(); f.invuln = 0; ys.push(b.y); if (b._tel > 0){ hgs.push(b._hz.hg && b._hz.hg[0]); looks.push(b._hz.look); } }
+      out.look = looks[looks.length - 1]; out.hg = hgs[hgs.length - 1]; out.fx = f.x; out.span = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.kind).toBe('fourhearts');
+    expect(r.name).toBe('LOVE HEARTS!');
+    expect(r.tel0).toBe(42);
+    expect(r.hg, 'the glow follows you').toBe(r.fx);
+    expect(r.look, 'the heart-eyed render').toBe('fourlove');
+    expect(r.span, 'he bounces').toBeGreaterThan(12);
+  });
+
+  it('a flood in fixed waves 8 frames apart -- two arcs from his eyes and one big low heart from his mouth: three waves in phase 2, four in phase 3 -- all solid, one attack id, 0.8 of a hit each', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [2, 3].forEach(function(ph){
+        ${STAGE(300, 1)}
+        b._phase = ph; b._fr = null; b._telPh = ph; b._hDir = 1; b._atkTimer = 1e9; projectiles = [];
+        fourHearts(b, f);
+        var hs = projectiles.filter(function(p){ return p.fourHeart; });
+        out[ph] = { n: hs.length, delays: Array.from(new Set(hs.map(function(p){ return p.delay; }))).sort(function(a, c){ return a - c; }), ids: Array.from(new Set(hs.map(function(p){ return p.bossAtk; }))).length,
+          dmg: Array.from(new Set(hs.map(function(p){ return p.dmg; }))), kb: Array.from(new Set(hs.map(function(p){ return p.kb; }))), r: Array.from(new Set(hs.map(function(p){ return p.r; }))).sort(function(a, c){ return a - c; }),
+          bounce: hs.every(function(p){ return p.bounce && p.maxBounces === 3; }), volley: hs.every(function(p){ return p.volley; }), shape: Array.from(new Set(hs.map(function(p){ return p.shape; }))),
+          wave0: hs.filter(function(p){ return p.delay === 0; }).map(function(p){ return JSON.stringify([Math.sign(p.vx), p.vy < -5 ? 'arc' : 'low', p.r]); }).sort() };
+      });
+      summons = []; projectiles = []; return out; })()`);
+    expect(r[2].n, 'three waves of three').toBe(9);
+    expect(r[3].n, 'four waves of three').toBe(12);
+    expect(r[2].delays).toEqual([0, 8, 16]);
+    expect(r[3].delays).toEqual([0, 8, 16, 24]);
+    expect(r[2].ids, 'one attack id for the whole flood').toBe(1);
+    expect(r[2].dmg, '0.8 of a boss hit').toEqual([17.6]);
+    expect(r[2].r, "the eyes' hearts and the mouth's big one").toEqual([18, 30]);
+    expect(r[2].bounce, 'they bounce off the floor, the platform and the walls three times').toBe(true);
+    expect(r[2].volley).toBe(true);
+    expect(r[2].shape).toEqual(['fourheart']);
+    expect(r[2].wave0, 'one arc to each side and the mouth heart low').toEqual([[-1, 'arc', 18], [1, 'arc', 18], [1, 'low', 30]].map((a) => JSON.stringify(a)).sort());
+  });
+
+  it('the hearts bounce off the floor and the walls and pop on the third; where they land they pile up on the floor, twelve at most, for 3 s; one flood is one hit', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 2)}
+      var gy = groundY(); f.x = 60; f.y = gy - 24; b._fr = null; b._telPh = 2; b._hDir = 1; b._atkTimer = 1e9; f.invuln = 0;
+      projectiles = []; fourHearts(b, f);
+      var maxAlive = 0, piled = 0;
+      for (var i=0;i<400;i++){
+        step(); f.invuln = 0; f.x = 60; f.y = gy - 24; f.vx = 0;
+        var hs = projectiles.filter(function(p){ return p.fourHeart && p.life > 0; });
+        maxAlive = Math.max(maxAlive, hs.length);
+        piled = Math.max(piled, b._hz.pile ? b._hz.pile.length : 0);
+      }
+      var end = { alive: projectiles.filter(function(p){ return p.fourHeart && p.life > 0; }).length, piled: piled, pile: b._hz.pile, max: maxAlive, pct: f.pct };
+      summons = []; projectiles = []; return end; })()`);
+    expect(r.max, 'nine hearts in the air at the most').toBeLessThanOrEqual(9);
+    expect(r.alive, 'every heart has popped by the end').toBe(0);
+    expect(r.piled, 'hearts piled up where they landed').toBeGreaterThan(2);
+    expect(r.piled, 'twelve at most').toBeLessThanOrEqual(12);
+    expect(r.pile, 'and they fade away').toBe(null);
+    expect(r.pct, 'a fighter by the wall the flood sweeps to takes one boss hit at the most').toBeLessThanOrEqual(22.01);
+  });
+});
