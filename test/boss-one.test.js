@@ -798,7 +798,7 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
     expect(r.ring[2].frames, 'so is the ring').toBeGreaterThan(r.ring[0].frames);
   });
 
-  it('and not one of them hits harder: every shot hits for at most her 33, and a move is one attack id (the eye lasers\' later bursts the one exception)', () => {
+  it('and not one of them hits harder: no shot hits for more than that attack\'s own hit always did (her 33, times a special\'s own multiplier), and a move is one attack id (the eye lasers\' later bursts the one exception)', () => {
     const r = STAGE(`
       var out = {}, worst = 0;
       var go = function(k, t){
