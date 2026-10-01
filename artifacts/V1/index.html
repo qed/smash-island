@@ -15294,6 +15294,9 @@ const COBS_SPEECH_HP = 0.6, COBS_SPEECH_T = 120, COBS_SPEECH_STOP = 40, COBS_RAG
 // darker. Many of his kernels are missing, popped, and/or charred" (his page) -- every hit he takes pops COBS_POP_N kernels
 // off him at the nearest fighter, COBS_POP_DMG each ("2% each"), and his render is the broken-glasses one.
 const COBS_POP_HP = 0.2, COBS_POP_N = [1, 3], COBS_POP_DMG = 2, COBS_POP_CD = 6;
+// ...and the twist (Round 7, "Popping Point burst ring"): the kernels no longer fly at you but burst off him in a RING of COBS_POP_RING, an even
+// ring at a random turn, like popcorn in a pan; still 2% each, and the same cap as before (COBS_POP_DMG x COBS_POP_N[1]) for the whole ring.
+const COBS_POP_RING = 8;
 // MY OWN HANDS' counter-window: a hit on him in the wind-up knocks his glasses off ("Ow- it's fine, it's fine... I was due
 // for an upgrade anyway.", Steve Cobs/Quotes) and he aims COBS_GLASSES_MISS px off for COBS_GLASSES_T frames.
 const COBS_GLASSES_T = 180, COBS_GLASSES_MISS = 120;
@@ -15465,15 +15468,28 @@ const COBS_TIERS = {
   // that fly at you (`spd`, `homing`) and cuff on contact (`cuff` frames rooted, dmg); from tier 3 the first cuff drops a wall
   // `wall` frames that splits the stage on his side of you; at tier 5 he fires MeMURDER poles at whoever is cuffed. They are
   // Meeple's security, not the playable MeTag: summons of his, never a fighter row.
-  metags:    [ { n:2, spd:5, dmg:0.4, hp:75, homing:0.04, cuff:30, wall:0 }, { n:2, spd:5.5, dmg:0.45, hp:75, homing:0.05, cuff:36, wall:0 }, { n:2, spd:6, dmg:0.5, hp:75, homing:0.06, cuff:42, wall:150 },
-               { n:2, spd:6.5, dmg:0.55, hp:75, homing:0.07, cuff:48, wall:210 }, { n:2, spd:7, dmg:0.6, hp:75, homing:0.08, cuff:54, wall:240, poles:true } ],
+  // TWIST: BARRIER LINK ("transparent walls", the MeTag page): while both MeTags live a see-through barrier `linkW` px thick links
+  // them, a moving line between two homing tags; touching it cuffs you exactly as touching a tag does; killing either drops it.
+  metags:    [ { n:2, spd:5, dmg:0.4, hp:75, homing:0.04, cuff:30, wall:0, link:0, linkW:0 }, { n:2, spd:5.5, dmg:0.45, hp:75, homing:0.05, cuff:36, wall:0, link:1, linkW:8 }, { n:2, spd:6, dmg:0.5, hp:75, homing:0.06, cuff:42, wall:150, link:1, linkW:12 },
+               { n:2, spd:6.5, dmg:0.55, hp:75, homing:0.07, cuff:48, wall:210, link:1, linkW:14 }, { n:2, spd:7, dmg:0.6, hp:75, homing:0.08, cuff:54, wall:240, poles:true, link:1, linkW:16 } ],
   // TOXIC CANNON. "MePhone's sailboat instantly disappears before the toxic cannon attacks the Egg Spaceship" (Through No
   // Choice of Your Own/Transcript); "By the end of the day, I'm expecting a spaceship." (Steve Cobs/Quotes). The
   // sailboat-spaceship crosses the sky at `spd`, n passes, its cannon sweeping a green beam along the floor ahead of it --
   // jump it -- and leaving poison puddles (`puddle` frames) where it passed. MeLife made the ship, so Pull the Plug erases
   // it mid-attack (cobsPoof).
-  cannon:    [ { n:1, spd:7, dmg:1.1, puddle:120 }, { n:2, spd:8, dmg:1.2, puddle:180 }, { n:2, spd:9, dmg:1.3, puddle:240 }, { n:3, spd:10, dmg:1.4, puddle:300 }, { n:3, spd:11, dmg:1.5, puddle:360 } ],
+  // TWIST: THE SAILBOAT ROCKS (the boat on the waves, Through No Choice of Your Own): the beam's floor point swings `rock` px either
+  // side of its lead on a 40-frame sine as the boat pitches, and puddles are left wherever it touched; the jump timing shifts.
+  cannon:    [ { n:1, spd:7, dmg:1.1, puddle:120, rock:0 }, { n:2, spd:8, dmg:1.2, puddle:180, rock:100 }, { n:2, spd:9, dmg:1.3, puddle:240, rock:140 }, { n:3, spd:10, dmg:1.4, puddle:300, rock:160 }, { n:3, spd:11, dmg:1.5, puddle:360, rock:180 } ],
 };
+// The rage on foot, after his move: he settles toward the low hover, and each stride he covers puts a footfall into the floor under him.
+function cobsFoot(s){
+  const fl = cobsFloor();
+  if(s.x > fl.x && s.x < fl.x + fl.w){
+    s.y += (fl.y - s.r - COBS_FOOT.gap - s.y)*0.2; s.vy *= 0.5;
+    s._stride = (s._stride || 0) + Math.abs(s.vx);
+    if(s._stride >= COBS_FOOT.stride){ s._stride = 0; cobsImpact(s.x, fl.y, { shake:3, dust:0.6, debris:0, r:70 }); }
+  }
+}
 // Wind-ups, frames (MePhone X's is its tier's `tel`; rage shortens all of them, COBS_RAGE_TEL).
 const COBS_TEL = { boomerangs:42, van:40, samples:40, chainsaws:36, spikes:40, deploy:36, device:40, portal:36, springs:40, memurder:40, meknife:34, kernelpop:36, hands:40,
                    deletion:72, ticktock:40, plug:44, keynote:50, metags:40, cannon:44 };
@@ -15484,8 +15500,12 @@ const COBS_MOVE_NAME = { boomerangs:"BOOMERANGS!", van:"THE MEEPLE VAN!", sample
   keynote:"THE FUTURE IS SO YESTERDAY!", metags:"LOCKDOWN!", cannon:"TOXIC CANNON!" };
 // His orbit (oneMove with these): a touch wider than One's and a swoop that comes a little closer -- his melee is fists and
 // a blade, hers a kick with a stretching leg -- at her chase speed, and his MeCloud's white for the teleport puffs.
+// RAGE ON FOOT (Round 7, "the low-hover version"): the rage brings him down off his cloud -- "he fights on foot on the island" (Objects in Mirror):
+// he hovers COBS_FOOT.gap px over the floor, circles at 200 px, and every COBS_FOOT.stride px he covers a footfall shakes the floor under him.
+const COBS_FOOT = { gap:70, orbitR:200, swoopR:150, stride:90 };
 const COBS_MOVE = { orbitR:320, swoopR:180, ungroundR:180, w:ONE_ORBIT_W, end:ONE_ORBIT_END, flip:ONE_ORBIT_FLIP, lead:ONE_SWOOP_LEAD, hold:ONE_SWOOP_HOLD,
                     steer:ONE_STEER, noSwoop:COBS_NO_SWOOP, accel:ONE_ACCEL, max:ONE_CHASE_MAX, teleDist:ONE_TELE_DIST, teleHold:ONE_TELE_HOLD, teleCd:ONE_TELE_CD, aura:["#f4f4f8", "#c8d0e0"] };
+const COBS_MOVE_FOOT = Object.assign({}, COBS_MOVE, { orbitR:COBS_FOOT.orbitR, swoopR:COBS_FOOT.swoopR });
 const COBS_ARENA_STAGE = { id:"cobsarena", name:"Meeple Headquarters", blurb:"The teams map with its walls gone, over the cloud Meeple sits on.",
   sky:["#1c2433","#0c1119"], ground:"#565a73", plats:[], hazard:null };
 // The pane and the wall are solid blocks the fighters stand on and against (the SOLID branch of the fighter step).
@@ -15610,12 +15630,13 @@ function cobsTakeDamage(s, dmg, from){
 function cobsPopKernels(s){
   if(s._popCd > 0) return;
   s._popCd = COBS_POP_CD;
-  const t = cobsNearest(s.x, s.y), n = COBS_POP_N[0] + Math.floor(Math.random()*(COBS_POP_N[1] - COBS_POP_N[0] + 1)), id = ++BOSS_ATK_ID;
+  const id = ++BOSS_ATK_ID, n = COBS_POP_RING, turn = Math.random()*Math.PI*2, v = 8;
   for(let i=0;i<n;i++){
-    const ax = t ? t.x : s.x + (s.face||1)*200, ay = t ? hurtCY(t) : s.y, a = Math.atan2(ay - s.y, ax - s.x) + (i - (n-1)/2)*0.25, v = 9;
-    addProj(cobsShot(s, { x:s.x, y:s.y - s.r*0.3, vx:Math.cos(a)*v, vy:Math.sin(a)*v - 3, grav:true, r:8, kb:4, dmg:COBS_POP_DMG, bossCap:COBS_POP_DMG*COBS_POP_N[1], life:90, color:'#f0d010', shape:'kernel', bossAtk:id }));
+    const a = turn + i*Math.PI*2/n;
+    addProj(cobsShot(s, { x:s.x + Math.cos(a)*s.r*0.5, y:s.y - s.r*0.3 + Math.sin(a)*s.r*0.5, vx:Math.cos(a)*v, vy:Math.sin(a)*v - 2, grav:true, r:8, kb:4, dmg:COBS_POP_DMG, bossCap:COBS_POP_DMG*COBS_POP_N[1], life:90, color:'#f0d010', shape:'kernel', bossAtk:id }));
   }
   for(let i=0;i<6;i++) puff(s.x + (Math.random()*2-1)*s.r*0.4, s.y, '#f0d010', 3);
+  cobsImpact(s.x, s.y, { shake:3, dust:0, debris:0 });
 }
 
 // ---- HIS BRAIN, once a frame (from updateBossAttack) ----
@@ -15668,7 +15689,10 @@ function updateCobs(s, tgt){
   } else if(held){
     s.vx *= 0.8; s.vy *= 0.8; s.x += s.vx; s.y += s.vy;
     if(chase && s._speechT <= 0 && s._stuckT <= 0) s.face = Math.sign(chase.x - s.x) || s.face;
-  } else oneMove(s, chase, COBS_MOVE);
+  } else {
+    oneMove(s, chase, s._rageT > 0 ? COBS_MOVE_FOOT : COBS_MOVE);
+    if(s._rageT > 0) cobsFoot(s);
+  }
   const fl = cobsFloor();
   if(s.x > fl.x && s.x < fl.x + fl.w && s.y > fl.y - s.r - 4){ s.y = fl.y - s.r - 4; if(s.vy > 0) s.vy = 0; }   // never into the floor
   if(s._speechT > 0 || s._stuckT > 0){ if(s.flash > 0) s.flash--; return; }
@@ -16220,14 +16244,14 @@ const COBS_MOVES = {
     if(cobsTags().length) return 0;   // never a second pair while one stands
     for(let i=0;i<T.n;i++){ const side = i%2===0 ? 1 : -1, x = clamp(s.x + side*(s.r + 40), 40, WW - 40);
       summons.push({ type:"metag", name:"MeTag", color:'#9aa6b2', team:-1, owner:-1, hostile:true, hover:true, x, y:s.y - 20, vx:0, vy:0, r:22, hp:T.hp, maxHp:T.hp, life:1e9,
-        face:-side, _cd:30, _spd:T.spd, _homing:T.homing, _cuff:T.cuff, _dmg:dmg, _wall:T.wall, _poles:!!T.poles, _walled:false, _cobs:true, flash:0 });
+        face:-side, _cd:30, _spd:T.spd, _homing:T.homing, _cuff:T.cuff, _dmg:dmg, _wall:T.wall, _poles:!!T.poles, _walled:false, _cobs:true, flash:0, _linkW:T.linkW || 0 });
       for(let j=0;j<10;j++) puff(x, s.y - 20, '#cfe8ff', 4); }
     return T.n;
   },
   cannon(s, tgt, id){
     const T = cobsT(s, 'cannon'), dmg = cobsDmg()*T.dmg, gy = groundY(), fl = cobsFloor();
     const fromLeft = tgt ? tgt.x > WW*0.5 : (s.face||1) < 0;
-    s._ship = { x:fromLeft ? fl.x - 120 : fl.x + fl.w + 120, y:gy - COBS_SHIP_Y, dir:fromLeft ? 1 : -1, spd:T.spd, left:T.n, dmg, id, puddle:T.puddle, hit:{}, x0:fl.x - 120, x1:fl.x + fl.w + 120, lastPud:-1e9, t:0 };
+    s._ship = { x:fromLeft ? fl.x - 120 : fl.x + fl.w + 120, y:gy - COBS_SHIP_Y, dir:fromLeft ? 1 : -1, spd:T.spd, left:T.n, dmg, id, puddle:T.puddle, hit:{}, x0:fl.x - 120, x1:fl.x + fl.w + 120, lastPud:-1e9, t:0, rock:T.rock || 0 };
     shake(4);
   },
 };
@@ -16326,10 +16350,10 @@ function cobsTickEntities(s, tgt){
   // the ship: across the sky, the beam ahead of it on the floor, puddles where it passed
   if(s._ship){
     const S = s._ship; S.x += S.dir*S.spd; S.t++;
-    const bx = S.x + S.dir*COBS_SHIP_LEAD; S.beamX = bx;
+    const bx = S.x + S.dir*COBS_SHIP_LEAD + S.rock*Math.sin(S.t*Math.PI*2/40); S.beamX = bx;   // the boat pitches: the beam's floor point swings round its lead
     for(const f of cobsFoes()){ if(S.hit[f.idx] || Math.abs(f.x - bx) > 44 || feetY(f) < gy - 100) continue;
       S.hit[f.idx] = 1; cobsHit(f, S.dmg, S.dir*9, -8, S.id, S.dmg); SM_FX.poison(f, null, 90); }
-    if(Math.abs(bx - S.lastPud) >= COBS_PUDDLE_EVERY && bx > fl.x + 20 && bx < fl.x + fl.w - 20){ S.lastPud = bx; cobsPuddle(bx, gy, S.puddle, S.id, false); }
+    if(Math.abs(bx - S.lastPud) >= COBS_PUDDLE_EVERY && bx > fl.x + 20 && bx < fl.x + fl.w - 20){ S.lastPud = bx; cobsPuddle(bx, gy, S.puddle, S.id, false); cobsImpact(bx, gy, { shake:2, dust:0.4, debris:0, r:40, color:'#9bd24b' }); }
     if(hazardT%2===0) puff(bx + (Math.random()*2-1)*20, gy - Math.random()*40, '#7fd63a', 3);
     if((S.dir > 0 && S.x > S.x1) || (S.dir < 0 && S.x < S.x0)){
       S.left--;
@@ -16363,6 +16387,16 @@ function cobsTickEntities(s, tgt){
 }
 // ---- THE TWISTS' OWN CLOCKS (once a frame, from cobsTickEntities) ----
 function cobsTickTwists(s, tgt){
+  // LOCKDOWN's BARRIER LINK: while both tags live, a see-through barrier between them cuffs whoever touches it (once a second and a half a fighter)
+  const tags = cobsTags();
+  if(tags.length >= 2 && tags[0]._linkW > 0){
+    const a = tags[0], b = tags[1], L = s._link = { ax:a.x, ay:a.y, bx:b.x, by:b.y, w:a._linkW };
+    for(const f of cobsFoes()){
+      if(f.invuln > 0 || (f._linkT || 0) > hazardT) continue;
+      const cx = f.x, cy = hurtCY(f), vx = L.bx - L.ax, vy = L.by - L.ay, u = clamp(((cx - L.ax)*vx + (cy - L.ay)*vy)/((vx*vx + vy*vy) || 1), 0, 1);
+      if(Math.hypot(cx - (L.ax + vx*u), cy - (L.ay + vy*u)) < L.w/2 + hurtRX(f)*0.6){ f._linkT = hazardT + 90; cobsCuff(s, f, a); }
+    }
+  } else s._link = null;
   // KERNEL POP's chain: the next puddle bursts every `step` frames, out from where he landed
   if(s._chain){
     const C = s._chain;
@@ -16529,12 +16563,8 @@ function cobsMinionStep(m){
     m.x = clamp(m.x + m.vx, 20, WW - 20); m.y = Math.min(gy - m.r, Math.max(m.r, m.y + m.vy));
     if(t && m._cd <= 0 && hurtGap(t, m.x, m.y) < m.r + 6){
       // "restrained and cuffed by MeTags": rooted for the tier's frames, a small hit
-      SM_FX.root(t, null, m._cuff); stunFx(t, Math.min(18, m._cuff));
-      cobsHit(t, m._dmg, 0, -2, ++BOSS_ATK_ID, m._dmg);
+      cobsCuff(boss, t, m);
       m._cd = 120; m.vx = -m.vx*0.5; m.vy = -Math.abs(m.vy) - 3;
-      for(let i=0;i<10;i++) puff(t.x, t.y, '#cfe8ff', 4);
-      if(m._wall > 0 && !m._walled){ m._walled = true; cobsPlaceWall(t, boss, m._wall); }
-      if(m._poles){ const T = cobsT(boss, 'memurder'); cobsPole(boss, t.x, oneSurf(t.x, feetY(t) - 4), T, ++BOSS_ATK_ID, cobsDmg()); }
     }
   } else {
     const post = m._post, wx = post ? post.x : clamp(boss.x + m._side*220, 60, WW - 60), wy = post ? post.y : Math.max(40, boss.y - 30);   // a unit that has blinked hovers where it landed
@@ -16550,6 +16580,15 @@ function cobsMinionStep(m){
   }
 }
 
+// A cuff, by a tag's touch or its barrier's: rooted for the tier's frames, a small hit on a fresh id; the first cuff of a tag drops the wall
+// (from tier 3), and at tier 5 a MeMURDER pole is called down on whoever was cuffed.
+function cobsCuff(boss, t, m){
+  SM_FX.root(t, null, m._cuff); stunFx(t, Math.min(18, m._cuff));
+  cobsHit(t, m._dmg, 0, -2, ++BOSS_ATK_ID, m._dmg);
+  for(let i=0;i<10;i++) puff(t.x, t.y, '#cfe8ff', 4);
+  if(m._wall > 0 && !m._walled){ m._walled = true; cobsPlaceWall(t, boss, m._wall); }
+  if(m._poles){ const T = cobsT(boss, 'memurder'); cobsPole(boss, t.x, oneSurf(t.x, feetY(t) - 4), T, ++BOSS_ATK_ID, cobsDmg()); }
+}
 // A unit's BLINK: a pink flash where it was, a pink flash where it lands -- 260-420 px from the fighter it shoots at, never below the floor --
 // and a short beat before its next round, so the new angle can be read. It hovers there until it blinks again.
 function cobsUnitBlink(m, t){
@@ -16672,6 +16711,11 @@ function drawCobsFx(){
     ctx.globalAlpha = 0.25 + 0.6*k; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2 + 3*k; ctx.beginPath(); ctx.moveTo(Y.x, Y.y); ctx.lineTo(hx, hy); ctx.stroke();
     const gx = Y.x + (hx - Y.x)*u, gy2 = Y.y + (hy - Y.y)*u; ctx.globalAlpha = 0.9; ctx.fillStyle = '#ffffff'; ctx.beginPath();
     for(let i=0;i<8;i++){ const a = i*Math.PI/4, d = i%2 ? 4 : 12 + 6*k; ctx.lineTo(gx + Math.cos(a)*d, gy2 + Math.sin(a)*d); } ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; }
+  // LOCKDOWN's BARRIER LINK: a see-through band between the two tags, bright at its edges (the tags' logos glow while they track you)
+  if(s._link){ const L = s._link, d = Math.hypot(L.bx - L.ax, L.by - L.ay) || 1, nx = -(L.by - L.ay)/d*L.w/2, ny = (L.bx - L.ax)/d*L.w/2;
+    ctx.lineCap = 'round'; ctx.globalAlpha = 0.22 + 0.08*Math.sin(hazardT*0.2); ctx.strokeStyle = '#cfe8ff'; ctx.lineWidth = L.w; ctx.beginPath(); ctx.moveTo(L.ax, L.ay); ctx.lineTo(L.bx, L.by); ctx.stroke();
+    ctx.globalAlpha = 0.8; ctx.lineWidth = 2; ctx.strokeStyle = '#ffffff'; for(const sg of [-1, 1]){ ctx.beginPath(); ctx.moveTo(L.ax + nx*sg, L.ay + ny*sg); ctx.lineTo(L.bx + nx*sg, L.by + ny*sg); ctx.stroke(); }
+    ctx.globalAlpha = 1; ctx.lineCap = 'butt'; }
   // X's ELECTRIC TRAIL: red electricity along the path it ran -- dim while it arms, bright and crackling once it bites
   if(s._trail && s._trail.length){ ctx.lineCap = 'round';
     for(let i=1;i<s._trail.length;i++){ const n = s._trail[i], p = s._trail[i-1];
@@ -16706,7 +16750,7 @@ function drawCobsFx(){
   if(s._ship){ const S = s._ship, bx = S.beamX != null ? S.beamX : S.x + S.dir*COBS_SHIP_LEAD;
     ctx.globalAlpha = 0.55 + 0.25*Math.sin(hazardT*0.5); ctx.strokeStyle = '#7fd63a'; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(S.x + S.dir*30, S.y + 20); ctx.lineTo(bx, gy); ctx.stroke();
     ctx.globalAlpha = 0.9; ctx.strokeStyle = '#d8ffb0'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(S.x + S.dir*30, S.y + 20); ctx.lineTo(bx, gy); ctx.stroke();
-    ctx.globalAlpha = 1; drawCobsShip(S.x, S.y, S.dir); }
+    ctx.globalAlpha = 1; drawCobsShip(S.x, S.y, S.dir, S.rock ? 0.22*Math.cos(S.t*Math.PI*2/40) : 0); }
   // the walls: see-through
   for(const p of worldPlats){ if(!p._cobsWall) continue; ctx.globalAlpha = 0.35 + 0.1*Math.sin(hazardT*0.2); ctx.fillStyle = '#cfe8ff'; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.globalAlpha = 0.8; ctx.strokeStyle = '#9aa6b2'; ctx.lineWidth = 2; ctx.strokeRect(p.x, p.y, p.w, p.h); }
   for(const p of worldPlats){ if(!p._cobsPane) continue; ctx.globalAlpha = 0.55; ctx.fillStyle = '#cfe8ff'; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.globalAlpha = 0.9; ctx.strokeStyle = '#f4f4f8'; ctx.lineWidth = 2; ctx.strokeRect(p.x, p.y, p.w, p.h); }
@@ -16734,8 +16778,8 @@ function drawCobsFx(){
   ctx.restore();
 }
 // The sailboat-spaceship: a hull, a sail, and the cannon under it. Decoration; the beam is the attack.
-function drawCobsShip(x, y, dir){
-  ctx.save(); ctx.translate(x, y); if(dir < 0) ctx.scale(-1, 1);
+function drawCobsShip(x, y, dir, tilt){
+  ctx.save(); ctx.translate(x, y); if(dir < 0) ctx.scale(-1, 1); if(tilt) ctx.rotate(tilt);
   ctx.fillStyle = '#4a4a58'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(-70, 0); ctx.lineTo(70, 0); ctx.lineTo(50, 26); ctx.lineTo(-50, 26); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#f4f4f8'; ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(0, -84); ctx.lineTo(52, -14); ctx.closePath(); ctx.fill(); ctx.stroke();

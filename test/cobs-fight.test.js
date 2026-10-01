@@ -588,7 +588,8 @@ describe('the passives ("Both in")', () => {
     expect(r.halved).toBeLessThanOrEqual(540);
   });
 
-  it('POPPING POINT below 20%: every hit he takes pops 1-3 kernels at you, 2% each, and he wears the broken-glasses render', () => {
+  // Round 7, verbatim: "Popping Point burst ring" -- the kernels no longer fly 1-3 at you: every hit pops a RING of them (COBS_POP_RING), 2% each, the same cap.
+  it('POPPING POINT below 20%: every hit he takes pops a ring of kernels, 2% each, and he wears the broken-glasses render', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s.x = you.x + 300; s.y = you.y - 100;
       s.hp = 502; step(); projectiles = []; cobsTakeDamage(s, 1); var above = { pops:shots().length, look:cobsLook(s) };   // 501: still above the line
@@ -596,11 +597,11 @@ describe('the passives ("Both in")', () => {
       var counts = [];
       for (var k=0;k<12;k++){ s._popCd = 0; projectiles = []; cobsTakeDamage(s, 1); var ks = shots(); counts.push(ks.length); }
       var one = shots()[0];
-      return { above:above, counts:counts, dmg:one.dmg, cap:one.bossCap, shape:one.shape, look:cobsLook(s), cd:COBS_POP_CD, min:COBS_POP_N[0], max:COBS_POP_N[1] };`);
+      return { above:above, counts:counts, dmg:one.dmg, cap:one.bossCap, shape:one.shape, look:cobsLook(s), cd:COBS_POP_CD, ring:COBS_POP_RING };`);
     expect(r.above, 'not yet at 501').toEqual({ pops: 0, look: 'cobs' });
     expect(r.cd).toBeGreaterThan(0);
-    expect(r.counts.every(n => n >= r.min && n <= r.max), '1-3 a hit').toBe(true);
-    expect(r.counts.some(n => n !== r.counts[0]), 'and it varies').toBe(true);
+    expect(r.counts.every(n => n === r.ring), 'a ring of the same number a hit').toBe(true);
+    expect(r.ring).toBeGreaterThanOrEqual(6);
     expect(r.dmg, '2% each').toBe(2);
     expect(r.shape).toBe('kernel');
     expect(r.look).toBe('cobshurt');

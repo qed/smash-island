@@ -778,3 +778,118 @@ describe('THE FUTURE IS SO YESTERDAY! -- the crescendo', () => {
     expect(t3.glass, 'glass falls from the backdrop').toBeGreaterThan(10);
   });
 });
+
+// ================= THE TWISTS, group 4: the barrier link, the rocking boat, the rage on foot, the burst ring =================
+
+describe('LOCKDOWN! -- the barrier link', () => {
+  const LINK = (t, touch, kill) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+    cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
+    var tags = summons.filter(function(m){ return m.type === 'metag'; }), a = tags[0], b = tags[1], T = cobsT(s, 'metags');
+    var place = function(){ a.x = you.x - 150; a.y = hurtCY(you) ${touch ? '' : '- 240'}; b.x = you.x + 150; b.y = a.y; a.vx = a.vy = b.vx = b.vy = 0; a._cd = b._cd = 9999; };
+    ${kill ? 'a.hp = 0;' : ''}
+    var out = { T: T, rooted: 0, hits: 0, link: null, frames: [], width: a._linkW }, p0 = 0;
+    for (var i=0;i<130;i++){ s._atkTimer = 1e9; place(); you.pct = Math.max(0, you.pct); var before = you.pct, wasRooted = you.rooted || 0; step(); place();
+      if (i === 3) out.link = s._link ? { w: s._link.w, len: Math.round(Math.hypot(s._link.bx - s._link.ax, s._link.by - s._link.ay)) } : null;
+      if (you.pct > before) out.frames.push(i); out.rooted = Math.max(out.rooted, you.rooted || 0); }
+    out.pct = you.pct; out.dmg = a._dmg; out.cuff = a._cuff; return out;`);
+
+  it('tier 1: no barrier; from tier 2 a see-through barrier links the two tags, thicker at tier 3; touching it cuffs you as a tag would, and it never cuffs twice in a second and a half', () => {
+    const t1 = LINK(1, true, false), t2 = LINK(2, true, false), t3 = LINK(3, true, false);
+    expect(t1.link, 'tier 1: off').toBe(null);
+    expect(t1.frames, 'and no cuff from a barrier that is not there').toEqual([]);
+    expect(t2.link, 'linked').not.toBe(null);
+    expect(t2.link.w).toBe(8);
+    expect(t3.link.w, 'stronger at tier 3: thicker').toBe(12);
+    expect(t2.link.len, 'a line between the two tags').toBeGreaterThan(250);
+    expect(t2.frames.length, 'a fighter on the line is cuffed...').toBeGreaterThanOrEqual(1);
+    expect(t2.frames.every((f, i, a) => i === 0 || f - a[i - 1] >= 90), '...once every 90 frames at most').toBe(true);
+    expect(t2.rooted, 'rooted for the cuff\'s frames, like a tag\'s cuff').toBeGreaterThan(20);
+    expect(t2.pct, 'the tag\'s own small hit').toBeGreaterThan(0);
+  });
+
+  it('a fighter off the line is not cuffed; killing either tag drops the barrier', () => {
+    const off = LINK(2, false, false), dead = LINK(2, true, true);
+    expect(off.frames, 'not on the line: left alone').toEqual([]);
+    expect(dead.link, 'one tag dead: no barrier').toBe(null);
+    expect(dead.frames).toEqual([]);
+  });
+
+  it('draws the barrier without a throw', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); s._link = { ax: you.x - 100, ay: you.y, bx: you.x + 100, by: you.y - 50, w: 8 };
+      var err = null; try { drawCobsFx(); } catch(e){ err = String(e && e.stack || e); } return err;`);
+    expect(r).toBe(null);
+  });
+});
+
+describe('TOXIC CANNON! -- the sailboat rocks', () => {
+  const ROCK = (t) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5 - 1300); you.invuln = 99999; projectiles = [];
+    cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
+    var S = s._ship, T = cobsT(s, 'cannon'), offs = [], puds = [], tilt = [];
+    for (var i=0;i<90;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); if (!s._ship) break; offs.push(Math.round((S.beamX - (S.x + S.dir*COBS_SHIP_LEAD))*10)/10); }
+    var pd = projectiles.filter(function(p){ return p.cobsPuddle && p.delay > 0; }).map(function(p){ return Math.round(p.x); });
+    return { T: T, offs: offs, rock: S.rock, pud: pd };`);
+
+  it('tier 1: the beam rides straight ahead of the boat; tier 2: its floor point swings 100 px either side of its lead on a 40-frame sine; tier 3 140', () => {
+    const t1 = ROCK(1), t2 = ROCK(2), t3 = ROCK(3);
+    expect(Math.max(...t1.offs.map(Math.abs)), 'tier 1: off').toBe(0);
+    expect(Math.max(...t2.offs), 'swings out...').toBeGreaterThan(95);
+    expect(Math.min(...t2.offs), '...and back').toBeLessThan(-95);
+    expect(Math.max(...t2.offs)).toBeLessThanOrEqual(100.01);
+    expect(Math.max(...t3.offs), 'stronger at tier 3').toBeGreaterThan(135);
+    const o = t2.offs, down = o.findIndex((v, i) => i && o[i - 1] > 0 && v <= 0), up = o.findIndex((v, i) => i > down && o[i - 1] < 0 && v >= 0);
+    expect(up - down, 'a 40-frame sine: the swing is back through its lead every 20 frames').toBeGreaterThanOrEqual(19);
+    expect(up - down).toBeLessThanOrEqual(21);
+  });
+
+  it('puddles are left where the beam touched (not where the boat was), and the boat is drawn pitching', () => {
+    const t2 = ROCK(2);
+    expect(t2.pud.length, 'it leaves puddles').toBeGreaterThan(0);
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); s._ship = { x: you.x, y: groundY() - COBS_SHIP_Y, dir: 1, spd: 8, left: 1, dmg: 30, id: 1, puddle: 100, hit: {}, x0: 0, x1: WW, lastPud: -1e9, t: 7, rock: 100, beamX: you.x + 200 };
+      var err = null; try { drawCobsFx(); } catch(e){ err = String(e && e.stack || e); } return err;`);
+    expect(r).toBe(null);
+  });
+});
+
+describe('KEYNOTE RAGE -- on foot (the low-hover version)', () => {
+  const FOOT = (rage) => fight(`
+    park(); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 300; s.y = you.y - 250; s._spoke = true; s._speechT = 0; s._rageT = ${rage ? 900 : 0}; atTier(3); s._atkTimer = 1e9;
+    var fl = cobsFloor(), ys = [], ds = [], dust0 = IMPACT_DUST.length, peak = 0;
+    for (var i=0;i<240;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); if (i > 60){ ys.push(fl.y - s.r - s.y); ds.push(Math.abs(s.x - you.x)); } peak = Math.max(peak, shakeAmt); }
+    var avg = function(a){ return a.reduce(function(x, y){ return x + y; }, 0)/a.length; };
+    return { gap: avg(ys), maxGap: Math.max.apply(null, ys), dist: avg(ds), dust: IMPACT_DUST.length - dust0, shake: peak, foot: COBS_FOOT, r: s.r };`);
+
+  it('in the rage he comes down off his cloud: a low hover 70 px over the floor, circling at 200 px, and each stride a footfall puts dust and shake 3 into the floor', () => {
+    const calm = FOOT(false), rage = FOOT(true);
+    expect(rage.foot).toMatchObject({ gap: 70, orbitR: 200 });
+    expect(calm.gap, 'not in rage: high on his cloud').toBeGreaterThan(150);
+    expect(rage.gap, 'in rage: about 70 px over the floor').toBeLessThan(110);
+    expect(rage.gap).toBeGreaterThan(20);
+    expect(rage.dist, 'and in close').toBeLessThan(calm.dist);
+    expect(rage.dist).toBeLessThan(300);
+    expect(rage.dust, 'footfall dust').toBeGreaterThan(calm.dust);
+    expect(rage.shake, 'shake 3 a stride').toBeGreaterThan(1);
+  });
+});
+
+describe('POPPING POINT -- the burst ring', () => {
+  it('every hit under 20% pops an EVEN RING of kernels, not aimed at you, 2% each, one id and the old cap for the whole ring', () => {
+    const r = fight(`
+      park(); floorAt(you, WW*0.5); s.x = you.x + 300; s.y = you.y - 200; s._spoke = true; s.hp = 450; atTier(5); projectiles = []; s._popCd = 0;
+      cobsTakeDamage(s, 1); var ks = shots(), cx = s.x, cy = s.y - s.r*0.3;
+      var angs = ks.map(function(p){ return Math.atan2(p.y - cy, p.x - cx); }).sort(function(a, b){ return a - b; });
+      var gaps = angs.map(function(a, i){ return i ? a - angs[i-1] : (angs[0] + 2*Math.PI) - angs[angs.length-1]; });
+      var mean = ks.reduce(function(a, p){ return a + p.vx; }, 0)/ks.length;
+      return { n: ks.length, ring: COBS_POP_RING, gaps: gaps, ids: new Set(ks.map(function(p){ return p.bossAtk; })).size, dmg: ks[0].dmg, cap: ks[0].bossCap, shape: ks[0].shape, mean: mean, speed: Math.hypot(ks[0].vx, ks[0].vy + 2) };`);
+    expect(r.n).toBe(r.ring);
+    for (const g of r.gaps) expect(g, 'evenly spaced round him').toBeCloseTo(2*Math.PI/r.ring, 1);
+    expect(r.ids, 'one id').toBe(1);
+    expect(r.dmg, '2% each').toBe(2);
+    expect(r.cap, 'the old cap: 3 kernels\' worth').toBe(6);
+    expect(Math.abs(r.mean), 'a ring, not a line at you').toBeLessThan(0.5);
+    expect(r.shape).toBe('kernel');
+  });
+});
