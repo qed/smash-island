@@ -166,7 +166,7 @@ describe('FIVE TIERS, all attacks stepping up together at 2000, 1500, 1000 and 5
           case 'deploy': return summons.filter(function(m){ return m.type==='mephoneunit'; }).length;
           case 'portal': return s._portals.length;
           case 'deletion': return s._xs.length;
-          case 'keynote': return s._rings.length;
+          case 'keynote': return s._rings.filter(function(R){ return !R.stress; }).length;   // (from tier 3 the finish adds two stressed rings of its own: the crescendo, Round 7)
           case 'metags': return summons.filter(function(m){ return m.type==='metag'; }).length;
           case 'cannon': return s._ship ? s._ship.left : 0;
           case 'plug': return sh.filter(function(p){ return p.cobsPane; }).length;
@@ -428,11 +428,12 @@ describe('the six personalised specials', () => {
       cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID); var shipUp = !!s._ship;
       cobsFightTelegraph(s, 'plug', you); s._tel = 0; COBS_MOVES.plug(s, you, ++BOSS_ATK_ID);
       var T = cobsT(s, 'plug'), panes = shots().filter(function(p){ return p.cobsPane; }).length, wait = s._plug.t;
-      for (var i=0;i<wait;i++) step();
+      // (from tier 2 the [POOF] is a wave of T.wave frames, end to end -- the owner, Round 7: "PULL THE PLUG wave" -- so it is run out before looking)
+      var poofSeen = false; for (var i=0;i<wait + T.wave + 2;i++){ step(); if (cobsFx.some(function(e){ return e.kind==='poof'; })) poofSeen = true; }
       var landed = worldPlats.filter(function(p){ return p._cobsPane; });
       var during = { phase:s._plug.phase, floating:worldPlats.filter(function(p){ return !p.solid; }).length, floor:worldPlats.some(function(p){ return p.solid && p.floor===0; }),
-        panes:landed.length, solidPane:landed.every(function(p){ return p.solid; }), yours:projectiles.filter(function(p){ return p.owner===you.idx; }).length, ship:!!s._ship, poof:cobsFx.some(function(e){ return e.kind==='poof'; }) };
-      for (var i=0;i<T.poof + 1;i++) step();
+        panes:landed.length, solidPane:landed.every(function(p){ return p.solid; }), yours:projectiles.filter(function(p){ return p.owner===you.idx; }).length, ship:!!s._ship, poof:poofSeen };
+      for (var i=0;i<T.poof + T.wave + 2;i++) step();
       var after = { plug:s._plug, floating:worldPlats.filter(function(p){ return !p.solid; }).length, plats:worldPlats.length - worldPlats.filter(function(p){ return p._cobsPane; }).length };
       return { panes:panes, want:T.n, shipUp:shipUp, floating0:floating0, plats0:plats0, during:during, after:after };`);
     expect(r.panes).toBe(r.want);

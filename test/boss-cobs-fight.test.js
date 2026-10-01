@@ -559,3 +559,222 @@ describe('SPRINGTASTIC! -- extend and retract', () => {
     expect(t3.T.reach, 'stronger: a longer arm').toBeGreaterThan(t2.T.reach);
   });
 });
+
+// ================= THE TWISTS, group 3: tracking, the chain, the bending watches, the unplugging wave, the crescendo =================
+
+describe('MeMURDER! -- the tracking app', () => {
+  const TRACK = (t) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5 - 600); s.x = you.x + 300; s.y = you.y - 200; projectiles = []; var x00 = you.x;
+    cobsFightTelegraph(s, 'memurder', you); s._tel = 0; COBS_MOVES.memurder(s, you, ++BOSS_ATK_ID);
+    var T = cobsT(s, 'memurder'), poles = shots().filter(function(p){ return p.cobsTrap; }), mid = poles[Math.floor(poles.length/2)], out = { T: T, n: poles.length, x0: mid.warnX, steps: [], locked: null, rose: null, flash: 0, id: new Set(poles.map(function(p){ return p.bossAtk; })).size };
+    var lastX = mid.warnX, lockFrame = null, dEnd = 0, scars0 = IMPACT_SCARS.length;
+    for (var i=0;i<T.delay + 12;i++){ s._atkTimer = 1e9; you.invuln = 99999; you.x += 4; you.vx = 0; var d0 = mid.delay; step(); you.invuln = 99999;
+      out.steps.push(Math.round((mid.warnX - lastX)*100)/100); lastX = mid.warnX;
+      if (mid.delay > 0 && mid._trk && mid._trk.locked && lockFrame === null){ lockFrame = i; out.locked = { frame: i, delayLeft: mid.delay, x: mid.warnX }; }
+      if (out.flash === 0 && cobsFx.some(function(e){ return e.kind === 'flash'; })) out.flash = 1; }
+    out.you = you.x - x00; out.finalX = mid.warnX; out.up = mid.life > 0 ? (mid.vy < 0) : null; out.scars = IMPACT_SCARS.length - scars0; out.popped = poles.every(function(p){ return p._popped; });
+    return out;`);
+
+  it('tier 1: the marks stay where you stood; tier 2: they slide after your feet, 2 px a frame, for the first 60% of the delay -- tier 3 faster', () => {
+    const t1 = TRACK(1), t2 = TRACK(2), t3 = TRACK(3);
+    expect(Math.max(...t1.steps.map(Math.abs)), 'tier 1: off').toBe(0);
+    expect(t2.n).toBeGreaterThanOrEqual(3);
+    expect(Math.max(...t2.steps), 'at the tier\'s tracking speed').toBeCloseTo(2.0, 5);
+    expect(Math.max(...t3.steps), 'stronger at tier 3').toBeCloseTo(2.5, 5);
+    expect(t2.id, 'one id').toBe(1);
+    expect(t2.finalX - t2.x0, 'it followed you, and lagged behind (never a lock-on that cannot be outrun)').toBeGreaterThan(20);
+    expect(t2.finalX - t2.x0).toBeLessThan(t2.you);
+  });
+
+  it('it LOCKS with a phone flash when 40% of the delay is left, and the poles rise from where they locked; every pole pops with a shake and a crack at its base', () => {
+    const t2 = TRACK(2);
+    expect(t2.locked, 'it locked').not.toBe(null);
+    expect(t2.locked.delayLeft, 'with 40% of the delay left').toBeLessThanOrEqual(Math.round(t2.T.delay*0.4) + 1);
+    expect(t2.locked.delayLeft).toBeGreaterThanOrEqual(Math.round(t2.T.delay*0.4) - 2);
+    expect(t2.steps.slice(t2.locked.frame + 1, t2.T.delay).every((d) => d === 0), 'and does not move again').toBe(true);
+    expect(t2.flash).toBe(1);
+    expect(t2.popped, 'every pole popped').toBe(true);
+    expect(t2.scars, 'a crack at each pole base').toBeGreaterThanOrEqual(t2.n);
+  });
+});
+
+describe('KERNEL POP! -- the dive and the chain', () => {
+  const POP = (t) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 260; s.y = you.y - 60; s.face = -1; projectiles = [];
+    var hp0 = s.hp; cobsFightTelegraph(s, 'kernelpop', you); s._tel = 0; COBS_MOVES.kernelpop(s, you, ++BOSS_ATK_ID);
+    var T = cobsT(s, 'kernelpop'), out = { T: T, cost: hp0 - s.hp, phases: [], minY: 1e9, topY: null, landed: null, bursts: [], popcorn: 0, dive0: null, hold: 0, maxShake: 0, scars: 0 };
+    var scars0 = IMPACT_SCARS.length, prev = '', puds = null, burstAt = {}, dust0 = IMPACT_DUST.length;
+    for (var i=0;i<260;i++){ s._atkTimer = 1e9; you.invuln = 99999; step();
+      var ph = s._dive ? s._dive.ph : '-'; if (ph !== prev){ out.phases.push(ph); prev = ph; }
+      if (s._dive){ out.minY = Math.min(out.minY, s.y); out.topY = cobsTopY(); }
+      if (s._chain && !puds){ puds = s._chain.list.slice(); out.landed = { x: s.x, y: s.y, surf: s._dive ? null : null, puds: puds.map(function(p){ return Math.round(p.x); }), land: Math.round(s._chain.list[0].x) }; out.hold = s._holdT; out.maxShake = shakeAmt; }
+      if (puds) puds.forEach(function(p, k){ if (burstAt[k] === undefined && !(p.delay > 0)) burstAt[k] = i; });
+      out.popcorn = Math.max(out.popcorn, projectiles.filter(function(p){ return p.shape === 'popcorn' && p.life > 0; }).length); }
+    out.burstAt = Object.keys(burstAt).sort().map(function(k){ return burstAt[k]; }); out.scars = IMPACT_SCARS.length - scars0; out.dust = IMPACT_DUST.length - dust0; return out;`);
+
+  it('tier 1 keeps the old stomp (every puddle at once); from tier 2 he dives: off the top of the screen, down onto the puddle nearest you', () => {
+    const t1 = POP(1), t2 = POP(2);
+    expect(t1.phases, 'tier 1: no dive').toEqual(['-']);
+    expect(t2.phases, 'up, off the screen, down').toEqual(['-', 'up', 'gone', 'down', '-']);
+    expect(t2.minY, 'he left the frame: above the top edge of the screen').toBeLessThan(t2.topY);
+    expect(t2.cost, 'it still costs him 1%').toBe(25);
+    expect(t2.landed, 'and he landed').not.toBe(null);
+    expect(t2.maxShake, 'the heaviest hit of the fight: shake(30) is the 12 px cap').toBeGreaterThanOrEqual(11.9);
+    expect(t2.scars, 'a crater in the floor').toBeGreaterThan(0);
+  });
+
+  it('then the puddles burst in a CHAIN, the tier\'s frames apart, out from where he landed, the nearest first; he stays where he landed meanwhile; tier 3 is quicker', () => {
+    const t2 = POP(2), t3 = POP(3);
+    expect(t2.burstAt.length, 'every puddle burst').toBe(t2.landed.puds.length);
+    const gaps = t2.burstAt.slice(1).map((v, i) => v - t2.burstAt[i]);
+    expect(gaps.every((g) => g === t2.T.chain || g === t2.T.chain + 1 || g === t2.T.chain - 1), `a burst every ${t2.T.chain} frames: ${gaps}`).toBe(true);
+    const xs = t2.landed.puds;
+    expect(xs[0], 'the first is the one he landed on').toBe(t2.landed.land);
+    expect(xs.map((x) => Math.abs(x - t2.landed.land)), 'out from there: sorted by distance from where he landed').toEqual(xs.map((x) => Math.abs(x - t2.landed.land)).slice().sort((a, b) => a - b));
+    expect(t2.hold, 'he holds still while they pop').toBeGreaterThanOrEqual(t2.landed.puds.length*t2.T.chain);
+    expect(t2.popcorn, 'popcorn arcs from each burst').toBeGreaterThan(0);
+    expect(t3.T.chain, 'stronger at tier 3: a quicker chain').toBeLessThan(t2.T.chain);
+  });
+
+  it('the popcorn of a burst arcs over to the NEXT puddle and bounces once (it is spent on its first bounce)', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5 - 900); you.invuln = 99999; s.x = WW*0.5; s.y = groundY() - 300; projectiles = []; var gy = groundY();
+      var a = cobsPuddle(WW*0.5, gy, 600, 1, true, cobsT(s, 'kernelpop'), 20), b = cobsPuddle(WW*0.5 + 90, gy, 600, 1, true, cobsT(s, 'kernelpop'), 20);
+      var C = { T: cobsT(s, 'kernelpop'), id: ++BOSS_ATK_ID }; cobsPuddleBurst(s, a, C, b);
+      var pc = projectiles.filter(function(p){ return p.shape === 'popcorn'; });
+      return { n: pc.length, want: cobsT(s, 'kernelpop').pop, toward: pc.every(function(p){ return p.vx > 0 && p.bounce === true && p.maxBounces === 1; }), id: pc.every(function(p){ return p.bossAtk === C.id; }), aGone: a.life <= 0 };`);
+    expect(r.n).toBe(r.want);
+    expect(r.toward, 'toward the next puddle, with a single bounce').toBe(true);
+    expect(r.id).toBe(true);
+    expect(r.aGone).toBe(true);
+  });
+});
+
+describe('TICK, TOCK! -- the watches bend', () => {
+  const BEND = (t) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 500; s.y = you.y - 200; projectiles = [];
+    var T = cobsT(s, 'ticktock'); cobsThrowWatches(s, you, ++BOSS_ATK_ID, T.n, T, 10, 0.18);
+    var ws = shots().filter(function(p){ return p.shape === 'meeplewatch'; }), res = [], prev = ws.map(function(p){ return [p.vx, p.vy]; });
+    for (var i=0;i<60;i++){ s._atkTimer = 1e9; you.invuln = 99999; var was = ws.map(function(p){ return p._bend ? p._bend.done : null; }); step();
+      ws.forEach(function(p, k){ if (p._bend && p._bend.done && !was[k] && p.life > 0){ var a0 = Math.atan2(prev[k][1], prev[k][0]), a1 = Math.atan2(p.vy, p.vx); var d = ((a1 - a0 + Math.PI*3) % (Math.PI*2)) - Math.PI;
+          res.push({ k: k, deg: Math.round(d*180/Math.PI*10)/10, sp0: Math.hypot(prev[k][0], prev[k][1]), sp1: Math.hypot(p.vx, p.vy) }); } });
+      prev = ws.map(function(p){ return [p.vx, p.vy]; }); }
+    return { T: T, n: ws.length, bends: res, flagged: ws.filter(function(p){ return !!p._bend; }).length };`);
+
+  it('tier 1 throws plain arcs; tier 2 bends each watch 35 degrees toward you at the top of its arc; tier 3 40', () => {
+    const t1 = BEND(1), t2 = BEND(2), t3 = BEND(3);
+    expect(t1.flagged, 'tier 1: off').toBe(0);
+    expect(t2.flagged).toBe(t2.n);
+    expect(t2.bends.length, 'every watch bent, once').toBe(t2.n);
+    for (const b of t2.bends) { expect(Math.abs(b.deg), 'bent 35 degrees (a frame of gravity on top)').toBeGreaterThan(30); expect(Math.abs(b.deg)).toBeLessThan(40); }
+    for (const b of t3.bends) { expect(Math.abs(b.deg), 'stronger at tier 3: 40').toBeGreaterThan(35); expect(Math.abs(b.deg)).toBeLessThan(46); }
+    expect(t3.T.bend).toBe(40);
+  });
+
+  it('the zero\'s volley bends too, and a spent watch shatters into shards (impact)', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 500; s.y = you.y - 200; projectiles = []; var T = cobsT(s, 'ticktock');
+      s._tick = { t:1, T:T.timer }; step(); var vol = shots().filter(function(p){ return p.shape === 'meeplewatch'; });
+      var bendable = vol.filter(function(p){ return !!p._bend; }).length, n = vol.length, want = T.volley;
+      var debris0 = IMPACT_DEBRIS.length, peak = 0, shook = 0;
+      for (var i=0;i<140;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); peak = Math.max(peak, IMPACT_DEBRIS.length); shook = Math.max(shook, shakeAmt); }
+      return { n: n, want: want, bendable: bendable, debris: peak - debris0, shook: shook, left: projectiles.filter(function(p){ return p.shape === 'meeplewatch' && p.life > 0; }).length };`);
+    expect(r.n).toBe(r.want);
+    expect(r.bendable).toBe(r.n);
+    expect(r.debris, 'shards').toBeGreaterThan(3);
+    expect(r.shook, 'shake(6) is 2.4 px').toBeGreaterThan(2);
+  });
+});
+
+describe('PULL THE PLUG! -- the unplugging wave', () => {
+  const WAVE = (t) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 600; s.y = you.y - 300; projectiles = [];
+    cobsFightTelegraph(s, 'plug', you); s._tel = 0; COBS_MOVES.plug(s, you, ++BOSS_ATK_ID);
+    var P = s._plug, T = cobsT(s, 'plug'), out = { T: T, wave: P.wave, gone: [], back: [], shots: null, glass: 0, order: [] };
+    var wait0 = P.t; for (var i=0;i<wait0 + 2 && P.phase === 'wait';i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); }
+    var list = P.list ? P.list.map(function(e){ return { p: e.p, k: e.k }; }) : [];
+    // a shot of yours on each side, to see them go as the wave passes
+    var shotFar = addProj({ owner: you.idx, ownerObj: you, x: you.x - P.dir*(-700), y: you.y - 400, vx: 0, vy: 0, r: 8, dmg: 1, kb: 1, life: 9000, color: '#fff' });
+    out.phase = P.phase; out.dir = P.dir; out.x0 = P.x0; out.list = list.length;
+    var f0 = 0, goneAt = new Map(), backAt = new Map();
+    for (var i=0;i<P.wave + 6;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); f0++; list.forEach(function(e){ if (!goneAt.has(e.p) && worldPlats.indexOf(e.p) < 0) goneAt.set(e.p, f0); });
+      out.glass = Math.max(out.glass, cobsFx.filter(function(e){ return e.kind === 'glass'; }).length); }
+    out.allGone = list.every(function(e){ return worldPlats.indexOf(e.p) < 0; }); out.phaseAfter = s._plug ? s._plug.phase : null; out.floor = worldPlats.some(function(p){ return p.solid && p.floor === 0; });
+    var pairs = list.map(function(e){ return [e.k, goneAt.get(e.p)]; }).filter(function(q){ return q[1] !== undefined; }).sort(function(a, b){ return a[0] - b[0]; });
+    out.gonePairs = pairs.length; out.goneMono = pairs.every(function(q, i){ return i === 0 || q[1] >= pairs[i-1][1]; }); out.goneSpan = pairs.length ? pairs[pairs.length-1][1] - pairs[0][1] : 0; out.firstGone = pairs.length ? pairs[0][1] : null;
+    // out for the poof's frames, then it comes back in the reverse order
+    var f1 = 0; while (s._plug && s._plug.phase !== 'returning' && f1 < 400){ s._atkTimer = 1e9; you.invuln = 99999; step(); f1++; }
+    var f2 = 0; while (s._plug && f2 < 200){ s._atkTimer = 1e9; you.invuln = 99999; step(); f2++; list.forEach(function(e){ if (!backAt.has(e.p) && worldPlats.indexOf(e.p) >= 0) backAt.set(e.p, f2); }); }
+    var bp = list.map(function(e){ return [e.k, backAt.get(e.p)]; }).filter(function(q){ return q[1] !== undefined; }).sort(function(a, b){ return b[0] - a[0]; });
+    out.backMono = bp.every(function(q, i){ return i === 0 || q[1] >= bp[i-1][1]; }); out.backPairs = bp.length; out.restored = list.every(function(e){ return worldPlats.indexOf(e.p) >= 0; }); out.plugNull = s._plug === null;
+    return out;`);
+
+  it('tier 1 is the old instant [POOF]; from tier 2 the platforms go in a WAVE, the order of their distance along it, over the tier\'s frames; the floor stays', () => {
+    const t2 = WAVE(2), t3 = WAVE(3);
+    expect(t2.wave).toBe(36);
+    expect(t2.phase, 'going').toBe('going');
+    expect(t2.allGone && t2.floor, 'every floating platform goes, the floor stays').toBe(true);
+    expect(t2.goneMono, 'footing goes in an order you can read: along the wave').toBe(true);
+    expect(t2.goneSpan, 'end to end in about the wave\'s frames').toBeGreaterThan(18);
+    expect(t2.goneSpan).toBeLessThanOrEqual(t2.wave + 1);
+    expect(t3.wave, 'stronger at tier 3: a quicker wave').toBe(28);
+    expect(t3.goneSpan).toBeLessThan(t2.goneSpan);
+    expect(t2.glass, 'and glass falls where the wave is').toBeGreaterThan(5);
+  });
+
+  it('everything comes back in the REVERSE order -- the last to go the first to return -- and it ends plugged in', () => {
+    const t2 = WAVE(2);
+    expect(t2.backPairs).toBeGreaterThan(20);
+    expect(t2.backMono, 'the last platform to go returns first').toBe(true);
+    expect(t2.restored).toBe(true);
+    expect(t2.plugNull).toBe(true);
+  });
+
+  it('a fighter standing on a platform is shocked only when the wave reaches it; one standing on a pane never is; tier 1 shocks nobody', () => {
+    const r = fight(`
+      park(); atTier(3); you.invuln = 0; s.x = WW*0.5 + 600; s.y = groundY() - 300; projectiles = [];
+      var pl = worldPlats.filter(function(p){ return !p.solid && p.w > 200 && p.y > groundY() - 700 && p.y < groundY() - 300; })[0];
+      you.x = pl.x + pl.w/2; you.y = pl.y - you.r; you.vx = 0; you.vy = 0; you.pct = 0; you.controller = 'still'; step(); you.pct = 0; you.invuln = 0;
+      cobsFightTelegraph(s, 'plug', you); s._tel = 0; COBS_MOVES.plug(s, you, ++BOSS_ATK_ID); var P = s._plug, hitAt = null, goneAt = null;
+      var wait1 = P.t, wave1 = P.wave; for (var i=0;i<wait1 + wave1 + 8;i++){ s._atkTimer = 1e9; var p0 = you.pct; you.invuln = 0; if (worldPlats.indexOf(pl) >= 0){ you.x = pl.x + pl.w/2; you.y = pl.y - you.r; you.vx = 0; you.vy = 0; } step();
+        if (hitAt === null && you.pct > p0) hitAt = i; if (goneAt === null && worldPlats.indexOf(pl) < 0) goneAt = i; }
+      return { hitAt: hitAt, goneAt: goneAt, shock: P.shock, pct: you.pct };`);
+    expect(r.hitAt, 'shocked').not.toBe(null);
+    expect(r.hitAt, 'the moment the platform under him goes').toBe(r.goneAt);
+    expect(r.pct).toBeCloseTo(r.shock, 3);
+  });
+});
+
+describe('THE FUTURE IS SO YESTERDAY! -- the crescendo', () => {
+  const KEY = (t) => fight(`
+    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x - 300; s.y = you.y - 120; s._rings = []; s._burst = null;
+    cobsFightTelegraph(s, 'keynote', you); s._tel = 0; COBS_MOVES.keynote(s, you, ++BOSS_ATK_ID);
+    var T = cobsT(s, 'keynote'), rs = s._rings.map(function(R){ return { d: R.delay, high: R.high, stress: !!R.stress, id: R.id, spd: R.spd }; });
+    var out = { T: T, rings: rs, burst: s._burst ? s._burst.t : null, hold: s._holdT, glass: 0, shake: 0 };
+    for (var i=0;i<(out.burst || 120) + 4;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); out.shake = Math.max(out.shake, shakeAmt); out.glass = Math.max(out.glass, cobsFx.filter(function(e){ return e.kind === 'glass'; }).length); }
+    return out;`);
+
+  it('tier 1 rings come at a steady beat; tier 2 each ring comes 2 frames sooner than the last, tier 3 three (never under 14)', () => {
+    const t1 = KEY(1), t2 = KEY(2), t3 = KEY(3), t5 = KEY(5);
+    const gaps = (r) => r.rings.filter((x) => !x.stress).map((x, i, a) => i ? x.d - a[i - 1].d : null).slice(1);
+    expect(gaps(t1), 'a steady beat').toEqual([40]);
+    expect(gaps(t2), '36, then 2 sooner').toEqual([36, 34]);
+    expect(gaps(t3), '32, then 3 sooner').toEqual([32, 29]);
+    expect(Math.min(...gaps(t5)), 'never under 14').toBeGreaterThanOrEqual(14);
+  });
+
+  it('from tier 3 the finish is three stressed beats 14 frames apart: a low ring, a high ring (one id between them), then the CARE! burst -- which shakes the stage and drops glass', () => {
+    const t2 = KEY(2), t3 = KEY(3);
+    expect(t2.rings.some((x) => x.stress), 'tier 2: no stressed finish').toBe(false);
+    const st = t3.rings.filter((x) => x.stress);
+    expect(st).toHaveLength(2);
+    expect(st.map((x) => x.high), 'low, then high').toEqual([false, true]);
+    expect(st[1].d - st[0].d, '14 frames apart').toBe(14);
+    expect(st[0].id, 'one id: one hit at most').toBe(st[1].id);
+    expect(t3.rings.filter((x) => !x.stress).every((x) => x.id !== st[0].id)).toBe(true);
+    expect(t3.burst - st[1].d, 'and the burst is the third beat, 14 frames after the high ring').toBe(14);
+    expect(st[0].spd, 'stressed: harder').toBeGreaterThan(t3.T.spd);
+    expect(t3.shake, 'CARE!: shake(30) hits the 12 px cap').toBeGreaterThanOrEqual(11.9);
+    expect(t3.glass, 'glass falls from the backdrop').toBeGreaterThan(10);
+  });
+});
