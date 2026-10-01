@@ -15,6 +15,7 @@ let W;
 beforeAll(async () => { W = loadMonolith().window; await W.eval('profileReady'); });
 
 const HP = { 1: 1, 2: 0.5, 3: 0.2 };
+const FOUR_CAC_POP = () => 14 + 180 - 2;   // FOUR.cacGrow + FOUR.cacLife: the frame it pops (a sixty-frame second is a hundred and eighty here)
 // A still Firey on the floor at `x` and Four spawned the way the gauntlet spawns him (BOSSRUSH.active false: the gauntlet logic off), floating, his attack timer held
 // unless `live`. `ph` is his phase (his HP sets it).
 const STAGE = (x, ph = 1, live = false) => `
@@ -446,7 +447,7 @@ describe('TAKE THE TOWER!', () => {
 describe('LOVE HEARTS!', () => {
   it('his eyes turn to hearts, he bounces, and a pink glow rings the spot you stand on', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 2)}
-      f.x = 400; b._tel = 0; b._fr = null; b._moveN = 1; b._xN = 2; b._atkTimer = 1; step();
+      f.x = 400; b._tel = 0; b._fr = null; b._moveN = 1; b._xN = 3; b._atkTimer = 1; step();
       var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel };
       var ys = [], hgs = [], looks = [];
       for (var w=0; w<90 && b._tel>0; w++){ f.x = 400 + Math.min(w, 15)*5; step(); f.invuln = 0; ys.push(b.y); if (b._tel > 0){ hgs.push(b._hz.hg && b._hz.hg[0]); looks.push(b._hz.look); } }
@@ -505,5 +506,162 @@ describe('LOVE HEARTS!', () => {
     expect(r.piled, 'twelve at most').toBeLessThanOrEqual(12);
     expect(r.pile, 'and they fade away').toBe(null);
     expect(r.pct, 'a fighter by the wall the flood sweeps to takes one boss hit at the most').toBeLessThanOrEqual(22.01);
+  });
+});
+
+describe("DON'T HUG THE CACTUS!", () => {
+  it('he melts into the floor beside you as a puddle, and a dashed outline marks where the cactus will rise', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3)}
+      f.x = 300; b._tel = 0; b._fr = null; b._moveN = 1; b._xN = 4; b._atkTimer = 1; step();
+      var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, cb0: b._hz.cb && b._hz.cb.slice(), y0: b.y };
+      var looks = [], cbs = [];
+      for (var w=0; w<90 && b._tel>0; w++){ step(); f.invuln = 0; if (b._tel > 0){ looks.push(b._hz.look); cbs.push(b._hz.cb && b._hz.cb.slice()); } }
+      out.cb = cbs[cbs.length - 1]; out.look = looks[looks.length - 1]; out.x = Math.round(b.x); out.y = Math.round(b.y); out.gy = groundY();
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.kind).toBe('fourcactus');
+    expect(r.name).toBe("DON'T HUG THE CACTUS!");
+    expect(r.tel0).toBe(40);
+    expect(r.cb0[0], 'the spot, 320 px from you on the side with room').toBeGreaterThan(300 + 280);
+    expect(r.look, 'the puddle render once he has melted').toBe('fourpuddle');
+    expect(r.gy - r.y, 'low in the floor').toBeLessThan(60);
+    expect(Math.abs(r.x - r.cb[0]), 'where the outline is').toBeLessThan(40);
+  });
+
+  it('a Four-shaped cactus grows out of the puddle and walks at you, throws up whoever touches it (0.8 of a hit) and pops after 3 s; he re-forms where he melted', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var gy = groundY();
+      b._fr = null; b._telPh = 1; b._cacX = 800; b._atkTimer = 1e9;
+      f.x = 400; f.y = gy - 24;
+      fourCactus(b, f);
+      var F = b._fr, out = { n: F.cacti.length, id: F.id, cac0: b._hz.cac.map(function(c){ return c.slice(); }) }, xs = [], hit = null;
+      for (var i=0;i<FOUR.cacGrow + FOUR.cacLife + 40;i++){
+        f.y = hit === null ? gy - 24 : f.y;
+        var p0 = f.pct; step(); if (hit === null) { f.vx = 0; f.invuln = 0; }
+        if (b._hz.cac) xs.push(b._hz.cac[0][0]);
+        if (hit === null && f.pct > p0){ hit = i; out.hitDmg = f.pct - p0; out.vy = f.vy; out.hitX = [Math.round(f.x), xs[xs.length-1]]; f.x = 60; }
+        if (hit !== null) { f.invuln = 99; }
+        if (i === FOUR.cacGrow - 2) out.growing = b._hz.cac[0][0];
+        if (i === FOUR.cacGrow + 10) out.walked = xs[xs.length - 1];
+        if (b._fr && b._fr.k === 'slither' && out.reform === undefined) out.reform = [i, Math.round(b.x), b._hz.look];
+      }
+      out.hit = hit; out.after = b._hz.cac; out.fr = b._fr && b._fr.k; out.bx = Math.round(b.x);
+      for (var i=0;i<40;i++) step();
+      out.final = [b._fr, Math.round(b.y), b.y < gy - b.r - 10];
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.n).toBe(1);
+    expect(r.cac0[0][0], 'it grows where he melted').toBe(800);
+    expect(r.hit, 'it reached the fighter who stood still').not.toBe(null);
+    expect(r.hitDmg, 'for 0.8 of a boss hit').toBeCloseTo(17.6, 5);
+    expect(r.vy, 'thrown straight up').toBeLessThanOrEqual(-15);
+    expect(r.walked, 'it walked toward them, at about 2 a frame, not before it had grown').toBeLessThan(800 - 15);
+    expect(r.after, 'and it has popped').toBe(null);
+    expect(r.reform[0], 'he re-forms when it has popped: the last leg of a slither').toBeGreaterThan(FOUR_CAC_POP());
+    expect(r.reform[1], 'where he melted').toBeGreaterThan(780);
+    expect(r.final[0], 'then he floats again').toBe(null);
+    expect(r.final[2]).toBe(true);
+  });
+
+  it('a jump clears it, the platform is out of its reach, and phase 3 sends two, one from each side of you', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var gy = groundY();
+      b._fr = null; b._telPh = 1; b._cacX = 600; b._atkTimer = 1e9; f.x = 600; f.y = gy - 24;
+      var g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 600, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+      fourCactus(b, f);
+      var plat = worldPlats.filter(function(p){ return !p.solid; }).sort(function(a, c){ return a.y - c.y; })[0];
+      for (var i=0;i<80;i++){ f.x = 600; f.y = gy - FOUR.cacH - 30 - f.r; f.vy = 0; f.invuln = 0; g.x = 600; g.y = plat.y - g.r; g.vy = 0; g.onground = true; g.invuln = 0; step(); }
+      var out = { jumper: f.pct, platform: g.pct };
+      summons = []; ${STAGE(300, 3)}
+      b._fr = null; b._telPh = 3; b._cacX = 800; b._atkTimer = 1e9; f.x = 500;
+      fourCactus(b, f);
+      out.two = b._hz.cac.map(function(c){ return [c[0], c[1]]; });
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.jumper, 'above its top: not touched').toBe(0);
+    expect(r.platform, 'on the platform: not touched').toBe(0);
+    expect(r.two, 'two cacti in phase 3').toHaveLength(2);
+    expect(r.two[0][1] * r.two[1][1], 'walking toward you from opposite sides').toBe(-1);
+  });
+});
+
+describe('I DO THIS!', () => {
+  it('the ring draws itself round the fighter and follows them until the last 26 frames, then locks; the wind-up is 54, 42, 34 frames by phase', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2, 3].forEach(function(ph){
+        ${STAGE(300, 1)}
+        b._phase = ph; b.hp = b.maxHp*[0, 1, 0.5, 0.2][ph];
+        f.x = 400; b._tel = 0; b._fr = null; b._moveN = 1; b._xN = 2; b._atkTimer = 1; step();
+        var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, first: b._hz.id && b._hz.id.map(function(r){ return r.slice(); }) }, ids = [];
+        for (var w=0; w<90 && b._tel>0; w++){ f.x = 400 + Math.min(w, 8)*5; step(); f.invuln = 0; ids.push(b._hz.id && b._hz.id.map(function(r){ return r.slice(); })); }
+        o.last = ids[ids.length - 2]; o.fx = f.x; o.look = b._hz.look;
+        out[ph] = o;
+        summons = [];
+      });
+      projectiles = []; return out; })()`);
+    expect(r[1].kind).toBe('fourido');
+    expect(r[1].name).toBe('I DO THIS!');
+    expect([r[1].tel0, r[2].tel0, r[3].tel0], 'the tell is shorter each phase').toEqual([54, 42, 34]);
+    expect(r[1].first, 'one ring, on the fighter').toHaveLength(1);
+    expect(r[1].first[0].slice(1, 3)).toEqual([400, 566]);
+    expect(r[1].first[0][3], 'not yet locked').toBe(0);
+    expect(r[1].last[0][3], 'locked at the end').toBe(1);
+    expect(r[1].last[0][1], 'it followed them to where they stood at the lock').toBe(r[1].fx);
+    expect(r[1].look, 'the raised-hand render').toBe('fourzap');
+    expect(r[2].last, 'phase 2: a Venn pair').toHaveLength(2);
+    expect(Math.abs(r[2].last[1][1] - r[2].last[0][1]), '90 px apart').toBe(90);
+    expect(r[3].last, 'phase 3: one fighter, one ring').toHaveLength(1);
+  });
+
+  it('the snap: whoever is inside takes one hit (0.8, one id), is thrown, turned into a squiggle for 36 frames and skipped for 10 s; whoever is outside is not touched', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+      var gy = groundY(), g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 900, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+      b._fr = null; b._telPh = 1; b._atkTimer = 1e9; f.x = 400; f.y = gy - 24; g.x = 400 + 140; g.y = gy - 24;
+      b._ido = [{ who:f.idx, off:0, cx:400, cy:gy - 24 }];
+      fourIdo(b, f);
+      var F = b._fr, out = { id: F.id, R: FOUR.idoSnapR[1] };
+      var pcts = [];
+      for (var i=0;i<FOUR.idoSnap + 2;i++){ step(); pcts.push([f.pct, g.pct]); g.invuln = 0; }
+      out.before = pcts[FOUR.idoSnap - 2]; out.after = pcts[FOUR.idoSnap]; out.sq = b._hz.sq && b._hz.sq.map(function(q){ return q.slice(); }); out.skip = f._idoSkip - hazardT; out.vy = f.vy;
+      out.hitstun = f.hitstun; out.sn = !!b._hz.sn; out.dc = b._hz.dc && b._hz.dc.length; out.ds = b._hz.ds > 0;
+      for (var i=0;i<60;i++) step();
+      out.done = [b._fr && b._fr.k, b._hz.sq];
+      // the fairness rule: a fighter just mutilated is not picked while the skip runs, and not hurt if it is the only one left
+      f.invuln = 0; b._fr = null; f.x = 400; f.y = gy - 24; g.dead = true;
+      FOUR_PLAN.fourido(b, f, b._hz, 1); out.pickedWhileSkipped = b._ido.length ? b._ido[0].who : null;
+      b._ido = [{ who:f.idx, off:0, cx:400, cy:gy - 24 }]; fourIdo(b, f); var p0 = f.pct;
+      for (var i=0;i<FOUR.idoSnap + 4;i++){ step(); f.invuln = 0; }
+      out.hurtAgain = f.pct - p0;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.before, 'nobody is hurt before the snap').toEqual([0, 0]);
+    expect(r.after[0], 'the fighter inside: one hit of 0.8').toBeCloseTo(17.6, 5);
+    expect(r.after[1], 'the one 140 px off, outside a 100 ring: not touched').toBe(0);
+    expect(r.sq[0][1] - 0, 'a squiggle').toBeGreaterThan(0);
+    expect(r.sq, 'for 36 frames').toHaveLength(1);
+    expect(r.skip, 'skipped for 10 seconds').toBeGreaterThan(590);
+    expect(r.vy, 'thrown up').toBeLessThan(-2);
+    expect(r.hitstun).toBeGreaterThanOrEqual(20);
+    expect(r.sn, 'a burst of shards for a client to draw').toBe(true);
+    expect(r.dc, 'a scribbled decal left on the floor').toBe(1);
+    expect(r.ds, 'the board scribbles over itself').toBe(true);
+    expect(r.done, 'then it is over, and the squiggle with it').toEqual(['slither', null]);
+    expect(r.pickedWhileSkipped, 'nobody else is there to pick: he falls back on the one he has just hit, and').toBe(0);
+    expect(r.hurtAgain, '"Nobody has ever been mutilated more than once": no second hit inside the 10 s').toBe(0);
+  });
+
+  it('phase 2 draws a Venn pair that hits once, phase 3 rings every fighter at once and one over the platform when someone stands on it', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${STAGE(300, 3)}
+      var gy = groundY(), g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 900, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+      var plat = worldPlats.filter(function(p){ return !p.solid; }).sort(function(a, c){ return a.y - c.y; })[0];
+      f.x = 200; f.y = gy - 24; g.x = plat.x + plat.w*0.5; g.y = plat.y - g.r; g.onground = true; g.vy = 0;
+      b._fr = null; FOUR_PLAN.fourido(b, f, b._hz, 3);
+      out.p3 = b._ido.map(function(r){ return [r.who, Math.round(r.cx), Math.round(r.cy)]; }); out.platTop = Math.round(plat.y);
+      summons = []; ${STAGE(300, 2)}
+      f.x = 400; f.y = gy - 24; b._fr = null; b._telPh = 2; b._atkTimer = 1e9; FOUR_PLAN.fourido(b, f, b._hz, 2);
+      fourIdo(b, f);
+      for (var i=0;i<FOUR.idoSnap + 2;i++){ step(); f.invuln = 0; }
+      out.pair = f.pct;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.p3.map((q) => q[0]).sort(), 'a ring on each of them, and one over the platform').toEqual([-1, 0, 1]);
+    expect(r.p3.find((q) => q[0] === -1)[2], 'above the platform').toBeLessThan(r.platTop);
+    expect(r.pair, 'two overlapping rings are still one boss hit').toBeCloseTo(17.6, 5);
   });
 });
