@@ -49,6 +49,12 @@ window.__oneBot = (function(){
     if (best === 0) return 9;
     return best < 1e9 ? bx : 0;
   }
+  // the way out of a jaw that is lit over you: away from its middle (0: you are not in one)
+  function outOfJaws(L, zones){
+    for (var i = 0; i < zones.length; i++){ var z = zones[i];
+      if (L.x > z.x0 - 10 && L.x < z.x1 + 10 && Math.abs(feetY(L) - z.y) < 40) return Math.sign(L.x - (z.x0 + z.x1)/2) || lastDir; }
+    return 0;
+  }
   return function(L, one){
     var inp = { left:false, right:false, jump:false, down:false, attack:false, special:false, smash:false };
     var slab = worldPlats.find(function(p){ return p.solid && !p.wall; }) || { x:0, w:WW, y:groundY() };
@@ -66,7 +72,8 @@ window.__oneBot = (function(){
     if (one._tel > 0){
       var k = one._telKind, tl = one._tel;
       if (k === 'zap' && one._telX != null && Math.abs(L.x - one._telX) < 70 && tl < 24) move = Math.sign(L.x - one._telX) || lastDir;
-      if (k === 'rain' && one._telX != null && Math.abs(L.x - one._telX) < 230 && tl < 30) move = Math.sign(L.x - one._telX) || lastDir;
+      // FOLDING ISLAND! (it was INCOMING!): the jaw over the floor stretch round you is lit for most of a second -- run out of it
+      if (k === 'fold' && one._foldZones && tl < 44) move = outOfJaws(L, one._foldZones) || move;
       if (k === 'hands' && one._handSpots){ for (var i = 0; i < one._handSpots.length; i++){ var sp = one._handSpots[i];
         if (Math.abs(L.x - sp.x) < 220 && tl < 30) move = Math.sign(L.x - sp.x) || lastDir; } }
       if (k === 'orbitkick'){ var dir = one._telDir || one.face || 1, y = one._kickY;
@@ -76,6 +83,8 @@ window.__oneBot = (function(){
       if (k === 'moonrocks' && tl < 8) move = lastDir;
       if (k === 'screechy' && tl < 20 && Math.abs(L.x - one.x) < 260) move = -Math.sign(one.x - L.x) || lastDir;
     }
+    // ...and the next fold of a chain, lit where you stood when the last one shut
+    for (var q = 0; q < oneFx.length; q++){ var fe = oneFx[q]; if (fe.kind === 'foldwarn' && fe.life < fe.max - 6) move = outOfJaws(L, fe.zones) || move; }
     var rd = ringDodge(L);
     if (rd === 9) move = 0; else if (rd) move = rd;
     var th = rd ? null : threat(L);

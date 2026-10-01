@@ -180,50 +180,51 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
   // copy flies at 8 instead of Two's 13, and the rest fly faster and come in more (and tighter) than theirs -- but every
   // shot still hits for the 33 it did.
   it('flies faster than Four and Two, harder but never harder-hitting; Mind Read slower; and winds up and comes round again at their pace', () => {
+    // THEN: "one could be harder... much harder. more bullets! also longer attacks. contact damage." (the owner, 2026-09-30) -- "Same
+    // damage per hit": the numbers below are the first tier of ONE_DECK_TIERS (her phase), a ring of twenty-four where there were
+    // fourteen, eight knives where there were five seekers, three orbs where there was one, and each of them in more than one wave
+    // (the rest of the waves are on her queue, which test/boss-one.test.js reads over the whole move).
     const r = W.eval(`(function(){
       projectiles = [];
       var s = { x:500, y:300, r:88, face:1, _marks:0, maxHp:2000, hp:2000, _spTier:{ moonrocks:1, eyelasers:1, hands:1, orbitkick:1, ghost:1 } };
       var own = function(){ return projectiles.filter(function(p){ return p.owner===-2; }); };
       var spd = function(p){ return Math.hypot(p.vx, p.vy); };
-      ONE_MOVES.screechy(s, null, 1); var scr1 = Math.max.apply(null, own().map(spd)); var scrDmg = own()[0].dmg; projectiles = [];
-      s._marks = 3; ONE_MOVES.screechy(s, null, 2); var scr4 = Math.max.apply(null, own().map(spd)); projectiles = [];
-      s._marks = 0; ONE_MOVES.ring(s, null, 3); var ring = own().map(spd); projectiles = [];
-      ONE_MOVES.seekers(s, null, 4); var seek = own().map(function(p){ return [spd(p), p.homing]; }); projectiles = [];
+      ONE_MOVES.screechy(s, null, 1); var scr1 = Math.max.apply(null, own().map(spd)); var scrDmg = own()[0].dmg; projectiles = []; s._q = [];
+      s._marks = 2; ONE_MOVES.screechy(s, null, 2); var scr3 = Math.max.apply(null, own().map(spd)); projectiles = []; s._q = [];
+      s._marks = 0; ONE_MOVES.ring(s, null, 3); var ring = own().map(spd); projectiles = []; s._q = [];
+      ONE_MOVES.knives(s, null, 4); var knives = own().map(function(p){ return [p.oHang.launch.spd, p.oHang.launch.home, p.dmg]; }); projectiles = []; s._q = [];
       var tgt = { x:900, y:300, vx:0, vy:0 };
       fighters = [];
-      ONE_MOVES.mindread(s, tgt, 5); var mr1 = own().map(function(p){ return [spd(p), p.homing, p.dmg, p.life]; }); projectiles = [];
-      s._marks = 1; ONE_MOVES.mindread(s, tgt, 6); var mr2 = own().map(function(p){ return [spd(p), p.homing]; }); projectiles = [];
-      s._marks = 0; s._telX = 500; s._telY = 300; ONE_MOVES.rain(s, tgt, 7); var rain = own().map(function(p){ return p.vy; }); projectiles = [];
+      ONE_MOVES.mindread(s, tgt, 5); var mr1 = own().map(function(p){ return [spd(p), p.homing, p.dmg, p.life]; }); projectiles = []; s._q = [];
+      s._marks = 1; ONE_MOVES.mindread(s, tgt, 6); var mr2 = own().map(function(p){ return [spd(p), p.homing]; }); projectiles = []; s._q = [];
       var dmgs = [];
-      ['screechy', 'ring', 'seekers', 'rain'].forEach(function(k){ ONE_MOVES[k](s, tgt, 8); own().forEach(function(p){ dmgs.push(p.dmg); }); projectiles = []; });
-      return { scr1:scr1, scr4:scr4, scrDmg:scrDmg, ring:ring, seek:seek, mr1:mr1, mr2:mr2, rain:rain, maxDmg:Math.max.apply(null, dmgs), pl:PROJ_LIFE,
-        tel:[ONE_TEL.zap, ONE_TEL.screechy, ONE_TEL.rain, ONE_TEL.mindread, ONE_TEL.seekers, ONE_TEL.ring, ONE_TEL.sizeshift, ONE_TEL.ungrounded],
+      ['screechy', 'ring', 'knives'].forEach(function(k){ ONE_MOVES[k](s, tgt, 8); own().forEach(function(p){ dmgs.push(p.dmg); }); projectiles = []; s._q = []; });
+      return { scr1:scr1, scr3:scr3, scrDmg:scrDmg, ring:ring, knives:knives, mr1:mr1, mr2:mr2, maxDmg:Math.max.apply(null, dmgs), pl:PROJ_LIFE,
+        tel:[ONE_TEL.zap, ONE_TEL.screechy, ONE_TEL.fold, ONE_TEL.mindread, ONE_TEL.knives, ONE_TEL.ring, ONE_TEL.sizeshift, ONE_TEL.ungrounded],
         gaps:[0,1,2,3].map(function(m){ return oneGap({ _marks:m }); }) };
     })()`);
     expect(r.scr1, "Four's 6, now 6.8 (harder)").toBeCloseTo(6.8 * 1.35, 6);
-    expect(r.scr4, "Four's 7.5, now 8.4").toBeCloseTo(8.4 * 1.35, 6);
+    expect(r.scr3, "Four's 7.5, now 8.4").toBeCloseTo(8.4 * 1.35, 6);
     expect(r.scrDmg).toBe(33);
-    expect(r.ring.length, "Two's twelve, now fourteen").toBe(14);
+    expect(r.ring.length, "Two's twelve, now twenty-four").toBe(24);
     r.ring.forEach(v => expect(v, "Two's ring at 6.5, now 7.5").toBeCloseTo(7.5 * 1.35, 6));
-    expect(r.seek.length, "Four's three seekers, now five").toBe(5);
-    r.seek.forEach(([v, h]) => { expect(v).toBeCloseTo(5.6 * 1.35, 6); expect(h, 'homing grows with the speed: the same turning circle').toBeCloseTo(0.056 * 1.35, 6); });
-    expect(r.mr1.length).toBe(1);
+    expect(r.knives.length, "Four's five seekers, now eight knives").toBe(8);
+    r.knives.forEach(([v, h, d]) => { expect(v).toBeCloseTo(9.5 * 1.35, 6); expect(h, '"2, but homing."').toBeGreaterThan(0); expect(d, 'a knife hits for her 33').toBe(33); });
+    expect(r.mr1.length, 'three orbs a volley where Two threw one').toBe(3);
     expect(r.mr1[0][0], '"make mind read move slower": 8 where Two threw it at 13').toBeCloseTo(8 * 1.35, 6);
     expect(r.mr1[0][0], 'slower than it was').toBeLessThan(13 * 1.35);
     expect(r.mr1[0][1]).toBe(0);
     expect(r.mr1[0][2]).toBe(33);
     // (addProj stretches every shot's life by PROJ_LIFE, the old 80 frames included)
     expect(r.mr1[0][0] * r.mr1[0][3], 'and still reaches as far (80 frames at 17.55)').toBeCloseTo(Math.round(80 * r.pl) * 13 * 1.35, -1);
-    expect(r.mr2.length).toBe(2);
-    expect(r.mr2[0][1], 'its homing slowed with it, so it curves along the same line').toBeCloseTo(0.081 * 8 / 13, 6);
-    expect(r.rain.length, "Four's five drops, now seven").toBe(7);
-    r.rain.forEach(v => expect(v, "falling at 6, not Four's 5").toBeCloseTo(6 * 1.35, 6));
+    expect(r.mr2.length, 'five from tier 2').toBe(5);
+    expect(r.mr2[0][1], 'its homing slowed with it, so it curves along the same line').toBeCloseTo(0.06 * 1.35 * 8 / 13, 6);
     expect(r.maxDmg, '"not more damage tho": nothing hits past her 33').toBeLessThanOrEqual(33);
     // "Launched faster" is the shots above, 1.35x. The wind-ups and the gaps between attacks were 0.7x of Four's and Two's
     // too, which was the design's reading and not the owner's words, and with it nobody could beat her: the bans lift only
     // when she is beaten and there is "No way out" (the review's permanent-lock finding). The scripted player in
     // test/one-winnable.test.js won 0 of its 8 story fights at 0.7x and wins some at Four's and Two's own pace.
-    expect(r.tel, "Four's 50 and Two's 36").toEqual([50, 50, 50, 36, 36, 36, 36, 36]);
+    expect(r.tel, "Four's 50 and Two's 36 (the fold and the knives, the two she swapped in, have their own)").toEqual([50, 50, 58, 36, 44, 36, 36, 36]);
     expect(r.gaps, "bossAtkGap's own 100/72/52").toEqual([100, 72, 52, 52]);
   });
 
@@ -240,17 +241,19 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
           healed: one.hp - hp0, fx: oneFx.map(function(e){ return e.kind; }) };
       });
       return { deck: ONE_DECK.slice(), out: out, base: one._baseR };`);
-    expect(r.deck).toEqual(['zap', 'screechy', 'mindread', 'rain', 'seekers', 'ring', 'sizeshift', 'ungrounded']);
+    // INCOMING! became FOLDING ISLAND! and SEEKERS! became KNIFE FLURRY! (the owner, 2026-09-29/30: "it could be a floor-based attack as well. if
+    // your standing on the floor, its the floor, and on a platform, its the 3 closest platforms and the one your one." / "2, but homing.")
+    expect(r.deck).toEqual(['zap', 'screechy', 'mindread', 'fold', 'knives', 'ring', 'sizeshift', 'ungrounded']);
     expect(r.out.zap.pct, 'the zap column reaches a fighter standing on the floor').toBe(33);
-    expect(r.out.zap.fx.filter(k => k === 'column').length, 'the aimed column and its two copies near her (phase 1)').toBe(3);
-    expect(r.out.screechy.shots).toBeGreaterThan(200);
-    expect(r.out.mindread.shots).toBe(1);
+    expect(r.out.zap.fx.filter(k => k === 'column').length, "the aimed column and its two copies near her (phase 1) -- the move's next wave is on her queue").toBe(3);
+    expect(r.out.screechy.shots, 'the first ring of two (the second is on her queue)').toBeGreaterThan(100);
+    expect(r.out.mindread.shots, 'three orbs in the first volley').toBe(3);
     expect(r.out.mindread.pct, "Power Drain's 6, x1.5").toBe(9);
     expect(r.out.mindread.healed, 'and it heals her').toBe(25);
-    // "make all attacks except ghost fighter harder(not more damage tho)": more of each, never a harder hit
-    expect(r.out.rain.shots, "Four's five, now seven").toBe(7);
-    expect(r.out.seekers.shots, "Four's three, now five").toBe(5);
-    expect(r.out.ring.shots, "Two's twelve, now fourteen").toBe(14);
+    // "make all attacks except ghost fighter harder(not more damage tho)", then "much harder. more bullets! also longer attacks.": more of each, never a harder hit
+    expect(r.out.fold.shots, 'the fold is a jaw, not a shot').toBe(0);
+    expect(r.out.knives.shots, "Four's three seekers, now eight knives").toBe(8);
+    expect(r.out.ring.shots, "Two's twelve, now twenty-four a burst").toBe(24);
     expect(r.out.sizeshift.r, 'canon One grows GIANT (TPOT 23, 25)').toBe(Math.round(r.base * 1.4));
     expect(r.out.ungrounded.ung).toBe(true);
   });
@@ -363,19 +366,22 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
       var out = {};
       [1,2,3].forEach(function(t){
         setTier(one, t);
-        var take = function(fn, shape){ projectiles = []; fn(); var ps = projectiles.filter(function(p){ return p.owner===-2 && (!shape || p.shape===shape); });
-          return { n: ps.length, spd: ps.length ? +Math.hypot(ps[0].vx, ps[0].vy).toFixed(3) : 0, dmg: ps.length ? +ps[0].dmg.toFixed(3) : 0, fx: ps.length ? ps[0].fxTag : null }; };
-        one._aimX = you.x; one._aimY = hurtCY(you); one._telDir = 1; one._kickY = hurtCY(you);
+        // a shot's speed: its own, or -- a Moon rock that hangs over her and a planet that is compressed -- the speed it goes at
+        var take = function(fn, shape){ projectiles = []; fn(); var ps = projectiles.filter(function(p){ return p.owner===-2 && (!shape || shape.indexOf(p.shape) >= 0); });
+          var sp = function(p){ return p.oHang ? p.oHang.launch.spd : (p.oComp ? p.oComp.v2 : Math.hypot(p.vx, p.vy)); };
+          return { n: ps.length, spd: ps.length ? +sp(ps[0]).toFixed(3) : 0, dmg: ps.length ? +ps[0].dmg.toFixed(3) : 0, fx: ps.length ? ps[0].fxTag : null }; };
+        one._aimX = you.x; one._aimY = hurtCY(you); one._telDir = 1; one._kickY = hurtCY(you); one._eyeBurst = 0;
         one._handSpots = [{ x: you.x, y: oneSurf(you.x, feetY(you) - 4) }];
         var row = {};
         row.moonrocks = take(function(){ ONE_MOVES.moonrocks(one, you, ++BOSS_ATK_ID); });
         row.eyelasers = take(function(){ ONE_MOVES.eyelasers(one, you, ++BOSS_ATK_ID); });
         row.hands = take(function(){ ONE_MOVES.hands(one, you, ++BOSS_ATK_ID); });
-        row.orbitkick = take(function(){ ONE_MOVES.orbitkick(one, you, ++BOSS_ATK_ID); }, 'oneplanet');
+        row.orbitkick = take(function(){ ONE_MOVES.orbitkick(one, you, ++BOSS_ATK_ID); }, ONE_PLANETS);
         row.ghost = take(function(){ ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID); });
         var g = one._ghost; row.ghost.hit = g ? g._ghostHit : 0; row.ghost.gfx = g ? g._ghostFx : null; row.ghost.hp = g ? g._ghostHp : 0;
         row.ghost.haste = g ? g._hasteT > 0 : false; row.ghost.drift = g ? !!g._ghostDrift && g.slowed > 0 : false;
         if(g) oneGhostDown(g, true);
+        one._q = [];
         out[t] = row;
       });
       return out;`);
@@ -388,12 +394,14 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
       expect(c.dmg, `${k}: harder at tier 3`).toBeGreaterThan(a.dmg);
       expect(c.fx, `${k}: a different effect at the top`).not.toBe(a.fx);
     }
-    // "make all attacks except ghost fighter harder(not more damage tho)": a rock more a tier (it was 3/5/7), two hands more
-    // (1/3/5), and Out of Orbit's planets (1/2/3 a lane) now fly down the aimed lane and its 2/3/4 copies ("more of the same")
-    expect([r[1].moonrocks.n, r[2].moonrocks.n, r[3].moonrocks.n]).toEqual([4, 6, 8]);
-    expect([r[1].eyelasers.n, r[2].eyelasers.n, r[3].eyelasers.n], 'a pair, two pairs, then a flurry (a burst; there are two)').toEqual([2, 4, 18]);
-    expect([r[1].hands.n, r[2].hands.n, r[3].hands.n], 'hands under the fighter').toEqual([3, 5, 7]);
-    expect([r[1].orbitkick.n, r[2].orbitkick.n, r[3].orbitkick.n], 'planets kicked out of orbit, down 3, 4 and 5 lanes').toEqual([1 * 3, 2 * 4, 3 * 5]);
+    // "make all attacks except ghost fighter harder(not more damage tho)": a rock more a tier, two hands more, and Out of Orbit's planets (a lane's
+    // worth, down the aimed lane and its 2/3/4 copies: "more of the same"). THEN "one could be harder... much harder. more bullets! also longer
+    // attacks." (the owner, 2026-09-30): twice the rocks (8/10/15), a pair of volleys and then more of the lasers (2/3/4 volleys of a fan of 3/3/5, in
+    // each of two or three bursts), and twice the planets a lane (2/3/4) -- none of it a harder hit.
+    expect([r[1].moonrocks.n, r[2].moonrocks.n, r[3].moonrocks.n]).toEqual([8, 10, 15]);
+    expect([r[1].eyelasers.n, r[2].eyelasers.n, r[3].eyelasers.n], 'volleys x two eyes x a fan, a burst').toEqual([2 * 2 * 3, 3 * 2 * 3, 4 * 2 * 5]);
+    expect([r[1].hands.n, r[2].hands.n, r[3].hands.n], 'hands under the fighter, a wave').toEqual([3, 5, 7]);
+    expect([r[1].orbitkick.n, r[2].orbitkick.n, r[3].orbitkick.n], 'planets kicked out of orbit, 2, 3 and 4 down each of 3, 4 and 5 lanes').toEqual([2 * 3, 3 * 4, 4 * 5]);
     for (const k of ['moonrocks', 'hands', 'orbitkick']) {
       expect([r[1][k].dmg, r[2][k].dmg, r[3][k].dmg], `${k}: harder, not harder-hitting`)
         .toEqual({ moonrocks: [0.8, 0.9, 1.0], hands: [0.8, 0.9, 1.0], orbitkick: [1.0, 1.1, 1.2] }[k].map(m => +(33 * m).toFixed(3)));
@@ -424,7 +432,8 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
         if (bolts.length > n0){
           var fresh = bolts.slice(n0), aim = locks[locks.length - 1].aim;
           bursts.push({ n: fresh.length, ids: fresh.map(function(p){ return p.bossAtk; }), timer: one._atkTimer,
-            err: Math.max.apply(null, fresh.map(function(p){ var t = (aim - p.x)/p.vx; return Math.abs(p.y + p.vy*t - one._aimY); })) });
+            // (a fan of three: the middle bolt of each eye goes dead at the lock, the other two a little to either side of it)
+            err: Math.min.apply(null, fresh.map(function(p){ var t = (aim - p.x)/p.vx; return Math.abs(p.y + p.vy*t - one._aimY); })) });
           n0 = bolts.length;
         }
         if (one._tel > 0 && one._tel <= 3) you.x += 30;
@@ -433,7 +442,7 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect(r.bursts.length, '"eye lasers should have two bursts"').toBe(2);
     expect(r.locks.length, 'each one tracks and then locks').toBe(2);
     r.bursts.forEach(b => {
-      expect(b.n, 'a pair at tier 1, each burst').toBe(2);
+      expect(b.n, 'two volleys of a fan of three from each of two eyes at tier 1, a burst ("much harder")').toBe(2 * 2 * 3);
       expect(b.err, 'the bolts go where you were at that lock').toBeLessThan(1);
     });
     expect(r.locks[1].aim - r.locks[0].aim, 'between the bursts the aim followed you again').toBeGreaterThan(40);
@@ -477,16 +486,19 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
       [you, B].forEach(function(f){ f.pct = 0; f.invuln = 0; f.vx = 0; f.y = one.y + 20; });
       one._telDir = 1; one._kickY = hurtCY(you); one._kickLanes = null; projectiles = [];
       ONE_MOVES.orbitkick(one, you, ++BOSS_ATK_ID);
-      var ps = projectiles.filter(function(p){ return p.shape==='oneplanet'; });
+      // (the planets are Earth, the Really Weird Planet and the Skateboard Planet now, each its own shape)
+      var ps = projectiles.filter(function(p){ return ONE_PLANETS.indexOf(p.shape) >= 0; });
       return { you: you.pct, youVx: you.vx, behind: B.pct, planets: ps.map(function(p){ return p.vx; }), ys: ps.map(function(p){ return p.y; }),
         y0: hurtCY(you), gap: ONE_LANE_GAP, floor: groundY() };`);
     expect(r.you).toBe(33);
     expect(r.youVx, 'sent the way she kicked').toBeGreaterThan(0);
     expect(r.behind, 'nobody behind her').toBe(0);
-    expect(r.planets.length, 'a planet down the marked lane and down each of its two copies (tier 1)').toBe(3);
+    // "much harder. more bullets!" (the owner, 2026-09-30): two planets down the marked lane and down each of its two copies (tier 1), where there was one
+    expect(r.planets.length, 'two planets down the marked lane and down each of its two copies (tier 1)').toBe(2 * 3);
     r.planets.forEach(vx => expect(vx, 'every lane kicked the same way').toBeGreaterThan(0));
     expect(r.ys[0], 'the first is the marked lane').toBeCloseTo(r.y0, 6);
-    const ys = [...r.ys].sort((a, b) => a - b);
+    const ys = [...new Set(r.ys)].sort((a, b) => a - b);   // (a lane's planets all start on its line)
+    expect(ys.length, 'three lanes').toBe(3);
     for (let i = 1; i < ys.length; i++) expect(ys[i] - ys[i - 1], 'lanes a gap apart').toBeGreaterThanOrEqual(r.gap);
     ys.forEach(y => expect(y, 'never under the floor').toBeLessThan(r.floor));
   });
@@ -649,7 +661,7 @@ describe('Zap to Dust and Out of Orbit come with copies of themselves near her',
       try {
         ['zap', 'orbitkick'].forEach(function(k){
           oneNextMove = function(){ return k; };
-          one._tel = 0; one._atkTimer = 1; oneFx = []; projectiles = [];
+          one._tel = 0; one._atkTimer = 1; oneFx = []; projectiles = []; one._q = [];   // (a move that runs on holds the next wind-up until its queue is empty)
           updateOne(one, you);
           var shown = k==='zap' ? one._zapCols.map(function(c){ return Math.round(c.x); }) : one._kickLanes.map(Math.round);
           one._atkTimer = 1e9; while (one._tel > 0) updateOne(one, you);
@@ -854,15 +866,15 @@ describe("Lightning hits twice as hard in One's fight, and only there", () => {
 });
 
 describe('winning and losing', () => {
-  it('shatters over sixty frames, then wins: never a Boss Rush clear, and the chain is told', () => {
+  it('plays her ending (she crumbles, shatters, and a black hole takes the pieces), then wins: never a Boss Rush clear, and the chain is told', () => {
     const r = fight(['Firey'], { story: true }, `
       var rush = JSON.stringify(BOSSRUSH);
       one._atkTimer = 1e9; one.hp = 0;
-      var frames = 0; while (running && frames < 200){ step(); frames++; }
+      var frames = 0; while (running && frames < 400){ step(); frames++; }
       return { won: ONEFIGHT.won, over: ONEFIGHT.over, frames: frames, told: window.__oneEnd, rush: JSON.stringify(BOSSRUSH) === rush,
         cleared: !!(PROFILE && PROFILE.bossesCleared && PROFILE.bossesCleared.One), result: ONEFIGHT.result, gone: !summons.some(function(s){ return s._oneFight; }) };`);
     expect(r.won && r.over).toBe(true);
-    expect(r.frames, 'her value flickers and crumbles first (TPOT 25)').toBeGreaterThanOrEqual(60);
+    expect(r.frames, 'her value flickers and crumbles first (TPOT 25), then the scene runs its length (test/boss-one.test.js reads it)').toBeGreaterThanOrEqual(140);
     expect(r.told).toBe(true);
     expect(r.rush).toBe(true);
     expect(r.cleared, 'not a Boss Rush boss').toBe(false);
@@ -1053,7 +1065,8 @@ describe("the review's fixes to her fight", () => {
     expect(four.healed, 'four drained, scaled like the hits').toBe(Math.round(36 * 2.8 * four.mult));
   });
 
-  it('each phase line she crosses heals your side and hands back a lost stock, never past the stocks you started with', () => {
+  // "also, no stock per phase." (the owner, 2026-09-30): the heal stays, the stock a phase line used to hand back is gone.
+  it('each phase line she crosses heals your side and hands back NO stock ("also, no stock per phase.")', () => {
     const r = fight(['Lightning'], { story: true }, `
       one._atkTimer = 1e9;
       you.pct = 100; you.stocks = 2; one.hp = 1490; step();
@@ -1061,8 +1074,8 @@ describe("the review's fixes to her fight", () => {
       you.pct = 30; one.hp = 990; step();
       return { first: first, second: { pct: you.pct, stocks: you.stocks, marks: one._marks } };`);
     expect(r.first.pct).toBeCloseTo(100 - 64, 0);
-    expect([r.first.stocks, r.first.marks]).toEqual([3, 1]);
-    expect(r.second, 'three was the start: no fourth').toEqual({ pct: 0, stocks: 3, marks: 2 });
+    expect([r.first.stocks, r.first.marks], 'healed 64, and still on the two stocks you had').toEqual([2, 1]);
+    expect(r.second, 'the second line heals the rest and still gives no stock').toEqual({ pct: 0, stocks: 2, marks: 2 });
   });
 
   it('keeps the teams map\'s own floating platforms, every one where the teams builder laid it', () => {
@@ -1124,6 +1137,7 @@ describe('the whole fight, drawn', () => {
       startOneFight(['Lightning', 'Firey'], { onEnd:function(){ return true; } });
       var one = summons.find(function(s){ return s._oneFight; });
       fighters.forEach(function(f){ f.controller = 'ai'; });
+      one._spN = 4;   // her moves run longer now ("much harder": longer attacks), so the ghost is brought forward to be her first special: it is on screen within this budget
       var n = { fx:0, bar:0 }, fx = drawOneFx, bar = drawOneBar;
       drawOneFx = function(){ n.fx++; return fx.apply(this, arguments); };
       drawOneBar = function(){ n.bar++; return bar.apply(this, arguments); };

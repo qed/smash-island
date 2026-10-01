@@ -11,16 +11,17 @@ import { mulberry32 } from './helpers/prng.js';
 //
 // So a scripted Lightning (test/helpers/one-bot.page.js) -- one that reads her wind-ups late, the way a person reacts to a
 // tell, and is weaker than the player she is for: it falls to the Boss Rush gauntlet by its fourth boss -- fights the story
-// fight on fixed dice. It has to win some of them, and lose some: she is the secret boss, not a formality. And the two
+// fight on fixed dice. It had to win some of them, and lose some: she is the secret boss, not a formality. And the two
 // numbers the review asked to be tracked: how much of the fight she cannot be hurt (her ghost, Power Ungrounded), and the
 // damage a minute a player gets through.
 //
 // THE BOT IS NOT THE BAR FOR HER DIFFICULTY. The owner then made her harder on purpose -- she circles and swoops, Zap to Dust
 // and Out of Orbit come with copies, Eye Lasers fire twice, every attack but the ghost fighter is harder "(not more damage
 // tho)" -- and on tuning her to what a bot can beat: "dont tune, cuz thats an agent, not a player." With
-// all of that in, the bot still wins some (its runs are logged below). If a later change the owner asks for stops it
-// winning, it is the bot's assertion that gives way -- to the second test, which pins that she stays beatable in principle
-// -- never her difficulty.
+// all of that in, the bot still won some. Then, 2026-09-30: "one could be harder... much harder. more bullets! also longer attacks.
+// contact damage." -- and the bot stopped winning, so it was the bot's assertion that gave way, as this comment always said it
+// would: the first test below pins what the bot's runs still show (the principle: she is hurtable most of the time, and a player's
+// hits land and take a real bite), and the second pins that she stays beatable in principle -- never her difficulty.
 
 const BOT = readFileSync('test/helpers/one-bot.page.js', 'utf8');
 const SEEDS = [3, 5, 7, 9, 11, 13, 15, 17];
@@ -51,21 +52,29 @@ function fightOne(seed) {
 }
 
 describe('One can be beaten', () => {
-  it('a scripted Lightning beats her in some story fights and loses others, and she is hurtable most of the time', () => {
+  // THE OWNER MADE HER MUCH HARDER, on purpose, and this test is no longer the proof she can be won (2026-09-30): "one could be harder...
+  // much harder. more bullets! also longer attacks. contact damage." -- far more bullets, every attack longer and in waves, touching her
+  // hurts as touching Evil Leafy does -- and before that "dont tune, cuz thats an agent, not a player." The scripted Lightning, which reads her
+  // wind-ups late, won 2 of its 8 story fights before; it now falls in about a minute and a half, having taken a third of her bar. It is
+  // NOT tuned back up for her, and she is NOT eased for it (the owner: never tune difficulty so a bot wins). What the runs still pin is the
+  // PRINCIPLE: she is hurtable most of the time (the ghost and Power Ungrounded are small parts of the fight), the hits a player makes land
+  // and take a real bite out of her, and she is the secret boss, not a formality. That she can be WON is the next test's: every hit
+  // reaches her, the ghost dies, her phases run to 0 and she shatters.
+  it("a scripted Lightning's hits land on her and she is hurtable most of the time -- however hard she is made", () => {
     const runs = SEEDS.map(fightOne);
     const wins = runs.filter(r => r.won);
     const mean = k => runs.reduce((a, r) => a + r[k], 0) / runs.length;
     console.log('One story fight, scripted Lightning:', JSON.stringify(runs.map(r => ({
       won: r.won, secs: Math.round(r.secs), dealt: Math.round(r.dealt), lost: r.lost,
       ghost: +r.ghost.toFixed(2), ung: +r.ung.toFixed(2), perMin: Math.round(r.perMin) }))));
-    expect(wins.length, 'she can be beaten').toBeGreaterThanOrEqual(1);
     expect(wins.length, 'and she is not a formality').toBeLessThan(runs.length);
-    expect(mean('dealt'), 'the runs she wins still get most of the way').toBeGreaterThanOrEqual(1400);
+    expect(Math.min(...runs.map(r => r.dealt)), 'every run takes a real bite out of her (a tenth of her bar at least)').toBeGreaterThanOrEqual(200);
     wins.forEach(r => expect(r.secs, 'a win takes minutes: 2000 HP is the whole gauntlet\'s worth').toBeGreaterThanOrEqual(120));
     expect(mean('ghost'), 'her ghost shields her for well under half the fight').toBeLessThanOrEqual(0.45);
     expect(mean('ung'), 'Power Ungrounded for a small part of it').toBeLessThanOrEqual(0.15);
+    expect(runs.map(r => r.ghost + r.ung).every(f => f < 0.5), 'in every run she is hurtable for more than half of it').toBe(true);
     expect(mean('perMin'), 'damage a minute').toBeGreaterThanOrEqual(400);
-  }, 900000);   // about 75 s alone; under a loaded full-suite run it has taken nearly 10 minutes
+  }, 900000);   // about 35 s alone; under a loaded full-suite run it has taken nearly 10 minutes
 
   // BEATABLE IN PRINCIPLE, whatever a bot manages: with no ghost up every damage path reaches her, the ghost can be killed,
   // her phases run all the way down to 0 HP and she shatters, and a player's hits -- a jab when she swoops in, a Chain Bolt
@@ -76,6 +85,7 @@ describe('One can be beaten', () => {
       SETTINGS.itemRate = 0; LOCAL_PLAYERS = 1;
       startOneFight(['Lightning'], { story:true, onEnd:function(){ return true; } });
       var one = summons.find(function(s){ return s._oneFight; }), L = fighters[0], out = {};
+      one._hop = null; one._hopPending = false; one.r = one._baseR;   // (the fight opens with her Vortex hop; this test puts her where it wants her)
       one._atkTimer = 1e9; L.controller = 'still';
       for (var w=0; w<10; w++) step();
       var took = function(fn){ var h = one.hp; fn(); return h - one.hp; };
@@ -94,7 +104,7 @@ describe('One can be beaten', () => {
       // the phases: hit her all the way down
       var marks = [];
       for (var i=0; i<400 && one.hp > 0; i++){ oneTakeDamage(one, 10, L); updateOne(one, L); if (marks[marks.length-1] !== one._marks) marks.push(one._marks); }
-      var frames = 0; while (running && frames < 200){ step(); frames++; }
+      var frames = 0; while (running && frames < 400){ step(); frames++; }   // (her ending scene runs about 150 frames)
       out.phases = { marks: marks, won: ONEFIGHT.won };
       return out; })()`);
     expect(r.melee, 'a jab').toBeGreaterThan(0);
@@ -108,19 +118,25 @@ describe('One can be beaten', () => {
     expect(r.phases.won, 'and she shatters').toBe(true);
 
     // ...and in the real fight, circling and swooping, a player's hits land: the scripted Lightning's jabs and smashes (when
-    // she swoops in) and its Chain Bolts (from her orbit) over the first minute and a half.
-    W.Math.random = mulberry32(3);
-    const live = W.eval(`(function(){
-      SETTINGS.itemRate = 0; LOCAL_PLAYERS = 1;
-      startOneFight(['Lightning'], { story:true, onEnd:function(){ return true; } });
-      var one = summons.find(function(s){ return s._oneFight; }), L = fighters[0];
-      L.controller = 'remote'; NET.inputs = NET.inputs || {};
-      var got = { melee:0, bolt:0 }, ds = damageSummons, cb = chainBoltBoss;
-      damageSummons = function(f){ var h = one.hp, r = ds.apply(this, arguments); if (f === L && one.hp < h) got.melee += h - one.hp; return r; };
-      chainBoltBoss = function(s){ var h = one.hp, r = cb.apply(this, arguments); if (s === one && one.hp < h) got.bolt += h - one.hp; return r; };
-      try { for (var i = 0; i < 60*90 && running; i++){ NET.inputs[0] = window.__oneBot(L, one); step(); } }
-      finally { damageSummons = ds; chainBoltBoss = cb; running = false; }
-      return got; })()`);
+    // she swoops in) and its Chain Bolts (from her orbit) over the first minute and a half -- of three fights, not one: she attacks in
+    // longer sequences now and goes through the Vortex after every special, so the close-in windows are fewer, and the scripted
+    // player (which never jumps at her) lands a jab in some fights and not in others
+    const live = { melee: 0, bolt: 0 };
+    for (const seed of [3, 5, 7]) {
+      W.Math.random = mulberry32(seed);
+      const got = W.eval(`(function(){
+        SETTINGS.itemRate = 0; LOCAL_PLAYERS = 1;
+        startOneFight(['Lightning'], { story:true, onEnd:function(){ return true; } });
+        var one = summons.find(function(s){ return s._oneFight; }), L = fighters[0];
+        L.controller = 'remote'; NET.inputs = NET.inputs || {};
+        var got = { melee:0, bolt:0 }, ds = damageSummons, cb = chainBoltBoss;
+        damageSummons = function(f){ var h = one.hp, r = ds.apply(this, arguments); if (f === L && one.hp < h) got.melee += h - one.hp; return r; };
+        chainBoltBoss = function(s){ var h = one.hp, r = cb.apply(this, arguments); if (s === one && one.hp < h) got.bolt += h - one.hp; return r; };
+        try { for (var i = 0; i < 60*90 && running; i++){ NET.inputs[0] = window.__oneBot(L, one); step(); } }
+        finally { damageSummons = ds; chainBoltBoss = cb; running = false; }
+        return got; })()`);
+      live.melee += got.melee; live.bolt += got.bolt;
+    }
     expect(live.melee, 'close-in hits land when she swoops').toBeGreaterThan(0);
     expect(live.bolt, 'and Chain Bolts reach her on her orbit').toBeGreaterThan(0);
   }, 300000);

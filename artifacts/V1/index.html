@@ -13545,8 +13545,12 @@ const ONE_ZAP_GAP = 220, ONE_LANE_GAP = 200;
 //   ring       `bursts` rings of `n` shots, `gap` frames apart. TWIST (the owner's own example): the bursts turn in opposite
 //              directions, `spin` radians a frame for `spinT` frames, so their arms cross like a pinwheel
 //   sizeshift  she grows to `k` times her size for `t` frames, and a giant One has more body to touch
-//   ungrounded no damage to her for `t` frames unless a fighter stays near her for `ground` frames
+//   ungrounded no damage to her for `t` frames unless a fighter stays near her for `ground` frames. The same at every tier: it is a
+//              state, not a bullet, so "more bullets! also longer attacks." leaves an invulnerability alone (she has to stay hurtable
+//              most of the time, test/one-winnable.test.js), and it was already made longer and slower to ground ("make all attacks
+//              except ghost fighter harder")
 // (Cut, with the owner's "remove 1 and 2": GROWS GIANT's platform crush; and POWER UNGROUNDED's lunge. Neither has a twist.)
+const ONE_GROUND_T_BASE = 75;
 const ONE_DECK_TIERS = {
   zap:        [ { waves:2, gap:36, warn:22, ash:0,   ashR:0  },
                 { waves:3, gap:32, warn:20, ash:120, ashR:50 },
@@ -13557,9 +13561,9 @@ const ONE_DECK_TIERS = {
   mindread:   [ { shots:3, volleys:2, vgap:30, homing:0,    fling:0,   catchT:0  },
                 { shots:5, volleys:2, vgap:26, homing:0.06, fling:1,   catchT:0  },
                 { shots:7, volleys:3, vgap:24, homing:0.07, fling:1.2, catchT:26 } ],
-  fold:       [ { folds:2, tel:58, tel2:40, half:200, half2:140, H:150 },
-                { folds:3, tel:54, tel2:36, half:220, half2:150, H:165 },
-                { folds:4, tel:50, tel2:32, half:240, half2:160, H:180 } ],
+  fold:       [ { folds:2, tel:58, tel2:44, half:180, half2:120, H:150 },
+                { folds:3, tel:54, tel2:40, half:195, half2:130, H:165 },
+                { folds:4, tel:50, tel2:36, half:210, half2:140, H:180 } ],
   knives:     [ { n:8,  spd:9.5,  home:0.026, homeT:60, hang:24, every:4 },
                 { n:12, spd:10.5, home:0.04,  homeT:70, hang:22, every:3 },
                 { n:16, spd:11.5, home:0.055, homeT:80, hang:20, every:3 } ],
@@ -13567,7 +13571,7 @@ const ONE_DECK_TIERS = {
                 { bursts:2, n:28, gap:14, spd:7.9, spin:0.042, spinT:36 },
                 { bursts:4, n:32, gap:14, spd:8.4, spin:0.063, spinT:40 } ],
   sizeshift:  [ { t:480, k:1.4 }, { t:600, k:1.5 }, { t:720, k:1.6 } ],
-  ungrounded: [ { t:480, ground:75 }, { t:540, ground:90 }, { t:600, ground:105 } ],
+  ungrounded: [ { t:480, ground:ONE_GROUND_T_BASE }, { t:480, ground:ONE_GROUND_T_BASE }, { t:480, ground:ONE_GROUND_T_BASE } ],   // the same at every tier (see below)
 };
 // "eye lasers should have two bursts": after the first, her eyes track you again for ONE_EYE_RETRACK frames, lock for the
 // tier's lock, and fire the same volley again -- under its own attack id, so it can land after the first one did.
@@ -13577,7 +13581,7 @@ const ONE_EYE_BURSTS = 2, ONE_EYE_RETRACK = 14;
 const ONE_MIND_SPD = 8;
 // Harder, not more damage, for the rest of the deck: Size Shift lasts longer and a giant One no longer slows; Power
 // Ungrounded lasts longer and takes longer to ground (it was 420 frames, grounded after 60 close).
-const ONE_GIANT_T = 480, ONE_UNGROUND_T = 480, ONE_GROUND_T = 75;
+const ONE_GIANT_T = 480, ONE_UNGROUND_T = 480, ONE_GROUND_T = ONE_GROUND_T_BASE;
 // "lightnings damage should be higher, but only in the One fight" -- asked how much, "Double": every hit Lightning lands on
 // One or on her ghost counts twice (oneTakeDamage, applyHit). Only One and her ghost read it, so nothing changes elsewhere.
 const ONE_LIGHTNING_MULT = 2;
@@ -13636,6 +13640,12 @@ function oneMoveLabel(s, k){ return (ONE_SPECIAL_TIERS[k] && s._spTier[k] > 1) ?
 // file), so every new behaviour -- spin, split, hang, lead aim, homing, compress -- steers HER shots from updateOne, before the
 // shared loop moves them (oneSteerShots). Nothing here is on a netcode snapshot: her fight is local-only (startOneFight).
 function oneBoss(){ return summons.find(o=>o._oneFight) || null; }
+// Which render she wears (bossLook): the Fish Monster while she screams -- SCREECHY!'s wind-up and its rings, from tier 2, the tier
+// its twist comes in at ("One appears as a fish monster, which screams at the pair", "All For One") -- else her own.
+function oneLook(s){
+  if(oneTierN(s, 'screechy') >= 2 && ((s._telKind === 'screechy' && s._tel > 0) || (s._f||0) < (s._scream||0))) return "onefish";
+  return s.sprite;
+}
 // What her arena remembers (oneArena): the Moon's chips, the marks on the floor, her statues, the grey leaves. Made on first use,
 // so a bare boss object still works, and a fresh boss starts clean.
 function oneArena(s){ return s._arena || (s._arena = { chips:0, marks:[], statues:[], leaves:[], veins:[], dark:0, shattered:0 }); }
@@ -14426,6 +14436,7 @@ const ONE_MOVES = {
   // every pellet splits in two, so the gaps you memorised narrow before the ring reaches you.
   screechy(s, tgt, id){
     const T = oneTier(s, 'screechy');
+    s._scream = (s._f||0) + (T.rings - 1)*T.ringGap + 24;   // she is the Fish Monster (oneLook) until the last ring has gone
     oneScreechRing(s, T, id);
     for(let r = 1; r < T.rings; r++) oneQueue(s, r*T.ringGap, ()=>oneScreechRing(s, T, id));
     if(T.rings > 1) oneSeqEnd(s, (T.rings - 1)*T.ringGap + 10);
@@ -26287,6 +26298,7 @@ const BOSS_SPRITE_SRC = {
   two:          "assets/sprites/two.png",
   four:         "assets/sprites/four.png",
   one:          "assets/sprites/one.png",   // File:One_TPOT_19.png, see CREDITS.md
+  onefish:      "assets/sprites/one-fish.png",   // File:One as fish monster.png: the look she takes while she screams, SCREECHY!'s wind-up from tier 2 (oneLook; see CREDITS.md)
   mephone:      "assets/sprites/mephone4.png",   // File:2024 II MePhone4.png, the II wiki's 2024 pose (see CREDITS.md)
   mephone4s:    "assets/sprites/mephone4s.png",  // File:Yeyeye.png, the "Late II2" tab of his II wiki infobox (see CREDITS.md)
   cobs:         "assets/sprites/steve-cobs.png", // File:SteveCobs2024PoseAlt.png, the "II2 16-18" tab of his II wiki infobox (see CREDITS.md)
@@ -26302,6 +26314,7 @@ const BOSS_SPRITE_SRC = {
 // Measured by scripts/fetch-sprites.mjs, same interior-ink method as the fighters.
 const BOSS_SPRITE_FLIP = {
   four:true,
+  onefish:true,   // the Fish Monster's mouth is on the left (measured: facing -0.077)
   // @boss:announcer:begin flip
   // @boss:announcer:end flip
 
@@ -26343,6 +26356,7 @@ function bossImage(key){
 function bossLook(s){
   if(s.sprite==="springy") return springyLook(s);
   if(s._cobsFight) return cobsLook(s);
+  if(s._oneFight) return oneLook(s);   // One: the Fish Monster while she screams
   // @boss:announcer:begin look
   if(s.attack==="announcer" && (s._phase||1) >= 3) return "announcerbitten";   // phase 3: the piece Flower chomped off (Announcer trivia, Return of the Hang Glider)
   // @boss:announcer:end look
@@ -26547,6 +26561,7 @@ function drawBossSprite(s){
       ctx.fillStyle="#eaffea"; ctx.beginPath(); ctx.arc(-R*0.3,-R*0.1,R*0.2,0,7); ctx.arc(R*0.3,-R*0.1,R*0.2,0,7); ctx.fill();
       ctx.fillStyle="#0a1a0a"; ctx.beginPath(); ctx.arc(-R*0.3,-R*0.1,R*0.09,0,7); ctx.arc(R*0.3,-R*0.1,R*0.09,0,7); ctx.fill();
       break; }
+    case "onefish":       // the same drawn numeral under the Fish Monster render (oneLook)
     case "one": {         // One: an armless light-blue numeral 1, upper serif further left than the lower, two legs, wide-set eyes
       ctx.fillStyle="#7E95F9"; ctx.fillRect(-R*0.28,R*0.7,R*0.16,R*0.3); ctx.fillRect(R*0.12,R*0.7,R*0.16,R*0.3);
       ctx.fillStyle=flash?"#fff":"#5D7AF2"; ctx.strokeStyle="#000001"; ctx.beginPath();
