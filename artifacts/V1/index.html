@@ -7117,9 +7117,9 @@ const BOSS_ROSTER = [
   // beat (he shot him dead in 4Seeing The Future), and before Four, because the loop ends when the boss NAMED Four dies
   // and anything after him is never reached. Mobile: a gunslinger who walks you down, stops at S4.standoff to shoot, and
   // steps back from anyone inside S4.backoff.
-  // HP 260, between the Dragon's 250 and Two's 285. The studio: he took over hosting (4Seeing The Future) and forced his
-  // way into co-hosting (The Tile Divide).
-  {name:"MePhone4S",           color:"#c8102e", hp:260, big:2.5, attack:"mephone4s", arena:"studio",  stationary:false, sprite:"mephone4s"},   // Boss 8
+  // HP 260, between the Dragon's 250 and Two's 285. His arena is his own Super Death Trap over the quicksand ("Each its own": the owner,
+  // 2026-09-29; The Tile Divide): the beam, the sawblades, the crusher, the pit below (BOSS_ARENA_HAZARD.deathtrap).
+  {name:"MePhone4S",           color:"#c8102e", hp:260, big:2.5, attack:"mephone4s", arena:"deathtrap", stationary:false, sprite:"mephone4s"},   // Boss 8
   // @boss:mephone4s:end roster
 
   // @boss:dragon:begin roster
@@ -12844,6 +12844,7 @@ function updateRejectionPortal(s){
 //             kit still reads fuse, poison and collapse (the cookie status) and spikeGap, so they stay
 //   tel       the wind-up of each move; gaps the frames between his turns, by phase (before BOSS_PACE): a little longer than the usual 100/72/52,
 //             because the arena's sawblades and quicksand now press as well ("if it makes sense for a hazard, reduce boss difficulty and add a hazard")
+//   muz       where the pistol's muzzle is from his hand, in his radius: forward along the aim, and up off it (the barrel sits over the grip, as the show draws it)
 //   fz*       the freeze (phase 2 on): a round stops mid-air at `fzAt` of the way to its mark (at least fzMin px out) for fzFor frames, and every
 //             round of the volley starts again together (fzStep: the gap between rounds)
 //   car*      I'LL BE BACK!: carBack the frames between the first car clearing the far edge and the second starting its rev; carIn his walk back in
@@ -12858,13 +12859,15 @@ function updateRejectionPortal(s){
 const S4 = { lock:18, bullet:18, gunKb:12, spread:0.07, standoff:180, backoff:100, car:14, carKb:11, carDelay:30, carGap:50,
              fuse:240, poison:110, collapse:30, cookieGap:90, spikeGap:40,
              tel:{ gun:42, car:46, prizes:36, vista:46, popup:46, shove:46 }, gaps:[0, 108, 78, 56],
-             gunLen:0.5, fzAt:0.36, fzMin:70, fzFor:14, fzStep:5,
+             muz:[0.54, 0.20], fzAt:0.36, fzMin:70, fzFor:14, fzStep:5,
              carBack:40, carIn:22,
              prize:{ pairs:[0, 1, 2, 3], gap:20, T:58, sawR:14, sawKb:9, bleed:60, lolliAt:12, lolliV:12, lolliR:13, lolliKb:7, headY:40, tail:34 },
              lemon:{ n:[0, 1, 2, 3], gap:18, T:60, r:20, kb:14, arc:3, tail:30 },
              pop:{ n:[0, 1, 2, 3], r:76, reach:110, lock:16, kb:[5, -15], sinkAt:0.6, hold:6, rise:11, peak:70, stand:16, again:26, sink2:12, beat:[22, 30, 10] },
              shove:{ n:[0, 1, 1, 2], spd:[0, 15, 17, 19], w:[0, 180, 210, 240], life:[0, 150, 210, 270], kb:13, skid:0.82, rec:24, again:24, lock:16, top:120, lead:60 },
-             crush:{ at:150, warn:30, fall:34, kb:14, r:34 }, flip:{ at:186, hold:150, turn:10 } };
+             saw:{ r:24, home:70, amp:[0, 0, 36, 64], w:0.034, frac:0.3, kb:8, gap:40 },
+             crush:{ at:150, warn:30, fall:34, kb:14, r:34 }, flip:{ at:186, hold:150, turn:10 },
+             end:{ total:96, hold:1500, snap:12, glove:34, fly:26, cageW:170, cageH:96 } };
 
 // ---- small helpers ----------------------------------------------------------------------------------------------------
 function s4Hz(s){ return s._hz || (s._hz = {}); }
@@ -12874,7 +12877,7 @@ function s4Live(f){ return !!f && !f.dead; }
 function s4Floor(f){ const y = surfaceBelow(f.x, f.y); return y != null ? y : groundY(); }
 // His hands, in world space: the front one (the side he faces: the gun, the chainsaw, Taco) and the back one (the lollipop).
 function s4Hand(s, back){ const f = s.face < 0 ? -1 : 1, R = s.r;
-  return back ? { x:s.x - f*R*0.52, y:s.y + R*0.30 } : { x:s.x + f*R*0.6, y:s.y - R*0.02 }; }
+  return back ? { x:s.x - f*R*0.62, y:s.y + R*0.46 } : { x:s.x + f*R*0.6, y:s.y - R*0.02 }; }
 // A lob that lands at (X, Y) after T frames, by the projectile step's own rules (move, then gravity 0.34).
 function s4Lob(x0, y0, X, Y, T){ const g = 0.34; return { vx:(X - x0)/T, vy:(Y - y0 - g*T*(T - 1)/2)/T }; }
 
@@ -12931,11 +12934,21 @@ function s4TrackSight(s, tgt){
     if(typeof s._aimX==='number') s.face = Math.sign(s._aimX - s.x) || s.face;   // his gun hand is on the side he faces
   }
 }
+// The pistol's muzzle for an aim at (ax, ay): from his hand, S4.muz[0] of his radius along the barrel and S4.muz[1] up off it; the angle is the one from the muzzle to the
+// aim, so the sight, the pistol drawn along it and the round all share one line (two passes settle it).
+function s4Muzzle(s, ax, ay){
+  const h = s4Hand(s, false), R = s.r; let a = Math.atan2(ay - h.y, ax - h.x), m = h;
+  for(let i = 0; i < 3; i++){
+    const side = Math.cos(a) < 0 ? -1 : 1;
+    m = { x:h.x + R*(S4.muz[0]*Math.cos(a) + S4.muz[1]*side*Math.sin(a)), y:h.y + R*(S4.muz[0]*Math.sin(a) - S4.muz[1]*side*Math.cos(a)) };
+    a = Math.atan2(ay - m.y, ax - m.x);
+  }
+  return { x:m.x, y:m.y, a:a };
+}
 function s4Gun(s, tgt, id){
   const ph = s4PhT(s), R = s.r, f = s.face < 0 ? -1 : 1, hand = s4Hand(s, false), H = s4Hz(s);
   const ax = s._aimX != null ? s._aimX : (tgt ? tgt.x : hand.x + f*300), ay = s._aimY != null ? s._aimY : (tgt ? tgt.y : hand.y);
-  const base = Math.atan2(ay - hand.y, ax - hand.x), rounds = ph >= 3 ? 3 : (ph === 2 ? 2 : 1);
-  const mx = hand.x + Math.cos(base)*R*S4.gunLen, my = hand.y + Math.sin(base)*R*S4.gunLen;
+  const M = s4Muzzle(s, ax, ay), base = M.a, rounds = ph >= 3 ? 3 : (ph === 2 ? 2 : 1), mx = M.x, my = M.y;
   const fzD = Math.max(S4.fzMin, Math.hypot(ax - mx, ay - my)*S4.fzAt);
   for(let i=0;i<rounds;i++){
     const ang = base + (i - (rounds - 1)/2)*S4.spread;
@@ -13333,7 +13346,32 @@ function s4PhaseBeat(s, ph){
 // BOSS_ARENA_HAZARD.deathtrap = { step: s4HazStep, draw: s4HazDraw }. The state is b._hz: sand [[centre, half-width, the frame it goes live, the frame it goes]...],
 // saw [x, x], flip [platform x, the frame it began], thunder (the frame of the last bolt). A client draws from it as it is.
 function s4HazStep(b, H, tgt){
-  const gy = groundY(), t = hazardT;
+  const gy = groundY(), t = hazardT, ph = Math.min(3, Math.max(1, b._phase||1)), SW = S4.saw;
+  // the sky's colour follows the phase ("P2: the sky reddens, lightning starts"), eased, and a bolt every so often from phase 2 on (never closer than 6 s)
+  H.tint = Math.round((((H.tint||0) + ([0, 0.55, 1][ph - 1] - (H.tint||0))*0.03))*1000)/1000;
+  if(ph >= 2){ if(H.nextBolt == null) H.nextBolt = t + 240; if(t >= H.nextBolt){ H.thunder = t; H.nextBolt = t + 360 + (t*7)%240; } }
+  // the sawblades on the beam, one at each end: parked in phase 1 ("the trap idle"), patrolling from phase 2 ("the whole course goes live")
+  const amp = SW.amp[ph], sw = Math.sin(t*SW.w);
+  H.saw = [Math.round(SW.home + amp*sw), Math.round(WW - SW.home - amp*Math.sin(t*SW.w + 1.7))];
+  for(const f of fighters){
+    if(f.dead || f.invuln > 0 || (f._s4sawT||0) > t) continue;
+    for(const bx of H.saw){
+      if(hurtGap(f, bx, gy - SW.r) < SW.r){
+        f._s4sawT = t + SW.gap;
+        const away = Math.sign(f.x - bx) || (bx < WW*0.5 ? 1 : -1);
+        arenaHazardHit(f, SW.frac, away*SW.kb, -9);
+        for(let i=0;i<8;i++) puff(f.x, f.y, '#c8c8d0', 4);
+        break;
+      }
+    }
+  }
+  // the big platform's flip (SUPER DEATH TRAP!): it turns over, stays over, turns back
+  if(H.flip){
+    const pl = worldPlats.find(q => !q._s4 && !q.solid && Math.round(q.x) === H.flip[0]), u = t - H.flip[1], T = S4.flip.turn, hold = S4.flip.hold;
+    let rot = 0;
+    if(u < T) rot = 180*Math.max(0, u)/T; else if(u < T + hold) rot = 180; else if(u < 2*T + hold) rot = 180*(1 - (u - T - hold)/T); else H.flip = null;
+    if(pl) pl.rot = rot > 0 ? Math.round(rot*10)/10 : 0;
+  }
   if(H.sand){   // QUICKSAND SHOVE!'s strips: whoever stands in a live one is slowed
     H.sand = H.sand.filter(e => t < e[3]);
     for(const f of fighters){
@@ -13343,6 +13381,116 @@ function s4HazStep(b, H, tgt){
   }
 }
 
+// Everything the arena draws under the shots: the platforms as red girders (a flipped one shows its dark underside), the strips of quicksand, the sawblades on the beam.
+function s4HazDraw(b, H, layer){
+  if(layer !== 'under') return;
+  const gy = groundY(), t = hazardT, SW = S4.saw;
+  for(const p of worldPlats) if(!p.solid && !p._s4) s4DrawGirder(p);
+  if(H.sand) for(const e of H.sand) s4DrawSand(e, t);
+  const blades = H.saw || [SW.home, WW - SW.home];
+  blades.forEach((bx, i) => s4DrawBlade(bx, gy - SW.r + 2, SW.r, t*(i ? -0.22 : 0.22)));
+}
+// The death trap's beam is red steel (File:Mephone4sdeathtrap.jpg): a platform here is a short length of it.
+function s4DrawGirder(p){
+  const flipped = p.rot && Math.abs(p.rot) > 90;
+  ctx.save();
+  if(p.rot){ ctx.translate(p.x + p.w/2, p.y + p.h/2); ctx.rotate(p.rot*Math.PI/180); ctx.translate(-(p.x + p.w/2), -(p.y + p.h/2)); }
+  ctx.fillStyle = flipped ? '#3c3c46' : '#ec1c06'; ctx.strokeStyle = flipped ? '#17171c' : '#6a0a00'; ctx.lineWidth = 3;
+  ctx.fillRect(p.x, p.y, p.w, p.h); ctx.strokeRect(p.x, p.y, p.w, p.h);
+  if(flipped){   // the underside: hazard stripes, nothing to stand on
+    ctx.save(); ctx.beginPath(); ctx.rect(p.x + 2, p.y + 2, p.w - 4, p.h - 4); ctx.clip(); ctx.fillStyle = '#d8b410';
+    for(let x = p.x - p.h; x < p.x + p.w; x += 18){ ctx.beginPath(); ctx.moveTo(x, p.y + p.h); ctx.lineTo(x + 9, p.y + p.h); ctx.lineTo(x + 9 + p.h, p.y); ctx.lineTo(x + p.h, p.y); ctx.closePath(); ctx.fill(); }
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#ff5a3a'; ctx.fillRect(p.x + 2, p.y + 2, p.w - 4, 4);   // the lit top edge
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(p.x + 2, p.y + p.h - 5, p.w - 4, 3);
+    ctx.fillStyle = '#7a0c00'; for(let x = p.x + 70; x < p.x + p.w - 20; x += 140) ctx.fillRect(x, p.y + 2, 3, p.h - 4);   // the seams between its lengths
+  }
+  ctx.restore();
+}
+// A sawblade of the trap: a grey twelve-pointed disc with a light hub and one hand, spinning (the blades in File:MP4S E15 6.png).
+function s4DrawBlade(x, y, r, spin){
+  ctx.save(); ctx.translate(x, y); ctx.rotate(spin); ctx.lineJoin = 'round';
+  ctx.fillStyle = '#9c9ea4'; ctx.strokeStyle = '#3e4048'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); for(let i = 0; i < 24; i++){ const a = i*Math.PI/12, d = i%2 ? r*0.72 : r*1.06; ctx.lineTo(Math.cos(a)*d, Math.sin(a)*d); } ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#d8dade'; ctx.beginPath(); ctx.arc(0, 0, r*0.3, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#5a5c64'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r*0.2, -r*0.42); ctx.stroke();
+  ctx.restore();
+}
+// The ground (BOSS_ARENA_GROUND.deathtrap): the beam, and under it the chasm and the quicksand basin (File:Mephone4sdeathtrap.jpg: a red beam over a gap, an orange
+// sand below). The sand bubbles where a car goes by.
+function s4GroundPattern(c, gy, x0, x1, bottom){
+  const t = hazardT, beamH = 26, chasm = Math.max(40, (WH - gy)*0.55), top2 = gy + beamH, sandY = top2 + chasm;
+  c.save();
+  const g = c.createLinearGradient(0, top2, 0, sandY); g.addColorStop(0, '#2d5f8e'); g.addColorStop(1, '#a6d6f2');
+  c.fillStyle = g; c.fillRect(x0, top2, x1 - x0, chasm);
+  c.fillStyle = '#d4b268'; c.fillRect(x0, sandY, x1 - x0, 5);   // the basin's lip
+  c.strokeStyle = '#c4a058'; c.lineWidth = 2;
+  for(let r = 0; r < 3; r++){ c.beginPath(); for(let x = x0; x <= x1; x += 40){ const y = sandY + 16 + r*14 + Math.sin(t*0.03 + x*0.02 + r*2)*2.5; if(x === x0) c.moveTo(x, y); else c.lineTo(x, y); } c.stroke(); }
+  const cw = Math.max(64, W*0.065), top = gy - 38;   // the cliffs of the decor, carried down past the beam: the same edge (s4DrawDecor)
+  for(const side of [-1, 1]){
+    const x0 = side < 0 ? 0 : WW, d = -side;
+    c.fillStyle = '#9a6a3c'; c.strokeStyle = '#4a2c14'; c.lineWidth = 3; c.lineJoin = 'round';
+    c.beginPath(); c.moveTo(x0, gy); c.lineTo(x0 + d*cw*0.946, gy); c.lineTo(x0 + d*cw*0.9, top + 70); c.lineTo(x0 + d*cw*1.08, top + 150); c.lineTo(x0 + d*cw*0.92, WH + 60); c.lineTo(x0, WH + 60); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle = '#7a4e28'; c.beginPath(); c.moveTo(x0, top + 60); c.lineTo(x0 + d*cw*0.5, top + 90); c.lineTo(x0 + d*cw*0.3, top + 150); c.lineTo(x0, top + 170); c.closePath(); c.fill();
+  }
+  const bub = (x, k) => { c.fillStyle = 'rgba(250,236,184,' + 0.85*(1 - k) + ')'; c.strokeStyle = 'rgba(168,128,60,' + (1 - k) + ')'; c.lineWidth = 1.2; c.beginPath(); c.arc(x, sandY + 12 - k*14, 2 + (x%3), 0, 7); c.fill(); c.stroke(); };
+  for(let i = 0; i < 7; i++) bub(((i*173 + 90) % Math.max(1, x1 - x0)) + x0, (t*0.012 + i*0.31) % 1);
+  for(const p of projectiles) if(p.s4 === 2 && !(p.delay > 0)) for(let k = 0; k < 4; k++) bub(p.x - (p.vx||0)*(k*3 + 2) + (k - 1.5)*9, (t*0.09 + k*0.25) % 1);   // the car passing stirs it
+  // the beam: red steel in lengths, lit along its top, rivets at the seams
+  c.fillStyle = '#ec1c06'; c.fillRect(x0, gy, x1 - x0, beamH);
+  c.fillStyle = '#ff5a3a'; c.fillRect(x0, gy, x1 - x0, 5);
+  c.fillStyle = '#a81000'; c.fillRect(x0, gy + beamH - 6, x1 - x0, 6);
+  c.fillStyle = '#7a0c00'; for(let x = x0 + 120; x < x1; x += 280) c.fillRect(x, gy, 3, beamH);
+  c.fillStyle = '#7a0c00'; for(let x = x0 + 30; x < x1; x += 70){ c.beginPath(); c.arc(x, gy + 13, 2, 0, 7); c.fill(); }
+  c.restore();
+}
+function s4Boss(){ return summons.find(s => s.type === "boss" && s.attack === "mephone4s") || null; }
+// The backdrop (the decor slot, screen space, behind everything): puffy clouds outlined pale blue, a grassy cliff at each edge the beam is bolted to, the crusher
+// hung above the course, and the phase's sky -- redder and darker from phase 2, a bolt now and then (a soft light that fades, never a flash).
+function s4DrawDecor(){
+  const b = s4Boss(), Z = (b && b._hz) || {}, ph = b ? Math.min(3, b._phase || 1) : 1, t = hazardT, gy = groundY(), cw = Math.max(64, W*0.065);
+  ctx.save();
+  // clouds
+  ctx.lineJoin = 'round';
+  for(let i = 0; i < 5; i++){
+    const cx = (((i*270 + t*0.05*(1 + i*0.25)) % (W + 320)) + W + 320) % (W + 320) - 160, cy = H*(0.10 + (i%3)*0.115), k = 0.85 + (i%3)*0.22;
+    const C = [[-50, 10, 22], [-22, -8, 28], [14, -12, 30], [46, 2, 24], [0, 12, 30]];
+    ctx.strokeStyle = '#a3bccb'; ctx.lineWidth = 6*k; for(const [dx, dy, r] of C){ ctx.beginPath(); ctx.arc(cx + dx*k, cy + dy*k, r*k, 0, 7); ctx.stroke(); }
+    ctx.fillStyle = '#f4f9fc'; for(const [dx, dy, r] of C){ ctx.beginPath(); ctx.arc(cx + dx*k, cy + dy*k, r*k, 0, 7); ctx.fill(); }
+  }
+  // the crusher, hung: it hangs still while the trap is idle and sways once it is live
+  const sway = ph >= 2 ? Math.sin(t*0.03)*(ph >= 3 ? 16 : 8) : 0, kx = W*0.64 + sway, kb = H*0.28, kw = Math.min(124, W*0.11);
+  ctx.fillStyle = '#ee1a05'; ctx.strokeStyle = '#6a0a00'; ctx.lineWidth = 3; ctx.fillRect(kx - kw/2, -20, kw, kb + 20); ctx.strokeRect(kx - kw/2, -20, kw, kb + 20);
+  ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(kx - kw/2, kb - 14, kw, 14); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(kx - kw/2 + 8, -20, 10, kb + 20);
+  // the cliffs: brown rock with a grass lip, the beam bolted into each
+  const top = gy - 38;
+  for(const side of [-1, 1]){
+    const x0 = side < 0 ? 0 : W, d = -side;   // d: toward the middle
+    ctx.fillStyle = '#9a6a3c'; ctx.strokeStyle = '#4a2c14'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0 + d*cw, top); ctx.lineTo(x0 + d*cw*0.9, top + 70); ctx.lineTo(x0 + d*cw*1.08, top + 150); ctx.lineTo(x0 + d*cw*0.92, H + 10); ctx.lineTo(x0, H + 10); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#7a4e28'; ctx.beginPath(); ctx.moveTo(x0, top + 60); ctx.lineTo(x0 + d*cw*0.5, top + 90); ctx.lineTo(x0 + d*cw*0.3, top + 150); ctx.lineTo(x0, top + 170); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#5db22a'; ctx.strokeStyle = '#2f6a14'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x0, top - 10); for(let i = 0; i <= 8; i++) ctx.lineTo(x0 + d*cw*i/8, top - 8 - (i%2)*5); ctx.lineTo(x0 + d*cw, top + 8); ctx.lineTo(x0, top + 8); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  // the phase's sky: redder and darker as the trap goes live
+  const k = Z.tint != null ? Z.tint : (ph >= 3 ? 1 : (ph === 2 ? 0.55 : 0));
+  if(k > 0){
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(60,18,40,' + 0.32*k + ')'); g.addColorStop(1, 'rgba(220,86,36,' + 0.30*k + ')');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  // a bolt: a jagged line down the sky and a soft light, fading over 14 frames
+  if(Z.thunder != null){
+    const a = t - Z.thunder;
+    if(a >= 0 && a < 14){
+      const f = 1 - a/14, bx = W*(0.12 + 0.76*((Z.thunder*0.618) % 1)), seed = Z.thunder;
+      ctx.fillStyle = 'rgba(255,236,200,' + 0.10*f + ')'; ctx.fillRect(0, 0, W, H);
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round'; const pts = [[bx, 0]]; let x = bx; for(let y = 0, i = 0; y < gy - 40; y += 46, i++){ x += (((seed*7 + i*53) % 31) - 15)*1.1; pts.push([x, y + 46]); }
+      for(const [w, col] of [[7, 'rgba(255,170,90,' + 0.35*f + ')'], [3, 'rgba(255,250,224,' + 0.95*f + ')']]){ ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); pts.forEach(([px, py], i) => i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.stroke(); }
+    }
+  }
+  ctx.restore();
+}
 // A live strip of quicksand across the floor, [centre, half-width, goes live, goes]: the blob of s4SandBlob, blinking over its last half second.
 function s4DrawSand(e, t){
   const gy = groundY(), left = e[3] - t, a = left < 30 ? (t%6 < 3 ? 0.55 : 1) : 1;
@@ -13355,6 +13503,7 @@ function s4DrawShot(pr){
   if(pr.s4 === 1 && pr.s4fz && pr.delay > 0){ s4DrawFrozen(pr); return true; }
   if(pr.s4 === 2){ s4DrawCar(pr); return true; }
   if(pr.s4 === 3){ s4DrawCrusher(pr); return true; }
+  if(pr.s4 === 5){ if(pr.shape === 's4end') s4DrawEnd(pr); return true; }   // his ending's scene; the shots that only carry an impact draw nothing
   return false;
 }
 // A round that has stopped: "the bullet freezes in mid-air ... Time unfreezes". Pale and still, with a ring round its head and a clock's two hands stopped.
@@ -13384,7 +13533,7 @@ function s4DrawCar(pr){
     ctx.translate(0, Math.sin(t*2.3)*1.6);   // the engine shakes it
     if(t%3 === 0) puff(pr.x - dir*w*0.5, pr.y + r*0.6, '#9a9a9a', 1);
   }
-  if(im){ if(dir > 0) ctx.scale(-1, 1); ctx.drawImage(im, -w/2, -h/2, w, h); }
+  if(im){ if(dir > 0) ctx.scale(-1, 1); ctx.rotate(-0.082); ctx.drawImage(im, -w/2, -h/2, w, h); }   // the frame has it riding a bump: levelled, its wheels on the floor
   else { if(dir < 0) ctx.scale(-1, 1); ctx.scale(w/(r*2.7), w/(r*2.7)); ctx.fillStyle = '#d01818'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; PROJ_SHAPE.redcar.draw(ctx, r, { vx:0 }); }   // the glyph faces right
   ctx.restore();
 }
@@ -13408,10 +13557,12 @@ function s4DrawCrusher(pr){
 // World space, over him and under the fighters: a prop is the show's art when it has loaded (attackImage) and its glyph until then. Everything here is a
 // function of his fields (b._s4, b._tel, b._telKind, b._aimX/Y, his face), the shots' and the hazard's, and the clock, so a netcode client draws it too.
 // S4_ART: how a cut prop sits in a hand: `base`, the angle its front points at in the file (radians, canvas), and `px`, `py`, the hand's spot in the file.
-const S4_ART = { s4gun:{ base:0, px:0.12, py:0.5 }, s4saw:{ base:0, px:0.1, py:0.5 }, s4lolli:{ base:0, px:0.5, py:0.5 } };
+// (the pistol's file: base is its barrel's slope, the pivot its grip; the muzzle S4.muz is where its barrel ends once turned along the aim)
+const S4_ART = { s4gun:{ base:-0.424, px:0.344, py:0.717 }, s4saw:{ base:-Math.PI/2, px:0.45, py:0.88 }, s4lolli:{ base:-Math.PI/2, px:0.5, py:0.86 } };
 function s4DrawProp(key, x, y, ang, r, h){
   const im = attackImage(key), A = S4_ART[key];
   ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  if(key === 's4gun' && Math.cos(ang) < 0) ctx.scale(1, -1);   // aimed left it is mirrored, not turned upside down
   if(im && A){ const w = h*(im.naturalWidth/im.naturalHeight); ctx.rotate(-A.base); ctx.drawImage(im, -A.px*w, -A.py*h, w, h); }
   else { ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; PROJ_SHAPE[key].draw(ctx, r, null); }
   ctx.restore();
@@ -13434,7 +13585,7 @@ function s4DrawFx(b){
   ctx.save();
   if(tel && b._telKind === b.attack && typeof b._aimX === 'number'){
     // the pistol in his hand, along the sight
-    s4DrawProp('s4gun', front.x, front.y, Math.atan2(b._aimY - front.y, b._aimX - front.x), R*0.3, R*0.46);
+    s4DrawProp('s4gun', front.x, front.y, s4Muzzle(b, b._aimX, b._aimY).a, R*0.3, R*0.64);
   } else if(A && A.k === 'prizes' && (tel || (A.go && A.t <= A.last))){
     // the chainsaw in the front hand and the lollipop in the back one, jabbed at you in turn: saw, lollipop, both
     const u = tel ? 1 - b._tel/bossTelLen(b) : 1, on = tel ? [true, true] : s4PrizeProps(A);
@@ -13452,7 +13603,7 @@ function s4DrawFx(b){
   } else if(A && A.k === 'pop' && (tel || A.go)){ s4DrawPop(b, A, tel);
   } else if(A && A.k === 'shove' && (tel || A.go)){ s4DrawShove(b, A, tel); }
   // a body under the floor line is covered by the sand it is sinking into or coming up through
-  if(b.y > gy - R + 4 && b.y < gy + R*2.2) s4SandBlob(b.x, gy, R*2.7, R*2.2, 1, t, 1);
+  if(b.y > gy - R + 4 && b.y < gy + R*2.2) s4SandBlob(b.x, gy, R*2.0, R*2.2, 1, t, 1);
   ctx.restore();
 }
 // A blob of quicksand across the floor line: the pale sand of File:S1RE8QuicksandPit.png (a flat tan with darker ripples and a brown edge), `w` wide,
@@ -13479,12 +13630,15 @@ function s4Bubble(x, y, r, a){
 function s4DrawPop(b, A, tel){
   const gy = groundY(), R = b.r, t = hazardT, P = S4.pop, len = bossTelLen(b), u = tel ? 1 - b._tel/len : 1;
   if(typeof A.x !== 'number' || typeof A.sx !== 'number') return;
+  if(A.go && (A.st === 'fall' || A.st === 'stand')){   // where he came up: a patch of sand in the beam, closing as he stands
+    s4SandBlob(A.x, gy, R*2.0, 28, A.st === 'fall' ? 1 : Math.max(0, 1 - (A.t||0)/(A.beat ? 10 : P.stand)), t, 0.95);
+    return;
+  }
   const going = tel || A.st === 'sink' || A.st === 'dig';
   if(!going) return;
   // the pit where he went down, open while he is under
   const kPit = tel ? Math.min(1, u*4) : (A.st === 'dig' ? 1 : Math.min(1, (A.t||0)/8));
-  if(!(b.y > gy - R + 4 && Math.abs(b.x - A.sx) < 2)) s4SandBlob(A.sx, gy, R*2.7, R*2.2, kPit, t, 0.95);
-  else if(A.st === 'dig') s4SandBlob(A.sx, gy, R*2.7, R*2.2, 1, t, 0.95);
+  if(!(b.y > gy - R + 4 && b.y < gy + R*2.2 && Math.abs(b.x - A.sx) < 2)) s4SandBlob(A.sx, gy, R*2.0, 28, kPit, t, 0.95);   // where he went down: a patch of sand in the beam (while he is still sinking into it, the cover over him is that patch)
   // bubbles running to the spot
   const dx = A.x - A.sx;
   if(Math.abs(dx) > 40 && (tel ? u > 0.25 : true)) for(let i = 0; i < 9; i++){
@@ -13542,6 +13696,89 @@ function s4DrawVista(b, A, tel){
   if(lim){ const lw = lh*(lim.naturalWidth/lim.naturalHeight); ctx.drawImage(lim, -lw/2, -lh/2, lw, lh); }
   else { ctx.fillStyle = '#f2e23a'; ctx.strokeStyle = '#a89a10'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, 0, lh*0.55, lh*0.42, 0, 0, 7); ctx.fill(); ctx.stroke(); }
   ctx.restore();
+}
+
+// ---- his ending: "(gets punched into the cage by the Fist Thingy)" -----------------------------------------------------------------------------------------
+// The Tile Divide: "MePhone4 snaps his fingers and the camera pans to a cage ... MePhone4S: 'No! MePhone, you don't understand! He's coming, MePhone! Listen to me,
+// he's co-' (gets punched into the cage by the Fist Thingy)"; the page: "he is hit by the Fist Thingy and lands in a cage before he can finish." A cage appears
+// beside him (a snap of the fingers), the glove comes in on its pole from the other side, punches him, and he flies into the cage; the door shuts. No words, and it
+// hurts nobody. His shots go with him (s4EndSweep: his rounds, cars, lemons, prizes, the crusher and the spikes), the flipped platform turns back, and the scene is an
+// inert shot -- far above the screen, gone when its delay ends -- carrying where he fell and when; s4DrawEnd draws all of it from the clock alone, so the host, a
+// netcode client and a replay see the same scene. Two more inert shots fall to land where the glove hits and where the cage door slams, and each lands as an impact().
+function s4EndSweep(b){
+  projectiles = projectiles.filter(p => !p.s4);
+  for(const p of worldPlats) if(p.rot) p.rot = 0;
+  for(const f of fighters) f._s4sawT = 0;
+}
+function s4EndBegin(b){
+  const E = S4.end, gy = groundY(), cd = b.x < WW*0.5 ? 1 : -1, cx = clamp(b.x + cd*230, 130, WW - 130);
+  addProj({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:b.x, y:-5000, vx:0, vy:0, r:0, dmg:0, kb:0, grav:false, color:b.color, life:1, delay:E.total + 1,
+    noAim:true, s4:5, shape:'s4end', et0:hazardT, ex:b.x, ey:b.y, ef:b.face < 0 ? -1 : 1, er:b.r, cd:cd });
+  const ghost = (x, at, imp) => addProj({ owner:-2, ownerObj:{ team:0, idx:-2 }, x:x, y:-120, vx:0, vy:30, r:2, dmg:0, kb:0, grav:false, color:b.color, life:60, noAim:true, s4:5,
+    breaksOnSurface:true, noDrift:true, warnX:x, warnY:gy, warn:0, delay:Math.max(0, at - Math.ceil((gy + 120)/30)), landImpact:imp });
+  ghost(b.x, E.glove, { shake:12, dust:2, debris:6, r:90, color:'#e8c878' });                        // the glove lands on him
+  ghost(cx, E.glove + E.fly, { shake:9, dust:1, debris:3, r:80, color:'#9a9ca2' });                  // the cage door slams
+}
+// His render, as the boss draws it (drawBossSprite's own sizing and flip), for a scene: at the origin, `face` the way he looks.
+function s4Sprite(R, face){
+  const im = bossImage('mephone4s');
+  if(im){
+    const ar = im.naturalWidth/im.naturalHeight, box = R*2.15; let dh = box, dw = box*ar;
+    if(dw > box*1.25){ dw = box*1.25; dh = dw/ar; }
+    if((face < 0) !== !!BOSS_SPRITE_FLIP.mephone4s) ctx.scale(-1, 1);
+    ctx.drawImage(im, -dw/2, -dh/2, dw, dh);
+  } else {   // the drawn phone, until the render loads
+    ctx.fillStyle = '#141414'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.rect(-R*0.6, -R, R*1.2, R*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#c8102e'; ctx.fillRect(-R*0.48, -R*0.8, R*0.96, R*1.45); ctx.fillStyle = '#101010'; ctx.fillRect(-R*0.4, -R*0.42, R*0.34, R*0.24); ctx.fillRect(R*0.06, -R*0.42, R*0.34, R*0.24);
+  }
+}
+// The cage of Idiotic Island 2 (File:Mephone4Scameo.png): a grey open-top box of upright bars with sloped sides. `k` how much of it has come (0..1), `door` how far the
+// front is shut (0..1). The back and sides are drawn first, the front bars after him (s4DrawEnd), so he is inside it.
+function s4DrawCage(cx, gy, k, door, front){
+  const E = S4.end, w = E.cageW*Math.min(1, k), h = E.cageH*Math.min(1, k), top = gy - h, tw = w*1.14;
+  if(!(k > 0)) return;
+  ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = '#6a6c72'; ctx.fillStyle = '#8d9096'; ctx.lineWidth = 5;
+  if(!front){
+    ctx.fillStyle = 'rgba(30,32,40,0.35)'; ctx.beginPath(); ctx.moveTo(cx - w/2, gy); ctx.lineTo(cx - tw/2, top); ctx.lineTo(cx + tw/2, top); ctx.lineTo(cx + w/2, gy); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx - w/2, gy); ctx.lineTo(cx - tw/2, top); ctx.lineTo(cx + tw/2, top); ctx.lineTo(cx + w/2, gy); ctx.stroke();   // the frame
+    ctx.lineWidth = 3; ctx.beginPath(); for(let i = 1; i < 9; i++){ const f = i/9; ctx.moveTo(cx - w/2 + w*f, gy); ctx.lineTo(cx - tw/2 + tw*f, top); } ctx.stroke();   // the bars behind
+  } else if(door > 0){
+    const dh = h*Math.min(1, door); ctx.lineWidth = 4; ctx.beginPath();
+    for(let i = 0; i <= 8; i++){ const f = i/8, xt = cx - tw/2 + tw*f, xb = cx - w/2 + w*f; ctx.moveTo(xt, top); ctx.lineTo(xt + (xb - xt)*dh/h, top + dh); }
+    ctx.stroke(); ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(cx - tw/2, top + 2); ctx.lineTo(cx + tw/2, top + 2); ctx.stroke();   // the door's bars come down, and its top rail
+  }
+  ctx.restore();
+}
+// The scene, from the clock: u frames since he fell. A cage comes (snap), he stands, shaking, as the glove arrives; it punches him; he flies into the cage; the door shuts.
+function s4DrawEnd(pr){
+  const E = S4.end, u = hazardT - pr.et0, gy = groundY();
+  if(!(u >= 0) || u > E.total) return;
+  const R = pr.er, cd = pr.cd, cx = clamp(pr.ex + cd*230, 130, WW - 130), kc = Math.min(1, u/E.snap), door = clamp((u - (E.glove + E.fly))/10, 0, 1);
+  // a snap of the fingers: a small starburst where the cage comes
+  if(u < E.snap + 6){ const a = 1 - u/(E.snap + 6); ctx.save(); ctx.strokeStyle = 'rgba(255,248,200,' + a + ')'; ctx.lineWidth = 3;
+    for(let i = 0; i < 8; i++){ const an = i*Math.PI/4; ctx.beginPath(); ctx.moveTo(cx + Math.cos(an)*14, gy - 60 + Math.sin(an)*14); ctx.lineTo(cx + Math.cos(an)*(26 + u*2), gy - 60 + Math.sin(an)*(26 + u*2)); ctx.stroke(); } ctx.restore(); }
+  s4DrawCage(cx, gy, kc, 0, false);
+  // him: standing, shaking ("No! MePhone, you don't understand!"), then punched across into the cage
+  let x = pr.ex, y = pr.ey, rot = 0;
+  if(u < E.glove){ x += Math.sin(u*1.7)*(u > 8 ? 3 : 0); }
+  else {
+    const f = clamp((u - E.glove)/E.fly, 0, 1), tx = cx, ty = gy - R*0.55;
+    x = pr.ex + (tx - pr.ex)*f; y = pr.ey + (ty - pr.ey)*f - Math.sin(Math.PI*f)*R*1.3; rot = cd*f*7.5;
+  }
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); s4Sprite(R, pr.ef); ctx.restore();
+  s4DrawCage(cx, gy, kc, door, true);
+  // the Fist Thingy, on its pole, from the side away from the cage: it comes in along his row, punches, and goes back
+  const gu = u - (E.glove - 14);
+  if(gu >= 0 && gu < 40){
+    const reach = gu < 14 ? gu/14 : 1 - (gu - 14)/26, gx = pr.ex - cd*(R*0.9 + 340*(1 - Math.min(1, reach))), edge = cd > 0 ? -60 : WW + 60;
+    ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(gx, pr.ey); ctx.lineTo(edge, pr.ey); ctx.stroke();
+    ctx.strokeStyle = '#cfcfd6'; ctx.lineWidth = 7; ctx.stroke(); ctx.restore();
+    const im = attackImage('hook'), gh = 92;
+    ctx.save(); ctx.translate(gx, pr.ey); if(cd < 0) ctx.scale(-1, 1);
+    if(im){ const gw = gh*(im.naturalWidth/im.naturalHeight); ctx.drawImage(im, -gw*0.5, -gh/2, gw, gh); }
+    else { ctx.fillStyle = '#e8302a'; ctx.strokeStyle = '#7a0c0c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, 0, gh*0.42, gh*0.34, 0, 0, 7); ctx.fill(); ctx.stroke(); }
+    ctx.restore();
+  }
 }
 // @boss:mephone4s:end helpers
 
@@ -13981,6 +14218,8 @@ const BOSS_ENDINGS = {
   // @boss:evilleafy:end ending
 
   // @boss:mephone4s:begin ending
+  // MePhone4S: "(gets punched into the cage by the Fist Thingy)" (The Tile Divide). His shots go with him, and the scene is s4EndBegin's: a cage, the glove, the flight. No text.
+  mephone4s: { sweep: s4EndSweep, begin: s4EndBegin, holdMs: S4.end.hold },
   // @boss:mephone4s:end ending
 
   // @boss:two:begin ending
@@ -14045,6 +14284,7 @@ const BOSS_ARENA_HAZARD = {
   // @boss:evilleafy:end hazard
 
   // @boss:mephone4s:begin hazard
+  deathtrap: { step: s4HazStep, draw: s4HazDraw },   // the sawblades on the beam (parked, then patrolling), the quicksand strips that slow, the platform's flip, the sky's tint and bolts (s4HazStep)
   // @boss:mephone4s:end hazard
 
   // @boss:two:begin hazard
@@ -26165,7 +26405,8 @@ const BOSS_ARENA_SKY = {
   // @boss:evilleafy:end sky
 
   // @boss:mephone4s:begin sky
-  studio: ["#2a2438","#15111f"],   // dark TV studio
+  studio: ["#2a2438","#15111f"],   // the old shared TV studio: no boss wears it now (the boss overhaul gave each its own place); the key stays, as the others' old ones do
+  deathtrap: ["#24527f","#6ba2cc"],   // his Super Death Trap: the blue sky of The Tile Divide (File:Mephone4sdeathtrap.jpg), deep enough that the red shots and the white sight read; the decor reddens it from phase 2
   // @boss:mephone4s:end sky
 
   // @boss:two:begin sky
@@ -26215,6 +26456,7 @@ const BOSS_ARENA_GROUND = {
   // @boss:evilleafy:end ground
 
   // @boss:mephone4s:begin ground
+  deathtrap: { fill:"#e6c880", line:"#7a0c00", pattern:s4GroundPattern },   // the red steel beam over a chasm and the quicksand basin (s4GroundPattern)
   // @boss:mephone4s:end ground
 
   // @boss:two:begin ground
@@ -26351,6 +26593,7 @@ function drawArenaDecor(key){
       const grd=ctx.createRadialGradient(lx,0,10,lx,0,260); grd.addColorStop(0,"rgba(255,220,120,0.14)"); grd.addColorStop(1,"rgba(255,220,120,0)");
       ctx.fillStyle=grd; ctx.beginPath(); ctx.moveTo(lx,-10); ctx.lineTo(lx-120,H); ctx.lineTo(lx+120,H); ctx.closePath(); ctx.fill(); }
   }
+  if(key==="deathtrap") s4DrawDecor();   // his Super Death Trap: clouds, the cliffs the beam is bolted to, the crusher hung above, the sky that reddens by phase (s4DrawDecor)
   // @boss:mephone4s:end decor
 
   // @boss:two:begin decor
@@ -26785,7 +27028,7 @@ function drawBossSprite(s){
   // MePhone4S's gun sight, from his hand on past the point it is on: red while it follows its mark, white once it has
   // locked. The telegraph, not a detail from the wiki. Drawn before the art, so it shows with the render too.
   if(s._tel>0 && s._telKind===s.attack && typeof s._aimX==='number' && typeof s._aimY==='number'){
-    const hx=(s.face||1)*R*0.6, hy=-R*0.02, dx=s._aimX-s.x-hx, dy=s._aimY-s.y-hy, k=1600/(Math.hypot(dx,dy)||1);
+    const M=s4Muzzle(s, s._aimX, s._aimY), hx=M.x-s.x, hy=M.y-s.y, dx=s._aimX-s.x-hx, dy=s._aimY-s.y-hy, k=1600/(Math.hypot(dx,dy)||1);   // from the pistol's muzzle: the line is the round's own
     ctx.save(); ctx.globalAlpha = s._aimLock ? 0.9 : 0.45; ctx.strokeStyle = s._aimLock ? "#ffffff" : "#ff2a2a"; ctx.lineWidth = s._aimLock ? 3 : 2;
     ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx+dx*k, hy+dy*k); ctx.stroke(); ctx.restore();
   }
@@ -30112,6 +30355,12 @@ const ATTACK_SPRITES = {
   // @boss:evilleafy:end art
 
   // @boss:mephone4s:begin art
+  // MePhone4S: what he holds and drives, cut from the show's frames (his PICKS slot in scripts/fetch-attack-sprites.mjs, credited in CREDITS.md). Keyed by the shot's `shape`, or drawn
+  // by name (s4DrawProp, s4DrawCar). The chainsaw tumbles and the lollipop flies flat, stick behind; the pistol and the car are drawn by his own code at their own size.
+  s4gun:   { src:'assets/sprites/attacks/s4gun.png',   h:54, fixed:true },                        // PUT THAT COOKIE DOWN! -- the pistol in his hand (File:S1RE8 MePhone4S pulls out his gun.png)
+  s4saw:   { src:'assets/sprites/attacks/s4saw.png',   h:30, spin:true, cap:2 },                 // ONE OF EACH! -- the chainsaw, thrown (the frame of The Tile Divide's elimination)
+  s4lolli: { src:'assets/sprites/attacks/s4lolli.png', h:26, aim:true, rot:R90, cap:2 },        // ...and the lollipop, flat at your head, ball first
+  redcar:  { src:'assets/sprites/attacks/redcar.png',  h:56, fixed:true },                       // I'LL BE BACK! -- the car (File:MePhone4S's Car.jpg), drawn by s4DrawCar
   // @boss:mephone4s:end art
 
   // @boss:two:begin art
@@ -30288,8 +30537,8 @@ const PROJ_SHAPE = {
   // @boss:mephone4s:begin shape
   // MePhone4S's drawn glyphs (they show until the show's art loads, and for good where it has none). The pistol is the one in his hand (File:S1RE8 MePhone4S pulls
   // out his gun.png), the chainsaw and the lollipop the prizes of The Tile Divide (File:Screen shot 2012-09-02 at 12.25.17 PM.png), all pointing along +x.
-  s4gun:   { draw(c,r){ c.lineJoin='round'; c.fillStyle='#4b4752'; c.fillRect(-r*0.5,-r*0.3,r*1.7,r*0.46); c.strokeRect(-r*0.5,-r*0.3,r*1.7,r*0.46);
-    c.fillStyle='#37333c'; c.fillRect(r*1.2,-r*0.22,r*0.4,r*0.3); c.fillStyle='#3a363f'; c.beginPath(); c.moveTo(-r*0.3,r*0.16); c.lineTo(-r*0.62,r*0.86); c.lineTo(-r*0.06,r*0.86); c.lineTo(r*0.18,r*0.16); c.closePath(); c.fill(); c.stroke(); } },
+  s4gun:   { draw(c,r){ c.lineJoin='round'; c.fillStyle='#4b4752'; c.fillRect(-r*0.45,-r*1.0,r*2.25,r*0.64); c.strokeRect(-r*0.45,-r*1.0,r*2.25,r*0.64);   // the grip at the origin, the barrel's axis 0.67r over it (S4.muz)
+    c.fillStyle='#37333c'; c.fillRect(r*1.5,-r*0.92,r*0.3,r*0.48); c.fillStyle='#3a363f'; c.beginPath(); c.moveTo(-r*0.3,-r*0.36); c.lineTo(-r*0.58,r*0.55); c.lineTo(r*0.02,r*0.55); c.lineTo(r*0.34,-r*0.36); c.closePath(); c.fill(); c.stroke(); } },
   s4saw:   { spin:true, draw(c,r){ c.lineJoin='round'; c.fillStyle='#e64a1a'; c.fillRect(-r*0.95,-r*0.58,r*0.95,r*1.16); c.strokeRect(-r*0.95,-r*0.58,r*0.95,r*1.16);
     c.fillStyle='#e8eaec'; c.strokeStyle='#8a8c90'; c.beginPath(); c.moveTo(0,-r*0.5); c.lineTo(r*3.1,-r*0.4); c.quadraticCurveTo(r*3.5,0,r*3.1,r*0.4); c.lineTo(0,r*0.5); c.closePath(); c.fill(); c.stroke();
     c.beginPath(); for(let x=r*0.2;x<r*3.1;x+=r*0.34){ c.moveTo(x,-r*0.47); c.lineTo(x+r*0.12,-r*0.72); c.lineTo(x+r*0.26,-r*0.44); c.moveTo(x,r*0.47); c.lineTo(x+r*0.12,r*0.72); c.lineTo(x+r*0.26,r*0.44); } c.stroke(); } },
@@ -31113,7 +31362,8 @@ function netProjectiles(){
     // @boss:evilleafy:end netshot
 
     // @boss:mephone4s:begin netshot
-    if(p.s4){ x = x || {}; x.s4 = p.s4; if(p.delay > 0) x.delay = p.delay; if(p.s4fz) x.s4fz = 1; }   // MePhone4S's shots: what they are, a car's rev and a frozen round's hold (the delay), and the freeze
+    if(p.s4){ x = x || {}; x.s4 = p.s4; if(p.delay > 0) x.delay = p.delay; if(p.s4fz) x.s4fz = 1;   // MePhone4S's shots: what they are, a car's rev and a frozen round's hold (the delay), and the freeze
+      if(p.et0 != null){ x.et0 = p.et0; x.ex = Math.round(p.ex); x.ey = Math.round(p.ey); x.ef = p.ef; x.er = Math.round(p.er); x.cd = p.cd; } }   // ...and his ending, a pure function of these and the clock (s4DrawEnd)
     // @boss:mephone4s:end netshot
 
     // @boss:two:begin netshot

@@ -603,6 +603,15 @@ sign's and the Recovery Center's files have their lettering baked in and a match
 <!-- @boss:evilleafy:end credits -->
 
 <!-- @boss:mephone4s:begin credits -->
+MePhone4S (Boss 8), his Super Death Trap over the quicksand. What he holds and drives wears the show's art, cut by `scripts/fetch-attack-sprites.mjs` (its `s4gun`, `s4saw`,
+`s4lolli` and `redcar` picks) into `assets/sprites/attacks/`, each lifted out of its Inanimate Insanity frame by a hand mask round the object and a test that drops the backdrop,
+alpha verified, looked at before it was kept. His own render (`mephone4s.png`), Taco's (`taco-ii.png`, the launcher of HASTA LA VISTA!), the lemon (`lemon.png`) and the Fist Thingy
+(`fist.png`, in his ending) are credited above; the sawblades, the crusher, the cliffs, the cage and the quicksand are drawn in code in the show's style (the death trap's own frame,
+File:Mephone4sdeathtrap.jpg, is a JPEG on a pale sky, and the cage and the quicksand pit are in File:Mephone4Scameo.png and File:S1RE8QuicksandPit.png).
+- MePhone4S (PUT THAT COOKIE DOWN!) (s4gun.png): the pistol in his hand (4Seeing The Future: "Put that cookie down! (pulls out a gun) Now!"), hand-masked out of the remaster frame — File:S1RE8 MePhone4S pulls out his gun.png — https://static.wikia.nocookie.net/inanimateinsanity/images/9/9d/S1RE8_MePhone4S_pulls_out_his_gun.png/revision/latest?cb=20260618002008
+- MePhone4S (ONE OF EACH!) (s4saw.png): the chainsaw MePhone4S holds up as the prize (The Tile Divide: "No! The prizes are chainsaws!"), hand-masked out of the frame; his hand is left behind — File:Screen shot 2012-09-02 at 12.25.17 PM.png — https://static.wikia.nocookie.net/inanimateinsanity/images/8/84/Screen_shot_2012-09-02_at_12.25.17_PM.png/revision/latest?cb=20240713042838
+- MePhone4S (ONE OF EACH!) (s4lolli.png): the lollipop MePhone4 holds up (The Tile Divide: "The prizes are lollipops!"), cut from the same frame: the red ball and its stick — File:Screen shot 2012-09-02 at 12.25.17 PM.png — https://static.wikia.nocookie.net/inanimateinsanity/images/8/84/Screen_shot_2012-09-02_at_12.25.17_PM.png/revision/latest?cb=20240713042838
+- MePhone4S (I'LL BE BACK!) (redcar.png): his red car (Sugar Rush: "I'll be back. (MePhone4S walks towards a nearby car, which he then proceeds to hit Cheesy with.)"), cut from the frame of it on the night grass — File:MePhone4S's Car.jpg — https://static.wikia.nocookie.net/inanimateinsanity/images/a/a7/MePhone4S%27s_Car.jpg/revision/latest?cb=20260122042116
 <!-- @boss:mephone4s:end credits -->
 
 <!-- @boss:two:begin credits -->
