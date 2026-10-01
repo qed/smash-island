@@ -70,7 +70,7 @@ describe('MePhone4S joins the gauntlet', () => {
       ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug', 'dodgepattern+swarmseek+dodgeball+eggsac', 'swarm dodgepattern swarm swarmseek', 36, 'Second Wave', 'Swarm Frenzy'],
       ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face', 'pfaceRap+pfaceTorture+pfaceThanks+pfaceShoes', 'swallow pfaceRap swallow pfaceTorture', 46, 'Running Loops', 'Broken Value'],   // rebuilt (the boss overhaul): test/boss-purple-face.test.js
       // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
-      ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone', 'melife+portal', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],
+      ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'elimarea', true, 'mephone', 'melife+portal+boomerang+maze', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],   // rebuilt (the boss overhaul, Rounds 8 and 10): the Great Escape's Elimination Area and five attacks, test/boss-mephone4.test.js
       ['Evil Leafy', '#ff0100', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'elpossess+elhole+elbehind', 'evilleafy elpossess evilleafy elhole', 56, 'No Refuge', 'Vine Coverage'],   // rebuilt (the boss overhaul): red ("Evil Leafy red with black vines", the owner, 2026-09-29), her own four, TENDRILS!'s longer wind-up (test/boss-evilleafy.test.js)
     ]);
   });

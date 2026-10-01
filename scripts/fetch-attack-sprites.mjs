@@ -297,6 +297,20 @@ const PICKS = {
   // @boss:dragon:end picks
 
   // @boss:mephone4:begin picks
+  // ---- MEPHONE4 (Boss 6), rebuilt in the boss overhaul: the show's own art for what he throws and opens. Names are prefixed `mp4` so no other boss's pick can share one.
+  // The glove: File:Late II Fist Thingy.png (the Fist Thingy page: "a red boxing glove with the label 'Fist Thingy' on it attached to a gray or white pole") is a clean
+  // transparent asset, but its cuff band carries the label and a match shows no words, so only the glove is cut (the region ends where the band begins); the cuff, the band
+  // (blank) and the pole are drawn in code beside it ("Yes, cut or draw", the owner, 2026-09-29).
+  mp4glove:  { who: 'MePhone4 (FIST THINGY!)',       kits: ['mp4glove'],  wiki: 'ii', file: 'Late II Fist Thingy.png', region: [0, 0, 200, 215], h: 96,
+    note: 'the red glove of the Fist Thingy, cut from File:Late II Fist Thingy.png before its labelled cuff band (the band and the pole are drawn)' },
+  // The Rejection Portal page: "a vertical, circular vortex ... It has yellow and pink on the inside and will fade away if an object enters it." File:Rejection Portal (Bigger Version).png
+  // is the wiki's own isolated oval of it.
+  mp4portal: { who: 'MePhone4 (REJECTION PORTAL!)',  kits: ['mp4portal'], wiki: 'ii', file: 'Rejection Portal (Bigger Version).png', h: 128,
+    note: 'the Rejection Portal, pink with yellow rings (the wiki\'s isolated oval of it)' },
+  // The Great Escape/Transcript: "(MePhone4 throws a boomerang at Party Hat, but before it can reach him, it rebounds and returns to MePhone4's hand.)" The boomerang is the one in his hand in
+  // File:S1RE14 MePhone's boomerangs.png (a remaster frame): the peach body and red tips are warm, the TV behind it dark navy and the frame's bar a pale grey, so the warm pixels are the cut.
+  mp4boom:   { who: 'MePhone4 (BOOMERANGS!)',        kits: ['mp4boom'],   wiki: 'ii', file: "S1RE14 MePhone's boomerangs.png", key: 'prop', region: [385, 60, 480, 185], srcH: 508, h: 56,
+    keep: (r, g, b) => r >= 140 && r - b >= 40, note: "one of MePhone4's boomerangs, lifted out of his hand in the Great Escape remaster frame" },
   // @boss:mephone4:end picks
 
   // @boss:evilleafy:begin picks

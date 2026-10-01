@@ -738,7 +738,7 @@ describe('the A-twos-ment Park: sky, floor, backdrop and what the phases do to i
   it('gives the park its dusk sky, its grey tile floor, its hazard and its ending, and every arena key a netcode client would take', () => {
     const r = W.eval(`({ sky: BOSS_ARENA_SKY.twopark, ground: BOSS_ARENA_GROUND.twopark && [BOSS_ARENA_GROUND.twopark.fill, BOSS_ARENA_GROUND.twopark.line, typeof BOSS_ARENA_GROUND.twopark.pattern],
       hz: [typeof arenaHazardOf('twopark').step, typeof arenaHazardOf('twopark').draw], end: [typeof BOSS_ENDINGS.two.sweep, typeof BOSS_ENDINGS.two.begin, BOSS_ENDINGS.two.holdMs, BOSS_ENDINGS.two.line],
-      void: BOSS_ARENA_SKY.void.length, others: ['studio','forest','cerealbox','hotelroof','cave','melife'].every(function(k){ return !!BOSS_ARENA_SKY[k]; }), four: BOSS_ROSTER.find(function(b){ return b.name === 'Four'; }).arena })`);
+      void: BOSS_ARENA_SKY.void.length, others: ['studio','forest','cerealbox','hotelroof','cave','elimarea'].every(function(k){ return !!BOSS_ARENA_SKY[k]; }), four: BOSS_ROSTER.find(function(b){ return b.name === 'Four'; }).arena })`);
     expect(r.sky).toHaveLength(2);
     expect(r.ground).toEqual(['#8d8fa0', '#2c2c3c', 'function']);
     expect(r.hz).toEqual(['function', 'function']);

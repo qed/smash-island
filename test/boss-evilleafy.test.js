@@ -528,7 +528,7 @@ describe('the Evil Forest: its sky and ground, the dark that follows her and wid
   it('has its sky, its dark-grass ground, its hazard, its decor and its ending, and the arena key a netcode client would take', () => {
     const r = W.eval(`({ sky: BOSS_ARENA_SKY.forest, ground: BOSS_ARENA_GROUND.forest && [BOSS_ARENA_GROUND.forest.fill, BOSS_ARENA_GROUND.forest.line, typeof BOSS_ARENA_GROUND.forest.pattern],
       hz: [typeof arenaHazardOf('forest').step, typeof arenaHazardOf('forest').draw], end: [typeof BOSS_ENDINGS.evilleafy.sweep, typeof BOSS_ENDINGS.evilleafy.begin, BOSS_ENDINGS.evilleafy.holdMs, BOSS_ENDINGS.evilleafy.line],
-      decor: String(drawArenaDecor).indexOf('elDecor()') >= 0, others: ['studio', 'cave', 'void', 'cerealbox', 'hotelroof', 'melife'].every(function(k){ return !!BOSS_ARENA_SKY[k]; }) })`);
+      decor: String(drawArenaDecor).indexOf('elDecor()') >= 0, others: ['studio', 'cave', 'void', 'cerealbox', 'hotelroof', 'elimarea'].every(function(k){ return !!BOSS_ARENA_SKY[k]; }) })`);
     expect(r.sky, 'a teal-green night, not the black it was').toEqual(['#1e4033', '#0e2218']);
     expect(r.ground).toEqual(['#1f2f1a', '#3f5d33', 'function']);
     expect(r.hz).toEqual(['function', 'function']);
