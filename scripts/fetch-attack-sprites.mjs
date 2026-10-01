@@ -300,6 +300,22 @@ const PICKS = {
   // @boss:four:begin picks
   // @boss:four:end picks
 
+  // ---- Steve Cobs's fight (the boss overhaul, 2026-09-30): what he throws, in the show's art ("Yes, cut or draw": cut from frames where the show
+  // has them, draw where it has none). The MeKnife, the lollipops and the Fist Thingy (reused: fist.png) and the pencil (reused: pencil.png) are standalone
+  // files; the boomerang, the van and the popcorn are lifted out of frames (the van and the popcorn hand-masked: poly is their silhouette, traced off the
+  // frame, holes filled; the boomerang is its own colours on the dark screen behind it). The Meeple Watch's frame is a 529x313 close-up of Cobs with the
+  // watch a smudge in the corner, so it stays drawn. His chainsaws keep Saw's blade (sawblade.png; the II wiki has no chainsaw file).
+  cobsknife:     { who: 'Steve Cobs', kits: ['meepleknife'], wiki: 'ii', file: 'MeKnife.png', h: 100, note: 'the MeKnife, a knife with the Meeple logo on its handle (File:MeKnife.png), point up' },
+  cobslolli1:    { who: 'Steve Cobs', kits: ['cobslolli1'], wiki: 'ii', file: 'Lollipop1.png', h: 44, note: 'a lollipop, the red swirl (The Tile Divide: lollipops and chainsaws thrown together)' },
+  cobslolli2:    { who: 'Steve Cobs', kits: ['cobslolli2'], wiki: 'ii', file: 'Lollipop2.png', h: 50, note: 'a lollipop, the green one (The Tile Divide), candy at the left' },
+  cobsboomerang: { who: 'Steve Cobs', kits: ['cobsboomerang'], wiki: 'ii', file: "S1RE14 MePhone's boomerangs.png", key: 'prop', region: [393, 62, 472, 180], srcH: 508, h: 60,
+    keep: (r, g, b) => (r >= 190 && r - b >= 50) || (r >= 110 && r - g >= 55 && r - b >= 40), note: 'the prize boomerang, orange with red tips (The Great Escape), lifted off the dark screen behind MePhone4' },
+  cobsvan:       { who: 'Steve Cobs', kits: ['meeplevan'], wiki: 'ii', file: 'S2e7 a police van throws mephone4 out of back.png', key: 'prop', region: [535, 55, 1308, 586], srcH: 768, h: 64,
+    poly: [[1145,58],[1168,63],[1171,85],[1233,88],[1261,97],[1303,287],[1292,397],[1291,425],[1298,428],[1293,466],[1245,463],[1235,510],[1221,530],[1205,534],[1166,528],[1155,517],[1146,492],[1106,503],[1089,501],[1084,535],[1069,567],[1050,580],[1014,580],[993,574],[976,547],[950,555],[853,544],[849,493],[754,483],[753,532],[676,524],[675,462],[569,450],[550,394],[539,323],[542,251],[558,134],[667,136],[675,109],[682,104],[780,90],[914,83],[1158,85],[1162,65],[1152,63],[1149,68],[1139,60]],
+    keep: () => true, note: 'the van that pulls up, throws MePhone4 out of its back doors and drives away (season 2, episode 7), hand-masked out of the frame' },
+  cobspopcorn:   { who: 'Steve Cobs', kits: ['popcorn'], wiki: 'ii', file: 'Popcorn Everywhere!.png', key: 'prop', region: [698, 42, 1250, 672], srcH: 1080, h: 48,
+    poly: [[901,46],[922,46],[949,64],[966,107],[993,81],[1023,86],[1110,159],[1109,209],[1160,187],[1184,197],[1197,216],[1198,232],[1172,267],[1232,299],[1241,321],[1245,372],[1231,439],[1215,469],[1174,515],[1149,529],[1087,511],[1093,540],[1087,559],[1043,584],[1014,571],[990,540],[968,603],[947,634],[929,654],[886,668],[842,661],[797,643],[769,628],[752,603],[742,560],[749,531],[813,397],[722,359],[705,324],[702,290],[733,182],[771,165],[840,181],[829,119],[834,102],[859,72]],
+    keep: () => true, note: 'a popped kernel, from the frame of the popcorn he exploded into (Objects in Mirror), hand-masked' },
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
   // The three II winners, allowed in only as Steve Cobs's prize ("3, but only after you beat cobs."). The owner's art answers
   // (2026-09-29): OJ's shards -- "crop the shards that were stuck to book in shattered." and then "the episode bfdia 23." --

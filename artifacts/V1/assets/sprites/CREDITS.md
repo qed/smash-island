@@ -429,6 +429,17 @@ OJ's puddle is drawn, per the owner; his shard is cut from the BFDI wiki's File:
 Objects in Mirror frame where Cobs holds it up (a JPEG, so `png` + key `orb`); her wrench is hand-masked (`poly`) and keyed
 grey out of the Marsh on Mars frame; Cabby's file is the wiki's own folder. The voices are drawn (nothing to cut).
 
+Steve Cobs's fight (the boss overhaul, 2026-09-30; "Yes, cut or draw"): what he throws wears the show's art, fetched by `scripts/fetch-attack-sprites.mjs` (the `cobs*` picks, in its Steve Cobs's fight block;
+rebuilt by `node scripts/fetch-attack-sprites.mjs <out> cobsknife cobslolli1 cobslolli2 cobsboomerang cobsvan cobspopcorn`) into `assets/sprites/attacks/`, alpha verified, looked at before it was kept. The boomerang,
+the van and the popcorn are lifted out of episode frames (the van and the popcorn hand-masked); the MeKnife and the lollipops are the wiki's own standalone files. His Fist Thingy wears `fist.png` and his unit rounds `pencil.png`, both
+credited above (the same files, new keys); his chainsaws keep Saw's blade (`sawblade.png`, above). The Meeple Watch, the crumbs, the glass pane, the thrown MePhone and the candy shards are drawn in code.
+- Steve Cobs (cobsknife.png): the MeKnife, a knife with the Meeple logo on its handle (File:MeKnife.png), point up — File:MeKnife.png — https://static.wikia.nocookie.net/inanimateinsanity/images/7/75/MeKnife.png/revision/latest?cb=20260114120122
+- Steve Cobs (cobslolli1.png): a lollipop, the red swirl (The Tile Divide: lollipops and chainsaws thrown together) — File:Lollipop1.png — https://static.wikia.nocookie.net/inanimateinsanity/images/0/0d/Lollipop1.png/revision/latest?cb=20260304130137
+- Steve Cobs (cobslolli2.png): a lollipop, the green one (The Tile Divide), candy at the left — File:Lollipop2.png — https://static.wikia.nocookie.net/inanimateinsanity/images/f/f1/Lollipop2.png/revision/latest?cb=20260304130155
+- Steve Cobs (cobsboomerang.png): the prize boomerang, orange with red tips (The Great Escape), lifted off the dark screen behind MePhone4 — File:S1RE14 MePhone's boomerangs.png — https://static.wikia.nocookie.net/inanimateinsanity/images/6/66/S1RE14_MePhone%27s_boomerangs.png/revision/latest?cb=20260728182417
+- Steve Cobs (cobsvan.png): the van that pulls up, throws MePhone4 out of its back doors and drives away (season 2, episode 7), hand-masked out of the frame — File:S2e7 a police van throws mephone4 out of back.png — https://static.wikia.nocookie.net/inanimateinsanity/images/4/4d/S2e7_a_police_van_throws_mephone4_out_of_back.png/revision/latest?cb=20170913191937
+- Steve Cobs (cobspopcorn.png): a popped kernel, from the frame of the popcorn he exploded into (Objects in Mirror), hand-masked — File:Popcorn Everywhere!.png — https://static.wikia.nocookie.net/inanimateinsanity/images/d/da/Popcorn_Everywhere%21.png/revision/latest?cb=20250328000023
+
 ### Boss Rush
 
 MePhone4, Boss 7 of the gauntlet. Same wiki and footing as the table above. The page's default image is a fan

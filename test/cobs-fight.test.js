@@ -23,13 +23,15 @@ const fight = (lineup, opts, body) => W.eval(`(function(){
   SETTINGS.itemRate=0; SETTINGS.stocks=3; LOCAL_PLAYERS=1; window.__cobsEnd = undefined;
   var __ok = startCobsFight(${JSON.stringify(lineup)}, Object.assign(${JSON.stringify(opts || {})}, { onEnd:function(won){ window.__cobsEnd = won; return true; } }));
   var s = summons.find(function(o){ return o._cobsFight; });
+  s._hop = null;   // (the opening hop off the top is tested on its own: a test that places him itself starts with him home)
   var you = fighters[0];
   var park = function(){ s._atkTimer = 1e9; you.controller = 'still'; };
   var floorAt = function(f, x){ f.x = x; f.y = groundY() - f.r; f.vx = 0; f.vy = 0; f.pct = 0; f.invuln = 0; step(); f.pct = 0; f.invuln = 0; };
   var shots = function(){ return projectiles.filter(function(p){ return p.owner===-2 && p.life > 0; }); };
   ${body}
 })()`);
-const ALL = ['rounds', 'van', 'samples', 'chainsaws', 'spikes', 'deploy', 'device', 'portal', 'springs', 'memurder', 'meknife', 'kernelpop', 'hands',
+// ('rounds' is 'boomerangs' now: the owner, boss-overhaul-decisions.md Round 7, "Swap for BOOMERANGS!" -- SECURITY ROUNDS! is gone)
+const ALL = ['boomerangs', 'van', 'samples', 'chainsaws', 'spikes', 'deploy', 'device', 'portal', 'springs', 'memurder', 'meknife', 'kernelpop', 'hands',
   'deletion', 'ticktock', 'plug', 'keynote', 'metags', 'cannon'];
 
 describe('Steve Cobs is his own boss', () => {
@@ -165,7 +167,7 @@ describe('FIVE TIERS, all attacks stepping up together at 2000, 1500, 1000 and 5
           case 'deploy': return summons.filter(function(m){ return m.type==='mephoneunit'; }).length;
           case 'portal': return s._portals.length;
           case 'deletion': return s._xs.length;
-          case 'keynote': return s._rings.length;
+          case 'keynote': return s._rings.filter(function(R){ return !R.stress; }).length;   // (from tier 3 the finish adds two stressed rings of its own: the crescendo, Round 7)
           case 'metags': return summons.filter(function(m){ return m.type==='metag'; }).length;
           case 'cannon': return s._ship ? s._ship.left : 0;
           case 'plug': return sh.filter(function(p){ return p.cobsPane; }).length;
@@ -203,7 +205,7 @@ describe('FIVE TIERS, all attacks stepping up together at 2000, 1500, 1000 and 5
         if (k === 'spikes') { expect(o.n, `${k} tier ${t} spikes`).toBeGreaterThan(0); continue; }   // how many platforms are near is the arena's business
         if (k === 'kernelpop') { expect(o.n, `${k} tier ${t} kernels`).toBeGreaterThanOrEqual(o.want); continue; }   // a kernel may already have splatted into its puddle
         expect(o.n, `${k} tier ${t} count`).toBe(o.want);
-        if (['rounds', 'van', 'samples', 'chainsaws', 'device', 'springs', 'meknife', 'hands', 'ticktock', 'plug'].includes(k)) {
+        if (['boomerangs', 'van', 'samples', 'chainsaws', 'device', 'springs', 'meknife', 'hands', 'ticktock', 'plug'].includes(k)) {
           expect(o.spd, `${k} tier ${t} flies no slower than the tier before`).toBeGreaterThanOrEqual(lastSpd - 1e-9); lastSpd = o.spd;
         }
       }
@@ -231,30 +233,36 @@ describe('the adapted set is HIS: he built the phones, he is not one', () => {
     expect(r.harder).toBe(true);
   });
 
-  it('the rounds come from HIS hand at the point the sight locked; the van drives the floor; the samples land and wait; the units shoot', () => {
+  it('the boomerangs leave HIS hand on the arc the sight locked; the van drives the floor; the samples burst into crumbs; the units shoot', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s.x = you.x + 400; s.y = you.y - 120; s.face = -1;
-      cobsFightTelegraph(s, 'rounds', you); var aimed = [s._aimX, s._aimY];
-      for (var i=0;i<s._tel - cobsT(s,'rounds').lock + 2;i++) step();   // follows you until the lock...
-      you.x += 300; step(); var lockedAim = s._aimX;                        // ...then holds
-      s._tel = 0; COBS_MOVES.rounds(s, you, ++BOSS_ATK_ID);
-      var r0 = shots()[0], hx = s.x + (s.face||1)*s.r*0.6;
-      var rounds = { fromHand: Math.abs(r0.x - hx) < 1, toward: Math.sign(r0.vx) === Math.sign(lockedAim - hx), heldAim: lockedAim === aimed[0], beam: !!r0.beamShot };
+      cobsFightTelegraph(s, 'boomerangs', you); var aimed = [s._aimX, s._aimY];
+      for (var i=0;i<s._tel - cobsT(s,'boomerangs').lock + 2;i++) step();   // follows you until the lock...
+      you.x += 300; step(); var lockedAim = s._aimX, lockedY = s._aimY;      // ...then holds
+      s._tel = 0; COBS_MOVES.boomerangs(s, you, ++BOSS_ATK_ID);
+      var r0 = shots()[0], hx = s.x + (s.face||1)*s.r*0.6, hy = s.y - s.r*0.1, T = cobsT(s, 'boomerangs');
+      var path = cobsBoomPath(T, hx, hy, lockedAim, lockedY, 0), end = path[path.length-1];
+      var near = Math.min.apply(null, path.map(function(q){ return Math.hypot(q[0] - lockedAim, q[1] - lockedY); }));
+      var boom = { fromHand: Math.abs(r0.x - hx) < 1 && Math.abs(r0.y - hy) < 1, near: near, heldAim: lockedAim === aimed[0], shape: r0.shape, pierce: !!r0.pierce, turns: r0._bm.turns, n: shots().length, want: T.n };
       projectiles = []; cobsFightTelegraph(s, 'van', you); s._tel = 0; COBS_MOVES.van(s, you, ++BOSS_ATK_ID);
       var v = shots()[0], fl = cobsFloor();
       var van = { onFloor: Math.abs(v.y - (groundY() - 26)) < 1, fromEdge: v.x < fl.x + 40 || v.x > fl.x + fl.w - 40, pierce: !!v.pierce, shape: v.shape, dir: Math.sign(v.vx) === Math.sign(you.x - v.x) };
       projectiles = []; cobsFightTelegraph(s, 'samples', you); s._tel = 0; COBS_MOVES.samples(s, you, ++BOSS_ATK_ID);
-      for (var i=0;i<200;i++) step();
-      var traps = projectiles.filter(function(p){ return p.owner===-2 && p.trap; });
-      var samples = { landed: traps.length, poison: traps.every(function(p){ return p.fxTag==='poison'; }) };
+      var boxes = shots().length; you.invuln = 99999;   // (a fighter under a box is hit by it, and a crumb that hits is spent: count them with nobody in the way)
+      for (var i=0;i<95;i++) step();
+      var crumbs = projectiles.filter(function(p){ return p.owner===-2 && p._crumb; });
+      var samples = { boxes:boxes, crumbs: crumbs.length, poison: crumbs.every(function(p){ return p.fxTag==='poison'; }), traps: projectiles.filter(function(p){ return p.trap; }).length };
       projectiles = []; summons = summons.filter(function(m){ return m===s; }); cobsFightTelegraph(s, 'deploy', you); s._tel = 0; COBS_MOVES.deploy(s, you, ++BOSS_ATK_ID);
       var u = summons.find(function(m){ return m.type==='mephoneunit'; }); u._cd = 0; step(); step();
       var unit = { shot: u._shots, alive: u.life > 0, cd: u._cd > 0 };   // a round can break on a platform top the frame it leaves, so the unit's own count is what is read
-      return { rounds:rounds, van:van, samples:samples, unit:unit };`);
-    expect(r.rounds).toEqual({ fromHand: true, toward: true, heldAim: false, beam: true });
+      return { boom:boom, van:van, samples:samples, unit:unit };`);
+    expect(r.boom).toMatchObject({ fromHand: true, heldAim: false, shape: 'cobsboomerang', pierce: true, turns: 4, n: r.boom.want });
+    expect(r.boom.near, 'the first leg is an arc that passes through the point the sight locked').toBeLessThan(30);
     expect(r.van).toMatchObject({ onFloor: true, fromEdge: true, pierce: true, shape: 'meeplevan', dir: true });
-    expect(r.samples.landed).toBeGreaterThan(0);
+    expect(r.samples.boxes).toBe(3);
+    expect(r.samples.crumbs, 'every box burst into crumbs (2 a side at tier 1), and the cookies no longer wait as mines').toBe(3 * 2 * 2);
     expect(r.samples.poison).toBe(true);
+    expect(r.samples.traps).toBe(0);
     expect(r.unit).toEqual({ shot: 1, alive: true, cd: true });
   });
 });
@@ -335,7 +343,7 @@ describe('his four base melee', () => {
       cobsTakeDamage(s, 5); var glasses = s._glassesOff;
       s._tel = 0; COBS_MOVES.hands(s, you, ++BOSS_ATK_ID);
       var fists = shots(), T = cobsT(s, 'hands'), last = fists[fists.length-1];
-      var out = { telUp:telUp, glasses:glasses, n:fists.length, want:T.n, snap:last.fxTag, snapN:last.fxN, gaps:fists.map(function(p){ return p.delay; }), row: fists.every(function(p){ return Math.abs(p.y - fists[0].y) < 1; }) };
+      var out = { telUp:telUp, glasses:glasses, n:fists.length, want:T.n, snap:last.fxTag, snapN:last.fxN, gaps:fists.map(function(p){ return p.delay; }), row: fists.every(function(p, i){ return Math.abs(p.y - fists[i % 2].y) < 1; }), rows2: Math.abs(fists[0].y - fists[1].y) > 50 };
       var rowX = s.x - 120, rowY = fists[0].y - (hurtCY(you) - you.y);   // held in the fists' row (he drifts on his orbit; the fists do not)
       you.invuln = 0; var p0 = you.pct; for (var i=0;i<80;i++){ step(); you.invuln = 0; you.x = rowX; you.y = rowY; you.vx = 0; you.vy = 0; }
       out.hit = you.pct - p0; out.weakened = you.weakened;
@@ -348,8 +356,11 @@ describe('his four base melee', () => {
     expect(r.n).toBe(r.want);
     expect(r.snap).toBe('weaken');
     expect(r.snapN).toBe(120);
-    expect(r.gaps).toEqual([0, 21, 42]);
-    expect(r.row).toBe(true);
+    // Round 7, verbatim: "MY OWN HANDS: TWO ROWS, MARKED -- punches alternate between two rows, both lit at the start with their order": from tier 2 the
+    // punches alternate between two rows (this is tier 2) and each gap is gap2 = 8 frames longer so the swap can be made: 21 + 8 (test/boss-cobs-fight.test.js)
+    expect(r.gaps).toEqual([0, 29, 58]);
+    expect(r.row, 'punch i on row i mod 2').toBe(true);
+    expect(r.rows2).toBe(true);
     expect(r.hit).toBeGreaterThan(0);
     expect(r.weakened, 'the snap: your hits deal less for a while').toBeGreaterThan(0);
     expect(r.missAim, 'and with his glasses off he aims off').toBe(true);
@@ -418,11 +429,12 @@ describe('the six personalised specials', () => {
       cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID); var shipUp = !!s._ship;
       cobsFightTelegraph(s, 'plug', you); s._tel = 0; COBS_MOVES.plug(s, you, ++BOSS_ATK_ID);
       var T = cobsT(s, 'plug'), panes = shots().filter(function(p){ return p.cobsPane; }).length, wait = s._plug.t;
-      for (var i=0;i<wait;i++) step();
+      // (from tier 2 the [POOF] is a wave of T.wave frames, end to end -- the owner, Round 7: "PULL THE PLUG wave" -- so it is run out before looking)
+      var poofSeen = false; for (var i=0;i<wait + T.wave + 2;i++){ step(); if (cobsFx.some(function(e){ return e.kind==='poof'; })) poofSeen = true; }
       var landed = worldPlats.filter(function(p){ return p._cobsPane; });
       var during = { phase:s._plug.phase, floating:worldPlats.filter(function(p){ return !p.solid; }).length, floor:worldPlats.some(function(p){ return p.solid && p.floor===0; }),
-        panes:landed.length, solidPane:landed.every(function(p){ return p.solid; }), yours:projectiles.filter(function(p){ return p.owner===you.idx; }).length, ship:!!s._ship, poof:cobsFx.some(function(e){ return e.kind==='poof'; }) };
-      for (var i=0;i<T.poof + 1;i++) step();
+        panes:landed.length, solidPane:landed.every(function(p){ return p.solid; }), yours:projectiles.filter(function(p){ return p.owner===you.idx; }).length, ship:!!s._ship, poof:poofSeen };
+      for (var i=0;i<T.poof + T.wave + 2;i++) step();
       var after = { plug:s._plug, floating:worldPlats.filter(function(p){ return !p.solid; }).length, plats:worldPlats.length - worldPlats.filter(function(p){ return p._cobsPane; }).length };
       return { panes:panes, want:T.n, shipUp:shipUp, floating0:floating0, plats0:plats0, during:during, after:after };`);
     expect(r.panes).toBe(r.want);
@@ -545,7 +557,8 @@ describe('the passives ("Both in")', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s.x = you.x + 300; s.y = you.y - 100;
       s.hp = 1501; step(); var before = { spoke:s._spoke, speech:s._speechT };
-      s.hp = 1500; step(); var at = { spoke:s._spoke, speech:s._speechT, tier:cobsTier(s), banner:window.__lastBanner && window.__lastBanner.text };
+      s.hp = 1500; step(); var hopped = !!s._hop; for (var i=0;i<100 && s._hop;i++) step(); step();   // (1500 is a tier line too: he is off the top of the screen and back before the speech begins, Round 15's bigger movement)
+      var at = { spoke:s._spoke, speech:s._speechT, tier:cobsTier(s), banner:window.__lastBanner && window.__lastBanner.text, hopped:hopped };
       s._atkTimer = 1; var tels = 0; for (var i=0;i<COBS_SPEECH_T - 2;i++){ step(); if (s._tel > 0) tels++; }
       var quiet = { tels:tels, speech:s._speechT };
       step(); step();
@@ -577,7 +590,8 @@ describe('the passives ("Both in")', () => {
     expect(r.halved).toBeLessThanOrEqual(540);
   });
 
-  it('POPPING POINT below 20%: every hit he takes pops 1-3 kernels at you, 2% each, and he wears the broken-glasses render', () => {
+  // Round 7, verbatim: "Popping Point burst ring" -- the kernels no longer fly 1-3 at you: every hit pops a RING of them (COBS_POP_RING), 2% each, the same cap.
+  it('POPPING POINT below 20%: every hit he takes pops a ring of kernels, 2% each, and he wears the broken-glasses render', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s.x = you.x + 300; s.y = you.y - 100;
       s.hp = 502; step(); projectiles = []; cobsTakeDamage(s, 1); var above = { pops:shots().length, look:cobsLook(s) };   // 501: still above the line
@@ -585,11 +599,11 @@ describe('the passives ("Both in")', () => {
       var counts = [];
       for (var k=0;k<12;k++){ s._popCd = 0; projectiles = []; cobsTakeDamage(s, 1); var ks = shots(); counts.push(ks.length); }
       var one = shots()[0];
-      return { above:above, counts:counts, dmg:one.dmg, cap:one.bossCap, shape:one.shape, look:cobsLook(s), cd:COBS_POP_CD, min:COBS_POP_N[0], max:COBS_POP_N[1] };`);
+      return { above:above, counts:counts, dmg:one.dmg, cap:one.bossCap, shape:one.shape, look:cobsLook(s), cd:COBS_POP_CD, ring:COBS_POP_RING };`);
     expect(r.above, 'not yet at 501').toEqual({ pops: 0, look: 'cobs' });
     expect(r.cd).toBeGreaterThan(0);
-    expect(r.counts.every(n => n >= r.min && n <= r.max), '1-3 a hit').toBe(true);
-    expect(r.counts.some(n => n !== r.counts[0]), 'and it varies').toBe(true);
+    expect(r.counts.every(n => n === r.ring), 'a ring of the same number a hit').toBe(true);
+    expect(r.ring).toBeGreaterThanOrEqual(6);
     expect(r.dmg, '2% each').toBe(2);
     expect(r.shape).toBe('kernel');
     expect(r.look).toBe('cobshurt');
@@ -604,8 +618,8 @@ describe('beatable in principle -- whatever a bot manages', () => {
       hp = s.hp; addProj({ owner:you.idx, ownerObj:you, x:s.x, y:s.y, vx:0.1, vy:0, r:10, dmg:15, kb:1, life:5, color:'#fff' }); step(); out.shot = hp - s.hp;
       hp = s.hp; you._dashing = 3; you._dashDmg = 12; you.x = s.x - 10; you.y = s.y; you.vx = 8; step(); out.dash = hp - s.hp;
       hp = s.hp; chainBoltBoss(s, 12, you); out.bolt = hp - s.hp;
-      s.hp = 2001; step(); out.t1 = cobsTier(s); s.hp = 1; cobsTakeDamage(s, 5); out.zero = s.hp; step(); out.dying = s._dying;
-      for (var i=0;i<72 && running;i++) step();
+      s.hp = 2001; step(); out.t1 = cobsTier(s); s.hp = 1; cobsTakeDamage(s, 5); out.zero = s.hp; window.__lastBanner = null; step(); out.dying = s._dying; out.total = COBS_END.total;
+      for (var i=0;i<COBS_END.total + 6 && running;i++) step();
       out.won = COBSFIGHT.won; out.told = window.__cobsEnd; out.life = s.life; out.over = COBSFIGHT.over; out.banner = window.__lastBanner;
       out.rushCleared = (PROFILE.bossesCleared || {})['Steve Cobs'] || null; out.title = document.getElementById('resultTitle').textContent;
       return out;`);
@@ -615,10 +629,11 @@ describe('beatable in principle -- whatever a bot manages', () => {
     expect(r.bolt).toBe(12);
     expect(r.t1).toBe(1);
     expect(r.zero).toBe(0);
-    expect(r.dying, 'he pops over seventy frames').toBe(70);
+    expect(r.dying, 'his ending scene runs COBS_END.total frames before the fight ends').toBe(r.total);
     expect(r.won && r.told && r.over).toBe(true);
     expect(r.life).toBe(0);
-    expect(r.banner.kind, 'his last words are a boss line').toBe('boss');
+    // Round 15, verbatim: "a short canon ending scene when he's beaten (no text)" -- his last-words banner is gone: the scene says nothing (test/boss-cobs-fight.test.js)
+    expect(r.banner, 'no text in the ending').toBe(null);
     expect(r.title).toBe('Steve Cobs is beaten!');
   });
 
