@@ -48,7 +48,7 @@ describe('Four takes his classroom', () => {
         hz: ['exitclass', 'fourest'].map(function(k){ var h = arenaHazardOf(k); return h && [typeof h.step, typeof h.draw]; }), void_: BOSS_ARENA_SKY.void.length }; })()`);
     expect(r.row).toEqual({ name: 'Four', color: '#3a6ad0', hp: 340, big: 2.8, attack: 'four', arena: 'exitclass', stationary: false, sprite: 'four' });
     expect(r.i, 'the final boss, last of the gauntlet').toBe(r.n - 1);
-    expect(r.two, 'the void is left to Two').toBe('void');
+    expect(r.two, 'Two has his own park now (test/boss-two.test.js)').toBe('twopark');
     expect(r.void_).toBe(2);
     expect(r.sky.every((s) => s.length === 2)).toBe(true);
     expect(r.ground).toEqual([['#5a7396', '#14233d', 'function'], ['#1c2e50', '#06102a', 'function']]);

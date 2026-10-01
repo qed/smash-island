@@ -736,9 +736,10 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     // Evil Leafy, rebuilt: her own gaps (phase 3's 80, was 70: the vine curtains press for her -- "if it makes sense for a hazard, reduce boss difficulty and add a hazard", the owner), TENDRILS!'s
     // wind-up of 56 ("1 needs a better telegraph.") and her own three second moves in place of the shared SEEKERS! and GROUND POUND! (test/boss-evilleafy.test.js has the fight)
     expect(r.evilleafy).toEqual({ base: [130, 95, 80], tel: 56, name1: 'TENDRILS!', name2: 'TENDRILS!', p2: 'No Refuge', p3: 'Vine Coverage', extra: ['elpossess', 'elhole', 'elbehind'] });
-    // rebuilt (the boss overhaul, Rounds 8 and 10): the gaps are a little longer than the usual 100/72/52 -- "if it makes sense for a hazard, reduce boss difficulty and add a hazard" (Round 11)
+    // rebuilt (the boss overhaul, Rounds 8 and 10), on the usual 100/72/52: his builder gave him a little longer for his hazard, but he then measured easier than
+    // MePhone4 before him, and asked, the owner chose "Make MePhone4S harder" (2026-10-01) -- the usual gaps
     // -- and his five second moves are his own ("PUT THAT COOKIE DOWN! (redone), I'LL BE BACK!, ONE OF EACH!, HASTA LA VISTA!, POP UP!, QUICKSAND SHOVE!")
-    expect(r.mephone4s).toEqual({ base: [108, 78, 56], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['s4prizes', 's4vista', 's4popup', 's4car', 's4shove'] });
+    expect(r.mephone4s).toEqual({ base: [100, 72, 52], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['s4prizes', 's4vista', 's4popup', 's4car', 's4shove'] });
     // Two, rebuilt: his phase-3 gap is 60, not 52 (the derailed coaster is the park's hazard now: "if it makes sense for a hazard, reduce boss difficulty and add a hazard.", the owner, 2026-09-29), and his second moves are his own five
     expect(r.two).toEqual({ base: [100, 72, 60], tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap'] });
     // Four, rebuilt (the boss overhaul): his gaps eased a shade for the hills and sparks of his room ("if it makes sense for a hazard, reduce boss difficulty and add a hazard"), his own five
@@ -830,7 +831,7 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
     expect(leaks, 'no slot puts the pace on its own number').toEqual([]);
   });
 
-  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, 108 x 1.2 for MePhone4S (rebuilt: a little longer), 100 x 1.2 for Two, and Four\'s own 104 x 1.2', () => {
+  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, 100 x 1.2 for MePhone4S and Two, and Four\'s own 104 x 1.2', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE('Four', 500)}
       ['MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Four'].forEach(function(name){
@@ -841,7 +842,7 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
         out[name] = b._atkTimer;
       });
       summons = []; projectiles = []; tendrils = []; return out; })()`);
-    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, 'Evil Leafy held': 1e6, MePhone4S: 130, Two: 120, Four: 125 });
+    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, 'Evil Leafy held': 1e6, MePhone4S: 120, Two: 120, Four: 125 });
   });
 });
 

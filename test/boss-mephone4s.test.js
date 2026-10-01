@@ -75,9 +75,9 @@ describe('MePhone4S takes his Super Death Trap', () => {
     expect(r.telLens, 'the gun 42, the props 36, the rest 46').toEqual([42, 36, 46, 46, 46, 46]);
     expect(r.telBare, 'a bare boss with no move yet is the gun\'s').toBe(42);
     expect([r.p2, r.p3]).toEqual(["I'll Be Back", 'Super Death Trap']);
-    // "bosses should attack a bit slower" (the owner, 2026-09-30): his own 108 / 78 / 56 (a little longer than the usual 100 / 72 / 52: his arena's sawblades and
-    // quicksand press as well -- "if it makes sense for a hazard, reduce boss difficulty and add a hazard", Round 11) times BOSS_PACE (1.2)
-    expect(r.gaps, 'his own pacing, paced, quicker each phase').toEqual([130, 94, 67]);
+    // "bosses should attack a bit slower" (the owner, 2026-09-30): the usual 100 / 72 / 52 times BOSS_PACE (1.2). His builder gave him 108 / 78 / 56 for his
+    // sawblades and quicksand; he then measured easier than MePhone4 before him, and asked, the owner chose "Make MePhone4S harder" (2026-10-01): the usual gaps
+    expect(r.gaps, 'his pacing, paced, quicker each phase').toEqual([120, 86, 62]);
     expect(r.held, 'held while a move runs').toBe(1e6);
     expect(r.rushOnly, 'an item boss never throws them: they need his floor and his arena').toEqual([true, true, true, true, true]);
   });
