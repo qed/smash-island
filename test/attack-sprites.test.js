@@ -81,7 +81,9 @@ const KEYS = ['shatter', 'atstake', 'van', 'float', 'cap', 'pricetag', 'measure'
   // One, rebuilt (the boss overhaul, 2026-09-30): the Moon piece of MOON ROCKS!, the three planets of OUT OF ORBIT! and the knife of KNIFE FLURRY! -- which is the Puffball Speaker Box's own file (test/boss-one.test.js)
   'moonrock', 'oneearth', 'oneweird', 'oneskate', 'oneknife',
   // Four's LOVE HEARTS!: the BFB Love Heart, cut from the wiki's bunch (the boss overhaul; test/boss-four.test.js)
-  'fourheart'];
+  'fourheart',
+  // Two, rebuilt (the boss overhaul): the spiked sun, the prize's orbs, the glow a copy with no art of its own falls back to, and the four team blocks (test/boss-two.test.js)
+  'twosun', 'twoprize', 'twoorb', 'twoblock0', 'twoblock1', 'twoblock2', 'twoblock3'];
 
 describe('the registry', () => {
   it('names only shapes the game draws, and every file exists', () => {
@@ -96,7 +98,7 @@ describe('the registry', () => {
   it('every file in the attack folder is drawn by some entry -- none is dead weight', () => {
     const drawn = new Set(W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src.split("/").pop(); })'));
     const onDisk = readdirSync('artifacts/V1/assets/sprites/attacks').filter((f) => f.endsWith('.png'));
-    expect(onDisk.length).toBe(126);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the boss overhaul's: the Announcer's 9, Firey Speaker Box's 9, Purple Face's 6, the Bug Swarm's 12, Puffball Speaker Box's 2, the Purple Dragon's 2, Steve Cobs's fight's 6, One's 4 (her knife is Puffball Speaker Box's file), Four's 1
+    expect(onDisk.length).toBe(133);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the boss overhaul's: the Announcer's 9, Firey Speaker Box's 9, Purple Face's 6, the Bug Swarm's 12, Puffball Speaker Box's 2, the Purple Dragon's 2, Steve Cobs's fight's 6, One's 4 (her knife is Puffball Speaker Box's file), Four's 1, Two's 7
     expect(onDisk.filter((f) => !drawn.has(f))).toEqual([]);
   });
 

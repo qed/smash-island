@@ -306,6 +306,21 @@ const PICKS = {
   // @boss:mephone4s:end picks
 
   // @boss:two:begin picks
+  // ---- Two (Boss 10): what he throws, stacks and rides. The spiked sun is File:Spike Ball aka Sun (BFB 16).png (a red ball with eight steel spikes: "Two transforms the sun into a spiked ball and begins
+  // bashing Four's head with it", The Escape from Four/Transcript). The Power of Two's orbs wear the prize's own icon (File:TPOT(prize).svg: a lime blob round a yellowish-green heart, "Outside: Lime Green /
+  // Inside: Yellowish Green"; the wiki's file is an SVG, so the server rasterises it: png). A copy of your special that has no art of its own comes back as the green glow of File:Two's Powers.png. The blocks that
+  // stack, fall, lie as steps and make up the cars of the rails are the show's own team blocks (the Blocks page: File:TSTOE Block.png red, File:JN Block.png yellow, File:TheS Block.png periwinkle, File:AYO Block.png
+  // green -- "the seats were made out of blocks" is Are You Okay's rollercoaster). His hands (CLAP!), the rails and carts, the park and the landing pad of his ending are DRAWN: no file of them is clean ("Yes, cut or draw").
+  twosun:    { who: 'Two', kits: ['two'], file: 'Spike Ball aka Sun (BFB 16).png', h: 110,
+    note: 'the spiked sun he bashes with and circles himself with ("Two transforms the sun into a spiked ball", The Escape from Four)' },
+  twoprize:  { who: 'Two', kits: ['two'], file: 'TPOT(prize).svg', png: true, h: 48,
+    note: "the Power of Two's prize, the orbs of THE POWER OF TWO! (The Power of Two (prize): \"Outside: Lime Green / Inside: Yellowish Green\")" },
+  twoglow:   { who: 'Two', kits: ['two'], file: "Two's Powers.png", h: 64,
+    note: "the green glow of Two's power, what a MIND READ! copy with no art of its own comes back as" },
+  twoblock0: { who: 'Two', kits: ['two'], file: 'TSTOE Block.png', h: 48, solid: true, note: "a red team block (The Strongest Team on Earth's): BLOCK TOWERS! and the carts of I LOVE RIDES!" },
+  twoblock1: { who: 'Two', kits: ['two'], file: 'JN Block.png', h: 48, solid: true, note: "a yellow team block (Just Not's): BLOCK TOWERS! and the carts of I LOVE RIDES!" },
+  twoblock2: { who: 'Two', kits: ['two'], file: 'TheS Block.png', h: 48, solid: true, note: "a periwinkle team block (The S!'s): BLOCK TOWERS! and the carts of I LOVE RIDES!" },
+  twoblock3: { who: 'Two', kits: ['two'], file: 'AYO Block.png', h: 48, solid: true, note: "a green team block (Are You Okay's): BLOCK TOWERS! and the carts of I LOVE RIDES!" },
   // @boss:two:end picks
 
   // @boss:four:begin picks

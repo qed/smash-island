@@ -95,7 +95,7 @@ describe('transparency: an object, never a rectangle pasted over the stage', () 
     // (Bracelety's blank board did too, and was no richer than a drawn rectangle: her ICY sign ships now.)
     const firstSeven = ['shatter.png', 'slice.png', 'van.png', 'bubble.png', 'cap.png', 'tag.png', 'measure.png'];
     const solid = entries.filter((e) => e.solid).map((e) => e.file).sort();
-    expect(solid, "Remote's battery cell and the Announcer's press (a block cut out of the crusher's asset) fill their own canvas").toEqual(['annpress.png', 'battery.png']);
+    expect(solid, "Remote's battery cell and the Announcer's press (a block cut out of the crusher's asset) fill their own canvas, and so do Two's four team blocks (flat squares: File:TSTOE Block.png and its kin)").toEqual(['annpress.png', 'battery.png', 'twoblock0.png', 'twoblock1.png', 'twoblock2.png', 'twoblock3.png']);
     for (const e of entries) {
       if (firstSeven.includes(e.file) || e.solid) continue;
       expect(clearOf(read(e.file)), `${e.file} has no real transparency`).toBeGreaterThan(0.05);
