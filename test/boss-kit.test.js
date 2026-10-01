@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { loadMonolith } from './helpers/load-monolith.js';
 import { mulberry32 } from './helpers/prng.js';
+import { bootValidating } from './helpers/validating-canvas.js';
 
 // THE BOSS KIT (the boss overhaul, 2026-09-29: boss-overhaul-decisions.md). The engine the thirteen rebuilt bosses stand on,
 // built before any of them, so six builders can work on the early six at once:
@@ -890,5 +891,60 @@ describe("Four's victory card waits for his ending (the hook; he has one of his 
     // the run ended while the scene played (a quit, a restart): no card over whatever came next
     expect(over.after.paused, 'no card if the run is over').toBe(false);
     expect(over.after.shown).toBe('none');
+  });
+});
+
+// ==== THE GLITCH PASS (2026-10-01) ===================================================================================================
+// scripts/boss-glitch.mjs plays every boss with AI fighters and draws every frame (and every netcode snapshot, as a client) through a
+// canvas that refuses what a real browser refuses (test/helpers/validating-canvas.js): jsdom accepts a negative arc radius, an alpha
+// of 1.04 and a fill of `undefined`, a browser throws on the first and ignores the others. What it found in the shared code is here.
+
+describe('the glitch pass: what every boss hit and every particle shares', () => {
+  // A boss's shot names its owner {team:-1, idx:-2}: no colour, no body. A hazard's hit names nobody (null).
+  const HIT = (extra = '', opts = '') => `(function(){
+    SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
+    worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[]; fighters=[];
+    var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 500, groundY()-24, 0);
+    f.team=0; f.controller='still'; f.stocks=9; fighters=[f]; ${extra}
+    var owner = { team:-1, idx:-2 };
+    projectiles.push({ owner:-2, ownerObj:owner, x:f.x, y:f.y, vx:0, vy:0, r:30, dmg:12, kb:6, life:10, bossAtk:++BOSS_ATK_ID, color:'#ff9a3a' });
+    var p0 = f.pct; particles = []; step();
+    return { took: f.pct - p0, owner: owner, parts: particles.map(function(p){ return { c: p.color, x: p.x, y: p.y }; }) ${opts} };
+  })()`;
+
+  it('a boss shot that lands throws sparks that have a colour and a place (its owner has neither: the sparks drew in whatever fill the last thing left, and a client was sent null)', async () => {
+    const r = W.eval(HIT());
+    expect(r.took, 'the hit lands').toBeGreaterThan(0);
+    expect(r.parts.length, 'and there are sparks').toBeGreaterThan(0);
+    expect(r.parts.every((p) => typeof p.c === 'string' && p.c.length > 0), 'every spark has a colour').toBe(true);
+    expect(r.parts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'and a place').toBe(true);
+    // the same, drawn, on a canvas that keeps the old fill for a fill it refuses
+    const { w, errors } = await bootValidating();
+    w.eval(HIT()); w.eval('draw()');
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && /fillStyle/.test(e.key)), 'no fill the canvas ignores').toEqual([]);
+  });
+
+  it('a fighter in a counter stance blocks a boss shot and has nobody to punish: no hit on the shot\'s owner, no sparks at (undefined, undefined), none drawn at the corner of a client\'s world', () => {
+    const r = W.eval(HIT('f.countering = 60; f.kit = { special: "basic" };', ', countering: f.countering'));
+    expect(r.took, 'the stance took the hit').toBe(0);
+    expect(r.countering, 'and is spent').toBe(0);
+    expect(Object.keys(r.owner).sort(), 'the owner is only a name: nothing was done to it').toEqual(['idx', 'team']);
+    expect(r.parts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'no spark has no place').toBe(true);
+    // against a fighter the stance still punishes, as it always did
+    const q = W.eval(`(function(){
+      SETTINGS.mode='ffa'; running=true; projectiles=[]; particles=[]; summons=[];
+      var a = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 400, groundY()-24, 0), b = makeFighter(ROSTER.find(function(r){ return r.name==='Pin'; }), 440, groundY()-24, 1);
+      a.team=0; b.team=1; a.stocks=b.stocks=9; fighters=[a,b]; a.countering=60; a.kit={special:'basic'};
+      var before = b.pct; applyHit(a, 10, 3, -2, b); return { atkr: b.pct - before, mine: a.pct }; })()`);
+    expect(q.atkr, 'the one who hit a counter stance takes it back').toBeGreaterThan(0);
+    expect(q.mine, 'and it took nothing').toBe(0);
+  });
+
+  it('a particle is drawn at an alpha the canvas keeps: a fresh puff lives up to 24 frames and its alpha was life / 22 (1.09), which a real canvas ignores', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){ SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); particles = []; for (var i=0;i<6;i++) particles.push({ x:300+i*20, y:300, vx:0, vy:0, life:24 - i, r:4, color:'#fff' }); })()`);
+    errors.length = 0;
+    w.eval('draw()');
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
   });
 });

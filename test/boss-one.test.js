@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { mulberry32 } from './helpers/prng.js';
+import { bootValidating } from './helpers/validating-canvas.js';
 
 // ONE, rebuilt in the boss overhaul (2026-09-30): "give the attacks a twist" -- a play on words: each attack gets a change, a specialty, and "the
 // twists should occur at tier 2, and get stronger at tier 3" (off at tier 1) -- INCOMING! became FOLDING ISLAND! ("it could be a floor-based
@@ -1245,5 +1246,26 @@ describe('no words, and nothing for a netcode client', () => {
     })()`);
     expect(r.ok, 'a netcode session cannot start her').toBe(false);
     expect(r.leak, 'none of her new state is on the snapshot').toEqual([]);
+  });
+});
+
+// ==== THE GLITCH PASS (2026-10-01): what scripts/boss-glitch.mjs found drawing her fight on a canvas that refuses what a browser refuses ====
+describe('the glitch pass: her fight drawn on a canvas that keeps the old fill and the old alpha', () => {
+  it('the turn arrows of her ring draw at an alpha the canvas keeps (0.5 + pulse peaks at 1.05), and her ghost\'s arrow at the edge of the screen has a colour (it fights on team -1: the team palette has no entry)', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 99; LOCAL_PLAYERS = 1;
+      startOneFight(['Firey'], { story:true, onEnd:function(){ return true; } });
+      var one = summons.find(function(s){ return s._oneFight; }), you = fighters[0];
+      one._hop = null; one._hopPending = false; one.r = one._baseR; one._atkTimer = 1e9; one._introT = 0; one._q = [];
+      you.controller = 'still'; one._marks = 1;            // tier 2: the ring turns both ways, and its tell shows the two arrows
+      one._tel = 30; one._telKind = 'ring';
+      var g = spawnOneGhost(one, { hit: 1 }); g.x = camX + W*3; g.y = groundY() - 100;   // her ghost, far off the side of the view
+      hazardT = 3;                                          // sin(hazardT * 0.5) at its top: the pulse at 0.55
+    })()`);
+    errors.length = 0;
+    w.eval('draw()');
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && /fillStyle/.test(e.key)), 'no fill it ignores: the ghost\'s arrow wore the last fill').toEqual([]);
   });
 });

@@ -1,51 +1,62 @@
 // THE BOSS GLITCH HUNTER. Plays every boss -- the twelve Boss Rush bosses, One and Steve Cobs -- with AI fighters, and reports what the
 // tests cannot see. jsdom accepts what a real browser refuses: a negative arc radius is an IndexSizeError that kills that frame's drawing,
 // a radial gradient with a NaN radius is a TypeError, a colour built from NaN is a SyntaxError, and none of them throws in the stub canvas
-// the suite draws on. So the whole game is drawn through a VALIDATING canvas, and the sim is watched for the things a player calls bugs.
+// the suite draws on. So the whole game is drawn through a VALIDATING canvas (test/helpers/validating-canvas.js), and the sim is watched
+// for the things a player calls bugs.
 //
-//   node scripts/boss-glitch.mjs                            everything: 14 bosses x RUNS runs, then one whole Boss Rush (about 20 min)
+//   node scripts/boss-glitch.mjs                            everything: 14 bosses x RUNS (6) runs, then one whole Boss Rush (about 20-40 min on 5 workers)
 //   BOSSES='["Four","One"]' node scripts/boss-glitch.mjs    just these bosses (and no Boss Rush run)
-//   RUNS=2 node scripts/boss-glitch.mjs                     a quicker look: 2 runs a boss (the first two plans below)
+//   RUNS=12 SEED0=1000 node scripts/boss-glitch.mjs         more runs a boss, on other seeds, fighters and window sizes
+//   MOVES=1 node scripts/boss-glitch.mjs                    the move matrix: every move of every Boss Rush boss in each of its three phases, 720 frames each
 //   RUSH=only node scripts/boss-glitch.mjs                  just the Boss Rush run;  RUSH=0  never the Boss Rush run
-//   REPRO='Four|Pen,Coiny|113|forced|art' node scripts/boss-glitch.mjs      one run again (the repro line a finding prints), VERBOSE=1 for all of it
-//   JOBS=4  FRAMES=3600  DRAW_EVERY=2  NET_EVERY=10  OUT=report.json  VERBOSE=1     (see the knobs below)
+//   REPRO='Four|Pen,Coiny|113|forced|art|1280x720|-' node scripts/boss-glitch.mjs     one run again (the repro line a finding prints; the last field is
+//                                                           items / assists / same, joined by +, or -), VERBOSE=1 for the boss's hit sources, TRACE=1 for every hit
+//   SELFTEST=1 node scripts/boss-glitch.mjs                 each detector fed a fault it must find (the exit code is how many it missed)
+//   JOBS=4  FRAMES=3600  DRAW_EVERY=2  NET_EVERY=10  OUT=report.json  SIZE=800x600  ALL_FIGHTERS=0  VERBOSE=1     (see below)
 // Run from the repo root (it reads artifacts/V1/index.html). Every run boots its own game on its own seed, so the same build and the same
 // repro line print the same findings. It is not in the vitest suite: it is minutes, not seconds.
 //
 // WHAT IT DOES
-//  - Draws every DRAW_EVERY-th frame through the validating canvas (makeCtx): arc / ellipse / arcTo / roundRect / gradients with a negative
+//  - Draws every DRAW_EVERY-th frame through the validating canvas: arc / ellipse / arcTo / roundRect / gradients with a negative
 //    radius, any non-finite coordinate or size in any call, NaN in a colour or a font or a line of text, a gradient stop off [0,1],
-//    drawImage with a broken, zero-size or not-yet-loaded source, a globalAlpha the browser would ignore, restore() with nothing saved,
-//    a draw() that ends with saves left open. Sprites "load" with the real width and height of their PNG (the vector fallback is what
-//    jsdom normally draws; art=1 runs draw the show's art as a player sees it, art=0 the fallback a player sees while it loads).
+//    drawImage with a broken, zero-size or not-yet-loaded source, a globalAlpha or a fill the browser would ignore, restore() with nothing
+//    saved, a draw() that ends with saves left open. Sprites "load" with the real width and height of their PNG (the vector fallback is what
+//    jsdom normally draws; `art` runs draw the show's art as a player sees it, `noart` the fallback a player sees while it loads).
 //  - Every NET_EVERY frames it also takes the host's netcode snapshot (serializeState, through JSON as on the wire) and applies and draws it
-//    in a SECOND game, a client's, through the same validating canvas: a field a client draws but is never sent shows up there.
+//    in a SECOND game, a client's, through the same validating canvas: a field a client draws but is never sent shows up there. On runs
+//    where the client's window is the host's size it also counts the canvas calls of the boss, its shots, hazard, decor and bar, host and
+//    client, for the same state: a picture the client draws differently for five snapshots in a row is a `net-drawdiff`.
 //  - Anything the game loop would swallow ("loop frame error") is a finding here with its stack, so is anything the page's own try/catch
-//    swallows when it is the boss's code (catch blocks that do nothing are rewritten to say so; audio and storage noise is filtered out).
+//    swallows (catch blocks that do nothing are rewritten to say so; audio and storage noise is filtered out), console.error, a timer's throw.
 //  - Invariants, checked every frame: NaN / Infinity in any position, velocity, size or boss state; a living boss with no new attack for
 //    10 s, or a turn held (1e6) that never lets go; a boss off screen or too high to reach for 5 s; a fighter held, frozen, stunned,
-//    swallowed (or any status a boss adds to a fighter) for 5 s; a shot alive for 30 s, or more than 300 at once; boss shots, hazards or
-//    adds that still hurt after the boss has fallen (the BOSS DOWN card, the next boss); a boss hit that struck within 12 frames of its
-//    source appearing, with no wind-up just before it and no mark of its own (a possible NO-TELL hit: look at its source before believing it);
-//    three boss hits in a row on a fighter who could not act.
+//    swallowed, rooted or slowed for 5 s, or alive outside the world; a shot alive for 30 s, or more than 300 at once; a list that only
+//    grows; boss shots, hazards or adds that still hurt after the boss has fallen (the BOSS DOWN card, the next boss); a boss hit that
+//    landed on a fighter in hit grace; a boss hit that struck within 12 frames of its source appearing, with no wind-up just before it and
+//    no mark of its own (a possible NO-TELL hit: look at its source before believing it -- the marks and lanes a boss draws in its own
+//    arrays are not seen from here); three boss hits in a row on a fighter who was already stunned or held; a burst of sparks with no colour.
 //  - The Boss Rush run plays all twelve in order (and one boss of the second loop), and at every spawn checks what the last boss left
 //    behind: the arena and its props against a clean spawn of the same boss, shots, adds, beams, vines, dust, scars, statuses a boss gave
-//    a fighter (slip, slow, held, swallowed, anything new on the fighter), timers still pending.
+//    a fighter (slip, slow, held, swallowed, anything a boss adds to the fighter), timers still pending.
 //
-// A RUN is {boss, lineup, seed, mode, art}: `forced` shortens the fight (the boss's bar is cut to its phases at fixed ages and finished at
-// 1900 frames, fighters have 9 stocks, so every phase and the ending are played), `natural` is the bot alone with 3 stocks. The bots are
-// the game's own AI. Nothing here tunes anything: it only looks.
+// A RUN is {boss, lineup, seed, mode, art, window}: the mode `forced` shortens the fight (the boss's bar is cut to its phases at fixed ages
+// and finished at 1900 frames, fighters have 9 stocks, so every phase and the ending are played), `skip` takes phase 1 straight to 3 and
+// kills him in the middle of a wind-up, `move` kills him in the middle of a scripted move, `natural` is the bots alone with 3 stocks, and
+// `moves:j:p` makes every turn move j in phase p. Some runs have the game's own items on, or call a trophy (Eraser, Black Hole...) every
+// 4 s. The fighters are the whole playable roster in rotation, the windows run from 480 x 800 to 2560 x 1440, and the bots are the game's
+// own AI. Nothing here tunes anything: it only looks.
 //
 // OUTPUT: findings grouped by boss, each with its repro (lineup, seed, mode, frame, the boss's phase and age) and a stack or the values,
-// stacks as index.html:LINE. `error` findings (throws, NaN, hangs) always print; `warn` ones (ignored draws, possible no-tells, long statuses)
-// print too; `info` (what a run saw) only with VERBOSE=1. The whole report is also written to OUT (default: not written).
-import { readFileSync, writeFileSync, openSync, readSync, closeSync, existsSync } from 'node:fs';
+// stacks as index.html:LINE. `error` findings (throws, NaN, hangs, leaks) always print; `warn` ones (ignored draws, possible no-tells, long
+// statuses) print too; `info` (what a run saw) only with VERBOSE=1. The whole report is also written to OUT (default: not written).
+import { readFileSync, writeFileSync } from 'node:fs';
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { mulberry32 } from '../test/helpers/prng.js';
+import { makeCtx, installImages } from '../test/helpers/validating-canvas.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const GAME_DIR = join(ROOT, 'artifacts/V1');
@@ -53,17 +64,16 @@ const env = process.env;
 const FRAMES = Number(env.FRAMES || 3600), DRAW_EVERY = Math.max(1, Number(env.DRAW_EVERY || 2)), NET_EVERY = Number(env.NET_EVERY ?? 10);
 const RUNS = Number(env.RUNS || 6), VERBOSE = !!env.VERBOSE;
 const FORCED_END = 1900;   // a forced fight's boss falls at this age (frames); phases 2 and 3 are cut in at 500 and 1100
-const FIGHTERS = ['Firey', 'Leafy', 'Pin', 'Needle', 'Coiny', 'Bubble', 'Pen', 'Snowball', 'Blocky', 'Ice Cube', 'Match', 'Pencil', 'Rocky', 'Tennis Ball', 'Golf Ball'];
-// the plans of a boss's runs, in order: who fights, how, and whether the sprites are loaded (art). 6 by default.
-const PLANS = [
-  { names: ['Firey'], mode: 'forced', art: true },
-  { names: ['Pin', 'Coiny'], mode: 'forced', art: false },
-  { names: ['Rocky'], mode: 'natural', art: true },
-  { names: ['Leafy', 'Needle', 'Bubble'], mode: 'forced', art: true },
-  { names: ['Pen'], mode: 'natural', art: false },
-  { names: ['Golf Ball', 'Snowball'], mode: 'forced', art: true },
-  { names: ['Tennis Ball'], mode: 'forced', art: true }, { names: ['Pencil', 'Match'], mode: 'natural', art: true },
-];
+let FIGHTERS = ['Firey', 'Leafy', 'Pin', 'Needle', 'Coiny', 'Bubble', 'Pen', 'Snowball', 'Blocky', 'Ice Cube', 'Match', 'Pencil', 'Rocky', 'Tennis Ball', 'Golf Ball'];
+// The window a host plays in: boss code works in WW and WH, and what is fine at 1280 x 720 can draw left of x = 0 or hang off the floor at
+// 800 x 600 (the car's bubbles in the sand did). A run's plan, in order for run k of boss number bi: the fighters (one, two, one, three...
+// from the roster, different for every boss), how the fight goes (forced, forced, natural), whether the sprites are loaded, the window.
+const SIZES = [[1280, 720], [1920, 1080], [1024, 768], [800, 600], [1600, 900], [1366, 768], [640, 480], [480, 800], [2560, 1440]];
+const PLANS = { at: (bi, k) => {
+  const n = [1, 2, 1, 3, 1, 4][k % 6], names = [];
+  for (let i = 0; i < n; i++) names.push(FIGHTERS[(k * 4 + bi * 5 + i * 7) % FIGHTERS.length]);
+  return { names: [...new Set(names)], mode: ['forced', 'skip', 'natural', 'move', 'forced', 'natural'][k % 6], art: k % 2 === 0, size: SIZES[k % SIZES.length], items: k % 4 === 1, assists: k % 4 === 3 };   // items: the game's own item drops (assists, heals...) on high; assists: one of the thirteen trophies called every 4 s
+} };
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 //  THE GAME, BOOTED: a validating canvas, sprites that load, a clock that only the harness moves
@@ -74,147 +84,6 @@ const SCRIPT_LINE0 = (() => { const at = HTML.lastIndexOf('<script', HTML.indexO
 // every `catch(e){}` that does nothing now says so (window.__sw, per realm), the line count kept so a stack still points at the right line
 const HTML_SW = HTML.replace(/catch\s*\(\s*(\w+)\s*\)\s*\{\s*\}/g, (m, v) => `catch(${v}){ window.__sw && window.__sw(${v}); }` + '\n'.repeat((m.match(/\n/g) || []).length));
 export const mapStack = (s) => String(s).replace(/(?:https?:\/\/localhost\/?)+:(\d+):(\d+)/g, (_m, l) => 'index.html:' + (Number(l) + SCRIPT_LINE0 - 1));
-
-const pngDims = new Map();
-function pngSize(rel) {
-  if (pngDims.has(rel)) return pngDims.get(rel);
-  let d = null;
-  try {
-    const p = join(GAME_DIR, rel.split('?')[0]);
-    if (existsSync(p)) { const fd = openSync(p, 'r'), b = Buffer.alloc(24); readSync(fd, b, 0, 24, 0); closeSync(fd); if (b.readUInt32BE(12) === 0x49484452) d = [b.readUInt32BE(16), b.readUInt32BE(20)]; }
-  } catch (e) { d = null; }
-  pngDims.set(rel, d);
-  return d;
-}
-
-function colorBad(s) {
-  s = String(s).trim();
-  if (!s) return true;
-  if (/NaN|undefined|Infinity|null|\[object/.test(s)) return true;
-  if (s[0] === '#') return !/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s);
-  if (/^(rgb|hsl)a?\(/i.test(s)) return !/^(rgb|hsl)a?\(\s*[-+0-9.e%\s,/deg]+\)$/i.test(s);
-  return !/^[a-z]+$/i.test(s) && !/^(color|lab|lch|oklab|oklch|hwb)\(/i.test(s);
-}
-// argument kinds per method: n a number, s text, b a boolean, i an image or canvas, o anything else
-const SIG = {
-  moveTo: 'nn', lineTo: 'nn', quadraticCurveTo: 'nnnn', bezierCurveTo: 'nnnnnn', arc: 'nnnnnb', arcTo: 'nnnnn', ellipse: 'nnnnnnnb', rect: 'nnnn',
-  roundRect: 'nnnno', fillRect: 'nnnn', strokeRect: 'nnnn', clearRect: 'nnnn', translate: 'nn', scale: 'nn', rotate: 'n', transform: 'nnnnnn',
-  setTransform: 'nnnnnn', fillText: 'snnn', strokeText: 'snnn', createLinearGradient: 'nnnn', createRadialGradient: 'nnnnnn', createConicGradient: 'nnn',
-  getImageData: 'nnnn', putImageData: 'onn', drawImage: 'innnnnnnn',
-};
-const DEFAULTS = { globalAlpha: 1, lineWidth: 1, fillStyle: '#000000', strokeStyle: '#000000', font: '10px sans-serif', textAlign: 'start', textBaseline: 'alphabetic',
-  lineCap: 'butt', lineJoin: 'miter', miterLimit: 10, shadowBlur: 0, shadowColor: 'rgba(0, 0, 0, 0)', shadowOffsetX: 0, shadowOffsetY: 0,
-  globalCompositeOperation: 'source-over', lineDashOffset: 0, filter: 'none', imageSmoothingEnabled: true, direction: 'ltr', letterSpacing: '0px', fontKerning: 'auto' };
-
-// `rec(sev, kind, key, detail, stack)` files a finding; makeCtx never throws (a real browser would: the point is to see every one, not the first).
-function makeCtx(canvas, rec) {
-  const S = Object.assign(Object.create(null), DEFAULTS);
-  const saved = [];
-  let depth = 0;
-  const cnt = new Map();   // a stack is taken for the first 30 of each kind and key; the rest are only counted
-  const err = (sev, kind, key, detail) => { const id = kind + '|' + key, c = (cnt.get(id) || 0) + 1; cnt.set(id, c); rec(sev, kind, key, detail, c <= 30 ? new Error().stack : null); };
-  const fmt = (v) => (typeof v === 'number' ? +v.toFixed(1) : String(v));
-  const gradient = (kind) => ({
-    __gradient: kind,
-    addColorStop(o, c) {
-      if (typeof o !== 'number' || !(o >= 0 && o <= 1)) err('error', 'ctx-throws', 'addColorStop offset', `${kind}.addColorStop(${o}) throws IndexSizeError (a stop outside 0..1, or not a number)`);
-      if (typeof c !== 'string' || colorBad(c)) err('error', 'ctx-throws', 'addColorStop colour', `${kind}.addColorStop(_, ${JSON.stringify(c)}) throws SyntaxError (not a colour)`);
-    },
-  });
-  const finiteCheck = (name, args, sig) => {
-    for (let i = 0; i < args.length && i < sig.length; i++) {
-      if (sig[i] !== 'n') continue;
-      const v = args[i];
-      if (typeof v === 'number') { if (!Number.isFinite(v)) err(name === 'createLinearGradient' || name.startsWith('createRadial') || name.startsWith('createConic') ? 'error' : 'warn', name.startsWith('create') ? 'ctx-throws' : 'ctx-nonfinite', name + ' arg' + i, `${name}(${Array.from(args, (a) => typeof a === 'number' ? +a.toFixed(2) : typeof a).join(', ')}): argument ${i} is ${v}` + (name.startsWith('create') ? ' (TypeError: gradients take finite numbers)' : ' (the browser ignores the call: nothing is drawn)')); }
-      else if (v === undefined) err('warn', 'ctx-nonfinite', name + ' arg' + i + ' undefined', `${name}: argument ${i} is undefined (reads as NaN: the call draws nothing)`);
-    }
-  };
-  const M = {
-    save() { depth++; saved.push(Object.assign(Object.create(null), S)); },
-    restore() { if (!depth) err('warn', 'ctx-restore', 'restore with nothing saved', 'restore() with an empty stack'); else { depth--; Object.assign(S, saved.pop()); } },
-    beginPath() {}, closePath() {}, fill() {}, stroke() {}, clip() {}, setLineDash() {}, resetTransform() {},
-    arc(x, y, r) { finiteCheck('arc', arguments, SIG.arc); if (r < 0) err('error', 'ctx-throws', 'arc negative radius', `arc(${fmt(x)}, ${fmt(y)}, ${fmt(r)}): a negative radius throws IndexSizeError and ends the frame's drawing`); },
-    ellipse(x, y, rx, ry) { finiteCheck('ellipse', arguments, SIG.ellipse); if (rx < 0 || ry < 0) err('error', 'ctx-throws', 'ellipse negative radius', `ellipse radii ${rx}, ${ry}: a negative radius throws IndexSizeError`); },
-    arcTo(x1, y1, x2, y2, r) { finiteCheck('arcTo', arguments, SIG.arcTo); if (r < 0) err('error', 'ctx-throws', 'arcTo negative radius', `arcTo radius ${r} throws IndexSizeError`); },
-    roundRect(x, y, w, h, r) {
-      finiteCheck('roundRect', arguments, SIG.roundRect);
-      const rs = Array.isArray(r) ? r : [r];
-      if (rs.some((q) => (typeof q === 'number' && q < 0) || (typeof q === 'number' && !Number.isFinite(q)))) err('error', 'ctx-throws', 'roundRect radius', `roundRect radii ${JSON.stringify(r)} throws RangeError`);
-    },
-    createLinearGradient() { finiteCheck('createLinearGradient', arguments, SIG.createLinearGradient); return gradient('linear'); },
-    createRadialGradient(x0, y0, r0, x1, y1, r1) {
-      finiteCheck('createRadialGradient', arguments, SIG.createRadialGradient);
-      if (r0 < 0 || r1 < 0) err('error', 'ctx-throws', 'radialGradient negative radius', `createRadialGradient radii ${r0}, ${r1}: a negative radius throws IndexSizeError`);
-      return gradient('radial');
-    },
-    createConicGradient() { finiteCheck('createConicGradient', arguments, SIG.createConicGradient); return gradient('conic'); },
-    createPattern() { return { __pattern: true }; },
-    measureText(t) { const px = parseFloat(String(S.font).match(/(\d+(?:\.\d+)?)px/)?.[1] || 10), w = String(t).length * px * 0.55; return { width: w, actualBoundingBoxLeft: 0, actualBoundingBoxRight: w, actualBoundingBoxAscent: px * 0.75, actualBoundingBoxDescent: px * 0.2, fontBoundingBoxAscent: px * 0.9, fontBoundingBoxDescent: px * 0.25 }; },
-    fillText(t) { finiteCheck('fillText', arguments, SIG.fillText); if (/\b(NaN|undefined|Infinity|null)\b/.test(String(t))) err('warn', 'ctx-text', 'text ' + String(t).slice(0, 30), `fillText(${JSON.stringify(String(t).slice(0, 60))}): the screen would read it`); },
-    strokeText(t) { finiteCheck('strokeText', arguments, SIG.strokeText); if (/\b(NaN|undefined|Infinity|null)\b/.test(String(t))) err('warn', 'ctx-text', 'text ' + String(t).slice(0, 30), `strokeText(${JSON.stringify(String(t).slice(0, 60))})`); },
-    drawImage(im) {
-      finiteCheck('drawImage', arguments, SIG.drawImage);
-      if (im == null || (typeof im !== 'object' && typeof im !== 'function')) { err('error', 'ctx-throws', 'drawImage source', `drawImage(${String(im)}, ...) throws TypeError (not an image)`); return; }
-      const w = im.naturalWidth !== undefined ? im.naturalWidth : im.width, h = im.naturalHeight !== undefined ? im.naturalHeight : im.height;
-      if (im.__fakeImage) {
-        if (im.complete === false) err('warn', 'ctx-image', 'not loaded ' + im.src, `drawImage of ${im.src}, which is not loaded (nothing is drawn)`);
-        else if (!(w > 0 && h > 0)) err('error', 'ctx-throws', 'broken image ' + im.src, `drawImage of ${im.src}: the file is missing or empty (a broken image throws InvalidStateError)`);
-      } else if ((w === 0 || h === 0) && typeof im.getContext === 'function') err('error', 'ctx-throws', 'zero-size canvas source', `drawImage of a ${w} x ${h} canvas throws InvalidStateError`);
-    },
-    getImageData(x, y, w, h) {
-      finiteCheck('getImageData', arguments, SIG.getImageData);
-      if (!(w > 0 && h > 0)) { err('error', 'ctx-throws', 'getImageData size', `getImageData(_, _, ${w}, ${h}) throws IndexSizeError`); return { data: new Uint8ClampedArray(0), width: 0, height: 0 }; }
-      return { data: new Uint8ClampedArray(Math.min(w * h * 4, 4e6)), width: w, height: h };
-    },
-    putImageData() {}, createImageData(w, h) { return { data: new Uint8ClampedArray(Math.min(w * h * 4, 4e6)), width: w, height: h }; },
-    __reset() { const d = depth; depth = 0; saved.length = 0; return d; },
-  };
-  for (const k of ['moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo', 'rect', 'fillRect', 'strokeRect', 'clearRect', 'translate', 'scale', 'rotate', 'transform', 'setTransform']) {
-    const sig = SIG[k]; M[k] = function () { finiteCheck(k, arguments, sig); };
-  }
-  return new Proxy(M, {
-    get(t, p) {
-      if (typeof p === 'symbol') return undefined;
-      if (p === '__depth') return depth;
-      if (p in M) return M[p];
-      if (p === 'canvas') return canvas;
-      if (p in S) return S[p];
-      return () => {};   // a method nothing here needs to model
-    },
-    set(t, p, v) {
-      switch (p) {
-        case 'fillStyle': case 'strokeStyle': case 'shadowColor':
-          if (typeof v === 'string') { if (colorBad(v)) { err('warn', 'ctx-ignored', p + ' ' + v.slice(0, 24), `${p} = ${JSON.stringify(v)} is not a colour: the browser keeps the old one`); return true; } }
-          else if (v == null || (typeof v !== 'object' && typeof v !== 'function')) { err('warn', 'ctx-ignored', p + ' ' + String(v), `${p} = ${String(v)} is neither a colour nor a gradient: ignored`); return true; }
-          break;
-        case 'globalAlpha': if (typeof v !== 'number' || !(v >= 0 && v <= 1)) { err('warn', 'ctx-ignored', 'globalAlpha', `globalAlpha = ${v}: outside 0..1 or not a number, the browser keeps the old alpha`); return true; } break;
-        case 'lineWidth': if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) { err('warn', 'ctx-ignored', 'lineWidth', `lineWidth = ${v}: ignored by the browser`); return true; } break;
-        case 'shadowBlur': case 'shadowOffsetX': case 'shadowOffsetY': case 'lineDashOffset': case 'miterLimit':
-          if (typeof v !== 'number' || !Number.isFinite(v) || (p === 'shadowBlur' && v < 0)) { err('warn', 'ctx-ignored', p, `${p} = ${v}: ignored by the browser`); return true; } break;
-        case 'font': if (/NaN|undefined|Infinity|null/.test(String(v))) { err('warn', 'ctx-ignored', 'font ' + String(v).slice(0, 24), `font = ${JSON.stringify(String(v))}: ignored by the browser`); return true; } break;
-        default: break;
-      }
-      S[p] = v;
-      return true;
-    },
-  });
-}
-
-// the images: a sprite "loads" at once with its PNG's own size, so the show's art is drawn the way a player sees it
-function installImages(win, rec) {
-  function Image() { this.complete = false; this.naturalWidth = 0; this.naturalHeight = 0; this.width = 0; this.height = 0; this._src = ''; this.__fakeImage = true; }
-  Object.defineProperty(Image.prototype, 'src', {
-    get() { return this._src; },
-    set(v) {
-      this._src = String(v); const d = pngSize(this._src);
-      this.complete = true;
-      if (d) { this.naturalWidth = this.width = d[0]; this.naturalHeight = this.height = d[1]; }
-      else { this.naturalWidth = this.naturalHeight = this.width = this.height = 0; rec('warn', 'asset-missing', this._src, `the game asks for ${this._src}, which is not in artifacts/V1`, new Error().stack); }
-    },
-  });
-  Image.prototype.addEventListener = Image.prototype.removeEventListener = function () {};
-  win.Image = Image;
-}
 
 function bootRealm({ seed, art, w = 1280, h = 720, sink, label }) {
   const clock = { now: 0 }, timers = new Map(); let tid = 0;
@@ -232,7 +101,7 @@ function bootRealm({ seed, art, w = 1280, h = 720, sink, label }) {
       win.setTimeout = (fn, ms = 0, ...a) => { const id = ++tid; timers.set(id, { at: clock.now + Math.max(0, +ms || 0), fn, a, id, every: 0 }); return id; };
       win.setInterval = (fn, ms = 0, ...a) => { const id = ++tid; timers.set(id, { at: clock.now + Math.max(1, +ms || 1), fn, a, id, every: Math.max(1, +ms || 1) }); return id; };
       win.clearTimeout = win.clearInterval = (id) => { timers.delete(id); };
-      if (art) installImages(win, rec);
+      if (art) installImages(win, rec, GAME_DIR);
       win.console.error = (...a) => { const m = a.map((x) => (x && x.stack) || String(x)).join(' '); rec('warn', 'console-error', m.replace(/\d+/g, '#').slice(0, 70), 'console.error: ' + m.slice(0, 600), (a.find((x) => x && x.stack) || {}).stack || ''); };
       win.addEventListener('error', (e) => rec('error', 'page-error', String(e.message).slice(0, 80), `uncaught: ${e.message}`, e.error && e.error.stack));
       win.addEventListener('unhandledrejection', (e) => rec('error', 'page-rejection', String(e.reason && e.reason.message || e.reason).slice(0, 80), `unhandled rejection: ${e.reason && e.reason.stack || e.reason}`, ''));
@@ -394,10 +263,16 @@ function pageHarness() {
   const SB = startBossRush;
   startBossRush = function () { G.bare = platSig(); return SB.apply(this, arguments); };
 
+  // ------- what each boss-related draw cost the canvas in operations, in the last picture drawn: a host and a client of the same size, shown the same state, make the same
+  G.ops = {}; G.opsLast = {};
+  for (const name of ['drawSummon', 'drawArenaHazard', 'drawArenaDecor', 'drawProjectile', 'drawBossBar']) {
+    const F = globalThis[name]; if (typeof F !== 'function') continue;
+    globalThis[name] = function () { const o0 = ctx.__ops; try { return F.apply(this, arguments); } finally { G.ops[name] = (G.ops[name] || 0) + (ctx.__ops - o0); } };
+  }
   // ------- starting a fight
   G.start = function (cfg) {
     G.cfg = cfg; G.chosen = cfg.names[0];
-    SETTINGS.mode = 'boss'; SETTINGS.count = cfg.names.length; SETTINGS.stocks = cfg.stocks; SETTINGS.items = false; SETTINGS.itemRate = 0;
+    SETTINGS.mode = 'boss'; SETTINGS.count = cfg.names.length; SETTINGS.stocks = cfg.stocks; SETTINGS.items = !!cfg.items; SETTINGS.itemRate = cfg.items ? 3 : 0;
     chosen = ROSTER.find((r) => r.name === cfg.names[0] && r.play) || ROSTER.find((r) => r.play);
     if (cfg.kind === 'one' || cfg.kind === 'cobs') {
       const ok = (cfg.kind === 'one' ? startOneFight : startCobsFight)(cfg.names, { story: !!cfg.story, onEnd: function () { return true; } });
@@ -490,15 +365,42 @@ function pageHarness() {
   const FORCED_END_FRAMES = 1900;
   G.cut = function () {
     const b = G.boss(), bt = G.bt;
-    if (!b || !bt || bt.boss !== b || G.cfg.mode !== 'forced' || G.fallFrame != null || !(b.hp > 0)) return;
+    if (!b || !bt || bt.boss !== b || G.cfg.mode === 'natural' || G.fallFrame != null || !(b.hp > 0)) return;
     const age = G.frame - bt.spawn;
+    if (typeof G.cfg.mode === 'string' && G.cfg.mode.startsWith('moves:')) {   // moves:j:p -- every turn is move j, held in phase p (the bar is kept inside its band)
+      const ph = +G.cfg.mode.split(':')[2], lo = [0.7, 0.4, 0.06][ph - 1], hi = [1, 0.6, 0.3][ph - 1];
+      b.hp = Math.min(b.maxHp * hi, Math.max(b.maxHp * lo, b.hp));
+      return;
+    }
     if (G.cfg.kind === 'one' || G.cfg.kind === 'cobs') {
       if (age % 90 === 60) { const dealer = fighters.find((q) => !q.dead); try { (b._oneFight ? oneTakeDamage : cobsTakeDamage)(b, b.maxHp * 0.045, dealer); } catch (e) { G.note('exception', 'forced damage', stk(e)); } }
+      return;
+    }
+    if (G.cfg.mode === 'skip') {   // phase 1 straight to phase 3 in one blow, and a death in the middle of a wind-up
+      if (age === 400 && b.hp > b.maxHp * 0.25) b.hp = b.maxHp * 0.25;
+      else if (age >= 900 && (b._tel > 0 || age >= 1700)) b.hp = 0;
+      return;
+    }
+    if (G.cfg.mode === 'move') {   // the usual cuts, and a death in the middle of a scripted move (its turn held at 1e6)
+      if (age === 500 && b.hp > b.maxHp * 0.64) b.hp = b.maxHp * 0.64;
+      else if (age === 1000 && b.hp > b.maxHp * 0.31) b.hp = b.maxHp * 0.31;
+      else if (age >= 1300 && (b._atkTimer > 5e5 || age >= 2300)) b.hp = 0;
       return;
     }
     if (age === 500 && b.hp > b.maxHp * 0.64) b.hp = b.maxHp * 0.64;
     else if (age === 1100 && b.hp > b.maxHp * 0.31) b.hp = b.maxHp * 0.31;
     else if (age >= FORCED_END_FRAMES && b.hp > 0) b.hp = 0;
+  };
+  // moves:j:p, every turn: the next one is move j of [the signature, ...BOSS_EXTRA] (updateBossAttack picks by _moveN's parity and count), and the gap is cut to 24 frames
+  const UB = updateBossAttack;
+  updateBossAttack = function (s, tgt) {
+    const m = G.cfg.mode;
+    if (typeof m === 'string' && m.startsWith('moves:') && s.type === 'boss' && s._bossRush && !(s._tel > 0) && s._atkTimer < 5e5 && s.hp > 0) {
+      const j = +m.split(':')[1];
+      s._moveN = j === 0 ? 0 : 2 * j - 1;
+      if (s._atkTimer > 24) s._atkTimer = 24;
+    }
+    return UB.apply(this, arguments);
   };
   const CW = checkWin;
   checkWin = function () { G.cut(); return CW.apply(this, arguments); };
@@ -514,9 +416,11 @@ function pageHarness() {
       try { step(); } catch (e) { G.note('exception', 'step: ' + String(e && e.message).slice(0, 60) + ' @ ' + fn1(e, 0), `step() threw on frame ${G.frame}: ${stk(e, 8)}`); }
       G.post();
       G.frame++;
+      if (G.cfg.assists && G.frame % 240 === 100) { try { const q = fighters.find((o) => !o.dead && !o._oneGhost); if (q) summonAssistNamed(q, ASSIST_ROSTER[(G.assistN = (G.assistN || 0) + 1) % ASSIST_ROSTER.length]); } catch (e) { G.note('exception', 'assist: ' + String(e && e.message).slice(0, 60), stk(e, 8)); } }
       window.__adv(1000 / 60);
       if (G.frame % drawEvery === 0) {
-        try { draw(); G.S.draws++; } catch (e) { G.note('exception', 'draw: ' + String(e && e.message).slice(0, 60) + ' @ ' + fn1(e, 0), `draw() threw on frame ${G.frame}: ${stk(e, 8)}`); }
+        G.ops = {};
+        try { draw(); G.S.draws++; G.opsLast = G.ops; } catch (e) { G.note('exception', 'draw: ' + String(e && e.message).slice(0, 60) + ' @ ' + fn1(e, 0), `draw() threw on frame ${G.frame}: ${stk(e, 8)}`); }
         const d = ctx.__reset ? ctx.__reset() : 0;
         if (d) G.note('ctx-unbalanced', 'draw', `draw() ended with ${d} save() left open (frame ${G.frame}); the transform and alpha leak into the next frame`, 'warn');
       }
@@ -529,7 +433,8 @@ function pageHarness() {
     G.frame = snap.t; const sb = snap.summons && snap.summons.find((m) => m.type === 'boss'); if (sb) G.bn = sb.name;
     try { NET.onMessage({ t: 'state', s: snap }); } catch (e) { G.note('exception', 'client onMessage: ' + String(e && e.message).slice(0, 60) + ' @ ' + fn1(e, 0), stk(e, 8)); }
     try { clientFrame(); window.__adv(40); clientFrame(); } catch (e) { G.note('exception', 'clientFrame: ' + String(e && e.message).slice(0, 60) + ' @ ' + fn1(e, 0), `clientFrame() threw: ${stk(e, 8)}`); }
-    try { draw(); G.S.clientDraws++; } catch (e) { G.note('exception', 'client draw: ' + String(e && e.message).slice(0, 60) + ' @ ' + fn1(e, 0), `a client's draw() threw on the host's frame ${snap.t}: ${stk(e, 8)}`); }
+    G.ops = {};
+    try { draw(); G.S.clientDraws++; G.opsLast = G.ops; } catch (e) { G.note('exception', 'client draw: ' + String(e && e.message).slice(0, 60) + ' @ ' + fn1(e, 0), `a client's draw() threw on the host's frame ${snap.t}: ${stk(e, 8)}`); }
     const d = ctx.__reset ? ctx.__reset() : 0;
     if (d) G.note('ctx-unbalanced', 'client draw', `a client's draw() ended with ${d} save() left open`, 'warn');
     return summons.length + ':' + projectiles.length;
@@ -579,15 +484,20 @@ class Sink {
 
 async function runTask(task, progress) {
   const sink = new Sink();
-  const nNames = task.names.length, stocks = task.mode === 'forced' || task.kind === 'rush' ? 9 : 3;
-  const host = bootRealm({ seed: task.seed, art: task.art, w: 1280, h: 720, sink, label: 'host' });
+  const nNames = task.names.length, stocks = task.mode !== 'natural' || task.kind === 'rush' ? 9 : 3;
+  const [hw, hh] = task.size || SIZES[0];
+  const host = bootRealm({ seed: task.seed, art: task.art, w: hw, h: hh, sink, label: 'host' });
   const H = host.win;
-  host.setInfo(() => { const g = H.__G; return g ? { frame: g.frame, boss: g.bn, phase: (g.boss() || {})._phase, age: g.bt ? g.frame - g.bt.spawn : -1 } : {}; });
+  const hostInfo = () => { const g = H.__G; return g ? { frame: g.frame, boss: g.bn, phase: (g.boss() || {})._phase, age: g.bt ? g.frame - g.bt.spawn : -1 } : {}; };
+  host.setInfo(hostInfo);
+  const streak = {};   // per draw, how many snapshots in a row the host and a same-size client have drawn it differently
   await H.eval('profileReady');
   H.eval('(' + pageHarness.toString() + ')()');
   let client = null, C = null;
   if (NET_EVERY > 0 && (task.kind === 'boss' || task.kind === 'rush')) {   // One's and Steve Cobs's fights cannot be played online (inNetSession refuses them): no client
-    client = bootRealm({ seed: task.seed + 7, art: task.art, w: 1024, h: 768, sink, label: 'client' }); C = client.win;
+    // a client's window is never the host's: a wide host seen from a 4:3 window, a small host from a big one
+    const [cw, ch] = task.cliSame ? [hw, hh] : hw >= 1600 ? [1024, 768] : hw <= 1024 ? [1600, 900] : [1024, 768];
+    client = bootRealm({ seed: task.seed + 7, art: task.art, w: cw, h: ch, sink, label: 'client' }); C = client.win;
     client.setInfo(() => { const g = C.__G; return g ? { frame: g.frame, boss: g.bn } : {}; });
     client.setMute(true);   // the client's own opening frame, before any snapshot, is not the host's picture
     await C.eval('profileReady');
@@ -595,11 +505,12 @@ async function runTask(task, progress) {
   }
   const out = { task, notes: [], sigs: [] };
   try {
-    const cfg = { kind: task.kind, boss: task.boss, names: task.names, stocks, mode: task.mode, rush: task.kind === 'rush', story: !!task.story, trace: !!env.TRACE };
+    const cfg = { kind: task.kind, boss: task.boss, names: task.names, stocks, mode: task.mode, rush: task.kind === 'rush', story: !!task.story, trace: !!env.TRACE, items: !!task.items, assists: !!task.assists };
     H.eval(`__G.start(${JSON.stringify(cfg)})`);
+    if (task.dropNet) H.eval(`(function(){ var ss = serializeState; serializeState = function(){ var s = ss.apply(this, arguments); s.summons.forEach(function(m){ delete m[${JSON.stringify(task.dropNet)}]; }); return s; }; })()`);   // (the self-test: a field left out of the snapshot)
     if (C) { C.eval(`__G.startClient(${JSON.stringify({ n: nNames, stocks, names: task.names })})`); client.setMute(false); }
     let stop = null;
-    const maxFrames = task.kind === 'rush' ? 13 * (FORCED_END + 900) : task.mode === 'forced' ? FORCED_END + 1500 : FRAMES;
+    const maxFrames = task.kind === 'rush' ? 13 * (FORCED_END + 900) : String(task.mode).startsWith('moves:') ? 720 : task.mode !== 'natural' ? FORCED_END + 1700 : FRAMES;
     const chunk = C ? NET_EVERY : 30;
     // the ending's own hold on the card and the next boss (BOSS_ENDINGS' holdMs), so a run lasts until the next boss is in and a moment of it has been played
     const endHold = task.kind === 'boss' ? H.eval(`(function(){ var r = BOSS_ROSTER.find(function(b){ return b.name === ${JSON.stringify(task.boss)}; }); var e = r && BOSS_ENDINGS[r.attack]; return e ? (e.holdMs || 0) : 0; })()`) : 0;
@@ -610,6 +521,14 @@ async function runTask(task, progress) {
         const snap = H.eval('JSON.stringify(serializeState())');
         C.__snap = snap; client.clock.now = host.clock.now;
         C.eval('__G.client(JSON.parse(window.__snap))');
+        if (task.cliSame && st === 'ok') {
+          const ho = JSON.parse(H.eval('JSON.stringify(__G.opsLast)')), co = JSON.parse(C.eval('JSON.stringify(__G.opsLast)'));
+          for (const name of new Set([...Object.keys(ho), ...Object.keys(co)])) {
+            const h = ho[name] || 0, c = co[name] || 0, big = Math.max(h, c), bad = big >= 8 && Math.abs(h - c) > 0.3 * big + 6;
+            streak[name] = bad ? (streak[name] || 0) + 1 : 0;
+            if (streak[name] === 5) sink.add('client', 'warn', 'net-drawdiff', name, `${name}: the host made ${h} canvas calls for this picture and a client of the same size made ${c}, five snapshots in a row (frame ${H.eval('__G.frame')}, the boss's move ${H.eval('(__G.boss() || {})._telKind')}): a field its drawing needs may not be in the snapshot`, null, hostInfo());
+          }
+        }
       }
       if (st === 'stopped' || st === 'paused') stop = st;
       const frame = H.eval('__G.frame');
@@ -655,13 +574,19 @@ async function cleanSigs(bosses) {
 // ---------------------------------------------------------------------------------------------------------------------------------
 const ROSTER_BOSSES = ['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Purple Dragon', 'Two', 'Springy', 'Four'];
 const ALL_BOSSES = [...ROSTER_BOSSES, 'One', 'Steve Cobs'];
-const planFor = (boss, k) => {
-  const p = PLANS[k % PLANS.length], bi = ALL_BOSSES.indexOf(boss);
-  const kind = boss === 'One' ? 'one' : boss === 'Steve Cobs' ? 'cobs' : 'boss';
-  return { kind, boss, names: p.names, mode: p.mode, art: p.art, seed: 100 + k + 17 * Math.max(0, bi) + Number(env.SEED0 || 0), story: (kind !== 'boss') && p.names.length === 1 && k % 3 === 0, k };
+const movePlan = (boss, j, ph) => {   // MOVES=1: one run for every move of every boss in every phase
+  const bi = ALL_BOSSES.indexOf(boss), n = ph === 2 ? 2 : 1, names = [];
+  for (let i = 0; i < n; i++) names.push(FIGHTERS[(bi * 3 + j * 2 + ph * 5 + i * 4) % FIGHTERS.length]);
+  return { kind: 'boss', boss, names: [...new Set(names)], mode: `moves:${j}:${ph}`, art: (j + ph) % 2 === 0, cliSame: (j + ph) % 3 === 0, size: env.SIZE ? env.SIZE.split('x').map(Number) : SIZES[(bi + j + ph) % SIZES.length], seed: 500 + bi * 31 + j * 7 + ph + Number(env.SEED0 || 0), story: false, k: 0 };
 };
-const reproLine = (t) => [t.boss || 'Boss Rush', t.names.join(','), t.seed, t.mode, t.art ? 'art' : 'noart'].join('|');
-const parseRepro = (s) => { const [boss, names, seed, mode, art] = s.split('|'); const kind = boss === 'One' ? 'one' : boss === 'Steve Cobs' ? 'cobs' : boss === 'Boss Rush' ? 'rush' : 'boss'; return { kind, boss: kind === 'rush' ? undefined : boss, names: names.split(','), seed: Number(seed), mode, art: art === 'art', story: false }; };
+const planFor = (boss, k) => {
+  const bi = Math.max(0, ALL_BOSSES.indexOf(boss)), p = PLANS.at(bi, k);
+  const kind = boss === 'One' ? 'one' : boss === 'Steve Cobs' ? 'cobs' : 'boss';
+  const size = env.SIZE ? env.SIZE.split('x').map(Number) : p.size;
+  return { kind, boss, names: p.names, mode: p.mode, art: p.art, size, cliSame: k % 2 === 0, items: p.items, assists: p.assists, seed: 100 + k + 17 * bi + Number(env.SEED0 || 0), story: (kind !== 'boss') && p.names.length === 1 && k % 3 === 0, k };
+};
+const reproLine = (t) => [t.boss || 'Boss Rush', t.names.join(','), t.seed, t.mode, t.art ? 'art' : 'noart', (t.size || SIZES[0]).join('x'), [t.items ? 'items' : '', t.assists ? 'assists' : '', t.cliSame ? 'same' : ''].filter(Boolean).join('+') || '-'].join('|');
+const parseRepro = (s) => { const [boss, names, seed, mode, art, size, flags = '-'] = s.split('|'); const kind = boss === 'One' ? 'one' : boss === 'Steve Cobs' ? 'cobs' : boss === 'Boss Rush' ? 'rush' : 'boss'; return { kind, boss: kind === 'rush' ? undefined : boss, names: names.split(','), seed: Number(seed), mode, art: art === 'art', size: size ? size.split('x').map(Number) : SIZES[0], items: /items/.test(flags), assists: /assists/.test(flags), cliSame: /same/.test(flags), story: false }; };
 
 // SELFTEST=1: the hunter's own detectors, each fed a fault it must find (a hunter that finds nothing is only believed if it can find
 // something). Prints one line a detector; the exit code is the number that missed.
@@ -734,6 +659,9 @@ async function selftest() {
   H.eval(`puff(1, 1, undefined, 3); puff(NaN, 1, '#fff', 3);`);
   expect('a burst with no colour or no position', pageHas('puff'));
   if (env.SELFTEST_DEBUG) { const h = have(); console.log(Object.keys(h.page).join('\n')); console.log(h.ctx.map((f) => f.kind + '|' + f.key).join('\n')); }
+  // a field a client draws but is never sent: Four's arena state (_hz) taken out of the snapshot; a same-size client must draw him differently
+  { const res = await runTask({ kind: 'boss', boss: 'Four', names: ['Firey'], seed: 100, mode: 'moves:2:3', art: false, size: [1280, 720], cliSame: true, dropNet: '_hz' }, null);
+    out.push(["a field a client draws but is never sent (Four without his _hz): the picture differs from the host's", res.findings.some((f) => f.kind === 'net-drawdiff')]); }
   const missed = out.filter((o) => !o[1]).length;
   for (const [name, ok] of out) console.log(`  ${ok ? 'found ' : 'MISSED'}  ${name}`);
   console.log(`boss-glitch selftest: ${out.length - missed} of ${out.length} detectors found their fault`);
@@ -753,13 +681,26 @@ if (env.GLITCH_WORKER) {
   await selftest();
 } else {
   const t0 = Date.now();
+  if (env.ALL_FIGHTERS !== '0' && !env.REPRO) {
+    const probe = bootRealm({ seed: 1, art: false, sink: new Sink(), label: 'probe' });
+    await probe.win.eval('profileReady');
+    const names = JSON.parse(probe.win.eval('JSON.stringify(ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; }))'));
+    probe.win.close();
+    if (names.length > 15) FIGHTERS = names;
+  }
   const bossList = env.BOSSES ? JSON.parse(env.BOSSES) : ALL_BOSSES;
   const rush = env.RUSH === 'only' ? 'only' : (env.RUSH === '0' ? 'no' : (env.BOSSES ? 'no' : 'yes'));
   let tasks = [];
   if (env.REPRO) { const t = parseRepro(env.REPRO); tasks = [t]; if (t.kind === 'rush') { t.k = 0; } }
   else {
-    if (rush !== 'only') for (const b of bossList) for (let k = 0; k < RUNS; k++) tasks.push(planFor(b, k));
-    if (rush !== 'no') tasks.unshift({ kind: 'rush', names: ['Firey', 'Rocky'], mode: 'forced', art: true, seed: 7, k: 0 });
+    if (env.MOVES) {   // every move of every Boss Rush boss, in each of its three phases
+      const probe = bootRealm({ seed: 1, art: false, sink: new Sink(), label: 'probe' });
+      await probe.win.eval('profileReady');
+      const counts = JSON.parse(probe.win.eval('JSON.stringify(BOSS_ROSTER.map(function(b){ return [b.name, 1 + (BOSS_EXTRA[b.name] || []).length]; }))'));
+      probe.win.close();
+      for (const [b, n] of counts) if (bossList.includes(b)) for (let j = 0; j < n; j++) for (let ph = 1; ph <= 3; ph++) tasks.push(movePlan(b, j, ph));
+    } else if (rush !== 'only') for (const b of bossList) for (let k = 0; k < RUNS; k++) tasks.push(planFor(b, k));
+    if (rush !== 'no' && !env.MOVES) tasks.unshift({ kind: 'rush', names: ['Firey', 'Rocky'], mode: 'forced', art: true, seed: 7, k: 0, cliSame: true });
   }
   const jobs = Math.max(1, Math.min(tasks.length, Number(env.JOBS || Math.max(2, Math.min(5, availableParallelism() - 4)))));
   console.log(`boss-glitch: ${tasks.length} runs on ${jobs} workers (FRAMES ${FRAMES}, draw every ${DRAW_EVERY}, client every ${NET_EVERY || 'never'}; script line offset ${SCRIPT_LINE0})`);
