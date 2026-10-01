@@ -7921,7 +7921,7 @@ const BOSS_EXTRA = {
   // his own six, with the signature: PUT THAT COOKIE DOWN!, ONE OF EACH!, PUT THAT COOKIE DOWN!, HASTA LA VISTA!, PUT THAT COOKIE DOWN!, POP UP!, PUT THAT COOKIE DOWN!, I'LL BE BACK!
   // (from phase 2: a phase-1 turn that would be the car plays the next move, and once phase 2 starts the car comes first), PUT THAT COOKIE DOWN!, QUICKSAND SHOVE!
   // ("from Boss 9 on, 6": the owner's count, Rounds 9 and 10)
-  "MePhone4S": ["s4prizes", "s4vista", "s4car"],
+  "MePhone4S": ["s4prizes", "s4vista", "s4popup", "s4car", "s4shove"],
   // @boss:mephone4s:end extra
 
   // @boss:two:begin extra
@@ -7975,7 +7975,7 @@ const BOSS_MOVE_NAME = { rain:"INCOMING!", ring:"SHOCK RING!", slam:"GROUND POUN
   // @boss:mephone4s:begin movename
   // The Tile Divide ("We'll give them one of each!"); Journey Through Memory Lane (Part 2) ("Hasta la vista, Blu-Ray"); Sugar Rush ("I'll be back");
   // 4Seeing The Future ("(pops up from under [a contestant])", "tackles MePhone4 and tries to push him into the quicksand")
-  s4prizes:"ONE OF EACH!", s4vista:"HASTA LA VISTA!", s4car:"I'LL BE BACK!",
+  s4prizes:"ONE OF EACH!", s4vista:"HASTA LA VISTA!", s4popup:"POP UP!", s4car:"I'LL BE BACK!", s4shove:"QUICKSAND SHOVE!",
   // @boss:mephone4s:end movename
 
   // @boss:two:begin movename
@@ -8017,7 +8017,7 @@ const BOSS_RUSH_ONLY = new Set([   // second moves an item boss never throws (se
   // @boss:evilleafy:end rushonly
 
   // @boss:mephone4s:begin rushonly
-  "s4prizes", "s4vista", "s4car",   // his moves read his arena, his scripted motion and the platforms: an item boss with none of them would only lunge
+  "s4prizes", "s4vista", "s4popup", "s4car", "s4shove",   // his moves read his arena, his scripted motion and the platforms: an item boss with none of them would only lunge
   // @boss:mephone4s:end rushonly
 
   // @boss:two:begin rushonly
@@ -8161,7 +8161,9 @@ const BOSS_MOVES = {
   // MEPHONE4S (Boss 8): his five (S4, and the helpers below): each starts its move; the wind-up (s4BeginTelegraph, s4Windup) has fixed what it needs.
   s4prizes(s, tgt){ s4PrizesGo(s, tgt); },   // ONE OF EACH!: a chainsaw lobbed at your feet, a lollipop flat at your head
   s4vista(s, tgt){ s4VistaGo(s, tgt); },     // HASTA LA VISTA!: Taco, cocked like a gun, fires one big lemon
+  s4popup(s, tgt){ s4PopGo(s, tgt); },       // POP UP!: he is under the floor; the sand boils where he will come up
   s4car(s, tgt){ s4CarGo(s, tgt); },         // I'LL BE BACK!: the run off the screen, the car (and from phase 2 its return), and in phase 3 the course going live
+  s4shove(s, tgt){ s4ShoveGo(s, tgt); },     // QUICKSAND SHOVE!: the charge, and the strip of quicksand at the end of it
   // @boss:mephone4s:end moves
 
   // @boss:two:begin moves
@@ -12860,6 +12862,8 @@ const S4 = { lock:18, bullet:18, gunKb:12, spread:0.07, standoff:180, backoff:10
              carBack:40, carIn:22,
              prize:{ pairs:[0, 1, 2, 3], gap:20, T:58, sawR:14, sawKb:9, bleed:60, lolliAt:12, lolliV:12, lolliR:13, lolliKb:7, headY:40, tail:34 },
              lemon:{ n:[0, 1, 2, 3], gap:18, T:60, r:20, kb:14, arc:3, tail:30 },
+             pop:{ n:[0, 1, 2, 3], r:76, reach:110, lock:16, kb:[5, -15], sinkAt:0.6, hold:6, rise:11, peak:70, stand:16, again:26, sink2:12, beat:[22, 30, 10] },
+             shove:{ n:[0, 1, 1, 2], spd:[0, 15, 17, 19], w:[0, 180, 210, 240], life:[0, 150, 210, 270], kb:13, skid:0.82, rec:24, again:24, lock:16, top:120, lead:60 },
              crush:{ at:150, warn:30, fall:34, kb:14, r:34 }, flip:{ at:186, hold:150, turn:10 } };
 
 // ---- small helpers ----------------------------------------------------------------------------------------------------
@@ -12912,8 +12916,14 @@ function s4BeginTelegraph(s, tgt){
   } else if(k === 's4shove'){ A.k = 'shove'; A.dir = Math.sign(tx - s.x) || s.face || 1; A.x = Math.round(tx); }
 }
 // Every frame (the tick slot): the sight, the aim of the moves that follow you until they lock, and what his shots are doing in the air.
-function s4TrackSight(s){
+function s4TrackSight(s, tgt){
   if(!(s._tel > 0)) return;
+  const A = s._s4;
+  // POP UP! and QUICKSAND SHOVE!: where he will come up and which way he will charge follow you until S4.pop.lock / S4.shove.lock frames before, then hold
+  if(A && (A.k === 'pop' || A.k === 'shove')){
+    if(s._tel <= (A.k === 'pop' ? S4.pop.lock : S4.shove.lock)) A.lock = 1;
+    else if(s4Live(tgt)){ A.x = Math.round(A.k === 'pop' ? clamp(tgt.x, 70, WW - 70) : tgt.x); if(A.k === 'shove') A.dir = Math.sign(tgt.x - s.x) || A.dir || 1; }
+  }
   if(s._s4Gun || s._s4Vista){
     s._aimLock = s._tel <= S4.lock;
     const f = fighters.find(q=>q.idx===s._aimIdx);
@@ -13120,15 +13130,148 @@ function s4Windup(s, tgt, A){
     s.x += (ex - s.x)/Math.max(4, s._tel - 3);
     return true;
   }
+  if(A.k === 'pop'){   // he sinks into the quicksand where he stands
+    const len = bossTelLen(s), u = clamp(1 - s._tel/len, 0, 1), k = clamp(u/S4.pop.sinkAt, 0, 1);
+    s.hover = true; s.vx = 0; s.vy = 0; s.x = A.sx; s.y = gy - R + k*R*1.9; s.face = Math.sign(A.x - s.x) || s.face;
+    return true;
+  }
   return false;
 }
 function s4Move(s, tgt){
   const A = s._s4;
   if(A && A.go){ s4Step(s, tgt, A); return true; }
+  if(!A && !(s._tel > 0) && s._beatQ){ const ph = s._beatQ; s._beatQ = 0; s4PopStart(s, tgt, ph); s4Step(s, tgt, s._s4); return true; }   // the phase beat, once he is idle
   if(A && s._tel > 0 && s4Windup(s, tgt, A)) return true;
   s4Walk(s, tgt);
   return true;
 }
+// ---- POP UP! ------------------------------------------------------------------------------------------------------------------
+// (4Seeing The Future: "(MePhone4S pops up from under [a contestant]) I hate you! That's why I poisoned your cookie!"; the quicksand is his other place:
+// "the challenge ... to get across this quicksand".) He sinks into the quicksand where he stands (the wind-up: the sand opens round him and he goes
+// down), bubbles run along the floor toward you -- they show where -- and a boil of sand marks the spot he will come up, red while it follows you, white
+// once it holds (S4.pop.lock frames before). Then he pops up under it: a hit to whoever is in the boil and low enough to be in it (S4.pop.reach above the
+// floor: a platform is clear of it), knocked up and away, and the floor shakes. He stands there in the pit a moment -- the punish -- and phase 2 pops
+// twice, phase 3 three times, the later ones with a shorter tell. One attack id. The phase beat is the same move with no hit (s4PhaseBeat).
+function s4PopGo(s, tgt){
+  const ph = s4PhT(s), gy = groundY(), A = s._s4 || (s._s4 = { k:'pop' }), P = S4.pop;
+  Object.assign(A, { k:'pop', go:true, st:'dig', t:0, ph:ph, id:++BOSS_ATK_ID, n:P.n[ph], i:0 });
+  if(A.x == null) A.x = Math.round(clamp(s4Live(tgt) ? tgt.x : s.x, 70, WW - 70));
+  if(A.sx == null) A.sx = Math.round(s.x);
+  s.hover = true; s.vx = 0; s.vy = 0; s.x = A.sx; s.y = gy + 400;   // under the floor: nothing reaches him
+}
+function s4PopStart(s, tgt, ph, beat){   // the phase beat: no wind-up of the engine's, no hit
+  const gy = groundY(), P = S4.pop, side = s4Live(tgt) && tgt.x > WW*0.5 ? -1 : 1;
+  const x = Math.round(clamp(s4Live(tgt) ? tgt.x + side*150 : s.x, 70, WW - 70));
+  s._s4 = { k:'pop', go:true, st:'sink', t:0, ph:ph, id:++BOSS_ATK_ID, n:1, i:0, beat:1, sx:Math.round(s.x), x:x, lock:0 };
+  s.hover = true; s.vx = 0; s.vy = 0;
+}
+function s4PopHit(s, A){
+  const gy = groundY(), P = S4.pop;
+  impact(A.x, gy, { shake:12, dust:2, debris:8, scar:true, r:100, color:'#e8c878' });
+  for(let i=0;i<10;i++) puff(A.x + (Math.random()*2 - 1)*P.r, gy - 4, '#ecd08a', 5);
+  if(A.beat) return;
+  for(const f of fighters){
+    if(f.dead || f.invuln > 0) continue;
+    if(Math.abs(f.x - A.x) < P.r + f.r*0.4 && feetY(f) > gy - P.reach){
+      const side = Math.sign(f.x - A.x) || 1;
+      applyHit(f, bossDmg()*0.8, side*P.kb[0], P.kb[1], null, { bossAtk:A.id });
+      for(let i=0;i<8;i++) puff(f.x, f.y, '#ecd08a', 4);
+    }
+  }
+}
+function s4PopStep(s, tgt, A){
+  const gy = groundY(), R = s.r, P = S4.pop;
+  if(A.st === 'sink'){   // a sink with no wind-up of the engine's under it (the beat, and between pops)
+    const len = A.beat ? P.beat[0] : P.sink2;
+    s.hover = true; s.vx = 0; s.x = A.sx; s.y = gy - R + clamp(A.t/len, 0, 1)*R*1.9;
+    if(A.t >= len){ A.st = 'dig'; A.t = 0; s.y = gy + 400; A.lock = 0; A.dig = A.beat ? P.beat[1] : P.again; }
+  } else if(A.st === 'dig'){
+    s.hover = true; s.vx = 0; s.x = A.sx; s.y = gy + 400;
+    const len = A.dig != null ? A.dig : P.hold;
+    if(A.dig != null){   // a follow-up pop: the spot follows you for a moment, then holds
+      if(A.t >= len - P.lock) A.lock = 1; else if(s4Live(tgt) && !A.beat) A.x = Math.round(clamp(tgt.x, 70, WW - 70));
+    }
+    if(A.t >= len){
+      s.x = A.x; s.y = gy + R*0.9; A.st = 'rise'; A.t = 0; A.vy = 0; s4PopHit(s, A);
+      s.face = tgt ? (Math.sign(tgt.x - s.x) || s.face) : s.face;
+    }
+  } else if(A.st === 'rise'){
+    const peak = gy - R - P.peak, y0 = gy + R*0.9, u = clamp(A.t/P.rise, 0, 1);
+    s.hover = true; s.y = y0 + (peak - y0)*(1 - (1 - u)*(1 - u));
+    if(A.t >= P.rise){ A.st = 'fall'; A.t = 0; A.vy = 0; }
+  } else if(A.st === 'fall'){
+    A.vy += 0.8; s.y += A.vy;
+    if(s.y >= gy - R){ s.y = gy - R; A.vy = 0; A.st = 'stand'; A.t = 0; impact(s.x, gy, { shake:5, dust:1, debris:2, r:70, color:'#e8c878' }); }
+  } else if(A.st === 'stand'){
+    s.y = gy - R; s.hover = true;
+    if(tgt) s.face = Math.sign(tgt.x - s.x) || s.face;
+    if(A.t >= (A.beat ? 10 : P.stand)){
+      if(A.i + 1 < A.n){ A.i++; A.sx = Math.round(s.x); A.x = Math.round(clamp(s4Live(tgt) ? tgt.x : s.x, 70, WW - 70)); A.st = 'sink'; A.t = 0; A.lock = 0; }
+      else s4Done(s, A.beat ? 70 : null);
+    }
+  }
+}
+
+// ---- QUICKSAND SHOVE! ----------------------------------------------------------------------------------------------------------
+// (4Seeing The Future: "MePhone4S tackles MePhone4 and tries to push him into the quicksand.") He crouches and charges along the floor -- the wind-up lays
+// out the lane, red while it follows you and white once it holds, as high as the tackle reaches (S4.shove.top above the floor: a platform is clear of it)
+// -- and the tackle pushes whoever it catches in front of him to the end of the run, where a strip of quicksand has opened that SLOWS whoever stands in it
+// (the strip is the arena's: BOSS_ARENA_HAZARD.deathtrap). He skids to a stop at the strip's edge and stands there a moment, the punish. The charge
+// is faster each phase and the strip wider and longer-lived; phase 3 charges twice. One attack id, so the tackle is at most one boss hit.
+function s4ShoveGo(s, tgt){
+  const ph = s4PhT(s), gy = groundY(), A = s._s4 || (s._s4 = { k:'shove' }), V = S4.shove;
+  Object.assign(A, { k:'shove', go:true, st:'run', t:0, ph:ph, id:++BOSS_ATK_ID, n:V.n[ph], i:0 });
+  if(A.x == null) A.x = Math.round(s4Live(tgt) ? tgt.x : s.x);
+  s4ShoveRun(s, A);
+}
+// Where a charge ends and where its strip lies: he runs V.lead px past where you stood, skids on (the sum of a speed that keeps V.skid of itself each frame), and the
+// strip begins just in front of where he stops, so the one he is pushing ends up in it.
+function s4ShovePlan(R, dir, ax, ph){
+  const V = S4.shove, skid = V.spd[ph]*V.skid/(1 - V.skid), hw = V.w[ph]/2, end = clamp(ax + dir*V.lead, R*0.6, WW - R*0.6);
+  return { end:end, hw:hw, cx:clamp(end + dir*(skid + R*0.7 + hw), hw + 10, WW - hw - 10) };
+}
+function s4ShoveRun(s, A){   // the charge begins: the lane, the strip beyond it
+  const gy = groundY(), V = S4.shove, ph = A.ph, R = s.r;
+  const dir = A.dir || Math.sign(A.x - s.x) || (s.face < 0 ? -1 : 1), pl = s4ShovePlan(R, dir, A.x, ph);
+  Object.assign(A, { st:'run', t:0, dir:dir, spd:V.spd[ph], end:Math.round(pl.end), cx:Math.round(pl.cx), hw:Math.round(pl.hw), v:V.spd[ph], hit:{}, carry:-1, lock:0 });
+  const H = s4Hz(s); (H.sand || (H.sand = [])).push([A.cx, A.hw, hazardT, hazardT + V.life[ph]]);
+  s.hover = true; s.vx = 0; s.vy = 0; s.y = gy - R; s.face = dir;
+  shake(5);
+}
+function s4ShoveStep(s, tgt, A){
+  const gy = groundY(), R = s.r, V = S4.shove, dir = A.dir;
+  s.hover = true; s.y = gy - R; s.face = dir;
+  if(A.st === 'run' || A.st === 'skid'){
+    if(A.st === 'run'){ s.x += dir*A.v; if((s.x - A.end)*dir >= 0){ s.x = A.end; A.st = 'skid'; A.t = 0; } }
+    else { A.v *= V.skid; s.x = clamp(s.x + dir*A.v, R*0.5, WW - R*0.5); if(A.v < 1.2){ A.st = 'rec'; A.t = 0; A.v = 0; } }
+    if(hazardT%2 === 0) puff(s.x - dir*R*0.55, gy - 4, '#ecd08a', 2);
+    if(A.t === 1 && A.st === 'skid') impact(s.x, gy, { shake:6, dust:2, debris:3, r:80, color:'#e8c878' });   // the skid
+    // the tackle: whoever is in the lane, low enough, in front of him, once
+    for(const f of fighters){
+      if(f.dead || A.hit[f.idx] || f.invuln > 0) continue;
+      if(Math.abs(f.x - s.x) < R*0.85 + f.r*0.5 && feetY(f) > gy - V.top){
+        A.hit[f.idx] = 1; A.carry = f.idx;
+        applyHit(f, bossDmg()*0.8, dir*V.kb, -5, null, { bossAtk:A.id });
+        impact(f.x, gy, { shake:7, dust:1, debris:3, r:60, color:'#e8c878' });
+      }
+    }
+    // ...and he pushes the one he caught along in front of him (while they are stunned), then lets go
+    const c = fighters.find(q => q.idx === A.carry);
+    if(c && !c.dead && c.hitstun > 0){ c.x = clamp(s.x + dir*(R*0.9 + c.r*0.5), 30, WW - 30); c.vx = dir*Math.max(4, A.v); if(c.vy < 0) c.vy = 0; }
+  } else if(A.st === 'rec'){
+    if(A.carry >= 0){ const c = fighters.find(q => q.idx === A.carry); if(c && !c.dead) c.vx = dir*6; A.carry = -1; }
+    if(A.t >= V.rec){
+      if(A.i + 1 < A.n){   // phase 3: again, from where he stands, at where you are by now
+        A.i++; A.st = 'tel2'; A.t = 0; A.lock = 0; A.x = Math.round(s4Live(tgt) ? tgt.x : s.x); A.dir = Math.sign(A.x - s.x) || dir;
+      } else s4Done(s);
+    }
+  } else if(A.st === 'tel2'){   // a short wind-up for the second charge: the lane follows you, then holds
+    if(A.t >= V.again - V.lock) A.lock = 1; else if(s4Live(tgt)){ A.x = Math.round(tgt.x); A.dir = Math.sign(tgt.x - s.x) || A.dir; }
+    s.face = A.dir;
+    if(A.t >= V.again) s4ShoveRun(s, A);
+  }
+}
+
 function s4Step(s, tgt, A){
   A.t = (A.t || 0) + 1;
   s4RunQueue(s, tgt, A);
@@ -13142,13 +13285,15 @@ function s4Step(s, tgt, A){
       break; }
     case 'car': s4CarStep(s, tgt, A); break;
     case 'prizes': case 'vista': s4Walk(s, tgt, true); if(A.t >= A.end) s4Done(s); break;   // planted while the pairs and the lemons go
+    case 'pop': s4PopStep(s, tgt, A); break;
+    case 'shove': s4ShoveStep(s, tgt, A); break;
     default: s4Done(s);
   }
 }
 // Every frame, after the phase check (the tick slot).
 function s4Tick(s, tgt){
   const A = s._s4;
-  s4TrackSight(s);
+  s4TrackSight(s, tgt);
   if(A && A.go && s._atkTimer < 2) s._atkTimer = 2;   // nothing new starts while a scripted move runs
   for(const p of projectiles){
     if(!p.s4) continue;
@@ -13182,6 +13327,26 @@ function s4Spawn(boss){
 function s4PhaseBeat(s, ph){
   s4Hz(s).thunder = hazardT;
   if(ph >= 2){ s._carDue = true; s._beatQ = ph; }
+}
+
+// ---- the arena's hazard: the quicksand strips (here), the sawblades and the platform's flip (below) ------------------------------------------------------
+// BOSS_ARENA_HAZARD.deathtrap = { step: s4HazStep, draw: s4HazDraw }. The state is b._hz: sand [[centre, half-width, the frame it goes live, the frame it goes]...],
+// saw [x, x], flip [platform x, the frame it began], thunder (the frame of the last bolt). A client draws from it as it is.
+function s4HazStep(b, H, tgt){
+  const gy = groundY(), t = hazardT;
+  if(H.sand){   // QUICKSAND SHOVE!'s strips: whoever stands in a live one is slowed
+    H.sand = H.sand.filter(e => t < e[3]);
+    for(const f of fighters){
+      if(f.dead || feetY(f) < gy - 14) continue;
+      for(const e of H.sand){ if(t >= e[2] && Math.abs(f.x - e[0]) < e[1] + f.r*0.3){ f.slowed = Math.max(f.slowed||0, 6); break; } }
+    }
+  }
+}
+
+// A live strip of quicksand across the floor, [centre, half-width, goes live, goes]: the blob of s4SandBlob, blinking over its last half second.
+function s4DrawSand(e, t){
+  const gy = groundY(), left = e[3] - t, a = left < 30 ? (t%6 < 3 ? 0.55 : 1) : 1;
+  s4SandBlob(e[0], gy, e[1]*2, 22, Math.min(1, (t - e[2] + 6)/10), t, a);
 }
 
 // ---- how his shots are drawn (the shotdraw slot): a car and its headlights, a round stopped in mid-air, the crusher and its shadow ----------------------------
@@ -13284,6 +13449,72 @@ function s4DrawFx(b){
     g.addColorStop(0, 'rgba(255,244,170,' + (0.08 + 0.3*u) + ')'); g.addColorStop(1, 'rgba(255,244,170,0)');
     ctx.fillStyle = g; ctx.fillRect(Math.min(ex, ex + d*420), gy - 56, 420, 56);
     ctx.fillStyle = 'rgba(255,250,200,' + (0.3 + 0.5*u) + ')'; ctx.beginPath(); ctx.arc(ex + d*12, gy - 38, 6, 0, 7); ctx.arc(ex + d*12, gy - 18, 6, 0, 7); ctx.fill();
+  } else if(A && A.k === 'pop' && (tel || A.go)){ s4DrawPop(b, A, tel);
+  } else if(A && A.k === 'shove' && (tel || A.go)){ s4DrawShove(b, A, tel); }
+  // a body under the floor line is covered by the sand it is sinking into or coming up through
+  if(b.y > gy - R + 4 && b.y < gy + R*2.2) s4SandBlob(b.x, gy, R*2.7, R*2.2, 1, t, 1);
+  ctx.restore();
+}
+// A blob of quicksand across the floor line: the pale sand of File:S1RE8QuicksandPit.png (a flat tan with darker ripples and a brown edge), `w` wide,
+// `depth` down from the floor, grown to `k` of its width, with a wavy lip a hair over the line. Bubbles rise in it.
+function s4SandBlob(cx, gy, w, depth, k, t, alpha){
+  if(!(k > 0)) return;
+  const hw = w*0.5*Math.min(1, k);
+  ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha; ctx.lineJoin = 'round';
+  ctx.fillStyle = '#ecd08a'; ctx.strokeStyle = '#a8803c'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(cx - hw, gy + depth); ctx.lineTo(cx - hw, gy - 1);
+  for(let i = 0; i <= 10; i++){ const x = cx - hw + hw*2*i/10; ctx.lineTo(x, gy - 5 + Math.sin(t*0.12 + i*1.3)*2.5 - (i%2)*1.5); }
+  ctx.lineTo(cx + hw, gy - 1); ctx.lineTo(cx + hw, gy + depth); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#c9a458'; ctx.lineWidth = 1.6;
+  for(let r = 0; r < 3; r++){ ctx.beginPath(); for(let i = 0; i <= 8; i++){ const x = cx - hw*0.85 + hw*1.7*i/8, y = gy + 9 + r*10 + Math.sin(t*0.07 + i*0.9 + r)*2; if(i) ctx.lineTo(x, y); else ctx.moveTo(x, y); } ctx.stroke(); }
+  for(let i = 0; i < 4; i++){ const ph = (t*0.04 + i*0.27) % 1, x = cx + (i - 1.5)*hw*0.4, y = gy + 12 - ph*16; s4Bubble(x, y, 2 + (i%2)*1.5, 1 - ph); }
+  ctx.restore();
+}
+function s4Bubble(x, y, r, a){
+  ctx.save(); ctx.globalAlpha = Math.max(0, a == null ? 1 : a); ctx.fillStyle = 'rgba(250,236,184,0.85)'; ctx.strokeStyle = '#a8803c'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
+}
+// POP UP!: the pit he sank into, the bubbles that run along the floor toward where he will come up (they show where), and the boil there -- red while it
+// follows you, white once it holds -- as wide as the pop reaches (the tell is the hitbox).
+function s4DrawPop(b, A, tel){
+  const gy = groundY(), R = b.r, t = hazardT, P = S4.pop, len = bossTelLen(b), u = tel ? 1 - b._tel/len : 1;
+  if(typeof A.x !== 'number' || typeof A.sx !== 'number') return;
+  const going = tel || A.st === 'sink' || A.st === 'dig';
+  if(!going) return;
+  // the pit where he went down, open while he is under
+  const kPit = tel ? Math.min(1, u*4) : (A.st === 'dig' ? 1 : Math.min(1, (A.t||0)/8));
+  if(!(b.y > gy - R + 4 && Math.abs(b.x - A.sx) < 2)) s4SandBlob(A.sx, gy, R*2.7, R*2.2, kPit, t, 0.95);
+  else if(A.st === 'dig') s4SandBlob(A.sx, gy, R*2.7, R*2.2, 1, t, 0.95);
+  // bubbles running to the spot
+  const dx = A.x - A.sx;
+  if(Math.abs(dx) > 40 && (tel ? u > 0.25 : true)) for(let i = 0; i < 9; i++){
+    const fr = (t*0.026 + i/9) % 1, x = A.sx + dx*fr, y = gy - 3 - Math.abs(Math.sin(t*0.3 + i*1.7))*5;
+    s4Bubble(x, y, 2.4 + (i%3), 0.9);
+  }
+  // the boil where he will come up
+  const lk = !!A.lock;
+  ctx.save(); ctx.strokeStyle = lk ? 'rgba(255,255,255,0.95)' : 'rgba(255,70,50,0.8)'; ctx.fillStyle = lk ? 'rgba(255,255,255,0.2)' : 'rgba(255,70,50,0.14)'; ctx.lineWidth = lk ? 3 : 2;
+  ctx.beginPath(); ctx.ellipse(A.x, gy - 4, P.r, 11, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
+  for(let i = 0; i < 6; i++){ const ph = (t*0.05 + i*0.19) % 1, x = A.x + (i - 2.5)*P.r*0.32, y = gy - 3 - ph*14; s4Bubble(x, y, 2.2 + (i%2)*1.6, 1 - ph); }
+}
+// QUICKSAND SHOVE!: the lane he will charge along (as high as the tackle reaches, red then white) and the strip of quicksand that will open at the end of it.
+function s4DrawShove(b, A, tel){
+  const gy = groundY(), R = b.r, t = hazardT, V = S4.shove, ph = A.ph || 1;
+  const winding = tel || A.st === 'tel2';
+  if(!winding && A.st !== 'run' && A.st !== 'skid') return;
+  const dir = A.dir || (b.face < 0 ? -1 : 1), x0 = b.x, pl = s4ShovePlan(R, dir, A.x, ph), end = winding ? pl.end : A.end, lk = winding ? !!A.lock : true;
+  if(typeof end !== 'number' || typeof A.x !== 'number') return;
+  ctx.save();
+  ctx.fillStyle = lk ? 'rgba(255,255,255,' + (winding ? 0.2 : 0.08) + ')' : 'rgba(255,70,50,0.12)';
+  ctx.fillRect(Math.min(x0, end), gy - V.top, Math.abs(end - x0), V.top);
+  ctx.strokeStyle = lk ? 'rgba(255,255,255,0.55)' : 'rgba(255,90,70,0.4)'; ctx.lineWidth = 3; ctx.beginPath();
+  for(let x = 70; x < Math.abs(end - x0); x += 90){ const cx = x0 + dir*x; ctx.moveTo(cx - dir*12, gy - 34); ctx.lineTo(cx, gy - 20); ctx.lineTo(cx - dir*12, gy - 6); }
+  ctx.stroke();
+  if(winding){   // the strip, before it opens: its edges, and the sand starting to boil
+    const hw = pl.hw, cx = pl.cx;
+    ctx.strokeStyle = 'rgba(168,128,60,0.9)'; ctx.setLineDash([8, 6]); ctx.lineWidth = 2.5; ctx.strokeRect(cx - hw, gy - 5, hw*2, 20); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(236,208,138,' + (0.14 + 0.1*Math.sin(t*0.2)) + ')'; ctx.fillRect(cx - hw, gy - 5, hw*2, 20);
+    for(let i = 0; i < 5; i++){ const q = (t*0.05 + i*0.21) % 1; s4Bubble(cx + (i - 2)*hw*0.4, gy + 8 - q*14, 2.2 + (i%2)*1.4, 1 - q); }
   }
   ctx.restore();
 }
@@ -26558,6 +26789,12 @@ function drawBossSprite(s){
     ctx.save(); ctx.globalAlpha = s._aimLock ? 0.9 : 0.45; ctx.strokeStyle = s._aimLock ? "#ffffff" : "#ff2a2a"; ctx.lineWidth = s._aimLock ? 3 : 2;
     ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx+dx*k, hy+dy*k); ctx.stroke(); ctx.restore();
   }
+  // QUICKSAND SHOVE!: he crouches into the charge, leaning the way he will go (his render's lean and squash carry on to the art, drawSummon restores them)
+  if(s._tel>0 && s._telKind==="s4shove" && s._s4 && s._s4.dir){ const u = 1 - s._tel/bossTelLen(s); ctx.translate(0, R*0.1*u); ctx.rotate(s._s4.dir*0.28*u); ctx.scale(1 + 0.05*u, 1 - 0.09*u); }
+  else if(s._s4 && s._s4.k==="shove" && s._s4.st==="tel2"){ ctx.translate(0, R*0.1); ctx.rotate(s._s4.dir*0.28); ctx.scale(1.05, 0.91); }
+  else if(s._s4 && s._s4.k==="shove" && (s._s4.st==="run" || s._s4.st==="skid")){ const k = s._s4.st === "run" ? 1 : Math.max(0, s._s4.v/Math.max(1, s._s4.spd)); ctx.rotate(s._s4.dir*0.3*k); }
+  // I'LL BE BACK!: he runs for the edge, leaning into it
+  else if(s._tel>0 && s._telKind==="s4car" && s._s4 && s._s4.from){ ctx.rotate(s._s4.from*0.14); }
   // @boss:mephone4s:end tell
 
   // @boss:two:begin tell
