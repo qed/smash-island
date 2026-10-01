@@ -1058,3 +1058,23 @@ describe('Size Shift: smaller, and quicker', () => {
     expect(r[3].r, 'and in phase 3 he is bigger').toBeGreaterThan(r[1].r);
   });
 });
+
+describe('a MIND READ! copy can wear any fighter\'s special', () => {
+  it('drawing a copy in every shape the game has -- every fighter\'s special art and glyph -- throws nothing, and the copy of a special with no art is the green orb', () => {
+    const r = W.eval(`(function(){
+      var keys = Object.keys(PROJ_SHAPE).concat(Object.keys(ATTACK_SPRITES)).filter(function(k, i, a){ return a.indexOf(k) === i; }), bad = [];
+      keys.forEach(function(k){
+        [0, 1].forEach(function(dir){
+          try { drawProjectile({ x:300, y:300, vx:dir ? -9 : 9, vy:1, r:12, owner:-2, ownerObj:{ team:-1, idx:-2 }, shape:k, color:'#44C549', twoCopy:true, two:true, bossAtk:3, life:50 }); }
+          catch(e){ bad.push(k + ': ' + e.message); }
+        });
+      });
+      var specials = ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.kit && r.kit.special; }).filter(Boolean);
+      return { n: keys.length, bad: bad, orbFor: specials.filter(function(k){ return twoCopyShape(k) === 'twoorb'; }).length, artFor: specials.filter(function(k){ return twoCopyShape(k) === k; }).length, total: specials.length };
+    })()`);
+    expect(r.bad).toEqual([]);
+    expect(r.n, 'the whole registry').toBeGreaterThan(100);
+    expect(r.orbFor + r.artFor, 'every special is either its own art or the orb').toBe(r.total);
+    expect(r.artFor, 'and plenty have art to wear').toBeGreaterThan(30);
+  });
+});
