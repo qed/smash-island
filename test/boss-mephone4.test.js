@@ -1272,3 +1272,21 @@ describe('a netcode client sees him', () => {
     expect(r.walls, 'the maze\'s wall is a platform the client has').toBe(1);
   });
 });
+
+describe('a downloading add stays where it lands', () => {
+  it('a Beach Ball add starts its ricochet only once its download is done, not the frame it appears', () => {
+    // MELIFE DOWNLOAD!'s adds are inert while they download (MELIFE_DL frames, the arrival tell); the Beach Ball's ricochet launched at once
+    // and bounced away from its scan circle (found by MePhone4's builder, 2026-10-01).
+    const r = W.eval(`(function(){ var gy = groundY(), saved = worldPlats; worldPlats = [];
+      var a = { type:'assist', act:'bounce', hostile:true, _dl:MELIFE_DL, x:500, y:gy-20, vx:0, vy:0, r:20, face:1, life:999 };
+      for (var i=0;i<MELIFE_DL-1;i++){ stepAssistBody(a, gy); a._dl--; }
+      var during = { x:a.x, vx:a.vx, launched: !!a._launched };
+      a._dl = 0; stepAssistBody(a, gy);
+      var out = { during: during, after: { vx: a.vx, launched: !!a._launched }, speed: BEACH_BALL_SPEED };
+      worldPlats = saved; return out;
+    })()`);
+    expect(r.during, 'inert while it downloads').toEqual({ x: 500, vx: 0, launched: false });
+    expect(r.after.launched, 'then it goes').toBe(true);
+    expect(Math.abs(r.after.vx)).toBe(r.speed);
+  });
+});
