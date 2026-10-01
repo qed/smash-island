@@ -54,7 +54,7 @@ describe('MePhone4 joins the gauntlet', () => {
       // 255, was 240: under the Dragon's 250 when the Dragon came before him (it moved to Boss 9 on 2026-09-30; see
       // test/boss-rush-order.test.js)
       ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'melife', true, 'mephone'],
-      ['Evil Leafy', '#123a12', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy'],
+      ['Evil Leafy', '#ff0100', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy'],   // red, her vines black ("Evil Leafy red with black vines", the owner, 2026-09-29; test/boss-evilleafy.test.js)
       ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'studio', false, 'mephone4s'],
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon'],   // the hotel roof in the storm, no longer the shared cave ("Each its own", the owner, 2026-09-29)
       ['Two', '#44C549', 285, 2.6, 'two', 'twopark', false, 'two'],   // rebuilt (the boss overhaul): green ("Two green", Round 11) in the A-twos-ment Park ("Each its own"); test/boss-two.test.js has the fight
@@ -65,7 +65,7 @@ describe('MePhone4 joins the gauntlet', () => {
       'Announcer': ['annlaser', 'annacid', 'annballoon'], 'Puffball Speaker Box': ['consequences', 'rainbowbarf', 'private'], 'Firey Speaker Box': ['furnace', 'youmust'],
       'The Bug Swarm': ['dodgepattern', 'swarmseek', 'dodgeball', 'eggsac'], 'Purple Face': ['pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes'], 'Purple Dragon': ['dragonroar', 'dragonchar', 'dragonwind', 'dragonropes'],
       'MePhone4': ['melife', 'portal'],
-      'Evil Leafy': ['seekers', 'slam'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap'], 'Springy': ['longarm', 'boxdrop'],
+      'Evil Leafy': ['elpossess', 'elhole', 'elbehind'], 'MePhone4S': ['cookies', 'chainsaws'], 'Two': ['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap'], 'Springy': ['longarm', 'boxdrop'],
       'Four': ['fourbye', 'fourtower', 'fourido', 'fourhearts', 'fourcactus'],
     });
   });
