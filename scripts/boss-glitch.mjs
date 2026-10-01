@@ -13,8 +13,8 @@
 //                                                           items / assists / same, joined by +, or -), VERBOSE=1 for the boss's hit sources, TRACE=1 for every hit,
 //                                                           WATCH='summons[0]._atkTimer' (any expression the game can evaluate, JSON-able) prints it every WATCH_EVERY (120) frames
 //   SELFTEST=1 node scripts/boss-glitch.mjs                 each detector fed a fault it must find (the exit code is how many it missed)
-//   JOBS=4  FRAMES=3600  DRAW_EVERY=2  NET_EVERY=10  OUT=report.json  SIZE=800x600  ALL_FIGHTERS=0  VERBOSE=1     (see below)
-// Run from the repo root (it reads artifacts/V1/index.html). Every run boots its own game on its own seed, so the same build and the same
+//   JOBS=4  FRAMES=3600  DRAW_EVERY=2  NET_EVERY=10  OUT=report.json  SIZE=800x600  ALL_FIGHTERS=0  VERBOSE=1  GAME_ROOT=../other-checkout     (see below)
+// Run from the repo root (it reads artifacts/V1/index.html, or the one in GAME_ROOT). Every run boots its own game on its own seed, so the same build and the same
 // repro line print the same findings. It is not in the vitest suite: it is minutes, not seconds.
 //
 // WHAT IT DOES
@@ -66,7 +66,7 @@ import { mulberry32 } from '../test/helpers/prng.js';
 import { makeCtx, installImages } from '../test/helpers/validating-canvas.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const GAME_DIR = join(ROOT, 'artifacts/V1');
+const GAME_DIR = join(process.env.GAME_ROOT || ROOT, 'artifacts/V1');   // GAME_ROOT=<another checkout of the repo> plays that checkout's game with this script
 const env = process.env;
 const FRAMES = Number(env.FRAMES || 3600), DRAW_EVERY = Math.max(1, Number(env.DRAW_EVERY || 2)), NET_EVERY = Number(env.NET_EVERY ?? 10);
 const RUNS = Number(env.RUNS || 6), VERBOSE = !!env.VERBOSE;
@@ -359,7 +359,7 @@ function pageHarness() {
       for (const k of STREAK) {
         if (k === 'slowed' && q._ghostDrift) continue;   // One's drift ghost is held slowed for as long as it stands (spawnOneGhost)
         const v = q[k], on = v > 0 || v === true, key = q.idx + '|' + k;
-        if (on) { const s0 = G.st[key]; if (s0 === undefined) G.st[key] = f; else if (f - s0 === 300) G.note('fighter-stuck', k, `${q.name}#${q.idx} has had ${k} = ${short(v, 30)} for 300 frames in a row (frame ${f}, boss ${b ? b.name + ' phase ' + b._phase + ' move ' + b._telKind : 'none'}); at (${Math.round(q.x)}, ${Math.round(q.y)})`); }
+        if (on) { const s0 = G.st[key]; if (s0 === undefined) G.st[key] = f; else if (f - s0 === (k === '_swallow' ? 540 : 300)) G.note('fighter-stuck', k, `${q.name}#${q.idx} has had ${k} = ${short(v, 30)} for ${k === '_swallow' ? 540 : 300} frames in a row (frame ${f}, boss ${b ? b.name + ' phase ' + b._phase + ' move ' + b._telKind : 'none'}); at (${Math.round(q.x)}, ${Math.round(q.y)})`); }
         else delete G.st[key];
       }
       { const ko = 'oob' + q.idx;
