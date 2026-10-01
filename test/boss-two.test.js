@@ -1078,3 +1078,35 @@ describe('a MIND READ! copy can wear any fighter\'s special', () => {
     expect(r.artFor, 'and plenty have art to wear').toBeGreaterThan(30);
   });
 });
+
+describe('Power Ungrounded holds against every kind of hit', () => {
+  it('in phase 3 a shot and a dash do nothing until a fighter has grounded him, as a hit does; grounded, all three land', () => {
+    // The phase-3 line says it: "Power Ungrounded — ground it to damage them!" Hits honoured it; shots and dashes went around it (found by Two's
+    // builder, 2026-10-01), so a ranged fighter never had to get close.
+    const r = W.eval(`(function(){ ${STAGE(300, 3)}
+      var out = { ungrounded: !!b._ungrounded };
+      var shot = function(){ projectiles.push({ x:b.x, y:b.y, vx:0, vy:0, r:8, dmg:9, owner:0, ownerObj:f, life:5, color:'#fff' }); var h = b.hp; step(); return h - b.hp; };
+      b._groundT = 0; b._grounded = false;
+      out.shotUngrounded = shot();
+      out.hitUngrounded = (function(){ var h = b.hp; damageSummon(f, b, b.x, b.y, 9); return h - b.hp; })();
+      b._groundT = 120; step();
+      out.grounded = !!b._grounded;
+      out.shotGrounded = shot();
+      out.hitGrounded = (function(){ var h = b.hp; damageSummon(f, b, b.x, b.y, 9); return h - b.hp; })();
+      projectiles = []; summons = []; return out;
+    })()`);
+    expect(r.ungrounded, 'phase 3: his power is ungrounded').toBe(true);
+    expect(r.hitUngrounded, 'a hit does nothing').toBe(0);
+    expect(r.shotUngrounded, 'and now neither does a shot').toBe(0);
+    expect(r.grounded).toBe(true);
+    expect(r.hitGrounded, 'grounded, a hit lands').toBe(9);
+    expect(r.shotGrounded, 'and so does a shot').toBe(9);
+  });
+
+  it('every fighter-to-boss path asks the same guard: the hit, the shot loop and the dash sweep', () => {
+    const html = readFileSync('artifacts/V1/index.html', 'utf8');
+    expect(html.match(/else if\(!twoUngroundedBlocks\(s\)\) s\.hp -= (pd|dd);/g), 'the shot loop and the dash sweep').toHaveLength(2);
+    expect(html).toContain('if(twoUngroundedBlocks(s)) return;');
+    expect(html.match(/else s\.hp -= (pd|dd);/g), 'no path left that skips it').toBe(null);
+  });
+});
