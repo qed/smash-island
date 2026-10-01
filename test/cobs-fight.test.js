@@ -29,7 +29,8 @@ const fight = (lineup, opts, body) => W.eval(`(function(){
   var shots = function(){ return projectiles.filter(function(p){ return p.owner===-2 && p.life > 0; }); };
   ${body}
 })()`);
-const ALL = ['rounds', 'van', 'samples', 'chainsaws', 'spikes', 'deploy', 'device', 'portal', 'springs', 'memurder', 'meknife', 'kernelpop', 'hands',
+// ('rounds' is 'boomerangs' now: the owner, boss-overhaul-decisions.md Round 7, "Swap for BOOMERANGS!" -- SECURITY ROUNDS! is gone)
+const ALL = ['boomerangs', 'van', 'samples', 'chainsaws', 'spikes', 'deploy', 'device', 'portal', 'springs', 'memurder', 'meknife', 'kernelpop', 'hands',
   'deletion', 'ticktock', 'plug', 'keynote', 'metags', 'cannon'];
 
 describe('Steve Cobs is his own boss', () => {
@@ -203,7 +204,7 @@ describe('FIVE TIERS, all attacks stepping up together at 2000, 1500, 1000 and 5
         if (k === 'spikes') { expect(o.n, `${k} tier ${t} spikes`).toBeGreaterThan(0); continue; }   // how many platforms are near is the arena's business
         if (k === 'kernelpop') { expect(o.n, `${k} tier ${t} kernels`).toBeGreaterThanOrEqual(o.want); continue; }   // a kernel may already have splatted into its puddle
         expect(o.n, `${k} tier ${t} count`).toBe(o.want);
-        if (['rounds', 'van', 'samples', 'chainsaws', 'device', 'springs', 'meknife', 'hands', 'ticktock', 'plug'].includes(k)) {
+        if (['boomerangs', 'van', 'samples', 'chainsaws', 'device', 'springs', 'meknife', 'hands', 'ticktock', 'plug'].includes(k)) {
           expect(o.spd, `${k} tier ${t} flies no slower than the tier before`).toBeGreaterThanOrEqual(lastSpd - 1e-9); lastSpd = o.spd;
         }
       }
@@ -231,30 +232,36 @@ describe('the adapted set is HIS: he built the phones, he is not one', () => {
     expect(r.harder).toBe(true);
   });
 
-  it('the rounds come from HIS hand at the point the sight locked; the van drives the floor; the samples land and wait; the units shoot', () => {
+  it('the boomerangs leave HIS hand on the arc the sight locked; the van drives the floor; the samples burst into crumbs; the units shoot', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s.x = you.x + 400; s.y = you.y - 120; s.face = -1;
-      cobsFightTelegraph(s, 'rounds', you); var aimed = [s._aimX, s._aimY];
-      for (var i=0;i<s._tel - cobsT(s,'rounds').lock + 2;i++) step();   // follows you until the lock...
-      you.x += 300; step(); var lockedAim = s._aimX;                        // ...then holds
-      s._tel = 0; COBS_MOVES.rounds(s, you, ++BOSS_ATK_ID);
-      var r0 = shots()[0], hx = s.x + (s.face||1)*s.r*0.6;
-      var rounds = { fromHand: Math.abs(r0.x - hx) < 1, toward: Math.sign(r0.vx) === Math.sign(lockedAim - hx), heldAim: lockedAim === aimed[0], beam: !!r0.beamShot };
+      cobsFightTelegraph(s, 'boomerangs', you); var aimed = [s._aimX, s._aimY];
+      for (var i=0;i<s._tel - cobsT(s,'boomerangs').lock + 2;i++) step();   // follows you until the lock...
+      you.x += 300; step(); var lockedAim = s._aimX, lockedY = s._aimY;      // ...then holds
+      s._tel = 0; COBS_MOVES.boomerangs(s, you, ++BOSS_ATK_ID);
+      var r0 = shots()[0], hx = s.x + (s.face||1)*s.r*0.6, hy = s.y - s.r*0.1, T = cobsT(s, 'boomerangs');
+      var path = cobsBoomPath(T, hx, hy, lockedAim, lockedY, 0), end = path[path.length-1];
+      var near = Math.min.apply(null, path.map(function(q){ return Math.hypot(q[0] - lockedAim, q[1] - lockedY); }));
+      var boom = { fromHand: Math.abs(r0.x - hx) < 1 && Math.abs(r0.y - hy) < 1, near: near, heldAim: lockedAim === aimed[0], shape: r0.shape, pierce: !!r0.pierce, turns: r0._bm.turns, n: shots().length, want: T.n };
       projectiles = []; cobsFightTelegraph(s, 'van', you); s._tel = 0; COBS_MOVES.van(s, you, ++BOSS_ATK_ID);
       var v = shots()[0], fl = cobsFloor();
       var van = { onFloor: Math.abs(v.y - (groundY() - 26)) < 1, fromEdge: v.x < fl.x + 40 || v.x > fl.x + fl.w - 40, pierce: !!v.pierce, shape: v.shape, dir: Math.sign(v.vx) === Math.sign(you.x - v.x) };
       projectiles = []; cobsFightTelegraph(s, 'samples', you); s._tel = 0; COBS_MOVES.samples(s, you, ++BOSS_ATK_ID);
-      for (var i=0;i<200;i++) step();
-      var traps = projectiles.filter(function(p){ return p.owner===-2 && p.trap; });
-      var samples = { landed: traps.length, poison: traps.every(function(p){ return p.fxTag==='poison'; }) };
+      var boxes = shots().length; you.invuln = 99999;   // (a fighter under a box is hit by it, and a crumb that hits is spent: count them with nobody in the way)
+      for (var i=0;i<95;i++) step();
+      var crumbs = projectiles.filter(function(p){ return p.owner===-2 && p._crumb; });
+      var samples = { boxes:boxes, crumbs: crumbs.length, poison: crumbs.every(function(p){ return p.fxTag==='poison'; }), traps: projectiles.filter(function(p){ return p.trap; }).length };
       projectiles = []; summons = summons.filter(function(m){ return m===s; }); cobsFightTelegraph(s, 'deploy', you); s._tel = 0; COBS_MOVES.deploy(s, you, ++BOSS_ATK_ID);
       var u = summons.find(function(m){ return m.type==='mephoneunit'; }); u._cd = 0; step(); step();
       var unit = { shot: u._shots, alive: u.life > 0, cd: u._cd > 0 };   // a round can break on a platform top the frame it leaves, so the unit's own count is what is read
-      return { rounds:rounds, van:van, samples:samples, unit:unit };`);
-    expect(r.rounds).toEqual({ fromHand: true, toward: true, heldAim: false, beam: true });
+      return { boom:boom, van:van, samples:samples, unit:unit };`);
+    expect(r.boom).toMatchObject({ fromHand: true, heldAim: false, shape: 'cobsboomerang', pierce: true, turns: 4, n: r.boom.want });
+    expect(r.boom.near, 'the first leg is an arc that passes through the point the sight locked').toBeLessThan(30);
     expect(r.van).toMatchObject({ onFloor: true, fromEdge: true, pierce: true, shape: 'meeplevan', dir: true });
-    expect(r.samples.landed).toBeGreaterThan(0);
+    expect(r.samples.boxes).toBe(3);
+    expect(r.samples.crumbs, 'every box burst into crumbs (2 a side at tier 1), and the cookies no longer wait as mines').toBe(3 * 2 * 2);
     expect(r.samples.poison).toBe(true);
+    expect(r.samples.traps).toBe(0);
     expect(r.unit).toEqual({ shot: 1, alive: true, cd: true });
   });
 });
