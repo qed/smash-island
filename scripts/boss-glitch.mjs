@@ -4,7 +4,7 @@
 // the suite draws on. So the whole game is drawn through a VALIDATING canvas (test/helpers/validating-canvas.js), and the sim is watched
 // for the things a player calls bugs.
 //
-//   node scripts/boss-glitch.mjs                            everything: 14 bosses x RUNS (6) runs, then one whole Boss Rush (about 20-40 min on 5 workers)
+//   node scripts/boss-glitch.mjs                            everything: 14 bosses x RUNS (6) runs, then one whole Boss Rush (about 15 min on 5 workers)
 //   BOSSES='["Four","One"]' node scripts/boss-glitch.mjs    just these bosses (and no Boss Rush run)
 //   RUNS=12 SEED0=1000 node scripts/boss-glitch.mjs         more runs a boss, on other seeds, fighters and window sizes
 //   MOVES=1 node scripts/boss-glitch.mjs                    the move matrix: every move of every Boss Rush boss in each of its three phases, 720 frames each
@@ -50,6 +50,12 @@
 // OUTPUT: findings grouped by boss, each with its repro (lineup, seed, mode, frame, the boss's phase and age) and a stack or the values,
 // stacks as index.html:LINE. `error` findings (throws, NaN, hangs, leaks) always print; `warn` ones (ignored draws, possible no-tells, long
 // statuses) print too; `info` (what a run saw) only with VERBOSE=1. The whole report is also written to OUT (default: not written).
+//
+// STILL FLAGGED, AND CHECKED (the glitch pass of 2026-10-01): `notell` is a heuristic -- a shot that first appears near a fighter and hits within 12
+// frames; the marks a boss draws in its own arrays (Puffball Speaker Box's spotlight, Purple Dragon's shadow and lane, One's zones) are not seen from here, so
+// look at the source before believing it. `grace-hit` from One's telegraphed zones, Steve Cobs's minions and wave, and a MeLife add (the shared assist acts never
+// look at a fighter's grace). `stunlock` from Steve Cobs's MeTag cuffs (the root is the attack). Four's ~600 `fourwave` shots at once. The Boss Rush `burn` that
+// MePhone4's fire leaves on a fighter for the next boss's first half second. Decor (`dust`, `debris`, `scars`) still fading as the next boss spawns.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
