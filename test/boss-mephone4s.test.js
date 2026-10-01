@@ -273,8 +273,7 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
           if (b._aimX !== lx || b._aimY !== ly) out.held = false; if (!b._aimLock) out.lockedLate = false; }
         out.lx = lx; out.ly = ly; out.fxAfter = f.x;
       } finally { addProj = AP; }
-      // and the round misses a fighter who stepped off the line
-      var tx = out.shot ? out.shot.x : 0; summons = []; projectiles = []; return out;
+      summons = []; projectiles = []; return out;
     })()`);
     expect(r.kind).toBe('mephone4s');
     expect(r.tel).toBe(42);
@@ -1247,7 +1246,13 @@ describe('no words, no other show, and the art is wired and credited', () => {
       beforeParse(window) {
         window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
           get: (_t, p) => (p === 'measureText' ? () => ({ width: 0 }) : p === 'canvas' ? { width: 1100, height: 720 } : p === 'getImageData' ? () => ({ data: [] })
-            : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') ? () => grad : (...args) => { rec.push({ op: p, args }); }),
+            : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createPattern') ? () => grad
+            : (...args) => {
+              // what a real canvas throws on: a negative radius (the car's bubbles in the sand once had one, left of x = 0, and took the frame down)
+              if (p === 'arc' && args[2] < 0) throw new RangeError('arc: negative radius ' + args[2]);
+              if (p === 'ellipse' && (args[2] < 0 || args[3] < 0)) throw new RangeError('ellipse: negative radius ' + args[2] + ', ' + args[3]);
+              rec.push({ op: p, args });
+            }),
           set: (_t, p, v) => { rec.push({ op: 'set:' + String(p), args: [v] }); return true; },
         });
         window.Math.random = mulberry32(seed); window.requestAnimationFrame = () => 0; window.cancelAnimationFrame = () => {};
@@ -1276,6 +1281,8 @@ describe('no words, no other show, and the art is wired and credited', () => {
           { _s4:{ k:'pop', go:true, st:'stand', sx:500, x:300, t:3, ph:3 } }, { _s4:{ k:'pop', go:true, st:'sink', sx:500, x:300, t:3, ph:3, beat:1 } },
           { _s4:{ k:'shove', go:true, st:'run', dir:-1, x:300, end:240, cx:120, hw:90, ph:1, t:3, spd:15 } }, { _s4:{ k:'shove', go:true, st:'tel2', dir:1, x:700, ph:3, t:3, lock:0 } },
           { _s4:{ k:'prizes', go:true, t:5, n:2, last:32 } }, { _s4:{ k:'vista', go:true, t:5, ax:300, ay:gy, n:2, last:18 } }, { _s4:{ k:'car', go:true, st:'away', t:10, from:1 }, x:-120 },
+          { _tel:90, _telKind:'s4vista', _s4Vista:true, _aimX:300, _aimY:gy, _s4:{ k:'vista' } }, { _tel:90, _telKind:'s4prizes', _s4:{ k:'prizes' } }, { _tel:90, _telKind:'s4car', _s4:{ k:'car', from:1 } },
+          { _tel:90, _telKind:'s4popup', _s4:{ k:'pop', sx:500, x:300, lock:0, ph:2 } },
           { flash:6 }, { hp:50, _phase:2, _hz:Object.assign({}, hz, { tint:0.2, flip:null, sand:null }) }, { _hz:{} }, { _s4:{ k:'enter', go:true }, y:-100 }];
         states.forEach(function(st){ summons = [Object.assign({}, base, st)]; ctx.save(); drawSummon(summons[0]); ctx.restore(); s4DrawFx(summons[0]); });
         summons = [Object.assign({}, base)]; drawArenaDecor('deathtrap'); drawArenaHazard('under'); drawArenaHazard('over');
@@ -1283,6 +1290,11 @@ describe('no words, no other show, and the art is wired and credited', () => {
         summons = [Object.assign({}, base, { _phase:1, _hz:{} })]; drawArenaDecor('deathtrap'); drawArenaHazard('under'); drawArenaHazard('over');
         summons = []; drawArenaDecor('deathtrap'); drawArenaHazard('under'); drawArenaHazard('over');   // between bosses
         arenaGround().pattern(ctx, gy, -20, WW + 20, WH + H, arenaGround());
+        // cars driving in the sand at either edge and in the middle: their bubbles run out behind them, off the left edge too
+        [[40, 14], [1060, -14], [300, 14], [-30, 14], [0.5, 14], [1130, -14]].forEach(function(c){
+          projectiles = [Object.assign({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:c[0], y:gy - 24, vx:c[1], vy:0, r:26, shape:'redcar', s4:2, delay:0, life:80, color:'#d01818' })];
+          arenaGround().pattern(ctx, gy, -20, WW + 20, WH + H, arenaGround()); });
+        projectiles = [];
         worldPlats[0].rot = 180; summons = [Object.assign({}, base)]; drawArenaHazard('under'); worldPlats[0].rot = 90; drawArenaHazard('under'); worldPlats = [];
         var own = { owner:-2, ownerObj:{ team:-1, idx:-2 } };
         [{ s4:1, beamShot:true, vx:-12, vy:3, r:8, color:'#ff3a2a' }, { s4:1, beamShot:true, vx:-12, vy:3, r:8, color:'#ff3a2a', s4fz:1, delay:10 },
