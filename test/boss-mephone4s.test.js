@@ -695,3 +695,289 @@ describe('ONE OF EACH! (the chainsaw and the lollipop)', () => {
     expect(Math.abs(landings[0][1] - 300), 'on the spot').toBeLessThanOrEqual(14);
   });
 });
+
+
+describe('HASTA LA VISTA! (Taco as a gun)', () => {
+  // Journey Through Memory Lane (Part 2): "(MePhone4S grabs Taco and cocks her like a gun.) MePhone4S: Well, in that case... Hasta la vista, Blu-Ray... You belong
+  // in VCR-land!" -- his page: "4S equips Taco nearby and fires a lemon". Taco "spits lemons" (4Seeing The Future).
+  it('he cocks Taco: the ring on the floor follows you for the first 28 frames of the wind-up and locks for the last 18, then ONE BIG LEMON lands exactly on it -- two in phase 2, three in phase 3, one attack id', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
+        f.invuln = 9999;
+        b._moveN = ${2 * EX.indexOf('s4vista') + 1}; b._atkTimer = 1; step();
+        var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, flag: b._s4Vista, mark: b._aimIdx, gy: groundY() };
+        var rec = [];
+        for (var w=0; w<80 && b._tel>0; w++){ f.x = (w < 20 ? 300 + w*5 : 400 - (w-20)*2); f.vx = 0; step(); rec.push([b._tel, b._aimLock, Math.round(b._aimX), Math.round(b._aimY), Math.round(f.x)]); }
+        o.rec = rec; o.lockedAt = { x: b._aimX, y: b._aimY };
+        var lem = [], seen = [], t = 0, shakes = [], _imp = impact; impact = function(x, y, o){ shakes.push([Math.round(x), o && o.shake]); return _imp(x, y, o); };
+        var scan = function(){ projectiles.forEach(function(p){ if (p.s4 === 7 && seen.indexOf(p) < 0){ seen.push(p); lem.push({ t:t, x:Math.round(p.x), y:Math.round(p.y), vx:p.vx, vy:p.vy, r:p.r, kb:p.kb, dmg:p.dmg, atk:p.bossAtk, wx:p.warnX, wy:Math.round(p.warnY), nd:!!p.noDrift, bs:!!p.breaksOnSurface, vol:!!p.volley, shape:p.shape, shake: p.landImpact && p.landImpact.shake, fx:Math.round(f.x) }); } }); };
+        scan();
+        for (var k=0;k<160;k++){
+          t++; f.vx = 0; f.invuln = 9999; f.y = groundY() - 24; step(); scan();
+          seen.forEach(function(p, i){ if (p.life > 0) { lem[i].lx = Math.round(p.x); lem[i].ly = Math.round(p.y); } });
+          if (!b._s4 && b._atkTimer > 5 && !projectiles.some(function(p){ return p.s4 === 7; })) break;
+        }
+        impact = _imp; o.lem = lem; o.shakes = shakes.filter(function(q){ return q[1] === 6; }); out.p${ph} = o; summons = []; projectiles = []; }`).join('\n')}
+      out.full = bossDmg(); return out; })()`);
+    for (const ph of [1, 2, 3]) {
+      const o = r['p' + ph], L = o.lem;
+      expect(o.kind).toBe('s4vista');
+      expect(o.name).toBe('HASTA LA VISTA!');
+      expect(o.tel0).toBe(46);
+      expect(o.flag, 'the sight is up: Taco is cocked').toBe(true);
+      // the ring follows you (aimX is where you are), and from 18 frames before the end it is locked where it was
+      const early = o.rec.filter((q) => q[0] >= 20), late = o.rec.filter((q) => q[0] <= 16);
+      for (const q of early) { expect(q[1], 'red while it follows').toBe(false); expect(q[2], 'on you').toBe(q[4]); }
+      for (const q of late) { expect(q[1], 'white once it holds').toBe(true); expect(q[2], 'where it locked').toBe(o.lockedAt.x < 0 ? q[2] : Math.round(o.lockedAt.x)); }
+      expect(new Set(late.map((q) => q[2])).size, 'the ring does not move after it locks').toBe(1);
+      expect(late[0][4] === late[late.length - 1][4], 'while you did keep moving').toBe(false);
+      expect(Math.abs(o.rec[0][3] - o.gy), 'on the floor under you').toBeLessThan(2);
+      // the lemons
+      expect(L.length, 'a lemon a phase, up to three').toBe(ph);
+      expect(L.map((l) => l.t), 'eighteen frames apart').toEqual([0, 18, 36].slice(0, ph));
+      expect(new Set(L.map((l) => l.atk)).size, 'one attack id').toBe(1);
+      for (const l of L) {
+        expect(l).toMatchObject({ r: 20, kb: 14, nd: true, bs: true, vol: true, shape: 'lemon', shake: 6 });
+        expect(l.dmg, 'a boss shot\'s 0.8 of a hit, as the volley cap shares it').toBeCloseTo(r.full * 0.8, 5);
+        expect(l.vy, 'thrown up and over: a lob, not a drop').toBeLessThan(0);
+        expect(Math.abs(l.lx - l.wx), 'it lands on the ring it drew, no drift').toBeLessThanOrEqual(1);
+      }
+      expect(L[0].wx, 'the first lemon lands on the locked ring').toBe(Math.round(o.lockedAt.x));
+      expect(o.shakes.length, 'each lemon shakes the floor where it lands').toBe(ph);
+      o.shakes.map((q) => q[0]).sort((a, b) => a - b).forEach((x, i) => expect(Math.abs(x - L.map((l) => l.wx).sort((a, b) => a - b)[i]), 'on its ring, give or take a frame\'s travel').toBeLessThanOrEqual(6));
+      // the later lemons go to where you are by then, fanned a little (34 px)
+      L.slice(1).forEach((l, j) => expect(Math.abs(l.wx - (l.fx + (j + 1 - (ph - 1) / 2) * 34)), 'at where you are by then').toBeLessThanOrEqual(1));
+    }
+  });
+
+  it('a lemon that lands on you is a heavy hit -- knock 14 -- and three of them are still one boss hit', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
+      b._moveN = ${2 * EX.indexOf('s4vista') + 1}; b._atkTimer = 1; step();
+      for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); }
+      var hits = [], pct0 = f.pct, kbs = [], gy = groundY(), shakes = [], _imp = impact; impact = function(x, y, o){ shakes.push(o && o.shake); return _imp(x, y, o); };
+      try {
+        for (var k=0;k<200;k++){
+          f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; step();
+          if (f.pct - pct0 > 1){ hits.push(+(f.pct - pct0).toFixed(2)); kbs.push([f.vx, f.vy]); }
+          pct0 = f.pct;
+          if (!b._s4 && b._atkTimer > 5 && !projectiles.some(function(p){ return p.s4 === 7; })) break;
+        }
+      } finally { impact = _imp; }
+      var out = { hits: hits, kbs: kbs, total: f.pct, full: bossDmg() };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.hits.length, 'the first lemon hits (17.6 of the 22), a later one takes the rest').toBeGreaterThanOrEqual(1);
+    expect(r.hits.length).toBeLessThanOrEqual(2);
+    expect(r.total, 'three lemons: one boss hit').toBeCloseTo(r.full, 5);
+    expect(Math.abs(r.kbs[0][0]), 'a knock: it sends you flying sideways').toBeGreaterThan(8);
+    expect(r.kbs[0][1], 'and up').toBeLessThan(0);
+  });
+});
+
+describe('POP UP! (up through the quicksand)', () => {
+  // 4Seeing The Future: "(MePhone4S pops up from under [a contestant]) I hate you! That's why I poisoned your cookie!"; the quicksand is his other place ("the
+  // challenge ... to get across this quicksand"). He sinks, bubbles show where, a boil marks the spot, he pops up under it.
+  it('the wind-up sinks him into the floor where he stands, the boil follows you for the first 30 frames and holds for the last 16, and he is under the floor, out of reach, when it ends', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      var gy = groundY(), R = b.r;
+      b._moveN = ${2 * EX.indexOf('s4popup') + 1}; b._atkTimer = 1; step();
+      var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, sx: b._s4.sx, R: R, gy: gy, x0: b.x };
+      var rec = [];
+      for (var w=0; w<80 && b._tel>0; w++){
+        f.x = (w < 24 ? 300 + w*4 : 396 - (w-24)); f.vx = 0; f.invuln = 9999; step();
+        rec.push([b._tel, b._s4.x, b._s4.lock, Math.round(b.y), Math.round(b.x), Math.round(f.x), b.hover]);
+      }
+      o.rec = rec; o.after = { st: b._s4.st, y: b.y, x: b.x, go: b._s4.go, lock: b._s4.lock, ax: b._s4.x };
+      summons = []; projectiles = []; return o; })()`);
+    expect(r.kind).toBe('s4popup');
+    expect(r.name).toBe('POP UP!');
+    expect(r.tel0).toBe(46);
+    expect(r.rec.every((q) => q[6] === true), 'he is hovering on his own motion, not walking').toBe(true);
+    expect(r.rec.every((q) => q[4] === r.sx), 'he sinks where he stands: his x does not change').toBe(true);
+    const ys = r.rec.map((q) => q[3]);
+    expect(ys.every((y, i) => i === 0 || y >= ys[i - 1]), 'he goes down, never up').toBe(true);
+    expect(ys[0], 'on the floor to start').toBeLessThan(r.gy - r.R + 40);
+    expect(ys[ys.length - 1], 'by the end his middle is below the floor line').toBeGreaterThan(r.gy + 40);
+    // the boil follows you, then holds
+    const early = r.rec.filter((q) => q[0] >= 20), late = r.rec.filter((q) => q[0] <= 14);
+    for (const q of early) { expect(q[2], 'red').toBe(0); expect(q[1], 'on you').toBe(q[5]); }
+    for (const q of late) expect(q[2], 'white').toBe(1);
+    expect(new Set(late.map((q) => q[1])).size, 'it does not move after it locks').toBe(1);
+    expect(r.after, 'and the wind-up hands over to the pop: under the floor, nothing reaches him').toMatchObject({ st: 'dig', go: true, lock: 1 });
+    expect(r.after.y).toBeGreaterThan(r.gy + 300);
+    expect(r.after.ax, 'the pop is where the boil locked').toBe(late[0][1]);
+  });
+
+  it('he pops up on the locked spot, once in phase 1, twice in phase 2 and three times in phase 3 (the later ones follow you again, shorter tells), stands in the pit a moment each time -- the punish -- and the turn is one attack id', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
+        var gy = groundY(), R = b.r;
+        b._moveN = ${2 * EX.indexOf('s4popup') + 1}; b._atkTimer = 1; step();
+        for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); }
+        var ev = [], last = '', ids = {}, xs = [], ys = {};
+        for (var k=0;k<400;k++){
+          f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 9999; step();
+          var A = b._s4;
+          if (A) ids[A.id] = 1;
+          var key = A ? (A.st + '|' + A.i) : 'none';
+          if (key !== last){ ev.push([k, key, Math.round(b.x), Math.round(b.y)]); last = key; }
+          if (A && A.st === 'stand') ys.stand = Math.round(b.y);
+          if (A && A.st === 'dig') ys.dig = Math.round(b.y);
+          if (!A) break;
+        }
+        out.p${ph} = { ev: ev, ids: Object.keys(ids).length, gy: gy, R: R, ys: ys, hover: b.hover, timer: b._atkTimer, sx: ev.length ? ev[0][2] : null };
+        summons = []; projectiles = []; }`).join('\n')}
+      out.pop = { hold: S4.pop.hold, rise: S4.pop.rise, stand: S4.pop.stand, sink2: S4.pop.sink2, again: S4.pop.again };
+      return out; })()`);
+    for (const ph of [1, 2, 3]) {
+      const o = r['p' + ph], seq = o.ev.map((e) => e[1].split('|')[0]);
+      const pops = o.ev.filter((e) => e[1].startsWith('rise')).length;
+      expect(pops, 'a pop a phase, up to three').toBe(ph);
+      expect(seq.slice(0, 4), 'under the floor, up, down, standing').toEqual(['dig', 'rise', 'fall', 'stand']);
+      expect(o.ids, 'one attack id for the whole turn').toBe(1);
+      expect(o.ys.dig, 'he is far under the floor between pops').toBeGreaterThan(o.gy + 300);
+      expect(o.ys.stand, 'and stands on the floor line after, where he can be hit').toBeCloseTo(o.gy - o.R, 0);
+      expect(o.hover, 'his own motion is over when it is').toBe(false);
+      expect(o.timer, 'and then the usual gap').toBeGreaterThan(40);
+      // the stand lasts S4.pop.stand frames, and the pops after the first sink (12 frames) and dig with a tell of their own (26 frames: follow, then hold)
+      const dur = (name, nth = 0) => { const idx = o.ev.map((e, i) => e[1].startsWith(name) ? i : -1).filter((i) => i >= 0)[nth]; return o.ev[idx + 1][0] - o.ev[idx][0]; };
+      expect(Math.abs(dur('stand') - r.pop.stand), 'the punish window').toBeLessThanOrEqual(1);
+      if (ph > 1) {
+        expect(seq.slice(4, 6)).toEqual(['sink', 'dig']);
+        expect(Math.abs(dur('sink') - r.pop.sink2), 'a short sink between pops').toBeLessThanOrEqual(1);
+        expect(Math.abs(dur('dig', 1) - r.pop.again), 'a shorter tell the second time').toBeLessThanOrEqual(1);
+      }
+      expect(Math.abs(dur('dig', 0) - r.pop.hold), 'the first pop is on the boil you were shown').toBeLessThanOrEqual(1);
+    }
+    // the pops are where the boil was locked: he comes up at 300 where the fighter stood
+    expect(r.p1.ev.find((e) => e[1].startsWith('rise'))[2]).toBe(300);
+  });
+
+  it('the pop hits whoever is in the boil and low enough to be in it -- knocked up and away, the floor shakes -- and misses whoever is outside it, up on a platform or in the air; the phase beat\'s pop hits nobody', () => {
+    const r = W.eval(`(function(){ ${STAGE(400, 1, false, true)}
+      var gy = groundY(), plat = worldPlats[0];
+      var mk = function(name, x, y, idx){ var g = makeFighter(ROSTER.find(function(r){ return r.name===name; }), x, y, idx); g.team = 0; g.controller = 'still'; g.stocks = 9; g.invuln = 0; g.hitstun = 0; g.pct = 0; return g; };
+      var A = f; A.x = 400; A.y = gy - 24;
+      var right = mk('Pillow', 460, gy - 24, 1), left = mk('Leafy', 340, gy - 24, 2), far = mk('Pillow', 530, gy - 24, 3), air = mk('Leafy', 400, gy - 200, 4), onPlat = mk('Pillow', 400, plat.y - 24, 5);
+      onPlat.x = plat.x + 60;   // standing on the platform, over the boil
+      var spot = onPlat.x;
+      fighters = [A, right, left, far, air, onPlat];
+      var shakes = [], _imp = impact; impact = function(x, y, o){ shakes.push([Math.round(x), Math.round(y), o && o.shake]); return _imp(x, y, o); };
+      var out = {};
+      try {
+        var id = ++BOSS_ATK_ID; s4PopHit(b, { x:400, id:id, beat:0 });
+        out.pct = { centre: A.pct, right: right.pct, left: left.pct, far: far.pct, air: air.pct };
+        out.knock = { centre: [A.vx, A.vy], right: [right.vx, right.vy], left: [left.vx, left.vy] };
+        out.shake = shakes[0];
+        // the platform: pop right under it
+        fighters.forEach(function(g){ g.pct = 0; g.invuln = 0; g._bossHitId = null; g._bossHitDmg = 0; });
+        s4PopHit(b, { x:spot, id:++BOSS_ATK_ID, beat:0 });
+        out.plat = onPlat.pct; out.platFeet = feetY(onPlat); out.platReach = gy - S4.pop.reach;
+        // the beat's pop is the same dust and no hit
+        fighters.forEach(function(g){ g.pct = 0; g.invuln = 0; g._bossHitId = null; g._bossHitDmg = 0; });
+        s4PopHit(b, { x:400, id:++BOSS_ATK_ID, beat:1 });
+        out.beat = A.pct + right.pct + left.pct;
+      } finally { impact = _imp; summons = []; projectiles = []; worldPlats = []; }
+      out.full = bossDmg(); out.r = S4.pop.r; return out; })()`);
+    expect(r.pct.centre, 'in the boil: 0.8 of a boss hit').toBeCloseTo(r.full * 0.8, 5);
+    expect(r.pct.right, 'inside the boil\'s width').toBeCloseTo(r.full * 0.8, 5);
+    expect(r.pct.left).toBeCloseTo(r.full * 0.8, 5);
+    expect(r.pct.far, '130 px from it: outside').toBe(0);
+    expect(r.pct.air, 'in the air, feet more than 110 px over the floor: it passes under').toBe(0);
+    expect(r.platFeet, 'a platform\'s top is over the reach of the pop').toBeLessThan(r.platReach);
+    expect(r.plat, 'so whoever stands on the platform over the boil is safe').toBe(0);
+    expect(r.knock.centre[1], 'knocked up').toBeLessThan(0);
+    expect(r.knock.right[0], 'and away from the boil').toBeGreaterThan(0);
+    expect(r.knock.left[0]).toBeLessThan(0);
+    expect(r.shake[2], 'the floor shakes').toBeGreaterThanOrEqual(10);
+    expect(r.beat, 'the phase beat\'s pop hurts nobody').toBe(0);
+  });
+});
+
+describe('QUICKSAND SHOVE! (the charging tackle)', () => {
+  // 4Seeing The Future: "MePhone4S tackles MePhone4 and tries to push him into the quicksand."
+  it('the lane follows you for the first 30 frames of the wind-up and holds for the last 16; the charge is faster each phase, the strip beyond it wider and longer-lived; phase 3 charges twice', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
+        var gy = groundY(), R = b.r;
+        b._moveN = ${2 * EX.indexOf('s4shove') + 1}; b._atkTimer = 1; step();
+        var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, dir0: b._s4.dir, R: R, gy: gy };
+        var rec = [];
+        for (var w=0; w<80 && b._tel>0; w++){
+          f.x = (w < 24 ? 300 + w*4 : 396 - (w-24)); f.vx = 0; f.invuln = 9999; step();
+          rec.push([b._tel, b._s4.x, b._s4.lock, b._s4.dir, Math.round(f.x), Math.round(b.x)]);
+        }
+        o.rec = rec; var A = b._s4; o.run = { st: A.st, spd: A.spd, end: A.end, cx: A.cx, hw: A.hw, dir: A.dir, x: A.x, n: A.n };
+        o.plan = (function(){ var p = s4ShovePlan(R, A.dir, A.x, ${ph}); return { end: Math.round(p.end), cx: Math.round(p.cx), hw: Math.round(p.hw) }; })();
+        o.sand = JSON.parse(JSON.stringify(b._hz.sand)); o.t0 = hazardT;
+        var ev = [], last = '', xs = [], vmax = 0, px = b.x;
+        for (var k=0;k<400;k++){
+          f.x = 100; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 9999; step();
+          var B = b._s4; var key = B ? (B.st + '|' + B.i) : 'none';
+          vmax = Math.max(vmax, Math.abs(b.x - px)); px = b.x;
+          if (key !== last){ ev.push([k, key, Math.round(b.x)]); last = key; }
+          if (!B) break;
+        }
+        o.ev = ev; o.vmax = Math.round(vmax); o.sandAfter = JSON.parse(JSON.stringify(b._hz.sand || [])); o.bx = b.x; o.timer = b._atkTimer; o.hover = b.hover;
+        out.p${ph} = o; summons = []; projectiles = []; }`).join('\n')}
+      out.V = S4.shove; return out; })()`);
+    const V = r.V;
+    for (const ph of [1, 2, 3]) {
+      const o = r['p' + ph];
+      expect(o.kind).toBe('s4shove');
+      expect(o.name).toBe('QUICKSAND SHOVE!');
+      expect(o.tel0).toBe(46);
+      expect(o.dir0, 'he faces you: you are to his left').toBe(-1);
+      const early = o.rec.filter((q) => q[0] >= 20), late = o.rec.filter((q) => q[0] <= 14 && q[0] >= 1);
+      for (const q of early) { expect(q[2], 'red').toBe(0); expect(q[1], 'the lane follows you').toBe(q[4]); }
+      for (const q of late) expect(q[2], 'white').toBe(1);
+      expect(new Set(late.map((q) => q[1])).size, 'it holds after it locks').toBe(1);
+      expect(o.run.st).toBe('run');
+      expect(o.run.spd, 'faster each phase').toBe(V.spd[ph]);
+      expect(o.run.n, 'one charge, two in phase 3').toBe(V.n[ph]);
+      expect(o.run.x, 'the charge goes to where the lane locked').toBe(late[0][1]);
+      expect({ end: o.run.end, cx: o.run.cx, hw: o.run.hw }, 'the run ends and the strip lies where the plan puts them').toEqual(o.plan);
+      expect(o.run.end, 'he runs on 60 px past where you were').toBe(Math.round(o.run.x + o.run.dir * V.lead));
+      expect(o.sand[0], 'the strip: centre, half-width, from now, for its life').toEqual([o.run.cx, V.w[ph] / 2, o.t0, o.t0 + V.life[ph]]);
+      expect((o.sand[0][0] - o.run.end) * o.run.dir, 'beyond where he stops, in the direction he runs').toBeGreaterThan(0);
+      expect(o.vmax, 'he moves no faster than his charge').toBeLessThanOrEqual(V.spd[ph] + 0.5);
+    }
+    expect(r.p3.ev.map((e) => e[1].split('|')[0]).filter((n) => n !== 'none'), 'phase 3: charge, skid, recover, a short wind-up, charge again').toEqual(['run', 'skid', 'rec', 'tel2', 'run', 'skid', 'rec']);
+    expect(r.p1.ev.map((e) => e[1].split('|')[0]).filter((n) => n !== 'none')).toEqual(['run', 'skid', 'rec']);
+    expect(r.p3.sandAfter.length, 'two strips in phase 3').toBe(2);
+    expect(r.p1.sandAfter.length).toBe(1);
+    expect(r.p1.timer, 'he stands a beat at the strip\'s edge, then the usual gap').toBeGreaterThan(60);
+    expect(r.p1.hover).toBe(false);
+  });
+
+  it('the tackle hits whoever is in front of him and low enough -- 0.8 of a boss hit, knocked along -- and pushes them to the end of the run, into the quicksand, slowed; a platform is clear of it', () => {
+    const r = W.eval(`(function(){ var out = {};
+      ${[1, 2].map((ph) => `{ ${STAGE(560, ph, true, true)}
+        var gy = groundY(), pl = worldPlats[0];
+        var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pillow'; }), 460, pl.y - 24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+        b._moveN = ${2 * EX.indexOf('s4shove') + 1}; b._atkTimer = 1; step();
+        var put = function(){ g.x = 460; g.y = pl.y - 24; g.vx = 0; g.vy = 0; g.invuln = 0; g.hitstun = 0; };
+        for (var w=0; w<80 && b._tel>0; w++){ put(); f.x = 560; f.vx = 0; f.invuln = 9999; step(); }
+        var A = b._s4, hits = [], pct0 = f.pct, gp0 = g.pct, maxSlow = 0;
+        f.invuln = 0;
+        for (var k=0;k<200;k++){
+          put(); step();
+          if (f.pct - pct0 > 2){ hits.push([k, +(f.pct - pct0).toFixed(2), A.st, Math.round(f.x)]); }
+          pct0 = f.pct; maxSlow = Math.max(maxSlow, f.slowed || 0);
+          if (!b._s4) break;
+        }
+        out.p${ph} = { hits: hits, fx: Math.round(f.x), fslow: f.slowed || 0, maxSlow: maxSlow, cx: A.cx, hw: A.hw, platHit: g.pct - gp0, bx: Math.round(b.x), dir: A.dir, end: A.end, fy: f.y - groundY() };
+        summons = []; projectiles = []; worldPlats = []; }`).join('\n')}
+      out.full = bossDmg(); return out; })()`);
+    for (const ph of [1, 2]) {
+      const o = r['p' + ph];
+      expect(o.hits.length, 'one tackle, one hit').toBe(1);
+      expect(o.hits[0][1], '0.8 of a boss hit').toBeCloseTo(r.full * 0.8, 5);
+      expect(o.hits[0][2], 'taken in the charge').toBe('run');
+      expect(Math.abs(o.fx - o.cx), 'carried on to the end of the run: you finish inside the strip').toBeLessThan(o.hw);
+      expect(o.maxSlow, 'and the quicksand slows you').toBeGreaterThan(0);
+      expect(o.platHit, 'a fighter on the platform over the lane is clear of it').toBe(0);
+      expect(Math.abs(o.bx - o.cx), 'he stands at its edge, not in it').toBeGreaterThan(o.hw);
+      expect((o.fx - 560) * o.dir, 'you were pushed the way he ran').toBeGreaterThan(0);
+    }
+  });
+});
