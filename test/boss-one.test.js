@@ -172,8 +172,8 @@ describe('SCREECHY!: rings, and the shatter (the Fish Monster screams)', () => {
       return out;`);
     expect([r[1].rings, r[2].rings, r[3].rings], 'two rings, two, and three in phase 3: it comes in waves now').toEqual([2, 2, 3]);
     for (const t of [1, 2, 3]) {
-      expect(r[t].n0, `tier ${t}: a ring of 180 pellets less its gaps`).toBeGreaterThan(100);
-      expect(r[t].n0).toBeLessThanOrEqual(180);
+      expect(r[t].n0, `tier ${t}: a ring of 360 pellets less its gaps`).toBeGreaterThan(200);
+      expect(r[t].n0).toBeLessThanOrEqual(360);
       expect(r[t].ids, `tier ${t}: one attack id for every pellet of every ring`).toBe(1);
       expect(r[t].same).toBe(true);
     }
@@ -440,7 +440,7 @@ describe('KNIFE FLURRY! (it was SEEKERS!): "2, but homing."', () => {
 });
 
 describe('SHOCK RING!: the owner\'s own twist, two opposite twisting bursts', () => {
-  it('tier 1 is a plain ring of 24 in two bursts; from tier 2 the bursts turn opposite ways, gold and purple, and cross like a pinwheel; all one id', () => {
+  it('tier 1 is a plain ring of 24 in three bursts; from tier 2 the bursts turn opposite ways, gold and purple, and cross like a pinwheel; all one id', () => {
     const r = STAGE(`
       var out = {};
       [1, 2, 3].forEach(function(t){
@@ -454,16 +454,16 @@ describe('SHOCK RING!: the owner\'s own twist, two opposite twisting bursts', ()
           ids: Object.keys(seen).length, off: bursts.map(function(x){ return +x[0]._h0.toFixed(4); }) };
       });
       return out;`);
-    expect(r[1].n, 'tier 1: two bursts of 24').toEqual([24, 24]);
-    expect(r[1].spin, 'tier 1: no twist').toEqual([undefined, undefined]);
+    expect(r[1].n, 'tier 1: three bursts of 24 (it was one of 14)').toEqual([24, 24, 24]);
+    expect(r[1].spin, 'tier 1: no twist').toEqual([undefined, undefined, undefined]);
     expect(r[1].shape).toBeUndefined();
-    expect(r[2].n, 'tier 2: two bursts of 28').toEqual([28, 28]);
-    expect(Math.sign(r[2].spin[0]) * Math.sign(r[2].spin[1]), 'turning opposite ways').toBe(-1);
+    expect(r[2].n, 'tier 2: four bursts of 28').toEqual([28, 28, 28, 28]);
+    expect(r[2].spin.map(Math.sign), 'turning opposite ways, clockwise first').toEqual([1, -1, 1, -1]);
     expect(Math.abs(r[2].spin[0]), 'a few degrees a frame').toBeCloseTo(0.042, 6);
     expect(r[2].shape, 'in the Vortex stars').toBe('onering');
     expect(r[2].colors, 'gold and purple').toBe(2);
-    expect(r[3].n, 'tier 3: four bursts').toEqual([32, 32, 32, 32]);
-    expect(r[3].spin.map(Math.sign), 'alternating, clockwise first').toEqual([1, -1, 1, -1]);
+    expect(r[3].n, 'tier 3: six bursts').toEqual([32, 32, 32, 32, 32, 32]);
+    expect(r[3].spin.map(Math.sign), 'alternating, clockwise first').toEqual([1, -1, 1, -1, 1, -1]);
     expect(Math.abs(r[3].spin[0]), 'turning harder').toBeGreaterThan(Math.abs(r[2].spin[0]));
     expect(r[2].off[1] - r[2].off[0], 'the second ring is half a step round, so the arms cross').toBeCloseTo(Math.PI/28, 3);
     for (const t of [1, 2, 3]) expect(r[t].ids, `tier ${t}: one attack id`).toBe(1);
@@ -734,7 +734,7 @@ describe('OUT OF ORBIT!: compressed planets', () => {
     expect(r[2].debrisAdded, 'at the end of its lane it cracks into five pieces').toBeGreaterThanOrEqual(5);
   });
 
-  it('from tier 2 the whole kick comes twice: the second lanes are lit where you stand after the first; 3, 4 and 5 lanes of 2, 3 and 4 planets', () => {
+  it('the whole kick comes twice (three times at the top): the next lanes are lit where you stand after the last; 3, 4 and 5 lanes of 2, 3 and 4 planets', () => {
     const r = STAGE(`
       var out = {};
       [1, 2, 3].forEach(function(t){
@@ -756,10 +756,494 @@ describe('OUT OF ORBIT!: compressed planets', () => {
       return out;`);
     expect([r[1].feet0, r[2].feet0, r[3].feet0], 'the kick down 3, 4 and 5 lanes').toEqual([3, 4, 5]);
     expect([r[1].planets0, r[2].planets0, r[3].planets0], 'with 2, 3 and 4 planets down each ("more bullets!")').toEqual([2 * 3, 3 * 4, 4 * 5]);
-    expect(r[1].warns.length, 'tier 1: the kick comes once').toBe(0);
-    expect(r[2].warns.length, 'tier 2: lit again for the second').toBe(1);
-    expect(r[2].warns[0].ys, 'on the same number of lanes').toBe(4);
-    expect(r[1].T.kicks).toBe(1);
-    expect([r[2].T.kicks, r[3].T.kicks]).toEqual([2, 2]);
+    expect(r[1].warns.length, 'tier 1: lit again for the second kick').toBe(1);
+    expect(r[1].warns[0].ys, 'on the same number of lanes').toBe(3);
+    expect(r[2].warns.length, 'tier 2: the same').toBe(1);
+    expect(r[2].warns[0].ys).toBe(4);
+    expect(r[3].warns.length, 'tier 3: lit twice, three kicks').toBe(2);
+    expect([r[1].T.kicks, r[2].T.kicks, r[3].T.kicks]).toEqual([2, 2, 3]);
+  });
+});
+
+describe('"one could be harder... much harder. more bullets! also longer attacks."  -- "Same damage per hit"', () => {
+  // What every attack made before this build: bullets in the whole move (zap: columns). Pinned so "far more" stays far more.
+  const OLD = { zap: [3, 4, 5], screechy: [300, 300, 300], ring: [14, 14, 14], knives: [5, 5, 5], mindread: [1, 2, 3], moonrocks: [4, 6, 8],
+    eyelasers: [4, 8, 36], hands: [3, 5, 7], orbitkick: [3, 8, 15] };
+
+  it('every attack makes at least half as many bullets again as it did, at every tier, and runs on for a while instead of landing in one frame', () => {
+    const r = STAGE(`
+      var out = {};
+      var go = function(k, t){
+        setTier(t); fresh(); IMPACT_DEBRIS = [];
+        one.x = you.x - 900; one.y = groundY() - 380; you.x = WW*0.5 + 600; you.y = groundY() - you.r;
+        var id = ++BOSS_ATK_ID, tgt = you, seen = new Set(), cols = 0, frames = 0, T = oneTier(one, k);
+        one._eyeBurst = 0; one._telX = you.x; one._telY = hurtCY(you); one._aimX = you.x; one._aimY = hurtCY(you); one._telDir = 1; one._kickY = hurtCY(you);
+        one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }]; one._zapCols = null; one._kickLanes = oneKickLanes(one, one._kickY);
+        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };
+        if (k === 'eyelasers'){ one._telKind = k; one._tel = oneTelLen(one, k); }
+        else { ONE_MOVES[k](one, tgt, id); count(); }
+        for (var i=0; i<600 && (oneBusy(one) || one._tel > 0 || i < 2); i++){ one._atkTimer = 1e9; one.x = you.x - 900; one.y = groundY() - 380; you.invuln = 99; step(); count(); frames++; }
+        return { bullets: k === 'zap' ? cols : seen.size, frames: frames };
+      };
+      ['zap', 'screechy', 'ring', 'knives', 'mindread', 'moonrocks', 'eyelasers', 'hands', 'orbitkick', 'fold'].forEach(function(k){ out[k] = [1, 2, 3].map(function(t){ return go(k, t); }); });
+      return out;`);
+    for (const k of Object.keys(OLD)) {
+      [0, 1, 2].forEach((t) => expect(r[k][t].bullets, `${k} at tier ${t + 1}: ${OLD[k][t]} before, ${r[k][t].bullets} now`).toBeGreaterThanOrEqual(OLD[k][t] * 1.5));
+    }
+    // "also longer attacks": none of them is over in a frame or two any more (the eye lasers' two or three bursts, a ring after ring, wave after wave)
+    for (const k of ['zap', 'screechy', 'ring', 'knives', 'mindread', 'moonrocks', 'eyelasers', 'hands', 'orbitkick', 'fold']) {
+      [0, 1, 2].forEach((t) => expect(r[k][t].frames, `${k} at tier ${t + 1} runs on after it fires`).toBeGreaterThanOrEqual(24));
+    }
+    expect(r.fold[2].frames, 'the fold chain is longer at the top').toBeGreaterThan(r.fold[0].frames);
+    expect(r.ring[2].frames, 'so is the ring').toBeGreaterThan(r.ring[0].frames);
+  });
+
+  it('and not one of them hits harder: every shot hits for at most her 33, and a move is one attack id (the eye lasers\' later bursts the one exception)', () => {
+    const r = STAGE(`
+      var out = {}, worst = 0;
+      var go = function(k, t){
+        setTier(t); fresh();
+        one.x = you.x - 900; one.y = groundY() - 380; you.x = WW*0.5 + 600; you.y = groundY() - you.r;
+        var id = ++BOSS_ATK_ID, ids = new Set(), maxDmg = 0, maxCap = 0, T = oneTier(one, k), unit = oneDmg()*(T.dmg || 1);   // (a special's own multiplier, as it always was: 0.8 to 1.2 of her 33)
+        one._eyeBurst = 0; one._telX = you.x; one._telY = hurtCY(you); one._aimX = you.x; one._aimY = hurtCY(you); one._telDir = 1; one._kickY = hurtCY(you);
+        one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }]; one._zapCols = null; one._kickLanes = oneKickLanes(one, one._kickY);
+        var look = function(){ projectiles.forEach(function(p){ if (p.owner === -2){ ids.add(p.bossAtk); maxDmg = Math.max(maxDmg, p.dmg); maxCap = Math.max(maxCap, p.bossCap == null ? p.dmg : p.bossCap); } }); };
+        if (k === 'eyelasers'){ one._telKind = k; one._tel = oneTelLen(one, k); } else { ONE_MOVES[k](one, you, id); look(); }
+        for (var i=0; i<600 && (oneBusy(one) || one._tel > 0 || i < 2); i++){ one._atkTimer = 1e9; one.x = you.x - 900; one.y = groundY() - 380; you.invuln = 99; step(); look(); }
+        return { ids: ids.size, maxDmg: maxDmg, maxCap: maxCap, unit: unit };
+      };
+      ['zap', 'screechy', 'ring', 'knives', 'mindread', 'moonrocks', 'eyelasers', 'hands', 'orbitkick'].forEach(function(k){ out[k] = [1, 2, 3].map(function(t){ return go(k, t); }); });
+      return { out: out, dmg: oneDmg() };`);
+    expect(r.dmg).toBe(33);
+    for (const [k, rows] of Object.entries(r.out)) {
+      rows.forEach((row, t) => {
+        expect(row.maxDmg, `${k} tier ${t + 1}: a shot hits for at most what that attack's hit always was`).toBeLessThanOrEqual(row.unit + 1e-9);
+        expect(row.maxCap, `${k} tier ${t + 1}: and the attack's cap is no more`).toBeLessThanOrEqual(row.unit + 1e-9);
+        expect(row.unit, 'and that is at most 33 x 1.2 (the top of the specials\' own multipliers, unchanged)').toBeLessThanOrEqual(33*1.2 + 1e-9);
+        // (the zap makes no shots: its columns hit through their own id, which the ZAP tests read)
+        expect(row.ids, `${k} tier ${t + 1}: ${k === 'eyelasers' ? 'two ids (the second burst has its own, a third shares it)' : 'one attack id'}`).toBe(k === 'eyelasers' ? 2 : (k === 'zap' ? 0 : 1));
+      });
+    }
+  });
+
+  it('a fighter standing through a whole move takes one hit from it, not one per bullet: the ring and the kicks, run over you', () => {
+    const r = STAGE(`
+      var out = {};
+      [['ring', 3], ['screechy', 3], ['hands', 3], ['zap', 3], ['knives', 3]].forEach(function(kt){
+        var k = kt[0], t = kt[1];
+        setTier(t); fresh(); worldPlats = worldPlats.filter(function(p){ return p.solid; });
+        one.x = you.x - 120; one.y = you.y - 60;
+        var id = ++BOSS_ATK_ID; one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }]; one._telX = you.x; one._telY = hurtCY(you); one._zapCols = null;
+        ONE_MOVES[k](one, you, id);
+        var peak = 0;
+        for (var i=0; i<260; i++){ one._atkTimer = 1e9; one.x = you.x - 120; one.y = you.y - 60; one._hop = null; you.invuln = 0; you.x = WW*0.5; you.y = groundY() - you.r; you.hitstun = 0; you.vx = 0; you.vy = 0; step(); peak = Math.max(peak, you.pct); }
+        out[k] = peak;
+      });
+      return out;`);
+    for (const [k, pct] of Object.entries(r)) expect(pct, `${k}: a whole move over a fighter who does not move is one hit of at most 33`).toBeLessThanOrEqual(33.0001);
+  });
+});
+
+describe('contact damage: "Evil leafy level."', () => {
+  it('touching her hurts exactly as touching Evil Leafy does: the same damage, knockback and grace (read off her own code)', () => {
+    const r = STAGE(`return { c: ONE_CONTACT, base: BOSS_DMG_BASE, src: String(updateBossAttack) };`);
+    // Evil Leafy's contact check, in updateBossAttack: applyHit(f, bossDmg()*0.6, kx, -12, null, {bossAtk}), kx = sign*13, invuln = max(invuln, 75)
+    expect(r.src, "Evil Leafy's damage").toMatch(/applyHit\(f, bossDmg\(\)\*0\.6, kx, -12, null, \{bossAtk: \+\+BOSS_ATK_ID\}\)/);
+    expect(r.src, "Evil Leafy's knockback").toMatch(/Math\.sign\(f\.x - s\.x \|\| 1\)\*13/);
+    expect(r.src, "Evil Leafy's grace").toMatch(/f\.invuln = Math\.max\(f\.invuln, 75\)/);
+    expect(r.c, "One's are the same numbers").toEqual({ dmg: r.base * 0.6, kx: 13, ky: -12, grace: 75 });
+    expect(r.c.dmg, 'about 13%: well under the 33 of one of her hits').toBeCloseTo(13.2, 6);
+  });
+
+  it('a fighter who overlaps her takes the hit, flies off the way it pushed, and cannot be hit again until the grace is over; one beside her is untouched', () => {
+    const r = STAGE(`
+      fresh(); one.x = you.x; one.y = you.y; you.vx = 0; you.vy = 0; one._hop = null;
+      var out = {};
+      one._atkTimer = 1e9; step();
+      out.first = { pct: you.pct, vx: you.vx, vy: you.vy, invuln: you.invuln };
+      var p0 = you.pct;
+      for (var i=0;i<60;i++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; step(); }
+      out.during = you.pct - p0;
+      for (var j=0;j<40;j++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; step(); }
+      out.after = you.pct - p0 > 0;
+      // a fighter beside her, outside her body
+      fresh(); one.x = you.x + one.r + 200; one.y = you.y; one._atkTimer = 1e9; var q0 = you.pct; step(); out.beside = you.pct - q0;
+      return out;`);
+    expect(r.first.pct, '13.2%').toBeCloseTo(13.2, 5);
+    expect(r.first.invuln, 'and a long grace').toBeGreaterThanOrEqual(70);
+    expect(r.first.vy, 'thrown up').toBeLessThan(0);
+    expect(r.during, 'no second bump while the grace lasts').toBe(0);
+    expect(r.after, 'and a bump again once it is over').toBe(true);
+    expect(r.beside, 'beside her: nothing').toBe(0);
+  });
+
+  it('her ghost is not hurt by her; a giant One has more body to touch; no contact in the Vortex or in her ending', () => {
+    const r = STAGE(`
+      var out = {};
+      fresh(); ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID); var g = one._ghost; g.controller = 'still'; g.invuln = 0; one.x = g.x; one.y = g.y; var g0 = g.pct; one._atkTimer = 1e9; oneContact(one); out.ghost = g.pct - g0; oneGhostDown(g, true);
+      // reach: a fighter just outside her body, then she grows
+      // a spot 110 px from the edge of your hurtbox: outside her body (88), inside it once she is giant (1.6 x 88)
+      fresh(); one.r = one._baseR; one.y = you.y; for (var dx = 400; dx > 0; dx--){ one.x = you.x + dx; if (hurtGap(you, one.x, one.y) <= 110) break; }
+      you.invuln = 0; var a0 = you.pct; oneContact(one); out.outside = you.pct - a0;
+      one.r = Math.round(one._baseR*1.6); you.invuln = 0; oneContact(one); out.giant = you.pct - a0;
+      // in the Vortex
+      fresh(); one.r = one._baseR; one.x = you.x; one.y = you.y; one._hop = { ph:'out', t:0, r0:one.r, giant:false }; you.invuln = 0; oneContact(one); out.hop = you.pct; one._hop = { ph:'fly', t:3, r0:one.r, giant:false }; oneContact(one); out.fly = you.pct; one._hop = null;
+      // dying
+      fresh(); one.r = one._baseR; one.x = you.x; one.y = you.y; one._dying = 100; you.invuln = 0; oneContact(one); out.dying = you.pct; one._dying = 0;
+      return out;`);
+    expect(r.ghost, 'her ghost is on her side').toBe(0);
+    expect(r.outside, 'just outside her body').toBe(0);
+    expect(r.giant, 'grown 1.6 times, the same spot is inside her').toBeCloseTo(13.2, 5);
+    expect(r.hop, 'nothing while she is in the Vortex').toBe(0);
+    expect(r.fly, 'and nothing while she flies in').toBe(0);
+    expect(r.dying, 'nor in her ending').toBe(0);
+  });
+});
+
+describe('"also, no stock per phase."', () => {
+  it('her phase lines heal and give no stock; the reward Steve Cobs\'s tier lines call is the same function with no argument, and still gives the stock', () => {
+    const r = STAGE(`
+      var out = {};
+      you.stocks = 1; you._oneStocks0 = 3; you.pct = 100; onePhaseReward(true); out.hers = [you.pct, you.stocks];
+      you.pct = 100; onePhaseReward(); out.cobs = [you.pct, you.stocks];
+      you.pct = 100; one.hp = 1490; you.stocks = 1; one._atkTimer = 1e9; step(); out.line = [Math.round(you.pct), you.stocks, one._marks];
+      return out;`);
+    expect(r.hers[0], 'a heal').toBeCloseTo(100 - 64, 5);
+    expect(r.hers[1], 'and the stock you had').toBe(1);
+    expect(r.cobs[0]).toBeCloseTo(36, 5);
+    expect(r.cobs[1], "Cobs keeps his (\"leave his as is until the owner has fought him\")").toBe(2);
+    expect(r.line, 'her own phase line: healed, same stock, phase 2').toEqual([36, 1, 1]);
+  });
+});
+
+describe('heavy hits go through impact() (shake, dust, debris, scars)', () => {
+  it('each attack shakes the screen where it lands: zap 20, fold 30, hands 12, the kick 24, and the lighter ones; all of them dust and debris', () => {
+    const r = STAGE(`
+      var out = {}, imps = [], shk = [], imp = impact, sh = shake;
+      impact = function(x, y, o){ imps.push({ shake: o && o.shake, dust: o && o.dust, debris: o && o.debris, scar: !!(o && o.scar), mark: o && o.mark }); return imp.apply(this, arguments); };
+      shake = function(n){ shk.push(n); return sh.apply(this, arguments); };
+      try {
+        var run = function(name, fn){ imps.length = 0; shk.length = 0; setTier(2); fresh(); worldPlats = worldPlats.filter(function(p){ return p.solid || p.y < groundY() - 200; });
+          one.x = you.x - 900; one.y = groundY() - 380; you.x = WW*0.5 + 600; you.y = groundY() - you.r; fn(); for (var i=0;i<4;i++){ one._atkTimer = 1e9; one.x = you.x - 900; you.invuln = 99; step(); }
+          out[name] = { imps: imps.slice(), shk: shk.slice() }; };
+        run('zap', function(){ one._telX = you.x; one._telY = hurtCY(you); one._zapCols = null; ONE_MOVES.zap(one, you, ++BOSS_ATK_ID); });
+        run('fold', function(){ one._foldZones = null; ONE_MOVES.fold(one, you, ++BOSS_ATK_ID); for (var i=0;i<ONE_FOLD_CLOSE + 2;i++){ one._atkTimer = 1e9; you.invuln = 99; step(); } });
+        run('hands', function(){ one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }]; ONE_MOVES.hands(one, you, ++BOSS_ATK_ID); });
+        run('kick', function(){ one._telDir = 1; one._kickY = hurtCY(you); one._kickLanes = null; ONE_MOVES.orbitkick(one, you, ++BOSS_ATK_ID); });
+        run('ring', function(){ ONE_MOVES.ring(one, you, ++BOSS_ATK_ID); });
+        run('screech', function(){ ONE_MOVES.screechy(one, you, ++BOSS_ATK_ID); });
+        run('giant', function(){ ONE_MOVES.sizeshift(one); one.r = one._baseR; one._giantT = 0; });
+        run('ghost', function(){ ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID); if (one._ghost) oneGhostDown(one._ghost, true); });
+        run('phase', function(){ one._marks = 0; one.hp = 1490; one._telKind = null; });
+      } finally { impact = imp; shake = sh; }
+      return out;`);
+    // impact()'s own shake where the move uses it, shake() where it does not (a hit that lands shakes the screen too: that is not what is read here)
+    const impShake = (name) => Math.max(0, ...r[name].imps.map((i) => i.shake || 0));
+    const plainShake = (name) => Math.max(0, ...r[name].shk);
+    expect(impShake('zap'), 'a column coming down').toBe(20);
+    expect(impShake('fold'), 'the clap of the jaws: the cap of shake()').toBe(30);
+    expect(impShake('hands'), 'a burst of hands').toBe(12);
+    expect(impShake('kick'), 'the kick').toBe(24);
+    expect(plainShake('ring'), 'a ring').toBeGreaterThanOrEqual(6);
+    expect(plainShake('screech'), 'the scream').toBeGreaterThanOrEqual(8);
+    expect(plainShake('giant'), 'the swell').toBeGreaterThanOrEqual(14);
+    expect(plainShake('ghost'), 'the ghost landing').toBeGreaterThanOrEqual(8);
+    expect(plainShake('phase'), 'a phase line').toBeGreaterThanOrEqual(16);
+    for (const k of ['zap', 'fold', 'hands', 'kick']) {
+      const big = r[k].imps.filter((i) => (i.shake || 0) >= 12);
+      expect(big.length, `${k}: a heavy impact()`).toBeGreaterThan(0);
+      expect(big[0].dust, `${k}: with dust`).toBeGreaterThanOrEqual(1);
+      expect(big[0].debris, `${k}: and debris`).toBeGreaterThanOrEqual(4);
+    }
+    expect(r.zap.imps.every((i) => i.scar), 'zap chips and scars the surface').toBe(true);
+    expect(r.fold.imps.some((i) => i.mark === 'crater'), 'the fold leaves a crater').toBe(true);
+    expect(r.zap.imps.some((i) => i.mark === 'scorch'), 'the zap, a scorch').toBe(true);
+    expect(r.hands.imps.some((i) => i.mark === 'crack'), 'the hands, a crack').toBe(true);
+  });
+});
+
+describe('her arena reacts by phase: the Moon, the Vortex, the rift and the dark, the floor, her statues, the leaves', () => {
+  it('the Moon loses a chunk with every Moon Rocks (up to eight) and splits in two at 1000 HP, the halves drifting apart', () => {
+    const r = STAGE(`
+      fresh(); var A = oneArena(one), out = {};
+      for (var i=0;i<10;i++){ setTier(1); ONE_MOVES.moonrocks(one, you, ++BOSS_ATK_ID); one._q = []; projectiles = []; }
+      out.chips = A.chips;
+      one._marks = 1; A.splitT = 0; for (var j=0;j<100;j++){ one._f++; oneArenaTick(one); } out.splitBefore = A.splitT || 0;
+      one._marks = 2; for (var k=0;k<100;k++){ one._f++; oneArenaTick(one); } out.splitAfter = A.splitT;
+      return out;`);
+    expect(r.chips, 'a bite out of it for every volley, to a ceiling of eight').toBe(8);
+    expect(r.splitBefore, 'whole until the second line').toBe(0);
+    expect(r.splitAfter, 'then the halves drift apart').toBeGreaterThanOrEqual(100);
+  });
+
+  it('the sky darkens phase by phase toward near pitch black, and a vein of light crawls across it at each phase line', () => {
+    const r = STAGE(`
+      fresh(); var A = oneArena(one), out = { dark: [], veins: [], t: [] };
+      for (var m = 0; m <= 3; m++){ one._marks = m; for (var i=0;i<700;i++){ one._f++; oneArenaTick(one); } out.dark.push(+A.dark.toFixed(3)); }
+      // the phase lines through her own update: one vein each
+      var b = oneBoss(); one._marks = 0; A.veins.length = 0; A.dark = 0;
+      [1400, 900, 400].forEach(function(hp){ one.hp = hp; one._atkTimer = 1e9; step(); out.veins.push(A.veins.length); });
+      for (var j=0;j<130;j++){ one._atkTimer = 1e9; step(); } out.t = A.veins.map(function(v){ return v.t; });
+      return out;`);
+    expect(r.dark[0], 'a night sky').toBe(0);
+    expect(r.dark[1] < r.dark[2] && r.dark[2] < r.dark[3], 'darker each phase').toBe(true);
+    expect(r.dark[3], 'near pitch black by phase 3').toBeGreaterThan(0.75);
+    expect(r.veins, 'one vein of light a phase line').toEqual([1, 2, 3]);
+    expect(r.t, 'and each has crawled all the way across').toEqual([1, 1, 1]);
+  });
+
+  it('from phase 2 she stands statues of herself on the platforms (3, then 2 and 2 more); a heavy impact within 300 px shatters the ones near it, a light or a far one does not', () => {
+    const r = STAGE(`
+      fresh(); var A = oneArena(one), out = {}, counts = [];
+      [1400, 900, 400].forEach(function(hp){ one.hp = hp; one._atkTimer = 1e9; step(); counts.push(A.statues.length); });
+      out.counts = counts;
+      out.onPlats = A.statues.every(function(st){ return worldPlats.some(function(p){ return !p.solid && p.y === st.y && st.x >= p.x && st.x <= p.x + p.w; }); });
+      var apart = true; for (var i=0;i<A.statues.length;i++) for (var j=i+1;j<A.statues.length;j++) if (Math.abs(A.statues[i].x - A.statues[j].x) < 140 && Math.abs(A.statues[i].y - A.statues[j].y) < 40) apart = false;
+      out.apart = apart;
+      var st = A.statues[0], n0 = A.statues.length, sh0 = A.shattered || 0;
+      oneImpact(st.x + 100, st.y, { shake:8, dust:1, debris:2 }); out.light = A.statues.length;               // too light
+      oneImpact(st.x + 900, st.y, { shake:30, dust:1, debris:2 }); out.far = A.statues.filter(function(q){ return q === st; }).length;   // too far from this one
+      var n1 = A.statues.length, sh1 = A.shattered || 0, ix = st.x + 100, iy = st.y;
+      var near = A.statues.filter(function(q){ return Math.hypot(q.x - ix, q.y - iy) < 300; }).length;
+      var d0 = IMPACT_DEBRIS.length; oneImpact(ix, iy, { shake:20, dust:1, debris:2 });
+      out.after = { left: A.statues.length, gone: n1 - A.statues.length, near: near, shattered: (A.shattered || 0) - sh1, debris: IMPACT_DEBRIS.length > d0 };
+      out.n0 = n0;
+      return out;`);
+    expect(r.counts, 'nothing in phase 1, three at the first line, then two more each').toEqual([3, 5, 7]);
+    expect(r.onPlats, 'each stands on a platform').toBe(true);
+    expect(r.apart, 'not two on one spot').toBe(true);
+    expect(r.light, 'a light impact leaves them').toBe(r.n0);
+    expect(r.far, 'and so does one far away').toBe(1);
+    expect(r.after.gone, 'a heavy one within 300 px shatters every one near it').toBe(r.after.near);
+    expect(r.after.shattered).toBe(r.after.gone);
+    expect(r.after.debris, 'into debris').toBe(true);
+  });
+
+  it('the floor takes the marks of what she does (a scorch, a crater, a glowing crack), kept up to forty; the leaves of the wasteland fall from phase 2 and more of them in phase 3', () => {
+    const r = STAGE(`
+      fresh(); var A = oneArena(one), out = {};
+      ['scorch', 'crater', 'crack'].forEach(function(k){ oneImpact(you.x, groundY(), { shake:0, dust:0, debris:0, mark:k, r:80 }); });
+      out.kinds = A.marks.map(function(m){ return m.kind; });
+      for (var i=0;i<60;i++) oneImpact(you.x + i*10, groundY(), { shake:0, dust:0, debris:0, mark:'crack' });
+      out.cap = A.marks.length;
+      var leaves = {};
+      [0, 1, 3].forEach(function(m){ one._marks = m; A.leaves = []; var peak = 0; for (var j=0;j<600;j++){ one._f++; oneArenaTick(one); peak = Math.max(peak, A.leaves.length); } leaves[m] = peak; });
+      out.leaves = leaves;
+      // they fall, and are gone once past the floor
+      one._marks = 3; A.leaves = [{ x: you.x, y: groundY() - 5, vx:0, vy:2, rot:0, vr:0, ph:0 }]; for (var q=0;q<20;q++){ one._f++; oneArenaTick(one); } out.gone = A.leaves.filter(function(l){ return l.y >= groundY() + 10; }).length;
+      return out;`);
+    expect(r.kinds).toEqual(['scorch', 'crater', 'crack']);
+    expect(r.cap, 'forty marks at most').toBe(40);
+    expect(r.leaves[0], 'none while the ground is whole').toBe(0);
+    expect(r.leaves[1], 'a few once it starts to go').toBeGreaterThan(3);
+    expect(r.leaves[3], 'a flurry by phase 3').toBeGreaterThan(r.leaves[1]);
+    expect(r.gone, 'the ones that fell past the floor are gone').toBe(0);
+  });
+
+  it("the arena's world-space layers are BOSS_ARENA_HAZARD.onemoon (a draw and no step: nothing in it hurts), and the backdrop draws in every phase", () => {
+    const r = STAGE(`
+      var H = arenaHazardOf('onemoon'), out = { step: typeof H.step, draw: typeof H.draw, errs: [] };
+      [0, 1, 2, 3].forEach(function(m){ one._marks = m; oneArena(one).chips = m*2; oneArena(one).splitT = m*50; oneArena(one).veins = []; for (var v=0;v<m;v++) oneArena(one).veins.push({ seed:v*0.3 + 0.1, t:1 }); oneAddStatues(one, 2);
+        try { drawArenaDecor('onemoon'); H.draw(null, {}, 'under'); H.draw(null, {}, 'over'); drawArenaHazard('under'); drawArenaHazard('over'); } catch (e){ out.errs.push(String(e)); } });
+      // between fights (no boss at all): the decor is the Moon as it was
+      summons = []; try { drawArenaDecor('onemoon'); H.draw(null, {}, 'under'); } catch (e){ out.errs.push('none: ' + e); }
+      out.sky = BOSS_ARENA_SKY.onemoon.length; out.ground = !!BOSS_ARENA_GROUND.onemoon; out.arena = ONE_BOSS.arena;
+      return out;`);
+    expect(r.step, 'it never steps').toBe('undefined');
+    expect(r.draw).toBe('function');
+    expect(r.errs).toEqual([]);
+    expect([r.sky, r.ground, r.arena], 'her sky was always its own; her ground is the platform slab, which her layer turns to ash').toEqual([2, false, 'onemoon']);
+  });
+});
+
+describe('the Vortex hop: "bigger movement"', () => {
+  // the fight as it opens, with her hop still on
+  const OPEN = (body) => W.eval(`(function(){
+    SETTINGS.itemRate = 0; SETTINGS.stocks = 99; LOCAL_PLAYERS = 1;
+    startOneFight(['Firey'], { story:true, onEnd:function(){ return true; } });
+    var one = summons.find(function(s){ return s._oneFight; }), you = fighters[0];
+    you.controller = 'still'; you.stocks = 99; one._atkTimer = 1e9;
+    ${body}
+  })()`);
+
+  it('the fight opens with her coming in through the Vortex: out of reach in it, then flying across the whole screen in 17 frames from the far edge to her orbit, her aura behind her', () => {
+    const r = OPEN(`
+      var rows = [], hit = [], v0 = oneView(), r0 = one._baseR, travel = 0, px = null, startX = null, trails = 0, portals = 0;
+      for (var i=0; i<50; i++){
+        one._atkTimer = 1e9; you.invuln = 99;
+        var ph = one._hop ? one._hop.ph : null, hp0 = one.hp;
+        if (ph === 'gone' || ph === 'out') hit.push(oneTakeDamage(one, 10, you)); else if (ph === 'fly') hit.push(-1);
+        step();
+        rows.push(ph);
+        if (one._hop && one._hop.ph === 'fly'){ if (px !== null) travel += Math.abs(one.x - px); else startX = one.x; px = one.x; }
+        trails += oneFx.filter(function(e){ return e.kind === 'trail'; }).length ? 1 : 0; portals += oneFx.filter(function(e){ return e.kind === 'portal'; }).length ? 1 : 0;
+      }
+      var view = oneView();
+      return { rows: rows, hit: hit, travel: travel, startX: startX, view: [view.x0, view.x1], hop: one._hop, r: one.r, base: r0, orbitA: one._orbitA, trails: trails, portals: portals, you: you.x, dist: Math.hypot(one.x - you.x, one.y - you.y) };`);
+    const first = (ph) => r.rows.indexOf(ph);
+    expect(r.rows[0], 'she is not here yet').toBe('gone');
+    expect(first('fly'), 'she comes in after a few frames').toBeGreaterThan(5);
+    const flyFrames = r.rows.filter((p) => p === 'fly').length;
+    expect(flyFrames, 'the flight is about 17 frames ("a run of 17 frames")').toBeGreaterThanOrEqual(15);
+    expect(flyFrames).toBeLessThanOrEqual(18);
+    expect(r.hit.filter((h) => h !== -1).every((h) => h === 0), 'nothing reaches her while she is in the Vortex').toBe(true);
+    expect(r.hop, 'and the hop ends').toBe(null);
+    expect(r.r, 'at her own size again').toBe(r.base);
+    expect(Math.abs(r.startX - (r.startX < r.you ? r.view[0] : r.view[1])), 'from the edge of the screen (a frame or two in)').toBeLessThan(600);
+    expect(r.travel, 'across it').toBeGreaterThan(600);
+    expect(r.trails, 'her aura streams behind her').toBeGreaterThan(5);
+    expect(r.portals, 'the spiral shows').toBeGreaterThan(0);
+    expect(r.orbitA, 'and she picks the orbit up where she landed').not.toBe(null);
+    expect(r.dist, 'in orbit round you, not on top of you').toBeGreaterThan(200);
+  });
+
+  it('she is hittable again as she flies in, and nothing about the hop leaves a cost: no stuck shrink, no lost attack clock', () => {
+    const r = OPEN(`
+      var fly = null, gone = null;
+      for (var i=0; i<40; i++){ one._atkTimer = 1e9; you.invuln = 99; step();
+        if (one._hop && one._hop.ph === 'fly' && fly === null) fly = oneTakeDamage(one, 10, you);
+        if (one._hop && one._hop.ph === 'gone' && gone === null) gone = [oneTakeDamage(one, 10, you), one.r]; }
+      return { fly: fly, gone: gone, atk: one._atkTimer };`);
+    expect(r.gone[0], 'in the spiral: nothing').toBe(0);
+    expect(r.gone[1], 'a speck in it').toBeLessThan(10);
+    expect(r.fly, 'flying in: a body again').toBeGreaterThan(0);
+    expect(r.atk, 'her attack clock waited for it (held here: only the frame\'s own tick has come off it)').toBeGreaterThan(9e8);
+  });
+
+  it('every phase line sends her through it, and so does every special -- not the eight she inherited, and not the ghost', () => {
+    const r = OPEN(`
+      var out = {};
+      one._hop = null; one._hopPending = false; one.r = one._baseR; one._q = [];
+      // a phase line
+      one.hp = 1490; one._atkTimer = 1e9; step(); out.lineHop = one._hopPending || !!one._hop;
+      for (var i=0;i<60;i++){ one._atkTimer = 1e9; you.invuln = 99; step(); } out.afterLine = [one._hop, one._hopPending];
+      // a special, forced to fire: moonrocks queues, so the hop waits until it is over
+      one._telKind = 'moonrocks'; one._tel = 1; one._atkTimer = 1e9; step(); out.special = [one._hopPending, !!one._hop];
+      var started = -1; for (var j=0; j<200 && started < 0; j++){ one._atkTimer = 1e9; you.invuln = 99; step(); if (one._hop) started = j; } out.specialHopAt = started; out.busyThen = oneBusy(one);
+      for (var k=0;k<60;k++){ one._atkTimer = 1e9; you.invuln = 99; step(); } out.specialDone = [one._hop, one._hopPending];
+      // the inherited moves and the ghost: no hop
+      ['zap', 'ring', 'mindread'].forEach(function(kd){ one._q = []; one._telKind = kd; one._tel = 1; one._atkTimer = 1e9; one._eyeBurst = 0; step(); out[kd] = [one._hopPending, !!one._hop]; for (var z=0;z<200;z++){ one._atkTimer = 1e9; you.invuln = 99; step(); } });
+      one._q = []; one._telKind = 'ghost'; one._tel = 1; step(); out.ghost = [one._hopPending, !!one._hop];
+      return out;`);
+    expect(r.lineHop, 'a phase line: she goes').toBe(true);
+    expect(r.afterLine, 'and comes back').toEqual([null, false]);
+    expect(r.special[0], 'a special: the hop is pending').toBe(true);
+    expect(r.specialHopAt, 'and starts once the special has run out').toBeGreaterThan(5);
+    expect(r.specialDone).toEqual([null, false]);
+    for (const k of ['zap', 'ring', 'mindread']) expect(r[k], `${k}: no hop`).toEqual([false, false]);
+    expect(r.ghost, 'the ghost: no hop').toEqual([false, false]);
+  });
+});
+
+describe('her ending: she crumbles, shatters, and a black hole takes the pieces -- no text', () => {
+  it('a flicker and crumble (pieces come off, cracks spread), a shatter at frame 60 (shake 30, a burst of shards), then a black hole that takes them; won only at the end; her shots go; nobody is hurt', () => {
+    const r = STAGE(`
+      fresh(); one.x = you.x + 20; one.y = you.y - 10; one.r = one._baseR;
+      var banners = [], bn = banner, imps = [], imp = impact, rows = {};
+      banner = function(t, ms, k){ banners.push([String(t), k]); return bn.apply(this, arguments); };
+      impact = function(x, y, o){ imps.push({ shake: o && o.shake, debris: o && o.debris, dust: o && o.dust }); return imp.apply(this, arguments); };
+      try {
+        ONE_MOVES.screechy(one, you, ++BOSS_ATK_ID); ONE_MOVES.knives(one, you, ++BOSS_ATK_ID);
+        var shots0 = own().length;
+        one.hp = 0; one._atkTimer = 1e9; var pct0 = you.pct, E, frames = 0, wonAt = null, minPct = 0;
+        you.x = one.x; you.y = one.y;   // right on top of her
+        for (var i=0; i<200 && one.life > 0; i++){ you.invuln = 0; you.hitstun = 0; step(); frames++; E = one._end;
+          if (i === 1) rows.start = { dying: one._dying, shots: own().length, shards: E ? E.shards.length : -1 };
+          if (i === 40) rows.crumble = { shards: E.shards.length, gone: !!one._gone, cracks: Math.min(6, Math.floor((ONE_END_T - one._dying)/8)) };
+          if (i === 62) rows.shatter = { gone: !!one._gone, r: one.r, bh: !!E.bh, shards: E.shards.length, imp: imps.filter(function(m){ return m.shake === 30; }).length };
+          if (i === 100) rows.hole = { shards: E.shards.length, bhT: E.bh && E.bh.t };
+          if (i === 140) rows.late = { shards: E.shards.length };
+          if (ONEFIGHT.won && wonAt === null) wonAt = i; minPct = Math.max(minPct, you.pct - pct0); }
+      } finally { banner = bn; impact = imp; }
+      return { rows: rows, frames: frames, wonAt: wonAt, banners: banners, hurt: minPct, life: one.life, endings: Object.keys(BOSS_ENDINGS).indexOf('one'), won: ONEFIGHT.won, shots0: shots0 };`);
+    expect(r.rows.start.dying, 'the scene starts').toBeGreaterThan(140);
+    expect(r.rows.start.shots, 'her shots are gone the moment she starts to go').toBe(0);
+    expect(r.rows.crumble.shards, 'pieces crumble off her').toBeGreaterThan(5);
+    expect(r.rows.crumble.cracks, 'and more cracks spread').toBeGreaterThanOrEqual(4);
+    expect(r.rows.crumble.gone, 'she is still there').toBe(false);
+    expect(r.rows.shatter.gone, 'at frame 60 she shatters').toBe(true);
+    expect(r.rows.shatter.imp, 'with the heaviest shake').toBeGreaterThan(0);
+    expect(r.rows.shatter.shards, 'into shards').toBeGreaterThan(20);
+    expect(r.rows.shatter.bh, 'and a black hole where she stood').toBe(true);
+    expect(r.rows.late.shards, 'it takes the pieces').toBeLessThan(r.rows.shatter.shards / 2);
+    expect(r.wonAt, 'the fight is won when the scene is over').toBeGreaterThanOrEqual(140);
+    expect(r.life, 'and she is gone').toBe(0);
+    expect(r.banners, 'no text, not even the old ONE SHATTERS!').toEqual([]);
+    expect(r.hurt, 'it hurts nobody, right on top of her').toBe(0);
+    expect(r.endings, 'it plays in her own fight flow, not as a Boss Rush ending').toBe(-1);
+  });
+});
+
+describe('her art, credited', () => {
+  it('Moon rocks, three planets and the knife wear the show\'s art; the hands, lasers, Vortex, statues and fold are drawn in her colours; every file is credited and on the record', () => {
+    const r = STAGE(`
+      var shapes = ['moonrock', 'oneearth', 'oneweird', 'oneskate', 'oneknife'], out = { shapes: {} };
+      shapes.forEach(function(k){ out.shapes[k] = { art: ATTACK_SPRITES[k] && ATTACK_SPRITES[k].src, glyph: !!(PROJ_SHAPE[k] && PROJ_SHAPE[k].draw) }; });
+      out.glyphs = ['onering', 'onelaser', 'onehand', 'onewisp'].map(function(k){ return !!(PROJ_SHAPE[k] && PROJ_SHAPE[k].draw); });
+      out.star = String(PROJ_SHAPE.onelaser.draw).indexOf('oneStarPath') >= 0;
+      out.planets = ONE_PLANETS.slice();
+      return out;`);
+    const man = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8'));
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    const picks = readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8');
+    const files = { moonrock: 'onemoonrock.png', oneearth: 'oneearth.png', oneweird: 'oneweird.png', oneskate: 'oneskate.png', oneknife: 'psbknife.png' };
+    for (const [k, f] of Object.entries(files)) {
+      expect(r.shapes[k].art, `${k} wears ${f}`).toBe(`assets/sprites/attacks/${f}`);
+      expect(r.shapes[k].glyph, `${k} keeps a drawn glyph until it loads`).toBe(true);
+      expect(existsSync(`artifacts/V1/assets/sprites/attacks/${f}`), f).toBe(true);
+      expect(credits, `${f} is credited`).toContain(`(${f})`);
+    }
+    for (const k of ['onemoonrock', 'oneearth', 'oneweird', 'oneskate']) {
+      expect(man[k], `${k} is on the record`).toMatchObject({ file: `${k}.png`, wiki: 'bfdi' });
+      expect(man[k].source, `${k}'s source`).toMatch(/^https:\/\/static\.wikia\.nocookie\.net\/battlefordreamisland\/images\//);
+      expect(picks, `${k} is a pick in the fetch script`).toMatch(new RegExp(`\\n  ${k}:\\s+\\{ who: 'One \\(`));
+      expect(credits, `${k}'s source is in CREDITS.md`).toContain(man[k].source);
+    }
+    expect(man.psbknife.srcTitle, 'the knife is the Cake at Stake knife the Puffball Speaker Box already credits').toBe('One knife.png');
+    expect(r.glyphs, 'the Vortex star, the laser, the hand and the wisp are drawn').toEqual([true, true, true, true]);
+    expect(r.star, 'her lasers are tipped with a star').toBe(true);
+    expect(r.planets).toEqual(['oneearth', 'oneweird', 'oneskate']);
+  });
+
+  it("the Fish Monster look is a real render (200 px tall at most, clear corners), credited, and the ones she already wore are untouched", () => {
+    const png = PNG.sync.read(readFileSync('artifacts/V1/assets/sprites/one-fish.png'));
+    const a = (x, y) => png.data[(y * png.width + x) * 4 + 3];
+    expect(png.height).toBeLessThanOrEqual(200);
+    expect([a(0, 0), a(png.width - 1, 0), a(0, png.height - 1), a(png.width - 1, png.height - 1)]).toEqual([0, 0, 0, 0]);
+    let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] === 0) clear++;
+    expect(clear / (png.width * png.height), 'a cut-out, not a rectangle').toBeGreaterThan(0.2);
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    expect(credits).toMatch(/`one-fish\.png`/);
+    expect(credits).toMatch(/One_as_fish_monster\.png/);
+    expect(credits).toMatch(/`one\.png`/);
+    expect(W.eval('BOSS_SPRITE_SRC.one')).toBe('assets/sprites/one.png');
+  });
+});
+
+describe('no words, and nothing for a netcode client', () => {
+  it('a long fight puts up only her telegraph names and the lines she already had: nothing new, and no sentence from any of the new attacks', () => {
+    const r = STAGE(`
+      fresh(); one._atkTimer = 100; one._spN = 2;
+      var texts = {}, bn = banner;
+      banner = function(t, ms, k){ texts[String(t) + '|' + (k || '')] = 1; return bn.apply(this, arguments); };
+      try { you.controller = 'ai'; for (var i=0; i<2400 && running; i++) step(); } finally { banner = bn; }
+      return { texts: Object.keys(texts), frames: i };`);
+    const names = ['ZAP TO DUST', 'SCREECHY', 'MIND READ', 'FOLDING ISLAND', 'KNIFE FLURRY', 'SHOCK RING', 'ONE GROWS GIANT', 'POWER UNGROUNDED', 'MOON ROCKS', 'EYE LASERS', 'HANDS FROM THE GROUND', 'OUT OF ORBIT', 'GHOST FIGHTER'];
+    const allowed = [new RegExp(`^(${names.join('|')})( I{1,3})?!\\|boss$`), /^\d+ HP — harder: .*\|boss$/, /^Hey guys!\|boss$/, /^(KILL THE GHOST FIRST|MIND READ: |POWER DRAIN!|POWER UNGROUNDED|GROUNDED|A GHOST FIGHTER|GHOST DOWN)[^|]*\|boss$/,
+      /^GO!/, /KO'd|You're out/];
+    const stray = r.texts.filter((t) => !allowed.some((re) => re.test(t)));
+    expect(stray, 'every line is a telegraph name, a line she already had, GO! or a KO').toEqual([]);
+    expect(r.texts.every((t) => !/INCOMING!|SEEKERS!|ONE SHATTERS/.test(t)), 'and the old ones are gone').toBe(true);
+  });
+
+  it('her fight is local-only (startOneFight refuses a netcode session), so none of her new state needs the snapshot; her fields stay off it', () => {
+    const r = W.eval(`(function(){
+      var n0 = window.NET; window.NET = Object.assign({}, n0 || {}, { role:'host' });
+      var ok; try { ok = startOneFight(['Lightning'], { story:true, onEnd:function(){ return true; } }); } finally { window.NET = n0; }
+      var snap = JSON.stringify(serializeState());
+      return { ok: ok, leak: ['_arena', '_hop', '_end', '_q', '_ash', 'oHang', '_foldZones', '_steerUntil'].filter(function(k){ return snap.indexOf(k) >= 0; }) };
+    })()`);
+    expect(r.ok, 'a netcode session cannot start her').toBe(false);
+    expect(r.leak, 'none of her new state is on the snapshot').toEqual([]);
   });
 });
