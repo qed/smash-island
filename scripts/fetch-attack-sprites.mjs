@@ -397,6 +397,10 @@ const PICKS = {
   // Cabby's file: File:Cabby file pose.png is a clean, transparent manila folder on its own.
   file:     { who: 'Cabby',     kits: ['files'],  wiki: 'ii', file: 'Cabby file pose.png', note: 'a file from her drawer (File:Cabby file pose.png)', h: 40 },
   // ---- Steve Cobs's prize: end ----
+  // ---- Springy's MY PURPOSE! (the boss overhaul, Round 10: "give him 1 more: the bot toy"): Spring-Bot itself. Springy has no picks slot, so
+  // this is the one block, at the end of the list. File:Springbot.png is the toy's own render (the Spring-toys page's gallery, season 3), a clean
+  // transparent PNG: no key and no cut. Green, with the red antenna, the speaker in its mouth, the grey claws and the black feet.
+  springbot: { who: 'Springy', kits: ['springbot'], wiki: 'ii', file: 'Springbot.png', srcH: 508, h: 80, note: "Spring-Bot, the toy Springy programmed in the image of Bot (File:Springbot.png): the toy of MY PURPOSE!, whose speaker plays back the specials it hears" },
 };
 
 async function api(wiki, params) {

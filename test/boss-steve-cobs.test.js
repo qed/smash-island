@@ -91,7 +91,9 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
       ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragon dragonchar', 44, 'Strafing Runs', 'Grab & Carry'],
       ['Two', '#44C549', 285, 2.6, 'two', 'twopark', false, 'two', 'twosun+twopower+twoblocks+tworails+twoclap', 'two twosun two twopower', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],   // rebuilt (the boss overhaul): green, the A-twos-ment Park, his own six (test/boss-two.test.js)
       // Boss 11: Springy, in his place ("replace him with springy"; test/boss-springy.test.js has the fight)
-      ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop', 'springy longarm springy boxdrop', 40, 'Glitching', 'Unvitational'],
+      // + MY PURPOSE!, the Spring-Bot toy: "give him 1 more: the bot toy, which will copy the 1st 5 specials used after spawning 3 times." (the owner,
+      // 2026-09-29) -- appended, so his first turns are as they were (test/boss-springy.test.js)
+      ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop+springbot', 'springy longarm springy boxdrop', 40, 'Glitching', 'Unvitational'],
       ['Four', '#3a6ad0', 340, 2.8, 'four', 'exitclass', false, 'four', 'fourbye+fourtower+fourido+fourhearts+fourcactus', 'four fourbye four fourtower', 50, 'Zap to Dust', 'Reality Buckles'],   // rebuilt (the boss overhaul, 2026-09-29): his own classroom, "Each its own" (the owner), and he floats -- "Only if canon moves" (Round 5): "Four can fly"; six attacks, the ones below (test/boss-four.test.js)
     ]);
   });

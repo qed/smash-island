@@ -54,8 +54,10 @@ describe('Springy takes Boss 11', () => {
     expect(r.n, 'the gauntlet is still twelve long').toBe(12);
     expect(r.row.hp, "between Two's 285 and Four's 340, so the curve still climbs").toBeGreaterThan(285);
     expect(r.row.hp).toBeLessThan(340);
-    expect(r.extra).toEqual(['longarm', 'boxdrop']);
-    expect(r.moves).toEqual(['function/JUST WANTED A HAND!', 'function/A TOY IN EVERY BOX!']);
+    // The owner's one more for him (Round 10, 2026-09-29), verbatim: "give him 1 more: the bot toy, which will copy the 1st 5 specials used after
+    // spawning 3 times." -> "it copies the 5 specials 3 times before expiring." It is the third second move, appended, so his first five turns run as they did.
+    expect(r.extra).toEqual(['longarm', 'boxdrop', 'springbot']);
+    expect(r.moves).toEqual(['function/JUST WANTED A HAND!', 'function/A TOY IN EVERY BOX!', 'function/MY PURPOSE!']);
     // "replace him with springy": Steve Cobs is the secret boss now -- not a roster row, never rolled, never in the gauntlet --
     // and every piece of his code is kept for that fight (COBS_ROW is his old row, whole)
     expect(r.cobs, 'Steve Cobs is not a Boss Rush boss').toBe(-1);
@@ -125,16 +127,17 @@ describe('Springy takes Boss 11', () => {
     expect(r.card, 'the victory card counts twelve').toMatch(/^All twelve bosses beaten/);
   });
 
-  it('takes turns: the slam, JUST WANTED A HAND, the slam, A TOY IN EVERY BOX, each named, with a 40-frame wind-up, and names his phases', () => {
+  it('takes turns: the slam, JUST WANTED A HAND, the slam, A TOY IN EVERY BOX, the slam, MY PURPOSE!, each named, with a 40-frame wind-up, and names his phases', () => {
     const r = W.eval(`(function(){
       var s = ${S()};
       var kinds = [], names = [];
-      for (var i=0;i<4;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+      for (var i=0;i<6;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       return { kinds: kinds, names: names, tel: bossTelLen(s), p2: bossPhaseName(s, 2), p3: bossPhaseName(s, 3), gaps: SPRINGY.gaps.slice(1).map(function(g, i){ s._phase = i+1; return bossAtkGap(s); }) };
     })()`);
-    expect(r.kinds).toEqual(['springy', 'longarm', 'springy', 'boxdrop']);
-    // "TRY NOT TO FALL~ ! It's a long way down..." (Spring on the Breakfast!/Transcript); "I thought you just wanted a hand." (A Jury of Your Fears/Transcript)
-    expect(r.names).toEqual(['TRY NOT TO FALL!', 'JUST WANTED A HAND!', 'TRY NOT TO FALL!', 'A TOY IN EVERY BOX!']);
+    expect(r.kinds).toEqual(['springy', 'longarm', 'springy', 'boxdrop', 'springy', 'springbot']);
+    // "TRY NOT TO FALL~ ! It's a long way down..." (Spring on the Breakfast!/Transcript); "I thought you just wanted a hand." (A Jury of Your Fears/Transcript);
+    // Spring-Bot: "My. Purpose." (You Can't Do This Forever/Transcript)
+    expect(r.names).toEqual(['TRY NOT TO FALL!', 'JUST WANTED A HAND!', 'TRY NOT TO FALL!', 'A TOY IN EVERY BOX!', 'TRY NOT TO FALL!', 'MY PURPOSE!']);
     expect(r.tel, 'he compresses for two thirds of a second').toBe(40);
     expect(r.p2, 'his page: "Whenever Springy is too excited, scared or enraged, they glitch constantly"').toBe('Glitching');
     expect(r.p3, '"a leader of The Unvitational Committee"').toBe('Unvitational');
@@ -497,7 +500,8 @@ describe('what the player sees', () => {
     const src = W.eval(`[String(springyBeginTelegraph), String(springySlamStart), String(springySlamStep), String(springySlamLand), String(springyHole), String(springyHoleAt),
       String(springyDrop), String(springyPlaceBox), String(springyDressArena), String(updateSpringy), String(springyEnding), String(springyEndStep), String(springyLook),
       String(BOSS_MOVES.longarm), String(BOSS_MOVES.boxdrop), String(drawSpringyBody), String(drawSpringyEnd), JSON.stringify(SPRINGY), JSON.stringify(SPRINGY_PAYLOADS),
-      JSON.stringify(SPRINGY_CLONES), BOSS_MOVE_NAME.longarm, BOSS_MOVE_NAME.boxdrop, bossPhaseName({attack:'springy'}, 2), bossPhaseName({attack:'springy'}, 3),
+      String(BOSS_MOVES.springbot), String(springyBotSpot), String(springyBotDrop), String(springyBotHear), String(springyBotFire), String(springyBotStep), String(drawSpringBot), String(springyShotGlyph),
+      JSON.stringify(SPRINGY_CLONES), BOSS_MOVE_NAME.longarm, BOSS_MOVE_NAME.boxdrop, BOSS_MOVE_NAME.springbot, bossPhaseName({attack:'springy'}, 2), bossPhaseName({attack:'springy'}, 3),
       bossTelName({attack:'springy'}), BOSS_ROSTER.map(function(b){ return b.name; }).join(',')].join('\\n')`);
     // case-sensitive and whole-word: "addProj" and "dropProj" contain "oj"
     expect(src).not.toMatch(/\bOJ\b|Suitcase|Cabby/i);
@@ -599,5 +603,312 @@ describe('a netcode client sees him', () => {
     expect(r.mark).toMatchObject({ warnX: 420 });
     expect(r.fist).toMatchObject({ shape: 'mitten', vx: -24, armX0: 500, armY0: 400 });
     expect(r.arena, 'a client draws the boss arena').toBe('cerealbox');
+  });
+});
+
+// MY PURPOSE!, the owner's one more for him (boss-overhaul-decisions.md Round 10, 2026-09-29), verbatim: "give him 1 more: the bot toy, which will copy the
+// 1st 5 specials used after spawning 3 times." -> "it copies the 5 specials 3 times before expiring." Spring-Bot (the Spring-toys page: a speaker in its mouth,
+// "programming it in the image of Bot", Springy's page; its line "My. Purpose.", You Can't Do This Forever/Transcript): a toy drops, listens for the first
+// five specials any fighter uses after it lands, plays them back three times -- each a shot drawn as that special, out of the toy, at whoever used it, under one
+// attack id and modest damage -- and powers down. "Special" is the Special button, as Two's MIND READ and Dough's Knockoff read it (_lastSpecialKind).
+describe('MY PURPOSE!: the Spring-Bot toy', () => {
+  // A landed, listening toy over a Firey (300) and a Pen (420), both parked; untouchable unless `hurt`. The fall has its own test.
+  const TOY = (hurt, ph) => `${STAGE(300)}
+    var gy = groundY(), B = SPRINGY.bot;
+    var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 420, gy-24, 1); g.team=0; g.controller='still'; g.stocks=9; fighters.push(g);
+    ${hurt ? '' : 'f.invuln = 1e9; g.invuln = 1e9;'}
+    b._atkTimer = 1e9; b._telPh = ${ph || 1}; BOSS_MOVES.springbot(b, f);
+    var toy = projectiles.find(function(p){ return p.springBot; });
+    toy.y = toy.warnY - toy.r*0.5; toy.x = toy.warnX; toy.vx = 0; toy.vy = 0; toy.warn = 0; toy.sb.s = 1; toy.sb.t = 0;
+    var say = function(){ for (var i=0;i<arguments.length;i++) springyBotHear(arguments[i], arguments[i].kit.special); };`;
+  const REC = `new Proxy({}, { get:function(_t,p){
+    if(p==='canvas') return {width:1100,height:720};
+    if(p==='measureText') return function(){ return {width:0}; };
+    return function(){ calls.push([p].concat([].slice.call(arguments))); }; }, set:function(){ return true; } })`;
+
+  it('the wind-up names it, fixes the box farthest from you and draws its ray and waves; the toy drops from that box under a shadow, lands on it to the pixel and stands listening, touching nobody', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var gy = groundY(), out = {}, top = WH*SPRINGY.boxY + 40;
+      b._moveN = 5; b._atkTimer = 1; step();   // his sixth turn: the third second move
+      out.kind = b._telKind; out.name = document.getElementById('banner').textContent; out.tel = b._tel; out.boxX = b._boxX; out.WW = WW;
+      out.tell = String(drawBossSprite).indexOf('springbot') >= 0;
+      var err = null; try { ctx.save(); drawBossSprite(b); ctx.restore(); } catch(e){ err = e.message; } out.tellErr = err;
+      for (var i=0;i<60 && b._tel>0;i++){ step(); f.x = 880; f.vx = 0; }   // someone stands where it will land
+      b._atkTimer = 1e9;
+      var toy = projectiles.find(function(p){ return p.springBot; });
+      out.has = !!toy;
+      out.toy = { springy: toy.springy, delay: toy.delay, dmg: toy.dmg, kb: toy.kb, volley: toy.volley, id: toy.bossAtk, warnX: toy.warnX, warnY: toy.warnY, x0: toy.x, y0: toy.y, vx: toy.vx,
+                  warn: toy.warn, state: toy.sb.s, top: top, face: b.face, gy: gy };
+      var fell = 0; while (toy.sb.s === 0 && fell < 120){ step(); f.x = 880; f.vx = 0; f.y = gy - 24; f.vy = 0; fell++; }
+      out.fell = fell; out.land = { x: toy.x, y: toy.y, state: toy.sb.s, warn: toy.warn, pct: f.pct, alive: projectiles.indexOf(toy) >= 0 && toy.life > 0 };
+      // never onto an open hole: it comes down beside it
+      projectiles = []; springyHole(880, 1, ++BOSS_ATK_ID); b._boxX = 880; BOSS_MOVES.springbot(b, f);
+      var t2 = projectiles.find(function(p){ return p.springBot; }); out.hole = { x: t2.warnX, over: !!springyHoleAt(t2.warnX) };
+      summons = []; projectiles = []; return out;
+    })()`);
+    expect(r.kind).toBe('springbot');
+    expect(r.name, 'the line of its own, Spring-Bot\'s: "My. Purpose."').toBe('MY PURPOSE!');
+    expect(r.tel, 'the wind-up he always has').toBe(40);
+    expect(r.boxX, 'you stand at 300, so the box farthest from you: the right one').toBe(r.WW*0.8);
+    expect(r.tell, 'the ray and the waves are drawn in the wind-up').toBe(true);
+    expect(r.tellErr).toBe(null);
+    expect(r.has, 'the wind-up ends and the toy is dropped').toBe(true);
+    expect(r.toy).toMatchObject({ springy: true, dmg: 0, kb: 0, volley: true, warnX: r.boxX, warnY: r.toy.gy, y0: r.toy.top, state: 0 });
+    expect(r.toy.delay, 'inert: a delayed shot, so the projectile step never moves, ages or hits with it').toBeGreaterThan(1e5);
+    expect(r.toy.id).toBeGreaterThan(0);
+    expect(r.toy.warn, 'it falls under a shadow').toBeGreaterThan(0);
+    expect(Math.sign(r.toy.vx), 'on a slant, the way he faced as he dropped it (FALL_DRIFT)').toBe(Math.sign(r.toy.face));
+    expect(Math.abs(r.toy.x0 - r.toy.warnX), 'and starts back along it').toBeGreaterThan(20);
+    expect(r.fell).toBeGreaterThan(20);
+    expect(r.fell).toBeLessThan(70);
+    expect(r.land).toMatchObject({ x: r.boxX, y: r.toy.gy - 12, state: 1, warn: 0, pct: 0, alive: true });   // on its shadow, its feet on the floor, harmless to the fighter it landed beside
+    expect(r.hole.over, 'never onto an open hole').toBe(false);
+    expect(Math.abs(r.hole.x - 880)).toBeGreaterThanOrEqual(W.eval('SPRINGY.holeW')*0.5);
+  });
+
+  it('it writes down the first five specials any fighter uses after it lands -- what, and who -- and not a jab, an up-special, a down-special or a smash, nothing before it lands and nothing after the fifth', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var gy = groundY(), out = {};
+      var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 420, gy-24, 1); g.team=0; g.controller='still'; g.stocks=9; fighters.push(g);
+      var park = function(){ f.x = 300; f.vx = 0; g.x = 420; g.vx = 0; };
+      var cast = function(who){ who.spCd = 0; who.atkCd = 0; who.smCd = 0; who._windup = null; doSpecial(who); step(); park(); };
+      b._telPh = 1; b._boxX = 880; BOSS_MOVES.springbot(b, f);
+      var toy = projectiles.find(function(p){ return p.springBot; });
+      cast(f);                                              // it is still falling: not heard
+      out.falling = toy.sb.r.length;
+      var n = 0; while (toy.sb.s === 0 && n++ < 120){ step(); park(); }
+      f.atkCd = 0; doAttack(f); f.spCd = 0; doUpSpecial(f); f.spCd = 0; doDownSpecial(f); f.smCd = 0; doSmash(f); step(); park();
+      out.others = toy.sb.r.length;
+      springyBotHear({ idx:0, color:'#fff', _knockoff:{ until:hazardT + 50 } }, 'ember'); out.copy = toy.sb.r.length;   // Dough's copy of a move is the press that made it
+      out.states = [];
+      [f, g, f, g, f].forEach(function(w){ cast(w); out.states.push(toy.sb.s); });
+      out.five = toy.sb.r.map(function(q){ return q.k + '/' + q.idx + '/' + q.c; }); out.colors = [f.color, g.color];
+      cast(g); out.sixth = toy.sb.r.length;
+      summons = []; projectiles = []; return out;
+    })()`);
+    expect(r.falling, 'nothing is written down before it lands').toBe(0);
+    expect(r.others, 'a jab, an up-special, a down-special and a smash are not "specials" here').toBe(0);
+    expect(r.copy, "Dough's copy is not a second press").toBe(0);
+    expect(r.states, 'still listening until the fifth, then it readies').toEqual([1, 1, 1, 1, 2]);
+    expect(r.five, 'what each was, and who used it, in order').toEqual([`ember/0/${r.colors[0]}`, `cap/1/${r.colors[1]}`, `ember/0/${r.colors[0]}`, `cap/1/${r.colors[1]}`, `ember/0/${r.colors[0]}`]);
+    expect(r.sixth, 'the first five only').toBe(5);
+  });
+
+  it('with five in it readies, then plays them back three times: each a shot drawn as its special, out of the toy, at whoever used it, one attack id, a modest share of a hit; then it powers down and is gone', () => {
+    const r = W.eval(`(function(){ ${TOY(false)}
+      say(f, g, f, g, f);
+      var out = { state: toy.sb.s, shots: [], calls: 0, B: B, full: bossDmg(), toyId: toy.bossAtk }, n = 0, mx = toy.x, my = toy.y - 18;
+      out.wantF = Math.atan2(f.y - my, f.x - mx); out.wantG = Math.atan2(g.y - my, g.x - mx);
+      while (toy.life > 0 && out.calls < 3000){
+        out.calls++; springyBotStep(toy, b);   // the toy's own clock
+        projectiles.forEach(function(p){ if (p.springEcho && !p._n){ p._n = ++n;
+          out.shots.push({ call: out.calls, shape: p.shape, ang: Math.atan2(p.vy, p.vx), speed: Math.hypot(p.vx, p.vy), x: p.x, y: p.y, r: p.r, dmg: p.dmg, id: p.bossAtk, volley: p.volley, springy: p.springy, owner: p.owner, color: p.color }); } });
+      }
+      out.colors = [f.color, g.color]; summons = []; projectiles = []; return out;
+    })()`);
+    const B = r.B;
+    expect(r.state, 'five in: it readies').toBe(2);
+    expect(r.shots).toHaveLength(15);
+    expect(r.shots.map((s) => s.shape), 'the same five, in the order they were used, three times, each drawn as its special').toEqual(Array(3).fill(['ember', 'cap', 'ember', 'cap', 'ember']).flat());
+    expect(r.shots[0].call, 'after its squat, a beat before the first').toBe(B.ready + B.first);
+    expect(r.shots.slice(1).map((s, i) => s.call - r.shots[i].call), 'a shot every gap, a longer pause between plays').toEqual([34, 34, 34, 34, 60, 34, 34, 34, 34, 60, 34, 34, 34, 34]);
+    expect(r.calls, 'then it powers down, and is gone').toBe(r.shots[14].call + B.down);
+    for (const s of r.shots) {
+      expect(s.ang, `${s.shape}: fired at whoever used it`).toBeCloseTo(s.shape === 'ember' ? r.wantF : r.wantG, 6);
+      expect(s.speed).toBeCloseTo(B.speed[1], 6);
+      expect(s.r).toBe(B.shotR);
+      expect(s.id, 'one attack id for the whole toy').toBe(r.toyId);
+      expect(s.dmg, 'a modest share of a boss hit').toBeCloseTo(r.full*B.dmg, 6);
+      expect([s.volley, s.springy, s.owner], 'a volley, his, a boss\'s').toEqual([true, true, -2]);
+      expect(s.color, 'in the colour of whoever used it').toBe(s.shape === 'ember' ? r.colors[0] : r.colors[1]);
+    }
+    expect(B.dmg).toBeLessThan(0.5);
+  });
+
+  it('a shorter recording plays as many as it has, three times; one that heard nothing powers down quietly; a second toy replaces the first; phases play quicker', () => {
+    const r = W.eval(`(function(){ ${TOY(false)}
+      var out = {}, run = function(t){ var shots = [], calls = 0; while (t.life > 0 && calls < 3000){ calls++; springyBotStep(t, b);
+        projectiles.forEach(function(p){ if (p.springEcho && !p._n){ p._n = calls; shots.push(p.shape + '@' + calls); } }); } return { shots: shots, calls: calls }; };
+      say(f, g); out.two = run(toy);
+      projectiles = []; BOSS_MOVES.springbot(b, f);
+      var t2 = projectiles.find(function(p){ return p.springBot; }); t2.sb.s = 1; t2.sb.t = 0; t2.y = t2.warnY - t2.r*0.5; t2.x = t2.warnX;
+      out.none = run(t2); out.echoes = projectiles.filter(function(p){ return p.springEcho; }).length;
+      projectiles = []; BOSS_MOVES.springbot(b, f); var first = projectiles.find(function(p){ return p.springBot; }); BOSS_MOVES.springbot(b, f);
+      out.alive = projectiles.filter(function(p){ return p.springBot && p.life > 0; }).length; out.firstLife = first.life; out.firstR = first.r;
+      out.phases = [1, 2, 3].map(function(ph){ projectiles = []; b._telPh = ph; BOSS_MOVES.springbot(b, f); var t3 = projectiles.find(function(p){ return p.springBot; });
+        t3.sb.s = 1; t3.sb.t = 0; t3.y = t3.warnY - t3.r*0.5; t3.x = t3.warnX; springyBotHear(f, 'ember'); springyBotHear(f, 'ember');
+        var q = run(t3); return q.shots.map(function(s){ return +s.split('@')[1]; }); });
+      summons = []; projectiles = []; return out;
+    })()`);
+    const B = W.eval('SPRINGY.bot');
+    expect(r.two.shots.map((s) => s.split('@')[0]), 'two heard: two played, three times').toEqual(['ember', 'cap', 'ember', 'cap', 'ember', 'cap']);
+    expect(r.none.shots).toEqual([]);
+    expect(r.none.calls, 'it waits out the window, and powers down').toBe(B.listen + B.down);
+    expect(r.echoes, 'and plays nothing').toBe(0);
+    expect(r.alive, 'one toy at a time').toBe(1);
+    expect(r.firstLife, 'the first is gone').toBe(0);
+    expect(r.firstR).toBe(0);
+    // the gap between shots, by phase: 34 / 30 / 26
+    expect(r.phases.map((c) => c[1] - c[0])).toEqual([B.gap[1], B.gap[2], B.gap[3]]);
+    expect(B.gap[3]).toBeLessThan(B.gap[1]);
+    expect(B.speed[3]).toBeGreaterThan(B.speed[1]);
+  });
+
+  it('one attack id and a volley: fifteen shots at one fighter are at most ONE boss hit, and each hit is a modest share of it', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var gy = groundY();
+      b._telPh = 1; b._boxX = 880; BOSS_MOVES.springbot(b, f); b._atkTimer = 1e9;
+      var toy = projectiles.find(function(p){ return p.springBot; });
+      for (var i=0;i<80 && toy.sb.s === 0;i++){ step(); f.x = 300; f.vx = 0; }
+      for (var k=0;k<5;k++){ f.spCd = 0; f.atkCd = 0; doSpecial(f); step(); f.x = 300; f.vx = 0; }
+      var hits = [], last = 0, frames = 0; f.pct = 0;
+      for (var n=0;n<1500 && projectiles.indexOf(toy) >= 0;n++){
+        step(); f.x = 300; f.vx = 0; f.y = gy - 24; f.vy = 0; f.invuln = 0; frames++;
+        if (f.pct > last + 1e-9){ hits.push(+(f.pct - last).toFixed(3)); last = f.pct; }
+      }
+      var out = { hits: hits, total: f.pct, full: bossDmg(), gone: projectiles.indexOf(toy) < 0, frames: frames, recorded: toy.sb.r.length };
+      summons = []; projectiles = []; return out;
+    })()`);
+    expect(r.recorded).toBe(5);
+    expect(r.hits[0], 'a hit is a modest share of a boss hit').toBeCloseTo(r.full*0.35, 3);
+    expect(r.hits.length, 'three of them fill the one hit it has').toBe(3);
+    expect(r.total, 'at most one boss hit from the whole toy, however many shots it plays').toBeCloseTo(r.full, 5);
+    expect(r.gone, 'and when it is done it goes').toBe(true);
+    expect(r.frames).toBeLessThan(1400);
+  });
+
+  it('no words: its wind-up is the only line it puts on the screen -- nothing names a special it recorded', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var seen = [], _b = banner; banner = function(t, m, k, l){ seen.push({ t: String(t), k: k || null }); return _b(t, m, k, l); };
+      try {
+        var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 420, groundY()-24, 1); g.team=0; g.controller='still'; g.stocks=9; fighters.push(g);
+        f.invuln = 1e9; g.invuln = 1e9; b._moveN = 5; b._atkTimer = 1; step();
+        for (var i=0;i<45 && b._tel>0;i++) step();
+        b._atkTimer = 1e9;
+        var toy = projectiles.find(function(p){ return p.springBot; });
+        toy.y = toy.warnY - toy.r*0.5; toy.x = toy.warnX; toy.vx = 0; toy.vy = 0; toy.warn = 0; toy.sb.s = 1; toy.sb.t = 0;
+        springyBotHear(f, 'ember'); springyBotHear(g, 'cap');
+        var calls = 0; while (toy.life > 0 && calls < 3000){ calls++; springyBotStep(toy, b); }
+        return { seen: seen, played: projectiles.filter(function(p){ return p.springEcho; }).length };
+      } finally { banner = _b; summons = []; projectiles = []; }
+    })()`);
+    expect(r.played, 'it played them back').toBe(6);
+    expect(r.seen, 'one boss telegraph, and no other words').toEqual([{ t: 'MY PURPOSE!', k: 'boss' }]);
+  });
+
+  it('it draws in every state -- falling, listening, readying, winding up each shot, powering down -- with the art loaded and without, and every kit\'s special draws as a shot it plays back', () => {
+    const r = W.eval(`(function(){
+      var gy = groundY(), out = { bad: [] }, calls, c, im = { complete:true, naturalWidth:113, naturalHeight:80 };
+      var rec = [{ k:'ember', c:'#f0803a' }, { k:'cap', c:'#3a86e0' }, { k:'ember', c:'#f0803a' }];
+      var states = [{ s:0, t:3, h:0, i:0, v:0, f:0, r:[] }, { s:1, t:10, h:0, i:0, v:0, f:0, r:rec.slice(0, 1) }, { s:1, t:11, h:12, i:0, v:0, f:0, r:rec }, { s:2, t:12, h:0, i:0, v:0, f:0, r:rec },
+        { s:3, t:0, h:0, i:1, v:0, f:30, r:rec }, { s:3, t:0, h:0, i:1, v:1, f:6, r:rec }, { s:3, t:0, h:10, i:0, v:2, f:1, r:rec }, { s:4, t:20, h:0, i:0, v:3, f:0, r:rec }];
+      states.forEach(function(sb, n){
+        [im, null].forEach(function(img){
+          calls = []; c = ${REC};
+          try { drawSpringBot({ x:880, y:gy - 12, r:24, color:'#93a85a', springBot:true, sb:sb }, c, img); } catch(e){ out.bad.push('state ' + n + ': ' + e.message); }
+          if (img){ out['img' + n] = calls.filter(function(q){ return q[0] === 'drawImage'; }).length; if (n === 1){ var d = calls.find(function(q){ return q[0] === 'drawImage'; }); out.size = [d[4], d[5]]; } }
+          else out['glyph' + n] = calls.filter(function(q){ return q[0] === 'drawImage'; }).length;
+        });
+        try { drawProjectile({ x:880, y:gy - 12, vx:0, vy:0, r:24, color:'#93a85a', springBot:true, springy:true, sb:sb }); } catch(e){ out.bad.push('drawProjectile ' + n + ': ' + e.message); }
+      });
+      try { drawProjectile({ x:880, y:200, vx:-2, vy:6, r:24, color:'#93a85a', warn:40, warnX:860, warnY:gy, springBot:true, springy:true, sb:states[0] }); } catch(e){ out.bad.push('falling: ' + e.message); }
+      var keys = {}; ROSTER.forEach(function(r){ if (r.kit && r.kit.special) keys[r.kit.special] = 1; });
+      out.kinds = Object.keys(keys).length;
+      Object.keys(keys).forEach(function(k){
+        try { drawProjectile({ x:300, y:300, vx:-8, vy:0, r:13, color:'#f0803a', shape:k, springEcho:true, springy:true, owner:-2, ownerObj:null, life:50 });
+              drawSpringBot({ x:500, y:gy - 12, r:24, color:'#93a85a', springBot:true, sb:{ s:3, t:0, h:0, i:0, v:0, f:4, r:[{ k:k, c:'#f0803a' }] } }); }
+        catch(e){ out.bad.push(k + ': ' + e.message); }
+      });
+      return out;
+    })()`);
+    expect(r.bad, 'nothing throws').toEqual([]);
+    expect(r.kinds, 'every special in the roster').toBeGreaterThanOrEqual(100);
+    for (let n = 0; n < 8; n++) expect(r['img' + n], `state ${n}: the art, once`).toBe(1);
+    for (let n = 0; n < 8; n++) expect(r['glyph' + n], `state ${n}: the glyph until it loads, no image`).toBe(0);
+    expect(r.size[1], 'drawn 65 px tall at its size (38 x 1.7), a toy not a boss').toBeCloseTo(38*1.7, 3);
+    expect(r.size[0]).toBeCloseTo(38*1.7*113/80, 3);
+  });
+
+  it('it wears the show\'s art: File:Springbot.png from the II wiki, in the fetch script, the manifest and the credits, transparent and projectile-sized; a drawn glyph stands in until it loads', () => {
+    const file = 'artifacts/V1/assets/sprites/attacks/springbot.png';
+    expect(existsSync(file)).toBe(true);
+    const png = PNG.sync.read(readFileSync(file));
+    expect(Math.max(png.width, png.height), 'projectile-sized').toBeLessThanOrEqual(128);
+    const alpha = (x, y) => png.data[(y * png.width + x) * 4 + 3];
+    expect([alpha(0, 0), alpha(png.width - 1, 0), alpha(0, png.height - 1), alpha(png.width - 1, png.height - 1)], 'transparent, not a sticker').toEqual([0, 0, 0, 0]);
+    const man = JSON.parse(readFileSync('scripts/attack-sprite-manifest.json', 'utf8')).springbot;
+    expect(man).toMatchObject({ who: 'Springy', kits: ['springbot'], file: 'springbot.png', wiki: 'ii', srcTitle: 'Springbot.png', width: png.width, height: png.height,
+      source: expect.stringContaining('/inanimateinsanity/images/8/8b/Springbot.png/') });
+    expect(man.clearFrac, 'transparent round the toy').toBeGreaterThan(0.12);
+    const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
+    expect(credits).toContain('(springbot.png)');
+    expect(credits).toContain(man.source);
+    expect(readFileSync('scripts/fetch-attack-sprites.mjs', 'utf8'), 'his pick, the one block at the end of the list').toMatch(/springbot:\s*\{ who: 'Springy', kits: \['springbot'\], wiki: 'ii', file: 'Springbot\.png'/);
+    const reg = W.eval('({ e: ATTACK_SPRITES.springbot, glyph: typeof PROJ_SHAPE.springbot.draw, spring: ATTACK_SPRITES.springbot.src.split("/").pop() })');
+    expect(reg.e).toEqual({ src: 'assets/sprites/attacks/springbot.png', h: 38, cap: 1.7 });
+    expect(reg.glyph).toBe('function');
+  });
+
+  it('his Spring-Bot, and every shot it plays back, go with him when he falls', () => {
+    const r = W.eval(`(function(){ ${TOY(true)}
+      var st = setTimeout; setTimeout = function(){ return 0; };
+      try {
+        BOSSRUSH.active = true; say(f, g, f, g, f);
+        for (var i=0;i<80;i++){ springyBotStep(toy, b); }   // five in: it has readied and is playing
+        var before = { toys: projectiles.filter(function(p){ return p.springBot; }).length, echoes: projectiles.filter(function(p){ return p.springEcho; }).length };
+        b.hp = 0; bossRushCheck();
+        var after = { toys: projectiles.filter(function(p){ return p.springBot; }).length, echoes: projectiles.filter(function(p){ return p.springEcho; }).length,
+                      hisLeft: projectiles.filter(function(p){ return p.springy; }).length };
+        return { before: before, after: after };
+      } finally { setTimeout = st; BOSSRUSH.active = false; summons = []; projectiles = []; worldPlats = []; }
+    })()`);
+    expect(r.before.toys).toBe(1);
+    expect(r.before.echoes).toBeGreaterThan(0);
+    expect(r.after.toys).toBe(0);
+    expect(r.after.echoes).toBe(0);
+    expect(r.after.hisLeft, 'only the hole of his ending').toBe(1);
+  });
+
+  it('an item Springy (summonBoss) never throws it: his second moves stay the punch and the boxes', () => {
+    const r = W.eval(`(function(){ projectiles = []; worldPlats = [];
+      var s = { type:'boss', name:'Springy', color:'#afafaf', x:550, y:300, r:70, hp:200, vx:0, vy:0, face:1, _atkTimer:1, _tel:0 };
+      var out = []; for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); out.push(String(s._telKind)); s._tel = 1; updateBossAttack(s, null); }
+      var toys = projectiles.filter(function(p){ return p.springBot; }).length;
+      projectiles = []; worldPlats = []; summons = [];
+      return { kinds: out, only: BOSS_RUSH_ONLY.has('springbot'), toys: toys };
+    })()`);
+    expect(r.only).toBe(true);
+    expect(r.kinds).toEqual(['undefined', 'longarm', 'undefined', 'boxdrop', 'undefined', 'longarm', 'undefined', 'boxdrop']);
+    expect(r.toys).toBe(0);
+  });
+
+  it('a netcode client sees the toy and what it plays back: its state, its pips and the shots, whole, drawn from the snapshot alone', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
+      BOSS_ARENA = 'cerealbox'; var gy = groundY(), O = { owner:-2, ownerObj:{ team:-1, idx:-2 } };
+      var rec = [{ k:'ember', idx:0, c:'#f0803a' }, { k:'cap', idx:1, c:'#3a86e0' }, { k:'ember', idx:0, c:'#f0803a' }];
+      summons = [{ type:'boss', name:'Springy', color:'#afafaf', r:88, sprite:'springy', x:500, y:gy-88, hp:300, maxHp:330, face:-1, flash:0, homeX:500, _rage:false, _tel:12, _telKind:'springbot', _boxX:880,
+                   _bossRush:true, attack:'springy', _phase:1 }];
+      projectiles = [Object.assign({ x:880, y:gy-12, vx:0, vy:0, r:24, color:'#93a85a', bossAtk:9, life:1, delay:1e6, warn:0, warnX:880, warnY:gy, springBot:true, springy:true,
+                       sb:{ s:3, t:0, h:5, i:2, v:1, f:9, ph:1, id:9, r:rec } }, O),
+                     Object.assign({ x:700, y:gy-30, vx:-8, vy:0, r:13, color:'#f0803a', shape:'ember', bossAtk:9, life:60, volley:true, springy:true, springEcho:true }, O),
+                     Object.assign({ x:900, y:200, vx:-2, vy:6, r:24, color:'#93a85a', bossAtk:10, life:1, delay:1e6, warn:40, warnX:880, warnY:gy, springBot:true, springy:true,
+                       sb:{ s:0, t:3, h:0, i:0, v:0, f:0, ph:1, id:10, r:[] } }, O)];
+      var snap = JSON.parse(JSON.stringify(serializeState()));
+      summons = []; projectiles = []; BOSS_ARENA = null;
+      applySnapshot(snap);
+      var err = null; try { summons.forEach(drawSummon); projectiles.forEach(drawProjectile); drawBossBar(); } catch(e){ err = e.message; }
+      return { err: err, toy: projectiles[0], echo: projectiles[1], falling: projectiles[2], boss: snap.summons[0] };
+    })()`);
+    expect(r.err).toBe(null);
+    expect(!!r.toy.springBot).toBe(true);
+    expect(r.toy.sb, 'what a client draws from: the state, the playback, and the colour and special of each pip -- not who, not the attack id').toEqual({ s: 3, t: 0, h: 5, i: 2, v: 1, f: 9,
+      r: [{ k: 'ember', c: '#f0803a' }, { k: 'cap', c: '#3a86e0' }, { k: 'ember', c: '#f0803a' }] });
+    expect(r.echo).toMatchObject({ shape: 'ember', vx: -8 });
+    expect(!!r.echo.springEcho, 'a shot it plays back wears its ring on the client too').toBe(true);
+    expect(r.falling.sb).toMatchObject({ s: 0, r: [] });
+    expect(r.falling, 'the shadow it falls toward').toMatchObject({ warn: 40, warnX: 880 });
+    expect(r.boss, 'the box its ray comes from, in the wind-up').toMatchObject({ _telKind: 'springbot', _boxX: 880, _tel: 12 });
   });
 });

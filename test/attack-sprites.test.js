@@ -68,6 +68,8 @@ const KEYS = ['shatter', 'atstake', 'van', 'float', 'cap', 'pricetag', 'measure'
   'ojshard', 'casebomb', 'wrench', 'file',
   // Steve Cobs's fight (the boss overhaul, "Yes, cut or draw"): the MeKnife, the lollipops, the boomerang, the van that threw MePhone4 out of its back, the popcorn he was blown into, a unit's pencil (test/boss-cobs-fight.test.js)
   'meepleknife', 'cobslolli1', 'cobslolli2', 'cobsboomerang', 'meeplevan', 'popcorn', 'cobspencil',
+  // Springy's MY PURPOSE! (the boss overhaul, Round 10: "give him 1 more: the bot toy"): Spring-Bot, the toy that listens and plays back (test/boss-springy.test.js)
+  'springbot',
   // the boss overhaul (2026-09-29), Firey Speaker Box: his arm (YOU MUST!), the volcano's Fire Monster and the seven pieces he was broken into (test/boss-firey-sb.test.js)
   'fsbarm', 'fsbmonster', 'fsbpart1', 'fsbpart2', 'fsbpart3', 'fsbpart4', 'fsbpart5', 'fsbpart6', 'fsbpart7',
   // Purple Face, rebuilt (the boss overhaul, 2026-09-29): the show's art for his bug, totems, shoes, star and the warehouse's magnet (test/boss-purple-face.test.js)
@@ -102,7 +104,7 @@ describe('the registry', () => {
   it('every file in the attack folder is drawn by some entry -- none is dead weight', () => {
     const drawn = new Set(W.eval('Object.keys(ATTACK_SPRITES).map(function(k){ return ATTACK_SPRITES[k].src.split("/").pop(); })'));
     const onDisk = readdirSync('artifacts/V1/assets/sprites/attacks').filter((f) => f.endsWith('.png'));
-    expect(onDisk.length).toBe(138);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the boss overhaul's: the Announcer's 9, Firey Speaker Box's 9, Purple Face's 6, the Bug Swarm's 12, Puffball Speaker Box's 2, the Purple Dragon's 2, Steve Cobs's fight's 6, One's 4 (her knife is Puffball Speaker Box's file), Four's 1, Two's 7, Evil Leafy's 2, MePhone4's 3
+    expect(onDisk.length).toBe(139);   // 47, plus batch 3's 24, plus Steve Cobs's prize's 4, plus the boss overhaul's: the Announcer's 9, Firey Speaker Box's 9, Purple Face's 6, the Bug Swarm's 12, Puffball Speaker Box's 2, the Purple Dragon's 2, Steve Cobs's fight's 6, One's 4 (her knife is Puffball Speaker Box's file), Four's 1, Two's 7, Evil Leafy's 2, MePhone4's 3, Springy's Spring-Bot 1
     expect(onDisk.filter((f) => !drawn.has(f))).toEqual([]);
   });
 
