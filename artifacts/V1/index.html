@@ -7697,7 +7697,11 @@ function bossAtkGapBase(s){
   // @boss:mephone4s:end gap
 
   // @boss:two:begin gap
-  if(s.attack==="two"){ const g = twoGap(s); if(g != null) return g; }   // held while a move of his is in the air (twoDone starts the gap); otherwise the usual 100 / 72 / 52
+  if(s.attack==="two"){   // held while a move of his is in the air (twoDone starts the gap); otherwise the usual 100 / 72 -- and 60 (not 52) in phase 3: the derailed coaster is the park's hazard now ("if it makes sense for a hazard, reduce boss difficulty and add a hazard.")
+    const g = twoGap(s);
+    if(g != null) return g;
+    if(s._phase===3) return 60;
+  }
   // @boss:two:end gap
 
   // @boss:four:begin gap
@@ -7930,7 +7934,7 @@ const BOSS_EXTRA = {
   // His own six with the signature (the owner: "you can add a bullet pattern." -> "Two bullet patterns"; "One of each"; Round 13's THE POWER OF TWO! and his own rail design):
   // his turns run MIND READ!, MAYBE YOU'D LIKE THIS!, MIND READ!, THE POWER OF TWO!, MIND READ!, BLOCK TOWERS!, MIND READ!, I LOVE RIDES! (phase 2 on; the ring again before),
   // MIND READ!, CLAP! (phase 2 on; the sun again before). The shared SEEKERS! and SHOCK RING! are gone from him (see TWO).
-  "Two": ["twosun"],
+  "Two": ["twosun", "twoblocks", "twoclap"],
   // @boss:two:end extra
 
   // @boss:four:begin extra
@@ -13047,7 +13051,8 @@ function twoBeginTelegraph(s, tgt){
     twoBlocksPlan(s, tx);
   } else if(k === 'twoclap'){
     twoGoTo(s, W2, gy - R - 250);
-    H.cl = [Math.round(clamp(tx, 80, WW - 80)), 0, 0, 0];
+    const hi = ph >= 3 ? ((s._clapN = (s._clapN || 0) + 1) % 2 ? 1 : 2) : 0;   // phase 3: one hand high and the other low, and they swap
+    H.cl = [Math.round(clamp(tx, 80, WW - 80)), 0, hi, 0];
   } else if(k === 'tworails'){
     twoGoTo(s, W2, gy - R - 300);
     H.rl = [hazardT, 0, 0, 0];
@@ -13250,6 +13255,155 @@ function twoSunEnd(s, T, H){
   else { if(p) p.life = 0; H.sb = hazardT; }                                                              // and the sky has its sun back
   H.mk = null;
   twoDone(s);
+}
+// ---- BLOCK TOWERS! ------------------------------------------------------------------------------------------------------------------------
+// "Two left stacks of blocks all over the grasslands, wanting to spruce the place up. However, the block towers start to become problem as they begin to topple over and
+// crush the contestants" (Two/Coverage, Getting Puffball To Think About Rollercoasters: "I'm just trying to spruce the place up. Adding my flair. They're not causing any
+// problems."); "Two snaps and creates blocks out of thin air" (Two: Creation). The wind-up: Two snaps and three stacks of the show's blocks grow out of the floor in lime glow --
+// one where you stood, one 200 px either side -- each rocking the way it will fall. After a held breath they fall like dominoes, ten frames apart, each a bar about 200 px
+// long swinging down over 24 frames (a hit while it falls, thrown the way it falls); the first two fall away from Two and the THIRD LEANS BACK toward you, so a run from the
+// first two runs into it. They land flat as low blocks and stand as steps for three seconds ("sprucing the place up"), then dissolve in glow. Phase 3 adds a second row of two
+// between them, after the first has gone down. 0.8 of a boss hit under one attack id (a volley). H.bk = [began, [[x, dir, fallAt, growAt], ...]]; the angle of every bar is a pure
+// function of the clock (twoStackAngle), so a client draws exactly what the host hits.
+function twoBlocksPlan(s, tx){
+  const H = twoHz(s), B = TWO.blocks, ph = twoPh(s), now = hazardT, fireAt = now + s._tel;
+  const d = Math.sign(tx - s.x) || s.face || 1;                         // the dominoes fall away from Two...
+  const xs = [tx - B.spacing*d, tx, tx + B.spacing*d], dirs = [d, d, -d];   // ...and the third stack leans back toward you
+  const lo = Math.min(xs[0], xs[2]), hi = Math.max(xs[0], xs[2]);
+  const sh = lo < 90 ? 90 - lo : (hi > WW - 90 ? WW - 90 - hi : 0);   // keep the row on the stage
+  const rows = xs.map((x, i) => [x + sh, dirs[i], fireAt + B.hold + i*B.gap, now]);
+  if(ph >= 3){   // a second row of two, once the first has gone down
+    const last = fireAt + B.hold + 2*B.gap + B.fall + B.row2.at, mid = tx + sh;
+    rows.push([clamp(mid - B.row2.off*d, 90, WW - 90), -d, last, last - 40], [clamp(mid + B.row2.off*d, 90, WW - 90), d, last + B.gap, last - 40]);
+  }
+  H.bk = [now, rows.map(r => r.map(Math.round))];
+}
+// A stack's lean from straight up, in radians, positive toward +x: it rocks a little toward the way it will fall until its time, then goes over -- slowly, then faster.
+function twoStackAngle(row, t){
+  const B = TWO.blocks, u = (t - row[2])/B.fall;
+  if(u <= 0) return row[1]*B.lean*(0.55 + 0.45*Math.sin(t*0.4));
+  return row[1]*(B.lean + (Math.PI/2 - B.lean)*Math.min(1, u*u));
+}
+function twoBlocksStart(s, tgt){
+  const id = ++BOSS_ATK_ID, ph = s._telPh || twoPh(s), H = twoHz(s);
+  if(!H.bk) twoBlocksPlan(s, clamp(s._telX != null ? s._telX : s.x, 50, WW - 50));
+  s._tw = { k:'blocks', id, ph, rows:H.bk[1], landed:[] };
+  for(const r of H.bk[1]) for(let i=0;i<4;i++) puff(r[0], groundY() - 30 - i*40, '#9be86a', 4);
+  shake(3);
+}
+function twoBlocksStep(s, tgt, T, H){
+  const B = TWO.blocks, gy = groundY(), t = hazardT, L = B.n*B.size;
+  let left = 0;
+  T.rows.forEach((row, i) => {
+    if(T.landed[i]) return;
+    left++;
+    const u = (t - row[2])/B.fall;
+    if(u < 0) return;
+    if(u >= 1){ twoBlocksLand(s, T, row, i, H); return; }
+    const th = twoStackAngle(row, t), x0 = row[0], sn = Math.sin(th), cs = Math.cos(th);
+    for(const f of fighters){
+      if(f.dead || f.invuln > 0) continue;
+      for(let d = 14; d <= L + 8; d += 18){
+        if(hurtGap(f, x0 + sn*d, gy - cs*d) < B.half){ applyHit(f, bossDmg()*0.8, row[1]*B.kb, -B.kb*0.75, null, { bossAtk:T.id, volley:true }); for(let k=0;k<6;k++) puff(f.x, f.y, '#9be86a', 4); break; }
+      }
+    }
+  });
+  if(!left) twoDone(s);
+}
+// A stack lands flat: a floor impact at its tip, and a low solid block where it lies (a step for B.step.life frames; H.stp is what a client draws of it).
+function twoBlocksLand(s, T, row, i, H){
+  const B = TWO.blocks, gy = groundY(), L = B.n*B.size, x1 = row[0] + row[1]*L, left = Math.min(row[0], x1);
+  T.landed[i] = 1;
+  impact(x1, gy, { shake:8, dust:2, debris:4, scar:true, r:110 });
+  worldPlats.push({ x:left, y:gy - B.step.h, w:L, h:B.step.h, solid:true, _two:true, _until:hazardT + B.step.life });
+  const a = H.stp || (H.stp = []);
+  a.push([Math.round(left), Math.round(gy - B.step.h), L, B.step.h, i % 4, hazardT + B.step.life]);
+  if(a.length > 8) a.shift();
+}
+// The stacks, from the clock: growing out of the floor in lime glow (the tell), rocking, then falling.
+function twoDrawStacks(H){
+  const bk = H.bk, t = hazardT, gy = groundY(), B = TWO.blocks;
+  if(!bk) return;
+  bk[1].forEach((row, i) => {
+    const grow = clamp((t - row[3])/B.grow, 0, 1), u = (t - row[2])/B.fall;
+    if(grow <= 0 || u >= 1) return;
+    const th = twoStackAngle(row, t), e = 1 - (1 - grow)*(1 - grow), h = B.size*e;
+    if(u < 0){   // the glow it stands in, and a ring on the floor where it will stand
+      ctx.save(); ctx.strokeStyle = 'rgba(160,255,140,' + (0.3 + 0.3*e) + ')'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(row[0], gy - 3, B.half*1.6, 8, 0, 0, 7); ctx.stroke(); ctx.restore();
+    }
+    ctx.save(); ctx.translate(row[0], gy); ctx.rotate(th);
+    ctx.shadowColor = 'rgba(160,255,140,0.9)'; ctx.shadowBlur = u < 0 ? 14 : 6;
+    for(let k=0;k<B.n;k++) twoBlockAt(-B.size/2, -(k + 1)*h, B.size, h, i + k);
+    ctx.restore();
+  });
+}
+// ---- CLAP! ----------------------------------------------------------------------------------------------------------------------------------
+// "Two claps their hands in front of Pie to eliminate her, making the others gasp" (Two/Coverage, The Worst Day of Black Hole's Life); "Two claps, causing them to fall through
+// the roof's floor"; "Two tells them all to quieten down ... clapping their hands together" (You Know Those Buttons Don't Do Anything, Right?). Joins in phase 2.
+// The wind-up: two big translucent four-fingered hands appear at the edges of the park and a line marks where they will meet -- where you stand: it follows you, and holds for the
+// last TWO.clap.lock frames. Then the hands slide in along the floor, reaching the line together, and clap with a shock (the park shakes, the "S"tage rattles): the hand on your side
+// reaches you first and throws you the way it was going. Each is about 120 px tall -- jump the one that comes at you, or stand on the "S"tage. Phase 3 sends one hand high and one
+// low (it alternates): the low one is jumped and the high one passed under -- you cannot jump both. 0.8 of a boss hit under one id. H.cl = [lineX, locked, high hand, clappedAt].
+function twoClapStart(s, tgt){
+  const id = ++BOSS_ATK_ID, ph = s._telPh || twoPh(s), H = twoHz(s), C = TWO.clap, gy = groundY();
+  const lx = H.cl ? H.cl[0] : Math.round(clamp(s._telX != null ? s._telX : s.x, 80, WW - 80)), hi = H.cl ? H.cl[2] : 0, T = C.arrive[ph];
+  if(H.cl) H.cl[1] = 1;
+  for(const side of [-1, 1]){   // -1: the left hand, coming in from the left edge
+    const x0 = side < 0 ? -C.hand*0.6 : WW + C.hand*0.6, x1 = lx + side*C.pad, high = hi === (side < 0 ? 1 : 2);
+    addProj(twoShot(s, id, { x:x0, y:high ? gy - C.r - C.high : gy - C.r, vx:(x1 - x0)/T, vy:0, r:C.r, kb:C.kb, pierce:true, shape:'twohand', color:TWO_LIME,
+      life:Math.round(T/PROJ_LIFE), twoHand:side }));
+  }
+  s._tw = { k:'clap', id, ph, t:0, T, lx };
+  shake(3);
+}
+function twoClapStep(s, tgt, T, H){
+  T.t++;
+  if(T.t === T.T){   // they meet: the clap
+    impact(T.lx, groundY(), { shake:11, dust:3, debris:6, scar:true, r:160 });
+    if(H.cl) H.cl[3] = hazardT;
+    for(let i=0;i<16;i++) puff(T.lx + (Math.random()*2 - 1)*50, groundY() - 30 - Math.random()*40, '#d6ffb0', 5);
+  }
+  if(T.t >= T.T + 14) twoDone(s);
+}
+// A hand, in its own space pointing along +x (the way it travels), palm to the left and four fingers and a thumb to the right: Pastel Green with the black outline ("Two has four fingers").
+function twoHandGlyph(c, r, a){
+  c.save(); c.globalAlpha *= a; c.lineJoin = 'round'; c.lineWidth = Math.max(2, r*0.07); c.strokeStyle = '#1c1c1c'; c.fillStyle = TWO_LIME;
+  const rr = (x, y, w, h, k) => { c.beginPath(); c.moveTo(x + k, y); c.lineTo(x + w - k, y); c.quadraticCurveTo(x + w, y, x + w, y + k); c.lineTo(x + w, y + h - k); c.quadraticCurveTo(x + w, y + h, x + w - k, y + h); c.lineTo(x + k, y + h); c.quadraticCurveTo(x, y + h, x, y + h - k); c.lineTo(x, y + k); c.quadraticCurveTo(x, y, x + k, y); c.fill(); c.stroke(); };
+  rr(-r*1.25, -r*0.78, r*1.5, r*1.56, r*0.3);                              // the palm
+  for(let i=0;i<4;i++) rr(r*0.15, -r*0.86 + i*r*0.46, r*(1.15 - (i === 0 || i === 3 ? 0.18 : 0)), r*0.4, r*0.18);   // four fingers
+  c.save(); c.translate(-r*0.5, -r*0.78); c.rotate(-0.7); rr(-r*0.1, -r*0.62, r*0.34, r*0.7, r*0.15); c.restore();   // the thumb
+  c.restore();
+}
+// The tell and the aftermath, in the park (the hazard's 'under' layer): the line, the ghost hands at the edges, and the clap's ring.
+function twoDrawClap(b, H){
+  const cl = H.cl;
+  if(!cl || !b) return;
+  const t = hazardT, gy = groundY(), C = TWO.clap, winding = b._tel > 0 && b._telKind === 'twoclap', moving = !!(b._tw && b._tw.k === 'clap'), ago = cl[3] ? t - cl[3] : -1;
+  if(!winding && !moving && !(ago >= 0 && ago < 18)) return;
+  const k = winding ? clamp(1 - b._tel/TWO.tel.twoclap, 0, 1) : 1, lx = cl[0], locked = cl[1] === 1;
+  ctx.save();
+  if(winding || moving){
+    ctx.strokeStyle = locked ? 'rgba(255,255,255,0.85)' : 'rgba(116,210,117,0.75)'; ctx.lineWidth = locked ? 4 : 3; ctx.setLineDash([14, 10]);
+    ctx.beginPath(); ctx.moveTo(lx, gy - 330); ctx.lineTo(lx, gy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = locked ? 'rgba(255,255,255,0.1)' : 'rgba(116,210,117,0.1)'; ctx.fillRect(lx - C.pad - C.r, gy - 330, 2*(C.pad + C.r), 330);
+  }
+  if(winding){
+    for(const side of [-1, 1]){
+      const high = cl[2] === (side < 0 ? 1 : 2), y = high ? gy - C.r - C.high : gy - C.r, x = side < 0 ? 14 + 24*k : WW - 14 - 24*k;
+      ctx.save(); ctx.translate(x, y); if(side > 0) ctx.scale(-1, 1); ctx.globalAlpha = 0.18 + 0.3*k; twoHandGlyph(ctx, C.r*(0.8 + 0.2*k), 1); ctx.restore();
+    }
+  }
+  if(ago >= 0 && ago < 10){   // the hands, palm to palm for a moment where they met
+    for(const side of [-1, 1]){
+      const high = cl[2] === (side < 0 ? 1 : 2), y = high ? gy - C.r - C.high : gy - C.r;
+      ctx.save(); ctx.translate(lx + side*C.pad, y); if(side > 0) ctx.scale(-1, 1); ctx.globalAlpha = 1 - ago/10; twoHandGlyph(ctx, C.r, 0.96); ctx.restore();
+    }
+  }
+  if(ago >= 0 && ago < 18){   // the shock where they met
+    ctx.strokeStyle = 'rgba(230,255,200,' + 0.8*(1 - ago/18) + ')'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.ellipse(lx, gy - 4, 30 + ago*16, 10 + ago*1.5, 0, 0, 7); ctx.stroke();
+  }
+  ctx.restore();
 }
 // ---- what the park looks like ------------------------------------------------------------------------------------------------------------
 // Everything below is drawn from the boss's fields and b._hz (which a netcode client gets as they are), the shots, and hazardT (the host's clock, which a client has
@@ -30350,6 +30504,8 @@ const PROJ_SHAPE = {
       c.fillStyle='#ff8a5a'; c.beginPath(); c.arc(-r*0.2, -r*0.22, r*0.4, 0, 7); c.fill(); } },
   twoorb:   { draw(c, r){ c.fillStyle='#44C549'; c.strokeStyle='#14501a'; c.lineWidth=Math.max(1.5, r*0.16); c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill(); c.stroke();
       c.fillStyle='rgba(214,255,176,0.85)'; c.beginPath(); c.arc(-r*0.28, -r*0.28, r*0.42, 0, 7); c.fill(); } },
+  // twohand: CLAP!'s hand ("Two has four fingers"), Pastel Green with the black outline, turned upright whichever way it travels (twoHandGlyph)
+  twohand:  { draw(c, r, pr){ if(pr && pr.vx < 0) c.scale(1, -1); twoHandGlyph(c, r, 0.96); } },
   // @boss:two:end shape
 
   // @boss:four:begin shape

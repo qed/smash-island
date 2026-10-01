@@ -32,7 +32,7 @@ const STAGE = (x, ph = 1, live = false) => `
 `;
 // Fire move number k (0 the signature, 1.. the second moves in order) of the boss `b` now, and run its wind-up out: the frame the move fires is the last one this
 // returns from. (Every test that needs a move in the air starts here.)
-const FIRE = (k) => `b._moveN = ${k === 0 ? 0 : 2*k - 1}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, telLen = b._tel;
+const FIRE = (k) => `b._moveN = ${k === 0 ? 0 : (typeof k === 'string' ? "2*(BOSS_EXTRA['Two'].indexOf('" + k + "') + 1) - 1" : 2*k - 1)}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, telLen = b._tel;
   for (var w=0; w<80 && b._tel>0; w++){ step(); f.invuln = 99; }`;
 // A frame with the fighter held where the test wants them
 const HOLD = `f.pct = 0; f.invuln = 99; f.hitstun = 0;`;
@@ -217,7 +217,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
   it('the ball drops from the sky onto its mark, bounces toward you 1, 2 then 3 more times by phase, a low hop each, and rises to be the sun again', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
-        f.x = 300; ${FIRE(1)}
+        f.x = 300; ${FIRE('twosun')}
         var T = b._tw, p = T.p, landings = 0, ys = [], n0 = T.n;
         for (var k=0;k<400 && b._tw;k++){
           var was = b._tw.st;
@@ -242,7 +242,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
 
   it('every bounce turns toward where you are NOW: the next mark is your position when it lands, at most 10.5 px a frame for 28 frames away', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 2, true)}
-      f.x = 300; ${FIRE(1)}
+      f.x = 300; ${FIRE('twosun')}
       var T = b._tw, legs = [];
       for (var k=0;k<200 && b._tw;k++){
         var n0 = T.n;
@@ -261,7 +261,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
       var imps = [], _impact = impact; impact = function(x, y, o){ imps.push([Math.round(x), o && o.scar, o && o.shake]); return _impact(x, y, o); };
       try {
-        f.x = 300; ${FIRE(1)}
+        f.x = 300; ${FIRE('twosun')}
         var T = b._tw, pct0 = f.pct;
         f.invuln = 0;
         for (var k=0;k<90;k++){ step(); f.hitstun = 0; f.y = groundY()-24; f.x = T.x2; f.vx = 0; }
@@ -304,5 +304,203 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
     expect(r.after).toBe(true);
     expect(r.alive, 'the mace is not spent by the bash').toBe(true);
     expect(r.back, 'it is back on its circle').toBeLessThan(r.R*r.k*1.1);
+  });
+});
+
+describe('BLOCK TOWERS!', () => {
+  it('the wind-up: Two snaps and three stacks grow where you stand and 200 px either side -- the first two lean away from him, the third back toward you -- 40 frames', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      f.x = 300; var out = { order: BOSS_EXTRA['Two'] }; b._moveN = 3; b._atkTimer = 1; step();
+      out.kind = b._telKind; out.name = document.getElementById('banner').textContent; out.tel = b._tel; out.bk = JSON.parse(JSON.stringify(b._hz.bk)); out.bx = b.x; out.dst = b._dst; out.gy = groundY(); out.R = b.r;
+      out.t0 = hazardT;
+      for (var k=0;k<30;k++){ step(); ${HOLD} f.x = 300; } out.y = b.y;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.kind).toBe('twoblocks');
+    expect(r.name).toBe('BLOCK TOWERS!');
+    expect(r.tel, 'a 40-frame wind-up').toBe(40);
+    const rows = r.bk[1];
+    expect(rows.map((row) => row[0]), 'one on you, one 200 px either side (he is on the right: the row runs toward him)').toEqual([500, 300, 100]);
+    expect(rows.map((row) => row[1]), 'the first two lean away from him, the third back toward you').toEqual([-1, -1, 1]);
+    expect(rows[1][2] - rows[0][2], 'they fall ten frames apart').toBe(10);
+    expect(rows[2][2] - rows[1][2]).toBe(10);
+    expect(rows[0][2] - (r.t0 + 40), 'after a held breath of 24 frames from the wind-up\'s end').toBe(24);
+    expect(r.y, 'Two has flown up to snap').toBeLessThan(r.gy - r.R - 150);
+  });
+
+  it('the row is kept on the stage when you stand by a wall: it shifts as a whole, still three stacks 200 apart', () => {
+    const r = W.eval(`(function(){ ${STAGE(60, 1, true)}
+      f.x = 60; b._moveN = 3; b._atkTimer = 1; step();
+      var out = { xs: b._hz.bk[1].map(function(r){ return r[0]; }), dirs: b._hz.bk[1].map(function(r){ return r[1]; }) };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.xs.every((x) => x >= 90 && x <= 1010)).toBe(true);
+    expect(Math.abs(r.xs[0] - r.xs[1])).toBe(200);
+    expect(Math.abs(r.xs[2] - r.xs[1])).toBe(200);
+  });
+
+  it('they fall like dominoes: a bar 200 px long swings down over 24 frames (slowly, then fast), lands flat, and stands as a 50 px step for three seconds, then dissolves', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      f.x = 300; ${FIRE('twoblocks')}
+      var T = b._tw, rows = T.rows, out = { n: rows.length, ang: [], landedAt: [], plats0: worldPlats.length };
+      var fall0 = rows[0][2], t0 = hazardT;
+      var _impact = impact, imps = []; impact = function(x, y, o){ imps.push([Math.round(x), o && o.scar]); return _impact(x, y, o); };
+      try {
+        for (var k=0;k<90 && b._tw;k++){
+          step(); ${HOLD}
+          if (rows[0][2] + 12 === hazardT) out.mid = Math.abs(twoStackAngle(rows[0], hazardT));
+          if (T.landed[0] && out.landedAt[0] == null) out.landedAt[0] = hazardT - fall0;
+          if (T.landed[2] && out.landedAt[2] == null) out.landedAt[2] = hazardT - rows[2][2];
+        }
+      } finally { impact = _impact; }
+      out.done = !b._tw; out.imps = imps; out.stp = JSON.parse(JSON.stringify(b._hz.stp)); out.plats = worldPlats.filter(function(p){ return p._two; }).map(function(p){ return [Math.round(p.x), Math.round(p.y), p.w, p.h, p.solid, p._until - hazardT]; });
+      out.gy = groundY(); out.flat = Math.abs(twoStackAngle(rows[0], hazardT)) ;
+      // they stand 180 frames and go
+      for (var k=0;k<200;k++){ b._atkTimer = 1e9; step(); ${HOLD} } out.after = worldPlats.filter(function(p){ return p._two; }).length; out.stpAfter = (b._hz.stp || []).length;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.n).toBe(3);
+    expect(r.mid, 'half way through the fall it has not reached the floor').toBeLessThan(1.2);
+    expect(r.mid, 'but it has left the lean behind').toBeGreaterThan(0.4);
+    expect(Math.abs(r.landedAt[0] - 24), 'a bar lands 24 frames after it starts to fall').toBeLessThanOrEqual(1);
+    expect(r.done, 'the move ends when the last has landed').toBe(true);
+    expect(r.imps.length, 'each landing is an impact() that cracks the floor').toBe(3);
+    expect(r.imps.every(([, scar]) => scar === true)).toBe(true);
+    expect(r.plats.length, 'a step where each lies').toBe(3);
+    for (const [, y, w, h, solid, left] of r.plats) {
+      expect([w, h, solid], 'a 200 x 50 solid block').toEqual([200, 50, true]);
+      expect(y, 'on the floor').toBe(Math.round(r.gy - 50));
+      expect(left, 'standing for three seconds').toBeGreaterThan(100);
+    }
+    expect(r.stp.length, 'a client draws the same steps from the hazard bag').toBe(3);
+    expect(r.after, 'then they dissolve: the platforms go').toBe(0);
+    expect(r.stpAfter, 'and so does what a client draws').toBe(0);
+  });
+
+  it('a falling bar hits what it sweeps: thrown the way it falls, 0.8 of a boss hit, one hit for the three bars under one attack id -- and misses what it does not', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
+      var out = {};
+      // stacks at 500 (falls left), 300 (falls left), 100 (falls right) with him on the right; a fighter in the first bar's sweep and one beyond its base
+      f.x = 300; ${FIRE('twoblocks')}
+      var f2 = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 560, groundY()-24, 1); f2.team = 0; f2.controller = 'still'; f2.stocks = 9; f2.idx = 7; fighters.push(f2);
+      var T = b._tw; f.invuln = 0; f.x = 440; f2.invuln = 0;   // 60 from the first base inside its sweep; 60 beyond it on the side it does not fall
+      var pct0 = f.pct, vx = null, pct2 = f2.pct;
+      for (var k=0;k<60 && b._tw;k++){ step(); f.y = groundY()-24; f2.y = groundY()-24; f2.x = 560; f2.vx = 0; if (vx === null && f.pct > pct0) vx = f.vx; if (f.pct > pct0 && out.hitAt == null) out.hitAt = hazardT - T.rows[0][2]; f.hitstun = 0; if (f.pct > pct0 + 1) { f.x = 440; f.vx = 0; } }
+      out.hit = f.pct - pct0; out.vx = vx; out.far = f2.pct - pct2; out.dmg = bossDmg();
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.hit, 'the bar that came down on it is 0.8 of a boss hit').toBeGreaterThan(r.dmg*0.79);
+    expect(r.hit, 'and the three of them are one attack id: never more than one boss hit').toBeLessThanOrEqual(r.dmg + 1e-6);
+    expect(r.vx, 'thrown the way it falls: left').toBeLessThan(0);
+    expect(r.far, 'a fighter behind its base is not touched').toBe(0);
+  });
+
+  it('phase 3 adds a second row of two between the first, growing as the first falls and falling after it has gone down', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
+      f.x = 300; b._mace = null; projectiles = []; b._moveN = 3; b._atkTimer = 1; step();
+      var rows = JSON.parse(JSON.stringify(b._hz.bk[1]));
+      summons = []; projectiles = []; return { rows: rows, last1: rows[2][2] + TWO.blocks.fall }; })()`);
+    expect(r.rows.length, 'three and two').toBe(5);
+    expect(r.rows[3][2], 'the second row falls once the first has landed').toBeGreaterThanOrEqual(r.last1);
+    expect(r.rows[4][2] - r.rows[3][2]).toBe(10);
+    expect(r.rows[3][3], 'and grows while the first row falls').toBeLessThan(r.rows[3][2]);
+    expect(r.rows[3][1] + r.rows[4][1], 'one each way').toBe(0);
+  });
+});
+
+describe('CLAP!', () => {
+  it('joins in phase 2: until then its turn is the sun again; from phase 2 the wind-up names it', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2].forEach(function(ph){ ${STAGE(300, 'ph', true)}
+        f.x = 300; ${FIRE('twoclap')} out[ph] = { kind: telKind, name: telName, tel: telLen };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r[1].kind, 'phase 1: the sun again').toBe('twosun');
+    expect(r[1].name).toBe("MAYBE YOU'D LIKE THIS!");
+    expect(r[2].kind).toBe('twoclap');
+    expect(r[2].name).toBe('CLAP!');
+    expect(r[2].tel, 'a 36-frame wind-up').toBe(36);
+  });
+
+  it('the wind-up: the line follows you for 26 frames and holds for the last 10, white; two ghost hands wait at the edges', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 2, true)}
+      f.x = 300; b._moveN = 5; b._atkTimer = 1; step();
+      var out = { cl0: b._hz.cl.slice() };
+      f.x = 400; for (var k=0;k<10;k++){ step(); ${HOLD} f.x = 400; } out.follow = b._hz.cl.slice();
+      for (var k=0;k<20;k++){ step(); ${HOLD} f.x = 400; } out.lockedAt = b._tel; out.locked = b._hz.cl.slice();
+      f.x = 700; step(); ${HOLD} f.x = 700; out.held = b._hz.cl.slice();
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.cl0.slice(0, 2)).toEqual([300, 0]);
+    expect(r.follow[0], 'it follows you').toBe(400);
+    expect(r.locked[1], 'and holds for the last ten frames').toBe(1);
+    expect(r.held[0], 'where it locked, not where you went next').toBe(400);
+  });
+
+  it('two hands from opposite edges, 120 px tall, reach the line together 34 frames later and clap; the clap is an impact, the "S"tage rattles, and the turn ends', () => {
+    const r = W.eval(`(function(){ ${STAGE(500, 2, true)}
+      f.x = 500; ${FIRE('twoclap')}
+      var hands = projectiles.filter(function(p){ return p.twoHand; }).map(function(p){ return { x: p.x, y: p.y, vx: p.vx, r: p.r, side: p.twoHand, pierce: p.pierce, id: p.bossAtk, dmg: p.dmg, life: p.life, shape: p.shape }; });
+      var lx = b._hz.cl[0], T = b._tw.T, gy = groundY();
+      var _impact = impact, imps = []; impact = function(x, y, o){ imps.push([Math.round(x), o && o.shake]); return _impact(x, y, o); };
+      var xs = { '-1': [], '1': [] }, rattle = null;
+      try {
+        for (var k=0;k<60 && b._tw;k++){ step(); ${HOLD} f.x = 500; projectiles.filter(function(p){ return p.twoHand; }).forEach(function(p){ xs[p.twoHand].push(Math.round(p.x)); }); }
+      } finally { impact = _impact; }
+      return { hands: hands, lx: lx, T: T, gy: gy, imps: imps, clapped: b._hz.cl[3], done: !b._tw, last: [xs['-1'][xs['-1'].length-1], xs['1'][xs['1'].length-1]], pad: TWO.clap.pad }; })()`);
+    expect(r.hands.length).toBe(2);
+    expect(r.hands.map((h) => h.side).sort()).toEqual([-1, 1]);
+    for (const h of r.hands) {
+      expect(h.r, '120 px tall').toBe(56);
+      expect(h.y, 'along the floor in phase 2').toBeCloseTo(r.gy - 56, 0);
+      expect(h.pierce).toBe(true);
+    }
+    expect(r.hands[0].id, 'one attack id for both').toBe(r.hands[1].id);
+    expect(r.lx).toBe(500);
+    expect(r.imps.length, 'the clap is an impact').toBe(1);
+    expect(r.imps[0][0]).toBe(500);
+    expect(r.clapped, 'the stage rattles from here').toBeGreaterThan(0);
+    expect(r.done).toBe(true);
+    expect(Math.abs(r.last[0] - (r.lx - r.pad)), 'the hands end at the line, a palm either side').toBeLessThan(30);
+    expect(Math.abs(r.last[1] - (r.lx + r.pad))).toBeLessThan(30);
+  });
+
+  it('the hand that reaches you first lands one hit, 0.8 of a boss hit, and throws you the way it was going; jumping the low hand is the dodge, and the "S"tage is out of its way', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [['floor', 160], ['jump', 160], ['stage', 160]].forEach(function(c){
+        ${STAGE(500, 2, true)}
+        f.x = 500; ${FIRE('twoclap')}
+        var top = twoStageTop();
+        f.invuln = 0; f.x = 160; f.y = groundY()-24; var pct0 = f.pct, vx = null;
+        if (c[0] === 'stage'){ f.x = 540; f.y = top - 30; }
+        for (var k=0;k<45 && b._tw;k++){
+          step(); f.hitstun = 0;
+          if (c[0] === 'jump'){ var h = projectiles.filter(function(p){ return p.twoHand === -1; })[0]; f.x = 160; f.vx = 0; f.vy = 0; f.onground = false; f.y = (h && Math.abs(h.x - f.x) < 260) ? groundY()-24-170 : groundY()-24; }
+          else if (c[0] === 'stage'){ f.x = 540; f.y = top - 30; f.vx = 0; f.vy = 0; f.onground = true; }
+          else { f.x = 160; f.y = groundY()-24; }
+          if (vx === null && f.pct > pct0) vx = f.vx;
+        }
+        out[c[0]] = { hit: f.pct - pct0, vx: vx, dmg: bossDmg() };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r.floor.hit, 'standing in its way: one hit, 0.8').toBeCloseTo(r.floor.dmg*0.8, 4);
+    expect(r.floor.vx, 'thrown the way the hand was going (right)').toBeGreaterThan(5);
+    expect(r.jump.hit, 'jumped').toBe(0);
+    expect(r.stage.hit, 'the "S"tage is above a low hand').toBe(0);
+  });
+
+  it('phase 3 sends one hand high and one low, and they swap each time: the high one passes over the floor and hits whoever stands on the "S"tage', () => {
+    const r = W.eval(`(function(){ var out = [];
+      ${STAGE(500, 3, true)}
+      b._mace = null; projectiles = [];
+      for (var round=0; round<2; round++){
+        f.x = 500; projectiles = []; summons[0]._tw = null; ${FIRE('twoclap')}
+        var hands = projectiles.filter(function(p){ return p.twoHand; });
+        out.push({ left: hands.filter(function(p){ return p.twoHand === -1; })[0].y, right: hands.filter(function(p){ return p.twoHand === 1; })[0].y, hi: b._hz.cl[2], gy: groundY(), T: b._tw.T });
+        b._tw = null;
+      }
+      summons = []; projectiles = []; return out; })()`);
+    expect(r[0].hi + r[1].hi, 'it swaps').toBe(3);
+    expect(r[0].T, 'and it is quicker in phase 3').toBe(28);
+    for (const c of r) {
+      const hiHand = c.hi === 1 ? c.left : c.right, lowHand = c.hi === 1 ? c.right : c.left;
+      expect(lowHand, 'one along the floor').toBeCloseTo(c.gy - 56, 0);
+      expect(hiHand, 'one 150 px higher: over a fighter on the floor, into one on the "S"tage').toBeCloseTo(c.gy - 56 - 150, 0);
+    }
   });
 });
