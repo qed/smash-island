@@ -944,6 +944,139 @@ describe('THE WINDOW: a fighter who reads the tells and moves can always avoid e
   }, 120000);
 });
 
+// The crusher is the arena's hazard and he is the boss: neither starts while the other is going, and there is a window between them -- before: its tell overlapped one of his
+// turns in 7 of 8, 10 of 10 and 8 of 8 cycles over 6000 frames (phases 1, 2, 3), and its slam came within 30 frames of one of his strikes 4, 6 and 1 times.
+describe('THE WINDOW: the crusher and his turns take turns', () => {
+  const FIGHT = (ph, frames) => `(function(){ ${STAGE(300)}
+    setPhase(${ph}); f.invuln = 999; b._hz.nx = 90; b._atkTimer = 40; var gy = groundY(), H = b._hz, prev = 0, last = null;
+    var out = { overlap:0, slams:[], starts:[], cycles:0, calmAtStart:[], births:[], telStarts:[], cc:[] };
+    for (var i=0;i<${frames};i++){
+      var tel = b._tel, n0 = projectiles.length;
+      step(); f.invuln = 999; f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0;
+      var pz = H.pz || 0;
+      if (pz >= 1 && pz <= 3 && annBusy(b)) out.overlap++;
+      if (pz === 1 && prev === 0){ out.cycles++; out.calmAtStart.push(b._calm); out.starts.push(i); }
+      if (pz === 3 && prev !== 3) out.slams.push(i);
+      if (!(tel > 0) && b._tel > 0){ out.telStarts.push(i); out.cc.push(H.cc); }
+      projectiles.forEach(function(p){ if (p.owner === -2 && !p.annGhost && !p.annMark && p.dmg > 0 && !p._b){ p._b = 1; out.births.push(i); } });
+      prev = pz;
+    }
+    out.tell = ANN.crush.tell; out.calm = ANN.calm;
+    return out;
+  })()`;
+
+  it('in a long fight, in every phase, the crusher never runs while one of his turns is going, starts only once he has been idle ANN_CALM frames, and his next wind-up waits ANN_CALM after its slam', () => {
+    for (const ph of [1, 2, 3]) {
+      const o = W.eval(FIGHT(ph, 2000));
+      expect(o.cycles, `phase ${ph}: the crusher did run`).toBeGreaterThanOrEqual(2);
+      expect(o.overlap, `phase ${ph}: frames when its tell, drop or hold was going with something of his in the air`).toBe(0);
+      for (const c of o.calmAtStart) expect(c, `phase ${ph}: it started this long after his last threat`).toBeGreaterThanOrEqual(ANN_CALM);
+      expect(o.tell, 'and its tell is long').toBeGreaterThanOrEqual(ANN_CALM);
+      // nothing of his is made within ANN_CALM frames either side of its slam, and none of his wind-ups begins in the ANN_CALM after it
+      for (const t of o.slams) {
+        expect(o.births.filter((x) => Math.abs(x - t) < ANN_CALM), `phase ${ph}: shots of his made within ${ANN_CALM} frames of the slam at ${t}`).toEqual([]);
+        expect(o.telStarts.filter((x) => x >= t && x < t + ANN_CALM), `phase ${ph}: wind-ups begun within ${ANN_CALM} frames after the slam at ${t}`).toEqual([]);
+      }
+      for (const c of o.cc) expect(c, 'a wind-up begins only when the crusher is not just back from a strike').toBeGreaterThanOrEqual(ANN_CALM);
+    }
+  }, 180000);
+});
+
+// The ring on a spot is where it can hurt: the farthest a plain round fighter (the game's own nominal body, r 24) is hit is no more than the ring, and not much less -- measured
+// on the engine's own hits, a half pixel at a time.
+describe('THE WINDOW: every ring is the zone it says', () => {
+  const REACH = (x0, what) => W.eval(`(function(){ ${STAGE(300)}
+    var gy = groundY(), best = 0, X0 = ${x0};
+    f.hurt = null;
+    for (var d=20; d<=120; d+=0.5){
+      f.invuln = 0; f.pct = 0; f.x = X0 + d; f.y = gy - 24; f.vx = 0; f.vy = 0; f.hitstun = 0; f.dead = false;
+      var id = ++BOSS_ATK_ID; projectiles = [];
+      ${what}
+      if (f.pct > 0) best = d;
+    }
+    return best; })()`);
+  const EDGE = (name, x0, what, ring) => {
+    const reach = REACH(x0, what);
+    expect(reach, `${name}: the farthest he is hit (${reach}) is inside its ring (${ring})`).toBeLessThanOrEqual(ring);
+    expect(reach, `${name}: and the ring is not much wider than that`).toBeGreaterThanOrEqual(ring - 6);
+  };
+
+  it('the puddle (50), the balloon\'s burst (80), the explosive pie (72), the crusher\'s zone (74): the ring drawn is the reach', () => {
+    EDGE('a puddle', '300', `annPuddle(b, { p:{ x:X0, warnY:gy, life:0 }, id:id }); step();`, 50);
+    EDGE('a balloon', '300', `annSplash(b, { p:{ x:X0, y:gy - 10, life:0 }, id:id });`, 80);
+    EDGE('the pie', '300', `annCakeEnd(b, { p:{ x:X0, y:gy - 9, warnY:gy, life:0 }, pz:3, id:id, lob:true });`, 72);
+    EDGE('the crusher', 'annZone().x', `b._hz.id = id; annCrusherSlam(b, b._hz);`, 74);
+    expect(W.eval('[ANN.acid.puddle, ANN.balloon.hit, ANN.prizes[3].splash + 12, ANN.crush.reach]'), 'and these are the numbers the rings are drawn with').toEqual([50, 80, 72, 74]);
+  }, 60000);
+
+  it('a lob and a drop come down on their ring: from the thrower\'s side too, a fighter just outside it is not clipped on the way down, however far it was thrown', () => {
+    const FLY = (kind, x1, d, side) => W.eval(`(function(){ ${STAGE(x1)}
+      var gy = groundY(); f.hurt = null; f.invuln = 0; f.pct = 0; var hit = false, placed = false, cx = WW*0.5;
+      var sd = ${side};
+      var q = ${kind === 'lob' ? `{ k:'toss', f:f.idx, w:'lob', id:++BOSS_ATK_ID, pz:0, ph:1 }` : `{ k:'acid', d:(f.x < b.x ? -1 : 1), kk:0, id:++BOSS_ATK_ID, x1:f.x, sy:gy }`};
+      ${kind === 'lob' ? 'annToss(b, q);' : 'b._acx = b.x; annDrop(b, q);'}
+      for (var i=0;i<120;i++){
+        f.x = ${x1} + sd*${d}; f.y = gy - 24; f.vx = 0; f.vy = 0; f.hitstun = 0;
+        var before = f.pct; step(); if (f.pct > before + 1e-6){ hit = true; break; }
+        if (!projectiles.some(function(p){ return p.annLob || p.shape === 'annacid'; })) break;
+      }
+      return hit; })()`);
+    for (const x1 of [100, 300, 450, 700, 1000]) for (const side of [-1, 1]) {
+      expect(FLY('lob', x1, 49.5, side), `a lob thrown at ${x1}: 49.5 px ${side > 0 ? 'right' : 'left'} of its spot (its ring is 48)`).toBe(false);
+      expect(FLY('lob', x1, 36, side), `and 36 px from it he is hit`).toBe(true);
+      expect(FLY('drop', x1, 51.5, side), `a drop at ${x1}: 51.5 px ${side > 0 ? 'right' : 'left'} of its spot (its ring is 50)`).toBe(false);
+    }
+  }, 120000);
+});
+
+// The flat throw's lane follows a fighter's row and side, and locks ANN.flat.lock frames before the throw: it leaves along exactly that row and that way, so one who moves
+// after the lock is not in it (a jump, or a step across the tosser) and one who stays is.
+describe('THE WINDOW: the lane locks', () => {
+  it('the lane follows you until its last 36 frames and then holds; the flat throw leaves along the locked row, the locked way', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var gy = groundY(), out = { lane:[], flat:null }; f.invuln = 999;
+      turn(0);
+      for (var i=0;i<200 && !out.flat;i++){
+        if (i === 5){ f.x = 760; }                           // across the tosser: the lane runs the other way
+        if (i === 12){ f.y = gy - 24 - 70; }                 // and higher: its row follows
+        if (i >= 12){ f.vy = 0; f.y = gy - 24 - 70; }        // (held there: he stands on something)
+        step(); f.invuln = 999;
+        var m = projectiles.find(function(p){ return p.annMark === 'lane'; });
+        if (m) out.lane.push({ d:m.delay, x:Math.round(m.warnX), y:Math.round(m.warnY), dir:m.mA });
+        var fl = projectiles.find(function(p){ return p.annFlat; });
+        if (fl) out.flat = { y:Math.round(fl.y), vx:fl.vx, born:i };
+      }
+      out.lock = ANN.flat.lock;
+      return out; })()`);
+    expect(r.flat, 'the flat throw left').not.toBeNull();
+    const before = r.lane.filter((l) => l.d > r.lock), held = r.lane.filter((l) => l.d <= r.lock && l.d > 1);
+    expect(new Set(before.map((l) => l.dir)).size, 'the lane changed sides when he crossed the tosser').toBe(2);
+    expect(before.some((l) => l.y < before[0].y - 40), 'and rose with him').toBe(true);
+    expect(held.length, 'it holds for the last 36 frames, ANN_CALM or more').toBeGreaterThanOrEqual(ANN_CALM);
+    expect(new Set(held.map((l) => l.y + ',' + l.dir + ',' + l.x)).size, 'one row, one way, one start').toBe(1);
+    expect(Math.abs(r.flat.y - held[0].y), 'the throw leaves along that row').toBeLessThanOrEqual(1);
+    expect(Math.sign(r.flat.vx), 'and that way').toBe(held[0].dir);
+  });
+
+  it('a fighter who moves after the lock is not touched by the flat; one who stays is', () => {
+    const run = (move) => W.eval(`(function(){ ${STAGE(300)}
+      var gy = groundY(), hit = false, locked = false; f.invuln = 0; f.pct = 0;
+      turn(0);
+      for (var i=0;i<200;i++){
+        var m = projectiles.find(function(p){ return p.annMark === 'lane'; });
+        if (m && m.delay <= ANN.flat.lock && m.delay > 0) locked = true;
+        // after the lock he is in the air (or not): a jump is 126 px high
+        f.x = 300; f.vx = 0; ${move ? `if (locked){ f.y = gy - 24 - 100; f.vy = 0; } else { f.y = gy - 24; f.vy = 0; }` : 'f.y = gy - 24; f.vy = 0;'}
+        var fl0 = projectiles.find(function(p){ return p.annFlat; }), fx0 = fl0 ? fl0.x : null;
+        step();
+        if (fl0 && projectiles.indexOf(fl0) < 0 && Math.abs(fx0 - f.x) < 60) hit = true;   // the throw was used up on him (one boss hit a volley, so the lob that landed first would hide it in his pct)
+      }
+      return hit; })()`);
+    expect(run(true), 'one in the air as it passes is not hit').toBe(false);
+    expect(run(false), 'one who stayed on the row is').toBe(true);
+  });
+});
+
 describe('how he moves', () => {
   it('a hard hit while he is on the floor skids him to the near edge and he rebounds back through the spot he was hit from ("flying into a slingshot"); it is only his walk', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
@@ -1177,6 +1310,9 @@ describe('drawing his arena, his tells, his shots and his ending', () => {
       H.bo = 200; go(); H.bo = 0; H.sp = 1; H.cs = 1; H.vt = hazardT - 30; H.st = [100, 300, 700]; H.lt = hazardT - 20; H.lx = 100; H.lw = 110; H.ly = gy - 108; go(); H.thr = hazardT - 3; H.tdir = -1; H.cnt = hazardT - 5; go();
       // every mark, and the beams and the ending at every frame
       ['splat', 'splash', 'ring', 'plate'].forEach(function(kind){ [1, 20, 40, 100].forEach(function(d){ projectiles = [annMark(kind, 400, gy, d, { color:'#f7a1a8', mA:d, mB:0 })]; go(); }); });
+      // the lanes (a flat throw's, a wave's: either way) and the rings of the spots (a drop's or a balloon's, with its drip; a lob's, a ring only)
+      [1, 20, 40, 100].forEach(function(d){ [-1, 1].forEach(function(dir){ projectiles = [annMark('lane', 400, gy - 24, d, { color:'#f7a1a8', mA:dir, mB:38, life:30 })]; go(); });
+        projectiles = [annMark('spot', 400, gy, d, { color:'#4cff1c', mA:50, mB:0 })]; go(); projectiles = [annMark('spot', 400, gy, d, { color:'#f7a1a8', mA:48, mB:2 })]; go(); });
       [[0, 2, 3, 4], [0, 14, 20, 40], [2, 28, 30, 60]].forEach(function(c){ for (var t=0;t<annBeamTotal(c[0], c[1]);t+=2){ projectiles = [annMark('beam', 400, gy - 24, annBeamTotal(c[0], c[1]) - t, { color:'#b060ff', mA:c[0], mB:c[1] })]; go(); } });
       [0, 1, 2, 3].forEach(function(d){ for (var t=0;t<annBeamTotal(d, 0);t+=3){ projectiles = [annMark('beam', 400, gy - 24, annBeamTotal(d, 0) - t, { color:'#b060ff', mA:d, mB:0 })]; go(); } });
       for (var e2=0;e2<ANN.end.total;e2+=2){ projectiles = [annMark('end', 400, gy, ANN.end.total - e2, { mA:-85, mB:(e2 % 4 ? 2 : -1) })]; go(); }
