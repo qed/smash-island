@@ -10,7 +10,8 @@
 //   MOVES=1 node scripts/boss-glitch.mjs                    the move matrix: every move of every Boss Rush boss in each of its three phases, 720 frames each
 //   RUSH=only node scripts/boss-glitch.mjs                  just the Boss Rush run;  RUSH=0  never the Boss Rush run
 //   REPRO='Four|Pen,Coiny|113|forced|art|1280x720|-' node scripts/boss-glitch.mjs     one run again (the repro line a finding prints; the last field is
-//                                                           items / assists / same, joined by +, or -), VERBOSE=1 for the boss's hit sources, TRACE=1 for every hit
+//                                                           items / assists / same, joined by +, or -), VERBOSE=1 for the boss's hit sources, TRACE=1 for every hit,
+//                                                           WATCH='summons[0]._atkTimer' (any expression the game can evaluate, JSON-able) prints it every WATCH_EVERY (120) frames
 //   SELFTEST=1 node scripts/boss-glitch.mjs                 each detector fed a fault it must find (the exit code is how many it missed)
 //   JOBS=4  FRAMES=3600  DRAW_EVERY=2  NET_EVERY=10  OUT=report.json  SIZE=800x600  ALL_FIGHTERS=0  VERBOSE=1     (see below)
 // Run from the repo root (it reads artifacts/V1/index.html). Every run boots its own game on its own seed, so the same build and the same
@@ -29,7 +30,7 @@
 //  - Anything the game loop would swallow ("loop frame error") is a finding here with its stack, so is anything the page's own try/catch
 //    swallows (catch blocks that do nothing are rewritten to say so; audio and storage noise is filtered out), console.error, a timer's throw.
 //  - Invariants, checked every frame: NaN / Infinity in any position, velocity, size or boss state; a living boss with no new attack for
-//    10 s, or a turn held (1e6) that never lets go; a boss off screen or too high to reach for 5 s; a fighter held, frozen, stunned,
+//    15 s (but One's ghost fight), or a turn held (1e6) that never lets go; a boss off screen or too high to reach for 5 s; a fighter held, frozen, stunned,
 //    swallowed, rooted or slowed for 5 s, or alive outside the world; a shot alive for 30 s, or more than 300 at once; a list that only
 //    grows; boss shots, hazards or adds that still hurt after the boss has fallen (the BOSS DOWN card, the next boss); a boss hit that
 //    landed on a fighter in hit grace; a boss hit that struck within 12 frames of its source appearing, with no wind-up just before it and
@@ -223,7 +224,7 @@ function pageHarness() {
   G.tpl = null;
   G.dynKeys = (f) => { if (!G.tpl) G.tpl = makeFighter(ROSTER.find((r) => r.play) || ROSTER[0], 0, 0, 0); const out = []; for (const k in f) if (!(k in G.tpl)) { const v = f[k]; if (v === true || (typeof v === 'number' && v !== 0) || (v && typeof v === 'object')) out.push(k); } return out; };
   const platSig = () => worldPlats.map((p) => [Math.round(p.x), Math.round(p.y), Math.round(p.w), Math.round(p.h), p.solid ? 1 : 0, p.wall ? 1 : 0, p.ladder ? 1 : 0, p.floor ? 1 : 0, p.hop ? 1 : 0, Math.round((p.rot || 0) * 100), p.field ? 1 : 0].join(',')).sort();
-  G.sig = () => ({ arena: BOSS_ARENA, stage: stage && stage.id, WW, WH, plats: platSig(), floors: floors.length, projectiles: 0, hostile: projectiles.filter((p) => p.owner === -2 || (p.ownerObj && p.ownerObj.team === -1)).length, assists: summons.filter((s) => s.type !== 'boss' && s.life > 3).length, bosses: summons.filter((s) => s.type === 'boss').length, beams: beams.length, tendrils: tendrils.length, items: items.length, evil: !!evil, dust: IMPACT_DUST.length, debris: IMPACT_DEBRIS.length, scars: IMPACT_SCARS.length, oneFx: oneFx.length, cobsFx: cobsFx.length });
+  G.sig = () => ({ arena: BOSS_ARENA, stage: stage && stage.id, WW, WH, plats: platSig(), floors: floors.length, projectiles: 0, hostile: projectiles.filter((p) => (p.ownerObj ? p.ownerObj.team === -1 : p.owner === -2)).length, assists: summons.filter((s) => s.type !== 'boss' && s.life > 3).length, bosses: summons.filter((s) => s.type === 'boss').length, beams: beams.length, tendrils: tendrils.length, items: items.length, evil: !!evil, dust: IMPACT_DUST.length, debris: IMPACT_DEBRIS.length, scars: IMPACT_SCARS.length, oneFx: oneFx.length, cobsFx: cobsFx.length });
   G.beforeSpawn = function (name) {
     G.leaks = [];
     if (name !== 'spawnBossRushBoss' || !G.cfg.rush) return;
@@ -234,7 +235,7 @@ function pageHarness() {
       // a field a boss gives a fighter and nothing takes off again (kits keep many fields of their own for good: only these prefixes are a boss's)
       for (const k of G.dynKeys(f)) if (/^_(mp|pf|s4|psb|ann|sw|fs|el|dr|two|four|spr|cobs|one|bye|carr|swallow|cookie|corked|ido|assistHit|cuff|pin|cage|tang|squig|poss|slip)/.test(k) && k !== '_oneStocks0') L.push(`fighter ${f.name}#${f.idx}: extra field ${k} = ${short(f[k], 60)} when the next boss spawns`);
     }
-    const bs = projectiles.filter((p) => p.owner === -2 || (p.ownerObj && p.ownerObj.team === -1) || p.bossAtk != null);
+    const bs = projectiles.filter((p) => (p.ownerObj ? p.ownerObj.team === -1 : p.owner === -2) || p.bossAtk != null);   // (a trophy's mines are owner -2 too, on the fighters' team)
     if (bs.length) L.push(`${bs.length} boss shots still out when the next boss spawns: ${[...new Set(bs.map(projLabel))].slice(0, 8).join(', ')}`);
     const adds = summons.filter((s) => s.type !== 'boss' && s.life > 3);
     if (adds.length) L.push(`${adds.length} adds still standing: ${[...new Set(adds.map((s) => s.type + ':' + s.name))].slice(0, 6).join(', ')}`);
@@ -317,10 +318,12 @@ function pageHarness() {
       const hp = b.hp > 0 && G.fallFrame == null;
       if (hp && alive) {
         if (b._atkTimer > 5e5) { if (++bt.held === 600) G.note('turn-held', b.name + ' ' + (b._telKind || ''), `${b.name}'s attack timer has been held at ${b._atkTimer} for 600 frames (move ${b._telKind}, tel ${b._tel}, phase ${b._phase}); open state: ${short(Object.keys(b).filter((k) => b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && !/^(_hz|_rigState)$/.test(k)).map((k) => k + '=' + short(b[k], 90)), 400)}`); } else bt.held = 0;
-        if (f - bt.lastTurn === 601 && f - bt.spawn > 300) G.note('no-attack', b.name, `${b.name} (phase ${b._phase}) has not begun a turn for 600 frames: _atkTimer ${b._atkTimer}, _tel ${b._tel}, _telKind ${b._telKind}, x ${Math.round(b.x)} y ${Math.round(b.y)}; open state: ${short(Object.keys(b).filter((k) => b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && k !== '_hz').map((k) => k + '=' + short(b[k], 90)), 400)}`);
+        if (b._ghost && !b._ghost.dead) bt.lastTurn = f;   // One lets her ghost fight and is shielded while it stands: no new turn of her own by design
+        if (f - bt.lastTurn === 901 && f - bt.spawn > 300) G.note('no-attack', b.name, `${b.name} (phase ${b._phase}) has not begun a turn for 900 frames (a long move and a phase change fit in 600): _atkTimer ${b._atkTimer}, _tel ${b._tel}, _telKind ${b._telKind}, x ${Math.round(b.x)} y ${Math.round(b.y)}; open state: ${short(Object.keys(b).filter((k) => b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && k !== '_hz').map((k) => k + '=' + short(b[k], 90)), 400)}`);
         // off the screen, or too high to reach
         const gy = groundY(), vis = b.x > -b.r * 0.5 && b.x < WW + b.r * 0.5 && b.y > -b.r * 1.5 && b.y < WH + b.r;
-        if (!vis) { if (++bt.off === 300) G.note('boss-offscreen', b.name, `${b.name} has been off the screen for 300 frames at (${Math.round(b.x)}, ${Math.round(b.y)}), r ${Math.round(b.r)}, world ${WW} x ${WH}, phase ${b._phase}, move ${b._telKind}`); } else bt.off = 0;
+        const away = !!(b._s4 && b._s4.k === 'car' && b._s4.st === 'away');   // MePhone4S's I'LL BE BACK! runs him off the screen on purpose while the cars cross (it is as long as the stage is wide)
+        if (!vis && !away) { if (++bt.off === 300) G.note('boss-offscreen', b.name, `${b.name} has been off the screen for 300 frames at (${Math.round(b.x)}, ${Math.round(b.y)}), r ${Math.round(b.r)}, world ${WW} x ${WH}, phase ${b._phase}, move ${b._telKind}`); } else bt.off = 0;
         if (vis && !b._oneFight && !b._cobsFight && gy - (b.y + b.r) > 640) { if (++bt.high === 300) G.note('boss-unreachable', b.name, `${b.name} has hung ${Math.round(gy - (b.y + b.r))} px above the floor for 300 frames (a double jump from the top platform reaches about 500), phase ${b._phase}, move ${b._telKind}`, 'warn'); } else bt.high = 0;
       }
       if (f % 20 === 0) { const acc = { n: 0, bad: [] }; deep(b, 'boss', 0, acc); if (acc.bad.length) G.note('nonfinite', 'boss state ' + acc.bad[0].replace(/\[\d+\]/g, ''), `${b.name} state has ${acc.bad.join(', ')} on frame ${f}`); }
@@ -333,12 +336,13 @@ function pageHarness() {
       if (!bi) born.set(p, bi = { f, x0: p.x, y0: p.y, spd: Math.hypot(p.vx || 0, p.vy || 0), marked: !!(p.warn > 0 || p.delay > 0 || p.warnX != null || p.warnY != null), telGap: G.tel.on ? 0 : (G.tel.end >= 0 ? f - G.tel.end : 9999), label: projLabel(p) });
       else if (f - bi.f > 1800 && !bi.flag && p.life > 0 && !(p.delay > 1e5 && G.fallFrame == null)) { bi.flag = 1; G.note('shot-lives-30s', bi.label, `a ${bi.label} has been alive ${f - bi.f} frames: life ${p.life}, delay ${p.delay}, at (${Math.round(p.x)}, ${Math.round(p.y)}), v (${p.vx}, ${p.vy}), dmg ${p.dmg}`, 'warn'); }
       NF(p, ['x', 'y', 'vx', 'vy', 'r', 'dmg'], 'shot ' + bi.label);
-      if (G.fallFrame != null && f - G.fallFrame === 90 && p.dmg > 0 && !(p.delay > 0) && p.life > 0 && (p.owner === -2 || (p.ownerObj && p.ownerObj.team === -1)) && !p.annGhost) G.note('post-fall-shot', bi.label, `${bi.label} is still out and live (dmg ${p.dmg}, life ${p.life}) ${f - G.fallFrame} frames after ${G.fallBoss} fell`, 'warn');
+      if (G.fallFrame != null && f - G.fallFrame === 90 && p.dmg > 0 && !(p.delay > 0) && p.life > 0 && (p.ownerObj ? p.ownerObj.team === -1 : p.owner === -2) && !p.assist && !p.annGhost) G.note('post-fall-shot', bi.label, `${bi.label} is still out and live (dmg ${p.dmg}, life ${p.life}) ${f - G.fallFrame} frames after ${G.fallBoss} fell`, 'warn');
     }
     if (n > G.S.maxShots) G.S.maxShots = n;
     if (f % 30 === 0) {
       const L = { particles: particles.length, summons: summons.length, worldPlats: worldPlats.length, oneFx: oneFx.length, cobsFx: cobsFx.length, items: items.length, beams: beams.length, tendrils: tendrils.length, dust: IMPACT_DUST.length, debris: IMPACT_DEBRIS.length, scars: IMPACT_SCARS.length };
-      const CAP = { particles: 3000, summons: 80, worldPlats: 220, oneFx: 600, cobsFx: 600, items: 60, beams: 200, tendrils: 400, dust: 400, debris: 400, scars: 200 };
+      if (G.plat0 == null) G.plat0 = L.worldPlats;   // a wide window builds its platforms from frame 0 (279 at 2560 x 1440): only growth past that is a leak
+      const CAP = { particles: 3000, summons: 80, worldPlats: Math.max(220, G.plat0 + 120), oneFx: 600, cobsFx: 600, items: 60, beams: 200, tendrils: 400, dust: 400, debris: 400, scars: 200 };
       for (const k in L) { G.S.max[k] = Math.max(G.S.max[k] || 0, L[k]); if (L[k] > CAP[k]) G.note('list-grows', k, `${k} holds ${L[k]} entries on frame ${f} (more than ${CAP[k]}): something is adding to it faster than it is taken away`, 'warn'); }
     }
     if (n > 300) { const c = {}; for (const p of projectiles) { const l = (born.get(p) || {}).label || 'shot'; c[l] = (c[l] || 0) + 1; } G.note('too-many-shots', Object.keys(c).sort((a, b2) => c[b2] - c[a])[0], `${n} shots at once on frame ${f}: ${short(c, 300)}`, 'warn'); }
@@ -347,6 +351,7 @@ function pageHarness() {
       NF(q, ['x', 'y', 'vx', 'vy', 'pct', 'r'], 'fighter ' + q.name);
       if (q.dead) { for (const k of STREAK) delete G.st[q.idx + '|' + k]; continue; }
       for (const k of STREAK) {
+        if (k === 'slowed' && q._ghostDrift) continue;   // One's drift ghost is held slowed for as long as it stands (spawnOneGhost)
         const v = q[k], on = v > 0 || v === true, key = q.idx + '|' + k;
         if (on) { const s0 = G.st[key]; if (s0 === undefined) G.st[key] = f; else if (f - s0 === 300) G.note('fighter-stuck', k, `${q.name}#${q.idx} has had ${k} = ${short(v, 30)} for 300 frames in a row (frame ${f}, boss ${b ? b.name + ' phase ' + b._phase + ' move ' + b._telKind : 'none'}); at (${Math.round(q.x)}, ${Math.round(q.y)})`); }
         else delete G.st[key];
@@ -416,6 +421,7 @@ function pageHarness() {
       try { step(); } catch (e) { G.note('exception', 'step: ' + String(e && e.message).slice(0, 60) + ' @ ' + fn1(e, 0), `step() threw on frame ${G.frame}: ${stk(e, 8)}`); }
       G.post();
       G.frame++;
+      if (G.cfg.watch && G.frame % G.cfg.watchEvery === 0) { try { console.log('[watch ' + G.cfg.boss + ' f' + G.frame + '] ' + JSON.stringify(window.eval(G.cfg.watch))); } catch (e) { console.log('[watch error] ' + e.message); } }   // WATCH='expr': a REPRO's own probe
       if (G.cfg.assists && G.frame % 240 === 100) { try { const q = fighters.find((o) => !o.dead && !o._oneGhost); if (q) summonAssistNamed(q, ASSIST_ROSTER[(G.assistN = (G.assistN || 0) + 1) % ASSIST_ROSTER.length]); } catch (e) { G.note('exception', 'assist: ' + String(e && e.message).slice(0, 60), stk(e, 8)); } }
       window.__adv(1000 / 60);
       if (G.frame % drawEvery === 0) {
@@ -505,7 +511,7 @@ async function runTask(task, progress) {
   }
   const out = { task, notes: [], sigs: [] };
   try {
-    const cfg = { kind: task.kind, boss: task.boss, names: task.names, stocks, mode: task.mode, rush: task.kind === 'rush', story: !!task.story, trace: !!env.TRACE, items: !!task.items, assists: !!task.assists };
+    const cfg = { kind: task.kind, boss: task.boss, names: task.names, stocks, mode: task.mode, rush: task.kind === 'rush', story: !!task.story, trace: !!env.TRACE, items: !!task.items, assists: !!task.assists, watch: env.WATCH || '', watchEvery: Number(env.WATCH_EVERY || 120) };
     H.eval(`__G.start(${JSON.stringify(cfg)})`);
     if (task.dropNet) H.eval(`(function(){ var ss = serializeState; serializeState = function(){ var s = ss.apply(this, arguments); s.summons.forEach(function(m){ delete m[${JSON.stringify(task.dropNet)}]; }); return s; }; })()`);   // (the self-test: a field left out of the snapshot)
     if (C) { C.eval(`__G.startClient(${JSON.stringify({ n: nNames, stocks, names: task.names })})`); client.setMute(false); }
@@ -634,8 +640,8 @@ async function selftest() {
   // the boss's turn
   H.eval(`__G.boss()._atkTimer = 1e6; __G.run(640, 3);`);
   expect('a turn held at 1e6 for 10 s', pageHas('turn-held'));
-  H.eval(`var b2 = __G.boss(); b2._atkTimer = 99999; __G.bt.lastTurn = __G.frame - 100; b2._tel = 0; __G.run(520, 3);`);
-  expect('no new attack for 10 s', pageHas('no-attack'));
+  H.eval(`var b2 = __G.boss(); b2._atkTimer = 99999; __G.bt.lastTurn = __G.frame - 400; b2._tel = 0; __G.run(520, 3);`);
+  expect('no new attack for 15 s', pageHas('no-attack'));
   H.eval(`var b3 = __G.boss(); __G.bt.off = 0; for (var i = 0; i < 320; i++){ b3.x = -5000; b3.y = 300; __G.post(); __G.frame++; } b3.x = 500;`);
   expect('a boss off the screen for 5 s', pageHas('boss-offscreen'));
   // a fighter held
@@ -732,7 +738,7 @@ if (env.GLITCH_WORKER) {
     for (const sg of rushRes.sigs) {
       const c = clean[sg.boss]; if (!c) continue;
       for (const k of ['arena', 'stage', 'WW', 'WH', 'floors', 'projectiles', 'hostile', 'assists', 'bosses', 'beams', 'tendrils', 'items', 'evil', 'dust', 'debris', 'scars', 'oneFx', 'cobsFx', 'hz']) {
-        if (JSON.stringify(sg[k]) !== JSON.stringify(c[k])) rushRes.findings.push({ realm: 'host', sev: 'error', kind: 'leak', key: `${sg.boss} spawns differently in the run: ${k}`, n: 1, frame: -1, boss: sg.boss, phase: 1, age: 0, detail: `${sg.boss}: ${k} is ${JSON.stringify(sg[k])} when it spawns in the Boss Rush, ${JSON.stringify(c[k])} on a clean start`, stack: '' });
+        if (JSON.stringify(sg[k]) !== JSON.stringify(c[k])) rushRes.findings.push({ realm: 'host', sev: ['dust', 'debris', 'scars'].includes(k) ? 'warn' : 'error', kind: 'leak', key: `${sg.boss} spawns differently in the run: ${k}`, n: 1, frame: -1, boss: sg.boss, phase: 1, age: 0, detail: `${sg.boss}: ${k} is ${JSON.stringify(sg[k])} when it spawns in the Boss Rush, ${JSON.stringify(c[k])} on a clean start`, stack: '' });
       }
       if (sg.plats.join('|') !== c.plats.join('|')) {
         const extra = sg.plats.filter((p) => !c.plats.includes(p)), missing = c.plats.filter((p) => !sg.plats.includes(p));
