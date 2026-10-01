@@ -184,6 +184,17 @@ const PICKS = {
   // Teddy Bear: the owner's Q1, "Cut from the frames". The only paintballs are the pink ones in her gun's hopper in the
   // remaster frame (War De Guacamole, S1RE6); the pink paint is keyed out of the hopper window and masked round (key 'paintball').
   paintball:  { who: 'Teddy Bear',  kits: ['paintball'],  wiki: 'ii', file: 'S1RE6 Teddy grabs a paintball gun.png', note: "a paintball: the pink paint in her gun's hopper (War De Guacamole remaster), cut from the frame", key: 'paintball', region: [472, 186, 528, 242], srcH: 477, h: 40 },
+  // ---- ONE, the secret boss (the boss overhaul, 2026-09-30; she has no slot, so her block sits above the slots): the show's own art for
+  // what she throws. Every file is a clean, transparent asset on the BFDI wiki (One's Gallery and the TPOT 10, 4 and 23 asset pages).
+  // The knife of KNIFE FLURRY! is the Cake at Stake knife the Puffball Speaker Box pick (psbknife) already fetched, so it has no pick here.
+  //   onemoonrock  MOON ROCKS!: File:Moonpeice11.png, the grey cratered Moon piece of TPOT 10 (she hurled Moon pieces, "Alone")
+  //   oneearth     OUT OF ORBIT!: File:EarthTPOT4.png, Earth, which she compressed and kicked out of orbit ("Last One Standing")
+  //   oneweird     OUT OF ORBIT!: File:Weirdplanettbig.png, the Really Weird Planet in the Orion Nebula she destroyed
+  //   oneskate     OUT OF ORBIT!: File:Nine's Planet.png, the Skateboard Planet, left split into five pieces around its core
+  onemoonrock: { who: 'One (MOON ROCKS!)',   kits: ['moonrock'], file: 'Moonpeice11.png',      note: 'a piece of the Moon (TPOT 10 asset; she hurled Moon pieces and a mountain in "Alone")', h: 64 },
+  oneearth:    { who: 'One (OUT OF ORBIT!)', kits: ['oneearth'], file: 'EarthTPOT4.png',       note: 'Earth, which she compressed and kicked out of orbit ("Last One Standing")', h: 64 },
+  oneweird:    { who: 'One (OUT OF ORBIT!)', kits: ['oneweird'], file: 'Weirdplanettbig.png',  note: 'the Really Weird Planet in the Orion Nebula, which she destroyed ("Last One Standing")', h: 64 },
+  oneskate:    { who: 'One (OUT OF ORBIT!)', kits: ['oneskate'], file: "Nine's Planet.png",    note: 'the Skateboard Planet, left split into five pieces around its core', h: 64 },
   // ---- the boss overhaul (2026-09-29): PICKS SLOTS -- each early-six builder adds its bosses' shot art between its own two
   // markers and nowhere else (artifacts/V1/index.html, BOSS SLOTS, has the rule and the list) ----
   // @boss:announcer:begin picks

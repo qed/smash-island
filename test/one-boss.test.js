@@ -25,6 +25,7 @@ const fight = (lineup, opts, body) => W.eval(`(function(){
   var __ok = startOneFight(${JSON.stringify(lineup)}, Object.assign(${JSON.stringify(opts || {})}, { onEnd:function(won){ window.__oneEnd = won; return true; } }));
   var one = summons.find(function(s){ return s._oneFight; });
   var you = fighters[0];
+  one._hop = null; one._hopPending = false; one.r = one._baseR;   // the fight opens with her Vortex hop (oneHopStep); these tests place her themselves
   ${body}
 })()`);
 const TIERS = `var setTier = function(one, t){ ONE_SPECIALS.forEach(function(k){ one._spTier[k] = t; }); };`;

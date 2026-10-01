@@ -218,6 +218,15 @@ fan-work norms in a disclaimed, non-commercial fan game.
 - Scaled server-side to 200px tall (`scale-to-height-down/200`, `format=original`), all four corners
   alpha 0, 686 near-zero-alpha halo pixels erased, facing measured the fetch-sprites.mjs way.
 
+One's attacks wear the show's art too (boss overhaul, 2026-09-30), cut by `scripts/fetch-attack-sprites.mjs` (its `onemoonrock`, `oneearth`, `oneweird` and `oneskate`
+picks, above the early-six slots) into `assets/sprites/attacks/`: standalone, transparent assets on the BFDI wiki (jacknjellify's art), looked at before they were kept.
+The knives of KNIFE FLURRY! are the Cake at Stake knife already credited under the Puffball Speaker Box (`psbknife.png`, File:One knife.png): the knife she duplicates
+("All For One"). Her hands, her eye lasers, the Vortex, her statues and the fold of FOLDING ISLAND! are drawn in her colours (Cornflower Blue #5D7AF2, outline #000001).
+- One (MOON ROCKS!) (onemoonrock.png): a piece of the Moon (TPOT 10 asset; she hurled Moon pieces and a mountain in "Alone") — File:Moonpeice11.png — https://static.wikia.nocookie.net/battlefordreamisland/images/3/32/Moonpeice11.png/revision/latest?cb=20240718185452
+- One (OUT OF ORBIT!) (oneearth.png): Earth, which she compressed and kicked out of orbit ("Last One Standing") — File:EarthTPOT4.png — https://static.wikia.nocookie.net/battlefordreamisland/images/f/f0/EarthTPOT4.png/revision/latest?cb=20251029162113
+- One (OUT OF ORBIT!) (oneweird.png): the Really Weird Planet in the Orion Nebula, which she destroyed ("Last One Standing") — File:Weirdplanettbig.png — https://static.wikia.nocookie.net/battlefordreamisland/images/0/0b/Weirdplanettbig.png/revision/latest?cb=20231002215154
+- One (OUT OF ORBIT!) (oneskate.png): the Skateboard Planet, left split into five pieces around its core — File:Nine's Planet.png — https://static.wikia.nocookie.net/battlefordreamisland/images/6/61/Nine%27s_Planet.png/revision/latest?cb=20260301122031
+
 ## Attack art
 
 What a fighter THROWS, in the show's own art, fetched by scripts/fetch-attack-sprites.mjs from the
