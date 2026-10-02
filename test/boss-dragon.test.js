@@ -34,16 +34,20 @@ const STAGE = (x, ph = 1, live = false) => `
 const S = (o = '') => `{ name:'Purple Dragon', attack:'dragon', type:'boss', x:700, y:420, r:92, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0,
   color:'#6a3a9a', face:-1, homeX:700, stationary:false, vx:0, vy:0 ${o ? ',' + o : ''} }`;
 // Fire move number k (0 the signature, 1 ROAR, 2 CHAR, 3 WIND, 4 ROPES) of the boss `b` now, and run its wind-up out: the frame the move fires is the
-// last one this returns from. (Every test that needs a move to be in the air uses this.)
-const FIRE = (k) => `b._moveN = ${k === 0 ? 0 : 2*k - 1}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent;
+// last one this returns from. (Every test that needs a move to be in the air uses this.) The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- there is no fixed
+// turn order to count along (signature, roar, signature, char, ...), so a test forces the move it measures (`_pickForce`); `DK[k]` is move number k.
+const DK = ['dragon', 'dragonroar', 'dragonchar', 'dragonwind', 'dragonropes'];
+const FIRE = (k) => `b._pickForce = ${JSON.stringify(DK[k])}; b._atkLive = null; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent;
   for (var w=0; w<60 && b._tel>0; w++){ step(); f.x = f.x; }`;
 
 describe('Purple Dragon takes the hotel roof', () => {
-  it('is Boss 9 (moved from 6: "just move purple dragon!!!" (the owner, 2026-09-30)), its own arena and its five attacks in turn: signature, roar, signature, char, signature, wind, signature, ropes', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position picks all
+  // (Recommended)": the strafing run no longer comes between every other move (signature, roar, signature, char, ...). It draws its five by where the fighters stand: none twice in a row, every one in twelve turns.
+  it('is Boss 9 (moved from 6: "just move purple dragon!!!" (the owner, 2026-09-30)), its own arena and its five attacks, drawn by position: signature, roar, char, wind, ropes', () => {
     const r = W.eval(`(function(){
       var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='Purple Dragon'; });
       var s = ${S()}, kinds = [], names = [];
-      for (var k=0;k<8;k++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+      for (var k=0;k<12;k++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       var p3 = ${S('_phase:3, _telPh:3')};
       return { i: i, row: BOSS_ROSTER[i], mp4: BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }), extra: BOSS_EXTRA['Purple Dragon'], kinds: kinds, names: names,
                tel: bossTelLen({ attack:'dragon' }), sig3: bossTelName(p3), p2: bossPhaseName({ attack:'dragon' }, 2), p3n: bossPhaseName({ attack:'dragon' }, 3),
@@ -55,10 +59,13 @@ describe('Purple Dragon takes the hotel roof', () => {
     expect(r.i, 'Boss 9, right after MePhone4S').toBe(8);
     expect(r.mp4, 'MePhone4S is Boss 8').toBe(7);
     expect(r.extra).toEqual(['dragonroar', 'dragonchar', 'dragonwind', 'dragonropes']);
-    expect(r.kinds).toEqual(['dragon', 'dragonroar', 'dragon', 'dragonchar', 'dragon', 'dragonwind', 'dragon', 'dragonropes']);
     // the wind-up names each move: the show's own words -- "The dragon lets out a furious roar" (Category One), "The dragon chars Cake with fire breath"
     // (The Great Goikian Bake-Off/Transcript), "based on the wind lottery" (Category One), "Lightning strikes Dora's stake" (Category One/Transcript)
-    expect(r.names).toEqual(['STRAFING RUN!', 'FURIOUS ROAR!', 'STRAFING RUN!', 'CHAR!', 'STRAFING RUN!', 'WIND LOTTERY!', 'STRAFING RUN!', 'LIGHTNING ROPES!']);
+    const NAME = { dragon: 'STRAFING RUN!', dragonroar: 'FURIOUS ROAR!', dragonchar: 'CHAR!', dragonwind: 'WIND LOTTERY!', dragonropes: 'LIGHTNING ROPES!' };
+    expect(r.kinds.every((k) => NAME[k]), `only its five: ${r.kinds}`).toBe(true);
+    expect(r.names).toEqual(r.kinds.map((k) => NAME[k]));
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(new Set(r.kinds).size, `all five come up in twelve turns: ${r.kinds}`).toBe(5);
     expect(r.moves).toEqual(['function/FURIOUS ROAR!', 'function/CHAR!', 'function/WIND LOTTERY!', 'function/LIGHTNING ROPES!']);
     expect(r.sig3, "phase 3's signature is the carry").toBe('GRAB & CARRY!');
     expect(r.tel, 'one wind-up length for all five').toBe(44);
@@ -84,7 +91,7 @@ describe('Purple Dragon takes the hotel roof', () => {
     const r = W.eval(`(function(){ var out = {}, gy = groundY();
       [0, 1, 2, 3, 4].forEach(function(k){
         ${STAGE(300, 1, true)}
-        f.x = 300; b._moveN = ${'k === 0 ? 0 : 2*k - 1'}; b._atkTimer = 1; step();
+        f.x = 300; b._pickForce = ${JSON.stringify(DK)}[k]; b._atkLive = null; b._atkTimer = 1; step();
         var kind = b._telKind, first = { x: b.x, y: b.y }, tel0 = b._tel;
         for (var w=0; w<43; w++){ step(); f.x = 300; }
         out[k] = { kind: kind, tel0: tel0, tel: b._tel, x: Math.round(b.x), y: Math.round(b.y), dir: b._runDir, aim: b._aimX, side: b._charDir, rope: b._hz.rope && b._hz.rope.slice(), door: b._hz.door && b._hz.door.slice(), calm: b._hz.calm > hazardT };
@@ -220,7 +227,7 @@ describe('GRAB & CARRY!', () => {
   it('phase 3: a swoop along your row from a high corner -- the row is drawn red then white -- and whoever it catches rides its back, out of control, till it drops them at the far edge for 0.6 of a hit', () => {
     const r = W.eval(`(function(){ ${STAGE(500, 3, true)}
       var gy = groundY(); f.x = 500;
-      b._moveN = 0; b._atkTimer = 1; step(); var name = document.getElementById('banner').textContent, rows = [];
+      b._pickForce = 'dragon'; b._atkLive = null; b._atkTimer = 1; step(); var name = document.getElementById('banner').textContent, rows = [];
       for (var w=0; w<60 && b._tel>0; w++){ step(); f.x = 500; f.y = gy-24; if (b._hz.row) rows.push(b._hz.row.slice()); }
       var out = { name: name, kind: b._telKind, rowFirst: rows[0], rowLast: rows[rows.length-1], dir: b._runDir, k: b._dr && b._dr.k };
       var ride = 0, pinned = true, controls = true, maxR = 0, dropX = null, dropped = false, rollMax = 0, roofY = gy-24, fy = [], pct = 0, tookAt = null;
@@ -345,7 +352,7 @@ describe('CHAR!', () => {
   it('a mark on the roof follows you and then holds; from off to the side it breathes a narrow jet at it that creeps along the roof, leaving a patch every tenth frame; then it lands and coughs', () => {
     const r = W.eval(`(function(){ ${STAGE(500, 1, true)}
       var gy = groundY(); b.x = 700;
-      b._moveN = 3; b._atkTimer = 1; step(); var name = document.getElementById('banner').textContent, dir = b._charDir, marks = [], cheek = false;
+      b._pickForce = 'dragonchar'; b._atkLive = null; b._atkTimer = 1; step(); var name = document.getElementById('banner').textContent, dir = b._charDir, marks = [], cheek = false;
       for (var w=0; w<60 && b._tel>0; w++){
         if (w === 10) f.x = 600; if (w === 36) f.x = 700; step(); f.y = gy - 24; f.vx = 0; f.invuln = 99;
         if (b._hz.aim) marks.push([b._tel, b._hz.aim[0], b._hz.aim[1]]);
@@ -383,7 +390,7 @@ describe('CHAR!', () => {
   it('whoever stands in the jet takes one boss hit, however long it burns; the patches it leaves burn 2.5 s and add nothing to that turn', () => {
     const r = W.eval(`(function(){ ${STAGE(600, 1, true)}
       var gy = groundY(); b.x = 700; f.x = 600;
-      b._moveN = 3; b._atkTimer = 1; step(); for (var w=0; w<60 && b._tel>0; w++){ step(); f.x = 600; f.burn = 0; }
+      b._pickForce = 'dragonchar'; b._atkLive = null; b._atkTimer = 1; step(); for (var w=0; w<60 && b._tel>0; w++){ step(); f.x = 600; f.burn = 0; }
       var hit = null, maxLife = 0;
       for (var i=0;i<300 && (b._dr || i < 250);i++){
         step(); b._atkTimer = 1e9; f.x = 600; f.y = gy - 24; f.vx = 0; f.burn = 0;
@@ -401,7 +408,7 @@ describe('CHAR!', () => {
   it('phase 3: "jets cross from both dragons" -- the second dragon breathes a jet of its own from where it circles, converging on the same ground', () => {
     const r = W.eval(`(function(){ ${STAGE(500, 3, true)}
       var gy = groundY(); b.x = 700; f.x = 500;
-      b._moveN = 3; b._atkTimer = 1; step(); for (var w=0; w<60 && b._tel>0; w++){ step(); f.x = 500; f.invuln = 99; }
+      b._pickForce = 'dragonchar'; b._atkLive = null; b._atkTimer = 1; step(); for (var w=0; w<60 && b._tel>0; w++){ step(); f.x = 500; f.invuln = 99; }
       var per = {}, ids = {}, srcs = [], d2 = b._hz.d2;
       for (var i=0;i<12;i++){ step(); f.invuln = 99; f.x = 500;
         projectiles.forEach(function(p){ if (p.dragon && !p._seen){ p._seen = 1; per[i] = (per[i]||0) + 1; ids[p.bossAtk] = 1; srcs.push([Math.round(p.x), Math.round(p.y)]); } }); }
@@ -485,7 +492,7 @@ describe('LIGHTNING ROPES!', () => {
   it('three rope anchors crackle for 30 frames each, in an order that alternates turn to turn; a bolt comes down each column; a spark runs 200 px along the roof each way', () => {
     const r = W.eval(`(function(){ var out = {}, gy = groundY();
       ${STAGE(300, 1, true)}
-      f.x = 30; b._moveN = 7; b._atkTimer = 1; step(); var name = document.getElementById('banner').textContent, t0 = hazardT;
+      f.x = 30; b._pickForce = 'dragonropes'; b._atkLive = null; b._atkTimer = 1; step(); var name = document.getElementById('banner').textContent, t0 = hazardT;
       var rope1 = b._hz.rope.slice();
       var scars0 = IMPACT_SCARS.length, sparks = [], seen = [], strikes = [];
       for (var i=0;i<260 && (b._tel>0 || b._dr);i++){
@@ -496,7 +503,7 @@ describe('LIGHTNING ROPES!', () => {
       out.name = name; out.rope1 = rope1; out.t0 = t0; out.strikes = strikes; out.sparks = sparks.map(function(s){ return { x0: Math.round(s.x0), vx: s.vx, y: Math.round(gy - s.y), r: s.r, id: s.id, reach: Math.round(s.life * Math.abs(s.vx)) }; });
       out.scars = IMPACT_SCARS.length - scars0; out.done = !b._dr; out.gy = gy; out.WW = WW;
       // the second turn strikes the other way
-      b._atkTimer = 1; b._moveN = 7; step(); out.rope2 = b._hz.rope.slice();
+      b._atkTimer = 1; b._pickForce = 'dragonropes'; b._atkLive = null; step(); out.rope2 = b._hz.rope.slice();
       summons = []; projectiles = []; return out; })()`);
     expect(r.name).toBe('LIGHTNING ROPES!');
     expect(r.rope1.slice(0, 3), 'the anchors, left to right this turn').toEqual([0.16, 0.5, 0.84].map((f) => Math.round(r.WW*f)));
@@ -518,7 +525,7 @@ describe('LIGHTNING ROPES!', () => {
         ${STAGE(300, 1, true)}
         var plat = worldPlats[0], fy = c[1] === 'platform' ? plat.y - 24 : gy - 24;
         f.x = c[0]; f.y = fy;
-        b._moveN = 7; b._atkTimer = 1; step(); var rope = b._hz.rope.slice(), hitAt = null;
+        b._pickForce = 'dragonropes'; b._atkLive = null; b._atkTimer = 1; step(); var rope = b._hz.rope.slice(), hitAt = null;
         for (var i=0;i<220 && (b._dr || i < 60);i++){ step(); b._atkTimer = 1e9; f.x = c[0]; f.y = fy; f.vx = 0; f.vy = 0; f.burn = 0; if (hitAt === null && f.pct > 0) hitAt = hazardT; }
         out[c[1]] = { pct: f.pct, hitAt: hitAt, rope: rope, full: bossDmg(), plat: [Math.round(plat.x), Math.round(plat.x + plat.w)] };
         summons = []; projectiles = [];
