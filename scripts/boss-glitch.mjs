@@ -7,7 +7,7 @@
 //   node scripts/boss-glitch.mjs                            everything: 14 bosses x RUNS (6) runs, then one whole Boss Rush (about 15 min on 5 workers)
 //   BOSSES='["Four","One"]' node scripts/boss-glitch.mjs    just these bosses (and no Boss Rush run)
 //   RUNS=12 SEED0=1000 node scripts/boss-glitch.mjs         more runs a boss, on other seeds, fighters and window sizes
-//   MOVES=1 node scripts/boss-glitch.mjs                    the move matrix: every move of every Boss Rush boss in each of its three phases, 720 frames each
+//   MOVES=1 node scripts/boss-glitch.mjs                    the move matrix: every move of every Boss Rush boss (the picker's, forced through s._pickForce) in each phase it is unlocked in, 720 frames each
 //   RUSH=only node scripts/boss-glitch.mjs                  just the Boss Rush run;  RUSH=0  never the Boss Rush run
 //   REPRO='Four|Pen,Coiny|113|forced|art|1280x720|-' node scripts/boss-glitch.mjs     one run again (the repro line a finding prints; the last field is
 //                                                           items / assists / same, joined by +, or -), VERBOSE=1 for the boss's hit sources, TRACE=1 for every hit,
@@ -402,13 +402,13 @@ function pageHarness() {
     else if (age === 1100 && b.hp > b.maxHp * 0.31) b.hp = b.maxHp * 0.31;
     else if (age >= FORCED_END_FRAMES && b.hp > 0) b.hp = 0;
   };
-  // moves:j:p, every turn: the next one is move j of [the signature, ...BOSS_EXTRA] (updateBossAttack picks by _moveN's parity and count), and the gap is cut to 24 frames
+  // moves:<move>:p, every turn: the next one is that move (the picker's s._pickForce -- it wins whenever the move is unlocked in
+  // the phase), and the gap is cut to 24 frames
   const UB = updateBossAttack;
   updateBossAttack = function (s, tgt) {
     const m = G.cfg.mode;
     if (typeof m === 'string' && m.startsWith('moves:') && s.type === 'boss' && s._bossRush && !(s._tel > 0) && s._atkTimer < 5e5 && s.hp > 0) {
-      const j = +m.split(':')[1];
-      s._moveN = j === 0 ? 0 : 2 * j - 1;
+      s._pickForce = m.split(':')[1];
       if (s._atkTimer > 24) s._atkTimer = 24;
     }
     return UB.apply(this, arguments);
@@ -586,10 +586,10 @@ async function cleanSigs(bosses) {
 // ---------------------------------------------------------------------------------------------------------------------------------
 const ROSTER_BOSSES = ['Announcer', 'Puffball Speaker Box', 'Firey Speaker Box', 'The Bug Swarm', 'Purple Face', 'MePhone4', 'Evil Leafy', 'MePhone4S', 'Purple Dragon', 'Two', 'Springy', 'Four'];
 const ALL_BOSSES = [...ROSTER_BOSSES, 'One', 'Steve Cobs'];
-const movePlan = (boss, j, ph) => {   // MOVES=1: one run for every move of every boss in every phase
+const movePlan = (boss, j, ph, mv) => {   // MOVES=1: one run for every move of every boss in every phase it is unlocked in
   const bi = ALL_BOSSES.indexOf(boss), n = ph === 2 ? 2 : 1, names = [];
   for (let i = 0; i < n; i++) names.push(FIGHTERS[(bi * 3 + j * 2 + ph * 5 + i * 4) % FIGHTERS.length]);
-  return { kind: 'boss', boss, names: [...new Set(names)], mode: `moves:${j}:${ph}`, art: (j + ph) % 2 === 0, cliSame: (j + ph) % 3 === 0, size: env.SIZE ? env.SIZE.split('x').map(Number) : SIZES[(bi + j + ph) % SIZES.length], seed: 500 + bi * 31 + j * 7 + ph + Number(env.SEED0 || 0), story: false, k: 0 };
+  return { kind: 'boss', boss, names: [...new Set(names)], mode: `moves:${mv}:${ph}`, art: (j + ph) % 2 === 0, cliSame: (j + ph) % 3 === 0, size: env.SIZE ? env.SIZE.split('x').map(Number) : SIZES[(bi + j + ph) % SIZES.length], seed: 500 + bi * 31 + j * 7 + ph + Number(env.SEED0 || 0), story: false, k: 0 };
 };
 const planFor = (boss, k) => {
   const bi = Math.max(0, ALL_BOSSES.indexOf(boss)), p = PLANS.at(bi, k);
@@ -708,9 +708,13 @@ if (env.GLITCH_WORKER) {
     if (env.MOVES) {   // every move of every Boss Rush boss, in each of its three phases
       const probe = bootRealm({ seed: 1, art: false, sink: new Sink(), label: 'probe' });
       await probe.win.eval('profileReady');
-      const counts = JSON.parse(probe.win.eval('JSON.stringify(BOSS_ROSTER.map(function(b){ return [b.name, 1 + (BOSS_EXTRA[b.name] || []).length]; }))'));
+      // the picker's moves, phase by phase (bossPickMoves: a phase gate or a cap leaves a move out where it cannot be played)
+      const decks = JSON.parse(probe.win.eval('JSON.stringify(BOSS_ROSTER.map(function(b){ var by = [1,2,3].map(function(ph){ try { return bossPickMoves({ type:"boss", attack:b.attack, name:b.name, _phase:ph, hp:1, maxHp:1, _hz:{} }, ph); } catch(e){ return []; } }); return [b.name, by]; }))'));
       probe.win.close();
-      for (const [b, n] of counts) if (bossList.includes(b)) for (let j = 0; j < n; j++) for (let ph = 1; ph <= 3; ph++) tasks.push(movePlan(b, j, ph));
+      for (const [b, by] of decks) if (bossList.includes(b)) {
+        const all = [...new Set(by.flat())];
+        all.forEach((mv, j) => { for (let ph = 1; ph <= 3; ph++) if (by[ph - 1].includes(mv)) tasks.push(movePlan(b, j, ph, mv)); });
+      }
     } else if (rush !== 'only') for (const b of bossList) for (let k = 0; k < RUNS; k++) tasks.push(planFor(b, k));
     if (rush !== 'no' && !env.MOVES) tasks.unshift({ kind: 'rush', names: ['Firey', 'Rocky'], mode: 'forced', art: true, seed: 7, k: 0, cliSame: true });
   }
