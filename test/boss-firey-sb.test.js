@@ -372,7 +372,7 @@ describe('YOU MUST!', () => {
       run(3, 300); out.held = b._telX; out.locked = locked;
       while (b._tel > 0) run(1, 300);
       var arms = projectiles.filter(function(p){ return p.fsbArm; });
-      out.arms = arms.map(function(p){ return { x0: Math.round(p.x - p.vx), y: p.y - gy, vx: +p.vx.toFixed(3), r: p.r, shape: p.shape, pierce: !!p.pierce, volley: !!p.volley, id: p.bossAtk }; });
+      out.arms = arms.map(function(p){ return { x0: Math.round(p.x - p.vx), y: p.y - gy, vx: +p.vx.toFixed(3), r: p.r, shape: p.shape, pierce: !!p.pierce, volley: !!p.volley, id: p.bossAtk, wx: Math.round(p.warnX), wy: p.warnY - gy }; });
       out.T = b._fs.T; out.mark = b._fs.x;
       var n = 0; while (b._fs){ run(1, 300); n++; } out.n = n;
       out.armsLeft = projectiles.filter(function(p){ return p.fsbArm && p.life > 0; }).length;
@@ -390,6 +390,7 @@ describe('YOU MUST!', () => {
     expect(r.arms.map((a) => a.x0).sort((p, q) => p - q)).toEqual([260, 940]);
     expect(r.arms.map((a) => a.vx).sort((p, q) => p - q)).toEqual([-13.077, 13.077]);
     for (const a of r.arms) expect(a).toMatchObject({ y: -46, r: 30, shape: 'fsbarm', pierce: true, volley: true });
+    for (const a of r.arms) { expect(a.wx, 'a hook carries its own start as warnX/warnY (the gate the mark draws there), for the glitch hunter').toBe(a.x0); expect(a.wy).toBe(a.y); }
     expect(r.arms[0].id).toBe(r.arms[1].id);
     expect(r.T).toBe(26);
     expect(r.n, 'the pinch is 26 frames after the hooks leave').toBe(26);
@@ -923,6 +924,24 @@ describe('the volcano: sky, ground, dust and drawing', () => {
     const words = log.filter((e) => e.op === 'fillText' || e.op === 'strokeText');
     expect(words, 'no word on the screen, from him or his arena').toEqual([]);
     expect(log.length, 'and something was drawn').toBeGreaterThan(500);
+  });
+
+  // The glitch pass, Round 17: with several fighters on the floor the hunter found a hook slap someone 5 frames after it appeared on him -- the hooks start a span out either side of the spot, and nothing
+  // showed where. The pinch mark now draws a gate on the floor at each start (and a chevron pointing at the spot), for the first pinch and the second.
+  it('the pinch mark draws a gate on the floor where each hook comes in from, a span either side of the spot (340 px in phase 1, 360 in phase 2), for the second pinch as well; a gate off the screen is not drawn', () => {
+    const { w, log } = bootRecording();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
+    const gates = (state) => {
+      log.length = 0;
+      w.eval(`(function(){ BOSS_ARENA = 'volcano'; var s = makeBossSummon(BOSS_ROSTER[2], 215); fsbDress(s); s._fs = null; s.x = 600; s.y = groundY() - s.r - 34; Object.assign(s, ${state}); summons = [s]; fsbDrawFx(s); })()`);
+      return log.filter((e) => e.op === 'ellipse' && e.args[2] === 28 && e.args[3] === 10).map((e) => Math.round(e.args[0])).sort((a, b) => a - b);
+    };
+    expect(gates('{ _tel:30, _telX:500, _fsb:{ k:"hooks", lk:0 } }'), 'phase 1: 340 either side of the mark').toEqual([160, 840]);
+    expect(gates('{ _phase:2, _tel:30, _telX:500, _fsb:{ k:"hooks", lk:0 } }'), 'phase 2: 360').toEqual([140, 860]);
+    const WWv = w.eval('WW');   // (the world is as wide as this window makes it)
+    expect(gates('{ _phase:2, _fsb:{ k:"hooks", p:1, x2:' + (WWv - 200) + ', h2:20, lk2:1 } }'), 'the second pinch\'s mark has its gates too').toEqual([WWv - 200 - 360]);   // (the far one would be off the screen: not drawn)
+    expect(gates('{ _phase:2, _fsb:{ k:"hooks", p:1, x2:' + Math.round(WWv/2) + ', h2:20, lk2:1 } }'), 'both, either side, for a mark in the middle').toEqual([Math.round(WWv/2) - 360, Math.round(WWv/2) + 360]);
+    expect(gates('{ _phase:2, _fsb:{ k:"hooks", p:1, x2:100, h2:20, lk2:1 } }'), 'the one that would be off the screen is not drawn').toEqual([460]);
   });
 });
 
