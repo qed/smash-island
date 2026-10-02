@@ -125,16 +125,19 @@ describe('Boss Rush balance', () => {
     expect(W.eval('String(fireBossAttack)')).not.toMatch(/away\*14, -9/);
   });
 
-  it('every boss has second moves, and its attacks take turns: signature, second move, signature', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- the turns are no longer signature, second move, signature: every Boss Rush boss draws its turn from its moves
+  // (the signature among them) by where the fighters stand, never the same move twice in a row.
+  it('every boss has second moves, and its attacks are drawn from its own moves: the signature and the second moves, none twice in a row', () => {
     const r = W.eval(`(function(){
       var missing = BOSS_ROSTER.filter(function(b){ var e = BOSS_EXTRA[b.name]; return !e || !e.length || e.some(function(k){ return !BOSS_MOVES[k]; }); }).map(function(b){ return b.name; });
       var s = { name:'Purple Dragon', attack:'dragon', x:500, y:300, r:60, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0, color:'#6a3a9a' };
       var kinds = [];
-      for (var i=0;i<3;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); }
-      return { missing: missing, kinds: kinds };
+      for (var i=0;i<6;i++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); }
+      return { missing: missing, kinds: kinds, own: ['dragon'].concat(BOSS_EXTRA['Purple Dragon']) };
     })()`);
     expect(r.missing).toEqual([]);
-    expect(r.kinds, 'the Dragon: its signature, FURIOUS ROAR!, its signature (its own five, no shared shape)').toEqual(['dragon', 'dragonroar', 'dragon']);
+    expect(r.kinds.every((k) => r.own.includes(k)), `the Dragon draws only its own five (no shared shape): ${r.kinds}`).toBe(true);
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
   });
 
   it('a second move fires real boss shots', () => {
