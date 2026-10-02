@@ -37,8 +37,8 @@ import { mulberry32 } from '../test/helpers/prng.js';
 
 const FRAMES = Number(process.env.FRAMES || 150);
 const SEED = Number(process.env.SEED || 5);
-const MOVES = ['jab', 'uptilt', 'downtilt', 'finisher', 'special', 'upspecial', 'downspecial', 'smash', 'smashup', 'smashdown', 'smash-tap', 'smash-hold'];
-const STAGINGS = ['ground', 'air', 'above'];
+const MOVES = ['jab', 'empjab', 'uptilt', 'downtilt', 'finisher', 'special', 'upspecial', 'downspecial', 'smash', 'smashup', 'smashdown', 'smash-tap', 'smash-hold'];
+const STAGINGS = ['ground', 'air', 'above', 'inside'];
 const KEYBOARD = new Set(['smash-tap', 'smash-hold']);   // the real input path: the key is read off `down`, so the fighter is a local one
 
 // Moves that are MEANT to land more than once on a boss, as `Fighter|move` -> { hits: the most frames the boss may be hit on, why }. `hits` counts
@@ -46,8 +46,11 @@ const KEYBOARD = new Set(['smash-tap', 'smash-hold']);   // the real input path:
 const DESIGNED = {};
 
 // Wraps the calls a move reaches a boss through, to say who called them and which damage numbers the move carries. Installed once a boot.
+// updateHUD and updateStandings are stubbed: they only rewrite the page's HUD, and in jsdom that rewrite (an innerHTML a frame) gets slower with every
+// frame -- a run went from 70 ms to 2 s after about 2,500 frames. Nothing in the sim reads what they write.
 const INSTALL = `
-  var MVB = { on:false, F:null, fr:-1, log:[], num:0 };
+  updateHUD = function(){}; updateStandings = function(){};
+  var MVB = { on:false, F:null, fr:-1, log:[], num:0, shots:[] };
   MVB.note = function(n){ if(MVB.on && typeof n === 'number' && n > MVB.num) MVB.num = n; };
   MVB.via = function(){ var out = [], L = (new Error().stack || '').split('\\n'), last = '';
     for(var i = 3; i < L.length && out.length < 5; i++){ var m = /at (?:new )?([^\\s(]+)/.exec(L[i]); if(m && m[1] !== last) out.push(last = m[1]); }
@@ -59,7 +62,7 @@ const INSTALL = `
     damageSummons = function(f, cx, cy, rad, dmg){ if(MVB.on && f === MVB.F) MVB.note(dmg); return DSs.apply(this, arguments); };
     hitCircle = function(f, cx, cy, rad, lo, hi){ if(MVB.on && f === MVB.F){ MVB.note(lo); MVB.note(hi); } return HC.apply(this, arguments); };
     hitShape = function(f, sh, lo, hi){ if(MVB.on && f === MVB.F){ MVB.note(lo); MVB.note(hi); } return HS.apply(this, arguments); };
-    addProj = function(p){ if(MVB.on && p && p.ownerObj === MVB.F) MVB.note(p.dmg); return AP.apply(this, arguments); };
+    addProj = function(p){ if(MVB.on && p && p.ownerObj === MVB.F){ MVB.note(p.dmg); MVB.shots.push(p.dmg + (p.pierce ? 'P' : '') + (p.van ? 'V' : '') + (p.trap || p.landsTrap ? 'T' : '') + (p.landsPuddle ? 'U' : '') + (p.bounce ? 'B' : '')); } return AP.apply(this, arguments); };
   })();
 `;
 
@@ -80,13 +83,14 @@ const RUN = (o) => `(function(){
   var bx, by;
   if(STAGING === 'ground'){ bx = f.x + f.r + b.r + 6; by = gy - b.r; }
   else if(STAGING === 'air'){ f.y = gy - 230; f.onground = false; bx = f.x + f.r + b.r + 6; by = f.y; }
-  else { bx = f.x; by = gy - b.r; f.y = by - b.r - 150; f.onground = false; }
+  else if(STAGING === 'above'){ bx = f.x; by = gy - b.r; f.y = by - b.r - 150; f.onground = false; }
+  else { bx = f.x + 30; by = gy - b.r; }   // inside: her middle is inside his body, as it is when a fighter walks into a boss
   var park = function(){ b.x = bx; b.y = by; b.vx = 0; b.vy = 0; b._atkTimer = 1e9; b._tel = 0; };
   park(); step(); park();   // one settling frame before the move, as the golden smash fixture takes (a body is only on the ground once the physics has said so)
   f.invuln = 0; f.pct = 0; f.atkCd = 0; f.spCd = 0; f.smCd = 0; f.fnCd = 0; f.hitstun = 0;
   var none = function(){ return { left:false, right:false, up:false, down:false, jump:false, attack:false, special:false, smash:false }; };
   var FIRE = {
-    jab: function(){ doAttack(f); }, uptilt: function(){ doUpTilt(f); }, downtilt: function(){ doGroundMove(f); }, finisher: function(){ doAttackSpecial(f); },
+    jab: function(){ doAttack(f); }, empjab: function(){ f._empower = 1; doAttack(f); }, uptilt: function(){ doUpTilt(f); }, downtilt: function(){ doGroundMove(f); }, finisher: function(){ doAttackSpecial(f); },
     special: function(){ fireSpecial(f, none()); },
     upspecial: function(){ var i = none(); i.up = true; fireSpecial(f, i); },
     downspecial: function(){ var i = none(); i.down = true; fireSpecial(f, i); },
@@ -94,17 +98,19 @@ const RUN = (o) => `(function(){
     smashup: function(){ var i = none(); i.up = true; fireSmash(f, i, 1); },
     smashdown: function(){ var i = none(); i.down = true; fireSmash(f, i, -1); }
   };
-  MVB.F = f; MVB.on = true; MVB.log = []; MVB.num = 0; MVB.fr = -1;
-  var hp0 = b.hp, frames = [], max1 = 0, died = false, steps = FRAMES + (MOVE === 'smash-hold' ? 70 : MOVE === 'smash-tap' ? 40 : 0);
+  MVB.F = f; MVB.on = true; MVB.log = []; MVB.num = 0; MVB.fr = -1; MVB.shots = [];
+  var hp0 = b.hp, frames = [], max1 = 0, bigDirect = 0, died = false, steps = FRAMES + (MOVE === 'smash-hold' ? 70 : MOVE === 'smash-tap' ? 40 : 0);
   if(FIRE[MOVE]) FIRE[MOVE]();
-  if(hp0 - b.hp > 1e-9){ frames.push([-1, +(hp0 - b.hp).toFixed(3)]); max1 = hp0 - b.hp; }
+  var queued = f._rant ? f._rant.n : (f._multi ? 1 + f._multi.n : 1), ticks = f._sawing > 0 ? Math.floor((f._sawing - 1) / 6) + 1 : 0;   // a flurry's hits and an aura's ticks, as the move set them
+  if(hp0 - b.hp > 1e-9){ frames.push([-1, +(hp0 - b.hp).toFixed(3)]); max1 = hp0 - b.hp; var seen0 = 0; MVB.log.forEach(function(e){ seen0 += e[1]; }); bigDirect = Math.max(0, max1 - seen0); }
   for(var i = 0; i < steps; i++){
     MVB.fr = i;
     if(MOVE === 'smash-tap') down[KEYS.smash] = (i === 0);
     else if(MOVE === 'smash-hold') down[KEYS.smash] = (i < 70);
-    var h = b.hp; step();
+    var h = b.hp, n0 = MVB.log.length; step();
     var d = h - b.hp;
-    if(d > 1e-9){ frames.push([i, +d.toFixed(3)]); if(d > max1) max1 = d; }
+    if(d > 1e-9){ frames.push([i, +d.toFixed(3)]); if(d > max1) max1 = d;
+      var seen = 0; for(var j = n0; j < MVB.log.length; j++) seen += MVB.log[j][1]; if(d - seen > bigDirect) bigDirect = d - seen; }
     if(f._dashDmg) MVB.note(f._dashDmg);
     if(f._sawing > 0) MVB.note(4);
     park(); if(f.dead) died = true;
@@ -113,8 +119,8 @@ const RUN = (o) => `(function(){
   var ev = {}, logged = 0, big = 0;
   MVB.log.forEach(function(e){ var s = ev[e[2]] || (ev[e[2]] = [0, 0]); s[0]++; s[1] += e[1]; logged += e[1]; if(e[1] > big) big = e[1]; });
   var lost = hp0 - b.hp;
-  var res = { lost: +lost.toFixed(2), hitFrames: frames.length, burst: +max1.toFixed(2), num: +Math.max(MVB.num, big, max1 > 0 && frames.length === 1 ? max1 : 0).toFixed(2),
-    direct: +(lost - logged).toFixed(2), frames: frames.slice(0, 60), ev: ev, died: died };
+  var res = { lost: +lost.toFixed(2), hitFrames: frames.length, burst: +max1.toFixed(2), num: +Math.max(MVB.num, big, MVB.num > 0 || big > 0 ? 0 : bigDirect).toFixed(2),
+    direct: +(lost - logged).toFixed(2), hitsAllowed: queued, ticks: ticks, shots: MVB.shots.slice(0, 24), frames: frames.slice(0, 60), ev: ev, died: died };
   summons = []; fighters = []; projectiles = []; beams = []; tendrils = []; particles = []; for(var k2 in down) delete down[k2];
   return JSON.stringify(res);
 })()`;
@@ -124,8 +130,9 @@ const key = (r) => `${r.name}|${r.move}`;
 function classify(r) {
   if (r.error) return 'ERROR';
   const ref = Math.max(r.num, 0.01);
-  const over = r.lost > 1.5 * ref + 1e-6 || r.lost > 40;
-  if (!over) return 'ok';
+  if (!(r.lost > 1.5 * ref + 1e-6 || r.lost > 40)) return 'ok';
+  // a flurry (_multi, Dora's _rant) lands its set count of the biggest number, an aura (_sawing) lands 4 every 6 frames: that is the move ticking as written
+  if (r.lost <= (ref * r.hitsAllowed + 4 * r.ticks) * 1.05 + 0.01) return 'TICK';
   const d = DESIGNED[key(r)];
   return d && r.hitFrames <= d.hits ? 'TICK' : 'FLAG';
 }
@@ -141,10 +148,10 @@ async function oneFighter(name) {
     for (const move of moves) for (const staging of stagings) {
       if (KEYBOARD.has(move) && staging !== 'ground') continue;
       W.Math.random = mulberry32(SEED);   // every run on the same dice, whatever ran before it
-      const row = { name, move, staging };
+      const row = { name, move, staging }, t0 = Date.now();
       try { Object.assign(row, JSON.parse(W.eval(RUN({ name, move, staging, frames: FRAMES, boss: process.env.BOSS })))); }
       catch (e) { row.error = String(e && e.message || e).split('\n')[0]; }
-      row.verdict = classify(row);
+      row.ms = Date.now() - t0; row.verdict = classify(row);
       rows.push(row);
     }
   } finally { W.close(); }
@@ -185,7 +192,7 @@ if (process.env.MVB_WORKER) {
   for (const r of out) {
     console.log(fmt(r));
     if (process.env.VERBOSE && r.verdict !== 'ok') {
-      console.log('      frames ' + (r.frames || []).map(([f, d]) => `${f}:${d}`).join(' '));
+      console.log('      frames ' + (r.frames || []).map(([f, d]) => `${f}:${d}`).join(' ') + (r.shots && r.shots.length ? `   shots ${r.shots.join(' ')}   (P pierce, V van, T trap, U puddle, B bounce)` : ''));
       for (const [k, v] of Object.entries(r.ev || {})) console.log(`      ${k}  x${v[0]}  ${v[1].toFixed(1)}`);
     }
   }
