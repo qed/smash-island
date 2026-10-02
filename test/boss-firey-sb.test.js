@@ -216,11 +216,15 @@ describe('ROCKET BOARD!', () => {
     expect(r.high, 'nothing to scorch on the pad row').toBe(0);
   });
 
-  it('phase 2 runs out and back, the second row another one, marked again while he turns round; phase 3 is one crossing and the clone, from the other side on the other row', () => {
+  // The owner's pick, Round 17 (the question boxes, 2026-10-01): "ROCKET BOARD! clone from P2" -- "ROCKET BOARD!'s clone from the other side from phase 2" (it was phase 3's): so phase 2 is out and back AND
+  // the clone, and phase 3 is as it was, one crossing and the clone.
+  it('phase 2 runs out and back, the second row another one, marked again while he turns round, and from phase 2 the clone comes from the other side on the other row; phase 3 is one crossing and the clone', () => {
     const r = EV(`var out = {};
       setup(300, 2); wind(0, 0);
       while (b._tel > 0) run(1, 300, gy - 24 - 200);
-      var F = b._fs, row1 = F.row, row2 = F.row2, seen = [], reMarked = null;
+      var F = b._fs, row1 = F.row, row2 = F.row2, seen = [], reMarked = null, id2 = F.id, cl2 = projectiles.filter(function(p){ return p.shape === 'fsbboard'; });
+      out.p2clone = { clones: cl2.length, clone: cl2[0] ? { x: Math.round(cl2[0].delay > 0 ? cl2[0].x : cl2[0].x - cl2[0].vx), y: cl2[0].y, vx: cl2[0].vx, delay: cl2[0].delay, id: cl2[0].bossAtk === id2, pierce: !!cl2[0].pierce, volley: !!cl2[0].volley, dmg: cl2[0].dmg, full: bossDmg(), r: cl2[0].r } : null, dir: F.dir, r2: b._fsb.r2 };
+      run(1, 300, gy - 24 - 200); out.p2clone.cl = b._fsb.cl;   // (read a frame on: the tick that lights the clone's row runs before the move starts)
       for (var i=0;i<400 && b._fs;i++){ run(1, 300, gy - 24 - 200); var s = b._fs ? b._fs.ph + ':' + b._fs.leg : 'done'; if (seen[seen.length-1] !== s) seen.push(s); if (b._fs && b._fs.ph === 'gap' && reMarked === null) reMarked = b._fsb.r; }
       out.p2 = { seen: seen, row1: row1, row2: row2, legs: F.legs, reMarked: reMarked };
       setup(300, 3); wind(0, 0);
@@ -233,6 +237,13 @@ describe('ROCKET BOARD!', () => {
     expect(r.p2.seen, 'out, a turn round off the screen, back, home').toEqual(['run:0', 'gap:1', 'run:1', 'ret:1', 'done']);
     expect(r.p2.row2, 'the return row is the other kind').not.toBe(r.p2.row1);
     expect(r.p2.reMarked, 'and the band shows it while he turns round').toBe(r.p2.row2);
+    // ...and the clone, from phase 2: from the other side (he runs left, so it enters at the left edge), on the other row, a moment behind, one attack id, the same damage
+    expect(r.p2clone.clones, 'phase 2 has the clone').toBe(1);
+    expect(r.p2clone.clone).toMatchObject({ x: -120, y: r.p2.row2, vx: 20, id: true, pierce: true, volley: true, r: 44 });
+    expect([19, 20], 'a moment behind: 20 frames, one already counted in the frame he fired').toContain(r.p2clone.clone.delay);
+    expect(r.p2clone.clone.dmg, 'the same damage').toBeCloseTo(r.p2clone.clone.full, 6);
+    expect(r.p2clone.r2, 'the wind-up marks the clone\'s row in phase 2 too').toBe(r.p2.row2);
+    expect(r.p2clone.cl, 'and its row stays lit while the clone is still to come').toBe(1);
     expect(r.r2, 'phase 3 marks the clone\'s row too').toBe(r.p3.row2);
     expect(r.p3.legs, 'one crossing').toBe(1);
     expect(r.p3.clones, 'and the clone').toBe(1);
@@ -240,6 +251,43 @@ describe('ROCKET BOARD!', () => {
     expect(r.p3.clone).toMatchObject({ x: -120, y: r.p3.row2, vx: 22, id: true, pierce: true, volley: true, r: 44 });
     expect([19, 20], 'a moment behind: 20 frames, one already counted in the frame he fired').toContain(r.p3.clone.delay);
     expect(r.p3.clone.dmg, 'the same damage').toBeCloseTo(r.p3.clone.full, 6);
+  });
+});
+
+// "Harder, same damage", and the way out stays: with the clone from phase 2 a fighter on the floor has the board on the floor row and the clone a head higher, so a jump over one is into the other
+// unless it is timed (they pass 20 frames apart, from two edges, at one spot of the floor they pass together) -- but on the pad the clone's row is the floor under him, and there is one pass to jump.
+describe('ROCKET BOARD! with the clone (phases 2 and 3): the pad is a way out', () => {
+  it('standing still on the pad is hit by the pass along its row; one jump over it and the whole move (the clone under him, the second leg) goes by without a touch', () => {
+    const r = EV(`var out = {};
+      function pad(ph, mode){
+        setup(500, ph);
+        var P = worldPlats[0];
+        f.x = P.x + P.w/2; f.y = P.y - 24; f.vx = 0; f.vy = 0; f.onground = true;
+        wind(0, 0);
+        var JUMP_V = -12.5, hit = null, jumps = 0, n = 0, clones = 0;
+        while ((b._tel > 0 || b._fs) && n < 600){
+          var need = false;
+          if (mode === 'jump' && b._fs && b._fs.k === 'board'){
+            var dist = (f.x - b.x) * b._fs.dir;
+            if (b._fs.ph === 'run' && Math.abs((b.y + 44) - f.y) < 80 && dist > 0 && dist < 260 && f.onground && !f._jumped) need = true;   // a pass along his own row, coming at him: jump
+            if (b._fs.ph !== 'run') f._jumped = false;
+          }
+          if (need){ f.vy = JUMP_V; f.onground = false; f._jumped = true; jumps++; }
+          var p = f.pct; step(); n++; f.vx = 0; f.invuln = 0;
+          clones = Math.max(clones, projectiles.filter(function(q){ return q.shape === 'fsbboard' && q.life > 0; }).length);
+          if (f.pct > p + 0.5 && hit === null) hit = { n: n, fs: b._fs ? b._fs.ph : null };
+        }
+        return { hit: hit, jumps: jumps, n: n, clones: clones, row2: b._fsb.r2, padRow: P.y - 24, gy: gy };
+      }
+      out.p2still = pad(2, 'still'); out.p2jump = pad(2, 'jump'); out.p3still = pad(3, 'still'); out.p3jump = pad(3, 'jump');
+      return out;`);
+    for (const ph of [2, 3]) {
+      expect(r['p' + ph + 'still'].hit, `phase ${ph}: standing on the pad as it comes is a hit`).not.toBeNull();
+      expect(r['p' + ph + 'jump'].clones, `phase ${ph}: the clone does cross`).toBeGreaterThan(0);
+      expect(r['p' + ph + 'jump'].jumps, `phase ${ph}: one jump`).toBe(1);
+      expect(r['p' + ph + 'jump'].hit, `phase ${ph}: and it clears the whole move`).toBeNull();
+      expect(r['p' + ph + 'jump'].row2, 'the clone runs the floor row under the pad').toBe(r['p' + ph + 'jump'].gy - 44);
+    }
   });
 });
 
@@ -385,10 +433,94 @@ describe('YOU MUST!', () => {
     for (const arms of r) expect(arms.map((a) => a[1]).sort((p, q) => p - q)).toEqual([-100, -46]);
     expect(r[0][0][1], 'the high side alternates').not.toBe(r[1][0][1]);
   });
+
+  // The owner's pick, Round 17 (the question boxes, 2026-10-01): "YOU MUST! a second pinch from P2 that follows where you escaped". The first pinch closes on the spot you were on; then a mark goes after
+  // you for FSB.pinch2.follow frames, locks (white), and the hooks leave a span out either side and close on it FSB.pinch2.T frames later: a locked warning of about the 30 frames a dodge needs.
+  it('from phase 2 a second pinch follows where you escaped: its mark goes after you for 12 frames, locks, and its hooks close on it 32 frames later; phase 1 has only the first', () => {
+    const r = EV(`var out = {};
+      function second(ph){
+        setup(500, ph); wind(3, 0);
+        while (b._tel > 0) run(1, 500, gy - 24 - 300);
+        var F = b._fs, id = F.id, log = [], first = F.x, n = 0, fb = b._fsb;
+        while (b._fs && n < 200){
+          var two = b._fs.two, fx = two ? 500 + 10*(two.t + 1) : 500;                     // after the first pinch he runs on, 10 px a frame
+          run(1, fx, gy - 24 - 300); n++;
+          var t = b._fs && b._fs.two ? b._fs.two.t : null;
+          if (t != null) log.push({ t: t, x2: fb.x2, lk2: fb.lk2, h2: fb.h2, fx: f.x, arms: projectiles.filter(function(p){ return p.fsbArm && p.life > 0; }).length, ids: Array.from(new Set(projectiles.filter(function(p){ return p.fsbArm; }).map(function(p){ return p.bossAtk; }))) });
+        }
+        return { log: log, id: id, first: first, frames: n, after: { x2: fb.x2, lk2: fb.lk2, h2: fb.h2 }, P: F.P, span: F.span, pinch2: FSB.pinch2 };
+      }
+      out[1] = second(1); out[2] = second(2);
+      return out;`);
+    expect(r[1].log, 'phase 1: one pinch and it is over').toEqual([]);
+    const o = r[2], log = o.log;
+    expect(log.length, 'phase 2: 12 frames following and 32 closing').toBe(44);
+    expect(o.pinch2).toMatchObject({ from: 2, follow: 12, T: 32 });
+    const follow = log.filter((l) => l.t < 12), locked = log.filter((l) => l.t >= 12);
+    expect(new Set(follow.map((l) => l.x2)).size, 'the mark goes where you have gone').toBeGreaterThan(8);
+    expect(follow.every((l) => l.lk2 === 0 && l.arms === 0), 'red, and no hook yet').toBe(true);
+    expect(new Set(locked.map((l) => l.x2)).size, 'then it holds').toBe(1);
+    expect(locked.length, 'the locked warning is at least the 30 frames a dodge needs').toBeGreaterThanOrEqual(32);
+    expect(locked.every((l) => l.lk2 === 1), 'white').toBe(true);
+    expect(Math.abs(locked[0].x2 - (500 + 10*12)), 'it locked where he was at the 12th frame, not where he started').toBeLessThanOrEqual(10);
+    expect(Math.abs(locked[0].x2 - o.first), 'a different spot from the first pinch\'s').toBeGreaterThan(80);
+    expect(locked.slice(0, 32).every((l) => l.arms === 2), 'two hooks are out while it closes').toBe(true);
+    expect(new Set(locked.map((l) => l.ids.join())).size, 'one attack id (the first pinch\'s)').toBe(1);
+    expect(locked[0].ids[0]).toBe(o.id);
+    expect(log.map((l) => l.h2).slice(0, 3), 'frames to the pinch count down from 44').toEqual([44, 43, 42]);
+    expect(o.after, 'and when it has closed the mark is gone').toEqual({ x2: null, lk2: 0, h2: 0 });
+    expect(o.frames, 'the whole move after the wind-up: 22 frames to the first pinch (phase 2), then 44 to the second').toBe(22 + 44);
+  });
+
+  it('the second pinch hits one standing on its locked spot (one whole boss hit with the rest of the move), and misses one in the air and one beyond its hooks; the first pinch\'s victim is not hit twice', () => {
+    const r = EV(`var out = {};
+      // where: the fighter holds this x, and up px over the floor, from the lock of the second pinch on; before it he stays at x 500, up high and out of the first pinch (or on the floor, in it, for 'both')
+      function once(where, up, both){
+        setup(500, 2); wind(3, 0);
+        var y = gy - 24 - up;
+        while (b._tel > 0) run(1, 500, both ? gy - 24 : gy - 24 - 300);
+        var pct0 = f.pct, hitsSecond = 0;
+        while (b._fs){
+          var p = f.pct, two0 = b._fs.two;
+          step();
+          if (f.pct > p + 0.5 && two0) hitsSecond++;
+          var tw = b._fs && b._fs.two;
+          f.vx = 0; f.vy = 0; f.invuln = 0;
+          if (tw && tw.t >= 12){ f.x = where(tw.x); f.y = y; } else { f.x = 500; f.y = both ? gy - 24 : gy - 24 - 300; }
+        }
+        return { taken: +(f.pct - pct0).toFixed(2), hitsSecond: hitsSecond, full: bossDmg() };
+      }
+      out.stay = once(function(x){ return x; }, 0);                        // the first pinch missed him (he was up high); on the floor at the lock, he stays
+      out.air = once(function(x){ return x; }, 200);                       // in the air over the mark all the while
+      out.far = once(function(x){ return x < 600 ? x + 360 + 60 : x - 360 - 60; }, 0);   // beyond the span the hooks start from (360 in phase 2)
+      out.both = once(function(x){ return x; }, 0, true);                  // in the first pinch too, and again in the second
+      return out;`);
+    expect(r.stay.taken, 'standing on the locked spot: one whole boss hit').toBeGreaterThan(r.stay.full - 0.6);
+    expect(r.stay.taken).toBeLessThanOrEqual(r.stay.full + 0.6);
+    expect(r.stay.hitsSecond).toBeGreaterThan(0);
+    expect(r.air.taken, 'in the air over it: nothing').toBe(0);
+    expect(r.far.taken, 'beyond the span: nothing reaches you').toBe(0);
+    expect(r.both.taken, 'the first pinch and the second on the same fighter are one boss hit between them').toBeLessThanOrEqual(r.both.full + 0.6);
+  });
+
+  it('phase 3: the second pinch\'s high arm is on the other side from the first\'s, so the jump that cleared one hook does not clear the same one again', () => {
+    const r = EV(`var out = [];
+      setup(500, 3); wind(3, 0);
+      while (b._tel > 0) run(1, 500, gy - 24 - 300);
+      var firstArms = projectiles.filter(function(p){ return p.fsbArm; }).map(function(p){ return [p.vx > 0 ? 'L' : 'R', Math.round(p.y - gy)]; }).sort();   // (a hook coming from the left moves right)
+      var secondArms = null, n = 0;
+      while (b._fs && n < 200){ run(1, 500, gy - 24 - 300); n++; if (b._fs && b._fs.two && b._fs.two.t === 13 && !secondArms) secondArms = projectiles.filter(function(p){ return p.fsbArm && p.life > 0; }).map(function(p){ return [p.vx > 0 ? 'L' : 'R', Math.round(p.y - gy)]; }).sort(); }
+      return { first: firstArms, second: secondArms };`);
+    expect(r.first.map((a) => a[1]).sort((p, q) => p - q), 'the first: one high, one low').toEqual([-100, -46]);
+    expect(r.second.map((a) => a[1]).sort((p, q) => p - q), 'the second: one high, one low').toEqual([-100, -46]);
+    const highSide = (arms) => arms.find((a) => a[1] === -100)[0];
+    expect(highSide(r.second), 'and the high one is on the other side').not.toBe(highSide(r.first));
+  });
 });
 
 describe('THE TLC NEEDS TO BE FIXED!', () => {
-  it('a stomp where he stands sets the beat, then four hops a step toward you: five landings, 30 frames apart, the fifth the big one', () => {
+  // The owner's pick, Round 17 (the question boxes, 2026-10-01): "THE TLC NEEDS TO BE FIXED! a 6th landing, and double fire rings from phase 2" -- it was five landings and the second ring was phase 3's.
+  it('a stomp where he stands sets the beat, then five hops a step toward you: six landings, 30 frames apart, the sixth the big one', () => {
     const r = EV(`var out = {};
       setup(200);
       b.x = 700;
@@ -406,10 +538,10 @@ describe('THE TLC NEEDS TO BE FIXED!', () => {
     expect(r.name).toBe('THE TLC NEEDS TO BE FIXED!');
     // the stomp is the first landing, at once, at his own feet: a ring each way along the floor
     expect(r.fireRing).toEqual([[Math.round(r.bx - 22), true, -7, 15], [Math.round(r.bx + 22), true, 7, 15]]);
-    // then hops: 30, 30, 30, and the big one after a crouch and a longer flight (38 + 14)
-    expect(r.land, 'landings (the stomp is 0)').toEqual([0, 30, 60, 90, 142]);
+    // then hops: 30, 30, 30, 30, and the big one after a crouch and a longer flight (38 + 14)
+    expect(r.land, 'landings (the stomp is 0)').toEqual([0, 30, 60, 90, 120, 172]);
     expect(r.xs.slice(0, 3), 'each hop is 170 px toward you').toEqual([Math.round(r.bx), Math.round(r.bx) - 170, Math.round(r.bx) - 340]);
-    expect(r.xs[4], 'and they end on you').toBe(200);
+    expect(r.xs[5], 'and they end on you').toBe(200);
     expect(r.after).toBe(null);
   });
 
@@ -427,7 +559,7 @@ describe('THE TLC NEEDS TO BE FIXED!', () => {
     expect(r.maxX).toBeLessThanOrEqual(r.WW - 80);
   });
 
-  it('each landing throws a ring of fire along the floor either way (jump it); the fifth is bigger and has a second, higher ring; in phase 3 every small landing sends two', () => {
+  it('each landing throws a ring of fire along the floor either way (jump it); the last is bigger and has a second, higher ring; from phase 2 every small landing sends two (a second ring 12 frames behind)', () => {
     const r = EV(`var out = {};
       function landings(ph){
         setup(200, ph);
@@ -443,12 +575,14 @@ describe('THE TLC NEEDS TO BE FIXED!', () => {
       out[1] = landings(1); out[2] = landings(2); out[3] = landings(3);
       return out;`);
     const lens = (ph) => r[ph].map((p) => p.length);
-    expect(lens(1), 'phase 1: two shots a landing, four for the big one').toEqual([2, 2, 2, 2, 4]);
+    expect(lens(1), 'phase 1: two shots a landing, four for the big one').toEqual([2, 2, 2, 2, 2, 4]);
     expect(r[1][0][0]).toMatchObject({ y: 16, r: 15 });
-    expect(r[1][4].map((s) => s.r).sort((p, q) => p - q), 'the fifth: the big ring and a smaller, higher one').toEqual([18, 18, 24, 24]);
-    expect(Math.max(...r[1][4].map((s) => s.y)), 'the higher ring is 58 px up').toBe(74);
-    expect(lens(3), 'phase 3: a second ring behind every small landing').toEqual([4, 4, 4, 4, 4]);
-    expect(r[3][0].filter((s) => s.d).length, 'the second ring starts 12 frames behind').toBe(2);
+    expect(r[1][5].map((s) => s.r).sort((p, q) => p - q), 'the sixth: the big ring and a smaller, higher one').toEqual([18, 18, 24, 24]);
+    expect(Math.max(...r[1][5].map((s) => s.y)), 'the higher ring is 58 px up').toBe(74);
+    expect(lens(2), 'phase 2: a second ring behind every small landing, from phase 2').toEqual([4, 4, 4, 4, 4, 4]);
+    expect(lens(3), 'phase 3: the same').toEqual([4, 4, 4, 4, 4, 4]);
+    expect(r[2][0].filter((s) => s.d).length, 'the second ring starts 12 frames behind').toBe(2);
+    expect(r[3][0].filter((s) => s.d).length).toBe(2);
     expect(Math.abs(r[1][0][0].vx) < Math.abs(r[2][0][0].vx) && Math.abs(r[2][0][0].vx) < Math.abs(r[3][0][0].vx), 'faster each phase').toBe(true);
   });
 
@@ -762,7 +896,11 @@ describe('the volcano: sky, ground, dust and drawing', () => {
           { _fsb:{ k:'board', p:1, bd:1, lk:1, d:-1, r:gy-44 } },
           { _tel:30, _fsKind:'furnace', _fsb:{ k:'furn', d:-1, g:2 } }, { _tel:10, _fsKind:'furnace', _phase:3, _fsb:{ k:'furn', d:1, g:4, j:30 } },
           { _tel:30, _fsKind:'youmust', _telX:500, _fsb:{ k:'hooks', lk:0 } }, { _telX:500, _fsb:{ k:'hooks', p:1, h:12, lk:1 } },
-          { _tel:30, _fsKind:'tlc', _fsb:{ k:'tlc', x:400, n:1 } }, { _fsb:{ k:'tlc', p:1, x:400, n:4 } },
+          // Round 17: the clone's row from phase 2 (lit while it is still to come: cl), and the second pinch's mark (following you, then locked)
+          { _tel:30, _fsKind:'rocketboard', _phase:2, _fsb:{ k:'board', bd:1, lk:0, d:1, r:gy-44, r2:gy-130 } },
+          { _phase:2, _fsb:{ k:'board', p:1, bd:1, lk:1, d:-1, r:gy-44, r2:gy-130, cl:1 } }, { _phase:3, _fsb:{ k:'board', p:1, bd:1, lk:1, d:1, r:gy-130, r2:gy-44, cl:1 } },
+          { _phase:2, _fsb:{ k:'hooks', p:1, x2:400, h2:40, lk2:0 } }, { _phase:2, _fsb:{ k:'hooks', p:1, x2:400, h2:20, lk2:1 } }, { _phase:3, _fsb:{ k:'hooks', p:1, x2:700, h2:3, lk2:1 } },
+          { _tel:30, _fsKind:'tlc', _fsb:{ k:'tlc', x:400, n:1 } }, { _fsb:{ k:'tlc', p:1, x:400, n:4 } }, { _fsb:{ k:'tlc', p:1, x:400, n:5 } },
           { _phase:3, _rage:true, _fsb:{ k:null, q:80 } }, { _phase:3, _rage:true, _fsb:{ k:null, q:0, f:6 }, flash:6 }, { face:-1, flash:8 }
         ];
         states.forEach(function(st){ var s = mk(st); summons = [s]; ctx.save(); ctx.translate(s.x, s.y); drawBossSprite(s); ctx.restore(); fsbDrawFx(s); drawArenaDecor('volcano'); });
