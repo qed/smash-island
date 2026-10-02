@@ -950,6 +950,36 @@ describe('MELIFE DOWNLOAD!: hostile assist trophies', () => {
     })()`);
     expect(r).toEqual({ name: 'MePhone4', before: 2, hostile: 0, normalKept: true, boss: false, next: 6, orphanGone: true });   // next: Evil Leafy, now index 6 (the Dragon moved to Boss 9, 2026-09-30)
   });
+
+  // GLITCH (the glitch hunter's `post-fall-hit`, run again at the end of Round 17's picks -- his adds live six seconds and two stand at once now, so more of their lobs are in the air when he goes): a
+  // Pie add's lob that was already flying when he fell hurt a fighter 30 frames after he was down. An add leaves with him; so does what it threw.
+  it('the lobs of his Pie adds go with him when he falls: nothing a hostile add threw hurts anyone once he is down', () => {
+    const run = (kill) => W.eval(`(function(){
+      var st = setTimeout; setTimeout = function(){ return 0; };
+      try {
+        SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
+        BOSSRUSH = { active:true, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
+        worldPlats = platRectsSmall(); summons = []; projectiles = []; hazardT = 0;
+        var f = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 700, groundY()-24, 0);
+        f.team = 0; f.controller = 'still'; f.stocks = 9; fighters = [f];
+        spawnBossRushBoss(); var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
+        var a = ${download('Pie', 1)}; a._dl = 0; a.x = f.x - 120;
+        var isLob = function(p){ return p.assist && p.ownerObj && p.ownerObj.team === -1; }, lob = null;
+        for (var i=0;i<200 && !lob;i++){ step(); f.x = 700; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; f.pct = 0; lob = projectiles.find(isLob); }
+        var out = { thrown: !!lob };
+        ${kill ? 'b.hp = 0; bossRushCheck();' : ''}
+        out.left = projectiles.filter(isLob).length;
+        for (var j=0;j<90;j++){ step(); f.x = 700; f.vx = 0; f.vy = 0; f.y = groundY() - 24; f.hitstun = 0; f.invuln = 0; }
+        out.hurt = f.pct; return out;
+      } finally { setTimeout = st; BOSSRUSH.active = false; running = false; summons = []; projectiles = []; worldPlats = []; }
+    })()`);
+    const live = run(false), fell = run(true);
+    expect(live.thrown, 'a Pie add lobs at the fighter').toBe(true);
+    expect(live.hurt, 'and with him standing, the lob lands on whoever is in its way').toBeGreaterThan(0);
+    expect(fell.thrown).toBe(true);
+    expect(fell.left, 'he falls: the lobs in the air are swept with him (mpEndSweep)').toBe(0);
+    expect(fell.hurt, 'and nothing an add threw hurts anyone after he is down').toBe(0);
+  });
 });
 
 describe('A-MAZE-ING!', () => {
