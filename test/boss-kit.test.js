@@ -539,9 +539,9 @@ describe("the Announcer's phase-3 banner", () => {
 // a digit in them, so a marker's boss is [a-z0-9]+).
 const EARLY = ['announcer', 'puffball', 'firey', 'swarm', 'purpleface', 'dragon'];
 const LATE = ['mephone4', 'evilleafy', 'mephone4s', 'two', 'four'];
-const SLOTS = ['roster', 'extra', 'rushonly', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen',
+const SLOTS = ['roster', 'extra', 'rushonly', 'pick', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen',
   'phase', 'phasename', 'telname', 'ending', 'hazard', 'netshot', 'net', 'shotdraw', 'fx', 'look', 'tell', 'body', 'sky', 'ground',
-  'decor', 'sprite', 'flip', 'shape', 'art'];
+  'decor', 'sprite', 'flip', 'shape', 'art'];   // `pick` (the picker's tags and hooks, BOSS_PICK) is the owner's Round 17: "make the attacks based on fighter position."
 const MARK = /@boss:([a-z0-9]+):(begin|end) ([a-z]+)/;
 
 // Every marker in `file` must be a known boss's and slot's, alone on its line; and for each slot the pairs of `bosses` (the early six unless said) must be

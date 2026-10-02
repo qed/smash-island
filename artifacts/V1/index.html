@@ -5336,6 +5336,10 @@ function startBossRush(){
   try{ sndInit(); startMusic('boss'); }catch(e){}   // recording is started by beginMatchNow for all modes
   spawnBossRushBoss();
 }
+// BOSS HP. The owner, 2026-10-01 (Round 17), asked how the bosses should get harder: "+50% (Recommended)" -- every Boss Rush boss spawns with half again the HP
+// of its roster row (Boss 1 175 -> about 260, Four 340 -> 510). The Announcer's own pick of 175 -> 200 is folded into it, as the question said. ONE constant,
+// applied here where the HP is set: the roster rows keep their own numbers. One and Steve Cobs are not Boss Rush bosses (no BOSS_ROSTER row, no gauntlet): they keep theirs.
+const BOSS_HP_MULT = 1.5;
 function spawnBossRushBoss(){
   // New boss, new theme: re-roll the boss playlist so a gauntlet walks through the owner's
   // boss/miniboss tracks instead of looping one of them for the whole run. No-op with 0 or 1.
@@ -5343,7 +5347,7 @@ function spawnBossRushBoss(){
   const b = BOSS_ROSTER[BOSSRUSH.bossIdx];
   // a beefier boss than the item version: scales HP with the number of fighters ganging up
   const nFighters = fighters.filter(f=>!f.dead).length || 1;
-  const hp = Math.round((b.hp||130) * (1 + (nFighters-1)*0.6));
+  const hp = Math.round((b.hp||130) * BOSS_HP_MULT * (1 + (nFighters-1)*0.6));
   BOSS_ARENA = b.arena || null;   // set the custom arena backdrop for this boss
   const boss = makeBossSummon(b, hp);
   summons.push(boss);
@@ -7038,8 +7042,9 @@ const GROTATO_MINES = Math.round(4*ASSIST_TROPHY_DMG), GROTATO_GAP = 60;
 // slot (Evil Leafy's horror-chase in move, MePhone4's glove follow in tick, each one's wind-up length, banner and phase lines);
 // an empty pair is a slot the boss does not use yet, and the 'void' arena that Two and Four share stays outside both. The slots:
 //   roster     BOSS_ROSTER: the boss's row (its arena key, sprite key...)
-//   extra      BOSS_EXTRA: its second moves, in turn order
+//   extra      BOSS_EXTRA: its second moves (the picker draws among them and the signature: there is no fixed turn order any more)
 //   rushonly   BOSS_RUSH_ONLY: second moves an item boss never throws
+//   pick       BOSS_PICK: each move's tags (what it punishes), the moves it has unlocked by phase, and the small hooks its own turn rules need (THE PICKER)
 //   movename   BOSS_MOVE_NAME: a second move's telegraph banner
 //   moves      BOSS_MOVES: the second moves (fired when the wind-up ends)
 //   helpers    free space below BOSS_MOVES for the boss's own constants, tables and functions (the late five's follow the Dragon's)
@@ -7559,11 +7564,18 @@ function updateBossAttack(s, tgt){
   if(s.attack==="four") fourTick(s, tgt);   // a move in the air holds the next wind-up; the ring stops at the floor and the hills; phase 3's quake (fourTick)
   // @boss:four:end tick
 
+  // ONE ATTACK AT A TIME (see THE PICKER AND ONE ATTACK AT A TIME): a Boss Rush boss's gap is held while its last attack is going and starts when it is over
+  if(s._atkLive) bossAttackWatch(s);
   // telegraph in progress → flash, then fire when it hits 0
   if(s._tel>0){
     s._tel--;
     if(s._tel%6<3) s.flash=1; else s.flash=0;
-    if(s._tel<=0){ if(s._telKind && s._telKind !== s.attack && BOSS_MOVES[s._telKind]) BOSS_MOVES[s._telKind](s, tgt); else fireBossAttack(s, tgt); s.flash=0; s._atkTimer = bossAtkGap(s); }
+    if(s._tel<=0){
+      const lo = s._atkLo != null ? s._atkLo : BOSS_ATK_ID;   // the ids this attack draws are above this (a wind-up that did not start here -- a test's -- counts from now)
+      if(s._telKind && s._telKind !== s.attack && BOSS_MOVES[s._telKind]) BOSS_MOVES[s._telKind](s, tgt); else fireBossAttack(s, tgt);
+      s.flash=0; s._atkTimer = bossAtkGap(s);
+      if(bossPicks(s)) s._atkLive = { lo };
+    }
     return;
   }
   // count down to the next attack; when ready, begin a telegraph
@@ -7572,13 +7584,16 @@ function updateBossAttack(s, tgt){
     s._tel = bossTelLen(s);
     // "bosses should have varied attacks": the signature attack, then one of its second moves, in turn
     s._moveN = (s._moveN||0) + 1;
+    s._atkLo = BOSS_ATK_ID;   // an attack's shots are the ones with an id above this (bossAttackOver)
     // The item version of a boss (summonBoss) has no attack of its own and no phases, so MePhone4S's cookies (a four-second
     // collapse) and chainsaws stay in the gauntlet and his item version only lunges; so do MePhone4's MeLife and portal (an
     // add downloaded by an item boss, team -1, would attack its own summoner, and so would the portal). Every other boss's
     // list is untouched.
     // (summonBoss is not in spawnItem's pool today, so no item boss spawns; this keeps one honest if it comes back.)
     const extra = (BOSS_EXTRA[s.name] || []).filter(k => s.attack || !BOSS_RUSH_ONLY.has(k));
-    s._telKind = (extra.length && s._moveN % 2 === 0) ? extra[((s._moveN >> 1) - 1) % extra.length] : s.attack;
+    // POSITION PICKS (see THE PICKER): a Boss Rush boss with a pick entry draws its move by where the fighters stand; the old turn cycle is what the rest still run
+    if(bossPicks(s)){ const P = BOSS_PICK[s.attack], k = bossPickTurn(s); s._telKind = P.kind ? P.kind(k, s) : k; }
+    else s._telKind = (extra.length && s._moveN % 2 === 0) ? extra[((s._moveN >> 1) - 1) % extra.length] : s.attack;
     // The phase the wind-up is drawn in is the phase the move fires in (fireBossAttack and the second moves read _telPh):
     // a hit that crossed a threshold mid-wind-up used to turn a single "FIST THINGY!" into the phase-3 combo, or add the
     // phase-3 second car and spikes to an "I'LL BE BACK!" nobody had been warned of.
@@ -7636,6 +7651,131 @@ function updateBossAttack(s, tgt){
 
     banner(bossTelName(s), 700, 'boss');
   }
+}
+// ==== THE PICKER AND ONE ATTACK AT A TIME (the owner, 2026-10-01, Round 17) ==================================================================================
+// Two engine rules for the twelve Boss Rush bosses -- a BOSS_ROSTER row (bossPaced) -- and for no other: One and Steve Cobs keep their own rotations and gaps ("actually,
+// do the 12 only!!!!! WHOOPS!!", the owner).
+//
+// THE PICKER. The owner, verbatim: "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are
+// close." Asked how far that goes: "Position picks all (Recommended)" -- the signature competes like every other move. The fixed turn cycle (signature, A, signature, B, ...) is
+// gone. Each turn bossPickTurn scores the boss's unlocked moves by how well each punishes where the fighters are NOW (bossSituation: how close and how far, floor, ledge or air,
+// near a wall or in the open, bunched or spread) and draws one by weighted chance. The dice are Math.random, the ones every fight already uses and the tests and the balance
+// harness seed, so a seeded fight is a repeatable one. THE VARIETY RULE: never the same move twice in a row; a move not played for a while weighs more (PICK.age); and a move not
+// played for PICK.deck passes of the deck of unlocked moves is played next whatever it scores -- so every unlocked move still comes up, within about two passes of the deck. A move
+// that has just been unlocked (a phase gate opening) starts as if it had waited PICK.fresh turns, so a phase's new move shows soon.
+// What a boss declares, in its own `pick` pair (BOSS_PICK, above): the tags of its moves -- what each punishes, read from the code of the move:
+//     close      a thing at his body: a ring, a stomp, a lunge, a swing. Worst for whoever stands near him.
+//     far        a reach across the room: a sweep, a shot from range, a mark far from him. Worst for whoever keeps away.
+//     ground     a row or a wave on the floor, a thing you jump. Worst for whoever stands on the floor.
+//     platform   a row at ledge height, a hit on the ledge. Worst for whoever stands on a ledge.
+//     air        a catch for a jumper. Worst for whoever is in the air.
+//     wall       a trap in a corner, a shove, a shutter. Worst for whoever is near an edge.
+//     bunch      an area that takes several at once. Worst for fighters standing together.
+//     spread     a shot for each fighter, from several places. Worst for fighters standing apart.
+//     any        a lock on your spot, wherever it is: neither favoured nor starved.
+// -- the moves it has unlocked now (a phase gate, a cap: MePhone4's add cap), and the few hooks its own turn rules need: a forced next move (the Announcer's ACID TEARS!), a move that
+// opens a phase (MePhone4S's car), a move that is a form of the signature (Firey's two, Four's two). A test forces a move by setting `s._pickForce = 'move'`.
+const PICK = {
+  gain:{ close:3, far:3, air:3, platform:3, wall:3, bunch:3, spread:3, ground:1 },   // what a tag that fits perfectly adds to a move's weight of 1 (most fighters stand on the floor most of the time, so `ground` says less)
+  idle:1,                                                                            // what a move that is `any` adds, whatever the fighters do
+  near:0.30, farFrom:0.28, farTo:0.50, edge:0.20,   // fractions of the arena: close inside `near` of the gap between a fighter's body and the boss's (fully at touching), far from `farFrom` to `farTo`, cornered inside `edge` of either wall
+  low:40,                                           // feet within this of the floor line: on the floor; higher up and standing: on a ledge; higher up and not standing: in the air
+  bunch:0.25, spreadFrom:0.30, spreadTo:0.60,       // bunched: inside `bunch` of the arena of each other; spread: from `spreadFrom` of it apart (fully at `spreadTo`)
+  age:0.6, ageCap:6, fresh:3, deck:2                // the variety rule: +60% a turn a move sits out (up to 6 turns), a new move starts at 3, and 2 passes of the deck play a move whatever it scores
+};
+function bossPicks(s){ return bossPaced(s) && !!BOSS_PICK[s.attack]; }
+// The moves a boss has unlocked now (its pick entry's `moves`, else the signature and every BOSS_EXTRA move) and what a move punishes (a name or a list; a function of the phase for a move that changes with it).
+function bossPickMoves(s, ph){
+  const P = BOSS_PICK[s.attack];
+  return (P.moves ? P.moves(s, ph == null ? (s._phase || 1) : ph) : [s.attack].concat(BOSS_EXTRA[s.name] || [])).slice();
+}
+function bossMoveTags(s, k, ph){
+  const P = BOSS_PICK[s.attack], t = P.tags && P.tags[k], v = typeof t === 'function' ? t(s, ph) : t;
+  return v == null ? [] : (Array.isArray(v) ? v : [v]);
+}
+// How the fighters stand against the boss `s`, each as 0..1: the gap is measured from his body to theirs, the floor line is groundY, a corner is the nearest wall.
+function bossSituation(s){
+  const gy = groundY(), P = PICK, L = fighters.filter(f => !f.dead), o = { n:L.length, close:0, far:0, ground:0, platform:0, air:0, wall:0, bunch:0, spread:0 };
+  const near = P.near*WW, f0 = P.farFrom*WW, f1 = P.farTo*WW, edge = P.edge*WW;
+  for(const f of L){
+    const gap = Math.max(0, Math.hypot(f.x - s.x, f.y - s.y) - s.r);
+    o.close = Math.max(o.close, clamp(1 - gap/near, 0, 1));
+    o.far = Math.max(o.far, clamp((gap - f0)/(f1 - f0), 0, 1));
+    o.wall = Math.max(o.wall, clamp(1 - Math.min(f.x, WW - f.x)/edge, 0, 1));
+    if(feetY(f) >= gy - P.low) o.ground = 1; else if(f.onground) o.platform = 1; else o.air = 1;
+  }
+  if(L.length > 1){
+    let lo = 1e9, hi = 0;
+    for(let i = 0; i < L.length; i++) for(let j = i + 1; j < L.length; j++){ const d = Math.hypot(L[i].x - L[j].x, L[i].y - L[j].y); lo = Math.min(lo, d); hi = Math.max(hi, d); }
+    o.bunch = clamp(1 - lo/(P.bunch*WW), 0, 1);
+    o.spread = clamp((hi - P.spreadFrom*WW)/((P.spreadTo - P.spreadFrom)*WW), 0, 1);
+  }
+  return o;
+}
+// A move's weight: 1, plus how well its tags fit (each tag's gain times how much the fighters' stance is that tag, averaged over the tags: naming more of them is not worth more).
+function bossPickWeight(tags, sit){
+  let sum = 0, n = 0;
+  for(const t of tags){
+    if(t === 'any'){ sum += PICK.idle; n++; }
+    else if(PICK.gain[t] != null){ sum += PICK.gain[t]*(sit[t] || 0); n++; }
+  }
+  return 1 + (n ? sum/n : PICK.idle);
+}
+// The turn: which move this wind-up is. Returns the move (also s._pickKey); the engine's _telKind is the pick's `kind` of it, else the move itself. A forced move (a test's
+// s._pickForce, the boss's `force`, a phase's `first`) wins if it is unlocked; else the oldest unplayed move at two decks, else the weighted draw over every unlocked move
+// but the one just played.
+function bossPickTurn(s){
+  const P = BOSS_PICK[s.attack], ph = s._phase || 1, pk = s._pk || (s._pk = { n:0, last:null, at:{} });
+  const keys = bossPickMoves(s, ph);
+  for(const q of keys) if(pk.at[q] == null) pk.at[q] = pk.n > 0 ? pk.n - PICK.fresh : 0;   // first seen: a move unlocked later starts a few turns "old"
+  const want = s._pickForce || (P.force && P.force(s, ph)) || (P.first && P.first(s, ph)) || null;
+  s._pickForce = null;
+  let k = want && keys.indexOf(want) >= 0 ? want : null;
+  if(k == null){
+    const cand = keys.length > 1 ? keys.filter(q => q !== pk.last) : keys, age = (q) => pk.n - pk.at[q];
+    let old = cand[0];
+    for(const q of cand) if(age(q) > age(old)) old = q;
+    if(age(old) >= PICK.deck*keys.length) k = old;
+    else {
+      const sit = bossSituation(s), w = cand.map(q => bossPickWeight(bossMoveTags(s, q, ph), sit)*(1 + PICK.age*Math.min(PICK.ageCap, Math.max(0, age(q) - 1))));
+      let r = Math.random()*w.reduce((a, b) => a + b, 0);
+      k = cand[cand.length - 1];
+      for(let i = 0; i < cand.length; i++){ r -= w[i]; if(r <= 0){ k = cand[i]; break; } }
+    }
+  }
+  pk.last = k; pk.at[k] = pk.n; pk.n++;
+  s._pickKey = k;
+  return k;
+}
+// ONE ATTACK AT A TIME. The owner, verbatim: "1 attack at a time... the bosses dont give any time between attacks to hit them." Asked how long the wait should be: "Current gaps"
+// -- and about the arena: "Keep hazards going (Recommended)". The next wind-up may not start until the attack before it is FULLY over: every shot, strike and scripted part of it
+// gone. Then the boss's gap runs (bossAtkGap: about 2 s / 1.4 s / 1 s by phase, paced), counted from the moment the attack is over and not from its shot, and that gap is the window
+// to hit him. OVER means: no shot of the attack alive (a shot of an attack is one whose `bossAtk` id was drawn after the wind-up began; one that only lies there -- a `trap`, or
+// `lingers` -- is terrain, not the attack); none that has left the arena for good (it is taken out: nothing out there can hit anyone); and nothing the boss's own `busy` says is going.
+// The arena's hazards run through the window, and what a boss keeps standing as an add (MePhone4's MeLife helpers) never held a turn back.
+function bossShotLive(p, lo){ return p.life > 0 && p.bossAtk != null && p.bossAtk > lo && !p.trap && !p.lingers; }
+function bossShotGone(p){   // out past an edge by more than its own size and still going: nothing it does reaches the room again
+  if(p.delay > 0 || p.boomerang || p.mpBm || p.orbit || p.homing || p.noCull) return false;
+  const m = 140 + (p.r || 10);
+  return (p.x < -m && p.vx < 0) || (p.x > WW + m && p.vx > 0);
+}
+function bossAttackOver(s, A){
+  const P = BOSS_PICK[s.attack];
+  if(P && P.busy && P.busy(s)) return false;
+  if(P && P.scan === false) return true;
+  for(const p of projectiles) if(bossShotLive(p, A.lo)){ if(bossShotGone(p)) p.life = 0; else return false; }
+  for(const t of tendrils) if(t.life > 0 && t.bossAtk != null && t.bossAtk > A.lo) return false;
+  return true;
+}
+// Every frame after a Boss Rush boss's move fires (s._atkLive): the gap is held until the attack is over, then it starts -- from here.
+function bossAttackWatch(s){
+  const A = s._atkLive;
+  if(!A || s._tel > 0) return;
+  if(bossAttackOver(s, A)){
+    const g = bossAtkGap(s);
+    if(g < 1e5){ s._atkLive = null; s._atkTimer = g; return; }   // (a gap the boss's own code still holds is held)
+  }
+  s._atkTimer = 1e6;
 }
 // BOSS PACE. The owner, 2026-09-30: "bosses should attack a bit slower." Every Boss Rush boss now waits BOSS_PACE times as long
 // between its attacks as its own gap says: 1.2, a fifth more. It is applied once, here, to whatever bossAtkGapBase returns -- the
@@ -8066,6 +8206,50 @@ const BOSS_RUSH_ONLY = new Set([   // second moves an item boss never throws (se
   // @boss:four:end rushonly
 
 ]);
+// THE PICKER's table (see THE PICKER, below updateBossAttack): one entry per Boss Rush boss, keyed by its `attack`, each in its own `pick` pair (Springy's is beside his own code,
+// BOSS_PICK.springy). An entry is an object, and every part of it but `tags` is optional:
+//   tags   { move: tag | [tags] | (s, phase) => tag | [tags] }   what each move punishes: close far ground platform air wall bunch spread any (a move with no entry is `any`)
+//   moves  (s, phase) => [moves]   the moves unlocked now, the signature (its `attack`) among them; the default is the signature and the boss's BOSS_EXTRA moves
+//   force  (s, phase) => move|null   a move that has to be the next turn (the Announcer's ACID TEARS! after a volley nobody was hit by)
+//   first  (s, phase) => move|null   a move that opens a phase (MePhone4S's car); the boss clears whatever it keys on when that move starts
+//   kind   (move, s) => _telKind   when a move is one form of the signature (Firey's board and TLC, Four's two): the engine's _telKind for it; s._pickKey is the move itself
+//   busy   (s) => bool   a part of the attack that is not a shot is still going (a choreography, a queue, a vine standing): the next wind-up waits for it
+//   scan   false: `busy` is the whole answer, so the engine does not look for shots (the Announcer's puddles lie on the floor for good)
+const BOSS_PICK = {
+  // @boss:announcer:begin pick
+  // @boss:announcer:end pick
+
+  // @boss:puffball:begin pick
+  // @boss:puffball:end pick
+
+  // @boss:firey:begin pick
+  // @boss:firey:end pick
+
+  // @boss:swarm:begin pick
+  // @boss:swarm:end pick
+
+  // @boss:purpleface:begin pick
+  // @boss:purpleface:end pick
+
+  // @boss:dragon:begin pick
+  // @boss:dragon:end pick
+
+  // @boss:mephone4:begin pick
+  // @boss:mephone4:end pick
+
+  // @boss:evilleafy:begin pick
+  // @boss:evilleafy:end pick
+
+  // @boss:mephone4s:begin pick
+  // @boss:mephone4s:end pick
+
+  // @boss:two:begin pick
+  // @boss:two:end pick
+
+  // @boss:four:begin pick
+  // @boss:four:end pick
+
+};
 // _dropFace/_dropVx: the way he faced and moved as he threw it -- a DROP of his drifts that way as it falls (FALL_DRIFT).
 function bossShot(s, o){ return Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:bossDmg()*0.8, kb:8, r:11, color:s.color, life:120, noAim:true, _dropFace:s.face, _dropVx:s.vx }, o); }
 const BOSS_MOVES = {

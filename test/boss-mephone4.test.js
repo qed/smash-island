@@ -37,7 +37,7 @@ const MOVEN = (k) => (k === 0 ? 0 : 2*k - 1);   // _moveN before the turn begins
 // The text of one of his slot pairs (or of every one), from the file itself.
 const html = () => readFileSync('artifacts/V1/index.html', 'utf8');
 const slot = (slotName) => { const t = html(), a = t.indexOf(`// @boss:mephone4:begin ${slotName}`), b = t.indexOf(`// @boss:mephone4:end ${slotName}`); return t.slice(a, b); };
-const SLOTS = ['roster', 'extra', 'rushonly', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen', 'phase', 'phasename', 'telname', 'ending', 'hazard',
+const SLOTS = ['roster', 'extra', 'rushonly', 'pick', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen', 'phase', 'phasename', 'telname', 'ending', 'hazard',
   'netshot', 'net', 'shotdraw', 'fx', 'look', 'tell', 'body', 'sky', 'ground', 'decor', 'sprite', 'flip', 'shape', 'art'];
 
 describe('MePhone4 joins the gauntlet', () => {
