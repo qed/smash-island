@@ -526,7 +526,7 @@ describe("the Announcer's phase-3 banner", () => {
 
   it('and the wind-up an Announcer at a third of his HP starts is announced as CRUSHER ARM!', () => {
     const r = W.eval(`(function(){ ${STAGE('Announcer', 500)}
-      b.hp = b.maxHp*0.2; b._phase = 3; b._moveN = 0; b._atkTimer = 1; b._tel = 0;
+      b.hp = b.maxHp*0.2; b._phase = 3; b._pickForce = 'announcer'; b._atkLive = null; b._atkTimer = 1; b._tel = 0;   // (the signature asked for: his order is the picker's now, Round 17)
       window.__lastBanner = null; updateBossAttack(b, f);
       var out = { kind: b._telKind, text: window.__lastBanner && window.__lastBanner.text, telKind: window.__lastBanner && window.__lastBanner.kind };
       summons = []; projectiles = []; return out;
@@ -606,8 +606,11 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
     it(`${name} still fights as it did, through its slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], shots: [], phase: null };
-        b.x = 350; b._atkTimer = 1; b._moveN = 0;
+        // the owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- no fixed cycle (signature, second move, signature), so the three turns are forced: the same three as before
+        var KS = bossPickMoves(b, 1), SEQ = [KS[0], KS[1], KS[0]];
+        b.x = 350; b._atkTimer = 1;
         for (var t=0;t<3;t++){
+          b._pickForce = SEQ[t]; b._atkLive = null;
           b._fs = null; b._fsQ = 0;   // Firey Speaker Box's moves run for seconds (fsbMove) and the next wind-up waits for the last: each turn here starts from a settled boss, as the game's do
           // the Announcer's next wind-up waits for the last threat of the turn before and for 30 frames more (the owner, 2026-10-01: "for the announcer "unavoidable hits", theyre unavoidable bcs they
           // barely have a moment where you can move to dodge."): this test fires turn after turn, so it settles him -- nothing of his going, and none for a long while -- as it does the two above
@@ -757,8 +760,11 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     it(`${name} still fights as he did, through his slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], landed: [], phase: null };
-        b.x = 350; b._atkTimer = 1; b._moveN = 0; b._s4 = null;   // (MePhone4S drops in from above and holds his timer for his scripted moves: each turn here starts from a settled one, as the game's do)
+        // the owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- no fixed cycle (signature, second move, signature), so the three turns are forced: the same three as before
+        var KS = bossPickMoves(b, 1), SEQ = [KS[0], KS[1], KS[0]];
+        b.x = 350; b._atkTimer = 1; b._s4 = null;   // (MePhone4S drops in from above and holds his timer for his scripted moves: each turn here starts from a settled one, as the game's do)
         for (var t=0;t<3;t++){
+          b._pickForce = SEQ[t]; b._atkLive = null;
           window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; b._s4 = null; b.hover = false; b.y = groundY() - b.r; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
           projectiles = []; tendrils = []; summons = summons.filter(function(s){ return s.type==='boss'; }); f.invuln = 0; f.pct = 0;
@@ -1072,6 +1078,8 @@ describe('the picker: a boss draws its turn by where the fighters stand (the twe
 // A whole fight, frame by frame, with one still fighter who cannot be hurt: for each wind-up that begins, was anything of the attack before it still alive (a shot with its id, or what the boss's own `busy`
 // says), and how long was it since that attack was over (the frame the engine's watch let the gap go) -- and twenty frames into each window, is the boss on the screen and does a shot of a fighter's hurt him.
 const FIGHT = (name, ph, frames) => `(function(){
+  var seed = ${40 + ph}, _R = Math.random; Math.random = function(){ seed |= 0; seed = (seed + 0x6d2b79f5) | 0; var t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };   // the tests' own dice: a fight does not depend on the tests before it
+  try {
   SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
   BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name===${JSON.stringify(name)}; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
   worldPlats=platRectsSmall(); summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[]; impactFxClear();
@@ -1105,13 +1113,14 @@ const FIGHT = (name, ph, frames) => `(function(){
     if (b._tel > 0){ lastBusy = false; lastAlive = 0; }
   }
   return { turns: turns, bad: bad, probes: probes, hits: hits, off: off, missed: missed, windows: windows, phase: b._phase };
+  } finally { Math.random = _R; }
 })()`;
 
 describe('one attack at a time: the next wind-up waits until the last of the attack before it is gone, and the gap counted from then is the window to hit him', () => {
   for (const name of TWELVE) {
     it(`${name}: through three phases of a fight, no wind-up begins under a shot or a scripted part of the attack before it; the window after is at least the paced gap; he is on the screen and a hit hurts him`, () => {
       for (const ph of [1, 2, 3]) {
-        const r = W.eval(FIGHT(name, ph, 1000));
+        const r = W.eval(FIGHT(name, ph, name === 'Puffball Speaker Box' ? 1600 : 1000));   // (her turns are the longest: a song of four seconds, a dash and five cuts)
         const at = `${name} phase ${ph}`;
         expect(r.phase, `${at}: the fight is in the phase asked for`).toBe(ph);
         expect(r.turns.length, `${at}: he keeps attacking (nothing waits for ever): ${r.turns.map((t) => t.kind)}`).toBeGreaterThanOrEqual(3);
