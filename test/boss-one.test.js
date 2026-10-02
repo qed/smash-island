@@ -846,14 +846,29 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
 });
 
 describe('contact damage: "Evil leafy level."', () => {
-  it('touching her hurts exactly as touching Evil Leafy does: the same damage, knockback and grace (read off her own code)', () => {
-    const r = STAGE(`return { c: ONE_CONTACT, base: BOSS_DMG_BASE, src: String(updateBossAttack) };`);
-    // Evil Leafy's contact check, in updateBossAttack: applyHit(f, bossDmg()*0.6, kx, -12, null, {bossAtk}), kx = sign*13, invuln = max(invuln, 75)
-    expect(r.src, "Evil Leafy's damage").toMatch(/applyHit\(f, bossDmg\(\)\*0\.6, kx, -12, null, \{bossAtk: \+\+BOSS_ATK_ID\}\)/);
-    expect(r.src, "Evil Leafy's knockback").toMatch(/Math\.sign\(f\.x - s\.x \|\| 1\)\*13/);
-    expect(r.src, "Evil Leafy's grace").toMatch(/f\.invuln = Math\.max\(f\.invuln, 75\)/);
-    expect(r.c, "One's are the same numbers").toEqual({ dmg: r.base * 0.6, kx: 13, ky: -12, grace: 75 });
+  // Round 17 (the owner, 2026-10-01), Evil Leafy's nerfs: "softer contact (knockback 13 -> 9, grace 75 -> 120 f; One keeps her own copy of the old numbers)". One's contact was read off
+  // Evil Leafy's own code (a boss hit of 0.6, kx = sign*13, -12, invuln = max(invuln, 75)); hers is softer now, so this test no longer reads her code: One keeps the numbers hers had, in its
+  // own ONE_CONTACT, and a change to hers does not touch it.
+  it("touching her hurts as touching Evil Leafy did: the old numbers, One's own copy -- Evil Leafy's contact is softer now (9 and 120) and One does not read hers", () => {
+    const r = STAGE(`
+      fresh(); one._hop = null; one._atkTimer = 1e9;
+      var out = { c: ONE_CONTACT, base: BOSS_DMG_BASE, src: String(oneContact), el: [EL.touchKX, EL.touchGrace] };
+      // change hers: One's hit does not move
+      var kx0 = EL.touchKX, g0 = EL.touchGrace; EL.touchKX = 1; EL.touchGrace = 1;
+      one.x = you.x; one.y = you.y; you.vx = 0; you.vy = 0; step();
+      out.one = { pct: you.pct, vx: you.vx, invuln: you.invuln };
+      EL.touchKX = kx0; EL.touchGrace = g0;
+      return out;`);
+    // The numbers Evil Leafy's contact check had when One copied them: applyHit(f, bossDmg()*0.6, kx, -12, ...), kx = sign*13, invuln = max(invuln, 75)
+    expect(r.c, "One's are the OLD numbers").toEqual({ dmg: r.base * 0.6, kx: 13, ky: -12, grace: 75 });
     expect(r.c.dmg, 'about 13%: well under the 33 of one of her hits').toBeCloseTo(13.2, 6);
+    expect(r.el, "Evil Leafy's are softer now (Round 17): knocked 9, 120 frames of grace").toEqual([9, 120]);
+    expect(r.src, "One's contact reads its own ONE_CONTACT and never hers").toMatch(/ONE_CONTACT/);
+    expect(r.src).not.toMatch(/\bEL\b|touchKX|touchGrace/);
+    expect(r.one.pct, 'with hers set to 1 and 1, One still hits for 13.2%').toBeCloseTo(13.2, 5);
+    expect(Math.abs(r.one.vx), 'knocked hard, the old 13 (hers would be 1)').toBeGreaterThan(8);
+    expect(r.one.invuln, 'with the old 75 frames of grace (hers would be 1)').toBeGreaterThanOrEqual(70);
+    expect(r.one.invuln).toBeLessThanOrEqual(75);
   });
 
   it('a fighter who overlaps her takes the hit, flies off the way it pushed, and cannot be hit again until the grace is over; one beside her is untouched', () => {
