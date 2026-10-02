@@ -194,7 +194,7 @@ function pageHarness() {
     }
     let label, age, marked = false, telGap = G.tel.on ? 0 : (G.tel.end >= 0 ? f - G.tel.end : 9999), cat = 'boss';
     let near = '', onVictim = false;
-    if (src) { const bi = born.get(src); label = bi ? bi.label : projLabel(src); age = bi ? f - bi.f : 0; marked = bi ? bi.marked : !!(src.warn > 0 || src.delay > 0); if (bi) telGap = bi.telGap; cat = 'shot';
+    if (src) { const bi = born.get(src); label = bi ? bi.label : projLabel(src); age = bi ? f - bi.f : 0; marked = bi ? bi.marked : !!(src.warn > 0 || src.delay > 0 || src.warnX != null || src.warnY != null); if (bi) telGap = bi.telGap; cat = 'shot';
       onVictim = !bi || Math.hypot(bi.x0 - t.x, bi.y0 - t.y) < 150;
       near = bi ? `; it first appeared ${Math.round(Math.hypot(bi.x0 - t.x, bi.y0 - t.y))} px from the victim, at speed ${bi.spd.toFixed(1)}, r ${src.r}` : '; it appeared this frame'; }
     else { const c = callers(new Error().stack); label = c.label; cat = c.cat; age = telGap; }

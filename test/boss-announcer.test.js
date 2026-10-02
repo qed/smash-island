@@ -562,7 +562,7 @@ describe('the crusher, the arena hazard', () => {
 describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wraps', () => {
   // the boss stands where the nearest fighter is the one at `x` (a still Firey), turn 2 is the laser
 
-  it('a ring on your spot follows you and locks for the last 30 frames of its wind-up; phase 1 sends two beams (up and down together), phase 2 four, phase 3 a second cross a step toward the middle', () => {
+  it('a ring on your spot follows you and locks for the last 30 frames of its wind-up; phase 1 sends two beams (up and down together), phase 2 four and then a second burst, an X of two diagonals a step toward the middle (phase 3 too)', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2, 3].forEach(function(ph){ ${STAGE(200)}
         var gy = groundY(); setPhase(ph);
@@ -590,19 +590,27 @@ describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wr
     // down beam were 14 frames apart and the walls' beams 14 after that: three strikes in 28 frames, one step or jump each. Now the column ("one that goes up, and one
     // that goes down") strikes together, and the row ("two more lasers moving horizontally") comes `rowAt` frames in, ANN_CALM after the column is over.
     expect(r[1].marks.map((m) => [m.d, m.start]), 'the up beam and the down beam together: one column, one step aside').toEqual([[0, 0], [1, 0]]);
-    expect(r[2].marks.map((m) => [m.d, m.start]), 'phase 2: "two more lasers moving horizontally", both from the walls, 51 frames in').toEqual([[0, 0], [1, 0], [2, 51], [3, 51]]);
+    expect(r[2].marks.slice(0, 4).map((m) => [m.d, m.start]), 'phase 2: "two more lasers moving horizontally", both from the walls, 51 frames in').toEqual([[0, 0], [1, 0], [2, 51], [3, 51]]);
     const colEnds = 7 + 14 + 5;   // the column grows (7), holds (14) and fades (5)
     expect(r[2].marks[2].start - (7 + 14), 'the row begins ANN_CALM or more after the column has done its harm (grow + hold)').toBeGreaterThanOrEqual(ANN_CALM);
     expect(colEnds).toBeLessThan(51);
-    expect(r[3].marks, 'phase 3: a second cross').toHaveLength(8);
-    const second = r[3].marks.slice(4);
-    expect(second.map((m) => m.start), 'the second cross: its column begins ANN_CALM after the row of the first cross is over (51 + 9 grow + 14 hold + 5 fade + 30 = 109)').toEqual([109, 109, 160, 160]);
-    expect(second[0].start - (51 + 9 + 14), 'a window of at least ANN_CALM between the two crosses').toBeGreaterThanOrEqual(ANN_CALM);
-    const x1 = r[3].marks[0].x, x2 = second[0].x;
-    expect(Math.abs(x2 - x1), 'a step toward the middle').toBe(220);
-    expect(Math.abs(x2 - 550) < Math.abs(x1 - 550)).toBe(true);
-    expect(second.every((m) => m.y === r[3].marks[0].y)).toBe(true);
-    expect(r[2].marks.every((m) => m.x === r[2].marks[0].x && m.y === r[2].marks[0].y), 'every beam converges on the one mark').toBe(true);
+    // The owner, Round 17 (the question boxes, 2026-10-01): "QUADRUPLE LASER!'s second cross from phase 2", and, verbatim, "laser burst 2 should go diagonal." -- so the second burst is there
+    // in phase 2 (it was phase 3 only) and it is an X: the "/" (beams 4 and 5, from its lower left and upper right) and, `diagAt` frames later, the "\" (6 and 7).
+    for (const ph of [2, 3]) {
+      expect(r[ph].marks, `phase ${ph}: the first cross (four beams) and the second burst (four more)`).toHaveLength(8);
+      const second = r[ph].marks.slice(4);
+      expect(second.map((m) => m.d), `phase ${ph}: the "/" (4, 5) then the "\\" (6, 7): diagonals`).toEqual([4, 5, 6, 7]);
+      expect(second.map((m) => m.start), `phase ${ph}: the "/" begins ANN_CALM after the row of the first cross is over (51 + 9 grow + 14 hold + 5 fade + 30 = 109), the "\\" ANN_CALM after the "/" is (109 + 9 + 14 + 30 = 162)`).toEqual([109, 109, 162, 162]);
+      expect(second[0].start - (51 + 9 + 14), 'a window of at least ANN_CALM between the two bursts').toBeGreaterThanOrEqual(ANN_CALM);
+      expect(second[2].start - (second[0].start + 9 + 14), 'and between the two diagonals').toBeGreaterThanOrEqual(ANN_CALM);
+      const x1 = r[ph].marks[0].x, x2 = second[0].x;
+      expect(Math.abs(x2 - x1), 'a step toward the middle').toBe(220);
+      expect(Math.abs(x2 - 550) < Math.abs(x1 - 550)).toBe(true);
+      expect(second.every((m) => m.y === r[ph].marks[0].y && m.x === x2), 'on the same row, every diagonal through the one point').toBe(true);
+      expect(new Set(r[ph].marks.map((m) => m.id)).size, 'the whole burst is one attack id').toBe(1);
+    }
+    expect(r[1].marks, 'phase 1 has no second burst').toHaveLength(2);
+    expect(r[2].marks.slice(0, 4).every((m) => m.x === r[2].marks[0].x && m.y === r[2].marks[0].y), 'every beam of the first cross converges on the one mark').toBe(true);
   });
 
   it('NO wrap ("3 shouldnt have one go around the screen."): every beam starts at an edge, ends on the mark and stays on the screen the whole time', () => {
@@ -616,12 +624,19 @@ describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wr
           if (sg.live && t === p.mB + (p.mA < 2 ? ANN.laser.growV : ANN.laser.growH) - 1) ends.push([sg.hx - sg.X, sg.hy - sg.Y]);
           edges[p.mA + ':' + Math.round(sg.ex) + ',' + Math.round(sg.ey)] = 1; }
         p.delay = keep; });
-      return { n: marks.length, bad: bad, ends: ends, edges: Object.keys(edges).length, WW: WW, gy: gy };
+      var diag = marks.filter(function(p){ return p.mA >= 4; }).map(function(p){ var e = annBeamEdge(p.mA, p.warnX, p.warnY, gy); return [p.mA, Math.round(e[0] - p.warnX), Math.round(e[1] - p.warnY)]; });
+      return { n: marks.length, bad: bad, ends: ends, edges: Object.keys(edges).length, diag: diag, WW: WW, gy: gy };
     })()`);
     expect(r.n, 'four beams a cross, never a fifth to wrap round').toBe(8);
     expect(r.bad, 'no beam ever leaves the screen').toEqual([]);
     expect(r.ends.every(([dx, dy]) => Math.abs(dx) < 1 && Math.abs(dy) < 1), 'each ends on the mark').toBe(true);
     expect(r.edges, 'the same four edges for each of the two crosses, each beam from a fixed edge').toBeGreaterThanOrEqual(4);
+    // the X: each diagonal is a line at 45 degrees through the mark, its two beams coming in from either end of it (the "/" from the lower left and the upper right, the "\" from the
+    // upper left and the lower right), each starting at an edge of the screen
+    expect(r.diag.map((d) => d[0])).toEqual([4, 5, 6, 7]);
+    for (const [d, dx, dy] of r.diag) expect(Math.abs(dx), `beam ${d} comes in at 45 degrees`).toBe(Math.abs(dy));
+    expect(r.diag.map(([, dx, dy]) => [Math.sign(dx), Math.sign(dy)]), 'lower left, upper right, upper left, lower right').toEqual([[-1, 1], [1, -1], [-1, -1], [1, 1]]);
+    expect(r.diag.every(([, dx, dy]) => Math.abs(dx) >= 38 && Math.hypot(dx, dy) < Math.hypot(r.WW + 60, r.gy + 60)), 'each is a real beam and none is longer than the screen').toBe(true);
   });
 
   it('a fighter on the mark is hit once for a whole boss hit and thrown to the far side; beside the column he is safe from the vertical pair, above the row from the horizontal pair', () => {
@@ -645,6 +660,36 @@ describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wr
     }
     expect(r[1].g2, 'phase 1 has no horizontal beams: on the row but beside the column is safe').toBe(0);
     expect(r[2].g2, 'phase 2: the beams from the walls take the row').toBeCloseTo(r[2].full, 5);
+  });
+
+  // Round 17, verbatim: "laser burst 2 should go diagonal." The second burst's point is 220 px toward the middle from the lock: probes stand on it, 60 px beside it on its row, on its
+  // "/" arm and straight above it (everyone is in hit grace until the "/" is two frames from striking, so only the X is tested)
+  it('the X (phases 2 and 3): a fighter on the point or on a diagonal takes one whole boss hit; one 60 px to the side of the point on its row, or straight above it, is out of both', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [2, 3].forEach(function(ph){ ${STAGE(300)}
+        var gy = groundY(); setPhase(ph); var Y = gy - 24, X2 = annCross2(300);
+        var mk = function(x, y, i){ var q = makeFighter(ROSTER.find(function(r){ return r.name === 'Pen'; }), x, y, i); q.team = 0; q.controller = 'still'; q.stocks = 9; fighters.push(q); return q; };
+        var pos = [[X2, Y], [X2 + 60, Y], [X2 + 110, Y - 110], [X2, Y - 130]], P = pos.map(function(q, i){ return mk(q[0], q[1], i + 1); });
+        var armed = false, hits = [0, 0, 0, 0], prev = [0, 0, 0, 0];
+        var pin = function(){ b.x = 200; b.vx = 0; f.x = 300; f.y = Y; f.vx = 0; f.vy = 0; f.invuln = 999; P.forEach(function(q, i){ q.x = pos[i][0]; q.y = pos[i][1]; q.vx = 0; q.vy = 0; q.hitstun = 0; if (!armed) q.invuln = 999; }); };
+        pin(); turn(1);
+        for (var i=0;i<300;i++){
+          if (!armed){ var d4 = projectiles.filter(function(p){ return p.annMark === 'beam' && p.mA === 4; })[0];
+            if (d4 && d4.delay <= annBeamTotal(4, d4.mB) - d4.mB + 2){ armed = true; P.forEach(function(q){ q.invuln = 0; }); } }
+          pin(); step();
+          P.forEach(function(q, k){ if (q.pct > prev[k] + 1e-9){ hits[k]++; prev[k] = q.pct; } });
+        }
+        out[ph] = { hits: hits, pct: P.map(function(q){ return q.pct; }), full: bossDmg(), armed: armed, X2: X2 };
+      });
+      return out;
+    })()`);
+    for (const ph of [2, 3]) {
+      const o = r[ph];
+      expect(o.armed, `phase ${ph}: the X came`).toBe(true);
+      expect(o.hits, `phase ${ph}: on the point, beside it, on the "/" arm, above it`).toEqual([1, 0, 1, 0]);
+      expect(o.pct[0], 'one whole boss hit however many beams cross the point').toBeCloseTo(o.full, 5);
+      expect(o.pct[2], 'and on an arm').toBeCloseTo(o.full, 5);
+    }
   });
 });
 
@@ -870,7 +915,7 @@ describe('THE WINDOW: every threat is told in time, and no two come too close to
   };
   // strikes that start together (within 4 frames of one another) are one threat: in different places at once, with room between them
   const threatsOf = (S) => { const T = []; for (const s of S) { const t = T[T.length - 1]; if (t && s.s - t.s0 <= 4) t.e = Math.max(t.e, s.e); else T.push({ s0: s.s, e: s.e }); } return T; };
-  const RUNS = [['CAKE AT STAKE!', 0, 1, 2], ['BUDGET CUTS!', 0, 2, 3], ['CRUSHER ARM!', 0, 3, 2], ['QUADRUPLE LASER!', 1, 1, 1], ['QUADRUPLE LASER!', 1, 2, 2], ['QUADRUPLE LASER!', 1, 3, 4],
+  const RUNS = [['CAKE AT STAKE!', 0, 1, 2], ['BUDGET CUTS!', 0, 2, 3], ['CRUSHER ARM!', 0, 3, 2], ['QUADRUPLE LASER!', 1, 1, 1], ['QUADRUPLE LASER!', 1, 2, 4], ['QUADRUPLE LASER!', 1, 3, 4],   // (phase 2: the column, the row, the "/" and the "\" -- Round 17's second burst; phase 3 the same)
     ['ACID TEARS!', 3, 1, 2], ['ACID TEARS!', 3, 2, 3], ['ACID TEARS!', 3, 3, 4], ['WATER BALLOONS!', 5, 1, 3], ['WATER BALLOONS!', 5, 2, 4], ['WATER BALLOONS!', 5, 3, 5]];   // name, turn, phase, threats
   let results;
   beforeAll(() => { results = RUNS.map(([name, mv, ph]) => W.eval(TURN(ph, mv))); }, 120000);
@@ -915,8 +960,9 @@ describe('THE WINDOW: a fighter who reads the tells and moves can always avoid e
         if (p.annMark === 'spot' && p.delay > 0) Z.push([p.warnX, p.mA + 6]);                       // the ring of a lob, a drop or a balloon
         if (p.shape === 'annpress' && p.life > 0) Z.push([p.warnX, 78]);                            // under the press
         if (p.annMark === 'beam' && p.mA < 2 && p.delay > 0) Z.push([p.warnX, 36]);                 // the column of a cross
+        if (p.annMark === 'beam' && p.mA >= 4 && p.delay > 0) Z.push([p.warnX, 48]);                // the X: a diagonal is out of reach about 42 px to the side of its point
       });
-      if (b._tel > 0 && b._telKind === 'annlaser' && b._tel <= ANN.laser.lock){ Z.push([b._telX, 36]); if (${ph} >= 3) Z.push([annCross2(b._telX), 36]); }   // the locked cross
+      if (b._tel > 0 && b._telKind === 'annlaser' && b._tel <= ANN.laser.lock){ Z.push([b._telX, 36]); if (${ph} >= 2) Z.push([annCross2(b._telX), 48]); }   // the locked cross, and the X
       if (b._tel > 0 && b._telKind === b.attack && ${ph} >= 3 && b._tel <= ANN.crush.lock) Z.push([b._telX, 78]);                                          // the locked circle
       return Z;
     }
@@ -934,7 +980,7 @@ describe('THE WINDOW: a fighter who reads the tells and moves can always avoid e
         projectiles.forEach(function(p){
           if (p.owner !== -2 || !(p.life > 0)) return;
           if ((p.annFlat || p.annWave) && !(p.delay > 0) && (f.x - p.x)*p.vx > 0 && Math.abs(f.x - p.x) < 150) need = true;   // along the floor toward him: jump as it comes
-          if (p.annMark === 'beam' && p.mA >= 2){ var until = p.delay - (annBeamTotal(p.mA, p.mB) - p.mB); if (until <= 8 && until >= -2) need = true; }   // a row about to start
+          if (p.annMark === 'beam' && p.mA >= 2 && p.mA < 4){ var until = p.delay - (annBeamTotal(p.mA, p.mB) - p.mB); if (until <= 8 && until >= -2) need = true; }   // a row about to start
           if (p.annMark === 'lane' && p.delay > 0 && p.delay <= 9 && Math.sign(f.x - p.warnX) === p.mA && Math.abs(f.x - p.warnX) < 150 && Math.abs(f.y - p.warnY) < p.mB + 24) need = true;   // a lane about to fire, and he stands near where it starts: jump as it leaves
         });
         if (need && f.onground){ f.vy = JUMP_V; f.onground = false; jumps++; }
@@ -1096,6 +1142,40 @@ describe('THE WINDOW: the lane locks', () => {
       return hit; })()`);
     expect(run(true), 'one in the air as it passes is not hit').toBe(false);
     expect(run(false), 'one who stayed on the row is').toBe(true);
+  });
+
+  // The glitch pass, Round 17: the hunter found a flat slice born 47 px from a fighter standing next to the boss that struck 2 frames later. His lane had been lit from the start of the
+  // wind-up and held white for 36 frames, so that fighter was warned -- but the band began at the blade, and a cake is born on whoever its body overlaps, which can be a fighter just behind
+  // the blade (next to the tosser). So the lit band now begins ANN.flat.back behind the blade, and the cake carries its lane's spot (warnX, warnY: no `warn`, so no shadow and no drift),
+  // which is what the hunter reads as "told". The acid puddle (a spot ringed since the wind-up began) carries its spot the same way.
+  it('the lit lane begins ANN.flat.back behind the blade, so every fighter the cake can be born on is inside it; the cake and the acid puddle carry their warning for the glitch hunter', () => {
+    const r = W.eval(`(function(){ ${STAGE(560)}
+      var gy = groundY(), out = { reach: {} }; f.invuln = 999;
+      turn(0);
+      for (var i=0;i<200 && !out.fl;i++){ f.x = 560; f.vx = 0; step(); f.invuln = 999;
+        var m = projectiles.find(function(p){ return p.annMark === 'lane'; });
+        if (m) out.lane = { x:m.warnX, y:m.warnY, dir:m.mA, back:m.mC, h:m.mB };
+        var fl = projectiles.find(function(p){ return p.annFlat; });
+        if (fl) out.fl = { x:fl.x, y:fl.y, r:fl.r, vx:fl.vx, warnX:fl.warnX, warnY:fl.warnY, warn:fl.warn || 0 }; }
+      out.back = ANN.flat.back;
+      // how far BEHIND the blade can a fighter stand and still be touched by the cake in its first three frames (the widest hurtboxes of the roster, standing on the lane's row)
+      ['Pen', 'Naily', 'Bracelety', 'Bot', 'Cheesy', 'Bonesaw', 'Firey', 'Ice Cube'].forEach(function(n){
+        var g = makeFighter(ROSTER.find(function(q){ return q.name === n; }), 0, out.fl.y + 6, 7), far = 0;
+        for (var dx=0; dx<=160; dx++){ g.x = out.fl.x - out.fl.vx/Math.abs(out.fl.vx)*dx;
+          var touched = [0, 1, 2].some(function(k){ return hurtGap(g, out.fl.x + out.fl.vx*k, out.fl.y) < out.fl.r; }); if (touched) far = dx; }
+        out.reach[n] = far; });
+      projectiles = []; var id = ++BOSS_ATK_ID; annPuddle(b, { p:{ x:300, warnY:gy, life:0 }, id:id });
+      var pd = projectiles.find(function(p){ return p.shape === 'annpuddle'; });
+      out.pud = pd ? { warnX:pd.warnX, warnY:pd.warnY, x:pd.x, y:pd.y } : null;
+      return out; })()`);
+    expect(r.fl, 'the flat throw left').toBeDefined();
+    expect(r.lane.back, 'the lane is told to start behind its blade').toBe(r.back);
+    expect(r.back, 'by more than the widest body and a cake').toBeGreaterThanOrEqual(38 + 17);
+    for (const [name, far] of Object.entries(r.reach)) expect(far, `${name}: the farthest behind the blade a fighter is touched is inside the lit lane`).toBeLessThanOrEqual(r.back);
+    expect(Object.values(r.reach).some((v) => v > 30), 'and it does reach that far back for the wide ones: the extension is needed').toBe(true);
+    expect(r.fl, 'the cake carries its lane\'s spot: warnX and warnY, and no `warn` (so no shadow)').toMatchObject({ warnX: r.lane.x, warnY: r.lane.y, warn: 0 });
+    expect(r.pud, 'the puddle carries the spot it was ringed on').toMatchObject({ warnX: 300 });
+    expect(r.pud.warnX).toBe(r.pud.x);
   });
 });
 
@@ -1335,8 +1415,8 @@ describe('drawing his arena, his tells, his shots and his ending', () => {
       // the lanes (a flat throw's, a wave's: either way) and the rings of the spots (a drop's or a balloon's, with its drip; a lob's, a ring only)
       [1, 20, 40, 100].forEach(function(d){ [-1, 1].forEach(function(dir){ projectiles = [annMark('lane', 400, gy - 24, d, { color:'#f7a1a8', mA:dir, mB:38, life:30 })]; go(); });
         projectiles = [annMark('spot', 400, gy, d, { color:'#4cff1c', mA:50, mB:0 })]; go(); projectiles = [annMark('spot', 400, gy, d, { color:'#f7a1a8', mA:48, mB:2 })]; go(); });
-      [[0, 2, 3, 4], [0, 14, 20, 40], [2, 28, 30, 60]].forEach(function(c){ for (var t=0;t<annBeamTotal(c[0], c[1]);t+=2){ projectiles = [annMark('beam', 400, gy - 24, annBeamTotal(c[0], c[1]) - t, { color:'#b060ff', mA:c[0], mB:c[1] })]; go(); } });
-      [0, 1, 2, 3].forEach(function(d){ for (var t=0;t<annBeamTotal(d, 0);t+=3){ projectiles = [annMark('beam', 400, gy - 24, annBeamTotal(d, 0) - t, { color:'#b060ff', mA:d, mB:0 })]; go(); } });
+      [[0, 2, 3, 4], [0, 14, 20, 40], [2, 28, 30, 60], [4, 20, 0, 0], [7, 40, 0, 0]].forEach(function(c){ for (var t=0;t<annBeamTotal(c[0], c[1]);t+=2){ projectiles = [annMark('beam', 400, gy - 24, annBeamTotal(c[0], c[1]) - t, { color:'#b060ff', mA:c[0], mB:c[1] })]; go(); } });
+      [0, 1, 2, 3, 4, 5, 6, 7].forEach(function(d){ for (var t=0;t<annBeamTotal(d, 0);t+=3){ projectiles = [annMark('beam', 400, gy - 24, annBeamTotal(d, 0) - t, { color:'#b060ff', mA:d, mB:0 })]; go(); } });
       for (var e2=0;e2<ANN.end.total;e2+=2){ projectiles = [annMark('end', 400, gy, ANN.end.total - e2, { mA:-85, mB:(e2 % 4 ? 2 : -1) })]; go(); }
       projectiles = [{ annGhost:1, x:1, y:1, r:2, vx:0, vy:26, color:'#f4d800', owner:-2, ownerObj:{ team:0, idx:-2 }, life:9 }]; go();
       b._tel = 0; return { n: n };
