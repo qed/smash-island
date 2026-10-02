@@ -845,11 +845,13 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
   });
 });
 
-describe('contact damage: "Evil leafy level."', () => {
+describe('contact damage: "Evil leafy level." -- and then "nerf one." / "Lighter contact"', () => {
+  // The owner, 2026-10-02: "nerf one." Asked which, they picked "Lighter contact": touching her hurts half as much (ONE_CONTACT's damage halved: 0.3 of the base, 6.6%)
+  // and knocks less (13 to 9); her 75 frames of grace stay. The numbers below are those; the "Evil leafy level" ones they replace are in the comments.
   // Round 17 (the owner, 2026-10-01), Evil Leafy's nerfs: "softer contact (knockback 13 -> 9, grace 75 -> 120 f; One keeps her own copy of the old numbers)". One's contact was read off
   // Evil Leafy's own code (a boss hit of 0.6, kx = sign*13, -12, invuln = max(invuln, 75)); hers is softer now, so this test no longer reads her code: One keeps the numbers hers had, in its
   // own ONE_CONTACT, and a change to hers does not touch it.
-  it("touching her hurts as touching Evil Leafy did: the old numbers, One's own copy -- Evil Leafy's contact is softer now (9 and 120) and One does not read hers", () => {
+  it("touching her hurts HALF as much as it did (\"Lighter contact\": 6.6%, knocked 9 not 13, the same 75 frames of grace): One's own copy -- Evil Leafy's contact is 9 and 120 and One does not read hers", () => {
     const r = STAGE(`
       fresh(); one._hop = null; one._atkTimer = 1e9;
       var out = { c: ONE_CONTACT, base: BOSS_DMG_BASE, src: String(oneContact), el: [EL.touchKX, EL.touchGrace] };
@@ -858,16 +860,24 @@ describe('contact damage: "Evil leafy level."', () => {
       one.x = you.x; one.y = you.y; you.vx = 0; you.vy = 0; step();
       out.one = { pct: you.pct, vx: you.vx, invuln: you.invuln };
       EL.touchKX = kx0; EL.touchGrace = g0;
+      // the same bump with the numbers it had before "Lighter contact" (0.6 of the base, knocked 13), the way it pushed: the knock it is lighter than
+      var dir = Math.sign(out.one.vx) || 1;
+      you.invuln = 0; you.hitstun = 0; you.pct = 0; you.vx = 0; you.vy = 0;
+      applyHit(you, BOSS_DMG_BASE*0.6, dir*13, -12, null, { bossAtk: ++BOSS_ATK_ID });
+      out.was = { pct: you.pct, vx: you.vx };
       return out;`);
     // The numbers Evil Leafy's contact check had when One copied them: applyHit(f, bossDmg()*0.6, kx, -12, ...), kx = sign*13, invuln = max(invuln, 75)
-    expect(r.c, "One's are the OLD numbers").toEqual({ dmg: r.base * 0.6, kx: 13, ky: -12, grace: 75 });
-    expect(r.c.dmg, 'about 13%: well under the 33 of one of her hits').toBeCloseTo(13.2, 6);
+    expect(r.c, "\"Lighter contact\": half the damage (0.3 of the base, it was 0.6), knocked 9 (it was 13), the -12 lift and the 75 frames of grace as they were").toEqual({ dmg: r.base * 0.3, kx: 9, ky: -12, grace: 75 });
+    expect(r.c.dmg, 'about 6.6%: half of the 13.2 it was, well under the 33 of one of her hits').toBeCloseTo(6.6, 6);
+    expect(r.c.dmg, 'exactly half').toBeCloseTo(r.base * 0.6 / 2, 9);
     expect(r.el, "Evil Leafy's are softer now (Round 17): knocked 9, 120 frames of grace").toEqual([9, 120]);
     expect(r.src, "One's contact reads its own ONE_CONTACT and never hers").toMatch(/ONE_CONTACT/);
     expect(r.src).not.toMatch(/\bEL\b|touchKX|touchGrace/);
-    expect(r.one.pct, 'with hers set to 1 and 1, One still hits for 13.2%').toBeCloseTo(13.2, 5);
-    expect(Math.abs(r.one.vx), 'knocked hard, the old 13 (hers would be 1)').toBeGreaterThan(8);
-    expect(r.one.invuln, 'with the old 75 frames of grace (hers would be 1)').toBeGreaterThanOrEqual(70);
+    expect(r.one.pct, 'with hers set to 1 and 1, One still hits for 6.6%').toBeCloseTo(6.6, 5);
+    expect(Math.abs(r.one.vx), 'knocked by her 9 (hers would be 1): well over a 1').toBeGreaterThan(5);
+    expect(Math.abs(r.one.vx), 'and less than the same bump at the old 13').toBeLessThan(Math.abs(r.was.vx) - 1);
+    expect(r.was.pct, 'which hurt twice as much').toBeCloseTo(13.2, 5);
+    expect(r.one.invuln, 'with her 75 frames of grace (hers would be 1)').toBeGreaterThanOrEqual(70);
     expect(r.one.invuln).toBeLessThanOrEqual(75);
   });
 
@@ -885,7 +895,7 @@ describe('contact damage: "Evil leafy level."', () => {
       // a fighter beside her, outside her body
       fresh(); one.x = you.x + one.r + 200; one.y = you.y; one._atkTimer = 1e9; var q0 = you.pct; step(); out.beside = you.pct - q0;
       return out;`);
-    expect(r.first.pct, '13.2%').toBeCloseTo(13.2, 5);
+    expect(r.first.pct, '6.6% ("Lighter contact": it was 13.2)').toBeCloseTo(6.6, 5);
     expect(r.first.invuln, 'and a long grace').toBeGreaterThanOrEqual(70);
     expect(r.first.vy, 'thrown up').toBeLessThan(0);
     expect(r.during, 'no second bump while the grace lasts').toBe(0);
@@ -909,26 +919,63 @@ describe('contact damage: "Evil leafy level."', () => {
       return out;`);
     expect(r.ghost, 'her ghost is on her side').toBe(0);
     expect(r.outside, 'just outside her body').toBe(0);
-    expect(r.giant, 'grown 1.6 times, the same spot is inside her').toBeCloseTo(13.2, 5);
+    expect(r.giant, 'grown 1.6 times, the same spot is inside her').toBeCloseTo(6.6, 5);
     expect(r.hop, 'nothing while she is in the Vortex').toBe(0);
     expect(r.fly, 'and nothing while she flies in').toBe(0);
     expect(r.dying, 'nor in her ending').toBe(0);
   });
 });
 
-describe('"also, no stock per phase."', () => {
-  it('her phase lines heal and give no stock; the reward Steve Cobs\'s tier lines call is the same function with no argument, and still gives the stock', () => {
+describe('stocks at her phase lines: "every 2 phases" (it was "also, no stock per phase.")', () => {
+  // The owner, 2026-09-30: "also, no stock per phase." Then, 2026-10-02, "nerf one.": asked about the stock at her phase lines, they picked "every 2 phases" -- a stock back at every
+  // SECOND line (the 2nd, the 4th), none at the 1st and the 3rd; the heal stays at every line. She has three lines (1500, 1000, 500), so in her fight it is the one at 1000.
+  it('the rule is every second line: a stock at the 2nd and the 4th, none at the 1st and the 3rd; the heal at every one', () => {
+    const r = STAGE(`
+      var out = { rule: [0, 1, 2, 3, 4, 5, 6].map(function(n){ return oneLineStock(n); }), every: ONE_STOCK_EVERY, rows: [] };
+      you._oneStocks0 = 9; you.stocks = 1;
+      for (var n = 1; n <= 4; n++){ you.pct = 100; onePhaseReward(!oneLineStock(n)); out.rows.push([Math.round(you.pct), you.stocks]); }
+      return out;`);
+    expect(r.every, '"every 2 phases"').toBe(2);
+    expect(r.rule, 'there is no line 0; then none, a stock, none, a stock, none, a stock').toEqual([false, false, true, false, true, false, true]);
+    expect(r.rows, 'four lines: healed 64 each time, and a stock only at the 2nd and the 4th').toEqual([[36, 1], [36, 2], [36, 2], [36, 3]]);
+  });
+
+  it('in her fight: the first line heals and gives no stock, the second heals and gives one, the third heals and gives none -- and she has no fourth', () => {
+    const r = STAGE(`
+      you._oneStocks0 = 3; you.stocks = 1;
+      var rows = [], line = function(hp){ you.pct = 100; one.hp = hp; one._atkTimer = 1e9; step(); rows.push([Math.round(you.pct), you.stocks, one._marks]); };
+      line(1490); line(990); line(490);
+      one.hp = 5; one._atkTimer = 1e9; step();   // (nearly nothing left of her: still no fourth line)
+      return { rows: rows, marks: one._marks, stocks: you.stocks };`);
+    expect(r.rows, 'line 1: healed, the one stock you had; line 2: healed, a stock back; line 3: healed, no stock').toEqual([[36, 1, 1], [36, 2, 2], [36, 2, 3]]);
+    expect([r.marks, r.stocks], 'three lines in all, and no stock for the end').toEqual([3, 2]);
+  });
+
+  it("Steve Cobs's reward is exactly what it was: onePhaseReward() with no argument heals and gives the stock, and each of his tier lines calls it so", () => {
     const r = STAGE(`
       var out = {};
-      you.stocks = 1; you._oneStocks0 = 3; you.pct = 100; onePhaseReward(true); out.hers = [you.pct, you.stocks];
-      you.pct = 100; onePhaseReward(); out.cobs = [you.pct, you.stocks];
-      you.pct = 100; one.hp = 1490; you.stocks = 1; one._atkTimer = 1e9; step(); out.line = [Math.round(you.pct), you.stocks, one._marks];
+      you.stocks = 1; you._oneStocks0 = 3; you.pct = 100; onePhaseReward(true); out.noStock = [Math.round(you.pct), you.stocks];
+      you.pct = 100; onePhaseReward(); out.cobs = [Math.round(you.pct), you.stocks];
+      you.pct = 100; you.stocks = 3; onePhaseReward(); out.capped = [Math.round(you.pct), you.stocks];   // up to the stocks you started with, and no more
+      out.src = String(updateCobs);
       return out;`);
-    expect(r.hers[0], 'a heal').toBeCloseTo(100 - 64, 5);
-    expect(r.hers[1], 'and the stock you had').toBe(1);
-    expect(r.cobs[0]).toBeCloseTo(36, 5);
-    expect(r.cobs[1], "Cobs keeps his (\"leave his as is until the owner has fought him\")").toBe(2);
-    expect(r.line, 'her own phase line: healed, same stock, phase 2').toEqual([36, 1, 1]);
+    expect(r.noStock, "her odd lines' call: the heal only").toEqual([36, 1]);
+    expect(r.cobs, 'no argument is his call: the heal and a stock back ("leave his as is until the owner has fought him")').toEqual([36, 2]);
+    expect(r.capped, 'never past the stocks you started with').toEqual([36, 3]);
+    expect(r.src, 'his tier line calls it with no argument, at every line').toMatch(/cobsTierUp\(s\); onePhaseReward\(\); \}/);
+    expect(r.src, "and knows nothing of her every-second-line rule").not.toMatch(/oneLineStock|ONE_STOCK_EVERY/);
+  });
+
+  it('...and his fight pays it at every one of his four tier lines: a heal and a stock back each time', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startCobsFight(['Knife'], { story:true, onEnd:function(){ return true; } });
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      s._hop = null; you.controller = 'still'; you._oneStocks0 = 9; you.stocks = 1;
+      var rows = [];
+      for (var n = 1; n <= 4; n++){ you.pct = 100; s.hp = s.maxHp - COBS_PHASE_HP*n - 1; s._atkTimer = 1e9; step(); rows.push([Math.round(you.pct), you.stocks, s._marks]); }
+      running = false; return rows; })()`);
+    expect(r, 'healed 64 and a stock back at the 1st, 2nd, 3rd and 4th line').toEqual([[36, 2, 1], [36, 3, 2], [36, 4, 3], [36, 5, 4]]);
   });
 });
 

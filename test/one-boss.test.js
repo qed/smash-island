@@ -1065,8 +1065,9 @@ describe("the review's fixes to her fight", () => {
     expect(four.healed, 'four drained, scaled like the hits').toBe(Math.round(36 * 2.8 * four.mult));
   });
 
-  // "also, no stock per phase." (the owner, 2026-09-30): the heal stays, the stock a phase line used to hand back is gone.
-  it('each phase line she crosses heals your side and hands back NO stock ("also, no stock per phase.")', () => {
+  // "also, no stock per phase." (the owner, 2026-09-30): the heal stayed, the stock a phase line used to hand back was gone. Then "every 2 phases" (2026-10-02, "nerf one."): the heal at
+  // every line, and a stock back at every SECOND one -- the first gives none, the second gives one.
+  it('each phase line she crosses heals your side; a stock comes back at the second line only ("every 2 phases"), not at the first', () => {
     const r = fight(['Lightning'], { story: true }, `
       one._atkTimer = 1e9;
       you.pct = 100; you.stocks = 2; one.hp = 1490; step();
@@ -1074,8 +1075,8 @@ describe("the review's fixes to her fight", () => {
       you.pct = 30; one.hp = 990; step();
       return { first: first, second: { pct: you.pct, stocks: you.stocks, marks: one._marks } };`);
     expect(r.first.pct).toBeCloseTo(100 - 64, 0);
-    expect([r.first.stocks, r.first.marks], 'healed 64, and still on the two stocks you had').toEqual([2, 1]);
-    expect(r.second, 'the second line heals the rest and still gives no stock').toEqual({ pct: 0, stocks: 2, marks: 2 });
+    expect([r.first.stocks, r.first.marks], 'healed 64, and still on the two stocks you had: the first line gives none').toEqual([2, 1]);
+    expect(r.second, 'the second line heals the rest and gives a stock back (up to the three you started with)').toEqual({ pct: 0, stocks: 3, marks: 2 });
   });
 
   it('keeps the teams map\'s own floating platforms, every one where the teams builder laid it', () => {
