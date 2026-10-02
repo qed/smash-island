@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { PNG } from 'pngjs';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { mulberry32 } from './helpers/prng.js';
+import { bootValidating } from './helpers/validating-canvas.js';
 
 // STEVE COBS, the secret boss, rebuilt in the boss overhaul (boss-plan-secret.md 1.2, 1.3, 2, 3.2, 4, 5; boss-overhaul-decisions.md Rounds 6, 7,
 // 14, 15). "give the attacks a twist" -- a play on words: each attack gets a change or specialty -- and "also 1." = heavier hits, the arena
@@ -1166,5 +1167,43 @@ describe('his shots wear the show\'s art, credited; nothing of his fight is onli
   it('his fight is local only: a netcode session cannot start it, so nothing of it needs to ride the snapshot', () => {
     const r = W.eval(`(function(){ var was = inNetSession; inNetSession = function(){ return true; }; var ok = startCobsFight(['Knife'], { story:true }); inNetSession = was; return ok; })()`);
     expect(r).toBe(false);
+  });
+});
+
+// ==== THE GLITCH PASS (2026-10-01): what scripts/boss-glitch.mjs found in his fight ====
+describe('the glitch pass: his fight on a canvas that keeps the old alpha, and a cuff that kept to the engine\'s grace', () => {
+  it('the van\'s lane marker draws at an alpha the canvas keeps (0.5 + pulse peaks at 1.05)', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startCobsFight(['Knife'], { story:true, onEnd:function(){ return true; } });
+      var s = summons.find(function(o){ return o._cobsFight; });
+      s._hop = null; s._atkTimer = 1e9; fighters[0].controller = 'still';
+      s._tel = 30; s._telKind = 'van'; s._vanFrom = true;
+      hazardT = 3;                                          // sin(hazardT * 0.5) at its top: the pulse at 0.55
+    })()`);
+    errors.length = 0;
+    w.eval('draw()');
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
+  });
+
+  it('two MeTags on you in the same frame cuff you once: the second waits out the grace of the first, as the barrier link and every shot do (it cuffed twice in a frame, 33% with no grace between)', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+      cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
+      var tags = summons.filter(function(m){ return m.type === 'metag'; }), a = tags[0], b = tags[1], hits = [], i = 0, AH = applyHit;
+      applyHit = function(t, d, kx, ky, from, o){ if (o && o.bossAtk != null && t === you) hits.push({ f: i, inv: you.invuln }); return AH.apply(this, arguments); };
+      try {
+        for (i = 0; i < 60; i++){
+          s._atkTimer = 1e9;
+          // both tags are on you at the start; after that only the second is (the first has its own wait after a cuff)
+          [a, b].forEach(function(m, k){ if (i === 0 || k === 1){ m.x = you.x; m.y = hurtCY(you); m.vx = m.vy = 0; m._cd = 0; } });
+          step();
+        }
+      } finally { applyHit = AH; }
+      return { hits: hits, grace: you.invuln };`);
+    expect(r.hits.length, 'both tags cuffed in the end').toBeGreaterThanOrEqual(2);
+    expect(r.hits[0].f, 'the first cuff, on the first frame').toBe(0);
+    expect(r.hits[1].f - r.hits[0].f, 'the second not until the first\'s grace (9 + 0.6 of the hit, at most 24 frames) was over').toBeGreaterThanOrEqual(12);
   });
 });

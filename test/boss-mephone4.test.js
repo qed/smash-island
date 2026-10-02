@@ -199,18 +199,18 @@ describe('FIST THINGY!', () => {
     projectiles = []; return { gloves: out, full: bossDmg(), row: ${row}, pu: s._hz.pu }; })()`);
   const sum = (g) => g.reduce((a, p) => a + p.dmg, 0);
 
-  it('P1 is one glove, bolted to the edge behind it, that flies the row you stood in through everyone on it: a whole boss hit', () => {
+  it('P1 is one glove, out of the edge behind it on its pole, that flies the row you stood in through everyone on it: a whole boss hit', () => {
     const r = fire(1, 300);
     expect(r.gloves).toHaveLength(1);
     const [g] = r.gloves;
     expect(g, 'at 20 px a frame ("at full speed"; it was 15), 88 px across: the 2x glove').toMatchObject({ owner: -2, shape: 'fistthingy', vx: -20, vy: 0, y: r.row, r: 44, kb: 13, pierce: true });
     expect(g.atk).toBeGreaterThan(0);
     expect(g.dmg).toBeCloseTo(r.full, 6);
-    expect(g.arm, 'its pole is bolted to the edge it comes from, on the boss side of the stage').toEqual([1100, r.row]);
+    expect(g.arm, 'the edge it comes out of, on the boss side of the stage').toEqual([1100, r.row]);
     expect(g.x, 'out on its pole, 400 px before the spot it flies through (it starts nearer than the edge only when there is no room)').toBe(300 + 400);
     expect(fire(1, 800, 200).gloves[0], 'it comes from the left edge and punches right when he is on the left').toMatchObject({ vx: 20, arm: [0, r.row], x: 800 - 400 });
     expect(fire(1, 1000, 200).gloves[0].x, 'and with you near the far wall it still starts a reach back: 600').toBe(600);
-    expect(fire(1, 800, 900).gloves[0].x, 'no room for a reach behind you: it starts at the edge it is bolted to, half in').toBe(1100 - 22);
+    expect(fire(1, 800, 900).gloves[0].x, 'no room for a reach behind you: it starts at the edge it comes out of, half in').toBe(1100 - 22);
     expect(fire(1, 80, 900).gloves[0].x, 'and a long way from the edge it keeps its reach').toBe(80 + 400);
     expect(r.pu, 'the TV is told a punch is out (the vote screen flickers)').toBe(0);
   });
@@ -417,6 +417,95 @@ describe('FIST THINGY!', () => {
       } catch(e){ return e.message; }
     })()`);
     expect(err).toBe(null);
+  });
+
+  // The owner, 2026-10-01 (Round 17): "there is a glitch with teh fist thingy, they stay stuck to mephone... they dont fly accross the screen." Three things did it: the pole ran back to the wall
+  // behind him, where he stands, so a glove in flight hung off his side on a tether; a glove aimed just past the middle of the stage was born inside his body; and a row off the stage began the
+  // glove beyond the wall it slams, so it waved there in a frame, with no flight at all.
+  describe('the glove flies across the stage and does not stay on him', () => {
+    const wallOf = (dir) => W.eval(`mpWallX(${dir})`);
+    const jabs = (ph, tx, bx) => fire(ph, tx, bx).gloves.filter((g) => !g.up);
+
+    it('is always born inside the stage with 300 px to cross before the wall it slams, whatever row it was aimed at: off either side of the stage, or no row at all', () => {
+      const bad = [];
+      for (const ph of [1, 2, 3]) for (const bx of [154, 946]) for (const tx of [-1500, -300, -40, 0, 30, 560, 1070, 1100, 1140, 1400, 3000, NaN]) {
+        for (const g of jabs(ph, tx, bx)) {
+          const flight = Math.abs(wallOf(g.dir) - g.x);
+          if (!Number.isFinite(g.x) || g.x < 0 || g.x > 1100 || flight < 300 - 1e-9) bad.push(`phase ${ph}, he is at ${bx}, row ${tx}: a glove at ${g.x} flying ${g.dir}, ${flight} px to the wall`);
+        }
+      }
+      expect(bad).toEqual([]);
+    });
+
+    it('is born in front of him, not on him, when the row is just past the middle of the stage: he stands 154 px from the wall he hopped to, and a reach before the row began inside his body', () => {
+      const bad = [], starts = {};
+      for (const [bx, rows] of [[154, [470, 520, 560, 600, 640, 680, 720, 760, 900]], [946, [630, 580, 540, 500, 460, 420, 380, 340, 200]]]) for (const tx of rows) {
+        const [g] = jabs(1, tx, bx), gap = Math.abs(g.x - bx) - (85 + 44);   // the bare MePhone is 85 px of radius, the glove 44
+        starts[`${bx}/${tx}`] = Math.round(g.x);
+        if (gap < 0) bad.push(`he is at ${bx}, row ${tx}: the glove starts at ${Math.round(g.x)}, ${Math.round(-gap)} px into him`);
+      }
+      expect(bad).toEqual([]);
+      expect(starts['154/900'], 'a row far from him keeps its reach: 400 px before it').toBe(500);
+      expect(starts['154/640'], 'a row just past the middle starts at the front of him: where he stands, his radius, the glove\'s and the gap').toBe(154 + 85 + 44 + 12);
+      expect(starts['946/460'], 'and the same from the other side').toBe(946 - 85 - 44 - 12);
+    });
+
+    it('draws the tell where the glove will start, also while he is still in the ring: it reads where he is going, not where he was', () => {
+      const r = W.eval(`(function(){
+        var hopR = ${S('x:946, _hopTo:154, _hz:{ fd:1, hop:[3, 946, 154] }')}, thereL = ${S('x:154, _hz:{ fd:1 }')};
+        var hopL = ${S('x:154, _hopTo:946, _hz:{ fd:-1, hop:[3, 154, 946] }')}, thereR = ${S('x:946, _hz:{ fd:-1 }')};
+        return { a: mpGloveStartX(1, 640, hopR), b: mpGloveStartX(1, 640, thereL), c: mpGloveStartX(-1, 460, hopL), d: mpGloveStartX(-1, 460, thereR) };
+      })()`);
+      expect(r.a, 'on the way to the left').toBe(r.b);
+      expect(r.c, 'on the way to the right').toBe(r.d);
+      expect(r.b, 'and it is the front of him').toBe(154 + 85 + 44 + 12);
+    });
+
+    it('draws its pole as a rod it carries, never the whole way back to the wall behind him: in the tell, in flight and slammed, no more than MP4.fist.rod of it', () => {
+      const r = WC.eval(`(function(){
+        var calls = [], P = mpPole, out = [];
+        mpPole = function(c, x0, y0, x1, y1, th){ calls.push(Math.hypot(x1 - x0, y1 - y0)); };
+        try {
+          var gy = groundY(), base = { owner:-2, ownerObj:{team:-1, idx:-2}, mpGlove:1, mpDir:-1, shape:'fistthingy', r:44, color:'#d8302a', x:700, y:gy-24, vx:-20, vy:0, armX0:1100, armY0:gy-24, mpLk:8, delay:0 };
+          [ {}, { x:300 }, { x:1000 }, { mpDir:1, vx:20, armX0:0, x:600 }, { mpDir:1, vx:20, armX0:0, x:1000 }, { delay:1e9, mpWave:12, x:58 }, { mpDir:1, delay:1e9, mpWave:12, x:1042, armX0:0 }, { delay:20, mpD0:30, x:1078 } ].forEach(function(o){
+            calls.length = 0; ctx.save(); drawProjectile(Object.assign({}, base, o)); ctx.restore(); out.push({ o: o, calls: calls.slice() });
+          });
+          [0, 0.3, 0.7, 1].forEach(function(u){ [1, -1].forEach(function(dir){
+            calls.length = 0; ctx.save(); mpGloveTell(ctx, dir, gy-24, u, false, dir > 0 ? 315 : 785); ctx.restore(); out.push({ o: { tell: u, dir: dir }, calls: calls.slice() });
+          }); });
+          return { out: out, rod: MP4.fist.rod };
+        } finally { mpPole = P; }
+      })()`);
+      expect(r.rod).toBe(260);
+      for (const c of r.out) {
+        expect(c.calls.length, `${JSON.stringify(c.o)} draws a pole`).toBeGreaterThan(0);
+        for (const len of c.calls) expect(len, `${JSON.stringify(c.o)}: its pole is a rod, not a tether to the wall`).toBeLessThanOrEqual(r.rod + 1e-6);
+      }
+    });
+
+    it('flies: in every phase each glove crosses at least 300 px of the stage in the air before it slams, aimed at a row in the middle, past the edge of the stage or off it', () => {
+      const r = W.eval(`(function(){ var out = [];
+        [1, 2, 3].forEach(function(ph){ [-900, 640, 1500].forEach(function(tx){ [154, 946].forEach(function(bx){
+          ${STAGE(560)}
+          f.invuln = 99; b.x = bx; b.homeX = bx; projectiles = [];
+          b._telPh = ph; b._telX = tx; b._telY = groundY() - 24; b._hz.fd = bx < 550 ? 1 : -1; fireBossAttack(b, f);
+          var gs = projectiles.filter(function(p){ return p.mpGlove && !p.mpUp; }).map(function(p){ return { p: p, x0: p.x, flew: 0 }; });
+          for (var i=0;i<150;i++){
+            step(); f.invuln = 99; f.x = 560; f.vx = 0; f.y = groundY() - 24;
+            gs.forEach(function(g){ if (!(g.p.delay > 0) && !(g.p.mpWave > 0)) g.flew++; });
+            if (!projectiles.some(function(p){ return p.mpGlove; })) break;
+          }
+          out.push({ ph: ph, tx: tx, bx: bx, flew: gs.map(function(g){ return g.flew; }), born: gs.map(function(g){ return Math.round(g.x0); }) });
+          projectiles = [];
+        }); }); });
+        return out; })()`);
+      const bad = [];
+      for (const c of Array.from(r)) {
+        if (c.flew.length !== (c.ph === 1 ? 1 : 2)) bad.push(`phase ${c.ph}: ${c.flew.length} gloves`);
+        c.flew.forEach((n, i) => { if (n < 14) bad.push(`phase ${c.ph}, he is at ${c.bx}, row ${c.tx}: glove ${i + 1} born at ${c.born[i]} flew ${n} frames`); });
+      }
+      expect(bad).toEqual([]);
+    });
   });
 });
 

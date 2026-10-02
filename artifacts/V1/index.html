@@ -13103,12 +13103,14 @@ function portalCore(P){ return PORTAL_CORE * Math.min(1, Math.max(0, P.t/(P.T||1
 // stage. "Harder, same damage" (the owner): every part of a turn shares that turn's one attack id, so a fighter takes at most one boss hit from it. The scene's state rides
 // b._hz (the bag a netcode client takes as it is): a few plain numbers. One table, so the tuning and the tests read the same numbers:
 //   hop      frames to go out through the ring, and to come in; the far side is `edge` of the arena in from its edge; already within `near` of it he stays
-//   fist     the glove's start (`edge`: how far in from the edge its centre starts, in glove radii), the wave goodbye and the slide back, the cuff, the uppercut's depth under the floor
+//   fist     the glove's start (`edge`: how far in from the edge its centre starts, in glove radii; `reach`: how far before your row; `clear`: the gap between his body and a glove born in front of him,
+//            and `run`: the least run-up to you that is worth it; `fly`: the least a glove has to fly before the wall; `rod`: the pole it carries), the wave goodbye and the slide back, the cuff,
+//            the uppercut's depth under the floor
 //   portal   open frames by phase; the oval's half-width and half-height (the hitbox IS the art); how far the exit is; the second entrance's wait and its lock; the third's stagger
 const MP4 = {
   turns:['melife', 'portal', 'boomerang', 'maze'],
   hop:{ out:9, inn:10, edge:0.14, near:0.18 },
-  fist:{ edge:0.5, reach:400, wave:24, back:8, cuff:0.6, upDepth:80, pole:0.5,
+  fist:{ edge:0.5, reach:400, clear:12, run:150, fly:300, rod:260, wave:24, back:8, cuff:0.6, upDepth:80, pole:0.5,
          slam:{ shake:8, dust:2, debris:6, scar:true, r:90 }, hit:{ shake:10, dust:2, debris:6, scar:true, r:80 } },
   portal:{ T:[0, 48, 42, 36], rx:30, ry:62, far:340, wait:30, lock:14, stag:24, side:170, shut:10,
            fling:{ dmg:0.8, rate:26, min:14, max:34, arc:36 } },
@@ -13172,20 +13174,34 @@ function mpBeginTelegraph(s, tgt){
 }
 // ---- FIST THINGY! ("the Fist Thingy ... shoots out and punches the contestant ... at full speed in the Elimination Area and sends them into Idiotic Island"; "a red boxing
 // glove ... attached to a gray or white pole") ---------------------------------------------------------------------------------------------------
-// The glove is BOLTED to the edge behind it: its pole slides in along the row you stood in (red while the row follows you, white for the last MEPHONE_GLOVE.lock frames),
-// then the glove flies the whole row at MEPHONE_GLOVE.spd ("at full speed"), through everyone on it (`pierce`, once each), slams the far wall (impact: shake, dust, debris,
-// a scar) and waves goodbye there ("it's seen waving goodbye with a tissue in hand", Out of Body Experience) before it slides back out. One attack id: the whole combo is at most one
-// boss hit. Phase 1 one glove; phase 2 "Back and Forth" (Double Digit Desert: "the Fist Thingy punches her once again ... for a third time"): a jab from his side, then the
-// finisher from the FAR edge, its row re-locking to you for the last frames before it flies -- being knocked flat by the jab is answered from behind; phase 3 "Glitching": a
-// jab from each edge, then the uppercut rising out of a floor mark where the second jab flew.
-// Where a glove starts: out on its pole, MP4.fist.reach px before the spot it flies through (the pole is bolted to the edge behind it and reaches out to there), or at the edge
-// itself when that is nearer. It used to start at his hand a stage away on a stage-wide crossing; the glove's lock-to-landing time is its reach over MEPHONE_GLOVE.spd, as short as it was.
-function mpGloveStartX(dir, tx){
-  const MG = MEPHONE_GLOVE, F = MP4.fist, e = (dir > 0 ? 0 : WW) + dir*MG.r*F.edge;
-  return dir > 0 ? Math.max(e, tx - F.reach) : Math.min(e, tx + F.reach);
+// The glove comes in off the edge behind it on its pole (a rod, MP4.fist.rod long, that it carries: the tell slides it in along the row you stood in, red while the row follows you,
+// white for the last MEPHONE_GLOVE.lock frames), then it flies the row at MEPHONE_GLOVE.spd ("at full speed"), through everyone on it (`pierce`, once each), slams the far wall
+// (impact: shake, dust, debris, a scar) and waves goodbye there ("it's seen waving goodbye with a tissue in hand", Out of Body Experience) before it slides back out. One attack id:
+// the whole combo is at most one boss hit. Phase 1 one glove; phase 2 "Back and Forth" (Double Digit Desert: "the Fist Thingy punches her once again ... for a third time"): a jab
+// from his side, then the finisher from the FAR edge, its row re-locking to you for the last frames before it flies -- being knocked flat by the jab is answered from behind; phase 3
+// "Glitching": a jab from each edge, then the uppercut rising out of a floor mark where the second jab flew.
+// THE GLOVE FLIES (the owner, 2026-10-01, Round 17: "there is a glitch with teh fist thingy, they stay stuck to mephone... they dont fly accross the screen"). Three things made it
+// look stuck to him. Its pole was drawn all the way back to the wall behind him, where he stands, so the glove hung off his side on a tether instead of crossing the stage: the rod is
+// the pole it carries now, and the glove leaves with it (mpRod). A glove aimed at the middle of the stage began inside his body (a reach before a row 550 px from the wall he had hopped
+// to is 150 px from it, and he is 170 wide): it starts at the front of him now, when MP4.fist.run px of run-up to the row are left past that (a row nearer than that keeps the start it
+// always had). And a row off the stage -- you knocked out of it by the glove before, the lock falling while you were still flying -- began the glove beyond the wall it slams, so it was
+// there, waving, in a frame, with no flight at all: a spot off the stage is the nearest edge's now, and the glove always has MP4.fist.fly px to cross.
+// Where a glove starts: out on its pole, MP4.fist.reach px before the spot it flies through, or at the edge itself when that is nearer (never inside him, never less than a flight from
+// the wall). It used to start at his hand a stage away on a stage-wide crossing; the glove's lock-to-landing time is its reach over MEPHONE_GLOVE.spd, as short as it was (a row just past
+// the middle of the stage gets 13 frames of flight, not 20, now that the glove is not born on top of him). `s` is him: where he stands (the ring's far end while he is still hopping, as
+// the tell is drawn then) and how wide he is.
+function mpGloveStartX(dir, tx, s){
+  const MG = MEPHONE_GLOVE, F = MP4.fist, e = (dir > 0 ? 0 : WW) + dir*MG.r*F.edge, wall = mpWallX(dir);
+  const t = clamp(Number.isFinite(+tx) ? +tx : WW*0.5, 0, WW);
+  let x = dir > 0 ? Math.max(e, t - F.reach) : Math.min(e, t + F.reach);
+  if(s && Number.isFinite(s.x)){
+    const hz = s._hz, bx = (hz && Array.isArray(hz.hop)) ? hz.hop[2] : s.x, body = (s.r || 85) + MG.r + F.clear;
+    if(Math.abs(x - bx) < body){ const front = bx + dir*body; if(dir*(t - front) >= F.run) x = front; }
+  }
+  return dir > 0 ? Math.min(x, wall - F.fly) : Math.max(x, wall + F.fly);
 }
 function mpGloveShot(s, id, o){
-  const MG = MEPHONE_GLOVE, dir = o.dir, ex = dir > 0 ? 0 : WW, x0 = o.x != null ? o.x : mpGloveStartX(dir, WW*0.5), wall = mpWallX(dir);
+  const MG = MEPHONE_GLOVE, dir = o.dir, ex = dir > 0 ? 0 : WW, x0 = o.x != null ? o.x : mpGloveStartX(dir, WW*0.5, s), wall = mpWallX(dir);
   const life = Math.ceil(Math.abs(wall - x0)/MG.spd/PROJ_LIFE) + 6;
   const q = Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, bossAtk:id, grav:false, noAim:true, pierce:true, mpGlove:1, mpDir:dir, r:MG.r, color:'#d8302a',
     shape:'fistthingy', life, x:x0, vx:dir*MG.spd, vy:0, armX0:ex, armY0:o.y, mpD0:o.delay || 0, mpLk:MG.lock }, o);
@@ -13196,7 +13212,7 @@ function mpFist(s, tgt, id){
   const ph = s._telPh || mpPh(s), gy = groundY(), MG = MEPHONE_GLOVE, F = MP4.fist, H = mpHz(s), spd = MG.spd;
   const row = clamp(s._telY != null ? s._telY : (tgt ? tgt.y : s.y), 60, gy - 16);
   const tx = s._telX != null ? s._telX : (tgt ? tgt.x : s.x + (s.face||1)*200), dir = H.fd || Math.sign(tx - s.x) || s.face || 1;
-  const jab = MG.jab[ph], xA = mpGloveStartX(dir, tx), xB = mpGloveStartX(-dir, tx);
+  const jab = MG.jab[ph], xA = mpGloveStartX(dir, tx, s), xB = mpGloveStartX(-dir, tx, s);
   if(ph === 1) mpGloveShot(s, id, { dir, y:row, x:xA, dmg:bossDmg(), kb:MG.kb });
   else {
     mpGloveShot(s, id, { dir, y:row, x:xA, dmg:bossDmg()*jab, kb:MG.jabKb, smAngle:-1 });
@@ -13227,7 +13243,7 @@ function mpGloveTick(s, tgt){
     if(p.mpWave > 0){ if(--p.mpWave <= 0) p.life = 0; continue; }           // slammed: it waves, slides back, and is gone
     if(p.delay > 0){
       if(p.mpUp){ if(p.delay > (p.mpLk != null ? p.mpLk : MG.lock) && tgt && !tgt.dead){ p.x = clamp(tgt.x, 60, WW - 60); p.armX0 = p.x; } }   // the mark, dropped when the jab before it flies, follows you like a row until its last frames (red, then white)
-      else if(p.delay > (p.mpLk != null ? p.mpLk : MG.lock) && tgt && !tgt.dead){ p.y = clamp(tgt.y, 60, gy - 16); p.armY0 = p.y; p.x = mpGloveStartX(p.mpDir, tgt.x); }   // the row, and where the glove starts on its pole
+      else if(p.delay > (p.mpLk != null ? p.mpLk : MG.lock) && tgt && !tgt.dead){ p.y = clamp(tgt.y, 60, gy - 16); p.armY0 = p.y; p.x = mpGloveStartX(p.mpDir, tgt.x, s); }   // the row, and where the glove starts on its pole
       p._lx = p.x;
       continue;
     }
@@ -13280,8 +13296,15 @@ function mpGloveTell(c, dir, y, u, locked, x1){
   c.globalAlpha = locked ? 0.3 : 0.14; c.fillStyle = locked ? '#ffffff' : '#d8302a'; c.fillRect(0, y - r, WW, r*2);   // the band is the glove's height
   c.globalAlpha = 1;
   const gx = x0 + (x1 - x0)*k, back = mpGloveArt(c, gx, y, dir > 0 ? 0 : Math.PI, r);
-  mpPole(c, ex - dir*40, y, gx - dir*back, y, r*F.pole);
+  mpRod(c, dir, y, gx - dir*back, r);
   c.restore();
+}
+// The pole the glove carries: a rod MP4.fist.rod long behind its cuff, coming out of the wall's lip while the glove is still near it. It used to run the whole way back to the wall
+// behind him, so a glove flying across the stage hung off his side on a tether (the owner: "they stay stuck to mephone... they dont fly accross the screen"). `bx` is where the
+// cuff ends (the pole's near end).
+function mpRod(c, dir, y, bx, r){
+  const F = MP4.fist, tail = dir > 0 ? Math.max(-40, bx - F.rod) : Math.min(WW + 40, bx + F.rod);
+  mpPole(c, tail, y, bx, y, r*F.pole);
 }
 // A glove shot (the shotdraw slot): waiting (its lane and pole, or for the uppercut its floor mark and the column it will break out along), flying (the pole to the edge it
 // is bolted to, the glove at the end), or slammed (waving, then sliding back). True when it drew.
@@ -13317,7 +13340,7 @@ function mpDrawGlove(pr){
     if(pr.mpWave < F.back){ const u = 1 - pr.mpWave/F.back; x -= dir*u*u*260; }     // ...and it slides back out along its pole
   }
   const back = mpGloveArt(c, x, pr.y, ang, r);
-  mpPole(c, pr.armX0 - dir*40, pr.y, x - dir*Math.cos(ang - (dir > 0 ? 0 : Math.PI))*back, pr.y, r*F.pole);
+  mpRod(c, dir, pr.y, x - dir*Math.cos(ang - (dir > 0 ? 0 : Math.PI))*back, r);   // the glove carries its pole: it is not tied to the wall behind him
   if(wave && pr.mpWave < F.wave - 4 && pr.mpWave > F.back){   // the tissue in its hand
     c.translate(x + dir*r*0.2, pr.y - r*1.05); c.rotate(Math.sin(hazardT*0.5)*0.4*dir);
     c.fillStyle = '#ffffff'; c.strokeStyle = '#8a8f98'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(r*0.5*dir, -r*0.35, r*0.7*dir, -r*0.1); c.quadraticCurveTo(r*0.45*dir, r*0.25, 0, r*0.1); c.closePath(); c.fill(); c.stroke();
@@ -13679,7 +13702,7 @@ function mpDrawTell(s){
   c.save(); c.translate(-s.x, -s.y);                                // into world space
   if(s._telKind === s.attack && typeof s._telX === 'number' && typeof s._telY === 'number'){
     const dir = H.fd || Math.sign(s._telX - s.x) || s.face || 1;
-    mpGloveTell(c, dir, clamp(s._telY, 60, gy - 16), 1 - s._tel/bossTelLen(s), s._tel < MG.lock, mpGloveStartX(dir, s._telX));
+    mpGloveTell(c, dir, clamp(s._telY, 60, gy - 16), 1 - s._tel/bossTelLen(s), s._tel < MG.lock, mpGloveStartX(dir, s._telX, s));
   }
   if(s._telKind === 'boomerang' && typeof s._telX === 'number' && typeof s._telY === 'number'){
     const B = MP4.boom, bx = H.hop ? H.hop[2] : s.x, dir = Math.sign(s._telX - bx) || s.face || 1, reach = clamp(Math.abs(s._telX - bx) + B.over, B.min, B.max);
@@ -18476,6 +18499,8 @@ function springyDressArena(){
 // the rest of updateBossAttack -- the walk, the phase check, a new wind-up -- waits for the floor).
 function updateSpringy(s, tgt){
   const gy = groundY(), ph = s._phase || 1;
+  // the shared walk has no wall of its own and he keeps an arm's length (SPRINGY.backoff): a fighter at the edge backed him right out of the arena, to fight from off the screen
+  if(s.x < s.r*0.5 || s.x > WW - s.r*0.5){ s.x = clamp(s.x, s.r*0.5, WW - s.r*0.5); s.vx = 0; }
   // hit while grounded, he bounces once
   if(s._hpSeen == null) s._hpSeen = s.hp;
   if(s.hp < s._hpSeen && !s._slam && s.y >= gy - s.r - 1){ s.vy = SPRINGY.hop; for(let i=0;i<6;i++) puff(s.x + (Math.random()*2-1)*s.r*0.5, gy - 4, '#d8d8d8', 4); }
@@ -20275,7 +20300,7 @@ function drawOneFx(){
       for(const ex of [-0.28, 0.28]){ ctx.beginPath(); ctx.arc(s.x + ex*s.r, s.y - 0.05*s.r, 9 + 5*Math.sin(hazardT*0.4), 0, 7); ctx.fill(); }
     } else if(k==="ring" && tn >= 2){   // the two turns, one each way: a gold arrow clockwise, a purple one counter-clockwise
       const R = s.r + 34, a0 = hazardT*0.08;
-      ctx.lineWidth = 5; ctx.globalAlpha = 0.5 + pulse;
+      ctx.lineWidth = 5; ctx.globalAlpha = Math.min(1, 0.5 + pulse);   // (pulse peaks at 0.55: past 1 the canvas keeps the last alpha)
       for(const [col, dir] of [['#f0d24b', 1], ['#a77bff', -1]]){
         ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(s.x, s.y, R, a0*dir, a0*dir + dir*2.2, dir < 0); ctx.stroke();
         const ae = a0*dir + dir*2.2; ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(s.x + Math.cos(ae)*(R + 12), s.y + Math.sin(ae)*(R + 12));
@@ -23030,7 +23055,7 @@ function cobsMinionStep(m){
     if(t){ const a = Math.atan2(hurtCY(t) - m.y, t.x - m.x); m.vx += Math.cos(a)*m._homing*8; m.vy += Math.sin(a)*m._homing*8; }
     const sp = Math.hypot(m.vx, m.vy); if(sp > m._spd){ m.vx *= m._spd/sp; m.vy *= m._spd/sp; }
     m.x = clamp(m.x + m.vx, 20, WW - 20); m.y = Math.min(gy - m.r, Math.max(m.r, m.y + m.vy));
-    if(t && m._cd <= 0 && hurtGap(t, m.x, m.y) < m.r + 6){
+    if(t && m._cd <= 0 && !(t.invuln > 0) && hurtGap(t, m.x, m.y) < m.r + 6){   // (not through the grace of the last hit, as the barrier link and every shot do: two tags landing together cuffed twice in a frame)
       // "restrained and cuffed by MeTags": rooted for the tier's frames, a small hit
       cobsCuff(boss, t, m);
       m._cd = 120; m.vx = -m.vx*0.5; m.vy = -Math.abs(m.vy) - 3;
@@ -23141,7 +23166,7 @@ function drawCobsFx(){
     } else if(k==="van"){
       const fl = cobsFloor(), fromLeft = s._vanFrom != null ? s._vanFrom : true;
       ctx.globalAlpha = 0.12 + 0.14*kk; ctx.fillStyle = '#d8d8e0'; ctx.fillRect(fl.x, gy - 52, fl.w, 52);
-      ctx.globalAlpha = 0.5 + pulse; ctx.fillRect(fromLeft ? fl.x : fl.x + fl.w - 60, gy - 52, 60, 52);
+      ctx.globalAlpha = Math.min(1, 0.5 + pulse); ctx.fillRect(fromLeft ? fl.x : fl.x + fl.w - 60, gy - 52, 60, 52);
     } else if(k==="plug" && s._paneX){
       for(const x of s._paneX){ const top = oneSurf(x, gy - 10); ctx.globalAlpha = 0.3 + pulse; ctx.strokeStyle = '#cfe8ff'; ctx.lineWidth = 2;
         ctx.strokeRect(x - COBS_PANE_W/2, top - COBS_PANE_H - 2, COBS_PANE_W, COBS_PANE_H + 2); }
@@ -28374,13 +28399,14 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // COUNTER: if the target is in a counter stance, they nullify the hit and punish the attacker.
   if(t.countering>0 && from && from.idx!==t.idx && !from.dead && !(SMASH_PROJ && SMASH_PROJ.unbreakable)){   // (a counter does not nullify an `unbreakable` shot -- the Bug Swarm's dodgeball: it lands)
     t.countering=0; t.flash=12; t.invuln=Math.max(t.invuln,10);
+    const bodied = Number.isFinite(from.x) && Number.isFinite(from.y);   // a boss's shot names its owner {team:-1, idx:-2}: nothing there to punish, and a hit on it puffed sparks at (undefined, undefined)
     if(t.kit && t.kit.special==="counter" && t._riposte){
       // Needle's SMASH, the Riposte Stance: sixty committed frames priced at cd 56, and this is the
       // payoff -- the whole hit back, amplified. The read is the commitment; see the special below.
       t._riposte = false;
       for(let i=0;i<8;i++) puff(t.x,t.y-8,'#ff9ec2',5);
       const dir = Math.sign((from.x - t.x)) || t.face || 1;
-      applyHit(from, Math.max(12, dmg*RIPOSTE_MULT), dir*14, -9, t);
+      if(bodied) applyHit(from, Math.max(12, dmg*RIPOSTE_MULT), dir*14, -9, t);
       return;
     } else if(t.kit && t.kit.special==="counter"){
       // Needle — The Reflex MINIMISES: a quarter of the damage, a quarter of the launch, and the
@@ -28390,18 +28416,18 @@ function applyHit(t, dmg, kbx, kby, from, opts){
       // holding the stance is still not the answer to everything.
       for(let i=0;i<6;i++) puff(t.x,t.y-8,'#d94f6a',4);
       const dir = Math.sign((from.x - t.x)) || t.face || 1;
-      applyHit(from, Math.max(4, dmg*REFLEX_PRICK), dir*7, -5, t);
+      if(bodied) applyHit(from, Math.max(4, dmg*REFLEX_PRICK), dir*7, -5, t);
       dmg*=0.25; kbx*=0.25; kby*=0.25;
     } else if(t.kit && t.kit.special==="zapshooter"){
       // Golf Ball -- the Announcer Crusher stop. She stopped the Crusher with her body: the hit is
       // stopped dead and the attacker is shoved off her. No amplified damage back; this is a wall.
       for(let i=0;i<8;i++) puff(t.x,t.y-6,'#dcdcdc',4);
       const dir = Math.sign((from.x - t.x)) || t.face || 1;
-      applyHit(from, CRUSHER_SHOVE_DMG, dir*16, -7, t);
+      if(bodied) applyHit(from, CRUSHER_SHOVE_DMG, dir*16, -7, t);
       return;
     } else {
       const dir = Math.sign((from.x - t.x)) || t.face || 1;
-      applyHit(from, Math.max(12, dmg*1.4), dir*14, -9, t);   // reflect amplified damage back
+      if(bodied) applyHit(from, Math.max(12, dmg*1.4), dir*14, -9, t);   // reflect amplified damage back
       return;
     }
   }
@@ -28551,7 +28577,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
   t._graceLeft = Math.max(t._graceLeft||0, Math.min(24, grace));
   t.flash=8;
-  puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,from?from.color:'#fff',4);
+  puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,(from&&from.color)||'#fff',4);   // a boss's shot (its owner is {team:-1, idx:-2}) and a hazard (null) have no colour: the sparks had none either, and drew in whatever fill the last thing left
   if(t.you||from?.you) shake(dmg);
   // per-character damage KO: pile on enough % and they burst regardless of position
   if(t.pct>=t.koCap && !t.dead) eliminate(t);   // no "maxed out!" line ("Remove them all"): eliminate puts up the KO line, the one line a KO keeps
@@ -31987,7 +32013,7 @@ function draw(){
   drawLaunchingProjectiles();
 
   // particles
-  for(const p of particles){ ctx.globalAlpha=Math.max(0,p.life/22); ctx.fillStyle=p.color;
+  for(const p of particles){ ctx.globalAlpha=Math.max(0,Math.min(1,p.life/22)); ctx.fillStyle=p.color;   // (a fresh puff lives up to 24: past 1 the canvas keeps the last alpha)
     ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill(); }
   ctx.globalAlpha=1;
   drawImpactFx();            // impact's dust rings and debris
@@ -32085,7 +32111,7 @@ function drawOffscreenArrows(){
     const sx=W/2+z*(f.x-camX-W/2), sy=H/2+z*(f.y-camY-H/2);
     if(sx>=0&&sx<=W&&sy>=0&&sy<=H) continue;   // on screen
     const ex=clamp(sx,16,W-16), ey=clamp(sy,74,H-16);
-    ctx.fillStyle = TEAM_COLORS[f.team%TEAM_COLORS.length]; ctx.globalAlpha=0.7;
+    ctx.fillStyle = TEAM_COLORS[f.team%TEAM_COLORS.length] || f.color; ctx.globalAlpha=0.7;   // (One's ghost fights on team -1: no entry, so it wore the last fill)
     ctx.beginPath(); ctx.arc(ex,ey,4,0,7); ctx.fill(); ctx.globalAlpha=1;
   }
 }

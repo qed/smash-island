@@ -912,3 +912,20 @@ describe('MY PURPOSE!: the Spring-Bot toy', () => {
     expect(r.boss, 'the box its ray comes from, in the wind-up').toMatchObject({ _telKind: 'springbot', _boxX: 880, _tel: 12 });
   });
 });
+
+describe('the glitch pass: his walk keeps him in the arena', () => {
+  // The shared walk has no wall of its own, and he keeps an arm's length from whoever is near (SPRINGY.backoff): a fighter at the edge, with him between that fighter and the wall, backed him right
+  // out of the arena -- in a world as narrow as a phone's within seconds -- and he fought from off the screen (the boss-glitch hunter: Springy off the screen for 300 frames, at 480 x 800).
+  it('a fighter at either edge does not back him out of the arena', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [[1050, 1085, 'right'], [50, 15, 'left']].forEach(function(c){
+        ${STAGE(560)}
+        b.x = c[1]; b.homeX = c[1]; b.vx = 0; var xs = [];
+        for (var i=0;i<160;i++){ f.x = c[0]; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 99; step(); xs.push(b.x); }
+        out[c[2]] = { max: Math.max.apply(null, xs), min: Math.min.apply(null, xs) };
+      });
+      return { out: out, WW: WW, r: summons.find(function(s){ return s.type==='boss'; }).r }; })()`);
+    expect(r.out.right.max, 'he stays in the arena: his body, half of it, is the least that shows').toBeLessThanOrEqual(r.WW - r.r*0.5 + 1e-9);
+    expect(r.out.left.min).toBeGreaterThanOrEqual(r.r*0.5 - 1e-9);
+  });
+});
