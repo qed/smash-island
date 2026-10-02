@@ -960,3 +960,21 @@ describe('the glitch pass: what every boss hit and every particle shares', () =>
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
   });
 });
+
+describe('a fighter\'s lingering hitbox lands on a boss once', () => {
+  it('Puffball\'s Meteor Puff hits a boss one time and ends, as it does on a fighter (it landed 22 a frame and felled bosses)', () => {
+    // The owner (2026-10-02): "puffball multihitbox on smash. instakills bosses." A boss has no grace after a hit, so a hitbox that
+    // follows her down every frame landed every frame.
+    const r = W.eval(`(function(){ ${STAGE('Announcer', 2000)}
+      var p = makeFighter(ROSTER.find(function(r){ return r.name==='Puffball'; }), b.x, b.y - b.r - 150, 0);
+      p.team = 0; p.controller = 'still'; fighters = [p]; b._atkTimer = 1e9;
+      var hp0 = b.hp; p.vx = 0; p.vy = 0; p.onground = false;
+      SMASHES.fly(p);
+      for (var i=0;i<60 && p._plunge;i++){ step(); b.x = p.x; b._atkTimer = 1e9; }
+      var lost = hp0 - b.hp; summons = []; fighters = []; return { lost: lost, ended: !p._plunge };
+    })()`);
+    expect(r.ended, 'the plunge ended').toBe(true);
+    expect(r.lost, 'one plunge hit, not one a frame').toBeGreaterThan(0);
+    expect(r.lost).toBeLessThanOrEqual(22 + 26);   // at most the plunge's 22 and the point-blank hit
+  });
+});
