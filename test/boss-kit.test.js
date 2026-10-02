@@ -527,7 +527,7 @@ describe("the Announcer's phase-3 banner", () => {
 
   it('and the wind-up an Announcer at a third of his HP starts is announced as CRUSHER ARM!', () => {
     const r = W.eval(`(function(){ ${STAGE('Announcer', 500)}
-      b.hp = b.maxHp*0.2; b._phase = 3; b._moveN = 0; b._atkTimer = 1; b._tel = 0;
+      b.hp = b.maxHp*0.2; b._phase = 3; b._pickForce = 'announcer'; b._atkLive = null; b._atkTimer = 1; b._tel = 0;   // (the signature asked for: his order is the picker's now, Round 17)
       window.__lastBanner = null; updateBossAttack(b, f);
       var out = { kind: b._telKind, text: window.__lastBanner && window.__lastBanner.text, telKind: window.__lastBanner && window.__lastBanner.kind };
       summons = []; projectiles = []; return out;
@@ -540,9 +540,9 @@ describe("the Announcer's phase-3 banner", () => {
 // a digit in them, so a marker's boss is [a-z0-9]+).
 const EARLY = ['announcer', 'puffball', 'firey', 'swarm', 'purpleface', 'dragon'];
 const LATE = ['mephone4', 'evilleafy', 'mephone4s', 'two', 'four'];
-const SLOTS = ['roster', 'extra', 'rushonly', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen',
+const SLOTS = ['roster', 'extra', 'rushonly', 'pick', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen',
   'phase', 'phasename', 'telname', 'ending', 'hazard', 'netshot', 'net', 'shotdraw', 'fx', 'look', 'tell', 'body', 'sky', 'ground',
-  'decor', 'sprite', 'flip', 'shape', 'art'];
+  'decor', 'sprite', 'flip', 'shape', 'art'];   // `pick` (the picker's tags and hooks, BOSS_PICK) is the owner's Round 17: "make the attacks based on fighter position."
 const MARK = /@boss:([a-z0-9]+):(begin|end) ([a-z]+)/;
 
 // Every marker in `file` must be a known boss's and slot's, alone on its line; and for each slot the pairs of `bosses` (the early six unless said) must be
@@ -607,8 +607,11 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
     it(`${name} still fights as it did, through its slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], shots: [], phase: null };
-        b.x = 350; b._atkTimer = 1; b._moveN = 0;
+        // the owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- no fixed cycle (signature, second move, signature), so the three turns are forced: the same three as before
+        var KS = bossPickMoves(b, 1), SEQ = [KS[0], KS[1], KS[0]];
+        b.x = 350; b._atkTimer = 1;
         for (var t=0;t<3;t++){
+          b._pickForce = SEQ[t]; b._atkLive = null;
           b._fs = null; b._fsQ = 0;   // Firey Speaker Box's moves run for seconds (fsbMove) and the next wind-up waits for the last: each turn here starts from a settled boss, as the game's do
           // the Announcer's next wind-up waits for the last threat of the turn before and for 30 frames more (the owner, 2026-10-01: "for the announcer "unavoidable hits", theyre unavoidable bcs they
           // barely have a moment where you can move to dodge."): this test fires turn after turn, so it settles him -- nothing of his going, and none for a long while -- as it does the two above
@@ -758,8 +761,11 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     it(`${name} still fights as he did, through his slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], landed: [], phase: null };
-        b.x = 350; b._atkTimer = 1; b._moveN = 0; b._s4 = null;   // (MePhone4S drops in from above and holds his timer for his scripted moves: each turn here starts from a settled one, as the game's do)
+        // the owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- no fixed cycle (signature, second move, signature), so the three turns are forced: the same three as before
+        var KS = bossPickMoves(b, 1), SEQ = [KS[0], KS[1], KS[0]];
+        b.x = 350; b._atkTimer = 1; b._s4 = null;   // (MePhone4S drops in from above and holds his timer for his scripted moves: each turn here starts from a settled one, as the game's do)
         for (var t=0;t<3;t++){
+          b._pickForce = SEQ[t]; b._atkLive = null;
           window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; b._s4 = null; b.hover = false; b.y = groundY() - b.r; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
           projectiles = []; tendrils = []; summons = summons.filter(function(s){ return s.type==='boss'; }); f.invuln = 0; f.pct = 0;

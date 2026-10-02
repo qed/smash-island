@@ -38,9 +38,10 @@ const STAGE = (x, live, hz) => `
   ${hz ? '' : 'b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };'}
   step(); f.pct=0; f.invuln=0;
 `;
-// Start this boss's next wind-up as `kind` (the turns alternate: signature, extra 0, signature, extra 1, signature, extra 2, ...).
+// Start this boss's next wind-up as `kind`. The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more
+// when ppl are close." -- the turns no longer alternate (signature, extra 0, signature, extra 1, ...): a test forces the move it measures (`_pickForce`), the one-attack watch is cleared with it.
 const TURN = { swallow: 0, pfaceRap: 1, pfaceTorture: 3, pfaceThanks: 5, pfaceShoes: 7 };
-const BEGIN = (kind) => `b._moveN = ${TURN[kind]}; b._tel = 0; b._atkTimer = 1; step(); f.invuln = 0;`;
+const BEGIN = (kind) => `b._pickForce = ${JSON.stringify(kind)}; b._atkLive = null; b._tel = 0; b._atkTimer = 1; step(); f.invuln = 0;`;
 // A bare boss for driving his functions directly.
 const S = (o = '') => `{ name:'Purple Face', attack:'swallow', x:550, y:groundY()-88.4, r:88.4, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0,
   color:'#7a3a8a', face:-1, homeX:550, stationary:false, vx:0, vy:0 ${o ? ',' + o : ''} }`;
@@ -68,16 +69,22 @@ describe('Purple Face is Boss 5, rebuilt', () => {
     expect(r.p3).toBe('Broken Value');     // "Purple Face with a broken value" (BFB 28)
   });
 
-  it('takes turns: AD BREAK!, the rap, AD BREAK!, the tank, AD BREAK!, the kick, AD BREAK!, the shoes -- each named, each with its own wind-up', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position
+  // picks all (Recommended)": AD BREAK! no longer runs between every other move. He draws his five by where the fighters stand; none twice in a row, and every one of them comes up.
+  it('draws his turns from his five -- AD BREAK!, the rap, the tank, the kick, the shoes -- each named, each with its own wind-up, none twice in a row, every one in fifteen turns', () => {
     const r = W.eval(`(function(){
       fighters = []; projectiles = [];
       var s = ${S()}, kinds = [], names = [], tel = [];
-      for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; window.__lastBanner = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tel.push(s._tel); s._tel = 0; s._pf = null; }
+      for (var i=0;i<15;i++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; window.__lastBanner = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tel.push(s._tel); s._tel = 0; s._pf = null; }
       return { kinds: kinds, names: names, tel: tel, lens: [1,2,3].map(function(ph){ return ['swallow','pfaceRap','pfaceTorture','pfaceThanks','pfaceShoes'].map(function(k){ return bossTelLen({ attack:'swallow', _telKind:k, _phase:ph }); }); }) };
     })()`);
-    expect(r.kinds).toEqual(['swallow', 'pfaceRap', 'swallow', 'pfaceTorture', 'swallow', 'pfaceThanks', 'swallow', 'pfaceShoes']);
-    expect(r.names).toEqual(['AD BREAK!', 'FREESTYLE RAP!', 'AD BREAK!', 'TORTURE TIME!', 'AD BREAK!', 'THANK YOU FOR COMING!', 'AD BREAK!', 'TOTAL SLIP SHOES!']);
-    expect(r.tel, 'the wind-up the engine set from the last turn is set again from this turn\'s own kind').toEqual([46, 72, 46, 66, 46, 44, 46, 42]);
+    const NAME = { swallow: 'AD BREAK!', pfaceRap: 'FREESTYLE RAP!', pfaceTorture: 'TORTURE TIME!', pfaceThanks: 'THANK YOU FOR COMING!', pfaceShoes: 'TOTAL SLIP SHOES!' };
+    const TEL1 = { swallow: 46, pfaceRap: 72, pfaceTorture: 66, pfaceThanks: 44, pfaceShoes: 42 };
+    expect(r.kinds.every((k) => NAME[k]), `only his five: ${r.kinds}`).toBe(true);
+    expect(r.names).toEqual(r.kinds.map((k) => NAME[k]));
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(new Set(r.kinds).size, `all five come up in fifteen turns: ${r.kinds}`).toBe(5);
+    expect(r.tel, 'the wind-up the engine set from the last turn is set again from this turn\'s own kind').toEqual(r.kinds.map((k) => TEL1[k]));
     expect(r.lens).toEqual([[46, 72, 66, 44, 42], [42, 66, 60, 40, 38], [40, 60, 54, 36, 34]]);
   });
 });

@@ -127,17 +127,22 @@ describe('Springy takes Boss 11', () => {
     expect(r.card, 'the victory card counts twelve').toMatch(/^All twelve bosses beaten/);
   });
 
-  it('takes turns: the slam, JUST WANTED A HAND, the slam, A TOY IN EVERY BOX, the slam, MY PURPOSE!, each named, with a 40-frame wind-up, and names his phases', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position picks
+  // all (Recommended)": the slam no longer comes on every other turn (the slam, the punch, the slam, the boxes, ...). He draws his four by where the fighters stand: none twice in a row, every one in time.
+  it('draws his turns from his four -- the slam, JUST WANTED A HAND, A TOY IN EVERY BOX, MY PURPOSE! -- each named, with a 40-frame wind-up, none twice in a row, every one in twelve turns, and names his phases', () => {
     const r = W.eval(`(function(){
       var s = ${S()};
       var kinds = [], names = [];
-      for (var i=0;i<6;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+      for (var i=0;i<12;i++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       return { kinds: kinds, names: names, tel: bossTelLen(s), p2: bossPhaseName(s, 2), p3: bossPhaseName(s, 3), gaps: SPRINGY.gaps.slice(1).map(function(g, i){ s._phase = i+1; return bossAtkGap(s); }) };
     })()`);
-    expect(r.kinds).toEqual(['springy', 'longarm', 'springy', 'boxdrop', 'springy', 'springbot']);
     // "TRY NOT TO FALL~ ! It's a long way down..." (Spring on the Breakfast!/Transcript); "I thought you just wanted a hand." (A Jury of Your Fears/Transcript);
     // Spring-Bot: "My. Purpose." (You Can't Do This Forever/Transcript)
-    expect(r.names).toEqual(['TRY NOT TO FALL!', 'JUST WANTED A HAND!', 'TRY NOT TO FALL!', 'A TOY IN EVERY BOX!', 'TRY NOT TO FALL!', 'MY PURPOSE!']);
+    const NAME = { springy: 'TRY NOT TO FALL!', longarm: 'JUST WANTED A HAND!', boxdrop: 'A TOY IN EVERY BOX!', springbot: 'MY PURPOSE!' };
+    expect(r.kinds.every((k) => NAME[k]), `only his four: ${r.kinds}`).toBe(true);
+    expect(r.names).toEqual(r.kinds.map((k) => NAME[k]));
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(new Set(r.kinds).size, `all four come up in twelve turns: ${r.kinds}`).toBe(4);
     expect(r.tel, 'he compresses for two thirds of a second').toBe(40);
     expect(r.p2, 'his page: "Whenever Springy is too excited, scared or enraged, they glitch constantly"').toBe('Glitching');
     expect(r.p3, '"a leader of The Unvitational Committee"').toBe('Unvitational');
@@ -154,7 +159,8 @@ describe('Springy takes Boss 11', () => {
       out.holes3 = h.length; out.holeX = h.length ? h[0].x : null; out.holeT = h.length ? h[0].delay : null;
       summons = []; projectiles = []; return out;
     })()`);
-    expect(r.hp, '330 for one fighter').toBe(330);
+    // the owner, 2026-10-01 (Round 17): "+50% (Recommended)" -- every Boss Rush boss spawns with half again the HP of its row (BOSS_HP_MULT); the row keeps 330
+    expect(r.hp, '330 x 1.5 for one fighter').toBe(Math.round(330*1.5));
     expect(r.st, 'a spring does not hold a spot').toBe(false);
     expect([r.p1, r.p2, r.p3]).toEqual([1, 2, 3]);
     expect(r.b2).toMatch(/PHASE 2: Glitching/);
@@ -185,7 +191,7 @@ describe('TRY NOT TO FALL: the slam', () => {
   it('he leaves the floor as the wind-up ends, hangs above the screen over a mark where you stand, comes down on it for a boss hit, and the floor gives', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       var gy = groundY(), out = { frames: {} };
-      b._atkTimer = 1; step();
+      b._pickForce = 'springy'; b._atkLive = null; b._atkTimer = 1; step();
       out.kind = b._telKind; out.name = document.getElementById('banner').textContent; out.tel = b._tel;
       for (var i=0;i<40 && b._tel>0;i++) step();
       out.launched = !!b._slam && b._slam.phase==='up' && b.vy < 0;
@@ -256,7 +262,7 @@ describe('TRY NOT TO FALL: the slam', () => {
       [2, 3].forEach(function(ph){
         ${STAGE(300)}
         b.hp = b.maxHp*(ph===2 ? 0.5 : 0.2); updateBossAttack(b, f); b._atkTimer = 1e9; projectiles = []; b._quakeT = 0;
-        b._atkTimer = 1; step(); for (var i=0;i<40 && b._tel>0;i++) step();
+        b._pickForce = 'springy'; b._atkLive = null; b._atkTimer = 1; step(); for (var i=0;i<40 && b._tel>0;i++) step();
         var holesAt = [], holeT = [], waves = 0, AP = addProj, hangs = 0, moved = false;
         addProj = function(p){ if (p && p.springHole){ holesAt.push(Math.round(p.x)); holeT.push(p.delay); } if (p && p.shape==='springwave') waves++; return AP(p); };
         try {
@@ -324,7 +330,7 @@ describe('the second moves', () => {
       var reach = 88*0.5 + Math.round((Math.ceil(WW*SPRINGY.armLen/SPRINGY.armSpd/PROJ_LIFE) + 1)*PROJ_LIFE)*SPRINGY.armSpd + SPRINGY.armR;
       [{ dx: 300, want: true }, { dx: reach - 30, want: true }, { dx: reach + HURT_R0 + 24, want: false }].forEach(function(c){
         ${STAGE(120)}
-        b.x = 120 + c.dx; b.homeX = b.x; b.vx = 0; b._moveN = 1;   // the next turn is his first second move: longarm
+        b.x = 120 + c.dx; b.homeX = b.x; b.vx = 0; b._pickForce = 'longarm'; b._atkLive = null;   // the next turn is his first second move: longarm (the owner, Round 17: "make the attacks based on fighter position." -- no cycle to count, so it is forced)
         b._atkTimer = 1; step();
         var kind = b._telKind, rows = b._armRows ? b._armRows.length : 0, band = String(drawBossSprite).indexOf('_armRows') >= 0;
         for (var i=0;i<120;i++){ step(); f.x = 120; f.vx = 0; f.y = groundY() - 24; f.vy = 0; b.x = 120 + c.dx; b.vx = 0; }
@@ -418,10 +424,10 @@ describe('phase 2: Glitching', () => {
       summons = []; projectiles = [];
       ${STAGE(300)}
       b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._atkTimer = 1e9; b.x = 900; b.homeX = 900; b.vx = 0;
-      b._atkTimer = 1; step();
+      b._pickForce = 'springy'; b._atkLive = null; b._atkTimer = 1; step();
       out.blinkX = b.x; out.blinkAt = b._blinkAt; out.now = hazardT; out.face = b.face;
       for (var j=0;j<40 && b._tel>0;j++) step(); for (var k=0;k<300 && b._slam;k++) step();
-      b.x = 900; b.vx = 0; b._atkTimer = 1; b._tel = 0; step(); out.noBlinkX = b.x;
+      b.x = 900; b.vx = 0; b._pickForce = 'springy'; b._atkLive = null; b._atkTimer = 1; b._tel = 0; step(); out.noBlinkX = b.x;
       summons = []; projectiles = []; return out;
     })()`);
     expect(r.p1, 'phase 1: the door is just a door').toBe(0);
@@ -629,7 +635,7 @@ describe('MY PURPOSE!: the Spring-Bot toy', () => {
   it('the wind-up names it, fixes the box farthest from you and draws its ray and waves; the toy drops from that box under a shadow, lands on it to the pixel and stands listening, touching nobody', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       var gy = groundY(), out = {}, top = WH*SPRINGY.boxY + 40;
-      b._moveN = 5; b._atkTimer = 1; step();   // his sixth turn: the third second move
+      b._pickForce = 'springbot'; b._atkLive = null; b._atkTimer = 1; step();   // the third second move (forced: his order is the picker's now, Round 17)
       out.kind = b._telKind; out.name = document.getElementById('banner').textContent; out.tel = b._tel; out.boxX = b._boxX; out.WW = WW;
       out.tell = String(drawBossSprite).indexOf('springbot') >= 0;
       var err = null; try { ctx.save(); drawBossSprite(b); ctx.restore(); } catch(e){ err = e.message; } out.tellErr = err;
@@ -782,7 +788,7 @@ describe('MY PURPOSE!: the Spring-Bot toy', () => {
       var seen = [], _b = banner; banner = function(t, m, k, l){ seen.push({ t: String(t), k: k || null }); return _b(t, m, k, l); };
       try {
         var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 420, groundY()-24, 1); g.team=0; g.controller='still'; g.stocks=9; fighters.push(g);
-        f.invuln = 1e9; g.invuln = 1e9; b._moveN = 5; b._atkTimer = 1; step();
+        f.invuln = 1e9; g.invuln = 1e9; b._pickForce = 'springbot'; b._atkLive = null; b._atkTimer = 1; step();
         for (var i=0;i<45 && b._tel>0;i++) step();
         b._atkTimer = 1e9;
         var toy = projectiles.find(function(p){ return p.springBot; });

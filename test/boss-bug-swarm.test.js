@@ -69,32 +69,40 @@ describe('the Bug Swarm is Boss 4, with four attacks of his own', () => {
     expect(r.hp, '"Harder, same damage": his health is not the dial').toBe(225);
   });
 
-  it('takes turns: the tide, the seekers, the tide, the ball, the tide, the sac, the tide, the seekers -- each named -- and names his phases', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position
+  // picks all (Recommended)": the tide no longer runs between every other move. He draws his four by where the fighters stand; none twice in a row, and every one of them comes up.
+  it('draws his turns from his four -- the tide, the seekers, the ball, the sac -- each named, none twice in a row, every one in twelve turns -- and names his phases', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       var kinds = [], names = [];
-      for (var i=0;i<8;i++){ b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f); kinds.push(b._telKind); names.push(bossTelTextForTest()); }
+      for (var i=0;i<12;i++){ b._atkTimer = 1; b._tel = 0; b._atkLive = null; updateBossAttack(b, f); kinds.push(b._telKind); names.push(bossTelTextForTest()); }
       function bossTelTextForTest(){ return bossTelName(b); }
       return { kinds: kinds, names: names, p2: bossPhaseName(b, 2), p3: bossPhaseName(b, 3) };
     })()`);
-    expect(r.kinds).toEqual(['swarm', 'swarmseek', 'swarm', 'dodgeball', 'swarm', 'eggsac', 'swarm', 'swarmseek']);
     // "The TLC gets destroyed by the wave of bugs"; his old seekers; "Bug-Filled Dodgeball Insanity"; the egg sac Flower throws
-    expect(r.names).toEqual(['SWARM WAVE!', 'SEEKERS!', 'SWARM WAVE!', 'DODGEBALL!', 'SWARM WAVE!', 'EGG SAC!', 'SWARM WAVE!', 'SEEKERS!']);
+    const NAME = { swarm: 'SWARM WAVE!', swarmseek: 'SEEKERS!', dodgeball: 'DODGEBALL!', eggsac: 'EGG SAC!' };
+    expect(r.kinds.every((k) => NAME[k]), `only his four: ${r.kinds}`).toBe(true);
+    expect(r.names).toEqual(r.kinds.map((k) => NAME[k]));
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(new Set(r.kinds).size, `all four come up in twelve turns: ${r.kinds}`).toBe(4);
     expect(r.p2).toBe('Second Wave');
     expect(r.p3).toBe('Swarm Frenzy');
   });
 
-  it("his gaps are a little longer than the default 100 / 72 / 52 -- the goo and the maw are the hazards (\"reduce boss difficulty and add a hazard\") -- and longer after a move whose bugs are still crossing", () => {
+  // The owner, 2026-10-01 (Round 17), verbatim: "1 attack at a time... the bosses dont give any time between attacks to hit them." Asked: "Current gaps". The gap is now counted from the moment a move is
+  // OVER -- its last bug gone (the engine's one-attack watch, test/boss-kit.test.js) -- so a move whose bugs are still crossing needs no longer gap of its own: the `tail` is gone, and all four moves
+  // wait the same 110 / 82 / 60 (x 1.2) after they are over.
+  it("his gaps are a little longer than the default 100 / 72 / 52 -- the goo and the maw are the hazards (\"reduce boss difficulty and add a hazard\") -- and the same after every move: the gap starts when the move is over", () => {
     const r = W.eval(`(function(){ var out = {};
       [1,2,3].forEach(function(ph){ out[ph] = ['swarm','swarmseek','dodgeball','eggsac'].map(function(k){ return bossAtkGap({ attack:'swarm', _phase:ph, _telKind:k }); }); });
       out.def = [1,2,3].map(function(ph){ return bossAtkGap({ attack:'other', _phase:ph }); });
       return out; })()`);
     expect(r.def, 'the shared pacing, unchanged (an attack no boss has is not a Boss Rush boss, so it is not paced)').toEqual([100, 72, 52]);
-    // "bosses should attack a bit slower" (the owner, 2026-09-30): every Boss Rush boss waits BOSS_PACE (1.2) times as long between attacks, so what was
-    // 134 / 110 / 150 / 140 in phase 1 is 161 / 132 / 180 / 168. (The fifth, DODGING PATTERN!'s 110 + an 80-frame tail, went with the tunnel itself:
-    // "remove the bug tunnel attack.", the owner, 2026-10-01.)
-    expect(r[1]).toEqual([161, 132, 180, 168]);
-    expect(r[2]).toEqual([127, 98, 146, 134]);
-    expect(r[3]).toEqual([101, 72, 120, 108]);
+    // "bosses should attack a bit slower" (the owner, 2026-09-30): every Boss Rush boss waits BOSS_PACE (1.2) times as long between attacks, so 110 / 82 / 60 is 132 / 98 / 72, the same after every move
+    // (it was 161 / 132 / 180 / 168 in phase 1, with a tail after the moves whose bugs were still crossing: that wait is the one-attack watch's now). (The fifth, DODGING PATTERN!'s 110 + an
+    // 80-frame tail, went with the tunnel itself: "remove the bug tunnel attack.", the owner, 2026-10-01.)
+    expect(r[1]).toEqual([132, 132, 132, 132]);
+    expect(r[2]).toEqual([98, 98, 98, 98]);
+    expect(r[3]).toEqual([72, 72, 72, 72]);
   });
 });
 
@@ -244,7 +252,7 @@ describe('the bug tunnel is gone', () => {
       var ex = BOSS_EXTRA['The Bug Swarm'];
       return { extra: ex, names: ex.map(function(k){ return BOSS_MOVE_NAME[k]; }), all: Object.keys(BOSS_MOVE_NAME).filter(function(k){ return /DODGING/.test(BOSS_MOVE_NAME[k]); }),
         move: typeof BOSS_MOVES.dodgepattern, name: BOSS_MOVE_NAME.dodgepattern, rushOnly: BOSS_RUSH_ONLY.has('dodgepattern'),
-        swarmKeys: Object.keys(SWARM).sort(), tail: Object.keys(SWARM.tail), fn: typeof swarmPattern,
+        swarmKeys: Object.keys(SWARM).sort(), tail: typeof SWARM.tail, fn: typeof swarmPattern,
         tel: [1,2,3].map(function(ph){ return bossTelLen({ attack:'swarm', _telKind:'dodgepattern', _phase:ph }); }), gap: bossAtkGap({ attack:'swarm', _phase:1, _telKind:'dodgepattern' }) };
     })()`);
     expect(r.extra, 'the signature and three more: four attacks').toEqual(['swarmseek', 'dodgeball', 'eggsac']);
@@ -253,7 +261,7 @@ describe('the bug tunnel is gone', () => {
     expect(r.move).toBe('undefined');
     expect(r.name).toBeUndefined();
     expect(r.rushOnly).toBe(false);
-    expect(r.tail, 'no tail after it').toEqual(['swarm', 'swarmseek', 'dodgeball', 'eggsac']);
+    expect(r.tail, 'no tail after it, or after any move: the gap starts when a move is over (Round 17, "1 attack at a time")').toBe('undefined');
     for (const k of ['pat', 'patTel', 'rowStep', 'rows', 'row0']) expect(r.swarmKeys, `SWARM.${k} (the tunnel's table) is gone`).not.toContain(k);
     expect(r.fn, 'and the function that built the wall').toBe('undefined');
     expect(r.tel, 'a move of an unknown kind has the usual wind-up: the longer one it had is gone').toEqual([36, 36, 36]);
@@ -274,9 +282,10 @@ describe('the bug tunnel is gone', () => {
   it('a whole fight through all three phases never throws a wall of bugs with a channel: every turn is the tide, the seekers, the ball or the sac, and no shot is the old pattern\'s', () => {
     const r = W.eval(`(function(){ var out = { kinds: [], swarms: {}, bad: 0 };
       [1,2,3].forEach(function(ph){
-        ${STAGE(300, 'ph')} f.invuln = 1e9; b._moveN = 0;
+        ${STAGE(300, 'ph')} f.invuln = 1e9;
+        var SEQ = ['swarm', 'swarmseek', 'swarm', 'dodgeball', 'swarm', 'eggsac', 'swarm', 'swarmseek'];   // (the turns are asked for: his order is the picker's now, Round 17)
         for (var t=0;t<8;t++){
-          b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f); out.kinds.push(ph + ':' + b._telKind);
+          b._pickForce = SEQ[t]; b._atkLive = null; b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f); out.kinds.push(ph + ':' + b._telKind);
           b._tel = 1; updateBossAttack(b, f);   // the wind-up ends: the move fires, as it does in the game
           for (var k=0;k<40;k++){
             step(); f.invuln = 1e9; f.x = 300; f.y = groundY() - 24;
@@ -881,7 +890,10 @@ describe('no words on the screen, and nothing that is not his', () => {
         SETTINGS.mode='boss'; SETTINGS.count=2; SETTINGS.stocks=99; SETTINGS.itemRate=0; SETTINGS.items=false; chosen = ROSTER.find(function(r){ return r.name==='Firey'; }); beginMatchNow();
         fighters.forEach(function(f){ f.controller='ai'; });
         BOSSRUSH.bossIdx = 3; summons = []; projectiles = []; spawnBossRushBoss(); var b = summons.find(function(s){ return s.type==='boss'; });
-        var n = 0; while (running && n < 2400){ step(); n++; if (b._phase === 1 && n === 900) b.hp = b.maxHp*0.5; if (b._phase === 2 && n === 1500) b.hp = b.maxHp*0.2; }
+        // his turns are drawn by position now (the owner, Round 17: "make the attacks based on fighter position."), and a fight with AI fighters that beats him in about 1300 frames has only a handful of turns:
+        // so the four moves are asked for in turn (a forced move is used once), and the fight is what it was -- the banners it says, the cards, and nothing else
+        var order = ['swarm', 'swarmseek', 'dodgeball', 'eggsac'], k = 0;
+        var n = 0; while (running && n < 2400){ if (!(b._tel > 0) && !b._atkLive && b._atkTimer <= 2 && !b._pickForce) b._pickForce = order[k++ % 4]; step(); n++; if (b._phase === 1 && n === 900) b.hp = b.maxHp*0.5; if (b._phase === 2 && n === 1500) b.hp = b.maxHp*0.2; }
       } finally { banner = _b; }
       return out; })()`);
     const boss = r.banners.filter((b) => b.kind === 'boss').map((b) => b.text);

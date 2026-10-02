@@ -5336,6 +5336,10 @@ function startBossRush(){
   try{ sndInit(); startMusic('boss'); }catch(e){}   // recording is started by beginMatchNow for all modes
   spawnBossRushBoss();
 }
+// BOSS HP. The owner, 2026-10-01 (Round 17), asked how the bosses should get harder: "+50% (Recommended)" -- every Boss Rush boss spawns with half again the HP
+// of its roster row (Boss 1 175 -> about 260, Four 340 -> 510). The Announcer's own pick of 175 -> 200 is folded into it, as the question said. ONE constant,
+// applied here where the HP is set: the roster rows keep their own numbers. One and Steve Cobs are not Boss Rush bosses (no BOSS_ROSTER row, no gauntlet): they keep theirs.
+const BOSS_HP_MULT = 1.5;
 function spawnBossRushBoss(){
   // New boss, new theme: re-roll the boss playlist so a gauntlet walks through the owner's
   // boss/miniboss tracks instead of looping one of them for the whole run. No-op with 0 or 1.
@@ -5343,7 +5347,7 @@ function spawnBossRushBoss(){
   const b = BOSS_ROSTER[BOSSRUSH.bossIdx];
   // a beefier boss than the item version: scales HP with the number of fighters ganging up
   const nFighters = fighters.filter(f=>!f.dead).length || 1;
-  const hp = Math.round((b.hp||130) * (1 + (nFighters-1)*0.6));
+  const hp = Math.round((b.hp||130) * BOSS_HP_MULT * (1 + (nFighters-1)*0.6));
   BOSS_ARENA = b.arena || null;   // set the custom arena backdrop for this boss
   const boss = makeBossSummon(b, hp);
   summons.push(boss);
@@ -7038,8 +7042,9 @@ const GROTATO_MINES = Math.round(4*ASSIST_TROPHY_DMG), GROTATO_GAP = 60;
 // slot (Evil Leafy's horror-chase in move, MePhone4's glove follow in tick, each one's wind-up length, banner and phase lines);
 // an empty pair is a slot the boss does not use yet, and the 'void' arena that Two and Four share stays outside both. The slots:
 //   roster     BOSS_ROSTER: the boss's row (its arena key, sprite key...)
-//   extra      BOSS_EXTRA: its second moves, in turn order
+//   extra      BOSS_EXTRA: its second moves (the picker draws among them and the signature: there is no fixed turn order any more)
 //   rushonly   BOSS_RUSH_ONLY: second moves an item boss never throws
+//   pick       BOSS_PICK: each move's tags (what it punishes), the moves it has unlocked by phase, and the small hooks its own turn rules need (THE PICKER)
 //   movename   BOSS_MOVE_NAME: a second move's telegraph banner
 //   moves      BOSS_MOVES: the second moves (fired when the wind-up ends)
 //   helpers    free space below BOSS_MOVES for the boss's own constants, tables and functions (the late five's follow the Dragon's)
@@ -7559,11 +7564,18 @@ function updateBossAttack(s, tgt){
   if(s.attack==="four") fourTick(s, tgt);   // a move in the air holds the next wind-up; the ring stops at the floor and the hills; phase 3's quake (fourTick)
   // @boss:four:end tick
 
+  // ONE ATTACK AT A TIME (see THE PICKER AND ONE ATTACK AT A TIME): a Boss Rush boss's gap is held while its last attack is going and starts when it is over
+  if(s._atkLive) bossAttackWatch(s);
   // telegraph in progress → flash, then fire when it hits 0
   if(s._tel>0){
     s._tel--;
     if(s._tel%6<3) s.flash=1; else s.flash=0;
-    if(s._tel<=0){ if(s._telKind && s._telKind !== s.attack && BOSS_MOVES[s._telKind]) BOSS_MOVES[s._telKind](s, tgt); else fireBossAttack(s, tgt); s.flash=0; s._atkTimer = bossAtkGap(s); }
+    if(s._tel<=0){
+      const lo = s._atkLo != null ? s._atkLo : BOSS_ATK_ID;   // the ids this attack draws are above this (a wind-up that did not start here -- a test's -- counts from now)
+      if(s._telKind && s._telKind !== s.attack && BOSS_MOVES[s._telKind]) BOSS_MOVES[s._telKind](s, tgt); else fireBossAttack(s, tgt);
+      s.flash=0; s._atkTimer = bossAtkGap(s);
+      if(bossPicks(s)) s._atkLive = { lo };
+    }
     return;
   }
   // count down to the next attack; when ready, begin a telegraph
@@ -7572,13 +7584,16 @@ function updateBossAttack(s, tgt){
     s._tel = bossTelLen(s);
     // "bosses should have varied attacks": the signature attack, then one of its second moves, in turn
     s._moveN = (s._moveN||0) + 1;
+    s._atkLo = BOSS_ATK_ID;   // an attack's shots are the ones with an id above this (bossAttackOver)
     // The item version of a boss (summonBoss) has no attack of its own and no phases, so MePhone4S's cookies (a four-second
     // collapse) and chainsaws stay in the gauntlet and his item version only lunges; so do MePhone4's MeLife and portal (an
     // add downloaded by an item boss, team -1, would attack its own summoner, and so would the portal). Every other boss's
     // list is untouched.
     // (summonBoss is not in spawnItem's pool today, so no item boss spawns; this keeps one honest if it comes back.)
     const extra = (BOSS_EXTRA[s.name] || []).filter(k => s.attack || !BOSS_RUSH_ONLY.has(k));
-    s._telKind = (extra.length && s._moveN % 2 === 0) ? extra[((s._moveN >> 1) - 1) % extra.length] : s.attack;
+    // POSITION PICKS (see THE PICKER): a Boss Rush boss with a pick entry draws its move by where the fighters stand; the old turn cycle is what the rest still run
+    if(bossPicks(s)){ const P = BOSS_PICK[s.attack], k = bossPickTurn(s); s._telKind = P.kind ? P.kind(k, s) : k; }
+    else s._telKind = (extra.length && s._moveN % 2 === 0) ? extra[((s._moveN >> 1) - 1) % extra.length] : s.attack;
     // The phase the wind-up is drawn in is the phase the move fires in (fireBossAttack and the second moves read _telPh):
     // a hit that crossed a threshold mid-wind-up used to turn a single "FIST THINGY!" into the phase-3 combo, or add the
     // phase-3 second car and spikes to an "I'LL BE BACK!" nobody had been warned of.
@@ -7637,12 +7652,141 @@ function updateBossAttack(s, tgt){
     banner(bossTelName(s), 700, 'boss');
   }
 }
+// ==== THE PICKER AND ONE ATTACK AT A TIME (the owner, 2026-10-01, Round 17) ==================================================================================
+// Two engine rules for the twelve Boss Rush bosses -- a BOSS_ROSTER row (bossPaced) -- and for no other: One and Steve Cobs keep their own rotations and gaps ("actually,
+// do the 12 only!!!!! WHOOPS!!", the owner).
+//
+// THE PICKER. The owner, verbatim: "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are
+// close." Asked how far that goes: "Position picks all (Recommended)" -- the signature competes like every other move. The fixed turn cycle (signature, A, signature, B, ...) is
+// gone. Each turn bossPickTurn scores the boss's unlocked moves by how well each punishes where the fighters are NOW (bossSituation: how close and how far, floor, ledge or air,
+// near a wall or in the open, bunched or spread) and draws one by weighted chance. The dice are Math.random, the ones every fight already uses and the tests and the balance
+// harness seed, so a seeded fight is a repeatable one. THE VARIETY RULE: never the same move twice in a row; a move not played for a while weighs more (PICK.age); and a move not
+// played for PICK.deck passes of the deck of unlocked moves is played next whatever it scores -- so every unlocked move still comes up, within about two passes of the deck. A move
+// that has just been unlocked (a phase gate opening) starts as if it had waited PICK.fresh turns, so a phase's new move shows soon.
+// What a boss declares, in its own `pick` pair (BOSS_PICK, above): the tags of its moves -- what each punishes, read from the code of the move:
+//     close      a thing at his body: a ring, a stomp, a lunge, a swing. Worst for whoever stands near him.
+//     far        a reach across the room: a sweep, a shot from range, a mark far from him. Worst for whoever keeps away.
+//     ground     a row or a wave on the floor, a thing you jump. Worst for whoever stands on the floor.
+//     platform   a row at ledge height, a hit on the ledge. Worst for whoever stands on a ledge.
+//     air        a catch for a jumper. Worst for whoever is in the air.
+//     wall       a trap in a corner, a shove, a shutter. Worst for whoever is near an edge.
+//     bunch      an area that takes several at once. Worst for fighters standing together.
+//     spread     a shot for each fighter, from several places. Worst for fighters standing apart.
+//     any        a lock on your spot, wherever it is: neither favoured nor starved.
+// -- the moves it has unlocked now (a phase gate, a cap: MePhone4's add cap), and the few hooks its own turn rules need: a forced next move (the Announcer's ACID TEARS!), a move that
+// opens a phase (MePhone4S's car), a move that is a form of the signature (Firey's two, Four's two). A test forces a move by setting `s._pickForce = 'move'`.
+const PICK = {
+  gain:{ close:5, far:5, air:5, platform:5, wall:5, bunch:5, spread:5, ground:1 },   // what a tag that fits perfectly adds to a move's weight of 1 (most fighters stand on the floor most of the time, so `ground` says less)
+  idle:1,                                                                            // what a move that is `any` adds, whatever the fighters do
+  near:0.30, farFrom:0.28, farTo:0.50, edge:0.20,   // fractions of the arena: close inside `near` of the gap between a fighter's body and the boss's (fully at touching), far from `farFrom` to `farTo`, cornered inside `edge` of either wall
+  low:40,                                           // feet within this of the floor line: on the floor; higher up and standing: on a ledge; higher up and not standing: in the air
+  bunch:0.25, spreadFrom:0.30, spreadTo:0.60,       // bunched: inside `bunch` of the arena of each other; spread: from `spreadFrom` of it apart (fully at `spreadTo`)
+  age:0.4, ageCap:6, fresh:3, deck:2                // the variety rule: +40% a turn a move sits out (up to 6 turns), a new move starts at 3, and 2 passes of the deck play a move whatever it scores
+};
+function bossPicks(s){ return bossPaced(s) && !!BOSS_PICK[s.attack]; }
+// The moves a boss has unlocked now (its pick entry's `moves`, else the signature and every BOSS_EXTRA move) and what a move punishes (a name or a list; a function of the phase for a move that changes with it).
+function bossPickMoves(s, ph){
+  const P = BOSS_PICK[s.attack];
+  return (P.moves ? P.moves(s, ph == null ? (s._phase || 1) : ph) : [s.attack].concat(BOSS_EXTRA[s.name] || [])).slice();
+}
+function bossMoveTags(s, k, ph){
+  const P = BOSS_PICK[s.attack], t = P.tags && P.tags[k], v = typeof t === 'function' ? t(s, ph) : t;
+  return v == null ? [] : (Array.isArray(v) ? v : [v]);
+}
+// How the fighters stand against the boss `s`, each as 0..1: the gap is measured from his body to theirs, the floor line is groundY, a corner is the nearest wall.
+function bossSituation(s){
+  const gy = groundY(), P = PICK, L = fighters.filter(f => !f.dead), o = { n:L.length, close:0, far:0, ground:0, platform:0, air:0, wall:0, bunch:0, spread:0 };
+  const near = P.near*WW, f0 = P.farFrom*WW, f1 = P.farTo*WW, edge = P.edge*WW;
+  for(const f of L){
+    const gap = Math.max(0, Math.hypot(f.x - s.x, f.y - s.y) - s.r);
+    o.close = Math.max(o.close, clamp(1 - gap/near, 0, 1));
+    o.far = Math.max(o.far, clamp((gap - f0)/(f1 - f0), 0, 1));
+    o.wall = Math.max(o.wall, clamp(1 - Math.min(f.x, WW - f.x)/edge, 0, 1));
+    if(feetY(f) >= gy - P.low) o.ground = 1; else if(f.onground) o.platform = 1; else o.air = 1;
+  }
+  if(L.length > 1){
+    let lo = 1e9, hi = 0;
+    for(let i = 0; i < L.length; i++) for(let j = i + 1; j < L.length; j++){ const d = Math.hypot(L[i].x - L[j].x, L[i].y - L[j].y); lo = Math.min(lo, d); hi = Math.max(hi, d); }
+    o.bunch = clamp(1 - lo/(P.bunch*WW), 0, 1);
+    o.spread = clamp((hi - P.spreadFrom*WW)/((P.spreadTo - P.spreadFrom)*WW), 0, 1);
+  }
+  return o;
+}
+// A move's weight: 1, plus its best tag -- how well that tag fits (its gain times how much the fighters' stance is that tag). A move names the stances it punishes, and is favoured
+// when ANY of them is the case; so a boss tags sparingly: one or two, the ones the code of the move is built for.
+function bossPickWeight(tags, sit){
+  let best = 0, n = 0;
+  for(const t of tags){
+    if(t === 'any'){ best = Math.max(best, PICK.idle); n++; }
+    else if(PICK.gain[t] != null){ best = Math.max(best, PICK.gain[t]*(sit[t] || 0)); n++; }
+  }
+  return 1 + (n ? best : PICK.idle);
+}
+// The turn: which move this wind-up is. Returns the move (also s._pickKey); the engine's _telKind is the pick's `kind` of it, else the move itself. A forced move (a test's
+// s._pickForce, the boss's `force`, a phase's `first`) wins if it is unlocked; else the oldest unplayed move at two decks, else the weighted draw over every unlocked move
+// but the one just played.
+function bossPickTurn(s){
+  const P = BOSS_PICK[s.attack], ph = s._phase || 1, pk = s._pk || (s._pk = { n:0, last:null, at:{} });
+  const keys = bossPickMoves(s, ph);
+  for(const q of keys) if(pk.at[q] == null) pk.at[q] = pk.n > 0 ? pk.n - PICK.fresh : 0;   // first seen: a move unlocked later starts a few turns "old"
+  const want = s._pickForce || (P.force && P.force(s, ph)) || (P.first && P.first(s, ph)) || null;
+  s._pickForce = null;
+  let k = want && keys.indexOf(want) >= 0 ? want : null;
+  if(k == null){
+    const cand = keys.length > 1 ? keys.filter(q => q !== pk.last) : keys, age = (q) => pk.n - pk.at[q];
+    let old = cand[0];
+    for(const q of cand) if(age(q) > age(old)) old = q;
+    if(age(old) >= PICK.deck*keys.length) k = old;
+    else {
+      const sit = bossSituation(s), w = cand.map(q => bossPickWeight(bossMoveTags(s, q, ph), sit)*(1 + PICK.age*Math.min(PICK.ageCap, Math.max(0, age(q) - 1))));
+      let r = Math.random()*w.reduce((a, b) => a + b, 0);
+      k = cand[cand.length - 1];
+      for(let i = 0; i < cand.length; i++){ r -= w[i]; if(r <= 0){ k = cand[i]; break; } }
+    }
+  }
+  pk.last = k; pk.at[k] = pk.n; pk.n++;
+  s._pickKey = k;
+  return k;
+}
+// ONE ATTACK AT A TIME. The owner, verbatim: "1 attack at a time... the bosses dont give any time between attacks to hit them." Asked how long the wait should be: "Current gaps"
+// -- and about the arena: "Keep hazards going (Recommended)". The next wind-up may not start until the attack before it is FULLY over: every shot, strike and scripted part of it
+// gone. Then the boss's gap runs (bossAtkGap: about 2 s / 1.4 s / 1 s by phase, paced), counted from the moment the attack is over and not from its shot, and that gap is the window
+// to hit him. OVER means: no shot of the attack alive (a shot of an attack is one whose `bossAtk` id was drawn after the wind-up began; one that only lies there -- a `trap`, or
+// `lingers` -- is terrain, not the attack); none that has left the arena for good (it is taken out: nothing out there can hit anyone); and nothing the boss's own `busy` says is going.
+// The arena's hazards run through the window, and what a boss keeps standing as an add (MePhone4's MeLife helpers) never held a turn back. (No hazard makes a shot today -- they hit through
+// arenaHazardHit -- and one that did would have to mark its shots `lingers`, or the wait would count them. A boss's own thing that lies for seconds -- Firey's fire patches, Springy's holes --
+// says `lingers` too. A boss parked for good, with an _atkTimer past 1e6, is not watched.)
+function bossShotLive(p, lo){ return p.life > 0 && p.bossAtk != null && p.bossAtk > lo && !p.trap && !p.lingers; }
+function bossShotGone(p){   // out past an edge by more than its own size and still going: nothing it does reaches the room again
+  if(p.delay > 0 || p.boomerang || p.mpBm || p.orbit || p.homing || p.noCull) return false;
+  const m = 140 + (p.r || 10);
+  return (p.x < -m && p.vx < 0) || (p.x > WW + m && p.vx > 0);
+}
+function bossAttackOver(s, A){
+  const P = BOSS_PICK[s.attack];
+  if(P && P.busy && P.busy(s)) return false;
+  if(P && P.scan === false) return true;
+  for(const p of projectiles) if(bossShotLive(p, A.lo)){ if(bossShotGone(p)) p.life = 0; else return false; }
+  for(const t of tendrils) if(t.life > 0 && t.bossAtk != null && t.bossAtk > A.lo) return false;
+  return true;
+}
+// Every frame after a Boss Rush boss's move fires (s._atkLive): the gap is held until the attack is over, then it starts -- from here.
+function bossAttackWatch(s){
+  const A = s._atkLive;
+  if(!A || s._tel > 0) return;
+  if(s._atkTimer > 1e6){ s._atkLive = null; return; }   // a boss parked for good (a timer past the 1e6 hold: a test's 1e9) is not being watched, and stays parked
+  if(bossAttackOver(s, A)){
+    const g = bossAtkGap(s);
+    if(g < 1e5){ s._atkLive = null; s._atkTimer = g; return; }   // (a gap the boss's own code still holds is held)
+  }
+  s._atkTimer = 1e6;
+}
 // BOSS PACE. The owner, 2026-09-30: "bosses should attack a bit slower." Every Boss Rush boss now waits BOSS_PACE times as long
 // between its attacks as its own gap says: 1.2, a fifth more. It is applied once, here, to whatever bossAtkGapBase returns -- the
 // shared 100/72/52 and every boss's own table, whether it lives in a slot or above the slots -- and every place that sets a gap
-// (the end of a turn in updateBossAttack, the end of Firey Speaker Box's, the Dragon's and Springy's moves) reads this one. A turn
-// that runs on after it fires (Puffball Speaker Box's, the Bug Swarm's tail) has its run counted in its gap, so its wait grows a
-// shade over a fifth. The wind-up (bossTelLen), how fast a shot flies, what a boss hits for and the wait before its first attack
+// (the end of a turn in updateBossAttack, the end of Firey Speaker Box's, the Dragon's and Springy's moves, and bossAttackWatch, which starts the gap the moment a turn is over:
+// since Round 17 a turn that runs on after it fires adds nothing to its gap, whose wait is the paced gap and no more) reads this one. The wind-up (bossTelLen), how fast a shot flies,
+// what a boss hits for and the wait before its first attack
 // are as they were, and a hold (the Dragon's 1e6 while a move is in the air) is no gap. One and Steve Cobs are not Boss Rush
 // bosses: neither is a BOSS_ROSTER row (One's oneGap, Steve Cobs's cobsGap and his old Boss-11 row, COBS_ROW, keep their own), so
 // none of them is slowed. Not in a slot: a slot returns its own number, and this makes it the paced one.
@@ -7661,10 +7805,9 @@ function bossAtkGapBase(s){
   // @boss:announcer:end gap
 
   // @boss:puffball:begin gap
-  if(s.attack==="soundwave"){   // her own pacing: slower than the shared 100/72/52 -- the lake and the tilt press instead -- counted from the END of a long turn (psbBusy: the frames it runs after it fires)
-    const extra = s._psbBusy || 0; s._psbBusy = 0;
-    return PSB.gaps[Math.min(3, Math.max(1, s._phase||1))] + extra;
-  }
+  // her own pacing: slower than the shared 100/72/52 -- the lake and the tilt press instead. It is counted from the moment her turn is over (the engine's one-attack watch, bossAttackWatch,
+  // asks BOSS_PICK.soundwave.busy and her shots); it used to be counted from her shot, plus an estimate of how long the turn ran on (_psbBusy).
+  if(s.attack==="soundwave") return PSB.gaps[Math.min(3, Math.max(1, s._phase||1))];
   // @boss:puffball:end gap
 
   // @boss:firey:begin gap
@@ -7672,7 +7815,7 @@ function bossAtkGapBase(s){
   // @boss:firey:end gap
 
   // @boss:swarm:begin gap
-  if(s.attack==="swarm") return swarmGap(s);   // 110 / 82 / 60 and more after a move whose bugs are still crossing (SWARM.gaps, SWARM.tail)
+  if(s.attack==="swarm") return swarmGap(s);   // 110 / 82 / 60, counted from the moment the move is over -- its last bug gone (SWARM.gaps; the engine's one-attack watch)
   // @boss:swarm:end gap
 
   // @boss:purpleface:begin gap
@@ -7900,18 +8043,18 @@ function bossTelLen(s){
 // shared shapes a boss throws between its signature attacks, dressed in its colour; which ones a boss uses is BOSS_EXTRA.
 const BOSS_EXTRA = {
   // @boss:announcer:begin extra
-  // His own three (Round 9: "Announcer: CAKE AT STAKE!/BUDGET CUTS!/CRUSHER ARM! (redone), QUADRUPLE LASER! ..., ACID TEARS!, WATER BALLOONS!"): turns run
-  // the signature, QUADRUPLE LASER!, the signature, ACID TEARS!, the signature, WATER BALLOONS!. The shared INCOMING! and SHOCK RING are gone from him.
+  // His own three (Round 9: "Announcer: CAKE AT STAKE!/BUDGET CUTS!/CRUSHER ARM! (redone), QUADRUPLE LASER! ..., ACID TEARS!, WATER BALLOONS!"): the picker draws his turn from the
+  // signature and these three by where the fighters stand (BOSS_PICK.announcer; the turns used to run in a fixed cycle). The shared INCOMING! and SHOCK RING are gone from him.
   "Announcer": ["annlaser", "annacid", "annballoon"],
   // @boss:announcer:end extra
 
   // @boss:puffball:begin extra
-  // her own three, not the shared shapes: SONIC BLAST!, CONSEQUENCES!, SONIC BLAST!, RAINBOW BARF! (from phase 2; phase 1 plays CONSEQUENCES! again), SONIC BLAST!, PRIVATE!
+  // her own three, not the shared shapes, drawn with SONIC BLAST! by the picker (BOSS_PICK.soundwave): CONSEQUENCES!, RAINBOW BARF! (from phase 2), PRIVATE!
   "Puffball Speaker Box": ["consequences", "rainbowbarf", "private"],
   // @boss:puffball:end extra
 
   // @boss:firey:begin extra
-  "Firey Speaker Box": ["furnace", "youmust"],   // his own, not the shared shapes: signature turns alternate ROCKET BOARD! and THE TLC NEEDS TO BE FIXED! (fsbBeginTelegraph), so his turns run board, FURNACE!, TLC, YOU MUST!
+  "Firey Speaker Box": ["furnace", "youmust"],   // his own, not the shared shapes; the picker (BOSS_PICK.firewall) draws among ROCKET BOARD!, THE TLC NEEDS TO BE FIXED! (the signature's two forms, two moves now), FURNACE! and YOU MUST!
   // @boss:firey:end extra
 
   // @boss:swarm:begin extra
@@ -7919,45 +8062,43 @@ const BOSS_EXTRA = {
   // @boss:swarm:end extra
 
   // @boss:purpleface:begin extra
-  // his own four (the boss overhaul): his turns run AD BREAK!, FREESTYLE RAP!, AD BREAK!, TORTURE TIME!, AD BREAK!, THANK YOU FOR COMING!, AD BREAK!, TOTAL SLIP SHOES!
+  // his own four (the boss overhaul), drawn with AD BREAK! by the picker (BOSS_PICK.swallow): FREESTYLE RAP!, TORTURE TIME!, THANK YOU FOR COMING!, TOTAL SLIP SHOES!
   "Purple Face": ["pfaceRap", "pfaceTorture", "pfaceThanks", "pfaceShoes"],
   // @boss:purpleface:end extra
 
   // @boss:dragon:begin extra
-  "Purple Dragon": ["dragonroar", "dragonchar", "dragonwind", "dragonropes"],   // its own five: STRAFING RUN!, FURIOUS ROAR!, STRAFING RUN!, CHAR!, STRAFING RUN!, WIND LOTTERY!, STRAFING RUN!, LIGHTNING ROPES! (see DRAGON)
+  "Purple Dragon": ["dragonroar", "dragonchar", "dragonwind", "dragonropes"],   // its own five, drawn by the picker (BOSS_PICK.dragon): STRAFING RUN!, FURIOUS ROAR!, CHAR!, WIND LOTTERY!, LIGHTNING ROPES! (see DRAGON)
   // @boss:dragon:end extra
 
   // @boss:mephone4:begin extra
-  "MePhone4": ["melife", "portal", "boomerang", "maze"],   // his own five with the signature, not the shared shapes: glove, MeLife, glove, portal, glove, boomerang, glove, maze (phase 1 plays the first three: mpBeginTelegraph)
+  "MePhone4": ["melife", "portal", "boomerang", "maze"],   // his own five with the signature, not the shared shapes, drawn by the picker (BOSS_PICK.mephone: no maze before phase 2, no MeLife at the add cap)
   // @boss:mephone4:end extra
 
   // @boss:evilleafy:begin extra
-  // her own, not the shared SEEKERS! and GROUND POUND! (Round 8: "Cut: BOOM!, CONSUME!, DEAD WEIGHT!"): her turns run TENDRILS!, POSSESSED!, TENDRILS!, BLACK HOLE!, TENDRILS!, BEHIND THE TREES!
+  // her own, not the shared SEEKERS! and GROUND POUND! (Round 8: "Cut: BOOM!, CONSUME!, DEAD WEIGHT!"): the picker draws among TENDRILS!, POSSESSED!, BLACK HOLE! and BEHIND THE TREES! (BOSS_PICK.evilleafy)
   "Evil Leafy": ["elpossess", "elhole", "elbehind"],
   // @boss:evilleafy:end extra
 
   // @boss:mephone4s:begin extra
-  // his own six, with the signature: PUT THAT COOKIE DOWN!, ONE OF EACH!, PUT THAT COOKIE DOWN!, HASTA LA VISTA!, PUT THAT COOKIE DOWN!, POP UP!, PUT THAT COOKIE DOWN!, I'LL BE BACK!
-  // (from phase 2: a phase-1 turn that would be the car plays the next move, and once phase 2 starts the car comes first), PUT THAT COOKIE DOWN!, QUICKSAND SHOVE!
-  // ("from Boss 9 on, 6": the owner's count, Rounds 9 and 10)
+  // his own six, with the signature (PUT THAT COOKIE DOWN!), drawn by the picker (BOSS_PICK.mephone4s): ONE OF EACH!, HASTA LA VISTA!, POP UP!, I'LL BE BACK! (from phase 2, and the first
+  // move once phase 2 starts), QUICKSAND SHOVE! ("from Boss 9 on, 6": the owner's count, Rounds 9 and 10)
   "MePhone4S": ["s4prizes", "s4vista", "s4popup", "s4car", "s4shove"],
   // @boss:mephone4s:end extra
 
   // @boss:two:begin extra
   // His own six with the signature (the owner: "you can add a bullet pattern." -> "Two bullet patterns"; "One of each"; Round 13's THE POWER OF TWO! and his own rail design):
-  // his turns run MIND READ!, MAYBE YOU'D LIKE THIS!, MIND READ!, THE POWER OF TWO!, MIND READ!, BLOCK TOWERS!, MIND READ!, I LOVE RIDES! (phase 2 on; the ring again before),
-  // MIND READ!, CLAP! (phase 2 on; the sun again before). The shared SEEKERS! and SHOCK RING! are gone from him (see TWO).
+  // the picker draws his turn from MIND READ! and these five (BOSS_PICK.two: I LOVE RIDES! and CLAP! from phase 2). The shared SEEKERS! and SHOCK RING! are gone from him (see TWO).
   "Two": ["twosun", "twopower", "twoblocks", "tworails", "twoclap"],
   // @boss:two:end extra
 
   // @boss:four:begin extra
-  // his own five with the signature, not the shared shapes: SCREECHY!, GO BYE-BYE!, ZAPPIES!, TAKE THE TOWER!, SCREECHY!, I DO THIS!, ZAPPIES!, GO BYE-BYE! ... (LOVE HEARTS! from phase 2, DON'T HUG THE CACTUS! from phase 3)
-  // (the signature alternates its two forms, and fourBeginTelegraph deals his extras out among the ones his phase has: FOUR.extras, FOUR.extraN)
+  // his own five with the signature, not the shared shapes: SCREECHY! and ZAPPIES! (the signature's two forms), GO BYE-BYE!, TAKE THE TOWER!, I DO THIS!, and LOVE HEARTS! from phase 2 and DON'T HUG THE CACTUS! from phase 3
+  // (the picker draws among them by where the fighters stand -- BOSS_PICK.four: its `moves` are the ones his phase has, and SCREECHY! and ZAPPIES! are two moves; there is no turn order)
   "Four": ["fourbye", "fourtower", "fourido", "fourhearts", "fourcactus"],
   // @boss:four:end extra
 
   "Steve Cobs": ["knife", "kernels"],       // his own: the Contraption, MeKnife, the Contraption, kernels (phase 3: every other Contraption is SCREEN CRACKER). Off the roster ("replace him with springy"); kept for the secret fight
-  "Springy": ["longarm", "boxdrop", "springbot"],   // his own: the slam, JUST WANTED A HAND, the slam, A TOY IN EVERY BOX, the slam, MY PURPOSE!, and round again (see SPRINGY)
+  "Springy": ["longarm", "boxdrop", "springbot"],   // his own, drawn with the slam by the picker (BOSS_PICK.springy, beside his code): JUST WANTED A HAND, A TOY IN EVERY BOX, MY PURPOSE! (see SPRINGY)
 };
 const BOSS_MOVE_NAME = { rain:"INCOMING!", ring:"SHOCK RING!", slam:"GROUND POUND!", seekers:"SEEKERS!",
   knife:"MEKNIFE!", kernels:"KERNEL STOMP!",
@@ -8066,6 +8207,157 @@ const BOSS_RUSH_ONLY = new Set([   // second moves an item boss never throws (se
   // @boss:four:end rushonly
 
 ]);
+// THE PICKER's table (see THE PICKER, below updateBossAttack): one entry per Boss Rush boss, keyed by its `attack`, each in its own `pick` pair (Springy's is beside his own code,
+// BOSS_PICK.springy). An entry is an object, and every part of it but `tags` is optional:
+//   tags   { move: tag | [tags] | (s, phase) => tag | [tags] }   what each move punishes: close far ground platform air wall bunch spread any (a move with no entry is `any`)
+//   moves  (s, phase) => [moves]   the moves unlocked now, the signature (its `attack`) among them; the default is the signature and the boss's BOSS_EXTRA moves
+//   force  (s, phase) => move|null   a move that has to be the next turn (the Announcer's ACID TEARS! after a volley nobody was hit by)
+//   first  (s, phase) => move|null   a move that opens a phase (MePhone4S's car); the boss clears whatever it keys on when that move starts
+//   kind   (move, s) => _telKind   when a move is one form of the signature (Firey's board and TLC, Four's two): the engine's _telKind for it; s._pickKey is the move itself
+//   busy   (s) => bool   a part of the attack that is not a shot is still going (a choreography, a queue, a vine standing): the next wind-up waits for it
+//   scan   false: `busy` is the whole answer, so the engine does not look for shots (the Announcer's puddles lie on the floor for good)
+const BOSS_PICK = {
+  // @boss:announcer:begin pick
+  // His four, each tagged by what its code punishes. CAKE AT STAKE! / BUDGET CUTS! (the signature) lobs to the surface you stand on, throws flat along your row and re-aims a lob, all from the tosser, so it
+  // reaches wherever you keep to: far, floor, ledge. From phase 3 the signature is CRUSHER ARM!, a press on the spot you stood and a wave along that floor: any, floor. QUADRUPLE LASER! locks a cross on your
+  // spot: any. ACID TEARS! falls round him, the first drop 100 px out and a puddle on the floor under each: close, floor. WATER BALLOONS! puts one over each fighter and the rest between: spread (and one
+  // over a lone fighter's spot: any). His old rule is `force`: ACID TEARS! comes straight after a cake volley nobody was hit by ("The 5 contestants who were safe reject the cake", Rescission). `busy` is annBusy,
+  // the glitch pass's list of everything of his still to strike, and it is the whole answer (scan: false): his puddles lie on the floor for good.
+  announcer: {
+    tags:{ announcer:(s, ph) => ph >= 3 ? ['any', 'ground'] : ['far', 'ground', 'platform'], annlaser:'any', annacid:['close', 'ground'], annballoon:['spread', 'any'] },
+    force:(s) => { const lc = s._lastCake; return (lc && !lc.hit && lc.shots.every(p => p.life <= 0 || projectiles.indexOf(p) < 0)) ? 'annacid' : null; },
+    busy:(s) => annBusy(s), scan:false
+  },
+  // @boss:announcer:end pick
+
+  // @boss:puffball:begin pick
+  // Her four. SONIC BLAST! sends a wall of rings along seven lanes from the floor to a jump's height, both ways across the whole room, with one gap: it reaches wherever you are and catches a jumper: far, air.
+  // CONSEQUENCES! dashes to the spot the spotlight locked on and throws five knives at you from there: close. RAINBOW BARF! (from phase 2) sweeps a stream over the floor round her, leaning toward you, and
+  // whips back: floor, close. PRIVATE! slams a shutter at each edge (whoever stands in their way is hit and shoved in) and sings notes from them at the floor's and the platform's height: wall, ledge.
+  // `busy`: her dash, cuts and way back, her extra waves, the sweep, and her song (she is out of frame until the shutters are up) with the flight back to her place -- none of it is a shot.
+  soundwave: {
+    tags:{ soundwave:['far', 'air'], consequences:'close', rainbowbarf:['ground', 'close'], private:['wall', 'platform'] },
+    moves:(s, ph) => ph >= 2 ? ['soundwave', 'consequences', 'rainbowbarf', 'private'] : ['soundwave', 'consequences', 'private'],
+    busy:(s) => !!(s._psbLoop || s._psbRun || s._psbBarf || s._psbPriv || s._psbMv)
+  },
+  // @boss:puffball:end pick
+
+  // @boss:firey:begin pick
+  // His four, and the signature's two forms are two moves (ROCKET BOARD! and THE TLC NEEDS TO BE FIXED! used to alternate: now each competes, and the engine's _telKind is the move itself, which BOSS_MOVES
+  // fires). ROCKET BOARD! crosses the whole stage along the row you stand in, from the far edge: any. THE TLC NEEDS TO BE FIXED! hops after you, a fire ring along the floor from every landing: close, floor.
+  // FURNACE! rolls plates along the floor from the far side toward the furnace: floor, far. YOU MUST! closes two hooks, low, on the spot you stood: floor. `busy`: his choreography (fsbMove's s._fs) until it
+  // is over -- the board's way back in, the hops' rest, the pinch -- but not his entrance or his fall after a hard hit, which are not an attack. The fire patches a pass or a pinch leaves lie there (`lingers`).
+  firewall: {
+    tags:{ rocketboard:'any', tlc:['close', 'ground'], furnace:['ground', 'far'], youmust:'ground' },
+    moves:() => ['rocketboard', 'tlc', 'furnace', 'youmust'],
+    busy:(s) => !!(s._fs && s._fs.k !== 'enter' && s._fs.k !== 'fall')
+  },
+  // @boss:firey:end pick
+
+  // @boss:swarm:begin pick
+  // His four. SWARM WAVE! pours crests of bugs along the floor from the wall far from you, each one a jump (and from phase 3 the crests climb the platform and run along its top): floor, and ledge in
+  // phase 3. SEEKERS! sends homing stingers up off his body: close, air (a jumper cannot turn). DODGEBALL! throws a ball at the spot you stood that ricochets off the floor, the walls and the ledges,
+  // shedding bugs where it lands: wall, ledge. EGG SAC! lobs a sac that cracks into crawlers that chase you along the floor or the ledge: floor, far. No `busy`: every part of every move is a shot
+  // (the sac too: it is inert, with a delay) with its attack's id, and the shots are what the engine waits for; his goo is the hive's hazard and lies there.
+  swarm: {
+    tags:{ swarm:(s, ph) => ph >= 3 ? ['ground', 'platform'] : 'ground', swarmseek:['close', 'air'], dodgeball:['wall', 'platform'], eggsac:['ground', 'far'] },
+    moves:() => ['swarm', 'swarmseek', 'dodgeball', 'eggsac']
+  },
+  // @boss:swarm:end pick
+
+  // @boss:purpleface:begin pick
+  // His five. AD BREAK! runs the floor at the side you are on, from the far wall, with a low mouth: floor, far. FREESTYLE RAP! pulses notes along the floor, the ledge and the air from three spots across
+  // the stage: spread, far. TORTURE TIME! closes a tank on the spot you stand (two in phase 3, the second where you would run) and bursts it: floor, bunch (one tank takes everyone inside it). THANK YOU FOR
+  // COMING! pops him in beside you for a low kick that throws you at the wall behind you, and rolls totems along the floor: close, wall. TOTAL SLIP SHOES! lobs a pair at your spot from across the floor,
+  // a slip and no damage: far. `busy`: his lunge (the run, the crash into the wall, the chewing, the second lunge), the leg's swing, a platform pulse or a second pair of shoes still to come, and
+  // whoever is in his stomach (up to eight seconds: the attack is not over while it holds someone).
+  swallow: {
+    tags:{ swallow:['ground', 'far'], pfaceRap:['spread', 'far'], pfaceTorture:['ground', 'bunch'], pfaceThanks:['close', 'wall'], pfaceShoes:'far' },
+    busy:(s) => { const pf = s._pf; return !!(pf && (pf.lunge || pf.kick || (pf.later && pf.later.length) || (pf.rap && pf.rap.k >= 0 && pf.rap.q && pf.rap.q.length))) || fighters.some(f => !f.dead && f._swallow > 0); }
+  },
+  // @boss:purpleface:end pick
+
+  // @boss:dragon:begin pick
+  // Its five. STRAFING RUN! flies the roof from edge to edge dropping flames that land clusters ahead of it, and a pass is jumped between them: floor; in phase 3 the signature is GRAB & CARRY!, a swoop along
+  // your row from a high corner that carries off whoever it catches: any. FURIOUS ROAR! shoves whoever is in front of it back and dives on the spot: close. CHAR! takes its stand off to the side and burns the
+  // mark that follows you, creeping: floor. WIND LOTTERY! throws what the storm sends through the door along the roof at heights from a couch's to a key's, low ones jumped and high ones walked under: floor,
+  // air. LIGHTNING ROPES! strikes three anchors across the roof and runs a spark along it from each: spread, floor. `busy`: the move it is flying (s._dr), from its wind-up to its way home.
+  dragon: {
+    tags:{ dragon:(s, ph) => ph >= 3 ? 'any' : 'ground', dragonroar:'close', dragonchar:'ground', dragonwind:['ground', 'air'], dragonropes:['spread', 'ground'] },
+    busy:(s) => !!s._dr
+  },
+  // @boss:dragon:end pick
+
+  // @boss:mephone4:begin pick
+  // His five, drawn by position (his tells follow you, so most of them are wherever you stand). FIST THINGY! flies a glove along the row you stood in, from the edge behind it: any. MELIFE DOWNLOAD! lands an
+  // add 200 px PAST you, with him on the other side -- a pincer: close. REJECTION PORTAL! opens an oval on your spot that flings you to the far side: any. BOOMERANGS! go out along your row about as far as
+  // you are, and a little more, and come back: far. A-MAZE-ING! (from phase 2) grows two hedge walls round you with a beam at the floor, the body and the head, and a cannonball along the floor: floor.
+  // MeLife is out of the draw while his adds stand at their cap (the move he skips: MELIFE_CAP). `busy`: what is still to come of the turn that is not a glove or a boomerang in the air (mpBusy: a portal
+  // still to open, the maze, a glove or boomerang still waiting on its delay), the portals while they stand open, and a fighter in the middle of the flight a portal flung him on.
+  mephone: {
+    tags:{ mephone:'any', melife:'close', portal:'any', boomerang:'far', maze:'ground' },
+    moves:(s, ph) => ['mephone', 'melife', 'portal', 'boomerang'].concat(ph >= 2 ? ['maze'] : []).filter(k => k !== 'melife' || hostileCount() < (MELIFE_CAP[ph] || 1)),
+    busy:(s) => mpBusy(s) || !!(s._hz && s._hz.pt) || fighters.some(f => f._mpFl)
+  },
+  // @boss:mephone4:end pick
+
+  // @boss:evilleafy:begin pick
+  // Her four. TENDRILS! runs a row of black vines along the floor from her side toward the wall, one gap two vines wide, and from phase 2 a second short row where you dodged to: floor. POSSESSED! sinks into
+  // the stage's platform and thrashes thorned vines up out of it for a few seconds (from phase 3 a patch of the floor too): ledge, and the floor from phase 3. BLACK HOLE! opens a void on the floor under the
+  // middle of the stage that pulls fighters and shots in to its core: floor, bunch (it drags everyone to the same place). BEHIND THE TREES! lights her eyes behind a tree of the backdrop and bursts out of
+  // it along a lane on the floor (the trees stand along the edges): wall, floor. `busy`: the move she is in the middle of (s._el: a wave still to come, the possession, the void, the rush) and any vine
+  // still standing, growing or falling (the vines are the hazard bag's, not shots).
+  evilleafy: {
+    tags:{ evilleafy:'ground', elpossess:(s, ph) => ph >= 3 ? ['platform', 'ground'] : 'platform', elhole:['ground', 'bunch'], elbehind:['wall', 'ground'] },
+    busy:(s) => { const H = s._hz; return !!s._el || !!(H && H.v && H.v.some(v => hazardT - v[1] < elVineLife(v))); }
+  },
+  // @boss:evilleafy:end pick
+
+  // @boss:mephone4s:begin pick
+  // His six, drawn by position. PUT THAT COOKIE DOWN! (the gun) draws on a mark and shoots where the sight locked, from the standoff he keeps: far. ONE OF EACH! throws a chainsaw at your feet and a lollipop
+  // at your head, 12 frames apart, wherever you stand: any. HASTA LA VISTA! lobs lemons onto the floor under you: floor. POP UP! sinks into the quicksand and comes up under the spot that followed you, a hit
+  // for whoever is low enough (a platform is clear): floor. I'LL BE BACK! (from phase 2) drives a car across the whole floor, jumped: floor, far. QUICKSAND SHOVE! charges along the floor, tackles whoever is
+  // low in the lane and pushes them on into the quicksand strip beyond: close, wall. The car is also his first move when phase 2 starts (`first`, while s._carDue stands: s4PhaseBeat sets it). `busy`: a
+  // scripted move he is flying (s._s4.go: the car, the pairs and lemons still to throw, a pop, a charge) or events still queued for it (the crusher and the flip of phase 3's car).
+  mephone4s: {
+    tags:{ mephone4s:'far', s4prizes:'any', s4vista:'ground', s4popup:'ground', s4car:['ground', 'far'], s4shove:['close', 'wall'] },
+    moves:(s, ph) => ['mephone4s', 's4prizes', 's4vista', 's4popup'].concat(ph >= 2 ? ['s4car'] : [], ['s4shove']),
+    first:(s, ph) => (ph >= 2 && s._carDue) ? 's4car' : null,
+    busy:(s) => !!(s._s4 && s._s4.go) || !!(s._s4q && s._s4q.length)
+  },
+  // @boss:mephone4s:end pick
+
+  // @boss:two:begin pick
+  // His six. MIND READ! closes a ring on you and opens a rift behind you for copies of your last special, and drains whoever is within his reach to heal him: any, close. MAYBE YOU'D LIKE THIS! drops the sun
+  // on the spot you stood and bashes it hop by hop to where you stand, on the floor or the stage's top (no perch is a refuge): floor, ledge. THE POWER OF TWO! rings his body with six pairs of orbs, one pair
+  // at you, to weave through: close. BLOCK TOWERS! stands three stacks round your spot and topples them (a second row in phase 3): floor, bunch. I LOVE RIDES! (from phase 2) runs block cars along a floor rail
+  // and a stage rail, each one way: floor, ledge. CLAP! (from phase 2) brings two hands in from the edges to meet on the spot that followed you: any. (In phase 3 the grounding rule -- he takes no damage until
+  // someone stays close -- is his own mechanic and stays; the `close` moves are what the picker leans on when someone does.) `busy`: the move he is flying (s._tw: the sun's bashes, the stacks falling, the
+  // hands, the cars, the second ring); the sun and the mace are carriers with no attack id, and his steps lie there.
+  two: {
+    tags:{ two:['any', 'close'], twosun:['ground', 'platform'], twopower:'close', twoblocks:['ground', 'bunch'], tworails:['ground', 'platform'], twoclap:'any' },
+    moves:(s, ph) => ['two', 'twosun', 'twopower', 'twoblocks'].concat(ph >= 2 ? ['tworails', 'twoclap'] : []),
+    busy:(s) => !!s._tw
+  },
+  // @boss:two:end pick
+
+  // @boss:four:begin pick
+  // His seven moves (the signature's two forms are two of them: the engine's _telKind for SCREECHY! and ZAPPIES! is his `attack`, and fourBeginTelegraph reads which from s._pickKey). SCREECHY! sends a ring of
+  // sound out of his body with a few gaps in it, stopped by the floor and the hills: close, air. ZAPPIES! puts a blue mark on you, locks it and brings a column down on it (a second where you were, in phase
+  // 3): any. GO BYE-BYE! inhales everyone within its reach toward his mouth, from the side of you with less room (they run off toward the room): far, wall. TAKE THE TOWER! raises three hills, one under
+  // where you stand, that throw whoever is on them and stand as walls (and in phase 3 a ripple runs the floor): floor, bunch. I DO THIS! tightens a scribbled ring round the fighter it marked and snaps it:
+  // any. LOVE HEARTS! (from phase 2) floods solid hearts that bounce off the floor, the platform and the walls, two high arcs and a low one at you: air, wall. DON'T HUG THE CACTUS! (from phase 3) grows a
+  // cactus that walks at you: floor. `busy`: the move he is flying (s._fr: the ring's wait, the column, the breaths and the spit, the hills and the ripple, the hearts, the cactus, the ring's snap), but not
+  // his entrance or his slither between turns (he melts into the floor and re-forms: not an attack, and he is on the screen and hittable all through it).
+  four: {
+    tags:{ screechy:['close', 'air'], zappies:'any', fourbye:['far', 'wall'], fourtower:['ground', 'bunch'], fourido:'any', fourhearts:['air', 'wall'], fourcactus:'ground' },
+    moves:(s, ph) => ['screechy', 'zappies', 'fourbye', 'fourtower', 'fourido'].concat(ph >= 2 ? ['fourhearts'] : [], ph >= 3 ? ['fourcactus'] : []),
+    kind:(k, s) => (k === 'screechy' || k === 'zappies') ? s.attack : k,
+    busy:(s) => !!(s._fr && s._fr.k !== 'slither' && s._fr.k !== 'enter')
+  },
+  // @boss:four:end pick
+
+};
 // _dropFace/_dropVx: the way he faced and moved as he threw it -- a DROP of his drifts that way as it falls (FALL_DRIFT).
 function bossShot(s, o){ return Object.assign({ owner:-2, ownerObj:{team:-1, idx:-2}, grav:false, dmg:bossDmg()*0.8, kb:8, r:11, color:s.color, life:120, noAim:true, _dropFace:s.face, _dropVx:s.vx }, o); }
 const BOSS_MOVES = {
@@ -8807,10 +9099,9 @@ function annTick(s, tgt){
 }
 // ---- THE WIND-UP STARTS (the TEL slot) ---------------------------------------------------------------------------------------------------------
 function annTel(s, tgt){
-  const sig = s._telKind === s.attack, ph = s._telPh || s._phase || 1, lc = s._lastCake;
-  // ACID TEARS! comes straight after a cake volley nobody was hit by: "The 5 contestants who were safe reject the cake, causing Announcer to become sad and
-  // start crying acid" (Rescission). It takes the turn of whichever second move was due; that one is only put off (the turn counter steps back two).
-  if(!sig && s._telKind !== 'annacid' && lc && !lc.hit && lc.shots.every(p=>p.life <= 0 || projectiles.indexOf(p) < 0)){ s._telKind = 'annacid'; s._moveN = (s._moveN||0) - 2; }
+  const ph = s._telPh || s._phase || 1;
+  // (ACID TEARS! comes straight after a cake volley nobody was hit by -- "The 5 contestants who were safe reject the cake, causing Announcer to become sad and start crying
+  // acid" (Rescission) -- and that is the picker's `force` now (BOSS_PICK.announcer): it read s._lastCake before this turn began; the volley is forgotten here.)
   s._lastCake = null;
   s._tel = annTelLen(s);   // (the engine set it a line ago, from the LAST turn's kind)
   s._lanes = null; s._spray = null;
@@ -9325,8 +9616,8 @@ function psbEnterPhase(s, ph){
 function psbBeginTelegraph(s, tgt){
   const ph = Math.min(3, Math.max(1, s._phase||1));
   s._telPh = ph;
-  if(s._telKind === 'rainbowbarf' && ph < 2) s._telKind = 'consequences';   // RAINBOW BARF! joins in phase 2: until then that turn is CONSEQUENCES! again
-  s._tel = bossTelLen(s);                                                    // ...with its own wind-up (this slot runs after the turn's kind is chosen)
+  // (RAINBOW BARF! joins in phase 2: the picker's `moves` do not list it before -- BOSS_PICK.soundwave; it used to be CONSEQUENCES! again until then)
+  s._tel = bossTelLen(s);                                                    // each turn has its own wind-up (this slot runs after the turn's kind is chosen)
   const k = s._telKind;
   if(k === 'soundwave'){
     s._psbZ = (s._psbZ||0) + 1;   // in turn, not at random, so it can be learned: the floor is safe, then the platform, then the floor...
@@ -9359,7 +9650,6 @@ function psbBlast(s, tgt, atkId){
   const H = psbHz(s); for(let i=-1;i<=1;i++) psbLight(H, s.x + i*PSB.tile, ph + i + 2, 0);
   if(L.waves[ph] > 1) s._psbLoop = { left:L.waves[ph] - 1, t:L.every[ph], id:atkId, pat:pat, ph:ph, x:s.x };   // "her voice was stuck in a loop": the same lanes again
   s._psbHold = (L.waves[ph] - 1)*L.every[ph] + 30;
-  s._psbBusy = (L.waves[ph] - 1)*L.every[ph] + 26;
   psbSing([523, 659, 784], 'triangle');
 }
 function psbLoopStep(s){
@@ -9382,7 +9672,6 @@ function psbConsequences(s, tgt){
   const x = typeof s._psbSpX === 'number' ? s._psbSpX : s.x, floorY = typeof s._psbSpY === 'number' ? s._psbSpY : groundY();
   s._psbSpLk = 1;
   s._psbRun = { phase:'dash', t:0, T:C.dash[ph], x0:s.x, y0:s.y, x1:clamp(x, s.r*0.5, WW - s.r*0.5), y1:clamp(floorY - s.r*1.08, 60, groundY() - s.r*1.08), n:0, id:id, ph:ph };
-  s._psbBusy = C.dash[ph] + C.every[ph]*C.cuts + (ph >= 3 ? C.fake : 0) + C.hang + C.back + 8;
   psbSing([392, 330, 262], 'sawtooth', 0.3);
 }
 function psbKnife(s, R, f){
@@ -9448,7 +9737,6 @@ function psbBarfArc(s, tgt){
 function psbBarf(s, tgt){
   const ph = Math.min(3, s._telPh || s._phase || 1), B = PSB.barf, arc = Array.isArray(s._psbArc) ? s._psbArc : psbBarfArc(s, tgt);
   s._psbBarf = { t:0, id:++BOSS_ATK_ID, ph:ph, a0:arc[0], a1:arc[1], sweeps:Math.max(1, B.sweeps[ph]) };
-  s._psbBusy = B.T*s._psbBarf.sweeps + 24;
   s._psbHold = B.T*s._psbBarf.sweeps + 8;   // planted while it lasts
 }
 function psbBarfStep(s){
@@ -9488,7 +9776,6 @@ function psbPrivate(s, tgt){
     f.x = inL ? shw + f.r + 4 : WW - shw - f.r - 4; f.vx = (inL ? 1 : -1)*4;
   }
   impact(shw, gy, { shake:14, dust:2, debris:6, scar:true }); impact(WW - shw, gy, { shake:0, dust:2, debris:6, scar:true });
-  s._psbBusy = P.settle + P.beats[ph]*P.beatLen[ph] + P.up + P.back + 10;
   psbSing([196, 147], 'square', 0.4);
 }
 // Beat `beat`'s notes: [the shutter it comes from (-1 left, 1 right), its level]; the second of a phase-3 pair comes from the other one.
@@ -9910,7 +10197,7 @@ function fsbFinish(s, gap){
 }
 // A patch of flame on the floor: the scorch behind a low pass, the strip a white-hot plate leaves, the spot a pinch burns.
 function fsbPatch(s, x, id, life){
-  return addProj(bossShot(s, { x, y:groundY() - 12, vx:0, vy:0, r:14, dmg:bossDmg()*0.3, kb:5, life, color:'#ff8a3a', shape:'spark', burn:true, bossAtk:id, volley:true, fsb:true }));
+  return addProj(bossShot(s, { x, y:groundY() - 12, vx:0, vy:0, r:14, dmg:bossDmg()*0.3, kb:5, life, color:'#ff8a3a', shape:'spark', burn:true, bossAtk:id, volley:true, fsb:true, lingers:true }));   // (it lies there: the next wind-up does not wait for it)
 }
 // ---- the arrival: he rockets in from off the screen on the board (spawn slot) -----------------------------------------------
 function fsbDress(boss){
@@ -10183,7 +10470,7 @@ function fsbBeginTelegraph(s, tgt){
   const fb = fsbLive(s), ph = fsbPh(s), live = tgt && !tgt.dead;
   s._fsTelLen = s._tel;
   let kind = s._telKind;
-  if(kind === s.attack){ s._fsSig = (s._fsSig || 0) + 1; kind = (s._fsSig%2) ? 'rocketboard' : 'tlc'; }
+  if(kind === s.attack){ s._fsSig = (s._fsSig || 0) + 1; kind = (s._fsSig%2) ? 'rocketboard' : 'tlc'; }   // (the picker's moves are the two forms themselves, BOSS_PICK.firewall: this is what a caller that asks for the signature gets)
   s._fsKind = kind;
   fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0;
   if(kind === 'rocketboard'){ fb.k = 'board'; fb.d = fsbFarSide(tgt); fb.r = fsbRow(tgt); fb.r2 = ph >= 3 ? fsbRow2(fb.r) : null; }
@@ -10627,8 +10914,7 @@ function fsbDrawFx(s){
 // one boss hit however many bugs it is made of: "Harder, same damage" is speed, count, rhythm and pattern, never a bigger hit.
 // Nothing here puts a word on the screen: the wind-up's banner is the only text, and every tell is a prop or a mark.
 const SWARM = {
-  gaps:[0, 110, 82, 60],   // frames between moves: the default is 100 / 72 / 52, and the hive's goo and maw are the hazards ("reduce boss difficulty and add a hazard")
-  tail:{ swarm:24, swarmseek:0, dodgeball:40, eggsac:30 },   // more, after a move whose bugs are still crossing the arena
+  gaps:[0, 110, 82, 60],   // frames between moves, counted from the moment the move is over -- its last bug gone (the engine's one-attack watch): the default is 100 / 72 / 52, and the hive's goo and maw are the hazards ("reduce boss difficulty and add a hazard")
   form:24,   // frames the swarm takes to gather itself again after it has scattered (a new place, a first appearance)
   shedLen:22,   // and how long the bugs a hit knocked off take to run out and rejoin
   // SKITTER: bugs move in bursts. approach / backoff: how near he lets you (he has no contact damage, so this is only pressure)
@@ -10763,7 +11049,7 @@ function swarmNearestFighter(x){
   return best;
 }
 function swarmGap(s){
-  return SWARM.gaps[Math.max(1, Math.min(3, s._phase || 1))] + (SWARM.tail[s._telKind] || 0);
+  return SWARM.gaps[Math.max(1, Math.min(3, s._phase || 1))];   // (it had a `tail` for a move whose bugs were still crossing: the gap now starts when the last of them is gone)
 }
 // The phase beats (boss-plan-early.md, section 6): phase 2, every egg pile on the floor cracks and hatches at once and the
 // pitcher plant wakes; phase 3, a wall of the hive bursts, goo pours, and the Queen's shadow fills the back.
@@ -13108,7 +13394,6 @@ function portalCore(P){ return PORTAL_CORE * Math.min(1, Math.max(0, P.t/(P.T||1
 //            the uppercut's depth under the floor
 //   portal   open frames by phase; the oval's half-width and half-height (the hitbox IS the art); how far the exit is; the second entrance's wait and its lock; the third's stagger
 const MP4 = {
-  turns:['melife', 'portal', 'boomerang', 'maze'],
   hop:{ out:9, inn:10, edge:0.14, near:0.18 },
   fist:{ edge:0.5, reach:400, clear:12, run:150, fly:300, rod:260, wave:24, back:8, cuff:0.6, upDepth:80, pole:0.5,
          slam:{ shake:8, dust:2, debris:6, scar:true, r:90 }, hit:{ shake:10, dust:2, debris:6, scar:true, r:80 } },
@@ -13156,13 +13441,8 @@ function mpMove(s, tgt){
 function mpBeginTelegraph(s, tgt){
   const H = mpHz(s), ph = s._telPh || mpPh(s);
   H.fd = 0; H.pw = null; H.ml = null;
-  // The turn. The engine picked the next of BOSS_EXTRA; phase 1 plays only the first three of his four second moves (A-MAZE-ING! joins in phase 2), in the same order.
-  if(s._telKind !== s.attack && s._moveN % 2 === 0){
-    const L = (ph >= 2 ? MP4.turns : MP4.turns.slice(0, 3)).filter(k => BOSS_MOVES[k]);
-    if(L.length) s._telKind = L[((s._moveN >> 1) - 1) % L.length];
-  }
-  // MeLife with no room for another add: the turn is the glitch ring until the maze replaces it (A-MAZE-ING! "replaces the generic GLITCH! ring")
-  if(s._telKind === 'melife' && hostileCount() >= (MELIFE_CAP[ph] || 1)) s._telKind = BOSS_MOVES.maze && ph >= 2 ? 'maze' : (BOSS_MOVES.boomerang ? 'boomerang' : 'glitch');
+  // (Which move this turn is, is the picker's -- BOSS_PICK.mephone4 in his `pick` pair: phase 1 draws from the first three of his four second moves and the signature, A-MAZE-ING! joins in phase 2, and
+  // MELIFE DOWNLOAD! is out of the draw while his adds stand at their cap (MELIFE_CAP). It used to be the next of a fixed cycle, with a capped MeLife turn swapped for the maze or the boomerang.)
   const k = s._telKind;
   s._tel = bossTelLen(s);   // the kind is known now: a move can have a wind-up of its own
   // the hop: FIST THINGY! starts every turn with it, so the glove crosses the whole stage; from phase 2 every turn does (the maze is built round you, with him out of it)
@@ -14963,14 +15243,10 @@ function s4Mark(s, tgt, ph){
 }
 function s4BeginTelegraph(s, tgt){
   s._s4Gun = false; s._s4Car = false; s._s4Vista = false; s._aimIdx = -1; s._aimX = null; s._aimY = null; s._aimLock = false;
-  const ph = s._telPh || s._phase || 1, ex = BOSS_EXTRA[s.name] || [];
-  if(s._telKind !== s.attack && ex.length){
-    // The car is the move of phase 2 ("I'll Be Back"): it comes first once the phase starts, and a phase-1 turn that would have been the car plays
-    // the next move instead.
-    if(ph >= 2 && s._carDue) s._telKind = 's4car';
-    else if(s._telKind === 's4car' && ph < 2){ s._moveN += 2; s._telKind = ex[((s._moveN >> 1) - 1) % ex.length]; }
-    if(s._telKind === 's4car') s._carDue = false;
-  }
+  const ph = s._telPh || s._phase || 1;
+  // The car is the move of phase 2 ("I'll Be Back"): it comes first once the phase starts (BOSS_PICK.mephone4s: `first` says it while s._carDue stands, and `moves` lists it only from phase 2);
+  // the turn that starts it puts the flag down.
+  if(s._telKind === 's4car') s._carDue = false;
   s._tel = bossTelLen(s);   // the turn's kind is known now: its own wind-up (the engine measured it with the last turn's)
   const k = s._telKind, live = s4Live(tgt), tx = live ? tgt.x : s.x + (s.face||1)*300, A = s._s4 = { k:null, ph:ph, go:false, lock:0 };
   if(k === s.attack){
@@ -15971,9 +16247,7 @@ function twoGoTo(s, x, y){
 function twoBeginTelegraph(s, tgt){
   const H = twoHz(s), ph = twoPh(s), gy = groundY(), R = s.r, W2 = WW*0.5;
   s._telPh = ph;
-  // CLAP! and I LOVE RIDES! join in phase 2: until then their turns are the sun and the ring again
-  if(s._telKind === 'twoclap' && ph < 2) s._telKind = 'twosun';
-  if(s._telKind === 'tworails' && ph < 2) s._telKind = 'twopower';
+  // (CLAP! and I LOVE RIDES! join in phase 2: the picker's `moves` list them only from then -- BOSS_PICK.two; their turns used to be the sun and the ring again until it.)
   const k = s._telKind;
   s._tel = bossTelLen(s);   // this slot runs once the turn's kind is chosen: its own length now
   H.rd = null; H.bk = null; H.cl = null; H.pw = null; H.mk = null;
@@ -16897,7 +17171,6 @@ function twoBlockGlyph(c, r, ci){ c.fillStyle = TWO_BLOCK_COLOURS[ci & 3]; c.fil
 const FOUR = {
   tel:{ screechy:50, zappies:54, fourbye:46, fourtower:44, fourhearts:42, fourcactus:40, fourido:[0, 54, 42, 34] },
   gaps:[0, 104, 78, 56],
-  extras:['fourbye', 'fourtower', 'fourido', 'fourhearts', 'fourcactus'], extraN:[0, 3, 4, 5],   // GO BYE-BYE!, TAKE THE TOWER! and I DO THIS! from the start; LOVE HEARTS! joins in phase 2 ("Zap to Dust"), DON'T HUG THE CACTUS! in phase 3
   band:[20, 64], sway:[0, 110, 160, 210], follow:0.012, eight:0.021,
   slither:[null, [12, 36, 16], [10, 28, 14], [8, 22, 12]], puddleY:31, enterT:54,
   // SCREECHY!: gaps (how many, half-width in radians), speed, the second ring of phase 3, how long he holds the pose
@@ -17049,16 +17322,15 @@ function fourTelName(s){
   if(H && H.sig === 'z') return 'ZAPPIES!';
   return ph >= 3 ? 'SCREECHY!!!' : (ph === 2 ? 'SCREECHY!!' : 'SCREECHY!');
 }
-// The wind-up starts (the tel slot): which move this turn is (the engine picked the signature or an extra; his extras take turns among the ones
-// his phase has) and what it aims at, fixed now. `s._telKind` is the move, `s._telPh` the phase it is wound up in.
+// The wind-up starts (the tel slot): which move this turn is (the picker drew it: BOSS_PICK.four -- SCREECHY! and ZAPPIES! are two moves, both `s._telKind === s.attack`, and
+// `s._pickKey` says which; the others are their own kinds) and what it aims at, fixed now. `s._telKind` is the move, `s._telPh` the phase it is wound up in.
 function fourBeginTelegraph(s, tgt){
-  const H = fourHz(s), ph = s._telPh || fourPh(s);
+  const H = fourHz(s), ph = s._telPh || fourPh(s), pk = s._pickKey;
+  s._pickKey = null;
   if(s._fr) s._fr = null;
   if(s._telKind === s.attack){
-    s._fSig = s._fSig === 's' ? 'z' : 's'; H.sig = s._fSig;
-  } else {
-    const list = FOUR.extras.slice(0, FOUR.extraN[ph]);
-    s._telKind = list[(s._xN || 0) % list.length]; s._xN = (s._xN || 0) + 1;
+    // (a caller that asks for the signature itself, and not for one of the two by name, gets them in turn, as it always did)
+    s._fSig = pk === 'zappies' ? 'z' : (pk === 'screechy' ? 's' : (s._fSig === 's' ? 'z' : 's')); H.sig = s._fSig;
   }
   const len = fourTelLen({ _telKind:s._telKind, _telPh:ph, _hz:{ sig:H.sig }, _tel:0 });
   H.tl = len; s._tel = len;
@@ -18301,6 +18573,15 @@ const SPRINGY_PAYLOADS = ["box", "clone", "toy"];              // in this order;
 // The Spring! Clones page: "Royal Purple (Candle)", "Lime Green (Test Tube)"; "Spring!Candle lacks the flame". Never a season winner's clone.
 const SPRINGY_CLONES = [{ name:"Spring!Candle", color:"#7851a9" }, { name:"Spring!TestTube", color:"#32cd32" }];
 const SPRINGY_END = { fall:32, lava:56, revive:104, glitch:118, total:150, boing:-28 };   // frames, and the take-off speed: see springyEnding
+// THE PICKER (Round 17: the owner, "make the attacks based on fighter position."): his four, drawn by where the fighters stand (he has no slots, so his entry is here, not in a `pick` pair). TRY NOT TO
+// FALL! (the slam) comes down on the spot you stand on, a hit for whoever is on the floor within its reach: floor. JUST WANTED A HAND! sends a mitten fist along your row from his body, half the arena
+// long, and from phase 2 a second along the floor: close. A TOY IN EVERY BOX! fires the ray of the box nearest your spot and drops a box, a clone or a toy there: any. MY PURPOSE! drops the Spring-Bot
+// from the box farthest from you and it plays back the specials it hears, from where it stands: far. `busy`: the slam while it is in the air (s._slam); every other part of a turn is a shot (the toy
+// is one inert shot for its whole life, and the next wind-up waits for it to power down), and the holes he punches lie there for good (`lingers`).
+BOSS_PICK.springy = {
+  tags:{ springy:'ground', longarm:'close', boxdrop:'any', springbot:'far' },
+  busy:(s) => !!s._slam
+};
 function springyNearest(x){ let best = null, bd = 1e9; for(const f of fighters){ if(f.dead) continue; const d = Math.abs(f.x - x); if(d < bd){ bd = d; best = f; } } return best; }
 function springyBoxIndex(x){ let bi = 0; SPRINGY.boxes.forEach((fx, i) => { if(Math.abs(WW*fx - x) < Math.abs(WW*SPRINGY.boxes[bi] - x)) bi = i; }); return bi; }
 // The wind-up starts: what this turn is, fixed now (a phase change mid-wind-up cannot swap it: the same rule as Cobs's
@@ -18381,7 +18662,7 @@ function springySlamLand(s, S){
 function springyHole(x, ph, id){
   const gy = groundY();
   return addProj({ owner:-2, ownerObj:{team:-1, idx:-2}, x, y:gy + 200, vx:0, vy:0, grav:false, dmg:0, kb:0, r:1, color:'#1a1008',
-    life:1, delay:SPRINGY.holeT[Math.min(3, Math.max(1, ph))], warn:0, warnY:gy, springHole:true, springy:true, bossAtk:id, noAim:true });
+    life:1, delay:SPRINGY.holeT[Math.min(3, Math.max(1, ph))], warn:0, warnY:gy, springHole:true, springy:true, bossAtk:id, noAim:true, lingers:true });   // (a hole lies there for seconds: the next wind-up does not wait for it)
 }
 function springyHoleAt(x){
   for(const p of projectiles){ if(p.springHole && p.delay > 0 && Math.abs(p.x - x) < SPRINGY.holeW*0.5) return p; }

@@ -43,9 +43,10 @@ const LIB = `
     step(); f.pct = 0; f.invuln = 0; b._fs = null;
   }
   function run(n, x, y){ for (var i=0;i<n;i++){ step(); if (x != null){ f.x = x; f.y = (y != null ? y : gy - 24); f.vx = 0; f.vy = 0; f.invuln = 0; } } }
-  // the wind-up of the move the next turn will be (the engine picks it from _moveN and his signature counter): 0,0 the board, 1,0
-  // FURNACE!, 0,1 the TLC, 3,0 YOU MUST!
-  function wind(moveN, sig){ b._moveN = moveN; b._fsSig = sig; b._atkTimer = 1; b._tel = 0; step(); }
+  // the wind-up of the move asked for. The owner, Round 17: "make the attacks based on fighter position." -- his turns are no longer a fixed cycle, so a test forces the move it measures
+  // (the arguments are the old cycle's, kept for the call sites): 0,0 the board, 1,0 FURNACE!, 0,1 the TLC, 3,0 YOU MUST!
+  function kindOf(moveN, sig){ return moveN === 1 ? 'furnace' : (moveN === 3 ? 'youmust' : (sig === 1 ? 'tlc' : 'rocketboard')); }
+  function wind(moveN, sig){ b._pickForce = kindOf(moveN, sig); b._atkLive = null; b._atkTimer = 1; b._tel = 0; step(); }
 `;
 // A bare Firey Speaker Box for driving the engine's turn-taking.
 const S = (o = '') => `{ name:'Firey Speaker Box', attack:'firewall', x:700, y:400, r:85, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0,
@@ -78,16 +79,22 @@ describe('Firey Speaker Box takes his four attacks', () => {
     expect(r.ending).toEqual(['sweep', 'begin', 'holdMs']);
   });
 
-  it('his turns run board, FURNACE!, TLC, YOU MUST!, each named as the banner says, and FIRE WALL! and RAGE FLAMES! are gone', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position
+  // picks all (Recommended)". His turns were board, FURNACE!, TLC, YOU MUST! in a fixed cycle; now each of the four is a move the picker draws (ROCKET BOARD! and THE TLC are two moves, not the
+  // signature's two forms), none twice in a row, and every one comes up. Each is still named as the banner says.
+  it('draws his turns from his four -- ROCKET BOARD!, THE TLC NEEDS TO BE FIXED!, FURNACE!, YOU MUST! -- each named as the banner says, none twice in a row, every one in twelve turns; FIRE WALL! and RAGE FLAMES! are gone', () => {
     const r = W.eval(`(function(){
       var s = ${S()}, kinds = [], names = [];
-      for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+      for (var i=0;i<12;i++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       var rage = ${S('_phase:3, _rage:true, _fsKind:"rocketboard"')};
       return { kinds: kinds, names: names, rage: bossTelName(rage) };
     })()`);
-    expect(r.kinds).toEqual(['firewall', 'furnace', 'firewall', 'youmust', 'firewall', 'furnace', 'firewall', 'youmust']);
+    const NAME = { rocketboard: 'ROCKET BOARD!', tlc: 'THE TLC NEEDS TO BE FIXED!', furnace: 'FURNACE!', youmust: 'YOU MUST!' };
+    expect(r.kinds.every((k) => NAME[k]), `only his four: ${r.kinds}`).toBe(true);
     // "(Jumping on the TLC) The Tiny. Loser. Chamber. Needs. To be. Fixed!" -- the banner is the attack's name, in capitals
-    expect(r.names).toEqual(['ROCKET BOARD!', 'FURNACE!', 'THE TLC NEEDS TO BE FIXED!', 'YOU MUST!', 'ROCKET BOARD!', 'FURNACE!', 'THE TLC NEEDS TO BE FIXED!', 'YOU MUST!']);
+    expect(r.names).toEqual(r.kinds.map((k) => NAME[k]));
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(new Set(r.kinds).size, `all four come up in twelve turns: ${r.kinds}`).toBe(4);
     expect(r.rage, 'the rage banner is cut with the signature').not.toMatch(/RAGE FLAMES|FIRE WALL/);
   });
 
@@ -504,7 +511,8 @@ describe('his phases and the volcano', () => {
       for (var i=0;i<FSB.quake + 2;i++){ b._atkTimer = 1e9; updateBossAttack(b, f); b._fs = null; if (shakeAmt > 0) shook++; }
       out.after = b._fsb.q; out.lookAfter = bossLook(b); out.shook = shook; out.rage = b._rage;
       return out;`);
-    expect(r.hp, '215 for one fighter').toBe(215);
+    // the owner, 2026-10-01 (Round 17): "+50% (Recommended)" -- every Boss Rush boss spawns with half again its row's HP (BOSS_HP_MULT); the row keeps 215
+    expect(r.hp, '215 x 1.5 for one fighter').toBe(Math.round(215*1.5));
     expect(r.hover, 'he floats').toBe(true);
     expect(r.st, 'and is not a boss who holds a spot').toBe(false);
     expect([r.p1, r.p2, r.p3]).toEqual([1, 2, 3]);
@@ -938,7 +946,7 @@ describe('no words on screen in his fight', () => {
         [[0,0],[1,0],[0,1],[3,0]].forEach(function(m){
           [1, 2, 3].forEach(function(ph){
             if (ph > 1 && b._phase !== ph){ b.hp = b.maxHp*(ph === 2 ? 0.5 : 0.2); b._atkTimer = 1e9; run(2, 300); var q = 0; while ((b._fs || b._fsQ > 0) && q++ < 400){ b._atkTimer = 1e9; run(1, 300); } }   // the phase turns; a big hit drops him off the screen, phase 3 quakes: let both run out
-            b._fs = null; b.x = 700; b._moveN = m[0]; b._fsSig = m[1]; b._atkTimer = 1; b._tel = 0;
+            b._fs = null; b.x = 700; b._pickForce = (m[0] === 1 ? 'furnace' : (m[0] === 3 ? 'youmust' : (m[1] === 1 ? 'tlc' : 'rocketboard'))); b._atkLive = null; b._atkTimer = 1; b._tel = 0;
             var n = 0; while ((b._tel > 0 || b._atkTimer <= 1 || b._fs) && n < 900){ run(1, 300); n++; if (b._fs === null && b._tel === 0 && n > 3 && b._atkTimer > 20) break; }
           });
         });
