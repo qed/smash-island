@@ -890,7 +890,10 @@ describe('no words on the screen, and nothing that is not his', () => {
         SETTINGS.mode='boss'; SETTINGS.count=2; SETTINGS.stocks=99; SETTINGS.itemRate=0; SETTINGS.items=false; chosen = ROSTER.find(function(r){ return r.name==='Firey'; }); beginMatchNow();
         fighters.forEach(function(f){ f.controller='ai'; });
         BOSSRUSH.bossIdx = 3; summons = []; projectiles = []; spawnBossRushBoss(); var b = summons.find(function(s){ return s.type==='boss'; });
-        var n = 0; while (running && n < 2400){ step(); n++; if (b._phase === 1 && n === 900) b.hp = b.maxHp*0.5; if (b._phase === 2 && n === 1500) b.hp = b.maxHp*0.2; }
+        // his turns are drawn by position now (the owner, Round 17: "make the attacks based on fighter position."), and a fight with AI fighters that beats him in about 1300 frames has only a handful of turns:
+        // so the four moves are asked for in turn (a forced move is used once), and the fight is what it was -- the banners it says, the cards, and nothing else
+        var order = ['swarm', 'swarmseek', 'dodgeball', 'eggsac'], k = 0;
+        var n = 0; while (running && n < 2400){ if (!(b._tel > 0) && !b._atkLive && b._atkTimer <= 2 && !b._pickForce) b._pickForce = order[k++ % 4]; step(); n++; if (b._phase === 1 && n === 900) b.hp = b.maxHp*0.5; if (b._phase === 2 && n === 1500) b.hp = b.maxHp*0.2; }
       } finally { banner = _b; }
       return out; })()`);
     const boss = r.banners.filter((b) => b.kind === 'boss').map((b) => b.text);
