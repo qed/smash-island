@@ -1162,3 +1162,29 @@ describe('nothing of his names anyone from the OSC', () => {
     expect(src, 'nor the place called The Floor (a plain "the floor" is the ground he stands over)').not.toMatch(/The Floor/);
   });
 });
+
+describe('his fire patches do not stun-lock', () => {
+  it('a patch lying on the floor skips a fighter still in hitstun, and burns one who has got up', () => {
+    // The glitch hunter's stun-lock warning: a fighter knocked into a lingering patch was burned again before getting up. The owner
+    // (2026-10-01): "theyre unavoidable bcs they barely have a moment where you can move to dodge."
+    const { window: w } = loadMonolith();
+    const r = w.eval(`(function(){
+      SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.stocks=99; running=true;
+      BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='Firey Speaker Box'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
+      worldPlats=platRectsSmall(); summons=[]; projectiles=[]; items=[]; particles=[];
+      var f = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 500, groundY()-24, 0);
+      f.team=0; f.controller='still'; fighters=[f];
+      spawnBossRushBoss();
+      var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9; b.x = 950;
+      var p = fsbPatch(b, 500, ++BOSS_ATK_ID, 200);
+      f.x = 500; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.pct = 0; f.invuln = 0; f.hitstun = 30;
+      step(); var stunned = f.pct;
+      f.hitstun = 0; f.invuln = 0; f.x = 500; f.y = groundY()-24;
+      step(); var up = f.pct;
+      return { flag: !!p.noStunHit, stunned: stunned, up: up };
+    })()`);
+    expect(r.flag).toBe(true);
+    expect(r.stunned, 'still reeling: the patch waits').toBe(0);
+    expect(r.up, 'up again: it burns').toBeGreaterThan(0);
+  });
+});
