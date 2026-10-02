@@ -10972,6 +10972,9 @@ const SWARM = {
   // (the tide's door, a ledge's height, high), the lit cell and the stinger's perch.
   sting:[null, { tel:48, v:20, r:20 }, { tel:44, v:22, r:20 }, { tel:40, v:24, r:20 }],
   fuse:180, cells:[52, 150, 262],
+  // The Queen's ANTI-POISON ("Her scales can also produce Anti-Poison", Bugs -- the plan's optional cure): in phase 3, while anyone's fuse burns, a drop of it falls from the ceiling every `every` frames
+  // (at most `max` at once) within `near` px of someone poisoned, `fall` px a frame, and lies on the floor `stay` frames; a poisoned fighter who touches one (within `reach` px) is cured. The poisoned have a way out.
+  cure:{ every:40, max:2, near:220, fall:7, stay:150, reach:26 },
   // the hive's hazards: STICKY GOO ("When crushed, bugs leave behind a sticky adhesive", Bugs) slows whoever stands in it;
   // the PITCHER PLANT ("a natural predator to the bugs", Bugs; "Its interior is coated in green goo ... [it] contains a
   // pitcher plant", Bug Hive) is awake from phase 2: at the right edge its maw eats the bugs that stray into it and, when it
@@ -11264,6 +11267,34 @@ function swarmStingTick(s){
     if(!f || f.dead || !(f._cookieT > 0)) delete pz[k];
     else { pz[k] = f._cookieT; if(hazardT % 14 === 0) puff(f.x, f.y - f.r*0.4, '#7fd63a', 3); }
   }
+  swarmCureTick(s);
+}
+// The Queen's Anti-Poison, phase 3 (SWARM.cure): drops that fall from the ceiling near whoever is poisoned and cure on touch. `cu` is [[x, y, age]] in `_sw` (so a client draws them): age 0 while a drop
+// falls, then the frames it has lain on the floor. They hurt nobody and carry no attack id, so they hold no turn back; when nobody's fuse burns any more they dry up.
+function swarmCureTick(s){
+  const sw = s._sw || (s._sw = {}), pz = sw.pz, C = SWARM.cure, gy = groundY(), ph = Math.max(1, Math.min(3, s._phase || 1)), burning = pz ? Object.keys(pz) : [];
+  if(!burning.length){ sw.cu = null; return; }
+  let cu = sw.cu;
+  if(ph >= 3 && hazardT % C.every === 0 && (!cu || cu.length < C.max)){
+    const who = fighters.find(q => q.idx === +burning[Math.floor(Math.random()*burning.length)]);
+    if(who && !who.dead) (cu || (cu = sw.cu = [])).push([clamp(Math.round(who.x + (Math.random()*2 - 1)*C.near), 60, WW - 60), 0, 0]);
+  }
+  if(!cu) return;
+  for(let i = cu.length - 1; i >= 0; i--){
+    const d = cu[i];
+    if(d[1] < gy - 12) d[1] = Math.min(gy - 12, d[1] + C.fall); else d[2]++;
+    let gone = d[2] > C.stay;
+    for(const k of burning){
+      const f = fighters.find(q => q.idx === +k);
+      if(!f || f.dead || !(f._cookieT > 0) || Math.hypot(f.x - d[0], f.y - d[1]) >= C.reach + f.r*0.6) continue;
+      f._cookieT = 0; delete pz[k]; gone = true;   // cured: the fuse is out, nobody collapses
+      for(let n = 0; n < 12; n++) puff(f.x + (Math.random()*2 - 1)*f.r*0.7, f.y + (Math.random()*2 - 1)*f.r*0.7, n % 2 ? '#8ff0ff' : '#e8ffff', 5);
+      tone(980, 0.2, 'triangle', 0.1, 0, 1500);
+      break;
+    }
+    if(gone) cu.splice(i, 1);
+  }
+  if(!cu.length) sw.cu = null;
 }
 function swarmPoison(s, f){
   if(f._cookieT > 0) return;   // a second sting restarts nothing: the fuse burns on
@@ -11477,7 +11508,7 @@ function swarmEndSweep(b){   // its bugs go, and the ledge it chewed is whole ag
   // and a fuse a sting lit goes out with him: nobody collapses after the fall (the glitch hunter's "still hurts after the boss has fallen")
   const sw = b && b._sw, pz = sw && sw.pz;
   if(pz) for(const k of Object.keys(pz)){ const f = fighters.find(q => q.idx === +k); if(f) f._cookieT = 0; }
-  if(sw){ sw.pz = null; sw.sg = null; }
+  if(sw){ sw.pz = null; sw.sg = null; sw.cu = null; }
   if(b) b._sting = null;
 }
 // ---- how it looks. Every bug is the wiki's own drawing (the Bugs page's assets: ATTACK_SPRITES, the art slot) once it has loaded
@@ -11689,6 +11720,16 @@ function swarmDrawFx(){
     c.save(); c.strokeStyle = '#7fd63a'; c.lineWidth = 3; c.globalAlpha = 0.3 + 0.35*(1 - left); c.setLineDash([9, 7]); c.lineDashOffset = -t*0.8;
     c.beginPath(); c.arc(f.x, f.y, R, 0, 7); c.stroke(); c.setLineDash([]);
     c.globalAlpha = 0.10 + 0.08*Math.sin(t*0.15); c.fillStyle = '#7fd63a'; c.beginPath(); c.arc(f.x, f.y, R, 0, 7); c.fill();
+    c.restore();
+  }
+  // the Queen's Anti-Poison (phase 3, while a fuse burns): the drops that fall from the ceiling -- the shadow they will land on, then a glowing drop of it, which lies on the floor until it dries
+  if(sw.cu) for(const d of sw.cu){
+    const x = d[0], y = d[1], lying = y >= gy - 12, fade = d[2] > SWARM.cure.stay - 30 ? Math.max(0, Math.min(1, (SWARM.cure.stay - d[2])/30)) : 1;
+    c.save();
+    if(!lying){ c.globalAlpha = 0.25 + 0.2*Math.max(0, Math.min(1, y/gy)); c.strokeStyle = '#8ff0ff'; c.lineWidth = 2; c.beginPath(); c.ellipse(x, gy - 4, 24, 7, 0, 0, 7); c.stroke(); }
+    c.globalAlpha = 0.30*fade; c.fillStyle = '#8ff0ff'; c.beginPath(); c.arc(x, y, 22, 0, 7); c.fill();
+    c.globalAlpha = fade; c.fillStyle = '#d8fbff'; c.strokeStyle = '#2a8aa0'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(x, y - 14); c.quadraticCurveTo(x + 11, y + 2, x, y + 11); c.quadraticCurveTo(x - 11, y + 2, x, y - 14); c.closePath(); c.fill(); c.stroke();
     c.restore();
   }
   if(b._tel > 0 && b._telKind === 'swarm' && sw.d){

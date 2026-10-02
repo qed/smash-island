@@ -500,6 +500,59 @@ describe('POISON STING!: a stinger on the hive wall, a marked line, a pounce, an
     expect(r.swept, 'his fall: no fuse, no table, no line').toEqual([0, null, null, null]);
   });
 
+  // The plan's optional cure (boss-plan-early.md section 6): "in phase 3 the Queen drips Anti-Poison: touching a drop clears it" -- "Her scales can also produce Anti-Poison" (Bugs). The poisoned have a way out.
+  it('phase 3: the Queen drips Anti-Poison near whoever is poisoned, two drops at most, and touching one puts the fuse out -- nobody collapses; none in phases 1 and 2, none for a fighter who is not poisoned, and a drop dries up', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2].forEach(function(ph){
+        ${STAGE(300, 'ph')} var gy = groundY(); worldPlats = []; f.invuln = 1e9; swarmPoison(b, f);
+        var drops = 0; for (var i=0;i<150;i++){ step(); b._atkTimer = 1e9; f.x = 300; f.vx = 0; f.y = gy - 24; if (b._sw.cu) drops++; }
+        out['p' + ph] = drops;
+      });
+      ${STAGE(300, 3)} var gy = groundY(); worldPlats = []; f.invuln = 1e9; swarmPoison(b, f);
+      var first = null, max = 0, ys = [], t0 = 0;
+      for (var j=0;j<60 && !first;j++){ step(); b._atkTimer = 1e9; f.x = 300; f.vx = 0; f.y = gy - 24; t0 = j; if (b._sw.cu && b._sw.cu.length) first = b._sw.cu[0].slice(); }
+      out.first = first; out.t0 = t0;
+      for (var k=0;k<80;k++){ step(); b._atkTimer = 1e9; f.x = 300; f.vx = 0; f.y = gy - 24; if (b._sw.cu){ max = Math.max(max, b._sw.cu.length); if (b._sw.cu[0]) ys.push(b._sw.cu[0][1]); } }
+      out.max = max; out.falls = ys.length > 3 && ys[ys.length - 1] > ys[0];
+      var d = b._sw.cu && b._sw.cu[0]; out.hadDrop = !!d;
+      if (d){
+        // a fighter who is not poisoned stands in it: nothing happens to the drop
+        var g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), d[0], d[1], 0); g.team = 0; g.controller = 'still'; g.stocks = 9; g._cookieT = 0; fighters.push(g);
+        var n0 = b._sw.cu.length; g.x = d[0]; g.y = d[1]; step(); out.spent = n0 - (b._sw.cu ? b._sw.cu.length : 0); fighters.pop();
+        // the poisoned one stands in it: the fuse is out
+        f.x = d[0]; f.y = d[1]; step(); out.cured = [f._cookieT || 0, JSON.stringify(b._sw.pz || {})];
+      }
+      var stunned = 0; for (var m=0;m<260;m++){ step(); b._atkTimer = 1e9; f.vx = 0; f.y = Math.min(f.y, gy - 24); if (f.hitstun > 0) stunned++; }
+      out.stunned = stunned; out.dry = b._sw.cu || null;
+      // the control: the same fuse, never touching a drop -- he collapses
+      ${STAGE(300, 3)} swarmPoison(b, f); f.invuln = 1e9; var hs = 0;
+      for (var q=0;q<230;q++){ step(); b._atkTimer = 1e9; f.vx = 0; (b._sw.cu || []).forEach(function(z){ if (Math.abs(z[0] - f.x) < 100) f.x = z[0] < 400 ? 560 : 200; }); if (f.hitstun > 0) hs++; }
+      out.control = hs;
+      return out; })()`);
+    expect(r.p1, 'no drops in phase 1').toBe(0);
+    expect(r.p2, 'nor in phase 2').toBe(0);
+    expect(r.first, 'in phase 3 a drop begins to fall within a moment of the poison').not.toBeNull();
+    expect(r.t0).toBeLessThan(45);
+    expect(Math.abs(r.first[0] - 300), 'near the one who is poisoned').toBeLessThanOrEqual(220);
+    expect(r.first[1], 'from the ceiling').toBeLessThan(40);
+    expect(r.max, 'two at most').toBeLessThanOrEqual(2);
+    expect(r.falls, 'it falls').toBe(true);
+    expect(r.hadDrop, 'and it lies there on the floor for a while').toBe(true);
+    expect(r.spent, 'a fighter who is not poisoned does not spend it').toBe(0);
+    expect(r.cured, 'a poisoned one who touches it: the fuse is out and the table is empty').toEqual([0, '{}']);
+    expect(r.stunned, 'and he never collapses').toBe(0);
+    expect(r.dry, 'and when nobody burns any more the drops dry up').toBeNull();
+    expect(r.control, 'the control: without one, the same fuse ends in the collapse (30 frames)').toBeGreaterThanOrEqual(26);
+  });
+
+  it('a drop dries up if nobody takes it: it lies on the floor 150 frames, and is gone', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3)} var gy = groundY(); worldPlats = []; f.invuln = 1e9; f._cookieT = 400; b._sw.pz = { 0: 400 }; b._sw.cu = [[700, gy - 12, 100]];
+      var gone = null; for (var i=0;i<80;i++){ f._cookieT = 400; b._sw.pz = { 0: 400 }; step(); b._atkTimer = 1e9; f.x = 200; f.vx = 0; f.y = gy - 24; var has = b._sw.cu && b._sw.cu.some(function(d){ return d[0] === 700; }); if (!has && gone === null) gone = i; }
+      return { gone: gone }; })()`);
+    expect(r.gone, 'a drop that has lain 100 frames is dry 50 frames on (150)').toBeGreaterThanOrEqual(48);
+    expect(r.gone).toBeLessThanOrEqual(52);
+  });
+
   it('the picker knows it: far and any, unlocked from phase 1, favoured when you keep away', () => {
     const r = W.eval(`(function(){ var out = {}; ${STAGE(900, 1)}
       out.moves = [1,2,3].map(function(ph){ return bossPickMoves(b, ph); });
@@ -1232,7 +1285,7 @@ describe('a netcode client sees him', () => {
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
       BOSS_ARENA = 'hive'; var gy = groundY();
       summons = [{ type:'boss', name:'The Bug Swarm', color:'#6a2ea0', r:78, sprite:'bug', x:900, y:gy-78, hp:80, maxHp:225, face:-1, flash:0, homeX:900, _rage:false, _tel:20, _telKind:'dodgeball', _bossRush:true, attack:'swarm', _phase:3,
-        _sw:{ d:-1, b:[300, gy-24], b2:[600, gy-24], f:hazardT - 4, ox:200, oy:gy-78, s:hazardT - 2, h:hazardT - 200, q:hazardT - 100, st:hazardT - 20, sc:[W, gy-52], pz:{ 0:120 },
+        _sw:{ d:-1, b:[300, gy-24], b2:[600, gy-24], f:hazardT - 4, ox:200, oy:gy-78, s:hazardT - 2, h:hazardT - 200, q:hazardT - 100, st:hazardT - 20, sc:[W, gy-52], pz:{ 0:120 }, cu:[[300, 80, 0], [520, gy-12, 40]],
           sg:{ x0:W, y0:Math.round(gy-52), x1:186, y1:Math.round(gy-20), ux:-1, uy:0.035, len:914, lane:0, d:-1 } }, _hz:{ g:[[300, 60, 200, 0], [700, 90, 1e9, 1.4]], ps:1, pt:30, sn:hazardT - 40 } }];
       var O = { owner:-2, ownerObj:{ team:-1, idx:-2 } };
       projectiles = [Object.assign({ x:390, y:gy-80, vx:0, vy:0, r:14, color:'#7fd63a', shape:'bugsac', swarm:'sac', tot:97, delay:40, lt:53, tx:300, ly:578, ph:2, bossAtk:6, life:1, dmg:0 }, O),
@@ -1257,7 +1310,7 @@ describe('a netcode client sees him', () => {
     expect(r.end, 'and the Delete Bugs scene').toMatchObject({ swarm: 'end', tot: 70, delay: 35, ex: 500, er: 78, shape: 'bugend' });
     expect(r.n).toBe(5);
     // Round 17: phase 3's second ball's aim, POISON STING!'s line and the cell it left, the table of who is poisoned and for how long -- all in `_sw`, so a client draws the line, the ring and the green wash
-    expect(r.boss._sw, 'the second ball\'s aim, the sting\'s line and perch, the steam, the poisoned fighters').toMatchObject({ b2: [600, expect.any(Number)], sg: { d: -1, lane: 0, x1: 186, len: 914 }, sc: [expect.any(Number), expect.any(Number)], st: expect.any(Number), pz: { 0: 120 } });
+    expect(r.boss._sw, 'the second ball\'s aim, the sting\'s line and perch, the steam, the poisoned fighters, the Queen\'s Anti-Poison drops').toMatchObject({ b2: [600, expect.any(Number)], sg: { d: -1, lane: 0, x1: 186, len: 914 }, sc: [expect.any(Number), expect.any(Number)], st: expect.any(Number), pz: { 0: 120 }, cu: [[300, 80, 0], [520, expect.any(Number), 40]] });
     expect(r.sting, 'the pounce: the stinger bug, with the heading a client turns its trail by').toMatchObject({ shape: 'bugsting', vx: -20, vy: 0.7, r: 20 });
     expect(r.held, 'a hatchling still squirming out of the sac: held, for as long as is left').toEqual({ delay: 7, hw: 18 });
   });
@@ -1273,7 +1326,8 @@ describe('the glitch pass (2026-10-01): what the swarm drew that a real canvas i
       w.eval(`(function(){ var gy = groundY(), t = hazardT + ${skew}; BOSS_ARENA = 'hive'; SETTINGS.mode = 'boss'; worldPlats = platRectsSmall(); projectiles = [];
         fighters = [{ idx:0, x:400, y:gy - 30, r:26, dead:false }];
         var s = { type:'boss', name:'The Bug Swarm', color:'#6a2ea0', sprite:'bug', attack:'swarm', r:78, x:500, y:gy-78, face:1, hp:100, maxHp:225, _phase:3, _tel:20, _telKind:'swarmsting', flash:0, _bossRush:true, homeX:500,
-          _sw:{ d:-1, q:t, h:t, f:t, s:t, st:t, sc:[W, gy-52], b:[300, gy-24], b2:[600, gy-24], pz:{ 0:90 }, sg:swarmStingLine({ _phase:3, _telPh:3 }, 300, gy - 24) }, _hz:{ g:[[300, 60, 200, 0]], ps:1, pt:30, sn:t } };
+          _sw:{ d:-1, q:t, h:t, f:t, s:t, st:t, sc:[W, gy-52], b:[300, gy-24], b2:[600, gy-24], pz:{ 0:90 }, sg:swarmStingLine({ _phase:3, _telPh:3 }, 300, gy - 24),
+            cu:[[300, 80, 0], [520, gy - 12, 40], [700, gy - 12, 135]] }, _hz:{ g:[[300, 60, 200, 0]], ps:1, pt:30, sn:t } };
         summons = [s]; swarmDrawDecor(); drawArenaDecor('hive'); swarmDrawFx(); drawArenaHazard('under'); drawArenaHazard('over');
         [{ shape:'bugsting', swarm:'sting', r:20, vx:-20, vy:0.7 }, { shape:'bughatch', swarm:'hatch', r:6, ph:3, hw:18, delay:9, hd:1, vx:0, vy:0 }, { shape:'bugball', swarm:'ball', r:36 }].forEach(function(sh){
           drawProjectile(Object.assign({ x:400, y:gy-30, vx:-6, vy:0, r:9, owner:-2, ownerObj:{ team:-1, idx:-2 }, color:'#a05ae0', life:50 }, sh)); });
