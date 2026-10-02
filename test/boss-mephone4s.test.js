@@ -436,6 +436,21 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
     expect(r.gap, 'walked up to, he ends up out at his backoff distance').toBeGreaterThanOrEqual(r.backoff - 10);
   });
 
+  // GLITCH (the glitch hunter's `boss-offscreen`, run again at the end of Round 17's picks): fighters crowded him against the right wall, he backed off from them through the edge of the world and
+  // stood there, off the screen and out of anyone's reach, for 300 frames. The walls hold him now: he stops at the wall, half his radius in from the edge, as his shove's skid does.
+  it('backing off from someone who has cornered him, he stops at the wall: he never walks off the world, on either side', () => {
+    const ww = W.eval('WW');
+    const run = (x0, side) => W.eval(`(function(){
+      var s = ${S('_atkTimer:1e9')}, tgt = { x:0, y:groundY()-24, dead:false, idx:0 }, mn = 1e9, mx = -1e9; s.x = ${x0};
+      for (var i=0;i<300;i++){ s.x += s.vx; s.vx *= 0.9; tgt.x = s.x + ${-side*60}; updateBossAttack(s, tgt); mn = Math.min(mn, s.x); mx = Math.max(mx, s.x); }   // the body's step (updateSummons) comes first, then his own turn; the fighter stays 60 px from him, on the side the wall is not
+      return { x: s.x, mn: mn, mx: mx, vx: s.vx, R: s.r }; })()`);
+    const right = run(ww - 300, 1), left = run(300, -1);
+    expect(right.mx, 'cornered on the right: never past the wall (half his radius in from the edge)').toBeLessThanOrEqual(ww - right.R * 0.5 + 1e-6);
+    expect(right.x, 'and he is at the wall, not somewhere short of it').toBeGreaterThan(ww - right.R);
+    expect(left.mn, 'cornered on the left: the same').toBeGreaterThanOrEqual(left.R * 0.5 - 1e-6);
+    expect(left.x).toBeLessThan(left.R);
+  });
+
   // The review: he read the phase when the attack fired, not when its wind-up started, so a move drawn in one phase could fire as the next phase's if a hit
   // crossed the threshold mid wind-up.
   // (Since Round 17, the owner's picks: the gun is two rounds in phase 1; the car is his from phase 1 -- the one car, with no trap -- and the car of phase 2 is the car and its return WITH the trap.)
