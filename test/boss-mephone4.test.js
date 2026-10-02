@@ -32,8 +32,11 @@ const STAGE = (x, ph = 1, live = false) => `
 // A bare MePhone4 for driving his functions directly, on the right of the arena looking left.
 const S = (o = '') => `{ name:'MePhone4', attack:'mephone', type:'boss', x:900, y:groundY()-85, r:85, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0, color:'#4fb8e8', face:-1, homeX:900,
   stationary:true, vx:0, vy:0 ${o ? ',' + o : ''} }`;
-// Turn `k` of his rotation (0 the glove, 1 MeLife, 2 the portal, 3 the boomerang, 4 the maze: the engine's _moveN counts 1, 2, 4, 6, 8 for them), started now.
-const MOVEN = (k) => (k === 0 ? 0 : 2*k - 1);   // _moveN before the turn begins: the engine adds one when it starts
+// His moves, by number (0 the glove, 1 MeLife, 2 the portal, 3 the boomerang, 4 the maze). The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- there is no cycle to count
+// along any more (the engine's _moveN used to count 1, 2, 4, 6, 8 for them), so a test that needs one of them forces it: `FORCE(k)` is the code that makes the next turn move number k (the picker's
+// `_pickForce`, and the one-attack watch cleared with it).
+const KINDS = ['mephone', 'melife', 'portal', 'boomerang', 'maze'];
+const FORCE = (k) => `b._pickForce = ${JSON.stringify(KINDS[k])}; b._atkLive = null;`;
 // The text of one of his slot pairs (or of every one), from the file itself.
 const html = () => readFileSync('artifacts/V1/index.html', 'utf8');
 const slot = (slotName) => { const t = html(), a = t.indexOf(`// @boss:mephone4:begin ${slotName}`), b = t.indexOf(`// @boss:mephone4:end ${slotName}`); return t.slice(a, b); };
@@ -79,18 +82,24 @@ describe('MePhone4 joins the gauntlet', () => {
   });
 
   const turns = (ph) => W.eval(`(function(){
-    var s = ${S('_phase:' + ph + ', hp:' + HP[ph]*100)}, kinds = [], names = [];
-    for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+    summons = []; var s = ${S('_phase:' + ph + ', hp:' + HP[ph]*100)}, kinds = [], names = [];
+    for (var i=0;i<16;i++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
     return { kinds: kinds, names: names };
   })()`);
 
-  it('takes turns: the glove on every odd turn, and on the even ones MeLife, the portal and the boomerang -- phase 1 plays those three, the maze joins in phase 2 -- each with its own warning', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position picks
+  // all (Recommended)": the glove no longer comes on every odd turn. He draws his moves by where the fighters stand -- the glove, MeLife, the portal and the boomerang in phase 1, the maze too from phase 2 --
+  // none twice in a row, and every one comes up (the picker's own tests are in test/boss-kit.test.js).
+  it('draws his turns from his moves -- the glove, MeLife, the portal and the boomerang in phase 1, the maze joins in phase 2 -- each with its own warning, none twice in a row, every one in sixteen turns', () => {
     const p1 = turns(1), p2 = turns(2);
-    expect(p1.kinds).toEqual(['mephone', 'melife', 'mephone', 'portal', 'mephone', 'boomerang', 'mephone', 'melife']);
-    expect(p1.names).toEqual(['FIST THINGY!', 'MELIFE DOWNLOAD!', 'FIST THINGY!', 'REJECTION PORTAL!', 'FIST THINGY!', 'BOOMERANGS!', 'FIST THINGY!', 'MELIFE DOWNLOAD!']);
-    expect(p2.kinds).toEqual(['mephone', 'melife', 'mephone', 'portal', 'mephone', 'boomerang', 'mephone', 'maze']);
+    const NAME1 = { mephone: 'FIST THINGY!', melife: 'MELIFE DOWNLOAD!', portal: 'REJECTION PORTAL!', boomerang: 'BOOMERANGS!' };
     // from phase 2 the warning names the combo (the phase the wind-up was drawn in, not the one it ends in); the maze is named from the show ("It's sure to be a-maze-ing!", Mazed and Confused)
-    expect(p2.names).toEqual(['FIST THINGY COMBO!', 'MELIFE DOWNLOAD!', 'FIST THINGY COMBO!', 'REJECTION PORTAL!', 'FIST THINGY COMBO!', 'BOOMERANGS!', 'FIST THINGY COMBO!', 'A-MAZE-ING!']);
+    const NAME2 = Object.assign({}, NAME1, { mephone: 'FIST THINGY COMBO!', maze: 'A-MAZE-ING!' });
+    expect(new Set(p1.kinds), 'phase 1: the four, never the maze').toEqual(new Set(Object.keys(NAME1)));
+    expect(p1.names).toEqual(p1.kinds.map((k) => NAME1[k]));
+    expect(new Set(p2.kinds), 'phase 2: all five').toEqual(new Set(Object.keys(NAME2)));
+    expect(p2.names).toEqual(p2.kinds.map((k) => NAME2[k]));
+    for (const [ph, p] of [[1, p1], [2, p2]]) expect(p.kinds.some((k, i) => i > 0 && k === p.kinds[i - 1]), `phase ${ph}: never the same move twice in a row: ${p.kinds}`).toBe(false);
     const r = W.eval(`({ p2: bossPhaseName({attack:'mephone'}, 2), p3: bossPhaseName({attack:'mephone'}, 3),
       moves: BOSS_EXTRA['MePhone4'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k] + '/' + BOSS_RUSH_ONLY.has(k); }),
       glitch: [typeof BOSS_MOVES.glitch, BOSS_MOVE_NAME.glitch], tel: [36, 44].map(function(n){ return n; }),
@@ -114,7 +123,9 @@ describe('MePhone4 joins the gauntlet', () => {
   });
 
   it('left to fight, phase 1 throws all of the first four attacks and never the maze; phase 2 throws all five', () => {
-    // The turns' gaps are squeezed to a few frames (the pacing has its own tests: the maze's held gap, MEPHONE_GAPS): this watches which attacks a left-alone fight throws.
+    // The turns' gaps are squeezed to a few frames (the pacing has its own tests: the maze's held gap, MEPHONE_GAPS): this watches which attacks a left-alone fight throws. His turns are drawn by position
+    // now (the owner, Round 17: "make the attacks based on fighter position.") and each waits for the last of the one before (the one-attack watch), so a left-alone fight is given long enough for every move
+    // to come up (the picker plays one that has sat out two passes of the deck whatever it scores).
     const seen = (ph, frames) => W.eval(`(function(){ ${STAGE(560, ph, true)}
       var kinds = {}, glove = false, add = false, portal = false, boom = false, maze = false;
       for (var i=0;i<${frames};i++){
@@ -128,8 +139,8 @@ describe('MePhone4 joins the gauntlet', () => {
       }
       summons = []; projectiles = []; return { kinds: Object.keys(kinds).sort(), glove: glove, add: add, portal: portal, boom: boom, maze: maze };
     })()`);
-    expect(seen(1, 700), 'two full cycles of his turns').toEqual({ kinds: ['boomerang', 'melife', 'mephone', 'portal'], glove: true, add: true, portal: true, boom: true, maze: false });
-    expect(seen(2, 900)).toEqual({ kinds: ['boomerang', 'maze', 'melife', 'mephone', 'portal'], glove: true, add: true, portal: true, boom: true, maze: true });
+    expect(seen(1, 3600), 'long enough for every one of his moves to come up').toEqual({ kinds: ['boomerang', 'melife', 'mephone', 'portal'], glove: true, add: true, portal: true, boom: true, maze: false });
+    expect(seen(2, 4800)).toEqual({ kinds: ['boomerang', 'maze', 'melife', 'mephone', 'portal'], glove: true, add: true, portal: true, boom: true, maze: true });
   });
 });
 
@@ -138,14 +149,14 @@ describe('he moves: through a portal, to the side of the arena farther from you'
   it('steps out of a ring at the far side from you at the start of every glove turn, and stays put if he is already there', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       b.x = 550; b.homeX = 550; b._hz.hop = null; var out = {};
-      b._moveN = 0; b._atkTimer = 1; step(); out.start = { hop: b._hz.hop && b._hz.hop.slice(), x: b.x, fd: b._hz.fd };
+      b._pickForce = 'mephone'; b._atkLive = null; b._atkTimer = 1; step(); out.start = { hop: b._hz.hop && b._hz.hop.slice(), x: b.x, fd: b._hz.fd };
       var gone = -1, back = -1;
       for (var i=0;i<30;i++){ step(); f.x = 300; if (gone < 0 && b.x !== 550) gone = i; if (back < 0 && !b._hz.hop) back = i; }
       out.end = { x: b.x, home: b.homeX, gone: gone, back: back };
       // you are on the right: he goes to the left
-      f.x = 800; b._moveN = 2; b._atkTimer = 1; b._tel = 0; step(); for (var j=0;j<30;j++){ step(); f.x = 800; } out.left = b.x;
+      f.x = 800; b._pickForce = 'mephone'; b._atkLive = null; b._atkTimer = 1; b._tel = 0; step(); for (var j=0;j<30;j++){ step(); f.x = 800; } out.left = b.x;
       // already at the far side: no hop at all
-      f.x = 800; b._moveN = 4; b._atkTimer = 1; b._tel = 0; step(); out.stay = { hop: b._hz.hop, x: b.x };
+      f.x = 800; b._pickForce = 'mephone'; b._atkLive = null; b._atkTimer = 1; b._tel = 0; step(); out.stay = { hop: b._hz.hop, x: b.x };
       return out; })()`);
     expect(r.start.hop, 'the ring opens as the wind-up starts: [frames so far, from, to]').toEqual([0, 550, 946]);
     expect(r.start.fd, 'and the glove will come from the side he steps to, toward you').toBe(-1);
@@ -159,7 +170,7 @@ describe('he moves: through a portal, to the side of the arena farther from you'
 
   it('from phase 2 every turn starts with a hop (the glove, MeLife, the portal, the boomerang and the maze, which is built round you with him out of it); phase 1 only the glove', () => {
     const turn = (ph, k) => W.eval(`(function(){ ${STAGE(300, ph)}
-      b._hz.hop = null; b.x = 550; b.homeX = 550; b._moveN = ${MOVEN(k)}; b._atkTimer = 1; step();
+      b._hz.hop = null; b.x = 550; b.homeX = 550; ${FORCE(k)} b._atkTimer = 1; step();
       return [b._telKind, !!b._hz.hop]; })()`);
     const out = { 1: {}, 2: {} };
     for (const ph of [1, 2]) for (const k of [0, 1, 2, 3, 4]) { const [kind, hop] = turn(ph, k); out[ph][kind] = hop; }
@@ -170,7 +181,7 @@ describe('he moves: through a portal, to the side of the arena farther from you'
   it('squeezes thin and fades going out of the ring, and the ring is drawn at each end (and the hop never takes him off the stage)', () => {
     const r = WC.eval(`(function(){ ${STAGE(300, 2)}
       var out = { fx: [], xs: [] };
-      b._moveN = 0; b._atkTimer = 1;
+      b._pickForce = 'mephone'; b._atkLive = null; b._atkTimer = 1;
       for (var i=0;i<24;i++){ step(); f.x = 300; f.invuln = 99; out.xs.push(b.x);
         ctx.save(); ctx.globalAlpha = 1; var err = null; try { drawBossSprite(b); mpDrawFx(b); } catch(e){ err = e.message; } out.fx.push(err); ctx.restore(); }
       out.min = Math.min.apply(null, out.xs); out.max = Math.max.apply(null, out.xs); out.R = b.r; out.WW = WW; return out; })()`);
@@ -328,7 +339,7 @@ describe('FIST THINGY!', () => {
 
   it('a wind-up drawn in phase 1 fires phase 1\'s single glove, even if a hit crosses into phase 3 during it', () => {
     const r = W.eval(`(function(){ ${STAGE(800)}
-      b._atkTimer = 1; b._moveN = 0; step();
+      b._atkTimer = 1; b._pickForce = 'mephone'; b._atkLive = null; step();
       var name = document.getElementById('banner').textContent, kind = b._telKind;
       var gloves = 0, AP = addProj;
       addProj = function(p){ if (p && p.mpGlove) gloves++; return AP(p); };
@@ -347,7 +358,7 @@ describe('FIST THINGY!', () => {
   // The row follows you through the wind-up until MEPHONE_GLOVE.lock frames before the punch (a red band; a white one once it holds): the dodge is to leave the row inside the lock.
   it('the glove row follows you through the wind-up, holds for its last MEPHONE_GLOVE.lock frames, and the glove goes along it', () => {
     const r = W.eval(`(function(){ ${STAGE(800)}
-      b._atkTimer = 1; b._moveN = 0; step();
+      b._atkTimer = 1; b._pickForce = 'mephone'; b._atkLive = null; step();
       var lock = MEPHONE_GLOVE.lock, follow = 0, held = 0, broke = [], lockedX = null, lockedY = null, glove = null, AP = addProj;
       addProj = function(p){ if (p && p.mpGlove && !glove) glove = { y: p.y, vx: p.vx }; return AP(p); };
       try {
@@ -436,7 +447,7 @@ describe('REJECTION PORTAL!', () => {
 
   it('the wind-up marks where it will open AND, across the arena, where it lets out -- from its first frame; phase 3 marks three', () => {
     const plan = (ph) => W.eval(`(function(){ ${STAGE(560, ph)}
-      b._hz = {}; b.x = 550; b._moveN = 3; b._atkTimer = 1; step();
+      b._hz = {}; b.x = 550; b._pickForce = 'portal'; b._atkLive = null; b._atkTimer = 1; step();
       return { kind: b._telKind, pw: b._hz.pw && JSON.parse(JSON.stringify(b._hz.pw)), tel: b._tel }; })()`);
     const p1 = plan(1), p3 = plan(3);
     expect(p1.kind).toBe('portal');
@@ -607,7 +618,7 @@ describe('MELIFE DOWNLOAD!: hostile assist trophies', () => {
 
   it('marks its spot on the floor from the first frame of the wind-up: 200 px PAST you, on the side away from him -- and the add lands exactly there', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
-      b.x = 550; b.homeX = 550; b._moveN = 1; b._atkTimer = 1;
+      b.x = 550; b.homeX = 550; b._pickForce = 'melife'; b._atkLive = null; b._atkTimer = 1;
       var R = Math.random; Math.random = function(){ return 0; };               // the 8-Ball: the Beach Ball is a ricochet and leaves its mark the frame it is made (stepAssistBody)
       try {
         step();
@@ -648,19 +659,26 @@ describe('MELIFE DOWNLOAD!: hostile assist trophies', () => {
     expect(r.hp).toBe(r.HP);
   });
 
-  // He used to throw the generic ring at his cap, from inside the MeLife turn: its warning said MELIFE DOWNLOAD! and the ring was named only as it went off (the review). The rebuild decides at the
-  // start of the wind-up and gives the turn to a move that is announced: the maze from phase 2 ("replaces the generic GLITCH! ring"), the boomerang in phase 1 (which has no maze).
-  it('at his cap the MeLife turn is another move, announced as itself -- and with room it is MeLife', () => {
-    // `adds` already standing when the MeLife turn (the second of his turns, _moveN 2) begins, in phase `ph`
+  // He used to throw the generic ring at his cap, from inside the MeLife turn: its warning said MELIFE DOWNLOAD! and the ring was named only as it went off (the review). The rebuild decided at the
+  // start of the wind-up and gave the turn to a move that was announced: the maze from phase 2 ("replaces the generic GLITCH! ring"), the boomerang in phase 1 (which has no maze). Since Round 17 (the owner:
+  // "make the attacks based on fighter position.") the turn is drawn by the picker, and the cap is the move he skips: MeLife is simply not among the moves it draws from while his adds stand at their cap.
+  it('at his cap MELIFE DOWNLOAD! is out of the draw -- no turn is MeLife, whatever is asked for -- and with room it is back in', () => {
+    // `adds` already standing when a turn begins, in phase `ph`; MeLife is asked for by hand, to see it refused at the cap
     const turn = (ph, adds) => W.eval(`(function(){ ${STAGE(900, ph)}
       for (var i=0;i<${adds};i++) meLifeDownload(b, 1);
-      b._moveN = 1; b._atkTimer = 1; step();
-      return { kind: b._telKind, warn: document.getElementById('banner').textContent, adds: hostileCount() }; })()`);
-    expect(turn(1, 1), 'phase 1 has no maze: the boomerang').toEqual({ kind: 'boomerang', warn: 'BOOMERANGS!', adds: 1 });
-    expect(turn(2, 1), 'from phase 2 the maze').toEqual({ kind: 'maze', warn: 'A-MAZE-ING!', adds: 1 });
-    expect(turn(3, 2), 'phase 3\'s cap is two').toEqual({ kind: 'maze', warn: 'A-MAZE-ING!', adds: 2 });
-    expect(turn(1, 0)).toEqual({ kind: 'melife', warn: 'MELIFE DOWNLOAD!', adds: 0 });
-    expect(turn(3, 1), 'one standing, room for the second').toEqual({ kind: 'melife', warn: 'MELIFE DOWNLOAD!', adds: 1 });
+      b._pickForce = 'melife'; b._atkLive = null; b._atkTimer = 1; step();
+      return { moves: bossPickMoves(b, ${ph}), kind: b._telKind, warn: document.getElementById('banner').textContent, adds: hostileCount() }; })()`);
+    for (const [ph, adds] of [[1, 1], [2, 1], [3, 2]]) {
+      const r = turn(ph, adds);
+      expect(r.moves, `phase ${ph} at ${adds} add(s): MeLife is not among the moves`).not.toContain('melife');
+      expect(r.moves, `phase ${ph}: and the rest are`).toEqual(expect.arrayContaining(ph >= 2 ? ['mephone', 'portal', 'boomerang', 'maze'] : ['mephone', 'portal', 'boomerang']));
+      expect(r.kind, `phase ${ph}: asked for MeLife at the cap, the turn is another move`).not.toBe('melife');
+      expect(r.moves).toContain(r.kind);
+      expect(r.warn).not.toBe('MELIFE DOWNLOAD!');
+      expect(r.adds).toBe(adds);
+    }
+    expect(turn(1, 0)).toEqual(expect.objectContaining({ kind: 'melife', warn: 'MELIFE DOWNLOAD!', adds: 0 }));
+    expect(turn(3, 1), 'one standing, room for the second').toEqual(expect.objectContaining({ kind: 'melife', warn: 'MELIFE DOWNLOAD!', adds: 1 }));
   });
 
   it('MeLife itself, with no room left (an add arrived during its wind-up), fizzles and throws nothing unannounced; phase 3 downloads two and the cap holds', () => {
@@ -838,7 +856,7 @@ describe('A-MAZE-ING!', () => {
 
   it('the wind-up marks the two walls\' footprints, following you until its last 10 frames, then holds (white) -- and the pen is built exactly where the mark held', () => {
     const r = W.eval(`(function(){ ${STAGE(400, 2)}
-      b._moveN = 7; b._atkTimer = 1; step();
+      b._pickForce = 'maze'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, tel: b._tel }, follow = [], held = [], lock = MP4.maze.lock, walls = null;
       for (var i=0;i<60;i++){
         f.x = 400 + i*6; f.invuln = 99; step();
@@ -925,7 +943,7 @@ describe('A-MAZE-ING!', () => {
 
   it('one attack id for all of it: a fighter who stands through the whole maze takes at most one boss hit (the orange beam\'s burn aside)', () => {
     const r = W.eval(`(function(){ ${STAGE(560, 2)}
-      b._moveN = 7; b._atkTimer = 1; step(); b.x = 946;
+      b._pickForce = 'maze'; b._atkLive = null; b._atkTimer = 1; step(); b.x = 946;
       var gy = groundY(), hits = 0, last = 0, burned = 0, c = null;
       for (var i=0;i<330 && !(i > 60 && !b._hz.mz);i++){
         step(); if (f.burn > 0) burned += 0.04; f.burn = 0;                 // the burn is its own, standard damage: counted out
@@ -942,7 +960,7 @@ describe('A-MAZE-ING!', () => {
 
   it('a hedge top is standable, the walls wilt to roots and go, and the turn\'s gap is held until they have (then it is the paced gap)', () => {
     const r = W.eval(`(function(){ ${STAGE(209, 2)}
-      b._moveN = 7; b._atkTimer = 1; step();
+      b._pickForce = 'maze'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { held: 0, standing: null }, wall = null, ended = -1, gap = -1, gy = groundY();
       for (var i=0;i<330;i++){
         step(); f.invuln = 99; f.hitstun = 0;

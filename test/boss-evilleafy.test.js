@@ -35,16 +35,18 @@ const STAGE = (x, ph = 1, bx = 200) => `
 `;
 // Fire move number k (0 the signature, 1 POSSESSED!) of the boss `b` now, leaving the fighter `f` where it is, and run its wind-up out: the frame the move fires is the last
 // one this returns from.
-const FIRE = (k) => `b._moveN = ${k === 0 ? 0 : 2*k - 1}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
+const FIRE = (k) => `b._pickForce = ${JSON.stringify(['evilleafy', 'elpossess', 'elhole', 'elbehind'][k])}; b._atkLive = null; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
   for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = FX; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.onground = true; }`;
 
 describe('Evil Leafy takes the Evil Forest', () => {
-  it('is Boss 7, red (the owner: "Evil Leafy red with black vines"), with her HP and size as they were, and her turns run TENDRILS!, POSSESSED!, TENDRILS!...', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position
+  // picks all (Recommended)": TENDRILS! no longer runs between every other move (TENDRILS!, POSSESSED!, TENDRILS!, BLACK HOLE!, ...). She draws her four by where the fighters stand: none twice in a row.
+  it('is Boss 7, red (the owner: "Evil Leafy red with black vines"), with her HP and size as they were, and her turns drawn from TENDRILS!, POSSESSED!, BLACK HOLE! and BEHIND THE TREES!', () => {
     const r = W.eval(`(function(){
       var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='Evil Leafy'; });
       var s = { name:'Evil Leafy', attack:'evilleafy', type:'boss', x:300, y:500, r:81.6, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0, color:'#ff0100', face:1, homeX:300, stationary:false, vx:0, vy:0 };
       var kinds = [], names = [];
-      for (var k=0;k<4;k++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+      for (var k=0;k<12;k++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       return { i: i, row: BOSS_ROSTER[i], mephone: BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), s4: BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }),
         extra: BOSS_EXTRA['Evil Leafy'], kinds: kinds, names: names,
         tel: ['evilleafy','elpossess'].map(function(k){ return bossTelLen({ attack:'evilleafy', _telKind:k }); }),
@@ -56,8 +58,11 @@ describe('Evil Leafy takes the Evil Forest', () => {
     expect(r.i, 'Boss 7, right after MePhone4').toBe(6);
     expect(r.mephone).toBe(5);
     expect(r.s4, 'and before MePhone4S').toBe(7);
-    expect(r.kinds.slice(0, 3)).toEqual(['evilleafy', 'elpossess', 'evilleafy']);
-    expect(r.names.slice(0, 3), 'the wind-up names the move').toEqual(['TENDRILS!', 'POSSESSED!', 'TENDRILS!']);
+    const NAME = { evilleafy: 'TENDRILS!', elpossess: 'POSSESSED!', elhole: 'BLACK HOLE!', elbehind: 'BEHIND THE TREES!' };
+    expect(r.kinds.every((k) => NAME[k]), `only her four: ${r.kinds}`).toBe(true);
+    expect(r.names, 'the wind-up names the move').toEqual(r.kinds.map((k) => NAME[k]));
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(new Set(r.kinds).size, `all four come up in twelve turns: ${r.kinds}`).toBe(4);
     expect(r.names2).toEqual(['POSSESSED!', 'BLACK HOLE!', 'BEHIND THE TREES!']);
     expect(r.tel, 'TENDRILS!\'s wind-up is longer than the 45 it was ("1 needs a better telegraph.")').toEqual([56, 34]);
     expect([r.p2, r.p3]).toEqual(['No Refuge', 'Vine Coverage']);
@@ -155,7 +160,7 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
     const r = W.eval(`(function(){ var out = {};
       // the fighter starts at 700 (the wind-up fixes the row from there), then stands where \`at(w)\` says -- in the row's path, or in its gap -- for the whole wave
       var run = function(at){ ${STAGE(700)}
-        b._moveN = 0; b._atkTimer = 1; step(); var w = b._hz.tw[0], fx = at(w); out.w = w;
+        b._pickForce = 'evilleafy'; b._atkLive = null; b._atkTimer = 1; step(); var w = b._hz.tw[0], fx = at(w); out.w = w;
         for (var i=0;i<260;i++){ step(); f.x = fx; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.onground = true; }
         return f.pct; };
       out.inRow = run(function(w){ return Math.round(elVineX(w, 8)); });
@@ -171,7 +176,7 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
       var out = { err: null };
       // mid wind-up: draw the arena hazard's 'under' layer and the boss (her tell slot draws the coils)
       ${STAGE(700)}
-      b._moveN = 0; b._atkTimer = 1; step();
+      b._pickForce = 'evilleafy'; b._atkLive = null; b._atkTimer = 1; step();
       for (var k=0;k<30;k++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       var w = b._hz.tw[0]; out.mid = [hazardT, w[6], w[7]];
       var calls = { lines:0, rects:0, curves:0 }, rec = new Proxy({}, { get: function(_t, p){
@@ -284,7 +289,7 @@ describe('POSSESSED!: she sinks into the platform, it is hers for a few seconds,
     const r = W.eval(`(function(){ var out = {};
       var run = function(onPlat, fx){ var FX = fx; ${STAGE(500)}
         var P = elPlat(); f.x = fx; f.y = onPlat ? P.y - 24 : groundY()-24; f.onground = true;
-        b._moveN = 1; b._atkTimer = 1; step(); var marks = 0, up = 0, tEnd = b._hz.pos[4], before = null;
+        b._pickForce = 'elpossess'; b._atkLive = null; b._atkTimer = 1; step(); var marks = 0, up = 0, tEnd = b._hz.pos[4], before = null;
         for (var i=0;i<330;i++){
           step(); f.x = fx; f.y = onPlat ? P.y - 24 : groundY()-24; f.vx = 0; f.vy = 0; f.onground = true;
           (b._hz.th || []).forEach(function(e){ var u = hazardT - e[1]; if (u > -EL.thMark && u < 0) marks++; if (u >= 0 && u < EL.thUp && elThrashH(u) > 30) up++; });
@@ -302,7 +307,7 @@ describe('POSSESSED!: she sinks into the platform, it is hers for a few seconds,
 
   it('she is expelled out of its middle with a BOOM that throws off whoever is on it, comes down on the floor, and the platform is clean after', () => {
     const r = W.eval(`(function(){ var FX = 450; ${STAGE(450)}
-      var P = elPlat(); b._moveN = 1; b._atkTimer = 1; step();
+      var P = elPlat(); b._pickForce = 'elpossess'; b._atkLive = null; b._atkTimer = 1; step();
       var log = [], hits = [], scars0 = 0;
       for (var i=0;i<420;i++){
         step(); f.x = FX; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.onground = true; f.invuln = 9999;
@@ -318,7 +323,7 @@ describe('POSSESSED!: she sinks into the platform, it is hers for a few seconds,
 
   it('phase 3 possesses a patch of floor with the platform, and thrashes come out of both', () => {
     const r = W.eval(`(function(){ var FX = 900; ${STAGE(900, 3)}
-      var P = elPlat(); b._moveN = 1; b._atkTimer = 1; step();
+      var P = elPlat(); b._pickForce = 'elpossess'; b._atkLive = null; b._atkTimer = 1; step();
       var Pz = b._hz.pos.slice(), th = b._hz.th.slice();
       return { pos: Pz, gy: Math.round(groundY()), onFloor: th.filter(function(e){ return e[2] === Math.round(groundY()); }).length, onPlat: th.filter(function(e){ return e[2] === Pz[1]; }).length, dur: Pz[4] - Pz[3] }; })()`);
     expect(r.pos[8], 'a patch of floor, 230 wide').toBe(230);
@@ -360,7 +365,7 @@ describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle 
     const r = W.eval(`(function(){ var out = {};
       var go = function(fx, onPlat, frames){ var FX = fx; ${STAGE(300, 1, 200)}
         var P = elPlat(); f.x = fx; f.y = onPlat ? P.y - 24 : groundY() - 24; f.onground = true;
-        b._moveN = 3; b._atkTimer = 1; step(); var B = b._hz.bh, x0 = f.x, xAt = null, vxs = [];
+        b._pickForce = 'elhole'; b._atkLive = null; b._atkTimer = 1; step(); var B = b._hz.bh, x0 = f.x, xAt = null, vxs = [];
         for (var i=0;i<frames;i++){
           step(); if (!onPlat){ f.y = groundY() - 24; f.onground = true; } else { f.y = P.y - 24; f.vy = 0; f.onground = true; }
           if (hazardT === B[3] + 50) xAt = f.x;   // fifty frames after it opened, before a fighter left alone has reached the core
@@ -383,7 +388,7 @@ describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle 
   it('the core is a boss hit of 0.8, thrown out of it; once however long you stay (one attack id); and the fighters\' shots curve in and are eaten at the core, hers are not', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE(550, 1, 200)}
-      b._moveN = 3; b._atkTimer = 1; step();
+      b._pickForce = 'elhole'; b._atkLive = null; b._atkTimer = 1; step();
       for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = 550; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       var B = b._hz.bh, first = null, last = 0;
       f.pct = 0; f.invuln = 0;
@@ -391,7 +396,7 @@ describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle 
       out.pct = f.pct; out.first = first; out.dmg = bossDmg();   // (held in the core with no grace at all: every frame could hit)
       // a fighter's shot aimed past the void bends toward it; one that reaches the core is eaten; a boss shot does not
       ${STAGE(250, 1, 200)}
-      b._moveN = 3; b._atkTimer = 1; step(); for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = 250; f.y = groundY()-24; f.vx = 0; f.onground = true; }
+      b._pickForce = 'elhole'; b._atkLive = null; b._atkTimer = 1; step(); for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = 250; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       var B2 = b._hz.bh, gy = groundY();
       for (var w=0; w<30; w++) step();   // let it open
       var mine = { x:B2[0] - 200, y:B2[1] - 90, vx:8, vy:0, r:8, owner:0, ownerObj:f, dmg:1, kb:1, life:200, color:'#fff', noAim:true }, boss = { x:B2[0] - 200, y:B2[1] - 90, vx:8, vy:0, r:8, owner:-2, ownerObj:{ team:-1, idx:-2 }, dmg:1, kb:1, life:200, color:'#f00', noAim:true };
@@ -409,7 +414,7 @@ describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle 
 
   it('the void closes, she drops back where it was and lands, and her next turn is a paced gap away; the void and its pull rode the snapshot and are drawn from it', () => {
     const r = W.eval(`(function(){ var FX = 700; ${STAGE(700, 1, 200)}
-      b._moveN = 3; b._atkTimer = 1; step();
+      b._pickForce = 'elhole'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { err: null }, B, seen = false;
       for (var i=0;i<400;i++){
         step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999;
@@ -433,7 +438,7 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
   it('the wind-up picks a tree that puts the lane through you, lights her eyes behind it and takes her off the stage: nothing touches her and she touches no one', () => {
     const r = W.eval(`(function(){ var FX = 700; ${STAGE(700)}
       f.x = 700;
-      b._moveN = 5; b._atkTimer = 1; step();
+      b._pickForce = 'elbehind'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, bt: b._hz.bt.slice(), hid: [] };
       var tree = elTreeX(out.bt[0]);
       // she is below the floor and at the tree's x for the whole wind-up; a fighter on that spot is touched by nothing
@@ -459,7 +464,7 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
   it('she bursts out on the frame the wind-up ends, runs the lane at 20 a frame, and is a 0.8 boss hit to a fighter in it, thrown the way she runs; not to one out of it, and not twice', () => {
     const r = W.eval(`(function(){ var out = {};
       var go = function(where){ var FX = 700; ${STAGE(700)}
-        b._moveN = 5; b._atkTimer = 1; step(); var B = b._hz.bt.slice(), x = elTreeX(B[0]), dir = B[4], x1 = B[5];
+        b._pickForce = 'elbehind'; b._atkLive = null; b._atkTimer = 1; step(); var B = b._hz.bt.slice(), x = elTreeX(B[0]), dir = B[4], x1 = B[5];
         var fx = where === 'lane' ? Math.round(x + dir*(x1 - x)*dir*0.6) : (where === 'behind' ? x - dir*300 : x + dir*(Math.abs(x1 - x) + 200));
         fx = clamp(fx, 40, WW - 40); f.x = fx; var first = null, last = 0, hits = 0, vx = 0;
         for (var i=0;i<130;i++){
@@ -486,7 +491,7 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
       [2, 3].forEach(function(ph){
         var FX = 700; ${STAGE(700, 1, 200)}
         b.hp = b.maxHp*(ph === 3 ? ${HP[3]} : ${HP[2]}); step(); f.x = 700;
-        b._moveN = 5; b._atkTimer = 1; step();
+        b._pickForce = 'elbehind'; b._atkLive = null; b._atkTimer = 1; step();
         var bt1 = b._hz.bt.slice(), seen = [];
         for (var i=0;i<200;i++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999; if (b._el && b._el.st === 'tell' && !seen.length) seen.push(b._hz.bt.slice()); if (!b._el && seen.length) break; }
         out[ph] = { bt1: bt1, bt2: seen[0], done: !b._el, nb: 0 };
@@ -507,7 +512,7 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
 
   it('the eyes, the lane and the trees are drawn and ride the snapshot: a client draws the same from b._hz', () => {
     const r = W.eval(`(function(){ var FX = 700; ${STAGE(700)}
-      b._moveN = 5; b._atkTimer = 1; step(); for (var k=0;k<30;k++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; }
+      b._pickForce = 'elbehind'; b._atkLive = null; b._atkTimer = 1; step(); for (var k=0;k<30;k++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       var out = { err: null }, snap = JSON.parse(JSON.stringify(serializeState()));
       out.hz = JSON.stringify(b._hz.bt); out.snapHz = JSON.stringify(snap.summons.find(function(m){ return m.attack === 'evilleafy'; })._hz.bt);
       try { drawArenaDecor('forest'); drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); draw(); } catch(e){ out.err = e.message + ' ' + (e.stack||'').split('\\n')[1]; }
