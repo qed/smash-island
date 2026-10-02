@@ -136,22 +136,27 @@ describe('the picker: a boss draws its turn by where the fighters stand (the twe
     const r = W.eval(`(function(){ var out = {}; ${RIG('MePhone4S', 1, 550, [300], 3)}
       try {
         s._pickForce = 's4popup'; out.forced = bossPickTurn(s); out.cleared = s._pickForce;
-        s._pickForce = 's4car'; out.locked = bossPickTurn(s); out.lockedWas = out.locked === 's4car';   // the car is a phase-2 move: not in phase 1
-        s._phase = 2; s._carDue = true; out.first = bossPickTurn(s); s._carDue = false;                 // ...and the first move once phase 2 starts (the wind-up, s4BeginTelegraph, puts the flag down)
+        // (the car was a phase-2 move until Round 17's "I'LL BE BACK! from phase 1": a move locked out of the draw is MePhone4's MeLife at his add cap, below)
+        s._phase = 2; s._carDue = true; out.first = bossPickTurn(s); s._carDue = false;                 // the first move once phase 2 starts (the wind-up, s4BeginTelegraph, puts the flag down)
         out.after = []; for (var i=0;i<30;i++) out.after.push(bossPickTurn(s));
+        s._carDue = true; s._pk.last = 's4car'; out.skipped = bossPickTurn(s); out.carDue = s._carDue; out.next = bossPickTurn(s);   // the car was the move he just played: the opening car waits a turn, and is the one after
         var a = { name:'Announcer', attack:'announcer', type:'boss', x:550, y:400, r:85, hp:100, maxHp:100, _phase:1, _tel:0, color:'#3a4a6a', face:1, vx:0, vy:0 };
         a._lastCake = { id: 1, hit: false, shots: [] }; out.acid = bossPickTurn(a); a._lastCake = null; out.noAcid = []; for (var j=0;j<14;j++) out.noAcid.push(bossPickTurn(a));
         var mp = { name:'MePhone4', attack:'mephone', type:'boss', x:550, y:400, r:85, hp:100, maxHp:100, _phase:1, _tel:0, color:'#4fb8e8', face:1, vx:0, vy:0 };
         out.melifeOpen = bossPickMoves(mp, 1).indexOf('melife') >= 0; meLifeDownload(mp, 1); out.melifeOne = bossPickMoves(mp, 1).indexOf('melife') >= 0;
-        meLifeDownload(mp, -1); out.melifeCapped = bossPickMoves(mp, 1).indexOf('melife') >= 0; summons = [];   // the cap is 2 in phase 1 now ("cap 2/2/3", the owner's pick, Round 17; it was 1)
+        meLifeDownload(mp, -1); out.melifeCapped = bossPickMoves(mp, 1).indexOf('melife') >= 0;   // the cap is 2 in phase 1 now ("cap 2/2/3", the owner's pick, Round 17; it was 1)
+        mp._pickForce = 'melife'; out.locked = bossPickTurn(mp); out.lockedWas = out.locked === 'melife'; summons = [];   // forcing a move that is out of the draw (MeLife at his cap) gets another move
         return out;
       } finally { done(); } })()`);
     expect(r.forced).toBe('s4popup');
     expect(r.cleared, 'a forced move is used once').toBe(null);
-    expect(r.lockedWas, 'forcing a move the phase does not have gets another one').toBe(false);
+    expect(r.lockedWas, 'forcing a move that is out of the draw (MePhone4\'s MeLife at his cap) gets another one').toBe(false);
     expect(r.first, 'the car opens phase 2').toBe('s4car');
     expect(r.after.some((k, i) => (i ? r.after[i - 1] : r.first) === k), 'and the turn after it is not the car again').toBe(false);
     expect(r.after, 'then the car competes like the rest').toContain('s4car');
+    expect(r.skipped, 'a car he has just played is not played twice in a row, even to open phase 2').not.toBe('s4car');
+    expect(r.carDue, 'it stays owed: the phase beat\'s flag stands until a car turn starts').toBe(true);
+    expect(r.next, 'and it is the next turn').toBe('s4car');
     expect(r.acid, 'a cake volley nobody was hit by: ACID TEARS! next').toBe('annacid');
     expect(r.noAcid, 'with no volley behind it nothing is forced').toContain('announcer');
     expect([r.melifeOpen, r.melifeOne, r.melifeCapped], 'MeLife is in the draw with room for an add (one standing, a second fits), and out of it at the cap of two').toEqual([true, true, false]);
