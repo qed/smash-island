@@ -192,8 +192,9 @@ describe('the course', () => {
     }
     const front = L.obs.filter(inFront).map((o) => o.k), back = L.obs.filter((o) => !inFront(o)).map((o) => o.k);
     // owner, 2026-10-02: "running should be d5 bfdi:branches difficulty" (asked what to change: "Jumps, Hazard timing and Length"): the front half has the
-    // lane's precision jumps too, the stairs of small platforms (planks, pillars) -- they are what the harder lane is for, and none is an episode hazard
-    for (const k of front) expect(['gap', 'wall', 'bar', 'piston', 'spikes', 'fire', 'belt', 'spring', 'cannon', 'planks', 'pillars'], 'the front half has the classics, the gentler platformer hazards and the first precision jumps: ' + k).toContain(k);
+    // lane's precision jumps too, the stairs of small platforms (planks, pillars), and the first hazards in combination built of the gentler ones (jets on a platform you
+    // land on, a cannon covering a jump) -- they are what the harder lane is for, and none is an episode hazard (the saw across a pit is a pendulum's: back half only)
+    for (const k of front) expect(['gap', 'wall', 'bar', 'piston', 'spikes', 'fire', 'belt', 'spring', 'cannon', 'planks', 'pillars', 'jetpad', 'coverfire'], 'the front half has the classics, the gentler platformer hazards, the first precision jumps and combinations: ' + k).toContain(k);
     expect(new Set(front.filter((k) => PLATFORMER.includes(k))).size, 'the platformer hazards start early').toBeGreaterThanOrEqual(4);
     for (const k of PLATFORMER.filter((k) => k !== 'belt')) expect(back, 'and every one of them but the gentlest, the belt, is in the back half too: ' + k).toContain(k);
     for (const k of ['ceiling', 'crumble', 'pendulum', 'ferry']) expect(front, 'the hardest wait for the back half: ' + k).not.toContain(k);
@@ -331,7 +332,7 @@ describe('the jumps: precision platforming', () => {
     const L = lane(), kinds = secs().map((o) => o.k);
     for (const k of ['planks', 'pillars', 'leap']) expect(kinds, 'on the lane: ' + k).toContain(k);
     for (const o of secs()) {
-      expect([o.sec.sx < o.x0, o.x0 < o.x1, o.x1 < o.sec.ex, o.sec.ex < L.edge], o.k + ' at ' + Math.round(o.x0) + ': the section spans its obstacle').toEqual([true, true, true, true]);
+      expect([o.sec.sx < o.x0, o.x0 < o.x1, o.x1 <= o.sec.ex, o.sec.ex < L.edge], o.k + ' at ' + Math.round(o.x0) + ': the section spans its obstacle').toEqual([true, true, true, true]);
       expect(o.x0 - o.sec.sx, 'run up to from 150 px back').toBe(150);
     }
     const gs = L.obs.map((o) => o);   // the run-up: 220 px more than the 240 before anything that is a section
@@ -378,6 +379,80 @@ describe('the jumps: precision platforming', () => {
     expect(r.run.worstSec, 'she was at his side on every section').toBeLessThanOrEqual(110 + 60);
     expect(r.run.worstSec).toBeGreaterThan(-1e8);
     expect(r.run.lost, 'and never lost').toBe(0);
+  }, 300000);
+});
+
+// HAZARD TIMING. The owner (2026-10-02): "running should be d5 bfdi:branches difficulty"; asked what should change: "Jumps, Hazard timing and Length". Hazards come
+// in combination now, with windows that are tighter and still readable -- every one has its tell on the screen (a saw swinging on a pole, vents that glow before they
+// burn, a cannon that flashes where its shot will leave) and none is invisible: a saw swinging across a pit under a ceiling of spikes, fire jets on the platform you land
+// on, a cannon covering the arc of a jump. The ceiling of spikes is the recurring answer to "just double jump over it": the tips are over a single jump's head and under
+// a double's. The room of every press and every wait is measured by the solver on the real engine ("the run").
+describe('the hazard combinations: tighter windows, every one with its tell', () => {
+  const ofKind = (k) => lane().obs.filter((o) => o.k === k);
+  it('the lane has a saw across a pit, jets on a platform you land on and a cannon covering a jump: each a section the solver plays', () => {
+    for (const k of ['sawgap', 'jetpad', 'coverfire']) { expect(ofKind(k).length, k + ' is on the lane').toBeGreaterThanOrEqual(1); for (const o of ofKind(k)) expect(o.sec, k + ' is a section').toBeTruthy(); }
+  });
+
+  it('a saw across a pit: one saw on a pole over the middle of the pit, as big and as quick as the pendulum for how far along the lane it stands, under a ceiling of spikes a single jump goes under and a double jump bangs on', () => {
+    const L = lane(), P = physics([26]);
+    for (const o of ofKind('sawgap')) {
+      const p = L.pendulums.find((q) => q.g === o.g), c = L.traps.find((t) => t.k === 'ceiling' && t.g === o.g);
+      expect(p && c, 'a saw and a ceiling').toBeTruthy();
+      expect(p.px, 'over the middle of the pit').toBe(o.x0 + Math.round(o.G / 2));
+      expect(p.py + p.L + p.R, 'the blade is 6 px off the floor at the bottom of its swing').toBe(L.floor - 6);
+      expect([p.R, p.period, p.L], 'the pendulum\'s own sizes for how far along the lane it stands').toEqual([Math.round(28 + 6 * o.s), Math.round(124 - 26 * o.s), Math.round(170 + 20 * o.s)]);
+      expect(c.x <= o.x0 - 60 && c.x + c.w >= o.x0 + o.G + 60, 'the ceiling is over the whole pit and the take-off').toBe(true);
+      expect(c.tip - (P.single.apex + 2 * L.r), 'one jump goes under the tips').toBeGreaterThanOrEqual(20);
+      expect(P.best.apex + 2 * L.r, 'a double jump bangs on them').toBeGreaterThan(c.tip);
+      expect(o.G, 'a pit one jump crosses').toBeLessThanOrEqual(330);
+    }
+  });
+
+  it('jets on the island you land on: two or three close together (no pocket to stand in), a ceiling of spikes over them, burning most of the time, resting in a wave that runs with a runner at full speed, with a window to cross', () => {
+    const L = lane(), P = physics([26]), v = P.maxvx;
+    for (const o of ofKind('jetpad')) {
+      const js = L.traps.filter((t) => t.k === 'jet' && t.g === o.g), c = L.traps.find((t) => t.k === 'ceiling' && t.g === o.g);
+      expect(js.length, 'two or three jets').toBe(o.n); expect(o.n).toBeGreaterThanOrEqual(2); expect(o.n).toBeLessThanOrEqual(3);
+      for (let i = 1; i < js.length; i++) {
+        expect(js[i].x - (js[i - 1].x + js[i - 1].w) - 2 * L.r, 'no pocket a fighter fits in between two jets').toBeLessThan(0);
+        const travel = (js[i].x - js[i - 1].x) / (v * js[i].period), d = (((js[i - 1].phase - js[i].phase - travel) % 1) + 1) % 1;
+        expect(Math.min(d, 1 - d), 'lit in a wave that runs with the runner').toBeLessThan(0.02);
+      }
+      for (const j of js) {
+        expect(Math.min(j.burn, j.period - j.warn) / j.period, 'burning most of the time').toBeGreaterThanOrEqual(0.5);
+        expect(j.warn + j.burn, 'a cycle is the glow and the burn and a rest').toBeLessThanOrEqual(j.period);
+        expect(j.period - j.burn - (j.w + 2 * L.r) / v, 'a window to cross one: what is left of the glow and the rest once he has crossed it, 5 frames or more').toBeGreaterThanOrEqual(5);
+      }
+      expect(c.tip - (P.single.apex + 2 * L.r), 'one jump goes under the tips').toBeGreaterThanOrEqual(20);
+      expect(c.x <= js[0].x && c.x + c.w >= js[js.length - 1].x + js[js.length - 1].w, 'the ceiling is over the jets').toBe(true);
+    }
+    const all = L.traps.filter((t) => t.k === 'jet');
+    nondecreasing(all.filter((t, i, a) => i === 0 || t.g !== a[i - 1].g), (t) => -t.period, 'jets cycle faster'); nondecreasing(all, (t) => t.hf, 'and burn higher');
+  });
+
+  it('a cannon covering a jump: it fires when he crosses its trigger at the lip (too late to wait out), the first shot is high and meets a jumper at the top of his jump, and a ceiling over the pit leaves him a single jump', () => {
+    const L = lane(), P = physics([26]), v = P.maxvx;
+    for (const o of ofKind('coverfire')) {
+      const c = L.cannons.find((q) => q.trig === o.x0 + 12), cei = L.traps.find((t) => t.k === 'ceiling' && t.g === o.g);
+      expect(c && cei, 'its cannon and its ceiling').toBeTruthy();
+      expect(c.n, 'two or three shots').toBeGreaterThanOrEqual(2); expect(c.hi[0], 'the first shot is high').toBe(true);
+      const tm = (c.cx - L.bullet.w - c.trig - L.r + 20 * c.bs) / (v + c.bs);   // frames after he crosses the trigger that the first shot meets the front of him
+      expect(Math.abs(tm - 20), 'it meets him at the top of a jump taken at the lip (the top of a jump is 20 frames up)').toBeLessThanOrEqual(3);
+      expect(c.cx - c.trig, 'and the cannon is on screen when it is triggered').toBeLessThanOrEqual(700);
+      expect(cei.tip - (P.single.apex + 2 * L.r), 'one jump goes under the tips').toBeGreaterThanOrEqual(20);
+      expect(P.best.apex + 2 * L.r, 'a double jump bangs on them').toBeGreaterThan(cei.tip);
+      expect(cei.x <= o.x0 && cei.x + cei.w >= o.x0 + o.G, 'the ceiling is over the whole pit').toBe(true);
+    }
+  });
+
+  it('each combination is a window, not a pass: its timing is measured on the real engine as the run goes by, 5 frames or more on every press and every wait; the saw and the jets are waits (the hazard is the clock)', () => {
+    const r = fullRun();
+    r.plan.seen.forEach((s, i) => {
+      const k = PROG.programs[i].k;
+      if (!['sawgap', 'jetpad', 'coverfire'].includes(k)) return;
+      for (const w of s.win) for (const key of ['t1', 'd2', 'w']) if (w[key] !== null) expect(w[key], k + ' #' + i + ' ' + key + ' window').toBeGreaterThanOrEqual(5);
+      if (k !== 'coverfire') expect(s.win.some((w) => w.w !== null), k + ' #' + i + ' has a wait to time').toBe(true);
+    });
   }, 300000);
 });
 
@@ -1014,6 +1089,20 @@ describe('the platformer hazards', () => {
     expect(r.states.glow.bump, 'it glows first, and does not hurt').toBe(0);
     expect(r.waves.length).toBeGreaterThanOrEqual(2);
     for (const w of r.waves) expect(w.pass / w.tried, 'a wave of ' + w.n + ' can be run through from a fifth of the start times or more').toBeGreaterThanOrEqual(0.2);
+  });
+
+  it('a jet on the platform you land on (owner 2026-10-02: "Hazard timing") burns like a vent: only while it burns, never while it glows or rests', () => {
+    const r = quick({}, `${SOLO}
+      var o = solo('jetpad', 0), t = RACE.traps.find(function(z){ return z.k === 'jet'; }), out = { states:{} }, rest = t.period - t.warn - t.burn;
+      var at = function(frac){ hazardT = Math.round((((frac - t.phase) % 1) + 1) % 1 * t.period); };
+      [['burn', (t.warn + t.burn/2)/t.period], ['rest', (t.warn + t.burn + rest/2)/t.period], ['glow', (t.warn/2)/t.period]].forEach(function(st){
+        put(t.x + t.w/2); you.controller = 'still'; at(st[1]); adv(1); out.states[st[0]] = { bump:you._raceBumpT, stun:you.hitstun, vx:you.vx, pct:you.pct, want:t.stun, kx:t.kx };
+      });
+      out.rest = rest; return out;`);
+    expect([r.states.burn.bump > 0, r.states.burn.stun, r.states.burn.vx, r.states.burn.pct], 'it burns').toEqual([true, r.states.burn.want, r.states.burn.kx, 0]);
+    expect(r.rest, 'the first jet of the lane rests a little between burning and glowing').toBeGreaterThan(2);
+    expect(r.states.rest.bump, 'it rests').toBe(0);
+    expect(r.states.glow.bump, 'it glows first, and does not hurt').toBe(0);
   });
 
   it('a conveyor belt runs backward under whoever stands on it, and never touches someone in the air', () => {
