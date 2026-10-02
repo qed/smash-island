@@ -5,7 +5,7 @@
 // steps FRAMES frames, and prints the HP the boss lost. Run from the repo root.
 //
 //   node scripts/moves-vs-boss.mjs                              every fighter in ROSTER, every move, three stagings (about 3 min on 7 workers)
-//   FIGHTERS='["Puffball","Saw"]' node scripts/moves-vs-boss.mjs     just these
+//   FIGHTERS='["Puffball","Saw"]' node scripts/moves-vs-boss.mjs     just these;  SLICE='0:26' the first 26 of them (a quarter of the roster is about a minute)
 //   MOVES='["smash","special"]' node scripts/moves-vs-boss.mjs        just these moves (jab uptilt downtilt finisher special upspecial downspecial
 //                                                               smash smashup smashdown smash-tap smash-hold)
 //   STAGINGS='["above"]' node scripts/moves-vs-boss.mjs          just this staging (ground, air, above; see STAGINGS)
@@ -174,7 +174,8 @@ if (process.env.MVB_WORKER) {
   await W.eval('profileReady');
   const ALL = JSON.parse(W.eval('JSON.stringify(ROSTER.map(function(r){ return r.name; }))'));
   W.close();
-  const names = process.env.FIGHTERS ? JSON.parse(process.env.FIGHTERS) : ALL;
+  let names = process.env.FIGHTERS ? JSON.parse(process.env.FIGHTERS) : ALL;
+  if (process.env.SLICE) { const [a, b] = process.env.SLICE.split(':').map(Number); names = names.slice(a, b); }   // SLICE='0:26': a quarter at a time
   const jobs = Math.max(1, Math.min(names.length, Number(process.env.JOBS || availableParallelism() - 1)));
   const results = new Array(names.length);
   let next = 0;
