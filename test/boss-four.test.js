@@ -84,7 +84,8 @@ describe('Four takes his classroom', () => {
   // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position picks
   // all (Recommended)": the signature no longer takes every other turn, alternating SCREECHY! and ZAPPIES! with a move between. He draws his moves by where the fighters stand -- SCREECHY! and ZAPPIES!
   // are two of them -- none twice in a row, every one in time; each still has its own wind-up.
-  it('draws his turns from his moves -- SCREECHY!, ZAPPIES!, GO BYE-BYE!, TAKE THE TOWER!, I DO THIS! in phase 1 -- each with its own wind-up, none twice in a row, every one in fifteen turns', () => {
+  // And the owner's pick (Round 17, "Four: ... LOVE HEARTS! from phase 1 with an extra wave"): LOVE HEARTS! is one of his moves from the first phase, so phase 1 draws from six.
+  it('draws his turns from his moves -- SCREECHY!, ZAPPIES!, GO BYE-BYE!, TAKE THE TOWER!, I DO THIS!, LOVE HEARTS! in phase 1 -- each with its own wind-up, none twice in a row, every one in fifteen turns', () => {
     const r = W.eval(`(function(){
       var s = ${S()}, keys = [], names = [], tels = [];
       for (var k=0;k<15;k++){ s._atkTimer = 1; s._tel = 0; s._fr = null; s._atkLive = null; updateBossAttack(s, null); keys.push(s._telKind === 'four' ? (s._hz.sig === 'z' ? 'zappies' : 'screechy') : s._telKind); names.push(bossTelName(s)); tels.push(s._tel); }
@@ -93,13 +94,13 @@ describe('Four takes his classroom', () => {
                len: bossTelLen({ attack:'four' }), gaps: [1,2,3].map(function(ph){ var q = ${S()}; q._phase = ph; return bossAtkGap(q); }),
                ph: [bossPhaseName({ attack:'four' }, 2), bossPhaseName({ attack:'four' }, 3)] };
     })()`);
-    const NAME = { screechy: 'SCREECHY!', zappies: 'ZAPPIES!', fourbye: 'GO BYE-BYE!', fourtower: 'TAKE THE TOWER!', fourido: 'I DO THIS!' };
-    const TEL = { screechy: 50, zappies: 54, fourbye: 46, fourtower: 44, fourido: 54 };
-    expect(r.keys.every((k) => NAME[k]), `only his five of phase 1: ${r.keys}`).toBe(true);
-    expect(new Set(r.keys).size, `all five come up in fifteen turns: ${r.keys}`).toBe(5);
+    const NAME = { screechy: 'SCREECHY!', zappies: 'ZAPPIES!', fourbye: 'GO BYE-BYE!', fourtower: 'TAKE THE TOWER!', fourido: 'I DO THIS!', fourhearts: 'LOVE HEARTS!' };
+    const TEL = { screechy: 50, zappies: 54, fourbye: 46, fourtower: 44, fourido: 54, fourhearts: 42 };
+    expect(r.keys.every((k) => NAME[k]), `only his six of phase 1: ${r.keys}`).toBe(true);
+    expect(new Set(r.keys).size, `all six come up in fifteen turns: ${r.keys}`).toBe(6);
     expect(r.keys.some((k, i) => i > 0 && k === r.keys[i - 1]), `never the same move twice in a row: ${r.keys}`).toBe(false);
     expect(r.names, 'each is announced by its own name').toEqual(r.keys.map((k) => NAME[k]));
-    expect(r.tels, 'each has its own wind-up: the screech 50, the zap 54, the breath 46, the hills 44, the ring 54').toEqual(r.keys.map((k) => TEL[k]));
+    expect(r.tels, 'each has its own wind-up: the screech 50, the zap 54, the breath 46, the hills 44, the ring 54, the hearts 42').toEqual(r.keys.map((k) => TEL[k]));
     expect(r.scr, 'SCREECHY! gets a "!" more each phase').toEqual(['SCREECHY!', 'SCREECHY!!']);
     expect(r.scr3).toBe('SCREECHY!!!');
     expect(r.len, 'a bare signature winds up for 50').toBe(50);
@@ -178,7 +179,8 @@ describe('SCREECHY!', () => {
 });
 
 describe('ZAPPIES!', () => {
-  it('a blue mark follows the fighter it is on, locks for the last 12 frames, and the bolt comes down on it as a column: the narrow one, the charged one, then a second on the spot you left', () => {
+  // The owner, 2026-10-01 (Round 17): "Four: ZAPPIES! second column from phase 2" -- the second column on the spot you left used to be phase 3's.
+  it('a blue mark follows the fighter it is on, locks for the last 12 frames, and the bolt comes down on it as a column: the narrow one, then from phase 2 the charged one and a second on the spot you left', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2, 3].forEach(function(ph){
         ${STAGE(300, 1)}
@@ -201,13 +203,16 @@ describe('ZAPPIES!', () => {
       expect(r[ph].lastMk[0][2], 'locked for the last frames').toBe(1);
     }
     expect(r[1].lastMk[0][0], 'it followed the fighter to where it stood at the lock').toBe(390);
-    expect(r[1].lastMk, 'one mark in phases 1 and 2').toHaveLength(1);
-    expect(r[3].lastMk, 'phase 3: a second mark, locked, where you were').toHaveLength(2);
-    expect(r[3].lastMk[1][0], 'where the fighter stood 30 frames before the lock').toBeLessThan(r[3].lastMk[0][0] - 40);
-    expect(r[1].zp.map((z) => z[1]), 'the narrow column').toEqual([26]);
-    expect(r[2].zp.map((z) => z[1]), 'the charged, wide one').toEqual([44]);
+    expect(r[1].lastMk, 'one mark in phase 1').toHaveLength(1);
+    for (const ph of [2, 3]) {
+      expect(r[ph].lastMk, `phase ${ph}: a second mark, locked, where you were`).toHaveLength(2);
+      expect(r[ph].lastMk[1][2], `phase ${ph}: and it is locked from the first mark's lock`).toBe(1);
+      expect(r[ph].lastMk[1][0], `phase ${ph}: where the fighter stood 30 frames before the lock`).toBeLessThan(r[ph].lastMk[0][0] - 40);
+    }
+    expect(r[1].zp.map((z) => z[1]), 'the narrow column, alone').toEqual([26]);
+    expect(r[2].zp.map((z) => z[1]), 'the charged, wide one, and a second like it').toEqual([44, 44]);
     expect(r[3].zp.map((z) => z[1]), 'phase 3: two columns').toEqual([44, 44]);
-    expect(r[3].zp[1][2] - r[3].zp[0][2], 'twenty frames apart').toBe(20);
+    for (const ph of [2, 3]) expect(r[ph].zp[1][2] - r[ph].zp[0][2], `phase ${ph}: twenty frames apart`).toBe(20);
     for (const ph of [1, 2, 3]) expect(r[ph].pct, `phase ${ph}: the fighter stood in the column and took one boss hit, 22`).toBeCloseTo(22, 5);
   });
 
@@ -220,6 +225,38 @@ describe('ZAPPIES!', () => {
       summons = []; projectiles = []; return out; })()`);
     expect(r.beside, 'ninety pixels off a 26-wide column').toBe(0);
     expect(r.in, 'in the column, high up: a boss hit').toBeCloseTo(22, 5);
+  });
+
+  // The owner, 2026-10-01 (Round 17): "Four: ZAPPIES! second column from phase 2". A phase-1 turn has one column; from phase 2 the second lands 28 frames after the arc began (20 after the first),
+  // on the spot you stood 30 frames before the lock; the pair shares the turn's one attack id.
+  it('from phase 2 the second column comes down on the spot you left, 20 frames after the first, and hits whoever stands in it; one fighter in both takes one boss hit, no more; phase 1 has only the first', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2].forEach(function(ph){
+        ${STAGE(300, 1)}
+        var gy = groundY(), g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 700, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+        b._phase = ph; b.hp = b.maxHp*[0, 1, 0.5][ph]; b._telPh = ph; b._fr = null; b._hz.sig = 'z'; b._zx = 200; b._zx2 = 700; b._atkTimer = 1e9;
+        fourZappies(b, f, 41, ph);
+        var cols = b._fr.cols.map(function(c){ return [c.x, c.t0]; }), hits = [];
+        for (var i=0;i<50;i++){
+          f.x = 200; g.x = 700; f.y = gy - 24; g.y = gy - 24; f.vx = 0; g.vx = 0; f.invuln = 0; g.invuln = 0;
+          var p0 = f.pct, q0 = g.pct; step();
+          if (f.pct > p0) hits.push(['f', i]); if (g.pct > q0) hits.push(['g', i]);
+        }
+        // one fighter standing in both columns: the cap of the turn's one id
+        summons = []; projectiles = [];
+        ${STAGE(300, 1)}
+        b._phase = ph; b.hp = b.maxHp*[0, 1, 0.5][ph]; b._telPh = ph; b._fr = null; b._hz.sig = 'z'; b._zx = 400; b._zx2 = 400; b._atkTimer = 1e9;
+        fourZappies(b, f, 42, ph);
+        for (var j=0;j<50;j++){ f.x = 400; f.y = groundY() - 24; f.vx = 0; f.invuln = 0; step(); }
+        out[ph] = { cols: cols, hits: hits, both: f.pct };
+      });
+      summons = []; projectiles = []; return out; })()`);
+    expect(r[1].cols, 'phase 1: one column').toEqual([[200, 8]]);
+    expect(r[1].hits.map((h) => h[0]), 'phase 1: only the fighter in the first is hit').toEqual(['f']);
+    expect(r[2].cols, 'phase 2: a second, where you were, 20 frames after the first').toEqual([[200, 8], [700, 28]]);
+    expect(r[2].hits.map((h) => h[0]), 'phase 2: the fighter in the first and the one in the second are each hit').toEqual(['f', 'g']);
+    expect(r[2].hits[1][1] - r[2].hits[0][1], 'twenty frames apart').toBe(20);
+    expect(r[2].both, 'one fighter in both takes one boss hit').toBeCloseTo(22, 5);
   });
 });
 
@@ -247,28 +284,36 @@ describe('GO BYE-BYE!', () => {
     expect(r[950].bx, 'and at the right wall, to their right').toBeGreaterThan(950);
   });
 
+  // The owner, 2026-10-01 (Round 17): "Four: ... GO BYE-BYE! second breath every phase, longer reach" -- the reach was 420 / 520 / 620 and is 500 / 600 / 700: a fighter 460 px from his mouth, past the
+  // old phase-1 reach, is pulled now; one 540 px away, past the new, is left alone.
   it('the pull drags whoever is in reach toward his mouth, a committed run beats it, and a fighter out of reach is left alone', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE(300, 1)}
       var gy = groundY(), R = b.r;
       b._fr = null; b._byeX = 700; b.x = 700; b.y = gy - R*0.95; b.face = -1; b._telPh = 1;
       var g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 1090, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
+      var h = makeFighter(ROSTER.find(function(q){ return q.name==='Coiny'; }), 240, gy-24, 2); h.team = 0; h.controller = 'still'; h.stocks = 9; fighters.push(h);   // 460 px from the mouth: inside 500, outside the old 420
+      var k = makeFighter(ROSTER.find(function(q){ return q.name==='Dough'; }), 160, gy-24, 3); k.team = 0; k.controller = 'still'; k.stocks = 9; fighters.push(k);   // 540: out of reach
       f.x = 480; f.y = gy - 24;
       fourBye(b, f);
-      var x0 = [f.x, g.x];
-      for (var i=0;i<20;i++){ step(); f.invuln = 0; g.invuln = 0; b.x = 700; }
+      var x0 = [f.x, g.x, h.x, k.x];
+      for (var i=0;i<20;i++){ step(); f.invuln = 0; g.invuln = 0; h.invuln = 0; k.invuln = 0; b.x = 700; }
       out.moved = [Math.round(f.x - x0[0]), Math.round(g.x - x0[1])];
-      out.range = FOUR.byeRange[1]; out.inh = b._hz.inh && b._hz.inh.slice();
+      out.extra = [Math.round(h.x - x0[2]), Math.round(k.x - x0[3])];
+      out.range = FOUR.byeRange; out.inh = b._hz.inh && b._hz.inh.slice();
       // a runner: pulled at up to 4, running 6.4 away
       summons = []; ${STAGE(480, 1)}
       b._fr = null; b.x = 700; b._byeX = 700; b.y = gy - R*0.95; b._telPh = 1; f.x = 520; fourBye(b, f); var x1 = f.x;
       for (var i=0;i<40;i++){ f.vx = -6.4; step(); f.x = Math.max(60, f.x); b.x = 700; f.invuln = 0; }
       out.runner = Math.round(f.x - x1);
       summons = []; projectiles = []; return out; })()`);
+    expect(r.range, 'the reach by phase: 500 / 600 / 700, 80 more than it was').toEqual([0, 500, 600, 700]);
     expect(r.moved[0], 'a fighter 220 px from his mouth is dragged toward it').toBeGreaterThan(25);
-    expect(Math.abs(r.moved[1]), 'one 390 px away (the reach is 420), on the other side, is dragged toward it too, a little less').toBeGreaterThan(8);
+    expect(Math.abs(r.moved[1]), 'one 390 px away (the reach is 500), on the other side, is dragged toward it too, a little less').toBeGreaterThan(8);
     expect(r.moved[1], 'the other way').toBeLessThan(0);
     expect(Math.abs(r.moved[1])).toBeLessThan(r.moved[0]);
+    expect(r.extra[0], 'one 460 px away -- past the old reach of 420 -- is dragged toward him now').toBeGreaterThan(3);
+    expect(r.extra[1], 'one 540 px away is out of reach, and left alone').toBe(0);
     expect(r.runner, 'running away at 6.4 against a pull of 4 or less: the runner gets away').toBeLessThan(-60);
   });
 
@@ -303,7 +348,8 @@ describe('GO BYE-BYE!', () => {
     expect(r.final, 'no second hit from the same turn').toBeCloseTo(17.6, 5);
   });
 
-  it('the platform is no shelter: a fighter standing on it above his mouth is dropped through, and phases 2 and 3 take a second breath', () => {
+  // The owner, 2026-10-01 (Round 17): "Four: ... GO BYE-BYE! second breath every phase, longer reach" -- phase 1 had one breath; it takes a second like the other two phases do.
+  it('the platform is no shelter: a fighter standing on it above his mouth is dropped through, and every phase takes a second breath', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 2)}
       var gy = groundY(), R = b.r, out = {};
       var plat = worldPlats.filter(function(p){ return !p.solid; }).sort(function(a, c){ return a.y - c.y; })[0];
@@ -314,13 +360,21 @@ describe('GO BYE-BYE!', () => {
       for (var i=0;i<40;i++){ step(); b.x = b._byeX; if (f.y > y0 + 40) fell = true; }
       out.fell = fell; out.breaths = b._fr ? b._fr.b.length : -1; out.b = b._fr ? b._fr.b : null;
       summons = []; ${STAGE(300, 1)}
-      b._telPh = 1; b._fr = null; b._atkTimer = 1e9; fourBye(b, f); out.breaths1 = b._fr.b.length; out.b1 = b._fr.b;
+      b._telPh = 1; b._fr = null; b._atkTimer = 1e9; fourBye(b, f); out.breaths1 = b._fr.b.length; out.b1 = b._fr.b; out.end1 = b._fr.end;
+      f.x = 1000; f.y = gy - 24; f.invuln = 1e9;   // (out of the way: the breaths themselves are what is looked at)
+      for (var j=0;j<100;j++){ step(); b.x = 700; f.x = 1000; f.invuln = 1e9; if (j === 64) out.rest1 = b._hz.inh && b._hz.inh.slice(); if (j === 94) out.second1 = b._hz.inh && b._hz.inh.slice(); if (j === 20) out.first1 = b._hz.inh && b._hz.inh.slice(); }
       summons = []; ${STAGE(300, 3)}
       b._telPh = 3; b._fr = null; b._atkTimer = 1e9; fourBye(b, f); out.b3 = b._fr.b;
       summons = []; projectiles = []; return out; })()`);
     expect(r.fell, 'dropped through the one-way platform and pulled down to the mouth').toBe(true);
     expect(r.b, 'phase 2: a second breath after the first and a rest of 30').toEqual([[0, 50], [80, 114]]);
-    expect(r.b1, 'phase 1: one breath').toEqual([[0, 50]]);
+    expect(r.b1, 'phase 1: a second breath too, a shorter one, after the same rest of 30').toEqual([[0, 50], [80, 110]]);
+    expect(r.end1, 'and the move ends after the second breath and the 18 frames inside him').toBe(110 + 18 + 4);
+    expect(r.first1, 'phase 1, in the first breath: the pull is on, 500 px of reach').not.toBe(null);
+    expect(r.first1[4]).toBe(500);
+    expect(r.rest1, 'in the rest between the breaths it is off (he smiles and waves again)').toBe(null);
+    expect(r.second1, 'and on again in the second, from his mouth, the whole reach').not.toBe(null);
+    expect(r.second1[4]).toBe(500);
     expect(r.b3, 'phase 3: a longer second breath').toEqual([[0, 56], [86, 126]]);
   });
 });
@@ -413,17 +467,24 @@ describe('TAKE THE TOWER!', () => {
     expect(r.hlGone, 'and their picture with them').toBe(null);
   });
 
-  it('a hill stops the ring: a shot of SCREECHY! that reaches a standing hill is gone, one that flies over it is not', () => {
+  // The owner, 2026-10-01 (Round 17): "Four: ... SCREECHY! rings pass through the hills" -- a standing hill used to stop a ring's shots (it was cover from SCREECHY!); now nothing but the floor does.
+  it('the ring passes through a hill: a shot of SCREECHY! that reaches a standing hill flies on through it, as one that flies over it does; the floor still stops it', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1)}
       var gy = groundY();
       worldPlats.push({ x:600 - 35, y:gy - 70, w:70, h:70, solid:true, _four:true, _until:hazardT + 500 });
       projectiles = []; b._fr = null;
-      projectiles.push(fourShot(b, 5, { x:500, y:gy - 30, vx:6, vy:0, fourRing:true, shape:'fourwave', life:200 }));
-      projectiles.push(fourShot(b, 5, { x:500, y:gy - 120, vx:6, vy:0, fourRing:true, shape:'fourwave', life:200 }));
-      for (var i=0;i<30;i++){ step(); f.invuln = 0; f.x = 100; }
+      var low = fourShot(b, 5, { x:500, y:gy - 30, vx:6, vy:0, fourRing:true, shape:'fourwave', life:200 }), high = fourShot(b, 5, { x:500, y:gy - 120, vx:6, vy:0, fourRing:true, shape:'fourwave', life:200 });
+      var down = fourShot(b, 5, { x:560, y:gy - 60, vx:0, vy:6, fourRing:true, shape:'fourwave', life:200 });   // a shot that falls to the floor, beside the hill
+      projectiles.push(low, high, down);
+      var through = null;
+      for (var i=0;i<30;i++){ step(); f.invuln = 0; f.x = 100; if (through === null && low.x > 600 - 35 + 70 && low.life > 0) through = Math.round(low.x); }
       var alive = projectiles.filter(function(p){ return p.fourRing && p.life > 0; }).map(function(p){ return Math.round(p.y); });
-      summons = []; projectiles = []; return { alive: alive, high: Math.round(gy - 120) }; })()`);
-    expect(r.alive, 'the low shot hit the hill and is gone; the high one flew over it').toEqual([r.high]);
+      var out = { alive: alive, low: Math.round(gy - 30), high: Math.round(gy - 120), through: through, lowX: Math.round(low.x), downLife: down.life };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.alive, 'the low shot went through the hill and is alive on the far side of it, and so is the high one that flew over it').toEqual(expect.arrayContaining([r.low, r.high]));
+    expect(r.through, 'the low one came out the other side of the hill').not.toBe(null);
+    expect(r.lowX, 'still flying').toBeGreaterThan(635);
+    expect(r.downLife, 'the floor stops a ring still: the one that fell to it is gone').toBeLessThanOrEqual(0);
   });
 
   it('phase 3 adds the ripple: humps run the floor one every 6 frames from the side farthest from you, throwing whoever stands on it, never someone in the air, once (one id)', () => {
@@ -467,9 +528,10 @@ describe('LOVE HEARTS!', () => {
     expect(r.span, 'he bounces').toBeGreaterThan(12);
   });
 
-  it('a flood in fixed waves 8 frames apart -- two arcs from his eyes and one big low heart from his mouth: three waves in phase 2, four in phase 3 -- all solid, one attack id, 0.8 of a hit each', () => {
+  // The owner, 2026-10-01 (Round 17): "Four: ... LOVE HEARTS! from phase 1 with an extra wave" -- the flood was three waves in phase 2 and four in phase 3, and is now three from phase 1, then four, then five.
+  it('a flood in fixed waves 8 frames apart -- two arcs from his eyes and one big low heart from his mouth: three waves in phase 1, four in phase 2, five in phase 3 -- all solid, one attack id, 0.8 of a hit each', () => {
     const r = W.eval(`(function(){ var out = {};
-      [2, 3].forEach(function(ph){
+      [1, 2, 3].forEach(function(ph){
         ${STAGE(300, 1)}
         b._phase = ph; b._fr = null; b._telPh = ph; b._hDir = 1; b._atkTimer = 1e9; projectiles = [];
         fourHearts(b, f);
@@ -480,22 +542,26 @@ describe('LOVE HEARTS!', () => {
           wave0: hs.filter(function(p){ return p.delay === 0; }).map(function(p){ return JSON.stringify([Math.sign(p.vx), p.vy < -5 ? 'arc' : 'low', p.r]); }).sort() };
       });
       summons = []; projectiles = []; return out; })()`);
-    expect(r[2].n, 'three waves of three').toBe(9);
-    expect(r[3].n, 'four waves of three').toBe(12);
-    expect(r[2].delays).toEqual([0, 8, 16]);
-    expect(r[3].delays).toEqual([0, 8, 16, 24]);
-    expect(r[2].ids, 'one attack id for the whole flood').toBe(1);
-    expect(r[2].dmg, '0.8 of a boss hit').toEqual([17.6]);
-    expect(r[2].r, "the eyes' hearts and the mouth's big one").toEqual([18, 30]);
-    expect(r[2].bounce, 'they bounce off the floor, the platform and the walls three times').toBe(true);
-    expect(r[2].volley).toBe(true);
-    expect(r[2].shape).toEqual(['fourheart']);
-    expect(r[2].wave0, 'one arc to each side and the mouth heart low').toEqual([[-1, 'arc', 18], [1, 'arc', 18], [1, 'low', 30]].map((a) => JSON.stringify(a)).sort());
+    expect(r[1].n, 'phase 1: three waves of three').toBe(9);
+    expect(r[2].n, 'phase 2: four waves of three').toBe(12);
+    expect(r[3].n, 'phase 3: five waves of three').toBe(15);
+    expect(r[1].delays).toEqual([0, 8, 16]);
+    expect(r[2].delays).toEqual([0, 8, 16, 24]);
+    expect(r[3].delays).toEqual([0, 8, 16, 24, 32]);
+    for (const ph of [1, 2, 3]) {
+      expect(r[ph].ids, `phase ${ph}: one attack id for the whole flood`).toBe(1);
+      expect(r[ph].dmg, `phase ${ph}: 0.8 of a boss hit`).toEqual([17.6]);
+      expect(r[ph].r, "the eyes' hearts and the mouth's big one").toEqual([18, 30]);
+      expect(r[ph].bounce, 'they bounce off the floor, the platform and the walls three times').toBe(true);
+      expect(r[ph].volley).toBe(true);
+      expect(r[ph].shape).toEqual(['fourheart']);
+      expect(r[ph].wave0, 'one arc to each side and the mouth heart low').toEqual([[-1, 'arc', 18], [1, 'arc', 18], [1, 'low', 30]].map((a) => JSON.stringify(a)).sort());
+    }
   });
 
   it('the hearts bounce off the floor and the walls and pop on the third; where they land they pile up on the floor, twelve at most, for 3 s; one flood is one hit', () => {
-    const r = W.eval(`(function(){ ${STAGE(300, 2)}
-      var gy = groundY(); f.x = 60; f.y = gy - 24; b._fr = null; b._telPh = 2; b._hDir = 1; b._atkTimer = 1e9; f.invuln = 0;
+    const r = W.eval(`(function(){ ${STAGE(300, 3)}
+      var gy = groundY(); f.x = 60; f.y = gy - 24; b._fr = null; b._telPh = 3; b._hDir = 1; b._atkTimer = 1e9; f.invuln = 0;
       projectiles = []; fourHearts(b, f);
       var maxAlive = 0, piled = 0;
       for (var i=0;i<400;i++){
@@ -506,7 +572,7 @@ describe('LOVE HEARTS!', () => {
       }
       var end = { alive: projectiles.filter(function(p){ return p.fourHeart && p.life > 0; }).length, piled: piled, pile: b._hz.pile, max: maxAlive, pct: f.pct };
       summons = []; projectiles = []; return end; })()`);
-    expect(r.max, 'nine hearts in the air at the most').toBeLessThanOrEqual(9);
+    expect(r.max, 'fifteen hearts in the air at the most (five waves of three: phase 3, the biggest flood)').toBeLessThanOrEqual(15);
     expect(r.alive, 'every heart has popped by the end').toBe(0);
     expect(r.piled, 'hearts piled up where they landed').toBeGreaterThan(2);
     expect(r.piled, 'twelve at most').toBeLessThanOrEqual(12);
@@ -781,7 +847,8 @@ describe('his place changes with the fight', () => {
 
 describe('his seven, drawn by position, phase by phase', () => {
   // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- his extras were dealt out in order, with the signature on every other turn; now he draws from the moves his phase has.
-  it('draws from the moves the phase has: five from the start (SCREECHY!, ZAPPIES!, GO BYE-BYE!, TAKE THE TOWER!, I DO THIS!), LOVE HEARTS! joins in phase 2, DON\'T HUG THE CACTUS! in phase 3, none twice in a row', () => {
+  // And the owner's pick, 2026-10-01 (Round 17): "Four: ... LOVE HEARTS! from phase 1 with an extra wave" -- LOVE HEARTS! joined in phase 2; it is one of his moves from the start now.
+  it('draws from the moves the phase has: six from the start (SCREECHY!, ZAPPIES!, GO BYE-BYE!, TAKE THE TOWER!, I DO THIS!, LOVE HEARTS!), DON\'T HUG THE CACTUS! joins in phase 3, none twice in a row', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2, 3].forEach(function(ph){
         var s = ${S()}; s._phase = ph; s.hp = [0, 100, 50, 20][ph]; var kinds = [];
@@ -790,13 +857,13 @@ describe('his seven, drawn by position, phase by phase', () => {
       });
       out.moves = BOSS_EXTRA['Four'].map(function(k){ return typeof BOSS_MOVES[k] + '/' + BOSS_MOVE_NAME[k] + '/' + BOSS_RUSH_ONLY.has(k); });
       out.extra = BOSS_EXTRA['Four']; out.unlocked = [1, 2, 3].map(function(ph){ return bossPickMoves(${S()}, ph); }); return out; })()`);
-    const P1 = ['fourbye', 'fourido', 'fourtower', 'screechy', 'zappies'];
-    expect(r.unlocked[0].slice().sort(), 'phase 1: five').toEqual(P1);
-    expect(r.unlocked[1].slice().sort(), 'phase 2: LOVE HEARTS! joins').toEqual([...P1, 'fourhearts'].sort());
-    expect(r.unlocked[2].slice().sort(), 'phase 3: DON\'T HUG THE CACTUS! joins').toEqual([...P1, 'fourhearts', 'fourcactus'].sort());
-    expect(Array.from(new Set(r[1])).sort(), 'phase 1: all five come up').toEqual(P1);
-    expect(Array.from(new Set(r[2])).sort(), 'phase 2: all six come up').toEqual([...P1, 'fourhearts'].sort());
-    expect(Array.from(new Set(r[3])).sort(), 'phase 3: all seven come up').toEqual([...P1, 'fourhearts', 'fourcactus'].sort());
+    const P1 = ['fourbye', 'fourhearts', 'fourido', 'fourtower', 'screechy', 'zappies'];
+    expect(r.unlocked[0].slice().sort(), 'phase 1: six, LOVE HEARTS! among them').toEqual(P1);
+    expect(r.unlocked[1].slice().sort(), 'phase 2: the same six').toEqual(P1);
+    expect(r.unlocked[2].slice().sort(), 'phase 3: DON\'T HUG THE CACTUS! joins').toEqual([...P1, 'fourcactus'].sort());
+    expect(Array.from(new Set(r[1])).sort(), 'phase 1: all six come up').toEqual(P1);
+    expect(Array.from(new Set(r[2])).sort(), 'phase 2: all six come up').toEqual(P1);
+    expect(Array.from(new Set(r[3])).sort(), 'phase 3: all seven come up').toEqual([...P1, 'fourcactus'].sort());
     for (const ph of [1, 2, 3]) expect(r[ph].some((k, i) => i > 0 && k === r[ph][i - 1]), `phase ${ph}: never the same move twice in a row: ${r[ph]}`).toBe(false);
     expect(r.extra).toEqual(['fourbye', 'fourtower', 'fourido', 'fourhearts', 'fourcactus']);
     expect(r.moves, 'each a function with its own banner, and an item boss never throws one').toEqual(['function/GO BYE-BYE!/true', 'function/TAKE THE TOWER!/true', 'function/I DO THIS!/true', 'function/LOVE HEARTS!/true', "function/DON'T HUG THE CACTUS!/true"]);

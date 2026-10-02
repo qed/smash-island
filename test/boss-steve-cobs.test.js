@@ -96,7 +96,7 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
       // + MY PURPOSE!, the Spring-Bot toy: "give him 1 more: the bot toy, which will copy the 1st 5 specials used after spawning 3 times." (the owner,
       // 2026-09-29) -- appended, so his first turns are as they were (test/boss-springy.test.js)
       ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop+springbot', 'springy longarm boxdrop springbot', 40, 'Glitching', 'Unvitational'],
-      ['Four', '#3a6ad0', 340, 2.8, 'four', 'exitclass', false, 'four', 'fourbye+fourtower+fourido+fourhearts+fourcactus', 'screechy zappies fourbye fourtower fourido', 50, 'Zap to Dust', 'Reality Buckles'],   // rebuilt (the boss overhaul, 2026-09-29): his own classroom, "Each its own" (the owner), and he floats -- "Only if canon moves" (Round 5): "Four can fly"; six attacks, the ones below (test/boss-four.test.js)
+      ['Four', '#3a6ad0', 340, 2.8, 'four', 'exitclass', false, 'four', 'fourbye+fourtower+fourido+fourhearts+fourcactus', 'screechy zappies fourbye fourtower fourido fourhearts', 50, 'Zap to Dust', 'Reality Buckles'],   // LOVE HEARTS! is one of his moves from phase 1 now (the owner, Round 17: "LOVE HEARTS! from phase 1 with an extra wave"; it joined in phase 2). Rebuilt (the boss overhaul, 2026-09-29): his own classroom, "Each its own" (the owner), and he floats -- "Only if canon moves" (Round 5): "Four can fly"; six attacks, the ones below (test/boss-four.test.js)
     ]);
   });
 
