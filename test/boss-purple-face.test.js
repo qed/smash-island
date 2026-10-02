@@ -18,6 +18,10 @@ import { mulberry32 } from './helpers/prng.js';
 // makes sense for a hazard, reduce boss difficulty and add a hazard." (the World's Strongest Magnet drops the end shelves; his turns are
 // a shade slower). "Only if canon moves": he pops up beside you and he runs. "Harder, same damage". His stomach used to draw "TONGUE
 // n%" as words -- "and remember the thing abt no attack titles onscreen." -- and draws a wordless meter now.
+// ROUND 17 (2026-10-01), the owner's picks, "Harder, same damage": AD BREAK! 2/2/3 lunges (was 1/2/2) and shorter wall-crash pauses; FREESTYLE RAP! 4 notes each way (was 3) -- and,
+// verbatim, "for freestyle rap, they shouldnt just be on the ground. i dont notice the last 2 attacks, i kill the bosses so fast."; TORTURE TIME!'s second tank from phase 2 (was 3);
+// THANK YOU FOR COMING! 2 waves from phase 2, faster totems; and after TOTAL SLIP SHOES! his next turn is AD BREAK!. The glitch pass found TORTURE TIME!'s bugs stun-locking a fighter and
+// landing on one AD BREAK! had swallowed: a swallowed fighter takes only the stomach's damage, and the bugs land on a fighter at most once each burst.
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
@@ -101,7 +105,7 @@ describe('AD BREAK!: a lunge you can dodge', () => {
     expect(r.kind).toBe('swallow');
     expect(r.tel).toBe(46);
     expect(r.banner).toBe('AD BREAK!');
-    expect(r.L).toMatchObject({ st: 'tell', dir: -1, n: 1 });
+    expect(r.L, 'two lunges even in phase 1 now ("AD BREAK! 2/2/3 lunges (was 1/2/2)", the owner, Round 17)').toMatchObject({ st: 'tell', dir: -1, n: 2 });
     expect(r.L.x0, 'he starts by the right wall').toBeCloseTo(r.WW - r.wall, 3);
     expect(r.L.x1, 'and the lane ends at the left wall').toBeCloseTo(r.wall, 3);
     expect(r.bx, 'he pops to the start of the lane').toBeCloseTo(r.WW - r.wall, 3);
@@ -158,7 +162,8 @@ describe('AD BREAK!: a lunge you can dodge', () => {
     }
   });
 
-  it('a miss ends in the wall: heavy impact (a scar), a squeak, and he is stuck for 45 frames -- a real opening -- before the next turn', () => {
+  // "AD BREAK! 2/2/3 lunges (was 1/2/2) and shorter wall-crash pauses" (the owner, Round 17): the first crash is 36 frames, it was 45, and in phase 1 he now turns for a second lunge after it.
+  it('a miss ends in the wall: heavy impact (a scar), a squeak, and he is stuck for 36 frames -- shorter than it was, still a real opening -- before he turns for the second lunge', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       f.y = groundY() - 24 - 200; f.vy = 0;   // out of the way
       ${BEGIN('swallow')}
@@ -173,44 +178,57 @@ describe('AD BREAK!: a lunge you can dodge', () => {
       return out;
     })()`);
     expect(r.crashAt).not.toBe(null);
-    expect(r.stuck, 'stuck for 45 frames').toBe(45);
+    expect(r.stuck, 'stuck for 36 frames (it was 45)').toBe(36);
     expect(r.scars, 'the wall takes a scar').toBeGreaterThan(0);
     expect(r.scarX, 'at the wall he ran into').toBe(0);
     expect(r.debris).toBeGreaterThan(3);
-    expect(r.lunge, 'and then the turn is over').toBe(null);
+    expect(r.lunge, 'and then he turns for the second lunge: a re-tell, back the way he came (the turn is not over)').toMatchObject({ st: 'retell', dir: 1 });
     expect(W.eval('(function(){ var s = ' + '{ _atkTimer:0, _phase:1 }' + '; pfaceLungeEnd(s); return s._atkTimer; })()'), 'and the next wind-up waits PFACE.after frames from the end of it').toBe(40);
     expect([r.rk, r.rs], 'the end shelf on that side rattles').toEqual([expect.any(Number), 1]);
   });
 
-  it('phase 2: two lunges, the second back from the wall after a re-tell; phase 3: he comes in from off the screen, and both are faster', () => {
+  // "AD BREAK! 2/2/3 lunges (was 1/2/2) and shorter wall-crash pauses" (the owner's pick, Round 17). Each lunge after the first is back the way he came after a re-tell (it was phases 2 and 3 only: phase 1
+  // needs one now too, 22 frames), and the pauses -- the crash into the wall, 45 / 40 / 34 frames before -- are 36 / 32 / 27: he is back on you sooner, and no hit is any bigger.
+  it('phase 1 and 2: two lunges, the second back from the wall after a re-tell; phase 3: three, from off the screen -- every crash pause shorter than it was, the lunges faster each phase', () => {
     const r = W.eval(`(function(){ var out = {};
-      [2, 3].forEach(function(ph){
+      [1, 2, 3].forEach(function(ph){
         ${STAGE(300)}
-        b.hp = b.maxHp*(ph===2 ? 0.5 : 0.2); updateBossAttack(b, f); b._atkTimer = 1e9; b._quakeT = 0;
+        if (ph > 1){ b.hp = b.maxHp*(ph===2 ? 0.5 : 0.2); updateBossAttack(b, f); b._atkTimer = 1e9; b._quakeT = 0; }
         f.y = groundY() - 224; f.vy = 0;
         ${BEGIN('swallow')}
         var L = b._pf.lunge, o = { n: L.n, dir0: L.dir, x0: L.x0, tel: b._tel, bx: b.x, ph: L.ph };
-        var seen = [], spd = [], last = null, dirs = [];
-        for (var i=0;i<600 && b._pf.lunge;i++){
+        var seen = [], spd = [], last = null, dirs = [], segs = [], cur = 0;
+        for (var i=0;i<900 && b._pf.lunge;i++){
           var px = b.x; step(); f.y = groundY() - 224; f.vy = 0; f.x = 300; f.vx = 0;
           var l = b._pf.lunge; if (!l) break;
-          if (l.st !== last){ seen.push(l.st); dirs.push(l.dir); last = l.st; }
+          if (l.st !== last){ if (last) segs.push([last, cur]); seen.push(l.st); dirs.push(l.dir); last = l.st; cur = 0; }
+          cur++;
           if (l.st === 'run') spd.push(Math.abs(Math.round((b.x - px)*100)/100));
         }
-        o.seen = seen; o.dirs = dirs; o.spd = spd;
+        if (last) segs.push([last, cur]);
+        o.seen = seen; o.dirs = dirs; o.spd = spd; o.segs = segs; o.over = !b._pf.lunge;
         out[ph] = o;
       });
+      out.table = { crash: PFACE.crash, again: PFACE.again, lunges: PFACE.lunges };
       return out;
     })()`);
-    expect(r[2].n).toBe(2);
-    expect(r[2].tel, 'a shade quicker wind-up').toBe(42);
-    expect(r[2].seen, 'run, crash, the re-tell, run, crash').toEqual(['tell', 'run', 'crash', 'retell', 'run', 'crash']);
-    expect(r[2].dirs, 'the second lunge goes back the way he came').toEqual([-1, -1, -1, 1, 1, 1]);
-    expect(Math.max.apply(null, r[2].spd), 'phase 2 speed').toBe(19);
-    expect(r[3].n).toBe(2);
-    expect(Math.max.apply(null, r[3].spd), 'phase 3 speed').toBe(21);
+    const N = [0, 2, 2, 3], CRASH = [0, 36, 32, 27], OLD_CRASH = [0, 45, 40, 34], AGAIN = [0, 22, 22, 16], TEL = [0, 46, 42, 40], RUN = [0, 17, 19, 21];
+    for (const ph of [1, 2, 3]) {
+      const o = r[ph];
+      expect(o.n, `phase ${ph}: ${N[ph]} lunges`).toBe(N[ph]);
+      expect(o.tel, `phase ${ph}: the wind-up (a shade quicker each phase)`).toBe(TEL[ph]);
+      const seen = ['tell', 'run', 'crash'], dirs = [-1, -1, -1];
+      for (let k = 1; k < N[ph]; k++) { seen.push('retell', 'run', 'crash'); const d = k % 2 ? 1 : -1; dirs.push(d, d, d); }
+      expect(o.seen, 'run, crash, then a re-tell and the next lunge, until the last crash').toEqual(seen);
+      expect(o.dirs, 'each lunge goes back the way he came').toEqual(dirs);
+      expect(o.segs.filter(([st]) => st === 'crash').map(([, n]) => n), `phase ${ph}: every crash pause is ${CRASH[ph]} frames`).toEqual(Array(N[ph]).fill(CRASH[ph]));
+      expect(CRASH[ph], 'shorter than it was').toBeLessThan(OLD_CRASH[ph]);
+      expect(o.segs.filter(([st]) => st === 'retell').map(([, n]) => n), `and every re-tell ${AGAIN[ph]}`).toEqual(Array(N[ph] - 1).fill(AGAIN[ph]));
+      expect(Math.max.apply(null, o.spd), `phase ${ph} speed`).toBe(RUN[ph]);
+      expect(o.over, 'and then the turn is over').toBe(true);
+    }
     expect(r[3].bx, 'phase 3: he vanishes -- he is past the screen edge for the wind-up').toBeGreaterThan(W.eval('WW'));
-    expect(r[3].tel).toBe(40);
+    expect(r.table, 'the table').toEqual({ crash: [0, 36, 32, 27], again: [0, 22, 22, 16], lunges: [0, 2, 2, 3] });
   });
 });
 
@@ -230,10 +248,10 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     for (var j=0;j<${frames};j++){ step(); t++; ${hold || ''} look(); }
     return { notes: notes, gy: gy, L: L }; })()`;
 
-  it('he plants at centre for a 72-frame intro, then the beat drops: three pulses, thirty frames apart, the third the big one, two notes each, six in all on one attack id', () => {
+  it('he plants at centre for a 72-frame intro, then the beat drops: four pulses ("4 notes each way", the owner, Round 17), thirty frames apart, the last the big one, two notes each, eight in all on one attack id', () => {
     const r = W.eval(`(function(){ ${STAGE(200)}
       ${BEGIN('pfaceRap')}
-      ${PLAN([['floor', 700], ['ledge', 520], ['floor', 250]])}
+      ${PLAN([['floor', 700], ['ledge', 520], ['floor', 250], ['floor', 900]])}
       var out = { kind: b._telKind, tel: b._tel, bx: b.x, banner: document.getElementById('banner').textContent, shotsDuring: 0, WW: WW };
       for (var i=0;i<80 && b._tel>1;i++){ step(); f.x = 200; f.vx = 0; out.shotsDuring += projectiles.filter(function(p){ return p.owner===-2; }).length; }
       f.invuln = 1e9; step();   // the frame it fires
@@ -247,25 +265,27 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     expect(r.bx, 'planted at centre').toBe(550);
     expect(r.shotsDuring, 'nothing flies during the intro').toBe(0);
     const n = r.w.notes;
-    expect(n, 'three pulses, two ways each: six notes').toHaveLength(6);
-    expect(n.filter((q) => q.shape === 'pfacenote')).toHaveLength(4);
-    expect(n.filter((q) => q.shape === 'pfacestar'), 'the big one wears the pointy star').toHaveLength(2);
-    // when each pulse starts to move: 0, 30, 60 frames after the beat dropped (a platform pulse is made on its turn, so it can be a frame off)
-    const starts = [1, 2, 3].map((p) => Math.min(...n.filter((q) => q.pulse === p).map((q) => q.at)));
+    expect(n, 'four pulses, two ways each: eight notes (four each way)').toHaveLength(8);
+    expect(n.filter((q) => q.shape === 'pfacenote')).toHaveLength(6);
+    expect(n.filter((q) => q.shape === 'pfacestar'), 'the big one (the last pulse) wears the pointy star').toHaveLength(2);
+    // when each pulse starts to move: 0, 30, 60, 90 frames after the beat dropped (a platform pulse is made on its turn, so it can be a frame off)
+    const starts = [1, 2, 3, 4].map((p) => Math.min(...n.filter((q) => q.pulse === p).map((q) => q.at)));
     expect(starts[0]).toBeLessThanOrEqual(1);
     expect(starts[1], 'thirty frames apart').toBeGreaterThanOrEqual(29); expect(starts[1]).toBeLessThanOrEqual(31);
     expect(starts[2]).toBeGreaterThanOrEqual(59); expect(starts[2]).toBeLessThanOrEqual(61);
-    expect(W.eval('PFACE.rap.delays[1]'), 'the table: thirty frames apart').toEqual([0, 30, 60]);
-    expect(n.filter((q) => q.vx > 0)).toHaveLength(3);
-    expect(n.filter((q) => q.vx < 0)).toHaveLength(3);
+    expect(starts[3]).toBeGreaterThanOrEqual(89); expect(starts[3]).toBeLessThanOrEqual(91);
+    expect(W.eval('PFACE.rap.delays[1]'), 'the table: thirty frames apart').toEqual([0, 30, 60, 90]);
+    expect(W.eval('PFACE.rap.n'), 'four pulses a use').toBe(4);
+    expect(n.filter((q) => q.vx > 0), 'four notes each way').toHaveLength(4);
+    expect(n.filter((q) => q.vx < 0)).toHaveLength(4);
     expect(Math.abs(n[0].vx), 'phase 1 speed').toBe(8);
-    expect(Math.max(...n.map((q) => q.r)), 'the third is the big one').toBe(26);
+    expect(Math.max(...n.map((q) => q.r)), 'the last is the big one').toBe(26);
     expect(new Set(n.map((q) => q.id)).size, 'one attack id: the whole rap is one boss hit').toBe(1);
-    expect(n.map((q) => q.dmg).sort((a, b) => a - b)).toEqual([0.35, 0.35, 0.35, 0.35, 1, 1]);
-    // the planned places: pulse 1 on the floor from 700, pulse 2 on the platform from 520, pulse 3 on the floor from 250 -- each note one `off` out from its spot
+    expect(n.map((q) => q.dmg).sort((a, b) => a - b), 'the share of a hit is what it was: 0.35 a note, the big one a whole hit').toEqual([0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 1, 1]);
+    // the planned places: pulse 1 on the floor from 700, pulse 2 on the platform from 520, pulses 3 and 4 on the floor from 250 and 900 -- each note one `off` out from its spot
     const off = W.eval('PFACE.rap.off');
     for (const q of n) {
-      const plan = [['floor', 700], ['ledge', 520], ['floor', 250]][q.pulse - 1];
+      const plan = [['floor', 700], ['ledge', 520], ['floor', 250], ['floor', 900]][q.pulse - 1];
       expect(q.row, `pulse ${q.pulse}'s row`).toBe(plan[0]);
       expect(Math.abs(q.x - (plan[1] + Math.sign(q.vx) * off)), `pulse ${q.pulse}'s note starts ${off} px either side of its spot (it has moved a frame by the time it is seen)`).toBeLessThanOrEqual(Math.abs(q.vx) * 2);
       expect(q.y, `pulse ${q.pulse} rides its row`).toBe(plan[0] === 'floor' ? r.w.gy - q.r : r.w.L.y - q.r);
@@ -274,7 +294,7 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     expect(r.gap, 'the next turn is timed from the fire').toBe(139);
   });
 
-  it('"2 should be uninterruptable.": hit him as hard as you like during the intro, and the beat still drops -- all three pulses, every time', () => {
+  it('"2 should be uninterruptable.": hit him as hard as you like during the intro, and the beat still drops -- all four pulses, every time', () => {
     const r = W.eval(`(function(){ ${STAGE(200)}
       ${BEGIN('pfaceRap')}
       var hp0 = b.hp, hits = 0;
@@ -290,15 +310,15 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
       var hp3 = b.hp;
       for (var j=0;j<70 && b._tel>1;j++){ step(); f.x = 200; f.vx = 0; if (j % 5 === 0) damageSummons(f, b.x, b.y, 200, 2); f.invuln = 0; }
       out.p3hits = hp3 - b.hp; f.invuln = 1e9; step();
-      out.p3 = ${WATCH(100, 'f.x = 200; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 1e9;')}.notes.length; out.p3kind = b._telKind;
+      out.p3 = ${WATCH(110, 'f.x = 200; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 1e9;')}.notes.length; out.p3kind = b._telKind;
       return out;
     })()`);
     expect(r.hpLost, 'the hits landed').toBeGreaterThan(30);
     expect(r.kind, 'and he is still rapping').toBe('pfaceRap');
-    expect(r.w.notes.length, 'the beat dropped: all three pulses, six notes').toBe(6);
+    expect(r.w.notes.length, 'the beat dropped: all four pulses, eight notes').toBe(8);
     expect(Math.abs(r.flung - 550), 'nobody flings him off the screen mid-rap (his canon weakness is not taken): a hit shoves him a couple of px, no more').toBeLessThan(40);
     expect(r.p3hits, 'phase 3: the hits landed').toBeGreaterThan(10);
-    expect(r.p3, 'phase 3 the same').toBe(6);
+    expect(r.p3, 'phase 3 the same').toBe(8);
   });
 
   it('a floor note hits whoever is on the floor in its way and a jump clears it; a note on the platform hits only whoever STANDS on the platform; a fighter on the other row is untouched, and the whole rap costs at most one boss hit', () => {
@@ -313,7 +333,7 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
       b._atkTimer = 1e9;
       for (var j=0;j<260;j++){ step(); f.x = ${x}; f.vx = 0; f.y = ${jump ? 'y - 70' : 'y'}; f.vy = 0; f.onground = ${jump ? 'false' : 'true'}; if (f.pct > last + 0.001){ hits++; last = f.pct; } f.invuln = 0; }
       return { pct: f.pct, hits: hits, cap: bossDmg() }; })()`);
-    const floorPlan = [['floor', 700], ['floor', 250], ['floor', 950]], ledgePlan = [['ledge', 420], ['ledge', 680], ['ledge', 560]];
+    const floorPlan = [['floor', 700], ['floor', 250], ['floor', 950], ['floor', 480]], ledgePlan = [['ledge', 420], ['ledge', 680], ['ledge', 560], ['ledge', 500]];
     const standing = run(100, false, floorPlan, false, 1);
     expect(standing.hits, 'the floor is dangerous to someone standing on it').toBeGreaterThan(0);
     expect(standing.pct, 'a fighter who takes every pulse still takes one boss hit at most').toBeLessThanOrEqual(standing.cap + 1e-6);
@@ -323,27 +343,30 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     expect(run(560, true, ledgePlan, true, 1).pct, 'and a jump clears it').toBe(0);
     expect(run(560, false, ledgePlan, false, 1).pct, 'a fighter on the floor under the platform is not touched by the notes above him, jumping or not').toBe(0);
     expect(run(560, false, ledgePlan, true, 1).pct).toBe(0);
-    // phase 2 and 3: quicker notes, and the third pulse late (off the beat) in phase 2
+    // phase 2 and 3: quicker notes, and the third and fourth pulses late (off the beat) in phase 2
     const p2 = W.eval(`(function(){ ${STAGE(200)} b.hp = b.maxHp*0.5; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
-      ${BEGIN('pfaceRap')} ${PLAN([['floor', 700], ['floor', 250], ['floor', 950]])}
+      ${BEGIN('pfaceRap')} ${PLAN([['floor', 700], ['floor', 250], ['floor', 950], ['floor', 480]])}
       for (var i=0;i<70 && b._tel>1;i++){ step(); f.x = 200; }
-      f.invuln = 1e9; step(); var w = ${WATCH(130, 'f.x = 200; f.vx = 0; f.invuln = 1e9;')};
-      return { starts: [1,2,3].map(function(p){ return Math.min.apply(null, w.notes.filter(function(q){ return q.pulse === p; }).map(function(q){ return q.at; })); }), spd: Math.abs(w.notes[0].vx) }; })()`);
+      f.invuln = 1e9; step(); var w = ${WATCH(140, 'f.x = 200; f.vx = 0; f.invuln = 1e9;')};
+      return { starts: [1,2,3,4].map(function(p){ return Math.min.apply(null, w.notes.filter(function(q){ return q.pulse === p; }).map(function(q){ return q.at; })); }), spd: Math.abs(w.notes[0].vx) }; })()`);
     expect(p2.starts[2], 'the third comes late in phase 2: off the beat').toBeGreaterThanOrEqual(71);
     expect(p2.starts[2]).toBeLessThanOrEqual(73);
-    expect(W.eval('PFACE.rap.delays[2]')).toEqual([0, 30, 72]);
+    expect(p2.starts[3], 'and the fourth, thirty frames after it').toBeGreaterThanOrEqual(101);
+    expect(p2.starts[3]).toBeLessThanOrEqual(103);
+    expect(W.eval('PFACE.rap.delays[2]')).toEqual([0, 30, 72, 102]);
+    expect(W.eval('PFACE.rap.delays[3]'), 'phase 3 is a shade tighter: 26 frames, then 38, then 26').toEqual([0, 26, 64, 90]);
     expect(p2.spd, 'and quicker').toBe(9.5);
   });
 
   it('an air note flies across the whole stage at its height and hurts only whoever is up there: a fighter on the floor or on the platform is untouched, so is one at the top of a jump from the floor, and one hovering at its height is hit', () => {
     // "for freestyle rap, they shouldnt just be on the ground." (the owner, 2026-10-01): the third row, in the air, above anyone standing and above a jump from the floor
     const run = (place) => W.eval(`(function(){ ${STAGE(560)} var gy = groundY(), L = pfaceLedge(), air = ${JSON.stringify(place)};
-      ${BEGIN('pfaceRap')} b._pf.rap.p = [{ row:'air', x:300, h:260 }, { row:'air', x:800, h:260 }, { row:'air', x:550, h:260 }];
+      ${BEGIN('pfaceRap')} b._pf.rap.p = [{ row:'air', x:300, h:260 }, { row:'air', x:800, h:260 }, { row:'air', x:550, h:260 }, { row:'air', x:420, h:260 }];
       var yAt = { floor: gy - 24, plat: L.y - 24, apex: gy - 24 - 126, hover: gy - 260 }[air], ground = air === 'floor' || air === 'plat';
       var pin = function(){ f.x = 560; f.vx = 0; f.y = yAt; f.vy = 0; f.onground = ground; };
       pin(); for (var i=0;i<75 && b._tel>1;i++){ step(); pin(); f.invuln = 0; }
       b._atkTimer = 1e9; var hits = 0, last = 0, notes = 0;
-      for (var j=0;j<200;j++){ step(); pin(); notes = Math.max(notes, projectiles.filter(function(p){ return p.pfaceNote && !p.pfaceLedge && p.y < gy - 200; }).length); if (f.pct > last + 0.001){ hits++; last = f.pct; } f.invuln = 0; }
+      for (var j=0;j<260;j++){ step(); pin(); notes = Math.max(notes, projectiles.filter(function(p){ return p.pfaceNote && !p.pfaceLedge && p.y < gy - 200; }).length); if (f.pct > last + 0.001){ hits++; last = f.pct; } f.invuln = 0; }
       return { pct: f.pct, hits: hits, notes: notes, cap: bossDmg(), y: gy - 260 }; })()`);
     const floor = run('floor'), plat = run('plat'), apex = run('apex'), hover = run('hover');
     expect(floor.notes, 'the air notes are there, flying high').toBeGreaterThanOrEqual(4);
@@ -355,24 +378,28 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     expect(hover.pct).toBeGreaterThan(0);
   });
 
-  it('the places vary: from one use to the next, and across a volley -- three spots a use, on the floor, the platform and in the air, in any order, apart from each other, off the walls, across the stage', () => {
-    // "purple faces notes should be in varied areas." and "for freestyle rap, they shouldnt just be on the ground." (the owner, 2026-10-01)
+  it('the places vary: from one use to the next, and across a volley -- four spots a use, on the floor, the platform and in the air, in any order, apart from each other, off the walls, across the stage', () => {
+    // "purple faces notes should be in varied areas." and "for freestyle rap, they shouldnt just be on the ground." (the owner, 2026-10-01) -- and Round 17's "4 notes each way": four pulses now. The spots a fighter
+    // can be hit by (the floor's and the platform's, at most three) keep PFACE.rap.sep from each other, which is what makes a pocket; the air pulses keep it from each other and fly at heights airSep apart
+    // (they fly above everything that stands, so where one starts says nothing about where it is safe).
     const r = W.eval(`(function(){ ${STAGE(300)} var gy = groundY(), L = pfaceLedge(), uses = [], at = { ledge: {}, air: {} };
       for (var i=0;i<90;i++){ var p = pfacePlanRap(b, 1); uses.push(p.map(function(q){ return [q.row, q.x, q.h || 0]; }));
         p.forEach(function(q, k){ if (q.row !== 'floor') at[q.row][k] = 1; }); }
       // the same dice give the same plan (the tests seed them; the game's bosses use Math.random)
       ${rnd0}; var a1 = JSON.stringify(pfacePlanRap(b, 1, rnd(9))), a2 = JSON.stringify(pfacePlanRap(b, 1, rnd(9))), a3 = JSON.stringify(pfacePlanRap(b, 1, rnd(10)));
-      // with no platform on the stage there is no platform pulse: two on the floor and one in the air
+      // with no platform on the stage there is no platform pulse: two on the floor and two in the air
       var keep = worldPlats; worldPlats = []; var none = []; for (var j=0;j<20;j++) none.push(pfacePlanRap(b, 1).map(function(q){ return q.row; }).sort().join('+')); worldPlats = keep;
       return { uses: uses, ledgeAt: Object.keys(at.ledge).sort(), airAt: Object.keys(at.air).sort(), L: L, same: a1 === a2, other: a1 !== a3, WW: WW, R: PFACE.rap, none: none }; })()`);
-    const R = r.R, mixes = new Set(['floor+floor+ledge', 'air+floor+floor', 'air+floor+ledge']);
+    const R = r.R, mixes = new Set(['air+floor+floor+ledge', 'air+air+floor+floor', 'air+air+floor+ledge']);
     const seen = new Set();
     for (const u of r.uses) {
       const mix = u.map((q) => q[0]).sort().join('+');
       expect(mixes.has(mix), `a mix a use may have: ${mix}`).toBe(true);
+      expect(u, 'four pulses').toHaveLength(4);
       seen.add(mix);
       expect(u.some((q) => q[0] === 'floor'), 'always a floor pulse').toBe(true);
       expect(u.some((q) => q[0] !== 'floor'), 'and always another height').toBe(true);
+      expect(u.filter((q) => q[0] !== 'floor').length, '"they shouldnt just be on the ground": half the volley or more is on the platform or in the air').toBeGreaterThanOrEqual(2);
       for (const [row, x, h] of u) {
         if (row === 'floor') { expect(x).toBeGreaterThanOrEqual(R.margin); expect(x, 'off the walls').toBeLessThanOrEqual(r.WW - R.margin); }
         else if (row === 'ledge') { expect(x, 'on the platform').toBeGreaterThanOrEqual(r.L.x0 + R.ledgeMargin); expect(x).toBeLessThanOrEqual(r.L.x1 - R.ledgeMargin); }
@@ -380,11 +407,13 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
       }
     }
     expect([...seen].sort(), 'all three mixes come up').toEqual([...mixes].sort());
-    expect(r.uses.filter((u) => { const xs = u.map((q) => q[1]); return xs.every((x, i) => xs.every((y, j) => i === j || Math.abs(x - y) >= R.sep)); }).length, 'the spots of a volley keep their distance (all but the rare use that could not find room)').toBeGreaterThanOrEqual(86);
+    const apart = (qs, key) => { const xs = qs.map((q) => q[key]); return xs.every((x, i) => xs.every((y, j) => i === j || Math.abs(x - y) >= (key === 1 ? R.sep : R.airSep))); };
+    expect(r.uses.filter((u) => apart(u.filter((q) => q[0] !== 'air'), 1) && apart(u.filter((q) => q[0] === 'air'), 1)).length, 'the spots of a volley keep their distance -- the ones that can hurt you from each other, the air\'s from each other (all but the rare use that could not find room)').toBeGreaterThanOrEqual(86);
+    expect(r.uses.filter((u) => apart(u.filter((q) => q[0] === 'air'), 2)).length, 'two air pulses fly at heights apart, so they read as two lanes (all but the rare use that could not find room)').toBeGreaterThanOrEqual(86);
     const key = (u) => JSON.stringify(u);
     expect(new Set(r.uses.map(key)).size, 'a new plan almost every use').toBeGreaterThanOrEqual(85);
-    expect(r.ledgeAt, 'the platform pulse can be the first, the second or the third').toEqual(['0', '1', '2']);
-    expect(r.airAt, 'and so can the air one').toEqual(['0', '1', '2']);
+    expect(r.ledgeAt, 'the platform pulse can be the first, the second, the third or the fourth').toEqual(['0', '1', '2', '3']);
+    expect(r.airAt, 'and so can the air one').toEqual(['0', '1', '2', '3']);
     const floorXs = r.uses.flatMap((u) => u.filter((q) => q[0] === 'floor').map((q) => q[1]));
     expect(Math.min(...floorXs), 'the floor spots reach the left of the stage').toBeLessThan(260);
     expect(Math.max(...floorXs), 'and the right').toBeGreaterThan(r.WW - 260);
@@ -394,7 +423,7 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     expect(Math.max(...heights) - Math.min(...heights), 'from low to high in the range').toBeGreaterThanOrEqual(40);
     expect(r.same, 'seeded dice give the same plan twice').toBe(true);
     expect(r.other, 'and other dice another').toBe(true);
-    expect(new Set(r.none), 'no platform, no platform pulse').toEqual(new Set(['air+floor+floor']));
+    expect(new Set(r.none), 'no platform, no platform pulse').toEqual(new Set(['air+air+floor+floor']));
   });
 
   it('a use really draws its own plan: three beats in a row start with three different plans, fixed when the wind-up starts and the same all the way to the last note', () => {
@@ -448,15 +477,16 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
     w.eval('BOSS_ARENA = null');
   });
 
-  it('there is always a gap: a fighter who reads the lanes -- stands in a pocket or well clear of where the notes appear, then jumps each note that comes -- is never hit, on the floor or on the platform, in any phase, across many plans', () => {
+  it('there is always a gap: a fighter who reads the lanes -- stands in a pocket or well clear of where the notes appear, then jumps each note that comes, with both his jumps -- is never hit, on the floor or on the platform, in any phase, across many plans', () => {
     const sim = (fx, onPlat, ph, seed) => W.eval(`(function(){ ${STAGE(fx)} var gy = groundY(), L = pfaceLedge(), JUMP_V = -12.5;
       ${ph > 1 ? `b.hp = b.maxHp*${ph === 2 ? 0.5 : 0.2}; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };` : ''}
       ${rnd0}; var r0 = rnd(${seed}); var saved = Math.random; Math.random = r0;
       ${BEGIN('pfaceRap')}
       Math.random = saved;
       var onP = ${onPlat}, fx = ${fx}; f.y = onP ? L.y - 24 : gy - 24; f.onground = true;
-      var spots = [], origins = [];
-      b._pf.rap.p.forEach(function(q){ if ((q.row === 'ledge') === !!onP){ origins.push(q.x); spots.push(q.x - PFACE.rap.off); spots.push(q.x + PFACE.rap.off); } });
+      var spots = [], origins = [], air2 = false;
+      // (only the pulses of his own row are his business: an air pulse flies above anyone standing -- "keep your feet down" -- so where it starts is no place to avoid)
+      b._pf.rap.p.forEach(function(q){ if (q.row === (onP ? 'ledge' : 'floor')){ origins.push(q.x); spots.push(q.x - PFACE.rap.off); spots.push(q.x + PFACE.rap.off); } });
       var lo = onP ? L.x0 + 20 : 40, hi = onP ? L.x1 - 20 : WW - 40;
       var okX = function(x){ return spots.every(function(sx){ return Math.abs(x - sx) >= 140; }) || origins.some(function(o){ return Math.abs(x - o) <= 30; }); };
       var bestX = fx; if (!okX(fx)){ for (var d=4; d<900; d+=4){ if (fx + d <= hi && okX(fx + d)){ bestX = fx + d; break; } if (fx - d >= lo && okX(fx - d)){ bestX = fx - d; break; } } }
@@ -468,12 +498,17 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
         projectiles.forEach(function(p){
           if (!p.pfaceNote || !(p.life > 0) || (!!p.pfaceLedge) !== !!onP || (!p.pfaceLedge && (p.delay > 0 || p.y < gy - 120)) || (f.x - p.x)*p.vx <= 0) return;   // (an air note is not his business: he keeps his feet down)
           var t = (Math.abs(f.x - p.x) - (p.r + 22))/Math.abs(p.vx); if (t >= 0 && t <= 12) need = 1; });
+        // he uses both his jumps, as a fighter has two: one off the ground and one more in the air once he is coming down -- four pulses are more notes to reach him, and now and then two
+        // come within one air time of each other (or one lands right after he does), which one jump alone cannot answer: that is what the second jump is for
+        if (f.onground) air2 = false;
         if (need && f.onground){ f.vy = JUMP_V; f.onground = false; jumps++; }
+        else if (need && !f.onground && !air2 && f.vy > 0){ f.vy = JUMP_V; air2 = true; jumps++; }
         var pct0 = f.pct; step(); f.x = fx; f.vx = 0; if (f.pct > pct0 + 1e-6 && hit === null) hit = i; }
       return { hit: hit, jumps: jumps, plan: b._pf.rap ? 1 : 0, step: step0 }; })()`);
     let n = 0, hits = 0, maxStep = 0, jumped = 0;
-    // (twelve fights of about 300 frames: three phases, two plans each -- seeded, so the same plans every run -- a fighter on the floor and one on the platform)
-    for (const ph of [1, 2, 3]) for (let seed = 1; seed <= 2; seed++) for (const [x, plat] of [[300, false], [560, true]]) {
+    // (twenty-four fights of about 300 frames: three phases, four plans each -- seeded, so the same plans every run -- a fighter on the floor and one on the platform; a hundred and twenty of them,
+    // twenty plans a phase, were run while the four-pulse rap was built: nobody was hit)
+    for (const ph of [1, 2, 3]) for (let seed = 1; seed <= 4; seed++) for (const [x, plat] of [[300, false], [560, true]]) {
       const o = sim(x, plat, ph, seed * 11 + ph); n++; if (o.hit !== null) hits++; maxStep = Math.max(maxStep, o.step); if (o.jumps > 0) jumped++;
     }
     expect(hits, `${n} runs, nobody who read the lanes was hit`).toBe(0);
@@ -522,11 +557,11 @@ describe('TORTURE TIME!: the tank', () => {
     expect(r.scars).toBeGreaterThan(0);
   });
 
-  it('you can leave in the first 24 frames and then the burst misses you; phase 2 closes in 18 and phase 3 has a second tank', () => {
+  it('you can leave in the first 24 frames and then the burst misses you; phase 2 closes in 18 and has a second tank, as phase 3 does', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE(400)}
       ${BEGIN('pfaceTorture')}
-      var TK = b._pf.tk[0];
+      var TK = b._pf.tk[0]; out.one = b._pf.tk.map(function(t){ return Math.round(t.x); });
       for (var i=0;i<24;i++){ step(); f.x += 8; f.vx = 8; f.y = groundY() - 24; }   // straight out of it: 24 frames at 8 px
       var x = f.x;
       for (var j=0;j<70 && b._tel>0;j++){ step(); f.invuln = 0; }
@@ -543,10 +578,118 @@ describe('TORTURE TIME!: the tank', () => {
     expect(r.out.inside).toBe(false);
     expect(r.out.pct, 'the burst missed you (the bugs are its spray)').toBeLessThan(22);
     expect(r[2].close).toBe(18);
-    expect(r[2].tanks).toHaveLength(1);
-    expect(r[3].tanks, 'a second tank where you would run').toHaveLength(2);
+    // "TORTURE TIME!'s second tank from phase 2 (was phase 3)" (the owner's pick, Round 17); phase 1 has the one
+    expect(r[2].tanks, 'a second tank where you would run, from phase 2').toHaveLength(2);
+    expect(Math.abs(r[2].tanks[1] - r[2].tanks[0]), 'not on top of the first').toBeGreaterThanOrEqual(200);
+    expect(r[3].tanks, 'and in phase 3').toHaveLength(2);
     expect(Math.abs(r[3].tanks[1] - r[3].tanks[0]), 'not on top of the first').toBeGreaterThanOrEqual(200);
+    expect(r.one, 'phase 1: the one tank, as it was').toHaveLength(1);
     expect([r[2].tel, r[3].tel]).toEqual([60, 54]);
+  });
+});
+
+// The glitch pass (scripts/boss-glitch.mjs, 2026-10-01): "TORTURE TIME!'s bugs (pfacebug) stun-lock a fighter, and a fighter swallowed by AD BREAK! is hit by them inside him: a swallowed fighter takes only the
+// stomach's damage, and the bugs land on a fighter at most once each burst." The bugs share the burst's attack id, whose cap for a fighter is a whole boss hit, so up to four of them (a quarter each) could land
+// one after another, each as the last one's grace ran out: three hits in a row, 36 frames of stun, was seen. Each bug now carries `bossCap` of its own damage: the first to land fills the cap for the id, and every
+// later bug is a no-op in applyHit (it returns before any knockback, stun or grace) and just pops.
+describe('TORTURE TIME!: the bugs land once, and never inside the stomach', () => {
+  // a burst over x = 550, a fighter `off` px away from its middle (outside the glass's reach, where the bugs are all that reach him); `control` takes the cap off the bugs: the old bugs
+  const BURST = (off, side, control, ph) => `(function(){ ${STAGE(550)}
+    var gy = groundY(), tx = 550;
+    ${ph > 1 ? `b.hp = b.maxHp*${ph === 2 ? 0.5 : 0.2}; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };` : ''}
+    f.x = tx + ${side}*${off}; f.y = gy - 24;
+    b._pf.tk = [{ id:1, x:tx, age:999, close:18 }];
+    pfaceDoTorture(b, f);
+    ${control ? 'projectiles.forEach(function(p){ if (p.pfaceBug) delete p.bossCap; });' : ''}
+    var hits = 0, last = f.pct, stun = 0, run = 0, maxRun = 0, pct0 = f.pct, bugs = projectiles.filter(function(p){ return p.pfaceBug; });
+    var info = { n: bugs.length, caps: bugs.every(function(p){ return p.bossCap === p.dmg && p.dmg > 0; }), ids: bugs.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).length, bug: bossDmg()*PFACE.tank.bugDmg };
+    for (var i=0;i<170;i++){ step(); b._atkTimer = 1e9; f.x = tx + ${side}*${off}; f.vx = 0; f.y = gy - 24; f.vy = 0;
+      if (f.pct > last + 1e-6){ hits++; last = f.pct; }
+      if (f.hitstun > 0){ stun++; run++; maxRun = Math.max(maxRun, run); } else run = 0; }
+    info.hits = hits; info.stun = stun; info.maxRun = maxRun; info.pct = f.pct - pct0; return info; })()`;
+
+  it('a fighter takes at most one bug of a burst -- a quarter of a boss hit, one stun -- however many reach him, in any phase; the same bugs without their cap landed up to three, chained into 36 frames of stun', () => {
+    const rows = [];
+    for (const ph of [1, 2]) for (const off of [210, 260, 320, 420]) for (const side of [1, -1]) rows.push([ph, off, side, W.eval(BURST(off, side, false, ph)), W.eval(BURST(off, side, true, ph))]);
+    let reached = 0, worst = 0;
+    for (const [ph, off, side, a, c] of rows) {
+      const tag = `phase ${ph}, ${side > 0 ? '+' : '-'}${off}`;
+      expect(a.caps, `${tag}: every bug carries a cap of its own damage`).toBe(true);
+      expect(a.ids, 'one attack id for the burst and its bugs').toBe(1);
+      expect(a.hits, `${tag}: one bug at most`).toBeLessThanOrEqual(1);
+      expect(a.pct, `${tag}: a quarter of a boss hit and no more`).toBeLessThanOrEqual(a.bug + 1e-6);
+      expect(a.maxRun, `${tag}: one stun, not a chain of them`).toBeLessThanOrEqual(14);
+      if (a.hits) reached++;
+      worst = Math.max(worst, c.hits);
+    }
+    expect(rows[0][3].n, 'the bugs are still thrown: eighteen in phase 1').toBe(18);
+    expect(rows.filter(([ph]) => ph === 2)[0][3].n, 'and twenty-four in phase 2').toBe(24);
+    expect(reached, 'the bugs do land on a fighter the glass did not take').toBeGreaterThanOrEqual(8);
+    expect(worst, 'the control: without the cap the same bugs land more than once').toBeGreaterThanOrEqual(3);
+    expect(Math.max(...rows.map(([, , , , c]) => c.maxRun)), 'and chain their stuns into a lock').toBeGreaterThanOrEqual(30);
+  });
+
+  it('a fighter in the stomach takes only the stomach\'s damage: 10% a second, nothing from the bugs that fly through him -- and without the guard they would hit him', async () => {
+    const SW = (guard) => `(function(){ ${STAGE(550)}
+      var gy = groundY(); b.x = 550;
+      ${guard ? '' : 'pfaceBugGuard = function(){};'}
+      fireSwallow(b, f, ++BOSS_ATK_ID);
+      b._pf.tk = [{ id:1, x:STOMACH.x, age:999, close:18 }];
+      pfaceDoTorture(b, f);
+      var pct0 = f.pct, hitstun = 0, bugs = projectiles.filter(function(p){ return p.pfaceBug; }).length;
+      for (var i=0;i<140;i++){ step(); b._atkTimer = 1e9; f._swallow = Math.max(f._swallow, 100); if (f.hitstun > 0) hitstun++; }
+      return { pct: f.pct - pct0, hitstun: hitstun, swallowed: f._swallow > 0, bugs: bugs, id: b._pf.bugId }; })()`;
+    const on = W.eval(SW(true));
+    expect(on.bugs, 'the bugs fly right through where he is held').toBe(18);
+    expect(on.swallowed).toBe(true);
+    expect(on.pct, 'two seconds in the stomach, two ticks of acid, and not a point from a bug').toBeCloseTo(20, 5);
+    expect(on.hitstun, 'and no stun from one').toBe(0);
+    // the control, in a fresh page (the guard is a function of the page): no guard, and a bug lands inside him
+    const w2 = bootMonolith(); await w2.eval('profileReady');
+    const off = w2.eval(SW(false));
+    expect(off.pct, 'the control: without the guard a bug hits him inside the stomach').toBeGreaterThan(20);
+    expect(off.hitstun).toBeGreaterThan(0);
+  });
+
+  it('the guard lasts as long as the bugs: it watches the burst\'s bugs for someone in the stomach and lets go when the last is gone', () => {
+    const r = W.eval(`(function(){ ${STAGE(550)} var gy = groundY();
+      b._pf.tk = [{ id:1, x:200, age:999, close:18 }]; pfaceDoTorture(b, f);
+      var id = b._pf.bugId, watched = id != null;
+      for (var i=0;i<400 && projectiles.some(function(p){ return p.pfaceBug && p.life > 0; });i++){ step(); b._atkTimer = 1e9; f.invuln = 1e9; }
+      step(); b._atkTimer = 1e9;
+      return { watched: watched, after: b._pf.bugId, left: projectiles.filter(function(p){ return p.pfaceBug; }).length }; })()`);
+    expect(r.watched, 'a burst notes its attack id for the guard').toBe(true);
+    expect(r.after, 'and the guard lets go of it once the last bug is gone').toBeNull();
+    expect(r.left).toBe(0);
+  });
+});
+
+describe('after TOTAL SLIP SHOES! his next turn is AD BREAK!', () => {
+  // "after TOTAL SLIP SHOES! his next turn is AD BREAK!" (the owner's pick, Round 17): you are still sliding (the slip is three seconds) when he runs. The picker's `force` (BOSS_PICK.swallow.force):
+  // a move named for the next turn, read from the last one played; no other turn is forced.
+  it('whatever the fighters do -- close to him, far from him -- the turn after the shoes is AD BREAK!, in every phase; and a turn after any other move is drawn as usual', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)} var out = { after: [], other: [], names: [] };
+      [1, 2, 3].forEach(function(ph){
+        if (ph > 1){ b.hp = b.maxHp*(ph === 2 ? 0.5 : 0.2); updateBossAttack(b, f); b._atkTimer = 1e9; }
+        b._pk = null;
+        for (var i=0;i<14;i++){
+          f.x = i % 2 ? b.x + 90 : 70; f.y = groundY() - 24; f.vx = 0;   // close to him, then far: each would draw other moves
+          b._pickForce = 'pfaceShoes'; b._atkLive = null; b._tel = 0; b._atkTimer = 1; b._pf = null; window.__lastBanner = null; updateBossAttack(b, f); var shoes = b._telKind;
+          b._atkLive = null; b._tel = 0; b._atkTimer = 1; b._pf = null; window.__lastBanner = null; updateBossAttack(b, f);
+          out.after.push([ph, shoes, b._telKind]); out.names.push(window.__lastBanner && window.__lastBanner.text);
+          // and after a kick, the next is the picker's own draw
+          b._pickForce = 'pfaceThanks'; b._atkLive = null; b._tel = 0; b._atkTimer = 1; b._pf = null; updateBossAttack(b, f); var kick = b._telKind;
+          b._atkLive = null; b._tel = 0; b._atkTimer = 1; b._pf = null; updateBossAttack(b, f); out.other.push([kick, b._telKind]);
+        }
+      });
+      return out; })()`);
+    expect(r.after, 'forty-two pairs').toHaveLength(42);
+    expect(r.after.every(([, a]) => a === 'pfaceShoes'), 'the first of each pair is the shoes').toBe(true);
+    expect(r.after.every(([, , c]) => c === 'swallow'), 'and the next is AD BREAK!, every time').toBe(true);
+    expect(r.names.every((t) => t === 'AD BREAK!'), 'and the banner says so').toBe(true);
+    expect(r.other.every(([k]) => k === 'pfaceThanks')).toBe(true);
+    expect(r.other.some(([, n]) => n !== 'swallow'), 'after the kick nothing is forced: the picker draws what it likes').toBe(true);
+    expect(W.eval(`typeof BOSS_PICK.swallow.force`), 'it is the picker\'s own `force`').toBe('function');
   });
 });
 
@@ -579,12 +722,14 @@ describe('THANK YOU FOR COMING!: the kick', () => {
     expect(r.hitAt.vx, 'toward the wall behind you').toBeGreaterThan(5);
     expect(r.totems, 'a black one and a white one, out to both walls').toHaveLength(2);
     expect(r.totems.map((t) => t[0]).sort()).toEqual(['pfacetotem', 'pfacetotemw']);
-    expect(r.totems.map((t) => t[1]).sort((a, b) => a - b)).toEqual([-7, 7]);
+    expect(r.totems.map((t) => t[1]).sort((a, b) => a - b), '"faster totems" (the owner, Round 17): 8 px a frame in phase 1, it was 7').toEqual([-8, 8]);
     expect(new Set(r.totems.map((t) => t[3])).size).toBe(1);
     expect(r.total, 'the kick and the totems together are still one boss hit at most').toBeLessThanOrEqual(r.full + 1e-6);
   });
 
-  it('the kick is low and short: a jump clears it, and so does standing back; the totems are jumped too; phase 3 rolls out a second pair', () => {
+  // "THANK YOU FOR COMING! 2 waves from phase 2, faster totems" (the owner's pick, Round 17): a second pair of totems rolls out sixteen frames after the first from phase 2 (it was phase 3), and
+  // every totem is quicker -- 8 / 9.5 / 11 px a frame, it was 7 / 8 / 9
+  it('the kick is low and short: a jump clears it, and so does standing back; the totems are jumped too; phases 2 and 3 roll out a second pair, quicker, and phase 1 one', () => {
     const r = W.eval(`(function(){ var out = {};
       [['jump', 700, 130, 700], ['far', 700, 0, 1010]].forEach(function(c){
         ${STAGE(700)}
@@ -593,17 +738,21 @@ describe('THANK YOU FOR COMING!: the kick', () => {
         for (var i=0;i<52;i++){ step(); f.x = c[3]; f.vx = 0; f.y = py; f.vy = 0; f.invuln = 0; }
         out[c[0]] = { pct: f.pct, ring: ring };
       });
-      ${STAGE(700)}
-      b.hp = b.maxHp*0.2; updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 };
-      f.y = groundY() - 224; ${BEGIN('pfaceThanks')}
-      for (var i=0;i<60 && b._tel>0;i++){ step(); f.y = groundY() - 224; f.vy = 0; }
-      out.p3 = projectiles.filter(function(p){ return p.shape === 'pfacetotem' || p.shape === 'pfacetotemw'; }).map(function(p){ return [p.delay, Math.abs(p.vx)]; }).sort(function(a, c){ return a[0] - c[0]; });
+      [1, 2, 3].forEach(function(ph){
+        ${STAGE(700)}
+        if (ph > 1){ b.hp = b.maxHp*(ph === 2 ? 0.5 : 0.2); updateBossAttack(b, f); b._atkTimer = 1e9; b._hz = { st:0, n:1e9, k:0, c:0, sd:0 }; }
+        f.y = groundY() - 224; ${BEGIN('pfaceThanks')}
+        for (var i=0;i<60 && b._tel>0;i++){ step(); f.y = groundY() - 224; f.vy = 0; }
+        out['p' + ph] = projectiles.filter(function(p){ return p.shape === 'pfacetotem' || p.shape === 'pfacetotemw'; }).map(function(p){ return [p.delay, Math.abs(p.vx)]; }).sort(function(a, c){ return a[0] - c[0]; });
+      });
       return out;
     })()`);
     expect(r.jump.pct, 'airborne over the leg').toBe(0);
     expect(r.far.pct, 'out of its reach').toBe(0);
-    expect(r.p3.map((t) => t[0]), 'two pairs, sixteen frames apart (read on the frame they fired)').toEqual([0, 0, 15, 15]);
-    expect(r.p3[0][1], 'and quicker').toBe(9);
+    expect(r.p1.map((t) => t[0]), 'phase 1: one pair').toEqual([0, 0]);
+    expect(r.p2.map((t) => t[0]), 'phase 2: two pairs, sixteen frames apart (read on the frame they fired) -- from phase 2 now, it was phase 3').toEqual([0, 0, 15, 15]);
+    expect(r.p3.map((t) => t[0]), 'phase 3: the same two').toEqual([0, 0, 15, 15]);
+    expect([r.p1[0][1], r.p2[0][1], r.p3[0][1]], 'and quicker each phase, and quicker than they were (7 / 8 / 9)').toEqual([8, 9.5, 11]);
   });
 });
 
@@ -858,15 +1007,19 @@ describe('three phases, each changing the fight', () => {
     const r = W.eval(`(function(){
       var P = PFACE;
       return { tel: [1,2,3].map(function(p){ return Object.keys(P.tel).map(function(k){ return P.tel[k][p]; }); }), gaps: P.gaps, run: P.run, lunges: P.lunges, rap: P.rap.spd, tank: P.tank.close, bugs: P.tank.bugs,
-               waves: P.thanks.waves, fly: P.shoes.fly, lock: P.shoes.lock, warn: P.hz.warn, cyc: P.hz.cycle, hit: P.hz.hit };
+               waves: P.thanks.waves, totem: P.thanks.totemSpd, crash: P.crash, rapN: P.rap.n, fly: P.shoes.fly, lock: P.shoes.lock, warn: P.hz.warn, cyc: P.hz.cycle, hit: P.hz.hit };
     })()`);
     for (let k = 0; k < 5; k++) { expect(r.tel[0][k]).toBeGreaterThan(r.tel[1][k]); expect(r.tel[1][k]).toBeGreaterThan(r.tel[2][k]); }
     expect(r.gaps.slice(1)).toEqual([116, 86, 64]);
     expect(r.run.slice(1)).toEqual([17, 19, 21]);
-    expect(r.lunges.slice(1)).toEqual([1, 2, 2]);
+    // Round 17's picks: more lunges with shorter crash pauses, four rap pulses, a second tank and a second wave of totems from phase 2, quicker totems
+    expect(r.lunges.slice(1), 'AD BREAK! 2/2/3 lunges (it was 1/2/2)').toEqual([2, 2, 3]);
+    expect(r.crash.slice(1), 'and shorter crash pauses (they were 45 / 40 / 34)').toEqual([36, 32, 27]);
+    expect(r.rapN, 'FREESTYLE RAP! four pulses, four notes each way (it was three)').toBe(4);
     expect(r.rap.slice(1)).toEqual([8, 9.5, 11]);
     expect(r.tank.slice(1), 'the panes close quicker').toEqual([24, 18, 18]);
-    expect(r.waves.slice(1)).toEqual([1, 1, 2]);
+    expect(r.waves.slice(1), 'THANK YOU FOR COMING! two waves from phase 2 (it was 1/1/2)').toEqual([1, 2, 2]);
+    expect(r.totem.slice(1), 'and faster totems (they were 7 / 8 / 9)').toEqual([8, 9.5, 11]);
     expect(r.fly.slice(1), 'the shoes fly faster').toEqual([34, 28, 24]);
     expect(r.lock.slice(1), 'and the mark stops following you sooner').toEqual([12, 16, 20]);
     expect(r.cyc.slice(1)).toEqual([840, 660, 540]);
@@ -876,9 +1029,13 @@ describe('three phases, each changing the fight', () => {
   it('a whole fight: every one of his five moves is named once, in turn, and nothing is said but the telegraphs and the phase cards', () => {
     const r = W.eval(`(function(){ ${STAGE(300, true, true)}
       var seen = [], tap = [], _b = banner; banner = function(t, m, k, l){ tap.push([String(t), k || null]); return _b(t, m, k, l); };
+      // his turns are drawn by position now (the owner, Round 17: "make the attacks based on fighter position."), and a fight of three thousand frames has only a handful of turns -- longer ones since the rap has
+      // four pulses and AD BREAK! three lunges -- so the five moves are asked for in turn (a forced move is used once), and the fight is what it was: the banners it says, the cards, and nothing else
+      var order = ['swallow', 'pfaceRap', 'pfaceTorture', 'pfaceThanks', 'pfaceShoes'], k = 0;
       try {
         for (var i=0;i<3000;i++){
           if (i === 1000) b.hp = b.maxHp*0.5; if (i === 2000) b.hp = b.maxHp*0.2;
+          if (!(b._tel > 0) && !b._atkLive && b._atkTimer <= 2 && !b._pickForce) b._pickForce = order[k++ % 5];
           step(); f.invuln = 0; f.pct = Math.min(f.pct, 40); f.dead = false;
           if (b._tel > 0 && b._tel === PFACE.tel[b._telKind][b._phase] - 0) seen.push(b._telKind);
         }

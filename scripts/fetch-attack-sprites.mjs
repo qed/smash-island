@@ -256,7 +256,7 @@ const PICKS = {
   bugpurple: { who: 'The Bug Swarm', kits: ['bugpurple'], file: 'Purple bug.png',  note: 'a purple-spotted bug, the Bugs page asset (BFDIA 3+)' },
   bugred:    { who: 'The Bug Swarm', kits: ['bugred'],    file: 'Red bug.png',     note: 'a red-spotted bug, the Bugs page asset (BFDIA 3+)' },
   bugcool:   { who: 'The Bug Swarm', kits: ['bugcool'],   file: 'Cool bug.png',    note: "a purple-spotted bug (BFDI 24, BFDIA 12), the swarm's other drawing of one", srcH: 436 },
-  bugsting:  { who: 'The Bug Swarm', kits: ['bugsting'],  file: 'Bug stinger.png', note: 'a bug with poison stingers, the Bugs page asset', srcH: 167 },
+  bugsting:  { who: 'The Bug Swarm', kits: ['bugsting'],  file: 'Bug stinger.png', note: "a bug with poison stingers, the Bugs page asset: the seekers, and POISON STING!'s pounce", srcH: 167 },
   bugegg:    { who: 'The Bug Swarm', kits: ['bugegg'],    file: 'Bug egg.png',     note: 'a bug egg, the Bugs page asset' },
   bugeggs:   { who: 'The Bug Swarm', kits: ['bugeggs'],   file: 'Bug eggs.png',    note: "multiple bug eggs: the egg sac Flower throws (Insectophobe's Nightmare 2)" },
   bugsplat:  { who: 'The Bug Swarm', kits: ['bugsplat'],  file: 'Bug Crushed.png', note: 'a crushed bug and its sticky adhesive, the Bugs page asset', srcH: 400 },
