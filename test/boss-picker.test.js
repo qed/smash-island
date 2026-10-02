@@ -142,7 +142,8 @@ describe('the picker: a boss draws its turn by where the fighters stand (the twe
         var a = { name:'Announcer', attack:'announcer', type:'boss', x:550, y:400, r:85, hp:100, maxHp:100, _phase:1, _tel:0, color:'#3a4a6a', face:1, vx:0, vy:0 };
         a._lastCake = { id: 1, hit: false, shots: [] }; out.acid = bossPickTurn(a); a._lastCake = null; out.noAcid = []; for (var j=0;j<14;j++) out.noAcid.push(bossPickTurn(a));
         var mp = { name:'MePhone4', attack:'mephone', type:'boss', x:550, y:400, r:85, hp:100, maxHp:100, _phase:1, _tel:0, color:'#4fb8e8', face:1, vx:0, vy:0 };
-        out.melifeOpen = bossPickMoves(mp, 1).indexOf('melife') >= 0; meLifeDownload(mp, 1); out.melifeCapped = bossPickMoves(mp, 1).indexOf('melife') >= 0; summons = [];
+        out.melifeOpen = bossPickMoves(mp, 1).indexOf('melife') >= 0; meLifeDownload(mp, 1); out.melifeOne = bossPickMoves(mp, 1).indexOf('melife') >= 0;
+        meLifeDownload(mp, -1); out.melifeCapped = bossPickMoves(mp, 1).indexOf('melife') >= 0; summons = [];   // the cap is 2 in phase 1 now ("cap 2/2/3", the owner's pick, Round 17; it was 1)
         return out;
       } finally { done(); } })()`);
     expect(r.forced).toBe('s4popup');
@@ -153,7 +154,7 @@ describe('the picker: a boss draws its turn by where the fighters stand (the twe
     expect(r.after, 'then the car competes like the rest').toContain('s4car');
     expect(r.acid, 'a cake volley nobody was hit by: ACID TEARS! next').toBe('annacid');
     expect(r.noAcid, 'with no volley behind it nothing is forced').toContain('announcer');
-    expect([r.melifeOpen, r.melifeCapped], 'MeLife is in the draw with room for an add, and out of it at the cap').toEqual([true, false]);
+    expect([r.melifeOpen, r.melifeOne, r.melifeCapped], 'MeLife is in the draw with room for an add (one standing, a second fits), and out of it at the cap of two').toEqual([true, true, false]);
   });
 
   it('the signature competes like every other move (it is not first, and it is not every other turn), and the item boss and the secret bosses keep what they had', () => {

@@ -739,7 +739,9 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
           p2: bossPhaseName({ attack:k }, 2), p3: bossPhaseName({ attack:k }, 3), extra: BOSS_EXTRA[A[k]] };
       });
       return out; })()`);
-    expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal', 'boomerang', 'maze'] });
+    // MePhone4: the glove is the combo from phase 1 -- "MePhone4: FIST THINGY! combo from P1" (the owner's difficulty picks, Round 17, 2026-10-01) -- so its warning names the combo in every phase
+    // (name1 was 'FIST THINGY!' while phase 1 threw one glove)
+    expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY COMBO!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal', 'boomerang', 'maze'] });
     // Evil Leafy, rebuilt: her own gaps (phase 3's 80, was 70: the vine curtains press for her -- "if it makes sense for a hazard, reduce boss difficulty and add a hazard", the owner), TENDRILS!'s
     // wind-up of 56 ("1 needs a better telegraph.") and her own three second moves in place of the shared SEEKERS! and GROUND POUND! (test/boss-evilleafy.test.js has the fight)
     expect(r.evilleafy).toEqual({ base: [130, 95, 80], tel: 56, name1: 'TENDRILS!', name2: 'TENDRILS!', p2: 'No Refuge', p3: 'Vine Coverage', extra: ['elpossess', 'elhole', 'elbehind'] });
@@ -849,10 +851,11 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
         summons = []; spawnBossRushBoss(); b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9; b._tel = 1; b._telKind = null;
         updateBossAttack(b, f);
         if (name === 'Evil Leafy'){ out['Evil Leafy held'] = b._atkTimer; elDone(b); }   // her turns run on past the wind-up: the gap is held (1e6) until the move is done, and elDone starts it
+        if (name === 'MePhone4'){ out['MePhone4 held'] = b._atkTimer; projectiles = []; mpTick(b, f); }   // his glove turn runs on past the wind-up too since "FIST THINGY! combo from P1" (the owner, Round 17): the finisher waits in the wings, the gap is held (1e6), and mpTick starts it once nothing is left to come
         out[name] = b._atkTimer;
       });
       summons = []; projectiles = []; tendrils = []; return out; })()`);
-    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, 'Evil Leafy held': 1e6, MePhone4S: 120, Two: 120, Four: 125 });
+    expect(r).toEqual({ MePhone4: 91, 'MePhone4 held': 1e6, 'Evil Leafy': 156, 'Evil Leafy held': 1e6, MePhone4S: 120, Two: 120, Four: 125 });
   });
 });
 
