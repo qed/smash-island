@@ -10,6 +10,8 @@ import { mulberry32 } from './helpers/prng.js';
 // CARRY!), FURIOUS ROAR!, CHAR!, WIND LOTTERY!, LIGHTNING ROPES! -- each a scene from the show, all of them through the boss engine kit
 // (impact, the fall drift, the arena's ground and hazard, its ending). "Harder, same damage": every part of a turn shares that turn's one
 // attack id, so a fighter takes at most one boss hit from it. Never tuned for a bot: every number here is what the design says.
+// ROUND 17, the owner's difficulty picks (2026-10-01): "Purple Dragon: STRAFING RUN! 4 flames a pass and two passes in phase 1; FURIOUS ROAR! second dive after the tail whip, shorter
+// landing window; CHAR! second jet from phase 2." (a burst of four flames, not three; two passes in phase 1 too; the roar dives twice and lands for less; two jets from phase 2).
 
 let W;
 beforeAll(async () => { W = loadMonolith().window; await W.eval('profileReady'); });
@@ -134,43 +136,51 @@ describe('Purple Dragon takes the hotel roof', () => {
 });
 
 describe('STRAFING RUN!', () => {
-  it('flies the whole roof from off one edge to off the other, its shadow crossing ahead of it, a burst of three flames every twelve frames -- the middle one a burning patch', () => {
+  // The owner, 2026-10-01 (Round 17): "STRAFING RUN! 4 flames a pass (was 3) and two passes in phase 1 too" -- a burst is four flames now (it was three), the second of them the burning
+  // patch, and phase 1 flies two passes a turn as phase 2 does (it flew one).
+  it('flies the whole roof from off one edge to off the other, twice in phase 1, its shadow crossing ahead of it, a burst of four flames every twelve frames -- the second one a burning patch', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
       f.x = 30; ${FIRE(0)}
-      var out = { telKind: telKind, telName: telName, dir: b._runDir, spd: b._dr && b._dr.spd }, xs = [], lead = [], shots = [], seen = [];
-      for (var i=0;i<220 && b._dr;i++){
+      var out = { telKind: telKind, telName: telName, dir: b._runDir, spd: b._dr && b._dr.spd, passes: b._dr && b._dr.passes }, xs = [], lead = [], shots = [], seen = [], dirs = [], last = 0;
+      for (var i=0;i<400 && b._dr;i++){
         step(); f.x = 30; f.y = groundY()-24; f.pct = 0; f.invuln = 99;
+        if (b._dr && b._dr.dir !== last){ last = b._dr.dir; dirs.push(last); }
         xs.push(b.x); if (b._hz.sh && i > 20 && i < 30) lead.push(Math.round(b._hz.sh[0] - b.x));
         projectiles.forEach(function(p){ if (p.dragon && seen.indexOf(p) < 0){ seen.push(p); shots.push({ x:Math.round(p.x), vx:p.vx, vy:p.vy, r:p.r, trap:!!p.landsTrap, patch:!!p.dragonPatch, id:p.bossAtk, dmg:p.dmg, volley:p.volley, shape:p.shape, t:i }); } });
       }
-      out.minX = Math.min.apply(null, xs); out.maxX = Math.max.apply(null, xs); out.R = b.r; out.WW = WW; out.frames = i; out.lead = lead; out.shots = shots; out.done = !b._dr; out.gapReset = b._atkTimer;
-      out.patches = projectiles.filter(function(p){ return p.dragonPatch && p.trap; }).length; out.soot = (b._hz.soot || []).length; out.sh = b._hz.sh;
+      out.minX = Math.min.apply(null, xs); out.maxX = Math.max.apply(null, xs); out.R = b.r; out.WW = WW; out.frames = i; out.lead = lead; out.shots = shots; out.done = !b._dr; out.gapReset = b._atkTimer; out.dirs = dirs;
+      out.patches = projectiles.filter(function(p){ return p.dragonPatch && p.trap; }).length; out.soot = (b._hz.soot || []).length; out.sh = b._hz.sh; out.runLand = DRAGON.runLand.slice();
       summons = []; projectiles = []; return out; })()`);
     expect(r.telKind).toBe('dragon');
     expect(r.telName).toBe('STRAFING RUN!');
     expect(r.dir, 'it was on the right').toBe(-1);
+    expect(r.passes, 'two passes in phase 1 too').toBe(2);
+    expect(r.dirs, 'right to left, then left to right').toEqual([-1, 1]);
     expect(r.maxX, 'it starts off the right edge').toBeGreaterThan(r.WW + r.R);
     expect(r.minX, 'and leaves off the left').toBeLessThan(-r.R);
     expect(r.done).toBe(true);
-    expect(r.frames, 'a real flyby: about a second').toBeLessThan(140);
+    expect(r.frames, 'a real flyby, twice: about two and a half seconds').toBeLessThan(190);
     // the shadow leads the dragon by 22 frames of its own flight, the way it is flying: "the shadow of the dragon quickly passing by"
     expect(r.lead.length).toBeGreaterThan(3);
     for (const l of r.lead) expect(l, 'the shadow is ahead, toward where it is going').toBeLessThan(-22*r.spd*0.95);
-    expect(r.shots.length % 3, 'three flames a burst').toBe(0);
-    const bursts = r.shots.length / 3;
-    expect(bursts, 'a burst every twelve frames while its flames would land on the roof').toBeGreaterThanOrEqual(3);
-    expect(bursts).toBeLessThanOrEqual(5);
+    expect(r.runLand.length, 'four flames a burst').toBe(4);
+    expect(r.shots.length % 4, 'four flames a burst').toBe(0);
     for (const s of r.shots) { expect(s.shape).toBe('dragonflame'); expect(s.vy).toBe(10.5); expect(s.volley, 'a volley under the turn\'s id').toBe(true); expect(s.dmg, 'the old flame hit, unchanged').toBeCloseTo(22, 5); }
-    expect(new Set(r.shots.map((s) => s.id)).size, 'one attack id for the whole run').toBe(1);
-    const mids = r.shots.filter((s, i) => i % 3 === 1);
-    expect(mids.every((s) => s.trap && s.patch && s.r === 22), 'the middle flame of each burst stays and burns the tiles').toBe(true);
-    expect(r.shots.filter((s, i) => i % 3 !== 1).every((s) => !s.trap && s.r === 13)).toBe(true);
-    for (let i = 0; i < r.shots.length; i += 3) {
-      const v = r.shots.slice(i, i + 3).map((s) => Math.abs(s.vx));
-      expect(v[0] < v[1] && v[1] < v[2], 'a cluster: three flames landing in a row ahead of where it let go').toBe(true);
-      expect(Math.sign(r.shots[i].vx), 'and ahead of it, the way it flies').toBe(-1);
+    expect(new Set(r.shots.map((s) => s.id)).size, 'one attack id for the whole run, both passes').toBe(1);
+    // the bursts of each pass: 4 flames each, in order of a cluster landing in a row ahead of where it let go, the second flame the patch, the way the dragon flies
+    for (const dir of [-1, 1]) {
+      const pass = r.shots.filter((s) => Math.sign(s.vx) === dir);
+      expect(pass.length % 4, `pass ${dir}: four flames a burst`).toBe(0);
+      expect(pass.length / 4, `pass ${dir}: a burst every twelve frames while its flames would land on the roof`).toBeGreaterThanOrEqual(3);
+      expect(pass.length / 4).toBeLessThanOrEqual(5);
+      expect(pass.filter((s, i) => i % 4 === 1).every((s) => s.trap && s.patch && s.r === 22), 'the second flame of each burst stays and burns the tiles').toBe(true);
+      expect(pass.filter((s, i) => i % 4 !== 1).every((s) => !s.trap && s.r === 13)).toBe(true);
+      for (let i = 0; i < pass.length; i += 4) {
+        const v = pass.slice(i, i + 4).map((s) => Math.abs(s.vx));
+        expect(v[0] < v[1] && v[1] < v[2] && v[2] < v[3], 'a cluster: four flames landing in a row ahead of where it let go').toBe(true);
+      }
     }
-    expect(r.patches, 'patches lie on the roof after the pass').toBeGreaterThanOrEqual(3);
+    expect(r.patches, 'patches lie on the roof after the passes').toBeGreaterThanOrEqual(3);
     expect(r.soot, 'and the tiles stay charred').toBeGreaterThanOrEqual(3);
     // the gap is DRAGON.gaps[1] (100) times BOSS_PACE (1.2) -- "bosses should attack a bit slower" (the owner, 2026-09-30) -- less the frames since the move ended
     expect(r.gapReset, 'the gap is timed from the end of the move').toBeGreaterThanOrEqual(118);
@@ -204,22 +214,30 @@ describe('STRAFING RUN!', () => {
     expect(r.life).toBeLessThanOrEqual(150);
   });
 
-  it('phase 2: two passes a turn, the second the other way with its bursts half a step off the first, and it is quicker', () => {
-    const r = W.eval(`(function(){ ${STAGE(300, 2, true)}
+  it('phases 1 and 2: two passes a turn, the second the other way with its bursts half a step off the first, and phase 2 is quicker', () => {
+    const run = (stage) => W.eval(`(function(){ ${stage}
       f.x = 30; ${FIRE(0)}
-      var dirs = [], xs = [], last = 0, seen = [], bursts = [], ids = {};
-      for (var i=0;i<300 && b._dr;i++){
+      var dirs = [], last = 0, seen = [], at = [], ids = {}, spd = b._dr.spd, every = DRAGON.runEvery[b._dr.ph];
+      for (var i=0;i<400 && b._dr;i++){
         step(); f.x = 30; f.y = groundY()-24; f.invuln = 99; f.pct = 0;
         if (b._dr && b._dr.dir !== last){ last = b._dr.dir; dirs.push(last); }
-        xs.push(b.x);
-        projectiles.forEach(function(p){ if (p.dragon && seen.indexOf(p) < 0){ seen.push(p); ids[p.bossAtk] = 1; } });
+        projectiles.forEach(function(p){ if (p.dragon && seen.indexOf(p) < 0){ seen.push(p); ids[p.bossAtk] = 1; if (b._dr) at.push([b._dr.pass, (b._dr.t - 1) % every]); } });
       }
-      return { dirs: dirs, ids: Object.keys(ids).length, n: seen.length, frames: i, spd: 0, name: telName, passes: 0 }; })()`);
-    expect(r.name).toBe('STRAFING RUN!');
-    expect(r.dirs, 'right to left, then left to right').toEqual([-1, 1]);
-    expect(r.ids, 'one attack id for both passes').toBe(1);
-    expect(r.n % 3).toBe(0);
-    expect(r.n, 'two passes of bursts').toBeGreaterThanOrEqual(18);
+      return { dirs: dirs, ids: Object.keys(ids).length, n: seen.length, frames: i, spd: spd, every: every, name: telName, at: at }; })()`);
+    const r1 = run(STAGE(300, 1, true)), r2 = run(STAGE(300, 2, true));
+    for (const [ph, r] of [[1, r1], [2, r2]]) {
+      expect(r.name).toBe('STRAFING RUN!');
+      expect(r.dirs, `phase ${ph}: right to left, then left to right`).toEqual([-1, 1]);
+      expect(r.ids, 'one attack id for both passes').toBe(1);
+      expect(r.n % 4, 'four flames a burst').toBe(0);
+      expect(r.n, 'two passes of bursts').toBeGreaterThanOrEqual(24);
+      const first = r.at.filter((a) => a[0] === 0).map((a) => a[1]), second = r.at.filter((a) => a[0] === 1).map((a) => a[1]);
+      expect(first.every((m) => m === 0), 'the first pass lets go on the beat').toBe(true);
+      expect(second.length).toBeGreaterThan(0);
+      expect(second.every((m) => m === Math.floor(r.every/2)), 'the second a half step off it').toBe(true);
+    }
+    expect(r2.spd, 'phase 2 crosses the roof quicker').toBeGreaterThan(r1.spd);
+    expect([r1.every, r2.every]).toEqual([12, 10]);
   });
 });
 
@@ -297,53 +315,73 @@ describe('FURIOUS ROAR!', () => {
     expect(r.edge.stocks).toBe(9);
   });
 
-  it('its eyes lock on (red while they follow you, white when they hold), then it dives along that line: the body is one boss hit, the tail whip adds nothing, and the landing is heavy', () => {
+  // The owner, 2026-10-01 (Round 17): "FURIOUS ROAR! second dive after the tail whip, shorter landing window" -- the dive and its whip come twice (the second dive straight after the first whip,
+  // after a climb back up and a lock of its own), and the landing it ends on is shorter than the 26 frames it was. One attack id still caps the whole move at one boss hit.
+  it('its eyes lock on (red while they follow you, white when they hold), then it dives along that line, and after the tail whip climbs and locks on and dives a second time: the body is one boss hit, the whips and the second dive add nothing, and each landing is heavy', () => {
     const r = W.eval(`(function(){ ${STAGE(400, 1, true)}
       b.x = 700; var gy = groundY(); f.x = 400;
       ${FIRE(1)}
-      var out = { kind: telKind }, eyes = [], locked = [], stage = [], scars0 = IMPACT_SCARS.length, debris = 0, hit = null, pos = [], tail = null, pct = [];
-      for (var i=0;i<200 && b._dr;i++){
+      var out = { kind: telKind }, eyes = [], stage = [], scars0 = IMPACT_SCARS.length, debris = 0, tails = [], dives = [], cur = null, locks = [], lifts = 0, lastSt = null, frames = 0;
+      for (var i=0;i<400 && b._dr;i++){
         // stand still where the shove left you: the eyes lock on that spot and the body comes down on it
-        step();
+        step(); frames++;
+        var st = b._dr ? b._dr.st : null;
         if (b._hz.eye) eyes.push(b._hz.eye.slice());
-        if (b._dr && stage[stage.length-1] !== b._dr.st) stage.push(b._dr.st);
-        if (b._dr && b._dr.st === 'dive') pos.push([Math.round(b.x), Math.round(b.y)]);
-        if (b._hz.tail && !tail) tail = b._hz.tail.slice();
-        pct.push(f.pct);
+        if (st && stage[stage.length-1] !== st) stage.push(st);
+        if (st === 'dive'){ if (lastSt !== 'dive'){ cur = []; dives.push(cur); } cur.push([Math.round(b.x), Math.round(b.y)]); }
+        if (st === 'lock'){ if (lastSt !== 'lock') locks.push({ first: null, last: null, frames: 0 }); var L = locks[locks.length-1]; L.frames++; if (b._hz.eye){ if (L.first === null) L.first = b._hz.eye[2]; L.last = b._hz.eye[2]; } }
+        if (st === 'lift') lifts++;
+        lastSt = st;
+        if (b._hz.tail && (!tails.length || tails[tails.length-1][3] !== b._hz.tail[3])) tails.push(b._hz.tail.slice());
         debris = Math.max(debris, IMPACT_DEBRIS.length);
       }
-      out.stage = stage; out.firstEye = eyes[0]; out.lastEye = eyes[eyes.length-1]; out.anyLocked = eyes.some(function(e){ return e[2] === 1; }); out.pct = f.pct; out.full = bossDmg();
-      out.scars = IMPACT_SCARS.length - scars0; out.debris = debris; out.tail = tail; out.landY = b.y; out.gy = gy; out.R = b.r; out.done = !b._dr;
-      out.diveFrames = pos.length; out.maxJump = 0; for (var j=1;j<pos.length;j++) out.maxJump = Math.max(out.maxJump, Math.hypot(pos[j][0]-pos[j-1][0], pos[j][1]-pos[j-1][1]));
+      out.stage = stage; out.locks = locks; out.lifts = lifts; out.pct = f.pct; out.full = bossDmg(); out.frames = frames;
+      out.scars = IMPACT_SCARS.length - scars0; out.debris = debris; out.tails = tails.length; out.gy = gy; out.R = b.r; out.done = !b._dr;
+      out.dives = dives.map(function(d){ var jump = 0; for (var j=1;j<d.length;j++) jump = Math.max(jump, Math.hypot(d[j][0]-d[j-1][0], d[j][1]-d[j-1][1])); return { frames: d.length, maxJump: jump, y0: d[0][1] }; });
+      out.lockT = DRAGON.roarLock[1]; out.liftT = DRAGON.liftT; out.dives2 = DRAGON.dives;
       summons = []; projectiles = []; return out; })()`);
     expect(r.kind).toBe('dragonroar');
-    expect(r.stage.slice(0, 4)).toEqual(['roar', 'lock', 'dive', 'land']);
-    expect(r.firstEye[2], 'red while it follows you').toBe(0);
-    expect(r.anyLocked, 'and white when it holds').toBe(true);
-    expect(r.lastEye[2]).toBe(1);
-    expect(r.maxJump, 'the dive flies at 27 px a frame, no faster').toBeLessThanOrEqual(28);
-    expect(r.diveFrames, 'a dive is a handful of frames').toBeGreaterThan(5);
-    expect(r.pct, 'the body is one boss hit; the tail whip after it adds nothing (one attack id)').toBeCloseTo(r.full, 5);
+    expect(r.dives2, 'two dives').toBe(2);
+    expect(r.stage, 'roar, lock, dive, the whip -- then up, lock, dive and the whip again -- then home').toEqual(['roar', 'lock', 'dive', 'land', 'lift', 'lock', 'dive', 'land', 'home']);
+    expect(r.locks.length, 'the eyes lock on before each dive').toBe(2);
+    for (const l of r.locks) {
+      expect(l.first, 'red while it follows you').toBe(0);
+      expect(l.last, 'and white when it holds').toBe(1);
+      expect(l.frames, 'the same lock both times: the same tell').toBe(r.lockT);
+    }
+    expect(r.lifts, 'it climbs back up between the dives').toBe(r.liftT);
+    expect(r.dives.length).toBe(2);
+    for (const d of r.dives) {
+      expect(d.maxJump, 'the dive flies at 27 px a frame, no faster').toBeLessThanOrEqual(28);
+      expect(d.frames, 'a dive is a handful of frames').toBeGreaterThan(3);
+    }
+    expect(r.dives[1].y0, 'the second dive comes from up where it hung, not from the roof').toBeLessThan(r.gy - 200);
+    expect(r.pct, 'the body is one boss hit; the second dive and both whips add nothing (one attack id)').toBeCloseTo(r.full, 5);
     expect(r.scars, 'it lands heavily: a scar in the roof').toBeGreaterThanOrEqual(1);
     expect(r.debris, 'and debris').toBeGreaterThan(3);
-    expect(r.tail, 'the tail whip').not.toBe(null);
+    expect(r.tails, 'a tail whip at each landing').toBe(2);
     expect(r.done).toBe(true);
   });
 
-  it('a fighter who leaves the dive line after the eyes lock is not hit; it then lands on the roof and stays low for a breath, a punish window', () => {
+  it('a fighter who leaves the dive line after each lock is not hit by either dive or whip; it then lands on the roof and stays low for a short breath, a punish window shorter than the 26 frames it was', () => {
     const r = W.eval(`(function(){ ${STAGE(400, 1, true)}
-      b.x = 700; var gy = groundY(), lockedAt = null, low = 0, lowY = [];
+      b.x = 700; var gy = groundY(), lockedAt = [], moved = null, lands = {}, lowY = [];
       ${FIRE(1)}
-      for (var i=0;i<200 && b._dr;i++){
+      for (var i=0;i<400 && b._dr;i++){
         step();
-        if (b._hz.eye && b._hz.eye[2] === 1 && lockedAt === null){ lockedAt = f.x; }
-        if (lockedAt !== null && b._dr && b._dr.st !== 'land'){ f.x = Math.max(80, Math.min(WW-80, lockedAt + (lockedAt > 550 ? -260 : 260))); f.y = gy - 24; f.vx = 0; }
-        if (b._dr && b._dr.st === 'land'){ low++; lowY.push(b.y); }
+        var D = b._dr;
+        if (D && D.st === 'lock' && b._hz.eye && b._hz.eye[2] === 1 && lockedAt.length < D.n){ lockedAt.push(f.x); moved = Math.max(80, Math.min(WW-80, f.x + (f.x > 550 ? -260 : 260))); }
+        if (moved !== null && D && D.st !== 'land'){ f.x = moved; f.y = gy - 24; f.vx = 0; }
+        if (D && D.st === 'land'){ lands[D.n] = (lands[D.n] || 0) + 1; if (D.n === 2) lowY.push(b.y); }
       }
-      var res = { pct: f.pct, lockedAt: lockedAt, low: low, lowY: Math.round(lowY[3]), floor: Math.round(gy - b.r*0.9), R: b.r };
+      var res = { pct: f.pct, lockedAt: lockedAt, lands: lands, lowY: Math.round(lowY[3]), floor: Math.round(gy - b.r*0.9), landT: DRAGON.landT, tailT: DRAGON.tailT, R: b.r };
       summons = []; projectiles = []; return res; })()`);
-    expect(r.pct, 'stepped off the line: nothing hits').toBe(0);
-    expect(r.low, 'it stays down for the landing time').toBeGreaterThanOrEqual(24);
+    expect(r.lockedAt.length, 'both dives were stepped off').toBe(2);
+    expect(r.pct, 'stepped off the line each time: nothing hits').toBe(0);
+    expect(r.lands[1], 'the first landing is the whip and nothing more: it climbs for the second dive at once').toBe(r.tailT);
+    expect(r.lands[2], 'the last landing is the whip and a breath: DRAGON.landT frames').toBe(r.landT);
+    expect(r.landT, 'a shorter window than the 26 it was: the breath after the whip is 6 frames, not 12').toBeLessThan(26);
+    expect(r.landT - r.tailT).toBe(6);
     expect(r.lowY, 'low on the roof, within reach').toBe(r.floor);
   });
 });
@@ -403,6 +441,38 @@ describe('CHAR!', () => {
     expect(r.pct, 'one boss hit for the whole turn').toBeCloseTo(r.full, 5);
     expect(r.maxLife, 'a patch is 150 frames of fire').toBeLessThanOrEqual(150);
     expect(r.maxLife).toBeGreaterThan(100);
+  });
+
+  // The owner, 2026-10-01 (Round 17): "CHAR! second jet from phase 2" (it was phase 3's, the second dragon's). In phase 2 there is only the one dragon, so it breathes both jets from its own mouth.
+  it('phase 2: a second jet crosses the first, from the other side of the mark -- both from its own mouth (the second dragon is phase 3) -- and one boss hit, ten patches, however long they burn', () => {
+    const r = W.eval(`(function(){ ${STAGE(500, 2, true)}
+      var gy = groundY(); b.x = 700; f.x = 500;
+      b._pickForce = 'dragonchar'; b._atkLive = null; b._atkTimer = 1; step(); for (var w=0; w<60 && b._tel>0; w++){ step(); f.x = 500; f.invuln = 99; }
+      var d2 = b._hz.d2, dir = b._dr && b._dr.dir, aim = b._aimX, per = {}, ids = {}, srcs = {}, jets = {}, seen = [], patches = 0, n = 0;
+      for (var i=0;i<60 && b._dr && b._dr.st === 'jet';i++){ step(); f.invuln = 99; f.x = 500;
+        projectiles.forEach(function(p){ if (p.dragon && seen.indexOf(p) < 0){ seen.push(p); per[i] = (per[i]||0) + 1; ids[p.bossAtk] = 1; (srcs[i] = srcs[i] || []).push([Math.round(p.x - p.vx), Math.round(p.y - p.vy)]); n++;
+          var lx = p.x + p.vx*(gy - p.y)/p.vy, k = per[i]; (jets[k] = jets[k] || []).push(Math.round(lx)); if (p.landsTrap) patches++; } }); }
+      var out = { d2: d2, dir: dir, aim: aim, per: per, ids: Object.keys(ids).length, srcs: srcs, jets: jets, patches: patches, n: n, jetT: DRAGON.jetT[2], WW: WW };
+      // and the whole turn on a fighter standing at the mark (at 600: off the platform's cover, where the flames reach the floor), past both jets and every patch: one boss hit
+      ${STAGE(600, 2, true)}
+      b.x = 700; f.x = 600; b._pickForce = 'dragonchar'; b._atkLive = null; b._atkTimer = 1; step(); for (var w2=0; w2<60 && b._tel>0; w2++){ step(); f.x = 600; f.burn = 0; }
+      for (var j=0;j<420 && (b._dr || j < 250);j++){ step(); b._atkTimer = 1e9; f.x = 600; f.y = gy - 24; f.vx = 0; f.burn = 0; }
+      out.pct = f.pct; out.full = bossDmg();
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.d2 || 0, 'the second dragon is phase 3: not here yet').toBe(0);
+    const frames = Object.keys(r.per).length;
+    expect(frames, 'a jet lasts 46 frames in phase 2').toBeGreaterThanOrEqual(r.jetT - 2);
+    expect(Object.values(r.per).every((k) => k === 2), 'two flames a frame: two jets').toBe(true);
+    expect(r.ids, 'one attack id').toBe(1);
+    for (const [i, pair] of Object.entries(r.srcs)) {
+      expect(Math.abs(pair[0][0] - pair[1][0]) + Math.abs(pair[0][1] - pair[1][1]), `frame ${i}: both from the one dragon, the same mouth`).toBeLessThanOrEqual(1);
+    }
+    const [j1, j2] = [r.jets[1], r.jets[2]];
+    expect((j2[0] - j1[0])*r.dir, 'the jets start 100 px apart, the second beyond the first (50 each side of the mark)').toBeGreaterThan(90);
+    expect((j2[0] - j1[0])*r.dir).toBeLessThan(110);
+    expect((j2[j2.length - 1] - j1[j1.length - 1])*r.dir, 'and they cross: by the end the second is behind the first').toBeLessThan(-100);
+    expect(r.patches, 'a patch every tenth frame from each jet').toBe(10);
+    expect(r.pct, 'one boss hit for the whole turn, from both jets and every patch').toBeCloseTo(r.full, 5);
   });
 
   it('phase 3: "jets cross from both dragons" -- the second dragon breathes a jet of its own from where it circles, converging on the same ground', () => {
