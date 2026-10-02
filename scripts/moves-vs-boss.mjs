@@ -11,6 +11,8 @@
 //   STAGINGS='["above"]' node scripts/moves-vs-boss.mjs          just this staging (ground, air, above; see STAGINGS)
 //   SHOW=all node scripts/moves-vs-boss.mjs                     print every row, not only the flagged ones;  SHOW=ticks also prints the designed ticks
 //   VERBOSE=1 node scripts/moves-vs-boss.mjs                    each flagged row with the frames it hit on and who called damageSummon
+//   KINDS=1 node scripts/moves-vs-boss.mjs                      instead of the moves: every kind of shot that pierces or lingers (pierce, van, trap, mine, puddle, orbit, boomerang...) put
+//                                                               on the boss's body, and what it took off him: each must land once (the shot loop's _sHit guard, and a shot that is used up on contact)
 //   BOSS='Four' node scripts/moves-vs-boss.mjs                  a real Boss Rush boss (spawned and dressed as the gauntlet does) instead of the plain dummy
 //   FRAMES=150  JOBS=4  OUT=moves-vs-boss.json  SEED=5          (OUT writes every row; the exit code is the number of flagged moves)
 //
@@ -41,9 +43,36 @@ const MOVES = ['jab', 'empjab', 'uptilt', 'downtilt', 'finisher', 'special', 'up
 const STAGINGS = ['ground', 'air', 'above', 'inside'];
 const KEYBOARD = new Set(['smash-tap', 'smash-hold']);   // the real input path: the key is read off `down`, so the fighter is a local one
 
-// Moves that are MEANT to land more than once on a boss, as `Fighter|move` -> { hits: the most frames the boss may be hit on, why }. `hits` counts
-// the frames the boss lost HP on. Past it, the row is flagged again.
-const DESIGNED = {};
+// Moves that are MEANT to land more than once on a boss, as `Fighter|move` (every smash variant is 'smash') -> { max: the most HP the whole move may take off him,
+// why }. A flurry (_multi, Dora's _rant) and an aura (_sawing) are read off the move itself (see classify); these are the rest: a set number of separate
+// shots, strokes or drops, each used up on its one hit. A fighter's hit grace would stop most of a volley piling onto one small target; a boss's body is
+// 170 px across, so all of it lands. They are priced as that many hits (Money's row says "priced like Match's and Roboty's three-shot rows"), and
+// they are left as designed -- the owner's call whether a boss should take one shot of a volley (see the report of 2026-10-02). Past `max`, a row flags again.
+const DESIGNED = {
+  'Money|smash':        { max: 72, why: 'three coins in a fan, 24 each' },
+  'Ice Cube|smash':     { max: 60, why: 'a rain of four shards, 15 each, a second or so apart' },
+  'Starfruit|smash':    { max: 70, why: 'a rain of five lemons, 14 each' },
+  'Roboty|smash':       { max: 51, why: 'a rain of three, 17 each' },
+  'Match|smash':        { max: 42, why: 'a rain of three, 14 each' },
+  'Ice Cube|special':   { max: 40, why: 'a ring of eight shards, 5 each' },
+  'Fries|finisher':     { max: 30, why: 'five fries, 6 each' },
+  'Fries|special':      { max: 12, why: 'three fries, 4 each' },
+  'Pen|finisher':       { max: 27, why: 'three caps, 9 each' },
+  'Woody|special':      { max: 27, why: 'the dash (12) and three splinters, 5 each' },
+  'Flower|upspecial':   { max: 25, why: 'the spin aura (4 a tick) and three drops, 3 each' },
+  'Donut|upspecial':    { max: 25, why: 'the spin aura (4 a tick) and three drops, 3 each' },
+  'Naily|special':      { max: 24, why: 'three piercing nails, 8 each (each nail once: pr._sHit)' },
+  'Spikey|special':     { max: 48, why: 'six spikes of 4 on a tap, eight of 6 held' },
+  'Match|special':      { max: 18, why: 'a three-way spread, 6 each' },
+  'Salt|special':       { max: 18, why: "three shakes of 4, and Pepper's two of 3 a beat later" },
+  'Bow|special':        { max: 15, why: 'three snowballs, 5 each, thrown one by one' },
+  'Nickel|upspecial':   { max: 12, why: 'three bouncing drops, 4 each' },
+  'Baseball|downspecial': { max: 12, why: 'two shots, 6 each' },
+  'Paintbrush|downspecial': { max: 10, why: 'two shots, 5 each' },
+  'Rocky|upspecial':    { max: 9, why: 'three bouncing drops, 3 each' },
+  'Clover|special':     { max: 8, why: 'four butterflies, 2 each' },
+  'Bonesaw|special':    { max: 12, why: 'three strokes, 3 + 3 + 6, each a new cut' },
+};
 
 // Wraps the calls a move reaches a boss through, to say who called them and which damage numbers the move carries. Installed once a boot.
 // updateHUD and updateStandings are stubbed: they only rewrite the page's HUD, and in jsdom that rewrite (an innerHTML a frame) gets slower with every
@@ -125,6 +154,42 @@ const RUN = (o) => `(function(){
   return JSON.stringify(res);
 })()`;
 
+// SHOT KINDS: one synthetic shot of each kind that pierces or lingers, put inside the boss, 90 frames. Each must take off one hit.
+const KINDS_JS = `(function(){
+  var SPECS = [
+    ['shot',          { dmg:10, r:8, life:90 }],
+    ['shot-ticks',    { dmg:10, r:8, life:90, ticks:{ n:3, every:4 } }],
+    ['pierce',        { dmg:10, r:8, vx:3, life:90, pierce:true }],
+    ['pierce-bounce', { dmg:10, r:8, vx:3, vy:-5, grav:true, bounce:true, maxBounces:2, life:120, pierce:true }],
+    ['trap',          { dmg:10, r:13, life:220, trap:true, arm:14 }],
+    ['mine',          { dmg:10, r:13, life:220, trap:true, arm:6, _mine:true }],
+    ['puddle',        { dmg:10, r:9, life:200, grav:true, landsPuddle:true }],
+    ['slow-puddle',   { dmg:10, r:18, life:200, trap:true, slow:true }],
+    ['orbit',         { dmg:10, r:8, life:200, orbit:true, orbitR:60, orbitAngle:0, orbitSpd:0.14 }],
+    ['boomerang',     { dmg:10, r:8, vx:6, life:120, boomerang:true, ownerFace:1 }],
+    ['van',           null]
+  ], out = [];
+  SPECS.forEach(function(sp){
+    SETTINGS.mode = 'boss'; SETTINGS.items = false; SETTINGS.stocks = 99; running = true; paused = false;
+    BOSSRUSH = { active:false, bossIdx:0, cleared:0, defeated:false, loop:0, dmgMult:1 };
+    worldPlats = []; summons = []; projectiles = []; beams = []; tendrils = []; items = []; particles = []; impactFxClear(); hazardT = 0;
+    var gy = groundY(), f = makeFighter(ROSTER.find(function(r){ return r.name === 'Firey'; }), 300, gy - 24, 0);
+    f.team = 0; f.controller = 'still'; f.stocks = 99; f.face = 1; f.y = gy - f.r; fighters = [f];
+    var b = makeBossSummon({ name:'Dummy Boss', color:'#9a9aff', attack:'basic', big:2.5, stationary:true }, 1e6); b.hp = b.maxHp = 1e6; b._atkTimer = 1e9; summons.push(b);
+    b.x = f.x + f.r + b.r + 6; b.y = gy - b.r; var bx = b.x, by = b.y;
+    var park = function(){ b.x = bx; b.y = by; b.vx = 0; b.vy = 0; b._atkTimer = 1e9; b._tel = 0; };
+    park(); step(); park(); f.invuln = 0;
+    var p = sp[1] ? Object.assign({ owner:f.idx, ownerObj:f, x:bx, y:by - 20, vx:0, vy:0, kb:2, color:'#fff' }, sp[1]) : vanProj(f, { speed:15, dmg:16, kb:11, r:20, life:60, drive:'land' });
+    if(!sp[1]) p.x = bx - 100;
+    var hp0 = b.hp, hits = [];
+    addProj(p);
+    for(var i = 0; i < 90; i++){ var h = b.hp; step(); park(); if(h - b.hp > 1e-9) hits.push([i, +(h - b.hp).toFixed(2)]); }
+    out.push({ kind:sp[0], dmg:p.dmg, lost:+(hp0 - b.hp).toFixed(2), hits:hits });
+  });
+  summons = []; fighters = []; projectiles = [];
+  return JSON.stringify(out);
+})()`;
+
 const key = (r) => `${r.name}|${r.move}`;
 // FLAG: well past the number the move carries, or past 40 HP. TICK: flagged by that rule but listed in DESIGNED and inside its hit count.
 function classify(r) {
@@ -133,8 +198,8 @@ function classify(r) {
   if (!(r.lost > 1.5 * ref + 1e-6 || r.lost > 40)) return 'ok';
   // a flurry (_multi, Dora's _rant) lands its set count of the biggest number, an aura (_sawing) lands 4 every 6 frames: that is the move ticking as written
   if (r.lost <= (ref * r.hitsAllowed + 4 * r.ticks) * 1.05 + 0.01) return 'TICK';
-  const d = DESIGNED[key(r)];
-  return d && r.hitFrames <= d.hits ? 'TICK' : 'FLAG';
+  const d = DESIGNED[r.name + '|' + (r.move.startsWith('smash') ? 'smash' : r.move)];
+  return d && r.lost <= d.max + 0.01 ? 'TICK' : 'FLAG';
 }
 
 async function oneFighter(name) {
@@ -164,7 +229,20 @@ const fmt = (r) => {
     `  biggest ${r.num}  (x${(r.lost / ref).toFixed(1)})${r.direct > 0.5 ? `  direct ${r.direct}` : ''}${r.died ? '  (KO)' : ''}${top ? '   ' + top : ''}`;
 };
 
-if (process.env.MVB_WORKER) {
+if (process.env.KINDS) {
+  const W = bootMonolith(SEED);
+  await W.eval('profileReady');
+  W.eval(INSTALL);
+  const rows = JSON.parse(W.eval(KINDS_JS));
+  W.close();
+  let bad = 0;
+  for (const r of rows) {
+    const ok = r.lost <= r.dmg * (r.kind === 'van' ? 2 : 1) + 0.01;   // a van is a hit and then a blast
+    if (!ok) bad++;
+    console.log(`${ok ? 'ok   ' : 'FLAG '} ${r.kind.padEnd(14)} dmg ${String(r.dmg).padStart(3)}  lost ${String(r.lost).padStart(5)} in ${r.hits.length} frames  ${r.hits.slice(0, 8).map(([f, d]) => f + ':' + d).join(' ')}`);
+  }
+  process.exitCode = bad;
+} else if (process.env.MVB_WORKER) {
   process.on('message', async (name) => {
     if (name === 'done') process.exit(0);
     process.send(await oneFighter(name));
