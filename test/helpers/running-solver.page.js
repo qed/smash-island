@@ -21,19 +21,16 @@ window.__rs = (function(){
   function YOU(){ return fighters.find(function(f){ return f.you; }); }
   function hold(o){ down[K.left]=!!o.left; down[K.right]=!!o.right; down[K.jump]=!!o.jump; down[K.down]=!!o.down; down[K.special]=!!o.special; down[K.attack]=!!o.attack; down[K.smash]=!!o.smash; }
 
-  // ---- the saved state: him and whatever the lane's hazards remember (the solo world: nobody else is in it) ----
+  // ---- the saved state: every fighter on the lane (him and Marshmallow: the runners are not in the solved world) and whatever the lane's hazards remember ----
   function snap(){
-    var you = YOU();
-    return { T:hazardT, fr:RACE.frames, lx:RACE.lineX, you:Object.assign({}, you), pl:worldPlats.slice(),
+    return { T:hazardT, fr:RACE.frames, lx:RACE.lineX, fs:fighters.map(function(f){ return Object.assign({}, f); }), pl:worldPlats.slice(),
       cr:RACE.crumbles.map(function(c){ return [c.t, c.gone]; }), fk:(RACE.fakes || []).map(function(c){ return [c.t, c.gone]; }),
       ca:RACE.cannons.map(function(c){ return [c.fired, c.at]; }), bu:RACE.bullets.map(function(b){ return Object.assign({}, b); }),
       pi:RACE.pianos.map(function(p){ return [p.state, p.t]; }), vo:RACE.voices.map(function(v){ return v.fired; }),
       wa:RACE.waves.map(function(w){ return Object.assign({}, w); }), fe:RACE.ferries.map(function(f){ return f.plat.x; }) };
   }
   function restore(S){
-    var you = YOU(), k;
-    for(k in you) if(!(k in S.you)) delete you[k];
-    Object.assign(you, S.you);
+    fighters.forEach(function(f, i){ var k; for(k in f) if(!(k in S.fs[i])) delete f[k]; Object.assign(f, S.fs[i]); });
     hazardT = S.T; RACE.frames = S.fr; RACE.lineX = S.lx; worldPlats = S.pl.slice();
     RACE.crumbles.forEach(function(c, i){ c.t = S.cr[i][0]; c.gone = S.cr[i][1]; });
     (RACE.fakes || []).forEach(function(c, i){ c.t = S.fk[i][0]; c.gone = S.fk[i][1]; });
@@ -173,9 +170,14 @@ window.__rs = (function(){
         if(again) steps = again.map(function(c){ return { w:c.w, t1:c.t1, d2:c.d2 }; });
       }
     }
-    var win = windowsOf(S0, sec, steps), m = 99;
+    var win = windowsOf(S0, sec, steps);
+    return { steps:steps, win:win, room:roomOf(win) };
+  }
+  // the room of a section: its tightest press, in frames (the length of the run of frames that work around it)
+  function roomOf(win){
+    var m = 99;
     win.forEach(function(w){ if(w.t1 !== null) m = Math.min(m, w.t1); if(w.d2 !== null) m = Math.min(m, w.d2); if(w.w !== null) m = Math.min(m, w.w); });
-    return { steps:steps, win:win, room:m };
+    return m;
   }
 
   // ---- the lane: the scripted runner, and the plans where the lane has a section ----
@@ -192,6 +194,7 @@ window.__rs = (function(){
           rec = { k:ob.k, steps:res ? res.steps : null, win:res ? res.win : null, room:res ? res.room : null };
         }
         C.seen[C.si] = { frame:RACE.frames, x:you.x };
+        if(opt.verify && rec.steps){ var S2 = snap(), win = windowsOf(S2, ob.sec, rec.steps); restore(S2); C.seen[C.si].win = win; C.seen[C.si].room = roomOf(win); }   // the room measured again, here, on this run
         C.recs[C.si] = rec;
         if(!rec.steps){ C.failed = C.si; C.si = secs.length; }
         else C.P = newDriver(ob.sec, rec.steps);
@@ -213,5 +216,5 @@ window.__rs = (function(){
     for(var i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
     return (h >>> 0).toString(16);
   }
-  return { snap:snap, restore:restore, tryStep:tryStep, candidates:candidates, solveSection:solveSection, controller:controller, laneHash:laneHash, newDriver:newDriver, inputs:inputs, observe:observe, YOU:YOU, hold:hold };
+  return { snap:snap, restore:restore, tryStep:tryStep, candidates:candidates, solveSection:solveSection, controller:controller, laneHash:laneHash, roomOf:roomOf, windowsOf:windowsOf, newDriver:newDriver, inputs:inputs, observe:observe, YOU:YOU, hold:hold };
 })();

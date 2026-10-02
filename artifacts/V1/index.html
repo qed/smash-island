@@ -20881,7 +20881,7 @@ function oneArenaDraw(b, H, layer){
 // Test Tube with the help of Microphone, then Mic and Taco crosses the finish line"; Tissues, whom "Soap grabs ... and the
 // two run off together" -- each on its own side, so attacks land ("attacks allowed"); no items.
 const RACE_SEED = 20241124;                       // the fixed seed: Objects in Mirror's air date (its page), and the same course every run
-const RACE_LEN = 22800;                           // the lane, world x 0 to the edge: 2.96 times the first version's 7,700
+const RACE_LEN = 29700;                           // the lane, world x 0 to the edge: 3.86 times the first version's 7,700, and 30% on the 22,800 of the version before the d5 pass
 const RACE_START_X = 520;                         // where you stand at GO!
 const RACE_FINAL_GAP = 620;                       // the last gap: past any double jump
 const RACE_FAR_W = 520;                           // the landing on the far side, with the finish line on it
@@ -20890,6 +20890,7 @@ const RACE_FLOOR_H = 60;
 const RACE_LINE_SPEED = 5.2;                      // px a frame, 81% of a sprint (MAXVX 6.4); it was 4.2. "It never stops, never slows."
 const RACE_LINE_START = 520;                      // how far behind the start line it begins
 const RACE_FIRST_X = RACE_START_X + 700;          // the first obstacle: a clear run first
+const RACE_SEC_KINDS = ['planks', 'pillars', 'leap'];   // the kinds that are precision sections: each has a `sec` (where it is run up to, waited at and left) for the solver
 const RACE_LAST_X = RACE_LEN - 460;               // no obstacle reaches past this: the last 460 px to the edge are clear
 const RACE_BACK_X = RACE_START_X + Math.round((RACE_LEN - RACE_START_X)/2);   // the back half: where the new hazards begin
 const RACE_THROW_FULL = 180;                      // frames of hold to a full charge: three seconds
@@ -20901,6 +20902,7 @@ const RACE_LAND_MARGIN = 80;                      // she must land this far onto
 const RACE_BRIDGE_DELAY = 12;
 const RACE_CAM_LEAD = 200;                        // the camera looks ahead of the runner
 const RACE_MARSH_LEASH = 260;                     // she is never further behind you than this
+const RACE_MARSH_LEASH_SEC = 110;                 // ...and on the lane's precision sections (obstacles with a `sec`) no further than this
 const RACE_RUNNERS = ["Fan", "Test Tube", "Microphone", "Tissues", "Soap", "Taco"];
 const RACE_RUNNER_SKILL = [1.0, 0.9, 0.75, 0.6, 0.45, 0.35];   // how much of the time each holds right: below about 0.6 the line wins, so some are caught
 const RACE_ATTACK_GRACE = 120;                    // frames after GO! before a runner throws a jab: the start is a crowd
@@ -20968,19 +20970,28 @@ function raceKindDrawer(rnd){
   // [the kinds that must come round, the fillers]: each round deals every must-kind once before the fillers (with three fillers
   // among them in the front half, where there is room), so a lane never misses one of them by the luck of the draw
   const deck = half => half
-    ? [['piano', 'memory', 'voice', 'ceiling', 'spring', 'crumble', 'cannon', 'fire', 'pendulum', 'ferry', 'spikes', 'piston', 'gap', 'wall'],
+    ? [['piano', 'memory', 'voice', 'ceiling', 'spring', 'crumble', 'cannon', 'fire', 'pendulum', 'ferry', 'spikes', 'piston', 'gap', 'wall', 'bar', 'planks', 'pillars', 'leap'],
        ['gap', 'gap', 'wall', 'wall', 'bar', 'belt', 'piston', 'spikes', 'cannon', 'piano', 'pendulum', 'memory', 'voice']]
-    : [['spikes', 'fire', 'belt', 'spring', 'cannon'], ['gap', 'gap', 'gap', 'gap', 'wall', 'wall', 'wall', 'bar', 'bar', 'piston', 'piston', 'spikes']];
+    : [['spikes', 'fire', 'belt', 'spring', 'cannon', 'pillars', 'planks'], ['gap', 'gap', 'gap', 'gap', 'wall', 'wall', 'wall', 'bar', 'bar', 'piston', 'piston', 'spikes']];
   const shuffle = arr => { const r = arr.slice(); for(let i = r.length - 1; i > 0; i--){ const j = Math.floor(rnd()*(i + 1)); const t = r[i]; r[i] = r[j]; r[j] = t; } return r; };
   const deal = half => { const [must, fill] = deck(half), f = shuffle(fill); const m = half ? 0 : 3; return shuffle(must.concat(f.slice(0, m))).concat(f.slice(m)); };
   return function(x, first, last){
     if(first) return 'gap';   // the first is the one everybody knows
     const half = x >= RACE_BACK_X ? 1 : 0, b = half ? clamp((x - RACE_BACK_X)/(RACE_LAST_X - RACE_BACK_X), 0, 1) : 0;
-    const ok = k => !(k === 'memory' && b < 0.12) && !(k === 'voice' && b < 0.25) && !(k === 'pendulum' && b < 0.1) && !(k === 'ferry' && b < 0.45) && !(k === last && k !== 'gap');
+    const sn = raceStrength(x);   // the precision platforms come in as the lane gets harder: pillars a tenth in, planks a fifth, the leaps a third
+    const ok = k => !(k === 'memory' && b < 0.12) && !(k === 'voice' && b < 0.25) && !(k === 'pendulum' && b < 0.1) && !(k === 'ferry' && b < 0.45) && !(k === 'pillars' && sn < 0.1) && !(k === 'planks' && sn < 0.2) && !(k === 'leap' && sn < 0.35) && !(k === last && k !== 'gap');
     if(seqHalf !== half || !seq.some(ok)){ seq = deal(half); seqHalf = half; }
     const i = seq.findIndex(ok);
     return i < 0 ? 'gap' : seq.splice(i, 1)[0];
   };
+}
+
+// How many frames a jump (JUMP up, GRAV down, as the engine has it) is in the air from one surface to another `dh` px higher (lower: negative):
+// the frame it comes down onto it. A runner at full speed (MAXVX) covers that many MAXVX px in it: the lane's precision platforms stand where it lands.
+function raceJumpFrames(dh){
+  let y = 0, v = JUMP;
+  for(let k = 1; k < 120; k++){ v += GRAV; y -= v; if(v > 0 && y <= dh) return k; }
+  return 120;
 }
 
 // THE LANE (setupWorld's race branch). Pure: every position comes from RACE_SEED, none from Math.random.
@@ -20991,16 +21002,20 @@ function buildRaceLane(){
   const fy = Math.round(WH*RACE_FLOOR_Y);
   RACE.floorY = fy; RACE.startX = RACE_START_X; RACE.edge = RACE_LEN; RACE.farX = RACE_LEN + RACE_FINAL_GAP; RACE.finishX = RACE.farX + 60;
   floors = [{ level:0, y:fy, x:0, w:RACE_LEN }];
-  const obs = [], haz = [], gaps = [], solids = [], ledges = [], pianos = [], voices = [], memories = [], traps = [], crumbles = [], cannons = [], pendulums = [], ferries = [];
+  const obs = [], haz = [], gaps = [], solids = [], ledges = [], pianos = [], voices = [], memories = [], traps = [], crumbles = [], cannons = [], pendulums = [], ferries = [], stones = [];
   // a clear run first, then obstacles with a run-up of 240 px at least between them, up to the last stretch before the edge
   let x = RACE_FIRST_X, last = null, group = 0;
   const nextKind = raceKindDrawer(rnd);
   while(x < RACE_LAST_X){
-    const s = raceStrength(x);
+    let s = raceStrength(x);
     const k = nextKind(x, obs.length === 0, last);
+    // a precision section (one with a `sec`) is run up to from further back: whoever has just come down from a tall wall or a double jump is
+    // still in the air 200 px on, and a stair of planks wants him on the ground, at speed, before its first jump
+    if(RACE_SEC_KINDS.includes(k)){ x += 220; s = raceStrength(x); }
     let end = x;   // where this obstacle's own space ends (its run-up follows)
     if(k === 'gap'){
-      const w = Math.round(raceLerp(160, 260, s) + rnd()*raceLerp(40, 90, s));
+      // JUMPS (owner, 2026-10-02: "Jumps"): gaps close to a full jump early and needing the double jump later, up to 440 px (the double jump's end)
+      const w = Math.round(raceLerp(170, 380, s*s) + rnd()*raceLerp(30, 60, s));
       end = x + w; if(end > RACE_LAST_X) break;
       obs.push({ k, x0:x, x1:end, g:group, s }); gaps.push([x, end]);
     } else if(k === 'wall'){
@@ -21125,6 +21140,38 @@ function buildRaceLane(){
       gaps.push([x, end]);
       for(let i = 0; i < 3; i++) ferries.push({ s, gx:x, gw, w:pw, y:fy, h:14, period, phase:i/3, plat:null, g:group, i });
       obs.push({ k, x0:x, x1:end, g:group, s, gw, pw, period });
+    } else if(k === 'planks' || k === 'pillars'){
+      // JUMPS (owner, 2026-10-02: "running should be d5 bfdi:branches difficulty"; asked what should change: "Jumps"): precision platforming. A staircase
+      // of small platforms over a pit, up and down in turn, each one jump from the last. Planks are thin wooden planks (one-way: the feet land on top
+      // of them and there is no wall to climb back up by), pillars are stone pillars one fighter wide. Each stands where a running jump from the one
+      // before comes down on it -- the engine's own jump (raceJumpFrames) to a surface that much higher or lower -- a few px off the rhythm, so that
+      // the takeoff has to be chosen each time. The width of the landing is the room of the takeoff: a plank is 76 px at the start and 28 at the end of
+      // the lane, 13 frames of room and 5. The solver (test/helpers/running-solver.page.js) says how much room there really is.
+      const solid = k === 'pillars', n = 3 + (s > 0.4 ? 1 : 0) + (s > 0.75 ? 1 : 0), pw = solid ? 48 : Math.round(raceLerp(76, 28, s));
+      const hs = [0], cs = [x], jit = raceLerp(4, 14, s);
+      for(let i = 1; i <= n; i++){
+        const mag = Math.round(raceLerp(22, solid ? 88 : 70, s)*(0.5 + 0.5*rnd()));
+        hs.push(clamp(hs[i - 1] + (i % 2 === 1 ? mag : -Math.round(mag*(0.6 + 0.8*rnd()))), solid ? -10 : -20, solid ? 92 : 80));
+        cs.push(cs[i - 1] + Math.round(MAXVX*raceJumpFrames(hs[i] - hs[i - 1]) + (rnd() - 0.5)*2*jit));
+      }
+      const far = cs[n] + Math.round(MAXVX*raceJumpFrames(-hs[n])) - 40;   // the floor on the far side: a jump from the last one lands 40 px onto it
+      end = far + 40; if(end > RACE_LAST_X) break;
+      gaps.push([x, far]);
+      for(let i = 1; i <= n; i++){
+        if(solid) solids.push({ x:cs[i] - pw/2, y:fy - hs[i], w:pw, h:hs[i] + 190, solid:true, racePillar:true });
+        else stones.push({ x:cs[i] - pw/2, y:fy - hs[i], w:pw, h:14, raceStone:true });
+      }
+      obs.push({ k, x0:x, x1:end, g:group, s, n, pw, hs, cs, sec:{ sx:x - 150, wx:x - 70, ex:far + 60, t1max:56, waits:[0] } });
+    } else if(k === 'leap'){
+      // JUMPS: pits at the very end of what a jump can do. Two of them, with a small plank between: the first only the double jump crosses (a pit of 340 to
+      // 460 px: a running jump carries about 256, the double jump about 506), the plank is too small to stand and run on (44-64 px: take off from it at
+      // once), the second is as wide, and the floor after it is the way out.
+      const g1 = Math.round(raceLerp(340, 430, s) + rnd()*30), g2 = Math.round(raceLerp(340, 430, s) + rnd()*30), pw = Math.round(raceLerp(64, 40, s)), ph = Math.round(raceLerp(0, 36, s)*rnd());
+      const p0 = x + g1, far = p0 + pw + g2;
+      end = far + 40; if(end > RACE_LAST_X) break;
+      gaps.push([x, far]);
+      stones.push({ x:p0, y:fy - ph, w:pw, h:14, raceStone:true });
+      obs.push({ k, x0:x, x1:end, g:group, s, g1, g2, pw, ph, sec:{ sx:x - 150, wx:x - 70, ex:far + 60, t1max:56, waits:[0] } });
     } else if(k === 'cannon'){
       // PLATFORMER: a cannon (Mario's Bullet Bills, Donkey Kong Country's barrels) firing along the lane when you cross its
       // trigger: low shots you jump, and from 40% in some high ones you must not (you pass under them). It hangs from above
@@ -21151,7 +21198,7 @@ function buildRaceLane(){
   slabs.push({ x:RACE.farX, y:fy, w:RACE_FAR_W, h:RACE_FLOOR_H, solid:true, floor:0, raceFar:true });
   for(const fe of ferries){ fe.plat = { x:fe.gx, y:fe.y, w:fe.w, h:fe.h, raceFerry:true }; slabs.push(fe.plat); }   // the ferries: one-way platforms, moved every frame
   for(const c of crumbles){ c.plat = { x:c.x, y:c.y, w:c.w, h:c.h, solid:true, floor:0, raceCrumble:true }; slabs.push(c.plat); }   // the crumbling floor's tiles
-  worldPlats = slabs.concat(solids, ledges);
+  worldPlats = slabs.concat(solids, ledges, stones);
   RACE.obstacles = obs; RACE.hazards = haz; RACE.pianos = pianos; RACE.voices = voices; RACE.memories = memories; RACE.waves = [];
   RACE.traps = traps; RACE.crumbles = crumbles; RACE.cannons = cannons; RACE.pendulums = pendulums; RACE.ferries = ferries; RACE.bullets = [];
   RACE.pits = gaps.map(g => ({ x0:g[0], x1:g[1] })).concat([{ x0:RACE.edge, x1:RACE.farX }]);
@@ -21214,9 +21261,13 @@ function raceTick(){
       f.dropping = 10; f.vy = 5; f.onground = false; f.y += f.r*0.6;
     }
   }
-  // Marshmallow keeps pace: fallen behind, about to be caught, or fallen in, she is back at your side
+  // Marshmallow keeps pace: fallen behind, about to be caught, or fallen in, she is back at your side. On the lane's precision sections (a stair of
+  // planks, a leap: the owner's "Jumps", 2026-10-02) she cannot follow a jump from one small platform to the next, so there she is kept right
+  // beside him: 110 px behind, or lower than he is by 60, and she is put at his side, in the air and all, to come down with him.
   if(marsh && you && !you.dead && !RACE.charge && !RACE.flight && !RACE.thrown && !RACE.marshOver){
-    if(marsh.x < you.x - RACE_MARSH_LEASH || marsh.x - marsh.r*0.5 < RACE.lineX + 60 || marsh.y > RACE.floorY + 120) raceMarshCatchUp(marsh, you);
+    const onSec = raceSectionAt(you.x);
+    if(onSec ? (marsh.x < you.x - RACE_MARSH_LEASH_SEC || marsh.y > you.y + 60 || marsh.x - marsh.r*0.5 < RACE.lineX + 60)
+             : (marsh.x < you.x - RACE_MARSH_LEASH || marsh.x - marsh.r*0.5 < RACE.lineX + 60 || marsh.y > RACE.floorY + 120)) raceMarshCatchUp(marsh, you, !!onSec);
   }
   // the line catches: you lose; a runner is deleted
   for(const f of fighters){
@@ -21340,7 +21391,14 @@ function raceHazards(you){
   }
   RACE.bullets = RACE.bullets.filter(b => !b.hit && b.x + b.w > RACE.lineX - 60);
 }
-function raceMarshCatchUp(m, you){
+// Is x on one of the lane's precision sections (a stair of planks, a leap: obstacles with a `sec`), from where it is run up to to where it ends?
+function raceSectionAt(x){ for(const o of RACE.obstacles) if(o.sec && x > o.sec.sx && x < o.sec.ex) return o; return null; }
+function raceMarshCatchUp(m, you, close){
+  if(close){   // right beside him, in the air if he is, with his speed: she comes down where he does
+    m.x = you.x - 44; m.y = you.y; m.vx = you.vx; m.vy = you.vy; m.onground = you.onground; m.hitstun = 0; m.dropping = 0; m.dead = false; m.alive = true; m.stocks = 1; m.invuln = 30; m._gravSaved = false;
+    for(let i=0;i<10;i++) puff(m.x, m.y, '#ffe9f2', 4);
+    return;
+  }
   let sx = you.x - 70, top = null;
   for(let dx = 70; dx <= 400; dx += 20){
     const cx = you.x - dx; if(cx <= RACE.lineX + 90) break;

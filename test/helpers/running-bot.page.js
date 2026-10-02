@@ -102,14 +102,14 @@ var __bot = function(you){
   return o;
 };
 var __run = function(you, hold, maxFrames, ctl){
-  var r = { frames:0, minLead:1e9, worst:-1e9, behindLine:0, lost:0, leadAtThrow:null, chargeMax:0, held:0, bumps:0 }, n = 0, pb = false;
+  var r = { frames:0, minLead:1e9, worst:-1e9, worstSec:-1e9, behindLine:0, lost:0, leadAtThrow:null, chargeMax:0, held:0, bumps:0 }, n = 0, pb = false;
   for(; n < maxFrames && running; n++){
     hold((ctl || __bot)(you)); step();
     var bb = you._raceBumpT > 0; if(bb && !pb) r.bumps++; pb = bb;
     var mm = fighters.find(function(q){ return q._marsh; });
     if(!you.dead) r.minLead = Math.min(r.minLead, you.x - RACE.lineX);
     if(mm.dead) r.lost++;
-    if(!RACE.marshOver && !RACE.thrown && !RACE.charge){ r.worst = Math.max(r.worst, you.x - mm.x); if(mm.x - mm.r*0.5 <= RACE.lineX) r.behindLine++; }
+    if(!RACE.marshOver && !RACE.thrown && !RACE.charge){ r.worst = Math.max(r.worst, you.x - mm.x); if(raceSectionAt(you.x)) r.worstSec = Math.max(r.worstSec, you.x - mm.x); if(mm.x - mm.r*0.5 <= RACE.lineX) r.behindLine++; }
     if(RACE.charge){ r.held++; r.chargeMax = Math.max(r.chargeMax, RACE.charge.t); if(r.leadAtThrow === null) r.leadAtThrow = you.x - RACE.lineX; }
   }
   hold({});

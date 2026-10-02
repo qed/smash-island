@@ -29,7 +29,7 @@ const res = W.eval(`(function(){
   var K = KEYS, hold = function(o){ down[K.left]=!!o.left; down[K.right]=!!o.right; down[K.jump]=!!o.jump; down[K.down]=!!o.down; down[K.special]=!!o.special; down[K.attack]=!!o.attack; down[K.smash]=!!o.smash; };
   hold({});
   var __hud = updateHUD; updateHUD = function(){};
-  fighters.forEach(function(f){ if(f !== you) f.dead = true; });   // the solo world: nobody else is on the lane while it is solved
+  fighters.forEach(function(f){ if(f !== you && !f._marsh) f.dead = true; });   // the solved world: the runners are not on the lane (Marshmallow is: she is his, and the throw is hers)
   ${BOT}
   var hash = __rs.laneHash(), C = __rs.controller({ bot:__bot, programs:null }), n = 0, minLead = 1e9;   // the lane's fingerprint is taken before anything has moved on it
   for(; n < 14000 && running && !(you.x + you.r > RACE.edge - 80) && C.failed < 0; n++){ hold(C.ctl(you)); step(); if(!you.dead) minLead = Math.min(minLead, you.x - RACE.lineX); }

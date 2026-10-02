@@ -102,7 +102,8 @@ const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 // ONE scripted run of the whole lane, shared by the tests below (a full run is the slow part of this file).
 let RUN = null;
 const fullRun = () => RUN || (RUN = quick({}, `${BOT}
-  var C = __rs.controller({ bot:__bot, programs:${JSON.stringify(PROG.programs)} });   // the plans on file for the lane's hard sections, the scripted runner for the rest
+  fighters.forEach(function(f){ if(f !== you && !f._marsh) f.dead = true; });   // the solved world: the runners are not on the lane, Marshmallow is (see PACKRUN for the runners)
+  var C = __rs.controller({ bot:__bot, programs:${JSON.stringify(PROG.programs)}, verify:true });   // the plans on file for the lane's hard sections, the scripted runner for the rest
   var out = __run(you, hold, 10000, C.ctl);
   var first = RACE.obstacles[0];
   var seen = window.__banners.slice(__b0).map(function(b){ return b.text + '|' + (b.kind||''); });
@@ -113,6 +114,18 @@ const fullRun = () => RUN || (RUN = quick({}, `${BOT}
     youX:Math.round(you.x), youXf:you.x, finish:RACE.finishX, edge:RACE.edge, farX:RACE.farX, marshOver:RACE.marshOver, marshX:Math.round(marsh.x), marshAlive:!marsh.dead, floor:RACE.floorY, marshY:Math.round(marsh.y + marsh.r),
     seen:seen, err:!!window.__loopErrLogged, gone:gone.map(function(f){ return f.name; }), past:past, speed:RACE_LINE_SPEED, leash:RACE_MARSH_LEASH, full:RACE_THROW_FULL,
     lineAtEnd:Math.round(RACE.lineX), plan:{ seen:C.seen, secs:C.secs, failed:C.failed, at:C.si } };`));
+
+// PACKRUN: the same runner with every runner of the MeAfterlife group on the lane too, as far as the first of the hard sections (the runners
+// have no plan for those: they run into the pit as the slow ones run into the line, which is the owner's "the runners can be caught more
+// often"). A section's plan is for the lane without the pack: a jab ("attacks allowed") at the wrong frame would spoil any plan.
+let PACK = null;
+const packRun = () => PACK || (PACK = quick({}, `${BOT}
+  var first = RACE.obstacles[0], sec0 = RACE.obstacles.find(function(o){ return o.sec; }), stopX = sec0 ? sec0.sec.sx : RACE.edge - 80, n = 0;
+  while(running && n < 10000 && you.x < stopX){ hold(__bot(you)); step(); n++; }
+  hold({});
+  var gone = fighters.filter(function(f){ return f._runner && !f._marsh && f.dead; });
+  return { frames:n, over:RACE.over, youX:you.x, stopX:stopX, gone:gone.map(function(f){ return f.name; }),
+    past:fighters.filter(function(f){ return f._runner && !f._marsh && (f.dead || f.x > first.x1 + 40); }).length };`));
 
 const CANON = ['piano', 'memory', 'voice'];
 const PLATFORMER = ['spikes', 'ceiling', 'spring', 'fire', 'belt', 'crumble', 'pendulum', 'cannon', 'ferry'];
@@ -128,9 +141,11 @@ describe('the course', () => {
     const b = race({}, `return ${SNAP};`);
     expect(a.ok).toBe(true);
     for (const k of ['obs', 'plats', 'haz', 'pianos', 'voices', 'memories', 'traps', 'cannons', 'pendulums', 'crumbles', 'ferries', 'pits']) expect(a[k], 'the same ' + k).toBe(b[k]);
-    // "the run should be much longer": the first version's lane was 7,700 px; now two and a half to three times that
-    expect(a.len / 7700, 'roughly 2.5-3x the first version').toBeGreaterThanOrEqual(2.5);
-    expect(a.len / 7700).toBeLessThanOrEqual(3);
+    // "the run should be much longer" (2026-09-29): the first version's lane was 7,700 px, the next 22,800 (2.96 times that). Then the owner (2026-10-02): "running
+    // should be d5 bfdi:branches difficulty", asked what to change: "Jumps, Hazard timing and Length": the lane is 30-40% longer than those 22,800 px, and
+    // what the length is for is harder sections, not filler
+    expect(a.len / 22800, 'the d5 lane is 30-40% longer than the one before it').toBeGreaterThanOrEqual(1.3);
+    expect(a.len / 22800).toBeLessThanOrEqual(1.4);
     expect(a.WW).toBe(a.len + 620 + 520);
     expect(a.kinds.length, 'a long lane has a lot on it').toBeGreaterThanOrEqual(30);
     for (const k of ['gap', 'wall', 'bar', 'piston'].concat(CANON, PLATFORMER)) expect(a.kinds, 'every kind of obstacle is on the course: ' + k).toContain(k);
@@ -176,7 +191,9 @@ describe('the course', () => {
       for (const o of os) expect(o.x0, k + ' is in the back half').toBeGreaterThanOrEqual(L.backX);
     }
     const front = L.obs.filter(inFront).map((o) => o.k), back = L.obs.filter((o) => !inFront(o)).map((o) => o.k);
-    for (const k of front) expect(['gap', 'wall', 'bar', 'piston', 'spikes', 'fire', 'belt', 'spring', 'cannon'], 'the front half has the classics and the gentler platformer hazards: ' + k).toContain(k);
+    // owner, 2026-10-02: "running should be d5 bfdi:branches difficulty" (asked what to change: "Jumps, Hazard timing and Length"): the front half has the
+    // lane's precision jumps too, the stairs of small platforms (planks, pillars) -- they are what the harder lane is for, and none is an episode hazard
+    for (const k of front) expect(['gap', 'wall', 'bar', 'piston', 'spikes', 'fire', 'belt', 'spring', 'cannon', 'planks', 'pillars'], 'the front half has the classics, the gentler platformer hazards and the first precision jumps: ' + k).toContain(k);
     expect(new Set(front.filter((k) => PLATFORMER.includes(k))).size, 'the platformer hazards start early').toBeGreaterThanOrEqual(4);
     for (const k of PLATFORMER.filter((k) => k !== 'belt')) expect(back, 'and every one of them but the gentlest, the belt, is in the back half too: ' + k).toContain(k);
     for (const k of ['ceiling', 'crumble', 'pendulum', 'ferry']) expect(front, 'the hardest wait for the back half: ' + k).not.toContain(k);
@@ -303,6 +320,67 @@ describe('the course', () => {
   });
 });
 
+// THE JUMPS. The owner (2026-10-02): "running should be d5 bfdi:branches difficulty"; asked what should change: "Jumps, Hazard timing and Length"; and "just not
+// just having to jump over easy things to jump over". So the lane has precision platforming: stairs of small platforms over a pit (planks: thin wooden
+// platforms that get narrower along the lane; pillars: stone pillars one fighter wide) and leaps (pits that only the double jump crosses, with a small plank
+// between). Each is a section the solver plays (`sec`): where it is run up to, waited at and left. How much room each press has is measured by the solver on
+// the real engine, never assumed, and played back in "the run" below.
+describe('the jumps: precision platforming', () => {
+  const secs = () => lane().obs.filter((o) => o.sec);
+  it('the lane has stairs of planks, stairs of pillars and leaps; each is a section run up to from further back than an obstacle usually is', () => {
+    const L = lane(), kinds = secs().map((o) => o.k);
+    for (const k of ['planks', 'pillars', 'leap']) expect(kinds, 'on the lane: ' + k).toContain(k);
+    for (const o of secs()) {
+      expect([o.sec.sx < o.x0, o.x0 < o.x1, o.x1 < o.sec.ex, o.sec.ex < L.edge], o.k + ' at ' + Math.round(o.x0) + ': the section spans its obstacle').toEqual([true, true, true, true]);
+      expect(o.x0 - o.sec.sx, 'run up to from 150 px back').toBe(150);
+    }
+    const gs = L.obs.map((o) => o);   // the run-up: 220 px more than the 240 before anything that is a section
+    for (let i = 1; i < gs.length; i++) if (gs[i].sec) expect(gs[i].x0 - gs[i - 1].x1, 'the run-up to ' + gs[i].k).toBeGreaterThanOrEqual(460);
+  });
+
+  it('the planks narrow as the lane goes on and the stairs grow; the pillars are one fighter wide; planks are one-way, pillars are stone', () => {
+    const L = lane(), planks = L.obs.filter((o) => o.k === 'planks'), pillars = L.obs.filter((o) => o.k === 'pillars'), plats = JSON.parse(L.plats);
+    expect(planks.length).toBeGreaterThanOrEqual(2); expect(pillars.length).toBeGreaterThanOrEqual(2);
+    nondecreasing(planks, (o) => -o.pw, 'planks narrow'); nondecreasing(planks, (o) => o.n, 'and the stairs grow');
+    expect(planks[planks.length - 1].pw, 'a plank is narrower at the end than a first one by a quarter or more').toBeLessThan(planks[0].pw * 0.75);
+    for (const o of pillars) expect(o.pw, 'a pillar is one fighter wide (48 px)').toBe(2 * L.r);
+    const stones = plats.filter((p) => p.raceStone), pil = plats.filter((p) => p.racePillar);
+    expect(stones.length, 'every plank of the stairs is in the world, and the one between the two pits of each leap').toBe(planks.reduce((a, o) => a + o.n, 0) + L.obs.filter((o) => o.k === 'leap').length);
+    expect(pil.length, 'and every pillar').toBe(pillars.reduce((a, o) => a + o.n, 0));
+    for (const p of stones) expect([!!p.solid, p.h], 'a plank is a thin one-way platform').toEqual([false, 14]);
+    for (const p of pil) expect(!!p.solid, 'a pillar is stone').toBe(true);
+  });
+
+  it('each stands where a running jump from the one before comes down on it: the engine\'s own jump, a few px off the rhythm, and never a rise the jump cannot make', () => {
+    const J = race({}, `return { f:[0, 40, -40, 80].map(function(d){ return raceJumpFrames(d); }), v:MAXVX };`), P = physics([26]), L = lane();
+    expect(J.f[0] * J.v, 'a flat jump at full speed is the distance the engine measures').toBeGreaterThan(P.single.dist - 8);
+    expect(J.f[0] * J.v).toBeLessThan(P.single.dist + 8);
+    expect(J.f[1], 'a surface 40 px higher is reached sooner').toBeLessThan(J.f[0]); expect(J.f[2], 'one 40 px lower later').toBeGreaterThan(J.f[0]);
+    for (const o of L.obs.filter((o) => o.k === 'planks' || o.k === 'pillars')) {
+      for (let i = 1; i < o.cs.length; i++) {
+        const want = J.v * race({}, `return raceJumpFrames(${o.hs[i] - o.hs[i - 1]});`), got = o.cs[i] - o.cs[i - 1];
+        expect(Math.abs(got - want), o.k + ' ' + i + ': a few px off the rhythm of the jump from the one before').toBeLessThanOrEqual(15);
+        expect(o.hs[i] - o.hs[i - 1], o.k + ' ' + i + ': a rise a single jump makes, with room').toBeLessThanOrEqual(P.single.apex - 25);
+      }
+    }
+  });
+
+  it('the room of every press, measured again on the real engine as the run goes by, is a skilled player\'s ("+-2 frames") and no more than that at the hardest: demanding, not easy', () => {
+    const r = fullRun(), rooms = r.plan.seen.map((s) => s.room);
+    expect(rooms.length, 'every section was measured').toBe(secs().length);
+    expect(Math.min(...rooms), 'the tightest press of the lane can be early or late by 2 frames and still work (a window of 5)').toBeGreaterThanOrEqual(5);
+    expect(Math.min(...rooms), 'and it is a precision jump: no more than 9 frames of window ("not just having to jump over easy things")').toBeLessThanOrEqual(9);
+    r.plan.seen.forEach((s, i) => expect(s.room, 'section ' + i + ' measures what the solver wrote down').toBe(PROG.programs[i].room));
+  }, 300000);
+
+  it('Marshmallow cannot follow a jump from plank to plank, so on a section she is kept beside him (110 px behind at the most, then put at his side), never lost', () => {
+    const r = fullRun();
+    expect(r.run.worstSec, 'she was at his side on every section').toBeLessThanOrEqual(110 + 60);
+    expect(r.run.worstSec).toBeGreaterThan(-1e8);
+    expect(r.run.lost, 'and never lost').toBe(0);
+  }, 300000);
+});
+
 describe('the line', () => {
   it('is faster than it was and still slower than a sprint; it starts behind everyone and advances every frame, whether or not anyone moves; it never stops, never slows', () => {
     const r = race({}, `you.controller = 'still';
@@ -365,8 +443,9 @@ describe('the runners', () => {
   });
 
   it('AI runners run right and clear the first gap; the slow ones fall behind, are caught, and are gone', () => {
-    const r = fullRun();
-    expect(r.won).toBe(true);
+    const r = packRun();
+    expect(r.over, 'the scripted runner is not caught on the way to the first hard section').toBe(false);
+    expect(r.youX, 'and gets there').toBeGreaterThanOrEqual(r.stopX);
     expect(r.past, 'the runners jump the gap (or were lost later, past it)').toBe(6);
     expect(r.gone.length, 'some fall behind and are caught').toBeGreaterThan(0);
     expect(r.gone.length).toBeLessThan(6);
@@ -668,7 +747,8 @@ describe('the hazards', () => {
     var only = function(kind, i){ RACE.traps = []; RACE.crumbles = []; RACE.cannons = []; RACE.pendulums = []; RACE.ferries = []; RACE.bullets = []; RACE.hazards = kind==='piston' ? [HZ[i]] : []; RACE.pianos = kind==='piano' ? [PI[i]] : []; RACE.voices = kind==='voice' ? [VO[i]] : []; RACE.memories = kind==='memory' ? [ME[i]] : [];
       RACE.waves = []; RACE.pianos.forEach(function(p){ p.state = 'idle'; p.t = 0; }); RACE.voices.forEach(function(v){ v.fired = false; }); };
     var put = function(x){ you.controller = 'local'; you.x = x; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.slowed = 0; you.dead = false; you.jumps = 2; you.onground = false; you.pct = 0; hold({});
-      for(var i=0;i<2;i++){ RACE.lineX = you.x - 5000; step(); } };
+      for(var i=0;i<2;i++){ RACE.lineX = you.x - 5000; step(); }
+      you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.vx = 0; you.vy = 0; you.x = x; you.y = fy - you.r; you.onground = true; };   // put down clean: whatever the two settling frames met (a piston that happened to be down) is not part of the test
     var adv = function(n){ for(var i=0;i<n;i++){ RACE.lineX = you.x - 5000; step(); } };
     only('none', 0);`;
 
