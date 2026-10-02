@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { loadMonolith } from './helpers/load-monolith.js';
 
 // A whole scripted run of the lane is thousands of frames of the real game loop; the file shares one such run between its
@@ -34,7 +35,7 @@ vi.setConfig({ testTimeout: 300000 });
 let W;
 // loadMonolith's canvas shim hands back gradient objects, so the real draw() runs to completion under jsdom and the loop's
 // one-time "ERROR:" line never goes up: the banner tap below must see GO! and nothing else.
-beforeAll(async () => { W = loadMonolith(11).window; await W.eval('profileReady'); });
+beforeAll(async () => { W = loadMonolith(11).window; await W.eval('profileReady'); W.eval(SOLVER); });
 
 // Every banner() call is recorded from the first race on: a race may say GO!, and nothing else, until its result screen.
 const TAP = `if(!window.__bannerTap){ window.__bannerTap=true; window.__banners=[]; var _b=banner; banner=function(t,m,k,l){ window.__banners.push({text:String(t), kind:k||null}); return _b(t,m,k,l); }; }`;
@@ -55,117 +56,13 @@ const race = (opts, body) => W.eval(`(function(){
 // every race here.
 const quick = (opts, body) => race(opts, `var __hud = updateHUD; updateHUD = function(){}; try { ${body} } finally { updateHUD = __hud; }`);
 
-// THE SCRIPTED RUNNER (page code): holds right and reads the lane the way a player reads the screen. Gaps: a jump at the
-// edge and, for the wide ones, the second jump late in the descent. Walls: one jump, or two for the tall ones (early, then
-// again ten frames on). Bars: hop the step, press DOWN on the ledge. Pistons: run in when the block is rising, wait in front
-// of it when it is not. Pianos: nothing -- keep running. Voices: one jump when the wave is a jump away. Memories: over
-// them, a jump and the second at the top. At the edge: stop, hold smash until the meter reads what it wants, let go; then
-// wait for the bridge and cross. Everything it reads is on the screen for a player too, and it never dodges an AI runner.
-const BOT = `var __opts = { charge:125 };
-var __bot = function(you){
-  var o = { right:true, jump:false, down:false, smash:false }, fy = RACE.floorY, ahead = you.x + you.r;
-  if(RACE.bridge) return o;
-  var m = fighters.find(function(q){ return q._marsh; });
-  if(ahead > RACE.edge - 80){
-    o.right = false;
-    if(RACE.thrown || RACE.marshOver) return o;
-    if(you.onground && Math.abs(you.vx) < 0.6 && m && Math.abs(m.x - you.x) < RACE_THROW_REACH){
-      if(RACE.charge) o.smash = RACE.charge.t < __opts.charge;   // holding, until the meter reads what I want
-      else o.smash = !you._smRaw;                                 // not charging: a fresh press (the key up for a frame first)
-    }
-    return o;
-  }
-  var wv = RACE.waves.find(function(w){ return w.x + w.th > ahead - you.r*2 && w.x - ahead < (MAXVX + w.sp)*18; });
-  if(wv && you.onground) o.jump = true;
-  var bl = RACE.bullets.find(function(b){ return b.y > fy - 40 && b.x + b.w > ahead - you.r*2 && b.x - ahead < (MAXVX + b.sp)*18; });   // a low shot coming: one jump
-  if(bl && you.onground) o.jump = true;
-  var ob = RACE.obstacles.find(function(b){ return b.x1 > you.x - 20; });
-  if(!ob) return o;
-  var lead = 34 + Math.max(0, you.vx)*3;
-  if(ob.k==='gap'){
-    if(you.onground && ob.x0 - ahead < lead && ob.x0 - ahead > -60) o.jump = true;
-    else if(!you.onground && you.vy > 0 && you.jumps > 0 && you.x > ob.x0 && you.x < ob.x1 && you.y + you.r > fy - 30) o.jump = true;
-  } else if(ob.k==='wall'){
-    if(fy - ob.top <= 105){
-      if(you.onground && ob.x0 - ahead < 70 + Math.max(0, you.vx)*2 && ob.x0 - ahead > -10) o.jump = true;
-      else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 && you.y + you.r > ob.top - 6) o.jump = true;
-    } else {   // a wall a single jump cannot top: jump early, and again ten frames later
-      if(you.onground && ob.x0 - you.x < 215 && ob.x0 - you.x > 20) o.jump = true;
-      else if(!you.onground && you.jumps > 0 && you.vy < -5 && you.vy > -7.2) o.jump = true;
-      else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 && you.y + you.r > ob.top - 6) o.jump = true;
-    }
-  } else if(ob.k==='bar'){
-    if(you.onground && Math.abs(you.y + you.r - ob.ledgeY) < 3){ if(ob.barX0 - ahead < 70) o.down = true; }
-    else if(you.onground && ob.stepX - ahead < 70 + Math.max(0, you.vx)*2 && ob.stepX - ahead > -10) o.jump = true;
-    else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.stepX + 40 && you.y + you.r > ob.ledgeY - 6) o.jump = true;
-  } else if(ob.k==='piston'){
-    var h = RACE.hazards.find(function(z){ return z.x===ob.x0; }), d = ob.x0 - ahead;
-    if(h && d > -10 && d < 260 && you.onground){
-      var P = h.period, tc = ((h.w + 2*you.r)/MAXVX + 3)/P;   // crossing it, and three frames to spare, as a part of its cycle
-      var eta = Math.max(0, d)/MAXVX + (you.vx < 3 ? 6 : 0), phE = (((hazardT + eta)/P) + h.phase) % 1;
-      if(!(phE >= 0.69 || phE <= 0.31 - tc) && d < 90){ o.right = false; return o; }
-    }
-  } else if(ob.k==='ferry'){
-    var fl = RACE.ferries.filter(function(z){ return z.g === ob.g; });
-    var onf = fl.find(function(z){ return you.onground && Math.abs(you.y + you.r - z.y) < 3 && you.x > z.plat.x - 4 && you.x < z.plat.x + z.w + 4 && you.x > ob.x0 + 5; });
-    if(onf){   // riding: walk to the front of it and wait there; hop off when the far edge is near
-      var front = onf.plat.x + onf.w, nearFar = ob.x1 - front <= 70;
-      o.right = nearFar || you.x < front - 34; o.jump = nearFar && you.onground && you.x > front - 60; return o;
-    }
-    if(ob.x0 - ahead < 60 && !fl.some(function(z){ return z.plat.x <= ob.x0 + 10; })){ o.right = false; if(you.onground && you.vx > 1) o.left = true; return o; }   // wait at the edge for one to come in
-  } else if(ob.k==='spikes'){
-    if(you.onground && ob.x0 - ahead < 34 && ob.x0 - ahead > -10) o.jump = true;   // one jump over the strip
-  } else if(ob.k==='ceiling'){
-    if(you.onground && ob.strip.x0 - ahead < 34 && ob.strip.x0 - ahead > -10) o.jump = true;   // one jump under the tips, never a second
-  } else if(ob.k==='spring' && ob.mode==='trap'){
-    if(you.onground && ob.pad.x0 - ahead < 60 && ob.pad.x0 - ahead > -10) o.jump = true;   // hop the pad under the tips (a pad before a field of spikes is run onto)
-  } else if(ob.k==='fire'){
-    // a run of vents: go when a runner setting off from where he is, holding right, would cross every one of them while it rests
-    var vs = RACE.traps.filter(function(z){ return z.k==='fire' && z.g===ob.g && z.x + z.w > you.x - you.r; }), d0 = vs[0].x - ahead;
-    if(d0 > -10 && d0 < 120 && you.onground){
-      var arrive = function(dist){ var v = Math.max(0, you.vx), x = 0, t = 0; while(x < dist && t < 300){ v = Math.min(MAXVX, v + 0.9); x += v; t++; } return t; };
-      var bad = false;
-      vs.forEach(function(z){ var di = z.x - ahead, ta = arrive(di), tb = arrive(di + z.w + 2*you.r);
-        for(var u = ta - 2; u <= tb + 2; u++){ var pf = (((hazardT + u)/z.period) + z.phase) % 1; if(pf >= z.warn/z.period && pf < (z.warn + z.burn)/z.period) bad = true; } });
-      if(bad && d0 < 90){ o.right = false; return o; }
-    }
-  } else if(ob.k==='pendulum'){
-    // what a player only approximates: look at the swing and take the first way through -- run on, or jump in a few frames --
-    // that misses the saw; if there is none yet, wait where you are
-    var pe = RACE.pendulums.find(function(z){ return z.px === ob.px; }), dz = ob.x0 - ahead;
-    if(pe && dz < 150 && you.x < pe.px + 120){
-      var path = function(jumpAt){   // the runner's centre, frame by frame, running on from here and jumping at frame jumpAt
-        var pts = [], v = Math.max(0, you.vx), x = you.x, tj = -1;
-        for(var k = 0; k < 130; k++){ v = Math.min(MAXVX, v + 0.9); x += v; if(jumpAt !== null && k >= jumpAt && k < jumpAt + 40) tj = k - jumpAt; else tj = -1;
-          pts.push({ x:x, y:you.y - (tj >= 0 ? Math.max(0, 11.88*(tj + 1) - 0.31*(tj + 1)*tj) : 0) }); if(x > pe.px + pe.L*Math.sin(pe.A) + pe.R + 60) break; }
-        return pts; };
-      var clear = function(jumpAt){ var pts = path(jumpAt); for(var k = 0; k < pts.length; k++){ var bb = racePendulumPos(pe, hazardT + k + 1); if(Math.hypot(pts[k].x - bb.x, pts[k].y - bb.y) < pe.R + you.r*0.85 + 4) return false; } return true; };
-      var plan = null;
-      if(clear(null)) plan = 'run'; else for(var jj = 0; jj <= 70 && plan === null; jj += 2) if(clear(jj)) plan = jj;
-      if(plan === null){ if(dz < 90){ o.right = false; return o; } }
-      else if(plan === 0 && you.onground) o.jump = true;
-    }
-  } else if(ob.k==='memory'){
-    if(you.onground && ob.x0 - ahead < 90 && ob.x0 - ahead > -10) o.jump = true;
-    else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 - 20) o.jump = true;
-  }
-  return o;
-};
-var __run = function(you, hold, maxFrames){
-  var r = { frames:0, minLead:1e9, worst:-1e9, behindLine:0, lost:0, leadAtThrow:null, chargeMax:0, held:0, bumps:0 }, n = 0, pb = false;
-  for(; n < maxFrames && running; n++){
-    hold(__bot(you)); step();
-    var bb = you._raceBumpT > 0; if(bb && !pb) r.bumps++; pb = bb;
-    var mm = fighters.find(function(q){ return q._marsh; });
-    if(!you.dead) r.minLead = Math.min(r.minLead, you.x - RACE.lineX);
-    if(mm.dead) r.lost++;
-    if(!RACE.marshOver && !RACE.thrown && !RACE.charge){ r.worst = Math.max(r.worst, you.x - mm.x); if(mm.x - mm.r*0.5 <= RACE.lineX) r.behindLine++; }
-    if(RACE.charge){ r.held++; r.chargeMax = Math.max(r.chargeMax, RACE.charge.t); if(r.leadAtThrow === null) r.leadAtThrow = you.x - RACE.lineX; }
-  }
-  hold({});
-  r.frames = n;
-  return r;
-};`;
+// THE SCRIPTED RUNNER (page code) is test/helpers/running-bot.page.js: it holds right and reads the lane the way a player reads the screen,
+// and never dodges an AI runner. The lane's hard sections are played by the plans of test/helpers/running-solver.page.js instead, which
+// scripts/solve-running-lane.mjs found by search on the real engine (see "the run" below). Both are spliced in or eval'd here, so every
+// test runs the real thing.
+const BOT = readFileSync('test/helpers/running-bot.page.js', 'utf8');
+const SOLVER = readFileSync('test/helpers/running-solver.page.js', 'utf8');
+const PROG = JSON.parse(readFileSync('test/data/running-lane.json', 'utf8'));   // the plans, and the lane they were solved on
 
 // ---- the numbers the engine gives (measured, never assumed), and the lane as built ----
 // Run flat and full speed on an endless floor: how far one jump carries, how far the best double jump carries, how high
@@ -198,13 +95,15 @@ const physics = (heights) => PH || (PH = quick({}, `
 let LANE = null;
 const lane = () => LANE || (LANE = race({}, `return { obs:RACE.obstacles, haz:RACE.hazards, pianos:RACE.pianos, voices:RACE.voices, memories:RACE.memories, traps:RACE.traps, cannons:RACE.cannons, pendulums:RACE.pendulums, pits:RACE.pits,
   crumbles:RACE.crumbles.map(function(c){ return { x:c.x, w:c.w, delay:c.delay, s:c.s, g:c.g }; }), ferries:RACE.ferries.map(function(f){ return { gx:f.gx, gw:f.gw, w:f.w, period:f.period, phase:f.phase, g:f.g, i:f.i, s:f.s }; }),
-  bullet:RACE_BULLET, grav:GRAV, floor:RACE.floorY, edge:RACE.edge, farX:RACE.farX, finishX:RACE.finishX, WW:WW, W:W, backX:RACE_BACK_X, len:RACE_LEN, lineSpeed:RACE_LINE_SPEED, maxvx:MAXVX, r:you.r, plats:JSON.stringify(worldPlats) };`));
+  bullet:RACE_BULLET, grav:GRAV, floor:RACE.floorY, edge:RACE.edge, farX:RACE.farX, finishX:RACE.finishX, WW:WW, W:W, backX:RACE_BACK_X, len:RACE_LEN, lineSpeed:RACE_LINE_SPEED, maxvx:MAXVX, r:you.r, plats:JSON.stringify(worldPlats),
+  hash:__rs.laneHash() };`));
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 
 // ONE scripted run of the whole lane, shared by the tests below (a full run is the slow part of this file).
 let RUN = null;
 const fullRun = () => RUN || (RUN = quick({}, `${BOT}
-  var out = __run(you, hold, 8000);
+  var C = __rs.controller({ bot:__bot, programs:${JSON.stringify(PROG.programs)} });   // the plans on file for the lane's hard sections, the scripted runner for the rest
+  var out = __run(you, hold, 10000, C.ctl);
   var first = RACE.obstacles[0];
   var seen = window.__banners.slice(__b0).map(function(b){ return b.text + '|' + (b.kind||''); });
   var gone = fighters.filter(function(f){ return f._runner && !f._marsh && f.dead; });
@@ -213,7 +112,7 @@ const fullRun = () => RUN || (RUN = quick({}, `${BOT}
     secs:window.__raceResult && window.__raceResult.secs, title:document.getElementById('resultTitle').textContent, sub:document.getElementById('resultSub').textContent,
     youX:Math.round(you.x), youXf:you.x, finish:RACE.finishX, edge:RACE.edge, farX:RACE.farX, marshOver:RACE.marshOver, marshX:Math.round(marsh.x), marshAlive:!marsh.dead, floor:RACE.floorY, marshY:Math.round(marsh.y + marsh.r),
     seen:seen, err:!!window.__loopErrLogged, gone:gone.map(function(f){ return f.name; }), past:past, speed:RACE_LINE_SPEED, leash:RACE_MARSH_LEASH, full:RACE_THROW_FULL,
-    lineAtEnd:Math.round(RACE.lineX) };`));
+    lineAtEnd:Math.round(RACE.lineX), plan:{ seen:C.seen, secs:C.secs, failed:C.failed, at:C.si } };`));
 
 const CANON = ['piano', 'memory', 'voice'];
 const PLATFORMER = ['spikes', 'ceiling', 'spring', 'fire', 'belt', 'crumble', 'pendulum', 'cannon', 'ferry'];
@@ -491,7 +390,27 @@ describe('the runners', () => {
   });
 });
 
+// THE PROOF THAT IT CAN BE WON. The owner (2026-10-02): "running should be d5 bfdi:branches difficulty" -- harder, and still winnable as Knife by a
+// skilled player with no checkpoint. The lane's hard sections are solved by search on the real engine (scripts/solve-running-lane.mjs, method in
+// test/helpers/running-solver.page.js): the plan for each is a few frames of exact presses, kept on file in test/data/running-lane.json. The tests
+// below play the whole lane back with them (and the scripted runner for the rest) in the real game with every runner on the lane, and the throw.
 describe('the run', () => {
+  it('the plans on file were solved on this very lane: when the lane changes they are solved again (node scripts/solve-running-lane.mjs)', () => {
+    expect(PROG.lane, 'the lane is not the one the plans were solved on: run node scripts/solve-running-lane.mjs and commit test/data/running-lane.json').toBe(lane().hash);
+    expect(PROG.programs.length, 'one plan for every section of the lane that has one').toBe(lane().obs.filter((o) => o.sec).length);
+    for (const p of PROG.programs) expect(p.steps, p.k + ' at ' + Math.round(p.x) + ' has a plan').toBeTruthy();
+  });
+
+  it('played back, the plans are the run that was solved: every section begins and ends on the frame and the spot it did when it was solved, with the runners and Marshmallow on the lane too', () => {
+    const r = fullRun();
+    expect(r.plan.failed, 'no section without a plan').toBe(-1);
+    expect(r.plan.seen.length, 'every section was reached').toBe(PROG.programs.length);
+    r.plan.seen.forEach((s, i) => {
+      const p = PROG.programs[i];
+      expect([s.frame, +s.x.toFixed(6), s.endFrame, +s.endX.toFixed(6)], p.k + ' #' + i + ': begins and ends where it did when it was solved').toEqual([p.frame, +p.x.toFixed(6), p.endFrame, +p.endX.toFixed(6)]);
+    });
+  }, 300000);
+
   it('a scripted runner who plays the whole lane reaches the end, throws Marshmallow over and crosses: the lane is completable, with room to spare', () => {
     const r = fullRun();
     expect(r.over, 'the race was decided within the frame budget').toBe(true);
