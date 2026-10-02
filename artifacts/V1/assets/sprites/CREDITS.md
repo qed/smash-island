@@ -575,14 +575,15 @@ kept: a real PNG, transparent, projectile-sized) and recorded in scripts/attack-
 The Bug Swarm, Boss 4 (the boss overhaul, 2026-09-29; the owner: "Give the swarm a sprite."). Twelve assets from the Bugs page (its infobox and its Assets/Poses gallery)
 and the Host Bug page, each a clean transparent PNG of the thing itself, fetched by `node scripts/fetch-attack-sprites.mjs <dir> bugpurple bugred bugcool bugsting bugegg
 bugeggs bugsplat bugbig bughost bugmutant buglarva bugqueen` (its `swarm` picks in that script) and looked at before they were kept: alpha verified, at most 128 px on the long
-side. They draw the swarm itself (a cloud of them round the Host Bug, the mutated bug in phase 3) and everything it throws: its tide, its pattern, its seekers, its ball, its egg
-sac and the hatchlings (`assets/sprites/attacks/`, drawn from ATTACK_SPRITES and swarmDrawBody in index.html). The wiki files its bugs under "Poorly Drawn Characters": they are
+side. They draw the swarm itself (a cloud of them round the Host Bug, the mutated bug in phase 3) and everything it throws: its tide, its seekers, its ball, its egg
+sac and the hatchlings, and the stinger bug of POISON STING! (Round 17: the owner's pick for the tunnel's place, the same File:Bug stinger.png the seekers wear, twice their size)
+(`assets/sprites/attacks/`, drawn from ATTACK_SPRITES and swarmDrawBody in index.html). The wiki files its bugs under "Poorly Drawn Characters": they are
 crude scribbles by design. The hive and its pitcher plant are drawn in code (Bug Hive), and so is the Delete Bugs button of its ending, not the wiki file.
 
 - The Bug Swarm (bugpurple.png): a purple-spotted bug, the Bugs page asset (BFDIA 3+) — File:Purple bug.png — https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/Purple_bug.png/revision/latest?cb=20240517152428
 - The Bug Swarm (bugred.png): a red-spotted bug, the Bugs page asset (BFDIA 3+) — File:Red bug.png — https://static.wikia.nocookie.net/battlefordreamisland/images/7/72/Red_bug.png/revision/latest?cb=20240517152230
 - The Bug Swarm (bugcool.png): a purple-spotted bug (BFDI 24, BFDIA 12), the swarm's other drawing of one — File:Cool bug.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/5e/Cool_bug.png/revision/latest?cb=20191217155221
-- The Bug Swarm (bugsting.png): a bug with poison stingers, the Bugs page asset — File:Bug stinger.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/5c/Bug_stinger.png/revision/latest?cb=20191217155229
+- The Bug Swarm (bugsting.png): a bug with poison stingers, the Bugs page asset: the seekers, and POISON STING!'s pounce — File:Bug stinger.png — https://static.wikia.nocookie.net/battlefordreamisland/images/5/5c/Bug_stinger.png/revision/latest?cb=20191217155229
 - The Bug Swarm (bugegg.png): a bug egg, the Bugs page asset — File:Bug egg.png — https://static.wikia.nocookie.net/battlefordreamisland/images/7/7d/Bug_egg.png/revision/latest?cb=20191217155153
 - The Bug Swarm (bugeggs.png): multiple bug eggs: the egg sac Flower throws (Insectophobe's Nightmare 2) — File:Bug eggs.png — https://static.wikia.nocookie.net/battlefordreamisland/images/c/cc/Bug_eggs.png/revision/latest?cb=20191217155105
 - The Bug Swarm (bugsplat.png): a crushed bug and its sticky adhesive, the Bugs page asset — File:Bug Crushed.png — https://static.wikia.nocookie.net/battlefordreamisland/images/d/d1/Bug_Crushed.png/revision/latest?cb=20200823173955
