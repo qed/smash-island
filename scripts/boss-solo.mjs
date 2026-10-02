@@ -13,8 +13,9 @@
 // A BOSS: one fighter from FIGHTERS, 3 stocks, AI-controlled, items off, on the Boss Rush stage, started AT the boss (a
 // fresh bar, 0%). SEEDS runs per fighter (16: 240 runs a boss. The steps between the Dragon, the II bosses and Four are
 // about a tenth of a life each, and at 60 runs a boss's lives lost moved by that much between retunes that changed almost
-// nothing; livesLostSE is the standard error, about 0.06 at 240). A run that has not beaten the boss inside FRAMES (60 s)
-// counts as not beaten. SEEDS=4 in the environment makes a quick look (it cannot be written).
+// nothing; livesLostSE is the standard error, about 0.06 at 240). A run that has not beaten the boss inside FRAMES (120 s)
+// counts as not beaten. (It was 60 s; with every boss on +50% HP and one attack at a time (Round 17) fights ran past a minute,
+// and a run cut off with stocks left read as fewer lives lost: the longest fights looked the easiest.) SEEDS=4 in the environment makes a quick look (it cannot be written).
 // A solo fight is scored the frame the boss falls, so it must not be paid the stock that clearing every third boss pays:
 // the first stored numbers were, for the Dragon, MePhone4S and Four (Bosses 6, 9 and 12), and each read about 0.8 of a
 // life easier than it was.
@@ -35,7 +36,7 @@ import { BOSS_TUNING_EXPR, harnessCode } from './boss-tuning.mjs';
 
 const FIGHTERS = ["Firey","Leafy","Pin","Needle","Coiny","Bubble","Pen","Snowball","Blocky","Ice Cube","Match","Pencil","Rocky","Tennis Ball","Golf Ball"];
 const SEEDS_STORED = 16, SEEDS = Number(process.env.SEEDS || SEEDS_STORED), RUN_SEEDS = 2;
-const FRAMES = 3600;
+const FRAMES = 7200;
 const RUN_FROM = 'MePhone4S';
 
 // Sets the run up and wraps addProj/applyHit so each point of damage is filed under the move that dealt it.
