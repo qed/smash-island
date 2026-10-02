@@ -47,8 +47,12 @@ const STAGE = (x, x2) => `
   step(); fighters.forEach(function(q){ q.pct=0; q.invuln=0; });
   function run(n){ for (var i=0;i<n;i++){ step(); } }
   function keep(n){ for (var i=0;i<n;i++){ step(); fighters.forEach(function(q){ q.pct=0; q.invuln=0; q.dead=false; }); } }
-  function calmed(){ b._lanes=null; b._bl=null; b._calm=999; b._hz.cc=999; }   // nothing of his is going, and has not been for a long while: his next turn may begin (the window the owner asked for is its own tests below)
-  function turn(moveN){ b._tel=0; projectiles=[]; b._q=[]; calmed(); b._moveN=moveN; b._atkTimer=1; step(); }
+  function calmed(){ b._lanes=null; b._bl=null; b._calm=999; b._hz.cc=999; b._atkLive=null; }   // nothing of his is going, and has not been for a long while: his next turn may begin (the window the owner asked for is its own tests below); no attack is live (the engine's one-at-a-time hold)
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- the turn
+  // cycle (the signature, a laser, the signature, acid, ...) is gone, so a test that needs one of his moves forces it: turn(0) is the signature (CAKE AT STAKE! / BUDGET CUTS! / CRUSHER ARM!),
+  // turn(1) QUADRUPLE LASER!, turn(3) ACID TEARS!, turn(5) WATER BALLOONS! (the numbers are the old cycle's, kept for the call sites: 2 and 4 were the signature again). The picker has its own tests.
+  var FORCE = { 0:'announcer', 1:'annlaser', 2:'announcer', 3:'annacid', 4:'announcer', 5:'annballoon' };
+  function turn(moveN){ b._tel=0; projectiles=[]; b._q=[]; calmed(); b._pickForce=FORCE[moveN]; b._atkTimer=1; step(); }
   function setPhase(ph){ b._phase = ph; b.hp = b.maxHp*[0, 0.9, 0.5, 0.2][ph]; keep(3); projectiles=[]; b._q=[]; b._tel=0; calmed(); impactFxClear(); }
 `;
 // A bare Announcer for driving his functions directly.
@@ -80,15 +84,21 @@ describe('the Announcer, rebuilt', () => {
     expect(r.gaps.every((g, k) => g > [100, 72, 52][k])).toBe(true);
   });
 
-  it('takes turns: the signature, QUADRUPLE LASER!, the signature, ACID TEARS!, the signature, WATER BALLOONS!, each with its own warning', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." Asked how
+  // far it goes: "Position picks all (Recommended)" -- the signature competes like every other move. So he no longer runs the signature, the laser, the signature, the acid...: he draws his four
+  // by where the fighters stand (test/boss-kit.test.js tests the picker itself). Here: his four are the moves, each with its own warning, none twice in a row, and all of them come up.
+  it('draws his turns from his four -- CAKE AT STAKE!, QUADRUPLE LASER!, ACID TEARS!, WATER BALLOONS! -- each with its own warning, none twice in a row, and every one of them comes up', () => {
     const r = W.eval(`(function(){
       var s = ${BARE()}, kinds = [], names = [];
       // (the turns are driven by hand: nobody is in the arena, so nothing of his is in the air -- but the balloons' hang is his own state, and his next turn waits for it)
-      for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; s._bl = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+      for (var i=0;i<12;i++){ s._atkTimer = 1; s._tel = 0; s._bl = null; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       return { kinds: kinds, names: names };
     })()`);
-    expect(r.kinds).toEqual(['announcer', 'annlaser', 'announcer', 'annacid', 'announcer', 'annballoon', 'announcer', 'annlaser']);
-    expect(r.names).toEqual(['CAKE AT STAKE!', 'QUADRUPLE LASER!', 'CAKE AT STAKE!', 'ACID TEARS!', 'CAKE AT STAKE!', 'WATER BALLOONS!', 'CAKE AT STAKE!', 'QUADRUPLE LASER!']);
+    const NAME = { announcer: 'CAKE AT STAKE!', annlaser: 'QUADRUPLE LASER!', annacid: 'ACID TEARS!', annballoon: 'WATER BALLOONS!' };
+    expect(r.kinds.every((k) => NAME[k]), `only his four: ${r.kinds}`).toBe(true);
+    expect(r.names, 'each is announced by its own name').toEqual(r.kinds.map((k) => NAME[k]));
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(new Set(r.kinds).size, `every one of his four comes up within twelve turns: ${r.kinds}`).toBe(4);
   });
 
   it('the signature is named for the phase its wind-up was drawn in: CAKE AT STAKE!, BUDGET CUTS!, CRUSHER ARM!', () => {
@@ -691,7 +701,9 @@ describe('ACID TEARS!: a sprinkler and puddles', () => {
     expect(r.n1, 'the ones that burned him are spent').toBeLessThan(r.n0);
   });
 
-  it('it comes straight after a cake volley nobody was hit by ("the contestants reject the cake"), takes the turn of the second move that was due, and that one is only put off', () => {
+  // Round 17 (the owner: "make the attacks based on fighter position."): the turn cycle is gone, so there is no "second move that was due" to take the turn of or to put off. What survives is the
+  // rule itself, as the picker's `force`: after a cake volley nobody was hit by, the next turn is ACID TEARS!; after one that landed (or with nothing thrown) nothing is forced.
+  it('it comes straight after a cake volley nobody was hit by ("the contestants reject the cake"): the picker forces it; a volley that landed forces nothing, and the turn after acid is never acid again', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       var out = {}, gy = groundY();
       // his next turn comes by itself, once the volley is over and ANN.calm has passed (annTick holds it until then): this lets it, and says which turn it was
@@ -702,22 +714,32 @@ describe('ACID TEARS!: a sprinkler and puddles', () => {
       var keepOn = function(){ f.invuln = 999; };
       // a volley nobody is hit by
       f.invuln = 999; turn(0); var rej = nextTurn(keepOn); out.waited = rej && rej.at; out.rejected = rej;
-      // the turns after: the signature, then the laser that was put off
-      // (each asked for by hand, the signature's volley not thrown: one that nobody is hit by would be rejected in just the same way)
-      var next = []; for (var k=0;k<2;k++){ b._tel = 0; calmed(); b._atkTimer = 1; step(); next.push(b._telKind); }
+      // the turn after the acid: asked for by hand (nothing is thrown, so nothing is rejected), it is never acid again -- the variety rule: no move twice in a row
+      var next = []; for (var k=0;k<3;k++){ b._tel = 0; calmed(); b._atkTimer = 1; step(); next.push(b._telKind); }
       out.next = next;
-      // a volley that hits: no acid
+      // a volley that hits: the volley is marked hit, and the picker forces nothing
       ${STAGE(300)}
-      turn(0); var hit = false; var nx = nextTurn(function(){ f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; if (f.pct > 0) hit = true; });
-      out.hit = { was: hit, kind: nx && nx.kind, waited: nx && nx.at };
+      turn(0); var hit = false, marked = false;
+      for (var j=0;j<260;j++){ step(); f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; if (f.pct > 0) hit = true; if (b._lastCake && b._lastCake.hit) marked = true; }
+      out.hit = { was: hit, marked: marked, forced: BOSS_PICK.announcer.force(b) };
+      // the hook itself, on volleys made by hand: missed and over -> acid; landed -> nothing; still in the air -> nothing; no volley -> nothing
+      var done = { life:0 }, air = { life:30 }; projectiles.push(air);
+      var P = BOSS_PICK.announcer, s = b;
+      s._lastCake = { id:1, hit:false, shots:[done] }; out.missed = P.force(s);
+      s._lastCake = { id:1, hit:true, shots:[done] }; out.landed = P.force(s);
+      s._lastCake = { id:1, hit:false, shots:[air] }; out.inAir = P.force(s);
+      s._lastCake = null; out.none = P.force(s);
       return out;
     })()`);
     expect(r.waited, 'his next turn did come, once the volley was over').toBeGreaterThan(100);
-    expect(r.rejected.kind, 'acid instead of the laser that was due').toBe('annacid');
+    expect(r.rejected.kind, 'acid after a volley nobody was hit by').toBe('annacid');
     expect(r.rejected.name).toBe('ACID TEARS!');
-    expect(r.next, 'then the signature, then the laser that was put off').toEqual(['announcer', 'annlaser']);
+    expect(r.next[0], 'the turn after acid is not acid').not.toBe('annacid');
+    expect(r.next.every((k) => ['announcer', 'annlaser', 'annacid', 'annballoon'].includes(k)), `only his own four: ${r.next}`).toBe(true);
     expect(r.hit.was).toBe(true);
-    expect(r.hit.kind, 'a volley that landed: the turn is the laser, as scheduled').toBe('annlaser');
+    expect(r.hit.marked, 'the volley that landed is marked hit').toBe(true);
+    expect(r.hit.forced, 'a volley that landed: nothing is forced').toBe(null);
+    expect([r.missed, r.landed, r.inAir, r.none], 'forced only when the volley is over and nobody was hit').toEqual(['annacid', null, null, null]);
   });
 });
 
@@ -1335,12 +1357,12 @@ describe('drawing his arena, his tells, his shots and his ending', () => {
       function run(n){ for (var i=0;i<n;i++){ step(); fighters.forEach(function(q){ q.invuln = 999; q.pct = 0; }); } }
       run(60); setPhase2();
       function setPhase2(){ b._phase = 2; b.hp = b.maxHp*0.5; run(3); }
-      b._moveN = 0; b._tel = 0; b._atkTimer = 1; step(); run(20);      // BUDGET CUTS! winding up: a prize on the tosser, a claw over a podium
+      b._pickForce = 'announcer'; b._tel = 0; b._atkLive = null; b._atkTimer = 1; step(); run(20);      // BUDGET CUTS! winding up: a prize on the tosser, a claw over a podium
       var snap = JSON.parse(JSON.stringify(serializeState()));
       var host = { pz: b._pz, sl: b._sl, ent: b._ent, hz: JSON.parse(JSON.stringify(b._hz)), seg: null };
       run(20); var lasers = projectiles.length;
       b._tel = 0; b._lanes = null; b._q = []; b._lastCake = null; b._calm = 999; b._hz.cc = 999; projectiles = [];   // (his next turn waits for the volley to be over and ANN.calm more: here it is)
-      b._moveN = 1; b._atkTimer = 1; step(); run(62);      // and a laser: its beams are marks
+      b._pickForce = 'annlaser'; b._atkLive = null; b._atkTimer = 1; step(); run(62);      // and a laser: its beams are marks
       var marks = projectiles.filter(function(p){ return p.annMark === 'beam'; }), m0 = marks[0];
       host.seg = m0 ? annBeamSeg(m0, gy) : null; host.mA = m0 && m0.mA;
       var snap2 = JSON.parse(JSON.stringify(serializeState()));

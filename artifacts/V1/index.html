@@ -7712,14 +7712,15 @@ function bossSituation(s){
   }
   return o;
 }
-// A move's weight: 1, plus how well its tags fit (each tag's gain times how much the fighters' stance is that tag, averaged over the tags: naming more of them is not worth more).
+// A move's weight: 1, plus its best tag -- how well that tag fits (its gain times how much the fighters' stance is that tag). A move names the stances it punishes, and is favoured
+// when ANY of them is the case; so a boss tags sparingly: one or two, the ones the code of the move is built for.
 function bossPickWeight(tags, sit){
-  let sum = 0, n = 0;
+  let best = 0, n = 0;
   for(const t of tags){
-    if(t === 'any'){ sum += PICK.idle; n++; }
-    else if(PICK.gain[t] != null){ sum += PICK.gain[t]*(sit[t] || 0); n++; }
+    if(t === 'any'){ best = Math.max(best, PICK.idle); n++; }
+    else if(PICK.gain[t] != null){ best = Math.max(best, PICK.gain[t]*(sit[t] || 0)); n++; }
   }
-  return 1 + (n ? sum/n : PICK.idle);
+  return 1 + (n ? best : PICK.idle);
 }
 // The turn: which move this wind-up is. Returns the move (also s._pickKey); the engine's _telKind is the pick's `kind` of it, else the move itself. A forced move (a test's
 // s._pickForce, the boss's `force`, a phase's `first`) wins if it is unlocked; else the oldest unplayed move at two decks, else the weighted draw over every unlocked move
@@ -7771,6 +7772,7 @@ function bossAttackOver(s, A){
 function bossAttackWatch(s){
   const A = s._atkLive;
   if(!A || s._tel > 0) return;
+  if(s._atkTimer > 1e6){ s._atkLive = null; return; }   // a boss parked for good (a timer past the 1e6 hold: a test's 1e9) is not being watched, and stays parked
   if(bossAttackOver(s, A)){
     const g = bossAtkGap(s);
     if(g < 1e5){ s._atkLive = null; s._atkTimer = g; return; }   // (a gap the boss's own code still holds is held)
@@ -7801,10 +7803,9 @@ function bossAtkGapBase(s){
   // @boss:announcer:end gap
 
   // @boss:puffball:begin gap
-  if(s.attack==="soundwave"){   // her own pacing: slower than the shared 100/72/52 -- the lake and the tilt press instead -- counted from the END of a long turn (psbBusy: the frames it runs after it fires)
-    const extra = s._psbBusy || 0; s._psbBusy = 0;
-    return PSB.gaps[Math.min(3, Math.max(1, s._phase||1))] + extra;
-  }
+  // her own pacing: slower than the shared 100/72/52 -- the lake and the tilt press instead. It is counted from the moment her turn is over (the engine's one-attack watch, bossAttackWatch,
+  // asks BOSS_PICK.soundwave.busy and her shots); it used to be counted from her shot, plus an estimate of how long the turn ran on (_psbBusy).
+  if(s.attack==="soundwave") return PSB.gaps[Math.min(3, Math.max(1, s._phase||1))];
   // @boss:puffball:end gap
 
   // @boss:firey:begin gap
@@ -8217,9 +8218,28 @@ const BOSS_RUSH_ONLY = new Set([   // second moves an item boss never throws (se
 //   scan   false: `busy` is the whole answer, so the engine does not look for shots (the Announcer's puddles lie on the floor for good)
 const BOSS_PICK = {
   // @boss:announcer:begin pick
+  // His four, each tagged by what its code punishes. CAKE AT STAKE! / BUDGET CUTS! (the signature) lobs to the surface you stand on, throws flat along your row and re-aims a lob, all from the tosser, so it
+  // reaches wherever you keep to: far, floor, ledge. From phase 3 the signature is CRUSHER ARM!, a press on the spot you stood and a wave along that floor: any, floor. QUADRUPLE LASER! locks a cross on your
+  // spot: any. ACID TEARS! falls round him, the first drop 100 px out and a puddle on the floor under each: close, floor. WATER BALLOONS! puts one over each fighter and the rest between: spread (and one
+  // over a lone fighter's spot: any). His old rule is `force`: ACID TEARS! comes straight after a cake volley nobody was hit by ("The 5 contestants who were safe reject the cake", Rescission). `busy` is annBusy,
+  // the glitch pass's list of everything of his still to strike, and it is the whole answer (scan: false): his puddles lie on the floor for good.
+  announcer: {
+    tags:{ announcer:(s, ph) => ph >= 3 ? ['any', 'ground'] : ['far', 'ground', 'platform'], annlaser:'any', annacid:['close', 'ground'], annballoon:['spread', 'any'] },
+    force:(s) => { const lc = s._lastCake; return (lc && !lc.hit && lc.shots.every(p => p.life <= 0 || projectiles.indexOf(p) < 0)) ? 'annacid' : null; },
+    busy:(s) => annBusy(s), scan:false
+  },
   // @boss:announcer:end pick
 
   // @boss:puffball:begin pick
+  // Her four. SONIC BLAST! sends a wall of rings along seven lanes from the floor to a jump's height, both ways across the whole room, with one gap: it reaches wherever you are and catches a jumper: far, air.
+  // CONSEQUENCES! dashes to the spot the spotlight locked on and throws five knives at you from there: close. RAINBOW BARF! (from phase 2) sweeps a stream over the floor round her, leaning toward you, and
+  // whips back: floor, close. PRIVATE! slams a shutter at each edge (whoever stands in their way is hit and shoved in) and sings notes from them at the floor's and the platform's height: wall, ledge.
+  // `busy`: her dash, cuts and way back, her extra waves, the sweep, and her song (she is out of frame until the shutters are up) with the flight back to her place -- none of it is a shot.
+  soundwave: {
+    tags:{ soundwave:['far', 'air'], consequences:'close', rainbowbarf:['ground', 'close'], private:['wall', 'platform'] },
+    moves:(s, ph) => ph >= 2 ? ['soundwave', 'consequences', 'rainbowbarf', 'private'] : ['soundwave', 'consequences', 'private'],
+    busy:(s) => !!(s._psbLoop || s._psbRun || s._psbBarf || s._psbPriv || s._psbMv)
+  },
   // @boss:puffball:end pick
 
   // @boss:firey:begin pick
@@ -8991,10 +9011,9 @@ function annTick(s, tgt){
 }
 // ---- THE WIND-UP STARTS (the TEL slot) ---------------------------------------------------------------------------------------------------------
 function annTel(s, tgt){
-  const sig = s._telKind === s.attack, ph = s._telPh || s._phase || 1, lc = s._lastCake;
-  // ACID TEARS! comes straight after a cake volley nobody was hit by: "The 5 contestants who were safe reject the cake, causing Announcer to become sad and
-  // start crying acid" (Rescission). It takes the turn of whichever second move was due; that one is only put off (the turn counter steps back two).
-  if(!sig && s._telKind !== 'annacid' && lc && !lc.hit && lc.shots.every(p=>p.life <= 0 || projectiles.indexOf(p) < 0)){ s._telKind = 'annacid'; s._moveN = (s._moveN||0) - 2; }
+  const ph = s._telPh || s._phase || 1;
+  // (ACID TEARS! comes straight after a cake volley nobody was hit by -- "The 5 contestants who were safe reject the cake, causing Announcer to become sad and start crying
+  // acid" (Rescission) -- and that is the picker's `force` now (BOSS_PICK.announcer): it read s._lastCake before this turn began; the volley is forgotten here.)
   s._lastCake = null;
   s._tel = annTelLen(s);   // (the engine set it a line ago, from the LAST turn's kind)
   s._lanes = null; s._spray = null;
@@ -9509,8 +9528,8 @@ function psbEnterPhase(s, ph){
 function psbBeginTelegraph(s, tgt){
   const ph = Math.min(3, Math.max(1, s._phase||1));
   s._telPh = ph;
-  if(s._telKind === 'rainbowbarf' && ph < 2) s._telKind = 'consequences';   // RAINBOW BARF! joins in phase 2: until then that turn is CONSEQUENCES! again
-  s._tel = bossTelLen(s);                                                    // ...with its own wind-up (this slot runs after the turn's kind is chosen)
+  // (RAINBOW BARF! joins in phase 2: the picker's `moves` do not list it before -- BOSS_PICK.soundwave; it used to be CONSEQUENCES! again until then)
+  s._tel = bossTelLen(s);                                                    // each turn has its own wind-up (this slot runs after the turn's kind is chosen)
   const k = s._telKind;
   if(k === 'soundwave'){
     s._psbZ = (s._psbZ||0) + 1;   // in turn, not at random, so it can be learned: the floor is safe, then the platform, then the floor...
@@ -9543,7 +9562,6 @@ function psbBlast(s, tgt, atkId){
   const H = psbHz(s); for(let i=-1;i<=1;i++) psbLight(H, s.x + i*PSB.tile, ph + i + 2, 0);
   if(L.waves[ph] > 1) s._psbLoop = { left:L.waves[ph] - 1, t:L.every[ph], id:atkId, pat:pat, ph:ph, x:s.x };   // "her voice was stuck in a loop": the same lanes again
   s._psbHold = (L.waves[ph] - 1)*L.every[ph] + 30;
-  s._psbBusy = (L.waves[ph] - 1)*L.every[ph] + 26;
   psbSing([523, 659, 784], 'triangle');
 }
 function psbLoopStep(s){
@@ -9566,7 +9584,6 @@ function psbConsequences(s, tgt){
   const x = typeof s._psbSpX === 'number' ? s._psbSpX : s.x, floorY = typeof s._psbSpY === 'number' ? s._psbSpY : groundY();
   s._psbSpLk = 1;
   s._psbRun = { phase:'dash', t:0, T:C.dash[ph], x0:s.x, y0:s.y, x1:clamp(x, s.r*0.5, WW - s.r*0.5), y1:clamp(floorY - s.r*1.08, 60, groundY() - s.r*1.08), n:0, id:id, ph:ph };
-  s._psbBusy = C.dash[ph] + C.every[ph]*C.cuts + (ph >= 3 ? C.fake : 0) + C.hang + C.back + 8;
   psbSing([392, 330, 262], 'sawtooth', 0.3);
 }
 function psbKnife(s, R, f){
@@ -9632,7 +9649,6 @@ function psbBarfArc(s, tgt){
 function psbBarf(s, tgt){
   const ph = Math.min(3, s._telPh || s._phase || 1), B = PSB.barf, arc = Array.isArray(s._psbArc) ? s._psbArc : psbBarfArc(s, tgt);
   s._psbBarf = { t:0, id:++BOSS_ATK_ID, ph:ph, a0:arc[0], a1:arc[1], sweeps:Math.max(1, B.sweeps[ph]) };
-  s._psbBusy = B.T*s._psbBarf.sweeps + 24;
   s._psbHold = B.T*s._psbBarf.sweeps + 8;   // planted while it lasts
 }
 function psbBarfStep(s){
@@ -9672,7 +9688,6 @@ function psbPrivate(s, tgt){
     f.x = inL ? shw + f.r + 4 : WW - shw - f.r - 4; f.vx = (inL ? 1 : -1)*4;
   }
   impact(shw, gy, { shake:14, dust:2, debris:6, scar:true }); impact(WW - shw, gy, { shake:0, dust:2, debris:6, scar:true });
-  s._psbBusy = P.settle + P.beats[ph]*P.beatLen[ph] + P.up + P.back + 10;
   psbSing([196, 147], 'square', 0.4);
 }
 // Beat `beat`'s notes: [the shutter it comes from (-1 left, 1 right), its level]; the second of a phase-3 pair comes from the other one.

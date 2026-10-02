@@ -49,7 +49,8 @@ const S = (o = '') => `{ name:'Puffball Speaker Box', attack:'soundwave', x:550,
 const TURN = `
   function busy(b){ return b._tel>0 || b._psbRun || b._psbBarf || b._psbPriv || b._psbLoop || b._psbMv || projectiles.some(function(p){ return p.psb && p.life > 0; }); }
   function turn(kind, o){ o = o || {};
-    b._moveN = {soundwave:1, consequences:2, rainbowbarf:4, private:6}[kind] - 1; b._atkTimer = 1; b._tel = 0; b._psbBusy = 0;
+    // the owner, Round 17: "make the attacks based on fighter position." -- no fixed order any more, so a test forces the move it measures
+    b._pickForce = kind; b._atkLive = null; b._atkTimer = 1; b._tel = 0;
     var rec = { kind:null, frames:0, shots:[], firstShot:null, minY:1e9, maxSh:0, telAt:-1, fireAt:-1, banner:null, pct0:f.pct }, started = false, _add = addProj;
     // every shot of hers is recorded as it is made (one that hits at once is gone by the time a frame is over): where, how fast, its damage and its id
     addProj = function(p){ if (p && p.psb){ rec.shots.push({ shape:p.shape, x:Math.round(p.x), y:Math.round(p.y), vx:+p.vx.toFixed(2), vy:+p.vy.toFixed(2), dmg:p.dmg, kb:p.kb, id:p.bossAtk, volley:!!p.volley, r:p.r,
@@ -103,21 +104,25 @@ describe('Puffball Speaker Box is Boss 2, with four attacks of her own', () => {
     expect([r.p2, r.p3]).toEqual(['Stuck in a Loop', 'Sinking Clubhouse']);
   });
 
-  it('takes turns: SONIC BLAST!, CONSEQUENCES!, SONIC BLAST!, then RAINBOW BARF! -- CONSEQUENCES! again until phase 2 -- SONIC BLAST!, PRIVATE!, each named and none with a number', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position
+  // picks all (Recommended)": the signature competes like every other move, so her turns are no longer SONIC BLAST!, CONSEQUENCES!, SONIC BLAST!, RAINBOW BARF!, ... She draws from the moves she has
+  // unlocked: three in phase 1, the barf too from phase 2; no move twice in a row, and every one of them comes up (the picker's own tests are in test/boss-kit.test.js).
+  it('draws her turns from the moves she has unlocked -- three in phase 1, RAINBOW BARF! too from phase 2 -- none twice in a row, every one in twelve turns, each named and none with a number', () => {
     const r = W.eval(`(function(){
       var out = {};
       [1, 2].forEach(function(ph){
         var s = ${S('hp:' + '100')}; s.hp = ph === 1 ? 100 : 50; s.maxHp = 100;
         var kinds = [], names = [];
-        for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; window.__lastBanner = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(window.__lastBanner && window.__lastBanner.text + '|' + window.__lastBanner.kind); }
+        for (var i=0;i<12;i++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; window.__lastBanner = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(window.__lastBanner && window.__lastBanner.text + '|' + window.__lastBanner.kind); }
         out['p' + ph] = { kinds: kinds, names: names, phase: s._phase };
       });
       return out;
     })()`);
     expect(r.p1.phase).toBe(1);
-    expect(r.p1.kinds).toEqual(['soundwave', 'consequences', 'soundwave', 'consequences', 'soundwave', 'private', 'soundwave', 'consequences']);
+    expect([...new Set(r.p1.kinds)].sort(), 'phase 1: her three').toEqual(['consequences', 'private', 'soundwave']);
     expect(r.p2.phase).toBe(2);
-    expect(r.p2.kinds).toEqual(['soundwave', 'consequences', 'soundwave', 'rainbowbarf', 'soundwave', 'private', 'soundwave', 'consequences']);
+    expect([...new Set(r.p2.kinds)].sort(), 'phase 2: her four').toEqual(['consequences', 'private', 'rainbowbarf', 'soundwave']);
+    for (const p of ['p1', 'p2']) expect(r[p].kinds.some((k, i) => i > 0 && k === r[p].kinds[i - 1]), `${p}: never the same move twice in a row: ${r[p].kinds}`).toBe(false);
     const say = { soundwave: 'SONIC BLAST!', consequences: 'CONSEQUENCES!', rainbowbarf: 'RAINBOW BARF!', private: 'PRIVATE!' };
     // a wind-up is announced by its name, as a 'boss' banner (the one kind of line a match may show), with no digit in it
     for (const p of ['p1', 'p2']) r[p].kinds.forEach((k, i) => {
@@ -345,7 +350,7 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
   it('the wall panels are the tell: at the wind-up their lanes are the ones the wave then fires, lit along both edges in the rings\' colours, and the gap stays dark', () => {
     const r = W.eval(`(function(){ ${STAGE(900, { settle: 60 })}
       var gy = groundY(), st = {};
-      b._moveN = 0; b._atkTimer = 1; b._tel = 0;
+      b._pickForce = 'soundwave'; b._atkLive = null; b._atkTimer = 1; b._tel = 0;
       for (var i=0;i<20 && !(b._tel > 0);i++) step();
       st.telKind = b._telKind; st.pat = b._psbPat.slice(); st.patT = b._psbPatT; st.tel = b._tel;
       for (var j=0;j<50 && b._tel > 0;j++) step();
@@ -360,7 +365,7 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
     // ...and the drawing: both edges, in the ring colours, the empty lanes dark
     const { w, log } = bootRecording();
     w.eval(`(function(){ ${STAGE(900, { settle: 60 })}
-      b._moveN = 0; b._atkTimer = 1; b._tel = 0; for (var i=0;i<20 && !(b._tel > 0);i++) step(); for (var j=0;j<30;j++) step();
+      b._pickForce = 'soundwave'; b._atkLive = null; b._atkTimer = 1; b._tel = 0; for (var i=0;i<20 && !(b._tel > 0);i++) step(); for (var j=0;j<30;j++) step();
       window.__pat = b._psbPat.slice(); psbDrawFx(); })()`);
     log.length = 0;
     w.eval('psbDrawFx()');
@@ -458,15 +463,19 @@ describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices fi
     expect([p1.phase, p2.phase, p3.phase]).toEqual([1, 2, 3]);
   });
 
-  it('in phase 1 the RAINBOW BARF! turn is CONSEQUENCES! again -- barf waits for phase 2, "once the knife is in her back"', () => {
+  // Round 17 (the owner: "make the attacks based on fighter position."): her turns are drawn from the moves she has unlocked, so there is no "RAINBOW BARF! turn" to be CONSEQUENCES! again: the barf
+  // is simply not among her phase-1 moves (BOSS_PICK.soundwave.moves), and asking for it there gets one of the others.
+  it('RAINBOW BARF! waits for phase 2, "once the knife is in her back": it is not among her phase-1 moves, and forcing it in phase 1 starts one of the others', () => {
     const r = W.eval(`(function(){ ${STAGE(300)} ${TURN}
-      var kinds = [];
       var rec = turn('rainbowbarf', { max:600 });
-      return { kind: rec.kind, banner: rec.banner && rec.banner.text, tel: rec.fireAt - rec.telAt };
+      return { kind: rec.kind, banner: rec.banner && rec.banner.text, p1: bossPickMoves(b, 1), p2: bossPickMoves(b, 2), p3: bossPickMoves(b, 3) };
     })()`);
-    expect(r.kind).toBe('consequences');
-    expect(r.banner).toBe('CONSEQUENCES!');
-    expect(r.tel, 'with CONSEQUENCES!\'s wind-up').toBe(60);
+    expect(r.p1, 'three moves in phase 1').toEqual(expect.arrayContaining(['soundwave', 'consequences', 'private']));
+    expect(r.p1).not.toContain('rainbowbarf');
+    expect(r.p2, 'the barf joins in phase 2').toContain('rainbowbarf');
+    expect(r.p3).toContain('rainbowbarf');
+    expect(['soundwave', 'consequences', 'private'], 'what a phase-1 turn drew instead').toContain(r.kind);
+    expect(r.banner).not.toBe('RAINBOW BARF!');
   });
 });
 
@@ -1037,7 +1046,7 @@ describe('a netcode client draws her from the snapshot', () => {
   it('carries her tells, the hazard state and the arena; a client applies them and draws the panels, the spotlight, the lake and the shutters as the host would', () => {
     const host = loadMonolith().window, client = loadMonolith().window;
     const snap = host.eval(`(function(){ ${STAGE(300, { phase: 2, settle: 200 })}
-      b._moveN = 0; b._atkTimer = 1; b._tel = 0; step(); for (var i=0;i<10;i++) step();
+      b._pickForce = 'soundwave'; b._atkLive = null; b._atkTimer = 1; b._tel = 0; step(); for (var i=0;i<10;i++) step();
       var out = { kind: b._telKind };
       psbHz(b).sh = 0.6; psbHz(b).shw = 220; b._psbPv = [[1, 418, 12]]; b._psbSpX = 321.4; b._psbSpY = 590.4; b._psbSpT = 0.8; b._psbSpLk = 1; b._psbArc = [0.3, 2.0]; b._psbKnifeT = 5;
       out.snap = JSON.parse(JSON.stringify(serializeState()));
