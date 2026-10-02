@@ -382,6 +382,23 @@ describe('the second moves', () => {
     expect(new Set(r.cloneColors)).toEqual(new Set(['#7851a9', '#32cd32']));
   });
 
+  // Every new or changed threat keeps a readable tell (the Round 17 briefs; the owner on the Announcer: "theyre unavoidable bcs they barely have a moment where you can move to dodge"): the second drop,
+  // which the shadow alone marked (23 frames of a 40-frame fall), is drawn as a ray in the wind-up like the first -- one helper says where each lands, and the move and the tell both read it.
+  it("the wind-up draws a ray to every drop's spot -- one in phase 1, two from phase 2 -- so the second drop has the tell the first always had", () => {
+    const r = W.eval(`(function(){ var gy = groundY(), out = {}, seen, _i = springyBoxIndex;
+      var base = { type:'boss', name:'Springy', color:'#afafaf', sprite:'springy', r:88, x:500, y:gy-88, face:1, hp:100, maxHp:100, _tel:30, _telKind:'boxdrop', _boxX:300, _rage:false, flash:0, homeX:500, attack:'springy' };
+      try {
+        [1, 2, 3].forEach(function(ph){ seen = []; springyBoxIndex = function(x){ seen.push(Math.round(x)); return _i(x); };
+          ctx.save(); drawBossSprite(Object.assign({}, base, { _phase:ph })); ctx.restore(); out[ph] = seen.slice(); });
+      } finally { springyBoxIndex = _i; }
+      out.spots = [[500, 1], [500, 2], [900, 2], [80, 2], [540, 3], [560, 3]].map(function(a){ return springyDropSpots(a[0], a[1]); });
+      return out; })()`);
+    expect(r[1], 'phase 1: one ray, to the spot').toEqual([300]);
+    expect(r[2], 'phase 2: a ray to the spot and one to the second, 170 px toward the middle').toEqual([300, 470]);
+    expect(r[3], 'phase 3: the same two').toEqual([300, 470]);
+    expect(r.spots, 'one spot a turn in phase 1; from phase 2 the second a step toward the middle (the nearer wall, kept 80 px in)').toEqual([[500], [500, 670], [900, 730], [80, 250], [540, 710], [560, 390]]);
+  });
+
   it('the box lands as a solid wall that stands SPRINGY.boxLife frames; the clone hops at you; the toy lands and lunges once', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
       var gy = groundY(), out = {};
