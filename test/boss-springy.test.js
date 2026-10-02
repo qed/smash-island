@@ -292,7 +292,8 @@ describe('TRY NOT TO FALL: the slam', () => {
 });
 
 describe('the second moves', () => {
-  it('JUST WANTED A HAND: one mitten along your row, half the arena, through everyone on it; from phase 2 a second along the floor, eight frames behind', () => {
+  // The owner, 2026-10-01 (Round 17): "Springy: JUST WANTED A HAND second fist from phase 1" -- the second fist along the floor, eight frames behind, was phase 2's; every phase throws it now.
+  it('JUST WANTED A HAND: a mitten along your row, half the arena, through everyone on it, and from phase 1 a second along the floor, eight frames behind', () => {
     const r = W.eval(`(function(){ var out = {}, gy = groundY();
       [1, 2].forEach(function(ph){ projectiles = [];
         var s = ${S('_telKind:"longarm", _telX:400, _telY:groundY()-100')}; s._phase = ph;
@@ -307,16 +308,19 @@ describe('the second moves', () => {
       projectiles = []; return out;
     })()`);
     expect(r.dir1, 'toward the side you were on').toBe(-1);
-    expect(r.rows1).toHaveLength(1);
-    expect(r[1].n).toBe(1);
-    expect(r[1].shapes).toEqual(['mitten']);
-    expect(r[1].vx).toEqual([-24]);
+    expect(r.rows1, 'phase 1: one high, one low').toHaveLength(2);
+    expect(r.rows1[1], 'the second along the floor').toBe(W.eval('groundY()') - 24);
+    expect(r[1].n, 'two fists from phase 1').toBe(2);
+    expect(r[1].shapes).toEqual(['mitten', 'mitten']);
+    expect(r[1].vx).toEqual([-24, -24]);
     expect(r[1].pierce, 'through everyone on the row').toBe(true);
-    expect(r[1].dmg).toBeCloseTo(r[1].full, 5);
+    expect(r[1].dmg, 'a full boss hit each, as it was: the damage did not move').toBeCloseTo(r[1].full, 5);
     expect(r[1].reach, 'half the arena').toBeGreaterThanOrEqual(r[1].want);
     expect(r[1].arm, 'the arm reaches back to him').toBe(700);
     expect(r[1].his).toBe(true);
-    expect(r.rows2, 'phase 2: one high, one low').toHaveLength(2);
+    expect(r[1].delays, 'the second eight frames behind the first').toEqual([0, 8]);
+    expect(r[1].ids[0], 'one attack id: the pair is one boss hit').toBe(r[1].ids[1]);
+    expect(r.rows2, 'phase 2: the same pair').toHaveLength(2);
     expect(r.rows2[1]).toBe(W.eval('groundY()') - 24);
     expect(r[2].n).toBe(2);
     expect(r[2].delays).toEqual([0, 8]);
@@ -334,20 +338,22 @@ describe('the second moves', () => {
         b._atkTimer = 1; step();
         var kind = b._telKind, rows = b._armRows ? b._armRows.length : 0, band = String(drawBossSprite).indexOf('_armRows') >= 0;
         for (var i=0;i<120;i++){ step(); f.x = 120; f.vx = 0; f.y = groundY() - 24; f.vy = 0; b.x = 120 + c.dx; b.vx = 0; }
-        out.push({ dx: c.dx, kind: kind, rows: rows, band: band, hit: f.pct > 0, want: c.want });
+        out.push({ dx: c.dx, kind: kind, rows: rows, band: band, hit: f.pct > 0, pct: f.pct, full: bossDmg(), want: c.want });
         summons = []; projectiles = [];
       });
       return out;
     })()`);
     for (const c of r) {
       expect(c.kind).toBe('longarm');
-      expect(c.rows, 'the rows are laid out as the wind-up starts').toBe(1);
+      expect(c.rows, 'the rows are laid out as the wind-up starts: both fists, from phase 1 (Round 17)').toBe(2);
       expect(c.band, 'and drawn').toBe(true);
       expect(c.hit, `a fighter ${Math.round(c.dx)} px out is ${c.want ? 'hit' : 'safe'}`).toBe(c.want);
+      if (c.want) expect(c.pct, 'both fists pass through him, and the pair is one boss hit, not two (damage unchanged)').toBeCloseTo(c.full, 5);
     }
   });
 
-  it('A TOY IN EVERY BOX: the box nearest your spot drops a clone, then a box, then (phase 2) the toy too, in turn; phase 3 drops two', () => {
+  // The owner, 2026-10-01 (Round 17): "Springy: ... A TOY IN EVERY BOX two drops from phase 2" -- two drops a turn, the second a step toward the middle, were phase 3's.
+  it('A TOY IN EVERY BOX: the box nearest your spot drops a clone, then a box, then (phase 2) the toy too, in turn; from phase 2 it drops two a turn', () => {
     // Where a drop comes down is its shadow, warnX. It was also where it started, until the owner's "add momentum to falling
     // objects(they should move horizontaly while falling)" -- "everything. bosses, characters, whatever." -- "The way it was
     // thrown" (2026-09-29): a drop now starts back along its drift and lands on the shadow (FALL_DRIFT; boss-kit.test.js).
@@ -357,16 +363,19 @@ describe('the second moves', () => {
         for (var t=0;t<turns;t++){ var before = projectiles.length; s._boxX = 500; BOSS_MOVES.boxdrop(s, null);
           projectiles.slice(before).forEach(function(p){ kinds.push(p.shape); xs.push(p.warnX); }); }
         return { kinds: kinds, xs: xs, fromTop: projectiles.every(function(p){ return p.y===top && p.grav && p.warn>0 && p.springy; }), ids: projectiles.map(function(p){ return p.bossAtk; }) }; };
-      out[1] = run(1, 3); out[2] = run(2, 3); out[3] = run(3, 1);
+      out[1] = run(1, 3); out[2] = run(2, 2); out[3] = run(3, 1);
       projectiles = []; var s2 = ${S('_telX:500')}; s2._phase = 2; s2._telPh = 2;
       out.cloneColors = [1,2,3,4,5,6].map(function(){ var n = projectiles.length; s2._boxX = 500; BOSS_MOVES.boxdrop(s2, null); return projectiles.slice(n).filter(function(p){ return p.shape==='springclone'; }).map(function(p){ return p.color; }); }).flat();
       projectiles = []; return out;
     })()`);
-    expect(r[1].kinds, 'phase 1: the clone and the box, in turn').toEqual(['springclone', 'cerealbox', 'springclone']);
+    expect(r[1].kinds, 'phase 1: one a turn, the clone and the box, in turn').toEqual(['springclone', 'cerealbox', 'springclone']);
     expect(r[1].xs.every(x => x === 500), 'on your spot').toBe(true);
     expect(r[1].fromTop, 'from the boxes, under a shadow').toBe(true);
-    expect(r[2].kinds, 'phase 2: the toy joins the turn').toEqual(['springclone', 'springtoy', 'cerealbox']);
-    expect(r[3].kinds, 'phase 3: two a turn').toHaveLength(2);
+    expect(r[2].kinds, 'phase 2: the toy joins the turn, and two drops a turn: two turns, four drops').toEqual(['springclone', 'springtoy', 'cerealbox', 'springclone']);
+    expect(r[2].xs, 'the first on your spot, the second a step toward the middle').toEqual([500, 670, 500, 670]);
+    expect(r[2].fromTop, 'from the boxes, under a shadow').toBe(true);
+    expect(new Set(r[2].ids).size, 'phase 2: one attack id a turn (two turns, two ids)').toBe(2);
+    expect(r[3].kinds, 'phase 3: two a turn, as in phase 2').toHaveLength(2);
     expect(r[3].xs[1], 'the second a step toward the middle').toBe(670);
     expect(new Set(r[3].ids).size, 'one attack id a turn').toBe(1);
     // "Royal Purple (Candle)", "Lime Green (Test Tube)" -- the two clones; never Spring!Suitcase
@@ -414,12 +423,15 @@ describe('the second moves', () => {
 });
 
 describe('phase 2: Glitching', () => {
-  it('the ELECTRIC FENCE door zaps a fighter at the left edge in phase 2 only; he blinks to your far side before a wind-up, once every eight seconds', () => {
+  // The owner, 2026-10-01 (Round 17): "Springy: ... the electric fence stays on in phase 3" -- the door on the left edge was live in phase 2 only.
+  it('the ELECTRIC FENCE door zaps a fighter at the left edge in phases 2 and 3 (and is just a door in phase 1); he blinks to your far side before a wind-up, once every eight seconds', () => {
     const r = W.eval(`(function(){ ${STAGE(20)}
       var out = {}; for (var i=0;i<5;i++){ step(); f.x = 20; f.vx = 0; } out.p1 = f.pct;
       b.hp = b.maxHp*0.5; step(); f.x = 20; step(); out.p2 = f.pct; out.vx2 = f.vx; out.full = bossDmg(); out.fence = SPRINGY.fence;
-      b.hp = b.maxHp*0.2; step();   // the phase flips inside this frame; the door is off from the next
-      f.pct = 0; f.invuln = 0; f.x = 20; step(); step(); step(); out.p3 = f.pct;
+      b.hp = b.maxHp*0.2; step();   // the phase flips inside this frame; the door stays on
+      f.pct = 0; f.invuln = 0; f.x = 20; f.vx = 0; step(); step(); step(); out.p3 = f.pct; out.vx3 = f.vx; out.phase3 = b._phase;
+      f.pct = 0; f.invuln = 0; f.x = 200; step(); step(); out.away3 = f.pct;   // (and not a fighter who is away from the door)
+      out.lit = /live=!!\\(sp && \\(sp\\._phase\\|\\|1\\)>=2/.test(String(drawArenaDecor));
       // the blink: phase 2, a wind-up starts, he lands SPRINGY.blink past you on your far side
       summons = []; projectiles = [];
       ${STAGE(300)}
@@ -433,7 +445,11 @@ describe('phase 2: Glitching', () => {
     expect(r.p1, 'phase 1: the door is just a door').toBe(0);
     expect(r.p2, 'phase 2: a zap, half a boss hit').toBeCloseTo(r.full*0.5, 5);
     expect(r.vx2, 'and away from the wall').toBeGreaterThan(0);
-    expect(r.p3, 'phase 3: off again').toBe(0);
+    expect(r.phase3, 'the fight is in phase 3').toBe(3);
+    expect(r.p3, 'phase 3: the door stays on -- the same zap, half a boss hit, not more (damage unchanged)').toBeCloseTo(r.full*0.5, 5);
+    expect(r.vx3, 'and away from the wall').toBeGreaterThan(0);
+    expect(r.away3, 'a fighter well away from the door is not touched').toBe(0);
+    expect(r.lit, 'and the door is drawn lit while it is live, in phase 3 as in phase 2').toBe(true);
     expect(r.blinkX, 'he lands SPRINGY.blink past you, between you and the far wall').toBe(300 + 320);
     expect(r.blinkAt).toBe(r.now);
     expect(r.face, 'facing you').toBe(-1);
@@ -731,7 +747,8 @@ describe('MY PURPOSE!: the Spring-Bot toy', () => {
     expect(B.dmg).toBeLessThan(0.5);
   });
 
-  it('a shorter recording plays as many as it has, three times; one that heard nothing powers down quietly; a second toy replaces the first; phases play quicker', () => {
+  // The owner, 2026-10-01 (Round 17): "Springy: ... MY PURPOSE!'s toy throws Springy's mitten when it hears no special" -- a toy that heard nothing used to power down quietly.
+  it("a shorter recording plays as many as it has, three times; one that heard nothing throws Springy's mitten, once, instead of powering down; a second toy replaces the first; phases play quicker", () => {
     const r = W.eval(`(function(){ ${TOY(false)}
       var out = {}, run = function(t){ var shots = [], calls = 0; while (t.life > 0 && calls < 3000){ calls++; springyBotStep(t, b);
         projectiles.forEach(function(p){ if (p.springEcho && !p._n){ p._n = calls; shots.push(p.shape + '@' + calls); } }); } return { shots: shots, calls: calls }; };
@@ -748,9 +765,9 @@ describe('MY PURPOSE!: the Spring-Bot toy', () => {
     })()`);
     const B = W.eval('SPRINGY.bot');
     expect(r.two.shots.map((s) => s.split('@')[0]), 'two heard: two played, three times').toEqual(['ember', 'cap', 'ember', 'cap', 'ember', 'cap']);
-    expect(r.none.shots).toEqual([]);
-    expect(r.none.calls, 'it waits out the window, and powers down').toBe(B.listen + B.down);
-    expect(r.echoes, 'and plays nothing').toBe(0);
+    expect(r.none.shots, 'one that heard nothing throws the mitten, once: after its squat and a beat, as for any first shot').toEqual([`mitten@${B.listen + B.ready + B.first}`]);
+    expect(r.none.calls, 'it waits out the window, squats, throws it, and then powers down').toBe(B.listen + B.ready + B.first + B.down);
+    expect(r.echoes, 'the one shot').toBe(1);
     expect(r.alive, 'one toy at a time').toBe(1);
     expect(r.firstLife, 'the first is gone').toBe(0);
     expect(r.firstR).toBe(0);
@@ -782,6 +799,134 @@ describe('MY PURPOSE!: the Spring-Bot toy', () => {
     expect(r.gone, 'and when it is done it goes').toBe(true);
     expect(r.frames).toBeLessThan(1400);
   });
+
+  // The owner, 2026-10-01 (Round 17): "Springy: ... MY PURPOSE!'s toy throws Springy's mitten when it hears no special." The toy has nothing to play back, so it plays his: one record, one throw, the same squat
+  // and the same tell as for any special (the thing in its mouth for the last 16 frames), then it powers down. "Harder, same damage": 0.8 of a boss hit, one attack id, a volley -- never more than the one hit.
+  it("a toy that heard nothing throws Springy's mitten: it loads it as its one record, squats, shows it in its mouth, throws it ONCE at the nearest fighter -- one attack id, 0.8 of a boss hit -- and powers down", () => {
+    const r = W.eval(`(function(){ ${TOY(false)}
+      g.y = gy - 220;   // (Pen is up on a ledge, so the way to him and the way to Firey are different directions)
+      var out = { B: B, full: bossDmg(), toyId: toy.bossAtk, nearest: Math.atan2(g.y - (toy.y - 18), g.x - toy.x), far: Math.atan2(f.y - (toy.y - 18), f.x - toy.x) }, calls = 0, shots = [], at = {};
+      while (toy.life > 0 && calls < 3000){
+        calls++; springyBotStep(toy, b);
+        if (calls === B.listen - 1) at.before = { s: toy.sb.s, n: toy.sb.r.length };
+        if (calls === B.listen) at.listened = { s: toy.sb.s, rec: toy.sb.r.map(function(q){ return q.k + '/' + q.idx + '/' + q.c; }), plays: springyBotPlays(toy.sb.r) };
+        if (calls === B.listen + B.ready + B.first - B.aim) at.aim = { s: toy.sb.s, i: toy.sb.i, f: toy.sb.f, glyph: toy.sb.r[toy.sb.i] && toy.sb.r[toy.sb.i].k };
+        projectiles.forEach(function(p){ if (p.springEcho && !p._n){ p._n = calls; shots.push({ call: calls, shape: p.shape, ang: Math.atan2(p.vy, p.vx), speed: Math.hypot(p.vx, p.vy), r: p.r, dmg: p.dmg, kb: p.kb, id: p.bossAtk, volley: p.volley, springy: p.springy, owner: p.owner, color: p.color, pierce: !!p.pierce }); } });
+      }
+      out.shots = shots; out.calls = calls; out.at = at;
+      // drawn: the toy winding up the mitten, its pip and its dots, and the mitten itself in flight, with the art loaded and not
+      var bad = [], gy = groundY(), mit = [{ k:'mitten', c:'#ff4a01' }];
+      [{ s:2, t:12, h:0, i:0, v:0, f:0, r:mit }, { s:3, t:0, h:0, i:0, v:0, f:4, r:mit }, { s:4, t:20, h:0, i:0, v:1, f:0, r:mit }].forEach(function(sb, n){
+        [{ complete:true, naturalWidth:113, naturalHeight:80 }, null].forEach(function(img){ try { drawSpringBot({ x:880, y:gy - 12, r:24, color:'#93a85a', springBot:true, sb:sb }, ctx, img); } catch(e){ bad.push(n + ': ' + e.message); } });
+      });
+      try { drawProjectile({ x:600, y:300, vx:-9, vy:0, r:20, color:'#ff4a01', shape:'mitten', springEcho:true, springy:true, owner:-2, ownerObj:{ team:-1, idx:-2 } }); } catch(e){ bad.push('shot: ' + e.message); }
+      out.bad = bad; out.dots = [springyBotPlays(mit), springyBotPlays([{ k:'ember' }]), springyBotPlays([{ k:'ember' }, { k:'cap' }]), springyBotPlays([])];
+      summons = []; projectiles = []; return out;
+    })()`);
+    const B = r.B;
+    expect(r.at.before, 'still listening a frame before its window ends, with nothing in it').toEqual({ s: 1, n: 0 });
+    expect(r.at.listened.s, 'the window ends: it readies -- it does not power down').toBe(2);
+    expect(r.at.listened.rec, 'with one record in it: Springy\'s mitten, in his orange, used by nobody').toEqual(['mitten/-1/#ff4a01']);
+    expect(r.at.listened.plays, 'to throw once, not three times').toBe(1);
+    expect(r.at.aim, 'its mouth shows the mitten for the last 16 frames before the throw, as for any special').toMatchObject({ s: 3, i: 0, glyph: 'mitten' });
+    expect(r.at.aim.f, 'with the tell still ahead of it').toBe(B.aim);
+    expect(r.shots, 'one throw').toHaveLength(1);
+    const s = r.shots[0];
+    expect(s.call, 'after its squat and a beat, as for any first shot').toBe(B.listen + B.ready + B.first);
+    expect(s.shape, "Springy's mitten").toBe('mitten');
+    expect(s.color).toBe(B.mit.color);
+    expect(s.ang, 'at the nearest fighter to it (Pen, not Firey)').toBeCloseTo(r.nearest, 6);
+    expect(Math.abs(s.ang - r.far), 'not at the farther one').toBeGreaterThan(0.01);
+    expect(s.speed, 'at the toy\'s own pace for the phase').toBeCloseTo(B.mit.speed[1], 6);
+    expect(s.r).toBe(B.mit.r);
+    expect(s.kb).toBe(B.mit.kb);
+    expect(s.dmg, '0.8 of a boss hit: his boxes and toys hit for 0.8, never the more than that').toBeCloseTo(r.full*B.mit.dmg, 6);
+    expect(B.mit.dmg).toBeLessThanOrEqual(1);
+    expect(s.id, 'the one attack id of the whole toy').toBe(r.toyId);
+    expect([s.volley, s.springy, s.owner, s.pierce], 'a volley, his, a boss\'s, and not through everyone').toEqual([true, true, -2, false]);
+    expect(r.calls, 'then it powers down and is gone').toBe(s.call + B.down);
+    expect(r.bad, 'the toy and the mitten draw, art or no art').toEqual([]);
+    expect(r.dots, 'a dot for each play to come: one for the mitten, three for specials').toEqual([1, 3, 3, 3]);
+  });
+
+  it("the mitten is a hit and no more: it flies at the nearest fighter, hurts for 0.8 of a boss hit once, and is spent; the toy powers down; the other fighter is not touched", () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var gy = groundY(), B = SPRINGY.bot;
+      var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 420, gy-24, 1); g.team=0; g.controller='still'; g.stocks=9; fighters.push(g);
+      var park = function(){ f.x = 300; f.vx = 0; f.y = gy - 24; f.vy = 0; g.x = 420; g.vx = 0; g.y = gy - 24; g.vy = 0; };
+      b._atkTimer = 1e9; b._telPh = 1; b._boxX = 880; BOSS_MOVES.springbot(b, f);
+      var toy = projectiles.find(function(p){ return p.springBot; });
+      for (var i=0;i<80 && toy.sb.s === 0;i++){ step(); park(); }
+      toy.sb.t = B.listen - 2;                           // (its whole listening window, with nobody using a special)
+      var hits = [], last = 0, frames = 0, shotSeen = false, spent = false; f.pct = 0; g.pct = 0; f.invuln = 0; g.invuln = 0;
+      for (var n=0;n<400 && (projectiles.indexOf(toy) >= 0 || projectiles.some(function(p){ return p.springEcho && p.life > 0; }));n++){   // (the toy powers down while the mitten is still flying)
+        step(); park(); f.invuln = 0; g.invuln = 0; frames++;
+        var m = projectiles.find(function(p){ return p.springEcho && p.life > 0; });
+        if (m) shotSeen = true; else if (shotSeen) spent = true;
+        if (g.pct > last + 1e-9){ hits.push(+(g.pct - last).toFixed(3)); last = g.pct; }
+      }
+      var out = { hits: hits, g: g.pct, f: f.pct, full: bossDmg(), gone: projectiles.indexOf(toy) < 0, spent: spent, frames: frames, echoes: projectiles.filter(function(p){ return p.springEcho; }).length };
+      summons = []; projectiles = []; return out;
+    })()`);
+    expect(r.hits, 'one hit on the nearest fighter').toHaveLength(1);
+    expect(r.g, '0.8 of a boss hit').toBeCloseTo(r.full*0.8, 5);
+    expect(r.f, 'the other fighter is not touched').toBe(0);
+    expect(r.spent, 'and the mitten is spent on the one it hit').toBe(true);
+    expect(r.gone, 'the toy powers down and goes').toBe(true);
+  });
+
+  // The owner, 2026-10-01 (Round 17), one attack at a time: "1 attack at a time... the bosses dont give any time between attacks to hit them." The toy LISTENING fires nothing, so it does not hold his next
+  // attack (it held him the whole of its life: the fall, up to eight seconds of listening, the playback and its power-down); once it PLAYS BACK he waits for it and for what it has fired, and the gap runs from then.
+  const ONE_AT_A_TIME = (sayAt, want) => `(function(){ ${STAGE(300, true)}
+    var gy = groundY(), B = SPRINGY.bot, gap = bossAtkGap(b);
+    var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 420, gy-24, 1); g.team=0; g.controller='still'; g.stocks=9; fighters.push(g);
+    var park = function(){ f.x = 300; f.vx = 0; f.y = gy - 24; f.vy = 0; f.invuln = 1e9; g.x = 420; g.vx = 0; g.y = gy - 24; g.vy = 0; g.invuln = 1e9; };
+    var toyOf = function(){ return projectiles.find(function(p){ return p.springBot && p.life > 0; }); };
+    var turns = [], bad = [], overAt = -1, lastBusy = false, said = -1, busyFrames = 0, heldFrames = 0, doneAt = -1, out = { gap: gap };
+    b._pickForce = 'springbot'; b._atkLive = null; b._atkTimer = 1; park();
+    for (var i=0;i<1700;i++){
+      if (said >= 0 || turns.length) b._pickForce = 'boxdrop';   // every later turn is a plain one (the picker's dice are not what is looked at)
+      park();
+      var wasLive = !!b._atkLive, pre = b._tel;
+      step();
+      var toy = toyOf();
+      if (wasLive && !b._atkLive) overAt = i;
+      if (!(pre > 0) && b._tel > 0){ turns.push({ i: i, kind: b._telKind, since: overAt >= 0 ? i - overAt : null, toy: toy ? toy.sb.s : -1 }); if (lastBusy) bad.push(i); overAt = -1; }
+      if (said < 0 && toy && ${sayAt}){ [f, g, f, g, f].forEach(function(w){ springyBotHear(w, w.kit.special); }); said = i; out.saidState = { s: toy.sb.s, tel: b._tel, live: !!b._atkLive, timer: b._atkTimer }; }
+      lastBusy = springyToyBusy();
+      if (lastBusy){ busyFrames++; if (b._atkTimer >= 1e5 && !(b._tel > 0)) heldFrames++; }
+      if (said >= 0 && !toy && doneAt < 0 && !springyToyBusy()) doneAt = i;
+      if (turns.length >= ${want} && doneAt >= 0) break;
+    }
+    out.turns = turns; out.bad = bad; out.said = said; out.busyFrames = busyFrames; out.heldFrames = heldFrames; out.doneAt = doneAt;
+    summons = []; projectiles = []; return out;
+  })()`;
+
+  it('ONE ATTACK AT A TIME: the toy listening holds nothing -- his next wind-up comes after the paced gap, with the toy still listening -- but once it plays back he waits for it and its shots, and then the gap runs', () => {
+    const r = W.eval(ONE_AT_A_TIME('toy.sb.s === 1 && turns.length === 2 && b._tel > 0', 3));   // five specials as his second wind-up begins: the toy readies while he winds up
+    expect(r.turns.map((t) => t.kind), 'his turns: the toy, then plain ones').toEqual(['springbot', 'boxdrop', 'boxdrop']);
+    expect(r.turns[1].toy, 'his second wind-up began while the toy was still LISTENING: it did not hold him').toBe(1);
+    expect(r.turns[1].since + 1, 'after the paced gap, counted from the turn that dropped it, and nothing more (it was about nine seconds)').toBe(r.gap);
+    expect(r.said, 'the toy heard its five and readied').toBeGreaterThan(0);
+    expect(r.bad, 'no wind-up began under the toy playing back, or a shot of it still flying').toEqual([]);
+    expect(r.busyFrames, 'the playback held him for all of it: its squat, its fifteen shots and the last one flying').toBeGreaterThan(400);
+    expect(r.doneAt, 'the toy and what it fired are gone').toBeGreaterThan(r.said + 400);
+    expect(r.turns[2].since + 1, 'and then the paced gap runs from the moment it is over, the window to hit him').toBeGreaterThanOrEqual(r.gap);
+    expect(r.turns[2].since + 1).toBeLessThanOrEqual(r.gap + 2);
+  }, 60000);
+
+  it('and when the toy readies in the gap between two of his turns, the engine\'s watch goes back on: he waits for the playback, and the gap runs when it is over', () => {
+    const r = W.eval(ONE_AT_A_TIME('toy.sb.s === 1 && turns.length === 1 && !b._atkLive && !(b._tel > 0) && b._atkTimer > 20 && b._atkTimer < 1e5', 2));   // five specials in his gap
+    expect(r.said, 'the toy readied in his gap').toBeGreaterThan(0);
+    expect(r.saidState.live, 'with the watch off and the gap counting down').toBe(false);
+    expect(r.saidState.timer, 'with the gap counting down').toBeLessThan(1e5);
+    expect(r.turns[1].kind).toBe('boxdrop');
+    expect(r.turns[1].i, 'his next turn did not begin until the toy was over').toBeGreaterThan(r.doneAt);
+    expect(r.bad, 'no wind-up began under the toy playing back, or a shot of it still flying').toEqual([]);
+    expect(r.heldFrames, 'his timer was held for the playback').toBeGreaterThan(400);
+    expect(r.turns[1].since + 1, 'and the paced gap runs from the moment it is over').toBeGreaterThanOrEqual(r.gap);
+    expect(r.turns[1].since + 1).toBeLessThanOrEqual(r.gap + 2);
+  }, 60000);
 
   it('no words: its wind-up is the only line it puts on the screen -- nothing names a special it recorded', () => {
     const r = W.eval(`(function(){ ${STAGE(300)}
