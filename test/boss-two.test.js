@@ -32,7 +32,8 @@ const STAGE = (x, ph = 1, live = false) => `
 `;
 // Fire move number k (0 the signature, 1.. the second moves in order) of the boss `b` now, and run its wind-up out: the frame the move fires is the last one this
 // returns from. (Every test that needs a move in the air starts here.)
-const FIRE = (k) => `b._moveN = ${k === 0 ? 0 : (typeof k === 'string' ? "2*(BOSS_EXTRA['Two'].indexOf('" + k + "') + 1) - 1" : 2*k - 1)}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, telLen = b._tel;
+// (The owner, 2026-10-01, Round 17: "make the attacks based on fighter position." -- there is no turn order to count along any more, so the move is forced: `_pickForce`.)
+const FIRE = (k) => `b._pickForce = ${k === 0 ? "'two'" : (typeof k === 'string' ? "'" + k + "'" : "BOSS_EXTRA['Two'][" + (k - 1) + "]")}; b._atkLive = null; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, telLen = b._tel;
   for (var w=0; w<80 && b._tel>0; w++){ step(); f.invuln = 99; }`;
 // A frame with the fighter held where the test wants them
 const HOLD = `f.pct = 0; f.invuln = 99; f.hitstun = 0;`;
@@ -105,7 +106,7 @@ describe('Two takes the park: his row, his flight and his pops', () => {
 describe('MIND READ!', () => {
   it('the wind-up: a lime ring follows you for 24 frames, then holds for the last 12 while a rift opens 220 px behind you, on the far side of you from Two', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
-      f.x = 300; b._moveN = 0; b._atkTimer = 1; step();
+      f.x = 300; b._pickForce = 'two'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, rd0: b._hz.rd && b._hz.rd.slice() };
       f.x = 360; for (var k=0;k<10;k++){ step(); ${HOLD} f.x = 360; }
       out.followed = b._hz.rd.slice();
@@ -201,7 +202,7 @@ describe('MIND READ!', () => {
 describe('MAYBE YOU\'D LIKE THIS!', () => {
   it('the wind-up: Two goes up toward the sun, the first landing is marked on the floor where you stood, and the sun is red and growing spikes', () => {
     const r = W.eval(`(function(){ ${STAGE(420, 1, true)}
-      f.x = 420; b._moveN = 1; b._atkTimer = 1; step();
+      f.x = 420; b._pickForce = 'twosun'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel: b._tel, mk: b._hz.mk && b._hz.mk.slice(), dst: b._dst, gy: groundY(), sky: twoSkySun(1), sun: TWO.sun.r };
       for (var k=0;k<30;k++){ step(); ${HOLD} f.x = 420; }
       out.y = b.y; out.mkAfter = b._hz.mk && b._hz.mk.slice();
@@ -287,7 +288,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
       f.invuln = 0; f.pct = 0; f.x = M.x; f.y = M.y; var id0 = b._maceId;
       step(); out.hit = f.pct; out.frac = bossDmg()*TWO.sun.mace.frac;
       // a sun attack bashes from the mace and then it circles again
-      f.x = 300; f.y = groundY()-24; f.invuln = 99; b._moveN = 1; b._atkTimer = 1; step(); for (var k=0;k<50;k++){ step(); ${HOLD} f.x = 300; }
+      f.x = 300; f.y = groundY()-24; f.invuln = 99; b._pickForce = 'twosun'; b._atkLive = null; b._atkTimer = 1; step(); for (var k=0;k<50;k++){ step(); ${HOLD} f.x = 300; }
       out.tw = b._tw && b._tw.k; out.mace3 = b._tw && b._tw.mace;
       for (var k=0;k<400 && b._tw;k++){ step(); ${HOLD} f.x = 300 + (k%80<40?0:150); }
       out.after = !b._tw; out.back = Math.hypot(M.x - b.x, M.y - b.y); out.alive = M.life > 0 && projectiles.indexOf(M) >= 0;
@@ -310,7 +311,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
 describe('BLOCK TOWERS!', () => {
   it('the wind-up: Two snaps and three stacks grow where you stand and 200 px either side -- the first two lean away from him, the third back toward you -- 40 frames', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
-      f.x = 300; var out = { order: BOSS_EXTRA['Two'] }; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twoblocks') + 1) - 1; b._atkTimer = 1; step();
+      f.x = 300; var out = { order: BOSS_EXTRA['Two'] }; b._pickForce = 'twoblocks'; b._atkLive = null; b._atkTimer = 1; step();
       out.kind = b._telKind; out.name = document.getElementById('banner').textContent; out.tel = b._tel; out.bk = JSON.parse(JSON.stringify(b._hz.bk)); out.bx = b.x; out.dst = b._dst; out.gy = groundY(); out.R = b.r;
       out.t0 = hazardT;
       for (var k=0;k<30;k++){ step(); ${HOLD} f.x = 300; } out.y = b.y;
@@ -329,7 +330,7 @@ describe('BLOCK TOWERS!', () => {
 
   it('the row is kept on the stage when you stand by a wall: it shifts as a whole, still three stacks 200 apart', () => {
     const r = W.eval(`(function(){ ${STAGE(60, 1, true)}
-      f.x = 60; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twoblocks') + 1) - 1; b._atkTimer = 1; step();
+      f.x = 60; b._pickForce = 'twoblocks'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { xs: b._hz.bk[1].map(function(r){ return r[0]; }), dirs: b._hz.bk[1].map(function(r){ return r[1]; }) };
       summons = []; projectiles = []; return out; })()`);
     expect(r.xs.every((x) => x >= 90 && x <= 1010)).toBe(true);
@@ -393,7 +394,7 @@ describe('BLOCK TOWERS!', () => {
 
   it('phase 3 adds a second row of two between the first, growing as the first falls and falling after it has gone down', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
-      f.x = 300; b._mace = null; projectiles = []; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twoblocks') + 1) - 1; b._atkTimer = 1; step();
+      f.x = 300; b._mace = null; projectiles = []; b._pickForce = 'twoblocks'; b._atkLive = null; b._atkTimer = 1; step();
       var rows = JSON.parse(JSON.stringify(b._hz.bk[1]));
       summons = []; projectiles = []; return { rows: rows, last1: rows[2][2] + TWO.blocks.fall }; })()`);
     expect(r.rows.length, 'three and two').toBe(5);
@@ -405,14 +406,19 @@ describe('BLOCK TOWERS!', () => {
 });
 
 describe('CLAP!', () => {
-  it('joins in phase 2: until then its turn is the sun again; from phase 2 the wind-up names it', () => {
+  // Round 17 (the owner: "make the attacks based on fighter position."): his turns are drawn from the moves he has unlocked, so there is no "turn that is the sun again" -- CLAP! is simply not among his
+  // phase-1 moves (BOSS_PICK.two.moves), and asking for it there gets one of the others.
+  it('joins in phase 2: it is not among his phase-1 moves, and asked for there the turn is another move; from phase 2 the wind-up names it', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2].forEach(function(ph){ ${STAGE(300, 'ph', true)}
-        f.x = 300; ${FIRE('twoclap')} out[ph] = { kind: telKind, name: telName, tel: telLen };
+        f.x = 300; ${FIRE('twoclap')} out[ph] = { kind: telKind, name: telName, tel: telLen, moves: bossPickMoves(b, ph) };
         summons = []; projectiles = []; });
       return out; })()`);
-    expect(r[1].kind, 'phase 1: the sun again').toBe('twosun');
-    expect(r[1].name).toBe("MAYBE YOU'D LIKE THIS!");
+    expect(r[1].moves, 'phase 1: not among his moves').not.toContain('twoclap');
+    expect(r[1].kind, 'phase 1: another move').not.toBe('twoclap');
+    expect(r[1].moves).toContain(r[1].kind);
+    expect(r[1].name).not.toBe('CLAP!');
+    expect(r[2].moves).toContain('twoclap');
     expect(r[2].kind).toBe('twoclap');
     expect(r[2].name).toBe('CLAP!');
     expect(r[2].tel, 'a 36-frame wind-up').toBe(36);
@@ -420,7 +426,7 @@ describe('CLAP!', () => {
 
   it('the wind-up: the line follows you for 26 frames and holds for the last 10, white; two ghost hands wait at the edges', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 2, true)}
-      f.x = 300; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twoclap') + 1) - 1; b._atkTimer = 1; step();
+      f.x = 300; b._pickForce = 'twoclap'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { cl0: b._hz.cl.slice() };
       f.x = 400; for (var k=0;k<10;k++){ step(); ${HOLD} f.x = 400; } out.follow = b._hz.cl.slice();
       for (var k=0;k<20;k++){ step(); ${HOLD} f.x = 400; } out.lockedAt = b._tel; out.locked = b._hz.cl.slice();
@@ -508,7 +514,7 @@ describe('CLAP!', () => {
 describe('THE POWER OF TWO!', () => {
   it('the wind-up: Two goes to the middle, low, and the twelve orbs form round him with a pair pointing at you (it follows you, and holds for the last 8 frames) -- 36 frames', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
-      f.x = 300; b._moveN = 2*(BOSS_EXTRA['Two'].indexOf('twopower') + 1) - 1; b._atkTimer = 1; step();
+      f.x = 300; b._pickForce = 'twopower'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel: b._tel, pw0: b._hz.pw.slice(), dst: b._dst, gy: groundY(), R: b.r, WW: WW };
       for (var k=0;k<20;k++){ step(); ${HOLD} f.x = 300; } out.mid = b._hz.pw.slice(); out.bx = b.x; out.by = b.y;
       f.x = 1000; for (var k=0;k<14;k++){ step(); ${HOLD} f.x = 1000; } out.locked = b._hz.pw.slice(); out.left = b._tel; out.shots = projectiles.length;
@@ -596,14 +602,18 @@ describe('THE POWER OF TWO!', () => {
 });
 
 describe('I LOVE RIDES!', () => {
-  it('joins in phase 2: until then its turn is the ring again; from phase 2 the wind-up names it, places the two rails and takes Two high over the middle -- 40 frames', () => {
+  // Round 17 (the owner: "make the attacks based on fighter position."): I LOVE RIDES! is simply not among his phase-1 moves (BOSS_PICK.two.moves), and asking for it there gets one of the others.
+  it('joins in phase 2: it is not among his phase-1 moves, and asked for there the turn is another move; from phase 2 the wind-up names it, places the two rails and takes Two high over the middle -- 40 frames', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2].forEach(function(ph){ ${STAGE(300, 'ph', true)}
-        f.x = 300; ${FIRE('tworails')} out[ph] = { kind: telKind, name: telName, tel: telLen, rl: b._hz.rl && b._hz.rl.slice(), dst: b._dst, gy: groundY(), R: b.r };
+        f.x = 300; ${FIRE('tworails')} out[ph] = { kind: telKind, name: telName, tel: telLen, rl: b._hz.rl && b._hz.rl.slice(), dst: b._dst, gy: groundY(), R: b.r, moves: bossPickMoves(b, ph) };
         summons = []; projectiles = []; });
       return out; })()`);
-    expect(r[1].kind, 'phase 1: the ring again').toBe('twopower');
-    expect(r[1].name).toBe('THE POWER OF TWO!');
+    expect(r[1].moves, 'phase 1: not among his moves').not.toContain('tworails');
+    expect(r[1].kind, 'phase 1: another move').not.toBe('tworails');
+    expect(r[1].moves).toContain(r[1].kind);
+    expect(r[1].name).not.toBe('I LOVE RIDES!');
+    expect(r[2].moves).toContain('tworails');
     expect(r[2].kind).toBe('tworails');
     expect(r[2].name).toBe('I LOVE RIDES!');
     expect(r[2].tel).toBe(40);
@@ -681,12 +691,14 @@ describe('I LOVE RIDES!', () => {
 });
 
 describe('the turn order and the wind-ups: six attacks, the signature between each', () => {
-  it('his turns run MIND READ!, MAYBE YOU\'D LIKE THIS!, MIND READ!, THE POWER OF TWO!, MIND READ!, BLOCK TOWERS!, MIND READ!, I LOVE RIDES!, MIND READ!, CLAP! -- and until phase 2 the last two are the ring and the sun again', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position picks all
+  // (Recommended)": MIND READ! no longer comes between every other move. He draws his moves by where the fighters stand: four in phase 1, all six from phase 2; none twice in a row, every one in time.
+  it('draws his turns from his moves -- MIND READ!, MAYBE YOU\'D LIKE THIS!, THE POWER OF TWO!, BLOCK TOWERS! and, from phase 2, I LOVE RIDES! and CLAP! -- each named, each with its own wind-up, none twice in a row', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2].forEach(function(ph){
         var s = { name:'Two', attack:'two', type:'boss', x:700, y:420, r:88, hp:[0, 100, 50, 20][ph], maxHp:100, _phase:ph, _atkTimer:1, _tel:0, color:'#44C549', face:-1, homeX:700, stationary:false, vx:0, vy:0 };
         var kinds = [], names = [], tels = [];
-        for (var k=0;k<10;k++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tels.push(s._tel); s._tw = null; }
+        for (var k=0;k<18;k++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tels.push(s._tel); s._tw = null; }
         out[ph] = { kinds: kinds, names: names, tels: tels };
       });
       out.extra = BOSS_EXTRA['Two']; out.rush = ['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap'].map(function(k){ return BOSS_RUSH_ONLY.has(k); });
@@ -696,10 +708,14 @@ describe('the turn order and the wind-ups: six attacks, the signature between ea
       out.shared = ['seekers', 'ring'].map(function(k){ return BOSS_EXTRA['Two'].indexOf(k); });
       return out; })()`);
     expect(r.extra).toEqual(['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap']);
-    expect(r[2].kinds).toEqual(['two', 'twosun', 'two', 'twopower', 'two', 'twoblocks', 'two', 'tworails', 'two', 'twoclap']);
-    expect(r[1].kinds, 'phase 1: I LOVE RIDES! is the ring again and CLAP! is the sun again').toEqual(['two', 'twosun', 'two', 'twopower', 'two', 'twoblocks', 'two', 'twopower', 'two', 'twosun']);
-    expect(r[2].names, 'the show\'s own lines, and the owner\'s own rail design named for Two\'s ride').toEqual(['MIND READ!', "MAYBE YOU'D LIKE THIS!", 'MIND READ!', 'THE POWER OF TWO!', 'MIND READ!', 'BLOCK TOWERS!', 'MIND READ!', 'I LOVE RIDES!', 'MIND READ!', 'CLAP!']);
-    expect(r[2].tels, 'each has its own wind-up: 36, 40, 36, 36, 36, 40, 36, 40, 36, 36').toEqual([36, 40, 36, 36, 36, 40, 36, 40, 36, 36]);
+    const NAME = { two: 'MIND READ!', twosun: "MAYBE YOU'D LIKE THIS!", twopower: 'THE POWER OF TWO!', twoblocks: 'BLOCK TOWERS!', tworails: 'I LOVE RIDES!', twoclap: 'CLAP!' };
+    const TEL = { two: 36, twosun: 40, twopower: 36, twoblocks: 40, tworails: 40, twoclap: 36 };
+    expect(new Set(r[1].kinds), 'phase 1: four moves -- I LOVE RIDES! and CLAP! are not among them').toEqual(new Set(['two', 'twosun', 'twopower', 'twoblocks']));
+    expect(new Set(r[2].kinds), 'phase 2: all six').toEqual(new Set(Object.keys(NAME)));
+    for (const ph of [1, 2]) expect(r[ph].kinds.some((k, i) => i > 0 && k === r[ph].kinds[i - 1]), `phase ${ph}: never the same move twice in a row: ${r[ph].kinds}`).toBe(false);
+    expect(r[2].names, 'the show\'s own lines, and the owner\'s own rail design named for Two\'s ride').toEqual(r[2].kinds.map((k) => NAME[k]));
+    expect(r[1].names).toEqual(r[1].kinds.map((k) => NAME[k]));
+    expect(r[2].tels, 'each has its own wind-up: 36, 40, 36, 40, 40, 36').toEqual(r[2].kinds.map((k) => TEL[k]));
     expect(r.moves).toEqual(["function/MAYBE YOU'D LIKE THIS!", 'function/THE POWER OF TWO!', 'function/BLOCK TOWERS!', 'function/I LOVE RIDES!', 'function/CLAP!']);
     expect(r.rush, 'an item boss never throws them: they need his flight, his tells and his park').toEqual([true, true, true, true, true]);
     expect([r.p2, r.p3]).toEqual(['Size Shift', 'Power Ungrounded — ground it to damage them!']);

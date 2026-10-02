@@ -41,16 +41,18 @@ const STAGE = (x, ph = 1, live = false, plats = false) => `
 const S = (o = '') => `{ name:'MePhone4S', attack:'mephone4s', type:'boss', x:550, y:groundY()-85, r:85, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0,
   color:'#c8102e', face:1, homeX:550, stationary:false, vx:0, vy:0 ${o ? ',' + o : ''} }`;
 // Begin move `kind` ('gun' or one of EX) of the boss `b` now and run its wind-up out: the frame the move fires is the last one this returns from.
-const FIRE = (kind) => `b._moveN = ${kind === 'gun' ? 0 : 2 * EX.indexOf(kind) + 1}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
+const FIRE = (kind) => `b._pickForce = '${kind === 'gun' ? 'mephone4s' : kind}'; b._atkLive = null; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
   for (var w=0; w<80 && b._tel>0; w++){ step(); }`;
 
 describe('MePhone4S takes his Super Death Trap', () => {
-  it('is Boss 8 (before the Dragon), his own arena, and his six attacks in turn: the gun between each of the five others, each named, each with its own wind-up', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position picks
+  // all (Recommended)": the gun no longer comes on every odd turn (the gun, the prizes, the gun, the lemons, ...). He draws his six by where the fighters stand: none twice in a row, every one in eighteen turns.
+  it('is Boss 8 (before the Dragon), his own arena, and his six attacks, drawn by position: the gun and the five others, each named, each with its own wind-up', () => {
     const r = W.eval(`(function(){
       var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; });
       var idx = function(n){ return BOSS_ROSTER.findIndex(function(b){ return b.name===n; }); };
       var kinds = [], names = [], tels = [], s = ${S('_phase:2, hp:50')};
-      for (var k=0;k<10;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tels.push(s._tel); }
+      for (var k=0;k<18;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tels.push(s._tel); }
       return { i: i, row: BOSS_ROSTER[i], leafy: idx('Evil Leafy'), mephone: idx('MePhone4'), dragon: idx('Purple Dragon'), two: idx('Two'), four: idx('Four'), n: BOSS_ROSTER.length, extra: BOSS_EXTRA['MePhone4S'],
                kinds: kinds, names: names, tels: tels, p2: bossPhaseName({ attack:'mephone4s' }, 2), p3: bossPhaseName({ attack:'mephone4s' }, 3),
                gaps: [1,2,3].map(function(ph){ var q = ${S()}; q._phase = ph; q.hp = [100, 50, 20][ph-1]; return bossAtkGap(q); }), held: (function(){ var q = ${S()}; q._s4 = { k:'pop', go:true }; return bossAtkGap(q); })(),
@@ -66,12 +68,15 @@ describe('MePhone4S takes his Super Death Trap', () => {
     expect(r.i, 'before Two and Four').toBeLessThan(r.two);
     expect(r.four, 'Four is still last').toBe(r.n - 1);
     expect(r.extra, '"PUT THAT COOKIE DOWN! (redone), I\'LL BE BACK!, ONE OF EACH!, HASTA LA VISTA!" and the two the owner added').toEqual(EX);
-    // the signature on every odd turn, then the five in the order of the list
-    expect(r.kinds).toEqual(['mephone4s', 's4prizes', 'mephone4s', 's4vista', 'mephone4s', 's4popup', 'mephone4s', 's4car', 'mephone4s', 's4shove']);
     // the names are the show's words: "Put that cookie down! ... Now!", "I'll be back", "We'll give them one of each!", "Hasta la vista, Blu-Ray...", "pops up from under"
-    expect(r.names).toEqual(['PUT THAT COOKIE DOWN!', 'ONE OF EACH!', 'PUT THAT COOKIE DOWN!', 'HASTA LA VISTA!', 'PUT THAT COOKIE DOWN!', 'POP UP!', 'PUT THAT COOKIE DOWN!', "I'LL BE BACK!", 'PUT THAT COOKIE DOWN!', 'QUICKSAND SHOVE!']);
+    const NAME = { mephone4s: 'PUT THAT COOKIE DOWN!', s4prizes: 'ONE OF EACH!', s4vista: 'HASTA LA VISTA!', s4popup: 'POP UP!', s4car: "I'LL BE BACK!", s4shove: 'QUICKSAND SHOVE!' };
+    const TEL = { mephone4s: 42, s4prizes: 36, s4vista: 46, s4popup: 46, s4car: 46, s4shove: 46 };
+    expect(r.kinds.every((k) => NAME[k]), `only his six: ${r.kinds}`).toBe(true);
+    expect(new Set(r.kinds).size, `all six come up in eighteen turns: ${r.kinds}`).toBe(6);
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(r.names).toEqual(r.kinds.map((k) => NAME[k]));
     expect(r.moves).toEqual(['function/ONE OF EACH!', 'function/HASTA LA VISTA!', 'function/POP UP!', "function/I'LL BE BACK!", 'function/QUICKSAND SHOVE!']);
-    expect(r.tels, 'each move reads out its own wind-up').toEqual([42, 36, 42, 46, 42, 46, 42, 46, 42, 46]);
+    expect(r.tels, 'each move reads out its own wind-up').toEqual(r.kinds.map((k) => TEL[k]));
     expect(r.telLens, 'the gun 42, the props 36, the rest 46').toEqual([42, 36, 46, 46, 46, 46]);
     expect(r.telBare, 'a bare boss with no move yet is the gun\'s').toBe(42);
     expect([r.p2, r.p3]).toEqual(["I'll Be Back", 'Super Death Trap']);
@@ -82,16 +87,24 @@ describe('MePhone4S takes his Super Death Trap', () => {
     expect(r.rushOnly, 'an item boss never throws them: they need his floor and his arena').toEqual([true, true, true, true, true]);
   });
 
-  it('in phase 1 the car turn plays the next move instead; entering phase 2 makes the car the very next extra, and the order carries on', () => {
+  // Round 17 (the owner: "make the attacks based on fighter position."): the car is a move of phase 2 -- not among the moves he draws from in phase 1 -- and the first move once phase 2 starts (the picker's
+  // `first`, while the phase beat's s._carDue stands); after that it competes like the rest.
+  it('the car is not among his phase-1 moves; entering phase 2 makes the car his very next move, and then it competes like the rest', () => {
     const r = W.eval(`(function(){
       var run = function(hp, ph, n){ var s = ${S('_phase:ph, hp:hp')}, out = [];
-        for (var k=0;k<n;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; s._beatQ = 0; updateBossAttack(s, null); out.push(s._telKind); } return out.join(' '); };
-      return { p1: run(100, 1, 12), p2: run(50, 2, 12), p3: run(20, 3, 12), enter: run(50, 1, 8) };
+        for (var k=0;k<n;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; s._beatQ = 0; s._atkLive = null; updateBossAttack(s, null); out.push(s._telKind); } return out; };
+      return { p1: run(100, 1, 24), p2: run(50, 2, 24), p3: run(20, 3, 24), enter: run(50, 1, 12), moves: [1, 2, 3].map(function(ph){ var s = ${S('_phase:ph')}; return bossPickMoves(s, ph); }) };
     })()`);
-    expect(r.p1, 'no car in phase 1: the fourth extra is the shove').toBe('mephone4s s4prizes mephone4s s4vista mephone4s s4popup mephone4s s4shove mephone4s s4prizes mephone4s s4vista');
-    expect(r.p2, 'phase 2: the car takes its place in the order').toBe('mephone4s s4prizes mephone4s s4vista mephone4s s4popup mephone4s s4car mephone4s s4shove mephone4s s4prizes');
-    expect(r.p3).toBe(r.p2);
-    expect(r.enter, 'a boss that has just entered phase 2 plays the car first ("I\'ll Be Back")').toBe('mephone4s s4car mephone4s s4vista mephone4s s4popup mephone4s s4car');
+    expect(r.p1, 'no car in phase 1').not.toContain('s4car');
+    expect(new Set(r.p1), 'the other five all come up').toEqual(new Set(['mephone4s', 's4prizes', 's4vista', 's4popup', 's4shove']));
+    expect(r.moves[0]).not.toContain('s4car');
+    expect(r.moves[1], 'phase 2: the car takes its place').toContain('s4car');
+    expect(r.moves[2]).toContain('s4car');
+    expect(new Set(r.p2), 'phase 2: all six come up').toEqual(new Set(['mephone4s', 's4prizes', 's4vista', 's4popup', 's4car', 's4shove']));
+    expect(new Set(r.p3)).toEqual(new Set(r.p2));
+    expect(r.enter[0], 'a boss that has just entered phase 2 plays the car first ("I will be back")').toBe('s4car');
+    expect(r.enter[1], 'and the turn after it is not the car again').not.toBe('s4car');
+    expect(r.enter.some((k, i) => i > 0 && k === r.enter[i - 1]), `no move twice in a row: ${r.enter}`).toBe(false);
   });
 
   it('gives the place its sky, its red beam over the quicksand, its hazard and its ending, and every arena key a netcode client would take; the studio is still the studio', () => {
@@ -133,7 +146,7 @@ describe('MePhone4S takes his Super Death Trap', () => {
     expect(r.y0, 'above the screen').toBeLessThan(0);
     expect(r.k0, 'the entrance is a scripted state').toBe('enter');
     expect(r.arena, 'the gauntlet puts him in his own arena').toBe('deathtrap');
-    expect(r.hp).toBe(260);
+    expect(r.hp, 'his row is 260; the owner, 2026-10-01 (Round 17): "+50% (Recommended)" -- every Boss Rush boss spawns with half again the HP of its row (BOSS_HP_MULT)').toBe(Math.round(260*1.5));
     expect(r.ys.every((y, i, a) => i === 0 || y > a[i - 1]), 'he falls, the engine\'s own gravity, getting faster').toBe(true);
     expect(r.landed).toBeGreaterThan(30);
     expect(r.by, 'standing on the beam').toBeCloseTo(r.gy - r.R, 0);
@@ -262,7 +275,7 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
   it('the sight follows its mark for the first 24 frames and locks for the last 18; the round goes where it locked, so stepping off the line is the dodge', () => {
     expect(W.eval('S4.lock')).toBe(18);
     const r = W.eval(`(function(){ ${STAGE(820, 1, true)}
-      b._moveN = 0; b._atkTimer = 1; step();
+      b._pickForce = 'mephone4s'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, tel: b._tel, follow: true, held: true, lockedLate: true, lockedEarly: false, shot: null, face: true };
       var AP = addProj; addProj = function(p){ if (p && p.owner===-2 && p.s4 === 1 && !out.shot) out.shot = { x:p.x, y:p.y, vx:p.vx, vy:p.vy }; return AP(p); };
       try {
@@ -289,7 +302,7 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
   it('a round hits whoever stands on the line and misses whoever stepped off it', () => {
     const r = W.eval(`(function(){ var out = {};
       [['stays', 0], ['steps', 260]].forEach(function(c){ ${STAGE(300, 1, true)}
-        b._moveN = 0; b._atkTimer = 1; step();
+        b._pickForce = 'mephone4s'; b._atkLive = null; b._atkTimer = 1; step();
         for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); if (b._tel === 5) f.x = 300; }
         f.x = 300 + c[1]; f.vx = 0; f.y = groundY()-24; f.invuln = 0; f.pct = 0;
         for (var k=0;k<60;k++){ f.x = 300 + c[1]; f.vx = 0; f.y = groundY()-24; f.invuln = 0; f.hitstun = 0; step(); }
@@ -404,7 +417,7 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
   it('a gun drawn in phase 1 is one round, and a car drawn in phase 2 is the car and its return and no spikes, even if phase 3 starts during the wind-up', () => {
     const r = W.eval(`(function(){ var out = {};
       ${['car', 'gun'].map((which) => `{ ${STAGE(800, which === 'car' ? 2 : 1, false, true)}
-        b._atkTimer = 1; b._moveN = ${which === 'car' ? 2 * EX.indexOf('s4car') + 1 : 0}; step();
+        b._atkTimer = 1; b._pickForce = '${which === 'car' ? 's4car' : 'mephone4s'}'; b._atkLive = null; step();
         var drawn = { phase: b._telPh, name: document.getElementById('banner').textContent };
         var seen = { car:0, spike:0, round:0 }, AP = addProj;
         addProj = function(p){ if (p && p.shape==='redcar') seen.car++; if (p && p.shape==='spike') seen.spike++; if (p && p.s4 === 1) seen.round++; return AP(p); };
@@ -430,7 +443,7 @@ describe("I'LL BE BACK! (the car)", () => {
   it('he runs for the edge farther from you and is off the screen when the wind-up ends; the cars wait there, headlights on, for the rev', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[300, 800].map((fx) => `{ ${STAGE(fx, 2, true)}
-        b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4car'; b._atkLive = null; b._atkTimer = 1; step();
         var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, from: b._s4.from };
         for (var w=0; w<80 && b._tel>0; w++){ f.x = ${fx}; f.vx = 0; step(); }
         o.x = Math.round(b.x); o.y = Math.round(b.y); o.hover = b.hover; o.go = b._s4.go; o.st = b._s4.st; o.R = b.r; o.WW = WW; o.gy = groundY();
@@ -490,7 +503,7 @@ describe("I'LL BE BACK! (the car)", () => {
 
   it('a car turn through the engine: both cars cross, he walks back in from the edge he left by 22 frames after the last has cleared, and the turn ends', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 2, true, true)}
-      b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+      b._pickForce = 's4car'; b._atkLive = null; b._atkTimer = 1; step();
       for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; step(); }
       var ev = [], last = '', backAt = -1, carsAtBack = -1, doneAt = -1, maxCars = 0, gone = -1;
       for (var k=0;k<400;k++){
@@ -518,7 +531,7 @@ describe("I'LL BE BACK! (the car)", () => {
   it('both cars together are one boss hit: whoever stands on the floor is run over once, and whoever is in the air is not touched', () => {
     const r = W.eval(`(function(){ var out = {};
       [['floor', 24], ['air', 200]].forEach(function(c){ ${STAGE(600, 2, true, false)}
-        b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4car'; b._atkLive = null; b._atkTimer = 1; step();
         var hits = 0, last = 0, gy = groundY(), n = 0;
         for (var k=0;k<400;k++){
           f.x = 600; f.y = gy - c[1]; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; step(); n++;
@@ -537,7 +550,7 @@ describe("I'LL BE BACK! (the car)", () => {
   it('phase 3 puts the whole course on the same turn: spikes shadowed 40 frames then up, the crusher on you at 150 frames (a whole hit), the big platform turned over at 186 -- one attack id', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 3, true, true)}
       var gy = groundY(), pl = worldPlats[0], ids = {};
-      b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+      b._pickForce = 's4car'; b._atkLive = null; b._atkTimer = 1; step();
       var banners = [], _b = banner; banner = function(t, m, k, l){ banners.push([String(t), k || null]); return _b(t, m, k, l); };
       var impacts = [], _imp = impact; impact = function(x, y, o){ impacts.push([hazardT, Math.round(x), Math.round(y), o && o.shake]); return _imp(x, y, o); };
       try {
@@ -703,7 +716,7 @@ describe('HASTA LA VISTA! (Taco as a gun)', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
         f.invuln = 9999;
-        b._moveN = ${2 * EX.indexOf('s4vista') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4vista'; b._atkLive = null; b._atkTimer = 1; step();
         var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, flag: b._s4Vista, mark: b._aimIdx, gy: groundY() };
         var rec = [];
         for (var w=0; w<80 && b._tel>0; w++){ f.x = (w < 20 ? 300 + w*5 : 400 - (w-20)*2); f.vx = 0; step(); rec.push([b._tel, b._aimLock, Math.round(b._aimX), Math.round(b._aimY), Math.round(f.x)]); }
@@ -751,7 +764,7 @@ describe('HASTA LA VISTA! (Taco as a gun)', () => {
 
   it('a lemon that lands on you is a heavy hit -- knock 14 -- and three of them are still one boss hit', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
-      b._moveN = ${2 * EX.indexOf('s4vista') + 1}; b._atkTimer = 1; step();
+      b._pickForce = 's4vista'; b._atkLive = null; b._atkTimer = 1; step();
       for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); }
       var hits = [], pct0 = f.pct, kbs = [], gy = groundY(), shakes = [], _imp = impact; impact = function(x, y, o){ shakes.push(o && o.shake); return _imp(x, y, o); };
       try {
@@ -778,7 +791,7 @@ describe('POP UP! (up through the quicksand)', () => {
   it('the wind-up sinks him into the floor where he stands, the boil follows you for the first 30 frames and holds for the last 16, and he is under the floor, out of reach, when it ends', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
       var gy = groundY(), R = b.r;
-      b._moveN = ${2 * EX.indexOf('s4popup') + 1}; b._atkTimer = 1; step();
+      b._pickForce = 's4popup'; b._atkLive = null; b._atkTimer = 1; step();
       var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, sx: b._s4.sx, R: R, gy: gy, x0: b.x };
       var rec = [];
       for (var w=0; w<80 && b._tel>0; w++){
@@ -810,7 +823,7 @@ describe('POP UP! (up through the quicksand)', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
         var gy = groundY(), R = b.r;
-        b._moveN = ${2 * EX.indexOf('s4popup') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4popup'; b._atkLive = null; b._atkTimer = 1; step();
         for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); }
         var ev = [], last = '', ids = {}, xs = [], ys = {};
         for (var k=0;k<400;k++){
@@ -898,7 +911,7 @@ describe('QUICKSAND SHOVE! (the charging tackle)', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
         var gy = groundY(), R = b.r;
-        b._moveN = ${2 * EX.indexOf('s4shove') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4shove'; b._atkLive = null; b._atkTimer = 1; step();
         var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, dir0: b._s4.dir, R: R, gy: gy };
         var rec = [];
         for (var w=0; w<80 && b._tel>0; w++){
@@ -953,7 +966,7 @@ describe('QUICKSAND SHOVE! (the charging tackle)', () => {
       ${[1, 2].map((ph) => `{ ${STAGE(560, ph, true, true)}
         var gy = groundY(), pl = worldPlats[0];
         var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pillow'; }), 460, pl.y - 24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
-        b._moveN = ${2 * EX.indexOf('s4shove') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4shove'; b._atkLive = null; b._atkTimer = 1; step();
         var put = function(){ g.x = 460; g.y = pl.y - 24; g.vx = 0; g.vy = 0; g.invuln = 0; g.hitstun = 0; };
         for (var w=0; w<80 && b._tel>0; w++){ put(); f.x = 560; f.vx = 0; f.invuln = 9999; step(); }
         var A = b._s4, hits = [], pct0 = f.pct, gp0 = g.pct, maxSlow = 0;
