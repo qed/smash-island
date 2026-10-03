@@ -64,7 +64,10 @@ describe('Springy takes Boss 11', () => {
     expect(r.cobsRow).toEqual(COBS_ROW);
     expect(r.cobsExtra).toEqual(['knife', 'kernels']);
     expect(r.cobsCode).toEqual(['function', 'function', 'function', 'function', 'function', 'object', 'assets/sprites/steve-cobs.png']);
-    expect(r.table.slams, 'one slam, then two, then three').toEqual([0, 1, 2, 3]);
+    // "tune them yourself. a reminder that the way we do it is harder in dodging, not harder in damage or speed" (the owner,
+    // 2026-10-03): measured after Round 17 he cost the solo bot 1.13 lives to MePhone4S's 1.72, so each turn has more to dodge --
+    // three slams, then four, then five (were one, two, three); every slam is still one boss hit, as fast and as well marked
+    expect(r.table.slams, 'three slams, then four, then five').toEqual([0, 3, 4, 5]);
     expect(r.table.holeT[3], 'phase 3 holes stay open longer').toBeGreaterThan(r.table.holeT[1]);
   });
 
@@ -169,7 +172,7 @@ describe('Springy takes Boss 11', () => {
     expect(r.quake, '"laughing as he shakes him around": two seconds of shaking').toBe(120);
     expect(r.holes3).toBe(1);
     expect(r.holeX, 'the floor gives under the nearest fighter').toBe(150);
-    expect(r.holeT, 'a phase-3 hole, open five seconds').toBe(300);
+    expect(r.holeT, 'a phase-3 hole, open six seconds (it was five: "harder in dodging", 2026-10-03)').toBe(360);
   });
 
   it('hit while grounded, he bounces once', () => {
@@ -196,12 +199,16 @@ describe('TRY NOT TO FALL: the slam', () => {
       for (var i=0;i<40 && b._tel>0;i++) step();
       out.launched = !!b._slam && b._slam.phase==='up' && b.vy < 0;
       var m = projectiles.find(function(p){ return p.springMark; }); out.markX = m ? m.warnX : null; out.markInert = m ? (m.delay > 0) : null;
-      var minY = 1e9, hung = false, fell = false, pct0 = f.pct, n = 0;
-      for (var j=0;j<260 && b._slam;j++){ step(); n++; minY = Math.min(minY, b.y); if (b._slam && b._slam.phase==='hang') hung = true; if (b._slam && b._slam.phase==='down') fell = true; f.pct = f.pct; }
-      out.minY = minY; out.hung = hung; out.fell = fell; out.n = n; out.landedX = b.x; out.landedY = b.y; out.floorY = gy - b.r;
-      out.taken = f.pct - pct0; out.full = bossDmg();
-      var h = projectiles.find(function(p){ return p.springHole; });
-      out.hole = h ? { x: h.x, delay: h.delay, id: h.bossAtk } : null; out.markLeft = projectiles.filter(function(p){ return p.springMark; }).length;
+      var minY = 1e9, hung = false, fell = false, pct0 = f.pct, n = 0, first = null, holes = 0, AP = addProj;
+      addProj = function(p){ if (p && p.springHole) holes++; return AP(p); };
+      try {
+        for (var j=0;j<600 && b._slam;j++){ step(); n++; minY = Math.min(minY, b.y); if (b._slam && b._slam.phase==='hang') hung = true; if (b._slam && b._slam.phase==='down') fell = true;
+          // the first landing: where, what it cost you, and the hole it left (the later slams of the turn follow you, wherever the first sent you)
+          var h = !first && projectiles.find(function(p){ return p.springHole; });
+          if (h) first = { n: n, x: b.x, y: b.y, taken: f.pct - pct0, hole: { x: h.x, delay: h.delay, id: h.bossAtk } }; }
+      } finally { addProj = AP; }
+      out.minY = minY; out.hung = hung; out.fell = fell; out.n = n; out.first = first; out.holes = holes; out.done = !b._slam; out.floorY = gy - b.r;
+      out.full = bossDmg(); out.markLeft = projectiles.filter(function(p){ return p.springMark; }).length;
       out.gapReset = b._atkTimer;
       summons = []; projectiles = []; return out;
     })()`);
@@ -214,13 +221,16 @@ describe('TRY NOT TO FALL: the slam', () => {
     expect(r.minY, 'above the top of the screen').toBeLessThan(-100);
     expect(r.hung).toBe(true);
     expect(r.fell).toBe(true);
-    expect(r.n, 'a slam is about a second and a half').toBeLessThan(160);
-    expect(r.landedX).toBe(300);
-    expect(r.landedY).toBeCloseTo(r.floorY, 3);
-    expect(r.taken, 'a whole boss hit').toBeCloseTo(r.full, 5);
-    expect(r.hole, 'the floor gives where he landed, under the slam\'s own id').toMatchObject({ x: 300 });
-    expect(r.hole.delay, 'for three seconds (read a frame or so after it opened)').toBeGreaterThanOrEqual(178);
-    expect(r.hole.delay).toBeLessThanOrEqual(180);
+    expect(r.first.n, 'a slam is about a second and a half').toBeLessThan(160);
+    expect(r.first.x).toBe(300);
+    expect(r.first.y).toBeCloseTo(r.floorY, 3);
+    expect(r.first.taken, 'a whole boss hit').toBeCloseTo(r.full, 5);
+    expect(r.first.hole, 'the floor gives where he landed, under the slam\'s own id').toMatchObject({ x: 300 });
+    expect(r.first.hole.delay, 'for four seconds (read a frame or so after it opened; three until 2026-10-03)').toBeGreaterThanOrEqual(238);
+    expect(r.first.hole.delay).toBeLessThanOrEqual(240);
+    // "harder in dodging" (the owner, 2026-10-03): three slams a turn in phase 1, where there was one
+    expect(r.done, 'the turn ends').toBe(true);
+    expect(r.holes, 'three slams, three holes').toBe(3);
     expect(r.markLeft, 'the mark is gone').toBe(0);
     // SPRINGY.gaps[1] (96) times BOSS_PACE (1.2): "bosses should attack a bit slower" (the owner, 2026-09-30)
     expect(r.gapReset, 'his next turn is timed from the floor').toBe(115);
@@ -257,7 +267,9 @@ describe('TRY NOT TO FALL: the slam', () => {
     expect(r.groundedAfter).toBe(true);
   });
 
-  it('phase 2: two slams, the second following you until it locks; phase 3: three, five-second holes, and a floor wave both ways', () => {
+  // Four slams in phase 2 and five in phase 3 since 2026-10-03 (they were two and three): "tune them yourself. a reminder that the way we do
+  // it is harder in dodging, not harder in damage or speed" (the owner). The first still comes down where you stood as he left the floor.
+  it('phase 2: four slams, the ones after the first following you until they lock; phase 3: five, six-second holes, and a floor wave both ways', () => {
     const r = W.eval(`(function(){ var out = {};
       [2, 3].forEach(function(ph){
         ${STAGE(300)}
@@ -279,15 +291,15 @@ describe('TRY NOT TO FALL: the slam', () => {
       return out;
     })()`);
     expect(r[2].done).toBe(true);
-    expect(r[2].holesAt, 'two slams: the first where you stood, the second where you went').toEqual([300, 700]);
+    expect(r[2].holesAt, 'four slams: the first where you stood, the rest where you went').toEqual([300, 700, 700, 700]);
     expect(r[2].waves, 'no wave before phase 3').toBe(0);
-    expect(r[2].delays, 'three-second holes').toEqual([180, 180]);
+    expect(r[2].delays, 'four-second holes').toEqual([240, 240, 240, 240]);
     expect(r[3].done).toBe(true);
-    expect(r[3].holesAt).toHaveLength(3);
+    expect(r[3].holesAt).toHaveLength(5);
     expect(r[3].holesAt[0]).toBe(300);
-    expect(r[3].holesAt.slice(1), 'the second and third follow you').toEqual([700, 700]);
-    expect(r[3].waves, 'the terrarium\'s shockwave: two a landing').toBe(6);
-    expect(r[3].delays, 'five-second holes').toEqual([300, 300, 300]);
+    expect(r[3].holesAt.slice(1), 'the rest follow you').toEqual([700, 700, 700, 700]);
+    expect(r[3].waves, 'the terrarium\'s shockwave: two a landing').toBe(10);
+    expect(r[3].delays, 'six-second holes').toEqual([360, 360, 360, 360, 360]);
   });
 });
 
@@ -350,6 +362,48 @@ describe('the second moves', () => {
       expect(c.hit, `a fighter ${Math.round(c.dx)} px out is ${c.want ? 'hit' : 'safe'}`).toBe(c.want);
       if (c.want) expect(c.pct, 'both fists pass through him, and the pair is one boss hit, not two (damage unchanged)').toBeCloseTo(c.full, 5);
     }
+  });
+
+  // "tune them yourself. a reminder that the way we do it is harder in dodging, not harder in damage or speed" (the owner, 2026-10-03).
+  // "a double punch, one high, one low": the high fist went along your row, so against anyone standing both fists ran along the floor,
+  // eight frames apart, and one hop cleared the pair. Standing, the high one now goes a hop's height over the floor: stay under it, hop
+  // the low one. In the air, it still goes along your row.
+  it('one high, one low: against a fighter standing on the floor the high fist goes a hop\'s height over it; against one in the air, along their row', () => {
+    const r = W.eval(`(function(){ var gy = groundY(), out = { gy: gy };
+      var s = ${S('_telKind:"longarm", _telX:400, _telY:groundY()-24')}; springyBeginTelegraph(s, { x:400, y:gy-24, dead:false }); out.standing = s._armRows.slice();
+      var s2 = ${S('_telKind:"longarm", _telX:400, _telY:groundY()-140')}; springyBeginTelegraph(s2, { x:400, y:gy-140, dead:false }); out.air = s2._armRows.slice();
+      return out; })()`);
+    expect(r.standing, 'standing: a hop over the floor, and the floor').toEqual([r.gy - 120, r.gy - 24]);
+    expect(r.air, 'in the air: your row, and the floor').toEqual([r.gy - 140, r.gy - 24]);
+  });
+
+  // "Springy can extend and retract his arms" (his page, Extendable Arms): each fist turns where its flight out ends and comes back along
+  // its row to where the arm began -- a fist hopped going out has to be hopped again coming back (2026-10-03, "harder in dodging").
+  it('the arm comes back: a fighter who was out of the way as the fists went out meets the low one coming back, for one boss hit, and the fists are gone at his hand', () => {
+    const r = W.eval(`(function(){ ${STAGE(600)}
+      b.x = 900; b.homeX = 900; b.vx = 0; b._pickForce = 'longarm'; b._atkLive = null; b._atkTimer = 1; step();
+      var turned = false, down = false, hitOut = false, minX = 1e9, gone = false, start = null;
+      for (var i=0;i<260;i++){
+        var fists = projectiles.filter(function(p){ return p.shape==='mitten' && p.life > 0; });
+        if (fists.length === 2 && start === null) start = fists.map(function(p){ return Math.sign(p.vx); });
+        if (fists.length === 2 && fists.every(function(p){ return p.vx > 0; })) turned = true;
+        fists.forEach(function(p){ minX = Math.min(minX, p.x); });
+        // up out of the way while the fists go out, and back on the floor once both have turned
+        if (!turned){ f.x = 600; f.y = groundY() - 300; f.vx = 0; f.vy = 0; } else if (!down){ f.x = 600; f.y = groundY() - 24; f.vx = 0; f.vy = 0; down = true; }
+        if (!turned && f.pct > 0) hitOut = true;
+        b.x = 900; b.vx = 0;
+        step();
+        if (turned && !projectiles.some(function(p){ return p.shape==='mitten' && p.life > 0; })){ gone = true; break; }
+      }
+      var out = { start: start, turned: turned, hitOut: hitOut, pct: f.pct, full: bossDmg(), minX: minX, gone: gone, reach: WW*SPRINGY.armLen };
+      summons = []; projectiles = []; return out;
+    })()`);
+    expect(r.start, 'both fists go out toward you').toEqual([-1, -1]);
+    expect(r.hitOut, 'nobody on the rows as they went out').toBe(false);
+    expect(r.turned, 'both turn').toBe(true);
+    expect(900 - r.minX, 'and only once they have been as far as a fist goes').toBeGreaterThanOrEqual(r.reach);
+    expect(r.pct, 'the low one coming back is the hit, and the pair is still one boss hit').toBeCloseTo(r.full, 5);
+    expect(r.gone, 'gone once they are back at his hand').toBe(true);
   });
 
   // The owner, 2026-10-01 (Round 17): "Springy: ... A TOY IN EVERY BOX two drops from phase 2" -- two drops a turn, the second a step toward the middle, were phase 3's.

@@ -58,10 +58,13 @@ const SETUP = (name, boss, run) => `
   ${run ? 'BOSSRUSH.cleared = BOSSRUSH.bossIdx;' : ''}
   spawnBossRushBoss();
   var AP = addProj, AH = applyHit, depth = 0, kinds = {}, src = {};
-  // Springy's slam has no shot of its own: its mark and its hole carry the slam's id, so its damage files under 'slam'.
+  // Springy's slam has no shot of its own. Its hole carries the slam's id, so a pit's pop files under 'slam' -- but the hole is made
+  // after the slam's own hit lands, so that hit is filed here, while springySlamLand runs (it went to 'boss-other' before 2026-10-03).
+  var inSlam = 0;
+  if (typeof springySlamLand === 'function'){ var SSL = springySlamLand; springySlamLand = function(s, S){ inSlam++; try { return SSL(s, S); } finally { inSlam--; } }; }
   addProj = function(p){ if(p && p.owner===-2 && p.bossAtk!=null) kinds[p.bossAtk] = p.cobsTrap ? 'contraption' : (p.springMark || p.springHole) ? 'slam' : p.beamShot ? 'gun' : (p.shape || 'shot'); return AP(p); };
   applyHit = function(t, dmg, kx, ky, from, opts){ var p0 = t.pct; depth++; try { return AH(t, dmg, kx, ky, from, opts); } finally { depth--;
-    if(depth===0 && t.pct > p0){ var k = opts && opts.bossAtk!=null ? (kinds[opts.bossAtk] || 'boss-other') : (from && (from.hostile || from.idx===-2) ? 'add' : 'other');
+    if(depth===0 && t.pct > p0){ var k = inSlam ? 'slam' : opts && opts.bossAtk!=null ? (kinds[opts.bossAtk] || 'boss-other') : (from && (from.hostile || from.idx===-2) ? 'add' : 'other');
       src[k] = (src[k]||0) + (t.pct - p0); t._bsAcc = (t._bsAcc||0) + (t.pct - p0); } } };
 `;
 // One step, with anything the fighter took that applyHit did not deal (poison, bleed, burn) filed as damage over time.

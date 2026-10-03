@@ -685,10 +685,10 @@ describe('I DO THIS!', () => {
   it('the snap: whoever is inside takes one hit (0.8, one id), is thrown, turned into a squiggle for 36 frames and skipped for 10 s; whoever is outside is not touched', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1)}
       var gy = groundY(), g = makeFighter(ROSTER.find(function(q){ return q.name==='Pen'; }), 900, gy-24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
-      b._fr = null; b._telPh = 1; b._atkTimer = 1e9; f.x = 400; f.y = gy - 24; g.x = 400 + 140; g.y = gy - 24;
+      b._fr = null; b._telPh = 1; b._atkTimer = 1e9; f.x = 400; f.y = gy - 24; g.x = 400 + FOUR.idoSnapR[1] + 40; g.y = gy - 24;
       b._ido = [{ who:f.idx, off:0, cx:400, cy:gy - 24 }];
       fourIdo(b, f);
-      var F = b._fr, out = { id: F.id, R: FOUR.idoSnapR[1] };
+      var F = b._fr, out = { id: F.id, R: FOUR.idoSnapR[1], radii: FOUR.idoSnapR.slice() };
       var pcts = [];
       for (var i=0;i<FOUR.idoSnap + 2;i++){ step(); pcts.push([f.pct, g.pct]); g.invuln = 0; }
       out.before = pcts[FOUR.idoSnap - 2]; out.after = pcts[FOUR.idoSnap]; out.sq = b._hz.sq && b._hz.sq.map(function(q){ return q.slice(); }); out.skip = f._idoSkip - hazardT; out.vy = f.vy;
@@ -704,7 +704,10 @@ describe('I DO THIS!', () => {
       summons = []; projectiles = []; return out; })()`);
     expect(r.before, 'nobody is hurt before the snap').toEqual([0, 0]);
     expect(r.after[0], 'the fighter inside: one hit of 0.8').toBeCloseTo(17.6, 5);
-    expect(r.after[1], 'the one 140 px off, outside a 100 ring: not touched').toBe(0);
+    expect(r.after[1], 'the one 40 px outside the ring: not touched').toBe(0);
+    // "tune them yourself. a reminder that the way we do it is harder in dodging, not harder in damage or speed" (the owner, 2026-10-03):
+    // the ring snaps 140 / 160 / 180 across (it was 100 / 120 / 140), more ground to cover once it locks; the hit is the 0.8 it was
+    expect(r.radii, 'the snap by phase').toEqual([0, 140, 160, 180]);
     expect(r.sq[0][1] - 0, 'a squiggle').toBeGreaterThan(0);
     expect(r.sq, 'for 36 frames').toHaveLength(1);
     expect(r.skip, 'skipped for 10 seconds').toBeGreaterThan(590);
