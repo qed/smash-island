@@ -112,7 +112,7 @@ describe('Four takes his classroom', () => {
 });
 
 describe('SCREECHY!', () => {
-  it('is a ring of sound a degree at a time with evenly spaced gaps -- 4, 3, 2 by phase (5, 4, 3 until 2026-10-03: harder to dodge, for the longer wind-up), slower than it was -- and phase 3 sends a second ring 24 frames behind, its gaps a half-gap off', () => {
+  it('is a ring of sound a degree at a time with evenly spaced gaps -- 5, 4, 3 by phase, slower than it was -- and phase 3 sends a second ring 24 frames behind, its gaps a half-gap off', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1)}
       var out = {};
       [1, 2, 3].forEach(function(ph){
@@ -130,7 +130,7 @@ describe('SCREECHY!', () => {
           volley: shots.every(function(p){ return p.volley; }), shape: Array.from(new Set(shots.map(function(p){ return p.shape; }))) };
       });
       b._fr = null; projectiles = []; return out; })()`);
-    for (const [ph, gaps, spd] of [[1, 4, 6], [2, 3, 6.8], [3, 2, 7.5]]) {
+    for (const [ph, gaps, spd] of [[1, 5, 6], [2, 4, 6.8], [3, 3, 7.5]]) {
       const o = r[ph];
       expect(o.gaps.length, `phase ${ph}: ${gaps} gaps`).toBe(gaps);
       expect(o.spd, `phase ${ph}: speed`).toBeCloseTo(spd, 5);
@@ -147,10 +147,10 @@ describe('SCREECHY!', () => {
     // the second ring is the first one turned (by phi, a random angle, and by half a gap): a turn of a non-whole number of degrees moves the whole-degree shots in and out of the gaps, up to one a gap (three), so
     // "the same ring" is the same ring to within that (it was equal only when the dice happened to line the two up)
     expect(Math.abs(r[3].late - r[3].n), 'the same ring, to a degree of rounding in each of the three gaps').toBeLessThanOrEqual(3);
-    // the second ring's gaps are a half gap-width on from the first: 0.13 rad = about 7 degrees, a lateral step the player has time for
-    const shift = (((r[3].gaps2[0][0] + r[3].gaps2[0][1]/2) - (r[3].gaps[0][0] + r[3].gaps[0][1]/2)) % 180 + 180) % 180;
-    expect(shift, 'its gaps are 7 degrees off').toBeGreaterThan(4);
-    expect(shift).toBeLessThan(11);
+    // the second ring's gaps are a half gap-width on from the first: 0.18 rad = about 10 degrees, a lateral step the player has time for
+    const shift = (((r[3].gaps2[0][0] + r[3].gaps2[0][1]/2) - (r[3].gaps[0][0] + r[3].gaps[0][1]/2)) % 120 + 120) % 120;
+    expect(shift, 'its gaps are 10 degrees off').toBeGreaterThan(6);
+    expect(shift).toBeLessThan(14);
   });
 
   it('the wind-up rears him up and shakes him (the screech render for the second half), the shots stop at the floor, and the turn is one hit for whoever stands in it', () => {

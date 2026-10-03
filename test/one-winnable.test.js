@@ -71,7 +71,9 @@ describe('One can be beaten', () => {
     expect(Math.min(...runs.map(r => r.dealt)), 'every run takes a real bite out of her (a tenth of her bar at least)').toBeGreaterThanOrEqual(200);
     wins.forEach(r => expect(r.secs, 'a win takes minutes: 2000 HP is the whole gauntlet\'s worth').toBeGreaterThanOrEqual(120));
     expect(mean('ghost'), 'her ghost shields her for well under half the fight').toBeLessThanOrEqual(0.45);
-    expect(mean('ung'), 'Power Ungrounded for a small part of it').toBeLessThanOrEqual(0.15);
+    // 2026-10-03, "one should be right beside you, so that you can hit them with a projectile": level with you she takes damage faster (the bot's
+    // 415-590 a minute became 577-870) and so reaches Power Ungrounded sooner in a shorter fight -- its share went from 0.11-0.17 to 0.12-0.23 a run
+    expect(mean('ung'), 'Power Ungrounded for a small part of it').toBeLessThanOrEqual(0.2);
     expect(runs.map(r => r.ghost + r.ung).every(f => f < 0.5), 'in every run she is hurtable for more than half of it').toBe(true);
     expect(mean('perMin'), 'damage a minute').toBeGreaterThanOrEqual(400);
   }, 900000);   // about 35 s alone; under a loaded full-suite run it has taken nearly 10 minutes
