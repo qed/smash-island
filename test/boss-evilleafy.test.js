@@ -10,8 +10,10 @@ import { mulberry32 } from './helpers/prng.js';
 // they will strike AND a dark vine line creeps along the floor showing the wave's path, with the gap lit), POSSESSED!, BLACK HOLE! and BEHIND THE TREES! (her glowing eyes
 // behind one tree of the backdrop, then she bursts out) -- each a scene from the show, all of them through the boss engine kit (impact, the arena's ground and hazard, its
 // ending). She is exempt from the attack-count rule: "unless they have a mechanic, like contact damage and teleporting for evil leafy, that makes it so that they dont
-// need extra attacks" (the owner), so her contact hit and her teleport are kept, and the contact hit's numbers are not touched ("Evil leafy level.": One's rebuild copies
-// them). "Harder, same damage": every part of a move shares its one attack id, so a fighter takes at most one boss hit from it. Never tuned for a bot: every number here is
+// need extra attacks" (the owner), so her contact hit and her teleport are kept ("Evil leafy level.": One's rebuild copied her contact numbers and keeps them). ROUND 17, the
+// owner (2026-10-01): "give me 5 options by boss to increase their difficulty(except evil leafy, give 5 options for nerfing)" -- and the picks: "Evil Leafy (nerfs): softer contact
+// (knockback 13 -> 9, grace 75 -> 120 f; One keeps her own copy of the old numbers); fewer teleports (every 300/220/160 f, never right beside you); TENDRILS!' second wave only in
+// phase 3." "Harder, same damage": every part of a move shares its one attack id, so a fighter takes at most one boss hit from it. Never tuned for a bot: every number here is
 // what the design says.
 
 let W;
@@ -35,16 +37,18 @@ const STAGE = (x, ph = 1, bx = 200) => `
 `;
 // Fire move number k (0 the signature, 1 POSSESSED!) of the boss `b` now, leaving the fighter `f` where it is, and run its wind-up out: the frame the move fires is the last
 // one this returns from.
-const FIRE = (k) => `b._moveN = ${k === 0 ? 0 : 2*k - 1}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
+const FIRE = (k) => `b._pickForce = ${JSON.stringify(['evilleafy', 'elpossess', 'elhole', 'elbehind'][k])}; b._atkLive = null; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
   for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = FX; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.onground = true; }`;
 
 describe('Evil Leafy takes the Evil Forest', () => {
-  it('is Boss 7, red (the owner: "Evil Leafy red with black vines"), with her HP and size as they were, and her turns run TENDRILS!, POSSESSED!, TENDRILS!...', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position
+  // picks all (Recommended)": TENDRILS! no longer runs between every other move (TENDRILS!, POSSESSED!, TENDRILS!, BLACK HOLE!, ...). She draws her four by where the fighters stand: none twice in a row.
+  it('is Boss 7, red (the owner: "Evil Leafy red with black vines"), with her HP and size as they were, and her turns drawn from TENDRILS!, POSSESSED!, BLACK HOLE! and BEHIND THE TREES!', () => {
     const r = W.eval(`(function(){
       var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='Evil Leafy'; });
       var s = { name:'Evil Leafy', attack:'evilleafy', type:'boss', x:300, y:500, r:81.6, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0, color:'#ff0100', face:1, homeX:300, stationary:false, vx:0, vy:0 };
       var kinds = [], names = [];
-      for (var k=0;k<4;k++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
+      for (var k=0;k<12;k++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); }
       return { i: i, row: BOSS_ROSTER[i], mephone: BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), s4: BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; }),
         extra: BOSS_EXTRA['Evil Leafy'], kinds: kinds, names: names,
         tel: ['evilleafy','elpossess'].map(function(k){ return bossTelLen({ attack:'evilleafy', _telKind:k }); }),
@@ -56,8 +60,11 @@ describe('Evil Leafy takes the Evil Forest', () => {
     expect(r.i, 'Boss 7, right after MePhone4').toBe(6);
     expect(r.mephone).toBe(5);
     expect(r.s4, 'and before MePhone4S').toBe(7);
-    expect(r.kinds.slice(0, 3)).toEqual(['evilleafy', 'elpossess', 'evilleafy']);
-    expect(r.names.slice(0, 3), 'the wind-up names the move').toEqual(['TENDRILS!', 'POSSESSED!', 'TENDRILS!']);
+    const NAME = { evilleafy: 'TENDRILS!', elpossess: 'POSSESSED!', elhole: 'BLACK HOLE!', elbehind: 'BEHIND THE TREES!' };
+    expect(r.kinds.every((k) => NAME[k]), `only her four: ${r.kinds}`).toBe(true);
+    expect(r.names, 'the wind-up names the move').toEqual(r.kinds.map((k) => NAME[k]));
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(new Set(r.kinds).size, `all four come up in twelve turns: ${r.kinds}`).toBe(4);
     expect(r.names2).toEqual(['POSSESSED!', 'BLACK HOLE!', 'BEHIND THE TREES!']);
     expect(r.tel, 'TENDRILS!\'s wind-up is longer than the 45 it was ("1 needs a better telegraph.")').toEqual([56, 34]);
     expect([r.p2, r.p3]).toEqual(['No Refuge', 'Vine Coverage']);
@@ -67,37 +74,135 @@ describe('Evil Leafy takes the Evil Forest', () => {
     expect(r.rushOnly, 'an item boss never throws them: they need her platform, her floor and her forest').toEqual([true, true, true]);
   });
 
-  it('she never walks: a statue that turns to face you, and only her teleport (every 200 / 130 / 100 frames) moves her', () => {
+  // The owner, 2026-10-01 (Round 17), her nerfs: "fewer teleports (every 300/220/160 f, never right beside you)" -- it was every 200 / 130 / 100 frames.
+  it('she never walks: a statue that turns to face you, and only her teleport (every 300 / 220 / 160 frames) moves her', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE(900, 1, 300)}
       var x0 = b.x; for (var i=0;i<90;i++){ step(); f.x = 900; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       out.still = Math.abs(b.x - x0) < 1; out.face = b.face;
       ${STAGE(900, 1, 100)}
       b._teleT = 1; step(); out.teleported = Math.abs(b.x - 100) > 100 && b.x <= WW*0.34 + 1;   // phase 1: only inside the dark left third
+      out.armed = [b._teleT];
       ${STAGE(900, 2, 300)}
-      b._teleT = 1; step(); out.p2 = b.x;
+      b._teleT = 1; step(); out.p2 = b.x; out.armed.push(b._teleT);
+      ${STAGE(900, 3, 300)}
+      b._teleT = 1; step(); out.p3 = b.x; out.armed.push(b._teleT);
       out.gaps = [1,2,3].map(function(p){ return EL.teleGap[p]; });
       return out; })()`);
     expect(r.still, 'no walk toward you').toBe(true);
     expect(r.face, 'she turns to you').toBe(1);
     expect(r.teleported, 'phase 1 teleports stay in the left third').toBe(true);
-    expect(r.p2, 'phase 2 teleports to within 180-320 of you').toBeGreaterThan(900 - 330);
-    expect(r.gaps).toEqual([200, 130, 100]);
+    for (const x of [r.p2, r.p3]) {
+      expect(900 - x, 'phase 2 and 3 teleports land 200 to 320 px off you').toBeGreaterThanOrEqual(200 - 1e-6);
+      expect(900 - x).toBeLessThanOrEqual(320 + 1e-6);
+    }
+    expect(r.gaps, 'the cadence by phase').toEqual([300, 220, 160]);
+    expect(r.armed, 'a teleport starts the next wait: the gap of the phase').toEqual([300, 220, 160]);
   });
 
-  it("her contact hit is exactly as it was: 0.6 of a boss hit, knocked 13 and -12, 75 frames of grace (One's rebuild copies the numbers)", () => {
+  // Her teleport used to be your x plus or minus 180-320, clamped to the stage (phase 1: to the dark left third) -- and the clamp could drop her right beside you: by a wall, or at the edge of
+  // the dark. "never right beside you" (the owner's pick, Round 17): elTeleX keeps her EL.teleNear (200) px off on a side that has room, and with no ground at that distance she stays.
+  it('the BOOM never lands right beside you: 200 px off at the least on whichever side has room -- by a wall or at the edge of the dark too -- and with no ground at that distance she stays', () => {
+    const r = W.eval(`(function(){ var out = { bad:[], far:[], n:0, nulls:{ 1:[], 2:[], 3:[] }, sides:{ left:0, right:0 }, WW:WW, near:EL.teleNear, span:EL.teleSpan.slice() };
+      for (var ph=1; ph<=3; ph++){
+        var lo = 80, hi = ph === 1 ? WW*0.34 : WW - 80;
+        for (var tx=0; tx<=WW; tx+=10) [0.1, 0.9].forEach(function(a){ [0, 0.5, 1].forEach(function(b){
+          var x = elTeleX(tx, ph, a, b); out.n++;
+          if (x === null){ out.nulls[ph].push(tx); return; }
+          if (x < lo - 1e-9 || x > hi + 1e-9 || Math.abs(x - tx) < EL.teleNear - 1e-9) out.bad.push([ph, tx, a, b, x]);
+          if (Math.abs(x - tx) > EL.teleNear + EL.teleSpan[ph] + 1e-9 && x !== hi) out.far.push([ph, tx, a, b, x]);
+          if (x < tx) out.sides.left++; else out.sides.right++;
+        }); });
+      }
+      out.wallL = [0, 0.3, 0.7, 1].map(function(b){ return elTeleX(90, 2, 0.1, b); });   // by the left wall, the side that would be the wall is given up
+      out.wallR = [0, 0.3, 0.7, 1].map(function(b){ return elTeleX(WW - 90, 2, 0.9, b); });
+      return out; })()`);
+    expect(r.near, '200 px: past her body and the reach of a fighter, with room to see it land').toBe(200);
+    expect(r.span, 'at most 80 (phase 1) or 120 farther than that').toEqual([0, 80, 120, 120]);
+    expect(r.n).toBeGreaterThan(1000);
+    expect(r.bad, 'every landing is on the ground she may stand on and 200 or more off you: ' + JSON.stringify(r.bad.slice(0, 4))).toEqual([]);
+    expect(r.far, 'and within 200 + the span of you, but at the edge of the dark when you are out past it: ' + JSON.stringify(r.far.slice(0, 4))).toEqual([]);
+    expect(r.nulls[2], 'phase 2: there is always ground').toEqual([]);
+    expect(r.nulls[3], 'phase 3: there is always ground').toEqual([]);
+    // phase 1 has no spot only when you stand in the middle of the dark left third (WW*0.34 = 374 wide to its edge): nearer than 200 to both of its ends
+    const hi1 = r.WW * 0.34;
+    expect(r.nulls[1].length, 'the dark left third has a middle with no spot').toBeGreaterThan(5);
+    for (const tx of r.nulls[1]) { expect(tx > hi1 - r.near && tx < 80 + r.near, `no spot at ${tx} only inside (${hi1 - r.near}, ${80 + r.near})`).toBe(true); }
+    expect(r.sides.left, 'both sides of you come up').toBeGreaterThan(200);
+    expect(r.sides.right).toBeGreaterThan(200);
+    for (const x of r.wallL) expect(x, 'by the left wall she is on the open side, 200+ off').toBeGreaterThanOrEqual(90 + 200 - 1e-6);
+    for (const x of r.wallR) expect(x, 'and by the right wall').toBeLessThanOrEqual(r.WW - 90 - 200 + 1e-6);
+  });
+
+  it('her move teleports her there: never within 200 of any fighter, none of it a hit with no warning, and with nowhere to stand she stays and looks again in 50 frames', () => {
+    // 14 teleports with the fighter at `fx` (and `others` standing where they are), her start at `startX` each time. `direct`: elMove(b, f) hunts f (no other fighter can be the one she picks); else the
+    // game's own step(). A teleport re-arms the wait (EL.teleGap), a missing spot sets the retry (EL.teleRetry), and `contact` counts landings that overlap a fighter.
+    const run = (ph, fx, others, startX, direct) => W.eval(`(function(){ ${STAGE(fx, ph, startX)}
+      var xs = ${JSON.stringify(others)}, gs = xs.map(function(x){ var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pillow'; }), x, groundY()-24, 1); g.team=0; g.controller='still'; g.stocks=9; fighters.push(g); return g; });
+      var res = { xs:[], pct:0, stay:0, go:0, retry:null, contact:0 };
+      for (var k=0;k<14;k++){
+        b.x = ${startX}; b.y = groundY() - b.r; b._teleT = 1; b._tel = 0; b._el = null; b.hover = false;
+        f.x = ${fx}; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.invuln = 0; f.pct = 0; f.hitstun = 0;
+        gs.forEach(function(g, i){ g.x = xs[i]; g.y = groundY()-24; g.vx = 0; g.vy = 0; });
+        ${direct ? 'elMove(b, f);' : 'step();'}
+        res.pct += f.pct; res.xs.push(Math.round(b.x));
+        if (b._teleT === EL.teleRetry){ res.stay++; res.retry = b._teleT; } else if (b._teleT === EL.teleGap[${ph}]) res.go++;
+        if (fighters.some(function(q){ return !q.dead && hurtGap(q, b.x, b.y) < b.r; })) res.contact++;
+      }
+      return res; })()`);
+    const alone = [[1, 100, 1000], [1, 330, 80], [1, 900, 80], [2, 60, 1000], [2, 560, 1000], [2, 1040, 100], [3, 90, 1000], [3, 1010, 100]];
+    for (const [ph, x, start] of alone) {
+      const o = run(ph, x, [], start, false);
+      expect(o.pct, `phase ${ph}, you at ${x}: the BOOM is never a hit`).toBe(0);
+      expect(o.contact, `phase ${ph}, you at ${x}: she never lands touching you`).toBe(0);
+      expect(o.go, `phase ${ph}, you at ${x}: there is ground, so she goes every time`).toBe(14);
+      for (const bx of o.xs) expect(Math.abs(bx - x), `phase ${ph}, you at ${x}: she landed at ${bx}`).toBeGreaterThanOrEqual(200 - 1);
+    }
+    const mid = run(1, 227, [], 80, false);
+    expect(mid.stay, 'phase 1, you in the middle of the dark: no ground 200 from you, so she stays').toBe(14);
+    expect(mid.retry, 'and looks again in 50 frames').toBe(50);
+    expect([mid.pct, mid.contact, mid.xs.every((x) => x === 80)]).toEqual([0, 0, true]);
+    // another fighter on the side she would take: she takes the other; one on each side: none, and she stays
+    const one = run(2, 560, [300], 1000, true);
+    expect(one.go, 'a fighter at 300 takes the left of you: she still goes').toBe(14);
+    for (const bx of one.xs) expect(bx, 'she lands on the right of you, 200+ off the other').toBeGreaterThanOrEqual(760 - 1);
+    expect(one.contact).toBe(0);
+    const both = run(2, 560, [300, 820], 1000, true);
+    expect(both.stay, 'a fighter on each side: she does not land beside either').toBe(14);
+    expect(both.retry).toBe(50);
+    expect(both.xs.every((x) => x === 1000)).toBe(true);
+  });
+
+  // The owner, 2026-10-01 (Round 17), her nerfs: "softer contact (knockback 13 -> 9, grace 75 -> 120 f; One keeps her own copy of the old numbers)". The hit itself is as it was: 0.6 of a boss
+  // hit, thrown -12 up. One's contact copied her numbers for "Evil leafy level." (the owner, 2026-09-29) and keeps them: it reads its own ONE_CONTACT, not hers.
+  it("her contact hit is softer: still 0.6 of a boss hit and -12 up, but knocked 9 (was 13) with 120 frames of grace (was 75); One keeps the old numbers in its own copy", () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, 300)}
-      var dmg = BOSS_DMG_BASE; f.x = b.x + 20; f.y = b.y; step();
-      var out = { pct: f.pct, want: dmg*0.6, vx: f.vx, vy: f.vy, invuln: f.invuln };
-      var src = String(updateBossAttack); out.src = [src.indexOf('bossDmg()*0.6') >= 0, src.indexOf('*13;') >= 0, src.indexOf('kx, -12') >= 0, src.indexOf('Math.max(f.invuln, 75)') >= 0];
+      var dmg = BOSS_DMG_BASE, kb = function(kx){ f.pct = 0; f.invuln = 0; f.hitstun = 0; f.vx = 0; f.vy = 0; applyHit(f, dmg*0.6, kx, -12, null, { bossAtk: ++BOSS_ATK_ID }); return f.vx; };
+      var v13 = kb(13), v9 = kb(9);
+      f.pct = 0; f.invuln = 0; f.hitstun = 0; f.vx = 0; f.vy = 0; f.x = b.x + 20; f.y = b.y; step();
+      var out = { pct: f.pct, want: dmg*0.6, vx: f.vx, vy: f.vy, invuln: f.invuln, v13: v13, v9: v9, kx: EL.touchKX, grace: EL.touchGrace };
+      var src = String(updateBossAttack); out.src = [src.indexOf('bossDmg()*0.6') >= 0, src.indexOf('*EL.touchKX;') >= 0, src.indexOf('kx, -12') >= 0, src.indexOf('Math.max(f.invuln, EL.touchGrace)') >= 0];
+      // the grace: no second bump while it lasts (a hit at the old 75 would come again at once), a bump again when it is over
+      var last = f.pct, again = null;
+      for (var i=1;i<=160;i++){ b.x = f.x - 20; b.y = f.y; b._atkTimer = 1e9; step(); if (again === null && f.pct > last + 1e-9) again = i; }
+      out.again = again;
       // asleep inside a tree or sunk into the platform, she touches no one
       b._el = { k:'pos', st:'in' }; f.invuln = 0; f.pct = 0; f.x = b.x; f.y = b.y; b.hover = true; var y0 = b.y; step(); out.sunk = f.pct;
+      // One reads its own numbers: the old ones, whatever hers are
+      out.one = ONE_CONTACT; out.base = BOSS_DMG_BASE; out.oneSrc = String(oneContact);
       return out; })()`);
-    expect(r.pct).toBeCloseTo(r.want, 5);
-    expect(r.vx, 'knocked 13 (away from her)').toBeGreaterThan(8);
-    expect(r.src).toEqual([true, true, true, true]);
-    expect(r.invuln).toBeGreaterThanOrEqual(74);
+    expect(r.pct, 'the hit itself is as it was: 0.6 of a boss hit').toBeCloseTo(r.want, 5);
+    expect([r.kx, r.grace], 'her numbers: knocked 9, 120 frames of grace').toEqual([9, 120]);
+    expect(r.src, 'her contact check reads them (and the -12 and the 0.6 are as they were)').toEqual([true, true, true, true]);
+    expect(r.vx, 'knocked 9 (away from her): the knock a 9 gives, softer than the 13 it was').toBeCloseTo(r.v9, 3);
+    expect(r.vx).toBeLessThan(r.v13 - 2);
+    expect(r.vy, 'still thrown up').toBeLessThan(-8);
+    expect(r.invuln, 'the grace is 120 frames (119 once the step has run)').toBeGreaterThanOrEqual(119);
+    expect(r.again, 'no second bump for 120 frames, and one once it is over').toBeGreaterThanOrEqual(119);
+    expect(r.again).toBeLessThanOrEqual(124);
     expect(r.sunk, 'sunk into the platform she touches no one').toBe(0);
+    expect(r.one, "One keeps the OLD numbers: 13 and -12 of knock, 75 frames of grace, its own copy").toEqual({ dmg: r.base * 0.6, kx: 13, ky: -12, grace: 75 });
+    expect(r.oneSrc, 'and One does not read hers').not.toMatch(/\bEL\b|touchKX|touchGrace/);
   });
 });
 
@@ -155,7 +260,7 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
     const r = W.eval(`(function(){ var out = {};
       // the fighter starts at 700 (the wind-up fixes the row from there), then stands where \`at(w)\` says -- in the row's path, or in its gap -- for the whole wave
       var run = function(at){ ${STAGE(700)}
-        b._moveN = 0; b._atkTimer = 1; step(); var w = b._hz.tw[0], fx = at(w); out.w = w;
+        b._pickForce = 'evilleafy'; b._atkLive = null; b._atkTimer = 1; step(); var w = b._hz.tw[0], fx = at(w); out.w = w;
         for (var i=0;i<260;i++){ step(); f.x = fx; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.onground = true; }
         return f.pct; };
       out.inRow = run(function(w){ return Math.round(elVineX(w, 8)); });
@@ -171,7 +276,7 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
       var out = { err: null };
       // mid wind-up: draw the arena hazard's 'under' layer and the boss (her tell slot draws the coils)
       ${STAGE(700)}
-      b._moveN = 0; b._atkTimer = 1; step();
+      b._pickForce = 'evilleafy'; b._atkLive = null; b._atkTimer = 1; step();
       for (var k=0;k<30;k++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       var w = b._hz.tw[0]; out.mid = [hazardT, w[6], w[7]];
       var calls = { lines:0, rects:0, curves:0 }, rec = new Proxy({}, { get: function(_t, p){
@@ -197,7 +302,8 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
     expect(r.snapHz, 'a netcode client gets the tell whole').toBe(r.hz);
   });
 
-  it('phase 2 adds a second wave where you dodged to -- a short row of eleven vines that comes up toward its gap, its tell shorter, begun once the ground it covers is clear of the first wave; phase 3 is faster still', () => {
+  // The owner, 2026-10-01 (Round 17), her nerfs: "TENDRILS!' second wave only in phase 3." -- it came from phase 2; phase 2 now has the first wave only.
+  it('phase 3 only adds a second wave where you dodged to -- a short row of eleven vines that comes up toward its gap, its tell short, begun once the ground it covers is clear of the first wave; phase 2 is the first wave alone', () => {
     const r = W.eval(`(function(){ var out = {};
       [2, 3].forEach(function(ph){
         var FX = 600; ${STAGE(600, 1, 100)}
@@ -214,11 +320,16 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
                     slots: vines2.map(function(v){ return Math.round((v[0] - w2[0])/(w2[1]*EL.vSpace)) + 0; }), times: vines2.map(function(v){ return v[1] - vines2[0][1]; }),
                     off: w2 && Math.abs((w2[4] + w2[5])/2 - 600), done: !b._el };
       });
+      out.waves = EL.waves.slice(1);
       return out; })()`);
-    for (const ph of [2, 3]) {
-      const o = r[ph], w2 = o.w2;
-      expect(o.nW, `phase ${ph}: two waves a turn`).toBe(2);
-      expect(w2, `phase ${ph}: the second wave came`).toBeTruthy();
+    expect(r[2].nW, 'phase 2: one wave a turn').toBe(1);
+    expect(r[2].w2, 'and no second wave comes').toBe(null);
+    expect(r[2].done, 'the turn is over with the first wave').toBe(true);
+    expect(r.waves, 'EL.waves by phase: one, one, then two').toEqual([1, 1, 2]);
+    {
+      const o = r[3], w2 = o.w2;
+      expect(o.nW, 'phase 3: two waves a turn').toBe(2);
+      expect(w2, 'phase 3: the second wave came').toBeTruthy();
       expect(o.after, 'its tell begins no sooner than 40 frames after the first wave went in').toBeGreaterThanOrEqual(40);
       expect(o.live, 'and on ground the first wave has left clear: no vine of it standing within reach of where you stand').toBe(0);
       expect([w2[2], w2[3]], 'eleven vines, its gap the eighth and ninth').toEqual([11, 8]);
@@ -228,9 +339,9 @@ describe('TENDRILS!: a wave of black vines along the floor, one gap two vines wi
       expect(o.slots, 'every slot but the gap, in order').toEqual([0, 1, 2, 3, 4, 5, 6, 7, 10]);
       expect(o.times[o.times.length - 1], 'the last is the farthest along').toBe(10*o.ev + 0);
       expect(o.done, 'and then the move is over').toBe(true);
+      expect(o.tell2, 'a short second tell: 30 frames').toBe(30);
+      expect(o.ev, 'the vines come every 4 frames').toBe(4);
     }
-    expect([r[2].tell2, r[3].tell2], 'a shorter second tell, shorter again in phase 3').toEqual([34, 30]);
-    expect([r[2].ev, r[3].ev], 'the vines come every 5 frames, then 4').toEqual([5, 4]);
   });
 
   it('the second wave never puts its gap on top of her, off the stage, or across her from you (her touch is a hit of its own), and moves it a vine or two nearer or farther if that is the only way to one you can reach', () => {
@@ -284,7 +395,7 @@ describe('POSSESSED!: she sinks into the platform, it is hers for a few seconds,
     const r = W.eval(`(function(){ var out = {};
       var run = function(onPlat, fx){ var FX = fx; ${STAGE(500)}
         var P = elPlat(); f.x = fx; f.y = onPlat ? P.y - 24 : groundY()-24; f.onground = true;
-        b._moveN = 1; b._atkTimer = 1; step(); var marks = 0, up = 0, tEnd = b._hz.pos[4], before = null;
+        b._pickForce = 'elpossess'; b._atkLive = null; b._atkTimer = 1; step(); var marks = 0, up = 0, tEnd = b._hz.pos[4], before = null;
         for (var i=0;i<330;i++){
           step(); f.x = fx; f.y = onPlat ? P.y - 24 : groundY()-24; f.vx = 0; f.vy = 0; f.onground = true;
           (b._hz.th || []).forEach(function(e){ var u = hazardT - e[1]; if (u > -EL.thMark && u < 0) marks++; if (u >= 0 && u < EL.thUp && elThrashH(u) > 30) up++; });
@@ -302,7 +413,7 @@ describe('POSSESSED!: she sinks into the platform, it is hers for a few seconds,
 
   it('she is expelled out of its middle with a BOOM that throws off whoever is on it, comes down on the floor, and the platform is clean after', () => {
     const r = W.eval(`(function(){ var FX = 450; ${STAGE(450)}
-      var P = elPlat(); b._moveN = 1; b._atkTimer = 1; step();
+      var P = elPlat(); b._pickForce = 'elpossess'; b._atkLive = null; b._atkTimer = 1; step();
       var log = [], hits = [], scars0 = 0;
       for (var i=0;i<420;i++){
         step(); f.x = FX; f.y = groundY()-24; f.vx = 0; f.vy = 0; f.onground = true; f.invuln = 9999;
@@ -318,7 +429,7 @@ describe('POSSESSED!: she sinks into the platform, it is hers for a few seconds,
 
   it('phase 3 possesses a patch of floor with the platform, and thrashes come out of both', () => {
     const r = W.eval(`(function(){ var FX = 900; ${STAGE(900, 3)}
-      var P = elPlat(); b._moveN = 1; b._atkTimer = 1; step();
+      var P = elPlat(); b._pickForce = 'elpossess'; b._atkLive = null; b._atkTimer = 1; step();
       var Pz = b._hz.pos.slice(), th = b._hz.th.slice();
       return { pos: Pz, gy: Math.round(groundY()), onFloor: th.filter(function(e){ return e[2] === Math.round(groundY()); }).length, onPlat: th.filter(function(e){ return e[2] === Pz[1]; }).length, dur: Pz[4] - Pz[3] }; })()`);
     expect(r.pos[8], 'a patch of floor, 230 wide').toBe(230);
@@ -360,7 +471,7 @@ describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle 
     const r = W.eval(`(function(){ var out = {};
       var go = function(fx, onPlat, frames){ var FX = fx; ${STAGE(300, 1, 200)}
         var P = elPlat(); f.x = fx; f.y = onPlat ? P.y - 24 : groundY() - 24; f.onground = true;
-        b._moveN = 3; b._atkTimer = 1; step(); var B = b._hz.bh, x0 = f.x, xAt = null, vxs = [];
+        b._pickForce = 'elhole'; b._atkLive = null; b._atkTimer = 1; step(); var B = b._hz.bh, x0 = f.x, xAt = null, vxs = [];
         for (var i=0;i<frames;i++){
           step(); if (!onPlat){ f.y = groundY() - 24; f.onground = true; } else { f.y = P.y - 24; f.vy = 0; f.onground = true; }
           if (hazardT === B[3] + 50) xAt = f.x;   // fifty frames after it opened, before a fighter left alone has reached the core
@@ -383,7 +494,7 @@ describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle 
   it('the core is a boss hit of 0.8, thrown out of it; once however long you stay (one attack id); and the fighters\' shots curve in and are eaten at the core, hers are not', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE(550, 1, 200)}
-      b._moveN = 3; b._atkTimer = 1; step();
+      b._pickForce = 'elhole'; b._atkLive = null; b._atkTimer = 1; step();
       for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = 550; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       var B = b._hz.bh, first = null, last = 0;
       f.pct = 0; f.invuln = 0;
@@ -391,7 +502,7 @@ describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle 
       out.pct = f.pct; out.first = first; out.dmg = bossDmg();   // (held in the core with no grace at all: every frame could hit)
       // a fighter's shot aimed past the void bends toward it; one that reaches the core is eaten; a boss shot does not
       ${STAGE(250, 1, 200)}
-      b._moveN = 3; b._atkTimer = 1; step(); for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = 250; f.y = groundY()-24; f.vx = 0; f.onground = true; }
+      b._pickForce = 'elhole'; b._atkLive = null; b._atkTimer = 1; step(); for (var w=0; w<90 && b._tel>0; w++){ step(); f.x = 250; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       var B2 = b._hz.bh, gy = groundY();
       for (var w=0; w<30; w++) step();   // let it open
       var mine = { x:B2[0] - 200, y:B2[1] - 90, vx:8, vy:0, r:8, owner:0, ownerObj:f, dmg:1, kb:1, life:200, color:'#fff', noAim:true }, boss = { x:B2[0] - 200, y:B2[1] - 90, vx:8, vy:0, r:8, owner:-2, ownerObj:{ team:-1, idx:-2 }, dmg:1, kb:1, life:200, color:'#f00', noAim:true };
@@ -409,7 +520,7 @@ describe('BLACK HOLE!: she flies up, a void opens on the floor under the middle 
 
   it('the void closes, she drops back where it was and lands, and her next turn is a paced gap away; the void and its pull rode the snapshot and are drawn from it', () => {
     const r = W.eval(`(function(){ var FX = 700; ${STAGE(700, 1, 200)}
-      b._moveN = 3; b._atkTimer = 1; step();
+      b._pickForce = 'elhole'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { err: null }, B, seen = false;
       for (var i=0;i<400;i++){
         step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999;
@@ -433,7 +544,7 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
   it('the wind-up picks a tree that puts the lane through you, lights her eyes behind it and takes her off the stage: nothing touches her and she touches no one', () => {
     const r = W.eval(`(function(){ var FX = 700; ${STAGE(700)}
       f.x = 700;
-      b._moveN = 5; b._atkTimer = 1; step();
+      b._pickForce = 'elbehind'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, bt: b._hz.bt.slice(), hid: [] };
       var tree = elTreeX(out.bt[0]);
       // she is below the floor and at the tree's x for the whole wind-up; a fighter on that spot is touched by nothing
@@ -459,7 +570,7 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
   it('she bursts out on the frame the wind-up ends, runs the lane at 20 a frame, and is a 0.8 boss hit to a fighter in it, thrown the way she runs; not to one out of it, and not twice', () => {
     const r = W.eval(`(function(){ var out = {};
       var go = function(where){ var FX = 700; ${STAGE(700)}
-        b._moveN = 5; b._atkTimer = 1; step(); var B = b._hz.bt.slice(), x = elTreeX(B[0]), dir = B[4], x1 = B[5];
+        b._pickForce = 'elbehind'; b._atkLive = null; b._atkTimer = 1; step(); var B = b._hz.bt.slice(), x = elTreeX(B[0]), dir = B[4], x1 = B[5];
         var fx = where === 'lane' ? Math.round(x + dir*(x1 - x)*dir*0.6) : (where === 'behind' ? x - dir*300 : x + dir*(Math.abs(x1 - x) + 200));
         fx = clamp(fx, 40, WW - 40); f.x = fx; var first = null, last = 0, hits = 0, vx = 0;
         for (var i=0;i<130;i++){
@@ -486,7 +597,7 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
       [2, 3].forEach(function(ph){
         var FX = 700; ${STAGE(700, 1, 200)}
         b.hp = b.maxHp*(ph === 3 ? ${HP[3]} : ${HP[2]}); step(); f.x = 700;
-        b._moveN = 5; b._atkTimer = 1; step();
+        b._pickForce = 'elbehind'; b._atkLive = null; b._atkTimer = 1; step();
         var bt1 = b._hz.bt.slice(), seen = [];
         for (var i=0;i<200;i++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; f.invuln = 9999; if (b._el && b._el.st === 'tell' && !seen.length) seen.push(b._hz.bt.slice()); if (!b._el && seen.length) break; }
         out[ph] = { bt1: bt1, bt2: seen[0], done: !b._el, nb: 0 };
@@ -507,7 +618,7 @@ describe('BEHIND THE TREES!: her eyes light behind one tree of the backdrop, the
 
   it('the eyes, the lane and the trees are drawn and ride the snapshot: a client draws the same from b._hz', () => {
     const r = W.eval(`(function(){ var FX = 700; ${STAGE(700)}
-      b._moveN = 5; b._atkTimer = 1; step(); for (var k=0;k<30;k++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; }
+      b._pickForce = 'elbehind'; b._atkLive = null; b._atkTimer = 1; step(); for (var k=0;k<30;k++){ step(); f.x = 700; f.y = groundY()-24; f.vx = 0; f.onground = true; }
       var out = { err: null }, snap = JSON.parse(JSON.stringify(serializeState()));
       out.hz = JSON.stringify(b._hz.bt); out.snapHz = JSON.stringify(snap.summons.find(function(m){ return m.attack === 'evilleafy'; })._hz.bt);
       try { drawArenaDecor('forest'); drawArenaHazard('under'); drawArenaHazard('over'); summons.forEach(drawSummon); draw(); } catch(e){ out.err = e.message + ' ' + (e.stack||'').split('\\n')[1]; }

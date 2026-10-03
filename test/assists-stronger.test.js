@@ -196,7 +196,8 @@ describe('the one-shots do more of their one thing', () => {
 });
 
 describe('not a trophy, not touched', () => {
-  it("MePhone4's adds keep three quarters of the cameo's own number and their 216-frame tenure", () => {
+  // The owner, 2026-10-01 (Round 17, the difficulty picks): "MePhone4: ... MELIFE DOWNLOAD! helpers 6 s, cap 2/2/3" -- an add fights six seconds (360 frames) now; it was 216 (3.6 s).
+  it("MePhone4's adds keep three quarters of the cameo's own number, and fight six seconds (360 frames; it was 216)", () => {
     const r = W.eval(`(function(){
       BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
       var add = { type:'assist', hostile:true, act:'rush' }, trophy = { type:'assist', act:'rush' };
@@ -208,11 +209,11 @@ describe('not a trophy, not touched', () => {
     expect(r.add, '0.75 x 10, 14, 8, 6: as before').toEqual([7.5, 10.5, 6, 4.5]);
     expect(r.trophy).toEqual([15, 21, 12, 9]);
     expect(r.isTrophy).toEqual([true, false]);
-    expect(r.addLife, 'three fifths of the six seconds it was tuned at').toBe(216);
+    expect(r.addLife, 'six seconds: "MELIFE DOWNLOAD! helpers 6 s" (the owner, Round 17; it was three fifths of that, 216)').toBe(360);
     expect(r.hostileMult).toBe(0.75);
   });
 
-  it('a downloaded add still stands its 216 + 40 frames, and Test Tube\'s Bot summon is gone: nothing of it is left to pin', () => {
+  it('a downloaded add stands its 360 + 40 frames, and Test Tube\'s Bot summon is gone: nothing of it is left to pin', () => {
     const r = W.eval(`(function(){
       var out = { gone: [typeof BOT_ASSIST, typeof BOT_DMG, typeof BOT_KB, typeof BOT_REACH, typeof BOT_CD, typeof BOT_SPECIAL_CD, typeof drawBotSummon] };
       SETTINGS.mode='boss'; SETTINGS.stocks=99; SETTINGS.items=false; running=true; BOSSRUSH = { active:false, bossIdx:BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4'; }), cleared:0, defeated:false, loop:0, dmgMult:1 };
@@ -223,7 +224,7 @@ describe('not a trophy, not touched', () => {
       summons = []; running = false; return out; })()`);
     expect(r.gone, "BOT_ASSIST, BOT_DMG, BOT_KB, BOT_REACH, BOT_CD, BOT_SPECIAL_CD and drawBotSummon went with the summon (\"New move for Test Tube\")").toEqual(Array(7).fill('undefined'));
     expect(r.addHostile).toBe(true);
-    expect(r.addLife, 'MELIFE_LIFE + MELIFE_DL, as before').toBe(216 + 40);
+    expect(r.addLife, 'MELIFE_LIFE + MELIFE_DL: 360 + 40 since Round 17 (it was 216 + 40)').toBe(360 + 40);
   });
 });
 

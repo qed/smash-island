@@ -64,38 +64,42 @@ describe('Steve Cobs, off the gauntlet, his kit whole', () => {
     expect(r.fns).toEqual(['function', 'function', 'function', 'function', 'function', 'object', 'string', 'The Most Painful Way']);
   });
 
-  it('every boss of the gauntlet is exactly as it was, Springy in his slot: its row, its second moves, its turns, its wind-up and its phases', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- the twelve no longer take their turns in a fixed order, so this pins, in place of "its first four turns", the moves
+  // each draws from in phase 1 (bossPickMoves): the signature and its second moves, the later phases' moves not yet among them.
+  it('every boss of the gauntlet is exactly as it was, Springy in his slot: its row, its second moves, the moves it draws from, its wind-up and its phases', () => {
     const r = W.eval(`(function(){
       return BOSS_ROSTER.filter(function(b){ return b.name!=='Steve Cobs'; }).map(function(b){
         var s = { name:b.name, attack:b.attack, x:550, y:300, r:80, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0, color:b.color,
                   face:1, homeX:550, stationary:b.stationary, vx:0, vy:0 };
-        var turns = [];
-        for (var i=0;i<4;i++){ s._atkTimer = 1; s._tel = 0; updateBossAttack(s, null); turns.push(s._telKind); }
+        var turns = bossPickMoves(s, 1);
         summons = []; projectiles = [];
         return [b.name, b.color, b.hp, b.big, b.attack, b.arena, b.stationary, b.sprite, BOSS_EXTRA[b.name].join('+'), turns.join(' '),
                 bossTelLen({ attack:b.attack }), bossPhaseName({ attack:b.attack }, 2), bossPhaseName({ attack:b.attack }, 3)];
       });
     })()`);
     expect(r).toEqual([
-      ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'cakeatstake', false, 'announcer', 'annlaser+annacid+annballoon', 'announcer annlaser announcer annacid', 36, 'Budget Cuts', 'Crusher Arm'],   // rebuilt (boss overhaul, Round 9): see test/boss-announcer.test.js
-      ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'clubhouse', false, 'speaker', 'consequences+rainbowbarf+private', 'soundwave consequences soundwave consequences', 44, 'Stuck in a Loop', 'Sinking Clubhouse'],   // rebuilt (test/boss-puffball.test.js): her own arena, her own four, her own wind-up; RAINBOW BARF! waits for phase 2, so phase 1 plays CONSEQUENCES! twice
-      ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'volcano', false, 'speakerfirey', 'furnace+youmust', 'firewall furnace firewall youmust', 44, 'Flame Surge', 'RAGE MODE'],   // the owner cut FIRE WALL! for THE TLC NEEDS TO BE FIXED! (boss-plan-early.md 5, Round 9; test/boss-firey-sb.test.js): his signature turns alternate ROCKET BOARD! and the TLC, his second moves are FURNACE! and YOU MUST!; the wind-up is 44 in phase 1
+      ['Announcer', '#3a4a6a', 175, 2.5, 'announcer', 'cakeatstake', false, 'announcer', 'annlaser+annacid+annballoon', 'announcer annlaser annacid annballoon', 36, 'Budget Cuts', 'Crusher Arm'],   // rebuilt (boss overhaul, Round 9): see test/boss-announcer.test.js
+      ['Puffball Speaker Box', '#c0b0d0', 200, 2.5, 'soundwave', 'clubhouse', false, 'speaker', 'consequences+rainbowbarf+private', 'soundwave consequences private', 44, 'Stuck in a Loop', 'Sinking Clubhouse'],   // rebuilt (test/boss-puffball.test.js): her own arena, her own four, her own wind-up; RAINBOW BARF! waits for phase 2, so phase 1 plays CONSEQUENCES! twice
+      ['Firey Speaker Box', '#d0402a', 215, 2.5, 'firewall', 'volcano', false, 'speakerfirey', 'furnace+youmust', 'rocketboard tlc furnace youmust', 44, 'Flame Surge', 'RAGE MODE'],   // the owner cut FIRE WALL! for THE TLC NEEDS TO BE FIXED! (boss-plan-early.md 5, Round 9; test/boss-firey-sb.test.js): his signature turns alternate ROCKET BOARD! and the TLC, his second moves are FURNACE! and YOU MUST!; the wind-up is 44 in phase 1
       // The Bug Swarm, rebuilt in the boss overhaul (2026-09-29): "starting from bug swarm, they should have 5" gave him five (test/boss-bug-swarm.test.js); the owner's newer request,
-      // verbatim, "remove the bug tunnel attack." (2026-10-01, Round 17), took the tunnel (DODGING PATTERN!) out, so he has four: the tide, then the seekers, the ball and the sac
-      ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug', 'swarmseek+dodgeball+eggsac', 'swarm swarmseek swarm dodgeball', 36, 'Second Wave', 'Swarm Frenzy'],
-      ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face', 'pfaceRap+pfaceTorture+pfaceThanks+pfaceShoes', 'swallow pfaceRap swallow pfaceTorture', 46, 'Running Loops', 'Broken Value'],   // rebuilt (the boss overhaul): test/boss-purple-face.test.js
+      // verbatim, "remove the bug tunnel attack." (2026-10-01, Round 17), took the tunnel (DODGING PATTERN!) out -- and the owner's pick in the same round put a canon fifth in its place, POISON STING!
+      // ("a new canon 5th attack in the tunnel's place"), so he has five again: the tide, then the seekers, the ball, the sac and the sting
+      ['The Bug Swarm', '#6a2ea0', 225, 2.3, 'swarm', 'hive', false, 'bug', 'swarmseek+dodgeball+eggsac+swarmsting', 'swarm swarmseek dodgeball eggsac swarmsting', 36, 'Second Wave', 'Swarm Frenzy'],
+      ['Purple Face', '#7a3a8a', 235, 2.6, 'swallow', 'warehouse', false, 'face', 'pfaceRap+pfaceTorture+pfaceThanks+pfaceShoes', 'swallow pfaceRap pfaceTorture pfaceThanks pfaceShoes', 46, 'Running Loops', 'Broken Value'],   // rebuilt (the boss overhaul): test/boss-purple-face.test.js
       // MePhone4's HP is 255 now, was 240 -- the review's retune of him, not a side effect (test/boss-rush-order.test.js)
-      ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'elimarea', true, 'mephone', 'melife+portal+boomerang+maze', 'mephone melife mephone portal', 36, 'Back and Forth', 'Glitching'],   // rebuilt (the boss overhaul, Rounds 8 and 10): the Great Escape's Elimination Area and five attacks, test/boss-mephone4.test.js
-      ['Evil Leafy', '#ff0100', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'elpossess+elhole+elbehind', 'evilleafy elpossess evilleafy elhole', 56, 'No Refuge', 'Vine Coverage'],   // rebuilt (the boss overhaul): red ("Evil Leafy red with black vines", the owner, 2026-09-29), her own four, TENDRILS!'s longer wind-up (test/boss-evilleafy.test.js)
-      ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'deathtrap', false, 'mephone4s', 's4prizes+s4vista+s4popup+s4car+s4shove', 'mephone4s s4prizes mephone4s s4vista', 42, "I'll Be Back", 'Super Death Trap'],   // rebuilt (the boss overhaul, Rounds 8 and 10): six attacks, his own arena (test/boss-mephone4s.test.js)
+      // phase 1 draws from the maze too: the owner's pick "A-MAZE-ING! starts in phase 1" (2026-10-01; test/boss-mephone4.test.js)
+      ['MePhone4', '#4fb8e8', 255, 2.5, 'mephone', 'elimarea', true, 'mephone', 'melife+portal+boomerang+maze', 'mephone melife portal boomerang maze', 36, 'Back and Forth', 'Glitching'],   // rebuilt (the boss overhaul, Rounds 8 and 10): the Great Escape's Elimination Area and five attacks, test/boss-mephone4.test.js
+      ['Evil Leafy', '#ff0100', 185, 2.4, 'evilleafy', 'forest', false, 'evilleafy', 'elpossess+elhole+elbehind', 'evilleafy elpossess elhole elbehind', 56, 'No Refuge', 'Vine Coverage'],   // rebuilt (the boss overhaul): red ("Evil Leafy red with black vines", the owner, 2026-09-29), her own four, TENDRILS!'s longer wind-up (test/boss-evilleafy.test.js)
+      // phase 1 draws from the car too: the owner's pick "I'LL BE BACK!: the car comes in phase 1 too" (2026-10-01; test/boss-mephone4s.test.js)
+      ['MePhone4S', '#c8102e', 260, 2.5, 'mephone4s', 'deathtrap', false, 'mephone4s', 's4prizes+s4vista+s4popup+s4car+s4shove', 'mephone4s s4prizes s4vista s4popup s4car s4shove', 42, "I'll Be Back", 'Super Death Trap'],   // rebuilt (the boss overhaul, Rounds 8 and 10): six attacks, his own arena (test/boss-mephone4s.test.js)
       // the Dragon's own five and its own wind-up (44), on the hotel roof: "the bosses should have more attacks the later they get" (Bug Swarm on: 5), "Each its own"
-      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragon dragonchar', 44, 'Strafing Runs', 'Grab & Carry'],
-      ['Two', '#44C549', 285, 2.6, 'two', 'twopark', false, 'two', 'twosun+twopower+twoblocks+tworails+twoclap', 'two twosun two twopower', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],   // rebuilt (the boss overhaul): green, the A-twos-ment Park, his own six (test/boss-two.test.js)
+      ['Purple Dragon', '#6a3a9a', 250, 2.7, 'dragon', 'hotelroof', false, 'dragon', 'dragonroar+dragonchar+dragonwind+dragonropes', 'dragon dragonroar dragonchar dragonwind dragonropes', 44, 'Strafing Runs', 'Grab & Carry'],
+      ['Two', '#44C549', 285, 2.6, 'two', 'twopark', false, 'two', 'twosun+twopower+twoblocks+tworails+twoclap', 'two twosun twopower twoblocks', 36, 'Size Shift', 'Power Ungrounded — ground it to damage them!'],   // rebuilt (the boss overhaul): green, the A-twos-ment Park, his own six (test/boss-two.test.js)
       // Boss 11: Springy, in his place ("replace him with springy"; test/boss-springy.test.js has the fight)
       // + MY PURPOSE!, the Spring-Bot toy: "give him 1 more: the bot toy, which will copy the 1st 5 specials used after spawning 3 times." (the owner,
       // 2026-09-29) -- appended, so his first turns are as they were (test/boss-springy.test.js)
-      ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop+springbot', 'springy longarm springy boxdrop', 40, 'Glitching', 'Unvitational'],
-      ['Four', '#3a6ad0', 340, 2.8, 'four', 'exitclass', false, 'four', 'fourbye+fourtower+fourido+fourhearts+fourcactus', 'four fourbye four fourtower', 50, 'Zap to Dust', 'Reality Buckles'],   // rebuilt (the boss overhaul, 2026-09-29): his own classroom, "Each its own" (the owner), and he floats -- "Only if canon moves" (Round 5): "Four can fly"; six attacks, the ones below (test/boss-four.test.js)
+      ['Springy', '#afafaf', 330, 2.6, 'springy', 'cerealbox', false, 'springy', 'longarm+boxdrop+springbot', 'springy longarm boxdrop springbot', 40, 'Glitching', 'Unvitational'],
+      ['Four', '#3a6ad0', 340, 2.8, 'four', 'exitclass', false, 'four', 'fourbye+fourtower+fourido+fourhearts+fourcactus', 'screechy zappies fourbye fourtower fourido fourhearts', 50, 'Zap to Dust', 'Reality Buckles'],   // LOVE HEARTS! is one of his moves from phase 1 now (the owner, Round 17: "LOVE HEARTS! from phase 1 with an extra wave"; it joined in phase 2). Rebuilt (the boss overhaul, 2026-09-29): his own classroom, "Each its own" (the owner), and he floats -- "Only if canon moves" (Round 5): "Four can fly"; six attacks, the ones below (test/boss-four.test.js)
     ]);
   });
 

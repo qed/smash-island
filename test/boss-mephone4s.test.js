@@ -41,16 +41,18 @@ const STAGE = (x, ph = 1, live = false, plats = false) => `
 const S = (o = '') => `{ name:'MePhone4S', attack:'mephone4s', type:'boss', x:550, y:groundY()-85, r:85, hp:100, maxHp:100, _phase:1, _atkTimer:1, _tel:0,
   color:'#c8102e', face:1, homeX:550, stationary:false, vx:0, vy:0 ${o ? ',' + o : ''} }`;
 // Begin move `kind` ('gun' or one of EX) of the boss `b` now and run its wind-up out: the frame the move fires is the last one this returns from.
-const FIRE = (kind) => `b._moveN = ${kind === 'gun' ? 0 : 2 * EX.indexOf(kind) + 1}; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
+const FIRE = (kind) => `b._pickForce = '${kind === 'gun' ? 'mephone4s' : kind}'; b._atkLive = null; b._atkTimer = 1; step(); var telKind = b._telKind, telName = document.getElementById('banner').textContent, tel0 = b._tel;
   for (var w=0; w<80 && b._tel>0; w++){ step(); }`;
 
 describe('MePhone4S takes his Super Death Trap', () => {
-  it('is Boss 8 (before the Dragon), his own arena, and his six attacks in turn: the gun between each of the five others, each named, each with its own wind-up', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position picks
+  // all (Recommended)": the gun no longer comes on every odd turn (the gun, the prizes, the gun, the lemons, ...). He draws his six by where the fighters stand: none twice in a row, every one in eighteen turns.
+  it('is Boss 8 (before the Dragon), his own arena, and his six attacks, drawn by position: the gun and the five others, each named, each with its own wind-up', () => {
     const r = W.eval(`(function(){
       var i = BOSS_ROSTER.findIndex(function(b){ return b.name==='MePhone4S'; });
       var idx = function(n){ return BOSS_ROSTER.findIndex(function(b){ return b.name===n; }); };
       var kinds = [], names = [], tels = [], s = ${S('_phase:2, hp:50')};
-      for (var k=0;k<10;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tels.push(s._tel); }
+      for (var k=0;k<18;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; s._atkLive = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(bossTelName(s)); tels.push(s._tel); }
       return { i: i, row: BOSS_ROSTER[i], leafy: idx('Evil Leafy'), mephone: idx('MePhone4'), dragon: idx('Purple Dragon'), two: idx('Two'), four: idx('Four'), n: BOSS_ROSTER.length, extra: BOSS_EXTRA['MePhone4S'],
                kinds: kinds, names: names, tels: tels, p2: bossPhaseName({ attack:'mephone4s' }, 2), p3: bossPhaseName({ attack:'mephone4s' }, 3),
                gaps: [1,2,3].map(function(ph){ var q = ${S()}; q._phase = ph; q.hp = [100, 50, 20][ph-1]; return bossAtkGap(q); }), held: (function(){ var q = ${S()}; q._s4 = { k:'pop', go:true }; return bossAtkGap(q); })(),
@@ -66,12 +68,15 @@ describe('MePhone4S takes his Super Death Trap', () => {
     expect(r.i, 'before Two and Four').toBeLessThan(r.two);
     expect(r.four, 'Four is still last').toBe(r.n - 1);
     expect(r.extra, '"PUT THAT COOKIE DOWN! (redone), I\'LL BE BACK!, ONE OF EACH!, HASTA LA VISTA!" and the two the owner added').toEqual(EX);
-    // the signature on every odd turn, then the five in the order of the list
-    expect(r.kinds).toEqual(['mephone4s', 's4prizes', 'mephone4s', 's4vista', 'mephone4s', 's4popup', 'mephone4s', 's4car', 'mephone4s', 's4shove']);
     // the names are the show's words: "Put that cookie down! ... Now!", "I'll be back", "We'll give them one of each!", "Hasta la vista, Blu-Ray...", "pops up from under"
-    expect(r.names).toEqual(['PUT THAT COOKIE DOWN!', 'ONE OF EACH!', 'PUT THAT COOKIE DOWN!', 'HASTA LA VISTA!', 'PUT THAT COOKIE DOWN!', 'POP UP!', 'PUT THAT COOKIE DOWN!', "I'LL BE BACK!", 'PUT THAT COOKIE DOWN!', 'QUICKSAND SHOVE!']);
+    const NAME = { mephone4s: 'PUT THAT COOKIE DOWN!', s4prizes: 'ONE OF EACH!', s4vista: 'HASTA LA VISTA!', s4popup: 'POP UP!', s4car: "I'LL BE BACK!", s4shove: 'QUICKSAND SHOVE!' };
+    const TEL = { mephone4s: 42, s4prizes: 36, s4vista: 46, s4popup: 46, s4car: 46, s4shove: 46 };
+    expect(r.kinds.every((k) => NAME[k]), `only his six: ${r.kinds}`).toBe(true);
+    expect(new Set(r.kinds).size, `all six come up in eighteen turns: ${r.kinds}`).toBe(6);
+    expect(r.kinds.some((k, i) => i > 0 && k === r.kinds[i - 1]), `never the same move twice in a row: ${r.kinds}`).toBe(false);
+    expect(r.names).toEqual(r.kinds.map((k) => NAME[k]));
     expect(r.moves).toEqual(['function/ONE OF EACH!', 'function/HASTA LA VISTA!', 'function/POP UP!', "function/I'LL BE BACK!", 'function/QUICKSAND SHOVE!']);
-    expect(r.tels, 'each move reads out its own wind-up').toEqual([42, 36, 42, 46, 42, 46, 42, 46, 42, 46]);
+    expect(r.tels, 'each move reads out its own wind-up').toEqual(r.kinds.map((k) => TEL[k]));
     expect(r.telLens, 'the gun 42, the props 36, the rest 46').toEqual([42, 36, 46, 46, 46, 46]);
     expect(r.telBare, 'a bare boss with no move yet is the gun\'s').toBe(42);
     expect([r.p2, r.p3]).toEqual(["I'll Be Back", 'Super Death Trap']);
@@ -82,16 +87,37 @@ describe('MePhone4S takes his Super Death Trap', () => {
     expect(r.rushOnly, 'an item boss never throws them: they need his floor and his arena').toEqual([true, true, true, true, true]);
   });
 
-  it('in phase 1 the car turn plays the next move instead; entering phase 2 makes the car the very next extra, and the order carries on', () => {
+  // Round 17 (the owner: "make the attacks based on fighter position."): the car was a move of phase 2 -- not among the moves he drew from in phase 1 -- and the first move once phase 2 starts (the picker's
+  // `first`, while the phase beat's s._carDue stands). Then the difficulty picks (the question boxes, Round 17): "MePhone4S: ... I'LL BE BACK! from phase 1" -- the car is among the six from phase 1 now.
+  // It is still the first move when phase 2 starts (the Super Death Trap goes live with that car), unless it is the move he has just played: never the same move twice in a row.
+  it('the car is among his moves from phase 1; entering phase 2 makes the car his very next move (never twice in a row), and then it competes like the rest', () => {
     const r = W.eval(`(function(){
       var run = function(hp, ph, n){ var s = ${S('_phase:ph, hp:hp')}, out = [];
-        for (var k=0;k<n;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; s._beatQ = 0; updateBossAttack(s, null); out.push(s._telKind); } return out.join(' '); };
-      return { p1: run(100, 1, 12), p2: run(50, 2, 12), p3: run(20, 3, 12), enter: run(50, 1, 8) };
+        for (var k=0;k<n;k++){ s._atkTimer = 1; s._tel = 0; s._s4 = null; s._beatQ = 0; s._atkLive = null; updateBossAttack(s, null); out.push(s._telKind); } return out; };
+      return { p1: run(100, 1, 24), p2: run(50, 2, 24), p3: run(20, 3, 24), enter: run(50, 1, 12), moves: [1, 2, 3].map(function(ph){ var s = ${S('_phase:ph')}; return bossPickMoves(s, ph); }) };
     })()`);
-    expect(r.p1, 'no car in phase 1: the fourth extra is the shove').toBe('mephone4s s4prizes mephone4s s4vista mephone4s s4popup mephone4s s4shove mephone4s s4prizes mephone4s s4vista');
-    expect(r.p2, 'phase 2: the car takes its place in the order').toBe('mephone4s s4prizes mephone4s s4vista mephone4s s4popup mephone4s s4car mephone4s s4shove mephone4s s4prizes');
-    expect(r.p3).toBe(r.p2);
-    expect(r.enter, 'a boss that has just entered phase 2 plays the car first ("I\'ll Be Back")').toBe('mephone4s s4car mephone4s s4vista mephone4s s4popup mephone4s s4car');
+    const SIX = ['mephone4s', 's4prizes', 's4vista', 's4popup', 's4car', 's4shove'];
+    expect(r.moves[0], 'phase 1: the car is among them ("I\'LL BE BACK! from phase 1 too", the owner, Round 17)').toContain('s4car');
+    expect(new Set(r.p1), 'phase 1: all six come up, the car too').toEqual(new Set(SIX));
+    for (const m of r.moves) expect(m, 'the same six in every phase').toEqual(SIX);
+    expect(new Set(r.p2), 'phase 2: all six come up').toEqual(new Set(SIX));
+    expect(new Set(r.p3)).toEqual(new Set(r.p2));
+    expect(r.enter[0], 'a boss that has just entered phase 2 plays the car first ("I will be back": the trap goes live with it)').toBe('s4car');
+    expect(r.enter[1], 'and the turn after it is not the car again').not.toBe('s4car');
+    expect(r.enter.some((k, i) => i > 0 && k === r.enter[i - 1]), `no move twice in a row: ${r.enter}`).toBe(false);
+  });
+
+  it('if the car is the move he has just played when phase 2 begins, it is not played twice in a row: another move first, and then the car that brings the trap in', () => {
+    const r = W.eval(`(function(){
+      var s = ${S('_phase:1, hp:100')}, out = [];
+      var turn = function(force){ s._atkTimer = 1; s._tel = 0; s._s4 = null; s._beatQ = 0; s._atkLive = null; if (force) s._pickForce = force; updateBossAttack(s, null); out.push(s._telKind); };
+      turn('s4car');                                  // the car, in phase 1
+      s.hp = 50; turn(); turn(); turn();             // and phase 2 begins
+      return out; })()`);
+    expect(r[0]).toBe('s4car');
+    expect(r[1], 'phase 2 begins right after a car: not the car again').not.toBe('s4car');
+    expect(r[2], 'the next turn is the car (the phase beat\'s flag stands until a car turn starts)').toBe('s4car');
+    expect(r[3]).not.toBe('s4car');
   });
 
   it('gives the place its sky, its red beam over the quicksand, its hazard and its ending, and every arena key a netcode client would take; the studio is still the studio', () => {
@@ -133,7 +159,7 @@ describe('MePhone4S takes his Super Death Trap', () => {
     expect(r.y0, 'above the screen').toBeLessThan(0);
     expect(r.k0, 'the entrance is a scripted state').toBe('enter');
     expect(r.arena, 'the gauntlet puts him in his own arena').toBe('deathtrap');
-    expect(r.hp).toBe(260);
+    expect(r.hp, 'his row is 260; the owner, 2026-10-01 (Round 17): "+50% (Recommended)" -- every Boss Rush boss spawns with half again the HP of its row (BOSS_HP_MULT)').toBe(Math.round(260*1.5));
     expect(r.ys.every((y, i, a) => i === 0 || y > a[i - 1]), 'he falls, the engine\'s own gravity, getting faster').toBe(true);
     expect(r.landed).toBeGreaterThan(30);
     expect(r.by, 'standing on the beam').toBeCloseTo(r.gy - r.R, 0);
@@ -221,7 +247,9 @@ describe('MePhone4S takes his Super Death Trap', () => {
 });
 
 describe('PUT THAT COOKIE DOWN! (the gun)', () => {
-  it('fires one round, then a fan of two, then three -- 18 px a frame, a whole boss hit, kb 12, one attack id -- each from his pistol\'s muzzle along the line it was aimed on', () => {
+  // The owner, 2026-10-01 (Round 17, the difficulty picks): "MePhone4S: PUT THAT COOKIE DOWN! 2/3/4 rounds" -- the volley was one round, then a fan of two, then three; it is two, three and four now: more to
+  // step off the line of, the same damage (every round of a volley shares its one attack id: one boss hit however many land).
+  it('fires a fan of two, then three, then four rounds -- 18 px a frame, a whole boss hit, kb 12, one attack id -- each from his pistol\'s muzzle along the line it was aimed on', () => {
     const r = W.eval(`(function(){ var out = [];
       ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
         ${FIRE('gun')}
@@ -235,7 +263,8 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
           others: projectiles.filter(function(p){ return p.s4 !== 1; }).length, thunder: b._hz.thunder != null });
         summons = []; projectiles = []; }`).join('\n')}
       return out; })()`);
-    expect(r.map((o) => o.n), 'one, two, three rounds').toEqual([1, 2, 3]);
+    expect(r.map((o) => o.n), 'two, three, four rounds ("PUT THAT COOKIE DOWN! 2/3/4 rounds", the owner: it was one, two, three)').toEqual([2, 3, 4]);
+    expect(W.eval('S4.rounds'), 'the table the tuning and the harness read').toEqual([0, 2, 3, 4]);
     for (const o of r) {
       expect(o.kind).toBe('mephone4s');
       expect(o.name).toBe('PUT THAT COOKIE DOWN!');
@@ -247,24 +276,28 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
       expect(o.ids, 'one attack id per volley').toBe(1);
       expect(o.others, 'a gun turn is only the gun').toBe(0);
     }
-    // (read the frame after the shot: a waiting round's delay has ticked once, so the five-frame step between rounds, S4.fzStep, reads 0, 4, 9)
-    expect(r.map((o) => o.delays), 'each round a few frames behind the last (they all start from the muzzle)').toEqual([[0], [0, 4], [0, 4, 9]]);
+    // (read the frame after the shot: a waiting round's delay has ticked once, so the five-frame step between rounds, S4.fzStep, reads 0, 4, 9, 14)
+    expect(r.map((o) => o.delays), 'each round a few frames behind the last (they all start from the muzzle)').toEqual([[0, 4], [0, 4, 9], [0, 4, 9, 14]]);
     expect(r[0].thunder, 'phase 1 keeps the sky quiet').toBe(false);
     expect(r[1].thunder, '"lightning strikes in the background": from phase 2 each shot').toBe(true);
     // the fan: neighbours a spread (0.07 rad) apart, centred on the line from the muzzle to the mark
-    const sp = r[2].ang;
-    expect(sp[1] - sp[0]).toBeCloseTo(0.07, 3);
-    expect(sp[2] - sp[1]).toBeCloseTo(0.07, 3);
-    expect(sp[1], 'the middle round is on the line').toBeCloseTo(r[2].mid, 2);
+    const sp = r[2].ang, s3 = r[1].ang, s2 = r[0].ang;
+    for (let i = 1; i < sp.length; i++) expect(sp[i] - sp[i - 1], `four: neighbours ${i - 1} and ${i}`).toBeCloseTo(0.07, 3);
+    expect(sp.reduce((a, v) => a + v, 0) / sp.length, 'four: the fan is centred on the line').toBeCloseTo(r[2].mid, 2);
+    for (let i = 1; i < s3.length; i++) expect(s3[i] - s3[i - 1], `three: neighbours ${i - 1} and ${i}`).toBeCloseTo(0.07, 3);
+    expect(s3[1], 'three: the middle round is on the line').toBeCloseTo(r[1].mid, 2);
+    expect(s2[1] - s2[0], 'two: a spread apart').toBeCloseTo(0.07, 3);
+    expect((s2[0] + s2[1]) / 2, 'two: centred on the line').toBeCloseTo(r[0].mid, 2);
     expect(Math.hypot(r[2].muzzle[0] - r[2].mz[0], r[2].muzzle[1] - r[2].mz[1]), 'the rounds leave from the pistol\'s muzzle, not from his middle').toBeLessThan(24);
   });
 
   it('the sight follows its mark for the first 24 frames and locks for the last 18; the round goes where it locked, so stepping off the line is the dodge', () => {
     expect(W.eval('S4.lock')).toBe(18);
     const r = W.eval(`(function(){ ${STAGE(820, 1, true)}
-      b._moveN = 0; b._atkTimer = 1; step();
+      b._pickForce = 'mephone4s'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, tel: b._tel, follow: true, held: true, lockedLate: true, lockedEarly: false, shot: null, face: true };
-      var AP = addProj; addProj = function(p){ if (p && p.owner===-2 && p.s4 === 1 && !out.shot) out.shot = { x:p.x, y:p.y, vx:p.vx, vy:p.vy }; return AP(p); };
+      out.shots = [];
+      var AP = addProj; addProj = function(p){ if (p && p.owner===-2 && p.s4 === 1){ var o = { x:p.x, y:p.y, vx:p.vx, vy:p.vy }; out.shots.push(o); if (!out.shot) out.shot = o; } return AP(p); };
       try {
         for (var i=0;i<24;i++){ f.x = 820 + (i+1)*4; f.vx = 0; f.invuln = 9999; step();
           if (b._aimX !== f.x) out.follow = false; if (b._aimLock) out.lockedEarly = true; if (b.face !== Math.sign(f.x - b.x)) out.face = false; }
@@ -283,13 +316,16 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
     expect(r.held, 'then it stays where it locked').toBe(true);
     expect(r.lockedLate).toBe(true);
     expect(r.shot, 'and he fires on the last frame').not.toBe(null);
-    expect(Math.atan2(r.shot.vy, r.shot.vx), 'along the sight').toBeCloseTo(Math.atan2(r.ly - r.shot.y, r.lx - r.shot.x), 6);
+    // (a volley of two in phase 1 since Round 17: a fan a spread apart, centred on the sight)
+    expect(r.shots, 'two rounds in phase 1').toHaveLength(2);
+    const ang = r.shots.map((p) => Math.atan2(p.vy, p.vx));
+    expect((ang[0] + ang[1]) / 2, 'along the sight').toBeCloseTo(Math.atan2(r.ly - r.shot.y, r.lx - r.shot.x), 6);
   });
 
   it('a round hits whoever stands on the line and misses whoever stepped off it', () => {
     const r = W.eval(`(function(){ var out = {};
       [['stays', 0], ['steps', 260]].forEach(function(c){ ${STAGE(300, 1, true)}
-        b._moveN = 0; b._atkTimer = 1; step();
+        b._pickForce = 'mephone4s'; b._atkLive = null; b._atkTimer = 1; step();
         for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); if (b._tel === 5) f.x = 300; }
         f.x = 300 + c[1]; f.vx = 0; f.y = groundY()-24; f.invuln = 0; f.pct = 0;
         for (var k=0;k<60;k++){ f.x = 300 + c[1]; f.vx = 0; f.y = groundY()-24; f.invuln = 0; f.hitstun = 0; step(); }
@@ -331,15 +367,16 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
       }
       out.dmgWhile = dmgWhile; out.dmgAfter = dmgAfter; out.framesWhile = framesWhile; out.full = bossDmg(); out.fzFor = S4.fzFor;
       summons = []; projectiles = []; return out; })()`);
-    expect(r.p1.n).toBe(1);
-    expect(r.p1.seenFz, 'phase 1: the round flies straight through').toBe(false);
-    for (const [ph, n] of [[2, 2], [3, 3]]) {
+    expect(r.p1.n, 'two rounds in phase 1 (2/3/4: the owner, Round 17)').toBe(2);
+    expect(r.p1.seenFz, 'phase 1: the rounds fly straight through').toBe(false);
+    for (const [ph, n] of [[2, 3], [3, 4]]) {
       const o = r['p' + ph];
       expect(o.n).toBe(n);
       expect(o.seenFz, 'phase ' + ph + ': it stops in mid-air').toBe(true);
       for (const h of o.held) expect(h, 'every round is stopped for S4.fzFor = 14 frames (the first is spent setting the hold)').toBeGreaterThanOrEqual(r.fzFor - 1);
       expect(o.allAt, 'there is a moment when the whole volley hangs there').toBeGreaterThan(0);
-      for (const p of o.pts) expect(Math.hypot(p[0] - o.pts[0][0], p[1] - o.pts[0][1]), 'a tight group on one line, not scattered').toBeLessThan(30);
+      // (a fan of n rounds is (n - 1) spreads wide -- 0.07 rad each, about 10 px at the freeze -- so the test looks at neighbours: each a few pixels from the next, a tight group and not a scatter)
+      for (let i = 1; i < o.pts.length; i++) expect(Math.hypot(o.pts[i][0] - o.pts[i - 1][0], o.pts[i][1] - o.pts[i - 1][1]), 'a tight group on one line, not scattered').toBeLessThan(15);
       expect(new Set(o.resume).size, 'and they all start again on the same frame').toBe(1);
       expect(o.resume[0]).toBeGreaterThan(o.allAt);
     }
@@ -399,28 +436,52 @@ describe('PUT THAT COOKIE DOWN! (the gun)', () => {
     expect(r.gap, 'walked up to, he ends up out at his backoff distance').toBeGreaterThanOrEqual(r.backoff - 10);
   });
 
+  // GLITCH (the glitch hunter's `boss-offscreen`, run again at the end of Round 17's picks): fighters crowded him against the right wall, he backed off from them through the edge of the world and
+  // stood there, off the screen and out of anyone's reach, for 300 frames. The walls hold him now: he stops at the wall, half his radius in from the edge, as his shove's skid does.
+  it('backing off from someone who has cornered him, he stops at the wall: he never walks off the world, on either side', () => {
+    const ww = W.eval('WW');
+    const run = (x0, side) => W.eval(`(function(){
+      var s = ${S('_atkTimer:1e9')}, tgt = { x:0, y:groundY()-24, dead:false, idx:0 }, mn = 1e9, mx = -1e9; s.x = ${x0};
+      for (var i=0;i<300;i++){ s.x += s.vx; s.vx *= 0.9; tgt.x = s.x + ${-side*60}; updateBossAttack(s, tgt); mn = Math.min(mn, s.x); mx = Math.max(mx, s.x); }   // the body's step (updateSummons) comes first, then his own turn; the fighter stays 60 px from him, on the side the wall is not
+      return { x: s.x, mn: mn, mx: mx, vx: s.vx, R: s.r }; })()`);
+    const right = run(ww - 300, 1), left = run(300, -1);
+    expect(right.mx, 'cornered on the right: never past the wall (half his radius in from the edge)').toBeLessThanOrEqual(ww - right.R * 0.5 + 1e-6);
+    expect(right.x, 'and he is at the wall, not somewhere short of it').toBeGreaterThan(ww - right.R);
+    expect(left.mn, 'cornered on the left: the same').toBeGreaterThanOrEqual(left.R * 0.5 - 1e-6);
+    expect(left.x).toBeLessThan(left.R);
+  });
+
   // The review: he read the phase when the attack fired, not when its wind-up started, so a move drawn in one phase could fire as the next phase's if a hit
   // crossed the threshold mid wind-up.
-  it('a gun drawn in phase 1 is one round, and a car drawn in phase 2 is the car and its return and no spikes, even if phase 3 starts during the wind-up', () => {
+  // (Since Round 17, the owner's picks: the gun is two rounds in phase 1; the car is his from phase 1 -- the one car, with no trap -- and the car of phase 2 is the car and its return WITH the trap.)
+  it('a gun drawn in phase 1 is two rounds, a car drawn in phase 1 is the one car and no trap, and a car drawn in phase 2 is the car, its return and the trap -- even if phase 3 starts during the wind-up', () => {
     const r = W.eval(`(function(){ var out = {};
-      ${['car', 'gun'].map((which) => `{ ${STAGE(800, which === 'car' ? 2 : 1, false, true)}
-        b._atkTimer = 1; b._moveN = ${which === 'car' ? 2 * EX.indexOf('s4car') + 1 : 0}; step();
+      ${[['car1', 1, 's4car'], ['car2', 2, 's4car'], ['gun', 1, 'mephone4s']].map(([which, ph, kind]) => `{ ${STAGE(800, ph, false, true)}
+        b._atkTimer = 1; b._pickForce = '${kind}'; b._atkLive = null; step();
         var drawn = { phase: b._telPh, name: document.getElementById('banner').textContent };
-        var seen = { car:0, spike:0, round:0 }, AP = addProj;
-        addProj = function(p){ if (p && p.shape==='redcar') seen.car++; if (p && p.shape==='spike') seen.spike++; if (p && p.s4 === 1) seen.round++; return AP(p); };
+        var seen = { cars:[], spike:0, round:0 }, AP = addProj;
+        addProj = function(p){ if (p && p.shape==='redcar') seen.cars.push(p.delay); if (p && p.shape==='spike') seen.spike++; if (p && p.s4 === 1) seen.round++; return AP(p); };
         try {
           b.hp = b.maxHp*0.2;
           for (var i=0;i<50;i++){ step(); f.x = 800; f.vx = 0; f.invuln = 9999; }
-          out.${which} = { drawn: drawn, phase: b._phase, seen: seen };
+          out.${which} = { drawn: drawn, phase: b._phase, seen: seen, q: (b._s4q || []).map(function(e){ return e.f + '@' + e.t; }) };
         } finally { addProj = AP; summons = []; projectiles = []; worldPlats = []; } }`).join('\n')}
       return out;
     })()`);
-    expect(r.car.drawn).toEqual({ phase: 2, name: "I'LL BE BACK!" });
-    expect(r.car.phase).toBe(3);
-    expect(r.car.seen, 'the car and the car coming back, as drawn: no spikes nobody was warned of').toEqual({ car: 2, spike: 0, round: 0 });
+    expect(r.car1.drawn).toEqual({ phase: 1, name: "I'LL BE BACK!" });
+    expect(r.car1.phase).toBe(3);
+    expect(r.car1.seen, 'a car drawn in phase 1: the one car (it revs 30 frames), no spikes nobody was warned of').toEqual({ cars: [30], spike: 0, round: 0 });
+    expect(r.car1.q, 'and no crusher or flip behind it').toEqual([]);
+    expect(r.car2.drawn).toEqual({ phase: 2, name: "I'LL BE BACK!" });
+    expect(r.car2.phase).toBe(3);
+    const T = Math.ceil((W.eval('WW') - 80) / 14) + 2;   // frames a car takes to cross the floor
+    expect(r.car2.seen.cars, 'phase 2: the car and the car coming back 40 frames after the first has cleared the far edge -- not phase 3\'s second car at 80').toEqual([30, 30 + T + 40]);
+    expect(r.car2.seen.spike, 'with the Super Death Trap live from phase 2 (the owner, Round 17)').toBeGreaterThan(0);
+    expect(r.car2.seen.round).toBe(0);
+    expect(r.car2.q, 'its crusher and flip wait for the return car to clear (phase 3\'s are at 150 and 186)').toEqual([`crush@${30 + T + 40 + T}`, `flip@${30 + T + 40 + T + 36}`]);
     expect(r.gun.drawn).toMatchObject({ phase: 1, name: 'PUT THAT COOKIE DOWN!' });
     expect(r.gun.phase).toBe(3);
-    expect(r.gun.seen.round, "phase 1's one round").toBe(1);
+    expect(r.gun.seen.round, "phase 1's two rounds").toBe(2);
   });
 });
 
@@ -430,7 +491,7 @@ describe("I'LL BE BACK! (the car)", () => {
   it('he runs for the edge farther from you and is off the screen when the wind-up ends; the cars wait there, headlights on, for the rev', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[300, 800].map((fx) => `{ ${STAGE(fx, 2, true)}
-        b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4car'; b._atkLive = null; b._atkTimer = 1; step();
         var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, from: b._s4.from };
         for (var w=0; w<80 && b._tel>0; w++){ f.x = ${fx}; f.vx = 0; step(); }
         o.x = Math.round(b.x); o.y = Math.round(b.y); o.hover = b.hover; o.go = b._s4.go; o.st = b._s4.st; o.R = b.r; o.WW = WW; o.gy = groundY();
@@ -459,7 +520,7 @@ describe("I'LL BE BACK! (the car)", () => {
     const r = W.eval(`(function(){ var WW0 = WW, out = {};
       try {
         [1100, 1920].forEach(function(w){ WW = w; out[w] = {};
-          [2, 3].forEach(function(ph){ projectiles = []; worldPlats = [];
+          [1, 2, 3].forEach(function(ph){ projectiles = []; worldPlats = [];
             var s = ${S('_phase:2, _telPh:2')}; s._phase = ph; s._telPh = ph; s.x = WW*0.5;
             BOSS_MOVES.s4car(s, { x: WW*0.8, y: groundY()-24, dead:false, idx:0 });
             var c = projectiles.filter(function(p){ return p.s4 === 2; });
@@ -473,13 +534,19 @@ describe("I'LL BE BACK! (the car)", () => {
       } finally { WW = WW0; projectiles = []; }
       return { out: out, full: bossDmg() }; })()`);
     const T = Math.ceil((1100 - 80) / 14) + 2;   // frames to cross the floor
-    const p2 = r.out[1100].p2, p3 = r.out[1100].p3;
+    const p1 = r.out[1100].p1, p2 = r.out[1100].p2, p3 = r.out[1100].p3;
+    // phase 1 ("I'LL BE BACK! from phase 1 too", the owner, Round 17): the one car, no return, no trap
+    expect(p1.cars, 'phase 1: the one car').toHaveLength(1);
+    expect(p1.cars[0]).toMatchObject({ x: 40, vx: 14, r: 26, dmg: r.full, kb: 11, pierce: true, delay: 30, shape: 'redcar' });
+    expect(p1.ids, 'one attack id').toBe(1);
+    expect(p1.q, 'and no layer on top of it').toBe('[]');
     expect(p2.cars).toHaveLength(2);
     // you are on the right (0.8 of the width): the edge farther from you is the left, and the first car starts there and drives at you
     expect(p2.cars[0]).toMatchObject({ x: 40, vx: 14, r: 26, dmg: r.full, kb: 11, pierce: true, delay: 30, shape: 'redcar' });
     expect(p2.cars[1], 'the car back: from the other edge, once the first has cleared the far one and 40 frames more').toMatchObject({ x: 1100 - 40, vx: -14, r: 26, dmg: r.full, kb: 11, pierce: true, delay: 30 + T + 40, shape: 'redcar' });
     expect(p2.ids, 'one attack id for the whole turn').toBe(1);
-    expect(p2.q, 'phase 2 has no layer on top of the cars').toBe('[]');
+    // the Super Death Trap is live from phase 2 (the owner, Round 17: it was phase 3): its crusher's shadow goes down as the car that came back has cleared (30 + T + 40 + T), the flip 36 frames after
+    expect(JSON.parse(p2.q).map((e) => [e.t, e.f]), 'phase 2: the crusher as the return car clears, the platform\'s flip 36 frames after it').toEqual([[30 + T + 40 + T, 'crush'], [30 + T + 40 + T + 36, 'flip']]);
     // phase 3: the second car does not wait ("the whole course goes live")
     expect(p3.cars[1]).toMatchObject({ x: 1100 - 40, vx: -14, delay: 30 + 50 });
     expect(JSON.parse(p3.q).map((e) => [e.t, e.f]), 'the crusher at 150 frames, the platform\'s flip at 186').toEqual([[150, 'crush'], [186, 'flip']]);
@@ -490,7 +557,7 @@ describe("I'LL BE BACK! (the car)", () => {
 
   it('a car turn through the engine: both cars cross, he walks back in from the edge he left by 22 frames after the last has cleared, and the turn ends', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 2, true, true)}
-      b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+      b._pickForce = 's4car'; b._atkLive = null; b._atkTimer = 1; step();
       for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; step(); }
       var ev = [], last = '', backAt = -1, carsAtBack = -1, doneAt = -1, maxCars = 0, gone = -1;
       for (var k=0;k<400;k++){
@@ -515,13 +582,15 @@ describe("I'LL BE BACK! (the car)", () => {
     expect(r.timer, 'and his next turn waits the usual gap').toBeGreaterThan(r.gap - 5);
   });
 
+  // (The air case looks at the CARS: the crusher of the trap, live from phase 2, comes down where you stand -- in the air too -- and is tested with the trap, below.)
   it('both cars together are one boss hit: whoever stands on the floor is run over once, and whoever is in the air is not touched', () => {
     const r = W.eval(`(function(){ var out = {};
       [['floor', 24], ['air', 200]].forEach(function(c){ ${STAGE(600, 2, true, false)}
-        b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4car'; b._atkLive = null; b._atkTimer = 1; step();
         var hits = 0, last = 0, gy = groundY(), n = 0;
         for (var k=0;k<400;k++){
-          f.x = 600; f.y = gy - c[1]; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; step(); n++;
+          f.x = 600; f.y = gy - c[1]; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; if (c[0] === 'air') projectiles = projectiles.filter(function(p){ return p.s4 !== 3; });   // the cars only: the trap's crusher is not one of them
+          step(); n++;
           if (f.pct > last + 0.5){ hits++; last = f.pct; }
           if (!b._s4 && k > 20) break;
         }
@@ -534,10 +603,16 @@ describe("I'LL BE BACK! (the car)", () => {
     expect(r.air.dmg, 'jumping the cars is the whole fight against them').toBe(0);
   });
 
-  it('phase 3 puts the whole course on the same turn: spikes shadowed 40 frames then up, the crusher on you at 150 frames (a whole hit), the big platform turned over at 186 -- one attack id', () => {
-    const r = W.eval(`(function(){ ${STAGE(300, 3, true, true)}
+  // The Super Death Trap -- spikes, crusher, flip -- is on the car's turn in phase 3, and in phase 2 too since Round 17 ("MePhone4S: ... the Super Death Trap (spikes, crusher, flip) live from phase 2",
+  // the owner's difficulty pick; it was phase 3). Phase 3's timing is as it was: the crusher's shadow at 150, as the second car (80 to 168) is on its last stretch, the flip at 186. Phase 2 has the car that
+  // comes back (it starts 40 frames after the first has crossed and crosses in its turn) and nothing drops on the floor under it: the crusher as it clears, the flip the same 36 frames after. "Harder, same
+  // damage": one attack id, one boss hit at most.
+  for (const [ph, label] of [[3, 'phase 3 puts the whole course on the same turn: spikes shadowed 40 frames then up, the crusher on you at 150 frames (a whole hit), the big platform turned over at 186 -- one attack id'],
+    [2, 'phase 2 puts the same course on the car and its return: spikes shadowed 40 frames then up, the crusher on you as the return car clears (a whole hit), the big platform turned over 36 frames after -- one attack id']]) it(label, () => {
+    const T = Math.ceil((W.eval('WW') - 80) / 14) + 2, crushT = ph === 3 ? 150 : 30 + T + 40 + T, hold = crushT - 10, frames = crushT + 330, crushLo = crushT - 20, crushHi = crushT + 10;   // (the crusher's frame, the frame the fighter comes down to meet it, the loop, the window it is looked for in)
+    const r = W.eval(`(function(){ ${STAGE(300, ph, true, true)}
       var gy = groundY(), pl = worldPlats[0], ids = {};
-      b._moveN = ${2 * EX.indexOf('s4car') + 1}; b._atkTimer = 1; step();
+      b._pickForce = 's4car'; b._atkLive = null; b._atkTimer = 1; step();
       var banners = [], _b = banner; banner = function(t, m, k, l){ banners.push([String(t), k || null]); return _b(t, m, k, l); };
       var impacts = [], _imp = impact; impact = function(x, y, o){ impacts.push([hazardT, Math.round(x), Math.round(y), o && o.shake]); return _imp(x, y, o); };
       try {
@@ -549,9 +624,9 @@ describe("I'LL BE BACK! (the car)", () => {
         projectiles.forEach(function(p){ if (p.bossAtk != null) ids[p.bossAtk] = 1; });
         var crush = null, crushAt = -1, flipAt = -1, rot180 = -1, rotBack = -1, surfGone = null, surfBack = null, shadow = null, hitAt = -1;
         var pct0 = f.pct;
-        for (var k=0;k<420;k++){
-          f.x = 300; f.y = gy - 24 - (k < 140 ? 380 : 0); f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0;
-          if (k < 140) f.invuln = 9999;
+        for (var k=0;k<${frames};k++){
+          f.x = 300; f.y = gy - 24 - (k < ${hold} ? 380 : 0); f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0;
+          if (k < ${hold}) f.invuln = 9999;
           step();
           if (b._s4) projectiles.forEach(function(p){ if (p.bossAtk != null) ids[p.bossAtk] = 1; });
           else b._atkTimer = 1e9;   // the turn is over: nothing else begins while the platform comes back
@@ -579,9 +654,11 @@ describe("I'LL BE BACK! (the car)", () => {
     expect(r.shadow[0]).toBe(300);
     expect(r.crush.dmg, 'a whole boss hit').toBe(r.full);
     expect(r.crush.kb).toBe(14);
-    expect(r.crushAt, 'about 150 frames after the cars set off').toBeGreaterThan(130);
-    expect(r.crushAt).toBeLessThan(160);
-    expect(r.flipAt, 'the platform turns at 186').toBeGreaterThan(r.crushAt);
+    expect(r.crushAt, `phase ${ph}: about ${crushT} frames after the cars set off`).toBeGreaterThan(crushLo);
+    expect(r.crushAt).toBeLessThan(crushHi);
+    expect(r.flipAt, `the platform turns at ${crushT + 36}`).toBeGreaterThan(r.crushAt);
+    expect(r.flipAt - r.crushAt, 'the flip comes 36 frames after the crusher is let go').toBeGreaterThan(30);
+    expect(r.flipAt - r.crushAt).toBeLessThan(42);
     expect(r.rot180, 'turned over within ten frames').toBeGreaterThan(r.flipAt);
     expect(r.rot180 - r.flipAt).toBeLessThanOrEqual(12);
     expect(r.surfGone, 'a platform turned over has nothing to stand on: the floor is the surface under it').toBeCloseTo(r.gy, 0);
@@ -703,7 +780,7 @@ describe('HASTA LA VISTA! (Taco as a gun)', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
         f.invuln = 9999;
-        b._moveN = ${2 * EX.indexOf('s4vista') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4vista'; b._atkLive = null; b._atkTimer = 1; step();
         var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, flag: b._s4Vista, mark: b._aimIdx, gy: groundY() };
         var rec = [];
         for (var w=0; w<80 && b._tel>0; w++){ f.x = (w < 20 ? 300 + w*5 : 400 - (w-20)*2); f.vx = 0; step(); rec.push([b._tel, b._aimLock, Math.round(b._aimX), Math.round(b._aimY), Math.round(f.x)]); }
@@ -751,7 +828,7 @@ describe('HASTA LA VISTA! (Taco as a gun)', () => {
 
   it('a lemon that lands on you is a heavy hit -- knock 14 -- and three of them are still one boss hit', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
-      b._moveN = ${2 * EX.indexOf('s4vista') + 1}; b._atkTimer = 1; step();
+      b._pickForce = 's4vista'; b._atkLive = null; b._atkTimer = 1; step();
       for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); }
       var hits = [], pct0 = f.pct, kbs = [], gy = groundY(), shakes = [], _imp = impact; impact = function(x, y, o){ shakes.push(o && o.shake); return _imp(x, y, o); };
       try {
@@ -778,7 +855,7 @@ describe('POP UP! (up through the quicksand)', () => {
   it('the wind-up sinks him into the floor where he stands, the boil follows you for the first 30 frames and holds for the last 16, and he is under the floor, out of reach, when it ends', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
       var gy = groundY(), R = b.r;
-      b._moveN = ${2 * EX.indexOf('s4popup') + 1}; b._atkTimer = 1; step();
+      b._pickForce = 's4popup'; b._atkLive = null; b._atkTimer = 1; step();
       var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, sx: b._s4.sx, R: R, gy: gy, x0: b.x };
       var rec = [];
       for (var w=0; w<80 && b._tel>0; w++){
@@ -810,7 +887,7 @@ describe('POP UP! (up through the quicksand)', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
         var gy = groundY(), R = b.r;
-        b._moveN = ${2 * EX.indexOf('s4popup') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4popup'; b._atkLive = null; b._atkTimer = 1; step();
         for (var w=0; w<80 && b._tel>0; w++){ f.x = 300; f.vx = 0; f.invuln = 9999; step(); }
         var ev = [], last = '', ids = {}, xs = [], ys = {};
         for (var k=0;k<400;k++){
@@ -898,7 +975,7 @@ describe('QUICKSAND SHOVE! (the charging tackle)', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[1, 2, 3].map((ph) => `{ ${STAGE(300, ph, true)}
         var gy = groundY(), R = b.r;
-        b._moveN = ${2 * EX.indexOf('s4shove') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4shove'; b._atkLive = null; b._atkTimer = 1; step();
         var o = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, dir0: b._s4.dir, R: R, gy: gy };
         var rec = [];
         for (var w=0; w<80 && b._tel>0; w++){
@@ -953,7 +1030,7 @@ describe('QUICKSAND SHOVE! (the charging tackle)', () => {
       ${[1, 2].map((ph) => `{ ${STAGE(560, ph, true, true)}
         var gy = groundY(), pl = worldPlats[0];
         var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pillow'; }), 460, pl.y - 24, 1); g.team = 0; g.controller = 'still'; g.stocks = 9; fighters.push(g);
-        b._moveN = ${2 * EX.indexOf('s4shove') + 1}; b._atkTimer = 1; step();
+        b._pickForce = 's4shove'; b._atkLive = null; b._atkTimer = 1; step();
         var put = function(){ g.x = 460; g.y = pl.y - 24; g.vx = 0; g.vy = 0; g.invuln = 0; g.hitstun = 0; };
         for (var w=0; w<80 && b._tel>0; w++){ put(); f.x = 560; f.vx = 0; f.invuln = 9999; step(); }
         var A = b._s4, hits = [], pct0 = f.pct, gp0 = g.pct, maxSlow = 0;
@@ -985,17 +1062,20 @@ describe('QUICKSAND SHOVE! (the charging tackle)', () => {
 describe('the Super Death Trap (his arena and its hazard)', () => {
   // The Tile Divide: "an obstacle course with sawblades, a crusher, and spikes above a pit of quicksand" -- "Each its own" (the owner, Round 8): the place reacts to the
   // fight, and "if it makes sense for a hazard, reduce boss difficulty and add a hazard" (Round 11): the sawblades and the quicksand are the hazard, his gaps are longer.
-  it('the sawblades at each end of the beam: parked in phase 1 ("the trap idle"), patrolling a little in phase 2 and a lot in phase 3 ("the whole course goes live"), mirrored', () => {
+  // The owner, 2026-10-01 (Round 17, the difficulty picks): "MePhone4S: ... the sawblades patrol from phase 1, and faster" -- they were parked in phase 1 ("the trap idle"), patrolled 36 px either side of
+  // where they sit in phase 2 and 64 in phase 3, at 0.034 rad a frame. They patrol from phase 1 now -- 36, 50 and 64 px, a little more each phase and never more than they ever did -- at 0.05 rad a frame.
+  it('the sawblades at each end of the beam: patrolling from phase 1 (a little), more in phase 2, the most in phase 3 ("the whole course goes live"), faster than they were, mirrored', () => {
     const r = W.eval(`(function(){ var out = {};
       ${[1, 2, 3].map((ph) => `{ ${STAGE(600, ph)}
-        var mn = [1e9, 1e9], mx = [-1e9, -1e9], first = null;
-        for (var k=0;k<500;k++){ f.x = 600; f.invuln = 9999; step(); var sw = b._hz.saw; if (k === 0) first = sw.slice(); mn[0] = Math.min(mn[0], sw[0]); mx[0] = Math.max(mx[0], sw[0]); mn[1] = Math.min(mn[1], sw[1]); mx[1] = Math.max(mx[1], sw[1]); }
-        out.p${ph} = { first: first, mn: mn, mx: mx }; summons = []; projectiles = []; }`).join('\n')}
+        var mn = [1e9, 1e9], mx = [-1e9, -1e9], first = null, turns = 0, prev = null, dir = 0;
+        for (var k=0;k<500;k++){ f.x = 600; f.invuln = 9999; step(); var sw = b._hz.saw; if (k === 0) first = sw.slice(); mn[0] = Math.min(mn[0], sw[0]); mx[0] = Math.max(mx[0], sw[0]); mn[1] = Math.min(mn[1], sw[1]); mx[1] = Math.max(mx[1], sw[1]);
+          if (prev !== null && sw[0] !== prev){ var d = Math.sign(sw[0] - prev); if (dir && d !== dir) turns++; dir = d; } prev = sw[0]; }
+        out.p${ph} = { first: first, mn: mn, mx: mx, turns: turns }; summons = []; projectiles = []; }`).join('\n')}
       out.SW = S4.saw; out.WW = WW; return out; })()`);
     const home = r.SW.home;
-    expect(r.p1.mn, 'phase 1: parked, a blade at each end of the beam').toEqual([home, r.WW - home]);
-    expect(r.p1.mx).toEqual([home, r.WW - home]);
-    for (const [ph, amp] of [[2, 36], [3, 64]]) {
+    expect(r.SW.amp, 'a little in phase 1, more in phase 2, as much as ever in phase 3').toEqual([0, 36, 50, 64]);
+    expect(r.SW.w, 'faster than the 0.034 it was').toBe(0.05);
+    for (const [ph, amp] of [[1, 36], [2, 50], [3, 64]]) {
       const o = r['p' + ph];
       expect(o.mn[0], 'phase ' + ph + ': it patrols ' + amp + ' px either side of where it sits').toBeCloseTo(home - amp, -1);
       expect(o.mx[0]).toBeCloseTo(home + amp, -1);
@@ -1003,11 +1083,23 @@ describe('the Super Death Trap (his arena and its hazard)', () => {
       expect(o.mx[1]).toBeCloseTo(r.WW - home + amp, -1);
       expect(o.mn[0], 'never off the beam, never past its middle').toBeGreaterThan(0);
       expect(o.mx[0]).toBeLessThan(r.WW / 2);
+      expect(o.turns, 'a sweep every 2 pi / 0.05 = 126 frames: about eight turns in 500 (it was five or so at 0.034)').toBeGreaterThanOrEqual(7);
     }
   });
 
+  it('a blade that patrols bites whoever it sweeps through, from phase 1: a fighter standing at its home is bitten within a sweep, for a fraction of a boss hit', () => {
+    const r = W.eval(`(function(){ ${STAGE(70, 1)}
+      var gy = groundY(), bites = [], last = 0;
+      for (var k=0;k<260;k++){ f.x = 70; f.y = gy - 24; f.vx = 0; f.vy = 0; f.hitstun = 0; f.invuln = 0; step(); if (f.pct > last + 1e-9){ bites.push([k, +(f.pct - last).toFixed(3)]); last = f.pct; } }
+      summons = []; projectiles = []; return { bites: bites, full: bossDmg(), frac: S4.saw.frac, gap: S4.saw.gap }; })()`);
+    expect(r.bites.length, 'it comes through again and again').toBeGreaterThanOrEqual(2);
+    for (const [, d] of r.bites) expect(d, 'each bite is 0.3 of a boss hit').toBeCloseTo(+(r.full * r.frac).toFixed(3), 2);
+    for (let i = 1; i < r.bites.length; i++) expect(r.bites[i][0] - r.bites[i - 1][0], 'and never closer than S4.saw.gap').toBeGreaterThanOrEqual(r.gap);
+  });
+
+  // (a blade parked at its home -- S4.saw.amp zeroed for the test -- so this is about its bite: the patrol has its own tests above)
   it('a blade is 0.3 of a boss hit, knocks you off it, bites again only every 40 frames, and is jumped: standing on the beam beside the quicksand is the risk, a hop is the answer', () => {
-    const r = W.eval(`(function(){ ${STAGE(300, 1)}
+    const r = W.eval(`(function(){ var amp0 = S4.saw.amp; S4.saw.amp = [0, 0, 0, 0]; try { ${STAGE(300, 1)}
       var gy = groundY(), hits = [], pct1 = 0;
       f.x = 70; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.pct = 0;
       step(); var first = { pct: f.pct, vx: f.vx, vy: f.vy, hitstun: f.hitstun };
@@ -1021,7 +1113,7 @@ describe('the Super Death Trap (his arena and its hazard)', () => {
       f.x = WW - 70; f.y = gy - 24; f.invuln = 0; f.pct = 0; f.vx = 0; step();
       var right = { pct: f.pct, vx: f.vx };
       var out = { first: first, again: hits, above: above, right: right, full: bossDmg(), gap: S4.saw.gap, frac: S4.saw.frac };
-      summons = []; projectiles = []; return out; })()`);
+      summons = []; projectiles = []; return out; } finally { S4.saw.amp = amp0; } })()`);
     expect(r.first.pct, 'a fraction of a boss hit').toBeCloseTo(r.full * r.frac, 5);
     expect(r.frac).toBe(0.3);
     expect(r.first.vx, 'knocked away from the blade, off the beam toward the middle').toBeGreaterThan(3);

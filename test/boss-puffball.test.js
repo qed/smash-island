@@ -12,7 +12,7 @@ import { mulberry32 } from './helpers/prng.js';
 //     that change the floor, phases that switch things on, a boss that moves, an arena that reacts; heavy hits (impact); canon
 //     scenes, cited by line below.
 //   Her FOUR attacks, approved (Round 9): SONIC BLAST! (the signature, redone: rainbow rings whose wall panels preview their heights,
-//     looping from phase 2), CONSEQUENCES! (a spotlight lands on you, then she dashes and slices five times), RAINBOW BARF! (from
+//     looping from phase 1 now, 2 / 3 / 4 waves), CONSEQUENCES! (a spotlight lands on you, then she dashes and slices six times), RAINBOW BARF! (from
 //     phase 2: a rainbow hose that reverses mid-sweep), PRIVATE! (she flies out of frame and shutters slam at both edges for 4 s,
 //     shrinking the arena to the middle while she sings from outside) -- the plan's TRASH COMPACTOR! is cut.
 //   "Harder, same damage": harder to dodge, damage per hit unchanged -- every extra shot of a turn keeps that turn's one attack id.
@@ -49,11 +49,12 @@ const S = (o = '') => `{ name:'Puffball Speaker Box', attack:'soundwave', x:550,
 const TURN = `
   function busy(b){ return b._tel>0 || b._psbRun || b._psbBarf || b._psbPriv || b._psbLoop || b._psbMv || projectiles.some(function(p){ return p.psb && p.life > 0; }); }
   function turn(kind, o){ o = o || {};
-    b._moveN = {soundwave:1, consequences:2, rainbowbarf:4, private:6}[kind] - 1; b._atkTimer = 1; b._tel = 0; b._psbBusy = 0;
+    // the owner, Round 17: "make the attacks based on fighter position." -- no fixed order any more, so a test forces the move it measures
+    b._pickForce = kind; b._atkLive = null; b._atkTimer = 1; b._tel = 0;
     var rec = { kind:null, frames:0, shots:[], firstShot:null, minY:1e9, maxSh:0, telAt:-1, fireAt:-1, banner:null, pct0:f.pct }, started = false, _add = addProj;
     // every shot of hers is recorded as it is made (one that hits at once is gone by the time a frame is over): where, how fast, its damage and its id
     addProj = function(p){ if (p && p.psb){ rec.shots.push({ shape:p.shape, x:Math.round(p.x), y:Math.round(p.y), vx:+p.vx.toFixed(2), vy:+p.vy.toFixed(2), dmg:p.dmg, kb:p.kb, id:p.bossAtk, volley:!!p.volley, r:p.r,
-      at:rec.frames + 1, delay:p.delay||0, bx:b.x, by:b.y, fx:f.x, fy:f.y, breaks:!!p.breaksOnSurface, life:p.life }); if (rec.firstShot == null) rec.firstShot = rec.frames; } return _add.apply(this, arguments); };
+      at:rec.frames + 1, delay:p.delay||0, bx:b.x, by:b.y, fx:f.x, fy:f.y, fvx:f.vx, fvy:f.vy, breaks:!!p.breaksOnSurface, life:p.life, warnX:p.warnX, warnY:p.warnY }); if (rec.firstShot == null) rec.firstShot = rec.frames; } return _add.apply(this, arguments); };
     try {
       for (var j=0;j<(o.max || 900);j++){
         window.__lastBanner = null; step(); rec.frames++;
@@ -103,21 +104,25 @@ describe('Puffball Speaker Box is Boss 2, with four attacks of her own', () => {
     expect([r.p2, r.p3]).toEqual(['Stuck in a Loop', 'Sinking Clubhouse']);
   });
 
-  it('takes turns: SONIC BLAST!, CONSEQUENCES!, SONIC BLAST!, then RAINBOW BARF! -- CONSEQUENCES! again until phase 2 -- SONIC BLAST!, PRIVATE!, each named and none with a number', () => {
+  // The owner, 2026-10-01 (Round 17): "make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close." -- "Position
+  // picks all (Recommended)": the signature competes like every other move, so her turns are no longer SONIC BLAST!, CONSEQUENCES!, SONIC BLAST!, RAINBOW BARF!, ... She draws from the moves she has
+  // unlocked: three in phase 1, the barf too from phase 2; no move twice in a row, and every one of them comes up (the picker's own tests are in test/boss-kit.test.js).
+  it('draws her turns from the moves she has unlocked -- three in phase 1, RAINBOW BARF! too from phase 2 -- none twice in a row, every one in twelve turns, each named and none with a number', () => {
     const r = W.eval(`(function(){
       var out = {};
       [1, 2].forEach(function(ph){
         var s = ${S('hp:' + '100')}; s.hp = ph === 1 ? 100 : 50; s.maxHp = 100;
         var kinds = [], names = [];
-        for (var i=0;i<8;i++){ s._atkTimer = 1; s._tel = 0; window.__lastBanner = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(window.__lastBanner && window.__lastBanner.text + '|' + window.__lastBanner.kind); }
+        for (var i=0;i<12;i++){ s._atkTimer = 1; s._tel = 0; s._atkLive = null; window.__lastBanner = null; updateBossAttack(s, null); kinds.push(s._telKind); names.push(window.__lastBanner && window.__lastBanner.text + '|' + window.__lastBanner.kind); }
         out['p' + ph] = { kinds: kinds, names: names, phase: s._phase };
       });
       return out;
     })()`);
     expect(r.p1.phase).toBe(1);
-    expect(r.p1.kinds).toEqual(['soundwave', 'consequences', 'soundwave', 'consequences', 'soundwave', 'private', 'soundwave', 'consequences']);
+    expect([...new Set(r.p1.kinds)].sort(), 'phase 1: her three').toEqual(['consequences', 'private', 'soundwave']);
     expect(r.p2.phase).toBe(2);
-    expect(r.p2.kinds).toEqual(['soundwave', 'consequences', 'soundwave', 'rainbowbarf', 'soundwave', 'private', 'soundwave', 'consequences']);
+    expect([...new Set(r.p2.kinds)].sort(), 'phase 2: her four').toEqual(['consequences', 'private', 'rainbowbarf', 'soundwave']);
+    for (const p of ['p1', 'p2']) expect(r[p].kinds.some((k, i) => i > 0 && k === r[p].kinds[i - 1]), `${p}: never the same move twice in a row: ${r[p].kinds}`).toBe(false);
     const say = { soundwave: 'SONIC BLAST!', consequences: 'CONSEQUENCES!', rainbowbarf: 'RAINBOW BARF!', private: 'PRIVATE!' };
     // a wind-up is announced by its name, as a 'boss' banner (the one kind of line a match may show), with no digit in it
     for (const p of ['p1', 'p2']) r[p].kinds.forEach((k, i) => {
@@ -253,15 +258,17 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
       return { rec: rec, gy: gy, boss: bossDmg(), lanes: rec.shots.map(function(s){ return Math.round((gy - 38 - s.y)/42); }), telLen: rec.fireAt - rec.telAt, kind: rec.kind,
                scars: rec.sc, debris: rec.d, bx: b.x, banner: rec.banner && rec.banner.text };
     })()`);
-    const sh = r.rec.shots;
+    // (phase 1 sends two waves now -- Round 17, "SONIC BLAST! 2/3/4 waves", it was one: the first wave is what this reads; the loop is tested below)
+    const all = r.rec.shots, sh = all.filter((s) => s.at === all[0].at);
     expect(r.kind).toBe('soundwave');
     expect(r.banner).toBe('SONIC BLAST!');
     expect(r.telLen, 'a wind-up long enough to read the panels').toBe(44);
     expect(sh.length, 'five filled lanes, both ways').toBe(10);
+    expect(all.length, 'and the second wave of phase 1, the same lanes again').toBe(20);
     expect(new Set(sh.map((s) => s.shape))).toEqual(new Set(['psbring']));
-    expect(sh.every((s) => s.dmg === r.boss), 'full boss damage: the damage per hit is unchanged').toBe(true);
-    expect(new Set(sh.map((s) => s.id)).size, 'one attack id for the whole wave').toBe(1);
-    expect(sh.every((s) => s.volley), 'and a volley, so its total is capped even when another boss hit lands between').toBe(true);
+    expect(all.every((s) => s.dmg === r.boss), 'full boss damage: the damage per hit is unchanged').toBe(true);
+    expect(new Set(all.map((s) => s.id)).size, 'one attack id for the whole attack, both waves').toBe(1);
+    expect(all.every((s) => s.volley), 'and a volley, so its total is capped even when another boss hit lands between').toBe(true);
     expect(sh.filter((s) => s.vx > 0).length).toBe(5);
     expect(sh.filter((s) => s.vx < 0).length).toBe(5);
     expect(sh.every((s) => Math.abs(s.vx) === 8.6 && s.vy === 0), 'phase 1: slow, level rings').toBe(true);
@@ -297,7 +304,7 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
     expect(r.p3[1]).toEqual([1, 1, 0, 0, 0, 1, 1]);
   });
 
-  it('safe in the gap, one boss hit off it, in every phase -- and the loops of phases 2 and 3 never stack a second', () => {
+  it('safe in the gap, one boss hit off it, in every phase -- and the loops (every phase has one now) never stack a second', () => {
     const run = (ph, plat) => W.eval(`(function(){ ${STAGE(plat ? 550 : 300, { phase: ph, plat })} ${TURN}
       var first = turn('soundwave', { hold:true, x:${plat ? 550 : 300}, plat:${!!plat} }).taken;
       f.pct = 0; f.invuln = 0;
@@ -314,7 +321,9 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
     }
   });
 
-  it("phase 1 throws one wave; phases 2 and 3 loop it three times over the same lanes (\"her voice was stuck in a loop\"), and phase 3 alternates the rows' speeds", () => {
+  // The owner's pick, Round 17 (the question boxes, 2026-10-01): "SONIC BLAST! 2/3/4 waves" -- it was 1 / 3 / 3. The loop is the same lanes again (a fighter in the gap is as safe as ever), a beat apart:
+  // 40 frames in phase 1 (which had no loop to give a beat to), 36 in phase 2, 30 in phase 3.
+  it("phase 1 throws two waves, phase 2 three and phase 3 four, each loop over the same lanes (\"her voice was stuck in a loop\"), and phase 3 alternates the rows' speeds", () => {
     const wave = (ph) => W.eval(`(function(){ ${STAGE(900, { phase: ph })} ${TURN}
       var gy = groundY(), rec = turn('soundwave', { hold:true, x:900 });
       var waves = {}; rec.shots.forEach(function(s){ (waves[s.at] = waves[s.at] || []).push(s); });
@@ -324,19 +333,21 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
                ids: rec.shots.map(function(s){ return s.id; }), n: rec.shots.length, frames: rec.frames };
     })()`);
     const p1 = wave(1), p2 = wave(2), p3 = wave(3);
-    expect(p1.ats.length, 'one wave').toBe(1);
-    expect(p2.ats.length, 'three loops').toBe(3);
-    expect(p3.ats.length).toBe(3);
-    expect(p2.ats[1] - p2.ats[0], 'a beat apart, the same in phase 2').toBe(36);
+    expect([p1.ats.length, p2.ats.length, p3.ats.length], 'two, three and four waves').toEqual([2, 3, 4]);
+    expect(p1.ats[1] - p1.ats[0], 'a beat apart: 40 frames in phase 1').toBe(40);
+    expect(p2.ats[1] - p2.ats[0], 'the same in phase 2: 36').toBe(36);
     expect(p2.ats[2] - p2.ats[1]).toBe(36);
-    expect(p3.ats[1] - p3.ats[0], 'and quicker in phase 3').toBe(30);
-    expect(p2.lanes[1], 'the same gap heights every loop: learnable, relentless').toBe(p2.lanes[0]);
+    for (let k = 1; k < 4; k++) expect(p3.ats[k] - p3.ats[k - 1], `and quicker in phase 3: wave ${k + 1} comes 30 after the one before`).toBe(30);
+    expect(p1.lanes[1], 'the same gap heights every loop: learnable, relentless').toBe(p1.lanes[0]);
+    expect(p2.lanes[1]).toBe(p2.lanes[0]);
     expect(p2.lanes[2]).toBe(p2.lanes[0]);
-    expect(p3.lanes[1]).toBe(p3.lanes[0]);
-    expect(new Set(p2.ids).size, 'still one attack id').toBe(1);
+    for (let k = 1; k < 4; k++) expect(p3.lanes[k]).toBe(p3.lanes[0]);
+    expect(new Set(p1.ids).size, 'still one attack id').toBe(1);
+    expect(new Set(p2.ids).size).toBe(1);
     expect(new Set(p3.ids).size).toBe(1);
+    expect(p1.n, 'five filled lanes, both ways, twice').toBe(20);
     expect(p2.n).toBe(30);
-    expect(p3.n, 'six filled lanes, both ways, three times').toBe(36);
+    expect(p3.n, 'six filled lanes, both ways, four times').toBe(48);
     expect(Object.values(p2.speeds[0]).every((v) => v === 10.2), 'phase 2: faster than phase 1').toBe(true);
     // phase 3: even lanes fast, odd lanes slow, "so a straight run fails"
     for (const [k, v] of Object.entries(p3.speeds[0])) expect(v, `lane ${k}`).toBe(Number(k) % 2 ? 8.4 : 13);
@@ -345,7 +356,7 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
   it('the wall panels are the tell: at the wind-up their lanes are the ones the wave then fires, lit along both edges in the rings\' colours, and the gap stays dark', () => {
     const r = W.eval(`(function(){ ${STAGE(900, { settle: 60 })}
       var gy = groundY(), st = {};
-      b._moveN = 0; b._atkTimer = 1; b._tel = 0;
+      b._pickForce = 'soundwave'; b._atkLive = null; b._atkTimer = 1; b._tel = 0;
       for (var i=0;i<20 && !(b._tel > 0);i++) step();
       st.telKind = b._telKind; st.pat = b._psbPat.slice(); st.patT = b._psbPatT; st.tel = b._tel;
       for (var j=0;j<50 && b._tel > 0;j++) step();
@@ -360,7 +371,7 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
     // ...and the drawing: both edges, in the ring colours, the empty lanes dark
     const { w, log } = bootRecording();
     w.eval(`(function(){ ${STAGE(900, { settle: 60 })}
-      b._moveN = 0; b._atkTimer = 1; b._tel = 0; for (var i=0;i<20 && !(b._tel > 0);i++) step(); for (var j=0;j<30;j++) step();
+      b._pickForce = 'soundwave'; b._atkLive = null; b._atkTimer = 1; b._tel = 0; for (var i=0;i<20 && !(b._tel > 0);i++) step(); for (var j=0;j<30;j++) step();
       window.__pat = b._psbPat.slice(); psbDrawFx(); })()`);
     log.length = 0;
     w.eval('psbDrawFx()');
@@ -379,7 +390,7 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
   });
 });
 
-describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices five times', () => {
+describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices six times', () => {
   // "Book, you read 'lips'. It's time for you to suffer the CONSEQUENCES of your ACTIONS!" / "Puffball Speaker Box slices Book to pieces
   // with several knives." (Catch These Hands/Transcript)
   it('the spotlight follows you through the wind-up and locks 14 frames before she goes; the room dims as it lands', () => {
@@ -404,7 +415,8 @@ describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices fi
     expect(r.log[3][4], 'gradually').toBeLessThan(r.log[r.log.length - 1][4]);
   });
 
-  it('she dashes to where the spotlight locked, lands on the floor (a cut in it), and throws five knives, one every 16 frames, each at where you are THEN', () => {
+  // The owner's pick, Round 17 (the question boxes, 2026-10-01): "CONSEQUENCES! 6 knives, the last two aimed ahead" -- it was five, every one at where you are THEN.
+  it('she dashes to where the spotlight locked, lands on the floor (a cut in it), and throws six knives, one every 16 frames, each at where you are THEN (a fighter standing still: the last two lead nothing)', () => {
     const r = W.eval(`(function(){ ${STAGE(300)} ${TURN}
       var dashEnd = null, made = 0;
       var rec = turn('consequences', { max:400, each:function(rc, j){
@@ -416,10 +428,10 @@ describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices fi
       return { rec: rec, aims: aims, dashEnd: dashEnd, knives: rec.shots.filter(function(s){ return s.shape === 'psbknife'; }), boss: bossDmg(), scars: scars, gy: groundY() };
     })()`);
     const k = r.knives;
-    expect(k.length, 'five knives').toBe(5);
+    expect(k.length, 'six knives').toBe(6);
     expect(new Set(k.map((s) => s.id)).size, 'one attack id: at most one boss hit').toBe(1);
     expect(k.every((s) => s.volley && s.dmg === r.boss && s.r === 15), 'full boss damage each, a volley').toBe(true);
-    expect(k.map((s, i) => (i ? s.at - k[i - 1].at : 0)).slice(1), 'every 16 frames').toEqual([16, 16, 16, 16]);
+    expect(k.map((s, i) => (i ? s.at - k[i - 1].at : 0)).slice(1), 'every 16 frames').toEqual([16, 16, 16, 16, 16]);
     expect(r.aims.every((a) => a < 0.12), `each is thrown at where you are: ${r.aims.map((a) => a.toFixed(3))}`).toBe(true);
     expect(k.every((s) => Math.hypot(s.vx, s.vy) > 15.9 && Math.hypot(s.vx, s.vy) < 16.1)).toBe(true);
     expect(Math.abs(r.dashEnd.x - r.dashEnd.sp), 'she landed on the spot it locked on').toBeLessThan(3);
@@ -427,16 +439,48 @@ describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices fi
     expect(r.scars.some(([x, y]) => Math.abs(x - r.dashEnd.x) < 2 && Math.abs(y - r.gy) < 0.01), 'and the floor is cut where she landed').toBe(true);
   });
 
-  it("standing where it locked costs one boss hit, not five; five knives are one attack, so nothing stacks (\"Harder, same damage\")", () => {
+  it("standing where it locked costs one boss hit, not six; six knives are one attack, so nothing stacks (\"Harder, same damage\")", () => {
     const r = W.eval(`(function(){ ${STAGE(300)} ${TURN}
       var rec = turn('consequences', { max:400 });
       return { taken: rec.taken, boss: bossDmg(), knives: rec.shots.filter(function(s){ return s.shape === 'psbknife'; }).length };
     })()`);
-    expect(r.knives).toBe(5);
+    expect(r.knives).toBe(6);
     expect(r.taken).toBeCloseTo(r.boss, 5);
   });
 
-  it('after the fifth cut she hangs winded for 24 frames, in reach, then floats back up; phase 3 is quicker, and its fifth cut is late', () => {
+  // "the last two aimed ahead" (Round 17): a knife's `lead` carries your speed for as long as it is in the air, so a fighter running straight on is met; the first four are at where you are.
+  it('the last two knives of a run are thrown where you are HEADING: a fighter running away is met by them (and missed by a knife thrown at where he is); a fighter standing still is not led', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)} ${TURN}
+      var gy = groundY(), out = {};
+      var cons = PSB.cons;
+      // her, on the floor at x 700 with a fighter 180 px to her left, running left (away) at 6 px a frame, or standing; the knife's closest pass to where he will be
+      var throwAt = function(vx, vy, lead, fy){ b.x = 700; b.y = gy - b.r*1.08; projectiles = [];
+        f.x = 520; f.y = fy == null ? gy - 24 : fy; f.vx = vx; f.vy = vy;
+        var R = { id:++BOSS_ATK_ID, n:0 }; psbKnife(b, R, f, lead);
+        var k = projectiles.find(function(p){ return p.shape === 'psbknife'; }), best = 1e9;
+        for (var n=0;n<=40;n++){ var kx = k.x + k.vx*n, ky = k.y + k.vy*n, px = f.x + vx*n, py = f.y + vy*n; best = Math.min(best, Math.hypot(kx - px, ky - py)); }
+        return { a: Math.atan2(k.vy, k.vx), sp: Math.hypot(k.vx, k.vy), best: best, warnX: k.warnX, warnY: k.warnY, x: k.x, y: k.y, want: Math.atan2(f.y - b.y, f.x - b.x) }; };
+      out.cuts = cons.cuts; out.leads = cons.leads;
+      out.runLead = throwAt(-6, 0, true); out.runPlain = throwAt(-6, 0, false); out.stillLead = throwAt(0, 0, true); out.stillPlain = throwAt(0, 0, false);
+      // which knives of a run are led: the run's own counter
+      out.which = []; for (var i=0;i<cons.cuts;i++) out.which.push(i >= cons.cuts - cons.leads);
+      return out; })()`);
+    expect(r.cuts).toBe(6);
+    expect(r.leads, 'the last two').toBe(2);
+    expect(r.which, 'the first four at where you are, the last two ahead').toEqual([false, false, false, false, true, true]);
+    expect(r.runPlain.a, 'a knife thrown at where he is').toBeCloseTo(r.runPlain.want, 6);
+    expect(r.runLead.best, 'a led knife meets him dead on').toBeLessThan(6);
+    expect(r.runPlain.best, 'a knife thrown at where he is passes behind him (he is 66 px on by the time it gets there): by more than 15 px').toBeGreaterThan(r.runLead.best + 15);
+    expect(r.runLead.a, 'it is thrown further ahead of him: a flatter angle than at where he is').not.toBeCloseTo(r.runLead.want, 2);
+    expect(r.stillLead.a, 'a fighter standing still is not led').toBeCloseTo(r.stillLead.want, 6);
+    for (const k of [r.runLead, r.runPlain, r.stillLead, r.stillPlain]) {
+      expect(k.sp, 'the same knife: 16 a frame').toBeCloseTo(16, 6);
+      expect(k.warnX, 'carries its own start as warnX (no `warn`: no shadow, no drift) for the glitch hunter').toBeCloseTo(k.x, 6);
+      expect(k.warnY).toBeCloseTo(k.y, 6);
+    }
+  });
+
+  it('after the last cut she hangs winded for 24 frames, in reach, then floats back up; phase 3 is quicker, and its last cut is late', () => {
     const run = (ph) => W.eval(`(function(){ ${STAGE(300, { phase: ph })} ${TURN}
       var hang = 0, hangY = null, returned = null, phases = [];
       var rec = turn('consequences', { max:600, each:function(rc){
@@ -452,21 +496,25 @@ describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices fi
     expect(Math.abs(p1.hangY - p1.floor), 'hanging low, where she can be hit').toBeLessThan(8);
     expect(p1.run).toBe(false);
     expect(Math.abs(p1.yEnd - p1.hover), 'and back at her float').toBeLessThan(30);
-    expect(p1.gaps).toEqual([16, 16, 16, 16]);
-    expect(p2.gaps, 'quicker in phase 2').toEqual([12, 12, 12, 12]);
-    expect(p3.gaps, 'quicker again in phase 3, the fifth a fake-out 14 frames late').toEqual([10, 10, 10, 24]);
+    expect(p1.gaps).toEqual([16, 16, 16, 16, 16]);
+    expect(p2.gaps, 'quicker in phase 2').toEqual([12, 12, 12, 12, 12]);
+    expect(p3.gaps, 'quicker again in phase 3, the last a fake-out 14 frames late').toEqual([10, 10, 10, 10, 24]);
     expect([p1.phase, p2.phase, p3.phase]).toEqual([1, 2, 3]);
   });
 
-  it('in phase 1 the RAINBOW BARF! turn is CONSEQUENCES! again -- barf waits for phase 2, "once the knife is in her back"', () => {
+  // Round 17 (the owner: "make the attacks based on fighter position."): her turns are drawn from the moves she has unlocked, so there is no "RAINBOW BARF! turn" to be CONSEQUENCES! again: the barf
+  // is simply not among her phase-1 moves (BOSS_PICK.soundwave.moves), and asking for it there gets one of the others.
+  it('RAINBOW BARF! waits for phase 2, "once the knife is in her back": it is not among her phase-1 moves, and forcing it in phase 1 starts one of the others', () => {
     const r = W.eval(`(function(){ ${STAGE(300)} ${TURN}
-      var kinds = [];
       var rec = turn('rainbowbarf', { max:600 });
-      return { kind: rec.kind, banner: rec.banner && rec.banner.text, tel: rec.fireAt - rec.telAt };
+      return { kind: rec.kind, banner: rec.banner && rec.banner.text, p1: bossPickMoves(b, 1), p2: bossPickMoves(b, 2), p3: bossPickMoves(b, 3) };
     })()`);
-    expect(r.kind).toBe('consequences');
-    expect(r.banner).toBe('CONSEQUENCES!');
-    expect(r.tel, 'with CONSEQUENCES!\'s wind-up').toBe(60);
+    expect(r.p1, 'three moves in phase 1').toEqual(expect.arrayContaining(['soundwave', 'consequences', 'private']));
+    expect(r.p1).not.toContain('rainbowbarf');
+    expect(r.p2, 'the barf joins in phase 2').toContain('rainbowbarf');
+    expect(r.p3).toContain('rainbowbarf');
+    expect(['soundwave', 'consequences', 'private'], 'what a phase-1 turn drew instead').toContain(r.kind);
+    expect(r.banner).not.toBe('RAINBOW BARF!');
   });
 });
 
@@ -508,21 +556,26 @@ describe('RAINBOW BARF!: a rainbow hose that reverses mid-sweep (phase 2 on)', (
     expect(Math.max(arcs[0].args[3], arcs[0].args[4])).toBeCloseTo(2.1, 5);
   });
 
-  it('the stream sweeps there in 20 frames and whips back in 20, a shot a frame, all one attack id, full boss damage, drawn as the rainbow substance and ending at the floor', () => {
+  // The owner's pick, Round 17 (the question boxes, 2026-10-01): "RAINBOW BARF! two streams from P2" -- the second stream was phase 3's; it is a second shot a frame, 0.05 rad behind the first.
+  it('the stream sweeps there in 20 frames and whips back in 20, a shot a frame (two streams: a second beside it), all one attack id, full boss damage, drawn as the rainbow substance and ending at the floor', () => {
     const r = W.eval(`(function(){ ${STAGE(850, { phase: 2 })} ${TURN}
       var arc = null, over = 0, gy = groundY();
       var rec = turn('rainbowbarf', { max:300, each:function(rc){ if (b._tel > 0){ b.x = 550; b.vx = 0; } if (b._tel > 0 && !arc) arc = b._psbArc.slice();
         projectiles.forEach(function(p){ if (p.psb && p.y > gy + 1) over++; }); } });
       return { rec: rec, arc: arc, over: over, boss: bossDmg(), tel: rec.fireAt - rec.telAt };
     })()`);
-    const sh = r.rec.shots;
+    const every = r.rec.shots, sh = every.filter((s, i) => i % 2 === 0), second = every.filter((s, i) => i % 2 === 1);   // (a frame's two shots: the first stream's, then the second's)
     const ang = (s) => Math.atan2(s.vy, s.vx);
     expect(r.rec.kind).toBe('rainbowbarf');
     expect(r.rec.banner.text).toBe('RAINBOW BARF!');
     expect(r.tel).toBe(40);
-    expect(sh.length, 'a shot a frame, over the 40 frames of one there-and-back sweep').toBe(40);
+    expect(every.length, 'two shots a frame from phase 2, over the 40 frames of one there-and-back sweep').toBe(80);
+    expect(sh.length, 'a shot a frame in the first stream').toBe(40);
     expect(new Set(sh.map((s) => s.at)).size, 'one each frame').toBe(40);
-    expect(new Set(sh.map((s) => s.id)).size, 'one attack id').toBe(1);
+    expect(second.map((s) => s.at), 'the second stream is the same frames').toEqual(sh.map((s) => s.at));
+    second.forEach((s, i) => expect(Math.abs(Math.atan2(Math.sin(ang(s) - ang(sh[i])), Math.cos(ang(s) - ang(sh[i]))) - 0.05), `frame ${i}: the second stream is 0.05 rad beside the first`).toBeLessThan(0.003));   // (the recorder keeps a shot's speed to two decimals)
+    expect(second.every((s) => s.volley && s.dmg === r.boss && s.shape === 'fly' && s.r === 14), 'the same shot').toBe(true);
+    expect(new Set(every.map((s) => s.id)).size, 'one attack id').toBe(1);
     expect(sh.every((s) => s.volley && s.dmg === r.boss && s.shape === 'fly' && s.r === 14), 'a volley, full damage, the rainbow substance art').toBe(true);
     expect(sh.every((s) => s.life > 1 && s.life <= 30), 'a shot lives no longer than the stream reaches').toBe(true);
     expect(sh.some((s) => s.life < 24), 'and the steep ones are cut to end at the floor').toBe(true);
@@ -537,7 +590,7 @@ describe('RAINBOW BARF!: a rainbow hose that reverses mid-sweep (phase 2 on)', (
     expect(r.over, 'not a shot ever goes into the floor').toBe(0);
   });
 
-  it('the far side of the room is safe, the swath is one whole boss hit however many shots cross you -- and in phase 3 she does two sweeps, two shots a frame', () => {
+  it('the far side of the room is safe, the swath is one whole boss hit however many shots cross you -- two shots a frame from phase 2, and in phase 3 she does two sweeps', () => {
     const hitTwo = W.eval(`(function(){ ${STAGE(850, { phase: 2 })}
       var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 200, groundY()-24, 1);
       g.team=0; g.controller='still'; g.stocks=9; fighters.push(g); g.pct = 0;
@@ -554,6 +607,15 @@ describe('RAINBOW BARF!: a rainbow hose that reverses mid-sweep (phase 2 on)', (
       return { taken: rec.taken, boss: bossDmg() };
     })()`);
     expect(under.taken, 'and standing on the floor under the platform is no shelter').toBeCloseTo(under.boss, 5);
+    const p2 = W.eval(`(function(){ ${STAGE(850, { phase: 2 })} ${TURN}
+      var rec = turn('rainbowbarf', { max:400, each:function(rc){ if (b._tel > 0){ b.x = 550; b.vx = 0; } } });
+      var ats = {}; rec.shots.forEach(function(s){ ats[s.at] = (ats[s.at]||0) + 1; });
+      return { n: rec.shots.length, frames: Object.keys(ats).length, per: Object.values(ats).every(function(v){ return v === 2; }), ids: new Set(rec.shots.map(function(s){ return s.id; })).size };
+    })()`);
+    expect(p2.n, 'phase 2: one sweep of 40 frames, two shots a frame (the second stream, from phase 2: Round 17)').toBe(80);
+    expect(p2.frames).toBe(40);
+    expect(p2.per).toBe(true);
+    expect(p2.ids, 'one attack id').toBe(1);
     const p3 = W.eval(`(function(){ ${STAGE(850, { phase: 3 })} ${TURN}
       var rec = turn('rainbowbarf', { max:400, each:function(rc){ if (b._tel > 0){ b.x = 550; b.vx = 0; } } });
       var ats = {}; rec.shots.forEach(function(s){ ats[s.at] = (ats[s.at]||0) + 1; });
@@ -612,6 +674,8 @@ describe('PRIVATE!: she flies out of frame and shutters slam at both edges, shri
     expect(h.hpEnd, 'and she cannot be hurt while she is gone, whatever reaches for her').toBe(h.hp0);
   });
 
+  // (Round 17, "PRIVATE! one more note per phase": the song keeps its length -- 252, 252 and 250 frames of it -- so the notes come quicker instead (beats of 48, 40 and 34 frames): one beat longer
+  // would be 312 frames of her out of frame and out of reach, past the glitch hunter's five-second limit for a boss that is off the screen)
   it('the shutters take a fifth of the width each side for about four seconds, in every phase, and lift; she comes back from above', () => {
     for (const ph of [1, 2, 3]) {
       const r = priv(ph, 550, { hold: true });
@@ -642,13 +706,14 @@ describe('PRIVATE!: she flies out of frame and shutters slam at both edges, shri
     expect(c.clamp.right, 'sent at the right one').toBeLessThanOrEqual(1100 - 220 - c.slam.fr + 0.001);
   });
 
-  it('a note leaves a shutter every beat -- 4, 5 and 6 beats of 60, 48 and 40 frames -- its grille lit 20 frames before, alternating sides and the floor and platform heights', () => {
-    for (const [ph, beats, len] of [[1, 4, 60], [2, 5, 48], [3, 6, 40]]) {
+  // The owner's pick, Round 17 (the question boxes, 2026-10-01): "PRIVATE! one more note per phase, in pairs from P2" -- it was 4, 5 and 6 beats, the notes in pairs in phase 3 only.
+  it('a note leaves a shutter every beat -- 5, 6 and 7 beats of 48, 40 and 34 frames, in pairs from phase 2 -- its grille lit 20 frames before, alternating sides and the floor and platform heights', () => {
+    for (const [ph, beats, len] of [[1, 5, 48], [2, 6, 40], [3, 7, 34]]) {
       const r = priv(ph, 550, { hold: true });
       const notes = r.notes.filter((n) => n.shape === 'psbnote');
       expect(new Set(r.rec.shots.map((s) => s.id)).size, `phase ${ph}: the slam and the song are one attack id`).toBe(1);
       expect(r.rec.shots.every((s) => s.volley && s.dmg === r.boss), `phase ${ph}: volleys at the shared damage`).toBe(true);
-      const per = ph === 3 ? 2 : 1;
+      const per = ph >= 2 ? 2 : 1;
       expect(notes.length, `phase ${ph}: ${beats} beats`).toBe(beats*per);
       const byBeat = [];
       for (let b = 0; b < beats; b++) byBeat.push(notes.slice(b*per, (b + 1)*per));
@@ -661,7 +726,7 @@ describe('PRIVATE!: she flies out of frame and shutters slam at both edges, shri
       });
       // levels in turn: the floor's height and the platform's
       const levels = byBeat.map((g) => g.map((n) => (Math.abs(n.y - r.fL) < 1 ? 'F' : Math.abs(n.y - r.fP) < 1 ? 'P' : '?')).join(''));
-      const want = { 1: ['F', 'P', 'F', 'P'], 2: ['F', 'P', 'P', 'F', 'P'], 3: ['FP', 'PF', 'FP', 'PF', 'FP', 'PF'] }[ph];
+      const want = { 1: ['F', 'P', 'F', 'P', 'F'], 2: ['FP', 'PF', 'FP', 'PF', 'FP', 'PF'], 3: ['FP', 'PF', 'FP', 'PF', 'FP', 'PF', 'FP'] }[ph];
       expect(levels).toEqual(want);
       // the grille is lit before the note: each cue is `lead` frames before its note, on its side, at its height
       for (const n of notes) {
@@ -669,6 +734,7 @@ describe('PRIVATE!: she flies out of frame and shutters slam at both edges, shri
         expect(cue, `a lit grille 20 frames before the note at frame ${n.at}`).toBeTruthy();
       }
       expect(notes.every((n) => Math.abs(n.vx) === [0, 5.4, 6.2, 7.2][ph] && n.vy === 0), 'faster each phase').toBe(true);
+      expect(notes.every((n) => Math.round(n.warnX) === n.x && Math.round(n.warnY) === n.y), 'a note carries its own start (the grille it came out of was lit): the glitch hunter\'s "told"').toBe(true);
     }
   });
 
@@ -1037,7 +1103,7 @@ describe('a netcode client draws her from the snapshot', () => {
   it('carries her tells, the hazard state and the arena; a client applies them and draws the panels, the spotlight, the lake and the shutters as the host would', () => {
     const host = loadMonolith().window, client = loadMonolith().window;
     const snap = host.eval(`(function(){ ${STAGE(300, { phase: 2, settle: 200 })}
-      b._moveN = 0; b._atkTimer = 1; b._tel = 0; step(); for (var i=0;i<10;i++) step();
+      b._pickForce = 'soundwave'; b._atkLive = null; b._atkTimer = 1; b._tel = 0; step(); for (var i=0;i<10;i++) step();
       var out = { kind: b._telKind };
       psbHz(b).sh = 0.6; psbHz(b).shw = 220; b._psbPv = [[1, 418, 12]]; b._psbSpX = 321.4; b._psbSpY = 590.4; b._psbSpT = 0.8; b._psbSpLk = 1; b._psbArc = [0.3, 2.0]; b._psbKnifeT = 5;
       out.snap = JSON.parse(JSON.stringify(serializeState()));
@@ -1133,7 +1199,8 @@ describe('"Harder, same damage": every extra shot keeps the turn\'s one attack i
     const combos = [[1, 'soundwave'], [2, 'soundwave'], [3, 'soundwave'], [1, 'consequences'], [3, 'consequences'], [2, 'rainbowbarf'], [3, 'rainbowbarf']];   // (PRIVATE!'s three phases are pinned with its notes above)
     const run = (ph, kind) => W.eval(`(function(){ ${STAGE(550, { phase: ph, settle: 20 })} ${TURN}
       f.invuln = 1e9; var rec = turn('${kind}', { max:700 });
-      return { n: rec.shots.length, ids: Array.from(new Set(rec.shots.map(function(s){ return s.id; }))).length, volley: rec.shots.every(function(s){ return s.volley; }), dmg: Array.from(new Set(rec.shots.map(function(s){ return s.dmg; }))), boss: bossDmg(), kind: rec.kind, phase: b._phase }; })()`);
+      return { n: rec.shots.length, ids: Array.from(new Set(rec.shots.map(function(s){ return s.id; }))).length, volley: rec.shots.every(function(s){ return s.volley; }), dmg: Array.from(new Set(rec.shots.map(function(s){ return s.dmg; }))), boss: bossDmg(), kind: rec.kind, phase: b._phase,
+        marked: rec.shots.every(function(s){ return s.warnX != null && Math.round(s.warnX) === s.x && Math.round(s.warnY) === s.y; }) }; })()`);
     for (const [ph, kind] of combos) {
       const x = run(ph, kind);
       expect(x.phase).toBe(ph);
@@ -1142,6 +1209,32 @@ describe('"Harder, same damage": every extra shot keeps the turn\'s one attack i
       expect(x.ids, `${kind} in phase ${ph}: one attack id`).toBe(1);
       expect(x.volley).toBe(true);
       expect(x.dmg, `${kind} in phase ${ph}: the shared boss hit, no more`).toEqual([x.boss]);
+      expect(x.marked, `${kind} in phase ${ph}: every shot carries its own start as warnX/warnY (the spot her wind-up marked: the glitch hunter's "told")`).toBe(true);
     }
   }, 300000);
+});
+
+// The glitch pass, Round 17 (scripts/boss-glitch.mjs, the hunter's assists runs against this boss): Book's DEFINE marks "whoever last hit her", and after a boss's shot that is the shot's plain owner
+// ({team:-1, idx:-2}, no position), so the marker puffed at an undefined spot (twelve non-finite puffs a run, and arcs drawn at NaN for their whole life). Only a fighter of the match can be marked.
+describe('Book\'s DEFINE after a boss shot (glitch follow-up)', () => {
+  it('a boss shot as the last hit marks nobody and puffs nowhere odd; a fighter who hit her is still marked', () => {
+    const r = W.eval(`(function(){ ${STAGE(300)}
+      var book = makeFighter(ROSTER.find(function(q){ return q.name === 'Book'; }), 700, groundY()-24, 1); book.team = 0; book.controller = 'still'; book.stocks = 9; fighters.push(book);
+      var bad = [], _puff = puff; puff = function(x, y){ if (!isFinite(x) || !isFinite(y)) bad.push([x, y]); return _puff.apply(this, arguments); };
+      var out = {};
+      try {
+        f.defined = 0; f.defineStacks = 0; book.spCd = 0; book.lastHitBy = { team:-1, idx:-2 }; doSpecial(book);
+        out.afterBoss = { defined: f.defined, stacks: f.defineStacks, bad: bad.length };
+        book.spCd = 0; book.lastHitBy = f; doSpecial(book);
+        out.afterFighter = { defined: f.defined, stacks: f.defineStacks, bad: bad.length };
+        book.spCd = 0; book.lastHitBy = summons.find(function(s){ return s.type === 'boss'; }); f.defineStacks = 0; f.defined = 0; doSpecial(book);   // (the boss itself is no fighter either)
+        out.afterBossBody = { defined: f.defined, stacks: f.defineStacks, bad: bad.length };
+      } finally { puff = _puff; }
+      return out; })()`);
+    expect(r.afterBoss, 'the plain owner of a boss shot is nobody: no mark, no puff at an undefined spot').toEqual({ defined: 0, stacks: 0, bad: 0 });
+    expect(r.afterFighter.defined, 'a fighter who hit her is marked').toBe(600);
+    expect(r.afterFighter.stacks).toBe(1);
+    expect(r.afterFighter.bad, 'and the marker puffs on him').toBe(0);
+    expect(r.afterBossBody, 'the boss\'s own body is not a fighter of the match either').toEqual({ defined: 0, stacks: 0, bad: 0 });
+  });
 });

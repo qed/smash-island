@@ -1,10 +1,13 @@
 # Work ledger — Battle for Smash Island
 
 Every task from this run, done or not. Grouped by where it came from, because that is the
-part that is easy to lose. Written 2026-09-03, extended 2026-09-10, 2026-09-11, 2026-09-14, 2026-09-15 and 2026-09-16.
+part that is easy to lose. Written 2026-09-03, extended 2026-09-10, 2026-09-11, 2026-09-14, 2026-09-15 and 2026-09-16,
+row by row through 2026-09-29, and on 2026-10-03 (H).
 
 `origin/main` carries everything below. The stacked `pr1`..`pr14` branches were merged earlier, and
 the D and E sessions were pushed straight to `main` on 2026-09-11 at the owner's request (O1).
+As of 2026-10-03 `origin/main` stops at H10 (`9e4a9a0`): H11-H13 are on `ii-dlc` (PR #35), and H14-H17 are on
+`claude/epic-shannon-9rti47` (PR #36), on top of it.
 
 ---
 
@@ -539,6 +542,117 @@ number to what the move lands, and every "no hit:" line to landing nothing.
 
 ---
 
+## H · The boss overhaul, 2026-09-29 to 2026-10-03
+
+The overhaul was planned and decided outside the repo, in `boss-plan-early.md`, `boss-plan-secret.md` and
+`boss-overhaul-decisions.md` (the question rounds; the game's comments cite them by section and round). They were never
+committed, so the rows below cite the commits and the owner's words as the commits and tests record them.
+
+| | Task | Status | Landed in |
+|---|---|---|---|
+| H1 | The engine kit for the rebuild: impact, a screen-shake setting (`Screen shake: Add a toggle`), fall drift, arena ground / hazard / ending hooks, a slot per boss | **Done** | `5ded990` |
+| H2 | Every Boss Rush boss rebuilt from the show, each in its own place ("Each its own"), "Harder, same damage" | **Done** | the Announcer `eb47de7`, Firey Speaker Box `cfa123d`, Purple Face `b70ff72`, the Bug Swarm `94a9ead`, Puffball Speaker Box `8b36b42`, the Purple Dragon `3999578`, Four `ad41762`, Two `6ab0fd0`, Evil Leafy `aeef059`, MePhone4 `fe5ed0f`, MePhone4S `b3fe076`, Springy's Spring-Bot toy `38a730d` |
+| H3 | One and Steve Cobs rebuilt too: harder, every twist by tier, their endings | **Done** | One `5fc0d99`, Steve Cobs `0f6278d` |
+| H4 | `just move purple dragon!!!` | **Done** | `10a7e49`: Boss 6 to Boss 9, after MePhone4S, measured harder than both MePhones |
+| H5 | `bosses should attack a bit slower.` | **Done** | `f013a15`: BOSS_PACE 1.2 |
+| H6 | `Make MePhone4S harder` (asked, after he measured easier than MePhone4) | **Done** | `b90dac3`: his turns on the usual gaps; re-measured `16b940a` |
+| H7 | `they stay stuck to mephone... they dont fly accross the screen` (the Fist Thingy) | **Done** | `50a4cdb` |
+| H8 | `3 fighters should be erased every time, not just 1.` (One's chain) | **Done** | `c1c5528` |
+| H9 | `remove the bug tunnel attack.` / `nondestructible bug balls.`, the Announcer's dodge windows and tells, Purple Face's rap notes in varied places | **Done** | `9185083` (g-swarmface) |
+| H10 | A glitch hunter for the bosses: every boss played by AI fighters through a validating canvas, as host and as netcode client, with invariants | **Done** | `9e4a9a0` (g-glitch): `scripts/boss-glitch.mjs` |
+| H11 | Round 17, the engine: `+50% (Recommended)`; `make the attacks based on fighter position. if there is an attack that punishes being close, then they should use it more when ppl are close.`; `1 attack at a time... the bosses dont give any time between attacks to hit them.` | **Done** | `01d3dca` (g-engine): BOSS_HP_MULT 1.5, the position picker (BOSS_PICK), one attack at a time |
+| H12 | Round 17, the difficulty picks for every boss ("Harder, same damage") | **Done** | p1 `04e3bf9` (Announcer, Puffball and Firey Speaker Box), p2 `d62db6a` (Bug Swarm, Purple Face), p3 `e8c0f76` (MePhone4, MePhone4S), p4 `96f9c6a` (Evil Leafy's nerfs, the Purple Dragon), p5 `73f7878` (Springy, Four) |
+| H13 | `puffball multihitbox on smash. instakills bosses.` | **Done** | `3b681aa` |
+| H14 | Re-measure Boss Rush after Round 17 (the stored numbers predated +50% HP, the picker and the picks; `boss-rush-order` failed by design until it was done) | **Done** | the fingerprint and the cap `66814e6`, the slam's attribution `d5850ae`, the stored numbers with this ledger |
+| H15 | The glitch hunter on the Round 17 build, and the move matrix | **Done** | no new glitch: the full sweep (85 runs) and the move matrix (172 runs) on `3b681aa`; what they flagged is below; what is not a glitch is in the hunter's header now |
+| H16 | Every move of every fighter against a boss: does anything else land every frame, as Puffball's plunge did? | **Done** | nothing else does: `scripts/boss-multihit.mjs` (`66814e6`), 918 moves |
+| H17 | `tune them yourself. a reminder that the way we do it is harder in dodging, not harder in damage or speed(unless i override that)` | **Done** | `d5850ae`: Springy's arm comes back, his high fist is high, his slams come three, four and five a turn over wider ground; Four's I DO THIS! snaps wider. Measured: Springy 1.13 -> 1.70 lives (level with MePhone4S's 1.72), Four 2.28 -> 2.38 (over the Dragon's 2.17 by more than the noise) |
+
+Also merged since G49 and not itemized above: OJ, Suitcase and Cabby (`cf97844`), RUNNING! and its rework and hazards
+(`0a6edec`, `473a42b`, `ddd2ac3`), quests that pay at once (`d7a5223`), sponsor credits (`e75e161`), Steve Cobs easier to
+reach (`5cb88b8`), Bot as a fighter (`a0a7899`), and the cleanup: DELTARUNE music out, a Thanks roll, a locked teammate chat
+(`10c9381`). Before G46 and not itemized either: the Vault (`1e6b785`, `ad85f03`), the show's art on what every fighter
+throws (`612abad`), One's fight (`a12c326`, `f5d3496`), the multiplayer feel (`a6efc28`), the owner's ten tracks as the
+battle playlist (`cf1b7e0`), the last 26 Inanimate Insanity fighters (`bd13197`), items in the show's art (`2b14371`), Win
+Tokens (`e59f7cc`), assist trophies (`8e4a986`) and the bug pass (`ba4b6f0`).
+
+**H15: what the sweeps flagged on the Round 17 build.** The full sweep (14 bosses x 6 runs and a whole Boss Rush: 85 runs)
+and the move matrix (every move of the twelve, forced, in every phase it is unlocked in: 172 runs), both on `3b681aa`. Neither found
+a throw, a NaN, a leak or a draw a browser refuses. Three findings on neither of the header's lists were looked at and are not
+glitches; they are in the header now. Springy's `turn-held` (twice): his turn is held while his Spring-Bot toy plays back -- Round 17's
+pick, "once it readies and PLAYS BACK he waits for it" -- and the playback is 534 frames in phase 2 (ready, then three plays of five
+shots with their gaps and pauses), held on until the last shot it echoed is gone: 10 to 12 s in the two repros, past the 600 frames
+the hunter allows. Both let go the frame the toy powers down. It is the length the picks add up
+to, not a stuck watch, and the fighters spend it hitting him (684 HP to 114 in one repro), so it is the owner's to shorten if they
+want. Steve Cobs's pencils and free samples landing on a fighter his MeTag cuffs hold: the cuffs are the root, already on the list.
+Purple Face's slip in the move matrix: every turn there is TOTAL SLIP SHOES!, so the slip is topped up before it runs out; in a fight
+AD BREAK! always follows the shoes.
+
+One finding is left flagged on purpose. In a 480 px-wide window, Firey Speaker Box's phase 3 hit a fighter in the corner three times
+before they could act: the white-hot plate, then the magma tide, then the Fire Monster, about 43% in 38 frames
+(`REPRO='Firey Speaker Box|Bell|579|moves:furnace:3|noart|480x800|-'`). That is three hazards meeting in a narrow room rather than
+one hazard stuck on a fighter, and making the hazards wait for a fighter to get up, as his fire patches now do (`32c9f0b`), would only
+move each hit two or three frames later. Whether that corner should be safer is a design call for the owner.
+
+One's findings are identical on `main` before any of this (`9e4a9a0`, the same repros), so they came with her rebuild, not with
+Round 17. Her ghost's hits through a victim's grace, three and four in a row, are not a glitch: the ghost fights as a fighter, and a
+fighter's chain may follow up through the grace its own hit opened (`chainOpen`, three links); that is in the header now. Left
+flagged: up to 1,826 of her shots alive at once in phase 3, where the hunter allows 300 and Four's ~600 are the one exception. She
+was rebuilt "much harder (more bullets...)", so it may be the point, but every one of them is drawn every frame, and nobody has timed
+that frame on a phone.
+
+**H16: A1 and the plunge were the same bug, so it was looked for everywhere.** A boss has no hit grace, so a hitbox that lives for
+several frames lands on it every frame unless the move remembers what it hit: the piercing shot did (A1), the burst ring did, and
+Puffball's Meteor Puff did, 721 HP in 32 frames where a fighter takes 22. `scripts/boss-multihit.mjs` fires every input of all 102
+playable fighters (the seven on the move card, the smash, and the smash from 200 px up) at a pinned boss and at a pinned fighter
+dummy. On this build none of the 918 lands on a boss frame after frame; run on the file from before `3b681aa`, it finds the plunge.
+Three hit a boss harder in a single frame, because a boss's body is big: Money's coin spray (72, where a fighter's grace stops all but
+the first coin: 33), Ice Cube's ring (40 to 5), and Puffball's dive, whose press and landing are two hits (61).
+
+**H14 and H17: the measurement, and the tune it asked for.** Two commits on `ii-dlc` said `boss-rush-order` would fail until the
+harness ran again, and it was worse than stale. The stored numbers predated the "+50%", and the check could not see it: BOSS_HP_MULT is
+applied at spawn and BOSS_PACE in the gap, outside the roster rows the fingerprint read, so a retune of either left old numbers
+standing. Both are read now (`66814e6`). The harness also stopped every solo fight at 60 s, a cap set for the roster's own HP: kept at
+60 s with every bar half again as long, it cut off a third of MePhone4's wins and the lives Four took after the first minute (at
+SEEDS=4, MePhone4 beaten 32 of 60 inside 60 s and 50 inside 90 s). The cap is 60 s times BOSS_HP_MULT now, and the harness refuses
+to run when the game's multiplier and its own disagree. And Springy's slam lands its hit before it makes its hole, so the hit was
+filed under 'boss-other' and the slam read as a tenth of his damage; inside `springySlamLand` a hit is the slam's (`d5850ae`).
+
+Measured that way on `66814e6` (240 solo runs a boss, 90 s): MePhone4 1.58 lives, Evil Leafy 2.10, MePhone4S 1.72, the Dragon 2.17,
+Two 2.97, Springy 1.13, Four 2.28. Springy, Boss 11, was far easier than MePhone4S, Boss 8. He took his turns as often as anyone,
+about 13 a minute, but landed 0.6 hits a turn where MePhone4S landed 1.45: the bot walked off his marked slams (one direct slam hit in
+six traced fights), took most of its damage from the electric fence, and lost most of its stocks to the punch (14 of 36 knockouts in
+30 probed fights). Four led the Dragon by 0.11, inside the harness's own
+noise. Asked, the owner said: "tune them yourself. a reminder that the way we do it is harder in dodging, not harder in damage or
+speed(unless i override that)".
+
+Nothing that only spread the same attacks wider moved Springy past the noise: one more slam a turn, a wider slam, wider and longer
+holes, a longer and thicker arm, every slam tracking, the shockwave from phase 2, a quicker blink -- each alone stayed within 0.12 of
+1.18 lives at SEEDS=4, and all at once reached 1.42. What moved him was the punch's shape and the slams' count. His page says his arms
+"extend and retract", and the punch only extended: each fist now turns where its flight has always ended and comes back along its
+row, so a fist hopped going out is hopped again coming back (1.43 on its own). "One high, one low" was two low fists against anyone
+standing, eight frames apart, and one hop cleared both; standing, the high one now goes a hop over the floor. And three slams in phase
+1 rather than one -- most of a fight is phase 1 -- took him from 1.65 to 2.00 (2/3/4, 2/3/5 and 2/4/5 read 1.65-1.70). Each turn is
+still one boss hit, no shot is faster and no tell shorter. Four got one change of the ten tried: I DO THIS! snaps 140/160/180 across,
+not 100/120/140 (2.22 -> 2.35). Fewer SCREECHY! gaps worked too, and were left: the owner asked for "more gaps" on 2026-09-21. Bigger,
+bouncier hearts made him easier, and a stronger pull is speed.
+
+Stored, from `d5850ae` (240 solo runs a boss, 90 s): MePhone4 1.58 lives, Evil Leafy 2.10, MePhone4S 1.72, the Dragon 2.17, Two 2.97,
+Springy 1.70 (beaten 176 of 240; the slam 27% of what he deals, the punch 33%), Four 2.38 (beaten 86 of 240). The five bosses nothing
+touched measured byte for byte as before, as a deterministic harness should. The sixty-run preview had put Springy at 2.00: the first
+sixty seeds were harder on the bot than the whole 240, and the stored number is the 240. So he sits level with MePhone4S, where he sat
+before Round 17 when the owner accepted it ("Accept level"), still under the Dragon; `boss-rush-order` passes all eight. Another slam
+a phase would lift him further, but he is out of reach while he slams, and "the bosses dont give any time between attacks to hit them"
+is why that was not done unasked.
+
+Swept again on `d5850ae` (Springy and Four, 24 runs and the move matrix): no new glitch. Four flags only his known ~600 SCREECHY!
+shots. Springy's two errors are one run in a 2560 x 1440 window: a box drop's payload, then his toy's playback, then its last echoes
+crossing that wide a room held his next turn for 15 s -- the toy hold above, which the build before the tuning flags in the same run;
+the header says so now. The full suite on `d5850ae` passed but for `boss-rush-order`'s two stored-number checks, which pass on the
+numbers stored here.
+
+---
+
 ## OPEN
 
 ### O1 - Open the pull requests  [SUPERSEDED]
@@ -799,10 +913,10 @@ six, they are real.
 
 | | Count |
 |---|---|
-| Done | 114 |
+| Done | 158 |
 | Open | 2 (O20, O22) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
-Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G22, O3-O19 and O21.
-Suite: **924 passed (80 files) on the shipped file, with G22**.
+Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G49, H1-H17, O3-O19 and O21.
+Suite: **2600 passed (134 files) on the shipped file, with H17**.

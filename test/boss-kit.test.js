@@ -527,7 +527,7 @@ describe("the Announcer's phase-3 banner", () => {
 
   it('and the wind-up an Announcer at a third of his HP starts is announced as CRUSHER ARM!', () => {
     const r = W.eval(`(function(){ ${STAGE('Announcer', 500)}
-      b.hp = b.maxHp*0.2; b._phase = 3; b._moveN = 0; b._atkTimer = 1; b._tel = 0;
+      b.hp = b.maxHp*0.2; b._phase = 3; b._pickForce = 'announcer'; b._atkLive = null; b._atkTimer = 1; b._tel = 0;   // (the signature asked for: his order is the picker's now, Round 17)
       window.__lastBanner = null; updateBossAttack(b, f);
       var out = { kind: b._telKind, text: window.__lastBanner && window.__lastBanner.text, telKind: window.__lastBanner && window.__lastBanner.kind };
       summons = []; projectiles = []; return out;
@@ -540,9 +540,9 @@ describe("the Announcer's phase-3 banner", () => {
 // a digit in them, so a marker's boss is [a-z0-9]+).
 const EARLY = ['announcer', 'puffball', 'firey', 'swarm', 'purpleface', 'dragon'];
 const LATE = ['mephone4', 'evilleafy', 'mephone4s', 'two', 'four'];
-const SLOTS = ['roster', 'extra', 'rushonly', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen',
+const SLOTS = ['roster', 'extra', 'rushonly', 'pick', 'movename', 'moves', 'helpers', 'spawn', 'move', 'tick', 'tel', 'fire', 'gap', 'tellen',
   'phase', 'phasename', 'telname', 'ending', 'hazard', 'netshot', 'net', 'shotdraw', 'fx', 'look', 'tell', 'body', 'sky', 'ground',
-  'decor', 'sprite', 'flip', 'shape', 'art'];
+  'decor', 'sprite', 'flip', 'shape', 'art'];   // `pick` (the picker's tags and hooks, BOSS_PICK) is the owner's Round 17: "make the attacks based on fighter position."
 const MARK = /@boss:([a-z0-9]+):(begin|end) ([a-z]+)/;
 
 // Every marker in `file` must be a known boss's and slot's, alone on its line; and for each slot the pairs of `bosses` (the early six unless said) must be
@@ -607,8 +607,11 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
     it(`${name} still fights as it did, through its slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], shots: [], phase: null };
-        b.x = 350; b._atkTimer = 1; b._moveN = 0;
+        // the owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- no fixed cycle (signature, second move, signature), so the three turns are forced: the same three as before
+        var KS = bossPickMoves(b, 1), SEQ = [KS[0], KS[1], KS[0]];
+        b.x = 350; b._atkTimer = 1;
         for (var t=0;t<3;t++){
+          b._pickForce = SEQ[t]; b._atkLive = null;
           b._fs = null; b._fsQ = 0;   // Firey Speaker Box's moves run for seconds (fsbMove) and the next wind-up waits for the last: each turn here starts from a settled boss, as the game's do
           // the Announcer's next wind-up waits for the last threat of the turn before and for 30 frames more (the owner, 2026-10-01: "for the announcer "unavoidable hits", theyre unavoidable bcs they
           // barely have a moment where you can move to dodge."): this test fires turn after turn, so it settles him -- nothing of his going, and none for a long while -- as it does the two above
@@ -736,7 +739,9 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
           p2: bossPhaseName({ attack:k }, 2), p3: bossPhaseName({ attack:k }, 3), extra: BOSS_EXTRA[A[k]] };
       });
       return out; })()`);
-    expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal', 'boomerang', 'maze'] });
+    // MePhone4: the glove is the combo from phase 1 -- "MePhone4: FIST THINGY! combo from P1" (the owner's difficulty picks, Round 17, 2026-10-01) -- so its warning names the combo in every phase
+    // (name1 was 'FIST THINGY!' while phase 1 threw one glove)
+    expect(r.mephone).toEqual({ base: [76, 56, 44], tel: 36, name1: 'FIST THINGY COMBO!', name2: 'FIST THINGY COMBO!', p2: 'Back and Forth', p3: 'Glitching', extra: ['melife', 'portal', 'boomerang', 'maze'] });
     // Evil Leafy, rebuilt: her own gaps (phase 3's 80, was 70: the vine curtains press for her -- "if it makes sense for a hazard, reduce boss difficulty and add a hazard", the owner), TENDRILS!'s
     // wind-up of 56 ("1 needs a better telegraph.") and her own three second moves in place of the shared SEEKERS! and GROUND POUND! (test/boss-evilleafy.test.js has the fight)
     expect(r.evilleafy).toEqual({ base: [130, 95, 80], tel: 56, name1: 'TENDRILS!', name2: 'TENDRILS!', p2: 'No Refuge', p3: 'Vine Coverage', extra: ['elpossess', 'elhole', 'elbehind'] });
@@ -758,8 +763,11 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     it(`${name} still fights as he did, through his slots`, () => {
       const r = W.eval(`(function(){ ${STAGE(name, 500)}
         var out = { tel: [], landed: [], phase: null };
-        b.x = 350; b._atkTimer = 1; b._moveN = 0; b._s4 = null;   // (MePhone4S drops in from above and holds his timer for his scripted moves: each turn here starts from a settled one, as the game's do)
+        // the owner, 2026-10-01 (Round 17): "make the attacks based on fighter position." -- no fixed cycle (signature, second move, signature), so the three turns are forced: the same three as before
+        var KS = bossPickMoves(b, 1), SEQ = [KS[0], KS[1], KS[0]];
+        b.x = 350; b._atkTimer = 1; b._s4 = null;   // (MePhone4S drops in from above and holds his timer for his scripted moves: each turn here starts from a settled one, as the game's do)
         for (var t=0;t<3;t++){
+          b._pickForce = SEQ[t]; b._atkLive = null;
           window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; b._s4 = null; b.hover = false; b.y = groundY() - b.r; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
           projectiles = []; tendrils = []; summons = summons.filter(function(s){ return s.type==='boss'; }); f.invuln = 0; f.pct = 0;
@@ -843,10 +851,11 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
         summons = []; spawnBossRushBoss(); b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9; b._tel = 1; b._telKind = null;
         updateBossAttack(b, f);
         if (name === 'Evil Leafy'){ out['Evil Leafy held'] = b._atkTimer; elDone(b); }   // her turns run on past the wind-up: the gap is held (1e6) until the move is done, and elDone starts it
+        if (name === 'MePhone4'){ out['MePhone4 held'] = b._atkTimer; projectiles = []; mpTick(b, f); }   // his glove turn runs on past the wind-up too since "FIST THINGY! combo from P1" (the owner, Round 17): the finisher waits in the wings, the gap is held (1e6), and mpTick starts it once nothing is left to come
         out[name] = b._atkTimer;
       });
       summons = []; projectiles = []; tendrils = []; return out; })()`);
-    expect(r).toEqual({ MePhone4: 91, 'Evil Leafy': 156, 'Evil Leafy held': 1e6, MePhone4S: 120, Two: 120, Four: 125 });
+    expect(r).toEqual({ MePhone4: 91, 'MePhone4 held': 1e6, 'Evil Leafy': 156, 'Evil Leafy held': 1e6, MePhone4S: 120, Two: 120, Four: 125 });
   });
 });
 
@@ -949,5 +958,23 @@ describe('the glitch pass: what every boss hit and every particle shares', () =>
     errors.length = 0;
     w.eval('draw()');
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
+  });
+});
+
+describe('a fighter\'s lingering hitbox lands on a boss once', () => {
+  it('Puffball\'s Meteor Puff hits a boss one time and ends, as it does on a fighter (it landed 22 a frame and felled bosses)', () => {
+    // The owner (2026-10-02): "puffball multihitbox on smash. instakills bosses." A boss has no grace after a hit, so a hitbox that
+    // follows her down every frame landed every frame.
+    const r = W.eval(`(function(){ ${STAGE('Announcer', 2000)}
+      var p = makeFighter(ROSTER.find(function(r){ return r.name==='Puffball'; }), b.x, b.y - b.r - 150, 0);
+      p.team = 0; p.controller = 'still'; fighters = [p]; b._atkTimer = 1e9;
+      var hp0 = b.hp; p.vx = 0; p.vy = 0; p.onground = false;
+      SMASHES.fly(p);
+      for (var i=0;i<60 && p._plunge;i++){ step(); b.x = p.x; b._atkTimer = 1e9; }
+      var lost = hp0 - b.hp; summons = []; fighters = []; return { lost: lost, ended: !p._plunge };
+    })()`);
+    expect(r.ended, 'the plunge ended').toBe(true);
+    expect(r.lost, 'one plunge hit, not one a frame').toBeGreaterThan(0);
+    expect(r.lost).toBeLessThanOrEqual(22 + 26);   // at most the plunge's 22 and the point-blank hit
   });
 });
