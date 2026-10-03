@@ -570,7 +570,7 @@ describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wr
         var name = document.getElementById('banner').textContent, kind = b._telKind, xs = [], marks = [];
         for (var i=0;i<80 && !marks.length;i++){ f.x = 200 + 6*(i+1); f.y = gy - 24; f.vx = 0; f.invuln = 999; step(); xs.push([b._tel, b._telX, b._telY]);
           marks = projectiles.filter(function(p){ return p.annMark === 'beam'; }); }
-        out[ph] = { name: name, kind: kind, xs: xs, marks: marks.map(function(p){ return { d: p.mA, start: p.mB, x: Math.round(p.warnX), y: Math.round(p.warnY), id: p.bossAtk, delay: p.delay }; }), gy: gy };
+        out[ph] = { lockU: annLock(b, ANN.laser.lock), name: name, kind: kind, xs: xs, marks: marks.map(function(p){ return { d: p.mA, start: p.mB, x: Math.round(p.warnX), y: Math.round(p.warnY), id: p.bossAtk, delay: p.delay }; }), gy: gy };
       });
       return out;
     })()`);
@@ -578,10 +578,14 @@ describe('QUADRUPLE LASER!: four beams that converge on you, and none of them wr
       const o = r[ph];
       expect(o.name).toBe('QUADRUPLE LASER!');
       expect(o.kind).toBe('annlaser');
-      // the wind-up is 54 frames (it was 36, the cross locked for its last 12): the cross follows you for 24 of them and then holds for 30 -- a locked warning is a window
-      expect(o.xs[0][0], 'a 54-frame wind-up').toBeGreaterThanOrEqual(53);
-      const follow = o.xs.filter(([t]) => t > 30).map(([, x]) => x), held = o.xs.filter(([t]) => t <= 30 && t > 0).map(([, x]) => x);
+      // the wind-up is 54 units (it was 36, the cross locked for its last 12): the cross follows you and then holds for 30 frames -- a locked warning is a window.
+      // Since 2026-10-03 his wind-ups run quicker (BOSS_TEL_PACE 0.8, "make the opposite happen for the 1st 3 bosses"): the follow is what is cut, the lock is
+      // still 30 frames (annLock: 37.5 units)
+      expect(o.xs[0][0], 'a 54-unit wind-up').toBeGreaterThanOrEqual(52);
+      expect(o.lockU, 'the lock in units, so it is still 30 frames').toBeCloseTo(37.5, 5);
+      const follow = o.xs.filter(([t]) => t > o.lockU).map(([, x]) => x), held = o.xs.filter(([t]) => t <= o.lockU && t > 0).map(([, x]) => x);
       expect(new Set(follow).size, 'the ring follows you').toBeGreaterThan(5);
+      expect(follow.length + held.length, 'quicker than it was: 54 units in 43 frames').toBeLessThanOrEqual(44);
       expect(new Set(held).size, 'and holds for the last 30 frames: ANN_CALM to move').toBe(1);
       expect(held.length, 'the lock lasts at least ANN_CALM frames').toBeGreaterThanOrEqual(ANN_CALM - 1);
       expect(new Set(o.marks.map((m) => m.id)).size, 'one attack id for every beam').toBe(1);
@@ -882,7 +886,7 @@ describe('THE WINDOW: every threat is told in time, and no two come too close to
     for (var i=0;i<420;i++){
       var before = b._tel;
       step(); fr++; f.invuln = 999; f.x = 300; f.y = gy - 24; f.vx = 0; f.vy = 0;
-      if (fire === null && before === 1) fire = fr;
+      if (fire === null && before > 0 && b._tel <= 0) fire = fr;
       if (before === 0 && b._tel > 0) starts.push(fr);
       projectiles.forEach(function(p){
         if (p.owner !== -2 || p.annGhost || seen.indexOf(p) >= 0) return;

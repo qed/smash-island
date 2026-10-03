@@ -112,7 +112,7 @@ describe('Four takes his classroom', () => {
 });
 
 describe('SCREECHY!', () => {
-  it('is a ring of sound a degree at a time with evenly spaced gaps -- 5, 4, 3 by phase, slower than it was -- and phase 3 sends a second ring 24 frames behind, its gaps a half-gap off', () => {
+  it('is a ring of sound a degree at a time with evenly spaced gaps -- 4, 3, 2 by phase (5, 4, 3 until 2026-10-03: harder to dodge, for the longer wind-up), slower than it was -- and phase 3 sends a second ring 24 frames behind, its gaps a half-gap off', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1)}
       var out = {};
       [1, 2, 3].forEach(function(ph){
@@ -130,7 +130,7 @@ describe('SCREECHY!', () => {
           volley: shots.every(function(p){ return p.volley; }), shape: Array.from(new Set(shots.map(function(p){ return p.shape; }))) };
       });
       b._fr = null; projectiles = []; return out; })()`);
-    for (const [ph, gaps, spd] of [[1, 5, 6], [2, 4, 6.8], [3, 3, 7.5]]) {
+    for (const [ph, gaps, spd] of [[1, 4, 6], [2, 3, 6.8], [3, 2, 7.5]]) {
       const o = r[ph];
       expect(o.gaps.length, `phase ${ph}: ${gaps} gaps`).toBe(gaps);
       expect(o.spd, `phase ${ph}: speed`).toBeCloseTo(spd, 5);
@@ -147,10 +147,10 @@ describe('SCREECHY!', () => {
     // the second ring is the first one turned (by phi, a random angle, and by half a gap): a turn of a non-whole number of degrees moves the whole-degree shots in and out of the gaps, up to one a gap (three), so
     // "the same ring" is the same ring to within that (it was equal only when the dice happened to line the two up)
     expect(Math.abs(r[3].late - r[3].n), 'the same ring, to a degree of rounding in each of the three gaps').toBeLessThanOrEqual(3);
-    // the second ring's gaps are a half gap-width on from the first: 0.18 rad = about 10 degrees, a lateral step the player has time for
-    const shift = (((r[3].gaps2[0][0] + r[3].gaps2[0][1]/2) - (r[3].gaps[0][0] + r[3].gaps[0][1]/2)) % 120 + 120) % 120;
-    expect(shift, 'its gaps are 10 degrees off').toBeGreaterThan(6);
-    expect(shift).toBeLessThan(14);
+    // the second ring's gaps are a half gap-width on from the first: 0.13 rad = about 7 degrees, a lateral step the player has time for
+    const shift = (((r[3].gaps2[0][0] + r[3].gaps2[0][1]/2) - (r[3].gaps[0][0] + r[3].gaps[0][1]/2)) % 180 + 180) % 180;
+    expect(shift, 'its gaps are 7 degrees off').toBeGreaterThan(4);
+    expect(shift).toBeLessThan(11);
   });
 
   it('the wind-up rears him up and shakes him (the screech render for the second half), the shots stop at the floor, and the turn is one hit for whoever stands in it', () => {
@@ -187,7 +187,7 @@ describe('ZAPPIES!', () => {
         b._phase = ph; b.hp = b.maxHp*[0, 1, 0.5, 0.2][ph];
         b._tel = 0; b._fr = null; b._pickForce = 'zappies'; b._atkLive = null; b._atkTimer = 1; step();
         var name = document.getElementById('banner').textContent, marks = [], looks = [];
-        for (var w=0; w<90 && b._tel>0; w++){ f.x = 300 + Math.min(w, 30)*3; step(); f.invuln = 0; f.hitstun = 0; marks.push(b._hz.mk && b._hz.mk.map(function(m){ return m.slice(); })); looks.push(b._hz.look); }
+        for (var w=0; w<120 && b._tel>0; w++){ f.x = 300 + Math.min(w, 45)*2; step(); f.invuln = 0; f.hitstun = 0; marks.push(b._hz.mk && b._hz.mk.map(function(m){ return m.slice(); })); looks.push(b._hz.look); }
         var lastMk = marks[marks.length - 2];
         var zp = b._hz.zp && b._hz.zp.map(function(z){ return z.slice(); });
         var hit = []; f.pct = 0;
@@ -529,7 +529,7 @@ describe('LOVE HEARTS!', () => {
   });
 
   // The owner, 2026-10-01 (Round 17): "Four: ... LOVE HEARTS! from phase 1 with an extra wave" -- the flood was three waves in phase 2 and four in phase 3, and is now three from phase 1, then four, then five.
-  it('a flood in fixed waves 8 frames apart -- two arcs from his eyes and one big low heart from his mouth: three waves in phase 1, four in phase 2, five in phase 3 -- all solid, one attack id, 0.8 of a hit each', () => {
+  it('a flood in fixed waves 8 frames apart -- two arcs from his eyes and one big low heart from his mouth: four waves in phase 1, five in phase 2, six in phase 3 (a wave more each since 2026-10-03, for the longer wind-up) -- all solid, one attack id, 0.8 of a hit each', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2, 3].forEach(function(ph){
         ${STAGE(300, 1)}
@@ -542,12 +542,12 @@ describe('LOVE HEARTS!', () => {
           wave0: hs.filter(function(p){ return p.delay === 0; }).map(function(p){ return JSON.stringify([Math.sign(p.vx), p.vy < -5 ? 'arc' : 'low', p.r]); }).sort() };
       });
       summons = []; projectiles = []; return out; })()`);
-    expect(r[1].n, 'phase 1: three waves of three').toBe(9);
-    expect(r[2].n, 'phase 2: four waves of three').toBe(12);
-    expect(r[3].n, 'phase 3: five waves of three').toBe(15);
-    expect(r[1].delays).toEqual([0, 8, 16]);
-    expect(r[2].delays).toEqual([0, 8, 16, 24]);
-    expect(r[3].delays).toEqual([0, 8, 16, 24, 32]);
+    expect(r[1].n, 'phase 1: four waves of three').toBe(12);
+    expect(r[2].n, 'phase 2: five waves of three').toBe(15);
+    expect(r[3].n, 'phase 3: six waves of three').toBe(18);
+    expect(r[1].delays).toEqual([0, 8, 16, 24]);
+    expect(r[2].delays).toEqual([0, 8, 16, 24, 32]);
+    expect(r[3].delays).toEqual([0, 8, 16, 24, 32, 40]);
     for (const ph of [1, 2, 3]) {
       expect(r[ph].ids, `phase ${ph}: one attack id for the whole flood`).toBe(1);
       expect(r[ph].dmg, `phase ${ph}: 0.8 of a boss hit`).toEqual([17.6]);
@@ -572,7 +572,7 @@ describe('LOVE HEARTS!', () => {
       }
       var end = { alive: projectiles.filter(function(p){ return p.fourHeart && p.life > 0; }).length, piled: piled, pile: b._hz.pile, max: maxAlive, pct: f.pct };
       summons = []; projectiles = []; return end; })()`);
-    expect(r.max, 'fifteen hearts in the air at the most (five waves of three: phase 3, the biggest flood)').toBeLessThanOrEqual(15);
+    expect(r.max, 'eighteen hearts in the air at the most (six waves of three: phase 3, the biggest flood)').toBeLessThanOrEqual(18);
     expect(r.alive, 'every heart has popped by the end').toBe(0);
     expect(r.piled, 'hearts piled up where they landed').toBeGreaterThan(2);
     expect(r.piled, 'twelve at most').toBeLessThanOrEqual(12);
@@ -706,8 +706,9 @@ describe('I DO THIS!', () => {
     expect(r.after[0], 'the fighter inside: one hit of 0.8').toBeCloseTo(17.6, 5);
     expect(r.after[1], 'the one 40 px outside the ring: not touched').toBe(0);
     // "tune them yourself. a reminder that the way we do it is harder in dodging, not harder in damage or speed" (the owner, 2026-10-03):
-    // the ring snaps 140 / 160 / 180 across (it was 100 / 120 / 140), more ground to cover once it locks; the hit is the 0.8 it was
-    expect(r.radii, 'the snap by phase').toEqual([0, 140, 160, 180]);
+    // the ring snaps 140 / 160 / 180 across (it was 100 / 120 / 140), more ground to cover once it locks; the hit is the 0.8 it was.
+    // 2026-10-03 again, with the longer wind-up ("more delay between when an attack is called and when it happens"): 160 / 180 / 200
+    expect(r.radii, 'the snap by phase').toEqual([0, 160, 180, 200]);
     expect(r.sq[0][1] - 0, 'a squiggle').toBeGreaterThan(0);
     expect(r.sq, 'for 36 frames').toHaveLength(1);
     expect(r.skip, 'skipped for 10 seconds').toBeGreaterThan(590);

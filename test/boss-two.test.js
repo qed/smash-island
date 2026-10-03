@@ -110,7 +110,7 @@ describe('MIND READ!', () => {
       var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel0: b._tel, rd0: b._hz.rd && b._hz.rd.slice() };
       f.x = 360; for (var k=0;k<10;k++){ step(); ${HOLD} f.x = 360; }
       out.followed = b._hz.rd.slice();
-      for (var k=0;k<14;k++){ step(); ${HOLD} f.x = 360; }   // tel is now 11: it has locked
+      for (var k=0;k<60 && b._tel > TWO.read.lock;k++){ step(); ${HOLD} f.x = 360; }   // until it locks (his wind-ups run 1.5 as long since 2026-10-03: BOSS_TEL_PACE)
       f.x = 460; step(); ${HOLD} f.x = 460;
       out.locked = b._hz.rd.slice(); out.tel = b._tel; out.bx = b.x;
       summons = []; projectiles = []; return out; })()`);
@@ -288,7 +288,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
       f.invuln = 0; f.pct = 0; f.x = M.x; f.y = M.y; var id0 = b._maceId;
       step(); out.hit = f.pct; out.frac = bossDmg()*TWO.sun.mace.frac;
       // a sun attack bashes from the mace and then it circles again
-      f.x = 300; f.y = groundY()-24; f.invuln = 99; b._pickForce = 'twosun'; b._atkLive = null; b._atkTimer = 1; step(); for (var k=0;k<50;k++){ step(); ${HOLD} f.x = 300; }
+      f.x = 300; f.y = groundY()-24; f.invuln = 99; b._pickForce = 'twosun'; b._atkLive = null; b._atkTimer = 1; step(); for (var k=0;k<70;k++){ step(); ${HOLD} f.x = 300; }
       out.tw = b._tw && b._tw.k; out.mace3 = b._tw && b._tw.mace;
       for (var k=0;k<400 && b._tw;k++){ step(); ${HOLD} f.x = 300 + (k%80<40?0:150); }
       out.after = !b._tw; out.back = Math.hypot(M.x - b.x, M.y - b.y); out.alive = M.life > 0 && projectiles.indexOf(M) >= 0;
@@ -298,13 +298,39 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
     expect(r.inShots, 'a carrier a client draws like any shot').toBe(true);
     expect(r.dMax, 'it circles at 1.6 of his radius, a little flattened').toBeGreaterThan(r.R*r.k*0.78);
     expect(r.dMax).toBeLessThan(r.R*r.k*1.05);
-    expect(r.turn, 'slowly: 0.034 rad a frame').toBeCloseTo(0.034, 3);
+    expect(r.turn, 'slowly: 0.025 rad a frame (0.034 until "nerf two", 2026-10-03)').toBeCloseTo(0.025, 3);
     expect(r.hit, 'a hit is 0.8 of a boss hit').toBeCloseTo(r.frac, 5);
     expect(r.tw).toBe('sun');
     expect(r.mace3).toBe(true);
     expect(r.after).toBe(true);
     expect(r.alive, 'the mace is not spent by the bash').toBe(true);
     expect(r.back, 'it is back on its circle').toBeLessThan(r.R*r.k*1.1);
+  });
+  // "nerf two" (the owner, 2026-10-03): in phase 3 only a fighter who stays close grounds him, and the mace circled exactly there -- a trap for the one doing what
+  // the fight asks. The mace is his power: from halfway to grounded it sinks to the floor and hits nobody, and it lifts back to its circle, still harmless, after.
+  it('phase 3: pressing in to ground him sinks the mace -- it rests on the floor and hits nobody -- and it rises back to its circle when you let go', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
+      for (var k=0;k<60;k++){ b._atkTimer = 1e9; step(); ${HOLD} }
+      var M = b._mace, gy = groundY(), out = {};
+      // stand right under him: grounding builds
+      var pct = 0, lowest = 0, AH = applyHit;
+      applyHit = function(t, d, kx, ky, from, o){ var q0 = t.pct, res = AH(t, d, kx, ky, from, o); if (o && o.bossAtk === b._maceId && b._groundT >= TWO.sun.mace.sink) pct += t.pct - q0; return res; };   // what the mace takes off you once it is sinking (his body and the park's coaster are not this)
+      for (var k=0;k<120;k++){ b._atkTimer = 1e9; f.x = b.x; f.y = gy - 24; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; step(); f.pct = 0;
+        if (k === 40) out.sunkAt40 = (b._groundT >= TWO.sun.mace.sink); lowest = Math.max(lowest, M.y); }
+      out.grounded = !!b._grounded; out.lowest = lowest; out.floor = gy - TWO.sun.r; out.pct = pct;
+      // park the sunk mace on the fighter: still nothing
+      var p0 = pct; f.x = M.x; f.invuln = 0; step(); out.parked = pct - p0; applyHit = AH;
+      // walk off: it lifts back to its circle
+      for (var k=0;k<200;k++){ b._atkTimer = 1e9; f.x = b.x < WW/2 ? WW - 60 : 60; f.y = gy - 24; f.invuln = 99; step(); }
+      out.back = Math.hypot(M.x - b.x, M.y - b.y); out.R = b.r; out.k = TWO.sun.mace.k; out.groundedAfter = !!b._grounded;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.sunkAt40, 'halfway there it is already sinking').toBe(true);
+    expect(r.grounded, 'he is grounded').toBe(true);
+    expect(r.lowest, 'the mace rests on the floor').toBeGreaterThan(r.floor - 6);
+    expect(r.pct, 'and hit nobody while you pressed in').toBe(0);
+    expect(r.parked, 'not even sitting on you').toBe(0);
+    expect(r.groundedAfter).toBe(false);
+    expect(r.back, 'back on its circle once you let go').toBeLessThan(r.R*r.k*1.1);
   });
 });
 
@@ -324,7 +350,7 @@ describe('BLOCK TOWERS!', () => {
     expect(rows.map((row) => row[1]), 'the first two lean away from him, the third back toward you').toEqual([-1, -1, 1]);
     expect(rows[1][2] - rows[0][2], 'they fall ten frames apart').toBe(10);
     expect(rows[2][2] - rows[1][2]).toBe(10);
-    expect(rows[0][2] - (r.t0 + 40), 'after a held breath of 24 frames from the wind-up\'s end').toBe(24);
+    expect(rows[0][2] - (r.t0 + 60), 'after a held breath of 24 frames from the wind-up\'s end (40 units, 60 frames: BOSS_TEL_PACE)').toBe(24);
     expect(r.y, 'Two has flown up to snap').toBeLessThan(r.gy - r.R - 150);
   });
 
@@ -429,7 +455,7 @@ describe('CLAP!', () => {
       f.x = 300; b._pickForce = 'twoclap'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { cl0: b._hz.cl.slice() };
       f.x = 400; for (var k=0;k<10;k++){ step(); ${HOLD} f.x = 400; } out.follow = b._hz.cl.slice();
-      for (var k=0;k<20;k++){ step(); ${HOLD} f.x = 400; } out.lockedAt = b._tel; out.locked = b._hz.cl.slice();
+      for (var k=0;k<60 && b._tel > TWO.clap.lock;k++){ step(); ${HOLD} f.x = 400; } step(); ${HOLD} f.x = 400; out.lockedAt = b._tel; out.locked = b._hz.cl.slice();
       f.x = 700; step(); ${HOLD} f.x = 700; out.held = b._hz.cl.slice();
       summons = []; projectiles = []; return out; })()`);
     expect(r.cl0.slice(0, 2)).toEqual([300, 0]);
@@ -512,12 +538,12 @@ describe('CLAP!', () => {
 });
 
 describe('THE POWER OF TWO!', () => {
-  it('the wind-up: Two goes to the middle, low, and the twelve orbs form round him with a pair pointing at you (it follows you, and holds for the last 8 frames) -- 36 frames', () => {
+  it('the wind-up: Two goes to the middle, low, and the eight orbs form round him with a gap pointing at you (it follows you, and holds for the last 8 units) -- 36 units', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
       f.x = 300; b._pickForce = 'twopower'; b._atkLive = null; b._atkTimer = 1; step();
       var out = { kind: b._telKind, name: document.getElementById('banner').textContent, tel: b._tel, pw0: b._hz.pw.slice(), dst: b._dst, gy: groundY(), R: b.r, WW: WW };
       for (var k=0;k<20;k++){ step(); ${HOLD} f.x = 300; } out.mid = b._hz.pw.slice(); out.bx = b.x; out.by = b.y;
-      f.x = 1000; for (var k=0;k<14;k++){ step(); ${HOLD} f.x = 1000; } out.locked = b._hz.pw.slice(); out.left = b._tel; out.shots = projectiles.length;
+      f.x = 1000; for (var k=0;k<60 && b._tel > TWO.power.lock;k++){ step(); ${HOLD} f.x = 1000; } step(); ${HOLD} f.x = 1000; out.locked = b._hz.pw.slice(); out.left = b._tel; out.shots = projectiles.length;
       summons = []; projectiles = []; return out; })()`);
     expect(r.kind).toBe('twopower');
     expect(r.name).toBe('THE POWER OF TWO!');
@@ -530,7 +556,8 @@ describe('THE POWER OF TWO!', () => {
     expect(r.shots, 'nothing is thrown during the wind-up').toBe(0);
   });
 
-  it('twelve orbs as six pairs: ten degrees apart in a pair, sixty between pairs, a pair pointing at you, 6.5 px a frame, 0.8 of a boss hit under one attack id; a lime dust ring and a shake of 4', () => {
+  // "nerf two" (the owner, 2026-10-03; the orbs were the attack named): four pairs, not six, and a GAP at you, not a pair -- stay put and the first ring passes you by
+  it('eight orbs as four pairs: ten degrees apart in a pair, ninety between pairs, a gap pointing at you, 6.5 px a frame, 0.8 of a boss hit under one attack id; a lime dust ring and a shake of 4', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
       var _impact = impact, imps = []; impact = function(x, y, o){ imps.push([o && o.shake, o && o.dust, o && o.color]); return _impact(x, y, o); };
       try {
@@ -540,7 +567,7 @@ describe('THE POWER OF TWO!', () => {
         return { n: orbs.length, spd: orbs.map(function(p){ return Math.round(Math.hypot(p.vx, p.vy)*100)/100; }), r: orbs.map(function(p){ return p.r; }), ids: orbs.map(function(p){ return p.bossAtk; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).length,
           volley: orbs.every(function(p){ return p.volley; }), dmg: orbs[0].dmg, boss: bossDmg(), ang: ang, base: base, imps: imps, two: orbs.every(function(p){ return p.two; }), owner: orbs[0].owner, done: !b._tw, gapSet: b._atkTimer };
       } finally { impact = _impact; summons = []; projectiles = []; } })()`);
-    expect(r.n).toBe(12);
+    expect(r.n).toBe(8);
     expect(r.spd.every((v) => Math.abs(v - 6.5) < 0.01), 'all at 6.5').toBe(true);
     expect(r.r.every((v) => v === 11)).toBe(true);
     expect(r.ids).toBe(1);
@@ -549,24 +576,25 @@ describe('THE POWER OF TWO!', () => {
     const norm = (a) => { a = ((a + Math.PI) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI) - Math.PI; return a; };
     const deg = (a) => a*180/Math.PI;
     const sorted = r.ang.map((a) => deg(norm(a - r.base))).map((d) => ((d % 360) + 360) % 360).sort((a, b) => a - b);
-    // pairs at 0, 60, 120, ... each ten degrees wide: -5..5, 55..65 ...
+    // pairs at 45, 135, 225, 315 -- each ten degrees wide -- so the middle of a gap (0) points at you
     const pairs = [];
-    for (let k = 0; k < 6; k++) pairs.push(sorted.filter((d) => Math.abs(d - k*60) < 8 || Math.abs(d - k*60 - 360) < 8));
-    expect(pairs.map((p) => p.length), 'six pairs').toEqual([2, 2, 2, 2, 2, 2]);
+    for (let k = 0; k < 4; k++) pairs.push(sorted.filter((d) => Math.abs(d - 45 - k*90) < 8));
+    expect(pairs.map((p) => p.length), 'four pairs').toEqual([2, 2, 2, 2]);
+    expect(sorted.every((d) => Math.min(d, 360 - d) > 35), 'nothing within 35 degrees of you: a gap at you').toBe(true);
     expect(Math.abs(deg(norm(r.ang[0] - r.base))) <= 5.01 || true).toBe(true);
     expect(r.imps.some((i) => i[0] === 4 && i[1] === 2), 'a shake of 4 and a lime dust ring').toBe(true);
     expect(r.two && r.owner === -2).toBe(true);
     expect(r.done, 'phase 1 has no second ring: the turn is over at once').toBe(true);
   });
 
-  it('phase 2 pairs a big slow orb (r 17, speed 5) with a small fast one (r 8, speed 8); phase 3 sends a second ring 24 frames after the first, turned half a pair-spacing -- one move, one id', () => {
+  it('phase 2 pairs a big slow orb (r 17, speed 5) with a small fast one (r 8, speed 8); phase 3 sends a second ring 36 frames after the first, turned half a pair-spacing (a pair at you) -- one move, one id', () => {
     const r = W.eval(`(function(){ var out = {};
       [2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
         b._mace = null; projectiles = []; f.x = 300; ${FIRE('twopower')}
         var ring1 = projectiles.filter(function(p){ return p.shape === 'twoprize'; });
         var o = { n1: ring1.length, rs: ring1.map(function(p){ return p.r; }).sort(function(a, c){ return a - c; }), spds: ring1.map(function(p){ return Math.round(Math.hypot(p.vx, p.vy)*10)/10; }).sort(function(a, c){ return a - c; }), tw: b._tw && b._tw.k, a1: Math.atan2(ring1[0].vy, ring1[0].vx) };
         var t0 = hazardT;
-        for (var k=0;k<40 && b._tw;k++){ step(); ${HOLD} f.x = 300; }
+        for (var k=0;k<60 && b._tw;k++){ step(); ${HOLD} f.x = 300; }
         var all = projectiles.filter(function(p){ return p.shape === 'twoprize'; });
         o.n2 = all.length - ring1.length; o.done = !b._tw; o.at = hazardT - t0;
         var second = all.filter(function(p){ return ring1.indexOf(p) < 0; });
@@ -574,22 +602,22 @@ describe('THE POWER OF TWO!', () => {
         if (second.length) o.rot = (Math.atan2(second[0].vy, second[0].vx) - Math.atan2(ring1[0].vy, ring1[0].vx));
         out[ph] = o; summons = []; projectiles = []; });
       return out; })()`);
-    expect(r[2].n1).toBe(12);
-    expect(r[2].rs, 'six big, six small').toEqual([8, 8, 8, 8, 8, 8, 17, 17, 17, 17, 17, 17]);
-    expect(r[2].spds.slice(0, 6).every((v) => Math.abs(v - 5) < 0.2) || r[2].spds[0] === 5).toBe(true);
-    expect(r[2].spds[11], 'the fast ones at 8').toBe(8);
+    expect(r[2].n1).toBe(8);
+    expect(r[2].rs, 'four big, four small').toEqual([8, 8, 8, 8, 17, 17, 17, 17]);
+    expect(r[2].spds.slice(0, 4).every((v) => Math.abs(v - 5) < 0.2) || r[2].spds[0] === 5).toBe(true);
+    expect(r[2].spds[7], 'the fast ones at 8').toBe(8);
     expect(r[2].spds[0], 'the slow ones at 5').toBe(5);
     expect(r[2].tw, 'phase 2 is one ring').toBe(undefined);
     expect(r[2].n2).toBe(0);
     expect(r[3].tw, 'phase 3 has a second ring on the way').toBe('power');
-    expect(r[3].n2, 'twelve more').toBe(12);
-    expect(r[3].at, '24 frames after the first (the move ends a few frames after)').toBeGreaterThanOrEqual(24);
+    expect(r[3].n2, 'eight more').toBe(8);
+    expect(r[3].at, '36 frames after the first (the move ends a few frames after)').toBeGreaterThanOrEqual(36);
     expect(r[3].ids, 'one attack id for both rings').toBe(1);
-    expect(Math.abs(r[3].rot*180/Math.PI), 'turned half a pair-spacing, 30 degrees').toBeCloseTo(30, 0);
+    expect(Math.abs(r[3].rot*180/Math.PI), 'turned half a pair-spacing, 45 degrees').toBeCloseTo(45, 0);
     expect(r[3].done).toBe(true);
   });
 
-  it('twelve orbs landing on one fighter are one boss hit at most', () => {
+  it('eight orbs landing on one fighter are one boss hit at most', () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, true)}
       f.x = 300; ${FIRE('twopower')}
       var orbs = projectiles.filter(function(p){ return p.shape === 'twoprize'; });
@@ -723,14 +751,14 @@ describe('the turn order and the wind-ups: six attacks, the signature between ea
     expect(r.row).toEqual(ROW);
   });
 
-  it('the gap holds while a move of his is in the air and the gap starts when it ends: 100 / 72 / 60 (phase 3 eased for the hazard), paced 1.2 -- and the shared SEEKERS! and RING are still the shared ones other bosses use', () => {
+  it('the gap holds while a move of his is in the air and the gap starts when it ends: 180 / 150 / 130 ("nerf two": "Longer gaps between turns", 2026-10-03; it was 100 / 72 / 60), paced 1.2 -- and the shared SEEKERS! and RING are still the shared ones other bosses use', () => {
     const r = W.eval(`(function(){
       var held = { attack:'two', _phase:1, _tw:{ k:'sun' } }, base = [1, 2, 3].map(function(ph){ return bossAtkGapBase({ attack:'two', _phase:ph }); });
       var paced = [1, 2, 3].map(function(ph){ return bossAtkGap({ attack:'two', _phase:ph }); });
       return { held: bossAtkGap(held), base: base, paced: paced, ring: typeof BOSS_MOVES.ring, seekers: typeof BOSS_MOVES.seekers, ringFour: BOSS_EXTRA['Four'] }; })()`);
     expect(r.held, 'a hold is no gap').toBe(1e6);
-    expect(r.base, 'his own 100 / 72 and 60 in phase 3 ("if it makes sense for a hazard, reduce boss difficulty and add a hazard.")').toEqual([100, 72, 60]);
-    expect(r.paced, 'BOSS_PACE applied once, centrally').toEqual([120, 86, 72]);
+    expect(r.base, 'his own 180 / 150 / 130 ("nerf two": "Longer gaps between turns", the owner, 2026-10-03)').toEqual([180, 150, 130]);
+    expect(r.paced, 'BOSS_PACE applied once, centrally').toEqual([216, 180, 156]);
     expect([r.ring, r.seekers], 'the shared moves stay for the bosses that use them').toEqual(['function', 'function']);
   });
 
@@ -745,8 +773,8 @@ describe('the turn order and the wind-ups: six attacks, the signature between ea
       summons = []; projectiles = []; return out; })()`);
     expect(r.held).toBe(true);
     expect(r.ended).toBe(true);
-    expect(r.gap, 'the gap counts down from the end of the move: 86 in phase 2').toBeLessThanOrEqual(86);
-    expect(r.gap).toBeGreaterThan(70);
+    expect(r.gap, 'the gap counts down from the end of the move: 180 in phase 2').toBeLessThanOrEqual(180);
+    expect(r.gap).toBeGreaterThan(160);
   });
 });
 

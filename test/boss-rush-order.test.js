@@ -84,14 +84,22 @@ describe('Boss Rush difficulty, as measured', () => {
     expect(names.indexOf('Purple Dragon'), 'the Dragon after MePhone4S').toBe(names.indexOf('MePhone4S') + 1);
   });
 
-  // Evil Leafy (Boss 7) and Two (Boss 10) are not this branch's, and the solo AI does far worse against them than against
-  // Four: it cannot read Evil Leafy's teleports or ground Two's power. That is the roster's shape from before the II
-  // bosses, left for the owner; this only pins that they were measured, so the numbers are there to look at.
-  it('Evil Leafy and Two are measured too, and are left as they were', () => {
+  // Evil Leafy (Boss 7) is not this branch's, and the solo AI does far worse against her than against Four: it cannot read her
+  // teleports. That is the roster's shape from before the II bosses, left for the owner; this only pins that she was measured.
+  // Two (Boss 10) was the same until the owner, 2026-10-03: "nerf two", landing "~2.2, between Dragon and Four", by "more delay between
+  // when an attack is called and when it happens" (BOSS_TEL_PACE) and "Longer gaps between turns" (TWO.gaps), the Power of Two orbs
+  // ("the attack that feels unfair") eased, and the phase-3 mace sinking while you ground him. His row is as it was.
+  it('Evil Leafy and Two are measured too, with their rows as they were', () => {
     for (const n of ['Evil Leafy', 'Two']) expect(at(n).of).toBe(RUNS);
     const rows = JSON.parse(W.eval(`JSON.stringify(BOSS_ROSTER.filter(function(b){ return b.name==='Evil Leafy' || b.name==='Two'; })
       .map(function(b){ return [b.name, b.hp, b.big, b.attack]; }))`));
     expect(rows).toEqual([['Evil Leafy', 185, 2.4, 'evilleafy'], ['Two', 285, 2.6, 'two']]);
+  });
+
+  it('Two sits between the Purple Dragon and Four: harder than or level with the Dragon, and Four harder than him ("nerf two", 2026-10-03)', () => {
+    const two = at('Two'), dr = at('Purple Dragon'), four = at('Four');
+    expect(harder(two, dr) || level(two, dr), `${tell(two)} is harder than or level with ${tell(dr)}`).toBe(true);
+    expect(harder(four, two), `${tell(four)} is harder than ${tell(two)}`).toBe(true);
   });
 
   // The review: "MePhone4S deals 32% of his damage over time (poison plus bleed), outside the 22 per-hit cap. That is his
