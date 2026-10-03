@@ -6,6 +6,9 @@ import { createHash } from 'node:crypto';
 export const BOSS_TUNING_EXPR = `JSON.stringify({
   roster: BOSS_ROSTER.map(function(b){ return [b.name, b.hp, b.big, !!b.stationary]; }),
   dmgBase: BOSS_DMG_BASE, stockEvery: BOSS_STOCK_EVERY,
+  // Round 17's "+50%" is applied at spawn (the rows keep their own hp) and the paced gap in bossAtkGap, so neither shows in the
+  // roster above: the numbers stored before them read as current until these two were read here too.
+  hpMult: BOSS_HP_MULT, pace: BOSS_PACE,
   mephone: { cap: MELIFE_CAP, hp: MELIFE_HP, life: MELIFE_LIFE, addDmg: HOSTILE_ADD_DMG, glove: MEPHONE_GLOVE, gaps: MEPHONE_GAPS },
   s4: S4, springy: SPRINGY   // Springy took Boss 11 ("replace him with springy"); Steve Cobs is the secret boss now and his numbers no longer bear on the gauntlet
 })`;
