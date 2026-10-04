@@ -7,7 +7,7 @@ row by row through 2026-09-29, and on 2026-10-03 (H).
 `origin/main` carries everything below. The stacked `pr1`..`pr14` branches were merged earlier, and
 the D and E sessions were pushed straight to `main` on 2026-09-11 at the owner's request (O1).
 As of 2026-10-03 `origin/main` stops at H10 (`9e4a9a0`): H11-H13 are on `ii-dlc` (PR #35), and H14-H17 are on
-`claude/epic-shannon-9rti47` (PR #36), on top of it.
+`claude/epic-shannon-9rti47` (PR #36), on top of it. PR #36 was merged on 2026-10-03; H18-H20 are on that branch again, unmerged.
 
 ---
 
@@ -567,6 +567,9 @@ committed, so the rows below cite the commits and the owner's words as the commi
 | H15 | The glitch hunter on the Round 17 build, and the move matrix | **Done** | no new glitch: the full sweep (85 runs) and the move matrix (172 runs) on `3b681aa`; what they flagged is below; what is not a glitch is in the hunter's header now |
 | H16 | Every move of every fighter against a boss: does anything else land every frame, as Puffball's plunge did? | **Done** | nothing else does: `scripts/boss-multihit.mjs` (`66814e6`), 918 moves |
 | H17 | `tune them yourself. a reminder that the way we do it is harder in dodging, not harder in damage or speed(unless i override that)` | **Done** | `d5850ae`: Springy's arm comes back, his high fist is high, his slams come three, four and five a turn over wider ground; Four's I DO THIS! snaps wider. Measured: Springy 1.13 -> 1.70 lives (level with MePhone4S's 1.72), Four 2.28 -> 2.38 (over the Dragon's 2.17 by more than the noise) |
+| H18 | `one should be right beside you, so that you can hit them with a projectile` (picked: "at your height, ~200px, swaps sides") | **Done** | `5b3f163`: she sits level with you 200 px out for 1.7-2.8 s, then sweeps over your head to your other side (ONE_SIDE_*); Steve Cobs keeps the old orbit. The scripted Lightning now hits her for 577-870 a minute (415-590 before) but falls in 31-57 s (48-106 before): level with you, her shots come along your row |
+| H19 | `nerf two(ask questions)`: asked; "~2.2, between Dragon and Four", "more delay between when an attack is called and when it happens. apply this to the last 3 bosses. make the opposite happen for the 1st 3 bosses.", "Longer gaps between turns", the orbs the unfair one | **Done** | `5b3f163`, `4119839`: BOSS_TEL_PACE (Two 1.5, Springy and Four 1.25, the first three 0.8; the Announcer's locked window kept at ANN_CALM); Two's gaps 180/150/130; four orb pairs with a gap at you; the phase-3 mace sinks while you ground him. Two 2.97 -> 2.24 lives |
+| H20 | Keep the ladder after the longer wind-ups (they took Springy under MePhone4S and Four to the Dragon) | **Done** | by dodging: Springy's slam 144 and holes 150; Four a LOVE HEARTS! wave more and I DO THIS! 160/180/200. Fewer SCREECHY! gaps were tried and taken back: the owner asked for "more gaps" (2026-09-21) |
 
 Also merged since G49 and not itemized above: OJ, Suitcase and Cabby (`cf97844`), RUNNING! and its rework and hazards
 (`0a6edec`, `473a42b`, `ddd2ac3`), quests that pay at once (`d7a5223`), sponsor credits (`e75e161`), Steve Cobs easier to
@@ -650,6 +653,15 @@ shots. Springy's two errors are one run in a 2560 x 1440 window: a box drop's pa
 crossing that wide a room held his next turn for 15 s -- the toy hold above, which the build before the tuning flags in the same run;
 the header says so now. The full suite on `d5850ae` passed but for `boss-rush-order`'s two stored-number checks, which pass on the
 numbers stored here.
+
+**H18-H20, 2026-10-03/04.** Stored (240 solo runs a boss, 90 s): MePhone4 1.58, Evil Leafy 2.10, MePhone4S 1.72, the Dragon 2.17
+(the four untouched, byte for byte), Two 2.24 (beaten 82 of 240; was 2.97, none), Springy 1.75 (167), Four 2.30 (103). So the line
+runs Dragon <= Two < Four as asked, Four over Two by more than either's standard error (0.05) but not by two of them. What nerfed Two,
+in turn at SEEDS=4: the longer wind-up, gaps and fewer orbs together 2.97 -> 2.78 (orbs 18% of his damage); gaps 180/150/130 and a
+slower mace 2.55; a gap aimed at you 2.53 (orbs 13%); his wind-up 1.5 not 1.25 2.40; the mace sinking from halfway to grounded 2.28. The
+mace was the biggest single source (1.95 hits a run): phase 3 is won by standing close to ground him, and it circled exactly there.
+One beside you is harder for the scripted bot, not easier: `one-winnable`'s Power Ungrounded share rose with the shorter fights and
+its bound is 0.2 now, with the reason beside it. The glitch hunter was not re-run for this.
 
 ---
 
@@ -913,10 +925,10 @@ six, they are real.
 
 | | Count |
 |---|---|
-| Done | 158 |
+| Done | 161 |
 | Open | 2 (O20, O22) |
 | Superseded | 2 (O1, B12) |
 | Blocked on you | 1 (G11: the Cloudflare MCP authorization) |
 
-Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G49, H1-H17, O3-O19 and O21.
-Suite: **2600 passed (134 files) on the shipped file, with H17**.
+Counted row by row: A1-A5, B1-B11, C1-C8, D1-D7, E1-E8, E10-E19, F1-F26, G1-G10, G12-G49, H1-H20, O3-O19 and O21.
+Suite: **2604 passed (135 files) on the shipped file, with H20**.

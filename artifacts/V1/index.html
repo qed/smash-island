@@ -7569,7 +7569,7 @@ function updateBossAttack(s, tgt){
   if(s._atkLive) bossAttackWatch(s);
   // telegraph in progress → flash, then fire when it hits 0
   if(s._tel>0){
-    s._tel--;
+    s._tel = s._tel - bossTelStep(s) > 1e-9 ? s._tel - bossTelStep(s) : 0;   // (a fractional step leaves rounding dust: 40 units are 50 frames, not 51)
     if(s._tel%6<3) s.flash=1; else s.flash=0;
     if(s._tel<=0){
       const lo = s._atkLo != null ? s._atkLo : BOSS_ATK_ID;   // the ids this attack draws are above this (a wind-up that did not start here -- a test's -- counts from now)
@@ -7792,6 +7792,15 @@ function bossAttackWatch(s){
 // bosses: neither is a BOSS_ROSTER row (One's oneGap, Steve Cobs's cobsGap and his old Boss-11 row, COBS_ROW, keep their own), so
 // none of them is slowed. Not in a slot: a slot returns its own number, and this makes it the paced one.
 const BOSS_PACE = 1.2;
+// WIND-UP PACE. The owner, 2026-10-03: "more delay between when an attack is called and when it happens. apply this to the last 3 bosses. make the
+// opposite happen for the 1st 3 bosses." A boss's wind-up runs BOSS_TEL_PACE times as long as its own length says: its countdown (s._tel, in the boss's
+// own wind-up units) goes down 1/BOSS_TEL_PACE a frame. Every lock, tell and ring is measured in those units, so all of it stretches with it -- the time
+// after an aim locks too, which is the part you dodge in. Two, Springy and Four (the last three) wind up a quarter longer; the Announcer, Puffball Speaker
+// Box and Firey Speaker Box (the first three) a fifth quicker. The rest are as they were.
+const BOSS_TEL_PACE = { announcer:0.8, soundwave:0.8, firewall:0.8, two:1.5, springy:1.25, four:1.25 };
+function bossTelStep(s){ return (bossPaced(s) && BOSS_TEL_PACE[s.attack]) ? 1/BOSS_TEL_PACE[s.attack] : 1; }
+// the frames until the wind-up fires: what a boss that plans on the clock (hazardT, or a frame counter) adds, not s._tel itself
+function bossTelFrames(s){ return Math.ceil(s._tel/bossTelStep(s) - 1e-9); }
 function bossPaced(s){ return !!s && !!s.attack && BOSS_ROSTER.some(r => r.attack === s.attack); }
 function bossAtkGap(s){
   const g = bossAtkGapBase(s);
@@ -7845,7 +7854,7 @@ function bossAtkGapBase(s){
   if(s.attack==="two"){   // held while a move of his is in the air (twoDone starts the gap); otherwise the usual 100 / 72 -- and 60 (not 52) in phase 3: the derailed coaster is the park's hazard now ("if it makes sense for a hazard, reduce boss difficulty and add a hazard.")
     const g = twoGap(s);
     if(g != null) return g;
-    if(s._phase===3) return 60;
+    return TWO.gaps[twoPh(s)];
   }
   // @boss:two:end gap
 
@@ -8642,6 +8651,10 @@ function annUndress(b){
 function annGap(s){ return ANN.gaps[Math.min(3, s._phase||1)]; }
 // How long his wind-up is: the laser and the acid get a longer one (the cross follows you, then locks for its last `lock` frames; the acid's spots are up all through
 // it); the cake's, the balloons' and the crusher's are the usual 36.
+// A lock of his, in wind-up units: the frames it was written in, kept as frames. His wind-ups run quicker since 2026-10-03 (BOSS_TEL_PACE: "make the opposite
+// happen for the 1st 3 bosses"), but the locked part -- the window you dodge in -- never got shorter than the owner asked for ("they barely have a moment where you
+// can move to dodge", ANN_CALM): only the part where the tell follows you is cut.
+function annLock(s, n){ return n*Math.max(1, bossTelStep(s)); }
 function annTelLen(s){ const k = s._telKind; return k === 'annlaser' ? ANN.laser.tel : (k === 'annacid' ? ANN.acid.tel : 36); }
 // Is anything of his still to strike? His wind-up, a throw or a drop still queued, the balloons' flight (he is up there), a lane with a flat still to come, a
 // damaging shot of his in the air (not a puddle: it lies there and strikes nobody), a beam, ring or plate still to go off. Everything he does to a fighter is on
@@ -8679,7 +8692,7 @@ function annArc(ox, oy, x1, y1, T){
 // last `flat.lock` frames, then it holds, and when its clock runs out the flat throw leaves along it (annTick) -- `calm` after the lob has landed. The lane IS the
 // tell: a band a note's reach either side of the row, lit all through, brighter as the throw nears, white once locked.
 function annLanes(s, ph){
-  const gy = groundY(), cx = WW*0.5, P = ANN.prizes[s._pz] || ANN.prizes[0], F = annLobT(P, 'lob') + ANN.calm, tel = annTelLen(s), lanes = s._lanes = {};
+  const gy = groundY(), cx = WW*0.5, P = ANN.prizes[s._pz] || ANN.prizes[0], F = annLobT(P, 'lob') + ANN.calm, tel = Math.ceil(annTelLen(s)/bossTelStep(s) - 1e-9), lanes = s._lanes = {};
   for(const f of fighters){ if(f.dead) continue;
     const dir = Math.sign(f.x - cx) || (s.face||1);
     const m = annMark('lane', cx + dir*44, clamp(f.y - 6, 40, gy - 14), tel + F, { color:P.color, mA:dir, mB:Math.round(P.r*0.85 + 24), mC:ANN.flat.back, life:30 });
@@ -8976,7 +8989,7 @@ function annSprayPlan(s, ph){
 // The wind-up starts: where he stands is the spray's middle (he is planted for the wind-up: annMove), and every spot it will land on is marked from now, a ring as wide
 // as the puddle's reach, brighter as its drop nears.
 function annSpray(s, ph){
-  const A = ANN.acid, tel = annTelLen(s);
+  const A = ANN.acid, tel = Math.ceil(annTelLen(s)/bossTelStep(s) - 1e-9);   // (in frames: BOSS_TEL_PACE)
   s._acx = s.x; s._spray = annSprayPlan(s, ph);
   for(const sp of s._spray) annMark('spot', sp.x, sp.sy, tel + A.T + sp.k*A.every, { color:'#4cff1c', mA:A.puddle, mB:0 });
 }
@@ -9118,7 +9131,7 @@ function annTick(s, tgt){
   const lc = s._lastCake; if(lc && !lc.hit && fighters.some(f=>f._bossHitId === lc.id)) lc.hit = true;
   // the wind-ups that follow you: the crusher's circle and the laser's cross, until they lock (the laser's last `lock` frames, the circle's last `crush.lock`)
   if(tgt && !tgt.dead){
-    const k = s._telKind, lock = k === 'annlaser' ? ANN.laser.lock : L.lock;
+    const k = s._telKind, lock = annLock(s, k === 'annlaser' ? ANN.laser.lock : L.lock);
     if(s._tel > lock && (k === 'annlaser' || (k === s.attack && (s._telPh || s._phase || 1) >= 3))){ s._telX = tgt.x; s._telY = tgt.y; }
   }
   // phase 3's entry press waits for him to be idle
@@ -9459,7 +9472,7 @@ function annDrawTell(s){
   } else if(kind === s.attack){
     // CRUSHER ARM!: the circle follows you and locks (white) for the last 12 frames of the wind-up -- then the press hangs `wait` frames and falls: the strike is 44 after the lock
     // -- on the surface you stood on (not always the floor); the press's whole path is lit, and so are the two lanes its waves will run along
-    const x = s._telX != null ? s._telX : s.x, sy = annSurface(x, s._telY != null ? s._telY + 16 : gy - 20), locked = s._tel <= ANN.crush.lock, R = 72;
+    const x = s._telX != null ? s._telX : s.x, sy = annSurface(x, s._telY != null ? s._telY + 16 : gy - 20), locked = s._tel <= annLock(s, ANN.crush.lock), R = 72;
     ctx.globalAlpha = 0.05 + 0.10*k; ctx.fillStyle = locked ? '#ffffff' : '#ff3a2a'; ctx.fillRect(x - 34, 0, 68, sy);
     annRing(x, sy, R, locked ? '#ffffff' : '#ff3a2a', locked ? 0.95 : 0.45 + 0.35*pulse);
     ctx.globalAlpha = 0.10 + 0.12*k; ctx.fillStyle = '#b8bcc4';
@@ -9467,7 +9480,7 @@ function annDrawTell(s){
   } else if(kind === 'annlaser'){
     // QUADRUPLE LASER!: a ring on your spot and the band of the column (and, from phase 2, of the row) as wide as the beams really are, the emitters at the edges lit; the
     // cross follows you until the last 30 frames of the wind-up, then locks (white) -- and the second burst (phase 2 on) is shown, dimmer, the same way
-    const L = ANN.laser, HW = L.w + 17, X = s._telX != null ? s._telX : s.x, Y = s._telY != null ? s._telY : gy - 24, locked = s._tel <= L.lock, col = locked ? '#ffffff' : '#c890ff';
+    const L = ANN.laser, HW = L.w + 17, X = s._telX != null ? s._telX : s.x, Y = s._telY != null ? s._telY : gy - 24, locked = s._tel <= annLock(s, L.lock), col = locked ? '#ffffff' : '#c890ff';
     const cross = (cx2, dim) => {
       ctx.globalAlpha = (0.08 + 0.14*k)*dim; ctx.fillStyle = col; ctx.fillRect(cx2 - HW, 0, HW*2, gy + 24); if(ph >= 2) ctx.fillRect(0, Y - HW, WW, HW*2);
       ctx.globalAlpha = (0.35 + 0.25*k)*dim; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
@@ -9679,7 +9692,7 @@ function psbBeginTelegraph(s, tgt){
   if(k === 'soundwave'){
     s._psbZ = (s._psbZ||0) + 1;   // in turn, not at random, so it can be learned: the floor is safe, then the platform, then the floor...
     s._psbPat = psbPattern((s._psbZ % 2) ? 'F' : 'P', PSB.lane.n[ph]);
-    s._psbPatT = s._tel + (PSB.lane.waves[ph] - 1)*PSB.lane.every[ph] + 24;
+    s._psbPatT = bossTelFrames(s) + (PSB.lane.waves[ph] - 1)*PSB.lane.every[ph] + 24;
   }
   if(k === 'consequences'){
     const f = tgt || psbNearest(s.x, s.y);
@@ -16594,13 +16607,14 @@ function s4DrawEnd(pr){
 // One table, so the tuning and the tests read the same numbers.
 const TWO = {
   tel:{ two:36, twosun:40, twopower:36, twoblocks:40, tworails:40, twoclap:36 },   // the wind-up of each move (bossTelLen)
+  gaps:[0, 180, 150, 130],   // the gap after a move, by phase (BOSS_PACE on top). "nerf two": "Longer gaps between turns" (the owner, 2026-10-03; it was the usual 100 / 72, and 60 in phase 3)
   hover:{ lo:24, hi:170, bob:9 }, stand:[0, 250, 200, 280], follow:[0, 0.03, 0.05, 0.034], glide:[0, 0.06, 0.09, 0.06],   // how high it floats over the floor, how far it keeps from you, how fast it follows and glides (by phase: phase 2's Size Shift is quicker)
   pop:{ out:9, inn:9, far:240 },                                                    // a pop: frames to go out and come in; a move that begins further than this away is a pop
   read:{ ring:176, lock:12, back:220, speed:13, lead:0.35, home:0.06, copies:[0, 1, 2, 3], r:12, kb:10, life:80, stagger:6, spread:0.16, drain:[0, 260, 260, 340], dim:{ max:3, hold:150 } },
-  sun:{ r:44, g:0.34, leg:28, vmax:10.5, bounces:[0, 1, 2, 3], rise:30, kb:13, home:[0.8, 0.25, 0.5], mace:{ spd:0.034, k:1.6, kb:11, frac:0.8, enter:30 } },
+  sun:{ r:44, g:0.34, leg:28, vmax:10.5, bounces:[0, 1, 2, 3], rise:30, kb:13, home:[0.8, 0.25, 0.5], mace:{ spd:0.025, k:1.6, kb:11, frac:0.8, enter:30, rise:30, sink:30 } },
   blocks:{ n:4, size:50, half:26, grow:30, hold:24, gap:10, fall:24, lean:0.16, spacing:200, kb:13, step:{ life:180, h:50, fade:24 }, row2:{ off:100, at:6 } },
   clap:{ r:56, arrive:[0, 34, 34, 28], lock:10, kb:16, high:150, pad:32, hand:110 },
-  power:{ pairs:6, within:10, spread:60, v:6.5, slow:5, fast:8, r:11, big:17, small:8, again:24, shift:30, lock:8, kb:9 },
+  power:{ pairs:4, within:10, spread:90, v:6.5, slow:5, fast:8, r:11, big:17, small:8, again:36, shift:45, lock:8, kb:9 },   // "nerf two" -- the orbs (the owner, 2026-10-03): four pairs, not six (wider gaps), and phase 3's second ring 36 frames behind, not 24
   rails:{ cars:[0, 0, 4, 6], speed:[0, 0, 11, 14], gap:[0, 0, 56, 44], lead:26, place:30, r:34, kb:13 },
   coaster:{ every:[0, 0, 0, 420], warn:50, r:30, kb:11, frac:0.5 },
   night:[0, 0, 0.3, 0.62], nightT:90,                                                // how dark the evening is, by phase, and how long it takes to fall
@@ -16693,7 +16707,7 @@ function twoBeginTelegraph(s, tgt){
     const sky = twoSunHome(s);
     twoGoTo(s, clamp(sky.x - 200, R, WW - R), gy - R - 250);
     const mx = clamp(tx, TWO.sun.r + 20, WW - TWO.sun.r - 20), surf = twoSunSurface(mx, ty);
-    H.mk = [Math.round(twoSunClampX(mx, surf)), Math.round(surf), hazardT + s._tel];
+    H.mk = [Math.round(twoSunClampX(mx, surf)), Math.round(surf), hazardT + bossTelFrames(s)];
   } else if(k === 'twopower'){
     twoGoTo(s, W2, gy - R - 90);
     H.pw = [twoRound(live ? Math.atan2(tgt.y - (gy - R - 90), tgt.x - W2) : 0), 0];
@@ -16834,8 +16848,14 @@ function twoMaceStep(s, tgt, H){
     const e = s._maceIn/S.enter, k = e*e*(3 - 2*e);
     x = s._maceFrom.x + (x - s._maceFrom.x)*k; y = s._maceFrom.y + (y - s._maceFrom.y)*k;
   }
-  M.vx = x - M.x; M.vy = y - M.y; M.x = x; M.y = y;
-  if(entering) return;
+  // GROUNDED, IT SINKS ("nerf two", the owner, 2026-10-03): the mace is his power, so while a fighter is grounding him (from halfway there: TWO.sun.mace.sink of the 60 frames) it hangs still, resting on the floor
+  // under where it was, and hits nobody -- standing close to ground him is the punish, not a trap -- and for TWO.sun.mace.rise frames after, it lifts back to
+  // its circle, still harmless.
+  const sunk = s._grounded || (s._groundT || 0) >= S.sink;   // (from halfway to grounded: pressing in pulls it down)
+  if(!entering && sunk){ x = M.x; y = groundY() - TWO.sun.r; s._maceA -= S.spd; s._maceRise = S.rise; }
+  else if(!entering && s._maceRise > 0){ const k = 1 - s._maceRise/S.rise; s._maceRise--; x = M.x + (x - M.x)*Math.max(0.15, k); y = M.y + (y - M.y)*Math.max(0.15, k); }
+  M.vx = x - M.x; M.vy = y - M.y; M.x = M.x + (x - M.x)*(sunk && !entering ? 0.2 : 1); M.y = M.y + (y - M.y)*(sunk && !entering ? 0.2 : 1);
+  if(entering || sunk || s._maceRise > 0) return;
   for(const f of fighters){
     if(f.dead || f.invuln > 0) continue;
     if(hurtGap(f, M.x, M.y) < M.r){
@@ -16928,7 +16948,7 @@ function twoSunEnd(s, T, H){
 // between them, after the first has gone down. 0.8 of a boss hit under one attack id (a volley). H.bk = [began, [[x, dir, fallAt, growAt], ...]]; the angle of every bar is a pure
 // function of the clock (twoStackAngle), so a client draws exactly what the host hits.
 function twoBlocksPlan(s, tx){
-  const H = twoHz(s), B = TWO.blocks, ph = twoPh(s), now = hazardT, fireAt = now + s._tel;
+  const H = twoHz(s), B = TWO.blocks, ph = twoPh(s), now = hazardT, fireAt = now + bossTelFrames(s);
   const d = Math.sign(tx - s.x) || s.face || 1;                         // the dominoes fall away from Two...
   const xs = [tx - B.spacing*d, tx, tx + B.spacing*d], dirs = [d, d, -d];   // ...and the third stack leans back toward you
   const lo = Math.min(xs[0], xs[2]), hi = Math.max(xs[0], xs[2]);
@@ -17071,10 +17091,10 @@ function twoDrawClap(b, H){
 // The old SHOCK RING, redrawn as Two's own (the owner: "i meant to reduce generic bullet patterns. its okay to use it for two and four.", "One of each"): the prize's own title line,
 // "I'm glad the 40 of you have made the wise choice of instead battling for... The Power of Two!!" (The Escape from Four/Transcript), and what it does: "The Power of Two makes the user's
 // limbs glow green" -- "a green glow ... in the user's hands". The wind-up: Two throws both arms wide, a lime glow gathers on both hands, and the twelve orbs form round him where they will
-// leave from, a pair pointing at you (it follows you, and holds for the last TWO.power.lock frames). Twelve orbs as SIX PAIRS -- pairs are Two's motif -- ten degrees apart within a pair and
-// sixty between pairs, so the gaps to weave through are the six wide ones; 6.5 px a frame, slow enough to weave. Phase 2 "Size Shift": in each pair one orb is big and slow (r 17, speed 5) and
-// one small and fast (r 8, speed 8) ("They can also control other objects' size"), so the pairs stretch into short spirals. Phase 3: a second ring 24 frames behind the first, turned half a
-// pair-spacing (30 degrees): the gap you stepped into is where the second ring's pairs come. 0.8 of a boss hit under one attack id (a volley), a lime dust ring on the floor, a shake of 4.
+// leave from, a pair pointing at you (it follows you, and holds for the last TWO.power.lock frames). Eight orbs as FOUR PAIRS (six until "nerf two", 2026-10-03) -- pairs are Two's motif -- ten degrees apart within a pair
+// and ninety between pairs, so the gaps to weave through are the four wide ones; 6.5 px a frame, slow enough to weave. Phase 2 "Size Shift": in each pair one orb is big and slow (r 17, speed 5) and
+// one small and fast (r 8, speed 8) ("They can also control other objects' size"), so the pairs stretch into short spirals. Phase 3: a second ring 36 frames behind the first (24 until "nerf two"), turned half a
+// pair-spacing (45 degrees): the gap you stepped into is where the second ring's pairs come. 0.8 of a boss hit under one attack id (a volley), a lime dust ring on the floor, a shake of 4.
 // H.pw = [angle of the pair that points at you, locked]
 function twoPowerRing(s, id, ph, base, rot){
   const P = TWO.power;
@@ -17087,7 +17107,7 @@ function twoPowerRing(s, id, ph, base, rot){
 function twoPowerFire(s, tgt){
   const id = ++BOSS_ATK_ID, ph = s._telPh || twoPh(s), H = twoHz(s);
   const base = H.pw ? H.pw[0] : (tgt ? Math.atan2(tgt.y - s.y, tgt.x - s.x) : 0);
-  twoPowerRing(s, id, ph, base, 0);
+  twoPowerRing(s, id, ph, base, Math.PI/TWO.power.pairs);   // a GAP at you, not a pair ("nerf two": the orbs, 2026-10-03): stay put and the first ring passes you by
   impact(s.x, groundY(), { shake:4, dust:2, debris:0, r:200, color:'#9be86a' });   // a ring of lime dust on the floor
   for(let i=0;i<14;i++) puff(s.x, s.y, '#9be86a', 6);
   if(ph >= 3) s._tw = { k:'power', id, ph, t:0, base };                       // the second ring is on its way
@@ -17095,7 +17115,7 @@ function twoPowerFire(s, tgt){
 function twoPowerStep(s, tgt, T, H){
   const P = TWO.power;
   T.t++;
-  if(T.t === P.again){ twoPowerRing(s, T.id, T.ph, T.base, P.shift*Math.PI/180); shake(3); for(let i=0;i<10;i++) puff(s.x, s.y, '#9be86a', 6); }
+  if(T.t === P.again){ twoPowerRing(s, T.id, T.ph, T.base, Math.PI/P.pairs + P.shift*Math.PI/180); shake(3); for(let i=0;i<10;i++) puff(s.x, s.y, '#9be86a', 6); }   // (half a spacing on from the first: a pair at you, so the second ring makes you move)
   if(T.t >= P.again + 4) twoDone(s);
 }
 // The prize (File:TPOT(prize).svg: "Outside: Lime Green / Inside: Yellowish Green"): its art once loaded, else a lime disc with a yellowish-green heart.
@@ -17112,7 +17132,7 @@ function twoDrawPowerTell(b, H){
   const P = TWO.power, k = clamp(1 - b._tel/TWO.tel.twopower, 0, 1), base = H.pw[0], ph = twoPh(b), locked = H.pw[1] === 1;
   ctx.save();
   for(let i=0;i<P.pairs;i++) for(const sg of [-1, 1]){
-    const a = base + i*Math.PI*2/P.pairs + sg*(P.within/2)*Math.PI/180, big = sg < 0;
+    const a = base + Math.PI/P.pairs + i*Math.PI*2/P.pairs + sg*(P.within/2)*Math.PI/180, big = sg < 0;
     const r = (ph >= 2 ? (big ? P.big : P.small) : P.r)*(0.3 + 0.7*k), d = b.r*(0.5 + 0.8*k);
     twoPrizeAt(b.x + Math.cos(a)*d, b.y + Math.sin(a)*d, r, 0.3 + 0.6*k);
   }
@@ -17607,7 +17627,9 @@ const FOUR = {
   gaps:[0, 104, 78, 56],
   band:[20, 64], sway:[0, 110, 160, 210], follow:0.012, eight:0.021,
   slither:[null, [12, 36, 16], [10, 28, 14], [8, 22, 12]], puddleY:31, enterT:54,
-  // SCREECHY!: gaps (how many, half-width in radians), speed, the second ring of phase 3, how long he holds the pose
+  // SCREECHY!: gaps (how many, half-width in radians), speed, the second ring of phase 3, how long he holds the pose. 2026-10-03: his wind-ups run a quarter
+  // longer (BOSS_TEL_PACE: "more delay between when an attack is called and when it happens"), and he stays the hardest by being harder to dodge, as the owner
+  // tunes: LOVE HEARTS! a wave more, I DO THIS!'s snap 20 wider (the gaps here stay as the owner asked, "more gaps", 2026-09-21)
   gapN:[0, 5, 4, 3], gapHalf:[0, 0.24, 0.21, 0.18], ringSpd:[0, 6, 6.8, 7.5], ring2:24, shriekT:46,
   // ZAPPIES!: the frames the mark is locked, the column's half-width by phase, the bolt's arc, how long the column is live, the second
   // column from phase 2 (frames after the first, and the frames back that it lands where you were)
@@ -17621,16 +17643,17 @@ const FOUR = {
   // the third hill's lock, and phase 3's ripple (frames between humps, their spacing, their height, when it starts after the third hill)
   hillW:70, hillH:70, hillBase:[0, 110, 126, 140], hillGap:[0, 10, 8, 6], hillLife:240, hillLock:14, hillRise:12, hillKb:15, hillHit:0.8,
   ripStep:6, ripSpace:96, ripH:46, ripBegin:24,
-  // LOVE HEARTS!: waves by phase (Round 17: from phase 1, and a wave more than it had: 3 / 4 / 5, it was 0 / 3 / 4), frames between waves, the eyes' hearts and
+  // LOVE HEARTS!: waves by phase (Round 17: from phase 1, and a wave more than it had: 3 / 4 / 5, it was 0 / 3 / 4; 4 / 5 / 6 since 2026-10-03, see SCREECHY!), frames between waves, the eyes' hearts and
   // the mouth's, the knock, bounces, decals on the floor
-  heartWaves:[0, 3, 4, 5], heartGap:8, heartR:18, heartBigR:30, heartKb:13, heartBounces:3, pileMax:12, pileLife:180, heartHit:0.8,
+  heartWaves:[0, 4, 5, 6], heartGap:8, heartR:18, heartBigR:30, heartKb:13, heartBounces:3, pileMax:12, pileLife:180, heartHit:0.8,
   // DON'T HUG THE CACTUS!: speed by phase, cacti by phase, frames standing, frames growing, half-width, height, the throw
   cacSpd:[0, 2.1, 2.7, 3.3], cacN:[0, 1, 1, 2], cacLife:180, cacGrow:14, cacW:38, cacH:100, cacHit:0.8,
   // I DO THIS!: the ring's size as it is drawn, the snap's radius by phase, frames locked, the Venn pair's spread, frames from the fire to the
   // snap, how long a mutilated fighter is skipped, the squiggle's frames
   // 2026-10-03 ("harder in dodging, not harder in damage or speed"): the snap is 140 / 160 / 180 across (was 100 / 120 / 140), so
-  // there is more ground to cover between the lock and the snap; the hit, the lock and the wind-up are as they were
-  idoR0:170, idoSnapR:[0, 140, 160, 180], idoLock:26, idoVenn:90, idoSnap:6, idoSkip:600, idoSq:36, idoHit:0.8,
+  // there is more ground to cover between the lock and the snap; the hit, the lock and the wind-up are as they were. 160 / 180 / 200 since the longer wind-up
+  // the same day (see SCREECHY!)
+  idoR0:170, idoSnapR:[0, 160, 180, 200], idoLock:26, idoVenn:90, idoSnap:6, idoSkip:600, idoSq:36, idoHit:0.8,
   // the arena: the sparks' frames between turns by phase (phase 2 on), their warning and their live frames, their reach, their share of a hit;
   // phase 3's tear and quake; the ending
   spEvery:[0, 0, 230, 180], spWarn:44, spLive:10, spR:34, spHit:0.3, tear:100, quakeN:6, quakeStep:7, endT:104, endHold:1700 };
@@ -17930,7 +17953,7 @@ FOUR_WIND.fourbye = function(s, tgt, H, u, ph){
   const gy = groundY(), R = s.r;
   fourGo(s, s._byeX != null ? s._byeX : s.x, gy - R*0.95, 0.1);
   H.look = u < 0.55 ? 'fourbye' : 'fourscreech';
-  if(u > 0.45){ const m = fourMouth(s); if(s._inhT0 == null) s._inhT0 = hazardT; H.inh = [Math.round(m.x), Math.round(m.y), s._inhT0, hazardT + s._tel, FOUR.byeRange[ph], 0.35]; }
+  if(u > 0.45){ const m = fourMouth(s); if(s._inhT0 == null) s._inhT0 = hazardT; H.inh = [Math.round(m.x), Math.round(m.y), s._inhT0, hazardT + bossTelFrames(s), FOUR.byeRange[ph], 0.35]; }
   H.rot = 0.08*Math.sin(hazardT*0.35)*(1 - u);
 };
 function fourBye(s, tgt){
@@ -18985,6 +19008,8 @@ function cobsPunch(s, atkId, first){
 // to be dodged -- slams 3/4/5 (were 1/2/3), a wider impact (slamR 128, was 96), wider holes open a second longer (holeW 130,
 // was 88; holeT 4 s / 6 s, were 3 s / 5 s), a punch that reaches further and is harder to hop (armLen 0.7, was 0.5; armR 30,
 // was 22), and the punch's arm comes back (BOSS_MOVES.longarm) -- and no hit is bigger, no shot faster, no tell shorter.
+// Later the same day his wind-ups were made a quarter longer (BOSS_TEL_PACE: "more delay between when an attack is called and when it happens"),
+// which took him under MePhone4S again; the slam's impact is 144 and its holes 150 wide now (were 128 and 130), so he is level with him again.
 //   gaps      frames between his attacks, by phase: 96/72/54 -- the usual 100/72/52, a shade quicker at the ends, because
 //             a slam turn is long in the air (about 1.5 s a slam) and the gap only starts once he is back on the floor
 //   slams     slams a signature turn, by phase; launch his take-off speed (off the top of a 720 px screen in ~35 frames,
@@ -19012,8 +19037,8 @@ function cobsPunch(s, atkId, first){
 //             power-down; r: its size, and so its shadow's; color: Chelsea Cucumber, the toy's colour on its page; glow: a livelier green
 //             for what is drawn round the toy (its ray, its speaker's rings, the ring on its shots), because the olive greys out on the dusk;
 //             mit: the mitten it throws when it heard nothing (Round 17), one throw, its size, knockback, share of a boss hit, speed by phase and colour
-const SPRINGY = { gaps:[0,96,72,54], slams:[0,3,4,5], launch:-30, hang:26, lock:10, drop:22, slamR:128, slamKb:12,
-                  holeW:130, holeT:[0,240,240,360], pit:44, hop:-7, approach:220, backoff:140,
+const SPRINGY = { gaps:[0,96,72,54], slams:[0,3,4,5], launch:-30, hang:26, lock:10, drop:22, slamR:144, slamKb:12,
+                  holeW:150, holeT:[0,240,240,360], pit:44, hop:-7, approach:220, backoff:140,
                   armLen:0.7, armSpd:24, armR:30, armKb:14, blinkEvery:480, blink:320, fence:48, fenceEvery:60,
                   boxes:[0.2,0.5,0.8], boxY:0.12, boxW:110, boxHgt:64, boxLife:240, quake:120, padW:90,
                   bot:{ slots:5, plays:3, listen:480, ready:30, first:24, gap:[0,34,30,26], pause:60, speed:[0,8,9,10], aim:16, down:40, r:24, shotR:13, kb:7, dmg:0.35, color:'#93a85a', glow:'#a8e04a',
@@ -19697,24 +19722,29 @@ const ONE_SPD = 1.35;              // "launched faster": every Four and Two shot
 const ONE_TEL_MULT = 1.0, ONE_GAP_MULT = 1.0;
 const ONE_ACCEL = 0.55*ONE_SPD, ONE_CHASE_MAX = 5.5*ONE_SPD;   // Two's chase, faster: 7.4 px a frame against a fighter's 6.4 run
 // ORBIT, THEN SWOOP. The owner: "One follows you too well- they should try to circle you", and asked how, "Orbit, then
-// swoop". She used to close to 140px (ONE_STANDOFF) and sit on you. Now she circles you at mid range, ONE_ORBIT_R from you,
+// swoop". She used to close to 140px (ONE_STANDOFF) and sit on you. Now she circles you at mid range, 300px from you (now ONE_SIDE_R, beside you: BESIDE YOU),
 // on the arc over your head from one side to the other (she hovers, and the floor cuts off the circle's lower half); she
 // turns back at either end of it and now and then in the middle (ONE_ORBIT_FLIP, frames between turns), and she closes in
-// to ONE_SWOOP_R only to strike -- over a strike's last ONE_SWOOP_LEAD frames of wind-up and ONE_SWOOP_HOLD after it
+// to 190px (now ONE_SIDE_SWOOP) only to strike -- over a strike's last ONE_SWOOP_LEAD frames of wind-up and ONE_SWOOP_HOLD after it
 // lands -- then backs out to the orbit (oneMove). From the orbit Lightning's Chain Bolt still reaches her (its 260 is
 // measured to her edge, 212px away); the swoop is where everyone else's hits land. Size Shift, Power Ungrounded and the
 // ghost are not strikes (ONE_NO_SWOOP). Power Ungrounded is grounded by staying within s.r+130 of her, so while it is up
 // she circles inside that (ONE_UNGROUND_R). ONE_STEER is how hard she steers for her point on the circle.
-const ONE_ORBIT_R = 300, ONE_SWOOP_R = 190, ONE_UNGROUND_R = 180;
+const ONE_UNGROUND_R = 180;   // (her orbit was 300 out, her swoop 190: BESIDE YOU, below, replaced both)
 const ONE_ORBIT_W = 0.02;          // radians a frame: 6px a frame round a 300px circle, one side of you to the other in ~2 s
 const ONE_ORBIT_END = 0.3;         // the arc ends this far (radians) above level on either side of you
 const ONE_ORBIT_FLIP = [150, 300]; // mostly she sweeps right over you; now and then she turns back halfway
 const ONE_SWOOP_LEAD = 28, ONE_SWOOP_HOLD = 24, ONE_STEER = 0.08;
 const ONE_NO_SWOOP = ["sizeshift", "ungrounded", "ghost"];
+// BESIDE YOU. The owner, 2026-10-03: "one should be right beside you, so that you can hit them with a projectile", and picked "at your height, ~200px,
+// swaps sides". The orbit's numbers above are Steve Cobs's now (COBS_MOVE); hers sit at the ends of the arc instead: ONE_SIDE_R from you, level with you
+// (ONE_SIDE_END above level -- the floor holds her up, so her body spans your height and a straight shot meets her), for ONE_SIDE_DWELL frames, and
+// then she sweeps over your head to the other side at ONE_SIDE_W radians a frame. No turning back halfway: the arc over you is only the way across.
+const ONE_SIDE_R = 200, ONE_SIDE_SWOOP = 150, ONE_SIDE_END = 0.05, ONE_SIDE_W = 0.045, ONE_SIDE_DWELL = [100, 170];
 const ONE_TELE_DIST = 1000, ONE_TELE_HOLD = 30, ONE_TELE_CD = 180;   // "one can teleport if you are very far" (canon: she teleports, TPOT 12 on)
 // Her orbit's numbers as one table: oneMove reads it, so Steve Cobs ("He chases/orbits like One") can circle with his own
 // (COBS_MOVE) through the same code, and hers are exactly the constants above.
-const ONE_MOVE_CFG = { orbitR:ONE_ORBIT_R, swoopR:ONE_SWOOP_R, ungroundR:ONE_UNGROUND_R, w:ONE_ORBIT_W, end:ONE_ORBIT_END, flip:ONE_ORBIT_FLIP, lead:ONE_SWOOP_LEAD, hold:ONE_SWOOP_HOLD,
+const ONE_MOVE_CFG = { orbitR:ONE_SIDE_R, swoopR:ONE_SIDE_SWOOP, ungroundR:ONE_UNGROUND_R, w:ONE_SIDE_W, end:ONE_SIDE_END, flip:ONE_ORBIT_FLIP, dwell:ONE_SIDE_DWELL, lead:ONE_SWOOP_LEAD, hold:ONE_SWOOP_HOLD,
                        steer:ONE_STEER, noSwoop:ONE_NO_SWOOP, accel:ONE_ACCEL, max:ONE_CHASE_MAX, teleDist:ONE_TELE_DIST, teleHold:ONE_TELE_HOLD, teleCd:ONE_TELE_CD, aura:ONE_AURA };
 const ONE_GHOST_HP = 100;          // "summon 1 ghost fighter with 100 hp you must kill before continuing damage"
 // ...and it takes a third of the knockback, so a hit keeps it in reach on a 5000px map instead of launching it away while she
@@ -20659,20 +20689,29 @@ function oneChaseTarget(s, nearest){
   return best || nearest || null;
 }
 // ORBIT, THEN SWOOP ("One follows you too well- they should try to circle you" -- "Orbit, then swoop"). She steers for a
-// point ONE_ORBIT_R from you on the arc over your head, and the point travels round it: back at either end, and now and
+// point M.orbitR from you on the arc over your head (hers: BESIDE YOU, at the ends of it), and the point travels round it: back at either end, and now and
 // then in the middle. A wind-up holds the point where it is, so a kick lane stays on the side it was shown; over a strike's
-// last ONE_SWOOP_LEAD frames, and ONE_SWOOP_HOLD after it lands, the point comes in to ONE_SWOOP_R -- her swoop -- and then
+// last ONE_SWOOP_LEAD frames, and ONE_SWOOP_HOLD after it lands, the point comes in to M.swoopR -- her swoop -- and then
 // goes back out. She still flies faster than you can run (ONE_CHASE_MAX), so running away does not lose her, and "one can
 // teleport if you are very far" still holds, never mid wind-up.
-function oneArcAngle(a){ const lo = -Math.PI + ONE_ORBIT_END, hi = -ONE_ORBIT_END; return a > 0 ? (a > Math.PI/2 ? lo : hi) : clamp(a, lo, hi); }
+function oneArcAngle(a, end){ const e = end == null ? ONE_ORBIT_END : end, lo = -Math.PI + e, hi = -e; return a > 0 ? (a > Math.PI/2 ? lo : hi) : clamp(a, lo, hi); }
 function oneFlipT(){ return ONE_ORBIT_FLIP[0] + Math.floor(Math.random()*(ONE_ORBIT_FLIP[1] - ONE_ORBIT_FLIP[0] + 1)); }
 function oneMove(s, tgt, cfg){
   const M = cfg || ONE_MOVE_CFG;   // One's own numbers, or Steve Cobs's (COBS_MOVE)
   const cap = M.max;   // a giant One no longer slows ("harder", see sizeshift)
   if(tgt){
     const tx = tgt.x, ty = hurtCY(tgt), lo = -Math.PI + M.end, hi = -M.end, winding = s._tel > 0;
-    if(s._orbitA == null){ s._orbitA = oneArcAngle(Math.atan2(s.y - ty, s.x - tx)); s._orbitDir = s._orbitDir || 1; s._orbitFlipT = oneFlipT(); }
-    if(!winding){
+    if(s._orbitA == null){ s._orbitA = oneArcAngle(Math.atan2(s.y - ty, s.x - tx), M.end); s._orbitDir = s._orbitDir || 1; s._orbitFlipT = oneFlipT(); }
+    if(!winding && M.dwell){
+      // hers (BESIDE YOU): held at an end of the arc, beside you, for a dwell; then over your head to the other end, and held there
+      if(s._orbitA <= lo || s._orbitA >= hi){
+        if(s._dwellT == null) s._dwellT = M.dwell[0] + Math.floor(Math.random()*(M.dwell[1] - M.dwell[0] + 1));
+        if(--s._dwellT <= 0){ s._dwellT = null; s._orbitDir = s._orbitA <= lo ? 1 : -1; s._orbitA += s._orbitDir*M.w; }
+      } else {
+        s._orbitA += (s._orbitDir || 1)*M.w;
+        if(s._orbitA <= lo) s._orbitA = lo; else if(s._orbitA >= hi) s._orbitA = hi;
+      }
+    } else if(!winding){
       if(--s._orbitFlipT <= 0){ s._orbitDir = -(s._orbitDir || 1); s._orbitFlipT = oneFlipT(); }
       s._orbitA += (s._orbitDir || 1)*M.w;
       if(s._orbitA <= lo){ s._orbitA = lo; s._orbitDir = 1; }

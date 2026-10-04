@@ -612,6 +612,7 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
         one._telKind = 'eyelasers'; one._tel = oneTelLen(one, 'eyelasers'); one._eyeBurst = 0; one._atkTimer = 1e9; one._aimX = you.x; one._aimY = hurtCY(you);
         for (var i=0; i<320 && (one._tel > 0 || i < 3); i++){
           one._atkTimer = 1e9; you.invuln = 99; you.vx = i > 30 ? 5 : 0;   // you stand still, then run right
+          one.x = you.x - 250; one.y = groundY() - 300; one.vx = 0; one.vy = 0;   // held up and to the side, where her old orbit kept her (she flies level with you since 2026-10-03, and along her own row a strafe barely turns the aim)
           step();
           var bolts = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p._b; });
           if (bolts.length){

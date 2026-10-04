@@ -196,7 +196,7 @@ describe('TRY NOT TO FALL: the slam', () => {
       var gy = groundY(), out = { frames: {} };
       b._pickForce = 'springy'; b._atkLive = null; b._atkTimer = 1; step();
       out.kind = b._telKind; out.name = document.getElementById('banner').textContent; out.tel = b._tel;
-      for (var i=0;i<40 && b._tel>0;i++) step();
+      for (var i=0;i<60 && b._tel>0;i++) step();
       out.launched = !!b._slam && b._slam.phase==='up' && b.vy < 0;
       var m = projectiles.find(function(p){ return p.springMark; }); out.markX = m ? m.warnX : null; out.markInert = m ? (m.delay > 0) : null;
       var minY = 1e9, hung = false, fell = false, pct0 = f.pct, n = 0, first = null, holes = 0, AP = addProj;
@@ -274,7 +274,7 @@ describe('TRY NOT TO FALL: the slam', () => {
       [2, 3].forEach(function(ph){
         ${STAGE(300)}
         b.hp = b.maxHp*(ph===2 ? 0.5 : 0.2); updateBossAttack(b, f); b._atkTimer = 1e9; projectiles = []; b._quakeT = 0;
-        b._pickForce = 'springy'; b._atkLive = null; b._atkTimer = 1; step(); for (var i=0;i<40 && b._tel>0;i++) step();
+        b._pickForce = 'springy'; b._atkLive = null; b._atkTimer = 1; step(); for (var i=0;i<60 && b._tel>0;i++) step();
         var holesAt = [], holeT = [], waves = 0, AP = addProj, hangs = 0, moved = false;
         addProj = function(p){ if (p && p.springHole){ holesAt.push(Math.round(p.x)); holeT.push(p.delay); } if (p && p.shape==='springwave') waves++; return AP(p); };
         try {
@@ -1005,7 +1005,7 @@ describe('MY PURPOSE!: the Spring-Bot toy', () => {
       try {
         var g = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 420, groundY()-24, 1); g.team=0; g.controller='still'; g.stocks=9; fighters.push(g);
         f.invuln = 1e9; g.invuln = 1e9; b._pickForce = 'springbot'; b._atkLive = null; b._atkTimer = 1; step();
-        for (var i=0;i<45 && b._tel>0;i++) step();
+        for (var i=0;i<70 && b._tel>0;i++) step();
         b._atkTimer = 1e9;
         var toy = projectiles.find(function(p){ return p.springBot; });
         toy.y = toy.warnY - toy.r*0.5; toy.x = toy.warnX; toy.vx = 0; toy.vy = 0; toy.warn = 0; toy.sb.s = 1; toy.sb.t = 0;
