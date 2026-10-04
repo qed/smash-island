@@ -194,7 +194,7 @@ describe('the course', () => {
     // owner, 2026-10-02: "running should be d5 bfdi:branches difficulty" (asked what to change: "Jumps, Hazard timing and Length"): the front half has the
     // lane's precision jumps too, the stairs of small platforms (planks, pillars), and the first hazards in combination built of the gentler ones (jets on a platform you
     // land on, a cannon covering a jump) -- they are what the harder lane is for, and none is an episode hazard (the saw across a pit is a pendulum's: back half only)
-    for (const k of front) expect(['gap', 'wall', 'bar', 'piston', 'spikes', 'fire', 'belt', 'spring', 'cannon', 'planks', 'pillars', 'jetpad', 'coverfire'], 'the front half has the classics, the gentler platformer hazards, the first precision jumps and combinations: ' + k).toContain(k);
+    for (const k of front) expect(['gap', 'wall', 'bar', 'piston', 'spikes', 'fire', 'belt', 'spring', 'cannon', 'planks', 'pillars', 'leap', 'jetpad', 'coverfire'], 'the front half has the classics, the gentler platformer hazards, the first precision jumps and combinations: ' + k).toContain(k);
     expect(new Set(front.filter((k) => PLATFORMER.includes(k))).size, 'the platformer hazards start early').toBeGreaterThanOrEqual(4);
     for (const k of PLATFORMER.filter((k) => k !== 'belt')) expect(back, 'and every one of them but the gentlest, the belt, is in the back half too: ' + k).toContain(k);
     for (const k of ['ceiling', 'crumble', 'pendulum', 'ferry']) expect(front, 'the hardest wait for the back half: ' + k).not.toContain(k);
@@ -319,6 +319,20 @@ describe('the course', () => {
     for (let i = 1; i < gs.length; i++) expect(gs[i].x0 - gs[i - 1].x1, 'the run-up').toBeGreaterThanOrEqual(gs[i - 1].k === 'gap' ? 360 : 240);
     expect(L.edge - gs[gs.length - 1].x1, 'the last stretch is clear').toBeGreaterThanOrEqual(460);
   });
+
+  it('the length is for harder sections, not filler (owner 2026-10-02: "Length"): the lane is at full strength from 90% of the way, a quarter of it is sections, and the last third is mostly the sections that get harder', () => {
+    const L = lane(), secs = L.obs.filter((o) => o.sec);
+    const r = race({}, `var f = RACE_FIRST_X, l = RACE_LAST_X; return { s0:raceStrength(f), s50:raceStrength(f + (l - f)*0.5), s90:raceStrength(f + (l - f)*0.9), s100:raceStrength(l), first:f, last:l, ramp:RACE_RAMP };`);
+    expect([r.s0, r.s90, r.s100], 'nothing at the first obstacle; full strength from 90% of the way to the last').toEqual([0, 1, 1]);
+    expect(r.s50, 'and a ramp between: more than half at the middle of the way').toBeGreaterThan(0.5);
+    const px = secs.reduce((a, o) => a + (o.x1 - o.x0), 0);
+    expect(px / (L.edge - r.first), 'a fifth of the lane or more is sections: the d5 lane\'s own').toBeGreaterThanOrEqual(0.2);
+    const late = L.obs.filter((o) => o.x0 > L.len * 0.66);
+    expect(late.filter((o) => o.sec).length, 'the last third has at least three sections in it').toBeGreaterThanOrEqual(3);
+    const lateSecs = late.filter((o) => o.sec).map((o) => o.k);
+    for (const k of ['sawgap', 'pillars', 'planks']) expect(lateSecs, 'the gauntlet, the last third\'s own, has the ' + k).toContain(k);
+    expect(late.filter((o) => o.sec).every((o) => o.s >= 0.75), 'and every one of them is at three quarters of the strength or more').toBe(true);
+  });
 });
 
 // THE JUMPS. The owner (2026-10-02): "running should be d5 bfdi:branches difficulty"; asked what should change: "Jumps, Hazard timing and Length"; and "just not
@@ -335,8 +349,9 @@ describe('the jumps: precision platforming', () => {
       expect([o.sec.sx < o.x0, o.x0 < o.x1, o.x1 <= o.sec.ex, o.sec.ex < L.edge], o.k + ' at ' + Math.round(o.x0) + ': the section spans its obstacle').toEqual([true, true, true, true]);
       expect(o.x0 - o.sec.sx, 'run up to from 150 px back').toBe(150);
     }
-    const gs = L.obs.map((o) => o);   // the run-up: 220 px more than the 240 before anything that is a section
-    for (let i = 1; i < gs.length; i++) if (gs[i].sec) expect(gs[i].x0 - gs[i - 1].x1, 'the run-up to ' + gs[i].k).toBeGreaterThanOrEqual(460);
+    // the run-up: 220 px more than the 240 before anything that is a section (after a section he has come down already: the 240 is enough there)
+    const gs = []; for (const o of L.obs) { const g = gs[gs.length - 1]; if (g && g.g === o.g) g.x1 = Math.max(g.x1, o.x1); else gs.push({ g: o.g, k: o.k, sec: o.sec, x0: o.x0, x1: o.x1 }); }
+    for (let i = 1; i < gs.length; i++) if (gs[i].sec) expect(gs[i].x0 - gs[i - 1].x1, 'the run-up to ' + gs[i].k).toBeGreaterThanOrEqual(gs[i - 1].sec ? 240 : 460);
   });
 
   it('the planks narrow as the lane goes on and the stairs grow; the pillars are one fighter wide; planks are one-way, pillars are stone', () => {

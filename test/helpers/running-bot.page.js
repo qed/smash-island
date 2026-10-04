@@ -62,7 +62,10 @@ var __bot = function(you){
       var front = onf.plat.x + onf.w, nearFar = ob.x1 - front <= 70;
       o.right = nearFar || you.x < front - 34; o.jump = nearFar && you.onground && you.x > front - 60; return o;
     }
-    if(ob.x0 - ahead < 60 && !fl.some(function(z){ return z.plat.x <= ob.x0 + 10; })){ o.right = false; if(you.onground && you.vx > 1) o.left = true; return o; }   // wait at the edge for one to come in
+    // wait at the edge for one to come in: go when one is docked, or is coming in to dock (within 60 px of the edge and slowing to it: it docks for about ten frames, and he needs
+    // those to be at the edge as it arrives, not to start running when it has already left)
+    var coming = function(z){ return z.plat.x <= ob.x0 + 10 || (z.plat.x <= ob.x0 + 60 && Math.sin(2*Math.PI*(hazardT/z.period + z.phase)) < 0); };
+    if(ob.x0 - ahead < 40 && !fl.some(coming)){ o.right = false; if(you.onground && you.vx > 1) o.left = true; return o; }
   } else if(ob.k==='spikes'){
     if(you.onground && ob.x0 - ahead < 34 && ob.x0 - ahead > -10) o.jump = true;   // one jump over the strip
   } else if(ob.k==='ceiling'){
