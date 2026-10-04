@@ -206,9 +206,9 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.scr1, "Four's 6, now 6.8 (harder)").toBeCloseTo(6.8 * 1.35, 6);
     expect(r.scr3, "Four's 7.5, now 8.4").toBeCloseTo(8.4 * 1.35, 6);
     expect(r.scrDmg).toBe(33);
-    expect(r.ring.length, "Two's twelve, now twenty-four").toBe(24);
+    expect(r.ring.length, "Two's twelve, then twenty-four, now seventeen (\"nerf one.\" / \"Fewer bullets\": 1.2x of Two's 14)").toBe(17);
     r.ring.forEach(v => expect(v, "Two's ring at 6.5, now 7.5").toBeCloseTo(7.5 * 1.35, 6));
-    expect(r.knives.length, "Four's five seekers, now eight knives").toBe(8);
+    expect(r.knives.length, "Four's five seekers, then eight knives, now six (\"Fewer bullets\": 1.2x of five)").toBe(6);
     r.knives.forEach(([v, h, d]) => { expect(v).toBeCloseTo(9.5 * 1.35, 6); expect(h, '"2, but homing."').toBeGreaterThan(0); expect(d, 'a knife hits for her 33').toBe(33); });
     expect(r.mr1.length, 'three orbs a volley where Two threw one').toBe(3);
     expect(r.mr1[0][0], '"make mind read move slower": 8 where Two threw it at 13').toBeCloseTo(8 * 1.35, 6);
@@ -252,8 +252,8 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.out.mindread.healed, 'and it heals her').toBe(25);
     // "make all attacks except ghost fighter harder(not more damage tho)", then "much harder. more bullets! also longer attacks.": more of each, never a harder hit
     expect(r.out.fold.shots, 'the fold is a jaw, not a shot').toBe(0);
-    expect(r.out.knives.shots, "Four's three seekers, now eight knives").toBe(8);
-    expect(r.out.ring.shots, "Two's twelve, now twenty-four a burst").toBe(24);
+    expect(r.out.knives.shots, "Four's five seekers, then eight knives, now six (\"Fewer bullets\")").toBe(6);
+    expect(r.out.ring.shots, "Two's fourteen, then twenty-four a burst, now seventeen (\"Fewer bullets\")").toBe(17);
     expect(r.out.sizeshift.r, 'canon One grows GIANT (TPOT 23, 25)').toBe(Math.round(r.base * 1.4));
     expect(r.out.ungrounded.ung).toBe(true);
   });
@@ -397,11 +397,12 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     // "make all attacks except ghost fighter harder(not more damage tho)": a rock more a tier, two hands more, and Out of Orbit's planets (a lane's
     // worth, down the aimed lane and its 2/3/4 copies: "more of the same"). THEN "one could be harder... much harder. more bullets! also longer
     // attacks." (the owner, 2026-09-30): twice the rocks (8/10/15), a pair of volleys and then more of the lasers (2/3/4 volleys of a fan of 3/3/5, in
-    // each of two or three bursts), and twice the planets a lane (2/3/4) -- none of it a harder hit.
-    expect([r[1].moonrocks.n, r[2].moonrocks.n, r[3].moonrocks.n]).toEqual([8, 10, 15]);
-    expect([r[1].eyelasers.n, r[2].eyelasers.n, r[3].eyelasers.n], 'volleys x two eyes x a fan, a burst').toEqual([2 * 2 * 3, 3 * 2 * 3, 4 * 2 * 5]);
+    // each of two or three bursts), and twice the planets a lane (2/3/4) -- none of it a harder hit. THEN "nerf one." / "Fewer bullets" (2026-10-02): back down to about
+    // 1.2x of what they began as -- 5/7/10 rocks (it began 4/6/8), 2/4/24 lasers a burst (2/4/18), 1/2/4 planets a lane (1/2/3).
+    expect([r[1].moonrocks.n, r[2].moonrocks.n, r[3].moonrocks.n]).toEqual([5, 7, 10]);
+    expect([r[1].eyelasers.n, r[2].eyelasers.n, r[3].eyelasers.n], 'volleys x two eyes x a fan, a burst').toEqual([1 * 2 * 1, 2 * 2 * 1, 4 * 2 * 3]);
     expect([r[1].hands.n, r[2].hands.n, r[3].hands.n], 'hands under the fighter, a wave').toEqual([3, 5, 7]);
-    expect([r[1].orbitkick.n, r[2].orbitkick.n, r[3].orbitkick.n], 'planets kicked out of orbit, 2, 3 and 4 down each of 3, 4 and 5 lanes').toEqual([2 * 3, 3 * 4, 4 * 5]);
+    expect([r[1].orbitkick.n, r[2].orbitkick.n, r[3].orbitkick.n], 'planets kicked out of orbit, 1, 2 and 4 down each of 3, 4 and 5 lanes').toEqual([1 * 3, 2 * 4, 4 * 5]);
     for (const k of ['moonrocks', 'hands', 'orbitkick']) {
       expect([r[1][k].dmg, r[2][k].dmg, r[3][k].dmg], `${k}: harder, not harder-hitting`)
         .toEqual({ moonrocks: [0.8, 0.9, 1.0], hands: [0.8, 0.9, 1.0], orbitkick: [1.0, 1.1, 1.2] }[k].map(m => +(33 * m).toFixed(3)));
@@ -442,7 +443,7 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect(r.bursts.length, '"eye lasers should have two bursts"').toBe(2);
     expect(r.locks.length, 'each one tracks and then locks').toBe(2);
     r.bursts.forEach(b => {
-      expect(b.n, 'two volleys of a fan of three from each of two eyes at tier 1, a burst ("much harder")').toBe(2 * 2 * 3);
+      expect(b.n, 'one volley of one bolt from each of two eyes at tier 1, a burst ("Fewer bullets": it was 2 x 2 x 3 after "much harder", 1 x 2 x 1 before)').toBe(1 * 2 * 1);
       expect(b.err, 'the bolts go where you were at that lock').toBeLessThan(1);
     });
     expect(r.locks[1].aim - r.locks[0].aim, 'between the bursts the aim followed you again').toBeGreaterThan(40);
@@ -493,8 +494,9 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect(r.you).toBe(33);
     expect(r.youVx, 'sent the way she kicked').toBeGreaterThan(0);
     expect(r.behind, 'nobody behind her').toBe(0);
-    // "much harder. more bullets!" (the owner, 2026-09-30): two planets down the marked lane and down each of its two copies (tier 1), where there was one
-    expect(r.planets.length, 'two planets down the marked lane and down each of its two copies (tier 1)').toBe(2 * 3);
+    // "much harder. more bullets!" (the owner, 2026-09-30): two planets down the marked lane and down each of its two copies (tier 1), where there was one; then "nerf one." /
+    // "Fewer bullets" (2026-10-02): one again, about 1.2x of what it began as
+    expect(r.planets.length, 'one planet down the marked lane and down each of its two copies (tier 1)').toBe(1 * 3);
     r.planets.forEach(vx => expect(vx, 'every lane kicked the same way').toBeGreaterThan(0));
     expect(r.ys[0], 'the first is the marked lane').toBeCloseTo(r.y0, 6);
     const ys = [...new Set(r.ys)].sort((a, b) => a - b);   // (a lane's planets all start on its line)
