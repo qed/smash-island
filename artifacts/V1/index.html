@@ -25365,7 +25365,7 @@ function step(){
       const pd = (fromAssist && pr.trap) ? Math.round(pr.dmg*TRAP_DMG_MULT) : pr.dmg;
       const o=pr.ownerObj;
       for(const s of summons){
-        if(s.team===(o?o.team:0)) continue;                  // don't hit your own assist
+        if(s.team===(o?o.team:0)) continue; if(pr._swing && pr._swing.has(s)) continue;                  // don't hit your own assist; nor a boss this press's swing already hit (pr._swing, see doAttack)
         if(fromAssist && !(s.type==="boss" || s.hostile)) continue;
         if(Math.hypot(s.x-pr.x, s.y-pr.y) < s.r+pr.r){
           // A pierce/van shot is deliberately NOT consumed on contact (see below) — but this loop,
@@ -25803,7 +25803,7 @@ function doAttack(f){
     if(rubyBeam) proj.trail=[];
     if(RA.ticks) proj.ticks = RA.ticks;
     visLaunch(f, proj);     // render-only: the shot draws its way out of the fighter's own anchor
-    addProj(proj);
+    proj._swing = f._swingBoss = new Set(); addProj(proj);   // a ranged jab swings AND shoots: a boss the swing hits (below) does not take the shot too, as a fighter's grace would stop it
     puff(px,py,rubyBeam?'#ff8aa0':(emp?'#fff':RA.color),emp?6:3);
     if(emp) for(let i=0;i<6;i++) puff(px+f.face*i*8,py,rubyBeam?'#ff3a5a':'#fff',4);
     if(rubyBeam) 
@@ -25817,7 +25817,7 @@ function doAttack(f){
   // combo token and its later hits land through the grace the first one opened -- and a hit on the
   // attacker cancels what is left. Per-hit damage is authored to 0.1.
   if(P.multi && !emp){ beginCombo(f); f._combo = true; }
-  hitShape(f, jabFan(f, reach), dmg, dmg, f.face*kb, -4);   // the arc the arm sweeps, shoulder to fist
+  hitShape(f, jabFan(f, reach), dmg, dmg, f.face*kb, -4, undefined, undefined, f._swingBoss); f._swingBoss = null;   // the arc the arm sweeps, shoulder to fist
   f._combo = false;
   if(P.multi && !emp) f._multi = { n: P.multi.hits - 1, every: P.multi.every, t: P.multi.every, dmg: dmg, kb: kb*(P.multi.kb||0.3), finalKb: P.multi.finalKb||0, reach: reach, cxOff: 22+extra*0.6 };
   puff(cx,f.y,emp?'#fff':'#fff',emp?6:3);
@@ -25999,9 +25999,9 @@ const SMASHES = {
     // 116px on the old 24px circle, 134px on the tallest hurtbox -- so a plunge from inside that band
     // was caught by it, spent the target's grace, and never paid out. From PLUNGE_HEIGHT up the fall
     // does the hitting, and the payoff starts at 90px whatever shape the target is.
-    const from = heightOverFoe(f);
-    if(from < PLUNGE_HEIGHT) hitCircle(f,f.x,f.y+f.r,f.r+44,Math.round(26*SMASH_DMG_MULT),Math.round(26*SMASH_DMG_MULT),f.face*10,-14);
-    f._plunge = { from: from, life: 90 };
+    const from = heightOverFoe(f), bossHit = new Set();   // the point-blank hit and the fall are ONE move: a boss that took the first does not take the fall too (a fighter's grace stops that; a boss has none)
+    if(from < PLUNGE_HEIGHT) hitCircle(f,f.x,f.y+f.r,f.r+44,Math.round(26*SMASH_DMG_MULT),Math.round(26*SMASH_DMG_MULT),f.face*10,-14,undefined,undefined,bossHit);
+    f._plunge = { from: from, life: 90, bosses: bossHit };
     for(let i=0;i<12;i++) puff(f.x,f.y+f.r,'#f2a6e8',5);  },
   // ---- Needle (counter) — Riposte Stance: long, powerful counter window ----
   counter(f){ f.countering=60; f._riposte=true; f.flash=14; f.armor=20; for(let i=0;i<10;i++) puff(f.x,f.y-8,'#d94f6a',5);  },   // the Riposte Stance: the full hit back (applyHit)
@@ -27174,7 +27174,7 @@ const DOWNSPECIALS = {
     // fighter through on a held down+jump, and faking it could carry him through a big stage's floor.)
     f.flash = 8; f.vy = Math.min(f.vy, -5); f.onground = false;
     const fy = feetY(f) - 12;
-    for(const d of [-1, 1]){ hitCircle(f, f.x + d*22, fy, f.r + 4, 7, 7, d*7, -6); for(let i=0;i<4;i++) puff(f.x + d*(14 + i*6), fy + 8, '#fcdfa6', 3); }
+    const once = new Set(); for(const d of [-1, 1]){ hitCircle(f, f.x + d*22, fy, f.r + 4, 7, 7, d*7, -6, undefined, undefined, once); for(let i=0;i<4;i++) puff(f.x + d*(14 + i*6), fy + 8, '#fcdfa6', 3); }
   },
   leavealone(f){ // Fan -- FAN THEORY (the owner: "Fan Theory is the DOWN-special"). He watches the show's patterns and calls
     // what comes next, and breaks down when a pattern changes (Fan, Personality). He jots it down (Tri Your Best: the blog)
@@ -27383,7 +27383,7 @@ const ATKSPECIALS = {
   define(f){ f.flash=12; const cx=f.x+f.face*28; hitCircle(f,cx,f.y,f.r+26,13,13,f.face*11,-8); for(const t of fighters){ if(!t.dead&&t.idx!==f.idx&&hurtGap(t, cx, f.y) < -HURT_R0 + f.r+30){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5);} }  },
   fry(f){ f.flash=12; for(let i=0;i<5;i++) addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y-8+i*4,vx:f.face*(9+i),vy:0,grav:false,dmg:6,kb:5,r:5,color:'#e04b3a',life:44});  },
   freeze(f){ f.flash=12; spawnProj(f,{vx:f.face*9,vy:-1,grav:true,dmg:11,kb:8,r:9,color:'#9ad24b',life:60,freeze:true});  },
-  slap(f){ f.flash=12; const cx=f.x+f.face*30; for(let n=0;n<2;n++) hitCircle(f,cx,f.y,f.r+28,8,8,f.face*10,-7); const fireBonus=fighters.some(t=>!t.dead&&/Firey|Bomby/.test(t.name));  },
+  slap(f){ f.flash=12; const cx=f.x+f.face*30; const once=new Set(); for(let n=0;n<2;n++) hitCircle(f,cx,f.y,f.r+28,8,8,f.face*10,-7,undefined,undefined,once); const fireBonus=fighters.some(t=>!t.dead&&/Firey|Bomby/.test(t.name));  },
   flip(f){ f.flash=12; if(Math.random()<0.7){ const cx=f.x+f.face*28; hitCircle(f,cx,f.y,f.r+26,15,15,f.face*13,-9); } else { f.pct+=8; knock(f,f.face*-5,-8); } },
   anvil(f){ f.flash=14; let tgt=null,best=1e9; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.abs(t.x-f.x); if(d<best){best=d;tgt=t;} } const ax=tgt?tgt.x:f.x+f.face*60; dropProj(f, ax, tgt?tgt.y+tgt.r:feetY(f), {dmg:16,kb:10,r:18,color:'#3a3a3a',life:150});  },
 };
@@ -27956,7 +27956,7 @@ function doSpecial(f){
         const d=Math.hypot(t.x-f.x,t.y-f.y);
         if(ahead && d<95 && d<gd){ gd=d; grabbed=t; } }   // reach 150 -> 95
       if(!grabbed && summons.length){ const bs = nearestSummon(f, f.x, f.y, 95, function(o){ return f.face>0 ? o.x>f.x-20 : o.x<f.x+20; });
-        if(bs){ damageSummon(f, bs, f.x, f.y, 6); for(let i=0;i<8;i++) puff(bs.x,bs.y,'#fff29a',4); } }   // the blitz lands its 6 on a boss in its path; the grab and the hurl need a body (fighters only before: 0 in Boss Rush)
+        if(bs){ damageSummon(f, bs, f.x, f.y, 6); (f._dashSummonHits = f._dashSummonHits || new Set()).add(bs); for(let i=0;i<8;i++) puff(bs.x,bs.y,'#fff29a',4); } }   // the blitz lands its 6 on a boss in its path (and the dash that carries it does not sweep the same boss for 12 more: a fighter's grace stops that); the grab and the hurl need a body (fighters only before: 0 in Boss Rush)
       if(grabbed){
         // pull them back toward Liy and mark them for the hurl (down-special finishes it)
         applyHit(grabbed, 6, -f.face*4, -3, f);            // small pull-in hit
@@ -28979,7 +28979,7 @@ function shapeTargets(f, sh){
   return out;
 }
 // hitCircle's twin for a shape. Sweet and sour work the same way, on the distance from the shape's origin.
-function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb){
+function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb, once){
   if(SHOW_HITBOXES) DEBUG_HITS.push({ shape:sh, pts:shapePts(sh), t:10 });
   const bb = shapeBounds(sh);
   hitTurrets(f, bb.cx, bb.cy, bb.rad, dmgHigh);
@@ -29002,7 +29002,7 @@ function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb){
     applyHit(t, dmg, kbx*k, kby*k, f);
     if(t.team!==f.team){ landed++; f._confirm = 1; }
   }
-  if(summons.length) damageSummons(f, bb.cx, bb.cy, bb.rad, dmgHigh);
+  if(summons.length) damageSummons(f, bb.cx, bb.cy, bb.rad, dmgHigh, null, once);   // `once`: hitCircle's, for a boss that must take the move once
   return landed;
 }
 // Two bodies touching: the attacker's outline against the target's, with a little margin for the frame step.
