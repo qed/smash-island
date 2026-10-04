@@ -618,7 +618,7 @@ describe('the slot markers: six builders, one file, no conflicts', () => {
           if (b.attack === 'announcer') { projectiles = []; b._lanes = null; b._bl = null; b._q = []; b._calm = 999; b._hz.cc = 999; }
           window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
-          projectiles = []; f.invuln = 0; b._tel = 1; updateBossAttack(b, f);
+          projectiles = []; f.invuln = 0; b._tel = 1e-3; updateBossAttack(b, f);   // (the last sliver of a wind-up: it fires on this update at any BOSS_TEL_PACE)
           // a rebuilt boss's turn can run for a while after it fires (Puffball Speaker Box dashes, then cuts): watch a second more
           var most = projectiles.filter(function(p){ return p.owner===-2; }).length;
           for (var k=0;k<60;k++){ updateBossAttack(b, f); most = Math.max(most, projectiles.filter(function(p){ return p.owner===-2; }).length); }
@@ -750,7 +750,8 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
     // -- and his five second moves are his own ("PUT THAT COOKIE DOWN! (redone), I'LL BE BACK!, ONE OF EACH!, HASTA LA VISTA!, POP UP!, QUICKSAND SHOVE!")
     expect(r.mephone4s).toEqual({ base: [100, 72, 52], tel: 42, name1: 'PUT THAT COOKIE DOWN!', name2: 'PUT THAT COOKIE DOWN!', p2: "I'll Be Back", p3: 'Super Death Trap', extra: ['s4prizes', 's4vista', 's4popup', 's4car', 's4shove'] });
     // Two, rebuilt: his phase-3 gap is 60, not 52 (the derailed coaster is the park's hazard now: "if it makes sense for a hazard, reduce boss difficulty and add a hazard.", the owner, 2026-09-29), and his second moves are his own five
-    expect(r.two).toEqual({ base: [100, 72, 60], tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap'] });
+    expect(r.two).toEqual({ base: [180, 150, 130],   // "nerf two": "Longer gaps between turns" (the owner, 2026-10-03; they were 100 / 72 / 60)
+       tel: 36, name1: 'MIND READ!', name2: 'MIND READ!', p2: 'Size Shift', p3: 'Power Ungrounded — ground it to damage them!', extra: ['twosun', 'twopower', 'twoblocks', 'tworails', 'twoclap'] });
     // Four, rebuilt (the boss overhaul): his gaps eased a shade for the hills and sparks of his room ("if it makes sense for a hazard, reduce boss difficulty and add a hazard"), his own five
     expect(r.four).toEqual({ base: [104, 78, 56], tel: 50, name1: 'SCREECHY!', name2: 'SCREECHY!!', p2: 'Zap to Dust', p3: 'Reality Buckles', extra: ['fourbye', 'fourtower', 'fourido', 'fourhearts', 'fourcactus'] });
   });
@@ -771,7 +772,7 @@ describe("the late five's slots: MePhone4, Evil Leafy, MePhone4S, Two and Four, 
           window.__lastBanner = null; b._atkTimer = 1; b._tel = 0; b._s4 = null; b.hover = false; b.y = groundY() - b.r; updateBossAttack(b, f);
           out.tel.push(window.__lastBanner && window.__lastBanner.text);
           projectiles = []; tendrils = []; summons = summons.filter(function(s){ return s.type==='boss'; }); f.invuln = 0; f.pct = 0;
-          b._tel = 1; updateBossAttack(b, f);
+          b._tel = 1e-3; updateBossAttack(b, f);   // (the last sliver of a wind-up: it fires on this update at any BOSS_TEL_PACE)
           out.landed.push(projectiles.filter(function(p){ return p.owner===-2; }).length + tendrils.length + summons.filter(function(s){ return s.hostile; }).length + (b._portal ? 1 : 0));
           b._portal = null;
         }
@@ -843,19 +844,19 @@ describe('BOSS_PACE: every Boss Rush boss waits a fifth longer between its attac
     expect(leaks, 'no slot puts the pace on its own number').toEqual([]);
   });
 
-  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, 100 x 1.2 for MePhone4S and Two, and Four\'s own 104 x 1.2', () => {
+  it('end to end: when a turn ends, the next attack is a paced gap away -- MePhone4 76 x 1.2, Evil Leafy 130 x 1.2, 100 x 1.2 for MePhone4S, Two\'s own 180 x 1.2, and Four\'s own 104 x 1.2', () => {
     const r = W.eval(`(function(){ var out = {};
       ${STAGE('Four', 500)}
       ['MePhone4', 'Evil Leafy', 'MePhone4S', 'Two', 'Four'].forEach(function(name){
         BOSSRUSH.bossIdx = BOSS_ROSTER.findIndex(function(r){ return r.name === name; });
-        summons = []; spawnBossRushBoss(); b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9; b._tel = 1; b._telKind = null;
+        summons = []; spawnBossRushBoss(); b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9; b._tel = 1e-3; b._telKind = null;
         updateBossAttack(b, f);
         if (name === 'Evil Leafy'){ out['Evil Leafy held'] = b._atkTimer; elDone(b); }   // her turns run on past the wind-up: the gap is held (1e6) until the move is done, and elDone starts it
         if (name === 'MePhone4'){ out['MePhone4 held'] = b._atkTimer; projectiles = []; mpTick(b, f); }   // his glove turn runs on past the wind-up too since "FIST THINGY! combo from P1" (the owner, Round 17): the finisher waits in the wings, the gap is held (1e6), and mpTick starts it once nothing is left to come
         out[name] = b._atkTimer;
       });
       summons = []; projectiles = []; tendrils = []; return out; })()`);
-    expect(r).toEqual({ MePhone4: 91, 'MePhone4 held': 1e6, 'Evil Leafy': 156, 'Evil Leafy held': 1e6, MePhone4S: 120, Two: 120, Four: 125 });
+    expect(r).toEqual({ MePhone4: 91, 'MePhone4 held': 1e6, 'Evil Leafy': 156, 'Evil Leafy held': 1e6, MePhone4S: 120, Two: 216, Four: 125 });   // Two: 180 x 1.2 since "nerf two" (2026-10-03)
   });
 });
 

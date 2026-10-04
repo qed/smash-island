@@ -252,7 +252,7 @@ function bootRecording(seed = 3) {
 }
 
 describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', () => {
-  it('a wave is a ring on every filled lane, both ways from her: full boss damage each, one attack id, drawn as her rings, after a 44-frame wind-up', () => {
+  it('a wave is a ring on every filled lane, both ways from her: full boss damage each, one attack id, drawn as her rings, after a 44-unit wind-up (36 frames: BOSS_TEL_PACE)', () => {
     const r = W.eval(`(function(){ ${STAGE(900)} ${TURN}
       var gy = groundY(), rec = turn('soundwave', { hold:true, x:900, each:function(rc){ if (rc.fireAt > 0 && rc.d == null){ rc.d = IMPACT_DEBRIS.length; rc.sc = IMPACT_SCARS.map(function(s){ return [Math.round(s.x), s.y, s.w]; }); } } });
       return { rec: rec, gy: gy, boss: bossDmg(), lanes: rec.shots.map(function(s){ return Math.round((gy - 38 - s.y)/42); }), telLen: rec.fireAt - rec.telAt, kind: rec.kind,
@@ -262,7 +262,8 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
     const all = r.rec.shots, sh = all.filter((s) => s.at === all[0].at);
     expect(r.kind).toBe('soundwave');
     expect(r.banner).toBe('SONIC BLAST!');
-    expect(r.telLen, 'a wind-up long enough to read the panels').toBe(44);
+    // "make the opposite happen for the 1st 3 bosses" (the owner, 2026-10-03): her wind-ups run 0.8 as long (BOSS_TEL_PACE), 44 units in 36 frames
+    expect(r.telLen, 'a wind-up long enough to read the panels').toBe(36);
     expect(sh.length, 'five filled lanes, both ways').toBe(10);
     expect(all.length, 'and the second wave of phase 1, the same lanes again').toBe(20);
     expect(new Set(sh.map((s) => s.shape))).toEqual(new Set(['psbring']));
@@ -393,7 +394,7 @@ describe('SONIC BLAST!: rainbow rings whose wall panels preview their heights', 
 describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices six times', () => {
   // "Book, you read 'lips'. It's time for you to suffer the CONSEQUENCES of your ACTIONS!" / "Puffball Speaker Box slices Book to pieces
   // with several knives." (Catch These Hands/Transcript)
-  it('the spotlight follows you through the wind-up and locks 14 frames before she goes; the room dims as it lands', () => {
+  it('the spotlight follows you through the wind-up and locks 14 units (12 frames) before she goes; the room dims as it lands', () => {
     const r = W.eval(`(function(){ ${STAGE(300)} ${TURN}
       var log = [];
       var rec = turn('consequences', { max:200, each:function(rc, j){
@@ -401,16 +402,16 @@ describe('CONSEQUENCES!: a spotlight lands on you, then she dashes and slices si
       return { log: log, telLen: rec.fireAt - rec.telAt, banner: rec.banner && rec.banner.text, lock: PSB.cons.lock };
     })()`);
     expect(r.banner).toBe('CONSEQUENCES!');
-    expect(r.telLen).toBe(60);
+    expect(r.telLen, '60 units, 48 frames (BOSS_TEL_PACE)').toBe(48);
     const early = r.log.filter(([tel]) => tel > r.lock + 2), late = r.log.filter(([tel]) => tel < r.lock - 1);
     expect(early.length).toBeGreaterThan(30);
     // while it follows, the spot is where you were one frame ago (it is read before you move again)
-    for (const [, spot, fx, lk] of early.slice(3)) { expect(Math.abs(spot - fx), 'follows you').toBeLessThanOrEqual(3); expect(lk).toBe(0); }
+    for (const [, spot, fx, lk] of early.slice(3)) { expect(Math.abs(spot - fx), 'follows you (a frame behind: 3 px a unit, 1.25 units a frame)').toBeLessThanOrEqual(4); expect(lk).toBe(0); }
     // once locked it holds, though you keep going, and it is white (locked)
     const held = new Set(late.map(([, spot]) => spot));
     expect(held.size, 'the spot holds still').toBe(1);
     expect(late.every(([, , , lk]) => lk === 1)).toBe(true);
-    expect(Math.abs(late[0][2] - late[0][1]) > 8, 'and you have moved on from it').toBe(true);
+    expect(Math.abs(late[late.length - 1][2] - late[late.length - 1][1]) > 8, 'and you have moved on from it').toBe(true);
     expect(r.log[r.log.length - 1][4], 'the room has dimmed').toBeGreaterThan(0.9);
     expect(r.log[3][4], 'gradually').toBeLessThan(r.log[r.log.length - 1][4]);
   });
@@ -568,7 +569,7 @@ describe('RAINBOW BARF!: a rainbow hose that reverses mid-sweep (phase 2 on)', (
     const ang = (s) => Math.atan2(s.vy, s.vx);
     expect(r.rec.kind).toBe('rainbowbarf');
     expect(r.rec.banner.text).toBe('RAINBOW BARF!');
-    expect(r.tel).toBe(40);
+    expect(r.tel, '40 units, 32 frames (BOSS_TEL_PACE)').toBe(32);
     expect(every.length, 'two shots a frame from phase 2, over the 40 frames of one there-and-back sweep').toBe(80);
     expect(sh.length, 'a shot a frame in the first stream').toBe(40);
     expect(new Set(sh.map((s) => s.at)).size, 'one each frame').toBe(40);
@@ -664,10 +665,10 @@ describe('PRIVATE!: she flies out of frame and shutters slam at both edges, shri
              yEnd: Math.round(b.y), hover: Math.round(psbHoverY(b)), shEnd: (b._hz||{}).sh, priv: !!b._psbPriv, minY: rec.minY, r: b.r, fL: psbLaneY(0), fP: psbLevelY('P'), banner: rec.banner && rec.banner.text, tel: rec.fireAt - rec.telAt };
   })()`);
 
-  it('the wind-up is 52 frames and she is out of the frame for the slam: her bottom edge is above the top of the screen, beyond any reach', () => {
+  it('the wind-up is 52 units (42 frames: BOSS_TEL_PACE) and she is out of the frame for the slam: her bottom edge is above the top of the screen, beyond any reach', () => {
     const r = priv(1, 550, { hold: true });
     expect(r.banner).toBe('PRIVATE!');
-    expect(r.tel).toBe(52);
+    expect(r.tel).toBe(42);
     expect(r.minY + r.r + 60, 'nothing a fighter swings on the screen can reach her').toBeLessThan(0);
     expect(r.slam.y + r.r, 'she is already out when the shutters go down').toBeLessThan(0);
     const h = priv(1, 550, { hold: true, hurt: true });

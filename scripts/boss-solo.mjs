@@ -13,8 +13,9 @@
 // A BOSS: one fighter from FIGHTERS, 3 stocks, AI-controlled, items off, on the Boss Rush stage, started AT the boss (a
 // fresh bar, 0%). SEEDS runs per fighter (16: 240 runs a boss. The steps between the Dragon, the II bosses and Four are
 // about a tenth of a life each, and at 60 runs a boss's lives lost moved by that much between retunes that changed almost
-// nothing; livesLostSE is the standard error, about 0.06 at 240). A run that has not beaten the boss inside FRAMES (60 s)
-// counts as not beaten. SEEDS=4 in the environment makes a quick look (it cannot be written).
+// nothing; livesLostSE is the standard error, about 0.06 at 240). A run that has not beaten the boss inside FRAMES counts as
+// not beaten: 60 s at a boss's roster HP, and as much longer as BOSS_HP_MULT makes the bar -- 90 s since Round 17's "+50%".
+// SEEDS=4 in the environment makes a quick look (it cannot be written).
 // A solo fight is scored the frame the boss falls, so it must not be paid the stock that clearing every third boss pays:
 // the first stored numbers were, for the Dragon, MePhone4S and Four (Bosses 6, 9 and 12), and each read about 0.8 of a
 // life easier than it was.
@@ -35,7 +36,11 @@ import { BOSS_TUNING_EXPR, harnessCode } from './boss-tuning.mjs';
 
 const FIGHTERS = ["Firey","Leafy","Pin","Needle","Coiny","Bubble","Pen","Snowball","Blocky","Ice Cube","Match","Pencil","Rocky","Tennis Ball","Golf Ball"];
 const SEEDS_STORED = 16, SEEDS = Number(process.env.SEEDS || SEEDS_STORED), RUN_SEEDS = 2;
-const FRAMES = 3600;
+// 60 s was set for the roster's own HP. Kept at 60 s once every bar was half again as long, it cut off the fights it measures:
+// at SEEDS=4, MePhone4 was beaten in 32 runs of 60 inside 60 s and in 50 inside 90 s, and Four in 13 and 25, and the lives
+// those fights cost after the first minute went uncounted (1.32 and 1.52 lives; 1.78 and 2.22). The parent checks the game's
+// multiplier against this, so a retune of BOSS_HP_MULT stops the harness until the cap is moved with it.
+const FRAMES_AT_ROSTER_HP = 3600, HP_MULT = 1.5, FRAMES = FRAMES_AT_ROSTER_HP*HP_MULT;
 const RUN_FROM = 'MePhone4S';
 
 // Sets the run up and wraps addProj/applyHit so each point of damage is filed under the move that dealt it.
@@ -53,10 +58,13 @@ const SETUP = (name, boss, run) => `
   ${run ? 'BOSSRUSH.cleared = BOSSRUSH.bossIdx;' : ''}
   spawnBossRushBoss();
   var AP = addProj, AH = applyHit, depth = 0, kinds = {}, src = {};
-  // Springy's slam has no shot of its own: its mark and its hole carry the slam's id, so its damage files under 'slam'.
+  // Springy's slam has no shot of its own. Its hole carries the slam's id, so a pit's pop files under 'slam' -- but the hole is made
+  // after the slam's own hit lands, so that hit is filed here, while springySlamLand runs (it went to 'boss-other' before 2026-10-03).
+  var inSlam = 0;
+  if (typeof springySlamLand === 'function'){ var SSL = springySlamLand; springySlamLand = function(s, S){ inSlam++; try { return SSL(s, S); } finally { inSlam--; } }; }
   addProj = function(p){ if(p && p.owner===-2 && p.bossAtk!=null) kinds[p.bossAtk] = p.cobsTrap ? 'contraption' : (p.springMark || p.springHole) ? 'slam' : p.beamShot ? 'gun' : (p.shape || 'shot'); return AP(p); };
   applyHit = function(t, dmg, kx, ky, from, opts){ var p0 = t.pct; depth++; try { return AH(t, dmg, kx, ky, from, opts); } finally { depth--;
-    if(depth===0 && t.pct > p0){ var k = opts && opts.bossAtk!=null ? (kinds[opts.bossAtk] || 'boss-other') : (from && (from.hostile || from.idx===-2) ? 'add' : 'other');
+    if(depth===0 && t.pct > p0){ var k = inSlam ? 'slam' : opts && opts.bossAtk!=null ? (kinds[opts.bossAtk] || 'boss-other') : (from && (from.hostile || from.idx===-2) ? 'add' : 'other');
       src[k] = (src[k]||0) + (t.pct - p0); t._bsAcc = (t._bsAcc||0) + (t.pct - p0); } } };
 `;
 // One step, with anything the fighter took that applyHit did not deal (poison, bleed, burn) filed as damage over time.
@@ -112,6 +120,7 @@ if (process.env.BOSS_SOLO_WORKER) {
   const ALL = JSON.parse(W.eval('JSON.stringify(BOSS_ROSTER.map(function(b){ return b.name; }))'));
   const tuning = JSON.parse(W.eval(BOSS_TUNING_EXPR));
   W.close();
+  if (tuning.hpMult !== HP_MULT) throw new Error(`BOSS_HP_MULT is ${tuning.hpMult} in the game and ${HP_MULT} here: move the cap with it (HP_MULT in scripts/boss-solo.mjs)`);
   const full = !process.env.BOSSES && !process.env.FROM;
   // The bosses measured: from MePhone4 to the end -- the same seven as before the Purple Dragon moved from Boss 6 to Boss 9
   // ("just move purple dragon!!!", the owner, 2026-09-30), when the list started at the Dragon.

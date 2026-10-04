@@ -56,6 +56,15 @@
 // look at the source before believing it. `grace-hit` from One's telegraphed zones, Steve Cobs's minions and wave, and a MeLife add (the shared assist acts never
 // look at a fighter's grace). `stunlock` from Steve Cobs's MeTag cuffs (the root is the attack). Four's ~600 `fourwave` shots at once. The Boss Rush `burn` that
 // MePhone4's fire leaves on a fighter for the next boss's first half second. Decor (`dust`, `debris`, `scars`) still fading as the next boss spawns.
+// And since Round 17 (the sweeps of 2026-10-03): Springy's `turn-held` while his Spring-Bot toy plays back -- he waits for the playback ("once it readies and
+// PLAYS BACK he waits for it"), which is 534 frames in phase 2 (ready, then three plays of five shots with their gaps and pauses), and the hold runs on until
+// the last shot it echoed is gone: 10 to 12 s in the two repros, past the 600 frames this flags. It lets go when the toy powers down and its last echo has
+// crossed the room -- which in a wide window, with a box drop still falling just before it, is 15 s without a new turn: a `no-attack` too (2560 x 1440,
+// REPRO='Springy|Cammy|278|natural|art|2560x1440|same'; the build before the tuning of 2026-10-03 holds the same run's turn the same way). `stunlock` from Steve
+// Cobs's shots (`cobspencil`, `meeplesample`) on a fighter his MeTag cuffs hold (the root is the cuffs). `grace-hit` and `stunlock` from One's ghost
+// (`[One idle ghost]`, a fighter's move: doUpTilt, doAttackSpecial): the ghost fights as a fighter, and a fighter's chain may follow up through the grace its own
+// hit opened (chainOpen, CHAIN_MAX 3). And in the move matrix only: Purple Face's `fighter-stuck: iceUntil` under `moves:pfaceShoes:3`, where every turn is
+// TOTAL SLIP SHOES! and the slip is topped up before it runs out (in a fight his next turn after the shoes is always AD BREAK!).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';

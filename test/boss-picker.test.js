@@ -231,7 +231,7 @@ describe('one attack at a time: the next wind-up waits until the last of the att
   for (const name of TWELVE) {
     it(`${name}: through three phases of a fight, no wind-up begins under a shot or a scripted part of the attack before it; the window after is at least the paced gap; he is on the screen and a hit hurts him`, () => {
       for (const ph of [1, 2, 3]) {
-        const r = W.eval(FIGHT(name, ph, name === 'Puffball Speaker Box' ? 1600 : 1000));   // (her turns are the longest: a song of four seconds, a dash and five cuts)
+        const r = W.eval(FIGHT(name, ph, name === 'Puffball Speaker Box' ? 1600 : name === 'Springy' ? 1300 : 1000));   // (her turns are the longest: a song of four seconds, a dash and five cuts; Springy's slams take a quarter longer to wind up since 2026-10-03, BOSS_TEL_PACE)
         const at = `${name} phase ${ph}`;
         expect(r.phase, `${at}: the fight is in the phase asked for`).toBe(ph);
         expect(r.turns.length, `${at}: he keeps attacking (nothing waits for ever): ${r.turns.map((t) => t.kind)}`).toBeGreaterThanOrEqual(3);
