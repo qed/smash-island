@@ -19788,6 +19788,8 @@ const ONE_GHOST_HASTE_T = 1e9;     // a tier-3 ghost is hasted for as long as it
 //    still there and last as long ("shorter attacks" was not picked): the rocks and the knives are thrown more slowly instead. Zap to Dust, Screechy and the hands
 //    were already at the original count per wave (zap's and screechy's change below); Mind Read is kept as it was (the owner's "Keep").
 //  - MOON ROCKS!: every rock leads your run, at every tier ("rocks should anticipate your direction."). KNIFE FLURRY!: half the homing, for fewer frames.
+//  - "One attack at a time": her next wind-up waits until the attack before it is fully over (oneAttackOver and oneAttackWatch: the Boss Rush rule, done in her own update),
+//    and her normal gap then runs -- the window to hit her, with her on the screen. Her ghost and Power Ungrounded stay her mechanics.
 const ONE_KB = 0.6;
 const ONE_PHASE_HEAL = 64;         // the gauntlet heals 30% at each of its nine bosses, 270% over 2110 HP: 64% for each 500
 // The fighters she erased from the timeline -- Gaty by contract in "Seasonal Shift" (TPOT 15), Barf Bag and Basketball in
@@ -20019,16 +20021,43 @@ function oneNearestFoe(x, y){
 }
 // HER QUEUE. A move that runs on for a while -- rings one after another, waves of hands, a chain of folds -- leaves entries in
 // s._q ({ at, fn } on her own frame counter s._f, which updateOne ticks, so a test that calls updateOne by hand sees the same
-// frames the game does). The next wind-up waits until it is empty, and a sequence ends with oneSeqEnd, which starts the gap.
+// frames the game does). The next wind-up waits until it is empty -- and, since "One attack at a time", until the whole attack is over (oneAttackOver) --
+// and a sequence ends with oneSeqEnd, a last empty entry that holds the attack open through its tail (the jaws' last frames, the dust).
 function oneQueue(s, dt, fn){ (s._q || (s._q = [])).push({ at:(s._f||0) + Math.max(1, Math.round(dt)), fn }); }
 function oneBusy(s){ return !!(s._q && s._q.length); }
-function oneSeqEnd(s, dt){ oneQueue(s, dt, ()=>{ s._atkTimer = oneGap(s); }); }
+function oneSeqEnd(s, dt){ oneQueue(s, dt, ()=>{}); }   // (it used to start her gap here, at its own estimate of when the move was done: the gap starts when it IS done, oneAttackWatch)
 function oneRunQueue(s){
   if(!s._q || !s._q.length) return;
   const now = s._f||0, due = s._q.filter(e=>e.at <= now);
   if(!due.length) return;
   s._q = s._q.filter(e=>e.at > now);
   for(const e of due) e.fn();
+}
+// ONE ATTACK AT A TIME. The owner, 2026-10-02, "nerf one.", asked which: "One attack at a time" -- the rule the twelve Boss Rush bosses have (the engine's
+// bossAttackWatch, `_atkLive` and `lingers`; not its picker: "do the 12 only"). Her next wind-up waits until the attack before it is FULLY over, and then her
+// normal gap (oneGap) runs: that gap is the window to hit her, and in it she is on the screen and hittable. When a move fires, updateOne holds her clock at
+// ONE_HOLD and sets s._atkLive = { lo }, `lo` being the attack id drawn before the wind-up began (s._atkLo), so every id drawn since is this attack's; each frame
+// oneAttackWatch asks oneAttackOver, and when it is over the gap starts, counted from that moment. OVER means: no wind-up and nothing queued (oneBusy: her
+// sequences -- rings after rings, waves, kicks, folds, and the tail of each); no shot of the attack alive (bossShotLive: not a `trap`, not what only lies
+// there -- `lingers`, the giant's stomps), none that has left the arena for good (it is taken out, bossShotGone: nothing out there can hit anyone); and no
+// Vortex hop, running or still to come, because the hop that ends a special takes her off the screen and the window comes after it (a hop her shield holds
+// back is dropped: updateOne). What she leaves standing is terrain, not the attack: her ash piles, her cracks and marks, the giant state ("Keep hazards
+// going"). Her ghost and Power Ungrounded are her mechanics and stay as they were: while the ghost stands she does not attack at all, and Power Ungrounded is
+// a move like the rest -- its wind-up and its cast are an attack and a gap follows them -- though the shield it raises stays up for its own time. A clock
+// past the hold (a test's 1e9) is parked for good, not watched, as in the engine.
+const ONE_HOLD = 1e6;
+function oneAttackOver(s, A){
+  if(s._tel > 0 || oneBusy(s)) return false;
+  if(s._hop || (s._hopPending && !s._ungrounded)) return false;
+  for(const p of projectiles) if(bossShotLive(p, A.lo)){ if(bossShotGone(p)) p.life = 0; else return false; }
+  return true;
+}
+function oneAttackWatch(s){
+  const A = s._atkLive;
+  if(!A || s._tel > 0) return;
+  if(s._atkTimer > ONE_HOLD){ s._atkLive = null; return; }
+  if(oneAttackOver(s, A)){ s._atkLive = null; s._atkLo = null; s._atkTimer = oneGap(s); return; }
+  s._atkTimer = ONE_HOLD;
 }
 // HER SHOTS' STEERING. A shot she makes may carry: oHang { dx, dy, a, at, launch, rock } (it hangs at that offset from her, held
 // where the shared loop leaves it, until her frame `at`, and then goes -- oneLaunch), oSpin/oSpinT (its heading turns oSpin radians
@@ -20358,7 +20387,7 @@ function spawnOneBoss(){
     _giantT:0, _ungrounded:false, _ungroundT:0, _groundT:0, _grounded:false, _ghost:null,
     _farT:0, _teleCd:0, _dying:0, _introT:45, _rage:false, flash:0,
     _orbitA:null, _orbitDir:1, _orbitFlipT:0, _swoopT:0, _eyeBurst:0, _zapCols:null, _kickLanes:null, _foldZones:null,
-    _f:0, _q:[], _ash:[], _steerUntil:0, _rumble:0, _hopPending:false, _hop:null, _end:null, _gone:false };
+    _f:0, _q:[], _ash:[], _atkLive:null, _atkLo:null, _steerUntil:0, _rumble:0, _hopPending:false, _hop:null, _end:null, _gone:false };
   // the fight opens with the Vortex hop: she is not here yet, and comes across the screen from the far edge (oneHopStep)
   s._hop = { ph:'gone', t:0, r0:r, giant:false };
   oneArena(s);
@@ -20462,6 +20491,7 @@ function updateOne(s, tgt){
   oneGhostLeash(s, chase);
   // THE VORTEX HOP: at the start, at every phase line and after every special she goes into a spiral and comes back from the
   // far edge across the whole screen, leaving her aura behind her. A scripted flight, so no orbit and no strike while it runs.
+  if(s._hopPending && s._ungrounded) s._hopPending = false;   // a hop her shield holds back is dropped: it would take her off the screen in the middle of a window (oneAttackOver)
   if(s._hopPending && !s._hop && !(s._tel > 0) && !oneBusy(s) && !s._ungrounded){ s._hopPending = false; oneHopStart(s); }
   if(s._hop){ oneHopStep(s, chase); if(s.flash > 0) s.flash--; return; }
   oneMove(s, chase);
@@ -20475,6 +20505,7 @@ function updateOne(s, tgt){
     if(s.flash > 0) s.flash--;
     return;
   }
+  if(s._atkLive) oneAttackWatch(s);   // "One attack at a time": her gap is held while the last attack is going, and starts when it is over
   if(s._tel > 0){
     s._tel--; s.flash = (s._tel % 6 < 3) ? 1 : 0;
     // the eye lasers track you, then LOCK for the tier's last frames: the lock is the cue to step off the line
@@ -20483,6 +20514,7 @@ function updateOne(s, tgt){
     if(s._telKind==="mindread" && s._tel <= oneTier(s, 'mindread').catchT && oneTier(s, 'mindread').catchT > 0) s._caught = (s._caught || []).concat(oneCatchShots(s));
     if(s._tel <= 0){
       s.flash = 0; const k = s._telKind;
+      const lo = (s._atkLo != null) ? s._atkLo : (s._atkLo = BOSS_ATK_ID);   // the ids this attack draws are above this (a wind-up that did not start here -- a test's -- counts from now)
       // the eye lasers' second burst has its own attack id (so it can land after the first did) and a third shares the second's
       let id = ++BOSS_ATK_ID;
       if(k==="eyelasers"){ if((s._eyeBurst||0) === 1) s._eyeId = id; else if((s._eyeBurst||0) >= 2 && s._eyeId) id = s._eyeId; }
@@ -20490,7 +20522,7 @@ function updateOne(s, tgt){
       s._swoopT = ONE_SWOOP_HOLD;   // she stays in close a moment after a strike lands, then backs out (oneMove)
       // "eye lasers should have two bursts": the eyes track you again, lock again, and the volley fires again (a third in the top tier)
       if(k==="eyelasers" && (s._eyeBurst = (s._eyeBurst||0) + 1) < oneTier(s, 'eyelasers').bursts){ s._tel = oneTier(s, 'eyelasers').lock + ONE_EYE_RETRACK; return; }
-      s._eyeBurst = 0; s._atkTimer = oneBusy(s) ? 1e9 : oneGap(s);   // a move that runs on starts the gap when it ends (oneSeqEnd)
+      s._eyeBurst = 0; s._atkTimer = ONE_HOLD; s._atkLive = { lo };   // her gap starts when the attack is over (oneAttackWatch), not now
       if(ONE_SPECIALS.indexOf(k) >= 0 && k !== "ghost") s._hopPending = true;   // after every special she goes through the Vortex
     }
     return;
@@ -20498,6 +20530,7 @@ function updateOne(s, tgt){
   if(s.flash > 0) s.flash--;
   if(--s._atkTimer <= 0 && tgt && !oneBusy(s)){
     const k = oneNextMove(s);
+    s._atkLo = BOSS_ATK_ID;   // this attack's ids are the ones drawn after this (oneAttackOver)
     s._telKind = k; s._tel = oneTelLen(s, k);
     s._telX = tgt.x; s._telY = hurtCY(tgt); s._telDir = Math.sign(tgt.x - s.x) || s.face || 1;
     s._aimX = tgt.x; s._aimY = hurtCY(tgt); s._kickY = hurtCY(tgt);
@@ -20577,7 +20610,7 @@ function oneHopStep(s, tgt){
 function oneBeginShatter(s){
   s._dying = ONE_END_T; s._tel = 0; s._telKind = null; s.vx = 0; s.vy = 0;
   if(s._hop){ s.r = s._hop.giant ? s._hop.r0 : s._baseR; s._hop = null; }
-  projectiles = projectiles.filter(p=>p.owner!==-2); oneFx = []; s._q = []; s._ash = []; s._hopPending = false;
+  projectiles = projectiles.filter(p=>p.owner!==-2); oneFx = []; s._q = []; s._ash = []; s._hopPending = false; s._atkLive = null;
   s._end = { shards:[], bh:null };
   if(oneGhostAlive(s)) oneGhostDown(s._ghost, true);
 }

@@ -449,7 +449,8 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect(r.locks[1].aim - r.locks[0].aim, 'between the bursts the aim followed you again').toBeGreaterThan(40);
     expect(r.bursts[0].ids[0], 'the second burst is its own attack, so it can land after the first did').not.toBe(r.bursts[1].ids[0]);
     expect(r.bursts[0].timer, 'the first burst does not start the clock to her next attack').toBe(1e9);
-    expect(r.bursts[1].timer, 'the second one does').toBe(r.gap);
+    // ("nerf one." / "One attack at a time", 2026-10-02): the last burst holds her clock until the attack is over -- its bolts gone -- and her gap (r.gap) starts then
+    expect(r.bursts[1].timer, 'the second one holds it until the attack is over (ONE_HOLD)').toBe(1e6);
     expect(r.aimNow, 'the aim stopped following once it locked').toBe(r.locks[1].aim);
     expect(r.youNow - r.aimNow, 'so stepping off the line after the lock is the dodge').toBeGreaterThan(60);
   });
@@ -663,7 +664,7 @@ describe('Zap to Dust and Out of Orbit come with copies of themselves near her',
       try {
         ['zap', 'orbitkick'].forEach(function(k){
           oneNextMove = function(){ return k; };
-          one._tel = 0; one._atkTimer = 1; oneFx = []; projectiles = []; one._q = [];   // (a move that runs on holds the next wind-up until its queue is empty)
+          one._tel = 0; one._atkTimer = 1; oneFx = []; projectiles = []; one._q = []; one._atkLive = null;   // (a move that runs on holds the next wind-up until it is over: its queue empty, its shots gone)
           updateOne(one, you);
           var shown = k==='zap' ? one._zapCols.map(function(c){ return Math.round(c.x); }) : one._kickLanes.map(Math.round);
           one._atkTimer = 1e9; while (one._tel > 0) updateOne(one, you);

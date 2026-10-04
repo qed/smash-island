@@ -1046,6 +1046,168 @@ describe('stocks at her phase lines: "every 2 phases" (it was "also, no stock pe
   });
 });
 
+// ONE ATTACK AT A TIME. The owner, 2026-10-02: "nerf one." Asked which, they picked "One attack at a time" -- the rule the twelve Boss Rush bosses now have (test/boss-picker.test.js),
+// and "do the 12 only", so it is done in her own update (oneAttackWatch), not through the picker. Her next attack waits until the attack before it is FULLY over -- every shot,
+// strike and queued part of it gone -- and then her normal gap runs: that gap is the window to hit her, with her on the screen and hittable. Her ghost and Power Ungrounded
+// shields are her mechanics and stay; Power Ungrounded is a move, so it counts as an attack.
+// A whole fight, frame by frame, with one still fighter who cannot be hurt (the engine's own check in test/boss-picker.test.js, for her): for each wind-up that begins, was anything of
+// the attack before it still going (a shot of hers, a queued part, a hop), and how long was it since that attack was over (the frame her watch let the gap go)? And twenty frames into
+// each window, is she on the screen, and does a shot of a fighter's hurt her (unless a shield of hers is up)?
+const ONE_FIGHT = (marks, frames, seed) => `(function(){
+  var sd = ${seed}, _R = Math.random; Math.random = function(){ sd |= 0; sd = (sd + 0x6d2b79f5) | 0; var t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  try {
+    SETTINGS.itemRate = 0; SETTINGS.stocks = 99; LOCAL_PLAYERS = 1; window.__oneEnd = undefined;
+    startOneFight(['Firey'], { story:true, onEnd:function(won){ window.__oneEnd = won; return true; } });
+    var one = summons.find(function(s){ return s._oneFight; }), f = fighters[0];
+    f.controller = 'still'; f.stocks = 99; one.hp = one.maxHp - 500*${marks} - 5;   // (the phase asked for: her lines are crossed in the first frames)
+    var turns = [], bad = [], hers = [], overAt = -1, gapAtOver = 0, lastAlive = 0, lastBusy = false, lastHop = false, lastHers = 0, probe = null, probes = 0, hits = 0, off = [], missed = [], windows = 0, shielded = 0, ghostAge = 0, kinds = {};
+    for (var i=0;i<${frames};i++){
+      var wasLive = !!one._atkLive, pre = one._tel;
+      f.invuln = 1e9; f.pct = 0; f.dead = false; f.vx = 0;
+      if (one._ghost && !one._ghost.dead && ++ghostAge > 40){ oneGhostDown(one._ghost, true); ghostAge = 0; }   // (her ghost is her mechanic, and a still fighter cannot kill it: it falls after a while)
+      if (!probe && !one._atkLive && !(one._tel > 0) && !one._hop && overAt >= 0 && i - overAt === 20){
+        windows++;
+        if (oneGhostAlive(one) || (one._ungrounded && !one._grounded)) shielded++;
+        else {
+          if (!(one.x > -one.r && one.x < WW + one.r && one.y + one.r > 0 && one.y - one.r < WH)) off.push([i, Math.round(one.x), Math.round(one.y)]);
+          probe = { hp0: one.hp, at: i };
+          addProj({ owner:f.idx, ownerObj:f, x:one.x, y:one.y, vx:0, vy:0, r:8, dmg:3, kb:0, life:4, grav:false, noAim:true });
+        }
+      }
+      step();
+      if (probe){ probes++; if (one.hp < probe.hp0) hits++; else missed.push(probe.at); one.hp = probe.hp0; probe = null; }
+      if (wasLive && !one._atkLive && overAt < 0){ overAt = i; gapAtOver = oneGap(one); }
+      if (!(pre > 0) && one._tel > 0){
+        turns.push({ i: i, kind: one._telKind, since: overAt >= 0 ? i - overAt : null, gap: gapAtOver }); kinds[one._telKind] = 1;
+        if (lastAlive || lastBusy || lastHop) bad.push({ i: i, kind: one._telKind, alive: lastAlive, busy: lastBusy, hop: lastHop });
+        if (lastHers) hers.push({ i: i, kind: one._telKind, n: lastHers });
+        overAt = -1;
+      }
+      var lo = one._atkLive ? one._atkLive.lo : null;
+      lastBusy = !(one._tel > 0) && oneBusy(one);
+      lastHop = !!one._hop || (!!one._hopPending && !one._ungrounded);
+      lastAlive = lo == null ? 0 : projectiles.filter(function(p){ return bossShotLive(p, lo); }).length;
+      lastHers = projectiles.filter(function(p){ return p.owner === -2 && p.life > 0 && !p.lingers && !p.trap; }).length;   // any shot of hers at all
+      if (one._tel > 0){ lastBusy = false; lastAlive = 0; lastHop = false; lastHers = 0; }
+    }
+    return { turns: turns, bad: bad, hers: hers, probes: probes, hits: hits, off: off, missed: missed, windows: windows, shielded: shielded, marks: one._marks, kinds: Object.keys(kinds) };
+  } finally { Math.random = _R; }
+})()`;
+
+describe('"One attack at a time": the next wind-up waits until the last of the attack before it is gone, and the gap counted from then is the window to hit her', () => {
+  for (const marks of [0, 1, 2, 3]) {
+    it(`through a fight in phase ${marks + 1}, no wind-up begins under a shot, a queued part or a hop of the attack before it; the window after is at least her gap; she is on the screen and a hit hurts her`, () => {
+      const r = W.eval(ONE_FIGHT(marks, 2600, 40 + marks));
+      const at = `phase ${marks + 1}`;
+      expect(r.marks, `${at}: the fight is in the phase asked for`).toBe(marks);
+      expect(r.turns.length, `${at}: she keeps attacking (nothing waits for ever): ${r.turns.map((t) => t.kind)}`).toBeGreaterThanOrEqual(4);
+      expect(r.bad, `${at}: no wind-up under a live shot of the attack before it, a queued part of it, or its hop`).toEqual([]);
+      expect(r.hers, `${at}: nor with any shot of hers in the air at all`).toEqual([]);
+      for (const t of r.turns) if (t.since != null) expect(t.since + 1, `${at}: the turn at frame ${t.i} (${t.kind}) came ${t.since} frames after the last was over; her gap is ${t.gap}`).toBeGreaterThanOrEqual(t.gap);
+      expect(r.windows, `${at}: windows were measured`).toBeGreaterThanOrEqual(3);
+      expect(r.windows - r.shielded, `${at}: and most of them were not under a shield of hers`).toBeGreaterThanOrEqual(2);
+      expect(r.off, `${at}: on the screen in the window`).toEqual([]);
+      expect(r.missed, `${at}: a fighter's shot hurts her in the window (her ghost and Power Ungrounded are the shields that stay)`).toEqual([]);
+    }, 240000);
+  }
+
+  it('over means: nothing queued, no wind-up, no hop (running, or still to come), no shot of the attack alive -- not a trap, not what only lies there (`lingers`), not an older attack\'s, not one that has left the arena for good (it is taken out); her ash, cracks and giant state are terrain, not the attack', () => {
+    const r = STAGE(`
+      var out = {}, A = { lo: 10 }, mk = function(o){ return Object.assign({ owner:-2, x:300, y:300, vx:0, vy:0, r:10, life:50, bossAtk:11, dmg:5 }, o); };
+      fresh(); one._hop = null; one._hopPending = false; one._ungrounded = false; one._tel = 0; one._q = []; projectiles = [];
+      out.none = oneAttackOver(one, A);
+      one._tel = 5; out.winding = oneAttackOver(one, A); one._tel = 0;
+      one._q = [{ at: one._f + 50, fn: function(){} }]; out.queued = oneAttackOver(one, A); one._q = [];
+      one._hop = { ph:'out', t:0, r0:one.r, giant:false }; out.hopping = oneAttackOver(one, A); one._hop = null;
+      one._hopPending = true; out.hopToCome = oneAttackOver(one, A);
+      one._ungrounded = true; out.hopHeld = oneAttackOver(one, A); one._ungrounded = false; one._hopPending = false;
+      projectiles = [mk({ x:-400, vx:-5 }), mk({ x:WW + 400, vx:5 })]; out.gone = [oneAttackOver(one, A), projectiles.map(function(p){ return p.life; })];
+      projectiles = [mk({ x:-400, vx:5 })]; out.coming = [oneAttackOver(one, A), projectiles[0].life];
+      projectiles = [mk({ x:-400, vx:-5, delay:30 })]; out.waiting = [oneAttackOver(one, A), projectiles[0].life];
+      projectiles = [mk({ trap:true }), mk({ lingers:true }), mk({ bossAtk:3 }), mk({ bossAtk:null }), mk({ life:0 })]; out.terrain = oneAttackOver(one, A);
+      projectiles = [mk({ })]; out.alive = oneAttackOver(one, A);
+      projectiles = []; one._ash = [{ x:300, y:300, r:50, life:100, max:100 }]; oneArena(one).marks.push({ x:1, y:1, w:50, kind:'crack', born:0, seed:0 }); one._giantT = 300;
+      out.stands = oneAttackOver(one, A); one._ash = []; one._giantT = 0;
+      return out;`);
+    expect(r.none, 'nothing going: over').toBe(true);
+    expect(r.winding, 'a wind-up is the attack, not its end').toBe(false);
+    expect(r.queued, 'a queued part of it still to run: not over').toBe(false);
+    expect(r.hopping, 'her Vortex hop is the end of a special, and the window comes after it: not over').toBe(false);
+    expect(r.hopToCome, 'and one still to come: not over').toBe(false);
+    expect(r.hopHeld, 'a hop her shield holds back does not hold the attack (it is dropped: see below)').toBe(true);
+    expect(r.gone[0], 'shots out past either edge and still going are gone: over').toBe(true);
+    expect(r.gone[1], 'and taken out of the game, since nothing out there can hit anyone').toEqual([0, 0]);
+    expect(r.coming[0], 'a shot coming in from beyond the edge is not gone').toBe(false);
+    expect(r.coming[1]).toBeGreaterThan(0);
+    expect(r.waiting, 'a shot waiting on its delay has not begun: not gone').toEqual([false, 50]);
+    expect(r.terrain, 'a trap, a thing that lies there, an older attack\'s shot, a shot with no id, a dead one: none of them is the attack').toBe(true);
+    expect(r.alive, 'a live shot with this attack\'s id: not over').toBe(false);
+    expect(r.stands, 'her ash piles, her cracks and the giant state are what she leaves standing: terrain ("Keep hazards going")').toBe(true);
+  });
+
+  it('her clock: held while the attack is going, let go to her gap when it is over; one parked for good (a test\'s 1e9) is not watched and stays parked', () => {
+    const r = STAGE(`
+      var out = {};
+      fresh(); one._hop = null; one._hopPending = false; one._tel = 0; one._q = []; projectiles = [];
+      one._atkLive = { lo: 0 }; one._atkTimer = 1e9; oneAttackWatch(one); out.parked = [one._atkTimer, one._atkLive];
+      one._atkTimer = 10; one._atkLive = { lo: 0 }; projectiles = [{ owner:-2, x:300, y:300, vx:0, vy:0, r:10, life:50, bossAtk:5, dmg:5 }]; oneAttackWatch(one); out.held = [one._atkTimer, !!one._atkLive];
+      projectiles = []; oneAttackWatch(one); out.let = [one._atkTimer, !!one._atkLive, oneGap(one)];
+      var t0 = one._atkTimer = 77; oneSeqEnd(one, 3); one._q[0].fn(); out.marker = [t0, one._atkTimer]; one._q = [];
+      return out;`);
+    expect(r.parked, 'parked: the watch lets go and leaves the clock where it was').toEqual([1e9, null]);
+    expect(r.held, 'a shot of the attack is alive: the clock is held').toEqual([1e6, true]);
+    expect(r.let[0], 'the shot is gone: her gap starts, her own gap').toBe(r.let[2]);
+    expect(r.let[1]).toBe(false);
+    expect(r.marker[1], 'the end of a sequence no longer starts the gap: it only holds the attack open to its tail').toBe(r.marker[0]);
+  });
+
+  it('Power Ungrounded is a move, so it counts as an attack: it winds up and fires like the rest, her gap follows its cast (not a second wind-up at once), and the shield it raises stays up and keeps its rules', () => {
+    const r = STAGE(`
+      setTier(1); fresh(); you.invuln = 1e9;
+      one._telKind = 'ungrounded'; one._tel = 3; one._atkTimer = 50; one._atkLive = null; one._atkLo = null; one._hopPending = false;
+      var out = { firedAt: -1, releaseAt: -1, windupAt: -1, gap: oneGap(one), shieldAtRelease: null, took: null, liveAtFire: null, upAtWindup: null };
+      for (var i=0;i<300 && out.windupAt < 0;i++){
+        you.invuln = 1e9; you.pct = 0;
+        var live0 = !!one._atkLive, pre = one._tel, ung0 = one._ungrounded; step();
+        if (out.firedAt < 0 && one._ungrounded && !ung0){ out.firedAt = i; out.liveAtFire = !!one._atkLive; }
+        if (live0 && !one._atkLive && out.releaseAt < 0){ out.releaseAt = i; out.shieldAtRelease = one._ungrounded && !one._grounded; var hp0 = one.hp; out.took = oneTakeDamage(one, 10, you); one.hp = hp0; }
+        if (out.releaseAt >= 0 && !(pre > 0) && one._tel > 0){ out.windupAt = i; out.upAtWindup = one._ungrounded; }
+      }
+      return out;`);
+    expect(r.firedAt, 'it fired').toBeGreaterThanOrEqual(0);
+    expect(r.liveAtFire, 'and it is an attack: her clock is held on it, as on any other').toBe(true);
+    expect(r.releaseAt - r.firedAt, 'it has no shot, so it is over at once').toBeLessThanOrEqual(2);
+    expect(r.windupAt - r.releaseAt + 1, 'and her gap runs before the next wind-up begins').toBeGreaterThanOrEqual(r.gap);
+    expect(r.shieldAtRelease, 'the shield it raised is still up').toBe(true);
+    expect(r.took, 'and still keeps everything off her (no damage) until it is grounded').toBe(0);
+    expect(r.upAtWindup, 'it outlasts the gap: her next attack comes with it still up').toBe(true);
+  });
+
+  it('the Vortex hop a special ends with is part of the attack: her gap starts after it, with her on the screen; and a hop her shield holds back is dropped', () => {
+    const r = STAGE(`
+      setTier(1); fresh(); you.invuln = 1e9;
+      one._telKind = 'moonrocks'; one._tel = 2; one._atkTimer = 50; one._atkLive = null; one._atkLo = null; one._hopPending = false;
+      var out = { hopSeen: false, release: null };
+      for (var i=0;i<700 && !out.release;i++){
+        you.invuln = 1e9; you.pct = 0;
+        var live0 = !!one._atkLive; step();
+        if (one._hop) out.hopSeen = true;
+        if (live0 && !one._atkLive) out.release = { i: i, hop: !!one._hop, pending: !!one._hopPending, hidden: oneHopHidden(one), x: Math.round(one.x), y: Math.round(one.y), r: one.r, base: one._baseR };
+      }
+      // a hop her shield holds back: she is ungrounded when a hop is due -- it is dropped, not kept for the middle of a window
+      fresh(); one._hop = null; one._tel = 0; one._q = []; one._atkLive = null; one._atkTimer = 1e9; one._ungrounded = true; one._ungroundT = 300; one._hopPending = true; step();
+      out.held = { pending: !!one._hopPending, hop: !!one._hop };
+      one._ungrounded = false; one._ungroundT = 0;
+      return Object.assign(out, { WW: WW, WH: WH });`);
+    expect(r.hopSeen, 'a special sent her through the Vortex').toBe(true);
+    expect(r.release, 'and her gap began').not.toBe(null);
+    expect(r.release.hop || r.release.pending || r.release.hidden, 'after it: no hop running or to come, and she is not in the Vortex').toBe(false);
+    expect(r.release.r, 'a body again, whole size').toBe(r.release.base);
+    expect(r.release.x > 0 && r.release.x < r.WW && r.release.y > 0 && r.release.y < r.WH, 'on the screen (in the arena)').toBe(true);
+    expect(r.held, 'a hop her shield holds back is dropped').toEqual({ pending: false, hop: false });
+  });
+});
+
 describe('heavy hits go through impact() (shake, dust, debris, scars)', () => {
   it('each attack shakes the screen where it lands: zap 20, fold 30, hands 12, the kick 24, and the lighter ones; all of them dust and debris', () => {
     const r = STAGE(`
