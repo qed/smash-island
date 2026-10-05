@@ -2840,6 +2840,9 @@ let lastKoFrame=0;   // frame of the most recent KO — drives the anti-stalemat
 let WW=1100, WH=720, camX=0, camY=0, bases=[], worldPlats=[], floors=[], worldZones=[], spawnZones=[];
 // Pre-match co-op plan, keyed by team index: { focusName, stance:'aggressive'|'defensive'|'balanced', protectName }
 let TEAM_PLAN = {};
+// TWO-TEAM WALL BANDS (see wallBand). One's arena and Steve Cobs's are cut from the 2v2 teams map as it was before 2TDM got its
+// side-wall zones, so oneTeamsMap() raises this while it builds: that map is the corner-pocket layout, whatever the match is.
+let TEAMS_QUADS_ONLY = false;
 // ONE'S FIGHT (see startOneFight). Declared with the world state, above isBig(), because her arena IS the teams map's
 // geometry: "you fight one on a teams-size map, but without the solid walls". While it is live the world answers isBig()
 // the way the teams map does (a floor slab with pits instead of an endless floor, drop-through, the climbing AI) and
@@ -6111,6 +6114,56 @@ function climbLayers(){
   return ys.sort((a,b)=>a-b);
 }
 
+// ============================================================
+//  TWO-TEAM WALL BANDS — the safe spawn zones of 2TDM (1v1 up to 10v10)
+// ============================================================
+// "what about teams, which still doesnt have a 10v10 big wall spawn zone. i asked for that in the A tests!!!!
+// thats 3 months ago!!!!" ... "so what I meant to do, was that in 2tdm, you would spawn along the vertical section
+// of the map." (the owner, 2026-10-05, choosing: the full height of each team's side wall is its safe spawn zone,
+// with 10 spawn spots stacked along it.)
+//
+// With exactly TWO teams, each team's safe zone is a BAND down its own side of the arena: the world's own edge to a
+// little way in, from the FLOOR to the TOP of the world. Left team left, right team right. The rules are the zone's
+// rules exactly (teamZoneOf, inOwnTeamZone, applyHit): your OWN band protects you and disables your attacks, an
+// ENEMY's protects nobody. Three and four teams have to share the sides, so they keep the corner pockets (setupWorld).
+//
+// TEN spots are stacked up the band, whatever the team size. The corner it replaces had eight pads, so a team of
+// ten formed two to a pad. Two spots sit on the home ledge at the foot; eight pads zig-zag up the wall in two
+// columns, spread from the ledge to near the ceiling, so a fighter who forms up high has footing, and teammates
+// reforming together (pickSpawnPad) have ten different places to land. The pads are ONE-WAY hop tops like every
+// other ledge, and the band stops at the floor line, so a fighter standing on the floor is inside it.
+//
+// PURE, like the rest of setupWorld: positions come from the world's size and the screen's width, never from
+// Math.random(), so replays and netplay rebuild the identical wall.
+const WALL_SPOTS = 10;        // standing places up each band
+const WALL_BLUFF_H = 96;      // the home ledge at the foot of the band: the corner layout's own ledge, kept
+function wallBand(team, g){
+  const left = team === 0;                                   // team 0 is the left side (the human's), team 1 the right
+  const s = left ? 1 : -1;                                   // which way is "in", toward the middle of the map
+  const edge = left ? g.marginX : g.WW - g.marginX;          // where the floor ends: the band's own edge, at 0 px in
+  const bw = Math.min(g.floorW*0.20, clamp(W*0.40, 400, 640));   // how much FLOOR the band spans: room for two columns
+  const at = c => edge + s*c;                                // the x that is c px in from the floor's end
+  const zone = { x: left ? 0 : g.WW - g.marginX - bw, y: 0, w: g.marginX + bw, h: g.botY };   // world edge, floor to top
+  // The home ledge: the zone's visible anchor, as in the corner layout, with two spots on its top.
+  const bluffW = Math.min(300, bw*0.72), bluffY = g.botY - WALL_BLUFF_H;
+  const bx = at(bluffW*0.6);
+  const plats = [{ x: bx - bluffW/2, y: bluffY, w: bluffW, h: WALL_BLUFF_H, solid:true, floor:0 }];
+  const spawns = [{ x: at(bluffW*0.34), y: bluffY, used:0 }, { x: at(bluffW*0.86), y: bluffY, used:0 }];
+  // The rest are pads up the wall, alternating columns (the outer one by the world's edge, the inner one toward the
+  // map), evenly spaced from the ledge to just under the ceiling. Capped, so a Huge map's wall is a stair, not a
+  // tower: the top spot on the biggest world is still a few screens' fall, not the whole height of it.
+  const nPads = WALL_SPOTS - spawns.length;
+  const rise = Math.min(280, (bluffY - Math.max(60, g.WH*0.12))/nPads);
+  const pw = Math.min(140, bw*0.34);
+  for(let k=0; k<nPads; k++){
+    const cx = at(bw * (k%2 === 0 ? 0.76 : 0.24)), y = bluffY - rise*(k+1);
+    plats.push({ x: cx - pw/2, y, w: pw, h: 14, hop:true, floor:0, pad:true });
+    spawns.push({ x: cx, y, used:0 });
+  }
+  return { plats, base: { team, x: bx - bluffW/2, y: bluffY, w: bluffW, h: 18, color: TEAM_COLORS[team % TEAM_COLORS.length],
+    spawnX: bx, spawnY: bluffY - 46, floor: 0, spawns, zone, wall: true } };
+}
+
 // Set up world dimensions, floors, and team bases for the current match.
 function setupWorld(){
   spawnZones=[];
@@ -6312,7 +6365,8 @@ function setupWorld(){
   // spread its eight pads from the ceiling to the floor, and the zone drawn round them then covered
   // 55% of the arena's height; two of those leave almost nowhere that isn't somebody's safe ground.
   // Two teams take the bottom corners and the entire upper half becomes contested; three teams take
-  // the bottom two and one top corner.
+  // the bottom two and one top corner. (A real two-team match no longer comes through here: it takes the side-wall
+  // bands of wallBand. The two-team row survives for One's arena, cut from this layout.)
   const ZONE_QUADS = teamCount>=4 ? [[0],[1],[2],[3]]
                    : teamCount===3 ? [[2],[3],[0]]
                    :                 [[2],[3]];
@@ -6321,8 +6375,18 @@ function setupWorld(){
   const SPAWN_PADS = teamCount>=4 ? 5 : teamCount===3 ? 6 : 8;
   const PAD_STEP = 132;            // vertical gap between pad rows — a comfortable timed jump
 
+  // EXACTLY TWO TEAMS (2TDM, 1v1 up to 10v10) do not use the corners above: each takes a band down its own side wall,
+  // floor to ceiling, with ten spawn spots stacked up it (wallBand). Three and four teams share the sides and keep the
+  // corner pockets below, unchanged; so does One's arena, which is cut from the corner layout (TEAMS_QUADS_ONLY).
+  const WALL = teamCount === 2 && !TEAMS_QUADS_ONLY;
+
   bases=[];
   for(let t=0; t<teamCount; t++){
+    if(WALL){
+      const wb = wallBand(t, { WW, WH, marginX, floorW, botY });
+      worldPlats.push(...wb.plats); bases.push(wb.base);
+      continue;
+    }
     const qs = ZONE_QUADS[t] || [t % 4];
 
     // SPAWN PADS — a staggered grid in the OUTER BAND of the team's quadrant(s), so a whole team
@@ -6664,7 +6728,10 @@ function buildFighters(){
       const rank = teamOf.slice(0,i).filter(t=>t===team).length;
       // cycle teammates through the 3 spawn points
       const sp = (b.spawns && b.spawns.length) ? b.spawns[rank % b.spawns.length] : {x:b.spawnX, y:b.spawnY};
-      sx = sp.x; sy = sp.y;
+      // A spot's y is the TOP of what you stand on. A wall spot is formed on the way a respawn is (40 above it, so the
+      // fighter drops onto it): a wall's spots go up the whole side of the map, and one formed AT the surface sank
+      // through its own pad and fell to the next one down. The corner layout keeps its old start exactly.
+      sx = sp.x; sy = sp.y - (b.wall ? 40 : 0);
     } else if(isBigFFA()){
       // spread across the wide arena floor so they don't all start in one blob
       sx = WW*(0.12+0.76*i/Math.max(1,N-1));
@@ -20773,8 +20840,10 @@ function oneTeamsMap(){
   try{
     ONEFIGHT.active = false; COBSFIGHT.active = false;
     SETTINGS.mode = 'teams'; SETTINGS.count = ONE_ARENA_COUNT; SETTINGS.teamKey = ONE_ARENA_TEAMS; SETTINGS.mapSize = 'normal';
+    TEAMS_QUADS_ONLY = true;   // her map is the corner-pocket 2v2 layout, not 2TDM's side-wall bands (wallBand)
     setupWorld();
   } finally {
+    TEAMS_QUADS_ONLY = false;
     SETTINGS.mode = keep.mode; SETTINGS.count = keep.count; SETTINGS.teamKey = keep.teamKey; SETTINGS.mapSize = keep.mapSize;
     ONEFIGHT.active = keep.active; COBSFIGHT.active = keep.cobs;
   }
@@ -29824,6 +29893,8 @@ function teamZoneOf(team){
   // The zone IS the team's quadrant of the cross — a corner you can be pushed out of, not a column
   // running to the ceiling. The old full-height column was what let two teams stand in their own
   // halves untouchable and unable to touch anyone, which is how matches turned into one big pile.
+  // With exactly TWO teams (2TDM) it is the band down the team's own side wall instead, floor to top (wallBand): the
+  // owner's "big wall spawn zone". Same rules either way: this one function is what every guard below asks.
   // (Fallback for any arena built without quadrants: the original column.)
   if(b.zone) return b.zone;
   return { x: b.x - TEAM_ZONE_PAD, y: 0, w: b.w + TEAM_ZONE_PAD*2, h: (b.y + b.h) - 0 };
@@ -39006,8 +39077,12 @@ function worldGeo(){
     // `solid` was missing here once, so on a client every stone landmark rendered as a thin ledge; `field` keeps the
     // client's minimap filtering out the scatter grid the way the host's does; `rot` is paintPlat's tilt.
     worldPlats: worldPlats.map(p=>({x:Math.round(p.x),y:Math.round(p.y),w:Math.round(p.w),h:p.h,floor:p.floor,hop:p.hop,solid:p.solid,field:p.field,ladder:p.ladder,rot:p.rot})),
+    // `zone` and `wall` ride along so a client DRAWS the team's safe zone where the host plays it: without them it fell back
+    // to the old column round the base, which is nowhere near a side-wall band (see wallBand).
     bases: bases.map(b=>({team:b.team,x:Math.round(b.x),y:Math.round(b.y),w:b.w,h:b.h,color:b.color,
-      spawns: b.spawns ? b.spawns.map(sp=>({x:Math.round(sp.x),y:Math.round(sp.y)})) : undefined})),
+      spawns: b.spawns ? b.spawns.map(sp=>({x:Math.round(sp.x),y:Math.round(sp.y)})) : undefined,
+      zone: b.zone ? {x:Math.round(b.zone.x),y:Math.round(b.zone.y),w:Math.round(b.zone.w),h:Math.round(b.zone.h)} : undefined,
+      wall: b.wall || undefined})),
   };
 }
 // A cheap fingerprint of the geometry, so the host can tell it changed without building and stringifying all of it
