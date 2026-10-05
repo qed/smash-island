@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { PNG } from 'pngjs';
@@ -15,6 +15,10 @@ import { LINEUP, OG_WIDTH, OG_HEIGHT, MAX_KB, truecolour, palettePng } from '../
 // Cobs's prize (OJ, Suitcase, Cabby), and One and Steve Cobs themselves. Every group below that produces text or a picture
 // checks it against the SAME list, built here from the game's own tables rather than typed out, so a new Vault fighter is
 // covered the day it is added.
+
+// Most tests here boot the whole game (a 3 MB page) in jsdom: about a second on a quiet machine, several on a busy one. The
+// default 5 s per test is what a loaded CI box or a laptop mid-benchmark trips over, so this file allows itself a minute.
+vi.setConfig({ testTimeout: 60000 });
 
 const SITE = 'https://smash-delta.vercel.app/';
 const PUBLISH = 'artifacts/V1';
@@ -552,16 +556,19 @@ describe('brag cards: no secret is ever named', () => {
   });
 
   it('keeps every secret in the player\'s own seat out of the share sheet and the clipboard too (a real tap)', async () => {
-    for (const name of ['Needle', 'Gelatin', 'OJ', 'Cabby']) {
-      const { w, rec, doc } = bootShare({ share: ok });
+    const { w, rec, doc } = bootShare({ share: ok });   // one boot; each name is armed in turn and the same share sheet records every tap
+    const names = ['Needle', 'Gelatin', 'OJ', 'Cabby', 'Steve Cobs', 'One'];
+    for (const name of names) {
       w.eval(`SHARE_BRAG = { kind:'daily', n:56, won:true, you:${JSON.stringify(name)}, foe:'Pin' }`);
-      w.eval("go('result')");
+      w.eval("go('result')");   // (a go() to the result screen re-syncs the button; leaving it would drop the line)
       doc.getElementById('resultShare').click();
       await flush();
-      const d = rec.shared[0];
-      expect(leaks([d.title, d.text, d.url].join('\n')), `${name}: ${d.text}`).toEqual([]);
-      expect(d.text).toContain('as a secret fighter');
     }
+    expect(rec.shared).toHaveLength(names.length);
+    rec.shared.forEach((d, i) => {
+      expect(leaks([d.title, d.text, d.url].join('\n')), `${names[i]}: ${d.text}`).toEqual([]);
+      expect(d.text).toContain('as a secret fighter');
+    });
   });
 });
 
@@ -726,5 +733,133 @@ describe('brag cards: after the Daily', () => {
     expect(doc.getElementById('result').classList.contains('active')).toBe(true);
     expect(BRAG(w)).toBeNull();
     expect(labelOf(doc)).toBe('📣 Share');
+  });
+});
+
+// ---- search basics ------------------------------------------------------------------------------------------------------
+const LD_EL = HEAD.querySelector('script[type="application/ld+json"]');
+const noCR = (s) => s.replace(/\r/g, '');   // a Windows checkout may carry CRLF; the files are served as LF either way
+
+describe('search basics: the canonical link', () => {
+  it('has exactly one, absolute, https, and it is the production address', () => {
+    const links = [...HEAD.querySelectorAll('link[rel="canonical"]')];
+    expect(links, 'one canonical link').toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe(SITE);
+    expect(links[0].getAttribute('href')).toBe(meta('property', 'og:url'));
+  });
+});
+
+describe('search basics: structured data (JSON-LD)', () => {
+  const ld = () => JSON.parse(LD_EL.textContent);
+
+  it('is one JSON-LD block in the head, and it parses', () => {
+    expect(HEAD.querySelectorAll('script[type="application/ld+json"]')).toHaveLength(1);
+    expect(() => ld()).not.toThrow();
+  });
+
+  it('describes a VideoGame with the fields the owner asked for', () => {
+    const d = ld();
+    expect(d['@context']).toBe('https://schema.org');
+    expect(d['@type']).toBe('VideoGame');
+    expect(d.name).toBe('Battle for Smash Island');
+    expect(d.url).toBe(SITE);
+    expect(d.genre, 'a genre').toBeTruthy();
+    expect([].concat(d.genre).every((g) => typeof g === 'string' && g.length > 2)).toBe(true);
+    expect(d.gamePlatform).toBe('Web browser');
+    expect(d.applicationCategory).toBe('Game');
+    expect(d.isAccessibleForFree).toBe(true);
+    expect(d.offers['@type']).toBe('Offer');
+    expect(Number(d.offers.price), 'free').toBe(0);
+    expect(d.offers.priceCurrency).toBe('USD');
+  });
+
+  it('says it is an unofficial fan game, and matches what the link previews say', () => {
+    const d = ld();
+    expect(d.description).toMatch(/unofficial fan game/);
+    expect(d.description).toMatch(/free/i);
+    expect(d.description).toMatch(/100\+ fighters/);
+    expect(d.image, 'the same picture as the link preview').toBe(meta('property', 'og:image'));
+  });
+
+  it('names no person: no author, publisher or creator, and nothing shaped like a person or an email', () => {
+    const d = ld();
+    const PEOPLE = ['author', 'creator', 'publisher', 'producer', 'developer', 'copyrightHolder', 'contributor', 'maintainer', 'sponsor', 'provider', 'funder', 'editor', 'translator'];
+    expect(PEOPLE.filter((k) => k in d)).toEqual([]);
+    const types = [];
+    (function walk(o) { if (o && typeof o === 'object') { if (o['@type']) types.push(o['@type']); Object.values(o).forEach(walk); } })(d);
+    expect(types.filter((t) => /^(Person|Organization)$/.test(t)), 'no person or organisation').toEqual([]);
+    expect(LD_EL.textContent).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  });
+
+  it('is data the page never runs or reads', () => {
+    const script = HTML.slice(HTML.indexOf('<script>'));
+    expect(script).not.toMatch(/ld\+json/);
+  });
+});
+
+describe('search basics: robots.txt and sitemap.xml', () => {
+  const robots = () => noCR(readFileSync(join(PUBLISH, 'robots.txt'), 'utf8'));
+  const sitemap = () => noCR(readFileSync(join(PUBLISH, 'sitemap.xml'), 'utf8'));
+
+  it('robots.txt lets every crawler in and names the sitemap at the production address', () => {
+    const r = robots();
+    expect(r).toMatch(/^User-agent: \*$/m);
+    expect(r).toMatch(/^Allow: \/$/m);
+    expect(r, 'allow all: nothing is disallowed').not.toMatch(/^Disallow:\s*\S/m);
+    expect(r).toMatch(/^Sitemap: https:\/\/smash-delta\.vercel\.app\/sitemap\.xml$/m);
+  });
+
+  it('sitemap.xml is a valid urlset with the one production page', () => {
+    const doc = new JSDOM(sitemap(), { contentType: 'application/xml' }).window.document;
+    expect(doc.documentElement.localName).toBe('urlset');
+    expect(doc.documentElement.namespaceURI).toBe('http://www.sitemaps.org/schemas/sitemap/0.9');
+    const locs = [...doc.getElementsByTagName('loc')].map((e) => e.textContent.trim());
+    expect(locs).toEqual([SITE]);
+  });
+
+  it('the canonical link, og:url, the JSON-LD, the sitemap and robots.txt all agree on one address', () => {
+    const urls = new Set([
+      HEAD.querySelector('link[rel="canonical"]').getAttribute('href'),
+      meta('property', 'og:url'),
+      JSON.parse(LD_EL.textContent).url,
+      sitemap().match(/<loc>([^<]+)<\/loc>/)[1].trim(),
+      robots().match(/^Sitemap: (\S+)\/sitemap\.xml$/m)[1] + '/',
+    ]);
+    expect([...urls]).toEqual([SITE]);
+  });
+
+  it('names no secret and no person (they are read by every crawler)', () => {
+    for (const text of [robots(), sitemap()]) {
+      expect(leaks(text)).toEqual([]);
+      expect(text).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+    }
+  });
+});
+
+describe('search basics: vercel.json serves them', () => {
+  const VERCEL = JSON.parse(readFileSync('vercel.json', 'utf8'));
+  const PATHS = ['/robots.txt', '/sitemap.xml', '/og-image.png', '/'];
+
+  it('publishes artifacts/V1 as the site root, so a file beside index.html is served at its own path', () => {
+    expect(VERCEL.outputDirectory).toBe(PUBLISH);
+    for (const f of ['index.html', 'robots.txt', 'sitemap.xml', 'og-image.png']) expect(existsSync(join(VERCEL.outputDirectory, f)), f).toBe(true);
+  });
+
+  it('has no rewrite, redirect, route or header rule that could catch them, and no clean-URL rewriting', () => {
+    for (const key of ['rewrites', 'redirects', 'routes', 'headers']) {
+      for (const rule of VERCEL[key] || []) {
+        const src = String(rule.source ?? rule.src ?? '');
+        for (const p of PATHS) {
+          const hit = (() => { try { return new RegExp('^' + src.replace(/\(\.\*\)|\*/g, '.*') + '$').test(p); } catch (e) { return true; } })();
+          expect(hit, `${key} rule "${src}" would catch ${p}`).toBe(false);
+        }
+      }
+    }
+    expect(VERCEL.cleanUrls, 'cleanUrls would redirect /index.html').not.toBe(true);
+  });
+
+  it('has no serverless function in api/ that shadows a static file', () => {
+    const api = readdirSync('api').map((f) => f.replace(/\.[^.]+$/, ''));
+    for (const name of ['robots', 'sitemap', 'og-image', 'index']) expect(api, name).not.toContain(name);
   });
 });
