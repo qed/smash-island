@@ -566,11 +566,11 @@ describe('THE TLC NEEDS TO BE FIXED!', () => {
         setup(200, ph);
         b.x = 700; b._telPh = ph;
         wind(0, 1);
-        while (b._tel > 0) run(1, 500, gy - 24 - 300);
+        while (b._tel > 0) run(1, 200, gy - 24 - 300);   // (he hangs over the floor at x 200, no ledge under him: over the pad -- x 342 to 758 -- he would stand on a ledge, and the chain hops up to him: "hops up onto a ledge", below)
         var id = b._fs.id, per = [];
         function snapRings(){ var rings = projectiles.filter(function(p){ return p.shape === 'ember' && p.bossAtk === id && !p._seen; }); rings.forEach(function(p){ p._seen = 1; }); return rings.map(function(p){ return { y: gy - p.y, r: p.r, vx: p.vx, d: p.delay > 0 }; }); }
         per.push(snapRings());
-        var frames = 0; while (b._fs && frames < 400){ run(1, 500, gy - 24 - 300); frames++; var s = snapRings(); if (s.length) per.push(s); }
+        var frames = 0; while (b._fs && frames < 400){ run(1, 200, gy - 24 - 300); frames++; var s = snapRings(); if (s.length) per.push(s); }
         return per;
       }
       out[1] = landings(1); out[2] = landings(2); out[3] = landings(3);
@@ -605,6 +605,108 @@ describe('THE TLC NEEDS TO BE FIXED!', () => {
     expect(r.floor.hits.length, 'a fighter on the floor is hit').toBeGreaterThan(0);
     expect(r.floor.hits.reduce((a, h) => a + h, 0), 'the hits add to one boss hit however many landed').toBeLessThanOrEqual(r.floor.full + 0.5);
     expect(r.air.hits, 'up in the air the rings pass under').toEqual([]);
+  });
+});
+
+// THE LEDGE. The owner, 2026-10-04, of the platform in his arena, verbatim: "also only 1 of his attacks can hit you if your standing on the platform(basically)". It was true: his BOSS_PICK tags were rocketboard
+// 'any', tlc close+ground, furnace ground+far, youmust ground, so only ROCKET BOARD! reached the platform. Asked which of his attacks should, he picked all three: "TLC hops up" (he hops onto the platform after you,
+// and the fire ring from that landing spreads along its top as it spreads along the floor today), "YOU MUST! at your height" (the hooks close on the spot you stood, platform included), "FURNACE! up top" (from
+// phase 2 a plate also rolls along the platform). And he said to LEAVE his narrow-window corner as it is (three hazards in a narrow room is a harder room). Same damage per hit, harder to dodge, every hit warned
+// where it lands (the warnX/warnY marks the glitch hunter reads), one attack id a turn.
+describe('THE TLC NEEDS TO BE FIXED! hops up onto a ledge (the owner: "TLC hops up")', () => {
+  it('after a fighter standing on the platform he hops up onto it: every hop that comes down over it lands on its top, the rings run along the top to its two ends and no further, and the whole chain is one boss hit', () => {
+    const r = EV(`var out = {};
+      setup(300);
+      var pad = worldPlats[0], px = pad.x + pad.w*0.5, py = pad.y - f.r;
+      out.pad = { x: pad.x, y: pad.y, w: pad.w }; out.gy = gy; out.br = b.r;
+      setup(px); f.y = py; f.x = px; step(); f.pct = 0; f.invuln = 0; b._fs = null;
+      out.standing = fsbStand(f).y === pad.y && f.onground;
+      b.x = 900; b.vx = 0;
+      wind(0, 1);
+      out.kind = b._fsKind;
+      var fb = b._fsb;
+      out.markDuringWindup = fb.ty;
+      while (b._tel > 0) run(1, px, py);
+      var id = b._fs.id, land = [{ n: 0, x: Math.round(b.x), y: Math.round(b.y) }], hits = [], ys = {}, wys = {}, minX = 1e9, maxX = -1e9, minTop = 1e9, tys = [], frames = 0;
+      while (b._fs && frames < 500){
+        var n0 = b._fs.n, p0 = f.pct;
+        run(1, px, py); frames++;
+        if (b._fs && b._fs.n !== n0){ land.push({ n: b._fs.n, x: Math.round(b.x), y: Math.round(b.y) }); tys.push(fb.ty); }
+        if (f.pct > p0 + 0.5) hits.push(+(f.pct - p0).toFixed(2));
+        minTop = Math.min(minTop, b.y - b.r);
+        for (var i = 0; i < projectiles.length; i++){ var p = projectiles[i]; if (p.bossAtk !== id) continue; ys[Math.round(pad.y - p.y)] = 1; wys[Math.round(pad.y - p.warnY)] = 1; if (p.y < pad.y){ minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); } }
+      }
+      out.land = land; out.hits = hits; out.ys = Object.keys(ys).map(Number).sort(function(a, b){ return a - b; }); out.wys = Object.keys(wys).map(Number).sort(function(a, b){ return a - b; });
+      out.ledgeX = { min: minX, max: maxX }; out.minTop = minTop; out.tys = tys; out.full = bossDmg(); out.after = { fs: b._fs, ty: fb.ty }; out.px = px; out.frames = frames;
+      return out;`);
+    const rest = (sy) => Math.round(sy - r.br - 2);   // his centre when he stands on a surface
+    expect(r.standing, 'the fighter is standing on the platform').toBe(true);
+    expect(r.kind).toBe('tlc');
+    expect(r.markDuringWindup, 'the stomp where he stands, before the first hop, is the floor\'s').toBe(Math.round(r.gy));
+    // the stomp is the first landing and the floor's; every hop after it comes down over the pad, where the fighter stands, and lands on its top
+    expect(r.land[0].y).toBe(rest(r.gy));
+    expect(r.land, 'six landings: the stomp and five hops').toHaveLength(6);
+    for (const l of r.land.slice(1)) expect(l.y, `landing ${l.n} is on the platform: his centre is a radius and two over its top`).toBe(rest(r.pad.y));
+    expect(r.land[5].x, 'and the chain ends on you').toBe(Math.round(r.px));
+    expect(r.tys.slice(0, 4), 'the landing mark shows the pad\'s top for the hop\'s whole flight').toEqual([446, 446, 446, 446]);
+    expect(r.minTop, 'his whole body stays on the screen, up there too').toBeGreaterThan(0);
+    // the rings run along the top of the pad (16 px over it; the big landing's higher one 58 px higher), each carrying its own start as warnX/warnY, and stop at the ends of the ledge.
+    // (-128 is the stomp's own two rings, the first landing, where he stood on the floor: the floor's, 16 over the floor line, 144 under the pad's top)
+    const floorRing = -(r.gy - r.pad.y - 16);
+    expect(r.ys, 'rings along the pad\'s top, and the stomp\'s along the floor').toEqual([floorRing, 16, 74]);
+    expect(r.wys, 'warnY: the ring\'s own start').toEqual([floorRing, 16, 74]);
+    const ledgeRings = r.ledgeX;
+    expect(ledgeRings.min, 'no ring up on the pad runs on past its left end').toBeGreaterThan(r.pad.x - 25);
+    expect(ledgeRings.max, 'nor past its right end').toBeLessThan(r.pad.x + r.pad.w + 25);
+    // a fighter who stands through all of it takes one boss hit, not one a ring
+    expect(r.hits.length, 'a fighter on the platform is hit').toBeGreaterThan(0);
+    expect(r.hits.reduce((a, h) => a + h, 0), 'one boss hit however many landings and rings reach him').toBeLessThanOrEqual(r.full + 0.5);
+    expect(r.after, 'the chain is over and its mark is gone').toEqual({ fs: null, ty: null });
+  });
+
+  it('a fighter on the floor gets the floor chain, even standing right under the platform: every landing on the floor line, every ring along the floor, none of it up on the pad', () => {
+    const r = EV(`var out = {};
+      setup(300);
+      var pad = worldPlats[0], px = pad.x + pad.w*0.5;
+      setup(px);
+      b.x = 900; b.vx = 0;
+      wind(0, 1);
+      var fb = b._fsb;
+      while (b._tel > 0) run(1, px);
+      var id = b._fs.id, bys = [Math.round(b.y)], tys = [], ys = {}, frames = 0;
+      while (b._fs && frames < 500){
+        var n0 = b._fs.n;
+        run(1, px); frames++;
+        if (b._fs && b._fs.n !== n0){ bys.push(Math.round(b.y)); tys.push(fb.ty); }
+        for (var i = 0; i < projectiles.length; i++){ var p = projectiles[i]; if (p.bossAtk === id) ys[Math.round(gy - p.y)] = 1; }
+      }
+      out.bys = bys; out.tys = tys; out.ys = Object.keys(ys).map(Number).sort(function(a, b){ return a - b; }); out.gy = gy; out.br = b.r; out.px = px; out.n = bys.length;
+      return out;`);
+    expect(r.n, 'the same six landings').toBe(6);
+    expect(r.bys.every((y) => y === Math.round(r.gy - r.br - 2)), `every landing is on the floor: ${r.bys}`).toBe(true);
+    expect(r.tys.every((y) => y === Math.round(r.gy)), 'and so is every mark').toBe(true);
+    expect(r.ys, 'rings along the floor (16 over it, the big landing\'s higher one 74)').toEqual([16, 74]);
+  });
+
+  it('a landing hits what stands on the surface he lands on: on the pad, the fighter on it and not the one on the floor right under it; on the floor, the other way round', () => {
+    const r = EV(`var out = {};
+      setup(300);
+      var pad = worldPlats[0], px = pad.x + pad.w*0.5;
+      setup(px); f.y = pad.y - f.r; f.x = px; step(); f.invuln = 0; b._fs = null;
+      var g = makeFighter(ROSTER.find(function(r){ return r.name === 'Pen'; }), px, gy - 24, 1); g.team = 0; g.controller = 'still'; g.stocks = 99; fighters.push(g);
+      function clear(){ f.pct = 0; g.pct = 0; f.invuln = 0; g.invuln = 0; f.hitstun = 0; g.hitstun = 0; }
+      b.x = px; clear();
+      fsbLand(b, { k:'tlc', P:1, n:2, id:++BOSS_ATK_ID, sy0:pad.y, sy1:pad.y, p1:pad });   // a hop's landing on the pad, right over the one on the floor
+      out.onPad = { up: f.pct, under: g.pct };
+      clear();
+      fsbLand(b, { k:'tlc', P:1, n:2, id:++BOSS_ATK_ID, sy0:gy, sy1:gy, p1:null });          // and one on the floor, right under the one on the pad
+      out.onFloor = { up: f.pct, under: g.pct };
+      out.full = bossDmg();
+      return out;`);
+    expect(r.onPad.up, 'the landing on the pad hits the fighter on it (0.9 of a boss hit)').toBeCloseTo(r.full*0.9, 1);
+    expect(r.onPad.under, 'not the one under it on the floor').toBe(0);
+    expect(r.onFloor.under, 'the landing on the floor hits the fighter on the floor (0.9 of a boss hit)').toBeCloseTo(r.full*0.9, 1);
+    expect(r.onFloor.up, 'not the one up on the pad').toBe(0);
   });
 });
 
@@ -902,6 +1004,8 @@ describe('the volcano: sky, ground, dust and drawing', () => {
           { _phase:2, _fsb:{ k:'board', p:1, bd:1, lk:1, d:-1, r:gy-44, r2:gy-130, cl:1 } }, { _phase:3, _fsb:{ k:'board', p:1, bd:1, lk:1, d:1, r:gy-130, r2:gy-44, cl:1 } },
           { _phase:2, _fsb:{ k:'hooks', p:1, x2:400, h2:40, lk2:0 } }, { _phase:2, _fsb:{ k:'hooks', p:1, x2:400, h2:20, lk2:1 } }, { _phase:3, _fsb:{ k:'hooks', p:1, x2:700, h2:3, lk2:1 } },
           { _tel:30, _fsKind:'tlc', _fsb:{ k:'tlc', x:400, n:1 } }, { _fsb:{ k:'tlc', p:1, x:400, n:4 } }, { _fsb:{ k:'tlc', p:1, x:400, n:5 } },
+          // 2026-10-04, "TLC hops up": the landing mark is drawn on the surface it comes down on -- the platform's top (ty), here a pad 144 px over the floor
+          { _fsb:{ k:'tlc', p:1, x:400, n:2, ty:Math.round(gy - 144) } }, { _fsb:{ k:'tlc', p:1, x:400, n:5, ty:Math.round(gy - 144) } },
           { _phase:3, _rage:true, _fsb:{ k:null, q:80 } }, { _phase:3, _rage:true, _fsb:{ k:null, q:0, f:6 }, flash:6 }, { face:-1, flash:8 }
         ];
         states.forEach(function(st){ var s = mk(st); summons = [s]; ctx.save(); ctx.translate(s.x, s.y); drawBossSprite(s); ctx.restore(); fsbDrawFx(s); drawArenaDecor('volcano'); });
@@ -1127,7 +1231,7 @@ describe('a netcode client sees him', () => {
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
       BOSS_ARENA = 'volcano'; var gy = groundY();
       var s = makeBossSummon(BOSS_ROSTER[2], 215); fsbDress(s); s._fs = null; s.x = 500; s.y = gy - s.r - 34; s._phase = 3; s._tel = 20; s._telKind = 'firewall'; s._fsKind = 'rocketboard'; s._telX = 640;
-      s._fsb = { k:'board', bd:1, lk:1, d:-1, r:gy - 44, r2:gy - 130, g:4, q:0, f:0, j:12, x:400, n:1, p:1, h:9 };
+      s._fsb = { k:'board', bd:1, lk:1, d:-1, r:gy - 44, r2:gy - 130, g:4, q:0, f:0, j:12, x:400, n:1, p:1, h:9, ty:Math.round(gy - 144) };
       s._hz = { ph:3, t0:0, ml:20, mr:-30, wn:0, wid:5, b0:1, g0:3, b1:2, g1:4 };
       summons = [s];
       var pj = function(o){ return Object.assign({ owner:-2, ownerObj:{ team:-1, idx:-2 }, vx:5, vy:0, r:20, color:'#ff8a3a', life:50 }, o); };
@@ -1143,6 +1247,8 @@ describe('a netcode client sees him', () => {
     })()`);
     expect(r.err).toBe(null);
     expect(r.fsb, 'the tell and its marks').toMatchObject({ k: 'board', bd: 1, lk: 1, d: -1, g: 4, j: 12, x: 400, n: 1, p: 1, h: 9 });
+    expect(r.fsb.ty, 'the surface the next landing is marked on (a ledge\'s top, when he hops up after you) crosses too').toEqual(expect.any(Number));
+    expect(r.client.ty).toBe(r.fsb.ty);
     expect(r.hz, 'the hazard\'s state').toMatchObject({ ph: 3, t0: 0, ml: 20, mr: -30 });
     expect(r.telX, 'the spot the hooks close on').toBe(640);
     expect(r.client).toMatchObject({ k: 'board', lk: 1, r: expect.any(Number) });
