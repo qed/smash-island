@@ -424,7 +424,7 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
       you.controller = 'still'; one.x = you.x + 400; one.y = you.y - 40;
       one._telKind = 'eyelasers'; one._tel = ONE_TEL.eyelasers; one._eyeBurst = 0; one._atkTimer = 1e9; projectiles = [];
       var LOCK = ONE_SPECIAL_TIERS.eyelasers[0].lock, locks = [], bursts = [], wasLocked = false, n0 = 0, guard = 0;
-      while (one._tel > 0 && guard++ < 400){
+      while (one._tel > 0 && !one._sweepP && guard++ < 400){   // (the sweep that comes after the last burst, "Buff: a sweep", is test/boss-one.test.js's)
         you.x += 4;
         updateOne(one, you);
         var locked = one._tel > 0 && one._tel <= LOCK;
@@ -450,8 +450,9 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect(r.locks[1].aim - r.locks[0].aim, 'between the bursts the aim followed you again').toBeGreaterThan(40);
     expect(r.bursts[0].ids[0], 'the second burst is its own attack, so it can land after the first did').not.toBe(r.bursts[1].ids[0]);
     expect(r.bursts[0].timer, 'the first burst does not start the clock to her next attack').toBe(1e9);
-    // ("nerf one." / "One attack at a time", 2026-10-02): the last burst holds her clock until the attack is over -- its bolts gone -- and her gap (r.gap) starts then
-    expect(r.bursts[1].timer, 'the second one holds it until the attack is over (ONE_HOLD)').toBe(1e6);
+    // ("nerf one." / "One attack at a time", 2026-10-02): her clock is held until the attack is over -- the sweep after the last burst, "Buff: a sweep", and then its bolts
+    // gone -- and her gap (r.gap) starts then; the last burst does not start it either (here it is still parked at the test's 1e9)
+    expect(r.bursts[1].timer, 'the second one does not start it either: the sweep comes after it').toBe(1e9);
     expect(r.aimNow, 'the aim stopped following once it locked').toBe(r.locks[1].aim);
     expect(r.youNow - r.aimNow, 'so stepping off the line after the lock is the dodge').toBeGreaterThan(60);
   });

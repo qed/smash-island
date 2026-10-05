@@ -19800,6 +19800,9 @@ const ONE_GHOST_HASTE_T = 1e9;     // a tier-3 ghost is hasted for as long as it
 //  - HANDS FROM THE GROUND! "Nerf: slower cracks": the crack before every later wave shows 24 frames ahead (it was 14/12/10) and the root on a hit is shorter.
 //    FOLDING ISLAND! "Buff: faster folds": the later folds come a quarter quicker (`tel2`), the tell still readable.
 //  - GHOST FIGHTER! "Nerf: 70 HP ghost" (ONE_GHOST_HP, it was 100). POWER UNGROUNDED! "Buff: lasts longer": ten seconds (t 600, it was 480) at every tier.
+//  - EYE LASERS! "Buff: a sweep": after the last burst, a tell for where the sweep goes, and the beams sweep across it once (T.sweep, oneSweepTell, oneSweepFire).
+//  - ONE GROWS GIANT! "Buff: landing stomps": each landing while she is giant sends a small shockwave along the floor both ways -- marked as it starts, jumpable, one of her
+//    small hits, one attack id a landing, and outside the attack watch (oneStompTick, oneStomp, ONE_STOMP).
 const ONE_KB = 0.6;
 const ONE_PHASE_HEAL = 64;         // the gauntlet heals 30% at each of its nine bosses, 270% over 2110 HP: 64% for each 500
 // The fighters she erased from the timeline -- Gaty by contract in "Seasonal Shift" (TPOT 15), Barf Bag and Basketball in
@@ -19841,9 +19844,14 @@ const ONE_SPECIAL_TIERS = {
   //    THE TWIST, LEAD AND CROSS (tier 2 up): from the second burst on the eyes lead your run (`lead` frames ahead), so the
   //    strafe that beat the first burst walks into the second, and the two beams cross at that point (All For One, TPOT 25:
   //    she fires lasers at contestants running across a conveyor belt).
-  eyelasers: [ { n:1, fan:1, spd:20, dmg:0.9,  fx:null,   lock:24, bursts:2, cross:0, lead:0  },
-               { n:2, fan:1, spd:25, dmg:1.0,  fx:'burn', fxN:90,  lock:20, bursts:2, cross:1, lead:24 },
-               { n:4, fan:3, spd:30, dmg:1.15, fx:'burn', fxN:130, lock:16, bursts:3, cross:1, lead:36 } ],
+  //    THE SWEEP ("EYE LASERS! Buff: a sweep", the owner, 2026-10-02, attack by attack): after the last burst her eyes lock a wedge `span`
+  //    radians wide, centred where you stand, and the tell shows it (and the way it will turn) for `tel` frames; then the beams sweep across
+  //    it ONCE -- a pair, one from each eye, every `every` frames, `n` pairs, from one edge of it to the other (oneSweepTell, oneSweepFire).
+  //    It is its own attack id, so it can land after the bursts did, and each beam is a hit of that tier's laser: no more damage, one more
+  //    chance to be hit. Wider and quicker as the tiers climb.
+  eyelasers: [ { n:1, fan:1, spd:20, dmg:0.9,  fx:null,   lock:24, bursts:2, cross:0, lead:0,  sweep:{ tel:42, span:1.0, n:10, every:3 } },
+               { n:2, fan:1, spd:25, dmg:1.0,  fx:'burn', fxN:90,  lock:20, bursts:2, cross:1, lead:24, sweep:{ tel:38, span:1.2, n:12, every:3 } },
+               { n:4, fan:3, spd:30, dmg:1.15, fx:'burn', fxN:130, lock:16, bursts:3, cross:1, lead:36, sweep:{ tel:34, span:1.4, n:14, every:3 } } ],
   // 3. HANDS FROM THE GROUND. Canon: One-coloured hands burst out of the ground, pop Bubble and drag Ruby and Lightning under
   //    ("All For One", TPOT 25). Cracks open under everyone during the wind-up; the hands come up through them.
   //    Harder, not more damage: two more hands a tier, spread wider, rising faster (it was 1/3/5 at 10/13/16). They still
@@ -19937,7 +19945,8 @@ const ONE_ZAP_GAP = 220, ONE_LANE_GAP = 200;
 //              same thing for screechy." and "no, like delay between the 2 bursts(tho keep that too)": the delay between the bursts is
 //              twice what it was (`gap` 32/28/24, it was 16/14/12), and the pellets of a burst are at least half as far again apart
 //              (16 a burst, it was 24/28/32: a gap of 1.5x, 1.75x and 2x at the three tiers)
-//   sizeshift  she grows to `k` times her size for `t` frames, and a giant One has more body to touch
+//   sizeshift  she grows to `k` times her size for `t` frames, and a giant One has more body to touch -- and, 2026-10-02 ("ONE GROWS GIANT! Buff:
+//              landing stomps"), every landing while she is giant sends a small shockwave along the floor both ways (oneStompTick, oneStomp)
 //   ungrounded no damage to her for `t` frames unless a fighter stays near her for `ground` frames. The same at every tier: it is a
 //              state, not a bullet, so "more bullets! also longer attacks." leaves an invulnerability alone (she has to stay hurtable
 //              most of the time, test/one-winnable.test.js), and it was already made longer and slower to ground ("make all attacks
@@ -20312,6 +20321,57 @@ function oneKickPass(s, T, id, dir, y0, copyLanes){
   });
   oneSteer(s, 260);
 }
+// EYE LASERS!' SWEEP ("Buff: a sweep"): after the last burst her eyes lock a wedge (T.sweep.span wide, centred on where you stand now, turning one way
+// or the other) and she holds it for T.sweep.tel frames -- the tell, drawn from s._sweepP: where the sweep goes, and the way it turns -- and then the
+// beams sweep across it once. The directions are fixed now, so the tell is what comes; the beams leave her eyes as they are then.
+function oneSweepTell(s, tgt, T){
+  const S = T.sweep, t = tgt || oneNearestFoe(s.x, s.y), x = s.x, y = s.y - 0.05*s.r;
+  const aim = t ? Math.atan2(hurtCY(t) - y, t.x - x) : ((s.face||1) > 0 ? 0 : Math.PI), dir = Math.random() < 0.5 ? 1 : -1;
+  s._sweepP = { a0:aim - dir*S.span/2, a1:aim + dir*S.span/2, dir, aim };
+  s._tel = S.tel;
+}
+function oneSweepFire(s, T, id){
+  const P = s._sweepP, S = T.sweep, dmg = oneDmg()*T.dmg;
+  s._sweepP = null;
+  const pair = (i)=>{
+    const a = P.a0 + (P.a1 - P.a0)*(S.n > 1 ? i/(S.n - 1) : 0.5);
+    for(const ex of [-0.28, 0.28]){   // her eyes are set far apart (the wiki)
+      const p = addProj(oneShot(s, { x:s.x + ex*s.r, y:s.y - 0.05*s.r, vx:Math.cos(a)*T.spd, vy:Math.sin(a)*T.spd, dmg, bossCap:dmg, kb:9, r:8, life:70,
+        shape:'onelaser', color:ONE_AURA[0], bossAtk:id, fxTag:T.fx, fxN:T.fxN }));
+      p.oSweep = true;
+    }
+  };
+  pair(0);
+  for(let i = 1; i < S.n; i++) oneQueue(s, i*S.every, ()=>pair(i));
+  oneSeqEnd(s, S.n*S.every + 8);
+  shake(6);
+}
+// ONE GROWS GIANT!'s LANDING STOMPS ("Buff: landing stomps", the owner, 2026-10-02, attack by attack): while she is giant, each time she comes down onto the floor
+// she sends a small shockwave along it, both ways. It is marked as it starts (a ring and a bright line on the floor, the dust and a crack, and the waves wait a few
+// frames at her feet before they go: `delay`), it skims the floor so a jump clears it (the wave is 16 px across, centred 18 px up), it is one of her small hits
+// (oneShot's own damage: 0.8 of her 33, never more than the 33 cap) under ONE attack id for the landing, and it lies outside the attack watch (`lingers`: it is what the
+// giant state does, not an attack, so it neither holds her next wind-up nor eats her window). A landing is the floor taking her after she was up: she must have been
+// ONE_STOMP.rise px above where the floor holds her since the last one, and one stomp is `cd` frames at least after the one before.
+const ONE_STOMP = { rise:50, cd:40, spd:9, r:16, life:80, delay:8, mark:16 };
+function oneStompTick(s){
+  if(!(s._giantT > 0) || s._hop || s._dying > 0){ s._stompUp = false; s._onFloor = false; return; }
+  const fl = worldPlats.find(p=>p.solid && p.floor===0 && s.x > p.x && s.x < p.x + p.w);
+  if(s._stompCd > 0) s._stompCd--;
+  if(!fl){ s._onFloor = false; return; }
+  const rest = fl.y - s.r - 4;   // where oneMove's floor holds her
+  if(s.y < rest - 6){ if(s.y < rest - ONE_STOMP.rise) s._stompUp = true; s._onFloor = false; return; }
+  if(!s._onFloor && s._stompUp && !(s._stompCd > 0)){ s._stompUp = false; s._stompCd = ONE_STOMP.cd; oneStomp(s, fl); }
+  s._onFloor = true;
+}
+function oneStomp(s, fl){
+  const id = ++BOSS_ATK_ID, y = fl.y - ONE_STOMP.r - 2, M = ONE_STOMP.mark + ONE_STOMP.delay;
+  oneFx.push({ kind:'stomp', x:s.x, y:fl.y, life:M, max:M });   // the mark, where the waves begin
+  oneImpact(s.x, fl.y, { shake:9, dust:1, debris:4, r:80, scar:true, mark:'crack' });
+  for(const dir of [-1, 1]){
+    const p = addProj(oneShot(s, { x:s.x + dir*s.r*0.6, y, vx:dir*ONE_STOMP.spd, vy:0, r:ONE_STOMP.r, life:ONE_STOMP.life, delay:ONE_STOMP.delay, shape:'onewave', color:'#bfe0ff', bossAtk:id }));
+    p.lingers = true; p.oStomp = true;
+  }
+}
 
 // THE ARENA ("you fight one on a teams-size map, but without the solid walls" / "teams size map but keep the platforms";
 // and on the details: the solid walls AND the raised home ledges go, the floating platforms STAY, and falling off either
@@ -20418,7 +20478,7 @@ function spawnOneBoss(){
     _giantT:0, _ungrounded:false, _ungroundT:0, _groundT:0, _grounded:false, _ghost:null,
     _farT:0, _teleCd:0, _dying:0, _introT:45, _rage:false, flash:0,
     _orbitA:null, _orbitDir:1, _orbitFlipT:0, _swoopT:0, _eyeBurst:0, _zapCols:null, _kickLanes:null, _foldZones:null,
-    _f:0, _q:[], _ash:[], _atkLive:null, _atkLo:null, _steerUntil:0, _rumble:0, _hopPending:false, _hop:null, _end:null, _gone:false };
+    _f:0, _q:[], _ash:[], _atkLive:null, _atkLo:null, _sweepP:null, _steerUntil:0, _rumble:0, _hopPending:false, _hop:null, _end:null, _gone:false };
   // the fight opens with the Vortex hop: she is not here yet, and comes across the screen from the far edge (oneHopStep)
   s._hop = { ph:'gone', t:0, r0:r, giant:false };
   oneArena(s);
@@ -20499,7 +20559,7 @@ function oneGhostDown(g, quiet){
 function updateOne(s, tgt){
   s._f = (s._f||0) + 1;   // her own frame counter: her queue, her hang times and her hop run on it
   if(oneFx.length){ for(const e of oneFx) e.life--; oneFx = oneFx.filter(e=>e.life>0); }
-  oneAshTick(s); oneArenaTick(s);
+  oneAshTick(s); oneArenaTick(s); oneStompTick(s);   // (the giant's landing stomps read where she is: nothing of her movement is theirs)
   oneSteerShots(s);   // her shots' own steering (spin, split, hang, homing), before the shared loop moves them
   oneRunQueue(s);
   if((s._rumble||0) > s._f) shake(1.4);   // the floor rumbles under the hands' wind-up and their cracks
@@ -20531,7 +20591,7 @@ function updateOne(s, tgt){
   // is dropped, and the clock to her next attack waits until the ghost is down. (She used to attack at half pace through
   // it, ONE_GHOST_LULL.)
   if(oneGhostAlive(s)){
-    if(s._tel > 0){ s._tel = 0; s._eyeBurst = 0; s._zapCols = null; s._kickLanes = null; s._foldZones = null; }
+    if(s._tel > 0){ s._tel = 0; s._eyeBurst = 0; s._sweepP = null; s._zapCols = null; s._kickLanes = null; s._foldZones = null; }
     s._q = [];
     if(s.flash > 0) s.flash--;
     return;
@@ -20540,19 +20600,24 @@ function updateOne(s, tgt){
   if(s._tel > 0){
     s._tel--; s.flash = (s._tel % 6 < 3) ? 1 : 0;
     // the eye lasers track you, then LOCK for the tier's last frames: the lock is the cue to step off the line
-    if(s._telKind==="eyelasers" && tgt && s._tel > oneTier(s, 'eyelasers').lock){ s._aimX = tgt.x; s._aimY = hurtCY(tgt); s._aimVX = tgt.vx||0; s._aimVY = tgt.vy||0; }
+    if(s._telKind==="eyelasers" && tgt && !s._sweepP && s._tel > oneTier(s, 'eyelasers').lock){ s._aimX = tgt.x; s._aimY = hurtCY(tgt); s._aimVX = tgt.vx||0; s._aimVY = tgt.vy||0; }
     // MIND READ's catch (tier 3): in the last frames of the wind-up she starts catching your shots in the air
     if(s._telKind==="mindread" && s._tel <= oneTier(s, 'mindread').catchT && oneTier(s, 'mindread').catchT > 0) s._caught = (s._caught || []).concat(oneCatchShots(s));
     if(s._tel <= 0){
       s.flash = 0; const k = s._telKind;
       const lo = (s._atkLo != null) ? s._atkLo : (s._atkLo = BOSS_ATK_ID);   // the ids this attack draws are above this (a wind-up that did not start here -- a test's -- counts from now)
       // the eye lasers' second burst has its own attack id (so it can land after the first did) and a third shares the second's
+      const sweeping = k==="eyelasers" && !!s._sweepP;   // this fire is the sweep, after the last burst: its own attack id
       let id = ++BOSS_ATK_ID;
-      if(k==="eyelasers"){ if((s._eyeBurst||0) === 1) s._eyeId = id; else if((s._eyeBurst||0) >= 2 && s._eyeId) id = s._eyeId; }
+      if(k==="eyelasers" && !sweeping){ if((s._eyeBurst||0) === 1) s._eyeId = id; else if((s._eyeBurst||0) >= 2 && s._eyeId) id = s._eyeId; }
       ONE_MOVES[k](s, tgt, id);
       s._swoopT = ONE_SWOOP_HOLD;   // she stays in close a moment after a strike lands, then backs out (oneMove)
       // "eye lasers should have two bursts": the eyes track you again, lock again, and the volley fires again (a third in the top tier)
-      if(k==="eyelasers" && (s._eyeBurst = (s._eyeBurst||0) + 1) < oneTier(s, 'eyelasers').bursts){ s._tel = oneTier(s, 'eyelasers').lock + ONE_EYE_RETRACK; return; }
+      if(k==="eyelasers" && !sweeping){
+        const Te = oneTier(s, 'eyelasers');
+        if((s._eyeBurst = (s._eyeBurst||0) + 1) < Te.bursts){ s._tel = Te.lock + ONE_EYE_RETRACK; return; }
+        if(Te.sweep){ oneSweepTell(s, tgt, Te); return; }   // "a sweep": after the last burst, a tell for where it goes, and then the beams sweep across once
+      }
       s._eyeBurst = 0; s._atkTimer = ONE_HOLD; s._atkLive = { lo };   // her gap starts when the attack is over (oneAttackWatch), not now
       if(ONE_SPECIALS.indexOf(k) >= 0 && k !== "ghost") s._hopPending = true;   // after every special she goes through the Vortex
     }
@@ -20641,7 +20706,7 @@ function oneHopStep(s, tgt){
 function oneBeginShatter(s){
   s._dying = ONE_END_T; s._tel = 0; s._telKind = null; s.vx = 0; s.vy = 0;
   if(s._hop){ s.r = s._hop.giant ? s._hop.r0 : s._baseR; s._hop = null; }
-  projectiles = projectiles.filter(p=>p.owner!==-2); oneFx = []; s._q = []; s._ash = []; s._hopPending = false; s._atkLive = null;
+  projectiles = projectiles.filter(p=>p.owner!==-2); oneFx = []; s._q = []; s._ash = []; s._hopPending = false; s._atkLive = null; s._sweepP = null;
   s._end = { shards:[], bh:null };
   if(oneGhostAlive(s)) oneGhostDown(s._ghost, true);
 }
@@ -21009,8 +21074,10 @@ const ONE_MOVES = {
     oneSteer(s, 4 + T.n*T.every + 160);
     oneSeqEnd(s, 4 + T.n*T.every + 20);
   },
-  // EYE LASERS: both eyes fire, bursts of volleys of fans. From the second burst on, tier 2 up, the aim leads your run.
+  // EYE LASERS: both eyes fire, bursts of volleys of fans. From the second burst on, tier 2 up, the aim leads your run. After the last
+  // burst comes the sweep (oneSweepTell, then oneSweepFire when its tell is over): the beams sweep across the wedge she showed, once.
   eyelasers(s, tgt, id){
+    if(s._sweepP){ oneSweepFire(s, oneTier(s, 'eyelasers'), id); return; }   // the last burst has fired and its tell is over: the beams sweep across it
     const T = oneTier(s, 'eyelasers'), dmg = oneDmg()*T.dmg, R = s.r;
     let ax = s._aimX!=null ? s._aimX : (tgt ? tgt.x : s.x), ay = s._aimY!=null ? s._aimY : (tgt ? hurtCY(tgt) : s.y);
     if(T.cross && (s._eyeBurst||0) >= 1){ ax += (s._aimVX||0)*T.lead; ay += (s._aimVY||0)*T.lead*0.5; }
@@ -21150,6 +21217,20 @@ function drawOneFx(){
       const bot = oneSurf(s._telX, (s._telY!=null ? s._telY : s.y) - 10) + 6;
       ctx.globalAlpha = last ? 0.55 : pulse; ctx.fillStyle = '#aef0ff'; ctx.fillRect(s._telX - 26, bot - 1100, 52, 1100);
       if(s._zapCols) for(const c of s._zapCols) ctx.fillRect(c.x - 26, c.bot - 1100, 52, 1100);   // and every copy near her
+    } else if(k==="eyelasers" && s._sweepP){   // the sweep's tell: the wedge it will sweep, the edge it starts on (gold), the edge it ends on (red) and the way it turns (an arrow)
+      const P = s._sweepP, x = s.x, y = s.y - 0.05*s.r, L = 1400, R = 260;
+      ctx.globalAlpha = last ? 0.45 : 0.16 + pulse*0.3; ctx.fillStyle = '#ff5a4a';
+      ctx.beginPath(); ctx.moveTo(x, y);
+      for(let i=0;i<=16;i++){ const a = P.a0 + (P.a1 - P.a0)*i/16; ctx.lineTo(x + Math.cos(a)*L, y + Math.sin(a)*L); }
+      ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.9; ctx.lineWidth = 3;
+      ctx.strokeStyle = '#ffd23f'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(P.a0)*L, y + Math.sin(P.a0)*L); ctx.stroke();
+      ctx.strokeStyle = '#ff3a3a'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(P.a1)*L, y + Math.sin(P.a1)*L); ctx.stroke();
+      ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 4; ctx.beginPath();
+      for(let i=0;i<=12;i++){ const a = P.a0 + (P.a1 - P.a0)*i/12, px = x + Math.cos(a)*R, py = y + Math.sin(a)*R; if(i) ctx.lineTo(px, py); else ctx.moveTo(px, py); }
+      ctx.stroke();
+      const hx = x + Math.cos(P.a1)*R, hy = y + Math.sin(P.a1)*R, td = P.a1 + P.dir*Math.PI/2;   // the head of the arrow, pointing the way the sweep turns
+      ctx.beginPath(); ctx.moveTo(hx - Math.cos(td - 0.5)*24, hy - Math.sin(td - 0.5)*24); ctx.lineTo(hx, hy); ctx.lineTo(hx - Math.cos(td + 0.5)*24, hy - Math.sin(td + 0.5)*24); ctx.stroke();
     } else if(k==="eyelasers"){
       const locked = s._tel <= oneTier(s, 'eyelasers').lock;
       ctx.strokeStyle = locked ? '#ff3a3a' : '#ff9a9a'; ctx.lineWidth = locked ? 3 : 1.5; ctx.globalAlpha = locked ? (0.5 + 0.4*Math.sin(hazardT*0.9)) : 0.5;
@@ -21218,6 +21299,8 @@ function drawOneFx(){
     else if(e.kind==='lanewarn'){ ctx.globalAlpha = 0.2 + 0.25*Math.abs(Math.sin(hazardT*0.5)); ctx.fillStyle = '#ff5a4a'; for(const ly of e.ys) ctx.fillRect(e.dir > 0 ? e.x : e.x - 1400, ly - 35, 1400, 70); }
     else if(e.kind==='star'){ ctx.fillStyle = '#fff7b0'; oneStarPath(ctx, e.x, e.y, 10 + 26*(1 - a), 4, 4, 0.4); ctx.fill(); }
     else if(e.kind==='squash'){ ctx.strokeStyle = '#bfe0ff'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(e.x, e.y, e.r*(1 + (1 - a)*0.9), 0, 7); ctx.stroke(); }
+    else if(e.kind==='stomp'){ ctx.strokeStyle = '#bfe0ff'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(e.x, e.y - 3, 50 + (1 - a)*190, 8 + (1 - a)*14, 0, 0, 7); ctx.stroke();
+      ctx.globalAlpha = a*0.8; ctx.fillStyle = '#ffffff'; ctx.fillRect(e.x - 60 - (1 - a)*220, e.y - 5, 120 + (1 - a)*440, 5); }   // the stomp's mark: a ring and a bright line along the floor, both ways, where the waves begin
     else if(e.kind==='crackwarn'){ oneDrawCracks(e.spots, e.offs, 0.4 + 0.5*Math.abs(Math.sin(hazardT*0.7))); }
     else if(e.kind==='jaws'){ const p = Math.min(1, (e.max - e.life)/e.close); for(const z of e.zones) oneDrawJaw(ctx, z, Math.max(0, 1 - p*p), Math.min(1, a*1.6), (z.x0 + z.x1)/2, z.y - 40); }
     else if(e.kind==='foldwarn'){ for(const z of e.zones) oneDrawJaw(ctx, z, 1, 0.55 + 0.3*Math.abs(Math.sin(hazardT*0.5)), e.tx, e.ty); }
@@ -37612,6 +37695,7 @@ const PROJ_SHAPE = {
   onehand:   { draw(c,r){ c.fillStyle='#5D7AF2'; c.strokeStyle='#000001'; c.lineWidth=r*0.12; c.beginPath(); c.ellipse(-r*0.2,0,r*0.7,r*0.55,0,0,7); c.fill(); c.stroke(); for(let i=-1.5;i<=1.5;i++){ c.beginPath(); c.ellipse(r*0.6,i*r*0.28,r*0.34,r*0.11,0,0,7); c.fill(); c.stroke(); } } },   // a One-coloured hand, fingers first
   oneplanet: { spin:true, draw(c,r){ c.fillStyle='#3a7ad0'; c.beginPath(); c.arc(0,0,r,0,7); c.fill(); c.fillStyle='#5cc85c'; c.beginPath(); c.arc(-r*0.3,-r*0.2,r*0.35,0,7); c.arc(r*0.35,r*0.3,r*0.28,0,7); c.fill(); c.strokeStyle='#1c1c1c'; c.lineWidth=2; c.beginPath(); c.arc(0,0,r,0,7); c.stroke(); } },   // Earth, kicked out of orbit
   onewisp:   { draw(c,r){ c.fillStyle='rgba(223,232,255,0.9)'; c.beginPath(); c.arc(0,0,r*0.8,0,7); c.fill(); c.beginPath(); c.moveTo(-r*0.6,-r*0.5); c.lineTo(-r*2,0); c.lineTo(-r*0.6,r*0.5); c.closePath(); c.fill(); } },   // ghost-fire
+  onewave:   { draw(c,r){ c.fillStyle='rgba(168,214,255,0.9)'; c.beginPath(); c.ellipse(0, r*0.35, r*1.3, r*0.75, 0, 0, 7); c.fill(); c.fillStyle='rgba(255,255,255,0.95)'; c.beginPath(); c.ellipse(-r*0.1, r*0.4, r*0.7, r*0.35, 0, 0, 7); c.fill(); } },   // a low crest along the floor: the giant's landing stomp
   // the rest of her kit: a star of the Vortex (SHOCK RING!'s twisting bursts, in its gold and its purple), a knife (the show's art takes
   // over: KNIFE FLURRY!), and the planets she kicked out of orbit (art too; Earth, the Really Weird Planet, the Skateboard Planet)
   onering:   { draw(c,r,pr){ c.fillStyle=(pr && pr.color) || '#f0d24b'; oneStarPath(c, 0, 0, r*1.3, r*0.5, 4, hazardT*0.2); c.fill(); c.stroke(); } },

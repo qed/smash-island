@@ -624,7 +624,7 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
         one._telKind = 'eyelasers'; one._tel = oneTelLen(one, 'eyelasers'); one._eyeBurst = 0; one._atkTimer = 1e9; one._aimX = you.x; one._aimY = hurtCY(you);
         for (var i=0; i<320 && (one._tel > 0 || i < 3); i++){
           one._atkTimer = 1e9; you.invuln = 99; step();
-          var fresh1 = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p._b; });
+          var fresh1 = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p.oSweep && !p._b; });   // (the sweep after the last burst is its own, below)
           if (fresh1.length){ fresh1.forEach(function(p){ p._b = 1; }); bursts.push({ i: i, n: fresh1.length, id: fresh1[0].bossAtk, ids: Object.keys(fresh1.reduce(function(a, p){ a[p.bossAtk] = 1; return a; }, {})).length }); }
         }
         out[t] = { T: T, bursts: bursts, gap: one._atkTimer };
@@ -651,7 +651,7 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
           one._atkTimer = 1e9; you.invuln = 99; you.vx = i > 30 ? 5 : 0;   // you stand still, then run right
           one.x = you.x - 250; one.y = groundY() - 300; one.vx = 0; one.vy = 0;   // held up and to the side, where her old orbit kept her (she flies level with you since 2026-10-03, and along her own row a strafe barely turns the aim)
           step();
-          var bolts = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p._b; });
+          var bolts = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p.oSweep && !p._b; });
           if (bolts.length){
             bolts.forEach(function(p){ p._b = 1; });
             // the centre bolt of each eye's fan goes dead at the aim: the lock, or from the second burst on (tier 2 up) the lock plus the velocity she saw x lead
@@ -673,6 +673,95 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
       expect(r[t].bursts[1].errLock, 'so it is NOT aimed at the lock').toBeGreaterThan(0.01);
     }
     expect(r[3].T.lead, 'leading further at tier 3').toBeGreaterThan(r[2].T.lead);
+  });
+
+  // "some attacks need nerfs, some need buffs. give me these in question boxes." (the owner, 2026-10-02), "EYE LASERS! Buff: a sweep": after the last burst the beams sweep across once,
+  // with a tell for where the sweep goes. "Harder, same damage": every beam is a hit of that tier's laser, and one id for the whole sweep (one more chance to be hit, not more per hit).
+  it('"Buff: a sweep": after the last burst her eyes lock a wedge and show it for a while; then the beams sweep across it ONCE, a pair every few frames from one edge to the other, in an attack id of their own', () => {
+    const r = STAGE(`
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; one._atkLive = null; one._atkLo = null;
+        var T = oneTier(one, 'eyelasers'), S = T.sweep, burstIds = {}, sweep = [], tellAt = -1, fireAt = -1, plan0 = null, plan1 = null, tellPos = null, rFire = 0;
+        one._telKind = 'eyelasers'; one._tel = oneTelLen(one, 'eyelasers'); one._eyeBurst = 0; one._atkTimer = 1e9; one._aimX = you.x; one._aimY = hurtCY(you);
+        for (var i=0; i<500; i++){
+          one._atkTimer = 1e9; you.invuln = 1e9; one.vx = 0; one.vy = 0; one._hop = null; one.x = you.x - 500; one.y = groundY() - 300;
+          step();
+          projectiles.forEach(function(p){
+            if (p.shape !== 'onelaser' || p._m) return; p._m = 1;
+            if (p.oSweep) sweep.push({ i: i, a: Math.atan2(p.vy, p.vx), x: p.x, y: p.y, id: p.bossAtk, dmg: p.dmg, cap: p.bossCap, sh: p.shape });
+            else burstIds[p.bossAtk] = 1;
+          });
+          if (one._sweepP && tellAt < 0){ tellAt = i; plan0 = JSON.stringify(one._sweepP); tellPos = { ex: one.x, ey: one.y - 0.05*one.r, tx: you.x, ty: hurtCY(you) }; }
+          if (one._sweepP) plan1 = JSON.stringify(one._sweepP);
+          if (sweep.length && fireAt < 0){ fireAt = i; rFire = one.r; }
+          if (fireAt >= 0 && i > fireAt + S.n*S.every + 120) break;
+        }
+        var P = JSON.parse(plan0);
+        out[t] = { T: T, S: S, burstIds: Object.keys(burstIds).length, sweep: sweep, tellAt: tellAt, fireAt: fireAt, P: P, same: plan0 === plan1, tellPos: tellPos, left: !!one._sweepP, oneBusy: oneBusy(one),
+          r: rFire, dmg: oneDmg() };
+      });
+      return out;`);
+    for (const t of [1, 2, 3]) {
+      const g = r[t], S = g.S, P = g.P, sw = g.sweep, pairs = [...new Set(sw.map((x) => x.i))];
+      expect(g.tellAt, `tier ${t}: a sweep was shown after the last burst`).toBeGreaterThan(0);
+      expect(g.burstIds, `tier ${t}: the bursts have their ids (two: the third burst shares the second's)`).toBe(t === 1 ? 2 : 2);
+      expect(g.fireAt - g.tellAt, `tier ${t}: its tell lasts ${S.tel} frames before the beams go`).toBe(S.tel);
+      expect(S.tel, `tier ${t}: a tell you can read: at least half a second`).toBeGreaterThanOrEqual(30);
+      expect(g.same, `tier ${t}: the wedge does not move during the tell: it is where the sweep goes`).toBe(true);
+      expect(Math.abs(P.a1 - P.a0), `tier ${t}: a wedge ${S.span} radians wide`).toBeCloseTo(S.span, 9);
+      expect(Math.abs((P.a0 + P.a1)/2 - Math.atan2(g.tellPos.ty - g.tellPos.ey, g.tellPos.tx - g.tellPos.ex)), `tier ${t}: centred on where you stood`).toBeLessThan(0.08);
+      expect(sw.length, `tier ${t}: ${S.n} pairs of beams, one from each eye`).toBe(2*S.n);
+      expect(pairs.length, `tier ${t}: a pair at a time`).toBe(S.n);
+      pairs.forEach((i, k) => expect(i - pairs[0], `tier ${t}: a pair every ${S.every} frames`).toBe(k*S.every));
+      pairs.forEach((i, k) => {
+        const two = sw.filter((x) => x.i === i), want = P.a0 + (P.a1 - P.a0)*k/(S.n - 1);
+        expect(two.length, `tier ${t}, pair ${k + 1}: two beams`).toBe(2);
+        two.forEach((x) => expect(Math.abs(x.a - want), `tier ${t}, pair ${k + 1}: at ${want.toFixed(3)} rad, sweeping from the first edge to the last`).toBeLessThan(1e-6));
+        expect(Math.abs(Math.abs(two[0].x - two[1].x) - 0.56*g.r), 'one from each eye, set far apart').toBeLessThan(2.5);
+      });
+      expect(new Set(sw.map((x) => x.id)).size, `tier ${t}: one attack id for the whole sweep`).toBe(1);
+      expect(sw[0].id, 'and not one the bursts used').not.toBe(undefined);
+      expect(sw.every((x) => x.dmg === g.dmg*g.T.dmg && x.cap === g.dmg*g.T.dmg && x.sh === 'onelaser'), `tier ${t}: every beam a hit of that tier's laser (33 x ${g.T.dmg}): no more damage`).toBe(true);
+      expect(g.left, `tier ${t}: it sweeps once, and the wedge is spent`).toBe(false);
+    }
+    expect(r[3].S.span > r[2].S.span && r[2].S.span > r[1].S.span, 'wider as the tiers climb').toBe(true);
+    expect(r[3].S.n*r[3].S.every <= r[1].S.n*r[1].S.every + 12, 'and not slower').toBe(true);
+  });
+
+  it('the sweep is ONE hit and a dodge: standing in the wedge you take one hit of that tier\'s laser from the whole sweep, not one a beam; stepping out of the wedge in the tell, you take none; her attack is over after its last beam', () => {
+    const r = STAGE(`
+      var out = {};
+      var run = function(t, stay){
+        setTier(t); fresh(); one._atkLive = null; one._atkLo = null; one._hop = null;
+        var T = oneTier(one, 'eyelasers'), S = T.sweep, total = 0, fireAt = -1, over = -1, x0 = you.x, pin = null;
+        one._telKind = 'eyelasers'; one._tel = oneTelLen(one, 'eyelasers'); one._eyeBurst = 0; one._atkTimer = ONE_HOLD; one._aimX = you.x; one._aimY = hurtCY(you);
+        for (var i=0; i<520; i++){
+          one._atkTimer = ONE_HOLD; one.vx = 0; one.vy = 0; one._hop = null; one.x = x0 - 500; one.y = groundY() - 300;   // (held at the engine's hold, not parked: her watch runs, and says when the attack is over)
+          if (one._sweepP && !pin){   // the wedge is up: stay where you are, or step well out of it (beyond the edge it ends on)
+            projectiles = projectiles.filter(function(p){ return p.owner !== -2; });   // (the last burst's late volleys are another attack id's: this is the sweep's)
+            pin = { x: you.x, y: you.y };
+            if (!stay){ var P = one._sweepP, a = P.aim + P.dir*(S.span/2 + 0.9); pin = { x: one.x + Math.cos(a)*300, y: one.y + Math.sin(a)*300 }; }
+          }
+          if (pin){ you.x = pin.x; you.y = pin.y; you.vx = 0; you.vy = 0; you.hitstun = 0; you.burn = 0; you.bleed = 0; you.pct = 0; you.invuln = fireAt >= 0 ? 0 : 1e9; }
+          else you.invuln = 1e9;
+          var live0 = !!one._atkLive;
+          step();
+          if (pin && fireAt >= 0) total += you.pct;   // (from the first beam on, with no grace: only the attack's one id keeps it to a hit)
+          if (fireAt < 0 && own().some(function(p){ return p.oSweep; })) fireAt = i;
+          if (live0 && !one._atkLive && over < 0 && fireAt >= 0) over = i;
+        }
+        return { total: total, fireAt: fireAt, over: over, want: oneDmg()*T.dmg, S: S };
+      };
+      out.stay = [1, 2, 3].map(function(t){ return run(t, true); });
+      out.step = [1, 2, 3].map(function(t){ return run(t, false); });
+      return out;`);
+    r.stay.forEach((g, k) => {
+      expect(g.total, `tier ${k + 1}: standing in the wedge you are hit`).toBeGreaterThan(0);
+      expect(g.total, `tier ${k + 1}: once, for a hit of that tier's laser (${g.want}), not once a beam (${2*g.S.n} of them)`).toBeLessThanOrEqual(g.want + 2);
+      expect(g.over - g.fireAt, `tier ${k + 1}: her attack is over after its last beam: not before the last pair (${(g.S.n - 1)*g.S.every} frames in) has gone`).toBeGreaterThanOrEqual((g.S.n - 1)*g.S.every);
+    });
+    r.step.forEach((g, k) => expect(g.total, `tier ${k + 1}: out of the wedge you take nothing from it`).toBe(0));
   });
 });
 
@@ -823,7 +912,7 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
         var parts = T.waves || T.rings || T.bursts || T.volleys || T.kicks || (k === 'hands' ? 3 : 1);   // what the move is made of: waves, rings, bursts, volleys, kicks
         one._eyeBurst = 0; one._telX = you.x; one._telY = hurtCY(you); one._aimX = you.x; one._aimY = hurtCY(you); one._telDir = 1; one._kickY = hurtCY(you);
         one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }]; one._zapCols = null; one._kickLanes = oneKickLanes(one, one._kickY);
-        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };
+        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !p.oSweep && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };
         if (k === 'eyelasers'){ one._telKind = k; one._tel = oneTelLen(one, k); }
         else { ONE_MOVES[k](one, tgt, id); count(); }
         for (var i=0; i<600 && (oneBusy(one) || one._tel > 0 || i < 2); i++){ one._atkTimer = 1e9; one.x = you.x - 900; one.y = groundY() - 380; you.invuln = 99; step(); count(); frames++; }
@@ -891,7 +980,7 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
         expect(row.maxCap, `${k} tier ${t + 1}: and the attack's cap is no more`).toBeLessThanOrEqual(row.unit + 1e-9);
         expect(row.unit, 'and that is at most 33 x 1.2 (the top of the specials\' own multipliers, unchanged)').toBeLessThanOrEqual(33*1.2 + 1e-9);
         // (the zap makes no shots: its columns hit through their own id, which the ZAP tests read)
-        expect(row.ids, `${k} tier ${t + 1}: ${k === 'eyelasers' ? 'two ids (the second burst has its own, a third shares it)' : 'one attack id'}`).toBe(k === 'eyelasers' ? 2 : (k === 'zap' ? 0 : 1));
+        expect(row.ids, `${k} tier ${t + 1}: ${k === 'eyelasers' ? 'three ids (the second burst has its own, a third shares it, and the sweep after them has its own)' : 'one attack id'}`).toBe(k === 'eyelasers' ? 3 : (k === 'zap' ? 0 : 1));
       });
     }
   });
@@ -1512,6 +1601,99 @@ describe('attack by attack: GHOST FIGHTER! "Nerf: 70 HP ghost" and POWER UNGROUN
   });
 });
 
+describe('attack by attack: ONE GROWS GIANT! "Buff: landing stomps"', () => {
+  // The owner, 2026-10-02: "ONE GROWS GIANT! Buff: landing stomps" -- each landing while she is giant sends a small shockwave along the floor both ways, marked as it starts, jumpable,
+  // the damage of her other small hits, one attack id per landing. (A landing is the floor taking her after she was up; her stomps are what the giant state does, not an attack:
+  // they are `lingers`, so they neither hold her next wind-up nor eat her window.)
+  const GIANT = `
+    setTier(2); fresh(); you.invuln = 1e9; you.x = WW*0.5 - 1500; one.r = one._baseR; one._giantT = 0; ONE_MOVES.sizeshift(one);
+    var fl = worldPlats.find(function(p){ return p.solid && p.floor === 0; }), X = WW*0.5, rest = function(){ return fl.y - one.r - 4; };
+    var hold = function(y){ one._atkTimer = 1e9; one.vx = 0; one.vy = 0; one._hop = null; one._tel = 0; one.x = X; one.y = y; };
+    var waves = function(){ return projectiles.filter(function(p){ return p.oStomp; }); };`;
+
+  it('each landing while she is giant sends a small shockwave along the floor both ways: marked as it starts, waiting a moment at her feet, skimming the floor, one of her small hits, one attack id', () => {
+    const r = STAGE(`${GIANT}
+      for (var i=0;i<6;i++){ hold(rest() - 200); step(); }   // up in the air
+      var fx0 = oneFx.filter(function(e){ return e.kind === 'stomp'; }).length, marks0 = oneArena(one).marks.filter(function(m){ return m.kind === 'crack'; }).length;
+      var w0 = waves().length;
+      hold(rest()); step();   // ...and down on the floor
+      var ws = waves(), row = ws.map(function(p){ return { x: p.x, y: p.y, vx: p.vx, vy: p.vy, r: p.r, dmg: p.dmg, cap: p.bossCap, id: p.bossAtk, shape: p.shape, lingers: !!p.lingers, delay: p.delay }; });
+      var moved = [];
+      for (var j=0;j<14;j++){ hold(rest()); step(); moved.push(ws.map(function(p){ return Math.round(p.x*10)/10; })); }
+      return { n: ws.length - w0, row: row, X: X, r: one.r, floorY: fl.y, fx: oneFx.filter(function(e){ return e.kind === 'stomp'; }).length - fx0, marks: oneArena(one).marks.filter(function(m){ return m.kind === 'crack'; }).length - marks0,
+        small: oneShot(one, {}).dmg, big: oneDmg(), moved: moved, delay: ONE_STOMP.delay, spd: ONE_STOMP.spd, fxLife: ONE_STOMP.mark + ONE_STOMP.delay };`);
+    expect(r.n, 'a shockwave each way').toBe(2);
+    expect(r.row.map((q) => Math.sign(q.vx)).sort(), 'one goes left and one goes right').toEqual([-1, 1]);
+    r.row.forEach((q) => {
+      expect(Math.abs(q.x - r.X), 'from her feet, either side of her').toBeCloseTo(0.6 * r.r, 6);
+      expect([q.shape, q.lingers], 'a low crest, and what she leaves standing, not her attack').toEqual(['onewave', true]);
+      expect(q.vy, 'along the floor').toBe(0);
+      expect(r.floorY - (q.y - q.r), `its top is ${Math.round(r.floorY - (q.y - q.r))} px up: a jump clears it`).toBeLessThanOrEqual(40);
+      expect(r.floorY - (q.y + q.r), 'and it is not under the floor').toBeGreaterThanOrEqual(-1);
+      expect(q.dmg, "one of her small hits: the damage every other small shot of hers has (0.8 of her 33)").toBe(r.small);
+      expect(q.cap, 'and never more than her 33 for the whole attack').toBe(r.big);
+    });
+    expect(r.row[0].id, 'one attack id for the landing').toBe(r.row[1].id);
+    expect(r.fx, 'marked as it starts: a ring and a line on the floor').toBe(1);
+    expect(r.marks, 'and a crack in it').toBe(1);
+    // they wait where they start (the mark is what you read), then go along the floor
+    expect(r.moved[0].every((x, k) => x === r.row[k].x), 'at her feet at first').toBe(true);
+    expect(r.moved[r.delay + 2].every((x, k) => Math.abs(x - r.row[k].x) > r.spd), 'and then they go').toBe(true);
+  });
+
+  it('only a landing makes one: not while she is not giant, not while she rests on the floor, not before she has been up, and not twice inside the cooldown -- and each landing has its own id', () => {
+    const r = STAGE(`${GIANT}
+      var out = {};
+      // resting on the floor for a long while: nothing
+      for (var i=0;i<100;i++){ hold(rest()); step(); } out.rest = waves().length;
+      // up, and down: a stomp
+      for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step(); out.first = waves().length; var ids = {}; waves().forEach(function(p){ ids[p.bossAtk] = 1; });
+      // up and down again at once: inside the cooldown
+      hold(rest() - 200); step(); hold(rest()); step(); out.quick = waves().length;
+      // after the cooldown: up, and down: a second stomp, with an id of its own
+      for (var i=0;i<ONE_STOMP.cd + 5;i++){ hold(rest()); step(); } for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step(); out.second = waves().length; waves().forEach(function(p){ ids[p.bossAtk] = 1; });
+      out.ids = Object.keys(ids).length;
+      // not giant: the same landing makes nothing
+      projectiles = []; one._giantT = 0; one.r = one._baseR; for (var i=0;i<6;i++){ hold(fl.y - one.r - 4 - 200); step(); } hold(fl.y - one.r - 4); step(); out.small = waves().length;
+      // not before she has been up: a giant who is brought straight down onto the floor
+      one.r = one._baseR; one._giantT = 0; ONE_MOVES.sizeshift(one); one._stompUp = false; one._onFloor = false; one._stompCd = 0; projectiles = []; hold(rest()); step(); out.straight = waves().length;
+      return out;`);
+    expect(r.rest, 'resting on the floor: no landing').toBe(0);
+    expect(r.first, 'up and down: a shockwave each way').toBe(2);
+    expect(r.quick, 'a second landing inside the cooldown does not stomp again').toBe(2);
+    expect(r.second, 'after the cooldown the next landing does: two more').toBe(4);
+    expect(r.ids, 'one attack id a landing').toBe(2);
+    expect(r.small, 'not while she is not giant').toBe(0);
+    expect(r.straight, 'and not before she has been up').toBe(0);
+  });
+
+  it('it is a hit you can jump: standing in a stomp\'s way you take one of her small hits (26.4); in the air as it goes under you take nothing; and it holds nothing back -- it is not her attack', () => {
+    const r = STAGE(`${GIANT}
+      var out = {};
+      var run = function(jump){
+        projectiles = []; one._stompUp = false; one._onFloor = false; one._stompCd = 0; you.pct = 0;
+        var fx = X + 420, total = 0;
+        for (var i=0;i<6;i++){ hold(rest() - 200); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 1e9; step(); }
+        hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.invuln = 1e9; step();
+        for (var j=0;j<90;j++){ hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 0; you.hitstun = 0; you.burn = 0; you.pct = 0; step(); total += you.pct; }
+        return total;
+      };
+      out.stand = run(false); out.jump = run(true);
+      // it is not her attack: with only its waves in the air she is over (oneAttackOver)
+      projectiles = []; one._stompUp = false; one._onFloor = false; one._stompCd = 0; you.x = WW*0.5 - 1500; you.invuln = 1e9;
+      var lo = BOSS_ATK_ID; for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step();
+      out.live = waves().length; out.over = oneAttackOver(one, { lo: lo }); out.hold = projectiles.filter(function(p){ return bossShotLive(p, lo); }).length;
+      out.small = oneShot(one, {}).dmg;
+      return out;`);
+    expect(r.stand, 'standing in its way: one hit of her small shot').toBeCloseTo(r.small, 5);
+    expect(r.small, 'which is 26.4').toBeCloseTo(26.4, 6);
+    expect(r.jump, 'a jump clears it').toBe(0);
+    expect(r.live, 'its waves are in the air').toBe(2);
+    expect(r.hold, 'and none of them is a shot of her attack').toBe(0);
+    expect(r.over, 'so her next wind-up is not held back by them').toBe(true);
+  });
+});
+
 describe('heavy hits go through impact() (shake, dust, debris, scars)', () => {
   it('each attack shakes the screen where it lands: zap 20, fold 30, hands 12, the kick 24, and the lighter ones; all of them dust and debris', () => {
     const r = STAGE(`
@@ -1862,5 +2044,42 @@ describe('the glitch pass: her fight drawn on a canvas that keeps the old fill a
     w.eval('draw()');
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && /fillStyle/.test(e.key)), 'no fill it ignores: the ghost\'s arrow wore the last fill').toEqual([]);
+  });
+
+  it('the eye lasers\' sweep tell (a wedge, two edges and an arrow, either way round) draws at alphas the canvas keeps and with fills and strokes it accepts', async () => {
+    const { w, errors } = await bootValidating();
+    for (const dir of [1, -1]) {
+      w.eval(`(function(){
+        SETTINGS.itemRate = 0; SETTINGS.stocks = 99; LOCAL_PLAYERS = 1;
+        startOneFight(['Firey'], { story:true, onEnd:function(){ return true; } });
+        var one = summons.find(function(s){ return s._oneFight; }), you = fighters[0];
+        one._hop = null; one._hopPending = false; one.r = one._baseR; one._atkTimer = 1e9; one._introT = 0; one._q = [];
+        you.controller = 'still'; one._marks = 1;
+        one._telKind = 'eyelasers'; one._tel = 20; one._sweepP = { a0: ${dir > 0 ? -1.1 : 0.1}, a1: ${dir > 0 ? 0.1 : -1.1}, dir: ${dir}, aim: -0.5 };
+        hazardT = 3;   // the pulse at its top
+      })()`);
+      errors.length = 0;
+      w.eval('draw()');
+      expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), `dir ${dir}: no alpha the canvas ignores`).toEqual([]);
+      expect(errors.filter((e) => e.kind === 'ctx-ignored' && /Style|lineWidth|lineCap/.test(e.key)), `dir ${dir}: no fill, stroke or line the canvas ignores`).toEqual([]);
+    }
+  });
+
+  it('the giant\'s landing stomp -- its mark on the floor and the low crest that goes along it -- draws at alphas, fills and strokes the canvas keeps', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 99; LOCAL_PLAYERS = 1;
+      startOneFight(['Firey'], { story:true, onEnd:function(){ return true; } });
+      var one = summons.find(function(s){ return s._oneFight; }), you = fighters[0];
+      one._hop = null; one._hopPending = false; one._atkTimer = 1e9; one._introT = 0; one._q = [];
+      you.controller = 'still'; one._giantT = 200; one.r = Math.round(one._baseR*1.5);
+      var fl = worldPlats.find(function(p){ return p.solid && p.floor === 0; });
+      one.x = you.x + 300; one.y = fl.y - one.r - 4; oneStomp(one, fl);   // the mark, and the two waves waiting at her feet
+      hazardT = 3;
+    })()`);
+    errors.length = 0;
+    w.eval('draw()');
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && /Style|lineWidth|lineCap/.test(e.key)), 'no fill, stroke or line the canvas ignores').toEqual([]);
   });
 });
