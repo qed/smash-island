@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { loadMonolith } from './helpers/load-monolith.js';
 
 // A whole scripted run of the lane is thousands of frames of the real game loop; the file shares one such run between its
@@ -30,11 +31,18 @@ vi.setConfig({ testTimeout: 300000 });
 //       ceilings, springs, fire jets, conveyor belts, crumbling floors, swinging saws, cannons and moving platforms over pits,
 //       from what Mario, Sonic, Super Meat Boy, Celeste, Mega Man, Donkey Kong Country, Rayman and Geometry Dash keep using. They
 //       run the whole lane, growing with it, among the classics and the episode's; the canon ones stay in the back half.
+//   2026-10-02: "running should be d5 bfdi:branches difficulty" (the lane was "Too easy"; what to change: "Jumps, Hazard timing and Length"), and "and also just
+//       not just having to jump over easy things to jump over; i want at least one thing to be slightly kaizo." -- the lane is
+//       30-40% longer, full of precision platforming (planks, pillars, leaps), hazards in combination with tighter windows (a saw across a pit, jets on the
+//       island you land on, a cannon covering a jump) and, last, the hairline (a slightly kaizo sequence). The line's speed was not theirs to pick and is
+//       untouched; no checkpoint; the lane has to stay winnable by a skilled player, and "the run" below is the proof (a solver plays every section on the
+//       real engine and the tests play it back). The pins above that were the OLD lane's -- its length, which kinds stand in the front half, how long a
+//       run-up is, where a runner can safely stand near the edge -- are updated with that, none of them loosened: what is new is pinned in its own describes.
 
 let W;
 // loadMonolith's canvas shim hands back gradient objects, so the real draw() runs to completion under jsdom and the loop's
 // one-time "ERROR:" line never goes up: the banner tap below must see GO! and nothing else.
-beforeAll(async () => { W = loadMonolith(11).window; await W.eval('profileReady'); });
+beforeAll(async () => { W = loadMonolith(11).window; await W.eval('profileReady'); W.eval(SOLVER); });
 
 // Every banner() call is recorded from the first race on: a race may say GO!, and nothing else, until its result screen.
 const TAP = `if(!window.__bannerTap){ window.__bannerTap=true; window.__banners=[]; var _b=banner; banner=function(t,m,k,l){ window.__banners.push({text:String(t), kind:k||null}); return _b(t,m,k,l); }; }`;
@@ -55,117 +63,13 @@ const race = (opts, body) => W.eval(`(function(){
 // every race here.
 const quick = (opts, body) => race(opts, `var __hud = updateHUD; updateHUD = function(){}; try { ${body} } finally { updateHUD = __hud; }`);
 
-// THE SCRIPTED RUNNER (page code): holds right and reads the lane the way a player reads the screen. Gaps: a jump at the
-// edge and, for the wide ones, the second jump late in the descent. Walls: one jump, or two for the tall ones (early, then
-// again ten frames on). Bars: hop the step, press DOWN on the ledge. Pistons: run in when the block is rising, wait in front
-// of it when it is not. Pianos: nothing -- keep running. Voices: one jump when the wave is a jump away. Memories: over
-// them, a jump and the second at the top. At the edge: stop, hold smash until the meter reads what it wants, let go; then
-// wait for the bridge and cross. Everything it reads is on the screen for a player too, and it never dodges an AI runner.
-const BOT = `var __opts = { charge:125 };
-var __bot = function(you){
-  var o = { right:true, jump:false, down:false, smash:false }, fy = RACE.floorY, ahead = you.x + you.r;
-  if(RACE.bridge) return o;
-  var m = fighters.find(function(q){ return q._marsh; });
-  if(ahead > RACE.edge - 80){
-    o.right = false;
-    if(RACE.thrown || RACE.marshOver) return o;
-    if(you.onground && Math.abs(you.vx) < 0.6 && m && Math.abs(m.x - you.x) < RACE_THROW_REACH){
-      if(RACE.charge) o.smash = RACE.charge.t < __opts.charge;   // holding, until the meter reads what I want
-      else o.smash = !you._smRaw;                                 // not charging: a fresh press (the key up for a frame first)
-    }
-    return o;
-  }
-  var wv = RACE.waves.find(function(w){ return w.x + w.th > ahead - you.r*2 && w.x - ahead < (MAXVX + w.sp)*18; });
-  if(wv && you.onground) o.jump = true;
-  var bl = RACE.bullets.find(function(b){ return b.y > fy - 40 && b.x + b.w > ahead - you.r*2 && b.x - ahead < (MAXVX + b.sp)*18; });   // a low shot coming: one jump
-  if(bl && you.onground) o.jump = true;
-  var ob = RACE.obstacles.find(function(b){ return b.x1 > you.x - 20; });
-  if(!ob) return o;
-  var lead = 34 + Math.max(0, you.vx)*3;
-  if(ob.k==='gap'){
-    if(you.onground && ob.x0 - ahead < lead && ob.x0 - ahead > -60) o.jump = true;
-    else if(!you.onground && you.vy > 0 && you.jumps > 0 && you.x > ob.x0 && you.x < ob.x1 && you.y + you.r > fy - 30) o.jump = true;
-  } else if(ob.k==='wall'){
-    if(fy - ob.top <= 105){
-      if(you.onground && ob.x0 - ahead < 70 + Math.max(0, you.vx)*2 && ob.x0 - ahead > -10) o.jump = true;
-      else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 && you.y + you.r > ob.top - 6) o.jump = true;
-    } else {   // a wall a single jump cannot top: jump early, and again ten frames later
-      if(you.onground && ob.x0 - you.x < 215 && ob.x0 - you.x > 20) o.jump = true;
-      else if(!you.onground && you.jumps > 0 && you.vy < -5 && you.vy > -7.2) o.jump = true;
-      else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 && you.y + you.r > ob.top - 6) o.jump = true;
-    }
-  } else if(ob.k==='bar'){
-    if(you.onground && Math.abs(you.y + you.r - ob.ledgeY) < 3){ if(ob.barX0 - ahead < 70) o.down = true; }
-    else if(you.onground && ob.stepX - ahead < 70 + Math.max(0, you.vx)*2 && ob.stepX - ahead > -10) o.jump = true;
-    else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.stepX + 40 && you.y + you.r > ob.ledgeY - 6) o.jump = true;
-  } else if(ob.k==='piston'){
-    var h = RACE.hazards.find(function(z){ return z.x===ob.x0; }), d = ob.x0 - ahead;
-    if(h && d > -10 && d < 260 && you.onground){
-      var P = h.period, tc = ((h.w + 2*you.r)/MAXVX + 3)/P;   // crossing it, and three frames to spare, as a part of its cycle
-      var eta = Math.max(0, d)/MAXVX + (you.vx < 3 ? 6 : 0), phE = (((hazardT + eta)/P) + h.phase) % 1;
-      if(!(phE >= 0.69 || phE <= 0.31 - tc) && d < 90){ o.right = false; return o; }
-    }
-  } else if(ob.k==='ferry'){
-    var fl = RACE.ferries.filter(function(z){ return z.g === ob.g; });
-    var onf = fl.find(function(z){ return you.onground && Math.abs(you.y + you.r - z.y) < 3 && you.x > z.plat.x - 4 && you.x < z.plat.x + z.w + 4 && you.x > ob.x0 + 5; });
-    if(onf){   // riding: walk to the front of it and wait there; hop off when the far edge is near
-      var front = onf.plat.x + onf.w, nearFar = ob.x1 - front <= 70;
-      o.right = nearFar || you.x < front - 34; o.jump = nearFar && you.onground && you.x > front - 60; return o;
-    }
-    if(ob.x0 - ahead < 60 && !fl.some(function(z){ return z.plat.x <= ob.x0 + 10; })){ o.right = false; if(you.onground && you.vx > 1) o.left = true; return o; }   // wait at the edge for one to come in
-  } else if(ob.k==='spikes'){
-    if(you.onground && ob.x0 - ahead < 34 && ob.x0 - ahead > -10) o.jump = true;   // one jump over the strip
-  } else if(ob.k==='ceiling'){
-    if(you.onground && ob.strip.x0 - ahead < 34 && ob.strip.x0 - ahead > -10) o.jump = true;   // one jump under the tips, never a second
-  } else if(ob.k==='spring' && ob.mode==='trap'){
-    if(you.onground && ob.pad.x0 - ahead < 60 && ob.pad.x0 - ahead > -10) o.jump = true;   // hop the pad under the tips (a pad before a field of spikes is run onto)
-  } else if(ob.k==='fire'){
-    // a run of vents: go when a runner setting off from where he is, holding right, would cross every one of them while it rests
-    var vs = RACE.traps.filter(function(z){ return z.k==='fire' && z.g===ob.g && z.x + z.w > you.x - you.r; }), d0 = vs[0].x - ahead;
-    if(d0 > -10 && d0 < 120 && you.onground){
-      var arrive = function(dist){ var v = Math.max(0, you.vx), x = 0, t = 0; while(x < dist && t < 300){ v = Math.min(MAXVX, v + 0.9); x += v; t++; } return t; };
-      var bad = false;
-      vs.forEach(function(z){ var di = z.x - ahead, ta = arrive(di), tb = arrive(di + z.w + 2*you.r);
-        for(var u = ta - 2; u <= tb + 2; u++){ var pf = (((hazardT + u)/z.period) + z.phase) % 1; if(pf >= z.warn/z.period && pf < (z.warn + z.burn)/z.period) bad = true; } });
-      if(bad && d0 < 90){ o.right = false; return o; }
-    }
-  } else if(ob.k==='pendulum'){
-    // what a player only approximates: look at the swing and take the first way through -- run on, or jump in a few frames --
-    // that misses the saw; if there is none yet, wait where you are
-    var pe = RACE.pendulums.find(function(z){ return z.px === ob.px; }), dz = ob.x0 - ahead;
-    if(pe && dz < 150 && you.x < pe.px + 120){
-      var path = function(jumpAt){   // the runner's centre, frame by frame, running on from here and jumping at frame jumpAt
-        var pts = [], v = Math.max(0, you.vx), x = you.x, tj = -1;
-        for(var k = 0; k < 130; k++){ v = Math.min(MAXVX, v + 0.9); x += v; if(jumpAt !== null && k >= jumpAt && k < jumpAt + 40) tj = k - jumpAt; else tj = -1;
-          pts.push({ x:x, y:you.y - (tj >= 0 ? Math.max(0, 11.88*(tj + 1) - 0.31*(tj + 1)*tj) : 0) }); if(x > pe.px + pe.L*Math.sin(pe.A) + pe.R + 60) break; }
-        return pts; };
-      var clear = function(jumpAt){ var pts = path(jumpAt); for(var k = 0; k < pts.length; k++){ var bb = racePendulumPos(pe, hazardT + k + 1); if(Math.hypot(pts[k].x - bb.x, pts[k].y - bb.y) < pe.R + you.r*0.85 + 4) return false; } return true; };
-      var plan = null;
-      if(clear(null)) plan = 'run'; else for(var jj = 0; jj <= 70 && plan === null; jj += 2) if(clear(jj)) plan = jj;
-      if(plan === null){ if(dz < 90){ o.right = false; return o; } }
-      else if(plan === 0 && you.onground) o.jump = true;
-    }
-  } else if(ob.k==='memory'){
-    if(you.onground && ob.x0 - ahead < 90 && ob.x0 - ahead > -10) o.jump = true;
-    else if(!you.onground && you.jumps > 0 && you.vy > 0 && you.x < ob.x1 - 20) o.jump = true;
-  }
-  return o;
-};
-var __run = function(you, hold, maxFrames){
-  var r = { frames:0, minLead:1e9, worst:-1e9, behindLine:0, lost:0, leadAtThrow:null, chargeMax:0, held:0, bumps:0 }, n = 0, pb = false;
-  for(; n < maxFrames && running; n++){
-    hold(__bot(you)); step();
-    var bb = you._raceBumpT > 0; if(bb && !pb) r.bumps++; pb = bb;
-    var mm = fighters.find(function(q){ return q._marsh; });
-    if(!you.dead) r.minLead = Math.min(r.minLead, you.x - RACE.lineX);
-    if(mm.dead) r.lost++;
-    if(!RACE.marshOver && !RACE.thrown && !RACE.charge){ r.worst = Math.max(r.worst, you.x - mm.x); if(mm.x - mm.r*0.5 <= RACE.lineX) r.behindLine++; }
-    if(RACE.charge){ r.held++; r.chargeMax = Math.max(r.chargeMax, RACE.charge.t); if(r.leadAtThrow === null) r.leadAtThrow = you.x - RACE.lineX; }
-  }
-  hold({});
-  r.frames = n;
-  return r;
-};`;
+// THE SCRIPTED RUNNER (page code) is test/helpers/running-bot.page.js: it holds right and reads the lane the way a player reads the screen,
+// and never dodges an AI runner. The lane's hard sections are played by the plans of test/helpers/running-solver.page.js instead, which
+// scripts/solve-running-lane.mjs found by search on the real engine (see "the run" below). Both are spliced in or eval'd here, so every
+// test runs the real thing.
+const BOT = readFileSync('test/helpers/running-bot.page.js', 'utf8');
+const SOLVER = readFileSync('test/helpers/running-solver.page.js', 'utf8');
+const PROG = JSON.parse(readFileSync('test/data/running-lane.json', 'utf8'));   // the plans, and the lane they were solved on
 
 // ---- the numbers the engine gives (measured, never assumed), and the lane as built ----
 // Run flat and full speed on an endless floor: how far one jump carries, how far the best double jump carries, how high
@@ -197,14 +101,17 @@ const physics = (heights) => PH || (PH = quick({}, `
   return { single:jumpTest(null), double18:jumpTest(18), best:best, maxvx:MAXVX, r:you.r, grav:GRAV };`));
 let LANE = null;
 const lane = () => LANE || (LANE = race({}, `return { obs:RACE.obstacles, haz:RACE.hazards, pianos:RACE.pianos, voices:RACE.voices, memories:RACE.memories, traps:RACE.traps, cannons:RACE.cannons, pendulums:RACE.pendulums, pits:RACE.pits,
-  crumbles:RACE.crumbles.map(function(c){ return { x:c.x, w:c.w, delay:c.delay, s:c.s, g:c.g }; }), ferries:RACE.ferries.map(function(f){ return { gx:f.gx, gw:f.gw, w:f.w, period:f.period, phase:f.phase, g:f.g, i:f.i, s:f.s }; }),
-  bullet:RACE_BULLET, grav:GRAV, floor:RACE.floorY, edge:RACE.edge, farX:RACE.farX, finishX:RACE.finishX, WW:WW, W:W, backX:RACE_BACK_X, len:RACE_LEN, lineSpeed:RACE_LINE_SPEED, maxvx:MAXVX, r:you.r, plats:JSON.stringify(worldPlats) };`));
+  crumbles:RACE.crumbles.map(function(c){ return { x:c.x, w:c.w, delay:c.delay, s:c.s, g:c.g }; }), fakes:RACE.fakes.map(function(c){ return { x:c.x, w:c.w, y:c.y, h:c.h, delay:c.delay, hair:!!c.hair, s:c.s, g:c.g }; }), ferries:RACE.ferries.map(function(f){ return { gx:f.gx, gw:f.gw, w:f.w, period:f.period, phase:f.phase, g:f.g, i:f.i, s:f.s }; }),
+  bullet:RACE_BULLET, grav:GRAV, floor:RACE.floorY, edge:RACE.edge, farX:RACE.farX, finishX:RACE.finishX, WW:WW, W:W, backX:RACE_BACK_X, len:RACE_LEN, lineSpeed:RACE_LINE_SPEED, maxvx:MAXVX, r:you.r, plats:JSON.stringify(worldPlats),
+  hash:__rs.laneHash() };`));
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 
 // ONE scripted run of the whole lane, shared by the tests below (a full run is the slow part of this file).
 let RUN = null;
 const fullRun = () => RUN || (RUN = quick({}, `${BOT}
-  var out = __run(you, hold, 8000);
+  fighters.forEach(function(f){ if(f !== you && !f._marsh) f.dead = true; });   // the solved world: the runners are not on the lane, Marshmallow is (see PACKRUN for the runners)
+  var C = __rs.controller({ bot:__bot, programs:${JSON.stringify(PROG.programs)}, verify:true });   // the plans on file for the lane's hard sections, the scripted runner for the rest
+  var out = __run(you, hold, 10000, C.ctl);
   var first = RACE.obstacles[0];
   var seen = window.__banners.slice(__b0).map(function(b){ return b.text + '|' + (b.kind||''); });
   var gone = fighters.filter(function(f){ return f._runner && !f._marsh && f.dead; });
@@ -213,7 +120,19 @@ const fullRun = () => RUN || (RUN = quick({}, `${BOT}
     secs:window.__raceResult && window.__raceResult.secs, title:document.getElementById('resultTitle').textContent, sub:document.getElementById('resultSub').textContent,
     youX:Math.round(you.x), youXf:you.x, finish:RACE.finishX, edge:RACE.edge, farX:RACE.farX, marshOver:RACE.marshOver, marshX:Math.round(marsh.x), marshAlive:!marsh.dead, floor:RACE.floorY, marshY:Math.round(marsh.y + marsh.r),
     seen:seen, err:!!window.__loopErrLogged, gone:gone.map(function(f){ return f.name; }), past:past, speed:RACE_LINE_SPEED, leash:RACE_MARSH_LEASH, full:RACE_THROW_FULL,
-    lineAtEnd:Math.round(RACE.lineX) };`));
+    lineAtEnd:Math.round(RACE.lineX), plan:{ seen:C.seen, secs:C.secs, failed:C.failed, at:C.si } };`));
+
+// PACKRUN: the same runner with every runner of the MeAfterlife group on the lane too, as far as the first of the hard sections (the runners
+// have no plan for those: they run into the pit as the slow ones run into the line, which is the owner's "the runners can be caught more
+// often"). A section's plan is for the lane without the pack: a jab ("attacks allowed") at the wrong frame would spoil any plan.
+let PACK = null;
+const packRun = () => PACK || (PACK = quick({}, `${BOT}
+  var first = RACE.obstacles[0], sec0 = RACE.obstacles.find(function(o){ return o.sec; }), stopX = sec0 ? sec0.sec.sx : RACE.edge - 80, n = 0;
+  while(running && n < 10000 && you.x < stopX){ hold(__bot(you)); step(); n++; }
+  hold({});
+  var gone = fighters.filter(function(f){ return f._runner && !f._marsh && f.dead; });
+  return { frames:n, over:RACE.over, youX:you.x, stopX:stopX, gone:gone.map(function(f){ return f.name; }),
+    past:fighters.filter(function(f){ return f._runner && !f._marsh && (f.dead || f.x > first.x1 + 40); }).length };`));
 
 const CANON = ['piano', 'memory', 'voice'];
 const PLATFORMER = ['spikes', 'ceiling', 'spring', 'fire', 'belt', 'crumble', 'pendulum', 'cannon', 'ferry'];
@@ -223,15 +142,17 @@ describe('the course', () => {
   it('is a much longer lane of the classics, the platformer hazards and the episode\'s, laid from a fixed seed: the same every time', () => {
     const SNAP = `{ obs:JSON.stringify(RACE.obstacles), plats:JSON.stringify(worldPlats), haz:JSON.stringify(RACE.hazards), pianos:JSON.stringify(RACE.pianos), voices:JSON.stringify(RACE.voices), memories:JSON.stringify(RACE.memories),
       traps:JSON.stringify(RACE.traps), cannons:JSON.stringify(RACE.cannons), pendulums:JSON.stringify(RACE.pendulums), crumbles:JSON.stringify(RACE.crumbles.map(function(c){ return [c.x, c.w, c.delay]; })),
-      ferries:JSON.stringify(RACE.ferries.map(function(f){ return [f.gx, f.gw, f.period, f.phase]; })), pits:JSON.stringify(RACE.pits) }`;
+      fakes:JSON.stringify(RACE.fakes.map(function(c){ return [c.x, c.w, c.delay]; })), ferries:JSON.stringify(RACE.ferries.map(function(f){ return [f.gx, f.gw, f.period, f.phase]; })), pits:JSON.stringify(RACE.pits) }`;
     const a = race({}, `var snap = ${SNAP}; snap.ok = __ok; snap.WW = WW; snap.W = W; snap.len = RACE_LEN; snap.kinds = RACE.obstacles.map(function(o){ return o.k; }); snap.edge = RACE.edge; snap.far = RACE.farX; snap.floor = RACE.floorY;
       snap.gy = groundY(); snap.big = isBig(); snap.scrolls = scrolls(); snap.mode = SETTINGS.mode; snap.items = itemSpawnInterval(); return snap;`);
     const b = race({}, `return ${SNAP};`);
     expect(a.ok).toBe(true);
-    for (const k of ['obs', 'plats', 'haz', 'pianos', 'voices', 'memories', 'traps', 'cannons', 'pendulums', 'crumbles', 'ferries', 'pits']) expect(a[k], 'the same ' + k).toBe(b[k]);
-    // "the run should be much longer": the first version's lane was 7,700 px; now two and a half to three times that
-    expect(a.len / 7700, 'roughly 2.5-3x the first version').toBeGreaterThanOrEqual(2.5);
-    expect(a.len / 7700).toBeLessThanOrEqual(3);
+    for (const k of ['obs', 'plats', 'haz', 'pianos', 'voices', 'memories', 'traps', 'cannons', 'pendulums', 'crumbles', 'fakes', 'ferries', 'pits']) expect(a[k], 'the same ' + k).toBe(b[k]);
+    // "the run should be much longer" (2026-09-29): the first version's lane was 7,700 px, the next 22,800 (2.96 times that). Then the owner (2026-10-02): "running
+    // should be d5 bfdi:branches difficulty", asked what to change: "Jumps, Hazard timing and Length": the lane is 30-40% longer than those 22,800 px, and
+    // what the length is for is harder sections, not filler
+    expect(a.len / 22800, 'the d5 lane is 30-40% longer than the one before it').toBeGreaterThanOrEqual(1.3);
+    expect(a.len / 22800).toBeLessThanOrEqual(1.4);
     expect(a.WW).toBe(a.len + 620 + 520);
     expect(a.kinds.length, 'a long lane has a lot on it').toBeGreaterThanOrEqual(30);
     for (const k of ['gap', 'wall', 'bar', 'piston'].concat(CANON, PLATFORMER)) expect(a.kinds, 'every kind of obstacle is on the course: ' + k).toContain(k);
@@ -277,7 +198,10 @@ describe('the course', () => {
       for (const o of os) expect(o.x0, k + ' is in the back half').toBeGreaterThanOrEqual(L.backX);
     }
     const front = L.obs.filter(inFront).map((o) => o.k), back = L.obs.filter((o) => !inFront(o)).map((o) => o.k);
-    for (const k of front) expect(['gap', 'wall', 'bar', 'piston', 'spikes', 'fire', 'belt', 'spring', 'cannon'], 'the front half has the classics and the gentler platformer hazards: ' + k).toContain(k);
+    // owner, 2026-10-02: "running should be d5 bfdi:branches difficulty" (asked what to change: "Jumps, Hazard timing and Length"): the front half has the
+    // lane's precision jumps too, the stairs of small platforms (planks, pillars), and the first hazards in combination built of the gentler ones (jets on a platform you
+    // land on, a cannon covering a jump) -- they are what the harder lane is for, and none is an episode hazard (the saw across a pit is a pendulum's: back half only)
+    for (const k of front) expect(['gap', 'wall', 'bar', 'piston', 'spikes', 'fire', 'belt', 'spring', 'cannon', 'planks', 'pillars', 'leap', 'jetpad', 'coverfire'], 'the front half has the classics, the gentler platformer hazards, the first precision jumps and combinations: ' + k).toContain(k);
     expect(new Set(front.filter((k) => PLATFORMER.includes(k))).size, 'the platformer hazards start early').toBeGreaterThanOrEqual(4);
     for (const k of PLATFORMER.filter((k) => k !== 'belt')) expect(back, 'and every one of them but the gentlest, the belt, is in the back half too: ' + k).toContain(k);
     for (const k of ['ceiling', 'crumble', 'pendulum', 'ferry']) expect(front, 'the hardest wait for the back half: ' + k).not.toContain(k);
@@ -402,6 +326,205 @@ describe('the course', () => {
     for (let i = 1; i < gs.length; i++) expect(gs[i].x0 - gs[i - 1].x1, 'the run-up').toBeGreaterThanOrEqual(gs[i - 1].k === 'gap' ? 360 : 240);
     expect(L.edge - gs[gs.length - 1].x1, 'the last stretch is clear').toBeGreaterThanOrEqual(460);
   });
+
+  it('the length is for harder sections, not filler (owner 2026-10-02: "Length"): the lane is at full strength from 90% of the way, a quarter of it is sections, and the last third is mostly the sections that get harder', () => {
+    const L = lane(), secs = L.obs.filter((o) => o.sec);
+    const r = race({}, `var f = RACE_FIRST_X, l = RACE_LAST_X; return { s0:raceStrength(f), s50:raceStrength(f + (l - f)*0.5), s90:raceStrength(f + (l - f)*0.9), s100:raceStrength(l), first:f, last:l, ramp:RACE_RAMP };`);
+    expect([r.s0, r.s90, r.s100], 'nothing at the first obstacle; full strength from 90% of the way to the last').toEqual([0, 1, 1]);
+    expect(r.s50, 'and a ramp between: more than half at the middle of the way').toBeGreaterThan(0.5);
+    const px = secs.reduce((a, o) => a + (o.x1 - o.x0), 0);
+    expect(px / (L.edge - r.first), 'a quarter of the lane or more is sections: the d5 lane\'s own').toBeGreaterThanOrEqual(0.25);
+    const late = L.obs.filter((o) => o.x0 > L.len * 0.66);
+    expect(late.filter((o) => o.sec).length, 'the last third has at least three sections in it').toBeGreaterThanOrEqual(3);
+    const lateSecs = late.filter((o) => o.sec).map((o) => o.k);
+    for (const k of ['sawgap', 'pillars', 'planks']) expect(lateSecs, 'the gauntlet, the last third\'s own, has the ' + k).toContain(k);
+    expect(late.filter((o) => o.sec).every((o) => o.s >= 0.75), 'and every one of them is at three quarters of the strength or more').toBe(true);
+  });
+});
+
+// THE JUMPS. The owner (2026-10-02): "running should be d5 bfdi:branches difficulty"; asked what should change: "Jumps, Hazard timing and Length"; and "just not
+// just having to jump over easy things to jump over". So the lane has precision platforming: stairs of small platforms over a pit (planks: thin wooden
+// platforms that get narrower along the lane; pillars: stone pillars one fighter wide) and leaps (pits that only the double jump crosses, with a small plank
+// between). Each is a section the solver plays (`sec`): where it is run up to, waited at and left. How much room each press has is measured by the solver on
+// the real engine, never assumed, and played back in "the run" below.
+describe('the jumps: precision platforming', () => {
+  const secs = () => lane().obs.filter((o) => o.sec);
+  it('the lane has stairs of planks, stairs of pillars and leaps; each is a section run up to from further back than an obstacle usually is', () => {
+    const L = lane(), kinds = secs().map((o) => o.k);
+    for (const k of ['planks', 'pillars', 'leap']) expect(kinds, 'on the lane: ' + k).toContain(k);
+    for (const o of secs()) {
+      expect([o.sec.sx < o.x0, o.x0 < o.x1, o.x1 <= o.sec.ex, o.sec.ex < L.edge], o.k + ' at ' + Math.round(o.x0) + ': the section spans its obstacle').toEqual([true, true, true, true]);
+      expect(o.x0 - o.sec.sx, 'run up to from 150 px back').toBe(150);
+    }
+    // the run-up: 220 px more than the 240 before anything that is a section (after a section he has come down already: the 240 is enough there)
+    const gs = []; for (const o of L.obs) { const g = gs[gs.length - 1]; if (g && g.g === o.g) g.x1 = Math.max(g.x1, o.x1); else gs.push({ g: o.g, k: o.k, sec: o.sec, x0: o.x0, x1: o.x1 }); }
+    for (let i = 1; i < gs.length; i++) if (gs[i].sec) expect(gs[i].x0 - gs[i - 1].x1, 'the run-up to ' + gs[i].k).toBeGreaterThanOrEqual(gs[i - 1].sec ? 240 : 460);
+  });
+
+  it('the planks narrow as the lane goes on and the stairs grow; the pillars are one fighter wide; planks are one-way, pillars are stone', () => {
+    const L = lane(), planks = L.obs.filter((o) => o.k === 'planks'), pillars = L.obs.filter((o) => o.k === 'pillars'), plats = JSON.parse(L.plats);
+    expect(planks.length).toBeGreaterThanOrEqual(2); expect(pillars.length).toBeGreaterThanOrEqual(2);
+    nondecreasing(planks, (o) => -o.pw, 'planks narrow'); nondecreasing(planks, (o) => o.n, 'and the stairs grow');
+    expect(planks[planks.length - 1].pw, 'a plank is narrower at the end than a first one by a quarter or more').toBeLessThan(planks[0].pw * 0.75);
+    for (const o of pillars) expect(o.pw, 'a pillar is one fighter wide (48 px)').toBe(2 * L.r);
+    const stones = plats.filter((p) => p.raceStone), pil = plats.filter((p) => p.racePillar);
+    expect(stones.length, 'every plank of the stairs is in the world, and the one between the two pits of each leap').toBe(planks.reduce((a, o) => a + o.n, 0) + L.obs.filter((o) => o.k === 'leap').length);
+    expect(pil.length, 'and every pillar').toBe(pillars.reduce((a, o) => a + o.n, 0));
+    for (const p of stones) expect([!!p.solid, p.h], 'a plank is a thin one-way platform').toEqual([false, 14]);
+    for (const p of pil) expect(!!p.solid, 'a pillar is stone').toBe(true);
+  });
+
+  it('each stands where a running jump from the one before comes down on it: the engine\'s own jump, a few px off the rhythm, and never a rise the jump cannot make', () => {
+    const J = race({}, `return { f:[0, 40, -40, 80].map(function(d){ return raceJumpFrames(d); }), v:MAXVX };`), P = physics([26]), L = lane();
+    expect(J.f[0] * J.v, 'a flat jump at full speed is the distance the engine measures').toBeGreaterThan(P.single.dist - 8);
+    expect(J.f[0] * J.v).toBeLessThan(P.single.dist + 8);
+    expect(J.f[1], 'a surface 40 px higher is reached sooner').toBeLessThan(J.f[0]); expect(J.f[2], 'one 40 px lower later').toBeGreaterThan(J.f[0]);
+    for (const o of L.obs.filter((o) => o.k === 'planks' || o.k === 'pillars')) {
+      for (let i = 1; i < o.cs.length; i++) {
+        const want = J.v * race({}, `return raceJumpFrames(${o.hs[i] - o.hs[i - 1]});`), got = o.cs[i] - o.cs[i - 1];
+        expect(Math.abs(got - want), o.k + ' ' + i + ': a few px off the rhythm of the jump from the one before').toBeLessThanOrEqual(15);
+        expect(o.hs[i] - o.hs[i - 1], o.k + ' ' + i + ': a rise a single jump makes, with room').toBeLessThanOrEqual(P.single.apex - 25);
+      }
+    }
+  });
+
+  it('the room of every press, measured again on the real engine as the run goes by, is a skilled player\'s ("+-2 frames") and no more than that at the hardest: demanding, not easy', () => {
+    const r = fullRun(), rooms = r.plan.seen.map((s) => s.room);
+    expect(rooms.length, 'every section was measured').toBe(secs().length);
+    expect(Math.min(...rooms), 'the tightest press of the lane can be early or late by 2 frames and still work (a window of 5)').toBeGreaterThanOrEqual(5);
+    expect(Math.min(...rooms), 'and it is a precision jump: no more than 9 frames of window ("not just having to jump over easy things")').toBeLessThanOrEqual(9);
+    r.plan.seen.forEach((s, i) => expect(s.room, 'section ' + i + ' measures what the solver wrote down').toBe(PROG.programs[i].room));
+  }, 300000);
+
+  it('Marshmallow cannot follow a jump from plank to plank, so on a section she is kept beside him (110 px behind at the most, then put at his side), never lost', () => {
+    const r = fullRun();
+    expect(r.run.worstSec, 'she was at his side on every section').toBeLessThanOrEqual(110 + 60);
+    expect(r.run.worstSec).toBeGreaterThan(-1e8);
+    expect(r.run.lost, 'and never lost').toBe(0);
+  }, 300000);
+});
+
+// HAZARD TIMING. The owner (2026-10-02): "running should be d5 bfdi:branches difficulty"; asked what should change: "Jumps, Hazard timing and Length". Hazards come
+// in combination now, with windows that are tighter and still readable -- every one has its tell on the screen (a saw swinging on a pole, vents that glow before they
+// burn, a cannon that flashes where its shot will leave) and none is invisible: a saw swinging across a pit under a ceiling of spikes, fire jets on the platform you land
+// on, a cannon covering the arc of a jump. The ceiling of spikes is the recurring answer to "just double jump over it": the tips are over a single jump's head and under
+// a double's. The room of every press and every wait is measured by the solver on the real engine ("the run").
+describe('the hazard combinations: tighter windows, every one with its tell', () => {
+  const ofKind = (k) => lane().obs.filter((o) => o.k === k);
+  it('the lane has a saw across a pit, jets on a platform you land on and a cannon covering a jump: each a section the solver plays', () => {
+    for (const k of ['sawgap', 'jetpad', 'coverfire']) { expect(ofKind(k).length, k + ' is on the lane').toBeGreaterThanOrEqual(1); for (const o of ofKind(k)) expect(o.sec, k + ' is a section').toBeTruthy(); }
+  });
+
+  it('a saw across a pit: one saw on a pole over the middle of the pit, as big and as quick as the pendulum for how far along the lane it stands, under a ceiling of spikes a single jump goes under and a double jump bangs on', () => {
+    const L = lane(), P = physics([26]);
+    for (const o of ofKind('sawgap')) {
+      const p = L.pendulums.find((q) => q.g === o.g), c = L.traps.find((t) => t.k === 'ceiling' && t.g === o.g);
+      expect(p && c, 'a saw and a ceiling').toBeTruthy();
+      expect(p.px, 'over the middle of the pit').toBe(o.x0 + Math.round(o.G / 2));
+      expect(p.py + p.L + p.R, 'the blade is 6 px off the floor at the bottom of its swing').toBe(L.floor - 6);
+      expect([p.R, p.period, p.L], 'the pendulum\'s own sizes for how far along the lane it stands').toEqual([Math.round(28 + 6 * o.s), Math.round(124 - 26 * o.s), Math.round(170 + 20 * o.s)]);
+      expect(c.x <= o.x0 - 60 && c.x + c.w >= o.x0 + o.G + 60, 'the ceiling is over the whole pit and the take-off').toBe(true);
+      expect(c.tip - (P.single.apex + 2 * L.r), 'one jump goes under the tips').toBeGreaterThanOrEqual(20);
+      expect(P.best.apex + 2 * L.r, 'a double jump bangs on them').toBeGreaterThan(c.tip);
+      expect(o.G, 'a pit one jump crosses').toBeLessThanOrEqual(330);
+    }
+  });
+
+  it('jets on the island you land on: two or three close together (no pocket to stand in), a ceiling of spikes over them, burning most of the time, resting in a wave that runs with a runner at full speed, with a window to cross', () => {
+    const L = lane(), P = physics([26]), v = P.maxvx;
+    for (const o of ofKind('jetpad')) {
+      const js = L.traps.filter((t) => t.k === 'jet' && t.g === o.g), c = L.traps.find((t) => t.k === 'ceiling' && t.g === o.g);
+      expect(js.length, 'two or three jets').toBe(o.n); expect(o.n).toBeGreaterThanOrEqual(2); expect(o.n).toBeLessThanOrEqual(3);
+      for (let i = 1; i < js.length; i++) {
+        expect(js[i].x - (js[i - 1].x + js[i - 1].w) - 2 * L.r, 'no pocket a fighter fits in between two jets').toBeLessThan(0);
+        const travel = (js[i].x - js[i - 1].x) / (v * js[i].period), d = (((js[i - 1].phase - js[i].phase - travel) % 1) + 1) % 1;
+        expect(Math.min(d, 1 - d), 'lit in a wave that runs with the runner').toBeLessThan(0.02);
+      }
+      for (const j of js) {
+        expect(Math.min(j.burn, j.period - j.warn) / j.period, 'burning most of the time').toBeGreaterThanOrEqual(0.5);
+        expect(j.warn + j.burn, 'a cycle is the glow and the burn and a rest').toBeLessThanOrEqual(j.period);
+        expect(j.period - j.burn - (j.w + 2 * L.r) / v, 'a window to cross one: what is left of the glow and the rest once he has crossed it, 5 frames or more').toBeGreaterThanOrEqual(5);
+      }
+      expect(c.tip - (P.single.apex + 2 * L.r), 'one jump goes under the tips').toBeGreaterThanOrEqual(20);
+      expect(c.x <= js[0].x && c.x + c.w >= js[js.length - 1].x + js[js.length - 1].w, 'the ceiling is over the jets').toBe(true);
+    }
+    const all = L.traps.filter((t) => t.k === 'jet');
+    nondecreasing(all.filter((t, i, a) => i === 0 || t.g !== a[i - 1].g), (t) => -t.period, 'jets cycle faster'); nondecreasing(all, (t) => t.hf, 'and burn higher');
+  });
+
+  it('a cannon covering a jump: it fires when he crosses its trigger at the lip (too late to wait out), the first shot is high and meets a jumper at the top of his jump, and a ceiling over the pit leaves him a single jump', () => {
+    const L = lane(), P = physics([26]), v = P.maxvx;
+    for (const o of ofKind('coverfire')) {
+      const c = L.cannons.find((q) => q.trig === o.x0 + 12), cei = L.traps.find((t) => t.k === 'ceiling' && t.g === o.g);
+      expect(c && cei, 'its cannon and its ceiling').toBeTruthy();
+      expect(c.n, 'two or three shots').toBeGreaterThanOrEqual(2); expect(c.hi[0], 'the first shot is high').toBe(true);
+      const tm = (c.cx - L.bullet.w - c.trig - L.r + 20 * c.bs) / (v + c.bs);   // frames after he crosses the trigger that the first shot meets the front of him
+      expect(Math.abs(tm - 20), 'it meets him at the top of a jump taken at the lip (the top of a jump is 20 frames up)').toBeLessThanOrEqual(3);
+      expect(c.cx - c.trig, 'and the cannon is on screen when it is triggered').toBeLessThanOrEqual(700);
+      expect(cei.tip - (P.single.apex + 2 * L.r), 'one jump goes under the tips').toBeGreaterThanOrEqual(20);
+      expect(P.best.apex + 2 * L.r, 'a double jump bangs on them').toBeGreaterThan(cei.tip);
+      expect(cei.x <= o.x0 && cei.x + cei.w >= o.x0 + o.G, 'the ceiling is over the whole pit').toBe(true);
+    }
+  });
+
+  it('each combination is a window, not a pass: its timing is measured on the real engine as the run goes by, 5 frames or more on every press and every wait; the saw and the jets are waits (the hazard is the clock)', () => {
+    const r = fullRun();
+    r.plan.seen.forEach((s, i) => {
+      const k = PROG.programs[i].k;
+      if (!['sawgap', 'jetpad', 'coverfire'].includes(k)) return;
+      for (const w of s.win) for (const key of ['t1', 'd2', 'w']) if (w[key] !== null) expect(w[key], k + ' #' + i + ' ' + key + ' window').toBeGreaterThanOrEqual(5);
+      if (k !== 'coverfire') expect(s.win.some((w) => w.w !== null), k + ' #' + i + ' has a wait to time').toBe(true);
+    });
+  }, 300000);
+});
+
+// SLIGHTLY KAIZO. The owner (2026-10-02): "and also just not just having to jump over easy things to jump over; i want at least one thing to be slightly kaizo." So the last thing
+// on the lane is THE HAIRLINE: a precise sequence with one small surprise that is fair on the next try, and nothing in it hidden. A spring pad on the runway that throws him into
+// the spikes of the ceiling (hop it), a pit, a platform in the middle of the next one that looks like the floor and crumbles four frames after he lands (a hairline crack you can
+// see if you look, spikes showing under it), and a pit wider than a jump under the ceiling, crossed by a jump and a second jump timed late. "Slightly": hard and a little sneaky,
+// never a blind or unwinnable trap: the solver plays all of it, and every press of it has room (the behaviour of the tile is pinned with "the platformer hazards").
+describe('the kaizo section: the hairline', () => {
+  const kz = () => lane().obs.filter((o) => o.k === 'kaizo');
+  it('there is one, it is the last thing on the lane, run up to from a long way back, and a section the solver plays', () => {
+    const L = lane(), o = kz()[0];
+    expect(kz().length, 'one').toBe(1);
+    expect(L.obs[L.obs.length - 1], 'the last thing on the lane').toBe(o);
+    expect(o.x0 / L.len, 'late: in its last tenth').toBeGreaterThan(0.9);
+    expect(o.sec, 'a section').toBeTruthy();
+    expect(o.x0 - L.obs[L.obs.length - 2].x1, 'a long run-up').toBeGreaterThanOrEqual(460);
+    expect(L.edge - o.x1, 'and the last stretch to the edge is clear').toBeGreaterThanOrEqual(460);
+  });
+
+  it('it is built of a ceiling of spikes, a spring that throws him into it, a tile with a hairline crack over spikes, and a pit only a late second jump crosses: every piece readable, none hidden', () => {
+    const L = lane(), P = physics([14, 26]), v = P.maxvx, o = kz()[0], g = o.g;
+    const cei = L.traps.find((t) => t.k === 'ceiling' && t.g === g), pad = L.traps.find((t) => t.k === 'spring' && t.g === g), bed = L.traps.find((t) => t.k === 'bed' && t.g === g), tile = L.fakes.find((c) => c.g === g);
+    expect(cei && pad && bed && tile, 'all four are there').toBeTruthy();
+    expect(cei.x <= o.x0 - 40 && cei.x + cei.w >= o.tile + o.TW + o.GB, 'the ceiling is over all of it, the runway and both pits').toBe(true);
+    expect(cei.tip - (P.single.apex + 2 * L.r), 'one jump goes under the tips').toBeGreaterThanOrEqual(20);
+    expect(P.best.apex + 2 * L.r, 'a second jump at the top bangs on them').toBeGreaterThan(cei.tip);
+    expect(pad.mode, 'the pad is the trap kind').toBe('trap');
+    expect(Math.abs(pad.vy) * Math.abs(pad.vy) / (2 * P.grav) + 2 * L.r, 'it throws him into the tips').toBeGreaterThan(cei.tip);
+    expect(pad.w + 2 * L.r + 6 * v, 'and a hop over it is easy').toBeLessThanOrEqual(P.single.above[14] * v);
+    expect([tile.hair, tile.delay <= 6, tile.w >= 100], 'the tile is a hairline tile: wide as a floor, gone four frames after he lands').toEqual([true, true, true]);
+    expect(tile.x, 'in the middle of the pit: a pit before it and a pit after').toBe(o.lipA + o.GA);
+    expect([bed.x <= tile.x, bed.x + bed.w >= tile.x + tile.w], 'the spikes are under the whole tile').toEqual([true, true]);
+    expect(bed.dy - bed.h, 'their tips show under the tile (it is 26 thick) and are a short fall from its top').toBeGreaterThan(tile.h - 26);
+    expect(bed.dy - bed.h, 'a short fall').toBeLessThan(30);
+    expect(o.GA, 'the first pit is a jump').toBeLessThanOrEqual(P.single.dist + 40);
+    expect(o.GB, 'the second needs a second jump').toBeGreaterThanOrEqual(P.single.dist + 100);
+    expect(o.GB, 'and a second jump can do it, with room').toBeLessThanOrEqual(P.best.dist - 40);
+  });
+
+  it('it is the tightest section of the lane and still fair: measured on the real engine as the run goes by, the least room of any press is 3 to 6 frames, the second jump is the late one, and every other section leaves more', () => {
+    const r = fullRun(), i = PROG.programs.findIndex((p) => p.k === 'kaizo'), s = r.plan.seen[i], steps = PROG.programs[i].steps;
+    expect(i, 'it was played').toBeGreaterThanOrEqual(0);
+    expect(s.room, 'slightly kaizo: a few frames, never a pixel').toBeGreaterThanOrEqual(3);
+    expect(s.room).toBeLessThanOrEqual(6);
+    r.plan.seen.forEach((q, j) => { if (j !== i) expect(q.room, 'section ' + j + ' (' + PROG.programs[j].k + ') leaves more room than the kaizo').toBeGreaterThan(s.room); });
+    const last = steps.filter((st) => st.d2 !== null).pop();
+    expect(last && last.d2, 'a second jump timed late (the top of a jump is 20 frames up; 39 frames on is as he comes back down past the tips)').toBeGreaterThanOrEqual(30);
+    expect(steps.some((st) => st.t1 !== null && st.t1 <= 8), 'and a jump off the tile within a few frames of landing on it').toBe(true);
+  }, 300000);
 });
 
 describe('the line', () => {
@@ -466,8 +589,9 @@ describe('the runners', () => {
   });
 
   it('AI runners run right and clear the first gap; the slow ones fall behind, are caught, and are gone', () => {
-    const r = fullRun();
-    expect(r.won).toBe(true);
+    const r = packRun();
+    expect(r.over, 'the scripted runner is not caught on the way to the first hard section').toBe(false);
+    expect(r.youX, 'and gets there').toBeGreaterThanOrEqual(r.stopX);
     expect(r.past, 'the runners jump the gap (or were lost later, past it)').toBe(6);
     expect(r.gone.length, 'some fall behind and are caught').toBeGreaterThan(0);
     expect(r.gone.length).toBeLessThan(6);
@@ -481,17 +605,44 @@ describe('the runners', () => {
       var atEdge = raceRunnerAi(fan).attack;                                 // at the edge: none
       you.x = RACE.edge - RACE_THROW_ZONE - 100; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
       var nearZone = raceRunnerAi(fan).attack;                               // just short of the throw's zone: none either
-      you.x = RACE.edge - RACE_THROW_ZONE - 800; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
-      var farBack = raceRunnerAi(fan).attack;                                // well before it: a jab again
-      return { mid:mid, atEdge:atEdge, nearZone:nearZone, farBack:farBack };`);
+      you.x = RACE_FIRST_X + 100; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
+      var farBack = raceRunnerAi(fan).attack;                                // well before it (and before everything: the first obstacle is a plain gap): a jab again
+      var sec = RACE.obstacles.find(function(o){ return o.sec; });
+      you.x = (sec.x0 + sec.x1)/2; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
+      var onSection = raceRunnerAi(fan).attack;                              // on a precision section (owner 2026-10-02, the d5 lane): none, a jab there is luck
+      you.x = sec.sec.sx - 10; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
+      var beforeSection = raceRunnerAi(fan).attack;                          // just before it: a jab
+      return { mid:mid, atEdge:atEdge, nearZone:nearZone, farBack:farBack, onSection:onSection, beforeSection:beforeSection };`);
     expect(r.mid).toBe(true);
     expect(r.atEdge).toBe(false);
     expect(r.nearZone).toBe(false);
     expect(r.farBack).toBe(true);
+    expect(r.onSection, 'the runners leave you alone on a plank, a saw\'s pit, the hairline: a jab there would be luck, and the section is meant to be fair on the next try').toBe(false);
+    expect(r.beforeSection, 'but not a step before it').toBe(true);
   });
 });
 
+// THE PROOF THAT IT CAN BE WON. The owner (2026-10-02): "running should be d5 bfdi:branches difficulty" -- harder, and still winnable as Knife by a
+// skilled player with no checkpoint. The lane's hard sections are solved by search on the real engine (scripts/solve-running-lane.mjs, method in
+// test/helpers/running-solver.page.js): the plan for each is a few frames of exact presses, kept on file in test/data/running-lane.json. The tests
+// below play the whole lane back with them (and the scripted runner for the rest) in the real game with every runner on the lane, and the throw.
 describe('the run', () => {
+  it('the plans on file were solved on this very lane: when the lane changes they are solved again (node scripts/solve-running-lane.mjs)', () => {
+    expect(PROG.lane, 'the lane is not the one the plans were solved on: run node scripts/solve-running-lane.mjs and commit test/data/running-lane.json').toBe(lane().hash);
+    expect(PROG.programs.length, 'one plan for every section of the lane that has one').toBe(lane().obs.filter((o) => o.sec).length);
+    for (const p of PROG.programs) expect(p.steps, p.k + ' at ' + Math.round(p.x) + ' has a plan').toBeTruthy();
+  });
+
+  it('played back, the plans are the run that was solved: every section begins and ends on the frame and the spot it did when it was solved, with the runners and Marshmallow on the lane too', () => {
+    const r = fullRun();
+    expect(r.plan.failed, 'no section without a plan').toBe(-1);
+    expect(r.plan.seen.length, 'every section was reached').toBe(PROG.programs.length);
+    r.plan.seen.forEach((s, i) => {
+      const p = PROG.programs[i];
+      expect([s.frame, +s.x.toFixed(6), s.endFrame, +s.endX.toFixed(6)], p.k + ' #' + i + ': begins and ends where it did when it was solved').toEqual([p.frame, +p.x.toFixed(6), p.endFrame, +p.endX.toFixed(6)]);
+    });
+  }, 300000);
+
   it('a scripted runner who plays the whole lane reaches the end, throws Marshmallow over and crosses: the lane is completable, with room to spare', () => {
     const r = fullRun();
     expect(r.over, 'the race was decided within the frame budget').toBe(true);
@@ -573,7 +724,7 @@ describe('the finish: the charged smash', () => {
 
   it('anywhere else, or with her out of reach, the smash is Knife\'s smash: nothing is picked up', () => {
     const r = quick({}, `${AT_EDGE}
-      you.x = RACE.edge - 600; you.y = RACE.floorY - you.r; marsh.x = you.x - 50; marsh.y = you.y; adv(2);   // well short of the zone, on the flat run to the edge
+      you.x = RACE.edge - 440; you.y = RACE.floorY - you.r; marsh.x = you.x - 50; marsh.y = you.y; adv(2);   // well short of the zone, on the flat run to the edge (the last 460 px are clear: the kaizo section of the d5 lane ends where they begin, so 600 back is a pit now)
       hold({smash:true}); adv(2); var mid = { charge:RACE.charge, held:!!marsh._raceHeld, q:!!you._smQ }; hold({}); adv(60);
       you.x = RACE.edge - 60; marsh.x = you.x - 50; marsh.y = you.y - 500; adv(1); marsh.y = you.y - 500; adv(1);   // at the edge but she is out of his reach (the leash keeps her within 260 px of him along the floor, never above him)
       hold({smash:true}); adv(2); var far = { charge:RACE.charge, held:!!marsh._raceHeld, q:!!you._smQ }; hold({}); adv(60);
@@ -749,7 +900,8 @@ describe('the hazards', () => {
     var only = function(kind, i){ RACE.traps = []; RACE.crumbles = []; RACE.cannons = []; RACE.pendulums = []; RACE.ferries = []; RACE.bullets = []; RACE.hazards = kind==='piston' ? [HZ[i]] : []; RACE.pianos = kind==='piano' ? [PI[i]] : []; RACE.voices = kind==='voice' ? [VO[i]] : []; RACE.memories = kind==='memory' ? [ME[i]] : [];
       RACE.waves = []; RACE.pianos.forEach(function(p){ p.state = 'idle'; p.t = 0; }); RACE.voices.forEach(function(v){ v.fired = false; }); };
     var put = function(x){ you.controller = 'local'; you.x = x; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.slowed = 0; you.dead = false; you.jumps = 2; you.onground = false; you.pct = 0; hold({});
-      for(var i=0;i<2;i++){ RACE.lineX = you.x - 5000; step(); } };
+      for(var i=0;i<2;i++){ RACE.lineX = you.x - 5000; step(); }
+      you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.vx = 0; you.vy = 0; you.x = x; you.y = fy - you.r; you.onground = true; };   // put down clean: whatever the two settling frames met (a piston that happened to be down) is not part of the test
     var adv = function(n){ for(var i=0;i<n;i++){ RACE.lineX = you.x - 5000; step(); } };
     only('none', 0);`;
 
@@ -916,18 +1068,18 @@ describe('the platformer hazards', () => {
   // One obstacle of the lane at a time, on the lane's own floor around it (its pits included) and nothing else: solo(kind, pick) leaves
   // just that obstacle's records, put(x) stands you there, adv(n) steps n frames with the line kept far behind.
   const SOLO = `fighters.forEach(function(f){ if(f!==you){ f.dead = true; } });
-    var KEEP = { tr:RACE.traps.slice(), cr:RACE.crumbles.slice(), ca:RACE.cannons.slice(), pe:RACE.pendulums.slice(), fe:RACE.ferries.slice(), haz:RACE.hazards.slice() }, fy = RACE.floorY, PITS = RACE.pits.slice();
+    var KEEP = { tr:RACE.traps.slice(), cr:RACE.crumbles.slice(), fk:RACE.fakes.slice(), ca:RACE.cannons.slice(), pe:RACE.pendulums.slice(), fe:RACE.ferries.slice(), haz:RACE.hazards.slice() }, fy = RACE.floorY, PITS = RACE.pits.slice();
     var adv = function(n){ for(var i=0;i<n;i++){ RACE.lineX = you.x - 5000; step(); } };
     var solo = function(kind, pick){
       var list = RACE.obstacles.filter(function(q){ return q.k === kind; }), o = typeof pick === 'function' ? list.filter(pick)[0] : list[pick || 0], g = o.g;
-      RACE.traps = KEEP.tr.filter(function(t){ return t.g === g; }); RACE.crumbles = KEEP.cr.filter(function(c){ return c.g === g; });
+      RACE.traps = KEEP.tr.filter(function(t){ return t.g === g; }); RACE.crumbles = KEEP.cr.filter(function(c){ return c.g === g; }); RACE.fakes = KEEP.fk.filter(function(c){ return c.g === g; });
       RACE.cannons = KEEP.ca.filter(function(c){ return c.trig === o.x0; }); RACE.pendulums = KEEP.pe.filter(function(p){ return p.g === g; }); RACE.ferries = KEEP.fe.filter(function(z){ return z.g === g; });
       RACE.hazards = KEEP.haz.filter(function(h){ return h.g === g; }); RACE.pianos = []; RACE.voices = []; RACE.memories = []; RACE.waves = []; RACE.bullets = [];
-      RACE.cannons.forEach(function(c){ c.fired = false; c.at = 0; }); RACE.crumbles.forEach(function(c){ c.t = -1; c.gone = 0; });
+      RACE.cannons.forEach(function(c){ c.fired = false; c.at = 0; }); RACE.crumbles.concat(RACE.fakes).forEach(function(c){ c.t = -1; c.gone = 0; });
       var pits = PITS.filter(function(p){ return p.x0 >= o.x0 - 2 && p.x1 <= o.x1 + 2 && p.x1 < RACE.edge; }).sort(function(a, b){ return a.x0 - b.x0; }), at = -4000, plats = [];
       pits.forEach(function(p){ plats.push({ x:at, y:fy, w:p.x0 - at, h:60, solid:true, floor:0 }); at = p.x1; });
       plats.push({ x:at, y:fy, w:90000, h:60, solid:true, floor:0 });
-      RACE.crumbles.forEach(function(c){ plats.push(c.plat); }); RACE.ferries.forEach(function(z){ plats.push(z.plat); });
+      RACE.crumbles.concat(RACE.fakes).forEach(function(c){ plats.push(c.plat); }); RACE.ferries.forEach(function(z){ plats.push(z.plat); });
       worldPlats = plats; return o;
     };
     var put = function(x){ you.controller = 'local'; you.x = x; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.slowed = 0; you.dead = false; you.jumps = 2; you.onground = true; you.pct = 0; hold({}); RACE.lineX = you.x - 5000; };`;
@@ -1017,6 +1169,20 @@ describe('the platformer hazards', () => {
     for (const w of r.waves) expect(w.pass / w.tried, 'a wave of ' + w.n + ' can be run through from a fifth of the start times or more').toBeGreaterThanOrEqual(0.2);
   });
 
+  it('a jet on the platform you land on (owner 2026-10-02: "Hazard timing") burns like a vent: only while it burns, never while it glows or rests', () => {
+    const r = quick({}, `${SOLO}
+      var o = solo('jetpad', 0), t = RACE.traps.find(function(z){ return z.k === 'jet'; }), out = { states:{} }, rest = t.period - t.warn - t.burn;
+      var at = function(frac){ hazardT = Math.round((((frac - t.phase) % 1) + 1) % 1 * t.period); };
+      [['burn', (t.warn + t.burn/2)/t.period], ['rest', (t.warn + t.burn + rest/2)/t.period], ['glow', (t.warn/2)/t.period]].forEach(function(st){
+        put(t.x + t.w/2); you.controller = 'still'; at(st[1]); adv(1); out.states[st[0]] = { bump:you._raceBumpT, stun:you.hitstun, vx:you.vx, pct:you.pct, want:t.stun, kx:t.kx };
+      });
+      out.rest = rest; return out;`);
+    expect([r.states.burn.bump > 0, r.states.burn.stun, r.states.burn.vx, r.states.burn.pct], 'it burns').toEqual([true, r.states.burn.want, r.states.burn.kx, 0]);
+    expect(r.rest, 'the first jet of the lane rests a little between burning and glowing').toBeGreaterThan(2);
+    expect(r.states.rest.bump, 'it rests').toBe(0);
+    expect(r.states.glow.bump, 'it glows first, and does not hurt').toBe(0);
+  });
+
   it('a conveyor belt runs backward under whoever stands on it, and never touches someone in the air', () => {
     const r = quick({}, `${SOLO}
       var o = solo('belt', 0), t = RACE.traps[0];
@@ -1061,6 +1227,33 @@ describe('the platformer hazards', () => {
     expect([c.run.past, c.run.over], 'keep running and you cross it').toEqual([true, false]);
     expect(c.run.worstY, 'without sinking').toBeLessThan(6);
     expect(c.run.stirred, 'it was crumbling behind him').toBeGreaterThan(1);
+  });
+
+  it('the hairline (owner 2026-10-02: "slightly kaizo"): a tile that crumbles four frames after he lands on it, with spikes showing under it -- stand on it and he falls onto them; jump off at once and a second jump late and he is across; a second jump at the top and the ceiling gets him', () => {
+    const r = quick({}, `${SOLO}
+      var o = solo('kaizo', 0), c = RACE.fakes[0], out = {}, far = o.tile + o.TW + o.GB;
+      put(c.x + 70); you.controller = 'still'; var dropAt = -1, bumpAt = -1;   // he stands where he landed, and the tile goes, and then the spikes
+      for(var n = 0; n < 40; n++){ adv(1); if(dropAt < 0 && c.gone > 0) dropAt = n; if(bumpAt < 0 && you._raceBumpT > 0) bumpAt = n; }
+      out.stand = { dropAt:dropAt, bumpAt:bumpAt, delay:c.delay, pct:you.pct, hair:!!c.hair };
+      // from a spot on the tile: a jump two frames on, and a second jump d frames after it
+      var run = function(off, d){ solo('kaizo', 0); put(c.x + off); var bumped = false, fell = false;
+        for(var f = 0; f < 150 && !fell; f++){ hold({ right:true, jump:(f === 2 || (d !== null && f === 2 + d)) }); adv(1); if(you._raceBumpT > 0) bumped = true; if(you.y > fy + 200) fell = true; }
+        hold({}); return { cross:!fell && !bumped && you.x > far + 10 && you.onground, bumped:bumped, fell:fell }; };
+      var late = 0, top = 0, topBang = 0, tried = 0;
+      for(var off = 40; off <= 130; off += 10){
+        for(var d = 30; d <= 44; d += 2){ tried++; if(run(off, d).cross) late++; }
+        for(var e = 12; e <= 28; e += 4){ var q = run(off, e); if(q.cross) top++; if(q.bumped) topBang++; }
+      }
+      out.jumps = { late:late, top:top, topBang:topBang, tried:tried };
+      return out;`);
+    expect(r.stand.hair, 'it is the hairline tile').toBe(true);
+    expect(Math.abs(r.stand.dropAt - r.stand.delay), 'it goes four frames after he is on it').toBeLessThanOrEqual(3);
+    expect(r.stand.bumpAt, 'and the spikes under it get him after it has gone').toBeGreaterThan(r.stand.dropAt);
+    expect(r.stand.bumpAt - r.stand.dropAt, 'in a few frames: he can jump out of the fall, or not stand there at all').toBeLessThanOrEqual(14);
+    expect(r.stand.pct, 'no damage').toBe(0);
+    expect(r.jumps.late, 'a jump at once and a second jump late crosses it, from more than one spot of the tile').toBeGreaterThanOrEqual(4);
+    expect(r.jumps.top, 'a second jump at the top of the first never does').toBe(0);
+    expect(r.jumps.topBang, 'it bangs his head on the tips').toBeGreaterThan(0);
   });
 
   it('a cannon: cross its trigger and it fires its shots, a low one bumps whoever stays in its way and passes under a jumper, a high one passes over a runner and bumps a jumper', () => {
@@ -1132,20 +1325,21 @@ describe('the platformer hazards', () => {
   it('every pit is a pit with spikes at the bottom, and every platformer hazard draws with a tell and no words, in every state, without throwing', () => {
     const r = quick({}, `${SOLO} var out = { errs:[], n:0 };
       var d = function(tag){ try{ drawRaceFx(); drawRaceBar(); }catch(e){ out.errs.push(tag + ': ' + e); } out.n++; };
-      RACE.traps = KEEP.tr; RACE.crumbles = KEEP.cr; RACE.cannons = KEEP.ca; RACE.pendulums = KEEP.pe; RACE.ferries = KEEP.fe; RACE.hazards = KEEP.haz;
+      RACE.traps = KEEP.tr; RACE.crumbles = KEEP.cr; RACE.fakes = KEEP.fk; RACE.cannons = KEEP.ca; RACE.pendulums = KEEP.pe; RACE.ferries = KEEP.fe; RACE.hazards = KEEP.haz;
       RACE.crumbles.forEach(function(c, i){ c.t = [-1, 14, 6, -1][i % 4]; c.gone = [0, 0, 0, 50][i % 4]; });
+      RACE.fakes.forEach(function(c, i){ c.t = [-1, 3][i % 2]; c.gone = [0, 0][i % 2]; });   // the hairline's tile: whole, and shaking
       RACE.cannons.forEach(function(c, i){ c.fired = i % 2 === 0; c.at = RACE.frames - 5; });
       RACE.bullets = RACE.cannons.map(function(c){ return { x:c.cx - 200, y:fy - RACE_BULLET.low, w:RACE_BULLET.w, h:RACE_BULLET.h, sp:c.bs, stun:14 }; });
-      var xs = RACE.traps.map(function(t){ return t.x; }).concat(RACE.crumbles.map(function(c){ return c.x; }), RACE.cannons.map(function(c){ return c.cx; }), RACE.pendulums.map(function(p){ return p.px; }), RACE.ferries.map(function(f){ return f.plat.x; }), RACE.pits.map(function(p){ return p.x0; }));
+      var xs = RACE.traps.map(function(t){ return t.x; }).concat(RACE.crumbles.map(function(c){ return c.x; }), RACE.fakes.map(function(c){ return c.x; }), RACE.cannons.map(function(c){ return c.cx; }), RACE.pendulums.map(function(p){ return p.px; }), RACE.ferries.map(function(f){ return f.plat.x; }), RACE.pits.map(function(p){ return p.x0; }));
       xs.forEach(function(x, i){ hazardT = i*37; camX = x - W/2; camY = 0; you.x = x; d('at ' + Math.round(x)); });
-      out.src = String(drawRaceFx) + String(raceDrawFloorSpikes) + String(raceDrawCeiling) + String(raceDrawSpring) + String(raceDrawFire) + String(raceDrawBelt) + String(raceDrawCrumble) + String(raceDrawCannon) + String(raceDrawBullet) + String(raceDrawPendulum) + String(raceDrawFerry) + String(raceDrawPit);
+      out.src = String(drawRaceFx) + String(raceDrawFloorSpikes) + String(raceDrawCeiling) + String(raceDrawSpring) + String(raceDrawFire) + String(raceDrawBelt) + String(raceDrawCrumble) + String(raceDrawHairline) + String(raceDrawCannon) + String(raceDrawBullet) + String(raceDrawPendulum) + String(raceDrawFerry) + String(raceDrawPit);
       out.pits = RACE.pits.length; out.gaps = RACE.obstacles.filter(function(o){ return o.k === 'gap'; }).length;
       return out;`);
     expect(r.errs).toEqual([]);
     expect(r.n).toBeGreaterThan(25);
     expect(r.pits, 'a pit for every gap, every crumbling floor, every ferry and every ceiling over a pit, and the last').toBeGreaterThan(r.gaps);
     expect(r.src, 'no words on any of them').not.toMatch(/fillText|strokeText/);
-    for (const needle of ['raceDrawPit(p.x0, p.x1, fy)', 'raceDrawFloorSpikes', 'raceDrawCeiling', 'raceDrawSpring', 'raceDrawFire', 'raceDrawBelt', 'raceDrawCrumble', 'raceDrawCannon', 'raceDrawBullet', 'raceDrawPendulum', 'raceDrawFerry']) expect(r.src, needle).toContain(needle);
+    for (const needle of ['raceDrawPit(p.x0, p.x1, fy)', 'raceDrawFloorSpikes', 'raceDrawCeiling', 'raceDrawSpring', 'raceDrawFire', 'raceDrawBelt', 'raceDrawCrumble', 'raceDrawHairline', 'raceDrawCannon', 'raceDrawBullet', 'raceDrawPendulum', 'raceDrawFerry']) expect(r.src, needle).toContain(needle);
   });
 });
 
