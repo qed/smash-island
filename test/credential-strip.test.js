@@ -84,6 +84,11 @@ const FORBIDDEN = [
 
 /** The one third-party host the game is allowed to contact, and only for the Advanced path. */
 const SANCTIONED_HOSTS = ['api.anthropic.com'];
+/** Hosts the page NAMES but never contacts. The game's own production address is written into its link-preview tags and into
+ *  the link the Share buttons hand over (test/share-and-previews.test.js pins both); it is the game's own site, not a third
+ *  party, and nothing in the page fetches it. Listed here so the allowlist below stays an exact set: a second host still
+ *  fails, and so does a typo'd one. */
+const NAMED_ONLY_HOSTS = ['smash-delta.vercel.app'];
 
 describe('Workstream 0 — credential surface is fully stripped', () => {
   it('publishes only the files we intend to serve', () => {
@@ -104,6 +109,9 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
       `${MUSIC_DIR}/tourney.mp3`,
       `${SPRITE_DIR}/CREDITS.md`,
       `${PUBLISH_ROOT}/index.html`,
+      // The link-preview picture (scripts/make-og-image.mjs): what Discord, Slack, Messages and X show when someone pastes the
+      // link. Made from the game's own sprites; test/share-and-previews.test.js pins its size and what it may show.
+      `${PUBLISH_ROOT}/og-image.png`,
       // sprites are checked by RULE below rather than pinned by name — there are 59 of them and a
       // hand-maintained list would be pure noise that everyone learns to update without reading
       ...PUBLISHED_FILES.filter(f => f.startsWith(`${SPRITE_DIR}/`) && f.endsWith('.png')),
@@ -142,7 +150,7 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     expect(orphans, 'sprite files that no fighter uses — dead weight on every page load').toEqual([]);
     // …and nothing new at the top level either, so a stray sibling directory is caught even if the
     // recursive pin above is ever relaxed to a rule.
-    expect(readdirSync(PUBLISH_ROOT).sort()).toEqual(['assets', 'index.html']);
+    expect(readdirSync(PUBLISH_ROOT).sort()).toEqual(['assets', 'index.html', 'og-image.png']);
   });
 
   it('serves exactly one HTML entry point', () => {
@@ -262,7 +270,7 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
       .filter((host) => !/^(localhost|127\.0\.0\.1)/.test(host));
     // Was `toEqual([])`. It is now an allowlist of exactly one, which is the same guarantee with one
     // named exception rather than none: a second host still fails, and so does a typo'd first one.
-    expect([...new Set(externals)].sort()).toEqual(SANCTIONED_HOSTS);
+    expect([...new Set(externals)].sort()).toEqual([...SANCTIONED_HOSTS, ...NAMED_ONLY_HOSTS].sort());
   });
 
   it('reaches its own endpoint same-origin, with no credential in the browser', () => {
