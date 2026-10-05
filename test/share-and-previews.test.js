@@ -194,3 +194,218 @@ describe('link previews: the generator (scripts/make-og-image.mjs)', () => {
     expect([pal.width, pal.height]).toEqual([w, h]);
   });
 });
+
+// ---- the Share buttons --------------------------------------------------------------------------------------------------
+// Boots the game, then stands in for the browser: a share sheet and/or a clipboard, each recording what it is handed. Timers are
+// captured so the 1.6 s "Copied!" can be run on demand instead of waited for.
+const flush = () => new Promise((r) => setTimeout(r, 0));
+function bootShare({ share, clipboard } = {}) {
+  const { window: w } = loadMonolith();
+  const rec = { shared: [], copied: [], timers: [] };
+  w.setTimeout = (fn) => { rec.timers.push(fn); return rec.timers.length; };
+  w.clearTimeout = () => {};
+  if (share) w.navigator.share = (d) => { rec.shared.push(d); return share(d); };
+  if (clipboard) w.navigator.clipboard = { writeText: (t) => { rec.copied.push(t); return clipboard(t); } };
+  return { w, rec, doc: w.document };
+}
+const ok = () => Promise.resolve();
+const fail = (name) => () => Promise.reject({ name });
+
+describe('the Share buttons: where they are', () => {
+  it('puts Share on the title as a text link beside the Vault, and keeps the title to six buttons', () => {
+    const { doc } = bootShare();
+    const link = doc.querySelector('#title #shareBtn');
+    expect(link, 'a Share control on the title').toBeTruthy();
+    expect(link.tagName, 'a link in the Vault\'s style, not a seventh button').toBe('A');
+    expect(link.getAttribute('role')).toBe('button');
+    expect(link.getAttribute('tabindex')).toBe('0');
+    expect(link.classList.contains('link')).toBe(true);
+    expect(link.parentElement, 'on the Vault\'s line').toBe(doc.querySelector('#title #vaultBtn').parentElement);
+    expect([...doc.querySelectorAll('#title button')].filter((b) => !b.closest('#dailyCard')).length).toBeLessThanOrEqual(6);
+  });
+
+  it('puts Share on the result screen, in the row with Rematch and Title, in the same ghost style as Title', () => {
+    const { doc } = bootShare();
+    const btn = doc.querySelector('#result #resultShare');
+    expect(btn, 'a Share button on the result screen').toBeTruthy();
+    expect(btn.tagName).toBe('BUTTON');
+    expect(btn.className, 'the menu\'s own small ghost button').toBe('btn ghost sm');
+    expect(btn.parentElement, 'in the row with Rematch').toBe(doc.getElementById('resultRematch').parentElement);
+    expect(btn.textContent).toMatch(/Share/);
+  });
+
+  it('fits at phone width: the controls wrap instead of overflowing (no fixed widths, rows may wrap)', () => {
+    // jsdom does no layout, so this pins the CSS that makes it true rather than measuring pixels: the result row and the
+    // title's Vault line must be allowed to wrap, and neither Share control may carry a width of its own.
+    const { doc } = bootShare();
+    expect(HTML).toMatch(/\.row\{[^}]*flex-wrap:wrap/);
+    for (const el of [doc.getElementById('shareBtn'), doc.getElementById('resultShare')]) {
+      expect(el.getAttribute('style') || '', 'no inline width on a Share control').not.toMatch(/width/);
+    }
+    expect(HTML).not.toMatch(/#shareBtn\s*\{[^}]*(width|min-width)/);
+    expect(HTML).not.toMatch(/#resultShare\s*\{[^}]*(width|min-width)/);
+  });
+});
+
+describe('the Share buttons: what a tap does', () => {
+  it('opens the share sheet where the browser has one, with a title, a line and the production link', async () => {
+    const { rec, doc } = bootShare({ share: ok, clipboard: ok });
+    doc.getElementById('shareBtn').click();
+    await flush();
+    expect(rec.shared).toHaveLength(1);
+    const d = rec.shared[0];
+    expect(d.title).toBe('Battle for Smash Island');
+    expect(d.url).toBe(SITE);
+    expect(d.text).toMatch(/free, fan-made BFDI & Inanimate Insanity/);
+    expect(Object.keys(d).sort(), 'exactly {title, text, url}').toEqual(['text', 'title', 'url']);
+    expect(rec.copied, 'a share that worked copies nothing').toEqual([]);
+  });
+
+  it('does the same from the result screen', async () => {
+    const { w, rec, doc } = bootShare({ share: ok, clipboard: ok });
+    w.eval("go('result')");
+    doc.getElementById('resultShare').click();
+    await flush();
+    expect(rec.shared).toHaveLength(1);
+    expect(rec.shared[0].url).toBe(SITE);
+  });
+
+  it('copies the link and says "Copied!" where there is no share sheet, then puts the label back', async () => {
+    const { rec, doc } = bootShare({ clipboard: ok });
+    const btn = doc.getElementById('shareBtn');
+    const label = btn.textContent;
+    btn.click();
+    await flush();
+    expect(rec.copied, 'the link, and only the link').toEqual([SITE]);
+    expect(btn.textContent).toBe('✓ Copied!');
+    rec.timers.forEach((t) => t());
+    expect(btn.textContent, 'the label comes back').toBe(label);
+  });
+
+  it('gives the production link whatever address this copy of the game was opened from', async () => {
+    const { w, rec, doc } = bootShare({ clipboard: ok });
+    expect(w.location.origin, 'the test page is not the production site').not.toBe(SITE.slice(0, -1));
+    doc.getElementById('shareBtn').click();
+    await flush();
+    expect(rec.copied).toEqual([SITE]);
+  });
+
+  it('a second tap inside the feedback does not leave "Copied!" as the label', async () => {
+    const { rec, doc } = bootShare({ clipboard: ok });
+    const btn = doc.getElementById('resultShare');
+    const label = btn.textContent;
+    btn.click(); await flush();
+    btn.click(); await flush();
+    rec.timers.forEach((t) => t());
+    expect(btn.textContent).toBe(label);
+  });
+
+  it('copies when the player backs out of nothing: a refused share falls through to the clipboard', async () => {
+    const { rec, doc } = bootShare({ share: fail('NotAllowedError'), clipboard: ok });
+    doc.getElementById('shareBtn').click();
+    await flush(); await flush();
+    expect(rec.shared).toHaveLength(1);
+    expect(rec.copied).toEqual([SITE]);
+  });
+
+  it('copies nothing when the player cancels the share sheet', async () => {
+    const { rec, doc } = bootShare({ share: fail('AbortError'), clipboard: ok });
+    doc.getElementById('shareBtn').click();
+    await flush(); await flush();
+    expect(rec.shared).toHaveLength(1);
+    expect(rec.copied, 'a cancelled share is not an error').toEqual([]);
+  });
+
+  it('falls back to a selectable field, never to a false "Copied!", when there is no clipboard either', async () => {
+    const { rec, doc } = bootShare();
+    const btn = doc.getElementById('shareBtn');
+    const label = btn.textContent;
+    btn.click();
+    await flush();
+    const field = doc.getElementById('shareField');
+    expect(field, 'a field to copy from').toBeTruthy();
+    expect(field.value).toBe(SITE);
+    expect(field.readOnly).toBe(true);
+    expect(btn.textContent, 'it did not claim to copy').toBe(label);
+    expect(rec.copied).toEqual([]);
+  });
+
+  it('shows the field instead of "Copied!" when the clipboard refuses the write', async () => {
+    const { doc } = bootShare({ clipboard: () => Promise.reject(new Error('denied')) });
+    const btn = doc.getElementById('resultShare');
+    const label = btn.textContent;
+    btn.click();
+    await flush(); await flush();
+    expect(btn.textContent).toBe(label);
+    expect(doc.getElementById('rrShare') ? doc.querySelector('#rrShare input') : doc.getElementById('shareField')).toBeTruthy();
+  });
+
+  it('presses from the keyboard like the Vault\'s link: Enter or Space on the title link shares', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });
+    const link = doc.getElementById('shareBtn');
+    for (const [key, code] of [['Enter', 'Enter'], [' ', 'Space']]) {
+      link.dispatchEvent(new w.KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true }));
+    }
+    await flush();
+    expect(rec.shared).toHaveLength(2);
+  });
+
+  it('leaves Copy Link on the replay panel as it was: no text means this page\'s own address', async () => {
+    const { w, rec } = bootShare({ clipboard: ok });
+    w.eval('shareCopyLink(null)');
+    await flush();
+    expect(rec.copied).toEqual(['http://localhost/']);
+  });
+
+  it('names the production address exactly once in the script, as the one constant it hands over', () => {
+    const script = HTML.slice(HTML.indexOf('<script>'));
+    expect(script.match(/smash-delta\.vercel\.app/g), 'one constant, no scattered copies').toHaveLength(1);
+    expect(script).toMatch(/const SHARE_URL = 'https:\/\/smash-delta\.vercel\.app\/';/);
+  });
+});
+
+describe('no share control in a match', () => {
+  // The owner's rule: no text on screen in matches except GO!, KOs, boss telegraphs and Boss Rush cards. A share control
+  // belongs to the title and the result screen, never to the HUD, the pause card, the boss cards, or a banner.
+  const shareish = (el) => /share/i.test(el.getAttribute('onclick') || '') || /share/i.test(el.id || '');
+  const notCode = (el) => el.tagName !== 'SCRIPT' && el.tagName !== 'STYLE';
+
+  it('puts every share control inside a menu screen (the lobby\'s "share the room code" line is one), and nowhere a match is drawn', () => {
+    const { doc } = bootShare();
+    const found = [...doc.body.querySelectorAll('*')].filter(notCode)
+      .filter((el) => shareish(el) || (el.children.length === 0 && /\bshare\b/i.test(el.textContent)));
+    expect(found.length, 'there are share controls to check').toBeGreaterThan(1);
+    for (const el of found) expect(el.closest('.screen'), `${el.tagName}#${el.id} is outside every menu screen`).toBeTruthy();
+    // ...and the two this feature adds are on the two screens it names
+    expect(doc.getElementById('shareBtn').closest('#title')).toBeTruthy();
+    expect(doc.getElementById('resultShare').closest('#result')).toBeTruthy();
+  });
+
+  it('shows no screen at all while a match runs, and nothing share-like in the HUD, the pause card or the boss card', () => {
+    const { w, doc } = bootShare();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.count=3; SETTINGS.items=false; beginMatchNow();");
+    for (let i = 0; i < 90; i++) w.eval('step()');
+    expect(w.eval('running'), 'the match is running').toBe(true);
+    expect([...doc.querySelectorAll('.screen.active')].map((s) => s.id), 'no menu screen is up during a match').toEqual([]);
+    expect(doc.getElementById('hud').classList.contains('active')).toBe(true);
+    for (const id of ['hud', 'pauseCard', 'rushVictory']) {
+      const inside = [...doc.getElementById(id).querySelectorAll('*')].filter((el) => shareish(el) || /\bshare|copied\b/i.test(el.textContent));
+      expect(inside.map((el) => el.outerHTML.slice(0, 60)), `share UI inside #${id}`).toEqual([]);
+    }
+  });
+
+  it('the Boss Rush victory card (a card that is allowed in a match) has no share control, and no match banner says share or copied', () => {
+    const { w, doc } = bootShare();
+    const said = JSON.parse(w.eval(`(function(){ var out = [], _b = banner; banner = function(t, m, k, l){ out.push(String(t)); return _b(t, m, k, l); };
+      try {
+        SETTINGS.mode='boss'; SETTINGS.count=2; SETTINGS.stocks=3; SETTINGS.itemRate=0; SETTINGS.items=false; beginMatchNow();
+        for (var i = 0; i < 300; i++) step();
+        showRushVictory(0);
+      } finally { banner = _b; }
+      return JSON.stringify(out); })()`));
+    expect(doc.getElementById('rushVictory').style.display, 'the card is up').toBe('flex');
+    expect(doc.getElementById('rushVictory').querySelectorAll('[onclick*="hare"]'), 'only Keep Going and Finish').toHaveLength(0);
+    expect([...doc.getElementById('rushVictory').querySelectorAll('button')].map((b) => b.textContent.trim())).toEqual(['Keep Going ▶', 'Finish']);
+    expect(said.filter((t) => /share|copied/i.test(t))).toEqual([]);
+  });
+});
