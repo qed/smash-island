@@ -855,6 +855,118 @@ describe('YOU MUST! at your height (the owner: "YOU MUST! at your height")', () 
   });
 });
 
+describe('FURNACE! up top (the owner: "FURNACE! up top")', () => {
+  // "FURNACE! up top": "from phase 2 a plate also rolls along the platform, alongside the floor plates". The floor plates are unchanged (the FURNACE! tests above: 1, 2, 2 of them).
+  const SCENE = `
+    function once(ph, where, jump, left){
+      setup(300, ph);
+      var pad = worldPlats[0], px = left ? pad.x + 60 : pad.x + pad.w*0.5, py = where === 'pad' ? pad.y - f.r - (jump || 0) : gy - f.r;
+      setup(px, ph); f.y = py; f.x = px; step(); f.pct = 0; f.invuln = 0; b._fs = null; b.x = 700; b.vx = 0;
+      wind(1, 0);
+      var fb = b._fsb, o = { kind: b._fsKind, pl: fb.pl, lpWind: fb.lp, d: fb.d, pad: { x: pad.x, w: pad.w, y: pad.y } };
+      while (b._tel > 0) run(1, px, py);
+      var led = projectiles.filter(function(p){ return p.fsbLedgePlate; });
+      o.led = led.map(function(p){ return { x: Math.round(p.x), dy: Math.round(pad.y - p.y), vx: p.vx, delay: p.delay, r: p.r, shape: p.shape, id: p.bossAtk, wx: Math.round(p.warnX), wdy: Math.round(pad.y - p.warnY), pierce: !!p.pierce, volley: !!p.volley, dmg: p.dmg }; });
+      o.floor = projectiles.filter(function(p){ return p.fsbPlate; }).map(function(p){ return { id: p.bossAtk, vx: p.vx }; });
+      o.lpMove = fb.lp;
+      var n = 0, hits = [], start = null, endAt = null, speed = null, maxX = -1e9, minX = 1e9, strips = [];
+      while (b._fs && n < 400){
+        var p0 = f.pct; run(1, px, py); n++;
+        if (f.pct > p0 + 0.5) hits.push(+(f.pct - p0).toFixed(2));
+        var L = projectiles.filter(function(p){ return p.fsbLedgePlate && p.life > 0; })[0], F0 = projectiles.filter(function(p){ return p.fsbPlate && p.delay <= 0 && p.life > 0; })[0];
+        if (L && L.delay <= 0 && start === null) start = { n: n, lx: L.x, fx: F0 ? F0.x : null };
+        if (L && L.delay <= 0){ speed = L.vx; maxX = Math.max(maxX, L.x); minX = Math.min(minX, L.x); }
+        if (!L && start && endAt === null) endAt = n;
+        for (var i = 0; i < projectiles.length; i++){ var s = projectiles[i]; if (s.shape === 'spark' && Math.abs(s.y - (pad.y - 12)) < 0.01 && s.life > 0 && !s._seen){ s._seen = 1; strips.push({ x: Math.round(s.x), lingers: !!s.lingers, nsh: !!s.noStunHit, volley: !!s.volley, wdy: Math.round(pad.y - 12 - s.warnY), id: s.bossAtk }); } }
+      }
+      o.n = n; o.hits = hits; o.start = start; o.endAt = endAt; o.speed = speed; o.xs = [minX, maxX]; o.strips = strips; o.lpAfter = fb.lp; o.plAfter = fb.pl; o.full = bossDmg();
+      return o;
+    }
+  `;
+  it('from phase 2 a plate also rolls along the platform, alongside the floor plates: its lane is lit on the pad from the wind-up, it waits at the lane\'s end in plain view, then rolls with the first floor plate under it, at the same speed and under the same attack id; phase 1 has none', () => {
+    const r = EV(`${SCENE}
+      var out = {};
+      out[1] = once(1, 'pad'); out[2] = once(2, 'pad'); out[3] = once(3, 'pad');
+      return out;`);
+    // phase 1: nothing up there (the pad is the way out of the floor plates, as it was)
+    expect(r[1].pl).toBe(null);
+    expect(r[1].led).toEqual([]);
+    expect(r[1].hits, 'phase 1: the pad is safe from FURNACE!').toEqual([]);
+    for (const ph of [2, 3]) {
+      const o = r[ph], pad = o.pad, sp = ph === 2 ? 11.5 : 13;
+      expect(o.kind).toBe('furnace');
+      expect(o.pl, `phase ${ph}: the lane's two ends and its top, marked from the wind-up`).toEqual([Math.round(pad.x), Math.round(pad.x + pad.w), Math.round(pad.y)]);
+      expect(o.lpWind, 'the plate is still to come').toBe(0);
+      expect(o.led, 'one plate along the platform').toHaveLength(1);
+      const p = o.led[0];
+      expect(p, 'the plate\'s own height and reach: 34 over the pad\'s top, the floor plate\'s hit circle, piercing, one volley').toMatchObject({ dy: 34, r: 34, pierce: true, volley: true });
+      expect(p.shape, 'white-hot in phase 3, as the floor plates are').toBe(ph === 2 ? 'fsbplate' : 'fsbplatehot');
+      expect(p.id, 'the same attack id as the floor plates: one boss hit for the whole move').toBe(o.floor[0].id);
+      expect(o.floor.length, 'the floor plates are the same two as ever').toBe(2);
+      expect(p.dmg, 'same damage').toBe(o.full);
+      expect(p.wx, 'its own start marked (warnX/warnY) for the glitch hunter').toBe(p.x);
+      expect(p.wdy).toBe(p.dy);
+      expect(p.x, 'it starts 30 px in from the end the plates come in at (the left: you are on the right of the middle)').toBe(Math.round(pad.x + 30));
+      expect(p.delay, 'it waits in plain view for at least the 30 frames a dodge needs, until the first floor plate passes under its start').toBeGreaterThanOrEqual(30);
+      expect(Math.abs(p.vx), 'parked: it only faces the way it goes').toBeLessThan(0.01);
+      expect(o.lpMove, 'its lane stays lit while it waits and rolls').toBe(1);
+      expect(Math.abs(o.start.lx - o.start.fx), 'it sets off as the first floor plate is under it: side by side').toBeLessThanOrEqual(sp + 1);
+      expect(o.speed, 'and rolls at the floor plates\' speed').toBe(sp);
+      expect(Math.min(...o.floor.map((q) => Math.abs(q.vx))), 'the same as theirs').toBe(sp);
+      expect(o.xs[1], 'it rolls the whole pad and no further: it tips off at the far end').toBeGreaterThan(pad.x + pad.w - sp);
+      expect(o.xs[1]).toBeLessThanOrEqual(pad.x + pad.w + sp);
+      expect(o.endAt - o.start.n, 'in about a third of a second more').toBeLessThanOrEqual(Math.ceil(pad.w/sp) + 1);
+      expect(o.lpAfter, 'and its lane goes out with it').toBe(0);
+      expect(o.plAfter).toBe(null);
+      // a fighter standing on the pad is hit by it, one whole boss hit
+      expect(o.hits.length, `phase ${ph}: a fighter on the platform is hit`).toBeGreaterThan(0);
+      expect(o.hits.reduce((a, h) => a + h, 0), 'one boss hit for the whole move').toBeLessThanOrEqual(o.full + 0.5);
+    }
+  });
+
+  it('a jump clears it, a fighter on the floor is still hit by the floor plates, and when the plates come from the right the lane starts at the pad\'s right end', () => {
+    const r = EV(`${SCENE}
+      var out = {};
+      out.jump = once(2, 'pad', 150);
+      out.floor = once(2, 'floor');
+      out.left = once(2, 'pad', 0, true);
+      return out;`);
+    expect(r.jump.hits, 'in the air over the plate: nothing').toEqual([]);
+    expect(r.floor.pl, 'a plate rolls along the platform whoever stands where (the widest ledge): the lane is lit').toEqual([Math.round(r.floor.pad.x), Math.round(r.floor.pad.x + r.floor.pad.w), Math.round(r.floor.pad.y)]);
+    expect(r.floor.hits.reduce((a, h) => a + h, 0), 'on the floor you are hit by the floor plates, as ever').toBeGreaterThan(r.floor.full - 0.5);
+    expect(r.left.d, 'on the left of the middle the plates come from the right').toBe(-1);
+    expect(r.left.led[0].x, 'the pad\'s plate starts 30 px in from its right end').toBe(Math.round(r.left.pad.x + r.left.pad.w - 30));
+    expect(Math.abs(r.left.start.lx - r.left.start.fx), 'side by side with the floor plate').toBeLessThanOrEqual(11.5 + 1);
+    expect(r.left.speed, 'going left').toBe(-11.5);
+    expect(r.left.hits.reduce((a, h) => a + h, 0), 'a fighter on the left of the pad is hit').toBeGreaterThan(0);
+  });
+
+  it('phase 3: the white-hot plate leaves burning strips on the pad\'s top, lingering ones that do not stun-lock, each carrying its own spot as warnX/warnY, and the strips of the move are one attack', () => {
+    const r = EV(`${SCENE}
+      var out = {};
+      out[3] = once(3, 'pad', 150);   // (he jumps clear of everything, so the strips are all that is measured)
+      out[2] = once(2, 'pad', 150);
+      return out;`);
+    const o = r[3];
+    expect(o.strips.length, 'burning strips on the pad\'s top').toBeGreaterThan(0);
+    for (const s of o.strips) {
+      expect(s, 'lingering, no stun-lock, a volley, its own spot marked').toMatchObject({ lingers: true, nsh: true, volley: true, wdy: 0 });
+      expect(s.x, 'on the pad').toBeGreaterThan(o.pad.x);
+      expect(s.x).toBeLessThan(o.pad.x + o.pad.w);
+    }
+    expect(new Set(o.strips.map((s) => s.id)).size, 'one attack id for every strip').toBe(1);
+    expect(o.strips[0].id, 'the move\'s own id: the same as the plates\'').toBe(o.floor[0].id);
+    expect(r[2].strips, 'phase 2\'s plate is not white-hot: no strips').toEqual([]);
+  });
+
+  it('his picker tags know it: from phase 2 FURNACE! says `platform` as well as the floor and far; in phase 1 it does not', () => {
+    const r = W.eval(`(function(){ var s = { attack:'firewall' }; return [1, 2, 3].map(function(ph){ return bossMoveTags(s, 'furnace', ph); }); })()`);
+    expect(r[0], 'phase 1: the pad is safe from it').toEqual(['ground', 'far']);
+    expect(r[1]).toEqual(expect.arrayContaining(['ground', 'far', 'platform']));
+    expect(r[2]).toEqual(expect.arrayContaining(['ground', 'far', 'platform']));
+  });
+});
+
 describe('every attack is one boss hit, however many parts of it land', () => {
   it('a fighter who stands through the whole of each move, in each phase, takes at most one boss hit from it (the burn status apart)', () => {
     const r = EV(`var out = [];
@@ -1151,6 +1263,9 @@ describe('the volcano: sky, ground, dust and drawing', () => {
           // 2026-10-04, "YOU MUST! at your height": the marks are drawn on the surface they close on -- the platform's top (my, my2), here a pad 144 px over the floor
           { _tel:30, _fsKind:'youmust', _telX:500, _fsb:{ k:'hooks', lk:0, my:Math.round(gy - 144) } }, { _telX:500, _fsb:{ k:'hooks', p:1, h:12, lk:1, my:Math.round(gy - 144) } },
           { _phase:2, _fsb:{ k:'hooks', p:1, x2:400, h2:40, lk2:0, my2:Math.round(gy - 144) } }, { _phase:3, _fsb:{ k:'hooks', p:1, x2:400, h2:20, lk2:1, my2:Math.round(gy - 144) } },
+          // 2026-10-04, "FURNACE! up top": the lane of the plate on the platform is lit on the pad's top while the plate waits and rolls (pl: the ledge's two ends and its top; lp: the plate is still to come or rolling)
+          { _tel:30, _fsKind:'furnace', _phase:2, _fsb:{ k:'furn', d:-1, g:2, pl:[342, 758, Math.round(gy - 144)] } }, { _phase:2, _fsb:{ k:'furn', p:1, d:1, g:3, pl:[342, 758, Math.round(gy - 144)], lp:1 } },
+          { _phase:3, _fsb:{ k:'furn', p:1, d:-1, g:4, pl:[342, 758, Math.round(gy - 144)], lp:1 } }, { _phase:3, _fsb:{ k:'furn', p:1, d:1, g:4, pl:[342, 758, Math.round(gy - 144)], lp:0 } },
           { _tel:30, _fsKind:'tlc', _fsb:{ k:'tlc', x:400, n:1 } }, { _fsb:{ k:'tlc', p:1, x:400, n:4 } }, { _fsb:{ k:'tlc', p:1, x:400, n:5 } },
           // 2026-10-04, "TLC hops up": the landing mark is drawn on the surface it comes down on -- the platform's top (ty), here a pad 144 px over the floor
           { _fsb:{ k:'tlc', p:1, x:400, n:2, ty:Math.round(gy - 144) } }, { _fsb:{ k:'tlc', p:1, x:400, n:5, ty:Math.round(gy - 144) } },
@@ -1389,7 +1504,7 @@ describe('a netcode client sees him', () => {
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
       BOSS_ARENA = 'volcano'; var gy = groundY();
       var s = makeBossSummon(BOSS_ROSTER[2], 215); fsbDress(s); s._fs = null; s.x = 500; s.y = gy - s.r - 34; s._phase = 3; s._tel = 20; s._telKind = 'firewall'; s._fsKind = 'rocketboard'; s._telX = 640;
-      s._fsb = { k:'board', bd:1, lk:1, d:-1, r:gy - 44, r2:gy - 130, g:4, q:0, f:0, j:12, x:400, n:1, p:1, h:9, ty:Math.round(gy - 144), my:Math.round(gy - 144), my2:Math.round(gy - 144) };
+      s._fsb = { k:'board', bd:1, lk:1, d:-1, r:gy - 44, r2:gy - 130, g:4, q:0, f:0, j:12, x:400, n:1, p:1, h:9, ty:Math.round(gy - 144), my:Math.round(gy - 144), my2:Math.round(gy - 144), pl:[342, 758, Math.round(gy - 144)], lp:1 };
       s._hz = { ph:3, t0:0, ml:20, mr:-30, wn:0, wid:5, b0:1, g0:3, b1:2, g1:4 };
       summons = [s];
       var pj = function(o){ return Object.assign({ owner:-2, ownerObj:{ team:-1, idx:-2 }, vx:5, vy:0, r:20, color:'#ff8a3a', life:50 }, o); };
@@ -1409,6 +1524,8 @@ describe('a netcode client sees him', () => {
     expect(r.client.ty).toBe(r.fsb.ty);
     expect([r.fsb.my, r.fsb.my2], 'and the surfaces the pinch marks are on (YOU MUST! at your height)').toEqual([r.fsb.ty, r.fsb.ty]);
     expect([r.client.my, r.client.my2]).toEqual([r.fsb.my, r.fsb.my2]);
+    expect(r.fsb.pl, 'the lane of the plate on the platform (FURNACE! up top): the ledge\'s two ends and its top').toEqual([342, 758, r.fsb.ty]);
+    expect([r.client.pl, r.client.lp], 'crosses with the plate still to come or rolling').toEqual([r.fsb.pl, 1]);
     expect(r.hz, 'the hazard\'s state').toMatchObject({ ph: 3, t0: 0, ml: 20, mr: -30 });
     expect(r.telX, 'the spot the hooks close on').toBe(640);
     expect(r.client).toMatchObject({ k: 'board', lk: 1, r: expect.any(Number) });

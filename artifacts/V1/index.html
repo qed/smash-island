@@ -8256,13 +8256,13 @@ const BOSS_PICK = {
   // @boss:firey:begin pick
   // His four, and the signature's two forms are two moves (ROCKET BOARD! and THE TLC NEEDS TO BE FIXED! used to alternate: now each competes, and the engine's _telKind is the move itself, which BOSS_MOVES
   // fires). ROCKET BOARD! crosses the whole stage along the row you stand in, from the far edge: any. THE TLC NEEDS TO BE FIXED! hops after you -- up onto your ledge when you stand on one -- a fire ring along the
-  // floor or the ledge's top from every landing: close, floor, ledge. FURNACE! rolls plates along the floor from the far side toward the furnace: floor, far.
+  // floor or the ledge's top from every landing: close, floor, ledge. FURNACE! rolls plates along the floor from the far side toward the furnace, and from phase 2 a plate along the platform too: floor, far, and ledge from phase 2.
   // YOU MUST! closes two hooks on the spot you stood, at the height you stood -- the floor's or your ledge's: floor, ledge. `busy`: his choreography (fsbMove's s._fs) until it
   // is over -- the board's way back in, the hops' rest, the pinch -- but not his entrance or his fall after a hard hit, which are not an attack. The fire patches a pass or a pinch leaves lie there (`lingers`).
   // THE LEDGE. The owner, 2026-10-04: "also only 1 of his attacks can hit you if your standing on the platform(basically)" -- the platform was nearly safe (only ROCKET BOARD! reached it), and he picked all three
   // of the others: "TLC hops up", "YOU MUST! at your height", "FURNACE! up top". So the tags that say what each one punishes now say `platform` where it reaches a ledge.
   firewall: {
-    tags:{ rocketboard:'any', tlc:['close', 'ground', 'platform'], furnace:['ground', 'far'], youmust:['ground', 'platform'] },
+    tags:{ rocketboard:'any', tlc:['close', 'ground', 'platform'], furnace:(s, ph) => ph >= FSB.ledgeFrom ? ['ground', 'far', 'platform'] : ['ground', 'far'], youmust:['ground', 'platform'] },
     moves:() => ['rocketboard', 'tlc', 'furnace', 'youmust'],
     busy:(s) => !!(s._fs && s._fs.k !== 'enter' && s._fs.k !== 'fall')
   },
@@ -10205,7 +10205,11 @@ function psbDrawEnd(pr){
 //                  pushes Flower, Leafy, and Spongy into the furnace, making them scream]" (Hurtful!/Transcript); the Metal Furnace
 //                  "can melt anything that it comes in contact with". A pusher plate rolls the floor toward the furnace at the far
 //                  edge: jump it, or stand on the pad. Phase 2 a second plate behind it; phase 3 the plates are white-hot, leave a
-//                  burning strip, and the furnace, full ("ENOUGH!!!!!!", the gauge), vents a jet.
+//                  burning strip, and the furnace, full ("ENOUGH!!!!!!", the gauge), vents a jet. UP TOP (the owner, 2026-10-04: "also only 1 of his attacks can hit
+//                  you if your standing on the platform(basically)"; he picked "FURNACE! up top"): from phase 2 a plate also rolls along the platform, alongside
+//                  the floor plates -- the same speed, the same attack id, its lane lit on the ledge's top through the wind-up; it waits at the lane's end, in plain
+//                  view, until the first floor plate is passing under it, rolls the length of the ledge (white-hot in phase 3, leaving a burning strip on its top)
+//                  and tips off at the far end. The ledge is the one the fighter stands on, else the widest one: the platform.
 //   YOU MUST!      "YOU MUST!!!" and "Pin's limbs are removed by mechanical hands from the Speaker Box" (Get in the Van/Transcript;
 //                  File:Fsb arm.png). His side panels open and two hooks close on the spot you were on; caught, you are hoisted
 //                  and thrown over him. From phase 2 (Round 17) a second pinch follows where you escaped to: a mark that goes after you
@@ -10249,6 +10253,7 @@ function psbDrawEnd(pr){
 //   edgeW, biteRise, biteSnap, biteRest, bite   the Fire Monster: how far in from an edge it reaches, and its rise, snap and rest
 //   quake, wave*  phase 3: the entry quake, and the magma wave (period, tell, advance, hold, recede, how far in from each edge)
 //   ledgeMin      how far over the floor line a platform's top has to be to count as a ledge he reaches (fsbLedges: THE TLC hops up onto one, YOU MUST! closes at its height, FURNACE! rolls a plate along it)
+//   ledgeFrom, ledgePlateIn   FURNACE!'s plate along a ledge: from this phase, and how far in from the ledge's end it starts (its centre; its hit circle is plateR)
 const FSB = {
   gaps:[0, 112, 92, 76], telLen:[0, 44, 40, 36], lock:16,
   hoverH:34, stand:300, speed:[0, 3.4, 4.2, 5.0], enterT:56, enterX:190, artH:183,
@@ -10261,7 +10266,7 @@ const FSB = {
   edgeW:92, biteRise:34, biteSnap:12, biteRest:70, bite:0.5,
   quake:120, waveStart:270, wavePeriod:540, waveTell:70, waveAdv:55, waveHold:45, waveRec:55, waveW:0.27, wave:0.7,
   endHold:1200,
-  ledgeMin:40,
+  ledgeMin:40, ledgeFrom:2, ledgePlateIn:30,
 };
 function fsbPh(s){ return Math.max(1, Math.min(3, (s && s._phase) || 1)); }
 // The phase a move fires in is the phase its wind-up was drawn in (_telPh, set as the wind-up starts): a hit that crossed a threshold
@@ -10295,6 +10300,14 @@ function fsbStand(f){
   const p = f && !f.dead ? fsbLedgeAt(f.x, feetY(f) - 8) : null;
   return { y:p ? p.y : groundY(), p };
 }
+// The ledge FURNACE!'s plate rolls along (from phase 2): the one the fighter stands on, else the widest of the stage's -- the platform. Null in an arena with none.
+function fsbPlateLedge(tgt){
+  const st = tgt && !tgt.dead ? fsbStand(tgt) : null;
+  if(st && st.p) return st.p;
+  let best = null;
+  for(const p of fsbLedges()) if(!best || p.w > best.w) best = p;
+  return best;
+}
 function fsbSteer(s, x, y, k, cap){
   let dx = (x - s.x)*k, dy = (y - s.y)*k; const d = Math.hypot(dx, dy);
   if(d > cap){ dx *= cap/d; dy *= cap/d; }
@@ -10302,7 +10315,7 @@ function fsbSteer(s, x, y, k, cap){
 }
 function fsbFinish(s, gap){
   const fb = fsbLive(s);
-  s._fs = null; fb.k = null; fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null;
+  s._fs = null; fb.k = null; fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; s._fsL = null;
   s._atkTimer = gap != null ? gap : bossAtkGap(s); s.vx = 0; s.vy = 0;
 }
 // A patch of flame on the floor: the scorch behind a low pass, the strip a white-hot plate leaves, the spot a pinch burns. `sy`: the surface it lies on -- a ledge's top, for a pinch or a plate up
@@ -10464,7 +10477,18 @@ function fsbFurnStart(s, tgt){
   for(let i=0;i<n;i++) addProj(bossShot(s, { x:d > 0 ? -70 : WW + 70, y:gy - FSB.plateR, vx:d*sp, vy:0, r:FSB.plateR, kb:FSB.plateKb, dmg:bossDmg(), life, pierce:true,
     shape:hot ? 'fsbplatehot' : 'fsbplate', color:hot ? '#ff8a3a' : '#9aa0a8', delay:i*FSB.plateGap, bossAtk:id, volley:true, fsb:true, fsbPlate:true }));
   s._fsUse = (s._fsUse || 0) + 1; fb.g = hot ? 4 : Math.min(3, s._fsUse);
-  const F = { k:'furn', P:ph, d, id, t:0, sp, hot, end:Math.ceil((WW + 140)/sp) + (n - 1)*FSB.plateGap + 30 };
+  // FURNACE! UP TOP (the owner, 2026-10-04: "FURNACE! up top" -- "from phase 2 a plate also rolls along the platform, alongside the floor plates"): one more plate of the same move, the same
+  // speed, the same attack id (so one boss hit), rolling the length of a ledge (fsbPlateLedge, picked as the wind-up began: its lane is lit then) from the end the plates come in at. It waits
+  // there in plain view, parked, until the first floor plate is passing under that end -- so the two roll side by side -- and is spent at the other end.
+  const L = ph >= FSB.ledgeFrom ? s._fsL : null;
+  let endL = 0;
+  if(L){
+    const xs = d > 0 ? L.x + FSB.ledgePlateIn : L.x + L.w - FSB.ledgePlateIn, y = L.y - FSB.plateR, wait = Math.round(Math.abs(xs - (d > 0 ? -70 : WW + 70))/sp);
+    addProj(bossShot(s, { x:xs, y, vx:d*0.001, vy:0, r:FSB.plateR, kb:FSB.plateKb, dmg:bossDmg(), life:Math.ceil((L.w + 160)/sp/PROJ_LIFE) + 3, pierce:true,   // (vx: the way it faces while it waits; _vx: its speed)
+      shape:hot ? 'fsbplatehot' : 'fsbplate', color:hot ? '#ff8a3a' : '#9aa0a8', delay:wait, bossAtk:id, volley:true, fsb:true, fsbLedgePlate:true, _vx:d*sp, warnX:xs, warnY:y }));   // (warnX/Y: its own start, the lane's end, lit through the wind-up)
+    endL = wait + Math.ceil(L.w/sp) + 24; fb.lp = 1;
+  }
+  const F = { k:'furn', P:ph, d, id, t:0, sp, hot, L, end:Math.max(Math.ceil((WW + 140)/sp) + (n - 1)*FSB.plateGap + 30, endL) };
   s._fs = F; fb.k = 'furn'; fb.d = d; fb.p = 1;
   shake(6);
   return F;
@@ -10484,6 +10508,16 @@ function fsbFurn(s, tgt, F){
       if(F.hot) fsbJet(s, F);
     }
   }
+  // the plate on the ledge: it sits at the end of the lane until its wait is over, then rolls (and, white-hot, leaves a burning strip on the ledge's top); at the far end it tips off and is spent
+  const L = F.L;
+  if(L) for(const p of projectiles){
+    if(!p.fsbLedgePlate || p.life <= 0 || p.delay > 0) continue;
+    if(p.vx !== p._vx) p.vx = p._vx;
+    if(F.hot){ p._strip = (p._strip || 0) + F.sp; if(p._strip >= 150 && p.x - F.d*46 > L.x + 8 && p.x - F.d*46 < L.x + L.w - 8){ p._strip = 0; fsbPatch(s, p.x - F.d*46, F.id, 120, L.y); } }
+    const end = F.d > 0 ? L.x + L.w : L.x;
+    if(F.d > 0 ? p.x >= end : p.x <= end){ p.life = 0; impact(end, L.y, { shake:3, dust:1, debris:2, color:'#ff9a3a' }); }
+  }
+  if(L && !projectiles.some(p => p.fsbLedgePlate && p.life > 0)) fb.lp = 0;
   if(F.t >= F.end) fsbFinish(s);
 }
 function fsbJet(s, F){
@@ -10641,9 +10675,14 @@ function fsbBeginTelegraph(s, tgt){
   let kind = s._telKind;
   if(kind === s.attack){ s._fsSig = (s._fsSig || 0) + 1; kind = (s._fsSig%2) ? 'rocketboard' : 'tlc'; }   // (the picker's moves are the two forms themselves, BOSS_PICK.firewall: this is what a caller that asks for the signature gets)
   s._fsKind = kind;
-  fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; s._telSY = null;
+  fb.p = 0; fb.h = 0; fb.n = 0; fb.lk = 0; fb.bd = 0; fb.x2 = null; fb.h2 = 0; fb.lk2 = 0; fb.ty = null; fb.my = null; fb.my2 = null; fb.pl = null; fb.lp = 0; s._telSY = null; s._fsL = null;
   if(kind === 'rocketboard'){ fb.k = 'board'; fb.d = fsbFarSide(tgt); fb.r = fsbRow(tgt); fb.r2 = ph >= FSB.cloneFrom ? fsbRow2(fb.r) : null; }
-  else if(kind === 'furnace'){ fb.k = 'furn'; fb.d = fsbFarSide(tgt); }
+  else if(kind === 'furnace'){
+    fb.k = 'furn'; fb.d = fsbFarSide(tgt);
+    // FURNACE! up top: from phase 2 a plate rolls along a ledge as well; its lane is lit from now (fb.pl: the ledge's two ends and its top), and fsbFurnStart rolls it
+    const L = ph >= FSB.ledgeFrom ? fsbPlateLedge(tgt) : null;
+    if(L){ s._fsL = L; fb.pl = [Math.round(L.x), Math.round(L.x + L.w), Math.round(L.y)]; }
+  }
   else if(kind === 'youmust'){ fb.k = 'hooks'; s._telX = clamp(live ? tgt.x : s.x, 70, WW - 70); s._telSY = live ? fsbStand(tgt).y : groundY(); fb.my = Math.round(s._telSY); }   // the mark is on the surface you stand on
   else { fb.k = 'tlc'; fb.x = Math.round(s.x); fb.ty = Math.round(groundY()); }   // the stomp where he stands is the floor's (fsbHopAim marks the hops' own surfaces)
 }
@@ -11032,6 +11071,16 @@ function fsbDrawFx(s){
     const d = fb.d || 1;
     c.globalAlpha = 0.5; c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(s.x, fb.r, FSB.passR, 0, 7); c.stroke();
     c.globalAlpha = 0.22; c.fillStyle = '#ff6a1a'; c.beginPath(); c.moveTo(s.x - d*s.r*0.5, fb.r - FSB.passR); c.lineTo(s.x - d*(s.r + 170), fb.r); c.lineTo(s.x - d*s.r*0.5, fb.r + FSB.passR); c.closePath(); c.fill();
+  }
+  // FURNACE! up top (the owner, 2026-10-04): from phase 2 a plate also rolls along a ledge -- its lane is lit on the ledge's top (the plate's own height and reach: the tell is the hitbox) through the
+  // wind-up and until the plate is spent, the chevrons pointing the way it goes; the plate waits at the lane's end in plain view until the floor plate passes under it
+  if(fb.k === 'furn' && fb.pl && (tel || fb.lp)){
+    const lx0 = fb.pl[0], lx1 = fb.pl[1], ly = fb.pl[2], dd = fb.d || 1, col = ph >= 3 ? '#ff8a3a' : '#ffd23f', top = ly - FSB.plateR*2, mid = ly - FSB.plateR;
+    c.globalAlpha = 0.12 + 0.05*Math.sin(hazardT*0.4); c.fillStyle = col; c.fillRect(lx0, top, lx1 - lx0, FSB.plateR*2);
+    c.globalAlpha = 0.5; c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.moveTo(lx0, top); c.lineTo(lx1, top); c.stroke();
+    c.globalAlpha = 0.34; c.fillStyle = col;
+    const off = (hazardT*7)%70;
+    for(let x = off; x < lx1 - lx0; x += 70){ const px = lx0 + (dd > 0 ? x : lx1 - lx0 - x); c.beginPath(); c.moveTo(px, mid - 14); c.lineTo(px + dd*18, mid); c.lineTo(px, mid + 14); c.lineTo(px + dd*6, mid); c.closePath(); c.fill(); }
   }
   // the spot a pinch will close on: red while it follows you, white once it holds. `gy` here is the surface it is on -- the floor line, or the top of the ledge you stand on ("YOU MUST! at your height")
   const pinchMark = (mx, hot, gy) => {
