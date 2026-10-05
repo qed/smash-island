@@ -474,16 +474,48 @@ describe('BLOCK TOWERS!', () => {
     expect(r.far, 'a fighter behind its base is not touched').toBe(0);
   });
 
-  it('phase 3 adds a second row of two between the first, growing as the first falls and falling after it has gone down', () => {
-    const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
-      f.x = 300; b._mace = null; projectiles = []; b._pickForce = 'twoblocks'; b._atkLive = null; b._atkTimer = 1; step();
-      var rows = JSON.parse(JSON.stringify(b._hz.bk[1]));
-      summons = []; projectiles = []; return { rows: rows, last1: rows[2][2] + TWO.blocks.fall }; })()`);
-    expect(r.rows.length, 'three and two').toBe(5);
-    expect(r.rows[3][2], 'the second row falls once the first has landed').toBeGreaterThanOrEqual(r.last1);
-    expect(r.rows[4][2] - r.rows[3][2]).toBe(10);
-    expect(r.rows[3][3], 'and grows while the first row falls').toBeLessThan(r.rows[3][2]);
-    expect(r.rows[3][1] + r.rows[4][1], 'one each way').toBe(0);
+  it('from phase 2 a second row of two goes between the first ("BLOCK TOWERS!: second row sooner", the owner, 2026-10-05; it was phase 3), growing as the first falls and falling after it has gone down', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
+        f.x = 300; b._mace = null; projectiles = []; b._pickForce = 'twoblocks'; b._atkLive = null; b._atkTimer = 1; step();
+        var rows = JSON.parse(JSON.stringify(b._hz.bk[1]));
+        out[ph] = { rows: rows, last1: rows[2][2] + TWO.blocks.fall };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    for (const ph of [2, 3]) {
+      expect(r[ph].rows.length, `phase ${ph}: three and two`).toBe(5);
+      expect(r[ph].rows[3][2], `phase ${ph}: the second row falls once the first has landed`).toBeGreaterThanOrEqual(r[ph].last1);
+      expect(r[ph].rows[4][2] - r[ph].rows[3][2]).toBe(10);
+      expect(r[ph].rows[3][3], 'and grows while the first row falls').toBeLessThan(r[ph].rows[3][2]);
+      expect(r[ph].rows[3][1] + r[ph].rows[4][1], 'one each way').toBe(0);
+    }
+  });
+
+  // "BLOCK TOWERS!: second row sooner" (the owner, 2026-10-05; the third of his five picks): the second row of stacks starts in phase 2, where it started in phase 3.
+  it('"second row sooner": phase 2 has the second row as phase 3 does -- phase 1 keeps its three stacks -- and it plays out whole: five bars, five steps, and a fighter only the second row reaches is hit by it', () => {
+    const r = W.eval(`(function(){ var out = { from: TWO.blocks.row2.from };
+      [1, 2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
+        b._mace = null; projectiles = [];
+        f.x = 300; ${FIRE('twoblocks')}
+        var T = b._tw, imps = [], _impact = impact;
+        impact = function(x, y, o){ imps.push(Math.round(x)); return _impact(x, y, o); };
+        var pct0 = f.pct; f.invuln = 0;   // stacks at 500, 300, 100 and (from phase 2) 400 and 200: 560 is past the first row's reach and in the second row's
+        try {
+          for (var k=0;k<300 && b._tw;k++){ step(); f.hitstun = 0; f.x = 560; f.y = groundY()-24; f.vx = 0; f.vy = 0; }
+        } finally { impact = _impact; }
+        out[ph] = { rows: T.rows.length, landings: imps.length, steps: worldPlats.filter(function(p){ return p._two; }).length, hit: f.pct - pct0, dmg: bossDmg(), done: !b._tw };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r.from, 'the second row starts in phase 2').toBe(2);
+    expect([r[1].rows, r[2].rows, r[3].rows], 'three stacks in phase 1; three and two from phase 2').toEqual([3, 5, 5]);
+    expect([r[1].landings, r[2].landings, r[3].landings], 'a landing for each bar').toEqual([3, 5, 5]);
+    expect([r[1].steps, r[2].steps, r[3].steps], 'a step where each lies').toEqual([3, 5, 5]);
+    for (const ph of [1, 2, 3]) expect(r[ph].done, `phase ${ph}: the move ends`).toBe(true);
+    expect(r[1].hit, 'phase 1: nothing reaches 560').toBe(0);
+    for (const ph of [2, 3]) {
+      expect(r[ph].hit, `phase ${ph}: the second row reaches it`).toBeGreaterThan(0);
+      expect(r[ph].hit, `phase ${ph}: and the two rows are one attack id: never more than one boss hit`).toBeLessThanOrEqual(r[ph].dmg + 1e-6);
+    }
   });
 });
 
@@ -590,6 +622,73 @@ describe('CLAP!', () => {
       expect(lowHand, 'one along the floor').toBeCloseTo(c.gy - 56, 0);
       expect(hiHand, 'one 150 px higher: over a fighter on the floor, into one on the "S"tage').toBeCloseTo(c.gy - 56 - 150, 0);
     }
+  });
+
+  // "CLAP!: double clap" (the owner, 2026-10-05; the fourth of his five picks): "from phase 3, after the hands meet, they clap again on the spot where you moved, with the same mark-and-lock tell
+  // before the second clap, under the same attack id." The rest of his rule stands: the same damage per hit, every hit marked where it lands, one attack id per turn.
+  it('"double clap": from phase 3, after the hands meet they clap again on the spot where you moved -- the mark follows you and locks for the last 10 units, as the first did -- under the same attack id', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [2, 3].forEach(function(ph){ ${STAGE(500, 'ph', true)}
+        b._mace = null; projectiles = [];
+        f.x = 500; b._pickForce = 'twoclap'; b._atkLive = null; b._atkTimer = 1; step();
+        var lock1 = 0;
+        for (var w=0; w<120 && b._tel>0; w++){ step(); f.invuln = 99; if (b._tel > 0 && b._hz.cl[1] === 1) lock1++; }   // the first wind-up: the frames its line holds
+        var T = b._tw, id = T.id, all = [], claps = [], t2 = 0, lock2 = 0, line5 = null, lastFollow = null, locked = [], hold = 500;
+        var _impact = impact; impact = function(x, y, o){ claps.push({ x: Math.round(x), at: hazardT }); return _impact(x, y, o); };
+        try {
+          for (var k=0;k<400 && b._tw;k++){
+            step(); f.invuln = 99; f.hitstun = 0; f.x = hold; f.y = groundY()-24; f.vx = 0; f.vy = 0;
+            projectiles.filter(function(p){ return p.twoHand; }).forEach(function(p){ if (all.indexOf(p) < 0) all.push(p); p._lx = p.x; });
+            var c = b._hz.cl;
+            if (all.length >= 2 && !claps.length) hold = 140;   // the hands are out: you step to where the high one passes over you
+            if (b._tw && b._tw.st === 'tell'){
+              t2++;
+              if (c[1] === 1){ lock2++; locked.push(c[0]); hold = 700; } else { lastFollow = c[0]; hold = t2 >= 6 ? 260 : 140; }   // you move while it follows; once it holds you run for the far side
+              if (t2 === 5) line5 = c[0];
+            }
+          }
+        } finally { impact = _impact; }
+        out[ph] = { id: id, claps: claps, hands: all.map(function(p){ return { id: p.bossAtk, dmg: p.dmg, side: p.twoHand, last: Math.round(p._lx) }; }), lock1: lock1, lock2: lock2, tell: t2, line5: line5, lastFollow: lastFollow, locked: locked,
+                   done: !b._tw, full: bossDmg(), lockFrames: Math.ceil(TWO.clap.lock/bossTelStep(b) - 1e-9) };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    const p2 = r[2], p3 = r[3];
+    expect([p2.claps.length, p2.hands.length, p2.tell, p2.done], 'phase 2 is the one clap it was: two hands, no second mark').toEqual([1, 2, 0, true]);
+    expect(p3.done).toBe(true);
+    expect(p3.claps.map((c) => c.x), 'phase 3 claps twice: where you stood, then where you moved (the line was following you, and held where it locked)').toEqual([500, 260]);
+    expect(p3.claps[1].at - p3.claps[0].at, 'the second 75 frames after the first: 14 of aftermath, the 33-frame tell, the hands\' 28').toBe(75);
+    expect(p3.hands.map((h) => h.side), 'two hands, then two more').toEqual([-1, 1, -1, 1]);
+    expect(p3.hands.every((h) => h.id === p3.id), 'one attack id for both claps').toBe(true);
+    expect(p3.hands.every((h) => Math.abs(h.dmg - p3.full*0.8) < 1e-9), 'the same damage per hand: 0.8 of a boss hit').toBe(true);
+    expect(Math.abs(p3.hands[2].last - (260 - 32)), 'the second hands end a palm either side of the line that held (the last frame they were seen, within one frame of their 31 px a frame)').toBeLessThan(40);
+    expect(Math.abs(p3.hands[3].last - (260 + 32))).toBeLessThan(40);
+    expect(p3.line5, 'the mark comes back on you, where you went after the first clap').toBe(140);
+    expect(p3.lastFollow, 'follows you while it can').toBe(260);
+    expect(p3.locked.length, 'and holds for the last 10 units, 15 frames at the 1.5 pace (the one the hands leave on included)').toBe(p3.lockFrames - 1);
+    expect(p3.locked.every((x) => x === 260), 'where it locked, not where you ran next').toBe(true);
+    expect(p3.lock2, 'the same lock as the first wind-up\'s').toBe(p3.lock1);
+    expect(p3.tell, 'a 22-unit tell (12 of following, the 10 locked): 33 frames from the mark\'s return to the frame the hands leave on').toBe(33);
+  });
+
+  it('"double clap": a fighter both claps reach takes one boss hit between them, not two -- the first hand\'s 0.8, then the 0.2 the same attack id leaves', () => {
+    const r = W.eval(`(function(){ ${STAGE(500, 3, true)}
+      b._mace = null; projectiles = [];
+      f.x = 500; b._pickForce = 'twoclap'; b._atkLive = null; b._atkTimer = 1; step();
+      for (var w=0; w<120 && b._tel>0; w++){ step(); f.invuln = 99; }
+      var out = { first: null, claps: 0 }, _impact = impact;
+      impact = function(x, y, o){ out.claps++; return _impact(x, y, o); };
+      f.invuln = 0; f.pct = 0;
+      try {
+        for (var k=0;k<400 && b._tw;k++){
+          step(); f.hitstun = 0; f.x = 500; f.y = groundY()-24; f.vx = 0; f.vy = 0;
+          if (b._tw && b._tw.st === 'tell'){ if (out.first === null) out.first = f.pct; f.invuln = 0; }
+        }
+      } finally { impact = _impact; }
+      out.total = f.pct; out.dmg = bossDmg(); out.done = !b._tw;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.claps, 'two claps').toBe(2);
+    expect(r.first, 'the first clap: the low hand reaches you, 0.8 of a boss hit').toBeCloseTo(r.dmg*0.8, 4);
+    expect(r.total, 'and the second finds only the rest of the one boss hit (0.2): one attack id, never 1.6').toBeCloseTo(r.dmg, 4);
   });
 });
 
@@ -1072,11 +1171,37 @@ describe('no words, no other show, and the art is wired and credited', () => {
     expect(drawn.filter((r) => r.op === 'fillText' || r.op === 'strokeText').length, 'not a word on the canvas').toBe(0);
   });
 
+  // CLAP!'s second wind-up (phase 3, "double clap", the owner, 2026-10-05) is drawn from the hazard bag and the clock alone -- a netcode client has no `_tw` and no `_tel` of his then --
+  // so the dashed line, the ghost hands and both of Two's hands glowing must all come from cl[5] and cl[6]; and none of it is drawn once the hands are out.
+  it("CLAP!'s second wind-up draws from the hazard bag alone, as a netcode client sees it: the dashed line and both of his hands glowing -- and none of it once the hands are out", () => {
+    const { w, rec } = bootRecording();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running = false;");
+    const draw = (bag) => {
+      const n0 = rec.length;
+      const err = w.eval(`(function(){
+        try {
+          BOSS_ARENA = 'twopark'; var gy = groundY(), t = hazardT + 300; hazardT = t;
+          summons = [{ type:'boss', name:'Two', color:'#44C549', sprite:'two', r:88, x:500, y:gy-200, face:-1, hp:100, maxHp:285, _tel:0, _telKind:null, _phase:3, _rage:false, flash:0, homeX:500, attack:'two', _bossRush:true, _ungrounded:true, _hz:{ cl:${bag} } }];
+          ctx.save(); drawSummon(summons[0]); ctx.restore(); drawArenaHazard('under');
+          return null;
+        } catch(e){ return e.message; }
+      })()`);
+      expect(err).toBe(null);
+      return rec.slice(n0);
+    };
+    const count = (a, op, pred) => a.filter((e) => e.op === op && (!pred || pred(e))).length;
+    const dashed = (e) => Array.isArray(e.args[0]) && e.args[0][0] === 14 && e.args[0][1] === 10;
+    const during = draw('[260, 0, 1, t - 40, 500, t - 12, t + 21]'), out = draw('[260, 1, 1, t - 40, 500, t - 60, t - 27]');
+    expect(count(during, 'setLineDash', dashed) - count(out, 'setLineDash', dashed), 'the line the second clap will land on, dashed as the first was').toBe(1);
+    expect(count(during, 'arc') - count(out, 'arc'), 'and a glow on each of his hands').toBe(2);
+    expect(count(during, 'fillText') + count(during, 'strokeText'), 'not a word').toBe(0);
+  });
+
   it("nothing of his says a word or names anyone from the OSC: his code has no banner of its own, no text drawing, no OJ, Suitcase or Cabby, no The Floor", () => {
     const fns = ['twoHz', 'twoPh', 'twoBoss', 'twoNearest', 'twoStagePlat', 'twoStageTop', 'twoShot', 'twoCarrier', 'twoGo', 'twoBandY', 'twoIdle', 'twoRing', 'twoPop', 'twoPopStep', 'twoMove', 'twoGoTo',
       'twoBeginTelegraph', 'twoTrack', 'twoTick', 'twoStep', 'twoDone', 'twoGap', 'twoPhaseBeat', 'twoPlatsStep', 'twoReadTrack', 'twoCopyShape', 'twoReadCopies', 'twoSkySun', 'twoSunHome', 'twoSunRest',
       'twoMaceSpot', 'twoMaceBegin', 'twoMaceStep', 'twoLeg', 'twoSunStart', 'twoSunHit', 'twoSunStep', 'twoSunEnd', 'twoBlocksPlan', 'twoStackAngle', 'twoBlocksStart', 'twoBlocksStep', 'twoBlocksLand',
-      'twoDrawStacks', 'twoClapStart', 'twoClapStep', 'twoHandGlyph', 'twoDrawClap', 'twoPowerRing', 'twoPowerFire', 'twoPowerStep', 'twoPrizeAt', 'twoDrawPowerTell', 'twoRailsStart', 'twoRailsDue', 'twoRailsCar',
+      'twoDrawStacks', 'twoClapHands', 'twoClapStart', 'twoClapAgain', 'twoClapStep', 'twoHandGlyph', 'twoDrawClap', 'twoPowerRing', 'twoPowerFire', 'twoPowerStep', 'twoPrizeAt', 'twoDrawPowerTell', 'twoRailsStart', 'twoRailsDue', 'twoRailsCar',
       'twoRailsStep', 'twoDrawRailOne', 'twoDrawRails', 'twoNight', 'twoHandAt', 'twoGlow', 'twoTellDraw', 'twoHazDraw', 'twoDrawRead', 'twoDrawSunMarks', 'twoSpawn', 'twoGroundPattern', 'twoDrawSkySun',
       'twoDrawHills', 'twoDrawFence', 'twoPopK', 'twoDrawFerris', 'twoDrawStrength', 'twoCoasterPt', 'twoDrawCoaster', 'twoDecor', 'twoDrawStage', 'twoBlockAt', 'twoDrawSteps', 'twoHazStep', 'twoDrawCoasterHaz',
       'twoBlockGlyph', 'twoEndSweep', 'twoEndBegin', 'twoSpriteDraw', 'twoDrawPad', 'drawTwoEnd'];
