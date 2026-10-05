@@ -39,12 +39,12 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
     ['van', 'phone', 'up'], ['van', 'pspd', 'up'], ['chainsaws', 'lolli', 'down'], ['chainsaws', 'shards', 'up'], ['spikes', 'stag', 'down'], ['spikes', 'alt', 'up'],
     ['deploy', 'blink', 'down'], ['deploy', 'pencil', 'up'], ['meknife', 'yank', 'up'], ['meknife', 'glint', 'down'], ['hands', 'rows2', 'up'], ['hands', 'rowDy', 'up'],
     ['device', 'pincer', 'up'], ['device', 'pgap', 'down'],
-    ['springs', 'retract', 'up'], ['springs', 'reach', 'up'], ['memurder', 'track', 'up'], ['kernelpop', 'chain', 'down'], ['ticktock', 'bend', 'up'], ['plug', 'wave', 'down'],
+    ['springs', 'retract', 'up'], ['springs', 'reach', 'up'], ['kernelpop', 'chain', 'down'], ['plug', 'wave', 'down'],
     ['keynote', 'cresc', 'up'], ['keynote', 'fin3', 'up'], ['metags', 'link', 'up'], ['metags', 'linkW', 'up'], ['cannon', 'rock', 'up'],
   ];
   // THE OWNER'S TUNING, 2026-10-05 ("some of cob's attacks are too easy, some too hard"): twists the owner moved to TIER 1 override the usual "twists from tier 2".
-  // PORTAL: "two from the start" -- the pull is on from tier 1 (and twice as strong, reaching farther). DELETION: "Trail from tier 1".
-  const OWNER_TIER1 = [['portal', 'pull', 'up'], ['portal', 'pullR', 'up'], ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up']];
+  // PORTAL: "two from the start" -- the pull is on from tier 1 (and twice as strong, reaching farther). DELETION: "Trail from tier 1". TICK TOCK!: "Bend from tier 1". MeMURDER: "Tracking from tier 1".
+  const OWNER_TIER1 = [['portal', 'pull', 'up'], ['portal', 'pullR', 'up'], ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up'], ['ticktock', 'bend', 'up'], ['memurder', 'track', 'up']];
   it('OWNER: the twists he moved to tier 1 are ON at tier 1, never weaker as the tiers climb, and stronger by tier 3 (PORTAL\'s pull: "two from the start")', () => {
     const rows = W.eval('COBS_TIERS');
     for (const [k, f, dir] of OWNER_TIER1) {
@@ -636,9 +636,11 @@ describe('MeMURDER! -- the tracking app', () => {
     out.you = you.x - x00; out.finalX = mid.warnX; out.up = mid.life > 0 ? (mid.vy < 0) : null; out.scars = IMPACT_SCARS.length - scars0; out.popped = poles.every(function(p){ return p._popped; });
     return out;`);
 
-  it('tier 1: the marks stay where you stood; tier 2: they slide after your feet, 2 px a frame, for the first 60% of the delay -- tier 3 faster', () => {
+  // THE OWNER, 2026-10-05 ("hardly notice the attacks i didnt click": MeMURDER): "Tracking from tier 1" -- the marks slide after your feet from tier 1, the old tier 2's 2 px a frame.
+  it('OWNER: the marks slide after your feet from tier 1, 2 px a frame (2, 2, 2.5, 3, 3.5), for the first 60% of the delay -- tier 3 faster', () => {
     const t1 = TRACK(1), t2 = TRACK(2), t3 = TRACK(3);
-    expect(Math.max(...t1.steps.map(Math.abs)), 'tier 1: off').toBe(0);
+    expect(Math.max(...t1.steps), 'tier 1: on').toBeCloseTo(2.0, 5);
+    expect(W.eval('COBS_TIERS.memurder.map(function(T){ return T.track; })')).toEqual([2.0, 2.0, 2.5, 3.0, 3.5]);
     expect(t2.n).toBeGreaterThanOrEqual(3);
     expect(Math.max(...t2.steps), 'at the tier\'s tracking speed').toBeCloseTo(2.0, 5);
     expect(Math.max(...t3.steps), 'stronger at tier 3').toBeCloseTo(2.5, 5);
@@ -722,9 +724,12 @@ describe('TICK, TOCK! -- the watches bend', () => {
       prev = ws.map(function(p){ return [p.vx, p.vy]; }); }
     return { T: T, n: ws.length, bends: res, flagged: ws.filter(function(p){ return !!p._bend; }).length };`);
 
-  it('tier 1 throws plain arcs; tier 2 bends each watch 35 degrees toward you at the top of its arc; tier 3 40', () => {
+  // THE OWNER, 2026-10-05 ("hardly notice the attacks i didnt click": TICK TOCK!): "Bend from tier 1" -- the bend is on from tier 1, the old tier 2's 35 degrees.
+  it('OWNER: every watch bends 35 degrees toward you at the top of its arc from tier 1 (35, 35, 40, 40, 45); tier 3 40', () => {
     const t1 = BEND(1), t2 = BEND(2), t3 = BEND(3);
-    expect(t1.flagged, 'tier 1: off').toBe(0);
+    expect(t1.flagged, 'tier 1: on now').toBe(t1.n);
+    for (const b of t1.bends) { expect(Math.abs(b.deg), 'bent 35 degrees (a frame of gravity on top)').toBeGreaterThan(30); expect(Math.abs(b.deg)).toBeLessThan(40); }
+    expect(W.eval('COBS_TIERS.ticktock.map(function(T){ return T.bend; })')).toEqual([35, 35, 40, 40, 45]);
     expect(t2.flagged).toBe(t2.n);
     expect(t2.bends.length, 'every watch bent, once').toBe(t2.n);
     for (const b of t2.bends) { expect(Math.abs(b.deg), 'bent 35 degrees (a frame of gravity on top)').toBeGreaterThan(30); expect(Math.abs(b.deg)).toBeLessThan(40); }

@@ -268,7 +268,7 @@ describe('the adapted set is HIS: he built the phones, he is not one', () => {
 });
 
 describe('his four base melee', () => {
-  it('MeMURDER: the poles come FROM THE FLOOR on marks laid at the wind-up, buried under their shadow, then up; from tier 4 they stand as spikes', () => {
+  it('MeMURDER: the poles come FROM THE FLOOR on marks laid at the wind-up, buried under their shadow, then up; they stand as spikes (from tier 1 since the owner\'s tuning of 2026-10-05: "Strikes linger")', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s._marks = 1;
       cobsFightTelegraph(s, 'memurder', you); var spots = s._poleSpots.map(function(p){ return p.x; }); s._tel = 0;
@@ -279,11 +279,11 @@ describe('his four base melee', () => {
       var free = poles.find(function(p, i){ return i !== 1 && vanTopsAt(p.x).every(function(t){ return t.y >= groundY() - 4; }); }) || null, watch = free || poles[0];
       for (var i=0;i<T.delay;i++) step(); var yAfterDelay = watch.y; step(); step(); var rose = yAfterDelay - watch.y, v = -watch.vy;
       var out = { n:poles.length, gap:Math.abs(spots[1]-spots[0]), fromFloor: y0 > groundY(), buried:buried, rose:rose, v:v, freeV: free ? -free.vy : null, spd:T.spd, ids: poles.every(function(p){ return p.bossAtk===poles[0].bossAtk; }) };
-      projectiles = []; s._marks = 3; cobsFightTelegraph(s, 'memurder', you); s._tel = 0; COBS_MOVES.memurder(s, you, ++BOSS_ATK_ID);
-      var p = shots()[0], T4 = cobsT(s, 'memurder'); for (var i=0;i<T4.delay + 12;i++) step();
+      projectiles = []; s._marks = 0; cobsFightTelegraph(s, 'memurder', you); s._tel = 0; COBS_MOVES.memurder(s, you, ++BOSS_ATK_ID);
+      var p = shots()[0], T4 = cobsT(s, 'memurder'); for (var i=0;i<T4.delay + 12;i++) step();   // (tier 1: no pairs, so the first pole has risen)
       out.linger = { vy:p.vy, life:p.life, alive:p.life > 0 };
       return out;`);
-    expect(r.n).toBe(3);
+    expect(r.n, 'tier 2: four (one more than the old 3 -- "More strikes", the owner)').toBe(4);
     expect(r.gap).toBe(84);
     expect(r.fromFloor, 'buried under the floor line').toBe(true);
     expect(r.buried).toBe(true);
@@ -292,7 +292,7 @@ describe('his four base melee', () => {
     expect(r.v).toBeLessThanOrEqual(r.spd);
     if (r.freeV != null) expect(r.freeV, 'open sky over it: the tier\'s rise').toBeCloseTo(r.spd, 6);
     expect(r.ids, 'one attack, one cap').toBe(true);
-    expect(r.linger.alive, 'tier 4: still standing after its seven frames of rise').toBe(true);
+    expect(r.linger.alive, 'tier 1: still standing after its seven frames of rise').toBe(true);
     expect(r.linger.vy, 'as a spike, not a rocket').toBe(0);
   });
 
@@ -405,7 +405,7 @@ describe('the six personalised specials', () => {
       cobsFightTelegraph(s, 'ticktock', you); s._tel = 0; COBS_MOVES.ticktock(s, you, ++BOSS_ATK_ID);
       var T = cobsT(s, 'ticktock'), w = shots();
       var out = { timer:s._tick.t, want:T.timer, n:w.length, wantN:T.n, bounce:w.every(function(p){ return p.bounce && p.maxBounces===T.ric + 1 && p.shape==='meeplewatch'; }) };
-      projectiles = []; s._tick.t = 1; step();
+      projectiles = []; s._track = []; s._tick.t = 1; step();   // (the stage cleared by hand: the track too, or the first throw's watches would shatter now)
       out.zero = { shots:shots().length, volley:T.volley, tel:s._tel, tick:s._tick, kind:s._telKind };
       projectiles = []; s._marks = 3; s._tick = { t:1, T:420 }; step();
       out.t4 = { pole: shots().filter(function(p){ return p.cobsTrap; }).length, watches: shots().filter(function(p){ return p.shape==='meeplewatch'; }).length, want:cobsT(s, 'ticktock').volley };

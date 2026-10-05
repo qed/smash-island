@@ -433,3 +433,166 @@ describe('OWNER: MePHONE X: DELETION! -- a double lunge, aimed longer, and talle
     expect(Math.abs(r.bottom - r.base), 'its bottom edge on the line you stood on').toBeLessThanOrEqual(0.001);
   });
 });
+
+// ================= 5. TICK TOCK! =================
+// "More watches" (one more at every tier); "Bend from tier 1" (pinned in test/boss-cobs-fight.test.js); "More ricochets" (they bounce off the walls twice); "Shards from tier 1"
+// (each spent watch shatters into shards from tier 1).
+describe('OWNER: TICK, TOCK! -- one more watch at every tier, more ricochets (the walls twice), and real shards from tier 1', () => {
+  const FLOOR_ONLY = 'worldPlats = worldPlats.filter(function(p){ return p.solid; });';
+  const THROW = (t) => fight(`
+    park(); atTier(${t}); ${FLOOR_ONLY} floorAt(you, WW*0.5 - 1400); you.invuln = 99999; s.x = WW*0.5; s.y = groundY() - 260; s.face = -1; projectiles = [];
+    var T = cobsT(s, 'ticktock'); cobsFightTelegraph(s, 'ticktock', you); s._tel = 0; COBS_MOVES.ticktock(s, you, ++BOSS_ATK_ID);
+    var ws = shots().filter(function(p){ return p.shape === 'meeplewatch'; }), n0 = ws.length, walls = ws.map(function(p){ return p._wallR; }), maxB = 0, shards = 0, shardIds = new Set(), shardDmg = null, shardCap = null;
+    for (var i=0;i<520;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); ws.forEach(function(p){ maxB = Math.max(maxB, p.bounces || 0); });
+      projectiles.filter(function(p){ return p.cobsWatchShard; }).forEach(function(p){ if (!p._seen) { p._seen = 1; shards++; shardIds.add(p.bossAtk); shardDmg = p.dmg; shardCap = p.bossCap; } }); }
+    return { T: T, n0: n0, walls: walls, maxB: maxB, shards: shards, ids: shardIds.size, shardDmg: shardDmg, shardCap: shardCap, spent: ws.every(function(p){ return p.life <= 0; }), maxBounces: ws.map(function(p){ return p.maxBounces; }) };`);
+
+  it('MORE WATCHES: one more at every tier, in the throw (4, 5, 6, 7, 8) and in the zero\'s volley (5, 6, 7, 8, 9)', () => {
+    const rs = [1, 2, 3, 4, 5].map(THROW);
+    expect(rs.map((r) => r.n0), 'one more than the old 3, 4, 5, 6, 7').toEqual([4, 5, 6, 7, 8]);
+    expect(rs.map((r) => r.T.volley), 'one more than the old 4, 5, 6, 7, 8').toEqual([5, 6, 7, 8, 9]);
+    const v = fight(`
+      park(); atTier(3); floorAt(you, WW*0.5 - 1400); you.invuln = 99999; s.x = WW*0.5; s.y = groundY() - 260; projectiles = []; var T = cobsT(s, 'ticktock');
+      s._tick = { t:1, T:T.timer }; step(); return { n: shots().filter(function(p){ return p.shape === 'meeplewatch'; }).length, want: T.volley };`);
+    expect(v.n, 'the volley at zero throws the tier\'s count').toBe(v.want);
+    expect(v.want).toBe(7);
+  });
+
+  it('MORE RICOCHETS: each watch ricochets off the floor and the platforms (2, 2, 2, 3, 3) before the landing that spends it, and carries two wall ricochets', () => {
+    const rs = [1, 3, 4].map(THROW);
+    expect(rs.map((r) => r.T.ric), '"they bounce twice" from tier 1, a third from tier 4 (the old 0, 1, 1, 2, 2 plus more)').toEqual([2, 2, 3]);
+    expect(W.eval('COBS_TIERS.ticktock.map(function(T){ return T.ric; })')).toEqual([2, 2, 2, 3, 3]);
+    for (const r of rs) {
+      expect(r.maxBounces.every((b) => b === r.T.ric + 1), 'the shared loop\'s bounce budget: the ricochets and the landing that ends it').toBe(true);
+      expect(r.maxB, 'they really bounced that many times').toBe(r.T.ric + 1);
+      expect(r.walls.every((w) => w === 2), 'and every watch is thrown with two wall ricochets').toBe(true);
+      expect(r.spent, 'and all are spent in the end').toBe(true);
+    }
+    expect(W.eval('COBS_TIERS.ticktock.map(function(T){ return T.wall; })'), 'twice at every tier').toEqual([2, 2, 2, 2, 2]);
+  });
+
+  it('THE WALLS TWICE: a watch that reaches a wall that stands (a MeTag\'s wall, a hedge, the arena\'s side) turns back off it twice with its speed kept, and the third contact lets it through; the floor and a pane are not walls', () => {
+    const r = fight(`
+      park(); ${FLOOR_ONLY} floorAt(you, 300); you.invuln = 99999; var gy = groundY(), X = WW*0.5, out = {};
+      var wall = { x:X, y:gy - 260, w:20, h:260, solid:true, _cobsWall:true, _until:hazardT + 99999 }; worldPlats.push(wall);
+      var mk = function(x, vx){ return { x:x, y:gy - 120, r:11, vx:vx, vy:0, _wallR:2 }; };
+      var p = mk(X - 8, 10), log = [], tick = function(q){ if (q._wallR > 0) cobsWallStep(q); };   // (cobsTickShots runs it only while a watch has a wall ricochet left)
+      for (var i=0;i<4;i++){ p.x = X - 8; p.vx = 10; tick(p); log.push([p.vx, p._wallR]); }   // from the left, four contacts
+      out.left = log;
+      var q = mk(X + 20 + 8, -9); tick(q); out.right = [q.vx, q._wallR];
+      var F = cobsFloor(), a = mk(F.x + 6, -7); tick(a); var b = mk(F.x + F.w - 6, 7); tick(b); out.sides = [a.vx, b.vx];
+      var high = mk(X - 8, 10); high.y = gy - 300; tick(high); out.over = high.vx;   // over the top of it: no contact
+      worldPlats.push({ x:X + 400, y:gy - 80, w:200, h:14, solid:true, _cobsPane:true, _until:hazardT + 99999 }); var pn = mk(X + 400 - 8, 10); pn.y = gy - 75; tick(pn); out.pane = pn.vx;
+      var fl = mk(X + 1200, -8); fl.y = gy - 10; tick(fl); out.floor = fl.vx;
+      return out;`);
+    expect(r.left[0], 'the first contact turns it back, speed kept').toEqual([-10, 1]);
+    expect(r.left[1], 'the second turns it back again').toEqual([-10, 0]);
+    expect(r.left[2], 'the third goes through').toEqual([10, 0]);
+    expect(r.right, 'off the other face too').toEqual([9, 1]);
+    expect(r.sides, 'the arena\'s two sides are walls').toEqual([7, -7]);
+    expect(r.over, 'a watch over the top of the wall is not stopped by it').toBe(10);
+    expect(r.pane, 'a pane is footing, not a wall').toBe(10);
+    expect(r.floor, 'neither is the floor\'s far end').toBe(-8);
+  });
+
+  it('SHARDS FROM TIER 1: every spent watch shatters into the tier\'s shards (3, 3, 4, 4, 5) -- real ones, up and out, small, on the watch\'s own id and cap', () => {
+    const rs = [1, 2, 3, 4, 5].map(THROW);
+    expect(W.eval('COBS_TIERS.ticktock.map(function(T){ return T.shards; })'), 'from tier 1').toEqual([3, 3, 4, 4, 5]);
+    for (const r of rs) {
+      expect(r.shards, 'a watch\'s shards each, every one of them spent').toBeGreaterThanOrEqual(r.n0*r.T.shards - r.T.shards);
+      expect(r.ids, 'on the throw\'s one id').toBe(1);
+      expect(r.shardDmg, 'small: 0.35 of the watch\'s hit').toBeCloseTo(33*r.T.dmg*0.35, 5);
+      expect(r.shardCap, 'under the watch\'s own cap').toBeCloseTo(33*r.T.dmg, 5);
+    }
+    const f = fight(`
+      park(); atTier(5); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 0; you.pct = 0; projectiles = []; var T = cobsT(s, 'ticktock'), dmg = cobsDmg()*T.dmg, id = ++BOSS_ATK_ID;
+      for (var k=0;k<T.n;k++) COBS_DIE.watch(s, { x:you.x + (k - 3)*6, y:you.y, bossAtk:id }, { shards:T.shards, dmg:dmg, cap:dmg });
+      var made = projectiles.filter(function(p){ return p.cobsWatchShard; }), up = made.filter(function(p){ return p.vy < 0; }).length;
+      for (var i=0;i<60;i++){ s._atkTimer = 1e9; you.invuln = 0; step(); }
+      return { made: made.length, want: T.n*T.shards, up: up, pct: you.pct, dmg: dmg, r: made[0].r };`);
+    expect(f.made, 'every spent watch makes its shards').toBe(f.want);
+    expect(f.up, 'up and out').toBeGreaterThan(f.made*0.8);
+    expect(f.r, 'small').toBeLessThanOrEqual(6);
+    expect(f.pct, 'a fighter under all the shards of all the watches takes at most ONE watch hit (one id, one cap)').toBeLessThanOrEqual(f.dmg + 1e-6);
+  });
+});
+
+// ================= 6. MeMURDER! =================
+// "More strikes" (one more at every tier); "Tracking from tier 1" (pinned in test/boss-cobs-fight.test.js); "Strikes linger" (each strike leaves a hazard where it lands for
+// about a second -- the row's `linger`); "Pairs" (from tier 3 the strikes come two at a time).
+describe('OWNER: MeMURDER! -- one more strike at every tier, they linger about a second, and from tier 3 they come two at a time', () => {
+  const FLOOR_ONLY = 'worldPlats = worldPlats.filter(function(p){ return p.solid; });';
+  const STRIKE = (t, extra = '', frames = 120) => fight(`
+    park(); atTier(${t}); ${FLOOR_ONLY} floorAt(you, WW*0.5 - 300); you.invuln = 99999; s.x = you.x + 300; s.y = you.y - 200; projectiles = []; cobsFx = [];
+    var tx = you.x; cobsFightTelegraph(s, 'memurder', you); var spots = s._poleSpots.slice(), dir = Math.sign(tx - s.x) || 1; s._tel = 0; var id = ++BOSS_ATK_ID; COBS_MOVES.memurder(s, you, id);
+    var T = cobsT(s, 'memurder'), poles = shots().filter(function(p){ return p.cobsTrap; }), lockAt = poles.map(function(){ return null; }), riseAt = poles.map(function(){ return null; }), deadAt = poles.map(function(){ return null; });
+    var d0 = poles.map(function(p){ return p.delay; });
+    for (var i=0;i<${frames};i++){ s._atkTimer = 1e9; you.invuln = 99999; ${extra} step();
+      poles.forEach(function(p, k){ if (lockAt[k] === null && p._trk && p._trk.locked) lockAt[k] = i; if (riseAt[k] === null && p.delay <= 0 && p.life > 0) riseAt[k] = i; if (deadAt[k] === null && p.life <= 0) deadAt[k] = i; }); }
+    return { T: T, n: poles.length, spots: spots.map(function(q){ return { x: q.x, k: q.k, wave: q.wave }; }), tx: tx, dir: dir, d0: d0, lockAt: lockAt, riseAt: riseAt, deadAt: deadAt, ids: new Set(poles.map(function(p){ return p.bossAtk; })).size, id: id, linger: poles.map(function(p){ return p.cobsLinger; }) };`);
+
+  it('MORE STRIKES: one more at every tier (2, 4, 6, 8, 10 -- was 1, 3, 5, 7, 9), the pole under your mark stays, and the extra one stands beyond you, away from him', () => {
+    const rs = [1, 2, 3, 4, 5].map((t) => STRIKE(t));
+    expect(rs.map((r) => r.n)).toEqual([2, 4, 6, 8, 10]);
+    expect(rs.map((r) => r.T.n)).toEqual([2, 4, 6, 8, 10]);
+    for (const r of rs) {
+      expect(r.spots.some((q) => Math.abs(q.x - r.tx) < 1), 'one pole is under your mark').toBe(true);
+      const side = r.spots.filter((q) => (q.x - r.tx)*r.dir > 1).length, other = r.spots.filter((q) => (q.x - r.tx)*r.dir < -1).length;
+      expect(side - other, 'the extra pole is on the side away from him').toBe(1);
+      expect(r.ids, 'one id').toBe(1);
+    }
+  });
+
+  it('STRIKES LINGER: every pole stays up its `linger` frames after it rises (60, 60, 60, 60, 90), a hazard where it landed, from tier 1; touching it hurts', () => {
+    expect(W.eval('COBS_TIERS.memurder.map(function(T){ return T.linger; })'), 'about a second').toEqual([60, 60, 60, 60, 90]);
+    const rs = [1, 3, 5].map((t) => STRIKE(t, '', 200));
+    for (const r of rs) {
+      expect(r.linger.every((l) => l === r.T.linger), 'every pole carries it').toBe(true);
+      const lived = r.deadAt.map((d, k) => d - r.riseAt[k]);
+      expect(Math.min(...lived), 'up as long as the row says after it rose (plus the seven frames of its rise)').toBeGreaterThanOrEqual(r.T.linger);
+      expect(Math.max(...lived), '...and no longer').toBeLessThanOrEqual(r.T.linger + 12);
+    }
+    const hurt = fight(`
+      park(); atTier(1); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 300; projectiles = [];
+      var T = cobsT(s, 'memurder'), id = ++BOSS_ATK_ID; var P = cobsPole(s, you.x + 600, groundY(), T, id, cobsDmg()*T.dmg, null, 0);
+      for (var i=0;i<T.delay + 25;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); }
+      var still = P.life > 0; you.x = P.x; you.y = P.y + 6; you.vy = 0; you.invuln = 0; you.pct = 0; you.vx = 0; var p0 = you.pct; for (var j=0;j<6;j++){ s._atkTimer = 1e9; step(); }
+      return { still: still, pct: you.pct - p0 };`);
+    expect(hurt.still, 'a pole that has risen is still there a moment later').toBe(true);
+    expect(hurt.pct, 'and stepping into it hurts').toBeGreaterThan(0);
+  });
+
+  it('PAIRS: from tier 3 the poles come two at a time -- the two nearest your mark first, then the next two, `pairGap` frames apart; before that they all come together', () => {
+    expect(W.eval('COBS_TIERS.memurder.map(function(T){ return T.pairGap; })'), 'from tier 3: 14, 12, 10 frames between pairs').toEqual([0, 0, 14, 12, 10]);
+    for (const t of [1, 2]) { const r = STRIKE(t); expect(new Set(r.d0).size, `tier ${t}: all at once`).toBe(1); }
+    for (const t of [3, 4, 5]) {
+      const r = STRIKE(t);
+      const waves = {}; r.spots.forEach((q, i) => { (waves[q.wave] = waves[q.wave] || []).push(q); });
+      expect(Object.keys(waves).length, `tier ${t}: n/2 pairs`).toBe(r.n/2);
+      for (const w of Object.keys(waves)) expect(waves[w].length, 'two at a time').toBe(2);
+      const delays = r.d0.slice().sort((a, b) => a - b);
+      expect(Array.from(new Set(delays)).map((d) => d - r.T.delay), 'a pair every pairGap frames').toEqual(Array.from({ length: r.n/2 }, (_, i) => i*r.T.pairGap));
+      const near = r.spots.slice().sort((a, b) => Math.abs(a.k) - Math.abs(b.k) || a.k - b.k).slice(0, 2);
+      expect(near.every((q) => q.wave === 0), 'the two nearest your mark go first').toBe(true);
+      expect(r.ids, 'one id for every pair').toBe(1);
+    }
+  });
+
+  it('every pair\'s marks lock TOGETHER (one phone flash for the whole row), and a later pair then rises that much after the first', () => {
+    const r = STRIKE(4, 'you.x += 3; you.vx = 0;', 140);
+    expect(new Set(r.lockAt).size, 'one lock frame for all of them').toBe(1);
+    expect(r.lockAt[0], 'locked').not.toBe(null);
+    const rises = Array.from(new Set(r.riseAt)).sort((a, b) => a - b);
+    expect(rises.length, 'four pairs rise at four times').toBe(4);
+    for (let i = 1; i < rises.length; i++) expect(rises[i] - rises[i - 1], 'pairGap frames apart').toBeGreaterThanOrEqual(r.T.pairGap - 1);
+    expect(rises[0] - r.lockAt[0], 'the first pair rises 40% of the delay after the lock').toBeLessThanOrEqual(Math.round(r.T.delay*0.4) + 2);
+  });
+
+  it('the tell draws the pairs (a dot a pair) without a throw', () => {
+    const r = fight(`
+      park(); atTier(4); floorAt(you, WW*0.5); you.invuln = 99999; projectiles = []; var e = null;
+      cobsFightTelegraph(s, 'memurder', you); s._tel = 20; try { drawCobsFx(); } catch(x){ e = String(x); } return { e: e, waves: s._poleSpots.map(function(q){ return q.wave; }) };`);
+    expect(r.e).toBe(null);
+    expect(Math.max(...r.waves)).toBe(3);
+  });
+});
