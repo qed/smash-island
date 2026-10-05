@@ -293,9 +293,35 @@
   .hint2{font-size:12px; color:#666; margin:2px 0 10px}
   .netinput{width:100%; box-sizing:border-box; font-family:inherit; font-size:15px; padding:8px 10px;
     border:2px solid #1c1c1c; border-radius:9px; margin-bottom:8px; background:#fff}
-  .lobbyroster{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:12px 0; min-height:40px}
-  .lobbyplayer{background:var(--panel); border:2px solid #1c1c1c; border-radius:10px; padding:6px 12px; font-weight:700; font-size:13px}
+  /* The room code, big enough to read out across a table, with the two things a host does with it. Shown to the host and to
+     everyone who joined (a joiner may want to pass it on). */
+  .lobbyinvite{background:var(--panel); border:3px solid #1c1c1c; border-radius:14px; padding:10px 14px 12px; width:min(460px,100%); margin:10px auto 0; text-align:center}
+  .inv-label{font-size:11px; font-weight:800; letter-spacing:.14em; color:#666; text-transform:uppercase}
+  .inv-code{font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace; font-weight:800; font-size:clamp(40px,15vw,68px); line-height:1.05;
+    letter-spacing:.14em; padding-left:.14em; color:var(--ink); user-select:all; -webkit-user-select:all}
+  .inv-sub{font-size:12px; color:#555; margin:2px 0 8px}
+  .inv-btns{display:flex; gap:8px; justify-content:center; flex-wrap:wrap}
+  .inv-btns .btn{flex:1 1 130px; padding-left:10px; padding-right:10px}
+  .inv-row{margin-top:10px}
+  .inv-row .netinput{margin-bottom:0; font-size:12px; padding:6px 8px; user-select:text; -webkit-user-select:text}
+  /* Who is in the room: one card per human, host first -- the slot, the fighter they picked, and who is who. */
+  .lobbyroster{display:flex; flex-direction:column; gap:8px; width:min(460px,100%); margin:12px auto 0}
+  .lobbyhead{font-size:11px; font-weight:800; letter-spacing:.14em; color:#3b4a5a; text-transform:uppercase; text-align:center}
+  .lobbyplayer{display:flex; align-items:center; gap:10px; min-width:0; background:var(--panel); border:3px solid #1c1c1c; border-radius:12px; padding:5px 10px; font-weight:700; font-size:15px}
   .lobbyplayer.host{outline:3px solid var(--gold)}
+  .lobbyplayer.you{background:#fff5cc}
+  .lpslot{flex:none; min-width:32px; text-align:center; font-size:12px; font-weight:800; background:#1c1c1c; color:#fff; border-radius:7px; padding:3px 6px}
+  .lpimg{flex:none; width:40px; height:40px; object-fit:contain; object-position:center bottom}
+  .lpdot{flex:none; width:34px; height:34px; margin:3px; border:2px solid #1c1c1c; border-radius:35%}
+  .lpname{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .lptag{flex:none; font-size:10px; font-weight:800; letter-spacing:.08em; background:var(--gold); color:#1c1c1c; border:2px solid #1c1c1c; border-radius:6px; padding:1px 6px}
+  .lobbywait{font-weight:700; font-size:14px; color:#2a3b4d; text-align:center; padding:6px 10px}
+  #lobbyControls{justify-content:center}
+  @media (max-width:480px){
+    #lobby{padding:16px 12px}
+    .lobbycol{width:min(300px,100%)}
+    .lpimg{width:34px; height:34px}
+  }
   .lobbysettings{background:var(--panel); border:3px solid #1c1c1c; border-radius:14px; padding:12px 16px; max-width:760px; margin:12px auto 0; text-align:left}
   .lobbysettings .settings{margin:0}
   .lobbyselect{font-size:14px; padding:4px 8px; min-width:180px}
@@ -851,7 +877,7 @@
   <div id="lobby" class="screen">
     <h1 style="font-size:34px">PLAY WITH FRIENDS</h1>
     <div class="tag" id="lobbyStatus">Not connected</div>
-    <div class="lobbywrap">
+    <div class="lobbywrap" id="lobbyChooser">
       <div class="lobbycol">
         <div class="brand">1 · Start a game</div>
         <p class="hint2">You get a 4-letter room code. Share it (or the link) and your friends drop straight in — no setup, no IP addresses.</p>
@@ -865,10 +891,10 @@
       </div>
     </div>
     <div id="lobbyInvite" class="lobbyinvite" style="display:none"></div>
-    <div id="lobbyRoster" class="lobbyroster"></div>
-    <div id="lobbySettings" class="lobbysettings" style="display:none"></div>
+    <div id="lobbyRoster" class="lobbyroster" aria-live="polite"></div>
     <div class="row" id="lobbyControls" style="margin-top:12px"></div>
-    <button class="btn ghost sm" onclick="NET.leave(); go('title')">◀ Back</button>
+    <div id="lobbySettings" class="lobbysettings" style="display:none"></div>
+    <button class="btn ghost sm" style="margin-top:12px; align-self:center" onclick="NET.leave(); go('title')">◀ Back</button>
   </div>
 
   <!-- SELECT -->
@@ -3011,6 +3037,17 @@ function fighterThumb(r){
 }
 function blobDot(r){
   const d=document.createElement('div'); d.className='dot'; d.style.background=r.color; return d;
+}
+// A fighter's face on a player's card in the online lobby: the same render the picker draws (SPRITES). A room is a handful of
+// rows, so it is fetched as the card is built; no render, or one that will not load, is the colour blob the picker falls back to.
+function lobbyThumb(name, color){
+  let sp=null; try{ sp = SPRITES[name]; }catch(e){}
+  const dot=()=>{ const d=document.createElement('div'); d.className='lpdot'; d.style.background=safeColor(color||'#cccccc'); return d; };
+  if(!(sp && sp.src)) return dot();
+  const im=document.createElement('img'); im.className='lpimg'; im.alt=''; im.draggable=false; im.setAttribute('decoding','async');
+  im.onerror=()=>{ try{ im.replaceWith(dot()); }catch(e){} };
+  im.src=sp.src;
+  return im;
 }
 // Grab-and-pull the roster line, the same gesture that pans a big arena. Wired once — the strip's
 // contents are rebuilt on every pick, the container is not.
@@ -39222,7 +39259,7 @@ window.NET = {
     const c = (link ? link[1] : (code||"")).trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
     if(!c){ this.status("Enter the 4-letter room code first"); return; }
     // Full ws:// addresses still work for manual LAN use; anything else is treated as a room code.
-    if(/^wss?:\/\//i.test(code)){ this.room=null; this.role="client"; this.connect(code.trim(), false); return; }
+    if(/^wss?:\/\//i.test(code)){ this.room=null; this.role="client"; this.connect(code.trim(), false); this.renderLobby(); return; }
     this.room = c;
     this.role="client";
     this.connect(null, false);           // same origin, different room
@@ -39243,7 +39280,7 @@ window.NET = {
   // This client's match is gone with the host (or the socket): out of the match and back to the lobby, told why.
   dropped(msg){
     this.leave(); running=false; paused=false;
-    go('lobby'); this.status(msg);
+    go('lobby'); this.renderLobby(); this.status(msg);   // (renderLobby: the room this lobby last showed is gone)
   },
   leave(){
     if(this.ws){ try{this.ws.close();}catch(e){} }
@@ -39273,6 +39310,9 @@ window.NET = {
         return;
       }
       this.renderLobby(); this.pushLobby();   // a new player sees the host's settings at once
+      const n=this.players.length;   // ...and the line under the title says who is here (it said "Connected — joining" for good)
+      if(this.role==="host") this.status(n>1 ? "Hosting — "+n+" players in the room" : "Hosting — waiting for players");
+      else if(this.role==="client" && n) this.status("Joined room "+(this.room||"")+" — waiting for the host");
       // assign my fighter index by my position in the roster
       const me=this.players.findIndex(p=>p.id===this.myId);
       if(me>=0 && this.role==="client") this.myIdx=me;
@@ -39295,23 +39335,87 @@ window.NET = {
   },
 
   // ---- lobby / roster ----
-  renderLobby(){
-    const el=document.getElementById('lobbyRoster'); if(!el) return; el.innerHTML='';
-    this.players.forEach((p,i)=>{
-      const d=document.createElement('div'); d.className='lobbyplayer'+(p.isHost?' host':'');
-      d.textContent=(i+1)+". "+(netSplitName(p.name).name||"player")+(p.id===this.myId?" (you)":"");
-      el.appendChild(d);
+  // Who is in the room, as the lobby draws it: one entry per human in the relay's roster, host first (the relay's order, which is
+  // also each player's seat). A player's pick is the `name` of their hello -- the relay keeps no other field, and puts it in the
+  // roster every screen is sent -- so the host's list and every client's are one list. What is listed is what the match will play:
+  // startAsHost's own rule, a name that is not a playable fighter is Firey.
+  lobbyEntries(){
+    const firey=ROSTER.find(x=>x.name==="Firey");
+    return (this.players||[]).map((p,i)=>{
+      const nm=netSplitName(p.fighter||p.name).name, r=ROSTER.find(x=>x.play && x.name===nm) || firey;
+      return { slot:i+1, id:p.id, isHost:!!p.isHost, you:p.id===this.myId, fighter:r?r.name:"Firey", color:r?r.color:null };
     });
+  },
+  renderLobby(){
+    // In a room the Create / Join boxes step aside: on a phone they pushed the code and the players off the screen.
+    const choose=document.getElementById('lobbyChooser'); if(choose) choose.style.display = (this.role==="host"||this.role==="client") ? 'none' : '';
+    this.renderRoomCard();
+    this.renderRoster();
     this.renderLobbySettings();
-    // host sees a Start button once ≥1 player
-    const ctr=document.getElementById('lobbyControls'); if(!ctr) return; ctr.innerHTML='';
-    if(this.role==="host"){
-      const b=document.createElement('button'); b.className='btn'; b.textContent='Start Match ▶ ('+this.players.length+' human'+(this.players.length>1?'s':'')+')';
-      b.onclick=()=>this.startAsHost(); ctr.appendChild(b);
-    } else if(this.role==="client"){
-      const s=document.createElement('div'); s.className='tag'; s.textContent='Waiting for host to start…'; ctr.appendChild(s);
+    this.renderControls();
+  },
+  // The players, one card each: the slot (P1 is the host), the fighter they picked, and who is you. Redrawn from the roster on every
+  // join, leave and pick; your own card changes the moment you pick (pickFighter), the room's roster confirms it.
+  renderRoster(){
+    const el=document.getElementById('lobbyRoster'); if(!el) return; el.innerHTML='';
+    const list=this.lobbyEntries();
+    if(!list.length){
+      if(this.role==="client"){ const w=document.createElement('div'); w.className='lobbywait'; w.textContent='Joining the room…'; el.appendChild(w); }
+      return;
+    }
+    const head=document.createElement('div'); head.className='lobbyhead'; head.textContent='In the room · '+list.length+' player'+(list.length>1?'s':''); el.appendChild(head);
+    for(const p of list){
+      const d=document.createElement('div'); d.className='lobbyplayer'+(p.isHost?' host':'')+(p.you?' you':'');
+      d.dataset.slot=String(p.slot); d.dataset.fighter=p.fighter;
+      const sl=document.createElement('span'); sl.className='lpslot'; sl.textContent='P'+p.slot; d.appendChild(sl);
+      d.appendChild(lobbyThumb(p.fighter, p.color));
+      const nm=document.createElement('span'); nm.className='lpname'; nm.textContent=p.fighter;
+      if(p.you){ const y=document.createElement('span'); y.className='lpyou'; y.textContent=' (you)'; nm.appendChild(y); }
+      d.appendChild(nm);
+      if(p.isHost){ const h=document.createElement('span'); h.className='lptag'; h.textContent='HOST'; d.appendChild(h); }
+      el.appendChild(d);
     }
   },
+  // The room code, big, with the buttons that pass it on. The host has it, and so does everyone who joined (it is the code of the
+  // room they are in, and a friend may ask them for it). The link only means something from a page served over the web.
+  renderRoomCard(){
+    const box=document.getElementById('lobbyInvite'); if(!box) return;
+    if(!((this.role==="host"||this.role==="client") && this.room)){ box.style.display='none'; box.innerHTML=''; return; }
+    const code=this.room, web=/^https?:$/.test(location.protocol);
+    box.style.display='block'; box.innerHTML='';
+    const mk=(tag,cls,text)=>{ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; box.appendChild(e); return e; };
+    mk('div','inv-label','Room code');
+    mk('div','inv-code',code).id='roomCode';
+    mk('div','inv-sub', this.role==="host" ? 'Tell your friends this code — they pick Join and type it in.' : 'You are in this room. Pass the code on to bring more friends in.');
+    const btns=mk('div','inv-btns');
+    const b1=document.createElement('button'); b1.className='btn alt sm'; b1.id='copyCodeBtn'; b1.textContent='📋 Copy code'; b1.onclick=()=>this.copyCode(b1); btns.appendChild(b1);
+    if(web){
+      const b2=document.createElement('button'); b2.className='btn ghost sm'; b2.id='copyLinkBtn'; b2.textContent='🔗 Copy link'; b2.onclick=()=>this.copyInvite(b2); btns.appendChild(b2);
+      const row=mk('div','inv-row'), inp=document.createElement('input');
+      inp.className='netinput'; inp.id='inviteLink'; inp.readOnly=true; inp.value=location.origin+location.pathname+'#room='+code; inp.onclick=()=>inp.select(); row.appendChild(inp);
+    }
+  },
+  // The host's Start button, or a client's word that the host decides when; and the way out of the room.
+  renderControls(){
+    const ctr=document.getElementById('lobbyControls'); if(!ctr) return; ctr.innerHTML='';
+    if(this.role==="host"){
+      const n=Math.max(1, this.players.length);
+      const b=document.createElement('button'); b.className='btn'; b.textContent='Start Match ▶ ('+n+' human'+(n>1?'s':'')+')';
+      b.onclick=()=>this.startAsHost(); ctr.appendChild(b);
+    } else if(this.role==="client"){
+      // A room the relay lists with nobody hosting is almost always a mistyped code (any four letters name a room): say so
+      // instead of waiting for a host who is not coming.
+      const lonely=(this.players||[]).length>0 && !this.players.some(p=>p.isHost);
+      const s=document.createElement('div'); s.className='lobbywait'; s.id='lobbyWait';
+      s.textContent = lonely ? '⚠ Nobody is hosting room '+(this.room||'')+' — check the code, or leave and try again' : '⏳ Waiting for the host to start the match…';
+      ctr.appendChild(s);
+    }
+    if(this.role==="host"||this.role==="client"){
+      const l=document.createElement('button'); l.className='btn ghost sm'; l.id='leaveRoomBtn'; l.textContent='Leave room'; l.onclick=()=>this.leaveRoom(); ctr.appendChild(l);
+    }
+  },
+  // Out of the room and back to the Create / Join boxes (Back, below, goes all the way to the title).
+  leaveRoom(){ this.leave(); this.lobby=null; this.renderLobby(); this.status("Not connected"); },
 
   // ---- the main game's match options, in the lobby ----
   // The host sets them here -- the same SETTINGS, stage and AI_LEVEL the select screen writes -- and the players
@@ -39327,13 +39431,22 @@ window.NET = {
   pickFighter(name){
     const r = ROSTER.find(x=>x.name===name && x.play); if(!r || oneBanned(r)) return;   // One's bans hold online too
     chosen = r;
-    this.send({t:"hello", id:this.myId, host:this.role==="host", name:netHelloName(r.name)});
+    const hello = netHelloName(r.name);
+    this.send({t:"hello", id:this.myId, host:this.role==="host", name:hello});
+    // Your own card changes at once; the roster the relay sends back (the same for everyone) says it again a moment later.
+    const me=(this.players||[]).find(p=>p.id===this.myId); if(me){ me.name=hello; me.fighter=null; }
+    this.renderRoster();
     this.renderLobbySettings();
   },
   renderLobbySettings(){
     const el=document.getElementById('lobbySettings'); if(!el) return;
-    el.innerHTML='';
-    if(this.role!=="host" && this.role!=="client"){ el.style.display='none'; return; }
+    if(this.role!=="host" && this.role!=="client"){ el.innerHTML=''; el.dataset.sig=''; el.style.display='none'; return; }
+    // Redrawn only when something it shows has changed. A roster message (a friend picking their fighter, or joining) used to
+    // rebuild it too, which closed the picker, or the stadium list, the player had open -- and with the room's picks arriving
+    // live that would happen all the time.
+    const sig=[this.role, (this.players||[]).length, chosen&&chosen.name, JSON.stringify(this.role==="client" ? (this.lobby||null) : this.lobbySettings())].join('|');
+    if(el.dataset.sig===sig && el.firstChild){ el.style.display='block'; return; }
+    el.dataset.sig=sig; el.innerHTML='';
     el.style.display='block';
     const wrap=document.createElement('div'); wrap.className='settings'; el.appendChild(wrap);
     const group=(label)=>{ const g=document.createElement('div'); g.className='setgrp'; const l=document.createElement('label'); l.textContent=label; g.appendChild(l); wrap.appendChild(g); return g; };
@@ -39381,28 +39494,36 @@ window.NET = {
   showAddress(){
     // Show the ROOM CODE, not an IP. On a hosted domain the invite is just "same link + this code",
     // which a 12-year-old can read out loud across a room or paste into a chat.
-    const code = this.room || "----";
-    const link = location.origin + location.pathname + "#room=" + code;
-    this.status("Room code: " + code);
-    const box = document.getElementById('lobbyInvite');
-    if(box){
-      box.style.display = 'block';
-      box.innerHTML =
-        '<div class="inv-code">' + code + '</div>' +
-        '<div class="inv-sub">Tell your friends this code — they pick <b>Join</b> and type it in.</div>' +
-        '<div class="inv-row"><input class="netinput" id="inviteLink" readonly value="' + link + '"/>' +
-        '<button class="btn alt sm" onclick="NET.copyInvite()">📋 Copy link</button></div>';
-    }
+    this.status("Room code: " + (this.room || "----"));
+    this.renderRoomCard();   // the big code, and the buttons that copy it
   },
-  copyInvite(){
-    const el = document.getElementById('inviteLink');
-    if(!el) return;
-    try{
-      el.select();
-      if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(el.value); }
-      else { document.execCommand('copy'); }
-      this.status("Invite link copied — send it to a friend");
-    }catch(e){ this.status("Select the link and copy it manually"); }
+  // Copies `text` and says so on `btn` for a moment. The clipboard API where the browser has one; else it selects `from` (a
+  // field, or the element showing the text) and asks the browser to copy that; if neither works the text stays selected, and the
+  // status line says to copy it by hand. (A refused writeText used to say "copied" anyway.)
+  copyText(text, btn, from, said){
+    const done = ()=>{
+      if(btn){ if(btn._was==null) btn._was = btn.textContent; btn.textContent = '✓ Copied!'; clearTimeout(btn._t);
+        btn._t = setTimeout(()=>{ btn.textContent = btn._was; btn._was = null; }, 1600); }
+      this.status(said);
+    };
+    const byHand = ()=>{
+      let ok = false;
+      try{
+        if(from){
+          if(typeof from.select === 'function') from.select();
+          else { const rg = document.createRange(); rg.selectNodeContents(from); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg); }
+        }
+        ok = !!document.execCommand('copy');
+      }catch(e){}
+      if(ok) done(); else this.status("Select it and copy it by hand");
+    };
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, byHand); return; } }catch(e){}
+    byHand();
+  },
+  copyCode(btn){ if(this.room) this.copyText(this.room, btn, document.getElementById('roomCode'), "Room code copied — read it out, or paste it"); },
+  copyInvite(btn){
+    const el = document.getElementById('inviteLink'); if(!el) return;
+    this.copyText(el.value, btn, el, "Invite link copied — send it to a friend");
   },
 
   // ---- match start (host decides settings & roster) ----
