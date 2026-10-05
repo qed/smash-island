@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { mulberry32 } from './helpers/prng.js';
 
@@ -711,5 +712,154 @@ describe('OWNER: LOCKDOWN! (too hard) -- no pile-on, a third shorter, mash free,
     expect(r.freed.rooted).toBe(0);
     expect(r.freed.until, 'the cuff is over, and so is the protection').toBe(0);
     expect(r.dead, 'he falls and every cuff ends').toBe(0);
+  });
+});
+
+// ================= 8. MAZED AND CONFUSED! =================
+// Verbatim: "and a-maze-ing should be called "mazed and confused", and be a hazard in the cobs fight." MePhone4's A-MAZE-ING! is renamed MAZED AND CONFUSED! (its banner and every mention), and
+// the maze becomes an ARENA HAZARD in Steve Cobs's fight: it comes on its own now and then between his turns, telegraphed the way the maze is in MePhone4's fight, never stacked on one of his
+// attacks (one attack at a time), and it never makes his fight unwinnable. Name it the same.
+describe('OWNER: "mazed and confused" -- the rename, and the maze as an arena hazard in his fight', () => {
+  const FLOOR_ONLY = 'worldPlats = worldPlats.filter(function(p){ return p.solid; });';
+  // the fight from a quiet stage with the maze about to be due: `setup` runs first; `frame` before each step; every state change of the hazard is logged
+  const RUN = (tier, setup = '', frame = '', frames = 520, due = 20) => fight(`
+    park(); atTier(${tier}); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.controller = 'still'; you.invuln = 99999; s._introT = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+    s._atkTimer = 30; s._mazeT = ${due}; var banners = [], B = banner; banner = function(t, ms, kind){ banners.push(t); return B.apply(this, arguments); };
+    var log = [], prev = '', turnKinds = [], hedgesMax = 0, otherShots = 0, cardDuringMaze = 0, zs = []; ${setup}
+    try { for (var i=0;i<${frames};i++){ ${frame} step(); you.invuln = 99999; if (s._telKind && s._tel > 0 && turnKinds.indexOf(s._telKind) < 0) turnKinds.push(s._telKind);
+      hedgesMax = Math.max(hedgesMax, worldPlats.filter(function(p){ return p._mz; }).length);
+      if (s._mz){ otherShots += projectiles.filter(function(p){ return p.owner === -2 && p.life > 0 && !p.mpBall && !p.cobsPuddle && !p.cobsSticky; }).length; if (s._tel > 0 && s._telKind !== 'maze') cardDuringMaze++; }
+      if (s._hz && s._hz.mz && s._tel > 0) zs.push(s._hz.mz.slice());
+      var st = (s._telKind === 'maze' && s._tel > 0 ? 'tel' : '') + '/' + (s._mz ? 'maze' : '') + '/' + (s._tel > 0 && s._telKind !== 'maze' ? 'card' : '');
+      if (st !== prev){ log.push({ f: i, st: st, atk: s._atkTimer, mazeT: s._mazeT, plats: worldPlats.filter(function(p){ return p._mz; }).length }); prev = st; } } } finally { banner = B; }
+    return { log: log, states: log.map(function(l){ return l.st; }), banners: banners, turnKinds: turnKinds, hedgesMax: hedgesMax, otherShots: otherShots, cardDuringMaze: cardDuringMaze, zs: zs, mazeT: s._mazeT, atk: s._atkTimer, tier: cobsTier(s), pct: you.pct };`);
+
+  it('THE RENAME: MePhone4\'s banner and his own maze are MAZED AND CONFUSED!, and no A-MAZE-ING! is left in the game', () => {
+    const r = W.eval(`({ mp: BOSS_MOVE_NAME.maze, cobs: COBS_MOVE_NAME.maze })`);
+    expect(r.mp, '"and a-maze-ing should be called "mazed and confused""').toBe('MAZED AND CONFUSED!');
+    expect(r.cobs, 'named the same in his fight').toBe('MAZED AND CONFUSED!');
+    expect(readFileSync('artifacts/V1/index.html', 'utf8').includes('A-MAZE-ING'), 'every mention').toBe(false);
+  });
+
+  it('IT COMES ON ITS OWN, between his turns: due 1500 frames into the fight, then every 2100 / 1900 / 1700 / 1500 / 1300 by tier; it takes the turn line under its name, and it is not one of his cards', () => {
+    expect(W.eval('COBS_MAZE.first')).toBe(1500);
+    expect(W.eval('COBS_MAZE.gap')).toEqual([2100, 1900, 1700, 1500, 1300]);
+    const dk = W.eval(`({ deck: COBS_DECK.indexOf('maze'), spec: COBS_SPECIALS.indexOf('maze'), bag: (function(){ var out = []; var q = { _moveN:0, _spN:0, _bag:[], _lastCard:null, _marks:2 }; for (var i=0;i<60;i++) out.push(cobsNextMove(q)); return out.indexOf('maze'); })() })`);
+    expect(dk, 'not in his deck, his specials or his rotation').toEqual({ deck: -1, spec: -1, bag: -1 });
+    const t0 = fight('return { t: s._mazeT };').t;
+    expect(t0, 'a fight starts with the first one due in 1500 frames (a frame or two of the fight have run)').toBeGreaterThanOrEqual(1495);
+    expect(t0).toBeLessThanOrEqual(1500);
+    const r = RUN(1);
+    const at = (st) => r.states.indexOf(st);
+    expect(at('tel//'), 'a wind-up').toBeGreaterThanOrEqual(0);
+    expect(at('/maze/'), 'then the maze stands').toBeGreaterThan(at('tel//'));
+    expect(r.states.indexOf('//card'), 'and only after it is over does a card of his start').toBeGreaterThan(at('/maze/'));
+    expect(r.banners, 'its banner is its name, the same as in MePhone4\'s fight').toContain('MAZED AND CONFUSED!');
+    expect(r.hedgesMax, 'two hedge walls').toBe(2);
+    const gap = r.log.find((l) => l.st === '//' && l.f > r.log.find((q) => q.st === '/maze/').f);
+    expect(gap.mazeT, 'the next is due `gap` frames on (tier 1: 2100)').toBeGreaterThan(2090);
+  });
+
+  it('IT IS TELEGRAPHED THE WAY MePhone4\'S MAZE IS: his wind-up, the pen marked on the floor where the walls will stand, following you until the last 10 frames, then held', () => {
+    const r = RUN(1, '', 'if (s._hz && s._hz.mz && s._tel > 0){ you.x += 3; you.vx = 0; }', 140);
+    expect(W.eval('MP4.maze.tel'), 'the wind-up is MePhone4\'s: 44 frames').toBe(44);
+    expect(r.zs.length, 'the plan stood for the whole wind-up').toBeGreaterThanOrEqual(40);
+    const first = r.zs[0], last = r.zs[r.zs.length - 1];
+    expect(last[0] - first[0], 'the pen followed you (you walked right)').toBeGreaterThan(60);
+    const frozen = r.zs.filter((z, i) => i > 0 && z[0] === r.zs[i - 1][0]).length;
+    expect(frozen, 'and held for its last frames (M.lock = 10)').toBeGreaterThanOrEqual(8);
+    expect(last[3], 'tier 1: MePhone4\'s second phase beat (36 frames between beams)').toBe(2);
+    expect(r.hedgesMax).toBe(2);
+  });
+
+  it('ONE ATTACK AT A TIME: it never starts on top of an attack of his -- with a shot of his in the air, a MeTag standing, a countdown running or a portal open, his turn is held until that is over, then the maze starts', () => {
+    const live = (setup, label) => {
+      const r = RUN(2, setup, '', 700, 5);
+      const i = r.states.indexOf('tel//');
+      expect(i, `${label}: the maze did come, once the stage was quiet`).toBeGreaterThanOrEqual(0);
+      return r;
+    };
+    // a shot of his that stays in the air for a while (a slow boomerang-like shot), well past the moment the maze is due
+    const shot = live(`projectiles.push(cobsShot(s, { x:you.x + 900, y:you.y - 500, vx:0, vy:0, dmg:1, bossCap:1, r:6, life:150, bossAtk:++BOSS_ATK_ID, noAim:true }));`, 'a shot in the air');
+    expect(shot.log.find((l) => l.st === 'tel//').f, 'not before the shot was gone (150 frames)').toBeGreaterThan(140);
+    const countdown = RUN(2, `s._tick = { t:150, T:150 };`, '', 400, 5), cd = countdown.log.find((l) => l.st === 'tel//');
+    expect(!cd || cd.f > 150, 'a countdown running: no maze until it has run out (and what it threw is spent)').toBe(true);
+    const portal = live(`s._portals = [{ x:you.x + 900, y:you.y - 40, t:120, T:120, id:++BOSS_ATK_ID, dmg:10, kb:5, hit:{}, pull:0, pullR:0, drift:0, ring:0 }];`, 'a portal');
+    expect(portal.log.find((l) => l.st === 'tel//').f, 'not before the portal was gone').toBeGreaterThan(100);
+    for (const r of [shot, countdown, portal]) expect(r.cardDuringMaze, 'no card of his under the maze').toBe(0);
+  });
+
+  it('NO TURN OF HIS STARTS UNDER THE MAZE: with his turn timer forced to zero every frame the whole time, no card, no shot of his, no wind-up shows until the hedges are gone -- and then he waits a normal gap', () => {
+    const r = RUN(3, '', 'if (s._mz) s._atkTimer = 0;', 520, 5);
+    expect(r.cardDuringMaze, 'no wind-up of a card while it stands').toBe(0);
+    expect(r.otherShots, 'nothing of his in the air but its own ball').toBe(0);
+    expect(r.turnKinds.indexOf('maze')).toBe(0);
+    const over = r.log.find((l) => l.st === '//' && l.f > r.log.find((q) => q.st === '/maze/').f);
+    expect(over.atk, 'his next turn waits his usual gap once it is over (58 at tier 4, 70 at tier 3)').toBeGreaterThanOrEqual(60);
+  });
+
+  it('IT NEVER GIVES HIM A STALL OR A DEADLOCK: held up by an attack that does not end (a MeTag standing), the maze gives way after `wait` frames, his turns go on, and it tries again `retry` frames later', () => {
+    const r = RUN(1, `COBS_MOVES.metags(s, you, ++BOSS_ATK_ID); var tg = summons.filter(function(m){ return m.type === 'metag'; })[0]; tg.x = you.x + 1500; tg._cd = 999999; tg._spd = 0; tg._homing = 0;`, 'var tg0 = summons.filter(function(m){ return m.type === "metag"; })[0]; if (tg0){ tg0.x = you.x + 1500; tg0.vx = tg0.vy = 0; }', 520, 5);
+    expect(r.states.indexOf('tel//'), 'a tag stands: no maze').toBe(-1);
+    expect(r.states.includes('//card') || r.turnKinds.length > 0, 'but his turns went on after the wait').toBe(true);
+    expect(r.mazeT, 'and it is due again, soon').toBeLessThanOrEqual(180);
+  });
+});
+
+describe('OWNER: "mazed and confused" -- it never makes his fight unwinnable', () => {
+  const FLOOR_ONLY = 'worldPlats = worldPlats.filter(function(p){ return p.solid; });';
+  // you stand where the pen is built, taking everything it has (no grace pinned); `mid` runs at the middle of the maze; `frame` before each step
+  const PEN = (tier, mid = '', frame = '') => fight(`
+    park(); atTier(${tier}); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 0; you.pct = 0; s._introT = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+    s._atkTimer = 30; s._mazeT = 5; var out = { mazeFrames: 0, started: null, ended: null, hedges: 0, errs: [], hp0: s.hp, hpMid: null, mid: null, firstHit: null };
+    var maxLeft = 0, errs = out.errs, AH = applyHit, mazeDmg = 0;
+    applyHit = function(t, d, kx, ky, from, o){ var b = t.pct; var r = AH.apply(this, arguments); if (s._mz && o && o.bossAtk === s._mz.id && t === you) mazeDmg += t.pct - b; return r; };
+    try { for (var i=0;i<560;i++){ ${frame} s._atkTimer = s._mz ? 0 : s._atkTimer; var p0 = you.pct; step();
+      if (s._mz){ out.mazeFrames++; if (out.started === null) out.started = i; if (you.pct > p0 && out.firstHit === null) out.firstHit = i; }
+      else if(out.started !== null && out.ended === null){ out.ended = i; out.pctAtEnd = you.pct; }   // (what the maze alone did: nothing else of his starts under it)
+      if (s._mz && out.mazeFrames === 100){ ${mid} }
+      if (i % 6 === 0 && (s._mz || (s._telKind === 'maze' && s._tel > 0))){ try { drawCobsFx(); } catch(e){ errs.push(String(e && e.message || e)); } } } } finally { applyHit = AH; }
+    out.mazeDmg = mazeDmg; out.hedgesAfter = worldPlats.filter(function(p){ return p._mz; }).length; out.planAfter = !!(s._hz && s._hz.mz); out.mzAfter = !!s._mz; out.pct = you.pct; out.bossDmg = bossDmg(); out.T = mpMazeTimes(cobsMazePh(s)); out.ph = cobsMazePh(s);
+    return out;`);
+
+  it('IT IS A HAZARD, NOT A TRAP: standing in the pen for the whole maze costs at most ONE boss hit (MePhone4\'s own volley: 22), it is over in its own few seconds, and the hedges and the plan are all gone', () => {
+    for (const t of [1, 3, 5]) {
+      const r = PEN(t);
+      expect(r.started, `tier ${t}: it began`).not.toBe(null);
+      expect(r.ended, 'and it ended').not.toBe(null);
+      expect(r.ended - r.started, 'in its own few seconds (MePhone4\'s total for this phase)').toBe(r.T.total);
+      expect(r.hedgesAfter, 'the hedges are gone').toBe(0);
+      expect(r.planAfter || r.mzAfter, 'and so is the plan').toBe(false);
+      expect(r.mazeDmg, 'a fighter who stands in all of it takes at most one boss hit (the volley\'s cap)').toBeLessThanOrEqual(r.bossDmg + 1e-6);
+      expect(r.mazeDmg, 'and it is a hazard: it does hurt').toBeGreaterThan(0);
+      expect(r.pctAtEnd - r.mazeDmg, 'all it adds is the orange beam\'s burn, MePhone4\'s own (110 frames of it)').toBeLessThanOrEqual(10);
+      expect(r.errs, 'drawn without a throw: the wind-up, the hedges rising, the beams, the ball, the wilt').toEqual([]);
+    }
+  });
+
+  it('IT CANNOT HIDE HIM: he can be hit all through it -- the wind-up, the hedges standing, the wilt -- and a hit counts as ever', () => {
+    const r = PEN(2, 'var hp0 = s.hp; damageSummon(you, s, s.x, s.y, 20); out.mid = hp0 - s.hp; you.pct = you.pct;');
+    expect(r.mid, 'a hit in the middle of the maze took 20 off him').toBe(20);
+  });
+
+  it('beats by tier: MePhone4\'s phase 2 timing (36 frames between beams) at tiers 1 and 2, phase 3 (24) from tier 3; both bring the second cannonball', () => {
+    const rs = [1, 2, 3, 4, 5].map((t) => PEN(t));
+    expect(rs.map((r) => r.ph)).toEqual([2, 2, 3, 3, 3]);
+    expect(rs.map((r) => r.T.rays[1][0] - r.T.rays[0][0]), 'the beat').toEqual([36, 36, 24, 24, 24]);
+    expect(rs.every((r) => r.T.balls.length === 2), 'two cannonballs').toBe(true);
+  });
+
+  it('HE FALLS, THE MAZE GOES: if he is beaten while the hedges stand they are gone with him, and no maze starts in his ending', () => {
+    const r = fight(`
+      park(); atTier(1); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 99999; s._introT = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+      s._atkTimer = 30; s._mazeT = 5; for (var i=0;i<140 && !s._mz;i++){ s._atkTimer = s._mz ? 0 : s._atkTimer; step(); you.invuln = 99999; }
+      var stood = worldPlats.filter(function(p){ return p._mz; }).length; s.hp = 0; for (var j=0;j<10;j++){ step(); you.invuln = 99999; }
+      var out = { stood: stood, after: worldPlats.filter(function(p){ return p._mz; }).length, mz: !!s._mz, dying: s._dying > 0 };
+      s._mazeT = 0; for (var k=0;k<60;k++){ s._atkTimer = 0; step(); you.invuln = 99999; } out.later = worldPlats.filter(function(p){ return p._mz; }).length; return out;`);
+    expect(r.stood, 'it was standing').toBe(2);
+    expect(r.after, 'and went with him').toBe(0);
+    expect(r.mz).toBe(false);
+    expect(r.dying).toBe(true);
+    expect(r.later, 'no maze starts in his ending').toBe(0);
   });
 });
