@@ -38,11 +38,24 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
   const TWISTS = [
     ['van', 'phone', 'up'], ['van', 'pspd', 'up'], ['chainsaws', 'lolli', 'down'], ['chainsaws', 'shards', 'up'], ['spikes', 'stag', 'down'], ['spikes', 'alt', 'up'],
     ['deploy', 'blink', 'down'], ['deploy', 'pencil', 'up'], ['meknife', 'yank', 'up'], ['meknife', 'glint', 'down'], ['hands', 'rows2', 'up'], ['hands', 'rowDy', 'up'],
-    ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up'], ['device', 'pincer', 'up'], ['device', 'pgap', 'down'], ['portal', 'pull', 'up'], ['portal', 'pullR', 'up'],
+    ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up'], ['device', 'pincer', 'up'], ['device', 'pgap', 'down'],
     ['springs', 'retract', 'up'], ['springs', 'reach', 'up'], ['memurder', 'track', 'up'], ['kernelpop', 'chain', 'down'], ['ticktock', 'bend', 'up'], ['plug', 'wave', 'down'],
     ['keynote', 'cresc', 'up'], ['keynote', 'fin3', 'up'], ['metags', 'link', 'up'], ['metags', 'linkW', 'up'], ['cannon', 'rock', 'up'],
   ];
-  it('every twist is 0 at tier 1, set at tier 2 and stronger at tier 3, and never weakens at tiers 4 and 5; seventeen attacks carry one in their table (the other two are his passives)', () => {
+  // THE OWNER'S TUNING, 2026-10-05 ("some of cob's attacks are too easy, some too hard"): twists the owner moved to TIER 1 override the usual "twists from tier 2".
+  // PORTAL: "two from the start" -- the pull is on from tier 1 (and twice as strong, reaching farther).
+  const OWNER_TIER1 = [['portal', 'pull', 'up'], ['portal', 'pullR', 'up']];
+  it('OWNER: the twists he moved to tier 1 are ON at tier 1, never weaker as the tiers climb, and stronger by tier 3 (PORTAL\'s pull: "two from the start")', () => {
+    const rows = W.eval('COBS_TIERS');
+    for (const [k, f, dir] of OWNER_TIER1) {
+      const v = rows[k].map((T) => T[f]);
+      expect(v[0], `${k}.${f} is ON at tier 1 (the owner moved it there)`).toBeGreaterThan(0);
+      const better = (x, y) => (dir === 'up' ? x >= y : x <= y);
+      for (let i = 1; i < 5; i++) expect(better(v[i], v[i - 1]), `${k}.${f} never weakens (${v})`).toBe(true);
+      expect(v[2], `${k}.${f} is stronger by tier 3 (${v})`).toBeGreaterThan(v[1]);
+    }
+  });
+  it('every twist is 0 at tier 1, set at tier 2 and stronger at tier 3, and never weakens at tiers 4 and 5; sixteen attacks carry one in their table (the other two are his passives; the owner moved PORTAL\'s to tier 1)', () => {
     const rows = W.eval('COBS_TIERS');
     const byAttack = {}; for (const [k, f, dir] of TWISTS) (byAttack[k] = byAttack[k] || []).push([f, dir]);
     for (const [k, f, dir] of TWISTS) {
@@ -57,7 +70,7 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
       expect(byAttack[k].some(([f]) => f !== 'pgap' && rows[k][1][f] > 0), `${k}: the twist is ON at tier 2`).toBe(true);
       expect(byAttack[k].some(([f, dir]) => (dir === 'up' ? rows[k][2][f] > rows[k][1][f] : rows[k][2][f] < rows[k][1][f])), `${k}: tier 3 is stronger than tier 2 in something`).toBe(true);
     }
-    expect(Object.keys(byAttack), 'seventeen attacks carry a table twist; the other two are his passives (rage on foot, Popping Point)').toHaveLength(17);
+    expect(Object.keys(byAttack).concat([...new Set(OWNER_TIER1.map((x) => x[0]))]), 'seventeen attacks carry a table twist (sixteen here, PORTAL\'s in the owner\'s tier-1 list); the other two are his passives (rage on foot, Popping Point)').toHaveLength(17);
   });
 
   it('the two passive twists wait for their own lines: the rage on foot fights low only while he rages, and the ring only below 20% (tier 5)', () => {
@@ -129,7 +142,7 @@ describe('FREE SAMPLES! -- "they create traveling crumbs that move along the gro
       crumbs = projectiles.filter(function(p){ return p._crumb; });
       var left = crumbs.filter(function(p){ return p.vx < 0; }).length, right = crumbs.filter(function(p){ return p.vx > 0; }).length;
       var ids = new Set(crumbs.map(function(p){ return p.bossAtk; })).size, sp = crumbs.every(function(p){ return Math.abs(Math.abs(p.vx) - T.cspd) < 1e-9; });
-      var onFloor = crumbs.filter(function(p){ return p._crumb.mode === 'run'; }).every(function(p){ return Math.abs(p.y + p.r*0.5 - p._crumb.sy) < 1.5; });
+      var onFloor = crumbs.filter(function(p){ return p.phase === 'drive'; }).every(function(p){ return Math.abs(p.y + p.r - p.rideTop) < 1.5; });   // (the van's riding: its centre one radius over the surface it rides)
       var xs0 = crumbs.map(function(p){ return p.x; }); for (var i=0;i<20;i++){ step(); you.invuln = 99999; } var moved = crumbs.every(function(p, k){ return Math.sign(p.x - xs0[k]) === Math.sign(p.vx) && Math.abs(p.x - xs0[k]) > 40; });
       return { n: boxes.length, want: T.n, shadow: shadow, left: left, right: right, per: T.crumbs, ids: ids, sp: sp, onFloor: onFloor, moved: moved, traps: projectiles.filter(function(p){ return p.trap; }).length,
         boxesLeft: projectiles.filter(function(p){ return p.cobsSample; }).length, poison: crumbs.every(function(p){ return p.fxTag === 'poison'; }), boxX: boxX };`);
@@ -146,28 +159,31 @@ describe('FREE SAMPLES! -- "they create traveling crumbs that move along the gro
     expect(r.poison).toBe(true);
   });
 
-  it('crumbs run to the edge of a platform and FALL, keeping their sideways run, land on what is below and run on', () => {
+  // THE OWNER, 2026-10-05 ("i hardly notice these 3"): "remove the crumbs chasing thing, they should just have the thing like the van where they ride off platforms."
+  // The crumbs used to drop off an edge on an arc, keeping their run in the air; now they ride the way the van does (vanDrive, `drive:'roll'`): along the surface,
+  // STRAIGHT down off its edge, onto what is below, and on the same way. test/cobs-tune.test.js has the rest of it (no chasing, the wall, the van's own code).
+  it('crumbs RIDE like the van: along a platform to its edge, STRAIGHT off it onto what is below, and on the same way (the owner: "like the van where they ride off platforms")', () => {
     const r = fight(`
       park(); you.invuln = 99999; atTier(1);
       var pl = worldPlats.filter(function(p){ return !p.solid && p.w > 200 && p.w < 330 && p.y > groundY() - 700 && p.y < groundY() - 200; })[0];
       var top = pl.y, mid = pl.x + pl.w/2, T = cobsT(s, 'samples');
       var box = { x:mid, y:top - 6, r:12, life:1, bossAtk:++BOSS_ATK_ID, warnX:mid, warnY:top };
       COBS_DIE.sample(s, box, { T:T, dmg:13.2, cap:13.2 });
-      var cs = projectiles.filter(function(p){ return p._crumb; }), out = { n: cs.length, plat: [pl.x, pl.w, top], track: [], vx0: cs.map(function(p){ return p.vx; }) };
-      var wasRun = false, fell = false, landedBelow = false, kept = true;
+      var cs = projectiles.filter(function(p){ return p._crumb; }), out = { n: cs.length, plat: [pl.x, pl.w, top], vx0: cs.map(function(p){ return p.vx; }) };
+      var wasRun = false, fell = false, straight = true, landedBelow = false, sameWay = true;
       for (var i=0;i<140;i++){ step(); you.invuln = 99999;
-        cs.forEach(function(p, k){ if (p.life <= 0) return; var C = p._crumb;
-          if (C.mode === 'run' && C.sy === top) wasRun = true;
-          if (C.mode === 'fall' && p.y > top + 4 && (p.x < pl.x - 2 || p.x > pl.x + pl.w + 2)) fell = true;
-          if (C.mode === 'run' && C.sy > top + 20) landedBelow = true;
-          if (p.vx !== out.vx0[k]) kept = false; }); }
-      out.wasRun = wasRun; out.fell = fell; out.landedBelow = landedBelow; out.kept = kept;
+        cs.forEach(function(p, k){ if (p.life <= 0) return;
+          if (p.phase === 'drive' && p.rideTop === top) wasRun = true;
+          if (p.phase === 'fall'){ fell = true; if (p.vx !== 0) straight = false; }
+          if (p.phase === 'drive' && p.rideTop > top + 20){ landedBelow = true; if (p.vx !== out.vx0[k]) sameWay = false; } }); }
+      out.wasRun = wasRun; out.fell = fell; out.straight = straight; out.landedBelow = landedBelow; out.sameWay = sameWay;
       return out;`);
     expect(r.n).toBe(4);
     expect(r.wasRun, 'on the platform they ran along it').toBe(true);
     expect(r.fell, 'off its edge they fell').toBe(true);
-    expect(r.kept, '"add momentum to falling objects": the sideways speed is never lost in the air').toBe(true);
-    expect(r.landedBelow, 'and below, they landed and ran on').toBe(true);
+    expect(r.straight, 'straight down, as the van\'s roller falls: no sideways run in the air').toBe(true);
+    expect(r.landedBelow, 'and below, they landed and rode on').toBe(true);
+    expect(r.sameWay, 'the way they were going: the van\'s driveVx comes back on landing').toBe(true);
   });
 
   it('a box that is HIT on the way down bursts where it is, crumbs and all; and [POOF] erasing boxes leaves no crumbs behind', () => {
@@ -541,13 +557,14 @@ describe('MEEPLE PORTAL! -- the vortex pull', () => {
     for (var i=0;i<${frames};i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); maxV = Math.max(maxV, Math.abs(you.vx)); }
     return { dx: you.x - x0, maxV: maxV, T: cobsT(s, 'portal'), left: s._portals.length };`);
 
-  it('tier 1 does not pull; tier 2 drags a fighter in range toward the core; tier 3 harder -- and never to a standstill-lock: the drift is below a fighter\'s own run', () => {
-    const t1 = PULL(1, 12), t2 = PULL(2, 12), t3 = PULL(3, 12);
-    expect(Math.abs(t1.dx), 'tier 1: off').toBeLessThan(0.5);
-    expect(t2.dx, 'toward the portal, which is on the right').toBeGreaterThan(3);
-    expect(t3.dx, 'stronger at tier 3').toBeGreaterThan(t2.dx);
-    expect(t3.maxV, 'never a lock: below a fighter\'s run (6.4)').toBeLessThan(6.4);
-    expect([t2.T.pull, t3.T.pull]).toEqual([0.4, 0.5]);
+  // THE OWNER, 2026-10-05 ("i hardly notice these 3"): PORTAL -- "two from the start" (the pull from tier 1) and "Stronger pull": twice as strong, reaching farther.
+  it('OWNER: the pull is on from tier 1 and TWICE as strong as it was (0.4, 0.5, 0.55, 0.6 -> 0.8, 1.0, 1.1, 1.2), reaching farther (170 and 200 px -> 240 and 280) -- and a standing fighter\'s drift still stays below a fighter\'s own run', () => {
+    const T = W.eval('COBS_TIERS.portal');
+    expect(T.map((x) => x.pull), 'double the old pulls; tier 1 takes the old tier 2\'s, doubled').toEqual([0.8, 0.8, 1.0, 1.1, 1.2]);
+    expect(T.map((x) => x.pullR), 'farther than the old 170 / 200').toEqual([240, 240, 280, 280, 280]);
+    const rs = [1, 2, 3, 4, 5].map((t) => PULL(t, 12));
+    for (const r of rs) { expect(r.dx, 'toward the portal, which is on the right').toBeGreaterThan(3); expect(r.maxV, 'below a fighter\'s run (6.4)').toBeLessThan(6.4); }
+    expect(rs[2].dx, 'stronger at tier 3').toBeGreaterThan(rs[1].dx);
   });
 
   it('a fighter out of range is left alone; the portal closes early once it has flung someone', () => {
