@@ -120,12 +120,22 @@ describe('who is in the room', () => {
     room.join('A', 'ZZZZ', 'Leafy');
     expect(room.roster('A').map((p) => p.fighter)).toEqual(['Leafy']);
     expect(A.document.getElementById('lobbyWait').textContent).toMatch(/Nobody is hosting room ZZZZ/);
+    expect(A.document.getElementById('lobbyStatus').textContent, 'and the line under the title agrees').toBe('Room ZZZZ has no host');
     // ...and when a host does arrive, it is an ordinary room again
     H.eval(`window.__code = NET.makeRoomCode; NET.makeRoomCode = function(){ return 'ZZZZ'; }`);
     room.host('H', 'Pen');
     H.eval(`NET.makeRoomCode = window.__code;`);
     expect(room.roster('A').map((p) => p.host)).toEqual([true, false]);
     expect(A.document.getElementById('lobbyWait').textContent).toMatch(/Waiting for the host to start the match/);
+    expect(A.document.getElementById('lobbyStatus').textContent).toBe('Joined room ZZZZ — waiting for the host');
+  });
+
+  it("leaving a room forgets its settings: the next room shows none until its own host sends them", () => {
+    three();
+    expect(B.document.getElementById('lobbySummary').textContent).toMatch(/contestants/);
+    B.eval(`NET.leave()`); room.flush();   // (the way Back and the title leave: no Leave room button)
+    room.join('B', 'QQQQ', 'Blocky');   // a room with no host in it
+    expect(B.document.getElementById('lobbySummary').textContent).toMatch(/Waiting for the host's match settings/);
   });
 
   it('with no relay to dial, Create Room says why, and shows neither a room code that exists nowhere nor a room of one', () => {

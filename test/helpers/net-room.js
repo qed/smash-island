@@ -1,10 +1,11 @@
 import { bootRealm } from './net-pair.js';
-import { rosterOf, applyHello, routeMessage } from '../../relay/src/protocol.js';
+import { normalizeRoom, rosterOf, applyHello, routeMessage } from '../../relay/src/protocol.js';
 
 // A room of real pages, headless: one jsdom realm per player, each running the unmodified artifacts/V1/index.html, joined by a
 // stand-in for the relay that routes with relay/src/protocol.js -- the same applyHello / rosterOf / routeMessage that
 // relay/src/index.js calls, so a roster is built, ordered and pushed exactly as the deployed one does, and `state` and `start`
-// reach only the clients while `input` reaches only the host. Nothing here dials a network: each page's WebSocket is replaced
+// reach only the clients while `input` reaches only the host. Rooms are sharded by the code in the dialled address, as the deployed
+// relay shards them, so two codes are two rooms. Nothing here dials a network: each page's WebSocket is replaced
 // before it can use one, and NET.RELAY is pointed at an address that cannot resolve.
 //
 // What a test does goes through the page's own code: NET.host() and NET.join(code) build a socket, the harness opens it (so the page
@@ -21,25 +22,27 @@ export async function makeRoom(names, { w = 1280, h = 720 } = {}) {
 
   const relay = { peers: [], pending: new Map(), queue: [], seq: 0, log: [] };
   const deliver = (ws, obj) => relay.queue.push({ ws, data: JSON.stringify(obj) });
-  const pushRoster = () => {
-    const players = rosterOf(relay.peers.map((p) => p.at));
-    for (const p of relay.peers) deliver(p.ws, { t: 'roster', players });
+  const inRoom = (code) => relay.peers.filter((p) => p.ws.room === code);
+  const pushRoster = (code) => {
+    const here = inRoom(code), players = rosterOf(here.map((p) => p.at));
+    for (const p of here) deliver(p.ws, { t: 'roster', players });
   };
   const fromPeer = (ws, raw) => {
     const peer = relay.peers.find((p) => p.ws === ws);
     if (!peer) return;
     const msg = JSON.parse(raw);
     relay.log.push({ from: ws.name, msg });
+    const here = inRoom(ws.room);
     if (msg && msg.t === 'hello') {
-      const { peer: np, refusedHost } = applyHello(msg, peer.at, relay.peers.map((p) => p.at));
+      const { peer: np, refusedHost } = applyHello(msg, peer.at, here.map((p) => p.at));
       peer.at = np;
       if (refusedHost) deliver(ws, { t: 'status', msg: 'That room already has a host -- you joined as a player.' });
-      pushRoster();
+      pushRoster(ws.room);
       return;
     }
     const route = routeMessage(msg, peer.at);
-    if (route.to === 'host') { const host = relay.peers.find((p) => p.at.isHost); if (host) deliver(host.ws, msg); }
-    else if (route.to === 'others') { for (const p of relay.peers) if (p !== peer) deliver(p.ws, msg); }
+    if (route.to === 'host') { const host = here.find((p) => p.at.isHost); if (host) deliver(host.ws, msg); }
+    else if (route.to === 'others') { for (const p of here) if (p !== peer) deliver(p.ws, msg); }
   };
   const flush = () => {
     for (let guard = 0; relay.queue.length && guard < 5000; guard++) {
@@ -50,12 +53,16 @@ export async function makeRoom(names, { w = 1280, h = 720 } = {}) {
   const drop = (ws) => {
     const i = relay.peers.findIndex((p) => p.ws === ws);
     ws.readyState = 3;
-    if (i >= 0) { relay.peers.splice(i, 1); pushRoster(); }
+    if (i >= 0) { relay.peers.splice(i, 1); pushRoster(ws.room); }
   };
 
   for (const [name, win] of Object.entries(pages)) {
     win.WebSocket = class FakeSocket {
-      constructor(url) { this.url = url; this.name = name; this.readyState = 0; this.bufferedAmount = 0; relay.pending.set(name, this); }
+      constructor(url) {
+        this.url = url; this.name = name; this.readyState = 0; this.bufferedAmount = 0;
+        this.room = normalizeRoom(new URL(url).searchParams.get('room'));   // the relay shards on ?room=
+        relay.pending.set(name, this);
+      }
       send(text) { if (this.readyState === 1) fromPeer(this, text); }
       close() { drop(this); flush(); }
     };
