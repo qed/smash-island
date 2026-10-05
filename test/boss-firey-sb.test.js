@@ -908,7 +908,8 @@ describe('FURNACE! up top (the owner: "FURNACE! up top")', () => {
       expect(p.wdy).toBe(p.dy);
       expect(p.x, 'it starts 30 px in from the end the plates come in at (the left: you are on the right of the middle)').toBe(Math.round(pad.x + 30));
       expect(p.delay, 'it waits in plain view for at least the 30 frames a dodge needs, until the first floor plate passes under its start').toBeGreaterThanOrEqual(30);
-      expect(Math.abs(p.vx), 'parked: it only faces the way it goes').toBeLessThan(0.01);
+      expect(Math.abs(p.vx), 'parked: it only faces the way it goes (under 1.5 px a frame draws no trail), and a shot with a delay does not move').toBe(1);
+      expect(Math.sign(p.vx), 'facing the way the plates go').toBe(o.d);
       expect(o.lpMove, 'its lane stays lit while it waits and rolls').toBe(1);
       expect(Math.abs(o.start.lx - o.start.fx), 'it sets off as the first floor plate is under it: side by side').toBeLessThanOrEqual(sp + 1);
       expect(o.speed, 'and rolls at the floor plates\' speed').toBe(sp);
