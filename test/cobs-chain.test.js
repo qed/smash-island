@@ -588,9 +588,11 @@ describe('the profile: reload and two tabs', () => {
   it('merges upward -- stage, wins and the flags by max/OR, the cups and the kills by union -- and copes with saves that have none of it', () => {
     const m = W.eval(`JSON.stringify(mergeProfiles(
       { cobs:{ stage:2, cups:['Knife'], race:false, beaten:false, wins:0, bestSecs:0 }, bossKills:{ MePhone4:['Knife'] }, one:{ stage:1, erased:['Gaty'] } },
-      { cobs:{ stage:1, cups:['Knife','Balloon'], race:true, beaten:false, wins:1, bestSecs:120 }, bossKills:{ MePhone4:['Fan'], Springy:['Balloon'] }, one:{ stage:0, erased:[] } }))`);
+      { cobs:{ stage:1, cups:['Knife','Balloon'], race:true, raceV:RACE_LANE_V, beaten:false, wins:1, bestSecs:120 }, bossKills:{ MePhone4:['Fan'], Springy:['Balloon'] }, one:{ stage:0, erased:[] } }))`);
     const p = JSON.parse(m);
-    expect(p.cobs).toEqual({ stage: 2, cups: ['Knife', 'Balloon'], race: true, beaten: false, wins: 1, bestSecs: 120 });
+    expect(p.cobs).toEqual({ stage: 2, cups: ['Knife', 'Balloon'], race: true, raceV: W.eval('RACE_LANE_V'), beaten: false, wins: 1, bestSecs: 120 });
+    // "Reset everyone's progress" (the owner, 2026-10-05): a tab's win on an older lane merges up to nothing
+    expect(W.eval(`mergeCobs({ race:true }, { race:false }).race`), 'an older lane\'s win is no win').toBe(false);
     expect(p.bossKills).toEqual({ MePhone4: ['Knife', 'Fan'], Springy: ['Balloon'] });
     expect(p.one, 'One\'s merge is untouched').toEqual({ stage: 1, erased: ['Gaty'], rushLightning: false, wins: 0, bestSecs: 0 });
     expect(W.eval(`mergeCobs({ stage:3 }, { beaten:false }).beaten`), 'stage FREE is the flag too').toBe(true);
@@ -601,7 +603,7 @@ describe('the profile: reload and two tabs', () => {
     expect(W.eval(`mergeCobs({ cups:['Balloon','Balloon','Zed'] }, { cups:['Balloon'] }).cups`), 'a repeat or a stranger is cleaned').toEqual(['Balloon']);
     expect(W.eval(`mergeCobs({ bestSecs:200 }, { bestSecs:95 }).bestSecs`)).toBe(95);
     const bare = W.eval(`JSON.stringify(mergeProfiles({ unlocked:[] }, { unlocked:[] }))`);
-    expect(JSON.parse(bare).cobs).toEqual({ stage: 0, cups: [], race: false, beaten: false, wins: 0, bestSecs: 0 });
+    expect(JSON.parse(bare).cobs).toEqual({ stage: 0, cups: [], race: false, raceV: 0, beaten: false, wins: 0, bestSecs: 0 });   // (raceV: the lane a race was won on, RACE_LANE_V)
     expect(JSON.parse(bare).bossKills).toEqual({});
     expect(W.eval(`mergeBossKills({ A:['x', 3, 'y'] }, null)`)).toEqual({ A: ['x', 'y'] });
   });
@@ -625,7 +627,7 @@ describe('the profile: reload and two tabs', () => {
     const w3 = boot({ 'profile:v1': J(old) });
     await w3.eval('profileReady');
     expect(w3.eval(`({ q:cobsQ(), kills:PROFILE.bossKills, beaten:cobsBeaten(), live:cobsChainLive() })`))
-      .toEqual({ q: { stage: 0, cups: [], race: false, beaten: false, wins: 0, bestSecs: 0 }, kills: {}, beaten: false, live: false });
+      .toEqual({ q: { stage: 0, cups: [], race: false, raceV: 0, beaten: false, wins: 0, bestSecs: 0 }, kills: {}, beaten: false, live: false });
     expect(w3.eval(`vaultSubmit('C0B5')`), 'and a chain that has not opened says not yet').toEqual({ kind: 'wrong', reply: NOT_YET });
   });
 
@@ -699,5 +701,44 @@ describe('the Vault never names him, and One\'s chain is untouched', () => {
     // "3 fighters should be erased every time, not just 1." (the owner, 2026-09-29): a win erases three (ONE_ERASE_PER_WIN).
     expect(W.eval('({ one:PROFILE.one.stage, erased:PROFILE.one.erased, cobs:PROFILE.cobs.stage })')).toEqual({ one: 1, erased: ['Gaty', 'Barf Bag', 'Basketball'], cobs: 2 });
     W.eval(`PROFILE.one = { stage:0, erased:[], rushLightning:false, wins:0, bestSecs:0 }; go('title')`);
+  });
+});
+
+describe('RUNNING! is reset for everyone: a win on the old lane does not count (the owner, 2026-10-05)', () => {
+  // "running should be reset." -- asked, "Reset everyone's progress": ship the D5 lane, and whoever beat the old one beats it again.
+  it('an old win reads as not won, the race opens again, and a new win is kept with the lane it was won on', async () => {
+    await fresh(W, ALL_EXISTING);
+    sub(W, 'C0B5'); sub(W, 'MISTAH PHONE'); sub(W, 'PH3N0M53 VK0CH');
+    W.eval(`PROFILE.cobs.race = true; delete PROFILE.cobs.raceV;`);   // a save from before the rebuild
+    expect(W.eval('cobsQ().race'), 'the old win does not count').toBe(false);
+    expect(W.eval('cobsRaceOpen()'), 'RUNNING! is open again').toBe(true);
+    expect(W.eval('cobsRaceWon()'), 'winning it now counts').toBe(true);
+    expect(W.eval('({ race: cobsQ().race, v: cobsQ().raceV, lane: RACE_LANE_V })')).toEqual({ race: true, v: 2, lane: 2 });
+    await sleep(W, 0);
+    expect(stored(W).cobs.raceV, 'saved with its lane').toBe(2);
+    expect(W.eval('cobsRaceOpen()'), 'and closed once won').toBe(false);
+  });
+
+  it('at his door with an old win: his card and his fight wait for the new lane; the codes, pairs and cups are kept', async () => {
+    await fresh(W, ALL_EXISTING);
+    sub(W, 'C0B5'); sub(W, 'MISTAH PHONE'); sub(W, 'PH3N0M53 VK0CH');
+    W.eval(`${PAIRS} PROFILE.cobs.cups = ['Knife', 'Balloon', 'Taco (II)']; PROFILE.cobs.race = true; PROFILE.cobs.raceV = RACE_LANE_V; PROFILE.cobs.stage = COBS_STAGE.DOOR;`);
+    expect(W.eval('cobsCardDue()'), 'a new-lane win: his card is due').toBe(true);
+    W.eval(`PROFILE.cobs.raceV = 1;`);   // the same door, won on the old lane
+    const r = W.eval(`({ due: cobsCardDue(), fight: cobsStoryFight(), stage: cobsQ().stage, cups: cobsQ().cups.slice(), pairs: cobsPairsDone(), open: cobsRaceOpen() })`);
+    expect(r.due, 'his card waits').toBe(false);
+    expect(r.fight, 'and so does his fight').toBe(false);
+    expect(r.stage, 'the door code is not asked again').toBe(W.eval('COBS_STAGE.DOOR'));
+    expect(r.cups).toEqual(['Knife', 'Balloon', 'Taco (II)']);
+    expect(r.pairs).toBe(true);
+    expect(r.open, 'RUNNING! is open for them').toBe(true);
+    W.eval('cobsRaceWon()');
+    expect(W.eval('cobsCardDue()'), 'won on the new lane: the door is open again').toBe(true);
+  });
+
+  it('one who has beaten him keeps the prize, whatever lane they ran', async () => {
+    await fresh(W, ALL_EXISTING);
+    W.eval(`PROFILE.cobs = { stage: COBS_STAGE.FREE, beaten: true, race: true, cups: ['Knife', 'Balloon', 'Taco (II)'], wins: 1 };`);
+    expect(W.eval('({ beaten: cobsBeaten(), stage: cobsQ().stage })')).toEqual({ beaten: true, stage: W.eval('COBS_STAGE.FREE') });
   });
 });

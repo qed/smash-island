@@ -31157,7 +31157,7 @@ function oneTitleCard(el){
 //                  (cobsBossFell), so a kill made before his code was typed counts ("in any order")
 //   cobs.stage     0 locked, 1 live (C0B5 in; a wrong code answers "Tick, tock."), 2 the door (he waits on the title), 3 beaten
 //   cobs.cups      the World Cups won so far: a unique subset of Knife, Balloon, Taco (II), whichever order they came in
-//   cobs.race      RUNNING! won as Knife
+//   cobs.race      RUNNING! won as Knife -- on the lane of version cobs.raceV (RACE_LANE_V): a win on an older lane does not count
 //   cobs.beaten    the prize flag (cobsBeaten)
 // Everything merges upward (mergeCobs, mergeBossKills), so a second tab can never undo a step; and like One's chain, the
 // Vault's own words never name him.
@@ -31238,12 +31238,19 @@ for(const s of COBS_VAULT.steps){
   for(const sp of list){ const k = vaultNorm(sp); if(k && !COBS_CODES.has(k) && !VAULT_CODES.has(k)) COBS_CODES.set(k, s); }
 }
 
+// The lane RUNNING! is run on, by version: 2 since its rebuild at BFDI: Branches D5 ("running should be d5 bfdi:branches difficulty",
+// the owner, 2026-10-02). A win is kept with the version it was won on, and a win on an older lane reads as not won: "Reset
+// everyone's progress" (the owner, 2026-10-05, on "running should be reset") -- whoever beat the old lane beats this one, and that
+// step of his chain opens again. A player waiting at his door finds it closed until then (his card and his story fight ask for the
+// race too); one who has beaten him keeps the prize.
+const RACE_LANE_V = 2;
 function cobsQ(){
-  if(!PROFILE) return { stage:0, cups:[], race:false, beaten:false, wins:0, bestSecs:0 };
+  if(!PROFILE) return { stage:0, cups:[], race:false, raceV:0, beaten:false, wins:0, bestSecs:0 };
   const q = (PROFILE.cobs && typeof PROFILE.cobs==='object') ? PROFILE.cobs : (PROFILE.cobs = {});
   q.stage = Math.max(0, Math.min(COBS_STAGE.FREE, q.stage|0));
   q.cups = cobsCupSubset(q.cups);
-  q.race = !!q.race; q.beaten = !!q.beaten || q.stage >= COBS_STAGE.FREE; q.wins = q.wins|0; q.bestSecs = q.bestSecs|0;
+  q.race = !!q.race && (q.raceV|0) >= RACE_LANE_V; q.raceV = q.race ? (q.raceV|0) : 0;   // (an older lane's win is not this lane's)
+  q.beaten = !!q.beaten || q.stage >= COBS_STAGE.FREE; q.wins = q.wins|0; q.bestSecs = q.bestSecs|0;
   return q;
 }
 // The cups as a save may hold them: a unique subset of the three, in any order they were won. Each real cup is kept once, in
@@ -31257,7 +31264,9 @@ function mergeCobs(a, b){
   a = a || {}; b = b || {};
   const best = [a.bestSecs|0, b.bestSecs|0].filter(x=>x>0);
   const stage = Math.max(a.stage|0, b.stage|0);
-  return { stage, cups: cobsCupSubset(cobsCupSubset(a.cups).concat(cobsCupSubset(b.cups))), race:!!(a.race || b.race), beaten:!!(a.beaten || b.beaten) || stage >= COBS_STAGE.FREE,
+  const won = (q)=> !!q.race && (q.raceV|0) >= RACE_LANE_V;   // (a tab's win on an older lane is no win to merge up)
+  const race = won(a) || won(b);
+  return { stage, cups: cobsCupSubset(cobsCupSubset(a.cups).concat(cobsCupSubset(b.cups))), race, raceV: race ? Math.max(a.raceV|0, b.raceV|0) : 0, beaten:!!(a.beaten || b.beaten) || stage >= COBS_STAGE.FREE,
            wins:Math.max(a.wins|0, b.wins|0), bestSecs:best.length ? Math.min(...best) : 0 };
 }
 function mergeBossKills(a, b){
@@ -31328,7 +31337,7 @@ function cobsRaceEnded(won, result){
   return cobsRaceWon();
 }
 // The race lane may call this from its own entry too: a race won as Knife counts whenever it was run, like the pairs.
-function cobsRaceWon(){ if(!PROFILE) return false; const q = cobsQ(); if(q.race) return false; q.race = true; saveProfile(); return true; }
+function cobsRaceWon(){ if(!PROFILE) return false; const q = cobsQ(); if(q.race) return false; q.race = true; q.raceV = RACE_LANE_V; saveProfile(); return true; }
 
 // ---- STEP 4: the World Cup won as each of the three runner-ups, in any order ----
 // Done once all three have been won; a loss, a cup as anyone else or the same cup twice changes nothing already won.
@@ -31374,9 +31383,9 @@ function cobsVaultSubmit(key){
 // since her chain came first ("alongside One's"). This is the first place his name appears: "like One's 'ONE IS WAITING',
 // never naming him before the card". True when it drew it.
 // His card is due on the title: the door is open and One's card is not in its place (go() plays his bed while it is).
-function cobsCardDue(){ return !!PROFILE && cobsQ().stage === COBS_STAGE.DOOR && oneQ().stage !== ONE_STAGE.CHALLENGE; }
+function cobsCardDue(){ return !!PROFILE && cobsQ().stage === COBS_STAGE.DOOR && cobsQ().race && oneQ().stage !== ONE_STAGE.CHALLENGE; }   // (.race: an older lane's win closed his door again, RACE_LANE_V)
 function cobsTitleCard(el){
-  if(!el || cobsQ().stage !== COBS_STAGE.DOOR) return false;
+  if(!el || cobsQ().stage !== COBS_STAGE.DOOR || !cobsQ().race) return false;
   el.style.display = 'block'; el.innerHTML = '';
   const title = document.createElement('div'); title.className = 'daily-title'; title.textContent = '🌽 STEVE COBS IS WAITING';
   const line = document.createElement('div'); line.className = 'daily-line'; line.textContent = COBS_STORY_FIGHTER + '  vs  ' + COBS_BOSS.name + ' · ' + COBS_BOSS.hp + ' HP';
@@ -31391,6 +31400,7 @@ function cobsStoryFight(){
   const s = cobsQ().stage;
   if(s < COBS_STAGE.DOOR) return false;
   if(s >= COBS_STAGE.FREE) return cobsOpenSelect();
+  if(!cobsQ().race) return false;   // the door waits on this lane's RUNNING! (RACE_LANE_V)
   clearUnlockNote();
   return startCobsFight([COBS_STORY_FIGHTER], { story:true, onEnd:cobsFightEnded });
 }
