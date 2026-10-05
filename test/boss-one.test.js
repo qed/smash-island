@@ -72,7 +72,7 @@ describe('the kit: tier tables for all thirteen, and every twist off at tier 1, 
     expect(r.spin[0], 'SHOCK RING: plain at tier 1').toEqual([0, 0]);
     expect(r.spin[1][1] > 0 && r.spin[2][0] > r.spin[1][0], 'twisting from tier 2, harder at tier 3').toBe(true);
     expect(r.star.map(x => x[0]), 'MOON ROCKS: star order from tier 2').toEqual([0, 1, 1]);
-    expect(r.star.map(x => x[1]), '...leading your run at tier 3').toEqual([0, 0, 10]);
+    expect(r.star.map(x => x[1]), '...and every rock leading your run, at every tier ("rocks should anticipate your direction.", 2026-10-02): it was tier 3 alone, 10').toEqual([8, 12, 16]);
     expect(r.cross.map(x => x[0]), 'EYE LASERS: lead and cross from tier 2').toEqual([0, 1, 1]);
     expect(r.cross[2][1], 'leading further at tier 3').toBeGreaterThan(r.cross[1][1]);
     expect(r.comp, 'OUT OF ORBIT: compressed from tier 2, harder at tier 3').toEqual([0, 1, 1.4]);
@@ -163,7 +163,9 @@ describe('SCREECHY!: rings, and the shatter (the Fish Monster screams)', () => {
       [1, 2, 3].forEach(function(t){
         setTier(t); fresh(); one.x = WW*0.5 - 900; one.y = groundY() - 420;
         var id = ++BOSS_ATK_ID, T = oneTier(one, 'screechy'), seen = {}, peak = 0;
-        ONE_MOVES.screechy(one, you, id);
+        // the first ring's gaps where we say, spread round the ring (their places are the dice's, and four gaps half as wide again can overlap): the four are four
+        var R0 = Math.random, seq = [0.10, 0.30, 0.65, 0.85], q = 0; Math.random = function(){ return q < seq.length ? seq[q++] : R0(); };   // (none across the +-180 degrees the count below starts from)
+        try { ONE_MOVES.screechy(one, you, id); } finally { Math.random = R0; }
         var first = own(), n0 = first.length, split0 = first[0].oSplit, veer0 = first[0].oVeer;
         var gapsOf = function(ps){ var a = ps.map(function(p){ return Math.round(Math.atan2(p.vy, p.vx)*180/Math.PI/2); }).sort(function(x, y){ return x - y; }), g = 0; for (var i=1;i<a.length;i++) if (a[i] - a[i-1] > 3) g++; return g; };
         var gaps0 = gapsOf(first);
@@ -173,7 +175,7 @@ describe('SCREECHY!: rings, and the shatter (the Fish Monster screams)', () => {
       return out;`);
     expect([r[1].rings, r[2].rings, r[3].rings], 'two rings, two, and three in phase 3: it comes in waves now').toEqual([2, 2, 3]);
     for (const t of [1, 2, 3]) {
-      expect(r[t].n0, `tier ${t}: a ring of 360 pellets less its gaps`).toBeGreaterThan(200);
+      expect(r[t].n0, `tier ${t}: a ring of 360 pellets less its gaps (wider since "same thing for screechy": tier 1 has 196)`).toBeGreaterThan(150);
       expect(r[t].n0).toBeLessThanOrEqual(360);
       expect(r[t].ids, `tier ${t}: one attack id for every pellet of every ring`).toBe(1);
       expect(r[t].same).toBe(true);
@@ -183,7 +185,7 @@ describe('SCREECHY!: rings, and the shatter (the Fish Monster screams)', () => {
     expect(r[3].split, 'and sooner at tier 3').toBeLessThan(14);
     expect(r[3].veer, 'veering further').toBeGreaterThan(r[2].veer);
     expect(r[3].peak, '"more bullets!": hundreds in the air at once in phase 3').toBeGreaterThan(r[1].peak * 1.8);
-    expect(r[1].gaps0, 'tier 1: the first ring has its four gaps').toBeGreaterThanOrEqual(3);
+    expect(r[1].gaps0, 'tier 1: the first ring has its four gaps').toBe(4);
   });
 
   it('from tier 2 every pellet splits into two that veer apart (and the pair shares its id); tier 1 does not split', () => {
@@ -389,7 +391,7 @@ describe('FOLDING ISLAND! (it was INCOMING!): the surface folds shut like a clam
 });
 
 describe('KNIFE FLURRY! (it was SEEKERS!): "2, but homing."', () => {
-  it('the copies hang in an arc over her and follow her, then go one at a time, each at where you are at its own launch; 8, 12 and 16 by tier', () => {
+  it('the copies hang in an arc over her and follow her, then go one at a time, each at where you are at its own launch; six at every tier ("Fewer bullets": 1.2x of the five it began as)', () => {
     const r = STAGE(`
       var out = {};
       [1, 2, 3].forEach(function(t){
@@ -397,19 +399,19 @@ describe('KNIFE FLURRY! (it was SEEKERS!): "2, but homing."', () => {
         var T = oneTier(one, 'knives'), id = ++BOSS_ATK_ID, t0 = one._f;
         ONE_MOVES.knives(one, you, id);
         var knives = own(), hungAt = knives.map(function(p){ return { x: p.x - one.x, y: p.y - one.y }; });
-        var firstGo = null, goAt = [], dirs = [], youAt = [], prev = knives.map(function(){ return false; });
+        var firstGo = null, goAt = [], dirs = [], youAt = [], prev = knives.map(function(){ return false; }), h0 = [0, 0];   // (h0: the first knife's homing, as it goes -- it is spent soon after)
         for (var i=0; i<T.hang + T.n*T.every + 4; i++){
           one._atkTimer = 1e9; you.invuln = 99; you.x += 2;   // you drift right a little all the time
           one.x += 0.5;                                        // and she drifts too: the hung knives go with her
           step();
-          knives.forEach(function(p, k){ if (!prev[k] && !p.oHang){ prev[k] = true; goAt.push(one._f - t0); dirs.push(Math.atan2(p.vy, p.vx)); youAt.push([you.x, hurtCY(you), p.x, p.y]); } });
+          knives.forEach(function(p, k){ if (!prev[k] && !p.oHang){ prev[k] = true; goAt.push(one._f - t0); dirs.push(Math.atan2(p.vy, p.vx)); youAt.push([you.x, hurtCY(you), p.x, p.y]); if (k === 0) h0 = [p.oHome, p.oHomeT]; } });
         }
         out[t] = { n: knives.length, T: T, shape: knives[0].shape, dmg: knives[0].dmg, ids: Object.keys(knives.reduce(function(a, p){ a[p.bossAtk] = 1; return a; }, {})).length,
           hungAbove: hungAt.every(function(h){ return h.y < 0; }), goAt: goAt, dirs: dirs, aimErr: youAt.map(function(a, k){ return Math.abs(Math.atan2(a[1] - a[3], a[0] - a[2]) - dirs[k]); }),
-          home: knives[0].oHome, homeT: knives[0].oHomeT };
+          home: h0[0], homeT: h0[1] };
       });
       return out;`);
-    expect([r[1].n, r[2].n, r[3].n], '8, 12 and 16 knives').toEqual([8, 12, 16]);
+    expect([r[1].n, r[2].n, r[3].n], 'six knives at every tier: 1.2x of the five Four\'s seekers were ("nerf one." / "Fewer bullets"); it was 8, 12 and 16').toEqual([6, 6, 6]);
     for (const t of [1, 2, 3]) {
       expect(r[t].shape).toBe('oneknife');
       expect(r[t].dmg, 'a hit of her 33').toBe(33);
@@ -423,6 +425,14 @@ describe('KNIFE FLURRY! (it was SEEKERS!): "2, but homing."', () => {
     }
     expect(r[3].home, 'harder at tier 3').toBeGreaterThan(r[1].home);
     expect(r[3].homeT).toBeGreaterThan(r[1].homeT);
+    // "KNIFE FLURRY!: Nerf: gentler homing" (the owner, 2026-10-02, attack by attack): half the turn rate, and the homing ends sooner. It was 0.026 / 0.04 / 0.055 for 60 / 70 / 80 frames.
+    const was = { home: [0.026, 0.04, 0.055], homeT: [60, 70, 80] };
+    [1, 2, 3].forEach((t, k) => {
+      expect(r[t].home, `tier ${t}: half the turn rate it was (${was.home[k]})`).toBeCloseTo(was.home[k] / 2, 9);
+      expect(r[t].homeT, `tier ${t}: homing ends sooner than ${was.homeT[k]} frames`).toBeLessThan(was.homeT[k]);
+      // "shorter attacks" was not picked: with six knives they go more slowly, so the flurry lasts as long as it did (8 x 4, 12 x 3, 16 x 3 frames)
+      expect(r[t].T.n*r[t].T.every, `tier ${t}: the flurry is not shorter`).toBeGreaterThanOrEqual([32, 36, 48][k]);
+    });
   });
 
   it('a knife in the air turns toward you: step aside after it is thrown and its heading follows, for homeT frames, then flies straight', () => {
@@ -441,7 +451,7 @@ describe('KNIFE FLURRY! (it was SEEKERS!): "2, but homing."', () => {
 });
 
 describe('SHOCK RING!: the owner\'s own twist, two opposite twisting bursts', () => {
-  it('tier 1 is a plain ring of 24 in three bursts; from tier 2 the bursts turn opposite ways, gold and purple, and cross like a pinwheel; all one id', () => {
+  it('tier 1 is a plain ring of 16 in three bursts ("Fewer bullets": about 1.2x of the 14 it began as; and their gaps half as wide again); from tier 2 the bursts turn opposite ways, gold and purple, and cross like a pinwheel; all one id', () => {
     const r = STAGE(`
       var out = {};
       [1, 2, 3].forEach(function(t){
@@ -455,18 +465,18 @@ describe('SHOCK RING!: the owner\'s own twist, two opposite twisting bursts', ()
           ids: Object.keys(seen).length, off: bursts.map(function(x){ return +x[0]._h0.toFixed(4); }) };
       });
       return out;`);
-    expect(r[1].n, 'tier 1: three bursts of 24 (it was one of 14)').toEqual([24, 24, 24]);
+    expect(r[1].n, 'tier 1: three bursts of 16 (it was one of 14, then 24 a burst)').toEqual([16, 16, 16]);
     expect(r[1].spin, 'tier 1: no twist').toEqual([undefined, undefined, undefined]);
     expect(r[1].shape).toBeUndefined();
-    expect(r[2].n, 'tier 2: four bursts of 28').toEqual([28, 28, 28, 28]);
+    expect(r[2].n, 'tier 2: four bursts of 16 (it was 28)').toEqual([16, 16, 16, 16]);
     expect(r[2].spin.map(Math.sign), 'turning opposite ways, clockwise first').toEqual([1, -1, 1, -1]);
     expect(Math.abs(r[2].spin[0]), 'a few degrees a frame').toBeCloseTo(0.042, 6);
     expect(r[2].shape, 'in the Vortex stars').toBe('onering');
     expect(r[2].colors, 'gold and purple').toBe(2);
-    expect(r[3].n, 'tier 3: six bursts').toEqual([32, 32, 32, 32, 32, 32]);
+    expect(r[3].n, 'tier 3: six bursts of 16 (it was 32)').toEqual([16, 16, 16, 16, 16, 16]);
     expect(r[3].spin.map(Math.sign), 'alternating, clockwise first').toEqual([1, -1, 1, -1, 1, -1]);
     expect(Math.abs(r[3].spin[0]), 'turning harder').toBeGreaterThan(Math.abs(r[2].spin[0]));
-    expect(r[2].off[1] - r[2].off[0], 'the second ring is half a step round, so the arms cross').toBeCloseTo(Math.PI/28, 3);
+    expect(r[2].off[1] - r[2].off[0], 'the second ring is half a step round, so the arms cross').toBeCloseTo(Math.PI/16, 3);
     for (const t of [1, 2, 3]) expect(r[t].ids, `tier ${t}: one attack id`).toBe(1);
   });
 
@@ -497,7 +507,7 @@ describe('ONE GROWS GIANT! and POWER UNGROUNDED!: no twist, tiers all the same',
       return out;`);
     expect(r.r.map(x => +x.toFixed(2)), 'bigger each tier').toEqual([1.4, 1.5, 1.6]);
     expect(r.t, 'for longer').toEqual([480, 600, 720]);
-    expect(r.g, 'Power Ungrounded: a state, not a bullet -- the same at every tier').toEqual([[480, 75], [480, 75], [480, 75]]);
+    expect(r.g, 'Power Ungrounded: a state, not a bullet -- the same at every tier, ten seconds since "Buff: lasts longer" (it was 480 frames)').toEqual([[600, 75], [600, 75], [600, 75]]);
     expect(r.plats, 'the platform crush was cut ("remove 1 and 2")').toBe(true);
     expect([r.lunge, r.crush], 'and so was the lunge').toEqual(['undefined', 'undefined']);
   });
@@ -517,7 +527,7 @@ describe('MOON ROCKS!: star order', () => {
     expect(r.seconds, 'and the next rock is half way along it').toEqual(r.mids);
   });
 
-  it('tier 1: eight rocks, all at the spot you stood on; tier 2: ten in a star, each at where you stand as it goes; tier 3: fifteen, leading your run', () => {
+  it('tier 1: five rocks in a row; tier 2: seven in a star; tier 3: ten ("Fewer bullets": 1.2x of 4, 6 and 8); each at where you are as it goes, and leading your run (see below), thrown over as long as before', () => {
     const r = STAGE(`
       var out = {};
       [1, 2, 3].forEach(function(t){
@@ -527,7 +537,7 @@ describe('MOON ROCKS!: star order', () => {
         var rocks = own(), rel = rocks.map(function(p){ return [p.oHang.dx, p.oHang.dy]; }), goAt = [], dirs = [], youAt = [];
         var prev = rocks.map(function(){ return false; }), chips = oneArena(one).chips - chips0;
         for (var i=0; i<T.n*T.every + 12; i++){ one._atkTimer = 1e9; you.invuln = 99; you.x += 3; step();   // you drift right 3 a frame
-          rocks.forEach(function(p, k){ if (!prev[k] && !p.oHang){ prev[k] = true; goAt.push(one._f - t0); dirs.push(Math.atan2(p.vy, p.vx)); youAt.push([you.x, hurtCY(you), p.x, p.y]); } }); }
+          rocks.forEach(function(p, k){ if (!prev[k] && !p.oHang){ prev[k] = true; goAt.push(one._f - t0); dirs.push(Math.atan2(p.vy, p.vx)); youAt.push([you.x, hurtCY(you), p.x, p.y, you.vx, you.vy]); } }); }
         out[t] = { n: rocks.length, T: T, shape: rocks[0].shape, dmg: rocks[0].dmg, ids: Object.keys(rocks.reduce(function(a, p){ a[p.bossAtk] = 1; return a; }, {})).length, goAt: goAt,
           aim: rocks[0].oHang === null ? null : null, lock: lock, dirs: dirs, youAt: youAt, spread: Math.max.apply(null, rel.map(function(q){ return Math.abs(q[0]); })), up: rel.every(function(q){ return q[1] < 0; }), chips: chips,
           launch: null };
@@ -535,7 +545,8 @@ describe('MOON ROCKS!: star order', () => {
         fresh(); ONE_MOVES.moonrocks(one, you, ++BOSS_ATK_ID); out[t].launch = own().map(function(p){ return p.oHang.launch; });
       });
       return out;`);
-    expect([r[1].n, r[2].n, r[3].n], '"much harder": twice the rocks, and then more').toEqual([8, 10, 15]);
+    // (it was 8, 10 and 15 after "much harder"; 4, 6 and 8 before it)
+    expect([r[1].n, r[2].n, r[3].n], '"nerf one." / "Fewer bullets": 1.2x of the original 4, 6 and 8').toEqual([5, 7, 10]);
     for (const t of [1, 2, 3]) {
       expect(r[t].shape).toBe('moonrock');
       expect(r[t].ids, 'one id').toBe(1);
@@ -543,15 +554,40 @@ describe('MOON ROCKS!: star order', () => {
       expect(r[t].goAt.length, 'every rock goes').toBe(r[t].n);
       for (let k = 1; k < r[t].goAt.length; k++) expect(r[t].goAt[k] - r[t].goAt[k - 1], 'one after another').toBe(r[t].T.every);
       expect(r[t].chips, 'the Moon in her sky has lost a chunk with every volley').toBe(1);
+      expect(r[t].launch.every(l => l.aim === 'foe' && l.lead === r[t].T.lead), `tier ${t}: each rock at where you are as it goes, leading your run by the tier's lead`).toBe(true);
+      // each goes at you as it goes: the aim is where you stand, plus what you are doing (your speed x the lead)
+      r[t].youAt.forEach((a, k) => expect(Math.abs(Math.atan2(a[1] + a[5]*r[t].T.lead*0.5 - a[3], a[0] + a[4]*r[t].T.lead - a[2]) - r[t].dirs[k]), `tier ${t}: each rock goes at you as it goes`).toBeLessThan(0.1));
     }
-    expect(r[1].launch.every(l => l.aim === 'point' && l.px === r[1].lock[0]), 'tier 1: every rock at the spot you stood on').toBe(true);
-    expect(r[2].launch.every(l => l.aim === 'foe' && l.lead === 0), 'tier 2: each at where you are as it goes').toBe(true);
-    expect(r[3].launch.every(l => l.aim === 'foe' && l.lead === 10), 'tier 3: leading your run').toBe(true);
-    r[2].youAt.forEach((a, k) => expect(Math.abs(Math.atan2(a[1] - a[3], a[0] - a[2]) - r[2].dirs[k]), 'each rock goes at you as it goes').toBeLessThan(0.1));
-    // the rocks that went at the spot you stood on all aim there, though you have moved since
-    r[1].youAt.forEach((a, k) => expect(Math.abs(Math.atan2(r[1].lock[1] - a[3], r[1].lock[0] - a[2]) - r[1].dirs[k])).toBeLessThan(0.1));
-    expect(r[2].spread, 'in a star (95 px across), where tier 1 hangs its eight in a row 308 wide').toBeLessThanOrEqual(96);
-    expect(r[1].spread).toBeGreaterThan(150);
+    expect(r[2].spread, 'in a star (95 px across), where tier 1 hangs its five in a row').toBeLessThanOrEqual(96);
+    expect(r[1].spread, 'tier 1 hangs its five in a row, 44 apart: 88 each way from the middle').toBeCloseTo(88, 6);
+    // "attacks are not shorter" ("shorter attacks" was not picked): with fewer rocks they are thrown more slowly, so a throw lasts as long as it did (8 x 5, 10 x 6, 15 x 6 frames)
+    [1, 2, 3].forEach((t, k) => expect(r[t].T.n*r[t].T.every, `tier ${t}: the throw is not shorter`).toBeGreaterThanOrEqual([40, 60, 90][k]));
+  });
+
+  it('"rocks should anticipate your direction." (the owner, 2026-10-02): every rock leads your run at EVERY tier -- it used to be tier 3 alone, 10 frames; now 8, 12 and 16', () => {
+    const r = STAGE(`
+      var out = { leads: [], rows: [] };
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); one.x = you.x + 450; one.y = groundY() - 420;
+        var T = oneTier(one, 'moonrocks'); out.leads.push(T.lead);
+        ONE_MOVES.moonrocks(one, you, ++BOSS_ATK_ID);
+        you.vx = 5; you.vy = 0;   // you are running right at 5 a frame
+        var rocks = own();
+        rocks.forEach(function(p){ var H = p.oHang; p.oHang = null; p.delay = 0; oneLaunch(one, p, H); });
+        out.rows.push(rocks.map(function(p){
+          var a = Math.atan2(p.vy, p.vx), plain = Math.atan2(hurtCY(you) - p.y, you.x - p.x), led = Math.atan2(hurtCY(you) - p.y, you.x + 5*T.lead - p.x);
+          return { toLed: Math.abs(a - led), toPlain: Math.abs(a - plain) }; }));
+        you.vx = 0;
+      });
+      return out;`);
+    expect(r.leads, 'a lead at every tier, longer as the rocks come faster; tier 3 is no less than the 10 it was').toEqual([8, 12, 16]);
+    r.rows.forEach((rocks, i) => {
+      expect(rocks.length, `tier ${i + 1}: rocks`).toBeGreaterThan(0);
+      rocks.forEach((q) => {
+        expect(q.toLed, `tier ${i + 1}: the rock is aimed where you are heading`).toBeLessThan(1e-6);
+        expect(q.toPlain, `tier ${i + 1}: not where you stand`).toBeGreaterThan(0.005);
+      });
+    });
   });
 
   it('a rock that misses breaks on the surface under where it was thrown, with a shake, dust and three grey shards -- a platform between her and you is not a roof', () => {
@@ -588,7 +624,7 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
         one._telKind = 'eyelasers'; one._tel = oneTelLen(one, 'eyelasers'); one._eyeBurst = 0; one._atkTimer = 1e9; one._aimX = you.x; one._aimY = hurtCY(you);
         for (var i=0; i<320 && (one._tel > 0 || i < 3); i++){
           one._atkTimer = 1e9; you.invuln = 99; step();
-          var fresh1 = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p._b; });
+          var fresh1 = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p.oSweep && !p._b; });   // (the sweep after the last burst is its own, below)
           if (fresh1.length){ fresh1.forEach(function(p){ p._b = 1; }); bursts.push({ i: i, n: fresh1.length, id: fresh1[0].bossAtk, ids: Object.keys(fresh1.reduce(function(a, p){ a[p.bossAtk] = 1; return a; }, {})).length }); }
         }
         out[t] = { T: T, bursts: bursts, gap: one._atkTimer };
@@ -600,7 +636,8 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
       expect(r[t].bursts[0].id, 'the second burst has its own id').not.toBe(r[t].bursts[1].id);
     }
     expect(r[3].bursts[2].id, 'a third burst shares the second\'s: one more hit at most, not two').toBe(r[3].bursts[1].id);
-    expect([r[1].bursts[0].n, r[2].bursts[0].n, r[3].bursts[0].n], 'volleys x two eyes x a fan').toEqual([2 * 2 * 3, 3 * 2 * 3, 4 * 2 * 5]);
+    // volleys x two eyes x a fan: 1.2x of the 2, 4 and 18 a burst they were before the rebuild ("nerf one." / "Fewer bullets"); they were 12, 18 and 40 after "much harder"
+    expect([r[1].bursts[0].n, r[2].bursts[0].n, r[3].bursts[0].n], 'a burst: one volley of one, two of one, four of three, from each eye').toEqual([1 * 2 * 1, 2 * 2 * 1, 4 * 2 * 3]);
   });
 
   it('from tier 2 the second burst leads your run (you + velocity x lead frames), so the strafe that beat the first walks into the second; tier 1 aims both at the lock', () => {
@@ -614,7 +651,7 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
           one._atkTimer = 1e9; you.invuln = 99; you.vx = i > 30 ? 5 : 0;   // you stand still, then run right
           one.x = you.x - 250; one.y = groundY() - 300; one.vx = 0; one.vy = 0;   // held up and to the side, where her old orbit kept her (she flies level with you since 2026-10-03, and along her own row a strafe barely turns the aim)
           step();
-          var bolts = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p._b; });
+          var bolts = projectiles.filter(function(p){ return p.shape === 'onelaser' && !p.oSweep && !p._b; });
           if (bolts.length){
             bolts.forEach(function(p){ p._b = 1; });
             // the centre bolt of each eye's fan goes dead at the aim: the lock, or from the second burst on (tier 2 up) the lock plus the velocity she saw x lead
@@ -636,6 +673,95 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
       expect(r[t].bursts[1].errLock, 'so it is NOT aimed at the lock').toBeGreaterThan(0.01);
     }
     expect(r[3].T.lead, 'leading further at tier 3').toBeGreaterThan(r[2].T.lead);
+  });
+
+  // "some attacks need nerfs, some need buffs. give me these in question boxes." (the owner, 2026-10-02), "EYE LASERS! Buff: a sweep": after the last burst the beams sweep across once,
+  // with a tell for where the sweep goes. "Harder, same damage": every beam is a hit of that tier's laser, and one id for the whole sweep (one more chance to be hit, not more per hit).
+  it('"Buff: a sweep": after the last burst her eyes lock a wedge and show it for a while; then the beams sweep across it ONCE, a pair every few frames from one edge to the other, in an attack id of their own', () => {
+    const r = STAGE(`
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; one._atkLive = null; one._atkLo = null;
+        var T = oneTier(one, 'eyelasers'), S = T.sweep, burstIds = {}, sweep = [], tellAt = -1, fireAt = -1, plan0 = null, plan1 = null, tellPos = null, rFire = 0;
+        one._telKind = 'eyelasers'; one._tel = oneTelLen(one, 'eyelasers'); one._eyeBurst = 0; one._atkTimer = 1e9; one._aimX = you.x; one._aimY = hurtCY(you);
+        for (var i=0; i<500; i++){
+          one._atkTimer = 1e9; you.invuln = 1e9; one.vx = 0; one.vy = 0; one._hop = null; one.x = you.x - 500; one.y = groundY() - 300;
+          step();
+          projectiles.forEach(function(p){
+            if (p.shape !== 'onelaser' || p._m) return; p._m = 1;
+            if (p.oSweep) sweep.push({ i: i, a: Math.atan2(p.vy, p.vx), x: p.x, y: p.y, id: p.bossAtk, dmg: p.dmg, cap: p.bossCap, sh: p.shape });
+            else burstIds[p.bossAtk] = 1;
+          });
+          if (one._sweepP && tellAt < 0){ tellAt = i; plan0 = JSON.stringify(one._sweepP); tellPos = { ex: one.x, ey: one.y - 0.05*one.r, tx: you.x, ty: hurtCY(you) }; }
+          if (one._sweepP) plan1 = JSON.stringify(one._sweepP);
+          if (sweep.length && fireAt < 0){ fireAt = i; rFire = one.r; }
+          if (fireAt >= 0 && i > fireAt + S.n*S.every + 120) break;
+        }
+        var P = JSON.parse(plan0);
+        out[t] = { T: T, S: S, burstIds: Object.keys(burstIds).length, sweep: sweep, tellAt: tellAt, fireAt: fireAt, P: P, same: plan0 === plan1, tellPos: tellPos, left: !!one._sweepP, oneBusy: oneBusy(one),
+          r: rFire, dmg: oneDmg() };
+      });
+      return out;`);
+    for (const t of [1, 2, 3]) {
+      const g = r[t], S = g.S, P = g.P, sw = g.sweep, pairs = [...new Set(sw.map((x) => x.i))];
+      expect(g.tellAt, `tier ${t}: a sweep was shown after the last burst`).toBeGreaterThan(0);
+      expect(g.burstIds, `tier ${t}: the bursts have their ids (two: the third burst shares the second's)`).toBe(t === 1 ? 2 : 2);
+      expect(g.fireAt - g.tellAt, `tier ${t}: its tell lasts ${S.tel} frames before the beams go`).toBe(S.tel);
+      expect(S.tel, `tier ${t}: a tell you can read: at least half a second`).toBeGreaterThanOrEqual(30);
+      expect(g.same, `tier ${t}: the wedge does not move during the tell: it is where the sweep goes`).toBe(true);
+      expect(Math.abs(P.a1 - P.a0), `tier ${t}: a wedge ${S.span} radians wide`).toBeCloseTo(S.span, 9);
+      expect(Math.abs((P.a0 + P.a1)/2 - Math.atan2(g.tellPos.ty - g.tellPos.ey, g.tellPos.tx - g.tellPos.ex)), `tier ${t}: centred on where you stood`).toBeLessThan(0.08);
+      expect(sw.length, `tier ${t}: ${S.n} pairs of beams, one from each eye`).toBe(2*S.n);
+      expect(pairs.length, `tier ${t}: a pair at a time`).toBe(S.n);
+      pairs.forEach((i, k) => expect(i - pairs[0], `tier ${t}: a pair every ${S.every} frames`).toBe(k*S.every));
+      pairs.forEach((i, k) => {
+        const two = sw.filter((x) => x.i === i), want = P.a0 + (P.a1 - P.a0)*k/(S.n - 1);
+        expect(two.length, `tier ${t}, pair ${k + 1}: two beams`).toBe(2);
+        two.forEach((x) => expect(Math.abs(x.a - want), `tier ${t}, pair ${k + 1}: at ${want.toFixed(3)} rad, sweeping from the first edge to the last`).toBeLessThan(1e-6));
+        expect(Math.abs(Math.abs(two[0].x - two[1].x) - 0.56*g.r), 'one from each eye, set far apart').toBeLessThan(2.5);
+      });
+      expect(new Set(sw.map((x) => x.id)).size, `tier ${t}: one attack id for the whole sweep`).toBe(1);
+      expect(sw[0].id, 'and not one the bursts used').not.toBe(undefined);
+      expect(sw.every((x) => x.dmg === g.dmg*g.T.dmg && x.cap === g.dmg*g.T.dmg && x.sh === 'onelaser'), `tier ${t}: every beam a hit of that tier's laser (33 x ${g.T.dmg}): no more damage`).toBe(true);
+      expect(g.left, `tier ${t}: it sweeps once, and the wedge is spent`).toBe(false);
+    }
+    expect(r[3].S.span > r[2].S.span && r[2].S.span > r[1].S.span, 'wider as the tiers climb').toBe(true);
+    expect(r[3].S.n*r[3].S.every <= r[1].S.n*r[1].S.every + 12, 'and not slower').toBe(true);
+  });
+
+  it('the sweep is ONE hit and a dodge: standing in the wedge you take one hit of that tier\'s laser from the whole sweep, not one a beam; stepping out of the wedge in the tell, you take none; her attack is over after its last beam', () => {
+    const r = STAGE(`
+      var out = {};
+      var run = function(t, stay){
+        setTier(t); fresh(); one._atkLive = null; one._atkLo = null; one._hop = null;
+        var T = oneTier(one, 'eyelasers'), S = T.sweep, total = 0, fireAt = -1, over = -1, x0 = you.x, pin = null;
+        one._telKind = 'eyelasers'; one._tel = oneTelLen(one, 'eyelasers'); one._eyeBurst = 0; one._atkTimer = ONE_HOLD; one._aimX = you.x; one._aimY = hurtCY(you);
+        for (var i=0; i<520; i++){
+          one._atkTimer = ONE_HOLD; one.vx = 0; one.vy = 0; one._hop = null; one.x = x0 - 500; one.y = groundY() - 300;   // (held at the engine's hold, not parked: her watch runs, and says when the attack is over)
+          if (one._sweepP && !pin){   // the wedge is up: stay where you are, or step well out of it (beyond the edge it ends on)
+            projectiles = projectiles.filter(function(p){ return p.owner !== -2; });   // (the last burst's late volleys are another attack id's: this is the sweep's)
+            pin = { x: you.x, y: you.y };
+            if (!stay){ var P = one._sweepP, a = P.aim + P.dir*(S.span/2 + 0.9); pin = { x: one.x + Math.cos(a)*300, y: one.y + Math.sin(a)*300 }; }
+          }
+          if (pin){ you.x = pin.x; you.y = pin.y; you.vx = 0; you.vy = 0; you.hitstun = 0; you.burn = 0; you.bleed = 0; you.pct = 0; you.invuln = fireAt >= 0 ? 0 : 1e9; }
+          else you.invuln = 1e9;
+          var live0 = !!one._atkLive;
+          step();
+          if (pin && fireAt >= 0) total += you.pct;   // (from the first beam on, with no grace: only the attack's one id keeps it to a hit)
+          if (fireAt < 0 && own().some(function(p){ return p.oSweep; })) fireAt = i;
+          if (live0 && !one._atkLive && over < 0 && fireAt >= 0) over = i;
+        }
+        return { total: total, fireAt: fireAt, over: over, want: oneDmg()*T.dmg, S: S };
+      };
+      out.stay = [1, 2, 3].map(function(t){ return run(t, true); });
+      out.step = [1, 2, 3].map(function(t){ return run(t, false); });
+      return out;`);
+    r.stay.forEach((g, k) => {
+      expect(g.total, `tier ${k + 1}: standing in the wedge you are hit`).toBeGreaterThan(0);
+      expect(g.total, `tier ${k + 1}: once, for a hit of that tier's laser (${g.want}), not once a beam (${2*g.S.n} of them)`).toBeLessThanOrEqual(g.want + 2);
+      expect(g.over - g.fireAt, `tier ${k + 1}: her attack is over after its last beam: not before the last pair (${(g.S.n - 1)*g.S.every} frames in) has gone`).toBeGreaterThanOrEqual((g.S.n - 1)*g.S.every);
+    });
+    r.step.forEach((g, k) => expect(g.total, `tier ${k + 1}: out of the wedge you take nothing from it`).toBe(0));
   });
 });
 
@@ -736,7 +862,7 @@ describe('OUT OF ORBIT!: compressed planets', () => {
     expect(r[2].debrisAdded, 'at the end of its lane it cracks into five pieces').toBeGreaterThanOrEqual(5);
   });
 
-  it('the whole kick comes twice (three times at the top): the next lanes are lit where you stand after the last; 3, 4 and 5 lanes of 2, 3 and 4 planets', () => {
+  it('the whole kick comes twice (three times at the top): the next lanes are lit where you stand after the last; 3, 4 and 5 lanes of 1, 2 and 4 planets', () => {
     const r = STAGE(`
       var out = {};
       [1, 2, 3].forEach(function(t){
@@ -757,7 +883,8 @@ describe('OUT OF ORBIT!: compressed planets', () => {
       });
       return out;`);
     expect([r[1].feet0, r[2].feet0, r[3].feet0], 'the kick down 3, 4 and 5 lanes').toEqual([3, 4, 5]);
-    expect([r[1].planets0, r[2].planets0, r[3].planets0], 'with 2, 3 and 4 planets down each ("more bullets!")').toEqual([2 * 3, 3 * 4, 4 * 5]);
+    // with 1, 2 and 4 planets down each lane: 1.2x of the 1, 2 and 3 they were before the rebuild ("nerf one." / "Fewer bullets"); they were 2, 3 and 4 after "much harder"
+    expect([r[1].planets0, r[2].planets0, r[3].planets0], 'a kick of 3, 8 and 20 planets').toEqual([1 * 3, 2 * 4, 4 * 5]);
     expect(r[1].warns.length, 'tier 1: lit again for the second kick').toBe(1);
     expect(r[1].warns[0].ys, 'on the same number of lanes').toBe(3);
     expect(r[2].warns.length, 'tier 2: the same').toBe(1);
@@ -768,36 +895,66 @@ describe('OUT OF ORBIT!: compressed planets', () => {
 });
 
 describe('"one could be harder... much harder. more bullets! also longer attacks."  -- "Same damage per hit"', () => {
-  // What every attack made before this build: bullets in the whole move (zap: columns). Pinned so "far more" stays far more.
+  // What every attack made before the rebuild: bullets in the whole move (zap: columns), when each was one wave, ring, burst, volley or kick (the eye lasers' two bursts: 2 each). Pinned
+  // so "about 1.2x" has something to be 1.2x of -- "much harder" (2026-09-30) took every attack to at least 1.5x of this, and "nerf one." (2026-10-02) took it back down.
   const OLD = { zap: [3, 4, 5], screechy: [300, 300, 300], ring: [14, 14, 14], knives: [5, 5, 5], mindread: [1, 2, 3], moonrocks: [4, 6, 8],
     eyelasers: [4, 8, 36], hands: [3, 5, 7], orbitkick: [3, 8, 15] };
 
-  it('every attack makes at least half as many bullets again as it did, at every tier, and runs on for a while instead of landing in one frame', () => {
+  it('"nerf one." / "Fewer bullets": a part of every attack -- a wave, ring, burst, volley or kick -- is about 1.2x what the attack made before the rebuild, at every tier; and each still runs on for a while ("shorter attacks" was not picked)', () => {
     const r = STAGE(`
       var out = {};
       var go = function(k, t){
         setTier(t); fresh(); IMPACT_DEBRIS = [];
+        var T0 = oneTier(one, k), ringN = null;
+        if (k === 'screechy'){ var n0 = projectiles.length; oneScreechRing(one, T0, ++BOSS_ATK_ID); ringN = projectiles.length - n0; projectiles = []; }   // a ring, before any of it splits
         one.x = you.x - 900; one.y = groundY() - 380; you.x = WW*0.5 + 600; you.y = groundY() - you.r;
         var id = ++BOSS_ATK_ID, tgt = you, seen = new Set(), cols = 0, frames = 0, T = oneTier(one, k);
+        var parts = T.waves || T.rings || T.bursts || T.volleys || T.kicks || (k === 'hands' ? 3 : 1);   // what the move is made of: waves, rings, bursts, volleys, kicks
         one._eyeBurst = 0; one._telX = you.x; one._telY = hurtCY(you); one._aimX = you.x; one._aimY = hurtCY(you); one._telDir = 1; one._kickY = hurtCY(you);
         one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }]; one._zapCols = null; one._kickLanes = oneKickLanes(one, one._kickY);
-        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };
+        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !p.oSweep && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };
         if (k === 'eyelasers'){ one._telKind = k; one._tel = oneTelLen(one, k); }
         else { ONE_MOVES[k](one, tgt, id); count(); }
         for (var i=0; i<600 && (oneBusy(one) || one._tel > 0 || i < 2); i++){ one._atkTimer = 1e9; one.x = you.x - 900; one.y = groundY() - 380; you.invuln = 99; step(); count(); frames++; }
-        return { bullets: k === 'zap' ? cols : seen.size, frames: frames };
+        var bullets = k === 'zap' ? cols : seen.size;
+        return { bullets: bullets, frames: frames, parts: parts, per: ringN != null ? ringN : bullets/parts };
       };
       ['zap', 'screechy', 'ring', 'knives', 'mindread', 'moonrocks', 'eyelasers', 'hands', 'orbitkick', 'fold'].forEach(function(k){ out[k] = [1, 2, 3].map(function(t){ return go(k, t); }); });
       return out;`);
-    for (const k of Object.keys(OLD)) {
-      [0, 1, 2].forEach((t) => expect(r[k][t].bullets, `${k} at tier ${t + 1}: ${OLD[k][t]} before, ${r[k][t].bullets} now`).toBeGreaterThanOrEqual(OLD[k][t] * 1.5));
+    // a part of the move (a wave, ring, burst or kick; the whole move for the rocks and the knives) against what the whole move made before the rebuild (the eyelasers' old two bursts: half each)
+    const was = { ...OLD, eyelasers: OLD.eyelasers.map((x) => x / 2) };
+    for (const k of ['moonrocks', 'knives', 'ring', 'eyelasers', 'orbitkick']) {
+      [0, 1, 2].forEach((t) => {
+        const ratio = r[k][t].per / was[k][t];
+        expect(ratio, `${k} at tier ${t + 1}: ${was[k][t]} before the rebuild, ${r[k][t].per} a part now: about 1.2x, not less`).toBeGreaterThanOrEqual(1 - 1e-9);
+        expect(ratio, `${k} at tier ${t + 1}: ${was[k][t]} before the rebuild, ${r[k][t].per} a part now: about 1.2x, not much more (they were at least 1.5x)`).toBeLessThanOrEqual(1.35);
+      });
     }
+    // (Zap to Dust's waves, Screechy's rings and the hands' waves were at the original count already, and stay there)
+    for (const k of ['zap', 'screechy', 'hands']) {
+      [0, 1, 2].forEach((t) => expect(r[k][t].per / was[k][t], `${k} at tier ${t + 1}: ${was[k][t]} before the rebuild, ${r[k][t].per} a wave or ring now`).toBeLessThanOrEqual(1.35));
+    }
+    // ...and every attack is still made of as many parts as it was ("shorter attacks" was not picked): waves, rings, bursts, volleys, kicks
+    expect([1, 2, 3].map((t) => r.zap[t - 1].parts), 'zap: waves').toEqual([2, 3, 4]);
+    expect([1, 2, 3].map((t) => r.screechy[t - 1].parts), 'screechy: rings').toEqual([2, 2, 3]);
+    expect([1, 2, 3].map((t) => r.ring[t - 1].parts), 'ring: bursts').toEqual([3, 4, 6]);
+    expect([1, 2, 3].map((t) => r.eyelasers[t - 1].parts), 'eye lasers: bursts').toEqual([2, 2, 3]);
+    expect([1, 2, 3].map((t) => r.orbitkick[t - 1].parts), 'out of orbit: kicks').toEqual([2, 2, 3]);
+    expect([1, 2, 3].map((t) => r.mindread[t - 1].parts), 'mind read: volleys').toEqual([2, 2, 3]);
     // "also longer attacks": none of them is over in a frame or two any more (the eye lasers' two or three bursts, a ring after ring, wave after wave)
     for (const k of ['zap', 'screechy', 'ring', 'knives', 'mindread', 'moonrocks', 'eyelasers', 'hands', 'orbitkick', 'fold']) {
       [0, 1, 2].forEach((t) => expect(r[k][t].frames, `${k} at tier ${t + 1} runs on after it fires`).toBeGreaterThanOrEqual(24));
     }
     expect(r.fold[2].frames, 'the fold chain is longer at the top').toBeGreaterThan(r.fold[0].frames);
     expect(r.ring[2].frames, 'so is the ring').toBeGreaterThan(r.ring[0].frames);
+  });
+
+  it('MIND READ! "Keep" (the owner, 2026-10-02, attack by attack): not touched by "Fewer bullets" or anything else -- its rows are exactly what they were', () => {
+    const r = STAGE(`return JSON.parse(JSON.stringify(ONE_DECK_TIERS.mindread));`);
+    expect(r, 'three, five and seven orbs a volley; two volleys, and three; homing from tier 2; flung back from tier 2').toEqual([
+      { shots: 3, volleys: 2, vgap: 30, homing: 0, fling: 0, catchT: 0 },
+      { shots: 5, volleys: 2, vgap: 26, homing: 0.06, fling: 1, catchT: 0 },
+      { shots: 7, volleys: 3, vgap: 24, homing: 0.07, fling: 1.2, catchT: 26 }]);
   });
 
   it('and not one of them hits harder: no shot hits for more than that attack\'s own hit always did (her 33, times a special\'s own multiplier), and a move is one attack id (the eye lasers\' later bursts the one exception)', () => {
@@ -823,7 +980,7 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
         expect(row.maxCap, `${k} tier ${t + 1}: and the attack's cap is no more`).toBeLessThanOrEqual(row.unit + 1e-9);
         expect(row.unit, 'and that is at most 33 x 1.2 (the top of the specials\' own multipliers, unchanged)').toBeLessThanOrEqual(33*1.2 + 1e-9);
         // (the zap makes no shots: its columns hit through their own id, which the ZAP tests read)
-        expect(row.ids, `${k} tier ${t + 1}: ${k === 'eyelasers' ? 'two ids (the second burst has its own, a third shares it)' : 'one attack id'}`).toBe(k === 'eyelasers' ? 2 : (k === 'zap' ? 0 : 1));
+        expect(row.ids, `${k} tier ${t + 1}: ${k === 'eyelasers' ? 'three ids (the second burst has its own, a third shares it, and the sweep after them has its own)' : 'one attack id'}`).toBe(k === 'eyelasers' ? 3 : (k === 'zap' ? 0 : 1));
       });
     }
   });
@@ -846,11 +1003,13 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
   });
 });
 
-describe('contact damage: "Evil leafy level."', () => {
+describe('contact damage: "Evil leafy level." -- and then "nerf one." / "Lighter contact"', () => {
+  // The owner, 2026-10-02: "nerf one." Asked which, they picked "Lighter contact": touching her hurts half as much (ONE_CONTACT's damage halved: 0.3 of the base, 6.6%)
+  // and knocks less (13 to 9); her 75 frames of grace stay. The numbers below are those; the "Evil leafy level" ones they replace are in the comments.
   // Round 17 (the owner, 2026-10-01), Evil Leafy's nerfs: "softer contact (knockback 13 -> 9, grace 75 -> 120 f; One keeps her own copy of the old numbers)". One's contact was read off
   // Evil Leafy's own code (a boss hit of 0.6, kx = sign*13, -12, invuln = max(invuln, 75)); hers is softer now, so this test no longer reads her code: One keeps the numbers hers had, in its
   // own ONE_CONTACT, and a change to hers does not touch it.
-  it("touching her hurts as touching Evil Leafy did: the old numbers, One's own copy -- Evil Leafy's contact is softer now (9 and 120) and One does not read hers", () => {
+  it("touching her hurts HALF as much as it did (\"Lighter contact\": 6.6%, knocked 9 not 13, the same 75 frames of grace): One's own copy -- Evil Leafy's contact is 9 and 120 and One does not read hers", () => {
     const r = STAGE(`
       fresh(); one._hop = null; one._atkTimer = 1e9;
       var out = { c: ONE_CONTACT, base: BOSS_DMG_BASE, src: String(oneContact), el: [EL.touchKX, EL.touchGrace] };
@@ -859,16 +1018,24 @@ describe('contact damage: "Evil leafy level."', () => {
       one.x = you.x; one.y = you.y; you.vx = 0; you.vy = 0; step();
       out.one = { pct: you.pct, vx: you.vx, invuln: you.invuln };
       EL.touchKX = kx0; EL.touchGrace = g0;
+      // the same bump with the numbers it had before "Lighter contact" (0.6 of the base, knocked 13), the way it pushed: the knock it is lighter than
+      var dir = Math.sign(out.one.vx) || 1;
+      you.invuln = 0; you.hitstun = 0; you.pct = 0; you.vx = 0; you.vy = 0;
+      applyHit(you, BOSS_DMG_BASE*0.6, dir*13, -12, null, { bossAtk: ++BOSS_ATK_ID });
+      out.was = { pct: you.pct, vx: you.vx };
       return out;`);
     // The numbers Evil Leafy's contact check had when One copied them: applyHit(f, bossDmg()*0.6, kx, -12, ...), kx = sign*13, invuln = max(invuln, 75)
-    expect(r.c, "One's are the OLD numbers").toEqual({ dmg: r.base * 0.6, kx: 13, ky: -12, grace: 75 });
-    expect(r.c.dmg, 'about 13%: well under the 33 of one of her hits').toBeCloseTo(13.2, 6);
+    expect(r.c, "\"Lighter contact\": half the damage (0.3 of the base, it was 0.6), knocked 9 (it was 13), the -12 lift and the 75 frames of grace as they were").toEqual({ dmg: r.base * 0.3, kx: 9, ky: -12, grace: 75 });
+    expect(r.c.dmg, 'about 6.6%: half of the 13.2 it was, well under the 33 of one of her hits').toBeCloseTo(6.6, 6);
+    expect(r.c.dmg, 'exactly half').toBeCloseTo(r.base * 0.6 / 2, 9);
     expect(r.el, "Evil Leafy's are softer now (Round 17): knocked 9, 120 frames of grace").toEqual([9, 120]);
     expect(r.src, "One's contact reads its own ONE_CONTACT and never hers").toMatch(/ONE_CONTACT/);
     expect(r.src).not.toMatch(/\bEL\b|touchKX|touchGrace/);
-    expect(r.one.pct, 'with hers set to 1 and 1, One still hits for 13.2%').toBeCloseTo(13.2, 5);
-    expect(Math.abs(r.one.vx), 'knocked hard, the old 13 (hers would be 1)').toBeGreaterThan(8);
-    expect(r.one.invuln, 'with the old 75 frames of grace (hers would be 1)').toBeGreaterThanOrEqual(70);
+    expect(r.one.pct, 'with hers set to 1 and 1, One still hits for 6.6%').toBeCloseTo(6.6, 5);
+    expect(Math.abs(r.one.vx), 'knocked by her 9 (hers would be 1): well over a 1').toBeGreaterThan(5);
+    expect(Math.abs(r.one.vx), 'and less than the same bump at the old 13').toBeLessThan(Math.abs(r.was.vx) - 1);
+    expect(r.was.pct, 'which hurt twice as much').toBeCloseTo(13.2, 5);
+    expect(r.one.invuln, 'with her 75 frames of grace (hers would be 1)').toBeGreaterThanOrEqual(70);
     expect(r.one.invuln).toBeLessThanOrEqual(75);
   });
 
@@ -886,7 +1053,7 @@ describe('contact damage: "Evil leafy level."', () => {
       // a fighter beside her, outside her body
       fresh(); one.x = you.x + one.r + 200; one.y = you.y; one._atkTimer = 1e9; var q0 = you.pct; step(); out.beside = you.pct - q0;
       return out;`);
-    expect(r.first.pct, '13.2%').toBeCloseTo(13.2, 5);
+    expect(r.first.pct, '6.6% ("Lighter contact": it was 13.2)').toBeCloseTo(6.6, 5);
     expect(r.first.invuln, 'and a long grace').toBeGreaterThanOrEqual(70);
     expect(r.first.vy, 'thrown up').toBeLessThan(0);
     expect(r.during, 'no second bump while the grace lasts').toBe(0);
@@ -910,26 +1077,620 @@ describe('contact damage: "Evil leafy level."', () => {
       return out;`);
     expect(r.ghost, 'her ghost is on her side').toBe(0);
     expect(r.outside, 'just outside her body').toBe(0);
-    expect(r.giant, 'grown 1.6 times, the same spot is inside her').toBeCloseTo(13.2, 5);
+    expect(r.giant, 'grown 1.6 times, the same spot is inside her').toBeCloseTo(6.6, 5);
     expect(r.hop, 'nothing while she is in the Vortex').toBe(0);
     expect(r.fly, 'and nothing while she flies in').toBe(0);
     expect(r.dying, 'nor in her ending').toBe(0);
   });
 });
 
-describe('"also, no stock per phase."', () => {
-  it('her phase lines heal and give no stock; the reward Steve Cobs\'s tier lines call is the same function with no argument, and still gives the stock', () => {
+describe('stocks at her phase lines: "every 2 phases" (it was "also, no stock per phase.")', () => {
+  // The owner, 2026-09-30: "also, no stock per phase." Then, 2026-10-02, "nerf one.": asked about the stock at her phase lines, they picked "every 2 phases" -- a stock back at every
+  // SECOND line (the 2nd, the 4th), none at the 1st and the 3rd; the heal stays at every line. She has three lines (1500, 1000, 500), so in her fight it is the one at 1000.
+  it('the rule is every second line: a stock at the 2nd and the 4th, none at the 1st and the 3rd; the heal at every one', () => {
+    const r = STAGE(`
+      var out = { rule: [0, 1, 2, 3, 4, 5, 6].map(function(n){ return oneLineStock(n); }), every: ONE_STOCK_EVERY, rows: [] };
+      you._oneStocks0 = 9; you.stocks = 1;
+      for (var n = 1; n <= 4; n++){ you.pct = 100; onePhaseReward(!oneLineStock(n)); out.rows.push([Math.round(you.pct), you.stocks]); }
+      return out;`);
+    expect(r.every, '"every 2 phases"').toBe(2);
+    expect(r.rule, 'there is no line 0; then none, a stock, none, a stock, none, a stock').toEqual([false, false, true, false, true, false, true]);
+    expect(r.rows, 'four lines: healed 64 each time, and a stock only at the 2nd and the 4th').toEqual([[36, 1], [36, 2], [36, 2], [36, 3]]);
+  });
+
+  it('in her fight: the first line heals and gives no stock, the second heals and gives one, the third heals and gives none -- and she has no fourth', () => {
+    const r = STAGE(`
+      you._oneStocks0 = 3; you.stocks = 1;
+      var rows = [], line = function(hp){ you.pct = 100; one.hp = hp; one._atkTimer = 1e9; step(); rows.push([Math.round(you.pct), you.stocks, one._marks]); };
+      line(1490); line(990); line(490);
+      one.hp = 5; one._atkTimer = 1e9; step();   // (nearly nothing left of her: still no fourth line)
+      return { rows: rows, marks: one._marks, stocks: you.stocks };`);
+    expect(r.rows, 'line 1: healed, the one stock you had; line 2: healed, a stock back; line 3: healed, no stock').toEqual([[36, 1, 1], [36, 2, 2], [36, 2, 3]]);
+    expect([r.marks, r.stocks], 'three lines in all, and no stock for the end').toEqual([3, 2]);
+  });
+
+  it("Steve Cobs's reward is exactly what it was: onePhaseReward() with no argument heals and gives the stock, and each of his tier lines calls it so", () => {
     const r = STAGE(`
       var out = {};
-      you.stocks = 1; you._oneStocks0 = 3; you.pct = 100; onePhaseReward(true); out.hers = [you.pct, you.stocks];
-      you.pct = 100; onePhaseReward(); out.cobs = [you.pct, you.stocks];
-      you.pct = 100; one.hp = 1490; you.stocks = 1; one._atkTimer = 1e9; step(); out.line = [Math.round(you.pct), you.stocks, one._marks];
+      you.stocks = 1; you._oneStocks0 = 3; you.pct = 100; onePhaseReward(true); out.noStock = [Math.round(you.pct), you.stocks];
+      you.pct = 100; onePhaseReward(); out.cobs = [Math.round(you.pct), you.stocks];
+      you.pct = 100; you.stocks = 3; onePhaseReward(); out.capped = [Math.round(you.pct), you.stocks];   // up to the stocks you started with, and no more
+      out.src = String(updateCobs);
       return out;`);
-    expect(r.hers[0], 'a heal').toBeCloseTo(100 - 64, 5);
-    expect(r.hers[1], 'and the stock you had').toBe(1);
-    expect(r.cobs[0]).toBeCloseTo(36, 5);
-    expect(r.cobs[1], "Cobs keeps his (\"leave his as is until the owner has fought him\")").toBe(2);
-    expect(r.line, 'her own phase line: healed, same stock, phase 2').toEqual([36, 1, 1]);
+    expect(r.noStock, "her odd lines' call: the heal only").toEqual([36, 1]);
+    expect(r.cobs, 'no argument is his call: the heal and a stock back ("leave his as is until the owner has fought him")').toEqual([36, 2]);
+    expect(r.capped, 'never past the stocks you started with').toEqual([36, 3]);
+    expect(r.src, 'his tier line calls it with no argument, at every line').toMatch(/cobsTierUp\(s\); onePhaseReward\(\); \}/);
+    expect(r.src, "and knows nothing of her every-second-line rule").not.toMatch(/oneLineStock|ONE_STOCK_EVERY/);
+  });
+
+  it('...and his fight pays it at every one of his four tier lines: a heal and a stock back each time', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startCobsFight(['Knife'], { story:true, onEnd:function(){ return true; } });
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      s._hop = null; you.controller = 'still'; you._oneStocks0 = 9; you.stocks = 1;
+      var rows = [];
+      for (var n = 1; n <= 4; n++){ you.pct = 100; s.hp = s.maxHp - COBS_PHASE_HP*n - 1; s._atkTimer = 1e9; step(); rows.push([Math.round(you.pct), you.stocks, s._marks]); }
+      running = false; return rows; })()`);
+    expect(r, 'healed 64 and a stock back at the 1st, 2nd, 3rd and 4th line').toEqual([[36, 2, 1], [36, 3, 2], [36, 4, 3], [36, 5, 4]]);
+  });
+});
+
+// ONE ATTACK AT A TIME. The owner, 2026-10-02: "nerf one." Asked which, they picked "One attack at a time" -- the rule the twelve Boss Rush bosses now have (test/boss-picker.test.js),
+// and "do the 12 only", so it is done in her own update (oneAttackWatch), not through the picker. Her next attack waits until the attack before it is FULLY over -- every shot,
+// strike and queued part of it gone -- and then her normal gap runs: that gap is the window to hit her, with her on the screen and hittable. Her ghost and Power Ungrounded
+// shields are her mechanics and stay; Power Ungrounded is a move, so it counts as an attack.
+// A whole fight, frame by frame, with one still fighter who cannot be hurt (the engine's own check in test/boss-picker.test.js, for her): for each wind-up that begins, was anything of
+// the attack before it still going (a shot of hers, a queued part, a hop), and how long was it since that attack was over (the frame her watch let the gap go)? And twenty frames into
+// each window, is she on the screen, and does a shot of a fighter's hurt her (unless a shield of hers is up)?
+const ONE_FIGHT = (marks, frames, seed) => `(function(){
+  var sd = ${seed}, _R = Math.random; Math.random = function(){ sd |= 0; sd = (sd + 0x6d2b79f5) | 0; var t = Math.imul(sd ^ (sd >>> 15), 1 | sd); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  try {
+    SETTINGS.itemRate = 0; SETTINGS.stocks = 99; LOCAL_PLAYERS = 1; window.__oneEnd = undefined;
+    startOneFight(['Firey'], { story:true, onEnd:function(won){ window.__oneEnd = won; return true; } });
+    var one = summons.find(function(s){ return s._oneFight; }), f = fighters[0];
+    f.controller = 'still'; f.stocks = 99; one.hp = one.maxHp - 500*${marks} - 5;   // (the phase asked for: her lines are crossed in the first frames)
+    var turns = [], bad = [], hers = [], overAt = -1, gapAtOver = 0, lastAlive = 0, lastBusy = false, lastHop = false, lastHers = 0, probe = null, probes = 0, hits = 0, off = [], missed = [], windows = 0, shielded = 0, ghostAge = 0, kinds = {};
+    for (var i=0;i<${frames};i++){
+      var wasLive = !!one._atkLive, pre = one._tel;
+      f.invuln = 1e9; f.pct = 0; f.dead = false; f.vx = 0;
+      if (one._ghost && !one._ghost.dead && ++ghostAge > 40){ oneGhostDown(one._ghost, true); ghostAge = 0; }   // (her ghost is her mechanic, and a still fighter cannot kill it: it falls after a while)
+      if (!probe && !one._atkLive && !(one._tel > 0) && !one._hop && overAt >= 0 && i - overAt === 20){
+        windows++;
+        if (oneGhostAlive(one) || (one._ungrounded && !one._grounded)) shielded++;
+        else {
+          if (!(one.x > -one.r && one.x < WW + one.r && one.y + one.r > 0 && one.y - one.r < WH)) off.push([i, Math.round(one.x), Math.round(one.y)]);
+          probe = { hp0: one.hp, at: i };
+          addProj({ owner:f.idx, ownerObj:f, x:one.x, y:one.y, vx:0, vy:0, r:8, dmg:3, kb:0, life:4, grav:false, noAim:true });
+        }
+      }
+      step();
+      if (probe){ probes++; if (one.hp < probe.hp0) hits++; else missed.push(probe.at); one.hp = probe.hp0; probe = null; }
+      if (wasLive && !one._atkLive && overAt < 0){ overAt = i; gapAtOver = oneGap(one); }
+      if (!(pre > 0) && one._tel > 0){
+        turns.push({ i: i, kind: one._telKind, since: overAt >= 0 ? i - overAt : null, gap: gapAtOver }); kinds[one._telKind] = 1;
+        if (lastAlive || lastBusy || lastHop) bad.push({ i: i, kind: one._telKind, alive: lastAlive, busy: lastBusy, hop: lastHop });
+        if (lastHers) hers.push({ i: i, kind: one._telKind, n: lastHers });
+        overAt = -1;
+      }
+      var lo = one._atkLive ? one._atkLive.lo : null;
+      lastBusy = !(one._tel > 0) && oneBusy(one);
+      lastHop = !!one._hop || (!!one._hopPending && !one._ungrounded);
+      lastAlive = lo == null ? 0 : projectiles.filter(function(p){ return bossShotLive(p, lo); }).length;
+      lastHers = projectiles.filter(function(p){ return p.owner === -2 && p.life > 0 && !p.lingers && !p.trap; }).length;   // any shot of hers at all
+      if (one._tel > 0){ lastBusy = false; lastAlive = 0; lastHop = false; lastHers = 0; }
+    }
+    return { turns: turns, bad: bad, hers: hers, probes: probes, hits: hits, off: off, missed: missed, windows: windows, shielded: shielded, marks: one._marks, kinds: Object.keys(kinds) };
+  } finally { Math.random = _R; }
+})()`;
+
+describe('"One attack at a time": the next wind-up waits until the last of the attack before it is gone, and the gap counted from then is the window to hit her', () => {
+  for (const marks of [0, 1, 2, 3]) {
+    it(`through a fight in phase ${marks + 1}, no wind-up begins under a shot, a queued part or a hop of the attack before it; the window after is at least her gap; she is on the screen and a hit hurts her`, () => {
+      const r = W.eval(ONE_FIGHT(marks, 2600, 40 + marks));
+      const at = `phase ${marks + 1}`;
+      expect(r.marks, `${at}: the fight is in the phase asked for`).toBe(marks);
+      expect(r.turns.length, `${at}: she keeps attacking (nothing waits for ever): ${r.turns.map((t) => t.kind)}`).toBeGreaterThanOrEqual(4);
+      expect(r.bad, `${at}: no wind-up under a live shot of the attack before it, a queued part of it, or its hop`).toEqual([]);
+      expect(r.hers, `${at}: nor with any shot of hers in the air at all`).toEqual([]);
+      for (const t of r.turns) if (t.since != null) expect(t.since + 1, `${at}: the turn at frame ${t.i} (${t.kind}) came ${t.since} frames after the last was over; her gap is ${t.gap}`).toBeGreaterThanOrEqual(t.gap);
+      expect(r.windows, `${at}: windows were measured`).toBeGreaterThanOrEqual(3);
+      expect(r.windows - r.shielded, `${at}: and most of them were not under a shield of hers`).toBeGreaterThanOrEqual(2);
+      expect(r.off, `${at}: on the screen in the window`).toEqual([]);
+      expect(r.missed, `${at}: a fighter's shot hurts her in the window (her ghost and Power Ungrounded are the shields that stay)`).toEqual([]);
+    }, 240000);
+  }
+
+  it('over means: nothing queued, no wind-up, no hop (running, or still to come), no shot of the attack alive -- not a trap, not what only lies there (`lingers`), not an older attack\'s, not one that has left the arena for good (it is taken out); her ash, cracks and giant state are terrain, not the attack', () => {
+    const r = STAGE(`
+      var out = {}, A = { lo: 10 }, mk = function(o){ return Object.assign({ owner:-2, x:300, y:300, vx:0, vy:0, r:10, life:50, bossAtk:11, dmg:5 }, o); };
+      fresh(); one._hop = null; one._hopPending = false; one._ungrounded = false; one._tel = 0; one._q = []; projectiles = [];
+      out.none = oneAttackOver(one, A);
+      one._tel = 5; out.winding = oneAttackOver(one, A); one._tel = 0;
+      one._q = [{ at: one._f + 50, fn: function(){} }]; out.queued = oneAttackOver(one, A); one._q = [];
+      one._hop = { ph:'out', t:0, r0:one.r, giant:false }; out.hopping = oneAttackOver(one, A); one._hop = null;
+      one._hopPending = true; out.hopToCome = oneAttackOver(one, A);
+      one._ungrounded = true; out.hopHeld = oneAttackOver(one, A); one._ungrounded = false; one._hopPending = false;
+      projectiles = [mk({ x:-400, vx:-5 }), mk({ x:WW + 400, vx:5 })]; out.gone = [oneAttackOver(one, A), projectiles.map(function(p){ return p.life; })];
+      projectiles = [mk({ x:-400, vx:5 })]; out.coming = [oneAttackOver(one, A), projectiles[0].life];
+      projectiles = [mk({ x:-400, vx:-5, delay:30 })]; out.waiting = [oneAttackOver(one, A), projectiles[0].life];
+      projectiles = [mk({ trap:true }), mk({ lingers:true }), mk({ bossAtk:3 }), mk({ bossAtk:null }), mk({ life:0 })]; out.terrain = oneAttackOver(one, A);
+      projectiles = [mk({ })]; out.alive = oneAttackOver(one, A);
+      projectiles = []; one._ash = [{ x:300, y:300, r:50, life:100, max:100 }]; oneArena(one).marks.push({ x:1, y:1, w:50, kind:'crack', born:0, seed:0 }); one._giantT = 300;
+      out.stands = oneAttackOver(one, A); one._ash = []; one._giantT = 0;
+      return out;`);
+    expect(r.none, 'nothing going: over').toBe(true);
+    expect(r.winding, 'a wind-up is the attack, not its end').toBe(false);
+    expect(r.queued, 'a queued part of it still to run: not over').toBe(false);
+    expect(r.hopping, 'her Vortex hop is the end of a special, and the window comes after it: not over').toBe(false);
+    expect(r.hopToCome, 'and one still to come: not over').toBe(false);
+    expect(r.hopHeld, 'a hop her shield holds back does not hold the attack (it is dropped: see below)').toBe(true);
+    expect(r.gone[0], 'shots out past either edge and still going are gone: over').toBe(true);
+    expect(r.gone[1], 'and taken out of the game, since nothing out there can hit anyone').toEqual([0, 0]);
+    expect(r.coming[0], 'a shot coming in from beyond the edge is not gone').toBe(false);
+    expect(r.coming[1]).toBeGreaterThan(0);
+    expect(r.waiting, 'a shot waiting on its delay has not begun: not gone').toEqual([false, 50]);
+    expect(r.terrain, 'a trap, a thing that lies there, an older attack\'s shot, a shot with no id, a dead one: none of them is the attack').toBe(true);
+    expect(r.alive, 'a live shot with this attack\'s id: not over').toBe(false);
+    expect(r.stands, 'her ash piles, her cracks and the giant state are what she leaves standing: terrain ("Keep hazards going")').toBe(true);
+  });
+
+  it('her clock: held while the attack is going, let go to her gap when it is over; one parked for good (a test\'s 1e9) is not watched and stays parked', () => {
+    const r = STAGE(`
+      var out = {};
+      fresh(); one._hop = null; one._hopPending = false; one._tel = 0; one._q = []; projectiles = [];
+      one._atkLive = { lo: 0 }; one._atkTimer = 1e9; oneAttackWatch(one); out.parked = [one._atkTimer, one._atkLive];
+      one._atkTimer = 10; one._atkLive = { lo: 0 }; projectiles = [{ owner:-2, x:300, y:300, vx:0, vy:0, r:10, life:50, bossAtk:5, dmg:5 }]; oneAttackWatch(one); out.held = [one._atkTimer, !!one._atkLive];
+      projectiles = []; oneAttackWatch(one); out.let = [one._atkTimer, !!one._atkLive, oneGap(one)];
+      var t0 = one._atkTimer = 77; oneSeqEnd(one, 3); one._q[0].fn(); out.marker = [t0, one._atkTimer]; one._q = [];
+      return out;`);
+    expect(r.parked, 'parked: the watch lets go and leaves the clock where it was').toEqual([1e9, null]);
+    expect(r.held, 'a shot of the attack is alive: the clock is held').toEqual([1e6, true]);
+    expect(r.let[0], 'the shot is gone: her gap starts, her own gap').toBe(r.let[2]);
+    expect(r.let[1]).toBe(false);
+    expect(r.marker[1], 'the end of a sequence no longer starts the gap: it only holds the attack open to its tail').toBe(r.marker[0]);
+  });
+
+  it('Power Ungrounded is a move, so it counts as an attack: it winds up and fires like the rest, her gap follows its cast (not a second wind-up at once), and the shield it raises stays up and keeps its rules', () => {
+    const r = STAGE(`
+      setTier(1); fresh(); you.invuln = 1e9;
+      one._telKind = 'ungrounded'; one._tel = 3; one._atkTimer = 50; one._atkLive = null; one._atkLo = null; one._hopPending = false;
+      var out = { firedAt: -1, releaseAt: -1, windupAt: -1, gap: oneGap(one), shieldAtRelease: null, took: null, liveAtFire: null, upAtWindup: null };
+      for (var i=0;i<300 && out.windupAt < 0;i++){
+        you.invuln = 1e9; you.pct = 0;
+        var live0 = !!one._atkLive, pre = one._tel, ung0 = one._ungrounded; step();
+        if (out.firedAt < 0 && one._ungrounded && !ung0){ out.firedAt = i; out.liveAtFire = !!one._atkLive; }
+        if (live0 && !one._atkLive && out.releaseAt < 0){ out.releaseAt = i; out.shieldAtRelease = one._ungrounded && !one._grounded; var hp0 = one.hp; out.took = oneTakeDamage(one, 10, you); one.hp = hp0; }
+        if (out.releaseAt >= 0 && !(pre > 0) && one._tel > 0){ out.windupAt = i; out.upAtWindup = one._ungrounded; }
+      }
+      return out;`);
+    expect(r.firedAt, 'it fired').toBeGreaterThanOrEqual(0);
+    expect(r.liveAtFire, 'and it is an attack: her clock is held on it, as on any other').toBe(true);
+    expect(r.releaseAt - r.firedAt, 'it has no shot, so it is over at once').toBeLessThanOrEqual(2);
+    expect(r.windupAt - r.releaseAt + 1, 'and her gap runs before the next wind-up begins').toBeGreaterThanOrEqual(r.gap);
+    expect(r.shieldAtRelease, 'the shield it raised is still up').toBe(true);
+    expect(r.took, 'and still keeps everything off her (no damage) until it is grounded').toBe(0);
+    expect(r.upAtWindup, 'it outlasts the gap: her next attack comes with it still up').toBe(true);
+  });
+
+  it('the Vortex hop a special ends with is part of the attack: her gap starts after it, with her on the screen; and a hop her shield holds back is dropped', () => {
+    const r = STAGE(`
+      setTier(1); fresh(); you.invuln = 1e9;
+      one._telKind = 'moonrocks'; one._tel = 2; one._atkTimer = 50; one._atkLive = null; one._atkLo = null; one._hopPending = false;
+      var out = { hopSeen: false, release: null };
+      for (var i=0;i<700 && !out.release;i++){
+        you.invuln = 1e9; you.pct = 0;
+        var live0 = !!one._atkLive; step();
+        if (one._hop) out.hopSeen = true;
+        if (live0 && !one._atkLive) out.release = { i: i, hop: !!one._hop, pending: !!one._hopPending, hidden: oneHopHidden(one), x: Math.round(one.x), y: Math.round(one.y), r: one.r, base: one._baseR };
+      }
+      // a hop her shield holds back: she is ungrounded when a hop is due -- it is dropped, not kept for the middle of a window
+      fresh(); one._hop = null; one._tel = 0; one._q = []; one._atkLive = null; one._atkTimer = 1e9; one._ungrounded = true; one._ungroundT = 300; one._hopPending = true; step();
+      out.held = { pending: !!one._hopPending, hop: !!one._hop };
+      one._ungrounded = false; one._ungroundT = 0;
+      return Object.assign(out, { WW: WW, WH: WH });`);
+    expect(r.hopSeen, 'a special sent her through the Vortex').toBe(true);
+    expect(r.release, 'and her gap began').not.toBe(null);
+    expect(r.release.hop || r.release.pending || r.release.hidden, 'after it: no hop running or to come, and she is not in the Vortex').toBe(false);
+    expect(r.release.r, 'a body again, whole size').toBe(r.release.base);
+    expect(r.release.x > 0 && r.release.x < r.WW && r.release.y > 0 && r.release.y < r.WH, 'on the screen (in the arena)').toBe(true);
+    expect(r.held, 'a hop her shield holds back is dropped').toEqual({ pending: false, hop: false });
+  });
+});
+
+// The owner, 2026-10-02, after "nerf one.": "also, shock ring spacing should be bigger. same thing for screechy. increase delay for both out of orbit and zap to dust." -- and, asked what
+// spacing was meant: "no, like delay between the 2 bursts(tho keep that too)". So SHOCK RING! and SCREECHY! wait longer between their bursts and rings (twice as long), AND leave wider
+// gaps: the ring's pellets half as far again apart or more, the screech's gaps half as wide again or more -- with the shatter cut around them, so it cannot close them.
+describe('"shock ring spacing should be bigger. same thing for screechy." / "no, like delay between the 2 bursts(tho keep that too)"', () => {
+  it('SHOCK RING!: the delay between its bursts is at least half as long again (it is twice), and the pellets of a burst -- in both twisting bursts -- are at least half as far apart again', () => {
+    const r = STAGE(`
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); one.x = WW*0.5 - 900; one.y = groundY() - 420;
+        var T = oneTier(one, 'ring'), f0 = one._f;
+        ONE_MOVES.ring(one, you, ++BOSS_ATK_ID);
+        var at = one._q.map(function(e){ return e.at - f0; });   // when each later burst (and the end of the sequence) is due
+        projectiles = []; one._q = [];
+        var gapsOf = function(b){   // the least angle between neighbouring pellets of burst b
+          var n0 = projectiles.length; oneRingBurst(one, T, ++BOSS_ATK_ID, b);
+          var as = projectiles.slice(n0).map(function(p){ return Math.atan2(p.vy, p.vx); }).sort(function(x, y){ return x - y; });
+          var steps = as.map(function(a, i){ return i ? a - as[i - 1] : (as[0] + 2*Math.PI) - as[as.length - 1]; });
+          return { n: as.length, min: Math.min.apply(null, steps), spin: projectiles[n0].oSpin }; };
+        out[t] = { T: T, at: at, even: gapsOf(0), odd: gapsOf(1) };
+      });
+      return out;`);
+    const was = { gap: [16, 14, 12], n: [24, 28, 32], bursts: [3, 4, 6] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, T = r[t].T;
+      r[t].at.slice(0, T.bursts - 1).forEach((a, i) => expect(a, `tier ${t}: burst ${i + 2} is due ${T.gap} frames after the one before`).toBe((i + 1) * T.gap));
+      expect(T.gap / was.gap[k], `tier ${t}: the delay between the bursts is at least half as long again (it was ${was.gap[k]} frames, it is ${T.gap})`).toBeGreaterThanOrEqual(1.5);
+      expect(T.bursts, `tier ${t}: and there are as many bursts as there were`).toBe(was.bursts[k]);
+      for (const [which, g] of [['even (clockwise)', r[t].even], ['odd (counter-clockwise)', r[t].odd]]) {
+        expect(g.n, `tier ${t}, the ${which} burst: ${g.n} pellets`).toBe(T.n);
+        expect(g.min / (2*Math.PI/was.n[k]), `tier ${t}, the ${which} burst: the pellets are at least half as far apart again (it was ${was.n[k]} round, it is ${g.n})`).toBeGreaterThanOrEqual(1.5 - 1e-9);
+      }
+    }
+    expect(r[2].even.spin * r[2].odd.spin, 'the two bursts still turn opposite ways').toBeLessThan(0);
+  });
+
+  it('SCREECHY!: the delay between its rings is at least half as long again (it is twice), and its gaps are at least half as wide again -- and the shatter does not close them', () => {
+    const r = STAGE(`
+      var out = {}, R0 = Math.random;
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; you.x = WW*0.5 - 1500;   // (far away)
+        var T = oneTier(one, 'screechy'), cx = WW*0.5, cy = groundY() - 900;
+        one.x = cx; one.y = cy;
+        var f0 = one._f; ONE_MOVES.screechy(one, you, ++BOSS_ATK_ID); var at = one._q.map(function(e){ return e.at - f0; }); projectiles = []; one._q = [];
+        // a ring with its gaps where we say, run on until every pellet has split and flown out; where is the nearest pellet to each gap's middle?
+        var seq = [0.05, 0.30, 0.55, 0.80], k = 0; Math.random = function(){ return k < seq.length ? seq[k++] : R0(); };
+        try { oneScreechRing(one, T, ++BOSS_ATK_ID); } finally { Math.random = R0; }
+        var centers = seq.slice(0, T.gaps).map(function(u){ return u*2*Math.PI; });
+        var wrap = function(a){ return Math.abs(((a + Math.PI*3) % (Math.PI*2)) - Math.PI); };
+        var look = function(){
+          var ps = own().filter(function(p){ return p.life > 0 && p.ring; });
+          return { n: ps.length, nearest: centers.map(function(c){ var m = 9; ps.forEach(function(p){ m = Math.min(m, wrap(Math.atan2(p.y - cy, p.x - cx) - c)); }); return m; }),
+            rmin: Math.min.apply(null, ps.map(function(p){ return Math.hypot(p.x - cx, p.y - cy); })) }; };
+        var early = null, late = null, split = T.split || 0;
+        for (var i=0;i<80;i++){ one._atkTimer = 1e9; one.x = cx; one.y = cy; one.vx = 0; one.vy = 0; one._hop = null; you.invuln = 1e9; step(); if (i === split + 15) early = look(); }
+        late = look();
+        out[t] = { T: T, at: at, early: early, late: late, centers: centers.length };
+      });
+      return out;`);
+    const was = { ringGap: [34, 30, 26], half: [0.24, 0.21, 0.18], rings: [2, 2, 3] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, T = r[t].T;
+      r[t].at.slice(0, T.rings - 1).forEach((a, i) => expect(a, `tier ${t}: ring ${i + 2} is due ${T.ringGap} frames after the one before`).toBe((i + 1) * T.ringGap));
+      expect(T.ringGap / was.ringGap[k], `tier ${t}: the delay between the rings is at least half as long again (it was ${was.ringGap[k]} frames, it is ${T.ringGap})`).toBeGreaterThanOrEqual(1.5);
+      expect(T.rings, `tier ${t}: and there are as many rings as there were`).toBe(was.rings[k]);
+      expect(T.half / was.half[k], `tier ${t}: each gap, once the ring has shattered, is at least half as wide again (${was.half[k]} each side it was, ${T.half} it is)`).toBeGreaterThanOrEqual(1.5 - 1e-9);
+      for (const [when, g] of [['soon after the split', r[t].early], ['out where it has flown on', r[t].late]]) {
+        expect(g.n, `tier ${t}, ${when}: the ring is there`).toBeGreaterThan(100);
+        g.nearest.forEach((m, c) => expect(m, `tier ${t}, ${when}: the nearest pellet to the middle of gap ${c + 1} is ${m.toFixed(3)} rad away; the gap is ${T.half} each side, and the shatter must not close it`).toBeGreaterThanOrEqual(T.half - 0.02));
+      }
+    }
+    // (what it was: the shatter's pair veer half of `veer` each way into the gap, and left 0.13 each side at tier 2 and 0.06 at tier 3 -- no room for a fighter at all)
+    expect(r[3].late.nearest.every((m) => m > 0.2), 'tier 3 leaves room: more than three times the 0.06 the old gaps were left with').toBe(true);
+  });
+});
+
+// The owner, 2026-10-02, in the same breath: "increase delay for both out of orbit and zap to dust." The coordinator's reading, which these tests hold: a longer warning before each pillar
+// of ZAP TO DUST! strikes and more time between its waves; a longer tell before OUT OF ORBIT!'s planets launch and more time between its kicks. Half as long again (1.5x) in each.
+describe('"increase delay for both out of orbit and zap to dust."', () => {
+  const MARK = `var mark = function(kind){ var fresh1 = oneFx.filter(function(e){ return e.kind === kind && !e._m; }); fresh1.forEach(function(e){ e._m = 1; }); return fresh1; };`;
+
+  it('ZAP TO DUST!: the first wave comes 75 frames after the wind-up begins (it was 50), each light before a later wave shows half as long again, and the waves come half as far apart again', () => {
+    const r = STAGE(`
+      ${MARK}
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; one.x = you.x + 900; one.y = groundY() - 420;
+        var T = oneTier(one, 'zap');
+        one._telKind = 'zap'; one._tel = oneTelLen(one, 'zap'); one._telX = you.x; one._telY = hurtCY(you); one._zapCols = null; one._atkLive = null; one._atkTimer = 1e9;
+        var tel0 = one._tel, warns = [], lands = [];
+        for (var i=0; i<tel0 + T.waves*T.gap + 60; i++){
+          one._atkTimer = 1e9; you.invuln = 1e9; one._hop = null;
+          step();
+          var w = mark('zapwarn'); if (w.length) warns.push({ i: i, life: w[0].life, max: w[0].max });
+          var c = mark('column'); if (c.length) lands.push(i);
+        }
+        out[t] = { T: T, tel0: tel0, warns: warns, lands: lands };
+      });
+      return out;`);
+    const was = { tel: 50, warn: [22, 20, 18], gap: [36, 32, 28], waves: [2, 3, 4] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, T = r[t].T;
+      expect(r[t].tel0 / was.tel, `tier ${t}: the tell before the first pillars is at least half as long again (it was ${was.tel} frames, it is ${r[t].tel0})`).toBeGreaterThanOrEqual(1.5);
+      expect(r[t].lands[0] + 1, `tier ${t}: the first wave comes down as that tell ends`).toBe(r[t].tel0);
+      expect(r[t].lands.length, `tier ${t}: and there are as many waves as there were`).toBe(was.waves[k]);
+      expect(T.warn / was.warn[k], `tier ${t}: the light before a later wave shows at least half as long again (it was ${was.warn[k]} frames, it is ${T.warn})`).toBeGreaterThanOrEqual(1.5);
+      expect(T.gap / was.gap[k], `tier ${t}: the waves are at least half as far apart again (it was ${was.gap[k]} frames, it is ${T.gap})`).toBeGreaterThanOrEqual(1.5);
+      expect(T.warn, `tier ${t}: a tell you can read: lit for at least half a second (30 frames) at tiers 1 and 2, nearly that at tier 3`).toBeGreaterThanOrEqual(27);
+      r[t].lands.slice(1).forEach((l, j) => expect(l - r[t].lands[j], `tier ${t}: wave ${j + 2} comes ${T.gap} frames after wave ${j + 1}`).toBe(T.gap));
+      expect(r[t].warns.length, `tier ${t}: a light before each later wave`).toBe(was.waves[k] - 1);
+      r[t].warns.forEach((w, j) => {
+        expect(w.life, 'it is lit for the whole warning').toBe(T.warn);
+        expect(r[t].lands[j + 1] - w.i, `tier ${t}: and the wave lands as the light ends`).toBe(T.warn);
+      });
+    }
+  });
+
+  it('OUT OF ORBIT!: the kick comes 72 frames after the wind-up begins (it was 48), and the next lanes are lit 66 frames after a kick for 45 before the next one (it was 44 and 30)', () => {
+    const r = STAGE(`
+      ${MARK}
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; one.x = you.x - 300; one.y = groundY() - 330;
+        var T = oneTier(one, 'orbitkick');
+        one._telKind = 'orbitkick'; one._tel = oneTelLen(one, 'orbitkick'); one._telDir = 1; one._kickY = hurtCY(you); one._kickLanes = oneKickLanes(one, one._kickY); one._atkLive = null; one._atkTimer = 1e9;
+        var tel0 = one._tel, foots = [], warns = [];
+        for (var i=0; i<tel0 + T.kicks*(ONE_KICK_REST + ONE_KICK_WARN) + 60; i++){
+          one._atkTimer = 1e9; you.invuln = 1e9; one.x = you.x - 300; one.y = groundY() - 330; one._hop = null;
+          step();
+          var f = mark('foot'); if (f.length) foots.push(i); var w = mark('lanewarn'); if (w.length) warns.push({ i: i, life: w[0].life, max: w[0].max });
+        }
+        out[t] = { T: T, tel0: tel0, foots: foots, warns: warns, rest: ONE_KICK_REST, warn: ONE_KICK_WARN };
+      });
+      return out;`);
+    const was = { tel: 48, rest: 44, warn: 30, kicks: [2, 2, 3] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, g = r[t];
+      expect(g.tel0 / was.tel, `tier ${t}: the tell before the planets launch is at least half as long again (it was ${was.tel} frames, it is ${g.tel0})`).toBeGreaterThanOrEqual(1.5);
+      expect(g.foots[0] + 1, `tier ${t}: the first kick comes as that tell ends`).toBe(g.tel0);
+      expect(g.foots.length, `tier ${t}: and there are as many kicks as there were`).toBe(was.kicks[k]);
+      expect(g.rest / was.rest, 'the wait after a kick before the next lanes are lit is at least half as long again').toBeGreaterThanOrEqual(1.5);
+      expect(g.warn / was.warn, 'and the lanes are lit at least half as long again before the next kick').toBeGreaterThanOrEqual(1.5);
+      expect(g.warns.length, `tier ${t}: the next lanes are lit before each later kick`).toBe(was.kicks[k] - 1);
+      g.warns.forEach((w, j) => {
+        expect(w.i - g.foots[j], `tier ${t}: lit ${g.rest} frames after kick ${j + 1}`).toBe(g.rest);
+        expect(w.life, 'for the whole warning').toBe(g.warn);
+        expect(g.foots[j + 1] - w.i, `tier ${t}: and the kick comes as the light ends`).toBe(g.warn);
+      });
+    }
+  });
+});
+
+// "some attacks need nerfs, some need buffs. give me these in question boxes." (the owner, 2026-10-02) -- the picks, attack by attack, from this file's point of view. "Harder, same
+// damage" holds for the buffs: no hit is for more than it was (the "same damage per hit" tests above still hold).
+describe('attack by attack: HANDS FROM THE GROUND! "Nerf: slower cracks" and FOLDING ISLAND! "Buff: faster folds"', () => {
+  const MARK = `var mark = function(kind){ var fresh1 = oneFx.filter(function(e){ return e.kind === kind && !e._m; }); fresh1.forEach(function(e){ e._m = 1; }); return fresh1; };`;
+
+  it('HANDS: the crack before every later wave shows 24 frames ahead at every tier (it was 14, 12 and 10), and the wave comes up as it ends', () => {
+    const r = STAGE(`
+      ${MARK}
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; one.x = you.x - 700; one.y = groundY() - 330;
+        var T = oneTier(one, 'hands'), warns = [], waves = [];
+        one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }];
+        ONE_MOVES.hands(one, you, ++BOSS_ATK_ID);
+        var up = function(){ var fresh1 = own().filter(function(p){ return p.shape === 'onehand' && !p._m; }); fresh1.forEach(function(p){ p._m = 1; }); return fresh1; };
+        up();   // (the first wave came up with the call)
+        for (var i=1; i<300 && (oneBusy(one) || i < 5); i++){
+          one._atkTimer = 1e9; you.invuln = 1e9; one.x = you.x - 700; one.y = groundY() - 330; one._hop = null;
+          step();
+          var w = mark('crackwarn'); if (w.length) warns.push({ i: i, max: w[0].max, life: w[0].life });
+          if (up().length) waves.push(i);
+        }
+        out[t] = { T: T, warns: warns, waves: waves };
+      });
+      return out;`);
+    const was = [14, 12, 10];
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, g = r[t];
+      expect(g.T.crack, `tier ${t}: a crack that shows 24 frames ahead (it was ${was[k]})`).toBe(24);
+      expect(g.warns.length, `tier ${t}: a crack before each of the last two waves`).toBe(2);
+      g.warns.forEach((w, j) => {
+        expect(w.max, 'it is lit for the whole 24').toBe(24);
+        expect(g.waves[j] - w.i, `tier ${t}: and the wave comes up as it ends`).toBe(24);
+      });
+    }
+  });
+
+  it('HANDS: the root a hand leaves you with is shorter (26 and 40 frames at tiers 2 and 3, it was 40 and 62); tier 1 slows, as it did', () => {
+    const r = STAGE(`
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); one.x = you.x - 900; one.y = groundY() - 330;
+        var T = oneTier(one, 'hands'), peak = 0, slow = 0;
+        one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }];
+        ONE_MOVES.hands(one, you, ++BOSS_ATK_ID);
+        for (var i=0; i<14; i++){ one._atkTimer = 1e9; one.x = you.x - 900; one.y = groundY() - 330; one._hop = null; step(); peak = Math.max(peak, you.rooted || 0); slow = Math.max(slow, you.slowed || 0); }
+        out[t] = { fx: T.fx, fxN: T.fxN, rooted: peak, slowed: slow, pct: you.pct };
+      });
+      return out;`);
+    const was = { 2: 40, 3: 62 };
+    expect([r[1].fx, r[2].fx, r[3].fx], 'slow, then root, then root').toEqual(['slow', 'root', 'root']);
+    expect(r[1].slowed, 'tier 1 slows you, as it did').toBeGreaterThan(0);
+    for (const t of [2, 3]) {
+      expect(r[t].fxN, `tier ${t}: a shorter root (it was ${was[t]} frames)`).toBeLessThan(was[t]);
+      expect([r[t].fxN], 'the numbers it is now').toEqual([{ 2: 26, 3: 40 }[t]]);
+      expect(r[t].pct, `tier ${t}: the hand hit you`).toBeGreaterThan(0);
+      expect(r[t].rooted, `tier ${t}: and rooted you, for no more than ${r[t].fxN} frames`).toBeGreaterThan(0);
+      expect(r[t].rooted).toBeLessThanOrEqual(r[t].fxN);
+      expect(r[t].rooted, 'and well under what it was').toBeLessThan(was[t]);
+    }
+  });
+
+  it('FOLDING ISLAND!: the later folds come a quarter quicker -- lit for 33, 30 and 27 frames where it was 44, 40 and 36 -- and the first fold, the reach and the jaws are as they were', () => {
+    const r = STAGE(`
+      ${MARK}
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); worldPlats = worldPlats.filter(function(p){ return p.solid; }); you.invuln = 1e9;
+        var T = oneTier(one, 'fold'), warns = [], shuts = [];
+        one._telKind = 'fold'; one._foldZones = oneFoldZones(one, you, T, true); one._tel = 0;
+        ONE_MOVES.fold(one, you, ++BOSS_ATK_ID);
+        mark('jaws'); shuts.push(0);
+        for (var i=1; i<900 && (oneBusy(one) || i < 5); i++){
+          one._atkTimer = 1e9; one.x = you.x + 900; one.y = groundY() - 400; you.invuln = 1e9; one._hop = null;
+          step();
+          var w = mark('foldwarn'); if (w.length) warns.push({ i: i, life: w[0].life, max: w[0].max });
+          if (mark('jaws').length) shuts.push(i);
+        }
+        out[t] = { T: T, warns: warns, shuts: shuts };
+      });
+      return out;`);
+    const was = { tel2: [44, 40, 36], tel: [58, 54, 50], folds: [2, 3, 4], half: [180, 195, 210], H: [150, 165, 180] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, g = r[t], T = g.T;
+      expect(T.tel2, `tier ${t}: a quarter quicker (it was ${was.tel2[k]})`).toBe(Math.round(was.tel2[k]*0.75));
+      expect(T.tel2 / was.tel2[k], 'no more than three quarters of what it was').toBeLessThanOrEqual(0.76);
+      expect(T.tel2, `tier ${t}: and still a tell you can read: lit for at least 27 frames, nearly half a second`).toBeGreaterThanOrEqual(27);
+      expect([T.tel, T.folds, T.half, T.H], 'the first fold, the chain, the reach and the jaws are as they were').toEqual([was.tel[k], was.folds[k], was.half[k], was.H[k]]);
+      expect(g.warns.length, `tier ${t}: a lit zone before each fold after the first`).toBe(T.folds - 1);
+      g.warns.forEach((w, j) => {
+        expect(w.life, 'lit for the whole tell').toBe(T.tel2);
+        expect(g.shuts[j + 1] - w.i, `tier ${t}: and the next fold shuts as it ends`).toBe(T.tel2);
+      });
+    }
+  });
+});
+
+describe('attack by attack: GHOST FIGHTER! "Nerf: 70 HP ghost" and POWER UNGROUNDED! "Buff: lasts longer"', () => {
+  it('GHOST: 70 HP at every tier, where it was 100 -- the one she sends, its banner and its bar say so, and 70 damage and it is gone, and she can be hurt again', () => {
+    const r = STAGE(`
+      var out = { hp: ONE_GHOST_HP, rows: [], banners: [] }, b0 = banner;
+      banner = function(t){ out.banners.push(String(t)); return b0.apply(this, arguments); };
+      try {
+        [1, 2, 3].forEach(function(t){
+          setTier(t); fresh(); one._ghost = null;
+          ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID);
+          var g = one._ghost, row = { hp: g._ghostHp, max: g._ghostMax };
+          g.controller = 'still'; g.invuln = 0; applyHit(g, 69, 1, -1, you); row.at69 = [g.dead, Math.round(g._ghostHp)];
+          var shielded = (function(){ var h = one.hp; damageSummons(you, one.x, one.y, 10, 20); return h - one.hp; })();
+          g.invuln = 0; applyHit(g, 1, 1, -1, you); row.dead = g.dead; row.cleared = one._ghost === null;
+          var h2 = one.hp; damageSummons(you, one.x, one.y, 10, 20); row.after = h2 - one.hp; row.shielded = shielded;
+          out.rows.push(row);
+        });
+      } finally { banner = b0; }
+      return out;`);
+    expect(r.hp, 'ONE_GHOST_HP').toBe(70);
+    r.rows.forEach((row, i) => {
+      expect([row.hp, row.max], `tier ${i + 1}: 70 HP`).toEqual([70, 70]);
+      expect(row.at69, `tier ${i + 1}: 69 damage leaves it standing on 1`).toEqual([false, 1]);
+      expect(row.shielded, `tier ${i + 1}: and she takes nothing while it stands`).toBe(0);
+      expect([row.dead, row.cleared], `tier ${i + 1}: 70 and it is gone`).toEqual([true, true]);
+      expect(row.after, `tier ${i + 1}: then she can be hurt again`).toBeGreaterThan(0);
+    });
+    expect(r.banners.some((t) => t.indexOf('(70 HP)') >= 0 && t.indexOf('GHOST FIGHTER') >= 0), 'its banner says 70').toBe(true);
+    expect(r.banners.some((t) => t.indexOf('100 HP') >= 0), 'and nothing says 100 any more').toBe(false);
+  });
+
+  it('UNGROUNDED: the shield lasts ten seconds (600 frames) at every tier, where it was eight; it keeps everything off her until it is grounded, and it still ends', () => {
+    const r = STAGE(`
+      var out = { rows: [] };
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); one.r = one._baseR; one._giantT = 0; one._ungrounded = false; one._grounded = false; one._groundT = 0; you.invuln = 1e9;
+        var T = oneTier(one, 'ungrounded');
+        ONE_MOVES.ungrounded(one);
+        var row = { table: T.t, set: one._ungroundT, immune: null, took: null, n: 0 }, hp0 = one.hp;
+        row.took = oneTakeDamage(one, 10, you); row.immune = one.hp === hp0 && row.took === 0;
+        for (var i=0; i<800 && one._ungrounded; i++){ one._atkTimer = 1e9; you.invuln = 1e9; you.x = WW*0.5 - 2200; step(); row.n++; }   // (you stand far away: nothing grounds it)
+        row.over = !one._ungrounded; row.grounded = one._grounded;
+        out.rows.push(row);
+      });
+      return out;`);
+    r.rows.forEach((row, i) => {
+      expect([row.table, row.set], `tier ${i + 1}: 600 frames of it, ten seconds (it was 480)`).toEqual([600, 600]);
+      expect(row.immune, `tier ${i + 1}: no damage reaches her while it is up and nobody has grounded it`).toBe(true);
+      expect(row.n, `tier ${i + 1}: it lasts the 600 frames`).toBeGreaterThanOrEqual(598);
+      expect(row.n).toBeLessThanOrEqual(602);
+      expect(row.over, `tier ${i + 1}: and then it ends`).toBe(true);
+    });
+  });
+});
+
+describe('attack by attack: ONE GROWS GIANT! "Buff: landing stomps"', () => {
+  // The owner, 2026-10-02: "ONE GROWS GIANT! Buff: landing stomps" -- each landing while she is giant sends a small shockwave along the floor both ways, marked as it starts, jumpable,
+  // the damage of her other small hits, one attack id per landing. (A landing is the floor taking her after she was up; her stomps are what the giant state does, not an attack:
+  // they are `lingers`, so they neither hold her next wind-up nor eat her window.)
+  const GIANT = `
+    setTier(2); fresh(); you.invuln = 1e9; you.x = WW*0.5 - 1500; one.r = one._baseR; one._giantT = 0; ONE_MOVES.sizeshift(one);
+    var fl = worldPlats.find(function(p){ return p.solid && p.floor === 0; }), X = WW*0.5, rest = function(){ return fl.y - one.r - 4; };
+    var hold = function(y){ one._atkTimer = 1e9; one.vx = 0; one.vy = 0; one._hop = null; one._tel = 0; one.x = X; one.y = y; };
+    var waves = function(){ return projectiles.filter(function(p){ return p.oStomp; }); };`;
+
+  it('each landing while she is giant sends a small shockwave along the floor both ways: marked as it starts, waiting a moment at her feet, skimming the floor, one of her small hits, one attack id', () => {
+    const r = STAGE(`${GIANT}
+      for (var i=0;i<6;i++){ hold(rest() - 200); step(); }   // up in the air
+      var fx0 = oneFx.filter(function(e){ return e.kind === 'stomp'; }).length, marks0 = oneArena(one).marks.filter(function(m){ return m.kind === 'crack'; }).length;
+      var w0 = waves().length;
+      hold(rest()); step();   // ...and down on the floor
+      var ws = waves(), row = ws.map(function(p){ return { x: p.x, y: p.y, vx: p.vx, vy: p.vy, r: p.r, dmg: p.dmg, cap: p.bossCap, id: p.bossAtk, shape: p.shape, lingers: !!p.lingers, delay: p.delay }; });
+      var moved = [];
+      for (var j=0;j<14;j++){ hold(rest()); step(); moved.push(ws.map(function(p){ return Math.round(p.x*10)/10; })); }
+      return { n: ws.length - w0, row: row, X: X, r: one.r, floorY: fl.y, fx: oneFx.filter(function(e){ return e.kind === 'stomp'; }).length - fx0, marks: oneArena(one).marks.filter(function(m){ return m.kind === 'crack'; }).length - marks0,
+        small: oneShot(one, {}).dmg, big: oneDmg(), moved: moved, delay: ONE_STOMP.delay, spd: ONE_STOMP.spd, fxLife: ONE_STOMP.mark + ONE_STOMP.delay };`);
+    expect(r.n, 'a shockwave each way').toBe(2);
+    expect(r.row.map((q) => Math.sign(q.vx)).sort(), 'one goes left and one goes right').toEqual([-1, 1]);
+    r.row.forEach((q) => {
+      expect(Math.abs(q.x - r.X), 'from her feet, either side of her').toBeCloseTo(0.6 * r.r, 6);
+      expect([q.shape, q.lingers], 'a low crest, and what she leaves standing, not her attack').toEqual(['onewave', true]);
+      expect(q.vy, 'along the floor').toBe(0);
+      expect(r.floorY - (q.y - q.r), `its top is ${Math.round(r.floorY - (q.y - q.r))} px up: a jump clears it`).toBeLessThanOrEqual(40);
+      expect(r.floorY - (q.y + q.r), 'and it is not under the floor').toBeGreaterThanOrEqual(-1);
+      expect(q.dmg, "one of her small hits: the damage every other small shot of hers has (0.8 of her 33)").toBe(r.small);
+      expect(q.cap, 'and never more than her 33 for the whole attack').toBe(r.big);
+    });
+    expect(r.row[0].id, 'one attack id for the landing').toBe(r.row[1].id);
+    expect(r.fx, 'marked as it starts: a ring and a line on the floor').toBe(1);
+    expect(r.marks, 'and a crack in it').toBe(1);
+    // they wait where they start (the mark is what you read), then go along the floor
+    expect(r.moved[0].every((x, k) => x === r.row[k].x), 'at her feet at first').toBe(true);
+    expect(r.moved[r.delay + 2].every((x, k) => Math.abs(x - r.row[k].x) > r.spd), 'and then they go').toBe(true);
+  });
+
+  it('only a landing makes one: not while she is not giant, not while she rests on the floor, not before she has been up, and not twice inside the cooldown -- and each landing has its own id', () => {
+    const r = STAGE(`${GIANT}
+      var out = {};
+      // resting on the floor for a long while: nothing
+      for (var i=0;i<100;i++){ hold(rest()); step(); } out.rest = waves().length;
+      // up, and down: a stomp
+      for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step(); out.first = waves().length; var ids = {}; waves().forEach(function(p){ ids[p.bossAtk] = 1; });
+      // up and down again at once: inside the cooldown
+      hold(rest() - 200); step(); hold(rest()); step(); out.quick = waves().length;
+      // after the cooldown: up, and down: a second stomp, with an id of its own
+      for (var i=0;i<ONE_STOMP.cd + 5;i++){ hold(rest()); step(); } for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step(); out.second = waves().length; waves().forEach(function(p){ ids[p.bossAtk] = 1; });
+      out.ids = Object.keys(ids).length;
+      // not giant: the same landing makes nothing
+      projectiles = []; one._giantT = 0; one.r = one._baseR; for (var i=0;i<6;i++){ hold(fl.y - one.r - 4 - 200); step(); } hold(fl.y - one.r - 4); step(); out.small = waves().length;
+      // not before she has been up: a giant who is brought straight down onto the floor
+      one.r = one._baseR; one._giantT = 0; ONE_MOVES.sizeshift(one); one._stompUp = false; one._onFloor = false; one._stompCd = 0; projectiles = []; hold(rest()); step(); out.straight = waves().length;
+      return out;`);
+    expect(r.rest, 'resting on the floor: no landing').toBe(0);
+    expect(r.first, 'up and down: a shockwave each way').toBe(2);
+    expect(r.quick, 'a second landing inside the cooldown does not stomp again').toBe(2);
+    expect(r.second, 'after the cooldown the next landing does: two more').toBe(4);
+    expect(r.ids, 'one attack id a landing').toBe(2);
+    expect(r.small, 'not while she is not giant').toBe(0);
+    expect(r.straight, 'and not before she has been up').toBe(0);
+  });
+
+  it('it is a hit you can jump: standing in a stomp\'s way you take one of her small hits (26.4); in the air as it goes under you take nothing; and it holds nothing back -- it is not her attack', () => {
+    const r = STAGE(`${GIANT}
+      var out = {};
+      var run = function(jump){
+        projectiles = []; one._stompUp = false; one._onFloor = false; one._stompCd = 0; you.pct = 0;
+        var fx = X + 420, total = 0;
+        for (var i=0;i<6;i++){ hold(rest() - 200); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 1e9; step(); }
+        hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.invuln = 1e9; step();
+        for (var j=0;j<90;j++){ hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 0; you.hitstun = 0; you.burn = 0; you.pct = 0; step(); total += you.pct; }
+        return total;
+      };
+      out.stand = run(false); out.jump = run(true);
+      // it is not her attack: with only its waves in the air she is over (oneAttackOver)
+      projectiles = []; one._stompUp = false; one._onFloor = false; one._stompCd = 0; you.x = WW*0.5 - 1500; you.invuln = 1e9;
+      var lo = BOSS_ATK_ID; for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step();
+      out.live = waves().length; out.over = oneAttackOver(one, { lo: lo }); out.hold = projectiles.filter(function(p){ return bossShotLive(p, lo); }).length;
+      out.small = oneShot(one, {}).dmg;
+      return out;`);
+    expect(r.stand, 'standing in its way: one hit of her small shot').toBeCloseTo(r.small, 5);
+    expect(r.small, 'which is 26.4').toBeCloseTo(26.4, 6);
+    expect(r.jump, 'a jump clears it').toBe(0);
+    expect(r.live, 'its waves are in the air').toBe(2);
+    expect(r.hold, 'and none of them is a shot of her attack').toBe(0);
+    expect(r.over, 'so her next wind-up is not held back by them').toBe(true);
   });
 });
 
@@ -1283,5 +2044,42 @@ describe('the glitch pass: her fight drawn on a canvas that keeps the old fill a
     w.eval('draw()');
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && /fillStyle/.test(e.key)), 'no fill it ignores: the ghost\'s arrow wore the last fill').toEqual([]);
+  });
+
+  it('the eye lasers\' sweep tell (a wedge, two edges and an arrow, either way round) draws at alphas the canvas keeps and with fills and strokes it accepts', async () => {
+    const { w, errors } = await bootValidating();
+    for (const dir of [1, -1]) {
+      w.eval(`(function(){
+        SETTINGS.itemRate = 0; SETTINGS.stocks = 99; LOCAL_PLAYERS = 1;
+        startOneFight(['Firey'], { story:true, onEnd:function(){ return true; } });
+        var one = summons.find(function(s){ return s._oneFight; }), you = fighters[0];
+        one._hop = null; one._hopPending = false; one.r = one._baseR; one._atkTimer = 1e9; one._introT = 0; one._q = [];
+        you.controller = 'still'; one._marks = 1;
+        one._telKind = 'eyelasers'; one._tel = 20; one._sweepP = { a0: ${dir > 0 ? -1.1 : 0.1}, a1: ${dir > 0 ? 0.1 : -1.1}, dir: ${dir}, aim: -0.5 };
+        hazardT = 3;   // the pulse at its top
+      })()`);
+      errors.length = 0;
+      w.eval('draw()');
+      expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), `dir ${dir}: no alpha the canvas ignores`).toEqual([]);
+      expect(errors.filter((e) => e.kind === 'ctx-ignored' && /Style|lineWidth|lineCap/.test(e.key)), `dir ${dir}: no fill, stroke or line the canvas ignores`).toEqual([]);
+    }
+  });
+
+  it('the giant\'s landing stomp -- its mark on the floor and the low crest that goes along it -- draws at alphas, fills and strokes the canvas keeps', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 99; LOCAL_PLAYERS = 1;
+      startOneFight(['Firey'], { story:true, onEnd:function(){ return true; } });
+      var one = summons.find(function(s){ return s._oneFight; }), you = fighters[0];
+      one._hop = null; one._hopPending = false; one._atkTimer = 1e9; one._introT = 0; one._q = [];
+      you.controller = 'still'; one._giantT = 200; one.r = Math.round(one._baseR*1.5);
+      var fl = worldPlats.find(function(p){ return p.solid && p.floor === 0; });
+      one.x = you.x + 300; one.y = fl.y - one.r - 4; oneStomp(one, fl);   // the mark, and the two waves waiting at her feet
+      hazardT = 3;
+    })()`);
+    errors.length = 0;
+    w.eval('draw()');
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
+    expect(errors.filter((e) => e.kind === 'ctx-ignored' && /Style|lineWidth|lineCap/.test(e.key)), 'no fill, stroke or line the canvas ignores').toEqual([]);
   });
 });

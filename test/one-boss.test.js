@@ -206,9 +206,9 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.scr1, "Four's 6, now 6.8 (harder)").toBeCloseTo(6.8 * 1.35, 6);
     expect(r.scr3, "Four's 7.5, now 8.4").toBeCloseTo(8.4 * 1.35, 6);
     expect(r.scrDmg).toBe(33);
-    expect(r.ring.length, "Two's twelve, now twenty-four").toBe(24);
+    expect(r.ring.length, "Two's twelve, then twenty-four, now sixteen (\"nerf one.\" / \"Fewer bullets\": about 1.2x of Two's 14, and \"shock ring spacing should be bigger\")").toBe(16);
     r.ring.forEach(v => expect(v, "Two's ring at 6.5, now 7.5").toBeCloseTo(7.5 * 1.35, 6));
-    expect(r.knives.length, "Four's five seekers, now eight knives").toBe(8);
+    expect(r.knives.length, "Four's five seekers, then eight knives, now six (\"Fewer bullets\": 1.2x of five)").toBe(6);
     r.knives.forEach(([v, h, d]) => { expect(v).toBeCloseTo(9.5 * 1.35, 6); expect(h, '"2, but homing."').toBeGreaterThan(0); expect(d, 'a knife hits for her 33').toBe(33); });
     expect(r.mr1.length, 'three orbs a volley where Two threw one').toBe(3);
     expect(r.mr1[0][0], '"make mind read move slower": 8 where Two threw it at 13').toBeCloseTo(8 * 1.35, 6);
@@ -224,7 +224,8 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     // too, which was the design's reading and not the owner's words, and with it nobody could beat her: the bans lift only
     // when she is beaten and there is "No way out" (the review's permanent-lock finding). The scripted player in
     // test/one-winnable.test.js won 0 of its 8 story fights at 0.7x and wins some at Four's and Two's own pace.
-    expect(r.tel, "Four's 50 and Two's 36 (the fold and the knives, the two she swapped in, have their own)").toEqual([50, 50, 58, 36, 44, 36, 36, 36]);
+    // (Zap to Dust's tell is 75, half as long again as Four's 50: "increase delay for both out of orbit and zap to dust." (the owner, 2026-10-02))
+    expect(r.tel, "Four's 50 and Two's 36 (the fold and the knives, the two she swapped in, have their own; the zap's is half as long again)").toEqual([75, 50, 58, 36, 44, 36, 36, 36]);
     expect(r.gaps, "bossAtkGap's own 100/72/52").toEqual([100, 72, 52, 52]);
   });
 
@@ -252,8 +253,8 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.out.mindread.healed, 'and it heals her').toBe(25);
     // "make all attacks except ghost fighter harder(not more damage tho)", then "much harder. more bullets! also longer attacks.": more of each, never a harder hit
     expect(r.out.fold.shots, 'the fold is a jaw, not a shot').toBe(0);
-    expect(r.out.knives.shots, "Four's three seekers, now eight knives").toBe(8);
-    expect(r.out.ring.shots, "Two's twelve, now twenty-four a burst").toBe(24);
+    expect(r.out.knives.shots, "Four's five seekers, then eight knives, now six (\"Fewer bullets\")").toBe(6);
+    expect(r.out.ring.shots, "Two's fourteen, then twenty-four a burst, now sixteen (\"Fewer bullets\", and wider spacing)").toBe(16);
     expect(r.out.sizeshift.r, 'canon One grows GIANT (TPOT 23, 25)').toBe(Math.round(r.base * 1.4));
     expect(r.out.ungrounded.ung).toBe(true);
   });
@@ -397,17 +398,18 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     // "make all attacks except ghost fighter harder(not more damage tho)": a rock more a tier, two hands more, and Out of Orbit's planets (a lane's
     // worth, down the aimed lane and its 2/3/4 copies: "more of the same"). THEN "one could be harder... much harder. more bullets! also longer
     // attacks." (the owner, 2026-09-30): twice the rocks (8/10/15), a pair of volleys and then more of the lasers (2/3/4 volleys of a fan of 3/3/5, in
-    // each of two or three bursts), and twice the planets a lane (2/3/4) -- none of it a harder hit.
-    expect([r[1].moonrocks.n, r[2].moonrocks.n, r[3].moonrocks.n]).toEqual([8, 10, 15]);
-    expect([r[1].eyelasers.n, r[2].eyelasers.n, r[3].eyelasers.n], 'volleys x two eyes x a fan, a burst').toEqual([2 * 2 * 3, 3 * 2 * 3, 4 * 2 * 5]);
+    // each of two or three bursts), and twice the planets a lane (2/3/4) -- none of it a harder hit. THEN "nerf one." / "Fewer bullets" (2026-10-02): back down to about
+    // 1.2x of what they began as -- 5/7/10 rocks (it began 4/6/8), 2/4/24 lasers a burst (2/4/18), 1/2/4 planets a lane (1/2/3).
+    expect([r[1].moonrocks.n, r[2].moonrocks.n, r[3].moonrocks.n]).toEqual([5, 7, 10]);
+    expect([r[1].eyelasers.n, r[2].eyelasers.n, r[3].eyelasers.n], 'volleys x two eyes x a fan, a burst').toEqual([1 * 2 * 1, 2 * 2 * 1, 4 * 2 * 3]);
     expect([r[1].hands.n, r[2].hands.n, r[3].hands.n], 'hands under the fighter, a wave').toEqual([3, 5, 7]);
-    expect([r[1].orbitkick.n, r[2].orbitkick.n, r[3].orbitkick.n], 'planets kicked out of orbit, 2, 3 and 4 down each of 3, 4 and 5 lanes').toEqual([2 * 3, 3 * 4, 4 * 5]);
+    expect([r[1].orbitkick.n, r[2].orbitkick.n, r[3].orbitkick.n], 'planets kicked out of orbit, 1, 2 and 4 down each of 3, 4 and 5 lanes').toEqual([1 * 3, 2 * 4, 4 * 5]);
     for (const k of ['moonrocks', 'hands', 'orbitkick']) {
       expect([r[1][k].dmg, r[2][k].dmg, r[3][k].dmg], `${k}: harder, not harder-hitting`)
         .toEqual({ moonrocks: [0.8, 0.9, 1.0], hands: [0.8, 0.9, 1.0], orbitkick: [1.0, 1.1, 1.2] }[k].map(m => +(33 * m).toFixed(3)));
     }
     expect([r[1].ghost.n, r[2].ghost.n, r[3].ghost.n], 'ghost-fire with it').toEqual([0, 4, 8]);
-    expect([r[1].ghost.hp, r[2].ghost.hp, r[3].ghost.hp], 'always one ghost with 100 HP').toEqual([100, 100, 100]);
+    expect([r[1].ghost.hp, r[2].ghost.hp, r[3].ghost.hp], 'always one ghost with 70 HP (it was 100: "Nerf: 70 HP ghost", the owner, 2026-10-02)').toEqual([70, 70, 70]);
     expect(r[3].ghost.hit).toBeGreaterThan(r[1].ghost.hit);
     expect(r[1].ghost.gfx).toBe(null);
     expect(r[3].ghost.gfx).not.toBe(null);
@@ -422,7 +424,7 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
       you.controller = 'still'; one.x = you.x + 400; one.y = you.y - 40;
       one._telKind = 'eyelasers'; one._tel = ONE_TEL.eyelasers; one._eyeBurst = 0; one._atkTimer = 1e9; projectiles = [];
       var LOCK = ONE_SPECIAL_TIERS.eyelasers[0].lock, locks = [], bursts = [], wasLocked = false, n0 = 0, guard = 0;
-      while (one._tel > 0 && guard++ < 400){
+      while (one._tel > 0 && !one._sweepP && guard++ < 400){   // (the sweep that comes after the last burst, "Buff: a sweep", is test/boss-one.test.js's)
         you.x += 4;
         updateOne(one, you);
         var locked = one._tel > 0 && one._tel <= LOCK;
@@ -442,13 +444,15 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect(r.bursts.length, '"eye lasers should have two bursts"').toBe(2);
     expect(r.locks.length, 'each one tracks and then locks').toBe(2);
     r.bursts.forEach(b => {
-      expect(b.n, 'two volleys of a fan of three from each of two eyes at tier 1, a burst ("much harder")').toBe(2 * 2 * 3);
+      expect(b.n, 'one volley of one bolt from each of two eyes at tier 1, a burst ("Fewer bullets": it was 2 x 2 x 3 after "much harder", 1 x 2 x 1 before)').toBe(1 * 2 * 1);
       expect(b.err, 'the bolts go where you were at that lock').toBeLessThan(1);
     });
     expect(r.locks[1].aim - r.locks[0].aim, 'between the bursts the aim followed you again').toBeGreaterThan(40);
     expect(r.bursts[0].ids[0], 'the second burst is its own attack, so it can land after the first did').not.toBe(r.bursts[1].ids[0]);
     expect(r.bursts[0].timer, 'the first burst does not start the clock to her next attack').toBe(1e9);
-    expect(r.bursts[1].timer, 'the second one does').toBe(r.gap);
+    // ("nerf one." / "One attack at a time", 2026-10-02): her clock is held until the attack is over -- the sweep after the last burst, "Buff: a sweep", and then its bolts
+    // gone -- and her gap (r.gap) starts then; the last burst does not start it either (here it is still parked at the test's 1e9)
+    expect(r.bursts[1].timer, 'the second one does not start it either: the sweep comes after it').toBe(1e9);
     expect(r.aimNow, 'the aim stopped following once it locked').toBe(r.locks[1].aim);
     expect(r.youNow - r.aimNow, 'so stepping off the line after the lock is the dodge').toBeGreaterThan(60);
   });
@@ -493,8 +497,9 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect(r.you).toBe(33);
     expect(r.youVx, 'sent the way she kicked').toBeGreaterThan(0);
     expect(r.behind, 'nobody behind her').toBe(0);
-    // "much harder. more bullets!" (the owner, 2026-09-30): two planets down the marked lane and down each of its two copies (tier 1), where there was one
-    expect(r.planets.length, 'two planets down the marked lane and down each of its two copies (tier 1)').toBe(2 * 3);
+    // "much harder. more bullets!" (the owner, 2026-09-30): two planets down the marked lane and down each of its two copies (tier 1), where there was one; then "nerf one." /
+    // "Fewer bullets" (2026-10-02): one again, about 1.2x of what it began as
+    expect(r.planets.length, 'one planet down the marked lane and down each of its two copies (tier 1)').toBe(1 * 3);
     r.planets.forEach(vx => expect(vx, 'every lane kicked the same way').toBeGreaterThan(0));
     expect(r.ys[0], 'the first is the marked lane').toBeCloseTo(r.y0, 6);
     const ys = [...new Set(r.ys)].sort((a, b) => a - b);   // (a lane's planets all start on its line)
@@ -504,7 +509,7 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
   });
 });
 
-describe('special 5: one ghost fighter with 100 HP, and One takes nothing until it dies', () => {
+describe('special 5: one ghost fighter with 70 HP (it was 100), and One takes nothing until it dies', () => {
   it('summons exactly one real fighter on her side, and shields her on every damage path', () => {
     const r = fight(['Firey', 'Leafy'], {}, `
       one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
@@ -527,28 +532,28 @@ describe('special 5: one ghost fighter with 100 HP, and One takes nothing until 
       you.pct = 0; you.invuln = 0; applyHit(you, 10, 1, -1, g); out.onYou = you.pct;
       // an ally goes for the ghost first
       var ally = fighters[1]; ally.aiTarget = null; ally.aiTimer = 0; aiThink(ally); out.allyTarget = ally.aiTarget === g;
-      // 100 HP and it is gone; then she can be hurt again. With an ally beside you each hit on it counts for 1/1.6, as
-      // every hit on her does (the review: its 100 did not scale with allies, so it was no shield for a full side), so
-      // two 60s leave it standing on 25 and a third finishes it.
-      g.invuln = 0; applyHit(g, 60, 1, -1, you); g.invuln = 0; applyHit(g, 60, 1, -1, you);
+      // 70 HP ("GHOST FIGHTER! Nerf: 70 HP ghost", the owner, 2026-10-02; it was 100) and it is gone; then she can be hurt again. With an ally
+      // beside you each hit on it counts for 1/1.6, as every hit on her does (the review: its HP did not scale with allies, so it was no shield
+      // for a full side), so two 40s leave it standing on 20 and a third finishes it.
+      g.invuln = 0; applyHit(g, 40, 1, -1, you); g.invuln = 0; applyHit(g, 40, 1, -1, you);
       out.twoHits = { dead: g.dead, hp: g._ghostHp };
-      g.invuln = 0; applyHit(g, 60, 1, -1, you);
+      g.invuln = 0; applyHit(g, 40, 1, -1, you);
       out.dead = g.dead; out.cleared = one._ghost === null;
       var hp2 = one.hp; damageSummons(you, one.x, one.y, 10, 20); out.after = hp2 - one.hp;
       return out;`);
     expect(r.added).toBe(1);
     expect(r.ghost && r.ai === 'ai' && r.idx).toBe(true);
     expect(r.team, "One's side").toBe(-1);
-    expect(r.hp).toBe(100);
+    expect(r.hp, '70 HP: "Nerf: 70 HP ghost" (the owner, 2026-10-02), where it was 100').toBe(70);
     expect(r.erased, 'a ghost of someone she erased from the timeline').toBe(true);
     expect(r.second, 'one ghost fighter, never two').toBe(1);
     expect([r.melee, r.shot, r.dash, r.chain], 'melee, shots, dashes and the Chain Bolt all do nothing').toEqual([0, 0, 0, 0]);
-    expect(r.ghostSafe).toBe(100);
+    expect(r.ghostSafe).toBe(70);
     expect(r.ghostOnOne).toBe(0);
     expect(r.onYou).toBeGreaterThan(0);
     expect(r.allyTarget).toBe(true);
     expect(r.twoHits.dead).toBe(false);
-    expect(r.twoHits.hp).toBeCloseTo(100 - 120 / 1.6, 6);
+    expect(r.twoHits.hp).toBeCloseTo(70 - 80 / 1.6, 6);
     expect(r.dead && r.cleared).toBe(true);
     expect(r.after, 'damage lands again once it is dead').toBeCloseTo(20 / 1.6, 6);
   });
@@ -661,7 +666,7 @@ describe('Zap to Dust and Out of Orbit come with copies of themselves near her',
       try {
         ['zap', 'orbitkick'].forEach(function(k){
           oneNextMove = function(){ return k; };
-          one._tel = 0; one._atkTimer = 1; oneFx = []; projectiles = []; one._q = [];   // (a move that runs on holds the next wind-up until its queue is empty)
+          one._tel = 0; one._atkTimer = 1; oneFx = []; projectiles = []; one._q = []; one._atkLive = null;   // (a move that runs on holds the next wind-up until it is over: its queue empty, its shots gone)
           updateOne(one, you);
           var shown = k==='zap' ? one._zapCols.map(function(c){ return Math.round(c.x); }) : one._kickLanes.map(Math.round);
           one._atkTimer = 1e9; while (one._tel > 0) updateOne(one, you);
@@ -1015,7 +1020,7 @@ describe("the review's fixes to her fight", () => {
     expect(r.free.every).toBeGreaterThan(0);
   });
 
-  it('burn and bleed wear down the ghost\'s 100 HP too', () => {
+  it('burn and bleed wear down the ghost\'s 70 HP too', () => {
     // Damage over time adds to pct without passing through applyHit, so 600 frames of burn and bleed on it came to +63%
     // and 0 HP (the review's probe), and Firey, Match, Pencil and Gelatin could not break the shield with it.
     const r = fight(['Firey'], { story: true }, `
@@ -1026,7 +1031,7 @@ describe("the review's fixes to her fight", () => {
       for (var i=0; i<300 && !g.dead; i++) step();
       return { gained: g.pct - p0, hp: g._ghostHp, dead: g.dead };`);
     expect(r.gained).toBeGreaterThan(5);
-    expect(r.hp, 'every point of it').toBeCloseTo(100 - r.gained, 6);
+    expect(r.hp, 'every point of it').toBeCloseTo(70 - r.gained, 6);
   });
 
   it('nothing turns her ghost: a possession or an outbreak changes neither its side nor its shield', () => {
@@ -1067,8 +1072,9 @@ describe("the review's fixes to her fight", () => {
     expect(four.healed, 'four drained, scaled like the hits').toBe(Math.round(36 * 2.8 * four.mult));
   });
 
-  // "also, no stock per phase." (the owner, 2026-09-30): the heal stays, the stock a phase line used to hand back is gone.
-  it('each phase line she crosses heals your side and hands back NO stock ("also, no stock per phase.")', () => {
+  // "also, no stock per phase." (the owner, 2026-09-30): the heal stayed, the stock a phase line used to hand back was gone. Then "every 2 phases" (2026-10-02, "nerf one."): the heal at
+  // every line, and a stock back at every SECOND one -- the first gives none, the second gives one.
+  it('each phase line she crosses heals your side; a stock comes back at the second line only ("every 2 phases"), not at the first', () => {
     const r = fight(['Lightning'], { story: true }, `
       one._atkTimer = 1e9;
       you.pct = 100; you.stocks = 2; one.hp = 1490; step();
@@ -1076,8 +1082,8 @@ describe("the review's fixes to her fight", () => {
       you.pct = 30; one.hp = 990; step();
       return { first: first, second: { pct: you.pct, stocks: you.stocks, marks: one._marks } };`);
     expect(r.first.pct).toBeCloseTo(100 - 64, 0);
-    expect([r.first.stocks, r.first.marks], 'healed 64, and still on the two stocks you had').toEqual([2, 1]);
-    expect(r.second, 'the second line heals the rest and still gives no stock').toEqual({ pct: 0, stocks: 2, marks: 2 });
+    expect([r.first.stocks, r.first.marks], 'healed 64, and still on the two stocks you had: the first line gives none').toEqual([2, 1]);
+    expect(r.second, 'the second line heals the rest and gives a stock back (up to the three you started with)').toEqual({ pct: 0, stocks: 3, marks: 2 });
   });
 
   it('keeps the teams map\'s own floating platforms, every one where the teams builder laid it', () => {

@@ -98,7 +98,7 @@ describe('One can be beaten', () => {
       out.dash = took(function(){ L._dashing = 5; L._dashDmg = 6; L._dashSummonHits = null; var x = L.x, y = L.y; L.x = one.x - 10; L.y = one.y; step(); L._dashing = 0; L.x = x; L.y = y; });
       L.face = Math.sign(one.x - L.x) || 1; L.spCd = 0;
       out.chain = took(function(){ doSpecial(L); });
-      // the ghost: its 100 HP can be spent, and then she can be hurt again
+      // the ghost: its 70 HP can be spent (it was 100: "Nerf: 70 HP ghost", the owner, 2026-10-02), and then she can be hurt again
       ONE_MOVES.ghost(one, L, ++BOSS_ATK_ID); projectiles = [];
       var g = one._ghost, shielded = took(function(){ damageSummons(L, one.x, one.y, 10, 10); }), hits = 0;
       while (!g.dead && hits < 20){ g.invuln = 0; applyHit(g, 10, 1, -1, L); hits++; }
