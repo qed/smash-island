@@ -3,6 +3,12 @@ import { readFileSync } from 'node:fs';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { mulberry32 } from './helpers/prng.js';
 import { BOT_GOLDEN_MATCHES, bootGoldenWindow, playBotMatch } from './helpers/bot-golden.js';
+import { loadMonolith } from './helpers/load-monolith.js';
+import { mutate, lookDecision, TEST, embedPlaybooks, readGame, playMatch, closeWindow, generation, loadState, freshFighter, deriveSeed } from '../scripts/train-bots.mjs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, copyFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 // ONE LEARNING BOT PER FIGHTER ("assign 1 bot to 1 fighter, and let them learn over time how to play well", the owner, 2026-10-05).
 // Each fighter may have a PLAYBOOK in index.html (between `// @playbooks:begin` and `// @playbooks:end`): genes that move what the
@@ -256,4 +262,237 @@ describe('Normal makes mistakes', () => {
     expect(empty).toBeGreaterThan(0.7);
     expect(empty).toBeLessThan(0.85);
   });
+});
+
+// ---- the trainer: scripts/train-bots.mjs ----------------------------------------------------------------------------------
+describe('the trainer keeps a change only when it wins clearly more', () => {
+  it('is a paired sign test on the pairs where the two disagree, with three looks', () => {
+    const at = (b, c, look, k = 1) => lookDecision(b, c, look, 3, TEST, k).verdict;
+    expect(at(30, 10, 3)).toBe('accept');           // 30 pairs the candidate won and the champion lost, 10 the other way
+    expect(at(20, 14, 3)).toBe('reject');           // ahead, but that is noise
+    expect(at(9, 3, 3)).toBe('reject');             // z of 1.7: not enough
+    expect(at(6, 0, 3)).toBe('accept');             // the smallest clear win: six more, z of 2.4
+    expect(at(5, 0, 3)).toBe('reject');             // under the net of six, however one-sided
+    expect(at(26, 6, 1)).toBe('accept');            // a runaway is kept at the first look
+    expect(at(10, 14, 1)).toBe('reject');           // behind at the first look: dropped
+    expect(at(13, 10, 1)).toBe('continue');         // level, so look again
+    expect(at(13, 3, 3, 1)).toBe('accept');         // z of 2.5 ...
+    expect(at(13, 3, 3, 8)).toBe('reject');         // ... is not enough against eight candidates at once (the bar rises with ln K)
+  });
+
+  it('keeps a neutral change fewer than one time in twenty, and a clear improvement nearly always', () => {
+    const rng = mulberry32(99);
+    const trial = (pWin) => {                       // discordant pairs: half of the pairs, each won by the candidate with probability pWin
+      let b = 0, c = 0, n = 0;
+      for (let li = 0; li < TEST.looks.length; li++) {
+        const to = Math.round(TEST.looks[li] / 2);
+        for (; n < to; n++) { if (rng() < pWin) b++; else c++; }
+        const d = lookDecision(b, c, li + 1, TEST.looks.length, TEST, 1).verdict;
+        if (d !== 'continue') return d === 'accept';
+      }
+      return false;
+    };
+    const rate = (p) => { let k = 0; for (let i = 0; i < 4000; i++) if (trial(p)) k++; return k / 4000; };
+    expect(rate(0.5)).toBeLessThan(0.05);
+    expect(rate(0.75)).toBeGreaterThan(0.9);
+  });
+});
+
+describe('the trainer mutates a playbook on the gene grid', () => {
+  let info;
+  beforeAll(async () => { info = await readGame(false); });
+
+  it('moves one to three genes of the champion, each inside its range and on its step, and only the g* genes the kit reads', () => {
+    const rocky = info.roster.find((r) => r.name === 'Rocky');                 // a floor-trap kit: g0-g3
+    const plain = info.roster.find((r) => r.kg.length === 0);                  // a kit with no knobs
+    expect(rocky.kg).toEqual(['g0', 'g1', 'g2', 'g3']);
+    expect(plain).toBeTruthy();
+    const champ = { v: { mJb: -0.5, sRng: 20 }, vs: {} };
+    const kinds = { move: 0, other: 0 }, seen = new Set();
+    for (let i = 0; i < 600; i++) {
+      for (const f of [rocky, plain]) {
+        const m = mutate(mulberry32(i), champ, { info, fighter: f, sigma: 1, counters: false, foes: [] });
+        const changed = new Set([...Object.keys(m.v), ...Object.keys(champ.v)].filter((k) => (m.v[k] || 0) !== (champ.v[k] || 0)));
+        expect(changed.size).toBeGreaterThanOrEqual(1);
+        expect(changed.size).toBeLessThanOrEqual(3);
+        for (const [g, x] of Object.entries(m.v)) {
+          const [lo, hi, step] = info.genes[g];
+          expect(x, g).toBeGreaterThanOrEqual(lo); expect(x, g).toBeLessThanOrEqual(hi);
+          expect(Math.abs(x / step - Math.round(x / step)), `${g} on its grid`).toBeLessThan(1e-6);
+          if (g[0] === 'g') expect(f.kg, `${f.name} reads ${g}`).toContain(g);
+          seen.add(g[0]);
+        }
+        for (const g of changed) kinds[g[0] === 'm' ? 'move' : 'other']++;
+      }
+    }
+    expect(kinds.move).toBeGreaterThan(kinds.other * 0.7);                     // the move genes are the bulk of the search
+    expect([...seen].sort()).toEqual(['g', 'm', 's', 'x']);                    // and every kind of gene is tried
+  });
+
+  it('a counter is one delta for one named foe, and nothing else changes', () => {
+    const champ = { v: { mJb: -0.5 }, vs: {} };
+    let counters = 0;
+    for (let i = 0; i < 400; i++) {
+      const m = mutate(mulberry32(i), champ, { info, fighter: info.roster[0], sigma: 1, counters: true, foes: ['Pen', 'Coiny'] });
+      if (!m.focus) continue;
+      counters++;
+      expect(['Pen', 'Coiny']).toContain(m.focus);
+      expect(m.v).toEqual(champ.v);
+      expect(Object.keys(m.vs)).toEqual([m.focus]);
+      const [p, x] = Object.entries(m.vs[m.focus])[0] || [];
+      if (p) { const [lo, hi, step] = info.vsGenes[p]; expect(x).toBeGreaterThanOrEqual(lo); expect(x).toBeLessThanOrEqual(hi); expect(Math.abs(x / step - Math.round(x / step))).toBeLessThan(1e-6); }
+    }
+    expect(counters).toBeGreaterThan(5);
+    expect(counters).toBeLessThan(80);                                         // "only where training finds a real counter": rare
+  });
+});
+
+// A stand-in for the game: who wins is a coin weighted by a hidden objective over fifteen genes (the best mJb is -1.5, the best sRng 40, and
+// so on). The coin is thrown from the match's seed AND the two playbooks, the worst case: a pair's two arms share nothing but the opponent,
+// as two real matches do once a changed gene has made them diverge. It lets the whole loop (mutation, pairs, the sign test, the benchmark,
+// saving) run in a second instead of an hour.
+const FAKE = { mJb: -1.5, mRb: 1, mSb: -1, mUb: 0.5, mDb: 1.5, mTb: -0.5, mFb: 1, sRng: 40, sApp: 20, sRet: -10, sAgr: 0.2, sJmp: 0.1, sDng: -10, sFin: 10, sEdg: 50 };
+const FAKE_UNIT = { sRng: 20, sApp: 10, sRet: 10, sAgr: 0.2, sJmp: 0.1, sDng: 10, sFin: 10, sEdg: 50 };
+const fakeScore = (e) => -Object.entries(FAKE).reduce((a, [g, t]) => a + Math.abs(((e && e.v[g]) || 0) - t) / (FAKE_UNIT[g] || 1), 0);
+const fakePool = (objective = true) => ({
+  async run(job) {
+    const p = objective ? 1 / (1 + Math.exp(-1.2 * (fakeScore(job.pb[0]) - fakeScore(job.pb[1])))) : 0.5;
+    const u = mulberry32(deriveSeed(job.seed, JSON.stringify(job.pb)))();
+    return { winner: u < p ? 0 : 1, frames: 1000, timedOut: false, stocks: [1, 0], pct: [0, 0] };
+  },
+});
+
+describe('the trainer learns when there is something to learn, and picks up where it stopped', () => {
+  let info;
+  const cfg = () => ({ cands: 3, stocks: 2, maxFrames: 100, looks: TEST.looks, bench: 8, benchEvery: 5, counters: true, test: { ...TEST } });
+  const fresh = () => ({ version: 1, schema: info.schema, seed: 424242, totals: { matches: 0, wallMs: 0 }, fighters: Object.fromEntries(info.roster.map((r) => [r.name, freshFighter()])) });
+  const gens = async (st, n, dir, pool = fakePool()) => { for (let i = 0; i < n; i++) await generation({ pool, st, cfg: cfg(), info, dir, log: () => {}, embed: false }, 'Firey'); };
+  beforeAll(async () => { info = await readGame(false); });
+
+  it("climbs a hidden objective: kept changes accumulate, the playbook gets closer to the optimum, and the benchmark against today's bot says so", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'bot-learn-'));
+    try {
+      const st = fresh();
+      await gens(st, 150, dir);
+      const F = st.fighters.Firey;
+      expect(F.gen).toBe(150);
+      expect(F.accepted).toBeGreaterThanOrEqual(4);
+      expect(fakeScore(F), 'closer to the optimum than the empty playbook').toBeGreaterThan(fakeScore(null) + 2);
+      expect(F.wr, "its playbook beats the legacy bot in the benchmark (the champion's own figure)").toBeGreaterThan(0.6);
+      expect(F.wrN).toBeGreaterThanOrEqual(8);
+      expect(F.matches).toBe(st.totals.matches);
+      expect(F.history.length).toBeLessThanOrEqual(30);
+      expect(Object.keys(F.v).every((g) => info.genes[g])).toBe(true);        // only genes the game has
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }, 240000);
+
+  it('learns nothing from noise: when the games do not depend on the playbook, almost no change is kept', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'bot-noise-'));
+    try {
+      const st = fresh();
+      await gens(st, 60, dir, fakePool(false));
+      expect(st.fighters.Firey.accepted).toBeLessThanOrEqual(5);              // about one candidate in eighty, against one in two for a rule that follows the coin
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }, 240000);
+
+  it('picks up where it stopped: ten generations in one go equal five, a restart from the saved file, and five more', async () => {
+    const a = mkdtempSync(path.join(tmpdir(), 'bot-run-a-')), b = mkdtempSync(path.join(tmpdir(), 'bot-run-b-'));
+    try {
+      const whole = fresh();
+      await gens(whole, 10, a);
+      const half = fresh();
+      await gens(half, 5, b);
+      const reloaded = loadState(b);                                          // what a restart reads: the state saved after the fifth generation
+      expect(reloaded.fighters.Firey.gen).toBe(5);
+      await gens(reloaded, 5, b);
+      const pick = (st) => { const F = st.fighters.Firey; return { gen: F.gen, accepted: F.accepted, v: F.v, vs: F.vs, sigma: F.sigma, matches: F.matches, wr: F.wr, wrN: F.wrN, history: F.history.map((h) => [h.g, h.ok, h.z, h.mut]) }; };
+      expect(pick(reloaded)).toEqual(pick(whole));
+      expect(loadState(b).fighters.Firey.gen).toBe(10);                       // and the file on disk is the latest
+    } finally { rmSync(a, { recursive: true, force: true }); rmSync(b, { recursive: true, force: true }); }
+  }, 120000);
+});
+
+describe("the trainer writes only index.html's @playbooks block", () => {
+  const html = readFileSync('artifacts/V1/index.html', 'utf8');
+  const entries = { Firey: { gen: 3, n: 480, wr: 0.625, v: { mJb: -0.5, sRng: 20 }, vs: { Pen: { J: -0.75 } } }, Pen: { v: { g0: 1 } } };
+  const block = /\/\/ @playbooks:begin[\s\S]*?\/\/ @playbooks:end/;
+
+  it('rewrites the PLAYBOOKS statement and keeps every other byte, CRLF line endings included', () => {
+    const out = embedPlaybooks(html, entries);
+    expect(out).not.toBe(html);
+    expect(out.replace(block, '')).toBe(html.replace(block, ''));
+    expect(out.split('\r\n').length - 1).toBe(out.split('\n').length - 1);     // not one bare LF in a CRLF file
+    expect(out).toContain('"Firey": {"gen":3,"n":480,"wr":0.625,"v":{"mJb":-0.5,"sRng":20},"vs":{"Pen":{"J":-0.75}}},');
+    expect(out).toContain('Written by scripts/train-bots.mjs');                // the comment above the statement survives
+    expect(embedPlaybooks(out, {})).toBe(html);                                // replacing is idempotent, and an empty set is the file as shipped
+    expect(embedPlaybooks(embedPlaybooks(html, { Pen: { v: { g1: 2 } } }), entries)).toBe(out);
+  });
+
+  it('what it writes is what the game reads', () => {
+    const out = embedPlaybooks(html, entries);
+    const w = loadMonolith(1, () => out).window;
+    const r = JSON.parse(w.eval('JSON.stringify({ firey: PLAYBOOKS.Firey, pen: PLAYBOOKS.Pen, eff: pbEff(PLAYBOOKS.Firey, "Pen", "zone") })'));
+    expect(r.firey).toEqual({ gen: 3, n: 480, wr: 0.625, v: { mJb: -0.5, sRng: 20 }, vs: { Pen: { J: -0.75 } } });
+    expect(r.pen.v.g0).toBe(1);
+    expect(r.eff.mJb).toBe(-1.25);                                             // mJb -0.5 and the named foe's J -0.75
+  });
+
+  it('refuses a file without the markers rather than guess', () => {
+    expect(() => embedPlaybooks('const PLAYBOOKS = {};', {})).toThrow(/@playbooks/);
+    expect(() => embedPlaybooks(html.replace('// @playbooks:end', '// elsewhere'), {})).toThrow(/@playbooks/);
+  });
+});
+
+describe("the trainer's matches are the game's", () => {
+  it("plays the golden Hard match to the frame when both bots are today's (no playbook), and a playbook override changes it", async () => {
+    const g = golden.find((x) => x.seed === 321);                              // Rocky v Needle, Hard
+    const r = await playMatch({ names: ['Rocky', 'Needle'], pb: [null, null], seed: 321, stocks: 2, maxFrames: 3000 }, false);
+    expect(r.frames).toBe(g.frames);
+    const final = g.final.split(',').map((s) => s.split(':'));
+    expect(r.stocks).toEqual(final.map((f) => +f[1]));
+    expect(r.pct).toEqual(final.map((f) => +f[2]));
+    expect(r.winner).toBe(final.findIndex((f) => f[3] === 'a'));
+    const book = await playMatch({ names: ['Rocky', 'Needle'], pb: [{ v: { mJb: -3, mJd0: -3, mFb: 2, sRng: 60 }, vs: {} }, null], seed: 321, stocks: 2, maxFrames: 3000 }, false);
+    expect(`${book.frames}/${book.stocks}/${book.pct}`).not.toBe(`${r.frames}/${r.stocks}/${r.pct}`);
+    const mirror = await playMatch({ names: ['Firey', 'Firey'], pb: [null, { v: { mJb: -3 }, vs: {} }], seed: 5, stocks: 1, maxFrames: 1500 }, false);   // two of one fighter, one with a playbook
+    expect([0, 1]).toContain(mirror.winner);
+    await closeWindow();
+  }, 300000);
+});
+
+describe("the trainer's smoke run", () => {
+  it('runs a generation end to end, saves it, resumes where it stopped, and embeds into a copy of the game', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'bot-train-'));
+    const copy = path.join(dir, 'index.html');
+    const node = (args, ms = 540000) => execFileSync(process.execPath, ['scripts/train-bots.mjs', ...args], { encoding: 'utf8', timeout: ms });
+    try {
+      const out = node(['smoke', '--dir', dir, '--fighters', 'Firey,Pen', '--pairs', '2', '--cands', '1', '--bench', '2', '--frames', '900', '--workers', '2']);
+      expect(out).toMatch(/matches a minute/);
+      let st = JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
+      expect(st.fighters.Firey.gen).toBe(1);
+      expect(st.fighters.Pen.gen).toBe(1);
+      expect(st.fighters.Rocky.gen).toBe(0);                                    // not in this run
+      expect(st.fighters.Pen.wr, "Pen had a playbook, so it was benchmarked against today's bot").not.toBeNull();
+      expect(st.fighters.Pen.wrN).toBe(2);
+      expect(st.fighters.Firey.matches).toBeGreaterThanOrEqual(4);              // the champion's two pairs and the candidate's
+      expect(st.totals.matches).toBe(st.fighters.Firey.matches + st.fighters.Pen.matches);
+      const before = st.totals.matches;
+      // pick up where it stopped: the same state, one more generation for Firey alone
+      const again = node(['run', '--dir', dir, '--fighters', 'Firey', '--gens', '1', '--pairs-max', '2', '--pairs-step', '2', '--cands', '1', '--bench', '2', '--frames', '900', '--workers', '2', '--no-prizes', '--priority', 'normal']);
+      expect(again).toMatch(/resuming/);
+      st = JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
+      expect(st.fighters.Firey.gen).toBe(2);
+      expect(st.fighters.Pen.gen).toBe(1);
+      expect(st.totals.matches).toBeGreaterThan(before);
+      expect(node(['status', '--dir', dir], 60000)).toMatch(/Firey\s+gen\s+2/);
+      // the playbooks go into a copy of the game and nowhere else
+      copyFileSync('artifacts/V1/index.html', copy);
+      expect(node(['embed', '--dir', dir, '--target', copy], 60000)).toMatch(/rewritten/);
+      const html = readFileSync(copy, 'utf8');
+      expect(html).toContain('"Pen": {"gen":1,');
+      expect(html).toContain('"mJb":0.25');
+      const block = /\/\/ @playbooks:begin[\s\S]*?\/\/ @playbooks:end/;
+      expect(html.replace(block, '')).toBe(readFileSync('artifacts/V1/index.html', 'utf8').replace(block, ''));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }, 900000);
 });
