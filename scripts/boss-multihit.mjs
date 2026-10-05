@@ -1,11 +1,14 @@
-// EVERY MOVE AGAINST A BOSS. A boss has no hit grace, so a hitbox that lives for several frames lands on it every frame unless the
+// EVERY MOVE AGAINST A BOSS. A boss had no hit grace, so a hitbox that lives for several frames landed on it every frame unless the
 // move remembers what it hit (a shot's pierce memory, hitCircle's `once`, the burst ring's set): a piercing shot did (A1, `56c6f37`),
 // and so did Puffball's Meteor Puff -- "puffball multihitbox on smash. instakills bosses." (the owner, 2026-10-02; `3b681aa`): 721 HP
-// in 32 frames, where a fighter takes 22. This fires every input of every playable fighter (the seven on the move card, the smash, and
+// in 32 frames, where a fighter takes 22. A boss keeps a grace for each attacking character now ("give bosses by-character iframes",
+// the owner, 2026-10-04; bossGraceRec), which stops a second hit of the same character the way a fighter's does, and those per-move
+// sets are the second guard. This fires every input of every playable fighter (the seven on the move card, the smash, and
 // the smash from 200 px up) at a boss pinned beside them, and at a fighter dummy pinned at the same spot, and prints each move that
 // deals the boss more than twice what the fighter takes. PER-FRAME marks one that lands on four or more frames in a row: the bug.
-// The rest land harder in ONE frame because a boss's body is big (a spray of coins all reaching it, a fighter's grace stopping all
-// but the first) -- look, but that is not this. Run from the repo root (about a minute per 34 fighters):
+// The rest land harder because a boss's body is big (a shot that went through and was still inside it when the grace ran out; a
+// spray of coins all reaching a body 170 px across, and before the grace all of them landing) -- look, but that is not this.
+// Run from the repo root (about a minute per 34 fighters):
 //
 //   node scripts/boss-multihit.mjs                 the whole roster
 //   node scripts/boss-multihit.mjs 0 34            a slice (first, count), to run several at once

@@ -832,7 +832,9 @@ describe("Lightning hits twice as hard in One's fight, and only there", () => {
       one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
       var F = fighters[1], m = one._dmgTakenMult, out = { m: m };
       [you, F].forEach(function(f){ f.controller = 'still'; });
-      var took = function(fn){ var h = one.hp; fn(); return (h - one.hp) / m; };
+      // (each hit is tried on its own: it opens that fighter's grace on her, one for each attacker -- "give bosses by-character iframes", the
+      // owner, 2026-10-04 -- so the clock moves 30 frames on before each, past any grace)
+      var took = function(fn){ hazardT += 30; var h = one.hp; fn(); return (h - one.hp) / m; };
       out.meleeL = took(function(){ damageSummons(you, one.x, one.y, 10, 20); });
       out.meleeF = took(function(){ damageSummons(F, one.x, one.y, 10, 20); });
       out.shotL = took(function(){ projectiles = [{ owner:you.idx, ownerObj:you, x:one.x, y:one.y, vx:0, vy:0, dmg:10, kb:5, r:10, life:10 }]; step(); });

@@ -7294,9 +7294,13 @@ function assistHitSummon(s, t, dmg, gapped){
     if(hazardT - (L[s.act]==null ? -1e9 : L[s.act]) < ASSIST_BOSS_GAP) return false;
     L[s.act] = hazardT;
   }
-  damageSummons({team:s.team, idx:-2}, t.x, t.y, 1, dmg, t);
+  damageSummons(assistFighter(s), t.x, t.y, 1, dmg, t);
   return true;
 }
+// An assist trophy is its own character to a boss's grace (bossGraceRec): one stable stand-in per trophy, so its hits neither
+// use up its summoner's grace nor share one with another trophy. (idx -2, as every summon-owned hit has always carried.)
+let ASSIST_KEY_SEQ = 0;
+function assistFighter(s){ return s._as || (s._as = { team:s.team, idx:-2, _asKey:'a'+(++ASSIST_KEY_SEQ) }); }
 
 // ---- ASSIST BODY & AI -------------------------------------------------------------------------
 // An assist used to be a floor-bound puck: gravity, a snap to groundY(), and one steering line
@@ -20608,6 +20612,7 @@ function chainBoltBoss(s, dmg, from){
   else if(s._ungrounded && !s._grounded){ for(let i=0;i<3;i++) puff(s.x, s.y, '#888', 3); }
   else { s.hp -= dmg; d = dmg; }
   for(let i=0;i<5;i++) puff(s.x + (Math.random()*30-15), s.y + (Math.random()*30-15), '#f2e84b', 4);
+  if(d > 0 && from) bossGraceNote(s, from, dmg);   // it opens her grace on the boss as it does on a fighter; it is not asked first, as the bolt does not ask a fighter's (its link goes to the nearest foe, once a cast)
   return d;
 }
 
@@ -24771,7 +24776,7 @@ function updateSummons(){
           // each at the trophy number (addDmg). The patch is slid to fit inside the walls: at 300 px wide, a Grotato summoned
           // at the edge would otherwise plant half of it off the stage, where nothing ever steps.
           const half = (GROTATO_MINES-1)*GROTATO_GAP*0.5, mx = clamp(s.x, 30+half, WW-30-half);
-          for(let i=0;i<GROTATO_MINES;i++){ addProj({owner:-2, ownerObj:{team:s.team,idx:-2}, x:mx+(i-(GROTATO_MINES-1)*0.5)*GROTATO_GAP, y:groundY()-8, vx:0, vy:0, grav:false, dmg:addDmg(s, 12), kb:11, r:12, color:'#4a9c6a', life:60*8, trap:true, arm:30, assist:true}); } s.life=0;
+          for(let i=0;i<GROTATO_MINES;i++){ addProj({owner:-2, ownerObj:assistFighter(s), x:mx+(i-(GROTATO_MINES-1)*0.5)*GROTATO_GAP, y:groundY()-8, vx:0, vy:0, grav:false, dmg:addDmg(s, 12), kb:11, r:12, color:'#4a9c6a', life:60*8, trap:true, arm:30, assist:true}); } s.life=0;
         } else if(act==="vortex"){               // Blender: multi-hit vortex trap, held at centre stage
           // It no longer chases (see `fixed`), so it needs the reach of a placed trap rather than
           // the 70px of a thing that was expected to walk up to you.
@@ -24843,7 +24848,7 @@ function updateSummons(){
           s._cd=0;
         } else if(act==="bolt"){                 // Pie: lobs arcing dessert ordnance
           // `assist`: a lob is an assist's shot, so it can land on the boss's side too (the projectile-vs-summon loop)
-          if(Math.abs(dx)<340){ addProj({owner:-2, ownerObj:{team:s.team,idx:-2}, x:s.x, y:s.y, vx:s.face*4, vy:-6, grav:true, bounce:true, dmg:addDmg(s, 8), kb:7, r:9, color:s.color, life:100, assist:true}); s._cd=55; }
+          if(Math.abs(dx)<340){ addProj({owner:-2, ownerObj:assistFighter(s), x:s.x, y:s.y, vx:s.face*4, vy:-6, grav:true, bounce:true, dmg:addDmg(s, 8), kb:7, r:9, color:s.color, life:100, assist:true}); s._cd=55; }
         }
       }
     }
@@ -25034,7 +25039,8 @@ function step(){
           applyHit(t,4,kx,ky,f); } }
         // The aura reaches a boss too, on the same six-frame tick: it looped over fighters only, so Saw's Spin Cycle and Defensive
         // Spin, Donut's Sprinkle Roll and every 'spin' up-special (Firey, Flower, Match, Balloony, Bomb, Donut) did 0 in Boss Rush.
-        if(summons.length) damageSummons(f, f.x, f.y, f.r+(f._spinR||30), 4); }
+        // ...and as the fighters above do (graceBlocks), each tick lands through the grace the spin's own earlier ticks opened on the boss (f._combo).
+        if(summons.length){ f._combo=true; damageSummons(f, f.x, f.y, f.r+(f._spinR||30), 4); f._combo=false; } }
     } else f._sawOn = false;
     // Puffball — METEOR PUFF: the plunge is a live state, not a single frame. The smash commits her
     // downward and the hitbox tracks her all the way down, so the payoff can measure the thing it
@@ -25183,7 +25189,7 @@ function step(){
           for(let i=0;i<4;i++) puff(t.x,t.y,'#c0304a',3);
         }
       }
-      if(summons.length) damageSummons(f, f.x, f.y, f.r+6, n.dmg, null, n.sHits || (n.sHits = new Set()));   // a boss she runs into takes the 16 once (the dash looped over fighters only: 0 in Boss Rush)
+      if(summons.length){ f._combo=true; damageSummons(f, f.x, f.y, f.r+6, n.dmg, null, n.sHits || (n.sHits = new Set())); f._combo=false; }   // a boss she runs into takes the 16 once (the dash looped over fighters only: 0 in Boss Rush); through her own grace, as the fighters above (graceBlocks)
       if(hazardT%2===0) puff(f.x-f.face*10, f.y+6, '#c0c0c0', 3);
       if(--n.t <= 0){
         const cx = f.x - f.face*30;
@@ -25191,7 +25197,7 @@ function step(){
           if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f)) continue;   // lands through the dash's grace
           if(hurtGap(t, cx, f.y) < f.r + 30){ applyHit(t, n.jab, -f.face*7, -5, f); applyBleed(t, BLEED_FRAMES); for(let i=0;i<8;i++) puff(t.x,t.y,'#c0304a',4); }   // the jab back is the extra 7
         }
-        if(summons.length) damageSummons(f, cx, f.y, f.r+30, n.jab);   // and the jab back lands on a boss behind her
+        if(summons.length){ f._combo=true; damageSummons(f, cx, f.y, f.r+30, n.jab); f._combo=false; }   // and the jab back lands on a boss behind her, through the dash's grace as it does on a fighter (graceBlocks)
         f.vx = 0; f.hitstun = Math.max(f.hitstun, NAIL_STUN); f._nail = null;
       }
     }
@@ -25251,7 +25257,8 @@ function step(){
           const withinX = (s.x > Math.min(f.x, f.x-f.vx) - (f.r+s.r+8)) && (s.x < Math.max(f.x, f.x-f.vx) + (f.r+s.r+8));
           if(withinX && Math.abs(s.y-f.y) < f.r+s.r+20){
             const dd = f._dashDmg||12;
-            if(s.type==="boss"){ if(s._oneFight) oneTakeDamage(s, dd, f); else if(s._cobsFight) cobsTakeDamage(s, dd, f); else if(!twoUngroundedBlocks(s)) s.hp -= dd; for(let i=0;i<5;i++) puff(s.x,s.y,'#8ed24b',5); }
+            if(s.type==="boss" && bossGraceBlocks(s, f, true)) continue;   // in the dasher's grace: not run through, not marked (the fighter loop above skips on invuln alone)
+            if(s.type==="boss"){ bossTakeHit(s, dd, f); for(let i=0;i<5;i++) puff(s.x,s.y,'#8ed24b',5); }
             else if(s.hostile){ hurtHostileAdd(s, dd, Math.sign(s.x-f.x||1)*4, f); }   // MePhone4's adds can be run down
             else { s.life -= 30; }
             (f._dashSummonHits = f._dashSummonHits || new Set()).add(s);
@@ -25787,6 +25794,10 @@ function step(){
         if(s.team===(o?o.team:0)) continue; if(pr._swing && pr._swing.has(s)) continue;                  // don't hit your own assist; nor a boss this press's swing already hit (pr._swing, see doAttack)
         if(fromAssist && !(s.type==="boss" || s.hostile)) continue;
         if(Math.hypot(s.x-pr.x, s.y-pr.y) < s.r+pr.r){
+          // GRACE, PER ATTACKER (bossGraceRec): a shot that reaches a boss while its owner's grace on it is running goes on through,
+          // unspent and unmarked, as it goes through a fighter in grace (the fighter loop above skips them on invuln alone). The
+          // owner is the character: the fighter, the reflector of a turned-back shot, or an assist trophy (assistFighter).
+          if(s.type==="boss" && o && bossGraceBlocks(s, o, true)) continue;
           // A pierce/van shot is deliberately NOT consumed on contact (see below) — but this loop,
           // unlike the fighter loop above, had no per-target guard to go with that. So a piercing
           // projectile sitting inside a boss's ~85px body re-applied its FULL damage on every frame
@@ -25798,7 +25809,7 @@ function step(){
             if(pr._sHit.indexOf(s) >= 0) continue;    // already went through this one — pass on
             pr._sHit.push(s);
           }
-          if(s.type==="boss"){ if(s._oneFight) oneTakeDamage(s, pd, o); else if(s._cobsFight) cobsTakeDamage(s, pd, o); else if(!twoUngroundedBlocks(s)) s.hp -= pd; for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }
+          if(s.type==="boss"){ bossTakeHit(s, pd, o); for(let i=0;i<4;i++) puff(pr.x,pr.y,'#fff',4); }   // (One's shield, Cobs's passives, Two's grounding, and the owner's grace opened by what lands)
           else if(s.hostile){ hurtHostileAdd(s, pd, Math.sign(pr.vx||1)*2, null); }   // MePhone4's adds can be shot down
           else { s.vx += Math.sign(pr.vx||1)*2; }   // assists are immune (see damageSummons) — shots shove, never kill
           if(!pr.pierce && !pr.van) pr.life=0;
@@ -29224,7 +29235,11 @@ function damageSummons(f, cx, cy, rad, dmg, only, once){
       if(s._tongueHp<=0) freeFromStomach(f);   // no "TONGUE BEATEN" line ("Remove them all"); being spat out is visible
       continue;
     }
-    if(Math.hypot(s.x-cx, s.y-cy) < s.r+rad){ if(once) once.add(s); damageSummon(f, s, cx, cy, dmg); }
+    if(Math.hypot(s.x-cx, s.y-cy) < s.r+rad){
+      // A boss in this attacker's grace is skipped BEFORE `once` marks it struck (damageSummon asks again, for the callers that
+      // come straight to it): a fighter in grace is skipped the same way, so a ring still growing lands when the grace is over.
+      if(s.type==="boss" && bossGraceBlocks(s, f)) continue;
+      if(once) once.add(s); damageSummon(f, s, cx, cy, dmg); }
   }
 }
 // TWO's Power Ungrounded (phase 3): "they take NO damage until a fighter stands close enough for long enough to ground it"
@@ -29242,12 +29257,17 @@ function twoUngroundedBlocks(s){
 // can land its damage on the boss it picked without a radius search. What each branch does is unchanged.
 function damageSummon(f, s, cx, cy, dmg){
   if(s.type==="boss"){
+    // GRACE, PER ATTACKER (bossGraceRec): a hit that lands opens THIS character's grace on this boss, and until it runs out this
+    // character's next hit does not land (a flurry or an aura through its own, a new move through an open chain: as on a fighter).
+    // Asked first, so a hit turned away costs nothing; noted only once it did damage, so a shield that stopped it opens nothing.
+    if(bossGraceBlocks(s, f)) return;
     // ONE: her ghost fighter and her Power Ungrounded both shield her (see oneTakeDamage)
-    if(s._oneFight){ if(oneTakeDamage(s, dmg, f) > 0){ s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4); } return; }
+    if(s._oneFight){ if(oneTakeDamage(s, dmg, f) > 0){ bossGraceNote(s, f, dmg); s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4); } return; }
     // STEVE COBS: no shield -- every hit lands, and what it does to him is his passives' business (see cobsTakeDamage)
-    if(s._cobsFight){ if(cobsTakeDamage(s, dmg, f) > 0){ s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4); } return; }
+    if(s._cobsFight){ if(cobsTakeDamage(s, dmg, f) > 0){ bossGraceNote(s, f, dmg); s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4); } return; }
     // TWO: while their power is ungrounded they are immune — you must ground it first (twoUngroundedBlocks).
     if(twoUngroundedBlocks(s)) return;
+    bossGraceNote(s, f, dmg);
     s.hp -= dmg; s.vx += Math.sign(s.x-cx||1)*2; for(let i=0;i<4;i++) puff(s.x,s.y,'#fff',4);
   }
   // An assist is a CAMEO, not a combatant: it can be shoved around, but it cannot be killed.
@@ -29303,9 +29323,10 @@ function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band,sourKb,once){
       if(t.team!==f.team){ landed++; f._confirm = 1; }   // a SWING that lands recovers sooner (see JAB_HIT_CD); a shot landing this frame does not count
     }
   }
-  // `once`: a hitbox that is live for several frames passes its own set, so a boss -- which has no grace after a hit, unlike a
-  // fighter -- takes it once, not once a frame (Puffball's Meteor Puff landed 22 a frame on a boss: "puffball multihitbox on
-  // smash. instakills bosses.", the owner, 2026-10-02)
+  // `once`: a hitbox that is live for several frames passes its own set, so a boss takes it once, not once a frame (Puffball's
+  // Meteor Puff landed 22 a frame on a boss, which had no grace after a hit then: "puffball multihitbox on smash. instakills
+  // bosses.", the owner, 2026-10-02). A boss keeps a grace for each attacker now (bossGraceRec), which stops the second frame
+  // first; this set stays as the second guard, and for the frames after the grace has run out.
   if(summons.length) damageSummons(f, cx, cy, rad, dmgHigh, null, once);
   return landed;
 }
@@ -29587,6 +29608,71 @@ function graceBlocks(t, f){
 // Two launchers ignore hit-grace by design, and told it apart by size alone: above 16, the old grace
 // cap, was real invulnerability. Grace reaches 24 now, so they keep that rule but never count grace.
 function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
+// WHAT A HIT DOES TO ITS TARGET'S GRACE AND CHAIN -- one place, for a fighter (applyHit) and for a boss (bossGraceNote).
+// Hit-grace scales with the hit's weight: light/fast pokes give little grace (so rapid pokes connect), heavy hits give more
+// (to stop projectile walls chain-stunning). More of it, on the owner's call: a light poke gave 6 frames, which is how a
+// projectile wall or a fast multi-hit chained someone with no gap to answer in. Roughly doubled at the light end, and the cap
+// raised so a big hit still buys more room than a small one. Comeback scaling: a designated fighter's attacks impose less
+// hit-grace (down to a floor), so their pokes chain better the more they've died / KO'd.
+function hitGraceFrames(dmg, from){
+  let grace = Math.round(9 + dmg*0.6);        // ~12 for a 5-dmg poke, ~20 for an 18-dmg hit, capped at 24
+  if(from && from.kit && COMEBACK[from.kit.special]){ grace = Math.max(COMEBACK_IFRAME_FLOOR, grace - comebackPoints(from)); }
+  return Math.min(24, grace);
+}
+function hitStunFrames(dmg, chained){ return Math.max(4, Math.round(Math.min(24, 6+dmg) * Math.pow(CHAIN_DECAY, chained))); }
+// `t` is anything with a fighter's invuln / hitstun / chain / grace fields: a fighter, or a boss's record of one attacker.
+function stampHit(t, dmg, from, isTick){
+  const chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
+  if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
+  t.hitstun = hitStunFrames(dmg, chained);
+  const grace = hitGraceFrames(dmg, from);
+  t.invuln = Math.max(t.invuln, grace);
+  t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
+  t._graceLeft = Math.max(t._graceLeft||0, grace);
+}
+// BOSS GRACE, PER ATTACKING CHARACTER. "give bosses by-character iframes" (the owner, 2026-10-04). Fans and rings fire all their
+// shots at once. A fighter's grace stops all but the first; a boss has a body 170 px across, had no grace, and took every one
+// (Money's coin spray 72 on a boss against 33 on a fighter, Ice Cube's ring 40 against 5, Starfruit 56, Roboty 51). Now a boss
+// keeps a record for each character that has hit it -- the boss as THAT attacker sees it: a stand-in with a fighter's own grace
+// and chain fields, stamped by the same stampHit and asked by the same graceBlocks / chainOpen, so a boss takes a hit exactly
+// as a fighter does. Other characters are not in it: two fighters hitting one boss in a frame both land. The character is
+//   the fighter, for all it does (melee, specials, smashes, its shots, turrets, traps and puddles),
+//   the reflector, for a shot it turned back (applyHit reflected: the shot's owner becomes her),
+//   an assist trophy, for itself (assistFighter: a stable stand-in, not the summoner).
+// Damage from no character (arena hazards, falls, a boss's own things) never asks. The record runs down by the frame count since
+// it was last read (hazardT), which is how a fighter's invuln and hitstun run down, so nothing has to tick it.
+function bossGraceRec(s, f, make){
+  const k = f._asKey || f.idx;
+  let G = s._grace; if(!G){ if(!make) return null; G = s._grace = {}; }
+  let R = G[k];
+  if(!R){
+    if(!make) return null;
+    R = G[k] = { invuln:0, hitstun:0, _graceLeft:0, _graceBy:-1, _graceTok:0, _chainBy:-1, _chain:0, _chainSeq:-1, at:hazardT };
+    for(const k2 in G) if(G[k2] !== R && hazardT - G[k2].at >= 40) delete G[k2];   // a record untouched for 40 frames has run out (grace and stun top out at 24), and a missing one reads the same: so the trophies of a long fight do not pile up
+  }
+  const dt = hazardT - R.at;
+  if(dt !== 0){ R.at = hazardT; if(dt > 0){ R.invuln = Math.max(0, R.invuln - dt); R._graceLeft = Math.max(0, R._graceLeft - dt); R.hitstun = Math.max(0, R.hitstun - dt); } }
+  return R;
+}
+// Does this attacker's grace on this boss stop the hit? The rule is the fighter's: a move built to hit more than once (f._combo)
+// lands through the grace its own earlier hits opened (graceBlocks); a swing may follow up through it as a new move while the
+// chain is open (chainOpen); a shot, a dash or a trap (`strict`) is stopped by any grace (a fighter's shot loop tests invuln alone).
+function bossGraceBlocks(s, f, strict){
+  const R = bossGraceRec(s, f, false);
+  if(!R || !(R.invuln > 0)) return false;
+  return f._combo ? graceBlocks(R, f) : (strict || !chainOpen(R, f));
+}
+// A hit landed on the boss: it opens this attacker's grace, for as long as the same hit gives a fighter.
+function bossGraceNote(s, f, dmg){ stampHit(bossGraceRec(s, f, true), dmg, f, false); }
+// A boss hurt by a shot or a dash: damageSummon's own branches for a caller with no point to shove it from. Returns what it took.
+function bossTakeHit(s, dmg, from){
+  let d = 0;
+  if(s._oneFight) d = oneTakeDamage(s, dmg, from);
+  else if(s._cobsFight) d = cobsTakeDamage(s, dmg, from);
+  else if(!twoUngroundedBlocks(s)){ s.hp -= dmg; d = dmg; }
+  if(d > 0 && from) bossGraceNote(s, from, dmg);
+  return d;
+}
 function applyHit(t, dmg, kbx, kby, from, opts){
   // SAFE IN YOUR OWN ZONE. Checked before anything else so no damage, knockback, burn or status
   // can be applied — a partial exemption would still let a fighter be juggled out of their spawn.
@@ -29785,32 +29871,17 @@ function applyHit(t, dmg, kbx, kby, from, opts){
     kbx = sx*L*Math.cos(a); kby = L*Math.sin(a);
   }
   knock(t, kbx*scale, kby*scale - t.pct*0.025);
-  // Each link of a chain stuns for less, so a chain ends even before CHAIN_MAX (see chainOpen).
+  // Each link of a chain stuns for less, so a chain ends even before CHAIN_MAX (see chainOpen). The stun, the chain and the
+  // hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
+  // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
-  const chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
-  if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
-  t.hitstun = Math.max(4, Math.round(Math.min(24, 6+dmg) * Math.pow(CHAIN_DECAY, chained)));
+  stampHit(t, dmg, from, isTick);
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
   if(!isTick && t._sm && t._sm.drive) t._sm = null;   // a lunge / dash / hop is lost to a hit (the dash's i-frames mostly spare it)
   t._hurtAnim=HURT_ANIM;   // render-only: the one unambiguous "was HIT" signal (see wasHit)
   t._hurt=90;   // any hit suppresses heal-over-time (Fern) for ~1.5s so aggression can break through
-  // hit-grace scales with the hit's weight: light/fast pokes give little grace (so rapid pokes connect),
-  // heavy hits give more (to stop projectile walls chain-stunning).
-  // More of it, on the owner's call. A light poke gave 6 frames, which is how a projectile wall or a
-  // fast multi-hit chained someone with no gap to answer in. Roughly doubled at the light end, and
-  // the cap raised so a big hit still buys more room than a small one.
-  let grace = Math.round(9 + dmg*0.6);        // ~12 for a 5-dmg poke, ~20 for an 18-dmg hit, capped at 24
-  // Comeback scaling: a designated fighter's attacks impose less hit-grace (down to a floor),
-  // so their pokes chain better the more they've died / KO'd.
-  if(from && from.kit && COMEBACK[from.kit.special]){
-    const reduce = comebackPoints(from);
-    grace = Math.max(COMEBACK_IFRAME_FLOOR, grace - reduce);
-  }
-  t.invuln=Math.max(t.invuln, Math.min(24, grace));
-  t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
-  t._graceLeft = Math.max(t._graceLeft||0, Math.min(24, grace));
   t.flash=8;
   puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,(from&&from.color)||'#fff',4);   // a boss's shot (its owner is {team:-1, idx:-2}) and a hazard (null) have no colour: the sparks had none either, and drew in whatever fill the last thing left
   if(t.you||from?.you) shake(dmg);

@@ -12,6 +12,8 @@ import { bootMonolith } from './helpers/smash-golden.js';
 //   the jab of Puffball, Ruby, Fanny and Ruler, which swings AND shoots: twice the jab -> once
 // And the shots that pierce or linger (the shot loop's pr._sHit guard, a trap or puddle that is used up on contact) and the spin aura's fixed
 // six-frame tick, which were already right and stay that way.
+// Since 2026-10-04 a boss keeps a grace for each attacking character too ("give bosses by-character iframes", the owner; test/boss-grace.test.js),
+// which stops a second hit of one character first. Everything above stays as the second guard: each is one hit per press, grace or none.
 
 let W;
 beforeAll(async () => {
