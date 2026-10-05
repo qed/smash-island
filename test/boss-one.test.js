@@ -1361,6 +1361,103 @@ describe('"increase delay for both out of orbit and zap to dust."', () => {
   });
 });
 
+// "some attacks need nerfs, some need buffs. give me these in question boxes." (the owner, 2026-10-02) -- the picks, attack by attack, from this file's point of view. "Harder, same
+// damage" holds for the buffs: no hit is for more than it was (the "same damage per hit" tests above still hold).
+describe('attack by attack: HANDS FROM THE GROUND! "Nerf: slower cracks" and FOLDING ISLAND! "Buff: faster folds"', () => {
+  const MARK = `var mark = function(kind){ var fresh1 = oneFx.filter(function(e){ return e.kind === kind && !e._m; }); fresh1.forEach(function(e){ e._m = 1; }); return fresh1; };`;
+
+  it('HANDS: the crack before every later wave shows 24 frames ahead at every tier (it was 14, 12 and 10), and the wave comes up as it ends', () => {
+    const r = STAGE(`
+      ${MARK}
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; one.x = you.x - 700; one.y = groundY() - 330;
+        var T = oneTier(one, 'hands'), warns = [], waves = [];
+        one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }];
+        ONE_MOVES.hands(one, you, ++BOSS_ATK_ID);
+        var up = function(){ var fresh1 = own().filter(function(p){ return p.shape === 'onehand' && !p._m; }); fresh1.forEach(function(p){ p._m = 1; }); return fresh1; };
+        up();   // (the first wave came up with the call)
+        for (var i=1; i<300 && (oneBusy(one) || i < 5); i++){
+          one._atkTimer = 1e9; you.invuln = 1e9; one.x = you.x - 700; one.y = groundY() - 330; one._hop = null;
+          step();
+          var w = mark('crackwarn'); if (w.length) warns.push({ i: i, max: w[0].max, life: w[0].life });
+          if (up().length) waves.push(i);
+        }
+        out[t] = { T: T, warns: warns, waves: waves };
+      });
+      return out;`);
+    const was = [14, 12, 10];
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, g = r[t];
+      expect(g.T.crack, `tier ${t}: a crack that shows 24 frames ahead (it was ${was[k]})`).toBe(24);
+      expect(g.warns.length, `tier ${t}: a crack before each of the last two waves`).toBe(2);
+      g.warns.forEach((w, j) => {
+        expect(w.max, 'it is lit for the whole 24').toBe(24);
+        expect(g.waves[j] - w.i, `tier ${t}: and the wave comes up as it ends`).toBe(24);
+      });
+    }
+  });
+
+  it('HANDS: the root a hand leaves you with is shorter (26 and 40 frames at tiers 2 and 3, it was 40 and 62); tier 1 slows, as it did', () => {
+    const r = STAGE(`
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); one.x = you.x - 900; one.y = groundY() - 330;
+        var T = oneTier(one, 'hands'), peak = 0, slow = 0;
+        one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }];
+        ONE_MOVES.hands(one, you, ++BOSS_ATK_ID);
+        for (var i=0; i<14; i++){ one._atkTimer = 1e9; one.x = you.x - 900; one.y = groundY() - 330; one._hop = null; step(); peak = Math.max(peak, you.rooted || 0); slow = Math.max(slow, you.slowed || 0); }
+        out[t] = { fx: T.fx, fxN: T.fxN, rooted: peak, slowed: slow, pct: you.pct };
+      });
+      return out;`);
+    const was = { 2: 40, 3: 62 };
+    expect([r[1].fx, r[2].fx, r[3].fx], 'slow, then root, then root').toEqual(['slow', 'root', 'root']);
+    expect(r[1].slowed, 'tier 1 slows you, as it did').toBeGreaterThan(0);
+    for (const t of [2, 3]) {
+      expect(r[t].fxN, `tier ${t}: a shorter root (it was ${was[t]} frames)`).toBeLessThan(was[t]);
+      expect([r[t].fxN], 'the numbers it is now').toEqual([{ 2: 26, 3: 40 }[t]]);
+      expect(r[t].pct, `tier ${t}: the hand hit you`).toBeGreaterThan(0);
+      expect(r[t].rooted, `tier ${t}: and rooted you, for no more than ${r[t].fxN} frames`).toBeGreaterThan(0);
+      expect(r[t].rooted).toBeLessThanOrEqual(r[t].fxN);
+      expect(r[t].rooted, 'and well under what it was').toBeLessThan(was[t]);
+    }
+  });
+
+  it('FOLDING ISLAND!: the later folds come a quarter quicker -- lit for 33, 30 and 27 frames where it was 44, 40 and 36 -- and the first fold, the reach and the jaws are as they were', () => {
+    const r = STAGE(`
+      ${MARK}
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); worldPlats = worldPlats.filter(function(p){ return p.solid; }); you.invuln = 1e9;
+        var T = oneTier(one, 'fold'), warns = [], shuts = [];
+        one._telKind = 'fold'; one._foldZones = oneFoldZones(one, you, T, true); one._tel = 0;
+        ONE_MOVES.fold(one, you, ++BOSS_ATK_ID);
+        mark('jaws'); shuts.push(0);
+        for (var i=1; i<900 && (oneBusy(one) || i < 5); i++){
+          one._atkTimer = 1e9; one.x = you.x + 900; one.y = groundY() - 400; you.invuln = 1e9; one._hop = null;
+          step();
+          var w = mark('foldwarn'); if (w.length) warns.push({ i: i, life: w[0].life, max: w[0].max });
+          if (mark('jaws').length) shuts.push(i);
+        }
+        out[t] = { T: T, warns: warns, shuts: shuts };
+      });
+      return out;`);
+    const was = { tel2: [44, 40, 36], tel: [58, 54, 50], folds: [2, 3, 4], half: [180, 195, 210], H: [150, 165, 180] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, g = r[t], T = g.T;
+      expect(T.tel2, `tier ${t}: a quarter quicker (it was ${was.tel2[k]})`).toBe(Math.round(was.tel2[k]*0.75));
+      expect(T.tel2 / was.tel2[k], 'no more than three quarters of what it was').toBeLessThanOrEqual(0.76);
+      expect(T.tel2, `tier ${t}: and still a tell you can read: lit for at least 27 frames, nearly half a second`).toBeGreaterThanOrEqual(27);
+      expect([T.tel, T.folds, T.half, T.H], 'the first fold, the chain, the reach and the jaws are as they were').toEqual([was.tel[k], was.folds[k], was.half[k], was.H[k]]);
+      expect(g.warns.length, `tier ${t}: a lit zone before each fold after the first`).toBe(T.folds - 1);
+      g.warns.forEach((w, j) => {
+        expect(w.life, 'lit for the whole tell').toBe(T.tel2);
+        expect(g.shuts[j + 1] - w.i, `tier ${t}: and the next fold shuts as it ends`).toBe(T.tel2);
+      });
+    }
+  });
+});
+
 describe('heavy hits go through impact() (shake, dust, debris, scars)', () => {
   it('each attack shakes the screen where it lands: zap 20, fold 30, hands 12, the kick 24, and the lighter ones; all of them dust and debris', () => {
     const r = STAGE(`
