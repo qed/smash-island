@@ -141,7 +141,7 @@ describe('MIND READ!', () => {
     expect(r.c.dmg, 'the signature is a full boss hit').toBe(r.dmg);
     expect(Math.hypot(r.c.x - r.rd[3], r.c.y - r.rd[4]), 'it leaves the rift (one frame of flight on)').toBeLessThan(14);
     expect(r.c.vx, 'and flies at you: you are to its right').toBeGreaterThan(0);
-    expect(r.speed).toBeCloseTo(13, 1);
+    expect(r.speed, '11.5 a frame: "1 needs to be slightly nerfed in speed" (the owner, 2026-10-05; it was 13)').toBeCloseTo(11.5, 1);
     expect(r.homing, 'phase 1 does not home').toBe(0);
     expect(r.copied).toBe('ember');
   });
@@ -155,8 +155,36 @@ describe('MIND READ!', () => {
         summons = []; projectiles = []; });
       return out; })()`);
     expect(r[1]).toMatchObject({ n: 1, ids: 1, homing: [0] });
-    expect(r[2]).toMatchObject({ n: 2, ids: 1, delays: [0, 5], homing: [0.06, 0.06] });
-    expect(r[3]).toMatchObject({ n: 3, ids: 1, delays: [0, 5, 11], homing: [0.06, 0.06, 0.06] });
+    // (they turn 0.053 a frame, it was 0.06: slowed with their speed, "1 needs to be slightly nerfed in speed", the owner, 2026-10-05)
+    expect(r[2]).toMatchObject({ n: 2, ids: 1, delays: [0, 5], homing: [0.053, 0.053] });
+    expect(r[3]).toMatchObject({ n: 3, ids: 1, delays: [0, 5, 11], homing: [0.053, 0.053, 0.053] });
+  });
+
+  // "1 needs to be slightly nerfed in speed" (the owner, 2026-10-05; MIND READ! is his number 1): the copies fly about an eighth slower and turn as much slower, so they curve along the line they
+  // did, only slower -- as many of them, the same hit, the same life.
+  it('"1 needs to be slightly nerfed in speed": the copies fly 11.5 a frame, where it was 13 -- 10 to 15 percent slower -- and turn as much slower, so they curve along the same line; as many, as hard, as long-lived', () => {
+    const r = W.eval(`(function(){ var out = {};
+      [1, 2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
+        f._lastSpecialKind = 'ember'; ${FIRE(0)}
+        var cp = projectiles.filter(function(p){ return p.twoCopy; }), p0 = cp[0], x0 = p0.x, y0 = p0.y;
+        step(); ${HOLD}
+        out[ph] = { n: cp.length, fly: Math.hypot(p0.x - x0, p0.y - y0), speed: Math.hypot(p0.vx, p0.vy), homing: p0.homing, dmg: p0.dmg, full: bossDmg() };
+        summons = []; projectiles = []; });
+      out.R = { speed: TWO.read.speed, home: TWO.read.home, life: TWO.read.life, copies: TWO.read.copies.slice() };
+      return out; })()`);
+    expect(r.R.speed, 'it was 13').toBe(11.5);
+    expect(r.R.speed/13, 'about 10 to 15 percent slower').toBeGreaterThan(0.85);
+    expect(r.R.speed/13).toBeLessThan(0.9);
+    expect(r.R.speed/r.R.home, 'the turn is slowed with the speed: the curve keeps the radius it had, 217 px (13 / 0.06)').toBeCloseTo(13/0.06, -1);
+    expect(r.R.copies, 'not more copies').toEqual([0, 1, 2, 3]);
+    expect(r.R.life, 'and they live as long').toBe(80);
+    for (const ph of [1, 2, 3]) {
+      expect(r[ph].n, `phase ${ph}: 1, 2, 3 copies`).toBe(ph);
+      expect(r[ph].speed, `phase ${ph}: it leaves the rift at 11.5`).toBeCloseTo(11.5, 3);
+      expect(r[ph].fly, `phase ${ph}: and covers 11.5 px a frame in the air`).toBeCloseTo(11.5, 1);
+      expect(r[ph].dmg, `phase ${ph}: a hit is the boss hit it was`).toBe(r[ph].full);
+    }
+    expect(r[3].homing, 'homing comes with phase 2 as it did').toBe(0.053);
   });
 
   it('a hit from the copies is one boss hit at most, however many come; the drain is as it was (6% inside 260 px, 340 in phase 3, 25 meter, Two heals 60% of it)', () => {
@@ -215,7 +243,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
     expect(r.mkAfter[0]).toBe(420);
   });
 
-  it('the ball drops from the sky onto its mark, bounces toward you 1, 2 then 3 more times by phase, a low hop each, and rises to be the sun again', () => {
+  it('the ball drops from the sky onto its mark, bounces toward you 2, 3 then 4 more times by phase ("more bashes", the owner, 2026-10-05: one more than 1, 2, 3), a low hop each, and rises to be the sun again', () => {
     const r = W.eval(`(function(){ var out = {};
       [1, 2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
         f.x = 300; ${FIRE('twosun')}
@@ -229,7 +257,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
         out[ph] = { n: n0, landings: landings, done: !b._tw, so: b._hz.so, sb: b._hz.sb, alive: p.life, lowest: Math.max.apply(null, ys), gy: groundY(), gap: b._atkTimer, mk: b._hz.mk || null };
         summons = []; projectiles = []; });
       return out; })()`);
-    expect([r[1].n, r[2].n, r[3].n], 'one, two, then three more bounces').toEqual([1, 2, 3]);
+    expect([r[1].n, r[2].n, r[3].n], 'two, three, then four more bounces: "MAYBE YOU\'D LIKE THIS!: more bashes" (the owner, 2026-10-05), one more hop in every phase').toEqual([2, 3, 4]);
     for (const ph of [1, 2, 3]) {
       expect(r[ph].done, `phase ${ph}: the move ends`).toBe(true);
       expect(r[ph].landings, `phase ${ph}: it lands once for every hop it plans`).toBe(r[ph].n);
@@ -239,6 +267,34 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
     expect(r[1].sb, 'the sky has its sun back').toBeGreaterThan(r[1].so);
     expect(r[1].alive, 'the carrier is gone with the move').toBe(0);
     expect(r[1].gap, 'and the turn\'s gap runs from here: 100, paced').toBeGreaterThan(110);
+  });
+
+  // "MAYBE YOU'D LIKE THIS!: more bashes" (the owner, 2026-10-05; the second of his five picks): he bashes the sun one more hop toward you in every phase.
+  it('"more bashes": one more hop toward you in every phase -- 2, 3 and 4, where it was 1, 2 and 3 -- each hop a landing, and in phase 3 it is the mace that bashes them', () => {
+    const r = W.eval(`(function(){ var out = { table: TWO.sun.bounces.slice() };
+      [1, 2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
+        f.x = 300; ${FIRE('twosun')}
+        var T = b._tw, hops = [], imps = [], mace = !!T.mace, _impact = impact;
+        impact = function(x, y, o){ imps.push(Math.round(x)); return _impact(x, y, o); };
+        try {
+          for (var k=0;k<400 && b._tw;k++){
+            var n0 = T.n;
+            step(); ${HOLD}
+            if (T.st === 'fly' && T.t === 0 && T.n < n0){ hops.push({ at: Math.round(T.x), mk: b._hz.mk[0], you: Math.round(f.x) }); f.x = T.x < 600 ? T.x + 200 : T.x - 200; }   // you stay a hop ahead of it
+          }
+        } finally { impact = _impact; }
+        out[ph] = { hops: hops, landings: imps.length, done: !b._tw, mace: mace };
+        summons = []; projectiles = []; });
+      return out; })()`);
+    expect(r.table, 'one more than the 1, 2, 3 it was').toEqual([0, 2, 3, 4]);
+    for (const ph of [1, 2, 3]) {
+      expect(r[ph].hops.length, `phase ${ph}: ${ph + 1} hops after the first landing`).toBe(ph + 1);
+      expect(r[ph].landings, `phase ${ph}: a landing on its mark, then one for each hop`).toBe(ph + 2);
+      expect(r[ph].done, `phase ${ph}: the move ends`).toBe(true);
+      for (const h of r[ph].hops) expect(Math.sign(h.mk - h.at), `phase ${ph}: every hop turns toward where you stand`).toBe(Math.sign(h.you - h.at));
+    }
+    expect(r[1].mace, 'the sky sun in phases 1 and 2').toBe(false);
+    expect(r[3].mace, 'the mace in phase 3: the same four hops').toBe(true);
   });
 
   it('every bounce turns toward where you are NOW: the next mark is your position when it lands, at most 10.5 px a frame for 28 frames away', () => {
@@ -251,7 +307,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
         if (T.st === 'fly' && T.t === 0 && T.n < n0){ legs.push({ at: Math.round(T.x), mk: b._hz.mk[0], N: T.N, you: Math.round(f.x) }); f.x = T.x < 600 ? 1000 : 100; }
       }
       summons = []; projectiles = []; return { legs: legs, reach: TWO.sun.vmax*TWO.sun.leg, leg: TWO.sun.leg }; })()`);
-    expect(r.legs.length, 'two hops in phase 2').toBe(2);
+    expect(r.legs.length, 'three hops in phase 2 (it was two: "more bashes", the owner, 2026-10-05)').toBe(3);
     expect(r.legs[0].N, 'every hop is 28 frames').toBe(r.leg);
     expect(r.legs[0].mk, 'the first hop goes to where you stood when it landed').toBe(r.legs[0].you);
     expect(Math.abs(r.legs[1].mk - r.legs[1].at), 'the second goes after you the other way, as far as one hop reaches').toBeLessThanOrEqual(r.reach + 1);
@@ -1080,7 +1136,7 @@ describe('MAYBE YOU\'D LIKE THIS! lands where you stand', () => {
     expect(r.mk0[1], 'the first landing is marked on the stage\'s top').toBe(Math.round(r.top));
     expect(r.mk0[0]).toBeGreaterThanOrEqual(r.plat[0]);
     expect(r.mk0[0]).toBeLessThanOrEqual(r.plat[1]);
-    expect(r.lands.length).toBe(2);
+    expect(r.lands.length, 'three hops in phase 2 (two before "more bashes", the owner, 2026-10-05)').toBe(3);
     expect(r.lands[0].y, 'the first hop lands on the stage: its centre a radius over the top').toBeCloseTo(r.top - 44, 0);
     expect(r.lands[0].mk[1], 'the hop after it stays on the stage while you do').toBe(Math.round(r.top));
     expect(r.floorMk, 'and when you jump down to the floor, the next mark is on the floor').toBe(Math.round(r.gy));
