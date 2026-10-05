@@ -365,32 +365,29 @@ describe('the Vault: the unlock model', () => {
 });
 
 describe('the Vault: the Daily Match', () => {
-  it('never puts you on a Vault fighter, and every other day keeps the pairing it always had', async () => {
-    // A Vault fighter "can ONLY be opened by a code", so not even the Daily hands you one for a match. The pairing is
-    // the same for everyone, so only the days that drew a Vault fighter for you change: that fighter becomes the foe.
+  it('never names a Vault fighter on either side, and every other day keeps the pairing it always had', async () => {
+    // A Vault fighter "can ONLY be opened by a code", so not even the Daily hands you one for a match -- and since "fix the daily
+    // spoiler" (the owner, 2026-10-05) it is not the foe either: the title's card named one ("Paper vs Gelatin"). The pairing is the
+    // same for everyone, so only the days that drew a Vault fighter change, and only in that seat.
     const w = boot(); await settle(w);
     const pool = w.eval('ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })');
     const vault = new Set(Object.keys(FIGHTER_CODES));
-    let swapped = 0, former = 0, example = null;
+    let swapped = 0, redrawn = 0, former = 0;
     for (let d = 0; d < 730; d++) {
       const seed = w.eval(`dailySeed(new Date(Date.UTC(2026, 8, ${24 + d})))`);
       const now = w.eval(`(function(){ var m = dailyMatchup(${seed}); return [m.you.name, m.foe.name]; })()`);
       const was = oldDaily(pool, seed);
       if (now[0] in FORMER_CODES) former++;
       expect(vault.has(now[0]), `${seed}: you on ${now[0]}`).toBe(false);
+      expect(vault.has(now[1]), `${seed}: the foe is ${now[1]}`).toBe(false);
       expect(now[0], `${seed}: nobody fights themselves`).not.toBe(now[1]);
-      if (!vault.has(was[0])) expect(now, `${seed} keeps its pairing`).toEqual(was);
-      else if (!vault.has(was[1])) { expect(now, `${seed} swaps seats`).toEqual([was[1], was[0]]); swapped++; example = example || { seed, you: was[0] }; }
-      else expect(now[1], `${seed} keeps its foe`).toBe(was[1]);
+      if (!vault.has(was[0]) && !vault.has(was[1])) expect(now, `${seed} keeps its pairing`).toEqual(was);
+      else if (!vault.has(was[0])) { expect(now[0], `${seed} keeps you; only the Vault foe is drawn again`).toBe(was[0]); redrawn++; }
+      else if (!vault.has(was[1])) { expect(now[0], `${seed} swaps seats`).toBe(was[1]); swapped++; }
     }
     expect(swapped, 'some days did draw a Vault fighter for you').toBeGreaterThan(0);
+    expect(redrawn, 'and some drew one as the foe, which is drawn again').toBeGreaterThan(0);
     expect(former, 'Pickle and Microphone are out of the Vault, so the Daily can hand you either').toBeGreaterThan(0);
-    // The review found 2026-12-01 drawing Pillow for you. Batch 3's 26 DLC fighters ("add the last set of dlc
-    // fighters.") grew the pool, which redraws every day, so the check now takes the first day that drew a Vault
-    // fighter for you: that fighter is the opponent now, and you are not on one.
-    expect(vault.has(example.you)).toBe(true);
-    expect(w.eval(`dailyMatchup(${example.seed}).foe.name`)).toBe(example.you);
-    expect(w.eval(`VAULT_FIGHTERS.has(dailyMatchup(${example.seed}).you.name)`)).toBe(false);
   });
 
   it('lends its fighter for that one match: after it, Rematch, Start Match, the World Cup and the lobby are on your own pick', async () => {

@@ -449,7 +449,7 @@ describe('step 6: the Moon', () => {
     W.eval(`oneStoryFight(); fighters.forEach(function(f){ f.dead = true; }); running = true; oneFightCheck();`);
     await sleep(W, 950);
     const labels = W.eval(`[].slice.call(document.querySelectorAll('#result .row button')).map(function(b){ return b.textContent; })`);
-    expect(labels).toEqual(['Rematch ↻', 'Change fighter', 'Title']);
+    expect(labels).toEqual(['Rematch ↻', 'Change fighter', 'Title', '📣 Share']);   // (the Share button the owner picked, 2026-10-05: it shares the game's link and touches no ban; the walk below presses it too)
     for (let i = 0; i < labels.length; i++) {
       W.eval(`oneStoryFight(); fighters.forEach(function(f){ f.dead = true; }); running = true; oneFightCheck();`);
       await sleep(W, 950);
