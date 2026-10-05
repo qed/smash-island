@@ -1,7 +1,10 @@
 // MOVES VS BOSS: does any fighter move land on a BOSS more times than it should? A fighter has hit grace (a second hit
-// waits it out); a boss has none, so a hitbox that is live for several frames and does not remember the boss it hit lands
+// waits it out); a boss had none, so a hitbox that is live for several frames and does not remember the boss it hit landed
 // on it every frame ("puffball multihitbox on smash. instakills bosses.", the owner, 2026-10-02: Meteor Puff took 264 HP
-// off a boss in one dive). This fires every move of every playable fighter once at a big-HP boss parked in front of it,
+// off a boss in one dive), and a volley of shots all landed on its 170 px body. A boss keeps a grace for each attacking
+// character now ("give bosses by-character iframes", the owner, 2026-10-04: bossGraceRec; test/boss-grace.test.js), as long
+// as a fighter's from the same hit, so a volley lands about as it does on a fighter; the per-move hit sets are the second guard.
+// This fires every move of every playable fighter once at a big-HP boss parked in front of it,
 // steps FRAMES frames, and prints the HP the boss lost. Run from the repo root.
 //
 //   node scripts/moves-vs-boss.mjs                              every fighter in ROSTER, every move, three stagings (about 3 min on 7 workers)
@@ -45,33 +48,25 @@ const KEYBOARD = new Set(['smash-tap', 'smash-hold']);   // the real input path:
 
 // Moves that are MEANT to land more than once on a boss, as `Fighter|move` (every smash variant is 'smash') -> { max: the most HP the whole move may take off him,
 // why }. A flurry (_multi, Dora's _rant) and an aura (_sawing) are read off the move itself (see classify); these are the rest: a set number of separate
-// shots, strokes or drops, each used up on its one hit. A fighter's hit grace would stop most of a volley piling onto one small target; a boss's body is
-// 170 px across, so all of it lands. They are priced as that many hits (Money's row says "priced like Match's and Roboty's three-shot rows"), and
-// they are left as designed -- the owner's call whether a boss should take one shot of a volley (see the report of 2026-10-02). Past `max`, a row flags again.
+// shots, strokes or drops, each used up on its one hit. Before 2026-10-04 a boss took all of a volley (Money's coin spray 72, Ice Cube's ring 40, Starfruit
+// 56, Roboty 51: its body is 170 px across and it had no grace); now it keeps a grace for each attacker (bossGraceRec), so a volley lands the first shot
+// and then whatever is still inside the body when that grace has run out, or arrives later -- about what a fighter takes. Those rows came out of this
+// table (Money, Ice Cube, Starfruit, Roboty and Match smashes, Pen's finisher, Naily's nails, Baseball's and Paintbrush's pairs: all under the 1.5x rule
+// now), and the rest were repriced. What is left lands more than once because the shots come a beat apart, a hit is a chain's link, or a second shot
+// is still inside the body when the grace is over. Past `max`, a row flags again.
 const DESIGNED = {
-  'Money|smash':        { max: 72, why: 'three coins in a fan, 24 each' },
-  'Ice Cube|smash':     { max: 60, why: 'a rain of four shards, 15 each, a second or so apart' },
-  'Starfruit|smash':    { max: 70, why: 'a rain of five lemons, 14 each' },
-  'Roboty|smash':       { max: 51, why: 'a rain of three, 17 each' },
-  'Match|smash':        { max: 42, why: 'a rain of three, 14 each' },
-  'Ice Cube|special':   { max: 40, why: 'a ring of eight shards, 5 each' },
-  'Fries|finisher':     { max: 30, why: 'five fries, 6 each' },
-  'Fries|special':      { max: 12, why: 'three fries, 4 each' },
-  'Pen|finisher':       { max: 27, why: 'three caps, 9 each' },
+  'Ice Cube|special':   { max: 10, why: 'a ring of eight shards, 5 each (40 before): the first, and one that went on through him and was still inside when its grace (12 frames) ran out' },
+  'Fries|finisher':     { max: 12, why: 'five fries, 6 each (30 before): the first, and one still inside when its grace (13 frames) ran out' },
+  'Fries|special':      { max: 8, why: 'three fries, 4 each (12 before): the first, and one still inside when its grace (11 frames) ran out' },
   'Woody|special':      { max: 27, why: 'the dash (12) and three splinters, 5 each' },
-  'Flower|upspecial':   { max: 25, why: 'the spin aura (4 a tick) and three drops, 3 each' },
-  'Donut|upspecial':    { max: 25, why: 'the spin aura (4 a tick) and three drops, 3 each' },
-  'Naily|special':      { max: 24, why: 'three piercing nails, 8 each (each nail once: pr._sHit)' },
-  'Spikey|special':     { max: 48, why: 'six spikes of 4 on a tap, eight of 6 held' },
-  'Match|special':      { max: 18, why: 'a three-way spread, 6 each' },
-  'Salt|special':       { max: 18, why: "three shakes of 4, and Pepper's two of 3 a beat later" },
+  'Spikey|special':     { max: 8, why: 'spikes of 4 on a tap, of 6 held (24 before): the first, and one still inside when its grace ran out' },
+  'Match|special':      { max: 12, why: 'a three-way spread, 6 each (18 before): the first, and one still inside when its grace ran out' },
+  'Salt|special':       { max: 11, why: "three shakes of 4, and Pepper's two of 3 a beat later (18 before)" },
   'Bow|special':        { max: 15, why: 'three snowballs, 5 each, thrown one by one' },
   'Nickel|upspecial':   { max: 12, why: 'three bouncing drops, 4 each' },
-  'Baseball|downspecial': { max: 12, why: 'two shots, 6 each' },
-  'Paintbrush|downspecial': { max: 10, why: 'two shots, 5 each' },
   'Rocky|upspecial':    { max: 9, why: 'three bouncing drops, 3 each' },
   'Clover|special':     { max: 8, why: 'four butterflies, 2 each' },
-  'Bonesaw|special':    { max: 12, why: 'three strokes, 3 + 3 + 6, each a new cut' },
+  'Bonesaw|special':    { max: 12, why: 'three strokes, 3 + 3 + 6, each a new cut: a chain, as on a fighter (chainOpen)' },
 };
 
 // Wraps the calls a move reaches a boss through, to say who called them and which damage numbers the move carries. Installed once a boot.
