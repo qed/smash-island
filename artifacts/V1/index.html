@@ -27955,7 +27955,7 @@ function fireSpecialInner(f, inp){
   if(dashKit && horiz && (inp.up||inp.down)){
     doSpecial(f); f.spCd=Math.max(f.spCd,55); return;   // diagonal dash: forward dash, angled
   }
-  f._aiSpGap = aiSpecialGap(f, !inp.up && !inp.down);   // read only by finishAI, so the human path is untouched
+  f._aiSpGap = Math.max(0, aiSpecialGap(f, !inp.up && !inp.down) + (f._pbGap||0));   // read only by finishAI, so the human path is untouched (_pbGap: a playbook's sGap, set by aiThink)
   if(inp.up){
     // an up-special can only be used ONCE per airtime — on the ground it's always allowed,
     // in the air it's spent until you land again. Prevents jump→upB→jump→upB infinite floating.
@@ -32188,29 +32188,37 @@ const AI_TRAP_SPACING = 90;      // px: no second trap on top of one already lai
 // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
 AI_TRAP_DOWN.add("voices");   // Suitcase's wrench is laid on the same read as every other floor trap
 // ---- Steve Cobs's prize: end ----
-function aiKitLessons(f, t, inp, dx, dy, dist, adx, rn){
+// THE GIMMICK GENES (g0-g4; `pb` is the fighter's playbook, null = every delta zero = the legacy read). What a gene means is the kit's:
+// counter stance: reach g0 (x30 px), discipline g1 (below 0 it sometimes lets a swing go), anticipation g2 (above 0 it also raises the
+// stance on a foe closing fast); floor trap: nearest g0 (x20 px), farthest g1 (x40), rate g2 (x0.2), spacing g3 (x20); Gelatin's
+// follow-up reach g4 (x40); Puffball: climb g0 (x20), chase g1 (x30), dive g2 (x15); OJ: inbound g0 (x30), spill g1 (x30); Cabby: file
+// from g0 (x30) to g1 (x40); Tennis Ball: the gadget range g0 (x30, in aiThink); the self-buff smash g5 (below).
+function pbDrop(s){ return s < 0 && Math.random() >= 2/(1 + Math.exp(-s)); }
+function aiKitLessons(f, t, inp, dx, dy, dist, adx, rn, pb){
   const sp = f.kit && f.kit.special;
-  if(AI_COUNTER_KITS.has(sp) && f.spCd<=0 && dist < f.r+t.r+AI_COUNTER_REACH
-     && (t.smashHold>0 || !!t._windup || (t._atkAnim>0 && t.atkCd>12))){
+  const g0 = pb ? (pb.g0||0) : 0, g1 = pb ? (pb.g1||0) : 0, g2 = pb ? (pb.g2||0) : 0, g3 = pb ? (pb.g3||0) : 0, g4 = pb ? (pb.g4||0) : 0;
+  if(AI_COUNTER_KITS.has(sp) && f.spCd<=0 && dist < f.r+t.r+AI_COUNTER_REACH+g0*30
+     && (t.smashHold>0 || !!t._windup || (t._atkAnim>0 && t.atkCd>12) || (g2>0 && dx*(t.vx||0) < -2 && Math.random() < PB_ADD_CAP*(2/(1 + Math.exp(-g2)) - 1)))
+     && !pbDrop(g1)){
     inp.special=true; inp.down=true; inp._kitRead=true;   // the stance goes up while their swing is still coming (every counter kit's stance is its down-special)
   }
   if(AI_TRAP_DOWN.has(sp) && f.spCd<=0 && f.onground){
-    const laid = projectiles.some(p=>p.trap && p.owner===f.idx && Math.abs(p.x-f.x)<AI_TRAP_SPACING);
+    const laid = projectiles.some(p=>p.trap && p.owner===f.idx && Math.abs(p.x-f.x)<AI_TRAP_SPACING+g3*20);
     const approaching = dx*(t.vx||0) < -0.5;     // they are coming this way
-    if(!laid && dist>70 && dist<260 && (approaching || t.hitstun>0) && rn<0.6){ inp.special=true; inp.down=true; inp._kitRead=true; }
+    if(!laid && dist>70+g0*20 && dist<260+g1*40 && (approaching || t.hitstun>0) && rn<0.6+g2*0.2){ inp.special=true; inp.down=true; inp._kitRead=true; }
   }
   // GELATIN: a frozen foe is the payoff (balance round 3: her first hit on one shatters the ice). Her bot used to
   // freeze people from range and walk away from them -- 91 freezes in 16 probe games and 16 follow-ups. While the
   // ice holds, she closes in and breaks it.
-  if(sp==="freeze" && t.frozen>0 && dist < 260){
+  if(sp==="freeze" && t.frozen>0 && dist < 260+g4*40){
     if(adx > f.r + t.r + 6){ inp.left = dx<0; inp.right = dx>0; }
     else if(f.atkCd<=0){ inp.attack = true; inp.special = false; inp.down = false; }
     inp._kitRead = true;
   }
   if(sp==="fly"){
-    if(dy < -70 && !f.onground && f.jumps<=0 && f.spCd<=0){ inp.special=true; inp.up=true; }                       // climb to a foe above
-    else if(dist>220 && dx*(t.vx||0) > 0.5 && f.spCd<=0 && rn<0.5){ inp.jump=true; inp.special=true; inp.up=true; }   // a chase being lost goes vertical
-    if(f.flying>0 && adx<50 && dy>40 && f.fnCd<=0){ inp.attack=true; inp.special=true; }               // over them: dive
+    if(dy < -70+g0*20 && !f.onground && f.jumps<=0 && f.spCd<=0){ inp.special=true; inp.up=true; }                       // climb to a foe above
+    else if(dist>220+g1*30 && dx*(t.vx||0) > 0.5 && f.spCd<=0 && rn<0.5){ inp.jump=true; inp.special=true; inp.up=true; }   // a chase being lost goes vertical
+    if(f.flying>0 && adx<50+g2*15 && dy>40 && f.fnCd<=0){ inp.attack=true; inp.special=true; }               // over them: dive
   }
   // ---- Steve Cobs's prize (OJ, Suitcase, Cabby): begin ----
   // OJ: the cork (special+down) goes on when an enemy shot is inbound within ~140 px; the spill (special) when the foe is
@@ -32218,15 +32226,19 @@ function aiKitLessons(f, t, inp, dx, dy, dist, adx, rn){
   // drawer ride (special+down) when she is beside a foe who is.
   if(sp==="spill" && f.spCd<=0 && !(f._corked > hazardT)){
     const inbound = projectiles.some(p=>!p.trap && !p.turret && p.owner!==f.idx && p.life>0 && Math.sign(p.vx||0)===Math.sign(f.x-p.x||1)
-      && Math.abs(p.x-f.x)<140 && Math.abs(p.y-f.y)<60 && !(p.ownerObj && p.ownerObj.team===f.team));
+      && Math.abs(p.x-f.x)<140+g0*30 && Math.abs(p.y-f.y)<60 && !(p.ownerObj && p.ownerObj.team===f.team));
     if(inbound){ inp.special=true; inp.down=true; inp._kitRead=true; }
-    else if(!(f._empty > hazardT) && f.onground && dist>120 && dist<260 && dx*(t.vx||0) < -0.5 && rn<0.5){ inp.special=true; inp.down=false; inp._kitRead=true; }
+    else if(!(f._empty > hazardT) && f.onground && dist>120+g1*30 && dist<260 && dx*(t.vx||0) < -0.5 && rn<0.5){ inp.special=true; inp.down=false; inp._kitRead=true; }
   }
   if(sp==="files" && f.spCd<=0){
-    if(!(t._onFile > hazardT) && dist>150 && dist<320 && Math.abs(dy)<60 && rn<0.6){ inp.special=true; inp.down=false; inp.up=false; inp._kitRead=true; }
+    if(!(t._onFile > hazardT) && dist>150+g0*30 && dist<320+g1*40 && Math.abs(dy)<60 && rn<0.6){ inp.special=true; inp.down=false; inp.up=false; inp._kitRead=true; }
     else if(t._onFile > hazardT && adx < f.r+t.r+30 && Math.abs(dy)<40 && f.onground){ inp.special=true; inp.down=true; inp._kitRead=true; }
   }
   // ---- Steve Cobs's prize: end ----
+  // g5: the self-buff smashes (Needle's riposte, Teardrop's cloud, Golf Ball's Presence). The legacy rules never cast one (BUFF_SMASHES are
+  // kept out of the punish), so this is the playbook's alone: with a foe near and the buff down, it casts at up to PB_ADD_CAP a frame.
+  if(pb && pb.g5 > 0 && BUFF_SMASHES.has(sp) && dist < 300 && f.smashHold === 0 && !f._aiCharging && f.smCd <= 0
+     && !(f.countering > 0 || f.cloud > 0 || f.curse > 0) && Math.random() < PB_ADD_CAP*(2/(1 + Math.exp(-pb.g5)) - 1)) f._aiCharging = smashFullOf(f) + 9;
   return inp;
 }
 function aiClass(f){
@@ -32366,6 +32378,167 @@ const AI_PROFILE = {
   brawl:  { range:70,  aggro:0.75, retreat:false, trapHappy:0, poke:0.4 },
 };
 
+// ============================================================
+//  PLAYBOOKS  --  one learned bot per fighter
+// ============================================================
+// "Assign 1 bot to 1 fighter, and let them learn over time how to play well" (the owner). Each fighter has a PLAYBOOK: a compact
+// vector of genes, every one a DELTA on what the legacy rules play, so no playbook and an all-zero one both play today's bot, and a
+// gene away from zero is something training found (scripts/train-bots.mjs). Four kinds:
+//   m*  which move, when. Seven moves: J jab, R ranged (an attack or special from outside melee), S special, U up-special, D down-special,
+//       T smash on a read, F smash as a punish. A move's logit shift is b (bias) + d (distance: 0 melee, 1 mid, 2 far) + h (the foe 0
+//       above, 1 level, 2 below) + o (the foe 0 neutral, 1 committed, 2 stunned) + p (own damage: 0 fresh, 1 hurt, 2 in danger).
+//       A shift below 0 thins the legacy rules' press of the move, above 0 adds the press (pbMoves). There is one smash, a press that
+//       charges to full and fires by itself (SMASHES: PRESS ONCE), so "tap" and "charged" are the two situations it is pressed in:
+//       T on a read (the foe is on its feet), F as the punish (stunned or frozen).
+//   s*  spacing and movement: ideal range, approach and retreat slack, hop-in rate, how early to recover, the danger %, aggression,
+//       edgeguard reach, the finisher's %, the gap between specials.
+//   g*  the kit's own tricks, six knobs read by the kit (aiKitLessons): counter stance reach, discipline and anticipation (g0 g1 g2);
+//       trap window, rate and spacing (g0 g1 g2 g3) and Gelatin's follow-up (g4); Puffball's climb, chase and dive (g0 g1 g2); OJ's
+//       cork and spill (g0 g1); Cabby's file (g0 g1); Tennis Ball's gadget range (g0); the self-buff smash (g5).
+//   x*  matchups: small deltas for the foe's AI class (aiClass: r rush, z zone, t trap, g grapple, h heavy, e evade, b brawl) folded
+//       into range, aggression and the move biases; and `vs`, the same deltas for one named foe, kept only where training found a
+//       real counter.
+const PB_SLOTS = ['J','R','S','U','D','T','F'];
+const PB_CLASS_CODE = { rush:'r', zone:'z', trap:'t', grapple:'g', heavy:'h', evade:'e', brawl:'b' };
+const PB_GENES = {};         // gene -> [lo, hi, step]: the range a gene may take and the grid training moves it on
+const PB_VS_GENES = { Rng:[-60,60,10], Agr:[-0.3,0.3,0.05], J:[-1.5,1.5,0.25], R:[-1.5,1.5,0.25], S:[-1.5,1.5,0.25], M:[-1.5,1.5,0.25] };
+const PB_MK = [];            // per move slot, the gene names pbShifts reads (built once)
+(function(){
+  for(const s of PB_SLOTS){
+    const mk = { b:'m'+s+'b', d:[], h:[], o:[], p:[] };
+    PB_GENES[mk.b] = [-3, 3, 0.25];
+    for(const k of ['d','h','o','p']) for(let i=0;i<3;i++){ const g = 'm'+s+k+i; mk[k].push(g); PB_GENES[g] = [-3, 3, 0.25]; }
+    PB_MK.push(mk);
+  }
+  Object.assign(PB_GENES, { sRng:[-60,120,10], sApp:[-30,60,5], sRet:[-30,60,5], sRtr:[-1,1,1], sJmp:[0,0.3,0.02], sRcE:[-30,120,10],
+    sRcY:[-40,120,10], sUpY:[-40,120,10], sDng:[-40,60,5], sAgr:[-0.5,0.5,0.05], sEdg:[-150,200,25], sFin:[-40,40,5], sGap:[-14,40,2] });
+  for(let i=0;i<6;i++) PB_GENES['g'+i] = [-3, 3, 0.25];
+  for(const c of Object.values(PB_CLASS_CODE)) for(const k in PB_VS_GENES) PB_GENES['x'+c+k] = PB_VS_GENES[k];
+})();
+
+// @playbooks:begin
+// Written by scripts/train-bots.mjs: its `embed` step rewrites everything between these two markers and nothing else. An entry is
+//   "Fighter": { gen: generations trained, n: matches played, wr: win rate against today's bot, v: { gene: value }, vs: { "Foe": { Rng, Agr, J, R, S, M } } }
+// with only the genes training moved off zero. A fighter with no entry plays the legacy rules.
+const PLAYBOOKS = {};
+// @playbooks:end
+
+// The legacy pin: true makes every CPU play the legacy rules whatever its level. The boss harnesses set it (scripts/boss-solo.mjs,
+// boss-glitch.mjs, moves-vs-boss.mjs, solo-rush.mjs) so the Boss Rush numbers stay the legacy bot's. Boss modes never read a playbook
+// either, nor does One's ghost, nor a RUNNING! runner.
+const BOT_PB = { legacy: false };
+// Normal reads a playbook the way a worse player plays it: it looks at the foe only every `react` frames (a slow read of what the
+// foe is doing), a frame in `skip` ignores the playbook and plays the legacy rules, and one in `blunder` presses any legal move.
+const PB_NORMAL = { react: 12, skip: 0.25, blunder: 0.05 };
+const PB_ADD_CAP = 0.12;               // an added press fires at most this often a frame, however large its shift
+const PB_ORDER = [6, 5, 2, 3, 4, 1, 0];   // the order added presses are rolled for: the punish first
+let _pbU = -1;                         // one roll shared by every thinning in a frame
+const pbAddP = (s) => s <= 0 ? 0 : PB_ADD_CAP * (2/(1 + Math.exp(-s)) - 1);
+function pbThin(s){ if(s >= 0) return false; if(_pbU < 0) _pbU = Math.random(); return _pbU >= 2/(1 + Math.exp(-s)); }
+function botAdaptShift(f, k, slot){ return 0; }   // the in-browser adaptation's nudge to a move's shift (see BOT_ADAPT)
+
+// The genes in force for this fighter against this foe: the playbook's own, clamped to their ranges (a stray key or a NaN is ignored,
+// so a bad entry can do no more than the ranges allow), with the matchup deltas for the foe's class and, if the entry has one, for the
+// foe by name folded into range, aggression and the move biases.
+function pbEff(entry, oppName, oppClass){
+  const e = {}, v = entry.v || {};
+  for(const k in v){ const g = Object.prototype.hasOwnProperty.call(PB_GENES, k) ? PB_GENES[k] : null, x = +v[k]; if(g && isFinite(x)) e[k] = Math.max(g[0], Math.min(g[1], x)); }
+  const add = (k, d) => { if(d) e[k] = (e[k]||0) + d; };
+  const fold = (b, pre) => {
+    add('sRng', b[pre+'Rng']); add('sAgr', b[pre+'Agr']); add('mJb', b[pre+'J']); add('mRb', b[pre+'R']);
+    add('mSb', b[pre+'S']); add('mUb', b[pre+'S']); add('mDb', b[pre+'S']); add('mTb', b[pre+'M']); add('mFb', b[pre+'M']);
+  };
+  fold(e, 'x' + (PB_CLASS_CODE[oppClass] || 'b'));
+  const named = entry.vs && entry.vs[oppName];
+  if(named){ const nb = {}; for(const k in PB_VS_GENES){ const x = +named[k], g = PB_VS_GENES[k]; if(isFinite(x)) nb[k] = Math.max(g[0], Math.min(g[1], x)); } fold(nb, ''); }
+  return e;
+}
+// null = play the legacy rules. Easy, no entry, a boss mode, One's ghost, a RUNNING! runner and the legacy pin all read null, and aiThink
+// does nothing differently for null: not one extra roll of the dice. `f._pbOverride` is the trainer's way to give one fighter a playbook
+// (null: the legacy rules) whatever PLAYBOOKS says, so a mirror match can pit two playbooks of the same fighter.
+function pbFor(f, t, lvl){
+  if(lvl < 1 || BOT_PB.legacy || SETTINGS.mode === 'boss' || f._oneGhost || f._runner) return null;
+  const entry = (f._pbOverride !== undefined) ? f._pbOverride : PLAYBOOKS[f.name];
+  if(!entry) return null;
+  const c = f._pbC;
+  if(c && c.entry === entry && c.foe === t.name) return c.eff;
+  const eff = pbEff(entry, t.name, aiClass(t));
+  f._pbC = { entry: entry, foe: t.name, eff: eff };
+  return eff;
+}
+// What the move genes are conditioned on: the distance band, the height relation, what the foe is doing and the fighter's own damage.
+// Hard looks every frame; Normal looks at the foe every PB_NORMAL.react frames (its own damage it always knows).
+const _pbK = { d:0, h:0, o:0, p:0, locked:false };
+function pbSense(f, t, danger, lvl){
+  const k = (lvl === 1) ? (f._pbSn || (f._pbSn = { at:-999, who:-1, d:0, h:0, o:0, p:0, locked:false })) : _pbK;
+  if(lvl !== 1 || k.who !== t.idx || hazardT - k.at >= PB_NORMAL.react || hazardT < k.at){
+    const dy = t.y - f.y, gap = Math.hypot(t.x - f.x, dy) - (f.r + t.r);
+    k.d = gap < 40 ? 0 : gap < 160 ? 1 : 2;
+    k.h = dy < -40 ? 0 : dy > 40 ? 2 : 1;
+    k.o = (t.hitstun > 0 || t.frozen > 0) ? 2 : (t.smashHold > 0 || t._windup || t._atkAnim > 0) ? 1 : 0;
+    k.locked = t.hitstun > 12 || t.frozen > 0;
+    if(lvl === 1){ k.at = hazardT; k.who = t.idx; }
+  }
+  k.p = danger ? 2 : f.pct >= 40 ? 1 : 0;
+  return k;
+}
+const _pbSh = [0, 0, 0, 0, 0, 0, 0];
+function pbShifts(f, e, k){
+  for(let i = 0; i < 7; i++){
+    const m = PB_MK[i];
+    _pbSh[i] = (e[m.b]||0) + (e[m.d[k.d]]||0) + (e[m.h[k.h]]||0) + (e[m.o[k.o]]||0) + (e[m.p[k.p]]||0) + botAdaptShift(f, k, i);
+  }
+  return _pbSh;
+}
+// The move edit (D14-D18). The legacy rules above have decided what to press; the playbook thins that press by its move's shift (a
+// shift of -1 drops it about half the time, -3 nine times in ten) and, when nothing is pressed, may add ONE press the legacy rules did
+// not make (a shift of +2 adds it at about 9% a frame while it is legal), always turned to face the foe. With every shift zero it
+// draws no dice and changes nothing.
+function pbMoves(f, t, inp, pb, lvl, sp, danger, inMelee, ac0){
+  if(inp._kitRead) return;                                     // a kit read (stance, trap, follow-up) is the g* genes' to shape
+  if(lvl === 1 && Math.random() < PB_NORMAL.skip) return;      // Normal: a frame in four plays the legacy rules
+  const k = pbSense(f, t, danger, lvl), sh = pbShifts(f, pb, k);
+  const dy = t.y - f.y, gap = Math.hypot(t.x - f.x, dy) - (f.r + t.r);
+  _pbU = -1;
+  if(inp.special){                                             // what the legacy rules pressed, thinned
+    const i = inp.up ? 3 : inp.down ? 4 : inMelee ? 2 : 1;
+    if(pbThin(sh[i])){ inp.special = false; if(i === 3) inp.up = false; if(i === 4) inp.down = false; }
+  }
+  if(inp.attack && pbThin(sh[inMelee ? 0 : 1])) inp.attack = false;
+  if(f._aiCharging > 0 && !(ac0 > 0) && !BUFF_SMASHES.has(sp) && pbThin(sh[k.locked ? 6 : 5])) f._aiCharging = 0;   // a smash decided this frame (the self-buffs are g5's)
+  if(inp.attack || inp.special || f._aiCharging > 0 || f.smashHold > 0 || t.invuln > 0) return;
+  let mask = 0;                                                // the moves that are legal now
+  if(f.atkCd <= 0 && gap < 60) mask |= 1;
+  if(!inMelee && gap < 420 && (f.spCd <= 0 || (f.atkCd <= 0 && gap < 110))) mask |= 2;
+  if(inMelee && f.spCd <= 0) mask |= 4;
+  if(f.spCd <= 0 && (dy < -30 || !f.onground)) mask |= 8;
+  if(f.spCd <= 0 && f.onground) mask |= 16;
+  if(inMelee && f.smashHold === 0 && f.smCd <= 0 && !BUFF_SMASHES.has(sp)) mask |= k.locked ? 64 : 32;
+  if(!mask) return;
+  let pick = -1;
+  if(lvl === 1 && Math.random() < PB_NORMAL.blunder){          // Normal: a pick off the playbook, any legal move
+    let n = 0; for(let i = 0; i < 7; i++) if(mask & (1 << i)) n++;
+    let r = Math.floor(Math.random() * n);
+    for(let i = 0; i < 7; i++) if((mask & (1 << i)) && r-- === 0){ pick = i; break; }
+  } else {
+    let r = -1, acc = 0;
+    for(const i of PB_ORDER){
+      if(!(mask & (1 << i))) continue;
+      const p = pbAddP(sh[i]); if(p <= 0) continue;
+      if(r < 0) r = Math.random();
+      acc += p; if(r < acc){ pick = i; break; }
+    }
+  }
+  if(pick < 0) return;
+  if(t.x < f.x){ inp.left = true; inp.right = false; } else { inp.right = true; inp.left = false; }
+  if(pick === 0) inp.attack = true;
+  else if(pick === 1){ if(f.spCd <= 0) inp.special = true; else inp.attack = true; }
+  else if(pick === 2) inp.special = true;
+  else if(pick === 3){ inp.special = true; inp.up = true; }
+  else if(pick === 4){ inp.special = true; inp.down = true; }
+  else f._aiCharging = aiChargeDepth(f, sp, pick === 6);
+}
+
 // For big-FFA AI: find a claimable spawn point worth going for (unowned or not-yet-mine, not mobbed).
 function aiSpawnGoal(f){
   if(!isBigFFA() || !spawnZones.length) return null;
@@ -32440,6 +32613,11 @@ function aiThink(f){
   const lvl = (f._lvl!=null) ? f._lvl : AI_LEVEL;
   const react = 0.9;   // all AI makes good decisions; difficulty is a handicap applied in finishAI
   f._lvlCache = lvl;   // stash for the handicap tail
+  // The playbook (see PLAYBOOKS): this fighter's genes against this foe, or null, which plays the legacy rules and nothing else.
+  // Every use of pb below is `pb ? gene : legacy constant` (or a zero delta), so null changes not a number and rolls no extra dice.
+  const pb = (lvl>=1) ? pbFor(f, t, lvl) : null;
+  if(pb || f._pbGap) f._pbGap = pb ? (pb.sGap||0) : 0;   // read by fireSpecialInner: the gap after a cast
+  const ac0 = f._aiCharging;   // a smash the legacy rules start this frame is the one the playbook may veto
   const rn = Math.random();
 
   // --- kit awareness + ARCHETYPE profile ---
@@ -32448,7 +32626,7 @@ function aiThink(f){
   const cls = aiClass(f);
   // The player's own habits with THIS fighter, blended into the archetype (Wave 5).
   const prof = styledProfile(f.name, AI_PROFILE[cls] || AI_PROFILE.brawl);
-  const idealRange = prof.range;   // preferred spacing comes from the archetype now
+  const idealRange = pb ? Math.max(20, prof.range + (pb.sRng||0)) : prof.range;   // preferred spacing comes from the archetype now (sRng: the playbook's own)
 
   // PROTECT: if the plan told this team to guard an ally, a guardian hovers near them
   const plan = TEAM_PLAN && TEAM_PLAN[f.team];
@@ -32462,16 +32640,18 @@ function aiThink(f){
   }
 
   // === RECOVERY: flung off the stage — top priority ===
-  const offLeft=f.x<50, offRight=f.x>WW-50, fallingOut=f.y>WH-90 && f.vy>0;
+  // sRcE, sRcY, sUpY: how early the playbook starts to recover (zero deltas for the legacy rules)
+  const rcE = pb ? (pb.sRcE||0) : 0, rcY = pb ? (pb.sRcY||0) : 0, upY = pb ? (pb.sUpY||0) : 0;
+  const offLeft=f.x<50+rcE, offRight=f.x>WW-50-rcE, fallingOut=f.y>WH-90-rcY && f.vy>0;
   if(offLeft||offRight||fallingOut){
     if(offLeft) inp.right=true; if(offRight) inp.left=true;
-    if(f.vy>0.5 || f.y>WH-140){ inp.jump=true; if(f.spCd<=0){ inp.special=true; inp.up=true; } }
+    if(f.vy>0.5 || f.y>WH-140-upY){ inp.jump=true; if(f.spCd<=0){ inp.special=true; inp.up=true; } }
     return finishAI(f,inp,sp);
   }
 
   // === EDGEGUARD: target is off-stage and low — chase for the kill ===
   const targetOff = (t.x<60||t.x>WW-60||t.y>WH-120);
-  if(targetOff && dist<300 && rn<react){
+  if(targetOff && dist<300+(pb ? (pb.sEdg||0) : 0) && rn<react){   // sEdg: the playbook's edgeguard reach
     if(dx<0)inp.left=true; else inp.right=true;
     if(dy<-20) inp.jump=true;
     if(f.atkCd<=0) inp.attack=true;               // spike them
@@ -32582,7 +32762,7 @@ function aiThink(f){
       // up-special once the jumps are gone rather than drifting under them.
       if(f.jumps<=0 && !f.onground && dy<-120 && f.spCd<=0 && rn<0.5){ inp.special=true; inp.up=true; }
     }
-    if(sp==="fly") aiKitLessons(f, t, inp, dx, dy, dist, adx, rn);   // Puffball climbs to a foe above; this block returns before the lessons below
+    if(sp==="fly") aiKitLessons(f, t, inp, dx, dy, dist, adx, rn, pb);   // Puffball climbs to a foe above; this block returns before the lessons below
     if(isZoner && f.spCd<=0 && adx<220 && rn<react*0.5) inp.special=true;   // poke while climbing
     return finishAI(f,inp,sp);
   }
@@ -32609,8 +32789,9 @@ function aiThink(f){
   // TEAM PLAN read: riskTolerance shifts where "danger" starts (0 = bail early, 1 = stay in it).
   // planRiskScale returns exactly 1 when the team has no plan field, so this is a no-op by default.
   const riskScale = planRiskScale(f);
-  const danger = f.pct > Math.max(85, killPct*0.85)*riskScale;
-  const scared = f.pct > Math.max(110, killPct*1.05)*riskScale;   // very high: full retreat
+  const dng = pb ? (pb.sDng||0) : 0;           // sDng: the playbook moves where "danger" starts
+  const danger = f.pct > (Math.max(85, killPct*0.85)+dng)*riskScale;
+  const scared = f.pct > (Math.max(110, killPct*1.05)+dng)*riskScale;   // very high: full retreat
   let retreatDir = 0;
   if(danger){
     // find the nearest live threat and move away from it, toward stage center / a safe perch
@@ -32681,14 +32862,15 @@ function aiThink(f){
   // spacing/zoning fighters stop circling forever in 1v1s. Resets on every KO.
   const staleFrames = hazardT - lastKoFrame;
   const staleRamp = Math.min(2.0, Math.max(0, (staleFrames-420)/600));   // 0 until 7s, ramps to +2.0 by ~17s
-  let aggro = prof.aggro * (stance==='aggressive'?1.25:stance==='defensive'?0.7:1) * (1 + staleRamp);
+  let aggro = (prof.aggro + (pb ? (pb.sAgr||0) : 0)) * (stance==='aggressive'?1.25:stance==='defensive'?0.7:1) * (1 + staleRamp);   // sAgr: the playbook's own
+  if(pb && aggro < 0) aggro = 0;
   const idealRangeAdj = idealRange * (1 - Math.min(0.75, staleRamp*0.45));               // close the gap as it drags on
   if(danger) aggro *= scared ? 0.15 : 0.5;   // at kill %, mostly stop committing
   if(retreatDir!==0){
     // DANGER overrides normal spacing: put distance between us and the threat
     inp.left = retreatDir<0; inp.right = retreatDir>0;
     if(scared && f.onground && rn<0.3) inp.jump=true;   // leap away
-  } else if(dist > idealRangeAdj+40){
+  } else if(dist > idealRangeAdj+40+(pb ? (pb.sApp||0) : 0)){   // sApp: the playbook's approach slack
     const wantDir = dx<0?-1:1;
     const obst = navAround(f, wantDir);
     if(obst && obst.climb){
@@ -32704,7 +32886,7 @@ function aiThink(f){
       if(obst && obst.jump && (f.onground||f.jumps>0)) inp.jump=true;   // hop the low obstacle
     }
     if(ady>40 && f.onground && rn<0.2) inp.jump=true;
-  } else if(dist < idealRangeAdj-40 && prof.retreat && staleRamp<0.8){
+  } else if(dist < idealRangeAdj-40-(pb ? (pb.sRet||0) : 0) && (pb && pb.sRtr ? pb.sRtr > 0 : prof.retreat) && staleRamp<0.8){   // sRet, sRtr: retreat slack, and -1 never / +1 always
     // too close for a spacing archetype — back off (but stop retreating once the match is dragging)
     if(stance!=='aggressive'){ if(dx<0)inp.right=true; else inp.left=true; }
     else { if(dx<0)inp.left=true; else inp.right=true; }
@@ -32712,11 +32894,13 @@ function aiThink(f){
     if(rn<0.25){ if(dx<0)inp.left=true; else inp.right=true; }
   }
 
+  // sJmp: the playbook hops in while it closes the gap (the legacy rules only jump to a foe on another level)
+  if(pb && pb.sJmp > 0 && retreatDir === 0 && f.onground && dist > idealRangeAdj+40 && Math.random() < pb.sJmp) inp.jump = true;
   // TENNIS BALL loads the gadget that suits the range before he spends one: the turret and the ball from
   // afar, the battery and the mine up close. His choice is re-picked when his target is, not every frame,
   // so he does not flick between two gadgets at a range boundary; each down-special steps the rack once.
   if(sp === "serve"){
-    if(!f._wantGadget || f.aiTimer >= 29) f._wantGadget = gadgetFor(dist);
+    if(!f._wantGadget || f.aiTimer >= 29) f._wantGadget = gadgetFor(dist + (pb ? (pb.g0||0)*30 : 0));   // g0: the playbook's range for the gadgets
     if(f.spCd <= 0 && gadgetOf(f) !== f._wantGadget){ inp.special = true; inp.down = true; return finishAI(f, inp, sp); }
   }
   // === OFFENSE: archetype-specific ===
@@ -32745,12 +32929,12 @@ function aiThink(f){
     }
   }
 
-  aiKitLessons(f, t, inp, dx, dy, dist, adx, rn);   // the counter, trap and flying reads (see AI_COUNTER_KITS)
+  aiKitLessons(f, t, inp, dx, dy, dist, adx, rn, pb);   // the counter, trap and flying reads (see AI_COUNTER_KITS); the g* genes shape them
   // ANTI-AIR: up+X is an uppercut now, so a foe above and close gets one.
   if(f.atkCd<=0 && !(f.flying>0) && dy < -24 && adx < f.r + 40 && dist < 130 && rn < 0.7 && !inp.special){ inp.attack=true; inp.up=true; inp.down=false; }
   if(rn < aggro){
     // finisher when the target is at kill percent and close
-    if(t.pct>90 && inMelee && f.fnCd<=0 && rn<0.4){
+    if(t.pct>90+(pb ? (pb.sFin||0) : 0) && inMelee && f.fnCd<=0 && rn<0.4){   // sFin: the playbook's finisher percent
       inp.special=true; inp.attack=true;
     }
     else if(cls==="trap"){
@@ -32840,6 +33024,7 @@ function aiThink(f){
     if(sp==="counter"||sp==="dash"||sp==="kick"||sp==="reflect"){ inp.special=true; inp.down=true; }
   }
 
+  if(pb) pbMoves(f, t, inp, pb, lvl, sp, danger, inMelee, ac0);   // the playbook's say over which move, when (the m* genes)
   return finishAI(f,inp,sp);
 }
 
