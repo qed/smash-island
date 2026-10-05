@@ -20871,6 +20871,22 @@ function oneArenaDraw(b, H, layer){
 // vent that is in the way asks for one wait at its edge), and the fairness pins are in test/running-race.test.js.
 // The lane ends at a gap no runner can jump (RACE_FINAL_GAP), then the landing with the finish line on it.
 //
+// THE D5 PASS. The owner (2026-10-02): "running should be d5 bfdi:branches difficulty" -- BFDI: Branches is a fan BFDI platformer whose levels are rated 0 to 7, with D7 to D10
+// as extreme tiers above, so d5 is demanding platforming short of extreme. Told the lane was "Too easy", they asked for change in "Jumps, Hazard timing and Length", and "and also
+// just not just having to jump over easy things to jump over; i want at least one thing to be slightly kaizo." One run from start to finish, no checkpoint, and the line's speed was
+// not theirs to pick: it is as it was. So the lane is 39.5% longer (31,800 px), reaches full strength from 90% of the way, and what the length holds is SECTIONS: obstacles with a
+// `sec` (where a runner begins it, where he may wait, where it ends) that are played by search on the real engine (test/helpers/running-solver.page.js; the test plays back what
+// scripts/solve-running-lane.mjs found, so that "winnable by a skilled player" is a run on file with the room of every press measured, never a claim):
+//   planks     a staircase of thin one-way planks over a pit, up and down, each a running jump from the one before; 76 px wide at the start of the lane, 28 at the end ("Jumps")
+//   pillars    the same in stone, one fighter wide, taller steps
+//   leap       two pits only the double jump crosses (340-460 px) with a small plank between; and the plain gaps themselves now reach 440 px
+//   sawgap     a saw on a pole over the middle of a pit, under a ceiling of spikes so that no double jump goes over it: the saw is the clock ("Hazard timing")
+//   jetpad     fire jets on the island you land on, close together (no pocket to stand in), burning most of the time, lit in a wave that runs with a runner, under a ceiling
+//   coverfire  a cannon that fires when he crosses its trigger at the lip, too late to wait out: its first shot meets him at the top of his jump, under a ceiling
+//   kaizo      THE HAIRLINE, the last thing on the lane ("slightly kaizo"), see its branch in buildRaceLane
+// A ceiling of spikes is the lane's answer to "just double jump over it": the tips are over a single jump's head and under a double's. Every window is tighter than the old lane's
+// and none is hidden: the jets glow before they burn, the cannon flashes where its shot will leave, the saw swings on a pole, the hairline tile has its crack.
+//
 // THE LINE ("the finale's chasing red line"): starts behind everyone at GO! and advances RACE_LINE_SPEED a frame, 81%
 // of a sprint (MAXVX): a good runner outruns it only by keeping moving. It never stops, never slows. Touching it is a loss
 // ("The line caught you", Retry). An AI runner it reaches is deleted on the spot and gone.
@@ -20890,7 +20906,7 @@ const RACE_FLOOR_H = 60;
 const RACE_LINE_SPEED = 5.2;                      // px a frame, 81% of a sprint (MAXVX 6.4); it was 4.2. "It never stops, never slows."
 const RACE_LINE_START = 520;                      // how far behind the start line it begins
 const RACE_FIRST_X = RACE_START_X + 700;          // the first obstacle: a clear run first
-const RACE_SEC_KINDS = ['planks', 'pillars', 'leap', 'sawgap', 'jetpad', 'coverfire'];   // the kinds that are precision sections: each has a `sec` (where it is run up to, waited at and left) for the solver
+const RACE_SEC_KINDS = ['planks', 'pillars', 'leap', 'sawgap', 'jetpad', 'coverfire', 'kaizo'];   // the kinds that are precision sections: each has a `sec` (where it is run up to, waited at and left) for the solver
 const RACE_LAST_X = RACE_LEN - 460;               // no obstacle reaches past this: the last 460 px to the edge are clear
 const RACE_KAIZO_LEN = 1300;                       // the kaizo section begins this far before the last obstacle's limit (it is 1,270 px long): nothing else is laid in the tail
 const RACE_RAMP = 0.9;                            // the lane is at full strength from 90% of the way to its last obstacle (it was 100%: the d5 lane is hard for longer)
@@ -20914,7 +20930,7 @@ const RACE_BULLET = { w:40, h:30, low:18, high:100 };   // a cannon's shot: its 
 const RACE_STAGE = { id:"meafterlife", name:"MeAfterlife", blurb:"The running lane inside MePhone4.",
   sky:["#eef4fb","#c3d5e8"], ground:"#b9c6d6", plats:[], hazard:null };   // "a blue, purgatory-like void", pale: the owner's "pale void backdrop"
 function raceFresh(){ return { active:false, over:false, won:false, frames:0, fighter:"Knife", opts:null, prev:null, retry:null, onEnd:null, result:null,
-  lineX:0, startX:0, edge:0, farX:0, finishX:0, floorY:0, obstacles:[], hazards:[], pianos:[], voices:[], memories:[], waves:[], traps:[], crumbles:[], cannons:[], bullets:[], pendulums:[], ferries:[], pits:[],
+  lineX:0, startX:0, edge:0, farX:0, finishX:0, floorY:0, obstacles:[], hazards:[], pianos:[], voices:[], memories:[], waves:[], traps:[], crumbles:[], fakes:[], cannons:[], bullets:[], pendulums:[], ferries:[], pits:[],
   bridge:null, bridgeIn:0, charge:null, flight:null, thrown:false, short:false, throwWho:-1, landX:0, marshOver:false, lossWhy:null }; }
 // mulberry32: the course's own dice, so Math.random (seeded differently by every test and never by a player) has no say in it
 function raceRng(seed){ let a = seed >>> 0; return function(){ a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -20959,7 +20975,7 @@ function raceMatchBegin(){
   for(const v of RACE.voices) v.fired = false;
   RACE.bullets = [];
   for(const c of RACE.cannons){ c.fired = false; c.at = 0; }
-  for(const c of RACE.crumbles){ c.t = -1; c.gone = 0; if(c.plat && worldPlats.indexOf(c.plat) < 0) worldPlats.push(c.plat); }
+  for(const c of RACE.crumbles.concat(RACE.fakes)){ c.t = -1; c.gone = 0; if(c.plat && worldPlats.indexOf(c.plat) < 0) worldPlats.push(c.plat); }
 }
 
 // Which obstacle stands next. Drawn from a shuffled bag (so every kind comes round in turn and none is missed by a run of
@@ -21007,13 +21023,13 @@ function buildRaceLane(){
   const fy = Math.round(WH*RACE_FLOOR_Y);
   RACE.floorY = fy; RACE.startX = RACE_START_X; RACE.edge = RACE_LEN; RACE.farX = RACE_LEN + RACE_FINAL_GAP; RACE.finishX = RACE.farX + 60;
   floors = [{ level:0, y:fy, x:0, w:RACE_LEN }];
-  const obs = [], haz = [], gaps = [], solids = [], ledges = [], pianos = [], voices = [], memories = [], traps = [], crumbles = [], cannons = [], pendulums = [], ferries = [], stones = [];
+  const obs = [], haz = [], gaps = [], solids = [], ledges = [], pianos = [], voices = [], memories = [], traps = [], crumbles = [], cannons = [], pendulums = [], ferries = [], stones = [], fakes = [];
   // a clear run first, then obstacles with a run-up of 240 px at least between them, up to the last stretch before the edge
-  let x = RACE_FIRST_X, last = null, group = 0;
+  let x = RACE_FIRST_X, last = null, group = 0, kz = false;   // kz: the ordinary obstacles are done (the next would pass cap) and the kaizo section is next
   const nextKind = raceKindDrawer(rnd);
-  while(x < cap){
+  while(x < RACE_LAST_X){
     let s = raceStrength(x);
-    const k = nextKind(x, obs.length === 0, last);
+    const k = kz ? 'kaizo' : nextKind(x, obs.length === 0, last);
     // a precision section (one with a `sec`) is run up to from further back: whoever has just come down from a tall wall or a double jump is
     // still in the air 200 px on, and a stair of planks wants him on the ground, at speed, before its first jump (after another section he has come down already)
     if(RACE_SEC_KINDS.includes(k) && !RACE_SEC_KINDS.includes(last)){ x += 220; s = raceStrength(x); }
@@ -21021,11 +21037,11 @@ function buildRaceLane(){
     if(k === 'gap'){
       // JUMPS (owner, 2026-10-02: "Jumps"): gaps close to a full jump early and needing the double jump later, up to 440 px (the double jump's end)
       const w = Math.round(raceLerp(170, 380, s*s) + rnd()*raceLerp(30, 60, s));
-      end = x + w; if(end > cap) break;
+      end = x + w; if(end > cap){ kz = true; continue; }
       obs.push({ k, x0:x, x1:end, g:group, s }); gaps.push([x, end]);
     } else if(k === 'wall'){
       const w = Math.round(raceLerp(50, 70, s) + rnd()*raceLerp(30, 50, s)), h = Math.round(raceLerp(70, 110, s) + rnd()*raceLerp(30, 80, s*s));
-      end = x + w; if(end > cap) break;
+      end = x + w; if(end > cap){ kz = true; continue; }
       solids.push({ x, y:fy - h, w, h, solid:true, raceWall:true });
       obs.push({ k, x0:x, x1:end, top:fy - h, g:group, s });
     } else if(k === 'bar'){
@@ -21033,7 +21049,7 @@ function buildRaceLane(){
       // ledge has 78-88 px of headroom
       const stepH = Math.round(raceLerp(90, 100, s)), ledgeY = fy - stepH, stepW = 40, ledgeW = Math.round(raceLerp(300, 360, s));
       const barX = x + stepW + Math.round(raceLerp(140, 90, s)), barW = 60;
-      end = x + stepW + ledgeW; if(end > cap) break;
+      end = x + stepW + ledgeW; if(end > cap){ kz = true; continue; }
       solids.push({ x, y:ledgeY, w:stepW, h:stepH, solid:true, raceStep:true });
       ledges.push({ x:x + stepW, y:ledgeY, w:ledgeW, h:12, raceLedge:true });
       solids.push({ x:barX, y:ledgeY - 40 - 700, w:barW, h:700, solid:true, raceBar:true });
@@ -21044,7 +21060,7 @@ function buildRaceLane(){
       const n = 1 + (s > 0.33 ? 1 : 0) + (s > 0.66 ? 1 : 0);
       const w = Math.round(raceLerp(56, 84, s)), h = 120, period = Math.round(raceLerp(84, 58, s) + rnd()*raceLerp(44, 18, s)), ph0 = rnd();
       const pitch = w + 48 + Math.round(raceLerp(90, 60, s));   // a fighter is 48 px: the pocket between two blocks is 60-90 px
-      end = x + (n - 1)*pitch + w; if(end > cap) break;
+      end = x + (n - 1)*pitch + w; if(end > cap){ kz = true; continue; }
       const kx = -Math.round(raceLerp(6, 8, s)), ky = -Math.round(raceLerp(4, 6, s)), stun = Math.round(raceLerp(11, 20, s));
       for(let i = 0; i < n; i++){
         const against = i > 0 && rnd() < s*0.4, px = x + i*pitch;
@@ -21057,19 +21073,19 @@ function buildRaceLane(){
       // it falls where the run-through is still just possible: at full speed you have left its box (and your own width) with
       // a few frames to spare -- fewer as the lane goes on
       const w = Math.round(raceLerp(90, 130, s)), T = Math.round(raceLerp(54, 48, s)), lead = Math.round(raceLerp(150, 180, s));
-      const cx = x + lead; end = cx + Math.round(w/2); if(end > cap) break;
+      const cx = x + lead; end = cx + Math.round(w/2); if(end > cap){ kz = true; continue; }
       pianos.push({ s, trig:x, x:cx - Math.round(w/2), w, h:96, T, kx:-Math.round(raceLerp(5, 6, s)), ky:-Math.round(raceLerp(7, 9, s)), stun:Math.round(raceLerp(22, 28, s)), state:'idle', t:0 });
       obs.push({ k, x0:x, x1:end, g:group, s });
     } else if(k === 'memory'){
       const w = Math.round(raceLerp(110, 200, s)), h = Math.round(raceLerp(70, 100, s)), slow = Math.round(raceLerp(34, 60, s));
-      end = x + w; if(end > cap) break;
+      end = x + w; if(end > cap){ kz = true; continue; }
       memories.push({ s, x, w, h, slow });
       obs.push({ k, x0:x, x1:end, g:group, s });
     } else if(k === 'spikes'){
       // PLATFORMER: a strip of spikes in the floor ("Spikes ... one of the most common obstacles" in Sonic; Super Meat Boy and
       // Geometry Dash live on them). Silver points with red tips. One jump takes you over; from half way in some are a pair.
       const n = s > 0.45 ? 2 : 1, w = Math.min(Math.round(raceLerp(70, 130, s)), n === 2 ? 110 : 130), pocket = 160;
-      end = x + n*w + (n - 1)*pocket; if(end > cap) break;
+      end = x + n*w + (n - 1)*pocket; if(end > cap){ kz = true; continue; }
       for(let i = 0; i < n; i++){
         const sx = x + i*(w + pocket);
         traps.push({ k, s, x:sx, w, h:26, kx:-5, ky:-8, stun:Math.round(raceLerp(12, 18, s)), g:group });
@@ -21080,7 +21096,7 @@ function buildRaceLane(){
       // one jump takes you through, a second bangs your head. The tips are above a single jump's head and below a double's.
       const pit = s >= 0.5 && rnd() < 0.5, w = pit ? Math.round(raceLerp(150, 190, s)) : Math.round(raceLerp(90, 130, s)), lead = 110;
       const tip = Math.round(raceLerp(200, 188, s)), sx = x + lead;
-      end = sx + w + lead; if(end > cap) break;
+      end = sx + w + lead; if(end > cap){ kz = true; continue; }
       if(pit) gaps.push([sx, sx + w]); else traps.push({ k:'spikes', s, x:sx, w, h:26, kx:-5, ky:-8, stun:Math.round(raceLerp(12, 18, s)), g:group });
       traps.push({ k, s, x, w:end - x, tip, kx:-4, ky:0, stun:Math.round(raceLerp(14, 20, s)), g:group, pit });
       obs.push({ k, x0:x, x1:end, g:group, s, pit, tip, strip:{ x0:sx, x1:sx + w } });
@@ -21090,13 +21106,13 @@ function buildRaceLane(){
       const trap = s >= 0.5;   // the pad is a help early on and a trap later
       if(!trap){
         const fw = Math.round(raceLerp(160, 200, s));
-        end = x + 70 + fw; if(end > cap) break;
+        end = x + 70 + fw; if(end > cap){ kz = true; continue; }
         traps.push({ k, s, x, w:40, h:14, vy:-16.5, mode:'helper', g:group });
         traps.push({ k:'spikes', s, x:x + 70, w:fw, h:26, kx:-5, ky:-8, stun:Math.round(raceLerp(12, 18, s)), g:group, field:true });
         obs.push({ k, x0:x, x1:end, g:group, s, mode:'helper', pad:{ x0:x, x1:x + 40 }, field:{ x0:x + 70, x1:end } });
       } else {
         const tip = Math.round(raceLerp(200, 188, s));
-        end = x + 270; if(end > cap) break;
+        end = x + 270; if(end > cap){ kz = true; continue; }
         traps.push({ k, s, x:x + 110, w:40, h:14, vy:-16.5, mode:'trap', g:group });
         traps.push({ k:'ceiling', s, x, w:270, tip, kx:-4, ky:0, stun:Math.round(raceLerp(14, 20, s)), g:group, pit:false });
         obs.push({ k, x0:x, x1:end, g:group, s, mode:'trap', pad:{ x0:x + 110, x1:x + 150 }, tip });
@@ -21107,7 +21123,7 @@ function buildRaceLane(){
       // full speed, through them all.
       const n = 1 + (s > 0.35 ? 1 : 0) + (s > 0.7 ? 1 : 0), pitch = 150, vw = 44;
       const period = Math.round(raceLerp(112, 86, s)), burn = Math.round(raceLerp(30, 42, s)), hf = Math.round(raceLerp(100, 150, s)), ph0 = rnd();
-      end = x + (n - 1)*pitch + vw; if(end > cap) break;
+      end = x + (n - 1)*pitch + vw; if(end > cap){ kz = true; continue; }
       for(let i = 0; i < n; i++){
         const vx = x + i*pitch;
         traps.push({ k, s, x:vx, w:vw, period, phase:(((ph0 - i*pitch/(MAXVX*period)) % 1) + 1) % 1, warn:24, burn, hf, kx:-4, ky:-9, stun:Math.round(raceLerp(10, 16, s)), g:group });
@@ -21117,7 +21133,7 @@ function buildRaceLane(){
       // PLATFORMER: a conveyor belt running against you (Mario's, Mega Man's, Rayman's factories): the floor itself is running
       // the other way, so your speed is less whatever you press. In the air it cannot touch you.
       const w = Math.round(raceLerp(220, 360, s)), bs = +raceLerp(1.6, 3.0, s).toFixed(2);
-      end = x + w; if(end > cap) break;
+      end = x + w; if(end > cap){ kz = true; continue; }
       traps.push({ k, s, x, w, bs, g:group });
       obs.push({ k, x0:x, x1:end, g:group, s, bs });
     } else if(k === 'crumble'){
@@ -21125,7 +21141,7 @@ function buildRaceLane(){
       // stood on and drops a moment later, and comes back after a while. Keep running and it never catches you; stand still and
       // every tile under you goes at once.
       const tiles = Math.round(raceLerp(5, 9, s)), tw = 40, delay = Math.round(raceLerp(32, 26, s));
-      end = x + tiles*tw; if(end > cap) break;
+      end = x + tiles*tw; if(end > cap){ kz = true; continue; }
       gaps.push([x, end]);
       for(let i = 0; i < tiles; i++) crumbles.push({ s, x:x + i*tw, w:tw, y:fy, h:26, delay, t:-1, gone:0, plat:null, g:group });
       obs.push({ k, x0:x, x1:end, g:group, s, tiles, delay });
@@ -21134,17 +21150,34 @@ function buildRaceLane(){
       // floor as it passes the middle and goes up to either side. Hop it as it comes, or cross while it is out at the side.
       const L = Math.round(raceLerp(170, 190, s)), A = raceLerp(58, 64, s)*Math.PI/180, R = Math.round(raceLerp(28, 34, s)), period = Math.round(raceLerp(124, 98, s));
       const half = Math.round(L*Math.sin(A)) + R + 30, px = x + half;
-      end = px + half; if(end > cap) break;
+      end = px + half; if(end > cap){ kz = true; continue; }
       pendulums.push({ s, px, py:fy - R - 6 - L, L, A, R, period, phase:rnd(), kx:6, ky:-7, stun:Math.round(raceLerp(12, 20, s)), g:group });   // the blade's lowest point is 6 px off the floor
       obs.push({ k, x0:x, x1:end, g:group, s, px, L, A, R });
     } else if(k === 'ferry'){
       // PLATFORMER: moving platforms over a pit too wide to jump (Mario's lifts, Rayman's and Mega Man's floating platforms): three
       // of them shuttle across, one always coming in to the edge. Step on when one docks, stand still, step off at the far side.
       const gw = Math.round(raceLerp(520, 560, s)), pw = 150, period = Math.round(raceLerp(140, 110, s));
-      end = x + gw; if(end > cap) break;
+      end = x + gw; if(end > cap){ kz = true; continue; }
       gaps.push([x, end]);
       for(let i = 0; i < 3; i++) ferries.push({ s, gx:x, gw, w:pw, y:fy, h:14, period, phase:i/3, plat:null, g:group, i });
       obs.push({ k, x0:x, x1:end, g:group, s, gw, pw, period });
+    } else if(k === 'kaizo'){
+      // SLIGHTLY KAIZO (owner, 2026-10-02: "i want at least one thing to be slightly kaizo"): THE HAIRLINE, the last thing on the lane. A precise sequence with one small
+      // surprise, fair on the next try, and nothing in it hidden. It is all under one ceiling of spikes, so no double jump but a late one:
+      //   1. a spring pad on the runway, like the springs that helped earlier in the lane and the ones that did not: step on it and it throws him up into the tips. Hop it.
+      //   2. a pit, and in the middle of the next one a wide platform that looks like the floor and is not: there is a hairline crack across it (thin and pale where every
+      //      other crumbling tile is brown and cracked heavy) and a little dust flakes off it now and then, and spikes show under it. It crumbles four frames after he lands
+      //      on it: it is for jumping off at once, not for running on. Whoever runs on falls onto the spikes, unless he jumps within the few frames of the fall.
+      //   3. a pit wider than a jump, under the ceiling: one jump and a SECOND JUMP TIMED LATE, as he comes back down past the tips, crosses it; a second jump at the top bangs his head.
+      x = Math.max(x, RACE_LAST_X - RACE_KAIZO_LEN);
+      const padX = x + 70, lipA = x + 380, GA = 270, TW = 140, T = lipA + GA, GB = 400, far = T + TW + GB;
+      end = far + 60; if(end > RACE_LAST_X) break;
+      gaps.push([lipA, far]);
+      fakes.push({ s, x:T, w:TW, y:fy, h:26, delay:4, t:-1, gone:0, plat:null, g:group, hair:true });
+      traps.push({ k:'bed', s, x:T - 6, w:TW + 12, h:26, dy:44, kx:-5, ky:-8, stun:18, g:group });   // the spikes under the tile: their tips are 18 px under its top
+      traps.push({ k:'spring', s, x:padX, w:40, h:14, vy:-16.5, mode:'trap', g:group });
+      traps.push({ k:'ceiling', s, x:x - 60, w:far + 120 - x + 60, tip:198, kx:-4, ky:0, stun:18, g:group, pit:true });
+      obs.push({ k, x0:x, x1:end, g:group, s, pad:{ x0:padX, x1:padX + 40 }, lipA, GA, TW, GB, tile:T, sec:{ sx:x - 150, wx:x - 70, ex:far + 80, t1max:56, waits:[0], opt:{ min:1, want:3 } } });
     } else if(k === 'planks' || k === 'pillars'){
       // JUMPS (owner, 2026-10-02: "running should be d5 bfdi:branches difficulty"; asked what should change: "Jumps"): precision platforming. A staircase
       // of small platforms over a pit, up and down in turn, each one jump from the last. Planks are thin wooden planks (one-way: the feet land on top
@@ -21160,7 +21193,7 @@ function buildRaceLane(){
         cs.push(cs[i - 1] + Math.round(MAXVX*raceJumpFrames(hs[i] - hs[i - 1]) + (rnd() - 0.5)*2*jit));
       }
       const far = cs[n] + Math.round(MAXVX*raceJumpFrames(-hs[n])) - 40;   // the floor on the far side: a jump from the last one lands 40 px onto it
-      end = far + 40; if(end > cap) break;
+      end = far + 40; if(end > cap){ kz = true; continue; }
       gaps.push([x, far]);
       for(let i = 1; i <= n; i++){
         if(solid) solids.push({ x:cs[i] - pw/2, y:fy - hs[i], w:pw, h:hs[i] + 190, solid:true, racePillar:true });
@@ -21173,7 +21206,7 @@ function buildRaceLane(){
       // once), the second is as wide, and the floor after it is the way out.
       const g1 = Math.round(raceLerp(340, 430, s) + rnd()*30), g2 = Math.round(raceLerp(340, 430, s) + rnd()*30), pw = Math.round(raceLerp(64, 40, s)), ph = Math.round(raceLerp(0, 36, s)*rnd());
       const p0 = x + g1, far = p0 + pw + g2;
-      end = far + 40; if(end > cap) break;
+      end = far + 40; if(end > cap){ kz = true; continue; }
       gaps.push([x, far]);
       stones.push({ x:p0, y:fy - ph, w:pw, h:14, raceStone:true });
       obs.push({ k, x0:x, x1:end, g:group, s, g1, g2, pw, ph, sec:{ sx:x - 150, wx:x - 70, ex:far + 60, t1max:56, waits:[0] } });
@@ -21184,7 +21217,7 @@ function buildRaceLane(){
       // over it with a double jump: the tips are over a single jump's head and under a double's. He waits at the lip for the saw to be at the side, jumps
       // and is across before it is back.
       const G = Math.round(raceLerp(240, 310, s) + rnd()*20), L = Math.round(raceLerp(170, 190, s)), A = raceLerp(58, 64, s)*Math.PI/180, R = Math.round(raceLerp(28, 34, s)), period = Math.round(raceLerp(124, 98, s));
-      end = x + G + 100; if(end > cap) break;
+      end = x + G + 100; if(end > cap){ kz = true; continue; }
       gaps.push([x, x + G]);
       pendulums.push({ s, px:x + Math.round(G/2), py:fy - R - 6 - L, L, A, R, period, phase:rnd(), kx:6, ky:-7, stun:Math.round(raceLerp(12, 20, s)), g:group });
       traps.push({ k:'ceiling', s, x:x - 90, w:G + 180, tip:Math.round(raceLerp(200, 190, s)), kx:-4, ky:0, stun:Math.round(raceLerp(14, 20, s)), g:group, pit:true });
@@ -21197,7 +21230,7 @@ function buildRaceLane(){
       // is left of the rest after he has crossed one vent, 14 frames at the start and about 6 at the end. They glow before they burn: the tell.
       const G1 = Math.round(raceLerp(230, 285, s) + rnd()*20), G2 = Math.round(raceLerp(230, 285, s) + rnd()*20), n = 2 + (s > 0.6 ? 1 : 0), pitch = 90, vw = 44, lead = 120, I = lead + (n - 1)*pitch + vw + 100;
       const period = Math.round(raceLerp(96, 84, s)), burn = Math.min(Math.round(period*raceLerp(0.55, 0.8, s)), period - 24), hf = Math.round(raceLerp(110, 150, s)), ph0 = rnd();   // late in the lane a jet only rests while it glows
-      end = x + G1 + I + G2 + 100; if(end > cap) break;
+      end = x + G1 + I + G2 + 100; if(end > cap){ kz = true; continue; }
       gaps.push([x, x + G1]); gaps.push([x + G1 + I, x + G1 + I + G2]);
       traps.push({ k:'ceiling', s, x:x + G1 - 40, w:I + 80, tip:Math.round(raceLerp(200, 190, s)), kx:-4, ky:0, stun:Math.round(raceLerp(14, 20, s)), g:group, pit:false });   // over the island: no double jump over the flames
       for(let i = 0; i < n; i++) traps.push({ k:'jet', s, x:x + G1 + lead + i*pitch, w:vw, period, phase:(((ph0 - i*pitch/(MAXVX*period)) % 1) + 1) % 1, warn:24, burn, hf, kx:-4, ky:-9, stun:Math.round(raceLerp(10, 16, s)), g:group });
@@ -21210,7 +21243,7 @@ function buildRaceLane(){
       // where each shot will leave, as every cannon does.
       const G = Math.round(raceLerp(250, 300, s) + rnd()*16), n = 2 + (s > 0.7 ? 1 : 0), gapF = Math.round(raceLerp(56, 44, s)), bs = +raceLerp(6.4, 9, s).toFixed(2), trig = x + 12, tm = 19;
       const cx = Math.round(trig + 24 + RACE_BULLET.w + MAXVX*tm + bs*(tm - 20)), hi = []; for(let i = 0; i < n; i++) hi.push(i % 2 === 0);
-      end = x + G + 180; if(end > cap) break;
+      end = x + G + 180; if(end > cap){ kz = true; continue; }
       gaps.push([x, x + G]);
       cannons.push({ s, trig, cx, n, gap:gapF, bs, hi, fired:false, at:0 });
       traps.push({ k:'ceiling', s, x:x - 60, w:G + 180, tip:Math.round(raceLerp(200, 190, s)), kx:-4, ky:0, stun:Math.round(raceLerp(14, 20, s)), g:group, pit:true });   // over the pit: the high shot is for a single jump to be above, not a double
@@ -21222,12 +21255,12 @@ function buildRaceLane(){
       const n = 1 + (s > 0.35 ? 1 : 0) + (s > 0.7 ? 1 : 0), gapF = Math.round(raceLerp(56, 44, s)), bs = +raceLerp(6.4, 9, s).toFixed(2), ds = Math.round(raceLerp(560, 620, s));
       const hi = []; for(let i = 0; i < n; i++) hi.push(s >= 0.4 && rnd() < 0.5);
       const lastFire = 20 + (n - 1)*gapF, meet = x + Math.ceil(MAXVX*(ds + bs*lastFire)/(MAXVX + bs));   // where a runner at full speed meets the last shot
-      end = meet + 60; if(end > cap) break;
+      end = meet + 60; if(end > cap){ kz = true; continue; }
       cannons.push({ s, trig:x, cx:x + ds, n, gap:gapF, bs, hi, fired:false, at:0 });
       obs.push({ k, x0:x, x1:end, g:group, s, n, hi });
     } else {   // voice
       const sp = raceLerp(5, 7.5, s), h = Math.round(raceLerp(62, 104, s)), th = 46, ds = Math.round(raceLerp(520, 600, s)), stun = Math.round(raceLerp(26, 40, s));
-      end = x + Math.ceil(ds*MAXVX/(MAXVX + sp)) + th + 30; if(end > cap) break;   // where a runner at full speed meets it, and a little past
+      end = x + Math.ceil(ds*MAXVX/(MAXVX + sp)) + th + 30; if(end > cap){ kz = true; continue; }   // where a runner at full speed meets it, and a little past
       voices.push({ s, trig:x, x0:x + ds, sp, h, th, stun, fired:false });
       obs.push({ k, x0:x, x1:end, g:group, s });
     }
@@ -21241,9 +21274,10 @@ function buildRaceLane(){
   slabs.push({ x:RACE.farX, y:fy, w:RACE_FAR_W, h:RACE_FLOOR_H, solid:true, floor:0, raceFar:true });
   for(const fe of ferries){ fe.plat = { x:fe.gx, y:fe.y, w:fe.w, h:fe.h, raceFerry:true }; slabs.push(fe.plat); }   // the ferries: one-way platforms, moved every frame
   for(const c of crumbles){ c.plat = { x:c.x, y:c.y, w:c.w, h:c.h, solid:true, floor:0, raceCrumble:true }; slabs.push(c.plat); }   // the crumbling floor's tiles
+  for(const c of fakes){ c.plat = { x:c.x, y:c.y, w:c.w, h:c.h, solid:true, floor:0, raceFake:true }; slabs.push(c.plat); }   // the hairline's tile
   worldPlats = slabs.concat(solids, ledges, stones);
   RACE.obstacles = obs; RACE.hazards = haz; RACE.pianos = pianos; RACE.voices = voices; RACE.memories = memories; RACE.waves = [];
-  RACE.traps = traps; RACE.crumbles = crumbles; RACE.cannons = cannons; RACE.pendulums = pendulums; RACE.ferries = ferries; RACE.bullets = [];
+  RACE.traps = traps; RACE.crumbles = crumbles; RACE.fakes = fakes; RACE.cannons = cannons; RACE.pendulums = pendulums; RACE.ferries = ferries; RACE.bullets = [];
   RACE.pits = gaps.map(g => ({ x0:g[0], x1:g[1] })).concat([{ x0:RACE.edge, x1:RACE.farX }]);
 }
 // THE RUNNERS (buildFighters' race branch): you, Marshmallow at your side (your team, so nothing of yours hits her), then the
@@ -21371,8 +21405,9 @@ function raceHazards(you){
   // lane they bump and never wound: a shove and a stun, and the grace after it.
   const live = f => !(f.dead || f._raceThrown || f._raceHeld), free = f => live(f) && !((f._raceBumpT||0) > 0);
   for(const t of RACE.traps){
-    if(t.k === 'spikes'){          // feet in the spikes: a jump takes you over them
-      for(const f of fighters) if(free(f) && f.x + f.r > t.x && f.x - f.r < t.x + t.w && f.y + f.r > fy - t.h) raceBump(f, t.kx, t.ky, t.stun);
+    if(t.k === 'spikes' || t.k === 'bed'){          // feet in the spikes: a jump takes you over them (a bed is a strip of them down in a pit, under the hairline's tile: whoever falls through it lands on it)
+      const base = fy + (t.dy || 0);
+      for(const f of fighters) if(free(f) && f.x + f.r > t.x && f.x - f.r < t.x + t.w && f.y + f.r > base - t.h) raceBump(f, t.kx, t.ky, t.stun);
     } else if(t.k === 'ceiling'){  // head in the tips: a second jump takes you there
       for(const f of fighters) if(free(f) && f.x + f.r > t.x && f.x - f.r < t.x + t.w && f.y - f.r < fy - t.tip) raceBump(f, t.kx, t.ky, t.stun);
     } else if(t.k === 'fire' || t.k === 'jet'){     // a vent: it glows (t.warn frames), burns (t.burn), rests; only the burn hurts. A jet is a vent on a platform you land on (jetpad)
@@ -21407,15 +21442,17 @@ function raceHazards(you){
     for(const f of fighters) if(free(f) && Math.hypot(f.x - b.x, f.y - b.y) < p.R + f.r*0.85) raceBump(f, f.x >= b.x ? p.kx : -p.kx, p.ky, p.stun);
   }
   // the crumbling floor: a tile stood on drops c.delay frames later, is gone for 200 frames, and comes back
-  for(const c of RACE.crumbles){
-    if(c.gone > 0){ if(--c.gone === 0){ c.t = -1; worldPlats.push(c.plat); } continue; }
+  const tileTick = c => {
+    if(c.gone > 0){ if(--c.gone === 0){ c.t = -1; worldPlats.push(c.plat); } return; }
     if(c.t < 0){
       for(const f of fighters) if(live(f) && f.onground && Math.abs(f.y + f.r - c.y) < 3 && f.x + f.r > c.x && f.x - f.r < c.x + c.w){ c.t = c.delay; break; }   // any part of him on it
     } else if(--c.t === 0){
       worldPlats = worldPlats.filter(p => p !== c.plat); c.gone = 200;
-      for(let i=0;i<8;i++) puff(c.x + Math.random()*c.w, c.y, '#8a7a66', 5);
+      for(let i=0;i<8;i++) puff(c.x + Math.random()*c.w, c.y, c.hair ? '#b9c6d6' : '#8a7a66', 5);
     }
-  }
+  };
+  for(const c of RACE.crumbles) tileTick(c);
+  for(const c of RACE.fakes) tileTick(c);   // the hairline's tiles (the kaizo): the same, but at once
   // the cannons: you cross the trigger, and each of its shots leaves 20 frames on, then every c.gap frames, along the lane at
   // the height it flashed at (low: jump it; high: stay down and it goes over you)
   for(const c of RACE.cannons){
@@ -21737,6 +21774,16 @@ function raceDrawCrumble(c){   // a cracked tile: it shakes and sinks once stood
   ctx.moveTo(x + c.w*0.3, y); ctx.lineTo(x + c.w*0.45, y + c.h*0.5); ctx.lineTo(x + c.w*0.35, y + c.h);
   ctx.moveTo(x + c.w*0.7, y); ctx.lineTo(x + c.w*0.6, y + c.h*0.6); ctx.stroke();
 }
+// THE HAIRLINE: a platform that looks like the floor and crumbles four frames after he lands on it. It is drawn as the floor is, with one thin pale crack across it and a
+// little dust that flakes off the crack now and then, where every other crumbling tile is brown and cracked heavy: a hairline you can see if you look. Stood on, it shakes; gone,
+// only its outline is left (as the others).
+function raceDrawHairline(c){
+  if(c.gone > 0){ ctx.globalAlpha = 0.3; ctx.strokeStyle = '#b9c6d6'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.strokeRect(c.x + 2, c.y, c.w - 4, c.h); ctx.setLineDash([]); ctx.globalAlpha = 1; return; }
+  const jx = c.t > 0 ? Math.sin(hazardT*2.9 + c.x)*2.5 : 0, x = c.x + jx, mid = x + c.w*0.46, y = c.y;
+  ctx.strokeStyle = '#f4f7fb'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(mid, y); ctx.lineTo(mid - 4, y + c.h*0.25); ctx.lineTo(mid + 3, y + c.h*0.5); ctx.lineTo(mid - 2, y + c.h*0.8); ctx.lineTo(mid + 1, y + c.h); ctx.stroke();
+  ctx.fillStyle = '#f4f7fb'; for(let i = 0; i < 3; i++){ const u = ((hazardT*0.7 + i*37 + c.x) % 110)/110; ctx.globalAlpha = 0.8*(1 - u); ctx.fillRect(mid - 6 + i*5 + Math.sin(u*6 + i)*3, y - 2 - u*14, 2, 2); }
+  ctx.globalAlpha = 1;
+}
 function raceDrawCannon(c, fy){   // hung from above, ahead of you: its barrel flashes where the next shot will fly
   ctx.strokeStyle = '#6b6f78'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(c.cx, -800); ctx.lineTo(c.cx, fy - 140); ctx.stroke();
   ctx.fillStyle = '#2a2d33'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3;
@@ -21841,7 +21888,7 @@ function drawRaceFx(){
   // the platformer hazards
   for(const t of RACE.traps){
     if(t.x + (t.w || 0) < vx0 || t.x > vx1) continue;
-    if(t.k === 'spikes') raceDrawFloorSpikes(t.x, t.w, t.h, fy);
+    if(t.k === 'spikes' || t.k === 'bed') raceDrawFloorSpikes(t.x, t.w, t.h, fy + (t.dy || 0));
     else if(t.k === 'ceiling') raceDrawCeiling(t.x, t.w, t.tip, fy);
     else if(t.k === 'spring') raceDrawSpring(t, fy);
     else if(t.k === 'fire' || t.k === 'jet') raceDrawFire(t, fy);
@@ -21850,6 +21897,7 @@ function drawRaceFx(){
   for(const fe of RACE.ferries){ if(fe.plat.x + fe.w < vx0 || fe.plat.x > vx1) continue; raceDrawFerry(fe); }
   for(const p of RACE.pendulums){ if(p.px + 300 < vx0 || p.px - 300 > vx1) continue; raceDrawPendulum(p); }
   for(const c of RACE.crumbles){ if(c.x + c.w < vx0 || c.x > vx1) continue; raceDrawCrumble(c); }
+  for(const c of RACE.fakes){ if(c.x + c.w < vx0 || c.x > vx1) continue; raceDrawHairline(c); }
   for(const c of RACE.cannons){ if(c.cx + 60 < vx0 || c.cx - 60 > vx1) continue; raceDrawCannon(c, fy); }
   for(const b of RACE.bullets){ if(b.x + b.w + 30 < vx0 || b.x > vx1) continue; raceDrawBullet(b); }
   if(RACE.bridge){ ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(RACE.bridge.x, RACE.bridge.y - 3, RACE.bridge.w, 5); }

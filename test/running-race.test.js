@@ -94,7 +94,7 @@ const physics = (heights) => PH || (PH = quick({}, `
   return { single:jumpTest(null), double18:jumpTest(18), best:best, maxvx:MAXVX, r:you.r, grav:GRAV };`));
 let LANE = null;
 const lane = () => LANE || (LANE = race({}, `return { obs:RACE.obstacles, haz:RACE.hazards, pianos:RACE.pianos, voices:RACE.voices, memories:RACE.memories, traps:RACE.traps, cannons:RACE.cannons, pendulums:RACE.pendulums, pits:RACE.pits,
-  crumbles:RACE.crumbles.map(function(c){ return { x:c.x, w:c.w, delay:c.delay, s:c.s, g:c.g }; }), ferries:RACE.ferries.map(function(f){ return { gx:f.gx, gw:f.gw, w:f.w, period:f.period, phase:f.phase, g:f.g, i:f.i, s:f.s }; }),
+  crumbles:RACE.crumbles.map(function(c){ return { x:c.x, w:c.w, delay:c.delay, s:c.s, g:c.g }; }), fakes:RACE.fakes.map(function(c){ return { x:c.x, w:c.w, y:c.y, h:c.h, delay:c.delay, hair:!!c.hair, s:c.s, g:c.g }; }), ferries:RACE.ferries.map(function(f){ return { gx:f.gx, gw:f.gw, w:f.w, period:f.period, phase:f.phase, g:f.g, i:f.i, s:f.s }; }),
   bullet:RACE_BULLET, grav:GRAV, floor:RACE.floorY, edge:RACE.edge, farX:RACE.farX, finishX:RACE.finishX, WW:WW, W:W, backX:RACE_BACK_X, len:RACE_LEN, lineSpeed:RACE_LINE_SPEED, maxvx:MAXVX, r:you.r, plats:JSON.stringify(worldPlats),
   hash:__rs.laneHash() };`));
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
@@ -135,12 +135,12 @@ describe('the course', () => {
   it('is a much longer lane of the classics, the platformer hazards and the episode\'s, laid from a fixed seed: the same every time', () => {
     const SNAP = `{ obs:JSON.stringify(RACE.obstacles), plats:JSON.stringify(worldPlats), haz:JSON.stringify(RACE.hazards), pianos:JSON.stringify(RACE.pianos), voices:JSON.stringify(RACE.voices), memories:JSON.stringify(RACE.memories),
       traps:JSON.stringify(RACE.traps), cannons:JSON.stringify(RACE.cannons), pendulums:JSON.stringify(RACE.pendulums), crumbles:JSON.stringify(RACE.crumbles.map(function(c){ return [c.x, c.w, c.delay]; })),
-      ferries:JSON.stringify(RACE.ferries.map(function(f){ return [f.gx, f.gw, f.period, f.phase]; })), pits:JSON.stringify(RACE.pits) }`;
+      fakes:JSON.stringify(RACE.fakes.map(function(c){ return [c.x, c.w, c.delay]; })), ferries:JSON.stringify(RACE.ferries.map(function(f){ return [f.gx, f.gw, f.period, f.phase]; })), pits:JSON.stringify(RACE.pits) }`;
     const a = race({}, `var snap = ${SNAP}; snap.ok = __ok; snap.WW = WW; snap.W = W; snap.len = RACE_LEN; snap.kinds = RACE.obstacles.map(function(o){ return o.k; }); snap.edge = RACE.edge; snap.far = RACE.farX; snap.floor = RACE.floorY;
       snap.gy = groundY(); snap.big = isBig(); snap.scrolls = scrolls(); snap.mode = SETTINGS.mode; snap.items = itemSpawnInterval(); return snap;`);
     const b = race({}, `return ${SNAP};`);
     expect(a.ok).toBe(true);
-    for (const k of ['obs', 'plats', 'haz', 'pianos', 'voices', 'memories', 'traps', 'cannons', 'pendulums', 'crumbles', 'ferries', 'pits']) expect(a[k], 'the same ' + k).toBe(b[k]);
+    for (const k of ['obs', 'plats', 'haz', 'pianos', 'voices', 'memories', 'traps', 'cannons', 'pendulums', 'crumbles', 'fakes', 'ferries', 'pits']) expect(a[k], 'the same ' + k).toBe(b[k]);
     // "the run should be much longer" (2026-09-29): the first version's lane was 7,700 px, the next 22,800 (2.96 times that). Then the owner (2026-10-02): "running
     // should be d5 bfdi:branches difficulty", asked what to change: "Jumps, Hazard timing and Length": the lane is 30-40% longer than those 22,800 px, and
     // what the length is for is harder sections, not filler
@@ -326,7 +326,7 @@ describe('the course', () => {
     expect([r.s0, r.s90, r.s100], 'nothing at the first obstacle; full strength from 90% of the way to the last').toEqual([0, 1, 1]);
     expect(r.s50, 'and a ramp between: more than half at the middle of the way').toBeGreaterThan(0.5);
     const px = secs.reduce((a, o) => a + (o.x1 - o.x0), 0);
-    expect(px / (L.edge - r.first), 'a fifth of the lane or more is sections: the d5 lane\'s own').toBeGreaterThanOrEqual(0.2);
+    expect(px / (L.edge - r.first), 'a quarter of the lane or more is sections: the d5 lane\'s own').toBeGreaterThanOrEqual(0.25);
     const late = L.obs.filter((o) => o.x0 > L.len * 0.66);
     expect(late.filter((o) => o.sec).length, 'the last third has at least three sections in it').toBeGreaterThanOrEqual(3);
     const lateSecs = late.filter((o) => o.sec).map((o) => o.k);
@@ -468,6 +468,55 @@ describe('the hazard combinations: tighter windows, every one with its tell', ()
       for (const w of s.win) for (const key of ['t1', 'd2', 'w']) if (w[key] !== null) expect(w[key], k + ' #' + i + ' ' + key + ' window').toBeGreaterThanOrEqual(5);
       if (k !== 'coverfire') expect(s.win.some((w) => w.w !== null), k + ' #' + i + ' has a wait to time').toBe(true);
     });
+  }, 300000);
+});
+
+// SLIGHTLY KAIZO. The owner (2026-10-02): "and also just not just having to jump over easy things to jump over; i want at least one thing to be slightly kaizo." So the last thing
+// on the lane is THE HAIRLINE: a precise sequence with one small surprise that is fair on the next try, and nothing in it hidden. A spring pad on the runway that throws him into
+// the spikes of the ceiling (hop it), a pit, a platform in the middle of the next one that looks like the floor and crumbles four frames after he lands (a hairline crack you can
+// see if you look, spikes showing under it), and a pit wider than a jump under the ceiling, crossed by a jump and a second jump timed late. "Slightly": hard and a little sneaky,
+// never a blind or unwinnable trap: the solver plays all of it, and every press of it has room (the behaviour of the tile is pinned with "the platformer hazards").
+describe('the kaizo section: the hairline', () => {
+  const kz = () => lane().obs.filter((o) => o.k === 'kaizo');
+  it('there is one, it is the last thing on the lane, run up to from a long way back, and a section the solver plays', () => {
+    const L = lane(), o = kz()[0];
+    expect(kz().length, 'one').toBe(1);
+    expect(L.obs[L.obs.length - 1], 'the last thing on the lane').toBe(o);
+    expect(o.x0 / L.len, 'late: in its last tenth').toBeGreaterThan(0.9);
+    expect(o.sec, 'a section').toBeTruthy();
+    expect(o.x0 - L.obs[L.obs.length - 2].x1, 'a long run-up').toBeGreaterThanOrEqual(460);
+    expect(L.edge - o.x1, 'and the last stretch to the edge is clear').toBeGreaterThanOrEqual(460);
+  });
+
+  it('it is built of a ceiling of spikes, a spring that throws him into it, a tile with a hairline crack over spikes, and a pit only a late second jump crosses: every piece readable, none hidden', () => {
+    const L = lane(), P = physics([14, 26]), v = P.maxvx, o = kz()[0], g = o.g;
+    const cei = L.traps.find((t) => t.k === 'ceiling' && t.g === g), pad = L.traps.find((t) => t.k === 'spring' && t.g === g), bed = L.traps.find((t) => t.k === 'bed' && t.g === g), tile = L.fakes.find((c) => c.g === g);
+    expect(cei && pad && bed && tile, 'all four are there').toBeTruthy();
+    expect(cei.x <= o.x0 - 40 && cei.x + cei.w >= o.tile + o.TW + o.GB, 'the ceiling is over all of it, the runway and both pits').toBe(true);
+    expect(cei.tip - (P.single.apex + 2 * L.r), 'one jump goes under the tips').toBeGreaterThanOrEqual(20);
+    expect(P.best.apex + 2 * L.r, 'a second jump at the top bangs on them').toBeGreaterThan(cei.tip);
+    expect(pad.mode, 'the pad is the trap kind').toBe('trap');
+    expect(Math.abs(pad.vy) * Math.abs(pad.vy) / (2 * P.grav) + 2 * L.r, 'it throws him into the tips').toBeGreaterThan(cei.tip);
+    expect(pad.w + 2 * L.r + 6 * v, 'and a hop over it is easy').toBeLessThanOrEqual(P.single.above[14] * v);
+    expect([tile.hair, tile.delay <= 6, tile.w >= 100], 'the tile is a hairline tile: wide as a floor, gone four frames after he lands').toEqual([true, true, true]);
+    expect(tile.x, 'in the middle of the pit: a pit before it and a pit after').toBe(o.lipA + o.GA);
+    expect([bed.x <= tile.x, bed.x + bed.w >= tile.x + tile.w], 'the spikes are under the whole tile').toEqual([true, true]);
+    expect(bed.dy - bed.h, 'their tips show under the tile (it is 26 thick) and are a short fall from its top').toBeGreaterThan(tile.h - 26);
+    expect(bed.dy - bed.h, 'a short fall').toBeLessThan(30);
+    expect(o.GA, 'the first pit is a jump').toBeLessThanOrEqual(P.single.dist + 40);
+    expect(o.GB, 'the second needs a second jump').toBeGreaterThanOrEqual(P.single.dist + 100);
+    expect(o.GB, 'and a second jump can do it, with room').toBeLessThanOrEqual(P.best.dist - 40);
+  });
+
+  it('it is the tightest section of the lane and still fair: measured on the real engine as the run goes by, the least room of any press is 3 to 6 frames, the second jump is the late one, and every other section leaves more', () => {
+    const r = fullRun(), i = PROG.programs.findIndex((p) => p.k === 'kaizo'), s = r.plan.seen[i], steps = PROG.programs[i].steps;
+    expect(i, 'it was played').toBeGreaterThanOrEqual(0);
+    expect(s.room, 'slightly kaizo: a few frames, never a pixel').toBeGreaterThanOrEqual(3);
+    expect(s.room).toBeLessThanOrEqual(6);
+    r.plan.seen.forEach((q, j) => { if (j !== i) expect(q.room, 'section ' + j + ' (' + PROG.programs[j].k + ') leaves more room than the kaizo').toBeGreaterThan(s.room); });
+    const last = steps.filter((st) => st.d2 !== null).pop();
+    expect(last && last.d2, 'a second jump timed late (the top of a jump is 20 frames up; 39 frames on is as he comes back down past the tips)').toBeGreaterThanOrEqual(30);
+    expect(steps.some((st) => st.t1 !== null && st.t1 <= 8), 'and a jump off the tile within a few frames of landing on it').toBe(true);
   }, 300000);
 });
 
@@ -661,7 +710,7 @@ describe('the finish: the charged smash', () => {
 
   it('anywhere else, or with her out of reach, the smash is Knife\'s smash: nothing is picked up', () => {
     const r = quick({}, `${AT_EDGE}
-      you.x = RACE.edge - 600; you.y = RACE.floorY - you.r; marsh.x = you.x - 50; marsh.y = you.y; adv(2);   // well short of the zone, on the flat run to the edge
+      you.x = RACE.edge - 440; you.y = RACE.floorY - you.r; marsh.x = you.x - 50; marsh.y = you.y; adv(2);   // well short of the zone, on the flat run to the edge (the last 460 px are clear: the kaizo section of the d5 lane ends where they begin, so 600 back is a pit now)
       hold({smash:true}); adv(2); var mid = { charge:RACE.charge, held:!!marsh._raceHeld, q:!!you._smQ }; hold({}); adv(60);
       you.x = RACE.edge - 60; marsh.x = you.x - 50; marsh.y = you.y - 500; adv(1); marsh.y = you.y - 500; adv(1);   // at the edge but she is out of his reach (the leash keeps her within 260 px of him along the floor, never above him)
       hold({smash:true}); adv(2); var far = { charge:RACE.charge, held:!!marsh._raceHeld, q:!!you._smQ }; hold({}); adv(60);
@@ -1005,18 +1054,18 @@ describe('the platformer hazards', () => {
   // One obstacle of the lane at a time, on the lane's own floor around it (its pits included) and nothing else: solo(kind, pick) leaves
   // just that obstacle's records, put(x) stands you there, adv(n) steps n frames with the line kept far behind.
   const SOLO = `fighters.forEach(function(f){ if(f!==you){ f.dead = true; } });
-    var KEEP = { tr:RACE.traps.slice(), cr:RACE.crumbles.slice(), ca:RACE.cannons.slice(), pe:RACE.pendulums.slice(), fe:RACE.ferries.slice(), haz:RACE.hazards.slice() }, fy = RACE.floorY, PITS = RACE.pits.slice();
+    var KEEP = { tr:RACE.traps.slice(), cr:RACE.crumbles.slice(), fk:RACE.fakes.slice(), ca:RACE.cannons.slice(), pe:RACE.pendulums.slice(), fe:RACE.ferries.slice(), haz:RACE.hazards.slice() }, fy = RACE.floorY, PITS = RACE.pits.slice();
     var adv = function(n){ for(var i=0;i<n;i++){ RACE.lineX = you.x - 5000; step(); } };
     var solo = function(kind, pick){
       var list = RACE.obstacles.filter(function(q){ return q.k === kind; }), o = typeof pick === 'function' ? list.filter(pick)[0] : list[pick || 0], g = o.g;
-      RACE.traps = KEEP.tr.filter(function(t){ return t.g === g; }); RACE.crumbles = KEEP.cr.filter(function(c){ return c.g === g; });
+      RACE.traps = KEEP.tr.filter(function(t){ return t.g === g; }); RACE.crumbles = KEEP.cr.filter(function(c){ return c.g === g; }); RACE.fakes = KEEP.fk.filter(function(c){ return c.g === g; });
       RACE.cannons = KEEP.ca.filter(function(c){ return c.trig === o.x0; }); RACE.pendulums = KEEP.pe.filter(function(p){ return p.g === g; }); RACE.ferries = KEEP.fe.filter(function(z){ return z.g === g; });
       RACE.hazards = KEEP.haz.filter(function(h){ return h.g === g; }); RACE.pianos = []; RACE.voices = []; RACE.memories = []; RACE.waves = []; RACE.bullets = [];
-      RACE.cannons.forEach(function(c){ c.fired = false; c.at = 0; }); RACE.crumbles.forEach(function(c){ c.t = -1; c.gone = 0; });
+      RACE.cannons.forEach(function(c){ c.fired = false; c.at = 0; }); RACE.crumbles.concat(RACE.fakes).forEach(function(c){ c.t = -1; c.gone = 0; });
       var pits = PITS.filter(function(p){ return p.x0 >= o.x0 - 2 && p.x1 <= o.x1 + 2 && p.x1 < RACE.edge; }).sort(function(a, b){ return a.x0 - b.x0; }), at = -4000, plats = [];
       pits.forEach(function(p){ plats.push({ x:at, y:fy, w:p.x0 - at, h:60, solid:true, floor:0 }); at = p.x1; });
       plats.push({ x:at, y:fy, w:90000, h:60, solid:true, floor:0 });
-      RACE.crumbles.forEach(function(c){ plats.push(c.plat); }); RACE.ferries.forEach(function(z){ plats.push(z.plat); });
+      RACE.crumbles.concat(RACE.fakes).forEach(function(c){ plats.push(c.plat); }); RACE.ferries.forEach(function(z){ plats.push(z.plat); });
       worldPlats = plats; return o;
     };
     var put = function(x){ you.controller = 'local'; you.x = x; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.slowed = 0; you.dead = false; you.jumps = 2; you.onground = true; you.pct = 0; hold({}); RACE.lineX = you.x - 5000; };`;
@@ -1166,6 +1215,33 @@ describe('the platformer hazards', () => {
     expect(c.run.stirred, 'it was crumbling behind him').toBeGreaterThan(1);
   });
 
+  it('the hairline (owner 2026-10-02: "slightly kaizo"): a tile that crumbles four frames after he lands on it, with spikes showing under it -- stand on it and he falls onto them; jump off at once and a second jump late and he is across; a second jump at the top and the ceiling gets him', () => {
+    const r = quick({}, `${SOLO}
+      var o = solo('kaizo', 0), c = RACE.fakes[0], out = {}, far = o.tile + o.TW + o.GB;
+      put(c.x + 70); you.controller = 'still'; var dropAt = -1, bumpAt = -1;   // he stands where he landed, and the tile goes, and then the spikes
+      for(var n = 0; n < 40; n++){ adv(1); if(dropAt < 0 && c.gone > 0) dropAt = n; if(bumpAt < 0 && you._raceBumpT > 0) bumpAt = n; }
+      out.stand = { dropAt:dropAt, bumpAt:bumpAt, delay:c.delay, pct:you.pct, hair:!!c.hair };
+      // from a spot on the tile: a jump two frames on, and a second jump d frames after it
+      var run = function(off, d){ solo('kaizo', 0); put(c.x + off); var bumped = false, fell = false;
+        for(var f = 0; f < 150 && !fell; f++){ hold({ right:true, jump:(f === 2 || (d !== null && f === 2 + d)) }); adv(1); if(you._raceBumpT > 0) bumped = true; if(you.y > fy + 200) fell = true; }
+        hold({}); return { cross:!fell && !bumped && you.x > far + 10 && you.onground, bumped:bumped, fell:fell }; };
+      var late = 0, top = 0, topBang = 0, tried = 0;
+      for(var off = 40; off <= 130; off += 10){
+        for(var d = 30; d <= 44; d += 2){ tried++; if(run(off, d).cross) late++; }
+        for(var e = 12; e <= 28; e += 4){ var q = run(off, e); if(q.cross) top++; if(q.bumped) topBang++; }
+      }
+      out.jumps = { late:late, top:top, topBang:topBang, tried:tried };
+      return out;`);
+    expect(r.stand.hair, 'it is the hairline tile').toBe(true);
+    expect(Math.abs(r.stand.dropAt - r.stand.delay), 'it goes four frames after he is on it').toBeLessThanOrEqual(3);
+    expect(r.stand.bumpAt, 'and the spikes under it get him after it has gone').toBeGreaterThan(r.stand.dropAt);
+    expect(r.stand.bumpAt - r.stand.dropAt, 'in a few frames: he can jump out of the fall, or not stand there at all').toBeLessThanOrEqual(14);
+    expect(r.stand.pct, 'no damage').toBe(0);
+    expect(r.jumps.late, 'a jump at once and a second jump late crosses it, from more than one spot of the tile').toBeGreaterThanOrEqual(4);
+    expect(r.jumps.top, 'a second jump at the top of the first never does').toBe(0);
+    expect(r.jumps.topBang, 'it bangs his head on the tips').toBeGreaterThan(0);
+  });
+
   it('a cannon: cross its trigger and it fires its shots, a low one bumps whoever stays in its way and passes under a jumper, a high one passes over a runner and bumps a jumper', () => {
     const r = quick({}, `${SOLO}
       var o = solo('cannon', 0), c = RACE.cannons[0], out = { fire:null };
@@ -1235,20 +1311,21 @@ describe('the platformer hazards', () => {
   it('every pit is a pit with spikes at the bottom, and every platformer hazard draws with a tell and no words, in every state, without throwing', () => {
     const r = quick({}, `${SOLO} var out = { errs:[], n:0 };
       var d = function(tag){ try{ drawRaceFx(); drawRaceBar(); }catch(e){ out.errs.push(tag + ': ' + e); } out.n++; };
-      RACE.traps = KEEP.tr; RACE.crumbles = KEEP.cr; RACE.cannons = KEEP.ca; RACE.pendulums = KEEP.pe; RACE.ferries = KEEP.fe; RACE.hazards = KEEP.haz;
+      RACE.traps = KEEP.tr; RACE.crumbles = KEEP.cr; RACE.fakes = KEEP.fk; RACE.cannons = KEEP.ca; RACE.pendulums = KEEP.pe; RACE.ferries = KEEP.fe; RACE.hazards = KEEP.haz;
       RACE.crumbles.forEach(function(c, i){ c.t = [-1, 14, 6, -1][i % 4]; c.gone = [0, 0, 0, 50][i % 4]; });
+      RACE.fakes.forEach(function(c, i){ c.t = [-1, 3][i % 2]; c.gone = [0, 0][i % 2]; });   // the hairline's tile: whole, and shaking
       RACE.cannons.forEach(function(c, i){ c.fired = i % 2 === 0; c.at = RACE.frames - 5; });
       RACE.bullets = RACE.cannons.map(function(c){ return { x:c.cx - 200, y:fy - RACE_BULLET.low, w:RACE_BULLET.w, h:RACE_BULLET.h, sp:c.bs, stun:14 }; });
-      var xs = RACE.traps.map(function(t){ return t.x; }).concat(RACE.crumbles.map(function(c){ return c.x; }), RACE.cannons.map(function(c){ return c.cx; }), RACE.pendulums.map(function(p){ return p.px; }), RACE.ferries.map(function(f){ return f.plat.x; }), RACE.pits.map(function(p){ return p.x0; }));
+      var xs = RACE.traps.map(function(t){ return t.x; }).concat(RACE.crumbles.map(function(c){ return c.x; }), RACE.fakes.map(function(c){ return c.x; }), RACE.cannons.map(function(c){ return c.cx; }), RACE.pendulums.map(function(p){ return p.px; }), RACE.ferries.map(function(f){ return f.plat.x; }), RACE.pits.map(function(p){ return p.x0; }));
       xs.forEach(function(x, i){ hazardT = i*37; camX = x - W/2; camY = 0; you.x = x; d('at ' + Math.round(x)); });
-      out.src = String(drawRaceFx) + String(raceDrawFloorSpikes) + String(raceDrawCeiling) + String(raceDrawSpring) + String(raceDrawFire) + String(raceDrawBelt) + String(raceDrawCrumble) + String(raceDrawCannon) + String(raceDrawBullet) + String(raceDrawPendulum) + String(raceDrawFerry) + String(raceDrawPit);
+      out.src = String(drawRaceFx) + String(raceDrawFloorSpikes) + String(raceDrawCeiling) + String(raceDrawSpring) + String(raceDrawFire) + String(raceDrawBelt) + String(raceDrawCrumble) + String(raceDrawHairline) + String(raceDrawCannon) + String(raceDrawBullet) + String(raceDrawPendulum) + String(raceDrawFerry) + String(raceDrawPit);
       out.pits = RACE.pits.length; out.gaps = RACE.obstacles.filter(function(o){ return o.k === 'gap'; }).length;
       return out;`);
     expect(r.errs).toEqual([]);
     expect(r.n).toBeGreaterThan(25);
     expect(r.pits, 'a pit for every gap, every crumbling floor, every ferry and every ceiling over a pit, and the last').toBeGreaterThan(r.gaps);
     expect(r.src, 'no words on any of them').not.toMatch(/fillText|strokeText/);
-    for (const needle of ['raceDrawPit(p.x0, p.x1, fy)', 'raceDrawFloorSpikes', 'raceDrawCeiling', 'raceDrawSpring', 'raceDrawFire', 'raceDrawBelt', 'raceDrawCrumble', 'raceDrawCannon', 'raceDrawBullet', 'raceDrawPendulum', 'raceDrawFerry']) expect(r.src, needle).toContain(needle);
+    for (const needle of ['raceDrawPit(p.x0, p.x1, fy)', 'raceDrawFloorSpikes', 'raceDrawCeiling', 'raceDrawSpring', 'raceDrawFire', 'raceDrawBelt', 'raceDrawCrumble', 'raceDrawHairline', 'raceDrawCannon', 'raceDrawBullet', 'raceDrawPendulum', 'raceDrawFerry']) expect(r.src, needle).toContain(needle);
   });
 });
 

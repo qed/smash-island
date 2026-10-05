@@ -176,7 +176,7 @@ window.__rs = (function(){
     return out;
   }
   function solveSection(S0, sec, optIn){
-    var opt = Object.assign({ min:2, want:4, wmin:5 }, optIn || {}), steps = solveFrom(S0, true, sec, 0, opt);   // every press can be early or late by 2 frames, on its own and with the other, and a wait by 2 frames either way
+    var opt = Object.assign({ min:2, want:4, wmin:5 }, sec.opt || {}, optIn || {}), steps = solveFrom(S0, true, sec, 0, opt);   // every press can be early or late by 2 frames, on its own and with the other, and a wait by 2 frames either way
     if(!steps) return null;
     steps = steps.map(function(c){ return { w:c.w, t1:c.t1, d2:c.d2 }; });
     var S = S0;   // the waits of every step, each put at the start of the waits that work and a few frames on, never to the middle of a long one (waiting costs the lead)
