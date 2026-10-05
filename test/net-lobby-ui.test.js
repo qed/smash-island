@@ -59,6 +59,13 @@ describe('who is in the room', () => {
     expect(room.roster('H').map((p) => p.fighter), 'and nobody else is told something the relay did not say').toEqual(['Pen', 'Leafy', 'Blocky']);
   });
 
+  it('...but not when the socket is closed, which tells nobody: a pick nobody heard is not on your card', () => {
+    three();
+    A.eval(`NET.ws.readyState = 3;
+      var s = document.getElementById('lobbyFighter'); s.value = 'Match'; s.dispatchEvent(new Event('change'));`);
+    expect(room.roster('A').map((p) => p.fighter)).toEqual(['Pen', 'Leafy', 'Blocky']);
+  });
+
   it('a new player takes a card and the host gets their contestant count to match, live', () => {
     room.reset();
     const code = room.host('H', 'Pen');
@@ -119,6 +126,19 @@ describe('who is in the room', () => {
     H.eval(`NET.makeRoomCode = window.__code;`);
     expect(room.roster('A').map((p) => p.host)).toEqual([true, false]);
     expect(A.document.getElementById('lobbyWait').textContent).toMatch(/Waiting for the host to start the match/);
+  });
+
+  it('with no relay to dial, Create Room says why, and shows neither a room code that exists nowhere nor a room of one', () => {
+    room.reset();
+    const r = JSON.parse(H.eval(`(function(){
+      var real = NET.wsURL; NET.wsURL = function(){ return null; };   // the desktop build before a relay is set (netcode-relay-url.test.js)
+      openLobby(); NET.host(); NET.wsURL = real;
+      return JSON.stringify({ role: NET.role, status: document.getElementById('lobbyStatus').textContent, card: document.getElementById('lobbyInvite').style.display,
+        cards: document.querySelectorAll('#lobbyRoster .lobbyplayer').length, chooser: document.getElementById('lobbyChooser').style.display });
+    })()`));
+    expect(r.role).toBe('solo');
+    expect(r.status, 'the reason, not "Room code: ..."').toMatch(/relay/i);
+    expect(r).toMatchObject({ card: 'none', cards: 0, chooser: '' });
   });
 
   it('the Create / Join boxes step aside once you are in a room, and come back when you leave it', () => {
