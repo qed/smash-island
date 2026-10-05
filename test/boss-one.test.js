@@ -29,7 +29,7 @@ const STAGE = (body) => W.eval(`(function(){
   var setTier = function(t){ one._marks = t - 1; ONE_SPECIALS.forEach(function(k){ one._spTier[k] = t; }); };
   // frames, with her clock held and you unhurt (a test that wants a hit reads you.pct before the frame resets it)
   var run = function(n, each){ for (var i=0;i<n;i++){ one._atkTimer = 1e9; if (each) each(i); step(); } };
-  var fresh = function(){ projectiles = []; oneFx.length = 0; one._q = []; one._ash = []; you.pct = 0; you.invuln = 0; you.hitstun = 0; you.slowed = 0; you.vx = 0; you.vy = 0; you.x = WW*0.5; you.y = groundY() - you.r; one.x = you.x + 650; one.y = groundY() - 330; one.vx = 0; one.vy = 0; one._tel = 0; one._telKind = null; one._orbitA = null; one._steerUntil = 0; };
+  var fresh = function(){ projectiles = []; oneFx.length = 0; one._q = []; one._ash = []; you.pct = 0; you.invuln = 0; you.hitstun = 0; you.slowed = 0; you.vx = 0; you.vy = 0; you.x = WW*0.5; you.y = groundY() - you.r; one.x = you.x + 650; one.y = groundY() - 330; one.vx = 0; one.vy = 0; one._tel = 0; one._telKind = null; one._orbitA = null; one._steerUntil = 0; one._grace = null; };   // (_grace: the grace each character's last hit opened on her -- "give bosses by-character iframes" -- is cleared with the fighter's own)
   var own = function(){ return projectiles.filter(function(p){ return p.owner === -2; }); };
   ${body}
 })()`);
