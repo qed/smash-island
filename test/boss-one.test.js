@@ -163,7 +163,9 @@ describe('SCREECHY!: rings, and the shatter (the Fish Monster screams)', () => {
       [1, 2, 3].forEach(function(t){
         setTier(t); fresh(); one.x = WW*0.5 - 900; one.y = groundY() - 420;
         var id = ++BOSS_ATK_ID, T = oneTier(one, 'screechy'), seen = {}, peak = 0;
-        ONE_MOVES.screechy(one, you, id);
+        // the first ring's gaps where we say, spread round the ring (their places are the dice's, and four gaps half as wide again can overlap): the four are four
+        var R0 = Math.random, seq = [0.10, 0.30, 0.65, 0.85], q = 0; Math.random = function(){ return q < seq.length ? seq[q++] : R0(); };   // (none across the +-180 degrees the count below starts from)
+        try { ONE_MOVES.screechy(one, you, id); } finally { Math.random = R0; }
         var first = own(), n0 = first.length, split0 = first[0].oSplit, veer0 = first[0].oVeer;
         var gapsOf = function(ps){ var a = ps.map(function(p){ return Math.round(Math.atan2(p.vy, p.vx)*180/Math.PI/2); }).sort(function(x, y){ return x - y; }), g = 0; for (var i=1;i<a.length;i++) if (a[i] - a[i-1] > 3) g++; return g; };
         var gaps0 = gapsOf(first);
@@ -173,7 +175,7 @@ describe('SCREECHY!: rings, and the shatter (the Fish Monster screams)', () => {
       return out;`);
     expect([r[1].rings, r[2].rings, r[3].rings], 'two rings, two, and three in phase 3: it comes in waves now').toEqual([2, 2, 3]);
     for (const t of [1, 2, 3]) {
-      expect(r[t].n0, `tier ${t}: a ring of 360 pellets less its gaps`).toBeGreaterThan(200);
+      expect(r[t].n0, `tier ${t}: a ring of 360 pellets less its gaps (wider since "same thing for screechy": tier 1 has 196)`).toBeGreaterThan(150);
       expect(r[t].n0).toBeLessThanOrEqual(360);
       expect(r[t].ids, `tier ${t}: one attack id for every pellet of every ring`).toBe(1);
       expect(r[t].same).toBe(true);
@@ -183,7 +185,7 @@ describe('SCREECHY!: rings, and the shatter (the Fish Monster screams)', () => {
     expect(r[3].split, 'and sooner at tier 3').toBeLessThan(14);
     expect(r[3].veer, 'veering further').toBeGreaterThan(r[2].veer);
     expect(r[3].peak, '"more bullets!": hundreds in the air at once in phase 3').toBeGreaterThan(r[1].peak * 1.8);
-    expect(r[1].gaps0, 'tier 1: the first ring has its four gaps').toBeGreaterThanOrEqual(3);
+    expect(r[1].gaps0, 'tier 1: the first ring has its four gaps').toBe(4);
   });
 
   it('from tier 2 every pellet splits into two that veer apart (and the pair shares its id); tier 1 does not split', () => {
@@ -449,7 +451,7 @@ describe('KNIFE FLURRY! (it was SEEKERS!): "2, but homing."', () => {
 });
 
 describe('SHOCK RING!: the owner\'s own twist, two opposite twisting bursts', () => {
-  it('tier 1 is a plain ring of 17 in three bursts ("Fewer bullets": 1.2x of the 14 it began as); from tier 2 the bursts turn opposite ways, gold and purple, and cross like a pinwheel; all one id', () => {
+  it('tier 1 is a plain ring of 16 in three bursts ("Fewer bullets": about 1.2x of the 14 it began as; and their gaps half as wide again); from tier 2 the bursts turn opposite ways, gold and purple, and cross like a pinwheel; all one id', () => {
     const r = STAGE(`
       var out = {};
       [1, 2, 3].forEach(function(t){
@@ -463,18 +465,18 @@ describe('SHOCK RING!: the owner\'s own twist, two opposite twisting bursts', ()
           ids: Object.keys(seen).length, off: bursts.map(function(x){ return +x[0]._h0.toFixed(4); }) };
       });
       return out;`);
-    expect(r[1].n, 'tier 1: three bursts of 17 (it was one of 14, then 24 a burst)').toEqual([17, 17, 17]);
+    expect(r[1].n, 'tier 1: three bursts of 16 (it was one of 14, then 24 a burst)').toEqual([16, 16, 16]);
     expect(r[1].spin, 'tier 1: no twist').toEqual([undefined, undefined, undefined]);
     expect(r[1].shape).toBeUndefined();
-    expect(r[2].n, 'tier 2: four bursts of 17 (it was 28)').toEqual([17, 17, 17, 17]);
+    expect(r[2].n, 'tier 2: four bursts of 16 (it was 28)').toEqual([16, 16, 16, 16]);
     expect(r[2].spin.map(Math.sign), 'turning opposite ways, clockwise first').toEqual([1, -1, 1, -1]);
     expect(Math.abs(r[2].spin[0]), 'a few degrees a frame').toBeCloseTo(0.042, 6);
     expect(r[2].shape, 'in the Vortex stars').toBe('onering');
     expect(r[2].colors, 'gold and purple').toBe(2);
-    expect(r[3].n, 'tier 3: six bursts of 17 (it was 32)').toEqual([17, 17, 17, 17, 17, 17]);
+    expect(r[3].n, 'tier 3: six bursts of 16 (it was 32)').toEqual([16, 16, 16, 16, 16, 16]);
     expect(r[3].spin.map(Math.sign), 'alternating, clockwise first').toEqual([1, -1, 1, -1, 1, -1]);
     expect(Math.abs(r[3].spin[0]), 'turning harder').toBeGreaterThan(Math.abs(r[2].spin[0]));
-    expect(r[2].off[1] - r[2].off[0], 'the second ring is half a step round, so the arms cross').toBeCloseTo(Math.PI/17, 3);
+    expect(r[2].off[1] - r[2].off[0], 'the second ring is half a step round, so the arms cross').toBeCloseTo(Math.PI/16, 3);
     for (const t of [1, 2, 3]) expect(r[t].ids, `tier ${t}: one attack id`).toBe(1);
   });
 
@@ -1205,6 +1207,81 @@ describe('"One attack at a time": the next wind-up waits until the last of the a
     expect(r.release.r, 'a body again, whole size').toBe(r.release.base);
     expect(r.release.x > 0 && r.release.x < r.WW && r.release.y > 0 && r.release.y < r.WH, 'on the screen (in the arena)').toBe(true);
     expect(r.held, 'a hop her shield holds back is dropped').toEqual({ pending: false, hop: false });
+  });
+});
+
+// The owner, 2026-10-02, after "nerf one.": "also, shock ring spacing should be bigger. same thing for screechy. increase delay for both out of orbit and zap to dust." -- and, asked what
+// spacing was meant: "no, like delay between the 2 bursts(tho keep that too)". So SHOCK RING! and SCREECHY! wait longer between their bursts and rings (twice as long), AND leave wider
+// gaps: the ring's pellets half as far again apart or more, the screech's gaps half as wide again or more -- with the shatter cut around them, so it cannot close them.
+describe('"shock ring spacing should be bigger. same thing for screechy." / "no, like delay between the 2 bursts(tho keep that too)"', () => {
+  it('SHOCK RING!: the delay between its bursts is at least half as long again (it is twice), and the pellets of a burst -- in both twisting bursts -- are at least half as far apart again', () => {
+    const r = STAGE(`
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); one.x = WW*0.5 - 900; one.y = groundY() - 420;
+        var T = oneTier(one, 'ring'), f0 = one._f;
+        ONE_MOVES.ring(one, you, ++BOSS_ATK_ID);
+        var at = one._q.map(function(e){ return e.at - f0; });   // when each later burst (and the end of the sequence) is due
+        projectiles = []; one._q = [];
+        var gapsOf = function(b){   // the least angle between neighbouring pellets of burst b
+          var n0 = projectiles.length; oneRingBurst(one, T, ++BOSS_ATK_ID, b);
+          var as = projectiles.slice(n0).map(function(p){ return Math.atan2(p.vy, p.vx); }).sort(function(x, y){ return x - y; });
+          var steps = as.map(function(a, i){ return i ? a - as[i - 1] : (as[0] + 2*Math.PI) - as[as.length - 1]; });
+          return { n: as.length, min: Math.min.apply(null, steps), spin: projectiles[n0].oSpin }; };
+        out[t] = { T: T, at: at, even: gapsOf(0), odd: gapsOf(1) };
+      });
+      return out;`);
+    const was = { gap: [16, 14, 12], n: [24, 28, 32], bursts: [3, 4, 6] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, T = r[t].T;
+      r[t].at.slice(0, T.bursts - 1).forEach((a, i) => expect(a, `tier ${t}: burst ${i + 2} is due ${T.gap} frames after the one before`).toBe((i + 1) * T.gap));
+      expect(T.gap / was.gap[k], `tier ${t}: the delay between the bursts is at least half as long again (it was ${was.gap[k]} frames, it is ${T.gap})`).toBeGreaterThanOrEqual(1.5);
+      expect(T.bursts, `tier ${t}: and there are as many bursts as there were`).toBe(was.bursts[k]);
+      for (const [which, g] of [['even (clockwise)', r[t].even], ['odd (counter-clockwise)', r[t].odd]]) {
+        expect(g.n, `tier ${t}, the ${which} burst: ${g.n} pellets`).toBe(T.n);
+        expect(g.min / (2*Math.PI/was.n[k]), `tier ${t}, the ${which} burst: the pellets are at least half as far apart again (it was ${was.n[k]} round, it is ${g.n})`).toBeGreaterThanOrEqual(1.5 - 1e-9);
+      }
+    }
+    expect(r[2].even.spin * r[2].odd.spin, 'the two bursts still turn opposite ways').toBeLessThan(0);
+  });
+
+  it('SCREECHY!: the delay between its rings is at least half as long again (it is twice), and its gaps are at least half as wide again -- and the shatter does not close them', () => {
+    const r = STAGE(`
+      var out = {}, R0 = Math.random;
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; you.x = WW*0.5 - 1500;   // (far away)
+        var T = oneTier(one, 'screechy'), cx = WW*0.5, cy = groundY() - 900;
+        one.x = cx; one.y = cy;
+        var f0 = one._f; ONE_MOVES.screechy(one, you, ++BOSS_ATK_ID); var at = one._q.map(function(e){ return e.at - f0; }); projectiles = []; one._q = [];
+        // a ring with its gaps where we say, run on until every pellet has split and flown out; where is the nearest pellet to each gap's middle?
+        var seq = [0.05, 0.30, 0.55, 0.80], k = 0; Math.random = function(){ return k < seq.length ? seq[k++] : R0(); };
+        try { oneScreechRing(one, T, ++BOSS_ATK_ID); } finally { Math.random = R0; }
+        var centers = seq.slice(0, T.gaps).map(function(u){ return u*2*Math.PI; });
+        var wrap = function(a){ return Math.abs(((a + Math.PI*3) % (Math.PI*2)) - Math.PI); };
+        var look = function(){
+          var ps = own().filter(function(p){ return p.life > 0 && p.ring; });
+          return { n: ps.length, nearest: centers.map(function(c){ var m = 9; ps.forEach(function(p){ m = Math.min(m, wrap(Math.atan2(p.y - cy, p.x - cx) - c)); }); return m; }),
+            rmin: Math.min.apply(null, ps.map(function(p){ return Math.hypot(p.x - cx, p.y - cy); })) }; };
+        var early = null, late = null, split = T.split || 0;
+        for (var i=0;i<80;i++){ one._atkTimer = 1e9; one.x = cx; one.y = cy; one.vx = 0; one.vy = 0; one._hop = null; you.invuln = 1e9; step(); if (i === split + 15) early = look(); }
+        late = look();
+        out[t] = { T: T, at: at, early: early, late: late, centers: centers.length };
+      });
+      return out;`);
+    const was = { ringGap: [34, 30, 26], half: [0.24, 0.21, 0.18], rings: [2, 2, 3] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, T = r[t].T;
+      r[t].at.slice(0, T.rings - 1).forEach((a, i) => expect(a, `tier ${t}: ring ${i + 2} is due ${T.ringGap} frames after the one before`).toBe((i + 1) * T.ringGap));
+      expect(T.ringGap / was.ringGap[k], `tier ${t}: the delay between the rings is at least half as long again (it was ${was.ringGap[k]} frames, it is ${T.ringGap})`).toBeGreaterThanOrEqual(1.5);
+      expect(T.rings, `tier ${t}: and there are as many rings as there were`).toBe(was.rings[k]);
+      expect(T.half / was.half[k], `tier ${t}: each gap, once the ring has shattered, is at least half as wide again (${was.half[k]} each side it was, ${T.half} it is)`).toBeGreaterThanOrEqual(1.5 - 1e-9);
+      for (const [when, g] of [['soon after the split', r[t].early], ['out where it has flown on', r[t].late]]) {
+        expect(g.n, `tier ${t}, ${when}: the ring is there`).toBeGreaterThan(100);
+        g.nearest.forEach((m, c) => expect(m, `tier ${t}, ${when}: the nearest pellet to the middle of gap ${c + 1} is ${m.toFixed(3)} rad away; the gap is ${T.half} each side, and the shatter must not close it`).toBeGreaterThanOrEqual(T.half - 0.02));
+      }
+    }
+    // (what it was: the shatter's pair veer half of `veer` each way into the gap, and left 0.13 each side at tier 2 and 0.06 at tier 3 -- no room for a fighter at all)
+    expect(r[3].late.nearest.every((m) => m > 0.2), 'tier 3 leaves room: more than three times the 0.06 the old gaps were left with').toBe(true);
   });
 });
 

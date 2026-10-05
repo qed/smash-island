@@ -206,7 +206,7 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.scr1, "Four's 6, now 6.8 (harder)").toBeCloseTo(6.8 * 1.35, 6);
     expect(r.scr3, "Four's 7.5, now 8.4").toBeCloseTo(8.4 * 1.35, 6);
     expect(r.scrDmg).toBe(33);
-    expect(r.ring.length, "Two's twelve, then twenty-four, now seventeen (\"nerf one.\" / \"Fewer bullets\": 1.2x of Two's 14)").toBe(17);
+    expect(r.ring.length, "Two's twelve, then twenty-four, now sixteen (\"nerf one.\" / \"Fewer bullets\": about 1.2x of Two's 14, and \"shock ring spacing should be bigger\")").toBe(16);
     r.ring.forEach(v => expect(v, "Two's ring at 6.5, now 7.5").toBeCloseTo(7.5 * 1.35, 6));
     expect(r.knives.length, "Four's five seekers, then eight knives, now six (\"Fewer bullets\": 1.2x of five)").toBe(6);
     r.knives.forEach(([v, h, d]) => { expect(v).toBeCloseTo(9.5 * 1.35, 6); expect(h, '"2, but homing."').toBeGreaterThan(0); expect(d, 'a knife hits for her 33').toBe(33); });
@@ -253,7 +253,7 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     // "make all attacks except ghost fighter harder(not more damage tho)", then "much harder. more bullets! also longer attacks.": more of each, never a harder hit
     expect(r.out.fold.shots, 'the fold is a jaw, not a shot').toBe(0);
     expect(r.out.knives.shots, "Four's five seekers, then eight knives, now six (\"Fewer bullets\")").toBe(6);
-    expect(r.out.ring.shots, "Two's fourteen, then twenty-four a burst, now seventeen (\"Fewer bullets\")").toBe(17);
+    expect(r.out.ring.shots, "Two's fourteen, then twenty-four a burst, now sixteen (\"Fewer bullets\", and wider spacing)").toBe(16);
     expect(r.out.sizeshift.r, 'canon One grows GIANT (TPOT 23, 25)').toBe(Math.round(r.base * 1.4));
     expect(r.out.ungrounded.ung).toBe(true);
   });
