@@ -151,12 +151,13 @@ export async function runMatch(fighterNames, opts = {}) {
 }
 
 // Partition a field into heats of size 2..maxSize with NO singleton (a 1-fighter "heat"
-// can't play). If the remainder is 1, shrink the previous heat to feed it a pair.
+// can't play). If the remainder is 1, shrink the previous heat to feed it a pair. A 1v1 field (--heat 2, "when running balance, do a
+// 1v1", the owner, 2026-10-05) has no heat to spare a fighter, so its odd fighter is left alone and gets a bye (see runTournament).
 function partitionHeats(field, maxSize) {
   const heats = [];
   for (let i = 0; i < field.length; i += maxSize) heats.push(field.slice(i, i + maxSize));
   const last = heats[heats.length - 1];
-  if (heats.length > 1 && last.length === 1) {
+  if (heats.length > 1 && last.length === 1 && maxSize > 2) {
     const prev = heats[heats.length - 2];
     last.unshift(prev.pop()); // move one over so the tail heat is a pair
   }
@@ -180,6 +181,7 @@ export async function runTournament(allNames, opts = {}) {
     const heats = partitionHeats(field, heatSize);
     const winners = [];
     for (let h = 0; h < heats.length; h++) {
+      if (heats[h].length === 1) { winners.push(heats[h][0]); continue; }   // a bye: the odd fighter of a 1v1 round goes through
       const seed = deriveSeed(baseSeed, tid, round, h);
       const res = await runMatch(heats[h], { seed, stocks, aiLevel, maxFrames });
       res.tid = tid; res.round = round; res.heat = h;
@@ -353,6 +355,6 @@ async function main() {
 
 // Run as CLI only (importing for runMatch/runTournament won't trigger this).
 import { pathToFileURL } from 'node:url';
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
 }

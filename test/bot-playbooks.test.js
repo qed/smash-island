@@ -752,6 +752,22 @@ describe("the trainer's smoke run", () => {
   }, 900000);
 });
 
+// "ok. when running balance, do a 1v1." (the owner, 2026-10-05) The balance tournament has always taken --heat; at 2 it used to crash on an odd
+// field (a round of 51 winners left a one-fighter heat to run). The odd fighter gets a bye now, so the whole roster can be played in 1v1s.
+describe('the balance tournament plays the 1v1 pass', () => {
+  it('--heat 2 makes every match two fighters and finishes any field, an odd one included (a bye)', () => {
+    const script = `import { runTournament } from './scripts/balance-tournament.mjs';
+      const out = [];
+      for (const field of [['Firey', 'Pen', 'Rocky'], ['Firey', 'Pen', 'Rocky', 'Needle', 'Leafy']]) {
+        const r = await runTournament(field, { heatSize: 2, baseSeed: 5, maxFrames: 1200 });
+        out.push({ n: field.length, matches: r.matches.length, two: r.matches.every((m) => m.placements.length === 2), champion: field.includes(r.champion) });
+      }
+      console.log(JSON.stringify(out)); process.exit(0);`;
+    const out = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 240000 }).trim().split('\n').pop());
+    expect(out).toEqual([{ n: 3, matches: 2, two: true, champion: true }, { n: 5, matches: 4, two: true, champion: true }]);   // a knockout of n fighters is n - 1 matches
+  }, 300000);
+});
+
 // ---- the boss harnesses keep today's bot ---------------------------------------------------------------------------------
 // "BOSS MEASUREMENTS keep today's bot. The boss harness, boss tests and the stored Boss Rush numbers must not change, so pin them to the
 // Easy/legacy AI explicitly." The pin is BOT_PB.legacy: every CPU plays the legacy rules whatever its level, with its level's own handicap
