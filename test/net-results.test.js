@@ -129,7 +129,9 @@ describe('the players\' cards', () => {
     const timers = [];
     P.Hh.setTimeout = P.Cc.setTimeout = (fn) => { timers.push(fn); return 0; };
     run(P, 20);
-    P.Hh.eval(`fighters.forEach(function(f){ f.invuln = 0; });  applyHit(fighters[2], 25, 0, 0, fighters[1]); fighters[2].x = -300;`);
+    // Both stand out in the open for the hit: in a two-team match each team's spawn is its own safe band down its side wall,
+    // and nobody can attack out of their own zone (so a swing from where Leafy was formed up would score nothing).
+    P.Hh.eval(`fighters.forEach(function(f){ f.invuln = 0; });  fighters[1].x = WW*0.5; fighters[1].y = WH*0.3; fighters[2].x = WW*0.5 + 60; fighters[2].y = WH*0.3;  applyHit(fighters[2], 25, 0, 0, fighters[1]); fighters[2].x = -300;`);
     run(P, 10);
     while (timers.length) timers.shift()();
     const h = cardsOf(P.Hh), c = cardsOf(P.Cc);
