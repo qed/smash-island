@@ -612,6 +612,35 @@ describe('the trainer learns when there is something to learn, and picks up wher
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }, 240000);
 
+  it('plays 1v1 only, and in pairs, as the balance pass will ("when running balance, do a 1v1", the owner): the same opponent, seed and side for the champion and every candidate, over a spread of the seven AI classes', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'bot-1v1-'));
+    try {
+      const jobs = [], inner = fakePool();
+      const pool = { async run(job) { jobs.push(job); return inner.run(job); } };
+      const st = fresh();
+      await generation({ pool, st, cfg: { ...cfg(), looks: [32], cands: 2, bench: 8, counters: false }, info, dir, log: () => {}, embed: false }, 'Firey');
+      expect(jobs.length).toBe(3 * 32);                                       // the champion's 32 and two candidates' 32: one look, no benchmark yet (Firey has no playbook)
+      expect(jobs.every((j) => j.names.length === 2 && j.pb.length === 2)).toBe(true);
+      const bySeed = new Map();
+      for (const j of jobs) bySeed.set(j.seed, (bySeed.get(j.seed) || []).concat(j));
+      expect(bySeed.size).toBe(32);
+      for (const g of bySeed.values()) {
+        expect(g).toHaveLength(3);                                            // the champion's arm and each candidate's, on the one seed
+        expect(new Set(g.map((j) => j.names.join('|'))).size, 'one opponent, one side').toBe(1);
+      }
+      expect(new Set(jobs.map((j) => j.names.indexOf('Firey'))), 'Firey takes both spawn sides').toEqual(new Set([0, 1]));
+      const classes = new Set(jobs.map((j) => info.roster.find((r) => r.name === j.names.find((n) => n !== 'Firey')).cls));
+      expect(classes.size, 'opponents from all seven AI classes').toBe(7);
+      // and the benchmark against today's bot is a 1v1 too: the fighter against its own legacy self
+      st.fighters.Firey.v = { mJb: -0.5 };
+      jobs.length = 0;
+      await generation({ pool, st, cfg: { ...cfg(), looks: [4], cands: 1, bench: 8, benchEvery: 1, counters: false }, info, dir, log: () => {}, embed: false }, 'Firey');
+      const bench = jobs.filter((j) => j.names[0] === 'Firey' && j.names[1] === 'Firey');
+      expect(bench).toHaveLength(8);
+      expect(bench.every((j, i) => (i % 2 ? j.pb[0] === null && j.pb[1] !== null : j.pb[0] !== null && j.pb[1] === null))).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  }, 120000);
+
   it('picks up where it stopped: ten generations in one go equal five, a restart from the saved file, and five more', async () => {
     const a = mkdtempSync(path.join(tmpdir(), 'bot-run-a-')), b = mkdtempSync(path.join(tmpdir(), 'bot-run-b-'));
     try {
@@ -673,6 +702,15 @@ describe("the trainer's matches are the game's", () => {
     expect(`${book.frames}/${book.stocks}/${book.pct}`).not.toBe(`${r.frames}/${r.stocks}/${r.pct}`);
     const mirror = await playMatch({ names: ['Firey', 'Firey'], pb: [null, { v: { mJb: -3 }, vs: {} }], seed: 5, stocks: 1, maxFrames: 1500 }, false);   // two of one fighter, one with a playbook
     expect([0, 1]).toContain(mirror.winner);
+    await closeWindow();
+  }, 300000);
+
+  it('plays the three prize fighters too, match after match (the game takes their rows out of ROSTER whenever a match ends with Steve Cobs unbeaten)', async () => {
+    for (const [names, seed] of [[['OJ', 'Cabby'], 3], [['Suitcase', 'OJ'], 4], [['Cabby', 'Suitcase'], 5]]) {
+      const r = await playMatch({ names, pb: [null, null], seed, stocks: 1, maxFrames: 900 }, true);
+      expect([0, 1], names.join(' v ')).toContain(r.winner);
+      expect(r.frames).toBeGreaterThan(0);
+    }
     await closeWindow();
   }, 300000);
 });

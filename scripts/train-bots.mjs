@@ -36,7 +36,11 @@
 // Matches run in worker threads, each with ONE jsdom copy of the game kept for hundreds of matches (re-seeded per match: a match depends on
 // nothing but its seed and lineup, verified in test/bot-playbooks.test.js) -- the boot is a second a time and a match is about as long.
 // The setup is the balance tournament's own (test/helpers/match-setup.js): the flat hazard-free stage, every fighter an AI, no items.
+// EVERY MATCH HERE IS A 1v1 -- the fighter against one opponent, two stocks, the benchmark against its own legacy self too -- because the
+// balance pass that follows training will be ("when running balance, do a 1v1", the owner, 2026-10-05), so what the bots learn is what
+// that pass measures. (node scripts/balance-tournament.mjs run --heat 2 plays its tournament in 1v1 heats.)
 // The in-browser adaptation (BOT_ADAPT) is off here, as in every measurement context.
+// The three prize fighters (OJ, Suitcase, Cabby) are trained too, in this copy of the game only (--no-prizes leaves them out).
 // ============================================================================
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -85,17 +89,20 @@ const gauss = (rng) => Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.P
 // ===========================================================================
 let W = null, playedHere = 0;
 export async function closeWindow() { if (W) { await settle(); try { W.close(); } catch { /* teardown best-effort */ } W = null; } }
-async function bootWindow(prizes) {
+// The three prize fighters (OJ, Suitcase, Cabby) are in ROSTER only once Steve Cobs is beaten, and the game takes their rows out again whenever
+// a match ends with him unbeaten (syncPrizeRoster): so they are put back before every match, in this copy of the game and nowhere else.
+const PRIZES_IN = 'installPrizeKit(); PRIZE_ROSTER.forEach(function(r){ if(ROSTER.indexOf(r) < 0) ROSTER.push(r); });';
+async function bootWindow() {
   await closeWindow();
   W = loadMonolith(1).window;
-  if (prizes) W.eval('installPrizeKit(); PRIZE_ROSTER.forEach(function(r){ if(ROSTER.indexOf(r) < 0) ROSTER.push(r); });');
   playedHere = 0;
 }
 // One match. job = { names, pb, seed, stocks, maxFrames }: pb[i] is the playbook entry fighter i plays (null: today's bot), and every fighter
 // plays at Hard. Returns the standings: the winner's index in `names`, the frames, whether it timed out, and the stocks and damage at the end.
 export async function playMatch(job, prizes) {
-  if (!W || playedHere >= 300) await bootWindow(prizes);   // a fresh copy every few hundred matches: nothing leaks that a long run could feel
+  if (!W || playedHere >= 300) await bootWindow();   // a fresh copy every few hundred matches: nothing leaks that a long run could feel
   playedHere++;
+  if (prizes) W.eval(PRIZES_IN);
   W.Math.random = mulberry32(job.seed);
   W.eval(SETUP_SRC);
   W.eval(`__setupCustomMatch(${JSON.stringify(job.names)}, ${job.stocks | 0}, 2, 0)`);
