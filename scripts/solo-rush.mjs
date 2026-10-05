@@ -8,6 +8,7 @@ function boot(seed){
   const dom=new JSDOM(html,{url:'http://localhost/',runScripts:'dangerously',pretendToBeVisual:true,
     beforeParse(w){ w.HTMLCanvasElement.prototype.getContext=()=>new Proxy({},{get:(_t,p)=>(p==='measureText'?()=>({width:0}):p==='canvas'?{width:1100,height:720}:p==='getImageData'?()=>({data:[]}):()=>{}),set:()=>true});
       w.Math.random=mulberry32(seed); w.requestAnimationFrame=()=>0; w.cancelAnimationFrame=()=>{}; }});
+  dom.window.eval('BOT_PB.legacy = true; BOT_ADAPT.lock();');   // today's bot, as in every boss measurement
   return dom.window;
 }
 const NAMES = JSON.parse(process.env.NAMES || '["Money"]');

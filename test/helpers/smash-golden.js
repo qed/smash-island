@@ -12,6 +12,11 @@ import { mulberry32 } from './prng.js';
 export const GOLDEN_DISTS = [60, 140];   // point-blank, and out where reach retunes would show
 export const GOLDEN_FRAMES = 120;        // sky-drops warn for 26 frames and then have to fall
 
+// THE BOOT EVERY TEST AND BOSS HARNESS USES IS PINNED TO TODAY'S AI: the legacy rules at every level (BOT_PB.legacy), and the in-browser
+// adaptation locked off (BOT_ADAPT.lock()). A learned playbook (PLAYBOOKS in index.html) can then never move a number a test or a
+// measurement pinned: the stored Boss Rush numbers (scripts/boss-solo.mjs, moves-vs-boss.mjs), the boss tests, the smash and hit fixtures.
+// The owner's call (2026-10-05): "BOSS MEASUREMENTS keep today's bot." A test of the playbooks themselves sets BOT_PB.legacy = false in its
+// own window (test/bot-playbooks.test.js does).
 export function bootMonolith(seed = 5) {
   const html = readFileSync('artifacts/V1/index.html', 'utf8');
   const dom = new JSDOM(html, {
@@ -28,6 +33,7 @@ export function bootMonolith(seed = 5) {
       window.cancelAnimationFrame = () => {};
     },
   });
+  dom.window.eval('BOT_PB.legacy = true; BOT_ADAPT.lock();');
   return dom.window;
 }
 

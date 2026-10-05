@@ -713,3 +713,54 @@ describe("the trainer's smoke run", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }, 900000);
 });
+
+// ---- the boss harnesses keep today's bot ---------------------------------------------------------------------------------
+// "BOSS MEASUREMENTS keep today's bot. The boss harness, boss tests and the stored Boss Rush numbers must not change, so pin them to the
+// Easy/legacy AI explicitly." The pin is BOT_PB.legacy: every CPU plays the legacy rules whatever its level, with its level's own handicap
+// as before (the harness plays at the default level, Normal, so "legacy" and not "Easy": Easy would drop half its attacks and move the
+// stored numbers). The boot the tests and the harnesses share (bootMonolith) sets it, and so do the standalone boss scripts.
+describe('the boss harnesses are pinned to the legacy AI', () => {
+  const golden311 = () => golden.find((x) => x.seed === 311);              // Firey v Pen at Normal
+  const m311 = () => BOT_GOLDEN_MATCHES.find((x) => x.seed === 311);
+
+  it('bootMonolith, which every boss test and harness script boots through, pins the legacy AI and locks the adaptation', () => {
+    const w = bootMonolith();
+    expect(w.eval('BOT_PB.legacy')).toBe(true);
+    expect(w.eval('BOT_ADAPT.locked')).toBe(true);
+    expect(loadMonolith(1).window.eval('BOT_PB.legacy'), "the tournament's and the trainer's boot is NOT pinned: they measure the playbooks").toBe(false);
+  });
+
+  it('a pinned game plays today\'s match whatever the playbooks say: loud playbooks for everyone, Normal, the golden match to the frame', () => {
+    const w = bootMonolith();
+    const names = m311().names;
+    const r = playBotMatch(w, m311(), loud(names));
+    expect(sameAs(r, golden311())).toBe(true);
+    w.eval('BOT_PB.legacy = false');                                         // the control: the same match unpinned is another match, so the pin is what held it
+    const free = playBotMatch(w, m311(), loud(names));
+    expect(sameAs(free, golden311())).toBe(false);
+  }, 120000);
+
+  it('boss modes never read a playbook, pinned or not: the bot a boss fight measures is the legacy bot', () => {
+    const w = bootMonolith();
+    const r = JSON.parse(w.eval(`(function(){
+      BOT_PB.legacy = false;
+      ${loud(['Firey'])}
+      var F = makeFighter(ROSTER.find(function(x){ return x.name === 'Firey'; }), 300, groundY() - 24, 0), T = makeFighter(ROSTER.find(function(x){ return x.name === 'Pen'; }), 500, groundY() - 24, 1);
+      var out = {};
+      SETTINGS.mode = 'ffa';  out.ffa = !!pbFor(F, T, 2); out.ffaEasy = !!pbFor(F, T, 0);
+      SETTINGS.mode = 'boss'; out.boss = !!pbFor(F, T, 2);
+      SETTINGS.mode = 'ffa'; F._oneGhost = true; out.ghost = !!pbFor(F, T, 2); F._oneGhost = false;
+      BOT_PB.legacy = true; out.pinned = !!pbFor(F, T, 2);
+      return JSON.stringify(out);
+    })()`));
+    expect(r).toEqual({ ffa: true, ffaEasy: false, boss: false, ghost: false, pinned: false });
+  });
+
+  it('the harness scripts say so and check it: boss-solo boots through bootMonolith and refuses an unpinned game; the standalone ones pin their own', () => {
+    const solo = readFileSync('scripts/boss-solo.mjs', 'utf8');
+    expect(solo).toMatch(/import \{ bootMonolith \} from '\.\.\/test\/helpers\/smash-golden\.js'/);
+    expect(solo).toMatch(/BOT_PB\.legacy === true && BOT_ADAPT\.locked === true/);
+    for (const f of ['scripts/boss-glitch.mjs', 'scripts/solo-rush.mjs']) expect(readFileSync(f, 'utf8'), f).toMatch(/BOT_PB\.legacy = true; BOT_ADAPT\.lock\(\);/);
+    for (const f of ['scripts/moves-vs-boss.mjs', 'scripts/boss-multihit.mjs']) expect(readFileSync(f, 'utf8'), `${f} boots through the pinned bootMonolith`).toMatch(/import \{ bootMonolith \} from '\.\.\/test\/helpers\/smash-golden\.js'/);
+  });
+});

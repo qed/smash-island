@@ -141,6 +141,7 @@ function bootRealm({ seed, art, w = 1280, h = 720, sink, label }) {
     },
   });
   const win = dom.window;
+  win.eval('BOT_PB.legacy = true; BOT_ADAPT.lock();');   // the hunter plays today's bot, and nothing a player's browser would have taught it: its runs must stay deterministic
   return { win, clock, dom, setInfo: (f) => { realmRef.info = f; }, setMute: (m) => { realmRef.mute = m; } };
 }
 
