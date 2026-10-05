@@ -65,7 +65,7 @@ const UPSTREAM_VERSION = '2023-06-01';
 //   * PREVIEWS OF THIS PROJECT ONLY. Vercel names them smash-<hash>-<scope>.vercel.app (one per deployment) and
 //     smash-git-<branch>-<scope>.vercel.app (one per branch), where "smash" is this project and "<scope>" is the
 //     owner's Vercel scope (the ones the GitHub deployments list). Another project's *.vercel.app is NOT on the
-//     list, and neither is a look-alike such as smash-delta.vercel.app.example.com;
+//     list, and neither is a look-alike such as smashisland.vercel.app.example.com;
 //   * localhost, so the tests and a local `vercel dev` keep working.
 // A custom domain added to the project later has to be added HERE, or this function answers 403 to that domain and the
 // game quietly falls back to its scripted teammate.
@@ -73,7 +73,8 @@ const UPSTREAM_VERSION = '2023-06-01';
 // sets those itself and a page on some other site cannot forge them, so this stops other websites from using this
 // endpoint through their visitors' browsers. It does NOT stop a script that runs outside a browser: curl can send any
 // Origin it likes. It is a fence against casual, cross-site use, not a lock — the spend limit (above) is the lock.
-const PRODUCTION_HOSTS = ['smash-delta.vercel.app'];
+const PRODUCTION_HOSTS = ['smashisland.vercel.app'];   // the game's public address. (It said smash-delta.vercel.app until 2026-10-05: that host is another project's site, so the live game's
+//   requests were refused and a stranger's page was allowed -- found when the link previews pointed there.)
 const PREVIEW_HOST_PATTERN = /^smash-[a-z0-9-]+-helix3\.vercel\.app$/;
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 
