@@ -8,9 +8,11 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // no-attacking half is what stops it becoming a fort — it is a place to recover, not a position
 // to hold.
 
-function teams(w) {
+// A 2v2 unless told otherwise. Two teams have the side-wall bands (test/teams-wall-spawn.test.js); three and four share
+// the sides and have the corner pockets, so the pocket assertions below pass a three- or four-team split.
+function teams(w, key = '2v2', count = 4) {
   w.eval(`
-    SETTINGS.mode='teams'; SETTINGS.teamKey='2v2'; SETTINGS.count=4; SETTINGS.itemRate=0;
+    SETTINGS.mode='teams'; SETTINGS.teamKey='${key}'; SETTINGS.count=${count}; SETTINGS.itemRate=0;
     beginMatchNow();
   `);
 }
@@ -44,21 +46,27 @@ describe('team zones exist only in teams mode', () => {
   // the change is the point rather than a side effect: with a column per team, two teams standing
   // in their own halves were each untouchable AND unable to swing out, so they piled up and the
   // match never resolved. A zone you can be pushed out of is what makes the fight happen.
-  it('is a pocket around the spawn pads, not a column to the ceiling', () => {
-    const { window: w } = loadMonolith();
-    teams(w);
-    const { zone, WH, pads } = JSON.parse(w.eval(`JSON.stringify({
-      zone: teamZoneOf(bases[0].team), WH: WH, pads: bases[0].spawns
-    })`));
-    expect(zone.y, 'does not start at the ceiling').toBeGreaterThan(0);
-    expect(zone.h, 'is a real area, not a sliver').toBeGreaterThan(100);
-    expect(zone.h, 'covers well under half the arena height').toBeLessThan(WH * 0.5);
-    // Every pad has to be inside it, or a fighter could reform outside their own protection.
-    for (const p of pads) {
-      expect(p.x >= zone.x && p.x <= zone.x + zone.w, `pad ${p.x} within zone x`).toBe(true);
-      expect(p.y >= zone.y && p.y <= zone.y + zone.h, `pad ${p.y} within zone y`).toBe(true);
-    }
-  });
+  //
+  // This is the corner layout, which THREE and FOUR teams still have (they share the sides). Two teams moved on, by the
+  // owner's design, to a band down their own side wall (2TDM: see test/teams-wall-spawn.test.js), so this pocket is
+  // asserted on the three- and four-team splits, where it still holds exactly.
+  for (const [key, count] of [['2v1v1', 4], ['1v1v1v1', 4]]) {
+    it(`is a pocket around the spawn pads, not a column to the ceiling (${key})`, () => {
+      const { window: w } = loadMonolith();
+      teams(w, key, count);
+      const { zone, WH, pads } = JSON.parse(w.eval(`JSON.stringify({
+        zone: teamZoneOf(bases[0].team), WH: WH, pads: bases[0].spawns
+      })`));
+      expect(zone.y, 'does not start at the ceiling').toBeGreaterThan(0);
+      expect(zone.h, 'is a real area, not a sliver').toBeGreaterThan(100);
+      expect(zone.h, 'covers well under half the arena height').toBeLessThan(WH * 0.5);
+      // Every pad has to be inside it, or a fighter could reform outside their own protection.
+      for (const p of pads) {
+        expect(p.x >= zone.x && p.x <= zone.x + zone.w, `pad ${p.x} within zone x`).toBe(true);
+        expect(p.y >= zone.y && p.y <= zone.y + zone.h, `pad ${p.y} within zone y`).toBe(true);
+      }
+    });
+  }
 
   // The flaw that stalled the first cut of this arena: give each team a zone covering its whole
   // side and every point on the map belongs to somebody, so nobody can ever be hit anywhere.
@@ -129,7 +137,9 @@ describe('reforming scatters across the pads', () => {
           seen[Math.round(p.x)+':'+Math.round(p.y)] = 1; }
         return JSON.stringify({ hit: Object.keys(seen).length, pads: b.spawns.length });
       })()`));
-    expect(pads, 'a 2v2 team gets eight pads').toBe(8);
+    // Ten, not eight: a two-team match gives each team ten spots up its side wall (wallBand), so a team of ten forms up on
+    // ten different ones. The roll has to reach every one of them.
+    expect(pads, 'a two-team side wall has ten spots').toBe(10);
     expect(hit, 'every pad is reachable by the roll').toBe(pads);
   });
 
