@@ -38,13 +38,13 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
   const TWISTS = [
     ['van', 'phone', 'up'], ['van', 'pspd', 'up'], ['chainsaws', 'lolli', 'down'], ['chainsaws', 'shards', 'up'], ['spikes', 'stag', 'down'], ['spikes', 'alt', 'up'],
     ['deploy', 'blink', 'down'], ['deploy', 'pencil', 'up'], ['meknife', 'yank', 'up'], ['meknife', 'glint', 'down'], ['hands', 'rows2', 'up'], ['hands', 'rowDy', 'up'],
-    ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up'], ['device', 'pincer', 'up'], ['device', 'pgap', 'down'],
+    ['device', 'pincer', 'up'], ['device', 'pgap', 'down'],
     ['springs', 'retract', 'up'], ['springs', 'reach', 'up'], ['memurder', 'track', 'up'], ['kernelpop', 'chain', 'down'], ['ticktock', 'bend', 'up'], ['plug', 'wave', 'down'],
     ['keynote', 'cresc', 'up'], ['keynote', 'fin3', 'up'], ['metags', 'link', 'up'], ['metags', 'linkW', 'up'], ['cannon', 'rock', 'up'],
   ];
   // THE OWNER'S TUNING, 2026-10-05 ("some of cob's attacks are too easy, some too hard"): twists the owner moved to TIER 1 override the usual "twists from tier 2".
-  // PORTAL: "two from the start" -- the pull is on from tier 1 (and twice as strong, reaching farther).
-  const OWNER_TIER1 = [['portal', 'pull', 'up'], ['portal', 'pullR', 'up']];
+  // PORTAL: "two from the start" -- the pull is on from tier 1 (and twice as strong, reaching farther). DELETION: "Trail from tier 1".
+  const OWNER_TIER1 = [['portal', 'pull', 'up'], ['portal', 'pullR', 'up'], ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up']];
   it('OWNER: the twists he moved to tier 1 are ON at tier 1, never weaker as the tiers climb, and stronger by tier 3 (PORTAL\'s pull: "two from the start")', () => {
     const rows = W.eval('COBS_TIERS');
     for (const [k, f, dir] of OWNER_TIER1) {
@@ -55,7 +55,7 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
       expect(v[2], `${k}.${f} is stronger by tier 3 (${v})`).toBeGreaterThan(v[1]);
     }
   });
-  it('every twist is 0 at tier 1, set at tier 2 and stronger at tier 3, and never weakens at tiers 4 and 5; sixteen attacks carry one in their table (the other two are his passives; the owner moved PORTAL\'s to tier 1)', () => {
+  it('every twist is 0 at tier 1, set at tier 2 and stronger at tier 3, and never weakens at tiers 4 and 5; the tier-2 twists of the attacks listed here (the owner\'s tier-1 ones are tested above)', () => {
     const rows = W.eval('COBS_TIERS');
     const byAttack = {}; for (const [k, f, dir] of TWISTS) (byAttack[k] = byAttack[k] || []).push([f, dir]);
     for (const [k, f, dir] of TWISTS) {
@@ -70,7 +70,7 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
       expect(byAttack[k].some(([f]) => f !== 'pgap' && rows[k][1][f] > 0), `${k}: the twist is ON at tier 2`).toBe(true);
       expect(byAttack[k].some(([f, dir]) => (dir === 'up' ? rows[k][2][f] > rows[k][1][f] : rows[k][2][f] < rows[k][1][f])), `${k}: tier 3 is stronger than tier 2 in something`).toBe(true);
     }
-    expect(Object.keys(byAttack).concat([...new Set(OWNER_TIER1.map((x) => x[0]))]), 'seventeen attacks carry a table twist (sixteen here, PORTAL\'s in the owner\'s tier-1 list); the other two are his passives (rage on foot, Popping Point)').toHaveLength(17);
+    expect(Object.keys(byAttack).concat([...new Set(OWNER_TIER1.map((x) => x[0]))]), 'seventeen attacks carry a table twist (fifteen here, the rest in the owner\'s tier-1 list, minus the ones the owner\'s tuning removed); the other two are his passives (rage on foot, Popping Point)').toHaveLength(17);
   });
 
   it('the two passive twists wait for their own lines: the rage on foot fights low only while he rages, and the ring only below 20% (tier 5)', () => {
@@ -477,35 +477,39 @@ describe('MY OWN HANDS! -- two rows, marked', () => {
 });
 
 describe('MePHONE X: DELETION! -- an electric trail', () => {
-  const TRAIL = (t, turn) => fight(`
+  // THE OWNER, 2026-10-05 ("hardly notice the attacks i didnt click": DELETION): "Trail from tier 1" (the burning trail from tier 1, lasting longer) and "Double lunge"
+  // (a second lunge right after the first, turned toward where you went). So these fighters always turn their back on the X that is lunging (`away`) or always face it.
+  const TRAIL = (t, away) => fight(`
     park(); atTier(${t}); floorAt(you, WW*0.5); you.face = 1; you.spCd = 0; s.x = you.x + 500; s.y = you.y - 200; projectiles = [];
-    cobsFightTelegraph(s, 'deletion', you); var X = s._xs[0]; s._tel = 0; COBS_MOVES.deletion(s, you, ++BOSS_ATK_ID); ${turn ? 'you.face = -1;' : ''}
-    var T = cobsT(s, 'deletion'), out = { T: T, trail0: s._trail.length, nodes: 0, pctAtPass: null, zapped: null, ids: null, frames: [] };
-    for (var i=0;i<130;i++){ s._atkTimer = 1e9; you.invuln = 0; var p0 = you.pct; step(); out.nodes = Math.max(out.nodes, s._trail.length);
-      if (out.pctAtPass === null && !s._xs.length) out.pctAtPass = you.pct;
+    cobsFightTelegraph(s, 'deletion', you); var X = s._xs[0]; s._tel = 0; COBS_MOVES.deletion(s, you, ++BOSS_ATK_ID);
+    var T = cobsT(s, 'deletion'), out = { T: T, nodes: 0, pctAtPass: null, turned: null, ids: null, frames: [] };
+    for (var i=0;i<170;i++){ s._atkTimer = 1e9; you.invuln = 0; if (s._xs.length) you.face = ${away ? '-' : ''}s._xs[0].side; var p0 = you.pct; step(); out.nodes = Math.max(out.nodes, s._trail.length);
+      if (out.turned === null && s._xs.length && s._xs[0].turnT > 0){ out.turned = i; out.pctAtPass = you.pct; }
       if (you.pct > p0) out.frames.push([i, Math.round((you.pct - p0)*10)/10]);
       if (i === 24) out.ids = new Set(s._trail.map(function(n){ return n.id; })).size; }
-    out.pct = you.pct; out.id = X.id; out.dmg = X.dmg; out.left = s._trail.length; return out;`);
+    out.pct = you.pct; out.id = X.id; out.dmg = X.dmg; out.left = s._trail.length; out.xs = s._xs.length; return out;`);
 
-  it('tier 1: nothing is left behind; tier 2: red electricity along the lunge, X running on through you if you turned away, armed after a beat, about a second long', () => {
+  it('OWNER: the trail is on from tier 1 and lasts longer (90, 90, 108, 126, 144 frames: 1.5 times the old 60 to 96): red electricity along the lunge, X running on through you if you turned away, armed after a beat', () => {
     const t1 = TRAIL(1, true), t2 = TRAIL(2, true);
-    expect(t1.nodes, 'tier 1: off').toBe(0);
-    expect(t1.pct, 'and a fighter who turned away is untouched').toBe(0);
+    expect(t1.nodes, 'tier 1: a trail now').toBeGreaterThan(10);
     expect(t2.nodes, 'a trail of nodes').toBeGreaterThan(10);
     expect(t2.ids, 'on X\'s own id').toBe(1);
-    expect(t2.T.trail, 'about a second').toBe(60);
+    expect(W.eval('COBS_TIERS.deletion.map(function(T){ return T.trail; })'), '1.5 times the old 0 (tier 1: the old tier 2\'s), 60, 72, 84, 96').toEqual([90, 90, 108, 126, 144]);
+    expect(W.eval('COBS_TIERS.deletion.map(function(T){ return T.trailDmg; })'), 'the same shares of the hit as before; tier 1 takes the old tier 2\'s').toEqual([0.3, 0.3, 0.4, 0.45, 0.5]);
     expect(t2.left, 'and it is gone again by the end').toBe(0);
+    expect(t2.xs, 'the whole attack ends: both lunges done').toBe(0);
   });
 
   it('the counter is not zapped the frame it is made: the electricity arms for COBS_TRAIL_ARM frames, then bites once for a part of X\'s hit (never both)', () => {
     const t2 = TRAIL(2, true), t3 = TRAIL(3, true);
+    expect(t2.turned, 'the first lunge passed and X turned to come again').not.toBe(null);
     expect(t2.pctAtPass, 'X passes through a fighter who turned away: no hit').toBe(0);
-    expect(t2.frames.length, 'then one zap, once').toBe(1);
+    expect(t2.frames.length, 'then one zap, once (every node of an X shares one hit list)').toBe(1);
     expect(t2.frames[0][1]).toBeCloseTo(33*1.6*0.3, 0);
     expect(t3.frames[0][1], 'stronger at tier 3').toBeGreaterThan(t2.frames[0][1]);
     expect(t2.pct, 'never more than X\'s own hit').toBeLessThanOrEqual(t2.dmg + 1e-6);
     const hit = TRAIL(2, false);
-    expect(hit.pct, 'a fighter X caught takes its hit and the trail adds nothing (one id, one cap)').toBeLessThanOrEqual(hit.dmg + 1e-6);
+    expect(hit.pct, 'a fighter X caught takes its hit and the trail and the second lunge add nothing (one id, one cap)').toBeLessThanOrEqual(hit.dmg + 1e-6);
   });
 
   it('draws the dim and the bright electricity without a throw', () => {

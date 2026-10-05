@@ -209,3 +209,227 @@ describe('OWNER: MEEPLE PORTAL! -- two from the start, three from tier 3, a stro
     expect(r.n).toBe(3);
   });
 });
+
+// ================= 3. SPIKES =================
+// "a second row" -- a second row rises right behind the first. And verbatim: "they throw themselves to adjacent platforms near the end of their attack. priority to the
+// ones that youre on." Near the end of the attack the spikes leap onto the platforms next to them -- the one you stand on first -- and rise there, with a tell.
+describe('OWNER: SUPER DEATH TRAP! -- a second row right behind the first, and the spikes leap to the platforms next to them (the one you stand on first)', () => {
+  // seven platforms in a row, 380 px apart (a 140 px gap between their edges) over the floor, the floor alone solid: PL[0..6]
+  const LAYOUT = `var gy = groundY(); worldPlats = worldPlats.filter(function(p){ return p.solid; }); var PL = [];
+    for (var k=0;k<7;k++){ var pp = { x: WW*0.5 + (k - 3)*380 - 120, y: gy - 260, w: 240, h: 12, solid: false }; PL.push(pp); worldPlats.push(pp); }
+    var plIndex = function(q){ for (var k=0;k<PL.length;k++) if (q.warnY === PL[k].y && q.warnX >= PL[k].x && q.warnX <= PL[k].x + PL[k].w) return k; return -1; };
+    var standOn = function(k){ you.x = PL[k].x + 120; you.y = PL[k].y - you.r; you.vx = 0; you.vy = 0; };`;
+
+  const ATTACK = (t, where, extra = '') => fight(`
+    park(); atTier(${t}); projectiles = []; ${LAYOUT}
+    var T = cobsT(s, 'spikes'); floorAt(you, PL[3].x + 120); you.invuln = 99999; s.x = you.x + 500; s.y = you.y - 200; s.face = -1; s._rows = []; s._leaps = []; cobsFx = [];
+    s._spikePlats = [PL[2], PL[3]]; s._telX = you.x; s._telY = hurtCY(you); var id = ++BOSS_ATK_ID; COBS_MOVES.spikes(s, you, id);
+    var main = projectiles.filter(function(p){ return p.shape === 'spike'; }), last = Math.max.apply(null, main.map(function(p){ return p.delay; })), L = s._leaps[0], t0 = L ? L.t : -1;
+    var out = { T: T, nMain: main.length, last: last, t0: t0, ids: new Set(main.map(function(p){ return p.bossAtk; })).size, mainOn: main.map(plIndex) };
+    for (var i=0;i<t0 + 1;i++){ s._atkTimer = 1e9; ${where} you.invuln = 99999; step(); }
+    var fresh = projectiles.filter(function(p){ return p.shape === 'spike' && main.indexOf(p) < 0; });
+    out.fresh = fresh.map(function(q){ return { on: plIndex(q), delay: q.delay, warn: q.warn, id: q.bossAtk, cap: q.bossCap, dmg: q.dmg }; });
+    out.leapsFx = cobsFx.filter(function(e){ return e.kind === 'leap'; }).map(function(e){ return { x0: Math.round(e.x0), x1: Math.round(e.x1), life: e.max }; });
+    out.platsOn = Array.from(new Set(fresh.map(plIndex))); out.id = id; out.pending = s._leaps.length; ${extra}
+    return out;`);
+
+  it('A SECOND ROW: every spot gets a second spike right behind the first, `row2` frames later (18, 16, 14, 13, 12), on the attack\'s one id and cap -- twice the spikes, the same hit', () => {
+    const rs = [1, 2, 3, 4, 5].map((t) => ATTACK(t, 'standOn(3);'));
+    expect(rs.map((r) => r.T.row2), 'right behind: a beat that tightens').toEqual([18, 16, 14, 13, 12]);
+    for (const r of rs) {
+      expect(r.ids, 'one id for the whole attack').toBe(1);
+      expect(r.nMain % 2, 'two to a spot').toBe(0);
+      expect(r.last, 'the last spike rises `row2` frames after the last tile\'s first').toBe(r.T.delay + (r.T.stag > 0 ? 3*r.T.stag : 0) + r.T.row2);
+    }
+    // the pairs: group the attack's spikes by spot and read their two delays
+    const t3 = fight(`
+      park(); atTier(3); projectiles = []; ${LAYOUT} var T = cobsT(s, 'spikes'); floorAt(you, PL[3].x + 120); you.invuln = 99999; s.x = you.x + 500; s.y = you.y - 200; s._rows = []; s._leaps = [];
+      s._spikePlats = [PL[3]]; s._telX = you.x; s._telY = hurtCY(you); COBS_MOVES.spikes(s, you, ++BOSS_ATK_ID);
+      var sp = projectiles.filter(function(p){ return p.shape === 'spike'; }), spots = {};
+      sp.forEach(function(p){ var k = Math.round(p.warnX); (spots[k] = spots[k] || []).push(p); });
+      return { T: T, spots: Object.keys(spots).map(function(k){ return spots[k].map(function(p){ return [p.delay, p.warn, p.dmg, p.bossCap, p.kb]; }); }) };`);
+    expect(t3.spots.length, 'a spike every 40 px').toBeGreaterThanOrEqual(5);
+    for (const sp of t3.spots) {
+      expect(sp.length, 'two a spot').toBe(2);
+      expect(sp[1][0] - sp[0][0], 'the second right behind the first').toBe(t3.T.row2);
+      expect(sp[1][1], 'its shadow stays up the whole way to the second rising').toBe(sp[1][0]);
+      expect(sp[1][2], 'the same damage').toBe(sp[0][2]); expect(sp[1][3]).toBe(sp[0][3]); expect(sp[1][4]).toBe(sp[0][4]);
+    }
+  });
+
+  it('a fighter on the platform takes ONE spike hit however many spikes of however many rows reach them (one id, one cap)', () => {
+    const r = fight(`
+      park(); atTier(1); projectiles = []; ${LAYOUT} var T = cobsT(s, 'spikes'); floorAt(you, PL[3].x + 120); you.pct = 0; s.x = you.x + 500; s.y = you.y - 200; s._rows = []; s._leaps = [];
+      s._spikePlats = [PL[3]]; s._telX = you.x; s._telY = hurtCY(you); var dmg = cobsDmg()*T.dmg; COBS_MOVES.spikes(s, you, ++BOSS_ATK_ID);
+      you.x = PL[3].x + 120; you.y = PL[3].y - you.r; you.vx = 0; you.vy = 0; var hits = 0;
+      for (var i=0;i<140;i++){ s._atkTimer = 1e9; var p0 = you.pct; you.invuln = 0; step(); if (you.pct > p0) hits++; if (you.hitstun <= 0 && i > T.delay + 30){ you.x = PL[3].x + 120; you.y = PL[3].y - you.r; you.vx = 0; you.vy = 0; } }
+      return { pct: you.pct, dmg: dmg, hits: hits };`);
+    expect(r.hits, 'the spikes landed').toBeGreaterThan(0);
+    expect(r.pct, 'one hit however many spikes').toBeLessThanOrEqual(r.dmg + 1e-6);
+  });
+
+  it('THE LEAP, near the end of the attack: `lead` frames before the last spike rises the spikes leap to a platform next to the ones raised -- the one you STAND ON first', () => {
+    for (const [on, want] of [[4, 4], [1, 1]]) {
+      const r = ATTACK(1, `standOn(${on});`);
+      expect(r.t0, 'the leap is scheduled `lead` frames before the last spike rises').toBe(r.last - r.T.lead);
+      expect(r.mainOn.every((k) => k === 2 || k === 3), 'the attack raised the two platforms it was given').toBe(true);
+      expect(r.platsOn, `tier 1 leaps to ONE platform: the one you stand on (${want})`).toEqual([want]);
+      expect(r.pending, 'and the leap is spent').toBe(0);
+    }
+    const t3 = ATTACK(3, 'standOn(4);');
+    expect(t3.platsOn.length, 'tier 3 leaps to two (both are next to the raised pair)').toBe(2);
+    expect(t3.platsOn[0], 'the one you stand on first').toBe(4);
+    expect(new Set(t3.platsOn)).toEqual(new Set([1, 4]));
+    const t5 = ATTACK(5, 'standOn(1);');
+    expect(t5.T.leap).toBe(3);
+    expect(t5.platsOn.length, 'only two platforms are next to the raised pair here: it leaps to them, no further').toBe(2);
+  });
+
+  it('with nobody on a candidate it goes to the one nearest to you, and it never leaps past `adj`, to the floor or onto a platform already spiked', () => {
+    const r = ATTACK(1, 'you.x = PL[4].x + 120; you.y = groundY() - you.r; you.vx = 0; you.vy = 0;');
+    expect(r.platsOn, 'on the floor under PL[4]: PL[4] is the nearest').toEqual([4]);
+    const far = ATTACK(1, 'you.x = PL[6].x + 120; you.y = PL[6].y - you.r; you.vx = 0; you.vy = 0;');
+    expect(far.platsOn, 'PL[6] is two platforms off the raised pair: out of reach, so the leap goes to the nearest one that is not').toEqual([4]);
+    const none = fight(`
+      park(); atTier(1); projectiles = []; ${LAYOUT} worldPlats = worldPlats.filter(function(p){ return p.solid || p === PL[3]; });
+      var T = cobsT(s, 'spikes'); floorAt(you, PL[3].x + 120); you.invuln = 99999; s.x = you.x + 500; s._rows = []; s._leaps = []; cobsFx = [];
+      s._spikePlats = [PL[3]]; s._telX = you.x; s._telY = hurtCY(you); COBS_MOVES.spikes(s, you, ++BOSS_ATK_ID);
+      var main = projectiles.filter(function(p){ return p.shape === 'spike'; }); for (var i=0;i<s._leaps[0].t + 2;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); }
+      var fresh = projectiles.filter(function(p){ return p.shape === 'spike' && main.indexOf(p) < 0; });
+      return { fresh: fresh.length, fx: cobsFx.filter(function(e){ return e.kind === 'leap'; }).length };`);
+    expect(none.fresh, 'no platform to leap to: nothing rises').toBe(0);
+    expect(none.fx).toBe(0);
+  });
+
+  it('THE LEAP HAS A TELL: an arc flies over from the platform that was raised (`hop` frames), the target\'s shadows are lit from that frame on, and the spikes rise there `hop + ldelay` frames later, on the attack\'s id at the same damage', () => {
+    for (const t of [1, 3]) {
+      const r = ATTACK(t, 'standOn(4);');
+      expect(r.leapsFx.length, `tier ${t}: an arc a platform`).toBe(r.platsOn.length);
+      for (const e of r.leapsFx) { expect(e.life, 'it takes `hop` frames').toBe(r.T.hop); }
+      expect(r.leapsFx.some((e) => Math.abs(e.x1 - e.x0) > 100), 'it goes across').toBe(true);
+      for (const q of r.fresh) {
+        expect(q.delay, 'rises after the flight and a beat (read a frame or two after it was made)').toBeGreaterThanOrEqual(r.T.hop + r.T.ldelay - 3);
+        expect(q.warn, 'the shadow is up the whole time').toBeGreaterThan(0);
+        expect(q.id, 'the attack\'s one id').toBe(r.id);
+        expect(q.dmg, 'the same damage as the spikes it came from').toBeCloseTo(33*r.T.dmg, 5);
+        expect(q.cap).toBeCloseTo(33*r.T.dmg, 5);
+      }
+    }
+    const err = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); you.invuln = 99999; projectiles = []; var e = null;
+      cobsFightTelegraph(s, 'spikes', you); s._tel = 20; try { drawCobsFx(); } catch(x){ e = String(x); }
+      cobsFx.push({ kind:'leap', x0:900, y0:1600, x1:1300, y1:1500, life:12, max:24 }); try { drawCobsFx(); } catch(x){ e = e || String(x); }
+      return { e: e };`);
+    expect(err.e, 'the second row\'s bars and the arc draw').toBe(null);
+  });
+
+  it('the floor, a pane and a wall are never leapt to, and a tier 5 leap of three stays next to what was raised', () => {
+    const r = fight(`
+      park(); atTier(5); projectiles = []; ${LAYOUT}
+      worldPlats.push({ x:PL[4].x, y:PL[4].y - 60, w:200, h:14, solid:true, _cobsPane:true, _until:hazardT + 9999 }, { x:PL[1].x, y:gy - 260, w:20, h:260, solid:true, _cobsWall:true, _until:hazardT + 9999 });
+      var T = cobsT(s, 'spikes'); floorAt(you, PL[3].x + 120); you.invuln = 99999; s.x = you.x + 500; s._rows = []; s._leaps = []; cobsFx = [];
+      s._spikePlats = [PL[2], PL[3]]; s._telX = you.x; s._telY = hurtCY(you); COBS_MOVES.spikes(s, you, ++BOSS_ATK_ID);
+      var main = projectiles.filter(function(p){ return p.shape === 'spike'; });
+      for (var i=0;i<s._leaps[0].t + 2;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); }
+      var fresh = projectiles.filter(function(p){ return p.shape === 'spike' && main.indexOf(p) < 0; });
+      return { on: Array.from(new Set(fresh.map(plIndex))), ys: Array.from(new Set(fresh.map(function(q){ return Math.round(q.warnY); }))), py: Math.round(PL[0].y) };`);
+    expect(r.on.every((k) => k === 1 || k === 4), 'only the platforms next to the raised pair').toBe(true);
+    expect(r.ys.every((y) => y === r.py), 'never the floor, a pane or a wall').toBe(true);
+  });
+});
+
+// ================= 4. DELETION =================
+// "Double lunge" (a second lunge right after the first, turned toward where you went); "Trail from tier 1" (the burning trail from tier 1, lasting longer -- the trail's own
+// pins are in test/boss-cobs-fight.test.js); "Aims longer" (it keeps aiming at you until just before it lunges); "Taller" (the lunge twice as tall, so jumping over it is harder).
+describe('OWNER: MePHONE X: DELETION! -- a double lunge, aimed longer, and taller', () => {
+  // the lunge (tier t): `you` stand on the floor facing right with X on your right; `face(frame)` is the JS expression for what you face each frame, `pin(frame)` any other pin
+  const LUNGE = (t, face, frames = 150, pin = '') => fight(`
+    park(); atTier(${t}); worldPlats = worldPlats.filter(function(p){ return p.solid; }); floorAt(you, WW*0.5); you.face = 1; you.spCd = 0; s.x = you.x + 500; s.y = you.y - 200; projectiles = []; s._trail = [];
+    cobsFightTelegraph(s, 'deletion', you); var xs = s._xs.slice(); s._tel = 0; var id = ++BOSS_ATK_ID; COBS_MOVES.deletion(s, you, id);
+    var T = cobsT(s, 'deletion'), out = { T: T, n: xs.length, side0: xs.map(function(X){ return X.side; }), turns: [], lunges: 0, pct: 0, hits: [], ids: xs.map(function(X){ return X.id; }), spd: xs.map(function(X){ return X.spd; }), h: xs.map(function(X){ return X.h; }) };
+    var was = xs.map(function(){ return false; }), startX = xs.map(function(X){ return X.x; });
+    for (var i=0;i<${frames};i++){ s._atkTimer = 1e9; you.invuln = 0; if (s._xs.length) you.face = ${face}; ${pin} var p0 = you.pct; step();
+      xs.forEach(function(X, k){ var turning = X.turnT > 0; if (turning && !was[k]) out.turns.push({ f: i, k: k, sideBefore: out.side0[k], x: X.x, you: you.x }); if (!turning && was[k] && !X.done) { out.lunges++; out.turns[out.turns.length - 1].sideAfter = X.side; out.turns[out.turns.length - 1].reLunge = i; } was[k] = turning; });
+      if (you.pct > p0) out.hits.push([i, you.pct - p0]); }
+    out.pct = you.pct; out.spCd = you.spCd; out.dmg = xs[0].dmg; out.left = s._xs.length; out.again = xs.map(function(X){ return X.again; }); out.id = xs[0].id; out.idWant = id; return out;`);
+
+  it('DOUBLE LUNGE: the first lunge passes you (you turned your back to it), X turns toward where you went and lunges AGAIN from the other side, a beat later, on the same id at the same speed', () => {
+    for (const t of [1, 3]) {
+      const r = LUNGE(t, '-s._xs[0].side');   // always back to the X that is lunging: the counter, made twice
+      expect(r.T.again, 'a second lunge').toBe(1);
+      expect(r.turns.length, `tier ${t}: it turned once, after the first lunge`).toBe(1);
+      expect(r.turns[0].sideAfter, 'toward where you went: it comes back from the other side').toBe(-r.turns[0].sideBefore);
+      expect(r.turns[0].reLunge - r.turns[0].f, 'a beat of `turn` frames between the lunges (the turn, flickering)').toBeGreaterThanOrEqual(r.T.turn - 2);
+      expect(r.turns[0].reLunge - r.turns[0].f, '...and no more than that').toBeLessThanOrEqual(r.T.turn + 2);
+      expect(r.left, 'both lunges done').toBe(0);
+      expect(r.hits.length, 'turned away from both lunges: neither lands -- the one hit is the trail\'s zap, once, on a fighter who stood in it').toBe(1);
+      expect(r.pct, 'a part of X\'s hit, the tier\'s trailDmg, and no more').toBeCloseTo(r.dmg*r.T.trailDmg, 3);
+      expect(r.ids.every((i) => i === r.idWant), 'the attack\'s one id').toBe(true);
+      expect(r.spd, 'never faster: the same speed').toEqual([r.T.spd]);
+    }
+  });
+
+  it('turn your back once and it is not enough: the second lunge, from the other side, finds you facing it (that is the whole point of the double lunge); one hit in all', () => {
+    const r = LUNGE(2, '-1');
+    expect(r.turns.length, 'it did turn').toBe(1);
+    expect(r.hits.length, 'the second lunge landed').toBeGreaterThanOrEqual(1);
+    expect(r.hits[r.hits.length - 1][0], 'after the turn').toBeGreaterThan(r.turns[0].f);
+    expect(r.pct, '1.6 x 33: the same hit as ever, however the trail and the second lunge share it').toBeCloseTo(52.8, 3);
+  });
+
+  it('caught by the first lunge, you take that hit and the second lunge adds nothing (one id, one cap), nor does it lock your special or "delete" you a second time', () => {
+    const r = LUNGE(2, 's._xs[0].side', 150, 'if (i === 40) you.spCd = 0;');
+    expect(r.hits.length, 'one hit').toBe(1);
+    expect(r.pct).toBeCloseTo(52.8, 3);
+    expect(r.turns.length, 'it still turned and came again').toBe(1);
+    expect(r.spCd, 'and the second lunge did not lock your special again (reset at frame 40, before it lands)').toBe(0);
+  });
+
+  it('tier 5\'s two X\'s each lunge twice: two turns, one each, and never more than the one hit however it goes', () => {
+    const r = LUNGE(5, 's._xs[0].side', 200);
+    expect(r.n).toBe(2);
+    expect(r.turns.length, 'each turned once').toBe(2);
+    expect(r.pct, 'never more than the one hit (one id, one cap)').toBeLessThanOrEqual(r.dmg + 1e-6);
+    expect(r.left, 'and it ends').toBe(0);
+  });
+
+  it('AIMS LONGER: X keeps re-spotting itself on the side you face now, on your line, until `aim` frames before it lunges -- then it holds -- so turning your back early gets you nothing', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); you.face = 1; s.x = you.x + 500; s.y = you.y - 200; projectiles = []; s._xs = [];
+      cobsFightTelegraph(s, 'deletion', you); var T = cobsT(s, 'deletion'), X = s._xs[0], rec = [];
+      for (var i=0;i<T.tel + 4;i++){ s._atkTimer = 1e9; you.invuln = 99999;
+        if (i === 8) you.face = -1; if (i === 20) you.x += 110; if (i === 30) you.face = 1; if (i === T.tel - T.aim + 2) { you.x -= 150; you.face = -1; }
+        step(); rec.push({ tel: s._tel, x: X.x, side: X.side, you: you.x, face: you.face, live: X.live }); if (X.live) break; }
+      return { T: T, rec: rec };`);
+    expect(r.T.aim, 'aimed until 11 frames before the lunge at tier 2').toBe(11);
+    const aiming = r.rec.filter((q) => q.tel > r.T.aim && !q.live), locked = r.rec.filter((q) => q.tel <= r.T.aim && q.tel > 0);
+    expect(aiming.length, 'it aimed for most of the wind-up').toBeGreaterThan(40);
+    for (const q of aiming) { expect(q.side, 'on the side you face now').toBe(q.face); expect(q.x, '170 px off you').toBeCloseTo(q.you + q.face*170, 0); }
+    expect(new Set(aiming.map((q) => q.side)).size, 'and it changed sides when you turned').toBe(2);
+    expect(locked.length).toBeGreaterThan(5);
+    expect(new Set(locked.map((q) => q.x)).size, 'locked: it did not move once the last frames began, however you moved').toBe(1);
+  });
+
+  it('TALLER: the lunge is 112 px tall (twice the 56 it was drawn), a band over the line you stood on -- in the air is not enough: your feet must clear its top (or you must face away)', () => {
+    const run = (hover) => LUNGE(2, 's._xs[0].side', 60, hover == null ? '' : `you.y = groundY() - you.r - ${hover}; you.vy = 0; you.vx = 0;`);
+    const r = run(null);
+    expect(r.h, 'twice as tall').toEqual([112]);
+    expect(W.eval('COBS_TIERS.deletion.map(function(T){ return T.h; })'), 'at every tier').toEqual([112, 112, 112, 112, 112]);
+    const low = run(40), mid = run(100), top = run(118), high = run(160);
+    expect(low.pct, 'a hop 40 px up is under its top: caught, airborne as you are').toBeCloseTo(52.8, 3);
+    expect(mid.pct, '100 px up is still inside it').toBeCloseTo(52.8, 3);
+    expect(top.pct, 'feet 118 px up clear its 112 px top').toBe(0);
+    expect(high.pct, 'and so does a full jump').toBe(0);
+  });
+
+  it('the lunge runs along the line you stood on: X is as tall as its band and sits on that line, and the tell and the lunge draw without a throw', () => {
+    const r = fight(`
+      park(); atTier(3); floorAt(you, WW*0.5); you.face = 1; s.x = you.x + 500; s.y = you.y - 200; projectiles = []; var e = null;
+      cobsFightTelegraph(s, 'deletion', you); var X = s._xs[0], T = cobsT(s, 'deletion'), base = X.base;
+      s._tel = 4; try { drawCobsFx(); } catch(x){ e = String(x); } s._tel = 0; COBS_MOVES.deletion(s, you, ++BOSS_ATK_ID); for (var i=0;i<6;i++){ s._atkTimer = 1e9; step(); } try { drawCobsFx(); } catch(x){ e = e || String(x); }
+      return { e: e, base: base, gy: groundY(), y: X.y, h: X.h, bottom: X.y + X.h/2 };`);
+    expect(r.e).toBe(null);
+    expect(r.h).toBe(112);
+    expect(Math.abs(r.bottom - r.base), 'its bottom edge on the line you stood on').toBeLessThanOrEqual(0.001);
+  });
+});

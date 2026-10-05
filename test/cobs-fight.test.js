@@ -377,9 +377,9 @@ describe('the six personalised specials', () => {
       cobsFightTelegraph(s, 'deletion', you); var X = s._xs[0], tel = s._tel, red = s._redT > 0, side = X.side;
       ${setup}
       s._tel = 0; COBS_MOVES.deletion(s, you, ++BOSS_ATK_ID);
-      var p0 = you.pct, grounded = []; for (var i=0;i<40 && s._xs.length;i++){ step(); grounded.push(you.onground); ${perFrame || ''} }
-      return { tel:tel, red:red, side:side, faced: side===1, dmg:you.pct - p0, lock:you.spCd, deleted:you._deletedT > 0, left:s._xs.length, grounded:grounded };`);
-    const caught = run('/* facing X, on the floor */');
+      var p0 = you.pct, grounded = [], lockAt = null, delAt = null; for (var i=0;i<130 && s._xs.length;i++){ step(); grounded.push(you.onground); if (lockAt === null && you.pct > p0){ lockAt = you.spCd; delAt = you._deletedT > 0; } ${perFrame || ''} }   // (130: both lunges -- the owner's "Double lunge", 2026-10-05 -- and the turn between them; the lock is read the frame of the hit)
+      return { tel:tel, red:red, side:side, faced: side===1, dmg:you.pct - p0, lock:(lockAt === null ? you.spCd : lockAt), deleted:(delAt === null ? you._deletedT > 0 : delAt), left:s._xs.length, grounded:grounded };`);
+    const caught = run('/* facing X, on the floor */', 'if (s._xs.length) you.face = s._xs[0].side;');   // (and facing the second lunge too: it deals nothing more -- one id, one cap)
     expect(caught.tel, 'tier 2\'s wind-up').toBe(66);
     expect(caught.red, 'the siren: the screen tints red').toBe(true);
     expect(caught.faced, 'X comes in on the side you face').toBe(true);
@@ -387,8 +387,8 @@ describe('the six personalised specials', () => {
     expect(caught.lock, 'specials locked 120 frames').toBeGreaterThanOrEqual(100);
     expect(caught.deleted).toBe(true);
     expect(caught.left).toBe(0);
-    const away = run('you.face = -1;   // turned away');
-    expect(away.dmg, '"simply not looking at him"').toBe(0);
+    const away = run('you.face = -1;   // turned away', 'if (s._xs.length) you.face = -s._xs[0].side;');   // (turned away from the first lunge, and from the second one that comes back from the other side)
+    expect(away.dmg, '"simply not looking at him": neither lunge lands -- all that reaches a fighter who stood still in the trail (from tier 1 now: the owner, 2026-10-05) is its zap, 0.3 of the hit').toBeCloseTo(52.8*0.3, 3);
     expect(away.lock).toBe(0);
     const air = run('you.y = airY; you.vy = 0;', 'you.y = airY; you.vy = 0;');
     expect(air.grounded.slice(1).some(g => g), 'held in the air').toBe(false);
