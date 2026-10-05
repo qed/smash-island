@@ -61,6 +61,32 @@
   .scbar-l{background:linear-gradient(#e0503a,#b83a2a)}
   .scbar-num{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     font-size:11px; font-weight:800; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.6)}
+  /* online results: every human side by side (place, KOs, damage), above the scorecard that lists everyone */
+  .netres{max-width:620px; width:94%; margin:10px auto 4px}
+  .nrhead{font-size:11px; font-weight:800; letter-spacing:.14em; color:#b9b9c9; text-transform:uppercase; margin-bottom:6px; text-align:center}
+  .nrgrid{display:flex; flex-wrap:wrap; gap:8px; justify-content:center}
+  .nrcard{flex:1 1 128px; max-width:196px; min-width:0; background:#ffffff14; border:2px solid #ffffff22; border-radius:12px; padding:8px 8px 9px; text-align:center}
+  .nrcard.you{background:#ffd23f22; border-color:#ffd23f88}
+  .nrcard.first{border-color:var(--gold)}
+  .nrcard.gone{opacity:.7}
+  .nrplace{font-size:22px; font-weight:800; color:var(--gold); line-height:1.1}
+  .nrcard .lpimg{display:block; width:52px; height:52px; margin:4px auto 0}
+  .nrcard .lpdot{display:block; width:44px; height:44px; margin:6px auto 0}
+  .nrname{font-weight:800; font-size:15px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .nryou{font-size:11px; color:#ffd23f}
+  .nrmeta{font-size:10px; font-weight:700; letter-spacing:.06em; color:#cfcfe0; min-height:12px}
+  .nrstats{display:flex; justify-content:center; gap:16px; margin-top:7px}
+  .nrstat b{display:block; font-size:19px; line-height:1.1}
+  .nrstat span{font-size:10px; font-weight:700; letter-spacing:.08em; color:#b9b9c9; text-transform:uppercase}
+  .nrsub{font-size:11px; color:#cfcfe0; margin-top:3px}
+  @media (max-width:480px){   /* a phone: two to a row, and snug, so eight players are not four screens of scrolling */
+    .nrcard{padding:6px 6px 7px}
+    .nrplace{font-size:19px}
+    .nrcard .lpimg{width:40px; height:40px; margin-top:2px}
+    .nrcard .lpdot{width:36px; height:36px; margin-top:4px}
+    .nrstats{margin-top:5px; gap:12px}
+    .nrstat b{font-size:17px}
+  }
   .brand{font-weight:700; font-size:13px; letter-spacing:.14em; text-transform:uppercase;
     color:var(--host); display:flex; align-items:center; gap:8px}
   .brand::before{content:"●"; color:var(--vote)}
@@ -491,7 +517,11 @@
     font-family:'JetBrains Mono',monospace; background:#0006; padding:4px 8px; border-radius:6px}
 
   #result{background:linear-gradient(#2a2438,#3a2a4a); color:#fff; align-items:center;
-    justify-content:center; text-align:center}
+    justify-content:flex-start; text-align:center}
+  /* Centred when it all fits, from the top when it does not. justify-content:center cut the title off the top of a tall result
+     screen (the players' cards, a long scorecard, on a phone), where no amount of scrolling could reach it. */
+  #result::before{content:""; margin-top:auto}
+  #result::after{content:""; margin-bottom:auto}
   #result h1{color:var(--gold)}
   .foot{margin-top:auto; font-size:11px; color:#0007; font-family:'JetBrains Mono',monospace}
   .kv{font-family:'JetBrains Mono',monospace; font-size:12px}
@@ -1240,6 +1270,7 @@
     <div class="sub" id="resultSub" style="color:#ddd; text-align:center"></div>
     <div id="resultQuip" class="resultquip" style="display:none"></div>
     <div id="resultCard" style="display:none"></div>
+    <div id="netResults" class="netres" style="display:none"></div>
     <div id="scorecard" class="scorecard"></div>
     <div id="unlockNote" class="unlock-note" style="display:none"></div>
     <div id="eraseNote" class="unlock-note erase-note" style="display:none"></div>
@@ -2771,7 +2802,7 @@ function go(id){
   paused=false; { const pc=document.getElementById('pauseCard'); if(pc) pc.style.display='none'; }   // no screen is reached paused
   try{ stopReplay(); }catch(e){}   // a looping replay must not survive leaving the result screen
   try{ stopMoonScene(); }catch(e){}   // ...and neither may the Moon's own animation loop
-  if(id!=='result'){ try{ clearShopNotes(); }catch(e){} }   // the result screen's player card and quest line are that match's
+  if(id!=='result'){ try{ clearShopNotes(); clearNetResults(); }catch(e){} }   // the result screen's player card, quest line and players' cards are that match's
   if(id==='title'){ try{ refreshDailyCard(); }catch(e){} }
   try{ syncTouchControls(); }catch(e){}   // any screen change re-evaluates whether the touch pad belongs
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -31926,6 +31957,7 @@ function showResult(winners, winTeam){
     document.getElementById('resultTitle').textContent="Draw"; document.getElementById('resultSub').textContent="";
   }
   renderScorecard();
+  try{ renderNetResults(); }catch(e){}   // an online match: every human's place, KOs and damage, side by side (nothing for a solo match)
   try{ syncPrizeRoster(true); }catch(e){}   // Steve Cobs's prize: a gate this match opened is announced with its result
   showUnlockNote();   // drains PENDING_UNLOCKS; renders nothing when empty
   showErasedNote();   // ...and One's erasures the same way
@@ -31938,12 +31970,14 @@ function renderScorecard(){
   const box=document.getElementById('scorecard'); if(!box) return;
   const teams = SETTINGS.mode==='teams';
   // sort by placement (1st at top), then by KOs as a tiebreak
-  const order=[...fighters].sort((a,b)=> (a.placement||99)-(b.placement||99) || (b.killCount||0)-(a.killCount||0));
+  const order=[...fighters].sort((a,b)=> (a.placement||99)-(b.placement||99) || (b._kos||0)-(a._kos||0));
   let rows='';
   for(const f of order){
     const {wins,losses}=placementWinsLosses(f.placement);
     const wPct=Math.round(wins/PLACE_MAX*100), lPct=100-wPct;
-    const kos=f.killCount||0, falls=f.deaths||0;
+    // _kos and _falls: tallied for every fighter. (killCount and deaths are the comeback fighters' own counters, so this row
+    // read "0 KO" for nearly everyone.)
+    const kos=f._kos||0, falls=f._falls||0;
     const medal = f.placement===1?'🥇':f.placement===2?'🥈':f.placement===3?'🥉':'';
     rows+=`<div class="scrow${f.you?' you':''}">
       <div class="scplace">${ORDINAL(f.placement)}${medal}</div>
@@ -31955,6 +31989,53 @@ function renderScorecard(){
     </div>`;
   }
   box.innerHTML=`<div class="schead"><span>Place</span><span>Fighter</span><span>Stats</span><span>Wins : Losses</span></div>${rows}`;
+}
+
+// ONLINE RESULTS: every human, side by side -- place, KOs and damage. The numbers are the host's: its tallies ride the final
+// snapshot (serializeState: place, kos, falls, dmg, taken) and the host reads the same ones off its own fighters, so every screen
+// draws the same cards from the same numbers. The humans are the seats the match started with (__netRoster, which every device was
+// sent in the start); the computer's fighters are in the scorecard below. Boss Rush has no places and credits no damage to a
+// player, so it has no cards.
+function netResultRows(){
+  const N=window.NET, roster=window.__netRoster;
+  if(!N || (N.role!=='host' && N.role!=='client') || !Array.isArray(roster) || !roster.length || SETTINGS.mode==='boss') return null;
+  const rows=[], num=(v)=>{ v=+v; return Number.isFinite(v) ? Math.round(v) : 0; };   // (a client's fighters came off the wire)
+  for(let i=0; i<roster.length && i<fighters.length; i++){
+    const f=fighters[i];
+    rows.push({ slot:i+1, name:String(f.name==null ? '' : f.name), color:f.color, team:num(f.team), place:(Number.isInteger(f.placement) && f.placement>0 && f.placement<=64) ? f.placement : null,
+      kos:num(f._kos), falls:num(f._falls), dmg:num(f._dmgDealt), taken:num(f._dmgTaken), host:i===0, you:!!f.you,
+      // a player who left mid-match: the computer played the rest of their seat. Only the host knows (the seats it freed), so
+      // it rides the final snapshot like the numbers do.
+      gone:(N.role==='host') ? (Array.isArray(N._seats) && N._seats[i]===null) : !!f._gone });
+  }
+  // first place first; teammates share a place, so then the one with more KOs, more damage, then the lower slot (a total order: the same on every screen)
+  rows.sort((a,b)=> (a.place||99)-(b.place||99) || b.kos-a.kos || b.dmg-a.dmg || a.slot-b.slot);
+  return rows;
+}
+function clearNetResults(){ const el=document.getElementById('netResults'); if(el){ el.innerHTML=''; el.style.display='none'; } }
+function renderNetResults(){
+  const el=document.getElementById('netResults'); if(!el) return;
+  clearNetResults();
+  const rows=netResultRows(); if(!rows || !rows.length) return;
+  const teams=SETTINGS.mode==='teams';
+  const mk=(parent, tag, cls, text)=>{ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; parent.appendChild(e); return e; };
+  mk(el, 'div', 'nrhead', 'The players');
+  const grid=mk(el, 'div', 'nrgrid');
+  for(const r of rows){
+    const c=mk(grid, 'div', 'nrcard'+(r.you ? ' you' : '')+(r.place===1 ? ' first' : '')+(r.gone ? ' gone' : ''));
+    c.dataset.slot=String(r.slot); c.dataset.fighter=r.name; c.dataset.place=r.place==null ? '' : String(r.place); if(r.gone) c.dataset.gone='1';
+    c.dataset.kos=String(r.kos); c.dataset.dmg=String(r.dmg); c.dataset.taken=String(r.taken);
+    mk(c, 'div', 'nrplace', ORDINAL(r.place)+(r.place===1 ? ' 🥇' : r.place===2 ? ' 🥈' : r.place===3 ? ' 🥉' : ''));
+    c.appendChild(lobbyThumb(r.name, r.color));
+    const nm=mk(c, 'div', 'nrname', r.name);
+    if(r.you) mk(nm, 'span', 'nryou', ' (you)');
+    mk(c, 'div', 'nrmeta', ['P'+r.slot, r.host ? 'HOST' : '', teams ? 'T'+(r.team+1) : '', r.gone ? 'LEFT' : ''].filter(Boolean).join(' · '));
+    const st=mk(c, 'div', 'nrstats');
+    const ko=mk(st, 'div', 'nrstat'); mk(ko, 'b', 'nrkos', String(r.kos)); mk(ko, 'span', null, 'KOs');
+    const dm=mk(st, 'div', 'nrstat'); mk(dm, 'b', 'nrdmg', r.dmg+'%'); mk(dm, 'span', null, 'Damage');
+    mk(c, 'div', 'nrsub', 'took '+r.taken+'%');
+  }
+  el.style.display='block';
 }
 
 // ---------- particles ----------
@@ -38908,8 +38989,12 @@ function serializeState(withGeo){
   if(evil) s.evil = [Math.round(evil.x), Math.round(evil.y)];
   if(tendrils.length) s.tend = tendrils.map(t=>[Math.round(t.x), Math.round(t.h)]);
   if(BOSSRUSH.card) s.rushWin = 1;   // Four is down and the host is reading the victory card (showRushVictory)
-  // The match is over: the placements, KOs and falls the client's scorecard shows.
-  if(!running) s.fighters.forEach((o,i)=>{ const f=fighters[i]; if(!f) return; o.place=f.placement; o.kos=f.killCount||0; o.falls=f.deaths||0; });
+  // The match is over: the host's placements, KOs, falls and damage, for the results every client draws (the scorecard, and the
+  // players' cards: netResultRows). The universal counters -- _kos and _falls, tallied for every fighter -- and not killCount and
+  // deaths, which only the comeback fighters keep. A client tallies nothing itself; these are the numbers.
+  if(!running) s.fighters.forEach((o,i)=>{ const f=fighters[i]; if(!f) return; o.place=f.placement; o.kos=f._kos||0; o.falls=f._falls||0; o.dmg=Math.round(f._dmgDealt||0); o.taken=Math.round(f._dmgTaken||0);
+    if(window.NET && Array.isArray(window.NET._seats) && window.NET._seats[i]===null) o.gone=1;   // a player who left mid-match: the computer played the rest of that seat (seatsLeft)
+  });
   // Boss Rush's backdrop: a client set it from ITS OWN boss 1 and kept that sky for the whole run
   if(BOSS_ARENA) s.arena = BOSS_ARENA;
   // big-FFA safe islands and claim pads: a client drew the ones its own setupWorld built for ITS window size, away
@@ -38971,7 +39056,8 @@ function applySnapshot(s){
     const f = {
       ...fd, stocks:(fd.stocks===-1 ? Infinity : fd.stocks), kit:fd.kit||{special:"basic"}, homeBase:null,
       reform:fd.reform||0, defineStacks:fd.defineStacks||0, curse:fd.curse||0, curseStacks:fd.curseStacks||0, weakened:fd.weakened||0, reflecting:fd.reflecting||0, dropping:0,
-      placement:fd.place, killCount:fd.kos||0, deaths:fd.falls||0,   // the final snapshot's, for the client's scorecard
+      placement:fd.place, killCount:0, deaths:0,   // (the comeback fighters' counters: a client keeps none)
+      _kos:fd.kos||0, _falls:fd.falls||0, _dmgDealt:fd.dmg||0, _dmgTaken:fd.taken||0, _gone:fd.gone ? 1 : 0,   // the final snapshot's: the host's tallies, for the client's results
       _heatFx:fd.heatFx, _hookFx:fd.hookFx,
       _atkAnim: fd.swing || 0, _atkKind: fd.swingKind || null, _atkLen: fd.swingLen, _hurtAnim: fd.hurtT,
       _windup: (fd.charge && typeof fd.charge === 'object') ? fd.charge : null,
@@ -39034,6 +39120,7 @@ function netClientMatchOver(){
     document.getElementById('resultTitle').textContent = alive.length ? "Victory!" : "Defeated";
     document.getElementById('resultSub').textContent = (alive.length ? "Boss Rush beaten" : "The boss won") + " · bosses cleared: " + BOSSRUSH.cleared;
     const box=document.getElementById('scorecard'); if(box) box.innerHTML="";
+    clearNetResults();   // (Boss Rush: no places, and no damage credited to a player, so no cards)
     setTimeout(()=>{ go('result'); note(); }, 800);
     return;
   }
