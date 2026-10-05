@@ -1136,6 +1136,7 @@ describe('Power Ungrounded holds against every kind of hit', () => {
       b._groundT = 120; step();
       out.grounded = !!b._grounded;
       out.shotGrounded = shot();
+      hazardT += 30;   // the shot's grace on him (14 frames) runs out before the hit: a boss keeps one for each attacker ("give bosses by-character iframes", the owner, 2026-10-04)
       out.hitGrounded = (function(){ var h = b.hp; damageSummon(f, b, b.x, b.y, 9); return h - b.hp; })();
       projectiles = []; summons = []; return out;
     })()`);
@@ -1149,8 +1150,12 @@ describe('Power Ungrounded holds against every kind of hit', () => {
 
   it('every fighter-to-boss path asks the same guard: the hit, the shot loop and the dash sweep', () => {
     const html = readFileSync('artifacts/V1/index.html', 'utf8');
-    expect(html.match(/else if\(!twoUngroundedBlocks\(s\)\) s\.hp -= (pd|dd);/g), 'the shot loop and the dash sweep').toHaveLength(2);
+    // The shot loop and the dash sweep hurt a boss through bossTakeHit (one place, which also keeps the boss's grace for each attacker:
+    // "give bosses by-character iframes", the owner, 2026-10-04), and that asks Two's guard; the hit asks it in damageSummon.
+    expect(html.match(/bossTakeHit\(s, (pd|dd), (o|f)\);/g), 'the shot loop and the dash sweep').toHaveLength(2);
+    expect(html).toMatch(/function bossTakeHit[^]*?else if\(!twoUngroundedBlocks\(s\)\)\{ s\.hp -= dmg;/);
     expect(html).toContain('if(twoUngroundedBlocks(s)) return;');
     expect(html.match(/else s\.hp -= (pd|dd);/g), 'no path left that skips it').toBe(null);
+    expect(html.match(/s\.hp -= (pd|dd)\b/g), 'and none writes the HP by itself').toBe(null);
   });
 });

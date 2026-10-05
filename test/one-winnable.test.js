@@ -90,7 +90,9 @@ describe('One can be beaten', () => {
       one._hop = null; one._hopPending = false; one.r = one._baseR;   // (the fight opens with her Vortex hop; this test puts her where it wants her)
       one._atkTimer = 1e9; L.controller = 'still';
       for (var w=0; w<10; w++) step();
-      var took = function(fn){ var h = one.hp; fn(); return h - one.hp; };
+      // (each path is tried on its own: a hit opens this fighter's grace on her, one for each attacker -- "give bosses by-character iframes",
+      // the owner, 2026-10-04 -- so the clock moves 30 frames on before each, past any grace)
+      var took = function(fn){ hazardT += 30; var h = one.hp; fn(); return h - one.hp; };
       one.x = L.x + 200; one.y = L.y;
       out.melee = took(function(){ damageSummons(L, one.x, one.y, 10, 10); });
       out.shot = took(function(){ projectiles = [{ owner:L.idx, ownerObj:L, x:one.x, y:one.y, vx:0, vy:0, dmg:5, kb:5, r:10, life:10 }]; step(); });

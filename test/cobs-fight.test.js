@@ -614,10 +614,12 @@ describe('beatable in principle -- whatever a bot manages', () => {
   it('every damage path reaches him (melee, a shot, a dash, the Chain Bolt), there is no shield, and his tiers run to 0', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); var out = {};
+      // (each path is tried on its own: a hit opens this fighter's grace on him, one for each attacker -- "give bosses by-character iframes", the
+      // owner, 2026-10-04 -- so the clock moves 30 frames on before each, past any grace)
       var hp = s.hp; damageSummons(you, s.x, s.y, s.r, 20); out.melee = hp - s.hp;
-      hp = s.hp; addProj({ owner:you.idx, ownerObj:you, x:s.x, y:s.y, vx:0.1, vy:0, r:10, dmg:15, kb:1, life:5, color:'#fff' }); step(); out.shot = hp - s.hp;
-      hp = s.hp; you._dashing = 3; you._dashDmg = 12; you.x = s.x - 10; you.y = s.y; you.vx = 8; step(); out.dash = hp - s.hp;
-      hp = s.hp; chainBoltBoss(s, 12, you); out.bolt = hp - s.hp;
+      hazardT += 30; hp = s.hp; addProj({ owner:you.idx, ownerObj:you, x:s.x, y:s.y, vx:0.1, vy:0, r:10, dmg:15, kb:1, life:5, color:'#fff' }); step(); out.shot = hp - s.hp;
+      hazardT += 30; hp = s.hp; you._dashing = 3; you._dashDmg = 12; you.x = s.x - 10; you.y = s.y; you.vx = 8; step(); out.dash = hp - s.hp;
+      hazardT += 30; hp = s.hp; chainBoltBoss(s, 12, you); out.bolt = hp - s.hp;
       s.hp = 2001; step(); out.t1 = cobsTier(s); s.hp = 1; cobsTakeDamage(s, 5); out.zero = s.hp; window.__lastBanner = null; step(); out.dying = s._dying; out.total = COBS_END.total;
       for (var i=0;i<COBS_END.total + 6 && running;i++) step();
       out.won = COBSFIGHT.won; out.told = window.__cobsEnd; out.life = s.life; out.over = COBSFIGHT.over; out.banner = window.__lastBanner;

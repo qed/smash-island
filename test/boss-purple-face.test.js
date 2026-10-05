@@ -313,7 +313,10 @@ describe('FREESTYLE RAP!: a beat nothing can interrupt, from places that change'
       out.p3 = ${WATCH(110, 'f.x = 200; f.vx = 0; f.y = groundY() - 24; f.vy = 0; f.invuln = 1e9;')}.notes.length; out.p3kind = b._telKind;
       return out;
     })()`);
-    expect(r.hpLost, 'the hits landed').toBeGreaterThan(30);
+    // A swing of 5 every six frames: his grace for this fighter after a 5 is twelve, so every other one lands ("give bosses by-character
+    // iframes", the owner, 2026-10-04; every swing landed before).
+    expect(r.hpLost, 'the hits landed, every other one').toBe(Math.ceil(r.hits / 2) * 5);
+    expect(r.hpLost, 'and that is more than a few').toBeGreaterThanOrEqual(30);
     expect(r.kind, 'and he is still rapping').toBe('pfaceRap');
     expect(r.w.notes.length, 'the beat dropped: all four pulses, eight notes').toBe(8);
     expect(Math.abs(r.flung - 550), 'nobody flings him off the screen mid-rap (his canon weakness is not taken): a hit shoves him a couple of px, no more').toBeLessThan(40);
