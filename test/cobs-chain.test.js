@@ -742,3 +742,41 @@ describe('RUNNING! is reset for everyone: a win on the old lane does not count (
     expect(W.eval('({ beaten: cobsBeaten(), stage: cobsQ().stage })')).toEqual({ beaten: true, stage: W.eval('COBS_STAGE.FREE') });
   });
 });
+
+describe('the skip: the first fifteen primes open his door at once (the owner, 2026-10-05)', () => {
+  // "give the vault a code that will skip the steps for the bosses. make it completely random.(its just the first 15 prime numbers)"
+  // -> asked what it skips: "Cobs only".
+  const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47];
+  it('is the first fifteen primes run together, and appears nowhere else in the game', () => {
+    expect(W.eval('COBS_SKIP')).toBe(PRIMES.join(''));
+    expect(HTML.split(PRIMES.join('')).length - 1, 'written once, in its own line: nothing hints at it').toBe(1);
+  });
+
+  it('typed on a fresh save, with nothing else done: his door opens, his card waits, and nothing counts as beaten', async () => {
+    await fresh(W);
+    const r = sub(W, PRIMES.join(''));
+    expect(r.kind).toBe('hint');
+    expect(r.reply, 'never his name').not.toMatch(/cobs|steve|meeple/i);
+    const q = W.eval(`({ stage: cobsQ().stage, race: cobsQ().race, v: cobsQ().raceV, due: cobsCardDue(), beaten: cobsBeaten(), one: oneQ().stage,
+      found: vaultState().found.length, prize: ROSTER.filter(function(x){ return x.prize; }).some(function(x){ return isUnlocked(x); }) })`);
+    expect(q.stage, 'his door').toBe(W.eval('COBS_STAGE.DOOR'));
+    expect(q.race, 'the race stands done, on this lane').toBe(true);
+    expect(q.v).toBe(W.eval('RACE_LANE_V'));
+    expect(q.due, 'his card waits on the title').toBe(true);
+    expect(q.beaten, 'nothing counts as beaten').toBe(false);
+    expect(q.prize, 'his prize still waits on beating him').toBe(false);
+    expect(q.one, "One's chain is untouched").toBe(0);
+    expect(q.found, 'it is not kept among the found codes').toBe(0);
+    await sleep(W, 0);
+    expect(stored(W).cobs.stage, 'saved').toBe(W.eval('COBS_STAGE.DOOR'));
+  });
+
+  it('spaces and commas between the primes are fine; typed again it changes nothing; once he is beaten it takes nothing away', async () => {
+    await fresh(W);
+    expect(sub(W, PRIMES.join(' ')).kind, 'with spaces').toBe('hint');
+    expect(sub(W, PRIMES.join(', ')).kind, 'again, with commas: already open').toBe('again');
+    W.eval(`PROFILE.cobs.stage = COBS_STAGE.FREE; PROFILE.cobs.beaten = true;`);
+    sub(W, PRIMES.join(''));
+    expect(W.eval('({ stage: cobsQ().stage, beaten: cobsBeaten() })')).toEqual({ stage: W.eval('COBS_STAGE.FREE'), beaten: true });
+  });
+});
