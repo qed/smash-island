@@ -224,7 +224,8 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     // too, which was the design's reading and not the owner's words, and with it nobody could beat her: the bans lift only
     // when she is beaten and there is "No way out" (the review's permanent-lock finding). The scripted player in
     // test/one-winnable.test.js won 0 of its 8 story fights at 0.7x and wins some at Four's and Two's own pace.
-    expect(r.tel, "Four's 50 and Two's 36 (the fold and the knives, the two she swapped in, have their own)").toEqual([50, 50, 58, 36, 44, 36, 36, 36]);
+    // (Zap to Dust's tell is 75, half as long again as Four's 50: "increase delay for both out of orbit and zap to dust." (the owner, 2026-10-02))
+    expect(r.tel, "Four's 50 and Two's 36 (the fold and the knives, the two she swapped in, have their own; the zap's is half as long again)").toEqual([75, 50, 58, 36, 44, 36, 36, 36]);
     expect(r.gaps, "bossAtkGap's own 100/72/52").toEqual([100, 72, 52, 52]);
   });
 

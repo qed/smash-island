@@ -1285,6 +1285,82 @@ describe('"shock ring spacing should be bigger. same thing for screechy." / "no,
   });
 });
 
+// The owner, 2026-10-02, in the same breath: "increase delay for both out of orbit and zap to dust." The coordinator's reading, which these tests hold: a longer warning before each pillar
+// of ZAP TO DUST! strikes and more time between its waves; a longer tell before OUT OF ORBIT!'s planets launch and more time between its kicks. Half as long again (1.5x) in each.
+describe('"increase delay for both out of orbit and zap to dust."', () => {
+  const MARK = `var mark = function(kind){ var fresh1 = oneFx.filter(function(e){ return e.kind === kind && !e._m; }); fresh1.forEach(function(e){ e._m = 1; }); return fresh1; };`;
+
+  it('ZAP TO DUST!: the first wave comes 75 frames after the wind-up begins (it was 50), each light before a later wave shows half as long again, and the waves come half as far apart again', () => {
+    const r = STAGE(`
+      ${MARK}
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; one.x = you.x + 900; one.y = groundY() - 420;
+        var T = oneTier(one, 'zap');
+        one._telKind = 'zap'; one._tel = oneTelLen(one, 'zap'); one._telX = you.x; one._telY = hurtCY(you); one._zapCols = null; one._atkLive = null; one._atkTimer = 1e9;
+        var tel0 = one._tel, warns = [], lands = [];
+        for (var i=0; i<tel0 + T.waves*T.gap + 60; i++){
+          one._atkTimer = 1e9; you.invuln = 1e9; one._hop = null;
+          step();
+          var w = mark('zapwarn'); if (w.length) warns.push({ i: i, life: w[0].life, max: w[0].max });
+          var c = mark('column'); if (c.length) lands.push(i);
+        }
+        out[t] = { T: T, tel0: tel0, warns: warns, lands: lands };
+      });
+      return out;`);
+    const was = { tel: 50, warn: [22, 20, 18], gap: [36, 32, 28], waves: [2, 3, 4] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, T = r[t].T;
+      expect(r[t].tel0 / was.tel, `tier ${t}: the tell before the first pillars is at least half as long again (it was ${was.tel} frames, it is ${r[t].tel0})`).toBeGreaterThanOrEqual(1.5);
+      expect(r[t].lands[0] + 1, `tier ${t}: the first wave comes down as that tell ends`).toBe(r[t].tel0);
+      expect(r[t].lands.length, `tier ${t}: and there are as many waves as there were`).toBe(was.waves[k]);
+      expect(T.warn / was.warn[k], `tier ${t}: the light before a later wave shows at least half as long again (it was ${was.warn[k]} frames, it is ${T.warn})`).toBeGreaterThanOrEqual(1.5);
+      expect(T.gap / was.gap[k], `tier ${t}: the waves are at least half as far apart again (it was ${was.gap[k]} frames, it is ${T.gap})`).toBeGreaterThanOrEqual(1.5);
+      expect(T.warn, `tier ${t}: a tell you can read: lit for at least half a second (30 frames) at tiers 1 and 2, nearly that at tier 3`).toBeGreaterThanOrEqual(27);
+      r[t].lands.slice(1).forEach((l, j) => expect(l - r[t].lands[j], `tier ${t}: wave ${j + 2} comes ${T.gap} frames after wave ${j + 1}`).toBe(T.gap));
+      expect(r[t].warns.length, `tier ${t}: a light before each later wave`).toBe(was.waves[k] - 1);
+      r[t].warns.forEach((w, j) => {
+        expect(w.life, 'it is lit for the whole warning').toBe(T.warn);
+        expect(r[t].lands[j + 1] - w.i, `tier ${t}: and the wave lands as the light ends`).toBe(T.warn);
+      });
+    }
+  });
+
+  it('OUT OF ORBIT!: the kick comes 72 frames after the wind-up begins (it was 48), and the next lanes are lit 66 frames after a kick for 45 before the next one (it was 44 and 30)', () => {
+    const r = STAGE(`
+      ${MARK}
+      var out = {};
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); you.invuln = 1e9; one.x = you.x - 300; one.y = groundY() - 330;
+        var T = oneTier(one, 'orbitkick');
+        one._telKind = 'orbitkick'; one._tel = oneTelLen(one, 'orbitkick'); one._telDir = 1; one._kickY = hurtCY(you); one._kickLanes = oneKickLanes(one, one._kickY); one._atkLive = null; one._atkTimer = 1e9;
+        var tel0 = one._tel, foots = [], warns = [];
+        for (var i=0; i<tel0 + T.kicks*(ONE_KICK_REST + ONE_KICK_WARN) + 60; i++){
+          one._atkTimer = 1e9; you.invuln = 1e9; one.x = you.x - 300; one.y = groundY() - 330; one._hop = null;
+          step();
+          var f = mark('foot'); if (f.length) foots.push(i); var w = mark('lanewarn'); if (w.length) warns.push({ i: i, life: w[0].life, max: w[0].max });
+        }
+        out[t] = { T: T, tel0: tel0, foots: foots, warns: warns, rest: ONE_KICK_REST, warn: ONE_KICK_WARN };
+      });
+      return out;`);
+    const was = { tel: 48, rest: 44, warn: 30, kicks: [2, 2, 3] };
+    for (const t of [1, 2, 3]) {
+      const k = t - 1, g = r[t];
+      expect(g.tel0 / was.tel, `tier ${t}: the tell before the planets launch is at least half as long again (it was ${was.tel} frames, it is ${g.tel0})`).toBeGreaterThanOrEqual(1.5);
+      expect(g.foots[0] + 1, `tier ${t}: the first kick comes as that tell ends`).toBe(g.tel0);
+      expect(g.foots.length, `tier ${t}: and there are as many kicks as there were`).toBe(was.kicks[k]);
+      expect(g.rest / was.rest, 'the wait after a kick before the next lanes are lit is at least half as long again').toBeGreaterThanOrEqual(1.5);
+      expect(g.warn / was.warn, 'and the lanes are lit at least half as long again before the next kick').toBeGreaterThanOrEqual(1.5);
+      expect(g.warns.length, `tier ${t}: the next lanes are lit before each later kick`).toBe(was.kicks[k] - 1);
+      g.warns.forEach((w, j) => {
+        expect(w.i - g.foots[j], `tier ${t}: lit ${g.rest} frames after kick ${j + 1}`).toBe(g.rest);
+        expect(w.life, 'for the whole warning').toBe(g.warn);
+        expect(g.foots[j + 1] - w.i, `tier ${t}: and the kick comes as the light ends`).toBe(g.warn);
+      });
+    }
+  });
+});
+
 describe('heavy hits go through impact() (shake, dust, debris, scars)', () => {
   it('each attack shakes the screen where it lands: zap 20, fold 30, hands 12, the kick 24, and the lighter ones; all of them dust and debris', () => {
     const r = STAGE(`
