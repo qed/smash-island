@@ -269,7 +269,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
     expect(r[1].gap, 'and the turn\'s gap runs from here: 100, paced').toBeGreaterThan(110);
   });
 
-  // "MAYBE YOU'D LIKE THIS!: more bashes" (the owner, 2026-10-05; the second of his five picks): he bashes the sun one more hop toward you in every phase.
+  // "MAYBE YOU'D LIKE THIS!: more bashes" (the owner, 2026-10-05; the second of his picks): he bashes the sun one more hop toward you in every phase.
   it('"more bashes": one more hop toward you in every phase -- 2, 3 and 4, where it was 1, 2 and 3 -- each hop a landing, and in phase 3 it is the mace that bashes them', () => {
     const r = W.eval(`(function(){ var out = { table: TWO.sun.bounces.slice() };
       [1, 2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
@@ -491,7 +491,7 @@ describe('BLOCK TOWERS!', () => {
     }
   });
 
-  // "BLOCK TOWERS!: second row sooner" (the owner, 2026-10-05; the third of his five picks): the second row of stacks starts in phase 2, where it started in phase 3.
+  // "BLOCK TOWERS!: second row sooner" (the owner, 2026-10-05; the third of his picks): the second row of stacks starts in phase 2, where it started in phase 3.
   it('"second row sooner": phase 2 has the second row as phase 3 does -- phase 1 keeps its three stacks -- and it plays out whole: five bars, five steps, and a fighter only the second row reaches is hit by it', () => {
     const r = W.eval(`(function(){ var out = { from: TWO.blocks.row2.from };
       [1, 2, 3].forEach(function(ph){ ${STAGE(300, 'ph', true)}
@@ -624,8 +624,8 @@ describe('CLAP!', () => {
     }
   });
 
-  // "CLAP!: double clap" (the owner, 2026-10-05; the fourth of his five picks): "from phase 3, after the hands meet, they clap again on the spot where you moved, with the same mark-and-lock tell
-  // before the second clap, under the same attack id." The rest of his rule stands: the same damage per hit, every hit marked where it lands, one attack id per turn.
+  // "CLAP!: double clap" (the owner, 2026-10-05; the fourth of his picks). As specified: from phase 3, after the hands meet, they clap again on the spot where you moved, with the same mark-and-lock tell
+  // before the second clap, under the same attack id. The standing rules hold: the same damage per hit, every hit marked where it lands, one attack id per turn.
   it('"double clap": from phase 3, after the hands meet they clap again on the spot where you moved -- the mark follows you and locks for the last 10 units, as the first did -- under the same attack id', () => {
     const r = W.eval(`(function(){ var out = {};
       [2, 3].forEach(function(ph){ ${STAGE(500, 'ph', true)}
