@@ -7553,13 +7553,19 @@ function updateBossAttack(s, tgt){
   // In phase 3 Two's power ungrounds: they take NO damage until a fighter stands close enough for
   // long enough to ground it. Grounding lapses if everyone backs off, so you must commit.
   if(s.attack==="two" && s._ungrounded){
-    const near = fighters.some(f=>!f.dead && Math.hypot(f.x-s.x, f.y-s.y) < s.r+130);
+    const G = TWO.ground, near = twoNear(s);
     s._groundT = near ? Math.min(120, (s._groundT||0)+1) : Math.max(0, (s._groundT||0)-2);
-    s._grounded = s._groundT >= 60;              // ~1s of pressure grounds them
+    // "Grounds twice as fast" and "Stays grounded" (the owner, 2026-10-05: "the power grounded thing just makes him take way too long"):
+    // G.need frames of pressure ground him (it was 60), and once grounded he stays grounded for G.hold frames after everyone backs off --
+    // refreshed for as long as someone stays close -- so you can step away from his attacks and keep the window
+    const held = (s._groundHold || 0) > 0;
+    if(near && (held || s._groundT >= G.need)){ s._groundHold = G.hold; s._groundT = Math.max(s._groundT, G.need); }
+    else if(held) s._groundHold--;
+    s._grounded = (s._groundHold || 0) > 0;
     if(s._grounded && !s._wasGrounded){ banner("GROUNDED — hit them NOW!",900,'boss'); s._wasGrounded=true; }
     if(!s._grounded && s._wasGrounded){ s._wasGrounded=false; }
-    // visual: crackling tether to the floor while grounded
-    if(s._grounded){ for(let i=0;i<2;i++) puff(s.x+(Math.random()*40-20), gy-6, '#f0d24b', 3); }
+    // visual: crackling tether to the floor while grounded; it flickers in the hold's last second, as it is about to let go
+    if(s._grounded && (near || s._groundHold > 60 || hazardT % 8 < 4)){ for(let i=0;i<2;i++) puff(s.x+(Math.random()*40-20), gy-6, '#f0d24b', 3); }
   }
   // the rest of him, every frame: the tells that follow you until they lock, a move in the air, the mace, the steps (twoTick)
   if(s.attack==="two") twoTick(s, tgt);
@@ -8359,7 +8365,7 @@ const BOSS_PICK = {
   // hands, the cars, the second ring); the sun and the mace are carriers with no attack id, and his steps lie there.
   two: {
     tags:{ two:['any', 'close'], twosun:['ground', 'platform'], twopower:'close', twoblocks:['ground', 'bunch'], tworails:['ground', 'platform'], twoclap:'any' },
-    moves:(s, ph) => ['two', 'twosun', 'twopower', 'twoblocks'].concat(ph >= 2 ? ['tworails', 'twoclap'] : []),
+    moves:(s, ph) => ['two', 'twosun', 'twopower', 'twoblocks'].concat(ph >= 2 ? ['tworails', 'twoclap'] : []).filter(m => m !== 'twopower' || !twoGrounding(s)),   // "No orbs while grounding" (the owner, 2026-10-05)
     busy:(s) => !!s._tw
   },
   // @boss:two:end pick
@@ -16706,12 +16712,13 @@ function s4DrawEnd(pr){
 //   cr  [[x, launchFrame, colour, id, landed]] the derailed coaster's cars (the hazard)        crNext, crN  when the next one leaves, and how many have
 // One table, so the tuning and the tests read the same numbers.
 const TWO = {
+  ground:{ need:30, hold:240, reach:130 },   // phase 3's grounding (the owner, 2026-10-05: "the power grounded thing just makes him take way too long"): "Grounds twice as fast" -- need frames close ground him (it was 60) -- and "Stays grounded" -- grounded, he stays so for hold frames after everyone backs off. reach: past his body
   tel:{ two:36, twosun:40, twopower:36, twoblocks:40, tworails:40, twoclap:36 },   // the wind-up of each move (bossTelLen)
   gaps:[0, 180, 150, 130],   // the gap after a move, by phase (BOSS_PACE on top). "nerf two": "Longer gaps between turns" (the owner, 2026-10-03; it was the usual 100 / 72, and 60 in phase 3)
   hover:{ lo:24, hi:170, bob:9 }, stand:[0, 250, 200, 280], follow:[0, 0.03, 0.05, 0.034], glide:[0, 0.06, 0.09, 0.06],   // how high it floats over the floor, how far it keeps from you, how fast it follows and glides (by phase: phase 2's Size Shift is quicker)
   pop:{ out:9, inn:9, far:240 },                                                    // a pop: frames to go out and come in; a move that begins further than this away is a pop
   read:{ ring:176, lock:12, back:220, speed:13, lead:0.35, home:0.06, copies:[0, 1, 2, 3], r:12, kb:10, life:80, stagger:6, spread:0.16, drain:[0, 260, 260, 340], dim:{ max:3, hold:150 } },
-  sun:{ r:44, g:0.34, leg:28, vmax:10.5, bounces:[0, 1, 2, 3], rise:30, kb:13, home:[0.8, 0.25, 0.5], mace:{ spd:0.025, k:1.6, kb:11, frac:0.8, enter:30, rise:30, sink:30 } },
+  sun:{ r:44, g:0.34, leg:28, vmax:10.5, bounces:[0, 1, 2, 3], rise:30, kb:13, home:[0.8, 0.25, 0.5], mace:{ spd:0.025, k:1.6, kb:11, frac:0.8, enter:30, rise:30, sink:15 } },
   blocks:{ n:4, size:50, half:26, grow:30, hold:24, gap:10, fall:24, lean:0.16, spacing:200, kb:13, step:{ life:180, h:50, fade:24 }, row2:{ off:100, at:6 } },
   clap:{ r:56, arrive:[0, 34, 34, 28], lock:10, kb:16, high:150, pad:32, hand:110 },
   power:{ pairs:4, within:10, spread:90, v:6.5, slow:5, fast:8, r:11, big:17, small:8, again:36, shift:45, lock:8, kb:9 },   // "nerf two" -- the orbs (the owner, 2026-10-03): four pairs, not six (wider gaps), and phase 3's second ring 36 frames behind, not 24
@@ -16860,7 +16867,7 @@ function twoPhaseBeat(s, ph){
   const H = twoHz(s), gy = groundY();
   if(ph >= 2 && !s._sizeShift){ s.r = Math.round(s.r*0.72); s._sizeShift = 1; H.p2 = hazardT; twoPop(s, WW*0.5, gy - s.r - 140); }
   if(ph >= 3 && !s._ungrounded){
-    s.stationary = false; s.r = Math.round(s.r*1.5); s._ungrounded = true; s._groundT = 0; H.p3 = hazardT; twoPop(s, WW*0.5, gy - s.r - 140);
+    s.stationary = false; s.r = Math.round(s.r*1.5); s._ungrounded = true; s._groundT = 0; s._groundHold = 0; H.p3 = hazardT; twoPop(s, WW*0.5, gy - s.r - 140);
     twoMaceBegin(s);
   }
 }
@@ -16920,6 +16927,12 @@ function twoSunHome(s){
   return twoSkySun(twoPh(s));
 }
 function twoSunRest(s){ return twoPh(s) >= 3 ? twoMaceSpot(s) : twoSkySun(twoPh(s)); }
+// Within his grounding reach (TWO.ground.reach past his body): whoever presses in grounds him.
+function twoNear(s){ return fighters.some(f => !f.dead && Math.hypot(f.x - s.x, f.y - s.y) < s.r + TWO.ground.reach); }
+// Someone is grounding him: phase 3's shield is up and a fighter is in reach, or the grounding still holds. "No orbs while grounding"
+// (the owner, 2026-10-05: "trying to get rid of it causes me to get hit by Tpot"): THE POWER OF TWO! is not picked then -- the picker
+// leaned on it exactly when someone stood close, its tag being `close` -- and a ring due while it is so fizzles in his hands.
+function twoGrounding(s){ return !!s._ungrounded && (!!s._grounded || twoNear(s)); }
 // The mace: the spiked ball circling Two at TWO.sun.mace.k of their radius, slow ("radius about 120, slow"), so the way to ground them (stay close) is the dangerous
 // place. Each revolution is one attack (the id changes), 0.8 of a boss hit.
 function twoMaceSpot(s){
@@ -16948,7 +16961,7 @@ function twoMaceStep(s, tgt, H){
     const e = s._maceIn/S.enter, k = e*e*(3 - 2*e);
     x = s._maceFrom.x + (x - s._maceFrom.x)*k; y = s._maceFrom.y + (y - s._maceFrom.y)*k;
   }
-  // GROUNDED, IT SINKS ("nerf two", the owner, 2026-10-03): the mace is his power, so while a fighter is grounding him (from halfway there: TWO.sun.mace.sink of the 60 frames) it hangs still, resting on the floor
+  // GROUNDED, IT SINKS ("nerf two", the owner, 2026-10-03): the mace is his power, so while a fighter is grounding him (from halfway there: TWO.sun.mace.sink of the TWO.ground.need frames) it hangs still, resting on the floor
   // under where it was, and hits nobody -- standing close to ground him is the punish, not a trap -- and for TWO.sun.mace.rise frames after, it lifts back to
   // its circle, still harmless.
   const sunk = s._grounded || (s._groundT || 0) >= S.sink;   // (from halfway to grounded: pressing in pulls it down)
@@ -17205,6 +17218,7 @@ function twoPowerRing(s, id, ph, base, rot){
   }
 }
 function twoPowerFire(s, tgt){
+  if(twoGrounding(s)){ for(let i=0;i<10;i++) puff(s.x, s.y, '#9be86a', 4); return; }   // "No orbs while grounding" (the owner, 2026-10-05): the ring fizzles in his hands
   const id = ++BOSS_ATK_ID, ph = s._telPh || twoPh(s), H = twoHz(s);
   const base = H.pw ? H.pw[0] : (tgt ? Math.atan2(tgt.y - s.y, tgt.x - s.x) : 0);
   twoPowerRing(s, id, ph, base, Math.PI/TWO.power.pairs);   // a GAP at you, not a pair ("nerf two": the orbs, 2026-10-03): stay put and the first ring passes you by
@@ -17215,7 +17229,8 @@ function twoPowerFire(s, tgt){
 function twoPowerStep(s, tgt, T, H){
   const P = TWO.power;
   T.t++;
-  if(T.t === P.again){ twoPowerRing(s, T.id, T.ph, T.base, Math.PI/P.pairs + P.shift*Math.PI/180); shake(3); for(let i=0;i<10;i++) puff(s.x, s.y, '#9be86a', 6); }   // (half a spacing on from the first: a pair at you, so the second ring makes you move)
+  if(T.t === P.again && twoGrounding(s)){ for(let i=0;i<8;i++) puff(s.x, s.y, '#9be86a', 4); }   // ("No orbs while grounding": the second ring fizzles too)
+  else if(T.t === P.again){ twoPowerRing(s, T.id, T.ph, T.base, Math.PI/P.pairs + P.shift*Math.PI/180); shake(3); for(let i=0;i<10;i++) puff(s.x, s.y, '#9be86a', 6); }   // (half a spacing on from the first: a pair at you, so the second ring makes you move)
   if(T.t >= P.again + 4) twoDone(s);
 }
 // The prize (File:TPOT(prize).svg: "Outside: Lime Green / Inside: Yellowish Green"): its art once loaded, else a lime disc with a yellowish-green heart.
@@ -31142,7 +31157,7 @@ function oneTitleCard(el){
 //                  (cobsBossFell), so a kill made before his code was typed counts ("in any order")
 //   cobs.stage     0 locked, 1 live (C0B5 in; a wrong code answers "Tick, tock."), 2 the door (he waits on the title), 3 beaten
 //   cobs.cups      the World Cups won so far: a unique subset of Knife, Balloon, Taco (II), whichever order they came in
-//   cobs.race      RUNNING! won as Knife
+//   cobs.race      RUNNING! won as Knife -- on the lane of version cobs.raceV (RACE_LANE_V): a win on an older lane does not count
 //   cobs.beaten    the prize flag (cobsBeaten)
 // Everything merges upward (mergeCobs, mergeBossKills), so a second tab can never undo a step; and like One's chain, the
 // Vault's own words never name him.
@@ -31199,6 +31214,21 @@ const COBS_VAULT = {
   // The first code typed before every other one is heard ("Say 'not yet'", the owner, 2026-09-29): cryptic, never his name.
   notYet: "Static... not yet. Every other code in here comes first.",
 };
+// THE SKIP (the owner, 2026-10-05: "give the vault a code that will skip the steps for the bosses. make it completely random.(its just
+// the first 15 prime numbers)" -> "Cobs only"): the first fifteen primes run together, typed in the Vault, open his door at once -- his
+// card waits on the title and his fight is Knife's, as at the end of his chain -- without his codes, the pairs, the race or the cups.
+// Nothing counts as beaten: his prize still waits on beating him. One's chain is untouched. Nothing in the game hints at it, and it is
+// not kept among the Vault's found codes.
+const COBS_SKIP = "23571113171923293137414347";
+function cobsSkip(){
+  if(!PROFILE) return { kind:'wait', reply:'The Vault is still opening. Press Enter again in a moment.' };
+  const q = cobsQ();
+  if(q.stage >= COBS_STAGE.DOOR && q.race) return { kind:'again', cobs:true, reply:'Static... the door is already open.' };
+  if(q.stage < COBS_STAGE.DOOR) q.stage = COBS_STAGE.DOOR;
+  if(!q.race){ q.race = true; q.raceV = RACE_LANE_V; }   // (his door asks for this lane's race: RACE_LANE_V)
+  saveProfile();
+  return { kind:'hint', cobs:true, reply:'★ Static on the line: the door is open. Look to the title.' };
+}
 // Every way of reading the wire's digits as letters: 3/E, 0/O, 5/S in every combination (32 spellings of "PH3N0M53 VK0CH").
 function cobsWireLookalikes(code){
   let out = [String(code)];
@@ -31223,12 +31253,19 @@ for(const s of COBS_VAULT.steps){
   for(const sp of list){ const k = vaultNorm(sp); if(k && !COBS_CODES.has(k) && !VAULT_CODES.has(k)) COBS_CODES.set(k, s); }
 }
 
+// The lane RUNNING! is run on, by version: 2 since its rebuild at BFDI: Branches D5 ("running should be d5 bfdi:branches difficulty",
+// the owner, 2026-10-02). A win is kept with the version it was won on, and a win on an older lane reads as not won: "Reset
+// everyone's progress" (the owner, 2026-10-05, on "running should be reset") -- whoever beat the old lane beats this one, and that
+// step of his chain opens again. A player waiting at his door finds it closed until then (his card and his story fight ask for the
+// race too); one who has beaten him keeps the prize.
+const RACE_LANE_V = 2;
 function cobsQ(){
-  if(!PROFILE) return { stage:0, cups:[], race:false, beaten:false, wins:0, bestSecs:0 };
+  if(!PROFILE) return { stage:0, cups:[], race:false, raceV:0, beaten:false, wins:0, bestSecs:0 };
   const q = (PROFILE.cobs && typeof PROFILE.cobs==='object') ? PROFILE.cobs : (PROFILE.cobs = {});
   q.stage = Math.max(0, Math.min(COBS_STAGE.FREE, q.stage|0));
   q.cups = cobsCupSubset(q.cups);
-  q.race = !!q.race; q.beaten = !!q.beaten || q.stage >= COBS_STAGE.FREE; q.wins = q.wins|0; q.bestSecs = q.bestSecs|0;
+  q.race = !!q.race && (q.raceV|0) >= RACE_LANE_V; q.raceV = q.race ? (q.raceV|0) : 0;   // (an older lane's win is not this lane's)
+  q.beaten = !!q.beaten || q.stage >= COBS_STAGE.FREE; q.wins = q.wins|0; q.bestSecs = q.bestSecs|0;
   return q;
 }
 // The cups as a save may hold them: a unique subset of the three, in any order they were won. Each real cup is kept once, in
@@ -31242,7 +31279,9 @@ function mergeCobs(a, b){
   a = a || {}; b = b || {};
   const best = [a.bestSecs|0, b.bestSecs|0].filter(x=>x>0);
   const stage = Math.max(a.stage|0, b.stage|0);
-  return { stage, cups: cobsCupSubset(cobsCupSubset(a.cups).concat(cobsCupSubset(b.cups))), race:!!(a.race || b.race), beaten:!!(a.beaten || b.beaten) || stage >= COBS_STAGE.FREE,
+  const won = (q)=> !!q.race && (q.raceV|0) >= RACE_LANE_V;   // (a tab's win on an older lane is no win to merge up)
+  const race = won(a) || won(b);
+  return { stage, cups: cobsCupSubset(cobsCupSubset(a.cups).concat(cobsCupSubset(b.cups))), race, raceV: race ? Math.max(a.raceV|0, b.raceV|0) : 0, beaten:!!(a.beaten || b.beaten) || stage >= COBS_STAGE.FREE,
            wins:Math.max(a.wins|0, b.wins|0), bestSecs:best.length ? Math.min(...best) : 0 };
 }
 function mergeBossKills(a, b){
@@ -31313,7 +31352,7 @@ function cobsRaceEnded(won, result){
   return cobsRaceWon();
 }
 // The race lane may call this from its own entry too: a race won as Knife counts whenever it was run, like the pairs.
-function cobsRaceWon(){ if(!PROFILE) return false; const q = cobsQ(); if(q.race) return false; q.race = true; saveProfile(); return true; }
+function cobsRaceWon(){ if(!PROFILE) return false; const q = cobsQ(); if(q.race) return false; q.race = true; q.raceV = RACE_LANE_V; saveProfile(); return true; }
 
 // ---- STEP 4: the World Cup won as each of the three runner-ups, in any order ----
 // Done once all three have been won; a loss, a cup as anyone else or the same cup twice changes nothing already won.
@@ -31359,9 +31398,9 @@ function cobsVaultSubmit(key){
 // since her chain came first ("alongside One's"). This is the first place his name appears: "like One's 'ONE IS WAITING',
 // never naming him before the card". True when it drew it.
 // His card is due on the title: the door is open and One's card is not in its place (go() plays his bed while it is).
-function cobsCardDue(){ return !!PROFILE && cobsQ().stage === COBS_STAGE.DOOR && oneQ().stage !== ONE_STAGE.CHALLENGE; }
+function cobsCardDue(){ return !!PROFILE && cobsQ().stage === COBS_STAGE.DOOR && cobsQ().race && oneQ().stage !== ONE_STAGE.CHALLENGE; }   // (.race: an older lane's win closed his door again, RACE_LANE_V)
 function cobsTitleCard(el){
-  if(!el || cobsQ().stage !== COBS_STAGE.DOOR) return false;
+  if(!el || cobsQ().stage !== COBS_STAGE.DOOR || !cobsQ().race) return false;
   el.style.display = 'block'; el.innerHTML = '';
   const title = document.createElement('div'); title.className = 'daily-title'; title.textContent = '🌽 STEVE COBS IS WAITING';
   const line = document.createElement('div'); line.className = 'daily-line'; line.textContent = COBS_STORY_FIGHTER + '  vs  ' + COBS_BOSS.name + ' · ' + COBS_BOSS.hp + ' HP';
@@ -31376,6 +31415,7 @@ function cobsStoryFight(){
   const s = cobsQ().stage;
   if(s < COBS_STAGE.DOOR) return false;
   if(s >= COBS_STAGE.FREE) return cobsOpenSelect();
+  if(!cobsQ().race) return false;   // the door waits on this lane's RUNNING! (RACE_LANE_V)
   clearUnlockNote();
   return startCobsFight([COBS_STORY_FIGHTER], { story:true, onEnd:cobsFightEnded });
 }
@@ -40743,6 +40783,7 @@ function vaultSubmit(raw){
   const key = vaultNorm(raw);
   // Only a blank box is "empty". Something typed that holds no letter or digit ("!!!", an emoji) is a guess, and wrong.
   if(!key) return String(raw==null ? '' : raw).trim() ? { kind:'wrong', reply:cobsChainLive() ? COBS_VAULT.wrong : VAULT.wrong } : { kind:'empty', reply:'Type a code, then press Enter.' };
+  if(key === COBS_SKIP) return cobsSkip();   // the first fifteen primes: his door at once (cobsSkip)
   const v = VAULT_CODES.get(key);
   // Not one of the Vault's own: the second secret's turn (cobsVaultSubmit) -- his codes are steps of his chain, a wrong code
   // while it is live is "Tick, tock.", and null means nothing of his, wrong as ever.

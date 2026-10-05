@@ -321,7 +321,7 @@ describe('MAYBE YOU\'D LIKE THIS!', () => {
       // park the sunk mace on the fighter: still nothing
       var p0 = pct; f.x = M.x; f.invuln = 0; step(); out.parked = pct - p0; applyHit = AH;
       // walk off: it lifts back to its circle
-      for (var k=0;k<200;k++){ b._atkTimer = 1e9; f.x = b.x < WW/2 ? WW - 60 : 60; f.y = gy - 24; f.invuln = 99; step(); }
+      for (var k=0;k<TWO.ground.hold + 90;k++){ b._atkTimer = 1e9; f.x = b.x < WW/2 ? WW - 60 : 60; f.y = gy - 24; f.invuln = 99; step(); }   // ("Stays grounded", the owner, 2026-10-05: he holds TWO.ground.hold frames after you let go, then the mace rises)
       out.back = Math.hypot(M.x - b.x, M.y - b.y); out.R = b.r; out.k = TWO.sun.mace.k; out.groundedAfter = !!b._grounded;
       summons = []; projectiles = []; return out; })()`);
     expect(r.sunkAt40, 'halfway there it is already sinking').toBe(true);
@@ -833,7 +833,8 @@ describe('the A-twos-ment Park: sky, floor, backdrop and what the phases do to i
     expect(r.skip.r).toBe(Math.round(Math.round(r.R0*0.72)*1.5));
   });
 
-  it('phase 3: nothing can hurt him until a fighter stays within his radius + 130 for a second -- grounded; and it lapses once everyone backs off', () => {
+  it('phase 3: nothing can hurt him until a fighter stays within his radius + 130 for half a second -- grounded; it holds four seconds after everyone backs off, then lapses', () => {
+    // (It was a second, lapsing at once; "Grounds twice as fast" and "Stays grounded", the owner, 2026-10-05: "the power grounded thing just makes him take way too long".)
     const r = W.eval(`(function(){ ${STAGE(300, 3, true)}
       b._mace = null; projectiles = []; b._atkTimer = 1e9;
       var out = { grounded0: !!b._grounded };
@@ -841,7 +842,7 @@ describe('the A-twos-ment Park: sky, floor, backdrop and what the phases do to i
       f.x = b.x - (b.r + 100); f.y = b.y;
       for (var k=0;k<80;k++){ step(); ${HOLD} f.x = b.x - (b.r + 100); f.y = b.y; }
       out.grounded1 = !!b._grounded; var hp1 = b.hp; damageSummons({ team:0, idx:0 }, b.x, b.y, 10, 20, b); out.damage = hp1 - b.hp;
-      f.x = 60; f.y = groundY() - 24; for (var k=0;k<90;k++){ step(); ${HOLD} f.x = 60; f.y = groundY() - 24; } out.lapsed = !b._grounded;
+      f.x = 60; f.y = groundY() - 24; for (var k=0;k<TWO.ground.hold + 10;k++){ step(); ${HOLD} f.x = 60; f.y = groundY() - 24; } out.lapsed = !b._grounded;
       summons = []; projectiles = []; return out; })()`);
     expect(r.grounded0).toBe(false);
     expect(r.noDamage, 'ungrounded: immune').toBe(0);
@@ -1133,7 +1134,7 @@ describe('Power Ungrounded holds against every kind of hit', () => {
       b._groundT = 0; b._grounded = false;
       out.shotUngrounded = shot();
       out.hitUngrounded = (function(){ var h = b.hp; damageSummon(f, b, b.x, b.y, 9); return h - b.hp; })();
-      b._groundT = 120; step();
+      b._groundT = 120; b._groundHold = TWO.ground.hold; step();   // (grounded: the hold is his grounding since "Stays grounded", the owner, 2026-10-05)
       out.grounded = !!b._grounded;
       out.shotGrounded = shot();
       hazardT += 30;   // the shot's grace on him (14 frames) runs out before the hit: a boss keeps one for each attacker ("give bosses by-character iframes", the owner, 2026-10-04)
@@ -1157,5 +1158,87 @@ describe('Power Ungrounded holds against every kind of hit', () => {
     expect(html).toContain('if(twoUngroundedBlocks(s)) return;');
     expect(html.match(/else s\.hp -= (pd|dd);/g), 'no path left that skips it').toBe(null);
     expect(html.match(/s\.hp -= (pd|dd)\b/g), 'and none writes the HP by itself').toBe(null);
+  });
+});
+
+describe('Two, phase 3: grounding him is fair (the owner, 2026-10-05)', () => {
+  // "two feels unfair. I can get to him, but the power grounded thing just makes him take way too long, and trying to get rid of it causes me to get hit by Tpot"
+  // Picked: "Stays grounded", "Grounds twice as fast", "No orbs while grounding".
+  const NEAR = `var near = function(){ f.x = b.x; f.y = b.y; f.vx = 0; f.vy = 0; f.pct = 0; f.invuln = 99; f.hitstun = 0; };
+    var away = function(){ f.x = b.x < WW/2 ? WW - 60 : 60; f.y = groundY() - 24; f.vx = 0; f.vy = 0; f.invuln = 99; };
+    var unground = function(){ b._groundT = 0; b._groundHold = 0; b._grounded = false; };
+    var orbs = function(){ return projectiles.filter(function(p){ return p.shape === 'twoprize'; }).length; };`;
+
+  it('"Grounds twice as fast": half a second close grounds him, where it was a second', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3)} ${NEAR}
+      unground(); var at = -1;
+      for (var k=0;k<90 && at<0;k++){ b._atkTimer = 1e9; near(); step(); if (b._grounded) at = k + 1; }
+      summons = []; projectiles = []; return { at: at, need: TWO.ground.need }; })()`);
+    expect(r.need).toBe(30);
+    expect(r.at, 'grounded after half a second close').toBeGreaterThanOrEqual(30);
+    expect(r.at, 'not a whole second').toBeLessThanOrEqual(32);
+  });
+
+  it('"Stays grounded": grounded, he stays so four seconds after everyone backs off, and coming back keeps him grounded', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3)} ${NEAR}
+      unground(); for (var k=0;k<40;k++){ b._atkTimer = 1e9; near(); step(); }
+      var out = { grounded: !!b._grounded, hold: TWO.ground.hold };
+      for (var k=0;k<TWO.ground.hold - 3;k++){ b._atkTimer = 1e9; away(); step(); }
+      out.late = !!b._grounded;                                    // just short of four seconds away: still grounded
+      for (var k=0;k<6;k++){ b._atkTimer = 1e9; away(); step(); }
+      out.after = !!b._grounded;                                   // past them: he lets go
+      unground(); for (var k=0;k<40;k++){ b._atkTimer = 1e9; near(); step(); }
+      for (var k=0;k<200;k++){ b._atkTimer = 1e9; away(); step(); }
+      for (var k=0;k<5;k++){ b._atkTimer = 1e9; near(); step(); } // back in before the hold runs out
+      for (var k=0;k<TWO.ground.hold - 10;k++){ b._atkTimer = 1e9; away(); step(); }
+      out.refreshed = !!b._grounded;                               // the hold started again from the return
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.grounded).toBe(true);
+    expect(r.hold, 'four seconds').toBe(240);
+    expect(r.late, 'still grounded just short of four seconds after backing off').toBe(true);
+    expect(r.after, 'and lets go after them').toBe(false);
+    expect(r.refreshed, 'coming back close keeps him grounded').toBe(true);
+  });
+
+  it('"No orbs while grounding": THE POWER OF TWO! is out of his picks while someone grounds him, and a ring due then fizzles', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 3)} ${NEAR}
+      var out = {};
+      unground(); away(); step();
+      out.far = bossPickMoves(b, 3).indexOf('twopower') >= 0;          // nobody close: it is in his deck
+      near(); step();
+      out.near = bossPickMoves(b, 3).indexOf('twopower') >= 0;         // someone pressing in: out of it
+      // a ring wound up while nobody was close, with someone stepping in before it flies: it fizzles
+      unground(); away(); projectiles = projectiles.filter(function(p){ return p.twoMace; });
+      b._tw = null; b._pickForce = 'twopower'; b._atkLive = null; b._atkTimer = 1; step(); out.kind = b._telKind;
+      for (var w=0; w<80 && b._tel>0; w++){ near(); step(); }
+      for (var w=0; w<6; w++){ near(); step(); }
+      out.fizzled = orbs();
+      // the control: the same ring with nobody close flies
+      unground(); away(); for (var w=0; w<30; w++){ b._atkTimer = 1e9; away(); step(); }
+      projectiles = projectiles.filter(function(p){ return p.twoMace; });
+      b._tw = null; b._pickForce = 'twopower'; b._atkLive = null; b._atkTimer = 1; step(); out.kind2 = b._telKind;
+      for (var w=0; w<80 && b._tel>0; w++){ away(); step(); }
+      for (var w=0; w<4; w++){ away(); step(); }
+      out.flew = orbs();
+      // and its second ring (phase 3) fizzles when someone steps in between the two
+      for (var w=0; w<3; w++){ near(); step(); }
+      var n1 = orbs(); for (var w=0; w<TWO.power.again + 6; w++){ near(); step(); }
+      out.second = orbs() - n1;
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.far, 'in his deck while nobody is close').toBe(true);
+    expect(r.near, 'out of it while someone grounds him').toBe(false);
+    expect(r.kind).toBe('twopower');
+    expect(r.fizzled, 'a ring due while someone grounds him fizzles').toBe(0);
+    expect(r.kind2).toBe('twopower');
+    expect(r.flew, 'with nobody close, the same ring flies').toBeGreaterThan(0);
+    expect(r.second, 'the second ring fizzles too once someone steps in').toBeLessThanOrEqual(0);
+  });
+
+  it('phases 1 and 2 have no grounding: THE POWER OF TWO! stays in his picks with someone close', () => {
+    const r = W.eval(`(function(){ ${STAGE(300, 2)} ${NEAR}
+      near(); step(); var out = { near: bossPickMoves(b, 2).indexOf('twopower') >= 0, ungrounded: !!b._ungrounded };
+      summons = []; projectiles = []; return out; })()`);
+    expect(r.ungrounded).toBe(false);
+    expect(r.near).toBe(true);
   });
 });

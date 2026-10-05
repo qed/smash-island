@@ -298,7 +298,7 @@ describe('what a boss turns away opens no grace, and the record does not pile up
       var d = function(){ var h = b.hp; damageSummon(f, b, b.x, b.y, 9); return h - b.hp; };
       out.turned = d();
       out.records = b._grace ? Object.keys(b._grace).length : 0;
-      b._groundT = 120; step(); out.grounded = !!b._grounded;
+      b._groundT = 120; b._groundHold = TWO.ground.hold; step(); out.grounded = !!b._grounded;   // (grounded: the hold is his grounding since "Stays grounded", the owner, 2026-10-05)
       out.lands = d();
       return out;
     `);
