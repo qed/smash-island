@@ -421,13 +421,14 @@ describe('YOU MUST!', () => {
   });
 
   it('phase 3: one hook runs high and one low, and which side is high changes turn by turn, so one jump does not clear both', () => {
+    // (he hangs in the air at x 200, over the floor: over the pad -- x 342 to 758 -- he would count as standing on the ledge and the hooks would close at its height, "YOU MUST! at your height", below)
     const r = EV(`var out = [];
-      setup(500, 3);
+      setup(200, 3);
       for (var t=0;t<2;t++){
         wind(3, 0);
-        while (b._tel > 0) run(1, 500, gy - 24 - 300);
-        var arms = projectiles.filter(function(p){ return p.fsbArm; }).map(function(p){ return [p.x < 500 ? 'L' : 'R', Math.round(p.y - gy)]; }).sort();
-        out.push(arms); while (b._fs) run(1, 500, gy - 24 - 300);
+        while (b._tel > 0) run(1, 200, gy - 24 - 300);
+        var arms = projectiles.filter(function(p){ return p.fsbArm; }).map(function(p){ return [p.x < 200 ? 'L' : 'R', Math.round(p.y - gy)]; }).sort();
+        out.push(arms); while (b._fs) run(1, 200, gy - 24 - 300);
         projectiles = []; b._atkTimer = 1e9;
       }
       return out;`);
@@ -475,11 +476,12 @@ describe('YOU MUST!', () => {
 
   it('the second pinch hits one standing on its locked spot (one whole boss hit with the rest of the move), and misses one in the air and one beyond its hooks; the first pinch\'s victim is not hit twice', () => {
     const r = EV(`var out = {};
-      // where: the fighter holds this x, and up px over the floor, from the lock of the second pinch on; before it he stays at x 500, up high and out of the first pinch (or on the floor, in it, for 'both')
+      // where: the fighter holds this x, and up px over the floor, from the lock of the second pinch on; before it he stays at x 200, up high and out of the first pinch (or on the floor, in it, for 'both')
+      // (x 200 is over the floor with no ledge under it: over the pad -- x 342 to 758 -- he would count as standing on it and the pinch would close at its height, "YOU MUST! at your height", below)
       function once(where, up, both){
-        setup(500, 2); wind(3, 0);
+        setup(200, 2); wind(3, 0);
         var y = gy - 24 - up;
-        while (b._tel > 0) run(1, 500, both ? gy - 24 : gy - 24 - 300);
+        while (b._tel > 0) run(1, 200, both ? gy - 24 : gy - 24 - 300);
         var pct0 = f.pct, hitsSecond = 0;
         while (b._fs){
           var p = f.pct, two0 = b._fs.two;
@@ -487,7 +489,7 @@ describe('YOU MUST!', () => {
           if (f.pct > p + 0.5 && two0) hitsSecond++;
           var tw = b._fs && b._fs.two;
           f.vx = 0; f.vy = 0; f.invuln = 0;
-          if (tw && tw.t >= 12){ f.x = where(tw.x); f.y = y; } else { f.x = 500; f.y = both ? gy - 24 : gy - 24 - 300; }
+          if (tw && tw.t >= 12){ f.x = where(tw.x); f.y = y; } else { f.x = 200; f.y = both ? gy - 24 : gy - 24 - 300; }
         }
         return { taken: +(f.pct - pct0).toFixed(2), hitsSecond: hitsSecond, full: bossDmg() };
       }
@@ -506,11 +508,11 @@ describe('YOU MUST!', () => {
 
   it('phase 3: the second pinch\'s high arm is on the other side from the first\'s, so the jump that cleared one hook does not clear the same one again', () => {
     const r = EV(`var out = [];
-      setup(500, 3); wind(3, 0);
-      while (b._tel > 0) run(1, 500, gy - 24 - 300);
+      setup(200, 3); wind(3, 0);   // (he hangs at x 200, over the floor with no ledge under him: see the phase 3 test above)
+      while (b._tel > 0) run(1, 200, gy - 24 - 300);
       var firstArms = projectiles.filter(function(p){ return p.fsbArm; }).map(function(p){ return [p.vx > 0 ? 'L' : 'R', Math.round(p.y - gy)]; }).sort();   // (a hook coming from the left moves right)
       var secondArms = null, n = 0;
-      while (b._fs && n < 200){ run(1, 500, gy - 24 - 300); n++; if (b._fs && b._fs.two && b._fs.two.t === 13 && !secondArms) secondArms = projectiles.filter(function(p){ return p.fsbArm && p.life > 0; }).map(function(p){ return [p.vx > 0 ? 'L' : 'R', Math.round(p.y - gy)]; }).sort(); }
+      while (b._fs && n < 200){ run(1, 200, gy - 24 - 300); n++; if (b._fs && b._fs.two && b._fs.two.t === 13 && !secondArms) secondArms = projectiles.filter(function(p){ return p.fsbArm && p.life > 0; }).map(function(p){ return [p.vx > 0 ? 'L' : 'R', Math.round(p.y - gy)]; }).sort(); }
       return { first: firstArms, second: secondArms };`);
     expect(r.first.map((a) => a[1]).sort((p, q) => p - q), 'the first: one high, one low').toEqual([-100, -46]);
     expect(r.second.map((a) => a[1]).sort((p, q) => p - q), 'the second: one high, one low').toEqual([-100, -46]);
@@ -707,6 +709,149 @@ describe('THE TLC NEEDS TO BE FIXED! hops up onto a ledge (the owner: "TLC hops 
     expect(r.onPad.under, 'not the one under it on the floor').toBe(0);
     expect(r.onFloor.under, 'the landing on the floor hits the fighter on the floor (0.9 of a boss hit)').toBeCloseTo(r.full*0.9, 1);
     expect(r.onFloor.up, 'not the one up on the pad').toBe(0);
+  });
+});
+
+describe('YOU MUST! at your height (the owner: "YOU MUST! at your height")', () => {
+  it('a fighter standing on the platform: the mark is drawn on the pad, the hooks run 46 px over it (100 for the high arm in phase 3) from a span out either side with their start as warnX/warnY, reach the mark together 26 frames later, and he is slapped and pinched as one boss hit', () => {
+    const r = EV(`var out = {};
+      function onPad(ph){
+        setup(300, ph);
+        var pad = worldPlats[0], px = pad.x + pad.w*0.5, py = pad.y - f.r;
+        setup(px, ph); f.y = py; f.x = px; step(); f.pct = 0; f.invuln = 0; b._fs = null; b.x = 900; b.vx = 0;
+        wind(3, 0);
+        var fb = b._fsb, o = { kind: b._fsKind, my: fb.my, telSY: b._telSY, pad: pad.y, px: px };
+        while (b._tel > 0) run(1, px, py);
+        o.arms = projectiles.filter(function(p){ return p.fsbArm; }).map(function(p){ return { dy: Math.round(p.y - pad.y), x0: Math.round(p.x - p.vx), wx: Math.round(p.warnX), wdy: Math.round(p.warnY - pad.y), vx: +p.vx.toFixed(3), id: p.bossAtk }; });
+        o.T = b._fs.T; o.sy = b._fs.sy; o.myMove = fb.my;
+        var n = 0, hits = []; while (b._fs && n < 300){ var p0 = f.pct; run(1, px, py); n++; if (f.pct > p0 + 0.5) hits.push(+(f.pct - p0).toFixed(2)); }
+        o.n = n; o.hits = hits; o.full = bossDmg(); o.after = { my: fb.my, my2: fb.my2 };
+        return o;
+      }
+      out[1] = onPad(1); out[3] = onPad(3);
+      return out;`);
+    const o = r[1];
+    expect(o.kind).toBe('youmust');
+    expect(o.my, 'the mark is on the pad from the start of the wind-up').toBe(Math.round(o.pad));
+    expect(o.telSY).toBe(o.pad);
+    // 340 out either side of the mark (the pad's middle), 46 over the pad's top, in at 340/26 a frame: as over the floor, but at his height
+    expect(o.arms.map((a) => a.x0).sort((p, q) => p - q)).toEqual([Math.round(o.px) - 340, Math.round(o.px) + 340]);
+    for (const a of o.arms) { expect(a.dy, 'hooks 46 px over the pad').toBe(-46); expect(a.wdy, 'and their start is marked there for the glitch hunter').toBe(-46); expect(a.wx).toBe(a.x0); }
+    expect(o.arms.map((a) => a.vx).sort((p, q) => p - q)).toEqual([-13.077, 13.077]);
+    expect(o.arms[0].id).toBe(o.arms[1].id);
+    expect(o.T, 'the same 26 frames').toBe(26);
+    expect(o.n, 'the pinch is 26 frames after the hooks leave').toBe(26);
+    expect(o.myMove, 'the mark stays on the pad while the hooks close').toBe(Math.round(o.pad));
+    expect(o.hits.length, 'a fighter standing on the platform is hit').toBeGreaterThan(0);
+    expect(o.hits.reduce((a, h) => a + h, 0), 'the hook and the pinch are one boss hit').toBeLessThanOrEqual(o.full + 0.5);
+    expect(o.hits.reduce((a, h) => a + h, 0)).toBeGreaterThan(o.full - 0.5);
+    expect(o.after, 'and the marks are gone when it is over').toEqual({ my: null, my2: null });
+    // phase 3: one arm high and one low, over the pad as over the floor
+    expect(r[3].arms.map((a) => a.dy).sort((p, q) => p - q), 'phase 3: 100 and 46 over the pad').toEqual([-100, -46]);
+  });
+
+  it('the surface follows you as the mark does and locks with it: standing on the floor when it locks, the hooks close on the floor and the fighter who has since climbed onto the pad is not in them', () => {
+    const r = EV(`var out = {};
+      setup(200);
+      var pad = worldPlats[0], px = pad.x + pad.w*0.5, py = pad.y - f.r;
+      wind(3, 0);
+      var fb = b._fsb;
+      run(6, px, py); out.onPad = { my: fb.my, x: b._telX };            // on the pad: the mark is on it
+      while (b._tel >= FSB.lock) run(1, 200);                            // down on the floor at x 200 until the lock
+      out.locked = { my: fb.my, x: b._telX, sy: b._telSY };
+      while (b._tel > 0) run(1, px, py);                                 // and back up on the pad, after the lock
+      out.held = { my: fb.my, x: b._telX };
+      out.arms = projectiles.filter(function(p){ return p.fsbArm; }).map(function(p){ return Math.round(p.y - gy); });
+      var pct0 = f.pct, n = 0; while (b._fs && n < 300){ run(1, px, py); n++; }
+      out.taken = f.pct - pct0; out.pad = Math.round(pad.y); out.gy = Math.round(gy);
+      return out;`);
+    expect(r.onPad.my, 'on the pad the mark is on the pad').toBe(r.pad);
+    expect(r.locked, 'on the floor at the lock: the mark and its surface are the floor\'s').toEqual({ my: r.gy, x: 200, sy: expect.closeTo(r.gy, 0) });
+    expect(r.held, 'after the lock it holds, whatever he does').toEqual({ my: r.gy, x: 200 });
+    expect(r.arms, 'the hooks close on the floor, low').toEqual([-46, -46]);
+    expect(r.taken, 'the fighter on the pad is not in it').toBe(0);
+  });
+
+  it('a pinch takes whoever stands on the surface it closes on: on the pad, the fighter on it and not the one under it on the floor; on the floor, the one on the floor and not the one on the pad', () => {
+    const r = EV(`var out = {};
+      setup(300);
+      var pad = worldPlats[0], px = pad.x + pad.w*0.5;
+      setup(px); f.y = pad.y - f.r; f.x = px; step(); f.invuln = 0; b._fs = null;
+      var g = makeFighter(ROSTER.find(function(r){ return r.name === 'Pen'; }), px, gy - 24, 1); g.team = 0; g.controller = 'still'; g.stocks = 99; fighters.push(g);
+      function clear(){ f.pct = 0; g.pct = 0; f.invuln = 0; g.invuln = 0; f.hitstun = 0; g.hitstun = 0; }
+      b.x = 900; clear();
+      fsbPinch(b, { id:++BOSS_ATK_ID, P:1 }, px, 0, pad.y);
+      out.onPad = { up: f.pct, under: g.pct };
+      clear();
+      fsbPinch(b, { id:++BOSS_ATK_ID, P:1 }, px, 0, gy);
+      out.onFloor = { up: f.pct, under: g.pct };
+      out.full = bossDmg();
+      return out;`);
+    expect(r.onPad.up, 'the pinch on the pad takes the fighter on it').toBeCloseTo(r.full, 1);
+    expect(r.onPad.under, 'not the one on the floor right under it').toBe(0);
+    expect(r.onFloor.under, 'the pinch on the floor takes the fighter on the floor').toBeCloseTo(r.full, 1);
+    expect(r.onFloor.up, 'not the one up on the pad').toBe(0);
+  });
+
+  it('from phase 2 the second pinch is at your height too: its mark follows the surface you have gone to, a fighter who stays on the pad gets it on the pad and one who drops to the floor gets it on the floor', () => {
+    const r = EV(`var out = {};
+      function second(drop){
+        setup(300, 2);
+        var pad = worldPlats[0], px = pad.x + pad.w*0.5, py = pad.y - f.r;
+        setup(px, 2); f.y = py; f.x = px; step(); f.pct = 0; f.invuln = 0; b._fs = null; b.x = 900; b.vx = 0;
+        wind(3, 0);
+        while (b._tel > 0) run(1, px, py);
+        var fb = b._fsb;
+        while (b._fs && !b._fs.two) run(1, px, py);                       // the first pinch closes on the pad
+        var o = { first: fb.my }, n = 0, yy = drop ? gy - 24 : py;
+        while (b._fs && n < 100){ run(1, px, yy); n++; if (b._fs && b._fs.two && b._fs.two.t === 13){ o.my2 = fb.my2; o.hooks = projectiles.filter(function(p){ return p.fsbArm && p.life > 0; }).map(function(p){ return Math.round(p.y); }); } }
+        o.pad = pad.y; o.gy = gy; o.after = fb.my2;
+        return o;
+      }
+      out.stay = second(false); out.drop = second(true);
+      return out;`);
+    expect(r.stay.my2, 'he stayed on the pad: the second mark is on it').toBe(Math.round(r.stay.pad));
+    expect(r.stay.hooks, 'and its hooks are 46 over the pad').toEqual([Math.round(r.stay.pad - 46), Math.round(r.stay.pad - 46)]);
+    expect(r.drop.my2, 'he dropped to the floor: the second mark followed him there').toBe(Math.round(r.drop.gy));
+    expect(r.drop.hooks, 'and its hooks are 46 over the floor').toEqual([Math.round(r.drop.gy - 46), Math.round(r.drop.gy - 46)]);
+    expect(r.stay.after, 'the mark is gone when it has closed').toBe(null);
+  });
+
+  it('a pinch on the pad in phase 3 burns a patch of fire on the pad\'s top, a lingering one that does not stun-lock, as the floor\'s does', () => {
+    const r = EV(`var out = {};
+      setup(300, 3);
+      var pad = worldPlats[0], px = pad.x + pad.w*0.5;
+      f.x = 100; f.y = gy - 24 - 300;     // out of the way
+      projectiles = [];
+      b.x = 900;
+      fsbPinch(b, { id:++BOSS_ATK_ID, P:3 }, px, 0, pad.y);
+      out.patch = projectiles.filter(function(p){ return p.shape === 'spark'; }).map(function(p){ return { dy: Math.round(p.y - pad.y), wdy: Math.round(p.warnY - pad.y), lingers: !!p.lingers, noStunHit: !!p.noStunHit, volley: !!p.volley, wx: Math.round(p.warnX), x: Math.round(p.x) }; });
+      projectiles = [];
+      fsbPinch(b, { id:++BOSS_ATK_ID, P:3 }, px, 0, gy);
+      out.floorPatch = projectiles.filter(function(p){ return p.shape === 'spark'; }).map(function(p){ return { dy: Math.round(p.y - gy), lingers: !!p.lingers, noStunHit: !!p.noStunHit }; });
+      return out;`);
+    expect(r.patch, 'one patch, 12 px over the pad\'s top, on the mark, with its own spot as warnX/warnY').toEqual([{ dy: -12, wdy: -12, lingers: true, noStunHit: true, volley: true, wx: r.patch[0].x, x: r.patch[0].x }]);
+    expect(r.floorPatch, 'the floor\'s is as it was').toEqual([{ dy: -12, lingers: true, noStunHit: true }]);
+  });
+
+  it('his picker tags know it: THE TLC and YOU MUST! now say `platform` as well as the floor, and ROCKET BOARD! is `any` as it was; a fighter standing on a ledge is what `platform` fits', () => {
+    const r = W.eval(`(function(){
+      var s = { attack:'firewall' }, tg = function(k, ph){ return bossMoveTags(s, k, ph); };
+      stage = STAGES.find(function(s){ return s.id==='goiky'; }); worldPlats = platRectsSmall();
+      var pad = worldPlats[0];
+      var ONPAD = makeFighter(ROSTER.find(function(r){ return r.name === 'Firey'; }), pad.x + pad.w*0.5, pad.y - 24, 0); ONPAD.onground = true;
+      fighters = [ONPAD];
+      var sit = bossSituation({ x:1000, y:400, r:85 });
+      return { rocketboard: tg('rocketboard', 1), tlc: tg('tlc', 1), youmust: tg('youmust', 1), platform: sit.platform, ground: sit.ground,
+               wTlc: bossPickWeight(tg('tlc', 1), sit), wMust: bossPickWeight(tg('youmust', 1), sit), wBoard: bossPickWeight(tg('rocketboard', 1), sit) };
+    })()`);
+    expect(r.rocketboard).toEqual(['any']);
+    expect(r.tlc).toEqual(expect.arrayContaining(['close', 'ground', 'platform']));
+    expect(r.youmust).toEqual(expect.arrayContaining(['ground', 'platform']));
+    expect([r.platform, r.ground], 'a fighter on the pad is on a ledge, not the floor').toEqual([1, 0]);
+    expect(r.wTlc, 'THE TLC is favoured against one on a ledge now (1 + the 5 a perfect fit adds)').toBe(6);
+    expect(r.wMust, 'and so is YOU MUST!').toBe(6);
+    expect(r.wBoard, 'ROCKET BOARD! as ever: neither favoured nor starved').toBe(2);
   });
 });
 
@@ -1003,6 +1148,9 @@ describe('the volcano: sky, ground, dust and drawing', () => {
           { _tel:30, _fsKind:'rocketboard', _phase:2, _fsb:{ k:'board', bd:1, lk:0, d:1, r:gy-44, r2:gy-130 } },
           { _phase:2, _fsb:{ k:'board', p:1, bd:1, lk:1, d:-1, r:gy-44, r2:gy-130, cl:1 } }, { _phase:3, _fsb:{ k:'board', p:1, bd:1, lk:1, d:1, r:gy-130, r2:gy-44, cl:1 } },
           { _phase:2, _fsb:{ k:'hooks', p:1, x2:400, h2:40, lk2:0 } }, { _phase:2, _fsb:{ k:'hooks', p:1, x2:400, h2:20, lk2:1 } }, { _phase:3, _fsb:{ k:'hooks', p:1, x2:700, h2:3, lk2:1 } },
+          // 2026-10-04, "YOU MUST! at your height": the marks are drawn on the surface they close on -- the platform's top (my, my2), here a pad 144 px over the floor
+          { _tel:30, _fsKind:'youmust', _telX:500, _fsb:{ k:'hooks', lk:0, my:Math.round(gy - 144) } }, { _telX:500, _fsb:{ k:'hooks', p:1, h:12, lk:1, my:Math.round(gy - 144) } },
+          { _phase:2, _fsb:{ k:'hooks', p:1, x2:400, h2:40, lk2:0, my2:Math.round(gy - 144) } }, { _phase:3, _fsb:{ k:'hooks', p:1, x2:400, h2:20, lk2:1, my2:Math.round(gy - 144) } },
           { _tel:30, _fsKind:'tlc', _fsb:{ k:'tlc', x:400, n:1 } }, { _fsb:{ k:'tlc', p:1, x:400, n:4 } }, { _fsb:{ k:'tlc', p:1, x:400, n:5 } },
           // 2026-10-04, "TLC hops up": the landing mark is drawn on the surface it comes down on -- the platform's top (ty), here a pad 144 px over the floor
           { _fsb:{ k:'tlc', p:1, x:400, n:2, ty:Math.round(gy - 144) } }, { _fsb:{ k:'tlc', p:1, x:400, n:5, ty:Math.round(gy - 144) } },
@@ -1046,6 +1194,16 @@ describe('the volcano: sky, ground, dust and drawing', () => {
     expect(gates('{ _phase:2, _fsb:{ k:"hooks", p:1, x2:' + (WWv - 200) + ', h2:20, lk2:1 } }'), 'the second pinch\'s mark has its gates too').toEqual([WWv - 200 - 360]);   // (the far one would be off the screen: not drawn)
     expect(gates('{ _phase:2, _fsb:{ k:"hooks", p:1, x2:' + Math.round(WWv/2) + ', h2:20, lk2:1 } }'), 'both, either side, for a mark in the middle').toEqual([Math.round(WWv/2) - 360, Math.round(WWv/2) + 360]);
     expect(gates('{ _phase:2, _fsb:{ k:"hooks", p:1, x2:100, h2:20, lk2:1 } }'), 'the one that would be off the screen is not drawn').toEqual([460]);
+    // 2026-10-04, "YOU MUST! at your height": a pinch on a ledge draws its mark and its gates at the ledge's height (my / my2), the floor's at the floor line (the default)
+    const gateYs = (state) => {
+      log.length = 0;
+      w.eval(`(function(){ BOSS_ARENA = 'volcano'; var s = makeBossSummon(BOSS_ROSTER[2], 215); fsbDress(s); s._fs = null; s.x = 600; s.y = groundY() - s.r - 34; Object.assign(s, ${state}); summons = [s]; fsbDrawFx(s); })()`);
+      return log.filter((e) => e.op === 'ellipse' && e.args[2] === 28 && e.args[3] === 10).map((e) => Math.round(e.args[1]));
+    };
+    const gy = w.eval('Math.round(groundY())');
+    expect(gateYs('{ _tel:30, _telX:500, _fsb:{ k:"hooks", lk:0 } }'), 'on the floor: 3 px over the floor line').toEqual([gy - 3, gy - 3]);
+    expect(gateYs('{ _tel:30, _telX:500, _fsb:{ k:"hooks", lk:0, my:' + (gy - 144) + ' } }'), 'on a pad 144 px up: 3 px over its top').toEqual([gy - 147, gy - 147]);
+    expect(gateYs('{ _phase:2, _fsb:{ k:"hooks", p:1, x2:500, h2:20, lk2:1, my2:' + (gy - 144) + ' } }'), 'the second pinch\'s too').toEqual([gy - 147, gy - 147]);
   });
 });
 
@@ -1231,7 +1389,7 @@ describe('a netcode client sees him', () => {
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow();
       BOSS_ARENA = 'volcano'; var gy = groundY();
       var s = makeBossSummon(BOSS_ROSTER[2], 215); fsbDress(s); s._fs = null; s.x = 500; s.y = gy - s.r - 34; s._phase = 3; s._tel = 20; s._telKind = 'firewall'; s._fsKind = 'rocketboard'; s._telX = 640;
-      s._fsb = { k:'board', bd:1, lk:1, d:-1, r:gy - 44, r2:gy - 130, g:4, q:0, f:0, j:12, x:400, n:1, p:1, h:9, ty:Math.round(gy - 144) };
+      s._fsb = { k:'board', bd:1, lk:1, d:-1, r:gy - 44, r2:gy - 130, g:4, q:0, f:0, j:12, x:400, n:1, p:1, h:9, ty:Math.round(gy - 144), my:Math.round(gy - 144), my2:Math.round(gy - 144) };
       s._hz = { ph:3, t0:0, ml:20, mr:-30, wn:0, wid:5, b0:1, g0:3, b1:2, g1:4 };
       summons = [s];
       var pj = function(o){ return Object.assign({ owner:-2, ownerObj:{ team:-1, idx:-2 }, vx:5, vy:0, r:20, color:'#ff8a3a', life:50 }, o); };
@@ -1249,6 +1407,8 @@ describe('a netcode client sees him', () => {
     expect(r.fsb, 'the tell and its marks').toMatchObject({ k: 'board', bd: 1, lk: 1, d: -1, g: 4, j: 12, x: 400, n: 1, p: 1, h: 9 });
     expect(r.fsb.ty, 'the surface the next landing is marked on (a ledge\'s top, when he hops up after you) crosses too').toEqual(expect.any(Number));
     expect(r.client.ty).toBe(r.fsb.ty);
+    expect([r.fsb.my, r.fsb.my2], 'and the surfaces the pinch marks are on (YOU MUST! at your height)').toEqual([r.fsb.ty, r.fsb.ty]);
+    expect([r.client.my, r.client.my2]).toEqual([r.fsb.my, r.fsb.my2]);
     expect(r.hz, 'the hazard\'s state').toMatchObject({ ph: 3, t0: 0, ml: 20, mr: -30 });
     expect(r.telX, 'the spot the hooks close on').toBe(640);
     expect(r.client).toMatchObject({ k: 'board', lk: 1, r: expect.any(Number) });
