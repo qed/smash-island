@@ -32,6 +32,7 @@
 // ============================================================================
 
 import { loadMonolith } from '../test/helpers/load-monolith.js';
+import { SETUP_SRC } from '../test/helpers/match-setup.js';
 
 // ---------------------------------------------------------------------------
 //  JSDOM TEARDOWN GUARD
@@ -83,44 +84,8 @@ function seededShuffle(arr, seed) {
   return a;
 }
 
-// The setup function we inject into the monolith realm. Kept as a string so it runs
-// INSIDE jsdom's script realm (where SETTINGS/fighters/makeFighter/etc. are lexical).
-const SETUP_SRC = `
-window.__setupCustomMatch = function(names, stocks, aiLevel, itemRate){
-  // Kill every rival mode/flag so we land in a clean plain FFA.
-  TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null;
-  if(typeof BOSSRUSH!=='undefined') BOSSRUSH.active=false;
-  CUSTOM_LEVEL=null; TOURNEY_MATCH_ACTIVE=false; PENDING_TOURNEY=null; window.__netRoster=null;
-  SETTINGS.mode='ffa'; SETTINGS.count=names.length; SETTINGS.stocks=stocks;
-  // Items OFF by default — random pickups are noise in a balance signal about FIGHTERS. But that
-  // default is also why the sweep reports a clean 0.0000 for item-buff durations, which reads like
-  // "this stat does not affect balance" and means "this stat was never in the room". Passing a rate
-  // turns them on so those knobs can be measured at all.
-  SETTINGS.itemRate = (itemRate === undefined || itemRate === null) ? 0 : itemRate;
-  AI_LEVEL=aiLevel; LOCAL_PLAYERS=1;
-  stage = STAGES.find(s=>s.id==='goiky') || STAGES.find(s=>!s.big) || STAGES[0];  // flat, hazard:null
-  resize(); setupWorld();
-  const N=names.length;
-  fighters=[];
-  names.forEach(function(nm,i){
-    const r = ROSTER.find(x=>x.name===nm);
-    if(!r) throw new Error('unknown fighter: '+nm);
-    const sx = WW*(0.08+0.84*i/Math.max(1,N-1));         // same spread as buildFighters' small-FFA branch
-    const sy = groundY()-60;
-    const f = makeFighter(Object.assign({}, r, {you:false}), sx, sy, i);
-    f.stocks=stocks; f.team=i; f.homeBase=null;           // one fighter per team => true FFA
-    f.controller='ai'; f.you=false; f.you2=false;         // all AI: nobody waits on a keyboard
-    fighters.push(f);
-  });
-  // mirror beginMatchNow()'s per-match resets
-  running=true; paused=false; hazardT=0;
-  window.__elimSeq=0; lastKoFrame=0;
-  fighters.forEach(function(f){ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
-  particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=0; tendrils=[]; BOSS_ARENA=null;
-  if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }  // (goiky has none; kept for safety)
-  return fighters.length;
-};
-`;
+// The setup function we inject into the monolith realm lives in test/helpers/match-setup.js (SETUP_SRC), shared with the
+// bot trainer and the bot golden.
 
 // Rank fighters for a finished OR timed-out match:
 //   alive before dead; among alive -> stocks desc then pct asc (the timeout tie-break the brief asks for);
@@ -186,12 +151,13 @@ export async function runMatch(fighterNames, opts = {}) {
 }
 
 // Partition a field into heats of size 2..maxSize with NO singleton (a 1-fighter "heat"
-// can't play). If the remainder is 1, shrink the previous heat to feed it a pair.
+// can't play). If the remainder is 1, shrink the previous heat to feed it a pair. A 1v1 field (--heat 2, "when running balance, do a
+// 1v1", the owner, 2026-10-05) has no heat to spare a fighter, so its odd fighter is left alone and gets a bye (see runTournament).
 function partitionHeats(field, maxSize) {
   const heats = [];
   for (let i = 0; i < field.length; i += maxSize) heats.push(field.slice(i, i + maxSize));
   const last = heats[heats.length - 1];
-  if (heats.length > 1 && last.length === 1) {
+  if (heats.length > 1 && last.length === 1 && maxSize > 2) {
     const prev = heats[heats.length - 2];
     last.unshift(prev.pop()); // move one over so the tail heat is a pair
   }
@@ -215,6 +181,7 @@ export async function runTournament(allNames, opts = {}) {
     const heats = partitionHeats(field, heatSize);
     const winners = [];
     for (let h = 0; h < heats.length; h++) {
+      if (heats[h].length === 1) { winners.push(heats[h][0]); continue; }   // a bye: the odd fighter of a 1v1 round goes through
       const seed = deriveSeed(baseSeed, tid, round, h);
       const res = await runMatch(heats[h], { seed, stocks, aiLevel, maxFrames });
       res.tid = tid; res.round = round; res.heat = h;
@@ -388,6 +355,6 @@ async function main() {
 
 // Run as CLI only (importing for runMatch/runTournament won't trigger this).
 import { pathToFileURL } from 'node:url';
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
 }
