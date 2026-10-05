@@ -15,7 +15,7 @@ import { loadMonolith } from './helpers/load-monolith.js';
 //                 and (for the huddle) a phrase id from the fixed list whose sentence is the message's last line.
 // The client half (the phrase buttons; no text box) is pinned in test/team-ai.test.js.
 
-const PROD = 'https://smash-delta.vercel.app';
+const PROD = 'https://smashisland.vercel.app';
 const KEY = 'placeholder-not-a-real-credential';
 const SERVER_SRC = readFileSync('api/strategy.js', 'utf8');
 
@@ -78,8 +78,8 @@ describe('lock 1: only the game\'s own site is answered', () => {
 
   it.each([
     [PROD, true],
-    ['https://smash-delta.vercel.app/', true],
-    ['https://SMASH-DELTA.vercel.app', true],
+    ['https://smashisland.vercel.app/', true],
+    ['https://SMASHISLAND.vercel.app', true],
     ['https://smash-qfrm3g85b-helix3.vercel.app', true],                 // a per-deployment preview of THIS project
     ['https://smash-git-cleanup-helix3.vercel.app', true],                // a per-branch preview
     ['http://localhost:3000', true], ['http://localhost', true], ['https://localhost:5173', true],
@@ -91,11 +91,11 @@ describe('lock 1: only the game\'s own site is answered', () => {
 
   it.each([
     'https://evil.example',
-    'https://smash-delta.vercel.app.evil.example',                        // a look-alike suffix
-    'https://evilsmash-delta.vercel.app',                                 // a look-alike prefix
-    'https://smash-delta.vercel.app@evil.example',                        // the real host as userinfo
-    'https://evil.example/smash-delta.vercel.app',
-    'http://smash-delta.vercel.app',                                      // not https
+    'https://smashisland.vercel.app.evil.example',                        // a look-alike suffix
+    'https://evilsmashisland.vercel.app',                                 // a look-alike prefix
+    'https://smashisland.vercel.app@evil.example',                        // the real host as userinfo
+    'https://evil.example/smashisland.vercel.app',
+    'http://smashisland.vercel.app',                                      // not https
     'https://other-project-helix3.vercel.app',                            // another project on the same scope
     'https://smash-abc123-otherscope.vercel.app',                         // this project's name, someone else's scope
     'https://smash-abc123-helix3.vercel.app.evil.example',
@@ -151,7 +151,7 @@ describe('lock 1: only the game\'s own site is answered', () => {
     expect(comment).toMatch(/PREVIEWS OF THIS PROJECT ONLY/);
     expect(comment).toMatch(/localhost/);
     expect(comment, 'it says plainly that Origin is forgeable outside a browser').toMatch(/curl can send any/);
-    expect(S.PRODUCTION_HOSTS).toEqual(['smash-delta.vercel.app']);
+    expect(S.PRODUCTION_HOSTS).toEqual(['smashisland.vercel.app']);
     expect(S.LOCAL_HOSTS).toEqual(['localhost', '127.0.0.1', '[::1]']);
   });
 });

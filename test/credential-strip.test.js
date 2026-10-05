@@ -89,7 +89,7 @@ const SANCTIONED_HOSTS = ['api.anthropic.com'];
  *  of them); it is the game's own site, not a third party, and nothing in the page fetches it. schema.org is the vocabulary
  *  the structured data's "@context" names: an identifier in a JSON-LD block that no script reads, never a request. Listed here
  *  so the allowlist below stays an exact set: a second host still fails, and so does a typo'd one. */
-const NAMED_ONLY_HOSTS = ['schema.org', 'smash-delta.vercel.app'];
+const NAMED_ONLY_HOSTS = ['schema.org', 'smashisland.vercel.app'];
 
 describe('Workstream 0 — credential surface is fully stripped', () => {
   it('publishes only the files we intend to serve', () => {

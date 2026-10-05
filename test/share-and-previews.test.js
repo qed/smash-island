@@ -20,7 +20,7 @@ import { LINEUP, OG_WIDTH, OG_HEIGHT, MAX_KB, truecolour, palettePng } from '../
 // default 5 s per test is what a loaded CI box or a laptop mid-benchmark trips over, so this file allows itself a minute.
 vi.setConfig({ testTimeout: 60000 });
 
-const SITE = 'https://smash-delta.vercel.app/';
+const SITE = 'https://smashisland.vercel.app/';
 const PUBLISH = 'artifacts/V1';
 const HTML = readFileSync(join(PUBLISH, 'index.html'), 'utf8');
 const DOC = new JSDOM(HTML).window.document;   // parsed, never run: the head is what a crawler reads
@@ -363,8 +363,8 @@ describe('the Share buttons: what a tap does', () => {
 
   it('names the production address exactly once in the script, as the one constant it hands over', () => {
     const script = HTML.slice(HTML.indexOf('<script>'));
-    expect(script.match(/smash-delta\.vercel\.app/g), 'one constant, no scattered copies').toHaveLength(1);
-    expect(script).toMatch(/const SHARE_URL = 'https:\/\/smash-delta\.vercel\.app\/';/);
+    expect(script.match(/smashisland\.vercel\.app/g), 'one constant, no scattered copies').toHaveLength(1);
+    expect(script).toMatch(/const SHARE_URL = 'https:\/\/smashisland\.vercel\.app\/';/);
   });
 });
 
@@ -457,7 +457,7 @@ describe('brag cards: the lines', () => {
 
   it('says a Boss Rush clear the way the owner\'s example does', () => {
     const c = line({ kind: 'rush', you: 'Firey', bosses: 12, secs: 14 * 60 + 32, stocks: 2 });
-    expect(c.full).toBe('I cleared Boss Rush in Battle for Smash Island as Firey: 12 bosses in 14:32, 2 stocks left. Free to play: https://smash-delta.vercel.app/');
+    expect(c.full).toBe('I cleared Boss Rush in Battle for Smash Island as Firey: 12 bosses in 14:32, 2 stocks left. Free to play: https://smashisland.vercel.app/');
   });
 
   it('counts one stock as "1 stock", and drops the stock clause when it is unknown or none', () => {
@@ -475,12 +475,12 @@ describe('brag cards: the lines', () => {
 
   it('says a won Daily the way the owner\'s example does', () => {
     expect(line({ kind: 'daily', n: 56, won: true, you: 'Firey', foe: 'Pin' }).full)
-      .toBe('Battle for Smash Island Daily #56: won as Firey vs Pin. Can you? https://smash-delta.vercel.app/');
+      .toBe('Battle for Smash Island Daily #56: won as Firey vs Pin. Can you? https://smashisland.vercel.app/');
   });
 
   it('says a lost Daily honestly: it says lost, and it still invites you', () => {
     const l = line({ kind: 'daily', n: 56, won: false, you: 'Firey', foe: 'Pin' });
-    expect(l.full).toBe('Battle for Smash Island Daily #56: lost as Firey vs Pin. Can you do better? https://smash-delta.vercel.app/');
+    expect(l.full).toBe('Battle for Smash Island Daily #56: lost as Firey vs Pin. Can you do better? https://smashisland.vercel.app/');
     expect(l.text).not.toMatch(/\bwon\b/);
   });
 
@@ -602,7 +602,7 @@ describe('brag cards: after a Boss Rush clear', () => {
     btn.click();
     await flush();
     expect(rec.copied).toHaveLength(1);
-    expect(rec.copied[0]).toMatch(/^I cleared Boss Rush in Battle for Smash Island as Firey: \d+ bosses in 14:32, \d+ stocks? left\. Free to play: https:\/\/smash-delta\.vercel\.app\/$/);
+    expect(rec.copied[0]).toMatch(/^I cleared Boss Rush in Battle for Smash Island as Firey: \d+ bosses in 14:32, \d+ stocks? left\. Free to play: https:\/\/smashisland\.vercel\.app\/$/);
     expect(btn.textContent).toBe('✓ Copied!');
     rec.timers.forEach((t) => t());
     expect(btn.textContent, 'and puts "Share result" back').toBe('📣 Share result');
@@ -806,7 +806,7 @@ describe('search basics: robots.txt and sitemap.xml', () => {
     expect(r).toMatch(/^User-agent: \*$/m);
     expect(r).toMatch(/^Allow: \/$/m);
     expect(r, 'allow all: nothing is disallowed').not.toMatch(/^Disallow:\s*\S/m);
-    expect(r).toMatch(/^Sitemap: https:\/\/smash-delta\.vercel\.app\/sitemap\.xml$/m);
+    expect(r).toMatch(/^Sitemap: https:\/\/smashisland\.vercel\.app\/sitemap\.xml$/m);
   });
 
   it('sitemap.xml is a valid urlset with the one production page', () => {

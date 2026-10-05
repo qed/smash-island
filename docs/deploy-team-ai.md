@@ -30,7 +30,7 @@ scripted teammate, exactly as it does today when the key is not set.
 
 `api/strategy.js` answers only the game, in three ways (all pinned by `test/strategy-lock.test.js`):
 
-1. **Site origin.** Only the game's own site may call it: the production domain (`smash-delta.vercel.app`),
+1. **Site origin.** Only the game's own site may call it: the production domain (`smashisland.vercel.app`),
    previews of this project (`smash-*-helix3.vercel.app`) and localhost. Anyone else gets 403 before the
    body is read. The list is a constant at the top of the file: **if you attach a custom domain to the
    project, add it there**, or the teammate quietly stops using the model on that domain. This stops other
