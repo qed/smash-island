@@ -689,7 +689,7 @@ describe('Zap to Dust and Out of Orbit come with copies of themselves near her',
 // you: she circles you at mid range, turning back now and then, closes in only to strike and backs out again -- and she
 // still outflies a fighter running away, and still teleports when you are very far, never mid wind-up.
 describe('she circles you ("Orbit, then swoop"), and teleports when you are very far', () => {
-  it('outflies a fighter, then sits beside you, level with you, ~200px out, and swaps sides over your head ("one should be right beside you")', () => {
+  it('outflies a fighter, then sits beside you, level with you, ~400px out, and swaps sides over your head ("one should be right beside you")', () => {
     // The owner, 2026-10-03: "one should be right beside you, so that you can hit them with a projectile" -- at your height, ~200px, swaps sides.
     const r = fight(['Firey'], { story: true }, `
       one._atkTimer = 1e9; you.controller = 'still';
@@ -711,19 +711,20 @@ describe('she circles you ("Orbit, then swoop"), and teleports when you are very
       }
       one.x = you.x + 60; one.y = cy - 60; one.vx = 0; one.vy = 0;
       for (var b=0; b<90; b++) updateOne(one, you);
-      return { chase: chase, maxvx: MAXVX, R: ONE_SIDE_R, minD: Math.min.apply(null, ds), maxD: Math.max.apply(null, ds),
+      return { chase: chase, maxvx: MAXVX, R: ONE_SIDE_R, RY: ONE_SIDE_RY, minD: Math.min.apply(null, ds), maxD: Math.max.apply(null, ds),
         left: left/N, right: right/N, level: level/N, over: over, swaps: swaps, backOut: Math.hypot(one.x - you.x, one.y - cy) };`);
     expect(r.chase.moved, 'she closed in').toBeGreaterThan(150);
     expect(r.chase.v, 'faster than a fighter can run').toBeGreaterThan(r.maxvx);
-    expect(r.R).toBe(200);
-    expect(r.minD, 'beside you, not on you').toBeGreaterThan(r.R * 0.75);
+    expect(r.R, '"give more distance between you and one." -> "400 px (2x)" (the owner, 2026-10-05)').toBe(400);
+    expect(r.RY, 'over your head she keeps her old 200: the arc is an oval ("400 px (2x)" is out to your side)').toBe(200);
+    expect(r.minD, 'beside you, not on you: never nearer than her arc over your head').toBeGreaterThan(Math.min(r.R, r.RY) * 0.75);
     expect(r.maxD, '...and never far off').toBeLessThan(r.R * 1.25);
     expect(r.level, 'level with you most of the time').toBeGreaterThan(0.6);
     expect(r.left, 'on one side of you').toBeGreaterThan(0.2);
     expect(r.right, 'and the other').toBeGreaterThan(0.2);
     expect(r.swaps, 'she swaps sides').toBeGreaterThanOrEqual(4);
     expect(r.over, '...over your head').toBeGreaterThan(0);
-    expect(r.backOut, 'she does not sit on you').toBeGreaterThan(r.R * 0.75);
+    expect(r.backOut, 'she does not sit on you').toBeGreaterThan(Math.min(r.R, r.RY) * 0.75);
   });
 
   it('swoops in only to strike -- over the end of a wind-up and just after -- then backs out; never for Size Shift', () => {
@@ -749,7 +750,7 @@ describe('she circles you ("Orbit, then swoop"), and teleports when you are very
         if (one._giantT > 0){ one._giantT = 1; updateOne(one, you); }
         return { held: held, before: before, swoop: swoop, after: after };
       };
-      return { ring: strike('ring'), zap: strike('zap'), size: strike('sizeshift'), R: ONE_SIDE_R, S: ONE_SIDE_SWOOP };`);
+      return { ring: strike('ring'), zap: strike('zap'), size: strike('sizeshift'), R: Math.min(ONE_SIDE_R, ONE_SIDE_RY), S: ONE_SIDE_SWOOP };`);   // (R: the oval's nearer radius, over your head)
     for (const k of ['ring', 'zap']) {
       expect(r[k].held, `${k}: a wind-up holds her place on the circle`).toBe(true);
       expect(r[k].before, `${k}: out on the orbit until the strike is close`).toBeGreaterThan(r.R * 0.8);

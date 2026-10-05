@@ -1025,7 +1025,7 @@ describe('contact damage: "Evil leafy level." -- and then "nerf one." / "Lighter
       out.was = { pct: you.pct, vx: you.vx };
       return out;`);
     // The numbers Evil Leafy's contact check had when One copied them: applyHit(f, bossDmg()*0.6, kx, -12, ...), kx = sign*13, invuln = max(invuln, 75)
-    expect(r.c, "\"Lighter contact\": half the damage (0.3 of the base, it was 0.6), knocked 9 (it was 13), the -12 lift and the 75 frames of grace as they were").toEqual({ dmg: r.base * 0.3, kx: 9, ky: -12, grace: 75 });
+    expect(r.c, "\"Lighter contact\": half the damage (0.3 of the base, it was 0.6), knocked 9 (it was 13), the -12 lift and the 75 frames of grace as they were").toEqual({ dmg: r.base * 0.3, kx: 9, ky: -12, grace: 75, reach: 0.55 });   // (reach: "damage hitbox is smaller so that i can hit her with small shockwaves.", the owner, 2026-10-05)
     expect(r.c.dmg, 'about 6.6%: half of the 13.2 it was, well under the 33 of one of her hits').toBeCloseTo(6.6, 6);
     expect(r.c.dmg, 'exactly half').toBeCloseTo(r.base * 0.6 / 2, 9);
     expect(r.el, "Evil Leafy's are softer now (Round 17): knocked 9, 120 frames of grace").toEqual([9, 120]);
@@ -1066,8 +1066,10 @@ describe('contact damage: "Evil leafy level." -- and then "nerf one." / "Lighter
       var out = {};
       fresh(); ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID); var g = one._ghost; g.controller = 'still'; g.invuln = 0; one.x = g.x; one.y = g.y; var g0 = g.pct; one._atkTimer = 1e9; oneContact(one); out.ghost = g.pct - g0; oneGhostDown(g, true);
       // reach: a fighter just outside her body, then she grows
-      // a spot 110 px from the edge of your hurtbox: outside her body (88), inside it once she is giant (1.6 x 88)
-      fresh(); one.r = one._baseR; one.y = you.y; for (var dx = 400; dx > 0; dx--){ one.x = you.x + dx; if (hurtGap(you, one.x, one.y) <= 110) break; }
+      // a spot between where touching her hurts now and where it hurts once she is giant (1.6x): since "damage hitbox is smaller so that i
+      // can hit her with small shockwaves." (the owner, 2026-10-05) touching hurts within ONE_CONTACT.reach of her radius, not all of it
+      var nearR = one._baseR*ONE_CONTACT.reach, giantR = Math.round(one._baseR*1.6)*ONE_CONTACT.reach, mid = (nearR + giantR)/2;
+      fresh(); one.r = one._baseR; one.y = you.y; for (var dx = 400; dx > 0; dx--){ one.x = you.x + dx; if (hurtGap(you, one.x, one.y) <= mid) break; }
       you.invuln = 0; var a0 = you.pct; oneContact(one); out.outside = you.pct - a0;
       one.r = Math.round(one._baseR*1.6); you.invuln = 0; oneContact(one); out.giant = you.pct - a0;
       // in the Vortex
@@ -1076,7 +1078,7 @@ describe('contact damage: "Evil leafy level." -- and then "nerf one." / "Lighter
       fresh(); one.r = one._baseR; one.x = you.x; one.y = you.y; one._dying = 100; you.invuln = 0; oneContact(one); out.dying = you.pct; one._dying = 0;
       return out;`);
     expect(r.ghost, 'her ghost is on her side').toBe(0);
-    expect(r.outside, 'just outside her body').toBe(0);
+    expect(r.outside, 'just outside where touching her hurts').toBe(0);
     expect(r.giant, 'grown 1.6 times, the same spot is inside her').toBeCloseTo(6.6, 5);
     expect(r.hop, 'nothing while she is in the Vortex').toBe(0);
     expect(r.fly, 'and nothing while she flies in').toBe(0);
@@ -2081,5 +2083,21 @@ describe('the glitch pass: her fight drawn on a canvas that keeps the old fill a
     w.eval('draw()');
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && /Style|lineWidth|lineCap/.test(e.key)), 'no fill, stroke or line the canvas ignores').toEqual([]);
+  });
+});
+
+describe('One: room to hit her up close (the owner, 2026-10-05)', () => {
+  // "give more distance between you and one." -> "2, and damage hitbox is smaller so that i can hit her with small shockwaves."
+  it('inside her body but outside the touch area, a fighter takes nothing -- and a short shockwave there still hits her', () => {
+    const r = STAGE(`
+      fresh(); one.r = one._baseR; one.y = you.y; one._atkTimer = 1e9;
+      var gapAt = (one._baseR*ONE_CONTACT.reach + one._baseR)/2;          // past the touch area, still inside her body
+      for (var dx = 400; dx > 0; dx--){ one.x = you.x + dx; if (hurtGap(you, one.x, one.y) <= gapAt) break; }
+      you.invuln = 0; var p0 = you.pct; oneContact(one); var touched = you.pct - p0;
+      var h0 = one.hp; damageSummons(you, you.x + Math.sign(one.x - you.x)*30, you.y, gapAt + 10, 7); var hit = h0 - one.hp;
+      return { touched: touched, hit: hit, reach: ONE_CONTACT.reach };`);
+    expect(r.reach, 'touching hurts only within a bit over half her radius').toBe(0.55);
+    expect(r.touched, 'standing inside her body, outside the touch area: nothing').toBe(0);
+    expect(r.hit, 'and a short shockwave from there lands on her').toBeGreaterThan(0);
   });
 });
