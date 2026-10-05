@@ -797,7 +797,7 @@ describe('PULL THE PLUG! -- the unplugging wave', () => {
     expect(t2.plugNull).toBe(true);
   });
 
-  it('a fighter standing on a platform is shocked only when the wave reaches it; one standing on a pane never is; tier 1 shocks nobody', () => {
+  it('a fighter standing on a PLATFORM is shocked only when the wave reaches it (a platform that goes: the row\'s `shock`, 0 at tier 1); one standing on a pane never is -- the live floor is tested below', () => {
     const r = fight(`
       park(); atTier(3); you.invuln = 0; s.x = WW*0.5 + 600; s.y = groundY() - 300; projectiles = [];
       var pl = worldPlats.filter(function(p){ return !p.solid && p.w > 200 && p.y > groundY() - 700 && p.y < groundY() - 300; })[0];
@@ -821,6 +821,153 @@ describe('PULL THE PLUG! -- the unplugging wave', () => {
     expect(r.boxAlive, 'the wave took the box').toBe(false);
     expect(r.crumbs).toBe(0);
     expect(r.track).toBe(0);
+  });
+});
+
+// ================= PULL THE PLUG!: the live floor =================
+// THE OWNER, 2026-10-05, verbatim: "if you hit the floor during pull the plug, then you take damage." From [POOF] until the slate returns the FLOOR is live at EVERY tier: whoever touches it is shocked the row's
+// `shock` x a hit (0.3 where the row has none: tier 1), bounced up, and again only after a grace while they stay on it -- never every frame; the panes he drops are the safe footing and one always stands while the
+// floor is live (the fight stays winnable); the floor crackles as it goes live and stops with the slate; no text.
+describe('OWNER: PULL THE PLUG! -- the live floor ("if you hit the floor during pull the plug, then you take damage.")', () => {
+  // The plug at tier `t`, run to its end with `you` in one of three places the whole time -- 'floor' (on the bare floor, free: a real fighter, the bounce is the shock's own), 'pane' (pinned on top of a
+  // pane he dropped) or 'air' (pinned 260 px up) -- the panes dropped 900 px away from the floor you stand on. Every boss-tagged hit on you is recorded with the frame it landed on, whether the floor was
+  // live then and what it was; then 150 frames more with the slate back. `setup` runs once after the move starts, `each` before every frame's step.
+  const LIVE = (t, stand, setup = '', each = '') => fight(`
+    park(); atTier(${t}); s._introT = 0; floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 600; s.y = you.y - 300; projectiles = [];
+    cobsFightTelegraph(s, 'plug', you); s._tel = 0;
+    var T = cobsT(s, 'plug'), px = []; for (var k=0;k<T.n;k++) px.push(WW*0.5 + 900 + k*200); s._paneX = px;
+    COBS_MOVES.plug(s, you, ++BOSS_ATK_ID);
+    var P = s._plug, rec = { T: T, dmg: cobsDmg(), kb: COBS_KB, fshock: P.fshock, shock: P.shock, liveAt: null, endAt: null, panes: [], hits: [], banners: [], pctEnd: null, pctAfter: null }, f = 0;
+    var AH = applyHit, BN = banner;
+    applyHit = function(tg, d, kx, ky, from, o){ if (tg === you && o && o.bossAtk != null) rec.hits.push({ f: f, d: d, ky: ky, live: !!(s._plug === P && P.live), ground: tg.onground, after: null }); return AH.apply(this, arguments); };
+    banner = function(m){ rec.banners.push(String(m)); return BN.apply(this, arguments); };
+    try {
+      ${setup}
+      var run = function(n, until){
+        for (var i=0;i<n;i++){
+          if (until && !until()) break;
+          s._atkTimer = 1e9; f++; ${each}
+          ${stand === 'pane' ? "var pn = worldPlats.find(function(p){ return p._cobsPane; }); if (pn){ you.x = pn.x + pn.w/2; you.y = pn.y - you.r; you.vx = 0; you.vy = 0; }" : ''}
+          ${stand === 'air' ? "you.y = groundY() - you.r - 260; you.vx = 0; you.vy = 0;" : ''}
+          step();
+          var live = (s._plug === P && P.live);
+          if (live && rec.liveAt === null) rec.liveAt = f;
+          if (live) rec.panes.push(worldPlats.filter(function(p){ return p._cobsPane; }).length);
+          var last = rec.hits[rec.hits.length - 1]; if (last && last.f === f) last.after = { ground: you.onground, vy: you.vy };
+        }
+      };
+      run(900, function(){ return !!s._plug; });
+      rec.endAt = f; rec.pctEnd = you.pct; var n0 = rec.hits.length;
+      run(150);
+      rec.after = rec.hits.slice(n0); rec.pctAfter = you.pct;
+    } finally { applyHit = AH; banner = BN; }
+    return rec;`);
+  const floorHits = (r) => r.hits.filter((h) => Math.abs(h.d - r.fshock) < 1e-9);
+
+  it('TIER 1: the row\'s shock is 0 and the floor is live all the same -- 0.3 of a hit (9.9), the first the moment of [POOF], a bounce up, then again only after a grace (45 to 60 frames), never every frame, never before [POOF] or once the slate is back', () => {
+    const r = LIVE(1, 'floor');
+    expect(r.T.shock, 'the row\'s own shock is 0 at tier 1 (that one is for a platform that goes)').toBe(0);
+    expect(r.shock).toBe(0);
+    expect(r.fshock, '0.3 x a boss hit of 33').toBeCloseTo(0.3 * r.dmg, 9);
+    expect(r.liveAt, 'the floor goes live at [POOF]').not.toBe(null);
+    const hits = floorHits(r);
+    expect(hits.length, 'a fighter who stays on the floor is shocked again and again, but not every frame').toBeGreaterThanOrEqual(2);
+    expect(hits[0].f, 'the very frame of [POOF]').toBe(r.liveAt);
+    expect(hits.every((h) => h.live), 'never before [POOF]').toBe(true);
+    expect(hits.every((h) => h.ground), 'it is the floor under your feet that does it').toBe(true);
+    expect(hits.every((h) => Math.abs(h.ky + 6 * r.kb) < 1e-9), 'with an upward bounce of 6 (x his launch scale)').toBe(true);
+    expect(hits.every((h) => h.after && h.after.ground === false), 'the bounce takes you off the floor').toBe(true);
+    for (let i = 1; i < hits.length; i++) {
+      const gap = hits[i].f - hits[i - 1].f;
+      expect(gap, 'again only after a grace of about 45-60 frames').toBeGreaterThanOrEqual(45);
+      expect(gap).toBeLessThanOrEqual(60);
+    }
+    expect(r.endAt - r.liveAt, 'tier 1 is the old instant [POOF]: live for its `poof` frames').toBe(r.T.poof);
+    expect(hits.length, 'never every frame: at most one shock in 45 frames of it').toBeLessThanOrEqual(Math.ceil((r.endAt - r.liveAt) / 45));
+    expect(r.after, 'not after the slate returns: 150 frames on the same floor, and nothing of his lands').toEqual([]);
+    expect(r.pctAfter, 'no damage of any kind').toBeCloseTo(r.pctEnd, 9);
+    expect(r.banners, 'no text: the floor says nothing').toEqual([]);
+  });
+
+  it('EVERY TIER: live from [POOF] -- as the wave starts, from tier 2 -- until the slate is all back, shocking the row\'s shock x a hit (0.3, 0.3, 0.3, 0.45, 0.45 of 33), and quiet again after', () => {
+    for (const t of [1, 2, 3, 4, 5]) {
+      const r = LIVE(t, 'floor');
+      const want = Math.max(r.T.shock, 0.3) * r.dmg;
+      expect(r.fshock, `tier ${t}: the row's shock, 0.3 where it has none`).toBeCloseTo(want, 9);
+      const hits = floorHits(r);
+      expect(hits.length, `tier ${t}: shocked, more than once`).toBeGreaterThanOrEqual(2);
+      expect(hits[0].f, `tier ${t}: the frame it goes live`).toBe(r.liveAt);
+      expect(hits.every((h) => h.live && h.ground && h.ky < 0), `tier ${t}: live, on the floor, bounced up`).toBe(true);
+      for (let i = 1; i < hits.length; i++) expect(hits[i].f - hits[i - 1].f, `tier ${t}: the grace`).toBeGreaterThanOrEqual(45);
+      expect(r.endAt - r.liveAt, `tier ${t}: live until the slate is back (the wave out, the poof, the wave back)`).toBe(r.T.poof + 2 * (r.T.wave || 0));
+      expect(floorHits({ hits: r.after, fshock: r.fshock }), `tier ${t}: quiet once the slate returns`).toEqual([]);
+    }
+  });
+
+  it('THE PANES ARE THE SAFE FOOTING: standing on a pane he dropped through the whole of it you are never shocked, and neither are you in the air -- at every tier', () => {
+    for (const t of [1, 2, 3, 5]) {
+      for (const stand of ['pane', 'air']) {
+        const r = LIVE(t, stand);
+        expect(r.liveAt, `tier ${t} ${stand}: it did go live`).not.toBe(null);
+        expect(r.hits.filter((h) => h.live), `tier ${t}: on a ${stand} nothing of his touches you while the floor is live`).toEqual([]);
+      }
+    }
+  });
+
+  it('A PANE ALWAYS STANDS while the floor is live: the panes he dropped last to the slate\'s return at every tier, and if every pane is gone -- or none ever landed -- one is laid where the nearest of you stands, that frame', () => {
+    for (const t of [1, 2, 3, 4, 5]) {
+      const r = LIVE(t, 'floor');
+      expect(Math.min(...r.panes), `tier ${t}: a pane from [POOF] to the slate's return`).toBeGreaterThanOrEqual(1);
+      expect(Math.max(...r.panes), `tier ${t}: the ones he dropped, with no help`).toBeLessThanOrEqual(r.T.n);
+    }
+    const gone = LIVE(3, 'floor', '', 'if (P.live) worldPlats = worldPlats.filter(function(p){ return !p._cobsPane; });');
+    expect(Math.min(...gone.panes), 'the last pane timed out (here: every frame): one is laid again at once').toBeGreaterThanOrEqual(1);
+    const none = LIVE(1, 'floor', 'projectiles = projectiles.filter(function(p){ return !p.cobsPane; });');
+    expect(none.liveAt).not.toBe(null);
+    expect(Math.min(...none.panes), 'no pane ever landed: one is there from the first frame of the live floor').toBe(1);
+  });
+
+  it('it never lands on a fighter in the grace of another hit or under a MeTag\'s cuff (no pile-on; the hunter\'s grace-hit): the shock waits for the grace to end', () => {
+    const arm = (what) => 'if (P.phase === \'wait\' && P.t <= 1){ ' + what + ' }';   // the frame before [POOF]
+    const cuffed = LIVE(2, 'floor', '', arm('you._cuffUntil = hazardT + 40; you._cuffId = -1;'));
+    const grace = LIVE(2, 'floor', '', arm('you.invuln = 40;'));
+    for (const [what, r] of [['a cuff', cuffed], ['a hit\'s grace', grace]]) {
+      const hits = floorHits(r);
+      expect(hits.length, `${what}: shocked once it is over`).toBeGreaterThanOrEqual(1);
+      expect(hits[0].f - r.liveAt, `${what}: not on top of it`).toBeGreaterThanOrEqual(35);
+    }
+  });
+
+  it('THE TELL: the floor crackles from [POOF] until the slate returns -- cyan arcs and a glow along its top, drawn with valid canvas calls, in no words -- and the picture is the plain floor again after', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startCobsFight(['Knife'], { story:true, onEnd:function(){ return true; } });
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      s._hop = null; s._atkTimer = 1e9; you.controller = 'still'; you.invuln = 99999; s.x = you.x + 600; s.y = you.y - 300; projectiles = [];
+    })()`);
+    errors.length = 0;
+    const r = w.eval(`(function(){
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      var ops = function(){ cobsFx = []; var a = ctx.__ops; drawCobsFx(); return ctx.__ops - a; };
+      var out = { idle: ops() };
+      cobsFightTelegraph(s, 'plug', you); s._tel = 0; s._paneX = [WW*0.5 + 900]; COBS_MOVES.plug(s, you, ++BOSS_ATK_ID);
+      out.waiting = ops();                                   // the panes are coming down: the floor is not live yet
+      var P = s._plug; P.t = 1; s._atkTimer = 1e9; step(); out.liveNow = P.live;
+      P.live = false; out.dark = ops(); P.live = true; out.live = ops();   // the same picture without the crackle and with it
+      out.flicker = []; for (var i=0;i<12;i++){ hazardT++; out.flicker.push(ops()); }   // it flickers, but it draws on every frame, whatever the beat
+      P.phase = 'out'; P.t = 1; s._atkTimer = 1e9; step(); out.over = s._plug === null;
+      worldPlats = worldPlats.filter(function(p){ return !p._cobsPane; });   // (the pane still lying there is drawn too)
+      out.after = ops();
+      return out;
+    })()`);
+    expect(r.liveNow).toBe(true);
+    expect(r.waiting, 'not before [POOF]').toBe(r.idle);
+    expect(r.live, 'crackling: arcs and a glow where there was nothing').toBeGreaterThan(r.dark + 20);
+    for (const n of r.flicker) expect(n, 'every frame of the flicker still draws').toBeGreaterThan(r.dark + 20);
+    expect(r.over).toBe(true);
+    expect(r.after, 'gone with the slate').toBe(r.idle);
+    expect(errors, 'every call valid').toEqual([]);
   });
 });
 

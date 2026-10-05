@@ -23319,6 +23319,9 @@ const COBS_TIERS = {
   // TWIST: UNPLUGGED, NOT SWITCHED OFF ("after the unplug the island empties piece by piece", Through No Choice of Your Own): the
   // [POOF] travels -- the platforms and the shots go in a wave, `wave` frames from one end of your side of the stage to the other,
   // from the side he pulls the cable, and everything comes back in the reverse order. Footing goes in an order you must read.
+  // THE LIVE FLOOR (the owner, 2026-10-05, verbatim: "if you hit the floor during pull the plug, then you take damage."): from [POOF] until the slate comes back the FLOOR is live at every tier -- whoever
+  // touches it is shocked `shock` x a hit (0.3 at tier 1, where the row's own is 0: that one is for a platform that goes), bounced up, and again only after COBS_FLOOR_GRACE frames while they stay on it;
+  // the panes are the safe footing and one always stands while the floor is live; the floor crackles as it goes live and stops with the slate (cobsFloorLive, drawCobsFx). No text.
   plug:      [ { n:1, spd:9, dmg:0.8, poof:120, shock:0, paneT:300, wave:0 }, { n:1, spd:10, dmg:0.85, poof:150, shock:0.3, paneT:300, wave:36 }, { n:2, spd:11, dmg:0.9, poof:180, shock:0.3, paneT:330, wave:28 },
                { n:2, spd:12, dmg:0.95, poof:210, shock:0.45, paneT:360, wave:24 }, { n:3, spd:13, dmg:1.0, poof:240, shock:0.45, paneT:390, marks:2, wave:20 } ],
   // THE FUTURE IS SO YESTERDAY. His keynote: "I created all that you believe! (Too ambitious?) You gave me power you can't
@@ -24379,7 +24382,9 @@ const COBS_MOVES = {
     xs.forEach((x, i)=>{ const top = oneSurf(x, gy - 10);
       addProj(cobsShot(s, { x, y:top - 620, vx:0, vy:T.spd, grav:true, warnX:x, warnY:top, warn:26, dmg, bossCap:dmg, kb:9, r:30, color:'#cfe8ff', life:150,
         shape:'glasspane', cobsPane:true, pierce:true, _paneT:T.paneT, bossAtk:id, delay:i*10 })); });   // pierce: it crushes whoever it lands on and STILL lands, as footing
-    s._plug = { phase:'wait', t:70 + xs.length*10, poof:T.poof, shock:T.shock*cobsDmg(), marks:T.marks||0, id, stash:null, wave:T.wave || 0 };
+    // THE LIVE FLOOR (the owner, 2026-10-05: "if you hit the floor during pull the plug, then you take damage."): from [POOF] until the slate comes back the floor itself shocks whoever touches
+    // it, at every tier -- `fshock`, the row's `shock` x a hit, with 0.3 (the old tier 2's) where the row has none: tier 1 -- see cobsFloorLive. The panes stay the safe footing.
+    s._plug = { phase:'wait', t:70 + xs.length*10, poof:T.poof, shock:T.shock*cobsDmg(), fshock:Math.max(T.shock, 0.3)*cobsDmg(), live:false, marks:T.marks||0, id, stash:null, wave:T.wave || 0 };
     shake(5);
   },
   keynote(s, tgt, id){
@@ -24515,6 +24520,7 @@ function cobsTickEntities(s, tgt){
     else if(P.phase==='going'){ if(cobsWaveStep(s, P, false)){ P.phase = 'out'; P.t = P.poof; } }   // the wave takes the footing and the shots, end to end
     else if(P.phase==='out'){ if(--P.t <= 0){ if(P.wave > 0){ P.phase = 'returning'; P.wt = 0; } else { cobsReplug(s, P, false); s._plug = null; } } }
     else if(P.phase==='returning'){ if(cobsWaveStep(s, P, true)){ cobsReplug(s, P, false); s._plug = null; } }   // and it all comes back in the reverse order
+    if(s._plug && s._plug.live) cobsFloorLive(s, s._plug);   // the floor is live from [POOF] until the slate is back
   }
   // the panes and the walls come down when their time is up
   if(worldPlats.some(p=>(p._cobsPane || p._cobsWall) && p._until != null && p._until <= hazardT)){
@@ -24676,6 +24682,7 @@ function cobsStomp(s){
 // shot on screen, the ship (MeLife made it). Whoever stands on a platform that goes is shocked (tier 2 and up).
 function cobsPoof(s, P){
   const keep = p=>(p.solid && p.floor===0) || p._cobsPane || p._cobsWall;
+  P.live = true;   // the floor is live from here until the slate comes back (cobsFloorLive)
   if(P.wave > 0){   // UNPLUGGED: the cable is on his side of you; the wave runs from there through you to the other side
     const t = cobsNearest(s.x, s.y), cx = t ? t.x : WW/2, side = s.x >= cx ? 1 : -1;
     P.dir = -side; P.x0 = cx + side*900; P.span = 1800; P.wt = 0;
@@ -24693,6 +24700,23 @@ function cobsPoof(s, P){
   projectiles = projectiles.filter(p=>p.cobsPane);
   s._ship = null; s._track = [];   // what [POOF] erased leaves nothing behind (no crumbs from a box the slate took)
   cobsFx.push({ kind:'poof', life:30, max:30 }); cobsImpact(s.x, s.y, { shake:10, dust:0, debris:0 });
+}
+// THE LIVE FLOOR, once a frame from [POOF] until the slate is back (the owner, 2026-10-05: "if you hit the floor during pull the plug, then you take damage."). A fighter standing on the
+// floor is shocked -- `fshock` (the row's shock x a hit; 0.3 at tier 1) with an upward bounce -- and again COBS_FLOOR_GRACE frames later if they stay on it, never every frame, and never
+// while they are in the grace of another hit. A fighter on a pane (the Meeple-made footing, which outlasts the live floor at every tier) is not on the floor: and there is always one to stand on
+// -- if the last has gone, one is laid where the nearest of you stands.
+const COBS_FLOOR_GRACE = 50;
+function cobsFloorLive(s, P){
+  const fl = cobsFloor();
+  if(!worldPlats.some(p=>p._cobsPane)){ const t = cobsNearest(s.x, s.y); if(t) cobsPlacePane(t.x, fl.y, 240); }
+  for(const f of cobsFoes()){
+    if(f.invuln > 0 || (f._floorShockT || 0) > hazardT) continue;
+    if(!(f.onground && f.x > fl.x - 4 && f.x < fl.x + fl.w + 4 && Math.abs(feetY(f) - fl.y) < 6)) continue;
+    if(cobsHit(f, P.fshock, 0, -6, ++BOSS_ATK_ID, P.fshock)){
+      f._floorShockT = hazardT + COBS_FLOOR_GRACE;
+      for(let i=0;i<8;i++) puff(f.x, feetY(f), '#7ff0ff', 4); cobsImpact(f.x, fl.y, { shake:3, dust:0, debris:0, r:40, color:'#7ff0ff' });
+    }
+  }
 }
 // Where along the wave an x is: 0 at the front's start, 1 at its end (it travels P.dir from P.x0, P.span px).
 function cobsWaveK(P, x){ return clamp(((x - P.x0)*P.dir)/P.span, 0, 1); }
@@ -24836,6 +24860,19 @@ function drawCobsFx(){
   ctx.save(); ctx.lineCap = 'round';
   // MAZED AND CONFUSED!: the hedges (and the pen's marks through the wind-up) and, over them, the guns, the beams, the pulse -- MePhone4's own drawing; the screen goes green for the wind-up
   mpDrawMaze(s, 'under'); mpDrawMaze(s, 'over');
+  // THE LIVE FLOOR (PULL THE PLUG, from [POOF] until the slate is back): the floor crackles -- a cyan glow along its top and arcs jumping up off it, flickering (no text)
+  if(s._plug && s._plug.live){
+    const fl = cobsFloor(), z = viewZoom(), vl = Math.max(fl.x, camX + W/2 - (W/2)/z - 40), vr = Math.min(fl.x + fl.w, camX + W/2 + (W/2)/z + 40);
+    ctx.save(); ctx.lineJoin = 'round';
+    ctx.globalAlpha = 0.14 + 0.06*Math.sin(hazardT*0.4); ctx.fillStyle = '#7ff0ff'; ctx.fillRect(vl, fl.y - 10, Math.max(0, vr - vl), 10);
+    ctx.strokeStyle = '#bff8ff'; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.85; ctx.beginPath();
+    for(let x = Math.floor(vl/36)*36; x < vr; x += 36){
+      if(((x/36 | 0) + hazardT) % 5 === 0) continue;   // the arcs flicker in and out
+      const ph = Math.sin(x*0.91 + hazardT*1.7), up = 6 + 16*Math.abs(Math.sin(x*0.37 + hazardT*0.9));
+      ctx.moveTo(x, fl.y - 2); ctx.lineTo(x + 9, fl.y - 2 - up*0.6 + ph*3); ctx.lineTo(x + 17, fl.y - 2 - up + ph*5); ctx.lineTo(x + 26, fl.y - 2 - up*0.4); ctx.lineTo(x + 36, fl.y - 2);
+    }
+    ctx.stroke(); ctx.restore();
+  }
   if(s._tel > 0 && s._telKind === 'maze'){ ctx.globalAlpha = 0.05 + 0.07*Math.max(0, 1 - s._tel/cobsTelLen(s)); ctx.fillStyle = '#5ad85a'; ctx.fillRect(camX - W*2, camY - H*2, W*5, H*5); ctx.globalAlpha = 1; }
   // MePhone X's siren: the screen tints red for the wind-up and the lunge
   if(s._redT > 0){ ctx.globalAlpha = 0.10 + 0.08*Math.sin(hazardT*0.6); ctx.fillStyle = '#ff1a1a'; ctx.fillRect(camX - W*2, camY - H*2, W*5, H*5); }
