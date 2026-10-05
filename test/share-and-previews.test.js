@@ -409,3 +409,322 @@ describe('no share control in a match', () => {
     expect(said.filter((t) => /share|copied/i.test(t))).toEqual([]);
   });
 });
+
+// ---- brag cards ---------------------------------------------------------------------------------------------------------
+// A Boss Rush clear and the Daily each leave a small record; the result screen's Share button turns into "Share result" and hands
+// over one line about it. The line is the one place the game talks about the player's own deeds in public, so it is held to the
+// secrecy rule harder than anything else in this file.
+const sharedText = (rec) => rec.shared[0] && rec.shared[0].text;
+const fullLine = (card) => card.text + ' ' + card.url;
+const BRAG = (w) => JSON.parse(w.eval('JSON.stringify(SHARE_BRAG)'));
+
+// Plays the real Boss Rush clear path: the last boss goes down inside bossRushCheck, exactly as in a run.
+function clearBossRush(w, { you = 'Firey', stocks = 1, secs = 872 } = {}) {
+  w.eval(`(function(){
+    SETTINGS.mode='boss'; SETTINGS.count=1; SETTINGS.stocks=3; SETTINGS.itemRate=0; SETTINGS.items=false;
+    chosen = ROSTER.find(function(r){ return r.name===${JSON.stringify(you)}; });
+    beginMatchNow();
+    BOSSRUSH.bossIdx = BOSS_ROSTER.length - 1; BOSSRUSH.cleared = BOSS_ROSTER.length - 1; BOSSRUSH.frames = ${secs * 60};
+    summons = []; spawnBossRushBoss();
+    fighters[0].stocks = ${stocks};
+    var boss = summons.find(function(s){ return s.type==='boss' && s._bossRush; }); boss.hp = 0;
+    bossRushCheck();
+  })()`);
+}
+// Plays the real end of a Daily: today's matchup is replaced by the one named, everything after is the game's own checkWin.
+function playDaily(w, { you = 'Firey', foe = 'Pin', outcome = 'win' } = {}) {
+  w.eval(`(function(){
+    DAILY_ACTIVE = true; DAILY_LOAN = { pick: chosen, mode:SETTINGS.mode, count:SETTINGS.count, stocks:SETTINGS.stocks, itemRate:SETTINGS.itemRate };
+    chosen = ROSTER.find(function(r){ return r.name===${JSON.stringify(you)}; });
+    SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=2; SETTINGS.itemRate=0; SETTINGS.items=false;
+    PENDING_DAILY = ROSTER.find(function(r){ return r.name===${JSON.stringify(foe)}; });
+    beginMatchNow();
+    var y = fighters.find(function(f){ return f.you; }), o = fighters.find(function(f){ return !f.you; });
+    if('${outcome}' !== 'loss'){ o.stocks = 0; o.dead = true; }
+    if('${outcome}' !== 'win'){ y.stocks = 0; y.dead = true; }
+    checkWin();
+  })()`);
+}
+const labelOf = (doc) => doc.getElementById('resultShare').textContent;
+
+describe('brag cards: the lines', () => {
+  const { window: W } = loadMonolith();
+  const line = (record) => { const c = JSON.parse(W.eval(`JSON.stringify(shareBragCard(${JSON.stringify(record)}))`)); return { ...c, full: fullLine(c) }; };
+
+  it('says a Boss Rush clear the way the owner\'s example does', () => {
+    const c = line({ kind: 'rush', you: 'Firey', bosses: 12, secs: 14 * 60 + 32, stocks: 2 });
+    expect(c.full).toBe('I cleared Boss Rush in Battle for Smash Island as Firey: 12 bosses in 14:32, 2 stocks left. Free to play: https://smash-delta.vercel.app/');
+  });
+
+  it('counts one stock as "1 stock", and drops the stock clause when it is unknown or none', () => {
+    expect(line({ kind: 'rush', you: 'Leafy', bosses: 12, secs: 600, stocks: 1 }).text).toMatch(/, 1 stock left\. Free to play:$/);
+    for (const stocks of [null, undefined, 0]) {
+      const t = line({ kind: 'rush', you: 'Leafy', bosses: 12, secs: 600, stocks }).text;
+      expect(t, `stocks=${stocks}`).toBe('I cleared Boss Rush in Battle for Smash Island as Leafy: 12 bosses in 10:00. Free to play:');
+    }
+  });
+
+  it('writes the time as m:ss, with the seconds padded', () => {
+    expect(line({ kind: 'rush', you: 'Pen', bosses: 12, secs: 61, stocks: 3 }).text).toContain('in 1:01,');
+    expect(line({ kind: 'rush', you: 'Pen', bosses: 12, secs: 3725, stocks: 3 }).text).toContain('in 62:05,');
+  });
+
+  it('says a won Daily the way the owner\'s example does', () => {
+    expect(line({ kind: 'daily', n: 56, won: true, you: 'Firey', foe: 'Pin' }).full)
+      .toBe('Battle for Smash Island Daily #56: won as Firey vs Pin. Can you? https://smash-delta.vercel.app/');
+  });
+
+  it('says a lost Daily honestly: it says lost, and it still invites you', () => {
+    const l = line({ kind: 'daily', n: 56, won: false, you: 'Firey', foe: 'Pin' });
+    expect(l.full).toBe('Battle for Smash Island Daily #56: lost as Firey vs Pin. Can you do better? https://smash-delta.vercel.app/');
+    expect(l.text).not.toMatch(/\bwon\b/);
+  });
+
+  it('says a drawn Daily as a draw', () => {
+    expect(line({ kind: 'daily', n: 9, won: null, you: 'Firey', foe: 'Pin' }).text).toBe('Battle for Smash Island Daily #9: drew as Firey vs Pin. Can you win it?');
+  });
+
+  it('numbers the Daily from the day it shipped, in UTC, the way the Daily itself is dated', () => {
+    const n = (y, m, d) => W.eval(`dailyNumber(new Date(Date.UTC(${y}, ${m}, ${d}, 23, 59)))`);
+    expect(n(2026, 7, 11), 'the first Daily').toBe(1);
+    expect(n(2026, 7, 12)).toBe(2);
+    expect(n(2026, 9, 5), '2026-10-05').toBe(56);
+    expect(n(2026, 7, 1), 'never below 1').toBe(1);
+  });
+
+  it('hands the share sheet the line and the link as separate fields, and the clipboard both together', () => {
+    const c = line({ kind: 'rush', you: 'Firey', bosses: 12, secs: 872, stocks: 2 });
+    expect(Object.keys(c).sort()).toEqual(['copy', 'full', 'text', 'title', 'url']);
+    expect(c.title).toBe('Battle for Smash Island');
+    expect(c.url).toBe(SITE);
+    expect(c.text, 'a share sheet that joins text and url must not show the link twice').not.toContain(SITE);
+    expect(c.copy, 'the clipboard gets the line and the link').toBe(`${c.text} ${SITE}`);
+    expect(c.copy.split(SITE)).toHaveLength(2);
+  });
+
+  it('names a fighter who is not a secret, in either seat', () => {
+    for (const name of ['Firey', 'Leafy', 'Pencil', 'Blocky', 'Ice Cube', 'Match', 'Pen', 'Test Tube', 'Lightning']) {
+      expect(line({ kind: 'rush', you: name, bosses: 12, secs: 60, stocks: 1 }).text, name).toContain(`as ${name}:`);
+      expect(line({ kind: 'daily', n: 3, won: true, you: 'Firey', foe: name }).text, name).toContain(`vs ${name}.`);
+    }
+  });
+});
+
+describe('brag cards: no secret is ever named', () => {
+  const { window: W } = loadMonolith();
+  const line = (record) => { const c = JSON.parse(W.eval(`JSON.stringify(shareBragCard(${JSON.stringify(record)}))`)); return fullLine(c); };
+
+  it.each(SECRET_NAMES)('"%s": a Boss Rush clear as them says "a secret fighter", never the name', (name) => {
+    const t = line({ kind: 'rush', you: name, bosses: 12, secs: 872, stocks: 2 });
+    expect(t).toContain('as a secret fighter:');
+    expect(leaks(t), t).toEqual([]);
+  });
+
+  it.each(SECRET_NAMES)('"%s": a Daily played as them, or against them, says "a secret fighter", never the name', (name) => {
+    for (const won of [true, false, null]) {
+      const as = line({ kind: 'daily', n: 12, won, you: name, foe: 'Pin' });
+      const vs = line({ kind: 'daily', n: 12, won, you: 'Firey', foe: name });
+      expect(as, as).toMatch(/ as a secret fighter vs Pin\./);
+      expect(vs, vs).toMatch(/ as Firey vs a secret fighter\./);
+      expect(leaks(as), as).toEqual([]);
+      expect(leaks(vs), vs).toEqual([]);
+    }
+  });
+
+  it('says "a secret fighter" for any name the game does not list, rather than echo it', () => {
+    expect(line({ kind: 'rush', you: 'Zorp', bosses: 12, secs: 60, stocks: 1 })).toContain('as a secret fighter:');
+    expect(line({ kind: 'rush', you: '', bosses: 12, secs: 60, stocks: 1 })).toContain('as a secret fighter:');
+  });
+
+  it('never says how anything is unlocked, however the line is built', () => {
+    const records = [
+      { kind: 'rush', you: 'Firey', bosses: 12, secs: 872, stocks: 2 },
+      { kind: 'rush', you: 'Lightning', bosses: 24, secs: 1900, stocks: 1 },   // two laps, as the chain asks of Lightning: still no word about it
+      { kind: 'rush', you: 'Needle', bosses: 12, secs: 872, stocks: 2 },
+      { kind: 'daily', n: 56, won: true, you: 'Firey', foe: 'Gelatin' },
+      { kind: 'daily', n: 56, won: false, you: 'Lightning', foe: 'OJ' },
+    ];
+    for (const r of records) {
+      const t = line(r);
+      expect(t, t).not.toMatch(/\b(vault|unlock(ed|s)?|secret boss|code|loop|lap|moon|chain|prize|hidden)\b/i);
+      expect(t, t).not.toMatch(/\b(One|Steve Cobs|Cobs)\b/);
+    }
+  });
+
+  it('keeps every secret in the player\'s own seat out of the share sheet and the clipboard too (a real tap)', async () => {
+    for (const name of ['Needle', 'Gelatin', 'OJ', 'Cabby']) {
+      const { w, rec, doc } = bootShare({ share: ok });
+      w.eval(`SHARE_BRAG = { kind:'daily', n:56, won:true, you:${JSON.stringify(name)}, foe:'Pin' }`);
+      w.eval("go('result')");
+      doc.getElementById('resultShare').click();
+      await flush();
+      const d = rec.shared[0];
+      expect(leaks([d.title, d.text, d.url].join('\n')), `${name}: ${d.text}`).toEqual([]);
+      expect(d.text).toContain('as a secret fighter');
+    }
+  });
+});
+
+describe('brag cards: after a Boss Rush clear', () => {
+  it('offers "Share result" with the clear\'s own numbers on the result screen', async () => {
+    const { w, rec, doc } = bootShare({ share: ok, clipboard: ok });
+    clearBossRush(w, { you: 'Firey', stocks: 1, secs: 872 });
+    const b = BRAG(w);
+    expect(b.kind).toBe('rush');
+    const bosses = w.eval('BOSS_ROSTER.length');
+    expect(b.bosses, 'every boss is counted').toBe(bosses);
+    expect(b.secs).toBe(872);
+    const stocksNow = w.eval('fighters[0].stocks');
+    // finish from the victory card, as a player does
+    w.eval('rushFinish()');
+    expect(doc.getElementById('result').classList.contains('active')).toBe(true);
+    expect(labelOf(doc)).toBe('📣 Share result');
+    doc.getElementById('resultShare').click();
+    await flush();
+    expect(rec.shared).toHaveLength(1);
+    expect(rec.shared[0].text).toBe(`I cleared Boss Rush in Battle for Smash Island as Firey: ${bosses} bosses in 14:32, ${stocksNow} ${stocksNow === 1 ? 'stock' : 'stocks'} left. Free to play:`);
+    expect(rec.shared[0].url).toBe(SITE);
+    expect(rec.shared[0].title).toBe('Battle for Smash Island');
+  });
+
+  it('copies the line and the link together where there is no share sheet, and says Copied!', async () => {
+    const { w, rec, doc } = bootShare({ clipboard: ok });
+    clearBossRush(w);
+    w.eval('rushFinish()');
+    const btn = doc.getElementById('resultShare');
+    btn.click();
+    await flush();
+    expect(rec.copied).toHaveLength(1);
+    expect(rec.copied[0]).toMatch(/^I cleared Boss Rush in Battle for Smash Island as Firey: \d+ bosses in 14:32, \d+ stocks? left\. Free to play: https:\/\/smash-delta\.vercel\.app\/$/);
+    expect(btn.textContent).toBe('✓ Copied!');
+    rec.timers.forEach((t) => t());
+    expect(btn.textContent, 'and puts "Share result" back').toBe('📣 Share result');
+  });
+
+  it('still offers the clear after Keep Going and a later defeat', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });
+    clearBossRush(w);
+    w.eval('rushKeepGoing()');
+    // the next lap: everyone falls
+    w.eval('fighters.forEach(function(f){ f.dead = true; f.stocks = 0; }); bossRushCheck();');
+    rec.timers.forEach((t) => t());   // the defeat card goes to the result screen after 800 ms
+    expect(doc.getElementById('result').classList.contains('active')).toBe(true);
+    expect(doc.getElementById('resultTitle').textContent).toBe('Defeated');
+    expect(labelOf(doc)).toBe('📣 Share result');
+    doc.getElementById('resultShare').click();
+    await flush();
+    expect(sharedText(rec)).toMatch(/^I cleared Boss Rush in Battle for Smash Island as Firey: /);
+  });
+
+  it('offers only the plain Share after a defeat that never cleared the run', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });
+    w.eval(`SETTINGS.mode='boss'; SETTINGS.count=1; SETTINGS.stocks=1; SETTINGS.itemRate=0; SETTINGS.items=false; beginMatchNow();
+            fighters.forEach(function(f){ f.dead = true; f.stocks = 0; }); bossRushCheck();`);
+    rec.timers.forEach((t) => t());
+    expect(doc.getElementById('resultTitle').textContent).toBe('Defeated');
+    expect(BRAG(w)).toBeNull();
+    expect(labelOf(doc)).toBe('📣 Share');
+    doc.getElementById('resultShare').click();
+    await flush();
+    expect(rec.shared[0].text, 'the plain pitch, not a brag').toMatch(/^Battle for Smash Island is a free, fan-made/);
+  });
+
+  it('forgets the clear when the next match starts, and when the result screen is left', () => {
+    const { w, doc } = bootShare();
+    clearBossRush(w);
+    w.eval('rushFinish()');
+    expect(BRAG(w)).toBeTruthy();
+    w.eval("go('title')");
+    expect(BRAG(w), 'left for the title').toBeNull();
+    clearBossRush(w);
+    expect(BRAG(w)).toBeTruthy();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.count=2; beginMatchNow();");
+    expect(BRAG(w), 'a new match').toBeNull();
+    w.eval("go('result')");
+    expect(labelOf(doc)).toBe('📣 Share');
+  });
+
+  it('is not armed in a match that is not a clear: nothing is left behind mid-run', () => {
+    const { w } = bootShare();
+    w.eval(`SETTINGS.mode='boss'; SETTINGS.count=1; SETTINGS.stocks=3; SETTINGS.itemRate=0; SETTINGS.items=false; beginMatchNow();
+            for (var i = 0; i < 200; i++) step();`);
+    expect(BRAG(w)).toBeNull();
+  });
+});
+
+describe('brag cards: after the Daily', () => {
+  it('offers "Share result" after a won Daily and tells it as a win', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });
+    playDaily(w, { you: 'Firey', foe: 'Pin', outcome: 'win' });
+    rec.timers.forEach((t) => t());   // showResult runs 700 ms after the win
+    expect(doc.getElementById('result').classList.contains('active')).toBe(true);
+    expect(labelOf(doc)).toBe('📣 Share result');
+    doc.getElementById('resultShare').click();
+    await flush();
+    const n = w.eval('dailyNumber()');
+    expect(sharedText(rec)).toBe(`Battle for Smash Island Daily #${n}: won as Firey vs Pin. Can you?`);
+    expect(rec.shared[0].url).toBe(SITE);
+  });
+
+  it('tells a lost Daily as a loss', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });
+    playDaily(w, { you: 'Firey', foe: 'Pin', outcome: 'loss' });
+    rec.timers.forEach((t) => t());
+    expect(labelOf(doc)).toBe('📣 Share result');
+    doc.getElementById('resultShare').click();
+    await flush();
+    expect(sharedText(rec)).toMatch(/: lost as Firey vs Pin\. Can you do better\?$/);
+  });
+
+  it('tells a drawn Daily as a draw', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });
+    playDaily(w, { you: 'Firey', foe: 'Pin', outcome: 'draw' });
+    rec.timers.forEach((t) => t());
+    doc.getElementById('resultShare').click();
+    await flush();
+    expect(sharedText(rec)).toMatch(/: drew as Firey vs Pin\./);
+  });
+
+  it('says "a secret fighter" when the Daily\'s opponent is a Vault fighter', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });
+    playDaily(w, { you: 'Firey', foe: 'Gelatin', outcome: 'win' });
+    rec.timers.forEach((t) => t());
+    doc.getElementById('resultShare').click();
+    await flush();
+    expect(sharedText(rec)).toMatch(/: won as Firey vs a secret fighter\. Can you\?$/);
+    expect(leaks(sharedText(rec))).toEqual([]);
+  });
+
+  it('works through the real startDailyMatch, whoever today\'s pair is, and never names a secret', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });
+    w.eval(`startDailyMatch(); var y = fighters.find(function(f){ return f.you; }), o = fighters.find(function(f){ return !f.you; });
+            o.stocks = 0; o.dead = true; checkWin();`);
+    rec.timers.forEach((t) => t());
+    expect(labelOf(doc)).toBe('📣 Share result');
+    doc.getElementById('resultShare').click();
+    await flush();
+    expect(sharedText(rec)).toMatch(/^Battle for Smash Island Daily #\d+: won as .+ vs .+\. Can you\?$/);
+    expect(leaks(sharedText(rec)), sharedText(rec)).toEqual([]);
+  });
+
+  it('forgets the Daily\'s line once the next match begins: a Rematch is an ordinary match with a plain Share', () => {
+    const { w, rec, doc } = bootShare();
+    playDaily(w, { you: 'Firey', foe: 'Pin', outcome: 'win' });
+    rec.timers.forEach((t) => t());
+    expect(BRAG(w)).toBeTruthy();
+    w.eval("SETTINGS.mode='ffa'; SETTINGS.count=2; beginMatchNow();");
+    expect(BRAG(w)).toBeNull();
+    w.eval("go('result')");
+    expect(labelOf(doc)).toBe('📣 Share');
+  });
+
+  it('keeps the plain "Share" after an ordinary match', () => {
+    const { w, rec, doc } = bootShare();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.stocks=1; SETTINGS.itemRate=0; SETTINGS.items=false; beginMatchNow();
+            var o = fighters.find(function(f){ return !f.you; }); o.stocks = 0; o.dead = true; checkWin();`);
+    rec.timers.forEach((t) => t());
+    expect(doc.getElementById('result').classList.contains('active')).toBe(true);
+    expect(BRAG(w)).toBeNull();
+    expect(labelOf(doc)).toBe('📣 Share');
+  });
+});
