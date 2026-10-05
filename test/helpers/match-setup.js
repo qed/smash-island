@@ -1,9 +1,11 @@
 // The match setup the balance tournament, the bot trainer and the bot golden all use: the function we inject into the
 // monolith's realm. Kept as a string so it runs INSIDE jsdom's script realm (where SETTINGS/fighters/makeFighter/etc. are
 // lexical). It lives here, not in scripts/balance-tournament.mjs, so a test can import it without pulling in that script's
-// process-level handlers. Moved verbatim.
+// process-level handlers. Moved verbatim, plus one line: a measurement locks the in-browser adaptation (BOT_ADAPT) off for good, so what
+// is played here depends on nothing but the seed and the lineup.
 export const SETUP_SRC = `
 window.__setupCustomMatch = function(names, stocks, aiLevel, itemRate){
+  if(typeof BOT_ADAPT!=='undefined') BOT_ADAPT.lock();
   // Kill every rival mode/flag so we land in a clean plain FFA.
   TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null;
   if(typeof BOSSRUSH!=='undefined') BOSSRUSH.active=false;

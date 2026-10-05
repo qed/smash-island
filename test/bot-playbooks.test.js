@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { JSDOM } from 'jsdom';
+import { SETUP_SRC } from './helpers/match-setup.js';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { mulberry32 } from './helpers/prng.js';
 import { BOT_GOLDEN_MATCHES, bootGoldenWindow, playBotMatch } from './helpers/bot-golden.js';
@@ -262,6 +264,221 @@ describe('Normal makes mistakes', () => {
     expect(empty).toBeGreaterThan(0.7);
     expect(empty).toBeLessThan(0.85);
   });
+});
+
+// ---- the in-browser adaptation (BOT_ADAPT) ----------------------------------------------------------------------------------
+// A window that looks like a real browser to the game: the user agent is Chrome's, not jsdom's (the game's own test for "not a measurement").
+const STUB_CTX = () => new Proxy({}, { get: (_t, p) => (p === 'measureText' ? () => ({ width: 0 }) : p === 'canvas' ? { width: 1100, height: 720 }
+  : p === 'getImageData' ? () => ({ data: [] }) : (p === 'createLinearGradient' || p === 'createRadialGradient' || p === 'createConicGradient' || p === 'createPattern') ? () => ({ addColorStop() {} }) : () => {}), set: () => true });
+function bootBrowser(opts = {}) {
+  const dom = new JSDOM(readFileSync('artifacts/V1/index.html', 'utf8'), {
+    url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+    beforeParse(window) {
+      window.HTMLCanvasElement.prototype.getContext = () => STUB_CTX();
+      window.Math.random = mulberry32(opts.seed || 5);
+      window.requestAnimationFrame = () => 0; window.cancelAnimationFrame = () => {};
+      Object.defineProperty(window.navigator, 'userAgent', { value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36', configurable: true });
+      if (opts.webdriver) Object.defineProperty(window.navigator, 'webdriver', { value: true, configurable: true });
+      if (opts.harness) window.__botsHarness = true;
+      if (opts.noStorage) Object.defineProperty(window, 'localStorage', { get() { throw new Error('SecurityError: storage is blocked'); }, configurable: true });
+    },
+  });
+  return dom.window;
+}
+// Two fighters in a plain FFA, an idle person (Pen, local) and a CPU Firey with an empty playbook; the code in `extra` runs once they are set
+// up and then the adaptation is begun the way beginMatchNow does. `keep` leaves localStorage as it is (else it is cleared first).
+const MATCH = (level = 2, extra = '', keep = false) => `(function(){
+  TESTMODE.active=false; TOURNEY_WATCHING=null; SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true; AI_LEVEL=${level};
+  worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+  for (var k in PLAYBOOKS) delete PLAYBOOKS[k]; PLAYBOOKS.Firey = { v: {} };
+  ${keep ? '' : 'try { localStorage.removeItem("bots:adapt:v1"); } catch (e) {}'}
+  var H = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 700, groundY()-24, 0);
+  var A = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 300, groundY()-24, 1);
+  H.team=0; A.team=1; H.controller='local'; H.you=true; A.controller='ai'; H.stocks=1; A.stocks=3;
+  fighters=[H,A]; step(); H.invuln=0; A.invuln=0; hazardT=1000; BOT_ADAPT.data = Object.create(null); BOT_ADAPT.locked = false;
+  ${extra} })()`;
+const K0 = '{ d: 0, h: 1, o: 0, p: 0, locked: false }';   // melee, level, the foe idle, fresh
+// what a fired move looks like to the bandit: the cooldown jumps, the damage counters move, the window runs out
+const FIRE_JAB = 'A.atkCd = 0; botAdaptNote(A, k); A.atkCd = 22; botAdaptNote(A, k); A._dmgDealt += 30; hazardT += 80; botAdaptNote(A, k);';
+
+describe('the in-browser adaptation is bounded, persists, and is off in every measurement context', () => {
+  let B;
+  beforeAll(async () => { B = bootBrowser(); await B.eval('profileReady'); });
+
+  it('is on in a browser and off in a jsdom window, under a webdriver, in the harness boots, and once a match setup has locked it', () => {
+    expect(B.eval('BOT_ADAPT.enabled && !BOT_ADAPT.locked')).toBe(true);
+    expect(bootBrowser({ webdriver: true }).eval('BOT_ADAPT.enabled')).toBe(false);
+    expect(bootBrowser({ harness: true }).eval('BOT_ADAPT.enabled')).toBe(false);
+    expect(bootMonolith().eval('BOT_ADAPT.enabled'), 'the boot every test and boss script uses').toBe(false);
+    expect(loadMonolith(1).window.eval('BOT_ADAPT.enabled'), "the balance tournament's, the trainer's and the golden's boot").toBe(false);
+    B.eval(SETUP_SRC); B.eval('__setupCustomMatch(["Firey","Pen"], 1, 2, 0)');   // the match setup they all run
+    expect(B.eval('BOT_ADAPT.locked')).toBe(true);
+    B.eval('BOT_ADAPT.locked = false');                                          // (the rest of this file wants it on)
+  });
+
+  it('adapts only a CPU with a shipped playbook, in a match a person plays, on the host, outside the boss modes', () => {
+    const begin = (extra = '') => JSON.parse(B.eval(`${MATCH(2, extra)}; botAdaptBegin(); JSON.stringify({ on: BOT_ADAPT.on, who: Object.keys(BOT_ADAPT.fx) })`));
+    expect(begin()).toEqual({ on: true, who: ['Firey'] });
+    expect(begin('delete PLAYBOOKS.Firey;').on, "no entry: today's bot, no adaptation").toBe(false);
+    expect(begin('H.controller="ai"; H.you=false;').on, 'no person in the match').toBe(false);
+    expect(begin('SETTINGS.mode="boss";').on, 'boss modes').toBe(false);
+    expect(begin('TESTMODE.active=true;').on, 'the practice sandbox').toBe(false);
+    expect(begin('A._pbOverride = null;').on, "the trainer's fighters").toBe(false);
+    const was = B.NET;
+    B.NET = { role: 'client' };
+    expect(begin().on, 'a client never runs AI, so it never adapts').toBe(false);
+    B.NET = { role: 'host', inputs: {} };
+    expect(begin('H.controller="remote";').on, "the host's CPUs adapt to a friend on the other end").toBe(true);
+    B.NET = was;
+    expect(B.eval(`${MATCH(2, 'BOT_ADAPT.locked = true;')}; botAdaptBegin(); BOT_ADAPT.on`), 'a locked game').toBe(false);
+    B.eval('BOT_ADAPT.locked = false');
+  });
+
+  it('is wired into the match: beginMatchNow begins it and checkWin commits it', () => {
+    expect(B.eval('String(beginMatchNow)')).toMatch(/botAdaptBegin\(\)/);
+    expect(B.eval('String(checkWin)')).toMatch(/botAdaptCommit\(\)/);
+  });
+
+  it("learns what pays: a move that earns above its context's average is nudged up, one that costs is nudged down, inside the cap", () => {
+    const r = JSON.parse(B.eval(`${MATCH(2, `
+      botAdaptBegin(); var k = ${K0};
+      // 30 jabs in melee that each land for 30 damage, and 30 specials in melee that each cost 40 damage taken
+      for (var i = 0; i < 30; i++){
+        ${FIRE_JAB}
+        A.spCd = 60; botAdaptNote(A, k); A._dmgTaken += 40; hazardT += 80; botAdaptNote(A, k);
+        A.spCd = 0; A.atkCd = 0; botAdaptNote(A, k);
+      }
+      botAdaptCommit();
+      var d = BOT_ADAPT.data.Firey;
+      botAdaptBegin();
+      var fx = BOT_ADAPT.fx.Firey, l1 = 0; fx.forEach(function(v){ l1 += Math.abs(v); });
+      return JSON.stringify({ jabN: d.c[0], jabM: d.m[0], spN: d.c[2], spM: d.m[2], n: d.n, jab: fx[0], sp: fx[2], l1: l1, max: Math.max.apply(null, fx.map(Math.abs)), cap: ADAPT_CAP, cap1: ADAPT_L1 });`)}`));
+    expect(r.n).toBe(1);
+    expect(r.jabN).toBeGreaterThanOrEqual(29); expect(r.spN).toBeGreaterThanOrEqual(29);
+    expect(r.jabM).toBeCloseTo(1.2, 1);               // 30 damage / 25
+    expect(r.spM).toBeCloseTo(-1.6, 1);
+    expect(r.jab).toBeGreaterThan(0.2);               // the jab beat the context's average ...
+    expect(r.sp).toBeLessThan(-0.2);                  // ... the special lost to it
+    expect(r.max).toBeLessThanOrEqual(r.cap);
+    expect(r.l1).toBeLessThanOrEqual(r.cap1 + 1e-9);
+  });
+
+  it('the nudge reaches the fighter: it is added to the move\'s shift, and only while the match adapts', () => {
+    const r = JSON.parse(B.eval(`${MATCH(2, `
+      PLAYBOOKS.Firey = { v: { mJb: -1 } };
+      botAdaptBegin(); BOT_ADAPT.fx.Firey = new Array(63).fill(0); BOT_ADAPT.fx.Firey[0] = ADAPT_CAP;
+      var k = ${K0}, eff = pbEff(PLAYBOOKS.Firey, 'Pen', 'zone');
+      var adapted = pbShifts(A, eff, k).slice();
+      BOT_ADAPT.on = false; var plain = pbShifts(A, eff, k).slice();
+      return JSON.stringify({ adapted: adapted[0], plain: plain[0], cap: ADAPT_CAP });`)}`));
+    expect(r.plain).toBe(-1);
+    expect(r.adapted).toBeCloseTo(-1 + r.cap, 6);
+  });
+
+  it('persists: it is written to localStorage and a reloaded page reads it back', () => {
+    B.eval(`${MATCH(2, `botAdaptBegin(); var k = ${K0}; ${FIRE_JAB} botAdaptCommit();`)}`);
+    const raw = B.localStorage.getItem('bots:adapt:v1');
+    expect(raw, 'the match left its lessons in localStorage').toBeTruthy();
+    const saved = JSON.parse(raw);
+    expect(saved.Firey.c).toHaveLength(63); expect(saved.Firey.c[0]).toBeGreaterThan(0); expect(saved.Firey.n).toBe(1);
+    const C = bootBrowser({ seed: 9 });                              // a new page load with the same storage
+    C.localStorage.setItem('bots:adapt:v1', raw);
+    const r = JSON.parse(C.eval(`${MATCH(2, `botAdaptBegin(); return JSON.stringify({ n: BOT_ADAPT.data.Firey.n, c0: BOT_ADAPT.data.Firey.c[0], m0: BOT_ADAPT.data.Firey.m[0], on: BOT_ADAPT.on });`, true)}`));
+    expect(r.on).toBe(true);
+    expect(r.n).toBe(1);
+    expect(r.c0).toBe(saved.Firey.c[0]);
+    expect(r.m0).toBeCloseTo(saved.Firey.m[0], 3);
+  });
+
+  it('works when storage is missing: no error, and it still learns for the session', () => {
+    const N = bootBrowser({ noStorage: true });
+    expect(() => N.localStorage).toThrow();
+    const r = JSON.parse(N.eval(`${MATCH(2, `
+      botAdaptBegin(); var k = ${K0}, first = BOT_ADAPT.on;
+      ${FIRE_JAB}
+      botAdaptCommit();
+      var kept = BOT_ADAPT.data.Firey && BOT_ADAPT.data.Firey.n;
+      botAdaptBegin();
+      return JSON.stringify({ first: first, kept: kept, again: BOT_ADAPT.on, c0: BOT_ADAPT.data.Firey.c[0] });`, true)}`));
+    expect(r).toMatchObject({ first: true, kept: 1, again: true });
+    expect(r.c0).toBeGreaterThan(0);
+  });
+
+  it('is bounded: nothing read from storage can push past the caps, and what it stores stays small', () => {
+    const r = JSON.parse(B.eval(`(function(){
+      var big = {}, junk = {};
+      // ninety fighters with out-of-range counts and rewards, one cell a fighter paying hugely and the rest costing hugely
+      for (var i = 0; i < 90; i++) big['F' + i] = { c: new Array(63).fill(1e9), m: Array.from({ length: 63 }, function(_, j){ return j % 7 === 0 ? 1e9 : -1e9; }), n: 5, t: i };
+      junk.Bad1 = { c: [1, 2, 3], m: [1] }; junk.Bad2 = 5; junk.Bad3 = { c: 'x', m: 'y' };
+      var clean = botAdaptClean(Object.assign({}, big, junk));
+      var names = Object.keys(clean), cmax = 0, mmin = 0, mmax = 0;
+      names.forEach(function(n){ clean[n].c.forEach(function(x){ cmax = Math.max(cmax, x); }); clean[n].m.forEach(function(x){ mmin = Math.min(mmin, x); mmax = Math.max(mmax, x); }); });
+      var fx = botAdaptFx(clean[names[0]]), worst = 0, l1 = 0; fx.forEach(function(v){ worst = Math.max(worst, Math.abs(v)); l1 += Math.abs(v); });
+      BOT_ADAPT.data = clean; localStorage.removeItem(ADAPT_KEY); botAdaptSave();
+      return JSON.stringify({ fighters: names.length, newest: names[0], hasBad: names.some(function(n){ return /^Bad/.test(n); }), cmax: cmax, mmin: mmin, mmax: mmax, worst: worst, l1: l1,
+        bytes: localStorage.getItem(ADAPT_KEY).length, caps: [ADAPT_MAX_FIGHTERS, ADAPT_CMAX, ADAPT_CAP, ADAPT_L1] });
+    })()`));
+    expect(r.fighters).toBe(r.caps[0]);                              // 40 of the 90
+    expect(r.newest).toBe('F89');                                    // the most recently updated are the ones kept
+    expect(r.hasBad).toBe(false);
+    expect(r.cmax).toBeLessThanOrEqual(r.caps[1]);
+    expect(r.mmin).toBeGreaterThanOrEqual(-3); expect(r.mmax).toBeLessThanOrEqual(3);
+    expect(r.worst).toBeLessThanOrEqual(r.caps[2] + 1e-9);
+    expect(r.l1).toBeCloseTo(r.caps[3], 6);                          // the nudges were scaled down to the L1 cap, not past it
+    expect(r.bytes).toBeLessThan(80000);                             // forty fighters of 63 cells: nothing next to a browser's storage
+  });
+
+  it("drift from the shipped playbook is capped: after 300 matches of the most one-sided rewards, no move's shift has moved more than the cap", () => {
+    const r = JSON.parse(B.eval(`${MATCH(2, `
+      var k = ${K0};
+      for (var m = 0; m < 300; m++){
+        botAdaptBegin();
+        for (var i = 0; i < 6; i++){                                  // jabs pay hugely, specials and smashes cost hugely
+          A.atkCd = 0; A.spCd = 0; A.smCd = 0; botAdaptNote(A, k);
+          A.atkCd = 22; botAdaptNote(A, k); A._dmgDealt += 500; hazardT += 80; botAdaptNote(A, k);
+          A.spCd = 60; A.smCd = 90; botAdaptNote(A, k); A._dmgTaken += 500; hazardT += 80; botAdaptNote(A, k);
+        }
+        botAdaptCommit();
+      }
+      botAdaptBegin();
+      var eff = pbEff(PLAYBOOKS.Firey, 'Pen', 'zone');
+      var adapted = pbShifts(A, eff, k).slice();
+      BOT_ADAPT.on = false; var plain = pbShifts(A, eff, k).slice();
+      var drift = 0, moved = 0; for (var s = 0; s < 7; s++){ drift = Math.max(drift, Math.abs(adapted[s] - plain[s])); moved = Math.max(moved, adapted[s] - plain[s]); }
+      var d = BOT_ADAPT.data.Firey, cmax = Math.max.apply(null, d.c), mabs = Math.max.apply(null, d.m.map(Math.abs));
+      return JSON.stringify({ drift: drift, moved: moved, cap: ADAPT_CAP, cmax: cmax, cmaxCap: ADAPT_CMAX, mabs: mabs, n: d.n });`)}`));
+    expect(r.n).toBe(300);
+    expect(r.drift).toBeLessThanOrEqual(r.cap + 1e-9);
+    expect(r.moved).toBeGreaterThan(0.2);                            // and it did learn: a nudge, not nothing
+    expect(r.cmax).toBeLessThanOrEqual(r.cmaxCap);
+    expect(r.mabs).toBeLessThanOrEqual(3);
+  });
+
+  it('Easy never adapts, even in a browser with a playbook: nothing is watched and nothing is written', () => {
+    const r = JSON.parse(B.eval(`${MATCH(0, `
+      botAdaptBegin(); A._lvl = 0; H.stocks = 3;
+      for (var i = 0; i < 400; i++){ A.atkCd = 0; step(); }
+      botAdaptCommit();
+      return JSON.stringify({ watched: !!A._pbA, stored: localStorage.getItem('bots:adapt:v1') });`)}`));
+    expect(r.watched).toBe(false);
+    expect(r.stored).toBeNull();
+  });
+
+  it('end to end: a CPU with a playbook beats an idle person through the real step() and checkWin, and the match lands in localStorage', () => {
+    B.Math.random = mulberry32(77);
+    const r = JSON.parse(B.eval(`${MATCH(2, `
+      botAdaptBegin();
+      var on = BOT_ADAPT.on, f = 0;
+      for (; running && f < 3000; f++) step();
+      var d = BOT_ADAPT.data.Firey, stored = JSON.parse(localStorage.getItem('bots:adapt:v1') || 'null');
+      return JSON.stringify({ on: on, over: !running, frames: f, after: BOT_ADAPT.on, n: d && d.n, uses: d && d.c.reduce(function(a, b){ return a + b; }, 0), stored: !!(stored && stored.Firey && stored.Firey.n === 1) });`)}`));
+    expect(r.on).toBe(true);
+    expect(r.over).toBe(true);
+    expect(r.after, 'committed once, at the end').toBe(false);
+    expect(r.n).toBe(1);
+    expect(r.uses).toBeGreaterThan(3);                               // it fired moves, and they were seen
+    expect(r.stored).toBe(true);
+  }, 120000);
 });
 
 // ---- the trainer: scripts/train-bots.mjs ----------------------------------------------------------------------------------

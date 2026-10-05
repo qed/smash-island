@@ -5523,6 +5523,7 @@ function beginMatchNow(){
   window.__elimSeq=0; lastKoFrame=0;   // reset placement/elimination + stalemate timer for the new match
   try{ teamAiResetMatch(); }catch(e){}  // and the team-AI cost guard: call budget is per match
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
+  try{ botAdaptBegin(); }catch(e){}   // the CPUs' in-browser adaptation to this player (BOT_ADAPT): decides whether this match adapts
   particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null; oneFx=[]; cobsFx=[];
   impactFxClear();   // no dust, debris or floor scar carries over from the last match (impact)
   try{ shopMatchReset(); }catch(e){}   // Win Tokens: this match's smash tally, KO bursts and quest line start empty
@@ -30210,6 +30211,7 @@ function checkWin(){
     if(DAILY_ACTIVE){ try{ recordDaily(winTeam===0); }catch(e){} DAILY_ACTIVE=false; PENDING_DAILY=null; }
     returnDailyLoan();   // the Daily's fighter was lent for that match only (showResult names who you played)
     try{ commitPlaystyles(); }catch(e){}   // …and fold this match into the play-style profile
+    try{ botAdaptCommit(); }catch(e){}   // …and into what the CPUs have learned of this player (BOT_ADAPT)
     setTimeout(()=>showResult(winners, winTeam),700);
   }
 }
@@ -32447,7 +32449,6 @@ const PB_ORDER = [6, 5, 2, 3, 4, 1, 0];   // the order added presses are rolled 
 let _pbU = -1;                         // one roll shared by every thinning in a frame
 const pbAddP = (s) => s <= 0 ? 0 : PB_ADD_CAP * (2/(1 + Math.exp(-s)) - 1);
 function pbThin(s){ if(s >= 0) return false; if(_pbU < 0) _pbU = Math.random(); return _pbU >= 2/(1 + Math.exp(-s)); }
-function botAdaptShift(f, k, slot){ return 0; }   // the in-browser adaptation's nudge to a move's shift (see BOT_ADAPT)
 
 // The genes in force for this fighter against this foe: the playbook's own, clamped to their ranges (a stray key or a NaN is ignored,
 // so a bad entry can do no more than the ranges allow), with the matchup deltas for the foe's class and, if the entry has one, for the
@@ -32507,9 +32508,11 @@ function pbShifts(f, e, k){
 // not make (a shift of +2 adds it at about 9% a frame while it is legal), always turned to face the foe. With every shift zero it
 // draws no dice and changes nothing.
 function pbMoves(f, t, inp, pb, lvl, sp, danger, inMelee, ac0){
+  const k = pbSense(f, t, danger, lvl);
+  botAdaptNote(f, k);                                          // the in-browser adaptation watches what this fighter fires (a no-op outside real play)
   if(inp._kitRead) return;                                     // a kit read (stance, trap, follow-up) is the g* genes' to shape
   if(lvl === 1 && Math.random() < PB_NORMAL.skip) return;      // Normal: a frame in four plays the legacy rules
-  const k = pbSense(f, t, danger, lvl), sh = pbShifts(f, pb, k);
+  const sh = pbShifts(f, pb, k);
   const dy = t.y - f.y, gap = Math.hypot(t.x - f.x, dy) - (f.r + t.r);
   _pbU = -1;
   if(inp.special){                                             // what the legacy rules pressed, thinned
@@ -32549,6 +32552,139 @@ function pbMoves(f, t, inp, pb, lvl, sp, danger, inMelee, ac0){
   else if(pick === 3){ inp.special = true; inp.up = true; }
   else if(pick === 4){ inp.special = true; inp.down = true; }
   else f._aiCharging = aiChargeDepth(f, sp, pick === 6);
+}
+
+// ============================================================
+//  IN-BROWSER ADAPTATION  --  each player's browser teaches the CPUs how THEY play
+// ============================================================
+// On top of a fighter's shipped playbook, a small bounded nudge learned from this player's own matches and kept on this device
+// (localStorage 'bots:adapt:v1'; nothing is sent anywhere). A contextual bandit over the move choice: the context is the distance band
+// and what the foe is doing (3 x 3), the arms are the seven moves. A move that is fired is rewarded with the damage the fighter dealt
+// minus the damage it took over the next ADAPT_WINDOW frames, plus 1.5 for each KO in them (minus 1.5 for each fall). What a move earns
+// above its context's average, shrunk by how seldom it was tried, becomes a nudge to that move's shift from the next match on (pbShifts),
+// and two cells that have hardly been tried get a push each match, so the bandit meets moves the playbook never plays. Bounded three
+// ways: no nudge passes ADAPT_CAP, a fighter's nudges sum to at most ADAPT_L1 (the shipped playbook's own shifts run to +-12), and what
+// is kept is capped (ADAPT_MAX_FIGHTERS fighters, a fixed 63 cells each, counts forgotten at ADAPT_FORGET a match). It exists only for a
+// CPU that has a shipped playbook entry, in a match a person is playing; it is the host's alone (a client never runs AI) and it is OFF in
+// every measurement and test context: a jsdom window, a webdriver, anything that called BOT_ADAPT.lock() (the match setup the balance
+// tournament and the trainer share, the boss harnesses, the glitch hunter). Those runs must stay deterministic.
+const ADAPT_KEY = 'bots:adapt:v1';
+const ADAPT_CELLS = 63;          // 3 distance bands x 3 foe states x 7 moves: cell = (band*3 + foe)*7 + move
+const ADAPT_CAP = 0.6, ADAPT_L1 = 6, ADAPT_MAX_FIGHTERS = 40, ADAPT_WINDOW = 75, ADAPT_CMAX = 60, ADAPT_C0 = 8, ADAPT_FORGET = 0.97, ADAPT_PUSH = 0.5;
+const BOT_ADAPT = {
+  enabled: (function(){ try{ return !/jsdom/i.test(navigator.userAgent || 'jsdom') && !navigator.webdriver && !window.__botsHarness; }catch(e){ return false; } })(),
+  locked: false,   // the harnesses lock it for good
+  on: false,       // this match adapts
+  data: Object.create(null),   // name -> { c: counts[63], m: mean rewards[63], n: matches, t: last update }
+  fx: {},          // name -> the nudges in force this match [63]: the stored stats, folded when the match began
+  acc: {},         // name -> { c: [63], s: [63] }: what this match has earned so far
+  lock(){ this.locked = true; this.on = false; },
+};
+// Whatever is read back from storage is made safe first: the right shape, counts and rewards inside their ranges, at most ADAPT_MAX_FIGHTERS.
+function botAdaptClean(d){
+  const out = Object.create(null);
+  if(!d || typeof d !== 'object') return out;
+  for(const name of Object.keys(d).slice(0, 400)){
+    const r = d[name];
+    if(!r || !Array.isArray(r.c) || !Array.isArray(r.m) || r.c.length !== ADAPT_CELLS || r.m.length !== ADAPT_CELLS) continue;
+    out[name] = { c: r.c.map(x => Math.max(0, Math.min(ADAPT_CMAX, +x || 0))), m: r.m.map(x => Math.max(-3, Math.min(3, +x || 0))),
+                  n: Math.max(0, Math.min(1e6, +r.n || 0)), t: +r.t || 0 };
+  }
+  const keep = Object.keys(out).sort((a, b) => out[b].t - out[a].t).slice(0, ADAPT_MAX_FIGHTERS), kept = Object.create(null);
+  for(const n of keep) kept[n] = out[n];
+  return kept;
+}
+function botAdaptLoad(){
+  try{ const raw = localStorage.getItem(ADAPT_KEY); if(raw) BOT_ADAPT.data = botAdaptClean(JSON.parse(raw)); }catch(e){}   // no storage, or garbage in it: what is in memory stands
+}
+function botAdaptSave(){
+  try{ localStorage.setItem(ADAPT_KEY, JSON.stringify(BOT_ADAPT.data, (k, v) => typeof v === 'number' ? Math.round(v*1000)/1000 : v)); }catch(e){}
+}
+// The nudges for one fighter: each cell's mean reward above its context's average, shrunk by how few times it was tried, and clamped.
+function botAdaptFx(rec){
+  const fx = new Array(ADAPT_CELLS).fill(0);
+  if(rec) for(let x = 0; x < 9; x++){
+    let tc = 0, ts = 0;
+    for(let a = 0; a < 7; a++){ const i = x*7 + a; tc += rec.c[i]; ts += rec.c[i]*rec.m[i]; }
+    if(tc <= 0) continue;
+    const base = ts/tc;
+    for(let a = 0; a < 7; a++){ const i = x*7 + a, c = rec.c[i]; if(c > 0) fx[i] = Math.max(-ADAPT_CAP, Math.min(ADAPT_CAP, (rec.m[i] - base) * c/(c + ADAPT_C0))); }
+  }
+  for(let j = 0; j < 2; j++){ const i = Math.floor(Math.random()*ADAPT_CELLS); if(!rec || rec.c[i] < 4) fx[i] = Math.min(ADAPT_CAP, fx[i] + ADAPT_PUSH); }
+  let l1 = 0; for(const v of fx) l1 += Math.abs(v);
+  if(l1 > ADAPT_L1){ const s = ADAPT_L1/l1; for(let i = 0; i < ADAPT_CELLS; i++) fx[i] *= s; }
+  return fx;
+}
+// Called when a match begins (beginMatchNow): decides whether this match adapts, and with what.
+function botAdaptBegin(){
+  const A = BOT_ADAPT;
+  A.on = false; A.fx = {}; A.acc = {};
+  if(!A.enabled || A.locked) return;
+  if(SETTINGS.mode === 'boss' || TESTMODE.active || RACE.active || ONEFIGHT.active || COBSFIGHT.active || TOURNEY_WATCHING) return;   // a fighter-vs-fighter match someone is playing
+  if(isNetClient()) return;                                    // a client never runs AI: only the host's CPUs adapt
+  if(!fighters.some(f => f.controller === 'local' || f.controller === 'local2' || f.controller === 'remote')) return;
+  botAdaptLoad();
+  for(const f of fighters){
+    if(f.controller !== 'ai' || f._pbOverride !== undefined || !PLAYBOOKS[f.name]) continue;   // only a CPU that has a shipped playbook
+    A.fx[f.name] = botAdaptFx(A.data[f.name]);
+    A.acc[f.name] = { c: new Array(ADAPT_CELLS).fill(0), s: new Array(ADAPT_CELLS).fill(0) };
+  }
+  A.on = Object.keys(A.fx).length > 0;
+}
+function botAdaptShift(f, k, slot){   // the nudge to a move's shift in this context (pbShifts adds it)
+  const fx = BOT_ADAPT.on && BOT_ADAPT.fx[f.name];
+  return fx ? fx[(k.d*3 + k.o)*7 + slot] : 0;
+}
+// Every frame of a CPU with a playbook (from pbMoves): which moves did it fire since the last frame (a cooldown jumped), in the context that
+// frame saw, and which fired moves' windows have run out. A reward is the damage dealt minus taken since the move, over the window.
+function botAdaptNote(f, k){
+  const A = BOT_ADAPT;
+  if(!A.on) return;
+  const acc = A.acc[f.name];
+  if(!acc) return;
+  const p = f._pbA || (f._pbA = { atk: f.atkCd, sp: f.spCd, sm: f.smCd, x: 0, melee: false, locked: false, q: [] }), li = f._lastInput || {};
+  const fired = [];
+  if(f.atkCd > p.atk) fired.push(p.melee ? 0 : 1);
+  if(f.spCd > p.sp) fired.push(li.up ? 3 : li.down ? 4 : p.melee ? 2 : 1);
+  if(f.smCd > p.sm) fired.push(p.locked ? 6 : 5);
+  for(const slot of fired) if(p.q.length < 12) p.q.push({ t: hazardT, i: p.x*7 + slot, d: f._dmgDealt||0, h: f._dmgTaken||0, o: f._kos||0, l: f._falls||0 });
+  p.atk = f.atkCd; p.sp = f.spCd; p.sm = f.smCd;
+  p.x = k.d*3 + k.o; p.melee = k.d === 0; p.locked = k.locked;
+  botAdaptClose(f, p, acc, false);
+}
+function botAdaptClose(f, p, acc, all){
+  while(p.q.length && (all || hazardT - p.q[0].t >= ADAPT_WINDOW)){
+    const u = p.q.shift();
+    const r = (((f._dmgDealt||0) - u.d) - ((f._dmgTaken||0) - u.h))/25 + 1.5*((f._kos||0) - u.o) - 1.5*((f._falls||0) - u.l);
+    acc.c[u.i]++; acc.s[u.i] += Math.max(-3, Math.min(3, r));
+  }
+}
+// Called when a match ends by elimination (checkWin, beside recordMatch): folds what the match earned into the stored stats and saves.
+function botAdaptCommit(){
+  const A = BOT_ADAPT;
+  if(!A.on) return;
+  A.on = false;
+  try{
+    botAdaptLoad();
+    for(const f of fighters){ const p = f._pbA, acc = A.acc[f.name]; if(p && acc) botAdaptClose(f, p, acc, true); }
+    const now = Date.now();
+    let learned = false;
+    for(const name of Object.keys(A.acc)){
+      const acc = A.acc[name];
+      if(!acc.c.some(x => x > 0)) continue;
+      learned = true;
+      const rec = A.data[name] || (A.data[name] = { c: new Array(ADAPT_CELLS).fill(0), m: new Array(ADAPT_CELLS).fill(0), n: 0, t: 0 });
+      for(let i = 0; i < ADAPT_CELLS; i++){
+        const c0 = rec.c[i]*ADAPT_FORGET, n = acc.c[i];
+        if(n > 0) rec.m[i] = (rec.m[i]*c0 + acc.s[i])/(c0 + n);
+        rec.c[i] = Math.min(ADAPT_CMAX, c0 + n);
+      }
+      rec.n++; rec.t = now;
+    }
+    if(!learned) return;                                       // a match that fired nothing teaches nothing and writes nothing
+    A.data = botAdaptClean(A.data);
+    botAdaptSave();
+  }catch(e){}
 }
 
 // For big-FFA AI: find a claimable spawn point worth going for (unowned or not-yet-mine, not mobbed).
