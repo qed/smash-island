@@ -555,7 +555,7 @@ describe('Boss Rush, round 2: every move whose card promises a hit reaches the b
         worldPlats=[]; summons=[]; projectiles=[]; items=[]; particles=[]; beams=[]; tendrils=[];
         var A=makeFighter(ROSTER.find(function(r){ return r.name===nm; }),400,groundY()-24,0); A.team=0; A.controller='still'; A.stocks=99; A.face=1; fighters=[A];
         spawnBossRushBoss(); var b=summons[0]; b._atkTimer=1e9; b.x=440; b.hp=b.maxHp=5000; b._ungrounded=true; b._grounded=false;   // Two's state
-        step(); A.smCd=0; A.spCd=0; var by0=b.y; eval(mv); for(var i=0;i<40;i++){ step(); b.x=440; b.y=by0; b.vx=0; b.vy=0; }
+        step(); A.smCd=0; A.spCd=0; var by0=b.y; eval(mv); for(var i=0;i<40;i++){ b._groundT=0; b._groundHold=0; b._grounded=false; step(); b.x=440; b.y=by0; b.vx=0; b.vy=0; }   // (kept ungrounded: since "Grounds twice as fast" (the owner, 2026-10-05) a fighter this close grounds him inside 40 frames)
         out[nm]=5000-b.hp; });
       return out; })()`);
     expect(r).toEqual({ Rose: 0, Ruby: 0 });

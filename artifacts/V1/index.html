@@ -7553,13 +7553,19 @@ function updateBossAttack(s, tgt){
   // In phase 3 Two's power ungrounds: they take NO damage until a fighter stands close enough for
   // long enough to ground it. Grounding lapses if everyone backs off, so you must commit.
   if(s.attack==="two" && s._ungrounded){
-    const near = fighters.some(f=>!f.dead && Math.hypot(f.x-s.x, f.y-s.y) < s.r+130);
+    const G = TWO.ground, near = twoNear(s);
     s._groundT = near ? Math.min(120, (s._groundT||0)+1) : Math.max(0, (s._groundT||0)-2);
-    s._grounded = s._groundT >= 60;              // ~1s of pressure grounds them
+    // "Grounds twice as fast" and "Stays grounded" (the owner, 2026-10-05: "the power grounded thing just makes him take way too long"):
+    // G.need frames of pressure ground him (it was 60), and once grounded he stays grounded for G.hold frames after everyone backs off --
+    // refreshed for as long as someone stays close -- so you can step away from his attacks and keep the window
+    const held = (s._groundHold || 0) > 0;
+    if(near && (held || s._groundT >= G.need)){ s._groundHold = G.hold; s._groundT = Math.max(s._groundT, G.need); }
+    else if(held) s._groundHold--;
+    s._grounded = (s._groundHold || 0) > 0;
     if(s._grounded && !s._wasGrounded){ banner("GROUNDED — hit them NOW!",900,'boss'); s._wasGrounded=true; }
     if(!s._grounded && s._wasGrounded){ s._wasGrounded=false; }
-    // visual: crackling tether to the floor while grounded
-    if(s._grounded){ for(let i=0;i<2;i++) puff(s.x+(Math.random()*40-20), gy-6, '#f0d24b', 3); }
+    // visual: crackling tether to the floor while grounded; it flickers in the hold's last second, as it is about to let go
+    if(s._grounded && (near || s._groundHold > 60 || hazardT % 8 < 4)){ for(let i=0;i<2;i++) puff(s.x+(Math.random()*40-20), gy-6, '#f0d24b', 3); }
   }
   // the rest of him, every frame: the tells that follow you until they lock, a move in the air, the mace, the steps (twoTick)
   if(s.attack==="two") twoTick(s, tgt);
@@ -8359,7 +8365,7 @@ const BOSS_PICK = {
   // hands, the cars, the second ring); the sun and the mace are carriers with no attack id, and his steps lie there.
   two: {
     tags:{ two:['any', 'close'], twosun:['ground', 'platform'], twopower:'close', twoblocks:['ground', 'bunch'], tworails:['ground', 'platform'], twoclap:'any' },
-    moves:(s, ph) => ['two', 'twosun', 'twopower', 'twoblocks'].concat(ph >= 2 ? ['tworails', 'twoclap'] : []),
+    moves:(s, ph) => ['two', 'twosun', 'twopower', 'twoblocks'].concat(ph >= 2 ? ['tworails', 'twoclap'] : []).filter(m => m !== 'twopower' || !twoGrounding(s)),   // "No orbs while grounding" (the owner, 2026-10-05)
     busy:(s) => !!s._tw
   },
   // @boss:two:end pick
@@ -16706,12 +16712,13 @@ function s4DrawEnd(pr){
 //   cr  [[x, launchFrame, colour, id, landed]] the derailed coaster's cars (the hazard)        crNext, crN  when the next one leaves, and how many have
 // One table, so the tuning and the tests read the same numbers.
 const TWO = {
+  ground:{ need:30, hold:240, reach:130 },   // phase 3's grounding (the owner, 2026-10-05: "the power grounded thing just makes him take way too long"): "Grounds twice as fast" -- need frames close ground him (it was 60) -- and "Stays grounded" -- grounded, he stays so for hold frames after everyone backs off. reach: past his body
   tel:{ two:36, twosun:40, twopower:36, twoblocks:40, tworails:40, twoclap:36 },   // the wind-up of each move (bossTelLen)
   gaps:[0, 180, 150, 130],   // the gap after a move, by phase (BOSS_PACE on top). "nerf two": "Longer gaps between turns" (the owner, 2026-10-03; it was the usual 100 / 72, and 60 in phase 3)
   hover:{ lo:24, hi:170, bob:9 }, stand:[0, 250, 200, 280], follow:[0, 0.03, 0.05, 0.034], glide:[0, 0.06, 0.09, 0.06],   // how high it floats over the floor, how far it keeps from you, how fast it follows and glides (by phase: phase 2's Size Shift is quicker)
   pop:{ out:9, inn:9, far:240 },                                                    // a pop: frames to go out and come in; a move that begins further than this away is a pop
   read:{ ring:176, lock:12, back:220, speed:13, lead:0.35, home:0.06, copies:[0, 1, 2, 3], r:12, kb:10, life:80, stagger:6, spread:0.16, drain:[0, 260, 260, 340], dim:{ max:3, hold:150 } },
-  sun:{ r:44, g:0.34, leg:28, vmax:10.5, bounces:[0, 1, 2, 3], rise:30, kb:13, home:[0.8, 0.25, 0.5], mace:{ spd:0.025, k:1.6, kb:11, frac:0.8, enter:30, rise:30, sink:30 } },
+  sun:{ r:44, g:0.34, leg:28, vmax:10.5, bounces:[0, 1, 2, 3], rise:30, kb:13, home:[0.8, 0.25, 0.5], mace:{ spd:0.025, k:1.6, kb:11, frac:0.8, enter:30, rise:30, sink:15 } },
   blocks:{ n:4, size:50, half:26, grow:30, hold:24, gap:10, fall:24, lean:0.16, spacing:200, kb:13, step:{ life:180, h:50, fade:24 }, row2:{ off:100, at:6 } },
   clap:{ r:56, arrive:[0, 34, 34, 28], lock:10, kb:16, high:150, pad:32, hand:110 },
   power:{ pairs:4, within:10, spread:90, v:6.5, slow:5, fast:8, r:11, big:17, small:8, again:36, shift:45, lock:8, kb:9 },   // "nerf two" -- the orbs (the owner, 2026-10-03): four pairs, not six (wider gaps), and phase 3's second ring 36 frames behind, not 24
@@ -16860,7 +16867,7 @@ function twoPhaseBeat(s, ph){
   const H = twoHz(s), gy = groundY();
   if(ph >= 2 && !s._sizeShift){ s.r = Math.round(s.r*0.72); s._sizeShift = 1; H.p2 = hazardT; twoPop(s, WW*0.5, gy - s.r - 140); }
   if(ph >= 3 && !s._ungrounded){
-    s.stationary = false; s.r = Math.round(s.r*1.5); s._ungrounded = true; s._groundT = 0; H.p3 = hazardT; twoPop(s, WW*0.5, gy - s.r - 140);
+    s.stationary = false; s.r = Math.round(s.r*1.5); s._ungrounded = true; s._groundT = 0; s._groundHold = 0; H.p3 = hazardT; twoPop(s, WW*0.5, gy - s.r - 140);
     twoMaceBegin(s);
   }
 }
@@ -16920,6 +16927,12 @@ function twoSunHome(s){
   return twoSkySun(twoPh(s));
 }
 function twoSunRest(s){ return twoPh(s) >= 3 ? twoMaceSpot(s) : twoSkySun(twoPh(s)); }
+// Within his grounding reach (TWO.ground.reach past his body): whoever presses in grounds him.
+function twoNear(s){ return fighters.some(f => !f.dead && Math.hypot(f.x - s.x, f.y - s.y) < s.r + TWO.ground.reach); }
+// Someone is grounding him: phase 3's shield is up and a fighter is in reach, or the grounding still holds. "No orbs while grounding"
+// (the owner, 2026-10-05: "trying to get rid of it causes me to get hit by Tpot"): THE POWER OF TWO! is not picked then -- the picker
+// leaned on it exactly when someone stood close, its tag being `close` -- and a ring due while it is so fizzles in his hands.
+function twoGrounding(s){ return !!s._ungrounded && (!!s._grounded || twoNear(s)); }
 // The mace: the spiked ball circling Two at TWO.sun.mace.k of their radius, slow ("radius about 120, slow"), so the way to ground them (stay close) is the dangerous
 // place. Each revolution is one attack (the id changes), 0.8 of a boss hit.
 function twoMaceSpot(s){
@@ -16948,7 +16961,7 @@ function twoMaceStep(s, tgt, H){
     const e = s._maceIn/S.enter, k = e*e*(3 - 2*e);
     x = s._maceFrom.x + (x - s._maceFrom.x)*k; y = s._maceFrom.y + (y - s._maceFrom.y)*k;
   }
-  // GROUNDED, IT SINKS ("nerf two", the owner, 2026-10-03): the mace is his power, so while a fighter is grounding him (from halfway there: TWO.sun.mace.sink of the 60 frames) it hangs still, resting on the floor
+  // GROUNDED, IT SINKS ("nerf two", the owner, 2026-10-03): the mace is his power, so while a fighter is grounding him (from halfway there: TWO.sun.mace.sink of the TWO.ground.need frames) it hangs still, resting on the floor
   // under where it was, and hits nobody -- standing close to ground him is the punish, not a trap -- and for TWO.sun.mace.rise frames after, it lifts back to
   // its circle, still harmless.
   const sunk = s._grounded || (s._groundT || 0) >= S.sink;   // (from halfway to grounded: pressing in pulls it down)
@@ -17205,6 +17218,7 @@ function twoPowerRing(s, id, ph, base, rot){
   }
 }
 function twoPowerFire(s, tgt){
+  if(twoGrounding(s)){ for(let i=0;i<10;i++) puff(s.x, s.y, '#9be86a', 4); return; }   // "No orbs while grounding" (the owner, 2026-10-05): the ring fizzles in his hands
   const id = ++BOSS_ATK_ID, ph = s._telPh || twoPh(s), H = twoHz(s);
   const base = H.pw ? H.pw[0] : (tgt ? Math.atan2(tgt.y - s.y, tgt.x - s.x) : 0);
   twoPowerRing(s, id, ph, base, Math.PI/TWO.power.pairs);   // a GAP at you, not a pair ("nerf two": the orbs, 2026-10-03): stay put and the first ring passes you by
@@ -17215,7 +17229,8 @@ function twoPowerFire(s, tgt){
 function twoPowerStep(s, tgt, T, H){
   const P = TWO.power;
   T.t++;
-  if(T.t === P.again){ twoPowerRing(s, T.id, T.ph, T.base, Math.PI/P.pairs + P.shift*Math.PI/180); shake(3); for(let i=0;i<10;i++) puff(s.x, s.y, '#9be86a', 6); }   // (half a spacing on from the first: a pair at you, so the second ring makes you move)
+  if(T.t === P.again && twoGrounding(s)){ for(let i=0;i<8;i++) puff(s.x, s.y, '#9be86a', 4); }   // ("No orbs while grounding": the second ring fizzles too)
+  else if(T.t === P.again){ twoPowerRing(s, T.id, T.ph, T.base, Math.PI/P.pairs + P.shift*Math.PI/180); shake(3); for(let i=0;i<10;i++) puff(s.x, s.y, '#9be86a', 6); }   // (half a spacing on from the first: a pair at you, so the second ring makes you move)
   if(T.t >= P.again + 4) twoDone(s);
 }
 // The prize (File:TPOT(prize).svg: "Outside: Lime Green / Inside: Yellowish Green"): its art once loaded, else a lime disc with a yellowish-green heart.
