@@ -24,10 +24,12 @@
 //      bot), all at Hard. For each pair i: an opponent, a seed and a side, and F's CHAMPION and every candidate play that same match.
 //   3. A candidate is kept only if it wins clearly more: a paired sign test on the discordant pairs (candidate won where the champion lost,
 //      b, against the reverse, c): z = (b - c) / sqrt(b + c). The test looks three times (32, 64, 96 pairs): it drops a candidate early when
-//      it is not ahead, accepts early at z >= 2.6, and at the last look needs z >= 2.0 + 0.35 ln K and a net of 6 wins. A neutral change is
-//      accepted about one time in twenty; the benchmark below catches the ones that were noise.
-//   4. Every few generations the champion plays today's bot (F's own legacy self, Hard, sides alternating): that win rate is `wr`. A champion
-//      that falls 15 points below its best is put back to the best.
+//      it is not ahead, accepts early at z >= 2.6, and at the last look needs z >= 2.0 + 0.35 ln K and a net of 6 wins. Measured on coin-flip
+//      pairs (test/bot-playbooks.test.js): a change that does nothing is kept 1.3% of the time (K = 3), one that takes the win rate from 50% to
+//      65% about 40%, to 70% about 65%, to 75% about 88%. Smaller true gains are rarely kept, which is what "clearly more" costs.
+//   4. A new champion, and then every five generations, plays today's bot (F's own legacy self, Hard, sides alternating; 24 matches a time):
+//      the running win rate of the CURRENT champion is `wr` (of `wrN` matches). A champion 15 points under the best one it has had (at 48+
+//      matches) is put back to that best, which is how a change that was kept on noise is found out.
 //   5. Save: the generation, the matches played, `wr`.
 // The dice of a generation (mutations, opponents, seeds) come from (seed, fighter, generation), so a generation replays identically.
 //
