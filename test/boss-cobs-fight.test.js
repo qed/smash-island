@@ -40,9 +40,10 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
     ['deploy', 'blink', 'down'], ['deploy', 'pencil', 'up'], ['meknife', 'yank', 'up'], ['meknife', 'glint', 'down'], ['hands', 'rows2', 'up'], ['hands', 'rowDy', 'up'],
     ['device', 'pincer', 'up'], ['device', 'pgap', 'down'],
     ['springs', 'retract', 'up'], ['springs', 'reach', 'up'], ['kernelpop', 'chain', 'down'], ['plug', 'wave', 'down'],
-    ['keynote', 'cresc', 'up'], ['keynote', 'fin3', 'up'], ['metags', 'link', 'up'], ['metags', 'linkW', 'up'], ['cannon', 'rock', 'up'],
+    ['keynote', 'cresc', 'up'], ['keynote', 'fin3', 'up'], ['cannon', 'rock', 'up'],
   ];
   // THE OWNER'S TUNING, 2026-10-05 ("some of cob's attacks are too easy, some too hard"): twists the owner moved to TIER 1 override the usual "twists from tier 2".
+  // (LOCKDOWN's twist, the barrier link, is not here at all any more: "No barrier link", the owner's nerf, 2026-10-05; see 'OWNER: LOCKDOWN! -- no barrier link'.)
   // PORTAL: "two from the start" -- the pull is on from tier 1 (and twice as strong, reaching farther). DELETION: "Trail from tier 1". TICK TOCK!: "Bend from tier 1". MeMURDER: "Tracking from tier 1".
   const OWNER_TIER1 = [['portal', 'pull', 'up'], ['portal', 'pullR', 'up'], ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up'], ['ticktock', 'bend', 'up'], ['memurder', 'track', 'up']];
   it('OWNER: the twists he moved to tier 1 are ON at tier 1, never weaker as the tiers climb, and stronger by tier 3 (PORTAL\'s pull: "two from the start")', () => {
@@ -70,7 +71,7 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
       expect(byAttack[k].some(([f]) => f !== 'pgap' && rows[k][1][f] > 0), `${k}: the twist is ON at tier 2`).toBe(true);
       expect(byAttack[k].some(([f, dir]) => (dir === 'up' ? rows[k][2][f] > rows[k][1][f] : rows[k][2][f] < rows[k][1][f])), `${k}: tier 3 is stronger than tier 2 in something`).toBe(true);
     }
-    expect(Object.keys(byAttack).concat([...new Set(OWNER_TIER1.map((x) => x[0]))]), 'seventeen attacks carry a table twist (fifteen here, the rest in the owner\'s tier-1 list, minus the ones the owner\'s tuning removed); the other two are his passives (rage on foot, Popping Point)').toHaveLength(17);
+    expect(Object.keys(byAttack).concat([...new Set(OWNER_TIER1.map((x) => x[0]))]), 'sixteen attacks carry a table twist now (twelve here, four in the owner\'s tier-1 list; LOCKDOWN\'s barrier link was taken out by the owner\'s nerf of 2026-10-05); the other two are his passives (rage on foot, Popping Point)').toHaveLength(16);
   });
 
   it('the two passive twists wait for their own lines: the rage on foot fights low only while he rages, and the ring only below 20% (tier 5)', () => {
@@ -859,44 +860,27 @@ describe('THE FUTURE IS SO YESTERDAY! -- the crescendo', () => {
 
 // ================= THE TWISTS, group 4: the barrier link, the rocking boat, the rage on foot, the burst ring =================
 
-describe('LOCKDOWN! -- the barrier link', () => {
-  const LINK = (t, touch, kill) => fight(`
-    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
-    cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
-    var tags = summons.filter(function(m){ return m.type === 'metag'; }), a = tags[0], b = tags[1], T = cobsT(s, 'metags');
-    var place = function(){ a.x = you.x - 150; a.y = hurtCY(you) ${touch ? '' : '- 240'}; b.x = you.x + 150; b.y = a.y; a.vx = a.vy = b.vx = b.vy = 0; a._cd = b._cd = 9999; };
-    ${kill ? 'a.hp = 0;' : ''}
-    var out = { T: T, rooted: 0, hits: 0, link: null, frames: [], width: a._linkW }, p0 = 0;
-    for (var i=0;i<130;i++){ s._atkTimer = 1e9; place(); you.pct = Math.max(0, you.pct); var before = you.pct, wasRooted = you.rooted || 0; step(); place();
-      if (i === 3) out.link = s._link ? { w: s._link.w, len: Math.round(Math.hypot(s._link.bx - s._link.ax, s._link.by - s._link.ay)) } : null;
-      if (you.pct > before) out.frames.push(i); out.rooted = Math.max(out.rooted, you.rooted || 0); }
-    out.pct = you.pct; out.dmg = a._dmg; out.cuff = a._cuff; return out;`);
-
-  it('tier 1: no barrier; from tier 2 a see-through barrier links the two tags, thicker at tier 3; touching it cuffs you as a tag would, and it never cuffs twice in a second and a half', () => {
-    const t1 = LINK(1, true, false), t2 = LINK(2, true, false), t3 = LINK(3, true, false);
-    expect(t1.link, 'tier 1: off').toBe(null);
-    expect(t1.frames, 'and no cuff from a barrier that is not there').toEqual([]);
-    expect(t2.link, 'linked').not.toBe(null);
-    expect(t2.link.w).toBe(8);
-    expect(t3.link.w, 'stronger at tier 3: thicker').toBe(12);
-    expect(t2.link.len, 'a line between the two tags').toBeGreaterThan(250);
-    expect(t2.frames.length, 'a fighter on the line is cuffed...').toBeGreaterThanOrEqual(1);
-    expect(t2.frames.every((f, i, a) => i === 0 || f - a[i - 1] >= 90), '...once every 90 frames at most').toBe(true);
-    expect(t2.rooted, 'rooted for the cuff\'s frames, like a tag\'s cuff').toBeGreaterThan(20);
-    expect(t2.pct, 'the tag\'s own small hit').toBeGreaterThan(0);
-  });
-
-  it('a fighter off the line is not cuffed; killing either tag drops the barrier', () => {
-    const off = LINK(2, false, false), dead = LINK(2, true, true);
-    expect(off.frames, 'not on the line: left alone').toEqual([]);
-    expect(dead.link, 'one tag dead: no barrier').toBe(null);
-    expect(dead.frames).toEqual([]);
-  });
-
-  it('draws the barrier without a throw', () => {
+// THE OWNER, 2026-10-05 (LOCKDOWN is too hard, the nerf): "No barrier link" (no barrier between his tags). The see-through line that linked two tags and cuffed whoever touched it is gone.
+describe('OWNER: LOCKDOWN! -- no barrier link', () => {
+  it('the twist is gone from the table at every tier (link 0, linkW 0), and two tags standing either side of you with a line between them cuff nobody but by touching one', () => {
+    expect(W.eval('COBS_TIERS.metags.map(function(T){ return [T.link, T.linkW]; })')).toEqual([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]);
     const r = fight(`
-      park(); atTier(2); floorAt(you, WW*0.5); s._link = { ax: you.x - 100, ay: you.y, bx: you.x + 100, by: you.y - 50, w: 8 };
-      var err = null; try { drawCobsFx(); } catch(e){ err = String(e && e.stack || e); } return err;`);
+      park(); atTier(3); floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+      cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
+      var a = summons.filter(function(m){ return m.type === 'metag'; })[0];
+      // a second tag, by hand, so a line could be drawn between two of them: the old twist would have linked these
+      var b = Object.assign({}, a, { x: you.x + 150 }); summons.push(b);
+      var place = function(){ a.x = you.x - 150; a.y = hurtCY(you); b.x = you.x + 150; b.y = a.y; a.vx = a.vy = b.vx = b.vy = 0; a._cd = b._cd = 9999; };
+      var frames = [], link = false;
+      for (var i=0;i<130;i++){ s._atkTimer = 1e9; place(); var before = you.pct; step(); place(); if (s._link) link = true; if (you.pct > before) frames.push(i); }
+      return { frames: frames, link: link, linkInCode: typeof s._link };`);
+    expect(r.frames, 'standing on the line between two tags: left alone').toEqual([]);
+    expect(r.link, 'no barrier is ever made').toBe(false);
+  });
+
+  it('draws without a throw (the tell shows the one tag he places)', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); var err = null; cobsFightTelegraph(s, 'metags', you); s._tel = 20; try { drawCobsFx(); } catch(e){ err = String(e && e.stack || e); } return err;`);
     expect(r).toBe(null);
   });
 });
@@ -1213,11 +1197,11 @@ describe('the glitch pass: his fight on a canvas that keeps the old alpha, and a
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
   });
 
-  it('two MeTags on you in the same frame cuff you once: the second waits out the grace of the first, as the barrier link and every shot do (it cuffed twice in a frame, 33% with no grace between)', () => {
+  it('two MeTags on you in the same frame cuff you once: the second waits out the first\'s cuff and its grace, as every shot does (it cuffed twice in a frame, 33% with no grace between)', () => {
     const r = fight(`
       park(); atTier(2); floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
       cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
-      var tags = summons.filter(function(m){ return m.type === 'metag'; }), a = tags[0], b = tags[1], hits = [], i = 0, AH = applyHit;
+      var a = summons.filter(function(m){ return m.type === 'metag'; })[0], b = Object.assign({}, a, { x: a.x + 5 }), hits = [], i = 0, AH = applyHit; summons.push(b);   // (he places one tag a turn now: the second is put there by hand)
       applyHit = function(t, d, kx, ky, from, o){ if (o && o.bossAtk != null && t === you) hits.push({ f: i, inv: you.invuln }); return AH.apply(this, arguments); };
       try {
         for (i = 0; i < 60; i++){

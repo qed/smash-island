@@ -153,8 +153,8 @@ describe('FIVE TIERS, all attacks stepping up together at 2000, 1500, 1000 and 5
       }
       expect(T[4].n > T[0].n || T[4].spd > T[0].spd || T[4].dmg > T[0].dmg, `${k} climbs`).toBe(true);
     }
-    // "2 metags with 75 hp each", at every tier
-    expect(rows.metags.every(t => t.n === 2 && t.hp === 75)).toBe(true);
+    // "2 metags with 75 hp each" -- and, the owner's nerf of 2026-10-05, "One tag at a time": one MeTag a turn, 75 hp, at every tier
+    expect(rows.metags.every(t => t.n === 1 && t.hp === 75)).toBe(true);
   });
 
   it('every attack FIRES at every tier, with the tier\'s count of shots, summons, rings, panes, portals or Xs', () => {
@@ -494,7 +494,7 @@ describe('the six personalised specials', () => {
     expect(r.interrupted.hold).toBe(0);
   });
 
-  it('MeTAG LOCKDOWN -- "2 metags with 75 hp each": two summons that fly at you and cuff on contact, killable on every path; from tier 3 a wall splits the stage', () => {
+  it('MeTAG LOCKDOWN -- "2 metags with 75 hp each", one at a time since the owner\'s nerf (2026-10-05): a summon that flies at you and cuffs on contact, killable on every path; from tier 3 a wall splits the stage', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s.x = you.x + 260; s.y = you.y - 60; s._marks = 2;
       cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
@@ -504,16 +504,17 @@ describe('the six personalised specials', () => {
       for (var i=0;i<400;i++){ step(); you.invuln = 0; rooted = Math.max(rooted, you.rooted||0); if (worldPlats.some(function(p){ return p._cobsWall; })) walled = true; if (rooted && walled) break; }
       out.cuff = { rooted:rooted, dmg:you.pct - pct0, walled:walled, wallSolid:worldPlats.filter(function(p){ return p._cobsWall; }).every(function(p){ return p.solid; }) };
       // killable: melee, a shot, a dash -- each through the boss side's own path
-      var a = tags[0], b = tags[1];
+      var a = tags[0];
       damageSummons(you, a.x, a.y, 30, 40); out.melee = a.hp;
       addProj({ owner:you.idx, ownerObj:you, x:a.x, y:a.y, vx:0.1, vy:0, r:12, dmg:20, kb:1, life:5, color:'#fff' }); step(); out.shot = a.hp;
       damageSummons(you, a.x, a.y, 30, 40); step(); out.dead = { life:a.life, gone:summons.indexOf(a) < 0 };
+      COBS_MOVES.metags(s, you, ++BOSS_ATK_ID); var b = summons.filter(function(m){ return m.type==='metag' && m.life > 0; })[0];   // (the first is gone: another may be placed)
       b.hp = 5; you._dashing = 3; you._dashDmg = 12; you.x = b.x - 10; you.y = b.y; you.vx = 8; step(); out.dash = { hp:b.hp, gone:summons.indexOf(b) < 0 };
       return out;`);
-    expect(r.n).toBe(2);
-    expect(r.hp).toEqual([[75, 75], [75, 75]]);
+    expect(r.n, 'ONE tag at a time').toBe(1);
+    expect(r.hp).toEqual([[75, 75]]);
     expect(r.hostile).toBe(true);
-    expect(r.again, 'never a second pair while one stands').toBe(0);
+    expect(r.again, 'never a second while one stands').toBe(0);
     expect(r.cuff.rooted, 'cuffed: rooted').toBeGreaterThan(0);
     expect(r.cuff.dmg).toBeGreaterThan(0);
     expect(r.cuff.walled, 'tier 3: the first cuff drops the wall').toBe(true);

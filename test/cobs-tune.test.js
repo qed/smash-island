@@ -596,3 +596,120 @@ describe('OWNER: MeMURDER! -- one more strike at every tier, they linger about a
     expect(Math.max(...r.waves)).toBe(3);
   });
 });
+
+// ================= 7. LOCKDOWN (the nerf) =================
+// "no pile-on" -- while a MeTag cuffs you, his other attacks cannot hit you, and the cuff lasts a third less. Plus: "Mash free" (pressing buttons breaks the cuff sooner); "No barrier link"
+// (no barrier between his tags -- pinned in test/boss-cobs-fight.test.js); "One tag at a time" (he places one MeTag at a time instead of two).
+describe('OWNER: LOCKDOWN! (too hard) -- no pile-on, a third shorter, mash free, one tag at a time', () => {
+  const FLOOR_ONLY = 'worldPlats = worldPlats.filter(function(p){ return p.solid; });';
+  // a tag on you at tier t; `body` runs once it has cuffed you (you are cuffed from frame 0 of the loop), `frame` each frame before the step
+  const CUFF = (t, frame = '', after = '', frames = 60) => fight(`
+    park(); atTier(${t}); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 0; you.pct = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+    cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
+    var tag = summons.filter(function(m){ return m.type === 'metag'; })[0], T = cobsT(s, 'metags'); tag.x = you.x; tag.y = hurtCY(you); tag.vx = tag.vy = 0; tag._cd = 0;
+    var out = { T: T, cuffedAt: null, freeAt: null, frames: [], pct0: 0, id: 0 };
+    for (var i=0;i<${frames};i++){ s._atkTimer = 1e9; ${frame} var p0 = you.pct; step(); if (out.cuffedAt === null && you.rooted > 0){ out.cuffedAt = i; out.pct0 = you.pct; out.id = you._cuffId; ${after} }
+      if (out.cuffedAt !== null && out.freeAt === null && !(you.rooted > 0)) out.freeAt = i; tag._cd = 9999; tag.x = you.x + 900; }
+    out.n = summons.filter(function(m){ return m.type === 'metag'; }).length; out.pct = you.pct; return out;`);
+
+  it('ONE TAG AT A TIME: he places one MeTag (75 hp) at every tier and never a second while it stands; with no tag standing he may place another', () => {
+    expect(W.eval('COBS_TIERS.metags.map(function(T){ return [T.n, T.hp]; })')).toEqual([[1, 75], [1, 75], [1, 75], [1, 75], [1, 75]]);
+    const r = fight(`
+      park(); floorAt(you, WW*0.5); s.x = you.x + 300; s.y = you.y - 100; summons = summons.filter(function(m){ return m === s; }); var out = {};
+      [1, 2, 3, 4, 5].forEach(function(t){ atTier(t); summons = summons.filter(function(m){ return m === s; }); cobsFightTelegraph(s, 'metags', you); s._tel = 0;
+        out['n' + t] = COBS_MOVES.metags(s, you, ++BOSS_ATK_ID); out['tags' + t] = summons.filter(function(m){ return m.type === 'metag'; }).length; });
+      out.again = COBS_MOVES.metags(s, you, ++BOSS_ATK_ID); out.stillOne = summons.filter(function(m){ return m.type === 'metag'; }).length;
+      summons.filter(function(m){ return m.type === 'metag'; }).forEach(function(m){ m.life = 0; }); summons = summons.filter(function(m){ return m.life > 0; });
+      out.after = COBS_MOVES.metags(s, you, ++BOSS_ATK_ID); return out;`);
+    for (let t = 1; t <= 5; t++) { expect(r['n' + t], `tier ${t}`).toBe(1); expect(r['tags' + t]).toBe(1); }
+    expect(r.again, 'never a second while one stands').toBe(0);
+    expect(r.stillOne).toBe(1);
+    expect(r.after, 'once it is gone he may place another').toBe(1);
+  });
+
+  it('THE CUFF LASTS A THIRD LESS: 20, 24, 28, 32, 36 frames (the old 30, 36, 42, 48, 54 x 2/3), and a tier-5 tag no longer calls a pole down on whoever it cuffed', () => {
+    const T = W.eval('COBS_TIERS.metags');
+    expect(T.map((x) => x.cuff)).toEqual([20, 24, 28, 32, 36]);
+    expect(T.map((x) => x.cuff), 'two thirds of the old ones').toEqual([30, 36, 42, 48, 54].map((c) => c * 2 / 3));
+    expect(T.some((x) => x.poles), 'the pile-on pole is gone').toBe(false);
+    for (const t of [1, 3, 5]) {
+      const r = CUFF(t, '', '', 80);
+      expect(r.cuffedAt, `tier ${t}: the tag cuffed on contact`).not.toBe(null);
+      expect(r.freeAt - r.cuffedAt, 'rooted for the cuff\'s frames').toBeGreaterThanOrEqual(r.T.cuff - 2);
+      expect(r.freeAt - r.cuffedAt).toBeLessThanOrEqual(r.T.cuff + 1);
+      expect(r.pct0, 'and the tag\'s own small hit lands: the cuff is still a hit').toBeCloseTo(33*r.T.dmg, 3);
+    }
+    const pole = fight(`
+      park(); atTier(5); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+      cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID); var tag = summons.filter(function(m){ return m.type === 'metag'; })[0]; tag.x = you.x; tag.y = hurtCY(you); tag._cd = 0;
+      for (var i=0;i<5;i++){ s._atkTimer = 1e9; step(); } return { poles: projectiles.filter(function(p){ return p.cobsTrap; }).length, cuffed: you.rooted > 0 };`);
+    expect(pole.cuffed).toBe(true);
+    expect(pole.poles, 'no MeMURDER pole on the cuffed').toBe(0);
+  });
+
+  it('NO PILE-ON: while a MeTag cuffs you nothing else of his lands -- not a hit of his own, not a shot of his through you, not MePhone X (no lock) -- and the moment the cuff is over they do', () => {
+    const r = CUFF(3, '', `
+      var id2 = ++BOSS_ATK_ID, c0 = you.pct; out.direct = cobsHit(you, 20, 0, 0, id2, 20); out.directPct = you.pct - c0;
+      addProj(cobsShot(s, { x:you.x, y:hurtCY(you), vx:0.1, vy:0, dmg:20, bossCap:20, r:24, life:30, bossAtk:++BOSS_ATK_ID, shape:'cobscandy' }));
+      var X = { x:you.x + 5, y:you.y, base:groundY(), h:112, side:1, fi:you.idx, live:true, t:0, id:++BOSS_ATK_ID, dmg:60, lock:150, spd:14, trail:0, trailDmg:0, trailHit:{}, again:0, turn:0, turnT:0, delay:0 };
+      s._xs = [X]; you.spCd = 0; you.face = 1; out.lockBefore = you.spCd;`, 14);
+    expect(r.cuffedAt).not.toBe(null);
+    expect(r.direct, 'a hit of his own is turned away').toBe(false);
+    expect(r.directPct, 'and costs nothing').toBe(0);
+    expect(r.pct, 'in all: only the cuff\'s own hit (a shot through you and X\'s lunge landed nothing)').toBeCloseTo(r.pct0, 3);
+    // the cuff ends: the same things land
+    const late = CUFF(1, '', '', 80);
+    const after = fight(`
+      park(); atTier(1); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 0; you.pct = 0; var out = {};
+      you._cuffUntil = hazardT - 1; you._cuffId = 9999; out.free = cobsHit(you, 20, 0, 0, ++BOSS_ATK_ID, 20); out.pct = you.pct;
+      you.pct = 0; you.invuln = 0; you._cuffUntil = hazardT + 30; you._cuffId = 9999; out.held = cobsHit(you, 20, 0, 0, ++BOSS_ATK_ID, 20); out.own = cobsHit(you, 20, 0, 0, 9999, 20);
+      return out;`);
+    expect(after.free, 'a cuff that has run out protects nobody').toBe(true);
+    expect(after.pct).toBeGreaterThan(0);
+    expect(after.held, 'a cuff still on turns every other id away').toBe(false);
+    expect(after.own, 'but its own id gets through').toBe(true);
+    expect(late.freeAt, 'and the cuff did end').not.toBe(null);
+  });
+
+  it('NO PILE-ON holds against his shots too: a shot of his that overlaps a cuffed fighter passes through (the fighter\'s grace is held while the cuff lasts), then lands the frame after the cuff is over', () => {
+    const r = fight(`
+      park(); atTier(1); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 0; you.pct = 0; projectiles = []; var out = { during: 0, after: 0 };
+      you._cuffUntil = hazardT + 12; you._cuffId = 4242; you._cuffMash = 0;
+      var shot = addProj(cobsShot(s, { x:you.x, y:hurtCY(you), vx:0, vy:0, dmg:20, bossCap:20, r:30, life:200, bossAtk:++BOSS_ATK_ID, shape:'cobscandy' }));
+      for (var i=0;i<30;i++){ s._atkTimer = 1e9; step(); if (i === 8) out.during = you.pct; }
+      out.after = you.pct; out.alive = shot.life > 0; return out;`);
+    expect(r.during, 'nothing landed through the cuff').toBe(0);
+    expect(r.after, 'it landed once the cuff was over').toBeGreaterThan(0);
+  });
+
+  it('MASH FREE: every new press of a button takes `mash` (5) frames off the cuff -- the root and the stun together -- so mashing frees you sooner; holding a button down does not', () => {
+    const KEY = 'down[KEYS.attack] = ';
+    const base = CUFF(3, 'you.controller = "local"; ' + KEY + 'false;', '', 70);
+    const mash = CUFF(3, 'you.controller = "local"; ' + KEY + '(i % 2 === 0);', '', 70);
+    const held = CUFF(3, 'you.controller = "local"; ' + KEY + 'true;', '', 70);
+    expect(base.freeAt - base.cuffedAt, 'no presses: the whole cuff').toBeGreaterThanOrEqual(base.T.cuff - 2);
+    expect(mash.freeAt - mash.cuffedAt, 'mashing: freed sooner (28 frames, 5 a press, a press every other frame)').toBeLessThan(base.freeAt - base.cuffedAt - 8);
+    expect(mash.T.mash).toBe(5);
+    expect(Math.abs((held.freeAt - held.cuffedAt) - (base.freeAt - base.cuffedAt)), 'a held button is one press at most, never a mash').toBeLessThanOrEqual(base.T.mash + 1);
+    const dead = fight(`
+      park(); atTier(3); floorAt(you, WW*0.5); you.controller = 'local'; down[KEYS.attack] = false; down[KEYS.jump] = false; down[KEYS.special] = false; down[KEYS.smash] = false;
+      you.rooted = 40; you.hitstun = 30; you._cuffUntil = hazardT + 40; you._cuffId = 5151; you._cuffMash = 5; you._cuffPrev = null;
+      var out = [];
+      [['attack', 0], ['special', 1], ['smash', 2], ['jump', 3]].forEach(function(b, k){ var r0 = you.rooted; down[KEYS[b[0]]] = true; s._atkTimer = 1e9; step(); down[KEYS[b[0]]] = false; s._atkTimer = 1e9; step(); out.push(r0 - you.rooted); });
+      return { cuts: out };`);
+    for (const c of dead.cuts) expect(c, 'each kind of press takes 5 frames and the frame that passed: 7 in all').toBeGreaterThanOrEqual(5);
+  });
+
+  it('a cuff that is mashed off ends with its protection at once; his death ends every cuff', () => {
+    const r = fight(`
+      park(); atTier(3); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.controller = 'local'; down[KEYS.attack] = false;
+      you.rooted = 4; you.hitstun = 3; you._cuffUntil = hazardT + 4; you._cuffId = 777; you._cuffMash = 5; you._cuffPrev = null; you.invuln = 0;
+      down[KEYS.attack] = true; s._atkTimer = 1e9; step(); down[KEYS.attack] = false; s._atkTimer = 1e9; step(); step();
+      var freed = { until: you._cuffUntil, rooted: you.rooted }; you.invuln = 0;
+      you._cuffUntil = hazardT + 500; you._cuffId = 778; cobsBeginDeath(s);
+      return { freed: freed, dead: you._cuffUntil };`);
+    expect(r.freed.rooted).toBe(0);
+    expect(r.freed.until, 'the cuff is over, and so is the protection').toBe(0);
+    expect(r.dead, 'he falls and every cuff ends').toBe(0);
+  });
+});
