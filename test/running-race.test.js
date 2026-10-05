@@ -31,6 +31,13 @@ vi.setConfig({ testTimeout: 300000 });
 //       ceilings, springs, fire jets, conveyor belts, crumbling floors, swinging saws, cannons and moving platforms over pits,
 //       from what Mario, Sonic, Super Meat Boy, Celeste, Mega Man, Donkey Kong Country, Rayman and Geometry Dash keep using. They
 //       run the whole lane, growing with it, among the classics and the episode's; the canon ones stay in the back half.
+//   2026-10-02: "running should be d5 bfdi:branches difficulty" (the lane was "Too easy"; what to change: "Jumps, Hazard timing and Length"), and "and also just
+//       not just having to jump over easy things to jump over; i want at least one thing to be slightly kaizo." -- the lane is
+//       30-40% longer, full of precision platforming (planks, pillars, leaps), hazards in combination with tighter windows (a saw across a pit, jets on the
+//       island you land on, a cannon covering a jump) and, last, the hairline (a slightly kaizo sequence). The line's speed was not theirs to pick and is
+//       untouched; no checkpoint; the lane has to stay winnable by a skilled player, and "the run" below is the proof (a solver plays every section on the
+//       real engine and the tests play it back). The pins above that were the OLD lane's -- its length, which kinds stand in the front half, how long a
+//       run-up is, where a runner can safely stand near the edge -- are updated with that, none of them loosened: what is new is pinned in its own describes.
 
 let W;
 // loadMonolith's canvas shim hands back gradient objects, so the real draw() runs to completion under jsdom and the loop's
@@ -598,13 +605,20 @@ describe('the runners', () => {
       var atEdge = raceRunnerAi(fan).attack;                                 // at the edge: none
       you.x = RACE.edge - RACE_THROW_ZONE - 100; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
       var nearZone = raceRunnerAi(fan).attack;                               // just short of the throw's zone: none either
-      you.x = RACE.edge - RACE_THROW_ZONE - 800; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
-      var farBack = raceRunnerAi(fan).attack;                                // well before it: a jab again
-      return { mid:mid, atEdge:atEdge, nearZone:nearZone, farBack:farBack };`);
+      you.x = RACE_FIRST_X + 100; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
+      var farBack = raceRunnerAi(fan).attack;                                // well before it (and before everything: the first obstacle is a plain gap): a jab again
+      var sec = RACE.obstacles.find(function(o){ return o.sec; });
+      you.x = (sec.x0 + sec.x1)/2; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
+      var onSection = raceRunnerAi(fan).attack;                              // on a precision section (owner 2026-10-02, the d5 lane): none, a jab there is luck
+      you.x = sec.sec.sx - 10; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
+      var beforeSection = raceRunnerAi(fan).attack;                          // just before it: a jab
+      return { mid:mid, atEdge:atEdge, nearZone:nearZone, farBack:farBack, onSection:onSection, beforeSection:beforeSection };`);
     expect(r.mid).toBe(true);
     expect(r.atEdge).toBe(false);
     expect(r.nearZone).toBe(false);
     expect(r.farBack).toBe(true);
+    expect(r.onSection, 'the runners leave you alone on a plank, a saw\'s pit, the hairline: a jab there would be luck, and the section is meant to be fair on the next try').toBe(false);
+    expect(r.beforeSection, 'but not a step before it').toBe(true);
   });
 });
 
