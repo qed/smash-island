@@ -409,7 +409,7 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
         .toEqual({ moonrocks: [0.8, 0.9, 1.0], hands: [0.8, 0.9, 1.0], orbitkick: [1.0, 1.1, 1.2] }[k].map(m => +(33 * m).toFixed(3)));
     }
     expect([r[1].ghost.n, r[2].ghost.n, r[3].ghost.n], 'ghost-fire with it').toEqual([0, 4, 8]);
-    expect([r[1].ghost.hp, r[2].ghost.hp, r[3].ghost.hp], 'always one ghost with 100 HP').toEqual([100, 100, 100]);
+    expect([r[1].ghost.hp, r[2].ghost.hp, r[3].ghost.hp], 'always one ghost with 70 HP (it was 100: "Nerf: 70 HP ghost", the owner, 2026-10-02)').toEqual([70, 70, 70]);
     expect(r[3].ghost.hit).toBeGreaterThan(r[1].ghost.hit);
     expect(r[1].ghost.gfx).toBe(null);
     expect(r[3].ghost.gfx).not.toBe(null);
@@ -508,7 +508,7 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
   });
 });
 
-describe('special 5: one ghost fighter with 100 HP, and One takes nothing until it dies', () => {
+describe('special 5: one ghost fighter with 70 HP (it was 100), and One takes nothing until it dies', () => {
   it('summons exactly one real fighter on her side, and shields her on every damage path', () => {
     const r = fight(['Firey', 'Leafy'], {}, `
       one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
@@ -531,28 +531,28 @@ describe('special 5: one ghost fighter with 100 HP, and One takes nothing until 
       you.pct = 0; you.invuln = 0; applyHit(you, 10, 1, -1, g); out.onYou = you.pct;
       // an ally goes for the ghost first
       var ally = fighters[1]; ally.aiTarget = null; ally.aiTimer = 0; aiThink(ally); out.allyTarget = ally.aiTarget === g;
-      // 100 HP and it is gone; then she can be hurt again. With an ally beside you each hit on it counts for 1/1.6, as
-      // every hit on her does (the review: its 100 did not scale with allies, so it was no shield for a full side), so
-      // two 60s leave it standing on 25 and a third finishes it.
-      g.invuln = 0; applyHit(g, 60, 1, -1, you); g.invuln = 0; applyHit(g, 60, 1, -1, you);
+      // 70 HP ("GHOST FIGHTER! Nerf: 70 HP ghost", the owner, 2026-10-02; it was 100) and it is gone; then she can be hurt again. With an ally
+      // beside you each hit on it counts for 1/1.6, as every hit on her does (the review: its HP did not scale with allies, so it was no shield
+      // for a full side), so two 40s leave it standing on 20 and a third finishes it.
+      g.invuln = 0; applyHit(g, 40, 1, -1, you); g.invuln = 0; applyHit(g, 40, 1, -1, you);
       out.twoHits = { dead: g.dead, hp: g._ghostHp };
-      g.invuln = 0; applyHit(g, 60, 1, -1, you);
+      g.invuln = 0; applyHit(g, 40, 1, -1, you);
       out.dead = g.dead; out.cleared = one._ghost === null;
       var hp2 = one.hp; damageSummons(you, one.x, one.y, 10, 20); out.after = hp2 - one.hp;
       return out;`);
     expect(r.added).toBe(1);
     expect(r.ghost && r.ai === 'ai' && r.idx).toBe(true);
     expect(r.team, "One's side").toBe(-1);
-    expect(r.hp).toBe(100);
+    expect(r.hp, '70 HP: "Nerf: 70 HP ghost" (the owner, 2026-10-02), where it was 100').toBe(70);
     expect(r.erased, 'a ghost of someone she erased from the timeline').toBe(true);
     expect(r.second, 'one ghost fighter, never two').toBe(1);
     expect([r.melee, r.shot, r.dash, r.chain], 'melee, shots, dashes and the Chain Bolt all do nothing').toEqual([0, 0, 0, 0]);
-    expect(r.ghostSafe).toBe(100);
+    expect(r.ghostSafe).toBe(70);
     expect(r.ghostOnOne).toBe(0);
     expect(r.onYou).toBeGreaterThan(0);
     expect(r.allyTarget).toBe(true);
     expect(r.twoHits.dead).toBe(false);
-    expect(r.twoHits.hp).toBeCloseTo(100 - 120 / 1.6, 6);
+    expect(r.twoHits.hp).toBeCloseTo(70 - 80 / 1.6, 6);
     expect(r.dead && r.cleared).toBe(true);
     expect(r.after, 'damage lands again once it is dead').toBeCloseTo(20 / 1.6, 6);
   });
@@ -1019,7 +1019,7 @@ describe("the review's fixes to her fight", () => {
     expect(r.free.every).toBeGreaterThan(0);
   });
 
-  it('burn and bleed wear down the ghost\'s 100 HP too', () => {
+  it('burn and bleed wear down the ghost\'s 70 HP too', () => {
     // Damage over time adds to pct without passing through applyHit, so 600 frames of burn and bleed on it came to +63%
     // and 0 HP (the review's probe), and Firey, Match, Pencil and Gelatin could not break the shield with it.
     const r = fight(['Firey'], { story: true }, `
@@ -1030,7 +1030,7 @@ describe("the review's fixes to her fight", () => {
       for (var i=0; i<300 && !g.dead; i++) step();
       return { gained: g.pct - p0, hp: g._ghostHp, dead: g.dead };`);
     expect(r.gained).toBeGreaterThan(5);
-    expect(r.hp, 'every point of it').toBeCloseTo(100 - r.gained, 6);
+    expect(r.hp, 'every point of it').toBeCloseTo(70 - r.gained, 6);
   });
 
   it('nothing turns her ghost: a possession or an outbreak changes neither its side nor its shield', () => {

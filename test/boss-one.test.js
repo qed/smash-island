@@ -507,7 +507,7 @@ describe('ONE GROWS GIANT! and POWER UNGROUNDED!: no twist, tiers all the same',
       return out;`);
     expect(r.r.map(x => +x.toFixed(2)), 'bigger each tier').toEqual([1.4, 1.5, 1.6]);
     expect(r.t, 'for longer').toEqual([480, 600, 720]);
-    expect(r.g, 'Power Ungrounded: a state, not a bullet -- the same at every tier').toEqual([[480, 75], [480, 75], [480, 75]]);
+    expect(r.g, 'Power Ungrounded: a state, not a bullet -- the same at every tier, ten seconds since "Buff: lasts longer" (it was 480 frames)').toEqual([[600, 75], [600, 75], [600, 75]]);
     expect(r.plats, 'the platform crush was cut ("remove 1 and 2")').toBe(true);
     expect([r.lunge, r.crush], 'and so was the lunge').toEqual(['undefined', 'undefined']);
   });
@@ -1455,6 +1455,60 @@ describe('attack by attack: HANDS FROM THE GROUND! "Nerf: slower cracks" and FOL
         expect(g.shuts[j + 1] - w.i, `tier ${t}: and the next fold shuts as it ends`).toBe(T.tel2);
       });
     }
+  });
+});
+
+describe('attack by attack: GHOST FIGHTER! "Nerf: 70 HP ghost" and POWER UNGROUNDED! "Buff: lasts longer"', () => {
+  it('GHOST: 70 HP at every tier, where it was 100 -- the one she sends, its banner and its bar say so, and 70 damage and it is gone, and she can be hurt again', () => {
+    const r = STAGE(`
+      var out = { hp: ONE_GHOST_HP, rows: [], banners: [] }, b0 = banner;
+      banner = function(t){ out.banners.push(String(t)); return b0.apply(this, arguments); };
+      try {
+        [1, 2, 3].forEach(function(t){
+          setTier(t); fresh(); one._ghost = null;
+          ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID);
+          var g = one._ghost, row = { hp: g._ghostHp, max: g._ghostMax };
+          g.controller = 'still'; g.invuln = 0; applyHit(g, 69, 1, -1, you); row.at69 = [g.dead, Math.round(g._ghostHp)];
+          var shielded = (function(){ var h = one.hp; damageSummons(you, one.x, one.y, 10, 20); return h - one.hp; })();
+          g.invuln = 0; applyHit(g, 1, 1, -1, you); row.dead = g.dead; row.cleared = one._ghost === null;
+          var h2 = one.hp; damageSummons(you, one.x, one.y, 10, 20); row.after = h2 - one.hp; row.shielded = shielded;
+          out.rows.push(row);
+        });
+      } finally { banner = b0; }
+      return out;`);
+    expect(r.hp, 'ONE_GHOST_HP').toBe(70);
+    r.rows.forEach((row, i) => {
+      expect([row.hp, row.max], `tier ${i + 1}: 70 HP`).toEqual([70, 70]);
+      expect(row.at69, `tier ${i + 1}: 69 damage leaves it standing on 1`).toEqual([false, 1]);
+      expect(row.shielded, `tier ${i + 1}: and she takes nothing while it stands`).toBe(0);
+      expect([row.dead, row.cleared], `tier ${i + 1}: 70 and it is gone`).toEqual([true, true]);
+      expect(row.after, `tier ${i + 1}: then she can be hurt again`).toBeGreaterThan(0);
+    });
+    expect(r.banners.some((t) => t.indexOf('(70 HP)') >= 0 && t.indexOf('GHOST FIGHTER') >= 0), 'its banner says 70').toBe(true);
+    expect(r.banners.some((t) => t.indexOf('100 HP') >= 0), 'and nothing says 100 any more').toBe(false);
+  });
+
+  it('UNGROUNDED: the shield lasts ten seconds (600 frames) at every tier, where it was eight; it keeps everything off her until it is grounded, and it still ends', () => {
+    const r = STAGE(`
+      var out = { rows: [] };
+      [1, 2, 3].forEach(function(t){
+        setTier(t); fresh(); one.r = one._baseR; one._giantT = 0; one._ungrounded = false; one._grounded = false; one._groundT = 0; you.invuln = 1e9;
+        var T = oneTier(one, 'ungrounded');
+        ONE_MOVES.ungrounded(one);
+        var row = { table: T.t, set: one._ungroundT, immune: null, took: null, n: 0 }, hp0 = one.hp;
+        row.took = oneTakeDamage(one, 10, you); row.immune = one.hp === hp0 && row.took === 0;
+        for (var i=0; i<800 && one._ungrounded; i++){ one._atkTimer = 1e9; you.invuln = 1e9; you.x = WW*0.5 - 2200; step(); row.n++; }   // (you stand far away: nothing grounds it)
+        row.over = !one._ungrounded; row.grounded = one._grounded;
+        out.rows.push(row);
+      });
+      return out;`);
+    r.rows.forEach((row, i) => {
+      expect([row.table, row.set], `tier ${i + 1}: 600 frames of it, ten seconds (it was 480)`).toEqual([600, 600]);
+      expect(row.immune, `tier ${i + 1}: no damage reaches her while it is up and nobody has grounded it`).toBe(true);
+      expect(row.n, `tier ${i + 1}: it lasts the 600 frames`).toBeGreaterThanOrEqual(598);
+      expect(row.n).toBeLessThanOrEqual(602);
+      expect(row.over, `tier ${i + 1}: and then it ends`).toBe(true);
+    });
   });
 });
 
