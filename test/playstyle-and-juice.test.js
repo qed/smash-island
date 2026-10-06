@@ -97,6 +97,27 @@ describe('victory quips', () => {
     expect(covered, 'most of the cast has a voice').toBeGreaterThan(35);
   });
 
+  // "give funny lines at the end of matches for dlc fighters." (the owner, 2026-10-06): the 40 DLC fighters who had no line got one, so now
+  // EVERY playable fighter has one. None may name a secret: not a hidden fighter or boss, not a word about codes or unlocking, and not a
+  // phrase the game hides a fighter behind -- the Vault's own table is the oracle, compared the way the Vault compares (letters and digits
+  // only), as a substring so that a line cannot tuck a phrase inside a longer one.
+  it('gives every playable fighter a line, and no line names a secret', () => {
+    const { window: w } = loadMonolith();
+    const rows = JSON.parse(w.eval(`JSON.stringify(ROSTER.filter(function(r){ return r.play; }).map(function(r){
+      var q = victoryQuipFor(r.name); return [r.name, q, vaultNorm(q)]; }))`));
+    const phrases = JSON.parse(w.eval(`JSON.stringify(Array.from(VAULT_CODES.keys()))`));
+    expect(rows.length, 'the whole playable roster, not a slice of it').toBeGreaterThan(100);
+    expect(phrases.length, 'the list the lines are checked against is not empty').toBeGreaterThan(20);
+    expect(rows.filter(([, q]) => !q).map(([n]) => n), 'playable fighters with no line').toEqual([]);
+    expect(rows.filter(([, q]) => /\b(One|Steve|Cobs?|OJ|Suitcase|Cabby)\b|Orange Juice/.test(q)).map(([n]) => n), 'lines that name a hidden fighter or boss').toEqual([]);
+    expect(rows.filter(([, q]) => /\b(Vault|codes?|unlock\w*|erase[sd]?)\b/i.test(q)).map(([n]) => n), 'lines that talk about codes or unlocking').toEqual([]);
+    // Needle's Wave 3.5 line IS her phrase, word for word. It only ever shows to someone playing her, who has already opened her, so it was
+    // left as it was; if the owner has it changed, this list goes.
+    const KNOWN = ['Needle'];
+    expect(rows.filter(([n, , k]) => !KNOWN.includes(n) && phrases.some((p) => k.includes(p))).map(([n]) => n), 'lines that repeat a phrase a fighter is hidden behind').toEqual([]);
+    expect(rows.filter(([, q]) => q.length > 60).map(([n]) => n), 'lines too long for the one line on the result screen').toEqual([]);
+  });
+
   it('returns nothing rather than a generic line for an unknown fighter', () => {
     // A generic line in a character's mouth is worse than silence.
     const { window: w } = loadMonolith();
