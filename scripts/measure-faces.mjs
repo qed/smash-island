@@ -5,8 +5,8 @@
 // for you to start from: the dark ink strictly inside the silhouette (eroded 3 px, so the outline and the stick limbs are gone) is split into blobs; the two
 // that look most like a pair of eyes, the widest blob below them, and any thin blob above them (a brow) are boxed, and a row is printed for FR_FACE, with the
 // colour of the fill round the eyes. It is a PROPOSAL: it cannot tell a brow from a scar or a mouth from a hand, and a face seen in profile has one eye. Look
-// at the sheet (--sheet), correct the row by hand, and put it in FR_FACE under the picture's file name. Every row in the game was checked by eye, and
-// test/frame-layer.test.js holds each one to the picture (the anchors are on painted ink, on the body).
+// at the sheet (--sheet), correct the row by hand, and put it in FR_FACE under the picture's file name. Every row in the game was checked by eye on that
+// sheet (the anchors are on painted ink, on the body).
 //
 //   node scripts/measure-faces.mjs artifacts/V1/assets/sprites/firey.png [more.png ...]
 //   node scripts/measure-faces.mjs --sheet=faces.png artifacts/V1/assets/sprites/skins/mech-firey.png    (also writes the pictures at 4x with the blobs boxed)

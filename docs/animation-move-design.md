@@ -420,14 +420,15 @@ go wide-eyed on the recoil and grin on the settle, on the same ticks as the base
 
 **The data.** `FRAME_SRC` is one row per fighter (a temperament from `FR_TEMPER_SRC`, `amp` for how far the body moves, `puff`, `vein`, `winStyle`, overrides `ex`, an optional `pose`
 hook), and `FR_FACE` one row per *picture*: where the eyes, brows and mouth are, as fractions of the picture, the radii of the patch that covers the painted feature, and the fill under it.
-`scripts/measure-faces.mjs` proposes a row from a picture; every row in the game was checked by eye, and `test/frame-layer.test.js` holds each to its picture (on the body, on painted ink).
+`scripts/measure-faces.mjs` proposes a row from a picture; every row in the game was checked by eye on the sheet it draws (`--sheet`): the anchors on the body, on painted ink.
 
 **Adding a fighter** is adding rows: a `FRAME_SRC` row, an `FR_FACE` row for their render (and one for each skin worn), and, if they have them, `over` extras in their `FIGHTER_ANIM` entry that
 read `frNow(f)`. Nothing else changes.
 
-**The rules it keeps.** Render-only: nothing writes a fighter's field or spends a die, and the sim never reads any of it (`test/frame-layer-sim.test.js` plays whole matches drawn and stripped
-and compares every tick). A client sees the same frames from the fields it already gets (face, vx, vy, onground, hitstun, swing, swingKind, swingLen, hurtT, smashHold, flash, plunge): no new
-wire field. The hot passes allocate nothing (the test reads the source). `FRAME_ON` is the switch.
+**The rules it keeps.** Render-only: nothing writes a fighter's field or spends a die, and the sim never reads any of it (`test/frame-layer.test.js`, the one test of the layer, plays each pilot fighter's match twice, bare and in a skin,
+drawn with the frames and with `FRAME_ON` false, and compares every tick and the dice left over; it also draws every moment for every pilot fighter, bare and in each skin, and checks that every number of the frame is finite). A client sees the same frames from the fields it already gets (face, vx, vy, onground, hitstun, swing, swingKind, swingLen, hurtT, smashHold, flash, plunge): no new
+wire field. The hot passes (between `FR-HOT-BEGIN` and `FR-HOT-END` in `index.html`) allocate nothing: no array, object or closure literal, no for-of, the scratch in `_FP`, `_FB`, `_FH`,
+`_FMV` and `_FMS`; nothing checks it, so keep them so. `FRAME_ON` is the switch.
 
 **The pilot.**
 
