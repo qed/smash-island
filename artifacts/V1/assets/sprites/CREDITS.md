@@ -797,6 +797,20 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | Chef Tennis Ball | Tennis Ball | `skins/chef-tennis-ball.png` | 191×200 | `File:ChefTB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/36/ChefTB.png/revision/latest?cb=20250527012103 |
 | Yoyle Metal Tennis Ball | Tennis Ball | `skins/yoyle-metal-tennis-ball.png` | 182×200 | `File:Metal Tennis Ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a8/Metal_Tennis_Ball.png/revision/latest?cb=20230902142315 |
 | Sleepy Tennis Ball | Tennis Ball | `skins/sleepy-tennis-ball.png` | 172×200 | `File:SleepyTB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c0/SleepyTB.png/revision/latest?cb=20250619003530 |
+| Shades Blocky | Blocky | `skins/shades-blocky.png` | 227×200 | `File:BlockyGlasses.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/1b/BlockyGlasses.png/revision/latest?cb=20250621231625 |
+| Glove Blocky | Blocky | `skins/glove-blocky.png` | 200×200 | `File:Blocky - SUPER SPIKY GLOVE.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2d/Blocky_-_SUPER_SPIKY_GLOVE.png/revision/latest?cb=20210529171524 |
+| Capless Pen | Pen | `skins/capless-pen.png` | 81×200 | `File:Pen Without Cap (TPOT 16).png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a5/Pen_Without_Cap_%28TPOT_16%29.png/revision/latest?cb=20250414010735 |
+| Gear Earrings Pencil | Pencil | `skins/gear-earrings-pencil.png` | 66×200 | `File:EarringPencil.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9d/EarringPencil.png/revision/latest?cb=20250611003316 |
+| Purple Shoes Pencil | Pencil | `skins/purple-shoes-pencil.png` | 67×200 | `File:PencilInPurpleShoesHD.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/30/PencilInPurpleShoesHD.png/revision/latest?cb=20241008082217 |
+| Tangerine Rocky | Rocky | `skins/tangerine-rocky.png` | 279×200 | `File:Why isn't rocky orange anymore it makes me sad.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ac/Why_isn%27t_rocky_orange_anymore_it_makes_me_sad.png/revision/latest?cb=20180823172456 |
+| Cracked Rocky | Rocky | `skins/cracked-rocky.png` | 258×200 | `File:Cracked Rocky.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c8/Cracked_Rocky.png/revision/latest?cb=20260706053525 |
+| Frozen Rocky | Rocky | `skins/frozen-rocky.png` | 253×200 | `File:Team freeze name.PNG-removebg-preview.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e8/Team_freeze_name.PNG-removebg-preview.png/revision/latest?cb=20260719005911 |
+| Headphone Gelatin | Gelatin | `skins/headphone-gelatin.png` | 166×200 | `File:Jelloheadphone.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fc/Jelloheadphone.png/revision/latest?cb=20231002231013 |
+| Sweater Gelatin | Gelatin | `skins/sweater-gelatin.png` | 200×200 | `File:55BA9FDA-3486-4325-B614-E1EA3DD6F69F.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/55BA9FDA-3486-4325-B614-E1EA3DD6F69F.png/revision/latest?cb=20210107175827 |
+| Dyed Gelatin | Gelatin | `skins/dyed-gelatin.png` | 167×200 | `File:Gelatin27-.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/69/Gelatin27-.png/revision/latest?cb=20210104204521 |
+| Triangle Hole Nickel | Nickel | `skins/triangle-hole-nickel.png` | 176×200 | `File:TriangleNickle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/99/TriangleNickle.png/revision/latest?cb=20250105214259 |
+| Pink Nickel | Nickel | `skins/pink-nickel.png` | 179×200 | `File:PinkNickel.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fd/PinkNickel.png/revision/latest?cb=20251210021450 |
+| Square Hole Nickel | Nickel | `skins/square-hole-nickel.png` | 176×200 | `File:Nickle Half.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/15/Nickle_Half.png/revision/latest?cb=20241004224524 |
 
 ### Inanimate Insanity wiki skins
 

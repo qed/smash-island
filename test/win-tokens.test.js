@@ -652,12 +652,6 @@ describe('the skins', () => {
   // they are not playable here, and the owner's rule keeps them out of every table this one is in: they are not listed.
   // NO_SKIN begin
   const NO_SKIN = {
-    'Blocky': 'not yet',
-    'Pen': 'not yet',
-    'Pencil': 'not yet',
-    'Rocky': 'not yet',
-    'Gelatin': 'not yet',
-    'Nickel': 'not yet',
     'Puffball': 'not yet',
     'Ruby': 'not yet',
     'Yellow Face': 'not yet',
