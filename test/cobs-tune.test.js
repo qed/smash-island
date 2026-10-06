@@ -839,7 +839,7 @@ describe('OWNER: "mazed and confused" -- it never makes his fight unwinnable', (
 
   it('IT CANNOT HIDE HIM: he can be hit all through it -- the wind-up, the hedges standing, the wilt -- and a hit counts as ever', () => {
     const r = PEN(2, 'var hp0 = s.hp; damageSummon(you, s, s.x, s.y, 20); out.mid = hp0 - s.hp; you.pct = you.pct;');
-    expect(r.mid, 'a hit in the middle of the maze took 20 off him').toBe(20);
+    expect(r.mid, 'a hit in the middle of the maze took 40 off him: 20, doubled -- Knife is the story fighter ("2x damage on knife in the cobs fight.", the owner, 2026-10-05)').toBe(40);
   });
 
   it('beats by tier: MePhone4\'s phase 2 timing (36 frames between beams) at tiers 1 and 2, phase 3 (24) from tier 3; both bring the second cannonball', () => {

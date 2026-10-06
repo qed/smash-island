@@ -971,6 +971,109 @@ describe('OWNER: PULL THE PLUG! -- the live floor ("if you hit the floor during 
   });
 });
 
+// ================= 2x DAMAGE ON KNIFE IN THE COBS FIGHT =================
+// THE OWNER, 2026-10-05, verbatim: "2x damage on knife in the cobs fight." In Steve Cobs's fight -- the story fight (Knife alone) and the any-fighter fight (a Knife among the lineup) -- what Knife deals to him
+// and to his units (the MeTags and the MePhone units) counts double, on every road into them; nothing else changes.
+describe('OWNER: "2x damage on knife in the cobs fight."', () => {
+  // His fight with `lineup`, every fighter still and in no danger. `by(name)` is that fighter; `ways` are the roads into a target (melee, a shot, a dash, a Chain Bolt: each with its own number); `took(f, t, way)` is
+  // what that fighter's hit by that road took off the target `t` (the clock moves on first, past any grace -- one for each attacker -- so one hit never swallows the next).
+  const DEAL = (body, lineup = ['Firey', 'Knife'], story = false) => { W.Math.random = mulberry32(5); return W.eval(`(function(){
+    SETTINGS.itemRate=0; SETTINGS.stocks=3; LOCAL_PLAYERS=1; window.__cobsEnd = undefined;
+    startCobsFight(${JSON.stringify(lineup)}, { story:${story}, onEnd:function(won){ window.__cobsEnd = won; return true; } });
+    var s = summons.find(function(o){ return o._cobsFight; }); s._hop = null; s._introT = 0; s._atkTimer = 1e9; s.x = WW*0.5 + 300; s.y = groundY() - 400;
+    fighters.forEach(function(f){ f.controller = 'still'; f.invuln = 99999; });
+    var by = function(name){ return fighters.find(function(f){ return f.name === name; }); };
+    var ways = {
+      melee: function(f, t){ damageSummons(f, t.x, t.y, (t.r || 30) + 10, 20); },
+      shot: function(f, t){ addProj({ owner:f.idx, ownerObj:f, x:t.x, y:t.y, vx:0.1, vy:0, r:12, dmg:15, kb:1, life:5, color:'#fff' }); step(); },
+      dash: function(f, t){ f._dashing = 3; f._dashDmg = 12; f._dashSummonHits = null; f.x = t.x - 10; f.y = t.y; f.vx = 8; step(); f._dashing = 0; f._dashSummonHits = null; },
+      bolt: function(f, t){ chainBoltBoss(t, 12, f); },
+    };
+    var took = function(f, t, way){ hazardT += 40; var h0 = t.hp; ways[way](f, t); return h0 - t.hp; };
+    ${body}
+  })()`); };
+
+  it('KNIFE DEALS TWICE TO HIM: on every road -- a swing, a shot, a dash, a Chain Bolt -- he takes twice from Knife what he takes from another fighter for the same hit; the other fighter\'s is as it always was', () => {
+    const r = DEAL(`
+      var out = {}; ['melee', 'shot', 'dash', 'bolt'].forEach(function(way){ out[way] = { firey: took(by('Firey'), s, way), knife: took(by('Knife'), s, way) }; });
+      out.mult = s._dmgTakenMult; return out;`);
+    // (two of you: every hit counts for 1/1.6 of itself against him, the same for both)
+    expect(r.mult).toBeCloseTo(1 / 1.6, 9);
+    const written = { melee: 20, shot: 15, dash: 12, bolt: 12 };
+    for (const way of Object.keys(written)) {
+      expect(r[way].firey, `${way}: another fighter's hit is as it was`).toBeCloseTo(written[way] * r.mult, 9);
+      expect(r[way].knife, `${way}: Knife's is double`).toBeCloseTo(2 * written[way] * r.mult, 9);
+      expect(r[way].knife / r[way].firey, `${way}: exactly twice`).toBeCloseTo(2, 9);
+    }
+  });
+
+  it('IN THE STORY FIGHT, where Knife is alone, every hit he lands is twice the number written (the story\'s bar has no allies to scale it)', () => {
+    const r = DEAL(`
+      var out = {}; ['melee', 'shot', 'dash', 'bolt'].forEach(function(way){ out[way] = took(by('Knife'), s, way); }); out.mult = s._dmgTakenMult; out.story = COBSFIGHT.story; return out;`, ['Knife'], true);
+    expect(r.story).toBe(true);
+    expect(r.mult).toBe(1);
+    expect([r.melee, r.shot, r.dash, r.bolt]).toEqual([40, 30, 24, 24]);
+  });
+
+  it('AND TO HIS UNITS: a MeTag and a MePhone unit take twice from Knife what they take from another fighter, by a swing, a shot and a dash', () => {
+    const r = DEAL(`
+      var out = { tag: {}, unit: {} };
+      s._marks = 2; COBS_MOVES.metags(s, by('Firey'), ++BOSS_ATK_ID); COBS_MOVES.deploy(s, by('Firey'), ++BOSS_ATK_ID);
+      var tag = cobsTags()[0], units = cobsUnits(), unit = units[0];
+      units.slice(1).forEach(function(m){ m.x = WW*0.5 + 1500; m.y = groundY() - 1200; m._cd = 1e9; m._post = { x:m.x, y:m.y }; });   // (any other unit well out of the way)
+      var spots = [[tag, 300], [unit, 700]];
+      var pin = function(m, up){ m.x = WW*0.5; m.y = groundY() - up; m.vx = m.vy = 0; m._cd = 1e9; m.hp = m.maxHp = 5000; if (m.type === 'mephoneunit') m._post = { x:m.x, y:m.y }; };
+      spots.forEach(function(pair){ var m = pair[0], key = m.type === 'metag' ? 'tag' : 'unit';
+        ['melee', 'shot', 'dash'].forEach(function(way){ pin(m, pair[1]); var a = took(by('Firey'), m, way); pin(m, pair[1]); var b = took(by('Knife'), m, way); out[key][way] = { firey: a, knife: b }; }); });
+      out.types = [tag.type, unit.type]; return out;`);
+    expect(r.types).toEqual(['metag', 'mephoneunit']);
+    const written = { melee: 20, shot: 15, dash: 12 };
+    for (const who of ['tag', 'unit']) for (const way of Object.keys(written)) {
+      expect(r[who][way].firey, `${who} ${way}: another fighter's hit is as it was`).toBe(written[way]);
+      expect(r[who][way].knife, `${who} ${way}: Knife's is double`).toBe(2 * written[way]);
+    }
+  });
+
+  it('NOTHING ELSE CHANGES: Knife deals the same to a fighter as anyone does; the same to another boss\'s adds (MePhone4\'s MeLife downloads) and to any boss that is not him; and no other name is ever doubled', () => {
+    const r = DEAL(`
+      var mk = function(x){ var f = makeFighter(Object.assign({}, ROSTER.find(function(q){ return q.name === 'Pencil'; }), { you:false }), x, groundY() - 40, fighters.length); f.team = 7; f.controller = 'still'; f.stocks = 3; f.invuln = 0; f.pct = 0; fighters.push(f); return f; };
+      var dummies = [mk(WW*0.5 - 600), mk(WW*0.5 - 800)], out = {};
+      applyHit(dummies[0], 10, 0, 0, by('Firey')); applyHit(dummies[1], 10, 0, 0, by('Knife'));
+      out.toFighters = [dummies[0].pct, dummies[1].pct];
+      var add = function(){ return { type:'assist', name:'MeLife add', hostile:true, hp:100, maxHp:100, x:0, y:0, r:20, vx:0, flash:0, life:100, color:'#fff', team:-1 }; };
+      var a1 = add(), a2 = add(); hurtHostileAdd(a1, 10, 0, by('Firey'), by('Firey')); hurtHostileAdd(a2, 10, 0, by('Knife'), by('Knife'));
+      out.toAdds = [100 - a1.hp, 100 - a2.hp];
+      var a3 = add(); hurtHostileAdd(a3, 10, 0, null, by('Knife')); out.toAddShot = 100 - a3.hp;
+      var knife = by('Knife'), firey = by('Firey');
+      out.mult = { himself: [cobsKnifeMult(s, knife), cobsKnifeMult(s, firey), cobsKnifeMult(s, null), cobsKnifeMult(s, undefined)],
+        otherBoss: [cobsKnifeMult({ type:'boss', _oneFight:true }, knife), cobsKnifeMult({ type:'boss', attack:'slam' }, knife)], add: cobsKnifeMult(add(), knife), fighter: cobsKnifeMult(firey, knife),
+        notNamedKnife: [cobsKnifeMult(s, { name:'Knife Jr.' }), cobsKnifeMult(s, { name:'knife' }), cobsKnifeMult(s, { team:0, idx:-2, _asKey:'a1' })], factor: COBS_KNIFE_MULT };
+      return out;`);
+    expect(r.toFighters[1], 'Knife\'s hit on a fighter is the same as another fighter\'s').toBe(r.toFighters[0]);
+    expect(r.toFighters[0], 'and the number written, undoubled').toBe(10);
+    expect(r.toAdds, 'and on a hostile add that is not one of his').toEqual([10, 10]);
+    expect(r.toAddShot, 'by a shot too').toBe(10);
+    expect(r.mult.factor).toBe(2);
+    expect(r.mult.himself, 'Knife: 2; another fighter, nobody, nothing: 1').toEqual([2, 1, 1, 1]);
+    expect(r.mult.otherBoss, 'not another boss').toEqual([1, 1]);
+    expect(r.mult.add).toBe(1);
+    expect(r.mult.fighter, 'not a fighter').toBe(1);
+    expect(r.mult.notNamedKnife, 'only Knife itself').toEqual([1, 1, 1]);
+  });
+
+  it('it does not make Knife hit more often: the grace a hit opens on him is noted at the number written (20 buys 21 frames, the doubled 40 would buy 24), and the keynote speech counts what he really took', () => {
+    const r = DEAL(`
+      var out = {}, fHit = by('Firey'), kHit = by('Knife');
+      hazardT += 40; damageSummon(fHit, s, s.x, s.y, 20); damageSummon(kHit, s, s.x, s.y, 20);
+      out.grace = [bossGraceRec(s, fHit, false).invuln, bossGraceRec(s, kHit, false).invuln];
+      s._speechT = 100; s._speechHit = 0; hazardT += 40; var k0 = s.hp; damageSummon(kHit, s, s.x, s.y, 20); out.speech = [s._speechHit, k0 - s.hp];
+      return out;`);
+    expect(r.grace, 'the same for both: 9 + 20 x 0.6').toEqual([21, 21]);
+    expect(r.speech[0], 'the keynote speech counts the doubled damage').toBeCloseTo(r.speech[1], 9);
+    expect(r.speech[1]).toBeCloseTo(2 * 20 / 1.6, 9);
+  });
+});
+
 describe('THE FUTURE IS SO YESTERDAY! -- the crescendo', () => {
   const KEY = (t) => fight(`
     park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x - 300; s.y = you.y - 120; s._rings = []; s._burst = null;

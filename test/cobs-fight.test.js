@@ -503,11 +503,12 @@ describe('the six personalised specials', () => {
       var rooted = 0, pct0 = you.pct, walled = false;
       for (var i=0;i<400;i++){ step(); you.invuln = 0; rooted = Math.max(rooted, you.rooted||0); if (worldPlats.some(function(p){ return p._cobsWall; })) walled = true; if (rooted && walled) break; }
       out.cuff = { rooted:rooted, dmg:you.pct - pct0, walled:walled, wallSolid:worldPlats.filter(function(p){ return p._cobsWall; }).every(function(p){ return p.solid; }) };
-      // killable: melee, a shot, a dash -- each through the boss side's own path
+      // killable: melee, a shot, a dash -- each through the boss side's own path. (you is Knife, the story fighter: "2x damage on knife in the cobs fight." -- the owner, 2026-10-05 -- so a swing of 20
+      // is 40 on a unit of his, and a shot of 10 is 20: written at half, the numbers read as they did.)
       var a = tags[0];
-      damageSummons(you, a.x, a.y, 30, 40); out.melee = a.hp;
-      addProj({ owner:you.idx, ownerObj:you, x:a.x, y:a.y, vx:0.1, vy:0, r:12, dmg:20, kb:1, life:5, color:'#fff' }); step(); out.shot = a.hp;
-      damageSummons(you, a.x, a.y, 30, 40); step(); out.dead = { life:a.life, gone:summons.indexOf(a) < 0 };
+      damageSummons(you, a.x, a.y, 30, 20); out.melee = a.hp;
+      addProj({ owner:you.idx, ownerObj:you, x:a.x, y:a.y, vx:0.1, vy:0, r:12, dmg:10, kb:1, life:5, color:'#fff' }); step(); out.shot = a.hp;
+      damageSummons(you, a.x, a.y, 30, 20); step(); out.dead = { life:a.life, gone:summons.indexOf(a) < 0 };
       COBS_MOVES.metags(s, you, ++BOSS_ATK_ID); var b = summons.filter(function(m){ return m.type==='metag' && m.life > 0; })[0];   // (the first is gone: another may be placed)
       b.hp = 5; you._dashing = 3; you._dashDmg = 12; you.x = b.x - 10; you.y = b.y; you.vx = 8; step(); out.dash = { hp:b.hp, gone:summons.indexOf(b) < 0 };
       return out;`);
@@ -626,10 +627,11 @@ describe('beatable in principle -- whatever a bot manages', () => {
       out.won = COBSFIGHT.won; out.told = window.__cobsEnd; out.life = s.life; out.over = COBSFIGHT.over; out.banner = window.__lastBanner;
       out.rushCleared = (PROFILE.bossesCleared || {})['Steve Cobs'] || null; out.title = document.getElementById('resultTitle').textContent;
       return out;`);
-    expect(r.melee).toBe(20);
-    expect(r.shot).toBe(15);
-    expect(r.dash).toBe(12);
-    expect(r.bolt).toBe(12);
+    // ("2x damage on knife in the cobs fight." -- the owner, 2026-10-05: you is Knife, the story fighter, so every path into him counts double: a swing of 20 takes 40, a shot of 15 takes 30, a dash of 12 and a bolt of 12 take 24)
+    expect(r.melee).toBe(40);
+    expect(r.shot).toBe(30);
+    expect(r.dash).toBe(24);
+    expect(r.bolt).toBe(24);
     expect(r.t1).toBe(1);
     expect(r.zero).toBe(0);
     expect(r.dying, 'his ending scene runs COBS_END.total frames before the fight ends').toBe(r.total);
