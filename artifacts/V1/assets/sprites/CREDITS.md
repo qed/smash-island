@@ -834,6 +834,17 @@ inanimateinsanity.fandom.com.
 | Golden Blueberry | Blueberry | `skins/golden-blueberry.png` | 166×200 | `File:Unbotheredgoldenblueberry.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/bb/Unbotheredgoldenblueberry.png/revision/latest?cb=20231001152648 |
 | Detective Clover | Clover | `skins/detective-clover.png` | 145×200 | `File:Clover's Detective Disguise (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6e/Clover%27s_Detective_Disguise_%28S4E4%29.png/revision/latest?cb=20260315063442 |
 | Glowing Gold Spoon | Silver Spoon | `skins/glowing-gold-spoon.png` | 67×200 | `File:Semi-Powerful Silver Spoon (S3E18).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/34/Semi-Powerful_Silver_Spoon_%28S3E18%29.png/revision/latest?cb=20260315072657 |
+| Whistle Trophy | Trophy | `skins/whistle-trophy.png` | 207×200 | `File:Trophy wearing a Whistle Necklace (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/ec/Trophy_wearing_a_Whistle_Necklace_%28S4E4%29.png/revision/latest?cb=20260322064653 |
+| Muscular Goo | Goo | `skins/muscular-goo.png` | 252×200 | `File:Goo's Muscular Arm (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b3/Goo%27s_Muscular_Arm_%28S4E4%29.png/revision/latest?cb=20260427061025 |
+| Tangled Spikey | Spikey | `skins/tangled-spikey.png` | 222×200 | `File:Spikey Tangled in Ropes (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d7/Spikey_Tangled_in_Ropes_%28S4E4%29.png/revision/latest?cb=20260315063443 |
+| Oily Soap | Soap | `skins/oily-soap.png` | 130×200 | `File:Soap Vinegar.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4c/Soap_Vinegar.png/revision/latest?cb=20260424163856 |
+| Blue Ray Balloon | Balloon | `skins/blue-ray-balloon.png` | 162×200 | `File:Balloongugu.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/5c/Balloongugu.png/revision/latest?cb=20251129200337 |
+| Soggy Taco | Taco (II) | `skins/soggy-taco.png` | 268×200 | `File:Taco Soggy.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f1/Taco_Soggy.png/revision/latest?cb=20260802002730 |
+| Deerstalker Clover | Clover | `skins/deerstalker-clover.png` | 144×200 | `File:Detective's Hat Clover (S3E15).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/26/Detective%27s_Hat_Clover_%28S3E15%29.png/revision/latest?cb=20260315063443 |
+| Ice Cream Spoon | Silver Spoon | `skins/ice-cream-spoon.png` | 78×200 | `File:SS Ice Cream.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9e/SS_Ice_Cream.png/revision/latest?cb=20260420042741 |
+| Hard Hat Silver Spoon | Silver Spoon | `skins/hard-hat-silver-spoon.png` | 74×200 | `File:Hard Hat Silver Spoon (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Hard_Hat_Silver_Spoon_%28S3E17%29.png/revision/latest?cb=20260315063442 |
+| Ice Cream Paintbrush | Paintbrush | `skins/ice-cream-paintbrush.png` | 83×200 | `File:1645292052660.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b1/1645292052660.png/revision/latest?cb=20220219173519 |
+| Guacamole Marshmallow | Marshmallow | `skins/guacamole-marshmallow.png` | 238×200 | `File:Guacamolemellow.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/03/Guacamolemellow.png/revision/latest?cb=20251005170934 |
 
 ### Notes on individual skins
 
