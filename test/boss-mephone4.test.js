@@ -6,7 +6,7 @@ import { loadMonolith } from './helpers/load-monolith.js';
 
 // "mephone should be a boss, alongside 4s, and cobs. mephone should spawn hostile assist trophies." MePhone4 is Boss 6 of the gauntlet, between Purple Face and Evil Leafy, rebuilt in the
 // boss overhaul (2026-09-29): "make the bosses more like springy ... but dont make them like him! make the attacks feel more immersive." Five attacks, each from the II wiki -- FIST THINGY!
-// (the signature, redone: a pole that slides in, a faster 2x glove, a finisher from the far edge), REJECTION PORTAL! (flings you to an exit), A-MAZE-ING! (hedge walls, rayguns, a cannon),
+// (the signature, redone: a pole that slides in, a faster 2x glove, a finisher from the far edge), REJECTION PORTAL! (flings you to an exit), MAZED AND CONFUSED! (hedge walls, rayguns, a cannon; it was A-MAZE-ING! until the owner renamed it on 2026-10-05),
 // BOOMERANGS! and MELIFE DOWNLOAD! (back in, Round 10) -- in the Great Escape's Elimination Area, through the boss engine kit (impact, the arena's ground, its ending). "Harder, same damage":
 // every part of a turn shares that turn's one attack id, so a fighter takes at most one boss hit from it. Never tuned for a bot, and "Accept level" with MePhone4S: every number here is what
 // the design says. Assists take their summoner's team, so his adds are summoned by a proxy owner on the boss's team, -1.
@@ -94,7 +94,7 @@ describe('MePhone4 joins the gauntlet', () => {
   it('draws his turns from his moves -- the glove, MeLife, the portal, the boomerang and the maze, all five from phase 1 -- each with its own warning, none twice in a row, every one in sixteen turns', () => {
     const p1 = turns(1), p2 = turns(2);
     // the warning names the combo in every phase ("FIST THINGY!'s jab-and-finisher combo from phase 1"); the maze is named from the show ("It's sure to be a-maze-ing!", Mazed and Confused)
-    const NAME = { mephone: 'FIST THINGY COMBO!', melife: 'MELIFE DOWNLOAD!', portal: 'REJECTION PORTAL!', boomerang: 'BOOMERANGS!', maze: 'A-MAZE-ING!' };
+    const NAME = { mephone: 'FIST THINGY COMBO!', melife: 'MELIFE DOWNLOAD!', portal: 'REJECTION PORTAL!', boomerang: 'BOOMERANGS!', maze: 'MAZED AND CONFUSED!' };   // THE OWNER, 2026-10-05: "and a-maze-ing should be called "mazed and confused"" -- the banner is MAZED AND CONFUSED! (it was A-MAZE-ING!)
     expect(new Set(p1.kinds), 'phase 1: all five, the maze too ("A-MAZE-ING! from P1", the owner)').toEqual(new Set(Object.keys(NAME)));
     expect(p1.names).toEqual(p1.kinds.map((k) => NAME[k]));
     expect(new Set(p2.kinds), 'phase 2: all five').toEqual(new Set(Object.keys(NAME)));
@@ -105,8 +105,8 @@ describe('MePhone4 joins the gauntlet', () => {
       glitch: [typeof BOSS_MOVES.glitch, BOSS_MOVE_NAME.glitch], tel: [36, 44].map(function(n){ return n; }),
       tels: ['mephone', 'melife', 'portal', 'boomerang', 'maze'].map(function(k){ return bossTelLen({ attack:'mephone', _telKind:k }); }) })`);
     expect([r.p2, r.p3]).toEqual(['Back and Forth', 'Glitching']);   // Double Digit Desert (the glove kept punching Bow); Hatching the Plan (he glitches)
-    expect(r.moves).toEqual(['function/MELIFE DOWNLOAD!/true', 'function/REJECTION PORTAL!/true', 'function/BOOMERANGS!/true', 'function/A-MAZE-ING!/true']);
-    expect(r.glitch, 'A-MAZE-ING! "replaces the generic GLITCH! ring" (boss-plan-late.md 1.3): the ring is gone').toEqual(['undefined', undefined]);
+    expect(r.moves).toEqual(['function/MELIFE DOWNLOAD!/true', 'function/REJECTION PORTAL!/true', 'function/BOOMERANGS!/true', 'function/MAZED AND CONFUSED!/true']);   // (renamed by the owner, 2026-10-05: "and a-maze-ing should be called "mazed and confused"")
+    expect(r.glitch, 'MAZED AND CONFUSED! (then A-MAZE-ING!) "replaces the generic GLITCH! ring" (boss-plan-late.md 1.3): the ring is gone').toEqual(['undefined', undefined]);
     expect(r.tels, 'the maze has the long wind-up ("Tell (44 frames)"); the rest keep the usual 36').toEqual([36, 36, 36, 36, 44]);
   });
 
@@ -982,10 +982,10 @@ describe('MELIFE DOWNLOAD!: hostile assist trophies', () => {
   });
 });
 
-describe('A-MAZE-ING!', () => {
+describe('MAZED AND CONFUSED! (the maze; it was A-MAZE-ING! until the owner renamed it, 2026-10-05)', () => {
   // The Maze page: "MePhone4 promptly creates the maze in a large green flash from an unknown activated application"; "hidden within the maze walls are various traps and weapons, such as freeze rays,
   // flamethrowers, zap guns and cannons". Mazed and Confused/Transcript: "Several rayguns emerge from the walls and zap [three contestants]; freezing, burning, and electrocuting them respectively. A
-  // cannon emerges from the wall and fires a cannonball at the zapped contestants, sending them crashing into the wall." Round 8: A-MAZE-ING! (phase 2 on; replaces the generic GLITCH! ring) -- and
+  // cannon emerges from the wall and fires a cannonball at the zapped contestants, sending them crashing into the wall." Round 8: A-MAZE-ING!, now MAZED AND CONFUSED! (phase 2 on; replaces the generic GLITCH! ring) -- and
   // since Round 17 from phase 1 ("A-MAZE-ING! from P1, two cannonballs from P2": the owner's pick), most of these look at it in phase 2, where it has all it had before phase 3.
   // The maze built round a still Firey at `fx` in phase `ph`, by the move itself, with him at `bx` (the pen's "far" side is away from him: 946 puts it on the left of you, 154 on the right). Every look
   // is the maze's own tick at a frame of my choosing, `t` frames after the walls rose.

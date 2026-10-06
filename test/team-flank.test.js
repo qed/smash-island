@@ -15,22 +15,27 @@ import { bootMonolith } from './helpers/smash-golden.js';
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
-/** A 2v2 on the teams arena; put `slot` of team 0 on the floor 520px from a level enemy, and let it think. */
+/**
+ * A 2v2 on the teams arena; put `slot` of team 0 on the floor 520px from a level enemy, and let it think.
+ * The floor is the real one (floors[0], where a fighter stands), out in the open at x = 1000: the corner this used to start
+ * in (x = 300, on groundY(), 150px above the floor) is now team 0's side-wall band and home ledge, and a rusher starting
+ * there hops the ledge's gap to the field, which is not what is measured here.
+ */
 const drive = (slot, mode = 'teams') => W.eval(`(function(){
   SETTINGS.mode='teams'; SETTINGS.count=4; SETTINGS.teamKey='2v2'; SETTINGS.stocks=3; SETTINGS.itemRate=0; running=true;
   beginMatchNow();
   fighters.forEach(function(f){ f.controller='ai'; f.you=false; });
   var mine = fighters.filter(function(f){ return f.team===0; }), foes = fighters.filter(function(f){ return f.team!==0; });
   var f = mine[${slot}], t = foes[0];
-  var gy = groundY();
-  f.x = 300; f.y = gy - f.r; f.vx = 0; f.vy = 0; f.onground = true;
-  t.x = 820; t.y = gy - t.r; t.vx = 0; t.vy = 0; t.controller = 'still';
+  var gy = floors[0].y;
+  f.x = 1000; f.y = gy - f.r; f.vx = 0; f.vy = 0; f.onground = true;
+  t.x = 1520; t.y = gy - t.r; t.vx = 0; t.vy = 0; t.controller = 'still';
   foes[1].x = 3000; foes[1].y = -3000;            // out of the way, so t is the nearest enemy
   mine[1 - ${slot}].x = -3000; mine[1 - ${slot}].y = -3000;
   f.aiTarget = t; f.aiTimer = 999; f.pct = 0;
   ${mode === 'ffa' ? "SETTINGS.mode='ffa';" : ''}
   var y0 = f.y, rose = 0, jumped = 0;
-  for (var i=0;i<90;i++){ step(); t.x = 820; t.y = gy - t.r; t.vx = 0; t.vy = 0;
+  for (var i=0;i<90;i++){ step(); t.x = 1520; t.y = gy - t.r; t.vx = 0; t.vy = 0;
     rose = Math.max(rose, y0 - f.y); if (!f.onground) jumped++; }
   return { slot: ${slot}, teamSlot: teamSlotOf(f), rose: rose, airborne: jumped, x: f.x };
 })()`);
