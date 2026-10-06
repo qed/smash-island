@@ -544,7 +544,7 @@ describe('the six personalised specials', () => {
       you.burn = 0; you._poisonT = 0; if (puddles.length){ floorAt(you, puddles[0].x); for (var i=0;i<3;i++) step(); } out.inPuddle = you._poisonT > 0;
       return out;`);
     expect(r.passes).toBe(r.want);
-    expect(r.fromFar, 'it comes in from the edge away from you and crosses toward you').toBe(true);
+    expect(r.fromFar, 'it sails toward you and across you (it appears near you now -- "the ship should spawn near you", the owner, 2026-10-06; test/cobs-tune2.test.js)').toBe(true);
     expect(r.ground.dmg, 'on the floor in its path: the beam').toBeGreaterThan(0);
     expect(r.ground.poisoned).toBe(true);
     expect(r.puddles.n, 'it leaves puddles').toBeGreaterThan(0);

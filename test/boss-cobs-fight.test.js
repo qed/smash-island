@@ -95,18 +95,20 @@ describe('BOOMERANGS! replaces SECURITY ROUNDS!', () => {
     expect(r.shape, 'drawn in the show\'s style until, and unless, its art loads').toBe('function');
   });
 
-  it('each boomerang TURNS AROUND FOUR TIMES, every turn re-aimed at where you stand, then flies home to his hand and is caught: n, speed and cut by tier', () => {
+  // THE OWNER'S PICK, 2026-10-06 (test/cobs-tune2.test.js has the rest): "boomerangs should NOT home." / "cobs should just turn around-not towards the player. 4 times." -- the turns are no longer re-aimed at you.
+  it('each boomerang TURNS AROUND FOUR TIMES, straight back along its own line and never re-aimed at where you stand ("cobs should just turn around-not towards the player. 4 times."), then flies home to his hand and is caught: n, speed and cut by tier', () => {
     const r = fight(`
       park(); floorAt(you, WW*0.5); s.x = you.x + 450; s.y = you.y - 200; s.face = -1; you.invuln = 99999; var out = {};
       [1, 2, 3, 4, 5].forEach(function(t){ atTier(t); projectiles = []; cobsFightTelegraph(s, 'boomerangs', you); s._tel = 0; COBS_MOVES.boomerangs(s, you, ++BOSS_ATK_ID);
         var T = cobsT(s, 'boomerangs'), b = shots(); out['t' + t] = { n: b.length, want: T.n, spd: b[0]._bm.spd, fx: b[0].fxTag, ids: new Set(b.map(function(p){ return p.bossAtk; })).size, turns: b[0]._bm.turns, pierce: b[0].pierce }; });
       atTier(1); projectiles = []; s.x = you.x + 450; s.y = you.y - 200; cobsFightTelegraph(s, 'boomerangs', you); s._tel = 0; COBS_MOVES.boomerangs(s, you, ++BOSS_ATK_ID);
-      var bs = shots(), turnAt = [], minDist = [], last = 0, legMin = 1e9;
+      var bs = shots(), turnAt = [], last = 0, prev = null;
       for (var i=0;i<300;i++){ s._atkTimer = 1e9; step(); you.invuln = 99999;
-        var p = bs[0]; if (!p || p.life <= 0) break;
-        legMin = Math.min(legMin, Math.hypot(you.x - p.x, hurtCY(you) - p.y));
-        if (p._bm.turned !== last){ last = p._bm.turned; turnAt.push({ f:i, n:last, toward: Math.hypot(you.x - p.x, hurtCY(you) - p.y), home:p._bm.home }); minDist.push(Math.round(legMin)); legMin = 1e9; } }
-      out.turns = turnAt; out.minDist = minDist; out.alive = bs.map(function(p){ return p.life > 0 && projectiles.indexOf(p) >= 0; }); out.caught = bs.every(function(p){ return p.life <= 0; });
+        var p = bs[0]; if (!p || bs.every(function(q){ return q.life <= 0; })) break;   // (until the whole volley is gone: each boomerang starts a few frames after the last and takes its own arc)
+        if (p.life <= 0) continue;
+        if (p._bm.turned !== last){ last = p._bm.turned; turnAt.push({ f:i, n:last, home:p._bm.home, dot: prev ? (p.vx*prev[0] + p.vy*prev[1])/(p._bm.spd*p._bm.spd) : null }); }   // dot: this frame's heading against the last one's (-1: straight back)
+        prev = [p.vx, p.vy]; }
+      out.turns = turnAt; out.alive = bs.map(function(p){ return p.life > 0 && projectiles.indexOf(p) >= 0; }); out.caught = bs.every(function(p){ return p.life <= 0; });
       return out;`);
     expect([1, 2, 3, 4, 5].map((t) => r['t' + t].n), '2, 2, 3, 3, 4').toEqual([2, 2, 3, 3, 4]);
     expect([1, 2, 3, 4, 5].map((t) => r['t' + t].n === r['t' + t].want)).toEqual([true, true, true, true, true]);
@@ -115,7 +117,7 @@ describe('BOOMERANGS! replaces SECURITY ROUNDS!', () => {
     for (let t = 1; t <= 5; t++) { expect(r['t' + t].ids, `tier ${t}: one id, one cap`).toBe(1); expect(r['t' + t].turns).toBe(4); expect(r['t' + t].pierce).toBe(true); }
     expect(r.turns.map((q) => q.n), 'four turn-arounds').toEqual([1, 2, 3, 4]);
     expect(r.turns.map((q) => q.home), 'and the fourth is the one that sends it home').toEqual([false, false, false, true]);
-    expect(Math.max(...r.minDist.slice(0, 3)), 'each of the first three legs is re-aimed at you: it passes through the spot you stand on').toBeLessThan(40);
+    expect(r.turns.slice(0, 3).map((q) => q.dot < -0.999), 'each of the first three turns sends it straight back the way it came (its heading reversed), never at the spot you stand on').toEqual([true, true, true]);
     expect(r.caught, 'home, caught in his hand').toBe(true);
   });
 
@@ -797,7 +799,8 @@ describe('PULL THE PLUG! -- the unplugging wave', () => {
     expect(t2.plugNull).toBe(true);
   });
 
-  it('a fighter standing on a PLATFORM is shocked only when the wave reaches it (a platform that goes: the row\'s `shock`, 0 at tier 1); one standing on a pane never is -- the live floor is tested below', () => {
+  // THE OWNER'S PICK, 2026-10-06: "damage for pull the plug should scale based on fall distance." (asked: "Only falls hurt") -- the flat shock for a platform that goes is gone: you fall, and the fall costs (test/cobs-tune2.test.js).
+  it('a fighter standing on a PLATFORM is NOT shocked when the wave takes it ("Only falls hurt"): nothing lands as it goes, and no flat hit lands while the wave runs -- the fall onto the live floor is what costs', () => {
     const r = fight(`
       park(); atTier(3); you.invuln = 0; s.x = WW*0.5 + 600; s.y = groundY() - 300; projectiles = [];
       var pl = worldPlats.filter(function(p){ return !p.solid && p.w > 200 && p.y > groundY() - 700 && p.y < groundY() - 300; })[0];
@@ -806,9 +809,9 @@ describe('PULL THE PLUG! -- the unplugging wave', () => {
       var wait1 = P.t, wave1 = P.wave; for (var i=0;i<wait1 + wave1 + 8;i++){ s._atkTimer = 1e9; var p0 = you.pct; you.invuln = 0; if (worldPlats.indexOf(pl) >= 0){ you.x = pl.x + pl.w/2; you.y = pl.y - you.r; you.vx = 0; you.vy = 0; } step();
         if (hitAt === null && you.pct > p0) hitAt = i; if (goneAt === null && worldPlats.indexOf(pl) < 0) goneAt = i; }
       return { hitAt: hitAt, goneAt: goneAt, shock: P.shock, pct: you.pct };`);
-    expect(r.hitAt, 'shocked').not.toBe(null);
-    expect(r.hitAt, 'the moment the platform under him goes').toBe(r.goneAt);
-    expect(r.pct).toBeCloseTo(r.shock, 3);
+    expect(r.goneAt, 'the wave took the platform').not.toBe(null);
+    expect(r.hitAt === null || r.hitAt - r.goneAt > 20, 'nothing lands the moment the platform under him goes (a fall of 300 px or more takes over 30 frames to land)').toBe(true);
+    expect(r.shock, 'the plug carries no flat shock for a platform that goes').toBeUndefined();
   });
 
   it('a box the wave erases leaves nothing behind: no crumbs from what the slate took', () => {
@@ -825,9 +828,10 @@ describe('PULL THE PLUG! -- the unplugging wave', () => {
 });
 
 // ================= PULL THE PLUG!: the live floor =================
-// THE OWNER, 2026-10-05, verbatim: "if you hit the floor during pull the plug, then you take damage." From [POOF] until the slate returns the FLOOR is live at EVERY tier: whoever touches it is shocked the row's
-// `shock` x a hit (0.3 where the row has none: tier 1), bounced up, and again only after a grace while they stay on it -- never every frame; the panes he drops are the safe footing and one always stands while the
-// floor is live (the fight stays winnable); the floor crackles as it goes live and stops with the slate; no text.
+// THE OWNER, 2026-10-05, verbatim: "if you hit the floor during pull the plug, then you take damage." From [POOF] until the slate returns the FLOOR is live at EVERY tier. Round 2 (2026-10-06): "damage for pull the plug
+// should scale based on fall distance." (asked: "Only falls hurt") -- so it is a FALL onto it that is shocked (the row's `shock` x a hit, 0.3 where the row has none: tier 1, x the height fallen), bounced up, and again only
+// after a grace; STANDING on it is safe (test/cobs-tune2.test.js has the falls); the panes he drops are the safe footing and one always stands while the floor is live; the floor crackles as it goes live and stops with the
+// slate; no text.
 describe('OWNER: PULL THE PLUG! -- the live floor ("if you hit the floor during pull the plug, then you take damage.")', () => {
   // The plug at tier `t`, run to its end with `you` in one of three places the whole time -- 'floor' (on the bare floor, free: a real fighter, the bounce is the shock's own), 'pane' (pinned on top of a
   // pane he dropped) or 'air' (pinned 260 px up) -- the panes dropped 900 px away from the floor you stand on. Every boss-tagged hit on you is recorded with the frame it landed on, whether the floor was
@@ -864,43 +868,30 @@ describe('OWNER: PULL THE PLUG! -- the live floor ("if you hit the floor during 
     return rec;`);
   const floorHits = (r) => r.hits.filter((h) => Math.abs(h.d - r.fshock) < 1e-9);
 
-  it('TIER 1: the row\'s shock is 0 and the floor is live all the same -- 0.3 of a hit (9.9), the first the moment of [POOF], a bounce up, then again only after a grace (45 to 60 frames), never every frame, never before [POOF] or once the slate is back', () => {
+  // THE OWNER'S PICK, 2026-10-06 (test/cobs-tune2.test.js has the falls): "damage for pull the plug should scale based on fall distance." (asked: "Only falls hurt") -- standing on the live floor is SAFE now, so the two
+  // tests below that used to count a shock again and again on a fighter who stayed on it say the opposite: nothing lands on him.
+  it('TIER 1: the row\'s shock is 0 and the floor is live all the same -- 0.3 of a hit (9.9) is what a fall onto it is based on -- from the frame of [POOF] for its poof\'s frames; standing on it all that time costs NOTHING ("Only falls hurt")', () => {
     const r = LIVE(1, 'floor');
-    expect(r.T.shock, 'the row\'s own shock is 0 at tier 1 (that one is for a platform that goes)').toBe(0);
-    expect(r.shock).toBe(0);
-    expect(r.fshock, '0.3 x a boss hit of 33').toBeCloseTo(0.3 * r.dmg, 9);
+    expect(r.T.shock, 'the row\'s own shock is 0 at tier 1').toBe(0);
+    expect(r.shock, 'no flat shock for a platform that goes any more').toBeUndefined();
+    expect(r.fshock, '0.3 x a boss hit of 33: the base of a fall\'s damage').toBeCloseTo(0.3 * r.dmg, 9);
     expect(r.liveAt, 'the floor goes live at [POOF]').not.toBe(null);
-    const hits = floorHits(r);
-    expect(hits.length, 'a fighter who stays on the floor is shocked again and again, but not every frame').toBeGreaterThanOrEqual(2);
-    expect(hits[0].f, 'the very frame of [POOF]').toBe(r.liveAt);
-    expect(hits.every((h) => h.live), 'never before [POOF]').toBe(true);
-    expect(hits.every((h) => h.ground), 'it is the floor under your feet that does it').toBe(true);
-    expect(hits.every((h) => Math.abs(h.ky + 6 * r.kb) < 1e-9), 'with an upward bounce of 6 (x his launch scale)').toBe(true);
-    expect(hits.every((h) => h.after && h.after.ground === false), 'the bounce takes you off the floor').toBe(true);
-    for (let i = 1; i < hits.length; i++) {
-      const gap = hits[i].f - hits[i - 1].f;
-      expect(gap, 'again only after a grace of about 45-60 frames').toBeGreaterThanOrEqual(45);
-      expect(gap).toBeLessThanOrEqual(60);
-    }
+    expect(r.hits.filter((h) => h.live), 'a fighter who stays on the floor through all of it is never touched: standing is safe').toEqual([]);
     expect(r.endAt - r.liveAt, 'tier 1 is the old instant [POOF]: live for its `poof` frames').toBe(r.T.poof);
-    expect(hits.length, 'never every frame: at most one shock in 45 frames of it').toBeLessThanOrEqual(Math.ceil((r.endAt - r.liveAt) / 45));
-    expect(r.after, 'not after the slate returns: 150 frames on the same floor, and nothing of his lands').toEqual([]);
-    expect(r.pctAfter, 'no damage of any kind').toBeCloseTo(r.pctEnd, 9);
+    expect(r.after, 'and nothing of his lands after the slate returns').toEqual([]);
+    expect(r.pctAfter, 'no damage of any kind').toBeCloseTo(0, 9);
     expect(r.banners, 'no text: the floor says nothing').toEqual([]);
   });
 
-  it('EVERY TIER: live from [POOF] -- as the wave starts, from tier 2 -- until the slate is all back, shocking the row\'s shock x a hit (0.3, 0.3, 0.3, 0.45, 0.45 of 33), and quiet again after', () => {
+  it('EVERY TIER: live from [POOF] -- as the wave starts, from tier 2 -- until the slate is all back; a fall is based on the row\'s shock x a hit (0.3, 0.3, 0.3, 0.45, 0.45 of 33); standing on the floor costs nothing at any of them, and it is quiet again after', () => {
     for (const t of [1, 2, 3, 4, 5]) {
       const r = LIVE(t, 'floor');
       const want = Math.max(r.T.shock, 0.3) * r.dmg;
       expect(r.fshock, `tier ${t}: the row's shock, 0.3 where it has none`).toBeCloseTo(want, 9);
-      const hits = floorHits(r);
-      expect(hits.length, `tier ${t}: shocked, more than once`).toBeGreaterThanOrEqual(2);
-      expect(hits[0].f, `tier ${t}: the frame it goes live`).toBe(r.liveAt);
-      expect(hits.every((h) => h.live && h.ground && h.ky < 0), `tier ${t}: live, on the floor, bounced up`).toBe(true);
-      for (let i = 1; i < hits.length; i++) expect(hits[i].f - hits[i - 1].f, `tier ${t}: the grace`).toBeGreaterThanOrEqual(45);
+      expect(r.liveAt, `tier ${t}: it went live`).not.toBe(null);
+      expect(r.hits.filter((h) => h.live), `tier ${t}: standing on it, nothing lands`).toEqual([]);
       expect(r.endAt - r.liveAt, `tier ${t}: live until the slate is back (the wave out, the poof, the wave back)`).toBe(r.T.poof + 2 * (r.T.wave || 0));
-      expect(floorHits({ hits: r.after, fshock: r.fshock }), `tier ${t}: quiet once the slate returns`).toEqual([]);
+      expect(floorHits({ hits: r.after, fshock: r.fshock }), `tier ${t}: quiet once the slate returns (tier 5's clean slate arms its poles, which are not the floor)`).toEqual([]);
     }
   });
 
@@ -927,14 +918,17 @@ describe('OWNER: PULL THE PLUG! -- the live floor ("if you hit the floor during 
     expect(Math.min(...none.panes), 'no pane ever landed: one is there from the first frame of the live floor').toBe(1);
   });
 
-  it('it never lands on a fighter in the grace of another hit or under a MeTag\'s cuff (no pile-on; the hunter\'s grace-hit): the shock waits for the grace to end', () => {
-    const arm = (what) => 'if (P.phase === \'wait\' && P.t <= 1){ ' + what + ' }';   // the frame before [POOF]
-    const cuffed = LIVE(2, 'floor', '', arm('you._cuffUntil = hazardT + 40; you._cuffId = -1;'));
-    const grace = LIVE(2, 'floor', '', arm('you.invuln = 40;'));
+  it('it never lands on a fighter in the grace of another hit or under a MeTag\'s cuff (no pile-on; the hunter\'s grace-hit): a fall that lands inside either deals nothing, and the same fall once it is over does (a 300 px fall: 1.5x the row\'s shock)', () => {
+    // a 300 px fall the frame after [POOF] (held off by `hold`), and the same fall 100 frames on with nothing holding it off
+    const go = (hold) => LIVE(2, 'floor', '', `if (P.live){ P._n = (P._n || 0) + 1;
+      if (P._n === 1){ ${hold} you.y = groundY() - you.r - 300; you.vy = 0; you.vx = 0; you.onground = false; }
+      if (P._n === 100){ you.invuln = 0; you._cuffUntil = 0; you.hitstun = 0; you.y = groundY() - you.r - 300; you.vy = 0; you.vx = 0; you.onground = false; } }`);
+    const cuffed = go('you._cuffUntil = hazardT + 70; you._cuffId = -1;'), grace = go('you.invuln = 60;');
     for (const [what, r] of [['a cuff', cuffed], ['a hit\'s grace', grace]]) {
-      const hits = floorHits(r);
-      expect(hits.length, `${what}: shocked once it is over`).toBeGreaterThanOrEqual(1);
-      expect(hits[0].f - r.liveAt, `${what}: not on top of it`).toBeGreaterThanOrEqual(35);
+      const hits = r.hits.filter((h) => h.live);
+      expect(hits.length, `${what}: only the second fall hurts`).toBe(1);
+      expect(hits[0].f - r.liveAt, `${what}: and it is the one after it is over`).toBeGreaterThanOrEqual(100);
+      expect(hits[0].d, 'a 300 px fall: 1.5x the row\'s shock').toBeCloseTo(r.fshock * 1.5, 6);
     }
   });
 
