@@ -14,22 +14,18 @@ import { makeRoom } from './helpers/net-room.js';
 //     friend opened and closed without choosing was still focused when the arena came up, and every key of the match went to it.
 //     (A browser that hides a focused control is supposed to clear the focus a tick later. Chromium does; jsdom, which these pages run
 //     in, does not; the rest are not known here. The game no longer leans on it: beginMatchNow lets go of the control itself.)
-//  2. THE TOUCH PAD NEVER ROSE. A phone has no keyboard, and the pad is the only way to move. syncTouchControls shows it only while
-//     `running`, and beginMatchNow asked it before setting `running`, so the pad stayed hidden for every match (a solo match too,
-//     since the touch controls shipped): a friend joining from a phone saw the match and could do nothing.
+//  2. (THE TOUCH PAD NEVER ROSE: a phone's pad stayed hidden for every match. The owner removed the touch pad, 2026-10-06, "I SAID I
+//     WANTED THIS TO BE A COMPUTER GAME!!!" -- test/computer-only.test.js -- so there is nothing left to pin.)
 //
 // What stays true, and is pinned here too: a text box the player really is typing into does not feed the game keys.
 
 let room, H, A;
 beforeAll(async () => {
   room = await makeRoom(['H', 'A']); ({ H, A } = room.pages);
-  // jsdom has no PointerEvent in some versions (test/touch-controls.test.js shims it the same way)
-  A.eval(`if (typeof window.PointerEvent === 'undefined') { window.PointerEvent = function(type, o){ var e = new window.Event(type, {bubbles: !!(o && o.bubbles)}); e.pointerId = (o && o.pointerId) || 1; return e; }; }
-    if (!window.Element.prototype.setPointerCapture) window.Element.prototype.setPointerCapture = function(){};`);
 }, 180000);
-// every test starts from a page nobody is holding a key on, with no control focused and the touch pad on Auto
+// every test starts from a page nobody is holding a key on, with no control focused
 beforeEach(() => {
-  for (const w of [H, A]) w.eval(`for (var k in down) down[k] = false; try { setTouchMode('auto'); } catch (e) {} if (document.activeElement && document.activeElement.blur) document.activeElement.blur();`);
+  for (const w of [H, A]) w.eval(`for (var k in down) down[k] = false; if (document.activeElement && document.activeElement.blur) document.activeElement.blur();`);
 });
 
 const click = (w, selector) => w.eval(`document.querySelector(${JSON.stringify(selector)}).click()`);
@@ -55,16 +51,14 @@ function hostedMatch({ mode = 'ffa', count = 2, teamKey = null, inLobby = () => 
   expect(H.eval('running') && A.eval('running'), 'the match is running on both screens').toBe(true);
 }
 
-// p2 holds Left for a second -- on the keyboard, or on the touch pad -- and this is how far p2's fighter went, as the host has it
-// and as p2 sees it.
-function p2WalksLeft(how = 'keyboard') {
+// p2 holds Left for a second on the keyboard, and this is how far p2's fighter went, as the host has it and as p2 sees it.
+function p2WalksLeft() {
   run(20);
   const h0 = hostSees(), c0 = p2Sees();
   const left = A.eval('KEYS.left');
-  const pad = (kind) => A.eval(`document.querySelector('#touchpad [data-act="left"]').dispatchEvent(new window.PointerEvent('${kind}', { bubbles: true, pointerId: 7 }))`);
-  if (how === 'keyboard') key(A, left, true); else pad('pointerdown');
+  key(A, left, true);
   run(60);
-  if (how === 'keyboard') key(A, left, false); else pad('pointerup');
+  key(A, left, false);
   return { host: hostSees() - h0, client: p2Sees() - c0 };
 }
 const walked = (r, label) => {
@@ -95,20 +89,6 @@ describe.each(MATCHES)('%s: p2 holds Left in a hosted match', (_name, setup) => 
     hostedMatch({ ...setup, inLobby: () => { A.eval(`document.getElementById('inviteLink').focus()`); expect(focused(A), 'the box holds the focus in the lobby').toBe('INPUT#inviteLink'); } });
     walked(p2WalksLeft(), 'a focused invite-link box');
     expect(focused(A), 'the match took the focus off it').toBe('BODY');
-  }, 120000);
-
-  it('on a phone: the touch pad is up, and its Left button walks p2', () => {
-    A.eval(`setTouchMode('on')`);   // what a touchscreen's Auto does (jsdom has none)
-    hostedMatch(setup);
-    walked(p2WalksLeft('pad'), 'the touch pad');
-    expect(A.eval(`document.getElementById('touchpad').style.display`), 'the touch pad is on p2\'s screen').toBe('block');
-  }, 120000);
-
-  it('with touch controls off, the pad stays down and the keyboard walks p2', () => {
-    A.eval(`setTouchMode('off')`);
-    hostedMatch(setup);
-    expect(A.eval(`document.getElementById('touchpad').style.display`)).toBe('none');
-    walked(p2WalksLeft(), 'a keyboard');
   }, 120000);
 });
 
