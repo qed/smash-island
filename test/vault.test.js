@@ -714,7 +714,7 @@ describe('the Vault: the screen', () => {
     expect(w.eval('VAULT.hints.map(function(h){ return h.step; })')).toEqual([1, 2, 3, 4]);
   });
 
-  it('is built to fit a phone: the box shrinks, the fighters wrap, the clues are one column', async () => {
+  it('wraps instead of overflowing: the box shrinks, the fighters wrap, the clues are one column', async () => {
     const css = readFileSync('artifacts/V1/index.html', 'utf8');
     expect(css).toMatch(/\.vaultentry\{[^}]*width:min\(460px,100%\)/);
     expect(css).toMatch(/\.vaultentry \.netinput\{[^}]*min-width:0/);

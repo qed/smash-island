@@ -103,6 +103,58 @@ describe('no Touch control in Settings', () => {
   });
 });
 
+describe('no phone-only layout', () => {
+  const MEDIA = [...CSS.matchAll(/@media\s*([^{]+)\{/g)].map((m) => m[1].trim());
+
+  it('has no @media rule written to fit a phone: no max-width, max-height, pointer, hover or orientation query', () => {
+    expect(MEDIA.length, 'the page does carry its one @media rule').toBeGreaterThan(0);
+    for (const q of MEDIA) expect(q, '@media ' + q).not.toMatch(/max-width|max-height|pointer|hover|orientation|device-(width|height)|\bwidth\s*[<>]|\bheight\s*[<>]/);
+  });
+
+  it('keeps the @media that is for everybody: the reduced-motion preference', () => {
+    expect(MEDIA).toContain('(prefers-reduced-motion: reduce)');
+  });
+
+  it('asks the browser nothing about a phone: no matchMedia, no touch points, no pointer type', () => {
+    expect(HTML).not.toMatch(/matchMedia\s*\(/);
+    expect(HTML).not.toMatch(/maxTouchPoints|pointer:\s*coarse|hover:\s*none|pointerType\s*[=!]==?\s*['"]touch/);
+  });
+
+  it('reacts to no touch: no touch event, no touch-action, no tap highlight', () => {
+    expect(HTML).not.toMatch(/touchstart|touchmove|touchend|touchcancel|ontouch|\.touches\b|TouchEvent|touch-action|tap-highlight/);
+  });
+
+  it('has no size that only a phone-width screen made fluid (the room code was clamp(40px,15vw,68px), How to Play\'s cards min(150px,40vw))', () => {
+    expect(CSS).not.toMatch(/\b(15|40)vw\b/);
+    expect(CSS).toMatch(/\.inv-code\{[^}]*font-size:68px/);
+    expect(CSS).toMatch(/\.tut-grid\{[^}]*minmax\(150px,1fr\)/);
+  });
+
+  it('still wraps and shrinks inside an ordinary laptop window: the rules that are not phone-only stay', () => {
+    expect(CSS).toMatch(/\.movecard\{[^}]*width:100%/);
+    expect(CSS).toMatch(/\.lobbyinvite\{[^}]*width:min\(460px,100%\)/);
+    expect(CSS).toMatch(/\.vaultgrid\{[^}]*flex-wrap:wrap/);
+    expect(CSS).toMatch(/\.edcanvas\{[^}]*max-width:96vw/);
+    expect(CSS).toMatch(/\.row\{[^}]*flex-wrap:wrap/);
+  });
+});
+
+describe('no phone-only page tags', () => {
+  it('has no apple-mobile-web-app-*, mobile-web-app-capable, apple-touch-icon, format-detection, HandheldFriendly or MobileOptimized', () => {
+    expect(DOC.querySelector('meta[name^="apple-mobile-web-app"], meta[name="mobile-web-app-capable"], meta[name="format-detection"], meta[name="HandheldFriendly"], meta[name="MobileOptimized"], link[rel^="apple-touch-icon"]')).toBeNull();
+    expect(HTML).not.toMatch(/apple-mobile-web-app|mobile-web-app-capable|apple-touch-icon|format-detection|HandheldFriendly|MobileOptimized/i);
+  });
+
+  it('leaves the plain viewport tag alone', () => {
+    expect([...DOC.querySelectorAll('meta[name="viewport"]')].map((m) => m.getAttribute('content'))).toEqual(['width=device-width, initial-scale=1.0']);
+  });
+
+  it('has no attribute only a phone\'s on-screen keyboard or iPhone reads: autocapitalize, autocorrect, enterkeyhint, inputmode, playsinline', () => {
+    expect(DOC.querySelector('[autocapitalize], [autocorrect], [enterkeyhint], [inputmode], [playsinline]')).toBeNull();
+    expect(HTML, 'the replay video is built in script, so the source is checked too').not.toMatch(/autocapitalize|autocorrect|enterkeyhint|inputmode|playsinline/);
+  });
+});
+
 // Kept from the file that tested the touch pad (test/touch-controls.test.js, removed with it): these three are about the KEYBOARD's
 // pause, not the pad, and a computer game keeps them.
 describe('pause key', () => {

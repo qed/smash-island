@@ -238,7 +238,7 @@ describe('the Share buttons: where they are', () => {
     expect(btn.textContent).toMatch(/Share/);
   });
 
-  it('fits at phone width: the controls wrap instead of overflowing (no fixed widths, rows may wrap)', () => {
+  it('wraps instead of overflowing: the controls wrap (no fixed widths, rows may wrap)', () => {
     // jsdom does no layout, so this pins the CSS that makes it true rather than measuring pixels: the result row and the
     // title's Vault line must be allowed to wrap, and neither Share control may carry a width of its own.
     const { doc } = bootShare();
