@@ -9,9 +9,10 @@ import { makePair } from './helpers/net-pair.js';
 // "and add animations to attacks. puffball should have 3-5 frames while firing the projectile to spit it, and meteor puff should have the
 // sprite from bfdia 6. like c'mon this is the 5th time ive asked." (the owner, 2026-10-06)
 //
-// Her SPIT: four pictures of her (puffball-spit-1..4.png, cut out of her own render) swapped in for her plain render by FIGHTER_ANIM.Puffball.body
-// over the 18-tick swing of her X (render-only, like every pose), and the shot is DRAWN leaving her mouth on the spit frame (it is spawned, flies
-// and hits on the tick it always did).
+// Two poses of Puffball, swapped in for her plain render by FIGHTER_ANIM.Puffball.body and nothing else (render-only, like every pose):
+//   · her SPIT -- four pictures of her (puffball-spit-1..4.png, cut out of her own render) over the 18-tick swing of her X, and the shot is
+//     DRAWN leaving her mouth on the spit frame (it is spawned, flies and hits on the tick it always did);
+//   · METEOR PUFF -- the sprite from BFDIA 6 for the whole of her dive (`_plunge`), her plain render back on the tick she lands.
 
 const SPRITES = 'artifacts/V1/assets/sprites';
 const credits = readFileSync(`${SPRITES}/CREDITS.md`, 'utf8');
@@ -373,5 +374,175 @@ describe('the spit frames: her own render, four pictures of it', () => {
     expect(existsSync('scripts/make-puffball-spit.mjs')).toBe(true);
     const poses = loadMonolith().window.eval(`Object.keys(FIGHTER_ANIM.Puffball.poses).map(function(k){ return FIGHTER_ANIM.Puffball.poses[k].src; })`);
     for (const f of FILES) expect(poses, `${f} is one of her poses, so it is not dead weight`).toContain(`assets/sprites/${f}`);
+  });
+});
+
+describe('METEOR PUFF: the dive wears the sprite from BFDIA 6, and her plain render is back when she lands', () => {
+  // The smash (SMASHES.fly) sets `_plunge` and clears it on the tick she lands or is stopped; the pose is read off it and nothing else.
+  const DIVE = `${ARENA(2000)}
+    P.y = groundY() - 24 - 260; P.onground = false; P.vy = 0; P.smCd = 0; P.atkCd = 0; P.flash = 0;`;
+
+  it('shows the BFDIA 6 sprite from the tick the smash fires, for every tick of the dive', () => {
+    const { w, rec } = bootRecording();
+    w.eval(DIVE);
+    w.eval(FAKE_DECODED);
+    w.eval(`doSmash(P, 1)`);
+    expect(w.eval('!!P._plunge'), 'the smash has set her diving').toBe(true);
+    const seq = [];
+    for (let t = 0; t < 90; t++) {
+      rec.length = 0;
+      w.eval('drawFighter(P)');
+      const tags = rec.filter((c) => c.op === 'drawImage').map((c) => c.args[0] && c.args[0].tag).filter(Boolean);
+      const tints = rec.filter((c) => c.op === 'drawImage' && c.args[0] && c.args[0].tagName === 'CANVAS').length;
+      seq.push({ tags, tints, diving: w.eval('!!P._plunge'), flash: w.eval('P.flash'), onground: w.eval('P.onground') });
+      w.eval('step()');
+      if (!seq[seq.length - 1].diving && t > 3) break;
+    }
+    expect(seq[0].tags, 'on the tick she fires').toEqual(['meteor']);
+    const diving = seq.filter((s) => s.diving);
+    expect(diving.length, 'a real dive from the height she started at').toBeGreaterThan(8);
+    for (const [i, s] of seq.entries()) {
+      if (s.diving) expect(s.tags, `tick ${i}: still diving, still the meteor`).toEqual(['meteor']);
+    }
+    expect(seq[0].flash, 'her own smash flash is lit on the first ticks of the dive').toBeGreaterThan(0);
+    expect(seq.filter((s) => s.diving && s.flash > 0).every((s) => s.tints === 0), 'and does not wash the sprite white').toBe(true);
+    // the tick she lands, and every tick after, she is her plain self again
+    const landed = seq.findIndex((s) => !s.diving);
+    expect(landed, 'she does land').toBeGreaterThan(0);
+    expect(seq[landed].onground, 'on the floor').toBe(true);
+    expect(seq[landed].tags, 'her plain render is back the tick she lands').toEqual(['plain']);
+    expect(seq.slice(0, landed).every((s) => s.diving), 'the dive is one unbroken run').toBe(true);
+  });
+
+  it('is her sprite for the dive and for nothing else, and a puppet with only the flag shows it too', () => {
+    const { w } = bootRecording();
+    w.eval(ARENA());
+    const r = w.eval(`(function(){
+      var pose = function(f){ return puffPose(f); };
+      var plain = pose(P);
+      P._plunge = { from: 0, life: 90 }; var diving = pose(P);
+      P._hurtAnim = 8; var hurt = pose(P);   // knocked about mid-dive she is still the one diving
+      P._plunge = null; P._hurtAnim = 0;
+      var other = makeFighter(ROSTER.find(function(r){ return r.name==='Leafy'; }), 300, 300, 3); other._plunge = { from: 0, life: 9 };
+      var puppet = { name:'Puffball', kit:{special:'fly'}, _plunge:{ from:0, life:0 }, f:1 };   // what applySnapshot makes of the wire's plunge flag
+      return { plain: plain, diving: diving, hurt: hurt, other: pose(other), puppet: pose(puppet) };
+    })()`);
+    expect(r.plain).toBe(null);
+    expect(r.diving).toBe('meteor');
+    expect(r.hurt).toBe('meteor');
+    expect(r.other, 'no other fighter has a meteor').toBe(null);
+    expect(r.puppet, 'a netcode client draws it off the flag alone').toBe('meteor');
+  });
+
+  it('is render-only: the dive plays out tick for tick the same whether or not it is drawn', () => {
+    const play = (draw) => {
+      const { window: w } = loadMonolith(0xC0FFEE);
+      return w.eval(`(function(){
+        ${ARENA(520)}
+        P.y = groundY() - 24 - 260; P.onground = false; P.vy = 0; P.smCd = 0; P.atkCd = 0; D.x = 330; D.pct = 20;
+        var rec = []; doSmash(P, 1);
+        for (var t = 0; t < 70; t++){
+          step(); ${draw ? 'draw();' : ''}
+          rec.push([t, Math.round(P.x*100), Math.round(P.y*100), Math.round(P.vy*100), P.flying, P.flash, P._plunge ? P._plunge.life : -1, P._momentumT|0, Math.round(D.pct*100), D.hitstun,
+            particles.length, JSON.stringify(netFighter(P))].join('|'));
+        }
+        return { rec: rec, rng: Math.random() };
+      })()`);
+    };
+    const a = play(true), b = play(false);
+    expect(a.rec, 'every tick of the sim and every byte of the wire').toEqual(b.rec);
+    expect(a.rng, 'drawing the dive spends no randomness').toBe(b.rng);
+  });
+
+  it('puts one flag on the wire while the dive lasts, and nothing before or after', () => {
+    const { w } = bootRecording();
+    w.eval(ARENA());
+    const r = w.eval(`(function(){
+      var before = netFighter(P); P._plunge = { from: 0, life: 90, bosses: new Set() }; var during = netFighter(P); P._plunge = null; var after = netFighter(P);
+      return { before: Object.keys(before), during: Object.keys(during), after: Object.keys(after), wire: JSON.stringify(during), plunge: during.plunge };
+    })()`);
+    expect(r.before).not.toContain('plunge');
+    expect(r.during).toContain('plunge');
+    expect(r.plunge).toBe(1);
+    expect(r.after).not.toContain('plunge');
+    expect(r.during.filter((k) => /^_/.test(k)), 'no render-only field leaks onto the wire').toEqual([]);
+    expect(r.wire, 'the host-only state does not travel').not.toMatch(/bosses|"from"|"life"/);
+  });
+});
+
+describe("online, end to end: the client wears the BFDIA 6 sprite for the host's dive and gets her plain render back on the landing", () => {
+  it("follows the host's Puffball down and back", async () => {
+    const p = await makePair({ hostFighter: 'Puffball', cliFighter: 'Firey', mode: 'ffa', count: 2, stageId: 'goiky' });
+    for (let i = 0; i < 20; i++) p.frame(null);
+    const pose = () => p.Cc.eval("puffPose(fighters.find(function(f){ return f.name==='Puffball'; }))");
+    expect(pose()).toBe(null);
+    p.frame(null, 'var P = fighters[0]; P.y = groundY() - 24 - 260; P.onground = false; P.vy = 0; P.smCd = 0; P.atkCd = 0; doSmash(P, 1);');
+    const seen = [pose()];
+    for (let i = 0; i < 80; i++) { p.frame(null); seen.push(pose()); }
+    const from = seen.indexOf('meteor');
+    expect(from, 'the client sees the dive begin (a frame or two after the host: the snapshot has to arrive)').toBeGreaterThan(-1);
+    expect(from, '...and not much later than that').toBeLessThan(4);
+    const runs = seen.slice(from).filter((s, i, all) => s !== all[i - 1]);
+    expect(runs, 'meteor all the way down, then her plain render, once').toEqual(['meteor', null]);
+    expect(seen.filter((s) => s === 'meteor').length, 'a real dive').toBeGreaterThan(8);
+    expect(seen[seen.length - 1]).toBe(null);
+  }, 240000);
+});
+
+describe('the BFDIA 6 sprite: one frame of the show, cut out by hand', () => {
+  const FILE = 'puffball-meteor.png';
+  const SOURCE = 'https://static.wikia.nocookie.net/battlefordreamisland/images/0/05/Bfdia6_prize_%2823%29.png/revision/latest?cb=20230905005030';
+
+  it('is a PNG as tall as her render, with transparent corners and none of the frame left round her', () => {
+    expect(existsSync(`${SPRITES}/${FILE}`)).toBe(true);
+    const png = readPng(FILE), plain = readPng('puffball.png');
+    expect(png.height, 'sized like her other sprites').toBe(plain.height);
+    expect(Math.abs(png.width / png.height - plain.width / plain.height), 'and about as wide as she is').toBeLessThan(0.1);
+    for (const [x, y] of [[0, 0], [png.width - 1, 0], [0, png.height - 1], [png.width - 1, png.height - 1]]) {
+      expect(png.data[(y * png.width + x) * 4 + 3], `the corner ${x},${y} is clear`).toBe(0);
+    }
+    expect(clearOf(png), 'transparent round her, not a rectangle').toBeGreaterThan(0.15);
+    // what the frame had round her: the dark navy of space, the white stars, the near-black of the streaks and the glow's shadow
+    let navy = 0, stars = 0, black = 0, solid = 0;
+    for (let i = 0; i < png.data.length; i += 4) {
+      if (png.data[i + 3] < 200) continue;
+      solid++;
+      const [r, g, b] = [png.data[i], png.data[i + 1], png.data[i + 2]], lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      if (b > r + 8 && lum < 90) navy++;
+      if (Math.min(r, g, b) >= 244) stars++;
+      if (lum < 40) black++;
+    }
+    expect(solid, 'she is most of the picture').toBeGreaterThan(png.width * png.height * 0.5);
+    expect([navy, stars, black], 'no space, no stars, no black left in the cut').toEqual([0, 0, 0]);
+    // her edge is soft, not a staircase of solid pixels against air
+    let hard = 0;
+    const A = (x, y) => (x < 0 || y < 0 || x >= png.width || y >= png.height ? 0 : png.data[(y * png.width + x) * 4 + 3]);
+    for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) if (A(x, y) >= 250 && Math.min(A(x - 1, y), A(x + 1, y), A(x, y - 1), A(x, y + 1)) < 16) hard++;
+    expect(hard, 'solid pixels touching air').toBeLessThan(40);
+  });
+
+  it('is her dive sprite, drawn at her own size, and credited with the frame it came from', () => {
+    const { window: w } = loadMonolith();
+    const m = w.eval(`(function(){ var s = FIGHTER_ANIM.Puffball.poses.meteor, b = SPRITES.Puffball; return { src: s.src, imgH: s.imgH, imgW: s.imgW, flip: s.flip, float: s.float, lift: s.floatLift, amp: s.floatAmp, plain: { imgH: b.imgH, imgW: b.imgW } }; })()`);
+    expect(m.src).toBe(`assets/sprites/${FILE}`);
+    const png = readPng(FILE), plain = readPng('puffball.png'), R = 24;
+    const fit = (b, pw, ph) => Math.min(b.imgH * R, b.imgW * R / (pw / ph));
+    expect(fit(m, png.width, png.height) / png.height, 'her pixel density').toBeCloseTo(fit(m.plain, plain.width, plain.height) / plain.height, 3);
+    expect(m.flip, 'the art faces left, so it is flipped (the manifest measured -0.088)').toBe(true);
+    expect([m.float, m.lift, m.amp], 'she hovers as she does').toEqual([true, 8, 5]);
+    const man = JSON.parse(readFileSync('scripts/sprite-manifest.json', 'utf8'))['Puffball (meteor)'];
+    expect(man && man.ok, 'it is in the sprite manifest').toBe(true);
+    expect(man.file).toBe(FILE);
+    expect(man.source, 'with the exact frame it was cut from').toBe(SOURCE);
+    expect(man.frame.file, "BFDIA 6's Cake at Stake, the burning dive").toBe('Bfdia6 prize (23).png');
+    expect([man.width, man.height]).toEqual([png.width, png.height]);
+    expect(man.flip).toBe(man.facing < 0);
+    expect(credits, `${FILE} is credited`).toContain(`\`${FILE}\``);
+    expect(credits, 'with the source of the frame').toContain(SOURCE);
+    expect(credits, 'and the episode').toContain('BFDIA 6');
+    expect(credits).toContain('Bfdia6 prize (23).png');
+    expect(credits, 'and that it was cut by hand').toMatch(/BY HAND/);
+    expect(existsSync('scripts/clean-puffball-meteor.mjs')).toBe(true);
+    expect(readFileSync('scripts/clean-puffball-meteor.mjs', 'utf8'), 'the traced outline is in the repo').toMatch(/const POLY = \[/);
   });
 });

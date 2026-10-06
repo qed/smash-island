@@ -198,16 +198,24 @@ non-commercial fan game.
 | Yellow Face | `yellow-face.png` | 194×200 | -0.059 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/Yellowface.png/revision/latest?cb=20190908174021 |
 <!-- RENDER-INVENTORY-END -->
 
-## Puffball: her spit (2026-10-06)
+## Puffball: her spit and Meteor Puff (2026-10-06)
 
-"puffball should have 3-5 frames while firing the projectile to spit it" (the owner).
-Her spit is a set of poses `FIGHTER_ANIM.Puffball` swaps in for her plain render while the shot is fired (`poses`), and nothing else about the move changes.
+"puffball should have 3-5 frames while firing the projectile to spit it, and meteor puff should have the sprite from bfdia 6" (the owner).
+Both are poses `FIGHTER_ANIM.Puffball` swaps in for her plain render while the move lasts (`poses`), and nothing else about the moves changes.
 
 - **Her spit, four frames** (`puffball-spit-1.png`, `puffball-spit-2.png`, `puffball-spit-3.png`, `puffball-spit-4.png`; 262×200 each: puff, spit, recoil, settle). Nothing is borrowed for them: each is
   Puffball's own render (`puffball.png`, https://static.wikia.nocookie.net/battlefordreamisland/images/a/ad/Tpot_renders0042.png, in the table at the top)
   with her cheeks pushed out and her eyes and mouth changed (warped, or painted over with her own fur colour and drawn again in her own black), cut by
   `scripts/make-puffball-spit.mjs`. The rainbow in the spit frame's mouth is the six colours of the rainbow barf she fires (`attacks/rainbow.png`, File:Barf rainbow long.png,
   credited under Attack art). The canvas is wider than the render because the puffed cheeks are; the frames are drawn at the render's own size.
+- **Meteor Puff's dive, the sprite from BFDIA 6** (`puffball-meteor.png`, 195×200, facing -0.088, flipped): BFDIA 6 is "Well Rested". At its Cake at Stake Puffball, furious that Firey
+  won the prize, dives out of space at him ("Puffball is furious and tries to attack Firey to prevent him from spinning the prize wheel"; the wheel then lands on the Meteor Shield),
+  and the gallery's Cake at Stake frames show the dive twice: in space, angry, with the streaks of the fall (`File:Bfdia6 prize (22).png`), and an instant later burning, screaming, her
+  whole body on fire (`File:Bfdia6 prize (23).png`) -- the second is the one used, the meteor Meteor Puff is named for, and she wears it for the whole of her dive. Source:
+  https://static.wikia.nocookie.net/battlefordreamisland/images/0/05/Bfdia6_prize_%2823%29.png/revision/latest?cb=20230905005030 (1920×1080). It exists only inside that episode
+  frame, so it is cut out of it BY HAND (the owner asked for hand-cleaning, not a background remover, for Cammy's flash too): `scripts/clean-puffball-meteor.mjs` carries a polygon traced by eye round her outline in the
+  frame's own pixels, pulls it in 3 px so the cut lands on her outline and not on the fire's glow, softens the edge by 1.5 px, then crops to her and shrinks to 200 px tall like every render.
+  The glow, the streaks, the trail of fire and the stars are outside the line and are gone; every pixel that stays is one the show drew. Its manifest row is `Puffball (meteor)` in `scripts/sprite-manifest.json`.
 
 ## One (the secret boss)
 

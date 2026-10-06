@@ -35872,17 +35872,19 @@ function puffSpitDrive(f){
   }
   return 0;
 }
-// The picture she wears right now, as a key of FIGHTER_ANIM.Puffball.poses, or null for her plain render: the spit frame, unless she has just been hit.
+// The picture she wears right now, as a key of FIGHTER_ANIM.Puffball.poses, or null for her plain render: 'meteor' for the whole of Meteor Puff's
+// dive (f._plunge: set when the smash fires, cleared on the tick she lands or is stopped), else the spit frame, unless she has just been hit.
 function puffPose(f){
   if(!f || !f.kit || f.kit.special !== 'fly') return null;
+  if(f._plunge) return 'meteor';
   if(hurtK(f) > 0) return null;
   const k = puffSpitFrame(f);
   return k < 0 ? null : PUFF_FRAME[k];
 }
 // One of her pictures as a sprite entry. They share the render's pixel density (the frames are the render on a wider canvas, so the box that
 // fits the PNG is wider by the same ratio), and they float exactly as she does, so swapping one in never moves her.
-function puffPoseSprite(file, imgW){
-  return Object.assign(renderSprite(file, { imgH: 2.6, imgW: imgW }), { float: true, floatLift: 8, floatAmp: 5 });
+function puffPoseSprite(file, imgW, flip){
+  return Object.assign(renderSprite(file, { imgH: 2.6, imgW: imgW, flip: !!flip }), { float: true, floatLift: 8, floatAmp: 5 });
 }
 const FIGHTER_ANIM = {
   // ============================================================
@@ -37092,10 +37094,11 @@ const FIGHTER_ANIM = {
   //      little puffs of air-magic that sell it. Drawn as ctx ops in the overlay pass rather than
   //      pushed into `particles`, so the draw path stays free of sim side effects and allocation. --
   Puffball: {
-    // PUFFBALL SPITS (above): a picture of her, swapped in for the plain render while the move lasts (`body`, the same pose swap
-    // Cammy's flash and Candle's Inner-Flame are). `poses` is the whole set: the four frames of her spit, cut out of her own render.
-    // Nothing here reaches the sim.
+    // PUFFBALL SPITS (above) and METEOR PUFF: a picture of her, swapped in for the plain render while the move lasts (`body`, the same pose swap
+    // Cammy's flash and Candle's Inner-Flame are). `poses` is the whole set: the four frames of her spit, cut out of her own render, and
+    // the BFDIA 6 sprite she wears for the whole of her dive. Nothing here reaches the sim.
     anchor: {x:0.7, y:0.3},      // her mouth as the spit frame snaps forward, upper half (the shot flies a little above the mouth): where a spat shot comes out (visLaunch / projVisLerp)
+    diveFlash: false,            // her own attack flash does not wash her dive white either: the sprite is the point (drawSpriteBody)
     spitFlash: false,            // her own attack flash does not wash a spit white (drawSpriteBody)...
     spitSwipe: false,            // ...nor does it throw a blade's swipe: she has nothing to swing (drawFighter)
     atkDrive(f){ return puffSpitDrive(f); },       // spriteRig: her own lunge for the spit (gather, snap, recoil, settle)
@@ -37103,13 +37106,20 @@ const FIGHTER_ANIM = {
       puff:   puffPoseSprite("puffball-spit-1.png", 3.176),
       spit:   puffPoseSprite("puffball-spit-2.png", 3.176),
       recoil: puffPoseSprite("puffball-spit-3.png", 3.176),
-      settle: puffPoseSprite("puffball-spit-4.png", 3.176)
+      settle: puffPoseSprite("puffball-spit-4.png", 3.176),
+      // METEOR PUFF's dive, the whole of it (f._plunge): the BFDIA 6 frame where she is burning and screaming on her way down at Firey
+      // (File:Bfdia6 prize (23).png, "Well Rested"), cut out by hand: scripts/clean-puffball-meteor.mjs. 195x200, drawn at her own pixel size.
+      // The art faces left, so it is flipped like the other renders that do.
+      meteor: puffPoseSprite("puffball-meteor.png", 2.364, true)
     },
     body(f){
       if(!this._warm){ this._warm = true; for(const k in this.poses) spriteImage(this.poses[k]); }   // every picture starts loading the first time she is drawn, so a pose never waits for its file
       const k = puffPose(f), sp = k && this.poses[k];
       if(!sp || !spriteImage(sp)) return false;                  // no pose now, or its picture has not decoded (and in a headless boot never does): the plain render stays
-      drawSpriteBody(Object.create(f, {name:{value:"Puffball (" + k + ")"}}), sp, this);   // under its own name, so the plain render's painted-limb rig never cuts a limb out of the wrong picture
+      const dive = k === 'meteor';
+      if(dive){ ctx.translate(0, f.r); ctx.scale(0.92, 1.12); ctx.translate(0, -f.r); }   // stretched along the fall, about her feet (the universal squash is not run for a pose)
+      // under its own name, so the plain render's painted-limb rig never cuts a limb out of the wrong picture; the dive is not also a lunge (the smash arms one)
+      drawSpriteBody(Object.create(f, dive ? {name:{value:"Puffball (meteor)"}, _atkAnim:{value:0}} : {name:{value:"Puffball (" + k + ")"}}), sp, this);
       return true;
     },
     over(f, ctx){
@@ -38290,10 +38300,10 @@ function drawSpriteBody(f, sp, anim){
   // COSMETICS (see WIN TOKENS): the hat below; a skin is the picture itself (drawFighter passes this function the skin's sprite).
   const _cos = cosOf(f);
   // state tints, clipped to the silhouette
-  // The white of her OWN attack flash is left off a fighter whose swing is a set of pictures (Puffball's spit: `spitFlash:false`): six ticks of white
-  // would hide the very frames. Being hit still flashes white, and so does everything else.
-  const ownSpit = f.flash>0 && f._atkAnim>0 && f._atkKind==='spit' && !!anim && anim.spitFlash === false && !wasHit(f);
-  const tint = (f.flash>0 && !ownSpit) ? ["#ffffff",0.88]
+  // The white of her OWN attack flash is left off a fighter whose move is a set of pictures (Puffball's spit, `spitFlash:false`, and her dive,
+  // `diveFlash:false`): six ticks of white would hide the very frames, and fourteen the very sprite. Being hit still flashes white, and so does everyone else.
+  const ownPoseFlash = f.flash>0 && !!anim && !wasHit(f) && ((f._atkAnim>0 && f._atkKind==='spit' && anim.spitFlash === false) || (!!f._plunge && anim.diveFlash === false));
+  const tint = (f.flash>0 && !ownPoseFlash) ? ["#ffffff",0.88]
              : f._yoyleT>0 ? ["#9aa7b0",0.72]
              : (f._starT>0 && hazardT%6<3) ? ["#ffd23f",0.62] : null;
   const lay = (col,a)=>{
@@ -39901,6 +39911,7 @@ function netFighter(f){
     if(f._atkKind) o.swingKind = f._atkKind;   // what the body does: punch, kick, uppercut...
     if(f._atkLen) o.swingLen = f._atkLen;      // a smash runs longer than a jab; the beats scale with it
   }
+  if(f._plunge) o.plunge = 1;   // Meteor Puff's dive is on: a client draws her BFDIA 6 sprite for as long as it lasts (puffPose); the state itself stays on the host
   if(f._hurtAnim != null) o.hurtT = f._hurtAnim;   // sent whenever set: wasHit tells 0 from "never set"
   if(f._heatFx) o.heatFx = f._heatFx;   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
   if(f._hookFx) o.hookFx = f._hookFx;
@@ -40157,6 +40168,7 @@ function applySnapshot(s){
       _kos:fd.kos||0, _falls:fd.falls||0, _dmgDealt:fd.dmg||0, _dmgTaken:fd.taken||0, _gone:fd.gone ? 1 : 0,   // the final snapshot's: the host's tallies, for the client's results
       _heatFx:fd.heatFx, _hookFx:fd.hookFx,
       _atkAnim: fd.swing || 0, _atkKind: fd.swingKind || null, _atkLen: fd.swingLen, _hurtAnim: fd.hurtT,
+      _plunge: fd.plunge ? { from: 0, life: 0 } : null,   // (a client never simulates: this is only the flag puffPose reads)
       _windup: (fd.charge && typeof fd.charge === 'object') ? fd.charge : null,
       _atk0: fd.swing || 0,   // the swing timer as the snapshot has it (netSwing counts it down between snapshots)
       // THIS device's fighter is the one it plays, not the one the host marked (the host's own). The gold marker, the
