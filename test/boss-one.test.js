@@ -612,6 +612,64 @@ describe('MOON ROCKS!: star order', () => {
     expect(r.calls[0][3], 'three shards').toBe(3);
     expect(Math.abs(r.calls[0][1] - r.floor), 'on the floor').toBeLessThanOrEqual(2);
   });
+
+  // "Rocks crack into chips" (the owner, 2026-10-06, "make it harder."): a rock that lands bursts into ONE_CHIPS.n (3) small chips, thrown up and out from where it broke, under the rock's own attack
+  // id -- so a fighter still takes at most the one hit its volley caps -- and they break when they come down.
+  it('"Rocks crack into chips" (the owner, 2026-10-06): a rock that lands throws 3 chips under its own id, up and out, and they break when they come down -- and a fighter still takes at most the volley\'s one hit', () => {
+    const r = STAGE(`
+      setTier(2);
+      var floor = worldPlats.filter(function(p){ return p.solid; })[0], out = {};
+      // a rock thrown at a point just over the floor, as a Moon Rock is (its launch rule), well clear of you: it breaks on the floor a little past that point
+      var land = function(){
+        fresh(); one.x = you.x - 400; one.y = groundY() - 360;
+        var px = you.x + 300, py = groundY() - 40, id = ++BOSS_ATK_ID;
+        var rock = addProj(oneShot(one, { x:one.x, y:one.y, vx:0, vy:0, life:110, delay:2, r:18, shape:'moonrock', bossAtk:id }));
+        rock.oHang = { dx:0, dy:0, a:0, at:one._f + 1, rock:true, launch:{ spd:14.5, aim:'point', px:px, py:py } }; oneSteer(one, 300);
+        you.x = WW*0.5 - 1200;   // out of the way
+        for (var i=0; i<80 && rock.life > 0; i++){ one._atkTimer = 1e9; one.x = WW*0.5 - 400; one.y = groundY() - 360; step(); }
+        return { rock: rock, id: id };
+      };
+      var a = land(), chips = projectiles.filter(function(p){ return p.oneChip; });
+      out.dead = a.rock.life <= 0; out.id = a.id; out.rock = { dmg: a.rock.dmg, cap: a.rock.bossCap, x: a.rock.x, flagged: !!a.rock.oneChips };
+      out.chips = chips.map(function(c){ return { id: c.bossAtk, owner: c.owner, dmg: c.dmg, cap: c.bossCap, shape: c.shape, breaks: !!c.breaksOnSurface, grav: !!c.grav, vx: c.vx, vy: c.vy, x: c.x, y: c.y, again: !!c.oneChips }; });
+      // they break when they come down: stepped on until every chip is gone
+      var seen = new Set(chips), y0 = chips.map(function(c){ return c.y; }), rise = 0, frames = 0;
+      for (frames=0; frames<120 && projectiles.some(function(p){ return p.oneChip; }); frames++){
+        one._atkTimer = 1e9; one.x = WW*0.5 - 400; one.y = groundY() - 360; you.x = WW*0.5 - 1200; step();
+        projectiles.forEach(function(p){ if (p.oneChip) seen.add(p); });
+        chips.forEach(function(c, k){ rise = Math.max(rise, y0[k] - c.y); });
+      }
+      out.frames = frames; out.rise = rise; out.seen = seen.size; out.floorY = floor.y; out.life = ONE_CHIPS.life;
+      out.ends = chips.map(function(c){ return { y: c.y, life: c.life }; });
+      // a fighter standing where another rock broke, with no grace, frame after frame: all the volley's hits together
+      var b = land(), chips2 = projectiles.filter(function(p){ return p.oneChip; });
+      var total = 0, hits = [];
+      for (var j=0; j<60; j++){ one._atkTimer = 1e9; one.x = WW*0.5 - 400; one.y = groundY() - 360; you.x = b.rock.x; you.y = floor.y - you.r; you.vx = 0; you.vy = 0; you.invuln = 0; you.hitstun = 0; you.burn = 0; you.pct = 0;
+        step(); total += you.pct; if (you.pct > 0) hits.push(you.pct); }
+      out.hit = { n: chips2.length, total: total, hits: hits, cap: oneDmg(), small: oneShot(one, {}).dmg };
+      return out;`);
+    expect(r.dead, 'the rock broke').toBe(true);
+    expect(r.rock.flagged, 'a Moon rock that lands is marked to chip').toBe(true);
+    expect(r.chips.length, 'into three chips (ONE_CHIPS.n)').toBe(3);
+    r.chips.forEach((c) => {
+      expect(c.id, "under the rock's own attack id").toBe(r.id);
+      expect([c.owner, c.shape, c.breaks, c.grav], 'hers, a small moon rock, thrown up to come down and break').toEqual([-2, 'moonrock', true, true]);
+      expect([c.dmg, c.cap], "the rock's own hit and cap: no chip hits harder than the rock").toEqual([r.rock.dmg, r.rock.cap]);
+      expect(c.vy, 'thrown up').toBeLessThan(0);
+      expect(Math.abs(c.x - r.rock.x), 'from where it broke').toBeLessThanOrEqual(12);
+      expect(c.again, 'a chip does not chip').toBe(false);
+    });
+    expect(r.chips.map((c) => Math.sign(c.vx)).sort((p, q) => p - q), 'out: one each way and one straight up').toEqual([-1, 0, 1]);
+    expect(r.seen, 'three chips in all: nothing chips again when a chip comes down').toBe(3);
+    expect(r.rise, 'they were thrown up into the air').toBeGreaterThan(20);
+    expect(r.frames, 'and they broke when they came down, before their own life ran out').toBeLessThan(r.life);
+    r.ends.forEach((e) => expect(Math.abs(e.y - r.floorY), 'on the floor they broke on').toBeLessThanOrEqual(8));
+    expect(r.hit.n, 'the same three with a fighter standing where the rock broke').toBe(3);
+    expect(r.hit.hits[0], 'a chip hits as hard as the rock does').toBeCloseTo(r.hit.small, 5);
+    expect(r.hit.hits.length, 'and more than one chip lands on him (so the cap is what is read below)').toBeGreaterThan(1);
+    expect(r.hit.total, 'yet he takes at most the one hit the volley caps (her 33): every chip is under the rock\'s id').toBeLessThanOrEqual(r.hit.cap + 1e-6);
+    expect(r.hit.small * 2, 'two of her small hits would be more than her 33, so it is the shared id that stops it').toBeGreaterThan(r.hit.cap);
+  });
 });
 
 describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
@@ -912,7 +970,7 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
         var parts = T.waves || T.rings || T.bursts || T.volleys || T.kicks || (k === 'hands' ? 3 : 1);   // what the move is made of: waves, rings, bursts, volleys, kicks
         one._eyeBurst = 0; one._telX = you.x; one._telY = hurtCY(you); one._aimX = you.x; one._aimY = hurtCY(you); one._telDir = 1; one._kickY = hurtCY(you);
         one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }]; one._zapCols = null; one._kickLanes = oneKickLanes(one, one._kickY);
-        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !p.oSweep && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };
+        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !p.oSweep && !p.oneChip && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };   // (not the chips a landing rock bursts into: "Rocks crack into chips", the owner, 2026-10-06 -- they are what a rock leaves behind, not a part of the volley she throws)
         if (k === 'eyelasers'){ one._telKind = k; one._tel = oneTelLen(one, k); }
         else { ONE_MOVES[k](one, tgt, id); count(); }
         for (var i=0; i<600 && (oneBusy(one) || one._tel > 0 || i < 2); i++){ one._atkTimer = 1e9; one.x = you.x - 900; one.y = groundY() - 380; you.invuln = 99; step(); count(); frames++; }
@@ -1570,7 +1628,8 @@ describe('attack by attack: ONE GROWS GIANT! "Buff: landing stomps"', () => {
       // up and down again at once: inside the cooldown
       hold(rest() - 200); step(); hold(rest()); step(); out.quick = waves().length;
       // after the cooldown: up, and down: a second stomp, with an id of its own
-      for (var i=0;i<ONE_STOMP.cd + 5;i++){ hold(rest()); step(); } for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step(); out.second = waves().length; waves().forEach(function(p){ ids[p.bossAtk] = 1; });
+      for (var i=0;i<ONE_STOMP.cd + 5;i++){ hold(rest()); step(); } out.between = waves().length;   // (the first landing's second pair has come by now)
+      for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step(); out.second = waves().length; waves().forEach(function(p){ ids[p.bossAtk] = 1; });
       out.ids = Object.keys(ids).length;
       // not giant: the same landing makes nothing
       projectiles = []; one._giantT = 0; one.r = one._baseR; for (var i=0;i<6;i++){ hold(fl.y - one.r - 4 - 200); step(); } hold(fl.y - one.r - 4); step(); out.small = waves().length;
@@ -1578,10 +1637,11 @@ describe('attack by attack: ONE GROWS GIANT! "Buff: landing stomps"', () => {
       one.r = one._baseR; one._giantT = 0; ONE_MOVES.sizeshift(one); one._stompUp = false; one._onFloor = false; one._stompCd = 0; projectiles = []; hold(rest()); step(); out.straight = waves().length;
       return out;`);
     expect(r.rest, 'resting on the floor: no landing').toBe(0);
-    expect(r.first, 'up and down: a shockwave each way').toBe(2);
+    expect(r.first, 'up and down: a shockwave each way (its second pair is 20 frames later: "Stomps twice", the owner, 2026-10-06)').toBe(2);
     expect(r.quick, 'a second landing inside the cooldown does not stomp again').toBe(2);
-    expect(r.second, 'after the cooldown the next landing does: two more').toBe(4);
-    expect(r.ids, 'one attack id a landing').toBe(2);
+    expect(r.between, 'the first landing has made its second pair by now: four in all ("Stomps twice")').toBe(4);
+    expect(r.second, 'after the cooldown the next landing does: two more, to the four of the first ("Stomps twice": its second pair is 20 frames later)').toBe(6);
+    expect(r.ids, 'one attack id a landing: both pairs of a landing share it').toBe(2);
     expect(r.small, 'not while she is not giant').toBe(0);
     expect(r.straight, 'and not before she has been up').toBe(0);
   });
@@ -1591,24 +1651,67 @@ describe('attack by attack: ONE GROWS GIANT! "Buff: landing stomps"', () => {
       var out = {};
       var run = function(jump){
         projectiles = []; one._stompUp = false; one._onFloor = false; one._stompCd = 0; you.pct = 0;
-        var fx = X + 420, total = 0;
+        var fx = X + 420, total = 0, hits = [];
         for (var i=0;i<6;i++){ hold(rest() - 200); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 1e9; step(); }
         hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.invuln = 1e9; step();
-        for (var j=0;j<90;j++){ hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 0; you.hitstun = 0; you.burn = 0; you.pct = 0; step(); total += you.pct; }
-        return total;
+        for (var j=0;j<90;j++){ hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 0; you.hitstun = 0; you.burn = 0; you.pct = 0; step(); total += you.pct; if (you.pct > 0) hits.push(you.pct); }
+        return { total: total, hits: hits };
       };
       out.stand = run(false); out.jump = run(true);
       // it is not her attack: with only its waves in the air she is over (oneAttackOver)
       projectiles = []; one._stompUp = false; one._onFloor = false; one._stompCd = 0; you.x = WW*0.5 - 1500; you.invuln = 1e9;
       var lo = BOSS_ATK_ID; for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step();
       out.live = waves().length; out.over = oneAttackOver(one, { lo: lo }); out.hold = projectiles.filter(function(p){ return bossShotLive(p, lo); }).length;
-      out.small = oneShot(one, {}).dmg;
+      out.small = oneShot(one, {}).dmg; out.big = oneDmg();
       return out;`);
-    expect(r.stand, 'standing in its way: one hit of her small shot').toBeCloseTo(r.small, 5);
+    // "Stomps twice" (the owner, 2026-10-06): the second pair comes along the same way 20 frames behind the first, under the same attack id. Standing in the way of both, you take one of her small hits
+    // from the first and what is left of her 33 from the second -- never more than the one hit the id caps. (A fighter who does not stand still, or jumps the first, takes one small hit or none.)
+    expect(r.stand.hits[0], 'standing in its way: one hit of her small shot').toBeCloseTo(r.small, 5);
     expect(r.small, 'which is 26.4').toBeCloseTo(26.4, 6);
-    expect(r.jump, 'a jump clears it').toBe(0);
+    expect(r.small * 2, 'two of them would be more than her 33').toBeGreaterThan(r.big);
+    expect(r.stand.total, 'and the second pair adds only what is left of her 33, under the same id: never more than one hit of hers').toBeCloseTo(r.big, 5);
+    expect(r.jump.total, 'a jump clears it').toBe(0);
     expect(r.live, 'its waves are in the air').toBe(2);
     expect(r.hold, 'and none of them is a shot of her attack').toBe(0);
+    expect(r.over, 'so her next wind-up is not held back by them').toBe(true);
+  });
+
+  // "Stomps twice" (the owner, 2026-10-06, "make it harder."): each landing sends two pairs of waves from the same spot, the second ONE_STOMP.again (20) frames after the first, under the same attack id.
+  it('"Stomps twice" (the owner, 2026-10-06): a landing makes two pairs of waves from the same spot, 20 frames apart, under one attack id -- and the second pair is no more her attack than the first', () => {
+    const r = STAGE(`${GIANT}
+      for (var i=0;i<6;i++){ hold(rest() - 200); step(); }   // up in the air
+      var info = function(ws){ return ws.map(function(p){ return { x: p.x, y: p.y, dir: Math.sign(p.vx), id: p.bossAtk, dmg: p.dmg, cap: p.bossCap, shape: p.shape, lingers: !!p.lingers, delay: p.delay }; }); };
+      var lo = BOSS_ATK_ID, fxSeen = new Set(oneFx);
+      hold(rest()); step();   // ...and down on the floor: the first pair
+      oneFx.forEach(function(e){ fxSeen.add(e); });
+      var seen = new Set(waves()), first = info(waves()), counts = [waves().length], second = null, at = -1, marks = null;
+      for (var j=1; j<=40; j++){
+        hold(rest()); step();
+        var added = waves().filter(function(p){ return !seen.has(p); });
+        counts.push(waves().length);
+        if (added.length && at < 0){ at = j; second = info(added); marks = oneFx.filter(function(e){ return e.kind === 'stomp' && !fxSeen.has(e); }).map(function(e){ return e.x; }); }
+        waves().forEach(function(p){ seen.add(p); });
+      }
+      return { first: first, second: second, at: at, counts: counts, marks: marks, X: X, small: oneShot(one, {}).dmg, big: oneDmg(), again: ONE_STOMP.again,
+        over: oneAttackOver(one, { lo: lo }), hold: projectiles.filter(function(p){ return bossShotLive(p, lo); }).length };`);
+    expect(r.counts[0], 'the first pair, as it lands: a wave each way').toBe(2);
+    expect(r.at, 'the second pair comes 20 frames after the first').toBe(20);
+    expect(r.again, 'ONE_STOMP.again').toBe(20);
+    expect(r.counts.slice(0, 20), 'nothing more until then').toEqual(new Array(20).fill(2));
+    expect(r.counts[20], 'and then four are in the air').toBe(4);
+    expect(Math.max(...r.counts), 'two pairs, not three').toBe(4);
+    expect(r.second.length, 'a wave each way again').toBe(2);
+    expect(r.second.map((q) => q.dir).sort((p, q) => p - q), 'one goes left and one goes right').toEqual([-1, 1]);
+    const byX = (a) => [...a].sort((p, q) => p.x - q.x);
+    byX(r.second).forEach((q, k) => {
+      expect(q.x, 'from the same spot, at her feet either side of her').toBeCloseTo(byX(r.first)[k].x, 6);
+      expect(q.y, 'on the same line along the floor').toBeCloseTo(byX(r.first)[k].y, 6);
+      expect([q.shape, q.lingers, q.delay], 'the same low crest, waiting the same moment, and what she leaves standing').toEqual([byX(r.first)[k].shape, true, byX(r.first)[k].delay]);
+      expect([q.dmg, q.cap], 'one of her small hits, and never more than her 33 for the whole attack').toEqual([r.small, r.big]);
+    });
+    expect(new Set([...r.first, ...r.second].map((q) => q.id)).size, 'both pairs under one attack id').toBe(1);
+    expect(r.marks, 'the second pair is marked where it starts, as the first was').toEqual([r.X]);
+    expect(r.hold, 'with both pairs in the air, none of them is a shot of her attack').toBe(0);
     expect(r.over, 'so her next wind-up is not held back by them').toBe(true);
   });
 });
