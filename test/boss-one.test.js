@@ -539,7 +539,7 @@ describe('MOON ROCKS!: star order', () => {
         for (var i=0; i<T.n*T.every + 12; i++){ one._atkTimer = 1e9; you.invuln = 99; you.x += 3; step();   // you drift right 3 a frame
           rocks.forEach(function(p, k){ if (!prev[k] && !p.oHang){ prev[k] = true; goAt.push(one._f - t0); dirs.push(Math.atan2(p.vy, p.vx)); youAt.push([you.x, hurtCY(you), p.x, p.y, you.vx, you.vy]); } }); }
         out[t] = { n: rocks.length, T: T, shape: rocks[0].shape, dmg: rocks[0].dmg, ids: Object.keys(rocks.reduce(function(a, p){ a[p.bossAtk] = 1; return a; }, {})).length, goAt: goAt,
-          aim: rocks[0].oHang === null ? null : null, lock: lock, dirs: dirs, youAt: youAt, spread: Math.max.apply(null, rel.map(function(q){ return Math.abs(q[0]); })), up: rel.every(function(q){ return q[1] < 0; }), chips: chips,
+          aim: rocks[0].oHang === null ? null : null, lock: lock, dirs: dirs, youAt: youAt, spread: Math.max.apply(null, rel.map(function(q){ return Math.abs(q[0]); })), inside: rel.every(function(q){ return Math.hypot(q[0], q[1]) < one.r; }), chips: chips,
           launch: null };
         // the launch rule each rock was given
         fresh(); ONE_MOVES.moonrocks(one, you, ++BOSS_ATK_ID); out[t].launch = own().map(function(p){ return p.oHang.launch; });
@@ -550,7 +550,7 @@ describe('MOON ROCKS!: star order', () => {
     for (const t of [1, 2, 3]) {
       expect(r[t].shape).toBe('moonrock');
       expect(r[t].ids, 'one id').toBe(1);
-      expect(r[t].up, 'they rise over her').toBe(true);
+      expect(r[t].inside, 'they start inside her body ("attacks should start from the center of her body", the owner, 2026-10-06; they rose over her head)').toBe(true);
       expect(r[t].goAt.length, 'every rock goes').toBe(r[t].n);
       for (let k = 1; k < r[t].goAt.length; k++) expect(r[t].goAt[k] - r[t].goAt[k - 1], 'one after another').toBe(r[t].T.every);
       expect(r[t].chips, 'the Moon in her sky has lost a chunk with every volley').toBe(1);
@@ -559,7 +559,7 @@ describe('MOON ROCKS!: star order', () => {
       r[t].youAt.forEach((a, k) => expect(Math.abs(Math.atan2(a[1] + a[5]*r[t].T.lead*0.5 - a[3], a[0] + a[4]*r[t].T.lead - a[2]) - r[t].dirs[k]), `tier ${t}: each rock goes at you as it goes`).toBeLessThan(0.1));
     }
     expect(r[2].spread, 'in a star (95 px across), where tier 1 hangs its five in a row').toBeLessThanOrEqual(96);
-    expect(r[1].spread, 'tier 1 hangs its five in a row, 44 apart: 88 each way from the middle').toBeCloseTo(88, 6);
+    expect(r[1].spread, 'tier 1 hangs its five in a row inside her body, 0.12 of her radius apart ("attacks should start from the center of her body", the owner, 2026-10-06; they hung 44 apart over her)').toBeLessThan(30);
     // "attacks are not shorter" ("shorter attacks" was not picked): with fewer rocks they are thrown more slowly, so a throw lasts as long as it did (8 x 5, 10 x 6, 15 x 6 frames)
     [1, 2, 3].forEach((t, k) => expect(r[t].T.n*r[t].T.every, `tier ${t}: the throw is not shorter`).toBeGreaterThanOrEqual([40, 60, 90][k]));
   });
@@ -611,6 +611,64 @@ describe('MOON ROCKS!: star order', () => {
     expect(r.calls.length, 'with one heavy landing').toBe(1);
     expect(r.calls[0][3], 'three shards').toBe(3);
     expect(Math.abs(r.calls[0][1] - r.floor), 'on the floor').toBeLessThanOrEqual(2);
+  });
+
+  // "Rocks crack into chips" (the owner, 2026-10-06, "make it harder."): a rock that lands bursts into ONE_CHIPS.n (3) small chips, thrown up and out from where it broke, under the rock's own attack
+  // id -- so a fighter still takes at most the one hit its volley caps -- and they break when they come down.
+  it('"Rocks crack into chips" (the owner, 2026-10-06): a rock that lands throws 3 chips under its own id, up and out, and they break when they come down -- and a fighter still takes at most the volley\'s one hit', () => {
+    const r = STAGE(`
+      setTier(2);
+      var floor = worldPlats.filter(function(p){ return p.solid; })[0], out = {};
+      // a rock thrown at a point just over the floor, as a Moon Rock is (its launch rule), well clear of you: it breaks on the floor a little past that point
+      var land = function(){
+        fresh(); one.x = you.x - 400; one.y = groundY() - 360;
+        var px = you.x + 300, py = groundY() - 40, id = ++BOSS_ATK_ID;
+        var rock = addProj(oneShot(one, { x:one.x, y:one.y, vx:0, vy:0, life:110, delay:2, r:18, shape:'moonrock', bossAtk:id }));
+        rock.oHang = { dx:0, dy:0, a:0, at:one._f + 1, rock:true, launch:{ spd:14.5, aim:'point', px:px, py:py } }; oneSteer(one, 300);
+        you.x = WW*0.5 - 1200;   // out of the way
+        for (var i=0; i<80 && rock.life > 0; i++){ one._atkTimer = 1e9; one.x = WW*0.5 - 400; one.y = groundY() - 360; step(); }
+        return { rock: rock, id: id };
+      };
+      var a = land(), chips = projectiles.filter(function(p){ return p.oneChip; });
+      out.dead = a.rock.life <= 0; out.id = a.id; out.rock = { dmg: a.rock.dmg, cap: a.rock.bossCap, x: a.rock.x, flagged: !!a.rock.oneChips };
+      out.chips = chips.map(function(c){ return { id: c.bossAtk, owner: c.owner, dmg: c.dmg, cap: c.bossCap, shape: c.shape, breaks: !!c.breaksOnSurface, grav: !!c.grav, vx: c.vx, vy: c.vy, x: c.x, y: c.y, again: !!c.oneChips }; });
+      // they break when they come down: stepped on until every chip is gone
+      var seen = new Set(chips), y0 = chips.map(function(c){ return c.y; }), rise = 0, frames = 0;
+      for (frames=0; frames<120 && projectiles.some(function(p){ return p.oneChip; }); frames++){
+        one._atkTimer = 1e9; one.x = WW*0.5 - 400; one.y = groundY() - 360; you.x = WW*0.5 - 1200; step();
+        projectiles.forEach(function(p){ if (p.oneChip) seen.add(p); });
+        chips.forEach(function(c, k){ rise = Math.max(rise, y0[k] - c.y); });
+      }
+      out.frames = frames; out.rise = rise; out.seen = seen.size; out.floorY = floor.y; out.life = ONE_CHIPS.life;
+      out.ends = chips.map(function(c){ return { y: c.y, life: c.life }; });
+      // a fighter standing where another rock broke, with no grace, frame after frame: all the volley's hits together
+      var b = land(), chips2 = projectiles.filter(function(p){ return p.oneChip; });
+      var total = 0, hits = [];
+      for (var j=0; j<60; j++){ one._atkTimer = 1e9; one.x = WW*0.5 - 400; one.y = groundY() - 360; you.x = b.rock.x; you.y = floor.y - you.r; you.vx = 0; you.vy = 0; you.invuln = 0; you.hitstun = 0; you.burn = 0; you.pct = 0;
+        step(); total += you.pct; if (you.pct > 0) hits.push(you.pct); }
+      out.hit = { n: chips2.length, total: total, hits: hits, cap: oneDmg(), small: oneShot(one, {}).dmg };
+      return out;`);
+    expect(r.dead, 'the rock broke').toBe(true);
+    expect(r.rock.flagged, 'a Moon rock that lands is marked to chip').toBe(true);
+    expect(r.chips.length, 'into three chips (ONE_CHIPS.n)').toBe(3);
+    r.chips.forEach((c) => {
+      expect(c.id, "under the rock's own attack id").toBe(r.id);
+      expect([c.owner, c.shape, c.breaks, c.grav], 'hers, a small moon rock, thrown up to come down and break').toEqual([-2, 'moonrock', true, true]);
+      expect([c.dmg, c.cap], "the rock's own hit and cap: no chip hits harder than the rock").toEqual([r.rock.dmg, r.rock.cap]);
+      expect(c.vy, 'thrown up').toBeLessThan(0);
+      expect(Math.abs(c.x - r.rock.x), 'from where it broke').toBeLessThanOrEqual(12);
+      expect(c.again, 'a chip does not chip').toBe(false);
+    });
+    expect(r.chips.map((c) => Math.sign(c.vx)).sort((p, q) => p - q), 'out: one each way and one straight up').toEqual([-1, 0, 1]);
+    expect(r.seen, 'three chips in all: nothing chips again when a chip comes down').toBe(3);
+    expect(r.rise, 'they were thrown up into the air').toBeGreaterThan(20);
+    expect(r.frames, 'and they broke when they came down, before their own life ran out').toBeLessThan(r.life);
+    r.ends.forEach((e) => expect(Math.abs(e.y - r.floorY), 'on the floor they broke on').toBeLessThanOrEqual(8));
+    expect(r.hit.n, 'the same three with a fighter standing where the rock broke').toBe(3);
+    expect(r.hit.hits[0], 'a chip hits as hard as the rock does').toBeCloseTo(r.hit.small, 5);
+    expect(r.hit.hits.length, 'and more than one chip lands on him (so the cap is what is read below)').toBeGreaterThan(1);
+    expect(r.hit.total, 'yet he takes at most the one hit the volley caps (her 33): every chip is under the rock\'s id').toBeLessThanOrEqual(r.hit.cap + 1e-6);
+    expect(r.hit.small * 2, 'two of her small hits would be more than her 33, so it is the shared id that stops it').toBeGreaterThan(r.hit.cap);
   });
 });
 
@@ -718,7 +776,7 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
         const two = sw.filter((x) => x.i === i), want = P.a0 + (P.a1 - P.a0)*k/(S.n - 1);
         expect(two.length, `tier ${t}, pair ${k + 1}: two beams`).toBe(2);
         two.forEach((x) => expect(Math.abs(x.a - want), `tier ${t}, pair ${k + 1}: at ${want.toFixed(3)} rad, sweeping from the first edge to the last`).toBeLessThan(1e-6));
-        expect(Math.abs(Math.abs(two[0].x - two[1].x) - 0.56*g.r), 'one from each eye, set far apart').toBeLessThan(2.5);
+        expect(Math.abs(two[0].x - two[1].x), 'both eyes fire from her middle ("attacks should start from the center of her body", the owner, 2026-10-06)').toBeLessThan(2.5);
       });
       expect(new Set(sw.map((x) => x.id)).size, `tier ${t}: one attack id for the whole sweep`).toBe(1);
       expect(sw[0].id, 'and not one the bursts used').not.toBe(undefined);
@@ -912,7 +970,7 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
         var parts = T.waves || T.rings || T.bursts || T.volleys || T.kicks || (k === 'hands' ? 3 : 1);   // what the move is made of: waves, rings, bursts, volleys, kicks
         one._eyeBurst = 0; one._telX = you.x; one._telY = hurtCY(you); one._aimX = you.x; one._aimY = hurtCY(you); one._telDir = 1; one._kickY = hurtCY(you);
         one._handSpots = [{ x:you.x, y:oneSurf(you.x, feetY(you) - 4) }]; one._zapCols = null; one._kickLanes = oneKickLanes(one, one._kickY);
-        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !p.oSweep && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };
+        var count = function(){ projectiles.forEach(function(p){ if (p.owner === -2 && !p.oSweep && !p.oneChip && !seen.has(p)) seen.add(p); }); cols += oneFx.filter(function(e){ return e.kind === 'column' && !e._c && (e._c = 1); }).length; };   // (not the chips a landing rock bursts into: "Rocks crack into chips", the owner, 2026-10-06 -- they are what a rock leaves behind, not a part of the volley she throws)
         if (k === 'eyelasers'){ one._telKind = k; one._tel = oneTelLen(one, k); }
         else { ONE_MOVES[k](one, tgt, id); count(); }
         for (var i=0; i<600 && (oneBusy(one) || one._tel > 0 || i < 2); i++){ one._atkTimer = 1e9; one.x = you.x - 900; one.y = groundY() - 380; you.invuln = 99; step(); count(); frames++; }
@@ -1000,89 +1058,6 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
       });
       return out;`);
     for (const [k, pct] of Object.entries(r)) expect(pct, `${k}: a whole move over a fighter who does not move is one hit of at most 33`).toBeLessThanOrEqual(33.0001);
-  });
-});
-
-describe('contact damage: "Evil leafy level." -- and then "nerf one." / "Lighter contact"', () => {
-  // The owner, 2026-10-02: "nerf one." Asked which, they picked "Lighter contact": touching her hurts half as much (ONE_CONTACT's damage halved: 0.3 of the base, 6.6%)
-  // and knocks less (13 to 9); her 75 frames of grace stay. The numbers below are those; the "Evil leafy level" ones they replace are in the comments.
-  // Round 17 (the owner, 2026-10-01), Evil Leafy's nerfs: "softer contact (knockback 13 -> 9, grace 75 -> 120 f; One keeps her own copy of the old numbers)". One's contact was read off
-  // Evil Leafy's own code (a boss hit of 0.6, kx = sign*13, -12, invuln = max(invuln, 75)); hers is softer now, so this test no longer reads her code: One keeps the numbers hers had, in its
-  // own ONE_CONTACT, and a change to hers does not touch it.
-  it("touching her hurts HALF as much as it did (\"Lighter contact\": 6.6%, knocked 9 not 13, the same 75 frames of grace): One's own copy -- Evil Leafy's contact is 9 and 120 and One does not read hers", () => {
-    const r = STAGE(`
-      fresh(); one._hop = null; one._atkTimer = 1e9;
-      var out = { c: ONE_CONTACT, base: BOSS_DMG_BASE, src: String(oneContact), el: [EL.touchKX, EL.touchGrace] };
-      // change hers: One's hit does not move
-      var kx0 = EL.touchKX, g0 = EL.touchGrace; EL.touchKX = 1; EL.touchGrace = 1;
-      one.x = you.x; one.y = you.y; you.vx = 0; you.vy = 0; step();
-      out.one = { pct: you.pct, vx: you.vx, invuln: you.invuln };
-      EL.touchKX = kx0; EL.touchGrace = g0;
-      // the same bump with the numbers it had before "Lighter contact" (0.6 of the base, knocked 13), the way it pushed: the knock it is lighter than
-      var dir = Math.sign(out.one.vx) || 1;
-      you.invuln = 0; you.hitstun = 0; you.pct = 0; you.vx = 0; you.vy = 0;
-      applyHit(you, BOSS_DMG_BASE*0.6, dir*13, -12, null, { bossAtk: ++BOSS_ATK_ID });
-      out.was = { pct: you.pct, vx: you.vx };
-      return out;`);
-    // The numbers Evil Leafy's contact check had when One copied them: applyHit(f, bossDmg()*0.6, kx, -12, ...), kx = sign*13, invuln = max(invuln, 75)
-    expect(r.c, "\"Lighter contact\": half the damage (0.3 of the base, it was 0.6), knocked 9 (it was 13), the -12 lift and the 75 frames of grace as they were").toEqual({ dmg: r.base * 0.3, kx: 9, ky: -12, grace: 75, reach: 0.55 });   // (reach: "damage hitbox is smaller so that i can hit her with small shockwaves.", the owner, 2026-10-05)
-    expect(r.c.dmg, 'about 6.6%: half of the 13.2 it was, well under the 33 of one of her hits').toBeCloseTo(6.6, 6);
-    expect(r.c.dmg, 'exactly half').toBeCloseTo(r.base * 0.6 / 2, 9);
-    expect(r.el, "Evil Leafy's are softer now (Round 17): knocked 9, 120 frames of grace").toEqual([9, 120]);
-    expect(r.src, "One's contact reads its own ONE_CONTACT and never hers").toMatch(/ONE_CONTACT/);
-    expect(r.src).not.toMatch(/\bEL\b|touchKX|touchGrace/);
-    expect(r.one.pct, 'with hers set to 1 and 1, One still hits for 6.6%').toBeCloseTo(6.6, 5);
-    expect(Math.abs(r.one.vx), 'knocked by her 9 (hers would be 1): well over a 1').toBeGreaterThan(5);
-    expect(Math.abs(r.one.vx), 'and less than the same bump at the old 13').toBeLessThan(Math.abs(r.was.vx) - 1);
-    expect(r.was.pct, 'which hurt twice as much').toBeCloseTo(13.2, 5);
-    expect(r.one.invuln, 'with her 75 frames of grace (hers would be 1)').toBeGreaterThanOrEqual(70);
-    expect(r.one.invuln).toBeLessThanOrEqual(75);
-  });
-
-  it('a fighter who overlaps her takes the hit, flies off the way it pushed, and cannot be hit again until the grace is over; one beside her is untouched', () => {
-    const r = STAGE(`
-      fresh(); one.x = you.x; one.y = you.y; you.vx = 0; you.vy = 0; one._hop = null;
-      var out = {};
-      one._atkTimer = 1e9; step();
-      out.first = { pct: you.pct, vx: you.vx, vy: you.vy, invuln: you.invuln };
-      var p0 = you.pct;
-      for (var i=0;i<60;i++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; step(); }
-      out.during = you.pct - p0;
-      for (var j=0;j<40;j++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; step(); }
-      out.after = you.pct - p0 > 0;
-      // a fighter beside her, outside her body
-      fresh(); one.x = you.x + one.r + 200; one.y = you.y; one._atkTimer = 1e9; var q0 = you.pct; step(); out.beside = you.pct - q0;
-      return out;`);
-    expect(r.first.pct, '6.6% ("Lighter contact": it was 13.2)').toBeCloseTo(6.6, 5);
-    expect(r.first.invuln, 'and a long grace').toBeGreaterThanOrEqual(70);
-    expect(r.first.vy, 'thrown up').toBeLessThan(0);
-    expect(r.during, 'no second bump while the grace lasts').toBe(0);
-    expect(r.after, 'and a bump again once it is over').toBe(true);
-    expect(r.beside, 'beside her: nothing').toBe(0);
-  });
-
-  it('her ghost is not hurt by her; a giant One has more body to touch; no contact in the Vortex or in her ending', () => {
-    const r = STAGE(`
-      var out = {};
-      fresh(); ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID); var g = one._ghost; g.controller = 'still'; g.invuln = 0; one.x = g.x; one.y = g.y; var g0 = g.pct; one._atkTimer = 1e9; oneContact(one); out.ghost = g.pct - g0; oneGhostDown(g, true);
-      // reach: a fighter just outside her body, then she grows
-      // a spot between where touching her hurts now and where it hurts once she is giant (1.6x): since "damage hitbox is smaller so that i
-      // can hit her with small shockwaves." (the owner, 2026-10-05) touching hurts within ONE_CONTACT.reach of her radius, not all of it
-      var nearR = one._baseR*ONE_CONTACT.reach, giantR = Math.round(one._baseR*1.6)*ONE_CONTACT.reach, mid = (nearR + giantR)/2;
-      fresh(); one.r = one._baseR; one.y = you.y; for (var dx = 400; dx > 0; dx--){ one.x = you.x + dx; if (hurtGap(you, one.x, one.y) <= mid) break; }
-      you.invuln = 0; var a0 = you.pct; oneContact(one); out.outside = you.pct - a0;
-      one.r = Math.round(one._baseR*1.6); you.invuln = 0; oneContact(one); out.giant = you.pct - a0;
-      // in the Vortex
-      fresh(); one.r = one._baseR; one.x = you.x; one.y = you.y; one._hop = { ph:'out', t:0, r0:one.r, giant:false }; you.invuln = 0; oneContact(one); out.hop = you.pct; one._hop = { ph:'fly', t:3, r0:one.r, giant:false }; oneContact(one); out.fly = you.pct; one._hop = null;
-      // dying
-      fresh(); one.r = one._baseR; one.x = you.x; one.y = you.y; one._dying = 100; you.invuln = 0; oneContact(one); out.dying = you.pct; one._dying = 0;
-      return out;`);
-    expect(r.ghost, 'her ghost is on her side').toBe(0);
-    expect(r.outside, 'just outside where touching her hurts').toBe(0);
-    expect(r.giant, 'grown 1.6 times, the same spot is inside her').toBeCloseTo(6.6, 5);
-    expect(r.hop, 'nothing while she is in the Vortex').toBe(0);
-    expect(r.fly, 'and nothing while she flies in').toBe(0);
-    expect(r.dying, 'nor in her ending').toBe(0);
   });
 });
 
@@ -1653,7 +1628,8 @@ describe('attack by attack: ONE GROWS GIANT! "Buff: landing stomps"', () => {
       // up and down again at once: inside the cooldown
       hold(rest() - 200); step(); hold(rest()); step(); out.quick = waves().length;
       // after the cooldown: up, and down: a second stomp, with an id of its own
-      for (var i=0;i<ONE_STOMP.cd + 5;i++){ hold(rest()); step(); } for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step(); out.second = waves().length; waves().forEach(function(p){ ids[p.bossAtk] = 1; });
+      for (var i=0;i<ONE_STOMP.cd + 5;i++){ hold(rest()); step(); } out.between = waves().length;   // (the first landing's second pair has come by now)
+      for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step(); out.second = waves().length; waves().forEach(function(p){ ids[p.bossAtk] = 1; });
       out.ids = Object.keys(ids).length;
       // not giant: the same landing makes nothing
       projectiles = []; one._giantT = 0; one.r = one._baseR; for (var i=0;i<6;i++){ hold(fl.y - one.r - 4 - 200); step(); } hold(fl.y - one.r - 4); step(); out.small = waves().length;
@@ -1661,10 +1637,11 @@ describe('attack by attack: ONE GROWS GIANT! "Buff: landing stomps"', () => {
       one.r = one._baseR; one._giantT = 0; ONE_MOVES.sizeshift(one); one._stompUp = false; one._onFloor = false; one._stompCd = 0; projectiles = []; hold(rest()); step(); out.straight = waves().length;
       return out;`);
     expect(r.rest, 'resting on the floor: no landing').toBe(0);
-    expect(r.first, 'up and down: a shockwave each way').toBe(2);
+    expect(r.first, 'up and down: a shockwave each way (its second pair is 20 frames later: "Stomps twice", the owner, 2026-10-06)').toBe(2);
     expect(r.quick, 'a second landing inside the cooldown does not stomp again').toBe(2);
-    expect(r.second, 'after the cooldown the next landing does: two more').toBe(4);
-    expect(r.ids, 'one attack id a landing').toBe(2);
+    expect(r.between, 'the first landing has made its second pair by now: four in all ("Stomps twice")').toBe(4);
+    expect(r.second, 'after the cooldown the next landing does: two more, to the four of the first ("Stomps twice": its second pair is 20 frames later)').toBe(6);
+    expect(r.ids, 'one attack id a landing: both pairs of a landing share it').toBe(2);
     expect(r.small, 'not while she is not giant').toBe(0);
     expect(r.straight, 'and not before she has been up').toBe(0);
   });
@@ -1674,24 +1651,67 @@ describe('attack by attack: ONE GROWS GIANT! "Buff: landing stomps"', () => {
       var out = {};
       var run = function(jump){
         projectiles = []; one._stompUp = false; one._onFloor = false; one._stompCd = 0; you.pct = 0;
-        var fx = X + 420, total = 0;
+        var fx = X + 420, total = 0, hits = [];
         for (var i=0;i<6;i++){ hold(rest() - 200); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 1e9; step(); }
         hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.invuln = 1e9; step();
-        for (var j=0;j<90;j++){ hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 0; you.hitstun = 0; you.burn = 0; you.pct = 0; step(); total += you.pct; }
-        return total;
+        for (var j=0;j<90;j++){ hold(rest()); you.x = fx; you.y = fl.y - you.r - (jump ? 90 : 0); you.vx = 0; you.vy = 0; you.invuln = 0; you.hitstun = 0; you.burn = 0; you.pct = 0; step(); total += you.pct; if (you.pct > 0) hits.push(you.pct); }
+        return { total: total, hits: hits };
       };
       out.stand = run(false); out.jump = run(true);
       // it is not her attack: with only its waves in the air she is over (oneAttackOver)
       projectiles = []; one._stompUp = false; one._onFloor = false; one._stompCd = 0; you.x = WW*0.5 - 1500; you.invuln = 1e9;
       var lo = BOSS_ATK_ID; for (var i=0;i<6;i++){ hold(rest() - 200); step(); } hold(rest()); step();
       out.live = waves().length; out.over = oneAttackOver(one, { lo: lo }); out.hold = projectiles.filter(function(p){ return bossShotLive(p, lo); }).length;
-      out.small = oneShot(one, {}).dmg;
+      out.small = oneShot(one, {}).dmg; out.big = oneDmg();
       return out;`);
-    expect(r.stand, 'standing in its way: one hit of her small shot').toBeCloseTo(r.small, 5);
+    // "Stomps twice" (the owner, 2026-10-06): the second pair comes along the same way 20 frames behind the first, under the same attack id. Standing in the way of both, you take one of her small hits
+    // from the first and what is left of her 33 from the second -- never more than the one hit the id caps. (A fighter who does not stand still, or jumps the first, takes one small hit or none.)
+    expect(r.stand.hits[0], 'standing in its way: one hit of her small shot').toBeCloseTo(r.small, 5);
     expect(r.small, 'which is 26.4').toBeCloseTo(26.4, 6);
-    expect(r.jump, 'a jump clears it').toBe(0);
+    expect(r.small * 2, 'two of them would be more than her 33').toBeGreaterThan(r.big);
+    expect(r.stand.total, 'and the second pair adds only what is left of her 33, under the same id: never more than one hit of hers').toBeCloseTo(r.big, 5);
+    expect(r.jump.total, 'a jump clears it').toBe(0);
     expect(r.live, 'its waves are in the air').toBe(2);
     expect(r.hold, 'and none of them is a shot of her attack').toBe(0);
+    expect(r.over, 'so her next wind-up is not held back by them').toBe(true);
+  });
+
+  // "Stomps twice" (the owner, 2026-10-06, "make it harder."): each landing sends two pairs of waves from the same spot, the second ONE_STOMP.again (20) frames after the first, under the same attack id.
+  it('"Stomps twice" (the owner, 2026-10-06): a landing makes two pairs of waves from the same spot, 20 frames apart, under one attack id -- and the second pair is no more her attack than the first', () => {
+    const r = STAGE(`${GIANT}
+      for (var i=0;i<6;i++){ hold(rest() - 200); step(); }   // up in the air
+      var info = function(ws){ return ws.map(function(p){ return { x: p.x, y: p.y, dir: Math.sign(p.vx), id: p.bossAtk, dmg: p.dmg, cap: p.bossCap, shape: p.shape, lingers: !!p.lingers, delay: p.delay }; }); };
+      var lo = BOSS_ATK_ID, fxSeen = new Set(oneFx);
+      hold(rest()); step();   // ...and down on the floor: the first pair
+      oneFx.forEach(function(e){ fxSeen.add(e); });
+      var seen = new Set(waves()), first = info(waves()), counts = [waves().length], second = null, at = -1, marks = null;
+      for (var j=1; j<=40; j++){
+        hold(rest()); step();
+        var added = waves().filter(function(p){ return !seen.has(p); });
+        counts.push(waves().length);
+        if (added.length && at < 0){ at = j; second = info(added); marks = oneFx.filter(function(e){ return e.kind === 'stomp' && !fxSeen.has(e); }).map(function(e){ return e.x; }); }
+        waves().forEach(function(p){ seen.add(p); });
+      }
+      return { first: first, second: second, at: at, counts: counts, marks: marks, X: X, small: oneShot(one, {}).dmg, big: oneDmg(), again: ONE_STOMP.again,
+        over: oneAttackOver(one, { lo: lo }), hold: projectiles.filter(function(p){ return bossShotLive(p, lo); }).length };`);
+    expect(r.counts[0], 'the first pair, as it lands: a wave each way').toBe(2);
+    expect(r.at, 'the second pair comes 20 frames after the first').toBe(20);
+    expect(r.again, 'ONE_STOMP.again').toBe(20);
+    expect(r.counts.slice(0, 20), 'nothing more until then').toEqual(new Array(20).fill(2));
+    expect(r.counts[20], 'and then four are in the air').toBe(4);
+    expect(Math.max(...r.counts), 'two pairs, not three').toBe(4);
+    expect(r.second.length, 'a wave each way again').toBe(2);
+    expect(r.second.map((q) => q.dir).sort((p, q) => p - q), 'one goes left and one goes right').toEqual([-1, 1]);
+    const byX = (a) => [...a].sort((p, q) => p.x - q.x);
+    byX(r.second).forEach((q, k) => {
+      expect(q.x, 'from the same spot, at her feet either side of her').toBeCloseTo(byX(r.first)[k].x, 6);
+      expect(q.y, 'on the same line along the floor').toBeCloseTo(byX(r.first)[k].y, 6);
+      expect([q.shape, q.lingers, q.delay], 'the same low crest, waiting the same moment, and what she leaves standing').toEqual([byX(r.first)[k].shape, true, byX(r.first)[k].delay]);
+      expect([q.dmg, q.cap], 'one of her small hits, and never more than her 33 for the whole attack').toEqual([r.small, r.big]);
+    });
+    expect(new Set([...r.first, ...r.second].map((q) => q.id)).size, 'both pairs under one attack id').toBe(1);
+    expect(r.marks, 'the second pair is marked where it starts, as the first was').toEqual([r.X]);
+    expect(r.hold, 'with both pairs in the air, none of them is a shot of her attack').toBe(0);
     expect(r.over, 'so her next wind-up is not held back by them').toBe(true);
   });
 });
@@ -2086,18 +2106,30 @@ describe('the glitch pass: her fight drawn on a canvas that keeps the old fill a
   });
 });
 
-describe('One: room to hit her up close (the owner, 2026-10-05)', () => {
-  // "give more distance between you and one." -> "2, and damage hitbox is smaller so that i can hit her with small shockwaves."
-  it('inside her body but outside the touch area, a fighter takes nothing -- and a short shockwave there still hits her', () => {
+describe('One has no damage box (the owner, 2026-10-06)', () => {
+  // "remove the damage-box for one" -- touching her does nothing; only her attacks hurt. (It was "contact damage. -- Evil leafy level.",
+  // then "Lighter contact", then a smaller touch area "so that i can hit her with small shockwaves.")
+  it('a fighter overlapping her for two seconds takes nothing, giant too, and none of the contact code is left', () => {
+    const r = STAGE(`
+      var out = { gone: typeof ONE_CONTACT === 'undefined' && typeof oneContact === 'undefined' };
+      fresh(); one._hop = null; one._atkTimer = 1e9; var p0 = you.pct;
+      for (var i=0;i<120;i++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; projectiles = []; step(); }
+      out.overlap = you.pct - p0;
+      fresh(); one.r = Math.round(one._baseR*1.6); one._atkTimer = 1e9; var p1 = you.pct;
+      for (var j=0;j<60;j++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; projectiles = []; step(); }
+      out.giant = you.pct - p1; one.r = one._baseR;
+      return out;`);
+    expect(r.gone, 'no contact code left').toBe(true);
+    expect(r.overlap, 'overlapping her for two seconds: nothing').toBe(0);
+    expect(r.giant, 'a giant One: nothing either').toBe(0);
+  });
+  it('a short shockwave from inside her body lands on her ("so that i can hit her with small shockwaves.")', () => {
     const r = STAGE(`
       fresh(); one.r = one._baseR; one.y = you.y; one._atkTimer = 1e9;
-      var gapAt = (one._baseR*ONE_CONTACT.reach + one._baseR)/2;          // past the touch area, still inside her body
+      var gapAt = one._baseR*0.75;   // inside her body
       for (var dx = 400; dx > 0; dx--){ one.x = you.x + dx; if (hurtGap(you, one.x, one.y) <= gapAt) break; }
-      you.invuln = 0; var p0 = you.pct; oneContact(one); var touched = you.pct - p0;
-      var h0 = one.hp; damageSummons(you, you.x + Math.sign(one.x - you.x)*30, you.y, gapAt + 10, 7); var hit = h0 - one.hp;
-      return { touched: touched, hit: hit, reach: ONE_CONTACT.reach };`);
-    expect(r.reach, 'touching hurts only within a bit over half her radius').toBe(0.55);
-    expect(r.touched, 'standing inside her body, outside the touch area: nothing').toBe(0);
-    expect(r.hit, 'and a short shockwave from there lands on her').toBeGreaterThan(0);
+      var h0 = one.hp; damageSummons(you, you.x + Math.sign(one.x - you.x)*30, you.y, gapAt + 10, 7);
+      return { hit: h0 - one.hp };`);
+    expect(r.hit).toBeGreaterThan(0);
   });
 });

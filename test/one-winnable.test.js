@@ -69,13 +69,18 @@ describe('One can be beaten', () => {
       ghost: +r.ghost.toFixed(2), ung: +r.ung.toFixed(2), perMin: Math.round(r.perMin) }))));
     expect(wins.length, 'and she is not a formality').toBeLessThan(runs.length);
     expect(Math.min(...runs.map(r => r.dealt)), 'every run takes a real bite out of her (a tenth of her bar at least)').toBeGreaterThanOrEqual(200);
-    wins.forEach(r => expect(r.secs, 'a win takes minutes: 2000 HP is the whole gauntlet\'s worth').toBeGreaterThanOrEqual(120));
+    // "2000 hp is good. I want this to be like a casual nkg (so abt 4-8 mins)" (the owner, 2026-10-06; NKG is Hollow Knight's Nightmare King Grimm): a win takes 4 minutes at the least
+    // (this floor reads only a run that wins)
+    wins.forEach(r => expect(r.secs, 'a win takes minutes, 4 at the least: "2000 hp is good. I want this to be like a casual nkg (so abt 4-8 mins)" (the owner, 2026-10-06)').toBeGreaterThanOrEqual(240));
     expect(mean('ghost'), 'her ghost shields her for well under half the fight').toBeLessThanOrEqual(0.45);
     // 2026-10-03, "one should be right beside you, so that you can hit them with a projectile": level with you she takes damage faster (the bot's
     // 415-590 a minute became 577-870) and so reaches Power Ungrounded sooner in a shorter fight -- its share went from 0.11-0.17 to 0.12-0.23 a run
     expect(mean('ung'), 'Power Ungrounded for a small part of it').toBeLessThanOrEqual(0.2);
     expect(runs.map(r => r.ghost + r.ung).every(f => f < 0.5), 'in every run she is hurtable for more than half of it').toBe(true);
-    expect(mean('perMin'), 'damage a minute').toBeGreaterThanOrEqual(400);
+    // "2000 hp is good. I want this to be like a casual nkg (so abt 4-8 mins)" (the owner, 2026-10-06): her 2000 HP at the scripted Lightning's damage a minute is 4 to 8 minutes of
+    // fighting, so 250 to 500 a minute (2000 / 8 to 2000 / 4)
+    expect(mean('perMin'), 'damage a minute: no more than 500, or 2000 HP is under 4 minutes ("2000 hp is good. I want this to be like a casual nkg (so abt 4-8 mins)", the owner, 2026-10-06)').toBeLessThanOrEqual(500);
+    expect(mean('perMin'), 'damage a minute: no less than 250, or 2000 HP is over 8 minutes ("so abt 4-8 mins")').toBeGreaterThanOrEqual(250);
   }, 900000);   // about 35 s alone; under a loaded full-suite run it has taken nearly 10 minutes
 
   // BEATABLE IN PRINCIPLE, whatever a bot manages: with no ghost up every damage path reaches her, the ghost can be killed,

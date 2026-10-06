@@ -14,6 +14,8 @@ import { JSDOM } from 'jsdom';
 // phase. 3 tiers of attacks. things to change during the attacks: projectile speed, projectile amount, damage, effects."
 // And on the arena: the solid walls AND the raised home ledges go, the floating platforms stay, and falling off either side
 // is a knockout. And "Lightning's Chain Bolt can hit bosses EVERYWHERE, Boss Rush included."
+// Then, 2026-10-06, to "make it harder.": of Lightning, "also remove double damage on lightning for one" (read below), and "Rocks crack into chips" and "Stomps twice"
+// (read in test/boss-one.test.js). Her bar stays 2000, with her lines at 1500, 1000 and 500: "2000 hp is good. I want this to be like a casual nkg (so abt 4-8 mins)".
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
@@ -820,15 +822,15 @@ describe("Lightning's Chain Bolt hits bosses everywhere", () => {
       one.x = you.x + 200; one.y = you.y; you.face = 1; you.spCd = 0; var hp0 = one.hp;
       doSpecial(you);
       return hp0 - one.hp;`);
-    // its 8, doubled: "lightnings damage should be higher, but only in the One fight" -- "Double" (see below)
-    expect(r).toBe(16);
+    // its 8, as it is on Four above: "also remove double damage on lightning for one" (the owner, 2026-10-06) -- it was 16 while Lightning's hits on her counted double
+    expect(r).toBe(8);
   });
 });
 
-// "lightnings damage should be higher, but only in the One fight" -- and asked how much, "Double". On One and on her ghost,
-// on every path a hit reaches them by, and nowhere else.
-describe("Lightning hits twice as hard in One's fight, and only there", () => {
-  it("doubles every Lightning hit on One -- melee, shots, dashes -- and on her ghost; nobody else's", () => {
+// "also remove double damage on lightning for one" (the owner, 2026-10-06). Lightning's hits on One counted double ("lightnings damage should be higher, but only in
+// the One fight" -- and asked how much, "Double"); now they hit her, and her ghost, for what the hit is worth, like anyone, on every path a hit reaches them by.
+describe("Lightning hits One like anyone else, in her fight and outside it", () => {
+  it("Lightning's hits on One -- melee, shot, dash -- and on her ghost are worth what they are worth, as Firey's are: no double", () => {
     const r = fight(['Lightning', 'Firey'], {}, `
       one._atkTimer = 1e9; for (var w=0; w<10; w++) step();
       var F = fighters[1], m = one._dmgTakenMult, out = { m: m };
@@ -848,16 +850,17 @@ describe("Lightning hits twice as hard in One's fight, and only there", () => {
       var hp0 = g._ghostHp; g.invuln = 0; applyHit(g, 10, 1, -1, you); out.ghostL = (hp0 - g._ghostHp) / m;
       var hp1 = g._ghostHp; g.invuln = 0; applyHit(g, 10, 1, -1, F); out.ghostF = (hp1 - g._ghostHp) / m;
       return out;`);
-    expect(r.meleeL, 'a Lightning hit counts twice').toBeCloseTo(40, 6);
+    expect(r.meleeL, '"also remove double damage on lightning for one" (the owner, 2026-10-06): a Lightning hit is worth what it is worth, 20 (it counted 40)').toBeCloseTo(20, 6);
     expect(r.meleeF, "Firey's the same as ever").toBeCloseTo(20, 6);
-    expect(r.shotL).toBeCloseTo(20, 6);
+    expect(r.shotL, 'a shot: 10, not 20').toBeCloseTo(10, 6);
     expect(r.shotF).toBeCloseTo(10, 6);
-    expect(r.dashL).toBeCloseTo(24, 6);
-    expect(r.ghostL, 'and on her ghost').toBeCloseTo(20, 6);
+    expect(r.dashL, 'a dash: 12, not 24').toBeCloseTo(12, 6);
+    expect(r.ghostL, 'and on her ghost: 10, not 20').toBeCloseTo(10, 6);
     expect(r.ghostF).toBeCloseTo(10, 6);
+    for (const k of ['melee', 'shot', 'ghost']) expect(r[k + 'L'], 'on every path Lightning does what Firey does: ' + k).toBeCloseTo(r[k + 'F'], 6);
   });
 
-  it('outside her fight Lightning hits exactly as she did: fighters, and every other boss', () => {
+  it('outside her fight Lightning hits exactly as she did: fighters, and every other boss; and no double is left to read', () => {
     const r = W.eval(`(function(){
       go('title'); SETTINGS.mode='boss'; running=true;
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
@@ -868,10 +871,10 @@ describe("Lightning hits twice as hard in One's fight, and only there", () => {
       var four = { type:'boss', name:'Four', attack:'four', team:-1, x:600, y:groundY()-95, r:95, hp:340, maxHp:340 };
       summons=[four]; damageSummons(L, four.x, four.y, 10, 20); var boss = 340 - four.hp;
       running=false; summons=[]; fighters=[]; SETTINGS.mode='ffa';
-      return { fighter: fighter, boss: boss, mult: oneLightningMult(L), none: oneLightningMult(F) }; })()`);
+      return { fighter: fighter, boss: boss, gone: [typeof oneLightningMult, typeof ONE_LIGHTNING_MULT] }; })()`);
     expect(r.fighter, 'a fighter takes the 10').toBeCloseTo(10, 6);
     expect(r.boss, 'Four takes the 20').toBe(20);
-    expect([r.mult, r.none], 'the double is read only by One and her ghost').toEqual([2, 1]);
+    expect(r.gone, 'the double (oneLightningMult, ONE_LIGHTNING_MULT) is gone, so nothing reads it ("also remove double damage on lightning for one", the owner, 2026-10-06)').toEqual(['undefined', 'undefined']);
   });
 });
 
