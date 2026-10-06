@@ -95,18 +95,20 @@ describe('BOOMERANGS! replaces SECURITY ROUNDS!', () => {
     expect(r.shape, 'drawn in the show\'s style until, and unless, its art loads').toBe('function');
   });
 
-  it('each boomerang TURNS AROUND FOUR TIMES, every turn re-aimed at where you stand, then flies home to his hand and is caught: n, speed and cut by tier', () => {
+  // THE OWNER'S PICK, 2026-10-06 (test/cobs-tune2.test.js has the rest): "boomerangs should NOT home." / "cobs should just turn around-not towards the player. 4 times." -- the turns are no longer re-aimed at you.
+  it('each boomerang TURNS AROUND FOUR TIMES, straight back along its own line and never re-aimed at where you stand ("cobs should just turn around-not towards the player. 4 times."), then flies home to his hand and is caught: n, speed and cut by tier', () => {
     const r = fight(`
       park(); floorAt(you, WW*0.5); s.x = you.x + 450; s.y = you.y - 200; s.face = -1; you.invuln = 99999; var out = {};
       [1, 2, 3, 4, 5].forEach(function(t){ atTier(t); projectiles = []; cobsFightTelegraph(s, 'boomerangs', you); s._tel = 0; COBS_MOVES.boomerangs(s, you, ++BOSS_ATK_ID);
         var T = cobsT(s, 'boomerangs'), b = shots(); out['t' + t] = { n: b.length, want: T.n, spd: b[0]._bm.spd, fx: b[0].fxTag, ids: new Set(b.map(function(p){ return p.bossAtk; })).size, turns: b[0]._bm.turns, pierce: b[0].pierce }; });
       atTier(1); projectiles = []; s.x = you.x + 450; s.y = you.y - 200; cobsFightTelegraph(s, 'boomerangs', you); s._tel = 0; COBS_MOVES.boomerangs(s, you, ++BOSS_ATK_ID);
-      var bs = shots(), turnAt = [], minDist = [], last = 0, legMin = 1e9;
+      var bs = shots(), turnAt = [], last = 0, prev = null;
       for (var i=0;i<300;i++){ s._atkTimer = 1e9; step(); you.invuln = 99999;
-        var p = bs[0]; if (!p || p.life <= 0) break;
-        legMin = Math.min(legMin, Math.hypot(you.x - p.x, hurtCY(you) - p.y));
-        if (p._bm.turned !== last){ last = p._bm.turned; turnAt.push({ f:i, n:last, toward: Math.hypot(you.x - p.x, hurtCY(you) - p.y), home:p._bm.home }); minDist.push(Math.round(legMin)); legMin = 1e9; } }
-      out.turns = turnAt; out.minDist = minDist; out.alive = bs.map(function(p){ return p.life > 0 && projectiles.indexOf(p) >= 0; }); out.caught = bs.every(function(p){ return p.life <= 0; });
+        var p = bs[0]; if (!p || bs.every(function(q){ return q.life <= 0; })) break;   // (until the whole volley is gone: each boomerang starts a few frames after the last and takes its own arc)
+        if (p.life <= 0) continue;
+        if (p._bm.turned !== last){ last = p._bm.turned; turnAt.push({ f:i, n:last, home:p._bm.home, dot: prev ? (p.vx*prev[0] + p.vy*prev[1])/(p._bm.spd*p._bm.spd) : null }); }   // dot: this frame's heading against the last one's (-1: straight back)
+        prev = [p.vx, p.vy]; }
+      out.turns = turnAt; out.alive = bs.map(function(p){ return p.life > 0 && projectiles.indexOf(p) >= 0; }); out.caught = bs.every(function(p){ return p.life <= 0; });
       return out;`);
     expect([1, 2, 3, 4, 5].map((t) => r['t' + t].n), '2, 2, 3, 3, 4').toEqual([2, 2, 3, 3, 4]);
     expect([1, 2, 3, 4, 5].map((t) => r['t' + t].n === r['t' + t].want)).toEqual([true, true, true, true, true]);
@@ -115,7 +117,7 @@ describe('BOOMERANGS! replaces SECURITY ROUNDS!', () => {
     for (let t = 1; t <= 5; t++) { expect(r['t' + t].ids, `tier ${t}: one id, one cap`).toBe(1); expect(r['t' + t].turns).toBe(4); expect(r['t' + t].pierce).toBe(true); }
     expect(r.turns.map((q) => q.n), 'four turn-arounds').toEqual([1, 2, 3, 4]);
     expect(r.turns.map((q) => q.home), 'and the fourth is the one that sends it home').toEqual([false, false, false, true]);
-    expect(Math.max(...r.minDist.slice(0, 3)), 'each of the first three legs is re-aimed at you: it passes through the spot you stand on').toBeLessThan(40);
+    expect(r.turns.slice(0, 3).map((q) => q.dot < -0.999), 'each of the first three turns sends it straight back the way it came (its heading reversed), never at the spot you stand on').toEqual([true, true, true]);
     expect(r.caught, 'home, caught in his hand').toBe(true);
   });
 
