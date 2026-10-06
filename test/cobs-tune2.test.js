@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { mulberry32 } from './helpers/prng.js';
+import { bootValidating } from './helpers/validating-canvas.js';
 
 // STEVE COBS, TUNED BY THE OWNER, ROUND 2 (2026-10-06). Five picks, each cited verbatim in the tests that pin it:
 //   11. MAZED AND CONFUSED!: "mazed and confused should be a hazard-passive and screen wide." (asked: "Always on" and "Rayguns on walls")
@@ -251,5 +252,126 @@ describe('OWNER (round 2): PULL THE PLUG! -- "damage for pull the plug should sc
     const keys = fight(`park(); floorAt(you, WW*0.5); cobsFightTelegraph(s, 'plug', you); s._tel = 0; COBS_MOVES.plug(s, you, ++BOSS_ATK_ID); return Object.keys(s._plug);`);
     expect(keys.includes('shock'), 'and the plug carries no flat `shock` any more (only `fshock`, the base a fall scales)').toBe(false);
     expect(keys.includes('fshock')).toBe(true);
+  });
+});
+
+// ================= 13. TOXIC CANNON! =================
+// "the ship should spawn near you" -- the ship appears close to the fighter it targets (a short way to one side, above them) instead of off the edge of the floor, with a clear tell before its beam starts.
+describe('OWNER (round 2): TOXIC CANNON! -- "the ship should spawn near you"', () => {
+  // the move at tier `t` with the fighter at `x` (and `lift` px up on a made platform, or on the floor): the telegraph, then the ship the move makes. `body` may use `S` (the ship), `you`, `s`, `fl`.
+  const CANNON = (t, x, body = 'return {};', lift = 0) => fight(`
+    park(); atTier(${t}); s._introT = 0; summons = summons.filter(function(m){ return m === s; }); projectiles = []; var fl = cobsFloor();
+    ${lift ? `worldPlats.push({ x:${x} - 160, y:groundY() - ${lift}, w:320, h:14 }); you.x = ${x}; you.y = groundY() - ${lift} - you.r; you.vx = 0; you.vy = 0; you.controller = 'still'; step();` : `floorAt(you, ${x});`}
+    you.invuln = 99999; s.x = you.x + 300; s.y = you.y - 200; s.face = -1;
+    cobsFightTelegraph(s, 'cannon', you); var at0 = s._shipAt && { x:s._shipAt.x, y:s._shipAt.y, dir:s._shipAt.dir };
+    s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
+    var S = s._ship, T = cobsT(s, 'cannon');
+    ${body}`);
+
+  it('THE SHIP APPEARS NEAR THE FIGHTER IT TARGETS: COBS_SHIP_NEAR (420) px to one side of them and up in the sky, sailing toward and across them -- never off the edge of the floor -- at every tier, wherever they stand', () => {
+    for (const t of [1, 3, 5]) {
+      for (const where of ['WW*0.5', 'cobsFloor().x + 200', 'cobsFloor().x + cobsFloor().w - 200']) {
+        const r = fight(`
+          park(); atTier(${t}); s._introT = 0; projectiles = []; var fl = cobsFloor(); floorAt(you, ${where}); you.invuln = 99999; s.x = you.x + 300; s.y = you.y - 200;
+          cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
+          var S = s._ship;
+          return { dx: S.x - you.x, dir: S.dir, towards: Math.sign(you.x - S.x), y: S.y, gy: groundY(), insideFloor: S.x > fl.x && S.x < fl.x + fl.w, near: COBS_SHIP_NEAR, left: S.left, want: cobsT(s, 'cannon').n };`);
+        expect(r.near).toBe(420);
+        expect(Math.abs(r.dx), `tier ${t} at ${where}: 420 px to one side of them`).toBeCloseTo(420, 3);
+        expect(r.dir, `tier ${t}: it sails toward them`).toBe(r.towards);
+        expect(r.insideFloor, `tier ${t}: not off the edge of the floor, where it used to come from`).toBe(true);
+        expect(r.y, `tier ${t}: up in the sky, above where they stand`).toBeLessThanOrEqual(r.gy - 380);
+        expect(r.left, `tier ${t}: the tier's number of passes`).toBe(r.want);
+      }
+    }
+  });
+
+  it('IT IS ABOVE THEM WHEREVER THEY STAND: a fighter up on a platform has the ship over their head (260 px over the platform), not below them', () => {
+    const r = CANNON(1, 'WW*0.5', `return { y: S.y, feet: feetY(you), plat: groundY() - 600 };`, 600);
+    expect(r.feet, 'they are up on a platform').toBeLessThan(r.plat + 20);
+    expect(r.y, 'the ship is over them').toBeLessThanOrEqual(r.feet - 259);
+  });
+
+  it('THE TELL BEFORE THE BEAM: the wind-up shows the ship where it will appear (and follows the fighter until the last 12 frames, then holds), and it appears exactly there', () => {
+    const r = fight(`
+      park(); atTier(2); s._introT = 0; projectiles = []; floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 300; s.y = you.y - 200; s._holdT = 99999;
+      cobsFightTelegraph(s, 'cannon', you);
+      var len = s._tel, first = Object.assign({}, s._shipAt), seen = [], lockAt = COBS_SHIP_LOCK;
+      for (var i=0;i<len - 1;i++){ s._atkTimer = 1e9; you.x = WW*0.5 + Math.min(i, 30)*8; you.vx = 0; step(); you.invuln = 99999; seen.push({ left: s._tel, x: s._shipAt && s._shipAt.x, dir: s._shipAt && s._shipAt.dir }); }
+      var held = seen.filter(function(q){ return q.left <= lockAt; }).map(function(q){ return q.x; }), moving = seen.filter(function(q){ return q.left > lockAt; }).map(function(q){ return q.x; });
+      var spot = Object.assign({}, s._shipAt); s._atkTimer = 1e9; step();   // the last frame of the wind-up: it appears
+      var S = s._ship;
+      return { len: len, first: first, spot: spot, held: held, moving: moving, S: S && { x: S.x, y: S.y, dir: S.dir }, sides: seen.map(function(q){ return q.dir; }), lock: lockAt };`);
+    expect(r.lock).toBe(12);
+    expect(r.first, 'the wind-up shows a spot from its first frame').toBeTruthy();
+    expect(new Set(r.moving).size, 'it follows the fighter through the wind-up...').toBeGreaterThan(5);
+    expect(new Set(r.held).size, '...and holds for the last 12 frames').toBe(1);
+    expect(new Set(r.sides).size, 'on the side it was first shown: it does not flip').toBe(1);
+    expect(r.S, 'the ship appears').toBeTruthy();
+    expect([r.S.x, r.S.y, r.S.dir], 'exactly where the tell showed it').toEqual([r.spot.x, r.spot.y, r.spot.dir]);
+  });
+
+  it('AND IT CHARGES BEFORE ITS BEAM STARTS: for COBS_SHIP_ARM (24) frames it hangs where it appeared -- no sailing, no beam hit, no puddle -- then it sails at its tier\'s speed, the beam leading it by 200 px', () => {
+    const r = CANNON(2, 'WW*0.5', `
+      you.invuln = 0; you.pct = 0; var x0 = S.x, xs = [], hits = 0, p0 = you.pct, arms = [], puds = [];
+      // the fighter stands right under the spot the beam will touch down first, so the very first beam frame would hit them
+      you.x = S.x + S.dir*COBS_SHIP_LEAD; you.y = groundY() - you.r; you.vx = 0; you.vy = 0;
+      for (var i=0;i<60;i++){ s._atkTimer = 1e9; you.x = S.x + S.dir*COBS_SHIP_LEAD; you.y = groundY() - you.r; you.vx = 0; you.vy = 0; var pb = you.pct; step();
+        arms.push(S.arm); xs.push(S.x); puds.push(projectiles.filter(function(p){ return p.cobsPuddle; }).length); if (you.pct > pb && !hits) hits = i + 1; }
+      return { x0: x0, xs: xs, arms: arms, hits: hits, puds: puds, spd: T.spd, dir: S.dir, arm0: COBS_SHIP_ARM };`);
+    expect(r.arm0).toBe(24);
+    expect(r.xs.slice(0, 22).every((x) => x === r.x0), 'it hangs still for the arm').toBe(true);
+    expect(r.puds.slice(0, 22).every((n) => n === 0), 'and lays no puddle').toBe(true);
+    expect(r.hits, 'no beam hit while it charges (the fighter stood in its first touch-down all that time), and the beam hurts the moment it starts').toBeGreaterThanOrEqual(24);
+    expect(r.hits).toBeLessThanOrEqual(27);
+    expect(r.arms[0], 'the arm counts down').toBe(23);
+    expect(r.xs[r.xs.length - 1] - r.x0, 'then it sails: speed x frames since the arm ended, toward them').toBeCloseTo(r.dir * r.spd * (60 - 24), 3);
+  });
+
+  it('THE BEAM COMES TO THEM: with them standing still where it was aimed, it has crossed the 220 px between its first touch-down and them some frames after the arm -- a hit on the floor, passed by a jump', () => {
+    const run = (jump) => CANNON(1, 'WW*0.5', `
+      you.invuln = 0; you.pct = 0; var hitAt = null;
+      for (var i=0;i<160;i++){ s._atkTimer = 1e9; you.invuln = 0; ${jump ? 'you.y = groundY() - you.r - 150; you.vy = 0;' : ''} var pb = you.pct; step(); if (you.pct > pb && hitAt === null) hitAt = i + 1; }
+      return { hitAt: hitAt, spd: T.spd, lead: COBS_SHIP_LEAD, near: COBS_SHIP_NEAR, arm: COBS_SHIP_ARM };`);
+    const floor = run(false), air = run(true);
+    expect(floor.hitAt, 'standing in its path: hit').not.toBe(null);
+    const frames = floor.arm + Math.ceil((floor.near - floor.lead - 44) / floor.spd);   // the arm, then the sail from the ship until the beam is within its 44 px of them
+    expect(Math.abs(floor.hitAt - frames), 'when the beam arrives: after the arm and the 220 px of floor (less its own width)').toBeLessThanOrEqual(2);
+    expect(air.hitAt, 'a jump clears the beam, as ever').toBe(null);
+  });
+
+  it('THE REST OF THE CANNON IS AS IT WAS: the tier\'s passes (1, 2, 2, 3, 3), speed, damage, puddles and rocking boat, a new id a pass -- and it turns at the ends of the floor', () => {
+    expect(W.eval('COBS_TIERS.cannon.map(function(T){ return [T.n, T.spd, T.dmg, T.puddle, T.rock]; })')).toEqual([[1, 7, 1.1, 120, 0], [2, 8, 1.2, 180, 100], [2, 9, 1.3, 240, 140], [3, 10, 1.4, 300, 160], [3, 11, 1.5, 360, 180]]);
+    const r = CANNON(3, 'WW*0.5', `
+      S.arm = 0; var id0 = S.id, ids = [S.id], dirs = [S.dir], f = 0, left0 = S.left;
+      for (var i=0;i<4000 && s._ship;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); var Sh = s._ship; if (Sh && Sh.dir !== dirs[dirs.length - 1]){ dirs.push(Sh.dir); ids.push(Sh.id); } f++; }
+      return { dirs: dirs, ids: ids, ended: !s._ship, left0: left0, f: f };`);
+    expect(r.ended, 'it sails its passes and goes').toBe(true);
+    expect(r.dirs.length, 'turning round at the ends of the floor: n passes, n - 1 turns').toBe(r.left0);
+    expect(new Set(r.ids).size, 'a new id each pass (one hit a pass)').toBe(r.left0);
+  });
+
+  it('THE TELL AND THE ARM DRAW WITHOUT A THROW, with valid canvas calls: the ghost and the lane of the wind-up, the charging ship with its aim line, then the beam -- and the picture changes between them', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startCobsFight(['Knife'], { story:true, onEnd:function(){ return true; } });
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      s._hop = null; s._atkTimer = 1e9; you.controller = 'still'; you.invuln = 99999; s.x = you.x + 300; s.y = you.y - 200; projectiles = [];
+    })()`);
+    errors.length = 0;
+    const r = w.eval(`(function(){
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0], ops = function(){ cobsFx = []; var a = ctx.__ops; drawCobsFx(); return ctx.__ops - a; };
+      var out = { idle: ops() };
+      cobsFightTelegraph(s, 'cannon', you); out.tell = ops(); s._tel = 3; out.locked = ops();
+      s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID); s._telKind = null; out.armed = ops(); out.armedEnd = (function(){ s._ship.arm = 1; return ops(); })();
+      s._ship.arm = 0; out.beam = ops(); s._ship.rock = 100; out.rocking = ops();
+      return out;
+    })()`);
+    expect(r.tell, 'the wind-up draws the ghost and the lane').toBeGreaterThan(r.idle + 10);
+    expect(r.locked, 'locked, in white').toBeGreaterThan(r.idle + 10);
+    expect(r.armed, 'the charging ship and its aim line').toBeGreaterThan(r.idle + 10);
+    expect(r.beam, 'the beam').toBeGreaterThan(r.idle + 10);
+    expect(errors, 'every call valid').toEqual([]);
   });
 });

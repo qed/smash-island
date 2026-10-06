@@ -23464,7 +23464,8 @@ const COBS_TIERS = {
   // Choice of Your Own/Transcript); "By the end of the day, I'm expecting a spaceship." (Steve Cobs/Quotes). The
   // sailboat-spaceship crosses the sky at `spd`, n passes, its cannon sweeping a green beam along the floor ahead of it --
   // jump it -- and leaving poison puddles (`puddle` frames) where it passed. MeLife made the ship, so Pull the Plug erases
-  // it mid-attack (cobsPoof).
+  // it mid-attack (cobsPoof). THE OWNER'S PICK, 2026-10-06 ("the ship should spawn near you"): it does not come in from the edge of the floor now -- it appears close to the fighter it targets
+  // (cobsShipSpot: COBS_SHIP_NEAR px to one side of them, up in the sky), shown by the wind-up's ghost and the lane of its beam, and hangs there COBS_SHIP_ARM frames charging (an aim line, no beam) before it sails.
   // TWIST: THE SAILBOAT ROCKS (the boat on the waves, Through No Choice of Your Own): the beam's floor point swings `rock` px either
   // side of its lead on a 40-frame sine as the boat pitches, and puddles are left wherever it touched; the jump timing shifts.
   cannon:    [ { n:1, spd:7, dmg:1.1, puddle:120, rock:0 }, { n:2, spd:8, dmg:1.2, puddle:180, rock:100 }, { n:2, spd:9, dmg:1.3, puddle:240, rock:140 }, { n:3, spd:10, dmg:1.4, puddle:300, rock:160 }, { n:3, spd:11, dmg:1.5, puddle:360, rock:180 } ],
@@ -23500,6 +23501,17 @@ const COBS_ARENA_STAGE = { id:"cobsarena", name:"Meeple Headquarters", blurb:"Th
 // The pane and the wall are solid blocks the fighters stand on and against (the SOLID branch of the fighter step).
 const COBS_PANE_W = 120, COBS_PANE_H = 14, COBS_WALL_W = 20, COBS_WALL_H = 260;
 const COBS_RING_BAND = 34, COBS_SHIP_Y = 380, COBS_SHIP_LEAD = 200, COBS_PUDDLE_EVERY = 160, COBS_PUDDLE_R = 40;
+// TOXIC CANNON!'s ship (THE OWNER, 2026-10-06: "the ship should spawn near you"): it appears close to the fighter it targets -- COBS_SHIP_NEAR px to one side of them (so its beam, which leads it by COBS_SHIP_LEAD, starts
+// the difference short of them), up in the sky (COBS_SHIP_Y over the floor, or COBS_SHIP_ABOVE over the surface they stand over if that is higher) -- and hangs there COBS_SHIP_ARM frames charging, its aim line down to
+// the floor and no beam yet, before it sails. During the wind-up the spot follows them until the last COBS_SHIP_LOCK frames, then holds.
+const COBS_SHIP_NEAR = 420, COBS_SHIP_ABOVE = 260, COBS_SHIP_ARM = 24, COBS_SHIP_LOCK = 12;
+function cobsShipSpot(s, tgt, side){
+  const fl = cobsFloor(), gy = groundY(), tx = tgt ? tgt.x : s.x + (s.face||1)*300;
+  let sd = side || Math.sign(s.x - tx) || -(s.face||1) || 1;   // the side he is on, unless it is held
+  if(!side && (tx + sd*COBS_SHIP_NEAR < fl.x + 120 || tx + sd*COBS_SHIP_NEAR > fl.x + fl.w - 120)) sd = -sd;   // off the floor that way: the other side
+  const top = tgt ? oneSurf(tx, feetY(tgt) - 10) : gy;
+  return { x:clamp(tx + sd*COBS_SHIP_NEAR, fl.x + 40, fl.x + fl.w - 40), y:Math.min(gy - COBS_SHIP_Y, top - COBS_SHIP_ABOVE), dir:-sd };   // it sails toward them, across them
+}
 const COBS_TRAIL_ARM = 14;   // frames a stretch of X's electricity crackles before it bites (so a counter is never zapped the frame it is made)
 const COBS_X_OFF = 170, COBS_X_BEAT = 24;   // where X flickers in (px from you) and the beat between the two of tier 4+
 // MAZED AND CONFUSED!, THE ARENA'S HAZARD. THE OWNER, 2026-10-05: "and a-maze-ing should be called "mazed and confused", and be a hazard in the cobs fight." MePhone4's maze (mpMazeFire,
@@ -23725,6 +23737,7 @@ function updateCobs(s, tgt){
     // the security sight follows you, then LOCKS for the tier's last frames: the lock is the cue to step off the line
     if(s._telKind==="boomerangs" && tgt && s._tel > cobsT(s, 'boomerangs').lock){ const a = cobsAim(s, tgt); s._aimX = a.x; s._aimY = a.y; }
     if(s._telKind==="deletion" && tgt && s._tel > cobsT(s, 'deletion').aim) cobsXAim(s, tgt, cobsT(s, 'deletion'));   // AIMS LONGER: X follows you until `aim` frames before it lunges
+    if(s._telKind==="cannon" && tgt && s._shipAt && s._tel > COBS_SHIP_LOCK) s._shipAt = cobsShipSpot(s, tgt, -s._shipAt.dir);   // the ship's spot follows you (on the side it was first shown), then holds for the last frames
     if(s._tel <= 0){
       s.flash = 0; const k = s._telKind; COBS_MOVES[k](s, tgt, ++BOSS_ATK_ID);
       s._swoopT = Math.max(s._swoopT||0, ONE_SWOOP_HOLD); s._atkTimer = cobsGap(s);
@@ -23754,6 +23767,7 @@ function cobsFightTelegraph(s, k, tgt){   // (not cobsBeginTelegraph: that is th
   if(k==="hands"){ const T = cobsT(s, 'hands'), gy = groundY(); if(T.rows2) s._handRows = cobsHandRows(clamp(a.y, s.y - s.r*0.9, gy - 16), T, gy); }   // TWO ROWS: fixed now, so the tell marks exactly what the punches use
   s._spikePlats = k==="spikes" ? cobsSpikePlats(s, cobsT(s, 'spikes')) : null;
   s._paneX = k==="plug" ? cobsPaneSpots(s, tgt, cobsT(s, 'plug').n) : null;
+  s._shipAt = k==="cannon" ? cobsShipSpot(s, tgt, 0) : null;   // TOXIC CANNON!: where the ship will appear, near you (the tell shows it; it follows you until the last COBS_SHIP_LOCK frames)
   s._xs = k==="deletion" && tgt ? cobsXSpots(s, tgt, cobsT(s, 'deletion')) : (s._xs || []).filter(X=>X.live);
   if(k==="deletion"){ s._redT = s._tel + 40; try{ SFX.bossPhase(); }catch(e){} }   // the siren
   if(k==="keynote") s._holdT = s._tel;   // he takes the podium as the screens rise
@@ -23763,7 +23777,7 @@ function cobsFightTelegraph(s, k, tgt){   // (not cobsBeginTelegraph: that is th
 function cobsBeginDeath(s){
   s._dying = COBS_END.total; s._tel = 0; s._telKind = null; s.vx = 0; s.vy = 0; s._speechT = 0; s._holdT = 0; s._lungeT = 0;
   if(s._plug && s._plug.stash) cobsReplug(s, s._plug, true);
-  s._plug = null; s._ship = null; s._rings = []; s._portals = []; s._xs = []; s._tick = null; s._knife = null; s._stompT = 0; s._burst = null; s._track = []; s._rows = []; s._yank = null; s._trail = []; s._leaps = []; s._handRows = null; s._dive = null; s._chain = null; s._stompChain = false; s._hop = null;
+  s._plug = null; s._ship = null; s._shipAt = null; s._rings = []; s._portals = []; s._xs = []; s._tick = null; s._knife = null; s._stompT = 0; s._burst = null; s._track = []; s._rows = []; s._yank = null; s._trail = []; s._leaps = []; s._handRows = null; s._dive = null; s._chain = null; s._stompChain = false; s._hop = null;
   projectiles = projectiles.filter(p=>p.owner!==-2); cobsFx = [];
   for(const f of fighters) f._cuffUntil = 0;   // a cuff ends with him
   for(const m of summons) if(m.type==="metag" || m.type==="mephoneunit"){ m.life = 0; for(let i=0;i<8;i++) puff(m.x, m.y, m.color, 4); }
@@ -24533,9 +24547,12 @@ const COBS_MOVES = {
     return T.n;
   },
   cannon(s, tgt, id){
-    const T = cobsT(s, 'cannon'), dmg = cobsDmg()*T.dmg, gy = groundY(), fl = cobsFloor();
-    const fromLeft = tgt ? tgt.x > WW*0.5 : (s.face||1) < 0;
-    s._ship = { x:fromLeft ? fl.x - 120 : fl.x + fl.w + 120, y:gy - COBS_SHIP_Y, dir:fromLeft ? 1 : -1, spd:T.spd, left:T.n, dmg, id, puddle:T.puddle, hit:{}, x0:fl.x - 120, x1:fl.x + fl.w + 120, lastPud:-1e9, t:0, rock:T.rock || 0 };
+    const T = cobsT(s, 'cannon'), dmg = cobsDmg()*T.dmg, fl = cobsFloor();
+    // THE OWNER, 2026-10-06: "the ship should spawn near you" -- where the tell showed it, close to the fighter it targets (cobsShipSpot), not off the edge of the floor; it hangs there COBS_SHIP_ARM frames
+    // charging (no beam, no puddle) and then sails across them. (Where the tell showed no spot -- a move called without one -- it is worked out now.)
+    const at = s._shipAt || cobsShipSpot(s, tgt, 0); s._shipAt = null;
+    s._ship = { x:at.x, y:at.y, dir:at.dir, spd:T.spd, left:T.n, dmg, id, puddle:T.puddle, hit:{}, x0:fl.x - 120, x1:fl.x + fl.w + 120, lastPud:-1e9, t:0, rock:T.rock || 0, arm:COBS_SHIP_ARM, beamX:at.x + at.dir*COBS_SHIP_LEAD };
+    for(let i=0;i<10;i++) puff(at.x + (i - 4.5)*12, at.y + 10, '#7fd63a', 4);   // it arrives
     shake(4);
   },
   // MAZED AND CONFUSED!, the arena's hazard (not in his deck: cobsMazeTurn starts it): MePhone4's maze, built round whoever he is facing -- the walls rise where the tell marked them.
@@ -24651,7 +24668,10 @@ function cobsTickEntities(s, tgt){
     worldPlats = worldPlats.filter(p=>!((p._cobsPane || p._cobsWall) && p._until != null && p._until <= hazardT));
   }
   // the ship: across the sky, the beam ahead of it on the floor, puddles where it passed
-  if(s._ship){
+  if(s._ship && s._ship.arm > 0){   // it has just appeared near you and hangs there charging -- the tell before its beam (the aim line is drawn, drawCobsFx): nothing sails, nothing is hit, no puddle is laid
+    const S = s._ship; S.arm--; S.beamX = S.x + S.dir*COBS_SHIP_LEAD;
+    if(hazardT%3===0) puff(S.x + S.dir*30 + (Math.random()*2-1)*10, S.y + 24, '#7fd63a', 3);
+  } else if(s._ship){
     const S = s._ship; S.x += S.dir*S.spd; S.t++;
     const bx = S.x + S.dir*COBS_SHIP_LEAD + S.rock*Math.sin(S.t*Math.PI*2/40); S.beamX = bx;   // the boat pitches: the beam's floor point swings round its lead
     for(const f of cobsFoes()){ if(S.hit[f.idx] || Math.abs(f.x - bx) > 44 || feetY(f) < gy - 100) continue;
@@ -25067,9 +25087,13 @@ function drawCobsFx(){
     } else if(k==="metags"){
       ctx.globalAlpha = 0.3 + pulse; ctx.fillStyle = '#9aa6b2';
       for(const d of (cobsT(s, 'metags').n > 1 ? [-1, 1] : [1])){ const x = clamp(s.x + d*(R + 40), 40, WW - 40); ctx.beginPath(); ctx.moveTo(x - 16, s.y - 40); ctx.lineTo(x + 16, s.y - 40); ctx.lineTo(x + 16, s.y); ctx.lineTo(x, s.y + 12); ctx.lineTo(x - 16, s.y); ctx.closePath(); ctx.fill(); }
-    } else if(k==="cannon"){
-      const fl = cobsFloor(), fromLeft = s._telX > WW*0.5, sx = fromLeft ? fl.x - 120 + 120*kk : fl.x + fl.w + 120 - 120*kk;
-      ctx.globalAlpha = 0.25 + 0.5*kk; drawCobsShip(sx, gy - COBS_SHIP_Y, fromLeft ? 1 : -1);
+    } else if(k==="cannon" && s._shipAt){
+      // THE SHIP SPAWNS NEAR YOU: its ghost where it will appear, and where its beam will touch down and sweep -- a dashed lane along the floor and a mark where it begins, white once the spot is locked (the last COBS_SHIP_LOCK frames)
+      const at = s._shipAt, locked = s._tel <= COBS_SHIP_LOCK, bx = at.x + at.dir*COBS_SHIP_LEAD;
+      ctx.globalAlpha = 0.2 + 0.55*kk; drawCobsShip(at.x, at.y, at.dir);
+      ctx.strokeStyle = locked ? '#ffffff' : '#7fd63a'; ctx.lineWidth = 2; ctx.globalAlpha = locked ? 0.9 : 0.3 + 0.3*kk; ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.moveTo(at.x + at.dir*30, at.y + 20); ctx.lineTo(bx, gy); ctx.lineTo(bx + at.dir*520, gy); ctx.stroke(); ctx.setLineDash([]);
+      ctx.globalAlpha = locked ? 0.55 : 0.25; ctx.fillStyle = locked ? '#ffffff' : '#7fd63a'; ctx.beginPath(); ctx.ellipse(bx, gy - 3, 44, 8, 0, 0, 7); ctx.fill();
     } else if(k==="portal"){
       // every portal's spot (two from tier 1, three from tier 3), and how far each one's pull will reach, a dashed ring that firms up as the wind-up runs out
       const T = cobsT(s, 'portal');
@@ -25130,8 +25154,15 @@ function drawCobsFx(){
   }
   // the ship, and its beam down to the floor
   if(s._ship){ const S = s._ship, bx = S.beamX != null ? S.beamX : S.x + S.dir*COBS_SHIP_LEAD;
-    ctx.globalAlpha = 0.55 + 0.25*Math.sin(hazardT*0.5); ctx.strokeStyle = '#7fd63a'; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(S.x + S.dir*30, S.y + 20); ctx.lineTo(bx, gy); ctx.stroke();
-    ctx.globalAlpha = 0.9; ctx.strokeStyle = '#d8ffb0'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(S.x + S.dir*30, S.y + 20); ctx.lineTo(bx, gy); ctx.stroke();
+    if(S.arm > 0){   // just arrived near you, charging: its aim line (dashed, thin), where the beam will first touch down, and the cannon filling -- no beam yet
+      const u = 1 - S.arm/COBS_SHIP_ARM;
+      ctx.globalAlpha = 0.35 + 0.45*u; ctx.strokeStyle = '#d8ffb0'; ctx.lineWidth = 2 + 2*u; ctx.setLineDash([10, 8]); ctx.beginPath(); ctx.moveTo(S.x + S.dir*30, S.y + 20); ctx.lineTo(bx, gy); ctx.stroke(); ctx.setLineDash([]);
+      ctx.globalAlpha = 0.25 + 0.3*u; ctx.fillStyle = '#7fd63a'; ctx.beginPath(); ctx.ellipse(bx, gy - 3, 44, 8, 0, 0, 7); ctx.fill();
+      ctx.globalAlpha = 0.5 + 0.5*u; ctx.fillStyle = '#d8ffb0'; ctx.beginPath(); ctx.arc(S.x + S.dir*30, S.y + 22, 6 + 10*u, 0, 7); ctx.fill();
+    } else {
+      ctx.globalAlpha = 0.55 + 0.25*Math.sin(hazardT*0.5); ctx.strokeStyle = '#7fd63a'; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(S.x + S.dir*30, S.y + 20); ctx.lineTo(bx, gy); ctx.stroke();
+      ctx.globalAlpha = 0.9; ctx.strokeStyle = '#d8ffb0'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(S.x + S.dir*30, S.y + 20); ctx.lineTo(bx, gy); ctx.stroke();
+    }
     ctx.globalAlpha = 1; drawCobsShip(S.x, S.y, S.dir, S.rock ? 0.22*Math.cos(S.t*Math.PI*2/40) : 0); }
   // the walls: see-through
   for(const p of worldPlats){ if(!p._cobsWall) continue; ctx.globalAlpha = 0.35 + 0.1*Math.sin(hazardT*0.2); ctx.fillStyle = '#cfe8ff'; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.globalAlpha = 0.8; ctx.strokeStyle = '#9aa6b2'; ctx.lineWidth = 2; ctx.strokeRect(p.x, p.y, p.w, p.h); }
