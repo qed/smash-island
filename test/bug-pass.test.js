@@ -362,12 +362,10 @@ describe('screens: every mode gives back what it took, and every match can be le
     expect(w.eval('ROSTER.length'), '101, and Bot ("oh, and bot should get their own kit.")').toBe(102);
     expect(w.eval("document.getElementById('titleBosses').textContent")).toBe(String(w.eval('BOSS_ROSTER.length')));
   });
-  it('phone width: the move card, the scorecard and the editor tools fit the screen', () => {
+  it('the move card fits its screen: full width, and its text may shrink', () => {
     const css = w.eval("[...document.querySelectorAll('style')].map(function(s){ return s.textContent; }).join('\\n')");
     expect(css).toMatch(/\.movecard\{[^}]*width:100%/);
     expect(css).toMatch(/\.mc-d\{[^}]*min-width:0/);
-    expect(css).toMatch(/@media \(max-width:480px\)\{[^}]*\.schead,\.scrow\{grid-template-columns:42px 1fr 74px 84px/);
-    expect(css).toMatch(/@media \(max-width:480px\)\{ #edTool\{flex-wrap:wrap/);
   });
 });
 

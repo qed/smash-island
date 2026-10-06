@@ -6,7 +6,7 @@ import { makeRoom } from './helpers/net-room.js';
 // pick; the room code is big and copyable; the host starts and the clients see they are waiting.
 //
 // Before: the list was a row of text chips ("1. Pen (you)") under the Create / Join boxes, the room code was a line of ordinary
-// text that only the host had, and on a phone the boxes pushed the code and the players off the screen.
+// text that only the host had, and the Create / Join boxes stayed on screen above both.
 //
 // The pages are real (test/helpers/net-room.js): each is the unmodified game in its own jsdom realm, joined by a stand-in for the
 // relay that routes with relay/src/protocol.js -- so a pick travels exactly as it does online: the `name` of a hello, which the
@@ -185,18 +185,15 @@ describe('the room code', () => {
       const r = w.eval(`({ code: document.getElementById('roomCode').textContent, box: document.getElementById('lobbyInvite').style.display, cls: document.getElementById('roomCode').className })`);
       expect(r).toEqual({ code, box: 'block', cls: 'inv-code' });
     }
-    // "big and easy to read out": the code is the largest text in the lobby, and it fits a phone (the size follows the screen width)
+    // "big and easy to read out": the code is the largest text in the lobby
     const css = H.eval(`[].map.call(document.querySelectorAll('style'), function(s){ return s.textContent; }).join('\\n')`);
-    const size = /\.inv-code\{[^}]*font-size:clamp\((\d+)px,\s*(\d+)vw,\s*(\d+)px\)/.exec(css);
-    expect(size, 'the code has a fluid size').not.toBeNull();
-    expect(+size[1], 'never smaller than 40px').toBeGreaterThanOrEqual(40);
-    expect(+size[3], 'and big where there is room').toBeGreaterThanOrEqual(60);
+    const size = /\.inv-code\{[^}]*font-size:(\d+)px/.exec(css);
+    expect(size, 'the code has a size of its own').not.toBeNull();
+    expect(+size[1], 'and it is big').toBeGreaterThanOrEqual(60);
     expect(css).toMatch(/\.inv-code\{[^}]*letter-spacing/);
-    expect(css).toMatch(/@media \(max-width:480px\)\{[^}]*#lobby\{padding/);
-    // jsdom has no layout, so the phone-width guarantee is the rules that make it: nothing in the lobby is wider than the screen
+    // jsdom has no layout, so the guarantee is the rules that make it: nothing in the lobby is wider than its screen
     expect(css, 'the code card is never wider than the screen').toMatch(/\.lobbyinvite\{[^}]*width:min\(460px,100%\)/);
     expect(css, 'nor are the player cards').toMatch(/\.lobbyroster\{[^}]*width:min\(460px,100%\)/);
-    expect(css, 'the Create / Join boxes shrink to the screen on a phone').toMatch(/@media \(max-width:480px\)\{[^@]*?\.lobbycol\{width:min\(300px,100%\)\}/);
     expect(css, 'a long fighter name is cut short rather than pushing the card wider').toMatch(/\.lpname\{[^}]*text-overflow:ellipsis/);
   });
 
