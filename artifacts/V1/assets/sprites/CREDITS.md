@@ -846,6 +846,17 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | Cracked Sidewalky | Sidewalky | `skins/cracked-sidewalky.png` | 219×200 | `File:Sidewalky cracked.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Sidewalky_cracked.png/revision/latest?cb=20260228093735 |
 | Leaf Profily | Profily | `skins/leaf-profily.png` | 158×200 | `File:Leafy Profily.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/Leafy_Profily.png/revision/latest?cb=20210104073933 |
 | Watch Profily | Profily | `skins/watch-profily.png` | 218×200 | `File:Profilywatch.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/17/Profilywatch.png/revision/latest?cb=20240731173849 |
+| Open Chest Roboty | Roboty | `skins/open-chest-roboty.png` | 153×200 | `File:RobotyChestCompartment.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/RobotyChestCompartment.png/revision/latest?cb=20240616190457 |
+| Plunger Roboty | Roboty | `skins/plunger-roboty.png` | 67×200 | `File:RobotyPlunger.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/64/RobotyPlunger.png/revision/latest?cb=20240616190920 |
+| Headphone Ice Cube | Ice Cube | `skins/headphone-ice-cube.png` | 157×200 | `File:ICRHBFDIA.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/63/ICRHBFDIA.png/revision/latest?cb=20240513212633 |
+| Pink Ice Cube | Ice Cube | `skins/pink-ice-cube.png` | 165×200 | `File:PinkIcy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/de/PinkIcy.png/revision/latest?cb=20231116223747 |
+| Springy Shoes Ice Cube | Ice Cube | `skins/springy-shoes-ice-cube.png` | 216×200 | `File:ICY1.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2e/ICY1.png/revision/latest?cb=20190627233652 |
+| Caked Cake | Cake | `skins/caked-cake.png` | 154×200 | `File:Rc Caked.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b8/Rc_Caked.png/revision/latest?cb=20210228233106 |
+| Doughnut | Donut | `skins/doughnut.png` | 169×200 | `File:Rc Doughnut BFDI25.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Rc_Doughnut_BFDI25.png/revision/latest?cb=20230919044443 |
+| Tangerine Balloony | Balloony | `skins/tangerine-balloony.png` | 115×200 | `File:Orange Balloony.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/42/Orange_Balloony.png/revision/latest?cb=20210226034949 |
+| One-Eyed Balloony | Balloony | `skins/one-eyed-balloony.png` | 95×200 | `File:Screenshot 20241201-152151.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/44/Screenshot_20241201-152151.png/revision/latest?cb=20250410072620 |
+| Magenta Bracelety | Bracelety | `skins/magenta-bracelety.png` | 293×200 | `File:BFDIA Bracelety.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d0/BFDIA_Bracelety.png/revision/latest?cb=20200402125837 |
+| Purple Bracelety | Bracelety | `skins/purple-bracelety.png` | 278×200 | `File:FirstBracelety.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/00/FirstBracelety.png/revision/latest?cb=20210228203903 |
 
 ### Inanimate Insanity wiki skins
 
