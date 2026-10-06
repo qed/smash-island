@@ -279,7 +279,9 @@ describe('background music — the file layer', () => {
     const r = w.eval(`(function(){
       var was = COBSFIGHT.active; COBSFIGHT.active = true; BOSSRUSH.active = false;
       var base = clutchBaseKind(); COBSFIGHT.active = was;
-      var P0 = PROFILE; PROFILE = { cobs:{ stage:COBS_STAGE.DOOR }, one:{} };
+      // (an open door is the door stage AND a RUNNING! win on the current lane: since the reset, an older lane's win
+      // keeps his card away -- test/cobs-chain.test.js)
+      var P0 = PROFILE; PROFILE = { cobs:{ stage:COBS_STAGE.DOOR, race:true, raceV:RACE_LANE_V }, one:{} };
       var due = cobsCardDue(); PROFILE.cobs.stage = COBS_STAGE.FREE; var after = cobsCardDue(); PROFILE = P0;
       return { base: base, start: String(beginMatchNow).indexOf("COBSFIGHT.active ? 'cobs'") >= 0,
                title: String(go).indexOf("(id==='title' && cobsCardDue()) ? 'cobs'") >= 0, due: due, after: after };

@@ -3706,6 +3706,13 @@ addEventListener('keydown',e=>{
   netInputChanged();
 });
 addEventListener('keyup',e=>{down[e.code]=false; netInputChanged();});
+// A key held as the window loses focus never sends its keyup -- it is let go in another window -- so it stayed down until the
+// player pressed it again. A match now goes on while the host's tab is hidden (HIDDEN HOST), and a host who tabbed away holding
+// Right walked their fighter off the stage with nobody playing. Everything is let go instead. (The touch pad lets go of its own
+// buttons the same way: bindTouchControls.)
+function releaseKeys(){ for(const c in down) down[c] = false; }
+addEventListener('blur', releaseKeys);
+addEventListener('visibilitychange', ()=>{ if(document.hidden) releaseKeys(); });
 
 // ============================================================
 //  TOUCH CONTROLS
@@ -3812,6 +3819,7 @@ addEventListener('keydown',e=>{ if(e.code==='KeyR' && running && !isNetClient())
 
 // gamepad polling (face buttons auto-mapped)
 function pollPad(){
+  if(typeof document!=='undefined' && document.hidden) return null;   // a hidden tab holds nothing (HIDDEN HOST)
   const gp=navigator.getGamepads&&navigator.getGamepads()[0];
   if(!gp) return null;
   const ax=gp.axes[0]||0, ay=gp.axes[1]||0;
@@ -7281,8 +7289,66 @@ function banner(txt,ms,kind,local){
 // ============================================================
 const GRAV=0.62, MOVE=0.9, MAXVX=6.4, JUMP=-12.5, FRICTION=0.82;
 
+// HIDDEN HOST. A browser stops requestAnimationFrame for a tab nobody can see -- another tab in front, the window minimized or
+// covered -- and in an online match the host is the only device that simulates, so a host who looked away froze every player
+// in the room until they came back. While the host's tab is hidden, a worker's clock steps the match instead (a hidden tab slows
+// the page's own timers to about once a second; a worker's keep time): a step every 60th of a second, a few at once when a tick
+// comes late, the snapshots going out as ever, and nothing drawn, since nobody is looking. The host's keys and pad hold nothing
+// meanwhile (releaseKeys, pollPad), so their fighter stands still. Seen again, requestAnimationFrame takes the match back.
+// (A phone that switches apps stops the whole page, worker and all: that pause is the phone's, and the room waits for it.)
+const HIDDEN_HOST = { ms:1000/60, catchUp:4, worker:null, timer:0, on:false, last:0, owed:0,
+  // the worker: told a period, it ticks back at that period; told 0, it stops
+  src:'var t=0;onmessage=function(e){clearInterval(t);t=e.data>0?setInterval(function(){postMessage(0);},e.data):0;};' };
+function hiddenHostWanted(){
+  return typeof document !== 'undefined' && !!document.hidden && running && !paused && !!window.NET && window.NET.role === 'host';
+}
+function hiddenHostStart(){
+  const H = HIDDEN_HOST;
+  if(H.on) return;
+  H.on = true; H.last = performance.now(); H.owed = 0;
+  try{
+    if(!H.worker){
+      H.worker = new Worker(URL.createObjectURL(new Blob([H.src], {type:'text/javascript'})));
+      H.worker.onmessage = hiddenHostTick;
+    }
+    H.worker.postMessage(H.ms);
+  }catch(e){
+    // no worker to be had: the page's own timer, which a hidden tab runs about once a second -- the match crawls rather than
+    // standing still
+    H.worker = null;
+    H.timer = setInterval(hiddenHostTick, H.ms);
+  }
+}
+function hiddenHostStop(){
+  const H = HIDDEN_HOST;
+  H.on = false;
+  if(H.worker){ try{ H.worker.postMessage(0); }catch(e){} }
+  if(H.timer){ clearInterval(H.timer); H.timer = 0; }
+}
+function hiddenHostTick(){
+  const H = HIDDEN_HOST;
+  if(!H.on) return;
+  if(!hiddenHostWanted()){ hiddenHostStop(); return; }
+  const now = performance.now();
+  H.owed = Math.min(H.owed + Math.max(0, now - H.last), H.ms*H.catchUp);   // a long stall is dropped, not raced through
+  H.last = now;
+  let n = 0;
+  while(H.owed >= H.ms - 0.01 && running && !paused){
+    H.owed -= H.ms; n++;
+    try{ step(); }
+    catch(err){ if(!window.__loopErrLogged){ window.__loopErrLogged = true; console.error("hidden host frame error:", err); } }
+  }
+  // once for the batch: the last frame is the one worth sending, and a match that ended in it goes out whatever the gates say
+  if(n) window.NET.broadcastState();
+}
+addEventListener('visibilitychange', ()=>{ if(hiddenHostWanted()) hiddenHostStart(); else if(HIDDEN_HOST.on) hiddenHostStop(); });
+
 function loop(){
   if(!running||paused) return;
+  // A hidden host's match belongs to the worker's clock (HIDDEN HOST); this loop only waits to be seen again. A loop() that
+  // starts or resumes while the tab is hidden hands the match over too, or it would wait for a frame that never comes.
+  if(hiddenHostWanted()){ hiddenHostStart(); raf=requestAnimationFrame(loop); return; }
+  if(HIDDEN_HOST.on) hiddenHostStop();
   try{
     const role = window.NET ? window.NET.role : "solo";
     if(role==="client"){
