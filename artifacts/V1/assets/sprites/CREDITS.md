@@ -803,6 +803,16 @@ inanimateinsanity.fandom.com.
 | Lab-Coat Test Tube | Test Tube | `skins/lab-coat-test-tube.png` | 86×200 | `File:Lab Coat Test Tube (S2E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4d/Lab_Coat_Test_Tube_%28S2E3%29.png/revision/latest?cb=20260317124319 |
 | Detective Yin-Yang | Yin-Yang | `skins/detective-yin-yang.png` | 184×200 | `File:Yin-Yang's Detective Disguise (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/86/Yin-Yang%27s_Detective_Disguise_%28S4E4%29.png/revision/latest?cb=20260315063438 |
 | Investigator Lifering | Lifering | `skins/investigator-lifering.png` | 184×200 | `File:Investigator's Top Hat Lifering (S3E15).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/e/e7/Investigator%27s_Top_Hat_Lifering_%28S3E15%29.png/revision/latest?cb=20260315063442 |
+| Blindfolded Taco | Taco (II) | `skins/blindfolded-taco.png` | 240×200 | `File:Blindfolded Taco (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/5e/Blindfolded_Taco_%28S4E3%29.png/revision/latest?cb=20260307055739 |
+| Blindfolded Microphone | Microphone | `skins/blindfolded-microphone.png` | 115×200 | `File:Blindfolded Microphone (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/21/Blindfolded_Microphone_%28S4E3%29.png/revision/latest?cb=20260307055741 |
+| Blindfolded Box | Box | `skins/blindfolded-box.png` | 282×200 | `File:Blindfolded Box Running (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/09/Blindfolded_Box_Running_%28S4E3%29.png/revision/latest?cb=20260427060517 |
+| Blindfolded Trophy | Trophy | `skins/blindfolded-trophy.png` | 181×200 | `File:Blindfolded Trophy (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/fb/Blindfolded_Trophy_%28S4E3%29.png/revision/latest?cb=20260307055742 |
+| Blindfolded Goo | Goo | `skins/blindfolded-goo.png` | 298×200 | `File:Season 4 Goo Blindfold (Transparent PNG).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/11/Season_4_Goo_Blindfold_%28Transparent_PNG%29.png/revision/latest?cb=20260110215246 |
+| Blindfolded Spikey | Spikey | `skins/blindfolded-spikey.png` | 186×200 | `File:Blindfolded Spikey (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/5/58/Blindfolded_Spikey_%28S4E3%29.png/revision/latest?cb=20260331021021 |
+| Blindfolded Candle | Candle | `skins/blindfolded-candle.png` | 111×200 | `File:Blindfolded Candle (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/0/07/Blindfolded_Candle_%28S4E3%29.png/revision/latest?cb=20260307055742 |
+| Blindfolded Cheesy | Cheesy | `skins/blindfolded-cheesy.png` | 310×200 | `File:Cheesy Blindfold.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/67/Cheesy_Blindfold.png/revision/latest?cb=20260426151316 |
+| Blindfolded Soap | Soap | `skins/blindfolded-soap.png` | 164×200 | `File:Soap Blindfold.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Soap_Blindfold.png/revision/latest?cb=20260426153248 |
+| Blindfolded Tea Kettle | Tea Kettle | `skins/blindfolded-tea-kettle.png` | 233×200 | `File:Blindfolded Tea Kettle (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f4/Blindfolded_Tea_Kettle_%28S4E3%29.png/revision/latest?cb=20260331021203 |
 
 ### Notes on individual skins
 
@@ -815,3 +825,6 @@ inanimateinsanity.fandom.com.
   wiki (`Ripped Fries.png`, `RottenRippedFriesAsset.png`) are faceless and were ruled out before fetching.
 - **`skins/robot-pin.png`** -- the wiki's Mech Pin design (tank treads and a battery), fetched as `WirelessPin is Good.png`.
 - **`skins/snazzy-nickel.png`** -- his eyes are behind sunglasses; the face is the glasses and the flat mouth.
+- **The blindfolded skins** (`skins/blindfolded-*.png`) -- how each of these Inanimate Insanity fighters looks in the challenge Heavy Metal Pop Stars
+  lose: the blindfolded relay of Inanimate Insanity IV episode 3, "Run the Risk!" (the owner: "the challenge where hmps loses" -- "the hmps thing is
+  for e3" -- "in s4"). Each is the wiki's own render of that episode, with the blindfold of its team's colour; no one else is in the picture.

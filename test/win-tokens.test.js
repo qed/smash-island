@@ -618,8 +618,8 @@ describe('the canon looks', () => {
 
   it('every look\'s Store preview draws without a fault', async () => {
     const w = await ready();
-    // (with the two Vault fighters opened, so the Store lists their skins too: every look has a cell)
-    const r = w.eval(`(function(){ PROFILE.unlocked.push('Lightbulb', 'Bow'); go('store'); return { cells: document.querySelectorAll('#storeList .scell').length, total: COSMETICS.length,
+    // (with the Vault fighters opened, so the Store lists their skins too: every look has a cell)
+    const r = w.eval(`(function(){ VAULT_FIGHTERS.forEach(function(n){ PROFILE.unlocked.push(n); }); go('store'); return { cells: document.querySelectorAll('#storeList .scell').length, total: COSMETICS.length,
       err: COS_DRAW_ERR ? String(COS_DRAW_ERR.stack || COS_DRAW_ERR) : null }; })()`);
     expect(r.err).toBe(null);
     expect(r.cells).toBe(r.total);
@@ -627,10 +627,12 @@ describe('the canon looks', () => {
 });
 
 // THE SKINS. "the skins should be by-fighter(like rockstar poppy, broken fries, robot pin)": a skin is a second render of ONE fighter, from
-// the show's own wikis, worn only by that fighter. Twenty-five, all approved ("Rockstar Poppy; Broken Fries; Robot Pin (the wiki's Mech
-// Pin)..."), sold for Win Tokens at the tier the plan gave each.
+// the show's own wikis, worn only by that fighter. Twenty-five were approved first ("Rockstar Poppy; Broken Fries; Robot Pin (the wiki's Mech
+// Pin)..."), sold for Win Tokens at the tier the plan gave each. Then: "If you can, give each fighter a skin. for the ii characters, it can
+// just be them from the challenge where hmps loses." -- "oh yea the hmps thing is for e3." -- "in s4": Run the Risk!, episode 3 of Inanimate
+// Insanity IV, where Heavy Metal Pop Stars lose the blindfolded relay. So every playable fighter has one.
 describe('the skins', () => {
-  // [id, fighter, name, price]: in the owner's order. They replace the seven colour washes, whose places in the online code they leave empty.
+  // [id, fighter, name, price]: the first twenty-five, in the owner's order. They replace the seven colour washes, whose places in the online code they leave empty.
   const SKINS = [
     ['sk_poppy_rock', 'Poppy', 'Rockstar Poppy', 150], ['sk_fries_broken', 'Fries', 'Broken Fries', 115], ['sk_pin_robot', 'Pin', 'Robot Pin', 150],
     ['sk_firey_mech', 'Firey', 'Mech Firey', 150], ['sk_woody_mech', 'Woody', 'Mech Woody', 150], ['sk_coiny_robo', 'Coiny', 'Robo Coiny', 150],
@@ -644,25 +646,116 @@ describe('the skins', () => {
     ['sk_yinyang_detective', 'Yin-Yang', 'Detective Yin-Yang', 75], ['sk_lifering_invest', 'Lifering', 'Investigator Lifering', 75],
   ];
   const ids = SKINS.map((r) => r[0]);
+  // Playable fighters with no skin, and why (name -> reason). The prize fighters of Steve Cobs's fight are not in ROSTER until he is beaten, so
+  // they are not playable here, and the owner's rule keeps them out of every table this one is in: they are not listed.
+  // NO_SKIN begin
+  const NO_SKIN = {
+    'Leafy': 'not yet',
+    'Needle': 'not yet',
+    'Bubble': 'not yet',
+    'Teardrop': 'not yet',
+    'Flower': 'not yet',
+    'Tennis Ball': 'not yet',
+    'Blocky': 'not yet',
+    'Pen': 'not yet',
+    'Pencil': 'not yet',
+    'Rocky': 'not yet',
+    'Gelatin': 'not yet',
+    'Nickel': 'not yet',
+    'Puffball': 'not yet',
+    'Ruby': 'not yet',
+    'Yellow Face': 'not yet',
+    'Barf Bag': 'not yet',
+    'Basketball': 'not yet',
+    'Bell': 'not yet',
+    'Bracelety': 'not yet',
+    'Fanny': 'not yet',
+    'Gaty': 'not yet',
+    'Lightning': 'not yet',
+    'Liy': 'not yet',
+    'Lollipop': 'not yet',
+    'Loser': 'not yet',
+    'Marker': 'not yet',
+    'Money': 'not yet',
+    'Naily': 'not yet',
+    'Pillow': 'not yet',
+    'Remote': 'not yet',
+    'Rose': 'not yet',
+    'Saw': 'not yet',
+    'Taco': 'not yet',
+    'Toothpaste': 'not yet',
+    'Dora': 'not yet',
+    'David': 'not yet',
+    'Firey Jr.': 'not yet',
+    'Fern': 'not yet',
+    'Ruler': 'not yet',
+    'Sidewalky': 'not yet',
+    'Balloony': 'not yet',
+    'Roboty': 'not yet',
+    'Profily': 'not yet',
+    'Tree': 'not yet',
+    'Ice Cube': 'not yet',
+    'Cake': 'not yet',
+    'Donut': 'not yet',
+    'Balloon': 'not yet',
+    'Bomb': 'not yet',
+    'Knife': 'not yet',
+    'Paintbrush': 'not yet',
+    'Marshmallow': 'not yet',
+    'Apple': 'not yet',
+    'Baseball': 'not yet',
+    'Pickle': 'not yet',
+    'Salt': 'not yet',
+    'Bonesaw': 'not yet',
+    'Cammy': 'not yet',
+    'Dough': 'not yet',
+    'Tissues': 'not yet',
+    'Blueberry': 'not yet',
+    'Cherries': 'not yet',
+    'Clover': 'not yet',
+    'Magnet': 'not yet',
+    'MeTag': 'not yet',
+    'Silver Spoon': 'not yet',
+    'Teddy Bear': 'not yet',
+    'Bot': 'not yet',
+  };
+  // NO_SKIN end
+  // The one fighter with two: Broken Fries and Glow Fries were both approved before every fighter was given one.
+  const TWO_SKINS = ['Fries'];
 
-  it('are in the shop: twenty-five, each for one playable fighter, at its tier, and the kind holds nothing else', async () => {
+  it('are in the shop: the first twenty-five at their approved names and tiers, then the rest, each for one playable fighter, and the kind holds nothing else', async () => {
     const w = await ready();
     const rows = w.eval("cosOfKind('skin').map(function(c){ return { id: c.id, fighter: c.fighter || null, name: c.name, price: c.price, src: c.src || null, flip: !!c.flip, imgH: c.imgH, imgW: c.imgW }; })");
     for (const [id, fighter, name, price] of SKINS) expect(rows.find((r) => r.id === id), id).toMatchObject({ id, fighter, name, price });
-    expect(rows, 'the kind is the 25 skins: no colour wash is left').toHaveLength(25);
-    expect(rows.filter((r) => r.fighter)).toHaveLength(25);
-    expect(rows.map((r) => r.id), 'in the owner\'s order').toEqual(ids);
+    expect(rows.slice(0, 25).map((r) => r.id), 'the first 25 keep their places, in the owner\'s order: a skin\'s place is its online code').toEqual(ids);
+    expect(rows.filter((r) => r.fighter), 'no colour wash is left: every row names its fighter').toHaveLength(rows.length);
     const playable = w.eval("ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })");
     for (const r of rows.filter((x) => x.fighter)) {
       expect(playable, `${r.id}: ${r.fighter} is a playable fighter`).toContain(r.fighter);
       expect(r.id).toMatch(/^[a-z][a-z0-9_]{0,23}$/);
-      expect(r.imgH, `${r.id} is fitted into a box`).toBeGreaterThan(2);
-      expect(r.imgW).toBeGreaterThan(2);
+      expect(r.imgH, `${r.id} is fitted into a box`).toBeGreaterThan(1.5);
+      expect(r.imgW).toBeGreaterThan(1.5);
     }
     // the tiers: a mech suit, a guitar or a new base is large (150); makeup or a change of colour or form, medium (115); a hat, a coat or a scuff, small (75)
     expect(new Set(rows.filter((r) => r.fighter).map((r) => r.price))).toEqual(new Set([75, 115, 150]));
     expect(rows.filter((r) => r.fighter && r.fighter === 'Fries').map((r) => r.name), 'one fighter may have two').toEqual(['Broken Fries', 'Glow Fries']);
     for (const c of w.eval("COSMETICS.map(function(c){ return c.id; })")) expect(c).toMatch(/^[a-z][a-z0-9_]{0,23}$/);
+    expect(new Set(rows.map((r) => r.id)).size, 'no id twice').toBe(rows.length);
+    expect(new Set(rows.map((r) => r.src)).size, 'no picture twice').toBe(rows.length);
+  });
+
+  it('every playable fighter has a skin of its own: exactly one (Fries, who had two before the rest got theirs, keeps both), and no one else has any', async () => {
+    const w = await ready();
+    const playable = w.eval("ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })");
+    const per = {};
+    for (const f of w.eval("cosOfKind('skin').map(function(c){ return c.fighter; })")) per[f] = (per[f] || 0) + 1;
+    const want = (n) => (NO_SKIN[n] ? 0 : TWO_SKINS.includes(n) ? 2 : 1);
+    expect(playable.filter((n) => (per[n] || 0) !== want(n)).map((n) => `${n}: ${per[n] || 0}`), 'a fighter with the wrong number of skins').toEqual([]);
+    expect(Object.keys(per).filter((n) => !playable.includes(n)), 'no skin names anyone who is not a playable fighter').toEqual([]);
+    for (const n of Object.keys(NO_SKIN)) expect(playable, `${n} is listed as a skip, so it must be a real fighter`).toContain(n);
+    // the prize fighters of Steve Cobs's fight and The Floor have no skin of their own
+    for (const n of ['OJ', 'Suitcase', 'Cabby', 'The Floor']) expect(per[n] || 0, n).toBe(0);
+    expect(w.eval("cosOfKind('skin').length"), 'one skin per playable fighter, and a second for Fries').toBe(playable.length - Object.keys(NO_SKIN).length + TWO_SKINS.length);
   });
 
   it('each has its own picture: a transparent 200 px render in assets/sprites/skins/, in the manifest, in CREDITS.md, and a thumbnail for the Store', async () => {
@@ -671,8 +764,8 @@ describe('the skins', () => {
     const manifest = JSON.parse(readFileSync('scripts/sprite-manifest-skins.json', 'utf8'));
     const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
     const thumbs = w.eval('COS_SKIN_THUMBS');
-    expect(Object.keys(thumbs).sort()).toEqual(ids.slice().sort());
-    expect(Object.keys(manifest).sort(), 'the manifest holds these 25 and nothing else').toEqual(rows.map((r) => r.name).sort());
+    expect(Object.keys(thumbs).sort()).toEqual(rows.map((r) => r.id).sort());
+    expect(Object.keys(manifest).sort(), 'the manifest holds the skins and nothing else').toEqual(rows.map((r) => r.name).sort());
     for (const r of rows) {
       const file = `artifacts/V1/${r.src}`, m = manifest[r.name];
       expect(r.src, r.id).toMatch(/^assets\/sprites\/skins\/[a-z0-9-]+\.png$/);
@@ -695,7 +788,7 @@ describe('the skins', () => {
       expect(Math.max(tp.width, tp.height), `${r.id}'s thumbnail`).toBeLessThanOrEqual(56);
       expect(t.length, `${r.id}'s thumbnail is small`).toBeLessThan(6500);
     }
-    // nothing else in the folder: every file is one of the 25
+    // nothing else in the folder: every file is one of the skins
     expect(readdirSync('artifacts/V1/assets/sprites/skins').sort()).toEqual(rows.map((r) => basename(r.src)).sort());
   });
 
@@ -791,24 +884,38 @@ describe('the skins', () => {
     }
   }, 120000);
 
-  it('ride the online join as one character, like every look, and every kind still fits the code', async () => {
+  it('ride the online join like every look: four characters while the skin\'s place fits one, five (the skin takes two) after that, and every other kind still fits one', async () => {
     const w = await ready();
     const r = w.eval(`(function(){
-      var out = { rt: [], counts: {} };
+      var out = { rt: [], counts: {}, reserved: COS_NET_RESERVED.skin };
       COS_KINDS.slice(0, 4).forEach(function(kind){
         out.counts[kind] = cosOfKind(kind).length;
-        cosOfKind(kind).forEach(function(it){
+        cosOfKind(kind).forEach(function(it, i){
           var c = {}; c[kind] = it.id; var code = cosNetCode(c), back = cosNetDecode(code);
-          out.rt.push([it.id, code.length, back && back[kind]]);
+          out.rt.push([it.id, code.length, back && back[kind], kind, i]);
         });
       });
       return out; })()`);
-    for (const [id, len, back] of r.rt) { expect(len, id).toBe(4); expect(back, `${id} comes back as itself`).toBe(id); }
-    // One base-36 character per kind, 0 meaning none: a kind holds 35 looks, and the skins' 25 fit.
-    for (const [kind, count] of Object.entries(r.counts)) expect(count, `${kind} stays within one character`).toBeLessThanOrEqual(35);
-    expect(r.counts.skin).toBeLessThanOrEqual(35);
+    let longs = 0;
+    for (const [id, len, back, kind, i] of r.rt) {
+      const long = kind === 'skin' && i + 1 + r.reserved > 35;
+      if (long) longs++;
+      expect(len, `${id}: the same four characters it always was while its place fits one, five after`).toBe(long ? 5 : 4);
+      expect(back, `${id} comes back as itself`).toBe(id);
+    }
+    // One base-36 character per kind, 0 meaning none: hats, trails and KO effects hold 35 looks at most. The skins are the only kind that outgrew it
+    // (one for each fighter), and they take two characters past the 28th: the long form is in use, and it carries the other three slots too.
+    for (const kind of ['hat', 'trail', 'ko']) expect(r.counts[kind], `${kind} stays within one character`).toBeLessThanOrEqual(35);
+    expect(longs, 'skins past the first 28 exist, so the long form is exercised').toBeGreaterThan(0);
+    const mix = w.eval(`(function(){
+      var sk = cosOfKind('skin'), last = sk[sk.length - 1].id, hat = cosOfKind('hat')[7].id, tr = cosOfKind('trail')[0].id, ko = cosOfKind('ko')[4].id;
+      var code = cosNetCode({ skin: last, hat: hat, trail: tr, ko: ko });
+      return { code: code, back: cosNetDecode(code), last: last, hat: hat, tr: tr, ko: ko, legacy: cosNetCode({ skin: sk[0].id, hat: hat, trail: tr, ko: ko }) }; })()`);
+    expect(mix.code).toMatch(/^[0-9a-z]{2}815$/);
+    expect(mix.back).toEqual({ skin: mix.last, hat: mix.hat, trail: mix.tr, ko: mix.ko });
+    expect(mix.legacy, 'a skin among the first 28 is sent exactly as an older build sent it').toBe('8815');
     // A code for a fighter that cannot wear the skin never dresses that fighter (the drawing asks again), and a garbled one dresses no one.
-    expect(w.eval("cosNetDecode('zzzz')")).toBe(null);
+    for (const bad of ['0zzz', '!!!!', 'zzzzzz', '000', '', '00000']) expect(w.eval(`cosNetDecode(${JSON.stringify(bad)})`), JSON.stringify(bad)).toBe(null);
   });
 
   it('are shown in the Store by their own thumbnail (no <img>, no request), name their fighter, wear on that fighter, and keep Vault fighters secret', async () => {
@@ -817,37 +924,41 @@ describe('the skins', () => {
       var srcs = [], OI = window.Image;
       window.Image = function(){ var im = new OI(); Object.defineProperty(im, 'src', { set: function(v){ srcs.push(String(v)); }, get: function(){ return ''; } }); return im; };
       walletEarn(100000); COSMETICS.forEach(function(c){ buyCosmetic(c.id); });
+      var vault = cosOfKind('skin').filter(function(c){ return VAULT_FIGHTERS.has(c.fighter); });
       go('store');
       var cell = function(id){ return document.querySelector('#storeList .scell[data-id="' + id + '"]'); };
       var out = { imgs: document.querySelectorAll('#store img').length, canvases: cell('sk_pin_robot').querySelectorAll('canvas').length,
         caption: cell('sk_pin_robot').querySelector('.sfor').textContent,
         listed: cosOfKind('skin').filter(function(c){ return c.fighter && cell(c.id); }).length,
-        secret: ['sk_lightbulb_rock', 'sk_bow_tattered'].map(function(id){ return !!cell(id); }),
-        text: document.getElementById('storeList').textContent.indexOf('Lightbulb') + document.getElementById('storeList').textContent.indexOf('Tattered Bow') };
+        secret: vault.map(function(c){ return !!cell(c.id); }),
+        text: (function(){ var t = document.getElementById('storeList').textContent, caps = [].slice.call(document.querySelectorAll('#storeList .sfor')).map(function(e){ return e.textContent; });
+          return vault.map(function(c){ return t.indexOf(c.name) + caps.filter(function(x){ return x === 'for ' + c.fighter; }).length; }); })() };
       out.srcs = srcs.filter(function(u){ return !/^data:image\\/png;base64,/.test(u); }).length;
       out.thumbs = srcs.length;
       // Wear from the Store: it goes on the skin's own fighter, not on whoever is picked
       chosen = ROSTER.find(function(x){ return x.name === 'Bubble'; });
       cell('sk_pin_robot').querySelector('button').click();
       out.worn = [wornCos('skin', 'Pin'), wornCos('skin', 'Bubble')];
-      // a code opens a Vault fighter: then that fighter's skin is in the Store
-      PROFILE.unlocked.push('Lightbulb'); go('store');
-      out.afterLightbulb = [!!cell('sk_lightbulb_rock'), !!cell('sk_bow_tattered')];
-      PROFILE.unlocked.push('Bow'); go('store');
-      out.afterBow = !!cell('sk_bow_tattered');
+      // a code opens a Vault fighter: then that fighter's skin is in the Store, and no other Vault fighter's
+      out.total = cosOfKind('skin').length; out.vault = vault.map(function(c){ return c.fighter; });
+      out.opened = [];
+      vault.forEach(function(c, i){
+        PROFILE.unlocked.push(c.fighter); go('store');
+        out.opened.push(vault.map(function(d){ return !!cell(d.id); }));
+      });
       window.Image = OI;
       return out; })()`);
     expect(r.imgs, 'the Store puts no picture on the page').toBe(0);
     expect(r.canvases, 'a skin\'s preview is a canvas').toBe(1);
-    expect(r.thumbs, 'one thumbnail decoded for each skin the Store listed, at least').toBeGreaterThanOrEqual(23);
+    expect(r.vault.length, 'some Vault fighters (Marshmallow, Balloon, Lightbulb, Taco (II), Bow) have a skin').toBeGreaterThanOrEqual(3);
+    expect(r.thumbs, 'one thumbnail decoded for each skin the Store listed, at least').toBeGreaterThanOrEqual(r.total - r.vault.length);
     expect(r.srcs, 'and every one is a data: URI: nothing is fetched').toBe(0);
     expect(r.caption).toBe('for Pin');
-    expect(r.listed, 'the 23 skins of fighters anyone may know of').toBe(23);
-    expect(r.secret, 'the Vault fighters\' skins are not in the Store while those fighters are locked').toEqual([false, false]);
-    expect(r.text, 'and the Store does not name either fighter').toBe(-2);
+    expect(r.listed, 'every skin of a fighter anyone may know of').toBe(r.total - r.vault.length);
+    expect(r.secret, 'the Vault fighters\' skins are not in the Store while those fighters are locked').toEqual(r.vault.map(() => false));
+    expect(r.text.every((i) => i === -1), 'and the Store shows neither their skins\' names nor a "for" line naming them').toBe(true);
     expect(r.worn).toEqual(['sk_pin_robot', null]);
-    expect(r.afterLightbulb, 'Lightbulb opened: his skin appears, Bow\'s still does not').toEqual([true, false]);
-    expect(r.afterBow).toBe(true);
+    r.opened.forEach((row, i) => expect(row, `${r.vault[i]} opened: that skin appears, and the Vault fighters still to open do not`).toEqual(r.vault.map((_, j) => j <= i)));
   }, 60000);
 
   it('are offered in the Wardrobe to the fighter they belong to, among their own', async () => {
@@ -1023,7 +1134,7 @@ describe('the seven old recolours', () => {
     expect(r.last, 'and the 25th skin the 32nd').toBe('w000');
     expect(r.old, 'what an older build sent for a wash dresses no one').toEqual(Array(7).fill(null));
     expect(r.firstReal).toEqual({ skin: 'sk_poppy_rock', hat: null, trail: null, ko: null });
-    expect(r.reserved.skin + r.skins, 'the skins still fit the one character').toBeLessThanOrEqual(35);
+    expect(r.skins, 'a skin for each fighter: more than one character holds').toBeGreaterThan(28);
   });
 });
 
@@ -1066,7 +1177,7 @@ describe('online', () => {
     const c = w.eval(`(function(){ var s = startMatch; startMatch = function(){};
       // beginMatch(settings, roster, ids, cos): the seats (ids) come from the bug pass's fix for players leaving mid-match; the
       // looks (cos) ride after them.
-      NET.beginMatch({ mode:'ffa', count:3, stocks:3 }, ['Leafy','Firey','Rocky'], ['h','me','c'], ${JSON.stringify(['0200', code, 'zzzz'])});
+      NET.beginMatch({ mode:'ffa', count:3, stocks:3 }, ['Leafy','Firey','Rocky'], ['h','me','c'], ${JSON.stringify(['0200', code, '0zzz'])});
       startMatch = s;
       return { host: cosOf({ idx: 0, you: false }), me: cosOf({ idx: 1, you: true, name: 'Firey' }), rocky: cosOf({ idx: 2, you: false }), ai: cosOf({ idx: 3, you: false }) }; })()`);
     expect(c.host).toEqual({ skin: null, hat: 'hat_top', trail: null, ko: null });
@@ -1118,12 +1229,13 @@ describe('the Store', () => {
       var rich = { reply: document.getElementById('storeReply').textContent, owned: ownsCos('hat_party'), mark: cell.classList.contains('owned'), btn: cell.querySelector('button').textContent, bal: walletBalance() };
       cell.querySelector('button').click();   // Wear
       var worn = wornCos('hat', chosen.name);
-      return { n: cells.length, total: COSMETICS.length, every: every, poor: poor, rich: rich, worn: worn,
+      return { n: cells.length, total: COSMETICS.length, vaultSkins: COSMETICS.filter(function(c){ return c.fighter && VAULT_FIGHTERS.has(c.fighter); }).length, every: every, poor: poor, rich: rich, worn: worn,
                wallet: document.querySelector('#store .walletAmt').textContent, title: (go('title'), document.querySelector('#title .walletAmt').textContent) };
     })()`);
-    // Every look but the skins of the two Vault fighters (Lightbulb, Bow), who "can ONLY be opened by a code": until a code opens
-    // one, the Store does not say that fighter exists (see the skins block).
-    expect(r.n).toBe(r.total - 2);
+    // Every look but the skins of the Vault fighters (Marshmallow, Balloon, Lightbulb, Taco (II), Bow), who "can ONLY be opened by a code":
+    // until a code opens one, the Store does not say that fighter exists (see the skins block).
+    expect(r.vaultSkins).toBeGreaterThanOrEqual(3);
+    expect(r.n).toBe(r.total - r.vaultSkins);
     expect(r.every, 'every price is in Win Tokens').toBe(true);
     expect(r.poor.owned).toBe(false);
     expect(r.poor.reply).toMatch(/need 75 more Win Tokens/);
