@@ -811,6 +811,19 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | Triangle Hole Nickel | Nickel | `skins/triangle-hole-nickel.png` | 176×200 | `File:TriangleNickle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/99/TriangleNickle.png/revision/latest?cb=20250105214259 |
 | Pink Nickel | Nickel | `skins/pink-nickel.png` | 179×200 | `File:PinkNickel.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fd/PinkNickel.png/revision/latest?cb=20251210021450 |
 | Square Hole Nickel | Nickel | `skins/square-hole-nickel.png` | 176×200 | `File:Nickle Half.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/15/Nickle_Half.png/revision/latest?cb=20241004224524 |
+| Frozen Puffball | Puffball | `skins/frozen-puffball.png` | 190×200 | `File:PBFROZEN.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a4/PBFROZEN.png/revision/latest?cb=20250720194357 |
+| Thinking Hat Puffball | Puffball | `skins/thinking-hat-puffball.png` | 172×200 | `File:Puffballwithtthinkhat.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fe/Puffballwithtthinkhat.png/revision/latest?cb=20230128203401 |
+| Yoyle Metal Ruby | Ruby | `skins/yoyle-metal-ruby.png` | 352×200 | `File:Met rob.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/80/Met_rob.png/revision/latest?cb=20200323061249 |
+| Snowy Ruby | Ruby | `skins/snowy-ruby.png` | 283×200 | `File:SnowRuby.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/86/SnowRuby.png/revision/latest?cb=20250601223757 |
+| Bandaged Ruby | Ruby | `skins/bandaged-ruby.png` | 279×200 | `File:Punished Ruby.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2e/Punished_Ruby.png/revision/latest?cb=20240402100255 |
+| Yoyle Metal Yellow Face | Yellow Face | `skins/yoyle-metal-yellow-face.png` | 195×200 | `File:Metal yf 20001.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/82/Metal_yf_20001.png/revision/latest?cb=20170729163056 |
+| Frozen Yellow Face | Yellow Face | `skins/frozen-yellow-face.png` | 194×200 | `File:Yellow Face Frozen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/b9/Yellow_Face_Frozen.png/revision/latest?cb=20200528015714 |
+| Zombie Barf Bag | Barf Bag | `skins/zombie-barf-bag.png` | 197×200 | `File:Barf Bag zombie.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/ba/Barf_Bag_zombie.png/revision/latest?cb=20240509072130 |
+| Yoyle Metal Barf Bag | Barf Bag | `skins/yoyle-metal-barf-bag.png` | 207×200 | `File:Metal Barf bag.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/27/Metal_Barf_bag.png/revision/latest?cb=20230818115830 |
+| Yoyle Metal Basketball | Basketball | `skins/yoyle-metal-basketball.png` | 179×200 | `File:Metal Basketball .png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/17/Metal_Basketball_.png/revision/latest?cb=20250918014355 |
+| Snowy Bell | Bell | `skins/snowy-bell.png` | 145×200 | `File:SnowBell.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f2/SnowBell.png/revision/latest?cb=20250520192230 |
+| Twinkle Bell | Bell | `skins/twinkle-bell.png` | 135×200 | `File:TwinkleBell.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/TwinkleBell.png/revision/latest?cb=20250610234023 |
+| Jetpack Fanny | Fanny | `skins/jetpack-fanny.png` | 173×200 | `File:Fanny Jetpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/68/Fanny_Jetpack.png/revision/latest?cb=20241115055313 |
 
 ### Inanimate Insanity wiki skins
 

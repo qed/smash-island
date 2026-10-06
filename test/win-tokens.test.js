@@ -648,18 +648,31 @@ describe('the skins', () => {
     ['sk_yinyang_detective', 'Yin-Yang', 'Detective Yin-Yang', 75], ['sk_lifering_invest', 'Lifering', 'Investigator Lifering', 75],
   ];
   const ids = SKINS.map((r) => r[0]);
+  // Every skin in the order the catalogue holds them: a skin's place is its online code (cosNetCode), so the order is append-only. The first
+  // twenty-five are the owner's list above; the rest were added after, one batch at a time (regenerated with each batch).
+  // SKIN_ORDER begin
+  const SKIN_ORDER = ids.concat([
+    'sk_taco2_blind', 'sk_micro_blind', 'sk_box_blind', 'sk_trophy_blind', 'sk_goo_blind', 'sk_spikey_blind',
+    'sk_candle_blind', 'sk_cheesy_blind', 'sk_soap_blind', 'sk_teakettle_blind', 'sk_cherries_blind', 'sk_magnet_blind',
+    'sk_metag_blind', 'sk_bonesaw_blind', 'sk_bot_damaged', 'sk_cammy_cam1', 'sk_teddy_tired', 'sk_balloon_hardhat',
+    'sk_bomb_snorkel', 'sk_knife_damaged', 'sk_paint_yellow', 'sk_marsh_burnt', 'sk_apple_snot', 'sk_baseball_choc',
+    'sk_pickle_boxing', 'sk_salt_facemask', 'sk_dough_solid', 'sk_tissues_snot', 'sk_blueberry_gold', 'sk_clover_detect',
+    'sk_spoon_gold', 'sk_trophy_whistle', 'sk_goo_muscle', 'sk_spikey_ropes', 'sk_soap_oil', 'sk_balloon_blue',
+    'sk_taco2_soggy', 'sk_clover_deer', 'sk_spoon_icecream', 'sk_spoon_hardhat', 'sk_paint_icecream', 'sk_marsh_guac',
+    'sk_leafy_witch', 'sk_leafy_metal', 'sk_leafy_sweater', 'sk_needle_alien', 'sk_bubble_metal', 'sk_bubble_balloon',
+    'sk_bubble_aloe', 'sk_teardrop_sweater', 'sk_teardrop_blind', 'sk_flower_petal', 'sk_flower_metal', 'sk_flower_frozen',
+    'sk_tball_chef', 'sk_tball_metal', 'sk_tball_sleepy', 'sk_blocky_shades', 'sk_blocky_glove', 'sk_pen_capless',
+    'sk_pencil_gears', 'sk_pencil_shoes', 'sk_rocky_tangerine', 'sk_rocky_cracked', 'sk_rocky_frozen', 'sk_gel_phones',
+    'sk_gel_sweater', 'sk_gel_dyed', 'sk_nickel_triangle', 'sk_nickel_pink', 'sk_nickel_square', 'sk_puff_frozen',
+    'sk_puff_think', 'sk_ruby_metal', 'sk_ruby_snow', 'sk_ruby_bandaged', 'sk_yf_metal', 'sk_yf_frozen',
+    'sk_bb_zombie', 'sk_bb_metal', 'sk_bball_metal', 'sk_bell_snow', 'sk_bell_twinkle', 'sk_fanny_jet',
+  ]);
+  // SKIN_ORDER end
   // Playable fighters with no skin, and why (name -> reason). The prize fighters of Steve Cobs's fight are not in ROSTER until he is beaten, so
   // they are not playable here, and the owner's rule keeps them out of every table this one is in: they are not listed.
   // NO_SKIN begin
   const NO_SKIN = {
-    'Puffball': 'not yet',
-    'Ruby': 'not yet',
-    'Yellow Face': 'not yet',
-    'Barf Bag': 'not yet',
-    'Basketball': 'not yet',
-    'Bell': 'not yet',
     'Bracelety': 'not yet',
-    'Fanny': 'not yet',
     'Gaty': 'not yet',
     'Lightning': 'not yet',
     'Liy': 'not yet',
@@ -683,7 +696,7 @@ describe('the skins', () => {
     'Balloony': 'not yet',
     'Roboty': 'not yet',
     'Profily': 'not yet',
-    'Tree': 'not yet',
+    'Tree': 'the owner\'s standing rule: Do not change Tree',
     'Ice Cube': 'not yet',
     'Cake': 'not yet',
     'Donut': 'not yet',
@@ -694,14 +707,16 @@ describe('the skins', () => {
     const w = await ready();
     const rows = w.eval("cosOfKind('skin').map(function(c){ return { id: c.id, fighter: c.fighter || null, name: c.name, price: c.price, src: c.src || null, flip: !!c.flip, imgH: c.imgH, imgW: c.imgW }; })");
     for (const [id, fighter, name, price] of SKINS) expect(rows.find((r) => r.id === id), id).toMatchObject({ id, fighter, name, price });
-    expect(rows.slice(0, 25).map((r) => r.id), 'the first 25 keep their places, in the owner\'s order: a skin\'s place is its online code').toEqual(ids);
-    expect(rows.filter((r) => r.fighter), 'no colour wash is left: every row names its fighter').toHaveLength(rows.length);
+    expect(rows, 'the kind is exactly these skins: no colour wash is left, none missing, none extra').toHaveLength(SKIN_ORDER.length);
+    expect(rows.filter((r) => r.fighter), 'every row names its fighter').toHaveLength(SKIN_ORDER.length);
+    expect(rows.map((r) => r.id), 'in this order: the first 25 are the owner\'s list, and a skin\'s place is its online code').toEqual(SKIN_ORDER);
+    expect(SKIN_ORDER.slice(0, 25), 'the first 25 keep their places').toEqual(ids.slice(0, 25));
     const playable = w.eval("ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })");
     for (const r of rows.filter((x) => x.fighter)) {
       expect(playable, `${r.id}: ${r.fighter} is a playable fighter`).toContain(r.fighter);
       expect(r.id).toMatch(/^[a-z][a-z0-9_]{0,23}$/);
-      expect(r.imgH, `${r.id} is fitted into a box`).toBeGreaterThan(1.2);
-      expect(r.imgW).toBeGreaterThan(1.2);
+      expect(r.imgH, `${r.id} is fitted into a box`).toBeGreaterThan(2);
+      expect(r.imgW).toBeGreaterThan(2);
     }
     // the tiers: a mech suit, a guitar or a new base is large (150); makeup or a change of colour or form, medium (115); a hat, a coat or a scuff, small (75)
     expect(new Set(rows.filter((r) => r.fighter).map((r) => r.price))).toEqual(new Set([75, 115, 150]));
@@ -875,6 +890,7 @@ describe('the skins', () => {
     // (one for each fighter), and they take two characters past the 28th: the long form is in use, and it carries the other three slots too.
     for (const kind of ['hat', 'trail', 'ko']) expect(r.counts[kind], `${kind} stays within one character`).toBeLessThanOrEqual(35);
     expect(longs, 'skins past the first 28 exist, so the long form is exercised').toBeGreaterThan(0);
+    expect(r.counts.skin + r.reserved, 'the skins fit the two-character code (36 x 36 places, 0 meaning none)').toBeLessThan(36 * 36);
     const mix = w.eval(`(function(){
       var sk = cosOfKind('skin'), last = sk[sk.length - 1].id, hat = cosOfKind('hat')[7].id, tr = cosOfKind('trail')[0].id, ko = cosOfKind('ko')[4].id;
       var code = cosNetCode({ skin: last, hat: hat, trail: tr, ko: ko });
@@ -900,7 +916,9 @@ describe('the skins', () => {
         listed: cosOfKind('skin').filter(function(c){ return c.fighter && cell(c.id); }).length,
         secret: vault.map(function(c){ return !!cell(c.id); }),
         text: (function(){ var t = document.getElementById('storeList').textContent, caps = [].slice.call(document.querySelectorAll('#storeList .sfor')).map(function(e){ return e.textContent; });
-          return vault.map(function(c){ return t.indexOf(c.name) + caps.filter(function(x){ return x === 'for ' + c.fighter; }).length; }); })() };
+          return vault.map(function(c){ return t.indexOf(c.name) + caps.filter(function(x){ return x === 'for ' + c.fighter; }).length; }); })(),
+        named: (function(){ var t = document.getElementById('storeList').textContent, seen = [], others = COSMETICS.filter(function(c){ return !(c.fighter && VAULT_FIGHTERS.has(c.fighter)); }).map(function(c){ return c.name; }).join('|');
+          vault.forEach(function(c){ if(seen.indexOf(c.fighter) < 0 && others.indexOf(c.fighter) < 0 && t.indexOf(c.fighter) >= 0) seen.push(c.fighter); }); return seen; })() };
       out.srcs = srcs.filter(function(u){ return !/^data:image\\/png;base64,/.test(u); }).length;
       out.thumbs = srcs.length;
       // Wear from the Store: it goes on the skin's own fighter, not on whoever is picked
@@ -926,6 +944,7 @@ describe('the skins', () => {
     expect(r.listed, 'every skin of a fighter anyone may know of').toBe(r.total - r.vault.length);
     expect(r.secret, 'the Vault fighters\' skins are not in the Store while those fighters are locked').toEqual(r.vault.map(() => false));
     expect(r.text.every((i) => i === -1), 'and the Store shows neither their skins\' names nor a "for" line naming them').toBe(true);
+    expect(r.named, 'nor the fighter\'s name anywhere (but where another look happens to carry it, like the Big Bow and the Balloon Lift-off)').toEqual([]);
     expect(r.worn).toEqual(['sk_pin_robot', null]);
     expect(r.who.length, 'five Vault fighters have skins').toBeGreaterThanOrEqual(3);
     r.opened.forEach((row, i) => expect(row, `${r.who[i]} opened: its skins appear, and the Vault fighters still to open do not`).toEqual(r.vault.map((name) => r.who.indexOf(name) <= i)));
