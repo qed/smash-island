@@ -671,19 +671,15 @@ describe('the skins', () => {
     'sk_dora_bob', 'sk_david_orange', 'sk_fjr_grin', 'sk_fern_frozen', 'sk_ruler_crown', 'sk_sidewalky_shades',
     'sk_sidewalky_snow', 'sk_sidewalky_crack', 'sk_profily_leaf', 'sk_profily_watch', 'sk_roboty_open', 'sk_roboty_plunger',
     'sk_icy_phones', 'sk_icy_pink', 'sk_icy_springy', 'sk_cake_caked', 'sk_donut_dough', 'sk_balloony_tang',
-    'sk_balloony_eye', 'sk_brace_magenta', 'sk_brace_purple',
+    'sk_balloony_eye', 'sk_brace_magenta', 'sk_brace_purple', 'sk_gaty_holes', 'sk_gaty_raw', 'sk_bolt_shades',
+    'sk_bolt_glow', 'sk_liy_jet', 'sk_liy_boots', 'sk_lolli_sweater', 'sk_lolli_scribble', 'sk_loser_pack',
+    'sk_marker_uncap', 'sk_marker_burnt',
   ]);
   // SKIN_ORDER end
   // Playable fighters with no skin, and why (name -> reason). The prize fighters of Steve Cobs's fight are not in ROSTER until he is beaten, so
   // they are not playable here, and the owner's rule keeps them out of every table this one is in: they are not listed.
   // NO_SKIN begin
   const NO_SKIN = {
-    'Gaty': 'not yet',
-    'Lightning': 'not yet',
-    'Liy': 'not yet',
-    'Lollipop': 'not yet',
-    'Loser': 'not yet',
-    'Marker': 'not yet',
     'Tree': 'the owner\'s standing rule: Do not change Tree',
   };
   // NO_SKIN end

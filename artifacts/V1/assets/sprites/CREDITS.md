@@ -751,7 +751,8 @@ keyed by the assist's name; MePhone4's hostile adds wear the same art.
 
 ## Per-fighter skins (Wardrobe)
 
-25 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`. They are loaded only when
+153 second renders, each worn by ONE fighter only (its Wardrobe skin), in `assets/sprites/skins/`; every playable fighter has at least
+one (Tree has none, on the owner's standing rule "Do not change Tree"), and a fighter with several real canon looks has them all. They are loaded only when
 worn, never at boot, and the fighter's own render above is unchanged. Each was fetched with the same pipeline as every render
 above: `node scripts/fetch-sprites.mjs --wiki=<subdomain> --out-dir=artifacts/V1/assets/sprites/skins
 --manifest=scripts/sprite-manifest-skins.json "Skin Name=File.png@Fighter"`, so each one is genuinely transparent, has a face,
@@ -857,6 +858,17 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | One-Eyed Balloony | Balloony | `skins/one-eyed-balloony.png` | 95×200 | `File:Screenshot 20241201-152151.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/44/Screenshot_20241201-152151.png/revision/latest?cb=20250410072620 |
 | Magenta Bracelety | Bracelety | `skins/magenta-bracelety.png` | 293×200 | `File:BFDIA Bracelety.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d0/BFDIA_Bracelety.png/revision/latest?cb=20200402125837 |
 | Purple Bracelety | Bracelety | `skins/purple-bracelety.png` | 278×200 | `File:FirstBracelety.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/00/FirstBracelety.png/revision/latest?cb=20210228203903 |
+| Holey Gaty | Gaty | `skins/holey-gaty.png` | 236×200 | `File:GatyWithHole.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fa/GatyWithHole.png/revision/latest?cb=20250118165045 |
+| Unpainted Gaty | Gaty | `skins/unpainted-gaty.png` | 283×200 | `File:GatyUnpainted.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/ab/GatyUnpainted.png/revision/latest?cb=20240719141926 |
+| Sunglasses Lightning | Lightning | `skins/sunglasses-lightning.png` | 238×200 | `File:Lighting just relaxing.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/6e/Lighting_just_relaxing.png/revision/latest?cb=20230505021352 |
+| Glowing Lightning | Lightning | `skins/glowing-lightning.png` | 182×200 | `File:Lightning Icon Pose.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d3/Lightning_Icon_Pose.png/revision/latest?cb=20200901051408 |
+| Jetpack Liy | Liy | `skins/jetpack-liy.png` | 214×200 | `File:Liy jetpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/96/Liy_jetpack.png/revision/latest?cb=20250216181634 |
+| Big Boots Liy | Liy | `skins/big-boots-liy.png` | 189×200 | `File:BigOlBoots.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/BigOlBoots.png/revision/latest?cb=20240616220037 |
+| Sweater Lollipop | Lollipop | `skins/sweater-lollipop.png` | 104×200 | `File:SweaterLollipop.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fb/SweaterLollipop.png/revision/latest?cb=20210817163646 |
+| Scribbled Lollipop | Lollipop | `skins/scribbled-lollipop.png` | 98×200 | `File:Lollipop - It means one of us....is leaving. .png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/fc/Lollipop_-_It_means_one_of_us....is_leaving._.png/revision/latest?cb=20210607221949 |
+| Backpack Loser | Loser | `skins/backpack-loser.png` | 215×200 | `File:LoserBackpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/b/bc/LoserBackpack.png/revision/latest?cb=20250621232021 |
+| Uncapped Marker | Marker | `skins/uncapped-marker.png` | 97×200 | `File:Uncapped marker.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/8b/Uncapped_marker.png/revision/latest?cb=20191026124851 |
+| Burnt Marker | Marker | `skins/burnt-marker.png` | 97×200 | `File:Burnt Marker (TPOT 6).png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3d/Burnt_Marker_%28TPOT_6%29.png/revision/latest?cb=20230710043409 |
 
 ### Inanimate Insanity wiki skins
 
@@ -935,3 +947,15 @@ inanimateinsanity.fandom.com.
 - **The blindfolded skins** (`skins/blindfolded-*.png`) -- how each of these Inanimate Insanity fighters looks in the challenge Heavy Metal Pop Stars
   lose: the blindfolded relay of Inanimate Insanity IV episode 3, "Run the Risk!" (the owner: "the challenge where hmps loses" -- "the hmps thing is
   for e3" -- "in s4"). Each is the wiki's own render of that episode, with the blindfold of its team's colour; no one else is in the picture.
+- **Where each look comes from.** The first 25 are the owner's own list (Rockstar Poppy and the rest). The Inanimate Insanity fighters who
+  were in the challenge Heavy Metal Pop Stars lose in Inanimate Insanity IV episode 3, "Run the Risk!" (the blindfolded relay), wear the
+  wiki's render of that episode. The cast of "Fan the Flames" (episode 4: the rock show, the Rockstar skins) have their episode-4 looks too
+  (a whistle, a muscular arm, ropes, olive oil, the Blue Ray, a fedora). A fighter who has no render from either episode, or was not in them
+  (Cammy and Teddy Bear look as they always do in episode 3; Balloon, Bomb, Knife, Paintbrush, Marshmallow, Apple, Baseball, Pickle, Salt,
+  Dough, Tissues, Blueberry, Clover and Silver Spoon are not in it), takes a look the character really has from another episode, taken from
+  its Designs gallery on the wiki. Every Battle for Dream Island fighter's looks are from its own gallery pages on the BFDI wiki (the episode
+  is in each caption there). The "Climbing Gear" renders of episode 3 (Cherries, Magnet, MeTag, Bonesaw) are the blindfold plus the harness
+  of the rock-climbing leg. No render with lettering, no render with a second character in it, and none whose face is hidden was kept.
+- **Left out on purpose.** Tree (the owner's standing rule). Renders under 200 px tall at the source (the blue Ruler of BFDIA 8). Renders
+  that are a photograph or a frame, not a cut-out; renders whose face is covered (a cake in the face, a paint splat, an ice block); renders
+  that carry a sign; fan-made colour variants.
