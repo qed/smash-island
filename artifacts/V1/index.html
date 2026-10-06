@@ -26955,7 +26955,7 @@ function doAttack(f){
     if(RA.aim) proj.aimWindow=rubyBeam?46:36;   // Ruby: hold up/down after firing to bend the arc (longer window when charged)
     if(rubyBeam) proj.trail=[];
     if(RA.ticks) proj.ticks = RA.ticks;
-    visLaunch(f, proj);     // render-only: the shot draws its way out of the fighter's own anchor
+    visLaunch(f, proj, sp==='fly' ? PUFF_SPIT_AT[PUFF_SPIT_SHOT] : 0);     // render-only: the shot draws its way out of the fighter's own anchor (Puffball's is held in her mouth until her spit frame: PUFFBALL SPITS)
     proj._swing = f._swingBoss = new Set(); addProj(proj);   // a ranged jab swings AND shoots: a boss the swing hits (below) does not take the shot too, as a fighter's grace would stop it
     puff(px,py,rubyBeam?'#ff8aa0':(emp?'#fff':RA.color),emp?6:3);
     if(emp) for(let i=0;i<6;i++) puff(px+f.face*i*8,py,rubyBeam?'#ff3a5a':'#fff',4);
@@ -34124,7 +34124,7 @@ function updateCamera(){
 // ember reads as leaving the mouth instead of being occluded by the body it came from.
 function drawLaunchingProjectiles(){
   for(const pr of projectiles){
-    if(!projVisLerp(pr)) continue;
+    if(!projVisLerp(pr) || _pvScale <= 0) continue;   // (a scale of 0 is a shot still held in the mouth: Puffball's, until her spit frame)
     ctx.save();
     ctx.translate(pr.x + _pvDX, pr.y + _pvDY);
     ctx.scale(_pvScale, _pvScale);
@@ -35913,12 +35913,16 @@ const PROJ_VIS_FRAMES = 6;
 // whitelist, and is never read by any collision test — pr.x/pr.y, the only position the hitbox
 // knows about, are untouched from the first frame. A netcode client receives projectiles without
 // the field and simply draws them where they are, exactly as it does today.
-function visLaunch(f, p){
+// `delay`: ticks the shot is HELD in the anchor before it starts to come out (Puffball's waits for her spit frame: PUFFBALL SPITS). The shot
+// itself is already flying, hitting and hurting from the tick it was spawned; only its drawing waits, and `_visLive` keeps the anchor on her
+// mouth while it does.
+function visLaunch(f, p, delay){
   if(!f || f.face === undefined || f.r === undefined) return;   // bosses and assists have no anchor
   fighterAnchor(f, _anchorOut);
   p._visOrigin = {x:_anchorOut.x, y:_anchorOut.y};
   p._visFrames = PROJ_VIS_FRAMES;
-  p._visT0 = hazardT;
+  p._visT0 = hazardT + (delay|0);
+  if(delay > 0) p._visLive = f;
 }
 // Draw-time only. Fills the scratch below with how far a shot's DRAWING should be pulled back
 // toward its launch anchor this frame, and how much smaller it should be while it is still coming
@@ -35931,6 +35935,11 @@ let _pvDX = 0, _pvDY = 0, _pvScale = 1;
 function projVisLerp(pr){
   const o = pr._visOrigin;
   if(!o) return false;
+  if(pr._visLive){                                         // a shot held in the mouth rides the mouth (PUFFBALL SPITS)...
+    fighterAnchor(pr._visLive, _anchorOut); o.x = _anchorOut.x; o.y = _anchorOut.y;
+    if(hazardT >= pr._visT0) pr._visLive = null;           // ...until the tick it is let go, where the anchor stays
+  }
+  if(hazardT < pr._visT0){ _pvDX = o.x - pr.x; _pvDY = o.y - pr.y; _pvScale = 0; return true; }   // still held: in the launch, with nothing to draw yet
   const left = pr._visFrames - (hazardT - pr._visT0);      // frames REMAINING on the launch
   if(!(left > 0)){ pr._visOrigin = null; return false; }   // done — stop paying for it
   const k = 1 - left/pr._visFrames;                        // 0 at the anchor -> 1 at the true spot
@@ -35941,6 +35950,63 @@ function projVisLerp(pr){
   return true;
 }
 
+// ---- PUFFBALL SPITS ---------------------------------------------------------------------------------------------------------------
+// "puffball should have 3-5 frames while firing the projectile to spit it" (the owner, 2026-10-06 -- "like c'mon this is the 5th time ive
+// asked"). Her X is a shot (RANGED_ATTACKERS.fly) and her render is one front-on picture, so she used to spit by lunging, which is no more than
+// every other fighter does. Now the swing is FOUR frames, each a picture of her (assets/sprites/puffball-spit-1..4.png, cut out of her own render:
+// scripts/make-puffball-spit.mjs), swapped in like every other pose a move wears (FIGHTER_ANIM.Puffball.body):
+//   puff     ticks 0-2    the cheeks swell, the eyes squeeze, the smile pinches to a small o
+//   spit     ticks 3-7    the face turns the way she shoots, the mouth is blown wide open and full of rainbow, and a rainbow streams out of it
+//                         (FIGHTER_ANIM.Puffball.over) -- THE SHOT LEAVES HERE
+//   recoil   ticks 8-12   kicked back: eyes wide, a small slack mouth
+//   settle   ticks 13-17  the grin comes back, the eyes closed and pleased
+// and her body moves with them (PUFF_DRIVE: gather, snap forward on the spit, kicked back, settle) where the shared rig would lunge her once.
+//
+// RENDER-ONLY, like the whole swing (THE ATTACK PHASE TIMELINE): the shot is spawned, hits and hurts on the tick it always did, the attack
+// cooldown and `_atkAnim` are untouched, and the sim never reads any of this. Only the DRAWING of the shot waits, held in her mouth until the
+// spit frame (visLaunch's `delay`), so the damage, the timing and the hitboxes are the old ones to the frame.
+const PUFF_SPIT_AT = [0, 3, 8, 13];   // the swing tick each frame starts on; the swing is ATK_ANIM (18) ticks long
+const PUFF_SPIT_SHOT = 1;             // ...and the frame the shot leaves on: the spit
+const PUFF_FRAME = ['puff', 'spit', 'recoil', 'settle'];   // FIGHTER_ANIM.Puffball.poses, in swing order
+// her lunge by swing tick, in spriteRig's own units (atkDrive: -1 wound back .. +1 fully forward): gather, SNAP forward as she spits, kicked back, settle
+const PUFF_DRIVE = [[0, -0.25], [2, -0.7], [3, 0.2], [5, 1], [7, 0.7], [9, -0.2], [11, -0.55], [13, -0.2], [16, 0.1], [18, 0]];
+const PUFF_RAINBOW = ['#ff3030', '#ff9614', '#ffe41e', '#28c846', '#2896ff', '#9646e1'];   // the six bands of the rainbow barf she spits (BFDIA), top to bottom
+// Ticks into the swing, on the 18-tick clock the frames are timed on. 0 on the tick the shot is fired.
+function puffSwingTick(f){
+  const len = f._atkLen || ATK_ANIM;
+  return (len - f._atkAnim) * (ATK_ANIM / len);
+}
+// Which of her spit frames the swing is on (0 puff, 1 spit, 2 recoil, 3 settle), or -1 when she is not spitting. A netcode client has the
+// swing timer, its length and its kind (swing, swingLen, swingKind), which is all this reads, so it draws the same frame as the host.
+function puffSpitFrame(f){
+  if(!f || f._atkKind !== 'spit' || !(f._atkAnim > 0) || !f.kit || f.kit.special !== 'fly') return -1;
+  const e = Math.round(puffSwingTick(f));
+  let k = 0;
+  for(let i = 1; i < PUFF_SPIT_AT.length; i++) if(e >= PUFF_SPIT_AT[i]) k = i;
+  return k;
+}
+function puffSpitDrive(f){
+  const e = puffSwingTick(f), T = PUFF_DRIVE;
+  if(!(e > 0)) return T[0][1];
+  for(let i = 1; i < T.length; i++){
+    if(e <= T[i][0]){ const a = T[i-1], b = T[i], q = (e - a[0]) / (b[0] - a[0]); return a[1] + (b[1] - a[1]) * q; }
+  }
+  return 0;
+}
+// The picture she wears right now, as a key of FIGHTER_ANIM.Puffball.poses, or null for her plain render: 'meteor' for the whole of Meteor Puff's
+// dive (f._plunge: set when the smash fires, cleared on the tick she lands or is stopped), else the spit frame, unless she has just been hit.
+function puffPose(f){
+  if(!f || !f.kit || f.kit.special !== 'fly') return null;
+  if(f._plunge) return 'meteor';
+  if(hurtK(f) > 0) return null;
+  const k = puffSpitFrame(f);
+  return k < 0 ? null : PUFF_FRAME[k];
+}
+// One of her pictures as a sprite entry. They share the render's pixel density (the frames are the render on a wider canvas, so the box that
+// fits the PNG is wider by the same ratio), and they float exactly as she does, so swapping one in never moves her.
+function puffPoseSprite(file, imgW, flip){
+  return Object.assign(renderSprite(file, { imgH: 2.6, imgW: imgW, flip: !!flip }), { float: true, floatLift: 8, floatAmp: 5 });
+}
 const FIGHTER_ANIM = {
   // ============================================================
   //  BATCH 2 — see the "Batch 2 — animation specs" table in docs/animation-move-design.md
@@ -37149,9 +37215,52 @@ const FIGHTER_ANIM = {
   //      little puffs of air-magic that sell it. Drawn as ctx ops in the overlay pass rather than
   //      pushed into `particles`, so the draw path stays free of sim side effects and allocation. --
   Puffball: {
+    // PUFFBALL SPITS (above) and METEOR PUFF: a picture of her, swapped in for the plain render while the move lasts (`body`, the same pose swap
+    // Cammy's flash and Candle's Inner-Flame are). `poses` is the whole set: the four frames of her spit, cut out of her own render, and
+    // the BFDIA 6 sprite she wears for the whole of her dive. Nothing here reaches the sim.
+    anchor: {x:0.7, y:0.3},      // her mouth as the spit frame snaps forward, upper half (the shot flies a little above the mouth): where a spat shot comes out (visLaunch / projVisLerp)
+    diveFlash: false,            // her own attack flash does not wash her dive white either: the sprite is the point (drawSpriteBody)
+    spitFlash: false,            // her own attack flash does not wash a spit white (drawSpriteBody)...
+    spitSwipe: false,            // ...nor does it throw a blade's swipe: she has nothing to swing (drawFighter)
+    atkDrive(f){ return puffSpitDrive(f); },       // spriteRig: her own lunge for the spit (gather, snap, recoil, settle)
+    poses: {
+      puff:   puffPoseSprite("puffball-spit-1.png", 3.176),
+      spit:   puffPoseSprite("puffball-spit-2.png", 3.176),
+      recoil: puffPoseSprite("puffball-spit-3.png", 3.176),
+      settle: puffPoseSprite("puffball-spit-4.png", 3.176),
+      // METEOR PUFF's dive, the whole of it (f._plunge): the BFDIA 6 frame where she is burning and screaming on her way down at Firey
+      // (File:Bfdia6 prize (23).png, "Well Rested"), cut out by hand: scripts/clean-puffball-meteor.mjs. 195x200, drawn at her own pixel size.
+      // The art faces left, so it is flipped like the other renders that do.
+      meteor: puffPoseSprite("puffball-meteor.png", 2.364, true)
+    },
+    body(f){
+      if(!this._warm){ this._warm = true; for(const k in this.poses) spriteImage(this.poses[k]); }   // every picture starts loading the first time she is drawn, so a pose never waits for its file
+      const k = puffPose(f), sp = k && this.poses[k];
+      if(!sp || !spriteImage(sp)) return false;                  // no pose now, or its picture has not decoded (and in a headless boot never does): the plain render stays
+      const dive = k === 'meteor';
+      if(dive){ ctx.translate(0, f.r); ctx.scale(0.92, 1.12); ctx.translate(0, -f.r); }   // stretched along the fall, about her feet (the universal squash is not run for a pose)
+      // under its own name, so the plain render's painted-limb rig never cuts a limb out of the wrong picture; the dive is not also a lunge (the smash arms one)
+      drawSpriteBody(Object.create(f, dive ? {name:{value:"Puffball (meteor)"}, _atkAnim:{value:0}} : {name:{value:"Puffball (" + k + ")"}}), sp, this);
+      return true;
+    },
     over(f, ctx){
       const t = hazardT*0.05 + f.idx*1.7;              // same clock the float rig rides
       const a0 = ctx.globalAlpha;
+      // THE RAINBOW SHE IS SPITTING, on the spit frame: six bands in the colours of her barf come out of the front of her mouth (which snaps forward
+      // with her lunge, so the start rides PUFF_DRIVE), grow out ahead of her over the frame and fade as it ends. Strokes in this pass, no particles,
+      // and worked out from the swing alone, so a client draws it too.
+      if(puffSpitFrame(f) === PUFF_SPIT_SHOT){
+        const d = Math.max(0, puffSpitDrive(f)), at = PUFF_SPIT_AT[PUFF_SPIT_SHOT];
+        const q = (puffSwingTick(f) - at) / (PUFF_SPIT_AT[PUFF_SPIT_SHOT + 1] - at);   // 0 -> 1 across the frame
+        const dir = f.face < 0 ? -1 : 1, x0 = dir*(16 + 21*d), y0 = 6 + 7*d, len = 6 + q*30;
+        ctx.lineCap = "round"; ctx.lineWidth = 2.3;
+        for(let i=0;i<6;i++){
+          const yy = y0 + (i - 2.5)*2.3*(1 + q*0.8), wob = Math.sin(hazardT*0.9 + i)*1.3;
+          ctx.globalAlpha = a0*(0.95 - q*0.55); ctx.strokeStyle = PUFF_RAINBOW[i];
+          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.quadraticCurveTo(x0 + dir*len*0.5, yy + wob, x0 + dir*len, yy + (i - 2.5)*q*3.2 - q*4); ctx.stroke();
+        }
+        ctx.globalAlpha = a0; ctx.lineCap = "butt";
+      }
       for(let i=0;i<3;i++){
         const k = (hazardT*0.9 + i*47 + f.idx*13) % 90;   // each sparkle blinks on its own cycle
         if(k > 26) continue;                              // …and is off most of the time
@@ -38222,7 +38331,8 @@ function spriteRig(f, R, sp, anim){
     // Note this is the GENERIC mapping every fighter gets for free — slight crouch and pull-back
     // on the gather, the lunge on the strike, a settle with a little overshoot after. Bespoke
     // choreography layers on top of it through FIGHTER_ANIM, it never replaces it.
-    const d = atkDrive(f), m = d < 0 ? -d : d;
+    // A fighter whose swing is a set of pictures (Puffball's spit) brings its own drive: a spit is not one lunge. Every other swing is the shared one.
+    const d = (anim && anim.atkDrive && f._atkKind === 'spit') ? anim.atkDrive(f) : atkDrive(f), m = d < 0 ? -d : d;
     // Was 0.34 — about 8px of travel on a 67px-tall sprite, which measured as "working" and read
     // as nothing at all in play. The swipe arc does most of the work now; this carries the body.
     lunge = f.face * d * R * 0.62;
@@ -38311,7 +38421,10 @@ function drawSpriteBody(f, sp, anim){
   // COSMETICS (see WIN TOKENS): the hat below; a skin is the picture itself (drawFighter passes this function the skin's sprite).
   const _cos = cosOf(f);
   // state tints, clipped to the silhouette
-  const tint = f.flash>0 ? ["#ffffff",0.88]
+  // The white of her OWN attack flash is left off a fighter whose move is a set of pictures (Puffball's spit, `spitFlash:false`, and her dive,
+  // `diveFlash:false`): six ticks of white would hide the very frames, and fourteen the very sprite. Being hit still flashes white, and so does everyone else.
+  const ownPoseFlash = f.flash>0 && !!anim && !wasHit(f) && ((f._atkAnim>0 && f._atkKind==='spit' && anim.spitFlash === false) || (!!f._plunge && anim.diveFlash === false));
+  const tint = (f.flash>0 && !ownPoseFlash) ? ["#ffffff",0.88]
              : f._yoyleT>0 ? ["#9aa7b0",0.72]
              : (f._starT>0 && hazardT%6<3) ? ["#ffd23f",0.62] : null;
   const lay = (col,a)=>{
@@ -38587,7 +38700,7 @@ function drawFighter(f){
   // punctuation it can catch, so every attack now throws a swipe and every sprint kicks dust.
   // Both are pure render: nothing is pushed to `particles`, so the sim, netcode and goldens are
   // untouched (which is why this cannot use puff()).
-  if(f._atkAnim > 0){ ctx.save(); drawSwipeArc(f); ctx.restore(); }
+  if(f._atkAnim > 0 && !(anim && anim.spitSwipe === false && f._atkKind === 'spit')){ ctx.save(); drawSwipeArc(f); ctx.restore(); }   // (Puffball's spit has no blade to swing: it is the rainbow that is thrown)
   if(f.onground !== false && Math.abs(f.vx||0) > 4){ ctx.save(); drawRunDust(f); ctx.restore(); }
   if(hurtK(f) > 0){ ctx.save(); drawHitSpark(f); ctx.restore(); }
   // POST-BODY pass: overlays/effects (trails, afterimages, glows) in unscaled space
@@ -39919,6 +40032,7 @@ function netFighter(f){
     if(f._atkKind) o.swingKind = f._atkKind;   // what the body does: punch, kick, uppercut...
     if(f._atkLen) o.swingLen = f._atkLen;      // a smash runs longer than a jab; the beats scale with it
   }
+  if(f._plunge) o.plunge = 1;   // Meteor Puff's dive is on: a client draws her BFDIA 6 sprite for as long as it lasts (puffPose); the state itself stays on the host
   if(f._hurtAnim != null) o.hurtT = f._hurtAnim;   // sent whenever set: wasHit tells 0 from "never set"
   if(f._heatFx) o.heatFx = f._heatFx;   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
   if(f._hookFx) o.hookFx = f._hookFx;
@@ -40175,6 +40289,7 @@ function applySnapshot(s){
       _kos:fd.kos||0, _falls:fd.falls||0, _dmgDealt:fd.dmg||0, _dmgTaken:fd.taken||0, _gone:fd.gone ? 1 : 0,   // the final snapshot's: the host's tallies, for the client's results
       _heatFx:fd.heatFx, _hookFx:fd.hookFx,
       _atkAnim: fd.swing || 0, _atkKind: fd.swingKind || null, _atkLen: fd.swingLen, _hurtAnim: fd.hurtT,
+      _plunge: fd.plunge ? { from: 0, life: 0 } : null,   // (a client never simulates: this is only the flag puffPose reads)
       _windup: (fd.charge && typeof fd.charge === 'object') ? fd.charge : null,
       _atk0: fd.swing || 0,   // the swing timer as the snapshot has it (netSwing counts it down between snapshots)
       // THIS device's fighter is the one it plays, not the one the host marked (the host's own). The gold marker, the
