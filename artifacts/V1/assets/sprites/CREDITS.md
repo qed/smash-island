@@ -823,6 +823,17 @@ inanimateinsanity.fandom.com.
 | Hard Hat Balloon | Balloon | `skins/hard-hat-balloon.png` | 133×200 | `File:Hard Hat Balloon (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/29/Hard_Hat_Balloon_%28S3E17%29.png/revision/latest?cb=20260315063441 |
 | Snorkel Bomb | Bomb | `skins/snorkel-bomb.png` | 154×200 | `File:Bomb Snorkel.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/46/Bomb_Snorkel.png/revision/latest?cb=20260424030546 |
 | Damaged Knife | Knife | `skins/damaged-knife.png` | 94×200 | `File:Knife damaged.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/90/Knife_damaged.png/revision/latest?cb=20241015012537 |
+| Painted Paintbrush | Paintbrush | `skins/painted-paintbrush.png` | 97×200 | `File:Painted Paintbrush.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/1d/Painted_Paintbrush.png/revision/latest?cb=20250802193652 |
+| Burnt Marshmallow | Marshmallow | `skins/burnt-marshmallow.png` | 140×200 | `File:Marshmallow Burnt 2.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/b3/Marshmallow_Burnt_2.png/revision/latest?cb=20260307185716 |
+| Snotty Apple | Apple | `skins/snotty-apple.png` | 171×200 | `File:Apple Snot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/af/Apple_Snot.png/revision/latest?cb=20260426194855 |
+| Chocolate Baseball | Baseball | `skins/chocolate-baseball.png` | 158×200 | `File:BaseballChocolate.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/7/76/BaseballChocolate.png/revision/latest?cb=20230506070528 |
+| Boxing Pickle | Pickle | `skins/boxing-pickle.png` | 100×200 | `File:Pickle Eyepatch Boxing.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/9c/Pickle_Eyepatch_Boxing.png/revision/latest?cb=20260217013034 |
+| Face Mask Salt | Salt | `skins/face-mask-salt.png` | 106×200 | `File:Salt Face Gel.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/83/Salt_Face_Gel.png/revision/latest?cb=20260424024034 |
+| Solid Dough | Dough | `skins/solid-dough.png` | 183×200 | `File:DoughForm.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/4f/DoughForm.png/revision/latest?cb=20140212190207 |
+| Snotty Tissues | Tissues | `skins/snotty-tissues.png` | 175×200 | `File:Tissues Snot.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6b/Tissues_Snot.png/revision/latest?cb=20260424025752 |
+| Golden Blueberry | Blueberry | `skins/golden-blueberry.png` | 166×200 | `File:Unbotheredgoldenblueberry.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/b/bb/Unbotheredgoldenblueberry.png/revision/latest?cb=20231001152648 |
+| Detective Clover | Clover | `skins/detective-clover.png` | 145×200 | `File:Clover's Detective Disguise (S4E4).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/6e/Clover%27s_Detective_Disguise_%28S4E4%29.png/revision/latest?cb=20260315063442 |
+| Glowing Gold Spoon | Silver Spoon | `skins/glowing-gold-spoon.png` | 67×200 | `File:Semi-Powerful Silver Spoon (S3E18).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/3/34/Semi-Powerful_Silver_Spoon_%28S3E18%29.png/revision/latest?cb=20260315072657 |
 
 ### Notes on individual skins
 

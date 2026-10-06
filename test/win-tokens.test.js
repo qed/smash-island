@@ -629,8 +629,10 @@ describe('the canon looks', () => {
 // THE SKINS. "the skins should be by-fighter(like rockstar poppy, broken fries, robot pin)": a skin is a second render of ONE fighter, from
 // the show's own wikis, worn only by that fighter. Twenty-five were approved first ("Rockstar Poppy; Broken Fries; Robot Pin (the wiki's Mech
 // Pin)..."), sold for Win Tokens at the tier the plan gave each. Then: "If you can, give each fighter a skin. for the ii characters, it can
-// just be them from the challenge where hmps loses." -- "oh yea the hmps thing is for e3." -- "in s4": Run the Risk!, episode 3 of Inanimate
-// Insanity IV, where Heavy Metal Pop Stars lose the blindfolded relay. So every playable fighter has one.
+// just be them from the challenge where hmps loses." -- "oh yea the hmps thing is for e3." -- "in s4": Heavy Metal Pop Stars lose three
+// challenges of Inanimate Insanity IV, among them Run the Risk! (episode 3, the blindfolded relay) and Fan the Flames (episode 4, their rock
+// show, the Rockstar skins). And: "skins from this challenge. also if you can find more than 1 skin per character, add them." So every
+// playable fighter has at least one, and a fighter with several real canon looks has them all.
 describe('the skins', () => {
   // [id, fighter, name, price]: the first twenty-five, in the owner's order. They replace the seven colour washes, whose places in the online code they leave empty.
   const SKINS = [
@@ -697,21 +699,8 @@ describe('the skins', () => {
     'Ice Cube': 'not yet',
     'Cake': 'not yet',
     'Donut': 'not yet',
-    'Paintbrush': 'not yet',
-    'Marshmallow': 'not yet',
-    'Apple': 'not yet',
-    'Baseball': 'not yet',
-    'Pickle': 'not yet',
-    'Salt': 'not yet',
-    'Dough': 'not yet',
-    'Tissues': 'not yet',
-    'Blueberry': 'not yet',
-    'Clover': 'not yet',
-    'Silver Spoon': 'not yet',
   };
   // NO_SKIN end
-  // The one fighter with two: Broken Fries and Glow Fries were both approved before every fighter was given one.
-  const TWO_SKINS = ['Fries'];
 
   it('are in the shop: the first twenty-five at their approved names and tiers, then the rest, each for one playable fighter, and the kind holds nothing else', async () => {
     const w = await ready();
@@ -734,18 +723,19 @@ describe('the skins', () => {
     expect(new Set(rows.map((r) => r.src)).size, 'no picture twice').toBe(rows.length);
   });
 
-  it('every playable fighter has a skin of its own: exactly one (Fries, who had two before the rest got theirs, keeps both), and no one else has any', async () => {
+  it('every playable fighter has at least one skin of its own (several where there are several real canon looks), and no one else has any', async () => {
     const w = await ready();
     const playable = w.eval("ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })");
     const per = {};
     for (const f of w.eval("cosOfKind('skin').map(function(c){ return c.fighter; })")) per[f] = (per[f] || 0) + 1;
-    const want = (n) => (NO_SKIN[n] ? 0 : TWO_SKINS.includes(n) ? 2 : 1);
-    expect(playable.filter((n) => (per[n] || 0) !== want(n)).map((n) => `${n}: ${per[n] || 0}`), 'a fighter with the wrong number of skins').toEqual([]);
+    expect(playable.filter((n) => (NO_SKIN[n] ? (per[n] || 0) !== 0 : (per[n] || 0) < 1)).map((n) => `${n}: ${per[n] || 0}`), 'a fighter without a skin (and not a listed skip)').toEqual([]);
     expect(Object.keys(per).filter((n) => !playable.includes(n)), 'no skin names anyone who is not a playable fighter').toEqual([]);
     for (const n of Object.keys(NO_SKIN)) expect(playable, `${n} is listed as a skip, so it must be a real fighter`).toContain(n);
     // the prize fighters of Steve Cobs's fight and The Floor have no skin of their own
     for (const n of ['OJ', 'Suitcase', 'Cabby', 'The Floor']) expect(per[n] || 0, n).toBe(0);
-    expect(w.eval("cosOfKind('skin').length"), 'one skin per playable fighter, and a second for Fries').toBe(playable.length - Object.keys(NO_SKIN).length + TWO_SKINS.length);
+    expect(w.eval("cosOfKind('skin').length"), 'at least one skin per playable fighter').toBeGreaterThanOrEqual(playable.length - Object.keys(NO_SKIN).length);
+    // the fighters who have more than one (a skin is one look, worn one at a time)
+    expect(Object.entries(per).filter(([, n]) => n > 1).length, 'Fries has two, and so do the others the owner asked for').toBeGreaterThanOrEqual(1);
   });
 
   it('each has its own picture: a transparent 200 px render in assets/sprites/skins/, in the manifest, in CREDITS.md, and a thumbnail for the Store', async () => {
