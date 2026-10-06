@@ -747,7 +747,9 @@ describe('the standing rules', () => {
       between('// BOT, cheering themselves on', "'#7cf0a8' : '#fff27a', 4); }"),
       between("// BOT'S SPAGGERS!", "// ...and the tangle where it lands\n}"),
       between('// BOT (they/them). CHEER FACTORY!', 'const GOTCHA_LUNGE = 14, GOTCHA_SPEED = 11, GOTCHA_HOLD = 60, GOTCHA_LOCK = 120;'),
-      between('// ---- Bot (they/them) -- the passes their kit needs', '\n};\n\n// ====='),
+      // (to the end of Bot's own FIGHTER_ANIM entry -- the first close at its indent. It ran to the end of the table while Bot was the last
+      // entry; Batch 7 put thirty-two after it, each rightly he or she.)
+      between('// ---- Bot (they/them) -- the passes their kit needs', '\n  },\n'),
       between('// Bot (they/them): a playable fighter now', 'Bot: renderSprite("bot.png", { imgW:3.0 }),'),
       between('Bot:          "I am Bot.', 'shout as they jump and catch N/A'),
     ];

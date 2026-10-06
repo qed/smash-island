@@ -31,9 +31,10 @@ squash/stretch and the multi-state fighter rig · the teams-arena stall fix.
 
 ## Wave 3 — Growth loops ✅ shipped
 
-- **Touch controls.** A phone or Chromebook touchscreen previously could not play at all. The pad
-  writes into the same `down` map the keyboard uses, so the sim, AI, netcode and replay paths never
-  learn touch exists — and remapping a key remaps the touch button for free.
+- **Touch controls. REMOVED 2026-10-06** (the owner: "remove mobile compatibility.... I SAID I WANTED THIS TO BE A COMPUTER
+  GAME!!!"): the pad, its switch in Settings and the phone-only layouts are gone, and `test/computer-only.test.js` keeps
+  them gone. It had been a pad that wrote into the same `down` map the keyboard uses, for a phone or Chromebook
+  touchscreen that could not play at all.
 - **Share the clip.** A raw `.webm` is not a share loop: it does not play inline in a chat and cannot
   be pasted. The last ~4 seconds are captured into a bounded ring and encoded to a **GIF** on demand.
   There is no backend, so "copy link" copies a link to the **game** — a link to a clip would 404.
