@@ -838,3 +838,38 @@ describe('OWNER (round 2): MAZED AND CONFUSED! -- "mazed and confused should be 
     expect(errors, 'every call valid').toEqual([]);
   });
 });
+
+// ================= DEPLOYING UNITS! in his last tier (2026-10-06) =================
+// "nerf the summoning units attack on cobs- last phase is soo hard bcs of that." / "dude, i cant dodge because there are 25 on my screen." (the owner, 2026-10-06)
+// It was 3 units at once, a round each every 50 frames, for 12 s, on top of his hardest tier. Now 2, every 90 frames, for 7 s. The blink (a unit teleports after a
+// round) keeps its tier: the twists never weaken as the tiers climb (boss-cobs-fight.test.js, Round 7).
+describe('OWNER: DEPLOYING UNITS! in his last tier -- "nerf the summoning units attack on cobs- last phase is soo hard bcs of that."', () => {
+  it('the last tier sends 2 units at most, each firing every 90 frames and gone after 7 s (it was 3, every 50, for 12 s)', () => {
+    const t = JSON.parse(W.eval('JSON.stringify(COBS_TIERS.deploy[4])'));
+    expect(t.cap, 'units standing at once').toBe(2);
+    expect(t.n, 'units per call').toBe(2);
+    expect(t.every, 'frames between a unit\'s rounds').toBe(90);
+    expect(t.life, 'frames a unit stays').toBe(420);
+  });
+  it('in a minute of his last tier, never more than 2 units stand, and each fires no more often than every 90 frames and leaves within 7 s', () => {
+    const r = JSON.parse(fight(`
+      atTier(5); you.controller = 'still';
+      var hp0 = s.hp, peak = 0, seen = [], gaps = [], lived = [];
+      for (var f = 0; f < 3600; f++) {
+        s.hp = hp0; you.pct = 0; you.stocks = 3; you.dead = false;
+        step();
+        var units = summons.filter(function(m){ return m.type === 'mephoneunit' && m.life > 0; });
+        if (units.length > peak) peak = units.length;
+        units.forEach(function(m){
+          if (seen.indexOf(m) < 0) { seen.push(m); m.__born = f; m.__shots = 0; }
+          if ((m._shots || 0) > m.__shots) { if (m.__last != null) gaps.push(f - m.__last); m.__last = f; m.__shots = m._shots; }
+          lived.push(f - m.__born);
+        });
+      }
+      return JSON.stringify({ peak: peak, units: seen.length, minGap: gaps.length ? Math.min.apply(null, gaps) : null, maxLife: Math.max.apply(null, lived.concat([0])) });`));
+    expect(r.units, 'he deployed units in that minute').toBeGreaterThan(0);
+    expect(r.peak, 'units standing at once').toBeLessThanOrEqual(2);
+    expect(r.minGap, 'the quickest a unit fired twice').toBeGreaterThanOrEqual(90);
+    expect(r.maxLife, 'the longest a unit stayed, in frames').toBeLessThanOrEqual(420);
+  });
+});
