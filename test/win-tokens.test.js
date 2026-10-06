@@ -97,6 +97,13 @@ const settle = (w) => w.eval('new Promise(function(r){ setTimeout(r, 0); })');
 // The first day on or after `from` whose three dailies include quest `id`.
 const dayWith = (w, id, from) => w.eval(`(function(){ for (var d = 0; d < 400; d++){ var t = ${from} + d*${ONE_DAY};
   if (questsFor('daily', new Date(t)).some(function(q){ return q.id === ${JSON.stringify(id)}; })) return t; } return null; })()`);
+// Only the quest under test on the day's board. The quests are picked from the date and DAY follows the real calendar, so the day dayWith
+// finds can also hold a quest that the same plain match ends finish: on 2026-10-12 it was "Win a match without losing a stock" (18), which
+// every won matchEnd completes, and the wallet counted both. A test of one quest paying once takes the day's other two dailies off its
+// board (each test boots its own page, so nothing carries over).
+const onlyQuest = (w, id) => w.eval(`(function(){ if (!window.__questsFor) window.__questsFor = questsFor;
+  questsFor = function(kind, t){ var r = window.__questsFor(kind, t); return kind === 'daily' ? r.filter(function(q){ return q.id === ${JSON.stringify(id)}; }) : r; };
+  return true; })()`);
 // One ordinary match's end, as checkWin reaches it: you on team 0 against one foe, `won` deciding who took it.
 const matchEnd = (w, won = true, setup = '') => w.eval(`(function(){ ${setup};
   var A = makeFighter(ROSTER.find(function(r){ return r.name==='Firey'; }), 300, 300, 0), B = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 500, 300, 1);
@@ -293,7 +300,7 @@ describe('quests', () => {
     // the tokens land inside the count that finished the quest, and a quest never looked at is paid all the same.
     const w = await ready();
     const D = dayWith(w, 'd_play3', DAY);
-    w.eval(`SHOP_CLOCK = ${D}`);
+    w.eval(`SHOP_CLOCK = ${D}`); onlyQuest(w, 'd_play3');
     expect(w.eval('typeof claimQuest'), 'no claim step').toBe('undefined');
     const row = () => w.eval(`questRows('daily').filter(function(r){ return r.quest.id==='d_play3'; })[0]`);
     matchEnd(w); matchEnd(w);
@@ -309,7 +316,7 @@ describe('quests', () => {
     expect(wk, 'the week counted the same matches').not.toBe('{}');
     // The next day that has it again: fresh, and paid once more when finished.
     const D2 = dayWith(w, 'd_play3', D + ONE_DAY);
-    w.eval(`SHOP_CLOCK = ${D2}`);
+    w.eval(`SHOP_CLOCK = ${D2}`); onlyQuest(w, 'd_play3');
     expect(row()).toMatchObject({ prog: 0, done: false, paid: false });
     matchEnd(w); matchEnd(w);
     expect(w.eval('walletBalance()')).toBe(9);
@@ -325,7 +332,7 @@ describe('quests', () => {
   it('two tabs finishing the same quest pay it once, through the real save path', async () => {
     const w = await ready();
     const D = dayWith(w, 'd_play3', DAY);
-    w.eval(`SHOP_CLOCK = ${D}`);
+    w.eval(`SHOP_CLOCK = ${D}`); onlyQuest(w, 'd_play3');
     matchEnd(w); matchEnd(w);
     await w.eval('saveProfile()');
     // The other tab, loaded from this save two matches in, plays the third itself: paid there (+9, on the ledger), saved.
