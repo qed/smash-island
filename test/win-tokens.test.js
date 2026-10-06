@@ -921,9 +921,10 @@ describe('the skins', () => {
       out.worn = [wornCos('skin', 'Pin'), wornCos('skin', 'Bubble')];
       // a code opens a Vault fighter: then that fighter's skin is in the Store, and no other Vault fighter's
       out.total = cosOfKind('skin').length; out.vault = vault.map(function(c){ return c.fighter; });
-      out.opened = [];
-      vault.forEach(function(c, i){
-        PROFILE.unlocked.push(c.fighter); go('store');
+      var who = []; vault.forEach(function(c){ if(who.indexOf(c.fighter) < 0) who.push(c.fighter); });
+      out.who = who; out.opened = [];
+      who.forEach(function(name){
+        PROFILE.unlocked.push(name); go('store');
         out.opened.push(vault.map(function(d){ return !!cell(d.id); }));
       });
       window.Image = OI;
@@ -938,7 +939,8 @@ describe('the skins', () => {
     expect(r.secret, 'the Vault fighters\' skins are not in the Store while those fighters are locked').toEqual(r.vault.map(() => false));
     expect(r.text.every((i) => i === -1), 'and the Store shows neither their skins\' names nor a "for" line naming them').toBe(true);
     expect(r.worn).toEqual(['sk_pin_robot', null]);
-    r.opened.forEach((row, i) => expect(row, `${r.vault[i]} opened: that skin appears, and the Vault fighters still to open do not`).toEqual(r.vault.map((_, j) => j <= i)));
+    expect(r.who.length, 'five Vault fighters have skins').toBeGreaterThanOrEqual(3);
+    r.opened.forEach((row, i) => expect(row, `${r.who[i]} opened: its skins appear, and the Vault fighters still to open do not`).toEqual(r.vault.map((name) => r.who.indexOf(name) <= i)));
   }, 60000);
 
   it('are offered in the Wardrobe to the fighter they belong to, among their own', async () => {
