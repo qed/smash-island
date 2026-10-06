@@ -22,11 +22,12 @@
 //      a named-foe delta, the "counter", which is then tested against that foe alone).
 //   2. A pool of opponents across the seven AI classes (the roster's `arch` through aiClass), each with ITS current playbook (none = today's
 //      bot), all at Hard. For each pair i: an opponent, a seed and a side, and F's CHAMPION and every candidate play that same match.
-//   3. A candidate is kept only if it wins clearly more: a paired sign test on the discordant pairs (candidate won where the champion lost,
-//      b, against the reverse, c): z = (b - c) / sqrt(b + c). The test looks three times (32, 64, 96 pairs): it drops a candidate early when
-//      it is not ahead, accepts early at z >= 2.6, and at the last look needs z >= 2.0 + 0.35 ln K and a net of 6 wins. Measured on coin-flip
-//      pairs (test/bot-playbooks.test.js): a change that does nothing is kept 1.3% of the time (K = 3), one that takes the win rate from 50% to
-//      65% about 40%, to 70% about 65%, to 75% about 88%. Smaller true gains are rarely kept, which is what "clearly more" costs.
+//   3. A candidate is kept when it is NET 7 WINS AHEAD on the discordant pairs (b, the pairs it won where the champion lost, minus c, the
+//      reverse), at any of three looks (32, 64, 96 pairs); one that is not ahead is dropped early (z = (b - c)/sqrt(b + c) under zDrop), and
+//      the best of the kept candidates becomes the champion. The owner, 2026-10-06, on the margins 17-7, 16-9 and 13-6: "that is a clear
+//      margin. in theory, when 2 bots go against each other, they will do the same inputs, right? so a difference of 10(for cabby), and
+//      7(coiny and candle), is enough". (It was a z-test, z >= 2.0 + 0.35 ln K and a net of 6, which kept a do-nothing change 1.3% of the
+//      time and those three never.) A change kept on luck is found out by step 4's 15-point rule.
 //   4. A new champion, and then every five generations, plays today's bot (F's own legacy self, Hard, sides alternating; 24 matches a time):
 //      the running win rate of the CURRENT champion is `wr` (of `wrN` matches). A champion 15 points under the best one it has had (at 48+
 //      matches) is put back to that best, which is how a change that was kept on noise is found out.
@@ -246,11 +247,10 @@ export function mutate(rng, champ, ctx) {
 }
 
 // ---- the paired test (see the header) ----
-export const TEST = { looks: [32, 64, 96], zEarly: 2.6, zAccept: 2.0, minNet: 6, zDrop: [0.3, 1.0] };
+export const TEST = { looks: [32, 64, 96], minNet: 7, zDrop: [0.3, 1.0] };   // minNet: "a difference of ... 7 ... is enough" (the owner, 2026-10-06)
 export function lookDecision(b, c, look, looks, cfg = TEST, k = 1) {
   const d = b - c, z = (b + c) ? d / Math.sqrt(b + c) : 0, last = look === looks;
-  const zAcc = cfg.zAccept + 0.35 * Math.log(Math.max(1, k));
-  if (d >= cfg.minNet && z >= (last ? zAcc : cfg.zEarly)) return { z, verdict: 'accept' };
+  if (d >= cfg.minNet) return { z, verdict: 'accept' };   // net minNet ahead, at any look ("is enough", the owner); k no longer raises the bar
   if (last) return { z, verdict: 'reject' };
   return { z, verdict: z < cfg.zDrop[Math.min(look - 1, cfg.zDrop.length - 1)] ? 'reject' : 'continue' };
 }
@@ -461,7 +461,7 @@ export async function run(opts) {
     bench: num(opts.bench, 24), benchEvery: num(opts['bench-every'], 5), counters: !opts['no-counters'], test,
   };
   if (opts.minnet !== undefined) test.minNet = num(opts.minnet);
-  if (opts['z-accept'] !== undefined) test.zAccept = num(opts['z-accept']);
+  if (opts['min-net'] !== undefined) test.minNet = num(opts['min-net']);
   const target = opts.target || INDEX_HTML;
   log(`${resumed ? 'resuming' : 'starting'} ${dir}: ${wanted.length} fighters, ${workers} workers, ${lanes} lanes, ${cfg.cands} candidates a generation, looks at ${cfg.looks.join('/')} pairs${opts.embed ? ', embedding into ' + target : ''}`);
   // A run of days should not make the machine it runs on feel slow: below normal priority unless asked otherwise (worker threads share it).
