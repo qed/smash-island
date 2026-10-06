@@ -666,6 +666,8 @@ describe('the skins', () => {
     'sk_gel_sweater', 'sk_gel_dyed', 'sk_nickel_triangle', 'sk_nickel_pink', 'sk_nickel_square', 'sk_puff_frozen',
     'sk_puff_think', 'sk_ruby_metal', 'sk_ruby_snow', 'sk_ruby_bandaged', 'sk_yf_metal', 'sk_yf_frozen',
     'sk_bb_zombie', 'sk_bb_metal', 'sk_bball_metal', 'sk_bell_snow', 'sk_bell_twinkle', 'sk_fanny_jet',
+    'sk_money_wet', 'sk_naily_happy', 'sk_pillow_charred', 'sk_remote_acid', 'sk_remote_siren', 'sk_rose_frozen',
+    'sk_rose_flame', 'sk_saw_sizzle', 'sk_saw_nohandle', 'sk_taco_fishless', 'sk_taco_evil',
   ]);
   // SKIN_ORDER end
   // Playable fighters with no skin, and why (name -> reason). The prize fighters of Steve Cobs's fight are not in ROSTER until he is beaten, so
@@ -679,13 +681,6 @@ describe('the skins', () => {
     'Lollipop': 'not yet',
     'Loser': 'not yet',
     'Marker': 'not yet',
-    'Money': 'not yet',
-    'Naily': 'not yet',
-    'Pillow': 'not yet',
-    'Remote': 'not yet',
-    'Rose': 'not yet',
-    'Saw': 'not yet',
-    'Taco': 'not yet',
     'Toothpaste': 'not yet',
     'Dora': 'not yet',
     'David': 'not yet',

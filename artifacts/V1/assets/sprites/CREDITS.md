@@ -824,6 +824,17 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | Snowy Bell | Bell | `skins/snowy-bell.png` | 145×200 | `File:SnowBell.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/f2/SnowBell.png/revision/latest?cb=20250520192230 |
 | Twinkle Bell | Bell | `skins/twinkle-bell.png` | 135×200 | `File:TwinkleBell.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/11/TwinkleBell.png/revision/latest?cb=20250610234023 |
 | Jetpack Fanny | Fanny | `skins/jetpack-fanny.png` | 173×200 | `File:Fanny Jetpack.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/68/Fanny_Jetpack.png/revision/latest?cb=20241115055313 |
+| Soaked Money | Money | `skins/soaked-money.png` | 185×200 | `File:Money wet.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/94/Money_wet.png/revision/latest?cb=20260227000422 |
+| Happy Naily | Naily | `skins/happy-naily.png` | 349×200 | `File:Nailyhappy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c5/Nailyhappy.png/revision/latest?cb=20231014221639 |
+| Charred Pillow | Pillow | `skins/charred-pillow.png` | 153×200 | `File:Charred Pillow Pose.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/43/Charred_Pillow_Pose.png/revision/latest?cb=20230713193406 |
+| Acid Remote | Remote | `skins/acid-remote.png` | 239×200 | `File:AcidRemote.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/e/e1/AcidRemote.png/revision/latest?cb=20250701010500 |
+| Siren Remote | Remote | `skins/siren-remote.png` | 165×200 | `File:Remote controlled.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/98/Remote_controlled.png/revision/latest?cb=20210408062010 |
+| Frozen Rose | Rose | `skins/frozen-rose.png` | 154×200 | `File:Frozen rose.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/Frozen_rose.png/revision/latest?cb=20260208081146 |
+| Flamethrower Rose | Rose | `skins/flamethrower-rose.png` | 163×200 | `File:Rose with a cool flamethrower.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/f/ff/Rose_with_a_cool_flamethrower.png/revision/latest?cb=20260122175032 |
+| Sizzling Saw | Saw | `skins/sizzling-saw.png` | 163×200 | `File:Saw sizzlin.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/81/Saw_sizzlin.png/revision/latest?cb=20221214222443 |
+| Handleless Saw | Saw | `skins/handleless-saw.png` | 156×200 | `File:Saw how are we going to win with such a disadvantage.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/58/Saw_how_are_we_going_to_win_with_such_a_disadvantage.png/revision/latest?cb=20180908230400 |
+| Fishless Taco | Taco | `skins/fishless-taco.png` | 179×200 | `File:Taco we were recovered.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/dc/Taco_we_were_recovered.png/revision/latest?cb=20220103052149 |
+| Evil Taco | Taco | `skins/evil-taco.png` | 227×200 | `File:Evil taco.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Evil_taco.png/revision/latest?cb=20200825150609 |
 
 ### Inanimate Insanity wiki skins
 
