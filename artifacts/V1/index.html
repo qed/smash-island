@@ -36199,6 +36199,11 @@ function puffPose(f){
 function puffPoseSprite(file, imgW, flip){
   return Object.assign(renderSprite(file, { imgH: 2.6, imgW: imgW, flip: !!flip }), { float: true, floatLift: 8, floatAmp: 5 });
 }
+// Two windows for building an attack beat out of, over the whole swing (u: 0 on the frame it fires -> 1 as it ends; atkU). Batch 7's beats are sums of
+// these, so each one is zero at both ends of the swing: it starts neutral and ends neutral, and nothing pops when the swing's timer runs out.
+//   animBump  a half-sine between a and b (0 outside), peaking at 1 in the middle      animHold  up over a..b, held to c, down over c..d
+function animBump(u, a, b){ return (u > a && u < b) ? Math.sin((u - a)/(b - a)*Math.PI) : 0; }
+function animHold(u, a, b, c, d){ return (u <= a || u >= d) ? 0 : (u < b ? (u - a)/(b - a) : (u <= c ? 1 : (d - u)/(d - c))); }
 const FIGHTER_ANIM = {
   // ============================================================
   //  BATCH 2 — see the "Batch 2 — animation specs" table in docs/animation-move-design.md
@@ -37585,6 +37590,15 @@ const FIGHTER_ANIM = {
   // and slumped as a Has-Been. Render-only: every pass reads the sim and writes nothing back. (Leading commas: the row
   // above these slots ends without one.)
   , Tissues: {
+    // Batch 7: very sickly ("the condiShAWn"), and his sneezes are the move. A sickly sway at rest; the swing is the sneeze: head right back to draw the
+    // breath, ACHOO, and the sag after.
+    idle: 0.8, squash: 1.3,
+    deform(f, ctx, R){
+      const u = atkU(f), sk = Math.sin(hazardT*0.06 + f.idx*1.7);   // the sickly sway
+      let inh = 0, ach = 0, sag = 0, dz = 0;
+      if(u >= 0){ inh = animBump(u, 0, 0.4); ach = animBump(u, 0.38, 0.62); sag = animBump(u, 0.55, 0.95); dz = Math.sin(u*Math.PI*7)*0.05*sag; }
+      deformAboutFeet(ctx, R, sk*0.03 + f.face*(-0.22*inh + 0.34*ach) + dz, 1 - 0.10*ach, 1 - sk*0.01 + 0.08*inh - 0.07*sag);
+    },
     poses: { nap: renderSprite("tissues-nap.png") },   // TissuesSittingIdle.png, 236x200, facing 0.05 -- the plan's sleep stand-in
     // A pose render in place of the fighter's own, fitted exactly as drawSpriteBody fits one (feet on R+12, mirrored to
     // the facing, the white hit flash on top). No image yet, or a net client (it gets no _windup): false, the render stands.
@@ -37612,6 +37626,15 @@ const FIGHTER_ANIM = {
     }
   }
   , "Yin-Yang": {
+    // Batch 7: two in one body, pulling opposite ways. Yin leans back and Yang leans in, and the two beats do not agree ("Yin is good-hearted ... Yang
+    // despises participation").
+    idle: 1, squash: 0.9,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const yin = Math.sin(u*Math.PI*2)*animBump(u, 0, 1), yang = Math.sin(u*Math.PI*3)*animBump(u, 0, 0.95);
+      deformAboutFeet(ctx, R, f.face*(-0.12*yin + 0.14*yang), 1 + 0.05*Math.abs(yang), 1 - 0.04*Math.abs(yin));
+    },
     // Yang III.png is drawn facing left, but the facing audit reads all that black as ink, so it measured 0.005: flip set
     // by eye. Yangyang.png faces front (the audit's -0.106 is the black half again), so it is left unflipped.
     poses: { yang: renderSprite("yin-yang-yang.png", { flip:true }), mindful: renderSprite("yin-yang-mindful.png") },
@@ -37621,8 +37644,12 @@ const FIGHTER_ANIM = {
     }
   }
   , Starfruit: {
+    // Batch 7: the lead singer, "fame and recognition": the swing is a pose, not a punch. Chest up and arms out, with a half-twirl.
+    idle: 1, squash: 1,
     // A HAS-BEEN (Cob Mentality): his one hit is spent, so he greys over and slumps until Recycle gives it back.
     deform(f, ctx, R){
+      const u = atkU(f);
+      if(u >= 0){ const pose = animBump(u, 0.1, 0.8); deformAboutFeet(ctx, R, f.face*0.14*Math.sin(Math.min(1, u/0.9)*Math.PI*2), 1 + 0.15*pose, 1 + 0.05*pose); }
       if(!f._hasBeen) return;
       deformAboutFeet(ctx, R, -0.08*(f.face||1), 1.04, 0.9);
       try { ctx.filter = "grayscale(0.8) brightness(0.92)"; } catch(e){}   // drawSpriteBody's own save/restore ends it
@@ -37632,6 +37659,15 @@ const FIGHTER_ANIM = {
   //      read the sim and write nothing back. (A leading comma: Puffball's entry above these slots ends without one.)
   , Tapey: {
     squash: 0.6,   // a plastic cassette: it gives a little, not like jelly
+    // Batch 7: observant and exact ("meticulous"), and a tape recorder: the swing is REWIND (a whirring shake as she winds back), PLAY (a steady push) and
+    // EJECT (the click of the button at the end).
+    idle: 0.85,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const rew = animBump(u, 0, 0.3), play = animBump(u, 0.28, 0.72), eject = animBump(u, 0.7, 0.92);
+      deformAboutFeet(ctx, R, f.face*(-0.10*rew + 0.20*play) + Math.sin(u*Math.PI*60)*0.04*rew, 1 + 0.03*play, 1 - 0.05*eject);
+    },
     over(f, ctx){
       if(!f._rec) return;
       const R = f.r, a0 = ctx.globalAlpha, k = 0.5 + 0.5*Math.sin(hazardT*0.3);
@@ -37713,6 +37749,293 @@ const FIGHTER_ANIM = {
           ctx.save(); ctx.translate(Math.cos(a)*rr, Math.sin(a)*rr); ctx.rotate(a*3 + hazardT*0.2); ctx.fillStyle = CHEER_CONFETTI[i%CHEER_CONFETTI.length]; ctx.fillRect(-2.5, -1.5, 5, 3); ctx.restore(); }
         ctx.globalAlpha = a0;
       }
+    }
+  },
+  // ============================================================
+  //  BATCH 7 -- the thirty-two that had no motion of their own (see the "Batch 7" table in docs/animation-move-design.md)
+  // ============================================================
+  // Same contract as batches 2-6: `deform`, never `body`, numbers only. Six of the thirty-two already had an entry (Cheesy, Soap, Tissues, Yin-Yang,
+  // Starfruit and Tapey carry a prop, a pose or a status), so their trait and their beat are written into those entries, where they are.
+
+  // ---- Balloon (II) -- helium, and a tantrum. "I demand a prize! Now!" (A Lemony Lesson): he stamps his foot twice before he swings. ----
+  Balloon: {
+    idle: 1, squash: 1.5,
+    deform(f, ctx, R){
+      const u = atkU(f), h = Math.sin(hazardT*0.07 + f.idx*1.9);   // full of helium: never quite still
+      let st = 0, pf = 0;
+      if(u >= 0){ st = animBump(u, 0, 0.15) + animBump(u, 0.15, 0.3); pf = animBump(u, 0.28, 0.8); }   // two stamps, then the demand itself
+      deformAboutFeet(ctx, R, h*0.025 + f.face*0.20*pf, 1 - h*0.025 + 0.05*st + 0.10*pf, 1 + h*0.035 - 0.14*st + 0.06*pf);
+    }
+  },
+  // ---- Bomb (II) -- iron, with a stutter ("a speech disorder, causing him to stutter frequently"): the bump comes twice, stop-start. ----
+  Bomb: {
+    idle: 0.55, squash: 0.55,
+    deform(f, ctx, R){
+      const tw = Math.sin(hazardT*2.3 + f.idx*2.7)*0.012, u = atkU(f);   // a faint fizz of nerves at rest
+      let a = 0, b = 0;
+      if(u >= 0){ a = animBump(u, 0, 0.35); b = animBump(u, 0.4, 0.78); }   // out, a hitch, out again
+      deformAboutFeet(ctx, R, f.face*(0.15*a + 0.21*b) + tw, 1 + 0.06*a + 0.10*b, 1 - 0.05*a - 0.08*b);
+    }
+  },
+  // ---- Knife -- blunt and mean ("a bully": he shoved Paper off the platform). He does not wind up, he cocks the blade and flicks it,
+  //      and holds the follow-through a beat, smirking. ----
+  Knife: {
+    idle: 0.8, squash: 0.4,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const cock = animBump(u, 0, 0.3), flick = animBump(u, 0.22, 0.62), hang = animBump(u, 0.55, 0.95);
+      deformAboutFeet(ctx, R, f.face*(-0.20*cock + 0.42*flick + 0.10*hang), 1 - 0.08*flick, 1 + 0.12*flick);   // long and thin through the cut
+    }
+  },
+  // ---- Lightbulb -- "erratic and unpredictable", goofy: a leader one moment and random the next. A lazy sway and the odd flicker at rest;
+  //      her swing wobbles side to side before it goes anywhere. ----
+  Lightbulb: {
+    deform(f, ctx, R){
+      const u = atkU(f), sw = Math.sin(hazardT*0.05 + f.idx*2.1)*0.035, fl = ((hazardT + f.idx*29) % 173) < 4 ? 0.07 : 0;   // the flicker: a quick pop, every few seconds
+      let wob = 0, p = 0;
+      if(u >= 0){ wob = Math.sin(u*Math.PI*5)*(1 - u)*0.22; p = animBump(u, 0, 0.92); }
+      deformAboutFeet(ctx, R, wob + f.face*0.20*p + sw, 1 + fl*0.5 + 0.06*p, 1 + fl - 0.04*p);
+    }
+  },
+  // ---- Paintbrush (they/them) -- "prone to angry outbursts", and "their bristles react to their emotions": the swing is reared back and brought
+  //      down hard, and the more of their fury is up, the further it goes and the more they shake holding it in. ----
+  Paintbrush: {
+    idle: 0.85, squash: 0.7,
+    deform(f, ctx, R){
+      const fury = Math.min(1, (f._fury||0)/100), big = 1 + 0.6*fury, sh = Math.sin(hazardT*2.1 + f.idx*2.9)*0.03*fury, u = atkU(f);
+      if(u < 0){ if(sh) deformAboutFeet(ctx, R, sh, 1, 1); return; }
+      const rear = animBump(u, 0, 0.3), down = animBump(u, 0.25, 0.75);
+      deformAboutFeet(ctx, R, f.face*big*(-0.24*rear + 0.42*down) + sh, 1, 1 + 0.08*rear - 0.10*down);
+    }
+  },
+  // ---- Taco (II) -- the dim act: "completely oblivious ... motionless with a sideways smile", and under it a plan. Nothing moves until it does, and
+  //      then it is quick: no gather at all, the kick lands in the first third and she holds it, still smiling. ----
+  "Taco (II)": {
+    idle: 0.25, squash: 0.75,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const k = animHold(u, 0, 0.28, 0.58, 0.93);
+      deformAboutFeet(ctx, R, f.face*0.30*k, 1 + 0.10*k, 1 - 0.07*k);
+    }
+  },
+  // ---- Bow -- a valley girl and a chair saleswoman ("like", "totally"): everything is a pose. A sassy sway at rest; the chair swing is a flounce,
+  //      back first and then right round. ----
+  Bow: {
+    deform(f, ctx, R){
+      const u = atkU(f), sw = Math.sin(hazardT*0.09 + f.idx*1.3);   // hip out, hip back
+      let fl = 0, p = 0;
+      if(u >= 0){ fl = -Math.sin(Math.min(1, u/0.9)*Math.PI*2); p = animBump(u, 0, 0.9); }
+      deformAboutFeet(ctx, R, sw*0.04 + f.face*0.30*fl, 1 - sw*0.02 + 0.12*p - 0.10*Math.abs(fl), 1 + sw*0.02 + 0.04*p);
+    }
+  },
+  // ---- Marshmallow -- "puny and inadequate", soft all through. The mop she beat Apple with is nearly her size, so the swing is the mop's: wide and
+  //      slow, and it carries her. The scream rattles her on the way out. ----
+  Marshmallow: {
+    squash: 1.8,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const arc = animBump(u, 0, 0.95), sway = -0.28*animBump(u, 0, 0.35) + 0.30*animBump(u, 0.3, 0.95);
+      const shiver = u > 0.3 ? Math.sin(u*40)*0.03*(1 - u)*arc : 0;
+      deformAboutFeet(ctx, R, f.face*sway + shiver, 1 + 0.10*arc, 1 - 0.18*arc);
+    }
+  },
+  // ---- Apple -- "naive and childish", "offended easily, a bit of a temper": a petulant slap, a little hop of outrage, and then the sulk. ----
+  Apple: {
+    idle: 0.9, squash: 0.9,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const slap = animBump(u, 0.1, 0.5), hop = animBump(u, 0.05, 0.45), sulk = animBump(u, 0.5, 0.95);
+      deformAboutFeet(ctx, R, f.face*(0.34*slap - 0.07*sulk), 1, 1 + 0.07*hop - 0.07*sulk);
+    }
+  },
+  // ---- Baseball -- "the largest contestant", all legs ("huge amounts of strength ... particularly those involving legs") and self-conscious about it:
+  //      the kick comes up out of a deep crouch, and the weight takes its time coming back. ----
+  Baseball: {
+    idle: 0.45, squash: 0.5,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const crouch = animBump(u, 0, 0.35), drive = animBump(u, 0.3, 0.62), settle = animBump(u, 0.55, 0.95);
+      deformAboutFeet(ctx, R, f.face*(-0.10*crouch + 0.28*drive), 1 + 0.08*crouch + 0.03*settle, 1 - 0.14*crouch + 0.06*drive - 0.04*settle);
+    }
+  },
+  // ---- Pickle -- a boxer (the boxing glove), laid-back and a little sweet: he bobs and weaves, and the one-two is loose, not sharp. ----
+  Pickle: {
+    idle: 0.7,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const bob = Math.sin(u*Math.PI*4)*animBump(u, 0, 1), jab = animBump(u, 0.2, 0.4) + animBump(u, 0.45, 0.65);
+      deformAboutFeet(ctx, R, f.face*(0.12*bob + 0.20*jab), 1 + 0.03*jab, 1 + 0.04*bob);
+    }
+  },
+  // ---- Nickel (II) -- sarcasm "as an art, and himself an artist": a smug lean back to set the line up, the zinger flicked out, and the shrug that says
+  //      it was nothing. ----
+  "Nickel (II)": {
+    idle: 0.5, squash: 0.6,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const smug = animBump(u, 0, 0.35), zing = animBump(u, 0.3, 0.55), shrug = animBump(u, 0.55, 0.95);
+      deformAboutFeet(ctx, R, f.face*(-0.14*smug + 0.26*zing), 1 + 0.02*zing, 1 + 0.04*smug - 0.06*shrug);
+    }
+  },
+  // ---- Paper -- a sheet: it folds forward on the gather and flaps back up through the cut ("a paper cut just in front of him"), shearing as it goes.
+  //      Friendly, and easy to push around: nothing in it commits. ----
+  Paper: {
+    squash: 1.6,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const fold = animBump(u, 0, 0.4), flap = animBump(u, 0.35, 0.85), feet = R + 12;
+      ctx.translate(0, feet); ctx.transform(1, 0, f.face*(0.20*flap - 0.12*fold), 1, 0, 0); ctx.translate(0, -feet);
+      deformAboutFeet(ctx, R, f.face*0.10*flap, 1 - 0.08*flap, 1 - 0.20*fold + 0.06*flap);
+    }
+  },
+  // ---- Microphone -- "her voice getting deafeningly loud": a breath in, then the shout, the whole body ringing like feedback. ----
+  Microphone: {
+    squash: 0.8,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const inh = animBump(u, 0, 0.3), yell = animBump(u, 0.28, 0.72), ring = Math.sin(u*90)*0.035*yell;
+      deformAboutFeet(ctx, R, f.face*(-0.12*inh + 0.22*yell) + ring, 1 + 0.03*yell, 1 + 0.07*inh - 0.04*yell);
+    }
+  },
+  // ---- Salt -- vapid, a little vain, and half of a pair ("Pepper does the same a beat later"): she sways, bored, beside Pepper, and a slap is a
+  //      toss of the head with a rocking on after it. ----
+  Salt: {
+    idle: 0.9, squash: 0.9,
+    deform(f, ctx, R){
+      const u = atkU(f), sw = Math.sin(hazardT*0.06 + f.idx*1.1)*0.03;
+      let toss = 0, slap = 0;
+      if(u >= 0){ toss = -Math.sin(u*Math.PI*3)*(1 - u); slap = animBump(u, 0.25, 0.6); }
+      deformAboutFeet(ctx, R, sw + f.face*(0.20*toss + 0.14*slap), 1 + 0.03*slap, 1 - 0.03*slap);
+    }
+  },
+  // ---- Test Tube -- a scientist: she works it out first. A long, still tilt while she measures, and then it is exact: one strike, no overshoot
+  //      ("an extreme form of atychiphobia (fear of being wrong)"). ----
+  "Test Tube": {
+    idle: 0.7, squash: 0.45,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const calc = animHold(u, 0, 0.1, 0.45, 0.5), strike = animBump(u, 0.48, 0.78);
+      deformAboutFeet(ctx, R, f.face*(-0.10*calc + 0.26*strike), 1, 1 + 0.03*calc - 0.03*strike);
+    }
+  },
+  // ---- Dough -- "enjoys mimicking everything Bow does mere seconds after she does it" (and Shameless Knockoff comes a beat late): the whole beat
+  //      arrives late, and then it stretches like dough. ----
+  Dough: {
+    idle: 0.6, squash: 1.9,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const v = u < 0.22 ? 0 : (u - 0.22)/0.78;   // a beat behind
+      const wind = animBump(v, 0, 0.3), go = animBump(v, 0.25, 0.8);
+      deformAboutFeet(ctx, R, f.face*(-0.12*wind + 0.26*go), 1 - 0.12*go, 1 + 0.30*go);
+    }
+  },
+  // ---- Fan -- the show's biggest fan ("talkative, awkward"): a folding fan, shut and shaking on the gather, snapped open on the hit. ----
+  Fan: {
+    idle: 0.8, squash: 0.6,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const shut = animBump(u, 0, 0.3), open = animBump(u, 0.28, 0.7), nerves = Math.sin(u*70)*0.025*shut;
+      deformAboutFeet(ctx, R, f.face*0.14*open + nerves, 1 - 0.14*shut + 0.22*open, 1 + 0.03*shut);
+    }
+  },
+  // ---- Blueberry -- "nothing matters": no confidence, no energy. A slump at rest ("pessimistic, apathetic, and lazy"); the punch is the least that
+  //      will do, late, and it takes him a long time to come back up. ----
+  Blueberry: {
+    idle: 0.3, squash: 0.9,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0){ deformAboutFeet(ctx, R, -f.face*0.035, 1.01, 0.97); return; }
+      const lazy = animBump(u, 0.3, 0.95), droop = animBump(u, 0, 1);
+      deformAboutFeet(ctx, R, f.face*(0.12*lazy - 0.035*(1 - droop)), 1.01, 0.97 - 0.03*droop);
+    }
+  },
+  // ---- Cherries (they/them) -- two bodies, one mind: one cherry does it and the other pantomimes it. A seesaw at rest (the pair bob out of step) and a
+  //      swing that is two beats, one cherry's and then the other's. ----
+  Cherries: {
+    idle: 1, squash: 1.2,
+    deform(f, ctx, R){
+      const u = atkU(f), b = Math.sin(hazardT*0.1 + f.idx);
+      let a = 0, c = 0;
+      if(u >= 0){ a = animBump(u, 0.05, 0.5); c = animBump(u, 0.45, 0.95); }
+      deformAboutFeet(ctx, R, b*0.03 + f.face*(0.18*a - 0.10*c), 1 + b*0.025 + 0.07*a - 0.05*c, 1 - b*0.025 - 0.06*a + 0.04*c);
+    }
+  },
+  // ---- Clover -- lucky, bubbly and easily distracted: a breeze seems to follow her. A sway at rest, and the punch is a little twirl with a skip in it. ----
+  Clover: {
+    deform(f, ctx, R){
+      const u = atkU(f), b = Math.sin(hazardT*0.06 + f.idx*2.3);   // the breeze
+      let tw = 0, lift = 0, kick = 0;
+      if(u >= 0){ tw = Math.sin(Math.min(1, u/0.9)*Math.PI*2); lift = animBump(u, 0.05, 0.7); kick = animBump(u, 0.25, 0.65); }
+      deformAboutFeet(ctx, R, b*0.04 + f.face*(0.20*tw + 0.12*kick), 1, 1 + b*0.015 + 0.12*lift);   // up on her toes for it
+    }
+  },
+  // ---- Jack -- "callous and blunt", cracking his knuckles at whoever is in front of him: two sharp jerks on the gather, then a stiff straight punch.
+  //      A playing card does not give. ----
+  Jack: {
+    idle: 0.5, squash: 0.45,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const crack = ((u > 0.05 && u < 0.12) || (u > 0.17 && u < 0.24)) ? 1 : 0, punch = animBump(u, 0.3, 0.62);
+      deformAboutFeet(ctx, R, f.face*(-0.07*crack + 0.22*punch), 1 + 0.05*punch, 1 - 0.02*crack - 0.03*punch);
+    }
+  },
+  // ---- Magnet -- "a very magnetic presence": she draws in, and then pushes off. Narrower and leaning to you on the gather, wide and shoved out
+  //      through the punch, the way two like poles part. ----
+  Magnet: {
+    squash: 0.8,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const pull = animBump(u, 0, 0.3), push = animBump(u, 0.28, 0.7);
+      deformAboutFeet(ctx, R, f.face*(0.10*pull + 0.26*push), 1 - 0.08*pull + 0.18*push, 1 + 0.02*pull - 0.06*push);
+    }
+  },
+  // ---- MeTag (they/them) -- a guard with "no voice or facial expressions", loyal and exact. They do not lean, they PING: the tag swells for an
+  //      instant, once, with a hard snap of the head. ----
+  MeTag: {
+    idle: 0.3, squash: 0.5,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const ping = animBump(u, 0.2, 0.5), snap = (u > 0.3 && u < 0.6) ? 1 : 0;
+      deformAboutFeet(ctx, R, f.face*0.12*snap, 1 + 0.12*ping, 1 + 0.12*ping);
+    }
+  },
+  // ---- Poppy (they/them) -- a corn cob, all enthusiasm: a kernel in a pan. Down into a crouch, POP up with a twist, back down a little deflated;
+  //      a small pop now and then at rest. ----
+  Poppy: {
+    squash: 1.3,
+    deform(f, ctx, R){
+      const u = atkU(f), pop = ((hazardT + f.idx*41) % 151) < 5 ? 0.06 : 0;
+      let down = 0, up = 0, land = 0, tw = 0;
+      if(u >= 0){ down = animBump(u, 0, 0.25); up = animBump(u, 0.2, 0.6); land = animBump(u, 0.55, 0.95); tw = Math.sin(u*Math.PI*2)*up; }
+      if(u < 0 && !pop) return;
+      deformAboutFeet(ctx, R, f.face*(0.20*tw + 0.04*up), 1 - pop*0.4 + 0.10*down - 0.10*up, 1 + pop - 0.16*down + 0.20*up - 0.06*land);
+    }
+  },
+  // ---- Silver Spoon -- "acts very refined and posh" and sees people as "beneath him": chin up at rest, and the swing is a scoop, nose up through the
+  //      gather, his weight dipping and lifting through the cut. ----
+  "Silver Spoon": {
+    idle: 0.6, squash: 0.5,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0){ deformAboutFeet(ctx, R, -f.face*0.025, 1, 1); return; }
+      const back = animBump(u, 0, 0.3), scoop = animBump(u, 0.28, 0.72);
+      deformAboutFeet(ctx, R, f.face*(-0.10*back + 0.30*scoop - 0.025*(1 - Math.min(1, back + scoop))), 1, 1 - 0.05*scoop);
+      ctx.translate(0, R*0.08*scoop);   // dips, and rises again
     }
   }
 };
@@ -38297,6 +38620,14 @@ const SPRITES = {
   // closes without a comma, so a row in its batch-3 slot would not parse without editing a line outside this group's
   // slots; their entries are registered here instead, as the render row is built, where FIGHTER_ANIM already exists.
   Cheesy: (FIGHTER_ANIM.Cheesy = {
+    // Batch 7: "Ha! Kick! Soccer! Pun!": a joke has a rhythm, so the swing is ba, dum, TSS (two little hits and then the crash).
+    idle: 1, squash: 1.1,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const hit = animBump(u, 0.12, 0.28) + animBump(u, 0.28, 0.44), tss = animBump(u, 0.5, 0.85);
+      deformAboutFeet(ctx, R, f.face*(0.12*hit + 0.30*tss), 1 + 0.04*hit + 0.10*tss, 1 - 0.05*hit + 0.04*tss);
+    },
     // his banked Knee Slaps as a shine on his leg, one twinkle a slap (the plan: "no text")
     over(f, ctx){ const n = f._kneeSlaps|0; if(!n) return;
       const a0 = ctx.globalAlpha, t = hazardT*0.2;
@@ -38310,6 +38641,14 @@ const SPRITES = {
   Dough: renderSprite("dough.png", { flip:true }),   // 184x200, official S4 art (File:Dough II S4 .png, his see-through ghost). "change 4": the banner render was a fan rebuild
   Fan: renderSprite("fan.png"),   // 174x200, facing -0.013
   Soap: (FIGHTER_ANIM.Soap = {
+    // Batch 7: a germophobe who will "scrub for hours": the swing is a scrub, the cloth going back and forth, quick and fussy.
+    idle: 1, squash: 1.2,
+    deform(f, ctx, R){
+      const u = atkU(f);
+      if(u < 0) return;
+      const sc = Math.sin(u*Math.PI*7)*animBump(u, 0.1, 0.9), lean = animBump(u, 0.1, 0.8);
+      deformAboutFeet(ctx, R, f.face*(0.10*lean + 0.06*sc), 1 + 0.05*sc, 1 - 0.02*lean);
+    },
     // the vacuum (cut from the S2E6 frame, owner Q1) while Clean Sweep draws them in, and her blue cloth on every swing
     over(f, ctx){
       if(f._sm && f._sm.pat === 'reel'){ const p = {x:f.face*(f.r + 16), y:f.r*0.4, vx:f.face, vy:0, r:10}, im = attackImage('soapvacuum');
