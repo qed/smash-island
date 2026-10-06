@@ -482,22 +482,25 @@ describe('the in-browser adaptation is bounded, persists, and is off in every me
 });
 
 // ---- the trainer: scripts/train-bots.mjs ----------------------------------------------------------------------------------
-describe('the trainer keeps a change only when it wins clearly more', () => {
-  it('is a paired sign test on the pairs where the two disagree, with three looks', () => {
+describe('the trainer keeps a change once it is net 7 wins ahead', () => {
+  // The owner, 2026-10-06, on 17-7, 16-9 and 13-6: "that is a clear margin. in theory, when 2 bots go against each other, they will do the
+  // same inputs, right? so a difference of 10(for cabby), and 7(coiny and candle), is enough". (It was a z-test that kept none of them.)
+  it('keeps a candidate net 7 ahead on the pairs where the two disagree, at any of three looks; drops one that is behind', () => {
     const at = (b, c, look, k = 1) => lookDecision(b, c, look, 3, TEST, k).verdict;
-    expect(at(30, 10, 3)).toBe('accept');           // 30 pairs the candidate won and the champion lost, 10 the other way
-    expect(at(20, 14, 3)).toBe('reject');           // ahead, but that is noise
-    expect(at(9, 3, 3)).toBe('reject');             // z of 1.7: not enough
-    expect(at(6, 0, 3)).toBe('accept');             // the smallest clear win: six more, z of 2.4
-    expect(at(5, 0, 3)).toBe('reject');             // under the net of six, however one-sided
-    expect(at(26, 6, 1)).toBe('accept');            // a runaway is kept at the first look
+    expect(TEST.minNet).toBe(7);
+    expect(at(17, 7, 3)).toBe('accept');            // Cabby's 17-7: net 10
+    expect(at(16, 9, 3)).toBe('accept');            // Candle's 16-9: net 7
+    expect(at(13, 6, 3)).toBe('accept');            // Coiny's 13-6: net 7
+    expect(at(7, 0, 3)).toBe('accept');             // the smallest kept: net 7
+    expect(at(6, 0, 3)).toBe('reject');             // net 6, however one-sided
+    expect(at(20, 14, 3)).toBe('reject');           // net 6 at the last look
+    expect(at(26, 6, 1)).toBe('accept');            // net 7 or more at the first look: kept then
     expect(at(10, 14, 1)).toBe('reject');           // behind at the first look: dropped
-    expect(at(13, 10, 1)).toBe('continue');         // level, so look again
-    expect(at(13, 3, 3, 1)).toBe('accept');         // z of 2.5 ...
-    expect(at(13, 3, 3, 8)).toBe('reject');         // ... is not enough against eight candidates at once (the bar rises with ln K)
+    expect(at(13, 10, 1)).toBe('continue');         // ahead by 3: look again
+    expect(at(13, 3, 3, 8)).toBe('accept');         // net 10 against eight candidates at once: the margin is the rule, not the count
   });
 
-  it('keeps a neutral change fewer than one time in twenty, and a clear improvement nearly always', () => {
+  it('keeps a neutral change about one time in seven (the 15-point rule finds those out), and a clear improvement nearly always', () => {
     const rng = mulberry32(99);
     const trial = (pWin) => {                       // discordant pairs: half of the pairs, each won by the candidate with probability pWin
       let b = 0, c = 0, n = 0;
@@ -510,7 +513,8 @@ describe('the trainer keeps a change only when it wins clearly more', () => {
       return false;
     };
     const rate = (p) => { let k = 0; for (let i = 0; i < 4000; i++) if (trial(p)) k++; return k / 4000; };
-    expect(rate(0.5)).toBeLessThan(0.05);
+    expect(rate(0.5)).toBeLessThan(0.16);            // 13.5% measured: the owner's trade for keeping 60%-win changes about half the time
+    expect(rate(0.6)).toBeGreaterThan(0.45);          // (under the old z-test, rarely)
     expect(rate(0.75)).toBeGreaterThan(0.9);
   });
 });
@@ -603,12 +607,15 @@ describe('the trainer learns when there is something to learn, and picks up wher
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }, 240000);
 
-  it('learns nothing from noise: when the games do not depend on the playbook, almost no change is kept', async () => {
+  it('follows noise only so far: when the games do not depend on the playbook, about one generation in three keeps a change', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'bot-noise-'));
     try {
       const st = fresh();
       await gens(st, 60, dir, fakePool(false));
-      expect(st.fighters.Firey.accepted).toBeLessThanOrEqual(5);              // about one candidate in eighty, against one in two for a rule that follows the coin
+      // "a difference of ... 7 ... is enough" (the owner, 2026-10-06): a neutral candidate is kept about one time in seven, so with three a
+      // generation about one generation in three keeps a change on noise (19 of 60 measured), where a rule that followed the coin would keep
+      // one nearly every generation. (Under the old z-test: 5 or fewer.)
+      expect(st.fighters.Firey.accepted).toBeLessThanOrEqual(24);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }, 240000);
 
