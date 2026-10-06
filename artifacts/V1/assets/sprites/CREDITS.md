@@ -782,6 +782,21 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | Bandaged Bomby | Bomby | `skins/bandaged-bomby.png` | 196×200 | `File:BMBO1.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c7/BMBO1.png/revision/latest?cb=20190704163912 |
 | Knight Match | Match | `skins/knight-match.png` | 102×200 | `File:MatchHelmet.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/MatchHelmet.png/revision/latest?cb=20240615092905 |
 | Chef Grassy | Grassy | `skins/chef-grassy.png` | 134×200 | `File:Chef Grassy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d6/Chef_Grassy.png/revision/latest?cb=20260629095836 |
+| Witch Leafy | Leafy | `skins/witch-leafy.png` | 154×200 | `File:WitchLeafy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/72/WitchLeafy.png/revision/latest?cb=20241112172729 |
+| Yoyle Metal Leafy | Leafy | `skins/yoyle-metal-leafy.png` | 120×200 | `File:Metallicleafy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/2c/Metallicleafy.png/revision/latest?cb=20190410173553 |
+| Sweater Leafy | Leafy | `skins/sweater-leafy.png` | 155×200 | `File:Leafy - Ayo firey wanna come.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/63/Leafy_-_Ayo_firey_wanna_come.png/revision/latest?cb=20210409033424 |
+| Algebralien Needle | Needle | `skins/algebralien-needle.png` | 82×200 | `File:AlgebralienNeedle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/AlgebralienNeedle.png/revision/latest?cb=20260628221438 |
+| Yoyleball | Bubble | `skins/yoyleball.png` | 173×200 | `File:Yoyleball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/91/Yoyleball.png/revision/latest?cb=20200323030627 |
+| Balloon Bubble | Bubble | `skins/balloon-bubble.png` | 122×200 | `File:Balloonbubble.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/5b/Balloonbubble.png/revision/latest?cb=20250621055445 |
+| Aloe Bubble | Bubble | `skins/aloe-bubble.png` | 185×200 | `File:Blubblel.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/32/Blubblel.png/revision/latest?cb=20200524035036 |
+| Sweater Teardrop | Teardrop | `skins/sweater-teardrop.png` | 149×200 | `File:Teardrop - Magnifying Glass.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/9/9c/Teardrop_-_Magnifying_Glass.png/revision/latest?cb=20210515164103 |
+| Blindfolded Teardrop | Teardrop | `skins/blindfolded-teardrop.png` | 189×200 | `File:Teardrop - making puns of teardrop's name drop.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/3f/Teardrop_-_making_puns_of_teardrop%27s_name_drop.png/revision/latest?cb=20210422031143 |
+| Missing Petal Flower | Flower | `skins/missing-petal-flower.png` | 155×200 | `File:Flower Missing 1 Petal.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c2/Flower_Missing_1_Petal.png/revision/latest?cb=20240402100149 |
+| Yoyle Metal Flower | Flower | `skins/yoyle-metal-flower.png` | 145×200 | `File:Metal Flower Idle.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0d/Metal_Flower_Idle.png/revision/latest?cb=20200403005416 |
+| Frozen Flower | Flower | `skins/frozen-flower.png` | 174×200 | `File:Flower frozen.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/8/86/Flower_frozen.png/revision/latest?cb=20250110193306 |
+| Chef Tennis Ball | Tennis Ball | `skins/chef-tennis-ball.png` | 191×200 | `File:ChefTB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/36/ChefTB.png/revision/latest?cb=20250527012103 |
+| Yoyle Metal Tennis Ball | Tennis Ball | `skins/yoyle-metal-tennis-ball.png` | 182×200 | `File:Metal Tennis Ball.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a8/Metal_Tennis_Ball.png/revision/latest?cb=20230902142315 |
+| Sleepy Tennis Ball | Tennis Ball | `skins/sleepy-tennis-ball.png` | 172×200 | `File:SleepyTB.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c0/SleepyTB.png/revision/latest?cb=20250619003530 |
 
 ### Inanimate Insanity wiki skins
 
