@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { mulberry32 } from './helpers/prng.js';
@@ -12,6 +12,8 @@ import { bootValidating } from './helpers/validating-canvas.js';
 //   15. BOOMERANGS!: "boomerangs should NOT home." and, asked again, "cobs should just turn around-not towards the player. 4 times."
 // Same damage per hit for everything except item 12's fall scaling; every hit keeps its attack's one bossAtk id; no text on screen but a boss's telegraph banners.
 // Nothing here is a bar for difficulty ("dont tune, cuz thats an agent, not a player"): every assertion is what the pick says.
+
+vi.setConfig({ testTimeout: 60000 });   // (the longer ones play a few hundred to a few thousand frames of his fight: seconds on a slow machine)
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
