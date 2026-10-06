@@ -667,7 +667,9 @@ describe('the skins', () => {
     'sk_puff_think', 'sk_ruby_metal', 'sk_ruby_snow', 'sk_ruby_bandaged', 'sk_yf_metal', 'sk_yf_frozen',
     'sk_bb_zombie', 'sk_bb_metal', 'sk_bball_metal', 'sk_bell_snow', 'sk_bell_twinkle', 'sk_fanny_jet',
     'sk_money_wet', 'sk_naily_happy', 'sk_pillow_charred', 'sk_remote_acid', 'sk_remote_siren', 'sk_rose_frozen',
-    'sk_rose_flame', 'sk_saw_sizzle', 'sk_saw_nohandle', 'sk_taco_fishless', 'sk_taco_evil',
+    'sk_rose_flame', 'sk_saw_sizzle', 'sk_saw_nohandle', 'sk_taco_fishless', 'sk_taco_evil', 'sk_tpaste_frozen',
+    'sk_dora_bob', 'sk_david_orange', 'sk_fjr_grin', 'sk_fern_frozen', 'sk_ruler_crown', 'sk_sidewalky_shades',
+    'sk_sidewalky_snow', 'sk_sidewalky_crack', 'sk_profily_leaf', 'sk_profily_watch',
   ]);
   // SKIN_ORDER end
   // Playable fighters with no skin, and why (name -> reason). The prize fighters of Steve Cobs's fight are not in ROSTER until he is beaten, so
@@ -681,16 +683,8 @@ describe('the skins', () => {
     'Lollipop': 'not yet',
     'Loser': 'not yet',
     'Marker': 'not yet',
-    'Toothpaste': 'not yet',
-    'Dora': 'not yet',
-    'David': 'not yet',
-    'Firey Jr.': 'not yet',
-    'Fern': 'not yet',
-    'Ruler': 'not yet',
-    'Sidewalky': 'not yet',
     'Balloony': 'not yet',
     'Roboty': 'not yet',
-    'Profily': 'not yet',
     'Tree': 'the owner\'s standing rule: Do not change Tree',
     'Ice Cube': 'not yet',
     'Cake': 'not yet',

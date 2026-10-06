@@ -835,6 +835,17 @@ used under fan-work norms in a disclaimed, non-commercial fan game.
 | Handleless Saw | Saw | `skins/handleless-saw.png` | 156×200 | `File:Saw how are we going to win with such a disadvantage.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/5/58/Saw_how_are_we_going_to_win_with_such_a_disadvantage.png/revision/latest?cb=20180908230400 |
 | Fishless Taco | Taco | `skins/fishless-taco.png` | 179×200 | `File:Taco we were recovered.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/dc/Taco_we_were_recovered.png/revision/latest?cb=20220103052149 |
 | Evil Taco | Taco | `skins/evil-taco.png` | 227×200 | `File:Evil taco.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/db/Evil_taco.png/revision/latest?cb=20200825150609 |
+| Half-Frozen Toothpaste | Toothpaste | `skins/half-frozen-toothpaste.png` | 160×200 | `File:Half Frozen Toothpaste.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/0/0c/Half_Frozen_Toothpaste.png/revision/latest?cb=20260130172115 |
+| Bob-Cut Dora | Dora | `skins/bob-cut-dora.png` | 155×200 | `File:Dora Mouth Closed.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7d/Dora_Mouth_Closed.png/revision/latest?cb=20210227225807 |
+| Tangerine David | David | `skins/tangerine-david.png` | 103×200 | `File:Orange david.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/d/d1/Orange_david.png/revision/latest?cb=20241217041531 |
+| Grinning Firey Jr. | Firey Jr. | `skins/grinning-firey-jr.png` | 190×200 | `File:BFDIA Firey Jr.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/c/c3/BFDIA_Firey_Jr.png/revision/latest?cb=20200422083111 |
+| Frozen Fern | Fern | `skins/frozen-fern.png` | 153×200 | `File:Frozen fern.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/6/6a/Frozen_fern.png/revision/latest?cb=20260606183155 |
+| Crowned Ruler | Ruler | `skins/crowned-ruler.png` | 131×200 | `File:Rulerbfdia8.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/2/24/Rulerbfdia8.png/revision/latest?cb=20240701185050 |
+| Shades Sidewalky | Sidewalky | `skins/shades-sidewalky.png` | 220×200 | `File:Angry cool Sidewalky.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/4/4c/Angry_cool_Sidewalky.png/revision/latest?cb=20260212223613 |
+| Snowy Sidewalky | Sidewalky | `skins/snowy-sidewalky.png` | 224×200 | `File:Sidewalky snowy.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7e/Sidewalky_snowy.png/revision/latest?cb=20260226211026 |
+| Cracked Sidewalky | Sidewalky | `skins/cracked-sidewalky.png` | 219×200 | `File:Sidewalky cracked.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/3/31/Sidewalky_cracked.png/revision/latest?cb=20260228093735 |
+| Leaf Profily | Profily | `skins/leaf-profily.png` | 158×200 | `File:Leafy Profily.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/7/7c/Leafy_Profily.png/revision/latest?cb=20210104073933 |
+| Watch Profily | Profily | `skins/watch-profily.png` | 218×200 | `File:Profilywatch.png` | https://static.wikia.nocookie.net/battlefordreamisland/images/1/17/Profilywatch.png/revision/latest?cb=20240731173849 |
 
 ### Inanimate Insanity wiki skins
 
