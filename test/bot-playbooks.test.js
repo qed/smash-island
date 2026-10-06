@@ -45,7 +45,10 @@ describe("Easy is today's AI, bit for bit", () => {
   let GW;
   beforeAll(() => { GW = bootGoldenWindow(); });
 
-  it('replays the twelve seeded matches recorded before any playbook existed, at every level, identically', async () => {
+  it('with no playbook, replays the twelve seeded matches recorded before any playbook existed, at every level, identically', async () => {
+    // (The game ships trained playbooks now -- Leafy, Coiny and Candle among the golden matches' fighters -- and Normal and Hard read them by
+    // design, so this replays the no-playbook game: what "a fighter with no entry plays the legacy rules" promises, at every level.)
+    GW.eval('for (var k in PLAYBOOKS) delete PLAYBOOKS[k];');
     for (let i = 0; i < BOT_GOLDEN_MATCHES.length; i++) {
       const m = BOT_GOLDEN_MATCHES[i];
       const r = await replay(GW, m);
@@ -677,7 +680,7 @@ describe("the trainer writes only index.html's @playbooks block", () => {
     expect(out.split('\r\n').length - 1).toBe(out.split('\n').length - 1);     // not one bare LF in a CRLF file
     expect(out).toContain('"Firey": {"gen":3,"n":480,"wr":0.625,"v":{"mJb":-0.5,"sRng":20},"vs":{"Pen":{"J":-0.75}}},');
     expect(out).toContain('Written by scripts/train-bots.mjs');                // the comment above the statement survives
-    expect(embedPlaybooks(out, {})).toBe(html);                                // replacing is idempotent, and an empty set is the file as shipped
+    expect(embedPlaybooks(out, {})).toBe(embedPlaybooks(html, {}));            // replacing is idempotent: an empty set gives the same file from either (the game ships trained playbooks now)
     expect(embedPlaybooks(embedPlaybooks(html, { Pen: { v: { g1: 2 } } }), entries)).toBe(out);
   });
 
