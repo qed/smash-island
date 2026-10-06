@@ -813,6 +813,16 @@ inanimateinsanity.fandom.com.
 | Blindfolded Cheesy | Cheesy | `skins/blindfolded-cheesy.png` | 310×200 | `File:Cheesy Blindfold.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/67/Cheesy_Blindfold.png/revision/latest?cb=20260426151316 |
 | Blindfolded Soap | Soap | `skins/blindfolded-soap.png` | 164×200 | `File:Soap Blindfold.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/c/c6/Soap_Blindfold.png/revision/latest?cb=20260426153248 |
 | Blindfolded Tea Kettle | Tea Kettle | `skins/blindfolded-tea-kettle.png` | 233×200 | `File:Blindfolded Tea Kettle (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/f/f4/Blindfolded_Tea_Kettle_%28S4E3%29.png/revision/latest?cb=20260331021203 |
+| Blindfolded Cherries | Cherries | `skins/blindfolded-cherries.png` | 211×200 | `File:Climbing Gear Cherries (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/23/Climbing_Gear_Cherries_%28S4E3%29.png/revision/latest?cb=20260306112717 |
+| Blindfolded Magnet | Magnet | `skins/blindfolded-magnet.png` | 168×200 | `File:Climbing Gear Magnet (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/1/17/Climbing_Gear_Magnet_%28S4E3%29.png/revision/latest?cb=20260331021258 |
+| Blindfolded MeTag | MeTag | `skins/blindfolded-metag.png` | 198×200 | `File:Climbing Gear MeTag (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d2/Climbing_Gear_MeTag_%28S4E3%29.png/revision/latest?cb=20260307055742 |
+| Blindfolded Bonesaw | Bonesaw | `skins/blindfolded-bonesaw.png` | 394×200 | `File:Climbing Gear Bonesaw (S4E3).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/6/63/Climbing_Gear_Bonesaw_%28S4E3%29.png/revision/latest?cb=20260307061151 |
+| Damaged Bot | Bot | `skins/damaged-bot.png` | 276×200 | `File:Season 4 Bot Damaged (Transparent PNG).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/d/d6/Season_4_Bot_Damaged_%28Transparent_PNG%29.png/revision/latest?cb=20260122022718 |
+| Camera #1 | Cammy | `skins/camera-1.png` | 263×200 | `File:Camera 1.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/8/84/Camera_1.png/revision/latest?cb=20210705173708 |
+| Tired Teddy Bear | Teddy Bear | `skins/tired-teddy-bear.png` | 169×200 | `File:Teddy Bear Tired.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/a/a6/Teddy_Bear_Tired.png/revision/latest?cb=20260216215543 |
+| Hard Hat Balloon | Balloon | `skins/hard-hat-balloon.png` | 133×200 | `File:Hard Hat Balloon (S3E17).png` | https://static.wikia.nocookie.net/inanimateinsanity/images/2/29/Hard_Hat_Balloon_%28S3E17%29.png/revision/latest?cb=20260315063441 |
+| Snorkel Bomb | Bomb | `skins/snorkel-bomb.png` | 154×200 | `File:Bomb Snorkel.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/4/46/Bomb_Snorkel.png/revision/latest?cb=20260424030546 |
+| Damaged Knife | Knife | `skins/damaged-knife.png` | 94×200 | `File:Knife damaged.png` | https://static.wikia.nocookie.net/inanimateinsanity/images/9/90/Knife_damaged.png/revision/latest?cb=20241015012537 |
 
 ### Notes on individual skins
 

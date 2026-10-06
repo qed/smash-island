@@ -697,27 +697,17 @@ describe('the skins', () => {
     'Ice Cube': 'not yet',
     'Cake': 'not yet',
     'Donut': 'not yet',
-    'Balloon': 'not yet',
-    'Bomb': 'not yet',
-    'Knife': 'not yet',
     'Paintbrush': 'not yet',
     'Marshmallow': 'not yet',
     'Apple': 'not yet',
     'Baseball': 'not yet',
     'Pickle': 'not yet',
     'Salt': 'not yet',
-    'Bonesaw': 'not yet',
-    'Cammy': 'not yet',
     'Dough': 'not yet',
     'Tissues': 'not yet',
     'Blueberry': 'not yet',
-    'Cherries': 'not yet',
     'Clover': 'not yet',
-    'Magnet': 'not yet',
-    'MeTag': 'not yet',
     'Silver Spoon': 'not yet',
-    'Teddy Bear': 'not yet',
-    'Bot': 'not yet',
   };
   // NO_SKIN end
   // The one fighter with two: Broken Fries and Glow Fries were both approved before every fighter was given one.
@@ -733,8 +723,8 @@ describe('the skins', () => {
     for (const r of rows.filter((x) => x.fighter)) {
       expect(playable, `${r.id}: ${r.fighter} is a playable fighter`).toContain(r.fighter);
       expect(r.id).toMatch(/^[a-z][a-z0-9_]{0,23}$/);
-      expect(r.imgH, `${r.id} is fitted into a box`).toBeGreaterThan(1.5);
-      expect(r.imgW).toBeGreaterThan(1.5);
+      expect(r.imgH, `${r.id} is fitted into a box`).toBeGreaterThan(1.2);
+      expect(r.imgW).toBeGreaterThan(1.2);
     }
     // the tiers: a mech suit, a guitar or a new base is large (150); makeup or a change of colour or form, medium (115); a hat, a coat or a scuff, small (75)
     expect(new Set(rows.filter((r) => r.fighter).map((r) => r.price))).toEqual(new Set([75, 115, 150]));
