@@ -70,7 +70,14 @@ export async function makeRoom(names, { w = 1280, h = 720 } = {}) {
   }
 
   const room = {
-    pages, relay, flush,
+    pages, relay, flush, clock,
+    // One 60 fps frame in the room: time moves on, the host steps and streams, then every client draws what reached it. (The clock is
+    // what the snapshot rate and the input heartbeat read, so a test that wants a match to be seen on a client has to move it.)
+    frame() {
+      clock.T += 1000 / 60;
+      const first = (n) => (pages[n].eval('NET.role') === 'host' ? 0 : 1);
+      for (const n of Object.keys(pages).sort((a, b) => first(a) - first(b))) { pages[n].eval('loop()'); flush(); }
+    },
     // The page's pending socket connects: its onopen runs (the page says hello), the relay answers everyone.
     open(name) {
       const ws = relay.pending.get(name);
