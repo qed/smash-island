@@ -69,7 +69,8 @@ describe('One can be beaten', () => {
       ghost: +r.ghost.toFixed(2), ung: +r.ung.toFixed(2), perMin: Math.round(r.perMin) }))));
     expect(wins.length, 'and she is not a formality').toBeLessThan(runs.length);
     expect(Math.min(...runs.map(r => r.dealt)), 'every run takes a real bite out of her (a tenth of her bar at least)').toBeGreaterThanOrEqual(200);
-    wins.forEach(r => expect(r.secs, 'a win takes minutes: 2000 HP is the whole gauntlet\'s worth').toBeGreaterThanOrEqual(120));
+    // (120 s until the owner's nerfs of 2026-10-05/06 -- no damage box, her attacks from her middle -- made her a little quicker to beat: 116 s on the scripted run)
+    wins.forEach(r => expect(r.secs, 'a win takes minutes: 2000 HP is the whole gauntlet\'s worth').toBeGreaterThanOrEqual(100));
     expect(mean('ghost'), 'her ghost shields her for well under half the fight').toBeLessThanOrEqual(0.45);
     // 2026-10-03, "one should be right beside you, so that you can hit them with a projectile": level with you she takes damage faster (the bot's
     // 415-590 a minute became 577-870) and so reaches Power Ungrounded sooner in a shorter fight -- its share went from 0.11-0.17 to 0.12-0.23 a run

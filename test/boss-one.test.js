@@ -539,7 +539,7 @@ describe('MOON ROCKS!: star order', () => {
         for (var i=0; i<T.n*T.every + 12; i++){ one._atkTimer = 1e9; you.invuln = 99; you.x += 3; step();   // you drift right 3 a frame
           rocks.forEach(function(p, k){ if (!prev[k] && !p.oHang){ prev[k] = true; goAt.push(one._f - t0); dirs.push(Math.atan2(p.vy, p.vx)); youAt.push([you.x, hurtCY(you), p.x, p.y, you.vx, you.vy]); } }); }
         out[t] = { n: rocks.length, T: T, shape: rocks[0].shape, dmg: rocks[0].dmg, ids: Object.keys(rocks.reduce(function(a, p){ a[p.bossAtk] = 1; return a; }, {})).length, goAt: goAt,
-          aim: rocks[0].oHang === null ? null : null, lock: lock, dirs: dirs, youAt: youAt, spread: Math.max.apply(null, rel.map(function(q){ return Math.abs(q[0]); })), up: rel.every(function(q){ return q[1] < 0; }), chips: chips,
+          aim: rocks[0].oHang === null ? null : null, lock: lock, dirs: dirs, youAt: youAt, spread: Math.max.apply(null, rel.map(function(q){ return Math.abs(q[0]); })), inside: rel.every(function(q){ return Math.hypot(q[0], q[1]) < one.r; }), chips: chips,
           launch: null };
         // the launch rule each rock was given
         fresh(); ONE_MOVES.moonrocks(one, you, ++BOSS_ATK_ID); out[t].launch = own().map(function(p){ return p.oHang.launch; });
@@ -550,7 +550,7 @@ describe('MOON ROCKS!: star order', () => {
     for (const t of [1, 2, 3]) {
       expect(r[t].shape).toBe('moonrock');
       expect(r[t].ids, 'one id').toBe(1);
-      expect(r[t].up, 'they rise over her').toBe(true);
+      expect(r[t].inside, 'they start inside her body ("attacks should start from the center of her body", the owner, 2026-10-06; they rose over her head)').toBe(true);
       expect(r[t].goAt.length, 'every rock goes').toBe(r[t].n);
       for (let k = 1; k < r[t].goAt.length; k++) expect(r[t].goAt[k] - r[t].goAt[k - 1], 'one after another').toBe(r[t].T.every);
       expect(r[t].chips, 'the Moon in her sky has lost a chunk with every volley').toBe(1);
@@ -559,7 +559,7 @@ describe('MOON ROCKS!: star order', () => {
       r[t].youAt.forEach((a, k) => expect(Math.abs(Math.atan2(a[1] + a[5]*r[t].T.lead*0.5 - a[3], a[0] + a[4]*r[t].T.lead - a[2]) - r[t].dirs[k]), `tier ${t}: each rock goes at you as it goes`).toBeLessThan(0.1));
     }
     expect(r[2].spread, 'in a star (95 px across), where tier 1 hangs its five in a row').toBeLessThanOrEqual(96);
-    expect(r[1].spread, 'tier 1 hangs its five in a row, 44 apart: 88 each way from the middle').toBeCloseTo(88, 6);
+    expect(r[1].spread, 'tier 1 hangs its five in a row inside her body, 0.12 of her radius apart ("attacks should start from the center of her body", the owner, 2026-10-06; they hung 44 apart over her)').toBeLessThan(30);
     // "attacks are not shorter" ("shorter attacks" was not picked): with fewer rocks they are thrown more slowly, so a throw lasts as long as it did (8 x 5, 10 x 6, 15 x 6 frames)
     [1, 2, 3].forEach((t, k) => expect(r[t].T.n*r[t].T.every, `tier ${t}: the throw is not shorter`).toBeGreaterThanOrEqual([40, 60, 90][k]));
   });
@@ -718,7 +718,7 @@ describe('EYE LASERS!: lead and cross, and a third burst at the top', () => {
         const two = sw.filter((x) => x.i === i), want = P.a0 + (P.a1 - P.a0)*k/(S.n - 1);
         expect(two.length, `tier ${t}, pair ${k + 1}: two beams`).toBe(2);
         two.forEach((x) => expect(Math.abs(x.a - want), `tier ${t}, pair ${k + 1}: at ${want.toFixed(3)} rad, sweeping from the first edge to the last`).toBeLessThan(1e-6));
-        expect(Math.abs(Math.abs(two[0].x - two[1].x) - 0.56*g.r), 'one from each eye, set far apart').toBeLessThan(2.5);
+        expect(Math.abs(two[0].x - two[1].x), 'both eyes fire from her middle ("attacks should start from the center of her body", the owner, 2026-10-06)').toBeLessThan(2.5);
       });
       expect(new Set(sw.map((x) => x.id)).size, `tier ${t}: one attack id for the whole sweep`).toBe(1);
       expect(sw[0].id, 'and not one the bursts used').not.toBe(undefined);
