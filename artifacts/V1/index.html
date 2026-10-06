@@ -23441,7 +23441,8 @@ const COBS_TIERS = {
   // the podium (holds still); each line is a ring shockwave from under him along the floor both ways, `gap` frames apart at
   // `spd` -- LOW rings to jump, HIGH rings to stay down under, by turns; the "CARE!" finale a full-screen burst (`burst` x a
   // hit) blocked by standing on a Screen Protector pane or by being airborne. Hittable throughout: COBS_SPEECH_STOP damage
-  // during the keynote skips the burst ("Uhm, no questions!").
+  // during the keynote skips the burst ("Uhm, no questions!"). THE OWNER'S PICK, 2026-10-06 ("alongside the future is so yesterday as well"): he takes his podium NEAR the fighter -- he
+  // flies to a spot beside them first (cobsPodiumSpot, cobsPodiumFly, COBS_PODIUM), so the rings start close; the rings, their timing and the CARE! finale are as they were.
   // TWIST: CRESCENDO (the song builds in stressed beats to a held final note): each ring comes `cresc` frames sooner than the last
   // (never under 14), and from tier 3 (`fin3`) the finish is three stressed beats 14 frames apart -- a low ring, a high ring, then the
   // CARE! burst. A tempo you must ride. The two stressed rings share one id: one hit at most.
@@ -23511,6 +23512,23 @@ function cobsShipSpot(s, tgt, side){
   if(!side && (tx + sd*COBS_SHIP_NEAR < fl.x + 120 || tx + sd*COBS_SHIP_NEAR > fl.x + fl.w - 120)) sd = -sd;   // off the floor that way: the other side
   const top = tgt ? oneSurf(tx, feetY(tgt) - 10) : gy;
   return { x:clamp(tx + sd*COBS_SHIP_NEAR, fl.x + 40, fl.x + fl.w - 40), y:Math.min(gy - COBS_SHIP_Y, top - COBS_SHIP_ABOVE), dir:-sd };   // it sails toward them, across them
+}
+// THE FUTURE IS SO YESTERDAY!'s podium (THE OWNER, 2026-10-06: "alongside the future is so yesterday as well" -- he takes his podium NEAR the fighter): he flies to a spot COBS_PODIUM.off px beside the fighter he targets, at the
+// height of their head, before the rings start from under him -- so they start close. The spot follows them through the wind-up (on the side first chosen) until the last COBS_PODIUM.lock frames, then holds; he flies there a
+// fifth of the way a frame, never more than COBS_PODIUM.max px (cobsPodiumFly). The rings, their timing and the CARE! finale are as they were.
+const COBS_PODIUM = { off:240, up:120, lock:14, max:60 };
+function cobsPodiumSpot(s, tgt, side){
+  const fl = cobsFloor(), gy = groundY(), tx = tgt ? tgt.x : s.x;
+  let sd = side || Math.sign(s.x - tx) || -(s.face||1) || 1;   // the side he is on, unless it is held
+  if(!side && (tx + sd*COBS_PODIUM.off < fl.x + 80 || tx + sd*COBS_PODIUM.off > fl.x + fl.w - 80)) sd = -sd;   // off the floor that way: the other side
+  const feet = tgt ? feetY(tgt) : gy;
+  return { x:clamp(tx + sd*COBS_PODIUM.off, fl.x + 80, fl.x + fl.w - 80), y:clamp(feet - s.r - COBS_PODIUM.up, cobsTopY() + s.r, gy - s.r - 40), side:sd };
+}
+function cobsPodiumFly(s, chase){
+  const P = s._podium, dx = P.x - s.x, dy = P.y - s.y, d = Math.hypot(dx, dy);
+  if(d > 1){ const st = Math.min(d, COBS_PODIUM.max, Math.max(12, d*0.2)); s.x += dx/d*st; s.y += dy/d*st; }
+  s.vx = 0; s.vy = 0;
+  if(chase) s.face = Math.sign(chase.x - s.x) || s.face;
 }
 const COBS_TRAIL_ARM = 14;   // frames a stretch of X's electricity crackles before it bites (so a counter is never zapped the frame it is made)
 const COBS_X_OFF = 170, COBS_X_BEAT = 24;   // where X flickers in (px from you) and the beat between the two of tier 4+
@@ -23723,8 +23741,12 @@ function updateCobs(s, tgt){
   } else if(s._lungeT > 0){
     s._lungeT--; s.x = clamp(s.x + s._lungeDir*s._lungeSpd, s.r*0.5, WW - s.r*0.5); s.vx = 0; s.vy = 0; s.face = s._lungeDir;
   } else if(held){
-    s.vx *= 0.8; s.vy *= 0.8; s.x += s.vx; s.y += s.vy;
-    if(chase && s._speechT <= 0 && s._stuckT <= 0) s.face = Math.sign(chase.x - s.x) || s.face;
+    if(s._podium && s._telKind==="keynote" && s._tel > 0 && s._speechT <= 0 && s._stuckT <= 0){
+      cobsPodiumFly(s, chase);   // THE FUTURE IS SO YESTERDAY!: he flies to his podium, beside you, first
+    } else {
+      s.vx *= 0.8; s.vy *= 0.8; s.x += s.vx; s.y += s.vy;
+      if(chase && s._speechT <= 0 && s._stuckT <= 0) s.face = Math.sign(chase.x - s.x) || s.face;
+    }
   } else {
     oneMove(s, chase, s._rageT > 0 ? COBS_MOVE_FOOT : COBS_MOVE);
     if(s._rageT > 0) cobsFoot(s);
@@ -23738,6 +23760,7 @@ function updateCobs(s, tgt){
     if(s._telKind==="boomerangs" && tgt && s._tel > cobsT(s, 'boomerangs').lock){ const a = cobsAim(s, tgt); s._aimX = a.x; s._aimY = a.y; }
     if(s._telKind==="deletion" && tgt && s._tel > cobsT(s, 'deletion').aim) cobsXAim(s, tgt, cobsT(s, 'deletion'));   // AIMS LONGER: X follows you until `aim` frames before it lunges
     if(s._telKind==="cannon" && tgt && s._shipAt && s._tel > COBS_SHIP_LOCK) s._shipAt = cobsShipSpot(s, tgt, -s._shipAt.dir);   // the ship's spot follows you (on the side it was first shown), then holds for the last frames
+    if(s._telKind==="keynote" && tgt && s._podium && s._tel > COBS_PODIUM.lock) s._podium = cobsPodiumSpot(s, tgt, s._podium.side);   // and so does his podium, beside you, until the last frames
     if(s._tel <= 0){
       s.flash = 0; const k = s._telKind; COBS_MOVES[k](s, tgt, ++BOSS_ATK_ID);
       s._swoopT = Math.max(s._swoopT||0, ONE_SWOOP_HOLD); s._atkTimer = cobsGap(s);
@@ -23770,14 +23793,15 @@ function cobsFightTelegraph(s, k, tgt){   // (not cobsBeginTelegraph: that is th
   s._shipAt = k==="cannon" ? cobsShipSpot(s, tgt, 0) : null;   // TOXIC CANNON!: where the ship will appear, near you (the tell shows it; it follows you until the last COBS_SHIP_LOCK frames)
   s._xs = k==="deletion" && tgt ? cobsXSpots(s, tgt, cobsT(s, 'deletion')) : (s._xs || []).filter(X=>X.live);
   if(k==="deletion"){ s._redT = s._tel + 40; try{ SFX.bossPhase(); }catch(e){} }   // the siren
-  if(k==="keynote") s._holdT = s._tel;   // he takes the podium as the screens rise
+  s._podium = k==="keynote" ? cobsPodiumSpot(s, tgt, 0) : null;   // THE FUTURE IS SO YESTERDAY!: the podium, beside you -- he flies there through the wind-up (updateCobs), and the rings start from under him
+  if(k==="keynote") s._holdT = s._tel + 1;   // he takes the podium as the screens rise (held through the wind-up's last frame too: he is at it, not on his way off it, when the rings start)
   if(k==="maze" && tgt){ s._telPh = cobsMazePh(s); mpHz(s).mz = mpMazePlan(s, tgt, s._telPh); }   // MAZED AND CONFUSED!: where the two walls will stand, marked on the floor now (mpMazeTick keeps it on you until the last frames)
   s._vanFrom = k==="van" ? (a.x > WW*0.5) : null;
 }
 function cobsBeginDeath(s){
   s._dying = COBS_END.total; s._tel = 0; s._telKind = null; s.vx = 0; s.vy = 0; s._speechT = 0; s._holdT = 0; s._lungeT = 0;
   if(s._plug && s._plug.stash) cobsReplug(s, s._plug, true);
-  s._plug = null; s._ship = null; s._shipAt = null; s._rings = []; s._portals = []; s._xs = []; s._tick = null; s._knife = null; s._stompT = 0; s._burst = null; s._track = []; s._rows = []; s._yank = null; s._trail = []; s._leaps = []; s._handRows = null; s._dive = null; s._chain = null; s._stompChain = false; s._hop = null;
+  s._plug = null; s._ship = null; s._shipAt = null; s._podium = null; s._rings = []; s._portals = []; s._xs = []; s._tick = null; s._knife = null; s._stompT = 0; s._burst = null; s._track = []; s._rows = []; s._yank = null; s._trail = []; s._leaps = []; s._handRows = null; s._dive = null; s._chain = null; s._stompChain = false; s._hop = null;
   projectiles = projectiles.filter(p=>p.owner!==-2); cobsFx = [];
   for(const f of fighters) f._cuffUntil = 0;   // a cuff ends with him
   for(const m of summons) if(m.type==="metag" || m.type==="mephoneunit"){ m.life = 0; for(let i=0;i<8;i++) puff(m.x, m.y, m.color, 4); }
@@ -24535,6 +24559,7 @@ const COBS_MOVES = {
     }
     s._holdT = burstAt;
     s._burst = T.burst > 0 ? { t:burstAt, dmg:cobsDmg()*T.burst, id:++BOSS_ATK_ID, hp0:s.hp } : null;
+    s._podium = null;   // (he is at it: the rings start from under him, beside you -- THE OWNER, 2026-10-06: "alongside the future is so yesterday as well")
     cobsImpact(s.x, s.y, { shake:4, dust:0, debris:0 });
   },
   metags(s, tgt, id){
@@ -25081,9 +25106,12 @@ function drawCobsFx(){
         const tw = p.w/4, nearLeft = Math.abs(p.x - s.x) <= Math.abs(p.x + p.w - s.x);
         for(let q=0;q<4;q++){ let ord = nearLeft ? q : 3 - q; if(T.alt && pi % 2 === 1) ord = 3 - ord; ctx.globalAlpha = kk*5 >= ord + 1.7 ? 0.6 : 0.12; ctx.fillRect(p.x + q*tw + 1, p.y - 15, tw - 2, 5); } });
     } else if(k==="keynote"){
-      ctx.globalAlpha = 0.25 + pulse*0.5; ctx.fillStyle = '#f4f4f8'; ctx.fillRect(s.x - 60, gy - 10, 120, 10);   // the podium
+      // the podium is where he is flying to, beside you (THE OWNER, 2026-10-06: "alongside the future is so yesterday as well"): marked on the floor, with a dashed ring where he will hang over it, and the screens rise either side of it
+      const px = s._podium ? s._podium.x : s.x;
+      ctx.globalAlpha = 0.25 + pulse*0.5; ctx.fillStyle = '#f4f4f8'; ctx.fillRect(px - 60, gy - 10, 120, 10);   // the podium
+      if(s._podium){ ctx.strokeStyle = '#f4f4f8'; ctx.lineWidth = 2; ctx.globalAlpha = 0.2 + 0.25*pulse; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.arc(s._podium.x, s._podium.y, R*0.9, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
       ctx.globalAlpha = 0.08 + 0.12*kk; ctx.fillStyle = '#7ff0ff';
-      for(const d of [-1, 1]) ctx.fillRect(s.x + d*260 - 40, gy - 220*kk, 80, 220*kk);   // the Meeple screens rising
+      for(const d of [-1, 1]) ctx.fillRect(px + d*260 - 40, gy - 220*kk, 80, 220*kk);   // the Meeple screens rising
     } else if(k==="metags"){
       ctx.globalAlpha = 0.3 + pulse; ctx.fillStyle = '#9aa6b2';
       for(const d of (cobsT(s, 'metags').n > 1 ? [-1, 1] : [1])){ const x = clamp(s.x + d*(R + 40), 40, WW - 40); ctx.beginPath(); ctx.moveTo(x - 16, s.y - 40); ctx.lineTo(x + 16, s.y - 40); ctx.lineTo(x + 16, s.y); ctx.lineTo(x, s.y + 12); ctx.lineTo(x - 16, s.y); ctx.closePath(); ctx.fill(); }

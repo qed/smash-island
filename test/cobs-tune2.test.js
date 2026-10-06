@@ -375,3 +375,125 @@ describe('OWNER (round 2): TOXIC CANNON! -- "the ship should spawn near you"', (
     expect(errors, 'every call valid').toEqual([]);
   });
 });
+
+// ================= 14. THE FUTURE IS SO YESTERDAY! =================
+// "alongside the future is so yesterday as well" -- he takes his podium NEAR the fighter (flies to a spot beside them first), so the rings start close; keep the rings, their timing and the CARE! finale.
+describe('OWNER (round 2): THE FUTURE IS SO YESTERDAY! -- "alongside the future is so yesterday as well"', () => {
+  // his keynote at tier `t`, the fighter on the floor in the middle and him `far` px off to the right (up in the air), before the wind-up; `body` may use s, you, T
+  const KEY = (t, body, far = 1200) => fight(`
+    park(); atTier(${t}); s._introT = 0; summons = summons.filter(function(m){ return m === s; }); projectiles = [];
+    floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + ${far}; s.y = you.y - 600; s.face = -1;
+    var T = cobsT(s, 'keynote');
+    ${body}`);
+
+  it('HE FLIES TO A SPOT BESIDE THE FIGHTER FIRST: from a long way off he closes on it through the wind-up -- never moving away from it -- and is there when the rings start, 240 px beside them at the height of their head', () => {
+    for (const t of [1, 3, 5]) {
+      const r = KEY(t, `
+        cobsFightTelegraph(s, 'keynote', you);
+        var len = s._tel, spot = Object.assign({}, s._podium), d0 = Math.hypot(s.x - spot.x, s.y - spot.y), ds = [];
+        for (var i=0;i<len;i++){ s._atkTimer = 1e9; step(); you.invuln = 99999; ds.push(Math.hypot(s.x - spot.x, s.y - spot.y)); }
+        return { spot: spot, d0: d0, ds: ds, rings: s._rings.map(function(R){ return R.x0; }), n: s._rings.filter(function(R){ return !R.stress; }).length, want: T.n, youX: you.x, gy: groundY(), r: s.r, len: len, podium: s._podium, sx: s.x, sy: s.y };`);
+      expect(r.d0, `tier ${t}: he starts far from it`).toBeGreaterThan(800);
+      expect(r.ds.every((d, i) => i === 0 || d <= r.ds[i - 1] + 1e-6), `tier ${t}: and only ever closes on it`).toBe(true);
+      expect(r.ds[r.ds.length - 1], `tier ${t}: there when the wind-up ends`).toBeLessThan(3);
+      expect(r.spot.x - r.youX, `tier ${t}: 240 px beside them, on his side`).toBeCloseTo(240, 3);
+      expect(r.spot.y, `tier ${t}: at the height of their head: over their feet, less his body and 120`).toBeCloseTo(r.gy - r.r - 120, 3);
+      expect(r.n, `tier ${t}: the rings the tier says`).toBe(r.want);
+      expect(r.rings.every((x) => Math.abs(x - r.spot.x) < 3), `tier ${t}: every ring starts from under him, at the podium`).toBe(true);
+      expect(r.podium, 'and the spot is spent').toBe(null);
+    }
+  });
+
+  it('THE RINGS START CLOSE: a fighter standing on the floor is reached by the first low ring within about 30 frames, however far off he was when the keynote began (it was well over 100 frames away before)', () => {
+    for (const [t, max] of [[1, 32], [5, 26]]) {
+      const r = KEY(t, `
+        cobsFightTelegraph(s, 'keynote', you); var len = s._tel;
+        for (var i=0;i<len + 2;i++){ s._atkTimer = 1e9; step(); you.invuln = 99999; if (s._rings.length) break; }
+        var hit = null, f = 0, x0 = s._rings.length ? s._rings[0].x0 : null, youX = you.x;   // (where they stood as the rings began: a hit will throw them)
+        for (var j=0;j<200;j++){ s._atkTimer = 1e9; you.invuln = 0; var p0 = you.pct; step(); f++; if (you.pct > p0 && hit === null) hit = f; }
+        return { hit: hit, spd: T.spd, x0: x0, youX: youX, rings: s._rings.length };`);
+      expect(r.x0, `tier ${t}: the rings began`).not.toBe(null);
+      expect(Math.abs(r.x0 - r.youX), `tier ${t}: close to them`).toBeLessThanOrEqual(245);
+      expect(r.hit, `tier ${t}: the first ring reaches a fighter on the floor`).not.toBe(null);
+      expect(r.hit, `tier ${t}: soon (spd ${r.spd})`).toBeLessThanOrEqual(max);
+    }
+  });
+
+  it('THE RINGS, THEIR TIMING AND THE CARE! FINALE ARE AS THEY WERE: the five rows (n, spd, dmg, gap, burst, cresc, fin3) and the 50-frame wind-up are unchanged', () => {
+    expect(W.eval('COBS_TIERS.keynote')).toEqual([
+      { n: 2, spd: 8, dmg: 0.6, gap: 40, burst: 0, cresc: 0, fin3: 0 }, { n: 3, spd: 9, dmg: 0.65, gap: 36, burst: 0.9, cresc: 2, fin3: 0 }, { n: 3, spd: 10, dmg: 0.7, gap: 32, burst: 1.0, cresc: 3, fin3: 1 },
+      { n: 4, spd: 11, dmg: 0.75, gap: 28, burst: 1.1, cresc: 3, fin3: 1 }, { n: 5, spd: 12, dmg: 0.8, gap: 24, burst: 1.25, cresc: 4, fin3: 1 }]);
+    expect(W.eval('COBS_TEL.keynote')).toBe(50);
+    const r = KEY(3, `
+      cobsFightTelegraph(s, 'keynote', you); s._tel = 0; COBS_MOVES.keynote(s, you, ++BOSS_ATK_ID);
+      return { delays: s._rings.map(function(R){ return R.delay; }), stress: s._rings.map(function(R){ return !!R.stress; }), burst: s._burst && s._burst.t, hold: s._holdT };`);
+    expect(r.delays, 'tier 3: a ring every 32 frames, each 3 sooner than the last (0, 32, 61), then the stressed beats 14 apart').toEqual([0, 32, 61, 87, 101]);
+    expect(r.burst, 'and the CARE! burst the third beat').toBe(r.delays[4] + 14);
+  });
+
+  it('HIS SIDE, AND THE EDGES: the podium is on the side he is on; off the floor that way, on the other -- and inside the floor either way, at the head\'s height over a platform too', () => {
+    const r = fight(`
+      park(); atTier(1); s._introT = 0; var fl = cobsFloor(), out = {};
+      var spot = function(x, bossDx){ floorAt(you, x); s.x = you.x + bossDx; s.y = you.y - 200; var P = cobsPodiumSpot(s, you, 0); return { dx: P.x - you.x, side: P.side, inside: P.x >= fl.x + 80 && P.x <= fl.x + fl.w - 80 }; };
+      out.mid = spot(WW*0.5, 300); out.midLeft = spot(WW*0.5, -300);
+      out.leftEdge = spot(fl.x + 100, -300);               // him on the outside of the left edge: he cannot stand there
+      out.rightEdge = spot(fl.x + fl.w - 100, 300);
+      camX = 0; camY = 0;   // (the camera as it was at the start: its top edge is far over the platform, so the clamp to the top of the screen is not what this reads)
+      worldPlats.push({ x:WW*0.5 - 160, y:groundY() - 700, w:320, h:14 }); you.x = WW*0.5; you.y = groundY() - 700 - you.r; you.vx = 0; you.vy = 0; step(); camX = 0; camY = 0; s.x = you.x + 300;
+      var P2 = cobsPodiumSpot(s, you, 0); out.high = { y: P2.y, feet: feetY(you), r: s.r, top: cobsTopY() };
+      return out;`);
+    expect(r.mid, 'him on the right: the podium on the right of them').toMatchObject({ side: 1, inside: true });
+    expect(r.mid.dx).toBeCloseTo(240, 3);
+    expect(r.midLeft, 'him on the left: on the left').toMatchObject({ side: -1, inside: true });
+    expect(r.midLeft.dx).toBeCloseTo(-240, 3);
+    expect(r.leftEdge, 'the left edge: flipped to the inside').toMatchObject({ side: 1, inside: true });
+    expect(r.rightEdge, 'the right edge: flipped to the inside').toMatchObject({ side: -1, inside: true });
+    expect(r.high.y, 'over a platform he hangs at the head\'s height over it...').toBeCloseTo(r.high.feet - r.high.r - 120, 3);
+    expect(r.high.y, '...and never off the top of the screen').toBeGreaterThanOrEqual(r.high.top + r.high.r - 1e-6);
+  });
+
+  it('THE SPOT FOLLOWS THEM THROUGH THE WIND-UP -- on the side first chosen -- and holds for its last 14 frames, so the podium is where it was marked', () => {
+    const r = fight(`
+      park(); atTier(2); s._introT = 0; summons = summons.filter(function(m){ return m === s; }); projectiles = []; floorAt(you, WW*0.5); you.invuln = 99999; s.x = you.x + 500; s.y = you.y - 300;
+      cobsFightTelegraph(s, 'keynote', you); var len = s._tel, seen = [];
+      for (var i=0;i<len - 1;i++){ s._atkTimer = 1e9; you.x = WW*0.5 + Math.min(i, 30)*8; you.vx = 0; step(); you.invuln = 99999; seen.push({ left: s._tel, x: s._podium && s._podium.x, side: s._podium && s._podium.side }); }
+      return { held: seen.filter(function(q){ return q.left <= COBS_PODIUM.lock; }).map(function(q){ return q.x; }), moving: seen.filter(function(q){ return q.left > COBS_PODIUM.lock; }).map(function(q){ return q.x; }), sides: seen.map(function(q){ return q.side; }), lock: COBS_PODIUM.lock };`);
+    expect(r.lock).toBe(14);
+    expect(new Set(r.moving).size, 'it follows them...').toBeGreaterThan(5);
+    expect(new Set(r.held).size, '...and holds for the last 14 frames').toBe(1);
+    expect(new Set(r.sides).size, 'on one side').toBe(1);
+  });
+
+  it('A KEYNOTE THAT IS DROPPED DOES NOT LEAVE HIM FLYING TO ITS PODIUM: a tier line in the wind-up takes it (his hop is the movement), and his speech or a stuck blade holds him where he is', () => {
+    const r = KEY(2, `
+      cobsFightTelegraph(s, 'keynote', you); for (var i=0;i<5;i++){ s._atkTimer = 1e9; step(); you.invuln = 99999; }
+      cobsTierUp(s); var after = { tel: s._tel, kind: s._telKind, hop: !!s._hop };
+      var x0 = s.x, y0 = s.y; s._hop = null; s._holdT = 0; s._speechT = 60; s._podium = { x: s.x + 900, y: s.y, side: 1 }; s._telKind = 'keynote'; s._tel = 30;
+      for (var j=0;j<10;j++){ s._atkTimer = 1e9; step(); you.invuln = 99999; s._tel = 30; }
+      return { after: after, drift: Math.hypot(s.x - x0, s.y - y0) };`);
+    expect(r.after, 'a tier line drops the wind-up and he hops').toEqual({ tel: 0, kind: null, hop: true });
+    expect(r.drift, 'in his speech he does not fly to a stale podium').toBeLessThan(40);
+  });
+
+  it('THE TELL DRAWS WITHOUT A THROW, with valid calls: the podium where he is flying to, the dashed ring over it and the screens either side of it', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startCobsFight(['Knife'], { story:true, onEnd:function(){ return true; } });
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      s._hop = null; s._atkTimer = 1e9; you.controller = 'still'; you.invuln = 99999; s.x = you.x + 900; s.y = you.y - 300; projectiles = [];
+    })()`);
+    errors.length = 0;
+    const r = w.eval(`(function(){
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0], ops = function(){ cobsFx = []; var a = ctx.__ops; drawCobsFx(); return ctx.__ops - a; };
+      var out = { idle: ops() };
+      cobsFightTelegraph(s, 'keynote', you); out.tell = ops(); s._tel = 3; out.late = ops();
+      s._podium = null; out.noSpot = ops();
+      return out;
+    })()`);
+    expect(r.tell, 'the podium, its ring and the screens').toBeGreaterThan(r.idle + 4);
+    expect(r.late).toBeGreaterThan(r.idle + 4);
+    expect(r.tell, 'the ring over the podium is drawn too').toBeGreaterThan(r.noSpot);
+    expect(errors, 'every call valid').toEqual([]);
+  });
+});
