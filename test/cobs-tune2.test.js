@@ -497,3 +497,342 @@ describe('OWNER (round 2): THE FUTURE IS SO YESTERDAY! -- "alongside the future 
     expect(errors, 'every call valid').toEqual([]);
   });
 });
+
+// ================= 11. MAZED AND CONFUSED! =================
+// "mazed and confused should be a hazard-passive and screen wide." Asked how: "Always on" (the maze covers the whole arena for the entire fight, and its walls shift every ~10 s) and the walls do: "Rayguns on walls"
+// (turrets on the walls fire slow shots, like MePhone4's maze). NOT picked: walls that block you, walls that block his shots, walls that hurt on touch. It replaces the between-turns hazard.
+describe('OWNER (round 2): MAZED AND CONFUSED! -- "mazed and confused should be a hazard-passive and screen wide."', () => {
+  // his fight with the boss not parked for the maze (his turns held far off: _atkTimer 99999) and the fighter on the floor in the middle, still and untouchable; `s`, `you`, `M` (his maze, laid), `fl`, `gy`, `C` = COBS_MAZE.
+  // `SYN(guns)` puts five rayguns of a made layout round the fighter, every one facing them and in reach, at 400, 400, 450, 591 and 638 px (the picks of a volley are then known).
+  const MAZE = (body, tier = 1) => fight(`
+    atTier(${tier}); s._introT = 0; s._atkTimer = 99999; summons = summons.filter(function(m){ return m === s; }); projectiles = [];
+    floorAt(you, WW*0.5); you.controller = 'still'; you.invuln = 99999; s.x = you.x + 900; s.y = you.y - 500; s._holdT = 99999;
+    var fl = cobsFloor(), gy = groundY(), C = COBS_MAZE; s._maze = null; cobsMazeStep(s, you); var M = s._maze;
+    var SYN = function(){ var yy = you.y - 10; M.cur.guns = [ { x:you.x + 400, y:yy, fx:-1, fy:0, type:0, k:0 }, { x:you.x - 400, y:yy, fx:1, fy:0, type:1, k:1 }, { x:you.x, y:yy - 450, fx:0, fy:1, type:2, k:2 },
+      { x:you.x + 560, y:yy - 200, fx:-1, fy:0, type:0, k:3 }, { x:you.x - 620, y:yy - 150, fx:1, fy:0, type:1, k:4 } ]; M.cur.walls = []; M.volT = 1; M.vol = null; return M.cur.guns; };
+    ${body}`);
+  const bolts = `projectiles.filter(function(p){ return p.cobsMaze && p.life > 0; })`;
+
+  it('ALWAYS ON, AND SCREEN WIDE: from the first frame of the fight a maze of hedges lies over the whole arena -- the floor\'s full width, from the floor up most of the way to the top -- walls on every shut edge and a border round it', () => {
+    const r = MAZE(`
+      var L = M.cur, xs = L.walls.map(function(w){ return w.x; }), xe = L.walls.map(function(w){ return w.x + w.w; }), ys = L.walls.map(function(w){ return w.y; });
+      return { cols: L.cols, rows: L.rows, cw: L.cw, ch: L.ch, flx: fl.x, flw: fl.w, gy: gy, WH: WH, minX: Math.min.apply(null, xs), maxX: Math.max.apply(null, xe), minY: Math.min.apply(null, ys), walls: L.walls.length,
+        border: L.walls.filter(function(w){ return w.border; }).length, n: M.n, t: M.t, said: M.said };`);
+    expect(r.cols * r.cw, 'across the whole floor').toBeCloseTo(r.flw, 6);
+    expect(r.rows * r.ch, 'and up most of the arena (the floor to the top, in rows)').toBeGreaterThan(r.gy * 0.7);
+    expect(r.rows * r.ch).toBeLessThanOrEqual(r.gy);
+    expect(r.minX, 'its border runs round the floor\'s left edge').toBeLessThanOrEqual(r.flx);
+    expect(r.maxX, '...and its right').toBeGreaterThanOrEqual(r.flx + r.flw);
+    expect(r.minY, '...and over the top').toBeLessThanOrEqual(r.gy - r.rows * r.ch);
+    expect(r.border, 'the border: both sides and the top').toBe(3);
+    expect(r.walls, 'a maze of walls, not a few').toBeGreaterThan(40);
+    expect(r.n, 'the first lay').toBe(0);
+  });
+
+  it('IT IS A MAZE: the passages are a spanning tree of the cells (every cell can be reached from every other, by one way only), and a wall stands on every edge the tree leaves shut', () => {
+    for (const seed of [1, 77, 123456]) {
+      const r = MAZE(`
+        var L = cobsMazeGen(${seed}, fl, gy), cells = L.cols*L.rows, open = 0, seen = {}, q = [[0, 0]]; seen['0,0'] = 1;
+        for (var r2=0;r2<L.rows;r2++) for (var c2=0;c2<L.cols;c2++){ if (L.pv[r2][c2] && c2 > 0) open++; if (L.ph[r2][c2] && r2 > 0) open++; }
+        while (q.length){ var cur = q.shift(), c = cur[0], r = cur[1], n = [];
+          if (c > 0 && L.pv[r][c]) n.push([c - 1, r]); if (c < L.cols - 1 && L.pv[r][c + 1]) n.push([c + 1, r]); if (r > 0 && L.ph[r][c]) n.push([c, r - 1]); if (r < L.rows - 1 && L.ph[r + 1][c]) n.push([c, r + 1]);
+          n.forEach(function(p){ var k = p[0] + ',' + p[1]; if (!seen[k]){ seen[k] = 1; q.push(p); } }); }
+        var inner = (L.cols - 1)*L.rows + L.cols*(L.rows - 1);
+        return { cells: cells, open: open, reached: Object.keys(seen).length, inner: inner, walls: L.walls.filter(function(w){ return !w.border; }).length, cols: L.cols, rows: L.rows };`);
+      expect(r.reached, `seed ${seed}: every cell is reachable`).toBe(r.cells);
+      expect(r.open, `seed ${seed}: by exactly one way (a tree: cells - 1 passages)`).toBe(r.cells - 1);
+      expect(r.walls, `seed ${seed}: a wall on every other inner edge`).toBe(r.inner - r.open);
+    }
+  });
+
+  it('IT IS LAID FROM ITS OWN DICE: the same seed is the same maze, other seeds are other mazes, and laying one -- or running it for a whole minute with nothing to fire at -- never draws on the game\'s random stream', () => {
+    const r = MAZE(`
+      var R = Math.random, calls = 0; Math.random = function(){ calls++; return R.apply(this, arguments); };
+      try {
+        var a = cobsMazeGen(5, fl, gy), b = cobsMazeGen(5, fl, gy), c = cobsMazeGen(6, fl, gy);
+        var sig = function(L){ return JSON.stringify(L.walls.map(function(w){ return [w.x, w.y, w.w, h(w)]; })) + JSON.stringify(L.guns.map(function(g){ return [g.x, g.y, g.type]; })); }; var h = function(w){ return w.h; };
+        s._atkTimer = 1e9; s._maze = null; for (var i=0;i<3600;i++) cobsMazeStep(s, you);   // parked: it lays and shifts, and fires nothing
+      } finally { Math.random = R; }
+      return { same: sig(a) === sig(b), other: sig(a) !== sig(c), calls: calls, n: s._maze.n, shots: ${bolts}.length };`);
+    expect(r.same, 'the same seed, the same maze').toBe(true);
+    expect(r.other, 'another seed, another maze').toBe(true);
+    expect(r.calls, 'no draw on the game\'s dice').toBe(0);
+    expect(r.n, 'and it shifted six times in the minute').toBe(6);
+    expect(r.shots, 'with nothing fired').toBe(0);
+  });
+
+  it('IT IS SCENERY: nothing of it is a platform -- worldPlats is exactly what it was through three lays -- so it blocks no fighter and no shot of his, and a fighter walks through a wall and stands in one for good with nothing happening', () => {
+    const r = MAZE(`
+      s._atkTimer = 1e9;   // (parked: no gun fires in this one)
+      var before = worldPlats.slice(), L = M.cur, w = L.walls.filter(function(q){ return q.vert && !q.border && q.y + q.h >= gy - 1; })[0];
+      for (var k=0;k<3;k++){ M.t = C.period - 2; for (var i=0;i<4;i++) cobsMazeStep(s, you); }
+      var same = worldPlats.length === before.length && worldPlats.every(function(p, i){ return p === before[i]; }), L2 = M.cur; w = L2.walls.filter(function(q){ return q.vert && !q.border && q.y + q.h >= gy - 1; })[0];
+      // walking through it along the floor
+      you.invuln = 0; you.pct = 0; you.x = w.x - 90; you.y = gy - you.r; you.vx = 0; you.vy = 0; step(); var x0 = you.x;
+      for (var j=0;j<40;j++){ you.vx = 8; step(); you.invuln = 0; }
+      var through = { from: x0, to: you.x, wall: [w.x, w.x + w.w] };
+      // standing in the middle of it
+      you.x = w.x + w.w/2; you.y = gy - you.r; you.vx = 0; you.vy = 0; var p0 = you.pct, stood = 0;
+      for (var j2=0;j2<300;j2++){ you.vx = 0; step(); you.invuln = 0; if (Math.abs(you.x - (w.x + w.w/2)) < w.w) stood++; }
+      // a shot of his along the row, through the wall
+      var sh = addProj(cobsShot(s, { x:w.x - 200, y:gy - 100, vx:6, vy:0, dmg:1, bossCap:1, r:6, life:200, bossAtk:++BOSS_ATK_ID })), xs = [];
+      you.x = 100; you.y = gy - you.r; for (var j3=0;j3<60;j3++){ step(); you.invuln = 99999; xs.push(sh.x); }
+      return { same: same, n: M.n, through: through, hurt: you.pct - p0, stood: stood, shot: { x0: w.x - 200, x: sh.x, alive: sh.life > 0, wall: [w.x, w.x + w.w] } };`);
+    expect(r.n, 'three lays').toBe(3);
+    expect(r.same, 'worldPlats is exactly what it was: the maze is no platform').toBe(true);
+    expect(r.through.to, 'a fighter walked clean through the wall (it did not stop him)').toBeGreaterThan(r.through.wall[1] + 20);
+    expect(r.stood, 'and could stand in it all that time').toBeGreaterThan(280);
+    expect(r.hurt, 'it hurt nothing').toBe(0);
+    expect(r.shot.alive && r.shot.x > r.shot.wall[1] + 40, 'a shot of his went through the wall too').toBe(true);
+  });
+
+  it('IT IS LAID AGAIN EVERY TEN SECONDS (600 frames), with a TELL before it shifts: the next lay is shown for the last 60 frames, the walls pulse, and nothing is shown before; then the old walls sink and the new ones rise over 30', () => {
+    const r = MAZE(`
+      s._maze = null; var log = [], seenNext = null, prevT = null, walls0 = null, growth = [];
+      for (var i=0;i<1300;i++){ cobsMazeStep(s, you); var m = s._maze;
+        if (walls0 === null) walls0 = JSON.stringify(m.cur.walls.map(function(w){ return [w.x, w.y, w.w, w.h]; }));
+        if (!m.next) seenNext = seenNext; else if (log.length === 0 && seenNext === null) seenNext = { t: m.t, n: m.n };
+        if (m.n !== (log.length ? log[log.length - 1].n : 0)){ log.push({ f: i, n: m.n, same: JSON.stringify(m.cur.walls.map(function(w){ return [w.x, w.y, w.w, w.h]; })) === walls0 }); growth.push({ shift: m.shift, prev: !!m.prev }); }
+        else if (log.length === 1 && growth.length < 40) growth.push({ shift: m.shift, prev: !!m.prev });
+      }
+      return { log: log, seenNext: seenNext, period: C.period, tell: C.tell, grow: C.grow, growth: growth };`);
+    expect(r.period, 'ten seconds of frames').toBe(600);
+    expect(r.tell).toBe(60);
+    expect(r.log.length, 'two lays in 1300 frames').toBe(2);
+    expect(r.log[1].f - r.log[0].f, 'every 600 frames').toBe(600);
+    expect(r.log[0].same, 'a new maze, not the old one again').toBe(false);
+    expect(r.seenNext, 'the next lay is shown ahead of the shift').toEqual({ t: 540, n: 0 });
+    expect(r.growth[0], 'the new walls start at nothing and the old ones are still there').toEqual({ shift: 0, prev: true });
+    const first = r.growth.slice(0, r.growth.length - 1), withOld = first.filter((g) => g.prev), last = withOld[withOld.length - 1];   // (the last entry is the second lay's own first frame)
+    expect(withOld.map((g) => g.shift).slice(0, 4), 'they rise a frame at a time').toEqual([0, 1, 2, 3]);
+    expect(last.shift, 'fully risen after `grow` (30) frames, the old ones gone the frame after').toBe(r.grow);
+    expect(first.some((g) => !g.prev), 'and the old lay is dropped').toBe(true);
+  });
+
+  it('RAYGUNS SIT ON THE WALLS: about half the inner walls carry one -- on a face of it, facing out along the wall\'s normal, in one of the three colours of MePhone4\'s guns -- and the border carries none', () => {
+    const r = MAZE(`
+      var L = cobsMazeGen(31, fl, gy), W2 = L.walls, off = [];
+      L.guns.forEach(function(g){ var w = W2[g.k]; off.push({ border: w.border, vert: w.vert, face: w.vert ? g.fx : g.fy, ortho: w.vert ? g.fy === 0 && Math.abs(g.fx) === 1 : g.fx === 0 && Math.abs(g.fy) === 1,
+        d: w.vert ? Math.abs(g.x - (w.x + w.w/2)) : Math.abs(g.y - (w.y + w.h/2)), inside: w.vert ? g.y >= w.y && g.y <= w.y + w.h : g.x >= w.x && g.x <= w.x + w.w, type: g.type }); });
+      return { guns: L.guns.length, inner: W2.filter(function(w){ return !w.border; }).length, off: off, wt: L.wall, colors: C.colors, share: C.gunShare };`);
+    expect(r.share).toBe(0.5);
+    expect(r.guns / r.inner, 'about half of them').toBeGreaterThan(0.3);
+    expect(r.guns / r.inner).toBeLessThan(0.7);
+    for (const o of r.off) {
+      expect(o.border, 'never on the border').toBe(false);
+      expect(o.ortho, 'facing straight out of the wall').toBe(true);
+      expect(o.d, 'on its face').toBeCloseTo(r.wt / 2 + 3, 6);
+      expect(o.inside, 'along the wall').toBe(true);
+      expect([0, 1, 2]).toContain(o.type);
+    }
+    expect(r.colors, 'MePhone4\'s freeze, burn and zap colours').toEqual(['#7ff0ff', '#ff8a2a', '#ffe94a']);
+    expect(r.off.some((o) => o.vert) && r.off.some((o) => !o.vert), 'on upright walls and on level ones').toBe(true);
+  });
+
+  it('THEY FIRE SLOW, MARKED SHOTS: a volley charges 36 frames and then each gun fires ONE bolt, slow (3.2 px a frame at tier 1), all on one attack id, each the damage of his smallest hits (13.2), marked `lingers`', () => {
+    const r = MAZE(`
+      var guns = SYN(); var id0 = BOSS_ATK_ID, started = null, fired = null, vol0 = null, sh = [];
+      for (var i=0;i<80;i++){ s._atkTimer = 99999; you.invuln = 99999; step();
+        if (M.vol && started === null){ started = i; vol0 = { id: M.vol.id, n: M.vol.guns.length, t: M.vol.t, spd: M.vol.spd }; }
+        var b = ${bolts}; if (b.length && fired === null){ fired = i; sh = b.map(function(p){ return { x: p.x, y: p.y, vx: p.vx, vy: p.vy, id: p.bossAtk, dmg: p.dmg, cap: p.bossCap, lingers: !!p.lingers, noStun: !!p.noStunHit, beam: !!p.beamShot, owner: p.owner, kb: p.kb, r: p.r, color: p.color }; }); } }
+      return { started: started, fired: fired, vol0: vol0, sh: sh, id0: id0, dmg: cobsDmg(), charge: C.charge, spd: C.spd, gunsXY: guns.map(function(g){ return [g.x, g.y]; }), youX: you.x, youY: hurtCY(you) };`);
+    expect(r.started, 'a volley began').not.toBe(null);
+    expect(r.vol0.n, 'tier 1: two guns').toBe(2);
+    expect(r.fired - r.started, 'it charged 36 frames, then fired').toBe(r.charge);
+    expect(r.sh.length, 'one bolt a gun').toBe(2);
+    expect(new Set(r.sh.map((p) => p.id)).size, 'one attack id for the volley').toBe(1);
+    expect(r.sh[0].id).toBe(r.vol0.id);
+    expect(r.sh[0].id, 'a fresh id').toBeGreaterThan(r.id0);
+    for (const p of r.sh) {
+      expect(Math.hypot(p.vx, p.vy), 'slow: tier 1\'s speed').toBeCloseTo(r.spd[0], 6);
+      expect(p.dmg, 'the damage of his smallest hits: 0.4 of 33').toBeCloseTo(0.4 * r.dmg, 9);
+      expect(p.cap, 'and capped there').toBeCloseTo(p.dmg, 9);
+      expect(p.lingers, 'marked `lingers`: terrain to the attack watch, never holding a turn').toBe(true);
+      expect(p.noStun, 'never on a fighter still reeling').toBe(true);
+      expect([p.beam, p.owner], 'a ray bolt, his').toEqual([true, -2]);
+      expect(r.gunsXY.some((g) => Math.hypot(p.x - g[0], p.y - g[1]) < 40), 'leaving a gun').toBe(true);
+    }
+  });
+
+  it('A BOLT HITS ONCE: two bolts of a volley that both reach a fighter cost him ONE small hit (13.2) -- the one id and its cap -- and a bolt bounces him a little; a fighter who is stunned is not hit by it', () => {
+    const r = MAZE(`
+      var guns = SYN(); you.invuln = 0; you.pct = 0; var hits = [], AH = applyHit;
+      applyHit = function(tg, d, kx, ky, from, o){ if (tg === you && o && o.bossAtk != null) hits.push({ d: d, id: o.bossAtk }); return AH.apply(this, arguments); };
+      try { for (var i=0;i<400;i++){ s._atkTimer = 99999; you.invuln = 0; if (i === 1) M.volT = 1e9; step(); if (M.vol === null && i > 40 && !${bolts}.length) break; } } finally { applyHit = AH; }   // (one volley: no second after it)
+      return { hits: hits, pct: you.pct, dmg: cobsDmg() };`);
+    expect(r.hits.length, 'both bolts reached him').toBeGreaterThanOrEqual(1);
+    expect(r.pct, 'and he took one small hit in all').toBeCloseTo(0.4 * r.dmg, 6);
+    const stun = MAZE(`
+      var guns = SYN(); you.invuln = 0; you.pct = 0; M.volT = 1; var pc = null;
+      for (var i=0;i<400;i++){ s._atkTimer = 99999; you.hitstun = 400; you.invuln = 0; step(); }
+      return { pct: you.pct };`);
+    expect(stun.pct, 'a fighter in hitstun is passed by it (noStunHit)').toBe(0);
+  });
+
+  it('THE AIM FOLLOWS THEM THROUGH THE CHARGE AND HOLDS FOR THE LAST 10 FRAMES: the bolt leaves along the held aim, not where they have run to since -- and each gun shows a lit muzzle and an aim line while it charges (drawn below)', () => {
+    const r = MAZE(`
+      var guns = SYN(), aims = [], bolt = null, held = null;
+      for (var i=0;i<60;i++){ s._atkTimer = 99999; you.invuln = 99999; you.x = WW*0.5 + Math.round(Math.sin(i*0.4)*120); you.vx = 0; step();
+        if (M.vol){ aims.push({ t: M.vol.t, x: M.vol.ax, y: M.vol.ay }); if (M.vol.t === C.lock) held = { x: M.vol.ax, y: M.vol.ay }; }
+        var b = ${bolts}; if (b.length && !bolt){ var p = b[0]; bolt = { ang: Math.atan2(p.vy, p.vx), x: p.x, y: p.y }; } }
+      var g = guns[0];
+      return { aims: aims, held: held, bolt: bolt, want: held ? Math.atan2(held.y - g.y, held.x - g.x) : null, lock: C.lock, g0: [g.x, g.y] };`);
+    const moving = r.aims.filter((a) => a.t > r.lock).map((a) => a.x), held = r.aims.filter((a) => a.t <= r.lock).map((a) => a.x);
+    expect(new Set(moving).size, 'it follows them while the charge is young').toBeGreaterThan(3);
+    expect(new Set(held).size, 'and holds for the last frames').toBe(1);
+    expect(r.bolt, 'a bolt left').toBeTruthy();
+    expect(Math.abs(r.bolt.ang - r.want), 'along the held aim').toBeLessThan(0.02);
+  });
+
+  it('THE BOLTS NEVER HOLD A TURN OF HIS ("One attack at a time" does not apply to the hazard\'s shots): every one is `lingers`, so the attack watch counts none as live; and his turn timer runs down a frame at a time through a sky full of them', () => {
+    const r = MAZE(`
+      SYN(); you.invuln = 99999; M.volT = 1; s._atkTimer = 5000; var timers = [], live = 0, maxBolts = 0, watchLive = 0;
+      for (var i=0;i<300;i++){ step(); you.invuln = 99999; timers.push(s._atkTimer); var b = ${bolts}; maxBolts = Math.max(maxBolts, b.length); if (b.length) b.forEach(function(p){ if (bossShotLive(p, 0)) watchLive++; }); if (M.vol === null && M.volT <= 0) M.volT = 1; }
+      var steps = timers.map(function(t, i){ return i ? timers[i - 1] - t : 1; });
+      return { steps: steps, maxBolts: maxBolts, watchLive: watchLive };`);
+    expect(r.maxBolts, 'there were bolts in the air').toBeGreaterThan(1);
+    expect(r.watchLive, 'the watch counts none of them as a live shot of an attack').toBe(0);
+    expect(r.steps.every((d) => d === 1), 'his turn timer ran down one a frame, held by nothing').toBe(true);
+  });
+
+  it('SAME DAMAGE, HARDER BY GUNS: 2, 2, 3, 3, 4 guns a volley, every 150, 130, 112, 96, 84 frames, bolts of 3.2, 3.5, 3.8, 4.1, 4.4 px a frame -- and every bolt at every tier is 0.4 x 33, the least any row of his hits for', () => {
+    expect(W.eval('[COBS_MAZE.n, COBS_MAZE.every, COBS_MAZE.spd, COBS_MAZE.dmg, COBS_MAZE.first, COBS_MAZE.charge, COBS_MAZE.lock]')).toEqual([[2, 2, 3, 3, 4], [150, 130, 112, 96, 84], [3.2, 3.5, 3.8, 4.1, 4.4], 0.4, 150, 36, 10]);
+    const least = W.eval('Math.min.apply(null, Object.keys(COBS_TIERS).map(function(k){ return Math.min.apply(null, COBS_TIERS[k].map(function(T){ return T.dmg; })); }))');
+    expect(least, 'the smallest hit in his table').toBe(0.4);
+    for (const t of [1, 2, 3, 4, 5]) {
+      const r = MAZE(`
+        SYN(); you.invuln = 99999; var sh = [], vols = [];
+        for (var i=0;i<60;i++){ s._atkTimer = 99999; step(); you.invuln = 99999; if (M.vol && !vols.length) vols.push(M.vol.guns.length); var b = ${bolts}; if (b.length && !sh.length) sh = b.map(function(p){ return [Math.hypot(p.vx, p.vy), p.dmg]; }); }
+        return { n: vols[0], sh: sh, dmg: cobsDmg() };`, t);
+      expect(r.n, `tier ${t}: the guns of a volley`).toBe([2, 2, 3, 3, 4][t - 1]);
+      expect(r.sh.length).toBe(r.n);
+      for (const [spd, dmg] of r.sh) { expect(spd).toBeCloseTo([3.2, 3.5, 3.8, 4.1, 4.4][t - 1], 6); expect(dmg, `tier ${t}: the same hit`).toBeCloseTo(0.4 * r.dmg, 9); }
+    }
+  });
+
+  it('A GUN ONLY FIRES AT A FIGHTER IT FACES AND CAN REACH: not one too close (220 px), too far (900), or turned away -- and a volley with nobody to fire at looks again 30 frames on', () => {
+    const r = MAZE(`
+      var yy = you.y - 10;
+      M.cur.guns = [ { x:you.x + 100, y:yy, fx:-1, fy:0, type:0, k:0 }, { x:you.x + 1200, y:yy, fx:-1, fy:0, type:0, k:1 }, { x:you.x + 400, y:yy, fx:1, fy:0, type:0, k:2 }, { x:you.x - 400, y:yy, fx:1, fy:0, type:1, k:3 } ];
+      M.cur.walls = []; var picked = cobsMazePick(M.cur.guns, you, 4).map(function(g){ return g.k; });
+      M.cur.guns = [ M.cur.guns[0], M.cur.guns[1], M.cur.guns[2] ]; M.volT = 1; M.vol = null; cobsMazeStep(s, you);
+      return { picked: picked, vol: M.vol, volT: M.volT };`);
+    expect(r.picked, 'only the one 400 px off that faces them').toEqual([3]);
+    expect(r.vol, 'nothing to fire').toBe(null);
+    expect(r.volT, 'looks again soon').toBe(30);
+  });
+
+  it('A SHIFT TAKES THE GUNS ON THE OLD WALLS AND THE VOLLEY THEY WERE CHARGING WITH IT; bolts already in the air fly on', () => {
+    const r = MAZE(`
+      SYN(); you.invuln = 99999; for (var i=0;i<60;i++){ s._atkTimer = 99999; step(); you.invuln = 99999; if (M.vol && M.vol.t < 20) break; }
+      var charging = !!M.vol, n0 = M.n; var b0 = ${bolts}.length;
+      M.t = C.period - 1; M.next = null; s._atkTimer = 99999; cobsMazeStep(s, you);
+      return { charging: charging, n: M.n - n0, vol: M.vol, guns: M.cur.guns.length, bolts: ${bolts}.length, b0: b0 };`);
+    expect(r.charging, 'a volley was charging').toBe(true);
+    expect(r.n, 'the shift happened').toBe(1);
+    expect(r.vol, 'its volley is gone').toBe(null);
+  });
+
+  it('IT REPLACES THE BETWEEN-TURNS HAZARD: no card, no wind-up, no turn-line wait -- his turns are his own and run as ever with the maze standing; MePhone4\'s maze is not his to build, but is untouched', () => {
+    const r = MAZE(`
+      var deck = COBS_DECK.concat(COBS_SPECIALS), bag = []; var q = { _moveN:0, _spN:0, _bag:[], _lastCard:null, _marks:2 }; for (var i=0;i<80;i++) bag.push(cobsNextMove(q));
+      return { move: typeof COBS_MOVES.maze, tel: COBS_TEL.maze, turn: typeof cobsMazeTurn, quiet: typeof cobsMazeQuiet, ph: typeof cobsMazePh, inDeck: deck.indexOf('maze'), inBag: bag.indexOf('maze'), swoop: COBS_NO_SWOOP.indexOf('maze'),
+        mazeT: s._mazeT, mz: s._mz, mpMaze: typeof mpMazeFire, name: COBS_MOVE_NAME.maze, plats: worldPlats.filter(function(p){ return p._mz; }).length };`);
+    expect(r.move, 'not a move').toBe('undefined');
+    expect(r.tel, 'no wind-up').toBe(undefined);
+    expect([r.turn, r.quiet, r.ph], 'the turn-line machinery is gone').toEqual(['undefined', 'undefined', 'undefined']);
+    expect([r.inDeck, r.inBag, r.swoop], 'not a card of his, not in his rotation').toEqual([-1, -1, -1]);
+    expect([r.mazeT, r.mz], 'no countdown, no standing hedge').toEqual([undefined, undefined]);
+    expect(r.plats, 'no hedge platforms').toBe(0);
+    expect(r.name, 'named the same').toBe('MAZED AND CONFUSED!');
+    expect(r.mpMaze, 'MePhone4\'s own maze is still his').toBe('function');
+    const turns = fight(`
+      s._introT = 0; summons = summons.filter(function(m){ return m === s; }); floorAt(you, WW*0.5); you.controller = 'still'; you.invuln = 99999; s._atkTimer = 30; s._holdT = 0; var starts = [], was = 0;
+      for (var i=0;i<900;i++){ step(); you.invuln = 99999; if (s._tel > 0 && !was) starts.push(i); was = s._tel > 0 ? 1 : 0; }
+      return { starts: starts, said: window.__lastBanner && window.__lastBanner.text };`);
+    expect(turns.starts.length, 'his turns came, on his own timer, with the maze up the whole time').toBeGreaterThanOrEqual(4);
+    expect(turns.starts[0], 'the first on his first timer (30 frames)').toBeLessThan(40);
+  });
+
+  it('IT IS NAMED ONCE, WHEN THE GREETING IS OVER, and never over a line already up: MAZED AND CONFUSED! as a boss banner 150 frames in, once for the fight', () => {
+    const r = MAZE(`
+      var said = [], B = banner; banner = function(t, ms, kind){ said.push([t, kind]); return B.apply(this, arguments); };
+      var el = document.getElementById('banner'); if (el) el.classList.remove('show'); s._maze = null;
+      try { for (var i=0;i<400;i++) cobsMazeStep(s, you); } finally { banner = B; }
+      return { said: said.filter(function(q){ return q[0] === COBS_MOVE_NAME.maze; }) };`);
+    expect(r.said, 'once, a boss line').toEqual([['MAZED AND CONFUSED!', 'boss']]);
+    const up = MAZE(`
+      var said = [], B = banner; banner = function(t, ms, kind){ said.push(t); return B.apply(this, arguments); };
+      var el = document.getElementById('banner'); if (el){ el.classList.add('show'); el.classList.add('banner-boss'); } s._maze = null;
+      try { for (var i=0;i<400;i++) cobsMazeStep(s, you); } finally { banner = B; if (el){ el.classList.remove('show'); el.classList.remove('banner-boss'); } }
+      return { said: said };`);
+    expect(up.said, 'another line is up: it waits and does not say it over it (and does not say it later)').toEqual([]);
+  });
+
+  it('HIS END CLEARS IT: when he falls the maze, its guns and every bolt of it are gone, nothing is drawn of it, and nothing fires in his ending', () => {
+    const r = MAZE(`
+      SYN(); you.invuln = 99999; for (var i=0;i<100;i++){ s._atkTimer = 99999; step(); you.invuln = 99999; } var before = { maze: !!s._maze, bolts: ${bolts}.length };
+      s.hp = 0; for (var j=0;j<10;j++){ step(); you.invuln = 99999; }
+      var left = { maze: s._maze, bolts: ${bolts}.length, dying: s._dying > 0 }; for (var k=0;k<400;k++){ step(); you.invuln = 99999; }
+      return { before: before, left: left, later: ${bolts}.length, maze: s._maze };`);
+    expect(r.before.maze).toBe(true);
+    expect(r.left.maze, 'the maze is gone').toBe(null);
+    expect(r.left.dying).toBe(true);
+    expect(r.left.bolts, 'and every bolt').toBe(0);
+    expect(r.later, 'nothing fires in his ending').toBe(0);
+  });
+
+  it('A BOSS PARKED FOR GOOD (an _atkTimer past 1e6, a test\'s) FIRES NOTHING, and the maze still stands and shifts; no gun fires before the greeting is over either', () => {
+    const r = MAZE(`
+      SYN(); s._atkTimer = 1e9; M.volT = 1; var n = 0; for (var i=0;i<400;i++){ step(); you.invuln = 99999; n = Math.max(n, ${bolts}.length); }
+      var parked = { bolts: n, n: M.n, t: M.t };
+      s._atkTimer = 99999; s._introT = 30; M.volT = 1; M.vol = null; var m2 = 0; for (var j=0;j<20;j++){ step(); you.invuln = 99999; m2 = Math.max(m2, ${bolts}.length + (M.vol ? 1 : 0)); }
+      return { parked: parked, greeting: m2 };`);
+    expect(r.parked.bolts, 'parked: nothing fired').toBe(0);
+    expect(r.parked.n + r.parked.t, 'but the maze went on').toBeGreaterThan(300);
+    expect(r.greeting, 'and none before the greeting is over').toBe(0);
+  });
+
+  it('IT NEVER FLOODS THE SCREEN: a whole fight\'s worth of tier-5 volleys at a fighter who never moves keeps the bolts in the air to a few dozen at most, and every one is gone within its life', () => {
+    const r = MAZE(`
+      SYN(); you.invuln = 99999; var mx = 0, tot = 0, ids = {}; M.volT = 1;
+      for (var i=0;i<1500;i++){ s._atkTimer = 99999; M.t = Math.min(M.t, 500); step(); you.invuln = 99999; var b = ${bolts}; mx = Math.max(mx, b.length); b.forEach(function(p){ ids[p.bossAtk] = 1; }); }   // (no shift: the five guns stay)
+      return { mx: mx, volleys: Object.keys(ids).length, life: C.life };`, 5);
+    expect(r.mx, 'a few dozen at most').toBeLessThan(40);
+    expect(r.volleys, 'a volley every 84 frames or so').toBeGreaterThan(10);
+  });
+
+  it('THE MAZE DRAWS WITHOUT A THROW, with valid canvas calls, under the shots and the fighters: the walls, the pulse and the next lay\'s outline before a shift, the walls rising and sinking, the guns, and a charging gun\'s lit muzzle and aim line (white once held)', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startCobsFight(['Knife'], { story:true, onEnd:function(){ return true; } });
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      s._hop = null; s._atkTimer = 99999; s._introT = 0; you.controller = 'still'; you.invuln = 99999; projectiles = [];
+    })()`);
+    errors.length = 0;
+    const r = w.eval(`(function(){
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0], fl = cobsFloor(), gy = groundY(), C = COBS_MAZE;
+      var ops = function(layer){ var a = ctx.__ops; drawArenaHazard(layer || 'under'); return ctx.__ops - a; };
+      s._maze = null; cobsMazeStep(s, you); var M = s._maze, out = { arena: BOSS_ARENA, hook: typeof BOSS_ARENA_HAZARD.meeplehq.draw, step: typeof BOSS_ARENA_HAZARD.meeplehq.step };
+      camX = you.x - W/2; camY = you.y - H/2;
+      M.shift = C.grow; M.prev = null; out.plain = ops(); out.over = ops('over');
+      M.shift = 10; M.prev = cobsMazeGen(9, fl, gy); out.shifting = ops(); M.shift = C.grow; M.prev = null;
+      M.t = C.period - 30; M.next = cobsMazeGen(8, fl, gy); out.tell = ops(); M.next = null; M.t = 100;
+      var yy = you.y - 10; M.cur.guns = [ { x:you.x + 300, y:yy, fx:-1, fy:0, type:0, k:0 }, { x:you.x - 300, y:yy, fx:1, fy:0, type:1, k:1 } ];
+      out.guns = ops(); M.vol = { id:99999, t:20, guns:M.cur.guns.slice(), spd:3.2, dmg:13, ax:you.x, ay:you.y }; out.charging = ops(); M.vol.t = 5; out.locked = ops(); M.vol = null;
+      s._maze = null; out.none = ops();
+      return out;
+    })()`);
+    expect(r.arena).toBe('meeplehq');
+    expect([r.hook, r.step], 'a draw and no step, like One\'s').toEqual(['function', 'undefined']);
+    expect(r.plain, 'the hedges').toBeGreaterThan(40);
+    expect(r.over, 'nothing in the layer over the fighters (only the save and restore round the hook)').toBeLessThanOrEqual(4);
+    expect(r.tell, 'the tell: pulsing walls and the next lay\'s outline').toBeGreaterThan(r.plain);
+    expect(r.charging, 'a charging gun adds its lit muzzle and aim line').toBeGreaterThan(r.guns);
+    expect(r.locked, 'held: drawn too').toBeGreaterThan(r.guns);
+    expect(r.none, 'no maze, no drawing (only the save and restore round the hook)').toBeLessThanOrEqual(4);
+    expect(r.shifting, 'the walls rising and sinking draw').toBeGreaterThan(20);
+    expect(errors, 'every call valid').toEqual([]);
+  });
+});
