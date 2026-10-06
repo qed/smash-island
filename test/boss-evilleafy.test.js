@@ -175,7 +175,7 @@ describe('Evil Leafy takes the Evil Forest', () => {
 
   // The owner, 2026-10-01 (Round 17), her nerfs: "softer contact (knockback 13 -> 9, grace 75 -> 120 f; One keeps her own copy of the old numbers)". The hit itself is as it was: 0.6 of a boss
   // hit, thrown -12 up. One's contact copied her numbers for "Evil leafy level." (the owner, 2026-09-29) and keeps them: it reads its own ONE_CONTACT, not hers.
-  it("her contact hit is softer: still 0.6 of a boss hit and -12 up, but knocked 9 (was 13) with 120 frames of grace (was 75); One has its own copy, lighter still", () => {
+  it("her contact hit is softer: still 0.6 of a boss hit and -12 up, but knocked 9 (was 13) with 120 frames of grace (was 75); One has none at all now", () => {
     const r = W.eval(`(function(){ ${STAGE(300, 1, 300)}
       var dmg = BOSS_DMG_BASE, kb = function(kx){ f.pct = 0; f.invuln = 0; f.hitstun = 0; f.vx = 0; f.vy = 0; applyHit(f, dmg*0.6, kx, -12, null, { bossAtk: ++BOSS_ATK_ID }); return f.vx; };
       var v13 = kb(13), v9 = kb(9);
@@ -188,8 +188,8 @@ describe('Evil Leafy takes the Evil Forest', () => {
       out.again = again;
       // asleep inside a tree or sunk into the platform, she touches no one
       b._el = { k:'pos', st:'in' }; f.invuln = 0; f.pct = 0; f.x = b.x; f.y = b.y; b.hover = true; var y0 = b.y; step(); out.sunk = f.pct;
-      // One reads its own numbers, whatever hers are
-      out.one = ONE_CONTACT; out.base = BOSS_DMG_BASE; out.oneSrc = String(oneContact);
+      // One has no contact damage at all now ("remove the damage-box for one", the owner, 2026-10-06), so nothing of hers is read
+      out.oneGone = typeof ONE_CONTACT === 'undefined' && typeof oneContact === 'undefined';
       return out; })()`);
     expect(r.pct, 'the hit itself is as it was: 0.6 of a boss hit').toBeCloseTo(r.want, 5);
     expect([r.kx, r.grace], 'her numbers: knocked 9, 120 frames of grace').toEqual([9, 120]);
@@ -201,9 +201,7 @@ describe('Evil Leafy takes the Evil Forest', () => {
     expect(r.again, 'no second bump for 120 frames, and one once it is over').toBeGreaterThanOrEqual(119);
     expect(r.again).toBeLessThanOrEqual(124);
     expect(r.sunk, 'sunk into the platform she touches no one').toBe(0);
-    // (One's copy was the old numbers, 0.6 and 13, until the owner, 2026-10-02, "nerf one." -- asked which, "Lighter contact": half the damage, knocked 9 not 13, the -12 and the 75 frames of grace as they were)
-    expect(r.one, "One's own copy: half the damage (0.3), knocked 9, -12 up, 75 frames of grace -- not hers (9 and 120 and 0.6)").toEqual({ dmg: r.base * 0.3, kx: 9, ky: -12, grace: 75 });
-    expect(r.oneSrc, 'and One does not read hers').not.toMatch(/\bEL\b|touchKX|touchGrace/);
+    expect(r.oneGone, "One has no contact damage at all: \"remove the damage-box for one\" (the owner, 2026-10-06)").toBe(true);
   });
 });
 

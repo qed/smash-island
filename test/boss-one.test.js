@@ -1003,89 +1003,6 @@ describe('"one could be harder... much harder. more bullets! also longer attacks
   });
 });
 
-describe('contact damage: "Evil leafy level." -- and then "nerf one." / "Lighter contact"', () => {
-  // The owner, 2026-10-02: "nerf one." Asked which, they picked "Lighter contact": touching her hurts half as much (ONE_CONTACT's damage halved: 0.3 of the base, 6.6%)
-  // and knocks less (13 to 9); her 75 frames of grace stay. The numbers below are those; the "Evil leafy level" ones they replace are in the comments.
-  // Round 17 (the owner, 2026-10-01), Evil Leafy's nerfs: "softer contact (knockback 13 -> 9, grace 75 -> 120 f; One keeps her own copy of the old numbers)". One's contact was read off
-  // Evil Leafy's own code (a boss hit of 0.6, kx = sign*13, -12, invuln = max(invuln, 75)); hers is softer now, so this test no longer reads her code: One keeps the numbers hers had, in its
-  // own ONE_CONTACT, and a change to hers does not touch it.
-  it("touching her hurts HALF as much as it did (\"Lighter contact\": 6.6%, knocked 9 not 13, the same 75 frames of grace): One's own copy -- Evil Leafy's contact is 9 and 120 and One does not read hers", () => {
-    const r = STAGE(`
-      fresh(); one._hop = null; one._atkTimer = 1e9;
-      var out = { c: ONE_CONTACT, base: BOSS_DMG_BASE, src: String(oneContact), el: [EL.touchKX, EL.touchGrace] };
-      // change hers: One's hit does not move
-      var kx0 = EL.touchKX, g0 = EL.touchGrace; EL.touchKX = 1; EL.touchGrace = 1;
-      one.x = you.x; one.y = you.y; you.vx = 0; you.vy = 0; step();
-      out.one = { pct: you.pct, vx: you.vx, invuln: you.invuln };
-      EL.touchKX = kx0; EL.touchGrace = g0;
-      // the same bump with the numbers it had before "Lighter contact" (0.6 of the base, knocked 13), the way it pushed: the knock it is lighter than
-      var dir = Math.sign(out.one.vx) || 1;
-      you.invuln = 0; you.hitstun = 0; you.pct = 0; you.vx = 0; you.vy = 0;
-      applyHit(you, BOSS_DMG_BASE*0.6, dir*13, -12, null, { bossAtk: ++BOSS_ATK_ID });
-      out.was = { pct: you.pct, vx: you.vx };
-      return out;`);
-    // The numbers Evil Leafy's contact check had when One copied them: applyHit(f, bossDmg()*0.6, kx, -12, ...), kx = sign*13, invuln = max(invuln, 75)
-    expect(r.c, "\"Lighter contact\": half the damage (0.3 of the base, it was 0.6), knocked 9 (it was 13), the -12 lift and the 75 frames of grace as they were").toEqual({ dmg: r.base * 0.3, kx: 9, ky: -12, grace: 75, reach: 0.55 });   // (reach: "damage hitbox is smaller so that i can hit her with small shockwaves.", the owner, 2026-10-05)
-    expect(r.c.dmg, 'about 6.6%: half of the 13.2 it was, well under the 33 of one of her hits').toBeCloseTo(6.6, 6);
-    expect(r.c.dmg, 'exactly half').toBeCloseTo(r.base * 0.6 / 2, 9);
-    expect(r.el, "Evil Leafy's are softer now (Round 17): knocked 9, 120 frames of grace").toEqual([9, 120]);
-    expect(r.src, "One's contact reads its own ONE_CONTACT and never hers").toMatch(/ONE_CONTACT/);
-    expect(r.src).not.toMatch(/\bEL\b|touchKX|touchGrace/);
-    expect(r.one.pct, 'with hers set to 1 and 1, One still hits for 6.6%').toBeCloseTo(6.6, 5);
-    expect(Math.abs(r.one.vx), 'knocked by her 9 (hers would be 1): well over a 1').toBeGreaterThan(5);
-    expect(Math.abs(r.one.vx), 'and less than the same bump at the old 13').toBeLessThan(Math.abs(r.was.vx) - 1);
-    expect(r.was.pct, 'which hurt twice as much').toBeCloseTo(13.2, 5);
-    expect(r.one.invuln, 'with her 75 frames of grace (hers would be 1)').toBeGreaterThanOrEqual(70);
-    expect(r.one.invuln).toBeLessThanOrEqual(75);
-  });
-
-  it('a fighter who overlaps her takes the hit, flies off the way it pushed, and cannot be hit again until the grace is over; one beside her is untouched', () => {
-    const r = STAGE(`
-      fresh(); one.x = you.x; one.y = you.y; you.vx = 0; you.vy = 0; one._hop = null;
-      var out = {};
-      one._atkTimer = 1e9; step();
-      out.first = { pct: you.pct, vx: you.vx, vy: you.vy, invuln: you.invuln };
-      var p0 = you.pct;
-      for (var i=0;i<60;i++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; step(); }
-      out.during = you.pct - p0;
-      for (var j=0;j<40;j++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; step(); }
-      out.after = you.pct - p0 > 0;
-      // a fighter beside her, outside her body
-      fresh(); one.x = you.x + one.r + 200; one.y = you.y; one._atkTimer = 1e9; var q0 = you.pct; step(); out.beside = you.pct - q0;
-      return out;`);
-    expect(r.first.pct, '6.6% ("Lighter contact": it was 13.2)').toBeCloseTo(6.6, 5);
-    expect(r.first.invuln, 'and a long grace').toBeGreaterThanOrEqual(70);
-    expect(r.first.vy, 'thrown up').toBeLessThan(0);
-    expect(r.during, 'no second bump while the grace lasts').toBe(0);
-    expect(r.after, 'and a bump again once it is over').toBe(true);
-    expect(r.beside, 'beside her: nothing').toBe(0);
-  });
-
-  it('her ghost is not hurt by her; a giant One has more body to touch; no contact in the Vortex or in her ending', () => {
-    const r = STAGE(`
-      var out = {};
-      fresh(); ONE_MOVES.ghost(one, you, ++BOSS_ATK_ID); var g = one._ghost; g.controller = 'still'; g.invuln = 0; one.x = g.x; one.y = g.y; var g0 = g.pct; one._atkTimer = 1e9; oneContact(one); out.ghost = g.pct - g0; oneGhostDown(g, true);
-      // reach: a fighter just outside her body, then she grows
-      // a spot between where touching her hurts now and where it hurts once she is giant (1.6x): since "damage hitbox is smaller so that i
-      // can hit her with small shockwaves." (the owner, 2026-10-05) touching hurts within ONE_CONTACT.reach of her radius, not all of it
-      var nearR = one._baseR*ONE_CONTACT.reach, giantR = Math.round(one._baseR*1.6)*ONE_CONTACT.reach, mid = (nearR + giantR)/2;
-      fresh(); one.r = one._baseR; one.y = you.y; for (var dx = 400; dx > 0; dx--){ one.x = you.x + dx; if (hurtGap(you, one.x, one.y) <= mid) break; }
-      you.invuln = 0; var a0 = you.pct; oneContact(one); out.outside = you.pct - a0;
-      one.r = Math.round(one._baseR*1.6); you.invuln = 0; oneContact(one); out.giant = you.pct - a0;
-      // in the Vortex
-      fresh(); one.r = one._baseR; one.x = you.x; one.y = you.y; one._hop = { ph:'out', t:0, r0:one.r, giant:false }; you.invuln = 0; oneContact(one); out.hop = you.pct; one._hop = { ph:'fly', t:3, r0:one.r, giant:false }; oneContact(one); out.fly = you.pct; one._hop = null;
-      // dying
-      fresh(); one.r = one._baseR; one.x = you.x; one.y = you.y; one._dying = 100; you.invuln = 0; oneContact(one); out.dying = you.pct; one._dying = 0;
-      return out;`);
-    expect(r.ghost, 'her ghost is on her side').toBe(0);
-    expect(r.outside, 'just outside where touching her hurts').toBe(0);
-    expect(r.giant, 'grown 1.6 times, the same spot is inside her').toBeCloseTo(6.6, 5);
-    expect(r.hop, 'nothing while she is in the Vortex').toBe(0);
-    expect(r.fly, 'and nothing while she flies in').toBe(0);
-    expect(r.dying, 'nor in her ending').toBe(0);
-  });
-});
-
 describe('stocks at her phase lines: "every 2 phases" (it was "also, no stock per phase.")', () => {
   // The owner, 2026-09-30: "also, no stock per phase." Then, 2026-10-02, "nerf one.": asked about the stock at her phase lines, they picked "every 2 phases" -- a stock back at every
   // SECOND line (the 2nd, the 4th), none at the 1st and the 3rd; the heal stays at every line. She has three lines (1500, 1000, 500), so in her fight it is the one at 1000.
@@ -2086,18 +2003,30 @@ describe('the glitch pass: her fight drawn on a canvas that keeps the old fill a
   });
 });
 
-describe('One: room to hit her up close (the owner, 2026-10-05)', () => {
-  // "give more distance between you and one." -> "2, and damage hitbox is smaller so that i can hit her with small shockwaves."
-  it('inside her body but outside the touch area, a fighter takes nothing -- and a short shockwave there still hits her', () => {
+describe('One has no damage box (the owner, 2026-10-06)', () => {
+  // "remove the damage-box for one" -- touching her does nothing; only her attacks hurt. (It was "contact damage. -- Evil leafy level.",
+  // then "Lighter contact", then a smaller touch area "so that i can hit her with small shockwaves.")
+  it('a fighter overlapping her for two seconds takes nothing, giant too, and none of the contact code is left', () => {
+    const r = STAGE(`
+      var out = { gone: typeof ONE_CONTACT === 'undefined' && typeof oneContact === 'undefined' };
+      fresh(); one._hop = null; one._atkTimer = 1e9; var p0 = you.pct;
+      for (var i=0;i<120;i++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; projectiles = []; step(); }
+      out.overlap = you.pct - p0;
+      fresh(); one.r = Math.round(one._baseR*1.6); one._atkTimer = 1e9; var p1 = you.pct;
+      for (var j=0;j<60;j++){ one.x = you.x; one.y = you.y; one._atkTimer = 1e9; projectiles = []; step(); }
+      out.giant = you.pct - p1; one.r = one._baseR;
+      return out;`);
+    expect(r.gone, 'no contact code left').toBe(true);
+    expect(r.overlap, 'overlapping her for two seconds: nothing').toBe(0);
+    expect(r.giant, 'a giant One: nothing either').toBe(0);
+  });
+  it('a short shockwave from inside her body lands on her ("so that i can hit her with small shockwaves.")', () => {
     const r = STAGE(`
       fresh(); one.r = one._baseR; one.y = you.y; one._atkTimer = 1e9;
-      var gapAt = (one._baseR*ONE_CONTACT.reach + one._baseR)/2;          // past the touch area, still inside her body
+      var gapAt = one._baseR*0.75;   // inside her body
       for (var dx = 400; dx > 0; dx--){ one.x = you.x + dx; if (hurtGap(you, one.x, one.y) <= gapAt) break; }
-      you.invuln = 0; var p0 = you.pct; oneContact(one); var touched = you.pct - p0;
-      var h0 = one.hp; damageSummons(you, you.x + Math.sign(one.x - you.x)*30, you.y, gapAt + 10, 7); var hit = h0 - one.hp;
-      return { touched: touched, hit: hit, reach: ONE_CONTACT.reach };`);
-    expect(r.reach, 'touching hurts only within a bit over half her radius').toBe(0.55);
-    expect(r.touched, 'standing inside her body, outside the touch area: nothing').toBe(0);
-    expect(r.hit, 'and a short shockwave from there lands on her').toBeGreaterThan(0);
+      var h0 = one.hp; damageSummons(you, you.x + Math.sign(one.x - you.x)*30, you.y, gapAt + 10, 7);
+      return { hit: h0 - one.hp };`);
+    expect(r.hit).toBeGreaterThan(0);
   });
 });
