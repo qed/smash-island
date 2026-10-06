@@ -153,8 +153,8 @@ describe('FIVE TIERS, all attacks stepping up together at 2000, 1500, 1000 and 5
       }
       expect(T[4].n > T[0].n || T[4].spd > T[0].spd || T[4].dmg > T[0].dmg, `${k} climbs`).toBe(true);
     }
-    // "2 metags with 75 hp each", at every tier
-    expect(rows.metags.every(t => t.n === 2 && t.hp === 75)).toBe(true);
+    // "2 metags with 75 hp each" -- and, the owner's nerf of 2026-10-05, "One tag at a time": one MeTag a turn, 75 hp, at every tier
+    expect(rows.metags.every(t => t.n === 1 && t.hp === 75)).toBe(true);
   });
 
   it('every attack FIRES at every tier, with the tier\'s count of shots, summons, rings, panes, portals or Xs', () => {
@@ -268,7 +268,7 @@ describe('the adapted set is HIS: he built the phones, he is not one', () => {
 });
 
 describe('his four base melee', () => {
-  it('MeMURDER: the poles come FROM THE FLOOR on marks laid at the wind-up, buried under their shadow, then up; from tier 4 they stand as spikes', () => {
+  it('MeMURDER: the poles come FROM THE FLOOR on marks laid at the wind-up, buried under their shadow, then up; they stand as spikes (from tier 1 since the owner\'s tuning of 2026-10-05: "Strikes linger")', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s._marks = 1;
       cobsFightTelegraph(s, 'memurder', you); var spots = s._poleSpots.map(function(p){ return p.x; }); s._tel = 0;
@@ -279,11 +279,11 @@ describe('his four base melee', () => {
       var free = poles.find(function(p, i){ return i !== 1 && vanTopsAt(p.x).every(function(t){ return t.y >= groundY() - 4; }); }) || null, watch = free || poles[0];
       for (var i=0;i<T.delay;i++) step(); var yAfterDelay = watch.y; step(); step(); var rose = yAfterDelay - watch.y, v = -watch.vy;
       var out = { n:poles.length, gap:Math.abs(spots[1]-spots[0]), fromFloor: y0 > groundY(), buried:buried, rose:rose, v:v, freeV: free ? -free.vy : null, spd:T.spd, ids: poles.every(function(p){ return p.bossAtk===poles[0].bossAtk; }) };
-      projectiles = []; s._marks = 3; cobsFightTelegraph(s, 'memurder', you); s._tel = 0; COBS_MOVES.memurder(s, you, ++BOSS_ATK_ID);
-      var p = shots()[0], T4 = cobsT(s, 'memurder'); for (var i=0;i<T4.delay + 12;i++) step();
+      projectiles = []; s._marks = 0; cobsFightTelegraph(s, 'memurder', you); s._tel = 0; COBS_MOVES.memurder(s, you, ++BOSS_ATK_ID);
+      var p = shots()[0], T4 = cobsT(s, 'memurder'); for (var i=0;i<T4.delay + 12;i++) step();   // (tier 1: no pairs, so the first pole has risen)
       out.linger = { vy:p.vy, life:p.life, alive:p.life > 0 };
       return out;`);
-    expect(r.n).toBe(3);
+    expect(r.n, 'tier 2: four (one more than the old 3 -- "More strikes", the owner)').toBe(4);
     expect(r.gap).toBe(84);
     expect(r.fromFloor, 'buried under the floor line').toBe(true);
     expect(r.buried).toBe(true);
@@ -292,7 +292,7 @@ describe('his four base melee', () => {
     expect(r.v).toBeLessThanOrEqual(r.spd);
     if (r.freeV != null) expect(r.freeV, 'open sky over it: the tier\'s rise').toBeCloseTo(r.spd, 6);
     expect(r.ids, 'one attack, one cap').toBe(true);
-    expect(r.linger.alive, 'tier 4: still standing after its seven frames of rise').toBe(true);
+    expect(r.linger.alive, 'tier 1: still standing after its seven frames of rise').toBe(true);
     expect(r.linger.vy, 'as a spike, not a rocket').toBe(0);
   });
 
@@ -377,9 +377,9 @@ describe('the six personalised specials', () => {
       cobsFightTelegraph(s, 'deletion', you); var X = s._xs[0], tel = s._tel, red = s._redT > 0, side = X.side;
       ${setup}
       s._tel = 0; COBS_MOVES.deletion(s, you, ++BOSS_ATK_ID);
-      var p0 = you.pct, grounded = []; for (var i=0;i<40 && s._xs.length;i++){ step(); grounded.push(you.onground); ${perFrame || ''} }
-      return { tel:tel, red:red, side:side, faced: side===1, dmg:you.pct - p0, lock:you.spCd, deleted:you._deletedT > 0, left:s._xs.length, grounded:grounded };`);
-    const caught = run('/* facing X, on the floor */');
+      var p0 = you.pct, grounded = [], lockAt = null, delAt = null; for (var i=0;i<130 && s._xs.length;i++){ step(); grounded.push(you.onground); if (lockAt === null && you.pct > p0){ lockAt = you.spCd; delAt = you._deletedT > 0; } ${perFrame || ''} }   // (130: both lunges -- the owner's "Double lunge", 2026-10-05 -- and the turn between them; the lock is read the frame of the hit)
+      return { tel:tel, red:red, side:side, faced: side===1, dmg:you.pct - p0, lock:(lockAt === null ? you.spCd : lockAt), deleted:(delAt === null ? you._deletedT > 0 : delAt), left:s._xs.length, grounded:grounded };`);
+    const caught = run('/* facing X, on the floor */', 'if (s._xs.length) you.face = s._xs[0].side;');   // (and facing the second lunge too: it deals nothing more -- one id, one cap)
     expect(caught.tel, 'tier 2\'s wind-up').toBe(66);
     expect(caught.red, 'the siren: the screen tints red').toBe(true);
     expect(caught.faced, 'X comes in on the side you face').toBe(true);
@@ -387,8 +387,8 @@ describe('the six personalised specials', () => {
     expect(caught.lock, 'specials locked 120 frames').toBeGreaterThanOrEqual(100);
     expect(caught.deleted).toBe(true);
     expect(caught.left).toBe(0);
-    const away = run('you.face = -1;   // turned away');
-    expect(away.dmg, '"simply not looking at him"').toBe(0);
+    const away = run('you.face = -1;   // turned away', 'if (s._xs.length) you.face = -s._xs[0].side;');   // (turned away from the first lunge, and from the second one that comes back from the other side)
+    expect(away.dmg, '"simply not looking at him": neither lunge lands -- all that reaches a fighter who stood still in the trail (from tier 1 now: the owner, 2026-10-05) is its zap, 0.3 of the hit').toBeCloseTo(52.8*0.3, 3);
     expect(away.lock).toBe(0);
     const air = run('you.y = airY; you.vy = 0;', 'you.y = airY; you.vy = 0;');
     expect(air.grounded.slice(1).some(g => g), 'held in the air').toBe(false);
@@ -405,7 +405,7 @@ describe('the six personalised specials', () => {
       cobsFightTelegraph(s, 'ticktock', you); s._tel = 0; COBS_MOVES.ticktock(s, you, ++BOSS_ATK_ID);
       var T = cobsT(s, 'ticktock'), w = shots();
       var out = { timer:s._tick.t, want:T.timer, n:w.length, wantN:T.n, bounce:w.every(function(p){ return p.bounce && p.maxBounces===T.ric + 1 && p.shape==='meeplewatch'; }) };
-      projectiles = []; s._tick.t = 1; step();
+      projectiles = []; s._track = []; s._tick.t = 1; step();   // (the stage cleared by hand: the track too, or the first throw's watches would shatter now)
       out.zero = { shots:shots().length, volley:T.volley, tel:s._tel, tick:s._tick, kind:s._telKind };
       projectiles = []; s._marks = 3; s._tick = { t:1, T:420 }; step();
       out.t4 = { pole: shots().filter(function(p){ return p.cobsTrap; }).length, watches: shots().filter(function(p){ return p.shape==='meeplewatch'; }).length, want:cobsT(s, 'ticktock').volley };
@@ -494,7 +494,7 @@ describe('the six personalised specials', () => {
     expect(r.interrupted.hold).toBe(0);
   });
 
-  it('MeTAG LOCKDOWN -- "2 metags with 75 hp each": two summons that fly at you and cuff on contact, killable on every path; from tier 3 a wall splits the stage', () => {
+  it('MeTAG LOCKDOWN -- "2 metags with 75 hp each", one at a time since the owner\'s nerf (2026-10-05): a summon that flies at you and cuffs on contact, killable on every path; from tier 3 a wall splits the stage', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5); s.x = you.x + 260; s.y = you.y - 60; s._marks = 2;
       cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
@@ -503,17 +503,19 @@ describe('the six personalised specials', () => {
       var rooted = 0, pct0 = you.pct, walled = false;
       for (var i=0;i<400;i++){ step(); you.invuln = 0; rooted = Math.max(rooted, you.rooted||0); if (worldPlats.some(function(p){ return p._cobsWall; })) walled = true; if (rooted && walled) break; }
       out.cuff = { rooted:rooted, dmg:you.pct - pct0, walled:walled, wallSolid:worldPlats.filter(function(p){ return p._cobsWall; }).every(function(p){ return p.solid; }) };
-      // killable: melee, a shot, a dash -- each through the boss side's own path
-      var a = tags[0], b = tags[1];
-      damageSummons(you, a.x, a.y, 30, 40); out.melee = a.hp;
-      addProj({ owner:you.idx, ownerObj:you, x:a.x, y:a.y, vx:0.1, vy:0, r:12, dmg:20, kb:1, life:5, color:'#fff' }); step(); out.shot = a.hp;
-      damageSummons(you, a.x, a.y, 30, 40); step(); out.dead = { life:a.life, gone:summons.indexOf(a) < 0 };
+      // killable: melee, a shot, a dash -- each through the boss side's own path. (you is Knife, the story fighter: "2x damage on knife in the cobs fight." -- the owner, 2026-10-05 -- so a swing of 20
+      // is 40 on a unit of his, and a shot of 10 is 20: written at half, the numbers read as they did.)
+      var a = tags[0];
+      damageSummons(you, a.x, a.y, 30, 20); out.melee = a.hp;
+      addProj({ owner:you.idx, ownerObj:you, x:a.x, y:a.y, vx:0.1, vy:0, r:12, dmg:10, kb:1, life:5, color:'#fff' }); step(); out.shot = a.hp;
+      damageSummons(you, a.x, a.y, 30, 20); step(); out.dead = { life:a.life, gone:summons.indexOf(a) < 0 };
+      COBS_MOVES.metags(s, you, ++BOSS_ATK_ID); var b = summons.filter(function(m){ return m.type==='metag' && m.life > 0; })[0];   // (the first is gone: another may be placed)
       b.hp = 5; you._dashing = 3; you._dashDmg = 12; you.x = b.x - 10; you.y = b.y; you.vx = 8; step(); out.dash = { hp:b.hp, gone:summons.indexOf(b) < 0 };
       return out;`);
-    expect(r.n).toBe(2);
-    expect(r.hp).toEqual([[75, 75], [75, 75]]);
+    expect(r.n, 'ONE tag at a time').toBe(1);
+    expect(r.hp).toEqual([[75, 75]]);
     expect(r.hostile).toBe(true);
-    expect(r.again, 'never a second pair while one stands').toBe(0);
+    expect(r.again, 'never a second while one stands').toBe(0);
     expect(r.cuff.rooted, 'cuffed: rooted').toBeGreaterThan(0);
     expect(r.cuff.dmg).toBeGreaterThan(0);
     expect(r.cuff.walled, 'tier 3: the first cuff drops the wall').toBe(true);
@@ -625,10 +627,11 @@ describe('beatable in principle -- whatever a bot manages', () => {
       out.won = COBSFIGHT.won; out.told = window.__cobsEnd; out.life = s.life; out.over = COBSFIGHT.over; out.banner = window.__lastBanner;
       out.rushCleared = (PROFILE.bossesCleared || {})['Steve Cobs'] || null; out.title = document.getElementById('resultTitle').textContent;
       return out;`);
-    expect(r.melee).toBe(20);
-    expect(r.shot).toBe(15);
-    expect(r.dash).toBe(12);
-    expect(r.bolt).toBe(12);
+    // ("2x damage on knife in the cobs fight." -- the owner, 2026-10-05: you is Knife, the story fighter, so every path into him counts double: a swing of 20 takes 40, a shot of 15 takes 30, a dash of 12 and a bolt of 12 take 24)
+    expect(r.melee).toBe(40);
+    expect(r.shot).toBe(30);
+    expect(r.dash).toBe(24);
+    expect(r.bolt).toBe(24);
     expect(r.t1).toBe(1);
     expect(r.zero).toBe(0);
     expect(r.dying, 'his ending scene runs COBS_END.total frames before the fight ends').toBe(r.total);

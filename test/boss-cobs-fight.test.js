@@ -38,11 +38,25 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
   const TWISTS = [
     ['van', 'phone', 'up'], ['van', 'pspd', 'up'], ['chainsaws', 'lolli', 'down'], ['chainsaws', 'shards', 'up'], ['spikes', 'stag', 'down'], ['spikes', 'alt', 'up'],
     ['deploy', 'blink', 'down'], ['deploy', 'pencil', 'up'], ['meknife', 'yank', 'up'], ['meknife', 'glint', 'down'], ['hands', 'rows2', 'up'], ['hands', 'rowDy', 'up'],
-    ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up'], ['device', 'pincer', 'up'], ['device', 'pgap', 'down'], ['portal', 'pull', 'up'], ['portal', 'pullR', 'up'],
-    ['springs', 'retract', 'up'], ['springs', 'reach', 'up'], ['memurder', 'track', 'up'], ['kernelpop', 'chain', 'down'], ['ticktock', 'bend', 'up'], ['plug', 'wave', 'down'],
-    ['keynote', 'cresc', 'up'], ['keynote', 'fin3', 'up'], ['metags', 'link', 'up'], ['metags', 'linkW', 'up'], ['cannon', 'rock', 'up'],
+    ['device', 'pincer', 'up'], ['device', 'pgap', 'down'],
+    ['springs', 'retract', 'up'], ['springs', 'reach', 'up'], ['kernelpop', 'chain', 'down'], ['plug', 'wave', 'down'],
+    ['keynote', 'cresc', 'up'], ['keynote', 'fin3', 'up'], ['cannon', 'rock', 'up'],
   ];
-  it('every twist is 0 at tier 1, set at tier 2 and stronger at tier 3, and never weakens at tiers 4 and 5; seventeen attacks carry one in their table (the other two are his passives)', () => {
+  // THE OWNER'S TUNING, 2026-10-05 ("some of cob's attacks are too easy, some too hard"): twists the owner moved to TIER 1 override the usual "twists from tier 2".
+  // (LOCKDOWN's twist, the barrier link, is not here at all any more: "No barrier link", the owner's nerf, 2026-10-05; see 'OWNER: LOCKDOWN! -- no barrier link'.)
+  // PORTAL: "two from the start" -- the pull is on from tier 1 (and twice as strong, reaching farther). DELETION: "Trail from tier 1". TICK TOCK!: "Bend from tier 1". MeMURDER: "Tracking from tier 1".
+  const OWNER_TIER1 = [['portal', 'pull', 'up'], ['portal', 'pullR', 'up'], ['deletion', 'trail', 'up'], ['deletion', 'trailDmg', 'up'], ['ticktock', 'bend', 'up'], ['memurder', 'track', 'up']];
+  it('OWNER: the twists he moved to tier 1 are ON at tier 1, never weaker as the tiers climb, and stronger by tier 3 (PORTAL\'s pull: "two from the start")', () => {
+    const rows = W.eval('COBS_TIERS');
+    for (const [k, f, dir] of OWNER_TIER1) {
+      const v = rows[k].map((T) => T[f]);
+      expect(v[0], `${k}.${f} is ON at tier 1 (the owner moved it there)`).toBeGreaterThan(0);
+      const better = (x, y) => (dir === 'up' ? x >= y : x <= y);
+      for (let i = 1; i < 5; i++) expect(better(v[i], v[i - 1]), `${k}.${f} never weakens (${v})`).toBe(true);
+      expect(v[2], `${k}.${f} is stronger by tier 3 (${v})`).toBeGreaterThan(v[1]);
+    }
+  });
+  it('every twist is 0 at tier 1, set at tier 2 and stronger at tier 3, and never weakens at tiers 4 and 5; the tier-2 twists of the attacks listed here (the owner\'s tier-1 ones are tested above)', () => {
     const rows = W.eval('COBS_TIERS');
     const byAttack = {}; for (const [k, f, dir] of TWISTS) (byAttack[k] = byAttack[k] || []).push([f, dir]);
     for (const [k, f, dir] of TWISTS) {
@@ -57,7 +71,7 @@ describe('Round 7: EVERY TWIST IS OFF AT TIER 1, ON AT TIER 2 AND STRONGER AT TI
       expect(byAttack[k].some(([f]) => f !== 'pgap' && rows[k][1][f] > 0), `${k}: the twist is ON at tier 2`).toBe(true);
       expect(byAttack[k].some(([f, dir]) => (dir === 'up' ? rows[k][2][f] > rows[k][1][f] : rows[k][2][f] < rows[k][1][f])), `${k}: tier 3 is stronger than tier 2 in something`).toBe(true);
     }
-    expect(Object.keys(byAttack), 'seventeen attacks carry a table twist; the other two are his passives (rage on foot, Popping Point)').toHaveLength(17);
+    expect(Object.keys(byAttack).concat([...new Set(OWNER_TIER1.map((x) => x[0]))]), 'sixteen attacks carry a table twist now (twelve here, four in the owner\'s tier-1 list; LOCKDOWN\'s barrier link was taken out by the owner\'s nerf of 2026-10-05); the other two are his passives (rage on foot, Popping Point)').toHaveLength(16);
   });
 
   it('the two passive twists wait for their own lines: the rage on foot fights low only while he rages, and the ring only below 20% (tier 5)', () => {
@@ -129,7 +143,7 @@ describe('FREE SAMPLES! -- "they create traveling crumbs that move along the gro
       crumbs = projectiles.filter(function(p){ return p._crumb; });
       var left = crumbs.filter(function(p){ return p.vx < 0; }).length, right = crumbs.filter(function(p){ return p.vx > 0; }).length;
       var ids = new Set(crumbs.map(function(p){ return p.bossAtk; })).size, sp = crumbs.every(function(p){ return Math.abs(Math.abs(p.vx) - T.cspd) < 1e-9; });
-      var onFloor = crumbs.filter(function(p){ return p._crumb.mode === 'run'; }).every(function(p){ return Math.abs(p.y + p.r*0.5 - p._crumb.sy) < 1.5; });
+      var onFloor = crumbs.filter(function(p){ return p.phase === 'drive'; }).every(function(p){ return Math.abs(p.y + p.r - p.rideTop) < 1.5; });   // (the van's riding: its centre one radius over the surface it rides)
       var xs0 = crumbs.map(function(p){ return p.x; }); for (var i=0;i<20;i++){ step(); you.invuln = 99999; } var moved = crumbs.every(function(p, k){ return Math.sign(p.x - xs0[k]) === Math.sign(p.vx) && Math.abs(p.x - xs0[k]) > 40; });
       return { n: boxes.length, want: T.n, shadow: shadow, left: left, right: right, per: T.crumbs, ids: ids, sp: sp, onFloor: onFloor, moved: moved, traps: projectiles.filter(function(p){ return p.trap; }).length,
         boxesLeft: projectiles.filter(function(p){ return p.cobsSample; }).length, poison: crumbs.every(function(p){ return p.fxTag === 'poison'; }), boxX: boxX };`);
@@ -146,28 +160,31 @@ describe('FREE SAMPLES! -- "they create traveling crumbs that move along the gro
     expect(r.poison).toBe(true);
   });
 
-  it('crumbs run to the edge of a platform and FALL, keeping their sideways run, land on what is below and run on', () => {
+  // THE OWNER, 2026-10-05 ("i hardly notice these 3"): "remove the crumbs chasing thing, they should just have the thing like the van where they ride off platforms."
+  // The crumbs used to drop off an edge on an arc, keeping their run in the air; now they ride the way the van does (vanDrive, `drive:'roll'`): along the surface,
+  // STRAIGHT down off its edge, onto what is below, and on the same way. test/cobs-tune.test.js has the rest of it (no chasing, the wall, the van's own code).
+  it('crumbs RIDE like the van: along a platform to its edge, STRAIGHT off it onto what is below, and on the same way (the owner: "like the van where they ride off platforms")', () => {
     const r = fight(`
       park(); you.invuln = 99999; atTier(1);
       var pl = worldPlats.filter(function(p){ return !p.solid && p.w > 200 && p.w < 330 && p.y > groundY() - 700 && p.y < groundY() - 200; })[0];
       var top = pl.y, mid = pl.x + pl.w/2, T = cobsT(s, 'samples');
       var box = { x:mid, y:top - 6, r:12, life:1, bossAtk:++BOSS_ATK_ID, warnX:mid, warnY:top };
       COBS_DIE.sample(s, box, { T:T, dmg:13.2, cap:13.2 });
-      var cs = projectiles.filter(function(p){ return p._crumb; }), out = { n: cs.length, plat: [pl.x, pl.w, top], track: [], vx0: cs.map(function(p){ return p.vx; }) };
-      var wasRun = false, fell = false, landedBelow = false, kept = true;
+      var cs = projectiles.filter(function(p){ return p._crumb; }), out = { n: cs.length, plat: [pl.x, pl.w, top], vx0: cs.map(function(p){ return p.vx; }) };
+      var wasRun = false, fell = false, straight = true, landedBelow = false, sameWay = true;
       for (var i=0;i<140;i++){ step(); you.invuln = 99999;
-        cs.forEach(function(p, k){ if (p.life <= 0) return; var C = p._crumb;
-          if (C.mode === 'run' && C.sy === top) wasRun = true;
-          if (C.mode === 'fall' && p.y > top + 4 && (p.x < pl.x - 2 || p.x > pl.x + pl.w + 2)) fell = true;
-          if (C.mode === 'run' && C.sy > top + 20) landedBelow = true;
-          if (p.vx !== out.vx0[k]) kept = false; }); }
-      out.wasRun = wasRun; out.fell = fell; out.landedBelow = landedBelow; out.kept = kept;
+        cs.forEach(function(p, k){ if (p.life <= 0) return;
+          if (p.phase === 'drive' && p.rideTop === top) wasRun = true;
+          if (p.phase === 'fall'){ fell = true; if (p.vx !== 0) straight = false; }
+          if (p.phase === 'drive' && p.rideTop > top + 20){ landedBelow = true; if (p.vx !== out.vx0[k]) sameWay = false; } }); }
+      out.wasRun = wasRun; out.fell = fell; out.straight = straight; out.landedBelow = landedBelow; out.sameWay = sameWay;
       return out;`);
     expect(r.n).toBe(4);
     expect(r.wasRun, 'on the platform they ran along it').toBe(true);
     expect(r.fell, 'off its edge they fell').toBe(true);
-    expect(r.kept, '"add momentum to falling objects": the sideways speed is never lost in the air').toBe(true);
-    expect(r.landedBelow, 'and below, they landed and ran on').toBe(true);
+    expect(r.straight, 'straight down, as the van\'s roller falls: no sideways run in the air').toBe(true);
+    expect(r.landedBelow, 'and below, they landed and rode on').toBe(true);
+    expect(r.sameWay, 'the way they were going: the van\'s driveVx comes back on landing').toBe(true);
   });
 
   it('a box that is HIT on the way down bursts where it is, crumbs and all; and [POOF] erasing boxes leaves no crumbs behind', () => {
@@ -461,35 +478,39 @@ describe('MY OWN HANDS! -- two rows, marked', () => {
 });
 
 describe('MePHONE X: DELETION! -- an electric trail', () => {
-  const TRAIL = (t, turn) => fight(`
+  // THE OWNER, 2026-10-05 ("hardly notice the attacks i didnt click": DELETION): "Trail from tier 1" (the burning trail from tier 1, lasting longer) and "Double lunge"
+  // (a second lunge right after the first, turned toward where you went). So these fighters always turn their back on the X that is lunging (`away`) or always face it.
+  const TRAIL = (t, away) => fight(`
     park(); atTier(${t}); floorAt(you, WW*0.5); you.face = 1; you.spCd = 0; s.x = you.x + 500; s.y = you.y - 200; projectiles = [];
-    cobsFightTelegraph(s, 'deletion', you); var X = s._xs[0]; s._tel = 0; COBS_MOVES.deletion(s, you, ++BOSS_ATK_ID); ${turn ? 'you.face = -1;' : ''}
-    var T = cobsT(s, 'deletion'), out = { T: T, trail0: s._trail.length, nodes: 0, pctAtPass: null, zapped: null, ids: null, frames: [] };
-    for (var i=0;i<130;i++){ s._atkTimer = 1e9; you.invuln = 0; var p0 = you.pct; step(); out.nodes = Math.max(out.nodes, s._trail.length);
-      if (out.pctAtPass === null && !s._xs.length) out.pctAtPass = you.pct;
+    cobsFightTelegraph(s, 'deletion', you); var X = s._xs[0]; s._tel = 0; COBS_MOVES.deletion(s, you, ++BOSS_ATK_ID);
+    var T = cobsT(s, 'deletion'), out = { T: T, nodes: 0, pctAtPass: null, turned: null, ids: null, frames: [] };
+    for (var i=0;i<170;i++){ s._atkTimer = 1e9; you.invuln = 0; if (s._xs.length) you.face = ${away ? '-' : ''}s._xs[0].side; var p0 = you.pct; step(); out.nodes = Math.max(out.nodes, s._trail.length);
+      if (out.turned === null && s._xs.length && s._xs[0].turnT > 0){ out.turned = i; out.pctAtPass = you.pct; }
       if (you.pct > p0) out.frames.push([i, Math.round((you.pct - p0)*10)/10]);
       if (i === 24) out.ids = new Set(s._trail.map(function(n){ return n.id; })).size; }
-    out.pct = you.pct; out.id = X.id; out.dmg = X.dmg; out.left = s._trail.length; return out;`);
+    out.pct = you.pct; out.id = X.id; out.dmg = X.dmg; out.left = s._trail.length; out.xs = s._xs.length; return out;`);
 
-  it('tier 1: nothing is left behind; tier 2: red electricity along the lunge, X running on through you if you turned away, armed after a beat, about a second long', () => {
+  it('OWNER: the trail is on from tier 1 and lasts longer (90, 90, 108, 126, 144 frames: 1.5 times the old 60 to 96): red electricity along the lunge, X running on through you if you turned away, armed after a beat', () => {
     const t1 = TRAIL(1, true), t2 = TRAIL(2, true);
-    expect(t1.nodes, 'tier 1: off').toBe(0);
-    expect(t1.pct, 'and a fighter who turned away is untouched').toBe(0);
+    expect(t1.nodes, 'tier 1: a trail now').toBeGreaterThan(10);
     expect(t2.nodes, 'a trail of nodes').toBeGreaterThan(10);
     expect(t2.ids, 'on X\'s own id').toBe(1);
-    expect(t2.T.trail, 'about a second').toBe(60);
+    expect(W.eval('COBS_TIERS.deletion.map(function(T){ return T.trail; })'), '1.5 times the old 0 (tier 1: the old tier 2\'s), 60, 72, 84, 96').toEqual([90, 90, 108, 126, 144]);
+    expect(W.eval('COBS_TIERS.deletion.map(function(T){ return T.trailDmg; })'), 'the same shares of the hit as before; tier 1 takes the old tier 2\'s').toEqual([0.3, 0.3, 0.4, 0.45, 0.5]);
     expect(t2.left, 'and it is gone again by the end').toBe(0);
+    expect(t2.xs, 'the whole attack ends: both lunges done').toBe(0);
   });
 
   it('the counter is not zapped the frame it is made: the electricity arms for COBS_TRAIL_ARM frames, then bites once for a part of X\'s hit (never both)', () => {
     const t2 = TRAIL(2, true), t3 = TRAIL(3, true);
+    expect(t2.turned, 'the first lunge passed and X turned to come again').not.toBe(null);
     expect(t2.pctAtPass, 'X passes through a fighter who turned away: no hit').toBe(0);
-    expect(t2.frames.length, 'then one zap, once').toBe(1);
+    expect(t2.frames.length, 'then one zap, once (every node of an X shares one hit list)').toBe(1);
     expect(t2.frames[0][1]).toBeCloseTo(33*1.6*0.3, 0);
     expect(t3.frames[0][1], 'stronger at tier 3').toBeGreaterThan(t2.frames[0][1]);
     expect(t2.pct, 'never more than X\'s own hit').toBeLessThanOrEqual(t2.dmg + 1e-6);
     const hit = TRAIL(2, false);
-    expect(hit.pct, 'a fighter X caught takes its hit and the trail adds nothing (one id, one cap)').toBeLessThanOrEqual(hit.dmg + 1e-6);
+    expect(hit.pct, 'a fighter X caught takes its hit and the trail and the second lunge add nothing (one id, one cap)').toBeLessThanOrEqual(hit.dmg + 1e-6);
   });
 
   it('draws the dim and the bright electricity without a throw', () => {
@@ -541,13 +562,14 @@ describe('MEEPLE PORTAL! -- the vortex pull', () => {
     for (var i=0;i<${frames};i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); maxV = Math.max(maxV, Math.abs(you.vx)); }
     return { dx: you.x - x0, maxV: maxV, T: cobsT(s, 'portal'), left: s._portals.length };`);
 
-  it('tier 1 does not pull; tier 2 drags a fighter in range toward the core; tier 3 harder -- and never to a standstill-lock: the drift is below a fighter\'s own run', () => {
-    const t1 = PULL(1, 12), t2 = PULL(2, 12), t3 = PULL(3, 12);
-    expect(Math.abs(t1.dx), 'tier 1: off').toBeLessThan(0.5);
-    expect(t2.dx, 'toward the portal, which is on the right').toBeGreaterThan(3);
-    expect(t3.dx, 'stronger at tier 3').toBeGreaterThan(t2.dx);
-    expect(t3.maxV, 'never a lock: below a fighter\'s run (6.4)').toBeLessThan(6.4);
-    expect([t2.T.pull, t3.T.pull]).toEqual([0.4, 0.5]);
+  // THE OWNER, 2026-10-05 ("i hardly notice these 3"): PORTAL -- "two from the start" (the pull from tier 1) and "Stronger pull": twice as strong, reaching farther.
+  it('OWNER: the pull is on from tier 1 and TWICE as strong as it was (0.4, 0.5, 0.55, 0.6 -> 0.8, 1.0, 1.1, 1.2), reaching farther (170 and 200 px -> 240 and 280) -- and a standing fighter\'s drift still stays below a fighter\'s own run', () => {
+    const T = W.eval('COBS_TIERS.portal');
+    expect(T.map((x) => x.pull), 'double the old pulls; tier 1 takes the old tier 2\'s, doubled').toEqual([0.8, 0.8, 1.0, 1.1, 1.2]);
+    expect(T.map((x) => x.pullR), 'farther than the old 170 / 200').toEqual([240, 240, 280, 280, 280]);
+    const rs = [1, 2, 3, 4, 5].map((t) => PULL(t, 12));
+    for (const r of rs) { expect(r.dx, 'toward the portal, which is on the right').toBeGreaterThan(3); expect(r.maxV, 'below a fighter\'s run (6.4)').toBeLessThan(6.4); }
+    expect(rs[2].dx, 'stronger at tier 3').toBeGreaterThan(rs[1].dx);
   });
 
   it('a fighter out of range is left alone; the portal closes early once it has flung someone', () => {
@@ -615,9 +637,11 @@ describe('MeMURDER! -- the tracking app', () => {
     out.you = you.x - x00; out.finalX = mid.warnX; out.up = mid.life > 0 ? (mid.vy < 0) : null; out.scars = IMPACT_SCARS.length - scars0; out.popped = poles.every(function(p){ return p._popped; });
     return out;`);
 
-  it('tier 1: the marks stay where you stood; tier 2: they slide after your feet, 2 px a frame, for the first 60% of the delay -- tier 3 faster', () => {
+  // THE OWNER, 2026-10-05 ("hardly notice the attacks i didnt click": MeMURDER): "Tracking from tier 1" -- the marks slide after your feet from tier 1, the old tier 2's 2 px a frame.
+  it('OWNER: the marks slide after your feet from tier 1, 2 px a frame (2, 2, 2.5, 3, 3.5), for the first 60% of the delay -- tier 3 faster', () => {
     const t1 = TRACK(1), t2 = TRACK(2), t3 = TRACK(3);
-    expect(Math.max(...t1.steps.map(Math.abs)), 'tier 1: off').toBe(0);
+    expect(Math.max(...t1.steps), 'tier 1: on').toBeCloseTo(2.0, 5);
+    expect(W.eval('COBS_TIERS.memurder.map(function(T){ return T.track; })')).toEqual([2.0, 2.0, 2.5, 3.0, 3.5]);
     expect(t2.n).toBeGreaterThanOrEqual(3);
     expect(Math.max(...t2.steps), 'at the tier\'s tracking speed').toBeCloseTo(2.0, 5);
     expect(Math.max(...t3.steps), 'stronger at tier 3').toBeCloseTo(2.5, 5);
@@ -701,9 +725,12 @@ describe('TICK, TOCK! -- the watches bend', () => {
       prev = ws.map(function(p){ return [p.vx, p.vy]; }); }
     return { T: T, n: ws.length, bends: res, flagged: ws.filter(function(p){ return !!p._bend; }).length };`);
 
-  it('tier 1 throws plain arcs; tier 2 bends each watch 35 degrees toward you at the top of its arc; tier 3 40', () => {
+  // THE OWNER, 2026-10-05 ("hardly notice the attacks i didnt click": TICK TOCK!): "Bend from tier 1" -- the bend is on from tier 1, the old tier 2's 35 degrees.
+  it('OWNER: every watch bends 35 degrees toward you at the top of its arc from tier 1 (35, 35, 40, 40, 45); tier 3 40', () => {
     const t1 = BEND(1), t2 = BEND(2), t3 = BEND(3);
-    expect(t1.flagged, 'tier 1: off').toBe(0);
+    expect(t1.flagged, 'tier 1: on now').toBe(t1.n);
+    for (const b of t1.bends) { expect(Math.abs(b.deg), 'bent 35 degrees (a frame of gravity on top)').toBeGreaterThan(30); expect(Math.abs(b.deg)).toBeLessThan(40); }
+    expect(W.eval('COBS_TIERS.ticktock.map(function(T){ return T.bend; })')).toEqual([35, 35, 40, 40, 45]);
     expect(t2.flagged).toBe(t2.n);
     expect(t2.bends.length, 'every watch bent, once').toBe(t2.n);
     for (const b of t2.bends) { expect(Math.abs(b.deg), 'bent 35 degrees (a frame of gravity on top)').toBeGreaterThan(30); expect(Math.abs(b.deg)).toBeLessThan(40); }
@@ -770,7 +797,7 @@ describe('PULL THE PLUG! -- the unplugging wave', () => {
     expect(t2.plugNull).toBe(true);
   });
 
-  it('a fighter standing on a platform is shocked only when the wave reaches it; one standing on a pane never is; tier 1 shocks nobody', () => {
+  it('a fighter standing on a PLATFORM is shocked only when the wave reaches it (a platform that goes: the row\'s `shock`, 0 at tier 1); one standing on a pane never is -- the live floor is tested below', () => {
     const r = fight(`
       park(); atTier(3); you.invuln = 0; s.x = WW*0.5 + 600; s.y = groundY() - 300; projectiles = [];
       var pl = worldPlats.filter(function(p){ return !p.solid && p.w > 200 && p.y > groundY() - 700 && p.y < groundY() - 300; })[0];
@@ -794,6 +821,256 @@ describe('PULL THE PLUG! -- the unplugging wave', () => {
     expect(r.boxAlive, 'the wave took the box').toBe(false);
     expect(r.crumbs).toBe(0);
     expect(r.track).toBe(0);
+  });
+});
+
+// ================= PULL THE PLUG!: the live floor =================
+// THE OWNER, 2026-10-05, verbatim: "if you hit the floor during pull the plug, then you take damage." From [POOF] until the slate returns the FLOOR is live at EVERY tier: whoever touches it is shocked the row's
+// `shock` x a hit (0.3 where the row has none: tier 1), bounced up, and again only after a grace while they stay on it -- never every frame; the panes he drops are the safe footing and one always stands while the
+// floor is live (the fight stays winnable); the floor crackles as it goes live and stops with the slate; no text.
+describe('OWNER: PULL THE PLUG! -- the live floor ("if you hit the floor during pull the plug, then you take damage.")', () => {
+  // The plug at tier `t`, run to its end with `you` in one of three places the whole time -- 'floor' (on the bare floor, free: a real fighter, the bounce is the shock's own), 'pane' (pinned on top of a
+  // pane he dropped) or 'air' (pinned 260 px up) -- the panes dropped 900 px away from the floor you stand on. Every boss-tagged hit on you is recorded with the frame it landed on, whether the floor was
+  // live then and what it was; then 150 frames more with the slate back. `setup` runs once after the move starts, `each` before every frame's step.
+  const LIVE = (t, stand, setup = '', each = '') => fight(`
+    park(); atTier(${t}); s._introT = 0; floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 600; s.y = you.y - 300; projectiles = [];
+    cobsFightTelegraph(s, 'plug', you); s._tel = 0;
+    var T = cobsT(s, 'plug'), px = []; for (var k=0;k<T.n;k++) px.push(WW*0.5 + 900 + k*200); s._paneX = px;
+    COBS_MOVES.plug(s, you, ++BOSS_ATK_ID);
+    var P = s._plug, rec = { T: T, dmg: cobsDmg(), kb: COBS_KB, fshock: P.fshock, shock: P.shock, liveAt: null, endAt: null, panes: [], hits: [], banners: [], pctEnd: null, pctAfter: null }, f = 0;
+    var AH = applyHit, BN = banner;
+    applyHit = function(tg, d, kx, ky, from, o){ if (tg === you && o && o.bossAtk != null) rec.hits.push({ f: f, d: d, ky: ky, live: !!(s._plug === P && P.live), ground: tg.onground, after: null }); return AH.apply(this, arguments); };
+    banner = function(m){ rec.banners.push(String(m)); return BN.apply(this, arguments); };
+    try {
+      ${setup}
+      var run = function(n, until){
+        for (var i=0;i<n;i++){
+          if (until && !until()) break;
+          s._atkTimer = 1e9; f++; ${each}
+          ${stand === 'pane' ? "var pn = worldPlats.find(function(p){ return p._cobsPane; }); if (pn){ you.x = pn.x + pn.w/2; you.y = pn.y - you.r; you.vx = 0; you.vy = 0; }" : ''}
+          ${stand === 'air' ? "you.y = groundY() - you.r - 260; you.vx = 0; you.vy = 0;" : ''}
+          step();
+          var live = (s._plug === P && P.live);
+          if (live && rec.liveAt === null) rec.liveAt = f;
+          if (live) rec.panes.push(worldPlats.filter(function(p){ return p._cobsPane; }).length);
+          var last = rec.hits[rec.hits.length - 1]; if (last && last.f === f) last.after = { ground: you.onground, vy: you.vy };
+        }
+      };
+      run(900, function(){ return !!s._plug; });
+      rec.endAt = f; rec.pctEnd = you.pct; var n0 = rec.hits.length;
+      run(150);
+      rec.after = rec.hits.slice(n0); rec.pctAfter = you.pct;
+    } finally { applyHit = AH; banner = BN; }
+    return rec;`);
+  const floorHits = (r) => r.hits.filter((h) => Math.abs(h.d - r.fshock) < 1e-9);
+
+  it('TIER 1: the row\'s shock is 0 and the floor is live all the same -- 0.3 of a hit (9.9), the first the moment of [POOF], a bounce up, then again only after a grace (45 to 60 frames), never every frame, never before [POOF] or once the slate is back', () => {
+    const r = LIVE(1, 'floor');
+    expect(r.T.shock, 'the row\'s own shock is 0 at tier 1 (that one is for a platform that goes)').toBe(0);
+    expect(r.shock).toBe(0);
+    expect(r.fshock, '0.3 x a boss hit of 33').toBeCloseTo(0.3 * r.dmg, 9);
+    expect(r.liveAt, 'the floor goes live at [POOF]').not.toBe(null);
+    const hits = floorHits(r);
+    expect(hits.length, 'a fighter who stays on the floor is shocked again and again, but not every frame').toBeGreaterThanOrEqual(2);
+    expect(hits[0].f, 'the very frame of [POOF]').toBe(r.liveAt);
+    expect(hits.every((h) => h.live), 'never before [POOF]').toBe(true);
+    expect(hits.every((h) => h.ground), 'it is the floor under your feet that does it').toBe(true);
+    expect(hits.every((h) => Math.abs(h.ky + 6 * r.kb) < 1e-9), 'with an upward bounce of 6 (x his launch scale)').toBe(true);
+    expect(hits.every((h) => h.after && h.after.ground === false), 'the bounce takes you off the floor').toBe(true);
+    for (let i = 1; i < hits.length; i++) {
+      const gap = hits[i].f - hits[i - 1].f;
+      expect(gap, 'again only after a grace of about 45-60 frames').toBeGreaterThanOrEqual(45);
+      expect(gap).toBeLessThanOrEqual(60);
+    }
+    expect(r.endAt - r.liveAt, 'tier 1 is the old instant [POOF]: live for its `poof` frames').toBe(r.T.poof);
+    expect(hits.length, 'never every frame: at most one shock in 45 frames of it').toBeLessThanOrEqual(Math.ceil((r.endAt - r.liveAt) / 45));
+    expect(r.after, 'not after the slate returns: 150 frames on the same floor, and nothing of his lands').toEqual([]);
+    expect(r.pctAfter, 'no damage of any kind').toBeCloseTo(r.pctEnd, 9);
+    expect(r.banners, 'no text: the floor says nothing').toEqual([]);
+  });
+
+  it('EVERY TIER: live from [POOF] -- as the wave starts, from tier 2 -- until the slate is all back, shocking the row\'s shock x a hit (0.3, 0.3, 0.3, 0.45, 0.45 of 33), and quiet again after', () => {
+    for (const t of [1, 2, 3, 4, 5]) {
+      const r = LIVE(t, 'floor');
+      const want = Math.max(r.T.shock, 0.3) * r.dmg;
+      expect(r.fshock, `tier ${t}: the row's shock, 0.3 where it has none`).toBeCloseTo(want, 9);
+      const hits = floorHits(r);
+      expect(hits.length, `tier ${t}: shocked, more than once`).toBeGreaterThanOrEqual(2);
+      expect(hits[0].f, `tier ${t}: the frame it goes live`).toBe(r.liveAt);
+      expect(hits.every((h) => h.live && h.ground && h.ky < 0), `tier ${t}: live, on the floor, bounced up`).toBe(true);
+      for (let i = 1; i < hits.length; i++) expect(hits[i].f - hits[i - 1].f, `tier ${t}: the grace`).toBeGreaterThanOrEqual(45);
+      expect(r.endAt - r.liveAt, `tier ${t}: live until the slate is back (the wave out, the poof, the wave back)`).toBe(r.T.poof + 2 * (r.T.wave || 0));
+      expect(floorHits({ hits: r.after, fshock: r.fshock }), `tier ${t}: quiet once the slate returns`).toEqual([]);
+    }
+  });
+
+  it('THE PANES ARE THE SAFE FOOTING: standing on a pane he dropped through the whole of it you are never shocked, and neither are you in the air -- at every tier', () => {
+    for (const t of [1, 2, 3, 5]) {
+      for (const stand of ['pane', 'air']) {
+        const r = LIVE(t, stand);
+        expect(r.liveAt, `tier ${t} ${stand}: it did go live`).not.toBe(null);
+        expect(r.hits.filter((h) => h.live), `tier ${t}: on a ${stand} nothing of his touches you while the floor is live`).toEqual([]);
+      }
+    }
+  });
+
+  it('A PANE ALWAYS STANDS while the floor is live: the panes he dropped last to the slate\'s return at every tier, and if every pane is gone -- or none ever landed -- one is laid where the nearest of you stands, that frame', () => {
+    for (const t of [1, 2, 3, 4, 5]) {
+      const r = LIVE(t, 'floor');
+      expect(Math.min(...r.panes), `tier ${t}: a pane from [POOF] to the slate's return`).toBeGreaterThanOrEqual(1);
+      expect(Math.max(...r.panes), `tier ${t}: the ones he dropped, with no help`).toBeLessThanOrEqual(r.T.n);
+    }
+    const gone = LIVE(3, 'floor', '', 'if (P.live) worldPlats = worldPlats.filter(function(p){ return !p._cobsPane; });');
+    expect(Math.min(...gone.panes), 'the last pane timed out (here: every frame): one is laid again at once').toBeGreaterThanOrEqual(1);
+    const none = LIVE(1, 'floor', 'projectiles = projectiles.filter(function(p){ return !p.cobsPane; });');
+    expect(none.liveAt).not.toBe(null);
+    expect(Math.min(...none.panes), 'no pane ever landed: one is there from the first frame of the live floor').toBe(1);
+  });
+
+  it('it never lands on a fighter in the grace of another hit or under a MeTag\'s cuff (no pile-on; the hunter\'s grace-hit): the shock waits for the grace to end', () => {
+    const arm = (what) => 'if (P.phase === \'wait\' && P.t <= 1){ ' + what + ' }';   // the frame before [POOF]
+    const cuffed = LIVE(2, 'floor', '', arm('you._cuffUntil = hazardT + 40; you._cuffId = -1;'));
+    const grace = LIVE(2, 'floor', '', arm('you.invuln = 40;'));
+    for (const [what, r] of [['a cuff', cuffed], ['a hit\'s grace', grace]]) {
+      const hits = floorHits(r);
+      expect(hits.length, `${what}: shocked once it is over`).toBeGreaterThanOrEqual(1);
+      expect(hits[0].f - r.liveAt, `${what}: not on top of it`).toBeGreaterThanOrEqual(35);
+    }
+  });
+
+  it('THE TELL: the floor crackles from [POOF] until the slate returns -- cyan arcs and a glow along its top, drawn with valid canvas calls, in no words -- and the picture is the plain floor again after', async () => {
+    const { w, errors } = await bootValidating();
+    w.eval(`(function(){
+      SETTINGS.itemRate = 0; SETTINGS.stocks = 3; LOCAL_PLAYERS = 1;
+      startCobsFight(['Knife'], { story:true, onEnd:function(){ return true; } });
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      s._hop = null; s._atkTimer = 1e9; you.controller = 'still'; you.invuln = 99999; s.x = you.x + 600; s.y = you.y - 300; projectiles = [];
+    })()`);
+    errors.length = 0;
+    const r = w.eval(`(function(){
+      var s = summons.find(function(o){ return o._cobsFight; }), you = fighters[0];
+      var ops = function(){ cobsFx = []; var a = ctx.__ops; drawCobsFx(); return ctx.__ops - a; };
+      var out = { idle: ops() };
+      cobsFightTelegraph(s, 'plug', you); s._tel = 0; s._paneX = [WW*0.5 + 900]; COBS_MOVES.plug(s, you, ++BOSS_ATK_ID);
+      out.waiting = ops();                                   // the panes are coming down: the floor is not live yet
+      var P = s._plug; P.t = 1; s._atkTimer = 1e9; step(); out.liveNow = P.live;
+      P.live = false; out.dark = ops(); P.live = true; out.live = ops();   // the same picture without the crackle and with it
+      out.flicker = []; for (var i=0;i<12;i++){ hazardT++; out.flicker.push(ops()); }   // it flickers, but it draws on every frame, whatever the beat
+      P.phase = 'out'; P.t = 1; s._atkTimer = 1e9; step(); out.over = s._plug === null;
+      worldPlats = worldPlats.filter(function(p){ return !p._cobsPane; });   // (the pane still lying there is drawn too)
+      out.after = ops();
+      return out;
+    })()`);
+    expect(r.liveNow).toBe(true);
+    expect(r.waiting, 'not before [POOF]').toBe(r.idle);
+    expect(r.live, 'crackling: arcs and a glow where there was nothing').toBeGreaterThan(r.dark + 20);
+    for (const n of r.flicker) expect(n, 'every frame of the flicker still draws').toBeGreaterThan(r.dark + 20);
+    expect(r.over).toBe(true);
+    expect(r.after, 'gone with the slate').toBe(r.idle);
+    expect(errors, 'every call valid').toEqual([]);
+  });
+});
+
+// ================= 2x DAMAGE ON KNIFE IN THE COBS FIGHT =================
+// THE OWNER, 2026-10-05, verbatim: "2x damage on knife in the cobs fight." In Steve Cobs's fight -- the story fight (Knife alone) and the any-fighter fight (a Knife among the lineup) -- what Knife deals to him
+// and to his units (the MeTags and the MePhone units) counts double, on every road into them; nothing else changes.
+describe('OWNER: "2x damage on knife in the cobs fight."', () => {
+  // His fight with `lineup`, every fighter still and in no danger. `by(name)` is that fighter; `ways` are the roads into a target (melee, a shot, a dash, a Chain Bolt: each with its own number); `took(f, t, way)` is
+  // what that fighter's hit by that road took off the target `t` (the clock moves on first, past any grace -- one for each attacker -- so one hit never swallows the next).
+  const DEAL = (body, lineup = ['Firey', 'Knife'], story = false) => { W.Math.random = mulberry32(5); return W.eval(`(function(){
+    SETTINGS.itemRate=0; SETTINGS.stocks=3; LOCAL_PLAYERS=1; window.__cobsEnd = undefined;
+    startCobsFight(${JSON.stringify(lineup)}, { story:${story}, onEnd:function(won){ window.__cobsEnd = won; return true; } });
+    var s = summons.find(function(o){ return o._cobsFight; }); s._hop = null; s._introT = 0; s._atkTimer = 1e9; s.x = WW*0.5 + 300; s.y = groundY() - 400;
+    fighters.forEach(function(f){ f.controller = 'still'; f.invuln = 99999; });
+    var by = function(name){ return fighters.find(function(f){ return f.name === name; }); };
+    var ways = {
+      melee: function(f, t){ damageSummons(f, t.x, t.y, (t.r || 30) + 10, 20); },
+      shot: function(f, t){ addProj({ owner:f.idx, ownerObj:f, x:t.x, y:t.y, vx:0.1, vy:0, r:12, dmg:15, kb:1, life:5, color:'#fff' }); step(); },
+      dash: function(f, t){ f._dashing = 3; f._dashDmg = 12; f._dashSummonHits = null; f.x = t.x - 10; f.y = t.y; f.vx = 8; step(); f._dashing = 0; f._dashSummonHits = null; },
+      bolt: function(f, t){ chainBoltBoss(t, 12, f); },
+    };
+    var took = function(f, t, way){ hazardT += 40; var h0 = t.hp; ways[way](f, t); return h0 - t.hp; };
+    ${body}
+  })()`); };
+
+  it('KNIFE DEALS TWICE TO HIM: on every road -- a swing, a shot, a dash, a Chain Bolt -- he takes twice from Knife what he takes from another fighter for the same hit; the other fighter\'s is as it always was', () => {
+    const r = DEAL(`
+      var out = {}; ['melee', 'shot', 'dash', 'bolt'].forEach(function(way){ out[way] = { firey: took(by('Firey'), s, way), knife: took(by('Knife'), s, way) }; });
+      out.mult = s._dmgTakenMult; return out;`);
+    // (two of you: every hit counts for 1/1.6 of itself against him, the same for both)
+    expect(r.mult).toBeCloseTo(1 / 1.6, 9);
+    const written = { melee: 20, shot: 15, dash: 12, bolt: 12 };
+    for (const way of Object.keys(written)) {
+      expect(r[way].firey, `${way}: another fighter's hit is as it was`).toBeCloseTo(written[way] * r.mult, 9);
+      expect(r[way].knife, `${way}: Knife's is double`).toBeCloseTo(2 * written[way] * r.mult, 9);
+      expect(r[way].knife / r[way].firey, `${way}: exactly twice`).toBeCloseTo(2, 9);
+    }
+  });
+
+  it('IN THE STORY FIGHT, where Knife is alone, every hit he lands is twice the number written (the story\'s bar has no allies to scale it)', () => {
+    const r = DEAL(`
+      var out = {}; ['melee', 'shot', 'dash', 'bolt'].forEach(function(way){ out[way] = took(by('Knife'), s, way); }); out.mult = s._dmgTakenMult; out.story = COBSFIGHT.story; return out;`, ['Knife'], true);
+    expect(r.story).toBe(true);
+    expect(r.mult).toBe(1);
+    expect([r.melee, r.shot, r.dash, r.bolt]).toEqual([40, 30, 24, 24]);
+  });
+
+  it('AND TO HIS UNITS: a MeTag and a MePhone unit take twice from Knife what they take from another fighter, by a swing, a shot and a dash', () => {
+    const r = DEAL(`
+      var out = { tag: {}, unit: {} };
+      s._marks = 2; COBS_MOVES.metags(s, by('Firey'), ++BOSS_ATK_ID); COBS_MOVES.deploy(s, by('Firey'), ++BOSS_ATK_ID);
+      var tag = cobsTags()[0], units = cobsUnits(), unit = units[0];
+      units.slice(1).forEach(function(m){ m.x = WW*0.5 + 1500; m.y = groundY() - 1200; m._cd = 1e9; m._post = { x:m.x, y:m.y }; });   // (any other unit well out of the way)
+      var spots = [[tag, 300], [unit, 700]];
+      var pin = function(m, up){ m.x = WW*0.5; m.y = groundY() - up; m.vx = m.vy = 0; m._cd = 1e9; m.hp = m.maxHp = 5000; if (m.type === 'mephoneunit') m._post = { x:m.x, y:m.y }; };
+      spots.forEach(function(pair){ var m = pair[0], key = m.type === 'metag' ? 'tag' : 'unit';
+        ['melee', 'shot', 'dash'].forEach(function(way){ pin(m, pair[1]); var a = took(by('Firey'), m, way); pin(m, pair[1]); var b = took(by('Knife'), m, way); out[key][way] = { firey: a, knife: b }; }); });
+      out.types = [tag.type, unit.type]; return out;`);
+    expect(r.types).toEqual(['metag', 'mephoneunit']);
+    const written = { melee: 20, shot: 15, dash: 12 };
+    for (const who of ['tag', 'unit']) for (const way of Object.keys(written)) {
+      expect(r[who][way].firey, `${who} ${way}: another fighter's hit is as it was`).toBe(written[way]);
+      expect(r[who][way].knife, `${who} ${way}: Knife's is double`).toBe(2 * written[way]);
+    }
+  });
+
+  it('NOTHING ELSE CHANGES: Knife deals the same to a fighter as anyone does; the same to another boss\'s adds (MePhone4\'s MeLife downloads) and to any boss that is not him; and no other name is ever doubled', () => {
+    const r = DEAL(`
+      var mk = function(x){ var f = makeFighter(Object.assign({}, ROSTER.find(function(q){ return q.name === 'Pencil'; }), { you:false }), x, groundY() - 40, fighters.length); f.team = 7; f.controller = 'still'; f.stocks = 3; f.invuln = 0; f.pct = 0; fighters.push(f); return f; };
+      var dummies = [mk(WW*0.5 - 600), mk(WW*0.5 - 800)], out = {};
+      applyHit(dummies[0], 10, 0, 0, by('Firey')); applyHit(dummies[1], 10, 0, 0, by('Knife'));
+      out.toFighters = [dummies[0].pct, dummies[1].pct];
+      var add = function(){ return { type:'assist', name:'MeLife add', hostile:true, hp:100, maxHp:100, x:0, y:0, r:20, vx:0, flash:0, life:100, color:'#fff', team:-1 }; };
+      var a1 = add(), a2 = add(); hurtHostileAdd(a1, 10, 0, by('Firey'), by('Firey')); hurtHostileAdd(a2, 10, 0, by('Knife'), by('Knife'));
+      out.toAdds = [100 - a1.hp, 100 - a2.hp];
+      var a3 = add(); hurtHostileAdd(a3, 10, 0, null, by('Knife')); out.toAddShot = 100 - a3.hp;
+      var knife = by('Knife'), firey = by('Firey');
+      out.mult = { himself: [cobsKnifeMult(s, knife), cobsKnifeMult(s, firey), cobsKnifeMult(s, null), cobsKnifeMult(s, undefined)],
+        otherBoss: [cobsKnifeMult({ type:'boss', _oneFight:true }, knife), cobsKnifeMult({ type:'boss', attack:'slam' }, knife)], add: cobsKnifeMult(add(), knife), fighter: cobsKnifeMult(firey, knife),
+        notNamedKnife: [cobsKnifeMult(s, { name:'Knife Jr.' }), cobsKnifeMult(s, { name:'knife' }), cobsKnifeMult(s, { team:0, idx:-2, _asKey:'a1' })], factor: COBS_KNIFE_MULT };
+      return out;`);
+    expect(r.toFighters[1], 'Knife\'s hit on a fighter is the same as another fighter\'s').toBe(r.toFighters[0]);
+    expect(r.toFighters[0], 'and the number written, undoubled').toBe(10);
+    expect(r.toAdds, 'and on a hostile add that is not one of his').toEqual([10, 10]);
+    expect(r.toAddShot, 'by a shot too').toBe(10);
+    expect(r.mult.factor).toBe(2);
+    expect(r.mult.himself, 'Knife: 2; another fighter, nobody, nothing: 1').toEqual([2, 1, 1, 1]);
+    expect(r.mult.otherBoss, 'not another boss').toEqual([1, 1]);
+    expect(r.mult.add).toBe(1);
+    expect(r.mult.fighter, 'not a fighter').toBe(1);
+    expect(r.mult.notNamedKnife, 'only Knife itself').toEqual([1, 1, 1]);
+  });
+
+  it('it does not make Knife hit more often: the grace a hit opens on him is noted at the number written (20 buys 21 frames, the doubled 40 would buy 24), and the keynote speech counts what he really took', () => {
+    const r = DEAL(`
+      var out = {}, fHit = by('Firey'), kHit = by('Knife');
+      hazardT += 40; damageSummon(fHit, s, s.x, s.y, 20); damageSummon(kHit, s, s.x, s.y, 20);
+      out.grace = [bossGraceRec(s, fHit, false).invuln, bossGraceRec(s, kHit, false).invuln];
+      s._speechT = 100; s._speechHit = 0; hazardT += 40; var k0 = s.hp; damageSummon(kHit, s, s.x, s.y, 20); out.speech = [s._speechHit, k0 - s.hp];
+      return out;`);
+    expect(r.grace, 'the same for both: 9 + 20 x 0.6').toEqual([21, 21]);
+    expect(r.speech[0], 'the keynote speech counts the doubled damage').toBeCloseTo(r.speech[1], 9);
+    expect(r.speech[1]).toBeCloseTo(2 * 20 / 1.6, 9);
   });
 });
 
@@ -833,44 +1110,27 @@ describe('THE FUTURE IS SO YESTERDAY! -- the crescendo', () => {
 
 // ================= THE TWISTS, group 4: the barrier link, the rocking boat, the rage on foot, the burst ring =================
 
-describe('LOCKDOWN! -- the barrier link', () => {
-  const LINK = (t, touch, kill) => fight(`
-    park(); atTier(${t}); floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
-    cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
-    var tags = summons.filter(function(m){ return m.type === 'metag'; }), a = tags[0], b = tags[1], T = cobsT(s, 'metags');
-    var place = function(){ a.x = you.x - 150; a.y = hurtCY(you) ${touch ? '' : '- 240'}; b.x = you.x + 150; b.y = a.y; a.vx = a.vy = b.vx = b.vy = 0; a._cd = b._cd = 9999; };
-    ${kill ? 'a.hp = 0;' : ''}
-    var out = { T: T, rooted: 0, hits: 0, link: null, frames: [], width: a._linkW }, p0 = 0;
-    for (var i=0;i<130;i++){ s._atkTimer = 1e9; place(); you.pct = Math.max(0, you.pct); var before = you.pct, wasRooted = you.rooted || 0; step(); place();
-      if (i === 3) out.link = s._link ? { w: s._link.w, len: Math.round(Math.hypot(s._link.bx - s._link.ax, s._link.by - s._link.ay)) } : null;
-      if (you.pct > before) out.frames.push(i); out.rooted = Math.max(out.rooted, you.rooted || 0); }
-    out.pct = you.pct; out.dmg = a._dmg; out.cuff = a._cuff; return out;`);
-
-  it('tier 1: no barrier; from tier 2 a see-through barrier links the two tags, thicker at tier 3; touching it cuffs you as a tag would, and it never cuffs twice in a second and a half', () => {
-    const t1 = LINK(1, true, false), t2 = LINK(2, true, false), t3 = LINK(3, true, false);
-    expect(t1.link, 'tier 1: off').toBe(null);
-    expect(t1.frames, 'and no cuff from a barrier that is not there').toEqual([]);
-    expect(t2.link, 'linked').not.toBe(null);
-    expect(t2.link.w).toBe(8);
-    expect(t3.link.w, 'stronger at tier 3: thicker').toBe(12);
-    expect(t2.link.len, 'a line between the two tags').toBeGreaterThan(250);
-    expect(t2.frames.length, 'a fighter on the line is cuffed...').toBeGreaterThanOrEqual(1);
-    expect(t2.frames.every((f, i, a) => i === 0 || f - a[i - 1] >= 90), '...once every 90 frames at most').toBe(true);
-    expect(t2.rooted, 'rooted for the cuff\'s frames, like a tag\'s cuff').toBeGreaterThan(20);
-    expect(t2.pct, 'the tag\'s own small hit').toBeGreaterThan(0);
-  });
-
-  it('a fighter off the line is not cuffed; killing either tag drops the barrier', () => {
-    const off = LINK(2, false, false), dead = LINK(2, true, true);
-    expect(off.frames, 'not on the line: left alone').toEqual([]);
-    expect(dead.link, 'one tag dead: no barrier').toBe(null);
-    expect(dead.frames).toEqual([]);
-  });
-
-  it('draws the barrier without a throw', () => {
+// THE OWNER, 2026-10-05 (LOCKDOWN is too hard, the nerf): "No barrier link" (no barrier between his tags). The see-through line that linked two tags and cuffed whoever touched it is gone.
+describe('OWNER: LOCKDOWN! -- no barrier link', () => {
+  it('the twist is gone from the table at every tier (link 0, linkW 0), and two tags standing either side of you with a line between them cuff nobody but by touching one', () => {
+    expect(W.eval('COBS_TIERS.metags.map(function(T){ return [T.link, T.linkW]; })')).toEqual([[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]]);
     const r = fight(`
-      park(); atTier(2); floorAt(you, WW*0.5); s._link = { ax: you.x - 100, ay: you.y, bx: you.x + 100, by: you.y - 50, w: 8 };
-      var err = null; try { drawCobsFx(); } catch(e){ err = String(e && e.stack || e); } return err;`);
+      park(); atTier(3); floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
+      cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
+      var a = summons.filter(function(m){ return m.type === 'metag'; })[0];
+      // a second tag, by hand, so a line could be drawn between two of them: the old twist would have linked these
+      var b = Object.assign({}, a, { x: you.x + 150 }); summons.push(b);
+      var place = function(){ a.x = you.x - 150; a.y = hurtCY(you); b.x = you.x + 150; b.y = a.y; a.vx = a.vy = b.vx = b.vy = 0; a._cd = b._cd = 9999; };
+      var frames = [], link = false;
+      for (var i=0;i<130;i++){ s._atkTimer = 1e9; place(); var before = you.pct; step(); place(); if (s._link) link = true; if (you.pct > before) frames.push(i); }
+      return { frames: frames, link: link, linkInCode: typeof s._link };`);
+    expect(r.frames, 'standing on the line between two tags: left alone').toEqual([]);
+    expect(r.link, 'no barrier is ever made').toBe(false);
+  });
+
+  it('draws without a throw (the tell shows the one tag he places)', () => {
+    const r = fight(`
+      park(); atTier(2); floorAt(you, WW*0.5); var err = null; cobsFightTelegraph(s, 'metags', you); s._tel = 20; try { drawCobsFx(); } catch(e){ err = String(e && e.stack || e); } return err;`);
     expect(r).toBe(null);
   });
 });
@@ -1187,11 +1447,11 @@ describe('the glitch pass: his fight on a canvas that keeps the old alpha, and a
     expect(errors.filter((e) => e.kind === 'ctx-ignored' && e.key === 'globalAlpha'), 'no alpha the canvas ignores').toEqual([]);
   });
 
-  it('two MeTags on you in the same frame cuff you once: the second waits out the grace of the first, as the barrier link and every shot do (it cuffed twice in a frame, 33% with no grace between)', () => {
+  it('two MeTags on you in the same frame cuff you once: the second waits out the first\'s cuff and its grace, as every shot does (it cuffed twice in a frame, 33% with no grace between)', () => {
     const r = fight(`
       park(); atTier(2); floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });
       cobsFightTelegraph(s, 'metags', you); s._tel = 0; COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
-      var tags = summons.filter(function(m){ return m.type === 'metag'; }), a = tags[0], b = tags[1], hits = [], i = 0, AH = applyHit;
+      var a = summons.filter(function(m){ return m.type === 'metag'; })[0], b = Object.assign({}, a, { x: a.x + 5 }), hits = [], i = 0, AH = applyHit; summons.push(b);   // (he places one tag a turn now: the second is put there by hand)
       applyHit = function(t, d, kx, ky, from, o){ if (o && o.bossAtk != null && t === you) hits.push({ f: i, inv: you.invuln }); return AH.apply(this, arguments); };
       try {
         for (i = 0; i < 60; i++){
