@@ -16,7 +16,7 @@ import { loadMonolith } from './helpers/load-monolith.js';
 //   - no phone-only page tags (the plain viewport tag stays);
 //   - no "tap" and no phone or tablet wording in anything a player reads.
 // What a computer window needs stays, and is not pinned away here: Esc still pauses, keys are still let go when the window loses
-// focus, and the rules that wrap or shrink a card inside an ordinary laptop window are untouched.
+// focus and at a new screen or match, and the rules that wrap or shrink a card inside an ordinary laptop window are untouched.
 
 const HTML = readFileSync('artifacts/V1/index.html', 'utf8');
 const DOC = new JSDOM(HTML).window.document;   // parsed, never run: the markup and the styles exactly as shipped
@@ -158,9 +158,9 @@ describe('no phone-only page tags', () => {
 
 // WHAT A PLAYER READS: the markup (text, tooltips, labels, placeholders), the head (title, descriptions, link previews, structured data)
 // and every string the script can put on screen. The script is PARSED, so a comment, which nobody reads, is not taken for text.
-// "Tap" is "click" (a tap of a key, in the smash and the tests' own words, is a different thing and is only ever in a comment), and no
-// phone or tablet is named as something the player holds. The game's own cast is not a phone: the MePhones and Steve Cobs's shelf are
-// characters and props, so what is checked is a device phrase ("your phone", "touch screen", "phones and tablets"), not the word.
+// "Tap" is "click" (the tap of a key is the keyboard's own word, the smash's, and lives only in comments), and no phone or tablet is
+// named as something the player holds. The game's own cast is not a phone: the MePhones and the keynote shelf are characters and props,
+// so what is checked is a device phrase ("your phone", "touch screen", "phones and tablets"), not the word.
 const TAP = /\btap(s|ped|ping)?\b/i;
 const PHONE_WORDING = new RegExp([
   String.raw`\b(smartphones?|iphone|ipad|android)\b`,
@@ -299,5 +299,33 @@ describe('keys are let go when the window loses focus', () => {
     w.eval(`down[KEYS.left] = true; Object.defineProperty(document, 'hidden', { value: true, configurable: true });
             window.dispatchEvent(new window.Event('visibilitychange'));`);
     expect(w.eval(`down[KEYS.left] === false`), 'a hidden tab holds nothing').toBe(true);
+  });
+});
+
+// syncTouchControls did one more thing, for every player and not only a touch screen's: at each new screen and at the start of a match it
+// let go of every mapped key still down. That is a keyboard's business too (a smash held as the player pressed R would otherwise act on
+// the first frame of the next match; test/running-race.test.js leaves one held between races), so it stayed, as releaseMappedKeys.
+describe('a new screen and a new match start with no mapped key held', () => {
+  it('a key still down from the last screen is let go when the next one comes up', () => {
+    const { window: w } = loadMonolith();
+    w.eval(`down[KEYS.smash] = true; down[KEYS.right] = true; go('title');`);
+    expect(w.eval(`down[KEYS.smash] === false && down[KEYS.right] === false`), 'go() let go of the mapped keys').toBe(true);
+  });
+
+  it('...and when a match begins', () => {
+    const { window: w } = loadMonolith();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; down[KEYS.smash] = true; down[KEYS.attack] = true; beginMatchNow();`);
+    expect(w.eval('running')).toBe(true);
+    expect(w.eval(`down[KEYS.smash] === false && down[KEYS.attack] === false`), 'the new match began with nothing held').toBe(true);
+    expect(w.eval(`!fighters.find(function(f){ return f.you; })._smQ`), 'so no smash was started on its first frame').toBe(true);
+  });
+
+  it('a key pressed after the match began is a key: the keyboard still plays', () => {
+    const { window: w } = loadMonolith();
+    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; beginMatchNow();`);
+    w.dispatchEvent(new w.KeyboardEvent('keydown', { code: w.eval('KEYS.right') }));
+    expect(w.eval(`down[KEYS.right]`)).toBe(true);
+    w.dispatchEvent(new w.KeyboardEvent('keyup', { code: w.eval('KEYS.right') }));
+    expect(w.eval(`down[KEYS.right]`)).toBe(false);
   });
 });
