@@ -396,9 +396,18 @@ function entriesOf(st) {
   }
   return out;
 }
+// Only fighters of the game's own ROSTER are written: Steve Cobs's prize fighters join the game from their own list (in his prize
+// blocks) only once he is beaten, so a playbook of theirs here would put their names outside those blocks (the standing rule, which
+// test/dlc-ii-prize.test.js checks). They are trained in this copy all the same.
+export function rosterNames(html) {
+  const i = html.indexOf('const ROSTER = ['), j = html.indexOf('\n];', i);
+  return new Set([...html.slice(i, j < 0 ? undefined : j).matchAll(/\{name:"([^"]+)"/g)].map((m) => m[1]));
+}
 function embedFile(ctx, target) {
   const html = readFileSync(target, 'utf8');
-  const next = embedPlaybooks(html, entriesOf(ctx.st));
+  const keep = rosterNames(html), all = entriesOf(ctx.st), entries = {};
+  for (const n of Object.keys(all)) if (keep.has(n)) entries[n] = all[n];
+  const next = embedPlaybooks(html, entries);
   if (next !== html) { writeFileSync(target + '.tmp', next); renameSync(target + '.tmp', target); }   // atomic: a worker booting the game never reads half a file
   return next !== html;
 }
