@@ -443,7 +443,8 @@ wire field. The hot passes allocate nothing (the test reads the source). `FRAME_
 | **Silver Spoon** | `smug`, 0.8; sways, chin up, to win | Half-lidded and cool, a glare when it counts, grit when offended | a **gleam** off the bowl on the scoop | "acts very refined and posh" and sees people as "beneath him" (Silver Spoon, Personality) |
 | **Puffball** | `gentle`, 1.3; twirls to win | The face frames of everyone else; on her render the spit and the dive are her baked pictures, on a skin they are built from the skin's own | the rainbow of her spit is her own (`FIGHTER_ANIM.Puffball.over`) | The owner's own ask ("3-5 frames while firing the projectile to spit it", Meteor Puff from BFDIA 6), now on her skins (Frozen, Thinking Hat) |
 
-**Seeing each moment in a running game.** Arrow keys move (up jumps, down crouches); X attacks (down+X is the ranged move and up+X the uppercut, for those who have one), C is the special (up+C and down+C the others), V held is the
-smash and X+C the finisher. Play any match with one of the nine and watch: *moving* is just walking, running and jumping; *attacks* are X, C and V (the kind of move decides the strip: a jab
-punches, down+X kicks, V held and released smashes); *hurt* is getting hit or hitting the CPU; *KO tumble* is launching a CPU hard (hold V, release it near a ledge at high percent) or being launched; *victory* is winning, on the result
-screen above "Winner!". The map editor's "Test the Feel" gives a dummy to hit with infinite stocks (R resets, Esc leaves). A skin shows the same frames on its own picture: wear it in the Wardrobe.
+**Seeing each moment in a running game.** The in-game hint line has the keys: arrows move (up jumps, down crouches); X attacks (down+X is the ranged move, up+X the uppercut for those
+who have one), C is the special (up+C and down+C the others), V is the smash (press once; it charges and fires) and X+C the finisher. Pick any of the nine at "Take the Plunge" and play:
+*moving* is walking, running and jumping; *attacks* are X, C and V (the kind of move decides the strip: a jab punches, down+X kicks, a smash slams or lunges); *hurt* is getting hit, or hitting
+the CPU; the *KO tumble* is a hit that launches (a smash at a high percent, or being smashed); *victory* is winning, on the result screen above "Winner!" (win with one of the nine, or watch a CPU
+win). A skin shows the same frames on its own picture: wear it in the Wardrobe first. The map editor's "Test the Feel" gives a dummy to hit with infinite stocks (R resets, Esc leaves).

@@ -8,8 +8,8 @@ import { mulberry32 } from './helpers/prng.js';
 // A boot whose 2D context RECORDS every call, so the render path can be asserted instead of merely
 // run. loadMonolith's stub swallows calls silently, which is right for the golden harness and
 // useless for proving what was drawn — and the browser is not always available to look.
-function bootRecording(seed = 7) {
-  const html = readFileSync('artifacts/V1/index.html', 'utf8');
+function bootRecording(seed = 7, transform) {
+  const html = transform ? transform(readFileSync('artifacts/V1/index.html', 'utf8')) : readFileSync('artifacts/V1/index.html', 'utf8');
   const rec = [];
   const dom = new JSDOM(html, {
     url: 'http://localhost/',
@@ -34,6 +34,12 @@ function bootRecording(seed = 7) {
   });
   return { w: dom.window, rec };
 }
+
+// THE FRAME LAYER (index.html) draws a render in pieces once its limbs move -- the body with the limbs cut out, then each painted limb, clipped -- and paints a face over the
+// picture, so a resting or swinging fighter that has frames is several drawImage calls plus some lineTo and arc. A check that counts the render path's OWN calls boots
+// without the layer (the same FRAME_ON switch frame-layer.test.js strips); the layer is held to its own account there (gameplay identical drawn or stripped, and every
+// moment drawn for every pilot fighter, bare and in each skin).
+const NOFRAMES = (src) => src.replace('const FRAME_ON = true;', 'const FRAME_ON = false;');
 
 /** Pretend a render has finished decoding, without any network or Image constructor. */
 const FAKE_DECODED = (w, name, nw, nh) => w.eval(
@@ -211,8 +217,8 @@ describe('drawing sprite fighters headlessly', () => {
 
   it('renders a decoded image INSTEAD of the vector art, limbs and shared face', () => {
     // The renders are whole characters. If the stub limbs or the shared BFDI face still drew,
-    // every fighter would sprout a second set of arms and a second pair of eyes.
-    const { w, rec } = bootRecording();
+    // every fighter would sprout a second set of arms and a second pair of eyes. (Booted without the frame layer: it draws its own limb outlines and eyes.)
+    const { w, rec } = bootRecording(7, NOFRAMES);
     soloFighter(w, 'Firey');
     FAKE_DECODED(w, 'Firey', 150, 200);
 
@@ -267,11 +273,17 @@ describe('drawing sprite fighters headlessly', () => {
     const { w, rec } = bootRecording();
     soloFighter(w, 'Bubble');
     FAKE_DECODED(w, 'Bubble', 200, 200);
-    for (const st of ['flash=6', '_yoyleT=200', 'burn=40']) {
+    // The draws of one frame with a state set. (A render the frame layer has put in pieces is several; the tint is counted on top of whatever the bare render takes.)
+    const draws = (st) => {
       rec.length = 0;
       w.eval(`const f=fighters[0]; f.flash=0; f._yoyleT=0; f._starT=0; f.burn=0; f.${st}; drawFighter(f)`);
-      // body + one tint pass, both through the cached source-atop copy
-      expect(rec.filter((c) => c.op === 'drawImage').length, `${st} adds a tint pass (base + offscreen copy + overlay)`).toBe(3);
+      return rec.filter((c) => c.op === 'drawImage').length;
+    };
+    const bare = draws('flash=0');
+    expect(bare, 'the render draws').toBeGreaterThan(0);
+    for (const st of ['flash=6', '_yoyleT=200', 'burn=40']) {
+      // body + one tint pass, both through the cached source-atop copy: the offscreen copy and the overlay are the two extra draws
+      expect(draws(st) - bare, `${st} adds a tint pass (offscreen copy + overlay)`).toBe(2);
     }
   });
 
@@ -323,7 +335,7 @@ describe('drawing sprite fighters headlessly', () => {
 
     rec.length = 0;
     w.eval('const f=fighters[0]; f._dashing=0; drawFighter(f)');
-    expect(rec.filter((c) => c.op === 'drawImage'), 'not dashing: the render draws').toHaveLength(1);
+    expect(rec.filter((c) => c.op === 'drawImage').length, 'not dashing: the render draws (whole, or in pieces once the frame layer moves a limb)').toBeGreaterThan(0);
 
     rec.length = 0;
     w.eval('const f=fighters[0]; f._dashing=8; f._dashVY=3; drawFighter(f)');
@@ -462,7 +474,7 @@ describe('drawing sprite fighters headlessly', () => {
   });
 
   it('keeps a crowd out of lockstep — the phase is per fighter', () => {
-    const { w, rec } = bootRecording();
+    const { w, rec } = bootRecording(7, NOFRAMES);   // the breath of the render path; a fighter with frames draws several pieces, each with a pose of its own
     w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=4; startMatch();
       fighters.length = 0;
       ['Firey','Firey','Firey','Firey'].forEach((n,i)=>{
@@ -727,7 +739,8 @@ describe('drawing sprite fighters headlessly', () => {
       withFighter(w, name);
       const on = bespoke(w, rec, name, active);
       expect(on.extra, `${name} [${active}] draws something`).toBeGreaterThan(4);
-      expect(on.renders, `${name} [${active}] keeps its render`).toBe(1);
+      expect(on.baseRenders, `${name} draws its render`).toBeGreaterThan(0);
+      expect(on.renders, `${name} [${active}] keeps its render (the same draws of the picture as without the entry)`).toBe(on.baseRenders);
       if (quiet) {
         const off = bespoke(w, rec, name, quiet);
         expect(off.extra, `${name} [${quiet}] stays quiet`).toBeLessThan(on.extra);
