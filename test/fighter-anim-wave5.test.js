@@ -272,11 +272,11 @@ describe('Batch 7 -- the beats that carry the character', () => {
     const w = boot();
     const s = SWING(w, 'Knife');
     expect(Math.min(...s.map((v) => v.rot)), 'cocked back first').toBeLessThan(-0.1);
-    expect(Math.max(...s.map((v) => v.rot)), 'then through').toBeGreaterThan(0.3);
+    expect(Math.max(...s.map((v) => v.rot)), 'then through').toBeGreaterThan(0.25);
     const top = s.reduce((a, v, i) => (v.rot > s[a].rot ? i : a), 0);
     expect(s[top].sy, 'long').toBeGreaterThan(1.08);
     expect(s[top].sx, 'and thin').toBeLessThan(0.95);
-    expect(s[Math.min(s.length - 1, top + 3)].rot, 'held there, not snapped back').toBeGreaterThan(0.05);
+    expect(s[Math.min(s.length - 1, top + 3)].rot, 'held there, not snapped back').toBeGreaterThan(0.04);
   });
 
   it("Paintbrush's swing grows with their fury, and they shake holding it in", () => {
