@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
+import { parse } from 'acorn';
 import { mulberry32 } from './helpers/prng.js';
 import { loadMonolith } from './helpers/load-monolith.js';
 
@@ -22,9 +23,9 @@ const DOC = new JSDOM(HTML).window.document;   // parsed, never run: the markup 
 const CSS = [...DOC.querySelectorAll('style')].map((s) => s.textContent).join('\n');
 
 // The page, booted in jsdom, with whatever a player's browser had already saved.
-function boot(seed = {}) {
+function boot(seed = {}, url = 'http://localhost/') {
   const dom = new JSDOM(HTML, {
-    url: 'http://localhost/', runScripts: 'dangerously', pretendToBeVisual: true,
+    url, runScripts: 'dangerously', pretendToBeVisual: true,
     beforeParse(window) {
       const grad = { addColorStop() {} };
       window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
@@ -152,6 +153,103 @@ describe('no phone-only page tags', () => {
   it('has no attribute only a phone\'s on-screen keyboard or iPhone reads: autocapitalize, autocorrect, enterkeyhint, inputmode, playsinline', () => {
     expect(DOC.querySelector('[autocapitalize], [autocorrect], [enterkeyhint], [inputmode], [playsinline]')).toBeNull();
     expect(HTML, 'the replay video is built in script, so the source is checked too').not.toMatch(/autocapitalize|autocorrect|enterkeyhint|inputmode|playsinline/);
+  });
+});
+
+// WHAT A PLAYER READS: the markup (text, tooltips, labels, placeholders), the head (title, descriptions, link previews, structured data)
+// and every string the script can put on screen. The script is PARSED, so a comment, which nobody reads, is not taken for text.
+// "Tap" is "click" (a tap of a key, in the smash and the tests' own words, is a different thing and is only ever in a comment), and no
+// phone or tablet is named as something the player holds. The game's own cast is not a phone: the MePhones and Steve Cobs's shelf are
+// characters and props, so what is checked is a device phrase ("your phone", "touch screen", "phones and tablets"), not the word.
+const TAP = /\btap(s|ped|ping)?\b/i;
+const PHONE_WORDING = new RegExp([
+  String.raw`\b(smartphones?|iphone|ipad|android)\b`,
+  String.raw`touch ?screens?|touch ?pads?|touch controls?`,
+  String.raw`on-screen (buttons?|pads?|controls?|keyboards?)`,
+  String.raw`mobile (device|browser|phone|app|friendly)`,
+  String.raw`\b(on|from|with|for) (a|your|their) (phone|tablet)\b`,
+  String.raw`\b(your|their) (phone|tablet)\b`,
+  String.raw`phone'?s? (share sheet|keyboard|screen|browser)`,
+  String.raw`\bphones? (and|or) tablets?\b|\btablets? (and|or) phones?\b`,
+  String.raw`\bswipe (to|left|right)\b`,
+].join('|'), 'i');
+
+function markupTexts() {
+  const body = DOC.body.cloneNode(true);
+  body.querySelectorAll('script, style').forEach((e) => e.remove());
+  const out = [body.textContent, DOC.title];
+  for (const el of body.querySelectorAll('[title], [aria-label], [placeholder], [alt], [value]')) {
+    for (const a of ['title', 'aria-label', 'placeholder', 'alt', 'value']) if (el.hasAttribute(a)) out.push(el.getAttribute(a));
+  }
+  for (const m of DOC.head.querySelectorAll('meta[content]')) out.push(m.getAttribute('content'));
+  const ld = DOC.querySelector('script[type="application/ld+json"]');
+  if (ld) out.push(ld.textContent);
+  return out;
+}
+
+// Every string literal and template piece in the game's script, from the syntax tree (an explicit stack: some of the concatenations are deep).
+function scriptStrings() {
+  const src = [...DOC.querySelectorAll('script:not([src]):not([type])')].map((e) => e.textContent).join('\n');
+  const ast = parse(src, { ecmaVersion: 'latest', sourceType: 'script' });
+  const out = [], stack = [ast];
+  while (stack.length) {
+    const n = stack.pop();
+    if (Array.isArray(n)) { for (const x of n) if (x && typeof x === 'object') stack.push(x); continue; }
+    if (n.type === 'Literal' && typeof n.value === 'string') out.push(n.value);
+    else if (n.type === 'TemplateElement') out.push(n.value.cooked != null ? n.value.cooked : n.value.raw);
+    for (const k in n) { const v = n[k]; if (v && typeof v === 'object') stack.push(v); }
+  }
+  // not words: the page's own pictures, inlined as data
+  return out.filter((t) => !/^data:/.test(t) && !(t.length > 60 && !/\s/.test(t)));
+}
+
+describe('no tap and no phone wording in anything a player reads', () => {
+  let markup, strings;
+  beforeAll(() => { markup = markupTexts(); strings = scriptStrings(); }, 60000);
+
+  it('finds the text it checks: the markup, the head and thousands of script strings', () => {
+    expect(markup.join(' ')).toMatch(/How to Play/);
+    expect(markup.join(' ')).toMatch(/Battle for Smash Island/);
+    expect(strings.length).toBeGreaterThan(5000);
+    expect(strings.join('\n')).toMatch(/Boss Rush/);
+  });
+
+  it('the markup and the head say click, never tap', () => {
+    expect(markup.filter((t) => TAP.test(t))).toEqual([]);
+  });
+
+  it('...and name no phone, tablet or touch screen as something the player holds', () => {
+    expect(markup.filter((t) => PHONE_WORDING.test(t))).toEqual([]);
+    expect(DOC.head.innerHTML, 'nothing in the head says phone, tablet or mobile (the link previews and the page description)').not.toMatch(/\b(phones?|tablets?|mobile)\b/i);
+  });
+
+  it('every string the script can show says click, never tap', () => {
+    expect(strings.filter((t) => TAP.test(t))).toEqual([]);
+  });
+
+  it('...and names no phone, tablet or touch screen as something the player holds', () => {
+    expect(strings.filter((t) => PHONE_WORDING.test(t))).toEqual([]);
+  });
+
+  it('How to Play, Controls and Settings give no touch instructions', () => {
+    for (const id of ['tutorial', 'controls', 'options']) {
+      const t = DOC.getElementById(id).textContent;
+      expect(t, id).not.toMatch(TAP);
+      expect(t, id).not.toMatch(PHONE_WORDING);
+    }
+    expect(DOC.getElementById('tutorial').textContent, 'it still teaches the keys').toMatch(/Smash: press V once/);
+  });
+
+  it('the huddle, the World Cup hub and the invite link say click', () => {
+    expect(DOC.getElementById('planChatNote').textContent).toMatch(/^Click a phrase/);
+    expect(strings.some((t) => t.includes('Click \u25b6 to watch a match live:')), 'World Cup hub').toBe(true);
+    expect(strings.some((t) => t.includes('Click \u25b6 to watch a knockout match live:')), 'the knockout fixtures').toBe(true);
+    expect(strings.some((t) => t.includes('Click a phrase below if you want it another way.')), "the teammate's opening line").toBe(true);
+    const w = boot({}, 'http://localhost/#room=ABCD');
+    const status = w.document.getElementById('lobbyStatus').textContent;
+    expect(status, 'the invite link prefilled the room').toMatch(/ABCD/);
+    expect(status).toMatch(/click Join Room/);
+    expect(status).not.toMatch(TAP);
   });
 });
 

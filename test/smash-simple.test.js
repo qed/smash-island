@@ -346,7 +346,7 @@ describe('the review of the change (2026-09-16)', () => {
     expect(r.hit).toBe(true);
     expect(r.none).toBe(false);
     expect(r.never, 'no smash thrown, no step').toBe(false);
-    expect(r.text.length, 'short enough for the prompt box on a phone').toBeLessThan(35);
+    expect(r.text.length, 'short enough for the prompt box').toBeLessThan(35);
   });
 });
 

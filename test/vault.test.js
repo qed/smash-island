@@ -90,7 +90,7 @@ function oldDaily(pool, seed) {
 }
 
 describe('the Vault: codes', () => {
-  it('ignores case, spaces and punctuation, a phone\'s curly apostrophe included', async () => {
+  it('ignores case, spaces and punctuation, a curly apostrophe included', async () => {
     const w = boot(); await settle(w);
     expect(w.eval(`vaultNorm("Don't call me Needy!")`)).toBe('dontcallmeneedy');
     expect(w.eval(`vaultNorm("  wal-MART ")`)).toBe('walmart');

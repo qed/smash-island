@@ -14,7 +14,7 @@ import { makeRoom } from './helpers/net-room.js';
 //     friend opened and closed without choosing was still focused when the arena came up, and every key of the match went to it.
 //     (A browser that hides a focused control is supposed to clear the focus a tick later. Chromium does; jsdom, which these pages run
 //     in, does not; the rest are not known here. The game no longer leans on it: beginMatchNow lets go of the control itself.)
-//  2. (THE TOUCH PAD NEVER ROSE: a phone's pad stayed hidden for every match. The owner removed the touch pad, 2026-10-06, "I SAID I
+//  2. (THE TOUCH PAD NEVER ROSE: the pad stayed hidden for every match. The owner removed the touch pad, 2026-10-06, "I SAID I
 //     WANTED THIS TO BE A COMPUTER GAME!!!" -- test/computer-only.test.js -- so there is nothing left to pin.)
 //
 // What stays true, and is pinned here too: a text box the player really is typing into does not feed the game keys.

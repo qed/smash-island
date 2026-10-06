@@ -8,7 +8,7 @@ import { LINEUP, OG_WIDTH, OG_HEIGHT, MAX_KB, truecolour, palettePng } from '../
 
 // SHARING AND PREVIEWS. The owner cannot post on social media much and asked for publicity, so the game has to do the talking
 // when someone else shares it: a pasted link unfurls into a picture and a pitch (link previews), a Share button on the title
-// and the result screen hands the link to the phone's share sheet (or copies it), a Boss Rush clear and the Daily offer a short
+// and the result screen hands the link to the browser's share sheet (or copies it), a Boss Rush clear and the Daily offer a short
 // brag line, and search engines get the basics (canonical, structured data, robots, sitemap).
 //
 // The one rule that runs through all of it: a public surface never names a secret. The secrets are the Vault's fighters, Steve
@@ -251,7 +251,7 @@ describe('the Share buttons: where they are', () => {
   });
 });
 
-describe('the Share buttons: what a tap does', () => {
+describe('the Share buttons: what a click does', () => {
   it('opens the share sheet where the browser has one, with a title, a line and the production link', async () => {
     const { rec, doc } = bootShare({ share: ok, clipboard: ok });
     doc.getElementById('shareBtn').click();
@@ -294,7 +294,7 @@ describe('the Share buttons: what a tap does', () => {
     expect(rec.copied).toEqual([SITE]);
   });
 
-  it('a second tap inside the feedback does not leave "Copied!" as the label', async () => {
+  it('a second click inside the feedback does not leave "Copied!" as the label', async () => {
     const { rec, doc } = bootShare({ clipboard: ok });
     const btn = doc.getElementById('resultShare');
     const label = btn.textContent;
@@ -555,8 +555,8 @@ describe('brag cards: no secret is ever named', () => {
     }
   });
 
-  it('keeps every secret in the player\'s own seat out of the share sheet and the clipboard too (a real tap)', async () => {
-    const { w, rec, doc } = bootShare({ share: ok });   // one boot; each name is armed in turn and the same share sheet records every tap
+  it('keeps every secret in the player\'s own seat out of the share sheet and the clipboard too (a real click)', async () => {
+    const { w, rec, doc } = bootShare({ share: ok });   // one boot; each name is armed in turn and the same share sheet records every click
     const names = ['Needle', 'Gelatin', 'OJ', 'Cabby', 'Steve Cobs', 'One'];
     for (const name of names) {
       w.eval(`SHARE_BRAG = { kind:'daily', n:56, won:true, you:${JSON.stringify(name)}, foe:'Pin' }`);

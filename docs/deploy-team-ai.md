@@ -1,6 +1,6 @@
 # Deploying the thinking teammate
 
-The Team Strategy panel's teammate — the one you tap phrases at in the huddle, and the one that
+The Team Strategy panel's teammate — the one you click phrases at in the huddle, and the one that
 re-plans for the CPU squads mid-fight — is written by a model. This is the one thing you have to set up for
 that to happen. **Until you do, nothing breaks**: the game falls back to its built-in tactics, the
 panel still works, matches still start, and no error reaches the player.
@@ -52,7 +52,7 @@ shipped game. `test/credential-strip.test.js` fails the build if a key value is 
 
 ## How to tell whether it worked
 
-Start a **Teams** match, tap a phrase ("Go aggressive", "Play safe", …) in the huddle, and read the line under the chat box:
+Start a **Teams** match, click a phrase ("Go aggressive", "Play safe", …) in the huddle, and read the line under the chat box:
 
 - *"Teammate is thinking for real (normal tier)"* → the model is answering.
 - *"Teammate is on built-in tactics right now — the strategy service is unreachable"* → the endpoint
@@ -82,7 +82,7 @@ Per teams match, worst case:
   costs nothing,
 - a KO can cut in early, but never within 6s of the previous call,
 - a hard ceiling of **16** calls a match (**8** on Hard), reset per match,
-- plus one call per phrase you tap in the huddle (one turn at a time).
+- plus one call per phrase you click in the huddle (one turn at a time).
 
 Responses are capped at 600 tokens server-side regardless of what the client asks for, and a caller is held to about 20 calls a minute. All the knobs
 are constants at the top of the `TEAM AI` section in `artifacts/V1/index.html`, mirrored in
