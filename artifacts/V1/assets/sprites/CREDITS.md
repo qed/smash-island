@@ -198,6 +198,17 @@ non-commercial fan game.
 | Yellow Face | `yellow-face.png` | 194×200 | -0.059 (flipped) | https://static.wikia.nocookie.net/battlefordreamisland/images/a/a7/Yellowface.png/revision/latest?cb=20190908174021 |
 <!-- RENDER-INVENTORY-END -->
 
+## Puffball: her spit (2026-10-06)
+
+"puffball should have 3-5 frames while firing the projectile to spit it" (the owner).
+Her spit is a set of poses `FIGHTER_ANIM.Puffball` swaps in for her plain render while the shot is fired (`poses`), and nothing else about the move changes.
+
+- **Her spit, four frames** (`puffball-spit-1.png`, `puffball-spit-2.png`, `puffball-spit-3.png`, `puffball-spit-4.png`; 262×200 each: puff, spit, recoil, settle). Nothing is borrowed for them: each is
+  Puffball's own render (`puffball.png`, https://static.wikia.nocookie.net/battlefordreamisland/images/a/ad/Tpot_renders0042.png, in the table at the top)
+  with her cheeks pushed out and her eyes and mouth changed (warped, or painted over with her own fur colour and drawn again in her own black), cut by
+  `scripts/make-puffball-spit.mjs`. The rainbow in the spit frame's mouth is the six colours of the rainbow barf she fires (`attacks/rainbow.png`, File:Barf rainbow long.png,
+  credited under Attack art). The canvas is wider than the render because the puffed cheeks are; the frames are drawn at the render's own size.
+
 ## One (the secret boss)
 
 One is not a roster fighter, so her render sits outside the generated inventory above (a re-run of
