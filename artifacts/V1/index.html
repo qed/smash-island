@@ -23423,15 +23423,17 @@ const COBS_TIERS = {
   // Business/Transcript); "I'll just pull the plug on everything right now. Literally! I can do that! Then everything MeLife
   // has ever generated... [POOF] ...gone in an instant. Then I'll plug it back in and make something new. A clean slate."
   // (Steve Cobs/Quotes). n glass panes drop on you at `spd` and stay `paneT` frames as the only footing that survives; then
-  // [POOF]: every platform but the floor and the panes, and every shot on screen, is gone for `poof` frames -- standing on a
-  // platform that goes shocks you `shock` x a hit -- then it all regenerates; tier 5's clean slate comes with `marks`
+  // [POOF]: every platform but the floor and the panes, and every shot on screen, is gone for `poof` frames -- whoever stood on a
+  // platform that goes falls (and the fall is what costs: `shock`, below) -- then it all regenerates; tier 5's clean slate comes with `marks`
   // MeMURDER poles pre-armed. Never erases fighters (One's chain owns erasures).
   // TWIST: UNPLUGGED, NOT SWITCHED OFF ("after the unplug the island empties piece by piece", Through No Choice of Your Own): the
   // [POOF] travels -- the platforms and the shots go in a wave, `wave` frames from one end of your side of the stage to the other,
   // from the side he pulls the cable, and everything comes back in the reverse order. Footing goes in an order you must read.
   // THE LIVE FLOOR (the owner, 2026-10-05, verbatim: "if you hit the floor during pull the plug, then you take damage."): from [POOF] until the slate comes back the FLOOR is live at every tier -- whoever
-  // touches it is shocked `shock` x a hit (0.3 at tier 1, where the row's own is 0: that one is for a platform that goes), bounced up, and again only after COBS_FLOOR_GRACE frames while they stay on it;
-  // the panes are the safe footing and one always stands while the floor is live; the floor crackles as it goes live and stops with the slate (cobsFloorLive, drawCobsFx). No text.
+  // touches it is hurt. THE OWNER'S PICK, 2026-10-06 (verbatim: "damage for pull the plug should scale based on fall distance."; asked: "Only falls hurt"): standing on the floor when it goes live is SAFE, and only
+  // a FALL onto it hurts -- `shock` x a hit (0.3 at tier 1, where the row's own is 0) x clamp(fall / 200 px, 0.5, 3), the fall tracked from where each fighter left the ground (cobsFallTrack) -- bounced up,
+  // and again only after COBS_FLOOR_GRACE frames. It replaces the flat shock, the platform that goes included. The panes are the safe footing and one always stands while the floor is live; the floor crackles as it
+  // goes live and stops with the slate (cobsFloorLive, drawCobsFx). No text.
   plug:      [ { n:1, spd:9, dmg:0.8, poof:120, shock:0, paneT:300, wave:0 }, { n:1, spd:10, dmg:0.85, poof:150, shock:0.3, paneT:300, wave:36 }, { n:2, spd:11, dmg:0.9, poof:180, shock:0.3, paneT:330, wave:28 },
                { n:2, spd:12, dmg:0.95, poof:210, shock:0.45, paneT:360, wave:24 }, { n:3, spd:13, dmg:1.0, poof:240, shock:0.45, paneT:390, marks:2, wave:20 } ],
   // THE FUTURE IS SO YESTERDAY. His keynote: "I created all that you believe! (Too ambitious?) You gave me power you can't
@@ -24501,9 +24503,10 @@ const COBS_MOVES = {
     xs.forEach((x, i)=>{ const top = oneSurf(x, gy - 10);
       addProj(cobsShot(s, { x, y:top - 620, vx:0, vy:T.spd, grav:true, warnX:x, warnY:top, warn:26, dmg, bossCap:dmg, kb:9, r:30, color:'#cfe8ff', life:150,
         shape:'glasspane', cobsPane:true, pierce:true, _paneT:T.paneT, bossAtk:id, delay:i*10 })); });   // pierce: it crushes whoever it lands on and STILL lands, as footing
-    // THE LIVE FLOOR (the owner, 2026-10-05: "if you hit the floor during pull the plug, then you take damage."): from [POOF] until the slate comes back the floor itself shocks whoever touches
-    // it, at every tier -- `fshock`, the row's `shock` x a hit, with 0.3 (the old tier 2's) where the row has none: tier 1 -- see cobsFloorLive. The panes stay the safe footing.
-    s._plug = { phase:'wait', t:70 + xs.length*10, poof:T.poof, shock:T.shock*cobsDmg(), fshock:Math.max(T.shock, 0.3)*cobsDmg(), live:false, marks:T.marks||0, id, stash:null, wave:T.wave || 0 };
+    // THE LIVE FLOOR (the owner, 2026-10-05: "if you hit the floor during pull the plug, then you take damage."): from [POOF] until the slate comes back the floor itself is live, at every tier. THE OWNER'S
+    // PICK, 2026-10-06 ("damage for pull the plug should scale based on fall distance.", asked: "Only falls hurt"): standing on it is safe; a FALL onto it hurts -- `fshock`, the row's `shock` x a hit (0.3
+    // where the row has none: tier 1), x the height fallen / 200 px held to 0.5-3 (cobsFloorLive). No flat shock is left: not on the floor, and not for a platform that goes. The panes stay the safe footing.
+    s._plug = { phase:'wait', t:70 + xs.length*10, poof:T.poof, fshock:Math.max(T.shock, 0.3)*cobsDmg(), live:false, marks:T.marks||0, id, stash:null, wave:T.wave || 0 };
     shake(5);
   },
   keynote(s, tgt, id){
@@ -24542,6 +24545,7 @@ const COBS_MOVES = {
 // ---- everything of his that runs on its own clock, once a frame ----
 function cobsTickEntities(s, tgt){
   const gy = groundY(), fl = cobsFloor();
+  cobsFallTrack();   // every fighter's fall, for the live floor (PULL THE PLUG: "Only falls hurt")
   // MePhone X: flickers where it was laid, then lunges; the counter is read at the moment it reaches you
   if(s._xs && s._xs.length){
     for(const X of s._xs){
@@ -24798,7 +24802,7 @@ function cobsStomp(s){
   return n;
 }
 // [POOF]. Everything but the floor and the Meeple-made footing goes: every other platform (stashed, to come back), every
-// shot on screen, the ship (MeLife made it). Whoever stands on a platform that goes is shocked (tier 2 and up).
+// shot on screen, the ship (MeLife made it). Nothing hurts at that moment ("Only falls hurt"): whoever stood on a platform that goes falls, and the fall onto the live floor is what costs (cobsFloorLive).
 function cobsPoof(s, P){
   const keep = p=>(p.solid && p.floor===0) || p._cobsPane || p._cobsWall;
   P.live = true;   // the floor is live from here until the slate comes back (cobsFloorLive)
@@ -24810,9 +24814,6 @@ function cobsPoof(s, P){
     cobsFx.push({ kind:'poof', life:30, max:30 }); cobsImpact(s.x, s.y, { shake:12, dust:0, debris:0 });
     return;
   }
-  if(P.shock > 0) for(const f of cobsFoes()){ if(!f.onground) continue;
-    const on = worldPlats.find(p=>!keep(p) && f.x > p.x - 6 && f.x < p.x + p.w + 6 && Math.abs(feetY(f) - p.y) < 10);
-    if(on){ cobsHit(f, P.shock, 0, -6, P.id, P.shock); for(let i=0;i<8;i++) puff(f.x, feetY(f), '#7ff0ff', 4); } }
   P.stash = worldPlats.filter(p=>!keep(p));
   worldPlats = worldPlats.filter(keep);
   for(const p of P.stash) for(let i=0;i<3;i++) puff(p.x + Math.random()*p.w, p.y, '#cfe8ff', 4);
@@ -24820,18 +24821,33 @@ function cobsPoof(s, P){
   s._ship = null; s._track = [];   // what [POOF] erased leaves nothing behind (no crumbs from a box the slate took)
   cobsFx.push({ kind:'poof', life:30, max:30 }); cobsImpact(s.x, s.y, { shake:10, dust:0, debris:0 });
 }
-// THE LIVE FLOOR, once a frame from [POOF] until the slate is back (the owner, 2026-10-05: "if you hit the floor during pull the plug, then you take damage."). A fighter standing on the
-// floor is shocked -- `fshock` (the row's shock x a hit; 0.3 at tier 1) with an upward bounce -- and again COBS_FLOOR_GRACE frames later if they stay on it, never every frame, and never
-// while they are in the grace of another hit. A fighter on a pane (the Meeple-made footing, which outlasts the live floor at every tier) is not on the floor: and there is always one to stand on
-// -- if the last has gone, one is laid where the nearest of you stands.
+// THE LIVE FLOOR, once a frame from [POOF] until the slate is back (the owner, 2026-10-05: "if you hit the floor during pull the plug, then you take damage."). THE OWNER'S PICK, 2026-10-06:
+// "damage for pull the plug should scale based on fall distance." (asked: "Only falls hurt"): standing on the floor when it goes live is SAFE -- so is walking on it, and a hop that is not a fall --
+// and only a FALL onto it hurts, by the height fallen: `fshock` (the row's shock x a hit; 0.3 at tier 1) x clamp(fall / 200 px, 0.5, 3), with the upward bounce, and the next only COBS_FLOOR_GRACE
+// frames later, never on a fighter in the grace of another hit. A fighter on a pane (the Meeple-made footing, which outlasts the live floor at every tier) is not on the floor: and there is always one
+// to stand on -- if the last has gone, one is laid where the nearest of you stands.
 const COBS_FLOOR_GRACE = 50;
+const COBS_FALL = { min:40, per:200, lo:0.5, hi:3 };   // px a fall has to be to count (a step down off a pane, a bounce, a hop in place are not falls), px of fall for 1x, the least and most it scales by
+// Once a frame (cobsTickEntities): every fighter's fall. `_fallTop` is the highest point of the fall they are in -- where they left the ground (off a ledge, a platform that went from under them) or the top
+// of their jump or launch -- and `_fell` is the height of the fall that ended this frame (they landed), else 0.
+function cobsFallTrack(){
+  for(const f of fighters){
+    if(f.dead){ f._fallAir = false; f._fallTop = null; f._fell = 0; continue; }
+    const y = feetY(f); f._fell = 0;
+    if(f.onground){ if(f._fallAir && f._fallTop != null) f._fell = Math.max(0, y - f._fallTop); f._fallAir = false; f._fallTop = y; }
+    else { f._fallTop = (f._fallAir && f._fallTop != null) ? Math.min(f._fallTop, y) : y; f._fallAir = true; }
+  }
+}
+function cobsFallDmg(P, fell){ return P.fshock*clamp(fell/COBS_FALL.per, COBS_FALL.lo, COBS_FALL.hi); }
 function cobsFloorLive(s, P){
   const fl = cobsFloor();
   if(!worldPlats.some(p=>p._cobsPane)){ const t = cobsNearest(s.x, s.y); if(t) cobsPlacePane(t.x, fl.y, 240); }
   for(const f of cobsFoes()){
     if(f.invuln > 0 || (f._floorShockT || 0) > hazardT) continue;
     if(!(f.onground && f.x > fl.x - 4 && f.x < fl.x + fl.w + 4 && Math.abs(feetY(f) - fl.y) < 6)) continue;
-    if(cobsHit(f, P.fshock, 0, -6, ++BOSS_ATK_ID, P.fshock)){
+    if(!(f._fell >= COBS_FALL.min)) continue;   // it lands only on a fall: standing on the floor when it goes live is safe
+    const dmg = cobsFallDmg(P, f._fell);
+    if(cobsHit(f, dmg, 0, -6, ++BOSS_ATK_ID, dmg)){
       f._floorShockT = hazardT + COBS_FLOOR_GRACE;
       for(let i=0;i<8;i++) puff(f.x, feetY(f), '#7ff0ff', 4); cobsImpact(f.x, fl.y, { shake:3, dust:0, debris:0, r:40, color:'#7ff0ff' });
     }
@@ -24839,14 +24855,13 @@ function cobsFloorLive(s, P){
 }
 // Where along the wave an x is: 0 at the front's start, 1 at its end (it travels P.dir from P.x0, P.span px).
 function cobsWaveK(P, x){ return clamp(((x - P.x0)*P.dir)/P.span, 0, 1); }
-// One frame of the wave. Going: every platform the front has reached goes (and shocks whoever stands on it), every shot it has passed
+// One frame of the wave. Going: every platform the front has reached goes (whoever stood on it falls: "Only falls hurt"), every shot it has passed
 // is gone, glass falls from the sky where it is; returning: the platforms come back, the last to go the first to return.
 function cobsWaveStep(s, P, back){
   const prog = Math.min(1, ++P.wt/P.wave), gy = groundY();
   for(const e of P.list){
     const k = back ? 1 - e.k : e.k;
     if(!back && !e.gone && k <= prog){ e.gone = true;
-      if(P.shock > 0) for(const f of cobsFoes()){ if(f.onground && f.x > e.p.x - 6 && f.x < e.p.x + e.p.w + 6 && Math.abs(feetY(f) - e.p.y) < 10){ cobsHit(f, P.shock, 0, -6, P.id, P.shock); for(let i=0;i<8;i++) puff(f.x, feetY(f), '#7ff0ff', 4); } }
       worldPlats = worldPlats.filter(p=>p !== e.p); for(let i=0;i<3;i++) puff(e.p.x + Math.random()*e.p.w, e.p.y, '#cfe8ff', 4); }
     else if(back && e.gone && k <= prog){ e.gone = false; if(worldPlats.indexOf(e.p) < 0) worldPlats.push(e.p); for(let i=0;i<3;i++) puff(e.p.x + Math.random()*e.p.w, e.p.y, '#7ff0ff', 3); }
   }
