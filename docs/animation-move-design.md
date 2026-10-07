@@ -561,3 +561,18 @@ Flamethrower Rose and Sizzling Saw show one eye; Siren Remote has eyes (white sq
 
 Skins: Dora's and David's faces (and Bob Cut Dora's) are pencil lines, grey, or brown on Tangerine David, so their rows give the ink (`k`); Half Frozen Toothpaste is small beside its block of ice, so its
 patches are small; Knight Match's face sits under the visor of her helmet, and her patches stop short of the chin strap.
+
+### Batch 8: Ruler, Sidewalky, Balloony, Roboty, Profily, Ice Cube
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Ruler** | `smug`, 0.5; sways to win | Half-lidded and smirking; a wince and a grit of the teeth on the hit | splinters of wood | Exact and a touch superior, the definition of straight: "By exactly my measure." |
+| **Sidewalky** | `deadpan`, 0.5; hops to win | A flat face; a flat and knowing look to win | chips of concrete | Dry and heavy, everything about him is mass: "I won. Sorry? Can't. Physically." |
+| **Balloony** | `plain`, 1.3; twirls to win | A plain game face; a shout of joy to win | puffs of air | Bright and buoyant, deflates and snaps back: "Still inflated!" |
+| **Roboty** | `deadpan`, 0.6; hops to win | A flat face; bright eyes to win, the painted grille left as it is | sparks | A monotone that wastes nothing, moves in servo steps: "beep. beep beep. (I won.)" |
+| **Profily** | `gentle`, 0.6; sways to win | Wide eyes and a small round mouth, drawn in white; a grin to win | shards of blue glass | Forgotten and hopeful, a flat frame that turns on its vertical axis: "Remember me now? Been here all along!" |
+| **Ice Cube** | `smug`, 0.7; sways to win | Half-lidded and smirking | chips of ice | Cool in every sense: "Cool." |
+
+Skins: Profily's features are white on a blue disc, so its rows give the ink (`k`). Roboty's eyes are green screens in a red head, covered whole by a patch of the head's red. The Ice Cubes are
+translucent, so their patches are opaque flat fills of the picture's own colour (the accepted limitation, as for Bubble, Teardrop and Gelatin). Snowy Sidewalky and Springy Shoes Ice Cube show
+one eye. Shades Sidewalky and Watch Profily have no row: the shades run into the mouth, so a patch would bite into the lens, and the watch skin's face runs over the edge of the head.
