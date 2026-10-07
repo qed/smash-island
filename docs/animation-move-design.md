@@ -678,3 +678,18 @@ Yin-Yang (the glasses sit on the mouth), Blindfolded Cherries, Tattered Jack (th
 
 **Pose swaps on a skin, continued** (Tissues and Yin-Yang): Tissues' nap (the sleep stand-in, in the sit-down windup) and Yin-Yang's Yang (when Yang takes over) and Mindful poses are pictures cut from their own render; `frTissuesPose` and `frYinYangPose` give a skin the same
 moments, for the same flags: Tissues sits low and wide, tipped a little, eyes shut and a round mouth; Yang is a glare, a clenched jaw and a lean in; Mindful is closed eyes and a flat mouth in a low, calm sit.
+
+### Batch 15: MeTag, Poppy, Tea Kettle, Teddy Bear, Bot, Loser
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **MeTag** | `deadpan`, 0.6; pulses (a sway) to win | (no face row: the show gives them no face) | rings of ping | A guard with no voice and no facial expressions, loyal and exact |
+| **Poppy** | `plain`, 1.2; twirls to win | Eyes only: a plain game face, a shout of joy to win (the painted grin stays) | popcorn | All enthusiasm, a kernel in a pan: "The jig is up!" |
+| **Tea Kettle** | `gentle`, 0.9; hops to win | Wide eyes and a small round mouth; a grin to win | puffs of steam | Motherly, flushed and steaming when she boils over: "Mama's gotcha!" |
+| **Teddy Bear** | `fierce`, 1.0; hops to win | Glare, grit and the anger mark on a wind-up; a shout of joy to win | tufts of stuffing | The Rage Room: "YES!!! SMASH!!!" |
+| **Bot** | `plain`, 1.0; twirls to win | Mouth only: a plain game face's mouth, a shout of joy to win | sparks | Exuberant: "I am Bot. The one and only! WOOHOO!" |
+| **Loser** | `gentle`, 0.9; hops to win | Wide eyes and a small round mouth; a grin to win | chips of yellow | Kind, and means it: "Aw, you did great too. Really." |
+
+Skins: no row for Blindfolded MeTag (no face) or Rockstar Poppy (the face is in the black makeup under the hair). Poppy's row is the eyes, because the toothy grin runs into the hand and a patch would bite into it. Bot's and Damaged Bot's are the mouth alone (the face is under a leaf),
+Tired Teddy Bear's the eyes (the pupils inside their dark rings; the nose and the snarl run together) and Blindfolded Tea Kettle's the mouth alone. Teddy Bear's mouth box starts under the nose, so the nose stays. Backpack Loser's eyes sit on the join of a white and a yellow facet,
+so the patches are small; the eyes' ellipses are widened a little to cover a tilt. Pose swaps: none of these has one.
