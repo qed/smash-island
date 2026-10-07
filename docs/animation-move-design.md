@@ -422,7 +422,7 @@ go wide-eyed on the recoil and grin on the settle, on the same ticks as the base
 hook), and `FR_FACE` one row per *picture*: where the eyes, brows and mouth are, as fractions of the picture, the radii of the patch that covers the painted feature, and the fill under it.
 `scripts/measure-faces.mjs` proposes a row from a picture; every row in the game was checked by eye on the sheet it draws (`--sheet`): the anchors on the body, on painted ink.
 A row may also carry `mc` (the fill under the mouth, when the body is another tone there), `c2` (the fill under the second eye, when the body shades between the two), and two more
-numbers on `e` (and on `b`) for the second eye's (brow's) own radii (a flat closed eye beside an open one), `bc2` likewise for the second brow, `k` for the ink the new features are drawn in when the body is dark and its face light (a Remote's is white); a face with no eyes to find has no `e`
+numbers on `e` (and on `b`) for the second eye's (brow's) own radii (a flat closed eye beside an open one), `bc2` likewise for the second brow, `k` for the ink the new features are drawn in when the body is dark and its face light (a Remote's is white), `mk` for the mouth's alone where it differs from `k`; a face with no eyes to find has no `e`
 (the effects go above its mouth). A fighter's row can
 also say what comes off them when they are hit or launched (`shed`: a dot, a leaf, a drop, a shard, a flake, a spark, smoke, rings, a feather, static; drawn, never a word).
 
@@ -576,3 +576,18 @@ patches are small; Knight Match's face sits under the visor of her helmet, and h
 Skins: Profily's features are white on a blue disc, so its rows give the ink (`k`). Roboty's eyes are green screens in a red head, covered whole by a patch of the head's red. The Ice Cubes are
 translucent, so their patches are opaque flat fills of the picture's own colour (the accepted limitation, as for Bubble, Teardrop and Gelatin). Snowy Sidewalky and Springy Shoes Ice Cube show
 one eye. Shades Sidewalky and Watch Profily have no row: the shades run into the mouth, so a patch would bite into the lens, and the watch skin's face runs over the edge of the head.
+
+### Batch 9: Cake, Donut, Bomb, Lightbulb, Paintbrush, Taco (II)
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Cake** | `plain`, 1.0; hops to win | A plain game face drawn in white on the chocolate; a grin to win | crumbs of cake | A pun-maker who is never worried: "Cake at stake. I'm not." |
+| **Donut** | `gentle`, 1.0; twirls to win | Wide eyes (the hole is the mouth, so there is no mouth row) | crumbs of dough | Sweet and slow, a torus that rolls: "Hole-y victory." |
+| **Bomb** | `gentle`, 0.55; hops to win | Wide eyes and a small round mouth; a grin to win | puffs of soot | Iron and nervous, a stutter in everything: "Y-yeah, I'm the bomb. L-literally." |
+| **Lightbulb** | `plain`, 0.9; twirls to win | A plain game face; a shout of joy to win | glints of light | Erratic and goofy, a leader one moment and random the next: "Do I get cookies again?" |
+| **Paintbrush** | `fierce`, 0.8; hops to win | Glare, grit and the anger mark on a wind-up; wide eyes and an open mouth to win | drops of yellow paint | Prone to angry outbursts, bristles that react to them: "Well actually, I had a question—" |
+| **Taco (II)** | `deadpan`, 0.75; sways to win | A flat face; a smirk to win | bits of lettuce and tomato | Oblivious on the surface and a plan under it: "IQ of 7? I merely pretended." |
+
+Skins: Cake's features are white on dark chocolate, so its row gives the ink (`k`). Rockstar Lightbulb has white eyes in black makeup (`k`) and a black mouth on the pale glass below (`mk`, new: the mouth's own ink
+where it differs). Snorkel Bomb's eyes are dark teal arcs inside the dive mask (`k`), and the snorkel covers the mouth. Doughnut and Caked Cake show one eye. Blindfolded Taco has the mouth alone. Caked Cake's mouth patch
+starts under the red band and leaves the first dot of the painted smile, so that the band stays whole.
