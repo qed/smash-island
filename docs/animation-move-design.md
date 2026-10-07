@@ -621,3 +621,24 @@ Baseball patches are big and shiny bodies show them as flat plates (the accepted
 Skins: Rockstar Paper, Blindfolded Microphone, Face Mask Salt and Blindfolded Trophy have the mouth alone, because the eyes are under makeup (the left one plain, the right one white in black paint, which would need two inks), a blindfold or cucumber slices.
 Lab-Coat Test Tube shows one eye. Blindfolded Bonesaw has no row: its mouth and the dark bars that run across it are one shape. Test Tube's body is banded light and dark, so its mouth patch is the colour between them; the textured bodies
 (Microphone's mesh, Paper's ruled lines, Bonesaw's rusty blade) show a patch as a flat plate, the accepted limitation.
+
+### Batch 12: Spikey, Cheesy, Dough, Box, Goo, Lifering
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Spikey** | `plain`, 0.6; hops to win | A plain game face; wide eyes and a round mouth to win | flecks of iron | Lost and a little slow, iron spikes on a ball that does not give: "Wait, I won? Did I miss something?" |
+| **Cheesy** | `plain`, 1.1; hops to win | A plain game face; a shout of joy to win | crumbs of cheese | All puns and no brakes, a wedge of cheese that kicks: "Ha! Kick! Soccer! Pun!" |
+| **Dough** | `gentle`, 1.4; hops to win | Wide eyes and a small round mouth, drawn in a deeper brown than its pale painted lines; wide-eyed even in a win | puffs of flour | Eager, and forever sure it is doing it wrong: "What am I doing wrong?!" |
+| **Box** | `deadpan`, 0.7; sways to win | A flat face; bright eyes to win, the painted frown left as it is | scraps of cardboard | Silent, and everyone calls it wise: "...(says nothing. Everyone calls it wise.)" |
+| **Goo** | `plain`, 1.5; twirls to win | A plain game face; a shout of joy to win | drops of goo | Cheerful, and his analogies never stick: "Winning is like glue! This one stuck!" |
+| **Lifering** | `gentle`, 0.9; hops to win | Wide eyes (the painted mouth stays) | flecks of foam | The lifeguard, earnest: "Everyone okay? I can perform CPR!" |
+
+Skins: Spikey is grey on one side and red on the other, so the mouth patches (which cross the join) are the colour between the two; Blindfolded Spikey, Blindfolded Box and Blindfolded Goo are the mouth alone, and Tangled Spikey
+(rope across the face) and Blindfolded Cheesy (the grin runs into the blindfold) have no row. Dough and Solid Dough: Dough is translucent and its painted features are pale brown (`k` gives the deeper brown the new ones are drawn in), so its patches
+are opaque fills of the colour it shows on a light stage. Lifering's two rows are eyes only: its mouth runs across red and white stripes, and a patch would wipe them out.
+
+**Pose swaps on a skin** (new, for Box, Goo and Lifering, the way Puffball's are): their own pictures for a moment (Box with her flaps open, or lying limp; Goo giant while Puffed Up, or melted to a puddle; Lifering in his dive, or kneeling to
+give First Aid) are cut from their own render, so `drawFighter` skips them on a skin. `frBoxPose`, `frGooPose` and `frLiferingPose` give a skin the same moments, for the same flags and the same lengths, from the skin's own picture: Box pops up
+and settles (wide eyes, a round mouth) or lies over on her side (crossed-out eyes); Goo is stretched to a giant with a glare and a shout, or pulled out wide and flat with a sad face; Lifering tips head first into the dive with a smear behind,
+or sits low with wide eyes. The frame-layer test draws each of these moments on every fighter, bare and in each skin, and checks every number is finite. Spikey's spikeless picture cannot be built from a skin (the spikes are in it), so
+Spikey stays as it was on a skin.
