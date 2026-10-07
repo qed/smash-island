@@ -77,8 +77,12 @@
     background:#2a2438; overflow:hidden; user-select:none;
     display:flex; align-items:center; justify-content:center;
   }
+  /* SCALE TO FIT ("scale to fit", the owner, 2026-10-07). The app is a box of exactly 1100x720 logical pixels, always: every menu, the match and its HUD
+     are laid out in it, and fitApp() scales the whole box (transform: scale(k), about its centre, which the flex centring above has put in the middle of the
+     window) to fill the window, keeping its shape, letterboxed. The text stays sharp (a transform is re-rasterised at the final size; there is no will-change
+     here to stop it). Do not give this box a vw/vh size or a max-width again: the world a match plays in is this box, in every window. */
   #app{
-    position:relative; width:100%; height:100%; max-width:1100px; max-height:720px;
+    position:relative; flex:0 0 auto; width:1100px; height:720px; transform-origin:50% 50%;
     background:linear-gradient(#bfe8ff,#88cdf2); overflow:hidden;
     box-shadow:0 0 0 4px #1c1c1c, 0 20px 60px rgba(0,0,0,.5);
   }
@@ -2881,6 +2885,40 @@ if(typeof window!=='undefined' && window.addEventListener){
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
 let W=1100,H=720, running=false, paused=false, raf=0;
+// ---- SCALE TO FIT ("scale to fit", the owner, 2026-10-07) ----
+// #app is a box of exactly 1100x720 LOGICAL pixels (LOGICAL_W x LOGICAL_H), and the whole of it -- every menu, the match, the HUD -- is scaled by k to fill
+// the window, letterboxed where the window's shape is not the box's (k is the smaller of the two ratios). W and H are that logical size and nothing else, so a
+// match is the same size, and the same world, in any window: that matters online, where two windows used to make two different arenas.
+// The canvas keeps its LOGICAL coordinates. Its backing store is the box's size times the pixels the box really covers (sx and sy: k times the pixel ratio,
+// capped at CANVAS_PIXELS_MAX so a 4K or a retina screen costs a few times a 1100x720 canvas, not ten), and a BASE TRANSFORM scales every drawing up to it.
+// So anything that "resets" the canvas resets to that base (baseTransform), never to the identity, and anything that reads a pointer in a canvas divides by k.
+// A headless page has no layout (its clientWidth is 0): there k is 1, there is no base transform, and W and H stay what the window says -- as they always were.
+const LOGICAL_W = 1100, LOGICAL_H = 720;
+const CANVAS_PIXELS_MAX = 4.2e6;
+const UI = { k:1, sx:1, sy:1, real:false, hooks:[] };
+function layoutBox(){ const d = document.documentElement; return (d && d.clientWidth > 0 && d.clientHeight > 0) ? [d.clientWidth, d.clientHeight] : null; }
+function baseTransform(c){ c.setTransform(UI.sx, 0, 0, UI.sy, 0, 0); }
+// The main canvas's backing store for the pixels it covers now. (Assigning a size clears a canvas and resets its state, so only when it changed.)
+function sizeMainCanvas(){
+  const w = Math.round(LOGICAL_W*UI.sx), h = Math.round(LOGICAL_H*UI.sy);
+  if(cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+  UI.sx = w/LOGICAL_W; UI.sy = h/LOGICAL_H;
+  baseTransform(ctx);
+}
+// On load, on a resize and on entering or leaving fullscreen. Gameplay does not read any of it: W and H do not move (see resize).
+function fitApp(){
+  const box = layoutBox(), app = document.getElementById('app');
+  UI.real = !!box;
+  if(!box){ UI.k = 1; UI.sx = UI.sy = 1; return; }
+  const k = Math.min(box[0]/LOGICAL_W, box[1]/LOGICAL_H);
+  UI.k = (k > 0 && isFinite(k)) ? k : 1;
+  if(app) app.style.transform = 'scale(' + UI.k + ')';
+  const cap = Math.sqrt(CANVAS_PIXELS_MAX/(LOGICAL_W*LOGICAL_H));
+  UI.sx = UI.sy = Math.max(0.5, Math.min(UI.k*(window.devicePixelRatio||1), cap));
+  sizeMainCanvas();
+  for(const h of UI.hooks){ try{ h(); }catch(e){} }   // the other canvases that size themselves to the pixels they cover (the Level Creator's)
+}
+fitApp();
 let fighters=[], particles=[], projectiles=[], beams=[], hazardT=0, evil=null;
 let items=[], summons=[], itemTimer=0;   // pickups on the stage, active assist/boss summons, spawn countdown
 let SPONGY_PLATS = [];   // Spongy republished as terrain each frame (see refreshSpongyPlats) — declared with the rest of the world state so platRects() can never touch it in TDZ
@@ -3212,8 +3250,8 @@ function scrollChosenIntoView(){
     const b=document.getElementById('board'), sc=b && b.parentElement, sel=b && b.querySelector('.cell.sel');
     if(!sel || !sc || !sc.clientHeight) return;
     const a=sel.getBoundingClientRect(), r=sc.getBoundingClientRect();
-    if(a.top < r.top) sc.scrollTop -= (r.top - a.top) + 6;
-    else if(a.bottom > r.bottom) sc.scrollTop += (a.bottom - r.bottom) + 6;
+    if(a.top < r.top) sc.scrollTop -= (r.top - a.top)/UI.k + 6;      // (the rects are on the screen; scrollTop is in the box's pixels: divide by k)
+    else if(a.bottom > r.bottom) sc.scrollTop += (a.bottom - r.bottom)/UI.k + 6;
   }catch(e){}
 }
 // A pick on the grid: the highlight moves, nothing is rebuilt (a hundred portraits would re-fetch and flicker), and what depends on the pick follows.
@@ -4321,20 +4359,31 @@ async function teamAiChatTurn(phraseId, ctx, myTeam){
 // ============================================================
 //  MATCH
 // ============================================================
-function resize(){ const r=cv.getBoundingClientRect();
-  // Guard against a not-yet-laid-out canvas (getBoundingClientRect can return 0 when the canvas was
-  // just unhidden — e.g. jumping into a match straight from the tournament hub). Falling back to 0
-  // builds a floorless empty map, so clamp to sensible real dimensions.
-  let rw=r.width, rh=r.height;
-  if(!rw || rw<50){ rw = (window.innerWidth||W||1100); }
-  if(!rh || rh<50){ rh = (window.innerHeight||H||720); }
+function resize(){
+  fitApp();
+  if(UI.real){
+    // Scale to fit: the world is the 1100x720 box in every window, so a match is the same size for everyone (the canvas's backing store is fitApp's business).
+    W = LOGICAL_W; H = LOGICAL_H;
+  } else {
+    // No layout (a headless page): W and H are what the window says, as they always were.
+    const r=cv.getBoundingClientRect();
+    // Guard against a not-yet-laid-out canvas (getBoundingClientRect can return 0 when the canvas was
+    // just unhidden — e.g. jumping into a match straight from the tournament hub). Falling back to 0
+    // builds a floorless empty map, so clamp to sensible real dimensions.
+    let rw=r.width, rh=r.height;
+    if(!rw || rw<50){ rw = (window.innerWidth||W||1100); }
+    if(!rh || rh<50){ rh = (window.innerHeight||H||720); }
+    cv.width=W=Math.round(rw); cv.height=H=Math.round(rh);
+  }
   // Only collapse the world to the screen for genuinely single-screen arenas. A mid-match browser
   // resize used to clobber WW/WH on scrolling FFA maps (leaving the camera clamped to one screen of
   // a much larger world); setupWorld() recomputes them for those.
   // A Tall/Huge CUSTOM level is a scrolling world too — collapsing it here left the camera clamped
   // to one screen of a map the player had just built at three times that.
-  cv.width=W=Math.round(rw); cv.height=H=Math.round(rh); if(!isBig() && !isBigFFA() && !customScrolls()){ WW=W; WH=H; } }
-addEventListener('resize',()=>{ if(running){resize();} });
+  if(!isBig() && !isBigFFA() && !customScrolls()){ WW=W; WH=H; } }
+// A resize (a window dragged, F11, the browser's zoom) and fullscreen coming or going refit the box, in a menu as well as in a match.
+addEventListener('resize',()=>{ if(running){ resize(); } else fitApp(); });
+document.addEventListener('fullscreenchange', ()=>{ if(running){ resize(); } else fitApp(); });
 
 // The result screen's Rematch. Online, the host's Rematch is a start for the whole room: startAsHost sends the 'start'
 // every client needs (a plain startMatch began the host's match alone -- the others sat waiting, and a player who had
@@ -5093,7 +5142,15 @@ function startRunRecording(){
   // still gets the KO replay and the GIF, which come from the clip ring.
   if(inNetSession()){ RUN_REC.skipped = true; return; }
   try{
-    const stream = cv.captureStream(30);   // 30fps capture of the game canvas
+    // The canvas is bigger than the box on a big or sharp screen (see UI). The recorder is what it always was, a 1100x720 picture: it records a copy at that size
+    // (clipCapture copies each frame in), because encoding a canvas of several times the pixels was a measured stall. At the box's size, or with no layout, it
+    // records the canvas itself.
+    let source = cv; RUN_REC.copy = null;
+    if(UI.real && (UI.sx > 1.05 || UI.sy > 1.05)){
+      const k2 = document.createElement('canvas'); k2.width = LOGICAL_W; k2.height = LOGICAL_H;
+      const g2 = k2.getContext('2d'); if(g2){ RUN_REC.copy = { cv:k2, ctx:g2, n:0 }; source = k2; }
+    }
+    const stream = source.captureStream(30);   // 30fps capture of the game canvas
     // pick a supported mime type -- VP8 first: the same replay for much less encoding work than VP9, at a bitrate a
     // 30 fps cartoon has no use for more than
     let mime = "";
@@ -5386,6 +5443,8 @@ function clipCanvas(){
 // only when a GIF or the replay is actually made (clipFrames). Browsers without it keep the old synchronous path.
 function clipCapture(){
   if(typeof document === 'undefined') return;
+  const rc = RUN_REC.copy;   // the run recorder's picture at the box's size (see startRunRecording): a copy of this frame, every other one (it records at 30 fps)
+  if(rc && RUN_REC.recording && (rc.n++ & 1) === 0){ try{ rc.ctx.drawImage(cv, 0, 0, LOGICAL_W, LOGICAL_H); }catch(e){} }
   if((CLIP.tick++ % CLIP.EVERY) !== 0) return;
   try{
     if(typeof createImageBitmap === 'function' && !CLIP.noBitmap && cv && cv.width){
@@ -31955,7 +32014,8 @@ function drawMoonFrame(M, t){
   if(t > T.bolt + 0.1 && t < T.bolt + 0.6) sh = 10;
   for(const q of T.knocks) if(t > q && t < q + 0.18) sh = 6;
   if(t > T.brk && t < T.brk + 0.5) sh = 14;
-  c.setTransform(1, 0, 0, 1, sh ? Math.sin(t*91)*sh : 0, sh ? Math.cos(t*77)*sh : 0);
+  const msx = M.sx || 1, msy = M.sy || 1;   // the base transform: the canvas's backing store is this much bigger than the scene's logical pixels
+  c.setTransform(msx, 0, 0, msy, sh ? Math.sin(t*91)*sh*msx : 0, sh ? Math.cos(t*77)*sh*msy : 0);
   const sky = c.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, '#0a0a2a'); sky.addColorStop(1, '#02021a');
   c.fillStyle = sky; c.fillRect(-20, -20, w + 40, h + 40);
   c.fillStyle = 'rgba(200,210,255,0.8)'; for(let i=0;i<90;i++) c.fillRect((i*197) % w, (i*113) % h, 2, 2);
@@ -31996,7 +32056,7 @@ function drawMoonFrame(M, t){
     c.save(); c.globalAlpha = 0.25*Math.sin(a*Math.PI); c.fillStyle = ONE_AURA[0]; c.fillRect(-20, -20, w + 40, h + 40); c.restore();
     c.fillStyle = 'rgba(0,0,0,' + k(T.end - 0.6, T.end) + ')'; c.fillRect(-20, -20, w + 40, h + 40); }
   if(t < 0.8){ c.fillStyle = 'rgba(0,0,0,' + (1 - k(0, 0.8)) + ')'; c.fillRect(-20, -20, w + 40, h + 40); }
-  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.setTransform(msx, 0, 0, msy, 0, 0);
 }
 function playMoonScene(){
   if(oneQ().stage < ONE_STAGE.MOON) return false;
@@ -32007,11 +32067,18 @@ function playMoonScene(){
   const skip = document.getElementById('moonSkip'); if(skip) skip.style.display = 'none';
   const cv2 = document.getElementById('moonCanvas');
   if(!cv2){ finishMoonScene(); return true; }
-  const r = cv2.getBoundingClientRect();
-  cv2.width = Math.round(r.width > 50 ? r.width : (window.innerWidth || 1100));
-  cv2.height = Math.round(r.height > 50 ? r.height : (window.innerHeight || 720));
+  // The scene is drawn in the box's logical pixels (1100x720), under a base transform up to a backing store of the pixels it covers, like the match.
+  // (With no layout, a headless page, it is the size of the window, and the base is the identity, as it always was.)
+  let mw, mh, msx = 1, msy = 1;
+  if(UI.real){ mw = LOGICAL_W; mh = LOGICAL_H; cv2.width = Math.round(mw*UI.sx); cv2.height = Math.round(mh*UI.sy); msx = cv2.width/mw; msy = cv2.height/mh; }
+  else {
+    const r = cv2.getBoundingClientRect();
+    cv2.width = Math.round(r.width > 50 ? r.width : (window.innerWidth || 1100));
+    cv2.height = Math.round(r.height > 50 ? r.height : (window.innerHeight || 720));
+    mw = cv2.width; mh = cv2.height;
+  }
   let c2 = null; try{ c2 = cv2.getContext('2d'); }catch(e){}
-  MOON.ctx = c2; MOON.w = cv2.width; MOON.h = cv2.height; MOON.t0 = performance.now(); MOON.t = 0;
+  MOON.ctx = c2; MOON.w = mw; MOON.h = mh; MOON.sx = msx; MOON.sy = msy; MOON.t0 = performance.now(); MOON.t = 0;
   MOON.raf = requestAnimationFrame(moonTick) || -1;   // -1 keeps the handle truthy where requestAnimationFrame hands back 0
   MOON.skipT = setTimeout(()=>{ if(MOON.raf && skip) skip.style.display = 'block'; }, 3000);   // a skip, never an exit
   // A tab that stops painting (hidden, throttled) stops animation frames; it must still reach the fight card.
@@ -32530,7 +32597,7 @@ function drawCakeAtStake(){
   const k = CAKE_FX.t / 78;                 // 1 -> 0
   // A widening ring of the eliminated fighter's colour, sweeping outward from centre screen.
   ctx.save();
-  ctx.setTransform(1,0,0,1,0,0);            // screen space: this is a stinger, not a world object
+  baseTransform(ctx);                       // screen space (the canvas's base transform, not the identity): this is a stinger, not a world object
   ctx.globalAlpha = 0.30 * k;
   ctx.strokeStyle = CAKE_FX.color;
   ctx.lineWidth = 14 * k + 3;
@@ -42674,12 +42741,23 @@ function edResize(){
   const cv = ED.cv; if(!cv) return;
   const gw = W||1100, gh = H||720;
   const m = edMul();
-  ED.cw = Math.max(320, Math.min(760, (window.innerWidth||760)-24));
+  ED.cw = Math.max(320, Math.min(760, ((UI.real ? LOGICAL_W : window.innerWidth)||760)-24));   // (the box's own width, not the window's: the box is what scales)
   ED.ch = Math.round(ED.cw * gh/gw);
-  cv.width = ED.cw; cv.height = ED.ch;
+  edBacking();
   ED.w = Math.round(gw*m.sw); ED.h = Math.round(gh*m.sh);
   if(ED.fit) edZoomFit(); else edClampView();
 }
+// The editor canvas is drawn in its own logical size (ED.cw x ED.ch), under a base transform up to a backing store of the pixels its box really covers: its CSS box
+// (the page stretches it to the screen's width, 1048 px in the box, so it was always drawn bigger than it was made, and soft) times UI.sx and UI.sy. With no layout
+// (a headless page) its box is 0 and the backing store is ED.cw x ED.ch, as it always was.
+function edBacking(){
+  const cv = ED.cv; if(!cv || !ED.cw) return;
+  const bw = cv.clientWidth || ED.cw, bh = cv.clientHeight || ED.ch;   // its box, in the app's own pixels (clientWidth is a layout size: k is not in it)
+  const w = Math.round(bw*UI.sx), h = Math.round(bh*UI.sy);
+  if(cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+  ED.sx = w/ED.cw; ED.sy = h/ED.ch;
+}
+UI.hooks.push(()=>{ if(ED.cv && ED.cw){ edBacking(); edDraw(); } });
 function edZoomFit(){ ED.fit=true; ED.zoom = Math.min(ED.cw/ED.w, ED.ch/ED.h); ED.view.x=0; ED.view.y=0; edClampView(); }
 function edZoomOne(){ ED.fit=false; ED.zoom = ED.cw/(W||1100); edClampView(); }   // 1:1 with the play screen
 // Letterbox offset: when the whole world is smaller than the canvas it sits centred rather than
@@ -43116,10 +43194,13 @@ function openEditor(){
   const dt=document.getElementById('edDecoType');
   if(dt){ dt.innerHTML=''; for(const k of DECO_KEYS){ const o=document.createElement('option'); o.value=k; o.textContent=DECO_TYPES[k].label; dt.appendChild(o); } dt.value=ED.decoKind; dt.onchange=e=>{ ED.decoKind=e.target.value; }; }
   genFillSelects();     // quick-map controls
-  // Displayed px -> internal canvas px (the canvas is CSS-scaled by max-width).
-  const pos=e=>{ const r=cv.getBoundingClientRect();
-    const sx=cv.width/(r.width||cv.width), sy=cv.height/(r.height||cv.height);
-    return {x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy}; };
+  // Displayed px -> the editor's own (logical) canvas px. The canvas is CSS-stretched to its box, and the whole app is scaled by k (fitApp); the rect is on the
+  // screen, so the box is k times its layout size (clientWidth), and so is the border (clientLeft): dividing by the box takes both out at once. It is the one place a
+  // pointer is read in a canvas. (Not cv.width, which is the backing store's size; and the press is measured from the box, not from the border's outer edge.)
+  const pos=e=>{ const r=cv.getBoundingClientRect(), k=UI.k||1;
+    const bw=(cv.clientWidth||0)*k, bh=(cv.clientHeight||0)*k;
+    const sx=ED.cw/(bw||r.width||ED.cw), sy=ED.ch/(bh||r.height||ED.ch);
+    return {x:(e.clientX-r.left-(cv.clientLeft||0)*k)*sx, y:(e.clientY-r.top-(cv.clientTop||0)*k)*sy}; };
 
   cv.oncontextmenu=e=>{ e.preventDefault(); };     // right-drag pans; never pop the browser menu
   cv.onpointerdown=e=>{ e.preventDefault();
@@ -43310,7 +43391,7 @@ function edDraw(){
   const ctx2=ED.ctx; if(!ctx2) return;
   const t = (typeof performance!=='undefined' && performance.now) ? performance.now()/16 : 0;
   const cw=ED.cw, ch=ED.ch, z=ED.zoom, ox=edOx(), oy=edOy();
-  ctx2.setTransform(1,0,0,1,0,0);
+  ctx2.setTransform(ED.sx||1,0,0,ED.sy||1,0,0);   // the canvas's base: its backing store is a little bigger than cw x ch
   ctx2.clearRect(0,0,cw,ch);
   // out-of-world surround, so the edge of the map is visible as an edge
   ctx2.fillStyle="#0d1117"; ctx2.fillRect(0,0,cw,ch);
