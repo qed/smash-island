@@ -33569,6 +33569,154 @@ function aiKitLessons(f, t, inp, dx, dy, dist, adx, rn, pb){
      && !(f.countering > 0 || f.cloud > 0 || f.curse > 0) && Math.random() < PB_ADD_CAP*(2/(1 + Math.exp(-pb.g5)) - 1)) f._aiCharging = smashFullOf(f) + 9;
   return inp;
 }
+// ---- THE II FIGHTERS' KIT READS (ii-buffs). aiKitLessons gives the legacy class rules their kit-specific presses; these are the kits whose special needs
+// a read the class rules never had. Measured on the 1v1 panel (probe: presses and hits per move): Silver Spoon blacked himself out beside the foe, Tapey
+// played an empty tape, Cammy took a snapshot of nothing, Cheesy kicked a ball that no knee slap had charged, Tissues sneezed 150 px jets at 280 px,
+// Teddy Bear shot a seventh paintball and fell on her knees. Run AFTER the class branches (so a read can also veto the legacy press). Every read is
+// something a player sees (a distance, the foe's pace, a cooldown, a meter) and none rolls a die, so a match walks the dice it always did.
+const AI_II_READS = new Set(["glowgold","tape","shutter","pun","vacuum","onehit","cherries","condishawn","coresaw","barrier","paintball","clover","leavealone",
+  "snark","mic","eball","lemon","lifeguard","spikeburst"]);
+const AI_II_NAMES = new Set(["Nickel (II)","Starfruit","Yin-Yang","Fan","Lifering","Teddy Bear","Box","Bot","Microphone","Lightbulb","Taco (II)","Spikey","Cheesy","Clover",
+  "Bonesaw","Poppy","Tissues","Cherries","Silver Spoon","Tapey","Dough","Cammy","Magnet","MeTag","Soap"]);   // the fighters this pass buffs; no one else's bot moves
+function aiKitReadsII(f, t, inp, dx, dy, dist, adx, ady){
+  if(f.hitstun > 0 || f._windup || SETTINGS.mode === 'boss' || !AI_II_NAMES.has(f.name)) return;   // (a boss fight keeps the legacy bot: its numbers are not this pass's)
+  // TURN BEFORE A SWING. The class rules back away to a range (zoners, trappers, evaders) with the attack button down, and a fighter faces the way
+  // it last walked: measured, over half of a retreating fighter's jabs and finishers were swung at the air behind it (probe: 42% faced the foe for
+  // Pen, 11% of Cammy's jabs landed). The input loop turns the fighter before it swings in the same frame, so a human turns and swings; so does this.
+  if((inp.attack || (inp.special && !inp.up && !inp.down && f.kit.special !== 'disinfect')) && adx > 10){   // (Soap's spray is not turned: whether it is pressed stays aiSoapSprayPays's call)
+    const nextFace = inp.right ? 1 : inp.left ? -1 : f.face;
+    if(nextFace !== (dx < 0 ? -1 : 1)){ inp.left = dx < 0; inp.right = dx > 0; }
+  }
+  const sp = f.kit && f.kit.special;
+  if(!AI_II_READS.has(sp)) return;
+  const plain = inp.special && !inp.up && !inp.down && !inp.attack;     // a neutral special press (up is the hop, down the stance, attack the finisher)
+  const veto = () => { inp.special = false; inp.down = false; };
+  const press = (down, turn) => { inp.special = true; inp.down = !!down; inp.up = false; inp.attack = false; inp._kitRead = true;
+    if(turn){ inp.left = dx < 0; inp.right = dx > 0; } };
+  if(sp === "glowgold"){
+    // SILVER SPOON: the gold blacks him out for 40 frames before it takes. Beside the foe that is 40 free frames to them; from across the stage,
+    // or with the foe launched away, it is six seconds of Attack Up and Speed Up.
+    const safe = dist > 230 || (t.hitstun > 24 && dist > 140);
+    if(plain && !safe) veto();
+    else if(!inp.special && f.spCd <= 0 && safe && !(f._empowerT > 0)) press(false, false);
+  }
+  else if(sp === "tape"){
+    // TAPEY: the neutral special plays what the down-special taped. Played empty it is a 3% push; so record while the foe is near, play the tape
+    // back once a real hit (6% or more) is on it.
+    let best = 0; if(f._rec) for(const q of f._rec.snap) if((q[3]||0) > best) best = q[3];
+    if(plain && best < 6) veto();
+    if(f.spCd <= 0){
+      if(best >= 6 && adx < 300 && ady < 70) press(false, true);
+      else if((!f._rec || (best < 6 && hazardT - f._rec.t0 > 420)) && dist < 260 && f.onground && !inp.special) press(true, false);
+    }
+  }
+  else if(sp === "shutter"){
+    // CAMMY: the flash goes off 12 frames after the press, 170 px ahead: aimed where the foe will be then. The USB (down) plugs the foe right in front.
+    const px = f.x + (dx < 0 ? -1 : 1)*170, lead = t.x + (t.vx||0)*12;
+    const framed = Math.abs(lead - px) < 32 && ady < 46 && t.invuln <= 0;
+    if(plain && !framed) veto();
+    if(f.spCd <= 0){
+      if(adx < f.r + t.r + 16 && ady < 40 && t.invuln <= 0 && Math.abs(t.vx||0) < 9) press(true, true);
+      else if(framed && !inp.special) press(false, true);
+    }
+  }
+  else if(sp === "pun"){
+    // CHEESY: every knee slap (down) banks a charge on the kick (neutral): 6% with none, 15% and through the foe with three. Bank while the foe is
+    // away, kick once there are two (or one with the foe on him).
+    const n = f._kneeSlaps || 0;
+    if(plain && n === 0 && adx > 90) veto();
+    if(f.spCd <= 0 && f.onground){
+      if(((n >= 2 && adx > 60 && adx < 420) || (n >= 1 && adx < 130)) && ady < 60) press(false, true);
+      else if(n < 3 && dist > 150 && !inp.special) press(true, false);
+    }
+  }
+  else if(sp === "vacuum"){
+    // POPPY: the down-special mends about 10% over a second, rooted. Do it when hurt and nobody is close.
+    if(f.spCd <= 0 && f.onground && f.pct >= 20 && dist > 200 && !(f.healing > 0) && !inp.special) press(true, false);
+  }
+  else if(sp === "lifeguard"){
+    // LIFERING: First Aid (down) kneels and mends about 6% over half a second, rooted. Hurt, with the foe off, it is free health.
+    if(f.spCd <= 0 && f.onground && f.pct >= 25 && dist > 220 && !(f.healing > 0) && !inp.special) press(true, false);
+  }
+  else if(sp === "snark"){
+    // NICKEL: Experiment 626 (down) is five seconds of haste and a next jab that lands 2.1x + 3: a buff, taken with the foe coming and not again until it ends.
+    if(f.spCd <= 0 && !f._nsplit && f.onground && dist > 70 && dist < 320 && !inp.special) press(true, false);
+  }
+  else if(sp === "mic"){
+    // MICROPHONE: the button on her chest (down) toggles Loud (hits 1.25x, launches 1.3x) and Quiet (takes 0.85x). Loud while she is healthy, Quiet once hurt.
+    const toggle = inp.special && inp.down && !inp.attack;
+    if(toggle) veto();
+    if(f.spCd <= 0 && !inp.special && ((!f._loud && f.pct < 60) || (f._loud && f.pct > 90))) press(true, false);
+  }
+  else if(sp === "eball"){
+    // LIGHTBULB: Light Production (down) flashes everyone within 150 px and scrambles their controls for a second: in the foe's face, once per scramble.
+    if(f.spCd <= 0 && adx < 120 && ady < 80 && !(t.ctrlRev > 0) && !(t._revLock > 0) && t.invuln <= 0 && !inp.special) press(true, false);
+  }
+  else if(sp === "lemon"){
+    // TACO: Retractable Arms (down) go out to 210 px, drag the foe in and stun it for 18 frames: for a foe sitting at mid range.
+    if(f.spCd <= 0 && dist > 100 && dist < 200 && ady < 90 && t.invuln <= 0 && !inp.special) press(true, false);
+  }
+  else if(sp === "spikeburst"){
+    // SPIKEY: the down-special hooks the foe right in front on a spike and carries it; with nobody there it is 18 frames of endlag.
+    const hooked = adx < f.r + t.r + 18 && ady < 40 && t.invuln <= 0;
+    if(inp.special && inp.down && !inp.attack && !hooked) veto();
+    else if(hooked && f.spCd <= 0 && !inp.special && !(f._baldUntil > hazardT)) press(true, true);
+  }
+  else if(sp === "onehit"){
+    // STARFRUIT: the first blast of each stock is the hit (14%, a launch); once it has landed the button is a 3% shove until Recycle (down, 3% to him,
+    // on its own 8 s clock) gives it back. A spent hit is recycled from a distance; a fresh one is belted at the foe in front, not spent on a shove.
+    const spent = !!f._hasBeen && f._hitFalls === (f._falls||0), ready = (f._recycleT||0) <= hazardT;
+    if(plain && spent) veto();
+    if(inp.special && inp.down && !inp.attack && !(spent && ready)) veto();
+    if(f.spCd <= 0 && !inp.special){
+      if(spent && ready && dist > 110 && f.onground) press(true, false);
+      else if(!spent && adx < f.r + t.r + 62 && ady < 40 && t.invuln <= 0) press(false, true);
+    }
+  }
+  else if(sp === "cherries"){
+    // CHERRIES: the oil trips whoever runs onto it, the Cherries too. Lay it when a foe is coming, never walk into it; the bait (down) springs on
+    // approach and lasts 40 frames, so it goes down with the foe at the door.
+    const oil = projectiles.find(p => p._cherryOil === f.idx), bait = projectiles.some(p => p._cherryBait === f.idx);
+    if(plain && (oil || !(dist > 110 && dist < 300 && dx*(t.vx||0) < -0.5))) veto();
+    if(oil){
+      if(inp.right && oil.x > f.x && oil.x - f.x < oil.r + f.r + 30) inp.right = false;
+      if(inp.left && oil.x < f.x && f.x - oil.x < oil.r + f.r + 30) inp.left = false;
+    }
+    if(f.spCd <= 0 && f.onground){
+      if(!bait && adx < f.r + t.r + 30 && ady < 50 && t.invuln <= 0 && !inp.special) press(true, false);
+      else if(!oil && !inp.special && dist > 110 && dist < 300 && dx*(t.vx||0) < -0.5) press(false, true);
+    }
+  }
+  else if(sp === "condishawn"){
+    // TISSUES: the snot jet reaches 150 px straight ahead, and the down-special is a 50-frame nap: neither is for a foe 280 px off.
+    const inJet = adx < 150 && ady < 30;
+    if(plain && !inJet) veto();
+    if(inp.special && inp.down && !inp.attack && dist < 300) veto();
+    if(inJet && adx > 50 && f.spCd <= 0 && !inp.special) press(false, true);
+  }
+  else if(sp === "coresaw"){
+    // BONESAW: every stroke strips armour, counters and reflects before it hits; against a foe holding one the saw is the answer.
+    if(f.spCd <= 0 && adx < f.r + t.r + 30 && ady < 40 && (t.armor > 0 || t.countering > 0 || t.reflecting > 0) && !inp.special) press(false, true);
+  }
+  else if(sp === "barrier"){
+    // METAG: the wall stops every enemy shot that touches it; up it goes (turned to the shooter) when one is on its way in.
+    if(f.spCd <= 0 && !inp.special){
+      const shot = projectiles.find(p => !p.trap && !p.turret && p.owner !== f.idx && p.life > 0 && (p.vx||0) !== 0 && Math.sign(p.vx) === Math.sign(f.x - p.x || 1)
+        && Math.abs(p.x - f.x) < 190 && Math.abs(p.y - f.y) < 60 && !(p.ownerObj && p.ownerObj.team === f.team));
+      if(shot){ press(false, false); inp.left = shot.x < f.x; inp.right = shot.x > f.x; }
+    }
+  }
+  else if(sp === "clover" || sp === "leavealone"){
+    // CLOVER (Meant For Me) and FAN (Fan Theory): the down-special is a counter stance, like Needle's and Leafy's (aiKitLessons): up as a swing comes.
+    if(f.spCd <= 0 && dist < f.r + t.r + AI_COUNTER_REACH && (t.smashHold > 0 || !!t._windup || (t._atkAnim > 0 && t.atkCd > 12))) press(true, false);
+  }
+  else if(sp === "paintball"){
+    // TEDDY BEAR: a seventh paintball inside a 1.5 s rest leaves her on her knees for a second.
+    if(plain && (f._pbN||0) >= 6 && hazardT - (f._pbLast == null ? -1e9 : f._pbLast) < 90) veto();
+    // ...and Front of the Crowd (down) is a 150 px armoured shoulder barge through whoever is in the way.
+    if(f.spCd <= 0 && f.onground && adx > 60 && adx < 170 && ady < 50 && t.invuln <= 0 && !inp.special) press(true, true);
+  }
+}
 function aiClass(f){
   if(f._aiClass) return f._aiClass;
   const a = f.arch || (ROSTER.find(r=>r.name===f.name)?.arch) || "";
@@ -34502,6 +34650,7 @@ function aiThink(f){
     if(sp==="counter"||sp==="dash"||sp==="kick"||sp==="reflect"){ inp.special=true; inp.down=true; }
   }
 
+  aiKitReadsII(f, t, inp, dx, dy, dist, adx, ady);   // the II kits' own reads (a veto of a press that hurts or wastes, or the press the class rules never make)
   if(pb) pbMoves(f, t, inp, pb, lvl, sp, danger, inMelee, ac0);   // the playbook's say over which move, when (the m* genes)
   return finishAI(f,inp,sp);
 }
