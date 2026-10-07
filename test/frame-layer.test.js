@@ -5,9 +5,11 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // 1. The same scripted match is played twice, both times drawn every tick -- frames on, and frames stripped (FRAME_ON false) -- once bare and once in a skin, and every
 //    number the sim can see has to come out the same, with the same dice left over. A launch every 90 ticks brings up the tumble, the hit and the rest. (Not drawing at all
 //    is another thing: draw() itself has always touched a little of what the sim reads. This holds the FRAMES to it.)
-// 2. Every pilot fighter draws every moment -- each kind of swing at six ticks, a walk, a run, a jump, a fall, a flinch, a tumble, a charge -- bare and in each of
-//    their skins, without throwing, and with every number of the frame finite.
-const PILOT = ['Firey', 'Leafy', 'Bubble', 'Pen', 'Knife', 'Balloon', 'Tapey', 'Silver Spoon', 'Puffball'];
+// 2. Every fighter with frames (every row of FRAME_DATA) draws every moment -- each kind of swing at six ticks, a walk, a run, a jump, a fall, a flinch, a tumble, a
+//    charge -- bare and in each of their skins, without throwing, and with every number of the frame finite.
+// The fighters of the first test: the pilot of nine, then each batch of the roster as it lands (one batch a commit).
+const FIGHTERS = ['Firey', 'Leafy', 'Bubble', 'Pen', 'Knife', 'Balloon', 'Tapey', 'Silver Spoon', 'Puffball',
+  'Needle', 'Pin', 'Snowball', 'Bomby', 'Teardrop', 'Flower'];
 const OFF = (src) => { expect(src, 'the switch is where the test expects it').toContain('const FRAME_ON = true;'); return src.replace('const FRAME_ON = true;', 'const FRAME_ON = false;'); };
 // every picture "decoded" (a stand-in with a size), so drawFighter runs the layer's passes instead of the vector fallback
 const FAKE = `window.__fake = function(sp){ sp._req = true; sp.img = { complete:true, naturalWidth:150, naturalHeight:200 }; }; true`;
@@ -37,7 +39,7 @@ const play = (name, frames) => {
 };
 
 describe('the frame layer is render-only: the same match, tick for tick, with the frames drawn or stripped', () => {
-  for (const name of PILOT) {
+  for (const name of FIGHTERS) {
     it(`${name}: bare and in a skin, the same ticks and the same dice`, () => {
       const on = play(name, true), off = play(name, false);
       expect(on.moments, 'the frames really came up: moving, and the tumble of a launch').toMatch(/3.*5|5.*3/);
@@ -49,7 +51,7 @@ describe('the frame layer is render-only: the same match, tick for tick, with th
   }
 });
 
-describe('every pilot fighter draws every moment, bare and in each of their skins', () => {
+describe('every fighter with frames draws every moment, bare and in each of their skins', () => {
   it('draws without throwing, and every number of every frame is finite', () => {
     const { window: w } = loadMonolith();
     w.eval(FAKE);

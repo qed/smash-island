@@ -421,6 +421,9 @@ go wide-eyed on the recoil and grin on the settle, on the same ticks as the base
 **The data.** `FRAME_SRC` is one row per fighter (a temperament from `FR_TEMPER_SRC`, `amp` for how far the body moves, `puff`, `vein`, `winStyle`, overrides `ex`, an optional `pose`
 hook), and `FR_FACE` one row per *picture*: where the eyes, brows and mouth are, as fractions of the picture, the radii of the patch that covers the painted feature, and the fill under it.
 `scripts/measure-faces.mjs` proposes a row from a picture; every row in the game was checked by eye on the sheet it draws (`--sheet`): the anchors on the body, on painted ink.
+A row may also carry `mc` (the fill under the mouth, when the body is another tone there), `c2` (the fill under the second eye, when the body shades between the two), and two more
+numbers on `e` for the second eye's own radii (a flat closed eye beside an open one); a face with no eyes to find has no `e` (the effects go above its mouth). A fighter's row can
+also say what comes off them when they are hit or launched (`shed`: a dot, a leaf, a drop, a shard, a flake, a spark, smoke, rings, a feather, static; drawn, never a word).
 
 **Adding a fighter** is adding rows: a `FRAME_SRC` row, an `FR_FACE` row for their render (and one for each skin worn), and, if they have them, `over` extras in their `FIGHTER_ANIM` entry that
 read `frNow(f)`. Nothing else changes.
@@ -449,3 +452,23 @@ who have one), C is the special (up+C and down+C the others), V is the smash (pr
 *moving* is walking, running and jumping; *attacks* are X, C and V (the kind of move decides the strip: a jab punches, down+X kicks, a smash slams or lunges); *hurt* is getting hit, or hitting
 the CPU; the *KO tumble* is a hit that launches (a smash at a high percent, or being smashed); *victory* is winning, on the result screen above "Winner!" (win with one of the nine, or watch a CPU
 win). A skin shows the same frames on its own picture: wear it in the Wardrobe first. The map editor's "Test the Feel" gives a dummy to hit with infinite stocks (R resets, Esc leaves).
+
+## The roster, a batch at a time
+
+The pilot's table is above. Each batch of the rest of the roster adds its own here as it lands: the fighter's row in `FRAME_SRC`, a row in `FR_FACE` for their render and each skin,
+and a win style. A skin the measurer cannot honestly find a face on keeps the face it has and still gets everything else.
+
+### Batch 1: Needle, Pin, Snowball, Bomby, Teardrop, Flower
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Needle** | `fierce`, 0.6; sways, chin up, to win | Glare, grit and the anger mark on a wind-up; `> <` when hit; a smirk to win. Her render is in profile, so she draws one eye | silver sparks | Polite and prim until someone calls her "Needy", then she slaps (Needle, Personality); "Don't call me Needy." |
+| **Pin** | `fierce`, 0.7; hops to win | Glare, grit and the anger mark on a wind-up; a smug grin to win; one eye (profile) | nothing | The bossy, impatient leader of the Squashy Grapes; "Team meeting. I won." |
+| **Snowball** | `fierce`, 1.25; hops to win | His painted face is already the glare, so its brows stay through every moment; grit and the mark on a wind-up, `> <` when hit | bits of snow | "I'M THE STRONGEST!"; a snowball packed and thrown at speed, the roster's brute |
+| **Bomby** | `gentle`, 1.1; hops to win | Wide eyes and a small round mouth; the fuse burning down on a charge is a wide-eyed "OH NO!"; a shout of joy to win | soot | Timid, jumpy and gluttonous; "Sorry! I get excited." |
+| **Teardrop** | `deadpan`, 0.9; smug sway to win | Eyes only: she is mute, so her mouth is a flat line through every moment, and a smirk to win; she does not breathe or blink | drops of water | The one contestant who has never spoken (Teardrop, Personality); a smirk she never loses; the WINNER sign |
+| **Flower** | `fierce`, 1.1; twirls to win | Glare, grit and the anger mark on a wind-up (the tantrum is her most characteristic state); a smug smile to win | petals | Vain and quick-tempered; "Of COURSE I won. Look at me." |
+
+Skins: Algebralien Needle's eyes bulge, white, past her body, so they are patched white; Sweater Teardrop's two eyes are not alike (a flat closed one and an open one), so the second has
+radii of its own; Bandaged Bomby and Robot Pin shade between their eyes, so the second eye has its own fill (`c2`); Blindfolded Teardrop has no row (her eyes are under the blindfold and
+her mouth is under her own hand), so she keeps the face she has.

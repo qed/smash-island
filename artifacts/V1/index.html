@@ -39040,10 +39040,12 @@ const FR_HURT = [[0.26,1.10,0.86,0.10,1.0], [-0.10,0.97,1.05,-0.04,0.5], [0.04,1
 //   t     a temperament (FR_TEMPER_SRC)       amp   how far the body moves: 0.6 rigid .. 1.4 rubbery    puff  how much of a spit's swell they take (0..1)
 //   vein  the anger mark on a wind-up         ex    overrides, per moment: { atk, hurt, tumble, jump, fall, run, win, charge } in the notation above
 //   winStyle  the victory pose: 0 a hop, 1 a slow smug sway, 2 a twirl      pose  an optional hook, (f, P, sp): the frames of a pose-swap fighter on a skin
+//   shed  what comes off them when they are hit or launched: [shape, colour, a second colour] (FR_SHAPES: dot, leaf, drop, shard, flake, spark, smoke, ring, feather, static)
 // ...and one row per PICTURE (FR_FACE, keyed by the picture's file), the anchors the face overlays are drawn at, as fractions of the picture:
-//   e  the eyes: left x, y, right x, y (of the picture's width and height), then the radii of the patch that covers a painted eye (of its height)
+//   e  the eyes: left x, y, right x, y (of the picture's width and height), then the radii of the patch that covers a painted eye (of its height); two more numbers
+//      are the second eye's own radii, for a pair that are not alike (a flat closed eye beside an open one)
 //   b  the same for painted brows that sit apart from the eyes (the patch colour is bc)      m  the mouth: x, y, then the radii of its patch
-//   c  the fill under the eyes and the mouth      s  the eye style: 0 dots, 1 whites with pupils
+//   c  the fill under the eyes (c2: under the second, where the body shades from one tone to another between them), mc under the mouth      s  the eye style: 0 dots, 1 whites with pupils
 
 // ---- building FRAME_DATA from the rows --------------------------------------------------------------------------------------------------
 const FRAME_DATA = {};
@@ -39052,6 +39054,7 @@ function frBuild(src){
     const s = src[name], T = FR_TEMPER[s.t || 'plain'], an = FIGHTER_ANIM[name];
     const o = { amp: s.amp == null ? 1 : s.amp, puff: s.puff == null ? 0.7 : s.puff, vein: !!s.vein, pose: s.pose || null, winStyle: s.winStyle | 0,
       blink: !(an && an.idle === 0),   // a fighter who does not breathe (Teardrop) does not blink either
+      shed: s.shed ? frShedId(s.shed) : 0,
       atk: T.atk, hurt: T.hurt, tumble: T.tumble, jump: T.jump, fall: T.fall, run: T.run, win2: T.win, charge: T.charge };
     if(s.ex) for(const k in s.ex) o[k === 'win' ? 'win2' : k] = frEx(s.ex[k]);
     FRAME_DATA[name] = o;
@@ -39059,8 +39062,8 @@ function frBuild(src){
 }
 
 // ---- scratch: the pose of the fighter being drawn right now. Module-level and overwritten each time, so a frame makes nothing to collect.
-const _FP = { mom:0, fi:0, eye:0, mouth:0, rot:0, sx:1, sy:1, dx:0, dy:0, spin:0, smear:0, sdx:0, sdy:0, bulge:0, arm:0, leg:0, ph:0, amt:0, lamt:0, fx:0, k:0 };
-const _FB = { dw:0, dh:0 };   // the picture's box, fitted the way drawSpriteBody fits it
+const _FP = { mom:0, fi:0, eye:0, mouth:0, rot:0, sx:1, sy:1, dx:0, dy:0, spin:0, smear:0, sdx:0, sdy:0, bulge:0, arm:0, leg:0, ph:0, amt:0, lamt:0, fx:0, k:0, shed:0 };
+const _FB = { dw:0, dh:0, hx:0.5, hy:0.35 };   // the picture's box, fitted the way drawSpriteBody fits it, and (frHead) where its head is, as fractions of it
 const _FH = { f:null, sp:null, x:0, y:0, t:-1 };   // where the head of the fighter last drawn is (the effects go there), whose it is, and on which tick
 // The pose of this fighter THIS frame, for a fighter's own `over` pass to read (the glint on a cut blade, the air out of a hurt balloon); null when the layer
 // did not draw them this frame (a pose swap drew them, or they have no picture yet), so a pass never reads another fighter's.
@@ -39072,7 +39075,12 @@ const FA_SWING = 1, FA_RAISE = 2, FA_FLAIL = 3, FA_CHEER = 4;
 // painted legs: a swing, a knee drawn up, pedalling
 const FL_SWING = 1, FL_TUCK = 2, FL_PEDAL = 3;
 // effects (bits)
-const FX_SWEAT = 1, FX_VEIN = 2, FX_STARS = 4, FX_SPARKLE = 8, FX_LINES = 16, FX_FLAME = 32;
+const FX_SWEAT = 1, FX_VEIN = 2, FX_STARS = 4, FX_SPARKLE = 8, FX_LINES = 16, FX_FLAME = 32, FX_SHED = 64;
+// WHAT COMES OFF A FIGHTER WHEN THEY ARE HIT OR SENT FLYING (a row's `shed`: [shape, colour, a second colour]): leaves off a plant, sparks off a match, drops off a drop,
+// shards off ice, crumbs off a cake. Drawn, never a word. The shapes are numbers so the hot pass can switch on them; the colours sit in arrays by the row's number.
+const FR_SHAPES = { dot:1, leaf:2, drop:3, shard:4, flake:5, spark:6, smoke:7, ring:8, feather:9, static:10 };
+const FR_SH_SHAPE = [0], FR_SH_C1 = [''], FR_SH_C2 = [''];
+function frShedId(r){ FR_SH_SHAPE.push(FR_SHAPES[r[0]] | 0); FR_SH_C1.push(r[1]); FR_SH_C2.push(r[2] || r[1]); return FR_SH_SHAPE.length - 1; }
 const FR_INK = '#0b0b0b';
 // the painted-limb list handed to drawRigged: one of four, preallocated, so a walk makes nothing to collect
 const _FMV = [{limb:null, a:0}, {limb:null, a:0}, {limb:null, a:0}, {limb:null, a:0}];
@@ -39089,6 +39097,13 @@ function frBox(sp, im, R){
   else dh = Math.min((sp.imgH||2.8)*R, ((sp.imgW||2.3)*R)/ar);
   _FB.dh = dh; _FB.dw = dh*ar;
 }
+// Where the head is, as fractions of the picture, into _FB.hx and _FB.hy (the effects are drawn there): between the eyes, on the one eye of a face in profile (its second
+// x is -1), else above the mouth, else the upper middle.
+function frHead(fc){
+  if(fc && fc.e){ const E = fc.e, p = E[2] < 0; _FB.hx = p ? E[0] : (E[0] + E[2])/2; _FB.hy = p ? E[1] : (E[1] + E[3])/2; }
+  else if(fc && fc.m){ _FB.hx = fc.m[0]; _FB.hy = fc.m[1] - 0.12; }
+  else { _FB.hx = 0.5; _FB.hy = 0.35; }
+}
 // The picture file's name: the key of its face anchors (and, for a skin, of its limb rig).
 function frPicKey(sp){
   let k = sp._fk;
@@ -39101,7 +39116,7 @@ function frPicKey(sp){
 function frPose(f, fd, sp){
   const P = _FP;
   P.mom = 0; P.fi = 0; P.eye = 0; P.mouth = 0; P.rot = 0; P.sx = 1; P.sy = 1; P.dx = 0; P.dy = 0; P.spin = 0;
-  P.smear = 0; P.sdx = 0; P.sdy = 0; P.bulge = 0; P.arm = 0; P.leg = 0; P.ph = 0; P.amt = 0; P.lamt = 0; P.fx = 0; P.k = 0;
+  P.smear = 0; P.sdx = 0; P.sdy = 0; P.bulge = 0; P.arm = 0; P.leg = 0; P.ph = 0; P.amt = 0; P.lamt = 0; P.fx = 0; P.k = 0; P.shed = 0;
   if(!FRAME_ON) return;
   const face = f.face < 0 ? -1 : 1, vx = f.vx || 0, vy = f.vy || 0, avx = vx < 0 ? -vx : vx, R = f.r, amp = fd.amp;
   const grounded = f.onground !== false, v2 = vx*vx + vy*vy;
@@ -39157,6 +39172,7 @@ function frPose(f, fd, sp){
       P.eye = 1;
     }
   }
+  if(fd.shed && (P.mom === FM_HURT || P.mom === FM_TUMBLE)){ P.fx |= FX_SHED; P.shed = fd.shed; }   // hit or sent flying: what comes off them
   if(fd.pose) fd.pose(f, P, sp);
 }
 
@@ -39193,13 +39209,15 @@ function frBulge(c, im, dw, dh, k, cy, ry){
 
 // A rounded rectangle, for covering a painted mouth. (arcTo: no allocation.)
 function frRR(c, x, y, w, h, r){
+  r *= 0.6;   // (not a pill: the tips of a wide painted mouth reach the corners)
   c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
 }
 
 // ONE EYE, drawn over the painted one. (x, y) its centre, (rx, ry) the radii of the patch that covers the painted eye, side -1 the left of the picture and 1
-// the right, style 0 dots and 1 whites-with-pupils, pc the fill under it. Sizes are fractions of the patch, so a big painted eye gets a big new one.
+// the right, style 0 dots and 1 whites-with-pupils, pc the fill under it. Sizes are fractions of the patch, so a big painted eye gets a big new one (but never more
+// than 1.8 times as wide as tall: a flat patch over a painted slit would otherwise draw a spiral twice the size of its partner's).
 function frEye(c, kind, x, y, rx, ry, side, style, pc, t){
-  const ew = rx*0.62, eh = ry*0.62, lw = eh*0.5 > 1.3 ? eh*0.5 : 1.3;
+  const eh = ry*0.62, ew = rx*0.62 < eh*1.8 ? rx*0.62 : eh*1.8, lw = eh*0.5 > 1.3 ? eh*0.5 : 1.3;
   c.fillStyle = pc; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 7); c.fill();
   c.fillStyle = FR_INK; c.strokeStyle = FR_INK; c.lineWidth = lw; c.lineCap = 'round'; c.lineJoin = 'round';
   switch(kind){
@@ -39261,15 +39279,15 @@ function frMouth(c, kind, x, y, rx, ry, pc, t){
 function frFace(c, fc, dw, dh, P, white, alpha){
   if(!(P.eye | P.mouth)) return;
   c.globalAlpha = alpha*(white ? 0.92 : 1);
-  const E = fc.e, B = fc.b, M = fc.m, pc = white ? '#ffffff' : fc.c;
-  if(P.eye){
-    if(B){ c.fillStyle = white ? '#ffffff' : fc.bc;
+  const E = fc.e, B = fc.b, M = fc.m, pc = white ? '#ffffff' : fc.c, pc2 = white ? '#ffffff' : (fc.c2 || fc.c), mc = white ? '#ffffff' : (fc.mc || fc.c);
+  if(P.mouth && M) frMouth(c, P.mouth, (M[0] - 0.5)*dw, (M[1] - 0.5)*dh, M[2]*dh, M[3]*dh, mc, hazardT);
+  if(P.eye && E){
+    if(B && P.eye !== 1){ c.fillStyle = white ? '#ffffff' : fc.bc;   // (a blink does not move the brows: they stay as they are painted)
       c.beginPath(); c.ellipse((B[0] - 0.5)*dw, (B[1] - 0.5)*dh, B[4]*dh, B[5]*dh, 0, 0, 7); c.fill();
-      c.beginPath(); c.ellipse((B[2] - 0.5)*dw, (B[3] - 0.5)*dh, B[4]*dh, B[5]*dh, 0, 0, 7); c.fill(); }
+      c.beginPath(); c.ellipse((B[2] - 0.5)*dw, (B[3] - 0.5)*dh, (B[6] || B[4])*dh, (B[7] || B[5])*dh, 0, 0, 7); c.fill(); }
     frEye(c, P.eye, (E[0] - 0.5)*dw, (E[1] - 0.5)*dh, E[4]*dh, E[5]*dh, -1, fc.s, pc, hazardT);
-    if(E[2] >= 0) frEye(c, P.eye, (E[2] - 0.5)*dw, (E[3] - 0.5)*dh, E[4]*dh, E[5]*dh, 1, fc.s, pc, hazardT);   // (a picture seen in profile shows one eye: x of -1)
+    if(E[2] >= 0) frEye(c, P.eye, (E[2] - 0.5)*dw, (E[3] - 0.5)*dh, (E[6] || E[4])*dh, (E[7] || E[5])*dh, 1, fc.s, pc2, hazardT);   // (a picture seen in profile shows one eye: x of -1)
   }
-  if(P.mouth && M) frMouth(c, P.mouth, (M[0] - 0.5)*dw, (M[1] - 0.5)*dh, M[2]*dh, M[3]*dh, pc, hazardT);
   c.globalAlpha = alpha;
 }
 
@@ -39347,6 +39365,42 @@ function frFx(c, P, hx, hy, s, side, alpha){
       }
     }
   }
+  if(fx & FX_SHED){             // what comes off them: the row's shape in its two colours, thrown out from the body and fading
+    const sh = P.shed, shape = FR_SH_SHAPE[sh], k1 = FR_SH_C1[sh], k2 = FR_SH_C2[sh];
+    if(shape === 8){            // rings: arcs spreading out either side (a bell struck, a microphone's feedback)
+      c.lineWidth = 2;
+      for(let i = 0; i < 3; i++){
+        const u = (t*0.07 + i*0.33) % 1, rr = s*(0.9 + u*1.2);
+        c.globalAlpha = alpha*(1 - u)*0.85; c.strokeStyle = (i & 1) ? k2 : k1;
+        c.beginPath(); c.arc(0, 0, rr, -0.8, 0.8); c.stroke(); c.beginPath(); c.arc(0, 0, rr, 2.3416, 3.9416); c.stroke();
+      }
+    } else {
+      for(let i = 0; i < 6; i++){
+        const u = (t*0.09 + i*0.17) % 1, a = i*1.05 + 0.4, spin = a + t*0.3*((i & 1) ? 1 : -1), r = s*(0.09 + 0.06*(1 - u));
+        let x = Math.cos(a)*s*(0.7 + u*1.5), y = Math.sin(a)*s*(0.5 + u*1.1) - u*s*0.5;
+        c.globalAlpha = alpha*(1 - u)*0.95; c.fillStyle = (i & 1) ? k2 : k1; c.strokeStyle = (i & 1) ? k1 : k2; c.lineWidth = 1;
+        if(shape === 3){        // drops: out, then falling
+          y = Math.sin(a)*s*0.4 - u*s*0.5 + u*u*s*1.5;
+          c.beginPath(); c.moveTo(x, y - r*1.7); c.quadraticCurveTo(x + r*1.1, y + r*0.2, x, y + r*1.1); c.quadraticCurveTo(x - r*1.1, y + r*0.2, x, y - r*1.7); c.fill();
+        } else if(shape === 7){ // smoke: puffs rising and swelling
+          x = Math.sin(i*2.3 + t*0.05)*s*0.45; y = -s*0.3 - u*s*1.3;
+          c.globalAlpha = alpha*(1 - u)*0.55; c.beginPath(); c.arc(x, y, s*(0.12 + 0.28*u), 0, 7); c.fill();
+        } else if(shape === 10){ // static: specks jumping about on the body
+          const v = Math.sin(i*12.9898 + ((t/3) | 0)*78.233)*43758.5453, w = Math.sin(i*39.346 + ((t/3) | 0)*11.135)*24634.6345;
+          x = ((v - Math.floor(v))*2 - 1)*s*0.8; y = ((w - Math.floor(w))*2 - 1)*s*0.9; c.globalAlpha = alpha*0.9; c.fillRect(x - r*0.8, y - r*0.5, r*1.6, r);
+        } else {
+          c.save(); c.translate(x, y); c.rotate(spin);
+          if(shape === 2){ c.beginPath(); c.ellipse(0, 0, s*0.2, s*0.09, 0, 0, 7); c.fill(); c.stroke(); }                                         // leaves, petals
+          else if(shape === 4){ c.beginPath(); c.moveTo(0, -r*1.6); c.lineTo(r*1.1, r); c.lineTo(-r*1.0, r*0.6); c.closePath(); c.fill(); c.stroke(); }  // shards
+          else if(shape === 5){ c.fillRect(-r*0.8, -r*0.8, r*1.6, r*1.6); }                                                                        // crumbs, grains, bits
+          else if(shape === 6){ c.beginPath(); c.moveTo(0, -r*2.2); c.quadraticCurveTo(0, 0, r*2.2, 0); c.quadraticCurveTo(0, 0, 0, r*2.2); c.quadraticCurveTo(0, 0, -r*2.2, 0); c.quadraticCurveTo(0, 0, 0, -r*2.2); c.fill(); }   // sparks
+          else if(shape === 9){ c.beginPath(); c.ellipse(0, 0, s*0.26, s*0.05, 0, 0, 7); c.fill(); }                                               // feathers, fluff
+          else { c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill(); }                                                                                   // dots
+          c.restore();
+        }
+      }
+    }
+  }
   if(fx & FX_FLAME){            // a trail of fire up the way they came from
     for(let i = 0; i < 6; i++){
       const u = ((t*0.12 + i*0.17) % 1), x = Math.sin(i*2.3 + t*0.2)*s*0.5, y = -s*0.5 - u*s*1.8;
@@ -39366,7 +39420,7 @@ const FR_WIN_HOP = [[1.08, 0.90, 0, 0.8], [0.94, 1.12, -0.30, 2.2], [0.97, 1.06,
 /* FR-HOT-BEGIN */
 function frWinPose(P, fd, t, idx){
   P.mom = FM_WIN; P.fi = 0; P.eye = fd.win2[0]; P.mouth = fd.win2[1]; P.rot = 0; P.sx = 1; P.sy = 1; P.dx = 0; P.dy = 0; P.spin = 0;
-  P.smear = 0; P.sdx = 0; P.sdy = 0; P.bulge = 0; P.arm = FA_CHEER; P.leg = 0; P.ph = t*0.2 + idx; P.amt = 2.4; P.lamt = 0; P.fx = FX_SPARKLE; P.k = 0;
+  P.smear = 0; P.sdx = 0; P.sdy = 0; P.bulge = 0; P.arm = FA_CHEER; P.leg = 0; P.ph = t*0.2 + idx; P.amt = 2.4; P.lamt = 0; P.fx = FX_SPARKLE; P.k = 0; P.shed = 0;
   const st = fd.winStyle, cyc = (t*0.045 + idx*0.31) % 1, q = (cyc*4) | 0;
   if(st === 1){            // smug: a slow sway, the chin up, the arms barely lifted
     P.rot = -0.07 + Math.sin(t*0.035 + idx)*0.04; P.sy = 1.02 + 0.015*Math.sin(t*0.05); P.amt = 1.1;
@@ -39398,7 +39452,8 @@ function frStageDraw(g, name, sp, fd, t, idx, cx, gy, S){
   if(moves) drawRigged(im, dw, dh, rig, moves, g); else g.drawImage(im, -dw/2, -dh/2, dw, dh);
   if(fc) frFace(g, fc, dw, dh, P, false, 1);
   g.restore();
-  frFx(g, P, fc ? ((fc.e[0] + fc.e[2])/2 - 0.5)*dw*(mir ? -1 : 1) : 0, fc ? feet - dh + ((fc.e[1] + fc.e[3])/2)*dh : -R*0.2, R, 1, 1);
+  if(fc && (fc.e || fc.m)) frHead(fc);
+  frFx(g, P, fc && (fc.e || fc.m) ? (_FB.hx - 0.5)*dw*(mir ? -1 : 1) : 0, fc && (fc.e || fc.m) ? feet - dh + _FB.hy*dh : -R*0.2, R, 1, 1);
   g.restore();
 }
 // The stage itself: shown when a winner has a row in FRAME_DATA (nobody else's result screen changes), run while the result screen is up.
@@ -39437,7 +39492,7 @@ function winStageShow(winners){
 }
 
 // ============================================================
-//  THE ROWS -- the pilot: Firey, Leafy, Bubble, Pen, Knife, Balloon, Tapey, Silver Spoon (and Puffball, for her skins)
+//  THE ROWS -- the pilot: Firey, Leafy, Bubble, Pen, Knife, Balloon, Tapey, Silver Spoon (and Puffball, for her skins); then the rest of the roster, a batch at a time
 // ============================================================
 // FACE ANCHORS, one row per picture, measured off the picture with scripts/measure-faces.mjs and checked by eye (every number is a fraction: x of the
 // picture's width, y and the radii of its height). A picture with no row keeps its own face and still gets the body, the limbs and the effects.
@@ -39469,6 +39524,22 @@ const FR_FACE = {
   'glowing-gold-spoon.png':{ e:[0.336, 0.1695, 0.604, 0.169, 0.025, 0.032], b:[0.346, 0.104, 0.600, 0.098, 0.045, 0.03], bc:'#fcdf90', m:[0.497, 0.289, 0.09, 0.085], c:'#fce798', s:0 },
   'ice-cream-spoon.png':  { e:[0.318, 0.3415, 0.590, 0.342, 0.03, 0.02], b:[0.323, 0.311, 0.605, 0.311, 0.065, 0.02], bc:'#fea8c5', m:[0.469, 0.441, 0.07, 0.03], c:'#fea8c6', s:0 },
   'hard-hat-silver-spoon.png':{ e:[0.292, 0.205, 0.524, 0.2025, 0.0225, 0.04], m:[0.584, 0.334, 0.025, 0.03], c:'#dde6e3', s:0 },
+  // ---- BATCH 1: Needle, Pin, Snowball, Bomby, Teardrop, Flower, and their skins. Needle and Pin are drawn in profile, so one eye; Bomby's eyes are black on a dark body that shades
+  // between them (c2); Algebralien Needle's eyes bulge, white, past her body. Blindfolded Teardrop has no row: her eyes are under the blindfold and her mouth under her own hand.
+  'needle.png': { e:[0.571, 0.455, -1, 0, 0.038, 0.033], b:[0.524, 0.373, 0.524, 0.373, 0.038, 0.04], bc:'#cbcbcb', m:[0.524, 0.558, 0.038, 0.05], mc:'#cbcbcb', c:'#cacaca', s:0 },
+  'pin.png': { e:[0.283, 0.513, -1, 0, 0.028, 0.05], m:[0.388, 0.67, 0.105, 0.113], mc:'#f00f0f', c:'#f23831', s:0 },
+  'snowball.png': { e:[0.361, 0.405, 0.614, 0.38, 0.03, 0.053], m:[0.572, 0.613, 0.163, 0.08], mc:'#e8e8ea', c:'#ebebeb', s:0 },
+  'bomby.png': { e:[0.55, 0.38, 0.73, 0.388, 0.028, 0.043], m:[0.573, 0.52, 0.123, 0.103], c:'#626262', s:0 },
+  'teardrop.png': { e:[0.434, 0.5, 0.663, 0.51, 0.035, 0.058], m:[0.472, 0.655, 0.14, 0.13], c:'#34bdfb', s:0 },
+  'flower.png': { e:[0.444, 0.375, 0.596, 0.36, 0.023, 0.048], m:[0.528, 0.505, 0.148, 0.108], mc:'#fefe32', c:'#fefe33', s:0 },
+  'algebralien-needle.png': { e:[0.384, 0.415, 0.707, 0.39, 0.055, 0.083], m:[0.494, 0.535, 0.045, 0.033], mc:'#c9c9c9', c:'#ffffff', s:1 },
+  'robot-pin.png': { e:[0.406, 0.578, 0.596, 0.565, 0.038, 0.045], m:[0.553, 0.725, 0.078, 0.105], mc:'#f00f0e', c:'#f00f0f', c2:'#da0e1d', s:0 },
+  'zombieball.png': { e:[0.453, 0.44, 0.663, 0.428, 0.055, 0.053], m:[0.55, 0.573, 0.158, 0.075], c:'#00ba3d', s:1 },
+  'bandaged-bomby.png': { e:[0.707, 0.478, 0.842, 0.458, 0.028, 0.05], m:[0.783, 0.63, 0.08, 0.028], mc:'#555559', c:'#626262', c2:'#555559', s:0 },
+  'sweater-teardrop.png': { e:[0.218, 0.355, 0.49, 0.4, 0.116, 0.039, 0.044, 0.056], m:[0.302, 0.493, 0.083, 0.045], mc:'#33bcfb', c:'#22b1fd', s:0 },
+  'missing-petal-flower.png': { e:[0.445, 0.365, 0.642, 0.373, 0.04, 0.05], m:[0.503, 0.493, 0.12, 0.093], c:'#fcfe32', s:0 },
+  'yoyle-metal-flower.png': { e:[0.724, 0.355, -1, 0, 0.04, 0.047], m:[0.617, 0.458, 0.12, 0.025], mc:'#6d6d6d', c:'#6b6b6b', s:0 },
+  'frozen-flower.png': { e:[0.356, 0.388, 0.516, 0.385, 0.035, 0.061], m:[0.425, 0.485, 0.078, 0.048], mc:'#bdeaf6', c:'#bfebf7', s:0 },
 };
 // THE FIGHTERS: a temperament, how elastic they are, and what is theirs alone. Each is the show's own character (docs/animation-move-design.md).
 const FRAME_SRC = {
@@ -39491,6 +39562,19 @@ const FRAME_SRC = {
   // Puffball: bubbly, hypersonic, and the first to have her own spit frames: those are her own pictures on her base render (FIGHTER_ANIM.Puffball.body), and
   // here, on a skin, the same four frames and her dive are built from the skin's own picture (frPuffballPose).
   Puffball: { t:'gentle', amp:1.3, puff:1, winStyle:2, ex:{ win:'joy.shout' } },
+  // ---- BATCH 1 ----
+  // Needle: polite and prim until someone calls her "Needy", and then she slaps: rigid steel, so little body, the anger mark on a wind-up, and a cool smirk and a sway to win.
+  Needle: { t:'fierce', amp:0.6, vein:1, winStyle:1, shed:['spark', '#ffffff', '#bfc9d9'], ex:{ win:'smug.smirk' } },
+  // Pin: the bossy, impatient leader of the Squashy Grapes ("Team meeting. I won."): glare and grit, hard plastic, a hop to win.
+  Pin: { t:'fierce', amp:0.7, vein:1, winStyle:0, ex:{ win:'smug.grin' } },
+  // Snowball: "I'M THE STRONGEST!": packed snow that squashes hard, and a face that is already the glare; flakes come off him when he is hit.
+  Snowball: { t:'fierce', amp:1.25, vein:1, winStyle:0, shed:['dot', '#ffffff', '#b9d3f2'] },
+  // Bomby: timid and jumpy ("Sorry! I get excited."): wide eyes and a small round mouth, a bounce when he wins; a fuse burning down on a charge is "OH NO!"; soot comes off him.
+  Bomby: { t:'gentle', amp:1.1, winStyle:0, shed:['smoke', '#3a3a3a', '#6e6e6e'], ex:{ charge:'wide.shout', win:'joy.shout' } },
+  // Teardrop: mute, and her smirk never goes: a flat mouth for everything (she has never said a word) and the eyes do the talking; unnervingly still, and a smug sway to win; drops of her come off her.
+  Teardrop: { t:'deadpan', amp:0.9, winStyle:1, shed:['drop', '#5ac8fa', '#2f8fd0'], ex:{ win:'smug.smirk' } },
+  // Flower: vain and quick-tempered ("Of COURSE I won. Look at me."): a glare and a tantrum, a twirl to show off and a smug smile to win; petals come off her.
+  Flower: { t:'fierce', amp:1.1, vein:1, winStyle:2, shed:['leaf', '#ff99ff', '#ffc4ff'], ex:{ win:'smug.smirk' } },
 };
 // PUFFBALL ON A SKIN. Her baked pictures (the spit's four, Meteor Puff's dive) are cut from HER render, so drawFighter leaves them off a skin and she would spit
 // and dive as a plain picture. Here the skin's own picture goes through the same frames: PUFF the cheeks swell and the eyes squeeze, SPIT the mouth is blown
@@ -39572,9 +39656,9 @@ function drawSpriteBody(f, sp, anim){
     const rig = (typeof LIMB_RIG !== 'undefined') && LIMB_RIG[sp.skin ? frPicKey(sp) : f.name], moves = rig && (limbMoves(f, rig, sp) || (fd && frLimbMoves(rig, sp, _FP)));
     if(fd){
       // where the head is (the effects are drawn there, after the body) and the ghosts of a fast frame
-      const fc = FR_FACE[frPicKey(sp)], E = fc && fc.e, ms = mirr ? -1 : 1;
+      const fc = FR_FACE[frPicKey(sp)], ms = mirr ? -1 : 1;
       _FB.dw = dw; _FB.dh = dh; _FH.f = f; _FH.sp = sp; _FH.t = hazardT;   // (the box drawSpriteBody has just worked out)
-      if(E){ _FH.x = ((E[0] + E[2])/2 - 0.5)*_FB.dw*ms; _FH.y = (R + 12) - _FB.dh + ((E[1] + E[3])/2)*_FB.dh; } else { _FH.x = 0; _FH.y = -R*0.2; }
+      if(fc && (fc.e || fc.m)){ frHead(fc); _FH.x = (_FB.hx - 0.5)*dw*ms; _FH.y = (R + 12) - dh + _FB.hy*dh; } else { _FH.x = 0; _FH.y = -R*0.2; }
       if(_FP.smear > 0) frSmear(ctx, im, dw, dh, ms, a0);
     }
     if(moves) drawRigged(im, dw, dh, rig, moves);      // the character's own arm swings (LIMB ANIMATION), and their legs walk and their arms fly (FRAME LAYER)
