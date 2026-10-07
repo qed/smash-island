@@ -72,14 +72,14 @@ const overOps = (setup) => W.eval(`(function(){
 const count = (ops, name) => ops.filter((o) => o[0] === name).length;
 
 describe('the roster row and the render', () => {
-  it('Bot is a playable II DLC fighter: weight 68 (ii-buffs: was 64), Azure Mist, Hype, open from the start, and not a Vault fighter', () => {
+  it('Bot is a playable II DLC fighter: weight 74 (ii-buffs: was 64), Azure Mist, Hype, open from the start, and not a Vault fighter', () => {
     const r = W.eval(`(function(){ var x = ROSTER.find(function(r){ return r.name==='Bot'; });
       return x && { name:x.name, w:x.w, color:x.color, dlc:x.dlc, play:x.play, arch:x.arch, kit:x.kit.special, desc:x.kit.desc, open:isUnlocked(x),
         vault: VAULT.fighters.some(function(v){ return v.name==='Bot'; }), code: VAULT_CODES.has(vaultNorm('Bot')), prize: !!x.prize,
         lastNonPrize: ROSTER.filter(function(r){ return !r.prize; }).slice(-1)[0].name,
         sharedKit: ROSTER.filter(function(r){ return r.kit.special==='cheer'; }).map(function(r){ return r.name; }), src:(SPRITES.Bot||{}).src }; })()`);
     expect(r, 'a ROSTER row').toBeTruthy();
-    expect([r.w, r.color, r.dlc, r.play, r.arch, r.kit]).toEqual([68, '#f0fff3', 'Inanimate Insanity', true, 'Hype', 'cheer']);   // ii-buffs: 64 -> 68
+    expect([r.w, r.color, r.dlc, r.play, r.arch, r.kit]).toEqual([74, '#f0fff3', 'Inanimate Insanity', true, 'Hype', 'cheer']);   // ii-buffs: 64 -> 74
     expect(r.desc).toMatch(/^[^→]+ → ./);
     expect(r.desc).toMatch(/^Cheer Factory → /);
     expect(r.open, 'arrives unlocked with the II DLC').toBe(true);
