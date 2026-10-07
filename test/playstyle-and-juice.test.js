@@ -169,15 +169,16 @@ describe('rival memory', () => {
     expect(w.eval(`RIVAL_NAME`), 'a fresh install has no rival').toBe(null);
   });
 
-  it('tags the rival on the select board when one exists', () => {
+  // The owner, 2026-10-07: "remove the thing that says "rival" from the select." The rival is still named on My Stats.
+  it('never tags a rival on the select board (it is named on My Stats instead)', () => {
     const { window: w } = loadMonolith();
     const tags = w.eval(`
       (function(){
         RIVAL_NAME = ROSTER.find(function(r){ return r.play; }).name;
         buildBoard();
-        return document.querySelectorAll('.rivaltag').length;
+        return document.querySelectorAll('#board .rivaltag').length + [].filter.call(document.querySelectorAll('#board *'), function(e){ return /^RIVAL$/.test((e.textContent||'').trim()); }).length;
       })()`);
-    expect(tags, 'exactly one fighter is the rival').toBe(1);
+    expect(tags, 'no RIVAL tag on any cell').toBe(0);
   });
 });
 
