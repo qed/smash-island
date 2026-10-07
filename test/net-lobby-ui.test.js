@@ -59,6 +59,20 @@ describe('who is in the room', () => {
     expect(B.eval(same), '...after more picks as well').toBe(true);
   });
 
+  it("the grid's portraits are fetched when the lobby is shown, not when the page loads", () => {
+    three();
+    const state = (w) => JSON.parse(w.eval(`JSON.stringify({ src: document.querySelectorAll('#lobbyFighter img[src]').length, waiting: document.querySelectorAll('#lobbyFighter img[data-src]').length })`));
+    expect(state(B), 'the lobby is up: every portrait has its render').toMatchObject({ waiting: 0 });
+    expect(state(B).src).toBeGreaterThan(40);
+    // the grid built while another screen is showing (a roster message that lands while another screen is up) holds its renders back until the lobby comes up
+    B.eval(`go('options'); document.getElementById('lobbyFighter').dataset.sig = ''; NET.renderFighterGrid();`);
+    expect(state(B)).toMatchObject({ src: 0 });
+    expect(state(B).waiting).toBeGreaterThan(40);
+    B.eval(`go('lobby')`);
+    expect(state(B)).toMatchObject({ waiting: 0 });
+    expect(state(B).src).toBeGreaterThan(40);
+  });
+
   it("each player's pick wears their P-badge on its portrait, the same on every screen, two players on one fighter stack theirs, and your own is picked out", () => {
     three();
     const badges = (w) => JSON.parse(w.eval(`JSON.stringify([].map.call(document.querySelectorAll('#lobbyFighter .lgcell'), function(c){
