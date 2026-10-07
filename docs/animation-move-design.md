@@ -642,3 +642,22 @@ give First Aid) are cut from their own render, so `drawFighter` skips them on a 
 and settles (wide eyes, a round mouth) or lies over on her side (crossed-out eyes); Goo is stretched to a giant with a glare and a shout, or pulled out wide and flat with a sad face; Lifering tips head first into the dive with a smear behind,
 or sits low with wide eyes. The frame-layer test draws each of these moments on every fighter, bare and in each skin, and checks every number is finite. Spikey's spikeless picture cannot be built from a skin (the spikes are in it), so
 Spikey stays as it was on a skin.
+
+### Batch 13: Candle, Cammy, Fan, Soap, Starfruit, Blueberry
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Candle** | `deadpan`, 0.9; sways to win | A flat face; bright eyes to win, the painted mouth left as it is | drops of wax | Weary and dry: "The day of betrayal has concluded. Sigh." |
+| **Cammy** | `smug`, 0.7; sways to win | Half-lidded and smirking, in white on the dark body; a smug grin to win | glints of flash | Theatrical, a camera that compels you: "The power of MePhone compels you: say cheese!" |
+| **Fan** | `plain`, 0.9; hops to win | A plain game face; a shout of joy to win | scraps of red paper | The show's biggest fan, talkative and awkward: "Not today!" |
+| **Soap** | `plain`, 1.2; hops to win | A plain game face; a grin to win | soap bubbles | No-nonsense, keeps things clean: "They're the mess, we clean it." |
+| **Starfruit** | `gentle`, 1.0; twirls to win | Wide eyes and a small round mouth; a sheepish round mouth to win | yellow sparkles | Sheepish and silly: "Sorry about the tuna dip, Guava." |
+| **Blueberry** | `deadpan`, 1.1; sways to win | A flat face in white on the navy; a blink and a flat mouth to win | drops of dark juice | Nothing matters: "Nothing matters. Start clapping." |
+
+Skins: Cammy's and Camera Cammy's features and Blueberry's are white on a dark body, so their rows give the ink (`k`) and force the dark fill under it (`c`; the white features would otherwise be taken for the body); both Cammys show one eye. Blindfolded
+Candle is the mouth alone, Oily Soap one eye and a mouth. Blindfolded Soap (the mouth is out of sight) and Rockstar Starfruit (the face is in the black star makeup) have no row. The textured bodies (Battered Fan's burnt paper, Starfruit's glow) show a patch
+as a flat plate, the accepted limitation.
+
+**Pose swaps on a skin, continued** (Candle and Cammy): Candle's Inner-Flame (the third eye, in a Crystal grip, a reel or a smash charge) and her flame put out are pictures cut from her own render, and Cammy's flash (a snap or a smash charge) is one from his;
+`frCandlePose` and `frCammyPose` give a skin the same moments, for the same flags: Candle's inner flame is a fixed glare and a clenched jaw with a sparkle and a little stretch up, her flame out is a sagging body (a little wider, a little shorter) with crossed-out eyes
+and a frown; Cammy's flash is a squint, a grin, a sparkle and a small pulse of size.
