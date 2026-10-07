@@ -146,8 +146,11 @@ describe('collapsible panels and the roster line cannot be squashed flat', () =>
   });
 });
 
-describe('the roster is one draggable line of fighter art', () => {
-  it('renders a single row whose cells carry the fighter renders', async () => {
+// 2026-10-07 ("optimise ... the ui in general"): the roster is a GRID now, every fighter on screen at once, about twelve across. It was one sideways strip you
+// dragged ("drag the line sideways to see everyone"), with a toggle cell at its head and its renders fetched only as a pull brought them near. The pins below say the
+// same things through the grid: every fighter has a cell with its render, a pick is a click, the view toggle is one click away, and nothing is a dead end.
+describe('the roster is a grid of fighter art', () => {
+  it('renders a cell for every fighter, and the cells carry the fighter renders', async () => {
     const { window: w } = loadMonolith();
     await w.eval('profileReady');
     w.eval('PROFILE.viewMode="everything"; buildBoard()');
@@ -157,12 +160,10 @@ describe('the roster is one draggable line of fighter art', () => {
     const withArt = cells.filter((c) => c.querySelector('img.cellimg'));
     expect(withArt.length, 'most of the cast has a render').toBeGreaterThan(40);
     for (const img of board.querySelectorAll('img.cellimg')) {
-      // data-src is the deferred source boardLazyPass() promotes to src once the cell nears the
-      // visible slice of the strip; one of the two always names the fighter's own render.
-      const src = img.getAttribute('src') || img.getAttribute('data-src');
+      const src = img.getAttribute('src');
       expect(src).toMatch(/^assets\/sprites\/.+\.png$/);
-      // No loading="lazy": the browser's own deferral would second-guess boardLazyPass() and can
-      // leave a src unfetched indefinitely in a hidden tab. What we hand over must load.
+      // No loading="lazy": the browser's own deferral can leave a src unfetched indefinitely in a
+      // hidden tab. What we hand over must load.
       expect(img.getAttribute('loading')).toBe(null);
     }
     // A fighter with no render still shows the blob the canvas would draw — never a blank cell.
@@ -176,61 +177,62 @@ describe('the roster is one draggable line of fighter art', () => {
     w.eval('buildBoard()');
     const img = w.document.querySelector('#board img.cellimg');
     const name = img.closest('.cell').querySelector('.cellname').textContent;
-    const src = img.getAttribute('src') || img.getAttribute('data-src');
+    const src = img.getAttribute('src');
     expect(src).toBe(w.eval(`SPRITES[${JSON.stringify(name)}].src`));
   });
 
-  it('fetches only the renders near the visible slice, and more as the line is dragged', async () => {
+  it('fetches the render of every portrait as the grid is built: the whole roster is on screen at once, so nothing waits to be pulled into view', async () => {
     const { window: w } = loadMonolith();
     await w.eval('profileReady');
-    // jsdom has no layout, so give the strip one: 84px cells in an 800px window. This is the
-    // geometry boardLazyPass() reasons about — nothing else in the game reads it.
-    w.eval(`
-      Object.defineProperty(HTMLElement.prototype, 'offsetLeft', { configurable:true,
-        get(){ return this.parentElement ? [...this.parentElement.children].indexOf(this)*84 : 0; } });
-      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable:true, get(){ return 78; } });
-      Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable:true, get(){ return 800; } });
-      PROFILE.viewMode='everything'; buildBoard();
-    `);
+    w.eval(`PROFILE.viewMode='everything'; buildBoard();`);
     const board = w.document.getElementById('board');
-    const fetched = () => board.querySelectorAll('img.cellimg[src]').length;
-    const deferred = () => board.querySelectorAll('img.cellimg[data-src]').length;
-    const atRest = fetched();
-    expect(atRest, 'the visible run plus a screen of lead-in').toBeGreaterThan(5);
-    expect(atRest, 'nowhere near all 59').toBeLessThan(30);
-    expect(deferred()).toBeGreaterThan(20);
-    // Drag toward the far end: the cells that come into range load, the rest still wait.
-    board.scrollLeft = 3000;
-    w.eval('boardLazyPass()');
-    expect(fetched(), 'dragging pulls in more art').toBeGreaterThan(atRest);
-    expect(deferred(), 'and still not everything').toBeGreaterThan(0);
+    const imgs = [...board.querySelectorAll('img.cellimg')];
+    expect(imgs.length, 'most of the cast has a render').toBeGreaterThan(40);
+    for (const img of imgs) {
+      expect(img.getAttribute('src'), 'each portrait has its render at once').toMatch(/^assets\/sprites\/.+\.png$/);
+      expect(img.hasAttribute('data-src'), 'none is left on a deferred source: there is no edge for it to wait beyond').toBe(false);
+    }
   });
 
-  it('is wired for drag-to-pan, once, however often the line is rebuilt', () => {
-    const { window: w } = loadMonolith();
-    w.eval('buildBoard(); buildBoard()');
-    expect(w.eval("document.getElementById('board')._dragWired")).toBe(true);
-  });
-
-  it('keeps the view toggle at the head of the line where it can be found', () => {
+  it('is rebuilt in place however often it is built: the same grid, one cell for every fighter, never more', () => {
     const { window: w } = loadMonolith();
     w.eval('buildBoard()');
-    expect(w.document.getElementById('board').firstElementChild.className)
-      .toContain('rostertoggle');
+    const board = w.document.getElementById('board');
+    const n = board.children.length;
+    w.eval('buildBoard(); buildBoard()');
+    expect(w.document.getElementById('board'), 'the same element').toBe(board);
+    expect(board.children.length, 'a rebuild replaces the cells, it never adds to them').toBe(n);
+    expect(board.querySelectorAll('.cell').length, 'a cell for every fighter').toBe(w.eval('ROSTER.length'));
   });
 
-  it('a pan does not count as a pick', () => {
+  it('keeps the view toggle (unlock every fighter, and back) one click away on the select screen', async () => {
+    const { window: w } = loadMonolith();
+    await w.eval('profileReady');
+    w.eval('buildBoard()');
+    const t = w.document.getElementById('viewToggle');
+    expect(t, 'the toggle is there, beside the legend').toBeTruthy();
+    expect(w.document.getElementById('select').contains(t)).toBe(true);
+    expect(w.document.getElementById('board').querySelector('.rostertoggle'), 'and it is no cell of the grid').toBe(null);
+    expect(t.textContent).toMatch(/Unlock every fighter/);
+    t.click();
+    expect(w.eval('PROFILE.viewMode'), 'one click: every fighter playable').toBe('everything');
+    expect(w.document.getElementById('viewToggle').textContent).toMatch(/Only the fighters I have unlocked/);
+    w.document.getElementById('viewToggle').click();
+    expect(w.eval('PROFILE.viewMode'), 'and one click back').toBe('unlocked');
+  });
+
+  it('a pick is one click: the highlight moves to the picked cell, only that one wears it, and no cell is rebuilt', () => {
     const { window: w } = loadMonolith();
     w.eval('buildBoard()');
     const before = w.eval('chosen.name');
-    const other = [...w.document.querySelectorAll('#board .cell.play')]
-      .find((c) => !c.classList.contains('rostertoggle') && !c.classList.contains('sel'));
-    w.eval("document.getElementById('board')._dragged = true");
-    other.onclick();
-    expect(w.eval('chosen.name'), 'the drag was swallowed').toBe(before);
-    w.eval("document.getElementById('board')._dragged = false");
+    const cells = [...w.document.querySelectorAll('#board .cell')];
+    const other = [...w.document.querySelectorAll('#board .cell.play')].find((c) => !c.classList.contains('sel'));
     other.onclick();
     expect(w.eval('chosen.name')).not.toBe(before);
+    expect(other.classList.contains('sel')).toBe(true);
+    expect(w.document.querySelectorAll('#board .cell.sel').length, 'one pick at a time').toBe(1);
+    expect([...w.document.querySelectorAll('#board .cell')].every((c, i) => c === cells[i]), 'nothing was rebuilt').toBe(true);
+    expect(w.document.getElementById('selName').textContent, 'the side panel names the pick').toBe(w.eval('chosen.name'));
   });
 });
 
@@ -331,7 +333,7 @@ describe('every inline handler on every screen is still reachable', () => {
   it('bridges every handler the reorganisation added', () => {
     const { window: w } = loadMonolith();
     for (const fn of ['toggleAdvSettings', 'edTestFeel', 'startTestNow', 'openStats', 'resetStats',
-      'myMains', 'fighterThumb', 'initBoardDrag', 'queueCustomLevel']) {
+      'myMains', 'fighterThumb', 'toggleViewMode', 'toggleStagePick', 'queueCustomLevel']) {
       expect(typeof w[fn], `${fn} is on the window bridge`).toBe('function');
     }
   });

@@ -28,11 +28,21 @@ const settle = (w) => w.eval('profileReady');
 const cells = (w) => [...w.document.querySelectorAll('#board .cell')].filter((c) => !c.classList.contains('rostertoggle'));
 
 describe('Unit 10 — the roster board respects unlock state', () => {
-  it('a fresh profile shows only starters, all selectable', async () => {
+  // (2026-10-07, "a full grid": the board used to open on the starters alone, with "All N unlocked" at its head. It shows everyone now. What a fresh profile can
+  // pick is what it has always had -- the seven starters, and the Inanimate Insanity pack, which arrives whole bar its Vault fighters -- and every other cell is greyed
+  // and locked, saying how to get its fighter.)
+  it('a fresh profile shows the whole roster, with the starters selectable and every other BFDI fighter locked', async () => {
     const w = boot(); await settle(w); w.eval('buildBoard()');
     const c = cells(w);
-    expect(c.length).toBe(w.eval('STARTERS.length'));
-    expect(c.filter((x) => x.classList.contains('locked')).length).toBe(0);
+    expect(c.length, 'the full grid: every fighter on screen').toBe(w.eval('ROSTER.length'));
+    const name = (x) => x.querySelector('.cellname').textContent;
+    const open = c.filter((x) => x.classList.contains('play'));
+    const wantOpen = w.eval('ROSTER.filter(function(r){ return r.play && isUnlocked(r) && !oneBanned(r); }).map(function(r){ return r.name; })');
+    expect(open.map(name).sort(), 'the open cells are exactly the fighters this profile can pick').toEqual(wantOpen.slice().sort());
+    const base = new Set(w.eval('ROSTER.filter(function(r){ return !r.dlc; }).map(function(r){ return r.name; })'));
+    expect(open.map(name).filter((n) => base.has(n)).sort(), 'of the BFDI cast, only the starters').toEqual(w.eval('STARTERS.slice()').sort());
+    expect(c.filter((x) => !x.classList.contains('play')).every((x) => x.classList.contains('locked')), 'everyone else is locked').toBe(true);
+    expect(c.filter((x) => x.classList.contains('locked') && !/locked/.test(x.title)).length, 'and each locked cell says how to get its fighter').toBe(0);
   });
 
   it('r.play stays true for all 59 so the tournament pool is untouched', async () => {
