@@ -9,7 +9,8 @@ import { loadMonolith } from './helpers/load-monolith.js';
 //    charge -- bare and in each of their skins, without throwing, and with every number of the frame finite.
 // The fighters of the first test: the pilot of nine, then each batch of the roster as it lands (one batch a commit).
 const FIGHTERS = ['Firey', 'Leafy', 'Bubble', 'Pen', 'Knife', 'Balloon', 'Tapey', 'Silver Spoon', 'Puffball',
-  'Needle', 'Pin', 'Snowball', 'Bomby', 'Teardrop', 'Flower'];
+  'Needle', 'Pin', 'Snowball', 'Bomby', 'Teardrop', 'Flower',
+  'Tennis Ball', 'Blocky', 'Coiny', 'Pencil', 'Golf Ball', 'Rocky'];
 const OFF = (src) => { expect(src, 'the switch is where the test expects it').toContain('const FRAME_ON = true;'); return src.replace('const FRAME_ON = true;', 'const FRAME_ON = false;'); };
 // every picture "decoded" (a stand-in with a size), so drawFighter runs the layer's passes instead of the vector fallback
 const FAKE = `window.__fake = function(sp){ sp._req = true; sp.img = { complete:true, naturalWidth:150, naturalHeight:200 }; }; true`;

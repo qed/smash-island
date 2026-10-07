@@ -472,3 +472,17 @@ and a win style. A skin the measurer cannot honestly find a face on keeps the fa
 Skins: Algebralien Needle's eyes bulge, white, past her body, so they are patched white; Sweater Teardrop's two eyes are not alike (a flat closed one and an open one), so the second has
 radii of its own; Bandaged Bomby and Robot Pin shade between their eyes, so the second eye has its own fill (`c2`); Blindfolded Teardrop has no row (her eyes are under the blindfold and
 her mouth is under her own hand), so she keeps the face she has.
+
+### Batch 2: Tennis Ball, Blocky, Coiny, Pencil, Golf Ball, Rocky
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Tennis Ball** | `gentle`, 1.45; hops to win | Wide eyes and a small round mouth for everything; a happy grin to win | fuzz | A sports fan with the bounciest body in the cast: cheerful, easily excited, and thrown up on sixteen times by Rocky |
+| **Blocky** | `smug`, 0.9; smug sway to win | A smirk, then a glare and a shout on the hit; grit when hurt | red chips | The cast's prankster and a mean-spirited bully, who smirks while he does it ("Blocky's Funny Doings") |
+| **Coiny** | `fierce`, 0.8; hops to win | Glare, grit and the anger mark on a wind-up | gold sparks | Short-tempered: the other half of the 299 slaps; thin flat metal |
+| **Pencil** | `fierce`, 0.8; sways, chin up, to win | Glare, grit and the anger mark on a wind-up (the scowl in her render is hers) | wood shavings | The confident, bossy leader of the FreeSmart alliance, nasty by the later seasons |
+| **Golf Ball** | `smug`, 0.6; sways to win | A cool, superior face: half-lidded, a smirk, grit when hit | white bits of the dimples | The control-freak perfectionist; a hard ball that hardly moves |
+| **Rocky** | `deadpan`, 0.7; hops to win | Eyes only: his smile is blank and never changes (no mouth row); `> <` when hit, `^ ^` to win | chips of rock | "a blank happy smile", who "speaks" only by barfing ("bulleh") |
+
+Skins: Chef Tennis Ball, Gear Earrings Pencil, Purple Shoes Pencil and Tangerine Rocky are in profile, one eye; Glove Blocky's face is on the right of the picture, half behind the glove;
+Sleepy and Yoyle Metal Tennis Ball and Shades Blocky have eyes drawn as arcs, so their patches are taller than the arcs; Robo Coiny's mouth is the frown between his eyes.
