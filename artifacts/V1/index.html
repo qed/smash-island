@@ -39037,7 +39037,8 @@ for(let _k = 0; _k < FR_KINDS.length; _k++) FR_KIND[FR_KINDS[_k]] = _k;
 const FR_HURT = [[0.26,1.10,0.86,0.10,1.0], [-0.10,0.97,1.05,-0.04,0.5], [0.04,1.01,0.99,0,0.15]];
 
 // ---- THE FIGHTERS: one small row each (FRAME_SRC), built into FRAME_DATA below.
-//   t     a temperament (FR_TEMPER_SRC)       amp   how far the body moves: 0.6 rigid .. 1.4 rubbery    puff  how much of a spit's swell they take (0..1)
+//   t     a temperament (FR_TEMPER_SRC)       amp   how far the body moves: 0.6 rigid .. 1.4 rubbery (a fighter whose FIGHTER_ANIM `squash` is below 1 takes that share of the frames' squash and stretch
+//         too: Rocky is a rock)        puff  how much of a spit's swell they take (0..1)
 //   vein  the anger mark on a wind-up         ex    overrides, per moment: { atk, hurt, tumble, jump, fall, run, win, charge } in the notation above
 //   winStyle  the victory pose: 0 a hop, 1 a slow smug sway, 2 a twirl      pose  an optional hook, (f, P, sp): the frames of a pose-swap fighter on a skin
 //   shed  what comes off them when they are hit or launched: [shape, colour, a second colour] (FR_SHAPES: dot, leaf, drop, shard, flake, spark, smoke, ring, feather, static)
@@ -39054,6 +39055,7 @@ function frBuild(src){
     const s = src[name], T = FR_TEMPER[s.t || 'plain'], an = FIGHTER_ANIM[name];
     const o = { amp: s.amp == null ? 1 : s.amp, puff: s.puff == null ? 0.7 : s.puff, vein: !!s.vein, pose: s.pose || null, winStyle: s.winStyle | 0,
       blink: !(an && an.idle === 0),   // a fighter who does not breathe (Teardrop) does not blink either
+      fq: an && an.squash != null && an.squash < 1 ? an.squash : 1,   // a fighter who opts out of the universal squash and stretch (Rocky, a rock) takes that share of the frames' own
       shed: s.shed ? frShedId(s.shed) : 0,
       atk: T.atk, hurt: T.hurt, tumble: T.tumble, jump: T.jump, fall: T.fall, run: T.run, win2: T.win, charge: T.charge };
     if(s.ex) for(const k in s.ex) o[k === 'win' ? 'win2' : k] = frEx(s.ex[k]);
@@ -39120,7 +39122,7 @@ function frPose(f, fd, sp){
   if(!FRAME_ON) return;
   const face = f.face < 0 ? -1 : 1, vx = f.vx || 0, vy = f.vy || 0, avx = vx < 0 ? -vx : vx, R = f.r, amp = fd.amp;
   const grounded = f.onground !== false, v2 = vx*vx + vy*vy;
-  const hk = hurtK(f), u = atkU(f);
+  const hk = hurtK(f), u = atkU(f), fq = fd.fq, qa = amp*fq;   // qa: the frames' squash and stretch (the lean, the shove and the spin keep amp alone)
   if(f.hitstun > 0 && v2 > 100){
     // ---- LAUNCHED: a tumble, end over end the way they are flying, dizzy, arms and legs flailing, the picture smeared round behind itself
     P.mom = FM_TUMBLE; P.eye = fd.tumble[0]; P.mouth = fd.tumble[1];
@@ -39131,14 +39133,14 @@ function frPose(f, fd, sp){
     const fi = hk > 0.7 ? 0 : (hk > 0.35 ? 1 : 2), H = FR_HURT[fi];
     const away = avx > 1 ? (vx < 0 ? -1 : 1) : -face;   // the way the blow sends them (and, stopped dead, the way they were not facing)
     P.mom = FM_HURT; P.fi = fi;
-    P.rot = -away*amp*H[0]; P.sx = 1 + (H[1] - 1)*amp; P.sy = 1 + (H[2] - 1)*amp; P.dx = away*amp*H[3];
+    P.rot = -away*amp*H[0]; P.sx = 1 + (H[1] - 1)*qa; P.sy = 1 + (H[2] - 1)*qa; P.dx = away*amp*H[3];
     P.arm = FA_RAISE; P.amt = H[4]*1.6; P.leg = FL_TUCK; P.lamt = fi === 0 ? 0.5 : 0.2;
     if(fi < 2){ P.eye = fd.hurt[0]; P.mouth = fd.hurt[1]; P.fx = FX_SWEAT; }
   } else if(u >= 0){
     // ---- ATTACK: wind-up, hit and recover, six held frames, by the kind of move it is
     const ki = FR_KIND[f._atkKind] | 0, fi = (u*6 + 0.000001) | 0, fj = fi > 5 ? 5 : fi, o = (ki*6 + fj)*7, slot = fj < 2 ? 0 : (fj < 4 ? 1 : 2);
     P.mom = FM_ATK; P.fi = fj;
-    P.rot = face*amp*FR_ATK[o]; P.sx = 1 + (FR_ATK[o + 1] - 1)*amp; P.sy = 1 + (FR_ATK[o + 2] - 1)*amp; P.dx = face*amp*FR_ATK[o + 3];
+    P.rot = face*amp*FR_ATK[o]; P.sx = 1 + (FR_ATK[o + 1] - 1)*qa; P.sy = 1 + (FR_ATK[o + 2] - 1)*qa; P.dx = face*amp*FR_ATK[o + 3];
     P.smear = FR_ATK[o + 4]; P.bulge = FR_ATK[o + 5]*fd.puff; P.spin = face*FR_ATK[o + 6];
     P.eye = fd.atk[slot*2]; P.mouth = fd.atk[slot*2 + 1];
     P.sdx = -face*R*0.30;
@@ -39154,9 +39156,9 @@ function frPose(f, fd, sp){
     P.mom = FM_MOVE;
     if(!grounded){
       if(vy < -1){            // up: stretched, eyes wide, arms thrown up, a knee drawn up
-        P.fi = 0; P.eye = fd.jump[0]; P.mouth = fd.jump[1]; P.sx = 0.97; P.sy = 1.03; P.arm = FA_RAISE; P.amt = 1.5; P.leg = FL_TUCK; P.lamt = 0.8;
+        P.fi = 0; P.eye = fd.jump[0]; P.mouth = fd.jump[1]; P.sx = 1 - 0.03*fq; P.sy = 1 + 0.03*fq; P.arm = FA_RAISE; P.amt = 1.5; P.leg = FL_TUCK; P.lamt = 0.8;
       } else if(vy > 8){      // plunging: the scream, the flail, a bead of sweat and the lines of the fall
-        P.fi = 2; P.eye = fd.fall[0]; P.mouth = fd.fall[1]; P.sx = 0.96; P.sy = 1.05; P.arm = FA_FLAIL; P.amt = 1.4; P.leg = FL_PEDAL; P.lamt = 0.6;
+        P.fi = 2; P.eye = fd.fall[0]; P.mouth = fd.fall[1]; P.sx = 1 - 0.04*fq; P.sy = 1 + 0.05*fq; P.arm = FA_FLAIL; P.amt = 1.4; P.leg = FL_PEDAL; P.lamt = 0.6;
         P.ph = hazardT*0.7 + f.idx; P.sdy = -R; P.fx = FX_SWEAT | FX_LINES;
       } else {                // hanging at the top, or drifting down: arms a little out, legs loose
         P.fi = 1; P.arm = FA_RAISE; P.amt = 0.8; P.leg = FL_SWING; P.lamt = 0.25; P.ph = hazardT*0.2 + f.idx;
@@ -39164,10 +39166,10 @@ function frPose(f, fd, sp){
     } else if(avx > 4){       // running: four held strides a cycle, arms and legs driving
       const q = (((hazardT*0.42*(1 + (f.idx % 4)*0.05) + f.idx*1.7)*0.6366) | 0) & 3, dir = vx < 0 ? -1 : 1;
       P.fi = q; P.ph = q*1.5708; P.arm = FA_SWING; P.amt = 0.85; P.leg = FL_SWING; P.lamt = 0.95;
-      P.rot = dir*((q & 1) ? 0.03 : -0.03); P.sy = (q & 1) ? 1.03 : 0.98; P.eye = fd.run[0]; P.mouth = fd.run[1];
+      P.rot = dir*((q & 1) ? 0.03 : -0.03); P.sy = 1 + ((q & 1) ? 0.03 : -0.02)*fq; P.eye = fd.run[0]; P.mouth = fd.run[1];
     } else if(avx > 0.5){     // walking: four held steps a cycle, the arms swinging easy
       const q = (((hazardT*0.3 + f.idx)*0.6366) | 0) & 3;
-      P.fi = q; P.ph = q*1.5708; P.arm = FA_SWING; P.amt = 0.4; P.leg = FL_SWING; P.lamt = 0.5; P.sy = (q & 1) ? 1.02 : 0.99;
+      P.fi = q; P.ph = q*1.5708; P.arm = FA_SWING; P.amt = 0.4; P.leg = FL_SWING; P.lamt = 0.5; P.sy = 1 + ((q & 1) ? 0.02 : -0.01)*fq;
     } else if(fd.blink && ((hazardT + f.idx*37) % 144) < 5){   // standing: the blink (the same beat the rig squints on)
       P.eye = 1;
     }
@@ -39421,15 +39423,15 @@ const FR_WIN_HOP = [[1.08, 0.90, 0, 0.8], [0.94, 1.12, -0.30, 2.2], [0.97, 1.06,
 function frWinPose(P, fd, t, idx){
   P.mom = FM_WIN; P.fi = 0; P.eye = fd.win2[0]; P.mouth = fd.win2[1]; P.rot = 0; P.sx = 1; P.sy = 1; P.dx = 0; P.dy = 0; P.spin = 0;
   P.smear = 0; P.sdx = 0; P.sdy = 0; P.bulge = 0; P.arm = FA_CHEER; P.leg = 0; P.ph = t*0.2 + idx; P.amt = 2.4; P.lamt = 0; P.fx = FX_SPARKLE; P.k = 0; P.shed = 0;
-  const st = fd.winStyle, cyc = (t*0.045 + idx*0.31) % 1, q = (cyc*4) | 0;
+  const st = fd.winStyle, fq = fd.fq, cyc = (t*0.045 + idx*0.31) % 1, q = (cyc*4) | 0;
   if(st === 1){            // smug: a slow sway, the chin up, the arms barely lifted
-    P.rot = -0.07 + Math.sin(t*0.035 + idx)*0.04; P.sy = 1.02 + 0.015*Math.sin(t*0.05); P.amt = 1.1;
+    P.rot = -0.07 + Math.sin(t*0.035 + idx)*0.04; P.sy = 1 + (0.02 + 0.015*Math.sin(t*0.05))*fq; P.amt = 1.1;
   } else if(st === 2){     // a twirl: turned in held steps, hopping at the top of it
     const s = ((cyc*8) | 0), hop = s === 3 || s === 4;
-    P.spin = s*0.7854; P.dy = hop ? -0.4 : 0; P.sy = hop ? 1.08 : 0.97; P.sx = hop ? 0.95 : 1.03; P.amt = 2.0;
+    P.spin = s*0.7854; P.dy = hop ? -0.4 : 0; P.sy = 1 + (hop ? 0.08 : -0.03)*fq; P.sx = 1 + (hop ? -0.05 : 0.03)*fq; P.amt = 2.0;
   } else {                 // the hop
     const H = FR_WIN_HOP[q];
-    P.sx = H[0]; P.sy = H[1]; P.dy = H[2]; P.amt = H[3]; P.fi = q;
+    P.sx = 1 + (H[0] - 1)*fq; P.sy = 1 + (H[1] - 1)*fq; P.dy = H[2]; P.amt = H[3]; P.fi = q;
     if((q === 1 || q === 2) && P.mouth === 3) P.mouth = 2;   // a cheer is an open mouth
   }
 }

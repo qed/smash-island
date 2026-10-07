@@ -428,6 +428,10 @@ also say what comes off them when they are hit or launched (`shed`: a dot, a lea
 **Adding a fighter** is adding rows: a `FRAME_SRC` row, an `FR_FACE` row for their render (and one for each skin worn), and, if they have them, `over` extras in their `FIGHTER_ANIM` entry that
 read `frNow(f)`. Nothing else changes.
 
+**Squash and stretch.** A fighter whose `FIGHTER_ANIM` `squash` is below 1 has opted out of some of the universal squash and stretch (Rocky is a solid stone, 0.35), and the frames honour it: their
+squash and stretch (the hurt and attack strips, the jump, the fall, the stride and the victory hop) are scaled by the same share, so a rock does not stretch like taffy on a jump. A rubbery fighter
+(`squash` above 1) is left to its `amp`.
+
 **The rules it keeps.** Render-only: nothing writes a fighter's field or spends a die, and the sim never reads any of it (`test/frame-layer.test.js`, the one test of the layer, plays each pilot fighter's match twice, bare and in a skin,
 drawn with the frames and with `FRAME_ON` false, and compares every tick and the dice left over; it also draws every moment for every pilot fighter, bare and in each skin, and checks that every number of the frame is finite). A client sees the same frames from the fields it already gets (face, vx, vy, onground, hitstun, swing, swingKind, swingLen, hurtT, smashHold, flash, plunge): no new
 wire field. The hot passes (between `FR-HOT-BEGIN` and `FR-HOT-END` in `index.html`) allocate nothing: no array, object or closure literal, no for-of, the scratch in `_FP`, `_FB`, `_FH`,

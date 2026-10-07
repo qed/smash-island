@@ -241,7 +241,9 @@ describe('drawing sprite fighters headlessly', () => {
   it('contain-fits each render to its own aspect ratio and stands it on the floor line', () => {
     // Nothing may be stretched: a tall character is capped by imgH, a wide one by imgW, and both
     // keep the source aspect exactly. Feet land on R+12, where the stub legs used to end.
-    const { w, rec } = bootRecording();
+    // (Booted without the frame layer: the render's OWN draw path, whose last translate is the one that puts the feet down. The layer draws a fighter in pieces, and the
+    // last translate of THAT recording is a painted limb's pivot; the next check holds a fighter with frames to the same account, measured at the body.)
+    const { w, rec } = bootRecording(7, NOFRAMES);
     const R = 24, FLOOR = R + 12;
     const cases = [
       // name,      natural w/h,  which bound should win
@@ -266,6 +268,36 @@ describe('drawing sprite fighters headlessly', () => {
       // drawImage is centred at the origin, so the translate is what puts the feet down.
       const ty = rec.filter((c) => c.op === 'translate').pop().args[1];
       expect(ty + dh / 2, `${name} stands on the floor line`).toBeCloseTo(FLOOR, 5);
+    }
+  });
+
+  it('...and so does a render the frame layer draws in pieces: its body keeps the aspect and has its feet on the floor line', () => {
+    // A fighter with frames is the body with its limbs cut out, then each painted limb swung about its shoulder or hip, so the last translate of the recording is a limb's
+    // pivot and says nothing about the feet. The BODY is the first drawImage; the transform in force there puts the bottom edge of the picture (dh/2 below its centre) on
+    // the floor line. Standing, and in the air where the limbs swing.
+    const { w, rec } = bootRecording();
+    const R = 24, FLOOR = R + 12;
+    const cases = [['Pencil', 94, 200, 'height'], ['Rocky', 257, 186, 'width']];
+    for (const [name, nw, nh, bound] of cases) {
+      for (const stance of ['f.onground = true', 'f.onground = false']) {
+        soloFighter(w, name);
+        FAKE_DECODED(w, name, nw, nh);
+        const { imgH, imgW } = w.eval(`({imgH:SPRITES[${JSON.stringify(name)}].imgH, imgW:SPRITES[${JSON.stringify(name)}].imgW})`);
+
+        rec.length = 0;
+        w.eval(`const f = fighters[0]; f.vx = 0; f.vy = 0; ${stance}; drawFighter(f)`);
+        const body = findAt(rec, 'drawImage');
+        const [, , , dw, dh] = rec[body].args;
+
+        expect(dw / dh, `${name} keeps its source aspect (${stance})`).toBeCloseTo(nw / nh, 5);
+        expect(dh, `${name} fits the height cap`).toBeLessThanOrEqual(imgH * R + 1e-6);
+        expect(dw, `${name} fits the width cap`).toBeLessThanOrEqual(imgW * R + 1e-6);
+        if (bound === 'height') expect(dh, `${name} is height-bound`).toBeCloseTo(imgH * R, 5);
+        else expect(dw, `${name} is width-bound`).toBeCloseTo(imgW * R, 5);
+
+        const m = ctmAt(rec, body), fy = w.eval('fighters[0].y');
+        expect(m[3] * dh / 2 + m[5] - fy, `${name} stands on the floor line (${stance})`).toBeCloseTo(FLOOR, 0);
+      }
     }
   });
 
