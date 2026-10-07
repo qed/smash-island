@@ -218,7 +218,10 @@ describe("all of Four's and Two's attacks, launched faster and hitting harder", 
     expect(r.mr1[0][1]).toBe(0);
     expect(r.mr1[0][2]).toBe(33);
     // (addProj stretches every shot's life by PROJ_LIFE, the old 80 frames included)
-    expect(r.mr1[0][0] * r.mr1[0][3], 'and still reaches as far (80 frames at 17.55)').toBeCloseTo(Math.round(80 * r.pl) * 13 * 1.35, -1);
+    // "mind read should have less bullet lifetime" (the owner, 2026-10-07): it lives ONE_MIND_LIFE (65) frames, half of the 130 that reached as far as
+    // Two's 80 frames at 17.55 did -- so it reaches about half as far now, and less than it did
+    expect(r.mr1[0][0] * r.mr1[0][3], 'it reaches 65 frames at 10.8').toBeCloseTo(Math.round(65 * r.pl) * 8 * 1.35, -1);
+    expect(r.mr1[0][0] * r.mr1[0][3], 'less far than the old reach').toBeLessThan(Math.round(80 * r.pl) * 13 * 1.35 * 0.6);
     expect(r.mr2.length, 'five from tier 2').toBe(5);
     expect(r.mr2[0][1], 'its homing slowed with it, so it curves along the same line').toBeCloseTo(0.06 * 1.35 * 8 / 13, 6);
     expect(r.maxDmg, '"not more damage tho": nothing hits past her 33').toBeLessThanOrEqual(33);
@@ -416,7 +419,8 @@ describe('her five specials: all cycling, three tiers each, three stepping up ev
     expect(r[1].ghost.gfx).toBe(null);
     expect(r[3].ghost.gfx).not.toBe(null);
     expect([r[1].ghost.drift, r[2].ghost.drift, r[3].ghost.drift], 'it drifts at tier 1').toEqual([true, false, false]);
-    expect([r[1].ghost.haste, r[2].ghost.haste, r[3].ghost.haste], 'and is hasted at tier 3').toEqual([false, false, true]);
+    // "remove the extra speed for ghost fighters at late tiers" (the owner, 2026-10-07): it was hasted at tier 3; it never is now
+    expect([r[1].ghost.haste, r[2].ghost.haste, r[3].ghost.haste], 'never hasted').toEqual([false, false, false]);
   });
 
   // ...and "eye lasers should have two bursts": after the first volley her eyes track you again, lock again, and fire again.
