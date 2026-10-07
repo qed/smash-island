@@ -238,11 +238,11 @@ describe('Silver Spoon: glowing gold, the punch, the rise and the cookie', () =>
     expect(r.t0.e).toBeGreaterThanOrEqual(400);
     expect(r.t0.h).toBeGreaterThanOrEqual(400);
     expect(r.t0.s).toBeGreaterThanOrEqual(400);
-    expect(r.gold, 'a 6.5% jab lands 9.1% in gold (ii-buffs: his jab 5 -> 6.5; gold is still x1.4)').toBeCloseTo(9.1, 0);
+    expect(r.gold, 'a 7.5% jab lands 10.5% in gold (ii-buffs: his jab 5 -> 7.5; gold is still x1.4)').toBeCloseTo(10.5, 0);
     expect(r.left).toBeGreaterThan(250);
     expect(r.cd, '8 s after it ends').toBeGreaterThan(600);
     const plain = arena('Silver Spoon', `doAttack(A); return D.pct - 30;`, 440);
-    expect(plain).toBe(6.5);   // ii-buffs: the jab row 5 -> 6.5
+    expect(plain).toBe(7.5);   // ii-buffs: the jab row 5 -> 7.5
   });
 
   it('Immunity Cookie: gold, heals 5% at once, shows the cookie and hits nobody (Q15 "heal only")', () => {
