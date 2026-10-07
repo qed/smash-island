@@ -153,7 +153,7 @@ describe('the roster is a grid of fighter art', () => {
   it('renders a cell for every fighter, and the cells carry the fighter renders', async () => {
     const { window: w } = loadMonolith();
     await w.eval('profileReady');
-    w.eval('PROFILE.viewMode="everything"; buildBoard()');
+    w.eval('PROFILE.viewMode="everything"; go("select")');   // (the renders are fetched when the select screen is shown, not before)
     const board = w.document.getElementById('board');
     const cells = [...board.querySelectorAll('.cell')].filter((c) => !c.classList.contains('rostertoggle'));
     expect(cells.length).toBe(w.eval('ROSTER.length'));
@@ -174,24 +174,38 @@ describe('the roster is a grid of fighter art', () => {
 
   it('points every thumbnail at the same file the match renders', () => {
     const { window: w } = loadMonolith();
-    w.eval('buildBoard()');
+    w.eval("go('select')");
     const img = w.document.querySelector('#board img.cellimg');
     const name = img.closest('.cell').querySelector('.cellname').textContent;
     const src = img.getAttribute('src');
     expect(src).toBe(w.eval(`SPRITES[${JSON.stringify(name)}].src`));
   });
 
-  it('fetches the render of every portrait as the grid is built: the whole roster is on screen at once, so nothing waits to be pulled into view', async () => {
+  // The old strip fetched only the renders near its visible slice (boardLazyPass). The grid has everyone on screen at once, so when the select screen is up every
+  // portrait fetches its render -- but the grid is built at boot, and a first visit sees the title: 102 renders are 2.6 MB it has no use for. So the page loads none of
+  // them until the select screen is shown (measured on the title screen: 7 images, 124 KB, before the grid; 102, 2.6 MB, with it, set at boot).
+  it('fetches no render until the select screen is shown, and then the render of every portrait (and the side panel\'s picture)', async () => {
     const { window: w } = loadMonolith();
     await w.eval('profileReady');
-    w.eval(`PROFILE.viewMode='everything'; buildBoard();`);
+    w.eval(`PROFILE.viewMode='everything'; buildBoard();`);   // built, as at boot, with the title screen up
     const board = w.document.getElementById('board');
-    const imgs = [...board.querySelectorAll('img.cellimg')];
-    expect(imgs.length, 'most of the cast has a render').toBeGreaterThan(40);
+    const waiting = [...board.querySelectorAll('img.cellimg')];
+    expect(waiting.length, 'most of the cast has a render').toBeGreaterThan(40);
+    expect(w.document.querySelectorAll('#select img[src], #lobby img[src]').length, 'the title screen has fetched no render of the select screen\'s or the lobby\'s').toBe(0);
+    for (const img of waiting) expect(img.getAttribute('data-src'), 'each portrait knows its render').toMatch(/^assets\/sprites\/.+\.png$/);
+    w.eval("go('select')");
+    const imgs = [...w.document.getElementById('board').querySelectorAll('img.cellimg')];
+    expect(imgs.length).toBe(waiting.length);
     for (const img of imgs) {
-      expect(img.getAttribute('src'), 'each portrait has its render at once').toMatch(/^assets\/sprites\/.+\.png$/);
+      expect(img.getAttribute('src'), 'each portrait has its render now').toMatch(/^assets\/sprites\/.+\.png$/);
       expect(img.hasAttribute('data-src'), 'none is left on a deferred source: there is no edge for it to wait beyond').toBe(false);
     }
+    const art = w.document.querySelector('#selArt img');
+    expect(art && art.getAttribute('src'), 'the side panel\'s picture, too').toMatch(/^assets\/sprites\/.+\.png$/);
+    // and a pick brings its own picture the same way
+    const other = [...w.document.querySelectorAll('#board .cell.play')].find((c) => !c.classList.contains('sel'));
+    other.onclick();
+    expect(w.document.querySelector('#selArt img').getAttribute('src')).toMatch(/^assets\/sprites\/.+\.png$/);
   });
 
   it('is rebuilt in place however often it is built: the same grid, one cell for every fighter, never more', () => {

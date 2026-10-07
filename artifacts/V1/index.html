@@ -2962,6 +2962,7 @@ function go(id){
   const el=document.getElementById(id);
   if(el){el.classList.add('active');}
   if(id==='select'){ buildBoard(); syncModeUI(); }
+  if(id==='lobby'){ try{ loadLobbyArt(); }catch(e){} }   // the lobby's portraits are fetched now, not when the page loaded
   if(id==='controls'){ buildMaps(); buildCustomMusic(); }
   if(id==='vault'){ try{ buildVault(); }catch(e){} }
   if(id==='quests' || id==='store' || id==='wardrobe'){ try{ shopPeek(); }catch(e){} }   // the balance another tab left, not this one's old copy
@@ -3156,9 +3157,10 @@ function unlockHint(name){
 // A fighter's face in the picker. It is the SAME render the match draws (SPRITES[name].src), and the decoded element is handed back to the sprite registry, so
 // picking a fighter warms the exact Image the canvas will use instead of fetching it twice. No render (or a 404) falls back to the colour blob this board has
 // always shown, which is also what the canvas falls back to.
-// The whole roster is on screen at once now (the grid), so every cell fetches its render as it is built: there is no strip to pull through, and nothing waits
-// off the edge. (The strip fetched only the cells near its visible slice, because a player saw a dozen at a time. Native loading="lazy" is still not used: it
-// keeps its own counsel about when to fetch, and a src handed to it in a hidden or throttled tab can sit unfetched forever.)
+// The whole roster is on screen at once now (the grid), so when the select screen opens every cell fetches its render: there is no strip to pull through, and
+// nothing waits off the edge. But the grid is BUILT at boot (and the title is what a first visit sees), so the picture is made with its source in `data-src`, and
+// loadSelectArt hands it over as src when the select screen is actually shown -- 102 renders are 2.6 MB a title screen has no use for. (Native loading="lazy" is
+// still not used: it keeps its own counsel about when to fetch, and a src handed to it in a hidden or throttled tab can sit unfetched forever.)
 // `cls` is the class of the picture: the grid's 'cellimg' by default, the side panel's own for the big one.
 function fighterThumb(r, cls){
   let sp=null; try{ sp = SPRITES[r.name]; }catch(e){}
@@ -3168,10 +3170,16 @@ function fighterThumb(r, cls){
     im.setAttribute('decoding','async');
     im.onload=()=>{ if(!sp.img){ sp.img=im; sp._req=true; } };
     im.onerror=()=>{ try{ im.replaceWith(blobDot(r)); }catch(e){} };
-    im.src=sp.src;
+    im.setAttribute('data-src', sp.src);   // promoted to src by loadSelectArt when the select screen is shown (the Vault promotes its own)
     return im;
   }
   return blobDot(r);
+}
+// The select screen's renders, fetched once it is on screen: every picture waiting on a data-src (the grid's, and the side panel's) gets its src.
+function loadSelectArt(){
+  const sel = document.getElementById('select');
+  if(!sel || !sel.classList.contains('active')) return;
+  for(const im of sel.querySelectorAll('img[data-src]')){ im.src = im.getAttribute('data-src'); im.removeAttribute('data-src'); }
 }
 function blobDot(r){
   const d=document.createElement('div'); d.className='dot'; d.style.background=r.color; return d;
@@ -3189,8 +3197,14 @@ function lobbyThumb(name, color, pre){
   const im=document.createElement('img'); im.className=pre+'img'; im.alt=''; im.draggable=false;
   if(pre==='lg') im.setAttribute('decoding','async');
   im.onerror=()=>{ try{ im.replaceWith(dot()); }catch(e){} };
-  im.src=sp.src;
+  // the grid's hundred portraits wait for the lobby to be on screen (loadLobbyArt), as the select grid's wait for the select screen
+  if(pre==='lg') im.setAttribute('data-src', sp.src); else im.src=sp.src;
   return im;
+}
+function loadLobbyArt(){
+  const lob = document.getElementById('lobby');
+  if(!lob || !lob.classList.contains('active')) return;
+  for(const im of lob.querySelectorAll('#lobbyFighter img[data-src]')){ im.src = im.getAttribute('data-src'); im.removeAttribute('data-src'); }
 }
 // Keep the picked fighter on screen after a rebuild, should the grid ever outgrow its panel (nine rows fit it; this is for the day there are more).
 function scrollChosenIntoView(){
@@ -3660,6 +3674,7 @@ function refreshSel(){
     mc.innerHTML = `<div class="mc-head">${chosen.name} — moves</div>` +
       rows.map(r=>`<div class="mc-row${r[2]?' mc-wide':''}"><span class="mc-k">${r[0]}</span><span class="mc-d">${r[1]}</span></div>`).join("");
   }
+  loadSelectArt();   // the grid's and the side panel's pictures, if (and only when) the select screen is up: buildBoard and every pick come through here
 }
 function buildStages(){
   const sp=document.getElementById('stagepick'); sp.innerHTML='';
@@ -42121,6 +42136,7 @@ window.NET = {
       c.appendChild(b);
     }
     this.pickCaption(grid._over||null);
+    loadLobbyArt();   // (only if the lobby is the screen showing: go('lobby') does it when it comes up)
   },
   pickCaption(hover){
     const el=document.getElementById('lobbyPickName'); if(!el) return;
