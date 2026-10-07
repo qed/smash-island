@@ -674,3 +674,68 @@ describe('beatable in principle -- whatever a bot manages', () => {
     expect(new Set(Object.values(r.names)).size, 'no two moves share a line').toBe(ALL.length);
   });
 });
+// The owner's playtest, 2026-10-07: "future is so yesterday still only spawns on the ground, toxic cannon shoots an undodgeable line." and "more windows
+// between attacks for cobs." with "some of the \"passive\" attacks can be kept while others run." (asked which: the countdown, the ship, the van, the crumbs).
+describe("the owner's playtest of 2026-10-07", () => {
+  it("THE FUTURE IS SO YESTERDAY!'s rings run along the platform you stand on, and a fighter on the ground under it is not on their line", () => {
+    const r = fight(['Knife'], { story: true }, `
+      park();
+      var gy = groundY(), p = worldPlats.filter(function(q){ return !q.solid && q.y < gy - 300; })[0];
+      you.x = p.x + p.w/2; you.y = p.y - you.r; you.vx = 0; you.vy = 0; you.onground = true;
+      s._marks = 0; s._rings = []; s._podium = cobsPodiumSpot(s, you, 0);
+      var podFloor = s._podium.floor;
+      COBS_MOVES.keynote(s, you, ++BOSS_ATK_ID);
+      var up = s._rings.map(function(R){ return R.y; });
+      // now from the ground: the line is the ground
+      s._rings = []; s._burst = null; you.x = p.x - 400; you.y = gy - you.r; s._podium = cobsPodiumSpot(s, you, 0);
+      COBS_MOVES.keynote(s, you, ++BOSS_ATK_ID);
+      var down = s._rings.map(function(R){ return R.y; });
+      // a ring on the platform's line passing a fighter on the ground below it: no hit
+      s._rings = [{ x0:you.x, y:p.y, r:0, spd:0, high:false, delay:0, id:++BOSS_ATK_ID, dmg:10, hit:{}, life:5 }]; s._burst = null; you.pct = 0; you.invuln = 0;
+      cobsTickEntities(s, you);
+      return { top:p.y, podFloor:podFloor, up:up, gy:gy, down:down, groundHit:you.pct };
+    `);
+    expect(r.podFloor, 'the podium knows the line: the platform under you').toBeCloseTo(r.top, 0);
+    expect(r.up.length).toBeGreaterThan(0);
+    r.up.forEach((y) => expect(y, 'every ring on the platform line').toBeCloseTo(r.top, 0));
+    r.down.forEach((y) => expect(y, 'from the ground, on the ground').toBeCloseTo(r.gy, 0));
+    expect(r.groundHit, 'a low ring up on a platform does not reach the ground under it').toBe(0);
+  });
+
+  it("TOXIC CANNON!'s beam hurts only at its splash, low enough that one jump is over it for most of a second", () => {
+    const r = W.eval(`(function(){ var y = 0, v = JUMP, over = 0; for (var t = 0; t < 120; t++){ v += GRAV; y -= v; if (y > COBS_BEAM_H) over++; if (y < 0) break; } return { h: COBS_BEAM_H, over: over }; })()`);
+    expect(r.h, 'was 100, which a jump cleared for a few frames at its top').toBeLessThanOrEqual(50);
+    expect(r.over, 'frames a plain jump stays over the splash').toBeGreaterThanOrEqual(25);
+  });
+
+  it('one attack at a time: no wind-up while his turn runs, his whole gap after it -- and the passives do not hold the turn', () => {
+    const r = fight(['Knife'], { story: true }, `
+      s._atkTimer = 0; s._marks = 2; you.controller = 'still';
+      var gy = groundY(); you.x = s.x + 300; you.y = gy - you.r;
+      cobsFightTelegraph(s, 'keynote', you);
+      var fired = -1, overAt = -1, nextTel = -1, telWhileLive = 0;
+      for (var t = 0; t < 1500; t++){
+        var wasTel = s._tel > 0; step(); you.invuln = 1e9; you.pct = 0;
+        if (fired < 0 && wasTel && !(s._tel > 0)) fired = t;
+        if (fired >= 0 && overAt < 0 && s._turnLive && s._tel > 0) telWhileLive++;
+        if (fired >= 0 && overAt < 0 && !s._turnLive) overAt = t;
+        if (overAt >= 0 && s._tel > 0){ nextTel = t; break; }
+      }
+      var gap = cobsGap(s);
+      // the passives: the ship once it sails, the van
+      park(); projectiles = []; s._ship = null; var lo = BOSS_ATK_ID;
+      cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
+      var charging = cobsTurnOver(s, { lo: lo }); s._ship.arm = 0; var sailing = cobsTurnOver(s, { lo: lo });
+      s._ship = null; lo = BOSS_ATK_ID; cobsFightTelegraph(s, 'van', you); s._tel = 0; COBS_MOVES.van(s, you, ++BOSS_ATK_ID);
+      var van = cobsTurnOver(s, { lo: lo });
+      return { fired: fired, overAt: overAt, nextTel: nextTel, telWhileLive: telWhileLive, gap: gap, charging: charging, sailing: sailing, van: van };
+    `);
+    expect(r.fired, 'the keynote fired').toBeGreaterThanOrEqual(0);
+    expect(r.overAt - r.fired, 'its rings ran on after it fired').toBeGreaterThan(60);
+    expect(r.telWhileLive, 'no wind-up while it ran').toBe(0);
+    expect(r.nextTel - r.overAt, 'then his whole gap: the window').toBeGreaterThanOrEqual(r.gap - 2);
+    expect(r.charging, 'the ship holds the turn while it hangs there charging').toBe(false);
+    expect(r.sailing, '...not once it sails').toBe(true);
+    expect(r.van, 'the van never holds it').toBe(true);
+  });
+});
