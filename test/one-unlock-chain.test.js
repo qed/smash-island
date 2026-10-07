@@ -274,8 +274,8 @@ describe('step 4: the bans', () => {
 
     const lobby = W.eval(`(function(){
       chosen = oneLightning(); NET.pickFighter('Firey'); var kept = chosen.name;
-      NET.role = 'host'; NET.renderLobbySettings(); NET.role = 'solo';
-      var opts = [].slice.call(document.querySelectorAll('#lobbyFighter option')).map(function(o){ return o.value; });
+      NET.role = 'host'; NET.renderFighterGrid(); NET.role = 'solo';
+      var opts = [].slice.call(document.querySelectorAll('#lobbyFighter .lgcell')).map(function(c){ return c.dataset.fighter; });
       return { kept:kept, firey:opts.indexOf('Firey') >= 0, lightning:opts.indexOf('Lightning') >= 0, leafy:opts.indexOf('Leafy') >= 0 };
     })()`);
     expect(lobby).toEqual({ kept: 'Lightning', firey: false, lightning: true, leafy: true });

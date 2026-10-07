@@ -51,7 +51,7 @@ describe('the fighters are shown in the order they appear in the show', () => {
     const r = w.eval(`(function(){
       NET.role='host'; NET.players=[{ id:'me', name:'Firey', isHost:true }]; NET.ws={ readyState:1, send:function(){}, close:function(){} };
       NET.renderLobby();
-      var opts = Array.prototype.map.call(document.getElementById('lobbyFighter').options, function(o){ return o.value; });
+      var opts = Array.prototype.map.call(document.querySelectorAll('#lobbyFighter .lgcell'), function(c){ return c.dataset.fighter; });
       return { opts: opts, order: SHOW_ORDER, first: ROSTER[0].name };
     })()`);
     const idx = r.opts.map((n) => r.order.indexOf(n));
