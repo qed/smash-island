@@ -11,7 +11,8 @@ import { loadMonolith } from './helpers/load-monolith.js';
 const FIGHTERS = ['Firey', 'Leafy', 'Bubble', 'Pen', 'Knife', 'Balloon', 'Tapey', 'Silver Spoon', 'Puffball',
   'Needle', 'Pin', 'Snowball', 'Bomby', 'Teardrop', 'Flower',
   'Tennis Ball', 'Blocky', 'Coiny', 'Pencil', 'Golf Ball', 'Rocky',
-  'Book', 'Fries', 'Gelatin', 'Nickel', 'Ruby', 'Yellow Face'];
+  'Book', 'Fries', 'Gelatin', 'Nickel', 'Ruby', 'Yellow Face',
+  'Barf Bag', 'Basketball', 'Bell', 'Bracelety', 'Fanny', 'Gaty'];
 const OFF = (src) => { expect(src, 'the switch is where the test expects it').toContain('const FRAME_ON = true;'); return src.replace('const FRAME_ON = true;', 'const FRAME_ON = false;'); };
 // every picture "decoded" (a stand-in with a size), so drawFighter runs the layer's passes instead of the vector fallback
 const FAKE = `window.__fake = function(sp){ sp._req = true; sp.img = { complete:true, naturalWidth:150, naturalHeight:200 }; }; true`;

@@ -505,3 +505,17 @@ Sleepy and Yoyle Metal Tennis Ball and Shades Blocky have eyes drawn as arcs, so
 
 Skins: Snowy Ruby has no row (snow covers her eyes and half her mouth); Broken Fries, Square Hole Nickel and Bandaged Ruby are in profile, one eye; Book's two brows sit on a green half and a
 blue half, so the second has its own fill (`bc2`); Frozen Yellow Face's eyes are big U shapes, so their patches are large.
+
+### Batch 4: Barf Bag, Basketball, Bell, Bracelety, Fanny, Gaty
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Barf Bag** | `gentle`, 1.25; hops to win | Wide eyes and a small round mouth (about to be sick); a happy grin to win | green drops | A bag of fluid, permanently queasy: "Oh, my SAP! Somebody refill me!" |
+| **Basketball** | `plain`, 1.3; hops to win | A game face: squint and grit on a wind-up, a shout on the hit; a grin to win | flecks of rubber | The sports competitor, inflated rubber that compresses like a bounce pass: "Nothing but net." |
+| **Bell** | `smug`, 0.8; sways to win | A mouth and no eyes (her face is her mouth): a smirk, a shout on the hit, a wavy mouth when launched, a grin to win | rings, as off a struck bell | Dry and a little smug, cast metal that rings: "Saved by the bell. Mine." |
+| **Bracelety** | `gentle`, 1.1; twirls to win | Wide eyes and a small round mouth; a shout of joy to win | glints | A hoop, eager and devoted to Ice Cube: "Oh, my grip! Did Ice Cube see?!" |
+| **Fanny** | `smug`, 0.9; sways to win | A smirk, then a glare and a shout on the hit; grit when hurt | bits of blade | Rude, blunt and pleased with her puns: "You BLEW it. Get it? Because I'm a fan." |
+| **Gaty** | `deadpan`, 0.9; sways to win | A flat face and a squint; a smirk to win | flakes of paint | Unbothered, a gate: "Honestly, I don't care. But like, clap." |
+
+Skins: Zombie Barf Bag's eyes are white with dark rims, so they are patched green and drawn with whites and pupils; Yoyle Metal Barf Bag and Purple Bracelety are in profile, one eye; Gaty's eyes
+in her render are an eyebrow and an eye joined, so one patch covers each pair; Basketball keeps her painted brows (the left one is on the very edge of the ball).
