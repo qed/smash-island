@@ -547,3 +547,17 @@ on Lollipop's left brow would paint outside the ball); Scribbled Lollipop is scr
 
 Skins: the Remotes' faces are white on a dark body and Upgraded TV's is light grey on black, so those rows give the ink the new features are drawn in (`k`), and the fill under them is the body's own;
 Flamethrower Rose and Sizzling Saw show one eye; Siren Remote has eyes (white squares) and no mouth to find; Mech Woody's eyes are the small ovals under its arcs, and the arcs are its brows.
+
+### Batch 7: Toothpaste, Dora, Match, David, Firey Jr., Fern
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Toothpaste** | `plain`, 1.2; hops to win | A plain game face; a grin to win | blobs of paste | Brisk and clean, a tube whose lot is to be squeezed: "Clean sweep." |
+| **Dora** | `plain`, 1.1; twirls to win | A plain game face drawn in her own grey pencil line; a shout of joy to win | strands of hair | Bright and quick, a laugh for everything: "¡Ja ja ja ja ja!" |
+| **Match** | `smug`, 0.6; sways, chin up, to win | Half-lidded and smirking; a glare and a shout on the hit; one eye (profile) | sparks | Chatty, snobby and quick to judge, a rigid matchstick: "Like, obviously I won?" |
+| **David** | `deadpan`, 1.1; hops to win | A flat face in his pencil line; wide-eyed disbelief to win | nothing (the show gives nothing) | Put-upon and flat, a stick figure who flails without committing: "Aw, seriously?" |
+| **Firey Jr.** | `fierce`, 1.0; hops to win | Glare, grit and the anger mark on a wind-up | embers | Copies his dad in everything: "Just like my dad!" |
+| **Fern** | `gentle`, 1.0; hops to win | Wide eyes and a small round mouth; a relieved smile to win | pine needles | Surrenders the moment a fight finds him: "Oh, my soil! I was gonna surrender!" |
+
+Skins: Dora's and David's faces (and Bob Cut Dora's) are pencil lines, grey, or brown on Tangerine David, so their rows give the ink (`k`); Half Frozen Toothpaste is small beside its block of ice, so its
+patches are small; Knight Match's face sits under the visor of her helmet, and her patches stop short of the chin strap.
