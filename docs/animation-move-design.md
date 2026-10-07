@@ -422,7 +422,7 @@ go wide-eyed on the recoil and grin on the settle, on the same ticks as the base
 hook), and `FR_FACE` one row per *picture*: where the eyes, brows and mouth are, as fractions of the picture, the radii of the patch that covers the painted feature, and the fill under it.
 `scripts/measure-faces.mjs` proposes a row from a picture; every row in the game was checked by eye on the sheet it draws (`--sheet`): the anchors on the body, on painted ink.
 A row may also carry `mc` (the fill under the mouth, when the body is another tone there), `c2` (the fill under the second eye, when the body shades between the two), and two more
-numbers on `e` (and on `b`) for the second eye's (brow's) own radii (a flat closed eye beside an open one), `bc2` likewise for the second brow; a face with no eyes to find has no `e`
+numbers on `e` (and on `b`) for the second eye's (brow's) own radii (a flat closed eye beside an open one), `bc2` likewise for the second brow, `k` for the ink the new features are drawn in when the body is dark and its face light (a Remote's is white); a face with no eyes to find has no `e`
 (the effects go above its mouth). A fighter's row can
 also say what comes off them when they are hit or launched (`shed`: a dot, a leaf, a drop, a shard, a flake, a spark, smoke, rings, a feather, static; drawn, never a word).
 
@@ -533,3 +533,17 @@ in her render are an eyebrow and an eye joined, so one patch covers each pair; B
 
 Skins: Sunglasses Lightning's eyes are behind the shades, so that row is a mouth alone; Uncapped Marker and Burnt Marker show one eye; Lollipop and Uncapped Marker keep their painted brows (a patch
 on Lollipop's left brow would paint outside the ball); Scribbled Lollipop is scribbled over in blue ink, which the patches leave alone where they do not reach.
+
+### Batch 6: Naily, Remote, Rose, Saw, TV, Woody
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Naily** | `fierce`, 0.5; hops to win | Glare, grit and the anger mark on a wind-up; a smug grin to win | sparks | Sharper and angrier than Needle, hardened steel that is driven: "Nailed it." |
+| **Remote** | `deadpan`, 0.6; calm sway to win | A flat face, drawn in white on her dark body | red and white sparks | A text-to-speech monotone: "Match won. Deaths prevented: 0.00." |
+| **Rose** | `deadpan`, 1.0; poised sway to win | A flat mouth through every moment, the eyes doing the moment | red petals | Elegant and silent: "...(keeps her vow of silence, wins anyway)" |
+| **Saw** | `plain`, 0.7; hops to win | A plain game face; a smug grin to win | bits of steel | Cheerful and punning, a blade that turns: "Cut it close." |
+| **TV** | `deadpan`, 0.6; sway to win | No face (its render shows a teapot on the screen): the body, the limbs and the effects | static | A screen that tears when it is hit: "Broadcast complete." |
+| **Woody** | `gentle`, 1.0; hops to win | Wide eyes and a small round mouth; a shy, relieved smile to win | drops of nervous sweat | The most fearful of them all: "...(hides, victorious)" |
+
+Skins: the Remotes' faces are white on a dark body and Upgraded TV's is light grey on black, so those rows give the ink the new features are drawn in (`k`), and the fill under them is the body's own;
+Flamethrower Rose and Sizzling Saw show one eye; Siren Remote has eyes (white squares) and no mouth to find; Mech Woody's eyes are the small ovals under its arcs, and the arcs are its brows.
