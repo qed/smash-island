@@ -661,3 +661,20 @@ as a flat plate, the accepted limitation.
 **Pose swaps on a skin, continued** (Candle and Cammy): Candle's Inner-Flame (the third eye, in a Crystal grip, a reel or a smash charge) and her flame put out are pictures cut from her own render, and Cammy's flash (a snap or a smash charge) is one from his;
 `frCandlePose` and `frCammyPose` give a skin the same moments, for the same flags: Candle's inner flame is a fixed glare and a clenched jaw with a sparkle and a little stretch up, her flame out is a sagging body (a little wider, a little shorter) with crossed-out eyes
 and a frown; Cammy's flash is a squint, a grin, a sparkle and a small pulse of size.
+
+### Batch 14: Tissues, Yin-Yang, Cherries, Clover, Jack, Magnet
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Tissues** | `gentle`, 1.3; hops to win | Wide eyes and a small round mouth; a round mouth to win | scraps of tissue | Sickly and sorry about it: "Gwuys! Ah-choo! Sorry, condiShAWn." |
+| **Yin-Yang** | `plain`, 0.9; twirls to win | (no face row: it crosses the white and black halves) | white and black flecks | Two minds in one body: "Yin: A toast, with water! Yang: DR. FIZZ!" |
+| **Cherries** | `plain`, 1.1; hops to win | (no face row: two faces in one picture) | drops of cherry juice | Two bodies, one mind: "LONG LIVE THE MARASCHINOS! (The left one mimes it.)" |
+| **Clover** | `plain`, 1.1; twirls to win | A plain game face; a shout of joy to win | leaves | Lucky, bubbly and easily distracted: "We won! Cordelia! Catalina! Cassandra! Jake!" |
+| **Jack** | `deadpan`, 0.7; sways to win | (no face row: his eyes sit on the join of white and blue) | scraps of card | Callous and blunt: "I only came to win. Handcuffs and all." |
+| **Magnet** | `smug`, 0.8; sways to win | Half-lidded and smirking, in white on the blue | blue sparks | A very magnetic presence: "By popular demand!" |
+
+Skins: Detective Clover's mouth is under a moustache, so its row is eyes only; Deerstalker Clover is the full face; Snotty Tissues is eyes and mouth with the eyes' boxes drawn by hand (the whites of its eyes run wider than the dark of them). No row for Detective
+Yin-Yang (the glasses sit on the mouth), Blindfolded Cherries, Tattered Jack (the cracks run over the face) or Blindfolded Magnet (the blindfold and a hand cover the face): they keep their body, limbs and effects, and a pose swap where they have one.
+
+**Pose swaps on a skin, continued** (Tissues and Yin-Yang): Tissues' nap (the sleep stand-in, in the sit-down windup) and Yin-Yang's Yang (when Yang takes over) and Mindful poses are pictures cut from their own render; `frTissuesPose` and `frYinYangPose` give a skin the same
+moments, for the same flags: Tissues sits low and wide, tipped a little, eyes shut and a round mouth; Yang is a glare, a clenched jaw and a lean in; Mindful is closed eyes and a flat mouth in a low, calm sit.

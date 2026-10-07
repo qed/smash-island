@@ -21,7 +21,8 @@ const FIGHTERS = ['Firey', 'Leafy', 'Bubble', 'Pen', 'Knife', 'Balloon', 'Tapey'
   'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)',
   'Paper', 'Microphone', 'Salt', 'Test Tube', 'Trophy', 'Bonesaw',
   'Spikey', 'Cheesy', 'Dough', 'Box', 'Goo', 'Lifering',
-  'Candle', 'Cammy', 'Fan', 'Soap', 'Starfruit', 'Blueberry'];
+  'Candle', 'Cammy', 'Fan', 'Soap', 'Starfruit', 'Blueberry',
+  'Tissues', 'Yin-Yang', 'Cherries', 'Clover', 'Jack', 'Magnet'];
 const OFF = (src) => { expect(src, 'the switch is where the test expects it').toContain('const FRAME_ON = true;'); return src.replace('const FRAME_ON = true;', 'const FRAME_ON = false;'); };
 // every picture "decoded" (a stand-in with a size), so drawFighter runs the layer's passes instead of the vector fallback
 const FAKE = `window.__fake = function(sp){ sp._req = true; sp.img = { complete:true, naturalWidth:150, naturalHeight:200 }; }; true`;
@@ -74,7 +75,8 @@ describe('every fighter with frames draws every moment, bare and in each of thei
         function(f){ f._plunge = { from:0, life:9 }; f.onground = false; f.vy = 16; },
         function(f){ f._g1Pose = 'flaps'; f._g1PoseUntil = hazardT + 12; }, function(f){ f._g1Pose = 'limp'; f._g1PoseUntil = hazardT + 12; }, function(f){ f._g1Pose = 'puddle'; f._g1PoseUntil = hazardT + 12; },
         function(f){ f._dashing = 8; }, function(f){ f.healing = 5; f.rooted = 5; }, function(f){ f._windup = { smash: true }; },
-        function(f){ f._windup = { b3: 'grip' }; }, function(f){ f._windup = { b3: 'snap' }; }, function(f){ f._flameOutUntil = hazardT + 12; f.weakened = 5; }];
+        function(f){ f._windup = { b3: 'grip' }; }, function(f){ f._windup = { b3: 'snap' }; }, function(f){ f._flameOutUntil = hazardT + 12; f.weakened = 5; },
+        function(f){ f._windup = { nap: true }; }, function(f){ f._yangT = hazardT + 12; }, function(f){ f._mindfulT = hazardT + 12; }];
       FR_KINDS.forEach(function(k){ [0, 3, 6, 9, 12, 15].forEach(function(e){ moments.push(function(f){ armAtk(f, ATK_ANIM, k); f._atkAnim = ATK_ANIM - e; }); }); });
       Object.keys(FRAME_DATA).forEach(function(n){
         var skins = [null].concat(COSMETICS.filter(function(c){ return c.kind === 'skin' && c.fighter === n; }).map(function(c){ return c.id; }));
