@@ -25,11 +25,15 @@ describe('the lobby has the main game\'s options', () => {
     const r = w.eval(`(function(){
       var ids = ['lobbyFighter','lobbyStage','lobbyMode','lobbyCount','lobbyStocks','lobbyAI','lobbyItems','lobbyMapSize'];
       return { present: ids.filter(function(id){ return !!document.getElementById(id); }), panel: document.getElementById('lobbySettings').style.display,
+               portraits: document.querySelectorAll('#lobbyFighter .lgcell').length, shown: document.getElementById('lobbyPicker').style.display,
                stages: document.getElementById('lobbyStage').options.length, total: STAGES.length,
                counts: Array.prototype.map.call(document.querySelectorAll('#lobbyCount button'), function(b){ return +b.dataset.v; }) };
     })()`);
     expect(r.panel).toBe('block');
     expect(r.present).toEqual(['lobbyFighter', 'lobbyStage', 'lobbyMode', 'lobbyCount', 'lobbyStocks', 'lobbyAI', 'lobbyItems', 'lobbyMapSize']);
+    // the fighter picker is the grid of portraits (it was a dropdown, so its element was only there once the room was): built, and showing
+    expect(r.portraits, 'a portrait for each fighter the player can pick').toBeGreaterThan(40);
+    expect(r.shown).toBe('flex');
     expect(r.stages).toBe(r.total);
     expect(Math.min(...r.counts), 'never fewer contestants than humans in the room').toBeGreaterThanOrEqual(2);
   });
@@ -62,7 +66,7 @@ describe('the lobby has the main game\'s options', () => {
     const r = w.eval(`(function(){
       var before = NET.snapshot;
       NET.onMessage({ t:'state', lobby:{ mode:'ffa', count:4, stocks:2, teamKey:'2v2', mapSize:'tall', stage: STAGES[1].id, itemRate:3, ai:0 } });
-      return { text: document.getElementById('lobbySummary').textContent, snapshotUntouched: NET.snapshot === before, hostControls: !!document.getElementById('lobbyItems'), fighter: !!document.getElementById('lobbyFighter') };
+      return { text: document.getElementById('lobbySummary').textContent, snapshotUntouched: NET.snapshot === before, hostControls: !!document.getElementById('lobbyItems'), fighter: document.querySelectorAll('#lobbyFighter .lgcell').length > 40 };
     })()`);
     expect(r.text).toContain('4 contestants');
     expect(r.text).toContain('2 stocks');
@@ -158,7 +162,7 @@ describe('the panel does not wait for the relay', () => {
     w.eval(`NET.RELAY = ''; localStorage.removeItem('bfsi:relay');   // no relay reachable at all
       NET.myId = 'me'; NET.host();`);
     const r = w.eval(`({ role: NET.role, panel: document.getElementById('lobbySettings').style.display,
-      picker: !!document.getElementById('lobbyFighter'), options: !!document.getElementById('lobbyStocks'), start: !!document.querySelector('#lobbyControls button') })`);
+      picker: document.querySelectorAll('#lobbyFighter .lgcell').length > 40, options: !!document.getElementById('lobbyStocks'), start: !!document.querySelector('#lobbyControls button') })`);
     expect(r.role).toBe('host');
     expect(r.panel).toBe('block');
     expect(r.picker).toBe(true);
@@ -169,7 +173,7 @@ describe('the panel does not wait for the relay', () => {
   it("Join Room shows the picker at once, and the host's settings when they come", () => {
     const { window: w } = loadMonolith();
     w.eval(`NET.RELAY = ''; NET.myId = 'me'; NET.join('QXTR');`);
-    const r = w.eval(`({ role: NET.role, picker: !!document.getElementById('lobbyFighter'), options: !!document.getElementById('lobbyStocks'), summary: document.getElementById('lobbySummary').textContent })`);
+    const r = w.eval(`({ role: NET.role, picker: document.querySelectorAll('#lobbyFighter .lgcell').length > 40, options: !!document.getElementById('lobbyStocks'), summary: document.getElementById('lobbySummary').textContent })`);
     expect(r.role).toBe('client');
     expect(r.picker).toBe(true);
     expect(r.options, 'a client does not set the match').toBe(false);

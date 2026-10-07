@@ -97,9 +97,9 @@ export async function makeRoom(names, { w = 1280, h = 720 } = {}) {
       flush();
       if (ws.onclose) ws.onclose();
     },
-    // The player picks a fighter from the lobby's own dropdown, the way a finger does.
+    // The player picks a fighter the way a finger does: a click on its portrait in the lobby's grid.
     pick(name, fighter) {
-      pages[name].eval(`(function(){ var s = document.getElementById('lobbyFighter'); s.value = ${JSON.stringify(fighter)}; s.dispatchEvent(new Event('change')); })()`);
+      pages[name].eval(`(function(){ var c = [].filter.call(document.querySelectorAll('#lobbyFighter .lgcell'), function(x){ return x.dataset.fighter === ${JSON.stringify(fighter)}; })[0]; c.click(); })()`);
       flush();
     },
     // Create Room on `name`'s page, then connect it. Returns the room code.

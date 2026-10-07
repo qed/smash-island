@@ -127,13 +127,14 @@ describe('no phone-only layout', () => {
 
   it('has no size that only a phone-width screen made fluid (the room code was clamp(40px,15vw,68px), How to Play\'s cards min(150px,40vw))', () => {
     expect(CSS).not.toMatch(/\b(15|40)vw\b/);
-    expect(CSS).toMatch(/\.inv-code\{[^}]*font-size:68px/);
+    // (the owner shrank the room code to one line across the top, 2026-10-07: it is a fixed 30px now, still never a viewport-width size)
+    expect(CSS).toMatch(/\.inv-code\{[^}]*font-size:\d+px/);
     expect(CSS).toMatch(/\.tut-grid\{[^}]*minmax\(150px,1fr\)/);
   });
 
   it('still wraps and shrinks inside an ordinary laptop window: the rules that are not phone-only stay', () => {
     expect(CSS).toMatch(/\.movecard\{[^}]*width:100%/);
-    expect(CSS).toMatch(/\.lobbyinvite\{[^}]*width:min\(460px,100%\)/);
+    expect(CSS).toMatch(/\.inv-sub\{[^}]*min-width:0[^}]*text-overflow:ellipsis/);   // the room line gives way (its hint is cut short) before it overflows; it was a card of width:min(460px,100%)
     expect(CSS).toMatch(/\.vaultgrid\{[^}]*flex-wrap:wrap/);
     expect(CSS).toMatch(/\.edcanvas\{[^}]*max-width:96vw/);
     expect(CSS).toMatch(/\.row\{[^}]*flex-wrap:wrap/);

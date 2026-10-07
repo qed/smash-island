@@ -18,6 +18,10 @@ import { makeRoom } from './helpers/net-room.js';
 //     WANTED THIS TO BE A COMPUTER GAME!!!" -- test/computer-only.test.js -- so there is nothing left to pin.)
 //
 // What stays true, and is pinned here too: a text box the player really is typing into does not feed the game keys.
+//
+// 2026-10-07 ("optimise the multiplayer character select UI"): the "Your fighter" dropdown is a grid of portrait BUTTONS now, and the long
+// invite-link box is gone, so the controls a lobby leaves focused are a portrait button and the Copy buttons. The same promise is pinned
+// through them: a focused portrait or Copy button does not take the match's keys either, and a pick lets go of the focus.
 
 let room, H, A;
 beforeAll(async () => {
@@ -74,20 +78,20 @@ describe.each(MATCHES)('%s: p2 holds Left in a hosted match', (_name, setup) => 
     walked(p2WalksLeft(), 'untouched lobby');
   }, 120000);
 
-  it('walks after picking a fighter from the dropdown', () => {
-    hostedMatch({ ...setup, inLobby: () => { A.eval(`(function(){ var s = document.getElementById('lobbyFighter'); s.focus(); s.value = 'Leafy'; s.dispatchEvent(new Event('change')); })()`); room.flush(); } });
+  it('walks after picking a fighter from the grid', () => {
+    hostedMatch({ ...setup, inLobby: () => { A.eval(`(function(){ var c = document.querySelector('#lobbyFighter [data-fighter="Leafy"]'); c.focus(); c.click(); })()`); room.flush(); } });
     walked(p2WalksLeft(), 'after a pick');
   }, 120000);
 
-  it('walks although the fighter dropdown was opened and closed without choosing, and still has the focus', () => {
-    hostedMatch({ ...setup, inLobby: () => { A.eval(`document.getElementById('lobbyFighter').focus()`); expect(focused(A), 'the dropdown holds the focus in the lobby').toBe('SELECT#lobbyFighter'); } });
-    walked(p2WalksLeft(), 'a focused dropdown');
+  it('walks although a portrait in the fighter grid was clicked or tabbed to without picking, and still has the focus', () => {
+    hostedMatch({ ...setup, inLobby: () => { A.eval(`document.querySelector('#lobbyFighter .lgcell').focus()`); expect(focused(A), 'the portrait holds the focus in the lobby').toBe('BUTTON'); } });
+    walked(p2WalksLeft(), 'a focused portrait');
     expect(focused(A), 'the match took the focus off it').toBe('BODY');
   }, 120000);
 
-  it('walks although the invite-link box was clicked into (to copy it by hand)', () => {
-    hostedMatch({ ...setup, inLobby: () => { A.eval(`document.getElementById('inviteLink').focus()`); expect(focused(A), 'the box holds the focus in the lobby').toBe('INPUT#inviteLink'); } });
-    walked(p2WalksLeft(), 'a focused invite-link box');
+  it('walks although a Copy button was clicked (to pass the room on) and still has the focus', () => {
+    hostedMatch({ ...setup, inLobby: () => { A.eval(`document.getElementById('copyLinkBtn').focus()`); expect(focused(A), 'the button holds the focus in the lobby').toBe('BUTTON#copyLinkBtn'); } });
+    walked(p2WalksLeft(), 'a focused Copy button');
     expect(focused(A), 'the match took the focus off it').toBe('BODY');
   }, 120000);
 });
