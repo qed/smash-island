@@ -693,3 +693,13 @@ moments, for the same flags: Tissues sits low and wide, tipped a little, eyes sh
 Skins: no row for Blindfolded MeTag (no face) or Rockstar Poppy (the face is in the black makeup under the hair). Poppy's row is the eyes, because the toothy grin runs into the hand and a patch would bite into it. Bot's and Damaged Bot's are the mouth alone (the face is under a leaf),
 Tired Teddy Bear's the eyes (the pupils inside their dark rings; the nose and the snarl run together) and Blindfolded Tea Kettle's the mouth alone. Teddy Bear's mouth box starts under the nose, so the nose stays. Backpack Loser's eyes sit on the join of a white and a yellow facet,
 so the patches are small; the eyes' ellipses are widened a little to cover a tilt. Pose swaps: none of these has one.
+
+### Batch 16: Pillow, Taco
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Pillow** | `deadpan`, 1.5; sways to win | A flat face; a flat, knowing look to win | feathers | The softest silhouette in the cast, dry about it: "Soft landing. For me." |
+| **Taco** | `plain`, 1.1; hops to win | A plain game face; a shout of joy to win | bits of lettuce and tomato | Upbeat and fond of a pun, a fold that is the whole silhouette: "Shell yeah." |
+
+Skins: Charred Pillow and Fishless Taco are full faces. Evil Taco has no row (the leafy snakes of its head run over its face). Pillow's and Taco's mouth patches are the colour between the body and the shaded band along its foot, because the painted mouth sits on the join.
+(This is the Taco of the first show; Taco (II) of the second was batch 9.) With this batch every fighter in the roster but Tree has a row in `FRAME_SRC`; the three secret prize fighters are not in the roster.
