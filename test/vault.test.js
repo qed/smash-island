@@ -209,9 +209,15 @@ describe('the Vault: the unlock model', () => {
     expect(w.eval('STARTERS')).toEqual(['Firey', 'Leafy', 'Pencil', 'Blocky', 'Ice Cube', 'Match', 'Pen']);
     expect(w.eval('isUnlocked(ROSTER.find(function(r){ return r.name==="Bubble"; }))')).toBe(false);
     w.eval('buildBoard()');
-    const cells = [...w.document.querySelectorAll('#board .cell')].filter((c) => !c.classList.contains('rostertoggle'));
-    expect(cells.map((c) => c.textContent).sort()).toEqual(['Blocky', 'Firey', 'Ice Cube', 'Leafy', 'Match', 'Pen', 'Pencil']);
-    expect(cells.filter((c) => c.classList.contains('locked')).length).toBe(0);
+    // (2026-10-07, "a full grid": the board shows everyone now, where it opened on the starters alone. Of the BFDI cast a fresh save can pick the same
+    // seven, and the rest are locked -- Bubble's cell among them, shut until her code.)
+    const cells = [...w.document.querySelectorAll('#board .cell')];
+    const base = new Set(w.eval('ROSTER.filter(function(r){ return !r.dlc; }).map(function(r){ return r.name; })'));
+    const open = cells.filter((c) => c.classList.contains('play') && base.has(c.textContent));
+    expect(open.map((c) => c.textContent).sort()).toEqual(['Blocky', 'Firey', 'Ice Cube', 'Leafy', 'Match', 'Pen', 'Pencil']);
+    expect(cells.length, 'everyone else is on the grid too').toBe(w.eval('ROSTER.length'));
+    expect(cells.filter((c) => base.has(c.textContent) && !c.classList.contains('play')).every((c) => c.classList.contains('locked')), 'and locked').toBe(true);
+    expect(cells.find((c) => c.textContent === 'Bubble').classList.contains('locked'), 'Bubble among them').toBe(true);
     // The default pick and How to Play's pick are both Firey, a starter.
     expect(w.eval('chosen.name')).toBe('Firey');
     expect(w.eval('isUnlocked(chosen)')).toBe(true);
