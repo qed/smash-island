@@ -591,3 +591,18 @@ one eye. Shades Sidewalky and Watch Profily have no row: the shades run into the
 Skins: Cake's features are white on dark chocolate, so its row gives the ink (`k`). Rockstar Lightbulb has white eyes in black makeup (`k`) and a black mouth on the pale glass below (`mk`, new: the mouth's own ink
 where it differs). Snorkel Bomb's eyes are dark teal arcs inside the dive mask (`k`), and the snorkel covers the mouth. Doughnut and Caked Cake show one eye. Blindfolded Taco has the mouth alone. Caked Cake's mouth patch
 starts under the red band and leaves the first dot of the painted smile, so that the band stays whole.
+
+### Batch 10: Bow, Marshmallow, Apple, Baseball, Pickle, Nickel (II)
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Bow** | `plain`, 1.1; twirls to win | A plain game face; a shout of joy to win | scraps of ribbon | A valley girl and a chair saleswoman, everything is a pose: "Coolness! Does it have cup holders?" |
+| **Marshmallow** | `gentle`, 1.3; hops to win | Wide eyes and a small round mouth; a grin to win | puffs of fluff | Puny and soft all through: "Softest, most flammable, and a winner!" |
+| **Apple** | `plain`, 1.0; hops to win | A plain game face; wide eyes and a round mouth to win | bits of leaf | Naive and childish, offended easily: "I won? Where's my pony?" |
+| **Baseball** | `gentle`, 0.9; hops to win | Wide eyes and a small round mouth; a grin to win | flecks of torn stitching | The team's moral compass, the largest of them and self-conscious about it: "We won! Nobody got thrown as ammo!" |
+| **Pickle** | `plain`, 1.0; hops to win | A plain game face; wide eyes and a grin to win | drops of brine | A laid-back boxer, sweet and dim: "Okay, let's do this! Oh, we did." |
+| **Nickel (II)** | `smug`, 0.6; sways to win | Half-lidded and smirking | silver glints | Sarcasm as an art: "Great. Now spell my name right." |
+
+Skins: Boxing Pickle's row is the one eye (the other is under the eyepatch) and no mouth, because the glove is in front of the grin and a patch would bite into it. Snazzy Nickel's is the mouth alone, the shades hide
+the eyes. Snotty Apple's right eye sits on the snot, so its fill is the green one (`c2`). Baseball and Chocolate Baseball keep their painted brows, as do Bow, Marshmallow, Apple and Nickel (II). The Nickel and
+Baseball patches are big and shiny bodies show them as flat plates (the accepted limitation); Baseball's mouth patch is wider than its painted mouth so that the sharp corner of the grin is inside it.
