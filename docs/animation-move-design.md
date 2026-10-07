@@ -422,7 +422,8 @@ go wide-eyed on the recoil and grin on the settle, on the same ticks as the base
 hook), and `FR_FACE` one row per *picture*: where the eyes, brows and mouth are, as fractions of the picture, the radii of the patch that covers the painted feature, and the fill under it.
 `scripts/measure-faces.mjs` proposes a row from a picture; every row in the game was checked by eye on the sheet it draws (`--sheet`): the anchors on the body, on painted ink.
 A row may also carry `mc` (the fill under the mouth, when the body is another tone there), `c2` (the fill under the second eye, when the body shades between the two), and two more
-numbers on `e` for the second eye's own radii (a flat closed eye beside an open one); a face with no eyes to find has no `e` (the effects go above its mouth). A fighter's row can
+numbers on `e` (and on `b`) for the second eye's (brow's) own radii (a flat closed eye beside an open one), `bc2` likewise for the second brow; a face with no eyes to find has no `e`
+(the effects go above its mouth). A fighter's row can
 also say what comes off them when they are hit or launched (`shed`: a dot, a leaf, a drop, a shard, a flake, a spark, smoke, rings, a feather, static; drawn, never a word).
 
 **Adding a fighter** is adding rows: a `FRAME_SRC` row, an `FR_FACE` row for their render (and one for each skin worn), and, if they have them, `over` extras in their `FIGHTER_ANIM` entry that
@@ -490,3 +491,17 @@ her mouth is under her own hand), so she keeps the face she has.
 
 Skins: Chef Tennis Ball, Gear Earrings Pencil, Purple Shoes Pencil and Tangerine Rocky are in profile, one eye; Glove Blocky's face is on the right of the picture, half behind the glove;
 Sleepy and Yoyle Metal Tennis Ball and Shades Blocky have eyes drawn as arcs, so their patches are taller than the arcs; Robo Coiny's mouth is the frown between his eyes.
+
+### Batch 3: Book, Fries, Gelatin, Nickel, Ruby, Yellow Face
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Book** | `gentle`, 1.0; hops to win | Wide eyes and a small round mouth; a happy grin to win | scraps of paper | Clever, caring and level-headed; her canon attack is closing on things |
+| **Fries** | `fierce`, 1.0; hops to win | Glare, grit and the anger mark on a wind-up | crumbs of fry | Proud and short-tempered; Puffball's best friend |
+| **Gelatin** | `gentle`, 1.4; twirls to win | Wide eyes and a small round mouth for everything | drops of jelly | Goofy, cheerful and never still: the most elastic body in the cast |
+| **Nickel** | `deadpan`, 0.7; smug sway to win | A flat face, a squint and a flat mouth; a smirk to win | sparks | Sarcastic and unimpressed; he would not put effort into it |
+| **Ruby** | `gentle`, 0.9; twirls to win | Eyes only: her painted smile stays (it is drawn over facets that a flat patch would smear) | red shards | Bubbly and a little ditzy, always smiling |
+| **Yellow Face** | `smug`, 1.3; hops to win | The same grin all through (smug), a shout on the hit | sparkles | The infomercial salesman, who oversells everything with the same grin |
+
+Skins: Snowy Ruby has no row (snow covers her eyes and half her mouth); Broken Fries, Square Hole Nickel and Bandaged Ruby are in profile, one eye; Book's two brows sit on a green half and a
+blue half, so the second has its own fill (`bc2`); Frozen Yellow Face's eyes are big U shapes, so their patches are large.
