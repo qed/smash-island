@@ -736,7 +736,9 @@ describe("the trainer's smoke run", () => {
       let st = JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
       expect(st.fighters.Firey.gen).toBe(1);
       expect(st.fighters.Pen.gen).toBe(1);
-      expect(st.fighters.Rocky.gen).toBe(0);                                    // not in this run
+      // not in this run: Rocky keeps the generation the game ships for him (0 until the trainer embedded his first playbook, 2026-10-07)
+      const shipped = /"Rocky": \{"gen":(\d+)/.exec(readFileSync('artifacts/V1/index.html', 'utf8'));
+      expect(st.fighters.Rocky.gen).toBe(shipped ? +shipped[1] : 0);
       expect(st.fighters.Pen.wr, "Pen had a playbook, so it was benchmarked against today's bot").not.toBeNull();
       expect(st.fighters.Pen.wrN).toBe(2);
       expect(st.fighters.Firey.matches).toBeGreaterThanOrEqual(4);              // the champion's two pairs and the candidate's
