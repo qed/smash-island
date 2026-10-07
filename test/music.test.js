@@ -616,7 +616,9 @@ describe('background music — playlists', () => {
     for (let i = 1; i < seen.length; i += 1) expect(seen[i]).not.toBe(seen[i - 1]);
   });
 
-  it('re-rolls the boss slot on every boss spawn, so a gauntlet cycles', async () => {
+  // The owner, 2026-10-07: "change the music so that it finishes a track before going to the next." A new boss used to cut the theme for a fresh one;
+  // now the theme playing finishes, and the gauntlet cycles at the END of each track.
+  it('lets the boss theme finish when the next boss spawns, then cycles to another when it ends', async () => {
     const { w, plays, gesture } = bootWithAudio();
     gesture(); await tick();
     load(w, 'boss', ['boss-a.mp3', 'boss-b.mp3']);
@@ -624,10 +626,15 @@ describe('background music — playlists', () => {
     await tick();
     const first = plays().at(-1);
     expect(first).toMatch(/^blob:/);
+    expect(w.eval('SND._decks[SND._deck].loop'), 'a playlist track plays to its end').toBe(false);
+    const n = plays().length;
     w.eval('spawnBossRushBoss()');                       // next boss in the gauntlet
     await tick();
+    expect(plays().length, 'the theme playing is not cut').toBe(n);
+    w.eval(`var d = SND._decks[SND._deck]; d.ended = true; d.paused = true; (d._on.ended || []).forEach(function(f){ f(); });`);                // ...and when it ends
+    await tick();
     expect(plays().at(-1)).toMatch(/^blob:/);
-    expect(plays().at(-1)).not.toBe(first);              // a different theme for the new boss
+    expect(plays().at(-1)).not.toBe(first);              // a different theme comes next
   });
 
   it('does not churn the track when the boss slot holds only one file', async () => {
@@ -763,33 +770,35 @@ describe('background music — the battle bed, with no shipped playlist', () => 
     expectOneBed(w, BATTLE);
   });
 
-  it("picks a new track from the player's own battle playlist when R restarts the match, as Rematch already did", async () => {
-    // R mid-fight restarts the match from the top, and a restart is a new match: a player's own multi-track battle
-    // playlist shuffles again (musicNewMatch). It used to keep the old track, because the battle bed was still
-    // playing and startMusic() read that as "already on this bed".
+  // The owner, 2026-10-07: "change the music so that it finishes a track before going to the next." R and Rematch used to roll a fresh track from the
+  // player's own battle playlist; now the song playing carries on through them, and the playlist moves on only when a track ends.
+  it("keeps the song playing when R restarts the match or Rematch starts another, and moves on when it ends", async () => {
     const { w, plays, gesture } = bootWithAudio();
     gesture(); await lands(plays, 'assets/music/menu.mp3');
     load(w, 'battle', ['a.mp3', 'b.mp3', 'c.mp3']);
     w.eval("SETTINGS.mode='ffa'; SETTINGS.stocks=3; startMatch()");
     await until(() => /^blob:/.test(plays().at(-1))); await tick(20);
-    const picks = [plays().at(-1)];
-    for (let i = 0; i < 4; i += 1) {
+    const song = plays().at(-1);
+    for (let i = 0; i < 3; i += 1) {
       const n = plays().length;
       pressR(w);
-      await until(() => plays().length > n && /^blob:/.test(plays().at(-1)));
       await tick(10);
       expect(w.eval('running'), 'R restarted the match').toBe(true);
-      picks.push(plays().at(-1));
-      expect(picks.at(-1), `restart ${i + 1} kept ${picks.at(-2)}`).not.toBe(picks.at(-2));
+      expect(plays().length, `restart ${i + 1} did not cut the song`).toBe(n);
       expect(w.eval('SND._kind')).toBe('battle');
-      expectOneBed(w, picks.at(-1));
+      expectOneBed(w, song);
     }
-    // Rematch from the result screen picks a new one too, as it already did.
-    w.eval('showResult([fighters[0]], fighters[0].team)');
+    // Rematch from the result screen picks the same song up where the result screen paused it.
+    w.eval('SND._decks[SND._deck].currentTime = 42; showResult([fighters[0]], fighters[0].team)');
     const n = plays().length;
     w.eval('startMatch()');
+    await tick(10);
+    expect(plays().at(-1), 'Rematch resumed the song').toBe(song);
+    expect(w.eval('SND._decks[SND._deck].currentTime'), '...from where it stopped').toBe(42);
+    // when the song ends, the next one from the playlist plays
+    w.eval(`var d = SND._decks[SND._deck]; d.ended = true; d.paused = true; (d._on.ended || []).forEach(function(f){ f(); });`);
     await until(() => plays().length > n && /^blob:/.test(plays().at(-1)));
-    expect(plays().at(-1)).not.toBe(picks.at(-1));
+    expect(plays().at(-1)).not.toBe(song);
     expectOneBed(w, plays().at(-1));
   }, 20000);   // four restarts and a result screen: past the 5 s default on a loaded machine
 
@@ -1588,7 +1597,8 @@ describe('background music — exactly one bed is ever audible', () => {
     await until(() => plays().at(-1).startsWith('blob:')); await tick(20);
     expectOneBed(w);
     const first = w.eval("SND._userPick['boss']");
-    w.eval('spawnBossRushBoss()');                    // forces a fresh pick mid-context
+    w.eval('spawnBossRushBoss()');                    // a new boss no longer cuts the track (the owner, 2026-10-07: "finishes a track before going to the next")...
+    w.eval(`var d = SND._decks[SND._deck]; d.ended = true; d.paused = true; (d._on.ended || []).forEach(function(f){ f(); });`);   // ...the track ending rolls the next
     await until(() => w.eval("SND._userPick['boss']") !== first); await tick(20);
     const b = expectOneBed(w);
     expect(b.decks[0]).toBe(w.eval("SND._userPick['boss']"));

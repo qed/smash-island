@@ -2290,6 +2290,7 @@ function musicDeck(i){
     // 404, decode failure, unsupported codec. This is the ordinary path for a custom/ slot the
     // owner has not filled, so it steps to the next source rather than giving up on the context.
     el.addEventListener('error', ()=>{ musicSourceFailed(i); });
+    el.addEventListener('ended', ()=>{ musicPlaylistNext(i); });   // a playlist track played to its end: the next one (musicPlaylistNext)
   }catch(e){ return null; }
   SND._decks[i] = el;
   return el;
@@ -2385,7 +2386,9 @@ function startMusicFile(kind){
     el.src = src;
     SND._deckSrc[next] = src;
     SND._deckKind[next] = kind;
-    el.loop = true;      // every bed loops: the player's own tracks, custom/ slots, the defaults
+    // A track from a playlist of two or more plays to its END and then the next one starts (musicPlaylistNext): THE OWNER, 2026-10-07, "change the
+    // music so that it finishes a track before going to the next." Every other bed loops as it always has: the defaults, custom/ slots, a one-track playlist.
+    el.loop = !musicPlaylistOf(kind, src);
     try{ el.currentTime = 0; }catch(e){}
     try{ el.volume = 0; }catch(e){}
     const p = el.play();
@@ -2422,6 +2425,7 @@ function musicSilenceDecks(){
 // The one entry point the game calls. Picks the recorded track when there is one, else the synth.
 function startMusic(kind){
   if(!musicAllowed()) return;
+  if(musicResumeHeld(kind)) return;   // the song the result screen paused, on the same bed: picked up where it stopped
   // Re-entering the same context (title -> select -> title) must not restart the track.
   if(kind===SND._kind && (musicPlaying() || SND._pendingKind===kind)) return;
   // NOT stopMusic() — that hard-pauses both decks, which would leave startMusicFile cross-fading
@@ -2630,9 +2634,46 @@ function musicRollIndex(n, last){
 // track of the player's own, or custom/battle.mp3, resolves to the file already playing and startMusicFile adopts
 // the live deck rather than restarting it. Boss Rush and the two secret fights keep their bed on R, so for them
 // this is plain startMusic.
+// FINISH THE TRACK. THE OWNER, 2026-10-07: "change the music so that it finishes a track before going to the next." A new match, a rematch (R) and a new
+// Boss Rush boss no longer cut the song that is playing to roll a fresh one: if the bed is already playing it carries on, and a playlist moves to its
+// next track only when a track ENDS (musicPlaylistNext). A change of bed (menu to match, a match into clutch time) still changes the music at once.
+// The context whose PLAYLIST the source `src` is (kind itself, or a context its chain falls back to), when that playlist has two or more tracks; else null.
+function musicPlaylistOf(kind, src){
+  for(const k of musicChainKinds(kind)){ const list = SND._userList[k]; if(list && list.length > 1 && SND._userPick[k] === src) return k; }
+  return null;
+}
+// The live deck's playlist track ended: roll that playlist's next track (never the same twice running) and cross to it, in the same bed.
+function musicPlaylistNext(i){
+  if(i !== SND._deck || !musicAllowed()) return;   // a deck already fading out, or music switched off
+  const kind = SND._deckKind[i] || SND._kind, k = kind && musicPlaylistOf(kind, SND._deckSrc[i]);
+  if(!k){ const el = SND._decks[i]; try{ el.currentTime = 0; el.play(); }catch(e){} return; }   // (a lone track loops; this is only a safety net)
+  musicRollUserTrack(k);
+  SND._kind = null; SND._keepPick = true;
+  try{ startMusic(kind); } finally { SND._keepPick = false; }
+}
+// The result screen stops the music for the win sting. So a rematch does not throw the song away ("finishes a track before going to the next"), the
+// result screen notes which song a MATCH bed was playing, and the next startMusic on that same bed resumes it from where it stopped. Any other bed
+// (the menus, a different mode) drops the note, and that bed starts as it always has.
+const MUSIC_HOLD_BEDS = { battle:1, boss:1, one:1, cobs:1, tourney:1 };
+function musicHoldForResult(){
+  SND._held = null;
+  const el = musicActiveEl();
+  if(el && !el.paused && MUSIC_HOLD_BEDS[SND._kind] && SND._deckSrc[SND._deck]) SND._held = { kind:SND._kind, deck:SND._deck, src:SND._deckSrc[SND._deck] };
+}
+function musicResumeHeld(kind){
+  const H = SND._held; if(!H) return false;
+  SND._held = null;
+  const el = SND._decks[H.deck];
+  if(H.kind !== kind || !el || SND._deckSrc[H.deck] !== H.src || !SND.gesture) return false;
+  stopSynthMusic(); SND._pendingKind = null;
+  SND._kind = kind; SND._deck = H.deck; SND._deckKind[H.deck] = kind;
+  try{ const p = el.play(); if(p && typeof p.catch === 'function') p.catch(()=>{}); }catch(e){ return false; }   // from where it stopped: currentTime is untouched
+  musicFileTookOver(kind);
+  musicFadeTo(H.deck, (MUSIC_VOLUME[kind]!=null) ? MUSIC_VOLUME[kind] : 0.32);
+  return true;
+}
 function musicNewMatch(kind){
-  if(kind==='battle' && SND._kind===kind && musicAllowed()) SND._kind = null;
-  startMusic(kind);
+  startMusic(kind);   // the same bed already playing carries on (startMusic no-ops); a different bed starts with a fresh pick
 }
 // Force a fresh pick mid-context. Boss Rush calls this on every boss spawn so a gauntlet walks
 // through the owner's boss/miniboss themes instead of looping one of them all run.
@@ -2642,6 +2683,7 @@ function musicNewMatch(kind){
 function musicRerollContext(kind){
   const list = SND._userList[kind];
   if(!list || list.length<2) return;
+  if(SND._kind===kind && musicPlaying()) return;   // the track playing finishes first; the playlist moves on when it ends (musicPlaylistNext)
   const before = SND._userPick[kind];
   musicRollUserTrack(kind);
   if(SND._kind===kind && SND._userPick[kind]!==before){
@@ -2759,6 +2801,9 @@ function clutchReset(){ CLUTCH.on=false; CLUTCH.ticks=0; }
 function clutchTick(){
   if(typeof running==='undefined' || !running){ clutchReset(); return; }
   const base = clutchBaseKind();
+  // NO CLUTCH IN A BOSS FIGHT. THE OWNER, 2026-10-07: "clutch plays during bossfights. I set one's music to joker, and it changed mid-fight 5 times!"
+  // One's, Steve Cobs's and Boss Rush's beds play straight through; clutch time is for ordinary matches only.
+  if(base !== 'battle'){ clutchReset(); return; }
   // Only ever fight over the match bed. If the menu or hub owns the music right now, stand down.
   if(SND._kind!==base && SND._kind!=='intense'){ clutchReset(); return; }
   if(CLUTCH.on){
@@ -33054,7 +33099,7 @@ async function hydrateRival(){
 }
 
 function showResult(winners, winTeam){
-  stopMusic(); SFX.win();
+  musicHoldForResult(); stopMusic(); SFX.win();   // (the song is paused, not dropped: the next match on the same bed picks it up -- musicHoldForResult)
   document.getElementById('hud').classList.remove('active');
   try{ stopReplay(); }catch(e){}   // last match's replay, and its frame references, go now
   const rr=document.getElementById('runReview'); if(rr) rr.innerHTML='';
