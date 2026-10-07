@@ -606,3 +606,18 @@ starts under the red band and leaves the first dot of the painted smile, so that
 Skins: Boxing Pickle's row is the one eye (the other is under the eyepatch) and no mouth, because the glove is in front of the grin and a patch would bite into it. Snazzy Nickel's is the mouth alone, the shades hide
 the eyes. Snotty Apple's right eye sits on the snot, so its fill is the green one (`c2`). Baseball and Chocolate Baseball keep their painted brows, as do Bow, Marshmallow, Apple and Nickel (II). The Nickel and
 Baseball patches are big and shiny bodies show them as flat plates (the accepted limitation); Baseball's mouth patch is wider than its painted mouth so that the sharp corner of the grin is inside it.
+
+### Batch 11: Paper, Microphone, Salt, Test Tube, Trophy, Bonesaw
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Paper** | `gentle`, 1.3; hops to win | Wide eyes and a small round mouth; a grin to win | scraps of paper | Wary and jumpy, a sheet that folds and flaps: "Somebody check for pianos." |
+| **Microphone** | `fierce`, 1.0; hops to win | Glare, grit and the anger mark on a wind-up; a shout of joy to win | rings of sound | Her voice gets deafeningly loud: "I WON! And I'M NOT THAT LOUD!!!" |
+| **Salt** | `smug`, 1.0; sways to win | Half-lidded and smirking | grains of salt | Vapid, a little vain, half of a pair: "Peps, that's us! Recognition!" |
+| **Test Tube** | `smug`, 0.8; sways to win | Half-lidded and smirking | drops of liquid | A scientist who works it out first: "Science rules! Hypothesis confirmed." |
+| **Trophy** | `smug`, 0.7; sways, chin up, to win | Half-lidded and smirking | gold flecks | Proud, and sore about a loss: "No cardboard box beats me twice." |
+| **Bonesaw** | `plain`, 0.6; hops to win | A plain game face; a grin to win | flakes of rust | Grateful and plain-spoken in the third person: "Bonesaw win! Bonesaw finally useful!" |
+
+Skins: Rockstar Paper, Blindfolded Microphone, Face Mask Salt and Blindfolded Trophy have the mouth alone, because the eyes are under makeup (the left one plain, the right one white in black paint, which would need two inks), a blindfold or cucumber slices.
+Lab-Coat Test Tube shows one eye. Blindfolded Bonesaw has no row: its mouth and the dark bars that run across it are one shape. Test Tube's body is banded light and dark, so its mouth patch is the colour between them; the textured bodies
+(Microphone's mesh, Paper's ruled lines, Bonesaw's rusty blade) show a patch as a flat plate, the accepted limitation.

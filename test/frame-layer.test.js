@@ -18,7 +18,8 @@ const FIGHTERS = ['Firey', 'Leafy', 'Bubble', 'Pen', 'Knife', 'Balloon', 'Tapey'
   'Toothpaste', 'Dora', 'Match', 'David', 'Firey Jr.', 'Fern',
   'Ruler', 'Sidewalky', 'Balloony', 'Roboty', 'Profily', 'Ice Cube',
   'Cake', 'Donut', 'Bomb', 'Lightbulb', 'Paintbrush', 'Taco (II)',
-  'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)'];
+  'Bow', 'Marshmallow', 'Apple', 'Baseball', 'Pickle', 'Nickel (II)',
+  'Paper', 'Microphone', 'Salt', 'Test Tube', 'Trophy', 'Bonesaw'];
 const OFF = (src) => { expect(src, 'the switch is where the test expects it').toContain('const FRAME_ON = true;'); return src.replace('const FRAME_ON = true;', 'const FRAME_ON = false;'); };
 // every picture "decoded" (a stand-in with a size), so drawFighter runs the layer's passes instead of the vector fallback
 const FAKE = `window.__fake = function(sp){ sp._req = true; sp.img = { complete:true, naturalWidth:150, naturalHeight:200 }; }; true`;
