@@ -229,7 +229,7 @@ describe('Fan: You Leave Us Alone!, Nice Save! and Fan Theory', () => {
 });
 
 describe('Soap: Secret Ingredient, Clean Sweep, and the mess she cleans', () => {
-  it('the spray scrubs armour and counters off a foe before it lands, and cleans her own ailments', () => {
+  it('the spray scrubs armour and counters off a foe before it lands (paused: see below), and cleans her own ailments', () => {
     const r = arena('Soap', `D.armor = 30; D.countering = 30; A.burn = 90; A._poisonT = 90; A.slowed = 90; A.weakened = 90;
       fireSpecial(A, {}); return { armor: D.armor, counter: D.countering, hit: D.pct - 30, me: [A.burn, A._poisonT, A.slowed, A.weakened], mePct: A.pct };`);
     expect(r.armor).toBe(0);
@@ -237,6 +237,30 @@ describe('Soap: Secret Ingredient, Clean Sweep, and the mess she cleans', () => 
     expect(r.hit).toBeCloseTo(6, 0);
     expect(r.me).toEqual([0, 0, 0, 0]);
     expect(r.mePct, 'the counter could not answer it').toBe(30);
+  });
+
+  // The owner, 2026-10-07: "soap feels like old needle ... literally just spamming counter" -- buff fighters' setups were erased every 50 frames.
+  // Asked: a 2 s recharge, "Pause, don't erase", and a bot that sprays only with something to pause or clean, and throws only when it pays.
+  it("what the spray scrubs is PAUSED, not erased: 1.5 s off, then back with the time it had left; and it recharges in about 2 s", () => {
+    const r = arena('Soap', `D.armor = 30; D.countering = 30; fireSpecial(A, {}); var off = [D.armor, D.countering], cd = A.spCd;
+      run(SCRUB_PAUSE - 2); var still = [D.armor, D.countering]; run(4); return { off: off, still: still, back: [D.armor, D.countering], cd: cd };`);
+    expect(r.off, 'switched off by the spray').toEqual([0, 0]);
+    expect(r.still, 'still off just before the pause ends').toEqual([0, 0]);
+    expect(r.back[0], 'the armour came back').toBeGreaterThan(20);
+    expect(r.back[1], 'the counter came back').toBeGreaterThan(20);
+    expect(r.cd, 'it was 50 frames').toBeGreaterThan(80);
+  });
+
+  it("her bot sprays only with something to pause or an ailment to clean, and throws only into someone or toward the edge", () => {
+    const r = arena('Soap', `var bare = aiSoapSprayPays(A); D.countering = 30; var stance = aiSoapSprayPays(A); D.countering = 0;
+      A.burn = 60; var sick = aiSoapSprayPays(A); A.burn = 0;
+      E.x = 2000; D.pct = 0; var lone = aiSoapThrowPays(A); E.x = 520; var into = aiSoapThrowPays(A);
+      return { bare: bare, stance: stance, sick: sick, lone: lone, into: into };`);
+    expect(r.bare, 'nothing to pause, nothing to clean: no spray').toBe(false);
+    expect(r.stance, 'a counter up in front of her').toBe(true);
+    expect(r.sick, 'a burn of her own').toBe(true);
+    expect(r.lone, 'a fresh foe alone in the middle: no throw').toBe(false);
+    expect(r.into, 'someone to throw them into').toBe(true);
   });
 
   it('Clean Sweep draws one foe in from afar, then blows them away', () => {
