@@ -519,3 +519,17 @@ blue half, so the second has its own fill (`bc2`); Frozen Yellow Face's eyes are
 
 Skins: Zombie Barf Bag's eyes are white with dark rims, so they are patched green and drawn with whites and pupils; Yoyle Metal Barf Bag and Purple Bracelety are in profile, one eye; Gaty's eyes
 in her render are an eyebrow and an eye joined, so one patch covers each pair; Basketball keeps her painted brows (the left one is on the very edge of the ball).
+
+### Batch 5: Grassy, Lightning, Liy, Lollipop, Marker, Money
+
+| Fighter | Temperament, and how elastic | The face through the moments | Comes off them | Grounding |
+|---|---|---|---|---|
+| **Grassy** | `plain`, 1.0; hops to win | A plain game face (squint and grit on a wind-up, a shout on the hit); a smug grin to win | blades of grass | Defiant, a patch of grass that has been stepped on once too often: "Nobody steps on me." |
+| **Lightning** | `plain`, 0.9; hops to win | A plain game face; a grin to win | sparks | Quick and quippy: no wind-up, already there. "Shocking result." |
+| **Liy** | `plain`, 1.0; calm sway to win | A plain game face; a smirk to win | sparks | Dry, a light switch whose kit is a grapple: "Lights out." |
+| **Lollipop** | `smug`, 0.8; sways, chin up, to win | Half-lidded and smirking; a glare and a shout on the hit | bits of candy | Glass-hard and haughty: "Was that supposed to be difficult?" |
+| **Marker** | `deadpan`, 0.7; sways to win | A flat face and a squint; `> <` when hit | drops of purple ink | Deadpan, a hard plastic barrel whose nib is the business end: "Permanent record." |
+| **Money** | `smug`, 1.3; twirls to win | Smug through every moment; a shout on the hit | scraps of green paper | Rich and pleased about it, paper with no rigidity: "Oh, my tree! Wins don't grow on trees." |
+
+Skins: Sunglasses Lightning's eyes are behind the shades, so that row is a mouth alone; Uncapped Marker and Burnt Marker show one eye; Lollipop and Uncapped Marker keep their painted brows (a patch
+on Lollipop's left brow would paint outside the ball); Scribbled Lollipop is scribbled over in blue ink, which the patches leave alone where they do not reach.
