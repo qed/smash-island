@@ -576,7 +576,7 @@ describe('Boss Rush, round 2: the fighter-vs-fighter numbers of the rerouted mov
     ['Bomby','xc',18,18,0],['Teardrop','xc',18,18,0],['Flower','special',14,14,14],['Flower','down',5,5,0],['Coiny','special',9,0,0],['Yellow Face','special',7,7,0],['Bell','special',6,6,0],['Gaty','special',5,0,0],
     ['Marker','special',9,9,0],['Rose','special',7,7,7],['TV','special',7,7,0],['Dora','special',15,15,0],['David','special',11,10,7],['Fern','special',8,8,0],['Sidewalky','special',10,0,0],['Balloony','special',10,10,0],
     ['Marshmallow','special',8,8,8],['Marshmallow','down',9,9,0],['Nickel (II)','special',7.95,7.95,7.95],['Goo','special',8,8,0],['Candle','special',9,9,9],['Cammy','special',0,0,4],['Cammy','down',5,5,0],
-    ['Blueberry','special',10,10,0],['Cherries','special',4,4,0],['Magnet','special',3,3,3],['Liy','special',54,66,60],['Taco (II)','down',6,6,6],['Apple','down',6,6,0],['Salt','down',7,7,0],['Spikey','down',8,8,0],
+    ['Blueberry','special',10,10,0],['Cherries','special',4,4,0],['Magnet','special',9,9,9],['Liy','special',54,66,60],['Taco (II)','down',6,6,6],['Apple','down',6,6,0],['Salt','down',7,7,0],['Spikey','down',8,8,0],
     ['Soap','down',9,0,0],['Tissues','down',8,8,0],['Tea Kettle','down',8,0,0],['Nickel','special',12,12,12]];
   const M = { special: 'fireSpecial(A, {})', up: 'fireSpecial(A, {up:true})', down: 'fireSpecial(A, {down:true})', smash: 'doSmash(A)', xc: 'doAttackSpecial(A)' };
   const FFA = (name, move, dx) => `(function(){

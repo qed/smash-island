@@ -11,14 +11,15 @@ const NAMES = ['Magnet', 'MeTag', 'Poppy', 'Silver Spoon'];
 const KEYS = { Magnet: 'bestie', MeTag: 'barrier', Poppy: 'vacuum', 'Silver Spoon': 'glowgold' };
 const HTML = readFileSync('artifacts/V1/index.html', 'utf8');
 let W;
-beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+let CW;
+beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); CW = W.eval('CIRCLE_WINDUP'); });
 
 // A at 400 facing right, Pen at foeX, both on the floor, nothing else on the stage.
-const arena = (name, body, foeX = 460) => W.eval(`(function(){
+const arena = (name, body, foeX = 460, foe = 'Pen') => W.eval(`(function(){
   SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true; window.__lastBanner=null;
   worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
   var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(name)}; }), 400, groundY()-24, 0);
-  var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), ${foeX}, groundY()-24, 1);
+  var D = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(foe)}; }), ${foeX}, groundY()-24, 1);
   A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
   fighters=[A,D]; step();
   [A,D].forEach(function(f){ f.invuln=0; f.pct=30; f.hitstun=0; f.spCd=0; f.atkCd=0; f.armor=0; f.smCd=0; });
@@ -118,15 +119,35 @@ describe('every input runs, lands what its card says, and puts no word on the sc
   }
 });
 
-describe("Magnet: personality pulls (Q11), no literal magnetism", () => {
-  it("C'mon, Bestie! hauls the nearest foe in front to her side and slows them for 4 seconds", () => {
-    const r = arena('Magnet', `var d0 = D.x - A.x; fireSpecial(A, {}); var d1 = D.x - A.x; return { d0: d0, d1: d1, slowed: D.slowed, hit: D.pct - 30, cd: A.spCd };`, 510);
-    expect(r.hit).toBe(3);
-    expect(r.d1).toBeLessThan(r.d0 * 0.7);
-    expect(r.slowed).toBeGreaterThanOrEqual(230);
-    expect(r.cd, 'one bestie at a time: the cooldown outlasts the slow').toBeGreaterThan(240);
-    const behind = arena('Magnet', `A.face = -1; fireSpecial(A, {}); return D.pct - 30;`, 510);
-    expect(behind, 'only a foe in front').toBe(0);
+describe("Magnet: Polarity (attract, repel and metal; 2026-10-07)", () => {
+  // "give metag and magnet new kits." The owner's reading is now physical magnetism (it was "personality pulls, no literal magnetism", Q11): C attracts and
+  // hits, down repels, and metal fighters are pulled and pushed further. The old bestie haul (a 3% tap and a 4 s slow) and the brake (no hit) were promises the
+  // owner replaced; each test below is restated to its new promise.
+  it("C'mon, Bestie! pulls the nearest foe in front toward her over about 16 frames and hits them as they arrive (9%, a real launch); only a foe in front, in reach", () => {
+    const r = arena('Magnet', `var d0 = D.x - A.x; fireSpecial(A, {}); for (var i=0;i<8;i++){ step(); D.dead=false; } var mid = D.x - A.x, early = D.pct - 30;
+      var vx = 0; for (var i=0;i<14;i++){ step(); D.dead=false; if (!vx && D.pct > 30) vx = D.vx; } return { d0: d0, mid: mid, early: early, hit: D.pct - 30, vx: vx, cd: A.spCd };`, 600);
+    expect(r.mid, 'drawn in over the first half').toBeLessThan(r.d0*0.75);
+    expect(r.early, 'no hit until they arrive').toBe(0);
+    expect(r.hit).toBe(9);
+    expect(r.vx, 'launched away from her').toBeGreaterThan(6);
+    expect(r.cd, 'one pull at a time').toBeGreaterThan(60);
+    expect(arena('Magnet', `A.face = -1; fireSpecial(A, {}); ${run(30)} return D.pct - 30;`, 600), 'only a foe in front').toBe(0);
+    expect(arena('Magnet', `fireSpecial(A, {}); ${run(30)} return { hit: D.pct - 30, moved: D.x };`, 740), 'a plain foe 340 px away is out of reach').toEqual({ hit: 0, moved: 740 });
+  });
+
+  it('metal fighters are pulled from further (x1.4): Knife 320 px away is drawn in and hit, a Pen at the same distance is not', () => {
+    const k = arena('Magnet', `fireSpecial(A, {}); ${run(30)} return { hit: D.pct - 30 };`, 720, 'Knife');
+    const p = arena('Magnet', `fireSpecial(A, {}); ${run(30)} return { hit: D.pct - 30 };`, 720, 'Pen');
+    expect(k.hit).toBe(9);
+    expect(p.hit).toBe(0);
+    const set = W.eval(`['Knife','Silver Spoon','Nickel','Nickel (II)','Coiny','Needle','Saw','Bonesaw','Bell','Trophy','Bot','Roboty','Naily'].every(function(n){ return METAL_FIGHTERS.has(n); }) && !METAL_FIGHTERS.has('Pin') && !METAL_FIGHTERS.has('Tea Kettle') && !METAL_FIGHTERS.has('Pen')`);
+    expect(set, 'canon-metal objects only (Pin is a plastic pushpin, Tea Kettle a white teapot on the wiki)').toBe(true);
+  });
+
+  it('a hit on her ends the pull, and a hit on the foe does too', () => {
+    const r = arena('Magnet', `fireSpecial(A, {}); for (var i=0;i<3;i++){ step(); D.dead=false; } applyHit(A, 4, 0, 0, D); var x0 = D.x; ${run(20)} return { pull: !!A._attract, dx: Math.abs(D.x - x0), hit: D.pct - 30 };`, 600);
+    expect(r.pull).toBe(false);
+    expect(r.hit).toBe(0);
   });
 
   it('By Popular Demand pulls a foe from well away, then stuns', () => {
@@ -136,11 +157,21 @@ describe("Magnet: personality pulls (Q11), no literal magnetism", () => {
     expect(r.stun).toBe(true);
   });
 
-  it('Another Brake stops her dead, launch and all, and slows whoever touches her', () => {
-    const r = arena('Magnet', `A.vx = 14; A.vy = -9; A.onground = false; fireSpecial(A, {down:true}); return { vx: A.vx, vy: A.vy, slowed: D.slowed, hit: D.pct - 30 };`, 425);
-    expect([r.vx, r.vy]).toEqual([0, 0]);
-    expect(r.slowed).toBeGreaterThan(0);
-    expect(r.hit).toBe(0);
+  it('Like Poles Repel: after the short wind-up a blast shoves a foe beside her away hard for 7%; a hit on her first cancels it; a foe out of the ring is untouched; metal is caught from further', () => {
+    const r = arena('Magnet', `fireSpecial(A, {down:true}); var early = D.pct - 30, hitAt = -1, vx = 0; for (var i=0;i<20;i++){ step(); D.dead=false; if (hitAt < 0 && D.pct > 30){ hitAt = i; vx = D.vx; } } return { early: early, hitAt: hitAt, vx: vx, hit: D.pct - 30, cd: A.spCd };`, 450);
+    expect(r.early, 'a wind-up first').toBe(0);
+    expect(r.hitAt).toBeGreaterThanOrEqual(CW - 2);
+    expect(r.hit).toBe(7);
+    expect(r.vx, 'away from her, hard').toBeGreaterThan(8);
+    expect(r.cd).toBeGreaterThan(60);
+    const cancelled = arena('Magnet', `fireSpecial(A, {down:true}); step(); applyHit(A, 5, 0, 0, D); ${run(20)} return D.pct - 30;`, 450);
+    expect(cancelled).toBe(0);
+    const far = arena('Magnet', `fireSpecial(A, {down:true}); ${run(20)} return D.pct - 30;`, 700);
+    expect(far).toBe(0);
+    const metal = arena('Magnet', `fireSpecial(A, {down:true}); ${run(20)} return D.pct - 30;`, 540, 'Knife');
+    const plain = arena('Magnet', `fireSpecial(A, {down:true}); ${run(20)} return D.pct - 30;`, 540, 'Pen');
+    expect(metal, 'Knife at 140 px is in the blast').toBe(7);
+    expect(plain, 'Pen at 140 px is not').toBe(0);
   });
 
   it('Climbing Gear climbs and hauls up whoever is beside her', () => {
