@@ -150,47 +150,92 @@ describe("Magnet: personality pulls (Q11), no literal magnetism", () => {
   });
 });
 
-describe('MeTag: the barrier, the tracking and the arrest', () => {
-  it('Barrier Generation stands a pane ahead that eats enemy shots, and bumps back a foe who walks in; one wall at a time', () => {
-    const r = arena('MeTag', `
-      fireSpecial(A, {});
-      var wall = projectiles.filter(function(p){ return p._metagWall; }), wx = wall[0].x;
-      var shot = addProj({owner:D.idx, ownerObj:D, x:wx + 120, y:A.y, vx:-10, vy:0, grav:false, dmg:9, kb:6, r:8, color:'#f00', life:60});
-      ${run(20)}
-      var blocked = shot.life <= 0 && A.pct === 30;
-      D.x = wx + 30; D.vx = -6; var dx0 = D.x; ${run(4)}
-      var bumped = D.x > wx;
-      A.spCd = 0; fireSpecial(A, {});
-      return { n: wall.length, turrets: wall.filter(function(p){ return p.turret; }).length, ahead: wx - A.x, blocked: blocked, bumped: bumped,
-               after: projectiles.filter(function(p){ return p._metagWall; }).length, hit: D.pct - 30, life: wall[0].life };`, 700);
+describe('MeTag: the cuff, the mark and the crushing wall (Enforcer, 2026-10-07)', () => {
+  // "give metag and magnet new kits." The wall special, the wall-only tracking and the wall-smash's root were 0%-damage promises the owner replaced:
+  // C is a cuffing dash, down marks a foe for +30%, and the wall moved to the smash and crushes. Each old test below is restated to its new promise.
+  it('Cuffing Dash: about 120 px, cuffs the first foe it touches (6%, rooted about 36 frames, stunned); a foe out of reach is missed', () => {
+    const r = arena('MeTag', `fireSpecial(A, {}); ${run(12)} return { hit: D.pct - 30, rooted: D.rooted, cuff: !!D._mtCuff, dashing: A._dashing, cd: A.spCd, dx: D.x - A.x };`, 520);
+    expect(r.hit).toBe(6);
+    expect(r.cuff).toBe(true);
+    expect(r.rooted).toBeGreaterThan(20);
+    expect(r.dashing, 'the dash ends on the foe').toBe(0);
+    expect(r.cd, 'a decision: about 60-80 frames').toBeGreaterThan(40);
+    const held = arena('MeTag', `fireSpecial(A, {}); var n = 0; for (var i=0;i<80;i++){ step(); if (D.rooted > 0) n++; } return n;`, 520);
+    expect(held).toBeGreaterThanOrEqual(30); expect(held).toBeLessThanOrEqual(40);
+    const far = arena('MeTag', `fireSpecial(A, {}); ${run(20)} return { hit: D.pct - 30, cuff: !!D._mtCuff };`, 760);
+    expect(far).toEqual({ hit: 0, cuff: false });
+  });
+
+  it('the cuff can be mashed off a little sooner (a new press takes 4 frames, after the first 12 which always hold); a counter stance answers it', () => {
+    const r = arena('MeTag', `fireSpecial(A, {}); ${run(8)} var r0 = D.rooted; D._lastInput = {attack:false}; metagCuffStep(D); var held = D.rooted;
+      D._mtCuff.t0 -= 30; D._lastInput = {attack:true}; metagCuffStep(D); var after = D.rooted; D._lastInput = {attack:true}; metagCuffStep(D);   // the same press held: no more
+      return { r0: r0, held: held, after: after, still: D.rooted };`, 500);
+    expect(r.held).toBe(r.r0);
+    expect(r.after).toBe(r.r0 - 4);
+    expect(r.still, 'a held button is one press').toBe(r.after);
+    const early = arena('MeTag', `fireSpecial(A, {}); ${run(8)} var r0 = D.rooted; D._lastInput = {attack:false}; metagCuffStep(D); D._lastInput = {attack:true}; metagCuffStep(D); return D.rooted - r0;`, 500);
+    expect(early, 'mashing in the first beat frees nobody').toBe(0);
+    const ans = arena('MeTag', `D.countering = 40; fireSpecial(A, {}); ${run(12)} return { cuff: !!D._mtCuff, rooted: D.rooted, took: A.pct - 30 };`, 520);
+    expect(ans.cuff).toBe(false);
+    expect(ans.took, 'the counter hits back').toBeGreaterThan(0);
+  });
+
+  it('Precision Finding locks the nearest foe for 5 seconds and every MeTag hit on them lands 30% harder; tracking another foe moves the mark', () => {
+    const r = arena('MeTag', `var p0 = D.pct; doAttack(A); var plain = D.pct - p0;
+      ${run(40)} D.pct = 30; D.invuln = 0; D.hitstun = 0; A.atkCd = 0; fireSpecial(A, {down:true}); var tr = A._g6track; A.atkCd = 0; var p1 = D.pct; D.x = A.x + 40; doAttack(A);
+      return { idx: tr && tr.idx, D: D.idx, plain: plain, marked: D.pct - p1, hit: 0, left: tr && (tr.until - hazardT) };`, 440);
+    expect(r.idx).toBe(r.D);
+    expect(r.left).toBeGreaterThan(280);
+    expect(r.marked / r.plain, 'the jab on the marked foe').toBeGreaterThan(1.25);
+    expect(r.marked / r.plain).toBeLessThan(1.35);
+    const lapse = arena('MeTag', `fireSpecial(A, {down:true}); ${run(310)} D.pct = 30; D.invuln = 0; D.hitstun = 0; D.x = A.x + 40; A.atkCd = 0; doAttack(A); return { tracked: metagTracked(A) && metagTracked(A).idx, jab: D.pct - 30 };`, 480);
+    expect(lapse.tracked, 'the lock runs out').toBeFalsy();
+    expect(lapse.jab).toBeLessThan(8);
+    const mark = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=3; SETTINGS.items=false; running=true; worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var A = makeFighter(ROSTER.find(function(r){ return r.name==='MeTag'; }), 400, groundY()-24, 0), B = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 500, groundY()-24, 1), C = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 160, groundY()-24, 2);
+      A.team=0; B.team=1; C.team=2; [A,B,C].forEach(function(f){ f.controller='still'; f.stocks=9; }); A.face=1; fighters=[A,B,C]; step(); A.spCd = 0;
+      fireSpecial(A, {down:true}); var first = A._g6track.idx; A.x = 220; A.spCd = 0; fireSpecial(A, {down:true});
+      return { first: first, second: A._g6track.idx, B: B.idx, C: C.idx }; })()`);
+    expect(mark.first).toBe(mark.B);
+    expect(mark.second, 'a new foe moves the mark').toBe(mark.C);
+  });
+
+  it('Under Arrest (the smash) hits and puts the wall up BEHIND the foe: six pieces, three turret bodies and three bumpers, one wall at a time, gone after 2.5 seconds', () => {
+    const r = arena('MeTag', `doSmash(A); var hit = D.pct - 30, wall = projectiles.filter(function(p){ return p._metagWall; });
+      var out = { hit: hit, n: wall.length, turrets: wall.filter(function(p){ return p.turret; }).length, behind: wall[0] && (wall[0].x - D.x), life: wall[0] && wall[0].life };
+      metagWall(A, 600, groundY()); metagWall(A, 640, groundY()); out.again = projectiles.filter(function(p){ return p._metagWall; }).length; return out;`, 450);
+    expect(r.hit, 'the swing lands: 10 x 1.5').toBeGreaterThan(12);
     expect(r.n).toBe(6);
     expect(r.turrets).toBe(3);
-    expect(r.ahead).toBeGreaterThan(30);
+    expect(r.behind, 'on the far side of the foe, away from MeTag').toBeGreaterThan(40);
+    expect(r.again, 'a new wall replaces the old, never two').toBe(6);
+    const gone = arena('MeTag', `metagWall(A, 600, groundY()); ${run(160)} return projectiles.filter(function(p){ return p._metagWall && p.life > 0; }).length;`, 900);
+    expect(gone).toBe(0);
+  });
+
+  it('the wall eats enemy shots and bumps a foe who walks in for nothing, but CRUSHES one launched into it (8%) and bounces them off', () => {
+    const r = arena('MeTag', `
+      metagWall(A, 520, groundY());
+      var shot = addProj({owner:D.idx, ownerObj:D, x:700, y:A.y, vx:-10, vy:0, grav:false, dmg:9, kb:6, r:8, color:'#f00', life:60});
+      ${run(25)}
+      var blocked = shot.life <= 0 && A.pct === 30;
+      D.x = 560; D.vx = -4; D.invuln = 0; D.hitstun = 0; D.pct = 30; ${run(6)}
+      var bumped = D.x > 520, walkDmg = D.pct - 30;
+      D.x = 470; D.vx = 11; D.vy = -2; D.hitstun = 12; D.invuln = 15; D.pct = 30; D._mtCrushT = null; var vx0 = D.vx; ${run(6)}
+      return { blocked: blocked, bumped: bumped, walkDmg: walkDmg, crush: D.pct - 30, bounced: D.vx < 0 || D.x < 500 };`, 700);
     expect(r.blocked, 'an enemy shot stops dead at the pane').toBe(true);
     expect(r.bumped, 'a foe walking in is pushed back').toBe(true);
-    expect(r.after, 'pressing again moves the wall, never two').toBe(6);
-    expect(r.hit).toBe(0);
+    expect(r.walkDmg, 'and takes nothing for it').toBe(0);
+    expect(r.crush, 'launched into it, through the grace of the hit that launched them').toBeGreaterThanOrEqual(8);
+    expect(r.crush).toBeLessThan(9);
+    expect(r.bounced).toBe(true);
   });
 
-  it('the wall goes after 2.5 seconds', () => {
-    const r = arena('MeTag', `fireSpecial(A, {}); ${run(160)} return projectiles.filter(function(p){ return p._metagWall && p.life > 0; }).length;`, 900);
-    expect(r).toBe(0);
-  });
-
-  it('Precision Finding locks the nearest foe, and the next wall goes up in front of them', () => {
-    const r = arena('MeTag', `fireSpecial(A, {down:true}); var tr = A._g6track; A.spCd = 0; fireSpecial(A, {});
-      var wall = projectiles.filter(function(p){ return p._metagWall; });
-      return { idx: tr && tr.idx, D: D.idx, wx: wall[0].x, dx: D.x, hit: D.pct - 30 };`, 760);
-    expect(r.idx).toBe(r.D);
-    expect(Math.abs(r.wx - r.dx)).toBeLessThan(60);
-    expect(r.wx, 'on the side facing MeTag').toBeLessThan(r.dx);
-    expect(r.hit).toBe(0);
-  });
-
-  it('Under Arrest holds whoever it catches (a root, low knockback); Barrier Step rises and hits nobody', () => {
-    const r = arena('MeTag', `doSmash(A); ${run(8)} return { rooted: D.rooted, hit: D.pct - 30 };`, 470);
-    expect(r.hit).toBeGreaterThan(8);
-    expect(r.rooted).toBeGreaterThan(40);
+  it('Under Arrest launches (no root any more) and drives the foe into its own wall for the crush; Barrier Step rises and hits nobody', () => {
+    const r = arena('MeTag', `doSmash(A); ${run(30)} return { rooted: D.rooted, hit: D.pct - 30 };`, 470);
+    expect(r.hit, 'the swing and the crush').toBeGreaterThan(20);
+    expect(r.rooted).toBe(0);
     const u = arena('MeTag', `var y0 = A.y; fireSpecial(A, {up:true}); ${run(6)} return { rose: y0 - A.y, hit: D.pct - 30 };`, 440);
     expect(u.rose).toBeGreaterThan(20);
     expect(u.hit).toBe(0);
