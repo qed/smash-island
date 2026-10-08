@@ -530,7 +530,7 @@ describe('Boss Rush, round 2: every move whose card promises a hit reaches the b
     ['Marker', 'special'], ['TV', 'special'], ['Dora', 'special'], ['David', 'special'], ['Fern', 'special'], ['Sidewalky', 'special'],
     ['Balloony', 'special'], ['Marshmallow', 'special'], ['Marshmallow', 'down'], ['Nickel (II)', 'special'], ['Cammy', 'special'],
     ['Cammy', 'down'], ['Blueberry', 'special'], ['Apple', 'down'], ['Salt', 'down'], ['Tissues', 'down'],              // damageSummons beside the fighter loop
-    ['Rose', 'special'], ['Taco (II)', 'down'], ['Magnet', 'special'], ['Liy', 'special'], ['Goo', 'special'], ['Candle', 'special'],
+    ['Rose', 'special'], ['Taco (II)', 'down'], ['Magnet', 'special'], ['MeTag', 'special'], ['Liy', 'special'], ['Goo', 'special'], ['Candle', 'special'],
     ['Spikey', 'down'], ['Tea Kettle', 'down'], ['Soap', 'down'],                                                       // one target: nearestSummon + damageSummon
     ['Cherries', 'special'],                                                                                            // the oil's owner:-1 read as summon-owned
   ];
