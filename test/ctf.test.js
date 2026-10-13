@@ -81,6 +81,57 @@ describe('capture the flag', () => {
     expect(w.eval(`CTF.map.zones.some(function(z){ return z.type==='dark'; })`)).toBe(true);
   });
 
+  it('2 to 8 a side: the team size is the number of flags that wins, and every fighter has a flag', () => {
+    const { window: w } = loadMonolith(15);
+    w.eval(`CTF.skipNav=true; SETTINGS.mode='ctf'; SETTINGS.count=4; CTF.forceMap='castle'; beginMatchNow();`);
+    expect(w.eval('fighters.length')).toBe(4);
+    expect(w.eval('CTF.live.n')).toBe(2);
+    expect(w.eval('CTF.live.flags.length')).toBe(4);
+    expect(J(w, `fighters.map(function(f){return f.team;}).sort().join('')`)).toBe('0011');
+    w.eval(`SETTINGS.count=16; beginMatchNow();`);
+    expect(w.eval('CTF.live.n')).toBe(8);
+    expect(J(w, `fighters.map(function(f){return f.team;}).sort().join('')`)).toBe('0000000011111111');
+  });
+
+  it('a flag its own side drops is picked up by that side and hidden again; the other side cannot see it any more', () => {
+    const { window: w } = loadMonolith(16);
+    start(w);
+    const a = mate(w, 0), b = mate(w, 1), fl = flagOf(w, 1), f = J(w, `CTF.live.flags[${fl}]`);
+    put(w, a, f.x, f.y); step(w, 2);
+    w.eval(`CTF.live.seen[0][${fl}]=true`);
+    w.eval(`ctfDropFlag(fighters[${a}], 'hit')`);
+    expect(w.eval(`CTF.live.flags[${fl}].st`), 'lying where it fell').toBe(3);
+    put(w, b, w.eval(`CTF.live.flags[${fl}].x`), w.eval(`CTF.live.flags[${fl}].y`)); step(w, 40);
+    expect(w.eval(`CTF.live.flags[${fl}].st`), 'its own side picked it up').toBe(2);
+    expect(w.eval(`fighters[${b}]._cf`)).toBe(fl);
+    // not a capture, even across the line (it is their own flag)
+    put(w, b, 20000, GY); step(w, 2);
+    expect(w.eval('CTF.live.score[1]')).toBe(0);
+    // the flag key puts it down somewhere new on its side
+    put(w, b, 24000, GY); w.eval(`CTF.skipNav=false`);
+    w.eval(`ctfAiReachable = function(){ return true; }`);
+    w.eval(`down[KEYS.flag]=false; fighters[${b}].controller='local'; down[KEYS.flag]=true;`); step(w, 2); w.eval(`down[KEYS.flag]=false`); step(w, 2);
+    expect(w.eval(`CTF.live.flags[${fl}].st`), 'hidden again').toBe(1);
+    expect(w.eval(`Math.abs(CTF.live.flags[${fl}].hx - ${f.x})`), 'somewhere new').toBeGreaterThan(200);
+    expect(w.eval(`CTF.live.seen[0][${fl}]`), 'and the other side has lost sight of it').toBe(false);
+  });
+
+  it('a ghost is invisible to the other side; a shield takes the hit that would have jailed you', () => {
+    const { window: w } = loadMonolith(17);
+    start(w);
+    const a = mate(w, 0);
+    w.eval(`fighters[${a}]._ghostT=100; fighters[${a}].you=false; fighters[${mate(w, 1)}].you=true`);
+    expect(w.eval(`ctfHiddenFrom(fighters[${a}])`), 'hidden from the other side').toBe(true);
+    w.eval(`fighters[${a}].you=true; fighters[${mate(w, 1)}].you=false`);
+    expect(w.eval(`ctfHiddenFrom(fighters[${a}])`), 'not from its own').toBe(false);
+    const t = w.eval('ctfJailThreshold(CTF.live.n)');
+    put(w, a, 20000, GY); w.eval(`fighters[${a}]._shield=1; fighters[${a}].pct=${t + 5}`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._jail`), 'the shield took it').toBe(null);
+    expect(w.eval(`fighters[${a}]._shield`)).toBe(0);
+    w.eval(`fighters[${a}].pct=${t + 5}`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._jail`), 'once only').toBe(1);
+  });
+
   it('a capture scores', () => {
     const { window: w } = loadMonolith(2);
     start(w);
@@ -113,8 +164,8 @@ describe('capture the flag', () => {
     expect(w.eval(`fighters[${a}]._cf`)).toBe(-1);
     // the flag's own team walks over it
     put(w, b, w.eval(`CTF.live.flags[${fl}].x`), w.eval(`CTF.live.flags[${fl}].y`)); step(w, 40);
-    expect(w.eval(`CTF.live.flags[${fl}].st`), 'back where it was hidden').toBe(1);
-    expect(w.eval(`Math.round(CTF.live.flags[${fl}].x)`)).toBe(Math.round(f.x));
+    expect(w.eval(`CTF.live.flags[${fl}].st`), 'its own side picked it up (to hide it again)').toBe(2);
+    expect(w.eval(`fighters[${b}]._cf`)).toBe(fl);
   });
 
   it('a hit launching a carrier fast drops the flag; a light one does not', () => {
@@ -150,13 +201,35 @@ describe('capture the flag', () => {
     expect(w.eval(`fighters[${a}].x`)).toBeLessThan(14400);
   });
 
-  it('a prisoner left in the cell is let out after a while, so no side is ever stuck', () => {
+  it('a prisoner stays until a teammate frees them; freed, they cannot be jailed again for a few seconds, and are quick', () => {
     const { window: w } = loadMonolith(6);
     start(w);
-    const a = mate(w, 0), j = J(w, 'CTF.map.jails[1]');
+    const a = mate(w, 0), friend = mate(w, 0, 1), j = J(w, 'CTF.map.jails[1]');
     put(w, a, 20000, GY); w.eval(`eliminate(fighters[${a}])`);
-    logic(w, w.eval('CTF_JAIL_AUTO') + 5);
+    logic(w, 20000);
+    expect(w.eval(`fighters[${a}]._jail`), 'still there, however long').toBe(1);
+    put(w, friend, j.door.x - 20, CAVE); logic(w, 2);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
+    expect(w.eval(`fighters[${a}]._ctfFree`)).toBeGreaterThan(100);
+    expect(w.eval(`fighters[${a}]._hasteT`), 'a short speed boost').toBeGreaterThan(0);
+    // a KO inside those seconds, on the enemy side, is a trip home and not a cell
+    put(w, a, 20000, GY); w.eval(`eliminate(fighters[${a}])`);
+    expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
+  });
+
+  it('damage over the threshold on the enemy side is a cell too (higher in small teams); on your own side it is not', () => {
+    const { window: w } = loadMonolith(14);
+    start(w);
+    expect(w.eval('ctfJailThreshold(2)')).toBe(120);
+    expect(w.eval('ctfJailThreshold(5)')).toBe(90);
+    expect(w.eval('ctfJailThreshold(8)')).toBe(60);
+    const a = mate(w, 0), t = w.eval('ctfJailThreshold(CTF.live.n)');
+    put(w, a, 800, GY); w.eval(`fighters[${a}].pct=${t + 5}`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._jail`), 'on its own side: no cell').toBe(null);
+    put(w, a, 20000, GY); w.eval(`fighters[${a}].pct=${t - 5}`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._jail`), 'under the threshold').toBe(null);
+    w.eval(`fighters[${a}].pct=${t + 5}`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._jail`), 'over it, in the enemy country').toBe(1);
   });
 
   it('the no-go zone pushes the jail\'s own team out, and never hurts them', () => {
@@ -176,14 +249,14 @@ describe('capture the flag', () => {
     expect(Math.abs(fx - (z.x + z.w / 2))).toBeLessThan(50);
   });
 
-  it('a key opens its door for good, and a KO\'d holder drops it', () => {
+  it('a key opens its door for its team only, goes back where it lay, and a KO\'d holder drops it', () => {
     const { window: w } = loadMonolith(8);
     start(w);
     const k = J(w, `CTF.live.keys.filter(function(k){ return k.door==='1r'; })[0]`);
     const holder = mate(w, 0);
     put(w, holder, k.x, k.y); step(w, 2);
     expect(w.eval(`fighters[${holder}]._ck`)).toBe(k.i);
-    expect(w.eval(`CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0].open`)).toBe(false);
+    expect(w.eval(`CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0].op[0]`)).toBe(false);
     put(w, holder, 1000, GY); w.eval(`eliminate(fighters[${holder}])`);
     expect(w.eval(`CTF.live.keys[${k.i}].st`), 'dropped where it fell').toBe(0);
     // pick it up again and take it to its door
@@ -193,8 +266,10 @@ describe('capture the flag', () => {
     put(w, holder, kk.x, kk.y); step(w, 70);
     expect(w.eval(`fighters[${holder}]._ck`)).toBe(k.i);
     put(w, holder, d.x - 50, d.y + d.h); step(w, 2);
-    expect(w.eval(`CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0].open`)).toBe(true);
-    expect(w.eval(`CTF.live.keys[${k.i}].st`), 'used up').toBe(2);
+    expect(w.eval(`CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0].op[0]`), 'open for the key\'s team').toBe(true);
+    expect(w.eval(`CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0].op[1]`), 'and not for the other').toBe(false);
+    expect(w.eval(`CTF.live.keys[${k.i}].st`), 'back where it lay').toBe(0);
+    expect(w.eval(`Math.round(CTF.live.keys[${k.i}].x)`)).toBe(Math.round(k.hx));
   });
 
   it('a whole side in jail at once is over: the other side wins', () => {
