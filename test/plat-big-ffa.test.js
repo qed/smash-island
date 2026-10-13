@@ -14,13 +14,13 @@ describe('big FFA arenas: pathing to a ledge', () => {
     const { window: w } = loadMonolith(11005);
     try {
       w.eval(SETUP_SRC);
-      w.eval(`__setupCustomMatch(["Firey","Pen"], 3, 2)`);
+      w.eval(`__setupCustomMatch(["Firey","Pen","Needle"], 3, 2)`);
       w.eval(`(function(){
         stage = STAGES.find(function(s){ return s.id === 'grandplains'; });
         resize(); setupWorld();
-        var a = fighters[0], b = fighters[1];
-        a.x = WW*0.12; a.y = groundY() - a.r; b.x = WW*0.88; b.y = groundY() - b.r;
-        b.controller = 'still';
+        var a = fighters[0], b = fighters[1], c = fighters[2];
+        a.x = WW*0.12; a.y = groundY() - a.r; b.x = WW*0.88; b.y = groundY() - b.r; c.x = WW*0.5; c.y = groundY() - c.r;
+        b.controller = 'still'; c.controller = 'still';
       })()`);
       const info = w.eval('({ big: isBigFFA(), claimY: Math.min.apply(null, spawnZones.filter(function(z){ return z.kind === "claim"; }).map(function(z){ return z.y; })), floor: groundY() })');
       expect(info.big).toBe(true);
@@ -31,6 +31,26 @@ describe('big FFA arenas: pathing to a ledge', () => {
       }
       // the claim points are ~800 px above the floor; reaching within 120 px of their row is a climb of the whole ledge field
       expect(info.floor - top).toBeGreaterThan(info.floor - info.claimY - 120);
+    } finally { try { w.close && w.close(); } catch { /* best effort */ } }
+  }, 120000);
+
+  it('a 1v1 skips the spawn-point claiming: the two CPUs meet within 12 s', () => {
+    const { window: w } = loadMonolith(11005);
+    try {
+      w.eval(SETUP_SRC);
+      w.eval(`__setupCustomMatch(["Firey","Pen"], 3, 2)`);
+      w.eval(`(function(){
+        stage = STAGES.find(function(s){ return s.id === 'grandplains'; });
+        resize(); setupWorld();
+        var a = fighters[0], b = fighters[1];
+        a.x = WW*0.12; a.y = groundY() - a.r; b.x = WW*0.88; b.y = groundY() - b.r;
+      })()`);
+      let met = -1;
+      for (let i = 0; i < 720 && met < 0; i++) {
+        w.eval('step()');
+        if (w.eval('fighters[0].pct > 0 || fighters[1].pct > 0')) met = i;
+      }
+      expect(met).toBeGreaterThanOrEqual(0);
     } finally { try { w.close && w.close(); } catch { /* best effort */ } }
   }, 120000);
 });
