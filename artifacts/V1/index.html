@@ -33915,6 +33915,101 @@ function aiKitReadsII(f, t, inp, dx, dy, dist, adx, ady){
     if(f.spCd <= 0 && f.onground && adx > 60 && adx < 170 && ady < 50 && t.invuln <= 0 && !inp.special) press(true, true);
   }
 }
+// ---- THE MINNOWS' READS (g-minnows). The full 1v1 run put these eighteen at 8-34%. A probe that records, for every swing, where the foe stood and whether it landed
+// found much of it was the CPU. A jab resolves on the frame it is pressed, on the foe inside the arm's fan, and over two thirds of theirs went at a foe the fan did not
+// reach: out of reach along the floor, or on another level (6-12% landed, against 90-100% on a foe level and inside the fan). The finisher (attack + special) is a circle that
+// lands when the foe is in it, but the class rules press it on a foe over 90% whether or not it is. Every read below is something a player sees (where the foe stands against
+// the arm, a cooldown, a meter) and none rolls a die. A boss fight keeps the legacy bot. Soap's spray and throw are not touched: aiSoapSprayPays and aiSoapThrowPays stay
+// the only say on them. Not every fighter takes every read: each took the reads it needed to reach the panel's middle and no more (a read that took one past it was left out).
+//   t  turn before a swing (aiKitReadsII has it for the II fighters)      j  a plain jab only on a foe inside the arm's fan
+//   v  the same, but only against a foe on another level (a jab at a foe level with her and out of reach is left to the class rules)
+//   f  the finisher only on a foe inside its circle                        k  the kit's own reads, below
+//   b  plays as a brawler, r  as a rushdown (Ice Cube: aiClass)
+const AI_MN_READS = {"Ice Cube":"tb","Bubble":"tvk","Loser":"tjk","Gaty":"tj","Clover":"jf","Cake":"tj","Bot":"jf","Cheesy":"v","Soap":"j","Balloony":"t","Nickel":"t","Needle":"t","Tissues":"vf","Dough":"v","Poppy":"j","Lifering":"v","Gelatin":"tj","Pin":"tjk"};
+const AI_MN_SLACK = 8;     // px: a foe moves between the press and the frame the swing resolves
+// The jab's own fan (doAttack: reach = f.r + 26 + the row's reach), the real shape test. True when any foe it could hit stands inside it (anywhere along the floor, for 'v').
+function aiMnJabReaches(f, face, anyRange){
+  const r1 = anyRange ? 900 : f.r + 26 + rangeProfile(f).reach + (f._grasstree > 0 ? 14 : 0) + AI_MN_SLACK;
+  const sh = { kind:'fan', cx:f.x, cy:f.y, r0:f.r*0.45, r1:r1, a0:-0.55, a1:0.45, face:face };
+  for(const e of fighters){
+    if(e.dead || e.team === f.team || e.idx === f.idx || e.invuln > 0 || Math.abs(e.x - f.x) > r1 + 60) continue;
+    if(shapeHits(sh, e)) return true;
+  }
+  return false;
+}
+// The finisher's (attack + special) reach, the circle ATKSPECIALS swings: 28 px ahead and r + 26 wide by default, Needle's and Bubble's their own, Pin's a stab, Gelatin's a syringe along the floor.
+function aiMnFinisherReaches(f, face){
+  const k = f.kit.special;
+  for(const e of fighters){
+    if(e.dead || e.team === f.team || e.idx === f.idx || e.invuln > 0 || Math.abs(e.x - f.x) > 320) continue;
+    if(k === 'pierce'){ if(shapeHits({ kind:'capsule', x1:f.x + face*f.r*0.4, y1:f.y, x2:f.x + face*(42 + 32*0.6), y2:f.y, r:9 + AI_MN_SLACK/2 }, e)) return true; continue; }
+    if(k === 'freeze'){ const ex = (e.x - f.x)*face; if(!(e.frozen > 0) && ex > 40 && ex < 260 && Math.abs(e.y - f.y) < 45) return true; continue; }
+    const off = k === 'counter' ? 30 : k === 'float' ? 24 : 28, rad = k === 'counter' ? f.r + 22 : k === 'float' ? f.r + 30 : f.r + 26;
+    if(hurtGap(e, f.x + face*off, f.y) < rad + AI_MN_SLACK/2) return true;
+  }
+  return false;
+}
+function aiMinnowReads(f, t, inp, dx, dy, dist, adx, ady){
+  const R = AI_MN_READS[f.name];
+  if(!R || f.hitstun > 0 || f._windup || SETTINGS.mode === 'boss') return;
+  const sp = f.kit && f.kit.special, toward = dx < 0 ? -1 : 1;
+  // TURN BEFORE A SWING (see aiKitReadsII): the class rules back away with the attack button down, and a fighter swings the way it last walked.
+  if(R.includes('t') && !AI_II_NAMES.has(f.name) && (inp.attack || (inp.special && !inp.up && !inp.down)) && adx > 10){
+    const nextFace = inp.right ? 1 : inp.left ? -1 : f.face;
+    if(nextFace !== toward){ inp.left = dx < 0; inp.right = dx > 0; }
+  }
+  const face = inp.right ? 1 : inp.left ? -1 : f.face;
+  if(R.includes('k')){
+    const plain = inp.special && !inp.up && !inp.down && !inp.attack;     // a neutral special press (up is the hop, down the stance, attack the finisher)
+    const veto = () => { inp.special = false; inp.down = false; };
+    const press = (down, turn) => { inp.special = true; inp.down = !!down; inp.up = false; inp.attack = false; inp._kitRead = true;
+      if(turn){ inp.left = dx < 0; inp.right = dx > 0; } };
+    const safeFloor = f.onground && f.x > 130 && f.x < WW - 130;       // a special cooldown on the up-special is no risk with the floor under her
+    const swinging = t.smashHold > 0 || !!t._windup || (t._atkAnim > 0 && t.atkCd > 12);
+    if(sp === 'float'){
+      // BUBBLE: Thermal Rise (neutral) is a hop with a second of low gravity, and pressed at random it spent the special clock her up-special needs: it is for a foe above her.
+      if(plain && !(dy < -60)) veto();
+    }
+    else if(sp === 'cool'){
+      // LOSER: Stay Cool (down) is 50 frames of armour and 8% healed on a 64-frame clock; Stay Cool's neutral is 22 frames of armour and a next hit 2.1x + 3. Heal once hurt,
+      // empower with a foe coming into jab reach (not with one far off, and not again while one is held).
+      if(plain && (f._empower > 0 || dist > 220 || face !== toward)) veto();
+      if(f.spCd <= 0 && !inp.special){
+        if(safeFloor && f.pct >= 25 && dist < 420) press(true, false);
+        else if(!(f._empower > 0) && dist > 70 && dist < 200 && face === toward && ady < 50 && t.invuln <= 0) press(false, true);
+      }
+    }
+    else if(sp === 'atstake'){
+      // CAKE: Recover a slice (down) heals for 100 frames, only while she is not being hit: for a foe that is not on her.
+      if(f.spCd <= 0 && safeFloor && f.pct >= 15 && !(f.healing > 0) && dist > 150 && !inp.special) press(true, false);
+    }
+    else if(sp === 'airleak'){
+      // BALLOONY: Air Leak's shove is a circle 30 px ahead of him, thrown on the press; the dash only carries him. Pressed from across the floor it is a dash with no hit, and a
+      // dash off the stage. Deflate & drift (down) is 16 frames untouchable: for a swing that is coming.
+      const shove = hurtGap(t, f.x + face*30, f.y) < 52 - HURT_R0 + 6 && ady < 50 && t.invuln <= 0 && !(t.countering > 0 || t.reflecting > 0);
+      if(plain && !shove) veto();
+      if(f.spCd <= 0 && !inp.special){
+        if(shove) press(false, true);
+        else if(swinging && dist < f.r + t.r + 100) press(true, false);
+      }
+    }
+    else if(sp === 'flip'){
+      // NICKEL: Heads or Tails is a coin thrown ahead (12%, armour) seven times in ten, and three in ten a stumble: 3% and a launch back. At range with a foe in front and room behind him.
+      const room = (face > 0 ? f.x : WW - f.x) > 170;
+      const ok = adx > 90 && adx < 320 && ady < 60 && t.invuln <= 0 && face === toward;
+      if(plain && !(ok && room)) veto();
+      if(f.spCd <= 0 && ok && room && !(f.armor > 0) && !inp.special) press(false, true);
+    }
+    else if(sp === 'pierce'){
+      // PIN: the down-special is 40 frames of armour (40% less damage, 60% less knockback): up as a swing comes at him, like a counter stance.
+      if(f.spCd <= 0 && !(f.armor > 0) && swinging && dist < f.r + t.r + 110 && !inp.special) press(true, false);
+    }
+  }
+  // THE FINISHER only on a foe inside its reach.
+  if(R.includes('f') && inp.attack && inp.special && !inp.up && !inp.down && !inp._kitRead && !(f._aiCharging > 0) && !aiMnFinisherReaches(f, face)){ inp.attack = false; inp.special = false; }
+  // A PLAIN JAB only on a foe inside the fan (no uppercut, no ground sweep, no item to throw).
+  if((R.includes('j') || R.includes('v')) && inp.attack && !inp.special && !inp.up && !inp.down && !f._holding && !(f._aiCharging > 0) && !aiMnJabReaches(f, face, !R.includes('j'))) inp.attack = false;
+}
 function aiClass(f){
   if(f._aiClass) return f._aiClass;
   const a = f.arch || (ROSTER.find(r=>r.name===f.name)?.arch) || "";
@@ -33924,6 +34019,8 @@ function aiClass(f){
   if(["fly","beam","gust"].includes(sp)) c="zone";       // empower-then-fire ranged
   if(["paste","jawbreaker","sucker","static"].includes(sp) && c==="brawl") c="trap";
   if(["shatter","timber"].includes(sp)) c="zone";   // new projectile kits play as zoners (Roboty left this list with his spring)
+  const mnR = AI_MN_READS[f.name];
+  if(sp === "shatter" && mnR){ if(mnR.includes('b')) c = "brawl"; else if(mnR.includes('r')) c = "rush"; }   // Ice Cube's ring is on a 4 s hold for the bot (AI_SPECIAL_HOLD): a zoner who fires it once in four seconds walks at 250 px doing nothing, with the best jab in her kit at 50
   if(sp==="glaze") c="rush";                                // Donut rolls in like a rushdown
   if(sp==="pricetag") c="zone";                             // Profily debuff-snipes from range
   f._aiClass=c; return c;
@@ -34860,6 +34957,7 @@ function aiThink(f){
 
   aiKitReadsII(f, t, inp, dx, dy, dist, adx, ady);   // the II kits' own reads (a veto of a press that hurts or wastes, or the press the class rules never make)
   if(pb) pbMoves(f, t, inp, pb, lvl, sp, danger, inMelee, ac0);   // the playbook's say over which move, when (the m* genes)
+  aiMinnowReads(f, t, inp, dx, dy, dist, adx, ady);   // the minnows' own reads (the last say: a swing only at a foe it reaches, the kits' own presses)
   return finishAI(f,inp,sp);
 }
 
