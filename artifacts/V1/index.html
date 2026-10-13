@@ -2097,9 +2097,9 @@ function ctfGridNew(){
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
     fields: [], decor: [],
     // a floor transition: a gap in the slab on row rSlab (2 wide at column c) and the one-way steps up from the floor at rFloor
-    stairs(rSlab, rFloor, c){ g.gap(rSlab, c, c+1); const n = rFloor - rSlab - 1; for(let i=0;i<n;i++) g.put(rFloor-1-i, c + (i%2), '='); return g; },
+    stairs(rSlab, rFloor, c){ g.gap(rSlab, c, c+1); const n = rFloor - rSlab - 1; for(let i=0;i<n;i++) g.fill(rFloor-1-i, c, c+1, '='); return g; },
     // a shaft of alternating steps between two columns, from row rBot up to row rTop
-    shaft(c, rBot, rTop){ for(let r=rBot;r>=rTop;r--) g.put(r, c + ((rBot-r)%2), '='); return g; },
+    shaft(c, rBot, rTop){ for(let r=rBot;r>=rTop;r--) g.fill(r, c, c+1, '='); return g; },
     // a free-standing zigzag of w-wide ledges, one row apart: the fast way up between lanes
     ladder(c, rBot, rTop, w){ w = w || 3; for(let r=rBot;r>=rTop;r--){ const o = ((rBot-r)%2)*w; g.fill(r, c+o, c+o+w-1, '='); } return g; },
     deck(r, c0, c1){ return g.fill(r, c0, c1, '='); },
@@ -2115,7 +2115,7 @@ function ctfGridNew(){
 }
 
 // Merge a set of cells into rectangles: horizontal runs first, then identical runs stacked vertically.
-function ctfMergeCells(cells){   // cells: Set of "r,c"
+function ctfMergeCells(cells, flat){   // cells: Set of "r,c" (flat: horizontal runs only, no stacking: one-way ledges one row above another stay apart)
   const runs = [];
   for(let r=0;r<CTF_ROWS;r++){
     let c = 0;
@@ -2125,7 +2125,7 @@ function ctfMergeCells(cells){   // cells: Set of "r,c"
   }
   const out = [];
   for(const run of runs){
-    const prev = out.find(o=>o.c0===run.c0 && o.c1===run.c1 && o.r1===run.r0-1);
+    const prev = flat ? null : out.find(o=>o.c0===run.c0 && o.c1===run.c1 && o.r1===run.r0-1);
     if(prev) prev.r1 = run.r1; else out.push({...run});
   }
   return out.map(o=>({ x:o.c0*CTF_CELL, y:o.r0*CTF_CELL, w:(o.c1-o.c0+1)*CTF_CELL, h:(o.r1-o.r0+1)*CTF_CELL }));
@@ -2155,7 +2155,7 @@ function ctfMapBuild(id){
     else if(ch==='p') objs.slots.push(at(r,c));
   }
   for(const rc of mergeCellsTo(solids)) leftPlats.push({ ...rc, solid:true });
-  for(const rc of ctfMergeCells(hops)) leftPlats.push({ x:rc.x, y:rc.y, w:rc.w, h:16, hop:true });
+  for(const rc of ctfMergeCells(hops, true)) leftPlats.push({ x:rc.x, y:rc.y, w:rc.w, h:16, hop:true });
   // lattice laid over the air
   for(const o of g.fields) for(const p of ctfLattice(g, leftPlats, o)) leftPlats.push(p);
   // mirror
@@ -2432,6 +2432,8 @@ CTF_MAPS.caves = {
 //     side as its door, so the foe has to raid for it. A KO'd key holder drops the key where they fell;
 //   - while the hiding phase lasts every door stands open; they lock when it ends.
 // ---------------------------------------------------------------------------------------------------------------
+const CTF_SPEED = 1.5;   // every fighter's walk, run and air speed in this mode (jump height is the game's own)
+function ctfSpeedK(f){ return SETTINGS.mode === 'ctf' ? CTF_SPEED*(f._cf >= 0 ? CTF_CARRY_SPEED : 1) : 1; }
 const CTF_N = 5, CTF_HIDE_STEPS = 18000, CTF_JAIL_AUTO = 2700, CTF_JAIL_OPEN = 150;
 const CTF_BIGHIT = 13, CTF_CARRY_SPEED = 0.78, CTF_CARRY_JUMP = 0.82, CTF_BOOST_JUMP = 1.2;
 const CTF_FLAG_R = 40, CTF_KEY_R = 42, CTF_BOOST_STEPS = 420, CTF_BOOST_CD = 1500;
@@ -3277,7 +3279,7 @@ function ctfDecorDraw(g, d, th){
 // ---------------------------------------------------------------------------------------------------------------
 const CTF_NAV_BUCKET = 256;
 // two sets of numbers: a carrier's (the slowest) and a free fighter's. A move only counts if it lands on the same place with both, so it works whoever plays it.
-function ctfNavParams(free){ const k = free ? 1 : CTF_CARRY_SPEED, j = free ? 1 : CTF_CARRY_JUMP; return { R:24, G:GRAV, CAP:MAXVX*k, ACC:MOVE*k, JV:JUMP*j }; }
+function ctfNavParams(free){ const k = (free ? 1 : CTF_CARRY_SPEED)*CTF_SPEED, j = free ? 1 : CTF_CARRY_JUMP; return { R:24, G:GRAV, CAP:MAXVX*k, ACC:MOVE*k, JV:JUMP*j }; }
 function ctfNavBucket(x){ return Math.floor(x/CTF_NAV_BUCKET); }
 
 function ctfNavNew(M){
@@ -3344,10 +3346,11 @@ function ctfNavNodeOf(nav, f){
 }
 // One simulated move. jump: a jump first (false: walking off an edge, already moving at vx); dir: held to the side while t <= T;
 // dj: a second jump at the top of the first. Returns where it lands: { node, x, t }, or null.
-function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free){
+function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru){
   const P = ctfNavParams(free), R = P.R, WH = nav.M.WH;
   let x = xa, y = A.y - R, vy = 0, jumps = 2;
   if(jump){ vy = P.JV; jumps = 1; }
+  if(thru){ y += R*0.6; vy = 5; }   // down + jump on a one-way ledge: dropped through it (the game's own: dropping = 10 frames, vy 5)
   for(let t = 1; t <= 150; t++){
     if(dir !== 0 && t <= T){ vx += dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
     if(dj && jumps > 0 && t >= 6 && vy >= -0.4){ vy = P.JV; jumps--; }
@@ -3362,7 +3365,7 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free){
       if(Math.abs(ax) < Math.abs(ay)){ x += ax; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
       else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else vy = Math.max(0, vy); }
     }
-    if(!landed && vy >= 0){
+    if(!landed && vy >= 0 && !(thru && t <= 10)){
       for(const p of list){
         if(p.solid || !(x > p.x - 4 && x < p.x + p.w + 4)) continue;
         if(pb <= p.y + 4 && y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; break; }
@@ -3380,6 +3383,7 @@ function ctfNavSimBoth(nav, n, xa, dir, dj, T, jump, run, want, frac){
   const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, jump, true);
   return !!r;   // anywhere on the map at all (a miss is then noticed and the way round it planned: see ctfAiFollow)
 }
+function ctfNavSimThru(nav, n, xa){ return !!ctfNavSim(nav, n, xa, 0, 0, 0, 0, false, true, true); }
 // Every move off one place: the standing jumps (from three spots, running either way or straight up) and the walks off either end.
 function ctfNavProbe(nav, n){
   const P = ctfNavParams(), w = n.x1 - n.x0, found = {};
@@ -3390,9 +3394,15 @@ function ctfNavProbe(nav, n){
   for(const xa of xs) for(const dir of [-1, 0, 1]){
     const run = dir === 1 ? xa - n.x0 : dir === -1 ? n.x1 - xa : 0;
     const v0 = dir === 0 ? 0 : dir*Math.min(P.CAP, Math.sqrt(2*0.55*Math.min(run, 150)));
-    for(const dj of [0, 1]) for(const T of (dir === 0 ? [0] : [10, 30, 200])){
+    for(const dj of [0, 1]) for(const T of (dir === 0 ? [0] : [4, 10, 30, 200])){
       const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, true, false);
       if(r && r.node !== n && ctfNavSimBoth(nav, n, xa, dir, dj, T, true, run, r.node)) add({ kind:'jump', from:n.id, to:r.node.id, xa, dir, dj, T, v0, xb:r.x, run:Math.min(run, 150), cost:r.t + 14 + dj*8, doors:[] });
+    }
+  }
+  if(!n.solid){   // down through a one-way ledge, from three spots along it
+    for(const xa of [n.x0 + 20, (n.x0 + n.x1)/2, n.x1 - 20]){
+      const r = ctfNavSim(nav, n, xa, 0, 0, 0, 0, false, false, true);
+      if(r && r.node !== n && ctfNavSimThru(nav, n, xa)) add({ kind:'thru', from:n.id, to:r.node.id, xa, dir:0, dj:0, T:0, v0:0, xb:r.x, run:0, cost:r.t + 12, doors:[] });
     }
   }
   const p = n.p;
@@ -3540,6 +3550,7 @@ function ctfAiFollow(f, ai, nav, inp, now){
   }
   const n = nav.nodes[e.from];
   if(ai.phase === 'stage'){
+    if(e.kind === 'thru'){ ctfAiWalk(f, inp, e.xa, 5); if(Math.abs(f.x - e.xa) < 9 && Math.abs(f.vx) < 1.2){ inp.down = true; inp.jump = true; ai.phase = 'air'; ai.jt = 0; } return false; }
     if(e.kind === 'drop'){ ai.phase = 'run'; }
     else if(e.dir === 0){ ctfAiWalk(f, inp, e.xa, 5); if(Math.abs(f.x - e.xa) < 9 && Math.abs(f.vx) < 1.2){ inp.jump = inp.up = true; ai.phase = 'air'; ai.jt = 0; } return false; }
     else { const xs = e.xa - e.dir*(e.run || 0); if(Math.abs(f.x - xs) < 14 && Math.abs(f.vx) < 2.5) ai.phase = 'run'; else { ctfAiWalk(f, inp, xs, 8); return false; } }
@@ -28361,7 +28372,7 @@ function step(){
       if(f.ctrlRev>0){ const l=inp.left; inp.left=inp.right; inp.right=l; }  // Remote hack: reversed controls
       // HASTE EASES OFF. It used to be 1.5x flat and then nothing, so the frame it ran out felt like the
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
-      const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * (f._cf>=0 ? CTF_CARRY_SPEED : 1);   // (a flag carrier is slower)
+      const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * ctfSpeedK(f);   // (Capture the Flag: everyone 1.5x as fast, a flag carrier slower)
       if(inp.left){ f.vx-=mv; f.face=f.ctrlRev>0?1:-1; }
       if(inp.right){ f.vx+=mv; f.face=f.ctrlRev>0?-1:1; }
       if(!inp.left&&!inp.right && f.onground && !(f._sm && f._sm.drive) && !(f._gotcha && f._gotcha.phase==='lunge')) f.vx*=(f.iceUntil>0?0.99:FRICTION);
@@ -28373,7 +28384,7 @@ function step(){
       // The speed CAP eases off with the haste, the same way the acceleration does. This is where the cliff was:
       // 1.4x flat and then nothing, so the frame the buff expired took 2.56 off a held run in one step (G28).
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
-        const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*(f._cf>=0?CTF_CARRY_SPEED:1); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
+        const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*ctfSpeedK(f); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
       // jump
       if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP); f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
       if(!inp.jump) f._jp=false;

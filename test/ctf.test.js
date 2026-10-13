@@ -44,6 +44,20 @@ describe('capture the flag', () => {
     expect(w.eval('CTF.live.phase'), 'one human, and done: the phase is over').toBe('play');
   });
 
+  it('everyone moves 1.5x as fast in this mode, a carrier a little slower, other modes as before', () => {
+    const { window: w } = loadMonolith(12);
+    start(w);
+    expect(w.eval('ctfSpeedK(fighters[0])')).toBe(1.5);
+    w.eval('fighters[0]._cf = 3');
+    expect(w.eval('ctfSpeedK(fighters[0])')).toBeCloseTo(1.5 * w.eval('CTF_CARRY_SPEED'), 5);
+    w.eval(`SETTINGS.mode='ffa'`);
+    expect(w.eval('ctfSpeedK(fighters[0])')).toBe(1);
+    w.eval(`SETTINGS.mode='ctf'; fighters[0]._cf = -1; fighters[0].controller='local'; fighters[0].x=3000; fighters[0].y=${GY}-24; fighters[0].vx=0; down[KEYS.right]=true;`);
+    step(w, 40);
+    w.eval('down[KEYS.right]=false');
+    expect(w.eval('fighters[0].vx')).toBeGreaterThan(w.eval('MAXVX') * 1.2);   // past the old top speed
+  });
+
   it('a capture scores', () => {
     const { window: w } = loadMonolith(2);
     start(w);
