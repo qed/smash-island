@@ -233,3 +233,54 @@ describe('the worker\'s program', () => {
     expect(intervals.length, 'told again, it ticks again').toBe(2);
   });
 });
+
+// FIXED STEP: "is this game's speed based on fps? if so, change it." (the owner, 2026-10-13). loop() used to run one step() per animation
+// frame, so a 144 Hz screen played the match 2.4x fast, and on a hosted match the host's screen set the speed for the whole room. It runs
+// on a clock now (STEP_CLOCK): 60 steps a real second whatever the screen does, a late frame owing two, a stall dropped rather than
+// raced through. Here the room's fake clock stands for the screen: each "frame" moves it by 1/hz of a second, then loop() runs.
+describe('the fixed step: the match runs 60 steps a second, whatever the screen does', () => {
+  const frames = (hz, seconds, who = [H, A]) => {
+    for (let i = 0; i < Math.round(hz * seconds); i++) {
+      room.clock.T += 1000 / hz;
+      for (const w of who) { w.eval('loop()'); room.flush(); }
+    }
+  };
+
+  it.each([[30], [60], [120], [144], [240]])('a %i Hz screen: the host steps 60 times a second and draws once a frame', (hz) => {
+    hostedMatch();
+    H.eval('window.__draws = 0; window.__draw0 = draw; draw = function(){ window.__draws++; return window.__draw0.apply(this, arguments); };');
+    try {
+      const t0 = H.eval('hazardT');
+      frames(hz, 2);
+      const steps = H.eval('hazardT') - t0, draws = H.eval('window.__draws');
+      expect(Math.abs(steps - 120), `${steps} steps in 2 s`).toBeLessThanOrEqual(2);
+      expect(draws, 'a frame that owes no step still draws').toBe(hz * 2);
+    } finally { H.eval('draw = window.__draw0'); }
+  });
+
+  it('a long stall is dropped, not raced through: no burst of steps after a gap', () => {
+    hostedMatch();
+    frames(60, 1);
+    let t0 = H.eval('hazardT');
+    room.clock.T += 100;   // a 100 ms hitch: the cap, four steps at most
+    H.eval('loop()');
+    expect(H.eval('hazardT') - t0, 'a 100 ms stall owes the catch-up cap and no more').toBeLessThanOrEqual(4);
+    t0 = H.eval('hazardT');
+    room.clock.T += 5000;   // the tab was away for 5 s
+    H.eval('loop()');
+    expect(H.eval('hazardT') - t0, 'a gap over 250 ms restarts the clock: nothing owed').toBe(0);
+    t0 = H.eval('hazardT');
+    frames(60, 1);
+    expect(Math.abs(H.eval('hazardT') - t0 - 60), 'and it carries on at 60 a second').toBeLessThanOrEqual(1);
+  });
+
+  it("a client's particles run at 60 ticks a second on a 144 Hz screen (they ran once per animation frame)", () => {
+    hostedMatch();
+    A.eval('particles = [{ x: 0, y: 0, vx: 1, vy: 0, life: 200, color: "#fff", r: 2 }]');
+    frames(144, 1, [A]);
+    const p = A.eval('particles[0]');
+    expect(200 - p.life, 'a second at 144 Hz is 60 ticks of life, not 144').toBeGreaterThanOrEqual(58);
+    expect(200 - p.life).toBeLessThanOrEqual(62);
+    expect(Math.round(p.x), 'and it moved 60 px at vx = 1').toBe(200 - p.life);
+  });
+});

@@ -44,13 +44,17 @@ describe('Cake at Stake', () => {
 describe('KO instant replay', () => {
   // jsdom's rAF is stubbed out by the harness, so install a hand-cranked one: `__pump(n)` runs n
   // display frames, which is the only way to assert on playback SPEED rather than on wiring.
+  // The replay counts TIME now (60 ticks a second, tickClock), not animation frames -- a 144 Hz screen used to play it 2.4x fast --
+  // so the pump carries a fake clock and each display frame is a 60th of a second on it: "display frames" below are 60 Hz frames.
   function manualRaf(w) {
     w.eval(`
-      window.__raf = { next:1, cbs:{} };
+      window.__raf = { next:1, cbs:{}, t:1000 };
+      Object.defineProperty(window.performance, 'now', { value: function(){ return window.__raf.t; }, configurable: true });
       window.requestAnimationFrame = function(f){ var id=window.__raf.next++; window.__raf.cbs[id]=f; return id; };
       window.cancelAnimationFrame = function(id){ delete window.__raf.cbs[id]; };
       window.__pump = function(n){
         for(var i=0;i<n;i++){
+          window.__raf.t += 1000/60;
           var cbs = window.__raf.cbs; window.__raf.cbs = {};
           var ks = Object.keys(cbs);
           if(!ks.length) return i;
