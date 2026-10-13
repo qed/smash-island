@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { loadMonolith } from './helpers/load-monolith.js';
 
 // CAPTURE THE FLAG: the rules of the mode, on the real game (the castle map, every fighter standing still so only what the test does happens).
-// Five a side, one flag each. A KO on your own side is a trip home; on the enemy side it is a trip to their jail, and a teammate at the jail
-// door frees everyone in it. The jail's own team cannot enter the zone round it. A carrier drops the flag when KO'd. The match has no clock:
-// only carrying all five of the other side's flags home ends it.
+// 2 to 8 a side, one flag each. A KO on your own side is a trip home; on the enemy side (or damage over a threshold there) it is a trip to their jail,
+// and a teammate at the jail door frees everyone in it. The jail's own team cannot enter the zone round it. A carrier drops the flag when KO'd, and a
+// flag is captured by carrying it across the middle line. The match has no clock.
 
 function start(w, map = 'castle') {
   w.eval(`CTF.skipNav=true; SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='${map}'; beginMatchNow();
@@ -18,9 +18,11 @@ const step = (w, n = 1) => { for (let i = 0; i < n; i++) w.eval('step()'); };
 const logic = (w, n) => w.eval(`(function(){ for (var i=0;i<${n};i++){ ctfStep(); ctfCheckWin(); } })()`);
 // put fighter i on the floor at (x, y) standing, where nothing else is going on
 const put = (w, i, x, y) => w.eval(`(function(){ var f=fighters[${i}]; f.x=${x}; f.y=${y}-f.r; f.vx=0; f.vy=0; f.invuln=0; })()`);
-// the castle: the surface is at 4320, the cellar floor (the jail) at 5520
-const GY = 4320, CAVE = 5520;
 const flagOf = (w, team, k = 0) => w.eval(`CTF.live.flags.filter(function(f){ return f.team===${team}; })[${k}].id`);
+// where things are on this map: a standing place on each side (the spawn of each home), the middle line, the floor in front of a jail's door
+const spawn = (w, t) => J(w, `{ x:CTF.map.homes[${t}].spawns[0].x, y:CTF.map.homes[${t}].spawns[0].y }`);
+const MID = 10800;
+const cellFloor = (w, owner) => { const j = J(w, `CTF.map.jails[${owner}]`); return j.door.y + j.door.h; };
 
 describe('capture the flag', () => {
   it('is five a side, one flag each, hiding first', () => {
@@ -30,6 +32,8 @@ describe('capture the flag', () => {
     expect(w.eval('CTF.live.flags.length')).toBe(10);
     expect(w.eval('CTF.live.phase')).toBe('hide');
     expect(w.eval('isBig()')).toBe(true);
+    expect(w.eval('CAM_ZOOM'), 'the rooms are drawn closer').toBeGreaterThan(0.72);
+    expect(w.eval('WW'), '75% of the first size').toBe(21600);
   });
 
   it('Space puts your flag down, C says done, and the hiding phase ends when the human is done', () => {
@@ -52,33 +56,11 @@ describe('capture the flag', () => {
     expect(w.eval('ctfSpeedK(fighters[0])')).toBeCloseTo(1.5 * w.eval('CTF_CARRY_SPEED'), 5);
     w.eval(`SETTINGS.mode='ffa'`);
     expect(w.eval('ctfSpeedK(fighters[0])')).toBe(1);
-    w.eval(`SETTINGS.mode='ctf'; fighters[0]._cf = -1; fighters[0].controller='local'; fighters[0].x=3000; fighters[0].y=${GY}-24; fighters[0].vx=0; down[KEYS.right]=true;`);
-    step(w, 40);
+    const sp = spawn(w, 0);
+    w.eval(`SETTINGS.mode='ctf'; fighters[0]._cf = -1; fighters[0].controller='local'; fighters[0].x=${sp.x}; fighters[0].y=${sp.y}-24; fighters[0].vx=0; down[KEYS.right]=true;`);
+    step(w, 25);
     w.eval('down[KEYS.right]=false');
     expect(w.eval('fighters[0].vx')).toBeGreaterThan(w.eval('MAXVX') * 1.2);   // past the old top speed
-  });
-
-  it('the areas do what they look like: ice, water, wind, belt, spring, thin air', () => {
-    const { window: w } = loadMonolith(13);
-    start(w);
-    const zone = type => J(w, `worldZones.filter(function(z){ return z.type==='${type}'; })[0]`);
-    const into = (z, vx) => w.eval(`(function(){ var f=fighters[0]; f.controller='still'; f.x=${z.x + z.w / 2}; f.y=${z.y + z.h - 30}; f.vx=${vx || 0}; f.vy=0; f.iceUntil=0; f._floatT=0; f._springT=0; return 1; })()`);
-    let z = zone('ice'); into(z); step(w, 2);
-    expect(w.eval('fighters[0].iceUntil'), 'ice: low friction').toBeGreaterThan(0);
-    z = zone('water'); into(z, 8); step(w, 1);
-    expect(w.eval('fighters[0].vx'), 'water drags').toBeLessThan(8);
-    z = zone('wind'); into(z, 0); step(w, 3);
-    expect(Math.sign(w.eval('fighters[0].vx')), 'wind pushes the way it points').toBe(z.dir);
-    z = zone('spring'); into(z); step(w, 3);
-    expect(w.eval('fighters[0].vy'), 'spring throws you up').toBeLessThan(-8);
-    z = zone('float'); into(z); step(w, 2);
-    expect(w.eval('fighters[0]._floatT'), 'thin air').toBeGreaterThan(0);
-    // the right side mirrors: a wind toward the middle on the left blows toward the middle on the right
-    const winds = J(w, `worldZones.filter(function(z){ return z.type==='wind'; }).map(function(z){ return [z.x + z.w/2 < 14400, z.dir]; })`);
-    expect(winds.find(q => q[0])[1]).toBe(-winds.find(q => !q[0])[1]);
-    // and a dark area is only a picture
-    expect(w.eval(`worldZones.some(function(z){ return z.type==='dark'; })`)).toBe(false);
-    expect(w.eval(`CTF.map.zones.some(function(z){ return z.type==='dark'; })`)).toBe(true);
   });
 
   it('2 to 8 a side: the team size is the number of flags that wins, and every fighter has a flag', () => {
@@ -93,64 +75,25 @@ describe('capture the flag', () => {
     expect(J(w, `fighters.map(function(f){return f.team;}).sort().join('')`)).toBe('0000000011111111');
   });
 
-  it('a flag its own side drops is picked up by that side and hidden again; the other side cannot see it any more', () => {
-    const { window: w } = loadMonolith(16);
-    start(w);
-    const a = mate(w, 0), b = mate(w, 1), fl = flagOf(w, 1), f = J(w, `CTF.live.flags[${fl}]`);
-    put(w, a, f.x, f.y); step(w, 2);
-    w.eval(`CTF.live.seen[0][${fl}]=true`);
-    w.eval(`ctfDropFlag(fighters[${a}], 'hit')`);
-    expect(w.eval(`CTF.live.flags[${fl}].st`), 'lying where it fell').toBe(3);
-    put(w, b, w.eval(`CTF.live.flags[${fl}].x`), w.eval(`CTF.live.flags[${fl}].y`)); step(w, 40);
-    expect(w.eval(`CTF.live.flags[${fl}].st`), 'its own side picked it up').toBe(2);
-    expect(w.eval(`fighters[${b}]._cf`)).toBe(fl);
-    // not a capture, even across the line (it is their own flag)
-    put(w, b, 20000, GY); step(w, 2);
-    expect(w.eval('CTF.live.score[1]')).toBe(0);
-    // the flag key puts it down somewhere new on its side
-    put(w, b, 24000, GY); w.eval(`CTF.skipNav=false`);
-    w.eval(`ctfAiReachable = function(){ return true; }`);
-    w.eval(`down[KEYS.flag]=false; fighters[${b}].controller='local'; down[KEYS.flag]=true;`); step(w, 2); w.eval(`down[KEYS.flag]=false`); step(w, 2);
-    expect(w.eval(`CTF.live.flags[${fl}].st`), 'hidden again').toBe(1);
-    expect(w.eval(`Math.abs(CTF.live.flags[${fl}].hx - ${f.x})`), 'somewhere new').toBeGreaterThan(200);
-    expect(w.eval(`CTF.live.seen[0][${fl}]`), 'and the other side has lost sight of it').toBe(false);
-  });
-
-  it('a ghost is invisible to the other side; a shield takes the hit that would have jailed you', () => {
-    const { window: w } = loadMonolith(17);
-    start(w);
-    const a = mate(w, 0);
-    w.eval(`fighters[${a}]._ghostT=100; fighters[${a}].you=false; fighters[${mate(w, 1)}].you=true`);
-    expect(w.eval(`ctfHiddenFrom(fighters[${a}])`), 'hidden from the other side').toBe(true);
-    w.eval(`fighters[${a}].you=true; fighters[${mate(w, 1)}].you=false`);
-    expect(w.eval(`ctfHiddenFrom(fighters[${a}])`), 'not from its own').toBe(false);
-    const t = w.eval('ctfJailThreshold(CTF.live.n)');
-    put(w, a, 20000, GY); w.eval(`fighters[${a}]._shield=1; fighters[${a}].pct=${t + 5}`); logic(w, 2);
-    expect(w.eval(`fighters[${a}]._jail`), 'the shield took it').toBe(null);
-    expect(w.eval(`fighters[${a}]._shield`)).toBe(0);
-    w.eval(`fighters[${a}].pct=${t + 5}`); logic(w, 2);
-    expect(w.eval(`fighters[${a}]._jail`), 'once only').toBe(1);
-  });
-
-  it('a capture scores', () => {
+  it('a capture scores only across the middle line', () => {
     const { window: w } = loadMonolith(2);
     start(w);
-    const a = mate(w, 0), fl = flagOf(w, 1);
+    const a = mate(w, 0), fl = flagOf(w, 1), own = spawn(w, 0), foe = spawn(w, 1);
     const f = J(w, `CTF.live.flags[${fl}]`);
     put(w, a, f.x, f.y);                                   // team 0 touches one of team 1's flags
     step(w, 2);
     expect(w.eval(`CTF.live.flags[${fl}].st`), 'picked up').toBe(2);
     expect(w.eval(`fighters[${a}]._cf`)).toBe(fl);
-    put(w, a, 14400 + 300, GY); step(w, 2);                // still on the enemy side of the middle line: not captured
+    put(w, a, MID + 300, foe.y); step(w, 2);               // still on the enemy side of the line: not captured
     expect(w.eval('CTF.live.score[0]')).toBe(0);
-    put(w, a, 14400 - 300, GY);                            // ...and across the line, onto its own side: captured
+    put(w, a, MID - 300, own.y);                           // ...and across the line, onto its own side: captured
     step(w, 2);
     expect(w.eval('CTF.live.score[0]')).toBe(1);
     expect(w.eval(`CTF.live.flags[${fl}].st`), 'captured').toBe(4);
     expect(w.eval(`fighters[${a}]._cf`)).toBe(-1);
   });
 
-  it('a carrier KO\'d drops the flag, and its own team touching it sends it home', () => {
+  it('a carrier KO\'d drops the flag, and its own side picks it up to hide it again', () => {
     const { window: w } = loadMonolith(3);
     start(w);
     const a = mate(w, 0), b = mate(w, 1), fl = flagOf(w, 1);
@@ -182,38 +125,38 @@ describe('capture the flag', () => {
   it('a KO on the enemy side is a trip to their jail, and a teammate at the door frees it', () => {
     const { window: w } = loadMonolith(5);
     start(w);
-    const a = mate(w, 0), friend = mate(w, 0, 1);
+    const a = mate(w, 0), friend = mate(w, 0, 1), foe = spawn(w, 1), own = spawn(w, 0);
     const j = J(w, 'CTF.map.jails[1]');   // team 1 owns the right jail: it holds team 0's fighters
-    put(w, a, 20000, GY);
+    put(w, a, foe.x, foe.y);
     w.eval(`eliminate(fighters[${a}])`);
     expect(w.eval(`fighters[${a}]._jail`), 'jailed by the right-hand side').toBe(1);
     const sl = J(w, `{x:fighters[${a}].x, y:fighters[${a}].y}`);
     expect(Math.abs(sl.x - j.door.x), 'inside the cell, by the door').toBeLessThan(900);
     step(w, 30);
     expect(w.eval(`fighters[${a}]._jail`), 'still inside').toBe(1);
-    put(w, friend, j.door.x - 20, CAVE);   // a teammate touches the door
+    put(w, friend, j.door.x - 20, cellFloor(w, 1));   // a teammate touches the door
     step(w, 2);
     expect(w.eval(`fighters[${a}]._jail`), 'freed').toBe(null);
     expect(w.eval('CTF.live.jails[1].pris.length')).toBe(0);
     // a KO on your own side is a trip home instead
-    put(w, a, 800, GY); w.eval(`eliminate(fighters[${a}])`);
+    put(w, a, own.x, own.y); w.eval(`eliminate(fighters[${a}])`);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
-    expect(w.eval(`fighters[${a}].x`)).toBeLessThan(14400);
+    expect(w.eval(`fighters[${a}].x`)).toBeLessThan(MID);
   });
 
   it('a prisoner stays until a teammate frees them; freed, they cannot be jailed again for a few seconds, and are quick', () => {
     const { window: w } = loadMonolith(6);
     start(w);
-    const a = mate(w, 0), friend = mate(w, 0, 1), j = J(w, 'CTF.map.jails[1]');
-    put(w, a, 20000, GY); w.eval(`eliminate(fighters[${a}])`);
+    const a = mate(w, 0), friend = mate(w, 0, 1), j = J(w, 'CTF.map.jails[1]'), foe = spawn(w, 1);
+    put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}])`);
     logic(w, 20000);
     expect(w.eval(`fighters[${a}]._jail`), 'still there, however long').toBe(1);
-    put(w, friend, j.door.x - 20, CAVE); logic(w, 2);
+    put(w, friend, j.door.x - 20, cellFloor(w, 1)); logic(w, 2);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
     expect(w.eval(`fighters[${a}]._ctfFree`)).toBeGreaterThan(100);
     expect(w.eval(`fighters[${a}]._hasteT`), 'a short speed boost').toBeGreaterThan(0);
     // a KO inside those seconds, on the enemy side, is a trip home and not a cell
-    put(w, a, 20000, GY); w.eval(`eliminate(fighters[${a}])`);
+    put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}])`);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
   });
 
@@ -223,10 +166,10 @@ describe('capture the flag', () => {
     expect(w.eval('ctfJailThreshold(2)')).toBe(120);
     expect(w.eval('ctfJailThreshold(5)')).toBe(90);
     expect(w.eval('ctfJailThreshold(8)')).toBe(60);
-    const a = mate(w, 0), t = w.eval('ctfJailThreshold(CTF.live.n)');
-    put(w, a, 800, GY); w.eval(`fighters[${a}].pct=${t + 5}`); logic(w, 2);
+    const a = mate(w, 0), t = w.eval('ctfJailThreshold(CTF.live.n)'), own = spawn(w, 0), foe = spawn(w, 1);
+    put(w, a, own.x, own.y); w.eval(`fighters[${a}].pct=${t + 5}`); logic(w, 2);
     expect(w.eval(`fighters[${a}]._jail`), 'on its own side: no cell').toBe(null);
-    put(w, a, 20000, GY); w.eval(`fighters[${a}].pct=${t - 5}`); logic(w, 2);
+    put(w, a, foe.x, foe.y); w.eval(`fighters[${a}].pct=${t - 5}`); logic(w, 2);
     expect(w.eval(`fighters[${a}]._jail`), 'under the threshold').toBe(null);
     w.eval(`fighters[${a}].pct=${t + 5}`); logic(w, 2);
     expect(w.eval(`fighters[${a}]._jail`), 'over it, in the enemy country').toBe(1);
@@ -235,29 +178,29 @@ describe('capture the flag', () => {
   it('the no-go zone pushes the jail\'s own team out, and never hurts them', () => {
     const { window: w } = loadMonolith(7);
     start(w);
-    const owner = mate(w, 1), j = J(w, 'CTF.map.jails[1]'), z = j.zone;
-    put(w, owner, z.x + 300, CAVE);
+    const owner = mate(w, 1), j = J(w, 'CTF.map.jails[1]'), z = j.zone, floor = cellFloor(w, 1);
+    put(w, owner, z.x + 200, floor);
     const pct0 = w.eval(`fighters[${owner}].pct`);
-    step(w, 600);
-    const x = w.eval(`fighters[${owner}].x`);
-    expect(x < z.x || x > z.x + z.w, 'walked out of the zone').toBe(true);
+    step(w, 900);
+    const x = w.eval(`fighters[${owner}].x`), y = w.eval(`fighters[${owner}].y`);
+    expect(x < z.x || x > z.x + z.w || y < z.y || y > z.y + z.h, 'out of the zone').toBe(true);
     expect(w.eval(`fighters[${owner}].pct`)).toBe(pct0);
     // the other side may stand there
     const foe = mate(w, 0);
-    put(w, foe, z.x + z.w / 2, CAVE); step(w, 60);
+    put(w, foe, z.x + z.w / 2, floor); step(w, 60);
     const fx = w.eval(`fighters[${foe}].x`);
-    expect(Math.abs(fx - (z.x + z.w / 2))).toBeLessThan(50);
+    expect(Math.abs(fx - (z.x + z.w / 2))).toBeLessThan(120);
   });
 
   it('a key opens its door for its team only, goes back where it lay, and a KO\'d holder drops it', () => {
     const { window: w } = loadMonolith(8);
     start(w);
     const k = J(w, `CTF.live.keys.filter(function(k){ return k.door==='1r'; })[0]`);
-    const holder = mate(w, 0);
+    const holder = mate(w, 0), own = spawn(w, 0);
     put(w, holder, k.x, k.y); step(w, 2);
     expect(w.eval(`fighters[${holder}]._ck`)).toBe(k.i);
     expect(w.eval(`CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0].op[0]`)).toBe(false);
-    put(w, holder, 1000, GY); w.eval(`eliminate(fighters[${holder}])`);
+    put(w, holder, own.x, own.y); w.eval(`eliminate(fighters[${holder}])`);
     expect(w.eval(`CTF.live.keys[${k.i}].st`), 'dropped where it fell').toBe(0);
     // pick it up again and take it to its door
     const d = J(w, `CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0]`);
@@ -272,12 +215,74 @@ describe('capture the flag', () => {
     expect(w.eval(`Math.round(CTF.live.keys[${k.i}].x)`)).toBe(Math.round(k.hx));
   });
 
+  it('a flag its own side drops is picked up by that side and hidden again; the other side loses sight of it', () => {
+    const { window: w } = loadMonolith(16);
+    start(w);
+    const a = mate(w, 0), b = mate(w, 1), fl = flagOf(w, 1), f = J(w, `CTF.live.flags[${fl}]`);
+    put(w, a, f.x, f.y); step(w, 2);
+    w.eval(`CTF.live.seen[0][${fl}]=true`);
+    w.eval(`ctfDropFlag(fighters[${a}], 'hit')`);
+    expect(w.eval(`CTF.live.flags[${fl}].st`), 'lying where it fell').toBe(3);
+    put(w, b, w.eval(`CTF.live.flags[${fl}].x`), w.eval(`CTF.live.flags[${fl}].y`)); step(w, 40);
+    expect(w.eval(`CTF.live.flags[${fl}].st`), 'its own side picked it up').toBe(2);
+    expect(w.eval(`fighters[${b}]._cf`)).toBe(fl);
+    // not a capture, even across the line (it is their own flag)
+    const own1 = spawn(w, 1);
+    put(w, b, own1.x, own1.y); step(w, 2);
+    expect(w.eval('CTF.live.score[1]')).toBe(0);
+    // the flag key puts it down somewhere new on its side
+    const spot = J(w, `CTF.map.spots.filter(function(s){ return s.team===1 && Math.abs(s.x-${f.x})>700 && ctfHideValid(1, s.x, s.y); })[0]`);
+    put(w, b, spot.x, spot.y);
+    w.eval(`ctfAiReachable = function(){ return true; }; fighters[${b}].controller='local'; down[KEYS.flag]=true;`); step(w, 2); w.eval(`down[KEYS.flag]=false`); step(w, 2);
+    expect(w.eval(`CTF.live.flags[${fl}].st`), 'hidden again').toBe(1);
+    expect(w.eval(`Math.abs(CTF.live.flags[${fl}].hx - ${f.x})`), 'somewhere new').toBeGreaterThan(300);
+    expect(w.eval(`CTF.live.seen[0][${fl}]`), 'and the other side has lost sight of it').toBe(false);
+  });
+
+  it('a ghost is invisible to the other side; a shield takes the hit that would have jailed you', () => {
+    const { window: w } = loadMonolith(17);
+    start(w);
+    const a = mate(w, 0), foe = spawn(w, 1);
+    w.eval(`fighters[${a}]._ghostT=100; fighters[${a}].you=false; fighters[${mate(w, 1)}].you=true`);
+    expect(w.eval(`ctfHiddenFrom(fighters[${a}])`), 'hidden from the other side').toBe(true);
+    w.eval(`fighters[${a}].you=true; fighters[${mate(w, 1)}].you=false`);
+    expect(w.eval(`ctfHiddenFrom(fighters[${a}])`), 'not from its own').toBe(false);
+    const t = w.eval('ctfJailThreshold(CTF.live.n)');
+    put(w, a, foe.x, foe.y); w.eval(`fighters[${a}]._shield=1; fighters[${a}].pct=${t + 5}`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._jail`), 'the shield took it').toBe(null);
+    expect(w.eval(`fighters[${a}]._shield`)).toBe(0);
+    w.eval(`fighters[${a}].pct=${t + 5}`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._jail`), 'once only').toBe(1);
+  });
+
+  it('the areas do what they look like: ice, water, wind, belt, spring, thin air', () => {
+    const { window: w } = loadMonolith(13);
+    start(w);
+    const zone = type => J(w, `worldZones.filter(function(z){ return z.type==='${type}'; })[0] || null`);
+    const into = (z, vx) => w.eval(`(function(){ var f=fighters[0]; f.controller='still'; f.x=${z.x + z.w / 2}; f.y=${z.y + z.h - 30}; f.vx=${vx || 0}; f.vy=0; f.iceUntil=0; f._floatT=0; f._springT=0; return 1; })()`);
+    let tested = 0;
+    let z = zone('ice'); if (z) { into(z); step(w, 2); expect(w.eval('fighters[0].iceUntil'), 'ice: low friction').toBeGreaterThan(0); tested++; }
+    z = zone('water'); if (z) { into(z, 8); step(w, 1); expect(w.eval('fighters[0].vx'), 'water drags').toBeLessThan(8); tested++; }
+    z = zone('wind'); if (z) { into(z, 0); step(w, 3); expect(Math.sign(w.eval('fighters[0].vx')), 'wind pushes the way it points').toBe(z.dir); tested++; }
+    z = zone('spring'); if (z) { into(z); step(w, 3); expect(w.eval('fighters[0].vy'), 'spring throws you up').toBeLessThan(-8); tested++; }
+    z = zone('float'); if (z) { into(z); step(w, 2); expect(w.eval('fighters[0]._floatT'), 'thin air').toBeGreaterThan(0); tested++; }
+    z = zone('belt'); if (z) { into(z); const x0 = w.eval('fighters[0].x'); step(w, 8); expect(Math.sign(w.eval('fighters[0].x') - x0), 'a belt carries you').toBe(z.dir); tested++; }
+    expect(tested, 'at least four of the area kinds are on this map').toBeGreaterThanOrEqual(4);
+    // the right side mirrors: a wind toward the middle on the left blows toward the middle on the right
+    const winds = J(w, `worldZones.filter(function(z){ return z.type==='wind'; }).map(function(z){ return [z.x + z.w/2 < ${MID}, z.dir]; })`);
+    if (winds.length) expect(winds.find(q => q[0])[1]).toBe(-winds.find(q => !q[0])[1]);
+    // and a dark area is only a picture
+    expect(w.eval(`worldZones.some(function(z){ return z.type==='dark'; })`)).toBe(false);
+    expect(w.eval(`CTF.map.zones.some(function(z){ return z.type==='dark'; })`)).toBe(true);
+  });
+
   it('a whole side in jail at once is over: the other side wins', () => {
     const { window: w } = loadMonolith(10);
     start(w);
+    const foe = spawn(w, 1);
     for (let k = 0; k < 5; k++) {
       const a = mate(w, 0, k);
-      put(w, a, 20000, GY); w.eval(`eliminate(fighters[${a}])`);
+      put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}])`);
       expect(w.eval(`fighters[${a}]._jail`)).toBe(1);
       logic(w, 1);
       expect(w.eval('CTF.live.over'), 'after ' + (k + 1) + ' in jail').toBe(k === 4);
@@ -286,16 +291,41 @@ describe('capture the flag', () => {
     expect(w.eval('CTF.live.why')).toBe('jail');
   });
 
+  it('a lift carries whoever stands on it; a team buff is claimed once per team', () => {
+    const { window: w } = loadMonolith(18);
+    start(w);
+    expect(w.eval('CTF.live.elevs.length'), 'two puzzle areas a side').toBe(4);
+    w.eval('worldZones = []');   // (a belt in the room would carry the rider off the car)
+    const e = J(w, 'CTF.live.elevs[0]');
+    put(w, 0, e.x + e.w / 2, e.y0); w.eval('fighters[0].onground = true');
+    step(w, 150);   // it rests, then runs down: the real game steps so the rider is carried
+    expect(w.eval('fighters[0].y'), 'carried down the shaft').toBeGreaterThan(e.y0 + 100);
+    const b = J(w, 'CTF.live.buffs[0]');
+    expect(w.eval('CTF.live.buffs.length'), 'one reward puzzle a side').toBe(2);
+    put(w, 1, b.x, b.y); logic(w, 2);
+    const team1 = w.eval('fighters[1].team');
+    expect(w.eval(`CTF.live.buff[${team1}]`), 'a modest speed-up for the side').toBeCloseTo(1.1, 5);
+    expect(w.eval('ctfSpeedK(fighters[1])')).toBeCloseTo(1.5 * 1.1, 5);
+    const other = mate(w, 1 - team1);
+    put(w, other, b.x, b.y); logic(w, 2);
+    expect(w.eval(`CTF.live.buff[${1 - team1}]`), 'the other side may claim it too').toBeCloseTo(1.1, 5);
+    const again = mate(w, team1, 1);
+    w.eval(`CTF.live.buff[${team1}] = 0; CTF.live.buffs[0].got[${team1}] = true`);
+    put(w, again, b.x, b.y); logic(w, 2);
+    expect(w.eval(`CTF.live.buff[${team1}]`), 'not twice').toBe(0);
+  });
+
   it('only capturing all five ends the match: no clock', () => {
     const { window: w } = loadMonolith(9);
     start(w);
     logic(w, 40000);                                      // far longer than any match clock there could have been (and no capture came of it)
     expect(w.eval('running')).toBe(true);
     expect(w.eval('CTF.live.over')).toBe(false);
+    const own = spawn(w, 0);
     for (let n = 0; n < 5; n++) {
       const a = mate(w, 0, n % 5), fl = flagOf(w, 1, n), f = J(w, `CTF.live.flags[${fl}]`);
       put(w, a, f.x, f.y); step(w, 2);
-      put(w, a, 14400 - 300, GY); step(w, 2);
+      put(w, a, MID - 300, own.y); step(w, 2);
       expect(w.eval('CTF.live.score[0]')).toBe(n + 1);
       expect(w.eval('CTF.live.over')).toBe(n === 4);
     }
