@@ -1166,6 +1166,7 @@
           <div class="seg" id="segMode">
             <button data-v="ffa" class="on">Free-for-all</button>
             <button data-v="teams">Teams</button>
+            <button data-v="ctf">Capture the Flag</button>
             <button data-v="boss">Boss Rush</button>
           </div>
         </div>
@@ -2036,7 +2037,8 @@ function countOptions(){
   // Boss Rush offers ONE. It is a co-op mode and every other mode needs an opponent, so the floor
   // has always been 2 — but a boss is the opponent, so a lone fighter is a complete match, and
   // "beat N bosses solo" (TROPHIES) is not a deed anybody could perform without it.
-  return SETTINGS.mode==="teams"
+  return SETTINGS.mode==="ctf" ? [10]   // Capture the Flag is five a side, always
+    : SETTINGS.mode==="teams"
     ? [2,3,4,5,6,8,10,12,16,20]
     // ...and only when ONE human is playing. Two people at the keyboard and a single contestant
     // leaves player 2 with no fighter at all: the existing guard only fires when the players
@@ -2060,6 +2062,962 @@ function teamSplitsFor(N){
   return opts;
 }
 const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, green, gold (max 4 teams)
+// @ctf:begin
+// ---------------------------------------------------------------------------------------------------------------
+//  CTF MAPS. A map is a grid of 120 px cells (80 columns x 28 rows = 9600 x 3360 world px, about 9 screens wide and
+//  3.4 tall at the match zoom), written for the LEFT half only: team 0's side. The right half is the mirror image, so
+//  both sides are exactly the same by construction. A hop-platform lattice is then laid over the open air (the same
+//  brick-bond idea the big stages use), so there is always somewhere to stand at every height.
+//
+//  Grid characters
+//    #  solid block            =  one-way ledge (the top of the cell)
+//    1-6 a locked door (a vertical run of the same digit is one door)     a-f  the key for door 1-6 (same side)
+//    S B C F W  a flag hiding spot: S bare, B bush, C crate, F banner, W barrel (the cover hides a flag from a distance)
+//    u v  a speed / jump boost pickup          H  a team spawn          P  the capture pad (the team's flag stand)
+//    J  the jail door (a vertical run)          p  a prisoner's place inside the jail
+//  An object stands on the floor under its cell.
+// ---------------------------------------------------------------------------------------------------------------
+const CTF_CELL = 120, CTF_COLS = 80, CTF_ROWS = 28, CTF_HALF = 40;
+const CTF_DOOR_COL = ['#d94f4f','#e0b030','#3fb0e0','#8a5ad0','#40b870','#e07a30'];   // door/key colours 1..6
+const CTF_COVER = { B:'bush', C:'crate', F:'banner', W:'barrel' };
+const CTF_MAPS = {};
+
+function ctfGridNew(){
+  const rows = []; for(let r=0;r<CTF_ROWS;r++) rows.push(new Array(CTF_HALF).fill('.'));
+  const g = {
+    rows,
+    put(r,c,s){ for(let i=0;i<s.length;i++){ const cc=c+i; if(r>=0&&r<CTF_ROWS&&cc>=0&&cc<CTF_HALF) rows[r][cc]=s[i]; } return g; },
+    fill(r,c0,c1,ch){ for(let c=c0;c<=c1;c++) g.put(r,c,ch); return g; },
+    col(c,r0,r1,ch){ for(let r=r0;r<=r1;r++) g.put(r,c,ch); return g; },
+    box(r0,c0,r1,c1,ch){ for(let r=r0;r<=r1;r++) g.fill(r,c0,c1,ch); return g; },
+    gap(r,c0,c1){ return g.fill(r,c0,c1,'.'); },
+    clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
+    field: null,
+    keepClear(c0,r0,c1,r1){ g.clear.push([c0,r0,c1,r1]); return g; },
+    lattice(o){ g.field = o; return g; },
+  };
+  return g;
+}
+
+// Merge a set of cells into rectangles: horizontal runs first, then identical runs stacked vertically.
+function ctfMergeCells(cells){   // cells: Set of "r,c"
+  const runs = [];
+  for(let r=0;r<CTF_ROWS;r++){
+    let c = 0;
+    while(c < CTF_HALF){
+      if(cells.has(r+','+c)){ let c1=c; while(cells.has(r+','+(c1+1))) c1++; runs.push({r0:r,r1:r,c0:c,c1}); c=c1+1; } else c++;
+    }
+  }
+  const out = [];
+  for(const run of runs){
+    const prev = out.find(o=>o.c0===run.c0 && o.c1===run.c1 && o.r1===run.r0-1);
+    if(prev) prev.r1 = run.r1; else out.push({...run});
+  }
+  return out.map(o=>({ x:o.c0*CTF_CELL, y:o.r0*CTF_CELL, w:(o.c1-o.c0+1)*CTF_CELL, h:(o.r1-o.r0+1)*CTF_CELL }));
+}
+
+function ctfMapBuild(id){
+  const def = CTF_MAPS[id]; if(!def) return null;
+  const g = ctfGridNew(); def.build(g);
+  const WW = CTF_COLS*CTF_CELL, WH = CTF_ROWS*CTF_CELL, HALF = WW/2;
+  const mx = (x, w)=> WW - x - (w||0);
+  const solids = new Set(), hops = new Set(), doorCells = {}, jailCells = new Set();
+  const M = { id, name:def.name, theme:def.theme, WW, WH, plats:[], doors:[], keys:[], boosts:[], spots:[], homes:[], jails:[],
+              pads:[], clear:[], G:0 };
+  const leftPlats = [], at = (r,c)=> ({ x:c*CTF_CELL+CTF_CELL/2, y:(r+1)*CTF_CELL });   // an object stands on the floor of its cell
+  const objs = { keys:[], boosts:[], spots:[], spawns:[], pad:new Set(), slots:[] };
+  for(let r=0;r<CTF_ROWS;r++) for(let c=0;c<CTF_HALF;c++){
+    const ch = g.rows[r][c], k = r+','+c;
+    if(ch==='#') solids.add(k);
+    else if(ch==='=') hops.add(k);
+    else if(ch>='1' && ch<='6') (doorCells[ch] = doorCells[ch] || []).push([r,c]);
+    else if(ch==='J') jailCells.add(k);
+    else if(ch>='a' && ch<='f') objs.keys.push({ door:ch.charCodeAt(0)-96, ...at(r,c) });
+    else if('SBCFW'.includes(ch)) objs.spots.push({ cover:CTF_COVER[ch]||null, ...at(r,c) });
+    else if(ch==='u' || ch==='v') objs.boosts.push({ kind:ch==='u'?'speed':'jump', ...at(r,c) });
+    else if(ch==='H') objs.spawns.push(at(r,c));
+    else if(ch==='P') objs.pad.add(k);
+    else if(ch==='p') objs.slots.push(at(r,c));
+  }
+  for(const rc of mergeCellsTo(solids)) leftPlats.push({ ...rc, solid:true });
+  for(const rc of ctfMergeCells(hops)) leftPlats.push({ x:rc.x, y:rc.y, w:rc.w, h:16, hop:true });
+  // lattice laid over the air
+  if(g.field) for(const p of ctfLattice(g, leftPlats, g.field)) leftPlats.push(p);
+  // mirror
+  for(const p of leftPlats){ M.plats.push({ ...p }); M.plats.push({ ...p, x:mx(p.x,p.w) }); }
+  function mergeCellsTo(s){ return ctfMergeCells(s); }
+  // doors: a vertical stack of one digit is one slab, thin, centred in its column
+  const doorOf = (r0,r1,c,n,team)=>({ id:team?n+'r':String(n), n, team, color:CTF_DOOR_COL[n-1], x:c*CTF_CELL+42, y:r0*CTF_CELL, w:36, h:(r1-r0+1)*CTF_CELL });
+  const stacks = (cells)=>{ const byC = {}; for(const [r,c] of cells) (byC[c] = byC[c]||[]).push(r);
+    const out = []; for(const c in byC){ const rs = byC[c].sort((a,b)=>a-b); let a=rs[0], b=a; for(let i=1;i<=rs.length;i++){ if(rs[i]===b+1) b=rs[i]; else { out.push([a,b,+c]); a=rs[i]; b=a; } } } return out; };
+  for(const ch in doorCells) for(const [r0,r1,c] of stacks(doorCells[ch])){
+    const d0 = doorOf(r0,r1,c,+ch,0); M.doors.push(d0);
+    M.doors.push({ ...d0, id:d0.n+'r', team:1, x:mx(d0.x,d0.w) });
+  }
+  for(const k of objs.keys){ M.keys.push({ door:String(k.door), x:k.x, y:k.y }); M.keys.push({ door:k.door+'r', x:mx(k.x), y:k.y }); }
+  for(const b of objs.boosts){ M.boosts.push({ kind:b.kind, x:b.x, y:b.y }); M.boosts.push({ kind:b.kind, x:mx(b.x), y:b.y }); }
+  for(const s of objs.spots){ M.spots.push({ team:0, cover:s.cover, x:s.x, y:s.y }); M.spots.push({ team:1, cover:s.cover, x:mx(s.x), y:s.y }); }
+  // home: spawns and the capture pad (the pad's cells are merged into one stand)
+  const padRects = ctfMergeCells(objs.pad);
+  const pad = padRects[0] ? { x:padRects[0].x, y:padRects[0].y+CTF_CELL, w:padRects[0].w, h:CTF_CELL } : null;
+  M.homes.push({ team:0, spawns:objs.spawns.map(s=>({x:s.x,y:s.y})), pad });
+  M.homes.push({ team:1, spawns:objs.spawns.map(s=>({x:mx(s.x),y:s.y})), pad: pad && { x:mx(pad.x,pad.w), y:pad.y, w:pad.w, h:pad.h } });
+  // the jail: its door, the places inside, and the no-go zone in front of it
+  const js = [...jailCells].map(k=>k.split(',').map(Number));
+  if(js.length){
+    const jr = stacks(js)[0], dr0 = jr[0], dr1 = jr[1], dc = jr[2];
+    const door = doorOf(dr0, dr1, dc, 0, 0);
+    const floorY = (dr1+1)*CTF_CELL, minC = Math.min(...objs.slots.map(s=>Math.floor(s.x/CTF_CELL)));
+    const zone = { x:(minC-3)*CTF_CELL, y:(dr0-4)*CTF_CELL, w:(dc+4-(minC-3)+1)*CTF_CELL, h:floorY-(dr0-4)*CTF_CELL };
+    const j0 = { owner:0, door:{ x:door.x, y:door.y, w:door.w, h:door.h }, slots:objs.slots.map(s=>({x:s.x,y:s.y})), zone, face:1 };
+    M.jails.push(j0);
+    M.jails.push({ owner:1, door:{ x:mx(door.x,door.w), y:door.y, w:door.w, h:door.h }, slots:objs.slots.map(s=>({x:mx(s.x),y:s.y})), zone:{ x:mx(zone.x,zone.w), y:zone.y, w:zone.w, h:zone.h }, face:-1 });
+  }
+  for(const b of g.clear) M.clear.push(b);
+  M.solids = M.plats.filter(p=>p.solid);
+  return M;
+}
+
+// The lattice of one-way ledges over the open air of one half. Deterministic (hashed from cell coordinates, never Math.random),
+// so a replay or a client rebuilds the same map.
+function ctfLattice(g, leftPlats, o){
+  const out = [], HALF = CTF_HALF*CTF_CELL;
+  const solids = leftPlats.filter(p=>p.solid);
+  const hops = leftPlats.filter(p=>p.hop);
+  const clear = g.clear.map(([c0,r0,c1,r1])=>({ x:c0*CTF_CELL, y:r0*CTF_CELL, w:(c1-c0+1)*CTF_CELL, h:(r1-r0+1)*CTF_CELL }));
+  const x0 = o.x0 != null ? o.x0 : 200, x1 = o.x1 != null ? o.x1 : HALF - 40;
+  const cols = Math.max(3, Math.round((x1-x0)/o.colW));
+  const salt = o.salt || 7;
+  for(let r=0; ; r++){
+    const y = o.bottom - r*o.gap;
+    if(y < o.top) break;
+    for(let c=0;c<cols;c++){
+      const t = (c + 0.5 + (r%2 ? 0.5 : 0))/cols; if(t >= 1) continue;
+      const w = Math.round(o.w * (0.85 + cellJitter(c,r,salt)*0.5));
+      const cx = x0 + (x1-x0)*t + (cellJitter(c,r,salt+1)-0.5)*o.colW*0.22;
+      const rect = { x:Math.round(clamp(cx - w/2, x0, Math.max(x0, x1-w))), y:Math.round(y), w, h:16, hop:true };
+      if(solids.some(b=>boxHit(rect,b,36,70))) continue;
+      if(clear.some(b=>boxHit(rect,b,0,0))) continue;
+      if(hops.some(b=>boxHit(rect,b,28,64))) continue;
+      if(out.some(b=>boxHit(rect,b,28,64))) continue;
+      out.push(rect);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+//  1. CASTLE YOYLEBERRY: a home keep, a courtyard with the jail, a locked tower, vaults under the floor.
+// ---------------------------------------------------------------------------------------------------------------
+CTF_MAPS.castle = {
+  name:'Castle Yoyleberry',
+  theme:{ sky:['#2b3a66','#d9a79a'], far:['#4b4f7a','#383c63'], pat:'brick',
+          solid:{ fill:'#8d8c9c', line:'#6c6b7d', hi:'#b2b1c2', edge:'#262532' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' }, cover:{ bush:'#3f9a4c', crate:'#a8773f', banner:'#c9433f', barrel:'#7a4a2a' } },
+  build(g){
+    g.fill(22,0,39,'#'); g.fill(26,0,39,'#'); g.fill(27,0,39,'#'); g.col(0,0,27,'#');          // the ground, the cellar floor, the outer wall
+    g.gap(22,27,28); g.gap(22,36,39);                                                          // two shafts down to the cellar
+    // home keep: a roofed hall with the capture pad and the spawns, a stair up to the roof
+    g.fill(18,1,10,'#'); g.put(21,1,'PP'); g.put(21,3,'HHHHH'); g.put(21,9,'C'); g.put(21,10,'S');
+    g.put(17,3,'B'); g.put(17,7,'C'); g.put(17,9,'b');
+    g.put(21,12,'='); g.put(20,13,'='); g.put(19,12,'=');
+    g.keepClear(1,19,10,21);
+    // the jail in the courtyard (the no-go zone is worked out from it)
+    g.col(17,18,21,'#'); g.fill(18,17,21,'#'); g.col(21,19,21,'J'); g.put(21,18,'ppp');
+    g.keepClear(17,18,21,21);
+    // the locked tower: ground room (door 1), second floor with the key, the roof
+    g.col(29,14,21,'#'); g.col(35,14,19,'#'); g.fill(14,29,35,'#'); g.fill(18,30,34,'#');
+    g.col(29,20,21,'1'); g.gap(16,29,29); g.gap(17,29,29); g.gap(16,35,35); g.gap(17,35,35);
+    g.put(21,31,'S'); g.put(21,32,'W'); g.put(21,34,'u'); g.put(17,31,'a'); g.put(17,33,'F'); g.put(13,31,'B'); g.put(13,34,'v');
+    g.put(21,27,'='); g.put(20,28,'='); g.put(19,27,'='); g.put(18,28,'=');                    // up the tower's face to the window
+    g.put(21,36,'='); g.put(20,36,'='); g.put(19,36,'='); g.put(18,36,'=');                    // and its far side
+    g.keepClear(29,14,35,21);
+    // the cellar: two vaults and a crawl space
+    g.fill(23,2,8,'#'); g.col(2,24,25,'#'); g.col(8,24,25,'2'); g.put(25,4,'W'); g.put(25,6,'S'); g.put(25,5,'v');
+    g.fill(23,17,25,'#'); g.col(17,24,25,'#'); g.col(25,24,25,'3'); g.put(25,20,'B'); g.put(25,23,'S'); g.put(25,22,'u');
+    g.put(25,33,'c'); g.fill(24,30,34,'#'); g.put(25,32,'S'); g.put(25,34,'W');
+    // stairs out of the shafts, and the bridge over the middle one
+    g.put(25,27,'='); g.put(24,28,'='); g.put(23,27,'=');
+    g.put(25,38,'='); g.put(24,37,'='); g.put(23,36,'=');
+    g.put(21,37,'===');
+    g.lattice({ top:600, bottom:2490, gap:132, colW:540, w:250, salt:11 });
+  },
+};
+
+if(typeof window !== 'undefined') window.CTF_MAPS = CTF_MAPS;
+
+// ---------------------------------------------------------------------------------------------------------------
+//  CAPTURE THE FLAG. SETTINGS.mode === 'ctf'. Two sides, five fighters each, one flag per fighter. A HIDING PHASE comes first
+//  (up to five minutes, over as soon as every human is done; a wall splits the map and nobody sees the other side's hiding),
+//  then the match, which has NO clock: it goes on until one team has carried all five of the other team's flags home.
+//
+//  Every timer here counts STEPS (60 a second). No word is ever drawn in a match: icons and colour only.
+//  Everything that changes lives in CTF.live, plain numbers and arrays, so the host's snapshot can carry it (ctfNet).
+//
+//  THE RULES, so they can be changed in one place:
+//   - a KO on your own side puts you back at your home; a KO on the ENEMY side puts you in THEIR jail (ctfEliminate);
+//   - a teammate who touches the jail door frees everyone inside; the jail's own team cannot enter the zone around it
+//     (they are pushed out, never hurt: ctfStepZones). A jail also lets its prisoners out after CTF_JAIL_AUTO steps, so
+//     a team whose every member is inside can never be stuck there for good;
+//   - a flag carrier moves and jumps slower, and drops the flag when KO'd or launched faster than CTF_BIGHIT;
+//   - a KEY is used up on its door, which then stays open for everyone for the rest of the match. A key lies on the same
+//     side as its door, so the foe has to raid for it. A KO'd key holder drops the key where they fell;
+//   - while the hiding phase lasts every door stands open; they lock when it ends.
+// ---------------------------------------------------------------------------------------------------------------
+const CTF_N = 5, CTF_HIDE_STEPS = 18000, CTF_JAIL_AUTO = 2700, CTF_JAIL_OPEN = 150;
+const CTF_BIGHIT = 13, CTF_CARRY_SPEED = 0.78, CTF_CARRY_JUMP = 0.82, CTF_BOOST_JUMP = 1.2;
+const CTF_FLAG_R = 40, CTF_KEY_R = 42, CTF_BOOST_STEPS = 420, CTF_BOOST_CD = 1500;
+const CTF_REVEAL_OPEN = 420, CTF_REVEAL_COVER = 130, CTF_STALL_REVEAL = 14400;
+const CTF = { live:null, map:null, mapId:null, prevStage:null, lastMap:null, built:{}, stageObjs:{}, forceMap:null };
+
+function ctfOn(){ return SETTINGS.mode === 'ctf'; }
+function ctfMapIds(){ return Object.keys(CTF_MAPS); }
+function ctfMapGet(id){ return CTF.built[id] || (CTF.built[id] = ctfMapBuild(id)); }
+function ctfStageObj(id){
+  if(!CTF.stageObjs[id]){ const M = ctfMapGet(id);
+    CTF.stageObjs[id] = { id:'ctf-'+id, name:M.name, blurb:'Capture the Flag', sky:M.theme.sky, ground:M.theme.solid.fill, plats:[], hazard:null }; }
+  return CTF.stageObjs[id];
+}
+function ctfPickMap(){
+  const ids = ctfMapIds();
+  if(CTF.forceMap && CTF_MAPS[CTF.forceMap]) return CTF.forceMap;
+  let id = ids[Math.floor(Math.random()*ids.length)];
+  if(ids.length > 1 && id === CTF.lastMap) id = ids[(ids.indexOf(id) + 1 + Math.floor(Math.random()*(ids.length-1))) % ids.length];
+  return id;
+}
+// setupWorld() for this mode: pick a map at random and lay it out. Pure given the map: the world holds no live state.
+function ctfBuildWorld(){
+  const id = ctfPickMap(), M = ctfMapGet(id);
+  CTF.lastMap = id; CTF.mapId = id; CTF.map = M;
+  if(!(stage && String(stage.id).indexOf('ctf-') === 0)) CTF.prevStage = stage;
+  stage = ctfStageObj(id);
+  WW = M.WW; WH = M.WH; camX = 0; camY = 0; bases = []; spawnZones = []; worldZones = []; floors = [];
+  worldPlats = M.plats.map(p=>({ ...p }));
+  CTF.live = null;
+}
+// Leaving the mode's screens puts the player's own stage back.
+function ctfStageRestore(){
+  if(CTF.prevStage && stage && String(stage.id).indexOf('ctf-') === 0){ stage = CTF.prevStage; }
+  CTF.live = null;
+}
+
+// ---- the match state -------------------------------------------------------------------------------------------
+function ctfBegin(){
+  const M = CTF.map;
+  const L = CTF.live = { map:M, id:CTF.mapId, phase:'hide', t:0, playT:0, flags:[], keys:[], doors:[], boosts:[], jails:[], score:[0,0],
+    done:{}, flash:null, over:false, winner:-1, lastCapT:0, stalled:false, respawnN:[0,0], dyn:[], seen:[[],[]], foundAt:[{},{}], kos:[0,0], capLog:[] };
+  for(const d of M.doors) L.doors.push({ id:d.id, n:d.n, team:d.team, color:d.color, x:d.x, y:d.y, w:d.w, h:d.h, open:true });
+  M.keys.forEach((k,i)=>L.keys.push({ i, door:k.door, x:k.x, y:k.y, hx:k.x, hy:k.y, st:0, hold:-1, lock:-1, lockT:0, n:+String(k.door).replace('r','') }));
+  M.boosts.forEach((b,i)=>L.boosts.push({ i, kind:b.kind, x:b.x, y:b.y, cd:0 }));
+  M.jails.forEach(j=>L.jails.push({ owner:j.owner, door:{ ...j.door, open:false, t:0 }, slots:j.slots, zone:j.zone, face:j.face, pris:[] }));
+  L.rank = [0,0];
+  for(const f of fighters){
+    f.stocks = Infinity; f._cf = -1; f._ck = -1; f._jail = null; f._jailT = 0; f._ctfJT = 0; f._ctfA = false; f._ctfS = false; f._caps = 0; f.homeBase = null;
+    const h = M.homes[f.team], rank = L.rank[f.team]++, sp = h.spawns[rank % h.spawns.length];
+    f.x = sp.x; f.y = sp.y - f.r - 2; f.vx = 0; f.vy = 0; f.face = f.team === 0 ? 1 : -1;
+    const fl = { id:f.idx, team:f.team, owner:f.idx, st:0, car:f.idx, x:f.x, y:f.y, hx:f.x, hy:f.y, cover:false, lockIdx:-1, lockT:0, vy:0, fall:false };
+    L.flags.push(fl);
+  }
+  L.seen = [ fighters.map(()=>false), fighters.map(()=>false) ];
+  ctfRebuildDyn(L);
+  CTF.cpuHide = {};
+  try{ ctfAiBegin(L); }catch(e){}
+}
+// The solids that change during a match: closed doors, the closed jail doors, and the wall across the middle while hiding.
+function ctfRebuildDyn(L){
+  const out = [];
+  for(const d of L.doors) if(!d.open) out.push({ x:d.x, y:d.y, w:d.w, h:d.h, solid:true, door:d.id });
+  for(const j of L.jails) if(!j.door.open) out.push({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, solid:true, jailDoor:j.owner });
+  if(L.phase === 'hide') out.push({ x:CTF.map.WW/2 - 30, y:-400, w:60, h:CTF.map.WH + 400, solid:true, barrier:true });
+  L.dyn = out;
+}
+function ctfDynSolids(){ return CTF.live ? CTF.live.dyn : []; }
+function ctfViewTeam(){ const y = fighters.find(f=>f.you); return y ? y.team : 0; }
+
+// What is under (x, y): the top of the first surface at or below y, or null. Used to settle a dropped flag or key.
+function ctfSurfaceBelow(x, y, maxDrop){
+  let best = null; const lim = y + (maxDrop || 2400);
+  const test = p=>{ if(x < p.x || x > p.x + p.w) return; if(p.y < y - 6 || p.y > lim) return; if(best === null || p.y < best) best = p.y; };
+  for(const p of worldPlats) test(p);
+  for(const p of ctfDynSolids()) test(p);
+  return best;
+}
+// Does a straight line from (x0,y0) to (x1,y1) cross a solid? (walls, ceilings, closed doors)
+function ctfLOS(x0, y0, x1, y1){
+  const minX = Math.min(x0,x1), maxX = Math.max(x0,x1), minY = Math.min(y0,y1), maxY = Math.max(y0,y1);
+  const dx = x1 - x0, dy = y1 - y0;
+  const hit = p=>{
+    if(p.x > maxX || p.x + p.w < minX || p.y > maxY || p.y + p.h < minY) return false;
+    let t0 = 0, t1 = 1;
+    for(const [d, lo, hi, o] of [[dx, p.x, p.x + p.w, x0], [dy, p.y, p.y + p.h, y0]]){
+      if(Math.abs(d) < 1e-9){ if(o < lo || o > hi) return false; }
+      else { let a = (lo - o)/d, b = (hi - o)/d; if(a > b){ const s = a; a = b; b = s; } if(a > t0) t0 = a; if(b < t1) t1 = b; if(t0 > t1) return false; }
+    }
+    return true;
+  };
+  for(const p of worldPlats) if(p.solid && hit(p)) return false;
+  for(const p of ctfDynSolids()) if(hit(p)) return false;
+  return true;
+}
+
+// ---- input filter: the hiding phase's two keys, and a prisoner's stillness --------------------------------------
+const CTF_NOINP = { left:false, right:false, jump:false, down:false, up:false, attack:false, special:false, smash:false };
+function ctfFilterInput(f, inp){
+  const L = CTF.live; if(!L || L.over) return inp;
+  if(f._jail != null) return CTF_NOINP;
+  if(L.phase === 'hide'){
+    const atk = !!inp.attack, sp = !!inp.special;
+    if(atk && !f._ctfA) ctfHidePlace(f);
+    if(sp && !f._ctfS) ctfToggleDone(f);
+    f._ctfA = atk; f._ctfS = sp;
+    return { left:inp.left, right:inp.right, jump:inp.jump, down:inp.down, up:inp.up, attack:false, special:false, smash:false };
+  }
+  return inp;
+}
+// Is this a place the fighter's team may hide a flag?
+function ctfHideValid(team, x, y){
+  const M = CTF.map, mid = M.WW/2;
+  if(team === 0 ? x > mid - 150 : x < mid + 150) return false;
+  for(const j of M.jails) if(x > j.zone.x - 20 && x < j.zone.x + j.zone.w + 20 && y > j.zone.y && y < j.zone.y + j.zone.h + 40) return false;
+  const pad = M.homes[team].pad;
+  if(pad && x > pad.x - 30 && x < pad.x + pad.w + 30 && Math.abs(y - pad.y) < 150) return false;
+  return true;
+}
+function ctfPlaceFlag(fl, x, y){
+  fl.st = 1; fl.car = -1; fl.x = x; fl.y = y; fl.hx = x; fl.hy = y; fl.fall = false; fl.cover = false;
+  for(const s of CTF.map.spots) if(s.team === fl.team && s.cover && Math.abs(s.x - x) < 46 && Math.abs(s.y - y) < 80){ fl.cover = true; break; }
+  for(let i = 0; i < 8; i++) puff(x, y - 16, TEAM_COLORS[fl.team % TEAM_COLORS.length], 4);
+}
+function ctfHidePlace(f){
+  const L = CTF.live, fl = L.flags[f.idx]; if(!fl || L.done[f.idx]) return false;
+  if(fl.st === 0){
+    const sy = ctfSurfaceBelow(f.x, f.y + f.r - 10, 500);
+    if(sy === null || !ctfHideValid(f.team, f.x, sy) || (typeof ctfAiReachable === 'function' && !ctfAiReachable(f.team, f.x, sy))){ puff(f.x, f.y, '#888', 6); return false; }
+    ctfPlaceFlag(fl, f.x, sy); ctfSfx('place'); return true;
+  }
+  if(Math.hypot(f.x - fl.x, f.y - fl.y) < 130){ fl.st = 0; fl.car = f.idx; fl.cover = false; ctfSfx('pick'); return true; }   // pick it up again to move it
+  return false;
+}
+function ctfToggleDone(f){
+  const L = CTF.live; if(L.phase !== 'hide') return;
+  const fl = L.flags[f.idx];
+  if(!L.done[f.idx]){
+    if(fl.st === 0 && !ctfHidePlace(f)) return;   // still holding it: put it down where you stand, or it is not done
+    L.done[f.idx] = true; ctfSfx('done');
+  } else L.done[f.idx] = false;
+}
+function ctfIsHuman(f){ return f.controller === 'local' || f.controller === 'local2' || f.controller === 'remote'; }
+function ctfEndHide(L){
+  for(const f of fighters){
+    const fl = L.flags[f.idx];
+    if(fl.st === 0){   // never put down: it goes where its carrier stands, or at the nearest hiding spot of its side
+      const sy = ctfSurfaceBelow(f.x, f.y + f.r - 10, 500);
+      if(sy !== null && ctfHideValid(f.team, f.x, sy)) ctfPlaceFlag(fl, f.x, sy);
+      else { let best = null, bd = 1e9; for(const s of CTF.map.spots) if(s.team === f.team){ const d = Math.hypot(s.x - f.x, s.y - f.y); if(d < bd){ bd = d; best = s; } }
+        ctfPlaceFlag(fl, best.x, best.y); }
+    }
+  }
+  L.phase = 'play'; L.playT = 0; L.done = {};
+  for(const d of L.doors) d.open = false;
+  ctfRebuildDyn(L);
+  for(const f of fighters){ f.invuln = Math.max(f.invuln, 30); f._ctfA = false; f._ctfS = false; }
+  banner('GO!', 900);
+  ctfSfx('go');
+}
+
+// ---- the step ---------------------------------------------------------------------------------------------------
+function ctfStep(){
+  const L = CTF.live; if(!L || L.over) return;
+  L.t++;
+  if(L.flash && --L.flash.t <= 0) L.flash = null;
+  for(const f of fighters){ if(f._ctfJT > 0) f._ctfJT--; }
+  if(L.phase === 'hide'){
+    try{ ctfAiHideTick(L); }catch(e){}
+    const humans = fighters.filter(ctfIsHuman);
+    const ready = humans.length ? humans.every(h=>L.done[h.idx]) : fighters.every(f=>L.done[f.idx]);
+    if(ready || L.t >= CTF_HIDE_STEPS) ctfEndHide(L);
+    return;
+  }
+  L.playT++;
+  ctfStepJails(L);
+  ctfStepZones(L);
+  ctfStepKeys(L);
+  ctfStepBoosts(L);
+  ctfStepFlags(L);
+  if(L.playT % 8 === 0) ctfReveal(L);
+  if(!L.stalled && L.playT - L.lastCapT >= CTF_STALL_REVEAL){   // nothing captured for four minutes: every flag still out there is shown to both sides
+    L.stalled = true; for(const t of [0,1]) for(const fl of L.flags) if(fl.st !== 4) L.seen[t][fl.id] = true;
+  }
+}
+function ctfStepJails(L){
+  for(const j of L.jails){
+    if(j.door.open){ if(--j.door.t <= 0){ j.door.open = false; ctfRebuildDyn(L); } }
+    if(!j.pris.length) continue;
+    for(const idx of j.pris){ const p = fighters[idx]; if(!p) continue; p.invuln = Math.max(p.invuln, 6); p.vx = 0; p._jailT++; }
+    // a teammate at the door frees them all
+    const dx0 = j.door.x - 80, dx1 = j.door.x + j.door.w + 80, dy0 = j.door.y - 70, dy1 = j.door.y + j.door.h + 50;
+    let rescuer = null;
+    for(const g of fighters) if(g.team !== j.owner && g._jail == null && g.x > dx0 && g.x < dx1 && g.y > dy0 && g.y < dy1){ rescuer = g; break; }
+    const stale = fighters[j.pris[0]] && fighters[j.pris[0]]._jailT >= CTF_JAIL_AUTO;
+    if(rescuer || stale) ctfFreeJail(L, j, rescuer);
+  }
+}
+function ctfFreeJail(L, j, by){
+  for(const idx of j.pris){ const p = fighters[idx]; if(p){ p._jail = null; p._jailT = 0; p.invuln = Math.max(p.invuln, 120); p.vx = 0; for(let i=0;i<10;i++) puff(p.x, p.y - 10, '#fff', 5); } }
+  j.pris = []; j.door.open = true; j.door.t = CTF_JAIL_OPEN; ctfRebuildDyn(L);
+  if(by) by._freed = (by._freed || 0) + 1;
+  L.flash = { team:j.owner === 0 ? 1 : 0, t:24, soft:true };
+  shake(4); ctfSfx('free');
+}
+// The jail's own team may not stand in the zone around it: they are walked out of it, gently.
+function ctfStepZones(L){
+  for(const j of L.jails){
+    const z = j.zone;
+    for(const f of fighters){
+      if(f.team !== j.owner || f._jail != null) continue;
+      if(f.x < z.x || f.x > z.x + z.w || f.y < z.y || f.y > z.y + z.h) { f._zoneT = 0; continue; }
+      const dl = f.x - z.x, dr = z.x + z.w - f.x, dir = (j.face === 1 ? (dr <= dl + z.w*0.25 ? 1 : -1) : (dl <= dr + z.w*0.25 ? -1 : 1));
+      f.x += dir*3.2; f.vx = dir*Math.max(Math.abs(f.vx)*0.5, 2.4);
+      f._zoneT = (f._zoneT || 0) + 1;
+      if(f._zoneT % 10 === 0) puff(f.x, f.y, '#ffffff', 2);
+    }
+  }
+}
+function ctfStepKeys(L){
+  for(const k of L.keys){
+    if(k.st === 2) continue;
+    if(k.lockT > 0) k.lockT--;
+    if(k.st === 1){
+      const h = fighters[k.hold];
+      if(!h || h._jail != null){ ctfDropKey(k, h); continue; }
+      k.x = h.x; k.y = h.y - h.r - 4;
+      for(const d of L.doors){
+        if(d.open || d.id !== k.door) continue;
+        if(h.x > d.x - 70 - h.r && h.x < d.x + d.w + 70 + h.r && h.y > d.y - 60 && h.y < d.y + d.h + 60){
+          d.open = true; k.st = 2; h._ck = -1; ctfRebuildDyn(L); ctfSfx('door');
+          for(let i=0;i<14;i++) puff(d.x + d.w/2, d.y + Math.random()*d.h, d.color, 5);
+          shake(3);
+        }
+      }
+      continue;
+    }
+    if(k.fall){ k.vy = (k.vy||0) + 0.5; k.y += k.vy; const s = ctfSurfaceBelow(k.x, k.y - k.vy - 4, 200); if(s !== null && k.y >= s){ k.y = s; k.fall = false; k.vy = 0; } else if(k.y > CTF.map.WH + 100){ k.x = k.hx; k.y = k.hy; k.fall = false; } }
+    for(const f of fighters){
+      if(f._ck >= 0 || f._jail != null) continue;
+      if(k.lockT > 0 && k.lock === f.idx) continue;
+      if(Math.abs(f.x - k.x) < CTF_KEY_R + f.r && f.y > k.y - 100 && f.y < k.y + 30){ k.st = 1; k.hold = f.idx; f._ck = k.i; ctfSfx('key'); break; }
+    }
+  }
+}
+function ctfDropKey(k, f){
+  k.st = 0; k.hold = -1; k.lock = f ? f.idx : -1; k.lockT = 60;
+  if(f){ f._ck = -1; k.x = f.x; k.y = f.y; }
+  const s = ctfSurfaceBelow(k.x, k.y, 2400);
+  if(s === null){ k.x = k.hx; k.y = k.hy; k.fall = false; } else k.fall = true;
+}
+function ctfStepBoosts(L){
+  for(const b of L.boosts){
+    if(b.cd > 0){ b.cd--; continue; }
+    for(const f of fighters){
+      if(f._jail != null) continue;
+      if(Math.abs(f.x - b.x) < 44 + f.r && f.y > b.y - 110 && f.y < b.y + 24){
+        if(b.kind === 'speed') f._hasteT = Math.max(f._hasteT || 0, CTF_BOOST_STEPS); else f._ctfJT = CTF_BOOST_STEPS;
+        b.cd = CTF_BOOST_CD; ctfSfx('boost'); for(let i=0;i<10;i++) puff(b.x, b.y - 20, b.kind === 'speed' ? '#7ad0f0' : '#ffd23f', 5); break;
+      }
+    }
+  }
+}
+function ctfStepFlags(L){
+  for(const fl of L.flags){
+    if(fl.st === 4 || fl.st === 0) continue;
+    if(fl.lockT > 0) fl.lockT--;
+    if(fl.st === 2){
+      const c = fighters[fl.car];
+      if(!c){ fl.st = 3; fl.car = -1; fl.fall = true; continue; }
+      if(c._jail != null){ ctfDropFlag(c, 'lost'); continue; }
+      fl.x = c.x; fl.y = c.y;
+      const pad = CTF.map.homes[c.team].pad;
+      if(pad && c.x > pad.x - 10 && c.x < pad.x + pad.w + 10 && c.y > pad.y - 160 && c.y < pad.y + 20) ctfCapture(L, fl, c);
+      continue;
+    }
+    if(fl.fall){
+      fl.vy += 0.5; fl.y += fl.vy;
+      const s = ctfSurfaceBelow(fl.x, fl.y - fl.vy - 4, 300);
+      if(s !== null && fl.y >= s){ fl.y = s; fl.fall = false; fl.vy = 0; }
+      else if(fl.y > CTF.map.WH + 100) ctfReturnFlag(fl);
+    }
+    for(const f of fighters){
+      if(f._jail != null) continue;
+      if(Math.abs(f.x - fl.x) < CTF_FLAG_R + f.r*0.5 && f.y > fl.y - 100 && f.y < fl.y + 30){
+        if(f.team === fl.team){ if(fl.st === 3){ ctfReturnFlag(fl); ctfSfx('return'); break; } }
+        else if(f._cf < 0 && !(fl.lockT > 0 && fl.lockIdx === f.idx)){
+          fl.st = 2; fl.car = f.idx; f._cf = fl.id; fl.fall = false; L.seen[0][fl.id] = L.seen[1][fl.id] = true;
+          if(L.foundAt[f.team][fl.id] == null) L.foundAt[f.team][fl.id] = L.playT;
+          ctfSfx('pick'); break;
+        }
+      }
+    }
+  }
+}
+function ctfReturnFlag(fl){ fl.st = 1; fl.car = -1; fl.x = fl.hx; fl.y = fl.hy; fl.fall = false; fl.vy = 0; for(let i=0;i<8;i++) puff(fl.x, fl.y - 20, '#fff', 4); }
+function ctfDropFlag(f, why, by){
+  const L = CTF.live; if(!L) return;
+  const fl = L.flags[f._cf]; if(!fl || fl.st !== 2) { f._cf = -1; return; }
+  fl.st = 3; fl.car = -1; fl.x = f.x; fl.y = f.y; fl.vy = 0; fl.lockIdx = f.idx; fl.lockT = 50; f._cf = -1;
+  const s = ctfSurfaceBelow(fl.x, fl.y, 2400);
+  if(s === null) ctfReturnFlag(fl); else fl.fall = true;
+  for(let i=0;i<8;i++) puff(f.x, f.y, '#fff', 4);
+}
+function ctfCapture(L, fl, c){
+  fl.st = 4; fl.car = -1; c._cf = -1; c._caps = (c._caps||0) + 1;
+  L.score[c.team]++; L.lastCapT = L.playT; L.stalled = false;
+  L.capLog.push({ flag:fl.id, by:c.idx, team:c.team, t:L.playT });
+  L.flash = { team:c.team, t:50 };
+  for(let i=0;i<24;i++) puff(c.x, c.y - 20, TEAM_COLORS[c.team % TEAM_COLORS.length], 7);
+  shake(7); ctfSfx('capture');
+}
+// What each side has seen: an enemy flag is known to the whole team the moment one of them sees it. A flag out in the open is seen
+// from far off with a clear line; one behind cover only from close by. Nothing else tells a side where a flag is.
+function ctfReveal(L){
+  for(const t of [0,1]){
+    for(const fl of L.flags){
+      if(fl.team === t || fl.st === 4 || fl.st === 2 || L.seen[t][fl.id]) continue;
+      const reach = fl.cover ? CTF_REVEAL_COVER : CTF_REVEAL_OPEN, r2 = reach*reach;
+      for(const f of fighters){
+        if(f.team !== t || f._jail != null) continue;
+        const dx = f.x - fl.x, dy = f.y - fl.y;
+        if(dx*dx + dy*dy > r2) continue;
+        if(!ctfLOS(f.x, f.y - 6, fl.x, fl.y - 24)) continue;
+        L.seen[t][fl.id] = true; if(L.foundAt[t][fl.id] == null) L.foundAt[t][fl.id] = L.playT;
+        break;
+      }
+    }
+  }
+}
+
+// ---- KO, hits, jumping ------------------------------------------------------------------------------------------
+function ctfNoHit(t, from){ return t._jail != null || (from && from._jail != null); }
+function ctfBigHit(t, from){
+  if(!(t._cf >= 0)) return;
+  if(Math.hypot(t.vx, t.vy) >= CTF_BIGHIT){ ctfDropFlag(t, 'hit', from); ctfSfx('drop'); }
+}
+function ctfJumpV(f){ return JUMP * (f._cf >= 0 ? CTF_CARRY_JUMP : 1) * (f._ctfJT > 0 ? CTF_BOOST_JUMP : 1); }
+function ctfEliminate(f){
+  const L = CTF.live; if(!L || L.over) return false;
+  SFX.ko();
+  if(f._infected > 0){ f.team = f._origTeam; f._infected = 0; f._infectedBy = null; }
+  const killer = f.lastHitBy;
+  if(killer && killer !== f && !killer.dead && killer.kit && killer.kit.special === 'fluff'){ killer.koCount = (killer.koCount||0) + 1; }
+  lastKoFrame = hazardT;
+  f._falls = (f._falls||0) + 1;
+  f._smQ = null; f.smashHold = 0;
+  if(f.kit && f.kit.special === 'saltpepper'){ f._pepperDown = false; const _p = pepperOf(f); if(_p) _p.life = 0; }
+  f._lev = null; f._levT = 0; f._levUsed = false;
+  if(f._carrying){ for(const c of f._carrying){ const t = fighters[c.idx]; if(t && t._carriedBy === f.idx) t._carriedBy = null; } f._carrying = null; }
+  f._carriedBy = null; f._gravSaved = false;
+  if(killer && killer !== f && !killer.dead){ killer._kos = (killer._kos||0) + 1; L.kos[killer.team] = (L.kos[killer.team]||0) + 1; }
+  if(killer && killer !== f && !killer.dead && killer.kit && COMEBACK[killer.kit.special]) killer.killCount = (killer.killCount||0) + 1;
+  if(f.kit && COMEBACK[f.kit.special]) f.deaths = (f.deaths||0) + 1;
+  // what they held falls where they fell
+  const px = clamp(f.x, 60, L.map.WW - 60), py = clamp(f.y, 0, L.map.WH - 40);
+  if(f._cf >= 0){ f.x = px; f.y = py; ctfDropFlag(f, 'ko'); }
+  if(f._ck >= 0){ const k = L.keys[f._ck]; if(k){ k.x = px; k.y = py; ctfDropKey(k, f); } f._ck = -1; }
+  puff(px, Math.max(20, Math.min(WH-20, f.y)), '#fff', 22);
+  puff(px, Math.max(20, Math.min(WH-20, f.y)), f.color, 14);
+  koStarburst(f.x, f.y, f.color);
+  try{ cosKoBurst(f); }catch(e){}
+  shake(9);
+  if(f.you) banner("KO'd!", 1100, null, true);
+  // where they come back: home on their own side, a cell on the enemy's
+  const side = px < L.map.WW/2 ? 0 : 1;
+  if(L.phase !== 'hide' && side !== f.team){
+    const j = L.jails.find(q=>q.owner === side);
+    const sl = j.slots[j.pris.length % j.slots.length];
+    f.x = sl.x; f.y = sl.y - f.r - 2; f._jail = side; f._jailT = 0; j.pris.push(f.idx);
+    f.invuln = 60; ctfSfx('jail');
+  } else {
+    const h = L.map.homes[f.team], sp = h.spawns[(L.respawnN[f.team]++) % h.spawns.length];
+    f.x = sp.x; f.y = sp.y - f.r - 40; f.invuln = 90;
+  }
+  f.vx = 0; f.vy = 0; f.pct = 0; f.hitstun = 0; f.burn = 0; f.bleed = 0; f._cookieT = 0; f._nail = null; f._stall = null; f._sm = null; f._windup = null; f.cloud = 0; f.frozen = 0;
+  dropInFlightMoves(f);
+  return true;
+}
+
+// ---- the end ----------------------------------------------------------------------------------------------------
+function ctfCheckWin(){
+  const L = CTF.live; if(!L || L.over) return;
+  for(const t of [0,1]) if(L.score[t] >= CTF_N){ ctfEnd(t); return; }
+}
+function ctfEnd(winTeam){
+  const L = CTF.live; if(!L || L.over) return;
+  L.over = true; L.winner = winTeam; running = false;
+  const winners = fighters.filter(f=>f.team === winTeam);
+  for(const f of fighters) f.placement = f.team === winTeam ? 1 : 2;
+  try{ awardMatchProgress(winTeam); }catch(e){}
+  try{ commitPlaystyles(); }catch(e){}
+  try{ botAdaptCommit(); }catch(e){}
+  setTimeout(()=>showResult(winners, winTeam), 700);
+}
+
+// ---- sound (tones only; every call is guarded, the sound may be off or unavailable) ---------------------------------
+function ctfSfx(kind){
+  try{
+    if(!SND.on) return;
+    switch(kind){
+      case 'pick':    tone(560, 0.07, 'triangle', 0.16, 0, 820); break;
+      case 'place':   tone(300, 0.08, 'sine', 0.16, 0, 200); break;
+      case 'done':    tone(660, 0.08, 'triangle', 0.16, 0, 990); break;
+      case 'key':     tone(880, 0.06, 'triangle', 0.16, 0, 1320); tone(1320, 0.08, 'triangle', 0.12, 0.06, 1760); break;
+      case 'door':    noise(0.18, 0.3, 700, 0, 200); tone(180, 0.2, 'square', 0.14, 0, 100); break;
+      case 'boost':   tone(420, 0.12, 'sawtooth', 0.14, 0, 1000); break;
+      case 'capture': [523, 659, 784, 1047].forEach((q,i)=>tone(q, 0.16, 'triangle', 0.2, i*0.07, q*1.01)); break;
+      case 'return':  tone(700, 0.1, 'triangle', 0.16, 0, 350); break;
+      case 'drop':    tone(240, 0.1, 'square', 0.14, 0, 120); break;
+      case 'jail':    tone(150, 0.2, 'square', 0.16, 0, 90); noise(0.1, 0.2, 500, 0, 150); break;
+      case 'free':    [392, 523, 659].forEach((q,i)=>tone(q, 0.12, 'triangle', 0.18, i*0.06, q)); break;
+      case 'go':      tone(520, 0.14, 'triangle', 0.18, 0, 780); break;
+    }
+  }catch(e){}
+}
+
+
+// ---- who is on which side -----------------------------------------------------------------------------------------------
+// Online, the humans take the seats first and alternate sides (the host is on team 0), so two friends meet; the CPUs fill the rest
+// to five a side. A local match puts the player on team 0.
+function ctfTeamOf(N, humanCount, net){
+  const teamOf = new Array(N).fill(-1), cnt = [0, 0];
+  if(net){ for(let i = 0; i < humanCount && i < N; i++){ const t = i % 2; teamOf[i] = t; cnt[t]++; } }
+  else { teamOf[0] = 0; cnt[0] = 1; }
+  for(let i = 0; i < N; i++){
+    if(teamOf[i] >= 0) continue;
+    const t = cnt[0] >= CTF_N ? 1 : cnt[1] >= CTF_N ? 0 : (cnt[0] < cnt[1] ? 0 : cnt[1] < cnt[0] ? 1 : i % 2);
+    teamOf[i] = t; cnt[t]++;
+  }
+  return teamOf;
+}
+// The result screen's own words (it is outside the match, so words are fine).
+function ctfResultText(youWon, winTeam){
+  const L = CTF.live; if(!L) return;
+  const secs = Math.round(L.playT/60), m = Math.floor(secs/60), s = secs % 60;
+  const title = document.getElementById('resultTitle'), sub = document.getElementById('resultSub');
+  if(title) title.textContent = youWon ? '🏆 YOU WIN!' : 'Team ' + (winTeam + 1) + ' wins';
+  if(sub) sub.innerHTML = 'Team ' + (winTeam + 1) + ' carried all 5 flags home on ' + esc(stage.name) + ' in ' + m + ':' + String(s).padStart(2, '0') + '. Flags ' + L.score[0] + ' to ' + L.score[1] + '.';
+}
+
+// ---- CPUs, first pass (the CPU block replaces these): each CPU puts its flag down at a hiding spot of its side and is done ---------
+function ctfAiInput(f){ return null; }
+function ctfAiBegin(L){ CTF.cpuHide = {}; }
+function ctfAiHideTick(L){
+  for(const f of fighters){
+    if(ctfIsHuman(f) || L.done[f.idx]) continue;
+    if(L.t < 40 + f.idx*15) continue;
+    const mine = CTF.map.spots.filter(s=>s.team === f.team), sp = mine[(f.idx*7 + 3) % mine.length];
+    const fl = L.flags[f.idx]; if(fl.st === 0) ctfPlaceFlag(fl, sp.x, sp.y);
+    L.done[f.idx] = true;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+//  CTF DRAWING. Static map art is painted once into 1024-px tiles (kept at 3/4 size) and drawn from there; everything that moves or
+//  changes (doors, flags, keys, boosts) is drawn on top each frame, and only what is in view. No text anywhere: icons and colour.
+// ---------------------------------------------------------------------------------------------------------------
+const CTF_TILE = 1024, CTF_TSCALE = 0.75;
+const CTF_TILES = new Map();
+function ctfColor(team){ return TEAM_COLORS[team % TEAM_COLORS.length]; }
+
+function ctfSolidPattern(g, pat, th, x0, y0, x1, y1, p){
+  g.strokeStyle = th.line; g.lineWidth = 2; g.beginPath();
+  if(pat === 'brick'){
+    const bh = 40, bw = 80;
+    for(let y = Math.ceil(y0/bh)*bh; y < y1; y += bh){ g.moveTo(x0, y); g.lineTo(x1, y);
+      const off = ((y/bh)|0) % 2 ? bw/2 : 0;
+      for(let x = Math.ceil((x0 - off)/bw)*bw + off; x < x1; x += bw){ g.moveTo(x, y); g.lineTo(x, Math.min(y1, y + bh)); } }
+  } else if(pat === 'rock'){
+    for(let y = Math.ceil(y0/70)*70; y < y1; y += 70){ for(let x = Math.ceil(x0/90)*90 + (((y/70)|0)%2 ? 45 : 0); x < x1; x += 90){
+      const j = cellJitter((x/90)|0, (y/70)|0, 3); g.moveTo(x - 20, y + 10); g.lineTo(x + 6, y + 4 + j*16); g.lineTo(x + 24, y + 18); } }
+  } else if(pat === 'metal'){
+    for(let y = Math.ceil(y0/60)*60; y < y1; y += 60){ g.moveTo(x0, y); g.lineTo(x1, y); }
+    g.stroke(); g.fillStyle = th.hi;
+    for(let y = Math.ceil(y0/60)*60 + 8; y < y1; y += 60) for(let x = Math.ceil(x0/60)*60 + 8; x < x1; x += 60){ g.fillRect(x, y, 5, 5); }
+    g.beginPath();
+  } else if(pat === 'cloud'){
+    g.stroke(); g.fillStyle = th.hi; g.globalAlpha = 0.5;
+    for(let y = Math.ceil(y0/50)*50; y < y1; y += 50) for(let x = Math.ceil(x0/70)*70 + (((y/50)|0)%2 ? 35 : 0); x < x1; x += 70){ g.beginPath(); g.arc(x, y + 14, 22, 0, 7); g.fill(); }
+    g.globalAlpha = 1; g.beginPath();
+  } else if(pat === 'bark'){
+    for(let x = Math.ceil(x0/36)*36; x < x1; x += 36){ const j = cellJitter((x/36)|0, 1, 5); g.moveTo(x, y0); g.lineTo(x + (j-0.5)*10, y1); }
+    for(let y = Math.ceil(y0/110)*110; y < y1; y += 110){ g.moveTo(x0, y); g.lineTo(x0 + 24, y + 8); }
+  }
+  g.stroke();
+}
+function ctfPaintPlat(g, p, th, X0, Y0, X1, Y1){
+  const x0 = Math.max(p.x, X0), x1 = Math.min(p.x + p.w, X1), y0 = Math.max(p.y, Y0), y1 = Math.min(p.y + p.h, Y1);
+  if(x1 <= x0 || y1 <= y0) return;
+  if(p.solid){
+    g.fillStyle = th.solid.fill; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctfSolidPattern(g, th.pat, th.solid, x0, y0, x1, y1, p);
+    if(p.y >= Y0 && p.y < Y1){ g.fillStyle = th.solid.hi; g.fillRect(x0, p.y, x1 - x0, Math.min(8, p.h)); }
+    g.strokeStyle = th.solid.edge; g.lineWidth = 5; g.strokeRect(p.x, p.y, p.w, p.h);
+  } else {
+    g.fillStyle = th.hop.fill; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    if(p.y >= Y0 && p.y < Y1){ g.fillStyle = th.hop.hi; g.fillRect(x0, p.y, x1 - x0, 4); }
+    g.strokeStyle = th.hop.edge; g.lineWidth = 3; g.strokeRect(p.x, p.y, p.w, p.h);
+    g.beginPath(); for(let x = Math.ceil(x0/60)*60; x < x1; x += 60){ g.moveTo(x, y0); g.lineTo(x, y1); } g.lineWidth = 1.5; g.stroke();
+  }
+}
+function ctfTile(M, tx, ty){
+  const key = M.id + ':' + tx + ',' + ty;
+  let t = CTF_TILES.get(key);
+  if(t) return t;
+  const cv = document.createElement('canvas'); cv.width = cv.height = Math.round(CTF_TILE*CTF_TSCALE);
+  const g = cv.getContext('2d');
+  if(g){
+    const X0 = tx*CTF_TILE, Y0 = ty*CTF_TILE, X1 = X0 + CTF_TILE, Y1 = Y0 + CTF_TILE;
+    g.scale(CTF_TSCALE, CTF_TSCALE); g.translate(-X0, -Y0);
+    g.beginPath(); g.rect(X0, Y0, CTF_TILE, CTF_TILE); g.clip();
+    g.lineJoin = 'round';
+    for(const p of M.plats) if(p.x < X1 && p.x + p.w > X0 && p.y < Y1 && p.y + p.h > Y0) ctfPaintPlat(g, p, M.theme, X0, Y0, X1, Y1);
+  }
+  CTF_TILES.set(key, cv);
+  if(CTF_TILES.size > 60){ const first = CTF_TILES.keys().next().value; CTF_TILES.delete(first); }   // a few screens' worth stay; a long walk drops the oldest
+  return cv;
+}
+// A parallax backdrop of the map's own silhouettes, painted once at screen size and slid with the camera.
+const CTF_BG = { id:null, layers:[] };
+function ctfBackdrop(M){
+  if(CTF_BG.id === M.id) return CTF_BG.layers;
+  CTF_BG.id = M.id; CTF_BG.layers = [];
+  const th = M.theme;
+  for(let li = 0; li < 2; li++){
+    const cv = document.createElement('canvas'); cv.width = 1600; cv.height = 520;
+    const g = cv.getContext('2d');
+    if(g){
+      g.fillStyle = th.far[li]; g.strokeStyle = th.far[li];
+      for(let i = 0; i < 12; i++){
+        const x = i*140 + cellJitter(i, li, 9)*60, w = 70 + cellJitter(i, li, 10)*90, h = 120 + cellJitter(i, li, 11)*(li ? 190 : 260);
+        ctfBackdropShape(g, th.bg || 'castle', x, 520, w, h, li);
+      }
+    }
+    CTF_BG.layers.push(cv);
+  }
+  return CTF_BG.layers;
+}
+function ctfBackdropShape(g, kind, x, base, w, h, li){
+  if(kind === 'cave'){ g.beginPath(); g.moveTo(x, base); g.lineTo(x + w/2, base - h); g.lineTo(x + w, base); g.fill(); }
+  else if(kind === 'sky'){ g.beginPath(); g.ellipse(x + w/2, base - h*0.25, w*0.9, h*0.25, 0, 0, 7); g.fill(); g.beginPath(); g.ellipse(x + w*0.2, base - h*0.15, w*0.6, h*0.2, 0, 0, 7); g.fill(); }
+  else if(kind === 'factory'){ g.fillRect(x, base - h, w*0.7, h); g.fillRect(x + w*0.2, base - h - 50, w*0.16, 50); }
+  else if(kind === 'forest'){ g.fillRect(x + w*0.42, base - h*0.5, w*0.16, h*0.5); g.beginPath(); g.arc(x + w/2, base - h*0.62, w*0.6, 0, 7); g.fill(); }
+  else { g.fillRect(x, base - h, w, h); for(let k = 0; k < 3; k++) g.fillRect(x + k*w/3, base - h - 22, w/5, 22); }
+}
+function ctfDrawBackdrop(){
+  const M = CTF.map; if(!M) return;
+  const ls = ctfBackdrop(M);
+  for(let i = 0; i < ls.length; i++){
+    const rate = 0.05 + i*0.08, off = (((-camX*rate) % 1600) + 1600) % 1600, y = H - 520 + 60 - i*20 - camY*0.03*(i+1);
+    for(let x = off - 1600; x < W + 20; x += 1600) ctx.drawImage(ls[i], Math.round(x), Math.round(y), 1600, 520);
+  }
+}
+
+// ---- icons ---------------------------------------------------------------------------------------------------
+function ctfFlagIcon(g, x, y, col, s, wave, dot){   // x,y: the pole's foot; s: height of the pole
+  g.save(); g.translate(x, y);
+  g.lineWidth = Math.max(2, s*0.07); g.strokeStyle = '#1c1c1c'; g.fillStyle = '#f4efe2';
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -s); g.stroke();
+  const w = s*0.62, h = s*0.4, k = (wave || 0);
+  g.fillStyle = col; g.beginPath(); g.moveTo(0, -s); g.lineTo(w*0.5, -s + Math.sin(k)*s*0.04 - 1); g.lineTo(w, -s + h*0.5 + Math.sin(k + 1.4)*s*0.05);
+  g.lineTo(w*0.5, -s + h + Math.sin(k + 0.7)*s*0.04); g.lineTo(0, -s + h); g.closePath(); g.fill(); g.stroke();
+  if(dot){ g.fillStyle = dot; g.beginPath(); g.arc(w*0.32, -s + h*0.5, h*0.22, 0, 7); g.fill(); }
+  g.restore();
+}
+function ctfKeyIcon(g, x, y, col, s){
+  g.save(); g.translate(x, y); g.lineWidth = Math.max(2, s*0.1); g.strokeStyle = '#1c1c1c'; g.fillStyle = col;
+  g.beginPath(); g.arc(0, 0, s*0.28, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = '#1c1c1c'; g.beginPath(); g.arc(0, 0, s*0.1, 0, 7); g.fill();
+  g.strokeStyle = '#1c1c1c'; g.lineWidth = Math.max(5, s*0.2); g.beginPath(); g.moveTo(s*0.26, 0); g.lineTo(s*0.9, 0); g.moveTo(s*0.66, 0); g.lineTo(s*0.66, s*0.28); g.moveTo(s*0.88, 0); g.lineTo(s*0.88, s*0.22); g.stroke();
+  g.strokeStyle = col; g.lineWidth = Math.max(3, s*0.12); g.beginPath(); g.moveTo(s*0.26, 0); g.lineTo(s*0.9, 0); g.moveTo(s*0.66, 0); g.lineTo(s*0.66, s*0.24); g.moveTo(s*0.88, 0); g.lineTo(s*0.88, s*0.18); g.stroke();
+  g.restore();
+}
+function ctfCheckIcon(g, x, y, r, col){
+  g.save(); g.fillStyle = col || '#3fbf5f'; g.strokeStyle = '#1c1c1c'; g.lineWidth = 3; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke();
+  g.strokeStyle = '#fff'; g.lineWidth = Math.max(3, r*0.28); g.lineCap = 'round'; g.beginPath(); g.moveTo(x - r*0.5, y + r*0.05); g.lineTo(x - r*0.12, y + r*0.42); g.lineTo(x + r*0.52, y - r*0.38); g.stroke(); g.restore();
+}
+function ctfNoEntryIcon(g, x, y, r){
+  g.save(); g.fillStyle = 'rgba(255,255,255,0.85)'; g.strokeStyle = '#d63a3a'; g.lineWidth = Math.max(4, r*0.2);
+  g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke(); g.beginPath(); g.moveTo(x - r*0.7, y + r*0.7); g.lineTo(x + r*0.7, y - r*0.7); g.stroke(); g.restore();
+}
+function ctfBoostIcon(g, x, y, kind, a){
+  g.save(); g.globalAlpha = a; g.translate(x, y);
+  const col = kind === 'speed' ? '#7ad0f0' : '#ffd23f';
+  g.fillStyle = col; g.strokeStyle = '#1c1c1c'; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 26, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = '#1c1c1c';
+  if(kind === 'speed'){ for(const o of [-9, 3]){ g.beginPath(); g.moveTo(o, -12); g.lineTo(o + 12, 0); g.lineTo(o, 12); g.lineTo(o + 4, 0); g.closePath(); g.fill(); } }
+  else { g.beginPath(); g.moveTo(0, -15); g.lineTo(13, 0); g.lineTo(5, 0); g.lineTo(5, 14); g.lineTo(-5, 14); g.lineTo(-5, 0); g.lineTo(-13, 0); g.closePath(); g.fill(); }
+  g.restore();
+}
+function ctfCoverDraw(g, s, th){
+  const c = th.cover || {}; g.save(); g.lineWidth = 4; g.strokeStyle = '#1c1c1c';
+  if(s.cover === 'bush'){ g.fillStyle = c.bush || '#3f9a4c'; for(const [dx, r] of [[-30, 28], [0, 38], [30, 28]]){ g.beginPath(); g.arc(s.x + dx, s.y - r + 4, r, 0, 7); g.fill(); g.stroke(); } }
+  else if(s.cover === 'crate'){ g.fillStyle = c.crate || '#a8773f'; g.fillRect(s.x - 38, s.y - 76, 76, 76); g.strokeRect(s.x - 38, s.y - 76, 76, 76); g.lineWidth = 3; g.beginPath(); g.moveTo(s.x - 38, s.y - 76); g.lineTo(s.x + 38, s.y); g.moveTo(s.x + 38, s.y - 76); g.lineTo(s.x - 38, s.y); g.stroke(); }
+  else if(s.cover === 'banner'){ g.fillStyle = c.banner || '#c9433f'; g.beginPath(); g.moveTo(s.x - 44, s.y - 130); g.lineTo(s.x + 44, s.y - 130); g.lineTo(s.x + 44, s.y - 6); g.lineTo(s.x, s.y - 26); g.lineTo(s.x - 44, s.y - 6); g.closePath(); g.fill(); g.stroke(); g.fillStyle = '#1c1c1c'; g.fillRect(s.x - 50, s.y - 136, 100, 8); }
+  else if(s.cover === 'barrel'){ g.fillStyle = c.barrel || '#7a4a2a'; g.beginPath(); g.moveTo(s.x - 30, s.y); g.lineTo(s.x - 36, s.y - 34); g.lineTo(s.x - 28, s.y - 74); g.lineTo(s.x + 28, s.y - 74); g.lineTo(s.x + 36, s.y - 34); g.lineTo(s.x + 30, s.y); g.closePath(); g.fill(); g.stroke(); g.lineWidth = 3; g.beginPath(); g.moveTo(s.x - 34, s.y - 24); g.lineTo(s.x + 34, s.y - 24); g.moveTo(s.x - 34, s.y - 50); g.lineTo(s.x + 34, s.y - 50); g.stroke(); }
+  g.restore();
+}
+
+// ---- the world ------------------------------------------------------------------------------------------------
+function ctfFlagVisible(L, fl, vt){
+  if(fl.st === 4) return false;
+  if(fl.st === 2) return true;
+  if(fl.team === vt) return true;
+  if(L.phase === 'hide') return false;
+  return !!(L.seen[vt] && L.seen[vt][fl.id]);
+}
+function ctfDrawWorld(){
+  const M = CTF.map; if(!M) return;
+  const L = CTF.live, z = viewZoom(), vw = W/z, vh = H/z, vx = camX + W/2 - vw/2, vy = camY + H/2 - vh/2;
+  // the tiles in view
+  for(let ty = Math.floor(vy/CTF_TILE); ty <= Math.floor((vy + vh)/CTF_TILE); ty++) for(let tx = Math.floor(vx/CTF_TILE); tx <= Math.floor((vx + vw)/CTF_TILE); tx++){
+    if(tx < 0 || ty < 0 || tx*CTF_TILE >= M.WW || ty*CTF_TILE >= M.WH) continue;
+    ctx.drawImage(ctfTile(M, tx, ty), tx*CTF_TILE, ty*CTF_TILE, CTF_TILE, CTF_TILE);
+  }
+  if(!L) return;
+  const inView = (x, y, w, h)=> x + w > vx - 40 && x < vx + vw + 40 && y + h > vy - 40 && y < vy + vh + 40;
+  const vt = ctfViewTeam(), T = hazardT;
+  // capture pads
+  for(const h of M.homes){ const pd = h.pad; if(!pd || !inView(pd.x, pd.y - 160, pd.w, 180)) continue;
+    ctx.save(); ctx.fillStyle = ctfColor(h.team); ctx.globalAlpha = 0.32; ctx.fillRect(pd.x, pd.y - 150, pd.w, 150); ctx.globalAlpha = 0.9;
+    ctx.fillRect(pd.x, pd.y - 10, pd.w, 10); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.strokeRect(pd.x, pd.y - 10, pd.w, 10);
+    ctx.globalAlpha = 1; ctfFlagIcon(ctx, pd.x + pd.w/2, pd.y - 10, ctfColor(h.team), 70, T*0.1); ctx.restore(); }
+  // jail zones and doors
+  for(const j of L.jails){
+    const zn = j.zone;
+    if(inView(zn.x, zn.y, zn.w, zn.h)){
+      ctx.save(); ctx.fillStyle = ctfColor(j.owner); ctx.globalAlpha = 0.07; ctx.fillRect(zn.x, zn.y, zn.w, zn.h);
+      ctx.globalAlpha = 0.5 + 0.15*Math.sin(T*0.06 + j.owner); ctx.strokeStyle = ctfColor(j.owner); ctx.lineWidth = 4; ctx.setLineDash([16, 12]);
+      ctx.beginPath(); ctx.moveTo(zn.x, zn.y); ctx.lineTo(zn.x + zn.w, zn.y); ctx.lineTo(zn.x + zn.w, zn.y + zn.h); ctx.moveTo(zn.x, zn.y); ctx.lineTo(zn.x, zn.y + zn.h); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 0.8; ctfNoEntryIcon(ctx, zn.x + zn.w/2, zn.y + 70, 32); ctx.restore();
+    }
+    const d = j.door;
+    if(!d.open && inView(d.x, d.y, d.w, d.h)){
+      ctx.save(); ctx.fillStyle = '#4a4f5c'; ctx.fillRect(d.x, d.y, d.w, d.h); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.strokeRect(d.x, d.y, d.w, d.h);
+      ctx.beginPath(); for(let y = d.y + 16; y < d.y + d.h; y += 34){ ctx.moveTo(d.x, y); ctx.lineTo(d.x + d.w, y); } ctx.stroke(); ctx.restore();
+    }
+    if(j.pris.length && inView(d.x - 200, d.y, 260, d.h)){ ctx.save(); ctx.globalAlpha = 0.75 + 0.2*Math.sin(T*0.2); ctfFlagIcon(ctx, d.x + d.w/2, d.y - 6, ctfColor(1 - j.owner), 46, T*0.15); ctx.restore(); }
+  }
+  // locked doors
+  for(const d of L.doors){ if(d.open || !inView(d.x, d.y, d.w, d.h)) continue;
+    ctx.save(); ctx.fillStyle = d.color; ctx.fillRect(d.x, d.y, d.w, d.h); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.strokeRect(d.x, d.y, d.w, d.h);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(d.x + 5, d.y, 7, d.h);
+    ctfKeyIcon(ctx, d.x + d.w/2 - 6, d.y + d.h/2, '#f4efe2', 40); ctx.fillStyle = ctfColor(d.team); ctx.fillRect(d.x, d.y, d.w, 10); ctx.restore(); }
+  // the wall across the middle while hiding
+  if(L.phase === 'hide'){ const bx = M.WW/2 - 30;
+    if(inView(bx, vy, 60, vh)){ ctx.save(); const g = ctx.createLinearGradient(bx, 0, bx + 60, 0); g.addColorStop(0, 'rgba(120,200,255,0)'); g.addColorStop(0.5, 'rgba(160,220,255,0.7)'); g.addColorStop(1, 'rgba(120,200,255,0)');
+      ctx.fillStyle = g; ctx.fillRect(bx - 30, vy, 120, vh); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.setLineDash([22, 18]); ctx.lineDashOffset = -T*1.5;
+      ctx.beginPath(); ctx.moveTo(M.WW/2, vy); ctx.lineTo(M.WW/2, vy + vh); ctx.stroke(); ctx.restore(); } }
+  // boosts
+  for(const b of L.boosts){ if(!inView(b.x - 40, b.y - 90, 80, 100)) continue; ctfBoostIcon(ctx, b.x, b.y - 38 + Math.sin(T*0.07 + b.i)*4, b.kind, b.cd > 0 ? 0.25 : 1); }
+  // keys lying about
+  for(const k of L.keys){ if(k.st !== 0 || !inView(k.x - 40, k.y - 90, 80, 100)) continue;
+    ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(k.x, k.y - 36, 34, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    ctfKeyIcon(ctx, k.x - 14, k.y - 36 + Math.sin(T*0.07 + k.i)*4, CTF_DOOR_COL[k.n - 1], 40); ctx.restore(); }
+  // flags (the viewer's own, the ones they have seen, and any being carried), then the cover in front of them
+  for(const fl of L.flags){
+    if(fl.st === 2 || fl.st === 0 || !ctfFlagVisible(L, fl, vt) || !inView(fl.x - 50, fl.y - 90, 100, 100)) continue;
+    const o = fighters[fl.owner]; ctfFlagIcon(ctx, fl.x, fl.y, ctfColor(fl.team), 64, T*0.1 + fl.id, o ? o.color : null);
+    if(fl.st === 3 && fl.team !== vt){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(fl.x, fl.y - 30, 44, 0, 7); ctx.stroke(); ctx.restore(); }
+  }
+  for(const s of M.spots){ if(!s.cover || !inView(s.x - 60, s.y - 140, 120, 150)) continue; ctfCoverDraw(ctx, s, M.theme); }
+}
+// Drawn after a fighter: the flag on their back, the key over their head, the lock on a prisoner, the check mark of a fighter who is done.
+function ctfDrawCarry(f){
+  const L = CTF.live; if(!L || f.dead) return;
+  const T = hazardT, fl = L.flags[f.idx];
+  if(f._cf >= 0 && L.flags[f._cf]){ const c = L.flags[f._cf]; ctfFlagIcon(ctx, f.x - f.face*(f.r + 6), f.y + f.r*0.4, ctfColor(c.team), 58, T*0.2, null); }
+  else if(L.phase === 'hide' && fl && fl.st === 0 && f.team === ctfViewTeam()) ctfFlagIcon(ctx, f.x - f.face*(f.r + 6), f.y + f.r*0.4, ctfColor(f.team), 50, T*0.2, f.color);
+  if(f._ck >= 0 && L.keys[f._ck]){ const k = L.keys[f._ck]; ctfKeyIcon(ctx, f.x - 14, f.y - f.r - 56 + Math.sin(T*0.1)*3, CTF_DOOR_COL[k.n - 1], 34); }
+  if(f._jail != null){ ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(f.x, f.y - f.r - 52, 11, Math.PI, 0); ctx.stroke(); ctx.fillStyle = '#d8c46a'; ctx.fillRect(f.x - 14, f.y - f.r - 52, 28, 20); ctx.strokeRect(f.x - 14, f.y - f.r - 52, 28, 20); ctx.restore(); }
+  if(L.phase === 'hide' && L.done[f.idx] && (f.team === ctfViewTeam())) ctfCheckIcon(ctx, f.x, f.y - f.r - 58, 14);
+}
+
+// ---- the screen: the top bar (flags captured by each side, the hiding timer) --------------------------------------
+function drawCtfHud(){
+  const L = CTF.live; if(!L) return;
+  const cx = W/2, y = 66;   // under the fighters' card bar
+  ctx.save();
+  const slot = 30;
+  for(const t of [0,1]){
+    const dir = t === 0 ? -1 : 1, x0 = cx + dir*72;
+    ctx.fillStyle = 'rgba(28,24,38,0.78)'; ctx.strokeStyle = ctfColor(t); ctx.lineWidth = 3;
+    const bw = slot*CTF_N + 14, bx = t === 0 ? x0 - bw : x0;
+    ctx.fillRect(bx, y, bw, 40); ctx.strokeRect(bx, y, bw, 40);
+    for(let i = 0; i < CTF_N; i++){
+      const fx = bx + 12 + i*slot + 8, got = i < L.score[t];
+      ctx.globalAlpha = got ? 1 : 0.28;
+      ctfFlagIcon(ctx, fx, y + 34, ctfColor(1 - t), 24, hazardT*0.1 + i, null);
+      ctx.globalAlpha = 1;
+    }
+    // a flag in somebody's hands, per side, under the box
+    let n = 0;
+    for(const f of fighters) if(f._cf >= 0 && f.team === t){ ctfFlagIcon(ctx, bx + 16 + n*20, y + 62, ctfColor(1 - t), 18, hazardT*0.2, null); n++; }
+    // fighters in the cell
+    n = 0;
+    for(const f of fighters) if(f._jail != null && f.team === t){ ctx.fillStyle = f.color; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(bx + bw - 14 - n*20, y + 56, 7, 0, 7); ctx.fill(); ctx.stroke(); n++; }
+  }
+  // the middle: while hiding, an hourglass and a draining bar; in the match, a pair of crossed flags
+  ctx.fillStyle = 'rgba(28,24,38,0.78)'; ctx.strokeStyle = '#f4efe2'; ctx.lineWidth = 3; ctx.fillRect(cx - 62, y, 124, 40); ctx.strokeRect(cx - 62, y, 124, 40);
+  if(L.phase === 'hide'){
+    const k = 1 - clamp(L.t/CTF_HIDE_STEPS, 0, 1);
+    ctx.fillStyle = '#f4efe2'; ctx.beginPath(); ctx.moveTo(cx - 52, y + 8); ctx.lineTo(cx - 30, y + 8); ctx.lineTo(cx - 41, y + 20); ctx.lineTo(cx - 30, y + 32); ctx.lineTo(cx - 52, y + 32); ctx.lineTo(cx - 41, y + 20); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#3a3448'; ctx.fillRect(cx - 20, y + 14, 74, 12);
+    ctx.fillStyle = k < 0.2 ? '#e0503a' : '#f2c033'; ctx.fillRect(cx - 20, y + 14, 74*k, 12);
+    ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.strokeRect(cx - 20, y + 14, 74, 12);
+    // who is done
+    let i = 0; for(const f of fighters){ if(!ctfIsHuman(f) && fighters.some(ctfIsHuman)) continue; const dx = cx - 52 + i*18; i++; if(i > 6) break;
+      ctx.fillStyle = L.done[f.idx] ? '#3fbf5f' : 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(dx + 8, y + 36, 5, 0, 7); ctx.fill(); }
+  } else {
+    ctfFlagIcon(ctx, cx - 18, y + 33, ctfColor(0), 26, hazardT*0.1, null); ctfFlagIcon(ctx, cx + 18, y + 33, ctfColor(1), 26, hazardT*0.1 + 2, null);
+  }
+  // a capture flashes the scoring side's colour round the edge of the screen
+  if(L.flash){ const a = Math.min(1, L.flash.t/25)*(L.flash.soft ? 0.25 : 0.5); ctx.globalAlpha = a; ctx.strokeStyle = ctfColor(L.flash.team); ctx.lineWidth = 36; ctx.strokeRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  ctx.restore();
+  ctfDrawMinimap();
+}
+const CTF_MINI = { id:null, cv:null };
+function ctfDrawMinimap(){
+  const M = CTF.map, L = CTF.live; if(!M || !L) return;
+  const mw = 220, mh = Math.round(mw*M.WH/M.WW), mx = W - mw - 12, my = 66, sx = mw/M.WW, sy = mh/M.WH;
+  if(CTF_MINI.id !== M.id){
+    CTF_MINI.id = M.id; const cv = CTF_MINI.cv = document.createElement('canvas'); cv.width = mw; cv.height = mh;
+    const g = cv.getContext('2d'); if(g){ g.fillStyle = 'rgba(20,18,30,0.8)'; g.fillRect(0, 0, mw, mh);
+      for(const p of M.plats){ if(p.hop) continue; g.fillStyle = 'rgba(210,205,225,0.55)'; g.fillRect(p.x*sx, p.y*sy, Math.max(1, p.w*sx), Math.max(1, p.h*sy)); }
+      g.strokeStyle = 'rgba(210,205,225,0.28)'; g.lineWidth = 1; g.beginPath(); for(const p of M.plats){ if(!p.hop) continue; g.moveTo(p.x*sx, p.y*sy); g.lineTo((p.x + p.w)*sx, p.y*sy); } g.stroke(); }
+  }
+  ctx.save(); ctx.globalAlpha = 0.92; ctx.drawImage(CTF_MINI.cv, mx, my);
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.strokeRect(mx, my, mw, mh);
+  const vt = ctfViewTeam();
+  for(const j of L.jails){ ctx.fillStyle = ctfColor(j.owner); ctx.fillRect(mx + j.door.x*sx - 3, my + j.door.y*sy, 6, Math.max(4, j.door.h*sy)); }
+  for(const h of M.homes){ if(h.pad){ ctx.fillStyle = ctfColor(h.team); ctx.fillRect(mx + h.pad.x*sx, my + (h.pad.y - 12)*sy, Math.max(4, h.pad.w*sx), 5); } }
+  for(const d of L.doors){ if(d.open) continue; ctx.fillStyle = d.color; ctx.fillRect(mx + d.x*sx - 1, my + d.y*sy, 3, Math.max(3, d.h*sy)); }
+  for(const fl of L.flags){ if(!ctfFlagVisible(L, fl, vt)) continue; ctx.fillStyle = ctfColor(fl.team); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(mx + fl.x*sx, my + (fl.y - 20)*sy, fl.st === 2 ? 4.5 : 3.2, 0, 7); ctx.fill(); ctx.stroke(); }
+  for(const f of fighters){ ctx.fillStyle = ctfColor(f.team); const px = mx + clamp(f.x, 0, M.WW)*sx, py = my + clamp(f.y, 0, M.WH)*sy; ctx.fillRect(px - 1.5, py - 1.5, f.you ? 5 : 3, f.you ? 5 : 3);
+    if(f.you){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(px - 3, py - 3, 7, 7); } }
+  const z = viewZoom(), vw = W/z, vh = H/z; ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 1; ctx.strokeRect(mx + (camX + W/2 - vw/2)*sx, my + (camY + H/2 - vh/2)*sy, vw*sx, vh*sy);
+  ctx.restore();
+}
+// A whole map on one canvas (a screenshot, a check): g, the box w x h, the map.
+function ctfOverview(g, w, h, M){
+  const s = Math.min(w/M.WW, h/M.WH); g.save(); g.fillStyle = M.theme.sky[1]; g.fillRect(0, 0, w, h); g.scale(s, s);
+  for(const p of M.plats){ g.fillStyle = p.solid ? M.theme.solid.fill : M.theme.hop.fill; g.fillRect(p.x, p.y, p.w, p.h); g.strokeStyle = '#1c1c1c'; g.lineWidth = 3/s; g.strokeRect(p.x, p.y, p.w, p.h); }
+  for(const d of M.doors){ g.fillStyle = d.color; g.fillRect(d.x - 6, d.y, d.w + 12, d.h); }
+  for(const j of M.jails){ g.fillStyle = ctfColor(j.owner); g.globalAlpha = 0.18; g.fillRect(j.zone.x, j.zone.y, j.zone.w, j.zone.h); g.globalAlpha = 1; g.fillStyle = '#222'; g.fillRect(j.door.x, j.door.y, j.door.w, j.door.h); }
+  for(const hm of M.homes) if(hm.pad){ g.fillStyle = ctfColor(hm.team); g.fillRect(hm.pad.x, hm.pad.y - 150, hm.pad.w, 150); }
+  for(const sp of M.spots){ g.fillStyle = sp.cover ? '#2c8f3a' : '#fff'; g.beginPath(); g.arc(sp.x, sp.y - 30, 26, 0, 7); g.fill(); }
+  for(const k of M.keys){ g.fillStyle = CTF_DOOR_COL[+String(k.door).replace('r','') - 1]; g.beginPath(); g.arc(k.x, k.y - 30, 30, 0, 7); g.fill(); g.strokeStyle = '#000'; g.lineWidth = 6/s; g.stroke(); }
+  for(const b of M.boosts){ g.fillStyle = b.kind === 'speed' ? '#7ad0f0' : '#ffd23f'; g.beginPath(); g.arc(b.x, b.y - 30, 24, 0, 7); g.fill(); }
+  g.restore();
+}
+
+// @ctf:end
 // ============================================================
 //  AUDIO — a tiny self-contained WebAudio synth (no files; keeps the game one HTML file).
 //  SFX for hits/KOs/specials/UI, plus a simple looping music bed. Everything degrades to a
@@ -2995,11 +3953,11 @@ let ONEFIGHT = { active:false, story:false, won:false, over:false, frames:0, lin
 // isBig() the way the teams map does (no endless floor: a fall is a fall) and groundY() is the lane's own floor line.
 let RACE = raceFresh();
 let COBSFIGHT = { active:false, story:false, won:false, over:false, frames:0, lineup:null, prev:null, onEnd:null, opts:null, retry:null, result:null };   // Steve Cobs's fight, the same shape (startCobsFight): the second secret boss, on One's arena
-function isBig(){ return SETTINGS.mode==='teams' || ONEFIGHT.active || COBSFIGHT.active || RACE.active; }   // team mode uses the big 4-floor tower (and so do One's arena and Steve Cobs's)
+function isBig(){ return SETTINGS.mode==='teams' || SETTINGS.mode==='ctf' || ONEFIGHT.active || COBSFIGHT.active || RACE.active; }   // team mode uses the big 4-floor tower (and so do One's arena and Steve Cobs's)
 const CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big map is visible
 // Wide scrolling FFA/boss arena: any stage flagged `big`, plus small stages when the MAP SIZE
 // setting asks for extra height (those ride this same, proven scrolling path).
-function isBigFFA(){ return (SETTINGS.mode!=='teams') && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL && !ONEFIGHT.active && !COBSFIGHT.active && !RACE.active; }
+function isBigFFA(){ return (SETTINGS.mode!=='teams') && SETTINGS.mode!=='ctf' && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL && !ONEFIGHT.active && !COBSFIGHT.active && !RACE.active; }
 function scrolls(){ return isBig() || isBigFFA() || WW>W+2 || WH>H+2; }   // any arena wider/taller than the screen
 // ---- what an online CLIENT draws with ----
 // "camera is weird on multiplayer, there is an input delay sometimes. I think this is what was happening on boss rush
@@ -3035,6 +3993,7 @@ function go(id){
   // RUNNING! the same way: its result screen keeps the Retry (the Rematch button, relabelled), and every other screen drops it.
   if(id!=='_none_'){ if(RACE.active) raceRestore(); if(id!=='result') RACE.retry = null;
     const _rb = document.getElementById('resultRematch'); if(_rb) _rb.textContent = RACE.retry ? "Retry \u21bb" : "Rematch \u21bb"; }
+  if(id!=='_none_' && id!=='result'){ try{ ctfStageRestore(); }catch(e){} }   // Capture the Flag: the player's own stage comes back
   if(id!=='_none_'){ if(COBSFIGHT.active) cobsFightRestore(); if(id!=='result') COBSFIGHT.retry = null; }   // and Steve Cobs's, the same way
   if(id==='title'){ TUT.active=false; TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null; try{ tourneyRestore(); tutorialRestore(); }catch(e){} TOURNEY_MATCH_ACTIVE=false; BOSSRUSH.active=false; PENDING_TOURNEY=null; PENDING_CUSTOM=false;
     if(RUN_REC.recording) stopRunRecording();
@@ -3392,7 +4351,7 @@ function buildSettings(){
     // clamp count into the new mode's range and rebuild count buttons. The FLOOR matters as well
     // as the cap now: a solo count of 1 is legal in Boss Rush but leaves every other mode with a
     // lone fighter and nobody to fight.
-    const cap = v==='teams'?MAX_TEAMS:MAX_FFA;
+    const cap = v==='teams'?MAX_TEAMS:(v==='ctf'?10:MAX_FFA);
     if(SETTINGS.count>cap) SETTINGS.count=cap;
     if(SETTINGS.count<minCount()) SETTINGS.count=minCount();
     buildCountButtons();
@@ -3534,7 +4493,8 @@ function updateSummary(){
   const el=document.getElementById('matchSummary'); if(!el) return;
   const ai=SETTINGS.count-1;
   const size = (MAP_SIZES[SETTINGS.mapSize]||MAP_SIZES.normal).label;
-  if(SETTINGS.mode==='teams'){ el.textContent=`${SETTINGS.teamKey} teams · ${SETTINGS.stocks} stocks · ${ai} AI · ${size} map`; }
+  if(SETTINGS.mode==='ctf'){ el.textContent=`Capture the Flag · 5 v 5 · ${ai} AI · X puts your flag down, C when you are done, then carry all 5 of theirs home`; }
+  else if(SETTINGS.mode==='teams'){ el.textContent=`${SETTINGS.teamKey} teams · ${SETTINGS.stocks} stocks · ${ai} AI · ${size} map`; }
   else if(SETTINGS.mode==='boss' && SETTINGS.bossPick==='one' && oneUnlocked() && !inNetSession()){ el.textContent=`One · ${SETTINGS.count} fighter${SETTINGS.count>1?'s':''} vs One (2000 HP) · ${SETTINGS.stocks} stocks`; }
   else if(cobsWanted()){ el.textContent=`Steve Cobs · ${SETTINGS.count} fighter${SETTINGS.count>1?'s':''} vs Steve Cobs (${COBS_BOSS.hp} HP) · ${SETTINGS.stocks} stocks`; }
   else if(SETTINGS.mode==='boss'){ el.textContent=`Boss Rush · ${SETTINGS.count} fighter${SETTINGS.count>1?'s':''} vs a boss · ${SETTINGS.stocks} stocks`; }
@@ -5879,6 +6839,7 @@ function beginMatchNow(){
   window.__elimSeq=0; lastKoFrame=0;   // reset placement/elimination + stalemate timer for the new match
   try{ teamAiResetMatch(); }catch(e){}  // and the team-AI cost guard: call budget is per match
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
+  if(SETTINGS.mode==='ctf') ctfBegin();   // Capture the Flag: the flags, keys, doors, jails; everyone to their home
   try{ botAdaptBegin(); }catch(e){}   // the CPUs' in-browser adaptation to this player (BOT_ADAPT): decides whether this match adapts
   particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null; oneFx=[]; cobsFx=[];
   impactFxClear();   // no dust, debris or floor scar carries over from the last match (impact)
@@ -6257,6 +7218,7 @@ function wallBand(team, g){
 // Set up world dimensions, floors, and team bases for the current match.
 function setupWorld(){
   spawnZones=[];
+  if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
@@ -6709,12 +7671,13 @@ function vanDrive(pr){
   pr.phase = 'fall'; pr.life = Math.max(pr.life, 90);          // the finisher: it falls, and has the time to land
 }
 function platRects(){
-  const base = isBigFFA() ? [...worldPlats, ...spawnPlatRects()]
+  let base = isBigFFA() ? [...worldPlats, ...spawnPlatRects()]
              : !isBig()   ? worldPlats
              : [...worldPlats, ...bases.map(b=>({x:b.x,y:b.y,w:b.w,h:b.h}))];
   // Spongy is a summon that is ALSO terrain (design doc: "a colossal bounce platform"). Rebuilt
   // once per frame in updateSummons, and concat'd only when one is actually on the stage so the
   // common case still returns worldPlats untouched.
+  if(SETTINGS.mode==='ctf' && CTF.live && CTF.live.dyn.length) base = base.concat(CTF.live.dyn);   // Capture the Flag: the closed doors, the jail doors, the hiding wall
   return SPONGY_PLATS.length ? base.concat(SPONGY_PLATS) : base;
 }
 
@@ -6754,7 +7717,8 @@ function buildFighters(){
   if(ONEFIGHT.active && ONEFIGHT.lineup){ buildOneFighters(); return; }   // exactly the lineup her fight was started with
   if(RACE.active){ buildRaceRunners(); return; }   // RUNNING!: you and Marshmallow (no rivals: RACE_RUNNERS)
   if(COBSFIGHT.active && COBSFIGHT.lineup){ buildCobsFighters(); return; }   // and his (Knife alone in the story fight)
-  const cap = SETTINGS.mode==='teams'?MAX_TEAMS:MAX_FFA;
+  if(SETTINGS.mode==='ctf') SETTINGS.count = 10;
+  const cap = SETTINGS.mode==='teams'?MAX_TEAMS:(SETTINGS.mode==='ctf'?10:MAX_FFA);
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
   const humanCount = netRoster ? netRoster.length : 0;
   const N=Math.max(minCount(), Math.min(cap, SETTINGS.count));
@@ -6795,7 +7759,8 @@ function buildFighters(){
 
   // team assignment
   let teamOf=null;
-  if(SETTINGS.mode==='teams'){
+  if(SETTINGS.mode==='ctf'){ teamOf = ctfTeamOf(N, humanCount, !!netRoster); }
+  else if(SETTINGS.mode==='teams'){
     const split=(SETTINGS.teamKey||'').split('v').map(Number).filter(n=>n>0);
     const sizes = (split.reduce((a,b)=>a+b,0)===N) ? split : (teamSplitsFor(N)[0]||[N]);
     teamOf=[]; 
@@ -6813,7 +7778,8 @@ function buildFighters(){
   all.forEach((r,i)=>{
     const team = teamOf ? teamOf[i] : i;
     let sx, sy;
-    if(isBig() && bases.length){
+    if(SETTINGS.mode==='ctf'){ sx = WW/2; sy = WH/2; }   // ctfBegin puts everyone at their home
+    else if(isBig() && bases.length){
       const b = bases[team % bases.length];
       const rank = teamOf.slice(0,i).filter(t=>t===team).length;
       // cycle teammates through the 3 spawn points
@@ -7414,12 +8380,12 @@ function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;
 function buildHUD(){
   const bar=document.getElementById('hudbar'); bar.innerHTML='';
   window.__hudLineup = fighters.map(f=>f.idx+':'+f.name).join('|');
-  const teams=SETTINGS.mode==='teams';
+  const teams=SETTINGS.mode==='teams' || SETTINGS.mode==='ctf';
   fighters.forEach(f=>{
     const c=document.createElement('div'); c.className='pcard'+(f.you?' you':'')+(f.you2?' you2':''); c.dataset.i=f.idx;
     const tc = teams ? TEAM_COLORS[f.team%TEAM_COLORS.length] : null;
     if(tc) c.style.borderTopColor=tc, c.style.borderTopWidth='5px';
-    const tag = teams ? `<div style="font-size:8px;font-weight:700;color:${tc}">TEAM ${f.team+1}</div>` : '';
+    const tag = (teams && SETTINGS.mode!=='ctf') ? `<div style="font-size:8px;font-weight:700;color:${tc}">TEAM ${f.team+1}</div>` : '';
     // In local 2-player, label whose fighter is whose — otherwise nobody knows who they're controlling.
     const ptag = (LOCAL_PLAYERS>=2 && (f.you||f.you2))
       ? `<div style="font-size:8px;font-weight:800;color:${f.you?'#ffd23f':'#6fe7ff'}">${f.you?'P1':'P2'}</div>` : '';
@@ -7431,7 +8397,7 @@ function buildHUD(){
 // Order key: alive first, then more stocks, then more KOs, then fewer falls.
 function updateStandings(){
   const box=document.getElementById('standings'); if(!box) return;
-  if(RACE.active){ box.innerHTML=''; return; }   // RUNNING!: no ladder; the progress bar is the standing
+  if(RACE.active || SETTINGS.mode==='ctf'){ box.innerHTML=''; return; }   // (Capture the Flag has its own scoreboard, drawn on the canvas)   // RUNNING!: no ladder; the progress bar is the standing
   const you=fighters.find(f=>f.you);
   const rankScore = f => (f.dead?0:1e6) + (f.stocks===Infinity ? (f._kos||0)*1000 : (f.stocks||0)*1000) + (f.killCount||0)*10 - (f.deaths||0);
   let html='';
@@ -7463,7 +8429,7 @@ function updateHUD(){
     c.classList.toggle('dead',f.dead);
     c.querySelector('.pct').textContent=(Math.round(f.pct*10)/10).toFixed(1)+'%';   // damage is tracked to 0.1 now, and shown to it
     c.querySelector('.pct').style.color=pctColor(f.pct, f.koCap);
-    c.querySelector('.stk').textContent = (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
+    c.querySelector('.stk').textContent = (SETTINGS.mode==='ctf') ? ((f._cf>=0?'\u2691':'')+(f._ck>=0?'\u26BF':'')+(f._jail!=null?'\u26D3':'')) : (f.stocks===Infinity) ? '∞' : '●'.repeat(Math.max(0, Math.min(20, f.stocks|0)));
   });
 }
 function pctColor(p, cap){ const r = cap ? p/cap : p/200;   // fraction of this fighter's KO threshold
@@ -26154,7 +27120,7 @@ function step(){
   if(TUT.active) tutorialTick();
   try{ observePlaystyle(); }catch(e){}   // Wave 5: watch how the human plays this fighter
   testDpsTick();
-  updateItems();
+  if(SETTINGS.mode!=='ctf') updateItems();
   if(TOURNEY_WATCHING) tourneyLiveTick();
   if(tendrils.length) updateTendrils();
   // Boss Rush's win/lose check (bossRushCheck) runs once a frame, from checkWin at the end of this step. It used to run from
@@ -26190,7 +27156,7 @@ function step(){
     } else if(ctrl==="still"){
       // test-mode dummy: no input at all — just stands to be hit
     } else {
-      inp = aiThink(f);
+      inp = (SETTINGS.mode==='ctf' && ctfAiInput(f)) || aiThink(f);
     }
 
     // OUTBREAK: while infected by Barf Bag, this fighter mirrors HER inputs (puppet) and
@@ -26209,6 +27175,7 @@ function step(){
     }
     if(f._mtCuff) metagCuffStep(f);   // MeTag's cuff: a new press takes frames off the root (after the first few, which always hold)
 
+    if(SETTINGS.mode==='ctf') inp = ctfFilterInput(f, inp);   // the hiding phase's two keys; a prisoner stands still
     // The smash press, caught before a stun or a freeze hides the key (see SMASHES: PRESS ONCE). A press still held when
     // the stun ends counts, as a held jump or special does; a key held through your own smash's stun is the press that
     // smash already used, so it is not a second one.
@@ -26611,7 +27578,7 @@ function step(){
       if(f.ctrlRev>0){ const l=inp.left; inp.left=inp.right; inp.right=l; }  // Remote hack: reversed controls
       // HASTE EASES OFF. It used to be 1.5x flat and then nothing, so the frame it ran out felt like the
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
-      const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1);
+      const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * (f._cf>=0 ? CTF_CARRY_SPEED : 1);   // (a flag carrier is slower)
       if(inp.left){ f.vx-=mv; f.face=f.ctrlRev>0?1:-1; }
       if(inp.right){ f.vx+=mv; f.face=f.ctrlRev>0?-1:1; }
       if(!inp.left&&!inp.right && f.onground && !(f._sm && f._sm.drive) && !(f._gotcha && f._gotcha.phase==='lunge')) f.vx*=(f.iceUntil>0?0.99:FRICTION);
@@ -26623,9 +27590,9 @@ function step(){
       // The speed CAP eases off with the haste, the same way the acceleration does. This is where the cliff was:
       // 1.4x flat and then nothing, so the frame the buff expired took 2.56 off a held run in one step (G28).
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
-        const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
+        const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*(f._cf>=0?CTF_CARRY_SPEED:1); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
       // jump
-      if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f.vy=JUMP; f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
+      if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP); f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
       if(!inp.jump) f._jp=false;
 
       // attacks
@@ -27107,6 +28074,7 @@ function step(){
   if(RACE.active) raceTick();   // RUNNING!: the line advances, the throw is charged and flies, the hazards fall and pound (see raceTick)
   updateCamera();
   updateHUD();
+  if(SETTINGS.mode==='ctf') ctfStep();
   checkWin();
 }
 
@@ -31162,6 +32130,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(RACE.active && t && t.you && !RACE.over && dmg > 0){ RACE.lossWhy = 'hit'; endRace(false, 'hit'); return; }   // RUNNING!: one hit ends the run (raceBump)
   // SAFE IN YOUR OWN ZONE. Checked before anything else so no damage, knockback, burn or status
   // can be applied — a partial exemption would still let a fighter be juggled out of their spawn.
+  if(SETTINGS.mode==='ctf' && ctfNoHit(t, from)) return;   // a prisoner cannot hit or be hit
   if(inOwnTeamZone(t)) return;
   // …and you cannot swing out of it either: an attack thrown from inside the zone does not land.
   if(from && from !== t && inOwnTeamZone(from)) return;
@@ -31359,6 +32328,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   }
   const hitGround = t.onground;   // (for the dust a launch kicks up: hitFx)
   knock(t, kbx*scale, kby*scale - t.pct*0.025);
+  if(SETTINGS.mode==='ctf') ctfBigHit(t, from);   // a big enough launch makes a flag carrier drop the flag
   // Each link of a chain stuns for less, so a chain ends even before CHAIN_MAX (see chainOpen). The stun, the chain and the
   // hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
   // boss's grace for each attacker (bossGraceNote) runs through as well.
@@ -31587,6 +32557,7 @@ function dropInFlightMoves(f){
 }
 function eliminate(f){
   if(RACE.active){ raceEliminate(f); return; }   // RUNNING!: a fall or a knockout ends your race; a runner is deleted, Marshmallow is put back
+  if(SETTINGS.mode==='ctf' && ctfEliminate(f)) return;   // Capture the Flag: no stocks; a KO is a trip home, or to the enemy's jail
   if(f._oneGhost){ oneGhostDown(f); return; }   // One's ghost fighter has no stocks to lose: a knockout is the kill
   SFX.ko();
   // if an infected puppet is KO'd, revert it to its real team immediately
@@ -31674,6 +32645,7 @@ function eliminate(f){
 
 function checkWin(){
   if(TESTMODE.active) return;   // test mode never ends — it's a sandbox
+  if(SETTINGS.mode==='ctf'){ ctfCheckWin(); return; }   // Capture the Flag ends when one side has carried all five flags home
   if(ONEFIGHT.active){ oneFightCheck(); return; }   // One's fight has its own win and loss, and is never a Boss Rush clear
   if(RACE.active){ raceCheck(); return; }   // RUNNING! has its own too, and is never a recorded match
   if(COBSFIGHT.active){ cobsFightCheck(); return; }   // ...and so has Steve Cobs's
@@ -33453,7 +34425,7 @@ function showResult(winners, winTeam){
   r.classList.add('active');
   const you=fighters.find(f=>f.you);
   const youWon = you && winTeam!==undefined && you.team===winTeam;
-  const teams = SETTINGS.mode==='teams';
+  const teams = SETTINGS.mode==='teams' || SETTINGS.mode==='ctf';
   // The quip is shown for a win and was never hidden again, so a loss (or One's screen) read the last win's victory line.
   const _quip = document.getElementById('resultQuip'); if(_quip){ _quip.style.display='none'; _quip.textContent=''; }
   if(youWon){
@@ -33479,6 +34451,7 @@ function showResult(winners, winTeam){
     document.getElementById('resultTitle').textContent="Draw"; document.getElementById('resultSub').textContent="";
   }
   renderScorecard();
+  if(SETTINGS.mode==='ctf'){ try{ ctfResultText(youWon, winTeam); }catch(e){} }
   try{ renderNetResults(); }catch(e){}   // an online match: every human's place, KOs and damage, side by side (nothing for a solo match)
   try{ syncPrizeRoster(true); }catch(e){}   // Steve Cobs's prize: a gate this match opened is announced with its result
   showUnlockNote();   // drains PENDING_UNLOCKS; renders nothing when empty
@@ -33492,7 +34465,7 @@ function showResult(winners, winTeam){
 // Build the results scorecard: every fighter ranked by placement, with KOs/falls and an OPS-style bar.
 function renderScorecard(){
   const box=document.getElementById('scorecard'); if(!box) return;
-  const teams = SETTINGS.mode==='teams';
+  const teams = SETTINGS.mode==='teams' || SETTINGS.mode==='ctf';
   // sort by placement (1st at top), then by KOs as a tiebreak
   const order=[...fighters].sort((a,b)=> (a.placement||99)-(b.placement||99) || (b._kos||0)-(a._kos||0));
   let rows='';
@@ -33507,7 +34480,7 @@ function renderScorecard(){
       <div class="scplace">${ORDINAL(f.placement)}${medal}</div>
       <div class="scdot" style="background:${safeColor(f.color)}"></div>
       <div class="scname">${esc(f.name)}${teams?` <span class="scteam">T${(f.team||0)+1}</span>`:''}${f.you?' <span class="scyou">YOU</span>':''}</div>
-      <div class="scstats">${kos} KO · ${falls} fall${falls===1?'':'s'}</div>
+      <div class="scstats">${kos} KO · ${falls} fall${falls===1?'':'s'}${SETTINGS.mode==='ctf' ? ' · '+(f._caps||0)+' flag'+((f._caps||0)===1?'':'s') : ''}</div>
       <div class="scbar"><div class="scbar-w" style="width:${wPct}%"></div><div class="scbar-l" style="width:${lPct}%"></div>
         <span class="scbar-num">${wins.toFixed(2)} : ${losses.toFixed(2)}</span></div>
     </div>`;
@@ -33541,7 +34514,7 @@ function renderNetResults(){
   const el=document.getElementById('netResults'); if(!el) return;
   clearNetResults();
   const rows=netResultRows(); if(!rows || !rows.length) return;
-  const teams=SETTINGS.mode==='teams';
+  const teams=SETTINGS.mode==='teams' || SETTINGS.mode==='ctf';
   const mk=(parent, tag, cls, text)=>{ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; parent.appendChild(e); return e; };
   mk(el, 'div', 'nrhead', 'The players');
   const grid=mk(el, 'div', 'nrgrid');
@@ -36169,6 +37142,7 @@ function draw(){
     ctx.fillStyle=g; ctx.fillRect(-20,-20,W+40,H+40);
   }
   if(BOSS_ARENA) drawArenaDecor(BOSS_ARENA);
+  if(SETTINGS.mode==='ctf') ctfDrawBackdrop();
 
   // clouds (decor) — slow parallax with camera; none under a roof (BOSS_ARENA_ROOFED)
   if(!stageArt && !(BOSS_ARENA && BOSS_ARENA_ROOFED.has(BOSS_ARENA))){
@@ -36239,7 +37213,7 @@ function draw(){
   const platStyle = { yoyle: stage.hazard==='yoyle',
                       leafy: (stage.id==='goiky'||stage.id==='custom'), shadow: isBig(),
                       theme: SA.on ? stage.id : null };   // the ten normal stages' own platform looks (STAGE ART); art only, the geometry is the platform's own
-  for(const p of worldPlats) paintPlat(ctx, p, platStyle);
+  if(SETTINGS.mode==='ctf') ctfDrawWorld(); else for(const p of worldPlats) paintPlat(ctx, p, platStyle);   // Capture the Flag paints its map from cached tiles
   drawImpactScars();          // impact's floor scars, on the surfaces they were made on
   drawArenaHazard('under');   // a boss arena's hazard, under the shots and the fighters (BOSS_ARENA_HAZARD)
 
@@ -36379,7 +37353,7 @@ function draw(){
   }
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
-  for(const f of fighters){ if(f.dead) continue; if(f._oneGhost) drawOneGhostAura(f); drawFighter(f); }
+  for(const f of fighters){ if(f.dead) continue; if(f._oneGhost) drawOneGhostAura(f); drawFighter(f); if(SETTINGS.mode==='ctf') ctfDrawCarry(f); }
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
   if(SHOW_HITBOXES) drawHitboxOverlay();
 
@@ -36409,8 +37383,9 @@ function draw(){
   ctx.restore();   // end world space
 
   // ---- screen-space overlays ----
-  if(viewScrolls() && !RACE.active) drawMinimap();   // the race has its progress bar instead (drawRaceBar)
+  if(viewScrolls() && !RACE.active && SETTINGS.mode!=='ctf') drawMinimap();   // the race has its progress bar instead (drawRaceBar)
   drawOffscreenArrows();
+  if(SETTINGS.mode==='ctf') drawCtfHud();
   if(SETTINGS.mode==='boss' && BOSSRUSH.active) drawBossBar();
   if(ONEFIGHT.active) drawOneBar();
   if(RACE.active) drawRaceBar();
@@ -42196,7 +43171,7 @@ function drawFighter(f){
     ctx.restore();
   }
   // team ring (team mode only) — a colored ground shadow so allies read at a glance
-  if(SETTINGS.mode==='teams'){ ctx.strokeStyle=TEAM_COLORS[f.team%TEAM_COLORS.length]; ctx.lineWidth=3; ctx.globalAlpha=0.9;
+  if(SETTINGS.mode==='teams' || SETTINGS.mode==='ctf'){ ctx.strokeStyle=TEAM_COLORS[f.team%TEAM_COLORS.length]; ctx.lineWidth=3; ctx.globalAlpha=0.9;
     ctx.beginPath(); ctx.ellipse(0,f.r+8,f.r*0.8,5,0,0,7); ctx.stroke(); ctx.globalAlpha=1; }
   // you marker
   if(f.you){ ctx.fillStyle="#ffd23f"; ctx.strokeStyle="#1c1c1c"; ctx.lineWidth=2;
