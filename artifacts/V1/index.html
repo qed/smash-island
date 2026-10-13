@@ -34656,6 +34656,22 @@ function climbJump(f){
 function navUp(f, t){
   // Find a platform the fighter can hop onto that gets it closer to a target ABOVE it.
   // Works in both single-screen (one-way tops) and big-tower mode.
+  //
+  // STICK TO THE STEP YOU JUMPED FOR. The candidates below must be above the fighter's feet, so the moment a jump carries the feet up
+  // to the step's own top (or past it) the step stops being a candidate, the next one up is chosen, and the fighter swings away in
+  // mid-air and drops back down: measured on Grand Plains, a CPU climbing for a spawn point jumped, flew off the step it was about
+  // to land on, and fell back every 2 s for the 17 s the stale clock gave it. Airborne and still near the step it chose, it keeps
+  // aiming at that step (and does not spend a jump while it is already above it) until it lands.
+  // (Only on the big FFA arenas: the teams arena, the boss arenas and the single-screen stages keep the climb they had, bit for bit.)
+  const wideFFA = isBigFFA();
+  const st = wideFFA ? f._navStep : null;
+  if(st && !f.onground && hazardT - st.t <= 50){
+    const feet = f.y + f.r;
+    if(feet > st.y - 90 && feet < st.y + 150){
+      const sx = (f.x < st.xL) ? st.xL + 12 : (f.x > st.xR) ? st.xR - 12 : f.x;
+      return { x:sx, y:st.y, landing: feet <= st.y + 2 };
+    }
+  }
   const cands=[];
   for(const p of worldPlats){
     const ptop=p.y;
@@ -34674,7 +34690,9 @@ function navUp(f, t){
       // genuinely reachable and refusing to aim at them stalls the chase outright. Instead they are
       // heavily penalised below, so a reachable step always wins when one exists.
       if(climbGap > 300) continue;
-      const reachPenalty = climbGap > MAX_HOP_RISE ? 260 : 0;
+      // 260 was too little: the step two rows straight overhead (300 up, out of any jump's reach) beat a reachable one 315 px away, and a CPU
+      // under it jumped at the underside of its own goal for good. A step out of reach now loses to any reachable one on the stage.
+      const reachPenalty = climbGap > MAX_HOP_RISE ? (wideFFA ? 1400 : 260) : 0;
       const xL = p.x, xR = p.x + p.w;
       // Distance to the NEAREST standable point, not the platform's centre: a wide ledge you are
       // already beside is a short hop, not a long walk to its middle.
@@ -34690,6 +34708,7 @@ function navUp(f, t){
   // aim at the nearest reachable point on the chosen platform (its edge if we're beside it)
   const c=cands[0];
   const aimX = (f.x < c.xL) ? c.xL+12 : (f.x > c.xR) ? c.xR-12 : f.x;
+  if(wideFFA) f._navStep = { y:c.y, xL:c.xL, xR:c.xR, t:hazardT };
   return {x:aimX, y:c.y};
 }
 // Horizontal ground a rising jump covers before the fighter is level with the next step.
@@ -34741,13 +34760,16 @@ function steerClimb(f, t, inp){
   // measurably hurt: on generated maps, match resolution fell from 6/6 to 5/6, because those are
   // built from stepped solid blocks where committing the jump early overshoots the edge you were
   // walking to. So the old steer-or-jump stays the default.
-  if(isBig()){
+  // The big FFA arenas (Grand Plains, Sky Towers...) are the same brick-bond field of offset ledges, so they climb the teams arena's way: walking
+  // to the spot DIRECTLY under a ledge that sits across a gap is walking onto air, and the old steer-or-jump never jumped (measured: Firey
+  // paced the 1100 px rows of Grand Plains for 17 s without gaining one).
+  if(isBig() || isBigFFA()){
     if(Math.abs(dxn) > 12){ inp.left = dxn < 0; inp.right = dxn > 0; }
     if(f.onground){ if(Math.abs(dxn) <= CLIMB_REACH) inp.jump = true; }
-    else if(climbJump(f)) inp.jump = true;
+    else if(!(nav && nav.landing) && climbJump(f)) inp.jump = true;
   } else {
     if(Math.abs(dxn) > 22){ inp.left = dxn < 0; inp.right = dxn > 0; }
-    else if(climbJump(f)) inp.jump = true;
+    else if(!(nav && nav.landing) && climbJump(f)) inp.jump = true;
   }
   return !!nav;
 }
@@ -35888,8 +35910,15 @@ function aiThink(f){
         const gx=goal.x+goal.w/2, gy=goal.y;
         if(rn<0.6 || f._seekingSpawn){
           f._seekingSpawn = (Math.abs(gx-f.x)>30 || Math.abs((f.y+f.r)-gy)>30);
-          if(Math.abs(gx-f.x)>18){ if(gx<f.x) inp.left=true; else inp.right=true; }
-          if(gy < f.y-24 && (f.onground||f.jumps>0)) inp.jump=true;   // hop up onto it
+          if((f.y+f.r) - gy > 90){
+            // PATHING: a point several rows up is climbed to, step by step (steerClimb), not jumped at from the floor. The old walk-and-hop
+            // paced under the point for the whole 17 s before the stale clock sent both fighters off to fight.
+            const climbing = steerClimb(f, { x:gx, y:gy, r:f.r }, inp);
+            if(!climbing && !f.onground && f.jumps<=0 && f.spCd<=0 && (f.y+f.r) - gy > 150 && rn<0.5){ inp.special=true; inp.up=true; }
+          } else {
+            if(Math.abs(gx-f.x)>18){ if(gx<f.x) inp.left=true; else inp.right=true; }
+            if(gy < f.y-24 && (f.onground||f.jumps>0)) inp.jump=true;   // hop up onto it
+          }
           return finishAI(f,inp,sp);
         }
       }
