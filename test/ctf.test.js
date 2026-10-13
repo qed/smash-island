@@ -134,8 +134,8 @@ describe('capture the flag', () => {
     expect(Math.abs(sl.x - j.door.x), 'inside the cell, by the door').toBeLessThan(900);
     step(w, 30);
     expect(w.eval(`fighters[${a}]._jail`), 'still inside').toBe(1);
-    put(w, friend, j.door.x - 20, cellFloor(w, 1));   // a teammate touches the door
-    step(w, 2);
+    put(w, friend, j.door.x - 20, cellFloor(w, 1));   // a teammate holds the door
+    step(w, 135);
     expect(w.eval(`fighters[${a}]._jail`), 'freed').toBe(null);
     expect(w.eval('CTF.live.jails[1].pris.length')).toBe(0);
     // a KO on your own side is a trip home instead
@@ -151,13 +151,43 @@ describe('capture the flag', () => {
     put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}])`);
     logic(w, 20000);
     expect(w.eval(`fighters[${a}]._jail`), 'still there, however long').toBe(1);
-    put(w, friend, j.door.x - 20, cellFloor(w, 1)); logic(w, 2);
+    put(w, friend, j.door.x - 20, cellFloor(w, 1)); logic(w, 125);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
     expect(w.eval(`fighters[${a}]._ctfFree`)).toBeGreaterThan(100);
     expect(w.eval(`fighters[${a}]._hasteT`), 'a short speed boost').toBeGreaterThan(0);
     // a KO inside those seconds, on the enemy side, is a trip home and not a cell
     put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}])`);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
+  });
+
+  it('a rescue is a hold: 2 s at the door, unhit; a hit starts it again; after a jailbreak the door is locked for 15 s; the no-go zone is small and holds no spawn', () => {
+    const { window: w } = loadMonolith(41);
+    start(w);
+    const a = mate(w, 0), b = mate(w, 0, 1), friend = mate(w, 0, 2), foe = spawn(w, 1), j = J(w, 'CTF.map.jails[1]');
+    for (const t of [0, 1]) {
+      const z = J(w, `CTF.map.jails[${t}].zone`), sp = J(w, `CTF.map.homes[${t}].spawns`);
+      expect(z.w, 'about 520 px wide').toBeLessThan(700);
+      expect(sp.some(s => s.x > z.x && s.x < z.x + z.w && s.y > z.y && s.y < z.y + z.h), 'no spawn in its own jail zone').toBe(false);
+    }
+    put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}])`);
+    expect(w.eval(`fighters[${a}]._jail`)).toBe(1);
+    put(w, friend, j.door.x - 20, cellFloor(w, 1)); logic(w, 100);
+    expect(w.eval(`fighters[${a}]._jail`), '100 steps is not enough').toBe(1);
+    w.eval(`fighters[${friend}].pct += 5`); logic(w, 1); logic(w, 100);
+    expect(w.eval(`fighters[${a}]._jail`), 'a hit started the count again').toBe(1);
+    put(w, friend, j.door.x + 400, cellFloor(w, 1)); logic(w, 60);   // leaving the zone does too
+    put(w, friend, j.door.x - 20, cellFloor(w, 1)); logic(w, 100);
+    expect(w.eval(`fighters[${a}]._jail`)).toBe(1);
+    logic(w, 30);
+    expect(w.eval(`fighters[${a}]._jail`), '2 s unhit: free').toBe(null);
+    // the lockdown: a second prisoner cannot be freed for 15 s
+    put(w, b, foe.x, foe.y); w.eval(`eliminate(fighters[${b}])`);
+    expect(w.eval(`fighters[${b}]._jail`)).toBe(1);
+    logic(w, 400);
+    expect(w.eval(`fighters[${b}]._jail`), 'locked down').toBe(1);
+    expect(w.eval('CTF.live.jails[1].lock')).toBeGreaterThan(0);
+    logic(w, 700);
+    expect(w.eval(`fighters[${b}]._jail`), 'after the lockdown the hold goes on').toBe(null);
   });
 
   it('damage over the threshold on the enemy side is a cell too (higher in small teams); on your own side it is not', () => {
