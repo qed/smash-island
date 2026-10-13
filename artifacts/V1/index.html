@@ -2451,7 +2451,26 @@ function ctfRoomGen(g, cfg){
     const cc = taken(j, k, c) ? x0(j) + 1 : c; g.put(fl(k) - 1, cc, String.fromCharCode(96 + v.id)); reserve(j, k, cc, cc);
   });
   // ---- hiding places, shelves, area features: every room ----
-  const feats = cfg.features || [], coverCh = cfg.cover;
+  const coverCh = cfg.cover;
+  // ---- SUPER JUMP rooms: a lone ledge three rows up that only a super-jump pad (a boost, 1.45x) reaches; the pad is on the floor of the same room, a hiding place on the ledge ----
+  { let made = 0; const want = cfg.superRooms != null ? cfg.superRooms : 3, cand = [];
+    for(let j = 2; j <= 8; j++) for(let k = 1; k < K; k++) if(!special.has(rk(j, k)) && !isVault(j, k)) cand.push([j, k, R(j, k, 106)]);
+    cand.sort((a, b) => a[2] - b[2]);
+    for(const [j, k] of cand){
+      if(made >= want) break;
+      const f = fl(k), x = x0(j);
+      let done = false;
+      for(let lc = x + 1; lc <= x + 3 && !done; lc++) for(const pc of [x + 6, x + 5, x + 7]){
+        let ok = true; for(let q = lc - 1; q <= lc + 3; q++) if(taken(j, k, q)) ok = false;
+        for(const c of [lc, lc + 1, lc + 2]) for(const r of [f - 4, f - 3, f - 2, f - 1]) if(g.at(r, c) !== '.') ok = false;
+        if(taken(j, k, pc) || g.at(f - 1, pc) !== '.') ok = false;
+        if(!ok) continue;
+        g.fill(f - 3, lc, lc + 2, '='); g.put(f - 4, lc + 1, coverCh[Math.floor(R(j, k, 105)*coverCh.length)]); g.put(f - 1, pc, 'v'); reserve(j, k, lc - 1, lc + 3); reserve(j, k, pc, pc);
+        (info.supers = info.supers || []).push({ j, k, c:lc, pad:pc }); made++; done = true; break;
+      }
+    }
+  }
+  const feats = cfg.features || [];
   for(let j = 0; j < J; j++) for(let k = 0; k < K; k++){
     if(special.has(rk(j, k))) continue;
     if(j === 0 && (k === 3 || k === 2)) continue;   // the base rooms are the spawns and the pad
@@ -2484,11 +2503,13 @@ function ctfRoomGen(g, cfg){
     }
   }
   // ---- boosts in the open rooms ----
-  for(let i = 0; i < (cfg.openBoosts != null ? cfg.openBoosts : 4); i++){
-    const j = 2 + Math.floor(R(i, 1, 91)*7), k = Math.floor(R(i, 2, 92)*K);
-    if(special.has(rk(j, k))) continue;
-    const c = x0(j) + 1 + Math.floor(R(i, 3, 93)*6); if(taken(j, k, c) || !['.'].includes(g.at(fl(k) - 1, c))) continue;
-    g.put(fl(k) - 1, c, boostCh[i % 4]);
+  { const want = cfg.openBoosts != null ? cfg.openBoosts : 4, kinds = ['u', 'g', 'h', 'u']; let placed = 0;   // speed, ghost, shield, speed (the super jumps are the pads in their own rooms)
+    for(let i = 0; i < 80 && placed < want; i++){
+      const j = 2 + Math.floor(R(i, 1, 91)*7), k = Math.floor(R(i, 2, 92)*K);
+      if(special.has(rk(j, k))) continue;
+      const c = x0(j) + 1 + Math.floor(R(i, 3, 93)*6); if(taken(j, k, c) || g.at(fl(k) - 1, c) !== '.') continue;
+      g.put(fl(k) - 1, c, kinds[placed % 4]); reserve(j, k, c, c); placed++;
+    }
   }
   // ---- the spine: the open middle, a ladder, ledges, the roofs above ----
   g.ladder(SPINE, 37, 10, 3);
@@ -2668,10 +2689,18 @@ function ctfFilterInput(f, inp){
     const p = !!inp.flag; if(p && !f._ctfS) ctfPlaceCarried(f); f._ctfS = p;
   }
   if(L.phase === 'hide'){
-    const atk = !!inp.flag, sp = !!inp.special;   // the flag key (Space) puts the flag down or picks it up; special is "done"
+    const atk = !!inp.flag, sp = !!inp.special, sm = !!inp.smash;   // the flag key (Space) puts the flag down or picks it up; special is "done"; smash is the free camera
+    if(sm && !f._ctfM){ f._cam = f._cam ? null : { x:f.x, y:f.y - 40 }; }
+    f._ctfM = sm;
     if(atk && !f._ctfA) ctfHidePlace(f);
     if(sp && !f._ctfS) ctfToggleDone(f);
     f._ctfA = atk; f._ctfS = sp;
+    if(f._cam){   // the free camera: the arrows steer a cursor over the whole of the player's own side, the fighter stands still
+      const M = CTF.map, mid = M.WW/2, c = f._cam;
+      c.x = clamp(c.x + ((inp.right ? 1 : 0) - (inp.left ? 1 : 0))*CTF_CAM_SPEED, f.team === 0 ? 40 : mid + 40, f.team === 0 ? mid - 40 : M.WW - 40);
+      c.y = clamp(c.y + ((inp.down ? 1 : 0) - ((inp.up || inp.jump) ? 1 : 0))*CTF_CAM_SPEED, 40, M.WH - 40);
+      return CTF_NOINP;
+    }
     return { left:inp.left, right:inp.right, jump:inp.jump, down:inp.down, up:inp.up, attack:false, special:false, smash:false, flag:false };
   }
   return inp;
@@ -2690,8 +2719,29 @@ function ctfPlaceFlag(fl, x, y){
   for(const s of CTF.map.spots) if(s.team === fl.team && s.cover && Math.abs(s.x - x) < 46 && Math.abs(s.y - y) < 80){ fl.cover = true; break; }
   for(let i = 0; i < 8; i++) puff(x, y - 16, TEAM_COLORS[fl.team % TEAM_COLORS.length], 4);
 }
+const CTF_CAM_SPEED = 26;
+function ctfInSolid(x, y){
+  for(const p of worldPlats) if(p.solid && x > p.x && x < p.x + p.w && y > p.y && y < p.y + p.h) return true;
+  for(const p of ctfDynSolids()) if(p.solid && !p.barrier && x > p.x && x < p.x + p.w && y > p.y && y < p.y + p.h) return true;
+  return false;
+}
+// Where the free camera's cursor would put the flag: the floor under it, and whether that is a place the team may hide one (own side, not near the line/jail/pad,
+// and a place the other side can walk to: ctfAiReachable, the same test the CPUs' hiding passes).
+function ctfCamSnap(f){
+  const c = f._cam; if(!c) return null;
+  const out = { x:c.x, y:c.y, ok:false };
+  if(ctfInSolid(c.x, c.y)) return out;
+  const sy = ctfSurfaceBelow(c.x, c.y, 300); if(sy === null) return out;
+  out.y = sy; out.ok = ctfHideValid(f.team, c.x, sy) && (typeof ctfAiReachable !== 'function' || ctfAiReachable(f.team, c.x, sy));
+  return out;
+}
 function ctfHidePlace(f){
   const L = CTF.live, fl = L.flags[f.idx]; if(!fl || L.done[f.idx]) return false;
+  if(f._cam){   // free camera: the flag goes where the cursor is, or nowhere
+    const s = ctfCamSnap(f);
+    if(!s.ok){ puff(s.x, s.y, '#888', 6); return false; }
+    ctfPlaceFlag(fl, s.x, s.y); ctfSfx('place'); return true;
+  }
   if(fl.st === 0){
     const sy = ctfSurfaceBelow(f.x, f.y + f.r - 10, 500);
     if(sy === null || !ctfHideValid(f.team, f.x, sy) || (typeof ctfAiReachable === 'function' && !ctfAiReachable(f.team, f.x, sy))){ puff(f.x, f.y, '#888', 6); return false; }
@@ -2720,6 +2770,7 @@ function ctfEndHide(L){
     }
   }
   L.phase = 'play'; L.playT = 0; L.done = {};
+  for(const f of fighters) f._cam = null;
   for(const d of L.doors) d.op = [false, false];
   ctfRebuildDyn(L);
   for(const f of fighters){ f.invuln = Math.max(f.invuln, 30); f._ctfA = false; f._ctfS = false; }
@@ -2947,7 +2998,7 @@ function ctfReveal(L){
 // A prisoner may be a spectator: the camera follows the teammate they choose (attack cycles), and the flag key pings the last flag they saw.
 function ctfSpecTargets(f){ return fighters.filter(g=>g.team === f.team && g.idx !== f.idx && g._jail == null); }
 function ctfSpecCycle(f){ const ts = ctfSpecTargets(f); if(!ts.length){ f._spec = null; return; } const i = ts.findIndex(g=>g.idx === f._spec); f._spec = ts[(i + 1) % ts.length].idx; }
-function ctfCamFighter(you){ if(you._jail == null) return you; const ts = ctfSpecTargets(you); let g = ts.find(q=>q.idx === you._spec); if(!g && ts.length){ g = ts[0]; you._spec = g.idx; } return g || you; }
+function ctfCamFighter(you){ if(you._cam && CTF.live && CTF.live.phase === 'hide') return { x:you._cam.x, y:you._cam.y, color:you.color, idx:you.idx, _free:true }; if(you._jail == null) return you; const ts = ctfSpecTargets(you); let g = ts.find(q=>q.idx === you._spec); if(!g && ts.length){ g = ts[0]; you._spec = g.idx; } return g || you; }
 function ctfPing(f){ const L = CTF.live; let id = f._lastFlagSeen; if(!(id >= 0) || !L.seen[f.team][id] || L.flags[id].st === 4) id = L.flags.findIndex(q=>q.team !== f.team && L.seen[f.team][q.id] && q.st !== 4 && q.st !== 2); if(id >= 0){ L.ping[f.team] = { id, t:420 }; ctfSfx('pick'); } }
 // Dropped and lying on its own side's ground, an own flag is hidden again where its carrier stands (it must be somewhere a fighter can reach)
 function ctfPlaceCarried(f){ const L = CTF.live, fl = L.flags[f._cf]; if(!fl) return false; const sy = ctfSurfaceBelow(f.x, f.y + f.r - 10, 500);
@@ -3302,6 +3353,15 @@ function ctfDrawWorld(){
       ctx.fillStyle = g; ctx.fillRect(bx - 30, vy, 120, vh); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.setLineDash([22, 18]); ctx.lineDashOffset = -T*1.5;
       ctx.beginPath(); ctx.moveTo(M.WW/2, vy); ctx.lineTo(M.WW/2, vy + vh); ctx.stroke(); ctx.restore(); } }
   { const pg = L.ping && L.ping[vt]; if(pg){ const pf = L.flags[pg.id]; if(pf && inView(pf.x - 80, pf.y - 140, 160, 160)){ ctx.save(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; ctx.globalAlpha = 0.5 + 0.4*Math.sin(T*0.3); ctx.beginPath(); ctx.arc(pf.x, pf.y - 30, 70 + (T%40), 0, 7); ctx.stroke(); ctx.restore(); } } }
+  // the free camera while hiding: a cursor, a line down to the floor it points at, and a ghost of the flag there (a tick where it may go, a no-entry where it may not)
+  { const me = fighters.find(q=>q.you); if(L.phase === 'hide' && me && me._cam){ const c = me._cam, s = ctfCamSnap(me);
+      ctx.save(); ctx.lineCap = 'round';
+      if(Math.abs(s.y - c.y) > 6){ ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(s.x, s.y); ctx.stroke(); ctx.setLineDash([]); }
+      ctx.globalAlpha = 0.6; ctfFlagIcon(ctx, s.x, s.y, ctfColor(me.team), 64, T*0.1, me.color); ctx.globalAlpha = 1;
+      if(s.ok) ctfCheckIcon(ctx, s.x, s.y + 26, 15); else ctfNoEntryIcon(ctx, s.x, s.y + 26, 15);
+      for(const [lw, col] of [[7, '#1c1c1c'], [3, '#ffffff']]){ ctx.lineWidth = lw; ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(c.x, c.y, 16, 0, 7);
+        ctx.moveTo(c.x - 28, c.y); ctx.lineTo(c.x - 10, c.y); ctx.moveTo(c.x + 10, c.y); ctx.lineTo(c.x + 28, c.y); ctx.moveTo(c.x, c.y - 28); ctx.lineTo(c.x, c.y - 10); ctx.moveTo(c.x, c.y + 10); ctx.lineTo(c.x, c.y + 28); ctx.stroke(); }
+      ctx.restore(); } }
   // the areas: what each one does is drawn in its own look (ctfDrawZone)
   for(const z of (M.zones || [])){ if(z.type === 'dark' || !inView(z.x, z.y, z.w, z.h)) continue; ctfDrawZone(z, T, vx, vy, vw, vh); }
   // lifts: a car on its chain-less rails, the shaft marked
@@ -3384,6 +3444,8 @@ function drawCtfHud(){
     ctx.fillStyle = '#3a3448'; ctx.fillRect(cx - 20, y + 14, 74, 12);
     ctx.fillStyle = k < 0.2 ? '#e0503a' : '#f2c033'; ctx.fillRect(cx - 20, y + 14, 74*k, 12);
     ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.strokeRect(cx - 20, y + 14, 74, 12);
+    { const me = fighters.find(q=>q.you); if(me && me._cam){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.fillRect(cx - 17, y + 48, 34, 24); ctx.strokeRect(cx - 17, y + 48, 34, 24); ctx.fillRect(cx - 9, y + 43, 12, 6);
+        ctx.fillStyle = '#3a3448'; ctx.beginPath(); ctx.arc(cx, y + 60, 7, 0, 7); ctx.fill(); ctx.stroke(); } }
     // who is done
     let i = 0; for(const f of fighters){ if(!ctfIsHuman(f) && fighters.some(ctfIsHuman)) continue; const dx = cx - 52 + i*18; i++; if(i > 6) break;
       ctx.fillStyle = L.done[f.idx] ? '#3fbf5f' : 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(dx + 8, y + 36, 5, 0, 7); ctx.fill(); }
@@ -3597,7 +3659,7 @@ function ctfDecorDraw(g, d, th){
 // ---------------------------------------------------------------------------------------------------------------
 const CTF_NAV_BUCKET = 256;
 // two sets of numbers: a carrier's (the slowest) and a free fighter's. A move only counts if it lands on the same place with both, so it works whoever plays it.
-function ctfNavParams(free){ const k = (free ? 1 : CTF_CARRY_SPEED)*CTF_SPEED, j = free ? 1 : CTF_CARRY_JUMP; return { R:24, G:GRAV, CAP:MAXVX*k, ACC:MOVE*k, JV:JUMP*j }; }
+function ctfNavParams(free, bst){ const k = (free ? 1 : CTF_CARRY_SPEED)*CTF_SPEED, j = (free ? 1 : CTF_CARRY_JUMP)*(bst ? CTF_BOOST_JUMP : 1); return { R:24, G:GRAV, CAP:MAXVX*k, ACC:MOVE*k, JV:JUMP*j }; }
 function ctfNavBucket(x){ return Math.floor(x/CTF_NAV_BUCKET); }
 
 function ctfNavNew(M){
@@ -3664,8 +3726,8 @@ function ctfNavNodeOf(nav, f){
 }
 // One simulated move. jump: a jump first (false: walking off an edge, already moving at vx); dir: held to the side while t <= T;
 // dj: a second jump at the top of the first. Returns where it lands: { node, x, t }, or null.
-function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru){
-  const P = ctfNavParams(free), R = P.R, WH = nav.M.WH;
+function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst){
+  const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
   let x = xa, y = A.y - R, vy = 0, jumps = 2;
   if(jump){ vy = P.JV; jumps = 1; }
   if(thru){ y += R*0.6; vy = 5; }   // down + jump on a one-way ledge: dropped through it (the game's own: dropping = 10 frames, vy 5)
@@ -3695,10 +3757,10 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru){
   return null;
 }
 // The same move with a free fighter's numbers (faster, higher): does it still come down on something?
-function ctfNavSimBoth(nav, n, xa, dir, dj, T, jump, run, want, frac){
-  const P = ctfNavParams(true);
+function ctfNavSimBoth(nav, n, xa, dir, dj, T, jump, run, want, frac, bst){
+  const P = ctfNavParams(true, bst);
   const v0 = jump ? (dir === 0 ? 0 : dir*Math.min(P.CAP, Math.sqrt(2*0.55*Math.min(run, 150)))) : dir*P.CAP*frac;
-  const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, jump, true);
+  const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, jump, true, false, bst);
   return !!r;   // anywhere on the map at all (a miss is then noticed and the way round it planned: see ctfAiFollow)
 }
 function ctfNavSimThru(nav, n, xa){ return !!ctfNavSim(nav, n, xa, 0, 0, 0, 0, false, true, true); }
@@ -3716,6 +3778,18 @@ function ctfNavProbe(nav, n){
       const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, true, false);
       if(r && r.node !== n && ctfNavSimBoth(nav, n, xa, dir, dj, T, true, run, r.node)) add({ kind:'jump', from:n.id, to:r.node.id, xa, dir, dj, T, v0, xb:r.x, run:Math.min(run, 150), cost:r.t + 14 + dj*8, doors:[] });
     }
+  }
+  // the SUPER JUMP (a boost pickup, 1.45x): ledges the plain jumps cannot reach. These edges need the boost (e.need), kept only for places not otherwise reached from here.
+  { const Pb = ctfNavParams(true, true); const extra = {};
+    for(const xa of xs) for(const dir of [-1, 0, 1]){
+      const run = dir === 1 ? xa - n.x0 : dir === -1 ? n.x1 - xa : 0;
+      const v0 = dir === 0 ? 0 : dir*Math.min(Pb.CAP, Math.sqrt(2*0.55*Math.min(run, 150)));
+      for(const dj of [0, 1]) for(const T of (dir === 0 ? [0] : [4, 10, 30])){
+        const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, true, true, false, true);
+        if(r && r.node !== n && !found[r.node.id] && !extra[r.node.id] && ctfNavSimBoth(nav, n, xa, dir, dj, T, true, run, r.node, 1, true)) extra[r.node.id] = { kind:'jump', need:'jump', from:n.id, to:r.node.id, xa, dir, dj, T, v0, xb:r.x, run:Math.min(run, 150), cost:r.t + 30 + dj*8, doors:[] };
+      }
+    }
+    for(const k in extra) n.edges.push(extra[k]);
   }
   if(!n.solid){   // down through a one-way ledge, from three spots along it
     for(const xa of [n.x0 + 20, (n.x0 + n.x1)/2, n.x1 - 20]){
@@ -3778,6 +3852,7 @@ function ctfNavPath(nav, from, to, opt){
     for(const e of N[cur].edges){
       if(opt.ban && opt.ban[e.from + '>' + e.to + ':' + Math.round(e.xa)] > opt.now) continue;
       let pen = 0;
+      if(e.need && !(opt.has && opt.has[e.need])) continue;
       if(e.doors.length){ let bad = 0; for(const d of e.doors) if(!opt.doorOK(d)) bad++; if(bad){ if(!opt.closed) continue; pen = 250*bad; } }
       if(opt.skip && opt.skip(N[e.to])) continue;
       if(done.has(e.to)) continue;

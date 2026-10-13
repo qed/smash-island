@@ -328,6 +328,62 @@ describe('capture the flag', () => {
     expect(Math.abs(floor.y - floor.top), 'a solid floor holds').toBeLessThan(6);
   });
 
+  it('a super-jump pad lifts a fighter to a ledge nothing else reaches', () => {
+    const { window: w } = loadMonolith(23);
+    start(w);
+    const s = J(w, `CTF.map.info.supers[0]`);
+    expect(s, 'the map has super-jump rooms').toBeTruthy();
+    const f = 13 + 5 * s.k, lx = (s.c + 1) * 120 + 60, ledgeY = (f - 3) * 120;
+    const tryJump = (boost) => {
+      w.eval(`(function(){ var q = fighters[0]; q.controller='local'; q.you=true; q.x=${lx}; q.y=${f * 120}-q.r; q.vx=0; q.vy=0; q.onground=true; q.jumps=2; q.invuln=0; q._ctfJT=${boost ? 600 : 0}; })()`);
+      step(w, 3);
+      w.eval(`down[KEYS.jump]=true`); step(w, 1); w.eval(`down[KEYS.jump]=false`); step(w, 1);
+      for (let i = 0; i < 40 && w.eval('fighters[0].vy') < -0.4; i++) step(w, 1);
+      w.eval(`down[KEYS.jump]=true`); step(w, 1); w.eval(`down[KEYS.jump]=false`); step(w, 90);
+      return w.eval('fighters[0].y + fighters[0].r');
+    };
+    expect(Math.abs(tryJump(true) - ledgeY), 'with the boost: standing on the ledge').toBeLessThan(10);
+    expect(tryJump(false), 'without it: back on the floor').toBeGreaterThan(ledgeY + 100);
+  });
+
+  it('the free camera: smash toggles it, the arrows steer a cursor, Space puts the flag only on a valid, reachable spot', () => {
+    const { window: w } = loadMonolith(22);
+    w.eval(`CTF.skipNav=true; SETTINGS.mode='ctf'; SETTINGS.count=10; CTF.forceMap='castle'; beginMatchNow(); CTF.nav = ctfNavNew(CTF.map); while(!CTF.nav.ready) ctfNavTick(CTF.nav, 80);`);
+    const tap = (key) => { w.eval(`down[KEYS.${key}]=true`); step(w, 2); w.eval(`down[KEYS.${key}]=false`); step(w, 2); };
+    const x0 = w.eval('fighters[0].x');
+    tap('smash');
+    expect(w.eval('!!fighters[0]._cam'), 'smash turns the free camera on').toBe(true);
+    const c0 = J(w, 'fighters[0]._cam');
+    w.eval(`down[KEYS.right]=true`); step(w, 5); w.eval(`down[KEYS.right]=false`);
+    expect(w.eval('fighters[0]._cam.x') - c0.x, 'the cursor moves 26 a step').toBeGreaterThan(100);
+    expect(w.eval('fighters[0].x'), 'the fighter stands still').toBeCloseTo(x0, 0);
+    expect(w.eval('ctfCamFighter(fighters[0]).x'), 'the camera follows the cursor').toBe(w.eval('fighters[0]._cam.x'));
+    // a hiding spot of team 0: the cursor a little above it snaps to the floor and the flag goes there
+    const sp = J(w, `CTF.map.spots.filter(function(s){ return s.team===0 && s.y > 1000; })[0]`);
+    w.eval(`fighters[0]._cam = { x:${sp.x}, y:${sp.y - 60} }`);
+    expect(w.eval('ctfCamSnap(fighters[0]).ok')).toBe(true);
+    tap('flag');
+    expect(w.eval('CTF.live.flags[0].st'), 'put down').toBe(1);
+    expect(w.eval('CTF.live.flags[0].x')).toBe(sp.x);
+    expect(Math.abs(w.eval('CTF.live.flags[0].y') - sp.y), 'on the floor under the cursor').toBeLessThan(2);
+    // not in a wall, not near the middle line, not on the other side
+    const wall = J(w, `(function(){ var p = worldPlats.filter(function(p){ return p.solid && p.x < 8000 && p.w >= 100 && p.h >= 100 && p.y > 1000; })[0]; return { x:p.x + p.w/2, y:p.y + p.h/2 }; })()`);
+    w.eval(`fighters[0]._cam = { x:${wall.x}, y:${wall.y} }`);
+    expect(w.eval('ctfCamSnap(fighters[0]).ok'), 'inside a wall').toBe(false);
+    w.eval(`fighters[0]._cam = { x:${MID - 100}, y:${sp.y - 60} }`);
+    expect(w.eval('ctfCamSnap(fighters[0]).ok'), 'near the line').toBe(false);
+    w.eval(`fighters[0]._cam = { x:${sp.x}, y:${sp.y - 60} }`);
+    const xBefore = w.eval('CTF.live.flags[0].x');
+    w.eval(`fighters[0]._cam = { x:${wall.x}, y:${wall.y} }`); tap('flag');
+    expect(w.eval('CTF.live.flags[0].x'), 'a refused spot leaves the flag where it was').toBe(xBefore);
+    // the cursor cannot cross to the enemy side
+    w.eval(`fighters[0]._cam = { x:${MID - 60}, y:${sp.y} }; down[KEYS.right]=true`); step(w, 6); w.eval(`down[KEYS.right]=false`);
+    expect(w.eval('fighters[0]._cam.x'), 'stays on its own side').toBeLessThan(MID);
+    // the camera is gone once the hiding is over
+    w.eval(`ctfEndHide(CTF.live)`);
+    expect(w.eval('fighters[0]._cam')).toBe(null);
+  });
+
   it('only capturing all five ends the match: no clock', () => {
     const { window: w } = loadMonolith(9);
     start(w);
