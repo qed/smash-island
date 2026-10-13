@@ -38,6 +38,15 @@ vi.setConfig({ testTimeout: 300000 });
 //       untouched; no checkpoint; the lane has to stay winnable by a skilled player, and "the run" below is the proof (a solver plays every section on the
 //       real engine and the tests play it back). The pins above that were the OLD lane's -- its length, which kinds stand in the front half, how long a
 //       run-up is, where a runner can safely stand near the edge -- are updated with that, none of them loosened: what is new is pinned in its own describes.
+//
+// THE OWNER'S DECISIONS OF 2026-10-13, which turned the race into a race for survival (and changed what this file pinned):
+//   "getting hit should instantly make you lose the run in running" -- every hit on you (a piston, a piano, spikes, a ceiling, a jet, a saw, a bullet; and any damage at
+//       all) ends the run: endRace(false, 'hit'), "You were hit". The lane used to bump: "a shove back and a stun, no damage: the lane never kills by itself". The voice's
+//       wave is not a hit: it only stops you (raceQuit), and the run goes on.
+//   "remove rivals!!!! this is supposed to be a race for SURVIVAL" -- RACE_RUNNERS is empty. No MeAfterlife group (Fan, Test Tube, Microphone, Tissues, Soap, Taco): the
+//       lane is Knife and Marshmallow, against the course and the line.
+//   "marshmallow should only be at the end of the thing" -- she waits on the clear runway RACE_MARSH_WAIT px short of the edge (_marshWait, facing left), with no
+//       catch-up and no leash, and is with you again once you are within RACE_MARSH_MEET of her, for the throw.
 
 let W;
 // loadMonolith's canvas shim hands back gradient objects, so the real draw() runs to completion under jsdom and the loop's
@@ -62,6 +71,12 @@ const race = (opts, body) => W.eval(`(function(){
 // whole run of the lane is thousands of frames. Every short test runs the real thing, HUD and all, and so does the first frame of
 // every race here.
 const quick = (opts, body) => race(opts, `var __hud = updateHUD; updateHUD = function(){}; try { ${body} } finally { updateHUD = __hud; }`);
+
+// One hit ends the run now (2026-10-13: "getting hit should instantly make you lose the run in running"), and a race that is over stops its hazards (raceTick returns at
+// once). The hazard tests below try a hazard again and again in one race, so every try starts by putting the race back on -- not over, not lost, running -- the way a
+// Retry would. (Without it every try after the first hit met a lane gone dead: "bumped" stayed false, and a test that expected a jumper to be hit, or the head to bang,
+// failed for no reason, while one that expected a runner to get through passed for nothing.)
+const REARM = `RACE.over = false; RACE.won = false; RACE.result = null; RACE.lossWhy = null; running = true; window.__raceEnd = undefined; window.__raceResult = null;`;
 
 // THE SCRIPTED RUNNER (page code) is test/helpers/running-bot.page.js: it holds right and reads the lane the way a player reads the screen,
 // and never dodges an AI runner. The lane's hard sections are played by the plans of test/helpers/running-solver.page.js instead, which
@@ -109,7 +124,7 @@ const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 // ONE scripted run of the whole lane, shared by the tests below (a full run is the slow part of this file).
 let RUN = null;
 const fullRun = () => RUN || (RUN = quick({}, `${BOT}
-  fighters.forEach(function(f){ if(f !== you && !f._marsh) f.dead = true; });   // the solved world: the runners are not on the lane, Marshmallow is (see PACKRUN for the runners)
+  fighters.forEach(function(f){ if(f !== you && !f._marsh) f.dead = true; });   // the solved world: you and Marshmallow (there are no other runners now: RACE_RUNNERS is empty, see PACKRUN)
   var C = __rs.controller({ bot:__bot, programs:${JSON.stringify(PROG.programs)}, verify:true });   // the plans on file for the lane's hard sections, the scripted runner for the rest
   var out = __run(you, hold, 10000, C.ctl);
   var first = RACE.obstacles[0];
@@ -122,16 +137,18 @@ const fullRun = () => RUN || (RUN = quick({}, `${BOT}
     seen:seen, err:!!window.__loopErrLogged, gone:gone.map(function(f){ return f.name; }), past:past, speed:RACE_LINE_SPEED, leash:RACE_MARSH_LEASH, full:RACE_THROW_FULL,
     lineAtEnd:Math.round(RACE.lineX), plan:{ seen:C.seen, secs:C.secs, failed:C.failed, at:C.si } };`));
 
-// PACKRUN: the same runner with every runner of the MeAfterlife group on the lane too, as far as the first of the hard sections (the runners
-// have no plan for those: they run into the pit as the slow ones run into the line, which is the owner's "the runners can be caught more
-// often"). A section's plan is for the lane without the pack: a jab ("attacks allowed") at the wrong frame would spoil any plan.
+// PACKRUN: the same runner, on the lane as it is dealt, as far as the first of the hard sections. It was the lane with the MeAfterlife group on it too (the runners have no
+// plan for those sections: they ran into the pit as the slow ones ran into the line, which was the owner's "the runners can be caught more often"). THE OWNER, 2026-10-13:
+// "remove rivals!!!! this is supposed to be a race for SURVIVAL" -- there is nobody on the lane now but you and Marshmallow, so this is the proof of that, on a real run.
 let PACK = null;
 const packRun = () => PACK || (PACK = quick({}, `${BOT}
   var first = RACE.obstacles[0], sec0 = RACE.obstacles.find(function(o){ return o.sec; }), stopX = sec0 ? sec0.sec.sx : RACE.edge - 80, n = 0;
+  var names0 = fighters.map(function(f){ return f.name; });
   while(running && n < 10000 && you.x < stopX){ hold(__bot(you)); step(); n++; }
   hold({});
   var gone = fighters.filter(function(f){ return f._runner && !f._marsh && f.dead; });
-  return { frames:n, over:RACE.over, youX:you.x, stopX:stopX, gone:gone.map(function(f){ return f.name; }),
+  return { frames:n, over:RACE.over, why:RACE.result && RACE.result.why, youX:you.x, stopX:stopX, gone:gone.map(function(f){ return f.name; }), names0:names0, names:fighters.map(function(f){ return f.name; }),
+    rivals:RACE_RUNNERS.length, runners:fighters.filter(function(f){ return f._runner && !f._marsh; }).length,
     past:fighters.filter(function(f){ return f._runner && !f._marsh && (f.dead || f.x > first.x1 + 40); }).length };`));
 
 const CANON = ['piano', 'memory', 'voice'];
@@ -561,65 +578,96 @@ describe('the line', () => {
     expect(r.again.active && r.again.running && !r.again.over).toBe(true);
     expect(r.again.frames, 'from the top (beginMatchNow steps the first frame itself)').toBeLessThanOrEqual(1);
     expect(r.again.line, 'the line is back behind the start').toBeCloseTo(r.again.youX - 520 + r.again.frames * r.again.speed, 6);
-    expect(r.again.alive).toBe(8);
+    // It was 8: you, Marshmallow and the six runners of the MeAfterlife group. THE OWNER, 2026-10-13: "remove rivals!!!! this is supposed to be a race for SURVIVAL" -- Retry
+    // puts the same two back: you and Marshmallow.
+    expect(r.again.alive, 'Retry runs it again with you and Marshmallow, nobody else').toBe(2);
   });
 });
 
+// THE OWNER, 2026-10-13: "remove rivals!!!! this is supposed to be a race for SURVIVAL". This describe pinned the MeAfterlife group (Fan, Test Tube, Microphone, Tissues, Soap,
+// Taco: runners of every skill, caught by the line, jabbing you "anywhere else"). Each test below keeps its subject and says what is true now: the lane is Knife and
+// Marshmallow, and she waits at the end ("marshmallow should only be at the end of the thing").
 describe('the runners', () => {
-  it('you run as Knife (the chain forces it); Marshmallow is always at your side; the MeAfterlife group runs too, each on its own side', () => {
-    const r = race({}, `return { names:fighters.map(function(f){ return f.name; }), you:you.name, ctrl:you.controller, marshTeam:marsh.team, youTeam:you.team,
-      teams:fighters.slice(2).map(function(f){ return f.team; }), ai:fighters.slice(1).every(function(f){ return f.controller==='ai' && f._runner; }), stocks:fighters.map(function(f){ return f.stocks; }) };`);
+  it('you run as Knife (the chain forces it); there are no rival runners, only Marshmallow -- who waits at the end, facing left, and is at your side once you reach her', () => {
+    // It was "Marshmallow is always at your side; the MeAfterlife group runs too, each on its own side" (Fan, Microphone, Soap, Taco, Test Tube, Tissues). Now: no group, and she is
+    // not at your side from the start but on the clear runway RACE_MARSH_WAIT px short of the edge, until you come within RACE_MARSH_MEET of her.
+    const r = race({}, `var m = marsh, out = { names:fighters.map(function(f){ return f.name; }), you:you.name, ctrl:you.controller, marshTeam:m.team, youTeam:you.team,
+        rivals:RACE_RUNNERS.length, strangers:fighters.filter(function(f){ return !f.you && !f._marsh; }).length,
+        ai:fighters.slice(1).every(function(f){ return f.controller==='ai' && f._runner; }), stocks:fighters.map(function(f){ return f.stocks; }) };
+      // where she stands: the clear runway before the last gap, the way she faces, and what she does about it
+      var lastX1 = Math.max.apply(null, RACE.obstacles.map(function(o){ return o.x1; })), top = surfaceBelow(m.x, RACE.floorY - 400);
+      out.spot = { wait:m._marshWait, x:m.x, want:RACE.edge - RACE_MARSH_WAIT, face:m.face, onground:m.onground, feet:m.y + m.r, top:top, floor:RACE.floorY, r:m.r, lastX1:lastX1,
+        input:Object.keys(raceRunnerAi(m)).filter(function(k){ return raceRunnerAi(m)[k]; }) };
+      // however long you take, she stands there (no catch-up, no leash while she waits)
+      you.controller = 'still'; for(var i = 0; i < 60; i++) step();
+      out.stayed = { x:m.x, wait:m._marshWait };
+      // you come: not yet at RACE_MARSH_MEET, and then within it she is with you
+      var place = function(x){ you.x = x; you.y = RACE.floorY - you.r; you.vx = 0; you.vy = 0; you.onground = true; you.hitstun = 0; RACE.lineX = you.x - 5000; step(); };
+      place(m.x - RACE_MARSH_MEET - 40); out.far = m._marshWait;
+      place(m.x - RACE_MARSH_MEET + 40); out.met = m._marshWait;
+      place(m.x - 60); place(m.x - 60); out.ready = !!raceThrowReady(you);   // at your side: the throw is on offer
+      // and from then on the leash is on: left behind, she is put back at your side
+      m.x = you.x - 900; m.y = you.y; m.vx = 0; m.vy = 0; RACE.lineX = you.x - 5000; step(); out.behind = you.x - m.x;
+      out.leash = RACE_MARSH_LEASH; out.meet = RACE_MARSH_MEET;
+      return out;`);
     expect(r.you).toBe('Knife');
     expect(r.ctrl).toBe('local');
-    expect(r.names.slice(0, 2)).toEqual(['Knife', 'Marshmallow']);
-    expect(r.names.slice(2).sort()).toEqual(['Fan', 'Microphone', 'Soap', 'Taco', 'Test Tube', 'Tissues']);
+    expect(r.names, 'the lane is you and Marshmallow, nobody else').toEqual(['Knife', 'Marshmallow']);
     expect(r.names).not.toContain('OJ'); expect(r.names).not.toContain('Suitcase'); expect(r.names).not.toContain('Cabby');
+    expect([r.rivals, r.strangers], 'no rival runners: RACE_RUNNERS is empty, and nobody else is on the lane').toEqual([0, 0]);
     expect(r.marshTeam, 'at your side: nothing of yours hits her').toBe(r.youTeam);
-    expect(new Set(r.teams).size, 'the rest can be hit').toBe(6);
     expect(r.ai).toBe(true);
     expect(r.stocks.every((s) => s === 1)).toBe(true);
+    expect(r.spot.wait, 'she waits').toBe(true);
+    expect(r.spot.x, 'RACE_MARSH_WAIT px short of the edge').toBeCloseTo(r.spot.want, 3);
+    expect(r.spot.face, 'facing left, toward you').toBe(-1);
+    expect([r.spot.onground, Math.abs(r.spot.feet - r.spot.top) < 2, r.spot.top], 'standing on the runway').toEqual([true, true, r.spot.floor]);
+    expect(r.spot.lastX1, 'a clear runway: the last obstacle is behind her').toBeLessThan(r.spot.x - r.spot.r);
+    expect(r.spot.input, 'and she does nothing').toEqual([]);
+    expect([r.stayed.x, r.stayed.wait], 'she is still there a second on').toEqual([r.spot.x, true]);
+    expect(r.far, 'still waiting while you are further than RACE_MARSH_MEET').toBe(true);
+    expect(r.met, 'with you again once you are within it').toBe(false);
+    expect(r.ready, 'and at your side the throw is on offer').toBe(true);
+    expect(r.behind, 'the leash is on once you have reached her').toBeLessThanOrEqual(r.leash);
   });
 
   it('the hidden entry lets the tests run as someone else', () => {
     const r = race({ fighter: 'Firey' }, `return { you:you.name, n:fighters.length, marsh:!!marsh };`);
     expect(r.you).toBe('Firey');
-    expect(r.n).toBe(8);
+    expect(r.n, 'Firey and Marshmallow, as the lane is now (it was 8, with the MeAfterlife group)').toBe(2);
     expect(r.marsh).toBe(true);
     const m = race({ fighter: 'Marshmallow' }, `return { you:you.name };`);
     expect(m.you, 'not as Marshmallow herself: she is the one who is thrown').toBe('Knife');
   });
 
-  it('AI runners run right and clear the first gap; the slow ones fall behind, are caught, and are gone', () => {
+  it('there are no AI runners to run right and clear the first gap, fall behind and be caught: nobody but you and Marshmallow, the whole way to the first hard section', () => {
+    // It was "AI runners run right and clear the first gap; the slow ones fall behind, are caught, and are gone" (six runners, some of them lost to the line). THE OWNER,
+    // 2026-10-13: "remove rivals!!!! this is supposed to be a race for SURVIVAL". The same scripted run (packRun) now shows the lane stays you and Marshmallow.
     const r = packRun();
-    expect(r.over, 'the scripted runner is not caught on the way to the first hard section').toBe(false);
+    expect(r.over, 'the scripted runner is not caught, and not hit, on the way to the first hard section').toBe(false);
     expect(r.youX, 'and gets there').toBeGreaterThanOrEqual(r.stopX);
-    expect(r.past, 'the runners jump the gap (or were lost later, past it)').toBe(6);
-    expect(r.gone.length, 'some fall behind and are caught').toBeGreaterThan(0);
-    expect(r.gone.length).toBeLessThan(6);
+    expect(r.rivals, 'RACE_RUNNERS is empty').toBe(0);
+    expect(r.names0, 'the lane begins with you and Marshmallow').toEqual(['Knife', 'Marshmallow']);
+    expect(r.names, 'and nobody comes onto it').toEqual(['Knife', 'Marshmallow']);
+    expect([r.runners, r.past, r.gone], 'no runner to jump the gap, none caught, none gone').toEqual([0, 0, []]);
   }, 300000);
 
-  it('the runners crowding the edge leave you to your throw, but jab you anywhere else ("attacks allowed")', () => {
-    const r = race({}, `you.controller = 'still'; var fan = fighters.find(function(f){ return f.name==='Fan'; });
-      RACE.frames = 300; fan.x = you.x + 30; fan.y = you.y; fan.vx = 0; fan.onground = true; hazardT = 500 - fan.idx*11;
-      var mid = raceRunnerAi(fan).attack;                                    // mid-lane, right beside you: a jab
-      you.x = RACE.edge - 100; you.y = RACE.floorY - you.r; fan.x = you.x - 40; fan.y = you.y; hazardT = 500 - fan.idx*11;
-      var atEdge = raceRunnerAi(fan).attack;                                 // at the edge: none
-      you.x = RACE.edge - RACE_THROW_ZONE - 100; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
-      var nearZone = raceRunnerAi(fan).attack;                               // just short of the throw's zone: none either
-      you.x = RACE_FIRST_X + 100; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
-      var farBack = raceRunnerAi(fan).attack;                                // well before it (and before everything: the first obstacle is a plain gap): a jab again
-      var sec = RACE.obstacles.find(function(o){ return o.sec; });
-      you.x = (sec.x0 + sec.x1)/2; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
-      var onSection = raceRunnerAi(fan).attack;                              // on a precision section (owner 2026-10-02, the d5 lane): none, a jab there is luck
-      you.x = sec.sec.sx - 10; fan.x = you.x - 40; hazardT = 500 - fan.idx*11;
-      var beforeSection = raceRunnerAi(fan).attack;                          // just before it: a jab
-      return { mid:mid, atEdge:atEdge, nearZone:nearZone, farBack:farBack, onSection:onSection, beforeSection:beforeSection };`);
-    expect(r.mid).toBe(true);
-    expect(r.atEdge).toBe(false);
-    expect(r.nearZone).toBe(false);
-    expect(r.farBack).toBe(true);
-    expect(r.onSection, 'the runners leave you alone on a plank, a saw\'s pit, the hairline: a jab there would be luck, and the section is meant to be fair on the next try').toBe(false);
-    expect(r.beforeSection, 'but not a step before it').toBe(true);
+  it('nobody jabs you anywhere ("attacks allowed" had the runners jab you; there are none now): Marshmallow, the only one left, never attacks, and your run is ended by the lane and never by another fighter', () => {
+    // It was "the runners crowding the edge leave you to your throw, but jab you anywhere else" -- Fan jabbed you mid-lane and just before a precision section, and kept off at
+    // the edge and on a section. THE OWNER, 2026-10-13: "remove rivals!!!! this is supposed to be a race for SURVIVAL": nobody to jab, so there is nobody to keep off, and the
+    // run can end only by the line, a fall, a hit of the lane, or a short throw.
+    const r = race({}, `you.controller = 'still'; var fan = fighters.find(function(f){ return f.name==='Fan'; }), sec = RACE.obstacles.find(function(o){ return o.sec; });
+      marsh._marshWait = false; RACE.frames = 300;
+      var jab = function(x){ you.x = x; you.y = RACE.floorY - you.r; marsh.x = you.x - 40; marsh.y = you.y; marsh.vx = 0; marsh.onground = true; hazardT = 500 - marsh.idx*11; return raceRunnerAi(marsh).attack; };
+      var spots = { mid:RACE_FIRST_X + 100, atEdge:RACE.edge - 100, nearZone:RACE.edge - RACE_THROW_ZONE - 100, onSection:(sec.x0 + sec.x1)/2, beforeSection:sec.sec.sx - 10 }, jabs = {};
+      Object.keys(spots).forEach(function(k){ jabs[k] = jab(spots[k]); });
+      // and a long stand next to her, the line far behind: nothing touches him
+      you.x = RACE_START_X + 200; you.y = RACE.floorY - you.r; you.vx = 0; you.vy = 0; marsh.x = you.x - 40; marsh.y = you.y; marsh.controller = 'ai'; you.pct = 0;
+      var hit = 0, n = 0; for(; n < 400 && running; n++){ RACE.lineX = you.x - 5000; step(); if(you._raceBumpT > 0 || you.pct > 0 || you.hitstun > 0) hit++; }
+      return { fan:!!fan, others:fighters.filter(function(f){ return !f.you && !f._marsh; }).length, jabs:jabs, hit:hit, n:n, over:RACE.over, why:RACE.result && RACE.result.why, pct:you.pct };`);
+    expect([r.fan, r.others], 'there is no Fan, nor anyone else, to jab you').toEqual([false, 0]);
+    for (const k of ['mid', 'atEdge', 'nearZone', 'onSection', 'beforeSection']) expect(r.jabs[k], 'Marshmallow never jabs you: ' + k).toBe(false);
+    expect([r.hit, r.n, r.over, r.pct], 'a long stand beside her, and nothing touches him and the run goes on').toEqual([0, 400, false, 0]);
   });
 });
 
@@ -902,67 +950,82 @@ describe('the hazards', () => {
       RACE.waves = []; RACE.pianos.forEach(function(p){ p.state = 'idle'; p.t = 0; }); RACE.voices.forEach(function(v){ v.fired = false; }); };
     var put = function(x){ you.controller = 'local'; you.x = x; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.slowed = 0; you.dead = false; you.jumps = 2; you.onground = false; you.pct = 0; hold({});
       for(var i=0;i<2;i++){ RACE.lineX = you.x - 5000; step(); }
-      you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.vx = 0; you.vy = 0; you.x = x; you.y = fy - you.r; you.onground = true; };   // put down clean: whatever the two settling frames met (a piston that happened to be down) is not part of the test
+      you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.vx = 0; you.vy = 0; you.x = x; you.y = fy - you.r; you.onground = true; ${REARM} };   // put down clean: whatever the two settling frames met (a piston that happened to be down, a hit that ended the race) is not part of the test, and the race is on again
     var adv = function(n){ for(var i=0;i<n;i++){ RACE.lineX = you.x - 5000; step(); } };
     only('none', 0);`;
 
-  it('a piston bumps whoever it comes down on -- a shove back and a stun, no damage: the lane never kills by itself -- and harder the further along it stands', () => {
+  it('a piston that comes down on you ends the run -- "You were hit" -- the shove and the stun still on him, no damage; raised it clears him, and it is harder the further along it stands', () => {
+    // It was "a piston bumps whoever it comes down on -- a shove back and a stun, no damage: the lane never kills by itself". THE OWNER, 2026-10-13: "getting hit should instantly
+    // make you lose the run in running". The piston still comes down only when it comes down, still stuns and shoves (and takes no percent and no stock), and still stuns and shoves
+    // harder the further along it stands -- but the bump on you now ends the run: endRace(false, 'hit'), onEnd(false), "You were hit". A raised one still clears him.
     const r = quick({}, `${ISOLATE}
       var out = [];
       [0, HZ.length - 1].forEach(function(i){
         var h = HZ[i]; only('piston', i);
         put(h.x + h.w/2); you.controller = 'still'; hold({});
         hazardT = Math.round(((0.5 - h.phase) % 1 + 1) % 1 * h.period);   // the bottom of its cycle
+        var before = [RACE.over, running];   // the run is on until it comes down
         adv(1);
-        var a = { bump:you._raceBumpT, stun:you.hitstun, vx:you.vx, pct:you.pct, dead:you.dead, want:h.stun, kx:h.kx, s:h.s };
+        var a = { before:before, bump:you._raceBumpT, stun:you.hitstun, vx:you.vx, pct:you.pct, dead:you.dead, want:h.stun, kx:h.kx, s:h.s,
+          over:RACE.over, won:RACE.won, why:RACE.result && RACE.result.why, end:window.__raceEnd, running:running, title:document.getElementById('resultTitle').textContent };
         adv(60); a.after = { pct:you.pct, dead:you.dead, over:RACE.over }; out.push(a);
       });
-      // and the same piston, raised: a runner under it is not touched
+      // and the same piston, raised: a runner under it is not touched, and the run goes on
       var h0 = HZ[0]; only('piston', 0); put(h0.x + h0.w/2); you.controller = 'still'; hazardT = Math.round(((0.0 - h0.phase) % 1 + 1) % 1 * h0.period);
-      adv(1); var raised = { bump:you._raceBumpT, stun:you.hitstun, y:racePistonY(h0), floor:fy };
+      adv(1); var raised = { bump:you._raceBumpT, stun:you.hitstun, y:racePistonY(h0), floor:fy, over:RACE.over, running:running };
       return { out:out, raised:raised };`);
     for (const a of r.out) {
+      expect(a.before, 'the run is on until it comes down').toEqual([false, true]);
       expect(a.bump, 'bumped').toBeGreaterThan(0);
       expect(a.stun, 'stunned for its stun').toBe(a.want);
       expect(a.bump, 'and a moment of grace after it: the stun and 16 frames (this one already counted)').toBe(a.want + 16 - 1);
       expect(a.vx, 'shoved back').toBe(a.kx);
       expect(a.pct, 'no damage').toBe(0);
-      expect([a.after.pct, a.after.dead, a.after.over]).toEqual([0, false, false]);
+      expect([a.over, a.won, a.why, a.end, a.running], 'and it is the end of the run: onEnd(false), because he was hit').toEqual([true, false, 'hit', false, false]);
+      expect(a.title, 'the result screen says so').toBe('You were hit');
+      expect([a.after.pct, a.after.dead, a.after.over], 'no damage still, not knocked out: the run just ends').toEqual([0, false, true]);
     }
     expect(r.out[1].want, 'the last stuns longer than the first').toBeGreaterThan(r.out[0].want);
     expect(r.out[1].kx, 'and shoves harder').toBeLessThan(r.out[0].kx);
     expect(r.raised.bump, 'raised, it clears him').toBe(0);
+    expect([r.raised.over, r.raised.running], 'and the run goes on').toEqual([false, true]);
     expect(r.raised.y + 120, 'its underside is well over his head').toBeLessThan(r.raised.floor - 100);
   });
 
-  it('a piano spawns when you cross its trigger and lands a fixed time later on whoever is under it -- crushed, not before; jump and you are over it; run and you are through', () => {
+  it('a piano spawns when you cross its trigger and lands a fixed time later on whoever is under it -- the run is over, not before; jump and you are over it; run and you are through', () => {
+    // It was "crushed, not before": a bump (a shove and a stun). THE OWNER, 2026-10-13: "getting hit should instantly make you lose the run in running" -- crushed now ends the run
+    // ('hit'). Under it as it lands: over. In the air above it as it lands, or already through it: the run goes on, as it always did.
+    // (It failed on "over it, in the air" because the crushing before it had ended the race, and a race that is over stops the piano: it never landed. put() puts the race back on.)
     const r = quick({}, `${ISOLATE}
       var out = { through:[], crushed:null, over:null, spawn:null };
       PI.forEach(function(p, i){
         only('piano', i); put(p.trig - 150); you.vx = 6.4; hold({right:true});
         var bumped = false, n = 0; while(n < 90){ adv(1); n++; if(you._raceBumpT > 0) bumped = true; }
-        out.through.push({ bumped:bumped, past:you.x > p.x + p.w + you.r });
+        out.through.push({ bumped:bumped, past:you.x > p.x + p.w + you.r, over:RACE.over });
       });
       var p0 = PI[0];
       only('piano', 0); put(p0.trig - 40); var before = p0.state; adv(1); hold({}); you.controller = 'still';   // he stands short of the trigger, then on it
       var still = p0.state; put(p0.x + p0.w/2); you.controller = 'still'; adv(1); out.spawn = { before:before, still:still, after:p0.state, T:p0.T };
       var early = null; for(var k = 0; k < p0.T - 3; k++){ adv(1); if(you._raceBumpT > 0){ early = k; break; } }
+      var onBefore = !RACE.over;
       var landed = null; for(var m = 0; m < 12; m++){ adv(1); if(p0.state === 'crash'){ landed = you._raceBumpT > 0; break; } }
-      out.crushed = { early:early, landed:landed, state:p0.state, bump:you._raceBumpT, stun:you.hitstun, vx:you.vx, pct:you.pct, want:p0.stun };
+      out.crushed = { early:early, onBefore:onBefore, landed:landed, state:p0.state, bump:you._raceBumpT, stun:you.hitstun, vx:you.vx, pct:you.pct, want:p0.stun,
+        over:RACE.over, won:RACE.won, why:RACE.result && RACE.result.why, end:window.__raceEnd };
       only('piano', 0); put(p0.x + p0.w/2); adv(1); p0.t = p0.T - 1; you.y = fy - you.r - 220; you.vy = 0; adv(1);
-      out.over = { state:p0.state, bump:you._raceBumpT };
+      out.over = { state:p0.state, bump:you._raceBumpT, over:RACE.over, running:running };
       return out;`);
     expect(r.through.length).toBeGreaterThanOrEqual(1);
-    for (const t of r.through) expect([t.bumped, t.past], 'keep running: through it').toEqual([false, true]);
+    for (const t of r.through) expect([t.bumped, t.past, t.over], 'keep running: through it, and the run goes on').toEqual([false, true, false]);
     expect(r.spawn.before).toBe('idle');
     expect(r.spawn.still, 'not before the trigger').toBe('idle');
     expect(r.spawn.after, 'on it').toBe('fall');
-    expect(r.crushed.early, 'not before it lands').toBeNull();
+    expect([r.crushed.early, r.crushed.onBefore], 'not before it lands: the run is on until then').toEqual([null, true]);
     expect(r.crushed.landed, 'crushed as it lands').toBe(true);
     expect(r.crushed.stun).toBeGreaterThan(r.crushed.want - 4);
     expect(r.crushed.vx, 'and shoved back').toBeLessThan(0);
     expect(r.crushed.pct, 'no damage').toBe(0);
-    expect([r.over.state, r.over.bump], 'over it, in the air').toEqual(['crash', 0]);
+    expect([r.crushed.over, r.crushed.won, r.crushed.why, r.crushed.end], 'and the run is over: onEnd(false), because he was hit').toEqual([true, false, 'hit', false]);
+    expect([r.over.state, r.over.bump, r.over.over, r.over.running], 'over it, in the air: it lands under him, and the run goes on').toEqual(['crash', 0, false, true]);
   });
 
   it('the voice\'s wave rolls at you along the floor from its trigger and stops dead whoever it catches on the ground; one jump takes you over it', () => {
@@ -1029,19 +1092,38 @@ describe('the hazards', () => {
     expect(r.running).toBe(true);
   });
 
-  it('the runners jump the voice\'s wave when it is a jump away, and not before', () => {
+  it('the voice\'s wave stops you dead when it reaches you, and not before, and does not end the run (it is not a hit); Marshmallow, the only runner left, jumps it when it is a jump away', () => {
+    // It was "the runners jump the voice's wave when it is a jump away, and not before" (Fan, an AI runner). THE OWNER, 2026-10-13: "remove rivals!!!! this is supposed to be a race
+    // for SURVIVAL", and "getting hit should instantly make you lose the run in running". So the wave is told on YOU: far off it does nothing; once it reaches you it stops you dead
+    // (raceQuit: no velocity, a stun) and that is not a hit: the run goes on. The AI's wave-jumping is Marshmallow's now, and still when it is a jump away, and not before.
     const r = race({}, `${ISOLATE}
-      var fan = fighters.find(function(f){ return f.name==='Fan'; }); fan.dead = false; fan.controller = 'ai'; fan.x = 4000; fan.y = fy - fan.r; fan.vx = 6; fan.vy = 0; fan.onground = true;
+      var W0 = { sp:6, h:80, th:46, stun:30 }, wave = function(x){ return [{ x:x, sp:W0.sp, h:W0.h, th:W0.th, stun:W0.stun }]; };
+      put(4000); you.controller = 'still';
+      RACE.waves = wave(you.x + 900); adv(5); var far = { bump:you._raceBumpT, over:RACE.over, x:RACE.waves[0] && RACE.waves[0].x - you.x };   // a jump away is not yet on him
+      RACE.waves = wave(you.x + 20); for(var q = 0; q < 5 && !(you._raceBumpT > 0); q++) adv(1);
+      var hit = { bump:you._raceBumpT, vx:you.vx, stun:you.hitstun, want:W0.stun, over:RACE.over, running:running, result:RACE.result, end:window.__raceEnd, pct:you.pct, dead:you.dead };
+      adv(W0.stun + 30); var later = { over:RACE.over, running:running, result:RACE.result, dead:you.dead, pct:you.pct, stun:you.hitstun };
+      // Marshmallow, beside you now, jumps it: she waits at the end until you come, and then she is the runner the AI drives
+      put(4000); marsh.dead = false; marsh.controller = 'ai'; marsh.x = 4000; marsh.y = fy - marsh.r; marsh.vx = 6; marsh.vy = 0; marsh.onground = true;
       RACE.obstacles = []; RACE.frames = 10;
-      var far = (RACE.waves = [{ x:fan.x + 900, sp:6, h:80, th:46, stun:30 }], raceRunnerAi(fan).jump);
-      fan.onground = true; fan._raceJumpHeld = false;
-      var near = (RACE.waves = [{ x:fan.x + 150, sp:6, h:80, th:46, stun:30 }], raceRunnerAi(fan).jump);
-      fan.onground = false; fan._raceJumpHeld = false;
-      var air = (RACE.waves = [{ x:fan.x + 150, sp:6, h:80, th:46, stun:30 }], raceRunnerAi(fan).jump);
-      return { far:far, near:near, air:air };`);
-    expect(r.far, 'not yet').toBe(false);
-    expect(r.near, 'now').toBe(true);
-    expect(r.air, 'once, on the ground').toBe(false);
+      marsh._marshWait = true; var waiting = (RACE.waves = wave(marsh.x + 150), raceRunnerAi(marsh).jump);   // waiting at the end, she does nothing
+      marsh._marshWait = false;
+      var mfar = (RACE.waves = wave(marsh.x + 900), raceRunnerAi(marsh).jump);
+      marsh.onground = true; marsh._raceJumpHeld = false;
+      var mnear = (RACE.waves = wave(marsh.x + 150), raceRunnerAi(marsh).jump);
+      marsh.onground = false; marsh._raceJumpHeld = false;
+      var mair = (RACE.waves = wave(marsh.x + 150), raceRunnerAi(marsh).jump);
+      return { far:far, hit:hit, later:later, waiting:waiting, mfar:mfar, mnear:mnear, mair:mair };`);
+    expect([r.far.bump, r.far.over], 'not before it reaches him').toEqual([0, false]);
+    expect(r.far.x, 'it is on its way').toBeLessThan(900);
+    expect(r.hit.bump, 'it stops him').toBeGreaterThan(0);
+    expect([r.hit.vx, r.hit.stun, r.hit.pct, r.hit.dead], 'dead, for its stun, no damage').toEqual([0, r.hit.want, 0, false]);
+    expect([r.hit.over, r.hit.running, r.hit.result, r.hit.end], 'and that is not a hit: the run goes on').toEqual([false, true, null, undefined]);
+    expect([r.later.over, r.later.running, r.later.result, r.later.dead, r.later.pct], 'a second on, still going').toEqual([false, true, null, false, 0]);
+    expect(r.waiting, 'waiting at the end she does nothing').toBe(false);
+    expect(r.mfar, 'not yet').toBe(false);
+    expect(r.mnear, 'now').toBe(true);
+    expect(r.mair, 'once, on the ground').toBe(false);
   });
 
   it('drawing every hazard live, in view, never throws', () => {
@@ -1064,7 +1146,8 @@ describe('the hazards', () => {
 // The platformer hazards (owner, 2026-09-30: "also add actual platformer hazards!!!! it doesnt always have to be canon!!!"): the
 // genre's own, researched from what Super Mario, Sonic, Super Meat Boy, Celeste, Mega Man, Donkey Kong Country, Rayman and
 // Geometry Dash keep putting in front of a runner. Each has a tell you can read, a way through for a player who reacts, and a
-// size that grows with how far along the lane it stands; none wounds: a shove and a stun, like the rest of the lane.
+// size that grows with how far along the lane it stands; none wounds, but every one that touches him ends the run (the owner, 2026-10-13: "getting hit should instantly
+// make you lose the run in running"). Before that: a shove and a stun, like the rest of the lane, and the run went on.
 describe('the platformer hazards', () => {
   // One obstacle of the lane at a time, on the lane's own floor around it (its pits included) and nothing else: solo(kind, pick) leaves
   // just that obstacle's records, put(x) stands you there, adv(n) steps n frames with the line kept far behind.
@@ -1083,7 +1166,7 @@ describe('the platformer hazards', () => {
       RACE.crumbles.concat(RACE.fakes).forEach(function(c){ plats.push(c.plat); }); RACE.ferries.forEach(function(z){ plats.push(z.plat); });
       worldPlats = plats; return o;
     };
-    var put = function(x){ you.controller = 'local'; you.x = x; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.slowed = 0; you.dead = false; you.jumps = 2; you.onground = true; you.pct = 0; hold({}); RACE.lineX = you.x - 5000; };`;
+    var put = function(x){ you.controller = 'local'; you.x = x; you.y = fy - you.r; you.vx = 0; you.vy = 0; you.hitstun = 0; you.invuln = 0; you._raceBumpT = 0; you.slowed = 0; you.dead = false; you.jumps = 2; you.onground = true; you.pct = 0; hold({}); RACE.lineX = you.x - 5000; ${REARM} };`;   // every try starts with the race on again (see REARM)
 
   it('spikes: feet in a strip are bumped -- a shove and a stun, no damage; one jump takes you over it', () => {
     const r = quick({}, `${SOLO}
@@ -1230,34 +1313,42 @@ describe('the platformer hazards', () => {
     expect(c.run.stirred, 'it was crumbling behind him').toBeGreaterThan(1);
   });
 
-  it('the hairline (owner 2026-10-02: "slightly kaizo"): a tile that crumbles four frames after he lands on it, with spikes showing under it -- stand on it and he falls onto them; jump off at once and a second jump late and he is across; a second jump at the top and the ceiling gets him', () => {
+  it('the hairline (owner 2026-10-02: "slightly kaizo"): a tile that crumbles four frames after he lands on it, with spikes showing under it -- stand on it and he falls onto them and the run is over; jump off at once and a second jump late and he is across; a second jump at the top and the ceiling gets him, and that is the end of the run', () => {
+    // THE OWNER, 2026-10-13: "getting hit should instantly make you lose the run in running". The tile, the four frames, the spikes and the late second jump are as they were; what
+    // changed is what the spikes and the ceiling do: the fall onto the spikes, or the head on the tips, now ends the run ('hit'). "A second jump at the top never crosses" failed
+    // as "expected 19 to be 0" because the first try to end the race ended it for good: every try after it (the race over, its hazards stopped) found no spikes and no ceiling and "crossed".
     const r = quick({}, `${SOLO}
       var o = solo('kaizo', 0), c = RACE.fakes[0], out = {}, far = o.tile + o.TW + o.GB;
       put(c.x + 70); you.controller = 'still'; var dropAt = -1, bumpAt = -1;   // he stands where he landed, and the tile goes, and then the spikes
       for(var n = 0; n < 40; n++){ adv(1); if(dropAt < 0 && c.gone > 0) dropAt = n; if(bumpAt < 0 && you._raceBumpT > 0) bumpAt = n; }
-      out.stand = { dropAt:dropAt, bumpAt:bumpAt, delay:c.delay, pct:you.pct, hair:!!c.hair };
+      out.stand = { dropAt:dropAt, bumpAt:bumpAt, delay:c.delay, pct:you.pct, hair:!!c.hair, over:RACE.over, why:RACE.result && RACE.result.why, end:window.__raceEnd };
       // from a spot on the tile: a jump two frames on, and a second jump d frames after it
       var run = function(off, d){ solo('kaizo', 0); put(c.x + off); var bumped = false, fell = false;
         for(var f = 0; f < 150 && !fell; f++){ hold({ right:true, jump:(f === 2 || (d !== null && f === 2 + d)) }); adv(1); if(you._raceBumpT > 0) bumped = true; if(you.y > fy + 200) fell = true; }
-        hold({}); return { cross:!fell && !bumped && you.x > far + 10 && you.onground, bumped:bumped, fell:fell }; };
-      var late = 0, top = 0, topBang = 0, tried = 0;
+        hold({}); return { cross:!fell && !bumped && you.x > far + 10 && you.onground, bumped:bumped, fell:fell, over:RACE.over, why:RACE.result && RACE.result.why }; };
+      var late = 0, top = 0, topBang = 0, topEnded = 0, tried = 0;
       for(var off = 40; off <= 130; off += 10){
         for(var d = 30; d <= 44; d += 2){ tried++; if(run(off, d).cross) late++; }
-        for(var e = 12; e <= 28; e += 4){ var q = run(off, e); if(q.cross) top++; if(q.bumped) topBang++; }
+        for(var e = 12; e <= 28; e += 4){ var q = run(off, e); if(q.cross) top++; if(q.bumped) topBang++; if(q.bumped && q.over && q.why === 'hit') topEnded++; }
       }
-      out.jumps = { late:late, top:top, topBang:topBang, tried:tried };
+      out.jumps = { late:late, top:top, topBang:topBang, topEnded:topEnded, tried:tried };
       return out;`);
     expect(r.stand.hair, 'it is the hairline tile').toBe(true);
     expect(Math.abs(r.stand.dropAt - r.stand.delay), 'it goes four frames after he is on it').toBeLessThanOrEqual(3);
     expect(r.stand.bumpAt, 'and the spikes under it get him after it has gone').toBeGreaterThan(r.stand.dropAt);
     expect(r.stand.bumpAt - r.stand.dropAt, 'in a few frames: he can jump out of the fall, or not stand there at all').toBeLessThanOrEqual(14);
     expect(r.stand.pct, 'no damage').toBe(0);
+    expect([r.stand.over, r.stand.why, r.stand.end], 'but the fall onto the spikes ends the run: onEnd(false), because he was hit').toEqual([true, 'hit', false]);
     expect(r.jumps.late, 'a jump at once and a second jump late crosses it, from more than one spot of the tile').toBeGreaterThanOrEqual(4);
     expect(r.jumps.top, 'a second jump at the top of the first never does').toBe(0);
     expect(r.jumps.topBang, 'it bangs his head on the tips').toBeGreaterThan(0);
+    expect(r.jumps.topEnded, 'and every bang is the end of the run').toBe(r.jumps.topBang);
   });
 
-  it('a cannon: cross its trigger and it fires its shots, a low one bumps whoever stays in its way and passes under a jumper, a high one passes over a runner and bumps a jumper', () => {
+  it('a cannon: cross its trigger and it fires its shots, a low one hits whoever stays in its way (and that is the end of the run) and passes under a jumper, a high one passes over a runner and hits a jumper', () => {
+    // THE OWNER, 2026-10-13: "getting hit should instantly make you lose the run in running": a shot that hits you ends the run ('hit'); passing under a low one, or over a high one,
+    // is still no hit and the run goes on. (It failed on "bumps one who jumps into it" because the low shot that hit him in the trial before had ended the race, and a race that is
+    // over stops its bullets. Every trial starts with the race on again.)
     const r = quick({}, `${SOLO}
       var o = solo('cannon', 0), c = RACE.cannons[0], out = { fire:null };
       put(c.trig + 5); you.controller = 'still'; adv(1);            // he crosses the trigger...
@@ -1273,16 +1364,18 @@ describe('the platformer hazards', () => {
           var b = RACE.bullets[0], lead = b ? b.x - (you.x + you.r) : 999;
           hold({ jump:jump && you.onground && lead < c.bs*framesAhead && lead > 0 }); adv(1); n++; if(you._raceBumpT > 0) bumped = true;
         }
-        return bumped;
+        return { bumped:bumped, over:RACE.over, why:RACE.result && RACE.result.why, end:window.__raceEnd };
       };
       out.lowStay = trial(false, false); out.lowJump = trial(false, true, 18); out.highStay = trial(true, false); out.highJump = trial(true, true, 5);
       return out;`);
     expect(r.fire.fired).toBe(true);
     expect(r.fire.spawn, 'every shot leaves, the first 20 frames on and the rest a gap apart').toEqual(Array.from({ length: r.fire.n }, (_, i) => 20 + i * r.fire.gap));
-    expect(r.lowStay, 'a low shot bumps a runner who stays in its way').toBe(true);
-    expect(r.lowJump, 'and passes under a jumper').toBe(false);
-    expect(r.highStay, 'a high shot passes over a runner on the floor').toBe(false);
-    expect(r.highJump, 'and bumps one who jumps into it').toBe(true);
+    expect(r.lowStay.bumped, 'a low shot hits a runner who stays in its way').toBe(true);
+    expect([r.lowStay.over, r.lowStay.why, r.lowStay.end], 'and that is the end of the run: onEnd(false), because he was hit').toEqual([true, 'hit', false]);
+    expect([r.lowJump.bumped, r.lowJump.over], 'a low shot passes under a jumper, and the run goes on').toEqual([false, false]);
+    expect([r.highStay.bumped, r.highStay.over], 'a high shot passes over a runner on the floor, and the run goes on').toEqual([false, false]);
+    expect(r.highJump.bumped, 'and hits one who jumps into it').toBe(true);
+    expect([r.highJump.over, r.highJump.why, r.highJump.end], 'which is the end of the run too').toEqual([true, 'hit', false]);
   });
 
   it('a swinging saw: it bumps a runner it sweeps, shoved away from it, and there is a way through at every moment -- run on, or hop it', () => {
@@ -1355,17 +1448,26 @@ describe('a fall, and what is said', () => {
     expect(r.title).toBe('You fell');
   });
 
-  it('a runner Knife knocks out is deleted, with no KO line, and Marshmallow cannot be hit by him', () => {
+  it('there is no runner for Knife to knock out (nothing to delete, no KO line), and Marshmallow cannot be hit by him -- waiting at the end, or at his side', () => {
+    // It was "a runner Knife knocks out is deleted, with no KO line, and Marshmallow cannot be hit by him" (Fan at 99% knocked out by one jab). THE OWNER, 2026-10-13: "remove rivals!!!!
+    // this is supposed to be a race for SURVIVAL": there is no Fan, nobody to knock out, so what is pinned is that, and that no KO line goes up. Marshmallow, your team, still cannot be
+    // hit by him: at her waiting spot (RACE_MARSH_WAIT short of the edge), and once she has joined you there.
     const r = race({}, `you.controller = 'still'; var fan = fighters.find(function(f){ return f.name==='Fan'; });
-      fan.x = you.x + 40; fan.y = you.y; fan.controller = 'still'; marsh.x = you.x - 40; marsh.y = you.y; marsh.controller = 'still'; step();
+      var others = fighters.filter(function(f){ return !f.you && !f._marsh; }).length;
       window.__banners = []; window.__lastBanner = null;
-      fan.pct = fan.koCap - 1; fan.invuln = 0; marsh.invuln = 0; marsh.pct = 0; you.face = 1; you.atkCd = 0;
-      doAttack(you); for (var i=0; i<20; i++) step();
-      you.face = -1; you.atkCd = 0; doAttack(you); for (var j=0; j<20; j++) step();
-      return { fanDead:fan.dead, marshPct:marsh.pct, banners:window.__banners.map(function(b){ return b.text; }), last:window.__lastBanner };`);
-    expect(r.fanDead).toBe(true);
-    expect(r.marshPct).toBe(0);
-    expect(r.banners).toEqual([]);
+      you.x = marsh.x + 40; you.y = marsh.y; RACE.lineX = you.x - 5000; marsh.controller = 'still'; marsh.invuln = 0; marsh.pct = 0; you.atkCd = 0;
+      var waiting = marsh._marshWait;                                    // she is still at her waiting spot, and he is on her
+      you.face = -1; doAttack(you); for (var i=0; i<20; i++){ RACE.lineX = you.x - 5000; step(); }
+      var pctWaiting = marsh.pct, joined = !marsh._marshWait;            // ...and the frames that passed made her his: he is within RACE_MARSH_MEET of her
+      you.face = -1; you.atkCd = 0; marsh.invuln = 0; doAttack(you); for (var j=0; j<20; j++){ RACE.lineX = you.x - 5000; step(); }
+      you.face = 1; you.atkCd = 0; doAttack(you); for (var k=0; k<20; k++){ RACE.lineX = you.x - 5000; step(); }
+      return { fan:!!fan, others:others, waiting:waiting, joined:joined, pctWaiting:pctWaiting, marshPct:marsh.pct, marshDead:marsh.dead, over:RACE.over, youPct:you.pct, banners:window.__banners.map(function(b){ return b.text; }), last:window.__lastBanner };`);
+    expect([r.fan, r.others], 'no runner to knock out').toEqual([false, 0]);
+    expect([r.waiting, r.joined], 'at her waiting spot, and then at his side').toEqual([true, true]);
+    expect(r.pctWaiting, 'a swing at her where she waits does nothing').toBe(0);
+    expect([r.marshPct, r.marshDead], 'nor does one at his side').toEqual([0, false]);
+    expect([r.over, r.youPct], 'and swinging does not end his own run').toEqual([false, 0]);
+    expect(r.banners, 'no KO line').toEqual([]);
     expect(r.last).toBeNull();
   });
 

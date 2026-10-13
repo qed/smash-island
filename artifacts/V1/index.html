@@ -6742,7 +6742,7 @@ function buildFighters(){
     return;
   }
   if(ONEFIGHT.active && ONEFIGHT.lineup){ buildOneFighters(); return; }   // exactly the lineup her fight was started with
-  if(RACE.active){ buildRaceRunners(); return; }   // RUNNING!: you, Marshmallow and the MeAfterlife group
+  if(RACE.active){ buildRaceRunners(); return; }   // RUNNING!: you and Marshmallow (no rivals: RACE_RUNNERS)
   if(COBSFIGHT.active && COBSFIGHT.lineup){ buildCobsFighters(); return; }   // and his (Knife alone in the story fight)
   const cap = SETTINGS.mode==='teams'?MAX_TEAMS:MAX_FFA;
   const netRoster = window.__netRoster || null;   // list of human-chosen fighter names, in slot order
@@ -22381,9 +22381,11 @@ const RACE_THROW_L0 = 100, RACE_THROW_L1 = 1060;  // where she lands, past the e
 const RACE_LAND_MARGIN = 80;                      // she must land this far onto the far side -- past the finish line, 60 px on -- or she is in the gap
 const RACE_BRIDGE_DELAY = 12;
 const RACE_CAM_LEAD = 200;                        // the camera looks ahead of the runner
-const RACE_MARSH_LEASH = 260;                     // she is never further behind you than this
+const RACE_MARSH_LEASH = 260;                     // she is never further behind you than this (once you have reached her: she waits at the end, RACE_MARSH_WAIT)
+const RACE_MARSH_WAIT = 200, RACE_MARSH_MEET = 520; // she waits this far short of the edge, and joins you when you are this close to her
 const RACE_MARSH_LEASH_SEC = 110;                 // ...and on the lane's precision sections (obstacles with a `sec`) no further than this
-const RACE_RUNNERS = ["Fan", "Test Tube", "Microphone", "Tissues", "Soap", "Taco"];
+const RACE_RUNNERS = [];   // NO RIVALS. THE OWNER, 2026-10-13: "remove rivals!!!! this is supposed to be a race for SURVIVAL" -- it was the MeAfterlife group
+                           // (Fan, Test Tube, Microphone, Tissues, Soap, Taco); now it is you and Marshmallow against the course and the line
 const RACE_RUNNER_SKILL = [1.0, 0.9, 0.75, 0.6, 0.45, 0.35];   // how much of the time each holds right: below about 0.6 the line wins, so some are caught
 const RACE_ATTACK_GRACE = 120;                    // frames after GO! before a runner throws a jab: the start is a crowd
 const RACE_MEMORY_EVERY = 300, RACE_MEMORY_STOP = 30;   // a runner who is not perfect stops at a projected memory now and then (Tissues, Microphone did)
@@ -22438,6 +22440,12 @@ function raceMatchBegin(){
   RACE.bullets = [];
   for(const c of RACE.cannons){ c.fired = false; c.at = 0; }
   for(const c of RACE.crumbles.concat(RACE.fakes)){ c.t = -1; c.gone = 0; if(c.plat && worldPlats.indexOf(c.plat) < 0) worldPlats.push(c.plat); }
+  // MARSHMALLOW WAITS AT THE END. THE OWNER, 2026-10-13: "marshmallow should only be at the end of the thing" ("the bots are DUMB at platforming"): she
+  // does not run the lane with you; she stands on the clear runway before the last gap (RACE_MARSH_WAIT px short of the edge) until you come, then
+  // she is at your side for the throw.
+  const m = fighters.find(f=>f._marsh);
+  if(m){ const mx = RACE.edge - RACE_MARSH_WAIT, top = surfaceBelow(mx, RACE.floorY - 400);
+    m.x = mx; m.y = (top !== null ? top : RACE.floorY) - m.r; m.vx = 0; m.vy = 0; m.onground = true; m.face = -1; m._marshWait = true; }
 }
 
 // Which obstacle stands next. Drawn from a shuffled bag (so every kind comes round in turn and none is missed by a run of
@@ -22771,6 +22779,9 @@ function raceBump(f, kx, ky, stun){
   f._sm = null; f._windup = null; f._smQ = null; f.smashHold = 0;   // a hit loses the move in the middle
   for(let i=0;i<8;i++) puff(f.x, f.y, '#9aa4b0', 4);
   if(f.you) shake(10);
+  // ONE HIT ENDS THE RUN. THE OWNER, 2026-10-13: "getting hit should instantly make you lose the run in running". Every hazard of the lane (a piston,
+  // a piano, spikes, a ceiling, a jet, a saw, a bullet) lands here; on you it is the end of the run. (The voice's wave only stops you: not a hit.)
+  if(f.you && RACE.active && !RACE.over){ RACE.lossWhy = 'hit'; endRace(false, 'hit'); }
 }
 // The voice's wave: whoever it catches on the ground stops dead ("causing them to stop").
 function raceQuit(f, w){
@@ -22803,7 +22814,8 @@ function raceTick(){
   // Marshmallow keeps pace: fallen behind, about to be caught, or fallen in, she is back at your side. On the lane's precision sections (a stair of
   // planks, a leap: the owner's "Jumps", 2026-10-02) she cannot follow a jump from one small platform to the next, so there she is kept right
   // beside him: 110 px behind, or lower than he is by 60, and she is put at his side, in the air and all, to come down with him.
-  if(marsh && you && !you.dead && !RACE.charge && !RACE.flight && !RACE.thrown && !RACE.marshOver){
+  if(marsh && marsh._marshWait && you && !you.dead && you.x > marsh.x - RACE_MARSH_MEET) marsh._marshWait = false;   // you have come: she is with you now
+  if(marsh && !marsh._marshWait && you && !you.dead && !RACE.charge && !RACE.flight && !RACE.thrown && !RACE.marshOver){
     const onSec = raceSectionAt(you.x);
     if(onSec ? (marsh.x < you.x - RACE_MARSH_LEASH_SEC || marsh.y > you.y + 60 || marsh.x - marsh.r*0.5 < RACE.lineX + 60)
              : (marsh.x < you.x - RACE_MARSH_LEASH || marsh.x - marsh.r*0.5 < RACE.lineX + 60 || marsh.y > RACE.floorY + 120)) raceMarshCatchUp(marsh, you, !!onSec);
@@ -22987,9 +22999,10 @@ function endRace(won, why){
   RACE.result = { won:!!won, why:(won ? 'crossed' : (why || 'caught')), secs, fighter:RACE.fighter };
   RACE.retry = { opts:RACE.opts };
   const t = document.getElementById('resultTitle'), sub = document.getElementById('resultSub'), box = document.getElementById('scorecard');
-  if(t) t.textContent = won ? "RUNNING! cleared" : (why==='fell' ? "You fell" : why==='ko' ? "You were knocked out" : why==='short' ? "Marshmallow fell short" : "The line caught you");
+  if(t) t.textContent = won ? "RUNNING! cleared" : (why==='fell' ? "You fell" : why==='hit' ? "You were hit" : why==='ko' ? "You were knocked out" : why==='short' ? "Marshmallow fell short" : "The line caught you");
   if(sub) sub.textContent = won ? ("Marshmallow thrown over, and " + RACE.fighter + " across the line in " + mmss + ".")
-    : why==='short' ? "She landed in the gap. Hold the smash longer to throw her across. Retry to run it again." : "The line never stops. Retry to run it again.";
+    : why==='short' ? "She landed in the gap. Hold the smash longer to throw her across. Retry to run it again."
+    : why==='hit' ? "One hit ends the run. Retry to run it again." : "The line never stops. Retry to run it again.";
   if(box) box.innerHTML = "";
   const quip = document.getElementById('resultQuip'); if(quip){ quip.style.display = 'none'; quip.textContent = ''; }
   const rb = document.getElementById('resultRematch'); if(rb) rb.textContent = "Retry ↻";
@@ -23101,6 +23114,7 @@ function raceRunnerAi(f){
   if(RACE.over || f._raceThrown || f._raceHeld) return inp;
   const you = fighters.find(q=>q.you), fy = RACE.floorY, ahead = f.x + f.r;
   if(f._marsh){
+    if(f._marshWait){ f.face = -1; return inp; }            // waiting at the end for you
     if(RACE.marshOver) return inp;                          // over, and done
     if(you && !you.dead && f.x > you.x + 120) return inp;   // at your side: she waits when she is well ahead of you
   }
@@ -30986,6 +31000,7 @@ function bossTakeHit(s, dmg, from){
   return d;
 }
 function applyHit(t, dmg, kbx, kby, from, opts){
+  if(RACE.active && t && t.you && !RACE.over && dmg > 0){ RACE.lossWhy = 'hit'; endRace(false, 'hit'); return; }   // RUNNING!: one hit ends the run (raceBump)
   // SAFE IN YOUR OWN ZONE. Checked before anything else so no damage, knockback, burn or status
   // can be applied — a partial exemption would still let a fighter be juggled out of their spawn.
   if(inOwnTeamZone(t)) return;

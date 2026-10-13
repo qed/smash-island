@@ -27,11 +27,14 @@ window.__rs = (function(){
       cr:RACE.crumbles.map(function(c){ return [c.t, c.gone]; }), fk:(RACE.fakes || []).map(function(c){ return [c.t, c.gone]; }),
       ca:RACE.cannons.map(function(c){ return [c.fired, c.at]; }), bu:RACE.bullets.map(function(b){ return Object.assign({}, b); }),
       pi:RACE.pianos.map(function(p){ return [p.state, p.t]; }), vo:RACE.voices.map(function(v){ return v.fired; }),
-      wa:RACE.waves.map(function(w){ return Object.assign({}, w); }), fe:RACE.ferries.map(function(f){ return f.plat.x; }) };
+      wa:RACE.waves.map(function(w){ return Object.assign({}, w); }), fe:RACE.ferries.map(function(f){ return f.plat.x; }),
+      // the race's end state: one hit ends the run now (the owner, 2026-10-13), so a try that is hit ends the race and the next try must start it again
+      ov:RACE.over, wo:RACE.won, rs:RACE.result, lw:RACE.lossWhy, rt:RACE.retry, rn:running };
   }
   function restore(S){
     fighters.forEach(function(f, i){ var k, g = S.fs[i]; if(!g) return; for(k in f) if(!(k in g)) delete f[k]; Object.assign(f, g); });
     hazardT = S.T; RACE.frames = S.fr; RACE.lineX = S.lx; worldPlats = S.pl.slice();
+    RACE.over = S.ov; RACE.won = S.wo; RACE.result = S.rs; RACE.lossWhy = S.lw; RACE.retry = S.rt; running = S.rn;
     RACE.crumbles.forEach(function(c, i){ c.t = S.cr[i][0]; c.gone = S.cr[i][1]; });
     (RACE.fakes || []).forEach(function(c, i){ c.t = S.fk[i][0]; c.gone = S.fk[i][1]; });
     RACE.cannons.forEach(function(c, i){ c.fired = S.ca[i][0]; c.at = S.ca[i][1]; });
