@@ -2102,23 +2102,24 @@ function teamSplitsFor(N){
 const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, green, gold (max 4 teams)
 // @ctf:begin
 // ---------------------------------------------------------------------------------------------------------------
-//  CTF MAPS. A map is a grid of 120 px cells (240 columns x 52 rows = 28800 x 6240 world px, about 27 screens wide and
-//  6 tall at the match zoom), written for the LEFT half only: team 0's side. The right half is the mirror image, so
-//  both sides are exactly the same by construction. A hop-platform lattice is then laid over the open air (the same
-//  brick-bond idea the big stages use), so there is always somewhere to stand at every height.
+//  CTF MAPS. A map is a grid of 120 px cells (180 columns x 39 rows = 21600 x 4680 world px, 75% of what it was), written for the LEFT half
+//  only: team 0's side. The right half is the mirror image, so both sides are exactly the same by construction. A map is built by a generator
+//  (ctfRoomGen, below) from a seed and a few settings: a grid of small connected rooms in six layers, with stairs, drops, springs, arches,
+//  locked doors and secret walls between them, a spine up the middle, a base at the far end, puzzle areas with a reward, hiding places in
+//  every room, and an area feature (ice, wind, water, belt...) for a room here and there.
 //
-//  Grid characters
+//  Grid characters (what the generator and the hand-made parts write)
 //    #  solid block            =  one-way ledge (the top of the cell)
 //    1-6 a locked door (a vertical run of the same digit is one door)     a-f  the key for door 1-6 (same side)
-//    S B C F W  a flag hiding spot: S bare, B bush, C crate, F banner, W barrel (the cover hides a flag from a distance)
-//    u v  a speed / jump boost pickup          H  a team spawn          P  the capture pad (the team's flag stand)
-//    J  the jail door (a vertical run)          p  a prisoner's place inside the jail
+//    S B C F W U R K  a flag hiding spot: S bare, B bush, C crate, F banner, W barrel, U curtain, R rubble, K rock (cover hides a flag from a distance)
+//    u v g h  a speed / super jump / ghost / shield boost pickup        y  a team buff on its pedestal (the puzzle area's reward)
+//    H  a team spawn          P  the home pad          J  the jail door (a vertical run)          p  a prisoner's place inside the jail
 //  An object stands on the floor under its cell.
 // ---------------------------------------------------------------------------------------------------------------
-const CTF_CELL = 120, CTF_COLS = 240, CTF_ROWS = 52, CTF_HALF = 120;
-const CTF_G = 36, CTF_HL = 28, CTF_LOW = 46;   // the three lanes: the surface (mid) row, the high walkway row, the cave floor row
+const CTF_CELL = 120, CTF_COLS = 180, CTF_ROWS = 39, CTF_HALF = 90;
+const CTF_G = 36, CTF_HL = 28, CTF_LOW = 46;   // (the old lane rows: kept for the old helper parts below)
 const CTF_DOOR_COL = ['#d94f4f','#e0b030','#3fb0e0','#8a5ad0','#40b870','#e07a30'];   // door/key colours 1..6
-const CTF_COVER = { B:'bush', C:'crate', F:'banner', W:'barrel' };
+const CTF_COVER = { B:'bush', C:'crate', F:'banner', W:'barrel', U:'curtain', R:'rubble', K:'rock' };
 const CTF_MAPS = {};
 
 function ctfGridNew(){
@@ -2130,22 +2131,26 @@ function ctfGridNew(){
     col(c,r0,r1,ch){ for(let r=r0;r<=r1;r++) g.put(r,c,ch); return g; },
     box(r0,c0,r1,c1,ch){ for(let r=r0;r<=r1;r++) g.fill(r,c0,c1,ch); return g; },
     gap(r,c0,c1){ return g.fill(r,c0,c1,'.'); },
+    at(r,c){ return (r>=0&&r<CTF_ROWS&&c>=0&&c<CTF_HALF) ? rows[r][c] : '#'; },
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
-    fields: [], decor: [], zones: [],
-    // a floor transition: a gap in the slab on row rSlab (2 wide at column c) and the one-way steps up from the floor at rFloor
+    fields: [], decor: [], front: [], zones: [], elevs: [], backs: [],
+    // the wall behind the rooms: a dark patterned fill over a region (cells)
+    back(c0, r0, c1, r1){ g.backs.push({ c:c0, r:r0, w:c1-c0+1, h:r1-r0+1 }); return g; },
+    // a floor transition: a gap in the slab on row rSlab (2 wide at column c) and the one-way steps up from the floor at rFloor, stacked one a row
     stairs(rSlab, rFloor, c){ g.gap(rSlab, c, c+1); const n = rFloor - rSlab - 1; for(let i=0;i<n;i++) g.fill(rFloor-1-i, c, c+1, '='); return g; },
-    // a shaft of alternating steps between two columns, from row rBot up to row rTop
     shaft(c, rBot, rTop){ for(let r=rBot;r>=rTop;r--) g.fill(r, c, c+1, '='); return g; },
-    // a free-standing zigzag of w-wide ledges, one row apart: the fast way up between lanes
+    // a free-standing zigzag of w-wide ledges, one row apart
     ladder(c, rBot, rTop, w){ w = w || 3; for(let r=rBot;r>=rTop;r--){ const o = ((rBot-r)%2)*w; g.fill(r, c+o, c+o+w-1, '='); } return g; },
     deck(r, c0, c1){ return g.fill(r, c0, c1, '='); },
-    // a stepped mound of solid blocks standing on the floor whose cell row is rFloor: cover that can always be walked over, one step a row
-    stepsUp(c0, rFloor, steps, w){ for(let i = 0; i < steps; i++) g.fill(rFloor - i, c0 + i*w, 119, '#'); return g; },
     mound(rFloor, c0, w, h){ for(let i = 0; i < h; i++){ const a = c0 + i, b = c0 + w - 1 - i; if(b < a) break; g.fill(rFloor - i, a, b, '#'); } return g; },
-    // scenery that collides with nothing: kind, column, row, width and height in cells
     // an AREA: a region (cells) where the game's effect zones apply (ice, glue, wind, belt, spring, float, water, heal, damage) or the screen goes dark
     zone(type, c0, r0, c1, r1, strength, dir){ g.zones.push({ type, c0, r0, c1, r1, strength:strength || 1, dir:dir || 0 }); return g; },
+    // scenery that collides with nothing: kind, column, row, width and height in cells
     deco(kind, c, r, w, h, opt){ g.decor.push({ kind, c, r, w, h, ...(opt||{}) }); return g; },
+    // a wall that can be walked through: drawn over the plain air as solid stone (after the platforms)
+    secret(c0, r0, c1, r1){ g.front.push({ kind:'secret', c:c0, r:r0, w:c1-c0+1, h:r1-r0+1 }); return g; },
+    // a lift: a platform c0..c0+w-1 wide that rides between the floor at row rTop and the one at row rBot, pausing at each end
+    elev(c0, w, rTop, rBot){ g.elevs.push({ c0, w, rTop, rBot }); return g; },
     keepClear(c0,r0,c1,r1){ g.clear.push([c0,r0,c1,r1]); return g; },
     lattice(o){ g.fields.push(o); return g; },
   };
@@ -2175,10 +2180,10 @@ function ctfMapBuild(id){
   const WW = CTF_COLS*CTF_CELL, WH = CTF_ROWS*CTF_CELL, HALF = WW/2;
   const mx = (x, w)=> WW - x - (w||0);
   const solids = new Set(), hops = new Set(), doorCells = {}, jailCells = new Set();
-  const M = { id, name:def.name, theme:def.theme, WW, WH, plats:[], doors:[], keys:[], boosts:[], spots:[], homes:[], jails:[],
-              pads:[], clear:[], G:0 };
+  const M = { id, name:def.name, theme:def.theme, WW, WH, plats:[], doors:[], keys:[], boosts:[], spots:[], homes:[], jails:[], buffs:[], elevs:[],
+              pads:[], clear:[], G:0, info:g.info || null };
   const leftPlats = [], at = (r,c)=> ({ x:c*CTF_CELL+CTF_CELL/2, y:(r+1)*CTF_CELL });   // an object stands on the floor of its cell
-  const objs = { keys:[], boosts:[], spots:[], spawns:[], pad:new Set(), slots:[] };
+  const objs = { keys:[], boosts:[], spots:[], spawns:[], pad:new Set(), slots:[], buffs:[] };
   for(let r=0;r<CTF_ROWS;r++) for(let c=0;c<CTF_HALF;c++){
     const ch = g.rows[r][c], k = r+','+c;
     if(ch==='#') solids.add(k);
@@ -2186,17 +2191,16 @@ function ctfMapBuild(id){
     else if(ch>='1' && ch<='6') (doorCells[ch] = doorCells[ch] || []).push([r,c]);
     else if(ch==='J') jailCells.add(k);
     else if(ch>='a' && ch<='f') objs.keys.push({ door:ch.charCodeAt(0)-96, ...at(r,c) });
-    else if('SBCFW'.includes(ch)) objs.spots.push({ cover:CTF_COVER[ch]||null, ...at(r,c) });
+    else if('SBCFWURK'.includes(ch)) objs.spots.push({ cover:CTF_COVER[ch]||null, ...at(r,c) });
     else if('uvgh'.includes(ch)) objs.boosts.push({ kind:{ u:'speed', v:'jump', g:'ghost', h:'shield' }[ch], ...at(r,c) });
+    else if(ch==='y') objs.buffs.push(at(r,c));
     else if(ch==='H') objs.spawns.push(at(r,c));
     else if(ch==='P') objs.pad.add(k);
     else if(ch==='p') objs.slots.push(at(r,c));
   }
-  for(const rc of mergeCellsTo(solids)) leftPlats.push({ ...rc, solid:true });
+  for(const rc of ctfMergeCells(solids)) leftPlats.push({ ...rc, solid:true });
   for(const rc of ctfMergeCells(hops, true)) leftPlats.push({ x:rc.x, y:rc.y, w:rc.w, h:16, hop:true });
-  // lattice laid over the air
   for(const o of g.fields) for(const p of ctfLattice(g, leftPlats, o)) leftPlats.push(p);
-  // mirror
   for(const p of leftPlats){ M.plats.push({ ...p }); M.plats.push({ ...p, x:mx(p.x,p.w) }); }
   M.zones = [];
   for(const z of g.zones){
@@ -2204,9 +2208,15 @@ function ctfMapBuild(id){
     M.zones.push(zz); M.zones.push({ ...zz, x:mx(zz.x, zz.w), dir:-zz.dir });   // the right side mirrors: a push toward the middle stays a push toward the middle
   }
   M.decor = [];
-  for(const d of g.decor){ const dd = { ...d, x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL }; M.decor.push(dd); M.decor.push({ ...dd, x:mx(dd.x, dd.w), flip:true }); }
-  function mergeCellsTo(s){ return ctfMergeCells(s); }
-  // doors: a vertical stack of one digit is one slab, thin, centred in its column
+  for(const d of g.decor){ const dd = { ...d, x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL, side:0 }; M.decor.push(dd); M.decor.push({ ...dd, x:mx(dd.x, dd.w), flip:true, side:1 }); }
+  M.back = [];
+  for(const d of g.backs){ const dd = { x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL }; M.back.push(dd); M.back.push({ ...dd, x:mx(dd.x, dd.w) }); }
+  M.front = [];
+  for(const d of g.front){ const dd = { ...d, x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL }; M.front.push(dd); M.front.push({ ...dd, x:mx(dd.x, dd.w) }); }
+  for(const e of g.elevs){
+    const ee = { x:e.c0*CTF_CELL, w:e.w*CTF_CELL, y0:e.rTop*CTF_CELL, y1:e.rBot*CTF_CELL };
+    M.elevs.push(ee); M.elevs.push({ ...ee, x:mx(ee.x, ee.w) });
+  }
   const doorOf = (r0,r1,c,n,team)=>({ id:team?n+'r':String(n), n, team, color:CTF_DOOR_COL[n-1], x:c*CTF_CELL+42, y:r0*CTF_CELL, w:36, h:(r1-r0+1)*CTF_CELL });
   const stacks = (cells)=>{ const byC = {}; for(const [r,c] of cells) (byC[c] = byC[c]||[]).push(r);
     const out = []; for(const c in byC){ const rs = byC[c].sort((a,b)=>a-b); let a=rs[0], b=a; for(let i=1;i<=rs.length;i++){ if(rs[i]===b+1) b=rs[i]; else { out.push([a,b,+c]); a=rs[i]; b=a; } } } return out; };
@@ -2216,25 +2226,25 @@ function ctfMapBuild(id){
   }
   for(const k of objs.keys){ M.keys.push({ door:String(k.door), x:k.x, y:k.y }); M.keys.push({ door:k.door+'r', x:mx(k.x), y:k.y }); }
   for(const b of objs.boosts){ M.boosts.push({ kind:b.kind, x:b.x, y:b.y }); M.boosts.push({ kind:b.kind, x:mx(b.x), y:b.y }); }
+  for(const b of objs.buffs){ M.buffs.push({ kind:'speed', x:b.x, y:b.y }); M.buffs.push({ kind:'speed', x:mx(b.x), y:b.y }); }
   for(const s of objs.spots){ M.spots.push({ team:0, cover:s.cover, x:s.x, y:s.y }); M.spots.push({ team:1, cover:s.cover, x:mx(s.x), y:s.y }); }
-  // home: spawns and the capture pad (the pad's cells are merged into one stand)
   const padRects = ctfMergeCells(objs.pad);
   const pad = padRects[0] ? { x:padRects[0].x, y:padRects[0].y+CTF_CELL, w:padRects[0].w, h:CTF_CELL } : null;
   M.homes.push({ team:0, spawns:objs.spawns.map(s=>({x:s.x,y:s.y})), pad });
   M.homes.push({ team:1, spawns:objs.spawns.map(s=>({x:mx(s.x),y:s.y})), pad: pad && { x:mx(pad.x,pad.w), y:pad.y, w:pad.w, h:pad.h } });
-  // the jail: its door, the places inside, and the no-go zone in front of it
   const js = [...jailCells].map(k=>k.split(',').map(Number));
   if(js.length){
     const jr = stacks(js)[0], dr0 = jr[0], dr1 = jr[1], dc = jr[2];
     const door = doorOf(dr0, dr1, dc, 0, 0);
     const floorY = (dr1+1)*CTF_CELL, minC = Math.min(...objs.slots.map(s=>Math.floor(s.x/CTF_CELL)));
-    const zone = { x:(minC-3)*CTF_CELL, y:(dr0-4)*CTF_CELL, w:(dc+7-(minC-3)+1)*CTF_CELL, h:floorY-(dr0-4)*CTF_CELL };
+    const zone = { x:Math.max(0, (minC-3))*CTF_CELL, y:(dr0-4)*CTF_CELL, w:(dc+7-Math.max(0, minC-3)+1)*CTF_CELL, h:floorY-(dr0-4)*CTF_CELL };
     const j0 = { owner:0, door:{ x:door.x, y:door.y, w:door.w, h:door.h }, slots:objs.slots.map(s=>({x:s.x,y:s.y})), zone, face:1 };
     M.jails.push(j0);
     M.jails.push({ owner:1, door:{ x:mx(door.x,door.w), y:door.y, w:door.w, h:door.h }, slots:objs.slots.map(s=>({x:mx(s.x),y:s.y})), zone:{ x:mx(zone.x,zone.w), y:zone.y, w:zone.w, h:zone.h }, face:-1 });
   }
   for(const b of g.clear) M.clear.push(b);
   M.solids = M.plats.filter(p=>p.solid);
+  M.rows = g.rows.map(r=>r.join(''));   // the left half as text, for a look at it
   return M;
 }
 
@@ -2266,200 +2276,253 @@ function ctfLattice(g, leftPlats, o){
   return out;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+//  THE ROOM GENERATOR. The left half is nine columns of rooms (each 8 wide and 4 high inside, walls and floors one cell thick) in six layers, then a
+//  spine (7 wide) up the middle of the map with a ladder, an open top (the roofs) and a base at the far left. Seeded and pure (cellJitter, never
+//  Math.random), so a replay or a client builds the same map.
+//
+//   - Every room is reached by a random spanning tree of arches (an opening 2 high at floor level, a chokepoint) and stairs (a hole in the floor with
+//     one-way ledges stacked in it: jump up through them); extra links are added on top, so most rooms have 2 to 4 ways in and out and a chase can run
+//     in a loop: more arches, one-way DROPS (a hole to fall through), SPRINGS (a hole with a spring pad under it, thrown up a layer), SECRET walls
+//     (an arch drawn as stone: walk through it) and a roof hatch here and there.
+//   - Some rooms are VAULTS: shut except for locked doors (one key opens a door for your team only; it goes back where it lay). A vault holds a boost
+//     and good hiding places.
+//   - Two PUZZLE areas a side (mirrored): a lift down a shaft, a run round, a drop through a hole into a SECRET room whose only way out is a one-way drop
+//     to a far corner. In it: a pedestal with a TEAM BUFF (once per team per match), or the best hiding places on the map.
+//   - Every room has its own hiding places (cover of the map's kinds) and some a shelf; a room may have an AREA feature (ice, wind, water, belt, mud,
+//     dark, thin air, healing) with a landmark behind it.
+//   - The base: a home room with the pad and eight spawns, a barracks above, the jail in the bottom corner with its no-go zone.
+// ---------------------------------------------------------------------------------------------------------------
+function ctfRoomGen(g, cfg){
+  const J = 9, K = 6, RW = 9, C0 = 2, SPINE = 83, HALFC = CTF_HALF;
+  const x0 = j => C0 + RW*j, wc = j => x0(j) + 8, fl = k => 13 + 5*k;
+  const R = (a, b, s) => cellJitter(a + 11, b + 7, (((cfg.seed|0)*31 + s) | 0));
+  const nid = (j, k) => j < 0 ? -1 : (j >= J ? J*K : j*K + k);
+  const rk = (j, k) => j + ',' + k;
+  const special = new Set(), vaults = [], puzzles = [];
+  const H = {}, V = {};                    // H[j,k]: the link between room (j,k) and (j+1,k) (j = 8: the spine); V[j,k]: between (j,k) above and (j,k+1) below
+  const res = {};                          // columns in a room's interior that are taken (a hole in the floor, a stack of ledges, a shaft)
+  const reserve = (j, k, c0, c1) => { const s = res[rk(j, k)] = res[rk(j, k)] || new Set(); for(let c = c0; c <= c1; c++) s.add(c); };
+  const taken = (j, k, c) => !!(res[rk(j, k)] && res[rk(j, k)].has(c));
+  const info = { puzzles:[], vaults:[], rooms:[] };
 
+  // ---- the shell: a mass of stone with the rooms cut out of it ----
+  g.box(0, 0, 38, 1, '#'); g.box(8, 0, 38, SPINE - 1, '#'); g.box(38, SPINE, 38, HALFC - 1, '#');
+  g.back(2, 9, SPINE - 1, 37);   // the dark wall behind the rooms
+  for(let j = 0; j < J; j++) for(let k = 0; k < K; k++) g.box(fl(k) - 4, x0(j), fl(k) - 1, x0(j) + 7, '.');
 
-// ---- parts every map shares: the three lanes' furniture ------------------------------------------------------------
-function ctfBase(g){ const G = CTF_G, LOW = CTF_LOW; g.box(0, 0, 51, 1, '#'); g.box(G, 2, G + 1, 119, '#'); g.box(LOW, 2, 51, 119, '#'); }
-// the jail: a cell in the cellar under the base (the zone round it is worked out from the door and the places)
-function ctfJailCellar(g){ g.fill(42, 5, 12, '#'); g.col(5, 42, 45, '#'); g.col(12, 43, 45, 'J'); g.put(45, 7, 'ppp'); g.keepClear(5, 42, 12, 45); }
-function ctfShaft(g, c){ g.gap(CTF_G, c, c + 1); g.gap(CTF_G + 1, c, c + 1); g.shaft(c, CTF_LOW - 1, CTF_G + 1); }
-// a chamber raised over the cellar lane (the lane runs under it): 9 cols from c0, a boost inside, the door on its right with steps up to it
-function ctfCellarChamber(g, c0, door, boost){
-  g.fill(42, c0, c0 + 8, '#'); g.fill(38, c0, c0 + 8, '#'); g.col(c0, 39, 41, '#'); g.col(c0 + 8, 39, 39, '#'); g.col(c0 + 8, 40, 41, String(door));
-  g.put(41, c0 + 4, boost); g.put(41, c0 + 2, 'S'); g.put(41, c0 + 6, 'B'); g.keepClear(c0, 38, c0 + 8, 42);
-  g.fill(45, c0 + 11, c0 + 12, '='); g.fill(44, c0 + 9, c0 + 10, '='); g.fill(43, c0 + 11, c0 + 12, '='); g.fill(42, c0 + 9, c0 + 10, '=');
+  // ---- the set pieces whose rooms the random network leaves alone ----
+  special.add(rk(0, 5));                                                    // the jail
+  const pz = cfg.puzzles || [{ kind:'buff', j:4, k0:2 }, { kind:'spot', j:1, k0:1 }];
+  for(const p of pz){
+    puzzles.push(p);
+    special.add(rk(p.j, p.k0 + 1)); special.add(rk(p.j, p.k0 + 2));         // the shaft room, the bottom of the lift
+    special.add(rk(p.j + 1, p.k0 + 2)); special.add(rk(p.j + 1, p.k0 + 1)); // the way round
+    special.add(rk(p.j + 2, p.k0 + 1)); special.add(rk(p.j + 2, p.k0 + 2)); // the drop room, the secret room
+  }
+  const isChain = (j, k) => special.has(rk(j, k)) && !(j === 0 && k === 5);
+  // vaults: shut rooms with locked doors left and right
+  const near = (j, k) => { for(const p of pz) for(const [pj, pk] of [[p.j, p.k0], [p.j, p.k0 + 3], [p.j + 1, p.k0 + 3], [p.j + 2, p.k0 + 3], [p.j + 1, p.k0], [p.j + 2, p.k0], [p.j + 3, p.k0 + 1], [p.j + 3, p.k0 + 2], [p.j - 1, p.k0 + 1], [p.j - 1, p.k0 + 2]]) if(pj === j && pk === k) return true; return false; };
+  const cands = [];
+  for(let j = 2; j <= 7; j++) for(let k = 1; k <= 4; k++) if(!special.has(rk(j, k)) && !near(j, k) && !special.has(rk(j - 1, k)) && !special.has(rk(j + 1, k))) cands.push([j, k, R(j, k, 1)]);
+  cands.sort((a, b) => a[2] - b[2]);
+  for(const [j, k] of cands){
+    if(vaults.length >= (cfg.vaults != null ? cfg.vaults : 4)) break;
+    if(vaults.some(v => Math.abs(v.j - j) <= 1 && Math.abs(v.k - k) <= 1)) continue;
+    vaults.push({ j, k, id:vaults.length + 1 }); special.add(rk(j, k));
+  }
+  const isVault = (j, k) => vaults.some(v => v.j === j && v.k === k);
+
+  // ---- the network: a random spanning tree, then extra links ----
+  const parent = new Array(J*K + 1).fill(0).map((_, i) => i);
+  const find = a => { while(parent[a] !== a){ parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const unite = (a, b) => { a = find(a); b = find(b); if(a === b) return false; parent[a] = b; return true; };
+  const okRoom = (j, k) => j >= 0 && j < J && k >= 0 && k < K && !special.has(rk(j, k));
+  const edges = [];
+  for(let k = 0; k < K; k++) for(let j = 0; j < J; j++){
+    if(j === J - 1){ if(okRoom(j, k)) edges.push({ h:true, j, k, a:nid(j, k), b:J*K, w:R(j, k, 2) }); }
+    else if(okRoom(j, k) && okRoom(j + 1, k)) edges.push({ h:true, j, k, a:nid(j, k), b:nid(j + 1, k), w:R(j, k, 2) });
+    if(k < K - 1 && okRoom(j, k) && okRoom(j, k + 1)) edges.push({ h:false, j, k, a:nid(j, k), b:nid(j, k + 1), w:R(j, k, 3) });
+  }
+  const setH = (j, k, type, extra) => { H[rk(j, k)] = { type, ...(extra || {}) }; };
+  const setV = (j, k, type) => { V[rk(j, k)] = { type }; };
+  // forced links: the base, the jail's door, the puzzles' own chains
+  setH(0, 3, 'arch'); unite(nid(0, 3), nid(1, 3)); setV(0, 2, 'stairs'); unite(nid(0, 2), nid(0, 3));
+  reserve(0, 3, x0(0) + 1, x0(0) + 4);   // the pad and the spawns are here: the stairs up from home go in the last two columns
+  setH(0, 5, 'arch');                                                         // the jail room opens into (1,5)
+  for(const p of pz){
+    setH(p.j, p.k0 + 2, 'arch'); setV(p.j + 1, p.k0 + 1, 'stairs'); setH(p.j + 1, p.k0 + 1, 'arch'); setV(p.j + 2, p.k0 + 1, 'drop'); setV(p.j + 2, p.k0 + 2, 'drop');
+    V[rk(p.j + 2, p.k0 + 1)].pz = true; V[rk(p.j + 2, p.k0 + 2)].pz = true;   // (their holes are cut by the puzzle itself)
+  }
+  for(const e of edges.slice().sort((a, b) => a.w - b.w)){
+    if(!unite(e.a, e.b)) continue;
+    e.tree = true;
+    if(e.h) setH(e.j, e.k, (R(e.j, e.k, 4) < 0.12 && e.j !== 8) ? 'open' : 'arch'); else setV(e.j, e.k, 'stairs');
+  }
+  for(const e of edges){
+    if(e.tree) continue;
+    if(e.h){ if(H[rk(e.j, e.k)]) continue; const r = R(e.j, e.k, 5); if(r < (cfg.pH != null ? cfg.pH : 0.5)) setH(e.j, e.k, r < 0.12 ? 'secret' : 'arch'); }
+    else { if(V[rk(e.j, e.k)]) continue; const r = R(e.j, e.k, 6); if(r < (cfg.pV != null ? cfg.pV : 0.42)){ const q = R(e.j, e.k, 7); setV(e.j, e.k, q < 0.4 ? 'stairs' : q < 0.72 ? 'drop' : 'spring'); } }
+  }
+  // every room with fewer than two ways to walk in or out gets another
+  const deg = (j, k) => { let n = 0; const h = H[rk(j, k)], h2 = H[rk(j - 1, k)], v = V[rk(j, k)], v2 = V[rk(j, k - 1)];
+    if(h && h.type !== 'door') n++; if(h2 && h2.type !== 'door') n++; if(v && (v.type === 'stairs' || v.type === 'spring')) n++; if(v2 && (v2.type === 'stairs' || v2.type === 'spring')) n++; return n; };
+  for(let pass = 0; pass < 2; pass++) for(const e of edges.slice().sort((a, b) => a.w - b.w)){
+    const a = e.h ? [e.j, e.k] : [e.j, e.k], b = e.h ? [e.j + 1, e.k] : [e.j, e.k + 1];
+    if((e.h ? H[rk(e.j, e.k)] : V[rk(e.j, e.k)])) continue;
+    if(deg(a[0], a[1]) >= 2 && (b[0] >= J || deg(b[0], b[1]) >= 2)) continue;
+    if(e.h) setH(e.j, e.k, 'arch'); else setV(e.j, e.k, 'stairs');
+  }
+  // vault doors: left and right, one key per vault (its id)
+  for(const v of vaults){
+    for(const dj of [-1, 1]){
+      const nj = v.j + dj; if(nj < 0 || nj >= J || special.has(rk(nj, v.k)) && !isVault(nj, v.k)) continue;
+      if(dj === -1) setH(v.j - 1, v.k, 'door', { id:v.id }); else setH(v.j, v.k, 'door', { id:v.id });
+    }
+  }
+
+  // ---- carving the links ----
+  const holeCol = (j, kUp, kLow, wide) => {   // a column for a hole in room (j,kUp)'s floor, clear of what else uses those two rooms
+    const order = []; for(let c = x0(j) + 1; c <= x0(j) + 6 - (wide - 2); c++) order.push([c, R(j, kUp, 20 + c)]);
+    order.sort((a, b) => a[1] - b[1]);
+    for(const [c] of order){ let ok = true; for(let q = c - 1; q <= c + wide; q++) if(taken(j, kUp, q) || taken(j, kLow, q)) ok = false; if(ok) return c; }
+    return order[0][0];
+  };
+  for(let k = 0; k < K; k++) for(let j = 0; j < J; j++){
+    const h = H[rk(j, k)];
+    if(h && !(j === J - 1 && !okRoom(j, k))){
+      const wcol = j === J - 1 ? SPINE - 1 : wc(j), f = fl(k);
+      if(h.type === 'open') g.box(f - 4, wcol, f - 1, wcol, '.');
+      else { g.box(f - 2, wcol, f - 1, wcol, '.'); if(h.type === 'secret') g.secret(wcol, f - 2, wcol, f - 1); if(h.type === 'door') g.box(f - 2, wcol, f - 1, wcol, String(h.id)); }
+    }
+  }
+  for(let k = 0; k < K - 1; k++) for(let j = 0; j < J; j++){
+    const v = V[rk(j, k)]; if(!v || v.pz) continue;
+    const s = fl(k), below = fl(k + 1);
+    if(v.type === 'stairs'){ const c = holeCol(j, k, k + 1, 2); g.stairs(s, below, c); reserve(j, k, c - 1, c + 2); reserve(j, k + 1, c - 1, c + 2); v.c = c; }
+    else if(v.type === 'drop'){ const c = holeCol(j, k, k + 1, 3); g.gap(s, c, c + 2); reserve(j, k, c - 1, c + 3); reserve(j, k + 1, c - 1, c + 3); v.c = c; }
+    else if(v.type === 'spring'){ const c = holeCol(j, k, k + 1, 2); g.gap(s, c, c + 1); g.zone('spring', c, below - 1, c + 1, below - 1, 1.18); reserve(j, k, c - 1, c + 2); reserve(j, k + 1, c - 1, c + 2); v.c = c; }
+  }
+  // roof hatches: the layer-0 rooms in these columns climb to the roofs
+  const roofJ = [1, 4, 7]; for(let j = 0; j < J; j++) if(j > 0 && j !== 6 && !roofJ.includes(j) && R(j, 0, 30) < 0.35) roofJ.push(j);
+  for(const j of roofJ){ if(special.has(rk(j, 0)) || isVault(j, 0) || j === 6) continue; const c = holeCol(j, -1, 0, 2); g.stairs(8, fl(0), c); reserve(j, 0, c - 1, c + 2); }
+
+  // ---- the base ----
+  { const f3 = fl(3), f2 = fl(2);
+    g.put(f3 - 1, x0(0) + 1, 'PP'); g.put(f3 - 1, x0(0) + 3, 'HH'); let nH = 0; for(let c = x0(0); c <= x0(0) + 7 && nH < 6; c++) if(!taken(0, 2, c)){ g.put(f2 - 1, c, 'H'); nH++; }   // the pad, two spawns, and six up in the barracks
+    reserve(0, 3, x0(0), x0(0) + 7); // (nothing else is put in the home room)
+    // the jail: a cell in the bottom corner, its door facing the corridor and the arch to the next room
+    const f5 = fl(5);
+    g.fill(f5 - 4, 3, 8, '#'); g.col(3, f5 - 4, f5 - 1, '#'); g.col(2, f5 - 4, f5 - 1, '#'); g.col(8, f5 - 3, f5 - 1, 'J'); g.put(f5 - 1, 4, 'ppp'); g.keepClear(2, f5 - 4, 9, f5 - 1);
+    reserve(0, 5, x0(0), x0(0) + 7);
+  }
+  // ---- the puzzles ----
+  for(const p of pz){
+    const j = p.j, k0 = p.k0, e0 = x0(j) + 3;
+    for(const kk of [k0, k0 + 1, k0 + 2]) reserve(j, kk, e0 - 1, e0 + 3);
+    // the shaft: holes through the two floors, the room between made solid but for the shaft
+    g.gap(fl(k0), e0, e0 + 2); g.gap(fl(k0 + 1), e0, e0 + 2);
+    g.box(fl(k0 + 1) - 4, x0(j), fl(k0 + 1) - 1, x0(j) + 7, '#'); g.box(fl(k0 + 1) - 4, e0, fl(k0 + 1) - 1, e0 + 2, '.');
+    g.elev(e0, 3, fl(k0), fl(k0 + 2));
+    g.keepClear(x0(j), fl(k0 + 1) - 4, x0(j) + 7, fl(k0 + 1) - 1);
+    // the secret room's two holes: in from the drop room above, out to the corner below
+    const R_ = [p.j + 2, k0 + 2], entry = V[rk(p.j + 2, k0 + 1)], exit_ = V[rk(p.j + 2, k0 + 2)];
+    const fe = x0(p.j + 2) + 1; g.gap(fl(k0 + 1), fe, fe + 2); reserve(p.j + 2, k0 + 1, fe - 1, fe + 3); reserve(p.j + 2, k0 + 2, fe - 1, fe + 3);
+    const re = x0(p.j + 2) + 5; g.gap(fl(k0 + 2), re, re + 2); reserve(p.j + 2, k0 + 2, re - 1, re + 3); reserve(p.j + 2, k0 + 3, re - 1, re + 3);
+    entry.c = fe; exit_.c = re;
+    const fR = fl(k0 + 2), cx = x0(p.j + 2) + 3;
+    if(p.kind === 'buff'){ g.put(fR - 1, cx, 'y'); g.deco('lantern', cx - 1, fR - 4, 3, 3); }
+    else { g.put(fR - 1, x0(p.j + 2) + 2, 'K'); g.put(fR - 1, x0(p.j + 2) + 4, 'U'); g.put(fR - 1, x0(p.j + 2) + 7, 'R'); }
+    g.deco('lantern', e0, fl(k0) - 4, 3, 3);   // the landmark at the top of the lift
+    info.puzzles.push({ kind:p.kind, j, k0 });
+  }
+  // ---- vault insides ----
+  const boostCh = ['u', 'v', 'g', 'h'];
+  vaults.forEach((v, i) => {
+    const f = fl(v.k), x = x0(v.j);
+    g.put(f - 1, x + 3, boostCh[i % 4]); g.put(f - 1, x + 1, cfg.cover[Math.floor(R(v.j, v.k, 40)*cfg.cover.length)]); g.put(f - 1, x + 5, cfg.cover[Math.floor(R(v.j, v.k, 41)*cfg.cover.length)]); g.put(f - 1, x + 6, cfg.cover[Math.floor(R(v.j, v.k, 42)*cfg.cover.length)]);
+    g.keepClear(x, f - 4, x + 7, f - 1); info.vaults.push({ j:v.j, k:v.k, id:v.id });
+  });
+  // ---- keys: one a door id, in the rooms nearer the middle where both sides go ----
+  vaults.forEach((v, i) => {
+    let tries = 0, j, k;
+    do { j = 3 + Math.floor(R(v.id, 50 + tries, 60)*6); k = Math.floor(R(v.id, 50 + tries, 61)*K); tries++; } while(tries < 40 && (special.has(rk(j, k)) || j >= J));
+    const c = x0(j) + 1 + Math.floor(R(j, k, 62)*6);
+    const cc = taken(j, k, c) ? x0(j) + 1 : c; g.put(fl(k) - 1, cc, String.fromCharCode(96 + v.id)); reserve(j, k, cc, cc);
+  });
+  // ---- hiding places, shelves, area features: every room ----
+  const feats = cfg.features || [], coverCh = cfg.cover;
+  for(let j = 0; j < J; j++) for(let k = 0; k < K; k++){
+    if(special.has(rk(j, k))) continue;
+    if(j === 0 && (k === 3 || k === 2)) continue;   // the base rooms are the spawns and the pad
+    const f = fl(k), x = x0(j);
+    // two hiding places on the floor, away from holes and stacks
+    const picks = []; for(let c = x + 1; c <= x + 6; c++) if(!taken(j, k, c)) picks.push([c, R(j, k, 80 + c)]);
+    picks.sort((a, b) => a[1] - b[1]);
+    const nSpots = R(j, k, 72) < 0.5 ? 2 : 3;
+    let placed = 0; const used = [];
+    for(const [c] of picks){ if(placed >= nSpots) break; if(used.some(u => Math.abs(u - c) < 2)) continue; g.put(f - 1, c, coverCh[Math.floor(R(j, k, 90 + c)*coverCh.length)]); used.push(c); placed++; }
+    // a shelf on the wall with one up on it
+    if(R(j, k, 73) < 0.4){ const sc = x + 1 + Math.floor(R(j, k, 74)*3); let ok = true; for(let q = sc - 1; q <= sc + 3; q++) if(taken(j, k, q) || used.includes(q)) ok = false;
+      if(ok){ g.fill(f - 1, sc, sc + 2, '='); g.put(f - 2, sc + 1, coverCh[Math.floor(R(j, k, 75)*coverCh.length)]); g.deco('chains', sc, f - 4, 3, 3); } }
+    // a team banner hanging from the ceiling, and a spiked ceiling in some rooms
+    if(R(j, k, 79) < 0.5) g.deco('hang', x + 1 + Math.floor(R(j, k, 69)*5), f - 4, 2, 2, {});
+    // an area feature, with a landmark behind it
+    if(feats.length && R(j, k, 76) < (cfg.pFeat != null ? cfg.pFeat : 0.55) && !(j === 8)){
+      const ft = feats[Math.floor(R(j, k, 77)*feats.length)], dirv = R(j, k, 78) < 0.5 ? -1 : 1;
+      const rowsTop = f - 4, deco = { ice:'crystal', water:'falls', wind:'cloud', belt:'gear', glue:'mushroom', dark:'lantern', heal:'berry', float:'cloud' }[ft];
+      if(ft === 'ice') g.zone('ice', x, f - 2, x + 7, f - 1, 1);
+      else if(ft === 'water') g.zone('water', x, f - 2, x + 7, f - 1, 1);
+      else if(ft === 'glue') g.zone('glue', x, f - 2, x + 7, f - 1, 0.6);
+      else if(ft === 'belt') g.zone('belt', x, f - 1, x + 7, f - 1, 1, dirv);
+      else if(ft === 'wind') g.zone('wind', x, rowsTop, x + 7, f - 1, 1, dirv);
+      else if(ft === 'dark') g.zone('dark', x, rowsTop, x + 7, f - 1);
+      else if(ft === 'float') g.zone('float', x, rowsTop, x + 7, f - 1);
+      else if(ft === 'heal') g.zone('heal', x + 2, f - 2, x + 5, f - 1, 1);
+      if(deco) g.deco(deco, x + 2, rowsTop, 4, 4);
+      info.rooms.push({ j, k, ft });
+    }
+  }
+  // ---- boosts in the open rooms ----
+  for(let i = 0; i < (cfg.openBoosts != null ? cfg.openBoosts : 4); i++){
+    const j = 2 + Math.floor(R(i, 1, 91)*7), k = Math.floor(R(i, 2, 92)*K);
+    if(special.has(rk(j, k))) continue;
+    const c = x0(j) + 1 + Math.floor(R(i, 3, 93)*6); if(taken(j, k, c) || !['.'].includes(g.at(fl(k) - 1, c))) continue;
+    g.put(fl(k) - 1, c, boostCh[i % 4]);
+  }
+  // ---- the spine: the open middle, a ladder, ledges, the roofs above ----
+  g.ladder(SPINE, 37, 10, 3);
+  g.lattice({ x0:CTF_CELL*(SPINE + 0), x1:CTF_CELL*HALFC, top:CTF_CELL*9, bottom:CTF_CELL*36, gap:150, colW:300, w:230, salt:cfg.seed*3 + 1, padx:30 });
+  g.deco('hang', SPINE + 1, 9, 3, 5); g.deco('hang', SPINE + 4, 17, 3, 5); g.deco('hang', SPINE + 1, 27, 3, 5);   // big team banners down the middle: whose side is whose
+  g.put(21, 86, 'a'); g.put(33, 86, 'F'); g.put(27, 87, 'B'); g.put(15, 87, 'C');   // on the ladder's ledges
+  // the roofs: a lattice of platforms over them, towers and lanterns to steer by, hiding places on the roof tops
+  g.lattice({ x0:CTF_CELL*3, x1:CTF_CELL*(SPINE - 3), top:CTF_CELL*1, bottom:CTF_CELL*7, gap:130, colW:470, w:130, salt:cfg.seed*3 + 2, padx:40 });   // single floating blocks over the roofs
+  for(let j = 0; j < J; j++) if(R(j, 9, 94) < 0.7){ const c = x0(j) + 1 + Math.floor(R(j, 8, 95)*6); if(!taken(j, 0, c) && g.at(7, c) === '.') g.put(7, c, coverCh[Math.floor(R(j, 7, 96)*coverCh.length)]); }
+  for(let j = 0; j < J; j += 2) g.deco(cfg.landmark || 'castle', x0(j) + 1, 0, 6, 8);
+  // a rubble mountain on the roofs with a dark shaft cut down through the middle of it into the room below, and hiding places behind its rocks
+  if(cfg.mountain !== false && !special.has(rk(6, 0)) && !isVault(6, 0)){
+    const mx0 = x0(6), mc = mx0 + 3;
+    g.mound(7, mx0, 9, 5); g.gap(7, mc, mc + 1); g.gap(6, mc, mc + 1); g.gap(5, mc, mc + 1); g.gap(4, mc, mc + 1); g.gap(3, mc, mc + 1);
+    g.stairs(8, fl(0), mc); g.shaft(mc, 7, 3); reserve(6, 0, mc - 1, mc + 2);
+    g.zone('dark', mc, 3, mc + 1, 12);
+    g.put(5, mx0 + 1, 'K'); g.put(5, mx0 + 7, 'R'); g.put(7, mx0 + 8 > SPINE - 1 ? mx0 + 7 : mx0 + 8, 'B');
+    g.keepClear(mx0, 3, mx0 + 8, 7);
+  }
+  g.info = info;
+  return info;
 }
-// a vault floating over the high walkway: 5 cols from c0, the door on its right, steps up from the deck
-function ctfDeckVault(g, c0, door, boost){
-  g.fill(25, c0, c0 + 4, '#'); g.fill(21, c0, c0 + 4, '#'); g.col(c0, 22, 24, '#'); g.col(c0 + 4, 22, 22, '#'); g.col(c0 + 4, 23, 24, String(door));
-  g.put(24, c0 + 2, boost); g.put(24, c0 + 1, 'S');
-  g.fill(27, c0 + 5, c0 + 6, '='); g.fill(26, c0 + 7, c0 + 8, '='); g.fill(25, c0 + 5, c0 + 6, '='); g.keepClear(c0, 21, c0 + 4, 25);
-}
-// a small tower on the surface with a locked vault on its ground floor: 5 cols from c0; steps up to its roof from both sides
-function ctfMidVault(g, c0, door, boost){
-  g.col(c0, 33, 35, '#'); g.col(c0, 34, 35, String(door)); g.col(c0 + 4, 29, 35, '#'); g.gap(30, c0 + 4, c0 + 4); g.gap(31, c0 + 4, c0 + 4); g.fill(32, c0, c0 + 4, '#');
-  g.put(35, c0 + 2, boost); g.put(35, c0 + 1, 'S'); g.keepClear(c0 + 1, 33, c0 + 3, 35);
-  g.put(35, c0 + 5, '=='); g.put(34, c0 + 7, '=='); g.put(33, c0 + 5, '=='); g.put(35, c0 - 3, '=='); g.put(34, c0 - 5, '=='); g.put(33, c0 - 3, '==');
-}
-// rising steps toward the centre line (columns c0..119, one row per step, w cols a step): the middle's great hill
 
 // ---------------------------------------------------------------------------------------------------------------
-//  1. CASTLE YOYLEBERRY. 28800 x 6240. Bases at the far ends, a great clock tower in the middle, three lanes between:
-//    HIGH   the battlement walkway (row 28): fast and open, nowhere to hide, a gap every so often;
-//    MID    the surface (row 36): ruins and arches for cover, a tower with a locked vault, ladders up to the walkway;
-//    LOW    the cellar tunnels (rows 38-45): crawl spaces, side chambers, a locked boost vault, and the jail under the keep.
-//  Each keep has three ways in: the front arch (a 2-high chokepoint), the roof (a hatch and stairs down), the cellar (a trapdoor).
-//  The vault in the middle of the ground floor has two locked doors, a hatch from above and a hatch from below.
-//  The keys lie in the great tower and along the lanes, where both sides meet.
+//  1. CASTLE YOYLEBERRY. 21600 x 4680, made by ctfRoomGen: small connected rooms in six layers, a spine up the middle, roofs above, a base at each end
+//  (home, barracks, a jail in the bottom corner), four locked vaults, two puzzle areas a side, a feature in half the rooms.
 // ---------------------------------------------------------------------------------------------------------------
 CTF_MAPS.castle = {
   name:'Castle Yoyleberry',
-  theme:{ sky:['#27345f','#e2a99a'], far:['#4a4f7c','#363a62'], bg:'castle', pat:'brick',
+  theme:{ sky:['#27345f','#e2a99a'], far:['#4a4f7c','#363a62'], bg:'castle', pat:'brick', back:'#2a2634', backLine:'rgba(255,255,255,0.055)',
           solid:{ fill:'#8d8c9c', line:'#6c6b7d', hi:'#b2b1c2', edge:'#262532' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' },
-          cover:{ bush:'#3f9a4c', crate:'#a8773f', banner:'#c9433f', barrel:'#7a4a2a' }, deco:{ a:'#5b5f8f', b:'#7a6fa8', c:'#e8d98a', d:'#4aa0d8' } },
+          cover:{ bush:'#3f9a4c', crate:'#a8773f', banner:'#c9433f', barrel:'#7a4a2a', curtain:'#8a3a6a', rubble:'#7d7a88', rock:'#6a6a74' }, deco:{ a:'#5b5f8f', b:'#7a6fa8', c:'#e8d98a', d:'#4aa0d8' } },
   build(g){
-    const G = CTF_G, HL = CTF_HL, LOW = CTF_LOW;
-    g.box(0, 0, 51, 1, '#');                         // the outer wall
-    g.box(G, 2, G + 1, 119, '#');                    // the surface (two rows thick)
-    g.box(LOW, 2, 51, 119, '#');                     // the cellar floor
-    // ---- the keep (columns 2-31): ground floor rows 33-35, upper floor rows 29-31, roof walkway at row 28 ----
-    g.fill(32, 2, 31, '#'); g.fill(28, 2, 31, '#'); g.col(2, 28, 35, '#'); g.col(31, 28, 35, '#');
-    g.gap(34, 31, 31); g.gap(35, 31, 31); g.gap(30, 31, 31); g.gap(31, 31, 31);                 // the front arch, and the upper window
-    g.col(11, 33, 33, '#');                                                                      // home | middle hall: an open arch (rows 34-35)
-    g.col(19, 33, 33, '#');                                                                      // middle hall | entry hall: an open arch
-    g.col(11, 29, 31, '#'); g.col(11, 30, 31, '1'); g.col(19, 29, 31, '#'); g.col(19, 30, 31, '2');   // upstairs: barracks | vault (door 1) | vault | balcony hall (door 2)
-    g.stairs(32, G, 9);                                                                          // home up to the barracks
-    g.stairs(32, G, 25);                                                                         // the entry hall up to the balcony hall
-    g.stairs(28, 32, 21);                                                                        // balcony hall up to the roof
-    g.gap(G, 21, 22); g.gap(G + 1, 21, 22); g.shaft(21, LOW - 1, G + 1);                         // the trapdoor in the entry hall: down to the cellar
-    g.put(35, 3, 'PP'); g.put(35, 5, 'HHHH'); g.put(35, 10, 'H');   g.put(31, 3, 'H'); g.put(31, 5, 'H'); g.put(31, 7, 'H');                                // home: the pad and the spawns
-    g.put(35, 12, 'S'); g.put(35, 14, 'S'); g.put(35, 16, 'W'); g.put(35, 18, 'B'); g.put(35, 27, 'F');
-    g.put(31, 4, 'B'); g.put(31, 8, 'C'); g.put(31, 6, 'S'); g.put(31, 13, 'W'); g.put(31, 16, 'F'); g.put(31, 17, 'B'); g.put(31, 23, 'C'); g.put(31, 29, 'S');
-    g.put(27, 5, 'B'); g.put(27, 10, 'C'); g.put(27, 16, 'F'); g.put(27, 28, 'W');               // the roof
-    g.keepClear(2, 28, 31, 35);
-    g.deco('castle', 5, 12, 10, 16); g.deco('castle', 22, 15, 7, 13);
-    // ---- the jail, in the cellar under the keep, with its zone ----
-    g.fill(42, 5, 12, '#'); g.col(5, 42, 45, '#'); g.col(12, 43, 45, 'J'); g.put(45, 7, 'ppp');
-    g.keepClear(5, 42, 12, 45);
-    // ---- the cellar lane (rows 38-45) ----
-    g.box(38, 28, 40, 29, '#'); g.box(38, 49, 41, 51, '#'); g.box(38, 62, 39, 64, '#'); g.box(38, 84, 40, 85, '#'); g.box(38, 104, 41, 106, '#');   // rock hanging from the ceiling
-    g.box(38, 78, 43, 92, '#'); g.put(45, 80, 'S'); g.put(45, 86, 'W'); g.put(45, 91, 'S');       // a crawl space (rows 44-45)
-    // a chamber raised above the cellar lane (the lane runs under it): speed boost, door 3
-    g.fill(42, 53, 61, '#'); g.fill(38, 53, 61, '#'); g.col(53, 39, 41, '#'); g.col(61, 39, 39, '#'); g.col(61, 40, 41, '3');
-    g.put(41, 57, 'u'); g.put(41, 55, 'S'); g.put(41, 59, 'B'); g.keepClear(53, 38, 61, 42);
-    g.fill(45, 64, 65, '='); g.fill(44, 62, 63, '='); g.fill(43, 64, 65, '='); g.fill(42, 62, 63, '=');
-    g.put(45, 70, 'C'); g.put(45, 44, 'W'); g.put(45, 100, 'F');
-    for(const c of [44, 76, 100]){ g.gap(G, c, c + 1); g.gap(G + 1, c, c + 1); g.shaft(c, LOW - 1, G + 1); }   // ways up to the surface
-    // ---- the surface (row 36) ----
-    g.mound(35, 34, 3, 2);                                                                         // a barricade in the yard
-    g.mound(35, 46, 5, 3); g.put(35, 51, 'B');
-    g.box(30, 54, 32, 58, '#'); g.put(35, 54, '#'); g.put(35, 56, 'C'); g.put(35, 57, 'W');   // an arch: a lintel over the way, a low stub at one end
-    g.col(64, 33, 35, '#'); g.col(64, 34, 35, '4'); g.col(68, 29, 35, '#'); g.gap(30, 68, 68); g.gap(31, 68, 68); g.fill(32, 64, 68, '#'); g.put(35, 66, 'v'); g.put(35, 65, 'S');   // the tower with the vault (door 4, jump boost)
-    g.keepClear(65, 33, 67, 35);
-    g.put(35, 69, '=='); g.put(34, 71, '=='); g.put(33, 69, '==');                              // up to the top of the vault tower
-    g.put(35, 61, '=='); g.put(34, 59, '=='); g.put(33, 61, '==');                              // ...and from the other side
-    g.put(35, 75, 'W'); g.mound(35, 76, 7, 3); g.put(32, 79, 'S');
-    g.mound(35, 86, 3, 2); g.put(35, 90, '#'); g.put(35, 83, 'a'); g.put(35, 88, 'C'); g.put(35, 92, 'B');
-    g.box(30, 104, 31, 110, '#'); g.put(35, 104, '#'); g.put(35, 107, 'W');   // a broken bridge
-    g.put(35, 41, 'F'); g.put(35, 38, 'B');
-    // ---- the high lane (row 28): the walkway, a gap now and then, ladders up from the surface ----
-    for(const [a, b] of [[32, 45], [47, 58], [60, 72], [74, 86], [88, 100], [102, 119]]) g.deck(HL, a, b);
-    for(const c of [36, 80, 96]) g.ladder(c, 35, 29, 3);
-    // a vault floating over the walkway (door 5, speed boost); steps up to it
-    g.fill(25, 88, 92, '#'); g.fill(21, 88, 92, '#'); g.col(88, 22, 24, '#'); g.col(92, 22, 22, '#'); g.col(92, 23, 24, '5'); g.put(24, 90, 'u'); g.put(24, 89, 'S');
-    g.fill(27, 93, 94, '='); g.fill(26, 95, 96, '='); g.fill(25, 93, 94, '=');
-    g.put(27, 98, 'b'); g.put(27, 40, 'F'); g.put(27, 54, 'W'); g.put(27, 66, 'B'); g.put(27, 80, 'C');
-    g.keepClear(88, 21, 92, 25);
-    g.put(27, 34, 'u'); g.put(35, 39, 'g'); g.put(27, 50, 'h');
-    // ---- the great clock tower in the middle (its left half: columns 112-119; the right half mirrors it) ----
-    g.col(112, 16, 33, '#'); g.gap(34, 112, 112); g.gap(35, 112, 112);
-    g.fill(32, 113, 119, '#'); g.fill(28, 113, 119, '#'); g.fill(24, 113, 119, '#'); g.fill(20, 113, 119, '#'); g.fill(16, 112, 119, '#');
-    g.stairs(32, G, 114); g.stairs(28, 32, 117); g.stairs(24, 28, 114); g.stairs(20, 24, 117); g.stairs(16, 20, 114);
-    g.put(31, 116, 'c'); g.put(27, 114, 'd'); g.put(23, 116, 'e');
-    g.put(31, 118, 'S'); g.put(27, 113, 'C'); g.put(23, 118, 'W'); g.put(19, 116, 'B'); g.put(15, 117, 'F');
-    g.put(35, 108, 'u'); g.put(35, 111, 'v');
-    g.gap(30, 112, 112); g.gap(31, 112, 112); g.gap(26, 112, 112); g.gap(27, 112, 112); g.gap(22, 112, 112); g.gap(23, 112, 112);
-    g.put(32, 110, '=='); g.put(28, 110, '=='); g.put(24, 110, '==');                                // balconies at the windows
-    g.ladder(106, 35, 24, 2);                                                                      // up the outside to them
-    g.keepClear(113, 17, 119, 35);
-    g.deco('castle', 113, 4, 14, 12);
-    // ---- more cover on the surface, and in the cellar ----
-    g.put(35, 38, '#'); g.mound(35, 41, 3, 2); g.put(35, 40, 'W');
-    g.put(35, 62, '#'); g.put(35, 73, 'C');
-    g.mound(35, 93, 4, 2); g.put(35, 98, '#'); g.put(35, 102, 'B'); g.put(35, 103, 'S');
-    g.mound(45, 23, 3, 2); g.mound(45, 36, 3, 2); g.mound(45, 67, 3, 2); g.mound(45, 97, 3, 2); g.mound(45, 114, 3, 2);
-    g.put(45, 26, 'S'); g.put(45, 48, 'B'); g.put(45, 74, 'W'); g.put(45, 93, 'C'); g.put(45, 108, 'F');
-    // ---- areas that play differently (the game's own effect zones; the right side mirrors them) ----
-    g.zone('ice', 4, 26, 28, 27, 1);                       // the keep's roof is icy
-    g.zone('heal', 3, 29, 10, 31, 1);                      // the barracks mend you
-    g.zone('water', 54, 33, 62, 35, 1);                    // the moat slows you
-    g.zone('wind', 60, 24, 90, 27, 1, -1);                 // a wind along the battlement walkway, toward home
-    g.zone('dark', 62, 38, 100, 45);                       // the cellar is dark: you see only near yourself
-    g.zone('spring', 109, 35, 110, 35, 1);                 // a spring pad in front of the great tower, up to its first balcony
-    g.zone('float', 113, 16, 119, 23);                     // thin air at the top of the great tower
-    // ---- scenery: landmarks to steer by ----
-    g.deco('falls', 50, 18, 6, 18); g.deco('berry', 66, 8, 10, 12); g.deco('castle', 90, 16, 8, 14);
-    // ---- space to fight in over the surface: stepping stones between the lanes ----
-    g.lattice({ x0:CTF_CELL*36, x1:CTF_CELL*110, top:CTF_CELL*16, bottom:CTF_CELL*G - 132, gap:132, colW:820, w:250, salt:11, padx:60 });
-    g.lattice({ x0:CTF_CELL*14, x1:CTF_CELL*118, top:CTF_CELL*39, bottom:CTF_CELL*LOW - 132, gap:132, colW:760, w:260, salt:23, padx:60 });   // stepping stones in the cellar
-  },
-};
-
-// ---------------------------------------------------------------------------------------------------------------
-//  2. CRYSTAL CAVES. 28800 x 6240. Each base is a hold carved into the rock: a long two-high tunnel for a front door (the
-//  chokepoint), a lift room, a vault with two locked doors, a window cut high in the rock, the roof; a trapdoor to the cellar.
-//  The middle is a great hill of rock steps with a plateau on top where the keys lie. Lanes: HIGH the rock bridges (row 28),
-//  MID the cavern floor between stalagmite mounds, LOW the deep tunnels under it, with the jail under the hold.
-// ---------------------------------------------------------------------------------------------------------------
-CTF_MAPS.caves = {
-  name:'Crystal Caves', wip:true,
-  theme:{ sky:['#140d2b','#4a3a78'], far:['#2a1f4d','#1f1740'], bg:'cave', pat:'rock',
-          solid:{ fill:'#5e4f82', line:'#473b66', hi:'#8b79b8', edge:'#1b1430' }, hop:{ fill:'#3fa6b8', edge:'#14424d', hi:'#7fe0ee' },
-          cover:{ bush:'#7a4aa8', crate:'#5a7ab8', banner:'#4ab8a0', barrel:'#8a6a4a' }, deco:{ a:'#7ad0f0', b:'#c070e8', c:'#ffd23f', d:'#4aa0d8' } },
-  build(g){
-    const G = CTF_G, HL = CTF_HL, LOW = CTF_LOW;
-    ctfBase(g);
-    // ---- the hold (columns 2-33): a mass of rock rows 28-35 with the rooms cut out of it ----
-    g.box(28, 2, 35, 33, '#');
-    g.box(33, 3, 35, 10, '.');                                      // home cave: the pad and the spawns
-    g.box(34, 11, 35, 13, '.');                                     // a tunnel out of it
-    g.box(33, 14, 35, 19, '.');                                     // the junction
-    g.box(34, 20, 35, 33, '.'); g.box(33, 21, 35, 24, '.');         // the front tunnel (two high, 14 long: the chokepoint) and the lift room in it
-    g.box(29, 3, 31, 10, '.');                                      // the barracks
-    g.box(30, 11, 31, 11, '.'); g.col(11, 30, 31, '1');             // door 1: barracks | vault
-    g.box(29, 12, 31, 18, '.');                                     // the vault
-    g.box(30, 19, 31, 19, '.'); g.col(19, 30, 31, '2');             // door 2: vault | watch hall
-    g.box(29, 20, 31, 27, '.'); g.box(30, 28, 31, 33, '.');         // the watch hall, and the window cut through to the outside
-    g.stairs(32, G, 9); g.stairs(32, G, 22); g.stairs(28, 32, 25);  // home up to the barracks; the lift room up to the watch hall; the watch hall up to the roof
-    g.gap(G, 27, 28); g.gap(G + 1, 27, 28); g.shaft(27, LOW - 1, G + 1);   // the trapdoor in the front tunnel: down to the cellar
-    g.fill(32, 34, 35, '='); g.put(33, 34, '=='); g.put(34, 36, '=='); g.put(35, 38, '==');   // up the rock to the window
-    g.put(35, 3, 'PP'); g.put(35, 5, 'HHHH'); g.put(35, 10, 'H');
-    g.put(35, 15, 'S'); g.put(35, 19, 'W'); g.put(35, 21, 'C'); g.put(35, 24, 'B'); g.put(35, 26, 'F'); g.put(35, 30, 'S'); g.put(35, 32, 'W');
-    g.put(31, 4, 'B'); g.put(31, 6, 'S'); g.put(31, 8, 'C'); g.put(31, 13, 'W'); g.put(31, 15, 'F'); g.put(31, 17, 'B'); g.put(31, 21, 'S'); g.put(31, 27, 'C'); g.put(31, 31, 'W');
-    g.put(27, 6, 'B'); g.put(27, 12, 'C'); g.put(27, 20, 'F'); g.put(27, 30, 'W');
-    g.keepClear(2, 28, 33, 35);
-    ctfJailCellar(g);
-    g.deco('crystal', 8, 14, 12, 14); g.deco('crystal', 24, 17, 9, 11);
-    // ---- the cellar lane ----
-    for(const [c0, c1, h] of [[26, 28, 3], [46, 49, 2], [62, 64, 3], [70, 73, 2], [86, 88, 3], [104, 107, 2]]) g.box(38, c0, 38 + h - 1, c1, '#');   // stalactites
-    g.box(38, 80, 43, 94, '#'); g.put(45, 82, 'S'); g.put(45, 88, 'W'); g.put(45, 93, 'S');          // a crawl space
-    ctfCellarChamber(g, 56, 3, 'u');
-    for(const c of [54, 76, 96]) ctfShaft(g, c);
-    g.mound(45, 20, 3, 2); g.mound(45, 34, 5, 3); g.mound(45, 66, 3, 2); g.mound(45, 100, 5, 3); g.mound(45, 112, 3, 2);
-    g.put(45, 24, 'S'); g.put(45, 44, 'B'); g.put(45, 50, 'W'); g.put(45, 70, 'C'); g.put(45, 78, 'F'); g.put(45, 98, 'S'); g.put(45, 108, 'W');
-    // ---- the cavern floor (the surface): stalagmite mounds, a rock arch, a tower with a vault, three ladders up ----
-    g.mound(35, 35, 3, 2); g.put(33, 36, 'B');
-    g.ladder(40, 35, 29, 3);
-    g.box(31, 46, 32, 52, '#'); g.put(35, 47, 'C'); g.put(35, 50, 'W');                      // an arch
-    g.mound(35, 54, 3, 2); g.put(35, 58, 'F');
-    g.ladder(58, 35, 29, 3);
-    ctfMidVault(g, 70, 4, 'v');
-    g.mound(35, 81, 9, 4); g.put(31, 85, 'S'); g.put(35, 79, 'B');
-    g.ladder(91, 35, 29, 3);
-    g.put(35, 95, 'a'); g.put(35, 98, 'u'); g.put(35, 99, 'v');
-    // ---- the high lane: rock bridges ----
-    for(const [a, b] of [[34, 50], [52, 66], [68, 82], [84, 97], [99, 119]]) g.deck(HL, a, b);
-    ctfDeckVault(g, 56, 5, 'u');
-    g.put(27, 70, 'b'); g.put(27, 42, 'F'); g.put(27, 62, 'S'); g.put(27, 90, 'B'); g.put(27, 108, 'W');
-    // ---- the great hill in the middle: rock steps up to a plateau, the keys on top ----
-    g.stepsUp(100, 35, 6, 3);
-    g.put(29, 115, 'c'); g.put(29, 117, 'd'); g.put(29, 119, 'e'); g.put(30, 113, 'S'); g.put(31, 110, 'B'); g.put(32, 107, 'C'); g.put(33, 104, 'W');
-    g.box(24, 112, 24, 119, '#'); g.put(23, 116, 'F');                                        // a ledge over the plateau
-    g.fill(27, 103, 105, '='); g.fill(26, 106, 108, '='); g.fill(25, 109, 111, '=');           // steps up to it
-    g.keepClear(110, 24, 119, 29);
-    g.deco('crystal', 108, 6, 24, 18); g.deco('mushroom', 58, 26, 6, 10); g.deco('mushroom', 84, 24, 7, 12); g.deco('crystal', 50, 18, 8, 10);
-    g.lattice({ x0:CTF_CELL*36, x1:CTF_CELL*104, top:CTF_CELL*16, bottom:CTF_CELL*G - 132, gap:132, colW:880, w:250, salt:5, padx:60 });
-    g.lattice({ x0:CTF_CELL*14, x1:CTF_CELL*118, top:CTF_CELL*39, bottom:CTF_CELL*LOW - 132, gap:132, colW:780, w:260, salt:17, padx:60 });
+    ctfRoomGen(g, { seed:3, cover:['B', 'C', 'W', 'F', 'U', 'R', 'K'], features:['ice', 'water', 'wind', 'belt', 'dark', 'heal', 'float', 'glue'], landmark:'castle', vaults:4 });
   },
 };
 
@@ -2483,7 +2546,7 @@ CTF_MAPS.caves = {
 //   - while the hiding phase lasts every door stands open; they lock when it ends.
 // ---------------------------------------------------------------------------------------------------------------
 const CTF_SPEED = 1.5;   // every fighter's walk, run and air speed in this mode (jump height is the game's own)
-function ctfSpeedK(f){ return SETTINGS.mode === 'ctf' ? CTF_SPEED*(f._cf >= 0 ? CTF_CARRY_SPEED : 1) : 1; }
+function ctfSpeedK(f){ return SETTINGS.mode === 'ctf' ? CTF_SPEED*(f._cf >= 0 ? CTF_CARRY_SPEED : 1)*((CTF.live && CTF.live.buff && CTF.live.buff[f.team]) || 1) : 1; }
 const CTF_N = 5, CTF_HIDE_STEPS = 18000, CTF_JAIL_AUTO = 1e12, CTF_JAIL_OPEN = 150;   // (a prisoner stays until freed)
 const CTF_BIGHIT = 13, CTF_CARRY_SPEED = 0.78, CTF_CARRY_JUMP = 0.82, CTF_BOOST_JUMP = 1.45;   // (the super jump)
 const CTF_FREE_GRACE = 300, CTF_FREE_HASTE = 180, CTF_GHOST_STEPS = 420, CTF_REVEAL_GRAB = 300;
@@ -2491,6 +2554,7 @@ const CTF_FREE_GRACE = 300, CTF_FREE_HASTE = 180, CTF_GHOST_STEPS = 420, CTF_REV
 function ctfJailThreshold(n){ return clamp(140 - 10*n, 50, 120); }
 const CTF_FLAG_R = 40, CTF_KEY_R = 42, CTF_BOOST_STEPS = 420, CTF_BOOST_CD = 1500;
 const CTF_REVEAL_OPEN = 420, CTF_REVEAL_COVER = 130, CTF_STALL_REVEAL = 14400;
+const CTF_ZOOM = 0.9;
 const CTF = { live:null, map:null, mapId:null, prevStage:null, lastMap:null, built:{}, stageObjs:{}, forceMap:null };
 
 function ctfOn(){ return SETTINGS.mode === 'ctf'; }
@@ -2514,6 +2578,7 @@ function ctfBuildWorld(){
   CTF.lastMap = id; CTF.mapId = id; CTF.map = M;
   if(!(stage && String(stage.id).indexOf('ctf-') === 0)) CTF.prevStage = stage;
   stage = ctfStageObj(id);
+  CAM_ZOOM = CTF_ZOOM;   // the rooms are drawn closer than the other big arenas: a screen is a room and a bit
   WW = M.WW; WH = M.WH; camX = 0; camY = 0; bases = []; spawnZones = []; worldZones = []; floors = [];
   worldPlats = M.plats.map(p=>({ ...p }));
   worldZones = (M.zones || []).filter(z=>z.type !== 'dark').map(z=>({ ...z }));   // the game's own effect zones (ice, wind, belt...); dark is only drawn
@@ -2521,6 +2586,7 @@ function ctfBuildWorld(){
 }
 // Leaving the mode's screens puts the player's own stage back.
 function ctfStageRestore(){
+  CAM_ZOOM = 0.72;
   if(CTF.prevStage && stage && String(stage.id).indexOf('ctf-') === 0){ stage = CTF.prevStage; }
   CTF.live = null;
 }
@@ -2533,6 +2599,8 @@ function ctfBegin(){
   for(const d of M.doors) L.doors.push({ id:d.id, n:d.n, team:d.team, color:d.color, x:d.x, y:d.y, w:d.w, h:d.h, op:[true, true] });   // op: open for team 0, for team 1
   M.keys.forEach((k,i)=>L.keys.push({ i, door:k.door, x:k.x, y:k.y, hx:k.x, hy:k.y, st:0, hold:-1, lock:-1, lockT:0, n:+String(k.door).replace('r','') }));
   M.boosts.forEach((b,i)=>L.boosts.push({ i, kind:b.kind, x:b.x, y:b.y, cd:0 }));
+  L.buff = [0, 0]; L.buffs = (M.buffs || []).map((b, i)=>({ i, kind:b.kind, x:b.x, y:b.y, got:[false, false] }));   // a team's reward from a puzzle: once a team
+  L.elevs = (M.elevs || []).map((e, i)=>({ i, x:e.x, w:e.w, y0:e.y0, y1:e.y1, y:e.y0, dir:1, pause:90, rect:{ x:e.x, y:e.y0, w:e.w, h:16, elev:true, hop:true } }));
   M.jails.forEach(j=>L.jails.push({ owner:j.owner, door:{ ...j.door, open:false, t:0 }, slots:j.slots, zone:j.zone, face:j.face, pris:[] }));
   L.rank = [0,0];
   for(const f of fighters){
@@ -2552,6 +2620,7 @@ function ctfRebuildDyn(L){
   const out = [];
   for(const d of L.doors) if(!(d.op[0] && d.op[1])) out.push({ x:d.x, y:d.y, w:d.w, h:d.h, solid:true, door:d.id, dref:d });   // (a door open for one team is still a wall for the other: the step asks dref.op)
   for(const j of L.jails) if(!j.door.open) out.push({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, solid:true, jailDoor:j.owner });
+  for(const e of (L.elevs || [])) out.push(e.rect);   // a lift's platform is a one-way ledge that moves (ctfStepElevs)
   if(L.phase === 'hide') out.push({ x:CTF.map.WW/2 - 30, y:-400, w:60, h:CTF.map.WH + 400, solid:true, barrier:true });
   L.dyn = out;
 }
@@ -2639,7 +2708,7 @@ function ctfToggleDone(f){
     L.done[f.idx] = true; ctfSfx('done');
   } else L.done[f.idx] = false;
 }
-function ctfIsHuman(f){ return f.controller === 'local' || f.controller === 'remote'; }
+function ctfIsHuman(f){ return f.controller === 'local' || f.controller === 'local2' || f.controller === 'remote'; }
 function ctfEndHide(L){
   for(const f of fighters){
     const fl = L.flags[f.idx];
@@ -2665,6 +2734,7 @@ function ctfStep(){
   if(L.flash && --L.flash.t <= 0) L.flash = null;
   for(const f of fighters){ if(f._ctfJT > 0) f._ctfJT--; if(f._springT > 0) f._springT--; if(f._ctfFree > 0) f._ctfFree--; if(f._ghostT > 0) f._ghostT--; }
   if(CTF.nav && !CTF.nav.ready) ctfNavTick(CTF.nav, 6);
+  ctfStepElevs(L);
   if(L.phase === 'hide'){
     try{ ctfAiHideTick(L); }catch(e){ if(!CTF.errOnce){ CTF.errOnce = 1; console.error('ctfAiHideTick', e); } }
     const humans = fighters.filter(ctfIsHuman);
@@ -2677,6 +2747,7 @@ function ctfStep(){
   ctfStepZones(L);
   ctfStepKeys(L);
   ctfStepBoosts(L);
+  ctfStepBuffs(L);
   ctfStepFlags(L);
   ctfStepDamageJail(L);
   if(L.ping[0] && --L.ping[0].t <= 0) L.ping[0] = null; if(L.ping[1] && --L.ping[1].t <= 0) L.ping[1] = null;
@@ -2755,6 +2826,32 @@ function ctfDropKey(k, f){
   if(f){ f._ck = -1; k.x = f.x; k.y = f.y; }
   const s = ctfSurfaceBelow(k.x, k.y, 2400);
   if(s === null){ k.x = k.hx; k.y = k.hy; k.fall = false; } else k.fall = true;
+}
+// A lift runs between its two stops, pausing at each; whoever stands on it rides.
+const CTF_ELEV_SPEED = 3.6;
+function ctfStepElevs(L){
+  for(const e of L.elevs){
+    if(e.pause > 0){ e.pause--; continue; }
+    const target = e.dir > 0 ? e.y1 : e.y0, d = Math.sign(target - e.y)*Math.min(CTF_ELEV_SPEED, Math.abs(target - e.y));
+    const top0 = e.y;
+    e.y += d; e.rect.y = e.y;
+    for(const f of fighters){ if(f.dead || f._jail != null || !f.onground) continue;
+      if(f.x > e.x - 6 && f.x < e.x + e.w + 6 && Math.abs(f.y + f.r - top0) < 8){ f.y += d; f.vy = 0; } }
+    if(e.y === target){ e.dir = -e.dir; e.pause = 150; }
+  }
+}
+// A team buff on its pedestal in a puzzle's secret room: once per team, a modest permanent speed-up for the whole side.
+const CTF_BUFF_SPEED = 1.1;
+function ctfStepBuffs(L){
+  for(const b of L.buffs){
+    for(const f of fighters){
+      if(f._jail != null || b.got[f.team] || L.buff[f.team]) continue;
+      if(Math.abs(f.x - b.x) < 50 + f.r && f.y > b.y - 110 && f.y < b.y + 24){
+        b.got[f.team] = true; L.buff[f.team] = CTF_BUFF_SPEED; L.flash = { team:f.team, t:40 };
+        for(let i=0;i<26;i++) puff(b.x, b.y - 30, '#ffd23f', 6); shake(5); ctfSfx('boost'); break;
+      }
+    }
+  }
 }
 function ctfStepBoosts(L){
   for(const b of L.boosts){
@@ -3030,6 +3127,16 @@ function ctfPaintPlat(g, p, th, X0, Y0, X1, Y1){
     g.beginPath(); for(let x = Math.ceil(x0/60)*60; x < x1; x += 60){ g.moveTo(x, y0); g.lineTo(x, y1); } g.lineWidth = 1.5; g.stroke();
   }
 }
+// The wall behind the rooms: a dark fill with faint brick.
+function ctfPaintBack(g, b, th, X0, Y0, X1, Y1){
+  const x0 = Math.max(b.x, X0), x1 = Math.min(b.x + b.w, X1), y0 = Math.max(b.y, Y0), y1 = Math.min(b.y + b.h, Y1);
+  if(x1 <= x0 || y1 <= y0) return;
+  g.fillStyle = th.back || '#2b2733'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  g.strokeStyle = th.backLine || 'rgba(255,255,255,0.05)'; g.lineWidth = 2; g.beginPath();
+  const bh = 60, bw = 120;
+  for(let y = Math.ceil(y0/bh)*bh; y < y1; y += bh){ g.moveTo(x0, y); g.lineTo(x1, y); const off = ((y/bh)|0) % 2 ? bw/2 : 0; for(let x = Math.ceil((x0 - off)/bw)*bw + off; x < x1; x += bw){ g.moveTo(x, y); g.lineTo(x, Math.min(y1, y + bh)); } }
+  g.stroke();
+}
 function ctfTile(M, tx, ty){
   const key = M.id + ':' + tx + ',' + ty;
   let t = CTF_TILES.get(key);
@@ -3041,8 +3148,10 @@ function ctfTile(M, tx, ty){
     g.scale(CTF_TSCALE, CTF_TSCALE); g.translate(-X0, -Y0);
     g.beginPath(); g.rect(X0, Y0, CTF_TILE, CTF_TILE); g.clip();
     g.lineJoin = 'round';
+    for(const b of (M.back || [])) if(b.x < X1 && b.x + b.w > X0 && b.y < Y1 && b.y + b.h > Y0) ctfPaintBack(g, b, M.theme, X0, Y0, X1, Y1);
     for(const d of (M.decor || [])) if(d.x < X1 + 100 && d.x + d.w > X0 - 100 && d.y - 140 < Y1 && d.y + d.h + 80 > Y0) ctfDecorDraw(g, d, M.theme);
     for(const p of M.plats) if(p.x < X1 && p.x + p.w > X0 && p.y < Y1 && p.y + p.h > Y0) ctfPaintPlat(g, p, M.theme, X0, Y0, X1, Y1);
+    for(const d of (M.front || [])) if(d.x < X1 && d.x + d.w > X0 && d.y < Y1 && d.y + d.h > Y0) ctfPaintPlat(g, { x:d.x, y:d.y, w:d.w, h:d.h, solid:true }, M.theme, X0, Y0, X1, Y1);   // a secret wall: stone you walk through
   }
   CTF_TILES.set(key, cv);
   if(CTF_TILES.size > 60){ const first = CTF_TILES.keys().next().value; CTF_TILES.delete(first); }   // a few screens' worth stay; a long walk drops the oldest
@@ -3125,7 +3234,12 @@ function ctfBoostIcon(g, x, y, kind, a){
 function ctfCoverDraw(g, s, th){
   const c = th.cover || {}; g.save(); g.lineWidth = 4; g.strokeStyle = '#1c1c1c';
   if(s.cover === 'bush'){ g.fillStyle = c.bush || '#3f9a4c'; for(const [dx, r] of [[-30, 28], [0, 38], [30, 28]]){ g.beginPath(); g.arc(s.x + dx, s.y - r + 4, r, 0, 7); g.fill(); g.stroke(); } }
-  else if(s.cover === 'crate'){ g.fillStyle = c.crate || '#a8773f'; g.fillRect(s.x - 38, s.y - 76, 76, 76); g.strokeRect(s.x - 38, s.y - 76, 76, 76); g.lineWidth = 3; g.beginPath(); g.moveTo(s.x - 38, s.y - 76); g.lineTo(s.x + 38, s.y); g.moveTo(s.x + 38, s.y - 76); g.lineTo(s.x - 38, s.y); g.stroke(); }
+  else if(s.cover === 'crate'){   // a stack: three wide, two high, the top one off to a side
+    g.fillStyle = c.crate || '#a8773f';
+    for(const [dx, dy] of [[-76, 0], [0, 0], [76, 0], [-38, -76], [38, -76]]){ const bx = s.x + dx - 38, by = s.y + dy - 76; g.fillRect(bx, by, 76, 76); g.strokeRect(bx, by, 76, 76); g.lineWidth = 3; g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + 76, by + 76); g.moveTo(bx + 76, by); g.lineTo(bx, by + 76); g.stroke(); g.lineWidth = 4; } }
+  else if(s.cover === 'curtain'){ g.fillStyle = c.curtain || '#8a3a6a'; g.beginPath(); g.moveTo(s.x - 56, s.y - 150); g.lineTo(s.x + 56, s.y - 150); g.lineTo(s.x + 56, s.y); for(let i = 0; i < 4; i++) g.quadraticCurveTo(s.x + 56 - i*28 - 14, s.y - 14, s.x + 56 - (i + 1)*28, s.y); g.lineTo(s.x - 56, s.y - 150); g.closePath(); g.fill(); g.stroke(); g.fillStyle = '#1c1c1c'; g.fillRect(s.x - 62, s.y - 158, 124, 10); g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 3; g.beginPath(); for(let i = 1; i < 4; i++){ g.moveTo(s.x - 56 + i*28, s.y - 146); g.lineTo(s.x - 56 + i*28, s.y - 6); } g.stroke(); }
+  else if(s.cover === 'rubble'){ g.fillStyle = c.rubble || '#7d7a88'; for(const [dx, w, h] of [[-48, 50, 36], [-10, 62, 62], [38, 52, 44], [-28, 34, 26], [8, 36, 24]]){ g.beginPath(); g.moveTo(s.x + dx - w/2, s.y); g.lineTo(s.x + dx - w/3, s.y - h); g.lineTo(s.x + dx + w/3, s.y - h*0.9); g.lineTo(s.x + dx + w/2, s.y); g.closePath(); g.fill(); g.stroke(); } }
+  else if(s.cover === 'rock'){ g.fillStyle = c.rock || '#6a6a74'; g.beginPath(); g.moveTo(s.x - 62, s.y); g.lineTo(s.x - 46, s.y - 52); g.lineTo(s.x - 10, s.y - 88); g.lineTo(s.x + 30, s.y - 76); g.lineTo(s.x + 60, s.y - 30); g.lineTo(s.x + 66, s.y); g.closePath(); g.fill(); g.stroke(); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 3; g.beginPath(); g.moveTo(s.x - 10, s.y - 88); g.lineTo(s.x - 6, s.y - 40); g.lineTo(s.x + 24, s.y - 8); g.stroke(); }
   else if(s.cover === 'banner'){ g.fillStyle = c.banner || '#c9433f'; g.beginPath(); g.moveTo(s.x - 44, s.y - 130); g.lineTo(s.x + 44, s.y - 130); g.lineTo(s.x + 44, s.y - 6); g.lineTo(s.x, s.y - 26); g.lineTo(s.x - 44, s.y - 6); g.closePath(); g.fill(); g.stroke(); g.fillStyle = '#1c1c1c'; g.fillRect(s.x - 50, s.y - 136, 100, 8); }
   else if(s.cover === 'barrel'){ g.fillStyle = c.barrel || '#7a4a2a'; g.beginPath(); g.moveTo(s.x - 30, s.y); g.lineTo(s.x - 36, s.y - 34); g.lineTo(s.x - 28, s.y - 74); g.lineTo(s.x + 28, s.y - 74); g.lineTo(s.x + 36, s.y - 34); g.lineTo(s.x + 30, s.y); g.closePath(); g.fill(); g.stroke(); g.lineWidth = 3; g.beginPath(); g.moveTo(s.x - 34, s.y - 24); g.lineTo(s.x + 34, s.y - 24); g.moveTo(s.x - 34, s.y - 50); g.lineTo(s.x + 34, s.y - 50); g.stroke(); }
   g.restore();
@@ -3190,6 +3304,17 @@ function ctfDrawWorld(){
   { const pg = L.ping && L.ping[vt]; if(pg){ const pf = L.flags[pg.id]; if(pf && inView(pf.x - 80, pf.y - 140, 160, 160)){ ctx.save(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5; ctx.globalAlpha = 0.5 + 0.4*Math.sin(T*0.3); ctx.beginPath(); ctx.arc(pf.x, pf.y - 30, 70 + (T%40), 0, 7); ctx.stroke(); ctx.restore(); } } }
   // the areas: what each one does is drawn in its own look (ctfDrawZone)
   for(const z of (M.zones || [])){ if(z.type === 'dark' || !inView(z.x, z.y, z.w, z.h)) continue; ctfDrawZone(z, T, vx, vy, vw, vh); }
+  // lifts: a car on its chain-less rails, the shaft marked
+  for(const e of (L.elevs || [])){ if(!inView(e.x - 10, e.y0 - 60, e.w + 20, e.y1 - e.y0 + 120)) continue;
+    ctx.save(); ctx.strokeStyle = 'rgba(30,30,40,0.45)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(e.x + 4, e.y0); ctx.lineTo(e.x + 4, e.y1); ctx.moveTo(e.x + e.w - 4, e.y0); ctx.lineTo(e.x + e.w - 4, e.y1); ctx.stroke();
+    ctx.fillStyle = '#6a8aa8'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.fillRect(e.x, e.y - 4, e.w, 22); ctx.strokeRect(e.x, e.y - 4, e.w, 22);
+    ctx.fillStyle = '#ffd23f'; for(let k = 0; k < 4; k++) ctx.fillRect(e.x + 12 + k*(e.w - 24)/4, e.y, 18, 10);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); const mx2 = e.x + e.w/2, up = e.dir < 0; ctx.moveTo(mx2, e.y - 34 + (up ? 0 : 20)); ctx.lineTo(mx2 + 14, e.y - 14 + (up ? 0 : -20)); ctx.lineTo(mx2 - 14, e.y - 14 + (up ? 0 : -20)); ctx.closePath(); ctx.globalAlpha = 0.8; ctx.fill(); ctx.restore(); }
+  // a team buff on its pedestal: a lightning bolt, dimmed for a side that has taken it
+  for(const b of (L.buffs || [])){ if(!inView(b.x - 60, b.y - 160, 120, 170)) continue; const got = b.got[vt] || L.buff[vt];
+    ctx.save(); ctx.fillStyle = '#5a4a6a'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.fillRect(b.x - 44, b.y - 30, 88, 30); ctx.strokeRect(b.x - 44, b.y - 30, 88, 30);
+    ctx.globalAlpha = got ? 0.25 : 1; ctx.translate(b.x, b.y - 76 + Math.sin(T*0.08)*5); ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(10, -36); ctx.lineTo(-18, 6); ctx.lineTo(-2, 6); ctx.lineTo(-10, 36); ctx.lineTo(20, -8); ctx.lineTo(4, -8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
   // boosts
   for(const b of L.boosts){ if(!inView(b.x - 40, b.y - 90, 80, 100)) continue; ctfBoostIcon(ctx, b.x, b.y - 38 + Math.sin(T*0.07 + b.i)*4, b.kind, b.cd > 0 ? 0.25 : 1); }
   // keys lying about
@@ -3243,6 +3368,7 @@ function drawCtfHud(){
       ctfFlagIcon(ctx, fx, y + 34, ctfColor(1 - t), 24, hazardT*0.1 + i, null);
       ctx.globalAlpha = 1;
     }
+    if(L.buff && L.buff[t]){ ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; const bx2 = t === 0 ? bx - 22 : bx + bw + 8; ctx.beginPath(); ctx.moveTo(bx2 + 8, y + 6); ctx.lineTo(bx2 - 2, y + 22); ctx.lineTo(bx2 + 5, y + 22); ctx.lineTo(bx2 + 1, y + 36); ctx.lineTo(bx2 + 13, y + 18); ctx.lineTo(bx2 + 6, y + 18); ctx.closePath(); ctx.fill(); ctx.stroke(); }
     // a flag in somebody's hands, per side, under the box
     let n = 0;
     for(const f of fighters) if(f._cf >= 0 && f.team === t){ ctfFlagIcon(ctx, bx + 16 + n*20, y + 62, ctfColor(1 - t), 18, hazardT*0.2, null); n++; }
@@ -3432,6 +3558,16 @@ function ctfDecorDraw(g, d, th){
       g.fillStyle = '#f2e0d0'; g.strokeStyle = dark; g.lineWidth = 6; g.fillRect(x + w*0.38, y + h*0.45, w*0.24, h*0.55); g.strokeRect(x + w*0.38, y + h*0.45, w*0.24, h*0.55);
       g.fillStyle = c.a || '#d94f4f'; g.beginPath(); g.ellipse(x + w/2, y + h*0.45, w*0.5, h*0.38, 0, Math.PI, 0); g.closePath(); g.fill(); g.stroke();
       g.fillStyle = '#fff'; for(const [fx, fy] of [[0.3, 0.28], [0.55, 0.2], [0.72, 0.34]]){ g.beginPath(); g.arc(x + w*fx, y + h*fy, w*0.06, 0, 7); g.fill(); }
+      break; }
+    case 'chains': {   // two chains hanging from the ceiling to a shelf below
+      g.strokeStyle = '#2a2a33'; g.lineWidth = 5; g.globalAlpha = 0.8;
+      for(const cx of [x + 10, x + w - 10]){ for(let yy = y; yy < y + h - 8; yy += 18){ g.beginPath(); g.ellipse(cx, yy + 9, 4, 9, 0, 0, 7); g.stroke(); } }
+      break; }
+    case 'hang': {   // a team banner hung from the ceiling, in the colour of the side it is on; spikes beside it
+      const col = TEAM_COLORS[(d.side || 0) % TEAM_COLORS.length];
+      g.globalAlpha = 0.9; g.fillStyle = col; g.strokeStyle = dark; g.lineWidth = 5;
+      g.beginPath(); g.moveTo(x + w*0.25, y); g.lineTo(x + w*0.75, y); g.lineTo(x + w*0.75, y + h*0.8); g.lineTo(x + w*0.5, y + h*0.62); g.lineTo(x + w*0.25, y + h*0.8); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#e8e8f0'; for(let k = 0; k < 4; k++){ g.beginPath(); g.moveTo(x + w*(0.02 + k*0.06), y); g.lineTo(x + w*(0.05 + k*0.06), y + 30); g.lineTo(x + w*(0.08 + k*0.06), y); g.closePath(); g.fill(); }
       break; }
     case 'lantern': {
       g.fillStyle = c.c || '#ffd23f'; g.strokeStyle = dark; g.lineWidth = 6; g.beginPath(); g.ellipse(x + w/2, y + h*0.5, w*0.3, h*0.35, 0, 0, 7); g.fill(); g.stroke();
@@ -4930,7 +5066,7 @@ let ONEFIGHT = { active:false, story:false, won:false, over:false, frames:0, lin
 let RACE = raceFresh();
 let COBSFIGHT = { active:false, story:false, won:false, over:false, frames:0, lineup:null, prev:null, onEnd:null, opts:null, retry:null, result:null };   // Steve Cobs's fight, the same shape (startCobsFight): the second secret boss, on One's arena
 function isBig(){ return SETTINGS.mode==='teams' || SETTINGS.mode==='ctf' || ONEFIGHT.active || COBSFIGHT.active || RACE.active; }   // team mode uses the big 4-floor tower (and so do One's arena and Steve Cobs's)
-const CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big map is visible
+let CAM_ZOOM = 0.72;   // scrolling arenas render zoomed out so more of the big map is visible (Capture the Flag's rooms are drawn closer: ctfBuildWorld)
 // Wide scrolling FFA/boss arena: any stage flagged `big`, plus small stages when the MAP SIZE
 // setting asks for extra height (those ride this same, proven scrolling path).
 function isBigFFA(){ return (SETTINGS.mode!=='teams') && SETTINGS.mode!=='ctf' && (!!stage.big || forcedScroll()) && !CUSTOM_LEVEL && !ONEFIGHT.active && !COBSFIGHT.active && !RACE.active; }
@@ -8355,6 +8491,7 @@ function wallBand(team, g){
 function setupWorld(){
   spawnZones=[];
   if(SETTINGS.mode==='ctf'){ ctfBuildWorld(); return; }   // Capture the Flag: one of its own huge maps (see the CTF block)
+  CAM_ZOOM = 0.72;
   if(ONEFIGHT.active || COBSFIGHT.active){ buildOneArena(); return; }   // One's arena, and Steve Cobs's: the teams map without its walls (see buildOneArena)
   if(RACE.active){ buildRaceLane(); return; }       // RUNNING!: the Red Line Game's lane (see buildRaceLane)
   const MS = mapSize();                       // MAP SIZE match setting → arena W/H multipliers
