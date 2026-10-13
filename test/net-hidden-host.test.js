@@ -284,3 +284,80 @@ describe('the fixed step: the match runs 60 steps a second, whatever the screen 
     expect(Math.round(p.x), 'and it moved 60 px at vx = 1').toBe(200 - p.life);
   });
 });
+
+// RENDER INTERPOLATION (the owner: "smoother on higher fps, but not faster"). On a screen faster than the steps, loop() draws each
+// moving thing a fraction of the way from where it was before the latest step to where it is now, around draw() only, and puts the
+// true numbers back. The same room, the same fake clock.
+describe('render interpolation: smoother on a fast screen, never faster', () => {
+  // `hz` frames a second for `seconds` on the host alone, with draw() watched: [hazardT, drawn x, true x after the frame]
+  const watch = (hz, seconds, extra = '') => {
+    H.eval(`window.__seen = []; window.__draw0 = draw; draw = function(){ var f = fighters[0]; window.__seen.push([hazardT, f.x, f.y, camX]); return window.__draw0.apply(this, arguments); }; ${extra}`);
+    const out = [];
+    try {
+      for (let i = 0; i < Math.round(hz * seconds); i++) {
+        room.clock.T += 1000 / hz;
+        H.eval('loop()');
+        const seen = H.eval('window.__seen[window.__seen.length - 1]');
+        out.push({ step: seen[0], drawnX: seen[1], drawnY: seen[2], drawnCam: seen[3], trueX: H.eval('fighters[0].x'), trueStep: H.eval('hazardT') });
+      }
+    } finally { H.eval('draw = window.__draw0'); }
+    return out;
+  };
+  const runRight = (on) => key(H, H.eval('KEYS.right'), on);
+
+  it('at 144 Hz the picture moves on frames that ran no step, in order, and the true positions only move with a step', () => {
+    hostedMatch();
+    runRight(true);
+    const f = watch(144, 1).slice(12);   // (the screen's pace is learned over the first few frames)
+    runRight(false);
+    const still = f.filter((x, i) => i > 0 && x.trueStep === f[i - 1].trueStep);
+    expect(still.length, 'a 144 Hz screen has frames with no step').toBeGreaterThan(40);
+    const moved = still.filter((x) => { const i = f.indexOf(x); return x.drawnX !== f[i - 1].drawnX; });
+    expect(moved.length / still.length, 'and the picture still moves on nearly all of them').toBeGreaterThan(0.9);
+    for (let i = 1; i < f.length; i++) {
+      expect(f[i].drawnX, 'running right: never drawn going back').toBeGreaterThanOrEqual(f[i - 1].drawnX - 1e-9);
+      if (f[i].trueStep === f[i - 1].trueStep) expect(f[i].trueX, 'the true x moves only when a step ran').toBe(f[i - 1].trueX);
+    }
+  });
+
+  it('is never faster: the true step rate stays 60 a second, and the picture covers the same ground', () => {
+    hostedMatch();
+    runRight(true);
+    const t0 = H.eval('hazardT'), x0 = H.eval('fighters[0].x');
+    const f = watch(144, 0.5);
+    runRight(false);
+    expect(Math.abs(H.eval('hazardT') - t0 - 30), 'half a second is 30 steps').toBeLessThanOrEqual(1);
+    const last = f[f.length - 1];
+    expect(last.drawnX - x0, 'the picture is at most one step behind the true position').toBeLessThanOrEqual(last.trueX - x0 + 1e-9);
+    expect(last.trueX - last.drawnX, 'and no more than a step (6.4 px) behind').toBeLessThanOrEqual(7);
+  });
+
+  it('a jump of more than 120 px in a step is drawn where it is: a respawn does not smear across the screen', () => {
+    const run = (jump) => {
+      hostedMatch();
+      H.eval(`INTERP_ST.jump = ${jump}; fighters[0].controller = 'still'; fighters[0].x = 300; window.__hop = hazardT + 12;
+        window.__step0 = step; step = function(){ window.__step0(); if(hazardT === window.__hop){ window.__from = fighters[0].x; fighters[0].x += 500; } };`);
+      try {
+        const f = watch(144, 0.4);
+        const from = H.eval('window.__from');
+        return f.filter((x) => x.drawnX > from + 60 && x.drawnX < from + 500 - 60).length;
+      } finally { H.eval('step = window.__step0; INTERP_ST.jump = 120;'); }
+    };
+    expect(run(120), 'no frame is drawn between where it was and where it landed').toBe(0);
+    expect(run(1e9), 'with the guard lifted the same teleport is swept across the screen').toBeGreaterThan(0);
+  });
+
+  it('a 60 Hz screen draws the newest step (no blend, no added delay), and a draw() called any other way draws the true positions', () => {
+    hostedMatch();
+    runRight(true);
+    const f = watch(60, 0.5);
+    runRight(false);
+    for (const x of f) expect(x.drawnX, 'drawn where the sim has it').toBe(x.trueX);
+    H.eval('window.__seen = []; window.__draw0 = draw; draw = function(){ window.__seen.push(fighters[0].x); return window.__draw0.apply(this, arguments); };');
+    room.clock.T += 1000 / 144;
+    const x = H.eval('fighters[0].x');
+    H.eval('draw()');
+    expect(H.eval('window.__seen[0]'), 'a direct draw() is untouched').toBe(x);
+    H.eval('draw = window.__draw0');
+  });
+});
