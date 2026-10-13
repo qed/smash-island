@@ -315,6 +315,19 @@ describe('capture the flag', () => {
     expect(w.eval(`CTF.live.buff[${team1}]`), 'not twice').toBe(0);
   });
 
+  it('a player drops through the maze one-way ledges (and a lift car) by holding Down; a solid floor holds', () => {
+    const { window: w } = loadMonolith(21);
+    start(w);
+    const stand = (sel) => { const P = J(w, `(function(){ var q = worldPlats.filter(${sel}); q.sort(function(a,b){ return a.x-b.x; }); var p = q[Math.floor(q.length/3)]; return { x:p.x, y:p.y, w:p.w }; })()`);
+      w.eval(`(function(){ var f = fighters[0]; f.controller='local'; f.you=true; f.x=${P.x + P.w/2}; f.y=${P.y}-f.r; f.vx=0; f.vy=0; f.onground=true; f.invuln=0; down[KEYS.down]=true; })()`);
+      step(w, 14); w.eval(`down[KEYS.down]=false`);
+      return { y: w.eval('fighters[0].y + fighters[0].r'), top: P.y }; };
+    const ledge = stand('function(p){ return p.hop && !p.solid && p.w >= 100 && p.x < 8000 && p.y > 1200; }');
+    expect(ledge.y, 'fell through the ledge').toBeGreaterThan(ledge.top + 20);
+    const floor = stand('function(p){ return p.solid && p.w >= 400 && p.x < 8000 && p.y > 1200; }');
+    expect(Math.abs(floor.y - floor.top), 'a solid floor holds').toBeLessThan(6);
+  });
+
   it('only capturing all five ends the match: no clock', () => {
     const { window: w } = loadMonolith(9);
     start(w);
