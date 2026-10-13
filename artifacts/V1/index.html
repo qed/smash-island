@@ -4563,7 +4563,7 @@ function startTutorial(){
   running=true; paused=false; hazardT=0;
   particles=[]; projectiles=[]; beams=[]; items=[]; summons=[]; tendrils=[]; itemTimer=1e9;  // no items during the tutorial
   try{ clutchReset(); sndInit(); musicNewMatch('battle'); }catch(e){}
-  buildHUD(); banner(TUT_STEPS[0].text, 2600); loop();
+  buildHUD(); banner(TUT_STEPS[0].text, 2600); startLoop();
 }
 // Called each frame while the tutorial runs.
 function tutorialTick(){
@@ -5024,7 +5024,7 @@ function finishWatchSetup(fx, youPlay, size){
   // this the regal hub loop kept playing straight through every fight.)
   try{ clutchReset(); sndInit(); musicNewMatch('battle'); }catch(e){}
   banner((fx.kind==="group"?"GROUP ":"KNOCKOUT ")+fx.a.name+" vs "+fx.b.name, 1600);
-  buildHUD(); loop();
+  buildHUD(); startLoop();
 }
 // Called each frame during a watched tournament match (from step) to enforce the group time limit.
 function tourneyLiveTick(){
@@ -5481,7 +5481,9 @@ function clipCanvas(){
   }
   return !!CLIP.ctx;
 }
-// Called once per rendered frame. Must stay cheap — it runs inside the game loop.
+// Called once per drawn frame, with the steps that frame moved the match on (loop() counts them; none given is one). A frame
+// that moved nothing -- a 144 Hz screen draws between two steps -- keeps nothing, and the ring takes every CLIP.EVERY'th STEP, so
+// the GIF and the replay run at the speed of the match whatever the screen does. Must stay cheap — it runs inside the game loop.
 //
 // It was not cheap. getImageData is a synchronous GPU readback, and on the owner's laptop it blocked 26-65 ms (median)
 // every 5th frame -- on a host, on every client, and in solo, in every mode. loop() runs one step() per frame, so the
@@ -5489,11 +5491,14 @@ function clipCanvas(){
 // ("there is an input delay sometimes ... what was happening on boss rush before"). Where the browser has
 // createImageBitmap, the frame is scaled down on the GPU and handed back later, off the frame, and its pixels are read
 // only when a GIF or the replay is actually made (clipFrames). Browsers without it keep the old synchronous path.
-function clipCapture(){
+function clipCapture(steps){
   if(typeof document === 'undefined') return;
+  const k = steps === undefined ? 1 : steps;
+  if(!(k > 0)) return;
   const rc = RUN_REC.copy;   // the run recorder's picture at the box's size (see startRunRecording): a copy of this frame, every other one (it records at 30 fps)
   if(rc && RUN_REC.recording && (rc.n++ & 1) === 0){ try{ rc.ctx.drawImage(cv, 0, 0, LOGICAL_W, LOGICAL_H); }catch(e){} }
-  if((CLIP.tick++ % CLIP.EVERY) !== 0) return;
+  const t0 = CLIP.tick; CLIP.tick += k;
+  if(Math.floor((t0 + k - 1)/CLIP.EVERY)*CLIP.EVERY < t0) return;   // a multiple of EVERY among the steps just taken? (k = 1: tick % EVERY === 0)
   try{
     if(typeof createImageBitmap === 'function' && !CLIP.noBitmap && cv && cv.width){
       if((CLIP.pending||0) >= 2) return;   // the GPU is behind: skip this frame rather than queue more
@@ -5765,7 +5770,7 @@ function showRushVictory(lap){
     " in " + Math.floor(secs/60) + ":" + String(secs%60).padStart(2,'0') + ". Keep going and the gauntlet starts again, hitting twice as hard.";
   el.style.display = 'flex';
 }
-function rushKeepGoing(){ const el = document.getElementById('rushVictory'); if(el) el.style.display = 'none'; BOSSRUSH.card = false; paused = false; loop(); }
+function rushKeepGoing(){ const el = document.getElementById('rushVictory'); if(el) el.style.display = 'none'; BOSSRUSH.card = false; paused = false; startLoop(); }
 function rushFinish(){
   const el = document.getElementById('rushVictory'); if(el) el.style.display = 'none';
   running = false; paused = false; BOSSRUSH.active = false; BOSSRUSH.card = false;
@@ -5887,7 +5892,7 @@ function beginMatchNow(){
   if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }
   banner("GO!", 900);
   buildHUD();
-  loop();
+  startLoop();
 }
 
 // ---------- pre-match co-op planning ----------
@@ -7364,8 +7369,7 @@ function drawHitboxOverlay(){
       else if(sh.kind==='capsule'){ ctx.lineWidth = sh.r*2; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(sh.x1, sh.y1); ctx.lineTo(sh.x2, sh.y2); ctx.stroke(); ctx.lineCap='butt'; }
       else if(h.pts && h.pts.length){ ctx.beginPath(); for(let j=0;j<h.pts.length;j+=2){ if(j===0) ctx.moveTo(h.pts[j], h.pts[j+1]); else ctx.lineTo(h.pts[j], h.pts[j+1]); } ctx.closePath(); ctx.stroke(); }
     } else { ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, 7); ctx.stroke(); }
-    if(--h.t <= 0) DEBUG_HITS.splice(i, 1);
-  }
+  }   // (the boxes age in ageView, on the 60 Hz clock)
   ctx.restore();
 }
 addEventListener('keydown', e => {
@@ -7535,27 +7539,68 @@ function hiddenHostTick(){
 }
 addEventListener('visibilitychange', ()=>{ if(hiddenHostWanted()) hiddenHostStart(); else if(HIDDEN_HOST.on) hiddenHostStop(); });
 
+// FIXED STEP. loop() used to run one step() per animation frame, and every number in the game -- a gravity, a cooldown, a boss's
+// timeline -- counts steps and means a 60th of a second. So a 120 Hz screen played the whole match twice as fast, a 144 Hz screen
+// 2.4 times as fast, a machine that fell under 60 fps played it slow, and online the HOST's screen set the speed for the whole room.
+// Now the match runs on a clock, in the shape of the hidden host above: the time that really passed is added to `owed`, and one
+// step() runs for every whole 60th of a second in it. A frame that comes early runs none (it still draws), one that comes late runs
+// two or three. A stall longer than `catchUp` steps is dropped, not raced through, and a gap over `gap` ms -- a pause, a tab that
+// was away, a new match -- restarts the clock (stepClockReset) so nothing bursts. `slack` is how early, in ms, a step may run, so a
+// frame that lands a hair under 1/60 s after the last does not push its step onto the next frame (the debt is paid back: 60 steps a
+// second, on average, to the millisecond). Nothing is interpolated: on a 144 Hz screen the picture changes 60 times a second, which
+// is the speed the numbers always meant.
+const FIXED_STEP = true;   // false: one step() per animation frame, as it was
+const STEP_CLOCK = { ms:1000/60, catchUp:4, gap:250, slack:1, last:0, owed:0 };
+function stepClockReset(){ STEP_CLOCK.last = performance.now(); STEP_CLOCK.owed = 0; }
+// The whole 60ths of a second that passed on clock C since it was last asked (C: { last, owed }; STEP_CLOCK itself drives the match).
+function tickClock(C, now){
+  const S = STEP_CLOCK, dt = now - C.last;
+  C.last = now;
+  if(!(dt >= 0) || dt > S.gap){ C.owed = 0; return 0; }   // a clock that ran backwards, or a long gap: start again from here
+  C.owed = Math.min(C.owed + dt, S.ms*S.catchUp);
+  let n = 0;
+  while(n < S.catchUp && C.owed >= S.ms - S.slack){ C.owed -= S.ms; n++; }
+  return n;
+}
+// A match (or its loop, after a pause) starts: the clock starts with it, owing nothing -- bar the one step the frame that starts it
+// has always taken (loop() was called, so a step ran), so a new match opens on a moved picture and not a still one.
+function startLoop(){ stepClockReset(); STEP_CLOCK.owed = STEP_CLOCK.ms; loop(); }
+// A tab coming back, or going away, never owes the steps it missed.
+addEventListener('visibilitychange', ()=>{ stepClockReset(); });
+// What a DRAWN picture does as time passes, once for each 60th of a second (k) since the last one: the screen shake dies down, the
+// hitbox overlay's red boxes fade. They used to age inside draw(), once per animation frame -- twice as fast on a 120 Hz screen.
+function ageView(k){
+  for(let i = 0; i < k; i++){
+    if(shakeAmt > 0.2) shakeAmt *= 0.85;
+    for(let j = DEBUG_HITS.length - 1; j >= 0; j--){ if(--DEBUG_HITS[j].t <= 0) DEBUG_HITS.splice(j, 1); }
+  }
+}
+
 function loop(){
   if(!running||paused) return;
   // A hidden host's match belongs to the worker's clock (HIDDEN HOST); this loop only waits to be seen again. A loop() that
   // starts or resumes while the tab is hidden hands the match over too, or it would wait for a frame that never comes.
   if(hiddenHostWanted()){ hiddenHostStart(); raf=requestAnimationFrame(loop); return; }
-  if(HIDDEN_HOST.on) hiddenHostStop();
+  if(HIDDEN_HOST.on){ hiddenHostStop(); stepClockReset(); }
   try{
     const role = window.NET ? window.NET.role : "solo";
+    // n: the 60ths of a second that passed since the last frame -- the steps this frame owes (FIXED STEP)
+    const n = FIXED_STEP ? tickClock(STEP_CLOCK, performance.now()) : 1;
     if(role==="client"){
       // Clients never simulate. They send their input (key presses leave the moment they happen -- netInputChanged;
       // this catches a gamepad and sends a slow heartbeat), then draw the host's snapshots: glided between, through
-      // a camera of their own (clientFrame).
+      // a camera of their own (clientFrame), with the ticks of the 60 Hz clock the host's own steps would have been.
       window.NET.sendInput();
-      clientFrame();
+      clientFrame(FIXED_STEP ? n : undefined);
       // A client never runs step(), and step() was the only thing that refreshed the HUD, so a client's stock and
       // damage cards froze at the numbers they started with ("stocks only render on the hosts side").
       try{ updateHUD(); }catch(e){}
-      draw(); clipCapture();
+      draw(); ageView(n); clipCapture(n);
     } else {
-      step(); draw(); clipCapture();
-      if(role==="host") window.NET.broadcastState();   // host relays authoritative state
+      // however many steps the clock owes (none on a frame that came early), then one picture of where the match is now
+      for(let i = 0; i < n && running && !paused; i++) step();
+      draw(); ageView(n); clipCapture(n);
+      if(role==="host" && n > 0) window.NET.broadcastState();   // host relays authoritative state, once for each frame that moved the match
     }
   }catch(err){
     // A thrown frame used to silently kill the loop (blank screen). Log it, show it on-screen once,
@@ -26640,6 +26685,7 @@ function step(){
     }
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
     if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
+    if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the steps after touchdown (it was in drawFighter, so a faster screen squashed for less time)
     // SLAM, THEN HIT: a ground move used in the air drops the fighter fast and goes off on landing (David's
     // Aw Seriously, Snowball's Ground Pound, Rocky's Toxic Wave). The owner's call: "slam, then hit".
     if(f._slam){ if(f.onground){ const fire=f._slam.fire; f._slam=null; fire(); } else if(--f._slam.life<=0) f._slam=null; }
@@ -32883,7 +32929,7 @@ const REPLAY_TAIL  = 24;   // ring frames ≈ 2.0s of match (CLIP.EVERY=5 → ~1
 const REPLAY_HOLD  = 10;   // display frames per source frame: 60/10 = 6fps vs 12fps captured = half speed
 const REPLAY_PAUSE = 30;   // …and half a second held on the KO itself at the end of each pass
 const REPLAY_LOOPS = 2;    // watching it twice is a beat; looping forever is wallpaper
-const REPLAY = { raf:0, i:0, hold:0, loops:0, frames:null, ctx:null };
+const REPLAY = { raf:0, i:0, hold:0, loops:0, frames:null, ctx:null, clk:{ last:0, owed:0 }, fresh:false };   // clk: its own 60 Hz clock (tickClock), so the replay is the same speed on any screen
 // Tournament sim and spectated fixtures never reach a result screen, and test mode and the
 // tutorial are not matches — there is no "final KO" to be instant about. Nothing captured on
 // those paths may be presented as the finish of a match the player just played.
@@ -32927,18 +32973,26 @@ function startReplay(host){
   host.insertBefore(el, host.firstChild);
   host.classList.add('on');
   REPLAY.frames = tail;
+  REPLAY.clk.last = performance.now(); REPLAY.clk.owed = 0; REPLAY.fresh = true;
   const tick = ()=>{
     REPLAY.raf = 0;
     const frames = REPLAY.frames;
     if(!frames || !REPLAY.ctx) return;               // stopped between frames
-    const f = frames[REPLAY.i];
-    if(f){ try{ REPLAY.ctx.putImageData(f, 0, 0); }catch(e){} }
-    const last = REPLAY.i >= frames.length - 1;
-    if(++REPLAY.hold >= (last ? REPLAY_PAUSE : REPLAY_HOLD)){
-      REPLAY.hold = 0;
-      if(!last) REPLAY.i++;
-      else if(++REPLAY.loops >= REPLAY_LOOPS){ REPLAY.frames = null; return; }   // freeze on the KO
-      else REPLAY.i = 0;
+    // REPLAY_HOLD and REPLAY_PAUSE count 60ths of a second, not animation frames: the first picture is one, then the clock says how
+    // many have passed (none on a frame that came early, two on one that came late).
+    const k = REPLAY.fresh ? 1 : tickClock(REPLAY.clk, performance.now());
+    REPLAY.fresh = false;
+    if(k > 0){
+      const f = frames[REPLAY.i];
+      if(f){ try{ REPLAY.ctx.putImageData(f, 0, 0); }catch(e){} }
+      const last = REPLAY.i >= frames.length - 1;
+      REPLAY.hold += k;
+      if(REPLAY.hold >= (last ? REPLAY_PAUSE : REPLAY_HOLD)){
+        REPLAY.hold = 0;
+        if(!last) REPLAY.i++;
+        else if(++REPLAY.loops >= REPLAY_LOOPS){ REPLAY.frames = null; return; }   // freeze on the KO
+        else REPLAY.i = 0;
+      }
     }
     REPLAY.raf = requestAnimationFrame(tick);
   };
@@ -35148,7 +35202,7 @@ function drawProjectile(pr){
 }
 function draw(){
   ctx.save();
-  let sx=0,sy=0; if(shakeAmt>0.2){ sx=(Math.random()*2-1)*shakeAmt; sy=(Math.random()*2-1)*shakeAmt; shakeAmt*=0.85; }
+  let sx=0,sy=0; if(shakeAmt>0.2){ sx=(Math.random()*2-1)*shakeAmt; sy=(Math.random()*2-1)*shakeAmt; }   // it dies down on the 60 Hz clock, not per picture (ageView)
   ctx.clearRect(0,0,W,H); ctx.translate(sx,sy);
 
   // sky — screen-fixed (parallax backdrop). Boss arenas override with a themed backdrop.
@@ -41068,7 +41122,6 @@ function drawFighter(f){
   // would draw the plain picture in the middle of a move, and so is the painted limb rig (drawSpriteBody).
   const skinSp = skin ? cosSkinSprite(skin, f.name) : null, skinLive = !!(skinSp && spriteImage(skinSp));
   if(cos && cos.trail){ try{ drawCosTrail(ctx, cos.trail, f); }catch(e){ cosDrawFail(e); } }
-  if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the frames after touchdown
 
   // ---- Teardrop cloud form ----
   if(f.cloud>0){
@@ -42860,7 +42913,8 @@ function netSwing(f){
   f._atkAnim = Math.min(f._atkLen || ATK_ANIM, f._atk0 + Math.max(0, NET_VIEW.tt - hazardT));
   f._atkPhase = atkPhase(f); f._atkProg = atkPhaseK(f);
 }
-// The same rule step() moves particles by, run by the client on the births the host sent.
+// The same rule step() moves particles by, run by the client on the births the host sent: once per 60th of a second (clientFrame
+// calls it for each tick the clock owes), never once per animation frame, or a particle crossed the screen twice as fast on a 120 Hz one.
 function netStepParticles(){
   if(!particles.length) return;
   for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }
@@ -42882,7 +42936,9 @@ function clientFollow(){
 }
 // The client's own camera, every frame, in every mode: the host's zoom-aware maths (camTarget) and the host's 0.12
 // easing, on this client's fighter, with this client's window size. A respawn or a carry is a pan, as on the host.
-function clientCamera(){
+// `k`: how many 60ths of a second this frame is (1 at 60 fps). The host eases once per step; a client eases once per picture, so its
+// 0.12 is spread over the time instead: the same pace on any screen, and a faster screen still gets a smoother camera.
+function clientCamera(k){
   if(!NET_VIEW.scroll){
     // The host's arena is one screen -- the HOST's screen. Fit all of it into this one, centred. Equal windows: zoom 1,
     // camera 0, exactly as before. (A 1920x1080 host on a 1280x720 client used to put the floor below the screen.)
@@ -42895,18 +42951,25 @@ function clientCamera(){
   if(!f) return;
   const t = camTarget(f.x, f.y, CAM_ZOOM);
   if(!NET_VIEW.camReady){ camX = t.x; camY = t.y; NET_VIEW.camReady = true; return; }   // a match opens on you
-  camX += (t.x-camX)*0.12;
-  camY += (t.y-camY)*0.12;
+  const e = (k === undefined || k === 1) ? 0.12 : 1 - Math.pow(1 - 0.12, k);
+  camX += (t.x-camX)*e;
+  camY += (t.y-camY)*e;
 }
-function clientFrame(){
+// `ticks`: the whole 60ths of a second since the last frame (loop() counts them on the same clock the host's steps are counted on).
+// Called with none -- a test, or FIXED_STEP off -- it is one frame and one tick, as it was.
+function clientFrame(ticks){
   const N = window.NET, s = N && N.snapshot, now = performance.now();
+  const k = ticks === undefined ? 1 : ticks;
+  const camK = (ticks !== undefined && NET_VIEW.lastFrame) ? clamp((now - NET_VIEW.lastFrame)/STEP_CLOCK.ms, 0, 6) : 1;   // real time since the last frame, in steps
   if(NET_VIEW.lastFrame){ const d = now - NET_VIEW.lastFrame; if(d > 0 && d < 100) NET_VIEW.frameDt += (d - NET_VIEW.frameDt)*0.1; }
   NET_VIEW.lastFrame = now;
   if(s && s !== NET_VIEW.applied) applySnapshot(s);
   netInterpolate(now);
-  netStepParticles();
-  stepImpactFx();   // the impacts the host sent, stepped by the host's own rule
-  clientCamera();
+  for(let i = 0; i < k; i++){
+    netStepParticles();
+    stepImpactFx();   // the impacts the host sent, stepped by the host's own rule
+  }
+  clientCamera(camK);
 }
 // A new match (beginMatchNow, on host and client alike).
 function netViewReset(){
@@ -43516,7 +43579,7 @@ function exitTest(){
 function setPaused(on){
   paused = !!on;
   const el = document.getElementById('pauseCard'); if(el) el.style.display = paused ? 'flex' : 'none';
-  if(!paused && running) loop();
+  if(!paused && running) startLoop();
 }
 function quitMatch(){
   setPaused(false);
