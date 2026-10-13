@@ -168,14 +168,19 @@ describe("Tea Kettle: Hors d'Oeuvres, Blow Her Lid, Get Lost, Mama's Gotcha! (th
     expect(boil.pct).toBeGreaterThan(0);
   });
 
-  it('Blow Her Lid burns everyone round her; Get Lost stomps and stuns; the hug holds and squeezes 8%', () => {
+  // RESTATED 2026-10-13 (kit-roles, the owner's pick): Get Lost (a 90 px rise, then a 12% stomp that stuns) was the weakest lift on the roster, below the 128 px default
+  // hop, so the up-special is a Steam Jet: she boils over upward (at least 128 px, here about 170) and scalds whoever is under her (4%, burns). Blow Her Lid and the hug are as they were.
+  it('Blow Her Lid burns everyone round her; the Steam Jet lifts her 128 px or more and scalds the foe under her; the hug holds and squeezes 8%', () => {
     const smash = arena('Tea Kettle', `doSmash(A); for (var i=0;i<40;i++) step(); return { pct: D.pct - 30, burn: D.burn > 0 };`);
     expect(smash.pct).toBeGreaterThan(10);
     expect(smash.burn).toBe(true);
-    const up = arena('Tea Kettle', `fireSpecial(A, {up:true}); var stun = 0;
-      for (var i=0;i<70;i++){ step(); stun = Math.max(stun, D._stunFx||0); } return { pct: D.pct - 30, stun: stun };`, 440);
-    expect(up.pct).toBeCloseTo(12, 0);
-    expect(up.stun).toBeGreaterThan(0);
+    const up = arena('Tea Kettle', `var y0 = A.y; fireSpecial(A, {up:true}); var apex = 0, burn = false;
+      for (var i=0;i<70;i++){ step(); apex = Math.max(apex, y0 - A.y); if (D.burn > 0) burn = true; } return { pct: D.pct - 30, apex: apex, burn: burn };`, 440);
+    expect(up.pct, 'was 12 (the stomp); the steam scald is 4, and the burn ticks a little more over 70 frames').toBeGreaterThanOrEqual(4);
+    expect(up.pct).toBeLessThan(9);
+    expect(up.burn, 'was a stun; the steam burns').toBe(true);
+    const lift = arena('Tea Kettle', `var y0 = A.y; fireSpecial(A, {up:true}); var apex = 0; for (var i=0;i<70;i++){ step(); apex = Math.max(apex, y0 - A.y); } return apex;`, 900);
+    expect(lift, 'the default hop is 128 px; Get Lost was 90').toBeGreaterThanOrEqual(128);
     const hug = arena('Tea Kettle', `fireSpecial(A, {down:true});
       return { pct: D.pct - 30, rooted: D.rooted > 20, held: D.hitstun > 20, close: Math.abs(D.x - A.x) < 50 };`, 440);
     expect(hug).toEqual({ pct: 8, rooted: true, held: true, close: true });
