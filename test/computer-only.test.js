@@ -257,10 +257,10 @@ describe('no tap and no phone wording in anything a player reads', () => {
 // Kept from the file that tested the touch pad (test/touch-controls.test.js, removed with it): these three are about the KEYBOARD's
 // pause, not the pad, and a computer game keeps them.
 describe('pause key', () => {
-  it('is Escape by default, for both players', () => {
+  it('is Escape by default, for the one human at the keyboard (multiplayer is online only: there is no second keymap)', () => {
     const { window: w } = loadMonolith();
     expect(w.eval('DEFAULT_KEYS.pause')).toBe('Escape');
-    expect(w.eval('DEFAULT_KEYS_P2.pause')).toBe('Escape');
+    expect(w.eval('typeof DEFAULT_KEYS_P2 + typeof KEYS_P2 + typeof LOCAL_PLAYERS')).toBe('undefinedundefinedundefined');
     expect(w.eval('KEYS.pause')).toBe('Escape');
   });
 
