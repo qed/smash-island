@@ -2808,7 +2808,7 @@ function ctfEndHide(L){
     }
   }
   for(const f of fighters) f._cam = null;
-  if(!CTF.skipNav && L.edits.some(ctfEditStructural)){ ctfFixBegin(L); return; }   // walls and platforms were built: check the way is still open before the match starts
+  if(!CTF.skipNav && L.edits.some(e=>ctfEditStructural(e) && e.elev == null)){ ctfFixBegin(L); return; }   // walls and platforms were built: check the way is still open before the match starts
   ctfStartPlay(L);
 }
 function ctfStartPlay(L){
@@ -2906,6 +2906,7 @@ function ctfStepKeys(L){
     if(k.st === 2) continue;
     if(k.lockT > 0) k.lockT--;
     if(k.st === 1){
+      k.elev = null;
       const h = fighters[k.hold];
       if(!h || h._jail != null){ ctfDropKey(k, h); continue; }
       k.x = h.x; k.y = h.y - h.r - 4;
@@ -2922,7 +2923,7 @@ function ctfStepKeys(L){
       if(k.st !== 1) continue;
       continue;
     }
-    if(k.fall){ k.vy = (k.vy||0) + 0.5; k.y += k.vy; const s = ctfSurfaceBelow(k.x, k.y - k.vy - 4, 200); if(s !== null && k.y >= s){ k.y = s; k.fall = false; k.vy = 0; } else if(k.y > CTF.map.WH + 100){ k.x = k.hx; k.y = k.hy; k.fall = false; } }
+    if(k.fall){ k.vy = (k.vy||0) + 0.5; k.y += k.vy; const s = ctfSurfaceBelow(k.x, k.y - k.vy - 4, 200); if(s !== null && k.y >= s){ k.y = s; k.fall = false; k.vy = 0; k.elev = ctfLiftUnder(L, k.x, k.y); } else if(k.y > CTF.map.WH + 100){ k.x = k.hx; k.y = k.hy; k.fall = false; } }
     for(const f of fighters){
       if(f._ck >= 0 || f._jail != null) continue;
       if(k.lockT > 0 && k.lock === f.idx) continue;
@@ -2938,13 +2939,20 @@ function ctfDropKey(k, f){
 }
 // A lift runs between its two stops, pausing at each; whoever stands on it rides.
 const CTF_ELEV_SPEED = 3.6;
+// Whatever lies on a moving platform goes where it goes: which lift (if any) has its top at (x, y)?
+function ctfLiftUnder(L, x, y){ for(const e of (L.elevs || [])) if(x >= e.x - 2 && x <= e.x + e.w + 2 && Math.abs(e.y - y) < 8) return e.i; return null; }
 function ctfStepElevs(L){
   for(const e of L.elevs){
     if(e.pause > 0){ e.pause--; continue; }
     const target = e.dir > 0 ? e.y1 : e.y0, d = Math.sign(target - e.y)*Math.min(CTF_ELEV_SPEED, Math.abs(target - e.y));
     const top0 = e.y;
     e.y += d; e.rect.y = e.y;
-    for(const fl of L.flags) if(fl.st === 1 && fl.elev === e.i){ fl.y = e.y; fl.hy = e.y; }
+    for(const fl of L.flags) if((fl.st === 1 || (fl.st === 3 && !fl.fall)) && fl.elev === e.i){ fl.y = e.y; if(fl.st === 1) fl.hy = e.y; }
+    for(const k of L.keys) if(k.st === 0 && !k.fall && k.elev === e.i) k.y = e.y;
+    let rebuild = false;
+    for(const p of L.edits){ if(p.elev !== e.i) continue; p.y += d; p.fy += d; if(p.tool === 'plat' || p.tool === 'wall' || p.kind === 'trapdoor') rebuild = true;
+      if(p.tool === 'plat' || p.tool === 'wall'){ const top0 = p.y - d; for(const f of fighters){ if(f.dead || f._jail != null || !f.onground) continue; if(f.x > p.x - 6 && f.x < p.x + p.w + 6 && Math.abs(f.y + f.r - top0) < 8){ f.y += d; f.vy = 0; } } } }
+    if(rebuild) ctfRebuildDyn(L);
     for(const f of fighters){ if(f.dead || f._jail != null || !f.onground) continue;
       if(f.x > e.x - 6 && f.x < e.x + e.w + 6 && Math.abs(f.y + f.r - top0) < 8){ f.y += d; f.vy = 0; } }
     if(e.y === target){ e.dir = -e.dir; e.pause = 150; }
@@ -2994,17 +3002,17 @@ function ctfStepFlags(L){
     if(fl.fall){
       fl.vy += 0.5; fl.y += fl.vy;
       const s = ctfSurfaceBelow(fl.x, fl.y - fl.vy - 4, 300);
-      if(s !== null && fl.y >= s){ fl.y = s; fl.fall = false; fl.vy = 0; }
+      if(s !== null && fl.y >= s){ fl.y = s; fl.fall = false; fl.vy = 0; fl.elev = ctfLiftUnder(L, fl.x, fl.y); }
       else if(fl.y > CTF.map.WH + 100) ctfReturnFlag(fl);
     }
     for(const f of fighters){
       if(f._jail != null) continue;
       if(Math.abs(f.x - fl.x) < CTF_FLAG_R + f.r*0.5 && f.y > fl.y - 100 && f.y < fl.y + 30){
         if(f.team === fl.team){   // its own side's flag, lying where it fell: picked up, to be hidden again somewhere new (the flag key)
-          if(fl.st === 3 && f._cf < 0 && !(fl.lockT > 0 && fl.lockIdx === f.idx)){ fl.st = 2; fl.car = f.idx; f._cf = fl.id; fl.fall = false; fl.revealT = 0; ctfSfx('pick'); break; }
+          if(fl.st === 3 && f._cf < 0 && !(fl.lockT > 0 && fl.lockIdx === f.idx)){ fl.st = 2; fl.car = f.idx; f._cf = fl.id; fl.fall = false; fl.elev = null; fl.revealT = 0; ctfSfx('pick'); break; }
         }
         else if(f._cf < 0 && !(fl.lockT > 0 && fl.lockIdx === f.idx)){
-          fl.st = 2; fl.car = f.idx; f._cf = fl.id; fl.fall = false; L.seen[0][fl.id] = L.seen[1][fl.id] = true; fl.revealT = CTF_REVEAL_GRAB;   // on both sides' minimaps for 5 s
+          fl.st = 2; fl.car = f.idx; f._cf = fl.id; fl.fall = false; fl.elev = null; L.seen[0][fl.id] = L.seen[1][fl.id] = true; fl.revealT = CTF_REVEAL_GRAB;   // on both sides' minimaps for 5 s
           if(L.foundAt[f.team][fl.id] == null) L.foundAt[f.team][fl.id] = L.playT;
           ctfSfx('pick'); break;
         }
@@ -3241,6 +3249,7 @@ function ctfEditSettle(L){   // flags whose floor went away (a removed platform)
 }
 function ctfEditAdd(f, tool, kind, sh){
   const L = CTF.live, e = { id:++L.editSeq, team:f.team, owner:f.idx, tool, kind, x:sh.x, y:sh.y, w:sh.w, h:sh.h, fy:sh.fy, cx:sh.cx, cost:CTF_COSTS[tool], seq:L.editSeq, hp:tool === 'deco' ? 1 : 0, open:false, openT:0, stand:0 };
+  for(const lf of (L.elevs || [])) if(e.x < lf.x + lf.w && e.x + e.w > lf.x && Math.abs((e.y + e.h) - lf.y) < 8){ e.elev = lf.i; e.off = e.y - lf.y; break; }   // placed on a lift car: it rides
   L.pts[f.idx] -= e.cost; L.edits.push(e); L.editT = L.t;
   if(ctfEditStructural(e) || kind === 'trapdoor') ctfRebuildDyn(L);
   if(tool === 'deco') for(const fl of L.flags) if(fl.st === 1 && fl.team === f.team) fl.cover = ctfCoverAt(fl.team, fl.x, fl.y);
@@ -3363,10 +3372,10 @@ function ctfEditStep(L){
 }
 
 // ---- "must be possible": the check that runs when the hiding ends -----------------------------------------------------------------------------------------
-function ctfEditRects(L, keepN){ return L.edits.filter(ctfEditStructural).sort((a, b)=>a.seq - b.seq).slice(0, keepN).map(e=>({ x:e.x, y:e.y, w:e.w, h:e.h })); }
+function ctfEditRects(L, keepN){ return L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).sort((a, b)=>a.seq - b.seq).slice(0, keepN).map(e=>({ x:e.x, y:e.y, w:e.w, h:e.h })); }
 function ctfEditNav(L, keepN){ return ctfNavNew(ctfEditMap(L, keepN), CTF.navs && CTF.navs[CTF.mapId], ctfEditRects(L, keepN)); }
 function ctfEditMap(L, keepN){   // the map with the first keepN walls and platforms in it (oldest first)
-  const M = CTF.map, st = L.edits.filter(ctfEditStructural).sort((a, b)=>a.seq - b.seq).slice(0, keepN);
+  const M = CTF.map, st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).sort((a, b)=>a.seq - b.seq).slice(0, keepN);
   return Object.assign({}, M, { plats:M.plats.concat(st.map(e=>({ x:e.x, y:e.y, w:e.w, h:e.h, solid:e.tool === 'wall', hop:e.tool === 'plat' }))) });
 }
 // What cannot be reached in this graph: a flag (from the other side's home), a key (from both), the jail's door (from the prisoners' side).
@@ -3379,12 +3388,12 @@ function ctfEditProblems(L, nav){
 }
 function ctfEditPrebuild(L){   // while they are still hiding: once the edits have been left alone for a couple of seconds, start the graph with them in it
   if(CTF.skipNav || !CTF.nav || !CTF.nav.ready) return;
-  const st = L.edits.filter(ctfEditStructural).length; if(!st){ L.pre = null; return; }
+  const st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).length; if(!st){ L.pre = null; return; }
   if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 8); return; }
   if(L.t - L.editT >= 120) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
 }
 function ctfFixBegin(L){
-  const st = L.edits.filter(ctfEditStructural).sort((a, b)=>a.seq - b.seq);
+  const st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).sort((a, b)=>a.seq - b.seq);
   L.phase = 'fix'; ctfRebuildDyn(L);
   L.fix = { st, lo:0, hi:null, keep:st.length, navs:{} };
   if(L.pre && L.pre.seq === L.editSeq && L.pre.n === st.length) L.fix.navs[st.length] = L.pre.nav;
@@ -3482,7 +3491,7 @@ function ctfNetOut(){
   o.ff = (L.freeFx || []).map(q=>[R(q.x), R(q.y), q.t | 0, q.team]);
   const key = L.edits.map(e=>e.id + (e.open ? 'o' : '')).join(',') + '|' + Object.keys(L.gone).join(',');
   if(key !== CTF._netKey || ((CTF._netN = (CTF._netN || 0) + 1) % 90) === 0){
-    o.e = L.edits.map(e=>[e.id, e.team, e.owner, e.tool, e.kind, R(e.x), R(e.y), R(e.w), R(e.h), R(e.fy), R(e.cx), e.open ? 1 : 0, e.cost | 0]);
+    o.e = L.edits.map(e=>[e.id, e.team, e.owner, e.tool, e.kind, R(e.x), R(e.y), R(e.w), R(e.h), R(e.fy), R(e.cx), e.open ? 1 : 0, e.cost | 0, e.elev == null ? -1 : e.elev, e.off | 0]);
     o.g = Object.keys(L.gone).map(Number); CTF._netKey = key;
   }
   return o;
@@ -3529,9 +3538,10 @@ function ctfNetIn(c){
   L.flash = c.fx ? { team:c.fx[0], t:c.fx[1], soft:!!c.fx[2] } : null;
   L.freeFx = (c.ff || []).map(q=>({ x:q[0], y:q[1], t:q[2], team:q[3] }));
   if(c.e){
-    L.edits = c.e.map(r=>({ id:r[0], team:r[1], owner:r[2], tool:r[3], kind:r[4], x:r[5], y:r[6], w:r[7], h:r[8], fy:r[9], cx:r[10], open:!!r[11], cost:r[12], hp:r[3] === 'deco' ? 1 : 0 }));
+    L.edits = c.e.map(r=>({ id:r[0], team:r[1], owner:r[2], tool:r[3], kind:r[4], x:r[5], y:r[6], w:r[7], h:r[8], fy:r[9], cx:r[10], open:!!r[11], cost:r[12], hp:r[3] === 'deco' ? 1 : 0, elev:r[13] < 0 ? null : r[13], off:r[14] }));
     L.gone = {}; (c.g || []).forEach(i=>{ L.gone[i] = true; }); dyn = true;
   }
+  for(const p of L.edits){ if(p.elev == null) continue; const e = L.elevs[p.elev]; if(!e) continue; const ny = e.y + p.off; if(ny !== p.y){ p.fy += ny - p.y; p.y = ny; if(p.tool === 'plat' || p.tool === 'wall' || p.kind === 'trapdoor') dyn = true; } }   // a riding piece goes with its lift: sent as the lift and an offset
   if(dyn) ctfRebuildDyn(L);
 }
 // After applySnapshot has rebuilt the fighters: their CTF fields back to the names the drawing reads.

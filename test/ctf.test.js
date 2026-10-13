@@ -598,6 +598,29 @@ describe('capture the flag', () => {
     expect(w.eval(`CTF.live.flags[0].y === CTF.live.elevs[${lift.i}].y`), 'the flag rides the car').toBe(true);
   });
 
+  it('what is put on a lift rides with it: a decoration and a wall that you build, and a flag or key that lands there', () => {
+    const { window: w } = loadMonolith(37);
+    hideStart(w);
+    const a = mate(w, 0, 1);
+    const lift = J(w, `(function(){ var e = CTF.live.elevs.filter(function(e){ return e.x < 8000; })[0]; return { i:e.i, x:e.x + e.w/2, y:e.y, w:e.w }; })()`);
+    expect(w.eval(`!!ctfEditPlaceAt(fighters[${a}], 'deco', 'crate', ${lift.x}, ${lift.y - 20})`), 'a crate goes on the lift car').toBe(true);
+    const p = J(w, `CTF.live.edits[0]`);
+    expect(p.elev, 'it rides that lift').toBe(lift.i);
+    w.eval(`CTF.live.elevs[${lift.i}].pause = 0; CTF.live.elevs[${lift.i}].dir = 1`);
+    for (let i = 0; i < 40; i++) w.eval('ctfStepElevs(CTF.live)');
+    const moved = w.eval(`CTF.live.elevs[${lift.i}].y`) - lift.y;
+    expect(moved, 'the lift moved').toBeGreaterThan(50);
+    expect(w.eval('CTF.live.edits[0].y') - p.y, 'and the crate went with it').toBeCloseTo(moved, 3);
+    expect(w.eval('CTF.live.edits[0].fy'), 'standing on the car').toBe(w.eval(`CTF.live.elevs[${lift.i}].y`));
+    // a flag dropped onto the car lies there and goes with it
+    w.eval(`(function(){ var L = CTF.live, e = L.elevs[${lift.i}], fl = L.flags[${a}]; fl.st = 3; fl.fall = true; fl.vy = 0; fl.x = e.x + e.w/2; fl.y = e.y - 60; fl.car = -1; })()`);
+    for (let i = 0; i < 30; i++) w.eval('ctfStepFlags(CTF.live)');
+    expect(w.eval(`CTF.live.flags[${a}].elev`), 'it landed on the car').toBe(lift.i);
+    const y0 = w.eval(`CTF.live.flags[${a}].y`);
+    for (let i = 0; i < 30; i++) w.eval('ctfStepElevs(CTF.live)');
+    expect(w.eval(`CTF.live.flags[${a}].y`) !== y0, 'and rode it').toBe(true);
+  });
+
   it('only capturing all five ends the match: no clock', () => {
     const { window: w } = loadMonolith(9);
     start(w);
