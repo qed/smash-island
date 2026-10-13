@@ -179,6 +179,7 @@ describe('Unit 7 — team construction', () => {
 // out, so TOURNEY_TIME_LIMIT IS the length of the fight. It was ~20s, which a 2-a-side game barely
 // got past the first exchange of. These pin the new length and — more importantly — pin down that
 // the clock governs ONLY watched group fixtures.
+// (2026-10-13: group fixtures are stock fights now; the clock is the default cap on one that will not end by itself.)
 describe('World Cup — watched group fixtures run long enough to be a match', () => {
   it('each fighter in a fixture is hit by its OWN hurtbox and has its own KO cap (a real bug: the slots were renamed, not rebuilt)', () => {
     // the owner, 2026-10-13: "hurtboxes are different in world cup" -- every slot kept the hurtbox of whoever buildFighters had put there
@@ -201,11 +202,63 @@ describe('World Cup — watched group fixtures run long enough to be a match', (
     }
   });
 
-  it('runs a watched group fixture for about forty seconds', () => {
+  // Restated 2026-10-13. This pin used to say a watched group fixture runs about forty seconds (38-75 s) on endless stocks, scored on KOs
+  // when the clock ran out. The owner asked for "group matches fought on stocks" (2 by default, knockouts keeping their rules): the fight now
+  // ends when a side is out, and the clock (90 s by default, set on the setup screen) is only a cap on a fight that will not end by itself.
+  it('fights a watched group fixture on stocks (2 each by default), with a clock that is only a cap', () => {
     const { window: w } = loadMonolith();
     const frames = w.eval('TOURNEY_TIME_LIMIT');
-    expect(frames / 60, 'seconds of group match').toBeGreaterThanOrEqual(38);
-    expect(frames / 60, '…but still a fixture, not a full match').toBeLessThanOrEqual(75);
+    expect(frames / 60, 'seconds of cap on a group match').toBeGreaterThanOrEqual(60);
+    expect(frames / 60, '…still a fixture, not a full match').toBeLessThanOrEqual(150);
+    startTourney(w);
+    const r = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false);
+        var out = { stocks: fighters.map(function(f){ return f.stocks; }), total: g._stk0.slice() };
+        TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false; running = false;
+        return out;
+      })()`);
+    expect(r.stocks, "every fighter has the cup's 2 group stocks, none infinite").toEqual([2, 2]);
+    expect(r.total, 'and each side started with the sum').toEqual([2, 2]);
+  });
+
+  it('scores a group fixture by the stocks each side took, whoever wipes the other out or leads on the clock', () => {
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const r = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false);
+        fighters[1].stocks = 0; fighters[1].dead = true;       // side B is wiped out; side A lost one of its two
+        fighters[0].stocks = 1;
+        finishWatchedGroup(g);
+        return { sa: g.result.sa, sb: g.result.sb, a: g.a.pts, b: g.b.pts };
+      })()`);
+    expect(r).toEqual({ sa: 2, sb: 1, a: 3, b: 0 });
+    // the same fight on the clock: equal stocks lost is a draw
+    const d = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group' && !f.played; });   // the group's other game: two teams that have not played
+        watchFixture(g, false);
+        finishWatchedGroup(g);
+        return { sa: g.result.sa, sb: g.result.sb, a: g.a.pts, b: g.b.pts };
+      })()`);
+    expect(d).toEqual({ sa: 0, sb: 0, a: 1, b: 1 });
+  });
+
+  it('a knockout that runs out of clock still has a winner: the side with more stocks left', () => {
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const win = w.eval(`
+      (function(){
+        TOURNEY_CFG.kTime = 120;
+        var g = TOURNEY.fixtures[0]; g.kind = 'ko';
+        watchFixture(g, false);
+        fighters[0].stocks = 1; fighters[1].stocks = 3;
+        return cupTimedWinner(g);
+      })()`);
+    expect(win).toBe(1);
   });
 
   it('arms the clock for a GROUP fixture and leaves knockout on elimination', () => {
