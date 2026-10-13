@@ -270,7 +270,8 @@ async function recoveryParent(){
   const all = w0.eval('ROSTER.filter(function(r){ return r.play && !r.prize; }).map(function(r){ return r.name; })'); try { w0.close(); } catch {}
   const names = args.only ? args.only.split(',') : all;
   const launches = [];
-  for (const side of [-1, 1]) for (const vx of [12, 16, 20]) launches.push({ side, vx, vy: -9, y: 'floor' });
+  const vxs = (args.vx || '12,16,20').split(',').map(Number), vy = +(args.vy || -9);
+  for (const side of [-1, 1]) for (const vx of vxs) launches.push({ side, vx, vy, y: 'floor' });
   const jobs = [];
   for (const st of stages) for (const nm of names) jobs.push({ recovery: true, name: nm, stage: st, launches, seed: 77 });
   const dir = mkdtempSync(path.join(tmpdir(), 'platr-'));
