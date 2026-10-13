@@ -397,6 +397,9 @@
   .cuprow{display:flex; flex-direction:column; gap:3px; align-items:flex-start; max-width:100%}
   .cupcol .seg{flex-wrap:wrap}
   .cupcol .seg button{padding:4px 10px; font-size:12.5px}
+  /* the World Cup teammate pick reuses the fighter select: no match settings, no team huddle, taken fighters dimmed */
+  #select.pickmates #settings, #select.pickmates .selrow2, #select.pickmates #teamChatPanel{display:none !important}
+  #select .cell.taken{opacity:.35; filter:grayscale(.7)}
   .cupchips{display:flex; flex-wrap:wrap; gap:5px; max-width:430px}
   .cupchip{font-family:inherit; font-weight:700; font-size:12px; border:2px solid #1c1c1c; border-radius:8px; background:var(--panel); padding:2px 8px; cursor:pointer}
   .cupchip.on{background:var(--host); color:#fff}
@@ -1070,8 +1073,8 @@
   <div id="select" class="screen">
     <div class="selhead">
       <div class="selttl">
-        <h1>Pick your fighter</h1>
-        <div class="brand">Cake at Stake · Contestant Select</div>
+        <h1 id="selTitle">Pick your fighter</h1>
+        <div class="brand" id="selBrand">Cake at Stake · Contestant Select</div>
       </div>
       <div class="legend selhint">
         <div class="selhinttext">
@@ -1240,7 +1243,7 @@
         </div>
 
         <span class="kv selsum" id="matchSummary" style="color:#555"></span>
-        <button class="btn ghost sm" onclick="go('title')">◀ Back</button>
+        <button class="btn ghost sm" id="selBackBtn" onclick="selectBack()">◀ Back</button>
         <button class="btn" id="startBtn" onclick="startMatch()">Start Match ▶</button>
       </div>
     </div>
@@ -3089,7 +3092,7 @@ function go(id){
   if(id!=='_none_' && id!=='result'){ try{ returnDailyLoan(); }catch(e){} }
   const el=document.getElementById(id);
   if(el){el.classList.add('active');}
-  if(id==='select'){ buildBoard(); syncModeUI(); }
+  if(id==='select'){ buildBoard(); syncModeUI(); cupPickSync(); }
   if(id==='tourneySetup'){ cupSyncUI(); }
   if(id==='lobby'){ try{ loadLobbyArt(); }catch(e){} }   // the lobby's portraits are fetched now, not when the page loaded
   if(id==='controls'){ buildMaps(); buildCustomMusic(); }
@@ -3382,9 +3385,10 @@ function buildBoard(){
     if(r.dlc && dlcHead !== r.dlc){ dlcHead = r.dlc;   // the DLC pack's own group, labelled
       const h=document.createElement('div'); h.className='dlchead'; h.innerHTML=`<span class="cellname">${r.dlc} DLC</span>`; b.appendChild(h); }
     const banned = oneBanned(r), erased = banned && oneErased(r);   // banned: cannot be picked; erased: drawn with the ✖
-    const open = r.play && isUnlocked(r) && !banned;
+    const taken = cupTaken(r);   // World Cup teammate pick: already on your team
+    const open = r.play && isUnlocked(r) && !banned && !taken;
     const c=document.createElement('div');
-    c.className='cell '+(open?'play':(erased?'locked erased':'locked'));
+    c.className='cell '+(open?'play':(erased?'locked erased':'locked'))+(taken?' taken':'');
     if(open && r.name===chosen.name) c.classList.add('sel');
     c.appendChild(fighterThumb(r));
     const nm=document.createElement('span'); nm.className='cellname'; nm.textContent=r.name;
@@ -3394,13 +3398,13 @@ function buildBoard(){
     // "rival" from the select." RIVAL_NAME still feeds the line on My Stats.)
     if(open){ c.onclick=()=>pickCell(r, c); }
     else {
-      const hint = erased ? oneEraseHint() : unlockHint(r.name);
-      c.title = r.name+(erased ? " — " : " — locked · ")+hint;
+      const hint = taken ? 'already on your team' : erased ? oneEraseHint() : unlockHint(r.name);
+      c.title = r.name+(taken ? " — " : erased ? " — " : " — locked · ")+hint;
       // A cell has no room for criterion text, so clicking a locked cell explains it in the note above the moves (the hover tooltip says the same, but only
       // while the mouse rests on the cell).
       c.onclick = ()=>{
         const n=document.getElementById('lockNote');
-        if(n){ n.textContent = (erased ? "✖ " : "🔒 ")+r.name+" — "+hint; n.style.display='block'; } };
+        if(n){ n.textContent = (taken ? "✔ " : erased ? "✖ " : "🔒 ")+r.name+" — "+hint; n.style.display='block'; } };
     }
     b.appendChild(c);
   });
@@ -3568,6 +3572,7 @@ function updateSummary(){
   // In local team mode the Start button opens the strategy huddle first — label it so it's expected.
   const sb=document.getElementById('startBtn');
   if(sb){ sb.textContent = "Start Match ▶"; }
+  cupPickSync();   // a World Cup team pick has its own labels
 }
 // Every smash has had a name, a colour and a sound since the identity pass, and nothing anywhere
 // told the player what it DOES. Now that all but six are SMASH_SPEC rows, the sentence can be
@@ -4482,7 +4487,19 @@ function startMatch(){
   if(!TUT.active) oneCoercePick();
   // If a World Cup was queued (normal mode), the character you just picked becomes your team's leader.
   if(PENDING_TOURNEY){
-    const pt=PENDING_TOURNEY; PENDING_TOURNEY=null;
+    const pt=PENDING_TOURNEY;
+    if(pt.pickMates){
+      // this Start took the fighter on the grid: your own first, then one teammate at a time until the team is full
+      if(!pt.lead){ pt.lead = chosen; pt.mates = []; } else pt.mates.push(chosen);
+      if(pt.mates.length < pt.size-1){
+        chosen = ROSTER.find(r=>r.play && isUnlocked(r) && !oneBanned(r) && !cupTaken(r)) || chosen;   // the grid opens on a fighter who is free
+        go('select'); return;
+      }
+      chosen = pt.lead; PENDING_TOURNEY = null;
+      startTournament(pt.size, pt.mode, { mates: pt.mates.map(m=>m.name) });
+      return;
+    }
+    PENDING_TOURNEY=null;
     startTournament(pt.size, pt.mode);   // startTournament reads `chosen` for your team
     return;
   }
@@ -4709,6 +4726,31 @@ function finishTutorial(skip){
   tutorialRestore();
   go('select');
 }
+// ---- PICK YOUR TEAMMATES (World Cup, normal mode, 2v2 / 3v3) ----
+// The fighter select again, one pick per seat: you, then each teammate ("pick your teammates ... in the same pick screen style as the fighter
+// select"). PENDING_TOURNEY.lead is your fighter once you have pressed the first Start; mates holds the teammates picked so far.
+function cupPicking(){ const pt = PENDING_TOURNEY; return (pt && pt.pickMates && pt.lead) ? pt : null; }   // non-null while a TEAMMATE is being picked
+function cupTaken(r){ const pt = cupPicking(); return !!pt && (pt.lead.name===r.name || pt.mates.some(m=>m.name===r.name)); }
+function cupPickSync(){
+  const sel = document.getElementById('select'), pt = PENDING_TOURNEY; if(!sel) return;
+  const mates = cupPicking(), onCup = !!(pt && pt.pickMates);
+  sel.classList.toggle('pickmates', !!mates);
+  const set = (id, t) => { const e = document.getElementById(id); if(e) e.textContent = t; };
+  const you = document.querySelector('#select .selyou'); if(you) you.textContent = mates ? 'TEAMMATE '+(pt.mates.length+1) : 'YOU';
+  set('selTitle', mates ? 'Pick teammate '+(pt.mates.length+1)+' of '+(pt.size-1) : 'Pick your fighter');
+  set('selBrand', mates ? 'World Cup · your team so far: '+[pt.lead, ...pt.mates].map(m=>m.name).join(', ') : onCup ? 'World Cup · you are picking your team' : 'Cake at Stake · Contestant Select');
+  set('startBtn', mates ? (pt.mates.length+1 < pt.size-1 ? 'Next teammate ▶' : 'Kick Off ▶') : onCup ? 'Pick teammates ▶' : 'Start Match ▶');
+  if(onCup) set('matchSummary', 'World Cup · '+pt.size+'v'+pt.size);
+}
+// Back, one step: the last teammate, then your own fighter, then the setup screen. (Outside a teammate pick, Back is the title as ever.)
+function selectBack(){
+  const pt = PENDING_TOURNEY;
+  if(pt && pt.pickMates){
+    if(pt.lead){ if(pt.mates.length) chosen = pt.mates.pop(); else { chosen = pt.lead; pt.lead = null; } go('select'); return; }
+    PENDING_TOURNEY = null; go('tourneySetup'); return;
+  }
+  go('title');
+}
 function openTournamentSetup(){
   // simple settings gate: choose team size, then start
   go('tourneySetup');
@@ -4717,7 +4759,8 @@ function openTournamentSetup(){
 // mode there's no player, so it starts straight away.
 function kickOffTournament(){
   if(TOURNEY_SETUP_MODE==="normal"){
-    PENDING_TOURNEY = { size:TOURNEY_SETUP_SIZE, mode:"normal" };
+    // a 2v2 or 3v3 with "I pick them": your fighter first, then each teammate, on this same screen (see cupPickSync / startMatch)
+    PENDING_TOURNEY = { size:TOURNEY_SETUP_SIZE, mode:"normal", pickMates: TOURNEY_SETUP_SIZE>1 && TOURNEY_CFG.mates==="pick", lead:null, mates:[] };
     go('select');   // pick your character; the select screen's Start button will launch the tournament
   } else {
     PENDING_TOURNEY = null;
@@ -4762,6 +4805,9 @@ function startTournament(teamSize, mode, opts){
   if(mode==="normal"){
     myTeam = teams[Math.floor(Math.random()*cupSize)];
     const me = chosen || pool[0];
+    // the teammates you picked (2v2 / 3v3, "I pick them"); at most teamSize-1, never you twice, only fighters in the pool
+    const matesIn = ((opts && opts.mates) || []).map(n=>pool.find(r=>r.name===n)).filter((r,i,a)=>r && r!==me && a.indexOf(r)===i).slice(0, Math.max(0, teamSize-1));
+    const lead = [me, ...matesIn];   // your whole picked side, in seat order
     // Your pick LEADS your team, and seating it used to duplicate it two different ways.
     //
     // ACROSS teams: the draw may already have spent your fighter on somebody else's side, and at
@@ -4770,20 +4816,21 @@ function startTournament(teamSize, mode, opts){
     // every other side first and backfill them from the bag.
     for(const t of teams){
       if(t===myTeam) continue;
-      const j = t.members.indexOf(me);
-      if(j<0) continue;
-      const rep = draw(t.members);              // t.members still holds `me`, so rep is never `me`
-      if(rep) t.members[j]=rep; else t.members.splice(j,1);
+      for(const m of lead){
+        const j = t.members.indexOf(m);
+        if(j<0) continue;
+        const rep = draw([...t.members, ...lead]);   // never a fighter of yours, nor one this side already has
+        if(rep) t.members[j]=rep; else t.members.splice(j,1);
+      }
       t.name = teamName(t.members, t.id);
     }
     // WITHIN your team: assigning slot 0 outright fielded the same fighter twice whenever the draw
     // had put your pick elsewhere on this same side — the duplicate the per-team check exists to
     // prevent, reintroduced one line later. Pull it out of wherever it landed; if it isn't here at
     // all, evict a slot and hand that fighter back to the bag.
-    const dup = myTeam.members.indexOf(me);
-    if(dup >= 0) myTeam.members.splice(dup, 1);
-    else if(myTeam.members.length) bag.push(myTeam.members.pop());
-    myTeam.members.unshift(me);
+    const others = myTeam.members.filter(m=>!lead.includes(m)), room = Math.max(0, teamSize - lead.length);
+    for(const m of others.slice(room)) bag.push(m);   // the drawn fighters your picks pushed out go back to the bag
+    myTeam.members = [...lead, ...others.slice(0, room)];
     myTeam.name = teamName(myTeam.members, myTeam.id);
   }
   TOURNEY = {

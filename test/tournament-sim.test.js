@@ -383,3 +383,49 @@ describe('World Cup — big stages', () => {
     expect(r.onScreen, 'and the fight is on screen').toBe(true);
   });
 });
+
+// ---- Pick your teammates -------------------------------------------------------------------------
+describe('World Cup — pick your teammates', () => {
+  it('walks the fighter select once per seat, then seats your picks together and nowhere else in the cup', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`
+      (function(){
+        var free = ROSTER.filter(function(r){ return r.play && isUnlocked(r); }).slice(0, 3).map(function(r){ return r.name; });
+        TOURNEY_SETUP_MODE = 'normal'; TOURNEY_SETUP_SIZE = 3; TOURNEY_CFG.mates = 'pick'; TOURNEY_CFG.cup = 16;
+        kickOffTournament();
+        var out = { stage:[] };
+        chosen = ROSTER.find(function(r){ return r.name === free[0]; }); startMatch();   // you
+        out.stage.push(document.getElementById('selTitle').textContent + '|' + document.querySelectorAll('#board .cell.taken').length + '|' + document.getElementById('startBtn').textContent);
+        chosen = ROSTER.find(function(r){ return r.name === free[1]; }); startMatch();   // teammate 1
+        out.stage.push(document.getElementById('selTitle').textContent + '|' + document.querySelectorAll('#board .cell.taken').length + '|' + document.getElementById('startBtn').textContent);
+        selectBack();                                                                       // back: teammate 1 is un-picked
+        out.back = document.getElementById('selTitle').textContent + '|' + document.querySelectorAll('#board .cell.taken').length + '|' + chosen.name;
+        chosen = ROSTER.find(function(r){ return r.name === free[1]; }); startMatch();
+        chosen = ROSTER.find(function(r){ return r.name === free[2]; }); startMatch();   // teammate 2: the cup starts
+        out.free = free; out.team = TOURNEY.myTeam.members.map(function(m){ return m.name; }); out.pending = PENDING_TOURNEY; out.chosen = chosen.name;
+        out.elsewhere = TOURNEY.teams.filter(function(t){ return t !== TOURNEY.myTeam; }).filter(function(t){ return t.members.some(function(m){ return free.indexOf(m.name) >= 0; }); }).length;
+        out.sizes = TOURNEY.teams.every(function(t){ return t.members.length === 3; });
+        return out;
+      })()`);
+    expect(r.stage[0]).toMatch(/^Pick teammate 1 of 2\|1\|Next teammate/);
+    expect(r.stage[1]).toMatch(/^Pick teammate 2 of 2\|2\|Kick Off/);
+    expect(r.back, 'Back un-picks the last teammate and gives the grid back').toBe('Pick teammate 1 of 2|1|' + r.free[1]);
+    expect(r.team, 'your side, in seat order').toEqual(r.free);
+    expect(r.pending, 'the pick is over').toBe(null);
+    expect(r.chosen, 'you lead your side').toBe(r.free[0]);
+    expect(r.elsewhere, 'nobody else in the cup has any of them').toBe(0);
+    expect(r.sizes).toBe(true);
+  });
+
+  it('keeps the random draw when the setup says so, and for solo', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`
+      (function(){
+        TOURNEY_SETUP_MODE = 'normal'; TOURNEY_SETUP_SIZE = 2; TOURNEY_CFG.mates = 'random'; kickOffTournament();
+        var a = PENDING_TOURNEY.pickMates; PENDING_TOURNEY = null;
+        TOURNEY_SETUP_SIZE = 1; TOURNEY_CFG.mates = 'pick'; kickOffTournament();
+        return [a, PENDING_TOURNEY.pickMates];
+      })()`);
+    expect(r).toEqual([false, false]);
+  });
+});
