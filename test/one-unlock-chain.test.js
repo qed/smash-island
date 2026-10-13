@@ -678,7 +678,9 @@ describe('the review\'s fixes to the chain', () => {
       if(!fx){ TOURNEY.round = 0; buildGroupFixtures(); fx = TOURNEY.fixtures.find(function(f){ return f.a===TOURNEY.myTeam || f.b===TOURNEY.myTeam; }); }
       watchFixture(fx, true);
       var you = fighters.find(function(f){ return f.you; });
-      fighters.forEach(function(f){ f._kos = (f.team===you.team) ? ${kosMine} : ${kosTheirs}; });
+      // Restated 2026-10-13: a group fixture is a STOCK fight now (2 stocks each), scored by the stocks each side took, not by _kos. kosMine is
+      // the stocks YOUR side took from theirs, kosTheirs the stocks they took from yours: the same win, loss and draw as before.
+      fighters.forEach(function(f){ f.stocks = 2 - ((f.team===you.team) ? ${kosTheirs} : ${kosMine}); f.dead = f.stocks <= 0; });
       finishWatchedGroup(fx);
       return { erased:PROFILE.one.erased.slice(), hub:document.getElementById('tourneyHubBody').textContent, you:you.name };
     })()`);
