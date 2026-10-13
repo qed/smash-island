@@ -27116,6 +27116,7 @@ function step(){
   for(const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--; }
   particles=particles.filter(p=>p.life>0);
   stepImpactFx();   // impact's dust, debris and floor scars (render-only)
+  stepLandFx();     // landing dust (HIT EFFECTS, render-only)
 
   if(RACE.active) raceTick();   // RUNNING!: the line advances, the throw is charged and flies, the hazards fall and pound (see raceTick)
   updateCamera();
@@ -31315,6 +31316,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
     const a = Math.max(-1.35, Math.min(0.25, Math.atan2(kby, Math.abs(kbx)) - smAng*SMASH_ANGLE_TILT));
     kbx = sx*L*Math.cos(a); kby = L*Math.sin(a);
   }
+  const hitGround = t.onground;   // (for the dust a launch kicks up: hitFx)
   knock(t, kbx*scale, kby*scale - t.pct*0.025);
   // Each link of a chain stuns for less, so a chain ends even before CHAIN_MAX (see chainOpen). The stun, the chain and the
   // hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
@@ -31329,6 +31331,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   t._hurt=90;   // any hit suppresses heal-over-time (Fern) for ~1.5s so aggression can break through
   t.flash=8;
   puff(t.x,t.y-6,'#fff',5); puff(t.x,t.y-6,(from&&from.color)||'#fff',4);   // a boss's shot (its owner is {team:-1, idx:-2}) and a hazard (null) have no colour: the sparks had none either, and drew in whatever fill the last thing left
+  hitFx(t, from, dmg, hitGround);   // the layered sparks, the flash ring on a heavy hit, the launch dust (HIT EFFECTS)
   if(t.you||from?.you) shake(dmg);
   // per-character damage KO: pile on enough % and they burst regardless of position
   if(t.pct>=t.koCap && !t.dead) eliminate(t);   // no "maxed out!" line ("Remove them all"): eliminate puts up the KO line, the one line a KO keeps
@@ -31587,6 +31590,7 @@ function eliminate(f){
   }
   puff(f.x, Math.max(20,Math.min(WH-20,f.y)), '#fff', 22);
   puff(f.x, Math.max(20,Math.min(WH-20,f.y)), f.color, 14);
+  koStarburst(f.x, f.y, f.color);   // the star at the blast zone (HIT EFFECTS)
   try{ cosKoBurst(f); }catch(e){}   // the KO effect of whoever knocked them out: drawn only, and never a roll of the dice
   shake(9);
   if(f.you) banner(f.stocks>0 ? "KO'd! − a stock" : "You're out!", 1100, null, true);   // local: a client gets its own (applySnapshot)
@@ -33518,6 +33522,55 @@ function renderNetResults(){
 
 // ---------- particles ----------
 function puff(x,y,color,n){ for(let i=0;i<n;i++) particles.push({x,y,vx:Math.random()*4-2,vy:Math.random()*-3-1,life:14+Math.random()*10,color,r:2+Math.random()*3}); }
+// ---------- HIT EFFECTS (render-only) ----------
+// Layered on the engine's own puffs, and ART ONLY: nothing here is read by a hitbox, a fighter or the AI. A hit throws a fan of streak sparks along its launch
+// (more and faster the harder it was: its damage and its knockback), a heavy one (power >= 1) adds a white flash ring, a hit that launches a fighter off the floor kicks up
+// a puff of the floor's dust, a hard landing does too (stepLandFx), and a KO bursts into a star at the blast zone (koStarburst).
+// They are plain `particles`, so a client gets them in the births it already steps (netStepParticles) and they run on the same 60-a-second clock as every other one. Two of them
+// are not round: a particle whose colour reads "s|#rrggbb" is a STREAK (a short line along its way) and "r|#rrggbb" a RING (swelling and fading over its 8 steps); the prefix
+// rides the colour string through the snapshot unchanged, and a client that knows neither just draws a small dot. The count is capped: past HITFX.room particles alive the
+// extras give way, so an 8-fighter free-for-all stays smooth.
+const HITFX = { room:260, ring:8 };
+function hitFxPower(dmg, sp){ return Math.max(0, Math.min(1.6, (+dmg || 0)/20 + (+sp || 0)/26)); }
+function hitFx(t, from, dmg, grounded){
+  if(!(dmg > 0) || particles.length > HITFX.room) return;
+  const sp = Math.hypot(t.vx || 0, t.vy || 0), power = hitFxPower(dmg, sp), x = t.x, y = t.y - 6;
+  const ang = Math.atan2(t.vy || 0, t.vx || (t.face || 1)), tint = (from && typeof from.color === 'string' && from.color.charAt(0) === '#' && from.color.length === 7) ? from.color : '#ffd34d';
+  const cols = ['#ffffff', '#fff1a0', '#ffc94a', tint], n = 2 + Math.round(power*4) + (power >= 1 ? 3 : 0);
+  for(let i = 0; i < n; i++){
+    const back = i % 4 === 3, a = (back ? ang + Math.PI : ang) + (Math.random() - 0.5)*(back ? 1.2 : 1.6), v = (3.5 + power*4.5 + Math.random()*3)*(back ? 0.7 : 1);
+    particles.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v - 0.4, life:9 + Math.random()*6 + power*3, r:1.5 + power*0.9 + Math.random()*0.6, color:'s|' + cols[i % cols.length] });
+  }
+  if(power >= 1){
+    particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:16 + power*9, color:'r|#ffffff' });
+    if(power >= 1.3) particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:9 + power*5, color:'r|' + tint });
+  }
+  if(grounded && sp >= 10){   // launched off the floor: dust kicks out behind the feet
+    const col = impactGroundColor(), fy = t.y + (t.r || 24), dir = Math.sign(t.vx) || 1;
+    for(let i = 0; i < 2 + Math.round(power*2); i++){ const side = i % 2 ? 1 : -1; particles.push({ x:t.x + side*6, y:fy - 2, vx:side*(0.8 + Math.random()*2.2) - dir*0.6, vy:-0.3 - Math.random()*0.9, life:15 + Math.random()*9, r:2.6 + Math.random()*3, color:col }); }
+  }
+}
+// The star a KO bursts into, where the fighter crossed the blast zone (kept inside the arena, so it is seen): two rings and a fan of streaks all round.
+function koStarburst(x, y, color){
+  if(particles.length > HITFX.room*1.5) return;
+  x = Math.max(64, Math.min(WW - 64, x)); y = Math.max(64, Math.min(WH - 64, y));
+  const tint = (typeof color === 'string' && color.charAt(0) === '#' && color.length === 7) ? color : '#ffd34d', cols = ['#ffffff', '#ffe27a', tint];
+  particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:46, color:'r|#ffffff' });
+  particles.push({ x, y, vx:0, vy:-0.6, life:HITFX.ring, r:28, color:'r|' + tint });
+  const j = Math.random()*0.4;
+  for(let i = 0; i < 14; i++){ const a = i/14*Math.PI*2 + j, v = 8 + Math.random()*6; particles.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v, life:17 + Math.random()*8, r:2.4 + (i % 2)*0.8, color:'s|' + cols[i % 3] }); }
+}
+// Once a step (after the particles move): a fighter that was falling fast and has just touched a surface kicks the dust up. Reads the fighter, never writes one.
+function stepLandFx(){
+  for(const f of fighters){
+    if(f.dead){ f._lgOn = false; continue; }
+    if(f.onground && !f._lgOn && f._lvy >= 9 && particles.length <= HITFX.room){
+      const col = impactGroundColor(), n = Math.max(2, Math.min(6, 2 + Math.round((f._lvy - 9)/3))), fy = f.y + (f.r || 24);
+      for(let i = 0; i < n; i++){ const side = i % 2 ? 1 : -1; particles.push({ x:f.x + side*5, y:fy - 2, vx:side*(0.9 + Math.random()*2.2), vy:-0.3 - Math.random()*0.8, life:14 + Math.random()*9, r:2.6 + Math.random()*3, color:col }); }
+    }
+    f._lgOn = !!f.onground; f._lvy = f.vy || 0;
+  }
+}
 // A splash: droplets thrown up and out to both sides, the way a belly-flop lands (Pickle's missed dive). Particles
 // only -- drawn, falling and gone; nothing here touches a fighter.
 function splashDrops(x,y,color,n){ for(let i=0;i<n;i++){ const side = i%2 ? 1 : -1; particles.push({x, y, vx:side*(0.8+Math.random()*3.2), vy:-(2.2+Math.random()*3.4), life:16+Math.random()*10, color, r:1.6+Math.random()*2}); } }
@@ -36144,9 +36197,20 @@ function draw(){
   drawLaunchingProjectiles();
 
   // particles
-  for(const p of particles){ ctx.globalAlpha=Math.max(0,Math.min(1,p.life/22)); ctx.fillStyle=p.color;   // (a fresh puff lives up to 24: past 1 the canvas keeps the last alpha)
+  ctx.lineCap='round';
+  for(const p of particles){
+    if(p._k === undefined){ const k = p.color; p._k = (typeof k === 'string' && k.charCodeAt(1) === 124) ? k.charCodeAt(0) : 0; if(p._k) p._c = k.slice(2); }   // "s|" a streak spark, "r|" a flash ring (HIT EFFECTS)
+    if(p._k === 115){   // a spark: a short bright line along the way it is going
+      ctx.globalAlpha=Math.max(0,Math.min(1,p.life/10)); ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(p.x-p.vx*1.5,p.y-p.vy*1.5);
+      ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=p.r*1.5 + 2.4; ctx.stroke(); ctx.strokeStyle=p._c; ctx.lineWidth=p.r*1.5; ctx.stroke(); continue;   // (a thin dark edge, so a white spark shows on a bright sky)
+    }
+    if(p._k === 114){   // a ring: swells over its life and fades
+      const u = Math.max(0, Math.min(1, p.life/HITFX.ring)); ctx.globalAlpha=0.15 + 0.85*u; ctx.strokeStyle=p._c; ctx.lineWidth=1.5 + 4*u;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r*(0.55 + 1.2*(1-u)),0,7); const lw = 1.5 + 4*u; ctx.strokeStyle='#1c1c1c'; ctx.lineWidth=lw + 2.4; ctx.stroke(); ctx.strokeStyle=p._c; ctx.lineWidth=lw; ctx.stroke(); continue;
+    }
+    ctx.globalAlpha=Math.max(0,Math.min(1,p.life/22)); ctx.fillStyle=p.color;   // (a fresh puff lives up to 24: past 1 the canvas keeps the last alpha)
     ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill(); }
-  ctx.globalAlpha=1;
+  ctx.globalAlpha=1; ctx.lineCap='butt';
   drawImpactFx();            // impact's dust rings and debris
   drawArenaHazard('over');   // and a boss arena's hazard, over the fighters
   drawCosKoFx();   // cosmetic KO bursts (see WIN TOKENS): drawn from their own list, never from `particles`
