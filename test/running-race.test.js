@@ -460,7 +460,9 @@ describe('the hazard combinations: tighter windows, every one with its tell', ()
         expect(Math.min(d, 1 - d), 'lit in a wave that runs with the runner').toBeLessThan(0.02);
       }
       for (const j of js) {
-        expect(Math.min(j.burn, j.period - j.warn) / j.period, 'burning most of the time').toBeGreaterThanOrEqual(0.5);
+        // it burned most of the time (half its cycle or more); then the owner (2026-10-13): "make fire cycles in running longer" -- the whole cycle 50% longer, the same
+        // burn -- so a jet burns a third of its cycle or more, and rests the rest
+        expect(Math.min(j.burn, j.period - j.warn) / j.period, 'still burning a third of the time or more: the burn kept, the cycle 50% longer').toBeGreaterThanOrEqual(0.5 / 1.5 - 0.01);
         expect(j.warn + j.burn, 'a cycle is the glow and the burn and a rest').toBeLessThanOrEqual(j.period);
         expect(j.period - j.burn - (j.w + 2 * L.r) / v, 'a window to cross one: what is left of the glow and the rest once he has crossed it, 5 frames or more').toBeGreaterThanOrEqual(5);
       }
