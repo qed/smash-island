@@ -399,6 +399,136 @@ describe('capture the flag', () => {
     expect(bad, 'prop kinds that fail to draw').toEqual([]);
   });
 
+  // ---- editing your area while hiding ----
+  const hideStart = (w, nav = false) => w.eval(`CTF.skipNav=${!nav}; SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='castle'; beginMatchNow(); fighters.forEach(function(f){ f.you=false; if(f.idx>0) f.controller='still'; }); fighters[0].controller='local'; fighters[0].you=true;`);
+  // a free place on team 0's side: a floor inside a room, with air above it
+  const roomSpot = (w) => J(w, `(function(){ var s = CTF.map.spots.filter(function(s){ return s.team===0 && s.y>1500 && s.x<8000; })[3]; return { x:s.x, y:s.y }; })()`);
+  const tryPlace = (w, who, tool, kind, x, y, offs = [0, 130, -130, 260, -260, 390, -390, 520]) => { for (const dx of offs) { const ok = w.eval(`!!ctfEditPlaceAt(fighters[${who}], '${tool}', '${kind}', ${x + dx}, ${y})`); if (ok) return dx; } return null; };
+
+  it('editing the area: pieces cost points, go on your own side only, can be removed (a piece you placed refunds, a prop of the map costs one)', () => {
+    const { window: w } = loadMonolith(31);
+    hideStart(w);
+    const a = mate(w, 0, 1), sp = roomSpot(w);
+    expect(w.eval(`CTF.live.pts[${a}]`), 'twenty points to start').toBe(20);
+    expect(tryPlace(w, a, 'deco', 'crate', sp.x, sp.y - 20), 'a crate goes down').not.toBeNull();
+    expect(w.eval(`CTF.live.pts[${a}]`), 'a decoration is 1').toBe(19);
+    expect(tryPlace(w, a, 'plat', 'plat', sp.x, sp.y - 240), 'a thin platform goes up').not.toBeNull();
+    expect(w.eval(`CTF.live.pts[${a}]`), 'a platform is 2').toBe(17);
+    expect(tryPlace(w, a, 'wall', 'block', sp.x, sp.y - 60), 'a block goes down').not.toBeNull();
+    expect(w.eval(`CTF.live.pts[${a}]`), 'a wall is 3').toBe(14);
+    expect(tryPlace(w, a, 'trap', 'stun', sp.x, sp.y - 20), 'a trap goes down').not.toBeNull();
+    expect(w.eval(`CTF.live.pts[${a}]`), 'a trap is 5').toBe(9);
+    expect(tryPlace(w, a, 'trap', 'spikes', sp.x, sp.y - 20), 'a second trap fits (4 left)').not.toBeNull();
+    expect(tryPlace(w, a, 'trap', 'spring', sp.x, sp.y - 20), 'not enough points for a third').toBeNull();
+    expect(tryPlace(w, a, 'deco', 'crate', MID + 1200, sp.y - 20, [0]), 'not on the other side').toBeNull();
+    expect(tryPlace(w, a, 'deco', 'crate', MID - 100, sp.y - 20, [0]), 'not by the line').toBeNull();
+    const n0 = w.eval('CTF.live.edits.length');
+    const wall = J(w, `CTF.live.edits.filter(function(e){ return e.tool==='wall'; })[0]`);
+    const before = w.eval(`CTF.live.pts[${a}]`);
+    expect(w.eval(`ctfEditRemoveAt(fighters[${a}], ${wall.x + 20}, ${wall.y + 20})`), 'a piece of yours comes away').toBe(true);
+    expect(w.eval(`CTF.live.pts[${a}]`), 'and gives its 3 back').toBe(before + 3);
+    expect(w.eval('CTF.live.edits.length')).toBe(n0 - 1);
+    // a prop of the map: costs one, and a flag behind it is in the open afterwards
+    const pr = J(w, `(function(){ var i = CTF.map.spots.findIndex(function(s){ return s.team===0 && s.cover; }); var s = CTF.map.spots[i]; return { i:i, x:s.x, y:s.y }; })()`);
+    w.eval(`ctfPlaceFlag(CTF.live.flags[${a}], ${pr.x}, ${pr.y})`);
+    expect(w.eval(`CTF.live.flags[${a}].cover`)).toBe(true);
+    const b4 = w.eval(`CTF.live.pts[${a}]`);
+    expect(w.eval(`ctfEditRemoveAt(fighters[${a}], ${pr.x}, ${pr.y - 40})`)).toBe(true);
+    expect(w.eval(`CTF.live.pts[${a}]`), 'a map prop costs 1').toBe(b4 - 1);
+    expect(w.eval(`!!CTF.live.gone[${pr.i}]`)).toBe(true);
+    expect(w.eval(`CTF.live.flags[${a}].cover`), 'the flag that was behind it is out in the open').toBe(false);
+  });
+
+  it('a decoration you placed breaks when it is hit; walls and platforms do not; traps catch only the other side', () => {
+    const { window: w } = loadMonolith(32);
+    hideStart(w);
+    const a = mate(w, 0, 1), foe = mate(w, 1, 1), sp = roomSpot(w);
+    tryPlace(w, a, 'deco', 'crate', sp.x, sp.y - 20, [0, 200, -200, 400]);
+    const d = J(w, `CTF.live.edits.filter(function(e){ return e.tool==='deco'; })[0]`);
+    tryPlace(w, a, 'trap', 'spikes', sp.x - 600, sp.y - 20, [0, 100, 200, -100, -200, 300, 400]);
+    tryPlace(w, a, 'wall', 'block', sp.x, sp.y - 60, [300, -300, 450, -450, 600]);
+    w.eval(`ctfEndHide(CTF.live)`);
+    expect(w.eval('CTF.live.phase')).toBe('play');
+    const nWall = w.eval(`CTF.live.edits.filter(function(e){ return e.tool==='wall'; }).length`);
+    // a swing next to the crate
+    w.eval(`(function(){ var f = fighters[${foe}]; f.x = ${d.cx - 70}; f.y = ${d.fy} - f.r; f.face = 1; f.vx = 0; f.vy = 0; f._atkSeq = (f._atkSeq||0) + 1; })()`);
+    w.eval('ctfEditStep(CTF.live)');
+    expect(w.eval(`CTF.live.edits.filter(function(e){ return e.tool==='deco'; }).length`), 'the swing broke the crate').toBe(0);
+    expect(w.eval(`CTF.live.edits.filter(function(e){ return e.tool==='wall'; }).length`), 'a wall does not break').toBe(nWall);
+    // spikes: bump the other side, no damage; the placer's own side walks over them
+    const sk = J(w, `CTF.live.edits.filter(function(e){ return e.kind==='spikes'; })[0]`);
+    expect(sk, 'spikes were placed').toBeTruthy();
+    w.eval(`(function(){ var g = fighters[${a}]; g.x = ${sk.cx}; g.y = ${sk.fy} - g.r; g.vy = 0; g.pct = 0; })()`); w.eval('ctfEditStep(CTF.live)');
+    expect(w.eval(`fighters[${a}].vy`), 'a teammate is not bumped').toBe(0);
+    w.eval(`(function(){ var g = fighters[${foe}]; g.x = ${sk.cx}; g.y = ${sk.fy} - g.r; g.vy = 0; g.pct = 0; g._trapT = 0; })()`); w.eval('ctfEditStep(CTF.live)');
+    expect(w.eval(`fighters[${foe}].vy`), 'the other side is bumped up').toBeLessThan(-5);
+    expect(w.eval(`fighters[${foe}].pct`), 'with no damage').toBe(0);
+  });
+
+  it('a trapdoor gives way under the other side, and a stun trap stuns it', () => {
+    const { window: w } = loadMonolith(33);
+    hideStart(w);
+    const a = mate(w, 0, 1), foe = mate(w, 1, 1), sp = roomSpot(w);
+    const dx = tryPlace(w, a, 'trap', 'trapdoor', sp.x, sp.y - 240);
+    expect(dx, 'a trapdoor goes up').not.toBeNull();
+    tryPlace(w, a, 'trap', 'stun', sp.x - 700, sp.y - 20, [0, 120, 240, -120, -240, 360]);
+    w.eval(`ctfEndHide(CTF.live)`);
+    const td = J(w, `CTF.live.edits.filter(function(e){ return e.kind==='trapdoor'; })[0]`);
+    expect(w.eval('ctfDynSolids().some(function(p){ return p.trapdoor; })'), 'the plank is solid').toBe(true);
+    for (let i = 0; i < 14; i++) { w.eval(`(function(){ var g = fighters[${foe}]; g.x = ${td.cx}; g.onground = true; g.y = ${td.y} - g.r; g.vy = 0; ctfEditStep(CTF.live); })()`); }
+    expect(w.eval('ctfDynSolids().some(function(p){ return p.trapdoor; })'), 'it opened').toBe(false);
+    const st = J(w, `CTF.live.edits.filter(function(e){ return e.kind==='stun'; })[0]`);
+    expect(st).toBeTruthy();
+    w.eval(`(function(){ var g = fighters[${foe}]; g.x = ${st.cx}; g.y = ${st.fy} - g.r; g.vy = 0; g.hitstun = 0; g._trapT = 0; })()`); w.eval('ctfEditStep(CTF.live)');
+    expect(w.eval(`fighters[${foe}].hitstun`), 'stunned').toBeGreaterThan(20);
+  });
+
+  it('bargaining: the CPU side accepts an offer that is the same for both and declines a lopsided one; humans vote', () => {
+    const { window: w } = loadMonolith(34);
+    hideStart(w);
+    const a = mate(w, 0, 0), foe = mate(w, 1, 1);
+    const offer = (piece) => { w.eval(`fighters[${a}]._piece = ${piece}; CTF.live.offerCool = 0; ctfEditOffer(fighters[${a}])`); for (let i = 0; i < 100; i++) w.eval('ctfEditStep(CTF.live)'); };
+    offer(0);   // both +10
+    expect(w.eval(`CTF.live.pts[${a}]`), 'both +10 accepted').toBe(30);
+    expect(w.eval(`CTF.live.pts[${foe}]`)).toBe(30);
+    offer(2);   // only us +10
+    expect(w.eval(`CTF.live.pts[${a}]`), 'a lopsided offer is declined').toBe(30);
+    offer(1);   // both -10
+    expect(w.eval(`CTF.live.pts[${a}]`), 'both -10 accepted').toBe(20);
+    expect(w.eval(`CTF.live.pts[${foe}]`)).toBe(20);
+    // with a human on the other side the human decides
+    w.eval(`fighters[${foe}].controller='remote'`);
+    w.eval(`fighters[${a}]._piece = 0; CTF.live.offerCool = 0; ctfEditOffer(fighters[${a}])`);
+    for (let i = 0; i < 200; i++) w.eval('ctfEditStep(CTF.live)');
+    expect(w.eval('!!CTF.live.offer'), 'it waits for the human').toBe(true);
+    w.eval(`ctfEditVote(fighters[${foe}], false)`); w.eval('ctfEditStep(CTF.live)');
+    expect(w.eval('!!CTF.live.offer'), 'a no settles it').toBe(false);
+    expect(w.eval(`CTF.live.pts[${a}]`)).toBe(20);
+  });
+
+  it('must be possible: pieces that shut a flag away are taken out when the hiding ends (newest first); the rest stay', { timeout: 120000 }, () => {
+    const { window: w } = loadMonolith(35);
+    hideStart(w, true);
+    w.eval(`while(!CTF.nav.ready) ctfNavTick(CTF.nav, 80);`);
+    const a = mate(w, 0, 1), sp = roomSpot(w);
+    // the flag of team 0's fighter a is on the floor at sp; a harmless platform first (oldest), then walls that wall the flag in
+    w.eval(`ctfPlaceFlag(CTF.live.flags[${a}], ${sp.x}, ${sp.y})`);
+    w.eval(`(function(){ var P = fighters[${a}]; CTF.live.pts[P.idx] = 99;
+      var add = function(tool, kind, x, y, w, h){ var e = { id:++CTF.live.editSeq, team:0, owner:P.idx, tool:tool, kind:kind, x:x, y:y, w:w, h:h, fy:y+h, cx:x+w/2, cost:1, seq:CTF.live.editSeq, hp:0, open:false, openT:0, stand:0 }; CTF.live.edits.push(e); return e; };
+      add('plat','plat', ${sp.x - 1500}, ${sp.y - 300}, 180, 16);
+      for(var k = 0; k < 4; k++){ add('wall','block', ${sp.x - 220}, ${sp.y} - 120*(k+1), 120, 120); }
+      for(var k = 0; k < 4; k++){ add('wall','block', ${sp.x + 100}, ${sp.y} - 120*(k+1), 120, 120); }
+      CTF.live.editT = CTF.live.t; ctfRebuildDyn(CTF.live); })()`);
+    expect(w.eval('CTF.live.edits.length')).toBe(9);
+    w.eval(`CTF.live.done = {}; ctfEndHide(CTF.live)`);
+    expect(w.eval('CTF.live.phase'), 'checking before the match').toBe('fix');
+    for (let i = 0; i < 4000 && w.eval('CTF.live.phase') === 'fix'; i++) w.eval('ctfStep()');
+    expect(w.eval('CTF.live.phase'), 'then the match').toBe('play');
+    expect(w.eval('CTF.live.removedByFix'), 'some of the walls came out').toBeGreaterThan(0);
+    expect(w.eval(`CTF.live.edits.some(function(e){ return e.tool==='plat'; })`), 'the harmless one stays').toBe(true);
+    expect(J(w, 'ctfEditProblems(CTF.live, CTF.nav)'), 'everything is reachable').toEqual([]);
+  });
+
   it('only capturing all five ends the match: no clock', () => {
     const { window: w } = loadMonolith(9);
     start(w);

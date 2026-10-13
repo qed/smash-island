@@ -2003,11 +2003,12 @@ const STAGES = [
 // ---------- CONTROLS ----------
 const DEFAULT_KEYS = {left:"ArrowLeft",right:"ArrowRight",jump:"ArrowUp",down:"ArrowDown",
   attack:"KeyX",special:"KeyC",smash:"KeyV",pause:"Escape",
-  flag:"Space"};   // Capture the Flag's hiding phase: puts your flag down (or picks it up again)
+  flag:"Space",   // Capture the Flag's hiding phase: puts your flag down (or picks it up again)
+  edit:"KeyB"};   // ...and in the free camera, picks the next piece of the tool (attack picks the tool)
 // Multiplayer is ONLINE only (the owner, many times): one human at this keyboard, so one keymap.
 let KEYS = JSON.parse(JSON.stringify(DEFAULT_KEYS));
 const KEY_LABELS = {left:"Move Left",right:"Move Right",jump:"Jump",down:"Down / Crouch",
-  attack:"Attack",special:"Special",smash:"Smash",pause:"Pause",flag:"Put flag down (Capture the Flag)"};
+  attack:"Attack",special:"Special",smash:"Smash",pause:"Pause",flag:"Put flag down (Capture the Flag)",edit:"Next piece (Capture the Flag editing)"};
 
 // ---------- state ----------
 let chosen = ROSTER.find(r=>r.play);
@@ -2640,6 +2641,7 @@ function ctfBegin(){
     L.flags.push(fl);
   }
   L.seen = [ fighters.map(()=>false), fighters.map(()=>false) ]; L.cseen = [ fighters.map(()=>false), fighters.map(()=>false) ];
+  ctfEditNew(L);
   ctfRebuildDyn(L);
   CTF.cpuHide = {};
   try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); }
@@ -2650,7 +2652,8 @@ function ctfRebuildDyn(L){
   for(const d of L.doors) if(!(d.op[0] && d.op[1])) out.push({ x:d.x, y:d.y, w:d.w, h:d.h, solid:true, door:d.id, dref:d });   // (a door open for one team is still a wall for the other: the step asks dref.op)
   for(const j of L.jails) if(!j.door.open) out.push({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, solid:true, jailDoor:j.owner });
   for(const e of (L.elevs || [])) out.push(e.rect);   // a lift's platform is a one-way ledge that moves (ctfStepElevs)
-  if(L.phase === 'hide') out.push({ x:CTF.map.WW/2 - 30, y:-400, w:60, h:CTF.map.WH + 400, solid:true, barrier:true });
+  for(const e of ctfEditDyn(L)) out.push(e);   // what the players built: walls, thin platforms, trapdoors
+  if(L.phase === 'hide' || L.phase === 'fix') out.push({ x:CTF.map.WW/2 - 30, y:-400, w:60, h:CTF.map.WH + 400, solid:true, barrier:true });
   L.dyn = out;
 }
 function ctfDynSolids(){ return CTF.live ? CTF.live.dyn : []; }
@@ -2678,12 +2681,12 @@ function ctfLOS(x0, y0, x1, y1, team){
     return true;
   };
   for(const p of worldPlats) if(p.solid && hit(p)) return false;
-  for(const p of ctfDynSolids()) if(!(team != null && p.dref && p.dref.op[team]) && hit(p)) return false;
+  for(const p of ctfDynSolids()) if(!(team != null && p.dref && p.dref.op[team]) && !(p.hop && !p.solid) && hit(p)) return false;
   return true;
 }
 
 // ---- input filter: the hiding phase's two keys, and a prisoner's stillness --------------------------------------
-const CTF_NOINP = { left:false, right:false, jump:false, down:false, up:false, attack:false, special:false, smash:false, flag:false };
+const CTF_NOINP = { left:false, right:false, jump:false, down:false, up:false, attack:false, special:false, smash:false, flag:false, edit:false };
 function ctfFilterInput(f, inp){
   const L = CTF.live; if(!L || L.over) return inp;
   if(f._jail != null){   // a prisoner: attack = watch the next teammate, the flag key = ping the flag this fighter saw last
@@ -2696,20 +2699,29 @@ function ctfFilterInput(f, inp){
   if(L.phase !== 'hide' && f._cf >= 0 && L.flags[f._cf] && L.flags[f._cf].team === f.team){   // carrying one of its own side's flags that was dropped: the flag key hides it again
     const p = !!inp.flag; if(p && !f._ctfS) ctfPlaceCarried(f); f._ctfS = p;
   }
+  if(L.phase === 'fix') return CTF_NOINP;   // the check that the edits leave every flag, key and the jail reachable: everybody waits
   if(L.phase === 'hide'){
-    const atk = !!inp.flag, sp = !!inp.special, sm = !!inp.smash;   // the flag key (Space) puts the flag down or picks it up; special is "done"; smash is the free camera
-    if(sm && !f._ctfM){ f._cam = f._cam ? null : { x:f.x, y:f.y - 40 }; }
-    f._ctfM = sm;
-    if(atk && !f._ctfA) ctfHidePlace(f);
-    if(sp && !f._ctfS) ctfToggleDone(f);
-    f._ctfA = atk; f._ctfS = sp;
+    // the flag key (Space) puts the flag down or picks it up; special is "done"; smash is the free camera. In the free camera Space uses the picked TOOL (attack cycles the
+    // tools, the edit key the pieces of a tool: ctfEditAct). An offer to your side waits for Space (yes) or attack (no).
+    const fk = !!inp.flag, sp = !!inp.special, sm = !!inp.smash, ak = !!inp.attack, ek = !!inp.edit;
+    const fkE = fk && !f._ctfA, spE = sp && !f._ctfS, smE = sm && !f._ctfM, akE = ak && !f._ctfX, ekE = ek && !f._ctfB;
+    f._ctfA = fk; f._ctfS = sp; f._ctfM = sm; f._ctfX = ak; f._ctfB = ek;
+    if(smE){ f._cam = f._cam ? null : { x:f.x, y:f.y - 40 }; f._tool = 0; f._piece = 0; }
+    const voting = ctfIsHuman(f) && L.offer && L.offer.to === f.team && L.offer.votes[f.idx] == null;
+    if(voting){ if(fkE) ctfEditVote(f, true); else if(akE) ctfEditVote(f, false); }
+    else if(f._cam){
+      if(akE){ f._tool = ((f._tool || 0) + 1) % CTF_TOOLS.length; f._piece = 0; }
+      if(ekE) f._piece = (f._piece || 0) + 1;
+      if(fkE) ctfEditAct(f);
+    } else if(fkE) ctfHidePlace(f);
+    if(spE) ctfToggleDone(f);
     if(f._cam){   // the free camera: the arrows steer a cursor over the whole of the player's own side, the fighter stands still
       const M = CTF.map, mid = M.WW/2, c = f._cam;
       c.x = clamp(c.x + ((inp.right ? 1 : 0) - (inp.left ? 1 : 0))*CTF_CAM_SPEED, f.team === 0 ? 40 : mid + 40, f.team === 0 ? mid - 40 : M.WW - 40);
       c.y = clamp(c.y + ((inp.down ? 1 : 0) - ((inp.up || inp.jump) ? 1 : 0))*CTF_CAM_SPEED, 40, M.WH - 40);
       return CTF_NOINP;
     }
-    return { left:inp.left, right:inp.right, jump:inp.jump, down:inp.down, up:inp.up, attack:false, special:false, smash:false, flag:false };
+    return { left:inp.left, right:inp.right, jump:inp.jump, down:inp.down, up:inp.up, attack:false, special:false, smash:false, flag:false, edit:false };
   }
   return inp;
 }
@@ -2724,7 +2736,7 @@ function ctfHideValid(team, x, y){
 }
 function ctfPlaceFlag(fl, x, y){
   fl.st = 1; fl.car = -1; fl.x = x; fl.y = y; fl.hx = x; fl.hy = y; fl.fall = false; fl.cover = false;
-  for(const s of CTF.map.spots) if(s.team === fl.team && s.cover && Math.abs(s.x - x) < (CTF_COVER_HW[s.cover] || 46) && Math.abs(s.y - y) < 80){ fl.cover = true; break; }
+  fl.cover = ctfCoverAt(fl.team, x, y);
   for(let i = 0; i < 8; i++) puff(x, y - 16, TEAM_COLORS[fl.team % TEAM_COLORS.length], 4);
 }
 const CTF_CAM_SPEED = 26;
@@ -2777,11 +2789,15 @@ function ctfEndHide(L){
         ctfPlaceFlag(fl, best.x, best.y); }
     }
   }
-  L.phase = 'play'; L.playT = 0; L.done = {};
   for(const f of fighters) f._cam = null;
+  if(!CTF.skipNav && L.edits.some(ctfEditStructural)){ ctfFixBegin(L); return; }   // walls and platforms were built: check the way is still open before the match starts
+  ctfStartPlay(L);
+}
+function ctfStartPlay(L){
+  L.phase = 'play'; L.playT = 0; L.done = {};
   for(const d of L.doors) d.op = [false, false];
   ctfRebuildDyn(L);
-  for(const f of fighters){ f.invuln = Math.max(f.invuln, 30); f._ctfA = false; f._ctfS = false; }
+  for(const f of fighters){ f.invuln = Math.max(f.invuln, 30); f._ctfA = false; f._ctfS = false; f._ctfSeq = f._atkSeq; }
   banner('GO!', 900);
   ctfSfx('go');
 }
@@ -2794,6 +2810,8 @@ function ctfStep(){
   for(const f of fighters){ if(f._ctfJT > 0) f._ctfJT--; if(f._springT > 0) f._springT--; if(f._ctfFree > 0) f._ctfFree--; if(f._ghostT > 0) f._ghostT--; }
   if(CTF.nav && !CTF.nav.ready) ctfNavTick(CTF.nav, 6);
   ctfStepElevs(L);
+  ctfEditStep(L);
+  if(L.phase === 'fix'){ ctfFixStep(L); return; }
   if(L.phase === 'hide'){
     try{ ctfAiHideTick(L); }catch(e){ if(!CTF.errOnce){ CTF.errOnce = 1; console.error('ctfAiHideTick', e); } }
     const humans = fighters.filter(ctfIsHuman);
@@ -3107,10 +3125,272 @@ function ctfSfx(kind){
       case 'return':  tone(700, 0.1, 'triangle', 0.16, 0, 350); break;
       case 'drop':    tone(240, 0.1, 'square', 0.14, 0, 120); break;
       case 'jail':    tone(150, 0.2, 'square', 0.16, 0, 90); noise(0.1, 0.2, 500, 0, 150); break;
+      case 'deny':    tone(200, 0.1, 'square', 0.12, 0, 140); break;
+      case 'trap':    tone(400, 0.08, 'sawtooth', 0.14, 0, 700); noise(0.06, 0.15, 900, 0, 300); break;
+      case 'break':   noise(0.14, 0.3, 600, 0, 200); tone(240, 0.1, 'triangle', 0.14, 0, 120); break;
       case 'free':    [392, 523, 659].forEach((q,i)=>tone(q, 0.12, 'triangle', 0.18, i*0.06, q)); break;
       case 'go':      tone(520, 0.14, 'triangle', 0.18, 0, 780); break;
     }
   }catch(e){}
+}
+
+// ---- EDITING YOUR AREA while hiding (the owner, 2026-10-13: "you should be able to edit your area to hide your flags. must be possible tho.") ----------------
+// In the free camera a player picks a TOOL (attack key cycles: flag, decoration, platform, wall, trap, remove, offer) and a PIECE (the edit key cycles the
+// kinds of that tool); Space uses it where the cursor is. Everything is paid for out of the player's points. Decorations, traps, thin platforms and walls
+// are placed on the player's own side only, and "must be possible": when the hiding ends the pieces are checked against the CPU graph (the same reach test the
+// flags pass) and any that make a flag, the jail or a key unreachable are taken away, the newest first, until all is reachable again.
+const CTF_EDIT_PTS = 20;
+const CTF_TOOLS = ['flag', 'deco', 'plat', 'wall', 'trap', 'remove', 'offer'];
+const CTF_PIECES = { flag:[null], deco:['crate', 'barrel', 'bush', 'curtain', 'rubble'], plat:['plat'], wall:['block', 'wall'], trap:['spikes', 'stun', 'spring', 'trapdoor'], remove:[null], offer:['both+', 'both-', 'mine+'] };
+const CTF_COSTS = { deco:1, plat:2, wall:3, trap:5, remove:1 };
+const CTF_DECO_H = { crate:152, barrel:74, bush:80, curtain:150, rubble:62 };
+const CTF_OFFER_STEPS = 1200, CTF_OFFER_CPU = 90;
+
+function ctfEditNew(L){
+  L.edits = []; L.gone = {}; L.pts = {}; L.bonus = [0, 0]; L.editSeq = 0; L.editT = 0; L.offer = null; L.offerCool = 0; L.fix = null; L.pre = null;
+  for(const f of fighters){ L.pts[f.idx] = CTF_EDIT_PTS; f._tool = 0; f._piece = 0; f._cam = null; }
+}
+function ctfEditStructural(e){ return e.tool === 'plat' || e.tool === 'wall'; }
+function ctfEditSolid(e){ return ctfEditStructural(e) ? { x:e.x, y:e.y, w:e.w, h:e.h, solid:e.tool === 'wall', hop:e.tool === 'plat', edit:e.id, team:e.team } : { x:e.x, y:e.y, w:e.w, h:e.h, hop:true, edit:e.id, team:e.team, trapdoor:true }; }
+// Everything of the editing that is solid in the world right now (what ctfRebuildDyn adds).
+function ctfEditDyn(L){
+  const out = [];
+  for(const e of (L.edits || [])){ if(ctfEditStructural(e) || (e.kind === 'trapdoor' && !e.open)) out.push(ctfEditSolid(e)); }
+  return out;
+}
+// A decoration or a trap or a platform or a wall as a piece: geometry from the cursor. Returns null where there is nothing to stand it on.
+function ctfEditShape(tool, kind, x, y){
+  if(tool === 'deco'){ const sy = ctfSurfaceBelow(x, y, 300); if(sy === null) return null; const hw = CTF_COVER_HW[kind] || 46, h = CTF_DECO_H[kind] || 80; return { x:x - hw, y:sy - h, w:2*hw, h, fy:sy, cx:x }; }
+  if(tool === 'trap' && kind !== 'trapdoor'){ const sy = ctfSurfaceBelow(x, y, 300); if(sy === null) return null; const w = 100, h = kind === 'spikes' ? 28 : 20; return { x:x - w/2, y:sy - h, w, h, fy:sy, cx:x }; }
+  if(tool === 'plat' || kind === 'trapdoor'){ const w = kind === 'trapdoor' ? 180 : 180, sx = Math.round((x - w/2)/30)*30, sy = Math.round(y/60)*60; return { x:sx, y:sy, w, h:16, fy:sy, cx:sx + w/2 }; }
+  if(tool === 'wall'){ const w = kind === 'wall' ? 60 : 120, h = kind === 'wall' ? 240 : 120, sx = Math.round((x - w/2)/60)*60, sy = Math.round((y - h/2)/60)*60; return { x:sx, y:sy, w, h, fy:sy + h, cx:sx + w/2 }; }
+  return null;
+}
+const ctfRectHit = (a, b, m)=> a.x < b.x + b.w + (m||0) && a.x + a.w > b.x - (m||0) && a.y < b.y + b.h + (m||0) && a.y + a.h > b.y - (m||0);
+// Why a piece may not go here (a short reason), or null if it may.
+function ctfEditCheck(f, tool, kind, sh){
+  const L = CTF.live, M = CTF.map, mid = M.WW/2, t = f.team;
+  if(!sh) return 'nothing under it';
+  if(t === 0 ? sh.x + sh.w > mid - 500 : sh.x < mid + 500) return 'line';
+  if(sh.x < 150 || sh.x + sh.w > M.WW - 150 || sh.y < 60 || sh.y + sh.h > M.WH - 60) return 'edge';
+  for(const [px, py] of [[sh.x, sh.y + sh.h], [sh.x + sh.w, sh.y + sh.h], [sh.x + sh.w/2, sh.y + sh.h/2]]) if(!ctfHideValid(t, px, py)) return 'zone';
+  const cost = CTF_COSTS[tool]; if((L.pts[f.idx] || 0) < cost) return 'points';
+  const r = { x:sh.x + 3, y:sh.y + 3, w:sh.w - 6, h:sh.h - 6 };
+  const structural = tool === 'plat' || tool === 'wall' || kind === 'trapdoor';
+  for(const p of worldPlats){ if(p.x > r.x + r.w + 8 || p.x + p.w < r.x - 8) continue;
+    if(structural){ if(ctfRectHit(sh, p, -2)) return 'blocked'; }
+    else if(p.solid && ctfRectHit(r, p, 0)) return 'blocked'; }
+  if(structural){
+    for(const d of M.doors) if(ctfRectHit(sh, d, 20)) return 'door';
+    for(const j of M.jails) if(ctfRectHit(sh, j.door, 40)) return 'door';
+    for(const k of L.keys) if(Math.abs(k.hx - (sh.x + sh.w/2)) < sh.w/2 + 60 && Math.abs(k.hy - (sh.y + sh.h/2)) < sh.h/2 + 80) return 'key';
+    for(const b of L.boosts) if(Math.abs(b.x - (sh.x + sh.w/2)) < sh.w/2 + 50 && Math.abs(b.y - (sh.y + sh.h/2)) < sh.h/2 + 70) return 'pickup';
+    for(const fl of L.flags) if(fl.st === 1 && fl.x > sh.x - 40 && fl.x < sh.x + sh.w + 40 && fl.y > sh.y - 40 && fl.y < sh.y + sh.h + 70) return 'flag';
+    for(const g of fighters) if(g.x > sh.x - g.r - 8 && g.x < sh.x + sh.w + g.r + 8 && g.y > sh.y - g.r - 8 && g.y < sh.y + sh.h + g.r + 8) return 'fighter';
+  }
+  for(const e of L.edits){ if(!ctfRectHit(sh, e, -4)) continue; if(structural || ctfEditStructural(e) || (e.tool === tool && Math.abs(e.cx - sh.cx) < 36)) return 'taken'; }
+  return null;
+}
+// The flag's cover: every prop of the map still standing and every decoration somebody placed.
+function ctfCoverAt(team, x, y){
+  const L = CTF.live;
+  let hit = false;
+  CTF.map.spots.forEach((s, i)=>{ if(!hit && s.team === team && s.cover && !(L && L.gone && L.gone[i]) && Math.abs(s.x - x) < (CTF_COVER_HW[s.cover] || 46) && Math.abs(s.y - y) < 80) hit = true; });
+  if(!hit && L && L.edits) for(const e of L.edits) if(e.tool === 'deco' && e.team === team && Math.abs(e.cx - x) < (CTF_COVER_HW[e.kind] || 46) && Math.abs(e.fy - y) < 80){ hit = true; break; }
+  return hit;
+}
+function ctfEditSettle(L){   // flags whose floor went away (a removed platform) fall to what is below; covers are looked at again
+  for(const fl of L.flags) if(fl.st === 1){
+    const sy = ctfSurfaceBelow(fl.x, fl.y - 14, 700);
+    if(sy !== null && sy > fl.y + 6) ctfPlaceFlag(fl, fl.x, sy);
+    fl.cover = ctfCoverAt(fl.team, fl.x, fl.y);
+  }
+}
+function ctfEditAdd(f, tool, kind, sh){
+  const L = CTF.live, e = { id:++L.editSeq, team:f.team, owner:f.idx, tool, kind, x:sh.x, y:sh.y, w:sh.w, h:sh.h, fy:sh.fy, cx:sh.cx, cost:CTF_COSTS[tool], seq:L.editSeq, hp:tool === 'deco' ? 1 : 0, open:false, openT:0, stand:0 };
+  L.pts[f.idx] -= e.cost; L.edits.push(e); L.editT = L.t;
+  if(ctfEditStructural(e) || kind === 'trapdoor') ctfRebuildDyn(L);
+  if(tool === 'deco') for(const fl of L.flags) if(fl.st === 1 && fl.team === f.team) fl.cover = ctfCoverAt(fl.team, fl.x, fl.y);
+  for(let i = 0; i < 5; i++) puff(sh.x + sh.w/2, sh.y + sh.h/2, TEAM_COLORS[f.team % TEAM_COLORS.length], 4);
+  ctfSfx('place');
+  return e;
+}
+// A placement at a spot (the CPU builders call this too). Returns the piece, or null (and a puff) if it may not go.
+function ctfEditPlaceAt(f, tool, kind, x, y){
+  const L = CTF.live; if(!L || L.phase !== 'hide') return null;
+  const sh = ctfEditShape(tool, kind, x, y), why = ctfEditCheck(f, tool, kind, sh);
+  if(why){ if(ctfIsHuman(f)){ puff(x, y, '#888', 6); L.denied = { x, y, t:30, why }; } return null; }
+  return ctfEditAdd(f, tool, kind, sh);
+}
+function ctfEditRemoveAt(f, x, y){
+  const L = CTF.live; if(!L || L.phase !== 'hide') return false;
+  let best = null, bd = 1e9;
+  for(const e of L.edits){ if(e.team !== f.team) continue; const cx = e.x + e.w/2, cy = e.y + e.h/2, d = Math.hypot(Math.max(0, Math.abs(x - cx) - e.w/2), Math.max(0, Math.abs(y - cy) - e.h/2)); if(d < 70 && d < bd){ bd = d; best = { piece:e }; } }
+  if(!best) CTF.map.spots.forEach((s, i)=>{ if(s.team !== f.team || !s.cover || L.gone[i]) return; const hw = CTF_COVER_HW[s.cover] || 46, d = Math.hypot(Math.max(0, Math.abs(x - s.x) - hw), Math.max(0, Math.min(s.y - 80 - y, y - s.y))); if(d < 70 && d < bd){ bd = d; best = { spot:i }; } });
+  if(!best) return false;
+  if(best.piece){ const e = best.piece; L.edits.splice(L.edits.indexOf(e), 1); L.pts[e.owner] = (L.pts[e.owner] || 0) + e.cost; for(let i = 0; i < 6; i++) puff(e.x + e.w/2, e.y + e.h/2, '#c9a070', 4); if(ctfEditStructural(e) || e.kind === 'trapdoor') ctfRebuildDyn(L); }
+  else { if((L.pts[f.idx] || 0) < CTF_COSTS.remove) return false; L.pts[f.idx] -= CTF_COSTS.remove; L.gone[best.spot] = true; const s = CTF.map.spots[best.spot]; for(let i = 0; i < 6; i++) puff(s.x, s.y - 40, '#c9a070', 4); }
+  L.editT = L.t; ctfEditSettle(L); ctfSfx('place');
+  return true;
+}
+// What the cursor of f would do now: { tool, kind, shape, ok, why } (the drawing and the placing both ask).
+function ctfEditGhost(f){
+  const c = f._cam, L = CTF.live; if(!c || !L) return null;
+  const tool = CTF_TOOLS[f._tool || 0]; if(tool === 'flag' || tool === 'offer') return { tool };
+  if(tool === 'remove'){
+    let tg = null, bd = 1e9; const x = c.x, y = c.y;
+    for(const e of L.edits){ if(e.team !== f.team) continue; const d = Math.hypot(Math.max(0, Math.abs(x - (e.x + e.w/2)) - e.w/2), Math.max(0, Math.abs(y - (e.y + e.h/2)) - e.h/2)); if(d < 70 && d < bd){ bd = d; tg = { x:e.x, y:e.y, w:e.w, h:e.h }; } }
+    if(!tg) CTF.map.spots.forEach((s, i)=>{ if(s.team !== f.team || !s.cover || L.gone[i]) return; const hw = CTF_COVER_HW[s.cover] || 46, d = Math.hypot(Math.max(0, Math.abs(x - s.x) - hw), Math.max(0, Math.min(s.y - 80 - y, y - s.y))); if(d < 70 && d < bd){ bd = d; tg = { x:s.x - hw, y:s.y - 120, w:2*hw, h:120 }; } });
+    return { tool, shape:tg, ok:!!tg };
+  }
+  const kind = CTF_PIECES[tool][(f._piece || 0) % CTF_PIECES[tool].length], sh = ctfEditShape(tool, kind, c.x, c.y), why = ctfEditCheck(f, tool, kind, sh);
+  return { tool, kind, shape:sh, ok:!why, why };
+}
+function ctfEditAct(f){
+  const tool = CTF_TOOLS[f._tool || 0];
+  if(tool === 'flag') return ctfHidePlace(f);
+  if(tool === 'remove'){ const c = f._cam; if(!c || !ctfEditRemoveAt(f, c.x, c.y)){ puff(c ? c.x : f.x, c ? c.y : f.y, '#888', 6); return false; } return true; }
+  if(tool === 'offer') return ctfEditOffer(f);
+  const c = f._cam; if(!c) return false;
+  return !!ctfEditPlaceAt(f, tool, CTF_PIECES[tool][(f._piece || 0) % CTF_PIECES[tool].length], c.x, c.y);
+}
+
+// ---- bargaining: "you can negociate with the other team" -------------------------------------------------------------------------------------------------
+// A team offers the other a change of budget: both +10, both -10, or just its own +10. The other side's humans vote (a majority accepts); with no
+// human on the other side the CPU answers: it accepts only what is the same for both.
+function ctfEditOffer(f){
+  const L = CTF.live; if(!L || L.offer || L.offerCool > 0) return false;
+  const kind = CTF_PIECES.offer[(f._piece || 0) % CTF_PIECES.offer.length];
+  L.offer = { from:f.team, to:1 - f.team, kind, t:0, votes:{} }; ctfSfx('pick'); return true;
+}
+function ctfEditVote(f, yes){ const L = CTF.live; if(L.offer && L.offer.to === f.team) L.offer.votes[f.idx] = !!yes; }
+function ctfEditResolve(L){
+  const o = L.offer; if(!o) return;
+  o.t++;
+  const voters = fighters.filter(g=>g.team === o.to && ctfIsHuman(g));
+  let verdict = null;
+  if(!voters.length){ if(o.t >= CTF_OFFER_CPU) verdict = o.kind !== 'mine+'; }
+  else {
+    const yes = voters.filter(g=>o.votes[g.idx] === true).length, no = voters.filter(g=>o.votes[g.idx] === false).length;
+    if(yes*2 > voters.length) verdict = true; else if(no*2 >= voters.length) verdict = false; else if(o.t >= CTF_OFFER_STEPS) verdict = false;
+  }
+  if(verdict === null) return;
+  L.offer = null; L.offerCool = 300; L.offerLast = { kind:o.kind, from:o.from, ok:verdict, t:90 };
+  if(!verdict){ ctfSfx('deny'); return; }
+  const d = o.kind === 'both-' ? -10 : 10;
+  for(const g of fighters) if(o.kind !== 'mine+' || g.team === o.from) L.pts[g.idx] = (L.pts[g.idx] || 0) + d;
+  if(o.kind === 'mine+') L.bonus[o.from] += d; else { L.bonus[0] += d; L.bonus[1] += d; }
+  ctfSfx('done');
+}
+
+// ---- the match: traps and breakable decorations ------------------------------------------------------------------------------------------------------------
+function ctfEditStep(L){
+  if(L.offerCool > 0) L.offerCool--;
+  if(L.offerLast && --L.offerLast.t <= 0) L.offerLast = null;
+  if(L.denied && --L.denied.t <= 0) L.denied = null;
+  if(L.phase === 'hide'){ ctfEditResolve(L); ctfEditPrebuild(L); }
+  if(L.phase !== 'play' || !L.edits.length) return;
+  let rebuild = false;
+  for(const f of fighters) if(f._trapT > 0) f._trapT--;
+  const swung = []; for(const f of fighters){ if(f._atkSeq !== f._ctfSeq){ f._ctfSeq = f._atkSeq; if(f._atkSeq && !f.dead) swung.push(f); } }
+  for(const e of L.edits.slice()){
+    if(e.tool === 'trap'){
+      let onTop = false;
+      for(const f of fighters){
+        if(f.dead || f._jail != null) continue;
+        const enemy = f.team !== e.team;
+        if(e.kind === 'trapdoor'){
+          if(!e.open && enemy && f.onground && f.x > e.x - 4 && f.x < e.x + e.w + 4 && Math.abs(f.y + f.r - e.y) <= 4) onTop = true;
+          continue;
+        }
+        if(!(f.x > e.x - f.r*0.4 && f.x < e.x + e.w + f.r*0.4 && f.y + f.r > e.y - 6 && f.y + f.r < e.y + e.h + 46)) continue;
+        if(e.kind === 'spring'){ if(!(f._springT > 0)){ f.vy = -24; f.onground = false; f.jumps = 2; f._springT = 24; puff(f.x, f.y + f.r, '#6fd0f0', 5); ctfSfx('trap'); } continue; }
+        if(!enemy || f._trapT > 0) continue;
+        f._trapT = e.kind === 'stun' ? 150 : 40;
+        if(e.kind === 'spikes'){ f.vy = -11; f.vx = (f.x < e.x + e.w/2 ? -1 : 1)*4; f.onground = false; for(let i = 0; i < 6; i++) puff(f.x, f.y + f.r, '#e8e8f0', 4); }
+        else { f.hitstun = Math.max(f.hitstun || 0, 50); f.vx = 0; for(let i = 0; i < 6; i++) puff(f.x, f.y, '#ffe04a', 4); }
+        ctfSfx('trap');
+      }
+      if(e.kind === 'trapdoor'){
+        if(e.open){ if(--e.openT <= 0){ const under = fighters.some(g=>!g.dead && g.x > e.x - g.r && g.x < e.x + e.w + g.r && g.y + g.r > e.y - 4 && g.y - g.r < e.y + 20); if(!under){ e.open = false; rebuild = true; } else e.openT = 8; } }
+        else if(onTop){ if(++e.stand > 10){ e.open = true; e.openT = 150; e.stand = 0; rebuild = true; for(let i = 0; i < 6; i++) puff(e.x + e.w/2, e.y, '#c9a070', 4); } }
+        else e.stand = 0;
+      }
+    } else if(e.tool === 'deco' && e.hp > 0){
+      let broke = false;
+      for(const f of swung){
+        const dx = (e.cx - f.x)*f.face;
+        if(dx > -20 && dx < 130 + e.w/2 && Math.abs((e.y + e.h/2) - f.y) < 100){ broke = true; break; }
+      }
+      if(!broke) for(const p of projectiles){ if(!(p.dmg > 0)) continue; const r = p.r || 8; if(p.x > e.x - r && p.x < e.x + e.w + r && p.y > e.y - r && p.y < e.y + e.h + r){ broke = true; break; } }
+      if(broke){ L.edits.splice(L.edits.indexOf(e), 1); for(let i = 0; i < 10; i++) puff(e.cx, e.y + e.h/2, '#c9a070', 5); ctfSfx('break'); for(const fl of L.flags) if(fl.st === 1) fl.cover = ctfCoverAt(fl.team, fl.x, fl.y); }
+    }
+  }
+  if(rebuild) ctfRebuildDyn(L);
+}
+
+// ---- "must be possible": the check that runs when the hiding ends -----------------------------------------------------------------------------------------
+function ctfEditRects(L, keepN){ return L.edits.filter(ctfEditStructural).sort((a, b)=>a.seq - b.seq).slice(0, keepN).map(e=>({ x:e.x, y:e.y, w:e.w, h:e.h })); }
+function ctfEditNav(L, keepN){ return ctfNavNew(ctfEditMap(L, keepN), CTF.navs && CTF.navs[CTF.mapId], ctfEditRects(L, keepN)); }
+function ctfEditMap(L, keepN){   // the map with the first keepN walls and platforms in it (oldest first)
+  const M = CTF.map, st = L.edits.filter(ctfEditStructural).sort((a, b)=>a.seq - b.seq).slice(0, keepN);
+  return Object.assign({}, M, { plats:M.plats.concat(st.map(e=>({ x:e.x, y:e.y, w:e.w, h:e.h, solid:e.tool === 'wall', hop:e.tool === 'plat' }))) });
+}
+// What cannot be reached in this graph: a flag (from the other side's home), a key (from both), the jail's door (from the prisoners' side).
+function ctfEditProblems(L, nav){
+  const bad = [], at = (x, y)=>ctfNavNodeAt(nav, x, y, 10);
+  for(const fl of L.flags){ if(fl.st !== 1) continue; const n = at(fl.x, fl.y); if(!n || !nav.reach[1 - fl.team][n.id]) bad.push('flag' + fl.id); }
+  for(const k of L.keys){ const n = at(k.hx, k.hy); if(!n || !nav.reach[0][n.id] || !nav.reach[1][n.id]) bad.push('key' + k.i); }
+  for(const j of L.jails){ const d = j.door, n = at(d.x + (j.face === 1 ? d.w + 50 : -50), d.y + d.h); if(!n || !nav.reach[1 - j.owner][n.id]) bad.push('jail' + j.owner); }
+  return bad;
+}
+function ctfEditPrebuild(L){   // while they are still hiding: once the edits have been left alone for a couple of seconds, start the graph with them in it
+  if(CTF.skipNav || !CTF.nav || !CTF.nav.ready) return;
+  const st = L.edits.filter(ctfEditStructural).length; if(!st){ L.pre = null; return; }
+  if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 8); return; }
+  if(L.t - L.editT >= 120) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
+}
+function ctfFixBegin(L){
+  const st = L.edits.filter(ctfEditStructural).sort((a, b)=>a.seq - b.seq);
+  L.phase = 'fix'; ctfRebuildDyn(L);
+  L.fix = { st, lo:0, hi:null, keep:st.length, navs:{} };
+  if(L.pre && L.pre.seq === L.editSeq && L.pre.n === st.length) L.fix.navs[st.length] = L.pre.nav;
+}
+function ctfFixStep(L){
+  const F = L.fix; if(!F){ ctfStartPlay(L); return; }
+  const nav = F.navs[F.keep] || (F.navs[F.keep] = F.keep === 0 ? CTF.navs[CTF.mapId] : ctfEditNav(L, F.keep));
+  if(!nav.ready){ ctfNavTick(nav, 40); return; }
+  const bad = F.keep === 0 ? [] : ctfEditProblems(L, nav);
+  if(bad.length) F.hi = F.keep; else F.lo = F.keep;
+  if(F.hi === null || F.hi - F.lo <= 1){ F.final = F.hi === null ? F.keep : F.lo; ctfFixFinish(L); return; }
+  F.keep = Math.floor((F.lo + F.hi)/2);
+}
+function ctfFixFinish(L){
+  const F = L.fix, keepIds = new Set(F.st.slice(0, F.final).map(e=>e.id));
+  for(const e of F.st) if(!keepIds.has(e.id)){ L.edits.splice(L.edits.indexOf(e), 1); L.removedByFix = (L.removedByFix || 0) + 1; for(let i = 0; i < 10; i++) puff(e.x + e.w/2, e.y + e.h/2, '#ffffff', 5); }
+  ctfRebuildDyn(L); ctfEditSettle(L);
+  const nav = F.navs[F.final] || (F.final === 0 ? CTF.navs[CTF.mapId] : ctfEditNav(L, F.final));
+  L.fix = null;
+  // a flag that now has no road to it (it sat on something that went) goes to the nearest prepared place that has one
+  if(nav.ready) for(const fl of L.flags) if(fl.st === 1){ const n = ctfNavNodeAt(nav, fl.x, fl.y, 10); if(n && nav.reach[1 - fl.team][n.id]) continue;
+    let best = null, bd = 1e9; for(const s of CTF.map.spots) if(s.team === fl.team){ const m = ctfNavNodeAt(nav, s.x, s.y, 10); if(m && nav.reach[1 - fl.team][m.id]){ const d = Math.hypot(s.x - fl.x, s.y - fl.y); if(d < bd){ bd = d; best = s; } } }
+    if(best) ctfPlaceFlag(fl, best.x, best.y); }
+  if(F.final > 0){ CTF.nav = nav; try{ ctfAiBegin(L, nav); }catch(e){ console.error('ctfAiBegin', e); } }
+  ctfStartPlay(L);
+}
+
+// ---- CPUs build too ---------------------------------------------------------------------------------------------------------------------------------------------
+// A few decorations about the flag, and now and then a trap or a wall on the way to it.
+function ctfAiBuild(f, L){
+  const fl = L.flags[f.idx]; if(!fl || fl.st !== 1) return;
+  const kinds = CTF_PIECES.deco, pick = a=>a[Math.floor(Math.random()*a.length)];
+  const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+  for(let i = 0; i < n; i++){
+    const dx = i === 0 ? (Math.random()*40 - 20) : (i % 2 ? 1 : -1)*(100 + 45*i + Math.random()*40);
+    ctfEditPlaceAt(f, 'deco', pick(kinds), fl.x + dx, fl.y - 20);
+  }
+  if(Math.random() < 0.4){ const s = Math.random() < 0.5 ? -1 : 1; ctfEditPlaceAt(f, 'trap', pick(['spikes', 'stun', 'spring']), fl.x + s*(260 + Math.random()*140), fl.y - 20); }
+  if(Math.random() < 0.25){ const s = Math.random() < 0.5 ? -1 : 1; ctfEditPlaceAt(f, 'wall', 'block', fl.x + s*(420 + Math.random()*160), fl.y - 70); }
 }
 
 
@@ -3372,7 +3652,7 @@ function ctfDrawWorld(){
     ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(d.x + 5, d.y, 7, d.h);
     ctfKeyIcon(ctx, d.x + d.w/2 - 6, d.y + d.h/2, '#f4efe2', 40); ctx.fillStyle = ctfColor(d.team); ctx.fillRect(d.x, d.y, d.w, 10); ctx.restore(); }
   // the wall across the middle while hiding
-  if(L.phase === 'hide'){ const bx = M.WW/2 - 30;
+  if(L.phase === 'hide' || L.phase === 'fix'){ const bx = M.WW/2 - 30;
     if(inView(bx, vy, 60, vh)){ ctx.save(); const g = ctx.createLinearGradient(bx, 0, bx + 60, 0); g.addColorStop(0, 'rgba(120,200,255,0)'); g.addColorStop(0.5, 'rgba(160,220,255,0.7)'); g.addColorStop(1, 'rgba(120,200,255,0)');
       ctx.fillStyle = g; ctx.fillRect(bx - 30, vy, 120, vh); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.setLineDash([22, 18]); ctx.lineDashOffset = -T*1.5;
       ctx.beginPath(); ctx.moveTo(M.WW/2, vy); ctx.lineTo(M.WW/2, vy + vh); ctx.stroke(); ctx.restore(); } }
@@ -3381,8 +3661,8 @@ function ctfDrawWorld(){
   { const me = fighters.find(q=>q.you); if(L.phase === 'hide' && me && me._cam){ const c = me._cam, s = ctfCamSnap(me);
       ctx.save(); ctx.lineCap = 'round';
       if(Math.abs(s.y - c.y) > 6){ ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(s.x, s.y); ctx.stroke(); ctx.setLineDash([]); }
-      ctx.globalAlpha = 0.6; ctfFlagIcon(ctx, s.x, s.y, ctfColor(me.team), 64, T*0.1, me.color); ctx.globalAlpha = 1;
-      if(s.ok) ctfCheckIcon(ctx, s.x, s.y + 26, 15); else ctfNoEntryIcon(ctx, s.x, s.y + 26, 15);
+      if(!ctfDrawEditGhost(L, me, T)){ ctx.globalAlpha = 0.6; ctfFlagIcon(ctx, s.x, s.y, ctfColor(me.team), 64, T*0.1, me.color); ctx.globalAlpha = 1;
+        if(s.ok) ctfCheckIcon(ctx, s.x, s.y + 26, 15); else ctfNoEntryIcon(ctx, s.x, s.y + 26, 15); }
       for(const [lw, col] of [[7, '#1c1c1c'], [3, '#ffffff']]){ ctx.lineWidth = lw; ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(c.x, c.y, 16, 0, 7);
         ctx.moveTo(c.x - 28, c.y); ctx.lineTo(c.x - 10, c.y); ctx.moveTo(c.x + 10, c.y); ctx.lineTo(c.x + 28, c.y); ctx.moveTo(c.x, c.y - 28); ctx.lineTo(c.x, c.y - 10); ctx.moveTo(c.x, c.y + 10); ctx.lineTo(c.x, c.y + 28); ctx.stroke(); }
       ctx.restore(); } }
@@ -3411,7 +3691,9 @@ function ctfDrawWorld(){
     const o = fighters[fl.owner]; ctfFlagIcon(ctx, fl.x, fl.y, ctfColor(fl.team), 64, T*0.1 + fl.id, o ? o.color : null);
     if(fl.st === 3 && fl.team !== vt){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(fl.x, fl.y - 30, 44, 0, 7); ctx.stroke(); ctx.restore(); }
   }
-  for(const s of M.spots){ if(!s.cover || !inView(s.x - 60, s.y - 140, 120, 150)) continue; ctfCoverDraw(ctx, s, M.theme); }
+  M.spots.forEach((s, i)=>{ if(!s.cover || (L.gone && L.gone[i]) || !inView(s.x - 60, s.y - 140, 120, 150)) return; ctfCoverDraw(ctx, s, M.theme); });
+  // what the players built (an enemy's work stays out of sight while the hiding goes on)
+  for(const e of (L.edits || [])){ if(L.phase === 'hide' && e.team !== vt) continue; if(!inView(e.x - 30, e.y - 30, e.w + 60, e.h + 60)) continue; ctfEditPieceDraw(ctx, e, M.theme, vt, T, null); }
 }
 // Drawn after a fighter: the flag on their back, the key over their head, the lock on a prisoner, the check mark of a fighter who is done.
 function ctfDrawCarry(f){
@@ -3462,7 +3744,7 @@ function drawCtfHud(){
   }
   // the middle: while hiding, an hourglass and a draining bar; in the match, a pair of crossed flags
   ctx.fillStyle = 'rgba(28,24,38,0.78)'; ctx.strokeStyle = '#f4efe2'; ctx.lineWidth = 3; ctx.fillRect(cx - 62, y, 124, 40); ctx.strokeRect(cx - 62, y, 124, 40);
-  if(L.phase === 'hide'){
+  if(L.phase === 'hide' || L.phase === 'fix'){
     const k = 1 - clamp(L.t/CTF_HIDE_STEPS, 0, 1);
     ctx.fillStyle = '#f4efe2'; ctx.beginPath(); ctx.moveTo(cx - 52, y + 8); ctx.lineTo(cx - 30, y + 8); ctx.lineTo(cx - 41, y + 20); ctx.lineTo(cx - 30, y + 32); ctx.lineTo(cx - 52, y + 32); ctx.lineTo(cx - 41, y + 20); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#3a3448'; ctx.fillRect(cx - 20, y + 14, 74, 12);
@@ -3476,6 +3758,8 @@ function drawCtfHud(){
   } else {
     ctfFlagIcon(ctx, cx - 18, y + 33, ctfColor(0), 26, hazardT*0.1, null); ctfFlagIcon(ctx, cx + 18, y + 33, ctfColor(1), 26, hazardT*0.1 + 2, null);
   }
+  { const me = fighters.find(q=>q.you); if(me && L.phase === 'hide') ctfDrawEditHud(L, me); }
+  if(L.phase === 'fix'){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.save(); ctx.translate(W/2, 130); ctx.rotate(hazardT*0.12); ctx.beginPath(); for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, rr = i%2 ? 14 : 22; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
   // a capture flashes the scoring side's colour round the edge of the screen
   if(L.flash){ const a = Math.min(1, L.flash.t/25)*(L.flash.soft ? 0.25 : 0.5); ctx.globalAlpha = a; ctx.strokeStyle = ctfColor(L.flash.team); ctx.lineWidth = 36; ctx.strokeRect(0, 0, W, H); ctx.globalAlpha = 1; }
   ctx.restore();
@@ -3586,6 +3870,91 @@ function ctfDrawDark(){
   ctx.restore();
 }
 
+// ---- drawing the editing: the pieces, the ghost under the cursor, the tool panel and the bargaining panel ------------------------------------------------------
+function ctfEditPieceDraw(g, e, th, vt, T, alpha){
+  g.save(); if(alpha != null) g.globalAlpha = alpha;
+  const tc = ctfColor(e.team);
+  g.lineWidth = 4; g.strokeStyle = '#1c1c1c';
+  if(e.tool === 'deco'){ ctfCoverDraw(g, { x:e.cx, y:e.fy, cover:e.kind }, th); }
+  else if(e.tool === 'plat'){ g.fillStyle = '#8b6a43'; g.fillRect(e.x, e.y, e.w, e.h); g.strokeRect(e.x, e.y, e.w, e.h); g.fillStyle = tc; g.fillRect(e.x, e.y, e.w, 5); g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2; g.beginPath(); for(let x = e.x + 30; x < e.x + e.w; x += 30){ g.moveTo(x, e.y); g.lineTo(x, e.y + e.h); } g.stroke(); }
+  else if(e.tool === 'wall'){ g.fillStyle = '#6b6f7e'; g.fillRect(e.x, e.y, e.w, e.h); g.strokeRect(e.x, e.y, e.w, e.h); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 2; g.beginPath(); for(let y = e.y + 40; y < e.y + e.h; y += 40){ g.moveTo(e.x, y); g.lineTo(e.x + e.w, y); } g.moveTo(e.x + e.w/2, e.y); g.lineTo(e.x + e.w/2, e.y + 40); g.stroke(); g.fillStyle = tc; g.fillRect(e.x, e.y, e.w, 8); }
+  else if(e.kind === 'spikes'){ g.fillStyle = '#e8e8f0'; const n = 5, w = e.w/n; for(let i = 0; i < n; i++){ g.beginPath(); g.moveTo(e.x + i*w + 2, e.y + e.h); g.lineTo(e.x + i*w + w/2, e.y - 6); g.lineTo(e.x + (i + 1)*w - 2, e.y + e.h); g.closePath(); g.fill(); g.stroke(); } g.fillStyle = tc; g.fillRect(e.x, e.y + e.h - 5, e.w, 7); }
+  else if(e.kind === 'stun'){ g.fillStyle = '#e8c63a'; g.fillRect(e.x, e.y + 6, e.w, e.h - 6); g.strokeRect(e.x, e.y + 6, e.w, e.h - 6); g.fillStyle = '#1c1c1c'; g.beginPath(); g.moveTo(e.x + e.w/2 + 6, e.y - 10); g.lineTo(e.x + e.w/2 - 10, e.y + 12); g.lineTo(e.x + e.w/2, e.y + 12); g.lineTo(e.x + e.w/2 - 6, e.y + 30); g.lineTo(e.x + e.w/2 + 12, e.y + 6); g.lineTo(e.x + e.w/2 + 2, e.y + 6); g.closePath(); g.fillStyle = '#fff6a0'; g.fill(); g.stroke(); g.fillStyle = tc; g.fillRect(e.x, e.y + e.h - 4, e.w, 6); }
+  else if(e.kind === 'spring'){ g.fillStyle = '#6fd0f0'; g.fillRect(e.x, e.y + 10, e.w, 10); g.strokeRect(e.x, e.y + 10, e.w, 10); g.strokeStyle = '#1c1c1c'; g.lineWidth = 5; g.beginPath(); g.moveTo(e.x + 20, e.y + 10); for(let i = 0; i < 4; i++){ g.lineTo(e.x + e.w - 20, e.y + 4 - i*5 + 14); g.lineTo(e.x + 20, e.y - i*5 + 14); } g.stroke(); g.fillStyle = tc; g.fillRect(e.x, e.y + e.h - 4, e.w, 6); }
+  else if(e.kind === 'trapdoor'){
+    if(e.open){ g.setLineDash([12, 10]); g.strokeStyle = tc; g.strokeRect(e.x, e.y, e.w, e.h); g.setLineDash([]); }
+    else { g.fillStyle = '#7a5a3a'; g.fillRect(e.x, e.y, e.w, e.h); g.strokeRect(e.x, e.y, e.w, e.h); g.fillStyle = tc; g.fillRect(e.x, e.y, e.w, 4); g.fillStyle = '#1c1c1c'; for(const dx of [14, e.w - 14]){ g.beginPath(); g.arc(e.x + dx, e.y + 8, 4, 0, 7); g.fill(); } g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2; g.beginPath(); g.moveTo(e.x + e.w/2, e.y); g.lineTo(e.x + e.w/2, e.y + e.h); g.stroke(); }
+  }
+  g.restore();
+}
+// A tool as a little picture.
+function ctfEditToolIcon(g, tool, x, y, s, col){
+  g.save(); g.lineWidth = 3; g.strokeStyle = '#1c1c1c'; g.fillStyle = col || '#f4efe2';
+  const h = s/2;
+  if(tool === 'flag') ctfFlagIcon(g, x - 3, y + h, col || '#f4efe2', s, 0, null);
+  else if(tool === 'deco'){ g.fillStyle = '#a8773f'; g.fillRect(x - h, y - h + 4, s, s - 4); g.strokeRect(x - h, y - h + 4, s, s - 4); g.beginPath(); g.moveTo(x - h, y - h + 4); g.lineTo(x + h, y + h); g.moveTo(x + h, y - h + 4); g.lineTo(x - h, y + h); g.stroke(); }
+  else if(tool === 'plat'){ g.fillStyle = '#8b6a43'; g.fillRect(x - h - 2, y - 3, s + 4, 9); g.strokeRect(x - h - 2, y - 3, s + 4, 9); }
+  else if(tool === 'wall'){ g.fillStyle = '#6b6f7e'; g.fillRect(x - h + 2, y - h, s - 4, s); g.strokeRect(x - h + 2, y - h, s - 4, s); g.lineWidth = 2; g.beginPath(); g.moveTo(x - h + 2, y - 2); g.lineTo(x + h - 2, y - 2); g.moveTo(x, y - h); g.lineTo(x, y - 2); g.moveTo(x - 4, y - 2); g.lineTo(x - 4, y + h); g.stroke(); }
+  else if(tool === 'trap'){ g.fillStyle = '#e8e8f0'; for(let i = 0; i < 3; i++){ g.beginPath(); g.moveTo(x - h + i*s/3, y + h - 2); g.lineTo(x - h + i*s/3 + s/6, y - h + 2); g.lineTo(x - h + (i + 1)*s/3, y + h - 2); g.closePath(); g.fill(); g.stroke(); } }
+  else if(tool === 'remove'){ g.strokeStyle = '#e0503a'; g.lineWidth = 6; g.beginPath(); g.moveTo(x - h + 3, y - h + 3); g.lineTo(x + h - 3, y + h - 3); g.moveTo(x + h - 3, y - h + 3); g.lineTo(x - h + 3, y + h - 3); g.stroke(); }
+  else if(tool === 'offer'){ g.fillStyle = '#f4efe2'; g.beginPath(); g.moveTo(x - h, y - 5); g.lineTo(x + h - 6, y - 5); g.lineTo(x + h - 6, y - 11); g.lineTo(x + h, y - 2); g.lineTo(x + h - 6, y + 7); g.lineTo(x + h - 6, y + 1); g.lineTo(x - h, y + 1); g.closePath(); g.fill(); g.stroke(); g.beginPath(); g.moveTo(x + h, y + 5); g.lineTo(x - h + 6, y + 5); g.lineTo(x - h + 6, y + 11); g.lineTo(x - h, y + 2); g.lineTo(x - h + 6, y - 7 + 9); g.closePath(); g.fillStyle = '#9ad0ff'; g.fill(); g.stroke(); }
+  g.restore();
+}
+// The ghost of what the cursor would do. Returns true when it drew one (the flag ghost is then not drawn).
+function ctfDrawEditGhost(L, me, T){
+  const gh = ctfEditGhost(me); if(!gh || gh.tool === 'flag' || gh.tool === 'offer') return false;
+  const g = ctx; g.save();
+  if(gh.tool === 'remove'){
+    if(gh.shape){ const r = gh.shape; g.strokeStyle = '#e0503a'; g.lineWidth = 5; g.setLineDash([14, 10]); g.lineDashOffset = -T; g.strokeRect(r.x - 6, r.y - 6, r.w + 12, r.h + 12); g.setLineDash([]); ctfEditToolIcon(g, 'remove', r.x + r.w/2, r.y - 26, 26); }
+    else ctfNoEntryIcon(g, me._cam.x, me._cam.y + 44, 15);
+  } else if(gh.shape){
+    const sh = gh.shape, e = { tool:gh.tool, kind:gh.kind, team:me.team, x:sh.x, y:sh.y, w:sh.w, h:sh.h, fy:sh.fy, cx:sh.cx, open:false };
+    ctfEditPieceDraw(g, e, CTF.map.theme, me.team, T, 0.6);
+    if(gh.ok) ctfCheckIcon(g, sh.x + sh.w/2, sh.y - 22, 15); else { g.globalAlpha = 0.5; g.fillStyle = '#e0503a'; g.fillRect(sh.x, sh.y, sh.w, sh.h); g.globalAlpha = 1; ctfNoEntryIcon(g, sh.x + sh.w/2, sh.y - 22, 15); }
+  }
+  g.restore(); return true;
+}
+// The panel in the free camera: the tools, the piece, what it costs and what is left; and the bargaining.
+function ctfDrawEditHud(L, me){
+  const g = ctx, cx = W/2;
+  g.save(); g.textAlign = 'center'; g.textBaseline = 'middle';
+  const pts = Math.max(0, L.pts[me.idx] || 0);
+  if(me._cam){
+    const tool = CTF_TOOLS[me._tool || 0], bw = CTF_TOOLS.length*38 + 150, bx = cx - bw/2, by = H - 116;
+    g.fillStyle = 'rgba(28,24,38,0.82)'; g.strokeStyle = '#f4efe2'; g.lineWidth = 3; g.fillRect(bx, by, bw, 52); g.strokeRect(bx, by, bw, 52);
+    CTF_TOOLS.forEach((t, i)=>{ const ix = bx + 24 + i*38, sel = i === (me._tool || 0);
+      if(sel){ g.fillStyle = 'rgba(255,255,255,0.2)'; g.fillRect(ix - 18, by + 4, 36, 44); g.strokeStyle = '#ffd23f'; g.lineWidth = 2; g.strokeRect(ix - 18, by + 4, 36, 44); }
+      ctfEditToolIcon(g, t, ix, by + 22, 22, ctfColor(me.team));
+      const np = CTF_PIECES[t].length; if(np > 1){ for(let k = 0; k < np; k++){ g.fillStyle = sel && k === (me._piece || 0) % np ? '#ffd23f' : 'rgba(255,255,255,0.3)'; g.beginPath(); g.arc(ix - (np - 1)*3 + k*6, by + 44, 2, 0, 7); g.fill(); } } });
+    // what is picked costs this much; this many points are left
+    const gx = bx + CTF_TOOLS.length*38 + 12;
+    g.font = 'bold 20px sans-serif';
+    const cost = CTF_COSTS[tool];
+    if(cost != null){ g.fillStyle = cost > pts ? '#e0503a' : '#f4efe2'; g.textAlign = 'left'; g.fillText('-' + cost, gx, by + 18); }
+    g.fillStyle = '#ffd23f'; g.strokeStyle = '#1c1c1c'; g.lineWidth = 2; g.beginPath(); g.arc(gx + 14, by + 38, 8, 0, 7); g.fill(); g.stroke();
+    g.fillStyle = '#f4efe2'; g.textAlign = 'left'; g.fillText(String(pts), gx + 30, by + 38);
+    if(tool === 'offer'){   // what would be offered, in the few words a menu may have
+      const o = CTF_PIECES.offer[(me._piece || 0) % CTF_PIECES.offer.length];
+      g.font = 'bold 16px sans-serif'; g.textAlign = 'center'; g.fillStyle = 'rgba(28,24,38,0.85)'; g.fillRect(cx - 70, by - 34, 140, 28); g.strokeStyle = '#f4efe2'; g.lineWidth = 2; g.strokeRect(cx - 70, by - 34, 140, 28);
+      g.fillStyle = '#f4efe2'; g.fillText(o === 'both+' ? 'both +10' : o === 'both-' ? 'both -10' : 'us +10', cx, by - 20);
+    }
+  }
+  // a pending offer: shown to whoever may answer it (Space says yes, attack says no) and to whoever made it
+  const o = L.offer;
+  if(o){
+    const mine = o.to === me.team, y = 124;
+    g.fillStyle = 'rgba(28,24,38,0.88)'; g.strokeStyle = ctfColor(o.from); g.lineWidth = 4; g.fillRect(cx - 120, y, 240, 52); g.strokeRect(cx - 120, y, 240, 52);
+    ctfEditToolIcon(g, 'offer', cx - 92, y + 26, 22);
+    g.font = 'bold 22px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#f4efe2'; g.fillText(o.kind === 'both-' ? '-10' : '+10', cx - 64, y + 26);
+    for(const t of [0, 1]){ const hit = o.kind === 'mine+' ? t === o.from : true; g.globalAlpha = hit ? 1 : 0.25; g.fillStyle = ctfColor(t); g.beginPath(); g.arc(cx - 6 + t*22, y + 26, 8, 0, 7); g.fill(); g.strokeStyle = '#1c1c1c'; g.lineWidth = 2; g.stroke(); } g.globalAlpha = 1;
+    if(mine && o.votes[me.idx] == null){ ctfCheckIcon(g, cx + 58, y + 26, 14); ctfNoEntryIcon(g, cx + 92, y + 26, 14); }
+    else { g.fillStyle = '#f4efe2'; g.beginPath(); g.arc(cx + 75, y + 26, 4 + 3*Math.abs(Math.sin(hazardT*0.1)), 0, 7); g.fill(); }
+  } else if(L.offerLast){
+    g.globalAlpha = Math.min(1, L.offerLast.t/30); if(L.offerLast.ok) ctfCheckIcon(g, cx, 150, 18); else ctfNoEntryIcon(g, cx, 150, 18); g.globalAlpha = 1;
+  }
+  g.restore();
+}
+
 
 // ---- landmarks: scenery behind the map that collides with nothing, painted into the cached tiles ------------------
 function ctfDecorDraw(g, d, th){
@@ -3686,7 +4055,9 @@ const CTF_NAV_BUCKET = 256;
 function ctfNavParams(free, bst){ const k = (free ? 1 : CTF_CARRY_SPEED)*CTF_SPEED, j = (free ? 1 : CTF_CARRY_JUMP)*(bst ? CTF_BOOST_JUMP : 1); return { R:24, G:GRAV, CAP:MAXVX*k, ACC:MOVE*k, JV:JUMP*j }; }
 function ctfNavBucket(x){ return Math.floor(x/CTF_NAV_BUCKET); }
 
-function ctfNavNew(M){
+function ctfNavKey(n){ return Math.round(n.x0) + '|' + Math.round(n.x1) + '|' + Math.round(n.y) + '|' + (n.solid ? 1 : 0); }
+// prev + diff: a graph already made for the map without some rectangles (the players' walls); nodes further than 1500 px sideways from all of them keep the moves they had
+function ctfNavNew(M, prev, diff){
   const R = 24, solids = M.plats.filter(p=>p.solid);
   const blockers = M.doors.map(d=>({ x:d.x, y:d.y, w:d.w, h:d.h, door:d.id })).concat(M.jails.map(j=>({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, door:'J' + j.owner })));
   const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0 };
@@ -3731,6 +4102,15 @@ function ctfNavNew(M){
       if(B === A || Math.abs(B.y - A.y) > 1.5 || B.x0 < A.x1 - 1 || B.x0 > A.x1 + 14) continue;
       A.edges.push({ kind:'walk', from:A.id, to:B.id, xa:A.x1, xb:B.x0 + 2, dir:1, doors:[], cost:2 });
       B.edges.push({ kind:'walk', from:B.id, to:A.id, xa:B.x0, xb:A.x1 - 2, dir:-1, doors:[], cost:2 });
+    }
+  }
+  nav.keyMap = {}; for(const n of nav.nodes) nav.keyMap[ctfNavKey(n)] = n;
+  if(prev && prev.keyMap && diff){
+    for(const n of nav.nodes){
+      const pn = prev.keyMap[ctfNavKey(n)]; if(!pn || diff.some(r=>n.x1 > r.x - 1500 && n.x0 < r.x + r.w + 1500)) continue;
+      const copy = []; let ok = true;
+      for(const e of pn.edges){ if(e.kind === 'walk') continue; const nn = nav.keyMap[ctfNavKey(prev.nodes[e.to])]; if(!nn){ ok = false; break; } copy.push(Object.assign({}, e, { from:n.id, to:nn.id })); }
+      if(ok){ for(const e of copy) n.edges.push(e); n.reused = true; }
     }
   }
   return nav;
@@ -3790,6 +4170,7 @@ function ctfNavSimBoth(nav, n, xa, dir, dj, T, jump, run, want, frac, bst){
 function ctfNavSimThru(nav, n, xa){ return !!ctfNavSim(nav, n, xa, 0, 0, 0, 0, false, true, true); }
 // Every move off one place: the standing jumps (from three spots, running either way or straight up) and the walks off either end.
 function ctfNavProbe(nav, n){
+  if(n.reused) return;
   const P = ctfNavParams(), w = n.x1 - n.x0, found = {};
   const add = e=>{ (found[e.to] = found[e.to] || []).push(e); };
   // takeoff spots along the floor: about every 90 px (a long floor gets up to 40)
@@ -3900,10 +4281,10 @@ function ctfNavSweep(nav, side){
 }
 
 // ---- the team's memory --------------------------------------------------------------------------------------------
-function ctfAiBegin(L){
+function ctfAiBegin(L, nav){
   if(CTF.skipNav){ CTF.nav = null; return; }
   if(!CTF.navs) CTF.navs = {};
-  CTF.nav = CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavNew(CTF.map));
+  CTF.nav = nav || CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavNew(CTF.map));
   L.ai = { visited:[null, null], claims:[{}, {}], hideTaken:{}, rescue:[0, 0], stat:{ nodes:CTF.nav.nodes.length } };
   for(const f of fighters){ f._ai = { goal:null, path:null, pi:0, edge:null, phase:'', t:0, lastX:f.x, still:0, ban:{}, replan:0, fight:0, role:'att', hide:null, hideT:0 }; }
   for(const t of [0, 1]){
@@ -3932,7 +4313,7 @@ function ctfAiSee(L){
 }
 
 // ---- the moves ------------------------------------------------------------------------------------------------------
-function ctfAiInpNew(){ return { left:false, right:false, jump:false, down:false, up:false, attack:false, special:false, smash:false, flag:false }; }
+function ctfAiInpNew(){ return { left:false, right:false, jump:false, down:false, up:false, attack:false, special:false, smash:false, flag:false, edit:false }; }
 // Toward x on the ground, letting go early enough to stop on it.
 function ctfAiWalk(f, inp, tx, tol){
   const dx = tx - f.x, s = Math.sign(dx), v = f.vx*s, stop = Math.max(0, v)*4.2 + (tol || 6);
@@ -4051,6 +4432,7 @@ function ctfAiInput(f){
   const inp = ctfAiInpNew();
   const now = L.t;
   if(L.phase === 'hide') return ctfAiHide(f, ai, L, nav, inp, now);
+  if(L.phase === 'fix') return inp;
   // ordinary fighting whenever a foe is close, as it always was
   if(ai.fight > 0){ ai.fight--; return null; }
   const carrying = f._cf >= 0;
@@ -4188,7 +4570,7 @@ function ctfAiHide(f, ai, L, nav, inp, now){
   const fl = L.flags[f.idx];
   if(L.done[f.idx]) return inp;
   if(fl.st === 1){   // put down: done a moment later
-    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 12) inp.special = true; return inp;
+    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT === 12) inp.special = true; return inp;
   }
   if(!ai.hide){
     const M = L.map, pts = ctfNavSweep(nav, f.team);
@@ -5172,7 +5554,7 @@ function onDropLedge(f){
     if(p.solid || p.rot || p.raceFloor || p.raceFar) continue;
     if(f.x >= p.x - 2 && f.x <= p.x + p.w + 2 && Math.abs(feet - p.y) <= 4) return true;
   }
-  if(SETTINGS.mode==='ctf' && typeof ctfDynSolids==='function') for(const p of ctfDynSolids()) if(p.elev && f.x >= p.x - 2 && f.x <= p.x + p.w + 2 && Math.abs(feet - p.y) <= 6) return true;   // a Capture the Flag lift's car is a one-way ledge too
+  if(SETTINGS.mode==='ctf' && typeof ctfDynSolids==='function') for(const p of ctfDynSolids()) if((p.elev || (p.edit && !p.solid)) && f.x >= p.x - 2 && f.x <= p.x + p.w + 2 && Math.abs(feet - p.y) <= 6) return true;   // a Capture the Flag lift's car is a one-way ledge too
   return false;
 }
 function isBig(){ return SETTINGS.mode==='teams' || SETTINGS.mode==='ctf' || ONEFIGHT.active || COBSFIGHT.active || RACE.active; }   // team mode uses the big 4-floor tower (and so do One's arena and Steve Cobs's)
@@ -5196,7 +5578,7 @@ function isNetClient(){ return !!(window.NET && window.NET.role==='client'); }
 function viewScrolls(){ return isNetClient() ? NET_VIEW.scroll : scrolls(); }
 function viewZoom(){ return isNetClient() ? NET_VIEW.z : (scrolls() ? CAM_ZOOM : 1); }
 // The buttons an online input message carries (NET.sendInput, NET.onMessage, netRemoteInput).
-const NET_BUTTONS = ['left','right','jump','down','attack','special','smash','flag'];
+const NET_BUTTONS = ['left','right','jump','down','attack','special','smash','flag','edit'];
 
 // ---------- screen router ----------
 function go(id){
@@ -28520,10 +28902,11 @@ function step(){
       inp.special=down[K.special]||gp?.special;
       inp.smash =down[K.smash]||gp?.smash;
       inp.flag  =down[K.flag];
+      inp.edit  =down[K.edit];
     } else if(ctrl==="remote"){
       const r = netRemoteInput(f.idx);   // input relayed from that player's device, a press since the last frame latched in
       if(r){ inp.left=!!r.left; inp.right=!!r.right; inp.jump=!!r.jump; inp.up=!!r.jump;
-        inp.down=!!r.down; inp.attack=!!r.attack; inp.special=!!r.special; inp.smash=!!r.smash; inp.flag=!!r.flag; }
+        inp.down=!!r.down; inp.attack=!!r.attack; inp.special=!!r.special; inp.smash=!!r.smash; inp.flag=!!r.flag; inp.edit=!!r.edit; }
     } else if(ctrl==="still"){
       // test-mode dummy: no input at all — just stands to be hit
     } else {
