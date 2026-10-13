@@ -384,6 +384,21 @@ describe('capture the flag', () => {
     expect(w.eval('fighters[0]._cam')).toBe(null);
   });
 
+  it('a flag put down within the width of a prop is behind it (seen only from close); anywhere else it is in the open; every prop kind draws', () => {
+    const { window: w } = loadMonolith(24);
+    start(w);
+    const sp = J(w, `CTF.map.spots.filter(function(s){ return s.team===0 && s.cover==='crate'; })[0] || CTF.map.spots.filter(function(s){ return s.team===0 && s.cover; })[0]`);
+    const hw = w.eval(`CTF_COVER_HW['${sp.cover}']`);
+    w.eval(`ctfPlaceFlag(CTF.live.flags[0], ${sp.x + hw - 8}, ${sp.y})`);
+    expect(w.eval('CTF.live.flags[0].cover'), 'at the edge of the prop: behind it').toBe(true);
+    w.eval(`ctfPlaceFlag(CTF.live.flags[0], ${sp.x + hw + 300}, ${sp.y})`);
+    const near = w.eval(`CTF.map.spots.some(function(s){ return s.team===0 && s.cover && Math.abs(s.x-${sp.x + hw + 300}) < (CTF_COVER_HW[s.cover]||46) && Math.abs(s.y-${sp.y}) < 80; })`);
+    expect(w.eval('CTF.live.flags[0].cover'), 'away from every prop: in the open').toBe(near);
+    expect(w.eval('Object.keys(CTF_COVER).length'), 'a wide choice of props').toBeGreaterThanOrEqual(20);
+    const bad = J(w, `Object.keys(CTF_COVER_HW).filter(function(k){ try{ ctfCoverDraw(ctx, { x:100, y:200, cover:k }, CTF.map.theme); return false; }catch(e){ return true; } })`);
+    expect(bad, 'prop kinds that fail to draw').toEqual([]);
+  });
+
   it('only capturing all five ends the match: no clock', () => {
     const { window: w } = loadMonolith(9);
     start(w);
