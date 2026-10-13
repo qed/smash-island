@@ -18,6 +18,8 @@ const step = (w, n = 1) => { for (let i = 0; i < n; i++) w.eval('step()'); };
 const logic = (w, n) => w.eval(`(function(){ for (var i=0;i<${n};i++){ ctfStep(); ctfCheckWin(); } })()`);
 // put fighter i on the floor at (x, y) standing, where nothing else is going on
 const put = (w, i, x, y) => w.eval(`(function(){ var f=fighters[${i}]; f.x=${x}; f.y=${y}-f.r; f.vx=0; f.vy=0; f.invuln=0; })()`);
+// the castle: the surface is at 4320, the cellar floor (the jail) at 5520
+const GY = 4320, CAVE = 5520;
 const flagOf = (w, team, k = 0) => w.eval(`CTF.live.flags.filter(function(f){ return f.team===${team}; })[${k}].id`);
 
 describe('capture the flag', () => {
@@ -55,7 +57,7 @@ describe('capture the flag', () => {
     put(w, a, f.x, f.y); step(w, 2);
     expect(w.eval(`fighters[${a}]._cf`)).toBe(fl);
     // carried a little way, then KO'd on its own side's ground
-    put(w, a, 1500, 2640); step(w, 1);
+    put(w, a, 1500, GY); step(w, 1);
     w.eval(`eliminate(fighters[${a}])`);
     expect(w.eval(`CTF.live.flags[${fl}].st`), 'dropped').toBe(3);
     expect(w.eval(`fighters[${a}]._cf`)).toBe(-1);
@@ -81,28 +83,28 @@ describe('capture the flag', () => {
     start(w);
     const a = mate(w, 0), friend = mate(w, 0, 1);
     const j = J(w, 'CTF.map.jails[1]');   // team 1 owns the right jail: it holds team 0's fighters
-    put(w, a, j.zone.x + 300, 2640);
+    put(w, a, 20000, GY);
     w.eval(`eliminate(fighters[${a}])`);
     expect(w.eval(`fighters[${a}]._jail`), 'jailed by the right-hand side').toBe(1);
     const sl = J(w, `{x:fighters[${a}].x, y:fighters[${a}].y}`);
-    expect(Math.abs(sl.x - j.door.x), 'inside the cell, by the door').toBeLessThan(600);
+    expect(Math.abs(sl.x - j.door.x), 'inside the cell, by the door').toBeLessThan(900);
     step(w, 30);
     expect(w.eval(`fighters[${a}]._jail`), 'still inside').toBe(1);
-    put(w, friend, j.door.x - 20, 2640);   // a teammate touches the door
+    put(w, friend, j.door.x - 20, CAVE);   // a teammate touches the door
     step(w, 2);
     expect(w.eval(`fighters[${a}]._jail`), 'freed').toBe(null);
     expect(w.eval('CTF.live.jails[1].pris.length')).toBe(0);
     // a KO on your own side is a trip home instead
-    put(w, a, 800, 2640); w.eval(`eliminate(fighters[${a}])`);
+    put(w, a, 800, GY); w.eval(`eliminate(fighters[${a}])`);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
-    expect(w.eval(`fighters[${a}].x`)).toBeLessThan(2000);
+    expect(w.eval(`fighters[${a}].x`)).toBeLessThan(14400);
   });
 
   it('a prisoner left in the cell is let out after a while, so no side is ever stuck', () => {
     const { window: w } = loadMonolith(6);
     start(w);
     const a = mate(w, 0), j = J(w, 'CTF.map.jails[1]');
-    put(w, a, j.zone.x + 300, 2640); w.eval(`eliminate(fighters[${a}])`);
+    put(w, a, 20000, GY); w.eval(`eliminate(fighters[${a}])`);
     logic(w, w.eval('CTF_JAIL_AUTO') + 5);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
   });
@@ -111,7 +113,7 @@ describe('capture the flag', () => {
     const { window: w } = loadMonolith(7);
     start(w);
     const owner = mate(w, 1), j = J(w, 'CTF.map.jails[1]'), z = j.zone;
-    put(w, owner, z.x + 300, 2640);
+    put(w, owner, z.x + 300, CAVE);
     const pct0 = w.eval(`fighters[${owner}].pct`);
     step(w, 600);
     const x = w.eval(`fighters[${owner}].x`);
@@ -119,7 +121,7 @@ describe('capture the flag', () => {
     expect(w.eval(`fighters[${owner}].pct`)).toBe(pct0);
     // the other side may stand there
     const foe = mate(w, 0);
-    put(w, foe, z.x + z.w / 2, 2640); step(w, 60);
+    put(w, foe, z.x + z.w / 2, CAVE); step(w, 60);
     const fx = w.eval(`fighters[${foe}].x`);
     expect(Math.abs(fx - (z.x + z.w / 2))).toBeLessThan(50);
   });
@@ -132,7 +134,7 @@ describe('capture the flag', () => {
     put(w, holder, k.x, k.y); step(w, 2);
     expect(w.eval(`fighters[${holder}]._ck`)).toBe(k.i);
     expect(w.eval(`CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0].open`)).toBe(false);
-    put(w, holder, 1000, 2640); w.eval(`eliminate(fighters[${holder}])`);
+    put(w, holder, 1000, GY); w.eval(`eliminate(fighters[${holder}])`);
     expect(w.eval(`CTF.live.keys[${k.i}].st`), 'dropped where it fell').toBe(0);
     // pick it up again and take it to its door
     const d = J(w, `CTF.live.doors.filter(function(d){ return d.id==='1r'; })[0]`);
