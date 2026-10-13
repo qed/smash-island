@@ -4602,7 +4602,8 @@ function cupSyncUI(){
     note.textContent = (TOURNEY_SETUP_MODE==='normal'
       ? "Normal: you're randomly assigned a team and play its matches yourself. All other matches auto-sim instantly. Reach the final and lift the cup!"
       : "Spectator: watch the AI play it out, auto-simming any matches you skip.")
-      + " Group matches are stock fights ("+who+", "+cfg.gStocks+" stock"+(cfg.gStocks===1?'':'s')+" each): 3 pts win · 1 draw · stock-difference tiebreaker.";
+      + " Group matches are stock fights ("+who+", "+cfg.gStocks+" stock"+(cfg.gStocks===1?'':'s')+" each): 3 pts win · 1 draw · stock-difference tiebreaker."
+      + (TOURNEY_SETUP_SIZE>1 ? " Time limits are per fighter on a side." : "");
   }
 }
 // A WATCHED World Cup group fixture is a STOCK fight now (the owner, 2026-10-13: "group matches fought on stocks"): each fighter has the cup's
@@ -5079,7 +5080,7 @@ let TOURNEY_WATCHING = null;
 function watchFixture(fx, youPlay){
   if(fx.played){ return; }
   TOURNEY_WATCHING = fx;
-  { const cfg0 = TOURNEY.cfg || TOURNEY_CFG, secs = (fx.kind==="group") ? cfg0.gTime : cfg0.kTime; TOURNEY.liveTimer = secs ? secs*60 : 0; }   // a clock only if the setup gave one: a group fight is a cap, a knockout runs to elimination
+  { const cfg0 = TOURNEY.cfg || TOURNEY_CFG, secs = (fx.kind==="group") ? cfg0.gTime : cfg0.kTime; TOURNEY.liveTimer = secs ? secs*60*tourneyTeamSize() : 0; }   // a clock only if the setup gave one (a group fight's is a cap, a knockout runs to elimination), per fighter on a side: a 3v3 has three times the stocks to get through
   const size = tourneyTeamSize(), cfg = TOURNEY.cfg || TOURNEY_CFG;
   SETTINGS.mode = (size>1) ? 'teams' : 'ffa';
   SETTINGS.count = size*2;
@@ -5099,10 +5100,25 @@ function watchFixture(fx, youPlay){
     try{ banner("WC SETUP ERROR: "+msg.split("\n").slice(0,2).join(" | "), 10000); }catch(e){}
   }
 }
-// The stages this cup may use. Small ones only for now (the big, scrolling ones come with their camera).
+// The stages this cup may use, by the setup's Stages row: all of them, the small ones (today's cup), the big scrolling ones, or the ticked list.
+// A list with nothing ticked falls back to the small ones, so a fixture always has a stage.
 function cupStagePool(cfg){
-  let pool = STAGES.filter(st=>!st.big);
-  return pool.length ? pool : STAGES.slice();
+  const pool = cfg.pool==='all' ? STAGES.slice()
+    : cfg.pool==='big' ? STAGES.filter(st=>st.big)
+    : cfg.pool==='pick' ? STAGES.filter(st=>(cfg.picks||[]).includes(st.id))
+    : STAGES.filter(st=>!st.big);
+  return pool.length ? pool : STAGES.filter(st=>!st.big);
+}
+// Where the camera looks at a fixture nobody is playing here (a spectated cup, or the player's own team is out): the closest pair of opponents
+// still standing. A big scrolling stage follows the fight; it used to follow whoever was first in the list, who can be a screen away from it.
+function cupCamFocus(){
+  const alive = fighters.filter(f=>!f.dead);
+  let best = null, bd = Infinity;
+  for(const a of alive) for(const b of alive){
+    if(a.team >= b.team) continue;
+    const d = Math.hypot(a.x-b.x, a.y-b.y); if(d < bd){ bd = d; best = [a, b]; }
+  }
+  return best ? { x:(best[0].x+best[1].x)/2, y:(best[0].y+best[1].y)/2 } : null;
 }
 function finishWatchSetup(fx, youPlay, size){
   // in normal mode, YOU control your team; the side your team sits on becomes the human side.
@@ -5121,6 +5137,11 @@ function finishWatchSetup(fx, youPlay, size){
     if(isBig() && bases.length){
       const b = bases[teamSlot % bases.length], sp = (b.spawns && b.spawns.length) ? b.spawns[(i % size) % b.spawns.length] : {x:b.spawnX, y:b.spawnY};
       sx = sp.x; sy = sp.y - (b.wall ? 40 : 0); hb = teamSlot % bases.length;
+    } else if(isBigFFA()){
+      // a big scrolling stage: start the pair 600 px apart in the middle. buildFighters spreads a whole free-for-all across 0.12..0.88 of a
+      // world five screens wide, which for two fighters is four screens apart: measured with two CPUs, 7 of 10 such fights had no KO in 90 s,
+      // against most at 600 px.
+      sx = WW/2 + (i/Math.max(1,fighters.length-1) - 0.5)*600; sy = groundY()-60;
     }
     const f = makeFighter({...row, ...mem, you:false}, sx, sy, f0.idx);
     f.stocks = f0.stocks; f.homeBase = hb;
@@ -5134,7 +5155,10 @@ function finishWatchSetup(fx, youPlay, size){
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; f.killCount=0; });
   fx._stk0 = [cupTeamStocks(0), cupTeamStocks(1)];   // what each side started with, for scoring a fight that ends on the clock
   particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null;
-  camX=0; camY=0;
+  if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }   // the Evil Forest keeps the monster it has in any other match
+  // Start the camera where updateCamera is heading (on you, or on the fight), not at the corner of the world.
+  { const me = fighters.find(f=>f.you), foc = me ? { x:me.x, y:me.y } : cupCamFocus();
+    if(scrolls() && foc){ const t = camTarget(foc.x, foc.y, CAM_ZOOM); camX = t.x; camY = t.y; } else { camX=0; camY=0; } }
   // A World Cup fixture is an arena match — swap the hub's anthem for the battle bed. (Without
   // this the regal hub loop kept playing straight through every fight.)
   try{ clutchReset(); sndInit(); musicNewMatch('battle'); }catch(e){}
@@ -35329,7 +35353,12 @@ function camTarget(x, y, z){
 }
 function updateCamera(){
   if(!scrolls()){ camX=0; camY=0; return; }
-  const you=fighters.find(f=>f.you&&!f.dead) || fighters.find(f=>!f.dead);
+  const live=fighters.find(f=>f.you&&!f.dead);
+  if(!live && TOURNEY_WATCHING){   // a World Cup fixture with nobody of yours in it: watch the fight
+    const foc = cupCamFocus();
+    if(foc){ const t = camTarget(foc.x, foc.y, CAM_ZOOM); camX += (t.x-camX)*0.12; camY += (t.y-camY)*0.12; return; }
+  }
+  const you=live || fighters.find(f=>!f.dead);
   if(!you) return;
   const t = camTarget(you.x + (RACE.active ? raceCamLead() : 0), you.y, CAM_ZOOM);   // RUNNING!: the camera looks ahead of the runner, and further at the edge (raceCamLead)
   camX += (t.x-camX)*0.12;   // smooth follow

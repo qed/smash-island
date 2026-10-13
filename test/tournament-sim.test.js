@@ -338,3 +338,48 @@ describe('World Cup — watched group fixtures run long enough to be a match', (
     expect(r.points, 'both teams were credited a played fixture').toBe(2);
   });
 });
+
+// ---- Big stages in the cup -----------------------------------------------------------------------
+// The setup's Stages row (all / small / big / pick) chooses what a fixture is fought on. A solo fixture on a big stage is the same scrolling
+// arena a normal free-for-all uses; with nobody of yours in it the camera follows the fight instead of the first fighter in the list.
+describe('World Cup — big stages', () => {
+  it('draws the stage of a fixture from the pool, and falls back to the small ones when the list is empty', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`
+      (function(){
+        var kinds = function(p){ var pool = cupStagePool({ pool:p, picks:[] }); return { n:pool.length, big:pool.filter(function(s){ return s.big; }).length }; };
+        var pick = cupStagePool({ pool:'pick', picks:['canyon','goiky'] }).map(function(s){ return s.id; });
+        return { all:kinds('all'), small:kinds('small'), big:kinds('big'), pick:pick, empty:kinds('pick') };
+      })()`);
+    expect(r.small.big, 'small only').toBe(0);
+    expect(r.big.big, 'big only').toBe(r.big.n);
+    expect(r.all.n).toBe(r.small.n + r.big.n);
+    expect(r.pick.sort()).toEqual(['canyon', 'goiky']);
+    expect(r.empty.n, 'nothing ticked: the small stages').toBe(r.small.n);
+    expect(r.empty.big).toBe(0);
+  });
+
+  it('plays a solo fixture on a big stage: a scrolling arena, the pair together in the middle, the camera on them', () => {
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const r = w.eval(`
+      (function(){
+        TOURNEY.cfg = cupClean({ ...TOURNEY.cfg, pool:'pick', picks:['grandplains'] });
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false); paused = true;
+        var out = { big:stage.big, scrolls:scrolls(), wide:WW > W*2, apart:Math.abs(fighters[0].x - fighters[1].x), mid:(fighters[0].x + fighters[1].x)/2 / WW,
+                    focus:cupCamFocus(), camX:camX, camY:camY };
+        for (var i = 0; i < 120; i++) step();                     // two seconds on: the camera has stayed with them
+        var f = cupCamFocus(); out.onScreen = f.x - camX > 0 && f.x - camX < W && f.y - camY > 0 && f.y - camY < H;
+        TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false; running = false;
+        return out;
+      })()`);
+    expect(r.big).toBe(true);
+    expect(r.scrolls).toBe(true);
+    expect(r.wide, 'the world is wider than two screens').toBe(true);
+    expect(Math.abs(r.apart - 600), 'they start about 600 px apart').toBeLessThan(10);
+    expect(r.mid, 'in the middle of the world').toBeCloseTo(0.5, 2);
+    expect(r.camX, 'the camera started on the fight, not at the corner of the world').toBeGreaterThan(500);
+    expect(r.onScreen, 'and the fight is on screen').toBe(true);
+  });
+});
