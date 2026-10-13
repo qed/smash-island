@@ -361,12 +361,13 @@ describe('the jumps: precision platforming', () => {
     for (let i = 1; i < gs.length; i++) if (gs[i].sec) expect(gs[i].x0 - gs[i - 1].x1, 'the run-up to ' + gs[i].k).toBeGreaterThanOrEqual(gs[i - 1].sec ? 240 : 460);
   });
 
-  it('the planks narrow as the lane goes on and the stairs grow; the pillars are one fighter wide; planks are one-way, pillars are stone', () => {
+  it('the planks narrow as the lane goes on and the stairs grow; the pillars are a little more than one fighter wide; planks are one-way, pillars are stone', () => {
     const L = lane(), planks = L.obs.filter((o) => o.k === 'planks'), pillars = L.obs.filter((o) => o.k === 'pillars'), plats = JSON.parse(L.plats);
     expect(planks.length).toBeGreaterThanOrEqual(2); expect(pillars.length).toBeGreaterThanOrEqual(2);
     nondecreasing(planks, (o) => -o.pw, 'planks narrow'); nondecreasing(planks, (o) => o.n, 'and the stairs grow');
     expect(planks[planks.length - 1].pw, 'a plank is narrower at the end than a first one by a quarter or more').toBeLessThan(planks[0].pw * 0.75);
-    for (const o of pillars) expect(o.pw, 'a pillar is one fighter wide (48 px)').toBe(2 * L.r);
+    // the owner, 2026-10-13: "make the running platforms a bit wider" -- a pillar was one fighter wide (48 px, 2 x r); it is 60 now
+    for (const o of pillars) { expect(o.pw, 'a pillar is 60 px').toBe(60); expect(o.pw, 'a little more than one fighter wide').toBeGreaterThan(2 * L.r); }
     const stones = plats.filter((p) => p.raceStone), pil = plats.filter((p) => p.racePillar);
     expect(stones.length, 'every plank of the stairs is in the world, and the one between the two pits of each leap').toBe(planks.reduce((a, o) => a + o.n, 0) + L.obs.filter((o) => o.k === 'leap').length);
     expect(pil.length, 'and every pillar').toBe(pillars.reduce((a, o) => a + o.n, 0));
