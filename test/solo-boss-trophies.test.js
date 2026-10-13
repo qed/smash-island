@@ -159,21 +159,24 @@ describe('a solo Boss Rush is a legal match', () => {
     expect(w.eval(`SETTINGS.mode='ffa';  fighters=[{}];       soloRun()`)).toBe(false);
   });
 
-  it('does not offer a solo run when two people share the keyboard', async () => {
-    // A solo count with LOCAL_PLAYERS=2 leaves player 2 with no fighter at all. The pre-existing
-    // guard only fires when the players control itself changes, so 2 Players -> Boss Rush -> 1
-    // walked straight past it the moment the solo option existed.
+  // Restated 2026-10-13. This used to promise that solo was HIDDEN while two people shared the keyboard (LOCAL_PLAYERS = 2), because
+  // player 2 would have had no fighter. The owner, many times: "multiplayer means ONLINE only" -- asked, they picked "Remove
+  // same-keyboard 2P". There is no second person at this keyboard, so Boss Rush always offers a solo run, and no other mode does.
+  it('there is no same-keyboard 2P to hide the solo run from: Boss Rush always offers 1, other modes never do', async () => {
     const w = boot(); await settle(w);
     const r = w.eval(`
       (function(){
-        LOCAL_PLAYERS = 2; SETTINGS.mode='boss';
-        var offered = countOptions();
-        SETTINGS.count = 1; buildCountButtons();
-        return { offered: offered, corrected: SETTINGS.count, floor: minCount() };
+        SETTINGS.mode='boss';
+        var boss = countOptions(), bossFloor = minCount();
+        SETTINGS.mode='ffa';
+        var ffa = countOptions(), ffaFloor = minCount();
+        return { boss: boss, bossFloor: bossFloor, ffa: ffa, ffaFloor: ffaFloor, gone: typeof LOCAL_PLAYERS + '|' + !!document.getElementById('segLocalPlayers') };
       })()`);
-    expect(r.offered, 'solo is hidden while two people are playing').not.toContain(1);
-    expect(r.floor).toBe(2);
-    expect(r.corrected, 'an out-of-range 1 clamps UP to the floor, not to the maximum').toBe(2);
+    expect(r.boss, 'solo is offered in Boss Rush').toContain(1);
+    expect(r.bossFloor).toBe(1);
+    expect(r.ffa, 'every other mode needs an opponent').not.toContain(1);
+    expect(r.ffaFloor).toBe(2);
+    expect(r.gone, 'the Players-at-this-keyboard control is gone').toBe('undefined|false');
   });
 
   it('leaving Boss Rush cannot strand another mode on one fighter', async () => {

@@ -16,7 +16,7 @@ window.__setupCustomMatch = function(names, stocks, aiLevel, itemRate){
   // "this stat does not affect balance" and means "this stat was never in the room". Passing a rate
   // turns them on so those knobs can be measured at all.
   SETTINGS.itemRate = (itemRate === undefined || itemRate === null) ? 0 : itemRate;
-  AI_LEVEL=aiLevel; LOCAL_PLAYERS=1;
+  AI_LEVEL=aiLevel;
   stage = STAGES.find(s=>s.id==='goiky') || STAGES.find(s=>!s.big) || STAGES[0];  // flat, hazard:null
   resize(); setupWorld();
   const N=names.length;
@@ -28,7 +28,7 @@ window.__setupCustomMatch = function(names, stocks, aiLevel, itemRate){
     const sy = groundY()-60;
     const f = makeFighter(Object.assign({}, r, {you:false}), sx, sy, i);
     f.stocks=stocks; f.team=i; f.homeBase=null;           // one fighter per team => true FFA
-    f.controller='ai'; f.you=false; f.you2=false;         // all AI: nobody waits on a keyboard
+    f.controller='ai'; f.you=false;                       // all AI: nobody waits on a keyboard
     fighters.push(f);
   });
   // mirror beginMatchNow()'s per-match resets

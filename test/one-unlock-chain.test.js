@@ -678,7 +678,9 @@ describe('the review\'s fixes to the chain', () => {
       if(!fx){ TOURNEY.round = 0; buildGroupFixtures(); fx = TOURNEY.fixtures.find(function(f){ return f.a===TOURNEY.myTeam || f.b===TOURNEY.myTeam; }); }
       watchFixture(fx, true);
       var you = fighters.find(function(f){ return f.you; });
-      fighters.forEach(function(f){ f._kos = (f.team===you.team) ? ${kosMine} : ${kosTheirs}; });
+      // Restated 2026-10-13: a group fixture is a STOCK fight now (2 stocks each), scored by the stocks each side took, not by _kos. kosMine is
+      // the stocks YOUR side took from theirs, kosTheirs the stocks they took from yours: the same win, loss and draw as before.
+      fighters.forEach(function(f){ f.stocks = 2 - ((f.team===you.team) ? ${kosTheirs} : ${kosMine}); f.dead = f.stocks <= 0; });
       finishWatchedGroup(fx);
       return { erased:PROFILE.one.erased.slice(), hub:document.getElementById('tourneyHubBody').textContent, you:you.name };
     })()`);
@@ -940,21 +942,20 @@ describe('the erased are gone for the AI too ("the ais also dont have access to 
     done();
   });
 
-  it('a second player at the keyboard is not an AI: their fighter is drawn exactly as it always was', async () => {
-    await fresh(W, ERASING() + ' LOCAL_PLAYERS = 2;');
+  // Restated 2026-10-13. This pin used to promise that a SECOND HUMAN AT THE KEYBOARD (LOCAL_PLAYERS = 2, controller 'local2') was
+  // drawn exactly as it always was, so could still be handed an erased fighter. The owner, many times: "multiplayer means ONLINE only",
+  // and asked, they picked "Remove same-keyboard 2P". There is no second keyboard human any more: every seat but yours is the
+  // computer's, so none of them can be handed an erased fighter. (A human in an ONLINE room still keeps their pick: see the net fill test.)
+  it('there is no same-keyboard second player: every seat but yours is the computer\'s and skips the erased', async () => {
+    await fresh(W, ERASING());
     const erased = erasedNow();
-    let p2Erased = 0;
     for (let s = 0; s < 60; s++) {
       W.eval('PROFILE.one.stage = 1;');
       const now = draw('ffa', 4, 9000 + s);
-      W.eval('PROFILE.one.stage = 0;');   // the same seed with the chain not started: the draw as it always was
-      const before = draw('ffa', 4, 9000 + s);
-      const p2 = now.find((x) => x.c === 'local2');
-      expect(p2.name, `seed ${s}`).toBe(before.find((x) => x.c === 'local2').name);
-      if (erased.has(p2.name)) p2Erased++;
+      expect(now.some((x) => x.c === 'local2'), `seed ${s}`).toBe(false);
+      expect(now.filter((y) => y.c === 'local')).toHaveLength(1);
       for (const x of now.filter((y) => y.c === 'ai')) expect(erased.has(x.name), `seed ${s}: AI ${x.name}`).toBe(false);
     }
-    expect(p2Erased, 'so a second human can still be handed an erased fighter').toBeGreaterThan(0);
     done();
   });
 

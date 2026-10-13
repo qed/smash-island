@@ -126,3 +126,23 @@ heavy/brawl, which denied 46 of 59 fighters their finisher *and* damped roster v
 holding them all to a common baseline. Opening it (pass 3) lifted the floor 7.0% → 9.1% but
 widened std-dev 5.89 → 6.50, because it amplifies uneven smash quality. If a future pass
 wants the tighter spread back, that single gate in `aiThink` is the lever.
+
+## Re-rating the whole roster for the World Cup (1v1 round robin)
+
+`FIGHTER_WINRATE` (the World Cup's unwatched-match ratings) was baked from the bracket run and covers ~59 fighters; the other ~43
+(all Inanimate Insanity, Bow, Soap, Fan, MeTag, Magnet...) fall back to the mean. To rate EVERY playable fighter (prize fighters are not in
+ROSTER at boot, so they are out):
+
+```bash
+# 1. measure: every playable fighter, each pairing twice with the sides swapped, 2 stocks like the old bake (slow: fighters x opp matches)
+node scripts/balance-1v1.mjs --opp 40 --procs 2 --stocks 2 --seed 2026 --out scripts/balance-1v1-<date>.json
+# 2. stand it on the scale the cup was tuned on, in the old ranking schema (refuses a run missing any playable fighter)
+node scripts/rank-from-1v1.mjs scripts/balance-1v1-<date>.json --out scripts/balance-ranking-<date>-1v1.json
+# 3. bake it (test/baked-ratings.test.js wants the NEWEST dated balance-ranking file, and the table to agree with it)
+node scripts/bake-ratings.mjs scripts/balance-ranking-<date>-1v1.json
+```
+
+Why step 2: a 1v1 win rate averages 50% with its own spread, the bracket's heat-winner rate averaged 20% (sd 0.107), and `RATING_SPREAD` plus the
+upset band in `test/tournament-rating.test.js` were tuned on that scale. `rank-from-1v1.mjs` shrinks each fighter toward the mean by how noisy their own
+number is, standardises, and maps onto the previous bake's mean and sd; the raw 1v1 rate rides along as `winRate1v1`. Then run
+`tournament-rating`, `tournament-sim` and `baked-ratings`.

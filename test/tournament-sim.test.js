@@ -179,6 +179,7 @@ describe('Unit 7 — team construction', () => {
 // out, so TOURNEY_TIME_LIMIT IS the length of the fight. It was ~20s, which a 2-a-side game barely
 // got past the first exchange of. These pin the new length and — more importantly — pin down that
 // the clock governs ONLY watched group fixtures.
+// (2026-10-13: group fixtures are stock fights now; the clock is the default cap on one that will not end by itself.)
 describe('World Cup — watched group fixtures run long enough to be a match', () => {
   it('each fighter in a fixture is hit by its OWN hurtbox and has its own KO cap (a real bug: the slots were renamed, not rebuilt)', () => {
     // the owner, 2026-10-13: "hurtboxes are different in world cup" -- every slot kept the hurtbox of whoever buildFighters had put there
@@ -201,11 +202,63 @@ describe('World Cup — watched group fixtures run long enough to be a match', (
     }
   });
 
-  it('runs a watched group fixture for about forty seconds', () => {
+  // Restated 2026-10-13. This pin used to say a watched group fixture runs about forty seconds (38-75 s) on endless stocks, scored on KOs
+  // when the clock ran out. The owner asked for "group matches fought on stocks" (2 by default, knockouts keeping their rules): the fight now
+  // ends when a side is out, and the clock (90 s by default, set on the setup screen) is only a cap on a fight that will not end by itself.
+  it('fights a watched group fixture on stocks (2 each by default), with a clock that is only a cap', () => {
     const { window: w } = loadMonolith();
     const frames = w.eval('TOURNEY_TIME_LIMIT');
-    expect(frames / 60, 'seconds of group match').toBeGreaterThanOrEqual(38);
-    expect(frames / 60, '…but still a fixture, not a full match').toBeLessThanOrEqual(75);
+    expect(frames / 60, 'seconds of cap on a group match').toBeGreaterThanOrEqual(60);
+    expect(frames / 60, '…still a fixture, not a full match').toBeLessThanOrEqual(150);
+    startTourney(w);
+    const r = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false);
+        var out = { stocks: fighters.map(function(f){ return f.stocks; }), total: g._stk0.slice() };
+        TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false; running = false;
+        return out;
+      })()`);
+    expect(r.stocks, "every fighter has the cup's 2 group stocks, none infinite").toEqual([2, 2]);
+    expect(r.total, 'and each side started with the sum').toEqual([2, 2]);
+  });
+
+  it('scores a group fixture by the stocks each side took, whoever wipes the other out or leads on the clock', () => {
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const r = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false);
+        fighters[1].stocks = 0; fighters[1].dead = true;       // side B is wiped out; side A lost one of its two
+        fighters[0].stocks = 1;
+        finishWatchedGroup(g);
+        return { sa: g.result.sa, sb: g.result.sb, a: g.a.pts, b: g.b.pts };
+      })()`);
+    expect(r).toEqual({ sa: 2, sb: 1, a: 3, b: 0 });
+    // the same fight on the clock: equal stocks lost is a draw
+    const d = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group' && !f.played; });   // the group's other game: two teams that have not played
+        watchFixture(g, false);
+        finishWatchedGroup(g);
+        return { sa: g.result.sa, sb: g.result.sb, a: g.a.pts, b: g.b.pts };
+      })()`);
+    expect(d).toEqual({ sa: 0, sb: 0, a: 1, b: 1 });
+  });
+
+  it('a knockout that runs out of clock still has a winner: the side with more stocks left', () => {
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const win = w.eval(`
+      (function(){
+        TOURNEY_CFG.kTime = 120;
+        var g = TOURNEY.fixtures[0]; g.kind = 'ko';
+        watchFixture(g, false);
+        fighters[0].stocks = 1; fighters[1].stocks = 3;
+        return cupTimedWinner(g);
+      })()`);
+    expect(win).toBe(1);
   });
 
   it('arms the clock for a GROUP fixture and leaves knockout on elimination', () => {
@@ -283,5 +336,96 @@ describe('World Cup — watched group fixtures run long enough to be a match', (
     expect(r.running, 'the match loop stopped').toBe(false);
     expect(r.matchActive, 'and the tournament-match flag cleared').toBe(false);
     expect(r.points, 'both teams were credited a played fixture').toBe(2);
+  });
+});
+
+// ---- Big stages in the cup -----------------------------------------------------------------------
+// The setup's Stages row (all / small / big / pick) chooses what a fixture is fought on. A solo fixture on a big stage is the same scrolling
+// arena a normal free-for-all uses; with nobody of yours in it the camera follows the fight instead of the first fighter in the list.
+describe('World Cup — big stages', () => {
+  it('draws the stage of a fixture from the pool, and falls back to the small ones when the list is empty', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`
+      (function(){
+        var kinds = function(p){ var pool = cupStagePool({ pool:p, picks:[] }); return { n:pool.length, big:pool.filter(function(s){ return s.big; }).length }; };
+        var pick = cupStagePool({ pool:'pick', picks:['canyon','goiky'] }).map(function(s){ return s.id; });
+        return { all:kinds('all'), small:kinds('small'), big:kinds('big'), pick:pick, empty:kinds('pick') };
+      })()`);
+    expect(r.small.big, 'small only').toBe(0);
+    expect(r.big.big, 'big only').toBe(r.big.n);
+    expect(r.all.n).toBe(r.small.n + r.big.n);
+    expect(r.pick.sort()).toEqual(['canyon', 'goiky']);
+    expect(r.empty.n, 'nothing ticked: the small stages').toBe(r.small.n);
+    expect(r.empty.big).toBe(0);
+  });
+
+  it('plays a solo fixture on a big stage: a scrolling arena, the pair together in the middle, the camera on them', () => {
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const r = w.eval(`
+      (function(){
+        TOURNEY.cfg = cupClean({ ...TOURNEY.cfg, pool:'pick', picks:['grandplains'] });
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false); paused = true;
+        var out = { big:stage.big, scrolls:scrolls(), wide:WW > W*2, apart:Math.abs(fighters[0].x - fighters[1].x), mid:(fighters[0].x + fighters[1].x)/2 / WW,
+                    focus:cupCamFocus(), camX:camX, camY:camY };
+        for (var i = 0; i < 120; i++) step();                     // two seconds on: the camera has stayed with them
+        var f = cupCamFocus(); out.onScreen = f.x - camX > 0 && f.x - camX < W && f.y - camY > 0 && f.y - camY < H;
+        TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false; running = false;
+        return out;
+      })()`);
+    expect(r.big).toBe(true);
+    expect(r.scrolls).toBe(true);
+    expect(r.wide, 'the world is wider than two screens').toBe(true);
+    expect(Math.abs(r.apart - 600), 'they start about 600 px apart').toBeLessThan(10);
+    expect(r.mid, 'in the middle of the world').toBeCloseTo(0.5, 2);
+    expect(r.camX, 'the camera started on the fight, not at the corner of the world').toBeGreaterThan(500);
+    expect(r.onScreen, 'and the fight is on screen').toBe(true);
+  });
+});
+
+// ---- Pick your teammates -------------------------------------------------------------------------
+describe('World Cup — pick your teammates', () => {
+  it('walks the fighter select once per seat, then seats your picks together and nowhere else in the cup', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`
+      (function(){
+        var free = ROSTER.filter(function(r){ return r.play && isUnlocked(r); }).slice(0, 3).map(function(r){ return r.name; });
+        TOURNEY_SETUP_MODE = 'normal'; TOURNEY_SETUP_SIZE = 3; TOURNEY_CFG.mates = 'pick'; TOURNEY_CFG.cup = 16;
+        kickOffTournament();
+        var out = { stage:[] };
+        chosen = ROSTER.find(function(r){ return r.name === free[0]; }); startMatch();   // you
+        out.stage.push(document.getElementById('selTitle').textContent + '|' + document.querySelectorAll('#board .cell.taken').length + '|' + document.getElementById('startBtn').textContent);
+        chosen = ROSTER.find(function(r){ return r.name === free[1]; }); startMatch();   // teammate 1
+        out.stage.push(document.getElementById('selTitle').textContent + '|' + document.querySelectorAll('#board .cell.taken').length + '|' + document.getElementById('startBtn').textContent);
+        selectBack();                                                                       // back: teammate 1 is un-picked
+        out.back = document.getElementById('selTitle').textContent + '|' + document.querySelectorAll('#board .cell.taken').length + '|' + chosen.name;
+        chosen = ROSTER.find(function(r){ return r.name === free[1]; }); startMatch();
+        chosen = ROSTER.find(function(r){ return r.name === free[2]; }); startMatch();   // teammate 2: the cup starts
+        out.free = free; out.team = TOURNEY.myTeam.members.map(function(m){ return m.name; }); out.pending = PENDING_TOURNEY; out.chosen = chosen.name;
+        out.elsewhere = TOURNEY.teams.filter(function(t){ return t !== TOURNEY.myTeam; }).filter(function(t){ return t.members.some(function(m){ return free.indexOf(m.name) >= 0; }); }).length;
+        out.sizes = TOURNEY.teams.every(function(t){ return t.members.length === 3; });
+        return out;
+      })()`);
+    expect(r.stage[0]).toMatch(/^Pick teammate 1 of 2\|1\|Next teammate/);
+    expect(r.stage[1]).toMatch(/^Pick teammate 2 of 2\|2\|Kick Off/);
+    expect(r.back, 'Back un-picks the last teammate and gives the grid back').toBe('Pick teammate 1 of 2|1|' + r.free[1]);
+    expect(r.team, 'your side, in seat order').toEqual(r.free);
+    expect(r.pending, 'the pick is over').toBe(null);
+    expect(r.chosen, 'you lead your side').toBe(r.free[0]);
+    expect(r.elsewhere, 'nobody else in the cup has any of them').toBe(0);
+    expect(r.sizes).toBe(true);
+  });
+
+  it('keeps the random draw when the setup says so, and for solo', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`
+      (function(){
+        TOURNEY_SETUP_MODE = 'normal'; TOURNEY_SETUP_SIZE = 2; TOURNEY_CFG.mates = 'random'; kickOffTournament();
+        var a = PENDING_TOURNEY.pickMates; PENDING_TOURNEY = null;
+        TOURNEY_SETUP_SIZE = 1; TOURNEY_CFG.mates = 'pick'; kickOffTournament();
+        return [a, PENDING_TOURNEY.pickMates];
+      })()`);
+    expect(r).toEqual([false, false]);
   });
 });

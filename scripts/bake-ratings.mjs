@@ -39,9 +39,16 @@ const rows = ranking
 
 const mean = Math.round((rows.reduce((s, r) => s + r[1], 0) / rows.length) * 1000) / 1000;
 
+// A 1v1 round robin (balance-1v1.mjs, turned into this file's schema by rank-from-1v1.mjs) is every playable fighter, standardised onto the
+// scale the World Cup was tuned on; the bracket measurement (balance-tournament.mjs) is the older, 59-fighter one.
+const is1v1 = data.method === '1v1-round-robin';
+const header = is1v1
+  ? [`// Measured over ${data.tournaments} real 1v1 matches, every playable fighter (round robin, each pairing twice with the sides swapped;`,
+     `// seed ${data.baseSeed}, ${data.stocks} stocks, AI level ${data.aiLevel}), standardised onto mean ${data.scaledTo.mean} / sd ${data.scaledTo.sd}, the scale the cup was tuned on. Source: ${src}`]
+  : [`// Measured over ${data.tournaments} tournaments / ${ranking.reduce((s, r) => s + r.games, 0)} real matches`,
+     `// (seed ${data.baseSeed}, ${data.stocks} stocks, AI level ${data.aiLevel}). Source: ${src}`];
 const body = [
-  `// Measured over ${data.tournaments} tournaments / ${ranking.reduce((s, r) => s + r.games, 0)} real matches`,
-  `// (seed ${data.baseSeed}, ${data.stocks} stocks, AI level ${data.aiLevel}). Source: ${src}`,
+  ...header,
   `// Regenerate with: node scripts/bake-ratings.mjs ${src}`,
   'const FIGHTER_WINRATE = {',
   ...rows.map(([name, wr]) => `  ${JSON.stringify(name)}: ${wr.toFixed(3)},`),

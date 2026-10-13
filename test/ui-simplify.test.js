@@ -85,7 +85,10 @@ describe('match settings — the three dials nobody changes are folded away', ()
   it('leaves mode, players, contestants and stocks in the open', () => {
     const { window: w } = loadMonolith();
     const adv = w.document.getElementById('advBody');
-    for (const id of ['segMode', 'segLocalPlayers', 'segCount', 'segStocks']) {
+    // Restated 2026-10-13: 'segLocalPlayers' (Players at this keyboard) used to be in this list. Multiplayer is online only (the
+    // owner, many times; asked, they picked "Remove same-keyboard 2P"), so the control is gone altogether.
+    expect(w.document.getElementById('segLocalPlayers'), 'no same-keyboard 2-player control').toBeNull();
+    for (const id of ['segMode', 'segCount', 'segStocks']) {
       expect(adv.contains(w.document.getElementById(id)), `${id} stays visible`).toBe(false);
     }
   });
