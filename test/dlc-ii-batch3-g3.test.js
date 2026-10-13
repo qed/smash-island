@@ -162,15 +162,17 @@ describe('Dough: Shameless Knockoff copies, a beat late and weaker', () => {
     expect(r.last).toBe('copycat');
   });
 
-  it("copying Bow is the joke, and it works: her Telekinesis raises three snowballs over him, at 0.7x", () => {
-    // Bow's special was Possession when this was written; the II-bosses build made it Telekinesis ("change possession to
-    // a different thing"), so the knockoff is three held snowballs now, weaker like everything he copies.
-    const r = arena('Dough', `D._lastSpecialKind = 'chair'; fireSpecial(A, {}); run(13);
-      var mine = projectiles.filter(function(p){ return p.owner === A.idx && p.shape === 'snowball'; });
-      return { n: mine.length, held: mine.filter(function(p){ return p.tkHold > 0; }).length, dmg: mine.map(function(p){ return +p.dmg.toFixed(2); }) };`, 470);
-    expect(r.n).toBe(3);
-    expect(r.held, 'still hanging over him a beat after the copy').toBe(3);
-    expect(r.dmg).toEqual([3.5, 3.5, 3.5]);
+  it("copying Bow is the joke, and it works: her Levitate lifts him off the floor and pops whoever he rises through, at 0.7x", () => {
+    // RESTATED (2026-10-13). Bow's special was Telekinesis (three held snowballs; Possession before that) and the owner replaced it with
+    // Levitate ("Recover: Levitate", non-canon by his permission). The knockoff is still the joke and still weaker like everything he
+    // copies: now it is a float of his own, and the rise hit is 6% at 0.7x.
+    const r = arena('Dough', `D._lastSpecialKind = 'chair'; var y0 = A.y; fireSpecial(A, {}); run(13);
+      var out = { floating: !!A._lev, shots: projectiles.filter(function(p){ return p.owner === A.idx; }).length };
+      run(14); out.rose = Math.round(y0 - A.y); out.dealt = +(D.pct - 30).toFixed(2); return out;`, 425);
+    expect(r.floating, 'the copy is a float').toBe(true);
+    expect(r.shots, 'no snowballs any more').toBe(0);
+    expect(r.rose, 'he is lifted').toBeGreaterThan(10);
+    expect(r.dealt).toBeCloseTo(6 * 0.7, 5);
   });
 
   it('a direct hit he copies lands at 0.7x (Nickel\'s Double Zinger)', () => {

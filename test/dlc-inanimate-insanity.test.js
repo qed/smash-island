@@ -221,55 +221,51 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(drift, 'she steps off a cliff and goes sideways').toBeGreaterThanOrEqual(5);
   });
 
-  // Bow's special was Possession (2026-09-22, "a bit more to do with her abilities as a ghost. this is for the special
-  // only"). The owner has since said "change possession to a different thing" (2026-09-24), so the test that pinned
-  // Possession now pins what replaced it: TELEKINESIS, still a ghost power -- "In "Snow Bow", Bow was able to levitate
-  // snowballs without touching them" (the II wiki, Abilities: As a Ghost).
-  it("Bow's special is Telekinesis: three snowballs hang over her touching no one, then go at the foe she faces", () => {
+  // Bow's special was Possession (2026-09-22, "a bit more to do with her abilities as a ghost. this is for the special only"), then
+  // Telekinesis -- three held snowballs ("In "Snow Bow", Bow was able to levitate snowballs without touching them", the II wiki).
+  // RESTATED (2026-10-13): the owner said "the snowballs arent good. they cant combo, cant kill, and cant recover", picked "Recover:
+  // Levitate", and gave "special permission to make a new, non-canon special". Each pin below is the old promise in Levitate's terms.
+  // The pins that stay: nobody changes sides, Possession's machinery is gone, nothing is thrown, a boss is hit only when she is in it.
+  it("Bow's special is Levitate: she lifts herself, steers, and pops up the foe she rises through -- no snowballs, no Possession", () => {
     const r = arena('Bow', `
-      E.x = A.x - 60; D.x = A.x + 250;                      // Coiny is nearer, but behind her
-      doSpecial(A);
-      for (var i=0;i<8;i++) step();
-      var sb = projectiles.filter(function(p){ return p.shape==='snowball'; });
-      var got = { n: sb.length, held: sb.every(function(p){ return p.tkHold > 0 && p.vx === 0; }),
-                  over: sb.every(function(p){ return p.y < A.y - 30; }), hurtWhileHeld: D.pct + E.pct - 60,
-                  sides: [D.team, E.team], possession: typeof endPossession !== 'undefined' };
-      for (var j=0;j<70;j++) step();
-      got.front = +(D.pct - 30).toFixed(2); got.behind = +(E.pct - 30).toFixed(2);
-      got.left = projectiles.filter(function(p){ return p.shape==='snowball'; }).length;
-      got.card = MOVE_TEXT['Bow'].special; got.desc = A.kit.desc;
-      return got;`);
-    expect(r.n, 'three snowballs').toBe(3);
-    expect(r.held && r.over, 'held up over her head, not thrown yet').toBe(true);
-    expect(r.hurtWhileHeld, 'while held they touch no one -- that is the tell').toBe(0);
+      D.x = A.x + 20; D.y = A.y; E.x = A.x + 400;
+      var y0 = A.y; doSpecial(A);
+      var floating = !!A._lev, frames = 0, minY = A.y, hits = [], last = D.pct;
+      for (var i=0;i<80;i++){ step(); if (A._lev) frames++; minY = Math.min(minY, A.y); if (D.pct > last + 0.01){ hits.push(+(D.pct - last).toFixed(2)); last = D.pct; } D.invuln = 0; }
+      return { floating: floating, frames: frames, climb: Math.round(y0 - minY), hits: hits, shots: projectiles.filter(function(p){ return p.shape==='snowball' || p.tkHold !== undefined; }).length,
+               sides: [D.team, E.team], possession: typeof endPossession !== 'undefined', card: MOVE_TEXT['Bow'].special, desc: A.kit.desc };`);
+    expect(r.floating).toBe(true);
+    expect(r.frames, 'about a second of float, then it ends').toBe(58);
+    expect(r.climb, 'a real lift with nothing held, and one lift: not flight (Puffball is the flyer)').toBeGreaterThan(50);
+    expect(r.climb).toBeLessThan(200);
+    expect(r.hits, 'the foe she rises through takes 6%, once').toEqual([6]);
+    expect(r.shots, 'the snowballs are gone').toBe(0);
     expect(r.sides, 'nobody changes sides any more').toEqual([1, 2]);
     expect(r.possession, 'Possession and its machinery are gone').toBe(false);
-    expect(r.front, 'all three land on the one she faces, 5% each').toBeCloseTo(15, 5);
-    expect(r.behind, 'not the nearer one behind her').toBe(0);
-    expect(r.left).toBe(0);
-    expect(r.card).toMatch(/^Telekinesis — /);
-    expect(r.desc).toMatch(/^Telekinesis/);
-    expect(r.card + r.desc).not.toMatch(/possess/i);
+    expect(r.card).toMatch(/^Levitate — /);
+    expect(r.desc).toMatch(/^Levitate/);
+    expect(r.card + r.desc).not.toMatch(/possess|snowball|telekinesis → /i);
   });
 
-  it("Bow's snowballs aim wherever she faces when each is let go, and fall if she goes down holding them", () => {
+  it("Bow steers where she holds while she floats, and the float ends with a KO: nothing keeps holding her up", () => {
     const r = arena('Bow', `
-      D.x = A.x + 250; E.x = A.x - 250;
-      doSpecial(A);
-      for (var i=0;i<4;i++) step();
-      A.face = -1;                                           // she turns before any of them goes
-      for (var j=0;j<70;j++) step();
-      var turned = { front: +(D.pct - 30).toFixed(2), behind: +(E.pct - 30).toFixed(2) };
-      projectiles = []; A.spCd = 0; A.face = 1; doSpecial(A);
-      for (var k=0;k<4;k++) step();
-      eliminate(A); step();
-      return { turned: turned, afterFall: projectiles.filter(function(p){ return p.shape==='snowball'; }).length };`);
-    expect(r.turned.behind, 'the one she turned to face gets them').toBeGreaterThan(0);
-    expect(r.turned.front).toBe(0);
-    expect(r.afterFall, 'nothing is holding them up').toBe(0);
+      D.x = A.x + 900; E.x = A.x + 900; A.y = groundY() - 220; A.onground = false; A.vy = 0; A.jumps = 0;
+      var inputs = {}; var saved = netRemoteInput; netRemoteInput = function(i){ return inputs[i] || null; }; A.controller = 'remote';
+      doSpecial(A); var x0 = A.x, out = {};
+      inputs[0] = { right: true }; for (var i=0;i<20;i++) step(); out.right = A.x - x0;
+      inputs[0] = { left: true }; var x1 = A.x; for (var j=0;j<30;j++) step(); out.left = A.x - x1;
+      inputs[0] = { jump: true }; var y1 = A.y; for (var k=0;k<5;k++) step(); out.up = y1 - A.y;
+      A.jumps = 1; step(); out.jumpDoesNotJump = A.jumps === 1;
+      netRemoteInput = saved; A.controller = 'still';
+      eliminate(A); step(); out.afterKO = { lev: !!A._lev, used: !!A._levUsed }; return out;`);
+    expect(r.right, 'right steers her right').toBeGreaterThan(30);
+    expect(r.left, 'left steers her back').toBeLessThan(-30);
+    expect(r.up, 'the jump key is her UP while she floats').toBeGreaterThan(-5);
+    expect(r.jumpDoesNotJump, 'and does not spend a jump').toBe(true);
+    expect(r.afterKO).toEqual({ lev: false, used: false });
   });
 
-  it("in Boss Rush Bow's snowballs go at the boss, since there is no one else to throw at", () => {
+  it("in Boss Rush Bow's Levitate hits the boss she rises through, once, since there is no one else to hit", () => {
     const r = W.eval(`(function(){
       SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
       BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
@@ -278,20 +274,20 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       A.team=0; A.controller='still'; A.stocks=9; fighters=[A];
       spawnBossRushBoss();
       var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
-      step(); A.invuln=0; A.spCd=0; A.x = b.x - 260; A.face = 1;
+      step(); A.invuln=300; A.spCd=0; A.x = b.x + 20; A.y = groundY() - A.r; A.face = 1;
       var hp0 = b.hp; doSpecial(A);
-      var aimed = 0;
-      for (var i=0;i<80;i++){ step(); projectiles.forEach(function(p){ if(p.shape==='snowball' && !(p.tkHold>0) && p.vy !== 0) aimed++; }); }
-      return { hurt: hp0 - b.hp, aimed: aimed > 0 };
+      for (var i=0;i<12;i++){ step(); A.invuln = 300; A.hitstun = 0; }   // (his body hurts her too: this pins what SHE does to him)
+      var first = hp0 - b.hp;
+      for (var j=0;j<60;j++){ step(); b._atkTimer = 1e9; A.invuln = 300; A.hitstun = 0; }
+      return { first: first, total: hp0 - b.hp };
     })()`);
-    expect(r.hurt, 'MePhone4 takes the snowballs').toBeGreaterThan(0);
-    expect(r.aimed, 'aimed at him, not just thrown flat ahead').toBe(true);
+    expect(r.first, 'MePhone4 takes the lift').toBeGreaterThan(0);
+    expect(r.total, 'and only once, however long she stays inside him').toBe(r.first);
   });
 
-  // The review's probe: with Bow standing under MePhone4 and facing AWAY from him, all three held snowballs hit him for 15
-  // on the first frame and were used up, never held -- the shots-hit-summons loop did not skip held ones, though the
-  // projectile step says "held: no travel, no life lost, no hits". An add beside her ate them the same way.
-  it("Bow's held snowballs touch no boss and no add either: standing under MePhone4, or beside one of his adds", () => {
+  // The review's probe (for the snowballs): standing under MePhone4, held snowballs hit him for 15 on the first frame. Levitate has
+  // nothing to hold: the same ground is covered by "once": a boss and an add she rises through each take the hit one time.
+  it("Bow's Levitate hits an add she rises through once, as it does a boss: beside one of MePhone4's adds", () => {
     const r = W.eval(`(function(){
       SETTINGS.mode='boss'; SETTINGS.items=false; SETTINGS.itemRate=0; SETTINGS.stocks=99; running=true;
       BOSSRUSH = { active:false, bossIdx:6, cleared:0, defeated:false, loop:0, dmgMult:1 };
@@ -299,19 +295,58 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       var A = makeFighter(ROSTER.find(function(r){ return r.name==='Bow'; }), 300, groundY()-24, 0);
       A.team=0; A.controller='still'; A.stocks=9; fighters=[A];
       spawnBossRushBoss();
-      var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
-      step(); A.invuln=0; A.spCd=0; A.x = b.x + 20; A.face = 1;          // under him, facing away
-      var a = meLifeDownload(b, 1); a._dl = 0; a.x = A.x + 10; a.y = A.y - 54; a.vx = 0; a.vy = 0;
-      var hp0 = b.hp, ahp0 = a.hp; doSpecial(A);
-      for (var i=0;i<8;i++){ step(); A.x = b.x + 20; A.face = 1; a.x = A.x + 10; a.y = A.y - 54; a.vx = 0; a.vy = 0; }
-      var sb = projectiles.filter(function(p){ return p.shape==='snowball'; });
-      var out = { boss: hp0 - b.hp, add: ahp0 - a.hp, held: sb.length, allHeld: sb.every(function(p){ return p.tkHold > 0; }) };
-      summons = []; projectiles = []; return out;
+      var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9; b.x = 900;
+      step(); A.invuln=300; A.spCd=0; A.x = 300; A.face = 1;
+      var a = meLifeDownload(b, 1); a._dl = 0; a.x = A.x + 10; a.y = A.y - 20; a.vx = 0; a.vy = 0;
+      var ahp0 = a.hp; doSpecial(A);
+      for (var i=0;i<30;i++){ step(); b._atkTimer = 1e9; A.invuln = 300; a.x = A.x + 10; a.y = A.y - 20; a.vx = 0; a.vy = 0; }
+      var out = { add: ahp0 - a.hp }; summons = []; projectiles = []; return out;
     })()`);
-    expect(r.held, 'all three are still up there').toBe(3);
-    expect(r.allHeld).toBe(true);
-    expect(r.boss, 'MePhone4 takes nothing from snowballs she is still holding').toBe(0);
-    expect(r.add, 'nor does his add').toBe(0);
+    expect(r.add, 'the add takes it').toBeGreaterThan(0);
+    expect(r.add, 'once').toBeLessThanOrEqual(7);
+  });
+
+  // The owner's rule for a good kit: "PB is a good kit, because you can get into combos by chipping with the attack, recover with the up
+  // special, and kill with the smash/finisher." Bow's three, after 2026-10-13: Levitate recovers, its rise hit pops a foe into a follow-up,
+  // and the finisher and the smash kill. This pins the first two and the once-per-airtime rule (the kill is measured in the commit).
+  it("Bow's Levitate recovers from under the ledge after her double jump, pops a foe into a follow-up, and is once per airtime", () => {
+    const r = arena('Bow', `
+      var savedBig = isBig, savedBases = bases, savedWW = WW, savedWH = WH, saved = netRemoteInput, inputs = {};
+      isBig = function(){ return true; }; WW = 1100; WH = 720; bases = [{x:350,y:500,w:400,h:20}]; fighters = [A];
+      netRemoteInput = function(i){ return inputs[i] || null; }; A.controller = 'remote';
+      A.x = 330; A.y = 680; A.vx = 0; A.vy = 6; A.onground = false; A.jumps = 1; A.spCd = 0;      // 180 px under the ledge, one jump left
+      var jumped = false, cast = false, back = -1, spent = null;
+      for (var i=0;i<260 && back < 0;i++){
+        var inp = {};
+        if (A._lev){ cast = true; inp.right = A.x < 540; inp.jump = A.y + A.r > 492; }
+        else { inp.right = A.x < 540;
+          if (A.jumps > 0 && !jumped && A.vy > 0){ inp.jump = true; jumped = true; }
+          else if (A.jumps <= 0 && A.vy > 0 && A.spCd <= 0 && !A.onground) inp.special = true; }
+        inputs[0] = inp; step();
+        if (cast && spent === null && !A._lev){ A.spCd = 0; fireSpecial(A, {}); spent = !!A._lev; }   // the float is over: a second one in the same airtime
+        if (A.onground && A.x > 350 && A.x < 750 && A.y + A.r <= 501) back = i;
+      }
+      var out = { back: back, cast: cast, secondFloat: spent };
+      isBig = savedBig; bases = savedBases; WW = savedWW; WH = savedWH; netRemoteInput = saved; return out;`);
+    expect(r.cast, 'she used it').toBe(true);
+    expect(r.back, 'and got back onto the stage').toBeGreaterThan(0);
+    expect(r.secondFloat, 'once per airtime: a second press in the same fall floats nothing').toBe(false);
+
+    const link = arena('Bow', `
+      D.x = A.x + 20; D.y = A.y; D.pct = 40; doSpecial(A);
+      var p0 = D.pct, hit = -1;
+      for (var i=0;i<30 && hit < 0;i++){ step(); if (D.pct > p0 + 0.01) hit = i; }
+      for (var k=0;k<6;k++) step();                                   // inside the stun the hit left: the follow-up is a second link
+      var before = D.pct; A.atkCd = 0; doUpTilt(A);
+      return { first: +(p0 - 40 + (D.pct - p0)).toFixed(1), second: D.pct > before + 0.01 };`);
+    expect(link.second, 'the pop leaves the foe open to an uppercut a few frames later').toBe(true);
+
+    const drop = arena('Bow', `
+      A.x = 400; A.y = groundY() - 24 - 260; A.vy = 0; A.onground = false; D.x = 404; D.y = A.y + 70; D.vy = 0; D.onground = false;
+      var p0 = D.pct, seq = [], last = p0; fireSpecial(A, { up: true });
+      for (var i=0;i<60;i++){ step(); if (D.pct > last + 0.01){ seq.push(+(D.pct - last).toFixed(1)); last = D.pct; } }
+      return seq;`);
+    expect(drop, 'Chair Slam in the air: 5.5% on the way down, then the 13% slam').toEqual([5.5, 13]);
   });
 
   it("Bow's chair slam gains no height, and Pepper echoes Salt's jab as well as her special", () => {
