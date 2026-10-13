@@ -734,11 +734,14 @@ describe("the trainer's smoke run", () => {
       const out = node(['smoke', '--dir', dir, '--fighters', 'Firey,Pen', '--pairs', '2', '--cands', '1', '--bench', '2', '--frames', '900', '--workers', '2']);
       expect(out).toMatch(/matches a minute/);
       let st = JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
-      expect(st.fighters.Firey.gen).toBe(1);
-      expect(st.fighters.Pen.gen).toBe(1);
-      // not in this run: Rocky keeps the generation the game ships for him (0 until the trainer embedded his first playbook, 2026-10-07)
-      const shipped = /"Rocky": \{"gen":(\d+)/.exec(readFileSync('artifacts/V1/index.html', 'utf8'));
-      expect(st.fighters.Rocky.gen).toBe(shipped ? +shipped[1] : 0);
+      // A fresh run is seeded from the playbooks the game ships, so a fighter starts at the generation it ships at (0 with no playbook). Firey ships one
+      // since 2026-10-13 and Rocky since 2026-10-07; the run adds one generation to each fighter it trains, and none to one it does not.
+      const html0 = readFileSync('artifacts/V1/index.html', 'utf8');
+      const shippedGen = (n) => { const m = new RegExp('"' + n + '": \\{"gen":(\\d+)').exec(html0); return m ? +m[1] : 0; };
+      expect(st.fighters.Firey.gen).toBe(shippedGen('Firey') + 1);
+      expect(st.fighters.Pen.gen).toBe(shippedGen('Pen') + 1);
+      // not in this run: Rocky keeps the generation the game ships for him
+      expect(st.fighters.Rocky.gen).toBe(shippedGen('Rocky'));
       expect(st.fighters.Pen.wr, "Pen had a playbook, so it was benchmarked against today's bot").not.toBeNull();
       expect(st.fighters.Pen.wrN).toBe(2);
       expect(st.fighters.Firey.matches).toBeGreaterThanOrEqual(4);              // the champion's two pairs and the candidate's
@@ -748,10 +751,10 @@ describe("the trainer's smoke run", () => {
       const again = node(['run', '--dir', dir, '--fighters', 'Firey', '--gens', '1', '--pairs-max', '2', '--pairs-step', '2', '--cands', '1', '--bench', '2', '--frames', '900', '--workers', '2', '--no-prizes', '--priority', 'normal']);
       expect(again).toMatch(/resuming/);
       st = JSON.parse(readFileSync(path.join(dir, 'state.json'), 'utf8'));
-      expect(st.fighters.Firey.gen).toBe(2);
-      expect(st.fighters.Pen.gen).toBe(1);
+      expect(st.fighters.Firey.gen).toBe(shippedGen('Firey') + 2);
+      expect(st.fighters.Pen.gen).toBe(shippedGen('Pen') + 1);
       expect(st.totals.matches).toBeGreaterThan(before);
-      expect(node(['status', '--dir', dir], 60000)).toMatch(/Firey\s+gen\s+2/);
+      expect(node(['status', '--dir', dir], 60000)).toMatch(new RegExp('Firey\\s+gen\\s+' + (shippedGen('Firey') + 2)));
       // the playbooks go into a copy of the game and nowhere else
       copyFileSync('artifacts/V1/index.html', copy);
       expect(node(['embed', '--dir', dir, '--target', copy], 60000)).toMatch(/rewritten/);
