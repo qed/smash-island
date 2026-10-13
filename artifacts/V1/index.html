@@ -2064,8 +2064,8 @@ function teamSplitsFor(N){
 const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, green, gold (max 4 teams)
 // @ctf:begin
 // ---------------------------------------------------------------------------------------------------------------
-//  CTF MAPS. A map is a grid of 120 px cells (80 columns x 28 rows = 9600 x 3360 world px, about 9 screens wide and
-//  3.4 tall at the match zoom), written for the LEFT half only: team 0's side. The right half is the mirror image, so
+//  CTF MAPS. A map is a grid of 120 px cells (240 columns x 52 rows = 28800 x 6240 world px, about 27 screens wide and
+//  6 tall at the match zoom), written for the LEFT half only: team 0's side. The right half is the mirror image, so
 //  both sides are exactly the same by construction. A hop-platform lattice is then laid over the open air (the same
 //  brick-bond idea the big stages use), so there is always somewhere to stand at every height.
 //
@@ -2077,7 +2077,8 @@ const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, gre
 //    J  the jail door (a vertical run)          p  a prisoner's place inside the jail
 //  An object stands on the floor under its cell.
 // ---------------------------------------------------------------------------------------------------------------
-const CTF_CELL = 120, CTF_COLS = 80, CTF_ROWS = 28, CTF_HALF = 40;
+const CTF_CELL = 120, CTF_COLS = 240, CTF_ROWS = 52, CTF_HALF = 120;
+const CTF_G = 36, CTF_HL = 28, CTF_LOW = 46;   // the three lanes: the surface (mid) row, the high walkway row, the cave floor row
 const CTF_DOOR_COL = ['#d94f4f','#e0b030','#3fb0e0','#8a5ad0','#40b870','#e07a30'];   // door/key colours 1..6
 const CTF_COVER = { B:'bush', C:'crate', F:'banner', W:'barrel' };
 const CTF_MAPS = {};
@@ -2092,9 +2093,20 @@ function ctfGridNew(){
     box(r0,c0,r1,c1,ch){ for(let r=r0;r<=r1;r++) g.fill(r,c0,c1,ch); return g; },
     gap(r,c0,c1){ return g.fill(r,c0,c1,'.'); },
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
-    field: null,
+    fields: [], decor: [],
+    // a floor transition: a gap in the slab on row rSlab (2 wide at column c) and the one-way steps up from the floor at rFloor
+    stairs(rSlab, rFloor, c){ g.gap(rSlab, c, c+1); const n = rFloor - rSlab - 1; for(let i=0;i<n;i++) g.put(rFloor-1-i, c + (i%2), '='); return g; },
+    // a shaft of alternating steps between two columns, from row rBot up to row rTop
+    shaft(c, rBot, rTop){ for(let r=rBot;r>=rTop;r--) g.put(r, c + ((rBot-r)%2), '='); return g; },
+    // a free-standing zigzag of w-wide ledges, one row apart: the fast way up between lanes
+    ladder(c, rBot, rTop, w){ w = w || 3; for(let r=rBot;r>=rTop;r--){ const o = ((rBot-r)%2)*w; g.fill(r, c+o, c+o+w-1, '='); } return g; },
+    deck(r, c0, c1){ return g.fill(r, c0, c1, '='); },
+    // a stepped mound of solid blocks standing on the floor whose cell row is rFloor: cover that can always be walked over, one step a row
+    mound(rFloor, c0, w, h){ for(let i = 0; i < h; i++){ const a = c0 + i, b = c0 + w - 1 - i; if(b < a) break; g.fill(rFloor - i, a, b, '#'); } return g; },
+    // scenery that collides with nothing: kind, column, row, width and height in cells
+    deco(kind, c, r, w, h, opt){ g.decor.push({ kind, c, r, w, h, ...(opt||{}) }); return g; },
     keepClear(c0,r0,c1,r1){ g.clear.push([c0,r0,c1,r1]); return g; },
-    lattice(o){ g.field = o; return g; },
+    lattice(o){ g.fields.push(o); return g; },
   };
   return g;
 }
@@ -2142,9 +2154,11 @@ function ctfMapBuild(id){
   for(const rc of mergeCellsTo(solids)) leftPlats.push({ ...rc, solid:true });
   for(const rc of ctfMergeCells(hops)) leftPlats.push({ x:rc.x, y:rc.y, w:rc.w, h:16, hop:true });
   // lattice laid over the air
-  if(g.field) for(const p of ctfLattice(g, leftPlats, g.field)) leftPlats.push(p);
+  for(const o of g.fields) for(const p of ctfLattice(g, leftPlats, o)) leftPlats.push(p);
   // mirror
   for(const p of leftPlats){ M.plats.push({ ...p }); M.plats.push({ ...p, x:mx(p.x,p.w) }); }
+  M.decor = [];
+  for(const d of g.decor){ const dd = { ...d, x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL }; M.decor.push(dd); M.decor.push({ ...dd, x:mx(dd.x, dd.w), flip:true }); }
   function mergeCellsTo(s){ return ctfMergeCells(s); }
   // doors: a vertical stack of one digit is one slab, thin, centred in its column
   const doorOf = (r0,r1,c,n,team)=>({ id:team?n+'r':String(n), n, team, color:CTF_DOOR_COL[n-1], x:c*CTF_CELL+42, y:r0*CTF_CELL, w:36, h:(r1-r0+1)*CTF_CELL });
@@ -2186,7 +2200,7 @@ function ctfLattice(g, leftPlats, o){
   const hops = leftPlats.filter(p=>p.hop);
   const clear = g.clear.map(([c0,r0,c1,r1])=>({ x:c0*CTF_CELL, y:r0*CTF_CELL, w:(c1-c0+1)*CTF_CELL, h:(r1-r0+1)*CTF_CELL }));
   const x0 = o.x0 != null ? o.x0 : 200, x1 = o.x1 != null ? o.x1 : HALF - 40;
-  const cols = Math.max(3, Math.round((x1-x0)/o.colW));
+  const cols = Math.max(3, Math.round((x1-x0)/o.colW)), PADX = o.padx != null ? o.padx : 36;
   const salt = o.salt || 7;
   for(let r=0; ; r++){
     const y = o.bottom - r*o.gap;
@@ -2196,7 +2210,7 @@ function ctfLattice(g, leftPlats, o){
       const w = Math.round(o.w * (0.85 + cellJitter(c,r,salt)*0.5));
       const cx = x0 + (x1-x0)*t + (cellJitter(c,r,salt+1)-0.5)*o.colW*0.22;
       const rect = { x:Math.round(clamp(cx - w/2, x0, Math.max(x0, x1-w))), y:Math.round(y), w, h:16, hop:true };
-      if(solids.some(b=>boxHit(rect,b,36,70))) continue;
+      if(solids.some(b=>boxHit(rect,b,PADX,70))) continue;
       if(clear.some(b=>boxHit(rect,b,0,0))) continue;
       if(hops.some(b=>boxHit(rect,b,28,64))) continue;
       if(out.some(b=>boxHit(rect,b,28,64))) continue;
@@ -2206,44 +2220,102 @@ function ctfLattice(g, leftPlats, o){
   return out;
 }
 
+
+
 // ---------------------------------------------------------------------------------------------------------------
-//  1. CASTLE YOYLEBERRY: a home keep, a courtyard with the jail, a locked tower, vaults under the floor.
+//  1. CASTLE YOYLEBERRY. 28800 x 6240. Bases at the far ends, a great clock tower in the middle, three lanes between:
+//    HIGH   the battlement walkway (row 28): fast and open, nowhere to hide, a gap every so often;
+//    MID    the surface (row 36): ruins and arches for cover, a tower with a locked vault, ladders up to the walkway;
+//    LOW    the cellar tunnels (rows 38-45): crawl spaces, side chambers, a locked boost vault, and the jail under the keep.
+//  Each keep has three ways in: the front arch (a 2-high chokepoint), the roof (a hatch and stairs down), the cellar (a trapdoor).
+//  The vault in the middle of the ground floor has two locked doors, a hatch from above and a hatch from below.
+//  The keys lie in the great tower and along the lanes, where both sides meet.
 // ---------------------------------------------------------------------------------------------------------------
 CTF_MAPS.castle = {
   name:'Castle Yoyleberry',
-  theme:{ sky:['#2b3a66','#d9a79a'], far:['#4b4f7a','#383c63'], pat:'brick',
-          solid:{ fill:'#8d8c9c', line:'#6c6b7d', hi:'#b2b1c2', edge:'#262532' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' }, cover:{ bush:'#3f9a4c', crate:'#a8773f', banner:'#c9433f', barrel:'#7a4a2a' } },
+  theme:{ sky:['#27345f','#e2a99a'], far:['#4a4f7c','#363a62'], bg:'castle', pat:'brick',
+          solid:{ fill:'#8d8c9c', line:'#6c6b7d', hi:'#b2b1c2', edge:'#262532' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' },
+          cover:{ bush:'#3f9a4c', crate:'#a8773f', banner:'#c9433f', barrel:'#7a4a2a' }, deco:{ a:'#5b5f8f', b:'#7a6fa8', c:'#e8d98a', d:'#4aa0d8' } },
   build(g){
-    g.fill(22,0,39,'#'); g.fill(26,0,39,'#'); g.fill(27,0,39,'#'); g.col(0,0,27,'#');          // the ground, the cellar floor, the outer wall
-    g.gap(22,27,28); g.gap(22,36,39);                                                          // two shafts down to the cellar
-    // home keep: a roofed hall with the capture pad and the spawns, a stair up to the roof
-    g.fill(18,1,10,'#'); g.put(21,1,'PP'); g.put(21,3,'HHHHH'); g.put(21,9,'C'); g.put(21,10,'S');
-    g.put(17,3,'B'); g.put(17,7,'C'); g.put(17,9,'b');
-    g.put(21,12,'='); g.put(20,13,'='); g.put(19,12,'=');
-    g.keepClear(1,19,10,21);
-    // the jail in the courtyard (the no-go zone is worked out from it)
-    g.col(17,18,21,'#'); g.fill(18,17,21,'#'); g.col(21,19,21,'J'); g.put(21,18,'ppp');
-    g.keepClear(17,18,21,21);
-    // the locked tower: ground room (door 1), second floor with the key, the roof
-    g.col(29,14,21,'#'); g.col(35,14,19,'#'); g.fill(14,29,35,'#'); g.fill(18,30,34,'#');
-    g.col(29,20,21,'1'); g.gap(16,29,29); g.gap(17,29,29); g.gap(16,35,35); g.gap(17,35,35);
-    g.put(21,31,'S'); g.put(21,32,'W'); g.put(21,34,'u'); g.put(17,31,'a'); g.put(17,33,'F'); g.put(13,31,'B'); g.put(13,34,'v');
-    g.put(21,27,'='); g.put(20,28,'='); g.put(19,27,'='); g.put(18,28,'=');                    // up the tower's face to the window
-    g.put(21,36,'='); g.put(20,36,'='); g.put(19,36,'='); g.put(18,36,'=');                    // and its far side
-    g.keepClear(29,14,35,21);
-    // the cellar: two vaults and a crawl space
-    g.fill(23,2,8,'#'); g.col(2,24,25,'#'); g.col(8,24,25,'2'); g.put(25,4,'W'); g.put(25,6,'S'); g.put(25,5,'v');
-    g.fill(23,17,25,'#'); g.col(17,24,25,'#'); g.col(25,24,25,'3'); g.put(25,20,'B'); g.put(25,23,'S'); g.put(25,22,'u');
-    g.put(25,33,'c'); g.fill(24,30,34,'#'); g.put(25,32,'S'); g.put(25,34,'W');
-    // stairs out of the shafts, and the bridge over the middle one
-    g.put(25,27,'='); g.put(24,28,'='); g.put(23,27,'=');
-    g.put(25,38,'='); g.put(24,37,'='); g.put(23,36,'=');
-    g.put(21,37,'===');
-    g.lattice({ top:600, bottom:2490, gap:132, colW:540, w:250, salt:11 });
+    const G = CTF_G, HL = CTF_HL, LOW = CTF_LOW;
+    g.box(0, 0, 51, 1, '#');                         // the outer wall
+    g.box(G, 2, G + 1, 119, '#');                    // the surface (two rows thick)
+    g.box(LOW, 2, 51, 119, '#');                     // the cellar floor
+    // ---- the keep (columns 2-31): ground floor rows 33-35, upper floor rows 29-31, roof walkway at row 28 ----
+    g.fill(32, 2, 31, '#'); g.fill(28, 2, 31, '#'); g.col(2, 28, 35, '#'); g.col(31, 28, 35, '#');
+    g.gap(34, 31, 31); g.gap(35, 31, 31); g.gap(30, 31, 31); g.gap(31, 31, 31);                 // the front arch, and the upper window
+    g.col(11, 33, 35, '#'); g.col(11, 34, 35, '1');                                             // home | vault (locked)
+    g.col(19, 33, 35, '#'); g.col(19, 34, 35, '2');                                             // vault | hall (locked)
+    g.col(12, 29, 31, '#'); g.gap(30, 12, 12); g.gap(31, 12, 12);                               // upstairs: barracks | store (an arch)
+    g.col(19, 29, 31, '#'); g.col(19, 30, 31, '3');                                             // store | balcony hall (locked)
+    g.stairs(32, G, 25);                                                                        // hall up to the balcony hall
+    g.stairs(32, G, 14);                                                                        // the vault's hatch from above is entered from below by these
+    g.stairs(28, 32, 21);                                                                       // balcony hall up to the roof
+    g.gap(G, 21, 22); g.gap(G + 1, 21, 22); g.shaft(21, LOW - 1, G + 1);                        // the trapdoor in the hall: down to the cellar
+    g.put(35, 3, 'PP'); g.put(35, 5, 'HHHHH');                                                  // home: the pad and the spawns
+    g.put(35, 10, 'S'); g.put(35, 13, 'S'); g.put(35, 16, 'W'); g.put(35, 18, 'B'); g.put(35, 27, 'F');
+    g.put(31, 4, 'B'); g.put(31, 8, 'C'); g.put(31, 10, 'S'); g.put(31, 13, 'W'); g.put(31, 17, 'F'); g.put(31, 23, 'C'); g.put(31, 29, 'S');
+    g.put(27, 5, 'B'); g.put(27, 10, 'C'); g.put(27, 16, 'F'); g.put(27, 28, 'W');              // the roof
+    g.keepClear(2, 28, 31, 35);
+    g.deco('castle', 5, 12, 10, 16); g.deco('castle', 22, 15, 7, 13);
+    // ---- the jail, in the cellar under the keep, with its zone ----
+    g.fill(42, 5, 12, '#'); g.col(5, 42, 45, '#'); g.col(12, 43, 45, 'J'); g.put(45, 7, 'ppp');
+    g.keepClear(5, 42, 12, 45);
+    // ---- the cellar lane (rows 38-45) ----
+    g.box(38, 28, 40, 29, '#'); g.box(38, 49, 41, 51, '#'); g.box(38, 62, 39, 64, '#'); g.box(38, 84, 40, 85, '#'); g.box(38, 104, 41, 106, '#');   // rock hanging from the ceiling
+    g.box(38, 78, 43, 92, '#'); g.put(45, 80, 'S'); g.put(45, 86, 'W'); g.put(45, 91, 'S');       // a crawl space (rows 44-45)
+    // a chamber raised above the cellar lane (the lane runs under it): speed boost, door 4
+    g.fill(42, 53, 61, '#'); g.fill(38, 53, 61, '#'); g.col(53, 39, 41, '#'); g.col(61, 39, 39, '#'); g.col(61, 40, 41, '4');
+    g.put(41, 57, 'u'); g.put(41, 55, 'S'); g.put(41, 59, 'B'); g.keepClear(53, 38, 61, 42);
+    g.fill(45, 64, 65, '='); g.fill(44, 62, 63, '='); g.fill(43, 64, 65, '='); g.fill(42, 62, 63, '=');
+    g.put(45, 95, 'c'); g.put(45, 70, 'C'); g.put(45, 44, 'W'); g.put(45, 100, 'F');
+    for(const c of [44, 76, 100]){ g.gap(G, c, c + 1); g.gap(G + 1, c, c + 1); g.shaft(c, LOW - 1, G + 1); }   // ways up to the surface
+    // ---- the surface (row 36) ----
+    g.mound(35, 34, 3, 2);                                                                         // a barricade in the yard
+    g.mound(35, 46, 5, 3); g.put(35, 51, 'B');
+    g.box(30, 54, 32, 58, '#'); g.put(35, 54, '#'); g.put(35, 56, 'C'); g.put(35, 57, 'W');   // an arch: a lintel over the way, a low stub at one end
+    g.col(64, 33, 35, '#'); g.col(64, 34, 35, '5'); g.col(68, 29, 35, '#'); g.gap(30, 68, 68); g.gap(31, 68, 68); g.fill(32, 64, 68, '#'); g.put(35, 66, 'v'); g.put(35, 65, 'S');   // the tower with the vault (door 5, jump boost)
+    g.keepClear(65, 33, 67, 35);
+    g.put(35, 69, '=='); g.put(34, 71, '=='); g.put(33, 69, '==');                              // up to the top of the vault tower
+    g.put(35, 61, '=='); g.put(34, 59, '=='); g.put(33, 61, '==');                              // ...and from the other side
+    g.put(35, 75, 'W'); g.mound(35, 76, 7, 3); g.put(32, 79, 'S');
+    g.mound(35, 86, 3, 2); g.put(35, 90, '#'); g.put(35, 83, 'a'); g.put(35, 88, 'C'); g.put(35, 92, 'B');
+    g.box(30, 104, 31, 110, '#'); g.put(35, 104, '#'); g.put(35, 107, 'W');   // a broken bridge
+    g.put(35, 41, 'F'); g.put(35, 38, 'B');
+    // ---- the high lane (row 28): the walkway, a gap now and then, ladders up from the surface ----
+    for(const [a, b] of [[32, 45], [47, 58], [60, 72], [74, 86], [88, 100], [102, 119]]) g.deck(HL, a, b);
+    for(const c of [36, 80, 96]) g.ladder(c, 35, 29, 3);
+    // a vault floating over the walkway (door 6, speed boost); steps up to it
+    g.fill(25, 88, 92, '#'); g.fill(21, 88, 92, '#'); g.col(88, 22, 24, '#'); g.col(92, 22, 22, '#'); g.col(92, 23, 24, '6'); g.put(24, 90, 'u'); g.put(24, 89, 'S');
+    g.fill(27, 93, 94, '='); g.fill(26, 95, 96, '='); g.fill(25, 93, 94, '=');
+    g.put(27, 98, 'b'); g.put(27, 40, 'F'); g.put(27, 54, 'W'); g.put(27, 66, 'B'); g.put(27, 80, 'C');
+    g.keepClear(88, 21, 92, 25);
+    g.put(27, 34, 'u');
+    // ---- the great clock tower in the middle (its left half: columns 112-119; the right half mirrors it) ----
+    g.col(112, 16, 33, '#'); g.gap(34, 112, 112); g.gap(35, 112, 112);
+    g.fill(32, 113, 119, '#'); g.fill(28, 113, 119, '#'); g.fill(24, 113, 119, '#'); g.fill(20, 113, 119, '#'); g.fill(16, 112, 119, '#');
+    g.stairs(32, G, 114); g.stairs(28, 32, 117); g.stairs(24, 28, 114); g.stairs(20, 24, 117); g.stairs(16, 20, 114);
+    g.put(31, 116, 'd'); g.put(27, 114, 'e'); g.put(23, 116, 'f');
+    g.put(31, 118, 'S'); g.put(27, 113, 'C'); g.put(23, 118, 'W'); g.put(19, 116, 'B'); g.put(15, 117, 'F');
+    g.put(35, 108, 'u'); g.put(35, 111, 'v');
+    g.gap(30, 112, 112); g.gap(31, 112, 112); g.gap(26, 112, 112); g.gap(27, 112, 112); g.gap(22, 112, 112); g.gap(23, 112, 112);
+    g.put(32, 110, '=='); g.put(28, 110, '=='); g.put(24, 110, '==');                                // balconies at the windows
+    g.ladder(106, 35, 24, 2);                                                                      // up the outside to them
+    g.keepClear(113, 17, 119, 35);
+    g.deco('castle', 113, 4, 14, 12);
+    // ---- more cover on the surface, and in the cellar ----
+    g.put(35, 38, '#'); g.mound(35, 41, 3, 2); g.put(35, 40, 'W');
+    g.put(35, 62, '#'); g.put(35, 73, 'C');
+    g.mound(35, 93, 4, 2); g.put(35, 98, '#'); g.put(35, 102, 'B'); g.put(35, 103, 'S');
+    g.mound(45, 18, 3, 2); g.mound(45, 36, 3, 2); g.mound(45, 67, 3, 2); g.mound(45, 97, 3, 2); g.mound(45, 114, 3, 2);
+    g.put(45, 26, 'S'); g.put(45, 48, 'B'); g.put(45, 74, 'W'); g.put(45, 93, 'C'); g.put(45, 108, 'F');
+    // ---- scenery: landmarks to steer by ----
+    g.deco('falls', 50, 18, 6, 18); g.deco('berry', 66, 8, 10, 12); g.deco('castle', 90, 16, 8, 14);
+    // ---- space to fight in over the surface: stepping stones between the lanes ----
+    g.lattice({ x0:CTF_CELL*36, x1:CTF_CELL*110, top:CTF_CELL*16, bottom:CTF_CELL*G - 132, gap:132, colW:820, w:250, salt:11, padx:60 });
+    g.lattice({ x0:CTF_CELL*14, x1:CTF_CELL*118, top:CTF_CELL*39, bottom:CTF_CELL*LOW - 132, gap:132, colW:760, w:260, salt:23, padx:60 });   // stepping stones in the cellar
   },
 };
-
-if(typeof window !== 'undefined') window.CTF_MAPS = CTF_MAPS;
 
 // ---------------------------------------------------------------------------------------------------------------
 //  CAPTURE THE FLAG. SETTINGS.mode === 'ctf'. Two sides, five fighters each, one flag per fighter. A HIDING PHASE comes first
@@ -2320,7 +2392,7 @@ function ctfBegin(){
   L.seen = [ fighters.map(()=>false), fighters.map(()=>false) ];
   ctfRebuildDyn(L);
   CTF.cpuHide = {};
-  try{ ctfAiBegin(L); }catch(e){}
+  try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); }
 }
 // The solids that change during a match: closed doors, the closed jail doors, and the wall across the middle while hiding.
 function ctfRebuildDyn(L){
@@ -2430,8 +2502,9 @@ function ctfStep(){
   L.t++;
   if(L.flash && --L.flash.t <= 0) L.flash = null;
   for(const f of fighters){ if(f._ctfJT > 0) f._ctfJT--; }
+  if(CTF.nav && !CTF.nav.ready) ctfNavTick(CTF.nav, 6);
   if(L.phase === 'hide'){
-    try{ ctfAiHideTick(L); }catch(e){}
+    try{ ctfAiHideTick(L); }catch(e){ if(!CTF.errOnce){ CTF.errOnce = 1; console.error('ctfAiHideTick', e); } }
     const humans = fighters.filter(ctfIsHuman);
     const ready = humans.length ? humans.every(h=>L.done[h.idx]) : fighters.every(f=>L.done[f.idx]);
     if(ready || L.t >= CTF_HIDE_STEPS) ctfEndHide(L);
@@ -2444,6 +2517,7 @@ function ctfStep(){
   ctfStepBoosts(L);
   ctfStepFlags(L);
   if(L.playT % 8 === 0) ctfReveal(L);
+  if(L.playT % 6 === 0 && CTF.nav) ctfAiSee(L);
   if(!L.stalled && L.playT - L.lastCapT >= CTF_STALL_REVEAL){   // nothing captured for four minutes: every flag still out there is shown to both sides
     L.stalled = true; for(const t of [0,1]) for(const fl of L.flags) if(fl.st !== 4) L.seen[t][fl.id] = true;
   }
@@ -2704,18 +2778,6 @@ function ctfResultText(youWon, winTeam){
   if(sub) sub.innerHTML = 'Team ' + (winTeam + 1) + ' carried all 5 flags home on ' + esc(stage.name) + ' in ' + m + ':' + String(s).padStart(2, '0') + '. Flags ' + L.score[0] + ' to ' + L.score[1] + '.';
 }
 
-// ---- CPUs, first pass (the CPU block replaces these): each CPU puts its flag down at a hiding spot of its side and is done ---------
-function ctfAiInput(f){ return null; }
-function ctfAiBegin(L){ CTF.cpuHide = {}; }
-function ctfAiHideTick(L){
-  for(const f of fighters){
-    if(ctfIsHuman(f) || L.done[f.idx]) continue;
-    if(L.t < 40 + f.idx*15) continue;
-    const mine = CTF.map.spots.filter(s=>s.team === f.team), sp = mine[(f.idx*7 + 3) % mine.length];
-    const fl = L.flags[f.idx]; if(fl.st === 0) ctfPlaceFlag(fl, sp.x, sp.y);
-    L.done[f.idx] = true;
-  }
-}
 
 // ---------------------------------------------------------------------------------------------------------------
 //  CTF DRAWING. Static map art is painted once into 1024-px tiles (kept at 3/4 size) and drawn from there; everything that moves or
@@ -2776,6 +2838,7 @@ function ctfTile(M, tx, ty){
     g.scale(CTF_TSCALE, CTF_TSCALE); g.translate(-X0, -Y0);
     g.beginPath(); g.rect(X0, Y0, CTF_TILE, CTF_TILE); g.clip();
     g.lineJoin = 'round';
+    for(const d of (M.decor || [])) if(d.x < X1 + 100 && d.x + d.w > X0 - 100 && d.y - 140 < Y1 && d.y + d.h + 80 > Y0) ctfDecorDraw(g, d, M.theme);
     for(const p of M.plats) if(p.x < X1 && p.x + p.w > X0 && p.y < Y1 && p.y + p.h > Y0) ctfPaintPlat(g, p, M.theme, X0, Y0, X1, Y1);
   }
   CTF_TILES.set(key, cv);
@@ -3005,8 +3068,10 @@ function ctfDrawMinimap(){
   ctx.restore();
 }
 // A whole map on one canvas (a screenshot, a check): g, the box w x h, the map.
-function ctfOverview(g, w, h, M){
-  const s = Math.min(w/M.WW, h/M.WH); g.save(); g.fillStyle = M.theme.sky[1]; g.fillRect(0, 0, w, h); g.scale(s, s);
+function ctfOverview(g, w, h, M, rx0, ry0, rx1, ry1){
+  const bw = (rx1 != null ? rx1 - rx0 : M.WW), bh = (ry1 != null ? ry1 - ry0 : M.WH);
+  const s = Math.min(w/bw, h/bh); g.save(); g.fillStyle = M.theme.sky[1]; g.fillRect(0, 0, w, h); g.scale(s, s); g.translate(-(rx0 || 0), -(ry0 || 0));
+  for(const d of M.decor || []){ if(rx1 != null && (d.x > rx1 || d.x + d.w < rx0)) continue; ctfDecorDraw(g, d, M.theme); }
   for(const p of M.plats){ g.fillStyle = p.solid ? M.theme.solid.fill : M.theme.hop.fill; g.fillRect(p.x, p.y, p.w, p.h); g.strokeStyle = '#1c1c1c'; g.lineWidth = 3/s; g.strokeRect(p.x, p.y, p.w, p.h); }
   for(const d of M.doors){ g.fillStyle = d.color; g.fillRect(d.x - 6, d.y, d.w + 12, d.h); }
   for(const j of M.jails){ g.fillStyle = ctfColor(j.owner); g.globalAlpha = 0.18; g.fillRect(j.zone.x, j.zone.y, j.zone.w, j.zone.h); g.globalAlpha = 1; g.fillStyle = '#222'; g.fillRect(j.door.x, j.door.y, j.door.w, j.door.h); }
@@ -3015,6 +3080,598 @@ function ctfOverview(g, w, h, M){
   for(const k of M.keys){ g.fillStyle = CTF_DOOR_COL[+String(k.door).replace('r','') - 1]; g.beginPath(); g.arc(k.x, k.y - 30, 30, 0, 7); g.fill(); g.strokeStyle = '#000'; g.lineWidth = 6/s; g.stroke(); }
   for(const b of M.boosts){ g.fillStyle = b.kind === 'speed' ? '#7ad0f0' : '#ffd23f'; g.beginPath(); g.arc(b.x, b.y - 30, 24, 0, 7); g.fill(); }
   g.restore();
+}
+
+
+// ---- landmarks: scenery behind the map that collides with nothing, painted into the cached tiles ------------------
+function ctfDecorDraw(g, d, th){
+  const c = th.deco || {}, x = d.x, y = d.y, w = d.w, h = d.h;
+  g.save(); g.globalAlpha = 0.62; g.lineJoin = 'round';
+  const dark = '#1c1c1c';
+  switch(d.kind){
+    case 'castle': {
+      g.fillStyle = c.a || '#5b5f8f'; g.strokeStyle = dark; g.lineWidth = 6;
+      g.fillRect(x + w*0.12, y + h*0.12, w*0.76, h*0.88); g.strokeRect(x + w*0.12, y + h*0.12, w*0.76, h*0.88);
+      const n = Math.max(3, Math.round(w/70));
+      for(let i = 0; i < n; i++){ const bx = x + w*0.12 + i*(w*0.76)/n; g.fillRect(bx + 6, y + h*0.05, (w*0.76)/n - 12, h*0.08); g.strokeRect(bx + 6, y + h*0.05, (w*0.76)/n - 12, h*0.08); }
+      g.fillStyle = c.c || '#e8d98a';
+      for(let r = 0; r < Math.floor(h/260); r++) for(let k = 0; k < Math.max(1, Math.floor(w/200)); k++){ const wx = x + w*0.25 + k*w*0.4, wy = y + h*0.25 + r*240; g.fillRect(wx, wy, 34, 60); g.strokeRect(wx, wy, 34, 60); }
+      g.strokeStyle = dark; g.lineWidth = 6; g.beginPath(); g.moveTo(x + w*0.5, y + h*0.05); g.lineTo(x + w*0.5, y - 100); g.stroke();
+      g.fillStyle = '#c9433f'; g.beginPath(); g.moveTo(x + w*0.5, y - 100); g.lineTo(x + w*0.5 + 90, y - 70); g.lineTo(x + w*0.5, y - 40); g.closePath(); g.fill(); g.stroke();
+      break; }
+    case 'falls': {
+      g.fillStyle = c.d || '#4aa0d8'; g.fillRect(x + w*0.25, y, w*0.5, h);
+      g.fillStyle = '#ffffff'; g.globalAlpha = 0.45;
+      for(let i = 0; i < 6; i++) g.fillRect(x + w*0.28 + i*w*0.08, y, w*0.03, h);
+      g.beginPath(); g.ellipse(x + w*0.5, y + h, w*0.55, 60, 0, 0, 7); g.fill();
+      g.globalAlpha = 0.62; g.fillStyle = '#6c6b7d'; g.fillRect(x, y, w*0.25, h); g.fillRect(x + w*0.75, y, w*0.25, h);
+      break; }
+    case 'berry': {
+      g.fillStyle = '#7d4fb8'; g.strokeStyle = dark; g.lineWidth = 8; const r = Math.min(w, h)/2;
+      g.beginPath(); g.arc(x + w/2, y + h/2, r, 0, 7); g.fill(); g.stroke();
+      g.fillStyle = '#b48ae6'; g.beginPath(); g.arc(x + w/2 - r*0.35, y + h/2 - r*0.35, r*0.28, 0, 7); g.fill();
+      g.fillStyle = '#4aa84c'; g.beginPath(); g.moveTo(x + w/2, y + h/2 - r); g.quadraticCurveTo(x + w/2 + r*0.7, y + h/2 - r*1.5, x + w/2 + r*0.9, y + h/2 - r*0.9); g.quadraticCurveTo(x + w/2 + r*0.3, y + h/2 - r*0.9, x + w/2, y + h/2 - r); g.fill(); g.stroke();
+      break; }
+    case 'tree': {
+      g.fillStyle = c.b || '#6b4a2a'; g.strokeStyle = dark; g.lineWidth = 6; g.fillRect(x + w*0.4, y + h*0.35, w*0.2, h*0.65); g.strokeRect(x + w*0.4, y + h*0.35, w*0.2, h*0.65);
+      g.fillStyle = c.a || '#3f8f4a';
+      for(const [cx, cy, r] of [[0.5, 0.25, 0.32], [0.28, 0.4, 0.24], [0.72, 0.4, 0.24]]){ g.beginPath(); g.arc(x + w*cx, y + h*cy, Math.min(w, h)*r, 0, 7); g.fill(); g.stroke(); }
+      break; }
+    case 'gear': {
+      const r = Math.min(w, h)/2, cx = x + w/2, cy = y + h/2; g.fillStyle = c.a || '#8a8f9c'; g.strokeStyle = dark; g.lineWidth = 6;
+      g.beginPath(); for(let i = 0; i < 16; i++){ const a0 = i/16*Math.PI*2, rr = i % 2 ? r*0.82 : r; g.lineTo(cx + Math.cos(a0)*rr, cy + Math.sin(a0)*rr); g.lineTo(cx + Math.cos(a0 + 0.2)*rr, cy + Math.sin(a0 + 0.2)*rr); } g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = c.b || '#4a4f5a'; g.beginPath(); g.arc(cx, cy, r*0.3, 0, 7); g.fill(); g.stroke();
+      break; }
+    case 'crystal': {
+      g.strokeStyle = dark; g.lineWidth = 6;
+      for(const [fx, fh, col] of [[0.1, 0.55, c.a], [0.3, 1, c.b], [0.55, 0.7, c.a], [0.78, 0.45, c.b]]){
+        g.fillStyle = col || '#7ad0f0'; g.beginPath(); g.moveTo(x + w*fx, y + h); g.lineTo(x + w*(fx + 0.1), y + h*(1 - fh)); g.lineTo(x + w*(fx + 0.2), y + h); g.closePath(); g.fill(); g.stroke(); }
+      break; }
+    case 'cloud': {
+      g.fillStyle = '#ffffff'; g.globalAlpha = 0.7;
+      for(const [fx, fy, r] of [[0.25, 0.6, 0.3], [0.5, 0.4, 0.38], [0.75, 0.6, 0.3], [0.5, 0.7, 0.3]]){ g.beginPath(); g.ellipse(x + w*fx, y + h*fy, w*r*0.6, h*r, 0, 0, 7); g.fill(); }
+      break; }
+    case 'chimney': {
+      g.fillStyle = c.a || '#6a5a52'; g.strokeStyle = dark; g.lineWidth = 6; g.fillRect(x + w*0.25, y + h*0.15, w*0.5, h*0.85); g.strokeRect(x + w*0.25, y + h*0.15, w*0.5, h*0.85);
+      g.fillStyle = c.b || '#c9433f'; g.fillRect(x + w*0.2, y + h*0.1, w*0.6, h*0.08); g.strokeRect(x + w*0.2, y + h*0.1, w*0.6, h*0.08);
+      g.fillStyle = '#d8d8d8'; g.globalAlpha = 0.5; for(let i = 0; i < 4; i++){ g.beginPath(); g.arc(x + w*0.5 + (i%2 ? 40 : -20), y - i*70, 50 + i*10, 0, 7); g.fill(); }
+      break; }
+    case 'mushroom': {
+      g.fillStyle = '#f2e0d0'; g.strokeStyle = dark; g.lineWidth = 6; g.fillRect(x + w*0.38, y + h*0.45, w*0.24, h*0.55); g.strokeRect(x + w*0.38, y + h*0.45, w*0.24, h*0.55);
+      g.fillStyle = c.a || '#d94f4f'; g.beginPath(); g.ellipse(x + w/2, y + h*0.45, w*0.5, h*0.38, 0, Math.PI, 0); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#fff'; for(const [fx, fy] of [[0.3, 0.28], [0.55, 0.2], [0.72, 0.34]]){ g.beginPath(); g.arc(x + w*fx, y + h*fy, w*0.06, 0, 7); g.fill(); }
+      break; }
+    case 'lantern': {
+      g.fillStyle = c.c || '#ffd23f'; g.strokeStyle = dark; g.lineWidth = 6; g.beginPath(); g.ellipse(x + w/2, y + h*0.5, w*0.3, h*0.35, 0, 0, 7); g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(x + w/2, y); g.lineTo(x + w/2, y + h*0.15); g.stroke();
+      break; }
+  }
+  g.restore();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+//  CTF CPUs.
+//
+//  NAVIGATION. The map is turned into a graph of standing places (the top of every platform, cut where a wall or a door
+//  stands on it). An edge is a move that was SIMULATED with the game's own numbers (a carrier's, the slowest: any fighter can
+//  do what a carrier can): a walk off an edge, or a running jump (single or double) held toward a side for so long. The CPU
+//  plans with A* over those edges and then plays them back the same way, so what it tries is what was tested.
+//  The graph is built a few nodes a step at the start of a match and kept for the map.
+//
+//  KNOWLEDGE. A CPU knows the map (platforms, doors, where keys lie) and what its own side has SEEN of the enemy's flags
+//  (L.seen: a flag is seen through a clear line, or from close by if it is behind cover; one teammate's sight is everyone's).
+//  It never reads where a hidden flag is. Searching is a sweep over places that have not been looked at yet; where a side has
+//  looked is remembered (L.ai.visited), and a CPU picks a place no teammate has already claimed, so the searchers spread out.
+//
+//  ROLES. By rank among the side's CPUs: the first two defend (they stay near their own flags, out of the zone round their
+//  own jail, and go for any foe on their side), the rest attack: search, take what they find home, free prisoners, fetch the
+//  key for a locked door, and some walk with a carrier. Fighting is the ordinary AI (aiThink) whenever a foe is close.
+// ---------------------------------------------------------------------------------------------------------------
+const CTF_NAV_BUCKET = 256;
+// two sets of numbers: a carrier's (the slowest) and a free fighter's. A move only counts if it lands on the same place with both, so it works whoever plays it.
+function ctfNavParams(free){ const k = free ? 1 : CTF_CARRY_SPEED, j = free ? 1 : CTF_CARRY_JUMP; return { R:24, G:GRAV, CAP:MAXVX*k, ACC:MOVE*k, JV:JUMP*j }; }
+function ctfNavBucket(x){ return Math.floor(x/CTF_NAV_BUCKET); }
+
+function ctfNavNew(M){
+  const R = 24, solids = M.plats.filter(p=>p.solid);
+  const blockers = M.doors.map(d=>({ x:d.x, y:d.y, w:d.w, h:d.h, door:d.id })).concat(M.jails.map(j=>({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, door:'J' + j.owner })));
+  const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0 };
+  for(const p of M.plats) for(let b = ctfNavBucket(p.x); b <= ctfNavBucket(p.x + p.w); b++) (nav.pb[b] = nav.pb[b] || []).push(p);
+  const pending = [];
+  for(const p of M.plats){
+    let ivs = [[p.x + 4, p.x + p.w - 4]];
+    for(const q of solids){
+      if(q === p || q.y >= p.y - 2 || q.y + q.h <= p.y - 46 || q.x >= p.x + p.w || q.x + q.w <= p.x) continue;
+      const lo = q.x - R, hi = q.x + q.w + R, out = [];
+      for(const [a, b] of ivs){ if(hi <= a || lo >= b){ out.push([a, b]); continue; } if(lo - a >= 8) out.push([a, lo]); if(b - hi >= 8) out.push([hi, b]); }
+      ivs = out;
+    }
+    const links = [];
+    for(const d of blockers){
+      if(d.y >= p.y - 2 || d.y + d.h <= p.y - 46 || d.x >= p.x + p.w || d.x + d.w <= p.x) continue;
+      const lo = d.x - R, hi = d.x + d.w + R, out = [];
+      for(const [a, b] of ivs){ if(hi <= a || lo >= b){ out.push([a, b]); continue; } if(lo - a >= 8) out.push([a, lo]); if(b - hi >= 8) out.push([hi, b]); }
+      ivs = out; links.push({ d:d.door, lo, hi });
+    }
+    const mine = [];
+    for(const [a, b] of ivs){
+      if(b - a < 8) continue;
+      const n = { id:nav.nodes.length, x0:a, x1:b, y:p.y, solid:!!p.solid, p, edges:[] };
+      nav.nodes.push(n); mine.push(n);
+      for(let k = ctfNavBucket(a); k <= ctfNavBucket(b); k++) (nav.nb[k] = nav.nb[k] || []).push(n);
+    }
+    for(const l of links){
+      const A = mine.find(n=>Math.abs(n.x1 - l.lo) < 1), B = mine.find(n=>Math.abs(n.x0 - l.hi) < 1);
+      if(A && B) pending.push({ A, B, d:l.d });
+    }
+  }
+  for(const l of pending){
+    l.A.edges.push({ kind:'walk', from:l.A.id, to:l.B.id, xa:l.A.x1, xb:l.B.x0, dir:1, doors:[l.d], cost:(l.B.x0 - l.A.x1)/5 });
+    l.B.edges.push({ kind:'walk', from:l.B.id, to:l.A.id, xa:l.B.x0, xb:l.A.x1, dir:-1, doors:[l.d], cost:(l.B.x0 - l.A.x1)/5 });
+  }
+  // two pieces of floor at one height with no gap between them are one walk
+  for(const A of nav.nodes){
+    for(const B of (nav.nb[ctfNavBucket(A.x1 + 12)] || [])){
+      if(B === A || Math.abs(B.y - A.y) > 1.5 || B.x0 < A.x1 - 1 || B.x0 > A.x1 + 14) continue;
+      A.edges.push({ kind:'walk', from:A.id, to:B.id, xa:A.x1, xb:B.x0 + 2, dir:1, doors:[], cost:2 });
+      B.edges.push({ kind:'walk', from:B.id, to:A.id, xa:B.x0, xb:A.x1 - 2, dir:-1, doors:[], cost:2 });
+    }
+  }
+  return nav;
+}
+function ctfNavNodeAt(nav, x, top, slack){
+  let best = null, bd = 1e9;
+  for(const n of (nav.nb[ctfNavBucket(x)] || [])){
+    if(Math.abs(n.y - top) > (slack || 1.5)) continue;
+    const d = x < n.x0 ? n.x0 - x : x > n.x1 ? x - n.x1 : 0;
+    if(d < bd){ bd = d; best = n; }
+  }
+  return bd <= 12 || (slack && bd <= 40) ? best : null;
+}
+function ctfNavNodeOf(nav, f){
+  if(!f.onground) return null;
+  return ctfNavNodeAt(nav, f.x, f.y + f.r, 9);
+}
+// One simulated move. jump: a jump first (false: walking off an edge, already moving at vx); dir: held to the side while t <= T;
+// dj: a second jump at the top of the first. Returns where it lands: { node, x, t }, or null.
+function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free){
+  const P = ctfNavParams(free), R = P.R, WH = nav.M.WH;
+  let x = xa, y = A.y - R, vy = 0, jumps = 2;
+  if(jump){ vy = P.JV; jumps = 1; }
+  for(let t = 1; t <= 150; t++){
+    if(dir !== 0 && t <= T){ vx += dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
+    if(dj && jumps > 0 && t >= 6 && vy >= -0.4){ vy = P.JV; jumps--; }
+    vy += P.G; x += vx; const pb = y + R; y += vy;
+    const list = (nav.pb[ctfNavBucket(x)] || []);
+    let landed = null;
+    for(const p of list){
+      if(!p.solid) continue;
+      if(!(x + R > p.x && x - R < p.x + p.w && y + R > p.y && y - R < p.y + p.h)) continue;
+      const fl = p.x - (x + R), fr = (p.x + p.w) - (x - R), ft = p.y - (y + R), fb = (p.y + p.h) - (y - R);
+      const ax = Math.abs(fl) < Math.abs(fr) ? fl : fr, ay = Math.abs(ft) < Math.abs(fb) ? ft : fb;
+      if(Math.abs(ax) < Math.abs(ay)){ x += ax; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
+      else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else vy = Math.max(0, vy); }
+    }
+    if(!landed && vy >= 0){
+      for(const p of list){
+        if(p.solid || !(x > p.x - 4 && x < p.x + p.w + 4)) continue;
+        if(pb <= p.y + 4 && y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; break; }
+      }
+    }
+    if(landed){ const node = ctfNavNodeAt(nav, x, landed.y, 1.5); return node ? { node, x, t } : null; }
+    if(y > WH + 100) return null;
+  }
+  return null;
+}
+// The same move with a free fighter's numbers (faster, higher): does it still come down on something?
+function ctfNavSimBoth(nav, n, xa, dir, dj, T, jump, run, want, frac){
+  const P = ctfNavParams(true);
+  const v0 = jump ? (dir === 0 ? 0 : dir*Math.min(P.CAP, Math.sqrt(2*0.55*Math.min(run, 150)))) : dir*P.CAP*frac;
+  const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, jump, true);
+  return !!r;   // anywhere on the map at all (a miss is then noticed and the way round it planned: see ctfAiFollow)
+}
+// Every move off one place: the standing jumps (from three spots, running either way or straight up) and the walks off either end.
+function ctfNavProbe(nav, n){
+  const P = ctfNavParams(), w = n.x1 - n.x0, found = {};
+  const add = e=>{ (found[e.to] = found[e.to] || []).push(e); };
+  // takeoff spots along the floor: about every 90 px (a long floor gets up to 40)
+  const K = w < 80 ? 1 : Math.min(40, Math.ceil(w/90) + 1), xs = [];
+  for(let k = 0; k < K; k++) xs.push(K === 1 ? (n.x0 + n.x1)/2 : n.x0 + 14 + (w - 28)*k/(K - 1));
+  for(const xa of xs) for(const dir of [-1, 0, 1]){
+    const run = dir === 1 ? xa - n.x0 : dir === -1 ? n.x1 - xa : 0;
+    const v0 = dir === 0 ? 0 : dir*Math.min(P.CAP, Math.sqrt(2*0.55*Math.min(run, 150)));
+    for(const dj of [0, 1]) for(const T of (dir === 0 ? [0] : [10, 30, 200])){
+      const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, true, false);
+      if(r && r.node !== n && ctfNavSimBoth(nav, n, xa, dir, dj, T, true, run, r.node)) add({ kind:'jump', from:n.id, to:r.node.id, xa, dir, dj, T, v0, xb:r.x, run:Math.min(run, 150), cost:r.t + 14 + dj*8, doors:[] });
+    }
+  }
+  const p = n.p;
+  for(const dir of [-1, 1]){
+    const atEnd = dir === 1 ? Math.abs(n.x1 - (p.x + p.w - 4)) < 1 : Math.abs(n.x0 - (p.x + 4)) < 1;
+    if(!atEnd) continue;
+    const xa = dir === 1 ? p.x + p.w + 6 : p.x - 6;
+    for(const f of [0.4, 1]) for(const T of [0, 200]){
+      const r = ctfNavSim(nav, n, xa, dir*P.CAP*f, dir, 0, T, false, false);
+      if(r && r.node !== n && ctfNavSimBoth(nav, n, xa, dir, 0, T, false, 0, r.node, f)) add({ kind:'drop', from:n.id, to:r.node.id, xa:dir === 1 ? n.x1 : n.x0, dir, dj:0, T, v0:dir*P.CAP*f, xb:r.x, run:0, cost:r.t + 6, doors:[] });
+    }
+  }
+  for(const k in found){
+    const arr = found[k].sort((a, b)=>a.cost - b.cost), keep = [arr[0]];
+    for(const e of arr) if(keep.length < 2 && !keep.includes(e) && Math.abs(e.xa - keep[0].xa) > 60) keep.push(e);
+    for(const e of keep) n.edges.push(e);
+  }
+}
+function ctfNavTick(nav, count){
+  for(let i = 0; i < count && nav.cursor < nav.nodes.length; i++) ctfNavProbe(nav, nav.nodes[nav.cursor++]);
+  if(nav.cursor >= nav.nodes.length && !nav.ready){ nav.ready = true; ctfNavReach(nav); }
+}
+// What each side's home can reach, doors ignored: where a flag may be hidden (a place the foe could never get to is no place for one).
+function ctfNavReach(nav){
+  for(const t of [0, 1]){
+    const seen = new Uint8Array(nav.nodes.length), q = [];
+    for(const sp of nav.M.homes[t].spawns){ const n = ctfNavNodeAt(nav, sp.x, sp.y, 12); if(n && !seen[n.id]){ seen[n.id] = 1; q.push(n.id); } }
+    while(q.length){ const id = q.pop(); for(const e of nav.nodes[id].edges){ if(e.doors.some(d=>d[0] === 'J')) continue; if(!seen[e.to]){ seen[e.to] = 1; q.push(e.to); } } }
+    nav.reach[t] = seen;
+  }
+}
+// May `team` hide a flag at (x, y)? Only where the other side can walk to it.
+function ctfAiReachable(team, x, y){
+  const nav = CTF.nav; if(!nav || !nav.ready) return true;
+  const n = ctfNavNodeAt(nav, x, y, 8); if(!n) return false;
+  return !!(nav.reach[1 - team] && nav.reach[1 - team][n.id]);
+}
+// A*. opt.doorOK(id) says which doors may be walked through; opt.skip(node) which places are out; opt.closed: record (and allow, at a price) closed doors instead.
+function ctfNavPath(nav, from, to, opt){
+  if(from === to) return { edges:[], doors:[] };
+  const N = nav.nodes, g = new Map(), came = new Map(), open = [from], done = new Set(), goal = N[to];
+  g.set(from, 0);
+  const hf = id=>{ const n = N[id]; return Math.hypot((n.x0 + n.x1)/2 - (goal.x0 + goal.x1)/2, n.y - goal.y)/6; };
+  const fs = new Map([[from, hf(from)]]);
+  let guard = 0;
+  while(open.length && guard++ < 4000){
+    let bi = 0; for(let i = 1; i < open.length; i++) if(fs.get(open[i]) < fs.get(open[bi])) bi = i;
+    const cur = open.splice(bi, 1)[0];
+    if(cur === to){
+      const edges = [], doors = []; let c = to;
+      while(c !== from){ const e = came.get(c); edges.push(e); for(const d of e.doors) if(!opt.doorOK(d) && !doors.includes(d)) doors.push(d); c = e.from; }
+      return { edges:edges.reverse(), doors };
+    }
+    done.add(cur);
+    for(const e of N[cur].edges){
+      if(opt.ban && opt.ban[e.from + '>' + e.to + ':' + Math.round(e.xa)] > opt.now) continue;
+      let pen = 0;
+      if(e.doors.length){ let bad = 0; for(const d of e.doors) if(!opt.doorOK(d)) bad++; if(bad){ if(!opt.closed) continue; pen = 250*bad; } }
+      if(opt.skip && opt.skip(N[e.to])) continue;
+      if(done.has(e.to)) continue;
+      const ng = g.get(cur) + e.cost + pen;
+      if(!g.has(e.to) || ng < g.get(e.to)){ g.set(e.to, ng); came.set(e.to, e); fs.set(e.to, ng + hf(e.to)); if(!open.includes(e.to)) open.push(e.to); }
+    }
+  }
+  return null;
+}
+function ctfNavSweep(nav, side){
+  if(nav.sweep[side]) return nav.sweep[side];
+  const M = nav.M, mid = M.WW/2, pts = [];
+  for(const n of nav.nodes){
+    const cx = (n.x0 + n.x1)/2; if(side === 0 ? cx > mid - 100 : cx < mid + 100) continue;
+    if(n.x1 - n.x0 < 50) continue;
+    const k = Math.max(1, Math.round((n.x1 - n.x0)/280));
+    for(let i = 0; i < k; i++) pts.push({ x:n.x0 + (n.x1 - n.x0)*(i + 0.5)/k, y:n.y, node:n.id, cover:false, i:pts.length });
+  }
+  for(const s of M.spots){ if(s.team !== side) continue; const n = ctfNavNodeAt(nav, s.x, s.y, 8); if(n) pts.push({ x:s.x, y:s.y, node:n.id, cover:!!s.cover, i:pts.length }); }
+  return nav.sweep[side] = pts;
+}
+
+// ---- the team's memory --------------------------------------------------------------------------------------------
+function ctfAiBegin(L){
+  if(CTF.skipNav){ CTF.nav = null; return; }
+  if(!CTF.navs) CTF.navs = {};
+  CTF.nav = CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavNew(CTF.map));
+  L.ai = { visited:[null, null], claims:[{}, {}], hideTaken:{}, rescue:[0, 0], stat:{ nodes:CTF.nav.nodes.length } };
+  for(const f of fighters){ f._ai = { goal:null, path:null, pi:0, edge:null, phase:'', t:0, lastX:f.x, still:0, ban:{}, replan:0, fight:0, role:'att', hide:null, hideT:0 }; }
+  for(const t of [0, 1]){
+    const cpus = fighters.filter(f=>f.team === t && !ctfIsHuman(f)); cpus.forEach((f, k)=>{ f._ai.role = k < 2 ? 'def' : 'att'; });
+  }
+}
+function ctfAiVisited(L, t){
+  const nav = CTF.nav, pts = ctfNavSweep(nav, 1 - t);
+  if(!L.ai.visited[t] || L.ai.visited[t].length !== pts.length) L.ai.visited[t] = new Uint8Array(pts.length);
+  return L.ai.visited[t];
+}
+// Every few steps: what each fighter can see of the places left to search is marked as looked at, for the whole side.
+function ctfAiSee(L){
+  const nav = CTF.nav; if(!nav || !nav.ready) return;
+  for(const f of fighters){
+    if(f._jail != null) continue;
+    const t = f.team, pts = ctfNavSweep(nav, 1 - t), vis = ctfAiVisited(L, t);
+    for(const p of pts){
+      if(vis[p.i]) continue;
+      const dx = p.x - f.x, dy = p.y - f.y, lim = p.cover ? 140 : 320;
+      if(dx*dx + dy*dy > lim*lim) continue;
+      if(!ctfLOS(f.x, f.y - 6, p.x, p.y - 30)) continue;
+      vis[p.i] = 1;
+    }
+  }
+}
+
+// ---- the moves ------------------------------------------------------------------------------------------------------
+function ctfAiInpNew(){ return { left:false, right:false, jump:false, down:false, up:false, attack:false, special:false, smash:false }; }
+// Toward x on the ground, letting go early enough to stop on it.
+function ctfAiWalk(f, inp, tx, tol){
+  const dx = tx - f.x, s = Math.sign(dx), v = f.vx*s, stop = Math.max(0, v)*4.2 + (tol || 6);
+  if(Math.abs(dx) > stop){ if(s > 0) inp.right = true; else inp.left = true; }
+  else if(v < -0.8){ if(s > 0) inp.right = true; else inp.left = true; }   // going the wrong way: turn round
+}
+// Follow a path (an array of edges) to its end. Returns true on the end of the path, false while still on it, 'lost' when it cannot go on.
+function ctfAiFollow(f, ai, nav, inp, now){
+  const cn = ctfNavNodeOf(nav, f);
+  if(f.onground){
+    if(!cn){ ai.lost = (ai.lost || 0) + 1; return ai.lost > 40 ? 'lost' : false; }
+    ai.lost = 0;
+    if(ai.phase === 'air'){   // came down
+      const e = ai.edge; ai.edge = null; ai.phase = '';
+      if(e && cn.id === e.to){ ai.pi++; } else { if(e) ai.ban[e.from + '>' + e.to + ':' + Math.round(e.xa)] = now + 1500; ai.path = null; return 'lost'; }
+    }
+  }
+  if(!ai.path) return 'lost';
+  if(ai.pi >= ai.path.length) return true;
+  let e = ai.path[ai.pi];
+  if(!ai.edge){
+    if(!f.onground) return false;
+    if(!cn || cn.id !== e.from){ ai.path = null; return 'lost'; }
+    ai.edge = e; ai.phase = 'stage'; ai.et = 0;
+  }
+  e = ai.edge; ai.et = (ai.et || 0) + 1;
+  if(ai.et > 260){ ai.ban[e.from + '>' + e.to + ':' + Math.round(e.xa)] = now + 900; ai.edge = null; ai.path = null; return 'lost'; }
+  if(e.kind === 'walk'){
+    ctfAiWalk(f, inp, e.xb, 4);
+    if(f.onground && cn && cn.id === e.to){ ai.edge = null; ai.pi++; }
+    return false;
+  }
+  const n = nav.nodes[e.from];
+  if(ai.phase === 'stage'){
+    if(e.kind === 'drop'){ ai.phase = 'run'; }
+    else if(e.dir === 0){ ctfAiWalk(f, inp, e.xa, 5); if(Math.abs(f.x - e.xa) < 9 && Math.abs(f.vx) < 1.2){ inp.jump = inp.up = true; ai.phase = 'air'; ai.jt = 0; } return false; }
+    else { const xs = e.xa - e.dir*(e.run || 0); if(Math.abs(f.x - xs) < 14 && Math.abs(f.vx) < 2.5) ai.phase = 'run'; else { ctfAiWalk(f, inp, xs, 8); return false; } }
+  }
+  if(ai.phase === 'run'){
+    if(e.dir > 0) inp.right = true; else inp.left = true;
+    if(e.kind === 'drop'){ if(!f.onground){ ai.phase = 'air'; ai.jt = 0; } }
+    else if((f.x - e.xa)*e.dir >= -2 && Math.abs(f.vx) >= Math.abs(e.v0)*0.8 - 0.3){ inp.jump = inp.up = true; ai.phase = 'air'; ai.jt = 0; }
+    return false;
+  }
+  if(ai.phase === 'air'){
+    ai.jt++;
+    if(e.dir !== 0 && ai.jt <= e.T){ if(e.dir > 0) inp.right = true; else inp.left = true; }
+    // steer on the last part: toward where it should come down
+    if(e.dj && ai.jt >= 6 && f.jumps > 0 && f.vy >= -0.4 && !ai.dj){ inp.jump = inp.up = true; ai.dj = true; }
+    if(f.onground && ai.jt > 3){ ai.dj = false; }
+    if(ai.jt > 6 && !f.onground){ ai.air = ai.jt; }
+    return false;
+  }
+  return false;
+}
+function ctfAiResetMove(ai){ ai.path = null; ai.edge = null; ai.phase = ''; ai.pi = 0; ai.dj = false; }
+
+// ---- the plan -------------------------------------------------------------------------------------------------------
+function ctfAiDoorOK(L, f){
+  const key = f._ck >= 0 ? L.keys[f._ck] : null;
+  return id=>{ if(id[0] === 'J') return false; const d = L.doors.find(q=>q.id === id); return !d || d.open || (key && key.door === id); };
+}
+function ctfAiSkip(f){   // places a CPU may not go: the zone round its own side's jail
+  const L = CTF.live, zs = L.jails.filter(j=>j.owner === f.team).map(j=>j.zone);
+  return n=>{ const cx = (n.x0 + n.x1)/2; for(const z of zs) if(cx > z.x - 20 && cx < z.x + z.w + 20 && n.y > z.y && n.y < z.y + z.h + 10) return true; return false; };
+}
+// Plan a path to (x, y); returns false when there is none (the goal is not reachable even with every door open) or sets ai.path.
+// With `closed` doors in the way it returns { need: door id }.
+function ctfAiPlan(f, ai, goalX, goalY, now){
+  const nav = CTF.nav, L = CTF.live;
+  const cn = ctfNavNodeOf(nav, f) || (ai.lastNode != null ? nav.nodes[ai.lastNode] : null);
+  const gn = ctfNavNodeAt(nav, goalX, goalY, 14);
+  if(!cn || !gn) return false;
+  const opt = { doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, now, closed:false };
+  let r = ctfNavPath(nav, cn.id, gn.id, opt);
+  if(!r){
+    opt.closed = true; r = ctfNavPath(nav, cn.id, gn.id, opt);
+    if(!r) return false;
+    return { need:r.doors[0] };
+  }
+  ai.path = r.edges; ai.pi = 0; ai.edge = null; ai.phase = ''; ai.pathGoal = gn.id; ai.goalX = goalX;
+  return true;
+}
+function ctfAiFoe(f, range, vert){
+  let best = null, bd = range*range;
+  for(const g of fighters){
+    if(g.team === f.team || g._jail != null || g.dead) continue;
+    const dx = g.x - f.x, dy = g.y - f.y;
+    if(Math.abs(dy) > (vert || 220)) continue;
+    const d = dx*dx + dy*dy; if(d < bd){ bd = d; best = g; }
+  }
+  return best;
+}
+
+function ctfAiInput(f){
+  const L = CTF.live; if(!L || L.over || f._jail != null) return null;
+  const nav = CTF.nav, ai = f._ai;
+  if(!nav || !ai) return null;
+  if(!nav.ready) return ctfAiInpNew();    // the map's graph is still being worked out: stand
+  if(f.onground){ const cn = ctfNavNodeOf(nav, f); if(cn) ai.lastNode = cn.id; }
+  const inp = ctfAiInpNew();
+  const now = L.t;
+  if(L.phase === 'hide') return ctfAiHide(f, ai, L, nav, inp, now);
+  // ordinary fighting whenever a foe is close, as it always was
+  if(ai.fight > 0){ ai.fight--; return null; }
+  const carrying = f._cf >= 0;
+  const foe = ctfAiFoe(f, carrying ? 90 : (ai.role === 'def' ? 520 : 300));
+  if(foe && (carrying || (ai.role === 'def' ? foe.x < L.map.WW/2 === (f.team === 0) : true)) && ctfLOS(f.x, f.y - 6, foe.x, foe.y - 6)){
+    if(carrying){ if(Math.abs(foe.x - f.x) < 80 && f.atkCd <= 0){ inp.attack = true; } }
+    else { ai.fight = 20; ai.path = null; ai.edge = null; ai.phase = ''; return null; }
+  }
+  // what to do
+  if(!ai.goal || ctfAiGoalDone(f, ai, L) || (now >= ai.replan && f.onground && !ai.edge)){ ctfAiChoose(f, ai, L, nav, now); ai.replan = now + 45; }
+  const g = ai.goal;
+  if(!g) return null;
+  if(g.kind === 'wait'){ if(f.onground){ const k = Math.sign(g.x - f.x); if(Math.abs(g.x - f.x) > 40) { if(k > 0) inp.right = true; else inp.left = true; } } return inp; }
+  const cn = ctfNavNodeOf(nav, f), gn = ctfNavNodeAt(nav, g.x, g.y, 14);
+  if(f.onground && cn && gn && cn.id === gn.id){   // on the right piece of floor: walk up to it
+    if(Math.abs(f.x - g.x) > 16) ctfAiWalk(f, inp, g.x, 8);
+    ai.path = null; ai.edge = null;
+    return inp;
+  }
+  if(!ai.path && f.onground){
+    const r = ctfAiPlan(f, ai, g.x, g.y, now);
+    if(r !== true){ ctfAiGoalFailed(f, ai, L, r, now); return inp; }
+  }
+  const st = ctfAiFollow(f, ai, nav, inp, now);
+  if(st === 'lost'){ ctfAiResetMove(ai); if(!f.onground) return null; }
+  if(f.onground && Math.abs(f.x - ai.lastX) < 0.25 && (inp.left || inp.right)){ if(++ai.still > 50){ ai.still = 0; if(ai.edge) ai.ban[ai.edge.from + '>' + ai.edge.to + ':' + Math.round(ai.edge.xa)] = now + 900; ctfAiResetMove(ai); ai.fight = 14; } } else ai.still = 0;
+  ai.lastX = f.x;
+  return inp;
+}
+function ctfAiGoalDone(f, ai, L){
+  const g = ai.goal; if(!g) return true;
+  if(g.kind === 'flag'){ const fl = L.flags[g.id]; if(fl.st === 4 || fl.st === 2 && f._cf !== fl.id && g.mine !== 'carry') return true; if(g.mine === 'return' && fl.st !== 3) return true; }
+  if(g.kind === 'point'){ const vis = ctfAiVisited(L, f.team); if(vis[g.pi]) return true; }
+  if(g.kind === 'key'){ const k = L.keys[g.id]; if(k.st !== 0 || f._ck >= 0) return true; }
+  if(g.kind === 'jail'){ const j = L.jails[g.jail]; if(!j.pris.length) return true; }
+  if(g.kind === 'home'){ if(f._cf < 0) return true; }
+  if(g.kind === 'door'){ const d = L.doors.find(q=>q.id === g.door); if(!d || d.open || f._ck < 0) return true; }
+  return false;
+}
+function ctfAiGoalFailed(f, ai, L, r, now){
+  const g = ai.goal; ai.path = null;
+  if(r && r.need && g){
+    // a locked door is in the way: the key that opens it
+    const k = L.keys.find(q=>q.door === r.need && q.st === 0);
+    if(k && f._ck < 0 && !(g.kind === 'key')){ ai.goal = { kind:'key', id:k.i, x:k.x, y:k.y, then:g }; ai.replan = now + 400; return; }
+    if(g.kind === 'point'){ ai.dead = ai.dead || {}; ai.dead[g.pi] = now + 1500; }
+    ai.goal = null; return;
+  }
+  if(g.kind === 'point'){ ai.dead = ai.dead || {}; ai.dead[g.pi] = now + 3000; }
+  ai.goal = null; ai.replan = now + 10;
+}
+// Pick this CPU's goal, in the order a sensible player would.
+function ctfAiChoose(f, ai, L, nav, now){
+  const t = f.team, M = L.map, mates = fighters.filter(g=>g.team === t);
+  const set = (goal)=>{
+    const o = ai.goal;
+    if(o && o.kind === goal.kind && o.id === goal.id && o.pi === goal.pi && o.jail === goal.jail && Math.hypot(o.x - goal.x, o.y - goal.y) < 24){ ai.goal = goal; return; }   // the same errand: keep the path
+    ai.goal = goal; ai.path = null; ai.edge = null; ai.phase = '';
+  };
+  // 1. a flag in hand goes home
+  if(f._cf >= 0){ const pad = M.homes[t].pad; return set({ kind:'home', x:pad.x + pad.w/2, y:pad.y }); }
+  // 2. a key in hand goes to the door it opens (a place behind it waits there to be searched)
+  if(f._ck >= 0){
+    const k = L.keys[f._ck], d = L.doors.find(q=>q.id === k.door);
+    if(d && !d.open && d.team !== t){ const left = f.x < d.x; return set({ kind:'door', x:left ? d.x - 28 : d.x + d.w + 28, y:d.y + d.h, door:d.id }); }
+  }
+  // 3. free the prisoners: a fighter of mine is in the enemy's jail (the nearest attackers go, at most two to a jail)
+  for(const j of L.jails){
+    if(j.owner === t || !j.pris.length) continue;
+    const mine = j.pris.some(i=>fighters[i] && fighters[i].team === t); if(!mine) continue;
+    const jid = L.jails.indexOf(j), others = mates.filter(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'jail' && g._ai.goal.jail === jid && g._jail == null).length;
+    const dist = Math.abs(f.x - j.door.x);
+    const closest = mates.filter(g=>g._jail == null && !ctfIsHuman(g) && g._cf < 0).sort((a, b)=>Math.abs(a.x - j.door.x) - Math.abs(b.x - j.door.x)).slice(0, 2).includes(f);
+    if(others < 2 && closest && (ai.role === 'att' || dist < 900)){
+      const fx = j.door.x + (j.face === 1 ? j.door.w + 50 : -50);
+      return set({ kind:'jail', jail:jid, x:fx, y:j.door.y + j.door.h });
+    }
+  }
+  // 4. my side's flag lying about: put it back (defenders first, whoever is close)
+  for(const fl of L.flags){
+    if(fl.team !== t || fl.st !== 3) continue;
+    const near = Math.hypot(fl.x - f.x, fl.y - f.y) < (ai.role === 'def' ? 3000 : 900);
+    if(near) return set({ kind:'flag', id:fl.id, x:fl.x, y:fl.y, mine:'return' });
+  }
+  // 5. the enemy's flag lying on the ground, or one we have seen
+  let best = null, bd = 1e9;
+  for(const fl of L.flags){
+    if(fl.team === t || fl.st === 4 || fl.st === 2) continue;
+    if(!L.seen[t][fl.id]) continue;
+    if(ai.role === 'def' && !(fl.st === 3 && Math.abs(fl.x - M.WW/2) < M.WW*0.28)) continue;
+    const claimed = mates.filter(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'flag' && g._ai.goal.id === fl.id && g._jail == null).length;
+    if(claimed >= 2) continue;
+    if(ai.dead && ai.dead['f' + fl.id] > now) continue;
+    const d = Math.hypot(fl.x - f.x, (fl.y - f.y)*1.4); if(d < bd){ bd = d; best = fl; }
+  }
+  if(best) return set({ kind:'flag', id:best.id, x:best.x, y:best.y, mine:'take' });
+  // 6. defenders stay with their own flags; attackers search (a few walk with a carrier)
+  if(ai.role === 'def'){
+    const own = L.flags.filter(fl=>fl.team === t && fl.st === 1);
+    if(own.length){
+      if(!ai.guard || now > ai.guardUntil){ ai.guard = own[Math.floor(Math.random()*own.length)]; ai.guardUntil = now + 600 + Math.floor(Math.random()*500); }
+      const z = ctfAiSkip(f), n = ctfNavNodeAt(nav, ai.guard.hx, ai.guard.hy, 14);
+      if(n && !z(n)) return set({ kind:'guard', x:ai.guard.hx + (ai.guard.id % 2 ? 70 : -70), y:ai.guard.hy });
+    }
+    const pad = M.homes[t].pad; return set({ kind:'guard', x:pad.x + pad.w + 180, y:pad.y });
+  }
+  const carrier = mates.find(g=>g._cf >= 0 && g !== f && g._ai);
+  if(carrier && (f.idx % 2 === 0) && Math.hypot(carrier.x - f.x, carrier.y - f.y) < 1600) return set({ kind:'escort', x:carrier.x, y:carrier.y + carrier.r, who:carrier.idx });
+  return ctfAiSearch(f, ai, L, nav, now, set);
+}
+function ctfAiSearch(f, ai, L, nav, now, set){
+  const t = f.team, pts = ctfNavSweep(nav, 1 - t), vis = ctfAiVisited(L, t), claims = L.ai.claims[t];
+  let best = null, bd = 1e9;
+  const mateGoals = fighters.filter(g=>g.team === t && g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'point').map(g=>g._ai.goal);
+  const holdDoor = f._ck >= 0 ? L.keys[f._ck].door : null;
+  for(const p of pts){
+    if(vis[p.i]) continue;
+    const c = claims[p.i]; if(c && c.idx !== f.idx && c.until > now) continue;
+    if(ai.dead && ai.dead[p.i] > now) continue;
+    let d = Math.hypot(p.x - f.x, (p.y - f.y)*1.5) - (p.cover ? 220 : 0);
+    for(const g of mateGoals) if(Math.hypot(g.x - p.x, g.y - p.y) < 520) d += 350;
+    if(d < bd){ bd = d; best = p; }
+  }
+  if(!best){   // everywhere has been looked at: look again, from the start (anything it has missed is somewhere it was not close enough)
+    if(now - (ai.resetAt || 0) > 600){ ai.resetAt = now; vis.fill(0); }
+    const pad = L.map.homes[t].pad; return set({ kind:'wait', x:pad.x + pad.w + 400, y:pad.y });
+  }
+  claims[best.i] = { idx:f.idx, until:now + 1500 };
+  return set({ kind:'point', pi:best.i, x:best.x, y:best.y });
+}
+
+// ---- hiding -----------------------------------------------------------------------------------------------------------
+function ctfAiHide(f, ai, L, nav, inp, now){
+  const fl = L.flags[f.idx];
+  if(L.done[f.idx]) return inp;
+  if(fl.st === 1){   // put down: done a moment later
+    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 12) inp.special = true; return inp;
+  }
+  if(!ai.hide){
+    const M = L.map, pts = ctfNavSweep(nav, f.team);
+    const taken = L.ai.hideTaken, cand = [];
+    for(const s of M.spots) if(s.team === f.team && !taken['s' + s.x + ',' + s.y]) cand.push(s);
+    // a few take an ordinary place instead of a prepared one
+    const own = pts.filter(p=>!p.cover && ctfHideValid(f.team, p.x, p.y) && ctfAiReachable(f.team, p.x, p.y));
+    let pick = null;
+    if(cand.length && (Math.random() < 0.7 || !own.length)) pick = cand[Math.floor(Math.random()*cand.length)];
+    else if(own.length) pick = own[Math.floor(Math.random()*own.length)];
+    if(!pick) pick = cand[0] || M.spots.find(s=>s.team === f.team);
+    taken['s' + pick.x + ',' + pick.y] = 1;
+    ai.hide = { x:pick.x, y:pick.y }; ai.hideT = 0; ai.hideTry = 0;
+  }
+  const h = ai.hide, cn = ctfNavNodeOf(nav, f), gn = ctfNavNodeAt(nav, h.x, h.y, 14);
+  if(f.onground && cn && gn && cn.id === gn.id){
+    ctfAiWalk(f, inp, h.x, 5);
+    if(Math.abs(f.x - h.x) < 14 && Math.abs(f.vx) < 1.5){ ai.hideT++; if(ai.hideT % 20 === 1) inp.attack = true; if(ai.hideT > 80){ ai.hide = null; } }
+    return inp;
+  }
+  if(!ai.path && f.onground){
+    const r = ctfAiPlan(f, ai, h.x, h.y, now);
+    if(r !== true){ ai.hide = null; ai.hideTry++; return inp; }
+  }
+  const st = ctfAiFollow(f, ai, nav, inp, now);
+  if(st === 'lost'){ ctfAiResetMove(ai); if(!f.onground) return null; }
+  return inp;
+}
+function ctfAiHideTick(L){
+  // humans press their own keys; a CPU's flag is put down by its own walk.
+  const nav = CTF.nav;
+  // a CPU that cannot get anywhere with its flag puts it down where it stands after a minute
+  if(L.t === 3600 && nav){ for(const f of fighters){ if(!ctfIsHuman(f) && !L.done[f.idx]){ const fl = L.flags[f.idx]; if(fl.st === 0) ctfHidePlace(f); L.done[f.idx] = true; } } }
+  if(!nav) { for(const f of fighters){ if(ctfIsHuman(f) || L.done[f.idx]) continue; if(L.t < 40 + f.idx*15) continue;
+    const mine = CTF.map.spots.filter(s=>s.team === f.team), sp = mine[(f.idx*7 + 3) % mine.length];
+    const fl = L.flags[f.idx]; if(fl.st === 0) ctfPlaceFlag(fl, sp.x, sp.y); L.done[f.idx] = true; } }
 }
 
 // @ctf:end
