@@ -306,11 +306,14 @@ describe('Poppy: the ghost vacuum, the soldering iron, the pop and the fix', () 
 });
 
 describe('Silver Spoon: glowing gold, the punch, the rise and the cookie', () => {
-  it('Glowing Gold: he blacks out first, then hits harder and runs faster for 6 seconds; hits do not end it', () => {
+  // RESTATED 2026-10-13 (kit-roles, the owner's pick): the black-out was 40 frames of nothing and Silver Spoon had no combo starter of his own, so it is now a
+  // pop-up hit and he is down for 16 frames. The gold (6 s of Attack Up and Speed Up, hits do not end it) is exactly as before.
+  it('Glowing Gold: the flash pops a foe beside him up and he is down for only 16 frames, then he hits harder and runs faster for 6 seconds; hits do not end it', () => {
     const r = arena('Silver Spoon', `fireSpecial(A, {}); var out = A.hitstun, t0 = { e: A._empowerT, h: A._hasteT, s: A._starT };
       ${run(45)} applyHit(A, 3, 0, 0, D); ${run(20)} A.hitstun = 0; A.atkCd = 0; D.x = A.x + 40; D.invuln = 0; D.pct = 30; doAttack(A); var gold = D.pct - 30;
       return { out: out, t0: t0, gold: gold, left: A._empowerT, cd: A.spCd };`, 900);
-    expect(r.out).toBeGreaterThanOrEqual(40);
+    expect(r.out, 'down for 16 frames (was 40)').toBeGreaterThanOrEqual(16);
+    expect(r.out).toBeLessThan(40);
     expect(r.t0.e).toBeGreaterThanOrEqual(400);
     expect(r.t0.h).toBeGreaterThanOrEqual(400);
     expect(r.t0.s).toBeGreaterThanOrEqual(400);
@@ -321,14 +324,36 @@ describe('Silver Spoon: glowing gold, the punch, the rise and the cookie', () =>
     expect(plain).toBe(7.5);   // ii-buffs: the jab row 5 -> 7.5
   });
 
-  it('Immunity Cookie: gold, heals 5% at once, shows the cookie and hits nobody (Q15 "heal only")', () => {
+  it('Glowing Gold pops a foe right beside him straight up for 4% and a long stun, and misses one across the stage (kit-roles: his combo starter)', () => {
+    const near = arena('Silver Spoon', `fireSpecial(A, {}); var hit = D.pct - 30, vy = D.vy, stun = D.hitstun; return { hit: hit, vy: vy, stun: stun };`, 440);
+    expect(near.hit).toBe(4);
+    expect(near.vy, 'lifted').toBeLessThan(-6);
+    expect(near.stun, 'long enough for a jab to follow').toBeGreaterThanOrEqual(24);
+    const far = arena('Silver Spoon', `fireSpecial(A, {}); return D.pct - 30;`, 900);
+    expect(far, 'across the stage it is only the buff').toBe(0);
+  });
+
+  // RESTATED 2026-10-13 (kit-roles, the owner's pick): the Immunity Cookie (heal 5%, hit nobody) opened nothing, so the down-special is a Scoop that lifts the foe
+  // and opens a combo. The cookie, its heal and its gold are gone from the down-special (the file and its glyph stay for the art).
+  it('Scoop (was the Immunity Cookie heal): a low sweep in front lifts the foe for 5% and a stun, heals nothing, and misses a foe across the stage', () => {
     const r = arena('Silver Spoon', `A.pct = 40; fireSpecial(A, {down:true});
-      return { pct: A.pct, gold: A._starT > 0, cookie: projectiles.filter(function(p){ return p.shape==='immunitycookie'; }).length, invuln: A.invuln, hit: D.pct - 30 };`, 440);
-    expect(r.pct).toBe(35);
-    expect(r.gold).toBe(true);
-    expect(r.cookie).toBe(1);
-    expect(r.invuln, 'heal only: not untouchable').toBe(0);
-    expect(r.hit).toBe(0);
+      return { pct: A.pct, cookie: projectiles.filter(function(p){ return p.shape==='immunitycookie'; }).length, hit: D.pct - 30, vy: D.vy, stun: D.hitstun };`, 440);
+    expect(r.pct, 'no heal').toBe(40);
+    expect(r.cookie).toBe(0);
+    expect(r.hit).toBe(5);
+    expect(r.vy, 'lifted off the ground').toBeLessThan(-6);
+    expect(r.stun, 'a jab can follow').toBeGreaterThanOrEqual(24);
+    const far = arena('Silver Spoon', `fireSpecial(A, {down:true}); return D.pct - 30;`, 900);
+    expect(far).toBe(0);
+  });
+
+  it('(replaced pin) the old cookie test, kept for its reason: the down-special no longer shows the held cookie', () => {
+    const r = arena('Silver Spoon', `A.pct = 40; fireSpecial(A, {down:true});
+      return { pct: A.pct, gold: A._starT > 0, cookie: projectiles.filter(function(p){ return p.shape==='immunitycookie'; }).length, invuln: A.invuln };`, 440);
+    expect(r.pct, 'was 35 (healed 5%)').toBe(40);
+    expect(r.gold, 'was true (went gold)').toBe(false);
+    expect(r.cookie, 'was 1 (the cookie was shown)').toBe(0);
+    expect(r.invuln, 'still not untouchable').toBe(0);
   });
 
   it('Punched Into the Sky launches up and forward; Up, Up and Away rises armoured and hits nobody', () => {
