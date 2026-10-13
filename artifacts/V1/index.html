@@ -7551,7 +7551,7 @@ addEventListener('visibilitychange', ()=>{ if(hiddenHostWanted()) hiddenHostStar
 // is the speed the numbers always meant.
 const FIXED_STEP = true;   // false: one step() per animation frame, as it was
 const STEP_CLOCK = { ms:1000/60, catchUp:4, gap:250, slack:1, last:0, owed:0 };
-function stepClockReset(){ STEP_CLOCK.last = performance.now(); STEP_CLOCK.owed = 0; }
+function stepClockReset(){ STEP_CLOCK.last = performance.now(); STEP_CLOCK.owed = 0; INTERP_ST.last = 0; }
 // The whole 60ths of a second that passed on clock C since it was last asked (C: { last, owed }; STEP_CLOCK itself drives the match).
 function tickClock(C, now){
   const S = STEP_CLOCK, dt = now - C.last;
@@ -7576,6 +7576,75 @@ function ageView(k){
   }
 }
 
+// RENDER INTERPOLATION. A 144 Hz screen draws 2.4 times for every step, and with the fixed step alone it would draw the same picture two
+// or three times running: the match is the right speed but moves in 60 Hz jumps. So loop() remembers where every drawn thing was before
+// the latest step (_px/_py, stamped with that step's number in _pk) and, around draw() and nothing else, sets each one's x/y a fraction
+// `alpha` of the way from there to where it is now -- alpha being how much of the NEXT step the clock has already collected (owed/ms) --
+// calls draw(), and writes the true numbers back exactly. Gameplay never sees the blend and no draw function knows of it; a draw() called
+// any other way (a test, a one-off) draws the true positions. Not blended: a thing that moved more than INTERP_ST.jump px in one step (a
+// respawn, a warp, a teleport), nor one with no earlier position (born in the latest step, a KO'd fighter back). Rotations and animation
+// frames stay on the 60 Hz steps; positions are what make a picture look smooth. A client's fighters, shots and bosses already glide on
+// real time between snapshots (netInterpolate), so there it is only the particles and the impact dust, which the client steps itself.
+// The picture runs one step (16.7 ms) behind the sim, the price of any interpolating renderer, so it is only done when the screen is
+// faster than the steps (interpFast): a 60 Hz screen, or a slower one, draws the newest step as it always did.
+const INTERP = true;   // false: draw the true positions only
+const INTERP_ST = { k:0, jump:120, ema:1000/60, last:0, on:false, camK:-1, cpx:0, cpy:0, cx:0, cy:0, camDone:false, undo:[] };
+// Before each step: where everything is now is where it will have been.
+function interpRecord(client){
+  const S = INTERP_ST, k = ++S.k;
+  const rec = (list)=>{ for(let i = 0; i < list.length; i++){ const e = list[i]; e._px = e.x; e._py = e.y; e._pk = k; } };
+  if(!client){
+    for(const f of fighters){ if(f.dead) continue; f._px = f.x; f._py = f.y; f._pk = k; }   // a KO'd fighter has no earlier position to blend from
+    rec(projectiles); rec(summons); rec(items); rec(worldPlats);
+    if(evil){ evil._px = evil.x; evil._py = evil.y; evil._pk = k; }
+    S.cpx = camX; S.cpy = camY; S.camK = k;
+  }
+  rec(particles); rec(IMPACT_DUST); rec(IMPACT_DEBRIS);
+}
+// Is the screen faster than the steps? Smoothed time between frames, with some give each way so a screen near the line does not flicker.
+function interpFast(now){
+  const S = INTERP_ST, dt = now - S.last;
+  S.last = now;
+  if(dt > 0 && dt < 100) S.ema += (dt - S.ema)*0.1;
+  return S.on = S.on ? S.ema < 15 : S.ema < 13.5;
+}
+// The picture's positions: `a` of the way from before the latest step to after it. Undone by interpEnd.
+function interpBegin(a, client){
+  const S = INTERP_ST, k = S.k, J = S.jump*S.jump, U = S.undo;
+  U.length = 0;
+  const blend = (list)=>{
+    for(let i = 0; i < list.length; i++){
+      const e = list[i];
+      if(e._pk !== k) continue;
+      const dx = e.x - e._px, dy = e.y - e._py, d2 = dx*dx + dy*dy;
+      if(!(d2 > 0 && d2 <= J)) continue;   // still, a jump, or not a number
+      U.push(e, e.x, e.y);
+      e.x = e._px + dx*a; e.y = e._py + dy*a;
+    }
+  };
+  if(!client){
+    blend(fighters); blend(projectiles); blend(summons); blend(items); blend(worldPlats);
+    if(evil) blend([evil]);
+    if(S.camK === k){
+      const dx = camX - S.cpx, dy = camY - S.cpy, d2 = dx*dx + dy*dy;
+      if(d2 > 0 && d2 <= J){ S.cx = camX; S.cy = camY; S.camDone = true; camX = S.cpx + dx*a; camY = S.cpy + dy*a; }
+    }
+  }
+  blend(particles); blend(IMPACT_DUST); blend(IMPACT_DEBRIS);
+}
+function interpEnd(){
+  const S = INTERP_ST, U = S.undo;
+  for(let i = U.length - 3; i >= 0; i -= 3){ const e = U[i]; e.x = U[i + 1]; e.y = U[i + 2]; }   // last in, first out: a thing in two lists is put back to its true place
+  U.length = 0;
+  if(S.camDone){ camX = S.cx; camY = S.cy; S.camDone = false; }
+}
+// draw(), blended or not
+function drawView(blended, client){
+  if(!blended){ draw(); return; }
+  interpBegin(clamp(STEP_CLOCK.owed/STEP_CLOCK.ms, 0, 1), client);
+  try{ draw(); } finally { interpEnd(); }
+}
+
 function loop(){
   if(!running||paused) return;
   // A hidden host's match belongs to the worker's clock (HIDDEN HOST); this loop only waits to be seen again. A loop() that
@@ -7585,7 +7654,9 @@ function loop(){
   try{
     const role = window.NET ? window.NET.role : "solo";
     // n: the 60ths of a second that passed since the last frame -- the steps this frame owes (FIXED STEP)
-    const n = FIXED_STEP ? tickClock(STEP_CLOCK, performance.now()) : 1;
+    const now = performance.now();
+    const n = FIXED_STEP ? tickClock(STEP_CLOCK, now) : 1;
+    const ip = INTERP && FIXED_STEP && interpFast(now);   // blend the picture between the last two steps (render interpolation)
     if(role==="client"){
       // Clients never simulate. They send their input (key presses leave the moment they happen -- netInputChanged;
       // this catches a gamepad and sends a slow heartbeat), then draw the host's snapshots: glided between, through
@@ -7595,11 +7666,11 @@ function loop(){
       // A client never runs step(), and step() was the only thing that refreshed the HUD, so a client's stock and
       // damage cards froze at the numbers they started with ("stocks only render on the hosts side").
       try{ updateHUD(); }catch(e){}
-      draw(); ageView(n); clipCapture(n);
+      drawView(ip, true); ageView(n); clipCapture(n);
     } else {
       // however many steps the clock owes (none on a frame that came early), then one picture of where the match is now
-      for(let i = 0; i < n && running && !paused; i++) step();
-      draw(); ageView(n); clipCapture(n);
+      for(let i = 0; i < n && running && !paused; i++){ if(INTERP && FIXED_STEP) interpRecord(false); step(); }
+      drawView(ip, false); ageView(n); clipCapture(n);
       if(role==="host" && n > 0) window.NET.broadcastState();   // host relays authoritative state, once for each frame that moved the match
     }
   }catch(err){
@@ -42993,6 +43064,7 @@ function clientFrame(ticks){
   if(s && s !== NET_VIEW.applied) applySnapshot(s);
   netInterpolate(now);
   for(let i = 0; i < k; i++){
+    if(ticks !== undefined && INTERP) interpRecord(true);   // (render interpolation: only a loop() frame, which counts ticks)
     netStepParticles();
     stepImpactFx();   // the impacts the host sent, stepped by the host's own rule
   }
