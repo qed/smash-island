@@ -157,7 +157,8 @@ const nondecreasing = (arr, f, why) => { for (let i = 1; i < arr.length; i++) ex
 
 describe('the course', () => {
   it('is a much longer lane of the classics, the platformer hazards and the episode\'s, laid from a fixed seed: the same every time', () => {
-    const SNAP = `{ obs:JSON.stringify(RACE.obstacles), plats:JSON.stringify(worldPlats), haz:JSON.stringify(RACE.hazards), pianos:JSON.stringify(RACE.pianos), voices:JSON.stringify(RACE.voices), memories:JSON.stringify(RACE.memories),
+    // (the platforms without the picture's in-between bookkeeping, _px/_py/_ipk, stamped each step since the render interpolation (2026-10-13): it is not the course)
+    const SNAP = `{ obs:JSON.stringify(RACE.obstacles), plats:JSON.stringify(worldPlats, function(k, v){ return k === '_px' || k === '_py' || k === '_ipk' ? undefined : v; }), haz:JSON.stringify(RACE.hazards), pianos:JSON.stringify(RACE.pianos), voices:JSON.stringify(RACE.voices), memories:JSON.stringify(RACE.memories),
       traps:JSON.stringify(RACE.traps), cannons:JSON.stringify(RACE.cannons), pendulums:JSON.stringify(RACE.pendulums), crumbles:JSON.stringify(RACE.crumbles.map(function(c){ return [c.x, c.w, c.delay]; })),
       fakes:JSON.stringify(RACE.fakes.map(function(c){ return [c.x, c.w, c.delay]; })), ferries:JSON.stringify(RACE.ferries.map(function(f){ return [f.gx, f.gw, f.period, f.phase]; })), pits:JSON.stringify(RACE.pits) }`;
     const a = race({}, `var snap = ${SNAP}; snap.ok = __ok; snap.WW = WW; snap.W = W; snap.len = RACE_LEN; snap.kinds = RACE.obstacles.map(function(o){ return o.k; }); snap.edge = RACE.edge; snap.far = RACE.farX; snap.floor = RACE.floorY;
@@ -555,7 +556,8 @@ describe('the line', () => {
     expect(r.moved, 'a still runner').toBe(false);
     expect(new Set(r.steps).size, 'the same step every frame').toBe(1);
     expect(r.steps[0]).toBe(r.speed);
-    expect(r.speed, '"the wall should move faster": it was 4.2 px a frame').toBeGreaterThan(4.2);
+    // "the wall should move faster" took it from 4.2 to 5.2 px a frame; then the owner (2026-10-13): "line should move 20 percent slower" -- 20% under 5.2
+    expect(r.speed, '"line should move 20 percent slower": 20% under the 5.2 px a frame it was').toBeCloseTo(5.2 * 0.8, 6);
     expect(r.speed, 'but a runner who never stops must outrun it').toBeLessThan(r.maxvx * 0.9);
     expect(r.drawn, 'the line is drawn').toBe(true);
   });

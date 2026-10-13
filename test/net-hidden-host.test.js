@@ -305,6 +305,16 @@ describe('render interpolation: smoother on a fast screen, never faster', () => 
   };
   const runRight = (on) => key(H, H.eval('KEYS.right'), on);
 
+  it('leaves a boss summon\'s move memory alone: its stamp is _ipk, not the picker\'s _pk', () => {
+    // a real bug (2026-10-13): the stamp was _pk, and a boss summon keeps its pick history in _pk -- every step overwrote it with a number
+    hostedMatch();
+    H.eval(`summons.push({ type:'boss', name:'T', team:-1, owner:0, x:WW*0.5, y:groundY()-70, vx:0, vy:0, r:40, hp:999, life:600, face:1, _cd:0, _pk:{ n:3, last:'x', at:{} } });`);
+    watch(144, 0.25);
+    const r = H.eval(`(function(){ var s = summons.find(function(q){ return q.name === 'T'; }); return { pk:s && s._pk, stamped:!!s && typeof s._ipk === 'number' }; })()`);
+    expect(r.pk, 'the picker\'s memory is untouched').toEqual({ n:3, last:'x', at:{} });
+    expect(r.stamped, 'and the summon is still stamped for the in-between picture').toBe(true);
+  });
+
   it('at 144 Hz the picture moves on frames that ran no step, in order, and the true positions only move with a step', () => {
     hostedMatch();
     runRight(true);
