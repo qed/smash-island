@@ -180,6 +180,27 @@ describe('Unit 7 — team construction', () => {
 // got past the first exchange of. These pin the new length and — more importantly — pin down that
 // the clock governs ONLY watched group fixtures.
 describe('World Cup — watched group fixtures run long enough to be a match', () => {
+  it('each fighter in a fixture is hit by its OWN hurtbox and has its own KO cap (a real bug: the slots were renamed, not rebuilt)', () => {
+    // the owner, 2026-10-13: "hurtboxes are different in world cup" -- every slot kept the hurtbox of whoever buildFighters had put there
+    const { window: w } = loadMonolith();
+    startTourney(w);
+    const rows = w.eval(`
+      (function(){
+        var g = TOURNEY.fixtures.find(function(f){ return f.kind === 'group'; });
+        watchFixture(g, false);
+        var out = fighters.map(function(f){ var r = ROSTER.find(function(x){ return x.name === f.name; }) || {};
+          return { name:f.name, hurt:JSON.stringify(f.hurt), own:JSON.stringify(hurtboxFor(f.name)), cap:f.koCap, ownCap:Math.round(150 + (r.w || 90)), arch:f.arch, ownArch:r.arch || 'Contestant' }; });
+        TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false; running = false;
+        return out;
+      })()`);
+    expect(rows.length).toBeGreaterThan(1);
+    for (const r of rows) {
+      expect(r.hurt, r.name + "'s hurtbox").toBe(r.own);
+      expect(r.cap, r.name + "'s KO cap").toBe(r.ownCap);
+      expect(r.arch, r.name + "'s arch").toBe(r.ownArch);
+    }
+  });
+
   it('runs a watched group fixture for about forty seconds', () => {
     const { window: w } = loadMonolith();
     const frames = w.eval('TOURNEY_TIME_LIMIT');
