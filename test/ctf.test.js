@@ -7,7 +7,7 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // only carrying all five of the other side's flags home ends it.
 
 function start(w, map = 'castle') {
-  w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='${map}'; beginMatchNow();
+  w.eval(`CTF.skipNav=true; SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='${map}'; beginMatchNow();
           fighters.forEach(function(f){ f.controller='still'; f.you=false; }); ctfEndHide(CTF.live);`);
 }
 const J = (w, code) => JSON.parse(w.eval(`JSON.stringify(${code})`));
