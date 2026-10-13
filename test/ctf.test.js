@@ -435,6 +435,30 @@ describe('capture the flag', () => {
   const roomSpot = (w) => J(w, `(function(){ var s = CTF.map.spots.filter(function(s){ return s.team===0 && s.y>1500 && s.x<8000; })[3]; return { x:s.x, y:s.y }; })()`);
   const tryPlace = (w, who, tool, kind, x, y, offs = [0, 130, -130, 260, -260, 390, -390, 520]) => { for (const dx of offs) { const ok = w.eval(`!!ctfEditPlaceAt(fighters[${who}], '${tool}', '${kind}', ${x + dx}, ${y})`); if (ok) return dx; } return null; };
 
+  it('the decoration tool offers what fits the place: a set for the area under the cursor (halls, snowy mountain, mines, reef), B steps through it, the ghost is that prop, both sides alike', () => {
+    const { window: w } = loadMonolith(33);
+    hideStart(w);
+    const a = mate(w, 0, 1), set = (x, y) => J(w, `ctfDecoSet(${x}, ${y})`), WW = w.eval('CTF.map.WW');
+    expect(set(30*120, 20*120), 'a great hall: armour and chests').toEqual(expect.arrayContaining(['armor', 'chest', 'urn']));
+    expect(set(70*120, 20*120), 'the snowy mountain: snow, pines, ice').toEqual(expect.arrayContaining(['drift', 'pine', 'iceblock']));
+    expect(set(WW - 70*120, 20*120), 'the other side has the same').toEqual(set(70*120, 20*120));
+    expect(set(30*120, 20*120).includes('pine'), 'no pines in a hall').toBe(false);
+    w.eval(`CTF.map = ctfMapGet('mines')`);
+    expect(set(85*120, 30*120), 'the reef: coral and kelp').toEqual(expect.arrayContaining(['coral', 'kelp', 'shell', 'anchor']));
+    expect(set(30*120, 20*120), 'in the mine: crystals and carts').toEqual(expect.arrayContaining(['crystal', 'minecart', 'lamp']));
+    w.eval(`CTF.map = ctfMapGet('castle')`);
+    // B steps through the set under the cursor and the ghost is that prop
+    const kinds = set(70*120, 20*120);
+    for (let i = 0; i < kinds.length + 2; i++) {
+      w.eval(`fighters[${a}]._tool = 1; fighters[${a}]._piece = ${i}; fighters[${a}]._cam = { x:${70*120}, y:${20*120} }`);
+      expect(w.eval(`ctfEditGhost(fighters[${a}]).kind`)).toBe(kinds[i % kinds.length]);
+    }
+    // a set that is not the old five has a painter and a size for every kind
+    for (const k of [...kinds, 'coral', 'kelp', 'shell', 'anchor', 'crystal', 'lamp', 'cone', 'hydrant', 'ball', 'minecart']) {
+      expect(w.eval(`!!CTF_COVER_HW['${k}'] && !!CTF_DECO_H['${k}']`), k + ' has a width and a height').toBe(true);
+    }
+  });
+
   it('editing the area: pieces cost points, go on your own side only, can be removed (a piece you placed refunds, a prop of the map costs one)', () => {
     const { window: w } = loadMonolith(31);
     hideStart(w);
