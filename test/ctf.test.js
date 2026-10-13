@@ -53,8 +53,9 @@ describe('capture the flag', () => {
     step(w, 2);
     expect(w.eval(`CTF.live.flags[${fl}].st`), 'picked up').toBe(2);
     expect(w.eval(`fighters[${a}]._cf`)).toBe(fl);
-    const pad = J(w, 'CTF.map.homes[0].pad');
-    put(w, a, pad.x + pad.w / 2, pad.y);                   // ...and brings it home
+    put(w, a, 14400 + 300, GY); step(w, 2);                // still on the enemy side of the middle line: not captured
+    expect(w.eval('CTF.live.score[0]')).toBe(0);
+    put(w, a, 14400 - 300, GY);                            // ...and across the line, onto its own side: captured
     step(w, 2);
     expect(w.eval('CTF.live.score[0]')).toBe(1);
     expect(w.eval(`CTF.live.flags[${fl}].st`), 'captured').toBe(4);
@@ -68,8 +69,8 @@ describe('capture the flag', () => {
     const f = J(w, `CTF.live.flags[${fl}]`);
     put(w, a, f.x, f.y); step(w, 2);
     expect(w.eval(`fighters[${a}]._cf`)).toBe(fl);
-    // carried a little way, then KO'd on its own side's ground
-    put(w, a, 1500, GY); step(w, 1);
+    // KO'd where it was picked up, in the enemy's country: it drops the flag there (and goes to their jail)
+    step(w, 1);
     w.eval(`eliminate(fighters[${a}])`);
     expect(w.eval(`CTF.live.flags[${fl}].st`), 'dropped').toBe(3);
     expect(w.eval(`fighters[${a}]._cf`)).toBe(-1);
@@ -159,6 +160,20 @@ describe('capture the flag', () => {
     expect(w.eval(`CTF.live.keys[${k.i}].st`), 'used up').toBe(2);
   });
 
+  it('a whole side in jail at once is over: the other side wins', () => {
+    const { window: w } = loadMonolith(10);
+    start(w);
+    for (let k = 0; k < 5; k++) {
+      const a = mate(w, 0, k);
+      put(w, a, 20000, GY); w.eval(`eliminate(fighters[${a}])`);
+      expect(w.eval(`fighters[${a}]._jail`)).toBe(1);
+      logic(w, 1);
+      expect(w.eval('CTF.live.over'), 'after ' + (k + 1) + ' in jail').toBe(k === 4);
+    }
+    expect(w.eval('CTF.live.winner')).toBe(1);
+    expect(w.eval('CTF.live.why')).toBe('jail');
+  });
+
   it('only capturing all five ends the match: no clock', () => {
     const { window: w } = loadMonolith(9);
     start(w);
@@ -168,8 +183,7 @@ describe('capture the flag', () => {
     for (let n = 0; n < 5; n++) {
       const a = mate(w, 0, n % 5), fl = flagOf(w, 1, n), f = J(w, `CTF.live.flags[${fl}]`);
       put(w, a, f.x, f.y); step(w, 2);
-      const pad = J(w, 'CTF.map.homes[0].pad');
-      put(w, a, pad.x + pad.w / 2, pad.y); step(w, 2);
+      put(w, a, 14400 - 300, GY); step(w, 2);
       expect(w.eval('CTF.live.score[0]')).toBe(n + 1);
       expect(w.eval('CTF.live.over')).toBe(n === 4);
     }
