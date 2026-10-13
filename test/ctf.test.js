@@ -58,6 +58,29 @@ describe('capture the flag', () => {
     expect(w.eval('fighters[0].vx')).toBeGreaterThan(w.eval('MAXVX') * 1.2);   // past the old top speed
   });
 
+  it('the areas do what they look like: ice, water, wind, belt, spring, thin air', () => {
+    const { window: w } = loadMonolith(13);
+    start(w);
+    const zone = type => J(w, `worldZones.filter(function(z){ return z.type==='${type}'; })[0]`);
+    const into = (z, vx) => w.eval(`(function(){ var f=fighters[0]; f.controller='still'; f.x=${z.x + z.w / 2}; f.y=${z.y + z.h - 30}; f.vx=${vx || 0}; f.vy=0; f.iceUntil=0; f._floatT=0; f._springT=0; return 1; })()`);
+    let z = zone('ice'); into(z); step(w, 2);
+    expect(w.eval('fighters[0].iceUntil'), 'ice: low friction').toBeGreaterThan(0);
+    z = zone('water'); into(z, 8); step(w, 1);
+    expect(w.eval('fighters[0].vx'), 'water drags').toBeLessThan(8);
+    z = zone('wind'); into(z, 0); step(w, 3);
+    expect(Math.sign(w.eval('fighters[0].vx')), 'wind pushes the way it points').toBe(z.dir);
+    z = zone('spring'); into(z); step(w, 3);
+    expect(w.eval('fighters[0].vy'), 'spring throws you up').toBeLessThan(-8);
+    z = zone('float'); into(z); step(w, 2);
+    expect(w.eval('fighters[0]._floatT'), 'thin air').toBeGreaterThan(0);
+    // the right side mirrors: a wind toward the middle on the left blows toward the middle on the right
+    const winds = J(w, `worldZones.filter(function(z){ return z.type==='wind'; }).map(function(z){ return [z.x + z.w/2 < 14400, z.dir]; })`);
+    expect(winds.find(q => q[0])[1]).toBe(-winds.find(q => !q[0])[1]);
+    // and a dark area is only a picture
+    expect(w.eval(`worldZones.some(function(z){ return z.type==='dark'; })`)).toBe(false);
+    expect(w.eval(`CTF.map.zones.some(function(z){ return z.type==='dark'; })`)).toBe(true);
+  });
+
   it('a capture scores', () => {
     const { window: w } = loadMonolith(2);
     start(w);

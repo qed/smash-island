@@ -2095,7 +2095,7 @@ function ctfGridNew(){
     box(r0,c0,r1,c1,ch){ for(let r=r0;r<=r1;r++) g.fill(r,c0,c1,ch); return g; },
     gap(r,c0,c1){ return g.fill(r,c0,c1,'.'); },
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
-    fields: [], decor: [],
+    fields: [], decor: [], zones: [],
     // a floor transition: a gap in the slab on row rSlab (2 wide at column c) and the one-way steps up from the floor at rFloor
     stairs(rSlab, rFloor, c){ g.gap(rSlab, c, c+1); const n = rFloor - rSlab - 1; for(let i=0;i<n;i++) g.fill(rFloor-1-i, c, c+1, '='); return g; },
     // a shaft of alternating steps between two columns, from row rBot up to row rTop
@@ -2107,6 +2107,8 @@ function ctfGridNew(){
     stepsUp(c0, rFloor, steps, w){ for(let i = 0; i < steps; i++) g.fill(rFloor - i, c0 + i*w, 119, '#'); return g; },
     mound(rFloor, c0, w, h){ for(let i = 0; i < h; i++){ const a = c0 + i, b = c0 + w - 1 - i; if(b < a) break; g.fill(rFloor - i, a, b, '#'); } return g; },
     // scenery that collides with nothing: kind, column, row, width and height in cells
+    // an AREA: a region (cells) where the game's effect zones apply (ice, glue, wind, belt, spring, float, water, heal, damage) or the screen goes dark
+    zone(type, c0, r0, c1, r1, strength, dir){ g.zones.push({ type, c0, r0, c1, r1, strength:strength || 1, dir:dir || 0 }); return g; },
     deco(kind, c, r, w, h, opt){ g.decor.push({ kind, c, r, w, h, ...(opt||{}) }); return g; },
     keepClear(c0,r0,c1,r1){ g.clear.push([c0,r0,c1,r1]); return g; },
     lattice(o){ g.fields.push(o); return g; },
@@ -2160,6 +2162,11 @@ function ctfMapBuild(id){
   for(const o of g.fields) for(const p of ctfLattice(g, leftPlats, o)) leftPlats.push(p);
   // mirror
   for(const p of leftPlats){ M.plats.push({ ...p }); M.plats.push({ ...p, x:mx(p.x,p.w) }); }
+  M.zones = [];
+  for(const z of g.zones){
+    const zz = { type:z.type, x:z.c0*CTF_CELL, y:z.r0*CTF_CELL, w:(z.c1 - z.c0 + 1)*CTF_CELL, h:(z.r1 - z.r0 + 1)*CTF_CELL, strength:z.strength, dir:z.dir };
+    M.zones.push(zz); M.zones.push({ ...zz, x:mx(zz.x, zz.w), dir:-zz.dir });   // the right side mirrors: a push toward the middle stays a push toward the middle
+  }
   M.decor = [];
   for(const d of g.decor){ const dd = { ...d, x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL }; M.decor.push(dd); M.decor.push({ ...dd, x:mx(dd.x, dd.w), flip:true }); }
   function mergeCellsTo(s){ return ctfMergeCells(s); }
@@ -2336,6 +2343,14 @@ CTF_MAPS.castle = {
     g.mound(35, 93, 4, 2); g.put(35, 98, '#'); g.put(35, 102, 'B'); g.put(35, 103, 'S');
     g.mound(45, 23, 3, 2); g.mound(45, 36, 3, 2); g.mound(45, 67, 3, 2); g.mound(45, 97, 3, 2); g.mound(45, 114, 3, 2);
     g.put(45, 26, 'S'); g.put(45, 48, 'B'); g.put(45, 74, 'W'); g.put(45, 93, 'C'); g.put(45, 108, 'F');
+    // ---- areas that play differently (the game's own effect zones; the right side mirrors them) ----
+    g.zone('ice', 4, 26, 28, 27, 1);                       // the keep's roof is icy
+    g.zone('heal', 3, 29, 10, 31, 1);                      // the barracks mend you
+    g.zone('water', 54, 33, 62, 35, 1);                    // the moat slows you
+    g.zone('wind', 60, 24, 90, 27, 1, -1);                 // a wind along the battlement walkway, toward home
+    g.zone('dark', 62, 38, 100, 45);                       // the cellar is dark: you see only near yourself
+    g.zone('spring', 109, 35, 110, 35, 1);                 // a spring pad in front of the great tower, up to its first balcony
+    g.zone('float', 113, 16, 119, 23);                     // thin air at the top of the great tower
     // ---- scenery: landmarks to steer by ----
     g.deco('falls', 50, 18, 6, 18); g.deco('berry', 66, 8, 10, 12); g.deco('castle', 90, 16, 8, 14);
     // ---- space to fight in over the surface: stepping stones between the lanes ----
@@ -2463,6 +2478,7 @@ function ctfBuildWorld(){
   stage = ctfStageObj(id);
   WW = M.WW; WH = M.WH; camX = 0; camY = 0; bases = []; spawnZones = []; worldZones = []; floors = [];
   worldPlats = M.plats.map(p=>({ ...p }));
+  worldZones = (M.zones || []).filter(z=>z.type !== 'dark').map(z=>({ ...z }));   // the game's own effect zones (ice, wind, belt...); dark is only drawn
   CTF.live = null;
 }
 // Leaving the mode's screens puts the player's own stage back.
@@ -2600,7 +2616,7 @@ function ctfStep(){
   const L = CTF.live; if(!L || L.over) return;
   L.t++;
   if(L.flash && --L.flash.t <= 0) L.flash = null;
-  for(const f of fighters){ if(f._ctfJT > 0) f._ctfJT--; }
+  for(const f of fighters){ if(f._ctfJT > 0) f._ctfJT--; if(f._springT > 0) f._springT--; }
   if(CTF.nav && !CTF.nav.ready) ctfNavTick(CTF.nav, 6);
   if(L.phase === 'hide'){
     try{ ctfAiHideTick(L); }catch(e){ if(!CTF.errOnce){ CTF.errOnce = 1; console.error('ctfAiHideTick', e); } }
@@ -3085,6 +3101,8 @@ function ctfDrawWorld(){
     if(inView(bx, vy, 60, vh)){ ctx.save(); const g = ctx.createLinearGradient(bx, 0, bx + 60, 0); g.addColorStop(0, 'rgba(120,200,255,0)'); g.addColorStop(0.5, 'rgba(160,220,255,0.7)'); g.addColorStop(1, 'rgba(120,200,255,0)');
       ctx.fillStyle = g; ctx.fillRect(bx - 30, vy, 120, vh); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.setLineDash([22, 18]); ctx.lineDashOffset = -T*1.5;
       ctx.beginPath(); ctx.moveTo(M.WW/2, vy); ctx.lineTo(M.WW/2, vy + vh); ctx.stroke(); ctx.restore(); } }
+  // the areas: what each one does is drawn in its own look (ctfDrawZone)
+  for(const z of (M.zones || [])){ if(z.type === 'dark' || !inView(z.x, z.y, z.w, z.h)) continue; ctfDrawZone(z, T, vx, vy, vw, vh); }
   // boosts
   for(const b of L.boosts){ if(!inView(b.x - 40, b.y - 90, 80, 100)) continue; ctfBoostIcon(ctx, b.x, b.y - 38 + Math.sin(T*0.07 + b.i)*4, b.kind, b.cd > 0 ? 0.25 : 1); }
   // keys lying about
@@ -3113,6 +3131,7 @@ function ctfDrawCarry(f){
 // ---- the screen: the top bar (flags captured by each side, the hiding timer) --------------------------------------
 function drawCtfHud(){
   const L = CTF.live; if(!L) return;
+  ctfDrawDark();   // (under the scoreboard: a dark area blacks out the world, not the HUD)
   const cx = W/2, y = 66;   // under the fighters' card bar
   ctx.save();
   const slot = 30;
@@ -3190,6 +3209,71 @@ function ctfOverview(g, w, h, M, rx0, ry0, rx1, ry1){
   for(const k of M.keys){ g.fillStyle = CTF_DOOR_COL[+String(k.door).replace('r','') - 1]; g.beginPath(); g.arc(k.x, k.y - 30, 30, 0, 7); g.fill(); g.strokeStyle = '#000'; g.lineWidth = 6/s; g.stroke(); }
   for(const b of M.boosts){ g.fillStyle = b.kind === 'speed' ? '#7ad0f0' : '#ffd23f'; g.beginPath(); g.arc(b.x, b.y - 30, 24, 0, 7); g.fill(); }
   g.restore();
+}
+
+// ---- the areas -------------------------------------------------------------------------------------------------------
+function ctfDrawZone(z, T, vx, vy, vw, vh){
+  const x0 = Math.max(z.x, vx - 20), x1 = Math.min(z.x + z.w, vx + vw + 20), w = x1 - x0, y = z.y, h = z.h;
+  if(w <= 0) return;
+  ctx.save();
+  switch(z.type){
+    case 'ice': {
+      ctx.fillStyle = 'rgba(190,235,255,0.30)'; ctx.fillRect(x0, y, w, h);
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 3; ctx.beginPath();
+      for(let xx = Math.floor(x0/90)*90; xx < x1; xx += 90){ ctx.moveTo(xx, y + h); ctx.lineTo(xx + 40, y + h - 26); }
+      ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(x0, y + h - 8, w, 8); break; }
+    case 'glue': {
+      ctx.fillStyle = 'rgba(120,84,42,0.45)'; ctx.fillRect(x0, y, w, h);
+      ctx.fillStyle = 'rgba(90,60,28,0.8)'; for(let xx = Math.floor(x0/70)*70; xx < x1; xx += 70){ ctx.beginPath(); ctx.arc(xx + 20, y + h - 6 + Math.sin(T*0.05 + xx)*2, 14, Math.PI, 0); ctx.fill(); } break; }
+    case 'water': {
+      ctx.fillStyle = 'rgba(60,140,225,0.38)'; ctx.fillRect(x0, y, w, h);
+      ctx.strokeStyle = 'rgba(210,240,255,0.9)'; ctx.lineWidth = 4; ctx.beginPath();
+      for(let xx = x0; xx <= x1; xx += 24){ const yy = y + 6 + Math.sin(T*0.08 + xx*0.04)*4; if(xx === x0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy); } ctx.stroke(); break; }
+    case 'wind': {
+      ctx.fillStyle = 'rgba(210,235,255,0.14)'; ctx.fillRect(x0, y, w, h);
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3;
+      const d = z.dir || 1, sp = (T*7*d) % 240;
+      for(let k = 0; k < 4; k++){ const yy = y + h*(0.15 + 0.2*k); ctx.beginPath(); for(let xx = Math.floor(x0/240)*240 - 240; xx < x1; xx += 240){ const sx = xx + sp + k*60; ctx.moveTo(sx, yy); ctx.lineTo(sx + d*110, yy); ctx.lineTo(sx + d*92, yy - 12); ctx.moveTo(sx + d*110, yy); ctx.lineTo(sx + d*92, yy + 12); } ctx.stroke(); } break; }
+    case 'belt': {
+      ctx.fillStyle = 'rgba(40,40,52,0.78)'; ctx.fillRect(x0, y + h - 22, w, 22);
+      ctx.fillStyle = '#ffd23f'; const d = z.dir || 1, sp = (T*2.2*d) % 60;
+      for(let xx = Math.floor(x0/60)*60 - 60; xx < x1; xx += 60){ const sx = xx + sp; ctx.beginPath(); ctx.moveTo(sx, y + h - 18); ctx.lineTo(sx + d*22, y + h - 11); ctx.lineTo(sx, y + h - 4); ctx.lineTo(sx + d*8, y + h - 11); ctx.closePath(); ctx.fill(); }
+      ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.strokeRect(x0, y + h - 22, w, 22); break; }
+    case 'spring': {
+      const n = Math.max(1, Math.round(z.w/120));
+      for(let i = 0; i < n; i++){ const cx = z.x + z.w*(i + 0.5)/n, bob = Math.sin(T*0.2 + i)*3;
+        ctx.fillStyle = '#e84b9c'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.fillRect(cx - 44, y + h - 22, 88, 22); ctx.strokeRect(cx - 44, y + h - 22, 88, 22);
+        ctx.strokeStyle = '#d8d8e0'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(cx - 30, y + h - 22); for(let k = 0; k < 4; k++){ ctx.lineTo(cx + (k%2 ? 30 : -30), y + h - 22 - (k + 1)*9 - bob); } ctx.stroke();
+        ctx.fillStyle = '#ffd23f'; ctx.fillRect(cx - 36, y + h - 66 - bob, 72, 10);
+        ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(cx, y + h - 118 - bob); ctx.lineTo(cx, y + h - 86 - bob); ctx.moveTo(cx - 14, y + h - 100 - bob); ctx.lineTo(cx, y + h - 118 - bob); ctx.lineTo(cx + 14, y + h - 100 - bob); ctx.stroke(); }
+      break; }
+    case 'float': {
+      ctx.fillStyle = 'rgba(225,215,255,0.16)'; ctx.fillRect(x0, y, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      for(let k = 0; k < 14; k++){ const bx = z.x + ((k*337 + T*0.4) % z.w), by = y + h - ((k*211 + T*0.8) % h); if(bx > x0 && bx < x1){ ctx.beginPath(); ctx.arc(bx, by, 6 + (k%3)*3, 0, 7); ctx.fill(); } } break; }
+    case 'heal': {
+      ctx.fillStyle = 'rgba(110,210,120,0.20)'; ctx.fillRect(x0, y, w, h);
+      ctx.strokeStyle = 'rgba(120,230,130,0.9)'; ctx.lineWidth = 6;
+      for(let k = 0; k < 6; k++){ const bx = z.x + ((k*251 + 60) % Math.max(1, z.w)), by = y + h - ((k*173 + T*0.9) % h); if(bx > x0 && bx < x1){ ctx.beginPath(); ctx.moveTo(bx - 9, by); ctx.lineTo(bx + 9, by); ctx.moveTo(bx, by - 9); ctx.lineTo(bx, by + 9); ctx.stroke(); } } break; }
+    case 'damage': {
+      ctx.fillStyle = 'rgba(224,80,58,0.28)'; ctx.fillRect(x0, y, w, h);
+      ctx.strokeStyle = 'rgba(255,200,60,0.85)'; ctx.lineWidth = 6; ctx.beginPath(); for(let xx = Math.floor(x0/60)*60; xx < x1; xx += 60){ ctx.moveTo(xx, y + h); ctx.lineTo(xx + 30, y + h - 30); } ctx.stroke(); break; }
+  }
+  ctx.restore();
+}
+// A dark area: while the fighter you play is inside one, the screen is black but for a small light round them.
+function ctfDrawDark(){
+  const M = CTF.map; if(!M || !M.zones) return;
+  const me = fighters.find(f=>f.you) ; if(!me || me.dead) return;
+  let inside = false;
+  for(const z of M.zones) if(z.type === 'dark' && me.x >= z.x && me.x <= z.x + z.w && me.y >= z.y && me.y <= z.y + z.h){ inside = true; break; }
+  const k = CTF.darkK = (CTF.darkK || 0) + ((inside ? 1 : 0) - (CTF.darkK || 0))*0.08;   // it fades in and out
+  if(k < 0.02) return;
+  const zm = viewZoom(), sx = W/2 + zm*(me.x - camX - W/2), sy = H/2 + zm*(me.y - camY - H/2), r0 = 120*zm, r1 = 330*zm;
+  ctx.save(); ctx.globalAlpha = Math.min(1, k)*0.95;
+  const g = ctx.createRadialGradient(sx, sy, r0, sx, sy, r1); g.addColorStop(0, 'rgba(6,4,14,0)'); g.addColorStop(1, 'rgba(6,4,14,1)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);   // clear inside the light, black beyond it
+  ctx.restore();
 }
 
 
@@ -33153,6 +33237,12 @@ function applyZone(f, z){
     case "damage": f.pct+=0.35*s; if(hazardT%8===0){ puff(f.x,f.y,'#e0503a',3); } break;
     case "heal":   f.pct=Math.max(0, f.pct-0.3*s); if(hazardT%12===0){ puff(f.x,f.y-6,'#7bc043',3); } break;
     case "wind":   f.vx += (z.dir||1)*0.6*s; f.vy -= 0.15*s; break;
+    // Capture the Flag's areas: a conveyor belt (it carries whoever stands on it), a spring pad (it throws you up), thin air (low gravity: Bubble's
+    // Thermal Rise float), and water (it drags at you, in the air and on the ground)
+    case "belt":   if(f.onground) f.x += (z.dir||1)*2.2*s; break;
+    case "spring": if(!(f._springT>0)){ f.vy = -24*s; f.onground = false; f.jumps = 2; f._springT = 24; if(f.you) SFX.jump(); } break;
+    case "float":  f._floatT = Math.max(f._floatT||0, 3); break;
+    case "water":  f.vx *= 1 - 0.13*s; f.vy *= 1 - 0.05*s; break;
   }
 }
 
@@ -37883,7 +37973,7 @@ function draw(){
 
   // floors & platforms — give tower floors a thick slab look
   // custom effect zones (under platforms)
-  if(worldZones && worldZones.length){
+  if(worldZones && worldZones.length && SETTINGS.mode!=='ctf'){   // (Capture the Flag draws its own areas)
     const zcol={glue:"#c9a34b",ice:"#bfe8ff",bounce:"#e84b9c",damage:"#e0503a",heal:"#7bc043",wind:"#8fd0ff"};
     for(const z of worldZones){ ctx.globalAlpha=0.30; ctx.fillStyle=zcol[z.type]||"#c9a34b"; ctx.fillRect(z.x,z.y,z.w,z.h);
       ctx.globalAlpha=0.9; ctx.strokeStyle=zcol[z.type]||"#c9a34b"; ctx.setLineDash([8,5]); ctx.lineWidth=2; ctx.strokeRect(z.x,z.y,z.w,z.h); ctx.setLineDash([]); ctx.globalAlpha=1; }
