@@ -2599,6 +2599,7 @@ function ctfStageObj(id){
 }
 function ctfPickMap(){
   const ids = ctfMapIds();
+  if(CTF.netMap && CTF_MAPS[CTF.netMap]){ const id = CTF.netMap; CTF.netMap = null; return id; }   // an online match: the host's pick
   if(CTF.forceMap && CTF_MAPS[CTF.forceMap]) return CTF.forceMap;
   let id = ids[Math.floor(Math.random()*ids.length)];
   if(ids.length > 1 && id === CTF.lastMap) id = ids[(ids.indexOf(id) + 1 + Math.floor(Math.random()*(ids.length-1))) % ids.length];
@@ -2643,7 +2644,7 @@ function ctfBegin(){
     L.flags.push(fl);
   }
   L.seen = [ fighters.map(()=>false), fighters.map(()=>false) ]; L.cseen = [ fighters.map(()=>false), fighters.map(()=>false) ];
-  ctfEditNew(L);
+  ctfEditNew(L); CTF._netKey = null; CTF._netN = 0;
   ctfRebuildDyn(L);
   CTF.cpuHide = {};
   try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); }
@@ -3453,6 +3454,94 @@ function ctfAiBuild(f, L){
     if(p) for(let i = 0; i < 3 && more(); i++) put('deco', pick(kinds), p.x + (i - 1)*(110 + R()*40), p.y - 20); }
   // 5. what is left of the points: more cover round the flag
   for(let i = 0; i < 12 && more(); i++){ const s = i % 2 ? 1 : -1; put('deco', pick(kinds), fl.x + s*(60 + 60*Math.floor(i/2) + R()*30), fl.y - 20); }
+}
+
+// ---- ONLINE: what the host's snapshot carries of a Capture the Flag match, and how a client takes it in --------------------------------------------------------
+// The host simulates everything (a guest's keys reach it as the same inputs, and it validates every placement and edit). A snapshot carries the MAP BY ITS ID (a client builds the
+// same geometry itself: ctfMapGet), and the live state compactly: phase and timers, the flags as each SIDE may see them (fv[team]: an enemy flag only once that side has seen it),
+// the keys and doors, the jails (prisoners, the door hold, the lockdown), the lifts, boosts and buffs, the score, the points and who is done, the bargaining, and the pieces players built
+// (sent when they change, and now and then as a refresh). The relay can only forward to everyone, so every client gets both sides' lists and reads its own team's: a modified client could
+// read the other's (the same is true of a ghost's position).
+function ctfNetOut(){
+  const L = CTF.live; if(!L) return null;
+  const R = Math.round;
+  const o = { id:CTF.mapId, ph:L.phase === 'hide' ? 0 : L.phase === 'fix' ? 1 : 2, t:L.t, pt:L.playT, n:L.n, sc:L.score.slice(), ov:L.over ? 1 : 0, w:L.winner, sl:L.stalled ? 1 : 0 };
+  o.fv = [0, 1].map(t=>L.flags.map(fl=>ctfFlagVisible(L, fl, t) ? [R(fl.x), R(fl.y), fl.st, fl.car, fl.fall ? 1 : 0, fl.cover ? 1 : 0, fl.elev == null ? -1 : fl.elev, fl.revealT > 0 ? 1 : 0] : 0));
+  o.k = L.keys.map(k=>[R(k.x), R(k.y), k.st, k.hold, k.lock, k.lockT | 0]);
+  o.d = L.doors.map(d=>(d.op[0] ? 1 : 0) | (d.op[1] ? 2 : 0));
+  o.j = L.jails.map(j=>[j.pris.slice(), j.hold | 0, j.lock | 0, j.door.open ? 1 : 0, j.door.t | 0]);
+  o.b = L.boosts.map(b=>b.cd | 0);
+  o.bf = L.buffs.map(b=>(b.got[0] ? 1 : 0) | (b.got[1] ? 2 : 0)); o.bt = L.buff.slice();
+  o.el = L.elevs.map(e=>[R(e.y), e.dir]);
+  o.pt2 = fighters.map(f=>L.pts[f.idx] == null ? 0 : L.pts[f.idx]);
+  o.dn = fighters.map(f=>L.done[f.idx] ? 1 : 0);
+  o.pg = L.ping.map(p=>p ? [p.id, p.t | 0] : 0);
+  o.of = L.offer ? [L.offer.from, L.offer.to, CTF_PIECES.offer.indexOf(L.offer.kind), Object.keys(L.offer.votes).map(Number)] : 0;
+  o.ol = L.offerLast ? [L.offerLast.ok ? 1 : 0, L.offerLast.t | 0, L.offerLast.from] : 0;
+  o.fx = L.flash ? [L.flash.team, L.flash.t | 0, L.flash.soft ? 1 : 0] : 0;
+  o.ff = (L.freeFx || []).map(q=>[R(q.x), R(q.y), q.t | 0, q.team]);
+  const key = L.edits.map(e=>e.id + (e.open ? 'o' : '')).join(',') + '|' + Object.keys(L.gone).join(',');
+  if(key !== CTF._netKey || ((CTF._netN = (CTF._netN || 0) + 1) % 90) === 0){
+    o.e = L.edits.map(e=>[e.id, e.team, e.owner, e.tool, e.kind, R(e.x), R(e.y), R(e.w), R(e.h), R(e.fy), R(e.cx), e.open ? 1 : 0, e.cost | 0]);
+    o.g = Object.keys(L.gone).map(Number); CTF._netKey = key;
+  }
+  return o;
+}
+// A fighter's CTF fields, on the wire by short names.
+function ctfNetFighter(f, o){
+  if(f._cf >= 0) o.cf = f._cf;
+  if(f._ck >= 0) o.ck = f._ck;
+  if(f._jail != null) o.jl = f._jail;
+  if(f._ctfFree > 0) o.fr = 1;
+  if(f._ghostT > 0) o.gh = 1;
+  if(f._shield) o.sh = 1;
+  if(f._ctfJT > 0) o.jt = 1;
+  if(f._cam){ o.cam = [Math.round(f._cam.x), Math.round(f._cam.y)]; o.tl = f._tool || 0; o.pc = f._piece || 0; }
+  if(f._spec != null) o.sp = f._spec;
+  if(f.controller === 'local' || f.controller === 'local2' || f.controller === 'remote') o.hu = 1;
+}
+// A snapshot arrives at a client (every one, not only the newest: what they carry is state that must not be lost): the live match state of this device is brought up to the host's.
+function ctfNetIn(c){
+  const L = CTF.live; if(!c || !L || !window.NET) return;
+  const me = fighters[window.NET.myIdx], vt = me ? me.team : 0;
+  L.phase = ['hide', 'fix', 'play'][c.ph] || 'play'; L.t = c.t; L.playT = c.pt; L.n = c.n; L.score = c.sc; L.over = !!c.ov; L.winner = c.w == null ? -1 : c.w; L.stalled = !!c.sl;
+  L.seen = [0, 1].map(()=>fighters.map(()=>false)); L.cseen = [0, 1].map(()=>fighters.map(()=>false));
+  const mine = c.fv && c.fv[vt] || [];
+  L.flags.forEach((fl, i)=>{
+    const r = mine[i], f = fighters[i];
+    if(f){ fl.team = f.team; fl.owner = f.idx; }
+    if(!r){ fl.st = 4; return; }   // not for this side to see
+    fl.x = r[0]; fl.y = r[1]; fl.st = r[2]; fl.car = r[3]; fl.fall = !!r[4]; fl.cover = !!r[5]; fl.elev = r[6] < 0 ? null : r[6]; fl.revealT = r[7] ? 1 : 0;
+    L.seen[vt][i] = true; L.cseen[vt][i] = true;
+  });
+  (c.k || []).forEach((r, i)=>{ const k = L.keys[i]; if(!k) return; k.x = r[0]; k.y = r[1]; k.st = r[2]; k.hold = r[3]; k.lock = r[4]; k.lockT = r[5]; });
+  let dyn = false;
+  (c.d || []).forEach((m, i)=>{ const d = L.doors[i]; if(!d) return; const a = !!(m & 1), b = !!(m & 2); if(d.op[0] !== a || d.op[1] !== b){ d.op = [a, b]; dyn = true; } });
+  (c.j || []).forEach((r, i)=>{ const j = L.jails[i]; if(!j) return; j.pris = r[0]; j.hold = r[1]; j.lock = r[2]; const open = !!r[3]; if(j.door.open !== open) dyn = true; j.door.open = open; j.door.t = r[4]; });
+  (c.b || []).forEach((cd, i)=>{ if(L.boosts[i]) L.boosts[i].cd = cd; });
+  (c.bf || []).forEach((m, i)=>{ if(L.buffs[i]) L.buffs[i].got = [!!(m & 1), !!(m & 2)]; }); if(c.bt) L.buff = c.bt;
+  (c.el || []).forEach((r, i)=>{ const e = L.elevs[i]; if(!e) return; e.y = r[0]; e.dir = r[1]; e.rect.y = e.y; });
+  L.pts = {}; (c.pt2 || []).forEach((v, i)=>{ L.pts[i] = v; });
+  L.done = {}; (c.dn || []).forEach((v, i)=>{ if(v) L.done[i] = true; });
+  L.ping = (c.pg || [0, 0]).map(p=>p ? { id:p[0], t:p[1] } : null);
+  if(c.of){ const votes = {}; (c.of[3] || []).forEach(i=>{ votes[i] = true; }); L.offer = { from:c.of[0], to:c.of[1], kind:CTF_PIECES.offer[c.of[2]], t:0, votes }; } else L.offer = null;
+  L.offerLast = c.ol ? { ok:!!c.ol[0], t:c.ol[1], from:c.ol[2] } : null;
+  L.flash = c.fx ? { team:c.fx[0], t:c.fx[1], soft:!!c.fx[2] } : null;
+  L.freeFx = (c.ff || []).map(q=>({ x:q[0], y:q[1], t:q[2], team:q[3] }));
+  if(c.e){
+    L.edits = c.e.map(r=>({ id:r[0], team:r[1], owner:r[2], tool:r[3], kind:r[4], x:r[5], y:r[6], w:r[7], h:r[8], fy:r[9], cx:r[10], open:!!r[11], cost:r[12], hp:r[3] === 'deco' ? 1 : 0 }));
+    L.gone = {}; (c.g || []).forEach(i=>{ L.gone[i] = true; }); dyn = true;
+  }
+  if(dyn) ctfRebuildDyn(L);
+}
+// After applySnapshot has rebuilt the fighters: their CTF fields back to the names the drawing reads.
+function ctfNetFightersIn(){
+  for(const f of fighters){
+    f._cf = f.cf != null ? f.cf : -1; f._ck = f.ck != null ? f.ck : -1; f._jail = f.jl != null ? f.jl : null;
+    f._ctfFree = f.fr ? 300 : 0; f._ghostT = f.gh ? 1 : 0; f._shield = f.sh ? 1 : 0; f._ctfJT = f.jt ? 1 : 0;
+    f._cam = f.cam ? { x:f.cam[0], y:f.cam[1] } : null; f._tool = f.tl || 0; f._piece = f.pc || 0; f._spec = f.sp != null ? f.sp : null;
+    f.controller = f.hu ? 'remote' : 'ai';
+  }
 }
 
 
@@ -4414,7 +4503,7 @@ function ctfNavSweep(nav, side){
 
 // ---- the team's memory --------------------------------------------------------------------------------------------
 function ctfAiBegin(L, nav){
-  if(CTF.skipNav){ CTF.nav = null; return; }
+  if(CTF.skipNav || (typeof isNetClient === 'function' && isNetClient())){ CTF.nav = null; return; }   // (an online guest never plans: the host does)
   if(!CTF.navs) CTF.navs = {};
   CTF.nav = nav || CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavNew(CTF.map));
   L.ai = { visited:[null, null], visAt:[null, null], claims:[{}, {}], roomClaims:[{}, {}], hideTaken:{}, rescue:[0, 0], stat:{ nodes:CTF.nav.nodes.length } };
@@ -46624,6 +46713,7 @@ function netFighter(f){
   if(f._heatFx) o.heatFx = f._heatFx;   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
   if(f._hookFx) o.hookFx = f._hookFx;
   if(f._windup) o.charge = { t:f._windup.t, t0:f._windup.t0, color:f._windup.color };   // the smash charge ring
+  if(SETTINGS.mode==='ctf') ctfNetFighter(f, o);
   return o;
 }
 // [id, x, y, r, vx, vy, colour index, owner's slot in fighters (-1: none), {rare fields}?]
@@ -46798,6 +46888,7 @@ function serializeState(withGeo){
     banner: (window.__lastBanner && Date.now()-window.__lastBanner.at < 400) ? window.__lastBanner : null,
     over: !running,
   };
+  if(SETTINGS.mode==='ctf') s.ctf = ctfNetOut();   // Capture the Flag: the map by its id and the live state (ctfNetOut)
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
   if(IMPACT_OUT.length) s.imp = IMPACT_OUT.splice(0);  // impacts since the last snapshot (impact), at most IMPACT_FX.netMax: a client plays them
   // Evil Forest's Evil Leafy and her tendrils were never sent: a client kept its own Evil Leafy standing in the corner
@@ -46824,7 +46915,7 @@ function serializeState(withGeo){
 // One line for the lobby: what the host has set.
 function lobbySummaryText(s){
   const st=STAGES.find(x=>x.id===s.stage), size=(MAP_SIZES[s.mapSize]||MAP_SIZES.normal).label;
-  const mode = s.mode==='teams' ? (s.teamKey||'')+' Teams' : s.mode==='boss' ? 'Boss Rush' : 'Free-for-all';
+  const mode = s.mode==='teams' ? (s.teamKey||'')+' Teams' : s.mode==='boss' ? 'Boss Rush' : s.mode==='ctf' ? 'Capture the Flag ' + Math.floor(s.count/2) + 'v' + Math.floor(s.count/2) : 'Free-for-all';
   const items=['no items','few items','normal items','lots of items'][s.itemRate] || 'normal items';
   const ai=['Easy','Normal','Hard'][s.ai] || 'Normal';
   return [(st?st.name:'Stadium'), mode, s.count+' contestants', s.stocks+' stocks', ai+' CPU', items, size+' map'].join(' · ');
@@ -46842,6 +46933,7 @@ function netSnapshotArrived(N, s){
   }
   if(NET_VIEW.lastArrive){ const g = now - NET_VIEW.lastArrive; if(g >= 0 && g < 400) NET_VIEW.gap += (g - NET_VIEW.gap)*0.15; }
   NET_VIEW.lastArrive = now;
+  if(s.ctf && s.mode==='ctf'){ try{ ctfNetIn(s.ctf); }catch(e){ console.error('ctfNetIn', e); } }   // Capture the Flag's state is taken in from every snapshot, not only the newest
   N.snapshot = s;
 }
 // Client rebuilds the render-globals from a received snapshot (no simulation).
@@ -46886,6 +46978,7 @@ function applySnapshot(s){
     netGlide(f, wasF.get(fd.idx));
     return f;
   });
+  if(s.mode==='ctf'){ try{ ctfNetFightersIn(); }catch(e){ console.error('ctfNetFightersIn', e); } }
   const lineup = fighters.map(f=>f.idx+':'+f.name).join('|') + '#' + myIdx;
   if(lineup !== window.__hudLineup){ window.__hudLineup = lineup; try{ buildHUD(); }catch(e){} }
   // This device's own KO line (the host's is local to the host: see banner)
@@ -46987,6 +47080,7 @@ function netStepParticles(){
 // Who this client's camera follows: its own fighter. While that fighter is out, the teammate nearest the view, else
 // the fighter nearest it -- not the lowest index still standing, which could be an enemy across the map.
 function clientFollow(){
+  if(SETTINGS.mode==='ctf'){ const me0 = fighters.find(f=>f.idx===window.NET.myIdx); if(me0){ const g0 = ctfCamFighter(me0); NET_VIEW.follow = g0.idx; return g0; } }   // Capture the Flag: the free camera's cursor, or the teammate a prisoner watches
   const me = fighters.find(f=>f.idx===window.NET.myIdx);
   if(me && !me.dead){ NET_VIEW.follow = me.idx; return me; }
   const kept = fighters.find(f=>f.idx===NET_VIEW.follow && !f.dead && f !== me);
@@ -47438,12 +47532,13 @@ window.NET = {
     STAGES.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.name + (st.big?' (big)':''); if(stage && stage.id===st.id) o.selected=true; ss.appendChild(o); });
     ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; changed(); };
     sg.appendChild(ss);
-    seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush']], SETTINGS.mode, v=>{ SETTINGS.mode=v; });
+    seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush'],['ctf','Capture the Flag']], SETTINGS.mode, v=>{ SETTINGS.mode=v; });
     // contestants: the main game's choices for this mode, never fewer than the humans in the room
     const humans=Math.max(1, this.players.length);
-    let counts=countOptions().filter(n=>n>=humans); if(!counts.length) counts=[humans];
+    let counts=countOptions().filter(n=>n>=humans); if(SETTINGS.mode==='ctf'){ const ev=counts.filter(n=>n%2===0); if(ev.length) counts=ev; }   // (Capture the Flag: two even sides)
+    if(!counts.length) counts=[humans];
     if(!counts.includes(SETTINGS.count)) SETTINGS.count = SETTINGS.count > counts[counts.length-1] ? counts[counts.length-1] : counts[0];
-    seg('Contestants', 'lobbyCount', counts.map(n=>[n, String(n)]), SETTINGS.count, v=>{ SETTINGS.count=+v; });
+    seg('Contestants', 'lobbyCount', counts.map(n=>[n, SETTINGS.mode==='ctf' ? (n/2) + 'v' + (n/2) : String(n)]), SETTINGS.count, v=>{ SETTINGS.count=+v; });
     seg('Stocks', 'lobbyStocks', [1,2,3,4,5].map(n=>[n, String(n)]), SETTINGS.stocks, v=>{ SETTINGS.stocks=+v; });
     if(SETTINGS.mode==='teams'){
       const splits=teamSplitsFor(SETTINGS.count).map(o=>o.join('v'));
@@ -47503,6 +47598,7 @@ window.NET = {
     const humans=picks.map(s=>ROSTER.some(r=>r.play && r.name===s.name) ? s.name : "Firey");
     // Everything the lobby shows travels with the start: host and clients must build the SAME stadium and arena.
     const settings=Object.assign(this.lobbySettings(), { count:Math.max(SETTINGS.count, this.players.length) });
+    if(SETTINGS.mode==='ctf') settings.ctfMap = ctfPickMap();   // the host picks the map: the start carries its id, and every device builds that one
     const roster=humans;
     const ids=this.players.map(p=>p.id);   // who sits where, so a client's seat comes from the start itself
     const start={t:"start", settings, roster, ids};
@@ -47515,7 +47611,8 @@ window.NET = {
   beginMatch(settings, roster, ids, cos){
     // Peer-supplied, every field of it: validate before anything reaches the arena math or the globals.
     const s=settings||{}, int=(v,lo,hi,d)=>{ v=Math.round(+v); return Number.isFinite(v) ? Math.max(lo,Math.min(hi,v)) : d; };
-    SETTINGS.mode = ['ffa','teams','boss'].includes(s.mode) ? s.mode : 'ffa';
+    SETTINGS.mode = ['ffa','teams','boss','ctf'].includes(s.mode) ? s.mode : 'ffa';
+    if(SETTINGS.mode==='ctf') CTF.netMap = (typeof s.ctfMap==='string' && CTF_MAPS[s.ctfMap]) ? s.ctfMap : null;
     SETTINGS.count = int(s.count, 1, 20, SETTINGS.count||2);
     SETTINGS.stocks = int(s.stocks, 1, 5, 3);
     if(typeof s.teamKey==='string' && /^\d+(v\d+)*$/.test(s.teamKey)) SETTINGS.teamKey = s.teamKey;
@@ -47558,7 +47655,7 @@ window.NET = {
     if(!final && this.ws.bufferedAmount > Math.max(24000, 2*(this._lastBytes||0))) return;
     this._lastBroadcast=now;
     const s = serializeState(false), key = worldGeoKey();
-    if(key !== this._geoKey || now - (this._geoAt||0) > NET_GEO_EVERY){ s.geo = worldGeo(); this._geoKey = key; this._geoAt = now; }
+    if(SETTINGS.mode !== 'ctf' && (key !== this._geoKey || now - (this._geoAt||0) > NET_GEO_EVERY)){ s.geo = worldGeo(); this._geoKey = key; this._geoAt = now; }   // (Capture the Flag's map goes by its id)
     const text = JSON.stringify({t:"state", s});
     this._lastBytes = text.length;
     if(!s.geo) this._rateBytes = text.length;
