@@ -529,6 +529,45 @@ describe('capture the flag', () => {
     expect(J(w, 'ctfEditProblems(CTF.live, CTF.nav)'), 'everything is reachable').toEqual([]);
   });
 
+  it('a flag can be put on a one-way platform, a platform somebody built, and a lift car (walking or with the free camera); not inside a wall', { timeout: 120000 }, () => {
+    const { window: w } = loadMonolith(36);
+    hideStart(w, true);
+    w.eval(`while(!CTF.nav.ready) ctfNavTick(CTF.nav, 80);`);
+    const hop = J(w, `(function(){ var p = worldPlats.filter(function(p){ return p.hop && !p.solid && p.w >= 200 && p.x < 8000 && p.y > 1500 && p.y < 4000; })[5]; return { x:p.x + p.w/2, y:p.y, w:p.w }; })()`);
+    // walking: standing on the thin platform, Space
+    w.eval(`(function(){ var f = fighters[0]; f.x = ${hop.x}; f.y = ${hop.y} - f.r; f.vx = 0; f.vy = 0; f.onground = true; })()`);
+    expect(w.eval('ctfHidePlace(fighters[0])'), 'put down on a thin platform').toBe(true);
+    expect(w.eval('CTF.live.flags[0].st')).toBe(1);
+    expect(w.eval('CTF.live.flags[0].y'), 'on its top').toBe(hop.y);
+    // the free camera: a cursor a little below the platform snaps to it, not to the floor beneath
+    w.eval(`fighters[0]._cam = { x:${hop.x + 30}, y:${hop.y + 12} }`);
+    const sn = J(w, 'ctfCamSnap(fighters[0])');
+    expect(sn.y, 'snapped to the platform').toBe(hop.y);
+    expect(sn.ok, 'and it may go there').toBe(true);
+    w.eval(`fighters[0]._cam = { x:${hop.x}, y:${hop.y - 35} }`);
+    expect(J(w, 'ctfCamSnap(fighters[0])').y, 'a cursor just above it too').toBe(hop.y);
+    // inside a wall: no
+    const wall = J(w, `(function(){ var p = worldPlats.filter(function(p){ return p.solid && p.x < 8000 && p.w >= 100 && p.h >= 100 && p.y > 1000; })[0]; return { x:p.x + p.w/2, y:p.y + p.h/2 }; })()`);
+    w.eval(`fighters[0]._cam = { x:${wall.x}, y:${wall.y} }`);
+    expect(J(w, 'ctfCamSnap(fighters[0])').ok, 'not inside a wall').toBe(false);
+    // a platform the player built
+    const a = mate(w, 0, 1), sp = roomSpot(w);
+    const dx = tryPlace(w, a, 'plat', 'plat', sp.x, sp.y - 240);
+    expect(dx).not.toBeNull();
+    const ep = J(w, `CTF.live.edits.filter(function(e){ return e.tool==='plat'; })[0]`);
+    w.eval(`fighters[0]._cam = { x:${ep.x + ep.w/2}, y:${ep.y - 40} }`);
+    const sn2 = J(w, 'ctfCamSnap(fighters[0])');
+    expect(sn2.y, 'the built platform is a surface').toBe(ep.y);
+    expect(sn2.ok, 'a flag may go on it').toBe(true);
+    // a lift car at rest, and it goes with the car
+    const lift = J(w, `(function(){ var e = CTF.live.elevs.filter(function(e){ return e.x < 8000; })[0]; return { i:e.i, x:e.x + e.w/2, y:e.y, w:e.w }; })()`);
+    w.eval(`(function(){ var f = fighters[0]; f.x = ${lift.x}; f.y = ${lift.y} - f.r; f.vx = 0; f.vy = 0; f.onground = true; CTF.live.flags[0].st = 0; CTF.live.flags[0].car = 0; f._cam = null; })()`);
+    expect(w.eval('ctfHidePlace(fighters[0])'), 'put down on a lift car').toBe(true);
+    w.eval(`CTF.live.elevs[${lift.i}].pause = 0; CTF.live.elevs[${lift.i}].dir = 1`);
+    for (let i = 0; i < 40; i++) w.eval('ctfStepElevs(CTF.live)');
+    expect(w.eval(`CTF.live.flags[0].y === CTF.live.elevs[${lift.i}].y`), 'the flag rides the car').toBe(true);
+  });
+
   it('only capturing all five ends the match: no clock', () => {
     const { window: w } = loadMonolith(9);
     start(w);
