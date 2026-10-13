@@ -7,11 +7,16 @@ import { writeFileSync } from 'node:fs';
 import { BOT_GOLDEN_MATCHES, bootGoldenWindow, playBotMatch } from '../test/helpers/bot-golden.js';
 
 const w = bootGoldenWindow();
+// The file is the NO-playbook game (test/bot-playbooks.test.js empties PLAYBOOKS before it replays): since the game ships trained
+// playbooks (Firey's, Pen's...), recording without emptying them wrote matches the test can never replay.
+const CLEAR = 'for (var k in PLAYBOOKS) delete PLAYBOOKS[k]; BOT_PB.legacy = false;';
+w.eval(CLEAR);
 const out = [];
 for (const m of BOT_GOLDEN_MATCHES) {
   const t0 = Date.now();
   const r = playBotMatch(w, m);
   await new Promise((res) => setTimeout(res, 0));   // let recordMatch's storage writes settle between matches
+  w.eval(CLEAR);
   out.push({ names: m.names, seed: m.seed, level: m.level, ...r });
   console.log(`${m.names.join(' v ')} (level ${m.level}, seed ${m.seed}): ${r.frames} frames, ${r.final}  [${Date.now() - t0} ms]`);
 }
