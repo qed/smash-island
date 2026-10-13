@@ -235,6 +235,28 @@ describe('picking one up does exactly what it did before', () => {
     const b = pick('boss');
     expect(b.summons).toEqual([{ type: 'boss', team: -1, owner: b.idx }]);
   });
+  it('a thrown crate is drawn as the crate, whoever throws it (a real bug: it took the thrower\'s own shot art, or a plain disc)', () => {
+    // the owner, 2026-10-13: "fighters with no ranged attacks use a placeholder sprite for the pickup"
+    const r = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; running=true; summons=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var out = [];
+      ROSTER.filter(function(x){ return x.play; }).forEach(function(row){
+        projectiles = [];
+        var A = makeFighter(row, 400, groundY()-24, 0); A.controller='still'; fighters=[A];
+        A._holding = { r:12, dmg:16, kb:12 };
+        doAttack(A);
+        var p = projectiles[0];
+        var threw = false; try { if(p) drawProjectile(p); } catch(e){ threw = String(e); }
+        out.push({ name:row.name, shape:p ? p.shape : null, threw:threw });
+      });
+      return out;
+    })()`);
+    expect(r.length).toBeGreaterThan(50);
+    for (const x of r) {
+      expect(x.shape, x.name + ': the crate keeps its own look').toBe('heldCrate');
+      expect(x.threw, x.name + ': and draws without a throw').toBe(false);
+    }
+  });
   it('a loose item still falls, lands and is grabbed by whoever touches it', () => {
     const r = W.eval(`(function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true;
