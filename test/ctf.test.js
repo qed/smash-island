@@ -32,6 +32,18 @@ describe('capture the flag', () => {
     expect(w.eval('isBig()')).toBe(true);
   });
 
+  it('Space puts your flag down, C says done, and the hiding phase ends when the human is done', () => {
+    const { window: w } = loadMonolith(11);
+    w.eval(`CTF.skipNav=true; SETTINGS.mode='ctf'; SETTINGS.count=10; CTF.forceMap='castle'; beginMatchNow();`);
+    expect(w.eval('DEFAULT_KEYS.flag')).toBe('Space');
+    expect(w.eval('fighters[0].controller')).toBe('local');
+    w.eval(`down[KEYS.flag]=true;`); step(w, 2); w.eval(`down[KEYS.flag]=false;`); step(w, 2);
+    expect(w.eval('CTF.live.flags[0].st'), 'put down where she stands').toBe(1);
+    expect(w.eval('CTF.live.phase')).toBe('hide');
+    w.eval(`down[KEYS.special]=true;`); step(w, 2); w.eval(`down[KEYS.special]=false;`); step(w, 2);
+    expect(w.eval('CTF.live.phase'), 'one human, and done: the phase is over').toBe('play');
+  });
+
   it('a capture scores', () => {
     const { window: w } = loadMonolith(2);
     start(w);
