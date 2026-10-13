@@ -2126,8 +2126,8 @@ const CTF_COVER = { B:'bush', C:'crate', F:'banner', W:'barrel', U:'curtain', R:
   G:'stalagmite', M:'minecart', Q:'ore',                  // caves and mines
   E:'machine', L:'gears', Z:'blocks',                     // factory and toy land
   O:'log', V:'fern', I:'stump',                           // forest and beach
-  X:'cloud', D:'snowman' };                               // sky, snow
-const CTF_COVER_HW = { bush:70, crate:112, banner:50, barrel:40, curtain:60, rubble:70, rock:64, armor:40, urn:34, chest:62, hay:70, stalagmite:62, minecart:72, ore:60, machine:62, gears:72, blocks:60, log:84, fern:62, stump:46, cloud:84, snowman:46 };
+  X:'cloud', D:'snowman', n:'drift', t:'pine' };           // sky, snow (a drift of snow, a pine you can stand behind)
+const CTF_COVER_HW = { bush:70, crate:112, banner:50, barrel:40, curtain:60, rubble:70, rock:64, armor:40, urn:34, chest:62, hay:70, stalagmite:62, minecart:72, ore:60, machine:62, gears:72, blocks:60, log:84, fern:62, stump:46, cloud:84, snowman:46, drift:84, pine:70 };
 const CTF_COVER_CHARS = Object.keys(CTF_COVER).join('');
 const CTF_MAPS = {};
 
@@ -2144,7 +2144,10 @@ function ctfGridNew(){
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
     fields: [], decor: [], front: [], zones: [], elevs: [], backs: [],
     // the wall behind the rooms: a dark patterned fill over a region (cells)
-    back(c0, r0, c1, r1){ g.backs.push({ c:c0, r:r0, w:c1-c0+1, h:r1-r0+1 }); return g; },
+    skins: [],
+    // a skin for the platforms whose middle lies in a region of cells: snowrock (a rock slope under snow), snowcap (a castle roof under snow), ice
+    skin(c0, r0, c1, r1, kind){ g.skins.push({ c0, r0, c1, r1, kind }); return g; },
+    back(c0, r0, c1, r1, kind){ g.backs.push({ c:c0, r:r0, w:c1-c0+1, h:r1-r0+1, kind:kind || 'brick' }); return g; },   // kind: brick, dirt, wood, metal, sky (what is drawn behind the room)
     // a floor transition: a gap in the slab on row rSlab (2 wide at column c) and the one-way steps up from the floor at rFloor, stacked one a row
     stairs(rSlab, rFloor, c){ g.gap(rSlab, c, c+1); const n = rFloor - rSlab - 1; for(let i=0;i<n;i++) g.fill(rFloor-1-i, c, c+1, '='); return g; },
     shaft(c, rBot, rTop){ for(let r=rBot;r>=rTop;r--) g.fill(r, c, c+1, '='); return g; },
@@ -2210,7 +2213,9 @@ function ctfMapBuild(id){
   for(const rc of ctfMergeCells(solids)) leftPlats.push({ ...rc, solid:true });
   for(const rc of ctfMergeCells(hops, true)) leftPlats.push({ x:rc.x, y:rc.y, w:rc.w, h:16, hop:true });
   for(const o of g.fields) for(const p of ctfLattice(g, leftPlats, o)) leftPlats.push(p);
+  for(const p of leftPlats){ const cx = (p.x + p.w/2)/CTF_CELL, cy = (p.y + p.h/2)/CTF_CELL; for(const k of g.skins) if(cx >= k.c0 && cx <= k.c1 + 1 && cy >= k.r0 && cy <= k.r1 + 1){ p.skin = k.kind; break; } }
   for(const p of leftPlats){ M.plats.push({ ...p }); M.plats.push({ ...p, x:mx(p.x,p.w) }); }
+  M.theme.skinRects = []; for(const k of g.skins){ const r = { x:k.c0*CTF_CELL, y:k.r0*CTF_CELL, w:(k.c1 - k.c0 + 1)*CTF_CELL, h:(k.r1 - k.r0 + 1)*CTF_CELL, kind:k.kind }; M.theme.skinRects.push(r); M.theme.skinRects.push({ ...r, x:mx(r.x, r.w) }); }
   M.zones = [];
   for(const z of g.zones){
     const zz = { type:z.type, x:z.c0*CTF_CELL, y:z.r0*CTF_CELL, w:(z.c1 - z.c0 + 1)*CTF_CELL, h:(z.r1 - z.r0 + 1)*CTF_CELL, strength:z.strength, dir:z.dir };
@@ -2219,7 +2224,7 @@ function ctfMapBuild(id){
   M.decor = [];
   for(const d of g.decor){ const dd = { ...d, x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL, side:0 }; M.decor.push(dd); M.decor.push({ ...dd, x:mx(dd.x, dd.w), flip:true, side:1 }); }
   M.back = [];
-  for(const d of g.backs){ const dd = { x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL }; M.back.push(dd); M.back.push({ ...dd, x:mx(dd.x, dd.w) }); }
+  for(const d of g.backs){ const dd = { x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL, kind:d.kind }; M.back.push(dd); M.back.push({ ...dd, x:mx(dd.x, dd.w) }); }
   M.front = [];
   for(const d of g.front){ const dd = { ...d, x:d.c*CTF_CELL, y:d.r*CTF_CELL, w:d.w*CTF_CELL, h:d.h*CTF_CELL }; M.front.push(dd); M.front.push({ ...dd, x:mx(dd.x, dd.w) }); }
   for(const e of g.elevs){
@@ -2544,16 +2549,129 @@ function ctfRoomGen(g, cfg){
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-//  1. CASTLE YOYLEBERRY. 21600 x 4680, made by ctfRoomGen: small connected rooms in six layers, a spine up the middle, roofs above, a base at each end
-//  (home, barracks, a jail in the bottom corner), four locked vaults, two puzzle areas a side, a feature in half the rooms.
+//  1. CASTLE YOYLEBERRY, built by hand from ten set pieces (the left half; the right is its mirror). Rows count down from the sky (0) to the floor of the world (38); a
+//  "surface row" s is the row whose top you stand on. Every piece has its own size, its own background and its own landmark:
+//    the zigzag stair TOWER over the HOME HALL, the JAIL BLOCK under it, the GREAT HALL (chain platforms, banners, ceiling teeth), the dirt CELLAR with its long hallway,
+//    the key-locked VAULT with a bell LOFT over it, the PUZZLE lift pit and its secret room, the rubble MOUNTAIN with a dark shaft, the airship DOCK (flame jets),
+//    the BATTLEMENTS along the roof, the SKY above them (propeller blocks, grass islands, a super-jump ledge), and the contested PLAZA and bridge at the middle line.
 // ---------------------------------------------------------------------------------------------------------------
 CTF_MAPS.castle = {
   name:'Castle Yoyleberry',
-  theme:{ sky:['#27345f','#e2a99a'], far:['#4a4f7c','#363a62'], bg:'castle', pat:'brick', back:'#2a2634', backLine:'rgba(255,255,255,0.055)',
+  theme:{ pal:{ rock:'#8d96ab', wood:'#a8773f', snow:'#f6f9ff', leaf:'#3a8f58', metal:'#7a8aa0' }, sky:['#27345f','#e2a99a'], far:['#4a4f7c','#363a62'], bg:'castle', pat:'brick', back:'#2a2634', backLine:'rgba(255,255,255,0.055)',
           solid:{ fill:'#8d8c9c', line:'#6c6b7d', hi:'#b2b1c2', edge:'#262532' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' },
           cover:{ bush:'#3f9a4c', crate:'#a8773f', banner:'#c9433f', barrel:'#7a4a2a', curtain:'#8a3a6a', rubble:'#7d7a88', rock:'#6a6a74' }, deco:{ a:'#5b5f8f', b:'#7a6fa8', c:'#e8d98a', d:'#4aa0d8' } },
   build(g){
-    ctfRoomGen(g, { seed:3, cover:['B', 'C', 'W', 'F', 'U', 'R', 'K', 'A', 'N', 'T', 'Y'], features:['ice', 'water', 'wind', 'belt', 'dark', 'heal', 'float', 'glue'], landmark:'castle', vaults:4 });
+    const info = { supers:[], pieces:[] };
+    // the mass of the castle, rows 10 to 38; the roof walkway and the sky are above it
+    g.box(10, 0, 38, 89, '#');
+    g.back(0, 10, 61, 38, 'brick');   // the dark wall behind everything inside the castle (each piece paints its own over it)
+
+    // ---- 1. THE STAIR TOWER (rows 11-21, cols 1-14): three floors, a hatch to the roof, thick walls, one hidden alcove ----
+    g.box(11, 1, 21, 14, '.');
+    g.fill(14, 1, 14, '#'); g.fill(14, 1, 14, '#'); g.box(14, 1, 14, 14, '#'); g.gap(14, 13, 14);     // floor 3 (surface 14), a hole at its right end
+    g.box(18, 1, 18, 14, '#'); g.gap(18, 1, 2);                                                        // floor 2 (surface 18), a hole at its left end
+    g.gap(10, 1, 2);                                                                                    // the hatch in the roof
+    g.shaft(1, 21, 19); g.shaft(13, 17, 15); g.shaft(1, 13, 11);                                         // the stairs: F1 to F2 (left), F2 to F3 (right), F3 to the roof (left)
+    g.fill(16, 5, 6, '='); g.fill(20, 8, 9, '='); g.fill(12, 7, 8, '=');                                // tiny landings
+    g.put(15, 6, 'U'); g.put(19, 9, 'B'); g.put(21, 5, 'F');
+    g.box(16, 15, 17, 16, '.'); g.secret(15, 16, 15, 17); g.put(17, 16, 'K');                          // the hidden alcove in the wall: walk through the stone at the end of floor 2
+    g.put(13, 10, 'g');                                                                                 // a ghost boost on the top floor
+    g.back(1, 11, 14, 21, 'brick'); g.deco('lantern', 4, 15, 3, 3); g.deco('hang', 9, 11, 2, 3, {}); g.deco('hang', 3, 19, 2, 2, {});
+    // the tunnel from the top floor into the great hall
+    g.box(12, 15, 13, 18, '.');
+
+    // ---- 2. THE HOME HALL (rows 24-30, cols 1-15) with the barracks balcony ----
+    g.box(24, 1, 30, 15, '.'); g.fill(27, 1, 15, '=');
+    g.put(30, 2, 'PP'); g.put(30, 5, 'HH'); g.put(26, 2, 'HHHHHH');
+    g.gap(22, 11, 12); g.gap(23, 11, 12); g.shaft(11, 30, 23);                                          // up into the tower
+    g.box(31, 14, 34, 15, '.'); g.shaft(14, 37, 32);                                                    // down to the corridor
+    g.box(25, 16, 26, 18, '.');                                                                         // the tunnel to the great hall
+    g.back(1, 24, 15, 30, 'brick'); g.deco('hang', 6, 24, 2, 3, {}); g.deco('hang', 12, 24, 2, 3, {});
+
+    // ---- 3. THE JAIL BLOCK (rows 35-37, cols 1-6) and the corridor out of it ----
+    g.box(35, 1, 37, 5, '.'); g.col(6, 35, 37, 'J'); g.put(37, 2, 'ppp');
+    g.box(35, 7, 37, 18, '.'); g.keepClear(1, 35, 6, 37);
+
+    // ---- 4. THE GREAT HALL (rows 11-27, cols 19-44): a wide tall hall, blue platforms hanging on chains, banners, ceiling teeth ----
+    g.box(11, 19, 27, 44, '.');
+    const hang = (s, c0, c1)=>{ g.fill(s, c0, c1, '='); g.deco('chains', c0 + 1, 11, 3, s - 11, {}); };
+    hang(26, 20, 24); hang(24, 26, 30); hang(22, 21, 25); hang(20, 27, 31); hang(18, 21, 25); hang(16, 27, 31); hang(14, 19, 24); hang(12, 26, 30);
+    hang(26, 36, 41); hang(24, 42, 44); hang(22, 37, 41); hang(20, 43, 44); hang(18, 33, 38); hang(14, 34, 38); hang(16, 40, 44);
+    g.gap(10, 27, 28);                                                                                  // the roof hatch above the top ledge
+    g.put(23, 28, 'C'); g.put(23, 27, 'C'); g.put(27, 33, 'C'); g.put(27, 34, 'C'); g.put(27, 38, 'C'); g.put(27, 40, 'F'); g.put(27, 22, 'F'); g.put(27, 25, 'A');
+    g.put(19, 29, 'U'); g.put(17, 23, 'T'); g.put(11, 28, 'T'); g.put(13, 21, 'N'); g.put(21, 39, 'U'); g.put(17, 36, 'F'); g.put(13, 36, 'h');
+    g.deco('teeth', 19, 11, 26, 1, {}); g.deco('hang', 22, 11, 2, 4, {}); g.deco('hang', 33, 11, 2, 4, {}); g.deco('hang', 41, 11, 2, 4, {});
+    g.back(19, 11, 44, 27, 'brick');
+    g.box(28, 31, 34, 32, '.'); g.shaft(31, 37, 29);                                                    // the stairs down to the cellar
+    g.box(18, 45, 19, 46, '.');                                                                         // the arch to the bell loft
+    g.box(26, 45, 27, 46, '.');                                                                         // the arch to the vault's door
+
+    // ---- 5. THE CELLAR (rows 35-37): dirt, a long hallway to a dead end, small chambers, a flooded stretch ----
+    g.box(35, 19, 37, 46, '.');
+    g.box(31, 21, 33, 26, '.'); g.gap(34, 23, 24); g.shaft(23, 37, 35); g.put(33, 25, 'a'); g.put(33, 22, 'W');          // a chamber over the hallway with the vault's key
+    g.box(31, 36, 33, 41, '.'); g.gap(34, 37, 38); g.shaft(37, 37, 35); g.put(33, 40, 'g'); g.put(33, 39, 'Q');          // another, with a ghost boost
+    g.put(37, 45, 'W'); g.put(37, 44, 'C'); g.put(37, 46, 'M'); g.put(37, 28, 'G'); g.put(37, 33, 'W');
+    g.zone('water', 34, 35, 41, 37, 1);
+    g.back(7, 35, 18, 37, 'dirt'); g.back(19, 35, 46, 37, 'dirt'); g.back(21, 31, 26, 33, 'dirt'); g.back(36, 31, 41, 33, 'dirt'); g.back(31, 28, 32, 34, 'dirt');
+    g.deco('mushroom', 25, 33, 2, 2, {}); g.deco('lantern', 42, 35, 2, 2, {});
+
+    // ---- 6. THE VAULT (rows 21-27, cols 48-56) behind two locked doors, with a bell loft above it (rows 12-19, cols 47-57) ----
+    g.box(21, 48, 27, 56, '.'); g.col(47, 26, 27, '1'); g.col(57, 26, 27, '1');
+    g.fill(26, 53, 55, '='); g.fill(24, 49, 52, '='); g.put(23, 50, 'N'); g.put(27, 50, 'U'); g.put(27, 54, 'T'); g.put(27, 52, 'u');
+    g.back(48, 21, 56, 27, 'wood'); g.deco('crystal', 51, 21, 3, 3, {});
+    g.box(12, 47, 19, 57, '.'); g.ladder(49, 19, 12, 3); g.gap(10, 53, 54);
+    g.put(19, 56, 'F'); g.put(19, 48, 'B'); g.put(11, 53, 'C');
+    g.back(47, 12, 57, 19, 'wood'); g.deco('chains', 51, 11, 3, 3, {});
+
+    // ---- 7. THE LIFT PIT (rows 31-37, cols 48-61) and the gatehouse above it (rows 23-27, cols 58-61) ----
+    g.box(23, 58, 27, 61, '.'); g.box(28, 59, 30, 61, '.'); g.box(31, 48, 37, 61, '.');
+    g.elev(59, 3, 28, 38);
+    g.fill(36, 50, 52, '='); g.fill(34, 53, 55, '='); g.fill(32, 56, 58, '='); g.put(35, 51, 'R'); g.put(33, 54, 'B'); g.put(31, 57, 'C'); g.put(37, 49, 'K'); g.put(37, 57, 'C');
+    g.secret(47, 36, 47, 37); g.box(36, 47, 37, 47, '.');                                               // the hallway's dead end walks through the wall into the pit
+    g.back(48, 31, 61, 37, 'dirt'); g.back(58, 23, 61, 27, 'brick'); g.deco('lantern', 59, 21, 3, 3, {});
+
+    // ---- 8. THE MOUNTAIN (cols 62-80): a stepped rubble slope up to a plateau, a dark shaft down through it with ledges, a secret room under the slope ----
+    g.box(10, 62, 37, 89, '.');
+    const top = { 62:27, 63:26, 64:26, 65:25, 66:24, 67:24, 68:23, 69:22, 70:22, 71:21, 72:20, 73:19, 74:18, 75:17, 76:17, 77:17, 78:17, 79:17, 80:17 };
+    for(const c in top) g.box(top[c], +c, 37, +c, '#');
+    g.skin(62, 10, 80, 37, 'snowrock'); g.skin(30, 10, 61, 10, 'snowcap');       // snow on the rock, and on the roofs towards it
+    g.box(17, 76, 36, 78, '.'); g.col(76, 20, 20, '='); g.col(78, 22, 22, '='); g.col(76, 24, 24, '='); g.col(78, 26, 26, '='); g.col(76, 28, 28, '='); g.col(78, 30, 30, '='); g.col(76, 32, 32, '='); g.col(78, 34, 34, '=');
+    g.box(30, 71, 37, 78, '.'); g.box(36, 79, 37, 80, '.');                                             // the heart of the mountain, with an arch out to the plaza
+    g.zone('dark', 71, 17, 78, 37);
+    g.box(36, 62, 37, 70, '.');                                                                         // the low way from the pit to it
+    g.box(23, 67, 27, 68, '.'); g.box(28, 66, 31, 69, '.'); g.put(31, 68, 'y'); g.deco('lantern', 66, 28, 3, 3, {});   // a hole in the slope and a fall into the secret room: its one way out is the wall at its east end
+    g.box(30, 70, 31, 70, '.'); g.secret(70, 30, 70, 31); g.shaft(71, 37, 32);
+    g.put(25, 64, 'n'); g.put(23, 66, 't'); g.put(21, 69, 'K'); g.put(20, 71, 'n'); g.put(18, 73, 't'); g.put(16, 75, 'n'); g.put(16, 79, 'K');
+    g.zone('ice', 70, 20, 71, 21, 1); g.zone('ice', 72, 18, 73, 19, 1); g.zone('ice', 74, 16, 75, 17, 1); g.zone('ice', 77, 15, 80, 16, 1);
+    g.deco('pine', 66, 21, 1, 3, {}); g.deco('pine', 69, 19, 1, 3, {}); g.deco('pine', 79, 14, 1, 3, {}); g.deco('pine', 62, 7, 1, 3, {}); g.deco('peak', 66, 7, 6, 4, {}); g.deco('peak', 74, 9, 5, 3, {}); g.deco('peak', 82, 8, 5, 4, {}); g.put(37, 74, 'K'); g.put(37, 73, 'R');
+    g.back(66, 28, 69, 31, 'dirt'); g.back(71, 30, 78, 37, 'dirt'); g.back(76, 17, 78, 36, 'dirt'); g.back(62, 36, 70, 37, 'dirt'); g.deco('falls', 68, 11, 4, 5, {});
+    g.shaft(62, 26, 11);                                                                                // up the mountain's foot to the battlements
+
+    // ---- 9. THE AIRSHIP DOCK and the PLAZA (cols 81-89): a ship's hull and deck over the courtyard, flame jets on the plateau's edge, a ladder up from the floor ----
+    for(let r = 20; r <= 26; r++) g.fill(r, 84 + Math.max(0, 22 - r), 89, '#');                      // the hull, stepped at the bow
+    g.fill(19, 84, 89, '='); g.fill(29, 84, 89, '='); g.put(18, 86, 'F'); g.put(18, 88, 'C'); g.put(28, 88, 'W'); g.put(28, 85, 'B');
+    g.zone('spring', 79, 16, 80, 16, 1.18);
+    g.shaft(82, 37, 19); g.put(37, 84, 'u'); g.put(37, 88, 'S'); g.put(37, 86, 'n'); g.put(37, 87, 't');
+    g.deco('pine', 85, 35, 1, 3, {}); g.deco('pine', 88, 35, 1, 3, {}); g.skin(62, 38, 89, 38, 'snowcap');
+    g.back(84, 20, 89, 26, 'metal'); g.deco('gear', 85, 21, 3, 3, {}); g.deco('chimney', 86, 12, 2, 4, {});
+
+    // ---- 10. THE BATTLEMENTS (rows 6-9) and the SKY above (rows 0-5) ----
+    g.box(10, 0, 10, 61, '#'); g.gap(10, 1, 2); g.gap(10, 27, 28); g.gap(10, 53, 54);
+    g.put(9, 36, 'v'); g.fill(7, 35, 37, '='); g.put(6, 36, 'X'); info.supers.push({ pad:{ c:36, r:9 }, ledge:{ c0:35, c1:37, r:7 } });
+    g.put(9, 14, 'B'); g.put(9, 45, 'C'); g.put(9, 22, 'R'); g.put(9, 58, 'K');
+    for(const c of [4, 10, 16, 22, 28, 40, 46, 52, 58]) g.deco('crenel', c, 8, 2, 1, {});
+    // propeller blocks and grass islands
+    for(const [r, c] of [[8, 14], [6, 19], [4, 26], [6, 33], [4, 41], [6, 48], [3, 55], [5, 60]]){ g.put(r, c, '#'); g.deco('prop', c, r - 2, 1, 2, {}); }
+    g.fill(4, 21, 27, '='); g.put(3, 24, 'F'); g.deco('pillar', 23, 1, 1, 3, {});
+    g.fill(2, 44, 50, '='); g.put(1, 47, 'F'); g.put(1, 45, 'X'); g.deco('pillar', 46, -1, 1, 3, {});
+    g.fill(8, 64, 66, '='); g.fill(6, 70, 72, '=');
+    g.zone('wind', 10, 0, 16, 6, 1, 1); g.zone('float', 40, 0, 52, 6, 1);
+    g.deco('castle', 30, 0, 6, 6, {}); g.deco('cloud', 8, 1, 4, 2, {}); g.deco('cloud', 36, 0, 5, 2, {}); g.deco('cloud', 58, 1, 4, 2, {});
+
+    // the middle: the plaza is open the whole way up, the ship's deck is the bridge across the line
+    g.keepClear(81, 11, 89, 37);
+    g.info = info;
+    return info;
   },
 };
 
@@ -3586,6 +3704,26 @@ function ctfResultText(youWon, winTeam){
 const CTF_TILE = 1024, CTF_TSCALE = 0.75;
 const CTF_TILES = new Map();
 function ctfColor(team){ return TEAM_COLORS[team % TEAM_COLORS.length]; }
+// ---- ONE STYLE for everything the map draws (the game's own flat, bright, thick-outlined look: see STAGE ART): one dark outline colour at one width (about 3 px at play zoom),
+// one light step and one shadow step on a fill, a soft dark ellipse under anything that stands, a palette per environment. Every prop, platform, door, icon and editor piece uses these.
+const CTF_LINE = '#1c1c1c', CTF_LW = 3.5;
+function ctfOutline(g, lw){ g.strokeStyle = CTF_LINE; g.lineWidth = lw || CTF_LW; g.lineJoin = 'round'; g.lineCap = 'round'; }
+function ctfMix(c, to, t){
+  const rgb = h=>{ const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(h || ''); if(!m) return null; let v = m[1]; if(v.length === 3) v = v[0] + v[0] + v[1] + v[1] + v[2] + v[2]; return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)]; };
+  const a = rgb(c), b = rgb(to); if(!a || !b) return c;
+  return '#' + [0, 1, 2].map(i=>Math.round(a[i] + (b[i] - a[i])*t).toString(16).padStart(2, '0')).join('');
+}
+function ctfShade(c){ return ctfMix(c, '#10141c', 0.24); }
+function ctfLight(c){ return ctfMix(c, '#ffffff', 0.26); }
+function ctfShadow(g, x, y, hw){ g.save(); g.fillStyle = 'rgba(20,16,28,0.26)'; g.beginPath(); g.ellipse(x, y + 1, hw, Math.max(6, hw*0.16), 0, 0, 7); g.fill(); g.restore(); }
+function ctfPal(th, k, d){ return (th && th.pal && th.pal[k]) || d; }
+// snow along a top edge: a white cap with a scalloped underside and one shadow step
+function ctfSnowCap(g, x0, x1, y, h){
+  const w = x1 - x0; if(w <= 0) return;
+  g.fillStyle = '#cdd9ee'; g.beginPath(); g.rect(x0, y + h - 6, w, 8); for(let x = x0 + 18; x < x1; x += 44){ g.moveTo(x + 15, y + h + 6); g.arc(x, y + h + 6, 15, 0, 7); } g.fill();
+  g.fillStyle = '#f6f9ff'; g.beginPath(); g.rect(x0, y, w, h); for(let x = x0 + 18; x < x1; x += 44){ g.moveTo(x + 14, y + h); g.arc(x, y + h, 14, 0, 7); } g.fill();
+  ctfOutline(g, 3); g.beginPath(); g.moveTo(x0, y + h*0.6); g.lineTo(x0, y); g.lineTo(x1, y); g.lineTo(x1, y + h*0.6); g.stroke();
+}
 
 function ctfSolidPattern(g, pat, th, x0, y0, x1, y1, p){
   g.strokeStyle = th.line; g.lineWidth = 2; g.beginPath();
@@ -3615,15 +3753,30 @@ function ctfSolidPattern(g, pat, th, x0, y0, x1, y1, p){
 function ctfPaintPlat(g, p, th, X0, Y0, X1, Y1){
   const x0 = Math.max(p.x, X0), x1 = Math.min(p.x + p.w, X1), y0 = Math.max(p.y, Y0), y1 = Math.min(p.y + p.h, Y1);
   if(x1 <= x0 || y1 <= y0) return;
+  if(p.skin === 'ice'){   // an icy ledge: pale blue with a shine
+    const base = p.solid ? '#a9d8ee' : '#bfe6f6'; g.fillStyle = base; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    g.fillStyle = ctfLight(base); if(p.y >= Y0 && p.y < Y1) g.fillRect(x0, p.y, x1 - x0, Math.min(10, p.h));
+    g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 3; g.beginPath(); for(let x = Math.ceil(x0/90)*90; x < x1; x += 90){ g.moveTo(x, y0 + 8); g.lineTo(x + 26, Math.min(y1 - 4, y0 + 34)); } g.stroke();
+    ctfOutline(g); g.strokeRect(p.x, p.y, p.w, p.h); return;
+  }
+  if(p.solid && p.skin === 'snowrock'){   // a rock slope under snow
+    g.fillStyle = '#8d96ab'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctfSolidPattern(g, 'rock', { line:'#6c758c', hi:'#b2bad0' }, x0, y0, x1, y1, p);
+    g.fillStyle = '#6f7891'; g.fillRect(Math.max(x0, p.x + p.w - 14), y0, Math.min(14, x1 - x0), y1 - y0);
+    ctfOutline(g); g.strokeRect(p.x, p.y, p.w, p.h);
+    if(p.y >= Y0 && p.y < Y1) ctfSnowCap(g, x0, x1, p.y, Math.min(34, p.h));
+    return;
+  }
   if(p.solid){
     g.fillStyle = th.solid.fill; g.fillRect(x0, y0, x1 - x0, y1 - y0);
     ctfSolidPattern(g, th.pat, th.solid, x0, y0, x1, y1, p);
     if(p.y >= Y0 && p.y < Y1){ g.fillStyle = th.solid.hi; g.fillRect(x0, p.y, x1 - x0, Math.min(8, p.h)); }
-    g.strokeStyle = th.solid.edge; g.lineWidth = 5; g.strokeRect(p.x, p.y, p.w, p.h);
+    ctfOutline(g, 4); g.strokeRect(p.x, p.y, p.w, p.h);
+    if(p.y >= Y0 && p.y < Y1) for(const k of (th.skinRects || [])) if(k.kind === 'snowcap' && p.y >= k.y - 2 && p.y < k.y + k.h + 2){ const a = Math.max(x0, k.x), b = Math.min(x1, k.x + k.w); if(b > a) ctfSnowCap(g, a, b, p.y, 26); }   // a roof, a floor under snow
   } else {
     g.fillStyle = th.hop.fill; g.fillRect(x0, y0, x1 - x0, y1 - y0);
     if(p.y >= Y0 && p.y < Y1){ g.fillStyle = th.hop.hi; g.fillRect(x0, p.y, x1 - x0, 4); }
-    g.strokeStyle = th.hop.edge; g.lineWidth = 3; g.strokeRect(p.x, p.y, p.w, p.h);
+    ctfOutline(g); g.strokeRect(p.x, p.y, p.w, p.h);
     g.beginPath(); for(let x = Math.ceil(x0/60)*60; x < x1; x += 60){ g.moveTo(x, y0); g.lineTo(x, y1); } g.lineWidth = 1.5; g.stroke();
   }
 }
@@ -3631,6 +3784,30 @@ function ctfPaintPlat(g, p, th, X0, Y0, X1, Y1){
 function ctfPaintBack(g, b, th, X0, Y0, X1, Y1){
   const x0 = Math.max(b.x, X0), x1 = Math.min(b.x + b.w, X1), y0 = Math.max(b.y, Y0), y1 = Math.min(b.y + b.h, Y1);
   if(x1 <= x0 || y1 <= y0) return;
+  const kind = b.kind || 'brick';
+  if(kind === 'sky') return;
+  if(kind === 'dirt'){   // packed earth: brown, with darker lumps and pebbles that sit where a hash of their cell puts them
+    g.fillStyle = th.dirt || '#4b372a'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    for(let y = Math.floor(y0/90)*90; y < y1; y += 90) for(let x = Math.floor(x0/90)*90; x < x1; x += 90){ const h = ((x*73856093) ^ (y*19349663)) >>> 0, ox = (h % 60), oy = ((h >>> 6) % 60), r = 6 + (h >>> 12) % 16;
+      g.fillStyle = (h >>> 4) & 1 ? 'rgba(0,0,0,0.22)' : 'rgba(255,220,170,0.10)'; g.beginPath(); g.ellipse(x + ox + 15, y + oy + 15, r*1.4, r, 0, 0, 7); g.fill(); }
+    return;
+  }
+  if(kind === 'wood'){   // planks standing side by side, with a seam here and there
+    g.fillStyle = th.wood || '#5d4329'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    g.strokeStyle = 'rgba(0,0,0,0.28)'; g.lineWidth = 3; g.beginPath();
+    for(let x = Math.ceil(x0/70)*70; x < x1; x += 70){ g.moveTo(x, y0); g.lineTo(x, y1); }
+    for(let y = Math.ceil(y0/210)*210; y < y1; y += 210) for(let x = Math.ceil(x0/70)*70; x < x1; x += 140){ g.moveTo(x, y + ((x/70)%3)*30); g.lineTo(x + 70, y + ((x/70)%3)*30); }
+    g.stroke(); return;
+  }
+  if(kind === 'metal'){   // riveted plates
+    g.fillStyle = th.metal || '#3b4552'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    g.strokeStyle = 'rgba(255,255,255,0.10)'; g.lineWidth = 3; g.beginPath();
+    for(let y = Math.ceil(y0/120)*120; y < y1; y += 120){ g.moveTo(x0, y); g.lineTo(x1, y); }
+    for(let x = Math.ceil(x0/160)*160; x < x1; x += 160){ g.moveTo(x, y0); g.lineTo(x, y1); }
+    g.stroke(); g.fillStyle = 'rgba(255,255,255,0.16)';
+    for(let y = Math.ceil(y0/120)*120 + 14; y < y1; y += 120) for(let x = Math.ceil(x0/160)*160 + 14; x < x1; x += 160){ g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); }
+    return;
+  }
   g.fillStyle = th.back || '#2b2733'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
   g.strokeStyle = th.backLine || 'rgba(255,255,255,0.05)'; g.lineWidth = 2; g.beginPath();
   const bh = 60, bw = 120;
@@ -3696,7 +3873,7 @@ function ctfDrawBackdrop(){
 // ---- icons ---------------------------------------------------------------------------------------------------
 function ctfFlagIcon(g, x, y, col, s, wave, dot){   // x,y: the pole's foot; s: height of the pole
   g.save(); g.translate(x, y);
-  g.lineWidth = Math.max(2, s*0.07); g.strokeStyle = '#1c1c1c'; g.fillStyle = '#f4efe2';
+  ctfOutline(g, Math.max(2.5, s*0.07)); g.fillStyle = '#f4efe2';
   g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -s); g.stroke();
   const w = s*0.62, h = s*0.4, k = (wave || 0);
   g.fillStyle = col; g.beginPath(); g.moveTo(0, -s); g.lineTo(w*0.5, -s + Math.sin(k)*s*0.04 - 1); g.lineTo(w, -s + h*0.5 + Math.sin(k + 1.4)*s*0.05);
@@ -3705,7 +3882,7 @@ function ctfFlagIcon(g, x, y, col, s, wave, dot){   // x,y: the pole's foot; s: 
   g.restore();
 }
 function ctfKeyIcon(g, x, y, col, s){
-  g.save(); g.translate(x, y); g.lineWidth = Math.max(2, s*0.1); g.strokeStyle = '#1c1c1c'; g.fillStyle = col;
+  g.save(); g.translate(x, y); ctfOutline(g, Math.max(2.5, s*0.1)); g.fillStyle = col;
   g.beginPath(); g.arc(0, 0, s*0.28, 0, 7); g.fill(); g.stroke();
   g.fillStyle = '#1c1c1c'; g.beginPath(); g.arc(0, 0, s*0.1, 0, 7); g.fill();
   g.strokeStyle = '#1c1c1c'; g.lineWidth = Math.max(5, s*0.2); g.beginPath(); g.moveTo(s*0.26, 0); g.lineTo(s*0.9, 0); g.moveTo(s*0.66, 0); g.lineTo(s*0.66, s*0.28); g.moveTo(s*0.88, 0); g.lineTo(s*0.88, s*0.22); g.stroke();
@@ -3713,21 +3890,21 @@ function ctfKeyIcon(g, x, y, col, s){
   g.restore();
 }
 function ctfCheckIcon(g, x, y, r, col){
-  g.save(); g.fillStyle = col || '#3fbf5f'; g.strokeStyle = '#1c1c1c'; g.lineWidth = 3; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke();
+  g.save(); g.fillStyle = col || '#3fbf5f'; ctfOutline(g); g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke();
   g.strokeStyle = '#fff'; g.lineWidth = Math.max(3, r*0.28); g.lineCap = 'round'; g.beginPath(); g.moveTo(x - r*0.5, y + r*0.05); g.lineTo(x - r*0.12, y + r*0.42); g.lineTo(x + r*0.52, y - r*0.38); g.stroke(); g.restore();
 }
 function ctfOpenLockIcon(g, x, y, s, col){   // an open padlock: the shackle lifted off to the side
-  g.save(); g.lineWidth = 4; g.strokeStyle = '#1c1c1c'; g.fillStyle = col || '#f4efe2';
+  g.save(); g.lineWidth = CTF_LW; g.strokeStyle = '#1c1c1c'; g.fillStyle = col || '#f4efe2';
   const w = s*0.8, h = s*0.55;
   g.beginPath(); g.arc(x + w*0.12, y - h*0.15, w*0.3, Math.PI, 0.1*Math.PI); g.lineWidth = 9; g.strokeStyle = '#1c1c1c'; g.stroke(); g.lineWidth = 5; g.strokeStyle = '#f4efe2'; g.stroke();
-  g.lineWidth = 4; g.strokeStyle = '#1c1c1c'; g.fillRect(x - w/2, y - h*0.1, w, h); g.strokeRect(x - w/2, y - h*0.1, w, h);
+  g.lineWidth = CTF_LW; g.strokeStyle = '#1c1c1c'; g.fillRect(x - w/2, y - h*0.1, w, h); g.strokeRect(x - w/2, y - h*0.1, w, h);
   g.fillStyle = '#1c1c1c'; g.beginPath(); g.arc(x, y + h*0.17, 4, 0, 7); g.fill(); g.fillRect(x - 2, y + h*0.17, 4, h*0.25);
   g.restore();
 }
 function ctfClosedLockIcon(g, x, y, s, col){
   g.save(); const w = s*0.8, h = s*0.55;
   g.lineCap = 'round'; g.beginPath(); g.arc(x, y - h*0.1, w*0.3, Math.PI, 0); g.lineTo(x + w*0.3, y); g.lineTo(x - w*0.3, y); g.closePath(); g.lineWidth = 9; g.strokeStyle = '#1c1c1c'; g.stroke(); g.lineWidth = 5; g.strokeStyle = '#f4efe2'; g.stroke();
-  g.fillStyle = col || '#d8c46a'; g.lineWidth = 4; g.strokeStyle = '#1c1c1c'; g.fillRect(x - w/2, y - h*0.1, w, h); g.strokeRect(x - w/2, y - h*0.1, w, h);
+  g.fillStyle = col || '#d8c46a'; g.lineWidth = CTF_LW; g.strokeStyle = '#1c1c1c'; g.fillRect(x - w/2, y - h*0.1, w, h); g.strokeRect(x - w/2, y - h*0.1, w, h);
   g.fillStyle = '#1c1c1c'; g.beginPath(); g.arc(x, y + h*0.17, 4, 0, 7); g.fill(); g.fillRect(x - 2, y + h*0.17, 4, h*0.25);
   g.restore();
 }
@@ -3738,7 +3915,7 @@ function ctfNoEntryIcon(g, x, y, r){
 function ctfBoostIcon(g, x, y, kind, a){
   g.save(); g.globalAlpha = a; g.translate(x, y);
   const col = { speed:'#7ad0f0', jump:'#ffd23f', ghost:'#e8e8ff', shield:'#6ae0a0' }[kind] || '#ffd23f';
-  g.fillStyle = col; g.strokeStyle = '#1c1c1c'; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 26, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = col; ctfOutline(g); g.beginPath(); g.arc(0, 0, 26, 0, 7); g.fill(); g.stroke();
   g.fillStyle = '#1c1c1c';
   if(kind === 'speed'){ for(const o of [-9, 3]){ g.beginPath(); g.moveTo(o, -12); g.lineTo(o + 12, 0); g.lineTo(o, 12); g.lineTo(o + 4, 0); g.closePath(); g.fill(); } }
   else if(kind === 'ghost'){ g.beginPath(); g.moveTo(-12, 13); g.lineTo(-12, -2); g.arc(0, -2, 12, Math.PI, 0); g.lineTo(12, 13); g.lineTo(6, 8); g.lineTo(0, 13); g.lineTo(-6, 8); g.closePath(); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(-4, -3, 3, 0, 7); g.arc(4, -3, 3, 0, 7); g.fill(); }
@@ -3747,11 +3924,11 @@ function ctfBoostIcon(g, x, y, kind, a){
   g.restore();
 }
 function ctfCoverDraw(g, s, th){
-  const c = th.cover || {}; g.save(); g.lineWidth = 4; g.strokeStyle = '#1c1c1c';
+  const c = th.cover || {}; g.save(); ctfShadow(g, s.x, s.y, (CTF_COVER_HW[s.cover] || 50)*0.92); ctfOutline(g);
   if(s.cover === 'bush'){ g.fillStyle = c.bush || '#3f9a4c'; for(const [dx, r] of [[-30, 28], [0, 38], [30, 28]]){ g.beginPath(); g.arc(s.x + dx, s.y - r + 4, r, 0, 7); g.fill(); g.stroke(); } }
   else if(s.cover === 'crate'){   // a stack: three wide, two high, the top one off to a side
     g.fillStyle = c.crate || '#a8773f';
-    for(const [dx, dy] of [[-76, 0], [0, 0], [76, 0], [-38, -76], [38, -76]]){ const bx = s.x + dx - 38, by = s.y + dy - 76; g.fillRect(bx, by, 76, 76); g.strokeRect(bx, by, 76, 76); g.lineWidth = 3; g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + 76, by + 76); g.moveTo(bx + 76, by); g.lineTo(bx, by + 76); g.stroke(); g.lineWidth = 4; } }
+    for(const [dx, dy] of [[-76, 0], [0, 0], [76, 0], [-38, -76], [38, -76]]){ const bx = s.x + dx - 38, by = s.y + dy - 76; g.fillRect(bx, by, 76, 76); g.strokeRect(bx, by, 76, 76); g.lineWidth = 3; g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + 76, by + 76); g.moveTo(bx + 76, by); g.lineTo(bx, by + 76); g.stroke(); g.lineWidth = CTF_LW; } }
   else if(s.cover === 'curtain'){ g.fillStyle = c.curtain || '#8a3a6a'; g.beginPath(); g.moveTo(s.x - 56, s.y - 150); g.lineTo(s.x + 56, s.y - 150); g.lineTo(s.x + 56, s.y); for(let i = 0; i < 4; i++) g.quadraticCurveTo(s.x + 56 - i*28 - 14, s.y - 14, s.x + 56 - (i + 1)*28, s.y); g.lineTo(s.x - 56, s.y - 150); g.closePath(); g.fill(); g.stroke(); g.fillStyle = '#1c1c1c'; g.fillRect(s.x - 62, s.y - 158, 124, 10); g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 3; g.beginPath(); for(let i = 1; i < 4; i++){ g.moveTo(s.x - 56 + i*28, s.y - 146); g.lineTo(s.x - 56 + i*28, s.y - 6); } g.stroke(); }
   else if(s.cover === 'rubble'){ g.fillStyle = c.rubble || '#7d7a88'; for(const [dx, w, h] of [[-48, 50, 36], [-10, 62, 62], [38, 52, 44], [-28, 34, 26], [8, 36, 24]]){ g.beginPath(); g.moveTo(s.x + dx - w/2, s.y); g.lineTo(s.x + dx - w/3, s.y - h); g.lineTo(s.x + dx + w/3, s.y - h*0.9); g.lineTo(s.x + dx + w/2, s.y); g.closePath(); g.fill(); g.stroke(); } }
   else if(s.cover === 'rock'){ g.fillStyle = c.rock || '#6a6a74'; g.beginPath(); g.moveTo(s.x - 62, s.y); g.lineTo(s.x - 46, s.y - 52); g.lineTo(s.x - 10, s.y - 88); g.lineTo(s.x + 30, s.y - 76); g.lineTo(s.x + 60, s.y - 30); g.lineTo(s.x + 66, s.y); g.closePath(); g.fill(); g.stroke(); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 3; g.beginPath(); g.moveTo(s.x - 10, s.y - 88); g.lineTo(s.x - 6, s.y - 40); g.lineTo(s.x + 24, s.y - 8); g.stroke(); }
@@ -3772,6 +3949,14 @@ function ctfCoverDraw(g, s, th){
   else if(s.cover === 'stump'){ g.fillStyle = c.stump || '#7a5a3a'; g.beginPath(); g.moveTo(s.x - 30, s.y); g.lineTo(s.x - 22, s.y - 62); g.lineTo(s.x + 22, s.y - 62); g.lineTo(s.x + 30, s.y); g.closePath(); g.fill(); g.stroke(); g.fillStyle = c.logEnd || '#c9a070'; g.beginPath(); g.ellipse(s.x, s.y - 62, 22, 8, 0, 0, 7); g.fill(); g.stroke(); g.beginPath(); g.ellipse(s.x, s.y - 62, 11, 4, 0, 0, 7); g.stroke(); }
   else if(s.cover === 'cloud'){ g.fillStyle = c.cloud || '#f2f6ff'; for(const [dx, r, dy] of [[-44, 28, 0], [-10, 42, 0], [32, 34, 0], [-22, 26, -30], [18, 28, -26]]){ g.beginPath(); g.arc(s.x + dx, s.y - r + 4 + dy, r, 0, 7); g.fill(); g.stroke(); } }
   else if(s.cover === 'snowman'){ g.fillStyle = c.snow || '#f4f8ff'; for(const [dy, r] of [[-30, 32], [-80, 24], [-114, 17]]){ g.beginPath(); g.arc(s.x, s.y + dy, r, 0, 7); g.fill(); g.stroke(); } g.fillStyle = '#e0803a'; g.beginPath(); g.moveTo(s.x, s.y - 114); g.lineTo(s.x + 22, s.y - 110); g.lineTo(s.x, s.y - 106); g.closePath(); g.fill(); g.fillStyle = '#1c1c1c'; for(const dx of [-6, 6]){ g.beginPath(); g.arc(s.x + dx, s.y - 120, 2.5, 0, 7); g.fill(); } }
+  else if(s.cover === 'drift'){   // a drift of snow: a soft white mound with a shadow side, you could hide a flag in it
+    g.fillStyle = '#cdd9ee'; g.beginPath(); g.moveTo(s.x - 84, s.y); g.quadraticCurveTo(s.x - 64, s.y - 62, s.x - 10, s.y - 58); g.quadraticCurveTo(s.x + 44, s.y - 82, s.x + 84, s.y); g.closePath(); g.fill();
+    g.fillStyle = '#f6f9ff'; g.beginPath(); g.moveTo(s.x - 84, s.y - 6); g.quadraticCurveTo(s.x - 66, s.y - 66, s.x - 14, s.y - 64); g.quadraticCurveTo(s.x + 34, s.y - 86, s.x + 70, s.y - 14); g.quadraticCurveTo(s.x, s.y - 28, s.x - 84, s.y - 6); g.fill();
+    g.beginPath(); g.moveTo(s.x - 84, s.y); g.quadraticCurveTo(s.x - 64, s.y - 62, s.x - 10, s.y - 58); g.quadraticCurveTo(s.x + 44, s.y - 82, s.x + 84, s.y); g.closePath(); g.stroke(); }
+  else if(s.cover === 'pine'){   // a pine with snow on its tiers
+    g.fillStyle = '#6b4a2a'; g.fillRect(s.x - 8, s.y - 36, 16, 38); g.strokeRect(s.x - 8, s.y - 36, 16, 38);
+    for(let i = 0; i < 4; i++){ const y0 = s.y - 22 - i*34, wi = 52 - i*10; g.fillStyle = i % 2 ? '#2f7a4d' : '#3a8f58'; g.beginPath(); g.moveTo(s.x - wi, y0); g.lineTo(s.x, y0 - 52); g.lineTo(s.x + wi, y0); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#f6f9ff'; g.beginPath(); g.moveTo(s.x - wi*0.42, y0 - 30); g.lineTo(s.x, y0 - 52); g.lineTo(s.x + wi*0.42, y0 - 30); g.lineTo(s.x + wi*0.2, y0 - 24); g.lineTo(s.x, y0 - 32); g.lineTo(s.x - wi*0.2, y0 - 24); g.closePath(); g.fill(); } }
   else if(s.cover === 'barrel'){ g.fillStyle = c.barrel || '#7a4a2a'; g.beginPath(); g.moveTo(s.x - 30, s.y); g.lineTo(s.x - 36, s.y - 34); g.lineTo(s.x - 28, s.y - 74); g.lineTo(s.x + 28, s.y - 74); g.lineTo(s.x + 36, s.y - 34); g.lineTo(s.x + 30, s.y); g.closePath(); g.fill(); g.stroke(); g.lineWidth = 3; g.beginPath(); g.moveTo(s.x - 34, s.y - 24); g.lineTo(s.x + 34, s.y - 24); g.moveTo(s.x - 34, s.y - 50); g.lineTo(s.x + 34, s.y - 50); g.stroke(); }
   g.restore();
 }
@@ -3811,7 +3996,7 @@ function ctfDrawWorld(){
     const zn = j.zone;
     if(inView(zn.x, zn.y, zn.w, zn.h)){
       ctx.save(); ctx.fillStyle = ctfColor(j.owner); ctx.globalAlpha = 0.07; ctx.fillRect(zn.x, zn.y, zn.w, zn.h);
-      ctx.globalAlpha = 0.5 + 0.15*Math.sin(T*0.06 + j.owner); ctx.strokeStyle = ctfColor(j.owner); ctx.lineWidth = 4; ctx.setLineDash([16, 12]);
+      ctx.globalAlpha = 0.5 + 0.15*Math.sin(T*0.06 + j.owner); ctx.strokeStyle = ctfColor(j.owner); ctx.lineWidth = CTF_LW; ctx.setLineDash([16, 12]);
       ctx.beginPath(); ctx.moveTo(zn.x, zn.y); ctx.lineTo(zn.x + zn.w, zn.y); ctx.lineTo(zn.x + zn.w, zn.y + zn.h); ctx.moveTo(zn.x, zn.y); ctx.lineTo(zn.x, zn.y + zn.h); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha = 0.8; ctfNoEntryIcon(ctx, zn.x + zn.w/2, zn.y + 70, 32); ctx.restore();
     }
@@ -3823,7 +4008,7 @@ function ctfDrawWorld(){
         else { ctx.strokeStyle = ctfColor(1 - j.owner); ctx.beginPath(); ctx.arc(lx, ly, 38, -Math.PI/2, -Math.PI/2 + 2*Math.PI*(j.hold/CTF_JAIL_HOLD)); ctx.stroke(); }
         ctx.restore(); } }
     if(!d.open && inView(d.x, d.y, d.w, d.h)){
-      ctx.save(); ctx.fillStyle = '#4a4f5c'; ctx.fillRect(d.x, d.y, d.w, d.h); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.strokeRect(d.x, d.y, d.w, d.h);
+      ctx.save(); ctx.fillStyle = '#4a4f5c'; ctx.fillRect(d.x, d.y, d.w, d.h); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.strokeRect(d.x, d.y, d.w, d.h);
       ctx.beginPath(); for(let y = d.y + 16; y < d.y + d.h; y += 34){ ctx.moveTo(d.x, y); ctx.lineTo(d.x + d.w, y); } ctx.stroke(); ctx.restore();
     }
     if(j.pris.length && inView(d.x - 200, d.y - 160, 260, d.h + 180)){
@@ -3841,7 +4026,7 @@ function ctfDrawWorld(){
   }
   // locked doors
   for(const d of L.doors){ if(d.op[vt] || !inView(d.x, d.y, d.w, d.h)) continue;
-    ctx.save(); ctx.fillStyle = d.color; ctx.fillRect(d.x, d.y, d.w, d.h); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.strokeRect(d.x, d.y, d.w, d.h);
+    ctx.save(); ctx.fillStyle = d.color; ctx.fillRect(d.x, d.y, d.w, d.h); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.strokeRect(d.x, d.y, d.w, d.h);
     ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(d.x + 5, d.y, 7, d.h);
     ctfKeyIcon(ctx, d.x + d.w/2 - 6, d.y + d.h/2, '#f4efe2', 40); ctx.fillStyle = ctfColor(d.team); ctx.fillRect(d.x, d.y, d.w, 10); ctx.restore(); }
   for(const q of (L.freeFx || [])){ if(!inView(q.x - 300, q.y - 300, 600, 600)) continue; const k = q.t/44; ctx.save(); ctx.globalAlpha = k; ctx.strokeStyle = ctfColor(q.team); ctx.lineWidth = 10*k + 2; ctx.beginPath(); ctx.arc(q.x, q.y, 40 + (1 - k)*240, 0, 7); ctx.stroke(); ctx.globalAlpha = Math.min(1, k*1.6); ctfOpenLockIcon(ctx, q.x, q.y - 40 - (1 - k)*50, 52, ctfColor(q.team)); ctx.restore(); }
@@ -3865,16 +4050,16 @@ function ctfDrawWorld(){
   // lifts: a car on its chain-less rails, the shaft marked
   for(const e of (L.elevs || [])){ if(!inView(e.x - 10, e.y0 - 60, e.w + 20, e.y1 - e.y0 + 120)) continue;
     ctx.save(); ctx.strokeStyle = 'rgba(30,30,40,0.45)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(e.x + 4, e.y0); ctx.lineTo(e.x + 4, e.y1); ctx.moveTo(e.x + e.w - 4, e.y0); ctx.lineTo(e.x + e.w - 4, e.y1); ctx.stroke();
-    ctx.fillStyle = '#6a8aa8'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.fillRect(e.x, e.y - 4, e.w, 22); ctx.strokeRect(e.x, e.y - 4, e.w, 22);
+    ctx.fillStyle = '#6a8aa8'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillRect(e.x, e.y - 4, e.w, 22); ctx.strokeRect(e.x, e.y - 4, e.w, 22);
     ctx.fillStyle = '#ffd23f'; for(let k = 0; k < 4; k++) ctx.fillRect(e.x + 12 + k*(e.w - 24)/4, e.y, 18, 10);
     ctx.fillStyle = '#fff'; ctx.beginPath(); const mx2 = e.x + e.w/2, up = e.dir < 0; ctx.moveTo(mx2, e.y - 34 + (up ? 0 : 20)); ctx.lineTo(mx2 + 14, e.y - 14 + (up ? 0 : -20)); ctx.lineTo(mx2 - 14, e.y - 14 + (up ? 0 : -20)); ctx.closePath(); ctx.globalAlpha = 0.8; ctx.fill(); ctx.restore(); }
   // a team buff on its pedestal: a lightning bolt, dimmed for a side that has taken it
   for(const b of (L.buffs || [])){ if(!inView(b.x - 60, b.y - 160, 120, 170)) continue; const got = b.got[vt] || L.buff[vt];
-    ctx.save(); ctx.fillStyle = '#5a4a6a'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.fillRect(b.x - 44, b.y - 30, 88, 30); ctx.strokeRect(b.x - 44, b.y - 30, 88, 30);
-    ctx.globalAlpha = got ? 0.25 : 1; ctx.translate(b.x, b.y - 76 + Math.sin(T*0.08)*5); ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4;
+    ctx.save(); ctx.fillStyle = '#5a4a6a'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillRect(b.x - 44, b.y - 30, 88, 30); ctx.strokeRect(b.x - 44, b.y - 30, 88, 30);
+    ctx.globalAlpha = got ? 0.25 : 1; ctx.translate(b.x, b.y - 76 + Math.sin(T*0.08)*5); ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW;
     ctx.beginPath(); ctx.moveTo(10, -36); ctx.lineTo(-18, 6); ctx.lineTo(-2, 6); ctx.lineTo(-10, 36); ctx.lineTo(20, -8); ctx.lineTo(4, -8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
   // boosts
-  for(const b of L.boosts){ if(!inView(b.x - 40, b.y - 90, 80, 100)) continue; ctfBoostIcon(ctx, b.x, b.y - 38 + Math.sin(T*0.07 + b.i)*4, b.kind, b.cd > 0 ? 0.25 : 1); }
+  for(const b of L.boosts){ if(!inView(b.x - 40, b.y - 90, 80, 100)) continue; if(!(b.cd > 0)) ctfShadow(ctx, b.x, b.y, 30); ctfBoostIcon(ctx, b.x, b.y - 38 + Math.sin(T*0.07 + b.i)*4, b.kind, b.cd > 0 ? 0.25 : 1); }
   // keys lying about
   for(const k of L.keys){ if(k.st !== 0 || !inView(k.x - 40, k.y - 90, 80, 100)) continue;
     ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(k.x, k.y - 36, 34, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
@@ -3882,7 +4067,7 @@ function ctfDrawWorld(){
   // flags (the viewer's own, the ones they have seen, and any being carried), then the cover in front of them
   for(const fl of L.flags){
     if(fl.st === 2 || fl.st === 0 || !ctfFlagVisible(L, fl, vt) || !inView(fl.x - 50, fl.y - 90, 100, 100)) continue;
-    const o = fighters[fl.owner]; ctfFlagIcon(ctx, fl.x, fl.y, ctfColor(fl.team), 64, T*0.1 + fl.id, o ? o.color : null);
+    const o = fighters[fl.owner]; ctfShadow(ctx, fl.x, fl.y, 28); ctfFlagIcon(ctx, fl.x, fl.y, ctfColor(fl.team), 64, T*0.1 + fl.id, o ? o.color : null);
     if(fl.st === 3 && fl.team !== vt){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(fl.x, fl.y - 30, 44, 0, 7); ctx.stroke(); ctx.restore(); }
   }
   M.spots.forEach((s, i)=>{ if(!s.cover || (L.gone && L.gone[i]) || !inView(s.x - 60, s.y - 140, 120, 150)) return; ctfCoverDraw(ctx, s, M.theme); });
@@ -3896,10 +4081,10 @@ function ctfDrawCarry(f){
   if(f._cf >= 0 && L.flags[f._cf]){ const c = L.flags[f._cf]; ctfFlagIcon(ctx, f.x - f.face*(f.r + 8), f.y + f.r*0.5, ctfColor(c.team), 104, T*0.2, fighters[c.owner] ? fighters[c.owner].color : null); }   // big, so everyone can see who has one
   else if(L.phase === 'hide' && fl && fl.st === 0 && f.team === ctfViewTeam()) ctfFlagIcon(ctx, f.x - f.face*(f.r + 6), f.y + f.r*0.4, ctfColor(f.team), 50, T*0.2, f.color);
   if(f._ck >= 0 && L.keys[f._ck]){ const k = L.keys[f._ck]; ctfKeyIcon(ctx, f.x - 14, f.y - f.r - 56 + Math.sin(T*0.1)*3, CTF_DOOR_COL[k.n - 1], 34); }
-  if(f._jail != null){ ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(f.x, f.y - f.r - 52, 11, Math.PI, 0); ctx.stroke(); ctx.fillStyle = '#d8c46a'; ctx.fillRect(f.x - 14, f.y - f.r - 52, 28, 20); ctx.strokeRect(f.x - 14, f.y - f.r - 52, 28, 20); ctx.restore(); }
+  if(f._jail != null){ ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(f.x, f.y - f.r - 52, 11, Math.PI, 0); ctx.stroke(); ctx.fillStyle = '#d8c46a'; ctx.fillRect(f.x - 14, f.y - f.r - 52, 28, 20); ctx.strokeRect(f.x - 14, f.y - f.r - 52, 28, 20); ctx.restore(); }
   if(L.phase === 'hide' && L.done[f.idx] && (f.team === ctfViewTeam())) ctfCheckIcon(ctx, f.x, f.y - f.r - 58, 14);
   if(f._shield > 0){ ctx.save(); ctx.strokeStyle = 'rgba(106,224,160,0.9)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 12 + Math.sin(T*0.15)*2, 0, 7); ctx.stroke(); ctx.restore(); }
-  if(f._ghostT > 0){ ctx.save(); ctx.strokeStyle = 'rgba(235,235,255,0.85)'; ctx.lineWidth = 4; ctx.setLineDash([8, 7]); ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 16, 0, 7); ctx.stroke(); ctx.restore(); }
+  if(f._ghostT > 0){ ctx.save(); ctx.strokeStyle = 'rgba(235,235,255,0.85)'; ctx.lineWidth = CTF_LW; ctx.setLineDash([8, 7]); ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 16, 0, 7); ctx.stroke(); ctx.restore(); }
   if(f._ctfFree > 0 && f.team === ctfViewTeam()){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.3); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(f.x, f.y + f.r + 14, 8, 0, 7); ctx.fill(); ctx.restore(); }   // freed: cannot be jailed again for a few seconds
 }
 // Does the viewer not see this fighter at all? A ghost (a boost) is invisible to the other side.
@@ -3921,7 +4106,7 @@ function drawCtfHud(){
         if(sx > 70 && sx < W - 70 && sy > 110 && sy < H - 70) continue;   // in view already: the door itself pulses
         const dx = sx - W/2, dy = sy - H/2, k = Math.min((W/2 - 56)/Math.max(1e-6, Math.abs(dx)), (H/2 - 90)/Math.max(1e-6, Math.abs(dy))), ax = W/2 + dx*k, ay = H/2 + dy*k, an = Math.atan2(dy, dx);
         ctx.save(); ctx.translate(ax, ay); ctx.globalAlpha = 0.65 + 0.35*pu; ctx.rotate(an); const s = 26 + 8*pu;
-        ctx.fillStyle = ctfColor(me.team); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s, 0); ctx.lineTo(-s*0.6, -s*0.8); ctx.lineTo(-s*0.25, 0); ctx.lineTo(-s*0.6, s*0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+        ctx.fillStyle = ctfColor(me.team); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = CTF_LW; ctx.beginPath(); ctx.moveTo(s, 0); ctx.lineTo(-s*0.6, -s*0.8); ctx.lineTo(-s*0.25, 0); ctx.lineTo(-s*0.6, s*0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
         ctx.save(); ctx.globalAlpha = 1; ctfOpenLockIcon(ctx, ax - Math.cos(an)*54, ay - Math.sin(an)*54, 34, ctfColor(me.team)); ctx.restore(); } } }
   const cx = W/2, y = 66;   // under the fighters' card bar
   ctx.save();
@@ -3998,6 +4183,7 @@ function ctfDrawMinimap(){
 function ctfOverview(g, w, h, M, rx0, ry0, rx1, ry1){
   const bw = (rx1 != null ? rx1 - rx0 : M.WW), bh = (ry1 != null ? ry1 - ry0 : M.WH);
   const s = Math.min(w/bw, h/bh); g.save(); g.fillStyle = M.theme.sky[1]; g.fillRect(0, 0, w, h); g.scale(s, s); g.translate(-(rx0 || 0), -(ry0 || 0));
+  for(const b of (M.back || [])) ctfPaintBack(g, b, M.theme, rx0 || 0, ry0 || 0, rx1 != null ? rx1 : M.WW, ry1 != null ? ry1 : M.WH);
   for(const d of M.decor || []){ if(rx1 != null && (d.x > rx1 || d.x + d.w < rx0)) continue; ctfDecorDraw(g, d, M.theme); }
   for(const p of M.plats){ g.fillStyle = p.solid ? M.theme.solid.fill : M.theme.hop.fill; g.fillRect(p.x, p.y, p.w, p.h); g.strokeStyle = '#1c1c1c'; g.lineWidth = 3/s; g.strokeRect(p.x, p.y, p.w, p.h); }
   for(const d of M.doors){ g.fillStyle = d.color; g.fillRect(d.x - 6, d.y, d.w + 12, d.h); }
@@ -4025,7 +4211,7 @@ function ctfDrawZone(z, T, vx, vy, vw, vh){
       ctx.fillStyle = 'rgba(90,60,28,0.8)'; for(let xx = Math.floor(x0/70)*70; xx < x1; xx += 70){ ctx.beginPath(); ctx.arc(xx + 20, y + h - 6 + Math.sin(T*0.05 + xx)*2, 14, Math.PI, 0); ctx.fill(); } break; }
     case 'water': {
       ctx.fillStyle = 'rgba(60,140,225,0.38)'; ctx.fillRect(x0, y, w, h);
-      ctx.strokeStyle = 'rgba(210,240,255,0.9)'; ctx.lineWidth = 4; ctx.beginPath();
+      ctx.strokeStyle = 'rgba(210,240,255,0.9)'; ctx.lineWidth = CTF_LW; ctx.beginPath();
       for(let xx = x0; xx <= x1; xx += 24){ const yy = y + 6 + Math.sin(T*0.08 + xx*0.04)*4; if(xx === x0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy); } ctx.stroke(); break; }
     case 'wind': {
       ctx.fillStyle = 'rgba(210,235,255,0.14)'; ctx.fillRect(x0, y, w, h);
@@ -4040,7 +4226,7 @@ function ctfDrawZone(z, T, vx, vy, vw, vh){
     case 'spring': {
       const n = Math.max(1, Math.round(z.w/120));
       for(let i = 0; i < n; i++){ const cx = z.x + z.w*(i + 0.5)/n, bob = Math.sin(T*0.2 + i)*3;
-        ctx.fillStyle = '#e84b9c'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 4; ctx.fillRect(cx - 44, y + h - 22, 88, 22); ctx.strokeRect(cx - 44, y + h - 22, 88, 22);
+        ctx.fillStyle = '#e84b9c'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillRect(cx - 44, y + h - 22, 88, 22); ctx.strokeRect(cx - 44, y + h - 22, 88, 22);
         ctx.strokeStyle = '#d8d8e0'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(cx - 30, y + h - 22); for(let k = 0; k < 4; k++){ ctx.lineTo(cx + (k%2 ? 30 : -30), y + h - 22 - (k + 1)*9 - bob); } ctx.stroke();
         ctx.fillStyle = '#ffd23f'; ctx.fillRect(cx - 36, y + h - 66 - bob, 72, 10);
         ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(cx, y + h - 118 - bob); ctx.lineTo(cx, y + h - 86 - bob); ctx.moveTo(cx - 14, y + h - 100 - bob); ctx.lineTo(cx, y + h - 118 - bob); ctx.lineTo(cx + 14, y + h - 100 - bob); ctx.stroke(); }
@@ -4078,7 +4264,8 @@ function ctfDrawDark(){
 function ctfEditPieceDraw(g, e, th, vt, T, alpha){
   g.save(); if(alpha != null) g.globalAlpha = alpha;
   const tc = ctfColor(e.team);
-  g.lineWidth = 4; g.strokeStyle = '#1c1c1c';
+  if(e.tool === 'trap' && e.kind !== 'trapdoor') ctfShadow(g, e.cx, e.fy, Math.max(30, e.w*0.5));
+  g.lineWidth = CTF_LW; g.strokeStyle = '#1c1c1c';
   if(e.tool === 'deco'){ ctfCoverDraw(g, { x:e.cx, y:e.fy, cover:e.kind }, th); }
   else if(e.tool === 'plat'){ g.fillStyle = '#8b6a43'; g.fillRect(e.x, e.y, e.w, e.h); g.strokeRect(e.x, e.y, e.w, e.h); g.fillStyle = tc; g.fillRect(e.x, e.y, e.w, 5); g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2; g.beginPath(); for(let x = e.x + 30; x < e.x + e.w; x += 30){ g.moveTo(x, e.y); g.lineTo(x, e.y + e.h); } g.stroke(); }
   else if(e.tool === 'wall'){ g.fillStyle = '#6b6f7e'; g.fillRect(e.x, e.y, e.w, e.h); g.strokeRect(e.x, e.y, e.w, e.h); g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 2; g.beginPath(); for(let y = e.y + 40; y < e.y + e.h; y += 40){ g.moveTo(e.x, y); g.lineTo(e.x + e.w, y); } g.moveTo(e.x + e.w/2, e.y); g.lineTo(e.x + e.w/2, e.y + 40); g.stroke(); g.fillStyle = tc; g.fillRect(e.x, e.y, e.w, 8); }
@@ -4147,7 +4334,7 @@ function ctfDrawEditHud(L, me){
   const o = L.offer;
   if(o){
     const mine = o.to === me.team, y = 124;
-    g.fillStyle = 'rgba(28,24,38,0.88)'; g.strokeStyle = ctfColor(o.from); g.lineWidth = 4; g.fillRect(cx - 120, y, 240, 52); g.strokeRect(cx - 120, y, 240, 52);
+    g.fillStyle = 'rgba(28,24,38,0.88)'; g.strokeStyle = ctfColor(o.from); g.lineWidth = CTF_LW; g.fillRect(cx - 120, y, 240, 52); g.strokeRect(cx - 120, y, 240, 52);
     ctfEditToolIcon(g, 'offer', cx - 92, y + 26, 22);
     g.font = 'bold 22px sans-serif'; g.textAlign = 'left'; g.fillStyle = '#f4efe2'; g.fillText(o.kind === 'both-' ? '-10' : '+10', cx - 64, y + 26);
     for(const t of [0, 1]){ const hit = o.kind === 'mine+' ? t === o.from : true; g.globalAlpha = hit ? 1 : 0.25; g.fillStyle = ctfColor(t); g.beginPath(); g.arc(cx - 6 + t*22, y + 26, 8, 0, 7); g.fill(); g.strokeStyle = '#1c1c1c'; g.lineWidth = 2; g.stroke(); } g.globalAlpha = 1;
@@ -4227,6 +4414,32 @@ function ctfDecorDraw(g, d, th){
       g.globalAlpha = 0.9; g.fillStyle = col; g.strokeStyle = dark; g.lineWidth = 5;
       g.beginPath(); g.moveTo(x + w*0.25, y); g.lineTo(x + w*0.75, y); g.lineTo(x + w*0.75, y + h*0.8); g.lineTo(x + w*0.5, y + h*0.62); g.lineTo(x + w*0.25, y + h*0.8); g.closePath(); g.fill(); g.stroke();
       g.fillStyle = '#e8e8f0'; for(let k = 0; k < 4; k++){ g.beginPath(); g.moveTo(x + w*(0.02 + k*0.06), y); g.lineTo(x + w*(0.05 + k*0.06), y + 30); g.lineTo(x + w*(0.08 + k*0.06), y); g.closePath(); g.fill(); }
+      break; }
+    case 'teeth': {   // spikes hanging from a ceiling the whole width
+      g.fillStyle = '#d8d8e4'; g.strokeStyle = dark; g.lineWidth = 4; g.globalAlpha = 0.85;
+      const n = Math.round(w/60); for(let i = 0; i < n; i++){ const tx = x + i*(w/n); g.beginPath(); g.moveTo(tx + 4, y); g.lineTo(tx + w/n/2, y + 52); g.lineTo(tx + w/n - 4, y); g.closePath(); g.fill(); g.stroke(); }
+      break; }
+    case 'crenel': {   // the notches of a battlement: two blocks
+      g.fillStyle = c.a || '#6c6b7d'; g.strokeStyle = dark; g.lineWidth = 5; g.globalAlpha = 0.9;
+      for(const k of [0.12, 0.58]){ g.fillRect(x + w*k, y, w*0.3, h*0.9); g.strokeRect(x + w*k, y, w*0.3, h*0.9); }
+      break; }
+    case 'prop': {   // a floating block's propeller
+      g.strokeStyle = dark; g.lineWidth = 7; g.globalAlpha = 0.9; const mx = x + w/2, my = y + h*0.55;
+      g.beginPath(); g.moveTo(mx, my); g.lineTo(mx, y + h - 6); g.stroke(); g.fillStyle = '#d8c46a'; g.beginPath(); g.ellipse(mx, my, w*0.46, 12, 0, 0, 7); g.fill(); g.stroke();
+      break; }
+    case 'pillar': {   // a grass island's banner pillar
+      g.fillStyle = '#c8c4d4'; g.strokeStyle = dark; g.lineWidth = 6; g.globalAlpha = 0.9; g.fillRect(x + w*0.35, y, w*0.3, h); g.strokeRect(x + w*0.35, y, w*0.3, h);
+      g.fillStyle = TEAM_COLORS[(d.side || 0) % TEAM_COLORS.length]; g.beginPath(); g.moveTo(x + w*0.65, y + 14); g.lineTo(x + w*0.65 + 90, y + 38); g.lineTo(x + w*0.65, y + 62); g.closePath(); g.fill(); g.stroke();
+      break; }
+    case 'pine': {   // a conifer on the ground, the game's own (saPine) with snow on it: the base is the bottom of its box
+      g.globalAlpha = 0.45; saPine(g, x + w/2, y + h, h, '#2f7a4d', '#1c1c1c', 4);
+      g.fillStyle = '#f6f9ff'; for(let i = 0; i < 4; i++){ const y0 = y + h - h*0.14 - i*h*0.19, wi = h*0.3*(1 - i*0.19); g.beginPath(); g.moveTo(x + w/2 - wi*0.5, y0 - h*0.1); g.lineTo(x + w/2, y0 - h*0.36); g.lineTo(x + w/2 + wi*0.5, y0 - h*0.1); g.closePath(); g.fill(); }
+      break; }
+    case 'peak': {   // far snowy peaks
+      g.globalAlpha = 0.34; g.fillStyle = '#7f8db0'; g.strokeStyle = dark; g.lineWidth = 5;
+      g.beginPath(); g.moveTo(x, y + h); g.lineTo(x + w*0.3, y + h*0.25); g.lineTo(x + w*0.5, y + h*0.5); g.lineTo(x + w*0.72, y); g.lineTo(x + w, y + h); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#f6f9ff'; g.beginPath(); g.moveTo(x + w*0.72, y); g.lineTo(x + w*0.58, y + h*0.3); g.lineTo(x + w*0.67, y + h*0.26); g.lineTo(x + w*0.72, y + h*0.36); g.lineTo(x + w*0.79, y + h*0.27); g.lineTo(x + w*0.86, y + h*0.32); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(x + w*0.3, y + h*0.25); g.lineTo(x + w*0.2, y + h*0.46); g.lineTo(x + w*0.28, y + h*0.4); g.lineTo(x + w*0.34, y + h*0.5); g.lineTo(x + w*0.4, y + h*0.4); g.closePath(); g.fill();
       break; }
     case 'lantern': {
       g.fillStyle = c.c || '#ffd23f'; g.strokeStyle = dark; g.lineWidth = 6; g.beginPath(); g.ellipse(x + w/2, y + h*0.5, w*0.3, h*0.35, 0, 0, 7); g.fill(); g.stroke();

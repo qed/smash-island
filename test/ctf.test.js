@@ -324,7 +324,7 @@ describe('capture the flag', () => {
   it('a lift carries whoever stands on it; a team buff is claimed once per team', () => {
     const { window: w } = loadMonolith(18);
     start(w);
-    expect(w.eval('CTF.live.elevs.length'), 'two puzzle areas a side').toBe(4);
+    expect(w.eval('CTF.live.elevs.length'), 'a lift puzzle a side').toBe(2);
     w.eval('worldZones = []');   // (a belt in the room would carry the rider off the car)
     const e = J(w, 'CTF.live.elevs[0]');
     put(w, 0, e.x + e.w / 2, e.y0); w.eval('fighters[0].onground = true');
@@ -363,7 +363,7 @@ describe('capture the flag', () => {
     start(w);
     const s = J(w, `CTF.map.info.supers[0]`);
     expect(s, 'the map has super-jump rooms').toBeTruthy();
-    const f = 13 + 5 * s.k, lx = (s.c + 1) * 120 + 60, ledgeY = (f - 3) * 120;
+    const f = s.pad.r + 1, lx = ((s.ledge.c0 + s.ledge.c1 + 1) / 2) * 120, ledgeY = s.ledge.r * 120;   // the walkway's surface row, the middle of the ledge, the ledge's surface
     const tryJump = (boost) => {
       w.eval(`(function(){ var q = fighters[0]; q.controller='local'; q.you=true; q.x=${lx}; q.y=${f * 120}-q.r; q.vx=0; q.vy=0; q.onground=true; q.jumps=2; q.invuln=0; q._ctfJT=${boost ? 600 : 0}; })()`);
       step(w, 3);
@@ -540,16 +540,14 @@ describe('capture the flag', () => {
     const { window: w } = loadMonolith(35);
     hideStart(w, true);
     w.eval(`while(!CTF.nav.ready) ctfNavTick(CTF.nav, 80);`);
-    const a = mate(w, 0, 1), sp = roomSpot(w);
-    // the flag of team 0's fighter a is on the floor at sp; a harmless platform first (oldest), then walls that wall the flag in
-    w.eval(`ctfPlaceFlag(CTF.live.flags[${a}], ${sp.x}, ${sp.y})`);
+    const a = mate(w, 0, 1);
+    // a harmless platform first (oldest), then blocks that wall off the corridor to the jail's door (the door must stay reachable: the check takes the newest away)
     w.eval(`(function(){ var P = fighters[${a}]; CTF.live.pts[P.idx] = 99;
       var add = function(tool, kind, x, y, w, h){ var e = { id:++CTF.live.editSeq, team:0, owner:P.idx, tool:tool, kind:kind, x:x, y:y, w:w, h:h, fy:y+h, cx:x+w/2, cost:1, seq:CTF.live.editSeq, hp:0, open:false, openT:0, stand:0 }; CTF.live.edits.push(e); return e; };
-      add('plat','plat', ${sp.x - 1500}, ${sp.y - 300}, 180, 16);
-      for(var k = 0; k < 4; k++){ add('wall','block', ${sp.x - 220}, ${sp.y} - 120*(k+1), 120, 120); }
-      for(var k = 0; k < 4; k++){ add('wall','block', ${sp.x + 100}, ${sp.y} - 120*(k+1), 120, 120); }
+      add('plat','plat', 4500, 2000, 180, 16);
+      add('wall','block', 1440, 4440, 120, 120); add('wall','block', 1440, 4320, 120, 120); add('wall','block', 1440, 4200, 120, 120);
       CTF.live.editT = CTF.live.t; ctfRebuildDyn(CTF.live); })()`);
-    expect(w.eval('CTF.live.edits.length')).toBe(9);
+    expect(w.eval('CTF.live.edits.length')).toBe(4);
     w.eval(`CTF.live.done = {}; ctfEndHide(CTF.live)`);
     expect(w.eval('CTF.live.phase'), 'checking before the match').toBe('fix');
     for (let i = 0; i < 4000 && w.eval('CTF.live.phase') === 'fix'; i++) w.eval('ctfStep()');
