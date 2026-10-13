@@ -485,14 +485,15 @@ describe('capture the flag', () => {
     w.eval('ctfEditStep(CTF.live)');
     expect(w.eval(`CTF.live.edits.filter(function(e){ return e.tool==='deco'; }).length`), 'the swing broke the crate').toBe(0);
     expect(w.eval(`CTF.live.edits.filter(function(e){ return e.tool==='wall'; }).length`), 'a wall does not break').toBe(nWall);
-    // spikes: bump the other side, no damage; the placer's own side walks over them
+    // spikes: bump the other side and hurt it (the owner, 2026-10-13, asked what spikes should do: "Damage + bounce"); the placer's own side walks over them
     const sk = J(w, `CTF.live.edits.filter(function(e){ return e.kind==='spikes'; })[0]`);
     expect(sk, 'spikes were placed').toBeTruthy();
     w.eval(`(function(){ var g = fighters[${a}]; g.x = ${sk.cx}; g.y = ${sk.fy} - g.r; g.vy = 0; g.pct = 0; })()`); w.eval('ctfEditStep(CTF.live)');
     expect(w.eval(`fighters[${a}].vy`), 'a teammate is not bumped').toBe(0);
     w.eval(`(function(){ var g = fighters[${foe}]; g.x = ${sk.cx}; g.y = ${sk.fy} - g.r; g.vy = 0; g.pct = 0; g._trapT = 0; })()`); w.eval('ctfEditStep(CTF.live)');
     expect(w.eval(`fighters[${foe}].vy`), 'the other side is bumped up').toBeLessThan(-5);
-    expect(w.eval(`fighters[${foe}].pct`), 'with no damage').toBe(0);
+    expect(w.eval(`fighters[${foe}].pct`), 'and takes the spike damage').toBe(w.eval('CTF_SPIKE_DMG'));
+    expect(w.eval(`fighters[${a}].pct`), 'a teammate takes none').toBe(0);
   });
 
   it('a trapdoor gives way under the other side, and a stun trap stuns it', () => {
