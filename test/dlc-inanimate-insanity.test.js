@@ -338,6 +338,7 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       for (var i=0;i<30 && hit < 0;i++){ step(); if (D.pct > p0 + 0.01) hit = i; }
       for (var k=0;k<6;k++) step();                                   // inside the stun the hit left: the follow-up is a second link
       var before = D.pct; A.atkCd = 0; doUpTilt(A);
+      for (var q=0;q<10;q++) step();   // Bow's up-tilt is her own move now (Chair Lift, 5 frames of startup): restated 2026-10-14, it used to land on the press
       return { first: +(p0 - 40 + (D.pct - p0)).toFixed(1), second: D.pct > before + 0.01 };`);
     expect(link.second, 'the pop leaves the foe open to an uppercut a few frames later').toBe(true);
 

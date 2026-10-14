@@ -165,7 +165,7 @@ export async function readGame(prizes) {
     if (prizes) w.eval('installPrizeKit(); PRIZE_ROSTER.forEach(function(r){ if(ROSTER.indexOf(r) < 0) ROSTER.push(r); });');
     const info = JSON.parse(w.eval(`JSON.stringify({
       genes: PB_GENES, vsGenes: PB_VS_GENES, classCode: PB_CLASS_CODE, shipped: PLAYBOOKS,
-      roster: ROSTER.filter(function(r){ return r.play; }).map(function(r){ var sp = r.kit && r.kit.special; return { name: r.name, cls: aiClass(r), sp: sp, kg: pbKitGenes(sp) }; }) })`));
+      roster: ROSTER.filter(function(r){ return r.play; }).map(function(r){ var sp = r.kit && r.kit.special; return { name: r.name, cls: aiClass(r), sp: sp, kg: pbKitGenes(sp), ms: !!MOVESETS[sp] }; }) })`));
     info.schema = deriveSeed(JSON.stringify(info.genes), JSON.stringify(info.vsGenes)).toString(16);
     return info;
   } finally { await settle(); try { w.close(); } catch { /* */ } }
@@ -214,7 +214,8 @@ export function mutate(rng, champ, ctx) {
   };
   const names = Object.keys(info.genes);
   const pools = {
-    move: names.filter((n) => n[0] === 'm'), spacing: names.filter((n) => n[0] === 's'),
+    // the moveset slots (L tilts, A aerials, G grab and throws, I side special, W movetech: aiMovesetUse) are only trained for a fighter that has a moveset
+    move: names.filter((n) => n[0] === 'm' && (fighter.ms || !/^m[LAGIW][bdhop]/.test(n))), spacing: names.filter((n) => n[0] === 's'),
     gimmick: (fighter.kg || []), matchup: names.filter((n) => n[0] === 'x'),
   };
   const kinds = [['move', 0.50], ['spacing', 0.20], ['matchup', 0.15]];
