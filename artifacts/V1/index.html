@@ -33151,6 +33151,7 @@ function mvGrabStart(f){
   if(RACE.active || inOwnTeamZone(f) || !f.onground || f._hold || f._gb || f._mv || f.atkCd > 0) return false;
   const G = grabOf(f);
   f._gb = { t: 0, G: G };
+  { const U = f._used || (f._used = {}); U.grab = (U.grab || 0) + 1; }
   f.atkCd = G.whiff; f.flash = 4;
   armAtk(f, G.whiff, 'grab');
   return true;
@@ -33241,6 +33242,7 @@ function doThrow(f, t, kind){
   applyHit(t, T.dmg, dir * T.kx, T.ky, f, { stun: T.stun || 0, throwKind: kind });
   if(T.fx) T.fx(f, t, dir);
   f._thrown = { t: hazardT, kind: kind, idx: t.idx };
+  { const U = f._used || (f._used = {}); U[kind + 'throw'] = (U[kind + 'throw'] || 0) + 1; }
 }
 // a held fighter's own frame: struggle, and nothing else (called where the inputs are masked)
 function heldStruggle(f, inp){
@@ -33290,7 +33292,7 @@ function mvStart(f, S, key, nofx){
   armAtk(f, Math.max(10, total + 2), S.pose || 'punch');   // a new move (_atkSeq): only a NEW move may chain onto a foe in hitstun
   beginCombo(f);
   f._mv = { s:S, key:key, t:0, air:!f.onground, landed:false, hit:{}, boss:new Set() };
-  f._lastKey = key;
+  f._lastKey = key; { const U = f._used || (f._used = {}); U[key] = (U[key] || 0) + 1; }   // (what a fighter has used, for the tests and the trainer)
   f.atkCd = Math.max(f.atkCd, total);
   f.flash = 4;
   if(S.cd) f.spCd = Math.max(f.spCd, S.cd);
@@ -33392,6 +33394,186 @@ function sideSpecialOf(f, inp){
   if(ms.sideFresh && !(hazardT - (f._dirT == null ? -99 : f._dirT) <= SIDE_FRESH)) return null;
   return ms.side;
 }
+
+// ============================================================
+//  MOVESETS, BATCH 1: Puffball, Bow, Pencil, Leafy
+// ============================================================
+// The template for the batches after it (the owner, 2026-10-14: "not too many, there should be 20-25 moves"; "you should be able to
+// combo"; fully unique tilts and aerials; canon specials and throws). Each fighter below has, besides today's jab, smash, finisher and
+// three specials: a side-tilt, an up-tilt, a down-tilt (the old low sweep, now its own), five aerials, a grab with a pummel and four
+// throws, a SIDE special, and the movetech (short hop, fast fall and wall jump for all; Pencil also clings and cancels, flyers and
+// dashers have a small share: the owner, "try to make less movetech for dashers and flyers, cuz they already have some").
+// COMBOS: a tilt leaves its foe in a stun that outlasts the tilt's own recovery by a few frames and a launch short enough to follow,
+// so tilt -> aerial and aerial -> aerial link at low and mid %, the down- and up-throws set up an up-air, and nothing counts hits
+// (no combo counter). Numbers are the launch before the target's % scales it (kb), the damage and the hitstun (stun); the frame data
+// is in frames at 60 a second.
+// RANGED, folded (the owner: "Ranged = neutral special"): Puffball's X is her stinging puff, a shot already (it stays: it is the
+// feel she was protected for), so there is no separate ranged move to fold; Bow, Pencil and Leafy never had a shot of their own --
+// their old "ranged" slot was the low sweep, which is now the down-tilt.
+const MS_SLOTS = [   // [key, how it is pressed, the MOVE_TEXT key]
+  ['ft', '←/→ + X', 'ftilt'], ['ut', '↑ + X', 'utilt'], ['dt', '↓ + X', 'ranged'],
+  ['na', 'X in the air', 'nair'], ['fa', '→ + X in the air', 'fair'], ['ba', 'turn round + X in the air', 'bair'], ['ua', '↑ + X in the air', 'uair'], ['da', '↓ + X in the air', 'dair'],
+  ['side', '←/→ + C', 'side'],
+];
+Object.assign(MOVESETS, {
+  // ---- PUFFBALL (kit "fly") -- light and quick, the aerial game; the owner protects her feel: air control, hitting from high up, the special
+  // that cuts knockback. None of her existing moves changes; every new one is an extra way to use the same body.
+  fly: {
+    sideFresh: true,   // ←/→ + C is the side special only for a direction pressed just now: running while pressing C is still Flight
+    ft: { n:'Cheek Bump', d:'bumps with her cheek, with a small hop forward', pose:'punch', st:4, act:2, end:6,
+      boxes:[{ s:MvO(34, 2, 22), dmg:4, kb:[3.6, -4.6], stun:24 }], mv:[{ t0:3, t1:4, mode:'add', vx:1.2 }] },
+    ut: { n:'Pop-Up', d:'a rising pop over her head that tosses them straight up, ready for an up-air', pose:'uppercut', st:4, act:3, end:7,
+      boxes:[{ s:MvF(8, 64, -2.3, -0.4, -4, 0), dmg:4, kb:[0.6, -11], stun:27 }] },
+    dt: { n:'Roll Under', d:'scoots forward low and rolls under their feet, popping them up', pose:'kick', st:3, act:2, end:6,
+      boxes:[{ s:MvC(8, 18, 58, 18, 12), dmg:3.5, kb:[1.8, -7.5], stun:25 }], mv:[{ t0:2, t1:4, mode:'set', vx:4 }] },
+    na: { n:'Spin Puff', d:'spins, puffed up, and bumps everything around her twice', pose:'spin', st:3, act:5, end:6, land:5, ac:12,
+      boxes:[{ s:MvO(0, 0, 46), dmg:3, kb:[1.4, -2.6], stun:20, rehit:4 }] },
+    fa: { n:'Cheek Slap', d:'slaps forward with her cheek; hit, and she can jump out of it', pose:'throw', st:5, act:3, end:8, land:8, ac:14, jc:'hit',
+      boxes:[{ s:MvC(16, -2, 62, -2, 14), dmg:5.5, kb:[2.4, -2.8], stun:24 }] },
+    ba: { n:'Rear Bounce', d:'bounces her backside into whoever is behind her; her strongest air hit', pose:'kickback', st:4, act:3, end:10, land:9, ac:17,
+      boxes:[{ s:MvC(-12, 2, -58, 2, 16), dmg:7.5, kb:[-8.4, -4.4], stun:14 }] },
+    ua: { n:'Sky Pop', d:'pops straight up, juggling whoever is above', pose:'uppercut', st:3, act:3, end:6, land:5, ac:10,
+      boxes:[{ s:MvF(6, 60, -2.4, -0.5, -2, 0), dmg:4, kb:[0.3, -8.5], stun:24 }] },
+    da: { n:'Belly Drop', d:'hovers a beat, then drops belly-first and spikes whoever is under her', pose:'slam', st:8, act:4, end:12, land:11, ac:23,
+      boxes:[{ s:MvC(0, 12, 4, 58, 16), t0:8, t1:11, dmg:6.5, kb:[0.6, 8.5], stun:14 }],
+      mv:[{ t0:0, t1:7, mode:'stall', vy:-0.3 }, { t0:8, t1:11, mode:'dive', vy:10 }] },
+    // "Grassy tells Puffball to go super fast, and Puffball zooms off" (Barriers and Pitfalls)
+    side: { n:'Zoom', d:'zooms off sideways, then floats for a moment, flying freely', pose:'dash', st:1, act:8, end:10, cd:66,
+      start:(f) => { f.flying = Math.max(f.flying, 54); },
+      boxes:[{ s:MvO(22, 0, 28), dmg:3.5, kb:[4.5, -3], stun:12 }], mv:[{ t0:0, t1:7, mode:'set', vx:10, vy:0 }] },
+    // "Members of the puffball species are known to regurgitate a rainbow substance during times of distress" (Puffball (species));
+    // "Getting Puffball To Think About Rollercoasters" (the episode)
+    grab: { reach:26, whiff:30, pummel:{ dmg:1.2, every:12, n:'Nibble' }, hold:{ base:60 },
+      f:{ n:'Rainbow Spit', d:'spits them out in a rainbow', dmg:6.5, kx:7.5, ky:-4, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Rollercoaster', d:'whirls them round and flings them behind her', dmg:7, kx:8.4, ky:-5, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Up She Goes', d:'bounces them skyward, ready for an up-air', dmg:4.5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Pounce', d:'flattens them on the floor and rolls off, leaving them down', dmg:4, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Cheek Slap can be jump-cancelled once it hits.', 'No cling: she flies.'],
+  },
+  // ---- BOW (kit "chair") -- summoner, slow and heavy-handed; Levitate stays her neutral special. "Buy a chair!" (Bow/Quotes); "carried off by
+  // Bow" (All Play and No Work).
+  chair: {
+    sideFresh: true,   // Levitate is steered with the arrows: only a fresh direction + C is the side special
+    ft: { n:'Chair Shove', d:'shoves a chair out in front of her', pose:'punch', st:6, act:3, end:9,
+      boxes:[{ s:MvC(14, 0, 70, 0, 16), dmg:6, kb:[4.4, -4], stun:25 }] },
+    ut: { n:'Chair Lift', d:'heaves a chair up and over her head', pose:'uppercut', st:5, act:3, end:9,
+      boxes:[{ s:MvF(10, 70, -2.3, -0.35, 0, 0), dmg:5, kb:[0.6, -11], stun:29 }] },
+    dt: { n:'Footstool', d:'kicks a chair along the floor at their feet, popping them up', pose:'kick', st:4, act:2, end:8,
+      boxes:[{ s:MvC(10, 20, 64, 20, 13), dmg:4, kb:[1.8, -7], stun:26 }] },
+    na: { n:'Swivel', d:'spins on the chair, which catches everyone around her twice', pose:'spin', st:5, act:6, end:7, land:8, ac:15,
+      boxes:[{ s:MvO(0, 0, 56), dmg:3.5, kb:[1.6, -2.8], stun:21, rehit:5 }] },
+    fa: { n:'Chair Swing', d:'a slow, wide swing of the chair; her hardest forward hit', pose:'throw', st:8, act:3, end:11, land:12, ac:18,
+      boxes:[{ s:MvC(18, -4, 76, -4, 17), dmg:9, kb:[3.6, -3], stun:24 }] },
+    ba: { n:'Backrest', d:'shoves the back of the chair into whoever is behind her', pose:'kickback', st:6, act:3, end:12, land:11, ac:20,
+      boxes:[{ s:MvC(-14, 0, -62, 0, 17), dmg:9, kb:[-9.2, -4.4], stun:14 }] },
+    ua: { n:'Seat Up', d:'lifts the seat up through whoever is above her', pose:'uppercut', st:4, act:3, end:8, land:8, ac:13,
+      boxes:[{ s:MvF(8, 66, -2.5, -0.5, -4, 0), dmg:5.5, kb:[0.4, -9], stun:25 }] },
+    da: { n:'Chair Drop', d:'hovers on her chair a beat, then drops it and spikes whoever is under her; Levitate can follow it', pose:'slam', st:9, act:4, end:14, land:14, ac:26, sc:true,
+      boxes:[{ s:MvC(0, 16, 6, 64, 17), t0:9, t1:12, dmg:9, kb:[0.8, 9], stun:14 }],
+      mv:[{ t0:0, t1:8, mode:'stall', vy:-0.2 }, { t0:9, t1:12, mode:'dive', vy:10 }] },
+    side: { n:'Pull Up a Chair', d:'scoots forward on a chair, bowling over whoever is in the way', pose:'dash', st:2, act:8, end:12, cd:58,
+      boxes:[{ s:MvC(14, 0, 52, 0, 18), dmg:6, kb:[5.5, -4], stun:14 }], mv:[{ t0:0, t1:9, mode:'set', vx:8 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:1.8, every:15, n:'Chair-Leg Poke' }, hold:{ base:64 },
+      f:{ n:'Carry Off', d:'carries them off and tosses them ahead', dmg:8, kx:8, ky:-4.5, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Sit Down!', d:'swings round and sits them down hard behind her', dmg:8.5, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Telekinetic Lift', d:'lifts them overhead with telekinesis and lets go', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Sat On', d:'sits on them, then hops off', dmg:6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Chair Drop can be cancelled into Levitate once it has come out.', 'No cling: she floats.'],
+  },
+  // ---- PENCIL (kit "van") -- the setup fighter, long and thin and slow on her feet, so she gets the generous movetech: she clings to a wall
+  // with her point, and her dives, thrusts and scoot cancel into a jump. "[Pencil] grabs 'Gelatin' ... tells him that she's got him ...
+  // as she continues running" (All For One).
+  van: {
+    ft: { n:'Lead Jab', d:'jabs her point out, hardest at the tip', pose:'punch', st:6, act:3, end:9,
+      boxes:[{ s:MvO(80, 2, 12), g:'a', dmg:9, kb:[5.2, -3.4], stun:25 }, { s:MvC(14, 2, 82, 2, 10), g:'a', dmg:6.5, kb:[4, -3.4], stun:25 }] },
+    ut: { n:'Eraser Up', d:'flips and rubs her eraser up over her head', pose:'chop', st:5, act:3, end:9,
+      boxes:[{ s:MvF(10, 74, -2.4, -0.4, -6, 0), dmg:5.5, kb:[0.5, -11], stun:28 }] },
+    dt: { n:'Point Poke', d:'pokes her point along the floor, far out in front, popping them up', pose:'stompdn', st:5, act:2, end:8,
+      boxes:[{ s:MvC(12, 22, 76, 22, 10), dmg:4.5, kb:[1.8, -7.2], stun:26 }] },
+    na: { n:'Spin Stick', d:'spins like a baton and clips everything around her twice', pose:'spin', st:5, act:5, end:8, land:9, ac:15,
+      boxes:[{ s:MvO(0, 0, 52), dmg:4.5, kb:[1.6, -2.8], stun:21, rehit:5 }] },
+    fa: { n:'Lead Thrust', d:'thrusts her point straight ahead, hardest at the tip; hit, and she can jump out of it', pose:'throw', st:7, act:3, end:10, land:10, ac:17, jc:'hit',
+      boxes:[{ s:MvO(88, 0, 12), g:'a', dmg:8.5, kb:[3.8, -3], stun:23 }, { s:MvC(12, 0, 84, 0, 10), g:'a', dmg:6.5, kb:[3, -3], stun:23 }] },
+    ba: { n:'Eraser Back', d:'swings her eraser end behind her', pose:'kickback', st:7, act:3, end:11, land:12, ac:20,
+      boxes:[{ s:MvC(-12, -2, -70, -2, 13), dmg:9.5, kb:[-8.8, -4.4], stun:15 }] },
+    ua: { n:'Point Up', d:'points straight up, a long thin reach for juggling', pose:'kickup', st:5, act:3, end:8, land:8, ac:13,
+      boxes:[{ s:MvC(0, -10, 6, -84, 10), dmg:5.5, kb:[0.4, -9], stun:25 }] },
+    da: { n:'Pencil Plant', d:'dives point-first and plants it in whoever is under her; hit, and she can jump out of it', pose:'stompdn', st:8, act:5, end:14, land:13, ac:26, jc:'hit',
+      boxes:[{ s:MvC(0, 14, 4, 84, 10), t0:8, t1:12, dmg:8.5, kb:[0.5, 9.5], stun:12 }], mv:[{ t0:8, t1:12, mode:'dive', vy:9 }] },
+    // she keeps her speed out of it (no friction clamp on a set speed that ends), and can jump out of the scoot once it ends or hits
+    side: { n:'Dash Out', d:'runs flat out and shoulders whoever is in the way; she can jump out of it, keeping her speed', pose:'dash', st:2, act:14, end:8, cd:56, jc:'any',
+      boxes:[{ s:MvO(24, 0, 26), dmg:6, kb:[6.5, -4], stun:14 }], mv:[{ t0:0, t1:15, mode:'set', vx:10.5 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:14, n:'Poke' }, hold:{ base:62 },
+      f:{ n:"She's Got Him", d:'carries them a few steps and flings them ahead', dmg:7.5, kx:8.2, ky:-4.2, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Over the Shoulder', d:'flips them over her shoulder, behind her', dmg:8, kx:8.8, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Sharpen', d:'twirls them up on her point and tosses them overhead', dmg:5.5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Plant', d:'plants them in the floor, point-down, and leaves them there', dmg:5.5, kx:1.8, ky:-8.5, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about a second (her point digs in) before she slides.', 'Lead Thrust, Pencil Plant and Dash Out jump-cancel; Dash Out keeps her speed.'],
+  },
+  // ---- LEAFY (kit "dash") -- the speedster; a dasher, so a small share of movetech. "[Leafy] pulls out her revamped Niceness Chart" (All For One).
+  dash: {
+    sideFresh: true,   // the straight Sprint is the neutral special and stays so while running
+    ft: { n:'Quick Kick', d:'a snap kick straight ahead', pose:'kick', st:3, act:2, end:5,
+      boxes:[{ s:MvC(10, 8, 56, 8, 12), dmg:3.5, kb:[3.2, -4.4], stun:22 }] },
+    ut: { n:'Leaf Whip', d:'whips her leaves up over her head', pose:'uppercut', st:3, act:2, end:6,
+      boxes:[{ s:MvF(8, 60, -2.3, -0.4, 0, 0), dmg:3.5, kb:[0.5, -10.5], stun:26 }] },
+    dt: { n:'Slide Kick', d:'slides forward and kicks the feet out from under them', pose:'kick', st:3, act:2, end:5,
+      boxes:[{ s:MvC(10, 20, 60, 20, 11), dmg:3, kb:[1.6, -7], stun:24 }], mv:[{ t0:2, t1:4, mode:'set', vx:3 }] },
+    na: { n:'Leaf Spin', d:'spins her leaves round her, clipping everything near twice', pose:'spin', st:3, act:4, end:5, land:5, ac:10,
+      boxes:[{ s:MvO(0, 0, 42), dmg:3, kb:[1.4, -2.6], stun:19, rehit:4 }] },
+    fa: { n:'Flying Punch', d:'a quick punch ahead in the air', pose:'punch', st:4, act:2, end:6, land:7, ac:11,
+      boxes:[{ s:MvC(14, -2, 58, -2, 13), dmg:5, kb:[2.2, -2.8], stun:22 }] },
+    ba: { n:'Back Kick', d:'kicks out behind her', pose:'kickback', st:4, act:3, end:9, land:7, ac:15,
+      boxes:[{ s:MvC(-12, 2, -56, 2, 13), dmg:6, kb:[-7.6, -4], stun:13 }] },
+    ua: { n:'Up Kick', d:'kicks straight up', pose:'kickup', st:3, act:2, end:5, land:5, ac:9,
+      boxes:[{ s:MvC(0, -8, 6, -60, 12), dmg:3.5, kb:[0.3, -8.5], stun:23 }] },
+    da: { n:'Heel Drop', d:'drops her heel on whoever is under her', pose:'stompdn', st:6, act:4, end:10, land:9, ac:19,
+      boxes:[{ s:MvC(0, 12, 4, 56, 13), t0:6, t1:9, dmg:5.5, kb:[0.6, 8], stun:13 }], mv:[{ t0:6, t1:9, mode:'dive', vy:8 }] },
+    // the angled dash (it was "← → + ↑/↓ + C"): the same BFDIA Sprint, up and forward, invincible the whole way (doSpecial "dash")
+    side: { n:'Sprint Leap', d:'her BFDIA Sprint, angled up and forward: untouchable the whole way; anyone she runs into is hit; she can jump out of the end of it', pose:'dash', st:16, act:0, end:2, cd:55, jc:'end',
+      start:(f) => { f._inUp = true; f._inDown = false; doSpecial(f); }, x:'10%' },
+    // "pulls out her revamped Niceness Chart" (All For One)
+    grab: { reach:30, whiff:26, pummel:{ dmg:1, every:10, n:'Chart Tap' }, hold:{ base:52 },
+      f:{ n:'Nice Try', d:'shoves them ahead with a smile', dmg:5, kx:7, ky:-4, stun:0, pose:'throw', lag:18 },
+      b:{ n:'Backhand Kindness', d:'turns and flicks them behind her', dmg:5.5, kx:7.5, ky:-4.4, stun:0, pose:'throwb', lag:20 },
+      u:{ n:'Lift Up', d:'hoists them up and lets go', dmg:4, kx:0.5, ky:-11.5, stun:31, pose:'uppercut', lag:14 },
+      d:{ n:'Niceness Chart', d:'slaps the Niceness Chart down on them', dmg:3.5, kx:1.8, ky:-8.5, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Sprint Leap can be jump-cancelled when it ends.', 'No cling: she already has the Sprint.'],
+  },
+});
+// ---- the words: every move's line on the move card, written from its numbers ----
+function msReach(S){
+  let m = 0;
+  for(const b of (S.boxes || [])){ const s = b.s; let e;
+    if(s.k === 'f') e = Math.hypot(s.ox, s.oy) + s.r1;
+    else if(s.k === 'c') e = Math.max(Math.hypot(s.x1, s.y1), Math.hypot(s.x2, s.y2)) + s.r;
+    else e = Math.hypot(s.x, s.y) + s.r;
+    if(e > m) m = e; }
+  for(const v of (S.mv || [])) if(v.mode === 'set' && v.vx) m += Math.abs(v.vx) * ((v.t1 == null ? v.t0 : v.t1) - v.t0 + 1) * 0.4;
+  return m;
+}
+function msReachWord(S){ const m = msReach(S); return m < 80 ? 'short reach' : (m < 140 ? 'medium reach' : 'long reach'); }
+function msPct(d){ return (Math.round(d * 10) / 10) + '%'; }
+function msLine(S){
+  const dm = Math.max.apply(null, (S.boxes || []).map(b => b.dmg).concat([0]));
+  return S.n + ' — ' + S.d + ' (' + msReachWord(S) + '). On hit: ' + (S.x || msPct(dm)) + '.';
+}
+function msThrowLine(T){ return T.n + ' — ' + T.d + '. On hit: ' + msPct(T.dmg) + '.'; }
+(function(){
+  for(const r of ROSTER){
+    if(!r.play || !r.kit) continue;
+    const ms = MOVESETS[r.kit.special], t = MOVE_TEXT[r.name];
+    if(!ms || !t) continue;
+    for(const [k, , key] of MS_SLOTS) if(ms[k]) t[key] = msLine(ms[k]);
+    const G = ms.grab;
+    if(G){
+      t.grab = 'Grab — reaches a short way ahead on the ground; hold on and press X to pummel (' + G.pummel.n + ', ' + msPct(G.pummel.dmg) + '), or a direction to throw. No hit: it is a hold.';
+      t.pummel = G.pummel.n + ' — a quick pummel while you hold them. On hit: ' + msPct(G.pummel.dmg) + '.';
+      t.fthrow = msThrowLine(G.f); t.bthrow = msThrowLine(G.b); t.uthrow = msThrowLine(G.u); t.dthrow = msThrowLine(G.d);
+    }
+    t.tech = (ms.tech || []).join(' ');
+  }
+})();
 
 function fireSpecial(f, inp){
   if(f.spCd>0 && !(inp && inp.down && f._grabbed!=null && f._grabTimer>0)) return;   // Liy's hurl is the grab's finish, inside its window

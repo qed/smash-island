@@ -19,7 +19,11 @@ const hit = (name, move, dx, dy = 0) => W.eval(`(function(){
   D.y = groundY()-24 + ${dy}; A.onground = true;
   var p0 = projectiles.length;
   ${move}(A);
-  return { dmg: +(D.pct-30).toFixed(2), shots: projectiles.length - p0, launchUp: D.vy < -2 };
+  // A converted fighter's tilt has a startup (a few frames before its box is live), so the swing is followed for 16 frames and the
+  // foe's launch is read on the frame it is hit (restated 2026-10-14; the old moves land on the press, which is frame 0 here too).
+  var dmg = D.pct-30, up = D.vy < -2;
+  for (var i=0;i<16 && !(dmg > 0);i++){ step(); dmg = D.pct-30; up = D.vy < -2; }
+  return { dmg: +dmg.toFixed(2), shots: projectiles.length - p0, launchUp: up };
 })()`);
 
 const ALL = () => W.eval('ROSTER.filter(function(r){ return r.play; }).map(function(r){ return r.name; })');
