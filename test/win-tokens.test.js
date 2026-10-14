@@ -1355,7 +1355,9 @@ describe('no hooks', () => {
                rows: [].slice.call(q.querySelectorAll('.quest')).length, paid: [].slice.call(q.querySelectorAll('.quest.paid .qreward')).map(function(e){ return e.textContent; }),
                bal: walletBalance() }; })()`);
     expect(r.rows, "the day's three and the week's three").toBe(6);
-    expect(r.buttons, 'Back and the Store, and nothing to press for tokens').toEqual(['◀ Back', '🛍 Store']);
+    // Restated (the owner, 2026-10-14: Store, Wardrobe and Quests become one Locker hub): the screen's cross-buttons became the Locker's three tabs
+    // across the top, so the buttons are the tabs and Back -- and still nothing to press for tokens.
+    expect(r.buttons, 'the Locker tabs and Back, and nothing to press for tokens').toEqual(['🏅 Quests', '🛍 Store', '👕 Wardrobe', '◀ Back']);
     expect(r.text).not.toMatch(/claim/i);
     expect(r.text, 'no clock running down to the next set').not.toMatch(/\bin \d+\s?(h|m|min|hours?|minutes?|days?)\b/i);
     expect(r.paid, 'the finished quest was paid on sight, and says so').toEqual(['Paid ✓']);
@@ -1364,15 +1366,28 @@ describe('no hooks', () => {
 });
 
 describe('the title', () => {
-  it('shows the wallet and its doors as links, keeping its six buttons', async () => {
+  it('shows the wallet and its one door (the Locker) as a link, keeping its six buttons', async () => {
+    // Restated (the owner, 2026-10-14: "Store, Wardrobe and Quests become one hub"): the title's three links (Quests, Store, Wardrobe) are one
+    // Locker link; each of the three screens keeps its own page and carries the Locker's tab bar, and each tab opens its screen.
     const w = await ready();
     const t = w.document.getElementById('title');
     expect([...t.querySelectorAll('button')].filter((b) => !b.closest('#dailyCard')).length).toBeLessThanOrEqual(6);
     expect(t.querySelector('.walletAmt').textContent).toBe('0');
-    for (const [id, screen] of [['questsBtn', 'quests'], ['storeBtn', 'store'], ['wardrobeBtn', 'wardrobe']]) {
+    expect(t.querySelectorAll('#shopDoor a.link').length, 'one door').toBe(1);
+    w.eval("go('title')");
+    w.document.getElementById('lockerBtn').click();
+    expect(w.document.getElementById('store').classList.contains('active'), 'the Locker opens the Store at first').toBe(true);
+    w.eval("go('wardrobe'); go('title')");
+    w.document.getElementById('lockerBtn').click();
+    expect(w.document.getElementById('wardrobe').classList.contains('active'), 'and then the tab you used last').toBe(true);
+    for (const [label, screen] of [['Quests', 'quests'], ['Store', 'store'], ['Wardrobe', 'wardrobe']]) {
       w.eval("go('title')");
-      w.document.getElementById(id).click();
-      expect(w.document.getElementById(screen).classList.contains('active'), id).toBe(true);
+      w.eval("openLocker()");
+      const tab = [...w.document.querySelectorAll('.screen.active .ltab')].find((b) => b.textContent.includes(label));
+      expect(tab, label + ' tab').toBeTruthy();
+      tab.click();
+      expect(w.document.getElementById(screen).classList.contains('active'), label).toBe(true);
+      expect(w.document.querySelectorAll('#' + screen + ' .ltab.on').length, 'one tab shows where you are').toBe(1);
       expect(w.eval(`MUSIC_SCREENS.${screen}`)).toBe('menu');
       expect(w.document.getElementById(screen).innerHTML, `${screen} leads back`).toContain("go('title')");
     }
@@ -1380,8 +1395,8 @@ describe('the title', () => {
     // "Remove it". A finished quest changes nothing on the title but the wallet's number.
     w.eval(`SHOP_CLOCK = ${DAY}; questState().dp[questsFor('daily')[0].id] = 999; go('title');`);
     expect(w.document.getElementById('questBadge')).toBe(null);
-    expect(w.document.getElementById('questsBtn').children.length, 'a plain link').toBe(0);
-    expect(w.document.getElementById('questsBtn').textContent.trim()).toBe('🏅 Quests');
+    expect(w.document.getElementById('lockerBtn').children.length, 'a plain link').toBe(0);
+    expect(w.document.getElementById('lockerBtn').textContent.trim()).toBe('🎒 Locker');
     expect(SRC).not.toMatch(/qbadge|questBadge|questsClaimable/);
   });
 });
@@ -1398,7 +1413,7 @@ describe('the second look', () => {
     expect(w.document.getElementById('questBadge')).toBe(null);
     expect(w.document.querySelectorAll('#shopDoor .qbadge, #shopDoor [hidden]').length).toBe(0);
     w.eval(`SHOP_CLOCK = ${DAY}; questState().dp[questsFor('daily')[0].id] = 999; go('title');`);
-    expect(w.document.getElementById('questsBtn').children.length).toBe(0);
+    expect(w.document.getElementById('lockerBtn').children.length).toBe(0);
     // The support link, hidden by its attribute, stays hidden in fact as well as in name.
     expect(w.getComputedStyle(w.document.getElementById('supportRow')).display).toBe('none');
   });
