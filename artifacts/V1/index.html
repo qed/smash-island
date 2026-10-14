@@ -31178,7 +31178,7 @@ function step(){
       // jump
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
       else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
-      else if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP); f._hop=f.onground && mtOn(f) && f.vy===JUMP; /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
+      else if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP); f._hop=f.onground && mtOn(f) && f.vy===JUMP && (isHumanCtrl(f) || !!f._aiHop);   /* a CPU's jumps stay the full jump unless it asked for a short hop (aiMovesetUse): its old rules tap jump */ /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
       if(!inp.jump) f._jp=false;
       if(f._hop){ if(f.vy>=0 || f.onground) f._hop=false; else if(!inp.jump){ if(f.vy < -SH_V) f.vy = -SH_V; f._hop=false; } }   // SHORT HOP: a tap of jump is cut (SH_V); held is the full jump
 
@@ -31189,10 +31189,12 @@ function step(){
       if(atkSp && f.fnCd<=0){
         doAttackSpecial(f); f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;
       } else if(atkSp){ } else {
+        f._legacyMv = false;
         if(inp.attack && f.atkCd<=0 && !inp.grab){ f._xDir = inp.down ? 'd' : (inp.up ? 'u' : ((inp.left||inp.right) ? 's' : 'n')); f._xAir = !f.onground; f._xT = hazardT; }
         if(inp.grab){ if(!f._hold && !f._gb) mvGrabStart(f); }   // X+C: the grab (anyone's; a converted fighter's own throws, MOVESETS)
         else if(inp.attack && f.atkCd<=0 && mvAttack(f, inp)){ }   // a converted fighter's tilt or aerial (MOVESETS)
         else if(inp.attack && f.atkCd<=0){
+          f._legacyMv = !isHumanCtrl(f);   // a CPU that did not ask for a moveset move swings today's jab, sweep and uppercut (doGroundMove, doUpTilt)
           // Land it and you recover sooner; whiff and you pay the full price (see JAB_HIT_CD).
           if(inp.down){ f._confirm=0; doGroundMove(f); f.atkCd = f._confirm ? GROUND_HIT_CD : 26; }
           // up+X is the uppercut -- except while Puffball is flying, where holding up is how she climbs
@@ -33356,7 +33358,7 @@ function utiltStats(f){
   return { reach: f.r*0.9 + 14 + Math.max(0, P.reach||0)*0.4, dmg: Math.max(5, Math.round((P.dmg||6) + 1)) };
 }
 function doGroundMove(f){
-  { const ms = msOf(f); if(ms && ms.dt && f.onground){ mvStart(f, ms.dt, 'dt'); return; } }   // a converted fighter's own down-tilt
+  { const ms = msOf(f); if(ms && ms.dt && f.onground && !f._legacyMv){ mvStart(f, ms.dt, 'dt'); return; } }   // a converted fighter's own down-tilt
   f.flash=5;
   armAtk(f, ATK_ANIM, 'kick');   // a low kick along the floor, forward only
   const S = dtiltStats(f), fy = feetY(f) - 10;
@@ -33391,7 +33393,7 @@ function spaggers(f, S, fy){
 // standing in front on its way up, and anyone above.
 function doUpTilt(f){
   if(inOwnTeamZone(f)) return;
-  { const ms = msOf(f); if(ms && ms.ut){ mvStart(f, ms.ut, 'ut'); return; } }   // a converted fighter's own up-tilt
+  { const ms = msOf(f); if(ms && ms.ut && !f._legacyMv){ mvStart(f, ms.ut, 'ut'); return; } }   // a converted fighter's own up-tilt
   f.flash=5;
   armAtk(f, ATK_ANIM, 'uppercut');
   const S = utiltStats(f);
@@ -34356,7 +34358,7 @@ function aerialKeyOf(f, inp){
 // Returns true when a moveset move took the press (so the old jab / sweep / uppercut does not).
 function mvAttack(f, inp){
   const ms = msOf(f);
-  if(!ms || f._mv || f._holding || f.flying > 0) return false;   // (Puffball in flight keeps X as her spit, on the ground as in the air)
+  if(!ms || f._mv || f._holding || f.flying > 0 || inp.jab || (!isHumanCtrl(f) && !inp.mv)) return false;   // (a CPU's X is the old instant jab unless aiMovesetUse asked for a moveset move: inp.mv)   // (Puffball in flight keeps X as her spit, on the ground as in the air)
   let ground = f.onground;
   const J0 = f._jmp0;
   if(!ground && inp.up && ms.ut && J0 && J0.ground && hazardT - J0.t <= UT_JUMP_WINDOW && f.vy < 0 && !(f.flying > 0)){   // ↑ and X together on the ground: the up-tilt, not a hop
@@ -34416,11 +34418,10 @@ Object.assign(MOVESETS, {
     ut: { n:'Pop-Up', d:'a rising pop over her head that tosses them straight up, ready for an up-air', pose:'uppercut', st:4, act:3, end:7,
       boxes:[{ s:MvF(8, 64, -2.3, -0.4, -4, 0), dmg:4, kb:[0.6, -11], stun:27 }] },
     dt: { n:'Roll Under', d:'scoots forward low and rolls under their feet, popping them up', pose:'kick', st:3, act:2, end:6,
-      boxes:[{ s:MvC(8, 18, 58, 18, 12), dmg:3.5, kb:[1.8, -7.5], stun:25 }], mv:[{ t0:2, t1:4, mode:'set', vx:4 }] },
-    na: { n:'Spin Puff', d:'spins, puffed up, and bumps everything around her twice', pose:'spin', st:3, act:5, end:6, land:5, ac:12,
-      boxes:[{ s:MvO(0, 0, 46), dmg:3, kb:[1.4, -2.6], stun:20, rehit:4 }] },
-    fa: { n:'Cheek Slap', d:'slaps forward with her cheek; hit, and she can jump out of it', pose:'throw', st:5, act:3, end:8, land:8, ac:14, jc:'hit',
-      boxes:[{ s:MvC(16, -2, 62, -2, 14), dmg:5.5, kb:[2.4, -2.8], stun:24 }] },
+      boxes:[{ s:MvC(8, 18, 58, 18, 12), dmg:3.5, kb:[1.8, -7.5], stun:25 }], mv:[{ t0:2, t1:4, mode:'set', vx:2 }] },
+    // (no neutral air: the owner, 2026-10-14, "Keep the spit" -- X in the air without a direction is her spit, exactly as before; her aerials are X with a direction)
+    fa: { n:'Cheek Slap', d:'slaps forward and down with her cheek; hit, and she can jump out of it', pose:'throw', st:4, act:3, end:8, land:8, ac:13, jc:'hit',
+      boxes:[{ s:MvC(14, 6, 62, 24, 18), dmg:5.5, kb:[2.4, -2.8], stun:24 }] },
     ba: { n:'Rear Bounce', d:'bounces her backside into whoever is behind her; her strongest air hit', pose:'kickback', st:4, act:3, end:10, land:9, ac:17,
       boxes:[{ s:MvC(-12, 2, -58, 2, 16), dmg:7.5, kb:[-8.4, -4.4], stun:14 }] },
     ua: { n:'Sky Pop', d:'pops straight up, juggling whoever is above', pose:'uppercut', st:3, act:3, end:6, land:5, ac:10,
@@ -34586,7 +34587,7 @@ function moveRowsFor(r){
   add('X', mt.jab);
   if(ms){
     add('←/→ + X', mt.ftilt); add('↑ + X', mt.utilt); add('↓ + X', mt.ranged);
-    add('X in the air', mt.nair); add('→ + X in the air', mt.fair); add('turn round + X in the air', mt.bair); add('↑ + X in the air', mt.uair); add('↓ + X in the air', mt.dair);
+    add('X in the air', ms.na ? mt.nair : 'Spit — the same as X on the ground, in the air too (her aerials are X with a direction).'); add('→ + X in the air', mt.fair); add('turn round + X in the air', mt.bair); add('↑ + X in the air', mt.uair); add('↓ + X in the air', mt.dair);
   } else {
     add('←/→ + X', 'Side-tilt — ' + SHARED_FALLBACK); add('↑ + X', mt.utilt); add('↓ + X', mt.ranged);
     add('X in the air', 'Aerials — ' + SHARED_FALLBACK);
@@ -34669,6 +34670,7 @@ function trainingPin(f){ if(TESTMODE.active && TESTMODE.training && TESTMODE.hol
 // shift on the move's odds (a shift of +1 is about twice as likely, -1 about half, -3 almost never):
 //   L  tilts (side, up, down)    A  aerials    G  the grab (and which throw)    I  the side special    W  movetech (hops, fast falls)
 // the odds multiplier a slot's genes give this frame (1 with no playbook)
+const AI_TILT_P = 0.4, AI_AIR_P = 0.5, AI_SIDE_P = 0.003;   // how often a jab press becomes a tilt / an aerial (the rest stay the old instant jab)
 function aiMsOdds(pb, k, s){
   if(!pb) return 1;
   const m = PB_MS_MK[s];
@@ -34698,7 +34700,7 @@ function aiMovesetUse(f, inp, sp){
     if(!H && f.spCd <= 0 && !f._airDash && f.atkCd <= 0 && !(f._lag > 0) && !(f._mv) && !inp.special && !inp.smash && f.hitstun <= 0){
       const danger = (f.pct >= 90 || t.smashHold > 0 || t._windup) && gap < 150;
       const close = gap > 200 && gap < 700 && Math.abs(dy) < 60 && t.hitstun <= 0;
-      if((danger && rn < 0.05) || (close && rn < 0.012 * aiMsOdds(pb, k, 'W'))){
+      if((danger && rn < 0.02) || (close && rn < 0.003 * aiMsOdds(pb, k, 'W'))){
         const dir = danger ? -toward : toward;                                   // away from the foe to escape, toward it to close in
         inp.special = true; inp.down = true; inp.up = false; inp.attack = false; inp.left = dir < 0; inp.right = dir > 0;
         f._aiHy = { t: hazardT }; return;
@@ -34734,50 +34736,54 @@ function aiMovesetUse(f, inp, sp){
   // ---- the grab: close, on the ground, a foe on its feet (the better the more it counters or armours) ----
   if(f.onground && f.atkCd <= 0 && !t._isBoss && t.hitstun <= 0 && t.invuln <= 0 && t.onground !== false && gap < ms.grab.reach - 4 && Math.abs(dy) < 30 && t._heldBy == null){
     const stance = (t.countering > 0 || t.armor > 0 || t.reflecting > 0 || t._windup) ? 3 : 1;
-    if(rn < 0.07 * stance * aiMsOdds(pb, k, 'G') * (pressing ? 4 : 1)){ inp.grab = true; inp.attack = false; inp.special = false; inp.left = inp.right = false; return; }
+    if(rn < 0.035 * stance * aiMsOdds(pb, k, 'G') * (pressing ? 3 : 1)){ inp.grab = true; inp.attack = false; inp.special = false; inp.left = inp.right = false; return; }
   }
   // ---- the legacy rules did not swing, but a foe is right here: a tilt or an aerial of its own accord (a fighter whose old rules only ever fired its shot) ----
-  if(!pressing && !inp.special && !inp.smash && f.atkCd <= 0 && !(f.flying > 0) && !t._isBoss && gap < 44 && Math.abs(dy) < 70 && t.invuln <= 0 && rn < 0.05 * aiMsOdds(pb, k, f.onground ? 'L' : 'A')){ inp.attack = true; pressing = true; }
+  if(!pressing && !inp.special && !inp.smash && f.atkCd <= 0 && !(f.flying > 0) && !t._isBoss && gap < 44 && Math.abs(dy) < 70 && t.invuln <= 0 && rn < 0.03 * aiMsOdds(pb, k, f.onground ? 'L' : 'A')){ inp.attack = true; pressing = true; }
   // ---- a legacy attack press becomes the right tilt or aerial ----
   if(pressing && f.flying > 0) return;   // Puffball in flight: X is her spit, as it always was
   if(pressing){
     if(f.onground){
       const odds = aiMsOdds(pb, k, 'L');
-      inp.up = false; inp.down = false; inp.left = false; inp.right = false;   // a jab is thrown standing: an arrow held with X would be a side-tilt
+      inp.up = false; inp.down = false;
       // the tilt that fits: up-tilt for a foe above, down-tilt for one low and close, side-tilt at a poke's range; weights, then a roll
       const wU = (dy < -30 && adx < 80) ? 1.6 : 0, wD = (Math.abs(dy) < 34 && gap < 58) ? 1 : 0, wF = (gap > 12 && gap < 80) ? 1.2 : 0, tot = wU + wD + wF;
-      if(tot > 0 && rn < 0.75 * odds){
+      if(tot > 0 && rn < AI_TILT_P * odds){
+        inp.mv = true;   // (a CPU's X is the old jab unless it asks for a moveset move: mvAttack)
         let r = Math.random() * tot;
         if((r -= wU) < 0) inp.up = true;
         else if((r -= wD) < 0) inp.down = true;
         else { inp.left = toward < 0; inp.right = toward > 0; }
-      }
+      } else inp.jab = true;   // the old jab: instant, and a fighter's strength was built on it
     } else {
       const odds = aiMsOdds(pb, k, 'A');
       inp.up = false; inp.down = false;
-      if(dy < -26 && adx < 64) inp.up = true;                                         // above: up-air
-      else if(dy > 30 && adx < 44 && f.vy > -1) inp.down = true;                      // below: down-air
-      else if(behind && adx > 12){ inp.left = toward < 0; inp.right = toward > 0; }   // behind: back-air (a press the other way is the turn)
-      else if(adx > 40 && rn < 0.75 * odds){ inp.left = toward < 0; inp.right = toward > 0; }   // in front: forward-air
-      else if(adx < 36){ inp.left = false; inp.right = false; }   // right on top of them: the neutral air
+      if(rn < AI_AIR_P * odds){
+        inp.mv = true;
+        if(dy < -26 && adx < 64) inp.up = true;                                         // above: up-air
+        else if(dy > 30 && adx < 44 && f.vy > -1) inp.down = true;                      // below: down-air
+        else if(behind && adx > 12){ inp.left = toward < 0; inp.right = toward > 0; }   // behind: back-air (a press the other way is the turn)
+        else if(adx > 40){ inp.left = toward < 0; inp.right = toward > 0; }             // in front: forward-air
+        else { inp.left = false; inp.right = false; }                                   // right on top of them: the neutral air
+      } else inp.jab = true;                                                              // the old jab in the air
     }
     return;
   }
   // ---- combo follow-up: a foe still in the stun of my last hit, and I am free: hop in (a quick press of jump) and go again ----
   if(comboFoe && f.onground && adx < 90 && Math.abs(dy) < 110 && rn < 0.6 * aiMsOdds(pb, k, 'W')){ inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
   if(comboFoe && !f.onground && gap < 70 && f.atkCd <= 0 && !inp.special){
-    inp.attack = true; inp.left = inp.right = inp.up = inp.down = false;
+    inp.attack = true; inp.mv = true; inp.left = inp.right = inp.up = inp.down = false;
     if(dy < -26 && adx < 64) inp.up = true; else if(dy > 30 && adx < 44) inp.down = true;
     else if(behind && adx > 12){ inp.left = toward < 0; inp.right = toward > 0; }
     else if(adx > 40){ inp.left = toward < 0; inp.right = toward > 0; }
     return;
   }
   // ---- the side special, as a way in ----
-  if(ms.side && f.spCd <= 0 && !inp.special && f.atkCd <= 0 && gap > 90 && gap < 280 && Math.abs(dy) < 60 && t.hitstun <= 0 && !f._lev && rn < 0.012 * aiMsOdds(pb, k, 'I')){
+  if(ms.side && f.spCd <= 0 && !inp.special && f.atkCd <= 0 && gap > 90 && gap < 280 && Math.abs(dy) < 60 && t.hitstun <= 0 && !f._lev && rn < AI_SIDE_P * aiMsOdds(pb, k, 'I')){
     inp.special = true; inp.side = true; inp.up = false; inp.down = false; inp.attack = false; inp.left = toward < 0; inp.right = toward > 0; return;
   }
   // ---- a short hop in toward a foe on the ground (so an aerial can come out), and a fast fall once the swing is over ----
-  if(f.onground && !inp.jump && gap > 36 && gap < 120 && Math.abs(dy) < 40 && t.hitstun <= 0 && rn < 0.012 * aiMsOdds(pb, k, 'W')){ f._aiHop = 1; inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
+  if(f.onground && !inp.jump && gap > 36 && gap < 120 && Math.abs(dy) < 40 && t.hitstun <= 0 && rn < 0.004 * aiMsOdds(pb, k, 'W')){ f._aiHop = 1; inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
   if(!f.onground && f._aiHop && inp.jump) inp.jump = false;   // let go at once: that is the short hop
   if(!f.onground && f.vy > 0.5 && !f._ff && !f._lev && !(f.flying > 0) && f.atkCd <= 0 && dy > 40 && adx < 60 && rn < 0.05 * aiMsOdds(pb, k, 'W')) inp.down = !f._dnPrev;
   if(f.onground) f._aiHop = 0;
