@@ -67,7 +67,7 @@ describe('up+X is an uppercut', () => {
       A.atkCd=0; A.hitstun=0; A.onground=true;
       for (var k in KEYS) down[KEYS[k]] = false;
       ${JSON.stringify(held)}.forEach(function(k){ down[KEYS[k]] = true; });
-      step();
+      step(); step(); step();   // X waits CI_DELAY frames in case C joins it for the grab (2026-10-14)
       for (var k2 in KEYS) down[KEYS[k2]] = false;
       return A._atkKind;
     })()`);

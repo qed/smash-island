@@ -1277,7 +1277,7 @@
     <div class="hudbar" id="hudbar"></div>
     <div class="standings" id="standings"></div>
     <div class="banner" id="banner"></div>
-    <div id="hint">BUILD v69 · ← → move · ↑ jump · X attack · ↓+X ranged · C special · ↑+C up · ↓+C down-sp · dir+↑/↓+C = angled dash · X+C finisher · V smash (press once) · Esc pause</div>
+    <div id="hint">BUILD v70 · ← → move · ↑ jump (quick press: short hop) · ↓ in the air: fast fall · X attack, + ←→↑↓ tilts and aerials · C special, + ←→↑↓ · X+C grab · V smash (press once) · V+C finisher · Esc pause</div>
   </div>
 
   <!-- RESULT -->
@@ -1316,11 +1316,12 @@
       <div class="tut-card"><div class="tut-key">← →</div><div class="tut-lbl">Move</div></div>
       <div class="tut-card"><div class="tut-key">↑</div><div class="tut-lbl">Jump (twice!)</div></div>
       <div class="tut-card"><div class="tut-key">X</div><div class="tut-lbl">Attack</div></div>
-      <div class="tut-card"><div class="tut-key">↓ + X</div><div class="tut-lbl">Ranged</div></div>
+      <div class="tut-card"><div class="tut-key">← → ↑ ↓ + X</div><div class="tut-lbl">Tilts (in the air: aerials)</div></div>
       <div class="tut-card"><div class="tut-key">C</div><div class="tut-lbl">Special</div></div>
       <div class="tut-card"><div class="tut-key">↑ + C</div><div class="tut-lbl">Up special</div></div>
       <div class="tut-card"><div class="tut-key">↓ + C</div><div class="tut-lbl">Down special</div></div>
-      <div class="tut-card"><div class="tut-key">X + C</div><div class="tut-lbl">Finisher</div></div>
+      <div class="tut-card"><div class="tut-key">X + C</div><div class="tut-lbl">Grab (then a direction throws)</div></div>
+      <div class="tut-card"><div class="tut-key">V + C</div><div class="tut-lbl">Finisher</div></div>
       <div class="tut-card"><div class="tut-key">V</div><div class="tut-lbl">Smash (big hit)</div></div>
     </div>
     <div class="tut-smash">
@@ -7142,7 +7143,7 @@ function refreshSel(){
       ["↑+C", mt ? esc(mt.up) : "Up special (recovery)", !!mt],
       ["↓+C", mt ? esc(mt.down) : "Down special", !!mt],
       ["V", esc((smashKindOf(chosen) ? smashKindOf(chosen) + " · " : "") + smashBlurb(chosen)) + '<div class="mc-sub">' + esc(smashHowText(chosen)) + '</div>', true],
-      ["X+C", mt ? esc(mt.finisher) : "Finisher", !!mt],
+      ["V+C", mt ? esc(mt.finisher) : "Finisher", !!mt],
     ];
     mc.innerHTML = `<div class="mc-head">${chosen.name} — moves</div>` +
       rows.map(r=>`<div class="mc-row${r[2]?' mc-wide':''}"><span class="mc-k">${r[0]}</span><span class="mc-d">${r[1]}</span></div>`).join("");
@@ -29739,7 +29740,9 @@ function step(){
       // test-mode dummy: no input at all — just stands to be hit
     } else {
       inp = (SETTINGS.mode==='ctf' && ctfAiInput(f)) || aiThink(f);
+      legacyFin(inp);   // the CPU's rules still press attack + special for the finisher; the engine reads `fin`
     }
+    if((ctrl==='local' || ctrl==='remote') && !RACE.active && !(SETTINGS.mode==='ctf' && CTF.live && (CTF.live.phase==='hide' || CTF.live.phase==='fix'))) comboInput(f, inp);   // X+C grab, V+C finisher (the Capture the Flag hiding phase reads the raw keys)
 
     // OUTBREAK: while infected by Barf Bag, this fighter mirrors HER inputs (puppet) and
     // temporarily counts as her team. Copy the infector's most recent input snapshot.
@@ -29749,7 +29752,7 @@ function step(){
       if(host && !host.dead && host._lastInput){
         inp = {left:host._lastInput.left, right:host._lastInput.right, jump:host._lastInput.jump,
                up:host._lastInput.up, down:host._lastInput.down, attack:host._lastInput.attack,
-               special:host._lastInput.special, smash:host._lastInput.smash};   // puppets DO fire specials/smashes now
+               special:host._lastInput.special, smash:host._lastInput.smash, grab:host._lastInput.grab, fin:host._lastInput.fin};   // puppets DO fire specials/smashes now
       }
       if(f._infected<=0){ f.team = f._origTeam; f._infectedBy=null; }   // no "Cured!" line (a special's status ending is still a special's text), and no banner("") for an AI puppet: that blanked the line that was up
     } else {
@@ -30163,8 +30166,10 @@ function step(){
       // HASTE EASES OFF. It used to be 1.5x flat and then nothing, so the frame it ran out felt like the
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
       const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * ctfSpeedK(f);   // (Capture the Flag: everyone 1.5x as fast, a flag carrier slower)
+      const _face0 = f.face;
       if(inp.left){ f.vx-=mv; f.face=f.ctrlRev>0?1:-1; }
       if(inp.right){ f.vx+=mv; f.face=f.ctrlRev>0?-1:1; }
+      if(f.face!==_face0){ f._turnT=hazardT; f._turnFrom=_face0; }
       if(!inp.left&&!inp.right && f.onground && !(f._sm && f._sm.drive) && !(f._gotcha && f._gotcha.phase==='lunge')) f.vx*=(f.iceUntil>0?0.99:FRICTION);
       if(f.iceUntil>0) f.iceUntil--;
       if(f._dashing>0){ f.vx=f.face*(f._dashSpeed||22); }   // dash overrides normal movement/clamp
@@ -30176,12 +30181,14 @@ function step(){
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
         const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*ctfSpeedK(f); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
       // jump
-      if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP); f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
+      if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
+      else if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP); f._hop=f.onground && mtOn(f) && f.vy===JUMP; /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
       if(!inp.jump) f._jp=false;
+      if(f._hop){ if(f.vy>=0 || f.onground) f._hop=false; else if(!inp.jump){ if(f.vy < -SH_V) f.vy = -SH_V; f._hop=false; } }   // SHORT HOP: a tap of jump is cut (SH_V); held is the full jump
 
       // attacks
-      const atkSp = inp.attack && inp.special;   // attack+special together = finisher
-      // X+C has its own cooldown too (fnCd): it no longer locks the jab or the special, and they do not hold it back.
+      const atkSp = !!inp.fin;   // V+C together = finisher (it was X+C until the grab took that pair, 2026-10-14)
+      // The finisher has its own cooldown too (fnCd): it no longer locks the jab or the special, and they do not hold it back.
       // C still has to be let go before the special fires again, so a finisher does not spill into a special.
       if(atkSp && f.fnCd<=0){
         doAttackSpecial(f); f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;
@@ -30259,6 +30266,7 @@ function step(){
       // almost all of her air speed instead of bleeding it off, so she drifts a long way from where she jumped.
       if(f.kit && f.kit.special==='wallmart' && !f.onground) f.vx *= 1.008;
     }
+    mtFastFall(f, inp);   // movetech: Down in the air past the peak
     f.x+=f.vx; f.y+=f.vy;
     const _wasAir=!f.onground, _impactVY=f.vy;   // capture for the land-squash before we reset onground
     f.onground=false;
@@ -30284,6 +30292,7 @@ function step(){
       if(Math.abs(ax) < Math.abs(ay)){
         // wall hit: push out horizontally and stop movement INTO the wall
         f.x += ax;
+        f._wallSide = ax < 0 ? 1 : -1; f._wallT = hazardT; f._wallId = p.x + ':' + p.y;   // movetech: which side the wall is on, and which wall
         if(ax < 0 && f.vx > 0) f.vx = 0;      // pushed left  => was moving right into it
         if(ax > 0 && f.vx < 0) f.vx = 0;      // pushed right => was moving left into it
       } else {
@@ -30329,6 +30338,8 @@ function step(){
         }
       }
     }
+    mtCling(f, inp);
+    if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; }   // landing refreshes the wall jump
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
     if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
     if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the steps after touchdown (it was in drawFighter, so a faster screen squashed for less time)
@@ -32990,6 +33001,94 @@ const DART_SPEED = 11, DART_RANGE = 700, DART_HOMING = 0.03, DART_KO = 72, DART_
 // three directions carry, is scaled by SPECIAL_CD_SCALE on the way out of fireSpecial. One number,
 // one door; the AI's own gap (aiSpecialGap) is separate and unchanged.
 const SPECIAL_CD_SCALE = 0.8;
+// ============================================================
+//  MOVESET INPUTS AND MOVETECH
+// ============================================================
+// "in smash ultimate, fighters have 48 moves... I think you can see where this is going." (the owner, 2026-10-14, with "pipis").
+// Every fighter is growing to about 22 moves, on the same keys: direction + X on the ground is a tilt, X in the air an aerial,
+// X + C is the GRAB (it was the finisher), V + C is the FINISHER, and C with a direction is the neutral / side / up / down special.
+// Fighters not yet converted (no MOVESETS entry, see msOf) keep today's moves under these controls: side+X and an aerial X are the
+// jab, down+X and up+X are the sweep and the uppercut, side+C is the neutral special, and the grab is a shared one.
+//
+// THE COMBINED BUTTONS. A human presses two keys "together" a frame or two apart, so a button that could be half of a pair waits
+// CI_DELAY frames before it counts on its own: X (jab / tilt / aerial) and V (smash). If C joins inside that window the pair
+// fires instead (X+C a grab, V+C the finisher). C itself never waits -- the special's timing is the owner's to protect -- so a C
+// that lands first fires its special, as an X before an X+C used to throw a jab. The pair is read from the three raw keys, so a
+// player on the other end of an online room sends nothing new: the host builds the grab and the finisher from the same keys
+// (NET_BUTTONS), and the CPU sets `grab` and `fin` itself. Edge-triggered: one press of the pair is one move.
+const CI_DELAY = 2;
+function ctrlOf(f){ return f.controller || (f.you ? "local" : "ai"); }
+function isHumanCtrl(f){ const c = ctrlOf(f); return c === "local" || c === "remote"; }
+// The fighter's moveset, or null (today's moves). MOVESETS is filled in by each batch; a fighter without an entry is "not yet converted".
+function msOf(f){ return (f && f.kit && typeof MOVESETS !== 'undefined' && MOVESETS[f.kit.special]) || null; }
+// Movetech (short hop, fast fall, wall jump and cling) is on for a human at any fighter, and for a CPU only once its fighter is
+// converted: an unconverted CPU plays exactly the jumps it always did.
+function mtOn(f){ return !RACE.active && (isHumanCtrl(f) || !!msOf(f)); }   // (RUNNING! is precision platforming on the full jump: none of it there)
+function comboInput(f, inp){
+  const c = f._ci || (f._ci = { x:0, c:0, v:0, grab:false, fin:false, xUsed:false, vUsed:false });
+  const x = !!inp.attack, cc = !!inp.special, v = !!inp.smash;
+  const px = c.x, pv = c.v;   // how long X and V had been down as of the last frame
+  c.x = x ? px + 1 : 0; c.c = cc ? c.c + 1 : 0; c.v = v ? pv + 1 : 0;
+  // a press that came and went inside the window (a quick tap, or one latched online between two frames) still counts, on release
+  const xTap = !x && px > 0 && px < CI_DELAY && !c.xUsed, vTap = !v && pv > 0 && pv < CI_DELAY && !c.vUsed;
+  if(!x) c.xUsed = false;
+  if(!v) c.vUsed = false;
+  if(!(x && cc)) c.grab = false;
+  if(!(v && cc)) c.fin = false;
+  inp.grab = false; inp.fin = false;
+  if(v && cc && !x){ if(!c.fin){ c.fin = true; c.vUsed = true; inp.fin = true; if(f._smQ && f.smashHold < 8){ f._smQ = null; f.smashHold = 0; } f._smBuf = false; } }
+  else if(x && cc && !v){ if(!c.grab){ c.grab = true; c.xUsed = true; inp.grab = true; } }
+  inp.attack = (x && c.x >= CI_DELAY && !c.grab && !cc) || xTap;
+  inp.special = cc && !c.grab && !c.fin && !x && !v;
+  inp.smash = (v && c.v >= CI_DELAY && !cc && !c.fin) || vTap;
+  return inp;
+}
+// The CPU's old finisher was attack + special on one frame, everywhere in its rules. It still is, in those rules; this is where the
+// two become the one button the engine reads (`fin`), after the rules have run.
+function legacyFin(inp){
+  if(inp && inp.attack && inp.special){ inp.fin = true; inp.attack = false; inp.special = false; }
+  return inp;
+}
+
+// ---- movetech --------------------------------------------------------------------------------------------------------
+// SHORT HOP: a tap of jump leaves the ground and is cut to SH_V when the key comes up, so it rises about 55px (a full jump
+// about 126px); held, it is the full jump. FAST FALL: Down pressed in the air after the peak drops you at FF_V and keeps you
+// there (a streak behind you is the cue); drop-through is on the ground only and keeps its own rules. WALL JUMP: in the air,
+// touching a solid wall while holding toward it, jump kicks off it (once per wall per airtime; landing refreshes it). CLING:
+// the fighters in CLINGERS stick to a wall they hold toward and slide slowly for up to that many frames. The owner
+// (2026-10-14): flyers and dashers get a SMALL share -- short hop, fast fall and a plain wall jump, no cling.
+const SH_V = 8.2, FF_V = 13, WJ_VX = 6.2, WJ_VY = 0.92, WALL_WINDOW = 3;
+const CLINGERS = { van:62 };   // Pencil: the point of her pencil digs into the wall
+function mtWallJump(f, inp){
+  if(!mtOn(f) || f.onground || f._lev || f.flying > 0 || f.hitstun > 0) return false;
+  if(!f._wallSide || !(f._wallT >= hazardT - WALL_WINDOW)) return false;
+  if(f._wallSide > 0 ? !inp.right : !inp.left) return false;       // toward the wall
+  const used = f._wallUsed || (f._wallUsed = {});
+  if(used[f._wallId]) return false;
+  used[f._wallId] = 1;
+  f.vy = JUMP * WJ_VY; f.vx = -f._wallSide * WJ_VX; f.face = -f._wallSide; f._clingT = 0; f._hop = false;
+  for(let i = 0; i < 5; i++) puff(f.x + f._wallSide * f.r, f.y + (i - 2) * 6, '#fff', 2);
+  if(f.you) SFX.jump();
+  return true;
+}
+function mtCling(f, inp){
+  const lim = f.kit && CLINGERS[f.kit.special];
+  if(!lim || !mtOn(f) || f.onground || f.hitstun > 0 || !f._wallSide || f._wallT !== hazardT) return;
+  if(f._wallSide > 0 ? !inp.right : !inp.left) return;
+  if(f.vy > 0 && (f._clingT || 0) < lim){ f.vy = Math.min(f.vy, 0.7); f._clingT = (f._clingT || 0) + 1; if(f._clingT % 9 === 1) puff(f.x + f._wallSide * f.r, f.y, '#fff', 1); }
+}
+function mtFastFall(f, inp){
+  const dn = !!inp.down, edge = dn && !f._dnPrev; f._dnPrev = dn;
+  if(!mtOn(f)) return;
+  const blocked = f.onground || f.hitstun > 0 || f.frozen > 0 || f._lev || f.flying > 0 || f._floatT > 0 || f.vy < 0;
+  if(blocked){ f._ff = false; return; }
+  if(f._ff){ if(f.vy < FF_V) f.vy = FF_V; if(hazardT % 2 === 0) puff(f.x, f.y - f.r, '#fff', 1); return; }
+  if(edge && !inp.attack && !inp.special && !inp.smash && !inp.grab && !inp.fin && !f._mv && !f._grabHold){
+    f._ff = true; f.vy = Math.max(f.vy, FF_V); for(let i = 0; i < 3; i++) puff(f.x + (i - 1) * 8, f.y - f.r, '#fff', 1);
+  }
+}
+const MOVESETS = {};   // kit.special -> the fighter's moves; each batch adds its fighters (piece 3 onward)
+
 function fireSpecial(f, inp){
   if(f.spCd>0 && !(inp && inp.down && f._grabbed!=null && f._grabTimer>0)) return;   // Liy's hurl is the grab's finish, inside its window
   const before = f.spCd;
@@ -34736,10 +34835,10 @@ function hitGraceFrames(dmg, from){
 }
 function hitStunFrames(dmg, chained){ return Math.max(4, Math.round(Math.min(24, 6+dmg) * Math.pow(CHAIN_DECAY, chained))); }
 // `t` is anything with a fighter's invuln / hitstun / chain / grace fields: a fighter, or a boss's record of one attacker.
-function stampHit(t, dmg, from, isTick){
+function stampHit(t, dmg, from, isTick, stunOvr){
   const chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
   if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
-  t.hitstun = hitStunFrames(dmg, chained);
+  t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr * Math.pow(CHAIN_DECAY, chained))) : hitStunFrames(dmg, chained);   // (stunOvr: a moveset move's own stun)
   const grace = hitGraceFrames(dmg, from);
   t.invuln = Math.max(t.invuln, grace);
   t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
@@ -34995,7 +35094,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
   // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
-  stampHit(t, dmg, from, isTick);
+  stampHit(t, dmg, from, isTick, opts && opts.stun);
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
@@ -35013,7 +35112,7 @@ function knock(t,kx,ky){
   // TEST MODE: an "anchored" dummy absorbs knockback entirely so it stays put — lets you measure
   // sustained damage/DPS on a stationary target instead of chasing it around the stage.
   if(TESTMODE.active && TESTMODE.anchored && t.controller!=="local"){ t.vx=0; t.vy=0; return; }
-  t.vx=kx; t.vy=ky; t.onground=false;
+  t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false;
 }
 // custom effect zones from the level editor
 function applyZone(f, z){
