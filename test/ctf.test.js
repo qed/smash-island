@@ -547,26 +547,29 @@ describe('capture the flag', () => {
     expect(w.eval(`fighters[${f1}]._pk`), 'a fresh key once freed').toBe(true);
   });
 
-  it('bargaining is points for speed: +10 points makes a side 8% slower, giving 10 up 8% faster, at most 16% either way; sacrificing 10 for speed needs no vote', () => {
+  it('bargaining is points for speed, relative: both +10 or both -10 changes nobody; one side +10 is 8% slower (the other 8% faster), a sacrifice of 10 is 8% faster; at most 16%; sacrificing needs no vote', () => {
     const { window: w } = loadMonolith(39);
     start(w);
     const a = mate(w, 0), b = mate(w, 1), k = (i) => w.eval(`ctfSpeedK(fighters[${i}])`);
     const a0 = k(a), b0 = k(b);
-    w.eval('CTF.live.bonus = [10, -10]');
-    expect(k(a) / a0, '+10: slower').toBeCloseTo(0.92, 3);
-    expect(k(b) / b0, '-10: faster').toBeCloseTo(1.08, 3);
-    w.eval('CTF.live.bonus = [30, -30]');
+    w.eval('CTF.live.bonus = [10, 10]');
+    expect(k(a) / a0, 'both +10: no change').toBeCloseTo(1, 3); expect(k(b) / b0).toBeCloseTo(1, 3);
+    w.eval('CTF.live.bonus = [-10, -10]');
+    expect(k(a) / a0, 'both -10: no change').toBeCloseTo(1, 3); expect(k(b) / b0).toBeCloseTo(1, 3);
+    w.eval('CTF.live.bonus = [10, 0]');
+    expect(k(a) / a0, 'us +10: 8% slower').toBeCloseTo(0.92, 3);
+    expect(k(b) / b0, 'the other side is the faster one').toBeCloseTo(1.08, 3);
+    w.eval('CTF.live.bonus = [30, 0]');
     expect(k(a) / a0, 'at most 16% slower').toBeCloseTo(0.84, 3);
     expect(k(b) / b0, 'at most 16% faster').toBeCloseTo(1.16, 3);
     w.eval('CTF.live.bonus = [0, 0]');
     expect(k(a) / a0).toBeCloseTo(1, 3);
-    // the sacrifice: each of the side's points drop by 10 and the side is faster, with no offer to answer
+    // the sacrifice: each of the side's points drop by 10 and the side is 8% faster, with no offer to answer
     w.eval(`CTF.live.pts[${a}] = 20; CTF.live.offerCool = 0; fighters[${a}]._piece = 3; ctfEditOffer(fighters[${a}])`);
     expect(w.eval('CTF.live.offer'), 'nothing to vote on').toBe(null);
     expect(w.eval(`CTF.live.pts[${a}]`), '10 points given up').toBe(10);
     expect(w.eval('CTF.live.bonus[0]')).toBe(-10);
-    expect(k(a) / a0, 'and faster').toBeCloseTo(1.08, 3);
-    expect(k(b) / b0, 'the other side is as it was').toBeCloseTo(1, 3);
+    expect(k(a) / a0, 'and 8% faster').toBeCloseTo(1.08, 3);
   });
 
   it('the decoration tool offers what fits the place: a set for the area under the cursor (halls, snowy mountain, mines, reef), B steps through it, the ghost is that prop, both sides alike', () => {
