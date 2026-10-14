@@ -29767,8 +29767,11 @@ function step(){
     if(inp.smash && !f._smRaw) f._smBuf = true;
     if(!inp.smash) f._smBuf = false;
     f._smRaw = !!inp.smash;
+    if(f.hitstun>0 && (f._hold || f._heldBy!=null || f._gb || f._mv)) mvCancel(f);   // a hit lets go of a grab, a hold or a move in progress
     if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
+    if(f._heldBy!=null && heldStruggle(f, inp)) inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};   // held: only the struggle (each press takes frames off the hold)
+    if(f._lag>0){ f._lag--; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // the recovery of a throw, a whiffed grab or a landing
     if(f.invuln>0) f.invuln--;
     if(f._graceLeft>0) f._graceLeft--;   // runs down beside invuln: how much of it is hit-grace
     if(f.flash>0) f.flash--;
@@ -30162,6 +30165,8 @@ function step(){
 
     // ---- move ----
     if(f.hitstun<=0){
+      if(f._gb) gbTick(f, inp);
+      if(f._hold) holdTick(f, inp);
       if(f.ctrlRev>0){ const l=inp.left; inp.left=inp.right; inp.right=l; }  // Remote hack: reversed controls
       // HASTE EASES OFF. It used to be 1.5x flat and then nothing, so the frame it ran out felt like the
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
@@ -30193,7 +30198,8 @@ function step(){
       if(atkSp && f.fnCd<=0){
         doAttackSpecial(f); f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;
       } else if(atkSp){ } else {
-        if(inp.attack && f.atkCd<=0){
+        if(inp.grab){ if(!f._hold && !f._gb) mvGrabStart(f); }   // X+C: the grab (anyone's; a converted fighter's own throws, MOVESETS)
+        else if(inp.attack && f.atkCd<=0){
           // Land it and you recover sooner; whiff and you pay the full price (see JAB_HIT_CD).
           if(inp.down){ f._confirm=0; doGroundMove(f); f.atkCd = f._confirm ? GROUND_HIT_CD : 26; }
           // up+X is the uppercut -- except while Puffball is flying, where holding up is how she climbs
@@ -30964,6 +30970,8 @@ function animPoses(kind, fwd){
     case 'slam':     return { limb:'arm', front:[UP, FD], back:[UP, BD] };
     case 'dash':     return { limb:'arm', front:[BD, B], back:[BD, B] };
     case 'spin':     return { limb:'arm', front:[FU, F], back:[BU, B] };
+    case 'grab':     return { limb:'arm', front:[BD, F], back:[BD, F] };
+    case 'throwb':   return { limb:'arm', front:[FD, BU] };
     default:         return null;   // 'spit': the body does it
   }
 }
@@ -33088,6 +33096,146 @@ function mtFastFall(f, inp){
   }
 }
 const MOVESETS = {};   // kit.special -> the fighter's moves; each batch adds its fighters (piece 3 onward)
+
+// ============================================================
+//  GRAB, PUMMEL AND THROWS
+// ============================================================
+// X + C is the grab (the owner, 2026-10-14: "Grab on X + C"). It reaches a short way in front of a fighter on the ground, takes
+// a moment to come out, and leaves you open if it finds nobody (GRAB_DEFAULT.whiff). A grab beats a counter stance and armour
+// (it is not a hit, so a stance has nothing to answer), and cannot take a fighter still in hit-grace, a prisoner, a boss or a
+// teammate. While you hold: X pummels (a little damage, GRAB.pummel.every frames apart), and a direction THROWS -- forward, back,
+// up (the jump key) or down. The held fighter struggles free sooner the more they press (each press takes STRUGGLE frames off the
+// hold), and later the more damage they carry (hold.perPct). Being hit, by anyone, lets go.
+//
+// Every fighter has the shared grab and throws below; a converted fighter's MOVESETS entry overrides any part of them with its
+// own (a `grab` object with the same shape): its own reach, pummel and four throws, from its show moments (quoted where it sets them).
+// Some throws set up a follow-up at low %: a long stun and a short launch, so a down-throw leads into an up-air.
+const GRAB_DEFAULT = {
+  reach: 30, st: 4, whiff: 28,
+  pummel: { dmg: 1.6, every: 14 },
+  hold: { base: 56, perPct: 0.5, max: 150 },
+  f: { dmg: 7, kx: 8, ky: -4.5, stun: 0, pose: 'throw', lag: 20 },
+  b: { dmg: 8, kx: 9, ky: -5, stun: 0, pose: 'throwb', lag: 22 },
+  u: { dmg: 6, kx: 1.5, ky: -10, stun: 20, pose: 'uppercut', lag: 20 },
+  d: { dmg: 5, kx: 2.5, ky: -3.5, stun: 24, pose: 'slam', lag: 22 },
+};
+const STRUGGLE = 3, GRAB_DIR_LOCK = 6;
+function grabOf(f){
+  const ms = msOf(f), o = ms && ms.grab;
+  if(!o) return GRAB_DEFAULT;
+  const G = Object.assign({}, GRAB_DEFAULT, o);
+  for(const k of ['pummel', 'hold', 'f', 'b', 'u', 'd']) G[k] = Object.assign({}, GRAB_DEFAULT[k], o[k] || {});
+  return G;
+}
+function grabbable(f, t){
+  return !t.dead && t.idx !== f.idx && t.team !== f.team && t._heldBy == null && !(t.frozen > 0) && t._carriedBy == null
+    && !(SETTINGS.mode === 'ctf' && ctfNoHit(t, f)) && !hardInvuln(t) && !(t._ghostT > 0);
+}
+function mvGrabStart(f){
+  if(RACE.active || inOwnTeamZone(f) || !f.onground || f._hold || f._gb || f._mv || f.atkCd > 0) return false;
+  const G = grabOf(f);
+  f._gb = { t: 0, G: G };
+  f.atkCd = G.whiff; f.flash = 4;
+  armAtk(f, G.whiff, 'grab');
+  return true;
+}
+// the grab's box comes out on frame G.st; the fighter cannot walk while it is out
+function gbTick(f, inp){
+  const g = f._gb, G = g.G;
+  inp.left = false; inp.right = false; inp.jump = false;
+  if(g.t === G.st){
+    const sh = { kind:'capsule', x1: f.x + f.face * f.r * 0.2, y1: f.y, x2: f.x + f.face * (f.r + G.reach), y2: f.y, r: 15 };
+    if(SHOW_HITBOXES) DEBUG_HITS.push({ shape: sh, pts: shapePts(sh), t: 10 });
+    let best = null, bd = 1e9;
+    for(const t of fighters){
+      if(!grabbable(f, t) || t.invuln > 0) continue;
+      if(!shapeHits(sh, t)) continue;
+      const d = Math.abs(t.x - f.x); if(d < bd){ bd = d; best = t; }
+    }
+    if(best) holdStart(f, best, G);
+  }
+  if(++g.t > G.whiff + 2) f._gb = null;
+}
+function holdStart(f, t, G){
+  t.countering = 0; t.reflecting = 0; t.armor = 0; t._riposte = false; t._windup = null; t._sm = null; t._mv = null; t._gb = null;   // a grab beats a stance
+  f._gb = null;
+  const max = Math.max(40, Math.min(G.hold.max, G.hold.base + t.pct * G.hold.perPct));
+  f._hold = { idx: t.idx, t: 0, max: max, pumCd: 0, G: G, prev: { l: false, r: false, u: false, d: false, a: true } };   // (X must come up and go down again to pummel)
+  t._heldBy = f.idx; t._stPrev = null;
+  f.atkCd = 0; f.vx = 0; f.flash = 6;
+  armAtk(f, 16, 'grab');
+  holdPlace(f, t);
+  for(let i = 0; i < 6; i++) puff(t.x, t.y - 8, '#fff', 3);
+}
+function holdPlace(f, t){
+  t.x = f.x + f.face * (f.r + t.r) * 0.85; t.y = f.y + f.r - t.r; t.vx = 0; t.vy = 0; t.onground = true; t.face = -f.face;
+  t.rooted = Math.max(t.rooted || 0, 2);
+}
+function holdRelease(f, t, push){
+  if(t){ t._heldBy = null; t.rooted = 0; if(push){ t.vx = f.face * push; t.invuln = Math.max(t.invuln, 12); } }
+  f._hold = null; f._gbDone = hazardT;
+}
+// let go of everything: a fighter was hit, frozen or knocked out mid-grab, mid-hold or mid-move
+function mvCancel(f){
+  if(f._hold){ const t = fighters[f._hold.idx]; holdRelease(f, t && t._heldBy === f.idx ? t : null, 0); }
+  if(f._heldBy != null){ const h = fighters[f._heldBy]; if(h && h._hold && h._hold.idx === f.idx) holdRelease(h, f, 0); f._heldBy = null; }
+  f._gb = null; f._mv = null;
+}
+// the holder's frame: pummel, throw, or let the struggle win
+function holdTick(f, inp){
+  const H = f._hold, t = fighters[H.idx], G = H.G;
+  if(!t || t.dead || f.dead || t._heldBy !== f.idx || t.hitstun > 0 || f.frozen > 0){ holdRelease(f, t && t._heldBy === f.idx ? t : null, 0); return; }
+  const dirs = { l: !!inp.left, r: !!inp.right, u: !!inp.up || !!inp.jump, d: !!inp.down, a: !!inp.attack };
+  const P = H.prev; H.prev = dirs;
+  inp.left = false; inp.right = false; inp.jump = false; inp.up = false; inp.attack = false; inp.special = false; inp.smash = false; inp.grab = false; inp.fin = false;
+  H.t++; if(H.pumCd > 0) H.pumCd--;
+  holdPlace(f, t);
+  if(H.t >= H.max){ holdRelease(f, t, -3); f.atkCd = 14; for(let i = 0; i < 6; i++) puff(t.x, t.y - 6, '#fff', 3); return; }   // they wriggled out
+  if(H.t < GRAB_DIR_LOCK) return;
+  const fwd = f.face > 0 ? 'r' : 'l', back = f.face > 0 ? 'l' : 'r';
+  let kind = null;
+  if(dirs.d && !P.d) kind = 'd';
+  else if(dirs.u && !P.u) kind = 'u';
+  else if(dirs[fwd] && !P[fwd]) kind = 'f';
+  else if(dirs[back] && !P[back]) kind = 'b';
+  if(kind){ doThrow(f, t, kind); return; }
+  if(dirs.a && !P.a && H.pumCd <= 0){
+    H.pumCd = G.pummel.every; f.flash = 5; armAtk(f, 10, 'punch');
+    holdDamage(f, t, G.pummel.dmg);
+    for(let i = 0; i < 4; i++) puff(t.x, t.y - 6, f.color, 3);
+  }
+}
+// damage that is not a launch (the pummel): same bookkeeping as a hit, none of the knockback or stun
+function holdDamage(f, t, dmg){
+  if(TESTMODE.active && !TESTMODE.damage) dmg = 0;
+  t.pct += dmg; t._dmgTaken = (t._dmgTaken || 0) + dmg; f._dmgDealt = (f._dmgDealt || 0) + dmg; t.lastHitBy = f;
+  t.flash = 6; t._hurtAnim = HURT_ANIM;
+  if(dmg > 0) SFX.hit(dmg);
+  if(t.pct >= t.koCap && !t.dead) eliminate(t);
+}
+function doThrow(f, t, kind){
+  const G = f._hold.G, T = G[kind];
+  holdRelease(f, t, 0);
+  if(kind === 'b') f.face = -f.face;
+  const dir = f.face;
+  armAtk(f, T.lag + 6, T.pose);
+  f.atkCd = Math.max(f.atkCd, T.lag); f.flash = 8;
+  t.x = f.x + dir * (f.r + t.r) * 0.9; t.y = f.y + f.r - t.r;
+  t.invuln = 0;
+  applyHit(t, T.dmg, dir * T.kx, T.ky, f, { stun: T.stun || 0, throwKind: kind });
+  if(T.fx) T.fx(f, t, dir);
+  f._thrown = { t: hazardT, kind: kind, idx: t.idx };
+}
+// a held fighter's own frame: struggle, and nothing else (called where the inputs are masked)
+function heldStruggle(f, inp){
+  const h = fighters[f._heldBy];
+  if(!h || h.dead || !h._hold || h._hold.idx !== f.idx){ f._heldBy = null; return false; }
+  const k = (inp.attack ? 1 : 0) | (inp.special ? 2 : 0) | (inp.jump ? 4 : 0) | (inp.left ? 8 : 0) | (inp.right ? 16 : 0) | (inp.down ? 32 : 0) | (inp.smash ? 64 : 0);
+  const prev = f._stPrev || 0; f._stPrev = k;
+  const edges = k & ~prev;
+  for(let b = 1; b <= 64; b <<= 1) if(edges & b) h._hold.t += STRUGGLE;
+  return true;
+}
 
 function fireSpecial(f, inp){
   if(f.spCd>0 && !(inp && inp.down && f._grabbed!=null && f._grabTimer>0)) return;   // Liy's hurl is the grab's finish, inside its window
@@ -44595,6 +44743,7 @@ const FR_ATK = [];   // flattened once: 10 kinds x 6 frames x 7 numbers
 for(let _k = 0; _k < FR_ATK_SRC.length; _k++) for(let _i = 0; _i < 6; _i++) for(let _j = 0; _j < 7; _j++) FR_ATK.push(FR_ATK_SRC[_k][_i][_j]);
 const FR_KIND = {};
 for(let _k = 0; _k < FR_KINDS.length; _k++) FR_KIND[FR_KINDS[_k]] = _k;
+FR_KIND.grab = FR_KIND.slam; FR_KIND.throwb = FR_KIND.throw;   // the frame layer's held frames for the kinds the movesets add (see animPoses)
 // the flinch: three frames over a hit's HURT_ANIM ticks -- the impact, the rebound, the recovery -- as [lean back from the blow (rad), sx, sy, pushed away from it (radii), arms raised]
 const FR_HURT = [[0.26,1.10,0.86,0.10,1.0], [-0.10,0.97,1.05,-0.04,0.5], [0.04,1.01,0.99,0,0.15]];
 
