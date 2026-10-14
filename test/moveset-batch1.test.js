@@ -8,6 +8,8 @@ import { bootMonolith } from './helpers/smash-golden.js';
 
 const KITS = { Puffball: 'fly', Bow: 'chair', Pencil: 'van', Leafy: 'dash' };
 const SLOTS = ['ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da', 'side'];
+// Puffball has no neutral air: "Keep the spit" (the owner, 2026-10-14) -- X in the air with no direction is her spit, as before
+const slotsOf = (name) => name === 'Puffball' ? SLOTS.filter((s) => s !== 'na') : SLOTS;
 const TEXT_KEY = { ft: 'ftilt', ut: 'utilt', dt: 'ranged', na: 'nair', fa: 'fair', ba: 'bair', ua: 'uair', da: 'dair', side: 'side' };
 let W, MS, TEXT;
 beforeAll(async () => {
@@ -36,7 +38,7 @@ describe('every batch-1 fighter has the whole set', () => {
   it('nine moves of its own, a grab with four throws, and a list of movetech', () => {
     const bad = [];
     for (const [name, k] of Object.entries(KITS)) {
-      for (const s of SLOTS) if (!MS[k][s]) bad.push(`${name}: no ${s}`);
+      for (const s of slotsOf(name)) if (!MS[k][s]) bad.push(`${name}: no ${s}`);
       for (const t of ['f', 'b', 'u', 'd']) if (!MS[k].grab || !MS[k].grab[t] || !MS[k].grab[t].n) bad.push(`${name}: no ${t} throw`);
       if (!MS[k].tech || MS[k].tech.length < 2) bad.push(`${name}: no movetech list`);
     }
@@ -44,10 +46,10 @@ describe('every batch-1 fighter has the whole set', () => {
   });
   it('no two fighters share a tilt or an aerial: names, shapes and numbers are each their own', () => {
     const seen = new Map(), dup = [];
-    for (const [name, k] of Object.entries(KITS)) for (const s of SLOTS) {
+    for (const [name, k] of Object.entries(KITS)) for (const s of slotsOf(name)) {
       const sig = JSON.stringify([MS[k][s].st, MS[k][s].act, MS[k][s].end, MS[k][s].boxes]);
       if (seen.has(sig)) dup.push(`${name} ${s} = ${seen.get(sig)}`); else seen.set(sig, `${name} ${s}`);
-      const names = Object.entries(KITS).filter(([n2, k2]) => n2 !== name && MS[k2][s].n === MS[k][s].n);
+      const names = Object.entries(KITS).filter(([n2, k2]) => n2 !== name && MS[k2][s] && MS[k2][s].n === MS[k][s].n);
       if (names.length) dup.push(`${name} ${s} shares the name ${MS[k][s].n}`);
     }
     expect(dup, dup.join(' ; ')).toEqual([]);
@@ -57,7 +59,7 @@ describe('every batch-1 fighter has the whole set', () => {
 describe('the moves do what the card says', () => {
   it('each tilt, aerial and the side special hits a foe in its reach for the damage its line names', () => {
     const bad = [];
-    for (const [name, k] of Object.entries(KITS)) for (const s of SLOTS) {
+    for (const [name, k] of Object.entries(KITS)) for (const s of slotsOf(name)) {
       const air = ['na', 'fa', 'ba', 'ua', 'da'].includes(s);
       const spots = air ? [[40, 0], [75, 0], [-40, 0], [8, -50], [8, 50]] : [[40, 0], [70, 0], [8, -50]];
       let best = null;
@@ -91,8 +93,8 @@ describe('combos', () => {
     }
     expect(bad, bad.join(' ; ')).toEqual([]);
   });
-  it('a down-tilt into a short hop and a neutral air lands both, at 0% and 30%, for all four', () => {
-    const link = (name, pct, wait) => W.eval(`(function(){
+  it('a down-tilt into a short hop and a neutral air (Puffball: a forward air) lands both, at 0% and 30%, for all four', () => {
+    const link = (name, pct, wait, aer) => W.eval(`(function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
       var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
@@ -106,12 +108,12 @@ describe('combos', () => {
       var g = 0; while (!(hits.length >= 1 && !A._mv && A.atkCd <= 0 && !(A._lag>0)) && g++ < 60) hold([], 1);
       hold(['jump'], 1);
       g = 0; while (A.onground && g++ < 4) hold([], 1);
-      hold(['right'], ${wait}); hold(['attack'], 3); hold([], 14);   // (a player drifts toward the foe while the hop starts)
+      hold(['right'], ${wait}); hold(${JSON.stringify(aer)}, 3); hold([], 14);   // (a player drifts toward the foe while the hop starts)
       for (var k2 in down) down[k2]=false;
       return hits.filter(function(h, i){ return hits.indexOf(h) === i; }).length;
     })()`);
     const bad = [];
-    for (const name of Object.keys(KITS)) for (const pct of [0, 30]) if (![0, 1, 2, 3, 4, 5].some((w) => link(name, pct, w) >= 2)) bad.push(`${name} at ${pct}%`);
+    for (const name of Object.keys(KITS)) for (const pct of [0, 30]) if (![0, 1, 2, 3, 4, 5].some((w) => link(name, pct, w, name === 'Puffball' ? ['attack', 'right'] : ['attack']) >= 2)) bad.push(`${name} at ${pct}%`);
     expect(bad, bad.join(' ; ')).toEqual([]);
   });
 });
@@ -123,7 +125,7 @@ describe('movetech, as the owner asked', () => {
     for (const k of ['fly', 'chair', 'dash']) expect(c[k]).toBeUndefined();
   });
   it('flyers and dashers have at most one small move-cancel; Pencil has several', () => {
-    const cancels = (name) => SLOTS.filter((s) => MS[KITS[name]][s].jc || MS[KITS[name]][s].sc).length;
+    const cancels = (name) => slotsOf(name).filter((s) => MS[KITS[name]][s].jc || MS[KITS[name]][s].sc).length;
     for (const n of ['Puffball', 'Bow', 'Leafy']) expect(cancels(n), n).toBeLessThanOrEqual(1);
     expect(cancels('Pencil')).toBeGreaterThanOrEqual(3);
   });
@@ -144,5 +146,24 @@ describe('movetech, as the owner asked', () => {
     const p = slow('Pencil'), b = slow('Bow');
     expect(p.first50, 'Pencil slides slowly while she clings').toBeLessThan(b.first50 * 0.35);
     expect(p.next60, 'then she lets go and falls').toBeGreaterThan(p.first50 * 3);
+  });
+});
+
+describe('Puffball keeps the spit ("Keep the spit", the owner, 2026-10-14)', () => {
+  it('X in the air with no direction is her spit, exactly as before; her aerials are X with a direction', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false; worldPlats=[]; summons=[]; projectiles=[]; particles=[];
+      var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
+      var A = mk('Puffball', 300, 0), D = mk('Pen', 900, 1); A.team=0; D.team=1; A.face=1; A.controller='local'; A.you=true; D.controller='still'; fighters=[A,D];
+      for (var k in down) delete down[k]; step(); step(); A.y = groundY()-24-120; A.onground = false; A.vy = 0; A.atkCd = 0;
+      var p0 = projectiles.length; down[KEYS.attack]=true; for (var i=0;i<4;i++) step(); down[KEYS.attack]=false;
+      var plain = { shots: projectiles.length - p0, mv: !!A._mv, key: A._lastKey || null };
+      for (var j=0;j<40;j++) step(); A.y = groundY()-24-120; A.onground = false; A.vy = 0; A.atkCd = 0; A.flying = 0; A._mv = null;
+      down[KEYS.attack]=true; down[KEYS.right]=true; for (var i2=0;i2<4;i2++) step(); down[KEYS.attack]=false; down[KEYS.right]=false;
+      return { plain: plain, fwd: { mv: !!A._mv || A._lastKey === 'fa', key: A._lastKey } };
+    })()`);
+    expect(r.plain.shots, 'the spit leaves her').toBeGreaterThan(0);
+    expect(r.plain.mv).toBe(false);
+    expect(r.fwd.key).toBe('fa');
   });
 });
