@@ -17,11 +17,14 @@ const match = (seed, hold) => `(function(){
   var ice = ROSTER.find(function(r){ return r.name==='Ice Cube'; });
   if(!fighters.some(function(f){ return f.name==='Ice Cube'; })){ var old=fighters[0]; var f0=makeFighter(ice, old.x, old.y, old.idx); f0.team=old.team; fighters[0]=f0; }
   fighters.forEach(function(f){ f.controller='ai'; f.you=false; });
+  // Ice Cube's minnow reads (AI_MN_READS, 2026-10-13: she plays as a brawler now, which threw far fewer rings) are set aside for the
+  // comparison: this pins what the HOLD does to a ring-throwing Ice Cube, not how often today's bot chooses to throw
+  var mnSaved = AI_MN_READS['Ice Cube']; delete AI_MN_READS['Ice Cube'];
   var saved = AI_SPECIAL_HOLD.shatter; AI_SPECIAL_HOLD.shatter = ${hold};
   var shards = 0, orig = addProj;
   addProj = function(p){ if(p.freeze && p.ownerObj && p.ownerObj.name==='Ice Cube') shards++; return orig(p); };
   for (var i=0;i<2400 && running;i++) step();
-  addProj = orig; AI_SPECIAL_HOLD.shatter = saved; running = false;
+  addProj = orig; AI_SPECIAL_HOLD.shatter = saved; running = false; AI_MN_READS['Ice Cube'] = mnSaved;
   return shards/8;
 })()`;
 
