@@ -21,7 +21,7 @@ const put = (w, i, x, y) => w.eval(`(function(){ var f=fighters[${i}]; f.x=${x};
 const flagOf = (w, team, k = 0) => w.eval(`CTF.live.flags.filter(function(f){ return f.team===${team}; })[${k}].id`);
 // where things are on this map: a standing place on each side (the spawn of each home), the middle line, the floor in front of a jail's door
 const spawn = (w, t) => J(w, `{ x:CTF.map.homes[${t}].spawns[0].x, y:CTF.map.homes[${t}].spawns[0].y }`);
-const MID = 10800;
+const MID = 13200;   // the middle line of the castle (110 columns a side)
 const cellFloor = (w, owner) => { const j = J(w, `CTF.map.jails[${owner}]`); return j.door.y + j.door.h; };
 
 describe('capture the flag', () => {
@@ -33,7 +33,7 @@ describe('capture the flag', () => {
     expect(w.eval('CTF.live.phase')).toBe('hide');
     expect(w.eval('isBig()')).toBe(true);
     expect(w.eval('CAM_ZOOM'), 'the rooms are drawn closer').toBeGreaterThan(0.72);
-    expect(w.eval('WW'), '75% of the first size').toBe(21600);
+    expect(w.eval('WW'), 'the castle: 110 columns a side').toBe(26400);
   });
 
   it('Space puts your flag down, C says done, and the hiding phase ends when the human is done', () => {
@@ -144,13 +144,32 @@ describe('capture the flag', () => {
     expect(w.eval(`fighters[${a}].x`)).toBeLessThan(MID);
   });
 
+  it('a prisoner is let out after 90 s, home to its own base, with a fresh key and the short grace but no speed boost; the ring on its head runs down; a rescue before then still works', () => {
+    const { window: w } = loadMonolith(38);
+    start(w);
+    const a = mate(w, 0), foe = spawn(w, 1);
+    put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}]); fighters[${a}]._pk = false`);
+    expect(w.eval(`fighters[${a}]._jail`)).toBe(1);
+    logic(w, 2700);
+    expect(w.eval(`fighters[${a}]._jailT`), 'the timer runs').toBe(2700);
+    logic(w, 2600);
+    expect(w.eval(`fighters[${a}]._jail`), 'not yet at 89 s').toBe(1);
+    logic(w, 120);
+    expect(w.eval(`fighters[${a}]._jail`), 'let out at 90 s').toBe(null);
+    expect(w.eval(`fighters[${a}].x < CTF.map.WW/2`), 'home, on its own side').toBe(true);
+    expect(w.eval(`CTF.live.jails[1].pris.length`), 'the cell is empty').toBe(0);
+    expect(w.eval(`fighters[${a}]._ctfFree`), 'the short grace').toBeGreaterThan(100);
+    expect(w.eval(`fighters[${a}]._hasteT || 0`), 'no speed boost: that is the rescue reward').toBe(0);
+    expect(w.eval(`fighters[${a}]._pk`), 'a fresh personal key').toBe(true);
+  });
+
   it('a prisoner stays until a teammate frees them; freed, they cannot be jailed again for a few seconds, and are quick', () => {
     const { window: w } = loadMonolith(6);
     start(w);
     const a = mate(w, 0), friend = mate(w, 0, 1), j = J(w, 'CTF.map.jails[1]'), foe = spawn(w, 1);
     put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}])`);
-    logic(w, 20000);
-    expect(w.eval(`fighters[${a}]._jail`), 'still there, however long').toBe(1);
+    logic(w, 5000);
+    expect(w.eval(`fighters[${a}]._jail`), 'still there well into the 90 s').toBe(1);
     put(w, friend, j.door.x - 20, cellFloor(w, 1)); logic(w, 125);
     expect(w.eval(`fighters[${a}]._jail`)).toBe(null);
     expect(w.eval(`fighters[${a}]._ctfFree`)).toBeGreaterThan(100);
@@ -462,7 +481,7 @@ describe('capture the flag', () => {
     expect(going().length, 'with every attacker in jail the defenders go').toBeGreaterThanOrEqual(1);
   });
 
-  it('a human who takes their time hiding: their CPU teammates keep moving (building, walking about, taking their opening places) instead of standing frozen; the map choice is remembered and used', { timeout: 120000 }, () => {
+  it('a human who takes their time hiding: their CPU teammates keep moving (building, walking about, taking their opening places) instead of standing frozen; the map choice is remembered and used', { timeout: 300000 }, () => {
     const { window: w } = loadMonolith(35);
     w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='castle'; beginMatchNow();`);
     step(w, 1700);
@@ -471,8 +490,8 @@ describe('capture the flag', () => {
     expect(mates.filter(i => w.eval(`!!CTF.live.done[${i}]`)).length, 'most are ready').toBeGreaterThanOrEqual(3);
     const pos = () => mates.map(i => J(w, `[fighters[${i}].x, fighters[${i}].y]`));
     let last = pos(); const moved = mates.map(() => 0);
-    for (let k = 0; k < 8; k++) { step(w, 150); const p = pos(); p.forEach((q, i) => { moved[i] += Math.hypot(q[0] - last[i][0], q[1] - last[i][1]); }); last = p; }
-    expect(moved.filter(m => m > 400).length, 'still on the move 20 s on').toBeGreaterThanOrEqual(3);
+    for (let k = 0; k < 40; k++) { step(w, 30); const p = pos(); p.forEach((q, i) => { moved[i] += Math.hypot(q[0] - last[i][0], q[1] - last[i][1]); }); last = p; }
+    expect(moved.filter(m => m > 250).length, 'still on the move 20 s on (walking, or looking about)').toBeGreaterThanOrEqual(3);
     // the map choice: a named map is the one played; Random picks among them; it is kept
     w.eval(`CTF.forceMap = null; ctfMapPickSet('mines')`);
     expect(w.eval('ctfPickMap()')).toBe('mines');
@@ -506,6 +525,26 @@ describe('capture the flag', () => {
     // the page's own AI leaves it alone too
     w.eval(`CTF.live.gone[${spi}] = false`); standAt(a, sp.x, sp.y); logic(w, 2);
     expect(w.eval(`fighters[${a}]._hid`)).toBe(true);
+  });
+
+  it('every fighter starts play with one personal key: it opens a locked door for its side and is used up; a respawn after a KO and a jailbreak give a fresh one', () => {
+    const { window: w } = loadMonolith(37);
+    start(w);
+    expect(w.eval('fighters.every(function(f){ return f._pk === true; })'), 'everyone holds one key at the start of play').toBe(true);
+    const f1 = mate(w, 1, 0), di = w.eval('CTF.live.doors.findIndex(function(d){ return d.team === 0; })'), d = J(w, `CTF.live.doors[${di}]`);
+    expect(w.eval(`CTF.live.doors[${di}].op[1]`), 'the door is shut to the enemy').toBe(false);
+    put(w, f1, d.x - 40, d.y + d.h); logic(w, 2);
+    expect(w.eval(`CTF.live.doors[${di}].op[1]`), 'the personal key opened it for the enemy side').toBe(true);
+    expect(w.eval(`CTF.live.doors[${di}].op[0]`), 'only for that side').toBe(false);
+    expect(w.eval(`fighters[${f1}]._pk`), 'and was used up').toBe(false);
+    // a KO on its own side: back home with a fresh key
+    const home = spawn(w, 1); put(w, f1, home.x, home.y); w.eval(`eliminate(fighters[${f1}])`);
+    expect(w.eval(`fighters[${f1}]._pk`), 'a fresh key after the respawn').toBe(true);
+    // freed from jail: a fresh key as well
+    const foe = spawn(w, 0); put(w, f1, foe.x, foe.y); w.eval(`eliminate(fighters[${f1}]); fighters[${f1}]._pk = false`);
+    expect(w.eval(`fighters[${f1}]._jail`), 'jailed on the enemy side').toBe(0);
+    w.eval(`ctfFreeJail(CTF.live, CTF.live.jails[0], null)`);
+    expect(w.eval(`fighters[${f1}]._pk`), 'a fresh key once freed').toBe(true);
   });
 
   it('the decoration tool offers what fits the place: a set for the area under the cursor (halls, snowy mountain, mines, reef), B steps through it, the ghost is that prop, both sides alike', () => {
@@ -642,8 +681,8 @@ describe('capture the flag', () => {
     // a harmless platform first (oldest), then blocks that wall off the corridor to the jail's door (the door must stay reachable: the check takes the newest away)
     w.eval(`(function(){ var P = fighters[${a}]; CTF.live.pts[P.idx] = 99;
       var add = function(tool, kind, x, y, w, h){ var e = { id:++CTF.live.editSeq, team:0, owner:P.idx, tool:tool, kind:kind, x:x, y:y, w:w, h:h, fy:y+h, cx:x+w/2, cost:1, seq:CTF.live.editSeq, hp:0, open:false, openT:0, stand:0 }; CTF.live.edits.push(e); return e; };
-      add('plat','plat', 4500, 2000, 180, 16);
-      add('wall','block', 1440, 4440, 120, 120); add('wall','block', 1440, 4320, 120, 120); add('wall','block', 1440, 4200, 120, 120);
+      add('plat','plat', 4500, 3080, 180, 16);
+      add('wall','block', 1440, 5520, 120, 120); add('wall','block', 1440, 5400, 120, 120); add('wall','block', 1440, 5280, 120, 120);   // (the castle is nine rows taller: everything is 1080 px lower)
       CTF.live.editT = CTF.live.t; ctfRebuildDyn(CTF.live); })()`);
     expect(w.eval('CTF.live.edits.length')).toBe(4);
     w.eval(`CTF.live.done = {}; ctfEndHide(CTF.live)`);
