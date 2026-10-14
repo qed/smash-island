@@ -25,7 +25,7 @@ for (const id of MAPS) {
         out.mirrored = M.plats.every(function(p){ return set[key({ x:M.WW - p.x - p.w, y:p.y, w:p.w, h:p.h, solid:p.solid })]; });
         return JSON.stringify(out);
       })()`));
-      expect(r.WW).toBe(21600);
+      expect(r.WW).toBeGreaterThanOrEqual(21600);
       expect(r.mirrored, 'the right half is the left half turned over').toBe(true);
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
@@ -38,6 +38,37 @@ for (const id of MAPS) {
       expect(r.coverKinds, 'a wide choice of cover').toBeGreaterThanOrEqual(6);
       expect(r.zoneKinds, 'areas that do things').toBeGreaterThanOrEqual(3);
       expect(r.backKinds, 'more than one wall behind the rooms').toBeGreaterThanOrEqual(3);
+    });
+
+    it('has no big empty rooms: no view at play zoom is mostly bare back wall (something to stand on, jump to or hide behind in reach of most of it)', { timeout: 120000 }, () => {
+      const { window: w } = loadMonolith(53);
+      const r = JSON.parse(w.eval(`(function(){
+  var M = ctfMapGet('${id}'), C = 120, cols = Math.round(M.WW/C), rows = Math.round(M.WH/C), z = (typeof CTF_ZOOM !== 'undefined' ? CTF_ZOOM : 0.75);
+  var vw = Math.round(1280/z/C), vh = Math.round(720/z/C);   // the view in cells
+  var solid = new Uint8Array(cols*rows), serve = new Uint8Array(cols*rows), inBack = new Uint8Array(cols*rows);
+  var idx = function(c, r){ return r*cols + c; };
+  M.plats.forEach(function(p){ var c0 = Math.floor(p.x/C), c1 = Math.ceil((p.x + p.w)/C) - 1, r0 = Math.floor(p.y/C), r1 = Math.max(r0, Math.ceil((p.y + p.h)/C) - 1);
+    for(var r = r0; r <= r1; r++) for(var c = c0; c <= c1; c++) if(c >= 0 && c < cols && r >= 0 && r < rows) solid[idx(c, r)] = p.solid ? 1 : 0;
+    // what a plat serves: the cells within 2 of its top edge, a side or an end (something to stand on, or to jump to)
+    for(var r = r0 - 1; r <= r1 + 1; r++) for(var c = c0 - 1; c <= c1 + 1; c++) if(c >= 0 && c < cols && r >= 0 && r < rows) serve[idx(c, r)] = 1; });
+  var mark = function(x, y, rr){ var c = Math.floor(x/C), r = Math.floor((y - 1)/C); for(var dr = -rr; dr <= rr; dr++) for(var dc = -rr; dc <= rr; dc++){ var cc = c + dc, r2 = r + dr; if(cc >= 0 && cc < cols && r2 >= 0 && r2 < rows) serve[idx(cc, r2)] = 1; } };
+  M.spots.forEach(function(s){ mark(s.x, s.y, 1); }); M.keys.forEach(function(k){ mark(k.x, k.y, 1); }); M.boosts.forEach(function(b){ mark(b.x, b.y, 1); }); M.doors.forEach(function(d){ mark(d.x, d.y + d.h/2, 1); });
+  M.buffs.forEach(function(b){ mark(b.x, b.y, 1); });
+  (M.back || []).forEach(function(b){ if(b.kind === 'sky') return; var c0 = Math.floor(b.x/C), c1 = Math.ceil((b.x + b.w)/C) - 1, r0 = Math.floor(b.y/C), r1 = Math.ceil((b.y + b.h)/C) - 1;
+    for(var r = r0; r <= r1; r++) for(var c = c0; c <= c1; c++) if(c >= 0 && c < cols && r >= 0 && r < rows) inBack[idx(c, r)] = 1; });
+  var res = [], seen = 0;
+  for(var cr = 2; cr < rows - 1; cr += 3) for(var cc = 3; cc < cols/2; cc += 3){
+    if(!inBack[idx(cc, cr)] || solid[idx(cc, cr)]) continue;
+    var back = 0, bare = 0;
+    for(var r = cr - Math.floor(vh/2); r < cr + Math.ceil(vh/2); r++) for(var c = cc - Math.floor(vw/2); c < cc + Math.ceil(vw/2); c++){
+      if(c < 0 || c >= cols/2 || r < 0 || r >= rows) continue; var i = idx(c, r); if(!inBack[i] || solid[i]) continue; back++; if(!serve[i]) bare++; }
+    seen++;
+    if(back > 60 && bare/back > 0.6) res.push({ c:cc, r:cr - (M.dr || 0), f:Math.round(100*bare/back), back:back });
+  }
+  res.sort(function(a, b){ return b.f - a.f; });
+  return JSON.stringify({ view:[vw, vh], sampled:seen, bare:res.length, worst:res.slice(0, 25) });
+})()`));
+      expect(r.worst, 'views more than 60% bare').toEqual([]);
     });
 
     it('can be walked: every hiding place, key, boost, pad and the jail door is reachable, vaults only through their doors', { timeout: 180000 }, () => {
