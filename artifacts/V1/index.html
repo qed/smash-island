@@ -2940,6 +2940,7 @@ const CTF_FREE_GRACE = 300, CTF_FREE_HASTE = 180, CTF_GHOST_STEPS = 420, CTF_REV
 function ctfJailThreshold(n){ return clamp(140 - 10*n, 50, 120); }
 const CTF_FLAG_R = 40, CTF_KEY_R = 42, CTF_BOOST_STEPS = 420, CTF_BOOST_CD = 1500;
 const CTF_REVEAL_OPEN = 420, CTF_REVEAL_COVER = 130, CTF_STALL_REVEAL = 14400;
+const CTF_PING_FIRST = 10800, CTF_PING_EVERY = 3600, CTF_PING_LEN = 300;   // the radar: after 3 minutes with no capture, and again every minute, all flags still out show for 5 s
 const CTF_ZOOM = 0.9;
 const CTF = { live:null, map:null, mapId:null, prevStage:null, lastMap:null, built:{}, stageObjs:{}, forceMap:null };
 
@@ -2964,8 +2965,11 @@ function ctfBuildMapButtons(){
   row.style.display = SETTINGS.mode === 'ctf' ? 'flex' : 'none'; if(SETTINGS.mode !== 'ctf') return;
   seg.innerHTML = ''; const cur = ctfMapPickGet();
   for(const [v, text] of ctfMapChoices()){ const b = document.createElement('button'); b.dataset.v = v; b.textContent = text; if(v === cur) b.classList.add('on');
-    b.onclick = ()=>{ ctfMapPickSet(v); seg.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x === b)); };
+    b.onclick = ()=>{ ctfMapPickSet(v); seg.querySelectorAll('button').forEach(x=>{ if(x.dataset.v !== 'explore') x.classList.toggle('on', x === b); }); };
     seg.appendChild(b); }
+  const eb = document.createElement('button'); eb.dataset.v = 'explore'; eb.textContent = 'Explore alone'; eb.title = 'Learn the map on your own: nobody moves, nothing to win'; if(ctfExploreOn()) eb.classList.add('on');
+  eb.onclick = ()=>{ SETTINGS.ctfExplore = !ctfExploreOn(); try{ localStorage.setItem(CTF_EXPLORE_KEY, SETTINGS.ctfExplore ? '1' : '0'); }catch(e){} eb.classList.toggle('on', SETTINGS.ctfExplore); };
+  seg.appendChild(eb);
 }
 function ctfPickMap(){
   const ids = ctfMapIds();
@@ -2999,7 +3003,7 @@ function ctfStageRestore(){
 function ctfBegin(){
   const M = CTF.map;
   const L = CTF.live = { map:M, id:CTF.mapId, phase:'hide', t:0, playT:0, flags:[], keys:[], doors:[], boosts:[], jails:[], score:[0,0],
-    done:{}, flash:null, over:false, winner:-1, lastCapT:0, stalled:false, respawnN:[0,0], dyn:[], seen:[[],[]], cseen:[[],[]], foundAt:[{},{}], kos:[0,0], capLog:[], ping:[null, null], n:Math.max(2, Math.floor(fighters.length/2)) };
+    done:{}, flash:null, over:false, winner:-1, lastCapT:0, stalled:false, respawnN:[0,0], dyn:[], seen:[[],[]], cseen:[[],[]], foundAt:[{},{}], kos:[0,0], capLog:[], ping:[null, null], radar:0, n:Math.max(2, Math.floor(fighters.length/2)) };
   for(const d of M.doors) L.doors.push({ id:d.id, n:d.n, team:d.team, color:d.color, x:d.x, y:d.y, w:d.w, h:d.h, op:[true, true] });   // op: open for team 0, for team 1
   M.keys.forEach((k,i)=>L.keys.push({ i, door:k.door, x:k.x, y:k.y, hx:k.x, hy:k.y, st:0, hold:-1, lock:-1, lockT:0, n:+String(k.door).replace('r','') }));
   M.boosts.forEach((b,i)=>L.boosts.push({ i, kind:b.kind, x:b.x, y:b.y, cd:0 }));
@@ -3018,7 +3022,34 @@ function ctfBegin(){
   ctfEditNew(L); CTF._netKey = null; CTF._netN = 0;
   ctfRebuildDyn(L);
   CTF.cpuHide = {};
+  L.explore = ctfExploreOn() && !(typeof inNetSession === 'function' && inNetSession());
+  const sk0 = CTF.skipNav; if(L.explore) CTF.skipNav = true;
   try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); }
+  CTF.skipNav = sk0;
+  if(L.explore){ for(const f of fighters) if(!ctfIsHuman(f)) f.controller = 'still'; ctfEndHide(L); }   // the others stand where they are; play starts at once
+  try{ ctfIntroCard(); }catch(e){}
+}
+// Explore alone (a toggle beside the map choice, remembered): the map for yourself to learn, nobody moving and nothing to win.
+const CTF_EXPLORE_KEY = 'bfsi:ctfexplore';
+function ctfExploreOn(){
+  if(SETTINGS.ctfExplore == null){ let v = false; try{ v = localStorage.getItem(CTF_EXPLORE_KEY) === '1'; }catch(e){} SETTINGS.ctfExplore = v; }
+  return !!SETTINGS.ctfExplore;
+}
+// The first-time card: what a match is, in a few lines; shown once (remembered), over the hiding.
+function ctfIntroCard(){
+  let seen = false; try{ seen = localStorage.getItem('bfsi:ctfintro') === '1'; }catch(e){}
+  const old = document.getElementById('ctfIntro'); if(old) old.remove();
+  if(seen || !fighters.some(ctfIsHuman) || (CTF.live && CTF.live.explore)) return;
+  const d = document.createElement('div'); d.id = 'ctfIntro';
+  d.style.cssText = 'position:fixed;left:50%;top:14%;transform:translateX(-50%);z-index:9000;max-width:540px;padding:18px 22px;background:rgba(28,24,38,0.94);color:#f4efe2;border:3px solid #f4efe2;border-radius:12px;font:16px/1.45 sans-serif;box-shadow:0 8px 30px rgba(0,0,0,0.5)';
+  d.innerHTML = '<div style="font-weight:700;font-size:20px;margin-bottom:8px">Capture the Flag</div>'
+    + '<div>1. Hide your flag: walk to a good spot and press Space, then C when you are done. You can build with the tool keys while you wait.</div>'
+    + '<div>2. When play starts, find the other side\'s flags and carry them over the middle line to your side. Five wins.</div>'
+    + '<div>3. A KO on their side puts you in their jail: a teammate stands at the door for two seconds to free you, or you walk out alone after ninety. You hold one key for one locked door.</div>'
+    + '<button id="ctfIntroOk" style="margin-top:12px;padding:8px 18px;font:700 16px sans-serif;border:3px solid #1c1c1c;border-radius:8px;background:#ffd23f;cursor:pointer">Got it</button>';
+  document.body.appendChild(d);
+  const close = ()=>{ try{ localStorage.setItem('bfsi:ctfintro', '1'); }catch(e){} d.remove(); };
+  const b = document.getElementById('ctfIntroOk'); if(b) b.onclick = close;
 }
 // The solids that change during a match: closed doors, the closed jail doors, and the wall across the middle while hiding.
 function ctfRebuildDyn(L){
@@ -3213,6 +3244,7 @@ function ctfStep(){
   ctfStepJails(L);
   for(const f of fighters) f._ctfPct = f.pct;
   ctfStepZones(L); ctfStepHide(L); ctfStepPersonalKeys(L);
+  for(const f of fighters) if(f._cf >= 0 && !f.dead){ if(f.flying > 0) f.flying -= 1; if(f._lev && f._levT > 0) f._levT -= 1; }   // a carrier's flight and hover: half as long
   ctfStepKeys(L);
   ctfStepBoosts(L);
   ctfStepBuffs(L);
@@ -3221,9 +3253,8 @@ function ctfStep(){
   if(L.ping[0] && --L.ping[0].t <= 0) L.ping[0] = null; if(L.ping[1] && --L.ping[1].t <= 0) L.ping[1] = null;
   if(L.playT % 8 === 0) ctfReveal(L);
   if(L.playT % 6 === 0 && CTF.nav) ctfAiSee(L);
-  if(!L.stalled && L.playT - L.lastCapT >= CTF_STALL_REVEAL){   // nothing captured for four minutes: every flag still out there is shown to both sides
-    L.stalled = true; for(const t of [0,1]) for(const fl of L.flags) if(fl.st !== 4) L.seen[t][fl.id] = true;
-  }
+  if(L.radar > 0) L.radar--;
+  { const q = L.playT - L.lastCapT - CTF_PING_FIRST; if(q >= 0 && q % CTF_PING_EVERY === 0 && !L.explore){ L.radar = CTF_PING_LEN; ctfSfx('ping'); } }   // a stalemate: the radar pings
 }
 function ctfStepJails(L){
   if(L.freeFx) L.freeFx = L.freeFx.filter(q=>--q.t > 0);
@@ -3442,7 +3473,7 @@ function ctfStepFlags(L){
         else if(f._cf < 0 && !(fl.lockT > 0 && fl.lockIdx === f.idx)){
           fl.st = 2; fl.car = f.idx; f._cf = fl.id; fl.fall = false; fl.elev = null; L.seen[0][fl.id] = L.seen[1][fl.id] = true; fl.revealT = CTF_REVEAL_GRAB;   // on both sides' minimaps for 5 s
           if(L.foundAt[f.team][fl.id] == null) L.foundAt[f.team][fl.id] = L.playT;
-          ctfSfx('pick'); break;
+          ctfSfx('grab'); break;
         }
       }
     }
@@ -3477,7 +3508,7 @@ function ctfReveal(L){
         const dx = f.x - fl.x, dy = f.y - fl.y;
         if(dx*dx + dy*dy > r2) continue;
         if(!ctfLOS(f.x, f.y - 6, fl.x, fl.y - 24, t)) continue;
-        L.seen[t][fl.id] = true; f._lastFlagSeen = fl.id; if(L.foundAt[t][fl.id] == null) L.foundAt[t][fl.id] = L.playT;
+        L.seen[t][fl.id] = true; f._lastFlagSeen = fl.id; if(t === ctfViewTeam()) ctfSfx('spot'); if(L.foundAt[t][fl.id] == null) L.foundAt[t][fl.id] = L.playT;
         break;
       }
     }
@@ -3564,7 +3595,7 @@ function ctfEliminate(f){
 
 // ---- the end ----------------------------------------------------------------------------------------------------
 function ctfCheckWin(){
-  const L = CTF.live; if(!L || L.over) return;
+  const L = CTF.live; if(!L || L.over || L.explore) return;
   for(const t of [0,1]) if(L.score[t] >= L.n){ ctfEnd(t, 'flags'); return; }
   // a whole side in jail at once: it is over
   for(const t of [0,1]){ const mates = fighters.filter(f=>f.team === t); if(mates.length && mates.every(f=>f._jail != null)){ ctfEnd(1 - t, 'jail'); return; } }
@@ -3600,6 +3631,9 @@ function ctfSfx(kind){
       case 'break':   noise(0.14, 0.3, 600, 0, 200); tone(240, 0.1, 'triangle', 0.14, 0, 120); break;
       case 'free':    [392, 523, 659, 784].forEach((q,i)=>tone(q, 0.14, 'triangle', 0.22, i*0.06, q)); noise(0.12, 0.25, 1200, 0, 300); break;
       case 'go':      tone(520, 0.14, 'triangle', 0.18, 0, 780); break;
+      case 'spot':    tone(880, 0.05, 'sine', 0.14, 0, 880); tone(1320, 0.08, 'sine', 0.14, 0.06, 1320); break;   // a flag found
+      case 'grab':    tone(300, 0.1, 'sawtooth', 0.18, 0, 620); tone(620, 0.1, 'triangle', 0.16, 0.09, 940); break;   // a flag taken
+      case 'ping':    tone(1040, 0.3, 'sine', 0.14, 0, 1040); tone(780, 0.3, 'sine', 0.1, 0.15, 780); break;   // the radar
     }
   }catch(e){}
 }
@@ -3978,7 +4012,7 @@ function ctfNetOut(){
   o.dn = fighters.map(f=>L.done[f.idx] ? 1 : 0);
   o.pg = L.ping.map(p=>p ? [p.id, p.t | 0] : 0);
   o.of = L.offer ? [L.offer.from, L.offer.to, CTF_PIECES.offer.indexOf(L.offer.kind), Object.keys(L.offer.votes).map(Number)] : 0;
-  o.bo = [L.bonus[0] | 0, L.bonus[1] | 0];
+  o.bo = [L.bonus[0] | 0, L.bonus[1] | 0]; o.rd = L.radar | 0;
   o.ol = L.offerLast ? [L.offerLast.ok ? 1 : 0, L.offerLast.t | 0, L.offerLast.from] : 0;
   o.fx = L.flash ? [L.flash.team, L.flash.t | 0, L.flash.soft ? 1 : 0] : 0;
   o.ff = (L.freeFx || []).map(q=>[R(q.x), R(q.y), q.t | 0, q.team]);
@@ -4031,7 +4065,7 @@ function ctfNetIn(c){
   L.done = {}; (c.dn || []).forEach((v, i)=>{ if(v) L.done[i] = true; });
   L.ping = (c.pg || [0, 0]).map(p=>p ? { id:p[0], t:p[1] } : null);
   if(c.of){ const votes = {}; (c.of[3] || []).forEach(i=>{ votes[i] = true; }); L.offer = { from:c.of[0], to:c.of[1], kind:CTF_PIECES.offer[c.of[2]], t:0, votes }; } else L.offer = null;
-  if(c.bo) L.bonus = [c.bo[0], c.bo[1]];
+  if(c.bo) L.bonus = [c.bo[0], c.bo[1]]; L.radar = c.rd | 0;
   L.offerLast = c.ol ? { ok:!!c.ol[0], t:c.ol[1], from:c.ol[2] } : null;
   L.flash = c.fx ? { team:c.fx[0], t:c.fx[1], soft:!!c.fx[2] } : null;
   L.freeFx = (c.ff || []).map(q=>({ x:q[0], y:q[1], t:q[2], team:q[3] }));
@@ -4068,8 +4102,24 @@ function ctfTeamOf(N, humanCount, net){
   return teamOf;
 }
 // The result screen's own words (it is outside the match, so words are fine).
+function ctfRevealMap(L){   // the whole map, with every flag where it was hidden (a ring round the ones that were carried home): the result screen's own picture
+  const M = CTF.map, box = document.getElementById('scorecard'); if(!M || !box) return;
+  const cv = document.createElement('canvas'); cv.id = 'ctfRevealMap'; cv.width = 960; cv.height = Math.round(960*M.WH/M.WW);
+  cv.style.cssText = 'display:block;margin:12px auto 0;max-width:100%;border:3px solid #1c1c1c;border-radius:8px;background:#222';
+  const g = cv.getContext('2d'); if(!g) return;
+  ctfOverview(g, cv.width, cv.height, M);
+  const s = cv.width/M.WW;
+  for(const fl of L.flags){
+    const x = fl.hx*s, y = (fl.hy - 10)*s;
+    ctfFlagIcon(g, x, y, ctfColor(fl.team), 44, 0, null);
+    if(fl.st === 4){ g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.arc(x, y - 18, 20, 0, 7); g.stroke(); }
+  }
+  const old = document.getElementById('ctfRevealMap'); if(old) old.remove();
+  box.appendChild(cv);
+}
 function ctfResultText(youWon, winTeam){
   const L = CTF.live; if(!L) return;
+  try{ ctfRevealMap(L); }catch(e){}
   const secs = Math.round(L.playT/60), m = Math.floor(secs/60), s = secs % 60;
   const title = document.getElementById('resultTitle'), sub = document.getElementById('resultSub');
   if(title) title.textContent = youWon ? '🏆 YOU WIN!' : 'Team ' + (winTeam + 1) + ' wins';
@@ -4426,6 +4476,7 @@ function ctfCoverDraw(g, s, th){
 // ---- the world ------------------------------------------------------------------------------------------------
 function ctfFlagVisible(L, fl, vt){
   if(fl.st === 4) return false;
+  if(L.radar > 0) return true;   // the radar ping: every flag still out
   if(fl.st === 2){ const c = fighters[fl.car]; return fl.team === vt || !!(c && c.team === vt) || fl.revealT > 0 || !!(L.cseen && L.cseen[vt] && L.cseen[vt][fl.id]); }   // a carried flag: its carrier's side, 5 s after the grab, or while in sight
   if(fl.team === vt) return true;
   if(L.phase === 'hide') return false;
@@ -4648,6 +4699,7 @@ function ctfDrawMinimap(){
   for(const d of L.doors){ if(d.op[vt]) continue; ctx.fillStyle = d.color; ctx.fillRect(mx + d.x*sx - 1, my + d.y*sy, 3, Math.max(3, d.h*sy)); }
   for(const fl of L.flags){ if(!ctfFlagVisible(L, fl, vt)) continue; ctx.fillStyle = ctfColor(fl.team); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(mx + fl.x*sx, my + (fl.y - 20)*sy, fl.st === 2 ? 4.5 : 3.2, 0, 7); ctx.fill(); ctx.stroke(); }
+  if(L.radar > 0){ const k = 1 - L.radar/CTF_PING_LEN; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; for(const fl of L.flags){ if(fl.st === 4) continue; ctx.globalAlpha = 0.85*(1 - k); ctx.beginPath(); ctx.arc(mx + fl.x*sx, my + (fl.y - 20)*sy, 5 + 26*k, 0, 7); ctx.stroke(); } ctx.globalAlpha = 0.92; }   // the radar: rings round every flag
   { const pg = L.ping && L.ping[vt]; if(pg && L.flags[pg.id] && (hazardT % 30) < 20){ const pf = L.flags[pg.id]; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mx + pf.x*sx, my + (pf.y - 20)*sy, 7, 0, 7); ctx.stroke(); } }
   for(const f of fighters){ if(f.team !== vt) continue; ctx.fillStyle = ctfColor(f.team); const px = mx + clamp(f.x, 0, M.WW)*sx, py = my + clamp(f.y, 0, M.WH)*sy; ctx.fillRect(px - 1.5, py - 1.5, f.you ? 5 : 3, f.you ? 5 : 3);
     if(f.you){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(px - 3, py - 3, 7, 7); } }
@@ -5814,7 +5866,7 @@ function ctfAiChoose(f, ai, L, nav, now){
   let best = null, bd = 1e9;
   for(const fl of L.flags){
     if(fl.team === t || fl.st === 4 || fl.st === 2) continue;
-    if(!L.seen[t][fl.id]) continue;
+    if(!L.seen[t][fl.id] && !(L.radar > 0)) continue;
     if(ai.role === 'def' && !(fl.st === 3 && Math.abs(fl.x - M.WW/2) < M.WW*0.28)) continue;
     const claimed = mates.filter(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'flag' && g._ai.goal.id === fl.id && g._jail == null).length;
     if(claimed >= 2) continue;
@@ -11494,7 +11546,9 @@ addEventListener('keydown', e => {
   // hitbox toggle -- and the toggle's banner must not appear over a menu for it.
   const ae = document.activeElement;
   if(ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA')) return;
-  if(Object.values(KEYS).includes('KeyB')) return;   // a player's key wins
+  // a player's key wins -- except CTF's edit key (B by default), which only means something in the CTF hiding phase
+  if(Object.keys(KEYS).some(k => k !== 'edit' && KEYS[k] === 'KeyB')) return;
+  if(KEYS.edit === 'KeyB' && SETTINGS.mode === 'ctf' && typeof CTF !== 'undefined' && CTF.live && CTF.live.phase !== 'play') return;
   SHOW_HITBOXES = !SHOW_HITBOXES;
   if(!SHOW_HITBOXES) DEBUG_HITS.length = 0;
   banner(SHOW_HITBOXES ? 'Hitboxes: ON  (B)' : 'Hitboxes: OFF', 700);

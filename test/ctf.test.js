@@ -572,6 +572,29 @@ describe('capture the flag', () => {
     expect(k(a) / a0, 'and 8% faster').toBeCloseTo(1.08, 3);
   });
 
+  it('the radar pings after three minutes without a capture and every minute after, for five seconds; a carrier flight runs out twice as fast; explore alone starts at once with nobody moving and no end', () => {
+    const { window: w } = loadMonolith(40);
+    start(w);
+    expect(w.eval('CTF.live.radar'), 'quiet at first').toBe(0);
+    logic(w, 10790); expect(w.eval('CTF.live.radar'), 'not yet at 2:59').toBe(0);
+    logic(w, 15); expect(w.eval('CTF.live.radar'), 'ping at three minutes').toBeGreaterThan(250);
+    expect(w.eval(`CTF.live.flags.every(function(f){ return ctfFlagVisible(CTF.live, f, 0); })`), 'every flag shows on a minimap').toBe(true);
+    logic(w, 320); expect(w.eval('CTF.live.radar'), 'over after five seconds').toBe(0);
+    expect(w.eval(`ctfFlagVisible(CTF.live, CTF.live.flags[CTF.live.flags.findIndex(function(f){ return f.team === 1; })], 0)`), 'and the flags are hidden again').toBe(false);
+    logic(w, 3300); expect(w.eval('CTF.live.radar'), 'and again a minute later').toBeGreaterThan(0);
+    // a carrier's flight
+    const a = mate(w, 0); w.eval(`fighters[${a}].flying = 100; fighters[${a}]._cf = 0`); logic(w, 5);
+    expect(w.eval(`fighters[${a}].flying`), 'twice as fast').toBeLessThanOrEqual(95);
+    // explore alone
+    const { window: w2 } = loadMonolith(41);
+    w2.eval(`SETTINGS.ctfExplore = true; CTF.skipNav = true; SETTINGS.mode = 'ctf'; SETTINGS.count = 10; SETTINGS.itemRate = 0; CTF.forceMap = 'castle'; beginMatchNow();`);
+    expect(w2.eval('CTF.live.explore'), 'explore').toBe(true);
+    expect(w2.eval('CTF.live.phase'), 'play at once, no hiding').toBe('play');
+    expect(w2.eval(`fighters.filter(function(f){ return f.controller === 'still'; }).length`), 'nobody else moves').toBeGreaterThanOrEqual(8);
+    w2.eval('CTF.live.score = [5, 0]; ctfCheckWin()');
+    expect(w2.eval('CTF.live.over'), 'nothing to win').toBe(false);
+  });
+
   it('the decoration tool offers what fits the place: a set for the area under the cursor (halls, snowy mountain, mines, reef), B steps through it, the ghost is that prop, both sides alike', () => {
     const { window: w } = loadMonolith(33);
     hideStart(w);

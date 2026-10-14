@@ -127,7 +127,8 @@ describe('the roster row and the render', () => {
     expect(t[4]).toMatch(/^↑\+C.*Bridge the Gap!/);
     expect(t[5]).toMatch(/^↓\+C.*Gotcha!/);
     expect(t[6]).toMatch(/^V.*Hop · The One and Only!/);
-    expect(t[7]).toMatch(/^X\+C.*Finisher/);
+    // the finisher moved from X+C to V+C with the moveset expansion (the owner, 2026-10-14: "Grab on X + C, finisher on V + C")
+    expect(t[7]).toMatch(/^V\+C.*Finisher/);
   });
 });
 
