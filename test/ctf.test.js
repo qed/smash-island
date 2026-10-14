@@ -499,6 +499,10 @@ describe('capture the flag', () => {
     w.eval(`ctfMapPickSet('random')`);
     const ch = J(w, 'ctfMapChoices().map(function(c){ return c[0]; })');
     expect(ch[0], 'Random first').toBe('random'); expect(ch).toEqual(expect.arrayContaining(['castle', 'mines']));
+    expect(ch, 'a beta map can be picked by name').toContain('factory');
+    expect(w.eval(`ctfMapChoices().filter(function(c){ return c[0] === 'factory'; })[0][1]`)).toContain('beta');
+    const picks = new Set(); for (let i = 0; i < 80; i++) picks.add(w.eval('CTF.forceMap = null; CTF.lastMap = null; ctfPickMap()'));
+    expect(picks.has('factory'), 'Random leaves the beta map out').toBe(false); expect(picks.size, 'and still varies').toBeGreaterThan(1);
   });
 
   it('a fighter standing inside a prop is hidden from the other side (not drawn, not targeted from afar) until it attacks or is hit; the prop breaking shows it; a friend or a close foe sees it', () => {
