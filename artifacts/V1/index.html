@@ -2787,10 +2787,10 @@ CTF_MAPS.mines = {
     g.box(0, 79, 37, 89, '.');
     g.zone('water', 79, 21, 89, 37, 1); g.zone('wind', 79, 0, 89, 12, 1, 1);
     g.fill(19, 79, 89, '='); g.shaft(79, 37, 20);
-    g.mound(37, 81, 8, 4); g.put(33, 84, 'V'); g.put(35, 82, 'V'); g.put(35, 87, 'K'); g.put(18, 85, 'W'); g.put(18, 88, 'C');
+    g.fill(37, 82, 87, '='); g.fill(36, 83, 86, '='); g.fill(35, 84, 85, '='); g.put(34, 84, 'V'); g.put(36, 82, 'V'); g.put(35, 86, 'K'); g.put(36, 87, 'K');   // the wreck: steps of hops (a jump in water is short, and a solid step of a row is too much) g.put(18, 85, 'W'); g.put(18, 88, 'C');
     g.put(37, 89, 'u');
     g.deco('chimney', 84, 13, 2, 6, {}); g.deco('cloud', 82, 2, 4, 2, {});
-    g.skin(79, 38, 89, 38, 'sandcap'); g.skin(81, 34, 88, 37, 'plank'); g.deco('mast', 84, 26, 2, 8, {});
+    g.skin(79, 38, 89, 38, 'sandcap'); g.deco('mast', 84, 26, 2, 8, {});
 
     // what the decoration tool offers here: crystals, carts and lanterns underground, a reef in the sea, a pier's things above it
     g.decoDefault(['crystal', 'minecart', 'rubble', 'lamp']);
@@ -4698,6 +4698,9 @@ function ctfNavNew(M, prev, diff){
   const R = 24, solids = M.plats.filter(p=>p.solid);
   const blockers = M.doors.map(d=>({ x:d.x, y:d.y, w:d.w, h:d.h, door:d.id })).concat(M.jails.map(j=>({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, door:'J' + j.owner })));
   const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0 };
+  // the areas that change a flight (water drags at you, glue stops you, wind pushes, thin air is light, a spring throws you): every simulated move feels them as the game does
+  { const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'float' || z.type === 'spring');
+    if(zs.length && !CTF.noZones){ nav.zb = {}; for(const z of zs) for(let b = ctfNavBucket(z.x); b <= ctfNavBucket(z.x + z.w); b++) (nav.zb[b] = nav.zb[b] || []).push(z); } }
   for(const p of M.plats) for(let b = ctfNavBucket(p.x); b <= ctfNavBucket(p.x + p.w); b++) (nav.pb[b] = nav.pb[b] || []).push(p);
   // a closed door is a wall to every simulated move (the walk through it is its own link, below)
   for(const d of blockers){ const r = { x:d.x, y:d.y, w:d.w, h:d.h, solid:true, door:true }; for(let b = ctfNavBucket(r.x); b <= ctfNavBucket(r.x + r.w); b++) (nav.pb[b] = nav.pb[b] || []).push(r); }
@@ -4752,6 +4755,22 @@ function ctfNavNew(M, prev, diff){
   }
   return nav;
 }
+// The game's own applyZone for the zones a flight meets (what a fighter feels at x, y): T holds vx, vy, jumps, the spring's rest steps; T.fl: thin air (a third of gravity).
+const CTF_ZT = { vx:0, vy:0, jumps:0, sp:0, fl:false };
+function ctfNavZoneFx(nav, x, y, R, T){
+  T.fl = false;
+  const zl = nav.zb[ctfNavBucket(x)];
+  if(zl) for(const z of zl){
+    if(x < z.x || x > z.x + z.w || y + R < z.y || y > z.y + z.h) continue;
+    const s = z.strength || 1;
+    if(z.type === 'water'){ T.vx *= 1 - 0.13*s; T.vy *= 1 - 0.05*s; }
+    else if(z.type === 'glue') T.vx *= Math.max(0, 1 - 0.55*s);
+    else if(z.type === 'wind'){ T.vx += (z.dir || 1)*0.6*s; T.vy -= 0.15*s; }
+    else if(z.type === 'float') T.fl = true;
+    else if(z.type === 'spring' && !(T.sp > 0)){ T.vy = -24*s; T.jumps = 2; T.sp = 24; }
+  }
+  if(T.sp > 0) T.sp--;
+}
 function ctfNavNodeAt(nav, x, top, slack){
   let best = null, bd = 1e9;
   for(const n of (nav.nb[ctfNavBucket(x)] || [])){
@@ -4773,13 +4792,13 @@ function ctfNavNodeOf(nav, f){
 function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
   if(pert){ P.CAP *= pert.k; P.ACC *= pert.k; }   // (a slightly slower fighter, a later second jump: does the move still come down on the same place?)
-  let x = xa, y = A.y - R, vy = 0, jumps = 2;
+  let x = xa, y = A.y - R, vy = 0, jumps = 2, sp = 0, fl = false;
   if(jump){ vy = P.JV; jumps = 1; }
   if(thru){ y += R*0.6; vy = 5; }   // down + jump on a one-way ledge: dropped through it (the game's own: dropping = 10 frames, vy 5)
   for(let t = 1; t <= 150; t++){
     if(dir !== 0 && t <= T){ vx += dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
     if(dj && jumps > 0 && t >= 6 + (pert ? pert.dd : 0) && vy >= -0.4){ vy = P.JV; jumps--; }
-    vy += P.G; x += vx; const pb = y + R; y += vy;
+    vy += fl ? P.G*0.35 : P.G; x += vx; const pb = y + R; y += vy;
     const list = (nav.pb[ctfNavBucket(x)] || []);
     let landed = null;
     for(const p of list){
@@ -4796,6 +4815,7 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
         if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; break; }   // (the game's own test: no look at where the feet were a step ago)
       }
     }
+    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; fl = Z.fl; }
     if(landed){ const node = ctfNavNodeAt(nav, x, landed.y, 1.5); return node ? { node, x, t } : null; }
     if(y > WH + 100) return null;
   }
@@ -4992,14 +5012,14 @@ function ctfAiWalk(f, inp, tx, tol){
 // The same numbers as ctfNavSim (the game's own), so what it says is what the real fighter does if it holds the same keys. Returns { node, x, t } where it comes down, or null.
 function ctfNavFly(nav, s, ctl, free, thru, bst){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
-  let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp;
+  let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, fl = !!s.fl;
   for(let t = 1; t <= 150; t++){
     const c = ctl(t, x, y, vx, vy, jumps) || {};
     if(c.dir){ vx += c.dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
     else if(ground) vx *= FRICTION;
     if(c.jump){ if(jumps > 0 && !jp){ vy = P.JV; jumps--; ground = false; jp = true; } } else jp = false;
     if(thru && t === 1){ y += R*0.6; vy = 5; ground = false; }
-    vy += P.G; x += vx; const pb = y + R; y += vy;
+    vy += fl ? P.G*0.35 : P.G; x += vx; const pb = y + R; y += vy;
     const list = (nav.pb[ctfNavBucket(x)] || []);
     let landed = null;
     for(const p of list){
@@ -5016,6 +5036,7 @@ function ctfNavFly(nav, s, ctl, free, thru, bst){
         if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; break; }   // (the game's own test: no look at where the feet were a step ago)
       }
     }
+    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; fl = Z.fl; }
     if(landed){ const node = ctfNavNodeAt(nav, x, landed.y, 1.5); return node ? { node, x, t } : null; }
     if(y > WH + 100) return null;
   }
@@ -5031,7 +5052,7 @@ function ctfAiPlanFly(nav, f, e, o){
     else if(o.dj && !djDone && jumps > 0 && (o.djNow || (t >= 6 && vy >= -0.4))){ c.jump = true; djDone = true; }
     return c;
   };
-  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp }, ctl, free, !!o.thru, bst);
+  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, fl:f._floatT > 0 }, ctl, free, !!o.thru, bst);
 }
 function ctfAiStat(k){ const S = CTF.stat = CTF.stat || {}; S[k] = (S[k] || 0) + 1; }
 // Follow the current path, one step at a time. Moves are steered from what the fighter is really doing: the jump goes at the moment a look ahead says it
@@ -5223,7 +5244,8 @@ function ctfAiInputRaw(f){
   // ordinary fighting whenever a foe is close, as it always was
   if(ai.fight > 0){ ai.fight--; return null; }
   const carrying = f._cf >= 0;
-  const foe = ctfAiFoe(f, carrying ? 90 : (ai.role === 'def' ? 520 : 300));
+  const holding = ai.goal && ai.goal.kind === 'jail' && ai.goal.role === 'hold';
+  const foe = ctfAiFoe(f, carrying ? 90 : (holding ? 130 : (ai.role === 'def' ? 520 : 300)));
   if(foe && (carrying || (ai.role === 'def' ? foe.x < L.map.WW/2 === (f.team === 0) : true)) && ctfLOS(f.x, f.y - 6, foe.x, foe.y - 6)){
     if(carrying){ if(Math.abs(foe.x - f.x) < 80 && f.atkCd <= 0){ inp.attack = true; } }
     else { ai.fight = 20; ai.path = null; ai.edge = null; ai.phase = ''; return null; }
@@ -5300,21 +5322,30 @@ function ctfAiChoose(f, ai, L, nav, now){
     const k = L.keys[f._ck], d = L.doors.find(q=>q.id === k.door);
     if(d && !d.op[t] && d.team !== t){ const left = f.x < d.x; return set({ kind:'door', x:left ? d.x - 28 : d.x + d.w + 28, y:d.y + d.h, door:d.id }); }
   }
-  // 3. free the prisoners: a fighter of mine is in the enemy's jail (the nearest attackers go, at most two to a jail)
+  // 3. free the prisoners: a fighter of mine is in the enemy's jail. A jailed HUMAN comes first: within about ten seconds the side commits (one rescuer when the door is clear, two when it is
+  //    guarded: the second goes in fighting, the first holds the door for the two seconds). A jailed CPU waits a little longer and is not gone for through a well guarded door.
   for(const j of L.jails){
-    if(j.owner === t || !j.pris.length) continue;
-    const mine = j.pris.some(i=>fighters[i] && fighters[i].team === t); if(!mine) continue;
-    const humanIn = j.pris.some(i=>fighters[i] && fighters[i].team === t && ctfIsHuman(fighters[i])), want = humanIn ? 2 : 1;
-    if(j.lock > 0) continue;
-    const jid = L.jails.indexOf(j), others = mates.filter(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'jail' && g._ai.goal.jail === jid && g._jail == null).length;
-    const dist = Math.abs(f.x - j.door.x);
-    const guards = fighters.filter(g=>g.team !== t && g._jail == null && !g.dead && Math.hypot(g.x - (j.door.x + j.door.w/2), g.y - (j.door.y + j.door.h)) < 400).length;
-    if(guards > 0) continue;   // a defender at the door: not now (the others get on with their searching)
-    const closest = mates.filter(g=>g._jail == null && !ctfIsHuman(g) && g._cf < 0).sort((a, b)=>Math.abs(a.x - j.door.x) - Math.abs(b.x - j.door.x)).slice(0, want).includes(f);
-    if(others < want && closest && (humanIn || ai.role === 'att' || dist < 900)){
-      const fx = j.door.x + (j.face === 1 ? j.door.w + 50 : -50);
-      return set({ kind:'jail', jail:jid, x:fx, y:j.door.y + j.door.h });
+    if(j.owner === t || !j.pris.length || j.lock > 0) continue;
+    const mine = j.pris.map(i=>fighters[i]).filter(p=>p && p.team === t); if(!mine.length) continue;
+    const humanIn = mine.some(p=>ctfIsHuman(p)), age = Math.max(...mine.map(p=>p._jailT || 0));
+    if(age < (humanIn ? 90 : 420)) continue;   // a beat to react
+    const jid = L.jails.indexOf(j), cx = j.door.x + j.door.w/2, cy = j.door.y + j.door.h;
+    const guards = fighters.filter(g=>g.team !== t && g._jail == null && !g.dead && Math.hypot(g.x - cx, g.y - cy) < (humanIn ? 420 : 250)).length;
+    const want = humanIn ? (guards > 0 ? 2 : 1) : (guards > 0 ? 0 : 1);
+    if(!want) continue;
+    const goalOf = g=>g._ai && g._ai.goal && g._ai.goal.kind === 'jail' && g._ai.goal.jail === jid && g._jail == null && !g.dead;
+    const sent = mates.filter(goalOf), mineIn = sent.includes(f);
+    if(!mineIn){
+      if(sent.length >= want || f._cf >= 0 || ctfIsHuman(f)) continue;
+      const noAtt = !mates.some(g=>g._jail == null && !g.dead && !ctfIsHuman(g) && g._ai && g._ai.role === 'att');   // every attacker is in jail: the defenders go too
+      if(!(humanIn || noAtt || ai.role === 'att' || Math.abs(f.x - j.door.x) < 900)) continue;
+      const pool = mates.filter(g=>g._jail == null && !g.dead && !ctfIsHuman(g) && g._cf < 0 && !goalOf(g)).sort((a, b)=>Math.abs(a.x - j.door.x) - Math.abs(b.x - j.door.x));
+      if(!pool.slice(0, want - sent.length).includes(f)) continue;
     }
+    const holder = sent.find(g=>g !== f && g._ai.goal.role === 'hold');
+    const role = mineIn ? f._ai.goal.role : (holder ? 'bait' : 'hold');
+    const out = j.face === 1 ? 1 : -1, fx = role === 'hold' ? j.door.x + (out === 1 ? j.door.w + 50 : -50) : j.door.x + (out === 1 ? j.door.w + 420 : -420);
+    return set({ kind:'jail', jail:jid, role, x:fx, y:j.door.y + j.door.h });
   }
   // 4. my side's flag lying about: put it back (defenders first, whoever is close)
   for(const fl of L.flags){
