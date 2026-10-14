@@ -3634,7 +3634,7 @@ function ctfEditStep(L){
         if(!(f.x > e.x - f.r*0.4 && f.x < e.x + e.w + f.r*0.4 && f.y + f.r > e.y - 6 && f.y + f.r < e.y + e.h + 46)) continue;
         if(e.kind === 'spring'){ if(!(f._springT > 0)){ f.vy = -24; f.onground = false; f.jumps = 2; f._springT = 24; puff(f.x, f.y + f.r, '#6fd0f0', 5); ctfSfx('trap'); } continue; }
         if(!enemy || f._trapT > 0) continue;
-        f._trapT = e.kind === 'stun' ? 150 : 40;
+        f._trapT = e.kind === 'stun' ? 56 : 40;   // (a stun is 50 steps: the next pad of a row takes hold the moment it is over)
         if(e.kind === 'spikes'){ f.pct += CTF_SPIKE_DMG; f.flash = Math.max(f.flash || 0, 8); f.vy = -11; f.vx = (f.x < e.x + e.w/2 ? -1 : 1)*4; f.onground = false; for(let i = 0; i < 6; i++) puff(f.x, f.y + f.r, '#e8e8f0', 4); }
         else { f.hitstun = Math.max(f.hitstun || 0, 50); f.vx = 0; for(let i = 0; i < 6; i++) puff(f.x, f.y, '#ffe04a', 4); }
         ctfSfx('trap');
@@ -3724,32 +3724,77 @@ function ctfAiApproach(L, fl){   // a way in from near the middle line to the fl
   }
   return [];
 }
+// A stun-pad gauntlet: the owner's own tactic. A row of pads along one wide floor on the way to a flag (stun, stun, spikes...), laid from the flag-side end outward, so an attacker who walks
+// it is held up pad after pad (a pad only waits for a stun to end, see the trap code), and defenders camp at the flag-side end to tag whoever comes out stunned. The side's CPUs share what is
+// laid on a floor (L.ai.gaunt): the next one carries the same row on from where the last stopped. Returns how many pads went down.
+function ctfAiGauntlet(f, L, fl, n, more, put, pick){
+  const nav = CTF.nav, M = L.map, t = f.team, mid = M.WW/2, gn = ctfNavNodeAt(nav, fl.x, fl.y, 14);
+  L.bld = L.bld || { gaunt:[{}, {}], camps:[[], []], decoRooms:[{}, {}] };
+  if(!nav || !nav.ready || !gn) return 0;
+  const z = ctfAiSkip(f);
+  let best = null;
+  for(let tries = 0; tries < 5 && !best; tries++){
+    const cand = nav.nodes.filter(nd=>{ const cx = (nd.x0 + nd.x1)/2, d = t === 0 ? mid - cx : cx - mid; return d > 500 && d < 2800 && nd.x1 - nd.x0 > 80; });
+    if(!cand.length) break;
+    const sn = pick(cand), r = ctfNavPath(nav, sn.id, gn.id, { doorOK:()=>true, now:0 }); if(!r || !r.edges.length) continue;
+    let acc = 0; const segs = [];
+    for(let k = r.edges.length - 1; k >= 0; k--){ const e = r.edges[k], nd = nav.nodes[e.from]; acc += e.cost*6;
+      if(acc > 250 && acc < 3000 && nd.x1 - nd.x0 >= 330 && !z(nd)) segs.push({ nd, acc }); }
+    if(!segs.length) for(let k = r.edges.length - 1; k >= 0; k--){ const nd = nav.nodes[r.edges[k].from]; if(nd.x1 - nd.x0 >= 330 && !z(nd)) segs.push({ nd, acc:0 }); }
+    if(segs.length){ segs.sort((a, b)=>(b.nd.x1 - b.nd.x0) - (a.nd.x1 - a.nd.x0)); best = segs[Math.floor(Math.random()*Math.min(2, segs.length))]; }
+  }
+  if(!best) return 0;
+  const nd = best.nd, g = (L.bld.gaunt[t][nd.id] = L.bld.gaunt[t][nd.id] || { k:0 }), west = Math.abs(nd.x0 - fl.x) < Math.abs(nd.x1 - fl.x);   // the flag-side end is the west end?
+  let placed = 0;
+  for(; placed < n && g.k < 14 && more(5); g.k++){
+    const off = 70 + g.k*105; if(off > (nd.x1 - nd.x0) - 60) break;
+    const x = west ? nd.x0 + off : nd.x1 - off;
+    if(put('trap', g.k % 3 === 2 ? 'spikes' : 'stun', x, nd.y - 20)) placed++;
+  }
+  if(placed){ const cx = west ? nd.x0 + 40 : nd.x1 - 40; if(!L.bld.camps[t].some(c=>c.node === nd.id)) L.bld.camps[t].push({ x:cx, y:nd.y, node:nd.id }); }
+  return placed;
+}
+// What a CPU builds with its points, with a purpose (not a heap): ONE prop over its flag; a stun-pad gauntlet on the way in (the hard ones a longer row), the side's CPUs carrying a row on between
+// them; a wall or a platform that makes the way longer; decoys, one to a room, in different rooms. Easy CPUs place fewer and simpler things.
 function ctfAiBuild(f, L){
   const fl = L.flags[f.idx]; if(!fl || fl.st !== 1) return;
-  const sk = ctfAiSkill(), R = Math.random, pick = a=>a[Math.floor(R()*a.length)];
-  const start = L.pts[f.idx] || 0, goal = start*[0.45, 0.88, 1][sk];
-  const spent = ()=>start - (L.pts[f.idx] || 0), more = ()=>spent() < goal - 0.5;
+  const nav = CTF.nav, sk = ctfAiSkill(), R = Math.random, pick = a=>a[Math.floor(R()*a.length)], t = f.team;
+  L.bld = L.bld || { gaunt:[{}, {}], camps:[[], []], decoRooms:[{}, {}] };
+  const start = L.pts[f.idx] || 0, goal = start*[0.5, 0.9, 1][sk];
+  const spent = ()=>start - (L.pts[f.idx] || 0), more = c=>spent() + (c || 0) <= goal + 0.01 && (L.pts[f.idx] || 0) >= (c || 0);
   const put = (tool, kind, x, y)=>ctfEditPlaceAt(f, tool, kind, x, y);
-  const putd = (x, y)=>put('deco', pick(ctfDecoSet(x, y)), x, y);   // the set for the place
-  // 1. cover for the flag: the first on top of it, the others about it
-  const nd = [2, 3, 4][sk];
-  for(let i = 0; i < nd && more(); i++){ const dx = i === 0 ? (R()*40 - 20) : (i % 2 ? 1 : -1)*(90 + 40*i + R()*40); putd(fl.x + dx, fl.y - 20); }
-  const path = sk >= 1 ? ctfAiApproach(L, fl) : [];
+  const putd = (x, y)=>put('deco', pick(ctfDecoSet(x, y)), x, y);   // the props that fit the place
+  // 1. one prop right over the flag (a hard CPU adds a second a little way off)
+  if(more(1)) putd(fl.x + (R()*30 - 15), fl.y - 20);
+  if(sk === 2 && more(1)) putd(fl.x + (R() < 0.5 ? -1 : 1)*(130 + R()*40), fl.y - 20);
+  // 2. the way in: a gauntlet (easy: one trap on the approach)
+  const path = sk >= 1 || !nav ? ctfAiApproach(L, fl) : [];
   const near = (lo, hi)=>path.filter(p=>p.d >= lo && p.d <= hi);
-  // 2. the way to the flag: a trap on the main approach, a wall that makes it longer
-  if(more()){ const c = near(250, 1100); const p = c.length ? pick(c) : { x:fl.x + (R() < 0.5 ? -1 : 1)*(260 + R()*140), y:fl.y };
-    const kind = pick(sk === 0 ? ['spikes', 'stun'] : ['spikes', 'stun', 'trapdoor']); if(kind === 'trapdoor') put('trap', kind, p.x, p.y - 140); else put('trap', kind, p.x, p.y - 20); }
-  if(sk >= 1 && more()){   // a wall or a platform that makes the way longer: a few tries at different places on the way in
+  if(sk >= 1 && nav && nav.ready) ctfAiGauntlet(f, L, fl, sk === 2 ? 3 : 2, more, put, pick);
+  else if(more(5)){ const p = fl.x + (R() < 0.5 ? -1 : 1)*(260 + R()*140); put('trap', pick(['spikes', 'stun']), p, fl.y - 20); }
+  // 3. a wall or a platform that makes the way longer (the check at the end of the hiding settles that the flag can still be reached)
+  if(sk >= 1 && more(2)){
     for(let tries = 0; tries < 6; tries++){ const c = near(300, 1500), p = c.length ? pick(c) : { x:fl.x + (R() < 0.5 ? -1 : 1)*(380 + R()*260), y:fl.y };
-      if(R() < 0.6 ? put('wall', pick(['block', 'wall']), p.x + (R()*160 - 80), p.y - 70) : put('plat', 'plat', p.x + (R()*160 - 80), p.y - 200)) break; } }
-  if(sk >= 1 && more()){ const c = near(300, 1600); if(c.length){ const p = pick(c); put('trap', pick(['spikes', 'stun']), p.x, p.y - 20); } }
-  // 3. the team's: narrow places near the middle line and on the routes in
-  if(sk >= 1 && more()){ const far = path.filter(p=>p.d > 1500); if(far.length){ const p = pick(far); put('trap', pick(['spikes', 'stun', 'spring']), p.x, p.y - 20); if(sk === 2 && more()) put('wall', 'block', p.x + (R() < 0.5 ? -200 : 200), p.y - 70); } }
-  // 4. a decoy: decorations round a place with no flag in it
-  if(sk >= 1 && CTF.nav && CTF.nav.ready && more()){ const pts = ctfNavSweep(CTF.nav, f.team).filter(p=>ctfHideValid(f.team, p.x, p.y)), p = pts.length ? pick(pts) : null;
-    if(p) for(let i = 0; i < 3 && more(); i++) putd(p.x + (i - 1)*(110 + R()*40), p.y - 20); }
-  // 5. what is left of the points: more cover round the flag
-  for(let i = 0; i < 12 && more(); i++){ const s = i % 2 ? 1 : -1; putd(fl.x + s*(60 + 60*Math.floor(i/2) + R()*30), fl.y - 20); }
+      if(R() < 0.6 ? put('wall', pick(['block', 'wall']), p.x + (R()*160 - 80), p.y - 70) : put('plat', 'plat', p.x + (R()*160 - 80), p.y - 200)) break; }
+  }
+  // 4. decoys, each in a different room of this side, never beside the flag
+  if(nav && nav.ready){
+    const rooms = ctfAiRooms(nav, t), pts = ctfNavSweep(nav, t), used = L.bld.decoRooms[t], flagRoom = ctfRoomId(L.map, fl.x, fl.y);
+    const nDec = [1, 2, 4][sk];
+    for(let k = 0; k < nDec && more(1); k++){
+      const rs = [...rooms.values()].filter(r=>!used[r.id] && r.id !== flagRoom && r.pts.length);
+      if(!rs.length) break;
+      const r = pick(rs); used[r.id] = true;
+      const ps = r.pts.map(i=>pts[i]).filter(p=>ctfHideValid(t, p.x, p.y)); if(!ps.length) continue;
+      const p = pick(ps); putd(p.x, p.y - 20);
+    }
+    // 5. what is left: more of the row (a pad is 5), else more decoys in other rooms
+    if(sk >= 1 && more(5)) ctfAiGauntlet(f, L, fl, 1 + (sk === 2 ? 1 : 0), more, put, pick);
+    for(let k = 0; k < 6 && more(1); k++){
+      const rs = [...rooms.values()].filter(r=>!used[r.id] && r.id !== flagRoom && r.pts.length); if(!rs.length) break;
+      const r = pick(rs); used[r.id] = true; const ps = r.pts.map(i=>pts[i]).filter(p=>ctfHideValid(t, p.x, p.y)); if(ps.length){ const p = pick(ps); putd(p.x, p.y - 20); }
+    }
+  } else { for(let k = 0; k < 3 && more(1); k++) putd(fl.x + (k % 2 ? 1 : -1)*(200 + 200*k), fl.y - 20); }
 }
 
 // ---- ONLINE: what the host's snapshot carries of a Capture the Flag match, and how a client takes it in --------------------------------------------------------
@@ -4389,6 +4434,7 @@ function ctfDrawMinimap(){
   }
   ctx.save(); ctx.globalAlpha = 0.92; ctx.drawImage(CTF_MINI.cv, mx, my);
   ctx.globalAlpha = 0.16; ctx.fillStyle = ctfColor(0); ctx.fillRect(mx, my, mw/2, mh); ctx.fillStyle = ctfColor(1); ctx.fillRect(mx + mw/2, my, mw/2, mh);   // each side tinted
+  // (your own side only on this map: never an enemy; a carrier shows through its flag, on both minimaps for five seconds)
   ctx.globalAlpha = 0.92; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(mx + mw/2, my); ctx.lineTo(mx + mw/2, my + mh); ctx.stroke();
   ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.strokeRect(mx, my, mw, mh);
   const vt = ctfViewTeam();
@@ -4398,7 +4444,7 @@ function ctfDrawMinimap(){
   for(const fl of L.flags){ if(!ctfFlagVisible(L, fl, vt)) continue; ctx.fillStyle = ctfColor(fl.team); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(mx + fl.x*sx, my + (fl.y - 20)*sy, fl.st === 2 ? 4.5 : 3.2, 0, 7); ctx.fill(); ctx.stroke(); }
   { const pg = L.ping && L.ping[vt]; if(pg && L.flags[pg.id] && (hazardT % 30) < 20){ const pf = L.flags[pg.id]; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(mx + pf.x*sx, my + (pf.y - 20)*sy, 7, 0, 7); ctx.stroke(); } }
-  for(const f of fighters){ if(ctfHiddenFrom(f)) continue; ctx.fillStyle = ctfColor(f.team); const px = mx + clamp(f.x, 0, M.WW)*sx, py = my + clamp(f.y, 0, M.WH)*sy; ctx.fillRect(px - 1.5, py - 1.5, f.you ? 5 : 3, f.you ? 5 : 3);
+  for(const f of fighters){ if(f.team !== vt) continue; ctx.fillStyle = ctfColor(f.team); const px = mx + clamp(f.x, 0, M.WW)*sx, py = my + clamp(f.y, 0, M.WH)*sy; ctx.fillRect(px - 1.5, py - 1.5, f.you ? 5 : 3, f.you ? 5 : 3);
     if(f.you){ ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(px - 3, py - 3, 7, 7); } }
   const z = viewZoom(), vw = W/z, vh = H/z; ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 1; ctx.strokeRect(mx + (camX + W/2 - vw/2)*sx, my + (camY + H/2 - vh/2)*sy, vw*sx, vh*sy);
   ctx.restore();
@@ -5268,7 +5314,8 @@ function ctfAiInputRaw(f){
   if(ai.fight > 0){ ai.fight--; return null; }
   const carrying = f._cf >= 0;
   const holding = ai.goal && ai.goal.kind === 'jail' && ai.goal.role === 'hold';
-  const foe = ctfAiFoe(f, carrying ? 90 : (holding ? 130 : (ai.role === 'def' ? 520 : 300)));
+  let foe = ctfAiFoe(f, carrying ? 90 : (holding ? 130 : (ai.role === 'def' ? 520 : 300)));
+  if(!foe && ai.role === 'def' && !carrying){ const sf = ctfAiFoe(f, 1000); if(sf && (sf.hitstun > 0 || sf._trapT > 0)) foe = sf; }   // a stunned intruder is worth a run
   if(foe && (carrying || (ai.role === 'def' ? foe.x < L.map.WW/2 === (f.team === 0) : true)) && ctfLOS(f.x, f.y - 6, foe.x, foe.y - 6)){
     if(carrying){ if(Math.abs(foe.x - f.x) < 80 && f.atkCd <= 0){ inp.attack = true; } }
     else { ai.fight = 20; ai.path = null; ai.edge = null; ai.phase = ''; return null; }
@@ -5392,6 +5439,9 @@ function ctfAiChoose(f, ai, L, nav, now){
   if(L.playT < 900 && ai.role === 'att' && !(f._hasteT > 0)){ const sb = L.boosts.find(b=>b.kind === 'speed' && b.cd <= 0 && Math.abs(b.x - f.x) < 500 && Math.abs(b.y - f.y) < 260 && (b.x < M.WW/2) === (t === 0)); if(sb) return set({ kind:'boost', id:sb.i, x:sb.x, y:sb.y }); }
   // 6. defenders stay with their own flags; attackers search (a few walk with a carrier)
   if(ai.role === 'def'){
+    // the end of a gauntlet: every other defender camps there (outside the jail zone: the pads are in the open), to tag what comes out stunned
+    const camps = (L.bld && L.bld.camps[t]) || [], defs = mates.filter(g=>g._ai && g._ai.role === 'def').sort((x, y)=>x.idx - y.idx), k = defs.indexOf(f), z0 = ctfAiSkip(f);
+    if(camps.length && k >= 0 && k % 2 === 0){ const c = camps[(k/2) % camps.length], cn = nav.nodes[c.node]; if(cn && !z0(cn)) return set({ kind:'guard', x:c.x + (Math.random()*60 - 30), y:c.y, camp:true }); }
     const own = L.flags.filter(fl=>fl.team === t && fl.st === 1);
     if(own.length){
       if(!ai.guard || now > ai.guardUntil){ ai.guard = own[Math.floor(Math.random()*own.length)]; ai.guardUntil = now + 600 + Math.floor(Math.random()*500); }
