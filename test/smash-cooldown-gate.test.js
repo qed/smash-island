@@ -142,7 +142,7 @@ describe('three cooldowns: attacks, specials and smashes never wait on each othe
 });
 
 describe('the finisher has its own cooldown too', () => {
-  it('X+C locks neither X nor C, and a held C does not spill into a special after it', () => {
+  it('V+C locks neither X nor C, and a held C does not spill into a special after it', () => {
     const r = W.eval(`(function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; running=true;
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
@@ -155,7 +155,7 @@ describe('the finisher has its own cooldown too', () => {
       doAttackSpecial = function(f){ if (f===A) fin++; return _f.apply(this, arguments); };
       doSpecial = function(f){ if (f===A) sp++; return _s.apply(this, arguments); };
       try {
-        down[KEYS.attack] = true; down[KEYS.special] = true; step();
+        down[KEYS.smash] = true; down[KEYS.special] = true; step();   // V+C is the finisher now (X+C became the grab, 2026-10-14)
         var after = { fnCd: A.fnCd, spCd: A.spCd };
         for (var i=0;i<20;i++) step();          // both keys still held
       } finally { doAttackSpecial = _f; doSpecial = _s; for (var k2 in down) delete down[k2]; }
