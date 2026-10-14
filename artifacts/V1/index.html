@@ -2122,6 +2122,8 @@ const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, gre
 //  An object stands on the floor under its cell.
 // ---------------------------------------------------------------------------------------------------------------
 const CTF_CELL = 120, CTF_COLS = 180, CTF_ROWS = 39, CTF_HALF = 90;
+// The grid being built: a map may be bigger than the standard 39 x 90 (size:{ rows, half }); it is written bottom-anchored, row 38 the bottom floor, new rows above are negative.
+const CTF_DIM = { rows:39, half:90, dr:0 };
 const CTF_G = 36, CTF_HL = 28, CTF_LOW = 46;   // (the old lane rows: kept for the old helper parts below)
 const CTF_DOOR_COL = ['#d94f4f','#e0b030','#3fb0e0','#8a5ad0','#40b870','#e07a30'];   // door/key colours 1..6
 // The things a flag can hide behind: a letter in the map grid is one of these. Half-width = how far from its middle a flag is still behind it.
@@ -2136,15 +2138,15 @@ const CTF_COVER_CHARS = Object.keys(CTF_COVER).join('');
 const CTF_MAPS = {};
 
 function ctfGridNew(){
-  const rows = []; for(let r=0;r<CTF_ROWS;r++) rows.push(new Array(CTF_HALF).fill('.'));
+  const rows = []; for(let r=0;r<CTF_DIM.rows;r++) rows.push(new Array(CTF_DIM.half).fill('.'));
   const g = {
     rows,
-    put(r,c,s){ for(let i=0;i<s.length;i++){ const cc=c+i; if(r>=0&&r<CTF_ROWS&&cc>=0&&cc<CTF_HALF) rows[r][cc]=s[i]; } return g; },
+    put(r,c,s){ const rr = r + CTF_DIM.dr; for(let i=0;i<s.length;i++){ const cc=c+i; if(rr>=0&&rr<CTF_DIM.rows&&cc>=0&&cc<CTF_DIM.half) rows[rr][cc]=s[i]; } return g; },
     fill(r,c0,c1,ch){ for(let c=c0;c<=c1;c++) g.put(r,c,ch); return g; },
     col(c,r0,r1,ch){ for(let r=r0;r<=r1;r++) g.put(r,c,ch); return g; },
     box(r0,c0,r1,c1,ch){ for(let r=r0;r<=r1;r++) g.fill(r,c0,c1,ch); return g; },
     gap(r,c0,c1){ return g.fill(r,c0,c1,'.'); },
-    at(r,c){ return (r>=0&&r<CTF_ROWS&&c>=0&&c<CTF_HALF) ? rows[r][c] : '#'; },
+    at(r,c){ const rr = r + CTF_DIM.dr; return (rr>=0&&rr<CTF_DIM.rows&&c>=0&&c<CTF_DIM.half) ? rows[rr][c] : '#'; },
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
     fields: [], decor: [], front: [], zones: [], elevs: [], backs: [],
     // the wall behind the rooms: a dark patterned fill over a region (cells)
@@ -2174,15 +2176,19 @@ function ctfGridNew(){
     decoDefault(kinds){ g.decoBase = kinds; return g; },
     lattice(o){ g.fields.push(o); return g; },
   };
+  const dr = CTF_DIM.dr; g.dr = dr;
+  if(dr){ const w = (name, f)=>{ const o = g[name]; g[name] = function(...a){ f(a); return o.apply(g, a); }; };
+    w('zone', a=>{ a[2] += dr; a[4] += dr; }); w('deco', a=>{ a[2] += dr; }); w('back', a=>{ a[1] += dr; a[3] += dr; }); w('skin', a=>{ a[1] += dr; a[3] += dr; }); w('secret', a=>{ a[1] += dr; a[3] += dr; });
+    w('elev', a=>{ a[2] += dr; a[3] += dr; }); w('keepClear', a=>{ a[1] += dr; a[3] += dr; }); w('decoSet', a=>{ a[1] += dr; a[3] += dr; }); }
   return g;
 }
 
 // Merge a set of cells into rectangles: horizontal runs first, then identical runs stacked vertically.
 function ctfMergeCells(cells, flat){   // cells: Set of "r,c" (flat: horizontal runs only, no stacking: one-way ledges one row above another stay apart)
   const runs = [];
-  for(let r=0;r<CTF_ROWS;r++){
+  for(let r=0;r<CTF_DIM.rows;r++){
     let c = 0;
-    while(c < CTF_HALF){
+    while(c < CTF_DIM.half){
       if(cells.has(r+','+c)){ let c1=c; while(cells.has(r+','+(c1+1))) c1++; runs.push({r0:r,r1:r,c0:c,c1}); c=c1+1; } else c++;
     }
   }
@@ -2196,15 +2202,17 @@ function ctfMergeCells(cells, flat){   // cells: Set of "r,c" (flat: horizontal 
 
 function ctfMapBuild(id){
   const def = CTF_MAPS[id]; if(!def) return null;
+  const size = def.size || {}; CTF_DIM.rows = size.rows || CTF_ROWS; CTF_DIM.half = size.half || CTF_HALF; CTF_DIM.dr = CTF_DIM.rows - CTF_ROWS;
   const g = ctfGridNew(); def.build(g);
-  const WW = CTF_COLS*CTF_CELL, WH = CTF_ROWS*CTF_CELL, HALF = WW/2;
+  const dr = CTF_DIM.dr; if(dr && g.info && g.info.supers) for(const sj of g.info.supers){ sj.pad.r += dr; sj.ledge.r += dr; }
+  const WW = 2*CTF_DIM.half*CTF_CELL, WH = CTF_DIM.rows*CTF_CELL, HALF = WW/2;
   const mx = (x, w)=> WW - x - (w||0);
   const solids = new Set(), hops = new Set(), doorCells = {}, jailCells = new Set();
-  const M = { id, name:def.name, theme:def.theme, WW, WH, plats:[], doors:[], keys:[], boosts:[], spots:[], homes:[], jails:[], buffs:[], elevs:[],
+  const M = { id, name:def.name, theme:def.theme, WW, WH, half:CTF_DIM.half, dr, plats:[], doors:[], keys:[], boosts:[], spots:[], homes:[], jails:[], buffs:[], elevs:[],
               pads:[], clear:[], G:0, info:g.info || null };
   const leftPlats = [], at = (r,c)=> ({ x:c*CTF_CELL+CTF_CELL/2, y:(r+1)*CTF_CELL });   // an object stands on the floor of its cell
   const objs = { keys:[], boosts:[], spots:[], spawns:[], pad:new Set(), slots:[], buffs:[] };
-  for(let r=0;r<CTF_ROWS;r++) for(let c=0;c<CTF_HALF;c++){
+  for(let r=0;r<CTF_DIM.rows;r++) for(let c=0;c<CTF_DIM.half;c++){
     const ch = g.rows[r][c], k = r+','+c;
     if(ch==='#') solids.add(k);
     else if(ch==='=') hops.add(k);
@@ -2276,7 +2284,7 @@ function ctfMapBuild(id){
 // The lattice of one-way ledges over the open air of one half. Deterministic (hashed from cell coordinates, never Math.random),
 // so a replay or a client rebuilds the same map.
 function ctfLattice(g, leftPlats, o){
-  const out = [], HALF = CTF_HALF*CTF_CELL;
+  const out = [], HALF = CTF_DIM.half*CTF_CELL;
   const solids = leftPlats.filter(p=>p.solid);
   const hops = leftPlats.filter(p=>p.hop);
   const clear = g.clear.map(([c0,r0,c1,r1])=>({ x:c0*CTF_CELL, y:r0*CTF_CELL, w:(c1-c0+1)*CTF_CELL, h:(r1-r0+1)*CTF_CELL }));
@@ -2319,7 +2327,7 @@ function ctfLattice(g, leftPlats, o){
 //   - The base: a home room with the pad and eight spawns, a barracks above, the jail in the bottom corner with its no-go zone.
 // ---------------------------------------------------------------------------------------------------------------
 function ctfRoomGen(g, cfg){
-  const J = 9, K = 6, RW = 9, C0 = 2, SPINE = 83, HALFC = CTF_HALF;
+  const J = 9, K = 6, RW = 9, C0 = 2, SPINE = 83, HALFC = CTF_DIM.half;
   const x0 = j => C0 + RW*j, wc = j => x0(j) + 8, fl = k => 13 + 5*k;
   const R = (a, b, s) => cellJitter(a + 11, b + 7, (((cfg.seed|0)*31 + s) | 0));
   const nid = (j, k) => j < 0 ? -1 : (j >= J ? J*K : j*K + k);
@@ -2977,6 +2985,7 @@ function ctfLOS(x0, y0, x1, y1, team){
 const CTF_NOINP = { left:false, right:false, jump:false, down:false, up:false, attack:false, special:false, smash:false, flag:false, edit:false };
 function ctfFilterInput(f, inp){
   const L = CTF.live; if(!L || L.over) return inp;
+  if(f._jail == null && inp && (inp.attack || inp.special || inp.smash)) f._ctfRevealT = CTF_HIDE_REVEAL;   // attacking from inside a prop shows you for a moment
   if(f._jail != null){   // a prisoner: attack = watch the next teammate, the flag key = ping the flag this fighter saw last
     const a = !!inp.attack, p = !!inp.flag;
     if(a && !f._ctfA) ctfSpecCycle(f);
@@ -3111,7 +3120,7 @@ function ctfStep(){
   L.playT++;
   ctfStepJails(L);
   for(const f of fighters) f._ctfPct = f.pct;
-  ctfStepZones(L);
+  ctfStepZones(L); ctfStepHide(L);
   ctfStepKeys(L);
   ctfStepBoosts(L);
   ctfStepBuffs(L);
@@ -3161,6 +3170,31 @@ function ctfFreeJail(L, j, by){
   shake(7); ctfSfx('free');
 }
 // The jail's own team may not stand in the zone around it: they are walked out of it, gently.
+// ---- HIDING IN PROPS: a fighter standing inside a prop (a map's bush or crate, a built decoration) is hidden from the other side: not drawn, not seen by their CPUs unless close, until
+// they attack or are hit; for their own side the prop turns see-through so they can see who is in it. A prop that breaks shows whoever was inside.
+const CTF_HIDE_REVEAL = 90, CTF_HIDE_CLOSE = 130;
+function ctfPropAt(f){
+  const L = CTF.live, M = CTF.map; if(!L || !M) return null;
+  const fy = f.y + f.r; let best = null;
+  M.spots.forEach((s, i)=>{ if(!s.cover || (L.gone && L.gone[i])) return; const hw = (CTF_COVER_HW[s.cover] || 46)*0.8; if(Math.abs(s.x - f.x) < hw && Math.abs(s.y - fy) < 36) best = { key:'s' + i, kind:s.cover, x:s.x, y:s.y }; });
+  if(!best) for(const e of (L.edits || [])) if(e.tool === 'deco' && e.hp > 0){ const hw = (CTF_COVER_HW[e.kind] || 46)*0.8; if(Math.abs(e.cx - f.x) < hw && Math.abs(e.fy - fy) < 36){ best = { key:'e' + e.id, kind:e.kind, x:e.cx, y:e.fy }; break; } }
+  return best;
+}
+function ctfStepHide(L){
+  for(const f of fighters){
+    if(f._ctfRevealT > 0) f._ctfRevealT--;
+    if(f.hitstun > 0) f._ctfRevealT = Math.max(f._ctfRevealT || 0, CTF_HIDE_REVEAL);
+    const p = (L.phase === 'play' && !f.dead && f._jail == null && f._cf < 0 && f.onground) ? ctfPropAt(f) : null;
+    f._propKey = p ? p.key : null;
+    f._hid = !!p && !(f._ctfRevealT > 0);
+  }
+}
+// Is this fighter out of sight of side vt? Hidden in a prop, unless one of vt's fighters is right beside it.
+function ctfHidInProp(f, vt){
+  if(!f._hid || f.team === vt) return false;
+  for(const g of fighters){ if(g.team !== vt || g.dead || g._jail != null) continue; const dx = g.x - f.x, dy = g.y - f.y; if(dx*dx + dy*dy < CTF_HIDE_CLOSE*CTF_HIDE_CLOSE) return false; }
+  return true;
+}
 function ctfStepZones(L){
   for(const j of L.jails){
     const z = j.zone;
@@ -3835,6 +3869,8 @@ function ctfNetFighter(f, o){
   if(f._jail != null) o.jl = f._jail;
   if(f._ctfFree > 0) o.fr = 1;
   if(f._ghostT > 0) o.gh = 1;
+  if(f._hid) o.hd = 1;
+  if(f._propKey) o.pk = f._propKey;
   if(f._shield) o.sh = 1;
   if(f._ctfJT > 0) o.jt = 1;
   if(f._cam){ o.cam = [Math.round(f._cam.x), Math.round(f._cam.y)]; o.tl = f._tool || 0; o.pc = f._piece || 0; }
@@ -3880,7 +3916,7 @@ function ctfNetIn(c){
 function ctfNetFightersIn(){
   for(const f of fighters){
     f._cf = f.cf != null ? f.cf : -1; f._ck = f.ck != null ? f.ck : -1; f._jail = f.jl != null ? f.jl : null;
-    f._ctfFree = f.fr ? 300 : 0; f._ghostT = f.gh ? 1 : 0; f._shield = f.sh ? 1 : 0; f._ctfJT = f.jt ? 1 : 0;
+    f._ctfFree = f.fr ? 300 : 0; f._ghostT = f.gh ? 1 : 0; f._hid = !!f.hd; f._propKey = f.pk || null; f._shield = f.sh ? 1 : 0; f._ctfJT = f.jt ? 1 : 0;
     f._cam = f.cam ? { x:f.cam[0], y:f.cam[1] } : null; f._tool = f.tl || 0; f._piece = f.pc || 0; f._spec = f.sp != null ? f.sp : null;
     f.controller = f.hu ? 'remote' : 'ai';
   }
@@ -4339,9 +4375,16 @@ function ctfDrawWorld(){
     const o = fighters[fl.owner]; ctfShadow(ctx, fl.x, fl.y, 28); ctfFlagIcon(ctx, fl.x, fl.y, ctfColor(fl.team), 64, T*0.1 + fl.id, o ? o.color : null);
     if(fl.st === 3 && fl.team !== vt){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(fl.x, fl.y - 30, 44, 0, 7); ctx.stroke(); ctx.restore(); }
   }
-  M.spots.forEach((s, i)=>{ if(!s.cover || (L.gone && L.gone[i]) || !inView(s.x - 60, s.y - 140, 120, 150)) return; ctfCoverDraw(ctx, s, M.theme); });
+  CTF_FRONT.length = 0; const occ = key=>fighters.some(q=>q._propKey === key && q.team === vt && !q.dead);
+  M.spots.forEach((s, i)=>{ if(!s.cover || (L.gone && L.gone[i]) || !inView(s.x - 60, s.y - 140, 120, 150)) return; if(occ('s' + i)) CTF_FRONT.push(s); else ctfCoverDraw(ctx, s, M.theme); });
   // what the players built (an enemy's work stays out of sight while the hiding goes on)
-  for(const e of (L.edits || [])){ if(L.phase === 'hide' && e.team !== vt) continue; if(!inView(e.x - 30, e.y - 30, e.w + 60, e.h + 60)) continue; ctfEditPieceDraw(ctx, e, M.theme, vt, T, null); }
+  for(const e of (L.edits || [])){ if(L.phase === 'hide' && e.team !== vt) continue; if(!inView(e.x - 30, e.y - 30, e.w + 60, e.h + 60)) continue; if(e.tool === 'deco' && occ('e' + e.id)){ CTF_FRONT.push({ x:e.cx, y:e.fy, cover:e.kind }); continue; } ctfEditPieceDraw(ctx, e, M.theme, vt, T, null); }
+}
+// Drawn after the fighters: the props one of the viewer's side stands in, see-through (about 40%), so whoever is inside can be seen.
+const CTF_FRONT = [];
+function ctfDrawCoverFront(){
+  if(!CTF_FRONT.length) return; const M = CTF.map; if(!M) return;
+  ctx.save(); ctx.globalAlpha = 0.4; for(const s of CTF_FRONT) ctfCoverDraw(ctx, s, M.theme); ctx.restore();
 }
 // Drawn after a fighter: the flag on their back, the key over their head, the lock on a prisoner, the check mark of a fighter who is done.
 function ctfDrawCarry(f){
@@ -4357,7 +4400,7 @@ function ctfDrawCarry(f){
   if(f._ctfFree > 0 && f.team === ctfViewTeam()){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.3); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(f.x, f.y + f.r + 14, 8, 0, 7); ctx.fill(); ctx.restore(); }   // freed: cannot be jailed again for a few seconds
 }
 // Does the viewer not see this fighter at all? A ghost (a boost) is invisible to the other side.
-function ctfHiddenFrom(f){ return f._ghostT > 0 && f.team !== ctfViewTeam(); }
+function ctfHiddenFrom(f){ const vt = ctfViewTeam(); return (f._ghostT > 0 && f.team !== vt) || ctfHidInProp(f, vt); }
 
 // ---- the screen: the top bar (flags captured by each side, the hiding timer) --------------------------------------
 function drawCtfHud(){
@@ -4969,8 +5012,8 @@ function ctfNavReach(nav){
 }
 // The rooms of one side (the map's rooms: 9 along, 6 layers, and the roofs): the sweep points in each, and the middle of it.
 function ctfRoomId(M, x, y){
-  const col = Math.floor(x/120), colm = x > M.WW/2 ? M.WW/120 - 1 - col : col, row = Math.floor((y - 1)/120);
-  const j = Math.max(0, Math.min(9, Math.floor((colm - 2)/9))), k = row < 9 ? -1 : Math.max(0, Math.min(5, Math.floor((row - 9)/5)));
+  const col = Math.floor(x/120), colm = x > M.WW/2 ? M.WW/120 - 1 - col : col, row = Math.floor((y - 1)/120) - (M.dr || 0);
+  const j = Math.max(0, Math.min(9, Math.floor((colm - 2)/((M.half || 90)/10)))), k = row < 9 ? -1 : Math.max(0, Math.min(5, Math.floor((row - 9)/5)));
   return (j + 1)*10 + (k + 1);
 }
 function ctfAiRooms(nav, side){
@@ -5266,6 +5309,7 @@ function ctfAiFoe(f, range, vert){
   for(const g of fighters){
     if(g.team === f.team || g._jail != null || g.dead || g._ghostT > 0) continue;
     const dx = g.x - f.x, dy = g.y - f.y;
+    if(g._hid && dx*dx + dy*dy > CTF_HIDE_CLOSE*CTF_HIDE_CLOSE) continue;   // hidden in a prop: not seen from afar
     if(Math.abs(dy) > (vert || 220)) continue;
     const d = dx*dx + dy*dy; if(d < bd){ bd = d; best = g; }
   }
@@ -5443,6 +5487,12 @@ function ctfAiChoose(f, ai, L, nav, now){
     const camps = (L.bld && L.bld.camps[t]) || [], defs = mates.filter(g=>g._ai && g._ai.role === 'def').sort((x, y)=>x.idx - y.idx), k = defs.indexOf(f), z0 = ctfAiSkip(f);
     if(camps.length && k >= 0 && k % 2 === 0){ const c = camps[(k/2) % camps.length], cn = nav.nodes[c.node]; if(cn && !z0(cn)) return set({ kind:'guard', x:c.x + (Math.random()*60 - 30), y:c.y, camp:true }); }
     const own = L.flags.filter(fl=>fl.team === t && fl.st === 1);
+    if(own.length && Math.random() < 0.3){   // lurk: stand inside a prop close to a flag (hidden from the other side) and come out to tag whoever comes near
+      const fl0 = own[Math.floor(Math.random()*own.length)], props = [];
+      L.map.spots.forEach((s, i)=>{ if(s.team === t && s.cover && !(L.gone && L.gone[i]) && Math.abs(s.x - fl0.hx) < 600 && Math.abs(s.y - fl0.hy) < 300) props.push(s); });
+      for(const e of (L.edits || [])) if(e.team === t && e.tool === 'deco' && e.hp > 0 && Math.abs(e.cx - fl0.hx) < 600 && Math.abs(e.fy - fl0.hy) < 300) props.push({ x:e.cx, y:e.fy });
+      if(props.length){ const s = props[Math.floor(Math.random()*props.length)], n = ctfNavNodeAt(nav, s.x, s.y, 14); if(n) return set({ kind:'guard', x:s.x, y:s.y, lurk:true }); }
+    }
     if(own.length){
       if(!ai.guard || now > ai.guardUntil){ ai.guard = own[Math.floor(Math.random()*own.length)]; ai.guardUntil = now + 600 + Math.floor(Math.random()*500); }
       const z = ctfAiSkip(f), fx = ai.guard.hx, fy = ai.guard.hy, here = [];
@@ -38593,7 +38643,7 @@ function teamSlotOf(f){ let n = 0; for(const o of fighters){ if(o.team === f.tea
 function aiThink(f){
   if(RACE.active && f._runner) return raceRunnerAi(f);   // RUNNING!: the runners run (see raceRunnerAi)
   f.aiTimer--;
-  let targets=fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team&&!(t._ghostT>0));   // (a ghost, in Capture the Flag, is not seen)
+  let targets=fighters.filter(t=>!t.dead&&t.idx!==f.idx&&t.team!==f.team&&!(t._ghostT>0)&&!(t._hid&&Math.hypot(t.x-f.x,t.y-f.y)>130));   // (a ghost, or a fighter hidden in a prop, in Capture the Flag, is not seen)
   const inp={left:false,right:false,jump:false,down:false,attack:false,special:false,smash:false,up:false};
   // BOSS RUSH: the boss is the enemy — treat it as a target so allies actually attack it.
   if(SETTINGS.mode==='boss' && !f._oneGhost){
@@ -40198,6 +40248,7 @@ function draw(){
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(f._oneGhost) drawOneGhostAura(f); drawFighter(f); if(SETTINGS.mode==='ctf') ctfDrawCarry(f); }
+  if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
   if(SHOW_HITBOXES) drawHitboxOverlay();
 

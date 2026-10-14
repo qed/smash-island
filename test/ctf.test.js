@@ -482,6 +482,32 @@ describe('capture the flag', () => {
     expect(ch[0], 'Random first').toBe('random'); expect(ch).toEqual(expect.arrayContaining(['castle', 'mines']));
   });
 
+  it('a fighter standing inside a prop is hidden from the other side (not drawn, not targeted from afar) until it attacks or is hit; the prop breaking shows it; a friend or a close foe sees it', () => {
+    const { window: w } = loadMonolith(36);
+    start(w);
+    const a = mate(w, 0, 1), foe = mate(w, 1, 0), friend = mate(w, 0, 2);
+    const sp = J(w, `CTF.map.spots.filter(function(s){ return s.team === 0 && s.cover && s.y > 1500; })[2]`), spi = w.eval(`CTF.map.spots.findIndex(function(s){ return s.team === 0 && s.cover && s.x === ${sp.x} && s.y === ${sp.y}; })`);
+    const standAt = (i, x, y) => w.eval(`(function(){ var f = fighters[${i}]; f.x = ${x}; f.y = ${y} - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.hitstun = 0; f.invuln = 0; f._ctfRevealT = 0; })()`);
+    standAt(foe, sp.x + 2500, sp.y); standAt(friend, sp.x - 900, sp.y);
+    standAt(a, sp.x, sp.y); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._hid`), 'inside the prop: hidden').toBe(true);
+    expect(w.eval(`ctfHidInProp(fighters[${a}], 1)`), 'the other side does not see it').toBe(true);
+    expect(w.eval(`ctfHidInProp(fighters[${a}], 0)`), 'its own side does').toBe(false);
+    expect(w.eval(`ctfAiFoe(fighters[${foe}], 3000)`), 'an enemy CPU does not target it from afar').toBe(null);
+    standAt(foe, sp.x + 90, sp.y); logic(w, 2);
+    expect(w.eval(`ctfHidInProp(fighters[${a}], 1)`), 'a foe right beside it sees it').toBe(false);
+    standAt(foe, sp.x + 2500, sp.y);
+    w.eval(`ctfFilterInput(fighters[${a}], { attack:true })`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._hid`), 'attacking shows it for a moment').toBe(false);
+    logic(w, 100);
+    expect(w.eval(`fighters[${a}]._hid`), 'and it hides again').toBe(true);
+    w.eval(`CTF.live.gone = CTF.live.gone || {}; CTF.live.gone[${spi}] = true`); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._hid`), 'the prop broke: shown').toBe(false);
+    // the page's own AI leaves it alone too
+    w.eval(`CTF.live.gone[${spi}] = false`); standAt(a, sp.x, sp.y); logic(w, 2);
+    expect(w.eval(`fighters[${a}]._hid`)).toBe(true);
+  });
+
   it('the decoration tool offers what fits the place: a set for the area under the cursor (halls, snowy mountain, mines, reef), B steps through it, the ghost is that prop, both sides alike', () => {
     const { window: w } = loadMonolith(33);
     hideStart(w);
