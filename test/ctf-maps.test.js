@@ -25,7 +25,8 @@ for (const id of MAPS) {
         out.mirrored = M.plats.every(function(p){ return set[key({ x:M.WW - p.x - p.w, y:p.y, w:p.w, h:p.h, solid:p.solid })]; });
         return JSON.stringify(out);
       })()`));
-      expect(r.WW).toBe(21600);
+      // each map's world width; the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side)
+      expect(r.WW).toBe({ castle: 26400, mines: 21600 }[id]);
       expect(r.mirrored, 'the right half is the left half turned over').toBe(true);
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
