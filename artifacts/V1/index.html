@@ -1206,6 +1206,10 @@
           <label>Team split</label>
           <div class="seg" id="segTeams"></div>
         </div>
+        <div class="setgrp" id="ctfMapRow" style="display:none">
+          <label>Map</label>
+          <div class="seg" id="segCtfMap"></div>
+        </div>
       </div>
 
       <div class="selrow2">
@@ -2847,10 +2851,27 @@ function ctfStageObj(id){
     CTF.stageObjs[id] = { id:'ctf-'+id, name:M.name, blurb:'Capture the Flag', sky:M.theme.sky, ground:M.theme.solid.fill, plats:[], hazard:null }; }
   return CTF.stageObjs[id];
 }
+// The map choice in the settings (and the host's row in the online lobby): Random, or one of the maps; remembered between visits (a blocked store changes nothing).
+const CTF_MAP_PICK_KEY = 'bfsi:ctfmap';
+function ctfMapPickGet(){
+  if(SETTINGS.ctfMapPick == null){ let v = 'random'; try{ v = localStorage.getItem(CTF_MAP_PICK_KEY) || 'random'; }catch(e){} SETTINGS.ctfMapPick = v; }
+  const v = SETTINGS.ctfMapPick; return (v !== 'random' && CTF_MAPS[v] && !CTF_MAPS[v].wip) ? v : 'random';
+}
+function ctfMapPickSet(v){ SETTINGS.ctfMapPick = v; try{ localStorage.setItem(CTF_MAP_PICK_KEY, v); }catch(e){} }
+function ctfMapChoices(){ return [['random', 'Random']].concat(ctfMapIds().map(id=>[id, CTF_MAPS[id].name])); }
+function ctfBuildMapButtons(){
+  const row = document.getElementById('ctfMapRow'), seg = document.getElementById('segCtfMap'); if(!row || !seg) return;
+  row.style.display = SETTINGS.mode === 'ctf' ? 'flex' : 'none'; if(SETTINGS.mode !== 'ctf') return;
+  seg.innerHTML = ''; const cur = ctfMapPickGet();
+  for(const [v, text] of ctfMapChoices()){ const b = document.createElement('button'); b.dataset.v = v; b.textContent = text; if(v === cur) b.classList.add('on');
+    b.onclick = ()=>{ ctfMapPickSet(v); seg.querySelectorAll('button').forEach(x=>x.classList.toggle('on', x === b)); };
+    seg.appendChild(b); }
+}
 function ctfPickMap(){
   const ids = ctfMapIds();
   if(CTF.netMap && CTF_MAPS[CTF.netMap]){ const id = CTF.netMap; CTF.netMap = null; return id; }   // an online match: the host's pick
   if(CTF.forceMap && CTF_MAPS[CTF.forceMap]) return CTF.forceMap;
+  { const pick = ctfMapPickGet(); if(pick !== 'random') return pick; }   // the player's choice
   let id = ids[Math.floor(Math.random()*ids.length)];
   if(ids.length > 1 && id === CTF.lastMap) id = ids[(ids.indexOf(id) + 1 + Math.floor(Math.random()*(ids.length-1))) % ids.length];
   return id;
@@ -4344,7 +4365,7 @@ function drawCtfHud(){
     { const me = fighters.find(q=>q.you); if(me && me._cam){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2; ctx.fillRect(cx - 17, y + 48, 34, 24); ctx.strokeRect(cx - 17, y + 48, 34, 24); ctx.fillRect(cx - 9, y + 43, 12, 6);
         ctx.fillStyle = '#3a3448'; ctx.beginPath(); ctx.arc(cx, y + 60, 7, 0, 7); ctx.fill(); ctx.stroke(); } }
     // who is done
-    let i = 0; for(const f of fighters){ if(!ctfIsHuman(f) && fighters.some(ctfIsHuman)) continue; const dx = cx - 52 + i*18; i++; if(i > 6) break;
+    let i = 0; for(const f of fighters){ if(f.team !== ctfViewTeam()) continue; const dx = cx - 52 + i*18; i++; if(i > 6) break;
       ctx.fillStyle = L.done[f.idx] ? '#3fbf5f' : 'rgba(255,255,255,0.25)'; ctx.beginPath(); ctx.arc(dx + 8, y + 36, 5, 0, 7); ctx.fill(); }
   } else {
     ctfFlagIcon(ctx, cx - 18, y + 33, ctfColor(0), 26, hazardT*0.1, null); ctfFlagIcon(ctx, cx + 18, y + 33, ctfColor(1), 26, hazardT*0.1 + 2, null);
@@ -4791,7 +4812,7 @@ function ctfNavNodeOf(nav, f){
 // dj: a second jump at the top of the first. Returns where it lands: { node, x, t }, or null.
 function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
-  if(pert){ P.CAP *= pert.k; P.ACC *= pert.k; }   // (a slightly slower fighter, a later second jump: does the move still come down on the same place?)
+  if(pert){ P.CAP *= pert.k; P.ACC *= pert.k; if(pert.jv) P.JV *= pert.jv; }   // (a slightly slower fighter, a later second jump: does the move still come down on the same place?)
   let x = xa, y = A.y - R, vy = 0, jumps = 2, sp = 0, fl = false;
   if(jump){ vy = P.JV; jumps = 1; }
   if(thru){ y += R*0.6; vy = 5; }   // down + jump on a one-way ledge: dropped through it (the game's own: dropping = 10 frames, vy 5)
@@ -4843,7 +4864,7 @@ function ctfNavProbe(nav, n){
     for(const dj of [0, 1]) for(const T of (dir === 0 ? [0] : [4, 10, 30, 200])){
       const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, true, false);
       if(r && r.node !== n && ctfNavSimBoth(nav, n, xa, dir, dj, T, true, run, r.node)){
-        const rb = (kk, dd)=>{ const r2 = ctfNavSim(nav, n, xa, v0*kk, dir, dj, T, true, false, false, false, { k:kk, dd }); return !!(r2 && r2.node === r.node); };
+        const rb = (kk, dd)=>{ const r2 = ctfNavSim(nav, n, xa, v0*kk, dir, dj, T, true, false, false, false, { k:kk, dd, jv:0.985 }); return !!(r2 && r2.node === r.node); };
         const rob = rb(0.92, 0) && rb(1, 4) && rb(0.92, 4);   // an edge that only just works is not one to rely on: it is kept only when nothing steadier joins the same two places
         add({ kind:'jump', from:n.id, to:r.node.id, xa, dir, dj, T, v0, xb:r.x, run:Math.min(run, 150), cost:r.t + 14 + dj*8 + (rob ? 0 : 300), risky:!rob, doors:[] });
       }
@@ -5070,7 +5091,9 @@ function ctfAiFollow(f, ai, nav, inp, now){
     ai.lost = 0;
     if(ai.phase === 'air'){   // came down
       const e = ai.edge; ai.edge = null; ai.phase = '';
-      if(e && cn.id === e.to){ ai.pi++; ctfAiStat('edgeOK'); } else { ctfAiStat('edgeBad'); if(e) ctfAiBanEdge(ai, e, now); ai.path = null; return 'lost'; }
+      if(e && cn.id === e.to){ ai.pi++; ctfAiStat('edgeOK'); }
+      else if(e && nav.nodes[e.to].y >= cn.y - 1 && Math.abs((cn.x0 + cn.x1)/2 - (nav.nodes[e.to].x0 + nav.nodes[e.to].x1)/2) < 700){ ctfAiStat('edgeAlt'); ai.path = null; return 'lost'; }   // came down somewhere as high or higher and close (a free fighter's jump is faster and higher than the one planned for): plan again from here, no blame on the move
+      else { ctfAiStat('edgeBad'); if(e){ const BL = CTF.stat.badList = CTF.stat.badList || []; if(BL.length < 600) BL.push([e.kind, e.from, e.to, cn.id, Math.round(e.xa), Math.round(f.x), e.dir, e.dj ? 1 : 0, e.T]); ctfAiBanEdge(ai, e, now); } ai.path = null; return 'lost'; }
     }
   }
   if(!ai.path) return 'lost';
@@ -5365,6 +5388,8 @@ function ctfAiChoose(f, ai, L, nav, now){
     const d = Math.hypot(fl.x - f.x, (fl.y - f.y)*1.4); if(d < bd){ bd = d; best = fl; }
   }
   if(best) return set({ kind:'flag', id:best.id, x:best.x, y:best.y, mine:'take' });
+  // 5b. the opening: an attacker standing by a speed boost takes it as play starts, then rushes
+  if(L.playT < 900 && ai.role === 'att' && !(f._hasteT > 0)){ const sb = L.boosts.find(b=>b.kind === 'speed' && b.cd <= 0 && Math.abs(b.x - f.x) < 500 && Math.abs(b.y - f.y) < 260 && (b.x < M.WW/2) === (t === 0)); if(sb) return set({ kind:'boost', id:sb.i, x:sb.x, y:sb.y }); }
   // 6. defenders stay with their own flags; attackers search (a few walk with a carrier)
   if(ai.role === 'def'){
     const own = L.flags.filter(fl=>fl.team === t && fl.st === 1);
@@ -5426,7 +5451,7 @@ function ctfAiSearch(f, ai, L, nav, now, set){
 // ---- hiding -----------------------------------------------------------------------------------------------------------
 function ctfAiHide(f, ai, L, nav, inp, now){
   const fl = L.flags[f.idx];
-  if(L.done[f.idx]) return inp;
+  if(L.done[f.idx]) return ctfAiHideIdle(f, ai, L, nav, inp, now);   // ready: but a human may take minutes yet, so never stand frozen
   if(fl.st !== 1 && now % 30 === f.idx % 30){ if(ai.hx != null && Math.abs(f.x - ai.hx) + Math.abs(f.y - ai.hy) < 40) ai.hn = (ai.hn || 0) + 1; else ai.hn = 0; ai.hx = f.x; ai.hy = f.y; if(ai.hn >= 4){ ai.hn = 0; ctfAiStat('unstickHide'); ai.hide = null; ai.hideTry = (ai.hideTry || 0) + 1; ctfAiResetMove(ai); ai.fight = 0; } }
   if(fl.st === 1){   // put down: done a moment later
     ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT === 12) inp.special = true; return inp;
@@ -5457,6 +5482,38 @@ function ctfAiHide(f, ai, L, nav, inp, now){
   }
   const st = ctfAiFollow(f, ai, nav, inp, now);
   if(st === 'lost'){ ctfAiResetMove(ai); if(!f.onground) return null; }
+  return inp;
+}
+// A CPU that has put its flag down and built while a human is still hiding (up to five minutes): it walks about its own ground near the flag, stops, looks about a little, walks on.
+function ctfAiHideIdle(f, ai, L, nav, inp, now){
+  if(f._jail != null || f.hitstun > 0) return inp;
+  const fl = L.flags[f.idx], mid = L.map.WW/2;
+  if(!ai.idleGoal || now > ai.idleUntil){
+    let g = null;
+    if(ai.role === 'att'){
+      // the opening an attacker prepares: beside a speed boost on its own side (it takes it as play starts, then rushes), or ready by the barrier on the middle line
+      if(!ai.stage){
+        const bs = L.boosts.filter(b=>b.kind === 'speed' && (b.x < mid) === (f.team === 0) && ctfAiReachable(f.team, b.x, b.y));
+        if(bs.length && Math.random() < 0.5){ const b = bs[Math.floor(Math.random()*bs.length)]; ai.stage = { x:b.x + (b.x < mid ? -90 : 90), y:b.y }; }
+        else { const pts = ctfNavSweep(nav, f.team).filter(p=>Math.abs(p.x - mid) > 500 && Math.abs(p.x - mid) < 1700 && ctfAiReachable(f.team, p.x, p.y)); const p = pts.length ? pts[Math.floor(Math.random()*pts.length)] : null; ai.stage = p ? { x:p.x, y:p.y } : { x:fl.x, y:fl.y }; }
+      }
+      g = ai.stage;
+    }
+    if(!g){
+      const pts = ctfNavSweep(nav, f.team).filter(p=>Math.hypot(p.x - fl.x, p.y - fl.y) < 2200 && ctfAiReachable(f.team, p.x, p.y));
+      const p = pts.length ? pts[Math.floor(Math.random()*pts.length)] : null; g = p ? { x:p.x, y:p.y } : { x:f.x, y:f.y };
+    }
+    ai.idleGoal = { x:g.x, y:g.y }; ai.idleUntil = now + 360 + Math.floor(Math.random()*480); ai.path = null; ai.edge = null; ai.phase = '';
+  }
+  const g = ai.idleGoal, cn = ctfNavNodeOf(nav, f), gn = ctfNavNodeAt(nav, g.x, g.y, 14);
+  if(f.onground && cn && gn && cn.id === gn.id){
+    if(Math.abs(f.x - g.x) > 20) ctfAiWalk(f, inp, g.x, 8);
+    else if(((now >> 5) + f.idx) % 5 === 0) ctfAiWalk(f, inp, g.x + (((now >> 6) % 2) ? 70 : -70), 8);   // a step or two to either side: looking about
+    return inp;
+  }
+  if(!ai.path && f.onground){ const r = ctfAiPlan(f, ai, g.x, g.y, now); if(r !== true){ ai.idleUntil = 0; return inp; } }
+  const st = ctfAiFollow(f, ai, nav, inp, now);
+  if(st === 'lost'){ ctfAiResetMove(ai); ai.idleUntil = 0; if(!f.onground) return null; }
   return inp;
 }
 function ctfAiHideTick(L){
@@ -6849,6 +6906,7 @@ function syncModeUI(opts){
   const isTeams = (SETTINGS.mode==='teams');
   const row=document.getElementById('teamRow');
   if(row) row.style.display = isTeams ? 'flex' : 'none';
+  try{ ctfBuildMapButtons(); }catch(e){}   // Capture the Flag's map choice
   const seg=document.getElementById('segMode');
   if(seg) seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===SETTINGS.mode));
   // One's pick sits under Boss Rush once she is beaten -- local play only, like her fight -- and Steve Cobs's beside it once his
@@ -48082,6 +48140,7 @@ window.NET = {
     ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; changed(); };
     sg.appendChild(ss);
     seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush'],['ctf','Capture the Flag']], SETTINGS.mode, v=>{ SETTINGS.mode=v; });
+    if(SETTINGS.mode==='ctf') seg('Map', 'lobbyCtfMap', ctfMapChoices(), ctfMapPickGet(), v=>{ ctfMapPickSet(v); });   // the host's pick goes in the start (settings.ctfMap)
     // contestants: the main game's choices for this mode, never fewer than the humans in the room
     const humans=Math.max(1, this.players.length);
     let counts=countOptions().filter(n=>n>=humans); if(SETTINGS.mode==='ctf'){ const ev=counts.filter(n=>n%2===0); if(ev.length) counts=ev; }   // (Capture the Flag: two even sides)

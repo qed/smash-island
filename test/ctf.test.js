@@ -462,6 +462,26 @@ describe('capture the flag', () => {
     expect(going().length, 'with every attacker in jail the defenders go').toBeGreaterThanOrEqual(1);
   });
 
+  it('a human who takes their time hiding: their CPU teammates keep moving (building, walking about, taking their opening places) instead of standing frozen; the map choice is remembered and used', { timeout: 120000 }, () => {
+    const { window: w } = loadMonolith(35);
+    w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='castle'; beginMatchNow();`);
+    step(w, 1700);
+    expect(w.eval('CTF.live.phase'), 'the human has not pressed done: still hiding').toBe('hide');
+    const mates = J(w, `fighters.filter(function(f){ return f.team===0 && f.idx!==0; }).map(function(f){ return f.idx; })`);
+    expect(mates.filter(i => w.eval(`!!CTF.live.done[${i}]`)).length, 'most are ready').toBeGreaterThanOrEqual(3);
+    const pos = () => mates.map(i => J(w, `[fighters[${i}].x, fighters[${i}].y]`));
+    let last = pos(); const moved = mates.map(() => 0);
+    for (let k = 0; k < 8; k++) { step(w, 150); const p = pos(); p.forEach((q, i) => { moved[i] += Math.hypot(q[0] - last[i][0], q[1] - last[i][1]); }); last = p; }
+    expect(moved.filter(m => m > 400).length, 'still on the move 20 s on').toBeGreaterThanOrEqual(3);
+    // the map choice: a named map is the one played; Random picks among them; it is kept
+    w.eval(`CTF.forceMap = null; ctfMapPickSet('mines')`);
+    expect(w.eval('ctfPickMap()')).toBe('mines');
+    expect(w.eval(`localStorage.getItem('bfsi:ctfmap')`)).toBe('mines');
+    w.eval(`ctfMapPickSet('random')`);
+    const ch = J(w, 'ctfMapChoices().map(function(c){ return c[0]; })');
+    expect(ch[0], 'Random first').toBe('random'); expect(ch).toEqual(expect.arrayContaining(['castle', 'mines']));
+  });
+
   it('the decoration tool offers what fits the place: a set for the area under the cursor (halls, snowy mountain, mines, reef), B steps through it, the ghost is that prop, both sides alike', () => {
     const { window: w } = loadMonolith(33);
     hideStart(w);
