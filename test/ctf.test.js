@@ -435,6 +435,33 @@ describe('capture the flag', () => {
   const roomSpot = (w) => J(w, `(function(){ var s = CTF.map.spots.filter(function(s){ return s.team===0 && s.y>1500 && s.x<8000; })[3]; return { x:s.x, y:s.y }; })()`);
   const tryPlace = (w, who, tool, kind, x, y, offs = [0, 130, -130, 260, -260, 390, -390, 520]) => { for (const dx of offs) { const ok = w.eval(`!!ctfEditPlaceAt(fighters[${who}], '${tool}', '${kind}', ${x + dx}, ${y})`); if (ok) return dx; } return null; };
 
+  it('a jailed human is rescued: CPU teammates set out within seconds (one when the door is clear, two when a guard stands by it: one fights, one holds), and defenders go when no attacker is left', () => {
+    const { window: w } = loadMonolith(34);
+    w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='castle'; beginMatchNow(); while(!CTF.nav.ready) ctfNavTick(CTF.nav, 80);
+      fighters.forEach(function(f){ f.controller = f.idx === 0 ? 'local' : 'ai'; f.you = f.idx === 0; }); ctfEndHide(CTF.live);`);
+    const sp = spawn(w, 1), door = J(w, 'CTF.map.jails[1].door');
+    w.eval(`(function(){ var f = fighters[0]; f.x = ${sp.x}; f.y = ${sp.y}; eliminate(f); })()`);
+    expect(w.eval('fighters[0]._jail'), 'the human is in the enemy jail').toBe(1);
+    const going = () => J(w, `fighters.filter(function(f){ return f.team===0 && f.idx!==0 && f._ai && f._ai.goal && f._ai.goal.kind==='jail' && f._jail==null; }).map(function(f){ return f._ai.goal.role; })`);
+    const choose = () => w.eval(`fighters.filter(function(f){ return f.team===0 && f.idx!==0 && f._jail==null; }).forEach(function(f){ ctfAiChoose(f, f._ai, CTF.live, CTF.nav, CTF.live.t); })`);
+    const clear = () => w.eval(`fighters.forEach(function(f){ if(f._ai) f._ai.goal = null; })`);
+    // a beat after the jailing: nobody yet; then one rescuer, holding the door
+    w.eval('fighters[0]._jailT = 10'); choose();
+    expect(going(), 'a moment to react').toEqual([]);
+    w.eval('fighters[0]._jailT = 100'); choose();
+    expect(going(), 'one rescuer goes when the door is clear, to hold it').toEqual(['hold']);
+    // a guard at the door: two, one holds and one fights
+    clear();
+    const foe = mate(w, 1, 0); put(w, foe, door.x - 160, door.y + door.h);
+    choose();
+    expect(going().sort(), 'two go when it is guarded').toEqual(['bait', 'hold']);
+    // only defenders are left free: they go too
+    clear(); put(w, foe, door.x - 3000, door.y + door.h);
+    w.eval(`fighters.forEach(function(f){ if(f.team===0 && f.idx!==0 && f._ai && f._ai.role==='att') f._jail = 1; })`);
+    choose();
+    expect(going().length, 'with every attacker in jail the defenders go').toBeGreaterThanOrEqual(1);
+  });
+
   it('the decoration tool offers what fits the place: a set for the area under the cursor (halls, snowy mountain, mines, reef), B steps through it, the ghost is that prop, both sides alike', () => {
     const { window: w } = loadMonolith(33);
     hideStart(w);
