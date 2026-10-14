@@ -30165,8 +30165,11 @@ function step(){
 
     // ---- move ----
     if(f.hitstun<=0){
+      if((inp.left && !f._pl) || (inp.right && !f._pr)) f._dirT = hazardT;
+      f._pl = !!inp.left; f._pr = !!inp.right;
       if(f._gb) gbTick(f, inp);
       if(f._hold) holdTick(f, inp);
+      if(f._mv) mvTick(f, inp);   // a tilt, an aerial or a side special in progress
       if(f.ctrlRev>0){ const l=inp.left; inp.left=inp.right; inp.right=l; }  // Remote hack: reversed controls
       // HASTE EASES OFF. It used to be 1.5x flat and then nothing, so the frame it ran out felt like the
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
@@ -30174,6 +30177,7 @@ function step(){
       const _face0 = f.face;
       if(inp.left){ f.vx-=mv; f.face=f.ctrlRev>0?1:-1; }
       if(inp.right){ f.vx+=mv; f.face=f.ctrlRev>0?-1:1; }
+      if(f._mv && !(f._mv.s.turn)) f.face=_face0;   // a move in progress does not turn her round
       if(f.face!==_face0){ f._turnT=hazardT; f._turnFrom=_face0; }
       if(!inp.left&&!inp.right && f.onground && !(f._sm && f._sm.drive) && !(f._gotcha && f._gotcha.phase==='lunge')) f.vx*=(f.iceUntil>0?0.99:FRICTION);
       if(f.iceUntil>0) f.iceUntil--;
@@ -30199,6 +30203,7 @@ function step(){
         doAttackSpecial(f); f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;
       } else if(atkSp){ } else {
         if(inp.grab){ if(!f._hold && !f._gb) mvGrabStart(f); }   // X+C: the grab (anyone's; a converted fighter's own throws, MOVESETS)
+        else if(inp.attack && f.atkCd<=0 && mvAttack(f, inp)){ }   // a converted fighter's tilt or aerial (MOVESETS)
         else if(inp.attack && f.atkCd<=0){
           // Land it and you recover sooner; whiff and you pay the full price (see JAB_HIT_CD).
           if(inp.down){ f._confirm=0; doGroundMove(f); f.atkCd = f._confirm ? GROUND_HIT_CD : 26; }
@@ -30213,11 +30218,11 @@ function step(){
         // held arms the special for SPECIAL_DIR_WINDOW frames and takes the first direction to land.
         if(inp.special && (f.spCd<=0 || (inp.down && f._grabbed!=null && f._grabTimer>0)) && !f._sp){   // Liy: down+C hurls inside the grab window
           f._sp=true;
-          if(inp.up||inp.down) fireSpecial(f, inp);
+          if(inp.up||inp.down||sideSpecialOf(f, inp)) fireSpecial(f, inp);
           else f._spPend = SPECIAL_DIR_WINDOW;
         }
         if(f._spPend>0){
-          if(inp.up||inp.down){ f._spPend=0; fireSpecial(f, inp); }   // a direction arrived: route it
+          if(inp.up||inp.down||sideSpecialOf(f, inp)){ f._spPend=0; fireSpecial(f, inp); }   // a direction arrived: route it
           else if(--f._spPend<=0) fireSpecial(f, inp);                 // window closed: neutral
         }
         if(!inp.special) f._sp=false;   // must release & re-press special to fire again (no hold-to-spam)
@@ -30971,6 +30976,13 @@ function animPoses(kind, fwd){
     case 'dash':     return { limb:'arm', front:[BD, B], back:[BD, B] };
     case 'spin':     return { limb:'arm', front:[FU, F], back:[BU, B] };
     case 'grab':     return { limb:'arm', front:[BD, F], back:[BD, F] };
+    case 'kickup':   return { limb:'leg', front:[BD, FU] };
+    case 'kickback': return { limb:'leg', front:[F, B] };
+    case 'stompdn':  return { limb:'leg', front:[FU, DN] };
+    case 'hook':     return { limb:'arm', front:[BU, F] };
+    case 'chop':     return { limb:'arm', front:[UP, DN] };
+    case 'sweep':    return { limb:'arm', front:[B, F], back:[F, B] };
+    case 'dive':     return { limb:'arm', front:[FU, DN], back:[FU, DN] };
     case 'throwb':   return { limb:'arm', front:[FD, BU] };
     default:         return null;   // 'spit': the body does it
   }
@@ -32355,6 +32367,7 @@ function utiltStats(f){
   return { reach: f.r*0.9 + 14 + Math.max(0, P.reach||0)*0.4, dmg: Math.max(5, Math.round((P.dmg||6) + 1)) };
 }
 function doGroundMove(f){
+  { const ms = msOf(f); if(ms && ms.dt && f.onground){ mvStart(f, ms.dt, 'dt'); return; } }   // a converted fighter's own down-tilt
   f.flash=5;
   armAtk(f, ATK_ANIM, 'kick');   // a low kick along the floor, forward only
   const S = dtiltStats(f), fy = feetY(f) - 10;
@@ -32389,6 +32402,7 @@ function spaggers(f, S, fy){
 // standing in front on its way up, and anyone above.
 function doUpTilt(f){
   if(inOwnTeamZone(f)) return;
+  { const ms = msOf(f); if(ms && ms.ut){ mvStart(f, ms.ut, 'ut'); return; } }   // a converted fighter's own up-tilt
   f.flash=5;
   armAtk(f, ATK_ANIM, 'uppercut');
   const S = utiltStats(f);
@@ -33036,6 +33050,7 @@ function comboInput(f, inp){
   const c = f._ci || (f._ci = { x:0, c:0, v:0, grab:false, fin:false, xUsed:false, vUsed:false });
   const x = !!inp.attack, cc = !!inp.special, v = !!inp.smash;
   const px = c.x, pv = c.v;   // how long X and V had been down as of the last frame
+  if((x && px === 0) || (v && pv === 0)) c.dir = { left:!!inp.left, right:!!inp.right, jump:!!inp.jump, up:!!inp.up, down:!!inp.down };   // the arrows held as the press began
   c.x = x ? px + 1 : 0; c.c = cc ? c.c + 1 : 0; c.v = v ? pv + 1 : 0;
   // a press that came and went inside the window (a quick tap, or one latched online between two frames) still counts, on release
   const xTap = !x && px > 0 && px < CI_DELAY && !c.xUsed, vTap = !v && pv > 0 && pv < CI_DELAY && !c.vUsed;
@@ -33049,6 +33064,7 @@ function comboInput(f, inp){
   inp.attack = (x && c.x >= CI_DELAY && !c.grab && !cc) || xTap;
   inp.special = cc && !c.grab && !c.fin && !x && !v;
   inp.smash = (v && c.v >= CI_DELAY && !cc && !c.fin) || vTap;
+  if((xTap || vTap) && c.dir){ const d = c.dir; inp.left = inp.left || d.left; inp.right = inp.right || d.right; inp.jump = inp.jump || d.jump; inp.up = inp.up || d.up; inp.down = inp.down || d.down; }   // a press that came and went keeps the arrows it was made with
   return inp;
 }
 // The CPU's old finisher was attack + special on one frame, everywhere in its rules. It still is, in those rules; this is where the
@@ -33116,8 +33132,8 @@ const GRAB_DEFAULT = {
   hold: { base: 56, perPct: 0.5, max: 150 },
   f: { dmg: 7, kx: 8, ky: -4.5, stun: 0, pose: 'throw', lag: 20 },
   b: { dmg: 8, kx: 9, ky: -5, stun: 0, pose: 'throwb', lag: 22 },
-  u: { dmg: 6, kx: 1.5, ky: -10, stun: 20, pose: 'uppercut', lag: 20 },
-  d: { dmg: 5, kx: 2.5, ky: -3.5, stun: 24, pose: 'slam', lag: 22 },
+  u: { dmg: 6, kx: 0.5, ky: -12, stun: 32, pose: 'uppercut', lag: 14 },
+  d: { dmg: 5, kx: 1.8, ky: -9, stun: 30, pose: 'slam', lag: 14 },
 };
 const STRUGGLE = 3, GRAB_DIR_LOCK = 6;
 function grabOf(f){
@@ -33237,6 +33253,146 @@ function heldStruggle(f, inp){
   return true;
 }
 
+// ============================================================
+//  TILTS AND AERIALS: the moveset move runner
+// ============================================================
+// A converted fighter (a MOVESETS entry, see msOf) has hand-made moves in these slots, each with its own shape, timing, damage and use
+// (the owner, 2026-10-14: "1, but replace pt. 2 of it for 2" -- fully unique, never archetype templates):
+//   ft side-tilt   ut up-tilt   dt down-tilt        (ground: ←/→, ↑, ↓ + X)
+//   na neutral-air  fa forward-air  ba back-air  ua up-air  da down-air        (in the air: X alone, or with →/←-just-pressed-back/↑/↓)
+//   side           the SIDE special (←/→ + C)
+// A fighter with no entry for a slot falls back to today's move (the jab, the sweep, the uppercut).
+//
+// A MOVE is a spec:  { n:name, pose:rig kind, st:startup, act:live frames, end:recovery, land:landing lag, ac:auto-cancel frame,
+//                      boxes:[{ t0,t1, s:shape, dmg, kb:[kx,ky], stun, g:group, rehit, fx }], mv:[{ t0,t1, mode, vx, vy }], jc, sc, cd }
+// Frames count from the press (frame 0). A box is live from t0 to t1 (default: the move's live frames) and hits each foe once per
+// group `g` (a sweet-spot box goes first in its group; a foe it hit is not hit again by the sour box behind it), or again every
+// `rehit` frames. Coordinates are forward-relative (x grows the way the fighter faced when the move began; y grows down), so a
+// back-air's box simply sits at a negative x with a negative kx. kb is the launch before the target's % scales it; stun is the
+// hitstun the target is left in (a long stun and a short launch is a combo starter, a short stun and a long launch a finisher).
+//   mv modes: 'set' (vx/vy replace the speed), 'add', 'stall' (vy held at or above vy: a hover), 'dive' (vy held at or below vy)
+//   jc: 'hit' | 'end' | 'any'  jump-cancel: once it connects (or its live frames end, or either) a press of jump leaves the move
+//   sc: special-cancel: once its live frames end a special / smash leaves the move        cd: the cooldown the side special puts on C
+// An aerial that lands before frame `ac` pays `land` frames of lag (less if it hit); at or after `ac` it lands free ("auto-cancel").
+const MvF = (r0, r1, a0, a1, oy, ox) => ({ k:'f', r0:r0, r1:r1, a0:a0, a1:a1, oy:oy || 0, ox:ox || 0 });
+const MvC = (x1, y1, x2, y2, r) => ({ k:'c', x1:x1, y1:y1, x2:x2, y2:y2, r:r });
+const MvO = (x, y, r) => ({ k:'o', x:x, y:y, r:r });
+function mvShape(f, s){
+  const d = f.face;
+  if(s.k === 'f') return { kind:'fan', cx:f.x + s.ox*d, cy:f.y + s.oy, r0:s.r0, r1:s.r1, a0:s.a0, a1:s.a1, face:d };
+  if(s.k === 'c') return { kind:'capsule', x1:f.x + s.x1*d, y1:f.y + s.y1, x2:f.x + s.x2*d, y2:f.y + s.y2, r:s.r };
+  return { kind:'capsule', x1:f.x + s.x*d, y1:f.y + s.y, x2:f.x + s.x*d, y2:f.y + s.y, r:s.r };
+}
+function mvTotal(S){ return S.st + S.act + S.end; }
+function mvStart(f, S, key, nofx){
+  if(inOwnTeamZone(f) || f._mv) return false;
+  const total = mvTotal(S);
+  armAtk(f, Math.max(10, total + 2), S.pose || 'punch');   // a new move (_atkSeq): only a NEW move may chain onto a foe in hitstun
+  beginCombo(f);
+  f._mv = { s:S, key:key, t:0, air:!f.onground, landed:false, hit:{}, boss:new Set() };
+  f._lastKey = key;
+  f.atkCd = Math.max(f.atkCd, total);
+  f.flash = 4;
+  if(S.cd) f.spCd = Math.max(f.spCd, S.cd);
+  if(S.start) S.start(f);   // a move that sets something up as it begins (a glide's flight, a dash's angle)
+  mvTick(f, {});   // frame 0 now: a move with no startup lands on the press, as the old ones did
+  return true;
+}
+function mvTick(f, inp){
+  const mv = f._mv, S = mv.s, t = mv.t, total = mvTotal(S), live1 = S.st + S.act;
+  if(mv.air && f.onground){   // landed: lag, unless the move has run past its auto-cancel frame
+    const lag = (t >= (S.ac == null ? 999 : S.ac) || t >= total) ? 0 : (S.land == null ? 6 : S.land);
+    if(lag > 0) f._lag = Math.max(f._lag || 0, mv.landed ? Math.ceil(lag * 0.7) : lag);
+    f._mv = null; f.atkCd = Math.max(0, f.atkCd - Math.max(0, total - t)); f._atkAnim = Math.min(f._atkAnim, lag + 2);
+    return;
+  }
+  // inputs while a move is out: no walking on the ground, no turning, no special / smash / grab (unless `sc`), jump only to cancel
+  const done = t >= live1;
+  if(!mv.air && !S.walk){ inp.left = false; inp.right = false; }
+  const jcOk = S.jc && ((S.jc === 'hit' && mv.landed) || (S.jc === 'end' && done) || (S.jc === 'any' && (mv.landed || done)));
+  if(jcOk && inp.jump && !f._jp && (f.jumps > 0 || f.onground)){ f._mv = null; f.atkCd = 0; f._atkAnim = 0; return; }
+  if(!(S.sc && done)){ inp.special = false; inp.smash = false; inp.fin = false; inp.grab = false; inp.attack = false; }
+  else if(inp.special || inp.smash || inp.fin){ f._mv = null; f.atkCd = 0; f._atkAnim = 0; return; }
+  if(!jcOk) inp.jump = false;
+  // impulses
+  if(S.mv) for(const m of S.mv){
+    const t1 = m.t1 == null ? m.t0 : m.t1;
+    if(t < m.t0 || t > t1) continue;
+    const vx = m.vx == null ? null : m.vx * f.face;
+    if(m.mode === 'add'){ if(vx != null) f.vx += vx; if(m.vy != null) f.vy += m.vy; }
+    else if(m.mode === 'stall'){ if(f.vy > m.vy) f.vy = m.vy; if(vx != null) f.vx = vx; }
+    else if(m.mode === 'dive'){ if(f.vy < m.vy) f.vy = m.vy; if(vx != null) f.vx = vx; }
+    else { if(vx != null) f.vx = vx; if(m.vy != null){ f.vy = m.vy; if(m.vy < 0) f.onground = false; } }
+  }
+  // boxes
+  if(S.boxes) for(let i = 0; i < S.boxes.length; i++){
+    const b = S.boxes[i], b0 = b.t0 == null ? S.st : b.t0, b1 = b.t1 == null ? live1 - 1 : b.t1;
+    if(t >= b0 && t <= b1) mvStrike(f, mv, b, i);
+  }
+  mv.t++;
+  if(mv.t >= total){ f._mv = null; }
+}
+function mvStrike(f, mv, b, gi){
+  const sh = mvShape(f, b.s), bb = shapeBounds(sh), key = b.g || ('b' + gi);
+  if(SHOW_HITBOXES) DEBUG_HITS.push({ shape:sh, pts:shapePts(sh), t:6 });
+  hitTurrets(f, bb.cx, bb.cy, bb.rad, b.dmg);
+  const hs = mv.hit[key] || (mv.hit[key] = new Map());
+  const fresh = shapeTargets(f, sh).filter(t => !hs.has(t.idx));
+  let again = [];
+  if(b.rehit){ f._combo = true; again = shapeTargets(f, sh).filter(t => hs.has(t.idx) && mv.t - hs.get(t.idx) >= b.rehit); f._combo = false; }
+  for(const t of fresh.concat(again)){
+    hs.set(t.idx, mv.t);
+    const kb = b.kb || [4, -3];
+    applyHit(t, b.dmg, f.face * kb[0], kb[1], f, { stun: b.stun || 0, mvKey: mv.key });
+    mv.landed = true; f._confirm = 1;
+    if(b.fx) b.fx(f, t, mv);
+  }
+  if(summons.length) damageSummons(f, bb.cx, bb.cy, bb.rad, b.dmg, null, mv.boss);
+}
+// ---- which move does X start? ----
+const UT_JUMP_WINDOW = 3;   // ↑+X on the ground: the jump key goes down with X, and the up-tilt comes out instead of the hop
+const TURN_WINDOW = 6;      // an aerial pressed within this many frames of turning round is a back-air
+function aerialKeyOf(f, inp){
+  if(inp.down) return 'da';
+  if(inp.up) return 'ua';
+  if(inp.left || inp.right){
+    if(f._turnT != null && hazardT - f._turnT <= TURN_WINDOW && f._turnFrom) return 'ba';
+    return 'fa';
+  }
+  return 'na';
+}
+// Returns true when a moveset move took the press (so the old jab / sweep / uppercut does not).
+function mvAttack(f, inp){
+  const ms = msOf(f);
+  if(!ms || f._mv || f._holding) return false;
+  let ground = f.onground;
+  const J0 = f._jmp0;
+  if(!ground && inp.up && ms.ut && J0 && J0.ground && hazardT - J0.t <= UT_JUMP_WINDOW && f.vy < 0 && !(f.flying > 0)){   // ↑ and X together on the ground: the up-tilt, not a hop
+    f.y = J0.y; f.vy = 0; f.onground = true; f.jumps = J0.jumps; f._hop = false; ground = true;
+  }
+  if(ground){
+    let k = null;
+    if(inp.down) k = 'dt'; else if(inp.up && !(f.flying > 0)) k = 'ut'; else if((inp.left || inp.right) && ms.ft) k = 'ft';
+    if(!k || !ms[k]) return false;
+    return mvStart(f, ms[k], k);
+  }
+  if(f.flying > 0) return false;   // Puffball in flight: X is her spit
+  const k = aerialKeyOf(f, inp), S = ms[k];
+  if(!S) return false;
+  if(k === 'ba'){ f.face = f._turnFrom; }
+  return mvStart(f, S, k);
+}
+// the side special: ←/→ + C. A fighter whose neutral special is steered with the arrows (`sideFresh`) only reads a direction pressed
+// just now (SIDE_FRESH frames), so running while pressing C is still its neutral special.
+const SIDE_FRESH = 12;
+function sideSpecialOf(f, inp){
+  const ms = msOf(f);
+  if(!ms || !ms.side || !(inp.left || inp.right) || inp.up || inp.down) return null;
+  if(!isHumanCtrl(f)) return inp.side ? ms.side : null;   // a CPU asks for it (inp.side); a CPU running with C held is pressing its neutral
+  if(ms.sideFresh && !(hazardT - (f._dirT == null ? -99 : f._dirT) <= SIDE_FRESH)) return null;
+  return ms.side;
+}
+
 function fireSpecial(f, inp){
   if(f.spCd>0 && !(inp && inp.down && f._grabbed!=null && f._grabTimer>0)) return;   // Liy's hurl is the grab's finish, inside its window
   const before = f.spCd;
@@ -33252,6 +33408,8 @@ function fireSpecialInner(f, inp){
   if(dashKit && horiz && (inp.up||inp.down)){
     doSpecial(f); f.spCd=Math.max(f.spCd,55); return;   // diagonal dash: forward dash, angled
   }
+  const sideS = sideSpecialOf(f, inp);   // ←/→ + C for a converted fighter
+  if(sideS){ if(!f._mv){ f.spCd = Math.max(f.spCd, sideS.cd || 55); mvStart(f, sideS, 'side'); } return; }
   f._aiSpGap = Math.max(0, aiSpecialGap(f, !inp.up && !inp.down) + (f._pbGap||0));   // read only by finishAI, so the human path is untouched (_pbGap: a playbook's sGap, set by aiThink)
   if(inp.up){
     // an up-special can only be used ONCE per airtime — on the ground it's always allowed,
@@ -34983,8 +35141,9 @@ function hitGraceFrames(dmg, from){
 }
 function hitStunFrames(dmg, chained){ return Math.max(4, Math.round(Math.min(24, 6+dmg) * Math.pow(CHAIN_DECAY, chained))); }
 // `t` is anything with a fighter's invuln / hitstun / chain / grace fields: a fighter, or a boss's record of one attacker.
-function stampHit(t, dmg, from, isTick, stunOvr){
-  const chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
+function stampHit(t, dmg, from, isTick, stunOvr, mvKey){
+  let chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
+  if(mvKey && chained > 0 && t._chainSeq === from._atkSeq) chained--;   // a moveset move's own second hit (a spin that hits twice) is not another link of the chain
   if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
   t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr * Math.pow(CHAIN_DECAY, chained))) : hitStunFrames(dmg, chained);   // (stunOvr: a moveset move's own stun)
   const grace = hitGraceFrames(dmg, from);
@@ -35242,7 +35401,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
   // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
-  stampHit(t, dmg, from, isTick, opts && opts.stun);
+  stampHit(t, dmg, from, isTick, opts && opts.stun, opts && opts.mvKey);
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
@@ -44743,7 +44902,8 @@ const FR_ATK = [];   // flattened once: 10 kinds x 6 frames x 7 numbers
 for(let _k = 0; _k < FR_ATK_SRC.length; _k++) for(let _i = 0; _i < 6; _i++) for(let _j = 0; _j < 7; _j++) FR_ATK.push(FR_ATK_SRC[_k][_i][_j]);
 const FR_KIND = {};
 for(let _k = 0; _k < FR_KINDS.length; _k++) FR_KIND[FR_KINDS[_k]] = _k;
-FR_KIND.grab = FR_KIND.slam; FR_KIND.throwb = FR_KIND.throw;   // the frame layer's held frames for the kinds the movesets add (see animPoses)
+FR_KIND.grab = FR_KIND.slam; FR_KIND.throwb = FR_KIND.throw; FR_KIND.kickup = FR_KIND.kickback = FR_KIND.kick; FR_KIND.stompdn = FR_KIND.stomp; FR_KIND.hook = FR_KIND.throw;
+FR_KIND.chop = FR_KIND.slam; FR_KIND.sweep = FR_KIND.spin; FR_KIND.dive = FR_KIND.slam;   // the frame layer's held frames for the kinds the movesets add (see animPoses)
 // the flinch: three frames over a hit's HURT_ANIM ticks -- the impact, the rebound, the recovery -- as [lean back from the blow (rad), sx, sy, pushed away from it (radii), arms raised]
 const FR_HURT = [[0.26,1.10,0.86,0.10,1.0], [-0.10,0.97,1.05,-0.04,0.5], [0.04,1.01,0.99,0,0.15]];
 
