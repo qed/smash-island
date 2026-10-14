@@ -5,7 +5,7 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // a jail with its no-go zone clear of the spawns, doors and keys, a lift), and the CPU's graph of it says every hiding place, key, boost, pad and the jail's door can be reached from
 // home, with only the vaults behind their locked doors.
 
-const MAPS = ['castle', 'mines'];
+const MAPS = ['castle', 'mines', 'factory', 'forest', 'sky'];
 
 for (const id of MAPS) {
   describe(`map ${id}`, () => {
@@ -26,7 +26,7 @@ for (const id of MAPS) {
         return JSON.stringify(out);
       })()`));
       // each map's world width: the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side); the others are 108 a side now
-      expect(r.WW).toBe({ castle: 26400, mines: 25920, factory: 25920, forest: 25920 }[id]);
+      expect(r.WW).toBe({ castle: 26400, mines: 25920, factory: 25920, forest: 25920, sky: 25920 }[id]);
       expect(r.mirrored, 'the right half is the left half turned over').toBe(true);
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
