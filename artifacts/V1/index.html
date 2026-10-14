@@ -1364,7 +1364,7 @@
         <li><b>Tilts:</b> on the ground, hold ← or → (side-tilt), ↑ (up-tilt) or ↓ (down-tilt) and press X. A tilt leaves them in a long stun, so you can follow it with a short hop and an aerial.</li>
         <li><b>Aerials:</b> in the air, X is a neutral air; add → (forward), ↑ (up) or ↓ (down); turn round and press X for a back-air. Land during one and you pay for it, so end it before you land.</li>
         <li><b>Grab:</b> press X and C together close to a foe on the ground. While you hold them, X pummels; ← → ↑ or ↓ throws. A down or up throw at low damage sets up an aerial. The one you hold struggles free faster the more they press.</li>
-        <li><b>Movement:</b> a quick press of ↑ is a short hop, a held one a full jump. ↓ in the air after the top of your jump fast-falls. In the air against a wall, hold toward it and press ↑ to wall jump (once per wall). Some fighters cling to a wall first.</li>
+        <li><b>Movement:</b> a quick press of ↑ is a short hop, a held one a full jump. ↓ in the air after the top of your jump fast-falls. In the air against a wall, hold toward it and press ↑ to wall jump (once per wall). Some fighters cling to a wall first. A dasher (Leafy, Liy, Woody) can jump out of a dash for a hyper or a super, as in Celeste.</li>
         <li><b>Learn them:</b> the Move list on the pause menu and the All moves tab on the character card show every move and its keys. Training (under the title) is a room with a dummy, hitboxes and any damage.</li>
       </ol>
     </div>
@@ -30095,6 +30095,7 @@ function step(){
     // control-reversed (Remote hack): handled in input reading below via f.ctrlRev
     // Leafy — Sharp Shadow dash: stay fast + invincible, damage anyone passed through (once each)
     if(f._dashing>0){
+      f._dashInfo = { down: f._dashVY > 0, spd: Math.abs(f._dashSpeed || 22), dir: f.face, t: hazardT };   // (dash tech: mtDashJump)
       f._dashing--;
       f.vx = f.face*(f._dashSpeed||22);      // dash speed set here; movement block skips the clamp while dashing
       if(f._dashVY){ f.vy = f._dashVY; }     // diagonal dash: up-dash / down-dash hold vertical speed
@@ -30210,6 +30211,7 @@ function step(){
       if(!inp.left&&!inp.right && f.onground && !(f._sm && f._sm.drive) && !(f._gotcha && f._gotcha.phase==='lunge')) f.vx*=(f.iceUntil>0?0.99:FRICTION);
       if(f.iceUntil>0) f.iceUntil--;
       if(f._dashing>0){ f.vx=f.face*(f._dashSpeed||22); }   // dash overrides normal movement/clamp
+      else if(f._hyperT>0 && !f.onground){ f._hyperT--; f.vx *= HYPER_DECAY; if(hazardT%2===0) puff(f.x - Math.sign(f.vx||1)*f.r, f.y + (Math.random()*16-8), f.color, 2); }   // a hyper's or a super's speed is carried to the landing (dash tech)
       else if(f._gotcha && f._gotcha.phase==='lunge'){ f.vx=f.face*f._gotcha.spd; }   // Bot's GOTCHA! lunge holds its own speed
       else if(f._nail){ }                    // Naily's dash holds its own speed (see the _nail block)
       else if(f._sm && f._sm.drive){ if(f._sm.vmax){ const c = f._sm.vmax; f.vx = Math.max(-c, Math.min(c, f.vx)); } }   // so does a smash that moves you (SM_PAT); a steered hop is capped
@@ -30218,7 +30220,8 @@ function step(){
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
         const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*ctfSpeedK(f); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
       // jump
-      if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
+      if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
+      else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
       else if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP); f._hop=f.onground && mtOn(f) && f.vy===JUMP; /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
       if(!inp.jump) f._jp=false;
       if(f._hop){ if(f.vy>=0 || f.onground) f._hop=false; else if(!inp.jump){ if(f.vy < -SH_V) f.vy = -SH_V; f._hop=false; } }   // SHORT HOP: a tap of jump is cut (SH_V); held is the full jump
@@ -30379,8 +30382,9 @@ function step(){
       }
     }
     mtCling(f, inp);
-    if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; }   // landing refreshes the wall jump
+    if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0; }   // landing refreshes the wall jump and the air dash
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
+    if(_wasAir && f.onground) f._landT = hazardT;
     if(_wasAir && f.onground && _impactVY>5){ f._landSquash=6; }
     if(f._landSquash>0) f._landSquash--;   // land-squash timer decays over the steps after touchdown (it was in drawFighter, so a faster screen squashed for less time)
     // SLAM, THEN HIT: a ground move used in the air drops the fighter fast and goes off on landing (David's
@@ -33326,6 +33330,7 @@ function mvStart(f, S, key, nofx){
   f.flash = 4;
   if(S.cd) f.spCd = Math.max(f.spCd, S.cd);
   if(S.start) S.start(f);   // a move that sets something up as it begins (a glide's flight, a dash's angle)
+  if(!f._mv) return false;   // (a start may refuse: the air dash is spent)
   mvTick(f, {});   // frame 0 now: a move with no startup lands on the press, as the old ones did
   return true;
 }
@@ -33395,7 +33400,7 @@ function aerialKeyOf(f, inp){
 // Returns true when a moveset move took the press (so the old jab / sweep / uppercut does not).
 function mvAttack(f, inp){
   const ms = msOf(f);
-  if(!ms || f._mv || f._holding) return false;
+  if(!ms || f._mv || f._holding || f.flying > 0) return false;   // (Puffball in flight keeps X as her spit, on the ground as in the air)
   let ground = f.onground;
   const J0 = f._jmp0;
   if(!ground && inp.up && ms.ut && J0 && J0.ground && hazardT - J0.t <= UT_JUMP_WINDOW && f.vy < 0 && !(f.flying > 0)){   // ↑ and X together on the ground: the up-tilt, not a hop
@@ -33448,6 +33453,7 @@ Object.assign(MOVESETS, {
   // ---- PUFFBALL (kit "fly") -- light and quick, the aerial game; the owner protects her feel: air control, hitting from high up, the special
   // that cuts knockback. None of her existing moves changes; every new one is an extra way to use the same body.
   fly: {
+    aiLand: true,   // the CPU may drop out of her flight beside a foe to use the new moves (aiMovesetUse)
     sideFresh: true,   // ←/→ + C is the side special only for a direction pressed just now: running while pressing C is still Flight
     ft: { n:'Cheek Bump', d:'bumps with her cheek, with a small hop forward', pose:'punch', st:4, act:2, end:6,
       boxes:[{ s:MvO(34, 2, 22), dmg:4, kb:[3.6, -4.6], stun:24 }], mv:[{ t0:3, t1:4, mode:'add', vx:1.2 }] },
@@ -33560,14 +33566,14 @@ Object.assign(MOVESETS, {
       boxes:[{ s:MvC(0, 12, 4, 56, 13), t0:6, t1:9, dmg:5.5, kb:[0.6, 8], stun:13 }], mv:[{ t0:6, t1:9, mode:'dive', vy:8 }] },
     // the angled dash (it was "← → + ↑/↓ + C"): the same BFDIA Sprint, up and forward, invincible the whole way (doSpecial "dash")
     side: { n:'Sprint Leap', d:'her BFDIA Sprint, angled up and forward: untouchable the whole way; anyone she runs into is hit; she can jump out of the end of it', pose:'dash', st:16, act:0, end:2, cd:55, jc:'end',
-      start:(f) => { f._inUp = true; f._inDown = false; doSpecial(f); }, x:'10%' },
+      start:(f) => { if(!mtAirDashOk(f)){ f._mv = null; f.atkCd = 0; f._atkAnim = 0; return; } f._inUp = true; f._inDown = false; doSpecial(f); }, x:'10%' },
     // "pulls out her revamped Niceness Chart" (All For One)
     grab: { reach:30, whiff:26, pummel:{ dmg:1, every:10, n:'Chart Flick' }, hold:{ base:52 },
       f:{ n:'Nice Try', d:'shoves them ahead with a smile', dmg:5, kx:7, ky:-4, stun:0, pose:'throw', lag:18 },
       b:{ n:'Backhand Kindness', d:'turns and flicks them behind her', dmg:5.5, kx:7.5, ky:-4.4, stun:0, pose:'throwb', lag:20 },
       u:{ n:'Lift Up', d:'hoists them up and lets go', dmg:4, kx:0.5, ky:-11.5, stun:31, pose:'uppercut', lag:14 },
       d:{ n:'Niceness Chart', d:'slaps the Niceness Chart down on them', dmg:3.5, kx:1.8, ky:-8.5, stun:29, pose:'slam', lag:14 } },
-    tech:['Short hop, fast fall and a plain wall jump.', 'Sprint Leap can be jump-cancelled when it ends.', 'No cling: she already has the Sprint.'],
+    tech:['Short hop, fast fall and a plain wall jump.', "DASH TECH (Celeste's): out of a ↓ + → dash along the ground, jump for a HYPER (long, low, 1.4x the dash's speed); out of a straight dash, a SUPER (normal height, the dash's speed); with the other arrow held, a short reverse hyper. A ↓ + → dash from the air that lands is a wavedash: jump at once for a hyper. One air dash an airtime, refilled on landing.", 'Sprint Leap can be jump-cancelled when it ends.', 'No cling: she already has the Sprint.'],
   },
 });
 // ---- the words: every move's line on the move card, written from its numbers ----
@@ -33638,7 +33644,7 @@ function moveRowsFor(r){
   add('↑ + C', mt.up); add('↓ + C', mt.down);
   add('V', (smashKindOf(r) ? smashKindOf(r) + ' · ' : '') + smashBlurb(r) + ' ' + smashHowText(r), true);
   add('V + C', mt.finisher);
-  const tech = ms && ms.tech ? ms.tech.join(' ') : 'Short hop (a quick press of ↑), fast fall (↓ in the air) and a wall jump (jump toward a wall in the air).';
+  const tech = ms && ms.tech ? ms.tech.join(' ') : 'Short hop (a quick press of ↑), fast fall (↓ in the air) and a wall jump (jump toward a wall in the air).' + (r.kit && DASH_KITS.has(r.kit.special) ? ' ' + "DASH TECH (Celeste's): out of a ↓ + → dash along the ground, jump for a HYPER (long, low, 1.4x the dash's speed); out of a straight dash, a SUPER (normal height, the dash's speed); with the other arrow held, a short reverse hyper. A ↓ + → dash from the air that lands is a wavedash: jump at once for a hyper. One air dash an airtime, refilled on landing." : '');
   add('Movetech', tech, true);
   return rows;
 }
@@ -33694,6 +33700,170 @@ function trainerInput(f){
 // the pinned damage: the dummy's % is set each frame before anything hits it, so every hit launches as it would at that %
 function trainingPin(f){ if(TESTMODE.active && TESTMODE.training && TESTMODE.holdPct && f.controller !== 'local' && f.you !== true) f.pct = TESTMODE.pct; }
 
+// ============================================================
+//  THE CPU USES THE MOVESET
+// ============================================================
+// "do it like in training - they can learn new strats" (the owner, 2026-10-14). The general CPU uses every move a converted fighter has:
+// tilts, aerials, grabs and throws picked by position, height and %, combo follow-ups, and the movetech (short hops for aerials, fast
+// falls, wall jumps). It works on top of the legacy rules: those decide that a fighter attacks, this decides WHICH attack, and adds the
+// grab, the hop and the side special. A fighter without a moveset is untouched (nothing here runs for it), so no unconverted bot plays a
+// frame differently.
+// The trainer (scripts/train-bots.mjs) can then learn how much each fighter uses them: five new move slots, genes named like the old ones
+// (m<slot>b the bias, m<slot>d0..2 by distance, h0..2 by height, o0..2 by the foe's state, p0..2 by the fighter's own damage), each a
+// shift on the move's odds (a shift of +1 is about twice as likely, -1 about half, -3 almost never):
+//   L  tilts (side, up, down)    A  aerials    G  the grab (and which throw)    I  the side special    W  movetech (hops, fast falls)
+// the odds multiplier a slot's genes give this frame (1 with no playbook)
+function aiMsOdds(pb, k, s){
+  if(!pb) return 1;
+  const m = PB_MS_MK[s];
+  return Math.exp(0.7 * ((pb[m.b]||0) + (pb[m.d[k.d]]||0) + (pb[m.h[k.h]]||0) + (pb[m.o[k.o]]||0) + (pb[m.p[k.p]]||0)));
+}
+function aiMovesetUse(f, inp, sp){
+  const ms = msOf(f), t = f.aiTarget;
+  if(!ms || !t || t.dead || f._runner || f._oneGhost || RACE.active) return;
+  const lvl = (f._lvlCache != null) ? f._lvlCache : 1;
+  const pb = (lvl >= 1) ? pbFor(f, t, lvl) : null;
+  const dx = t.x - f.x, adx = Math.abs(dx), dy = t.y - f.y, gap = Math.hypot(dx, dy) - (f.r + t.r);
+  const k = pbSense(f, t, (f.pct >= 100), lvl);
+  const toward = dx < 0 ? -1 : 1, faceTo = f.face, behind = dx * faceTo < -6;
+  const rn = Math.random();
+  // ---- movetech that never waits on a target: a wall jump when falling out, fast fall ----
+  if(!f.onground && !f._hold){
+    const offstage = f.x < 70 || f.x > WW - 70 || f.y > WH - 160;
+    if(offstage && f._wallSide && f._wallT >= hazardT - 2 && f.vy > 0.5 && !(f._wallUsed && f._wallUsed[f._wallId]) && !(f.flying > 0) && !f._lev){
+      inp.jump = true; inp.left = f._wallSide < 0; inp.right = f._wallSide > 0; return;   // kick off it
+    }
+  }
+  // ---- a dasher (Leafy): a HYPER to close the distance, or to get away. Dash down-forward along the ground, then jump out of it (dash tech: mtDashJump) ----
+  if(f.kit.special === 'dash' && f.onground && !f._hold){
+    const H = f._aiHy;
+    if(H && f._dashing > 0 && hazardT - H.t < 24){ inp.jump = true; f._aiHy = null; return; }                    // in the dash on the ground: jump out of it
+    if(H && hazardT - H.t >= 24) f._aiHy = null;
+    if(!H && f.spCd <= 0 && !f._airDash && f.atkCd <= 0 && !(f._lag > 0) && !(f._mv) && !inp.special && !inp.smash && f.hitstun <= 0){
+      const danger = (f.pct >= 90 || t.smashHold > 0 || t._windup) && gap < 150;
+      const close = gap > 200 && gap < 700 && Math.abs(dy) < 60 && t.hitstun <= 0;
+      if((danger && rn < 0.05) || (close && rn < 0.012 * aiMsOdds(pb, k, 'W'))){
+        const dir = danger ? -toward : toward;                                   // away from the foe to escape, toward it to close in
+        inp.special = true; inp.down = true; inp.up = false; inp.attack = false; inp.left = dir < 0; inp.right = dir > 0;
+        f._aiHy = { t: hazardT }; return;
+      }
+    }
+  }
+  // ---- holding a foe: pummel a little, then throw the way that fits ----
+  if(f._hold){
+    const H = f._hold, T = fighters[H.idx];
+    inp.left = inp.right = inp.up = inp.down = inp.jump = false; inp.attack = false;
+    if(!T || H.t < GRAB_DIR_LOCK) return;
+    f._aiPum = f._aiPum || 0;
+    if(f._aiPumH !== H) { f._aiPumH = H; f._aiPum = 0; }
+    const want = (T.pct < 40) ? 1 : (T.pct < 90 ? 2 : 0);   // a pummel or two while they are low, none when it is time to finish them
+    if(f._aiPum < want && H.pumCd <= 0 && H.t < H.max - 22){ inp.attack = true; f._aiPum++; return; }
+    // which throw: a kill throw toward the nearer edge when they are high; a combo throw (down, up) when they are low
+    const edgeDir = (T.x < WW * 0.5) ? -1 : 1;
+    let kind;
+    if(T.pct >= 90) kind = (edgeDir === f.face) ? 'f' : 'b';
+    else if(T.pct >= 45) kind = (rn < 0.5) ? 'u' : ((edgeDir === f.face) ? 'f' : 'b');
+    else kind = (rn < 0.6) ? 'd' : 'u';
+    if(kind === 'd') inp.down = true; else if(kind === 'u') inp.up = true;
+    else if(kind === 'f'){ if(f.face > 0) inp.right = true; else inp.left = true; }
+    else { if(f.face > 0) inp.left = true; else inp.right = true; }
+    return;
+  }
+  if(f._mv || f._gb || f._lag > 0 || inp.smash || inp.fin || f._aiCharging > 0 || f.smashHold > 0) return;
+  let pressing = inp.attack && !inp.special;
+  // Puffball's old rules keep her in flight nearly the whole match (98% of frames in a measured one) and her X is the spit there; with a foe right beside her
+  // and the special cooling down she may drop out of the flight (the key for it is Down, which ends it for a player), and so fight with the new moves
+  if(f.flying > 0 && ms.aiLand && gap < 46 && Math.abs(dy) < 60 && f.spCd > 20 && t.invuln <= 0 && rn < 0.06 * aiMsOdds(pb, k, 'A')){ f.flying = 0; f.vy = Math.max(f.vy, 1); puff(f.x, f.y + f.r, '#e6a6e0', 3); }
+  const comboFoe = (t.hitstun > 8 && t._chainBy === f.idx);
+  // ---- the grab: close, on the ground, a foe on its feet (the better the more it counters or armours) ----
+  if(f.onground && f.atkCd <= 0 && !t._isBoss && t.hitstun <= 0 && t.invuln <= 0 && t.onground !== false && gap < ms.grab.reach - 4 && Math.abs(dy) < 30 && t._heldBy == null){
+    const stance = (t.countering > 0 || t.armor > 0 || t.reflecting > 0 || t._windup) ? 3 : 1;
+    if(rn < 0.07 * stance * aiMsOdds(pb, k, 'G') * (pressing ? 4 : 1)){ inp.grab = true; inp.attack = false; inp.special = false; inp.left = inp.right = false; return; }
+  }
+  // ---- the legacy rules did not swing, but a foe is right here: a tilt or an aerial of its own accord (a fighter whose old rules only ever fired its shot) ----
+  if(!pressing && !inp.special && !inp.smash && f.atkCd <= 0 && !(f.flying > 0) && !t._isBoss && gap < 44 && Math.abs(dy) < 70 && t.invuln <= 0 && rn < 0.05 * aiMsOdds(pb, k, f.onground ? 'L' : 'A')){ inp.attack = true; pressing = true; }
+  // ---- a legacy attack press becomes the right tilt or aerial ----
+  if(pressing && f.flying > 0) return;   // Puffball in flight: X is her spit, as it always was
+  if(pressing){
+    if(f.onground){
+      const odds = aiMsOdds(pb, k, 'L');
+      inp.up = false; inp.down = false; inp.left = false; inp.right = false;   // a jab is thrown standing: an arrow held with X would be a side-tilt
+      // the tilt that fits: up-tilt for a foe above, down-tilt for one low and close, side-tilt at a poke's range; weights, then a roll
+      const wU = (dy < -30 && adx < 80) ? 1.6 : 0, wD = (Math.abs(dy) < 34 && gap < 58) ? 1 : 0, wF = (gap > 12 && gap < 80) ? 1.2 : 0, tot = wU + wD + wF;
+      if(tot > 0 && rn < 0.75 * odds){
+        let r = Math.random() * tot;
+        if((r -= wU) < 0) inp.up = true;
+        else if((r -= wD) < 0) inp.down = true;
+        else { inp.left = toward < 0; inp.right = toward > 0; }
+      }
+    } else {
+      const odds = aiMsOdds(pb, k, 'A');
+      inp.up = false; inp.down = false;
+      if(dy < -26 && adx < 64) inp.up = true;                                         // above: up-air
+      else if(dy > 30 && adx < 44 && f.vy > -1) inp.down = true;                      // below: down-air
+      else if(behind && adx > 12){ inp.left = toward < 0; inp.right = toward > 0; }   // behind: back-air (a press the other way is the turn)
+      else if(adx > 40 && rn < 0.75 * odds){ inp.left = toward < 0; inp.right = toward > 0; }   // in front: forward-air
+      else if(adx < 36){ inp.left = false; inp.right = false; }   // right on top of them: the neutral air
+    }
+    return;
+  }
+  // ---- combo follow-up: a foe still in the stun of my last hit, and I am free: hop in (a quick press of jump) and go again ----
+  if(comboFoe && f.onground && adx < 90 && Math.abs(dy) < 110 && rn < 0.6 * aiMsOdds(pb, k, 'W')){ inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
+  if(comboFoe && !f.onground && gap < 70 && f.atkCd <= 0 && !inp.special){
+    inp.attack = true; inp.left = inp.right = inp.up = inp.down = false;
+    if(dy < -26 && adx < 64) inp.up = true; else if(dy > 30 && adx < 44) inp.down = true;
+    else if(behind && adx > 12){ inp.left = toward < 0; inp.right = toward > 0; }
+    else if(adx > 40){ inp.left = toward < 0; inp.right = toward > 0; }
+    return;
+  }
+  // ---- the side special, as a way in ----
+  if(ms.side && f.spCd <= 0 && !inp.special && f.atkCd <= 0 && gap > 90 && gap < 280 && Math.abs(dy) < 60 && t.hitstun <= 0 && !f._lev && rn < 0.012 * aiMsOdds(pb, k, 'I')){
+    inp.special = true; inp.side = true; inp.up = false; inp.down = false; inp.attack = false; inp.left = toward < 0; inp.right = toward > 0; return;
+  }
+  // ---- a short hop in toward a foe on the ground (so an aerial can come out), and a fast fall once the swing is over ----
+  if(f.onground && !inp.jump && gap > 36 && gap < 120 && Math.abs(dy) < 40 && t.hitstun <= 0 && rn < 0.012 * aiMsOdds(pb, k, 'W')){ f._aiHop = 1; inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
+  if(!f.onground && f._aiHop && inp.jump) inp.jump = false;   // let go at once: that is the short hop
+  if(!f.onground && f.vy > 0.5 && !f._ff && !f._lev && !(f.flying > 0) && f.atkCd <= 0 && dy > 40 && adx < 60 && rn < 0.05 * aiMsOdds(pb, k, 'W')) inp.down = !f._dnPrev;
+  if(f.onground) f._aiHop = 0;
+}
+
+// ---- DASH TECH, for the dashers (Celeste's, at the owner's request: "im a celeste nerd, give me hypers when im on a dasher..") ----
+// The dashers are the angled-dash kits (DASH_KITS: Leafy, Liy, Woody). With a dash active and the fighter on the ground, jump:
+//   HYPER   after a dash angled DOWN-forward into the ground (or a wavedash: a down-forward dash from the air, landing while it is active, and
+//           jumping within WD_GRACE frames of the landing): a long, LOW, fast jump, HYPER_K times the dash's speed and half the height;
+//   SUPER   after a dash straight along the ground: a normal-height jump that keeps the dash's whole speed;
+//   REVERSE HYPER   the same jump with the OPPOSITE direction held: a short hyper backward (REV_K of the dash's speed).
+// The dash refills on landing: one air dash an airtime (mtAirDashOk), so nothing chains in the air; the jump is the ground jump (one is used up,
+// the double jump is still there). The speed is carried until the fighter lands (_hyperT; the usual speed cap and the ground friction wait for the
+// landing) and a short trail of puffs shows it. Humans on any dasher, and the CPU on a converted one (Leafy): mtOn.
+const HYPER_K = 1.4, HYPER_JUMP = 0.5, REV_K = 0.8, HYPER_DECAY = 0.985, WD_GRACE = 5, DASH_JUMP_GRACE = 4;
+function mtDashJump(f, inp){
+  if(!mtOn(f) || !f.kit || !DASH_KITS.has(f.kit.special)) return false;
+  const I = f._dashInfo;
+  if(!I || !(f._dashing > 0 || hazardT - I.t <= DASH_JUMP_GRACE)) return false;    // a dash is out (or ended a moment ago)
+  if(!(f.onground || hazardT - (f._landT == null ? -99 : f._landT) <= WD_GRACE) || f.jumps <= 0) return false;   // from the ground only (a wavedash lands first)
+  if(f._lev || f.hitstun > 0) return false;
+  const spd = I.spd, dir = I.dir || f.face, back = dir > 0 ? !!inp.left : !!inp.right;   // (the arrow already turned her round this frame: the dash's own way is what counts)
+  let vx, vy;
+  if(back){ vx = -dir * spd * REV_K; vy = JUMP * HYPER_JUMP; f.face = -dir; }             // reverse hyper
+  else if(I.down){ vx = dir * spd * HYPER_K; vy = JUMP * HYPER_JUMP; f.face = dir; }      // hyper
+  else { vx = dir * spd; vy = JUMP; f.face = dir; }                                       // super
+  f._dashing = 0; f._dashHits = null; f._dashDmg = 0; f._dashVY = 0; f._dashSpeed = 0; f._dashArmored = false; f._dashBoom = false; f._dashMargin = null; f._dashCuff = false; f._dashSummonHits = null;
+  f._dashInfo = null;
+  f.vx = vx; f.vy = vy; f.jumps--; f.onground = false; f._hop = false; f._hyperT = 140; f._hyperKind = back ? 'rev' : (I.down ? 'hyper' : 'super');
+  { const U = f._used || (f._used = {}); U[f._hyperKind] = (U[f._hyperKind] || 0) + 1; }
+  f.flash = 6; for(let i = 0; i < 8; i++) puff(f.x - Math.sign(vx) * (6 + i * 7), f.y + f.r - 4 - Math.random() * 10, f.color, 3);
+  if(f.you) SFX.jump();
+  return true;
+}
+// one air dash an airtime: the dash refills on landing
+function mtAirDashOk(f){
+  if(!mtOn(f) || !f.kit || !DASH_KITS.has(f.kit.special)) return true;
+  if(f.onground) return true;
+  if(f._airDash) return false;
+  f._airDash = true; return true;
+}
+
 function fireSpecial(f, inp){
   if(f.spCd>0 && !(inp && inp.down && f._grabbed!=null && f._grabTimer>0)) return;   // Liy's hurl is the grab's finish, inside its window
   const before = f.spCd;
@@ -33707,6 +33877,7 @@ function fireSpecialInner(f, inp){
   const dashKit = DASH_KITS.has(f.kit&&f.kit.special);
   const horiz = inp.left||inp.right;
   if(dashKit && horiz && (inp.up||inp.down)){
+    if(!mtAirDashOk(f)) return;   // one air dash an airtime (dashers)
     doSpecial(f); f.spCd=Math.max(f.spCd,55); return;   // diagonal dash: forward dash, angled
   }
   const sideS = sideSpecialOf(f, inp);   // ←/→ + C for a converted fighter
@@ -33722,6 +33893,7 @@ function fireSpecialInner(f, inp){
     return;
   }
   if(inp.down){ doDownSpecial(f); f.spCd=Math.max(f.spCd, (f.kit && f.kit.special==='serve') ? GADGET_SWAP_CD : 64); return; }
+  if(dashKit && !mtAirDashOk(f)) return;   // one air dash an airtime (dashers)
   doSpecial(f); if(!(f.kit && f.kit.special==='serve')) f.spCd=Math.max(f.spCd,55);   // Tennis Ball's gadgets carry their own (GADGET_SPECIAL_CD)
 }
 
@@ -35720,7 +35892,7 @@ function knock(t,kx,ky){
   // TEST MODE: an "anchored" dummy absorbs knockback entirely so it stays put — lets you measure
   // sustained damage/DPS on a stationary target instead of chasing it around the stage.
   if(TESTMODE.active && TESTMODE.anchored && t.controller!=="local"){ t.vx=0; t.vy=0; return; }
-  t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false;
+  t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false; t._hyperT=0;
 }
 // custom effect zones from the level editor
 function applyZone(f, z){
@@ -38832,6 +39004,17 @@ const PB_MK = [];            // per move slot, the gene names pbShifts reads (bu
   for(let i=0;i<6;i++) PB_GENES['g'+i] = [-3, 3, 0.25];
   for(const c of Object.values(PB_CLASS_CODE)) for(const k in PB_VS_GENES) PB_GENES['x'+c+k] = PB_VS_GENES[k];
 })();
+// the new move slots' genes (see THE CPU USES THE MOVESET, aiMovesetUse): registered with the others so the trainer finds them
+const PB_MS_SLOTS = ['L', 'A', 'G', 'I', 'W'];
+const PB_MS_MK = {};
+(function(){
+  for(const s of PB_MS_SLOTS){
+    const mk = { b:'m' + s + 'b', d:[], h:[], o:[], p:[] };
+    PB_GENES[mk.b] = [-3, 3, 0.25];
+    for(const k of ['d', 'h', 'o', 'p']) for(let i = 0; i < 3; i++){ const g = 'm' + s + k + i; mk[k].push(g); PB_GENES[g] = [-3, 3, 0.25]; }
+    PB_MS_MK[s] = mk;
+  }
+})();
 
 // @playbooks:begin
 // Written by scripts/train-bots.mjs: its `embed` step rewrites everything between these two markers and nothing else. An entry is
@@ -39641,6 +39824,7 @@ function aiChargeDepth(f, sp, punish){
 }
 // shared tail: difficulty handicap + smash-hold commitment
 function finishAI(f,inp,sp){
+  if(f.aiTarget && msOf(f)) aiMovesetUse(f, inp, sp);   // a converted fighter uses its whole moveset (aiMovesetUse)
   if(f._aiCharging>0){
     // A charge is refused during endlag (see the smash input block), and the AI tends to decide to
     // charge on the frame after it jabs -- mid-endlag. The countdown used to run anyway, so the
@@ -39678,10 +39862,10 @@ function finishAI(f,inp,sp){
   // difficulty handicap: lower levels drop offensive inputs & hesitate (movement still works so they don't look frozen)
   const lvl = (f._lvlCache!=null)?f._lvlCache:1;
   if(lvl===0){                       // easy: frequently fails to attack, sometimes wrong-foots itself
-    if(Math.random()<0.5){ inp.attack=false; inp.special=false; inp.smash=false; }
+    if(Math.random()<0.5){ inp.attack=false; inp.special=false; inp.smash=false; inp.grab=false; }
     if(Math.random()<0.12){ const l=inp.left; inp.left=inp.right; inp.right=l; }  // occasional misstep
   } else if(lvl===1){                // normal: occasionally drops an attack
-    if(Math.random()<0.22){ inp.attack=false; inp.special=false; }
+    if(Math.random()<0.22){ inp.attack=false; inp.special=false; inp.grab=false; }
   }
   return inp;
 }
