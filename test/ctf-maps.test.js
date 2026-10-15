@@ -28,7 +28,7 @@ for (const id of MAPS) {
         return JSON.stringify(out);
       })()`));
       // each map's world width: the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side); then 2026-10-15: "about 15 screens wide and 4 tall", "some maps could be small with good spots" (castle v4: 84 columns a side, 28 rows); the others are 108 a side now
-      expect(r.WW).toBe({ castle: 20160, mines: 25920, factory: 25920, forest: 25920, sky: 25920, oak: 20160, 'oak.s': 20160, 'oak.l': 25920, 'castle.s': 20160, 'castle.l': 25920 }[id]);
+      expect(r.WW).toBe({ castle: 26880, mines: 25920, factory: 25920, forest: 25920, sky: 25920, oak: 20160, 'oak.s': 20160, 'oak.l': 25920, 'castle.s': 23040, 'castle.l': 31680 }[id]);
       if (!ASYM[baseOf(id)]) expect(r.mirrored, 'the right half is the left half turned over').toBe(true);   // (an asymmetric map is two halves, each its own)
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
