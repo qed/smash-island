@@ -66,17 +66,22 @@ describe('the CPU uses the moveset', () => {
   });
 });
 
-describe('the CPU uses the moves of batch 2 too, and only the ones that reach', () => {
-  it('each of the eight, played by the CPU, uses a tilt or an aerial of its own at least once (Pen, Blocky and Bomby keep most jab presses as the jab: their strength is built on it), and never errors', () => {
+describe('the CPU uses the moves of batches 2 and 3 too, and only the ones that reach', () => {
+  it('each of the sixteen, played by the CPU, uses a tilt or an aerial of its own at least once (the ones whose strength is built on the old rules keep most jab presses as the jab), and never errors', () => {
     const bad = []; let total = 0;
-    for (const name of ['Firey', 'Pen', 'Blocky', 'Ice Cube', 'Match', 'Snowball', 'Pin', 'Bomby']) {
-      const r = play(name, 'Rocky', 14, 3600);
+    for (const name of ['Firey', 'Pen', 'Blocky', 'Ice Cube', 'Match', 'Snowball', 'Pin', 'Bomby', 'Needle', 'Flower', 'Tennis Ball', 'Teardrop', 'Bubble', 'Rocky', 'Coiny', 'Golf Ball']) {
+      // a fighter whose CPU keeps nearly all its jab presses (aiK under 0.1: Blocky, Bubble, Tennis Ball) is shown to be ABLE to use its moves with its knob lifted to 1
+      const kit = W.eval(`ROSTER.find(function(r){ return r.name === ${JSON.stringify(name)}; }).kit.special`);
+      const low = W.eval(`MOVESETS.${kit}.aiK != null && MOVESETS.${kit}.aiK < 0.1`);
+      if (low) W.eval(`MOVESETS.${kit}._aiK0 = MOVESETS.${kit}.aiK; MOVESETS.${kit}.aiK = 1;`);
+      const r = play(name, 'Woody', 14, 3600);
+      if (low) W.eval(`MOVESETS.${kit}.aiK = MOVESETS.${kit}._aiK0;`);
       if (r.errs.length) bad.push(`${name}: ${r.errs[0]}`);
       const n = ['ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da'].reduce((a, k) => a + (r.used[k] || 0), 0);
       total += n;
       if (n < 1) bad.push(`${name}: no tilt or aerial in 3600 frames (${JSON.stringify(r.used)})`);
     }
-    if (total < 14) bad.push(`only ${total} tilts and aerials between the eight`);
+    if (total < 20) bad.push(`only ${total} tilts and aerials between the sixteen`);
     expect(bad, bad.join(' ; ')).toEqual([]);
   });
 });
