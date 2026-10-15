@@ -351,3 +351,13 @@ batchSuite("batch G", [
   ["Ruler", "exactmeasure", 250, -300],
   ["Sidewalky", "physically", 250, 560]
 ]);
+batchSuite("batch H", [
+  ["Balloony", "airleak", 300, -300],
+  ["Roboty", "antennaspring", 150, 520],
+  ["Profily", "cactus", 250, 560],
+  ["Tree", "timber", 250, null],
+  ["Cake", "cakeatstake", 300, -300],
+  ["Donut", "sprinkleroll", 60, 220],
+  ["Balloon", "tirade", 120, 600],
+  ["Bomb", "literally", 100, 450]
+]);
