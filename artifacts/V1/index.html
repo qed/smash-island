@@ -3042,8 +3042,10 @@ CTF_MAPS.factory = {
 
     // the factory roof
     g.box(10, 0, 10, 69, '#'); g.gap(10, 4, 9); g.gap(10, 26, 30); g.gap(10, 49, 51);
-    g.mound(9, 8, 6, 3); g.mound(9, 34, 8, 3); g.mound(9, 56, 7, 3);
-    g.put(6, 10, 'E'); g.put(9, 18, 'W'); g.put(6, 36, 'L'); g.put(9, 44, 'C'); g.put(6, 58, 'E'); g.put(9, 64, 'K');
+    // three roof hills, as slopes (the owner, 2026-10-15: "you had to do a movement cancel hyper to get in": the old stepped mounds were a row to climb a step, a jump against a wall, which the game turns into a wall jump
+    // (movetech). A baseline fighter walks a slope: g.slope, steps of at most 24 px.)
+    for(const [c0, c1] of [[10, 21], [32, 43], [55, 66]]){ g.slope(c0, c0 + 4, 10, 8, 3, { fill:10 }); g.slope(c0 + 5, c0 + 6, 8, 8, 3, { fill:10 }); g.slope(c0 + 7, c1, 8, 10, 3, { fill:10 }); }
+    g.put(7, 15, 'E'); g.put(9, 23, 'W'); g.put(7, 37, 'L'); g.put(9, 44, 'C'); g.put(7, 60, 'E'); g.put(9, 67, 'K');
     g.deco('chimney', 14, 5, 2, 5, {}); g.deco('chimney', 46, 4, 2, 6, {}); g.deco('cloud', 20, 1, 4, 2, {}); g.deco('cloud', 52, 2, 5, 2, {});
 
     // what the decoration tool offers here: machines and gears in the works, toy blocks and balls in the toy land, cones and hydrants in the city
@@ -6052,12 +6054,12 @@ function ctfNavNodeOf(nav, f){
 function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
   if(pert){ P.CAP *= pert.k; P.ACC *= pert.k; if(pert.jv) P.JV *= pert.jv; }   // (a slightly slower fighter, a later second jump: does the move still come down on the same place?)
-  let x = xa, y = A.y - R, vy = 0, jumps = 2, sp = 0, fl = false;
+  let x = xa, y = A.y - R, vy = 0, jumps = 2, sp = 0, fl = false, wt = -9, ws = 0;   // (wt, ws: when and on which side a wall was last touched)
   if(jump){ vy = P.JV; jumps = 1; }
   if(thru){ y += R*0.6; vy = 5; }   // down + jump on a one-way ledge: dropped through it (the game's own: dropping = 10 frames, vy 5)
   for(let t = 1; t <= 150; t++){
     if(dir !== 0 && t <= T){ vx += dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
-    if(dj && jumps > 0 && t >= 6 + (pert ? pert.dd : 0) && vy >= -0.4){ vy = P.JV; jumps--; }
+    if(dj && jumps > 0 && t >= 6 + (pert ? pert.dd : 0) && vy >= -0.4){ if(t - wt <= 3 && dir === ws && t <= T && !CTF.wallOK) return null; vy = P.JV; jumps--; }   // (a jump against a wall held toward is the wall jump: the baseline fighter's plan never needs it, and it is not what the plan says)
     vy += fl ? P.G*0.35 : P.G; x += vx; const pb = y + R; y += vy;
     const list = (nav.pb[ctfNavBucket(x)] || []);
     let landed = null;
@@ -6066,7 +6068,7 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
       if(!(x + R > p.x && x - R < p.x + p.w && y + R > p.y && y - R < p.y + p.h)) continue;
       const fl = p.x - (x + R), fr = (p.x + p.w) - (x - R), ft = p.y - (y + R), fb = (p.y + p.h) - (y - R);
       const ax = Math.abs(fl) < Math.abs(fr) ? fl : fr, ay = Math.abs(ft) < Math.abs(fb) ? ft : fb;
-      if(Math.abs(ax) < Math.abs(ay) && !((p.ramp === true || p.step === true) && ft < 0 && ft >= -28 && vy > -2)){ x += ax; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
+      if(Math.abs(ax) < Math.abs(ay) && !((p.ramp === true || p.step === true) && ft < 0 && ft >= -28 && vy > -2)){ x += ax; wt = t; ws = ax < 0 ? 1 : -1; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
       else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else vy = Math.max(0, vy); }
     }
     if(!landed && vy >= 0 && !(thru && t <= 10)){
@@ -6349,12 +6351,12 @@ function ctfAiWalk(f, inp, tx, tol){
 // The same numbers as ctfNavSim (the game's own), so what it says is what the real fighter does if it holds the same keys. Returns { node, x, t } where it comes down, or null.
 function ctfNavFly(nav, s, ctl, free, thru, bst){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
-  let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, fl = !!s.fl;
+  let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, fl = !!s.fl, wt = -9, ws = 0;
   for(let t = 1; t <= 150; t++){
     const c = ctl(t, x, y, vx, vy, jumps) || {};
     if(c.dir){ vx += c.dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
     else if(ground) vx *= FRICTION;
-    if(c.jump){ if(jumps > 0 && !jp){ vy = P.JV; jumps--; ground = false; jp = true; } } else jp = false;
+    if(c.jump){ if(jumps > 0 && !jp){ if(!ground && t - wt <= 3 && c.dir === ws && !CTF.wallOK) return null; vy = P.JV; jumps--; ground = false; jp = true; } } else jp = false;
     if(thru && t === 1){ y += R*0.6; vy = 5; ground = false; }
     vy += fl ? P.G*0.35 : P.G; x += vx; const pb = y + R; y += vy;
     const list = (nav.pb[ctfNavBucket(x)] || []);
@@ -6364,7 +6366,7 @@ function ctfNavFly(nav, s, ctl, free, thru, bst){
       if(!(x + R > p.x && x - R < p.x + p.w && y + R > p.y && y - R < p.y + p.h)) continue;
       const fl = p.x - (x + R), fr = (p.x + p.w) - (x - R), ft = p.y - (y + R), fb = (p.y + p.h) - (y - R);
       const ax = Math.abs(fl) < Math.abs(fr) ? fl : fr, ay = Math.abs(ft) < Math.abs(fb) ? ft : fb;
-      if(Math.abs(ax) < Math.abs(ay) && !((p.ramp === true || p.step === true) && ft < 0 && ft >= -28 && vy > -2)){ x += ax; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
+      if(Math.abs(ax) < Math.abs(ay) && !((p.ramp === true || p.step === true) && ft < 0 && ft >= -28 && vy > -2)){ x += ax; wt = t; ws = ax < 0 ? 1 : -1; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
       else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else vy = Math.max(0, vy); }
     }
     if(!landed && vy >= 0 && !(thru && t <= 10)){
