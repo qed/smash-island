@@ -43,6 +43,13 @@ describe('X+C grabs', () => {
 });
 
 describe('holding', () => {
+  it('X and C a few frames apart, in either order, still grab ("grab is hard to use", 2026-10-15)', () => {
+    const late = (first, gap) => { stage('Coiny', 40); W.eval(`down[KEYS.${first}]=true;`); steps(gap);
+      W.eval(`down[KEYS.attack]=true; down[KEYS.special]=true;`); steps(1); W.eval('down[KEYS.attack]=false; down[KEYS.special]=false;'); steps(10); };
+    late('attack', 4); expect(J('!!fighters[0]._hold')).toBe(true);
+    late('special', 3); expect(J('!!fighters[0]._hold')).toBe(true);
+    expect(J('fighters[0].spCd')).toBe(0);   // the pending neutral special was dropped, not fired
+  });
   it('a press of X pummels for a little damage, not a launch', () => {
     grab('Coiny', 40); steps(6);
     hold(['attack'], 4); steps(6);
