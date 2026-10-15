@@ -10,13 +10,13 @@ import { loadMonolith } from './helpers/load-monolith.js';
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
-// A (Firey) and D (Pen) on a flat floor, D `dx` px in front of A. `body` runs inside with A and D in scope.
-const arenaIn = (win, dx, body, { pct = 0, a = 'Firey' } = {}) => win.eval(`(function(){
+// A (Coiny: no Final Smash of its own yet, so the default) and D (Pen) on a flat floor, D `dx` px in front of A. `body` runs inside with A and D in scope.
+const arenaIn = (win, dx, body, { pct = 0, a = 'Coiny', ax = 400 } = {}) => win.eval(`(function(){
   SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=2; SETTINGS.smashBalls=true; running=true;
   RACE.active=false; ONEFIGHT.active=false; COBSFIGHT.active=false; TESTMODE.active=false; BOSSRUSH.active=false; TOURNEY.active=false;
   worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
-  var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(a)}; }), 400, groundY()-24, 0);
-  var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), ${400 + dx}, groundY()-24, 1);
+  var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(a)}; }), ${ax}, groundY()-24, 0);
+  var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), ${ax + dx}, groundY()-24, 1);
   A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
   fighters=[A,D]; hazardT=5; fsReset(); SMASHBALL=null; FS.next=99999;
   [A,D].forEach(function(f){ f.invuln=0; f.hitstun=0; f.spCd=0; f.atkCd=0; f.armor=0; f.fnCd=0; });
@@ -198,5 +198,67 @@ describe('drawing', () => {
       for (var i=0;i<100;i+=4){ for (var k=0;k<4;k++) step(); pic(); }
       return { errs: errs };`);
     expect(r.errs).toEqual([]);
+  });
+});
+
+// BATCH A: each fighter's own Final Smash lands on a foe standing where its tell drew the hit, and misses one standing where it did not.
+describe('batches A and B: the unique Final Smashes', () => {
+  const rows = [
+    // name, id, a foe in the hit, a foe out of it
+    ['Firey',    'inferno',  110, 700],
+    ['Leafy',    'void',     200, -420],
+    ['Pencil',   'twofour',  200, 560],
+    ['Puffball', 'trance',   150, -520],
+    ['Bow',      'snowbow',  300, null],
+    ['Flower',   'petals',   200, null],
+    // batch B
+    ['Bubble',   'yoylecake',     150, 500],
+    ['Blocky',   'recoveryloop',  200, 450],
+    ['Pen',      'erasure',       250, 520],
+    ['Match',    'freesmartvan',  200, null],
+    ['Ice Cube', 'vengeance',     200, 450],
+    ['Teardrop', 'silenttreatment', 250, -300],
+    ['Bomby',    'detonation',    120, 330],
+    ['Rocky',    'matter',        200, -300],
+  ];
+  const play = (name, dx, pct) => arena(dx, `
+    A.fsGlow = 900; fsTryFire(A); var id = A.fsId, kind0 = null, kinds = {};
+    for (var i = 0; i < 200; i++) { step(); if (A._atkKind) kinds[A._atkKind] = 1; if (i > 150) { D.invuln = 0; } }
+    var over = !A._fs && !A.fsId;
+    return { id: id, over: over, hurt: D.pct !== ${pct} || D.stocks < 9, stocks: D.stocks, pct: D.pct, kinds: Object.keys(kinds) };`, { pct, a: name, ax: dx < 0 ? 800 : 130 });
+  for (const [name, id, near, far] of rows) {
+    it(name + ': ' + id + ' lands in its circle, ends cleanly, and uses the Final Smash animation', () => {
+      const r = play(name, near, 60);
+      expect(r.id).toBe(id);
+      expect(r.over).toBe(true);
+      expect(r.hurt, JSON.stringify(r)).toBe(true);
+      expect(r.kinds.some(k => k === 'fsgather' || k === 'fsburst' || k === 'spit' || k === 'spin'), JSON.stringify(r.kinds)).toBe(true);
+    });
+    if (far !== null) it(name + ': ' + id + ' misses a foe standing outside the drawn reach', () => {
+      const r = play(name, far, 60);
+      expect(r.hurt, JSON.stringify(r)).toBe(false);
+    });
+  }
+  it('Flower flings petals, and more between them 16 frames on', () => {
+    const r = arena(400, `
+      A.fsGlow = 900; fsTryFire(A); var n = [], q = [];
+      for (var i = 0; i < 70; i++) { step(); n.push(projectiles.filter(function(p){ return p.owner === A.idx && p.color === '#ff6fae'; }).length); }
+      return { first: n[36], second: Math.max.apply(null, n) };`, { a: 'Flower' });
+    expect(r.first).toBeGreaterThanOrEqual(6);   // (the ones thrown down into the floor break on it at once)
+    expect(r.second).toBeGreaterThan(r.first);
+    expect(r.second).toBeLessThanOrEqual(24);
+  });
+  it('every row draws its tell and its blast with no error, and a client could (the wire fields are enough)', () => {
+    const { window: w } = loadMonolith();
+    const r = arenaIn(w, 150, `
+      var errs = [];
+      ['Firey','Leafy','Pencil','Puffball','Bow','Flower','Bubble','Blocky','Pen','Match','Ice Cube','Teardrop','Bomby','Rocky'].forEach(function(nm){
+        var A2 = makeFighter(ROSTER.find(function(r){ return r.name===nm; }), 400, groundY()-24, 0);
+        A2.team=0; A2.controller='still'; A2.stocks=9; fighters[0] = A2; D.x = 550;
+        A2.fsGlow = 900; fsTryFire(A2);
+        for (var i=0;i<130;i+=5){ for (var k=0;k<5;k++) step(); try{ draw(); }catch(e){ errs.push(nm+': '+e); } }
+      });
+      return errs;`);
+    expect(r).toEqual([]);
   });
 });

@@ -12843,7 +12843,7 @@ function fsRun(f){
 function fsEnd(f){
   const st = f._fs; if(st && st.d.end) st.d.end(f, st);
   f._fs = null; f.fsId = ''; f.fsT = 0; f.fsWind = 0; f.fsDur = 0;
-  f._lag = Math.max(f._lag || 0, 6); f.invuln = Math.max(f.invuln, 10);
+  if(!(st && st.d.exposed)){ f._lag = Math.max(f._lag || 0, 6); f.invuln = Math.max(f.invuln, 10); }   // (a row marked `exposed` ends with no grace at all)
   fsArm();
 }
 // One radius hit on every foe in it that this Final Smash has not hit yet. A Final Smash beats a counter stance and armour's flinch.
@@ -12868,11 +12868,12 @@ const FS_SURGE_R = 240;
 const FS_DEFAULT = {
   id:'surge', wind:40, dur:92, reach:FS_SURGE_R,
   tick(f, st, t){
-    if(t === 0){ shake(6); for(let i = 0; i < 10; i++) puff(f.x, f.y, f.color, 6); }
+    if(t === 0){ shake(6); armAtk(f, this.wind, 'fsgather'); for(let i = 0; i < 10; i++) puff(f.x, f.y, f.color, 6); }
     if(t === this.wind){
-      shake(12); armAtk(f, 30, animKindOf(f, 'finisher'));
-      fsBurst(f, st, f.x, f.y, FS_SURGE_R, 26, 22, -14);
+      shake(12);
+      fsBurst(f, st, f.x, f.y, FS_SURGE_R, 24, 20, -13);
       doAttackSpecial(f);   // their own finisher, in the middle of it
+      armAtk(f, 34, 'fsburst');
       for(let i = 0; i < 22; i++) puff(f.x, f.y, i % 2 ? f.color : '#fff', 7);
     }
   },
@@ -13004,6 +13005,606 @@ function fsDrawScreen(){
     break;   // one at a time is plenty
   }
 }
+// ---- BATCH A: Firey, Leafy, Pencil, Puffball, Bow, Flower (each from a show moment; the canon is quoted on its row) --------------------
+// Shared pieces. Every row's hit is something the tell drew: a circle, a lane, a pull, a marked spot, a fan with gaps. `draw` is a pure
+// function of the fighter's fs* fields (fsT, fsWind, fsAx, fsAy, face, colour) and, for what other fighters are doing, their own wire fields.
+function fsFeetY(f){ return (f.fsAy != null ? f.fsAy : f.y) + f.r; }
+function fsRing(c, x, y, r, col, lw, a){ c.globalAlpha = a; c.strokeStyle = '#1c1c1c'; c.lineWidth = lw + 3; c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke(); c.strokeStyle = col; c.lineWidth = lw; c.stroke(); }
+function fsDisc(c, x, y, r, col, a){ c.globalAlpha = a; c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
+function fsHurtMark(f, t){ return t.dead || t.idx === f.idx || t.team === f.team || hardInvuln(t); }
+
+// FIREY -- TOTAL FIREY ISLAND. The wiki's Firey: the original contestant and the winner of Battle for Dream Island (406 votes), a living
+// flame who burns whatever he touches; the design doc's finisher for him ("406 Votes") ends in "a towering bonfire". Here he flares up
+// (the tell: a row of flames flickering on the floor out to both sides) and the fire runs out from under him in columns, one every
+// three frames, 55 px apart, 8 a side, each 300 tall and 80 wide. Stand off the marked floor or be above the flames.
+FINAL_SMASHES['Firey'] = {
+  id:'inferno', wind:36, dur:96, reach:400,
+  start(f, st){ st.fy = f.y + f.r; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    if(t === 0){ shake(5); for(let i = 0; i < 12; i++) puff(f.x, f.y, i % 2 ? '#f0521f' : '#ffd23f', 6); }
+    if(t === this.wind){ armAtk(f, 34, 'fsburst'); shake(10); }
+    if(t >= this.wind && t < this.wind + 24 && (t - this.wind) % 3 === 0){
+      const i = (t - this.wind)/3, ax = f.fsAx, reach = i === 0 ? [0] : [-1, 1];
+      for(const sd of reach){
+        const x = ax + sd*(i*55);
+        for(const o of fighters){
+          if(fsHurtMark(f, o) || st.hit.has(o.idx)) continue;
+          if(Math.abs(o.x - x) < 40 + o.r*0.5 && o.y > st.fy - 300 - o.r && o.y < st.fy + 40){
+            st.hit.add(o.idx); o.countering = 0; o.burn = Math.max(o.burn || 0, 200);
+            applyHit(o, 15, (Math.sign(o.x - ax) || f.face)*8, -17, f);
+          }
+        }
+        for(let k = 0; k < 4; k++) puff(x + (k - 1.5)*10, st.fy - k*40, k % 2 ? '#ffd23f' : '#f0521f', 6);
+      }
+    }
+  },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && Math.abs(o.x - f.x) < 400 && Math.abs(o.y - f.y) < 190) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 36, ax = f.fsAx != null ? f.fsAx : f.x, fy = fsFeetY(f), sw = hazardT*0.3;
+    for(let i = 0; i < 8; i++) for(const sd of (i === 0 ? [0] : [-1, 1])){
+      const x = ax + sd*i*55, born = w + i*3;
+      if(t < w){   // the tell: a flicker of flame on the floor where a column will stand, growing as the moment nears
+        const k = t/w, hh = 8 + 14*k + 3*Math.sin(sw + i);
+        c.globalAlpha = 0.5 + 0.4*k; c.fillStyle = '#ffd23f'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(x - 13, fy); c.quadraticCurveTo(x - 6, fy - hh, x, fy - hh*1.6); c.quadraticCurveTo(x + 7, fy - hh, x + 13, fy); c.closePath(); c.fill(); c.stroke();
+      } else if(t >= born && t < born + 22){   // the column: shoots up, holds, sinks
+        const u = (t - born)/22, h = 300*Math.sin(Math.min(1, u*1.6)*Math.PI/2)*(u > 0.7 ? 1 - (u - 0.7)/0.3 : 1), wd = 40;
+        c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.fillStyle = '#f0521f';
+        c.beginPath(); c.moveTo(x - wd, fy); c.quadraticCurveTo(x - wd*0.9, fy - h*0.55, x + Math.sin(sw + i)*10, fy - h); c.quadraticCurveTo(x + wd*0.9, fy - h*0.55, x + wd, fy); c.closePath(); c.fill(); c.stroke();
+        c.fillStyle = '#ffd23f'; c.beginPath(); c.moveTo(x - wd*0.5, fy); c.quadraticCurveTo(x - wd*0.4, fy - h*0.45, x, fy - h*0.72); c.quadraticCurveTo(x + wd*0.4, fy - h*0.45, x + wd*0.5, fy); c.closePath(); c.fill();
+      }
+    }
+  },
+};
+
+// LEAFY -- INTO THE STARRY VOID. Evil Leafy, the dark side of her: in "Alone" (TPOT 20) she is shut in the Moon's pocket dimension, a
+// starry void; the design doc's finisher for her opens it and "pulls in foes ahead of her", then "spits them out". Here the void opens
+// 150 px ahead of her (the tell: it widens and its pull ring, 330 px, pulses), drags every foe in reach toward it about 3 px a frame
+// for 40 frames (run or jump away faster than that and you are out), and snaps shut on whoever is in its middle.
+FINAL_SMASHES['Leafy'] = {
+  id:'void', wind:34, dur:104, reach:300,
+  start(f, st){ st.cx = f.x + f.face*150; st.cy = f.y; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    if(t === this.wind) armAtk(f, 44, 'fsgather');
+    if(t >= this.wind && t < this.wind + 40){
+      for(const o of fighters){
+        if(fsHurtMark(f, o) || o._heldBy != null) continue;
+        const dx = st.cx - o.x, dy = st.cy - o.y, d = Math.hypot(dx, dy);
+        if(d < 330 && d > 4){ const k = Math.min(3.2, d)/d; o.x += dx*k; if(!o.onground) o.y += dy*k*0.5; }
+      }
+    }
+    if(t === this.wind + 40){
+      armAtk(f, 24, 'fsburst'); shake(11);
+      fsBurst(f, st, st.cx, st.cy, 100, 24, 21, -14);
+      for(let i = 0; i < 20; i++) puff(st.cx, st.cy, i % 2 ? '#2a1a4a' : '#f4f1ff', 7);
+    }
+  },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && hurtGap(o, f.x + f.face*150, f.y) < 250) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 34, cx = (f.fsAx != null ? f.fsAx : f.x) + f.face*150, cy = f.fsAy != null ? f.fsAy : f.y;
+    if(t >= w + 46) return;
+    const open = t < w ? t/w : (t < w + 40 ? 1 : Math.max(0, 1 - (t - w - 40)/6)), R = 100*open;
+    c.save(); c.translate(cx, cy);
+    if(t >= w - 10 && t < w + 42){ const pr = 330*(0.9 + 0.1*Math.sin(hazardT*0.25)); fsRing(c, 0, 0, pr, '#b9a5ff', 4, 0.5); }   // how far its pull reaches
+    fsDisc(c, 0, 0, R + 8, '#f4f1ff', 0.35*open);
+    fsDisc(c, 0, 0, R, '#1a1030', 0.95*open);
+    c.globalAlpha = open; c.fillStyle = '#fff';
+    for(let i = 0; i < 14; i++){ const a = hazardT*0.05*(i % 2 ? 1 : -1) + i*0.9, rr = R*(0.2 + 0.75*((i*0.37 + hazardT*0.01) % 1)); c.beginPath(); c.arc(Math.cos(a)*rr, Math.sin(a)*rr, 2.4, 0, 7); c.fill(); }
+    fsRing(c, 0, 0, R, '#8ed24b', 4, open);
+    if(t >= w && t < w + 40){ c.globalAlpha = 0.6; c.strokeStyle = '#f4f1ff'; c.lineWidth = 3; for(let i = 0; i < 6; i++){ const a = i*1.047 + hazardT*0.04, r0 = 300 - ((hazardT*6 + i*50) % 220); c.beginPath(); c.moveTo(Math.cos(a)*r0, Math.sin(a)*r0); c.lineTo(Math.cos(a)*(r0 - 40), Math.sin(a)*(r0 - 40)); c.stroke(); } }   // the lines running in
+    c.restore();
+  },
+};
+
+// PENCIL -- THE POWER OF TWO AND FOUR. "The Power of Two": she takes all the power of Two and Four and cannot control it (the design
+// doc's finisher for her, "left staggered/vulnerable afterward"). Two rings, drawn in the tell, go off 14 frames apart: the inner 300 px
+// (20%), the outer 420 px (14%) for whoever the first did not reach; then she is dizzy for 70 frames and takes the hit she can no longer
+// shrug off (`exposed`: no grace at the end).
+FINAL_SMASHES['Pencil'] = {
+  id:'twofour', wind:44, dur:126, reach:300, exposed:true,
+  start(f, st){ st.hit2 = new Set(); armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    if(t === 0){ shake(6); for(let i = 0; i < 12; i++) puff(f.x, f.y, i % 2 ? '#f2d84b' : '#a78bfa', 6); }
+    if(t === this.wind){ armAtk(f, 40, 'fsburst'); shake(12); fsBurst(f, st, f.x, f.y, 300, 20, 20, -13); }
+    if(t === this.wind + 14){
+      shake(10);
+      for(const o of fighters){
+        if(fsHurtMark(f, o) || st.hit.has(o.idx) || st.hit2.has(o.idx)) continue;
+        if(hurtGap(o, f.x, f.y) < 420){ st.hit2.add(o.idx); o.countering = 0; applyHit(o, 14, (Math.sign(o.x - f.x) || f.face)*18, -12, f); }
+      }
+    }
+  },
+  end(f){ stunFx(f, 70); },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && hurtGap(o, f.x, f.y) < 280) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 44;
+    c.save(); c.translate(f.x, f.y);
+    if(t < w){
+      const k = t/w, pulse = 0.5 + 0.5*Math.sin(t*0.5);
+      fsDisc(c, 0, 0, 300, '#f2d84b', 0.08 + 0.1*k); fsRing(c, 0, 0, 300, '#f2d84b', 5, 0.9);
+      fsRing(c, 0, 0, 420, '#a78bfa', 3, 0.35 + 0.3*pulse);
+      for(let j = 0; j < 3; j++){ c.globalAlpha = 0.5; c.strokeStyle = '#fff'; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, 420*(1 - ((k*1.5 + j/3) % 1)*0.9), 0, 7); c.stroke(); }
+    } else {
+      const u1 = Math.min(1, (t - w)/18), u2 = t >= w + 14 ? Math.min(1, (t - w - 14)/20) : -1;
+      if(u1 < 1){ fsDisc(c, 0, 0, 300*u1, '#fff', 0.5*(1 - u1)); fsRing(c, 0, 0, 300*u1, '#f2d84b', 16*(1 - u1) + 2, 1 - u1); }
+      if(u2 >= 0 && u2 < 1){ fsRing(c, 0, 0, 420*u2, '#a78bfa', 12*(1 - u2) + 2, 1 - u2); }
+      if(t > w + 30 && t < w + 100){ c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; for(let i = 0; i < 3; i++){ const a = hazardT*0.2 + i*2.1; c.beginPath(); c.arc(Math.cos(a)*18, -f.r - 14 + Math.sin(a)*5, 4, 0, 7); c.stroke(); } }   // dizzy
+    }
+    c.restore();
+  },
+};
+
+// PUFFBALL -- VOCODER TRANCE. Her vocoded singing: in BFDIA 1 her song put Firey in a trance (the design doc's finisher for her: "sings a
+// vocoded note that locks nearby foes into a hypnotic stun, then follows with a rainbow-barf tsunami"; her rainbow substance is canon,
+// BFDIA 4 and 5a). The tell is the song's circle, 270 px; whoever is still in it when it goes off is entranced for 70 frames; 30 frames on
+// the tsunami sweeps out in front of her, 560 px along the floor and 100 tall, hitting everyone in its way, entranced or not.
+FINAL_SMASHES['Puffball'] = {
+  id:'trance', wind:40, dur:130, reach:270,
+  start(f, st){ st.wave = false; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === 0){ shake(4); for(let i = 0; i < 12; i++) puff(f.x, f.y, 'hsl(' + (i*30) + ',95%,65%)', 6); }
+    if(t === w){
+      shake(8); armAtk(f, 40, 'spit');
+      for(const o of fighters){ if(fsHurtMark(f, o)) continue; if(hurtGap(o, f.x, f.y) < 270){ stunFx(o, 70); o.vx *= 0.2; } }
+    }
+    if(t === w + 30){ armAtk(f, 44, 'spit'); st.fx0 = f.x; st.fy0 = f.y; st.dir = f.face; shake(10); }
+    if(t >= w + 30 && t < w + 50){
+      const front = st.fx0 + st.dir*28*(t - w - 29), back = st.fx0 + st.dir*28*(t - w - 30 - 5);
+      for(const o of fighters){
+        if(fsHurtMark(f, o) || st.hit.has(o.idx)) continue;
+        const rel = (o.x - st.fx0)*st.dir;
+        if(rel > -10 && (o.x - front)*st.dir < o.r && o.y > st.fy0 - 90 - o.r && o.y < st.fy0 + f.r + 40){
+          st.hit.add(o.idx); o.countering = 0; applyHit(o, 22, st.dir*18, -12, f);
+        }
+      }
+      for(let k = 0; k < 3; k++) puff(front, st.fy0 + (k - 1)*30, 'hsl(' + ((t*24 + k*70) % 360) + ',95%,62%)', 7);
+    }
+  },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && (hurtGap(o, f.x, f.y) < 250 || ((o.x - f.x)*f.face > 0 && (o.x - f.x)*f.face < 520 && Math.abs(o.y - f.y) < 80))) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 40;
+    c.save();
+    if(t < w + 50){   // the song's circle (rainbow, turning), then the spirals over whoever it caught
+      c.translate(f.x, f.y);
+      if(t < w){ const k = t/w; fsDisc(c, 0, 0, 270, '#e6a6e0', 0.1 + 0.14*k); for(let i = 0; i < 6; i++){ c.globalAlpha = 0.8; c.strokeStyle = fsRainbow(i, 6); c.lineWidth = 6; c.beginPath(); c.arc(0, 0, 270, i*1.047 + hazardT*0.04, i*1.047 + 0.9 + hazardT*0.04); c.stroke(); }
+        for(let n = 0; n < 4; n++){ const a = hazardT*0.1 + n*1.57, rr = 60 + ((t*5 + n*40) % 200); c.globalAlpha = 0.7; c.fillStyle = fsRainbow(n, 8); c.beginPath(); c.arc(Math.cos(a)*rr, Math.sin(a)*rr*0.8, 5, 0, 7); c.fill(); } }
+      c.translate(-f.x, -f.y);
+      if(t >= w) for(const o of fighters){
+        if(o.dead || o.idx === f.idx || o.team === f.team || !(o.hitstun > 0) || Math.hypot(o.x - f.x, o.y - f.y) > 330) continue;
+        c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath();
+        for(let i = 0; i <= 16; i++){ const a = i*0.6 + hazardT*0.3, r = i*1.1; if(i === 0) c.moveTo(o.x + Math.cos(a)*r, o.y - o.r - 14 + Math.sin(a)*r); else c.lineTo(o.x + Math.cos(a)*r, o.y - o.r - 14 + Math.sin(a)*r); }
+        c.stroke();
+      }
+    }
+    if(t >= w + 30 && t < w + 70){   // the tsunami
+      const ax = f.fsAx != null ? f.fsAx : f.x, ay = f.fsAy != null ? f.fsAy : f.y, dir = f.face, len = Math.min(560, 28*(t - w - 29)), u = (t - w - 30)/40;
+      for(let b = 0; b < 5; b++){
+        const hh = 100 - b*8, col = fsRainbow(b, 4);
+        c.globalAlpha = 0.85*(1 - Math.max(0, u - 0.5)*1.6); c.fillStyle = col; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+        const x0 = ax + dir*(b*14), x1 = ax + dir*len, base = ay + f.r;
+        c.beginPath(); c.moveTo(x0, base); c.lineTo(x0, base - hh*0.5);
+        c.quadraticCurveTo((x0 + x1)/2, base - hh - 14*Math.sin(hazardT*0.3 + b), x1, base - hh*0.7);
+        c.lineTo(x1, base); c.closePath(); c.fill(); c.stroke();
+      }
+    }
+    c.restore();
+  },
+};
+
+// BOW -- SNOW BOW. Telekinesis: "In "Snow Bow", Bow was able to levitate snowballs without touching them" (the II wiki, Abilities; the
+// same note sits on her old special). She rises (the tell: a ring of snowballs lifts around her, pink glow) and sends the snowballs down
+// on the stage, 13 of them four frames apart, each over a mark drawn on the floor for a beat before it lands: one on each foe in turn
+// and the rest scattered about them. Keep moving: no single mark is on you for long.
+FINAL_SMASHES['Bow'] = {
+  id:'snowbow', wind:36, dur:124, reach:600,
+  start(f, st){ st.n = 0; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t < 18) f.vy = -4.5; else if(t < this.dur - 16) f.vy = 0;   // she lifts herself, and hangs there
+    if(t === 0){ shake(4); for(let i = 0; i < 12; i++) puff(f.x, f.y, i % 2 ? '#f06fa8' : '#fff', 6); }
+    if(t === w) armAtk(f, 60, 'fsburst');
+    if(t >= w && t < w + 52 && (t - w) % 4 === 0){
+      const foes = fighters.filter(o=>!o.dead && o.team !== f.team);
+      if(!foes.length) return;
+      const o = foes[st.n % foes.length], jit = (fsRand() - 0.5)*(st.n % 2 ? 40 : 200);
+      st.n++;
+      dropProj(f, clamp(o.x + jit, 30, WW - 30), o.y + o.r, { dmg:12, kb:17, r:22, color:'#eaf6ff', life:150 }, true);
+    }
+  },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && Math.hypot(o.x - f.x, o.y - f.y) < 650) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 36;
+    if(t >= w + 56) return;
+    c.save(); c.translate(f.x, f.y);
+    const left = t < w ? 12 : Math.max(0, 12 - Math.floor((t - w)/4)), rise = t < w ? t/w : 1;
+    c.globalAlpha = 0.18 + 0.12*Math.sin(hazardT*0.3); c.fillStyle = '#f06fa8'; c.beginPath(); c.arc(0, 0, f.r + 34, 0, 7); c.fill();
+    for(let i = 0; i < left; i++){   // the snowballs, orbiting and lifting, then going one by one
+      const a = hazardT*0.07 + i*Math.PI*2/12, rr = (f.r + 34)*(0.4 + 0.6*rise), yy = -f.r*0.6 - 44*rise + Math.sin(a)*rr*0.35;
+      c.globalAlpha = 1; c.fillStyle = '#eaf6ff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5; c.beginPath(); c.arc(Math.cos(a)*rr, yy, 9, 0, 7); c.fill(); c.stroke();
+    }
+    c.restore();
+  },
+};
+
+// FLOWER -- PETAL TANTRUM. Flower is vain and quick to anger ("Of COURSE I won. Look at me."; a tantrum is her most characteristic state,
+// the design doc), and the rival of Leafy. She shakes with rage (the tell: petals tremble and ring her), then flings her petals out in
+// every direction, 12 of them, and, 16 frames on, 12 more between them. Petals fly 12 px a frame for 55 frames (about 660 px) and
+// break on a floor; the gaps between them are the way through.
+FINAL_SMASHES['Flower'] = {
+  id:'petals', wind:34, dur:100, reach:330,
+  start(f, st){ armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === 0){ shake(5); for(let i = 0; i < 10; i++) puff(f.x, f.y, i % 2 ? '#ff6fae' : '#fff', 6); }
+    if(t === w || t === w + 16){
+      if(t === w){ armAtk(f, 40, 'spin'); shake(9); }
+      const off = t === w ? 0 : Math.PI/12;
+      for(let i = 0; i < 12; i++){
+        const a = off + i*Math.PI/6;
+        addProj({ owner:f.idx, ownerObj:f, x:f.x, y:f.y, vx:Math.cos(a)*12, vy:Math.sin(a)*12, grav:false, dmg:14, kb:18, r:15, color:'#ff6fae', life:55, breaksOnSurface:true });
+      }
+      for(let i = 0; i < 12; i++) puff(f.x, f.y, '#ff9bc8', 6);
+    }
+  },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && hurtGap(o, f.x, f.y) < 330) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 34;
+    if(t >= w + 20) return;
+    c.save(); c.translate(f.x, f.y);
+    if(t < w){
+      const k = t/w, sh = Math.sin(t*1.9)*2*k;
+      for(let i = 0; i < 12; i++){   // the petals gathering round her, shaking harder as it builds
+        const a = i*Math.PI/6 + hazardT*0.02, rr = 20 + (f.r + 26)*k + sh;
+        c.save(); c.translate(Math.cos(a)*rr, Math.sin(a)*rr); c.rotate(a); c.globalAlpha = 0.9; c.fillStyle = '#ff6fae'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.5;
+        c.beginPath(); c.ellipse(0, 0, 11, 6, 0, 0, 7); c.fill(); c.stroke(); c.restore();
+      }
+      c.globalAlpha = 0.5*k; c.strokeStyle = '#ff6fae'; c.lineWidth = 3; c.setLineDash([10, 10]); c.beginPath(); c.arc(0, 0, 130, 0, 7); c.stroke(); c.setLineDash([]);   // where the first of them are by the end
+    } else {
+      const u = (t - w)/20; fsRing(c, 0, 0, 40 + 120*u, '#ff9bc8', 10*(1 - u) + 2, 1 - u);
+    }
+    c.restore();
+  },
+};
+
+// ---- BATCH B: Bubble, Blocky, Pen, Match, Ice Cube, Teardrop, Bomby, Rocky (the design doc's finishers, docs/animation-move-design.md) ----------
+// A LOCK-ON Final Smash (Blocky, Pen, Ice Cube, Teardrop) picks its foe by a plain rule on what everyone can see -- the nearest foe in a
+// box about the holder (fsPick) -- and follows them with a marker until `lock` frames before the hit, then the spot is fixed: it is sent
+// as the fighter's fsAx / fsAy, and the tell shows it. Step out of the marked circle in the beat between the lock and the hit and it misses.
+function fsPick(f, rx, ry, fwd){ return nearestFoe(f, rx, ry, o=>!hardInvuln(o) && !(o._ghostT > 0) && !(fwd && (o.x - f.x)*f.face < 0)); }
+function fsLockAt(f, st, o, fallback){   // fix the spot (ahead of the holder when nobody is in the box)
+  f.fsAx = Math.round(o ? o.x : f.x + f.face*fallback); f.fsAy = Math.round(o ? o.y : f.y); st.locked = true;
+}
+function fsMark(c, x, y, R, col, k, a){   // a lock-on marker: a ring with four ticks, closing in as `k` goes 0 -> 1
+  c.save(); c.translate(x, y); c.globalAlpha = a;
+  fsRing(c, 0, 0, R*(1.5 - 0.5*k), col, 4, a);
+  for(let i = 0; i < 4; i++){ const an = i*Math.PI/2 + hazardT*0.05; c.strokeStyle = '#1c1c1c'; c.lineWidth = 6; c.beginPath(); c.moveTo(Math.cos(an)*(R*0.5), Math.sin(an)*(R*0.5)); c.lineTo(Math.cos(an)*(R*1.7), Math.sin(an)*(R*1.7)); c.stroke(); c.strokeStyle = col; c.lineWidth = 3; c.stroke(); }
+  c.restore();
+}
+function fsPin(o, x, y){ if(o.dead) return; o.x = x; o.y = y; o.vx = 0; o.vy = 0; stunFx(o, 3); }
+
+// BUBBLE -- YOYLECAKE FINALE. Her catchphrase "Yoylecake!" and her nature, a soap bubble that engulfs and pops: the design doc has her boop the
+// foe skyward, inflate them inside a giant bubble, float them up and "pop the whole thing for a massive launch and soap-shard shower".
+// The circle in the tell is 230 px; whoever is in it when it closes is caught, floats up for 42 frames helpless, and the pop (22%) throws them.
+FINAL_SMASHES['Bubble'] = {
+  id:'yoylecake', wind:34, dur:112, reach:230,
+  start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === 0){ shake(4); for(let i = 0; i < 12; i++) puff(f.x, f.y, i % 2 ? '#bfe8ff' : '#fff', 6); }
+    if(t === w){
+      armAtk(f, 44, 'fsburst'); shake(6);
+      for(const o of fighters){ if(fsHurtMark(f, o) || o._heldBy != null) continue; if(hurtGap(o, f.x, f.y) < 230){ st.caught.push(o.idx); o.countering = 0; } }
+    }
+    if(t >= w && t < w + 42) for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){ o.vy = -3.2; o.vx *= 0.7; stunFx(o, 3); } }
+    if(t === w + 42){
+      shake(12);
+      for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){ applyHit(o, 22, (Math.sign(o.x - f.x) || f.face)*6, -22, f); for(let k = 0; k < 14; k++) puff(o.x, o.y, k % 2 ? '#bfe8ff' : '#fff', 6); } }
+    }
+  },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && hurtGap(o, f.x, f.y) < 215) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 34;
+    c.save();
+    if(t < w){
+      const k = t/w; c.translate(f.x, f.y);
+      fsDisc(c, 0, 0, 230, '#bfe8ff', 0.1 + 0.12*k); fsRing(c, 0, 0, 230, '#7fc8f8', 5, 0.9);
+      for(let i = 0; i < 9; i++){ const a = i*0.7 + hazardT*0.02, rr = 60 + ((i*37 + t*3) % 160); fsRing(c, Math.cos(a)*rr, Math.sin(a)*rr*0.8 - k*30, 6 + (i % 3)*4, '#ffffff', 2, 0.8); }
+    } else if(t < w + 56){
+      for(const o of fighters){   // a bubble round whoever it caught (they are the ones held in the air: stunned, near her)
+        if(o.dead || o.idx === f.idx || o.team === f.team || !(o.hitstun > 0) || Math.hypot(o.x - f.x, o.y - f.y) > 420) continue;
+        if(t < w + 42){ c.globalAlpha = 0.35; c.fillStyle = '#bfe8ff'; c.beginPath(); c.arc(o.x, o.y, o.r + 24, 0, 7); c.fill(); fsRing(c, o.x, o.y, o.r + 24, '#ffffff', 3, 0.9); c.globalAlpha = 0.8; c.fillStyle = '#fff'; c.beginPath(); c.arc(o.x - o.r*0.6, o.y - o.r*0.7, 6, 0, 7); c.fill(); }
+      }
+      if(t >= w + 42){ const u = (t - w - 42)/14; for(const o of fighters){ if(o.dead || o.idx === f.idx || o.team === f.team || Math.hypot(o.x - f.x, o.y - f.y) > 520) continue; if(o.hitstun > 0) fsRing(c, o.x, o.y, o.r + 24 + 60*u, fsRainbow(o.idx, 8), 8*(1 - u) + 1, 1 - u); } }
+    }
+    c.restore();
+  },
+};
+
+// BLOCKY -- INFINITE RECOVERY LOOP. "Blocky's Funny Doings International": his cruelty is rigging the Recovery Centers so a contestant recovers
+// and dies again at once, over and over (the design doc: "a rapid recover-and-die loop of escalating hits, ending in a big launch"). The
+// tell: a marker on the nearest foe within 300, fixed 16 frames before the boxes slam down; whoever is inside it is boxed in and takes seven hits
+// (3% rising to 5%) over 56 frames, then the crush (10%, a big launch).
+FINAL_SMASHES['Blocky'] = {
+  id:'recoveryloop', wind:36, dur:126, reach:300,
+  start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === w - 16){ fsLockAt(f, st, fsPick(f, 300, 210), 110); }
+    if(t === w){
+      armAtk(f, 30, 'fsburst'); shake(10);
+      for(const o of fighters){ if(fsHurtMark(f, o) || o._heldBy != null) continue; if(Math.hypot(o.x - f.fsAx, o.y - f.fsAy) < 75 + o.r*0.3){ st.caught.push(o.idx); o.countering = 0; } }
+    }
+    if(t >= w && t < w + 56) for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){
+      fsPin(o, f.fsAx, f.fsAy);
+      if((t - w) % 8 === 4) applyHit(o, 3 + Math.floor((t - w)/16), 0, -1, f);
+    } }
+    if(t === w + 56){
+      shake(13);
+      for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){ o._heldBy = null; applyHit(o, 10, (Math.sign(o.x - f.x) || f.face)*20, -17, f); for(let k = 0; k < 12; k++) puff(o.x, o.y, k % 2 ? '#d62329' : '#e8c88a', 6); } }
+    }
+  },
+  ai(f){ return !!fsPick(f, 280, 190); },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 36;
+    c.save();
+    if(t < w - 16){ const o = fsPick(f, 300, 210); if(o) fsMark(c, o.x, o.y, 60, '#d62329', t/(w - 16), 0.7); }
+    else if(t < w){ fsMark(c, f.fsAx, f.fsAy, 75, '#d62329', 1, 0.9); }
+    else if(t < w + 66){
+      const x = f.fsAx, y = f.fsAy, drop = Math.min(1, (t - w)/6), k = (t - w)/56, spin = Math.min(1, Math.max(0, k));
+      for(let i = 0; i < 6; i++){   // the ring of boxes, slammed down round the foe
+        const a = i*Math.PI/3 + (t >= w + 56 ? 0 : spin*0.4), rr = 52, bx = x + Math.cos(a)*rr, by = y + Math.sin(a)*rr*0.7 - (1 - drop)*220;
+        c.globalAlpha = t >= w + 56 ? Math.max(0, 1 - (t - w - 56)/10) : 1; c.fillStyle = i % 2 ? '#d62329' : '#e8c88a'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3;
+        c.beginPath(); c.rect(bx - 16, by - 16, 32, 32); c.fill(); c.stroke();
+        c.beginPath(); c.moveTo(bx - 16, by - 5); c.lineTo(bx + 16, by - 5); c.stroke();
+      }
+      if(t < w + 56){ c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; const n = 3 + Math.floor(k*6); for(let i = 0; i < n; i++){ const a = hazardT*0.5 + i*2.1; c.beginPath(); c.arc(x + Math.cos(a)*22, y + Math.sin(a)*22, 4, 0, 7); c.stroke(); } }
+    }
+    c.restore();
+  },
+};
+
+// PEN -- EDITOR'S ERASURE. A host in the show; the design doc flags this as stylised, not literal canon ("a pen writes you out of the story"):
+// he uncaps and draws a colossal dripping X over the foe, who is slurped into his nib as an inkblot. The tell is the marker on the nearest foe within
+// 420, fixed 20 frames before the X is complete: stand outside its circle (90 px) by then and the X lands on nothing. It is 30%, thrown hard.
+FINAL_SMASHES['Pen'] = {
+  id:'erasure', wind:40, dur:104, reach:420,
+  start(f, st){ armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === w - 20) fsLockAt(f, st, fsPick(f, 420, 260), 150);
+    if(t === w){ armAtk(f, 34, 'fsburst'); shake(5); }
+    if(t === w + 8){
+      shake(13); const n = fsBurst(f, st, f.fsAx, f.fsAy, 90, 30, 22, -16);
+      for(let i = 0; i < 18; i++) puff(f.fsAx, f.fsAy, i % 2 ? '#3a2f9f' : '#1c1c1c', 7);
+    }
+  },
+  ai(f){ return !!fsPick(f, 400, 240); },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 40;
+    c.save();
+    if(t < w - 20){ const o = fsPick(f, 420, 260); if(o) fsMark(c, o.x, o.y, 55, '#3a2f9f', t/(w - 20), 0.7); }
+    else if(t < w + 40){
+      const x = f.fsAx, y = f.fsAy, k = Math.min(1, (t - (w - 20))/28), s = 110;
+      if(t < w + 8) fsRing(c, x, y, 90, '#3a2f9f', 3, 0.45);
+      c.globalAlpha = 1; c.lineCap = 'round';
+      c.strokeStyle = '#1c1c1c'; c.lineWidth = 17; c.beginPath(); c.moveTo(x - s, y - s); c.lineTo(x - s + 2*s*Math.min(1, k*2), y - s + 2*s*Math.min(1, k*2)); c.stroke();
+      if(k > 0.5){ const k2 = (k - 0.5)*2; c.beginPath(); c.moveTo(x + s, y - s); c.lineTo(x + s - 2*s*k2, y - s + 2*s*k2); c.stroke(); }
+      c.strokeStyle = '#3a2f9f'; c.lineWidth = 11; c.beginPath(); c.moveTo(x - s, y - s); c.lineTo(x - s + 2*s*Math.min(1, k*2), y - s + 2*s*Math.min(1, k*2)); c.stroke();
+      if(k > 0.5){ const k2 = (k - 0.5)*2; c.beginPath(); c.moveTo(x + s, y - s); c.lineTo(x + s - 2*s*k2, y - s + 2*s*k2); c.stroke(); }
+      c.fillStyle = '#3a2f9f'; for(let i = 0; i < 5; i++){ const dy = ((t*2 + i*37) % 90); c.beginPath(); c.ellipse(x - 70 + i*35, y + s*0.4 + dy, 4, 8, 0, 0, 7); c.fill(); }   // the drips
+      if(t >= w + 8){ const u = Math.min(1, (t - w - 8)/22); c.globalAlpha = 1 - u; c.fillStyle = '#1c1c3a'; c.beginPath(); c.ellipse(x + (f.x - x)*u*0.8, y + (f.y - y)*u*0.8, 70*(1 - u*0.6), 40*(1 - u*0.6), 0, 0, 7); c.fill(); }   // the inkblot, drawn into his nib
+    }
+    c.restore();
+  },
+};
+
+// MATCH -- FREESMART OVERDRIVE. The FreeSmart Van, the FreeSmarters' own: in BFDIA 5 Pencil drives it (Match aboard) into Evil Leafy's mouth
+// (the design doc). Match whistles and the Van barrels through from behind her, edge to edge, 24 px a frame, 100 px tall: jump it or stand
+// off the lane. 24% and a hard launch for whoever it meets.
+FINAL_SMASHES['Match'] = {
+  id:'freesmartvan', wind:36, dur:112, reach:700,
+  start(f, st){ st.dir = f.face; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind, dir = st.dir;
+    if(t === w){ armAtk(f, 40, 'fsburst'); shake(7); }
+    if(t >= w && t < w + 62){
+      const vx = (dir > 0 ? -150 : WW + 150) + dir*24*(t - w), fy = st.fy != null ? st.fy : (st.fy = f.y + f.r);
+      for(const o of fighters){
+        if(fsHurtMark(f, o) || st.hit.has(o.idx)) continue;
+        if(Math.abs(o.x - vx) < 70 + o.r && o.y > fy - 100 - o.r && o.y < fy + 30){ st.hit.add(o.idx); o.countering = 0; applyHit(o, 24, dir*24, -10, f); shake(8); }
+      }
+      if(t % 2 === 0) puff(vx - dir*60, fy - 6, '#d8c8a8', 5);
+    }
+  },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && o.onground && Math.abs(o.y - f.y) < 90) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 36, fy = fsFeetY(f), dir = f.face;
+    c.save();
+    if(t < w + 66){
+      if(t < w){   // the lane, marked with chevrons running the way the Van will, and its headlights flashing at the edge
+        const k = t/w; c.globalAlpha = 0.12 + 0.12*k; c.fillStyle = '#ffd23f'; c.fillRect(-40, fy - 100, WW + 80, 112);
+        c.globalAlpha = 0.5 + 0.4*k; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.setLineDash([14, 12]); c.strokeRect(-40, fy - 100, WW + 80, 112); c.setLineDash([]);
+        for(let i = 0; i < 8; i++){ const x = ((hazardT*6*dir + i*160) % (WW + 160) + WW + 160) % (WW + 160) - 80; c.fillStyle = '#d62329'; c.beginPath(); c.moveTo(x, fy - 60); c.lineTo(x + dir*26, fy - 44); c.lineTo(x, fy - 28); c.closePath(); c.fill(); }
+        if((t % 6) < 3){ const ex = dir > 0 ? 24 : WW - 24; c.globalAlpha = 1; c.fillStyle = '#fffbd0'; c.beginPath(); c.arc(ex, fy - 60, 16, 0, 7); c.arc(ex, fy - 30, 16, 0, 7); c.fill(); }
+      } else if(t < w + 62){   // the Van
+        const vx = (dir > 0 ? -150 : WW + 150) + dir*24*(t - w), by = fy;
+        c.save(); c.translate(vx, by); c.scale(dir, 1); c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4;
+        c.fillStyle = '#e8e2d0'; c.beginPath(); c.rect(-90, -88, 150, 76); c.fill(); c.stroke();   // the body
+        c.fillStyle = '#e8e2d0'; c.beginPath(); c.moveTo(60, -80); c.lineTo(100, -50); c.lineTo(100, -12); c.lineTo(60, -12); c.closePath(); c.fill(); c.stroke();   // the nose
+        c.fillStyle = '#9fd6f0'; c.beginPath(); c.moveTo(66, -74); c.lineTo(92, -52); c.lineTo(66, -52); c.closePath(); c.fill(); c.stroke();   // the windscreen
+        c.fillStyle = '#d62329'; c.fillRect(-90, -52, 150, 10);   // a stripe
+        c.fillStyle = '#1c1c1c'; for(const wx of [-58, 62]){ c.beginPath(); c.arc(wx, -10, 17, 0, 7); c.fill(); c.fillStyle = '#9a9a9a'; c.beginPath(); c.arc(wx, -10, 8, 0, 7); c.fill(); c.fillStyle = '#1c1c1c'; }
+        c.fillStyle = '#fffbd0'; c.beginPath(); c.arc(98, -32, 7, 0, 7); c.fill();
+        c.restore();
+      }
+    }
+    c.restore();
+  },
+};
+
+// ICE CUBE -- VENGEANCE, SERVED COLD. She is quiet but vengeful, wants revenge, and her ice-against-fire rivalry with Firey is the doc's
+// ground for it ("this time SHE delivers the cold"): the foe is flash-frozen solid, she rockets into the block and it shatters. The tell is
+// the frost marker on the nearest foe within 380, fixed 18 frames before the freeze (80 px: step out of it); a frozen foe is held 70
+// frames, she dashes to them (the Cube is a hard shape of ice, so a charge is on-model) and the block bursts: 26%, a big launch.
+FINAL_SMASHES['Ice Cube'] = {
+  id:'vengeance', wind:38, dur:116, reach:380,
+  start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === w - 18) fsLockAt(f, st, fsPick(f, 380, 240), 120);
+    if(t === w){
+      armAtk(f, 28, 'dash'); shake(5);
+      for(const o of fighters){ if(fsHurtMark(f, o)) continue; if(Math.hypot(o.x - f.fsAx, o.y - f.fsAy) < 80 + o.r*0.3){ st.caught.push(o.idx); o.countering = 0; applyFreeze(o, 70); } }
+    }
+    if(t >= w + 10 && t < w + 24){ const dx = f.fsAx - f.x; if(Math.abs(dx) > 55){ f.vx = Math.sign(dx)*24; f.face = Math.sign(dx); } }
+    if(t === w + 26){
+      armAtk(f, 30, 'fsburst'); shake(13);
+      for(const i of st.caught){ const o = fighters[i]; if(o) o.frozen = 0; }
+      fsBurst(f, st, f.fsAx, f.fsAy, 120, 26, 22, -15);
+      for(let k = 0; k < 24; k++) puff(f.fsAx, f.fsAy, k % 2 ? '#cfeeff' : '#ffffff', 7);
+    }
+  },
+  ai(f){ return !!fsPick(f, 360, 220); },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 38;
+    c.save();
+    if(t < w - 18){ const o = fsPick(f, 380, 240); if(o) fsMark(c, o.x, o.y, 55, '#7fc8f8', t/(w - 18), 0.75); }
+    else if(t < w){ fsMark(c, f.fsAx, f.fsAy, 80, '#7fc8f8', 1, 0.9); }
+    if(t < w + 40){   // frost creeping in from the edges of the screen, in the world: drawn about the view
+      const fa = t < w ? t/w : 1 - (t - w)/40; c.globalAlpha = 0.25*fa; c.strokeStyle = '#cfeeff'; c.lineWidth = 40; c.strokeRect(camX - 10, camY - 10, W + 20, H + 20);
+    }
+    if(t >= w && t < w + 26){   // the ice round whoever is frozen near the spot
+      for(const o of fighters){ if(o.dead || o.idx === f.idx || o.team === f.team || !(o.frozen > 0) || Math.hypot(o.x - f.fsAx, o.y - f.fsAy) > 140) continue;
+        c.globalAlpha = 0.65; c.fillStyle = '#cfeeff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.beginPath(); c.rect(o.x - o.r - 8, o.y - o.r - 10, 2*o.r + 16, 2*o.r + 20); c.fill(); c.stroke();
+        c.globalAlpha = 0.9; c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.beginPath(); c.moveTo(o.x - o.r, o.y - o.r*0.4); c.lineTo(o.x - o.r*0.3, o.y - o.r); c.stroke(); }
+    }
+    if(t >= w + 26 && t < w + 46){ const u = (t - w - 26)/20; for(let i = 0; i < 10; i++){ const a = i*0.63, rr = 20 + 130*u; c.globalAlpha = 1 - u; c.fillStyle = i % 2 ? '#cfeeff' : '#fff'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2; c.beginPath(); c.moveTo(f.fsAx + Math.cos(a)*rr, f.fsAy + Math.sin(a)*rr - 10); c.lineTo(f.fsAx + Math.cos(a + 0.2)*rr + 9, f.fsAy + Math.sin(a + 0.2)*rr + 6); c.lineTo(f.fsAx + Math.cos(a - 0.2)*rr - 9, f.fsAy + Math.sin(a - 0.2)*rr + 6); c.closePath(); c.fill(); c.stroke(); } fsRing(c, f.fsAx, f.fsAy, 120*u, '#cfeeff', 10*(1 - u) + 1, 1 - u); }
+    c.restore();
+  },
+};
+
+// TEARDROP -- SILENT TREATMENT. She has never spoken a word; she communicates by holding up a wooden sign (the design doc: "her muteness
+// turned into a finisher"). The tell is the marker on the nearest foe in front of her within 500, fixed 16 frames before her stare; whoever is in
+// its circle (70 px) is held in place 64 frames while twelve blank signs fly at them (2.5% each), and a house-sized last sign (the sign
+// says only three dots) lands for 20% and a big launch.
+FINAL_SMASHES['Teardrop'] = {
+  id:'silenttreatment', wind:40, dur:132, reach:500,
+  start(f, st){ st.caught = []; armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === w - 16) fsLockAt(f, st, fsPick(f, 500, 240, true), 200);
+    if(t === w){
+      armAtk(f, 48, 'throw'); shake(4);
+      for(const o of fighters){ if(fsHurtMark(f, o) || o._heldBy != null) continue; if(Math.hypot(o.x - f.fsAx, o.y - f.fsAy) < 70 + o.r*0.3){ st.caught.push(o.idx); o.countering = 0; } }
+    }
+    if(t >= w && t < w + 64) for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead){
+      fsPin(o, f.fsAx, f.fsAy);
+      if(t >= w + 8 && (t - w - 8) % 4 === 0 && t < w + 56) applyHit(o, 2.5, 0, -1, f);
+    } }
+    if(t === w + 64){
+      armAtk(f, 30, 'slam'); shake(14);
+      for(const i of st.caught){ const o = fighters[i]; if(o && !o.dead) applyHit(o, 20, (Math.sign(o.x - f.x) || f.face)*24, -14, f); }
+      for(let k = 0; k < 14; k++) puff(f.fsAx, f.fsAy, k % 2 ? '#c9a46c' : '#fff', 6);
+    }
+  },
+  ai(f){ return !!fsPick(f, 480, 220, true); },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 40;
+    c.save();
+    if(t < w - 16){ const o = fsPick(f, 500, 240, true); if(o) fsMark(c, o.x, o.y, 50, '#6fb7ff', t/(w - 16), 0.7); }
+    else if(t < w){ fsMark(c, f.fsAx, f.fsAy, 70, '#6fb7ff', 1, 0.9); }
+    const board = (x, y, wd, ht, rot, dots)=>{ c.save(); c.translate(x, y); c.rotate(rot); c.fillStyle = '#c9a46c'; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.rect(-wd/2, -ht/2, wd, ht); c.fill(); c.stroke();
+      c.fillStyle = '#7a5a30'; c.fillRect(-3, ht/2, 6, ht*0.6); if(dots){ c.fillStyle = '#1c1c1c'; for(let i = -1; i <= 1; i++){ c.beginPath(); c.arc(i*wd*0.22, 0, wd*0.05, 0, 7); c.fill(); } } c.restore(); };
+    if(t >= w && t < w + 70){
+      const sx = f.x, sy = f.y - f.r*0.5, tx = f.fsAx, ty = f.fsAy;
+      for(let i = 0; i < 12; i++){   // the signs, one every four frames, five frames in the air
+        const born = w + 8 + i*4, u = (t - born)/5;
+        if(u >= 0 && u < 1){ c.globalAlpha = 1; board(sx + (tx - sx)*u, sy + (ty - sy)*u - Math.sin(u*Math.PI)*20, 30, 22, u*5*f.face, false); }
+        else if(u >= 1 && t < w + 64){ c.globalAlpha = 1; board(tx + ((i*53) % 46) - 23, ty + 30 - ((i*29) % 18), 28, 20, ((i*37) % 11 - 5)*0.15, false); }   // the pile
+      }
+      if(t >= w + 64){ const u = Math.min(1, (t - w - 64)/6), k = Math.max(0, 1 - (t - w - 64)/6); c.globalAlpha = k; board(tx, ty - 140*(1 - u), 220, 150, 0, true); }
+    }
+    c.restore();
+  },
+};
+
+// BOMBY -- SELFLESS DETONATION. His late-series heroism: he lights his own fuse on lava to save his team ("Don't Dig Straight Down") and blows
+// himself up to end Pillow's killing spree ("Outbreak At Stake") (the design doc). Calm, a fuse burning (the tell: 200 px, closing in over
+// 50 frames), then a point-blank blast, 34% and a launch that takes anyone it reaches at moderate %. The price is his: he takes 35% himself and is
+// stunned for 90 frames (`exposed`), and the circle is only 200 px.
+FINAL_SMASHES['Bomby'] = {
+  id:'detonation', wind:50, dur:134, reach:200, exposed:true,
+  start(f, st){ armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === 0) shake(3);
+    if(t < w && t % 5 === 0) puff(f.x + f.face*6, f.y - f.r - 8, '#ffd23f', 3);   // the fuse
+    if(t === w){
+      shake(15); armAtk(f, 40, 'fsburst');
+      fsBurst(f, st, f.x, f.y, 200, 34, 28, -16);
+      f.pct = Math.min(Math.max(0, f.koCap - 5), f.pct + 35);
+      for(let i = 0; i < 30; i++) puff(f.x, f.y, i % 3 ? '#fff' : '#ffb347', 8);
+    }
+  },
+  end(f){ stunFx(f, 90); },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && hurtGap(o, f.x, f.y) < 185 && o.pct > 25) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 50;
+    c.save(); c.translate(f.x, f.y);
+    if(t < w){
+      const k = t/w, blink = (t % 8) < 4 && k > 0.5;
+      fsDisc(c, 0, 0, 200, '#ffb347', 0.08 + 0.14*k); fsRing(c, 0, 0, 200, blink ? '#fff' : '#f0521f', 5, 0.9);
+      fsRing(c, 0, 0, 200*(1 - k*0.85), '#ffffff', 3, 0.6);
+      c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.moveTo(f.face*4, -f.r); c.quadraticCurveTo(f.face*14, -f.r - 14, f.face*6, -f.r - 20 + 14*k); c.stroke();
+      c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(f.face*6, -f.r - 20 + 14*k, 4 + 2*Math.sin(hazardT), 0, 7); c.fill();
+    } else if(t < w + 40){
+      const u = (t - w)/40;
+      fsDisc(c, 0, 0, 200*Math.min(1, u*3), '#ffffff', 0.9*(1 - u));
+      fsRing(c, 0, 0, 200*Math.min(1, u*1.6), '#ffb347', 20*(1 - u) + 2, 1 - u);
+      fsRing(c, 0, -40*u, 120*u + 40, '#f0521f', 10*(1 - u) + 1, 0.8*(1 - u));
+      c.globalAlpha = 0.85*(1 - u); c.fillStyle = '#5a5048'; c.beginPath(); c.ellipse(0, -90*u - 30, 40 + 70*u, 26 + 30*u, 0, 0, 7); c.fill();   // the mushroom's cap
+      c.fillRect(-14 - 10*u, -90*u - 30, 28 + 20*u, 90*u + 30);
+    } else if(t < w + 90){
+      c.globalAlpha = Math.max(0, 1 - (t - w - 40)/50); c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(0, -f.r - 34 - (t - w - 40)*0.6, 12, 0, 7); c.stroke();   // the halo of the ghost that rises
+    }
+    c.restore();
+  },
+};
+
+// ROCKY -- INFINITE MATTER OVERLOAD. The Infinite Matter Generator makes "an infinite amount" of not just vomit but red balls ("Don't Lose
+// Your Marbles"), blocks ("The Worst Day of Black Hole's Life") and cake batter ("Today's Very Special Episode") (the design doc). He
+// becomes a fountain: for 70 frames, a shot every three, in a rotation of sludge, red ball, block and batter, thrown forward over a spread of
+// distances (6-8% each); then one acid cannonball (22%, goes through). Behind him is safe; the shots land in front, so it is a wall to get over.
+FINAL_SMASHES['Rocky'] = {
+  id:'matter', wind:30, dur:138,reach:420,
+  start(f, st){ armAtk(f, this.wind, 'fsgather'); },
+  tick(f, st, t){
+    const w = this.wind;
+    if(t === w){ armAtk(f, 80, 'spit'); shake(6); }
+    if(t >= w && t < w + 70 && (t - w) % 3 === 0){
+      const i = (t - w)/3, k = i % 4, vx = f.face*(6 + (i*5) % 6), vy = -(2 + (i*7) % 6);
+      const P = [
+        { color:'#7cb342', dmg:6, kb:6, r:13, grav:true, shape:'barfglob' },
+        { color:'#e53935', dmg:7, kb:7, r:12, grav:true, bounce:true, maxBounces:3 },
+        { color:'#9e9e9e', dmg:8, kb:8, r:15, grav:true },
+        { color:'#e8b4c8', dmg:6, kb:6, r:13, grav:true },
+      ][k];
+      spawnProj(f, Object.assign({ vx:vx, vy:vy, life:110, noAim:true }, P));
+    }
+    if(t === w + 78){ armAtk(f, 30, 'fsburst'); shake(11); spawnProj(f, { vx:f.face*13, vy:-2, grav:false, dmg:22, kb:24, r:28, color:'#b2ff59', life:60, pierce:true, noAim:true }); for(let i = 0; i < 16; i++) puff(f.x + f.face*20, f.y, '#b2ff59', 6); }
+  },
+  ai(f){ for(const o of fighters) if(!fsHurtMark(f, o) && (o.x - f.x)*f.face > 0 && (o.x - f.x)*f.face < 430 && Math.abs(o.y - f.y) < 160) return true; return false; },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || 30;
+    if(t >= w + 80) return;
+    c.save(); c.translate(f.x, f.y);
+    if(t < w){ const k = t/w; c.globalAlpha = 0.5*k; c.strokeStyle = '#fff'; c.lineWidth = 4; for(let i = 0; i < 6; i++){ const a = i*1.047 + hazardT*0.1; c.beginPath(); c.moveTo(Math.cos(a)*(f.r + 4), Math.sin(a)*(f.r + 4)); c.lineTo(Math.cos(a)*(f.r + 4 + 16*k), Math.sin(a)*(f.r + 4 + 16*k)); c.stroke(); }
+      c.globalAlpha = 0.18 + 0.12*k; c.fillStyle = '#7cb342'; c.beginPath(); c.moveTo(0, -f.r*0.5); c.lineTo(f.face*440, -150); c.lineTo(f.face*440, f.r + 8); c.lineTo(0, f.r*0.5); c.closePath(); c.fill();   // where it will land: the cone in front
+    } else if(t < w + 72){ c.globalAlpha = 0.9; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.fillStyle = '#7cb342'; c.beginPath(); c.arc(f.face*(f.r*0.5), -4, f.r*0.5 + 4*Math.sin(hazardT*0.8), 0, 7); c.fill(); c.stroke(); }
+    c.restore();
+  },
+};
 // @finalsmash:end
 function summonAssist(owner){
   summonAssistNamed(owner, ASSIST_ROSTER[Math.floor(Math.random()*ASSIST_ROSTER.length)]);
@@ -32490,6 +33091,8 @@ function animPoses(kind, fwd){
     case 'sweep':    return { limb:'arm', front:[B, F], back:[F, B] };
     case 'dive':     return { limb:'arm', front:[FU, DN], back:[FU, DN] };
     case 'throwb':   return { limb:'arm', front:[FD, BU] };
+    case 'fsgather': return { limb:'arm', front:[BD, UP], back:[BD, UP] };   // a Final Smash: both arms raised over the head as it builds...
+    case 'fsburst':  return { limb:'arm', front:[UP, F], back:[UP, B] };   // ...and thrown wide as it goes
     default:         return null;   // 'spit': the body does it
   }
 }
@@ -46862,7 +47465,7 @@ for(const _t in FR_TEMPER_SRC){ const s = FR_TEMPER_SRC[_t], o = {}; for(const k
 // own `deform` rides on top of both, so the lean here is a share of what the rig already leans (a tall, thin picture falls over if it is more). A row is
 //   rot   lean the way the fighter faces (rad)       sx, sy   squash and stretch about the feet         dx    forward, in radii
 //   smear 0..1: a ghost of the picture behind it      bulge    0..1: the cheeks (the middle of the picture) swell     spin   a turn about the centre (rad)
-const FR_KINDS = ['punch', 'uppercut', 'kick', 'throw', 'spit', 'cast', 'slam', 'stomp', 'dash', 'spin'];
+const FR_KINDS = ['punch', 'uppercut', 'kick', 'throw', 'spit', 'cast', 'slam', 'stomp', 'dash', 'spin', 'fsgather', 'fsburst'];   // (the last two are a Final Smash's: the coil and the release)
 const FR_ATK_SRC = [
   // punch
   [[-0.048,1.03,0.97,-0.05,0,0,0], [-0.084,1.06,0.94,-0.10,0,0,0], [0.144,0.94,1.08,0.20,1,0,0], [0.096,0.96,1.05,0.12,0.55,0,0], [0.036,1,1,0.04,0,0,0], [-0.012,1.01,0.99,0,0,0,0]],
@@ -46884,6 +47487,10 @@ const FR_ATK_SRC = [
   [[-0.084,1.04,0.96,-0.10,0,0,0], [-0.132,1.08,0.92,-0.16,0,0,0], [0.204,1.12,0.92,0.30,1,0,0], [0.18,1.14,0.90,0.26,1,0,0], [0.084,1.04,0.98,0.08,0.5,0,0], [0.024,1,1,0,0,0,0]],
   // spin: a turn in held steps, back where it began
   [[-0.036,1.04,0.96,0,0,0,0], [0,1,1,0,0.4,0,1.2], [0,1,1,0,0.8,0,2.5], [0,1,1,0,0.8,0,3.8], [0,1,1,0,0.4,0,5.1], [0,1,1,0,0,0,0]],
+  // fsgather (a Final Smash's tell): a deeper and deeper crouch, trembling, the cheeks tight, and then up on the toes, stretched tall, as it is about to go
+  [[0,1.05,0.92,0,0,0,0], [0,1.09,0.86,0,0,0.3,0], [0,1.12,0.82,0,0,0.6,0], [0,1.14,0.80,0,0.3,0.9,0], [0,0.96,1.12,0,0.6,0.5,0], [0,0.92,1.20,0,0.9,0,0]],
+  // fsburst (the release): thrown wide and flat, snapping back through three frames of smear
+  [[0,0.88,1.22,0,1,0,0], [0.03,1.14,0.88,0.05,1,0,0], [0.05,1.18,0.84,0.08,0.8,0,0], [0.03,1.08,0.94,0.04,0.5,0,0], [0,1.02,0.98,0,0.2,0,0], [0,1,1,0,0,0,0]],
 ];
 const FR_ATK = [];   // flattened once: 10 kinds x 6 frames x 7 numbers
 for(let _k = 0; _k < FR_ATK_SRC.length; _k++) for(let _i = 0; _i < 6; _i++) for(let _j = 0; _j < 7; _j++) FR_ATK.push(FR_ATK_SRC[_k][_i][_j]);
@@ -47005,6 +47612,8 @@ function frPose(f, fd, sp){
     P.eye = fd.atk[slot*2]; P.mouth = fd.atk[slot*2 + 1];
     P.sdx = -face*R*0.30;
     if(ki === 1){ P.sdx = 0; P.sdy = R*0.28; } else if(ki === 6){ P.sdx = 0; P.sdy = -R*0.30; } else if(ki === 8){ P.sdx = -face*R*0.50; if(fj === 2) P.fx = FX_LINES; }
+    else if(ki === 10){ P.sdx = 0; P.sdy = R*0.2; P.fx = FX_SPARKLE | (fj > 2 ? FX_LINES : 0); }   // a Final Smash's coil: sparkles, and the lines of the rise
+    else if(ki === 11){ P.sdx = 0; P.sdy = -R*0.3; P.fx = FX_SPARKLE | FX_LINES; }
     if(fd.vein && fj < 2) P.fx |= FX_VEIN;
   } else if(f.smashHold > 0){
     // ---- CHARGING a smash: set jaw, a tremble, the anger mark coming up
