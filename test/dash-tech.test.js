@@ -5,11 +5,13 @@ import { bootMonolith } from './helpers/smash-golden.js';
 // ground: out of a down-forward dash a HYPER (long, low, fast), out of a straight dash a SUPER (normal height, the dash's speed), with the
 // opposite direction held a short REVERSE HYPER; a down-forward air dash that lands is a WAVEDASH (jump within a few frames: a hyper); one air dash
 // an airtime, refilled on landing.
+// "hypers should only be in ctf" (the owner, 2026-10-15): the tech works in Capture the Flag and nowhere else, so these pins run with the CTF switch (hyperOk) on, and the last tests
+// check that it is on in CTF only and that every other mode jumps out of a dash like anyone.
 
 let W;
-beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); W.eval('window.__hyperOk = hyperOk;'); });
 const J = (code) => W.eval(`(function(){ return ${code}; })()`);
-const stage = (name = 'Leafy') => W.eval(`(function(){
+const stage = (name = 'Leafy', ctf = true) => W.eval(`(function(){
   SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
   worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
   var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
@@ -17,6 +19,7 @@ const stage = (name = 'Leafy') => W.eval(`(function(){
   A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='local'; A.you=true; D.controller='still'; A.stocks=9; D.stocks=9;
   fighters=[A,D]; for (var k in down) delete down[k]; step(); step();
   fighters.forEach(function(f){ f.invuln=0; f.hitstun=0; f.atkCd=0; f.spCd=0; f.vx=0; f.vy=0; f.pct=0; });
+  hyperOk = ${ctf ? 'function(){ return true; }' : 'window.__hyperOk'};   // (a real CTF match needs its map and flags: these pins flip only the switch)
 })()`);
 const hold = (keys, n = 1) => W.eval(`(function(){ ${JSON.stringify(keys)}.forEach(function(k){ down[KEYS[k]]=true; }); for(var i=0;i<${n};i++) step(); ${JSON.stringify(keys)}.forEach(function(k){ down[KEYS[k]]=false; }); })()`);
 const steps = (n) => W.eval(`for(var i=0;i<${n};i++) step();`);
@@ -81,5 +84,26 @@ describe('dash tech (Leafy; Liy and Woody are the other dashers)', () => {
     stage('Woody'); W.eval('fighters[0].controller = "ai"; fighters[0].you = false;');
     expect(J('mtOn(fighters[0])')).toBe(false);
     expect(J('mtDashJump(fighters[0], { jump:true })')).toBe(false);
+  });
+  it('the switch is on in Capture the Flag and in no other mode', () => {
+    const on = (mode) => J(`(function(){ var m = SETTINGS.mode; SETTINGS.mode = ${JSON.stringify(mode)}; var r = window.__hyperOk(); SETTINGS.mode = m; return r; })()`);
+    expect(on('ctf')).toBe(true);
+    for (const m of ['ffa', 'teams', 'worldcup', 'boss', 'bossrush', 'training', 'race']) expect(on(m), m).toBe(false);
+  });
+  it('outside Capture the Flag a jump out of a dash is just a jump: no hyper, no super, no reverse hyper, no wavedash', () => {
+    stage('Leafy', false); hold(['right', 'down', 'special'], 1); steps(2);
+    expect(J('fighters[0]._dashing')).toBeGreaterThan(0);
+    hold(['jump'], 1);
+    const r = flight();
+    expect(r.kind, 'a plain jump leaves no tech behind').toBeUndefined();
+    stage('Leafy', false); hold(['special'], 1); steps(6); hold(['jump'], 1);
+    expect(flight().kind).toBeUndefined();
+    stage('Leafy', false); hold(['right', 'down', 'special'], 1); steps(2); hold(['left', 'jump'], 1);
+    expect(flight().kind).toBeUndefined();
+    stage('Leafy', false); W.eval('fighters[0].y = groundY()-24-120; fighters[0].onground = false; fighters[0].vy = 0;');
+    hold(['right', 'down', 'special'], 1);
+    let g = 0; while (!J('fighters[0].onground') && g++ < 30) steps(1);
+    hold(['jump'], 1);
+    expect(flight().kind, 'no wavedash').toBeUndefined();
   });
 });

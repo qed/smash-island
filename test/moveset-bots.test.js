@@ -37,20 +37,26 @@ describe('the CPU uses the moveset', () => {
     for (const name of FIGHTERS) for (const seed of [21, 22]) { const r = play(name, 'Snowball', seed, 2400); grabs += r.used.grab || 0; for (const k in r.used) if (/throw$/.test(k)) throws += r.used[k]; }
     expect(grabs).toBeGreaterThan(0); expect(throws).toBeGreaterThan(0);
   });
-  it('a dasher CPU (Leafy) that has started a down-forward dash on the ground jumps out of it into a hyper, and a plain Sprint toward a foe far off into a super', () => {
+  it('in Capture the Flag a dasher CPU (Leafy) that has started a down-forward dash on the ground jumps out of it into a hyper, and a plain Sprint toward a foe far off into a super (restated: "hypers should only be in ctf", the owner, 2026-10-15; the switch is flipped here, a real CTF match needs its map)', () => {
     const run = (setup) => JSON.parse(W.eval(`(function(){
+      var __ok = hyperOk; hyperOk = function(){ return true; };
       __setupCustomMatch(['Leafy', 'Snowball'], 3, 2, 0);
       var F = fighters[0], T = fighters[1]; F.x = 200; F.y = groundY() - F.r; T.x = 900; T.y = groundY() - T.r; F.face = 1; F.onground = true; F.vx = 0; F.vy = 0; F.spCd = 0; F.atkCd = 0; T.invuln = 0;
       for (var i = 0; i < 3; i++) step();
       F.onground = true; F.face = 1; F.spCd = 0; ${setup}
       var x0 = F.x;
       for (var j = 0; j < 40; j++) step();
+      hyperOk = __ok;
       return JSON.stringify({ used: F._used || {}, dx: F.x - x0 });
     })()`));
     const hy = run("fireSpecial(F, { right:true, down:true, special:true }); F._aiHy = { t: hazardT };");
     expect(hy.used.hyper, JSON.stringify(hy)).toBe(1);
     const su = run("fireSpecial(F, { special:true }); step();");   // the plain Sprint (a foe 700 px off cannot be reached by it)
     expect((su.used.super || 0) + (su.used.hyper || 0) >= 0).toBe(true);   // (a super is a 15% roll per frame: only checked to run clean)
+  });
+  it('outside Capture the Flag a dasher CPU never tries a hyper or a super', () => {
+    const r = play('Leafy', 'Pen', 41, 1800);
+    for (const k of ['hyper', 'super', 'rev']) expect(r.used[k], k).toBeUndefined();
   });
   it('a fighter with no moveset is not given one: it never uses a moveset slot', () => {
     const r = play('Firey', 'Pen', 31, 900);
