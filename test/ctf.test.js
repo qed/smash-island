@@ -21,7 +21,7 @@ const put = (w, i, x, y) => w.eval(`(function(){ var f=fighters[${i}]; f.x=${x};
 const flagOf = (w, team, k = 0) => w.eval(`CTF.live.flags.filter(function(f){ return f.team===${team}; })[${k}].id`);
 // where things are on this map: a standing place on each side (the spawn of each home), the middle line, the floor in front of a jail's door
 const spawn = (w, t) => J(w, `{ x:CTF.map.homes[${t}].spawns[0].x, y:CTF.map.homes[${t}].spawns[0].y }`);
-const MID = 13200;   // the middle line of the castle (110 columns a side)
+const MID = 13440;   // the middle line of the castle at medium size (84 columns a side and the frozen valley's 28: the owner, 2026-10-15, wants about 15 screens wide and a third area; it was 110 columns, 13200)
 const cellFloor = (w, owner) => { const j = J(w, `CTF.map.jails[${owner}]`); return j.door.y + j.door.h; };
 
 describe('capture the flag', () => {
@@ -33,7 +33,7 @@ describe('capture the flag', () => {
     expect(w.eval('CTF.live.phase')).toBe('hide');
     expect(w.eval('isBig()')).toBe(true);
     expect(w.eval('CAM_ZOOM'), 'the rooms are drawn closer').toBeGreaterThan(0.72);
-    expect(w.eval('WW'), 'the castle: 110 columns a side').toBe(26400);
+    expect(w.eval('WW'), 'the castle: 84 columns a side and the 28 of the frozen valley (was 110: the owner, 2026-10-15, wants about 15 screens wide and a third area)').toBe(26880);
   });
 
   it('Space puts your flag down, C says done, and the hiding phase ends when the human is done', () => {
@@ -373,7 +373,7 @@ describe('capture the flag', () => {
       return { y: w.eval('fighters[0].y + fighters[0].r'), top: P.y }; };
     const ledge = stand('function(p){ return p.hop && !p.solid && p.w >= 100 && p.x < 8000 && p.y > 1200; }');
     expect(ledge.y, 'fell through the ledge').toBeGreaterThan(ledge.top + 20);
-    const floor = stand('function(p){ return p.solid && p.w >= 400 && p.x < 8000 && p.y > 1200; }');
+    const floor = stand('function(p){ return p.solid && !p.step && p.w >= 400 && p.x < 8000 && p.y > 1200 && p.y < 3200; }');   // (castle v4 has slopes: a stone beside a step of one is stepped onto, so the floor to test is a plain one)
     expect(Math.abs(floor.y - floor.top), 'a solid floor holds').toBeLessThan(6);
   });
 
@@ -451,7 +451,8 @@ describe('capture the flag', () => {
   // ---- editing your area while hiding ----
   const hideStart = (w, nav = false) => w.eval(`CTF.skipNav=${!nav}; SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='castle'; beginMatchNow(); fighters.forEach(function(f){ f.you=false; if(f.idx>0) f.controller='still'; }); fighters[0].controller='local'; fighters[0].you=true;`);
   // a free place on team 0's side: a floor inside a room, with air above it
-  const roomSpot = (w) => J(w, `(function(){ var s = CTF.map.spots.filter(function(s){ return s.team===0 && s.y>1500 && s.x<8000; })[3]; return { x:s.x, y:s.y }; })()`);
+  // (the 11th such spot, not the 4th, since the castle's frozen-valley rebuild: the 4th now has no room for the spikes and the stun trap; the 11th is on open floor and takes every kind)
+  const roomSpot = (w) => J(w, `(function(){ var s = CTF.map.spots.filter(function(s){ return s.team===0 && s.y>1500 && s.x<8000; })[10]; return { x:s.x, y:s.y }; })()`);
   const tryPlace = (w, who, tool, kind, x, y, offs = [0, 130, -130, 260, -260, 390, -390, 520]) => { for (const dx of offs) { const ok = w.eval(`!!ctfEditPlaceAt(fighters[${who}], '${tool}', '${kind}', ${x + dx}, ${y})`); if (ok) return dx; } return null; };
 
   it('a jailed human is rescued: CPU teammates set out within seconds (one when the door is clear, two when a guard stands by it: one fights, one holds), and defenders go when no attacker is left', () => {
@@ -484,7 +485,7 @@ describe('capture the flag', () => {
   it('a human who takes their time hiding: their CPU teammates keep moving (building, walking about, taking their opening places) instead of standing frozen; the map choice is remembered and used', { timeout: 300000 }, () => {
     const { window: w } = loadMonolith(35);
     w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='castle'; beginMatchNow();`);
-    step(w, 1700);
+    step(w, 2600);   // (castle v4: a bigger graph, built a slice a frame while the CPUs wait here, where no shipped file can be fetched: 1700 steps were enough for the old castle)
     expect(w.eval('CTF.live.phase'), 'the human has not pressed done: still hiding').toBe('hide');
     const mates = J(w, `fighters.filter(function(f){ return f.team===0 && f.idx!==0; }).map(function(f){ return f.idx; })`);
     expect(mates.filter(i => w.eval(`!!CTF.live.done[${i}]`)).length, 'most are ready').toBeGreaterThanOrEqual(3);
@@ -497,6 +498,8 @@ describe('capture the flag', () => {
     expect(w.eval('ctfPickMap()')).toBe('mines');
     expect(w.eval(`localStorage.getItem('bfsi:ctfmap')`)).toBe('mines');
     w.eval(`ctfMapPickSet('random')`);
+    // (the Works and Neon City graduated from beta on 2026-10-15 after a clean CPU probe, so this test marks a map as beta itself: the rule is a map flagged beta is pickable by name and left out of Random)
+    w.eval(`CTF_MAPS.factory.beta = true`);
     const ch = J(w, 'ctfMapChoices().map(function(c){ return c[0]; })');
     expect(ch[0], 'Random first').toBe('random'); expect(ch).toEqual(expect.arrayContaining(['castle', 'mines']));
     expect(ch, 'a beta map can be picked by name').toContain('factory');
@@ -509,7 +512,7 @@ describe('capture the flag', () => {
     const { window: w } = loadMonolith(36);
     start(w);
     const a = mate(w, 0, 1), foe = mate(w, 1, 0), friend = mate(w, 0, 2);
-    const sp = J(w, `CTF.map.spots.filter(function(s){ return s.team === 0 && s.cover && s.y > 1500; })[2]`), spi = w.eval(`CTF.map.spots.findIndex(function(s){ return s.team === 0 && s.cover && s.x === ${sp.x} && s.y === ${sp.y}; })`);
+    const sp = J(w, `CTF.map.spots.filter(function(s){ return s.team === 0 && s.cover && s.y > 1500 && s.x > 4000; })[2]`), spi = w.eval(`CTF.map.spots.findIndex(function(s){ return s.team === 0 && s.cover && s.x === ${sp.x} && s.y === ${sp.y}; })`);
     const standAt = (i, x, y) => w.eval(`(function(){ var f = fighters[${i}]; f.x = ${x}; f.y = ${y} - f.r; f.vx = 0; f.vy = 0; f.onground = true; f.hitstun = 0; f.invuln = 0; f._ctfRevealT = 0; })()`);
     standAt(foe, sp.x + 2500, sp.y); standAt(friend, sp.x - 900, sp.y);
     standAt(a, sp.x, sp.y); logic(w, 2);
@@ -733,8 +736,8 @@ describe('capture the flag', () => {
     // a harmless platform first (oldest), then blocks that wall off the corridor to the jail's door (the door must stay reachable: the check takes the newest away)
     w.eval(`(function(){ var P = fighters[${a}]; CTF.live.pts[P.idx] = 99;
       var add = function(tool, kind, x, y, w, h){ var e = { id:++CTF.live.editSeq, team:0, owner:P.idx, tool:tool, kind:kind, x:x, y:y, w:w, h:h, fy:y+h, cx:x+w/2, cost:1, seq:CTF.live.editSeq, hp:0, open:false, openT:0, stand:0 }; CTF.live.edits.push(e); return e; };
-      add('plat','plat', 4500, 3080, 180, 16);
-      add('wall','block', 1440, 5520, 120, 120); add('wall','block', 1440, 5400, 120, 120); add('wall','block', 1440, 5280, 120, 120);   // (the castle is nine rows taller: everything is 1080 px lower)
+      add('plat','plat', 5400, 3000, 180, 16);
+      add('wall','block', 840, 2520, 120, 120); add('wall','block', 840, 2400, 120, 120); add('wall','block', 840, 2280, 120, 120);   // (castle v4.1, 28 rows: the jail corridor is rows 19-21 and the home hall has two stairs down into it, so the three blocks that seal the door go right beside it, at x 840, y 2280-2520; it was nine rows taller: everything 1080 px lower)
       CTF.live.editT = CTF.live.t; ctfRebuildDyn(CTF.live); })()`);
     expect(w.eval('CTF.live.edits.length')).toBe(4);
     w.eval(`CTF.live.done = {}; ctfEndHide(CTF.live)`);
