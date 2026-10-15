@@ -16,7 +16,9 @@ describe('the mill wheel', () => {
     const { window: w } = loadMonolith(41);
     start(w);
     const ws = J(w, `CTF.live.wheels.map(function(x){ return { kind:x.kind, dir:x.dir, n:x.n, R:x.R, x:x.x, y:x.y, ids:x.ids }; })`);
-    expect(ws.length, 'one wheel in the whole map: it is its own mirror').toBe(1);
+    expect(ws.filter(x => x.kind === 'wheel').length, 'one water wheel in the whole map: it is its own mirror').toBe(1);
+    expect(ws.filter(x => x.kind === 'cog').length, 'and the cogs of the mill: the great one on the line, two a side in the gear room, the millstones').toBe(7);
+    expect(ws[0].kind, 'the water wheel first').toBe('wheel');
     expect(Math.abs(ws[0].x - w.eval('CTF.map.WW/2')), 'its hub is on the middle line').toBeLessThan(1);
     expect(ws[0].R, 'paddles 4 rows out').toBe(480);
     step(w, 400);
@@ -52,7 +54,7 @@ describe('the mill wheel', () => {
     start(w);
     step(w, 50);
     const out = J(w, 'ctfNetOut()');
-    expect(out.wa.length, 'one angle a wheel').toBe(1);
+    expect(out.wa.length, 'one angle a wheel and cog').toBe(8);
     expect(out.wa[0]).toBeCloseTo(w.eval('CTF.live.wheels[0].a'), 3);
     expect(out.el.length, 'the paddles are not lifts on the wire').toBe(w.eval('CTF.map.elevs.length'));
     const e0 = J(w, `{ x:CTF.live.elevs[CTF.map.elevs.length].x, y:CTF.live.elevs[CTF.map.elevs.length].y }`);
@@ -91,7 +93,7 @@ describe('the mill wheel', () => {
     expect(enters[0].dir, 'pressed the other way on the other side').toBe(-enters[1].dir);
     expect(exits.length, 'two ways out on each side').toBe(4);
     const f = w.eval('fighters[0].idx'), A = enters.find(p => p.dir < 0);
-    const press = (dir, n) => { for (let i = 0; i < n; i++) w.eval(`(function(){ var f = fighters[${f}]; f._press = ${dir}; f.onground = true; ctfStepPortals(CTF.live); })()`); };
+    const press = (dir, n, up) => { for (let i = 0; i < n; i++) w.eval(`(function(){ var f = fighters[${f}]; f._press = ${dir}; f._pressUp = ${!!up}; f.onground = true; ctfStepPortals(CTF.live); })()`); };
     // standing at the door on a paddle (level with the hub): a press into it goes in, to the half beside it
     w.eval(`(function(){ var f = fighters[${f}]; f.x = ${A.x + A.w/2}; f.y = ${A.y + A.h} - f.r; f.onground = true; f._room = null; })()`);
     press(0, 10); expect(w.eval(`fighters[${f}]._room`), 'not pressing: stays').toBeNull();
@@ -105,11 +107,16 @@ describe('the mill wheel', () => {
     // it is no way out: the door it came through is far away, and the way out is a door in the room
     const ex = exits.find(p => p.x + p.w < M.WW/2);
     w.eval(`(function(){ var f = fighters[${f}]; f.x = ${ex.x + ex.w/2}; f.y = ${ex.y + ex.h} - f.r; f.onground = true; f._portCool = 0; })()`);
-    press(ex.dir, 8);
+    press(-1, 30); press(1, 30);
+    expect(w.eval(`fighters[${f}]._room`), 'walking into a way out is nothing: it wants Up').toBe(1);
+    press(0, 12, true);
     expect(w.eval(`fighters[${f}]._room`), 'out of the room').toBeNull();
     const out = J(w, `{ x:fighters[${f}].x, y:fighters[${f}].y }`);
     expect(Math.abs(out.x - ex.tx), 'put down where the way out leads').toBeLessThan(2);
     expect(out.x < M.WW/2, 'on the same side of the map').toBe(true);
+    // a shot from the map into the room (or out of it) is gone
+    w.eval(`projectiles.push({ x:1000, y:CTF.map.pocketY + 600, life:100, ownerObj:fighters[${f}], dmg:5 }); ctfStepPortals(CTF.live);`);
+    expect(w.eval('projectiles.filter(function(p){ return p.life > 0 && p.y > CTF.map.pocketY + 500; }).length'), 'nothing crosses').toBe(0);
   });
 
   it('a flag hidden on a paddle rides it, and the end-of-hiding check does not call the place impossible', () => {
@@ -133,5 +140,26 @@ describe('the mill wheel', () => {
     const chk = (y) => w.eval(`ctfEditCheck(fighters[${f}], 'trap', 'trapdoor', ctfEditShape('trap', 'trapdoor', ${sp.x}, ${y}))`);
     expect(chk(sp.y - 60), 'a plank just over the floor (it would drop you 60 px onto it): no').toBe('floor');
     expect([420, 540, 660, 780, 900, 1020].some(d => chk(sp.y - d) !== 'floor'), 'high over a drop: not refused for being on a floor').toBe(true);
+  });
+
+  it('nothing in the room is knocked out of it: a hard knock any way stays inside the walls; and from the map nothing reaches in', () => {
+    const { window: w } = loadMonolith(48);
+    start(w);
+    const f = w.eval('fighters[0].idx'), py = w.eval('CTF.map.pocketY'), WW = w.eval('CTF.map.WW');
+    const at = (x, y) => w.eval(`(function(){ var g = fighters[${f}]; g.x = ${x}; g.y = ${y} - g.r; g.vx = 0; g.vy = 0; g.hitstun = 0; g.onground = true; g.dead = false; })()`);
+    for (const [vx, vy] of [[-180, 0], [180, 0], [0, -180], [0, 200], [-120, -120], [120, 120]]) {
+      at(9300, 6600);   // (the great hall's floor, under the map)
+      w.eval(`(function(){ var g = fighters[${f}]; g.vx = ${vx}; g.vy = ${vy}; g.hitstun = 60; })()`);
+      for (let n = 0; n < 60; n++) w.eval('step()');
+      const p = J(w, `{ x:fighters[${f}].x, y:fighters[${f}].y, room:fighters[${f}]._room }`);
+      expect(p.y, 'under the map still (' + vx + ',' + vy + ')').toBeGreaterThan(py + 600);
+      expect(p.x > 400 && p.x < WW - 400, 'inside the walls (' + vx + ',' + vy + ')').toBe(true);
+      expect(p.room, 'still in the room').toBe(1);
+    }
+    // the camera stays in the room while you are in it, and in the map while you are not
+    const cam = w.eval(`(function(){ var g = fighters[${f}]; g.you = true; var inn = camTarget(g.x, g.y, 0.9); g._room = null; var a = ctfViewRoom(); g.y = 800; g.x = 6000; var out = camTarget(g.x, g.y, 0.9); return JSON.stringify({ inn:inn.y, out:out.y, a:a }); })()`);
+    const cj = JSON.parse(cam);
+    expect(cj.inn + 360, 'from inside the view is inside the room: its top is under the map').toBeGreaterThanOrEqual(py - 1);
+    expect(cj.out + 800 <= py + 1 || cj.out + 400 <= py, 'from the map the view never goes under it').toBe(true);
   });
 });
