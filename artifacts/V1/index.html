@@ -1324,6 +1324,12 @@
                 </div>
               </div>
               <div class="setgrp">
+                <label>Smash Balls</label>
+                <div class="seg" id="segSmashBalls">
+                  <button data-v="1" class="on">On</button><button data-v="0">Off</button>
+                </div>
+              </div>
+              <div class="setgrp">
                 <label>Map Size</label>
                 <div class="seg" id="segMapSize">
                   <button data-v="compact">Compact</button><button data-v="normal" class="on">Normal</button><button data-v="tall">Tall</button><button data-v="huge">Huge</button>
@@ -2117,7 +2123,7 @@ const KEY_LABELS = {left:"Move Left",right:"Move Right",jump:"Jump",down:"Down /
 // ---------- state ----------
 let chosen = ROSTER.find(r=>r.play);
 let stage = STAGES[0];
-const SETTINGS = { mode:"ffa", count:5, stocks:3, teamKey:"", itemRate:2, mapSize:"normal", bossPick:"rush" };   // bossPick: "rush" or "one" (once One is beaten)
+const SETTINGS = { mode:"ffa", count:5, stocks:3, teamKey:"", itemRate:2, mapSize:"normal", bossPick:"rush", smashBalls:true };   // bossPick: "rush" or "one" (once One is beaten)
 // ---------- MAP SIZE (match setting) ----------
 // Multipliers applied to the arena width/height that setupWorld() computes. Every other piece of
 // arena geometry (floor span, tower, bluffs, spawns, blast zone, minimap, camera clamps) is derived
@@ -7958,6 +7964,8 @@ function buildSettings(){
     TOURNEY_CFG = cupClean(TOURNEY_CFG); cupSyncUI(); cupSave(); }); }
   bindSeg('segAI', v=>{ AI_LEVEL=+v; updateSummary(); });
   bindSeg('segMapSize', v=>{ SETTINGS.mapSize = MAP_SIZES[v] ? v : 'normal'; updateSummary(); });
+  bindSeg('segSmashBalls', v=>{ SETTINGS.smashBalls = v !== '0'; updateSummary(); });
+  { const sbSeg=document.getElementById('segSmashBalls'); if(sbSeg) sbSeg.querySelectorAll('button').forEach(b=>b.classList.toggle('on', (b.dataset.v!=='0')===(SETTINGS.smashBalls!==false))); }
   // a net match can change mapSize behind the menu's back — re-sync the highlight on open
   const msSeg=document.getElementById('segMapSize');
   if(msSeg) msSeg.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===SETTINGS.mapSize));
@@ -8066,7 +8074,7 @@ function advSummaryText(){
   const ai = ['Easy','Normal','Hard'][AI_LEVEL] || 'Normal';
   const items = ['no items','few items','normal items','lots of items'][SETTINGS.itemRate] || 'normal items';
   const size = (MAP_SIZES[SETTINGS.mapSize]||MAP_SIZES.normal).label;
-  return `${ai} CPU · ${items} · ${size} map`;
+  return `${ai} CPU · ${items}${SETTINGS.smashBalls===false ? ' · no Smash Balls' : ''} · ${size} map`;
 }
 function updateSummary(){
   const adv=document.getElementById('advSummary');
@@ -12674,6 +12682,329 @@ function pickUpItem(f, it){
     case "boss":      summonBoss(f); break;
   }
 }
+// @finalsmash:begin
+// ============================================================
+//  FINAL SMASH BALLS
+// ============================================================
+// The owner, 2026-10-14 (with "pipis"): "Like Smash Bros." A rare glowing Smash Ball floats around a normal match; whoever breaks it
+// glows, and fires their Final Smash ONCE with the finisher input (V + C). Not glowing, V + C is the ordinary finisher.
+//   - The ball drifts toward the fight, shies away from anyone close (slowly: a runner catches it) and breaks after about 3-5 hits,
+//     by the damage dealt to it (FSBALL.hp; a jab 6-9, a tilt about 10, a smash 15+). One ball at a time, one every 60-90 s.
+//   - The glow lasts FSBALL.glow frames (20 s), until the Final Smash is fired, or until the holder is KO'd (fsOnKo), who may drop a
+//     fresh ball a few seconds later.
+//   - Normal matches only (free-for-all and teams, items on, "Smash Balls" on): not Capture the Flag, RUNNING!, Boss Rush, a boss
+//     fight, the Training room, or the World Cup (fsAllowed). Online, the host runs it all; a client is sent the ball (s.fsb) and the
+//     fighters' fs* fields, and draws everything from those.
+//   - NO WORDS are drawn: a flash, a silhouette sweep, rings and effects. The ball is drawn in code (fsDrawBall); no image files.
+//   - A Final Smash is a table row (FINAL_SMASHES, by fighter name; FS_DEFAULT for everyone without one): a visible tell (`wind`
+//     frames, the holder cannot be hurt and cannot move), then the hit, then the end (`dur` frames in all). It can be dodged: every
+//     hit is a radius or a lane that was drawn during the tell. The sim uses its own dice (fsRand), so a seeded match is the same
+//     with or without the system. Everything a client needs to DRAW one is on the fighter: fsId, fsT (frames in), fsWind, fsDur.
+const FSBALL = { r:22, hp:34, life:1500, glow:1200, grace:12, minHit:4, maxHit:24 };
+const FS = { next:0, seq:0, rng:1, lastT:0 };
+let SMASHBALL = null;   // { x, y, vx, vy, hp, hpMax, r, t, life, wx, wy, wt, gr:{idx:frame}, seq, flash, last }
+const FINAL_SMASHES = {};   // fighter name -> { id, wind, dur, reach, start?, tick, end?, ai?, draw } (the batches below fill it in)
+function fsRand(){ FS.rng = (Math.imul(FS.rng, 1664525) + 1013904223) >>> 0; return FS.rng / 4294967296; }
+function fsInterval(){ return SETTINGS.itemRate === 1 ? 5400 : (SETTINGS.itemRate === 3 ? 3600 : 4500); }   // 90 s, 75 s, 60 s a ball, +-20%
+function fsArm(){ FS.next = Math.round(fsInterval()*(0.8 + 0.4*fsRand())); }
+function fsAllowed(){
+  if(!running || SETTINGS.smashBalls === false) return false;
+  if(itemSpawnInterval() <= 0) return false;   // items off (and One's story, Steve Cobs's, RUNNING!)
+  if(SETTINGS.mode !== 'ffa' && SETTINGS.mode !== 'teams') return false;   // not Capture the Flag, not Boss Rush
+  if(RACE.active || ONEFIGHT.active || COBSFIGHT.active || TESTMODE.active || TUT.active || BOSSRUSH.active) return false;
+  if(TOURNEY.active || TOURNEY_MATCH_ACTIVE || TOURNEY_WATCHING) return false;   // the World Cup
+  for(const s of summons) if(s.type === 'boss') return false;   // a boss fight (an item's boss capsule in a normal match too)
+  return true;
+}
+function fsReset(){
+  SMASHBALL = null; FS.seq = 0; FS.rng = ((0x9e3779b9 ^ Math.imul(fighters.length, 2654435761)) >>> 0) || 1;
+  FS.next = Math.round(fsInterval()*0.55*(0.8 + 0.4*fsRand()));   // the first one comes a little early
+  for(const f of fighters){ f.fsGlow = 0; f.fsId = ''; f.fsT = 0; f._fs = null; }
+  FS.lastT = hazardT;
+}
+function fsClampPos(x, y){ const gy = groundY(); return { x:clamp(x, 50, WW - 50), y:clamp(y, 70, Math.max(120, isBig() ? WH - 320 : gy - 70)) }; }
+function fsSpawn(){
+  const live = fighters.filter(f=>!f.dead);
+  if(live.length < 2){ FS.next = 120; return; }
+  let cx = 0, cy = 0; for(const f of live){ cx += f.x; cy += f.y; } cx /= live.length; cy /= live.length;
+  const p = fsClampPos(cx + (fsRand() - 0.5)*500, cy - 80 - fsRand()*80);
+  SMASHBALL = { x:p.x, y:p.y, vx:0, vy:0, hp:FSBALL.hp, hpMax:FSBALL.hp, r:FSBALL.r, t:0, life:FSBALL.life, wx:p.x, wy:p.y, wt:0, gr:{}, seq:++FS.seq, flash:0, last:-1 };
+  for(let i = 0; i < 14; i++) puff(p.x, p.y, 'hsl(' + (i*26) + ',95%,62%)', 5);
+}
+function fsPop(b, broken){
+  if(SMASHBALL === b) SMASHBALL = null;
+  for(let i = 0; i < (broken ? 26 : 10); i++) puff(b.x, b.y, 'hsl(' + ((i*37) % 360) + ',95%,62%)', broken ? 7 : 4);
+}
+function fsStep(){
+  if(hazardT <= 1 || hazardT < FS.lastT) fsReset();
+  FS.lastT = hazardT;
+  let busy = false;
+  for(const f of fighters){
+    if(f._fs){ fsRun(f); busy = true; }
+    if(f.fsGlow > 0){
+      busy = true;
+      if(f.dead || !running) f.fsGlow = 0;
+      else if(--f.fsGlow === 0) fsArm();   // the glow ran out unused
+    }
+  }
+  if(!fsAllowed()){ if(SMASHBALL) fsPop(SMASHBALL, false); return; }
+  if(!SMASHBALL){
+    if(!busy && --FS.next <= 0) fsSpawn();
+    return;
+  }
+  fsMoveBall();
+  fsShotHits();
+}
+function fsMoveBall(){
+  const b = SMASHBALL; b.t++;
+  if(b.flash > 0) b.flash--;
+  if(--b.life <= 0){ fsPop(b, false); fsArm(); return; }
+  const live = fighters.filter(f=>!f.dead);
+  if(--b.wt <= 0 && live.length){   // a new place to drift to, near some fighter
+    b.wt = 90 + Math.floor(fsRand()*80);
+    const a = live[Math.floor(fsRand()*live.length)], p = fsClampPos(a.x + (fsRand() - 0.5)*420, a.y - 60 - fsRand()*140);
+    b.wx = p.x; b.wy = p.y;
+  }
+  let ax = (b.wx - b.x)*0.0016, ay = (b.wy - b.y)*0.0016;
+  for(const f of live){   // it shies away from anyone close, but only so fast: a runner catches it
+    const dx = b.x - f.x, dy = b.y - f.y, d = Math.hypot(dx, dy);
+    if(d < 130 && d > 0.1){ const k = (130 - d)/130*0.22; ax += dx/d*k; ay += dy/d*k; }
+  }
+  b.vx = (b.vx + ax)*0.97; b.vy = (b.vy + ay)*0.97;
+  const sp = Math.hypot(b.vx, b.vy); if(sp > 4.2){ b.vx *= 4.2/sp; b.vy *= 4.2/sp; }
+  b.x += b.vx; b.y += b.vy;
+  const lo = fsClampPos(-1e9, -1e9), hi = fsClampPos(1e9, 1e9);
+  if(b.x < lo.x){ b.x = lo.x; b.vx = Math.abs(b.vx); } else if(b.x > hi.x){ b.x = hi.x; b.vx = -Math.abs(b.vx); }
+  if(b.y < lo.y){ b.y = lo.y; b.vy = Math.abs(b.vy); } else if(b.y > hi.y){ b.y = hi.y; b.vy = -Math.abs(b.vy); }
+}
+// A swing's hitbox (hitTurrets calls this for every melee hitbox) or a shot meets the ball. Returns true if it landed.
+function fsBallHit(f, cx, cy, rad, dmg){
+  const b = SMASHBALL;
+  if(!b || !f || f.dead || f.fsGlow > 0 || f._fs || !(dmg > 0)) return false;   // a holder, or one mid Final Smash, cannot break another
+  if(Math.hypot(b.x - cx, b.y - cy) >= rad + b.r) return false;
+  if((b.gr[f.idx] || 0) > hazardT) return false;   // a lingering hitbox does not melt it in a frame
+  b.gr[f.idx] = hazardT + FSBALL.grace;
+  b.hp -= clamp(dmg, FSBALL.minHit, FSBALL.maxHit); b.flash = 8; b.last = f.idx;
+  b.vx += (Math.sign(b.x - f.x) || f.face || 1)*3.2; b.vy -= 1;
+  for(let i = 0; i < 6; i++) puff(b.x, b.y, 'hsl(' + ((i*60 + hazardT*7) % 360) + ',95%,65%)', 4);
+  SFX.hit(dmg);
+  if(b.hp <= 0) fsBreak(f);
+  return true;
+}
+function fsShotHits(){
+  for(const pr of projectiles){
+    const b = SMASHBALL; if(!b) return;
+    if(!(pr.life > 0) || pr.turret || pr.trap || !(pr.dmg > 0)) continue;
+    const o = pr.ownerObj;
+    if(!o || !(o.idx >= 0) || fighters[o.idx] !== o) continue;
+    if(Math.hypot(pr.x - b.x, pr.y - b.y) < pr.r + b.r) fsBallHit(o, pr.x, pr.y, pr.r, pr.dmg*0.8);
+  }
+}
+function fsBreak(f){
+  const b = SMASHBALL; if(b) fsPop(b, true);
+  fsGrant(f); fsArm();
+}
+function fsGrant(f){
+  f.fsGlow = FSBALL.glow; f.fnCd = 0; f.flash = 10;
+  for(let i = 0; i < 16; i++) puff(f.x, f.y - 6, 'hsl(' + ((i*23) % 360) + ',95%,62%)', 6);
+  shake(7); SFX.smash();
+}
+// The holder is KO'd (eliminate): the glow goes with the stock, and a fresh ball may come a few seconds on.
+function fsOnKo(f){
+  const had = f.fsGlow > 0;
+  f.fsGlow = 0; f._fs = null; f.fsId = ''; f.fsT = 0;
+  if(had && !SMASHBALL) FS.next = 150 + Math.floor(fsRand()*120);
+}
+// ---- firing -------------------------------------------------------------------------------------------------------------
+function fsOf(f){ return FINAL_SMASHES[f.name] || FS_DEFAULT; }
+function fsCanFire(f){
+  return f.fsGlow > 0 && !f._fs && !f.dead && !(f.hitstun > 0) && !(f.frozen > 0) && f._heldBy == null && !f._gb && !RACE.active && !inOwnTeamZone(f);
+}
+// The finisher input (V + C) while glowing: the Final Smash instead. True if it took the press.
+function fsTryFire(f){
+  if(!fsCanFire(f)) return false;
+  if(f._mv) mvCancel(f);
+  const d = fsOf(f);
+  f._fs = { d:d, hit:new Set(), t:0 };
+  f.fsId = d.id; f.fsT = 0; f.fsWind = d.wind; f.fsDur = d.dur; f.fsAx = Math.round(f.x); f.fsAy = Math.round(f.y);
+  f.fsGlow = 0; f.invuln = Math.max(f.invuln, 2); f.fnCd = Math.max(f.fnCd || 0, 30);
+  if(d.start) d.start(f, f._fs);
+  return true;
+}
+function fsRun(f){
+  const st = f._fs, d = st.d;
+  if(f.dead){ f._fs = null; f.fsId = ''; return; }
+  const t = st.t;
+  f.invuln = Math.max(f.invuln, 2); f._lag = Math.max(f._lag || 0, 3); f.fsT = t;   // untouchable and still while it plays
+  if(t < d.wind){ f.vx *= 0.7; if(!f.onground) f.vy = 0; }
+  d.tick(f, st, t);
+  if(++st.t >= d.dur) fsEnd(f);
+}
+function fsEnd(f){
+  const st = f._fs; if(st && st.d.end) st.d.end(f, st);
+  f._fs = null; f.fsId = ''; f.fsT = 0; f.fsWind = 0; f.fsDur = 0;
+  f._lag = Math.max(f._lag || 0, 6); f.invuln = Math.max(f.invuln, 10);
+  fsArm();
+}
+// One radius hit on every foe in it that this Final Smash has not hit yet. A Final Smash beats a counter stance and armour's flinch.
+function fsBurst(f, st, x, y, R, dmg, kbx, kby){
+  let n = 0;
+  for(const t of fighters){
+    if(t.dead || t.idx === f.idx || t.team === f.team || st.hit.has(t.idx) || hardInvuln(t)) continue;
+    if(hurtGap(t, x, y) < R){ st.hit.add(t.idx); t.countering = 0; applyHit(t, dmg, (Math.sign(t.x - x) || f.face || 1)*kbx, kby, f); n++; }
+  }
+  if(summons.length) damageSummons(f, x, y, R, dmg);
+  return n;
+}
+// Is a foe in reach of this Final Smash right now (the CPU's cue to fire)?
+function fsFoeNear(f, R){
+  for(const t of fighters) if(!t.dead && t.team !== f.team && !hardInvuln(t) && !(t._ghostT > 0) && hurtGap(t, f.x, f.y) < R) return true;
+  return false;
+}
+// ---- the default: a supercharged, cinematic version of the fighter's own finisher ------------------------------------
+// A tell (the ground circle closes in for FS_DEFAULT.wind frames: walk out of it), then a burst in that circle, with the fighter's own
+// finisher thrown in the middle of it. Everyone without a row of their own plays this one, in their own colour.
+const FS_SURGE_R = 240;
+const FS_DEFAULT = {
+  id:'surge', wind:40, dur:92, reach:FS_SURGE_R,
+  tick(f, st, t){
+    if(t === 0){ shake(6); for(let i = 0; i < 10; i++) puff(f.x, f.y, f.color, 6); }
+    if(t === this.wind){
+      shake(12); armAtk(f, 30, animKindOf(f, 'finisher'));
+      fsBurst(f, st, f.x, f.y, FS_SURGE_R, 26, 22, -14);
+      doAttackSpecial(f);   // their own finisher, in the middle of it
+      for(let i = 0; i < 22; i++) puff(f.x, f.y, i % 2 ? f.color : '#fff', 7);
+    }
+  },
+  ai(f){ return fsFoeNear(f, FS_SURGE_R*0.85); },
+  draw(f, c){
+    const t = f.fsT || 0, w = f.fsWind || FS_DEFAULT.wind, R = FS_SURGE_R;
+    if(t < w){
+      const k = t/w, blink = (w - t < 14) && (t % 4 < 2);
+      c.save(); c.translate(f.x, f.y);
+      c.globalAlpha = (blink ? 0.3 : 0.12 + 0.16*k); c.fillStyle = f.color; c.beginPath(); c.arc(0, 0, R, 0, 7); c.fill();
+      c.globalAlpha = 0.85; c.strokeStyle = '#1c1c1c'; c.lineWidth = 8; c.setLineDash([16, 12]); c.beginPath(); c.arc(0, 0, R, 0, 7); c.stroke();
+      c.strokeStyle = blink ? '#fff' : f.color; c.lineWidth = 4; c.stroke(); c.setLineDash([]);
+      for(let j = 0; j < 3; j++){ const rr = R*(1 - ((k*1.6 + j/3) % 1)*0.85); c.globalAlpha = 0.35 + 0.4*k; c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, rr, 0, 7); c.stroke(); }
+      c.restore();
+    } else {
+      const u = (t - w)/20;
+      if(u < 1){
+        c.save(); c.translate(f.x, f.y);
+        c.globalAlpha = 0.6*(1 - u); c.fillStyle = '#fff'; c.beginPath(); c.arc(0, 0, R*(0.4 + 0.7*u), 0, 7); c.fill();
+        c.globalAlpha = 1 - u; c.strokeStyle = f.color; c.lineWidth = 18*(1 - u) + 2; c.beginPath(); c.arc(0, 0, R*(0.3 + 0.9*u), 0, 7); c.stroke();
+        c.restore();
+      }
+    }
+  },
+};
+// ---- the CPU ----------------------------------------------------------------------------------------------------------
+// Run after the CPU's own rules each frame. A glowing CPU holds its Final Smash until it will hit (a foe in the drawn reach), or
+// until the glow is nearly out and a foe is anywhere near; a third of them mind their own fight when a ball is out, and nobody
+// walks away from a foe at arm's length to chase it.
+function fsBotInput(f, inp){
+  if(f._fs || f.dead) return inp;
+  if(f.fsGlow > 0){
+    inp.fin = false;
+    const d = fsOf(f), ready = d.ai ? d.ai(f) : fsFoeNear(f, d.reach || 200);
+    if(ready || (f.fsGlow < 150 && fsFoeNear(f, 420))){ inp.fin = true; inp.attack = false; inp.special = false; inp.smash = false; }
+    return inp;
+  }
+  const b = SMASHBALL;
+  if(!b || f.hitstun > 0 || ((f.idx*5 + b.seq*7) % 3) === 0) return inp;
+  const dx = b.x - f.x, dy = b.y - f.y, dist = Math.hypot(dx, dy);
+  if(dist > 700 || fsFoeNear(f, 95)) return inp;
+  inp.left = dx < -4; inp.right = dx > 4;
+  if(dy < -50 && Math.abs(dx) < 220) inp.jump = (hazardT % 12) < 6;
+  if(dist < 90){
+    inp.special = false; inp.smash = false; inp.fin = false;
+    if(dy < -40 && Math.abs(dx) < 70) inp.up = true;
+    inp.attack = (hazardT % 6) < 3;
+  }
+  return inp;
+}
+// ---- drawing (everything from the fighter's own fs* fields and the ball: a client draws the same) ----------------------
+function fsRainbow(i, speed){ return 'hsl(' + (((i*51 + hazardT*(speed || 5)) % 360 + 360) % 360) + ',95%,60%)'; }
+function fsDrawBall(b){
+  const c = ctx, r = b.r;
+  c.save(); c.translate(b.x, b.y + Math.sin(hazardT*0.07)*3);
+  c.lineCap = 'round';
+  for(let i = 0; i < 7; i++){   // the swirl of light round it
+    const a = hazardT*0.05 + i*Math.PI*2/7;
+    c.globalAlpha = 0.55; c.strokeStyle = fsRainbow(i, 5); c.lineWidth = 6;
+    c.beginPath(); c.arc(0, 0, r + 9 + Math.sin(hazardT*0.1 + i)*2, a, a + 0.7); c.stroke();
+  }
+  c.globalAlpha = 1;
+  c.fillStyle = '#1c1c1c'; c.beginPath(); c.arc(0, 0, r + 3, 0, 7); c.fill();
+  c.save(); c.beginPath(); c.arc(0, 0, r, 0, 7); c.clip();
+  for(let i = 0; i < 6; i++){   // a pinwheel of colour, turning
+    const a0 = hazardT*0.04 + i*Math.PI/3;
+    c.fillStyle = fsRainbow(i, 3); c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, r + 2, a0, a0 + Math.PI/3 + 0.02); c.closePath(); c.fill();
+  }
+  c.fillStyle = '#ffffffcc'; c.beginPath(); c.arc(-r*0.32, -r*0.38, r*0.28, 0, 7); c.fill();   // the shine
+  c.strokeStyle = '#1c1c1c'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, r*0.45, 0, 7); c.stroke();
+  const cracks = Math.floor((1 - Math.max(0, b.hp)/(b.hpMax || FSBALL.hp))*5);   // the more it has taken, the more it cracks
+  c.lineWidth = 2.5;
+  for(let i = 0; i < cracks; i++){ const a = i*1.9 + 0.6; c.beginPath(); c.moveTo(Math.cos(a)*r*0.2, Math.sin(a)*r*0.2); c.lineTo(Math.cos(a + 0.35)*r*0.65, Math.sin(a + 0.35)*r*0.65); c.lineTo(Math.cos(a)*r*1.05, Math.sin(a)*r*1.05); c.stroke(); }
+  if(b.flash > 0){ c.globalAlpha = 0.6*(b.flash/8); c.fillStyle = '#fff'; c.beginPath(); c.arc(0, 0, r + 2, 0, 7); c.fill(); }
+  c.restore();
+  c.globalAlpha = 1; c.strokeStyle = '#1c1c1c'; c.lineWidth = 3.5; c.beginPath(); c.arc(0, 0, r, 0, 7); c.stroke();
+  c.restore();
+}
+// The glow: a pulsing rainbow outline and a few sparks, behind a holder; faster as it runs out. Kept through the Final Smash itself.
+function fsDrawAura(f){
+  const on = f.fsGlow > 0, act = !!f.fsId;
+  if(!on && !act) return;
+  const c = ctx, left = on ? f.fsGlow : 9999, rate = left < 180 ? 0.5 : 0.18, pulse = 0.5 + 0.5*Math.sin(hazardT*rate);
+  c.save(); c.translate(f.x, f.y);
+  c.globalCompositeOperation = 'lighter';
+  const g = c.createRadialGradient(0, 0, f.r*0.6, 0, 0, f.r + 38);
+  g.addColorStop(0, 'rgba(255,255,255,0.0)'); g.addColorStop(0.55, 'rgba(255,230,120,' + (0.25 + 0.2*pulse) + ')'); g.addColorStop(1, 'rgba(255,120,255,0)');
+  c.fillStyle = g; c.beginPath(); c.arc(0, 0, f.r + 38, 0, 7); c.fill();
+  c.globalCompositeOperation = 'source-over';
+  c.lineWidth = 3 + 2*pulse;
+  for(let k = 0; k < 3; k++){ c.globalAlpha = 0.85 - k*0.2; c.strokeStyle = fsRainbow(k*2, 7); c.beginPath(); c.arc(0, 0, f.r + 8 + k*4 + 3*pulse, hazardT*0.05*(k % 2 ? -1 : 1), hazardT*0.05*(k % 2 ? -1 : 1) + 4.2); c.stroke(); }
+  c.globalAlpha = 1;
+  for(let i = 0; i < 6; i++){ const a = hazardT*0.06 + i*1.047, rr = f.r + 16 + 6*Math.sin(hazardT*0.11 + i*2); c.fillStyle = fsRainbow(i, 9); c.beginPath(); c.arc(Math.cos(a)*rr, Math.sin(a)*rr, 2.6, 0, 7); c.fill(); }
+  c.restore();
+}
+// World-space effects of a Final Smash in progress (its tell and its blast), over the fighters.
+function fsDrawFx(){
+  for(const f of fighters){
+    if(!f.fsId || f.dead) continue;
+    const d = FINAL_SMASHES[f.name] && FINAL_SMASHES[f.name].id === f.fsId ? FINAL_SMASHES[f.name] : FS_DEFAULT;
+    if(d.draw){ ctx.save(); try{ d.draw(f, ctx); }catch(e){} ctx.restore(); }
+  }
+}
+// Screen-space: the white flash, the dimmed edges, and the silhouette sweeping across, for the first moments of a Final Smash.
+function fsDrawScreen(){
+  for(const f of fighters){
+    if(!f.fsId || f.dead) continue;
+    const t = f.fsT || 0, w = f.fsWind || 40;
+    if(t > w + 12) continue;
+    const c = ctx; c.save();
+    const dim = t < w ? Math.min(1, t/8) : Math.max(0, 1 - (t - w)/12);
+    const g = c.createRadialGradient(W/2, H/2, Math.min(W, H)*0.3, W/2, H/2, Math.max(W, H)*0.75);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,0,30,' + (0.5*dim) + ')');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    if(t < 28){   // the sweep: a band of the fighter's colour and their dark silhouette crossing the screen
+      const k = t/28, ba = Math.sin(k*Math.PI);
+      c.globalAlpha = 0.8*ba; c.fillStyle = f.color; c.fillRect(0, H*0.38, W, H*0.2);
+      c.globalAlpha = 0.9*ba; c.fillStyle = '#1c1c1c'; c.fillRect(0, H*0.38 - 5, W, 5); c.fillRect(0, H*0.58, W, 5);
+      c.globalAlpha = ba; c.fillStyle = '#fff';
+      for(let i = 0; i < 6; i++){ const ly = H*0.38 + 12 + i*(H*0.2 - 24)/5, lx = ((k*W*1.6 + i*97) % (W + 200)) - 200; c.fillRect(lx, ly, 160 + 40*(i % 3), 3); }
+      const sx = -W*0.1 + k*W*1.2, sy = H*0.48, s = 2.6*f.r/24 + 1.2;
+      c.globalAlpha = Math.min(1, ba*1.6); c.translate(sx, sy); c.scale(s, s);
+      c.fillStyle = '#1c1c1c'; c.strokeStyle = '#fff'; c.lineWidth = 3; roundBlob(0, 0, 24); c.fill(); c.stroke();
+      c.fillStyle = f.color; c.beginPath(); c.arc(-7*f.face, -4, 4, 0, 7); c.arc(7*f.face, -4, 4, 0, 7); c.fill();
+    }
+    c.restore();
+    if(t < 6){ c.save(); c.globalAlpha = 0.75*(1 - t/6); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); c.restore(); }
+    else if(t >= w && t < w + 4){ c.save(); c.globalAlpha = 0.5*(1 - (t - w)/4); c.fillStyle = '#fff'; c.fillRect(0, 0, W, H); c.restore(); }
+    break;   // one at a time is plenty
+  }
+}
+// @finalsmash:end
 function summonAssist(owner){
   summonAssistNamed(owner, ASSIST_ROSTER[Math.floor(Math.random()*ASSIST_ROSTER.length)]);
 }
@@ -30866,6 +31197,7 @@ function step(){
   try{ observePlaystyle(); }catch(e){}   // Wave 5: watch how the human plays this fighter
   testDpsTick();
   if(SETTINGS.mode!=='ctf') updateItems();
+  fsStep();   // the Smash Ball and any Final Smash in progress (FINAL SMASH BALLS)
   if(TOURNEY_WATCHING) tourneyLiveTick();
   if(tendrils.length) updateTendrils();
   // Boss Rush's win/lose check (bossRushCheck) runs once a frame, from checkWin at the end of this step. It used to run from
@@ -30906,6 +31238,7 @@ function step(){
     } else {
       inp = (SETTINGS.mode==='ctf' && ctfAiInput(f)) || aiThink(f);
       legacyFin(inp);   // the CPU's rules still press attack + special for the finisher; the engine reads `fin`
+      fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
     }
     if((ctrl==='local' || ctrl==='remote') && !RACE.active && !(SETTINGS.mode==='ctf' && CTF.live && (CTF.live.phase==='hide' || CTF.live.phase==='fix'))) comboInput(f, inp);   // X+C grab, V+C finisher (the Capture the Flag hiding phase reads the raw keys)
 
@@ -31367,7 +31700,8 @@ function step(){
       const atkSp = !!inp.fin;   // V+C together = finisher (it was X+C until the grab took that pair, 2026-10-14)
       // The finisher has its own cooldown too (fnCd): it no longer locks the jab or the special, and they do not hold it back.
       // C still has to be let go before the special fires again, so a finisher does not spill into a special.
-      if(atkSp && f.fnCd<=0){
+      if(atkSp && f.fsGlow>0 && fsTryFire(f)){ f._sp=true; }   // glowing: the finisher input is the FINAL SMASH (once)
+      else if(atkSp && f.fnCd<=0){
         doAttackSpecial(f); f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;
       } else if(atkSp){ } else {
         f._legacyMv = false;
@@ -35180,6 +35514,7 @@ function damageTurret(pr, dmg){
 }
 function hitTurrets(f, cx, cy, rad, dmg){
   if(!f || f.team === undefined) return;
+  if(SMASHBALL) fsBallHit(f, cx, cy, rad, dmg);   // every melee hitbox passes here: the Smash Ball is struck by it too (FINAL SMASH BALLS)
   for(const pr of projectiles){
     if(!pr.turret || pr.life <= 0) continue;
     const o = pr.ownerObj;
@@ -37254,6 +37589,7 @@ function eliminate(f){
   if(SETTINGS.mode==='ctf' && ctfEliminate(f)) return;   // Capture the Flag: no stocks; a KO is a trip home, or to the enemy's jail
   if(f._oneGhost){ oneGhostDown(f); return; }   // One's ghost fighter has no stocks to lose: a knockout is the kill
   SFX.ko();
+  if(f.fsGlow>0 || f._fs) fsOnKo(f);   // the glow (or a Final Smash under way) goes with the stock
   // if an infected puppet is KO'd, revert it to its real team immediately
   if(f._infected>0){ f.team=f._origTeam; f._infected=0; f._infectedBy=null; }
   // Pillow passive: each KO she scores permanently boosts all her damage (+1% per stack)
@@ -42028,6 +42364,7 @@ function draw(){
 
   // items on the stage
   for(const it of items){ if(it.taken) continue; drawItem(it); }
+  if(SMASHBALL) fsDrawBall(SMASHBALL);
   // active summons (assists & bosses)
   for(const s of summons){ drawSummon(s); }
   if(ONEFIGHT.active) drawOneFx();
@@ -42111,7 +42448,7 @@ function draw(){
   }
   // fighters
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
-  for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(f._oneGhost) drawOneGhostAura(f); drawFighter(f); if(SETTINGS.mode==='ctf') ctfDrawCarry(f); }
+  for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId) fsDrawAura(f); drawFighter(f); if(SETTINGS.mode==='ctf') ctfDrawCarry(f); }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
   if(SHOW_HITBOXES) drawHitboxOverlay();
@@ -42119,6 +42456,7 @@ function draw(){
   // …and the shots still coming OUT of a fighter, drawn last so the launch is on top of the
   // character who launched it rather than buried behind their body.
   drawLaunchingProjectiles();
+  fsDrawFx();   // a Final Smash's tell and blast
 
   // particles
   ctx.lineCap='round';
@@ -42144,6 +42482,7 @@ function draw(){
   // ---- screen-space overlays ----
   if(viewScrolls() && !RACE.active && SETTINGS.mode!=='ctf') drawMinimap();   // the race has its progress bar instead (drawRaceBar)
   drawOffscreenArrows();
+  fsDrawScreen();   // a Final Smash's flash and silhouette sweep
   if(SETTINGS.mode==='ctf') drawCtfHud();
   if(SETTINGS.mode==='boss' && BOSSRUSH.active) drawBossBar();
   if(ONEFIGHT.active) drawOneBar();
@@ -49268,7 +49607,8 @@ const NET_FIGHTER_FLAGS = ['flash','invuln','cloud','frozen','armor','countering
   // client: a star or Yoyleberry fighter looked normal there, and rooted, cursed, infected, healing, swallowed showed nothing.
   'bleed','hitstun','_stunFx','slowed','rooted','ctrlRev','weakened','curseStacks','defineStacks','_infected','_empowerT','_empower',
   '_momentumT','_hasteT','_bulletT','_starT','_yoyleT','healing','reflecting','_noBattery','_taunted','_grasstree','curse','iceUntil',
-  'reform','_floatT','_swallow','_fury','koCount','_poisonT','_levT'];
+  'reform','_floatT','_swallow','_fury','koCount','_poisonT','_levT',
+  'fsGlow','fsId','fsT','fsWind','fsDur','fsAx','fsAy'];   // FINAL SMASH BALLS: the glow, and which Final Smash is on, how far in, and where it began (all a client needs to draw it)
 function netFighter(f){
   const o = { idx:f.idx, name:f.name, color:f.color, x:Math.round(f.x), y:Math.round(f.y), r:f.r, face:f.face,
     pct:Math.round(f.pct*10)/10, stocks:(f.stocks===Infinity?-1:f.stocks), koCap:f.koCap, dead:f.dead, team:f.team,
@@ -49462,6 +49802,7 @@ function serializeState(withGeo){
     banner: (window.__lastBanner && Date.now()-window.__lastBanner.at < 400) ? window.__lastBanner : null,
     over: !running,
   };
+  if(SMASHBALL) s.fsb = [Math.round(SMASHBALL.x), Math.round(SMASHBALL.y), Math.max(0, Math.round(SMASHBALL.hp/SMASHBALL.hpMax*100)), SMASHBALL.flash > 0 ? 1 : 0];   // the Smash Ball: where it is, how much is left, a hit's flash
   if(SETTINGS.mode==='ctf') s.ctf = ctfNetOut();   // Capture the Flag: the map by its id and the live state (ctfNetOut)
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
   if(IMPACT_OUT.length) s.imp = IMPACT_OUT.splice(0);  // impacts since the last snapshot (impact), at most IMPACT_FX.netMax: a client plays them
@@ -49571,6 +49912,9 @@ function applySnapshot(s){
   { const wasE = evil; evil = Array.isArray(s.evil) ? {x:s.evil[0], y:s.evil[1]} : null; if(evil) netGlide(evil, fresh ? null : wasE); }
   tendrils = (s.tend||[]).map(r=>({ x:r[0], h:r[1], maxH:r[1], grow:0, life:1, _hit:true }));   // drawTendrils reads x and h
   items=(s.items||[]).map(it=>({...it, taken:false}));
+  { const wasB = fresh ? null : SMASHBALL;   // the Smash Ball, glided like a fighter
+    SMASHBALL = Array.isArray(s.fsb) ? { x:s.fsb[0], y:s.fsb[1], r:FSBALL.r, hp:s.fsb[2], hpMax:100, flash:s.fsb[3] ? 8 : 0 } : null;
+    if(SMASHBALL) netGlide(SMASHBALL, wasB); }
   summons=(s.summons||[]).map((m,i)=>{ const e={...m}, p=wasS[i]; netGlide(e, (p && p.name===m.name && p.type===m.type) ? p : null); return e; });
   if(typeof s.bossCleared==='number') BOSSRUSH.cleared=s.bossCleared;
   if(Array.isArray(s.pb)){
@@ -49633,6 +49977,7 @@ function netInterpolate(now){
   for(const f of fighters){ at(f); netSwing(f); }
   for(const m of summons) at(m);
   if(evil) at(evil);
+  if(SMASHBALL) at(SMASHBALL);
   for(const p of projectiles) at(p);
 }
 // The swing, like the positions. The host counts the swing timer down once a frame; a client held one value for 2-3
@@ -50062,7 +50407,7 @@ window.NET = {
   lobby: null,
   lobbySettings(){
     return { mode:SETTINGS.mode, count:SETTINGS.count, stocks:SETTINGS.stocks, teamKey:SETTINGS.teamKey, mapSize:SETTINGS.mapSize,
-             stage: stage && stage.id, itemRate:SETTINGS.itemRate, ai:AI_LEVEL };
+             stage: stage && stage.id, itemRate:SETTINGS.itemRate, ai:AI_LEVEL, smashBalls:SETTINGS.smashBalls===false ? 0 : 1 };
   },
   pushLobby(){ if(this.role==="host") this.send({t:"state", lobby:this.lobbySettings()}); },
   pickFighter(name){
@@ -50122,6 +50467,7 @@ window.NET = {
     }
     seg('CPU Skill', 'lobbyAI', [[0,'Easy'],[1,'Normal'],[2,'Hard']], AI_LEVEL, v=>{ AI_LEVEL=+v; });
     seg('Items', 'lobbyItems', [[0,'Off'],[1,'Low'],[2,'Normal'],[3,'High']], SETTINGS.itemRate, v=>{ SETTINGS.itemRate=+v; });
+    seg('Smash Balls', 'lobbySmashBalls', [[1,'On'],[0,'Off']], SETTINGS.smashBalls===false ? 0 : 1, v=>{ SETTINGS.smashBalls = +v !== 0; });
     seg('Map Size', 'lobbyMapSize', [['compact','Compact'],['normal','Normal'],['tall','Tall'],['huge','Huge']], SETTINGS.mapSize, v=>{ SETTINGS.mapSize = MAP_SIZES[v] ? v : 'normal'; });
     const sum=document.createElement('div'); sum.className='foot lobbysummary'; sum.id='lobbySummary'; sum.textContent=lobbySummaryText(this.lobbySettings()); el.appendChild(sum);
   },
@@ -50193,6 +50539,7 @@ window.NET = {
     if(typeof s.teamKey==='string' && /^\d+(v\d+)*$/.test(s.teamKey)) SETTINGS.teamKey = s.teamKey;
     SETTINGS.mapSize = MAP_SIZES[s.mapSize] ? s.mapSize : 'normal';
     if(s.itemRate!=null) SETTINGS.itemRate = int(s.itemRate, 0, 3, 2);
+    SETTINGS.smashBalls = s.smashBalls == null ? true : +s.smashBalls !== 0;   // (an older host sends none: on)
     if(s.ai!=null) AI_LEVEL = int(s.ai, 0, 2, 1);
     { const st=STAGES.find(x=>x.id===s.stage); if(st) stage=st; }
     roster = (Array.isArray(roster)?roster:[]).map(n=>ROSTER.some(r=>r.play && r.name===n) ? n : "Firey");
