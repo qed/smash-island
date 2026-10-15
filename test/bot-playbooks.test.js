@@ -98,6 +98,7 @@ const SETUP = (a, b, dist, level = 2) => `
   for (var k in PLAYBOOKS) delete PLAYBOOKS[k];
   var F = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(a)}; }), 300, groundY()-24, 0);
   var T = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(b)}; }), 300+${dist}, groundY()-24, 1);
+  { var __ms = MOVESETS[F.kit.special]; if (__ms) __ms.side = null; }   // (restated, batch 3: Rocky has a moveset now, and its CPU may press the new side special at range (aiMovesetUse); these pins measure the OLD rules, so the side special is taken away here)
   F.team=0; T.team=1; F.face=1; T.face=-1; F.controller='still'; T.controller='still'; fighters=[F,T]; step();
   F.controller='ai'; F.invuln=0; T.invuln=0; F.atkCd=0; F.spCd=0; F.smCd=0; F.pct=0; T.pct=0; F.stocks=3; T.stocks=3; F._lvl=${level};
   var think = function(){ F._stuck=0; F._recover=0; F._lastX=F.x; F._aiCharging=0; F.smashHold=0; F._smQ=null; F._aiSpGap=0; F.aiTimer=20; F.hitstun=0; return aiThink(F); };
