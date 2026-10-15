@@ -14,7 +14,7 @@ beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 const arenaIn = (win, dx, body, { pct = 0, a = null, ax = 400 } = {}) => win.eval(`(function(){
   SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=2; SETTINGS.smashBalls=true; running=true;
   RACE.active=false; ONEFIGHT.active=false; COBSFIGHT.active=false; TESTMODE.active=false; BOSSRUSH.active=false; TOURNEY.active=false;
-  worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+  worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[]; itemTimer=1e9;   // (no pickup wanders in: a heal would move the dummy's %)
   var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(a || 'Coiny')}; }), ${ax}, groundY()-24, 0);
   var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), ${ax + dx}, groundY()-24, 1);
   A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
@@ -340,4 +340,14 @@ batchSuite("batch F", [
   ["Remote", "signaljam", 120, 560],
   ["Rose", "thornlash", 250, 600],
   ["Taco", "retractablearms", 150, 560]
+]);
+batchSuite("batch G", [
+  ["TV", "staticburst", 120, 560],
+  ["Woody", "fraidystampede", 200, -300],
+  ["Toothpaste", "enemynow", 220, -300],
+  ["David", "awseriously", 120, 560],
+  ["Firey Jr.", "sparkjr", 150, 800],
+  ["Fern", "photosynthesis", 250, 600],
+  ["Ruler", "exactmeasure", 250, -300],
+  ["Sidewalky", "physically", 250, 560]
 ]);
