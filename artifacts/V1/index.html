@@ -34261,7 +34261,7 @@ function step(){
       } else if(atkSp){ } else {
         f._legacyMv = false;
         if(inp.attack && f.atkCd<=0 && !inp.grab){ f._xDir = inp.down ? 'd' : (inp.up ? 'u' : ((inp.left||inp.right) ? 's' : 'n')); f._xAir = !f.onground; f._xT = hazardT; }
-        if(inp.grab){ if(!f._hold && !f._gb) mvGrabStart(f); }   // X+C: the grab (anyone's; a converted fighter's own throws, MOVESETS)
+        if(inp.grab){ if(!f._hold && !f._gb && mvGrabStart(f)) f._spPend = 0; }   // X+C: the grab (anyone's; a converted fighter's own throws, MOVESETS)
         else if(inp.attack && f.atkCd<=0 && mvAttack(f, inp)){ }   // a converted fighter's tilt or aerial (MOVESETS)
         else if(inp.attack && f.atkCd<=0){
           f._legacyMv = !isHumanCtrl(f);   // a CPU that did not ask for a moveset move swings today's jab, sweep and uppercut (doGroundMove, doUpTilt)
@@ -37107,7 +37107,11 @@ const SPECIAL_CD_SCALE = 0.8;
 // that lands first fires its special, as an X before an X+C used to throw a jab. The pair is read from the three raw keys, so a
 // player on the other end of an online room sends nothing new: the host builds the grab and the finisher from the same keys
 // (NET_BUTTONS), and the CPU sets `grab` and `fin` itself. Edge-triggered: one press of the pair is one move.
-const CI_DELAY = 2;
+// THE GRAB WINDOW (the owner, 2026-10-15: "grab is hard to use" -- pressing X and C together). Two frames was too tight for two
+// fingers, so a plain X on the ground (no arrow held: the jab, which is what a grab press looks like) waits CI_GRAB_DELAY frames
+// for C instead. Tilts and aerials keep the short wait (the owner: "2 for tilts/aerials"). C first works too: a neutral C waits
+// SPECIAL_DIR_WINDOW frames for a direction anyway, and an X landing inside that wait takes the grab and drops the pending special.
+const CI_DELAY = 2, CI_GRAB_DELAY = 5;
 function ctrlOf(f){ return f.controller || (f.you ? "local" : "ai"); }
 function isHumanCtrl(f){ const c = ctrlOf(f); return c === "local" || c === "remote"; }
 // The fighter's moveset, or null (today's moves). MOVESETS is filled in by each batch; a fighter without an entry is "not yet converted".
@@ -37120,9 +37124,11 @@ function comboInput(f, inp){
   const x = !!inp.attack, cc = !!inp.special, v = !!inp.smash;
   const px = c.x, pv = c.v;   // how long X and V had been down as of the last frame
   if((x && px === 0) || (v && pv === 0)) c.dir = { left:!!inp.left, right:!!inp.right, jump:!!inp.jump, up:!!inp.up, down:!!inp.down };   // the arrows held as the press began
+  if(x && px === 0) c.xd = (f.onground && !inp.left && !inp.right && !inp.jump && !inp.up && !inp.down) ? CI_GRAB_DELAY : CI_DELAY;   // a plain X on the ground waits longer for C
+  const xd = c.xd || CI_DELAY;
   c.x = x ? px + 1 : 0; c.c = cc ? c.c + 1 : 0; c.v = v ? pv + 1 : 0;
   // a press that came and went inside the window (a quick tap, or one latched online between two frames) still counts, on release
-  const xTap = !x && px > 0 && px < CI_DELAY && !c.xUsed, vTap = !v && pv > 0 && pv < CI_DELAY && !c.vUsed;
+  const xTap = !x && px > 0 && px < xd && !c.xUsed, vTap = !v && pv > 0 && pv < CI_DELAY && !c.vUsed;
   if(!x) c.xUsed = false;
   if(!v) c.vUsed = false;
   if(!(x && cc)) c.grab = false;
@@ -37130,7 +37136,7 @@ function comboInput(f, inp){
   inp.grab = false; inp.fin = false;
   if(v && cc && !x){ if(!c.fin){ c.fin = true; c.vUsed = true; inp.fin = true; if(f._smQ && f.smashHold < 8){ f._smQ = null; f.smashHold = 0; } f._smBuf = false; } }
   else if(x && cc && !v){ if(!c.grab){ c.grab = true; c.xUsed = true; inp.grab = true; } }
-  inp.attack = (x && c.x >= CI_DELAY && !c.grab && !cc) || xTap;
+  inp.attack = (x && c.x >= xd && !c.grab && !cc) || xTap;
   inp.special = cc && !c.grab && !c.fin && !x && !v;
   inp.smash = (v && c.v >= CI_DELAY && !cc && !c.fin) || vTap;
   if((xTap || vTap) && c.dir){ const d = c.dir; inp.left = inp.left || d.left; inp.right = inp.right || d.right; inp.jump = inp.jump || d.jump; inp.up = inp.up || d.up; inp.down = inp.down || d.down; }   // a press that came and went keeps the arrows it was made with
