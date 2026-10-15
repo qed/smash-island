@@ -6,7 +6,7 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // simulating every move of the map; so a map, a physics number or the move search that changes WITHOUT the files being rebuilt must fail here, loudly.
 // Fast: the file is this map's (fingerprint) and fills the graph at once. Slow: it is exactly what the builder makes now (the whole graph, built again).
 
-const MAPS = ['castle', 'castle.s', 'castle.l', 'mines', 'factory', 'factory.s', 'factory.l', 'factory~', 'factory~.s', 'factory~.l', 'forest', 'sky', 'oak', 'oak.s', 'oak.l', 'oak~', 'oak~.s', 'oak~.l'];   // (`.s` and `.l`: the small and large builds of a map with bands: each its own graph, <id>-s-graph.json and <id>-l-graph.json)   // (oak~: the asymmetric map with its sides swapped by the bid: its own graph, <id>-swap-graph.json)
+const MAPS = ['castle', 'castle.s', 'castle.l', 'mines', 'mines.s', 'mines.l', 'mines~', 'mines~.s', 'mines~.l', 'factory', 'factory.s', 'factory.l', 'factory~', 'factory~.s', 'factory~.l', 'forest', 'sky', 'oak', 'oak.s', 'oak.l', 'oak~', 'oak~.s', 'oak~.l'];   // (`.s` and `.l`: the small and large builds of a map with bands: each its own graph, <id>-s-graph.json and <id>-l-graph.json)   // (oak~: the asymmetric map with its sides swapped by the bid: its own graph, <id>-swap-graph.json)
 const file = (id) => `artifacts/V1/assets/ctf/${id.replace('~', '-swap').replace('.', '-')}-graph.json`;   // (relative to the repo root, as loadMonolith reads the game)
 const REBUILD = 'run: node scripts/ctf-build-graphs.mjs   (a map, a physics number or ctfNavProbe changed; the shipped graphs are stale)';
 

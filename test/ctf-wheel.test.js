@@ -12,23 +12,20 @@ const J = (w, code) => JSON.parse(w.eval(`JSON.stringify(${code})`));
 const step = (w, n = 1) => { for (let i = 0; i < n; i++) w.eval('step()'); };
 
 describe('the mill wheel', () => {
-  it('each half has a water wheel and an iron cog, their paddles on a circle, level, all of them one-way ledges, the other half turning the other way', () => {
+  it('there is one water wheel, hub on the middle line, its paddles on a circle, level, all of them one-way ledges', () => {
     const { window: w } = loadMonolith(41);
     start(w);
     const ws = J(w, `CTF.live.wheels.map(function(x){ return { kind:x.kind, dir:x.dir, n:x.n, R:x.R, x:x.x, y:x.y, ids:x.ids }; })`);
-    expect(ws.filter(x => x.kind === 'wheel').length, 'a water wheel a side').toBe(2);
-    expect(ws.filter(x => x.kind === 'cog').length, 'a cog a side').toBe(2);
-    const big = ws.filter(x => x.kind === 'wheel');
-    expect(big[0].R, 'a big wheel: 6 rows from hub to paddle').toBe(720);
-    expect(big[0].dir, 'the halves turn opposite ways').toBe(-big[1].dir);
-    expect(Math.abs(big[0].x + big[1].x - w.eval('CTF.map.WW')), 'one is the other turned over').toBeLessThan(1);
+    expect(ws.length, 'one wheel in the whole map: it is its own mirror').toBe(1);
+    expect(Math.abs(ws[0].x - w.eval('CTF.map.WW/2')), 'its hub is on the middle line').toBeLessThan(1);
+    expect(ws[0].R, 'paddles 4 rows out').toBe(480);
     step(w, 400);
-    for (const x of ws) for (const id of x.ids) {
+    for (const id of ws[0].ids) {
       const e = J(w, `(function(){ var e = CTF.live.elevs[${id}]; return { x:e.x, y:e.y, w:e.w, ry:e.rect.y, rx:e.rect.x, hop:e.rect.hop }; })()`);
-      expect(Math.hypot(e.x + e.w/2 - x.x, e.y - x.y), 'on its circle').toBeCloseTo(x.R, 0);
+      expect(Math.hypot(e.x + e.w/2 - ws[0].x, e.y - ws[0].y), 'on its circle').toBeCloseTo(ws[0].R, 0);
       expect(e.ry === e.y && e.rx === e.x && e.hop, 'the ledge is where the paddle is, and one-way').toBe(true);
     }
-    expect(w.eval(`CTF.live.wheels.every(function(x){ return Math.abs(x.a - x.a0) > 0.1; })`), 'they turn').toBe(true);
+    expect(w.eval(`CTF.live.wheels[0].a !== CTF.live.wheels[0].a0`), 'it turns').toBe(true);
   });
 
   it('whoever stands on a paddle rides it up and round, and stays on it', () => {
@@ -55,7 +52,7 @@ describe('the mill wheel', () => {
     start(w);
     step(w, 50);
     const out = J(w, 'ctfNetOut()');
-    expect(out.wa.length, 'one angle a wheel').toBe(4);
+    expect(out.wa.length, 'one angle a wheel').toBe(1);
     expect(out.wa[0]).toBeCloseTo(w.eval('CTF.live.wheels[0].a'), 3);
     expect(out.el.length, 'the paddles are not lifts on the wire').toBe(w.eval('CTF.map.elevs.length'));
     const e0 = J(w, `{ x:CTF.live.elevs[CTF.map.elevs.length].x, y:CTF.live.elevs[CTF.map.elevs.length].y }`);
@@ -67,5 +64,21 @@ describe('the mill wheel', () => {
     w.eval(`ctfNetIn(${JSON.stringify(c)})`);
     const e2 = J(w, `{ x:CTF.live.elevs[CTF.map.elevs.length].x, y:CTF.live.elevs[CTF.map.elevs.length].y }`);
     expect(Math.abs(e2.x - e0.x) + Math.abs(e2.y - e0.y), 'the host\'s angle puts it back').toBeLessThan(1);
+  });
+
+  it('the mill hall is wheel-only: the route graph reaches its hiding places by the wheel move and by nothing else', { timeout:120000 }, () => {
+    const { window: w } = loadMonolith(44);
+    const r = JSON.parse(w.eval(`(function(){ var M = ctfMapGet('oak', false, 1); CTF.noShipped = true; var nav = ctfNavNew(M); while(!nav.ready) ctfNavTick(nav, 80);
+      var spots = M.spots.filter(function(s){ return s.y < 2000 && s.y > 1500 && Math.abs(s.x - M.WW/2) < 1000; }), out = { n:spots.length, wheelEdges:0 };
+      nav.nodes.forEach(function(n){ n.edges.forEach(function(e){ if(e.kind === 'wheel') out.wheelEdges++; }); });
+      [false, true].forEach(function(noWheel){ var seen = new Uint8Array(nav.nodes.length), q = [];
+        M.homes[0].spawns.forEach(function(sp){ var n = ctfNavNodeAt(nav, sp.x, sp.y, 12); if(n && !seen[n.id]){ seen[n.id] = 1; q.push(n.id); } });
+        while(q.length){ var id = q.pop(); nav.nodes[id].edges.forEach(function(e){ if(noWheel && e.kind === 'wheel') return; if(e.doors.some(function(d){ return d[0] === 'J'; })) return; if(!seen[e.to]){ seen[e.to] = 1; q.push(e.to); } }); }
+        var ok = 0; spots.forEach(function(s){ var n = ctfNavNodeAt(nav, s.x, s.y, 14); if(n && seen[n.id]) ok++; }); out[noWheel ? 'without' : 'with'] = ok; });
+      return JSON.stringify(out); })()`));
+    expect(r.n, 'the hall holds hiding places').toBeGreaterThanOrEqual(3);
+    expect(r.wheelEdges, 'the graph has the wheel move').toBeGreaterThan(0);
+    expect(r.with, 'all of them reached with it').toBe(r.n);
+    expect(r.without, 'none without it: the wheel is the only way in').toBe(0);
   });
 });
