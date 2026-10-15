@@ -10,14 +10,15 @@ import { loadMonolith } from './helpers/load-monolith.js';
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
-// A (Coiny: no Final Smash of its own yet, so the default) and D (Pen) on a flat floor, D `dx` px in front of A. `body` runs inside with A and D in scope.
-const arenaIn = (win, dx, body, { pct = 0, a = 'Coiny', ax = 400 } = {}) => win.eval(`(function(){
+// A (the default Final Smash, forced, unless a fighter is named) and D (Pen) on a flat floor, D `dx` px in front of A. `body` runs inside with A and D in scope.
+const arenaIn = (win, dx, body, { pct = 0, a = null, ax = 400 } = {}) => win.eval(`(function(){
   SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=2; SETTINGS.smashBalls=true; running=true;
   RACE.active=false; ONEFIGHT.active=false; COBSFIGHT.active=false; TESTMODE.active=false; BOSSRUSH.active=false; TOURNEY.active=false;
   worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
-  var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(a)}; }), ${ax}, groundY()-24, 0);
+  var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(a || 'Coiny')}; }), ${ax}, groundY()-24, 0);
   var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), ${ax + dx}, groundY()-24, 1);
   A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
+  ${a ? '' : 'A._fsForce = FS_DEFAULT;'}   // no fighter named: the DEFAULT Final Smash, whoever has a row of their own by now
   fighters=[A,D]; hazardT=5; fsReset(); SMASHBALL=null; FS.next=99999;
   [A,D].forEach(function(f){ f.invuln=0; f.hitstun=0; f.spCd=0; f.atkCd=0; f.armor=0; f.fnCd=0; });
   A.pct=0; D.pct=${pct};
