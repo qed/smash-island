@@ -202,7 +202,7 @@ describe('drawing', () => {
 });
 
 // BATCH A: each fighter's own Final Smash lands on a foe standing where its tell drew the hit, and misses one standing where it did not.
-describe('batches A and B: the unique Final Smashes', () => {
+describe('batches A, B and C: the unique Final Smashes', () => {
   const rows = [
     // name, id, a foe in the hit, a foe out of it
     ['Firey',    'inferno',  110, 700],
@@ -220,6 +220,15 @@ describe('batches A and B: the unique Final Smashes', () => {
     ['Teardrop', 'silenttreatment', 250, -300],
     ['Bomby',    'detonation',    120, 330],
     ['Rocky',    'matter',        200, -300],
+    // batch C
+    ['Lightning','chainbolt',     250, 560],
+    ['Fanny',    'hurricane',     120, 520],
+    ['Dora',     'rant',           80, -200],
+    ['Saw',      'overdrive',      60, 200],
+    ['Tennis Ball', 'ballmachine', 250, -300],
+    ['Snowball', 'avalanche',     200, -300],
+    ['Book',     'overdue',       250, null],
+    ['Ruby',     'refraction',    250, -300],
   ];
   const play = (name, dx, pct) => arena(dx, `
     A.fsGlow = 900; fsTryFire(A); var id = A.fsId, kind0 = null, kinds = {};
@@ -252,7 +261,7 @@ describe('batches A and B: the unique Final Smashes', () => {
     const { window: w } = loadMonolith();
     const r = arenaIn(w, 150, `
       var errs = [];
-      ['Firey','Leafy','Pencil','Puffball','Bow','Flower','Bubble','Blocky','Pen','Match','Ice Cube','Teardrop','Bomby','Rocky'].forEach(function(nm){
+      ['Firey','Leafy','Pencil','Puffball','Bow','Flower','Bubble','Blocky','Pen','Match','Ice Cube','Teardrop','Bomby','Rocky','Lightning','Fanny','Dora','Saw','Tennis Ball','Snowball','Book','Ruby'].forEach(function(nm){
         var A2 = makeFighter(ROSTER.find(function(r){ return r.name===nm; }), 400, groundY()-24, 0);
         A2.team=0; A2.controller='still'; A2.stocks=9; fighters[0] = A2; D.x = 550;
         A2.fsGlow = 900; fsTryFire(A2);
