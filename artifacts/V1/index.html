@@ -4006,7 +4006,7 @@ function ctfHideValid(team, x, y){
 function ctfPlaceFlag(fl, x, y){
   fl.st = 1; fl.car = -1; fl.x = x; fl.y = y; fl.hx = x; fl.hy = y; fl.fall = false; fl.cover = false;
   fl.cover = ctfCoverAt(fl.team, x, y);
-  fl.elev = null; if(CTF.live) for(const e of (CTF.live.elevs || [])) if(!e.mov && Math.abs(e.y - y) < 8 && x >= e.x && x <= e.x + e.w) fl.elev = e.i;   // on a lift car: it goes where the car goes
+  fl.elev = null; fl.pad = null; if(CTF.live) for(const e of (CTF.live.elevs || [])){ if(Math.abs(e.y - y) < 8 && x >= e.x && x <= e.x + e.w){ if(e.mov) fl.pad = e.i; else fl.elev = e.i; } }   // on a lift car it goes where the car goes; on a wheel's paddle or a ferry's deck it rides that (fl.pad)
   for(let i = 0; i < 8; i++) puff(x, y - 16, TEAM_COLORS[fl.team % TEAM_COLORS.length], 4);
 }
 const CTF_CAM_SPEED = 26;
@@ -4300,7 +4300,7 @@ function ctfStepWheels(L){
     wl.ids.forEach((id, q)=>{ const e = L.elevs[id], dx = e.x - old[q].x, dy = e.y - old[q].y, w = e.w; e.mvx = dx; e.mvy = dy;
       const on = (x, y)=> x > old[q].x - 6 && x < old[q].x + w + 6 && Math.abs(y - old[q].y) < 8;   // standing on this paddle (where it was a step ago)
       for(const f of fighters){ if(f.dead || f._jail != null || !f.onground) continue; if(on(f.x, f.y + f.r)){ f.x += dx; f.y += dy; f.vy = 0; } }
-      for(const fl of L.flags) if(fl.st === 3 && !fl.fall && on(fl.x, fl.y)){ fl.x += dx; fl.y += dy; }
+      for(const fl of L.flags){ if(fl.st === 3 && !fl.fall && on(fl.x, fl.y)){ fl.x += dx; fl.y += dy; } else if(fl.st === 1 && fl.pad === id){ fl.x += dx; fl.y += dy; fl.hx = fl.x; fl.hy = fl.y; } }   // (a flag hidden on a paddle rides it)
       for(const k of L.keys) if(k.st === 0 && !k.fall && on(k.x, k.y)){ k.x += dx; k.y += dy; } });
   }
 }
@@ -4314,7 +4314,7 @@ function ctfStepElevs(L){
       e.x += d; e.rect.x = e.x;
       const on = (x, y)=> x > x0 - 6 && x < x0 + e.w + 6 && Math.abs(y - e.y) < 8;
       for(const f of fighters){ if(f.dead || f._jail != null || !f.onground) continue; if(on(f.x, f.y + f.r)){ f.x += d; f.vy = 0; } }
-      for(const fl of L.flags) if(fl.st === 3 && !fl.fall && on(fl.x, fl.y)) fl.x += d;
+      for(const fl of L.flags){ if(fl.st === 3 && !fl.fall && on(fl.x, fl.y)) fl.x += d; else if(fl.st === 1 && fl.pad === e.i){ fl.x += d; fl.hx = fl.x; } }
       for(const k of L.keys) if(k.st === 0 && !k.fall && on(k.x, k.y)) k.x += d;
       if(e.x === target){ e.dir = -e.dir; e.pause = 150; }
       continue;
@@ -4610,6 +4610,7 @@ function ctfEditCheck(f, tool, kind, sh){
   const cost = CTF_COSTS[tool]; if((L.pts[f.idx] || 0) < cost) return 'points';
   const r = { x:sh.x + 3, y:sh.y + 3, w:sh.w - 6, h:sh.h - 6 };
   const structural = tool === 'plat' || tool === 'wall' || kind === 'trapdoor';
+  if(kind === 'trapdoor'){ const sy = ctfSurfaceBelow(sh.x + sh.w/2, sh.y + 20, 900); if(sy !== null && sy < sh.y + sh.h + 190) return 'floor'; }   // (a trapdoor on a floor opens onto the floor: it goes only over a drop of two rows or more, where the one who stands on it falls)
   for(const p of worldPlats){ if(p.x > r.x + r.w + 8 || p.x + p.w < r.x - 8) continue;
     if(structural){ if(ctfRectHit(sh, p, -2)) return 'blocked'; }
     else if(p.solid && ctfRectHit(r, p, 0)) return 'blocked'; }
@@ -4779,7 +4780,8 @@ function ctfEditMap(L, keepN){   // the map with the first keepN walls and platf
 // What cannot be reached in this graph: a flag (from the other side's home), a key (from both), the jail's door (from the prisoners' side).
 function ctfEditProblems(L, nav){
   const bad = [], at = (x, y)=>ctfNavNodeAt(nav, x, y, 10);
-  for(const fl of L.flags){ if(fl.st !== 1 || fl.elev != null) continue; const n = at(fl.x, fl.y); if(!n || !nav.reach[1 - fl.team][n.id]) bad.push('flag' + fl.id); }
+  for(const fl of L.flags){ if(fl.st !== 1 || fl.elev != null || fl.pad != null) continue; const n = at(fl.x, fl.y);   // (a flag on a mover, a lift or a paddle, is reached by riding it: the check does not know that, and does not judge it)
+ if(!n || !nav.reach[1 - fl.team][n.id]) bad.push('flag' + fl.id); }
   for(const k of L.keys){ const n = at(k.hx, k.hy); if(!n || !nav.reach[0][n.id] || !nav.reach[1][n.id]) bad.push('key' + k.i); }
   for(const j of L.jails){ const d = j.door, n = at(d.x + (j.face === 1 ? d.w + 50 : -50), d.y + d.h); if(!n || !nav.reach[1 - j.owner][n.id]) bad.push('jail' + j.owner); }
   return bad;

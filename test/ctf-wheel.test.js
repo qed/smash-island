@@ -111,4 +111,27 @@ describe('the mill wheel', () => {
     expect(Math.abs(out.x - ex.tx), 'put down where the way out leads').toBeLessThan(2);
     expect(out.x < M.WW/2, 'on the same side of the map').toBe(true);
   });
+
+  it('a flag hidden on a paddle rides it, and the end-of-hiding check does not call the place impossible', () => {
+    const { window: w } = loadMonolith(46);
+    start(w);
+    const id = J(w, `CTF.live.wheels[0].ids[0]`), fl = w.eval('CTF.live.flags[0].id');
+    const at = () => J(w, `(function(){ var e = CTF.live.elevs[${id}], f = CTF.live.flags[${fl}]; return { px:e.x + e.w/2, py:e.y, fx:f.x, fy:f.y, pad:f.pad, st:f.st }; })()`);
+    w.eval(`(function(){ var e = CTF.live.elevs[${id}], f = CTF.live.flags[${fl}]; ctfPlaceFlag(f, e.x + e.w/2, e.y); })()`);
+    expect(at().pad, 'locked to the paddle').toBe(id);
+    for (let i = 0; i < 200; i++) w.eval('ctfStepWheels(CTF.live)');
+    const r = at();
+    expect(Math.hypot(r.fx - r.px, r.fy - r.py), 'it went where the paddle went').toBeLessThan(2);
+    expect(J(w, `ctfEditProblems(CTF.live, { nodes:[], nb:{}, reach:[[], []] }).filter(function(b){ return b === 'flag${fl}'; })`), 'not impossible').toEqual([]);
+  });
+
+  it('a trapdoor goes only over a drop: on a floor it would open onto the floor', () => {
+    const { window: w } = loadMonolith(47);
+    start(w, 'castle');
+    const sp = J(w, `(function(){ var s = CTF.map.spots.filter(function(s){ return s.team===0 && s.y>1500 && s.x<8000; })[10]; return { x:s.x, y:s.y }; })()`), f = w.eval('fighters.filter(function(f){ return f.team === 0; })[1].idx');
+    w.eval(`CTF.live.phase = 'hide'; CTF.live.pts[${f}] = 100;`);
+    const chk = (y) => w.eval(`ctfEditCheck(fighters[${f}], 'trap', 'trapdoor', ctfEditShape('trap', 'trapdoor', ${sp.x}, ${y}))`);
+    expect(chk(sp.y - 60), 'a plank just over the floor (it would drop you 60 px onto it): no').toBe('floor');
+    expect([420, 540, 660, 780, 900, 1020].some(d => chk(sp.y - d) !== 'floor'), 'high over a drop: not refused for being on a floor').toBe(true);
+  });
 });
