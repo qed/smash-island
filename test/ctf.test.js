@@ -21,7 +21,7 @@ const put = (w, i, x, y) => w.eval(`(function(){ var f=fighters[${i}]; f.x=${x};
 const flagOf = (w, team, k = 0) => w.eval(`CTF.live.flags.filter(function(f){ return f.team===${team}; })[${k}].id`);
 // where things are on this map: a standing place on each side (the spawn of each home), the middle line, the floor in front of a jail's door
 const spawn = (w, t) => J(w, `{ x:CTF.map.homes[${t}].spawns[0].x, y:CTF.map.homes[${t}].spawns[0].y }`);
-const MID = 10080;   // the middle line of the castle (84 columns a side since the owner's 2026-10-15 redesign: about 15 screens wide and 4 tall; it was 110 columns, 13200)
+const MID = 13440;   // the middle line of the castle at medium size (84 columns a side and the frozen valley's 28: the owner, 2026-10-15, wants about 15 screens wide and a third area; it was 110 columns, 13200)
 const cellFloor = (w, owner) => { const j = J(w, `CTF.map.jails[${owner}]`); return j.door.y + j.door.h; };
 
 describe('capture the flag', () => {
@@ -33,7 +33,7 @@ describe('capture the flag', () => {
     expect(w.eval('CTF.live.phase')).toBe('hide');
     expect(w.eval('isBig()')).toBe(true);
     expect(w.eval('CAM_ZOOM'), 'the rooms are drawn closer').toBeGreaterThan(0.72);
-    expect(w.eval('WW'), 'the castle: 84 columns a side (was 110: the owner, 2026-10-15, wants about 15 screens wide)').toBe(20160);
+    expect(w.eval('WW'), 'the castle: 84 columns a side and the 28 of the frozen valley (was 110: the owner, 2026-10-15, wants about 15 screens wide and a third area)').toBe(26880);
   });
 
   it('Space puts your flag down, C says done, and the hiding phase ends when the human is done', () => {

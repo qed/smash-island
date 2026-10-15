@@ -2230,7 +2230,10 @@ const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, gre
 // ---------------------------------------------------------------------------------------------------------------
 const CTF_CELL = 120, CTF_COLS = 180, CTF_ROWS = 39, CTF_HALF = 90;
 // The grid being built: a map may be bigger than the standard 39 x 90 (size:{ rows, half }); it is written bottom-anchored, row 38 the bottom floor, new rows above are negative.
-const CTF_DIM = { rows:39, half:90, dr:0, ox:0, band:1 };
+const CTF_DIM = { rows:39, half:90, dr:0, ox:0, band:1, mx:0, mxAt:1e9 };
+// A map's columns, as its builder writes them, onto the grid: the annex (ox: columns added at the outer end, written in negative columns) and a MIDDLE MODULE (mx columns inserted at column mxAt, so every column from
+// there on moves right; the module itself is written in columns 1000 and up). Anything written to a column that does not exist at this size is dropped.
+function ctfCx(c){ const d = CTF_DIM; if(c >= 1000) return (c - 1000 < d.mx) ? d.ox + d.mxAt + (c - 1000) : -1; return d.ox + c + (c >= d.mxAt ? d.mx : 0); }
 // SCALE WITH THE PLAYER COUNT (the owner, 2026-10-15: "map size and details and rooms should scale by number of ppl"): a map that says bands:true is built in three sizes, small (2v2, 3v3), medium (4v4, 5v5) and
 // large (6v6 to 8v8). The core always; wings (g.wing(minBand, fn): rooms off the roads) from medium; the ANNEX (def.annex: columns added at the outer end, written in negative columns) for large.
 function ctfBandOf(count){ const n = Math.floor((count || 10)/2); return n <= 3 ? 0 : n <= 5 ? 1 : 2; }
@@ -2252,13 +2255,13 @@ function ctfGridNew(){
   const rows = []; for(let r=0;r<CTF_DIM.rows;r++) rows.push(new Array(CTF_DIM.half).fill('.'));
   const g = {
     rows,
-    put(r,c,s){ const rr = r + CTF_DIM.dr; for(let i=0;i<s.length;i++){ const cc=c+i+CTF_DIM.ox; if(rr>=0&&rr<CTF_DIM.rows&&cc>=0&&cc<CTF_DIM.half) rows[rr][cc]=s[i]; } return g; },
+    put(r,c,s){ const rr = r + CTF_DIM.dr; for(let i=0;i<s.length;i++){ const cc=ctfCx(c+i); if(rr>=0&&rr<CTF_DIM.rows&&cc>=0&&cc<CTF_DIM.half) rows[rr][cc]=s[i]; } return g; },
     fill(r,c0,c1,ch){ for(let c=c0;c<=c1;c++) g.put(r,c,ch); return g; },
     col(c,r0,r1,ch){ for(let r=r0;r<=r1;r++) g.put(r,c,ch); return g; },
     box(r0,c0,r1,c1,ch){ for(let r=r0;r<=r1;r++) g.fill(r,c0,c1,ch); return g; },
     gap(r,c0,c1){ return g.fill(r,c0,c1,'.'); },
-    at(r,c){ const rr = r + CTF_DIM.dr; c += CTF_DIM.ox; return (rr>=0&&rr<CTF_DIM.rows&&c>=0&&c<CTF_DIM.half) ? rows[rr][c] : '#'; },
-    band: CTF_DIM.band, ox: CTF_DIM.ox,
+    at(r,c){ const rr = r + CTF_DIM.dr; c = ctfCx(c); return (rr>=0&&rr<CTF_DIM.rows&&c>=0&&c<CTF_DIM.half) ? rows[rr][c] : '#'; },
+    band: CTF_DIM.band, ox: CTF_DIM.ox, mx: CTF_DIM.mx, cx: ctfCx,
     wing(minBand, fn){ if(g.band >= minBand) fn(); return g; },   // rooms and wings that only a bigger team's map has
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
     fields: [], decor: [], front: [], zones: [], elevs: [], backs: [],
@@ -2296,7 +2299,7 @@ function ctfGridNew(){
       const ys = []; for(let i = 0; i < n; i++) ys.push(Math.round((rA + (rB - rA)*(i + 0.5)/n)*CTF_CELL));
       const dr = CTF_DIM.dr, rowOf = y=>Math.floor((y - 1)/CTF_CELL);
       for(let k = 0; k < cols; k++){
-        const c = c0 + k, cx = c + CTF_DIM.ox, ya = ys[2*k], yb = ys[2*k + 1], ra = rowOf(ya), rb = rowOf(yb), rMax = Math.max(ra, rb), rMin = Math.min(ra, rb);
+        const c = c0 + k, cx = ctfCx(c), ya = ys[2*k], yb = ys[2*k + 1], ra = rowOf(ya), rb = rowOf(yb), rMax = Math.max(ra, rb), rMin = Math.min(ra, rb);
         let up = h; if(o.rough && cellJitter(c, Math.round(rA), 5) > 0.74) up++;
         if(o.cut){ const lo = rMin - up + 1 + dr, hi = rMax + dr; g.ramps = g.ramps.filter(rp=>!(rp.x >= cx*CTF_CELL && rp.x < (cx + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= lo && Math.floor((rp.y + 1)/CTF_CELL) <= hi)); }   // o.cut: the steps of an earlier slope inside this cut are taken out (a tunnel through a hill's side)
         g.box(rMin - up + 1, c, rMax, c, '.');
@@ -2312,10 +2315,10 @@ function ctfGridNew(){
     decoDefault(kinds){ g.decoBase = kinds; return g; },
     lattice(o){ g.fields.push(o); return g; },
   };
-  { const ox = CTF_DIM.ox, wc = (name, f)=>{ const o = g[name]; g[name] = function(...a){ if(f(a) === false) return g; return o.apply(g, a); }; };
-    const cols = (i0, i1)=>a=>{ a[i0] += ox; if(i1 != null){ a[i1] += ox; if(a[i1] < 0) return false; if(a[i0] < 0) a[i0] = 0; } else if(a[i0] < 0) return false; };
+  { const wc = (name, f)=>{ const o = g[name]; g[name] = function(...a){ if(f(a) === false) return g; return o.apply(g, a); }; };
+    const cols = (i0, i1)=>a=>{ a[i0] = ctfCx(a[i0]); if(i1 != null){ a[i1] = ctfCx(a[i1]); if(a[i1] < 0) return false; if(a[i0] < 0) a[i0] = 0; } else if(a[i0] < 0) return false; };
     wc('zone', cols(1, 3)); wc('back', cols(0, 2)); wc('skin', cols(0, 2)); wc('secret', cols(0, 2)); wc('keepClear', cols(0, 2)); wc('decoSet', cols(0, 2)); wc('elev', cols(0));
-    wc('deco', a=>{ a[1] += ox; if(a[1] + a[3] <= 0) return false; }); }
+    wc('deco', a=>{ a[1] = ctfCx(a[1]); if(a[1] + a[3] <= 0) return false; }); }
   const dr = CTF_DIM.dr; g.dr = dr;
   if(dr){ const w = (name, f)=>{ const o = g[name]; g[name] = function(...a){ f(a); return o.apply(g, a); }; };
     w('zone', a=>{ a[2] += dr; a[4] += dr; }); w('deco', a=>{ a[2] += dr; }); w('back', a=>{ a[1] += dr; a[3] += dr; }); w('skin', a=>{ a[1] += dr; a[3] += dr; }); w('secret', a=>{ a[1] += dr; a[3] += dr; });
@@ -2363,9 +2366,9 @@ function ctfMapMerge(A, B, def, swap, id){
 }
 function ctfMapBuildOne(id, build, band){
   const def = CTF_MAPS[id]; if(!def) return null;
-  const size = def.size || {}; CTF_DIM.rows = size.rows || CTF_ROWS; CTF_DIM.band = band == null ? 1 : band; CTF_DIM.ox = (def.bands && def.annex) ? def.annex[CTF_DIM.band] : 0; CTF_DIM.half = (size.half || CTF_HALF) + CTF_DIM.ox; CTF_DIM.dr = CTF_DIM.rows - CTF_ROWS;
+  const size = def.size || {}; CTF_DIM.rows = size.rows || CTF_ROWS; CTF_DIM.band = band == null ? 1 : band; CTF_DIM.ox = (def.bands && def.annex) ? def.annex[CTF_DIM.band] : 0; CTF_DIM.mx = (def.bands && def.mid) ? def.mid[CTF_DIM.band] : 0; CTF_DIM.mxAt = def.midAt || 1e9; CTF_DIM.half = (size.half || CTF_HALF) + CTF_DIM.ox + CTF_DIM.mx; CTF_DIM.dr = CTF_DIM.rows - CTF_ROWS;
   const g = ctfGridNew(); build(g);
-  const dr = CTF_DIM.dr; if(g.info && g.info.supers) for(const sj of g.info.supers){ sj.pad.r += dr; sj.ledge.r += dr; sj.pad.c += CTF_DIM.ox; sj.ledge.c0 += CTF_DIM.ox; sj.ledge.c1 += CTF_DIM.ox; }
+  const dr = CTF_DIM.dr; if(g.info && g.info.supers) for(const sj of g.info.supers){ sj.pad.r += dr; sj.ledge.r += dr; sj.pad.c = ctfCx(sj.pad.c); sj.ledge.c0 = ctfCx(sj.ledge.c0); sj.ledge.c1 = ctfCx(sj.ledge.c1); }
   const WW = 2*CTF_DIM.half*CTF_CELL, WH = CTF_DIM.rows*CTF_CELL, HALF = WW/2;
   const mx = (x, w)=> WW - x - (w||0);
   const solids = new Set(), hops = new Set(), doorCells = {}, jailCells = new Set();
@@ -2758,7 +2761,7 @@ function ctfBaseKit(g, o){
 CTF_MAPS.castle = {
   name:'Castle Yoyleberry',
   size:{ rows:28, half:84 },
-  bands:true, annex:[0, 0, 24],   // small and medium teams: the castle (small without its wings); large: and an outer ward behind the home
+  bands:true, mid:[12, 28, 48], midAt:50,   // the THIRD AREA, the frozen valley, is a module of this many columns put in at column 50 (between the gorge and the mountain): small a reduced one, medium the valley, large a full village and lake
   living:{ weather:['clear', 'snow', 'clear', 'fog'], night:true, critters:{ birds:7, bats:6, mice:16, fish:5 } },
   theme:{ neutral:30, pal:{ rock:'#8d96ab', wood:'#a8773f', snow:'#f6f9ff', leaf:'#3a8f58', metal:'#7a8aa0' }, sky:['#79c8f4','#eaf7ff'], far:['#c7d6f2','#a9ddb9'], bg:'castle', pat:'brick', back:'#b8a89a', backLine:'rgba(80,52,40,0.22)', wain:'#9c8878', trim:'#d8c8b6',
           solid:{ fill:'#a4a3b6', line:'#7c7b90', hi:'#c8c7da', edge:'#262532' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' },
@@ -2768,11 +2771,12 @@ CTF_MAPS.castle = {
     const A = (c0, r0, c1, r1)=>g.box(Y(r0), c0, Y(r1), c1, '.'), S = (c0, r0, c1, r1)=>g.box(Y(r0), c0, Y(r1), c1, '#'), H = (r, c0, c1)=>g.fill(Y(r), c0, c1, '=');
     const P = (r, c, s)=>g.put(Y(r), c, s), SL = (c0, c1, rA, rB, h, o)=>g.slope(c0, c1, Y(rA), Y(rB), h, o && o.fill != null ? Object.assign({}, o, { fill:Y(o.fill) }) : o);
     const BK = (c0, r0, c1, r1, k)=>g.back(c0, Y(r0), c1, Y(r1), k), DC = (k, c, r, w, h, o)=>g.deco(k, c, Y(r), w, h, o || {}), ZN = (t, c0, r0, c1, r1, s, d)=>g.zone(t, c0, Y(r0), c1, Y(r1), s, d);
+    const SK = (c0, r0, c1, r1, kind)=>g.skin(c0, Y(r0), c1, Y(r1), kind);
     const STALK = (c, rb, rt)=>g.stalk(c, Y(rb), Y(rt)), SHAFT = (c, rb, rt)=>g.shaft(c, Y(rb), Y(rt));
     // ---- the mass: the castle (cols 0-55, roof at row 9) and the mountain (56-83): a gentle flank up to a plateau on the middle line ----
     S(0, 9, 55, 27);
     SL(56, 79, 9, 1, 3, { fill:27 }); S(80, 1, D, 27);
-    BK(0, 11, 55, 26, 'brick');
+    BK(0, 11, 49, 26, 'brick'); BK(50, 11, 55, 26, 'brick');   // (never one back across the valley's columns: the module is open sky)
 
     // ---- 1. THE HOME HALL (cols 1-15, rows 11-16): a barracks balcony over the floor, a stair up through the roof, a hole down to the jail corridor ----
     A(1, 11, 15, 16); H(14, 1, 12); P(16, 1, 'PP'); P(16, 3, 'HHH'); P(13, 2, 'HHHHH'); P(13, 7, 'U'); P(16, 7, 'C'); P(16, 9, 'C');
@@ -2802,7 +2806,7 @@ CTF_MAPS.castle = {
     SL(42, 55, 22, 24, 3, { rough:true });                                                              // from the landing, down toward the heart
     A(39, 22, 40, 23); STALK(39, 26, 22);                                                               // a stair of hops from the low road up to the landing (a loop)
     A(47, 18, 48, 19); STALK(47, 22, 18);                                                               // and from the main road up through the gorge's floor
-    BK(18, 19, 55, 26, 'dirt'); DC('mushroom', 30, 25, 2, 2); DC('torch', 44, 21, 1, 2);
+    BK(18, 19, 49, 26, 'dirt'); BK(50, 19, 55, 26, 'dirt'); DC('mushroom', 30, 25, 2, 2); DC('torch', 44, 21, 1, 2);
 
     // ---- 5. THE UPPER ROAD (T1) and the GORGE (cols 43-49): a cut open to the sky, ledges up its walls, a pool at the bottom, tunnels out of its foot ----
     SL(42, 42, 17, 17, 3);                                                                              // the upper road leaves the balcony
@@ -2813,7 +2817,7 @@ CTF_MAPS.castle = {
     SL(50, 60, 18, 22, 3, { rough:true });                                                              // and a ramp down into the heart
     A(52, 9, 53, 15);                                                                                    // a well from the roof: a long drop onto the upper road
     ZN('water', 43, 16, 46, 17, 1);
-    BK(43, 9, 49, 17, 'sky'); BK(42, 13, 61, 17, 'dirt');
+    BK(43, 9, 49, 17, 'sky'); BK(42, 13, 42, 17, 'dirt'); BK(50, 13, 61, 17, 'dirt');
     DC('falls', 44, 9, 3, 8); DC('torch', 52, 14, 1, 2);
 
     // ---- 6. THE MOUNTAIN: the vault (doors at 62 and 71), the heart cave under it, the upper gallery, the peak chamber ----
@@ -2874,17 +2878,31 @@ CTF_MAPS.castle = {
       A(c0, r0, c0 + 2, r1); STALK(c0, rb, rt);
     }
     });
-    // ---- 12. THE OUTER WARD (large teams only: the annex, columns -24 to -1 behind the home keep): a tall hall with a ramp floor falling west to a deep chamber, a watchtower on the roof, more props ----
-    g.wing(2, ()=>{
-      S(-24, 9, -1, 27);
-      A(-22, 12, -1, 16); A(0, 14, 0, 16);                                                                // the hall, and a doorway through the keep's west wall into it
-      SL(-21, -6, 21, 17, 3);                                                                             // its floor falls west, gently, down to the chamber
-      A(-23, 22, -16, 26); g.ramps = g.ramps.filter(rp=>!(rp.x >= (-22 + g.ox)*CTF_CELL && rp.x < (-19 + g.ox)*CTF_CELL && rp.y > 2400 && rp.y < 2700)); A(-22, 21, -20, 21); STALK(-22, 26, 21);                                        // the deep chamber under the ramp's foot, a hole and a stair of hops
-      H(14, -20, -16); H(13, -12, -8); BK(-22, 12, -1, 16, 'brick'); BK(-23, 22, -16, 26, 'dirt'); DC('torch', -10, 12, 1, 3); DC('hang', -18, 12, 2, 3);
-      S(-14, 2, -9, 8); A(-13, 3, -10, 8); A(-14, 7, -14, 8); SHAFT(-13, 8, 3);   // a watchtower: a door at its foot, a shaft of hops to the top
-      P(26, -20, 'W'); P(26, -18, 'R'); P(16, -6, 'A'); P(16, -3, 'N');
-    });
-
+    // ---- 12. THE FROZEN VALLEY (the owner, 2026-10-15: "a big new shared third zone ... a frozen lake and a snowy village around and under the mountain"): the module put in at column 50, so it lies between the
+    // gorge and the mountain and BOTH teams cross it. An ice lake on top (the gorge's floor goes on across it), a village on the ice (huts with a door each end), a bell tower, a sled ramp down from the
+    // gorge's ledges, a bridge over it all at the roof's height; under the ice the ICE CAVE in two levels: the upper gallery is the main road's way on and the lower cavern the low road's, joined by holes and
+    // stairs of hops, and with holes in the ice to drop through. Small teams get the short valley (12 columns) with one hut, medium the village and tower (28), large a longer ramp and two huts (48).
+    { const M = g.mx, m = o=>1000 + o, L = M - 1;
+      const cut = (c0, c1, y0, y1)=>{ c0 = g.cx(c0); c1 = g.cx(c1); g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c1 + 1)*CTF_CELL && rp.y > y0 && rp.y < y1)); };
+      S(m(0), 18, m(L), 27);                                                                              // the ice, and the world's floor under it
+      A(m(0), 20, m(L), 22); SL(m(0), m(L), 23.1, 23.2, 3);                                              // the upper gallery: its floor a slab of ice
+      A(m(0), 24, m(L), 26); BK(m(0), 20, m(L), 26, 'dirt');                                             // the lower cavern
+      ZN('ice', m(0), 16, m(L), 17, 1); ZN('ice', m(0), 21, m(L), 22, 1);
+      SK(m(0), 18, m(L), 19, 'ice'); SK(m(0), 23, m(L), 23, 'ice');                                  // the lake and the gallery's floor look like ice                                 // slippery: the lake's surface and the gallery floor
+      H(9, m(0), m(L));                                                                                   // a bridge at the roof's height from the gorge's to the mountain's
+      for(const o of (M > 12 ? [3, L - 5] : [3])){ A(m(o), 18, m(o + 2), 19); STALK(m(o), 23, 18); }      // holes in the ice into the gallery, and the hops back up
+      for(const o of (M > 12 ? [6, L - 8] : [4])){ cut(m(o), m(o + 2), 2700, 2900); STALK(m(o), 26, 23); }  // holes in the gallery floor into the cavern, and the hops back up
+      // a hut: a roof of snow, a door at each end (the lake's road goes through), a stair of hops up its side
+      const hut = (o0, w)=>{ S(m(o0), 13, m(o0 + w - 1), 17); A(m(o0 + 1), 14, m(o0 + w - 2), 17); A(m(o0), 16, m(o0), 17); A(m(o0 + w - 1), 16, m(o0 + w - 1), 17); SK(m(o0), 13, m(o0 + w - 1), 13, 'snowcap'); BK(m(o0 + 1), 14, m(o0 + w - 2), 17, 'wood'); STALK(m(o0 + w), 17, 13); DC('lantern', m(o0 + 2), 14, 1, 2); };
+      // a bell tower: a hollow tower, a door at each foot, a shaft of hops up the middle to the deck, a lantern for the bell
+      const tower = (b)=>{ S(m(b), 4, m(b + 5), 17); A(m(b + 1), 5, m(b + 4), 17); A(m(b), 16, m(b), 17); A(m(b + 5), 16, m(b + 5), 17); SHAFT(m(b + 2), 17, 5); H(4, m(b - 1), m(b + 6)); SK(m(b), 4, m(b + 5), 4, 'snowcap'); BK(m(b + 1), 5, m(b + 4), 17, 'brick'); DC('lantern', m(b + 2), 5, 2, 2); DC('window', m(b + 1), 8, 1, 2); };
+      // the sled ramp first (a long slab of snow from the gorge's ledges down to the ice), then what stands on the ice beyond its foot
+      if(M <= 12){ SL(m(0), m(9), 14, 17, 3); }
+      else if(M <= 28){ SL(m(0), m(9), 13, 17, 3); hut(10, 6); tower(M - 7); }
+      else { SL(m(0), m(16), 11, 17, 3); hut(18, 7); hut(29, 6); tower(M - 7); }
+      // props: the village, the ice, the cave
+      DC('torch', m(2), 21, 1, 2); DC('torch', m(M - 3), 21, 1, 2); DC('crystal', m(Math.floor(M/2)), 24, 3, 3);
+    }
     // ---- keys, boosts ----
     P(26, 50, 'a'); P(26, 46, 'g'); P(26, 44, 'h'); P(26, 69, 'u');
     g.decoDefault(['armor', 'urn', 'chest', 'hay', 'curtain', 'crate']);
@@ -2893,9 +2911,10 @@ CTF_MAPS.castle = {
 
     // ---- hiding places: props scattered along every flat floor and ledge, a kind to suit the place (nothing on a slope, nothing in the home or the jail) ----
     { const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {};
-      const kindsAt = (r, c)=> c >= 56 ? (r < 10 ? ['n', 't', 'K'] : ['G', 'K', 'Q', 'R']) : (r >= 18 && c >= 18) ? ['R', 'G', 'K', 'W', 'M', 'Q'] : ['C', 'W', 'F', 'A', 'N', 'T', 'U', 'B'];
-      for(let r = 0; r < 27; r++) for(let c = Math.min(1, -g.ox); c <= D; c++){
-        if(rampCell.has(r + '.' + (c + g.ox)) || (c >= 0 && c < 17 && r >= 11)) continue;
+      const kindsAt = (r, c)=> c >= 1000 ? (r >= 20 ? ['G', 'K', 'Q', 'R'] : ['n', 'D', 'Y', 'W', 'C', 'K']) : c >= 56 ? (r < 10 ? ['n', 't', 'K'] : ['G', 'K', 'Q', 'R']) : (r >= 18 && c >= 18) ? ['R', 'G', 'K', 'W', 'M', 'Q'] : ['C', 'W', 'F', 'A', 'N', 'T', 'U', 'B'];
+      const cols = []; for(let c = Math.min(1, -g.ox); c <= D; c++) cols.push(c); for(let o = 0; o < g.mx; o++) cols.push(1000 + o);
+      for(let r = 0; r < 27; r++) for(const c of cols){
+        if(rampCell.has(r + '.' + g.cx(c)) || (c >= 0 && c < 17 && r >= 11) || (c >= 43 && c <= 49 && r >= 9 && r <= 17)) continue;   // (no props on the gorge's ledges)
         const here = g.at(Y(r), c), below = g.at(Y(r) + 1, c);
         if(here !== '.' || (below !== '#' && below !== '=')) continue;
         if(r < 9 && c < 56) continue;
@@ -3437,12 +3456,12 @@ function ctfKit28(g){
   k.BK = (c0, r0, c1, r1, kind)=>g.back(c0, Y(r0), c1, Y(r1), kind); k.DC = (kind, c, r, w, h, o)=>g.deco(kind, c, Y(r), w, h, o || {}); k.ZN = (t, c0, r0, c1, r1, st, d)=>g.zone(t, c0, Y(r0), c1, Y(r1), st, d);
   k.STALK = (c, rb, rt)=>g.stalk(c, Y(rb), Y(rt)); k.SHAFT = (c, rb, rt)=>g.shaft(c, Y(rb), Y(rt));
   // cut the steps of earlier slopes out of a box of cells (rows, columns), so a hole can go through a slope
-  k.CUT = (c0, r0, c1, r1)=>{ const dr = CTF_DIM.dr; g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c1 + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= r0 + dr + 11 && Math.floor((rp.y + 1)/CTF_CELL) <= r1 + dr + 11)); };
+  k.CUT = (c0, r0, c1, r1)=>{ const dr = CTF_DIM.dr; c0 += g.ox; c1 += g.ox; g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c1 + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= r0 + dr + 11 && Math.floor((rp.y + 1)/CTF_CELL) <= r1 + dr + 11)); };
   // props along every flat floor and ledge, a kind to suit the place; kindsAt(r, c) -> a list; skip(r, c) -> true to leave the place bare
   k.scatter = (kindsAt, prob, gap, skip, salt)=>{
     const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {};
-    for(let r = 0; r < 27; r++) for(let c = 1; c <= D; c++){
-      if(rampCell.has(r + '.' + c) || (skip && skip(r, c))) continue;
+    for(let r = 0; r < 27; r++) for(let c = Math.min(1, -g.ox); c <= D; c++){
+      if(rampCell.has(r + '.' + (c + g.ox)) || (skip && skip(r, c))) continue;
       const here = g.at(Y(r), c), below = g.at(Y(r) + 1, c);
       if(here !== '.' || (below !== '#' && below !== '=')) continue;
       if(cellJitter(c, r, salt || 41) > prob || (last[r] != null && c - last[r] < gap)) continue;
@@ -3476,6 +3495,7 @@ function oakHeart(k, g){
 CTF_MAPS.oak = {
   name:'The Old Oak and the Meadow',
   size:{ rows:28, half:84 },
+  bands:true, annex:[0, 0, 24],   // small: the core; medium: and the wings; large: and an annex behind each home
   asym:{ value:[0.64, 0.36], icons:['fort', 'run'], names:['Fortress', 'Meadow'] },
   beta:true,   // pickable by name; Random leaves it out until its CPU-only probe passes
   living:{ weather:['clear', 'rain', 'clear', 'fog'], night:true, critters:{ birds:8, bats:5, mice:14, fish:5 } },
@@ -3503,14 +3523,19 @@ CTF_MAPS.oak = {
     A(52, 9, 54, 13); CUT(52, 8, 54, 10); STALK(52, 17, 9);                                             // ...and one from its middle up through the limb to the open air
     // the VAULT OF SEEDS (doors at cols 27 and 36) above the trunk stair, a branch of the hall's own corridor; its east corridor drops into the heartwood
     A(28, 9, 35, 12); g.col(27, Y(11), Y(12), '1'); g.col(36, Y(11), Y(12), '1'); P(12, 30, 'N'); P(12, 33, 'T'); P(12, 29, 'u'); BK(28, 9, 35, 12, 'brick');
-    A(16, 11, 26, 12); STALK(24, 15, 13); A(37, 11, 43, 12); A(42, 13, 43, 13);
+    A(16, 11, 26, 12); STALK(24, 15, 13); g.wing(1, ()=>{ A(37, 11, 43, 12); A(42, 13, 43, 13); });   // (the vault's east corridor, dropping into the heartwood: a wing)
     P(26, 45, 'a');
     H(19, 62, 63); g.elev(62, 2, Y(19), Y(27));                                                       // a lift from the floor to the upper stair
     ZN('dark', 41, 18, 62, 26);
     // props everywhere in a fortress: roots, stumps, logs, ferns
     oakHeart(k, g);
-    k.scatter((r, c)=>(r > 13 ? ['I', 'O', 'V', 'K', 'G', 'W'] : ['I', 'O', 'V']), 0.9, 3, (r, c)=>(c < 17 && r >= 9 && r <= 20) || (c >= 6 && c <= 10 && r >= 12), 41);
-    H(4, 46, 49); H(3, 52, 55); H(4, 58, 61); H(3, 64, 67);                                             // the canopy: ledges over the limb, a third way to the middle (it ends over the bridge)
+    k.scatter((r, c)=>(r > 13 ? ['I', 'O', 'V', 'K', 'G', 'W'] : ['I', 'O', 'V']), [0.5, 0.9, 0.95][g.band], 3, (r, c)=>(c < 17 && r >= 9 && r <= 20) || (c >= 6 && c <= 10 && r >= 12), 41);
+    g.wing(1, ()=>{ H(4, 46, 49); H(3, 52, 55); H(4, 58, 61); H(3, 64, 67); });                          // the canopy: ledges over the limb, a third way to the middle (a wing)
+    g.wing(2, ()=>{   // THE ROOT CELLARS (large teams): behind the home, a hollow branch hall level with its floor, a long ramp tunnel falling west, a deep cellar under it, ledges in the leaves
+      S(-24, 6, -1, 27); A(-22, 9, -1, 13); A(0, 11, 0, 13); A(-23, 21, -12, 26); SL(-23, -8, 20, 14, 3); BK(-22, 9, -1, 13, 'wood'); BK(-23, 21, -12, 26, 'dirt');
+      g.ramps = g.ramps.filter(rp=>!(rp.x >= (-23 + g.ox)*CTF_CELL && rp.x < (-20 + g.ox)*CTF_CELL && rp.y > 2300 && rp.y < 2600)); A(-23, 20, -21, 20); STALK(-23, 26, 20);
+      H(3, -20, -16); H(2, -12, -8); H(4, -6, -2); P(13, -4, 'I'); P(13, -2, 'O'); P(26, -20, 'I'); P(26, -17, 'K'); DC('lantern', -12, 9, 2, 2);
+    });
     P(13, 12, 'h');
     g.info = info; return info;
   },
@@ -3530,16 +3555,21 @@ CTF_MAPS.oak = {
     S(51, 9, 54, 16); A(52, 10, 53, 16); A(51, 15, 51, 16); SHAFT(52, 16, 10); H(9, 48, 57); P(8, 56, 'C'); DC('prop', 49, 5, 6, 4);
     // BURROWS under the meadow: a long tunnel from the cellar corridor to the cave under the bowl, and a rabbit hole from the hill
     A(31, 24, 57, 26); BK(31, 24, 57, 26, 'dirt');
-    CUT(40, 18, 42, 21); A(40, 18, 42, 23); STALK(40, 26, 18);
+    g.wing(1, ()=>{ CUT(40, 18, 42, 21); A(40, 18, 42, 23); STALK(40, 26, 18); });                       // a rabbit hole from the hill into the burrow (a wing)
     // the GRANARY (doors at cols 2 and 12) behind the barn: a hut on the flat, a locked door each end; its key lies out on the meadow
     S(2, 14, 12, 17); S(2, 18, 2, 19); S(12, 18, 12, 19); A(3, 18, 11, 21); g.col(2, Y(20), Y(21), '1'); g.col(12, Y(20), Y(21), '1'); P(21, 5, 'T'); P(21, 8, 'N'); P(21, 10, 'u'); BK(3, 18, 11, 21, 'wood');
     P(21, 30, 'a'); P(21, 32, 'h');
     // wind at the back, mushrooms to bounce on, a field of props (fewer, in the open)
     ZN('wind', 28, 8, 65, 17, 1, 1); ZN('spring', 60, 14, 61, 16, 1); ZN('float', 36, 0, 48, 8, 1);
-    H(12, 36, 40); H(10, 42, 46); H(11, 58, 61); H(12, 63, 65);                                         // ledges in the air over the hills: from the windmill's deck on to the rim (a third way)
+    g.wing(1, ()=>{ H(12, 36, 40); H(10, 42, 46); H(11, 58, 61); H(12, 63, 65); });                      // ledges in the air over the hills: from the windmill's deck on to the rim (a third way: a wing)
+    g.wing(2, ()=>{   // THE FARMYARD (large teams): beyond the granary, flat ground, a silo with a shaft up its middle, a second barn with a door each end, a root cellar under the yard
+      S(-24, 22, -1, 27); S(-21, 14, -15, 21); A(-20, 15, -16, 21); A(-21, 20, -21, 21); A(-15, 20, -15, 21); SHAFT(-19, 21, 15); H(14, -22, -14); P(13, -18, 'C');
+      S(-12, 18, -3, 21); A(-11, 19, -4, 21); A(-12, 20, -12, 21); A(-3, 20, -3, 21); H(19, -10, -5); BK(-11, 19, -4, 21, 'wood');
+      A(-22, 24, -8, 26); A(-14, 22, -13, 23); SHAFT(-14, 26, 22); BK(-22, 24, -8, 26, 'dirt'); P(26, -20, 'W'); P(26, -16, 'R'); P(26, -10, 'K'); P(21, -8, 'Y'); P(21, -6, 'Y');
+    });
     DC('cloud', 20, 3, 4, 2); DC('cloud', 46, 1, 5, 2); DC('hay', 5, 19, 3, 3);
     oakHeart(k, g);
-    k.scatter((r, c)=>(r < 22 ? ['Y', 'B', 'K', 'O', 'W'] : ['R', 'K', 'G', 'W']), 0.85, 3, (r, c)=>(c >= 14 && c <= 27 && r >= 16 && r <= 26) || (c >= 21 && c <= 31 && r >= 24) || (c >= 2 && c <= 27 && r <= 17), 41);
+    k.scatter((r, c)=>(r < 22 ? ['Y', 'B', 'K', 'O', 'W'] : ['R', 'K', 'G', 'W']), [0.5, 0.85, 0.9][g.band], 3, (r, c)=>(c >= 14 && c <= 27 && r >= 16 && r <= 26) || (c >= 21 && c <= 31 && r >= 24) || (c >= 2 && c <= 27 && r <= 17), 41);
     g.info = info; return info;
   },
 };
@@ -6454,7 +6484,7 @@ function ctfNavProbe(nav, n){
   // (a place a few steps of a slope away that can be WALKED to is never jumped to: the jump to it lands a step off, and the bot counts it a failed move)
   let walkSet = null;
   const walkable = id=>{ if(!walkSet){ walkSet = new Set(); let fr = [n.id]; for(let d = 0; d < 14 && fr.length; d++){ const nx = []; for(const i of fr) for(const e of nav.nodes[i].edges) if(e.kind === 'walk' && !e.doors.length && !walkSet.has(e.to) && e.to !== n.id){ walkSet.add(e.to); nx.push(e.to); } fr = nx; } } return walkSet.has(id); };
-  const add = e=>{ const T2 = nav.nodes[e.to]; if(T2.p && T2.p.ramp && Math.abs(T2.y - n.y) < 90 && walkable(e.to)) return; const k = e.to + (e.prof || ''); (found[k] = found[k] || []).push(e); };
+  const add = e=>{ const T2 = nav.nodes[e.to]; if(T2.p && (T2.p.ramp || T2.p.step) && Math.abs(T2.y - n.y) < 90 && walkable(e.to)) return; const k = e.to + (e.prof || ''); (found[k] = found[k] || []).push(e); };
   const PR = { c:ctfNavParams(false), f:ctfNavParams(true) }, PROFS = CTF_NAV_PROFILES;   // a carrier's numbers and a free fighter's: every move is planned on each (a free fighter is faster and higher, and overshoots what a carrier needs)
   // takeoff spots: a coarse set along the floor (about every 250 px), and a fine one (every 70 px) round the foot of every place a jump could aim at (a ledge a few rows up, a gap across): a climb of one row
   // only just works from the right spot, and the right spot is near the target

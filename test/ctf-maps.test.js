@@ -5,7 +5,7 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // a jail with its no-go zone clear of the spawns, doors and keys, a lift), and the CPU's graph of it says every hiding place, key, boost, pad and the jail's door can be reached from
 // home, with only the vaults behind their locked doors.
 
-const MAPS = ['castle', 'castle.s', 'castle.l', 'mines', 'factory', 'forest', 'sky', 'oak'];   // (`.s` and `.l`: the small and the large build of a map with bands; the plain name is the medium one, 4v4 and 5v5)
+const MAPS = ['castle', 'castle.s', 'castle.l', 'mines', 'factory', 'forest', 'sky', 'oak', 'oak.s', 'oak.l'];   // (`.s` and `.l`: the small and the large build of a map with bands; the plain name is the medium one, 4v4 and 5v5)
 const baseOf = (id) => id.replace(/[.].*$/, ''), bandOf = (id) => id.endsWith('.s') ? 0 : id.endsWith('.l') ? 2 : 1;
 const ASYM = { oak: true };   // an asymmetric map (two different halves, the bid chooses the sides): not its own mirror; every check is made for both sides
 
@@ -28,7 +28,7 @@ for (const id of MAPS) {
         return JSON.stringify(out);
       })()`));
       // each map's world width: the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side); then 2026-10-15: "about 15 screens wide and 4 tall", "some maps could be small with good spots" (castle v4: 84 columns a side, 28 rows); the others are 108 a side now
-      expect(r.WW).toBe({ castle: 20160, mines: 25920, factory: 25920, forest: 25920, sky: 25920, oak: 20160, 'castle.s': 20160, 'castle.l': 25920 }[id]);
+      expect(r.WW).toBe({ castle: 26880, mines: 25920, factory: 25920, forest: 25920, sky: 25920, oak: 20160, 'oak.s': 20160, 'oak.l': 25920, 'castle.s': 23040, 'castle.l': 31680 }[id]);
       if (!ASYM[baseOf(id)]) expect(r.mirrored, 'the right half is the left half turned over').toBe(true);   // (an asymmetric map is two halves, each its own)
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
@@ -37,7 +37,7 @@ for (const id of MAPS) {
       expect(r.doors, 'a vault with its doors').toBeGreaterThanOrEqual(4);
       expect(r.keys).toBeGreaterThanOrEqual(2);
       expect(r.elevs, 'a lift a side').toBeGreaterThanOrEqual(2);
-      expect(r.spots, 'places to hide (a small team's map is compact: at least 10 a fighter of its biggest team, the owner 2026-10-15 "details and rooms should scale by number of ppl")').toBeGreaterThanOrEqual(bandOf(id) === 0 ? 60 : 80);
+      expect(r.spots, 'places to hide (a small team map is compact: fewer, the owner 2026-10-15: details and rooms should scale by number of ppl)').toBeGreaterThanOrEqual(bandOf(id) === 0 ? 60 : 80);
       expect(r.coverKinds, 'a wide choice of cover').toBeGreaterThanOrEqual(6);
       expect(r.zoneKinds, 'areas that do things').toBeGreaterThanOrEqual(3);
       expect(r.backKinds, 'more than one wall behind the rooms').toBeGreaterThanOrEqual(3);
