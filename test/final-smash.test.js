@@ -1,0 +1,202 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { bootMonolith } from './helpers/smash-golden.js';
+import { loadMonolith } from './helpers/load-monolith.js';
+
+// FINAL SMASH BALLS (the owner, 2026-10-14, "pipis"): a rare Smash Ball floats about a normal match; whoever breaks it glows and fires
+// their Final Smash ONCE with the finisher input (V + C). Direct checks only: the ball breaks and grants the glow; V + C fires it once;
+// the default Final Smash lands on a foe in its drawn circle and misses one outside it; the ball is not in Capture the Flag, RUNNING!,
+// boss fights or with items off; and the online snapshot carries the ball and the glow.
+
+let W;
+beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+
+// A (Firey) and D (Pen) on a flat floor, D `dx` px in front of A. `body` runs inside with A and D in scope.
+const arenaIn = (win, dx, body, { pct = 0, a = 'Firey' } = {}) => win.eval(`(function(){
+  SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=2; SETTINGS.smashBalls=true; running=true;
+  RACE.active=false; ONEFIGHT.active=false; COBSFIGHT.active=false; TESTMODE.active=false; BOSSRUSH.active=false; TOURNEY.active=false;
+  worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+  var A = makeFighter(ROSTER.find(function(r){ return r.name===${JSON.stringify(a)}; }), 400, groundY()-24, 0);
+  var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), ${400 + dx}, groundY()-24, 1);
+  A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
+  fighters=[A,D]; hazardT=5; fsReset(); SMASHBALL=null; FS.next=99999;
+  [A,D].forEach(function(f){ f.invuln=0; f.hitstun=0; f.spCd=0; f.atkCd=0; f.armor=0; f.fnCd=0; });
+  A.pct=0; D.pct=${pct};
+  for (var k in down) down[k]=false;
+  ${body}
+})()`);
+const arena = (...args) => arenaIn(W, ...args);
+
+describe('the Smash Ball', () => {
+  it('breaks after a few hits and the one who broke it glows', () => {
+    const r = arena(300, `
+      fsSpawn(); var b = SMASHBALL; b.x = A.x + 40; b.y = A.y; b.wx = b.x; b.wy = b.y; b.vx = 0; b.vy = 0;
+      var hits = 0, glowAtHit = [];
+      for (var i = 0; i < 400 && SMASHBALL; i++) {
+        b.x = A.x + 40; b.y = A.y; b.vx = 0; b.vy = 0;
+        hazardT += 14; if (fsBallHit(A, A.x + 40, A.y, 30, 7)) hits++;
+      }
+      return { hits: hits, ball: !!SMASHBALL, glow: A.fsGlow, dGlow: D.fsGlow || 0 };`);
+    expect(r.ball).toBe(false);
+    expect(r.hits).toBeGreaterThanOrEqual(3);
+    expect(r.hits).toBeLessThanOrEqual(7);
+    expect(r.glow).toBeGreaterThan(1000);
+    expect(r.dGlow).toBe(0);
+  });
+
+  it('a real swing meets it (hitCircle), and a glowing fighter cannot break another', () => {
+    const r = arena(300, `
+      fsSpawn(); var b = SMASHBALL; b.x = A.x + 40; b.y = A.y; var hp0 = b.hp;
+      hitCircle(A, A.x + 40, A.y, 30, 8, 8, 9, -5);
+      var hurt = hp0 - b.hp;
+      D.fsGlow = 600; hazardT += 30; var hp1 = b.hp; hitCircle(D, b.x, b.y, 30, 8, 8, 9, -5);
+      return { hurt: hurt, held: b.hp === hp1 };`);
+    expect(r.hurt).toBeGreaterThan(0);
+    expect(r.held).toBe(true);
+  });
+
+  it('is never made in Capture the Flag, RUNNING!, a boss fight, with items or Smash Balls off', () => {
+    const r = arena(300, `
+      var out = { normal: fsAllowed() };
+      SETTINGS.mode='ctf'; out.ctf = fsAllowed(); SETTINGS.mode='boss'; out.boss = fsAllowed(); SETTINGS.mode='ffa';
+      RACE.active=true; out.race = fsAllowed(); RACE.active=false;
+      summons.push({type:'boss', hp:10, team:-1}); out.bossSummon = fsAllowed(); summons=[];
+      SETTINGS.itemRate=0; out.itemsOff = fsAllowed(); SETTINGS.itemRate=2;
+      SETTINGS.smashBalls=false; out.toggleOff = fsAllowed(); SETTINGS.smashBalls=true;
+      TOURNEY.active=true; out.cup = fsAllowed(); TOURNEY.active=false;
+      // and it never spawns on the clock where it is not allowed
+      SETTINGS.mode='ctf'; FS.next = 1; for (var i=0;i<5;i++) step(); out.ctfSpawned = !!SMASHBALL;
+      return out;`);
+    expect(r.normal).toBe(true);
+    for (const k of ['ctf', 'boss', 'race', 'bossSummon', 'itemsOff', 'toggleOff', 'cup', 'ctfSpawned']) expect(r[k], k).toBe(false);
+  });
+
+  it('comes on the clock, one at a time', () => {
+    const r = arena(300, `
+      FS.next = 3; for (var i=0;i<6;i++) step();
+      var first = SMASHBALL, many = 0;
+      for (var j=0;j<300;j++){ FS.next = 1; step(); if (SMASHBALL !== first) many++; }
+      return { made: !!first, same: many === 0 };`);
+    expect(r.made).toBe(true);
+    expect(r.same).toBe(true);
+  });
+});
+
+describe('V + C while glowing', () => {
+  it('fires the Final Smash once, through the real keys, and the glow is spent', () => {
+    const r = arena(120, `
+      A.controller='local'; A.you=true; A.fsGlow = 900;
+      down[KEYS.smash] = true; down[KEYS.special] = true;
+      step(); step(); step();
+      var fired = !!A._fs, id = A.fsId, glow = A.fsGlow;
+      down[KEYS.smash] = false; down[KEYS.special] = false;
+      var starts = 0, prev = !!A._fs;
+      for (var i=0;i<130;i++){ step(); if (A._fs && !prev) starts++; prev = !!A._fs; }
+      // pressing again after it is over is the ordinary finisher: nothing glows
+      down[KEYS.smash] = true; down[KEYS.special] = true; for (var k=0;k<4;k++) step();
+      return { fired: fired, id: id, glow: glow, starts: starts, over: !A._fs && !A.fsId, again: !!A._fs };`);
+    expect(r.fired).toBe(true);
+    expect(r.id).toBe('surge');
+    expect(r.glow).toBe(0);
+    expect(r.starts).toBe(0);
+    expect(r.over).toBe(true);
+    expect(r.again).toBe(false);
+  });
+
+  it('not glowing, V + C is still the ordinary finisher', () => {
+    const r = arena(120, `
+      A.controller='local'; A.you=true;
+      down[KEYS.smash] = true; down[KEYS.special] = true; step(); step(); step();
+      return { fs: !!A._fs, cd: A.fnCd > 0 };`);
+    expect(r.fs).toBe(false);
+    expect(r.cd).toBe(true);
+  });
+
+  it('the default lands on a foe inside the drawn circle (a stock at moderate %) and misses one outside it', () => {
+    const near = arena(110, `
+      A.fsGlow = 900; fsTryFire(A);
+      for (var i=0;i<160;i++) step();
+      return { pct: D.pct, stocks: D.stocks };`, { pct: 60 });
+    expect(near).toEqual({ pct: 0, stocks: 8 });   // 26% on top of 60 and a launch: out (the stock is gone, the % starts over)
+    const far = arena(520, `
+      A.fsGlow = 900; fsTryFire(A);
+      for (var i=0;i<160;i++) step();
+      return { pct: D.pct, stocks: D.stocks };`, { pct: 60 });
+    expect(far.pct).toBe(60);
+    expect(far.stocks).toBe(9);
+  });
+
+  it('the holder is untouchable through the tell, and a KO ends the glow', () => {
+    const r = arena(120, `
+      A.fsGlow = 900; fsTryFire(A);
+      step(); var inv = A.invuln > 0 && A._lag > 0;
+      var B = A; B.fsGlow = 0;
+      A.fsGlow = 500; A._fs = null; A.fsId = ''; eliminate(A);
+      return { inv: inv, glow: A.fsGlow, fs: !!A._fs };`);
+    expect(r.inv).toBe(true);
+    expect(r.glow).toBe(0);
+    expect(r.fs).toBe(false);
+  });
+});
+
+describe('the CPU', () => {
+  it('holds its Final Smash until a foe is in reach, then fires; and a CPU chases the ball', () => {
+    const r = arena(600, `
+      A.controller='ai'; A.fsGlow = 900;
+      var inp = fsBotInput(A, {left:false,right:false,jump:false,attack:false,special:false,smash:false,up:false,fin:true});
+      var holdFar = !inp.fin;
+      D.x = A.x + 100;
+      inp = fsBotInput(A, {left:false,right:false,jump:false,attack:false,special:false,smash:false,up:false});
+      var fireNear = !!inp.fin;
+      A.fsGlow = 0; D.x = A.x + 600; fsSpawn(); SMASHBALL.seq = 1; SMASHBALL.x = A.x + 300; SMASHBALL.y = A.y;
+      var seen = false;
+      for (var q = 0; q < 3 && !seen; q++) { SMASHBALL.seq = q; var i2 = fsBotInput(A, {left:false,right:false,jump:false,attack:false,special:false,smash:false,up:false}); if (i2.right) seen = true; }
+      return { holdFar: holdFar, fireNear: fireNear, chases: seen };`);
+    expect(r).toEqual({ holdFar: true, fireNear: true, chases: true });
+  });
+});
+
+describe('online', () => {
+  it('the snapshot carries the ball and the glow, and a client rebuilds both', () => {
+    const r = arena(300, `
+      fsSpawn(); SMASHBALL.x = 321; SMASHBALL.y = 222; SMASHBALL.hp = 17; A.fsGlow = 700;
+      var snap = JSON.parse(JSON.stringify(serializeState(true)));
+      var carried = { fsb: snap.fsb, glow: snap.fighters[0].fsGlow };
+      SMASHBALL = null; A.fsGlow = 0;
+      applySnapshot(snap);
+      var out = { carried: carried, ball: SMASHBALL && [SMASHBALL.x, SMASHBALL.hp], glow: fighters[0].fsGlow, none: null };
+      SMASHBALL = null; delete snap.fsb; applySnapshot(snap); out.none = SMASHBALL;
+      return out;`);
+    expect(r.carried.fsb).toEqual([321, 222, 50, 0]);
+    expect(r.carried.glow).toBe(700);
+    expect(r.ball).toEqual([321, 50]);
+    expect(r.glow).toBe(700);
+    expect(r.none).toBeNull();
+  });
+
+  it('a Final Smash in progress is on the wire (id, frames in, tell length)', () => {
+    const r = arena(300, `
+      A.fsGlow = 900; fsTryFire(A); for (var i=0;i<12;i++) step();
+      var o = JSON.parse(JSON.stringify(serializeState(true))).fighters[0];
+      return { id: o.fsId, t: o.fsT, wind: o.fsWind, dur: o.fsDur };`);
+    expect(r.id).toBe('surge');
+    expect(r.t).toBeGreaterThan(8);
+    expect(r.wind).toBe(40);
+    expect(r.dur).toBe(92);
+  });
+});
+
+describe('drawing', () => {
+  it('draws the ball, the glow and a Final Smash (tell and blast) with no error', () => {
+    const { window: w } = loadMonolith();
+    const r = arenaIn(w, 120, `
+      var texts = 0; var real = ctx.fillText; 
+      fsSpawn(); SMASHBALL.x = 500; SMASHBALL.y = 300; SMASHBALL.hp = 10; A.fsGlow = 900;
+      var errs = [];
+      function pic(){ try{ draw(); }catch(e){ errs.push(String(e)); } }
+      pic();
+      A.fsGlow = 100; pic(); A.fsGlow = 900; fsTryFire(A);
+      for (var i=0;i<100;i+=4){ for (var k=0;k<4;k++) step(); pic(); }
+      return { errs: errs };`);
+    expect(r.errs).toEqual([]);
+  });
+});
