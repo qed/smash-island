@@ -321,3 +321,13 @@ batchSuite("batch D", [
   ["Nickel", "sparechange", 250, null],
   ["Yellow Face", "buynow", 150, 600]
 ]);
+batchSuite("batch E", [
+  ["Barf Bag", "outbreak", 120, 520],
+  ["Basketball", "nothingbutnet", 250, -300],
+  ["Bell", "savedbythebell", 120, 520],
+  ["Bracelety", "didicecubesee", 250, 560],
+  ["Gaty", "swingopen", 120, 520],
+  ["Grassy", "nobodysteps", 110, 600],
+  ["Liy", "lightsout", 250, -300],
+  ["Lollipop", "stickytrap", 150, 560]
+]);
