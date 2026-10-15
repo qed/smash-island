@@ -2264,7 +2264,7 @@ function ctfGridNew(){
     band: CTF_DIM.band, ox: CTF_DIM.ox, mx: CTF_DIM.mx, cx: ctfCx,
     wing(minBand, fn){ if(g.band >= minBand) fn(); return g; },   // rooms and wings that only a bigger team's map has
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
-    fields: [], decor: [], front: [], zones: [], elevs: [], backs: [], wheels: [], ferries: [],
+    fields: [], decor: [], front: [], zones: [], elevs: [], backs: [], wheels: [], ferries: [], portals: [], rooms: [],
     // the wall behind the rooms: a dark patterned fill over a region (cells)
     skins: [],
     // a skin for the platforms whose middle lies in a region of cells: snowrock (a rock slope under snow), snowcap (a castle roof under snow), ice
@@ -2294,6 +2294,12 @@ function ctfGridNew(){
     // A FERRY (the owner, 2026-10-15: a third area on every map, with a moving feature): a w px wide one-way deck on row r that sails between two stops, the left edge at the start of column c0 and at the start of column c1,
     // pausing at each end; whoever stands on it rides. A lift on its side. o.spd: px a step.
     ferry(c0, c1, r, w, o){ g.ferries.push({ c0, c1, r, w, ...(o || {}) }); return g; },
+    // A DOOR INTO A ROOM APART (the owner, 2026-10-15: "a door on each side to enter the mill ... you have to find a door to exit"): a trigger rect (cells c0..c1, rows r0..r1, frame rows) that a fighter standing in it passes through by pressing the
+    // way dir (-1 left, 1 right) for a moment; it is put down at (toC, a surface at or under row toR). kind 'enter' (the door on the wheel's pit) or 'exit' (a way out of the room, hidden among its props).
+    portal(kind, c0, r0, c1, r1, dir, toC, toR, o){ const dr = CTF_DIM.dr, a = ctfCx(c0), b = ctfCx(c1), t = ctfCx(toC); if(a < 0 || b < 0 || t < 0) return g;
+      g.portals.push({ kind, x:a*CTF_CELL, y:(r0 + dr)*CTF_CELL, w:(b - a + 1)*CTF_CELL, h:(r1 - r0 + 1)*CTF_CELL, dir, tx:t*CTF_CELL + CTF_CELL/2, ty:(toR + dr)*CTF_CELL, ...(o || {}) }); return g; },
+    // a room apart: its cells (the door puts you in it; from outside it looks like solid rock, from inside nothing else is seen)
+    room(id, c0, r0, c1, r1){ const dr = CTF_DIM.dr, a = ctfCx(c0), b = ctfCx(c1); if(a < 0 || b < 0) return g; g.rooms.push({ id, x:a*CTF_CELL, y:(r0 + dr)*CTF_CELL, w:(b - a + 1)*CTF_CELL, h:(r1 - r0 + 1)*CTF_CELL }); return g; },
     keepClear(c0,r0,c1,r1){ g.clear.push([c0,r0,c1,r1]); return g; },
     // A SLOPE (the owner, 2026-10-15: "tunnels slope gently downward", slopes and uneven caves, not flat floors and stairs): a floor that climbs or falls from the start of column c0
     // (its surface at row rA, a fraction allowed) to the end of column c1 (row rB), cut out of whatever is there with h rows of air over it (h 3 is a corridor, 2 a crawlspace a fighter
@@ -2364,7 +2370,7 @@ function ctfMapBuild(id, swap, band){
 function ctfMapMerge(A, B, def, swap, id){
   const M = Object.assign({}, A);
   const pick = (a, b)=>{ const out = []; for(let i = 0; i < a.length; i += 2) out.push(a[i]); for(let i = 1; i < b.length; i += 2) out.push(b[i]); return out; };
-  for(const k of ['plats', 'zones', 'decor', 'decoAreas', 'back', 'front', 'elevs', 'ferries', 'wheels', 'boosts', 'buffs', 'keys', 'doors', 'spots']) M[k] = pick(A[k], B[k]);
+  for(const k of ['plats', 'zones', 'decor', 'decoAreas', 'back', 'front', 'elevs', 'ferries', 'wheels', 'portals', 'rooms', 'boosts', 'buffs', 'keys', 'doors', 'spots']) M[k] = pick(A[k], B[k]);
   M.homes = [A.homes[0], B.homes[1]]; M.jails = [A.jails[0], B.jails[1]];
   M.solids = M.plats.filter(p=>p.solid);
   M.theme = Object.assign({}, def.theme, { skinRects:pick(A._skin, B._skin) });
@@ -2426,6 +2432,9 @@ function ctfMapBuildOne(id, build, band){
     const ee = { x:e.c0*CTF_CELL, w:e.w*CTF_CELL, y0:e.rTop*CTF_CELL, y1:e.rBot*CTF_CELL };
     M.elevs.push(ee); M.elevs.push({ ...ee, x:mx(ee.x, ee.w) });
   }
+  M.portals = []; M.rooms = [];
+  for(const p of g.portals){ M.portals.push(p); M.portals.push({ ...p, x:mx(p.x, p.w), tx:WW - p.tx, dir:-p.dir }); }   // (the other half's door is this one turned over)
+  for(const r of g.rooms){ M.rooms.push(r); M.rooms.push({ ...r, x:mx(r.x, r.w) }); }
   M.ferries = [];
   for(const e of g.ferries){   // (the other half's ferry sails the mirror course)
     const ff = { x0:e.c0*CTF_CELL, x1:e.c1*CTF_CELL, y:e.r*CTF_CELL, w:e.w, spd:e.spd || 3.2 };
@@ -3529,21 +3538,29 @@ function ctfKit28(g){
   };
   return k;
 }
-// THE MIDDLE AND THE THIRD AREA, shared by both halves (the owner, 2026-10-15: "give all maps a third area"; "the riverside mill should have a large spinning waterwheel"; "the water mill should be a mini-area accessible by both sides
-// which you can enter through a door only accessible by the big wheel. inside, it should be divided by side"): THE RIVERSIDE MILL, on the middle line. A hill rises from each approach to a ridge on the line (the high road); inside it, the
-// MILL HALL straddles the line (each half is its own side: hiding places, sacks and gears; crossing the line inside is crossing onto enemy ground). The hall's floor over the pit is the only way in: under it is the PIT of the great WATER
-// WHEEL, one wheel with its hub on the line, its paddles level like the cars of a Ferris wheel; the top paddle comes up level with the hall's floor, and you step off into the hall. The pit's floor is the river tunnel (the low road, wading) that
-// runs under the hill from each half and across the pit under the wheel. No other entrance: the wheel is the door (a CPU rides it too).
-function oakHeart(k, g){
+// THE MIDDLE AND THE THIRD AREA, shared by both halves (the owner, 2026-10-15: "give all maps a third area"; "the riverside mill should have a large spinning waterwheel"; "the water mill should be a mini-area accessible by both sides ...";
+// "there is a door on each side to enter the mill (actually enter, you have to find a door to exit)"): THE RIVERSIDE MILL, on the middle line. A hill rises from each approach to a ridge on the line (the high road). Inside it is the MILL, a room apart:
+// a chamber across the line with a cellar under each half (each half of it its own side: sacks and gears to hide behind, a team buff). Under the chamber is the PIT of the great WATER WHEEL, one wheel with its hub on the line, its paddles level like
+// the cars of a Ferris wheel. There are two doors in the pit's walls, one a side, level with the hub where a paddle goes by: ride the wheel up to one and press into it to go in (a door puts you in the half beside it; anyone may use either).
+// Inside you cannot see out, and nobody outside sees in. The ways out are doors hidden among the sacks and gears, two to a side, that come out in other places on that team's side of the map; not the way you came in.
+// The pit's floor is the river tunnel, the low road, which runs under the hill from each half and across the pit under the wheel.
+function oakHeart(k, g, exits){
   const { A, S, H, P, SL, BK, DC, ZN, STALK, SHAFT, CUT, Y } = k, D = k.D;
   SL(66, 83, 14, 7, 3, { fill:27 });                                                                  // the hill: from the approach (row 14) up to the ridge on the middle line (row 7)
-  // the river tunnel, the low road: the cave's floor (row 27) rises gently to the bed of the pit (row 24); it opens into the pit
-  A(64, 21, 78, 26); BK(64, 21, 78, 26, 'dirt'); SL(66, 76, 27, 24, 3, { fill:27 }); S(77, 24, 78, 27); ZN('dark', 64, 21, 78, 26);
-  // the pit of the wheel on the line (5 columns a side), a pond in the bottom of it
-  A(79, 16, D, 23); BK(79, 16, D, 23, 'dirt'); ZN('water', 66, 25, 76, 26, 1);   // (the mill race slows you in the tunnel; the pit's bed is dry, so a jump onto a paddle is a jump)
-  // the mill hall over it (3 rows high, 7 columns a side), its floor over the pit one-way hops: the top paddle of the wheel comes up through them
-  A(77, 12, D, 14); H(15, 79, D); BK(77, 12, D, 14, 'wood'); P(14, 80, 'y'); DC('lantern', 78, 12, 2, 2); DC('window', 82, 12, 1, 2);
-  g.wheel(D + 1, Y(19), 4, 6, { center:true, kind:'wheel', pw:200, spd:2.2 });                        // hub on the middle line, paddles 4 rows out: the top one is level with the hall's floor, the bottom one just over the bed
+  // the river tunnel, the low road: the cave's floor (row 27) rises gently to the bed of the pit (row 26); it opens into the pit
+  A(64, 21, 78, 26); BK(64, 21, 78, 26, 'dirt'); SL(66, 76, 27, 26, 3, { fill:27 }); S(77, 26, 78, 27); ZN('dark', 64, 21, 78, 26); ZN('water', 66, 25, 76, 26, 1);
+  // the pit of the wheel on the line (5 columns a side)
+  A(79, 15, D, 25); BK(79, 15, D, 25, 'dirt');
+  g.wheel(D + 1, Y(21), 4, 6, { center:true, kind:'wheel', pw:200, spd:2.2 });                        // hub on the middle line, paddles 4 rows out: the top one is two rows under the chamber's floor, the bottom one just over the bed
+  // the doors onto the wheel: on the pit's wall at the height of the hub, where a paddle at its widest goes by; pressing into one goes in
+  g.portal('enter', 79, Y(19), 80, Y(20), -1, 80, Y(12));
+  // the mill, a room apart: the chamber over the pit (cols 77-83 of this half, 3 rows), a stair of hops down to the cellar under this half (rows 15-18)
+  A(77, 11, D, 13); A(75, 12, 76, 13); A(75, 14, 76, 18); A(68, 15, 77, 18); SHAFT(75, 18, 14);
+  BK(75, 11, D, 13, 'wood'); BK(75, 14, 76, 18, 'wood'); BK(68, 15, 77, 18, 'wood'); DC('lantern', 79, 11, 2, 2); DC('lantern', 71, 15, 2, 2);
+  g.room(1, 77, Y(11), 83, Y(13)); g.room(1, 75, Y(12), 76, Y(13)); g.room(1, 75, Y(14), 76, Y(18)); g.room(1, 68, Y(15), 77, Y(18));
+  P(13, 81, 'y'); P(18, 69, 'L'); P(18, 71, 'Y'); P(13, 76, 'L'); P(13, 78, 'Y');                       // the team buff, and the sacks and gears the exits hide among
+  g.portal('exit', 68, Y(17), 69, Y(18), -1, exits[0][0], Y(exits[0][1]));                            // out, in the cellar's far wall
+  g.portal('exit', 75, Y(12), 76, Y(13), -1, exits[1][0], Y(exits[1][1]));                            // out, in the chamber's far wall
   DC('cloud', 70, 2, 5, 2); DC('cloud', 56, 5, 4, 2); DC('chimney', 73, 4, 2, 5);
 }
 CTF_MAPS.oak = {
@@ -3582,8 +3599,8 @@ CTF_MAPS.oak = {
     H(19, 62, 63); g.elev(62, 2, Y(19), Y(27));                                                       // a lift from the floor to the upper stair
     ZN('dark', 41, 18, 62, 26);
     // props everywhere in a fortress: roots, stumps, logs, ferns
-    oakHeart(k, g);
-    k.scatter((r, c)=>(c >= 77 && r >= 12 && r <= 14 ? ['Y', 'L', 'W', 'C'] : r > 13 ? ['I', 'O', 'V', 'K', 'G', 'W'] : ['I', 'O', 'V']), [0.5, 0.9, 0.95][g.band], 3, (r, c)=>(c < 17 && r >= 9 && r <= 20) || (c >= 6 && c <= 10 && r >= 12), 41);
+    oakHeart(k, g, [[55, 19], [50, 4]]);                                                                 // (the ways out of the mill: the great hall's floor, and the top of the limb)
+    k.scatter((r, c)=>(((c >= 75 && c <= 83 && r >= 11 && r <= 18) || (c >= 68 && c <= 77 && r >= 15 && r <= 18)) ? ['Y', 'L', 'W', 'C'] : r > 13 ? ['I', 'O', 'V', 'K', 'G', 'W'] : ['I', 'O', 'V']), [0.5, 0.9, 0.95][g.band], 3, (r, c)=>(c < 17 && r >= 9 && r <= 20) || (c >= 6 && c <= 10 && r >= 12), 41);
     g.wing(1, ()=>{ H(4, 46, 49); H(3, 52, 55); H(4, 58, 61); H(3, 64, 67); });                          // the canopy: ledges over the limb, a third way to the middle (a wing)
     g.wing(2, ()=>{   // THE ROOT CELLARS (large teams): behind the home, a hollow branch hall level with its floor, a long ramp tunnel falling west, a deep cellar under it, ledges in the leaves
       S(-24, 6, -1, 27); A(-22, 9, -1, 13); A(0, 11, 0, 13); A(-23, 21, -12, 26); SL(-23, -8, 20, 14, 3); BK(-22, 9, -1, 13, 'wood'); BK(-23, 21, -12, 26, 'dirt');
@@ -3625,8 +3642,8 @@ CTF_MAPS.oak = {
       A(-22, 24, -8, 26); A(-14, 22, -13, 23); SHAFT(-14, 26, 22); BK(-22, 24, -8, 26, 'dirt'); P(26, -20, 'W'); P(26, -16, 'R'); P(26, -10, 'K'); P(21, -8, 'Y'); P(21, -6, 'Y');
     });
     DC('cloud', 20, 3, 4, 2); DC('cloud', 46, 1, 5, 2); DC('hay', 5, 19, 3, 3);
-    oakHeart(k, g);
-    k.scatter((r, c)=>(c >= 77 && r >= 12 && r <= 14 ? ['Y', 'L', 'W', 'C'] : r < 22 ? ['Y', 'B', 'K', 'O', 'W'] : ['R', 'K', 'G', 'W']), [0.5, 0.85, 0.9][g.band], 3, (r, c)=>(c >= 14 && c <= 27 && r >= 16 && r <= 26) || (c >= 21 && c <= 31 && r >= 24) || (c >= 2 && c <= 27 && r <= 17), 41);
+    oakHeart(k, g, [[60, 24], [49, 6]]);                                                                 // (the ways out of the mill: the burrow under the middle, and the windmill's deck)
+    k.scatter((r, c)=>(((c >= 75 && c <= 83 && r >= 11 && r <= 18) || (c >= 68 && c <= 77 && r >= 15 && r <= 18)) ? ['Y', 'L', 'W', 'C'] : r < 22 ? ['Y', 'B', 'K', 'O', 'W'] : ['R', 'K', 'G', 'W']), [0.5, 0.85, 0.9][g.band], 3, (r, c)=>(c >= 14 && c <= 27 && r >= 16 && r <= 26) || (c >= 21 && c <= 31 && r >= 24) || (c >= 2 && c <= 27 && r <= 17), 41);
     g.info = info; return info;
   },
 };
@@ -3938,6 +3955,7 @@ function ctfLOS(x0, y0, x1, y1, team){
 const CTF_NOINP = { left:false, right:false, jump:false, down:false, up:false, attack:false, special:false, smash:false, flag:false, edit:false };
 function ctfFilterInput(f, inp){
   const L = CTF.live; if(!L || L.over) return inp;
+  f._press = inp ? (inp.left ? -1 : inp.right ? 1 : 0) : 0;   // (the way held this frame: a door in a wall opens to a press into it)
   if(f._jail == null && inp && (inp.attack || inp.special || inp.smash)) f._ctfRevealT = CTF_HIDE_REVEAL;   // attacking from inside a prop shows you for a moment
   if(f._jail != null){   // a prisoner: attack = watch the next teammate, the flag key = ping the flag this fighter saw last
     const a = !!inp.attack, p = !!inp.flag;
@@ -4079,6 +4097,7 @@ function ctfStep(){
   for(const f of fighters){ if(f._ctfJT > 0) f._ctfJT--; if(f._springT > 0) f._springT--; if(f._ctfFree > 0) f._ctfFree--; if(f._ghostT > 0) f._ghostT--; }
   if(CTF.nav && !CTF.nav.ready) ctfNavTick(CTF.nav, 40, L.phase === 'hide' ? 8 : 4);
   ctfStepElevs(L);
+  ctfStepPortals(L);
   ctfEditStep(L);
   if(L.phase === 'fix'){ ctfFixStep(L); return; }
   if(L.phase === 'hide'){
@@ -4252,6 +4271,27 @@ function ctfLiftUnder(L, x, y){ for(const e of (L.elevs || [])) if(!e.mov && x >
 function ctfWheelPlace(L, wl){
   wl.ids.forEach((id, q)=>{ const e = L.elevs[id], an = wl.a + q*2*Math.PI/wl.n;
     e.x = wl.x + Math.cos(an)*wl.R - wl.pw/2; e.y = wl.y + Math.sin(an)*wl.R; e.rect.x = e.x; e.rect.y = e.y; e.y0 = e.y1 = e.y; });
+}
+// Doors: a fighter standing on the ground in a door's rect and pressing into it for a moment goes through, to the other side of it (an enter door puts you in the room apart, an exit door out of it, somewhere else on the map).
+// Whoever is not carrying a thing the door cannot take (nothing is: a flag goes in too) and not jailed may use it, either side.
+function ctfPortalLand(p){ const sy = ctfSurfaceBelow(p.tx, p.ty, 900); return sy; }
+function ctfStepPortals(L){
+  const M = CTF.map; if(!M || !M.portals || !M.portals.length) return;
+  for(const f of fighters){
+    if(f.dead || f._jail != null) { f._portT = 0; continue; }
+    if(f._portCool > 0) f._portCool--;
+    let hit = null;
+    if(f.onground && !(f._portCool > 0)) for(const p of M.portals){
+      const feet = f.y + f.r; if(f.x < p.x || f.x > p.x + p.w || feet < p.y + 40 || feet > p.y + p.h + 50) continue;
+      if(p.dir !== 0 && f._press !== p.dir) continue; hit = p; break;
+    }
+    if(!hit){ f._portT = 0; continue; }
+    f._portT = (f._portT || 0) + 1; if(f._portT < 5) continue;
+    const sy = ctfPortalLand(hit); if(sy == null){ f._portT = 0; continue; }
+    f._portT = 0; f._portCool = 40; f.x = hit.tx; f.y = sy - f.r; f.vx = 0; f.vy = 0; f.onground = true; f._room = hit.kind === 'enter' ? 1 : null;
+    for(let i = 0; i < 8; i++) puff(f.x, f.y, '#f0e0b0', 5);
+    ctfSfx('door');
+  }
 }
 function ctfStepWheels(L){
   for(const wl of (L.wheels || [])){
@@ -4561,6 +4601,7 @@ function ctfEditShape(tool, kind, x, y){
 const ctfRectHit = (a, b, m)=> a.x < b.x + b.w + (m||0) && a.x + a.w > b.x - (m||0) && a.y < b.y + b.h + (m||0) && a.y + a.h > b.y - (m||0);
 // Why a piece may not go here (a short reason), or null if it may.
 function ctfEditCheck(f, tool, kind, sh){
+  if(CTF.map && CTF.map.rooms && CTF.map.rooms.some(r=>sh.x < r.x + r.w && sh.x + sh.w > r.x && sh.y < r.y + r.h && sh.y + sh.h > r.y)) return 'room';   // (the room apart is nobody's to build in)
   const L = CTF.live, M = CTF.map, mid = M.WW/2, t = f.team;
   if(!sh) return 'nothing under it';
   if(t === 0 ? sh.x + sh.w > mid - 500 : sh.x < mid + 500) return 'line';
@@ -4915,6 +4956,7 @@ function ctfNetFighter(f, o){
   if(f._jail != null) o.jtm = f._jailT | 0;
   if(f._propKey) o.pk = f._propKey;
   if(f._shield) o.sh = 1;
+  if(f._room) o.rm = 1;
   if(f._ctfJT > 0) o.jt = 1;
   if(f._cam){ o.cam = [Math.round(f._cam.x), Math.round(f._cam.y)]; o.tl = f._tool || 0; o.pc = f._piece || 0; }
   if(f._spec != null) o.sp = f._spec;
@@ -4962,7 +5004,7 @@ function ctfNetIn(c){
 function ctfNetFightersIn(){
   for(const f of fighters){
     f._cf = f.cf != null ? f.cf : -1; f._ck = f.ck != null ? f.ck : -1; f._jail = f.jl != null ? f.jl : null;
-    f._ctfFree = f.fr ? 300 : 0; f._ghostT = f.gh ? 1 : 0; f._hid = !!f.hd; f._pk = f.kp > 1 ? f.kp : !!f.kp; f._jailT = f.jtm | 0; f._propKey = f.pk || null; f._shield = f.sh ? 1 : 0; f._ctfJT = f.jt ? 1 : 0;
+    f._ctfFree = f.fr ? 300 : 0; f._ghostT = f.gh ? 1 : 0; f._hid = !!f.hd; f._pk = f.kp > 1 ? f.kp : !!f.kp; f._jailT = f.jtm | 0; f._propKey = f.pk || null; f._shield = f.sh ? 1 : 0; f._room = f.rm ? 1 : null; f._ctfJT = f.jt ? 1 : 0;
     f._cam = f.cam ? { x:f.cam[0], y:f.cam[1] } : null; f._tool = f.tl || 0; f._piece = f.pc || 0; f._spec = f.sp != null ? f.sp : null;
     f.controller = f.hu ? 'remote' : 'ai';
   }
@@ -5779,10 +5821,34 @@ function ctfDrawWorld(){
     const o = fighters[fl.owner]; ctfShadow(ctx, fl.x, fl.y, 28); ctfFlagIcon(ctx, fl.x, fl.y, ctfColor(fl.team), 64, T*0.1 + fl.id, o ? o.color : null);
     if(fl.st === 3 && fl.team !== vt){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.2); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(fl.x, fl.y - 30, 44, 0, 7); ctx.stroke(); ctx.restore(); }
   }
+  // the doors (the door onto the wheel is seen from the pit; the ways out of the room are seen only from inside it)
+  for(const p of (M.portals || [])){ if(!inView(p.x - 60, p.y - 20, p.w + 120, p.h + 40)) continue;
+    const enter = p.kind === 'enter', fx = p.dir < 0 ? p.x : p.x + p.w, dw = enter ? 74 : 56, dh = Math.min(p.h, 150), dx = p.dir < 0 ? fx - dw*(enter ? 0.6 : 0.2) : fx - dw*(enter ? 0.4 : 0.8), dy = p.y + p.h - dh;
+    ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillStyle = enter ? '#8a5a2f' : '#6e4a2a';
+    ctx.beginPath(); ctx.moveTo(dx, dy + dh); ctx.lineTo(dx, dy + dw*0.5); ctx.arc(dx + dw/2, dy + dw*0.5, dw/2, Math.PI, 0); ctx.lineTo(dx + dw, dy + dh); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#c99a5c'; ctx.fillRect(dx + 10, dy + dh*0.4, dw - 20, dh*0.55); ctx.strokeRect(dx + 10, dy + dh*0.4, dw - 20, dh*0.55);
+    ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(p.dir < 0 ? dx + dw - 16 : dx + 16, dy + dh*0.7, 5, 0, 7); ctx.fill();
+    if(enter){ ctx.strokeStyle = '#4b5360'; ctx.fillStyle = '#7d8795'; ctx.lineWidth = 3; const gx = dx + dw/2, gy = dy + dw*0.45; ctx.beginPath(); ctx.arc(gx, gy, 12, 0, 7); ctx.fill(); ctx.stroke(); for(let k = 0; k < 6; k++){ const a = k*Math.PI/3 + hazardT*0.02; ctx.beginPath(); ctx.moveTo(gx + Math.cos(a)*12, gy + Math.sin(a)*12); ctx.lineTo(gx + Math.cos(a)*18, gy + Math.sin(a)*18); ctx.stroke(); } }   // a cog on it: the mill
+    ctx.restore(); }
   CTF_FRONT.length = 0; const occ = key=>fighters.some(q=>q._propKey === key && q.team === vt && !q.dead);
   M.spots.forEach((s, i)=>{ if(!s.cover || (L.gone && L.gone[i]) || !inView(s.x - 60, s.y - 140, 120, 150)) return; if(occ('s' + i)) CTF_FRONT.push(s); else ctfCoverDraw(ctx, s, M.theme); });
   // what the players built (an enemy's work stays out of sight while the hiding goes on)
   for(const e of (L.edits || [])){ if(L.phase === 'hide' && e.team !== vt) continue; if(!inView(e.x - 30, e.y - 30, e.w + 60, e.h + 60)) continue; if(e.tool === 'deco' && occ('e' + e.id)){ CTF_FRONT.push({ x:e.cx, y:e.fy, cover:e.kind }); continue; } ctfEditPieceDraw(ctx, e, M.theme, vt, T, null); }
+  ctfDrawRoomRock(vx, vy, vw, vh);
+}
+// A room apart from outside is plain rock (nothing of it shows); from inside, the rest of the world is blacked out (called under the scoreboard, like the dark).
+function ctfDrawRoomRock(vx, vy, vw, vh){
+  const M = CTF.map; if(!M || !M.rooms || !M.rooms.length || ctfViewRoom()) return;
+  const th = M.theme || {}, sd = th.solid || {}; ctx.save(); ctx.fillStyle = sd.fill || '#8c7855';
+  for(const r of M.rooms){ if(r.x + r.w < vx - 40 || r.x > vx + vw + 40 || r.y + r.h < vy - 40 || r.y > vy + vh + 40) continue; ctx.fillRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2); }
+  ctx.restore();
+}
+function ctfDrawRoomMask(){
+  const M = CTF.map; if(!M || !M.rooms || !M.rooms.length || !ctfViewRoom()) return;
+  const zm = viewZoom(), ox = W/2 - zm*(camX + W/2), oy = H/2 - zm*(camY + H/2);
+  ctx.save(); ctx.fillStyle = '#0b0912'; ctx.beginPath(); ctx.rect(0, 0, W, H);
+  for(const r of M.rooms) if(r.id === 1) ctx.rect(ox + zm*r.x, oy + zm*r.y, zm*r.w, zm*r.h);
+  ctx.fill('evenodd'); ctx.restore();
 }
 // Drawn after the fighters: the props one of the viewer's side stands in, see-through (about 40%), so whoever is inside can be seen.
 const CTF_FRONT = [];
@@ -5805,13 +5871,15 @@ function ctfDrawCarry(f){
   if(f._ctfFree > 0 && f.team === ctfViewTeam()){ ctx.save(); ctx.globalAlpha = 0.5 + 0.3*Math.sin(T*0.3); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(f.x, f.y + f.r + 14, 8, 0, 7); ctx.fill(); ctx.restore(); }   // freed: cannot be jailed again for a few seconds
 }
 // Does the viewer not see this fighter at all? A ghost (a boost) is invisible to the other side.
-function ctfHiddenFrom(f){ const vt = ctfViewTeam(); return (f._ghostT > 0 && f.team !== vt) || ctfHidInProp(f, vt); }
+function ctfViewRoom(){ const y = fighters.find(f=>f.you); return y && y._room ? y._room : null; }
+function ctfHiddenFrom(f){ const vt = ctfViewTeam(); return (f._ghostT > 0 && f.team !== vt) || ctfHidInProp(f, vt) || (f._room || null) !== ctfViewRoom(); }   // (a fighter in the room apart is not seen from outside, nor one outside from in it)
 
 // ---- the screen: the top bar (flags captured by each side, the hiding timer) --------------------------------------
 function drawCtfHud(){
   const L = CTF.live; if(!L) return;
   ctfDrawWeather();
   ctfDrawDark();   // (under the scoreboard: a dark area blacks out the world, not the HUD)
+  ctfDrawRoomMask();
   { const me = fighters.find(q=>q.you); if(me && me._jail != null){   // jailed: a lock, and the teammate you are watching
       ctx.save(); ctx.globalAlpha = 0.85; const lx = W/2, ly = H - 70; ctx.fillStyle = 'rgba(28,24,38,0.8)'; ctx.fillRect(lx - 90, ly - 34, 180, 68); ctx.strokeStyle = '#d8c46a'; ctx.lineWidth = 3; ctx.strokeRect(lx - 90, ly - 34, 180, 68);
       ctx.fillStyle = '#d8c46a'; ctx.fillRect(lx - 16, ly - 8, 32, 26); ctx.beginPath(); ctx.arc(lx, ly - 8, 12, Math.PI, 0); ctx.lineWidth = 6; ctx.strokeStyle = '#d8c46a'; ctx.stroke();
@@ -5883,6 +5951,7 @@ function ctfDrawMinimap(){
     CTF_MINI.id = (M.gid || M.id); const cv = CTF_MINI.cv = document.createElement('canvas'); cv.width = mw; cv.height = mh;
     const g = cv.getContext('2d'); if(g){ g.fillStyle = 'rgba(20,18,30,0.8)'; g.fillRect(0, 0, mw, mh);
       for(const p of M.plats){ if(p.hop) continue; g.fillStyle = 'rgba(210,205,225,0.55)'; g.fillRect(p.x*sx, p.y*sy, Math.max(1, p.w*sx), Math.max(1, p.h*sy)); }
+      for(const r of (M.rooms || [])){ g.fillStyle = 'rgba(210,205,225,0.55)'; g.fillRect(r.x*sx, r.y*sy, Math.max(1, r.w*sx), Math.max(1, r.h*sy)); }   // (a room apart is rock on the map)
       g.strokeStyle = 'rgba(210,205,225,0.28)'; g.lineWidth = 1; g.beginPath(); for(const p of M.plats){ if(!p.hop) continue; g.moveTo(p.x*sx, p.y*sy); g.lineTo((p.x + p.w)*sx, p.y*sy); } g.stroke(); }
   }
   ctx.save(); ctx.globalAlpha = 0.92; ctx.drawImage(CTF_MINI.cv, mx, my);
@@ -6523,21 +6592,34 @@ function ctfNavNew(M, prev, diff){
   }
   // WHEELS (the owner, 2026-10-15: a door only the big waterwheel reaches, and the CPUs ride it): from the floor under a wheel (its bed) to the floor level with its hub beside each wall, where a paddle goes by the door.
   // The move is timed by the turn: wait for a paddle, jump on, ride to the door's height, step off (ctfAiWheel). Not part of the shipped graph (it is made here, from the wheel's numbers).
+  // the node under a point where a door puts you (the surface at or under it)
+  const landNode = (x, y)=>{ let best = null; for(const p of M.plats){ if(x < p.x || x > p.x + p.w || p.y < y - 6) continue; if(best === null || p.y < best) best = p.y; } return best === null ? null : ctfNavNodeAt(nav, x, best, 3); };
   (M.wheels || []).filter(w=>!w.dup).forEach((w, j)=>{
     if(w.kind !== 'wheel') return;
-    const bx = w.x - w.dir*130, bottom = w.y + w.R, top = w.y - w.R;
+    const bx = w.x - w.dir*130, bottom = w.y + w.R;
     let bed = null; for(const n of (nav.nb[ctfNavBucket(bx)] || [])) if(n.y > bottom + 40 && n.y < bottom + 260 && n.x0 < bx && n.x1 > bx && (!bed || n.y < bed.y)) bed = n;
-    const halls = []; for(let bk = ctfNavBucket(w.x - 140); bk <= ctfNavBucket(w.x + 140); bk++) for(const n of (nav.nb[bk] || [])) if(Math.abs(n.y - top) <= 3 && n.x0 <= w.x + 130 && n.x1 >= w.x - 130 && !halls.includes(n)) halls.push(n);   // (the floor is two pieces where the middle line splits it)
-    if(!bed || !halls.length) return;
-    const turn = (((3*Math.PI/2 - Math.PI/2)*w.dir) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI);   // from the bottom to the top
-    for(const hall of halls) bed.edges.push({ kind:'wheel', from:bed.id, to:hall.id, xa:bx, xb:Math.min(Math.max(w.x, hall.x0 + 6), hall.x1 - 6), dir:0, dj:0, T:0, wh:j, doors:[], cost:200 + turn*w.R/w.spd });
+    if(!bed) return;
+    for(const p of (M.portals || [])){   // a door on the pit's wall, level with the hub: a paddle at its extreme goes by it
+      if(p.kind !== 'enter' || Math.abs(p.y + p.h - w.y) > 30 || Math.abs((p.dir < 0 ? p.x : p.x + p.w) - (w.x + p.dir*(w.R + 120))) > 130) continue;
+      const room = landNode(p.tx, p.ty); if(!room) continue;
+      const phiT = p.dir < 0 ? Math.PI : 0, turn = (((phiT - Math.PI/2)*w.dir) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI);
+      bed.edges.push({ kind:'wheel', from:bed.id, to:room.id, xa:bx, xb:p.tx, dir:0, dj:0, T:0, wh:j, side:p.dir, doorY:w.y, doors:[], cost:200 + turn*w.R/w.spd });
+    }
   });
+  for(const p of (M.portals || [])){   // a way out of the room: walk to the door, press into it, come out at the other end
+    if(p.kind !== 'exit') continue;
+    const to = landNode(p.tx, p.ty); if(!to) continue;
+    let from = null; for(const n of (nav.nb[ctfNavBucket(p.x + p.w/2)] || [])) if(Math.abs(n.y - (p.y + p.h)) <= 4 && n.x0 <= p.x + p.w && n.x1 >= p.x) from = n;
+    if(!from) continue;
+    const xa = Math.min(Math.max(p.x + p.w/2, from.x0 + 8), from.x1 - 8);
+    from.edges.push({ kind:'portal', from:from.id, to:to.id, xa, xb:p.tx, dir:p.dir, dj:0, T:0, doors:[], cost:40 });
+  }
   nav.keyMap = {}; for(const n of nav.nodes) nav.keyMap[ctfNavKey(n)] = n;
   if(prev && prev.keyMap && diff){
     for(const n of nav.nodes){
       const pn = prev.keyMap[ctfNavKey(n)]; if(!pn || diff.some(r=>n.x1 > r.x - 1500 && n.x0 < r.x + r.w + 1500)) continue;
       const copy = []; let ok = true;
-      for(const e of pn.edges){ if(e.kind === 'walk' || e.kind === 'wheel') continue; const nn = nav.keyMap[ctfNavKey(prev.nodes[e.to])]; if(!nn){ ok = false; break; } copy.push(Object.assign({}, e, { from:n.id, to:nn.id })); }
+      for(const e of pn.edges){ if(e.kind === 'walk' || e.kind === 'wheel' || e.kind === 'portal') continue; const nn = nav.keyMap[ctfNavKey(prev.nodes[e.to])]; if(!nn){ ok = false; break; } copy.push(Object.assign({}, e, { from:n.id, to:nn.id })); }
       if(ok){ for(const e of copy) n.edges.push(e); n.reused = true; }
     }
   }
@@ -6721,7 +6803,7 @@ function ctfNavFingerprint(M){
 function ctfNavPack(nav){
   const q = v=>v == null ? null : Math.round(v*100)/100;
   return { v:CTF_GRAPH_V, id:nav.M.gid || nav.M.id, fp:ctfNavFingerprint(nav.M), n:nav.nodes.length,
-    nodes:nav.nodes.map(n=>n.edges.filter(e=>e.kind !== 'walk' && e.kind !== 'wheel').map(e=>[CTF_GRAPH_KINDS.indexOf(e.kind), e.to, q(e.xa), e.dir, e.dj, e.T, q(e.v0), q(e.xb), q(e.run), q(e.cost), (e.risky ? 1 : 0) | (e.need ? 2 : 0) | (e.prof === 'f' ? 4 : 0)])) };
+    nodes:nav.nodes.map(n=>n.edges.filter(e=>e.kind !== 'walk' && e.kind !== 'wheel' && e.kind !== 'portal').map(e=>[CTF_GRAPH_KINDS.indexOf(e.kind), e.to, q(e.xa), e.dir, e.dj, e.T, q(e.v0), q(e.xb), q(e.run), q(e.cost), (e.risky ? 1 : 0) | (e.need ? 2 : 0) | (e.prof === 'f' ? 4 : 0)])) };
 }
 // Put a map's shipped moves into its (freshly made, unprobed) graph. False when the file is not this map's.
 function ctfNavAdopt(nav, data){
@@ -6934,7 +7016,7 @@ function ctfAiBanEdge(ai, e, now){
   const G = L.ai.gfail = L.ai.gfail || {}, ct = G[key] = (G[key] || 0) + 1;
   ai.ban[key] = now + 900*ct*ct; (L.ai.gban = L.ai.gban || {})[key] = now + 500*ct*ct*ct;
 }
-// Riding a wheel (an edge of kind 'wheel'): walk to the boarding spot on the bed, wait for a paddle coming up past the feet, jump onto it, ride it to the top, where it is level with the hall's floor (the node it is bound for).
+// Riding a wheel (an edge of kind 'wheel'): walk to the boarding spot on the bed, wait for a paddle coming up past the feet, jump onto it, ride it to the height of the door on the pit's wall, and press into it.
 function ctfAiWheel(f, ai, nav, inp, now){
   const L = CTF.live, e = ai.edge, wl = L && L.wheels[e.wh]; if(!wl){ ai.path = null; ai.edge = null; ai.phase = ''; return 'lost'; }
   ai.et = (ai.et || 0) + 1;
@@ -6944,6 +7026,7 @@ function ctfAiWheel(f, ai, nav, inp, now){
   let on = null; if(f.onground) for(const id of wl.ids){ const p = L.elevs[id]; if(Math.abs(feet - p.y) < 10 && f.x > p.x - 4 && f.x < p.x + p.w + 4){ on = p; break; } }
   if(on){   // riding: nothing to press until the paddle is at the door
     ai.ws = 'ride'; ai.wl = 0;
+    if(Math.abs(on.y - e.doorY) <= 6 && Math.abs(on.x + on.w/2 - (wl.x + e.side*wl.R)) < 60){ if(e.side < 0) inp.left = true; else inp.right = true; }   // level with the door: press into it
     return false;
   }
   if(f.onground && cn && cn.id !== e.from && cn.id !== e.to){ ctfAiStat('wheelLost'); ai.path = null; ai.edge = null; ai.phase = ''; return 'lost'; }   // came down somewhere else: plan again
@@ -6994,6 +7077,12 @@ function ctfAiFollow(f, ai, nav, inp, now){
   }
   e = ai.edge; ai.et = (ai.et || 0) + 1;
   if(e.kind === 'wheel'){ ai.et = 0; return ctfAiWheel(f, ai, nav, inp, now); }
+  if(e.kind === 'portal'){
+    if(f.onground && cn && cn.id === e.to){ ai.edge = null; ai.phase = ''; ai.pi++; ctfAiStat('portalOK'); return false; }
+    if(Math.abs(f.x - e.xa) > 16) ctfAiWalk(f, inp, e.xa, 10); else if(e.dir < 0) inp.left = true; else inp.right = true;
+    if(ai.et > 400){ ctfAiStat('portalTimeout'); ctfAiBanEdge(ai, e, now); ai.path = null; ai.edge = null; ai.phase = ''; return 'lost'; }
+    return false;
+  }
   if(ai.et > (ai.etMax || 260) + (e.kind === 'walk' ? Math.abs(e.xb - f.x)/5 : 0) || (ai.phase === 'air' && ai.jt > 150)){ ctfAiStat('edgeTimeout'); ctfAiStat('to_' + e.kind + '_' + ai.phase); (CTF.stat.toList = CTF.stat.toList || []).length < 14 && CTF.stat.toList.push(e.kind + ' ' + e.from + '>' + e.to + ' xa=' + Math.round(e.xa) + ' dir=' + e.dir + ' T=' + e.T + ' run=' + Math.round(e.run||0) + ' fx=' + Math.round(f.x) + ' fy=' + Math.round(f.y) + ' vx=' + Math.round(f.vx*10)/10 + ' ph=' + ai.phase + ' fi=' + f.idx); ctfAiBanEdge(ai, e, now); ai.edge = null; ai.path = null; return 'lost'; }
   if(e.kind === 'walk'){
     ctfAiWalk(f, inp, e.xb, 4);
@@ -7120,7 +7209,7 @@ function ctfAiPlan(f, ai, goalX, goalY, now){
 function ctfAiFoe(f, range, vert){
   let best = null, bd = range*range;
   for(const g of fighters){
-    if(g.team === f.team || g._jail != null || g.dead || g._ghostT > 0) continue;
+    if(g.team === f.team || g._jail != null || g.dead || g._ghostT > 0 || (g._room || null) !== (f._room || null)) continue;   // (a foe in the room apart is no foe from outside it)
     const dx = g.x - f.x, dy = g.y - f.y;
     if(g._hid && dx*dx + dy*dy > CTF_HIDE_CLOSE*CTF_HIDE_CLOSE) continue;   // hidden in a prop: not seen from afar
     if(Math.abs(dy) > (vert || 220)) continue;
@@ -7395,7 +7484,7 @@ function ctfNavMoverOnly(nav){
   if(nav.moverOnly) return nav.moverOnly;
   const plain = new Uint8Array(nav.nodes.length), q = [], out = new Uint8Array(nav.nodes.length);
   for(const t of [0, 1]) for(const sp of nav.M.homes[t].spawns){ const n = ctfNavNodeAt(nav, sp.x, sp.y, 12); if(n && !plain[n.id]){ plain[n.id] = 1; q.push(n.id); } }
-  while(q.length){ const id = q.pop(); for(const e of nav.nodes[id].edges){ if(e.kind === 'wheel' || e.need || e.doors.some(d=>d[0] === 'J')) continue; if(!plain[e.to]){ plain[e.to] = 1; q.push(e.to); } } }
+  while(q.length){ const id = q.pop(); for(const e of nav.nodes[id].edges){ if(e.kind === 'wheel' || e.kind === 'portal' || e.need || e.doors.some(d=>d[0] === 'J')) continue; if(!plain[e.to]){ plain[e.to] = 1; q.push(e.to); } } }
   nav.nodes.forEach(n=>{ if(!plain[n.id]) out[n.id] = 1; });
   return nav.moverOnly = out;
 }
@@ -7416,7 +7505,7 @@ function ctfAiHide(f, ai, L, nav, inp, now){
     let pick = null;
     cand.sort((a, b)=>Math.hypot(a.x - f.x, (a.y - f.y)*1.5) - Math.hypot(b.x - f.x, (b.y - f.y)*1.5));
     const mo = ctfNavMoverOnly(nav), wo = cand.filter(s=>{ const n = ctfNavNodeAt(nav, s.x, s.y, 14); return n && mo[n.id] && nav.reach[f.team][n.id]; });   // (a place only a mover reaches, like the mill hall: some hide there, when it is not too far to go in the time there is)
-    if(wo.length && Math.random() < 0.4){
+    if(wo.length && CTF.moverHide && Math.random() < 0.4){   // (off unless CTF.moverHide is set: a flag in the mill is one the attackers do not find, and the match stalls)
       const sp = wo[Math.floor(Math.random()*wo.length)], cn0 = ctfNavNodeOf(nav, f) || (ai.lastNode != null ? nav.nodes[ai.lastNode] : null), gn0 = ctfNavNodeAt(nav, sp.x, sp.y, 14);
       const r0 = cn0 && gn0 ? ctfNavPath(nav, cn0.id, gn0.id, { prof:'f', x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, noCross:true, mid:M.WW/2, now, closed:false }) : null;
       if(r0 && r0.edges.reduce((q, e)=>q + e.cost, 0) < 1300) pick = sp;

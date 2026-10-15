@@ -66,19 +66,49 @@ describe('the mill wheel', () => {
     expect(Math.abs(e2.x - e0.x) + Math.abs(e2.y - e0.y), 'the host\'s angle puts it back').toBeLessThan(1);
   });
 
-  it('the mill hall is wheel-only: the route graph reaches its hiding places by the wheel move and by nothing else', { timeout:120000 }, () => {
+  it('the mill is wheel-only: the route graph reaches its hiding places by the wheel move (and the door it ends at) and by nothing else', { timeout:120000 }, () => {
     const { window: w } = loadMonolith(44);
     const r = JSON.parse(w.eval(`(function(){ var M = ctfMapGet('oak', false, 1); CTF.noShipped = true; var nav = ctfNavNew(M); while(!nav.ready) ctfNavTick(nav, 80);
-      var spots = M.spots.filter(function(s){ return s.y < 2000 && s.y > 1500 && Math.abs(s.x - M.WW/2) < 1000; }), out = { n:spots.length, wheelEdges:0 };
+      var spots = M.spots.filter(function(s){ return M.rooms.some(function(r){ return s.x >= r.x && s.x <= r.x + r.w && s.y > r.y && s.y <= r.y + r.h + 2; }); }), out = { n:spots.length, wheelEdges:0 };
       nav.nodes.forEach(function(n){ n.edges.forEach(function(e){ if(e.kind === 'wheel') out.wheelEdges++; }); });
       [false, true].forEach(function(noWheel){ var seen = new Uint8Array(nav.nodes.length), q = [];
         M.homes[0].spawns.forEach(function(sp){ var n = ctfNavNodeAt(nav, sp.x, sp.y, 12); if(n && !seen[n.id]){ seen[n.id] = 1; q.push(n.id); } });
         while(q.length){ var id = q.pop(); nav.nodes[id].edges.forEach(function(e){ if(noWheel && e.kind === 'wheel') return; if(e.doors.some(function(d){ return d[0] === 'J'; })) return; if(!seen[e.to]){ seen[e.to] = 1; q.push(e.to); } }); }
         var ok = 0; spots.forEach(function(s){ var n = ctfNavNodeAt(nav, s.x, s.y, 14); if(n && seen[n.id]) ok++; }); out[noWheel ? 'without' : 'with'] = ok; });
       return JSON.stringify(out); })()`));
-    expect(r.n, 'the hall holds hiding places').toBeGreaterThanOrEqual(3);
+    expect(r.n, 'the mill holds hiding places').toBeGreaterThanOrEqual(6);
     expect(r.wheelEdges, 'the graph has the wheel move').toBeGreaterThan(0);
     expect(r.with, 'all of them reached with it').toBe(r.n);
     expect(r.without, 'none without it: the wheel is the only way in').toBe(0);
+  });
+
+  it('a door is a press into it: it takes you into the room apart (one half or the other) and you cannot go out by it; the room cannot be seen into; a way out puts you elsewhere on your side', () => {
+    const { window: w } = loadMonolith(45);
+    start(w);
+    const M = J(w, `{ WW:CTF.map.WW, portals:CTF.map.portals, rooms:CTF.map.rooms }`);
+    const enters = M.portals.filter(p => p.kind === 'enter'), exits = M.portals.filter(p => p.kind === 'exit');
+    expect(enters.length, 'a door in on each side of the line').toBe(2);
+    expect(enters[0].dir, 'pressed the other way on the other side').toBe(-enters[1].dir);
+    expect(exits.length, 'two ways out on each side').toBe(4);
+    const f = w.eval('fighters[0].idx'), A = enters.find(p => p.dir < 0);
+    const press = (dir, n) => { for (let i = 0; i < n; i++) w.eval(`(function(){ var f = fighters[${f}]; f._press = ${dir}; f.onground = true; ctfStepPortals(CTF.live); })()`); };
+    // standing at the door on a paddle (level with the hub): a press into it goes in, to the half beside it
+    w.eval(`(function(){ var f = fighters[${f}]; f.x = ${A.x + A.w/2}; f.y = ${A.y + A.h} - f.r; f.onground = true; f._room = null; })()`);
+    press(0, 10); expect(w.eval(`fighters[${f}]._room`), 'not pressing: stays').toBeNull();
+    press(A.dir, 8);
+    expect(w.eval(`fighters[${f}]._room`), 'in the room apart').toBe(1);
+    const inRoom = J(w, `{ x:fighters[${f}].x, y:fighters[${f}].y + fighters[${f}].r }`);
+    expect(M.rooms.some(r => inRoom.x >= r.x && inRoom.x <= r.x + r.w && inRoom.y >= r.y && inRoom.y <= r.y + r.h + 2), 'put down inside it').toBe(true);
+    expect(inRoom.x < M.WW/2, 'in the half beside the door it went through').toBe(A.dir < 0);
+    // nobody outside sees in
+    expect(w.eval(`(function(){ var o = fighters.find(function(g){ return g.idx !== ${f}; }); o._room = null; fighters[${f}].you = false; o.you = true; return ctfHiddenFrom(fighters[${f}]); })()`), 'from outside the room, a fighter in it is hidden').toBe(true);
+    // it is no way out: the door it came through is far away, and the way out is a door in the room
+    const ex = exits.find(p => p.x + p.w < M.WW/2);
+    w.eval(`(function(){ var f = fighters[${f}]; f.x = ${ex.x + ex.w/2}; f.y = ${ex.y + ex.h} - f.r; f.onground = true; f._portCool = 0; })()`);
+    press(ex.dir, 8);
+    expect(w.eval(`fighters[${f}]._room`), 'out of the room').toBeNull();
+    const out = J(w, `{ x:fighters[${f}].x, y:fighters[${f}].y }`);
+    expect(Math.abs(out.x - ex.tx), 'put down where the way out leads').toBeLessThan(2);
+    expect(out.x < M.WW/2, 'on the same side of the map').toBe(true);
   });
 });
