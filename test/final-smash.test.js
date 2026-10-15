@@ -331,3 +331,13 @@ batchSuite("batch E", [
   ["Liy", "lightsout", 250, -300],
   ["Lollipop", "stickytrap", 150, 560]
 ]);
+batchSuite("batch F", [
+  ["Loser", "tlc", 100, 520],
+  ["Marker", "permanentrecord", 200, -300],
+  ["Money", "makeitrain", 250, null],
+  ["Naily", "nailedit", 300, -300],
+  ["Pillow", "fluffbounce", 100, 520],
+  ["Remote", "signaljam", 120, 560],
+  ["Rose", "thornlash", 250, 600],
+  ["Taco", "retractablearms", 150, 560]
+]);
