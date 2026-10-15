@@ -5821,9 +5821,62 @@ function ctfNavProbe(nav, n){
   }
 }
 function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds (the game builds the graph a slice a frame, so it never stutters)
+  if(nav.pending) return;   // the map's shipped graph is being fetched: nothing to build unless it fails (ctfGraphFetch)
   const t0 = ms ? performance.now() : 0;
   for(let i = 0; i < count && nav.cursor < nav.nodes.length; i++){ ctfNavProbe(nav, nav.nodes[nav.cursor++]); if(ms && performance.now() - t0 > ms) break; }
   if(nav.cursor >= nav.nodes.length && !nav.ready){ nav.ready = true; ctfNavReach(nav); }
+}
+// ---- SHIPPED ROUTE GRAPHS ----------------------------------------------------------------------------------------------------------------------------------------
+// Building a map's graph takes 9-20 s of CPU (every move of every place is simulated), so scripts/ctf-build-graphs.mjs does it once, offline, and ships the moves as
+// artifacts/V1/assets/ctf/<map>-graph.json. The places themselves are cheap and always made here (ctfNavNew); the file holds only the simulated moves, place by place,
+// with a fingerprint of the map's geometry and the numbers the simulation reads. A file that does not match the map (or is missing, or the fetch fails) leaves the runtime
+// builder to do the work exactly as before, and the players' own pieces still patch the graph at runtime (ctfEditNav).
+const CTF_GRAPH_V = 1, CTF_GRAPH_KINDS = ['jump', 'drop', 'thru'], CTF_GRAPHS = {}, CTF_GRAPH_WAIT = {};
+function ctfNavFingerprint(M){
+  const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring');
+  const str = JSON.stringify([CTF_GRAPH_V, M.id, M.WW, M.WH, M.plats.map(p=>[p.x, p.y, p.w, p.h, p.solid ? 1 : 0, p.hop ? 1 : 0]), M.doors.map(d=>[d.id, d.x, d.y, d.w, d.h]),
+    M.jails.map(j=>[j.owner, j.door.x, j.door.y, j.door.w, j.door.h]), zs.map(z=>[z.type, z.x, z.y, z.w, z.h, z.strength || 1, z.dir || 1]), M.boosts.filter(b=>b.kind === 'jump').map(b=>[b.x, b.y]),
+    [GRAV, MAXVX, MOVE, JUMP, CTF_SPEED, CTF_CARRY_SPEED, CTF_CARRY_JUMP, CTF_BOOST_JUMP, CTF_NAV_BUCKET], CTF.noZones ? 1 : 0]);
+  let a = 0x811c9dc5, b = 0x01000193;
+  for(let i = 0; i < str.length; i++){ const ch = str.charCodeAt(i); a = Math.imul(a ^ ch, 0x01000193) >>> 0; b = Math.imul(b + ch, 0x85ebca6b) >>> 0; b ^= b >>> 13; }
+  return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0') + '-' + str.length;
+}
+// The simulated moves of a finished graph, one list per place, a move as [kind, to, xa, dir, dj, T, v0, xb, run, cost, flags] (numbers to 2 decimals; flags: 1 risky, 2 needs the pad, 4 planned on a free fighter).
+function ctfNavPack(nav){
+  const q = v=>v == null ? null : Math.round(v*100)/100;
+  return { v:CTF_GRAPH_V, id:nav.M.id, fp:ctfNavFingerprint(nav.M), n:nav.nodes.length,
+    nodes:nav.nodes.map(n=>n.edges.filter(e=>e.kind !== 'walk').map(e=>[CTF_GRAPH_KINDS.indexOf(e.kind), e.to, q(e.xa), e.dir, e.dj, e.T, q(e.v0), q(e.xb), q(e.run), q(e.cost), (e.risky ? 1 : 0) | (e.need ? 2 : 0) | (e.prof === 'f' ? 4 : 0)])) };
+}
+// Put a map's shipped moves into its (freshly made, unprobed) graph. False when the file is not this map's.
+function ctfNavAdopt(nav, data){
+  if(!data || data.v !== CTF_GRAPH_V || data.fp !== ctfNavFingerprint(nav.M) || !data.nodes || data.nodes.length !== nav.nodes.length || nav.cursor > 0) return false;
+  for(let i = 0; i < nav.nodes.length; i++){
+    const n = nav.nodes[i];
+    for(const r of data.nodes[i]){
+      const e = { kind:CTF_GRAPH_KINDS[r[0]], from:n.id, to:r[1], xa:r[2], dir:r[3], dj:r[4], T:r[5], v0:r[6], xb:r[7], run:r[8], cost:r[9], doors:[] };
+      if(r[10] & 1) e.risky = true; if(r[10] & 2) e.need = 'jump'; if(r[10] & 4) e.prof = 'f';
+      n.edges.push(e);
+    }
+  }
+  nav.cursor = nav.nodes.length; nav.ready = true; nav.shipped = true; ctfNavReach(nav);
+  return true;
+}
+// A graph for the map: the shipped one at once when its file is loaded, else the places only, to be filled by the fetch (nav.pending) or built by the ticker.
+function ctfNavMake(M){
+  const nav = ctfNavNew(M);
+  if(CTF.noShipped) return nav;
+  if(CTF_GRAPHS[M.id]){ if(!ctfNavAdopt(nav, CTF_GRAPHS[M.id])) delete CTF_GRAPHS[M.id]; return nav; }
+  if(typeof fetch === 'function' && !CTF.noFetch){
+    nav.pending = true;
+    const done = ok=>{ nav.pending = false; if(ok && !nav.ready && CTF.navs && CTF.navs[M.id] === nav) try{ ctfNavAdopt(nav, CTF_GRAPHS[M.id]); }catch(e){} };
+    let fin = false; const once = ok=>{ if(!fin){ fin = true; done(ok); } };
+    try{ ctfGraphFetch(M.id).then(once, ()=>once(false)); setTimeout(()=>once(false), 8000); }catch(e){ once(false); }
+  }
+  return nav;
+}
+function ctfGraphFetch(id){
+  if(CTF_GRAPH_WAIT[id]) return CTF_GRAPH_WAIT[id];
+  return CTF_GRAPH_WAIT[id] = fetch('assets/ctf/' + id + '-graph.json').then(r=>r.ok ? r.json() : null).then(d=>{ if(d && d.nodes) CTF_GRAPHS[id] = d; return !!CTF_GRAPHS[id]; }, ()=>false).then(ok=>{ delete CTF_GRAPH_WAIT[id]; return ok; });
 }
 // What each side's home can reach, doors ignored: where a flag may be hidden (a place the foe could never get to is no place for one).
 function ctfNavReach(nav){
@@ -5910,7 +5963,7 @@ function ctfNavSweep(nav, side){
 function ctfAiBegin(L, nav){
   if(CTF.skipNav || (typeof isNetClient === 'function' && isNetClient())){ CTF.nav = null; return; }   // (an online guest never plans: the host does)
   if(!CTF.navs) CTF.navs = {};
-  CTF.nav = nav || CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavNew(CTF.map));
+  CTF.nav = nav || CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavMake(CTF.map));
   L.ai = { visited:[null, null], visAt:[null, null], claims:[{}, {}], roomClaims:[{}, {}], hideTaken:{}, rescue:[0, 0], stat:{ nodes:CTF.nav.nodes.length } };
   for(const f of fighters){ f._ai = { goal:null, path:null, pi:0, edge:null, phase:'', t:0, lastX:f.x, still:0, ban:{}, replan:0, fight:0, role:'att', hide:null, hideT:0 }; }
   for(const t of [0, 1]){
