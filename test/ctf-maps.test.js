@@ -5,7 +5,8 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // a jail with its no-go zone clear of the spawns, doors and keys, a lift), and the CPU's graph of it says every hiding place, key, boost, pad and the jail's door can be reached from
 // home, with only the vaults behind their locked doors.
 
-const MAPS = ['castle', 'mines', 'factory', 'forest', 'sky'];
+const MAPS = ['castle', 'mines', 'factory', 'forest', 'sky', 'oak'];
+const ASYM = { oak: true };   // an asymmetric map (two different halves, the bid chooses the sides): not its own mirror; every check is made for both sides
 
 for (const id of MAPS) {
   describe(`map ${id}`, () => {
@@ -26,8 +27,8 @@ for (const id of MAPS) {
         return JSON.stringify(out);
       })()`));
       // each map's world width: the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side); then 2026-10-15: "about 15 screens wide and 4 tall", "some maps could be small with good spots" (castle v4: 84 columns a side, 28 rows); the others are 108 a side now
-      expect(r.WW).toBe({ castle: 20160, mines: 25920, factory: 25920, forest: 25920, sky: 25920 }[id]);
-      expect(r.mirrored, 'the right half is the left half turned over').toBe(true);
+      expect(r.WW).toBe({ castle: 20160, mines: 25920, factory: 25920, forest: 25920, sky: 25920, oak: 20160 }[id]);
+      if (!ASYM[id]) expect(r.mirrored, 'the right half is the left half turned over').toBe(true);   // (an asymmetric map is two halves, each its own)
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
       expect(r.jails).toBe(2);
@@ -58,11 +59,11 @@ for (const id of MAPS) {
   (M.back || []).forEach(function(b){ if(b.kind === 'sky') return; var c0 = Math.floor(b.x/C), c1 = Math.ceil((b.x + b.w)/C) - 1, r0 = Math.floor(b.y/C), r1 = Math.ceil((b.y + b.h)/C) - 1;
     for(var r = r0; r <= r1; r++) for(var c = c0; c <= c1; c++) if(c >= 0 && c < cols && r >= 0 && r < rows) inBack[idx(c, r)] = 1; });
   var res = [], seen = 0;
-  for(var cr = 2; cr < rows - 1; cr += 3) for(var cc = 3; cc < cols/2; cc += 3){
+  for(var cr = 2; cr < rows - 1; cr += 3) for(var cc = 3; cc < ${ASYM[id] ? 'cols - 3' : 'cols/2'}; cc += 3){
     if(!inBack[idx(cc, cr)] || solid[idx(cc, cr)]) continue;
     var back = 0, bare = 0;
     for(var r = cr - Math.floor(vh/2); r < cr + Math.ceil(vh/2); r++) for(var c = cc - Math.floor(vw/2); c < cc + Math.ceil(vw/2); c++){
-      if(c < 0 || c >= cols/2 || r < 0 || r >= rows) continue; var i = idx(c, r); if(!inBack[i] || solid[i]) continue; back++; if(!serve[i]) bare++; }
+      if(c < 0 || c >= ${ASYM[id] ? 'cols' : 'cols/2'} || r < 0 || r >= rows) continue; var i = idx(c, r); if(!inBack[i] || solid[i]) continue; back++; if(!serve[i]) bare++; }
     seen++;
     if(back > 60 && bare/back > 0.6) res.push({ c:cc, r:cr - (M.dr || 0), f:Math.round(100*bare/back), back:back });
   }
@@ -76,22 +77,26 @@ for (const id of MAPS) {
       const { window: w } = loadMonolith(52);
       const r = JSON.parse(w.eval(`(function(){
         var M = ctfMapGet('${id}'), nav = ctfNavNew(M); while(!nav.ready) ctfNavTick(nav, 80);
-        var bad = [], chk = function(label, x, y){ var n = ctfNavNodeAt(nav, x, y, 10); if(!n) bad.push(label + '(' + Math.round(x/120) + ',' + Math.round(y/120) + ') no node'); else if(!nav.reach[0][n.id]) bad.push(label + '(' + Math.round(x/120) + ',' + Math.round(y/120) + ') unreachable'); };
-        M.spots.forEach(function(s){ if(s.team === 0) chk('spot', s.x, s.y); });
-        M.keys.forEach(function(k){ chk('key' + k.door, k.x, k.y); });
-        M.boosts.forEach(function(b){ chk('boost' + b.kind, b.x, b.y); });
-        M.homes.forEach(function(h){ if(h.pad) chk('pad' + h.team, h.pad.x + h.pad.w/2, h.pad.y); });
-        M.jails.forEach(function(j){ chk('jail' + j.owner, j.door.x + (j.face === 1 ? j.door.w + 50 : -50), j.door.y + j.door.h); });
-        // the other half's mirror reaches the same: the second home reaches the first's jail
+        var bad = [], chk = function(label, x, y, t){ var n = ctfNavNodeAt(nav, x, y, 10); if(!n) bad.push(label + '(' + Math.round(x/120) + ',' + Math.round(y/120) + ') no node'); else if(!nav.reach[t][n.id]) bad.push(label + '(' + Math.round(x/120) + ',' + Math.round(y/120) + ') unreachable'); };
+        // every thing is checked from the home of the side it belongs to (both sides: an asymmetric map is two different halves)
+        M.spots.forEach(function(s){ chk('spot' + s.team, s.x, s.y, s.team); });
+        M.keys.forEach(function(k){ chk('key' + k.door, k.x, k.y, String(k.door).indexOf('r') >= 0 ? 1 : 0); });
+        M.boosts.forEach(function(b){ chk('boost' + b.kind, b.x, b.y, b.x > M.WW/2 ? 1 : 0); });
+        M.homes.forEach(function(h){ if(h.pad) chk('pad' + h.team, h.pad.x + h.pad.w/2, h.pad.y, h.team); });
+        M.jails.forEach(function(j){ chk('jail' + j.owner, j.door.x + (j.face === 1 ? j.door.w + 50 : -50), j.door.y + j.door.h, 1 - j.owner); });   // (the jail's door is reached by the other side)
+        // the other half reaches the first's jail
         var j0 = M.jails[0], n0 = ctfNavNodeAt(nav, j0.door.x + j0.door.w + 50, j0.door.y + j0.door.h, 10);
         var viaOther = !!(n0 && nav.reach[1][n0.id]);
-        // no trap: from every place one can reach, the way back home exists (doors ignored; the super jump not counted)
+        // no trap: from every place one can reach, the way back home exists (doors ignored; the super jump not counted), for both sides
         var N = nav.nodes, rev = N.map(function(){ return []; });
         N.forEach(function(a){ a.edges.forEach(function(e){ if(e.need || e.doors.some(function(d){ return d[0] === 'J'; })) return; rev[e.to].push(a.id); }); });
-        var canHome = new Uint8Array(N.length), q = [];
-        M.homes[0].spawns.forEach(function(sp){ var nd = ctfNavNodeAt(nav, sp.x, sp.y, 12); if(nd && !canHome[nd.id]){ canHome[nd.id] = 1; q.push(nd.id); } });
-        while(q.length){ var id = q.pop(); rev[id].forEach(function(p){ if(!canHome[p]){ canHome[p] = 1; q.push(p); } }); }
-        var trapped = 0; for(var i = 0; i < N.length; i++) if(nav.reach[0][i] && !canHome[i]) trapped++;
+        var trapped = 0;
+        [0, 1].forEach(function(t){
+          var canHome = new Uint8Array(N.length), q = [];
+          M.homes[t].spawns.forEach(function(sp){ var nd = ctfNavNodeAt(nav, sp.x, sp.y, 12); if(nd && !canHome[nd.id]){ canHome[nd.id] = 1; q.push(nd.id); } });
+          while(q.length){ var id = q.pop(); rev[id].forEach(function(p){ if(!canHome[p]){ canHome[p] = 1; q.push(p); } }); }
+          for(var i = 0; i < N.length; i++) if(nav.reach[t][i] && !canHome[i]) trapped++;
+        });
         return JSON.stringify({ bad: bad, viaOther: viaOther, nodes: nav.nodes.length, trapped: trapped });
       })()`));
       expect(r.bad, 'unreachable or off the graph').toEqual([]);

@@ -2324,10 +2324,29 @@ function ctfMergeCells(cells, flat){   // cells: Set of "r,c" (flat: horizontal 
   return out.map(o=>({ x:o.c0*CTF_CELL, y:o.r0*CTF_CELL, w:(o.c1-o.c0+1)*CTF_CELL, h:(o.r1-o.r0+1)*CTF_CELL }));
 }
 
-function ctfMapBuild(id){
+// An ASYMMETRIC map (the owner, 2026-10-15: "SOME maps asymmetric", sides differ in style) has two builders: build is side A and buildB is side B, each written as a left half (home at column 0)
+// and turned over for the right half. Side A sits on the left unless the bid swaps them (swap: B on the left). The two halves are built apart and joined: the lists of a built half hold
+// each thing and its mirror in turn, so the left half is every first entry of A and the right half every second entry of B.
+function ctfMapBuild(id, swap){
+  const def = CTF_MAPS[id]; if(!def) return null;
+  if(!def.buildB){ const M = ctfMapBuildOne(id, def.build); M.gid = id; return M; }
+  const A = ctfMapBuildOne(id, swap ? def.buildB : def.build), B = ctfMapBuildOne(id, swap ? def.build : def.buildB);
+  return ctfMapMerge(A, B, def, !!swap, id);
+}
+function ctfMapMerge(A, B, def, swap, id){
+  const M = Object.assign({}, A);
+  const pick = (a, b)=>{ const out = []; for(let i = 0; i < a.length; i += 2) out.push(a[i]); for(let i = 1; i < b.length; i += 2) out.push(b[i]); return out; };
+  for(const k of ['plats', 'zones', 'decor', 'decoAreas', 'back', 'front', 'elevs', 'boosts', 'buffs', 'keys', 'doors', 'spots']) M[k] = pick(A[k], B[k]);
+  M.homes = [A.homes[0], B.homes[1]]; M.jails = [A.jails[0], B.jails[1]];
+  M.solids = M.plats.filter(p=>p.solid);
+  M.theme = Object.assign({}, def.theme, { skinRects:pick(A._skin, B._skin) });
+  M.rowsR = B.rows; M.gid = id + (swap ? '~' : ''); M.asym = true; M.swap = swap;
+  return M;
+}
+function ctfMapBuildOne(id, build){
   const def = CTF_MAPS[id]; if(!def) return null;
   const size = def.size || {}; CTF_DIM.rows = size.rows || CTF_ROWS; CTF_DIM.half = size.half || CTF_HALF; CTF_DIM.dr = CTF_DIM.rows - CTF_ROWS;
-  const g = ctfGridNew(); def.build(g);
+  const g = ctfGridNew(); build(g);
   const dr = CTF_DIM.dr; if(dr && g.info && g.info.supers) for(const sj of g.info.supers){ sj.pad.r += dr; sj.ledge.r += dr; }
   const WW = 2*CTF_DIM.half*CTF_CELL, WH = CTF_DIM.rows*CTF_CELL, HALF = WW/2;
   const mx = (x, w)=> WW - x - (w||0);
@@ -2361,6 +2380,7 @@ function ctfMapBuild(id){
   for(const p of leftPlats){ const cx = (p.x + p.w/2)/CTF_CELL, cy = (p.y + p.h/2)/CTF_CELL; for(const k of g.skins) if(cx >= k.c0 && cx <= k.c1 + 1 && cy >= k.r0 && cy <= k.r1 + 1){ p.skin = k.kind; break; } }
   for(const p of leftPlats){ M.plats.push({ ...p }); M.plats.push({ ...p, x:mx(p.x,p.w) }); }
   M.theme.skinRects = []; for(const k of g.skins){ const r = { x:k.c0*CTF_CELL, y:k.r0*CTF_CELL, w:(k.c1 - k.c0 + 1)*CTF_CELL, h:(k.r1 - k.r0 + 1)*CTF_CELL, kind:k.kind }; M.theme.skinRects.push(r); M.theme.skinRects.push({ ...r, x:mx(r.x, r.w) }); }
+  M._skin = M.theme.skinRects;
   M.zones = [];
   for(const z of g.zones){
     const zz = { type:z.type, x:z.c0*CTF_CELL, y:z.r0*CTF_CELL, w:(z.c1 - z.c0 + 1)*CTF_CELL, h:(z.r1 - z.r0 + 1)*CTF_CELL, strength:z.strength, dir:z.dir };
@@ -3367,6 +3387,131 @@ function ctfJailThreshold(n){ return clamp(140 - 10*n, 50, 120); }
 const CTF_FLAG_R = 40, CTF_KEY_R = 42, CTF_BOOST_STEPS = 420, CTF_BOOST_CD = 1500;
 const CTF_REVEAL_OPEN = 420, CTF_REVEAL_COVER = 130, CTF_STALL_REVEAL = 14400;
 const CTF_PING_FIRST = 10800, CTF_PING_EVERY = 3600, CTF_PING_LEN = 300;   // the radar: after 3 minutes with no capture, and again every minute, all flags still out show for 5 s
+// ---------------------------------------------------------------------------------------------------------------
+//  6. THE OLD OAK AND THE MEADOW (the owner, 2026-10-15: "SOME maps asymmetric", sides different in style, a bid for the side). 84 columns a side, 28 rows; side A is the FORTRESS, side B the MEADOW.
+//    A: the home is high in the oak's crown, a trunk of rooms and tunnels that fall gently down to the HEARTWOOD hall and the roots; great hiding spots, a long way round. The jail is under the
+//    home; a vault of seeds behind two locked doors.
+//    B: the home is a barn on open ground, a storm cellar under it for the jail, rolling hills (slopes), a windmill with a lift, burrows under the meadow; open, fast, closer to the middle,
+//    with a few good hiding places, a granary behind two locked doors.
+//    The MIDDLE is the same on both sides (oakHeart): a bowl of mossy ground with a pond, a hollow heart-tree on the line, a cave under it all, a canopy bridge, a rope of hops.
+//  Rows are written as the grid's own (0 the top, 27 the bottom floor).
+// ---------------------------------------------------------------------------------------------------------------
+function ctfKit28(g){
+  const Y = r=>r + 11, D = 83;
+  const k = { Y, D };
+  k.A = (c0, r0, c1, r1)=>g.box(Y(r0), c0, Y(r1), c1, '.'); k.S = (c0, r0, c1, r1)=>g.box(Y(r0), c0, Y(r1), c1, '#'); k.H = (r, c0, c1)=>g.fill(Y(r), c0, c1, '=');
+  k.P = (r, c, s)=>g.put(Y(r), c, s);
+  k.SL = (c0, c1, rA, rB, h, o)=>g.slope(c0, c1, Y(rA), Y(rB), h, o && o.fill != null ? Object.assign({}, o, { fill:Y(o.fill) }) : o);
+  k.BK = (c0, r0, c1, r1, kind)=>g.back(c0, Y(r0), c1, Y(r1), kind); k.DC = (kind, c, r, w, h, o)=>g.deco(kind, c, Y(r), w, h, o || {}); k.ZN = (t, c0, r0, c1, r1, st, d)=>g.zone(t, c0, Y(r0), c1, Y(r1), st, d);
+  k.STALK = (c, rb, rt)=>g.stalk(c, Y(rb), Y(rt)); k.SHAFT = (c, rb, rt)=>g.shaft(c, Y(rb), Y(rt));
+  // cut the steps of earlier slopes out of a box of cells (rows, columns), so a hole can go through a slope
+  k.CUT = (c0, r0, c1, r1)=>{ const dr = CTF_DIM.dr; g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c1 + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= r0 + dr + 11 && Math.floor((rp.y + 1)/CTF_CELL) <= r1 + dr + 11)); };
+  // props along every flat floor and ledge, a kind to suit the place; kindsAt(r, c) -> a list; skip(r, c) -> true to leave the place bare
+  k.scatter = (kindsAt, prob, gap, skip, salt)=>{
+    const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {};
+    for(let r = 0; r < 27; r++) for(let c = 1; c <= D; c++){
+      if(rampCell.has(r + '.' + c) || (skip && skip(r, c))) continue;
+      const here = g.at(Y(r), c), below = g.at(Y(r) + 1, c);
+      if(here !== '.' || (below !== '#' && below !== '=')) continue;
+      if(cellJitter(c, r, salt || 41) > prob || (last[r] != null && c - last[r] < gap)) continue;
+      const ks = kindsAt(r, c); if(!ks || !ks.length) continue;
+      g.put(Y(r), c, ks[Math.floor(cellJitter(c, r, (salt || 41) + 2)*ks.length)]); last[r] = c;
+    }
+  };
+  return k;
+}
+// THE MIDDLE, shared by both halves: its columns 66-83 and the line they meet at (the other half is this turned over)
+function oakHeart(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, STALK, SHAFT, CUT, Y } = k, D = k.D;
+  SL(66, 81, 14, 20, 3, { fill:27 }); S(82, 20, D, 27);                                               // the bowl: from the rim (row 14) down to the bottom (row 20), 6 rows over 16 columns
+  ZN('water', 74, 17, 81, 19, 1);                                                                     // a pond
+  // the hollow heart-tree on the middle line: bark 2 columns thick, a doorway at the foot, a shaft of hops up to a crown deck
+  S(80, 5, D, 19); A(82, 7, D, 19); A(80, 17, 81, 19); A(82, 5, D, 6);
+  SHAFT(82, 19, 5); H(4, 76, D); P(3, 79, 'y'); BK(82, 7, D, 19, 'wood');
+  g.put(Y(18), 81, '.');
+  // the cave under it all (the roots of the tree and the bowl): wide, low, humped
+  A(58, 22, D, 26); SL(58, 83, 27, 27, 3);
+  SL(60, 65, 27, 25, 3, { fill:27 }); SL(66, 71, 25, 27, 3, { fill:27 });                               // one hump in the cave floor
+  H(23, 61, 66); H(22, 82, 83); H(24, 68, 72);
+  // two holes down from the bowl into the cave, and a stair of hops back up each
+  CUT(73, 17, 75, 19); A(73, 18, 75, 21); STALK(73, 26, 18);
+  CUT(77, 18, 79, 20); A(77, 19, 79, 21); STALK(77, 26, 19);
+  // the canopy bridge across the line, with a vine to climb up to it from the rim
+  H(9, 70, D); STALK(68, 13, 9);
+  BK(58, 22, D, 26, 'dirt'); ZN('dark', 62, 22, D, 26);
+  DC('cloud', 70, 2, 5, 2); DC('cloud', 56, 5, 4, 2);
+}
+CTF_MAPS.oak = {
+  name:'The Old Oak and the Meadow',
+  size:{ rows:28, half:84 },
+  asym:{ value:[0.64, 0.36], icons:['fort', 'run'], names:['Fortress', 'Meadow'] },
+  beta:true,   // pickable by name; Random leaves it out until its CPU-only probe passes
+  living:{ weather:['clear', 'rain', 'clear', 'fog'], night:true, critters:{ birds:8, bats:5, mice:14, fish:5 } },
+  theme:{ neutral:22, pal:{ rock:'#6b5a42', wood:'#8a5a2f', leaf:'#3f8f4a', sand:'#e8d49a', water:'#3a8fc0', bark:'#6b4a2a' }, sky:['#79cdf2','#e8f8ff'], far:['#b6e5b4','#87cc74'], bg:'forest', pat:'rock', back:'#9fc79b', backLine:'rgba(30,72,40,0.2)', dirt:'#a8835a', wain:'#7fa87c', trim:'#c8e4c2', autoCap:'grass',
+          solid:{ fill:'#8c7855', line:'#6a5a40', hi:'#b09a72', edge:'#1c1c1c' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' },
+          cover:{ log:'#7a5a3a', logEnd:'#c9a070', fern:'#2f9a52', stump:'#8a6a44', bush:'#3f9a4c', rock:'#6a6a74', crate:'#a8773f', barrel:'#7a4a2a', hay:'#d8b44a', chest:'#b08a3a', urn:'#6a8aa0', banner:'#9a3a5a' },
+          deco:{ a:'#5cb85a', b:'#8f6a3e', c:'#9fe0f0', d:'#3a8fc0' } },
+  // ---- SIDE A: THE FORTRESS ----
+  build(g){
+    const k = ctfKit28(g), { A, S, H, P, SL, BK, DC, ZN, STALK, SHAFT, CUT, Y } = k, D = k.D, info = { supers:[], pieces:[] };
+    S(0, 6, 65, 27);                                                                                    // the oak: a body of wood from the crown down to the roots
+    A(44, 0, 65, 13); SL(44, 65, 6, 14, 3, { fill:27 });                                                  // the great limb: from the crown (row 6) down to the rim of the bowl (row 14), outside
+    // the HOME HALL high in the crown (rows 9-13), a hatch to the canopy, a stair down to the jail corridor
+    A(1, 9, 14, 13); P(13, 1, 'PP'); H(11, 1, 13); P(10, 2, 'HHHHHH'); P(13, 3, 'HH'); STALK(11, 13, 11); BK(1, 9, 14, 13, 'wood'); DC('lantern', 8, 9, 2, 2); DC('hang', 12, 9, 2, 3);
+    A(8, 6, 10, 8); STALK(8, 13, 6);                                                                    // up to the canopy
+    A(1, 17, 5, 19); g.col(6, Y(17), Y(19), 'J'); P(19, 2, 'ppp'); A(7, 17, 16, 19); g.keepClear(1, Y(17), 6, Y(19)); BK(1, 17, 16, 19, 'dirt');
+    A(12, 14, 13, 16); SHAFT(12, 19, 14);                                                               // the stair from the hall's floor to the corridor
+    // the TRUNK STAIR from the hall (upper) and the CORRIDOR (lower) fall gently east to the heartwood
+    A(15, 11, 18, 13); SL(15, 40, 14, 20, 3, { rough:true }); BK(15, 9, 40, 20, 'wood');
+    SL(17, 40, 20, 25, 3, { rough:true });
+    // THE HEARTWOOD: a tall hollow hall of the oak (cols 41-62), its floor at the bottom, slabs of bark hung in it
+    A(41, 14, 63, 26); BK(41, 14, 63, 26, 'wood');
+    SL(41, 58, 20, 26, 3); SL(44, 60, 16, 19, 3);                                                       // two slabs: the first the trunk stair's own floor going on, the second climbing back the other way
+    STALK(58, 26, 19);                                                                                  // a stair of hops from the floor up to the second slab's low end...
+    A(52, 9, 54, 13); CUT(52, 8, 54, 10); STALK(52, 17, 9);                                             // ...and one from its middle up through the limb to the open air
+    // the VAULT OF SEEDS (doors at cols 27 and 36) above the trunk stair, a branch of the hall's own corridor; its east corridor drops into the heartwood
+    A(28, 9, 35, 12); g.col(27, Y(11), Y(12), '1'); g.col(36, Y(11), Y(12), '1'); P(12, 30, 'N'); P(12, 33, 'T'); P(12, 29, 'u'); BK(28, 9, 35, 12, 'brick');
+    A(16, 11, 26, 12); STALK(24, 15, 13); A(37, 11, 43, 12); A(42, 13, 43, 13);
+    P(26, 45, 'a');
+    H(19, 62, 63); g.elev(62, 2, Y(19), Y(27));                                                       // a lift from the floor to the upper stair
+    ZN('dark', 41, 18, 62, 26);
+    // props everywhere in a fortress: roots, stumps, logs, ferns
+    oakHeart(k, g);
+    k.scatter((r, c)=>(r > 13 ? ['I', 'O', 'V', 'K', 'G', 'W'] : ['I', 'O', 'V']), 0.9, 3, (r, c)=>(c < 17 && r >= 9 && r <= 20) || (c >= 6 && c <= 10 && r >= 12), 41);
+    H(4, 46, 49); H(3, 52, 55); H(4, 58, 61); H(3, 64, 67);                                             // the canopy: ledges over the limb, a third way to the middle (it ends over the bridge)
+    P(13, 12, 'h');
+    g.info = info; return info;
+  },
+  // ---- SIDE B: THE MEADOW ----
+  buildB(g){
+    const k = ctfKit28(g), { A, S, H, P, SL, BK, DC, ZN, STALK, SHAFT, CUT, Y } = k, D = k.D, info = { supers:[], pieces:[] };
+    S(0, 22, 65, 27);                                                                                   // the meadow: open ground, a thin crust over burrows
+    // the BARN (home) on the ground, a storm cellar under it (the jail)
+    S(14, 16, 27, 21); A(15, 18, 26, 21); A(14, 20, 14, 21); A(27, 20, 27, 21); P(21, 15, 'PP'); H(19, 15, 26); P(18, 17, 'HHHHHHHH'); STALK(21, 21, 19); BK(15, 18, 26, 21, 'wood'); DC('lantern', 20, 18, 2, 2);
+    A(15, 24, 19, 26); g.col(20, Y(24), Y(26), 'J'); P(26, 16, 'ppp'); A(21, 24, 30, 26); g.keepClear(15, Y(24), 20, Y(26)); BK(15, 24, 30, 26, 'dirt');
+    A(24, 22, 25, 23); SHAFT(24, 26, 22);                                                               // the stair down from the barn floor to the cellar corridor
+    A(22, 22, 23, 23); g.elev(22, 2, Y(22), Y(27));                                                     // and a lift beside it
+    // the MEADOW: hills as slopes; the way to the middle runs up over them
+    SL(34, 50, 22, 17, 3, { fill:27 }); S(51, 17, 55, 27);                                              // up to the windmill hill
+    SL(56, 65, 17, 14, 3, { fill:27 });                                                                 // and on up to the rim of the bowl
+    // the WINDMILL on the hill (a hollow tower, a lift up its side, a deck and sails)
+    S(51, 9, 54, 16); A(52, 10, 53, 16); A(51, 15, 51, 16); SHAFT(52, 16, 10); H(9, 48, 57); P(8, 56, 'C'); DC('prop', 49, 5, 6, 4);
+    // BURROWS under the meadow: a long tunnel from the cellar corridor to the cave under the bowl, and a rabbit hole from the hill
+    A(31, 24, 57, 26); BK(31, 24, 57, 26, 'dirt');
+    CUT(40, 18, 42, 21); A(40, 18, 42, 23); STALK(40, 26, 18);
+    // the GRANARY (doors at cols 2 and 12) behind the barn: a hut on the flat, a locked door each end; its key lies out on the meadow
+    S(2, 14, 12, 17); S(2, 18, 2, 19); S(12, 18, 12, 19); A(3, 18, 11, 21); g.col(2, Y(20), Y(21), '1'); g.col(12, Y(20), Y(21), '1'); P(21, 5, 'T'); P(21, 8, 'N'); P(21, 10, 'u'); BK(3, 18, 11, 21, 'wood');
+    P(21, 30, 'a'); P(21, 32, 'h');
+    // wind at the back, mushrooms to bounce on, a field of props (fewer, in the open)
+    ZN('wind', 28, 8, 65, 17, 1, 1); ZN('spring', 60, 14, 61, 16, 1); ZN('float', 36, 0, 48, 8, 1);
+    H(12, 36, 40); H(10, 42, 46); H(11, 58, 61); H(12, 63, 65);                                         // ledges in the air over the hills: from the windmill's deck on to the rim (a third way)
+    DC('cloud', 20, 3, 4, 2); DC('cloud', 46, 1, 5, 2); DC('hay', 5, 19, 3, 3);
+    oakHeart(k, g);
+    k.scatter((r, c)=>(r < 22 ? ['Y', 'B', 'K', 'O', 'W'] : ['R', 'K', 'G', 'W']), 0.85, 3, (r, c)=>(c >= 14 && c <= 27 && r >= 16 && r <= 26) || (c >= 21 && c <= 31 && r >= 24) || (c >= 2 && c <= 27 && r <= 17), 41);
+    g.info = info; return info;
+  },
+};
+
 const CTF_ZOOM = 0.9;
 const CTF = { live:null, map:null, mapId:null, prevStage:null, lastMap:null, built:{}, stageObjs:{}, forceMap:null };
 
@@ -3375,7 +3520,8 @@ function ctfMapIds(){ return Object.keys(CTF_MAPS).filter(k=>!CTF_MAPS[k].wip); 
 // A map marked BETA can be picked by name (its button says so) but Random leaves it out: the owner's rule (2026-10-14) that a map ships only once
 // its CPU-only probe passes; the factory's CPUs still search it too slowly.
 function ctfMapRandomIds(){ return ctfMapIds().filter(k=>!CTF_MAPS[k].beta); }
-function ctfMapGet(id){ return CTF.built[id] || (CTF.built[id] = ctfMapBuild(id)); }
+function ctfMapGet(id, swap){ const k = id + (swap ? '~' : ''); return CTF.built[k] || (CTF.built[k] = ctfMapBuild(id, swap)); }
+function ctfNavId(){ return CTF.map && CTF.map.gid ? CTF.map.gid : CTF.mapId; }
 function ctfStageObj(id){
   if(!CTF.stageObjs[id]){ const M = ctfMapGet(id);
     CTF.stageObjs[id] = { id:'ctf-'+id, name:M.name, blurb:'Capture the Flag', sky:M.theme.sky, ground:M.theme.solid.fill, plats:[], hazard:null }; }
@@ -3410,8 +3556,10 @@ function ctfPickMap(){
   return id;
 }
 // setupWorld() for this mode: pick a map at random and lay it out. Pure given the map: the world holds no live state.
-function ctfBuildWorld(){
-  const id = ctfPickMap(), M = ctfMapGet(id);
+function ctfBuildWorld(keep){   // keep: the same map again (the bid swapped the sides)
+  const id = keep ? CTF.mapId : ctfPickMap();
+  if(!keep){ CTF.swap = false; CTF.bidRes = null; CTF.bidPre = null; }
+  const M = ctfMapGet(id, CTF.swap);
   CTF.lastMap = id; CTF.mapId = id; CTF.map = M;
   if(!(stage && String(stage.id).indexOf('ctf-') === 0)) CTF.prevStage = stage;
   stage = ctfStageObj(id);
@@ -3430,7 +3578,125 @@ function ctfStageRestore(){
 }
 
 // ---- the match state -------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------------------------
+//  THE SIDE BID (the owner, 2026-10-15: "you getting the tradeoff of picking: give the opponent extra points in exchange for choosing your side"). On an asymmetric map the match opens with a
+//  secret bid: each side picks the half it wants and bids build points (0-10 a fighter) for it. Different halves wanted: each gets its own, nothing is paid. The same half: the higher bid gets
+//  it and pays that many points a fighter to the other side; a tie is a coin flip. The side that lost the bid gets the other half, the points, an EXTRA KEY each, and ONE EXTRA FLAG to hide
+//  (so the winner has one more to find: "hiding a flag is an advantage"). The bidder is each side's first human (online: that player's own keys, read by the host); a side of CPUs bids
+//  by what each half is worth to it (the map's asym.value). Keys: left or right picks the half, up and down the bid, Space or C locks it in (again to take it back).
+// ---------------------------------------------------------------------------------------------------------------
+const CTF_BID_MAX = 10, CTF_BID_STEPS = 1800;
+function ctfAsym(){ const d = CTF.mapId && CTF_MAPS[CTF.mapId]; return !!(d && d.buildB); }
+function ctfBidCpu(t, def){
+  const v = (def.asym && def.asym.value) || [0.5, 0.5], d = v[0] - v[1], sk = ctfAiSkill();   // d: how much better half A is than half B, -1..1
+  const want = d > 0.04 ? 0 : d < -0.04 ? 1 : (Math.random() < 0.5 ? 0 : 1);
+  const amt = Math.max(0, Math.min(CTF_BID_MAX, Math.round(Math.abs(d)*10*(0.7 + 0.15*sk) + (Math.random() - 0.5)*3)));
+  return { side:want, amt };
+}
+function ctfBidTeamHuman(t){ return fighters.find(f=>f.team === t && ctfIsHuman(f)); }
+function ctfBidCpuFill(b, def){
+  for(const t of [0, 1]) if(!b.lock[t] && !ctfBidTeamHuman(t)){ const q = ctfBidCpu(t, def); b.side[t] = q.side; b.amt[t] = q.amt; b.lock[t] = true; b.who[t] = -1; }
+}
+function ctfBidNew(){
+  const def = CTF_MAPS[CTF.mapId], b = { t:0, side:[0, 0], amt:[0, 0], lock:[false, false], who:[-1, -1] };
+  for(const t of [0, 1]){ const h = ctfBidTeamHuman(t); b.who[t] = h ? h.idx : -1; if(h){ b.side[t] = (def.asym && def.asym.value && def.asym.value[1] > def.asym.value[0]) ? 1 : 0; b.amt[t] = 2; } }
+  ctfBidCpuFill(b, def);
+  return b;
+}
+function ctfBidResolve(b){
+  const want = b.side.slice(), amt = b.amt.slice(), sideOf = want.slice();
+  let win = -1, lo = -1, pay = 0;
+  if(want[0] === want[1]){
+    win = amt[0] > amt[1] ? 0 : amt[1] > amt[0] ? 1 : (Math.random() < 0.5 ? 0 : 1); lo = 1 - win; pay = amt[win]; sideOf[lo] = 1 - want[win];
+  }
+  const res = { sw:sideOf[0] === 1 ? 1 : 0, lo, pay, win, xo:-1, sd:sideOf };
+  if(lo >= 0){ const mates = fighters.filter(f=>f.team === lo), cpu = mates.find(f=>!ctfIsHuman(f)); res.xo = (cpu || mates[0]).idx; }
+  return res;
+}
+// The result is in: the right half for each side (the world is built again when the halves swap), the points paid, the extra key and flag; the match begins its hiding.
+function ctfBidApplyRes(res){
+  CTF.bidRes = res; CTF.bidPre = null;
+  const sw = !!res.sw;
+  if(sw !== !!CTF.swap){ CTF.swap = sw; ctfBuildWorld(true); }
+  ctfBegin();
+}
+function ctfBidStep(L){
+  const b = L.bid; if(!b){ L.phase = 'hide'; return; }
+  b.t++;
+  ctfBidCpuFill(b, CTF_MAPS[L.id]);
+  if((b.lock[0] && b.lock[1]) || b.t >= CTF_BID_STEPS){ ctfBidApplyRes(ctfBidResolve(b)); }
+}
+function ctfBidInput(f, inp){
+  const L = CTF.live, b = L.bid; if(!b) return CTF_NOINP;
+  const t = f.team, k = f._bk || (f._bk = { l:false, r:false, u:false, d:false, s:false });
+  const l = !!inp.left, r = !!inp.right, u = !!(inp.up || inp.jump), d = !!inp.down, sp = !!(inp.flag || inp.special);
+  if(b.who[t] === f.idx){
+    if(!b.lock[t]){
+      if(l && !k.l) b.side[t] = 0;
+      if(r && !k.r) b.side[t] = 1;
+      if(u && !k.u) b.amt[t] = Math.min(CTF_BID_MAX, b.amt[t] + 1);
+      if(d && !k.d) b.amt[t] = Math.max(0, b.amt[t] - 1);
+    }
+    if(sp && !k.s){ b.lock[t] = !b.lock[t]; ctfSfx(b.lock[t] ? 'done' : 'pick'); }
+  }
+  k.l = l; k.r = r; k.u = u; k.d = d; k.s = sp;
+  return CTF_NOINP;
+}
+// ---- drawing: two cards (a stronghold and a run), your pick, your bid, a lock; then who got what ----
+function ctfBidIcon(g, kind, x, y, s, col){   // 'fort': a tower with a crenellated top and a door; 'run': three chevrons; others (a map may name its own): a hill
+  g.save(); g.translate(x, y); ctfOutline(g, Math.max(2.5, s*0.06)); g.lineJoin = 'round';
+  if(kind === 'fort'){
+    g.fillStyle = col; g.beginPath(); g.rect(-s*0.34, -s*0.3, s*0.68, s*0.7); g.fill(); g.stroke();
+    g.beginPath(); for(let i = 0; i < 3; i++){ g.rect(-s*0.34 + i*s*0.24, -s*0.46, s*0.2, s*0.18); } g.fill(); g.stroke();
+    g.fillStyle = '#1c1c1c'; g.beginPath(); g.moveTo(-s*0.1, s*0.4); g.lineTo(-s*0.1, s*0.12); g.arc(0, s*0.12, s*0.1, Math.PI, 0); g.lineTo(s*0.1, s*0.4); g.closePath(); g.fill();
+  } else if(kind === 'run'){
+    g.fillStyle = col; for(let i = 0; i < 3; i++){ g.beginPath(); g.moveTo(-s*0.34 + i*s*0.26, -s*0.34); g.lineTo(-s*0.1 + i*s*0.26, 0); g.lineTo(-s*0.34 + i*s*0.26, s*0.34); g.lineTo(-s*0.2 + i*s*0.26 - s*0.0, 0); g.closePath(); g.fill(); g.stroke(); }
+  } else { g.fillStyle = col; g.beginPath(); g.moveTo(-s*0.44, s*0.34); g.quadraticCurveTo(0, -s*0.6, s*0.44, s*0.34); g.closePath(); g.fill(); g.stroke(); }
+  g.restore();
+}
+function ctfDrawBid(L){
+  const b = L.bid; if(!b) return;
+  const def = CTF_MAPS[L.id], icons = (def.asym && def.asym.icons) || ['fort', 'run'], g = ctx, cx = W/2, cy = H*0.4;
+  const me = fighters.find(q=>q.you), vt = me ? me.team : 0;
+  g.save(); g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(28,24,38,0.9)'; g.strokeStyle = ctfColor(vt); g.lineWidth = 4; g.fillRect(cx - 270, cy - 150, 540, 300); g.strokeRect(cx - 270, cy - 150, 540, 300);
+  for(let sd = 0; sd < 2; sd++){
+    const x = cx - 135 + sd*270, sel = b.side[vt] === sd;
+    g.fillStyle = sel ? 'rgba(255,210,63,0.22)' : 'rgba(255,255,255,0.06)'; g.strokeStyle = sel ? '#ffd23f' : 'rgba(244,239,226,0.4)'; g.lineWidth = sel ? 5 : 2;
+    g.fillRect(x - 100, cy - 120, 200, 150); g.strokeRect(x - 100, cy - 120, 200, 150);
+    ctfBidIcon(g, icons[sd], x, cy - 52, 110, sd === 0 ? '#c9a070' : '#7ac27a');
+    if(sel){ g.fillStyle = ctfColor(vt); g.strokeStyle = '#1c1c1c'; g.lineWidth = 3; g.beginPath(); g.arc(x, cy + 14, 11, 0, 7); g.fill(); g.stroke(); }
+  }
+  // the bid: a coin, the number, an arrow each way
+  const amt = b.amt[vt], by = cy + 74;
+  g.fillStyle = '#ffd23f'; g.strokeStyle = '#1c1c1c'; g.lineWidth = 3; g.beginPath(); g.arc(cx - 56, by, 18, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = '#f4efe2'; g.font = 'bold 46px sans-serif'; g.fillText(String(amt), cx + 6, by + 2);
+  g.fillStyle = b.lock[vt] ? 'rgba(244,239,226,0.25)' : '#f4efe2'; g.strokeStyle = '#1c1c1c'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(cx + 62, by - 22); g.lineTo(cx + 78, by - 6); g.lineTo(cx + 46, by - 6); g.closePath(); g.fill(); g.stroke();
+  g.beginPath(); g.moveTo(cx + 62, by + 22); g.lineTo(cx + 78, by + 6); g.lineTo(cx + 46, by + 6); g.closePath(); g.fill(); g.stroke();
+  if(b.lock[vt]) ctfCheckIcon(g, cx + 118, by, 18);
+  // who has locked: a dot a side (nothing of what they picked)
+  for(const t of [0, 1]){ g.fillStyle = b.lock[t] ? ctfColor(t) : 'rgba(255,255,255,0.2)'; g.strokeStyle = '#1c1c1c'; g.lineWidth = 2; g.beginPath(); g.arc(cx - 20 + t*40, cy + 128, 8, 0, 7); g.fill(); g.stroke(); }
+  g.fillStyle = '#3a3448'; g.fillRect(cx - 120, cy + 140, 240, 6); g.fillStyle = '#f2c033'; g.fillRect(cx - 120, cy + 140, 240*(1 - Math.min(1, b.t/CTF_BID_STEPS)), 6);
+  g.restore();
+}
+function ctfDrawBidResult(L){
+  const r = CTF.bidRes; if(!r || !(L.bidShow > 0)) return;
+  const def = CTF_MAPS[L.id], icons = (def.asym && def.asym.icons) || ['fort', 'run'], g = ctx, cx = W/2, cy = 180;
+  g.save(); g.globalAlpha = Math.min(1, L.bidShow/30); g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(28,24,38,0.9)'; g.strokeStyle = '#f4efe2'; g.lineWidth = 3; g.fillRect(cx - 190, cy - 60, 380, 120); g.strokeRect(cx - 190, cy - 60, 380, 120);
+  for(const t of [0, 1]){
+    const y = cy - 26 + t*52, sd = r.sd[t];
+    g.fillStyle = ctfColor(t); g.strokeStyle = '#1c1c1c'; g.lineWidth = 3; g.beginPath(); g.arc(cx - 150, y, 13, 0, 7); g.fill(); g.stroke();
+    ctfBidIcon(g, icons[sd], cx - 100, y, 40, sd === 0 ? '#c9a070' : '#7ac27a');
+    if(r.win === t){ g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(cx - 40, y, 10, 0, 7); g.fill(); g.strokeStyle = '#1c1c1c'; g.stroke(); g.fillStyle = '#e0503a'; g.font = 'bold 26px sans-serif'; g.fillText('-' + r.pay, cx + 0, y + 1); }
+    if(r.lo === t){ g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(cx - 40, y, 10, 0, 7); g.fill(); g.strokeStyle = '#1c1c1c'; g.stroke(); g.fillStyle = '#3fbf5f'; g.font = 'bold 26px sans-serif'; g.fillText('+' + r.pay, cx + 0, y + 1);
+      ctfKeyIcon(g, cx + 50, y, '#e8e8f0', 26); g.fillStyle = '#f4efe2'; g.font = 'bold 18px sans-serif'; g.fillText('2', cx + 76, y + 8); ctfFlagIcon(g, cx + 128, y + 14, ctfColor(t), 30, hazardT*0.1, null); }
+  }
+  g.restore();
+}
 function ctfBegin(){
+  if(ctfAsym() && !CTF.bidRes){ const pre = ctfBidNew(); if(pre.lock[0] && pre.lock[1]){ ctfBidApplyRes(ctfBidResolve(pre)); return; } CTF.bidPre = pre; }   // (a match with no human: no bidding to wait for)
   const M = CTF.map;
   const L = CTF.live = { map:M, id:CTF.mapId, phase:'hide', t:0, playT:0, flags:[], keys:[], doors:[], boosts:[], jails:[], score:[0,0],
     done:{}, flash:null, over:false, winner:-1, lastCapT:0, stalled:false, respawnN:[0,0], dyn:[], seen:[[],[]], cseen:[[],[]], foundAt:[{},{}], kos:[0,0], capLog:[], ping:[null, null], radar:0, n:Math.max(2, Math.floor(fighters.length/2)) };
@@ -3450,11 +3716,20 @@ function ctfBegin(){
   }
   L.seen = [ fighters.map(()=>false), fighters.map(()=>false) ]; L.cseen = [ fighters.map(()=>false), fighters.map(()=>false) ];
   ctfEditNew(L); CTF._netKey = null; CTF._netN = 0;
+  if(ctfAsym()){
+    const R = CTF.bidRes;
+    if(!R){ L.phase = 'bid'; L.bid = CTF.bidPre || ctfBidNew(); }
+    else {   // the side bid is settled: points paid, an extra key a fighter and an extra flag for the side that lost it
+      L.xKey = [false, false]; L.bidShow = 300;
+      if(R.lo >= 0){ for(const f of fighters){ L.pts[f.idx] = Math.max(0, (L.pts[f.idx] || 0) + (f.team === R.win ? -R.pay : R.pay)); } L.xKey[R.lo] = true; }
+      if(R.xo >= 0 && fighters[R.xo]){ const o = fighters[R.xo]; const xf = { id:L.flags.length, team:o.team, owner:o.idx, st:0, car:o.idx, x:o.x, y:o.y, hx:o.x, hy:o.y, cover:false, lockIdx:-1, lockT:0, vy:0, fall:false, extra:true }; L.flags.push(xf); L.xFlag = xf; }
+    }
+  }
   ctfRebuildDyn(L);
   CTF.cpuHide = {};
   L.explore = ctfExploreOn() && !(typeof inNetSession === 'function' && inNetSession());
   const sk0 = CTF.skipNav; if(L.explore) CTF.skipNav = true;
-  try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); }
+  if(L.phase !== 'bid'){ try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); } }
   CTF.skipNav = sk0;
   if(L.explore){ for(const f of fighters) if(!ctfIsHuman(f)) f.controller = 'still'; ctfEndHide(L); }   // the others stand where they are; play starts at once
   try{ ctfIntroCard(); }catch(e){}
@@ -3549,6 +3824,7 @@ function ctfFilterInput(f, inp){
   if(L.phase !== 'hide' && f._cf >= 0 && L.flags[f._cf] && L.flags[f._cf].team === f.team){   // carrying one of its own side's flags that was dropped: the flag key hides it again
     const p = !!inp.flag; if(p && !f._ctfS) ctfPlaceCarried(f); f._ctfS = p;
   }
+  if(L.phase === 'bid') return ctfBidInput(f, inp);   // the secret bid: the keys choose, everyone stands
   if(L.phase === 'fix') return CTF_NOINP;   // the check that the edits leave every flag, key and the jail reachable: everybody waits
   if(L.phase === 'hide'){
     // the flag key (Space) puts the flag down or picks it up; special is "done"; smash is the free camera. In the free camera Space uses the picked TOOL (attack cycles the
@@ -3591,6 +3867,11 @@ function ctfPlaceFlag(fl, x, y){
   for(let i = 0; i < 8; i++) puff(x, y - 16, TEAM_COLORS[fl.team % TEAM_COLORS.length], 4);
 }
 const CTF_CAM_SPEED = 26;
+function ctfFreshKey(f){ const L = CTF.live; return L && L.xKey && L.xKey[f.team] ? 2 : true; }
+// A side's flags to capture: the other side's, all of them (the side that won the bid hides one fewer, so its foe has one more to find: the owner, "making the winner capture one more").
+function ctfNeed(L, t){ let n = 0; for(const fl of L.flags) if(fl.team !== t) n++; return n; }
+// The flag a fighter is putting down: its own first, and then, for the one who hides the extra flag, that one.
+function ctfMyFlag(L, f){ const own = L.flags[f.idx], x = L.xFlag; return (own && own.st === 1 && x && x.owner === f.idx && x.st !== 1) ? x : own; }
 // A fighter who has just been walking a slope and is a hair above its next step down stays on it (a step down is 24 px at most, a fall of several frames at a run).
 function ctfRampSnap(f){
   const ix = CTF.rampIx; if(!ix) return;
@@ -3614,7 +3895,7 @@ function ctfCamSnap(f){
   return out;
 }
 function ctfHidePlace(f){
-  const L = CTF.live, fl = L.flags[f.idx]; if(!fl || L.done[f.idx]) return false;
+  const L = CTF.live, fl = ctfMyFlag(L, f); if(!fl || L.done[f.idx]) return false;
   if(f._cam){   // free camera: the flag goes where the cursor is, or nowhere
     const s = ctfCamSnap(f);
     if(!s.ok){ puff(s.x, s.y, '#888', 6); return false; }
@@ -3630,7 +3911,7 @@ function ctfHidePlace(f){
 }
 function ctfToggleDone(f){
   const L = CTF.live; if(L.phase !== 'hide') return;
-  const fl = L.flags[f.idx];
+  const fl = ctfMyFlag(L, f);
   if(!L.done[f.idx]){
     if(fl.st === 0 && !ctfHidePlace(f)) return;   // still holding it: put it down where you stand, or it is not done
     L.done[f.idx] = true; ctfSfx('done');
@@ -3647,6 +3928,9 @@ function ctfEndHide(L){
         ctfPlaceFlag(fl, best.x, best.y); }
     }
   }
+  { const x = L.xFlag; if(x && x.st !== 1){ const o = fighters[x.owner]; const sy = o ? ctfSurfaceBelow(o.x, o.y + o.r - 10, 500) : null;
+      if(o && sy !== null && ctfHideValid(o.team, o.x, sy)) ctfPlaceFlag(x, o.x, sy);
+      else { let best = null, bd = 1e9; for(const sp of CTF.map.spots) if(sp.team === x.team && o){ const d = Math.hypot(sp.x - o.x, sp.y - o.y); if(d < bd){ bd = d; best = sp; } } if(best) ctfPlaceFlag(x, best.x, best.y); } } }
   for(const f of fighters) f._cam = null;
   if(!CTF.skipNav && L.edits.some(e=>ctfEditStructural(e) && e.elev == null)){ ctfFixBegin(L); return; }   // walls and platforms were built: check the way is still open before the match starts
   ctfStartPlay(L);
@@ -3655,7 +3939,7 @@ function ctfStartPlay(L){
   L.phase = 'play'; L.playT = 0; L.done = {};
   for(const d of L.doors) d.op = [false, false];
   ctfRebuildDyn(L);
-  for(const f of fighters){ f.invuln = Math.max(f.invuln, 30); f._ctfA = false; f._ctfS = false; f._ctfSeq = f._atkSeq; f._pk = true; }   // everyone starts with one personal key
+  for(const f of fighters){ f.invuln = Math.max(f.invuln, 30); f._ctfA = false; f._ctfS = false; f._ctfSeq = f._atkSeq; f._pk = ctfFreshKey(f); }   // everyone starts with one personal key (two for the side that lost the bid)
   banner('GO!', 900);
   ctfSfx('go');
 }
@@ -3664,6 +3948,8 @@ function ctfStartPlay(L){
 function ctfStep(){
   const L = CTF.live; if(!L || L.over) return;
   L.t++;
+  if(L.phase === 'bid'){ ctfBidStep(L); return; }
+  if(L.bidShow > 0) L.bidShow--;
   if(L.flash && --L.flash.t <= 0) L.flash = null;
   for(const f of fighters){ if(f._ctfJT > 0) f._ctfJT--; if(f._springT > 0) f._springT--; if(f._ctfFree > 0) f._ctfFree--; if(f._ghostT > 0) f._ghostT--; }
   if(CTF.nav && !CTF.nav.ready) ctfNavTick(CTF.nav, 40, L.phase === 'hide' ? 8 : 4);
@@ -3721,7 +4007,7 @@ function ctfStepJails(L){
 // The timer ran out: the prisoner goes home to their own base (no speed boost, that stays a rescue's reward), with the same short grace as a rescue and a fresh personal key.
 function ctfReleaseOnTimer(L, j, p){
   const i = j.pris.indexOf(p.idx); if(i >= 0) j.pris.splice(i, 1);
-  p._jail = null; p._jailT = 0; p._spec = null; p._pk = true; p._ctfFree = CTF_FREE_GRACE; p.invuln = Math.max(p.invuln, 120);
+  p._jail = null; p._jailT = 0; p._spec = null; p._pk = ctfFreshKey(p); p._ctfFree = CTF_FREE_GRACE; p.invuln = Math.max(p.invuln, 120);
   const h = L.map.homes[p.team], sp = h.spawns[(L.respawnN[p.team]++) % h.spawns.length];
   for(let k = 0; k < 8; k++) puff(p.x, p.y - 10, '#fff', 5);
   p.x = sp.x; p.y = sp.y - p.r - 40; p.vx = 0; p.vy = 0; p.hitstun = 0;
@@ -3730,7 +4016,7 @@ function ctfReleaseOnTimer(L, j, p){
   ctfSfx('free');
 }
 function ctfFreeJail(L, j, by){
-  for(const idx of j.pris){ const p = fighters[idx]; if(p) p._pk = true; }   // freed: a fresh personal key
+  for(const idx of j.pris){ const p = fighters[idx]; if(p) p._pk = ctfFreshKey(p); }   // freed: a fresh personal key
   const d = j.door, dir = j.face === 1 ? 1 : -1, out = dir === 1 ? d.x + d.w + 36 : d.x - 36; let k = 0;
   for(const idx of j.pris){ const p = fighters[idx]; if(p){ p._jail = null; p._jailT = 0; p.invuln = Math.max(p.invuln, 120); p._ctfFree = CTF_FREE_GRACE; p._hasteT = Math.max(p._hasteT || 0, CTF_FREE_HASTE); p._spec = null;
     for(let i=0;i<10;i++) puff(p.x, p.y - 10, '#fff', 5);
@@ -3820,7 +4106,7 @@ function ctfStepPersonalKeys(L){
     for(const d of L.doors){
       if(d.op[f.team]) continue;
       if(f.x > d.x - 70 - f.r && f.x < d.x + d.w + 70 + f.r && f.y > d.y - 60 && f.y < d.y + d.h + 60){
-        d.op[f.team] = true; f._pk = false; ctfRebuildDyn(L); ctfSfx('door');
+        d.op[f.team] = true; f._pk = f._pk > 1 ? f._pk - 1 : false; ctfRebuildDyn(L); ctfSfx('door');
         for(let i = 0; i < 14; i++) puff(d.x + d.w/2, d.y + Math.random()*d.h, d.color, 5);
         shake(3); break;
       }
@@ -4005,7 +4291,7 @@ function ctfEliminate(f){
   const px = clamp(f.x, 60, L.map.WW - 60), py = clamp(f.y, 0, L.map.WH - 40);
   if(f._cf >= 0){ f.x = px; f.y = py; ctfDropFlag(f, 'ko'); }
   if(f._ck >= 0){ const k = L.keys[f._ck]; if(k){ k.x = px; k.y = py; ctfDropKey(k, f); } f._ck = -1; }
-  f._pk = true;   // the personal key is never dropped or taken: a fresh one comes with the respawn
+  f._pk = ctfFreshKey(f);   // the personal key is never dropped or taken: a fresh one comes with the respawn
   puff(px, Math.max(20, Math.min(WH-20, f.y)), '#fff', 22);
   puff(px, Math.max(20, Math.min(WH-20, f.y)), f.color, 14);
   koStarburst(f.x, f.y, f.color);
@@ -4033,7 +4319,7 @@ function ctfEliminate(f){
 // ---- the end ----------------------------------------------------------------------------------------------------
 function ctfCheckWin(){
   const L = CTF.live; if(!L || L.over || L.explore) return;
-  for(const t of [0,1]) if(L.score[t] >= L.n){ ctfEnd(t, 'flags'); return; }
+  for(const t of [0,1]) if(L.score[t] >= ctfNeed(L, t)){ ctfEnd(t, 'flags'); return; }
   // a whole side in jail at once: it is over
   for(const t of [0,1]){ const mates = fighters.filter(f=>f.team === t); if(mates.length && mates.every(f=>f._jail != null)){ ctfEnd(1 - t, 'jail'); return; } }
 }
@@ -4290,7 +4576,7 @@ function ctfEditStep(L){
 
 // ---- "must be possible": the check that runs when the hiding ends -----------------------------------------------------------------------------------------
 function ctfEditRects(L, keepN){ return L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).sort((a, b)=>a.seq - b.seq).slice(0, keepN).map(e=>({ x:e.x, y:e.y, w:e.w, h:e.h })); }
-function ctfEditNav(L, keepN){ return ctfNavNew(ctfEditMap(L, keepN), CTF.navs && CTF.navs[CTF.mapId], ctfEditRects(L, keepN)); }
+function ctfEditNav(L, keepN){ return ctfNavNew(ctfEditMap(L, keepN), CTF.navs && CTF.navs[ctfNavId()], ctfEditRects(L, keepN)); }
 function ctfEditMap(L, keepN){   // the map with the first keepN walls and platforms in it (oldest first)
   const M = CTF.map, st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).sort((a, b)=>a.seq - b.seq).slice(0, keepN);
   return Object.assign({}, M, { plats:M.plats.concat(st.map(e=>({ x:e.x, y:e.y, w:e.w, h:e.h, solid:e.tool === 'wall', hop:e.tool === 'plat' }))) });
@@ -4317,7 +4603,7 @@ function ctfFixBegin(L){
 }
 function ctfFixStep(L){
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
-  const nav = F.navs[F.keep] || (F.navs[F.keep] = F.keep === 0 ? CTF.navs[CTF.mapId] : ctfEditNav(L, F.keep));
+  const nav = F.navs[F.keep] || (F.navs[F.keep] = F.keep === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.keep));
   if(!nav.ready){ ctfNavTick(nav, 40, 10); return; }
   const bad = F.keep === 0 ? [] : ctfEditProblems(L, nav);
   if(bad.length) F.hi = F.keep; else F.lo = F.keep;
@@ -4328,7 +4614,7 @@ function ctfFixFinish(L){
   const F = L.fix, keepIds = new Set(F.st.slice(0, F.final).map(e=>e.id));
   for(const e of F.st) if(!keepIds.has(e.id)){ L.edits.splice(L.edits.indexOf(e), 1); L.removedByFix = (L.removedByFix || 0) + 1; for(let i = 0; i < 10; i++) puff(e.x + e.w/2, e.y + e.h/2, '#ffffff', 5); }
   ctfRebuildDyn(L); ctfEditSettle(L);
-  const nav = F.navs[F.final] || (F.final === 0 ? CTF.navs[CTF.mapId] : ctfEditNav(L, F.final));
+  const nav = F.navs[F.final] || (F.final === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.final));
   L.fix = null;
   // a flag that now has no road to it (it sat on something that went) goes to the nearest prepared place that has one
   if(nav.ready) for(const fl of L.flags) if(fl.st === 1 && fl.elev == null){ const n = ctfNavNodeAt(nav, fl.x, fl.y, 10); if(n && nav.reach[1 - fl.team][n.id]) continue;
@@ -4437,7 +4723,9 @@ function ctfAiBuild(f, L){
 function ctfNetOut(){
   const L = CTF.live; if(!L) return null;
   const R = Math.round;
-  const o = { id:CTF.mapId, ph:L.phase === 'hide' ? 0 : L.phase === 'fix' ? 1 : 2, t:L.t, pt:L.playT, n:L.n, sc:L.score.slice(), ov:L.over ? 1 : 0, w:L.winner, sl:L.stalled ? 1 : 0 };
+  const o = { id:CTF.mapId, ph:L.phase === 'hide' ? 0 : L.phase === 'fix' ? 1 : L.phase === 'bid' ? 3 : 2, t:L.t, pt:L.playT, n:L.n, sc:L.score.slice(), ov:L.over ? 1 : 0, w:L.winner, sl:L.stalled ? 1 : 0 };
+  if(L.bid && L.phase === 'bid') o.bid = [L.bid.side[0], L.bid.side[1], L.bid.amt[0], L.bid.amt[1], L.bid.lock[0] ? 1 : 0, L.bid.lock[1] ? 1 : 0, L.bid.t];
+  if(CTF.bidRes){ const r = CTF.bidRes; o.br = [r.sw, r.lo, r.pay, r.win, r.xo, r.sd[0], r.sd[1]]; }
   o.fv = [0, 1].map(t=>L.flags.map(fl=>ctfFlagVisible(L, fl, t) ? [R(fl.x), R(fl.y), fl.st, fl.car, fl.fall ? 1 : 0, fl.cover ? 1 : 0, fl.elev == null ? -1 : fl.elev, fl.revealT > 0 ? 1 : 0] : 0));
   o.k = L.keys.map(k=>[R(k.x), R(k.y), k.st, k.hold, k.lock, k.lockT | 0]);
   o.d = L.doors.map(d=>(d.op[0] ? 1 : 0) | (d.op[1] ? 2 : 0));
@@ -4468,7 +4756,7 @@ function ctfNetFighter(f, o){
   if(f._ctfFree > 0) o.fr = 1;
   if(f._ghostT > 0) o.gh = 1;
   if(f._hid) o.hd = 1;
-  if(f._pk) o.kp = 1;
+  if(f._pk) o.kp = f._pk > 1 ? f._pk : 1;
   if(f._jail != null) o.jtm = f._jailT | 0;
   if(f._propKey) o.pk = f._propKey;
   if(f._shield) o.sh = 1;
@@ -4479,9 +4767,10 @@ function ctfNetFighter(f, o){
 }
 // A snapshot arrives at a client (every one, not only the newest: what they carry is state that must not be lost): the live match state of this device is brought up to the host's.
 function ctfNetIn(c){
+  if(c && c.br && !CTF.bidRes && ctfAsym()){ CTF.bidRes = { sw:c.br[0], lo:c.br[1], pay:c.br[2], win:c.br[3], xo:c.br[4], sd:[c.br[5], c.br[6]] }; ctfBidApplyRes(CTF.bidRes); }   // the host's bid result: the same half for each side, the same extra flag
   const L = CTF.live; if(!c || !L || !window.NET) return;
   const me = fighters[window.NET.myIdx], vt = me ? me.team : 0;
-  L.phase = ['hide', 'fix', 'play'][c.ph] || 'play'; L.t = c.t; L.playT = c.pt; L.n = c.n; L.score = c.sc; L.over = !!c.ov; L.winner = c.w == null ? -1 : c.w; L.stalled = !!c.sl;
+  L.phase = ['hide', 'fix', 'play', 'bid'][c.ph] || 'play'; if(c.bid){ L.bid = L.bid || { t:0, side:[0, 0], amt:[0, 0], lock:[false, false], who:[-1, -1] }; L.bid.side = [c.bid[0], c.bid[1]]; L.bid.amt = [c.bid[2], c.bid[3]]; L.bid.lock = [!!c.bid[4], !!c.bid[5]]; L.bid.t = c.bid[6]; } L.t = c.t; L.playT = c.pt; L.n = c.n; L.score = c.sc; L.over = !!c.ov; L.winner = c.w == null ? -1 : c.w; L.stalled = !!c.sl;
   L.seen = [0, 1].map(()=>fighters.map(()=>false)); L.cseen = [0, 1].map(()=>fighters.map(()=>false));
   const mine = c.fv && c.fv[vt] || [];
   L.flags.forEach((fl, i)=>{
@@ -4517,7 +4806,7 @@ function ctfNetIn(c){
 function ctfNetFightersIn(){
   for(const f of fighters){
     f._cf = f.cf != null ? f.cf : -1; f._ck = f.ck != null ? f.ck : -1; f._jail = f.jl != null ? f.jl : null;
-    f._ctfFree = f.fr ? 300 : 0; f._ghostT = f.gh ? 1 : 0; f._hid = !!f.hd; f._pk = !!f.kp; f._jailT = f.jtm | 0; f._propKey = f.pk || null; f._shield = f.sh ? 1 : 0; f._ctfJT = f.jt ? 1 : 0;
+    f._ctfFree = f.fr ? 300 : 0; f._ghostT = f.gh ? 1 : 0; f._hid = !!f.hd; f._pk = f.kp > 1 ? f.kp : !!f.kp; f._jailT = f.jtm | 0; f._propKey = f.pk || null; f._shield = f.sh ? 1 : 0; f._ctfJT = f.jt ? 1 : 0;
     f._cam = f.cam ? { x:f.cam[0], y:f.cam[1] } : null; f._tool = f.tl || 0; f._piece = f.pc || 0; f._spec = f.sp != null ? f.sp : null;
     f.controller = f.hu ? 'remote' : 'ai';
   }
@@ -4748,7 +5037,7 @@ function ctfRampLines(g, M, X0, Y0, X1, Y1){
   if(any) g.stroke();
 }
 function ctfTile(M, tx, ty){
-  const key = M.id + ':' + tx + ',' + ty;
+  const key = (M.gid || M.id) + ':' + tx + ',' + ty;
   let t = CTF_TILES.get(key);
   if(t) return t;
   const cv = document.createElement('canvas'); cv.width = cv.height = Math.round(CTF_TILE*CTF_TSCALE);
@@ -5322,7 +5611,7 @@ function ctfDrawCarry(f){
   const L = CTF.live; if(!L || f.dead) return;
   const T = hazardT, fl = L.flags[f.idx];
   if(f._cf >= 0 && L.flags[f._cf]){ const c = L.flags[f._cf]; ctfFlagIcon(ctx, f.x - f.face*(f.r + 8), f.y + f.r*0.5, ctfColor(c.team), 104, T*0.2, fighters[c.owner] ? fighters[c.owner].color : null); }   // big, so everyone can see who has one
-  else if(L.phase === 'hide' && fl && fl.st === 0 && f.team === ctfViewTeam()) ctfFlagIcon(ctx, f.x - f.face*(f.r + 6), f.y + f.r*0.4, ctfColor(f.team), 50, T*0.2, f.color);
+  else if(L.phase === 'hide' && ctfMyFlag(L, f) && ctfMyFlag(L, f).st === 0 && f.team === ctfViewTeam()) ctfFlagIcon(ctx, f.x - f.face*(f.r + 6), f.y + f.r*0.4, ctfColor(f.team), 50, T*0.2, f.color);
   if(f._pk && f.team === ctfViewTeam() && L.phase === 'play') ctfKeyIcon(ctx, f.x + 14, f.y - f.r - 30, '#e8e8f0', 24);   // your side's personal keys, small, by the head
   if(f._ck >= 0 && L.keys[f._ck]){ const k = L.keys[f._ck]; ctfKeyIcon(ctx, f.x - 14, f.y - f.r - 56 + Math.sin(T*0.1)*3, CTF_DOOR_COL[k.n - 1], 34); }
   if(f._jail != null){ ctx.save(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.arc(f.x, f.y - f.r - 52, 11, Math.PI, 0); ctx.stroke(); ctx.fillStyle = '#d8c46a'; ctx.fillRect(f.x - 14, f.y - f.r - 52, 28, 20); ctx.strokeRect(f.x - 14, f.y - f.r - 52, 28, 20); ctx.restore(); }
@@ -5360,7 +5649,7 @@ function drawCtfHud(){
   for(const t of [0,1]){
     const dir = t === 0 ? -1 : 1, x0 = cx + dir*72;
     ctx.fillStyle = 'rgba(28,24,38,0.78)'; ctx.strokeStyle = ctfColor(t); ctx.lineWidth = 3;
-    const NN = L.n, bw = slot*NN + 14, bx = t === 0 ? x0 - bw : x0;
+    const NN = ctfNeed(L, t), bw = slot*NN + 14, bx = t === 0 ? x0 - bw : x0;
     ctx.fillRect(bx, y, bw, 40); ctx.strokeRect(bx, y, bw, 40);
     for(let i = 0; i < NN; i++){
       const fx = bx + 12 + i*slot + 8, got = i < L.score[t];
@@ -5395,6 +5684,7 @@ function drawCtfHud(){
   // the bargain in speed, each side's own bolt beside the middle box: an arrow up for the side that gave points up (faster), down for one that took them (slower)
   for(const t of [0, 1]){ const b = ctfPtsDiff(t); if(!b) continue; ctfSpeedIcon(ctx, cx + (t ? 92 : -92), y + 20, 12, b < 0 ? 1 : -1); ctx.fillStyle = ctfColor(t); ctx.beginPath(); ctx.arc(cx + (t ? 92 : -92), y + 38, 3.5, 0, 7); ctx.fill(); }
   { const me = fighters.find(q=>q.you); if(me && L.phase === 'hide') ctfDrawEditHud(L, me); }
+  if(L.phase === 'bid') ctfDrawBid(L); else if(L.bidShow > 0) ctfDrawBidResult(L);
   if(L.phase === 'fix'){ ctx.fillStyle = '#f4efe2'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3; ctx.save(); ctx.translate(W/2, 130); ctx.rotate(hazardT*0.12); ctx.beginPath(); for(let i = 0; i < 12; i++){ const a = i*Math.PI/6, rr = i%2 ? 14 : 22; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); } ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
   // a capture flashes the scoring side's colour round the edge of the screen
   if(L.flash){ const a = Math.min(1, L.flash.t/25)*(L.flash.soft ? 0.25 : 0.5); ctx.globalAlpha = a; ctx.strokeStyle = ctfColor(L.flash.team); ctx.lineWidth = 36; ctx.strokeRect(0, 0, W, H); ctx.globalAlpha = 1; }
@@ -5405,8 +5695,8 @@ const CTF_MINI = { id:null, cv:null };
 function ctfDrawMinimap(){
   const M = CTF.map, L = CTF.live; if(!M || !L) return;
   const mw = 220, mh = Math.round(mw*M.WH/M.WW), mx = W - mw - 12, my = 66, sx = mw/M.WW, sy = mh/M.WH;
-  if(CTF_MINI.id !== M.id){
-    CTF_MINI.id = M.id; const cv = CTF_MINI.cv = document.createElement('canvas'); cv.width = mw; cv.height = mh;
+  if(CTF_MINI.id !== (M.gid || M.id)){
+    CTF_MINI.id = (M.gid || M.id); const cv = CTF_MINI.cv = document.createElement('canvas'); cv.width = mw; cv.height = mh;
     const g = cv.getContext('2d'); if(g){ g.fillStyle = 'rgba(20,18,30,0.8)'; g.fillRect(0, 0, mw, mh);
       for(const p of M.plats){ if(p.hop) continue; g.fillStyle = 'rgba(210,205,225,0.55)'; g.fillRect(p.x*sx, p.y*sy, Math.max(1, p.w*sx), Math.max(1, p.h*sy)); }
       g.strokeStyle = 'rgba(210,205,225,0.28)'; g.lineWidth = 1; g.beginPath(); for(const p of M.plats){ if(!p.hop) continue; g.moveTo(p.x*sx, p.y*sy); g.lineTo((p.x + p.w)*sx, p.y*sy); } g.stroke(); }
@@ -6213,7 +6503,7 @@ function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds 
 const CTF_GRAPH_V = 1, CTF_GRAPH_KINDS = ['jump', 'drop', 'thru'], CTF_GRAPHS = {}, CTF_GRAPH_WAIT = {};
 function ctfNavFingerprint(M){
   const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring');
-  const str = JSON.stringify([CTF_GRAPH_V, M.id, M.WW, M.WH, M.plats.map(p=>[p.x, p.y, p.w, p.h, p.solid ? 1 : 0, p.hop ? 1 : 0]), M.doors.map(d=>[d.id, d.x, d.y, d.w, d.h]),
+  const str = JSON.stringify([CTF_GRAPH_V, M.gid || M.id, M.WW, M.WH, M.plats.map(p=>[p.x, p.y, p.w, p.h, p.solid ? 1 : 0, p.hop ? 1 : 0]), M.doors.map(d=>[d.id, d.x, d.y, d.w, d.h]),
     M.jails.map(j=>[j.owner, j.door.x, j.door.y, j.door.w, j.door.h]), zs.map(z=>[z.type, z.x, z.y, z.w, z.h, z.strength || 1, z.dir || 1]), M.boosts.filter(b=>b.kind === 'jump').map(b=>[b.x, b.y]),
     [GRAV, MAXVX, MOVE, JUMP, CTF_SPEED, CTF_CARRY_SPEED, CTF_CARRY_JUMP, CTF_BOOST_JUMP, CTF_NAV_BUCKET], CTF.noZones ? 1 : 0]);
   let a = 0x811c9dc5, b = 0x01000193;
@@ -6223,7 +6513,7 @@ function ctfNavFingerprint(M){
 // The simulated moves of a finished graph, one list per place, a move as [kind, to, xa, dir, dj, T, v0, xb, run, cost, flags] (numbers to 2 decimals; flags: 1 risky, 2 needs the pad, 4 planned on a free fighter).
 function ctfNavPack(nav){
   const q = v=>v == null ? null : Math.round(v*100)/100;
-  return { v:CTF_GRAPH_V, id:nav.M.id, fp:ctfNavFingerprint(nav.M), n:nav.nodes.length,
+  return { v:CTF_GRAPH_V, id:nav.M.gid || nav.M.id, fp:ctfNavFingerprint(nav.M), n:nav.nodes.length,
     nodes:nav.nodes.map(n=>n.edges.filter(e=>e.kind !== 'walk').map(e=>[CTF_GRAPH_KINDS.indexOf(e.kind), e.to, q(e.xa), e.dir, e.dj, e.T, q(e.v0), q(e.xb), q(e.run), q(e.cost), (e.risky ? 1 : 0) | (e.need ? 2 : 0) | (e.prof === 'f' ? 4 : 0)])) };
 }
 // Put a map's shipped moves into its (freshly made, unprobed) graph. False when the file is not this map's.
@@ -6244,18 +6534,19 @@ function ctfNavAdopt(nav, data){
 function ctfNavMake(M){
   const nav = ctfNavNew(M);
   if(CTF.noShipped) return nav;
-  if(CTF_GRAPHS[M.id]){ if(!ctfNavAdopt(nav, CTF_GRAPHS[M.id])) delete CTF_GRAPHS[M.id]; return nav; }
+  const gid = M.gid || M.id;
+  if(CTF_GRAPHS[gid]){ if(!ctfNavAdopt(nav, CTF_GRAPHS[gid])) delete CTF_GRAPHS[gid]; return nav; }
   if(typeof fetch === 'function' && !CTF.noFetch){
     nav.pending = true;
-    const done = ok=>{ nav.pending = false; if(ok && !nav.ready && CTF.navs && CTF.navs[M.id] === nav) try{ ctfNavAdopt(nav, CTF_GRAPHS[M.id]); }catch(e){} };
+    const done = ok=>{ nav.pending = false; if(ok && !nav.ready && CTF.navs && CTF.navs[gid] === nav) try{ ctfNavAdopt(nav, CTF_GRAPHS[gid]); }catch(e){} };
     let fin = false; const once = ok=>{ if(!fin){ fin = true; done(ok); } };
-    try{ ctfGraphFetch(M.id).then(once, ()=>once(false)); setTimeout(()=>once(false), 8000); }catch(e){ once(false); }
+    try{ ctfGraphFetch(gid).then(once, ()=>once(false)); setTimeout(()=>once(false), 8000); }catch(e){ once(false); }
   }
   return nav;
 }
 function ctfGraphFetch(id){
   if(CTF_GRAPH_WAIT[id]) return CTF_GRAPH_WAIT[id];
-  return CTF_GRAPH_WAIT[id] = fetch('assets/ctf/' + id + '-graph.json').then(r=>r.ok ? r.json() : null).then(d=>{ if(d && d.nodes) CTF_GRAPHS[id] = d; return !!CTF_GRAPHS[id]; }, ()=>false).then(ok=>{ delete CTF_GRAPH_WAIT[id]; return ok; });
+  return CTF_GRAPH_WAIT[id] = fetch('assets/ctf/' + id.replace('~', '-swap') + '-graph.json').then(r=>r.ok ? r.json() : null).then(d=>{ if(d && d.nodes) CTF_GRAPHS[id] = d; return !!CTF_GRAPHS[id]; }, ()=>false).then(ok=>{ delete CTF_GRAPH_WAIT[id]; return ok; });
 }
 // What each side's home can reach, doors ignored: where a flag may be hidden (a place the foe could never get to is no place for one).
 function ctfNavReach(nav){
@@ -6343,7 +6634,7 @@ function ctfNavSweep(nav, side){
 function ctfAiBegin(L, nav){
   if(CTF.skipNav || (typeof isNetClient === 'function' && isNetClient())){ CTF.nav = null; return; }   // (an online guest never plans: the host does)
   if(!CTF.navs) CTF.navs = {};
-  CTF.nav = nav || CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavMake(CTF.map));
+  CTF.nav = nav || CTF.navs[ctfNavId()] || (CTF.navs[ctfNavId()] = ctfNavMake(CTF.map));
   L.ai = { visited:[null, null], visAt:[null, null], claims:[{}, {}], roomClaims:[{}, {}], hideTaken:{}, rescue:[0, 0], stat:{ nodes:CTF.nav.nodes.length } };
   for(const f of fighters){ f._ai = { goal:null, path:null, pi:0, edge:null, phase:'', t:0, lastX:f.x, still:0, ban:{}, replan:0, fight:0, role:'att', hide:null, hideT:0 }; }
   for(const t of [0, 1]){
@@ -6632,6 +6923,7 @@ function ctfAiWatch(f, ai, now){
 }
 function ctfAiInputRaw(f){
   const L = CTF.live; if(!L || L.over || f._jail != null) return null;
+  if(L.phase === 'bid') return ctfAiInpNew();
   const nav = CTF.nav, ai = f._ai;
   if(!nav || !ai) return null;
   if(!nav.ready) return ctfAiInpNew();    // the map's graph is still being worked out: stand
@@ -6864,11 +7156,12 @@ function ctfAiSearch(f, ai, L, nav, now, set){
 
 // ---- hiding -----------------------------------------------------------------------------------------------------------
 function ctfAiHide(f, ai, L, nav, inp, now){
-  const fl = L.flags[f.idx];
+  const fl = ctfMyFlag(L, f);
+  if(ai.hf !== fl.id){ ai.hf = fl.id; ai.hide = null; ai.doneT = 0; ai.hideTry = 0; }   // (the next flag: a new place)
   if(L.done[f.idx]) return ctfAiHideIdle(f, ai, L, nav, inp, now);   // ready: but a human may take minutes yet, so never stand frozen
   if(fl.st !== 1 && now % 30 === f.idx % 30){ if(ai.hx != null && Math.abs(f.x - ai.hx) + Math.abs(f.y - ai.hy) < 40) ai.hn = (ai.hn || 0) + 1; else ai.hn = 0; ai.hx = f.x; ai.hy = f.y; if(ai.hn >= 4){ ai.hn = 0; ctfAiStat('unstickHide'); ai.hide = null; ai.hideTry = (ai.hideTry || 0) + 1; ctfAiResetMove(ai); ai.fight = 0; } }
   if(fl.st === 1){   // put down: done a moment later
-    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT === 12) inp.special = true; return inp;
+    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2 && fl === L.flags[f.idx]){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT === 12) inp.special = true; return inp;
   }
   if(!ai.hide){
     const M = L.map, pts = ctfNavSweep(nav, f.team);
@@ -6935,7 +7228,7 @@ function ctfAiHideTick(L){
   // humans press their own keys; a CPU's flag is put down by its own walk.
   const nav = CTF.nav;
   // a CPU that cannot get anywhere with its flag puts it down where it stands after a minute
-  if(L.t === 2700 && nav){ for(const f of fighters){ if(!ctfIsHuman(f) && !L.done[f.idx]){ const fl = L.flags[f.idx]; if(fl.st === 0) ctfHidePlace(f); L.done[f.idx] = true; } } }
+  if(L.t === 2700 && nav){ for(const f of fighters){ if(!ctfIsHuman(f) && !L.done[f.idx]){ for(let k = 0; k < 2; k++){ const fl = ctfMyFlag(L, f); if(fl.st === 0) ctfHidePlace(f); } L.done[f.idx] = true; } } }
   if(!nav) { for(const f of fighters){ if(ctfIsHuman(f) || L.done[f.idx]) continue; if(L.t < 40 + f.idx*15) continue;
     const mine = CTF.map.spots.filter(s=>s.team === f.team), sp = mine[(f.idx*7 + 3) % mine.length];
     const fl = L.flags[f.idx]; if(fl.st === 0) ctfPlaceFlag(fl, sp.x, sp.y); L.done[f.idx] = true; } }
