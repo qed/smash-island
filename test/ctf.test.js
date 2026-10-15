@@ -451,7 +451,8 @@ describe('capture the flag', () => {
   // ---- editing your area while hiding ----
   const hideStart = (w, nav = false) => w.eval(`CTF.skipNav=${!nav}; SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='castle'; beginMatchNow(); fighters.forEach(function(f){ f.you=false; if(f.idx>0) f.controller='still'; }); fighters[0].controller='local'; fighters[0].you=true;`);
   // a free place on team 0's side: a floor inside a room, with air above it
-  const roomSpot = (w) => J(w, `(function(){ var s = CTF.map.spots.filter(function(s){ return s.team===0 && s.y>1500 && s.x<8000; })[3]; return { x:s.x, y:s.y }; })()`);
+  // (the 11th such spot, not the 4th, since the castle's frozen-valley rebuild: the 4th now has no room for the spikes and the stun trap; the 11th is on open floor and takes every kind)
+  const roomSpot = (w) => J(w, `(function(){ var s = CTF.map.spots.filter(function(s){ return s.team===0 && s.y>1500 && s.x<8000; })[10]; return { x:s.x, y:s.y }; })()`);
   const tryPlace = (w, who, tool, kind, x, y, offs = [0, 130, -130, 260, -260, 390, -390, 520]) => { for (const dx of offs) { const ok = w.eval(`!!ctfEditPlaceAt(fighters[${who}], '${tool}', '${kind}', ${x + dx}, ${y})`); if (ok) return dx; } return null; };
 
   it('a jailed human is rescued: CPU teammates set out within seconds (one when the door is clear, two when a guard stands by it: one fights, one holds), and defenders go when no attacker is left', () => {
@@ -497,6 +498,8 @@ describe('capture the flag', () => {
     expect(w.eval('ctfPickMap()')).toBe('mines');
     expect(w.eval(`localStorage.getItem('bfsi:ctfmap')`)).toBe('mines');
     w.eval(`ctfMapPickSet('random')`);
+    // (the Works and Neon City graduated from beta on 2026-10-15 after a clean CPU probe, so this test marks a map as beta itself: the rule is a map flagged beta is pickable by name and left out of Random)
+    w.eval(`CTF_MAPS.factory.beta = true`);
     const ch = J(w, 'ctfMapChoices().map(function(c){ return c[0]; })');
     expect(ch[0], 'Random first').toBe('random'); expect(ch).toEqual(expect.arrayContaining(['castle', 'mines']));
     expect(ch, 'a beta map can be picked by name').toContain('factory');
