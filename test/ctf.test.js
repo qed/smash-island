@@ -611,7 +611,7 @@ describe('capture the flag', () => {
     expect(set(WW - 70*120, 20*120), 'the other side has the same').toEqual(set(70*120, 20*120));
     expect(set(30*120, 20*120).includes('pine'), 'no pines in a hall').toBe(false);
     w.eval(`CTF.map = ctfMapGet('mines')`);
-    expect(set(85*120, 30*120), 'the reef: coral and kelp').toEqual(expect.arrayContaining(['coral', 'kelp', 'shell', 'anchor']));
+    expect(set(w.eval('CTF.map.WW') - 30*120, 20*120), 'the reef (the right half of the mines map, Coral Deep): coral and kelp').toEqual(expect.arrayContaining(['coral', 'kelp', 'shell', 'anchor']));
     expect(set(30*120, 20*120), 'in the mine: crystals and carts').toEqual(expect.arrayContaining(['crystal', 'minecart', 'lamp']));
     w.eval(`CTF.map = ctfMapGet('castle')`);
     // B steps through the set under the cursor and the ghost is that prop
