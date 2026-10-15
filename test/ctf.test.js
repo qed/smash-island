@@ -373,7 +373,7 @@ describe('capture the flag', () => {
       return { y: w.eval('fighters[0].y + fighters[0].r'), top: P.y }; };
     const ledge = stand('function(p){ return p.hop && !p.solid && p.w >= 100 && p.x < 8000 && p.y > 1200; }');
     expect(ledge.y, 'fell through the ledge').toBeGreaterThan(ledge.top + 20);
-    const floor = stand('function(p){ return p.solid && !p.step && p.w >= 400 && p.x < 8000 && p.y > 1200; }');   // (castle v4 has slopes: a stone beside a step of one is stepped onto, so the floor to test is a plain one)
+    const floor = stand('function(p){ return p.solid && !p.step && p.w >= 400 && p.x < 8000 && p.y > 1200 && p.y < 3200; }');   // (castle v4 has slopes: a stone beside a step of one is stepped onto, so the floor to test is a plain one)
     expect(Math.abs(floor.y - floor.top), 'a solid floor holds').toBeLessThan(6);
   });
 
@@ -484,7 +484,7 @@ describe('capture the flag', () => {
   it('a human who takes their time hiding: their CPU teammates keep moving (building, walking about, taking their opening places) instead of standing frozen; the map choice is remembered and used', { timeout: 300000 }, () => {
     const { window: w } = loadMonolith(35);
     w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='castle'; beginMatchNow();`);
-    step(w, 1700);
+    step(w, 2600);   // (castle v4: a bigger graph, built a slice a frame while the CPUs wait here, where no shipped file can be fetched: 1700 steps were enough for the old castle)
     expect(w.eval('CTF.live.phase'), 'the human has not pressed done: still hiding').toBe('hide');
     const mates = J(w, `fighters.filter(function(f){ return f.team===0 && f.idx!==0; }).map(function(f){ return f.idx; })`);
     expect(mates.filter(i => w.eval(`!!CTF.live.done[${i}]`)).length, 'most are ready').toBeGreaterThanOrEqual(3);
@@ -734,7 +734,7 @@ describe('capture the flag', () => {
     w.eval(`(function(){ var P = fighters[${a}]; CTF.live.pts[P.idx] = 99;
       var add = function(tool, kind, x, y, w, h){ var e = { id:++CTF.live.editSeq, team:0, owner:P.idx, tool:tool, kind:kind, x:x, y:y, w:w, h:h, fy:y+h, cx:x+w/2, cost:1, seq:CTF.live.editSeq, hp:0, open:false, openT:0, stand:0 }; CTF.live.edits.push(e); return e; };
       add('plat','plat', 5400, 3000, 180, 16);
-      add('wall','block', 1440, 2520, 120, 120); add('wall','block', 1440, 2400, 120, 120); add('wall','block', 1440, 2280, 120, 120);   // (castle v4, 28 rows: the jail corridor is rows 19-21, so its three blocks are at y 2280-2520; it was nine rows taller: everything 1080 px lower)
+      add('wall','block', 840, 2520, 120, 120); add('wall','block', 840, 2400, 120, 120); add('wall','block', 840, 2280, 120, 120);   // (castle v4.1, 28 rows: the jail corridor is rows 19-21 and the home hall has two stairs down into it, so the three blocks that seal the door go right beside it, at x 840, y 2280-2520; it was nine rows taller: everything 1080 px lower)
       CTF.live.editT = CTF.live.t; ctfRebuildDyn(CTF.live); })()`);
     expect(w.eval('CTF.live.edits.length')).toBe(4);
     w.eval(`CTF.live.done = {}; ctfEndHide(CTF.live)`);
