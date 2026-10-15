@@ -4315,7 +4315,7 @@ function ctfEditProblems(L, nav){
 function ctfEditPrebuild(L){   // while they are still hiding: once the edits have been left alone for a couple of seconds, start the graph with them in it
   if(CTF.skipNav || !CTF.nav || !CTF.nav.ready) return;
   const st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).length; if(!st){ L.pre = null; return; }
-  if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 8); return; }
+  if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 8, 5); return; }
   if(L.t - L.editT >= 120) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
 }
 function ctfFixBegin(L){
@@ -4327,7 +4327,7 @@ function ctfFixBegin(L){
 function ctfFixStep(L){
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
   const nav = F.navs[F.keep] || (F.navs[F.keep] = F.keep === 0 ? CTF.navs[CTF.mapId] : ctfEditNav(L, F.keep));
-  if(!nav.ready){ ctfNavTick(nav, 40); return; }
+  if(!nav.ready){ ctfNavTick(nav, 40, 10); return; }
   const bad = F.keep === 0 ? [] : ctfEditProblems(L, nav);
   if(bad.length) F.hi = F.keep; else F.lo = F.keep;
   if(F.hi === null || F.hi - F.lo <= 1){ F.final = F.hi === null ? F.keep : F.lo; ctfFixFinish(L); return; }
@@ -5827,9 +5827,62 @@ function ctfNavProbe(nav, n){
   }
 }
 function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds (the game builds the graph a slice a frame, so it never stutters)
+  if(nav.pending) return;   // the map's shipped graph is being fetched: nothing to build unless it fails (ctfGraphFetch)
   const t0 = ms ? performance.now() : 0;
   for(let i = 0; i < count && nav.cursor < nav.nodes.length; i++){ ctfNavProbe(nav, nav.nodes[nav.cursor++]); if(ms && performance.now() - t0 > ms) break; }
   if(nav.cursor >= nav.nodes.length && !nav.ready){ nav.ready = true; ctfNavReach(nav); }
+}
+// ---- SHIPPED ROUTE GRAPHS ----------------------------------------------------------------------------------------------------------------------------------------
+// Building a map's graph takes 9-20 s of CPU (every move of every place is simulated), so scripts/ctf-build-graphs.mjs does it once, offline, and ships the moves as
+// artifacts/V1/assets/ctf/<map>-graph.json. The places themselves are cheap and always made here (ctfNavNew); the file holds only the simulated moves, place by place,
+// with a fingerprint of the map's geometry and the numbers the simulation reads. A file that does not match the map (or is missing, or the fetch fails) leaves the runtime
+// builder to do the work exactly as before, and the players' own pieces still patch the graph at runtime (ctfEditNav).
+const CTF_GRAPH_V = 1, CTF_GRAPH_KINDS = ['jump', 'drop', 'thru'], CTF_GRAPHS = {}, CTF_GRAPH_WAIT = {};
+function ctfNavFingerprint(M){
+  const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring');
+  const str = JSON.stringify([CTF_GRAPH_V, M.id, M.WW, M.WH, M.plats.map(p=>[p.x, p.y, p.w, p.h, p.solid ? 1 : 0, p.hop ? 1 : 0]), M.doors.map(d=>[d.id, d.x, d.y, d.w, d.h]),
+    M.jails.map(j=>[j.owner, j.door.x, j.door.y, j.door.w, j.door.h]), zs.map(z=>[z.type, z.x, z.y, z.w, z.h, z.strength || 1, z.dir || 1]), M.boosts.filter(b=>b.kind === 'jump').map(b=>[b.x, b.y]),
+    [GRAV, MAXVX, MOVE, JUMP, CTF_SPEED, CTF_CARRY_SPEED, CTF_CARRY_JUMP, CTF_BOOST_JUMP, CTF_NAV_BUCKET], CTF.noZones ? 1 : 0]);
+  let a = 0x811c9dc5, b = 0x01000193;
+  for(let i = 0; i < str.length; i++){ const ch = str.charCodeAt(i); a = Math.imul(a ^ ch, 0x01000193) >>> 0; b = Math.imul(b + ch, 0x85ebca6b) >>> 0; b ^= b >>> 13; }
+  return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0') + '-' + str.length;
+}
+// The simulated moves of a finished graph, one list per place, a move as [kind, to, xa, dir, dj, T, v0, xb, run, cost, flags] (numbers to 2 decimals; flags: 1 risky, 2 needs the pad, 4 planned on a free fighter).
+function ctfNavPack(nav){
+  const q = v=>v == null ? null : Math.round(v*100)/100;
+  return { v:CTF_GRAPH_V, id:nav.M.id, fp:ctfNavFingerprint(nav.M), n:nav.nodes.length,
+    nodes:nav.nodes.map(n=>n.edges.filter(e=>e.kind !== 'walk').map(e=>[CTF_GRAPH_KINDS.indexOf(e.kind), e.to, q(e.xa), e.dir, e.dj, e.T, q(e.v0), q(e.xb), q(e.run), q(e.cost), (e.risky ? 1 : 0) | (e.need ? 2 : 0) | (e.prof === 'f' ? 4 : 0)])) };
+}
+// Put a map's shipped moves into its (freshly made, unprobed) graph. False when the file is not this map's.
+function ctfNavAdopt(nav, data){
+  if(!data || data.v !== CTF_GRAPH_V || data.fp !== ctfNavFingerprint(nav.M) || !data.nodes || data.nodes.length !== nav.nodes.length || nav.cursor > 0) return false;
+  for(let i = 0; i < nav.nodes.length; i++){
+    const n = nav.nodes[i];
+    for(const r of data.nodes[i]){
+      const e = { kind:CTF_GRAPH_KINDS[r[0]], from:n.id, to:r[1], xa:r[2], dir:r[3], dj:r[4], T:r[5], v0:r[6], xb:r[7], run:r[8], cost:r[9], doors:[] };
+      if(r[10] & 1) e.risky = true; if(r[10] & 2) e.need = 'jump'; if(r[10] & 4) e.prof = 'f';
+      n.edges.push(e);
+    }
+  }
+  nav.cursor = nav.nodes.length; nav.ready = true; nav.shipped = true; ctfNavReach(nav);
+  return true;
+}
+// A graph for the map: the shipped one at once when its file is loaded, else the places only, to be filled by the fetch (nav.pending) or built by the ticker.
+function ctfNavMake(M){
+  const nav = ctfNavNew(M);
+  if(CTF.noShipped) return nav;
+  if(CTF_GRAPHS[M.id]){ if(!ctfNavAdopt(nav, CTF_GRAPHS[M.id])) delete CTF_GRAPHS[M.id]; return nav; }
+  if(typeof fetch === 'function' && !CTF.noFetch){
+    nav.pending = true;
+    const done = ok=>{ nav.pending = false; if(ok && !nav.ready && CTF.navs && CTF.navs[M.id] === nav) try{ ctfNavAdopt(nav, CTF_GRAPHS[M.id]); }catch(e){} };
+    let fin = false; const once = ok=>{ if(!fin){ fin = true; done(ok); } };
+    try{ ctfGraphFetch(M.id).then(once, ()=>once(false)); setTimeout(()=>once(false), 8000); }catch(e){ once(false); }
+  }
+  return nav;
+}
+function ctfGraphFetch(id){
+  if(CTF_GRAPH_WAIT[id]) return CTF_GRAPH_WAIT[id];
+  return CTF_GRAPH_WAIT[id] = fetch('assets/ctf/' + id + '-graph.json').then(r=>r.ok ? r.json() : null).then(d=>{ if(d && d.nodes) CTF_GRAPHS[id] = d; return !!CTF_GRAPHS[id]; }, ()=>false).then(ok=>{ delete CTF_GRAPH_WAIT[id]; return ok; });
 }
 // What each side's home can reach, doors ignored: where a flag may be hidden (a place the foe could never get to is no place for one).
 function ctfNavReach(nav){
@@ -5916,7 +5969,7 @@ function ctfNavSweep(nav, side){
 function ctfAiBegin(L, nav){
   if(CTF.skipNav || (typeof isNetClient === 'function' && isNetClient())){ CTF.nav = null; return; }   // (an online guest never plans: the host does)
   if(!CTF.navs) CTF.navs = {};
-  CTF.nav = nav || CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavNew(CTF.map));
+  CTF.nav = nav || CTF.navs[CTF.mapId] || (CTF.navs[CTF.mapId] = ctfNavMake(CTF.map));
   L.ai = { visited:[null, null], visAt:[null, null], claims:[{}, {}], roomClaims:[{}, {}], hideTaken:{}, rescue:[0, 0], stat:{ nodes:CTF.nav.nodes.length } };
   for(const f of fighters){ f._ai = { goal:null, path:null, pi:0, edge:null, phase:'', t:0, lastX:f.x, still:0, ban:{}, replan:0, fight:0, role:'att', hide:null, hideT:0 }; }
   for(const t of [0, 1]){
@@ -6269,6 +6322,7 @@ function ctfAiGoalFailed(f, ai, L, r, now){
     ai.goal = null; return;
   }
   if(g.kind === 'point'){ ai.dead = ai.dead || {}; ai.dead[g.pi] = now + 3000; }
+  if(g.kind === 'boost'){ ai.dead = ai.dead || {}; ai.dead['b' + g.id] = now + 2400; }   // a pickup it found no road to: left alone for 40 s (it chose the same one every replan, and every try was a whole failed search)
   ai.goal = null; ai.replan = now + 10;
 }
 // Pick this CPU's goal, in the order a sensible player would.
@@ -6339,11 +6393,11 @@ function ctfAiChoose(f, ai, L, nav, now){
   }
   if(best) return set({ kind:'flag', id:best.id, x:best.x, y:best.y, mine:'take' });
   // 5b. the opening: an attacker standing by a speed boost takes it as play starts, then rushes
-  if(L.playT < 900 && ai.role === 'att' && !(f._hasteT > 0)){ const sb = L.boosts.find(b=>b.kind === 'speed' && b.cd <= 0 && Math.abs(b.x - f.x) < 500 && Math.abs(b.y - f.y) < 260 && (b.x < M.WW/2) === (t === 0)); if(sb) return set({ kind:'boost', id:sb.i, x:sb.x, y:sb.y }); }
+  if(L.playT < 900 && ai.role === 'att' && !(f._hasteT > 0)){ const sb = L.boosts.find(b=>b.kind === 'speed' && b.cd <= 0 && !(ai.dead && ai.dead['b' + b.i] > now) && Math.abs(b.x - f.x) < 500 && Math.abs(b.y - f.y) < 260 && (b.x < M.WW/2) === (t === 0)); if(sb) return set({ kind:'boost', id:sb.i, x:sb.x, y:sb.y }); }
   // 5c. the contested middle: in the first minute an attacker goes for a boost lying within about 3600 px of the line (two to a boost), then searches the rooms nearest the line first
   if(L.playT < 3600 && ai.role === 'att' && f._cf < 0){
     let bb = null, bdd = 1e9;
-    for(const b of L.boosts){ if(b.cd > 0 || Math.abs(b.x - M.WW/2) > 3600) continue;
+    for(const b of L.boosts){ if(b.cd > 0 || Math.abs(b.x - M.WW/2) > 3600 || (ai.dead && ai.dead['b' + b.i] > now)) continue;
       if(b.kind === 'speed' && f._hasteT > 120) continue; if(b.kind === 'jump' && nav.boostOnly && !(nav.boostOnly[t] && Object.keys(nav.boostOnly[t]).length)) continue;
       const taken = mates.filter(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'boost' && g._ai.goal.id === b.i && g._jail == null).length; if(taken >= 2) continue;
       const d = Math.hypot(b.x - f.x, (b.y - f.y)*1.4); if(d < bdd){ bdd = d; bb = b; } }
@@ -6411,7 +6465,7 @@ function ctfAiSearch(f, ai, L, nav, now, set){
   if(!bestP){
     // nothing left but what the super jump reaches: fetch a pad first
     if(bo && !boosted){ let hasBo = false; for(const p of pts) if(bo[p.node] && (!vis[p.i] || now - visAt[p.i] > 9000)){ hasBo = true; break; }
-      if(hasBo){ let pad = null, pd = 1e9; for(const b of L.boosts){ if(b.kind !== 'jump' || b.cd > 0) continue; const d = Math.hypot(b.x - f.x, (b.y - f.y)*1.5); if(d < pd){ pd = d; pad = b; } }
+      if(hasBo){ let pad = null, pd = 1e9; for(const b of L.boosts){ if(b.kind !== 'jump' || b.cd > 0 || (ai.dead && ai.dead['b' + b.i] > now)) continue; const d = Math.hypot(b.x - f.x, (b.y - f.y)*1.5); if(d < pd){ pd = d; pad = b; } }
         if(pad) return set({ kind:'boost', id:pad.i, x:pad.x, y:pad.y }); } }
     // everywhere has been looked at lately: go and look again at somewhere, anywhere (keep moving)
     const any = pts.filter(p=>!(ai.deadN && ai.deadN[p.node] > now) && (!bo || !bo[p.node]));
@@ -36859,18 +36913,36 @@ function shapePts(sh){
   }
   return pts;
 }
+// A fan that cannot touch fighter t: a cheap, CONSERVATIVE test (never rejects a hit) on t's bounding circle against the fan's ring and its two edges, so the
+// ~5000 sample points of a long fan (a CPU's any-range jab read, with eight foes on the castle's floor) are not walked for a foe that is plainly out of it.
+function hurtReach(t){   // a circle about (t.x, t.y) that holds the whole hurtbox and the outline bodyPts walks
+  let R = t.r || 0;
+  if(t.hurt){ const h = t.hurt; R = Math.max(R, Math.hypot(Math.abs(h.cx || 0) + h.rx, Math.abs(h.oy || 0) + h.ry)); }
+  return R;
+}
+function fanMisses(sh, t, thick){
+  const R = hurtReach(t) + thick + 2;
+  const face = sh.face || 1, ox = (t.x - sh.cx) * face, oy = t.y - sh.cy, d = Math.hypot(ox, oy);
+  if(d > sh.r1 + R || d + R < sh.r0) return true;
+  if(d <= R) return false;
+  const phi = Math.atan2(oy, ox), dl = Math.asin(R / d);
+  return phi - dl > sh.a1 || phi + dl < sh.a0;
+}
 // Does the shape touch fighter t's outline?
 function shapeHits(sh, t){
   if(sh.kind==='body'){
-    const A = bodyPts(sh.f), m = sh.margin||0;
+    const m = sh.margin||0;
+    if(Math.hypot(sh.f.x - t.x, sh.f.y - t.y) > hurtReach(sh.f) + hurtReach(t) + m + 2) return false;   // too far apart for any outline point to touch (a conservative circle test)
+    const A = bodyPts(sh.f);
     for(let i=0;i<A.length;i+=2) if(hurtGap(t, A[i], A[i+1]) < m) return true;   // a point of the attacker's body inside (or at) the target
     const B = bodyPts(t), me = sh.f;
     for(let i=0;i<B.length;i+=2) if(hurtGap(me, B[i], B[i+1]) < m) return true;   // or of the target's inside the attacker
     return false;
   }
   const thick = sh.kind==='capsule' ? sh.r : 5;   // a limb has some thickness; a blade its radius
-  const pts = shapePts(sh);
-  for(let i=0;i<pts.length;i+=2) if(hurtGap(t, pts[i], pts[i+1]) < thick) return true;
+  if(sh.kind==='fan' && fanMisses(sh, t, thick)) return false;
+  const pts = shapePts(sh), Rc = hurtReach(t) + thick + 2, Rc2 = Rc*Rc;
+  for(let i=0;i<pts.length;i+=2){ const qx = pts[i] - t.x, qy = pts[i+1] - t.y; if(qx*qx + qy*qy > Rc2) continue; if(hurtGap(t, pts[i], pts[i+1]) < thick) return true; }   // (a point outside t's bounding circle is never within `thick` of it)
   if(sh.kind==='fan'){ const B = bodyPts(t); for(let i=0;i<B.length;i+=2) if(fanHas(sh, B[i], B[i+1])) return true; if(fanHas(sh, t.x, hurtCY(t))) return true; }
   return false;
 }
