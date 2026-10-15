@@ -90,18 +90,18 @@ describe('the mill wheel', () => {
     const M = J(w, `{ WW:CTF.map.WW, portals:CTF.map.portals, rooms:CTF.map.rooms }`);
     const enters = M.portals.filter(p => p.kind === 'enter'), exits = M.portals.filter(p => p.kind === 'exit');
     expect(enters.length, 'a door in on each side of the line').toBe(2);
-    expect(enters[0].dir, 'pressed the other way on the other side').toBe(-enters[1].dir);
+    expect(enters[0].side, 'one on each side of the line').toBe(-enters[1].side);
     expect(exits.length, 'two ways out on each side').toBe(4);
-    const f = w.eval('fighters[0].idx'), A = enters.find(p => p.dir < 0);
+    const f = w.eval('fighters[0].idx'), A = enters.find(p => p.side < 0);
     const press = (dir, n, up) => { for (let i = 0; i < n; i++) w.eval(`(function(){ var f = fighters[${f}]; f._press = ${dir}; f._pressUp = ${!!up}; f.onground = true; ctfStepPortals(CTF.live); })()`); };
     // standing at the door on a paddle (level with the hub): a press into it goes in, to the half beside it
     w.eval(`(function(){ var f = fighters[${f}]; f.x = ${A.x + A.w/2}; f.y = ${A.y + A.h} - f.r; f.onground = true; f._room = null; })()`);
     press(0, 10); expect(w.eval(`fighters[${f}]._room`), 'not pressing: stays').toBeNull();
-    press(A.dir, 8);
+    press(0, 8, true);
     expect(w.eval(`fighters[${f}]._room`), 'in the room apart').toBe(1);
     const inRoom = J(w, `{ x:fighters[${f}].x, y:fighters[${f}].y + fighters[${f}].r }`);
     expect(M.rooms.some(r => inRoom.x >= r.x && inRoom.x <= r.x + r.w && inRoom.y >= r.y && inRoom.y <= r.y + r.h + 2), 'put down inside it').toBe(true);
-    expect(inRoom.x < M.WW/2, 'in the half beside the door it went through').toBe(A.dir < 0);
+    expect(inRoom.x < M.WW/2, 'in the half beside the door it went through').toBe(A.side < 0);
     // nobody outside sees in
     expect(w.eval(`(function(){ var o = fighters.find(function(g){ return g.idx !== ${f}; }); o._room = null; fighters[${f}].you = false; o.you = true; return ctfHiddenFrom(fighters[${f}]); })()`), 'from outside the room, a fighter in it is hidden').toBe(true);
     // it is no way out: the door it came through is far away, and the way out is a door in the room
