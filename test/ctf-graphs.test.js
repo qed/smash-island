@@ -6,8 +6,8 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // simulating every move of the map; so a map, a physics number or the move search that changes WITHOUT the files being rebuilt must fail here, loudly.
 // Fast: the file is this map's (fingerprint) and fills the graph at once. Slow: it is exactly what the builder makes now (the whole graph, built again).
 
-const MAPS = ['castle', 'mines', 'factory', 'forest', 'sky', 'oak', 'oak~'];   // (oak~: the asymmetric map with its sides swapped by the bid: its own graph, <id>-swap-graph.json)
-const file = (id) => `artifacts/V1/assets/ctf/${id.replace('~', '-swap')}-graph.json`;   // (relative to the repo root, as loadMonolith reads the game)
+const MAPS = ['castle', 'castle.s', 'castle.l', 'mines', 'factory', 'forest', 'sky', 'oak', 'oak~'];   // (`.s` and `.l`: the small and large builds of a map with bands: each its own graph, <id>-s-graph.json and <id>-l-graph.json)   // (oak~: the asymmetric map with its sides swapped by the bid: its own graph, <id>-swap-graph.json)
+const file = (id) => `artifacts/V1/assets/ctf/${id.replace('~', '-swap').replace('.', '-')}-graph.json`;   // (relative to the repo root, as loadMonolith reads the game)
 const REBUILD = 'run: node scripts/ctf-build-graphs.mjs   (a map, a physics number or ctfNavProbe changed; the shipped graphs are stale)';
 
 for (const id of MAPS) {
@@ -18,7 +18,7 @@ for (const id of MAPS) {
       const { window: w } = loadMonolith(7);
       w.eval(`CTF_GRAPHS[${JSON.stringify(id)}] = ${JSON.stringify(data)};`);
       const r = JSON.parse(w.eval(`(function(){
-        var M = ctfMapGet(${JSON.stringify(id.replace('~', ''))}, ${id.endsWith('~')}), nav = ctfNavMake(M);
+        var M = ctfMapGet(${JSON.stringify(id.replace(/[~.].*$/, ''))}, ${id.indexOf('~') >= 0}, ${id.endsWith('.s') ? 0 : id.endsWith('.l') ? 2 : 1}), nav = ctfNavMake(M);
         return JSON.stringify({ fp: ctfNavFingerprint(M), ready: nav.ready, shipped: !!nav.shipped, nodes: nav.nodes.length, moves: nav.nodes.reduce(function(a, n){ return a + n.edges.filter(function(e){ return e.kind !== 'walk'; }).length; }, 0), reach: !!(nav.reach[0] && nav.reach[1]) });
       })()`));
       expect(data.fp, `graph file is for another version of the ${id} map. ${REBUILD}`).toBe(r.fp);
@@ -32,7 +32,7 @@ for (const id of MAPS) {
     it('is exactly what the builder makes now', { timeout: 240000 }, () => {
       const data = JSON.parse(readFileSync(file(id), 'utf8'));
       const { window: w } = loadMonolith(7);
-      const built = JSON.parse(w.eval(`(function(){ CTF.noShipped = true; var nav = ctfNavNew(ctfMapGet(${JSON.stringify(id.replace('~', ''))}, ${id.endsWith('~')})); while(!nav.ready) ctfNavTick(nav, 500); return JSON.stringify(ctfNavPack(nav)); })()`));
+      const built = JSON.parse(w.eval(`(function(){ CTF.noShipped = true; var nav = ctfNavNew(ctfMapGet(${JSON.stringify(id.replace(/[~.].*$/, ''))}, ${id.indexOf('~') >= 0}, ${id.endsWith('.s') ? 0 : id.endsWith('.l') ? 2 : 1})); while(!nav.ready) ctfNavTick(nav, 500); return JSON.stringify(ctfNavPack(nav)); })()`));
       expect(built.fp).toBe(data.fp);
       expect(built.nodes.length).toBe(data.nodes.length);
       const bad = built.nodes.findIndex((l, i) => JSON.stringify(l) !== JSON.stringify(data.nodes[i]));
