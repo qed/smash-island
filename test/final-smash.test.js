@@ -271,3 +271,52 @@ describe('batches A, B and C: the unique Final Smashes', () => {
     expect(r).toEqual([]);
   });
 });
+
+// The later batches (D onward) are built on the nine shapes (circle, lane, fan, rain, lock, pull, cols, orbit, hose): one suite for each, a row per fighter
+// (name, id, a foe in the hit, a foe out of it; null: no such place), and one drawing sweep over the batch.
+function batchSuite(title, rows){
+  describe(title, () => {
+    const play = (name, dx, pct) => arena(dx, `
+      A.fsGlow = 900; fsTryFire(A); var id = A.fsId, kinds = {};
+      for (var i = 0; i < 220; i++) { step(); if (A._atkKind) kinds[A._atkKind] = 1; if (i > 170) { D.invuln = 0; } }
+      var over = !A._fs && !A.fsId;
+      return { id: id, over: over, hurt: D.pct !== ${pct} || D.stocks < 9, stocks: D.stocks, pct: D.pct, kinds: Object.keys(kinds) };`, { pct, a: name, ax: dx < 0 ? 800 : 130 });
+    for (const [name, id, near, far] of rows) {
+      it(name + ': ' + id + ' lands where its tell is, and ends cleanly', () => {
+        const r = play(name, near, 60);
+        expect(r.id).toBe(id);
+        expect(r.over).toBe(true);
+        expect(r.hurt, JSON.stringify(r)).toBe(true);
+        expect(r.kinds.length, JSON.stringify(r)).toBeGreaterThan(0);
+      });
+      if (far !== null) it(name + ': ' + id + ' misses a foe outside it', () => {
+        const r = play(name, far, 60);
+        expect(r.hurt, JSON.stringify(r)).toBe(false);
+      });
+    }
+    it('draws its tell and its blast with no error', () => {
+      const { window: w } = loadMonolith();
+      const names = JSON.stringify(rows.map(r => r[0]));
+      const r = arenaIn(w, 150, `
+        var errs = [];
+        ${names}.forEach(function(nm){
+          var A2 = makeFighter(ROSTER.find(function(r){ return r.name===nm; }), 400, groundY()-24, 0);
+          A2.team=0; A2.controller='still'; A2.stocks=9; fighters[0] = A2; D.x = 550;
+          A2.fsGlow = 900; fsTryFire(A2);
+          for (var i=0;i<150;i+=10){ for (var k=0;k<10;k++) step(); try{ draw(); }catch(e){ errs.push(nm+': '+e); } }
+        });
+        return errs;`);
+      expect(r).toEqual([]);
+    });
+  });
+}
+batchSuite("batch D", [
+  ["Needle", "cutinhalf", 200, null],
+  ["Pin", "popped", 250, 520],
+  ["Coiny", "monitor", 200, -300],
+  ["Golf Ball", "freezejuice", 250, 650],
+  ["Fries", "fryfan", 200, -300],
+  ["Gelatin", "jellyquake", 120, 500],
+  ["Nickel", "sparechange", 250, null],
+  ["Yellow Face", "buynow", 150, 600]
+]);
