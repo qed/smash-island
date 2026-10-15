@@ -2230,7 +2230,11 @@ const TEAM_COLORS = ["#e0503a","#3a8ee0","#7bc043","#f2c033"]; // red, blue, gre
 // ---------------------------------------------------------------------------------------------------------------
 const CTF_CELL = 120, CTF_COLS = 180, CTF_ROWS = 39, CTF_HALF = 90;
 // The grid being built: a map may be bigger than the standard 39 x 90 (size:{ rows, half }); it is written bottom-anchored, row 38 the bottom floor, new rows above are negative.
-const CTF_DIM = { rows:39, half:90, dr:0 };
+const CTF_DIM = { rows:39, half:90, dr:0, ox:0, band:1 };
+// SCALE WITH THE PLAYER COUNT (the owner, 2026-10-15: "map size and details and rooms should scale by number of ppl"): a map that says bands:true is built in three sizes, small (2v2, 3v3), medium (4v4, 5v5) and
+// large (6v6 to 8v8). The core always; wings (g.wing(minBand, fn): rooms off the roads) from medium; the ANNEX (def.annex: columns added at the outer end, written in negative columns) for large.
+function ctfBandOf(count){ const n = Math.floor((count || 10)/2); return n <= 3 ? 0 : n <= 5 ? 1 : 2; }
+const CTF_BAND_SFX = ['.s', '', '.l'];
 const CTF_G = 36, CTF_HL = 28, CTF_LOW = 46;   // (the old lane rows: kept for the old helper parts below)
 const CTF_DOOR_COL = ['#d94f4f','#e0b030','#3fb0e0','#8a5ad0','#40b870','#e07a30'];   // door/key colours 1..6
 // The things a flag can hide behind: a letter in the map grid is one of these. Half-width = how far from its middle a flag is still behind it.
@@ -2248,12 +2252,14 @@ function ctfGridNew(){
   const rows = []; for(let r=0;r<CTF_DIM.rows;r++) rows.push(new Array(CTF_DIM.half).fill('.'));
   const g = {
     rows,
-    put(r,c,s){ const rr = r + CTF_DIM.dr; for(let i=0;i<s.length;i++){ const cc=c+i; if(rr>=0&&rr<CTF_DIM.rows&&cc>=0&&cc<CTF_DIM.half) rows[rr][cc]=s[i]; } return g; },
+    put(r,c,s){ const rr = r + CTF_DIM.dr; for(let i=0;i<s.length;i++){ const cc=c+i+CTF_DIM.ox; if(rr>=0&&rr<CTF_DIM.rows&&cc>=0&&cc<CTF_DIM.half) rows[rr][cc]=s[i]; } return g; },
     fill(r,c0,c1,ch){ for(let c=c0;c<=c1;c++) g.put(r,c,ch); return g; },
     col(c,r0,r1,ch){ for(let r=r0;r<=r1;r++) g.put(r,c,ch); return g; },
     box(r0,c0,r1,c1,ch){ for(let r=r0;r<=r1;r++) g.fill(r,c0,c1,ch); return g; },
     gap(r,c0,c1){ return g.fill(r,c0,c1,'.'); },
-    at(r,c){ const rr = r + CTF_DIM.dr; return (rr>=0&&rr<CTF_DIM.rows&&c>=0&&c<CTF_DIM.half) ? rows[rr][c] : '#'; },
+    at(r,c){ const rr = r + CTF_DIM.dr; c += CTF_DIM.ox; return (rr>=0&&rr<CTF_DIM.rows&&c>=0&&c<CTF_DIM.half) ? rows[rr][c] : '#'; },
+    band: CTF_DIM.band, ox: CTF_DIM.ox,
+    wing(minBand, fn){ if(g.band >= minBand) fn(); return g; },   // rooms and wings that only a bigger team's map has
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
     fields: [], decor: [], front: [], zones: [], elevs: [], backs: [],
     // the wall behind the rooms: a dark patterned fill over a region (cells)
@@ -2290,12 +2296,12 @@ function ctfGridNew(){
       const ys = []; for(let i = 0; i < n; i++) ys.push(Math.round((rA + (rB - rA)*(i + 0.5)/n)*CTF_CELL));
       const dr = CTF_DIM.dr, rowOf = y=>Math.floor((y - 1)/CTF_CELL);
       for(let k = 0; k < cols; k++){
-        const c = c0 + k, ya = ys[2*k], yb = ys[2*k + 1], ra = rowOf(ya), rb = rowOf(yb), rMax = Math.max(ra, rb), rMin = Math.min(ra, rb);
+        const c = c0 + k, cx = c + CTF_DIM.ox, ya = ys[2*k], yb = ys[2*k + 1], ra = rowOf(ya), rb = rowOf(yb), rMax = Math.max(ra, rb), rMin = Math.min(ra, rb);
         let up = h; if(o.rough && cellJitter(c, Math.round(rA), 5) > 0.74) up++;
-        if(o.cut){ const lo = rMin - up + 1 + dr, hi = rMax + dr; g.ramps = g.ramps.filter(rp=>!(rp.x >= c*CTF_CELL && rp.x < (c + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= lo && Math.floor((rp.y + 1)/CTF_CELL) <= hi)); }   // o.cut: the steps of an earlier slope inside this cut are taken out (a tunnel through a hill's side)
+        if(o.cut){ const lo = rMin - up + 1 + dr, hi = rMax + dr; g.ramps = g.ramps.filter(rp=>!(rp.x >= cx*CTF_CELL && rp.x < (cx + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= lo && Math.floor((rp.y + 1)/CTF_CELL) <= hi)); }   // o.cut: the steps of an earlier slope inside this cut are taken out (a tunnel through a hill's side)
         g.box(rMin - up + 1, c, rMax, c, '.');
         if(o.fill != null) g.box(rMax + 1, c, o.fill, c, '#');
-        [[ya, 0], [yb, 1]].forEach(([y, j])=>{ const ph = (rMax + 1)*CTF_CELL - y; if(ph > 0) g.ramps.push({ x:c*CTF_CELL + j*St, y:y + dr*CTF_CELL, w:St, h:ph }); });
+        [[ya, 0], [yb, 1]].forEach(([y, j])=>{ const ph = (rMax + 1)*CTF_CELL - y; if(ph > 0) if(cx >= 0) g.ramps.push({ x:cx*CTF_CELL + j*St, y:y + dr*CTF_CELL, w:St, h:ph }); });
       }
       return g;
     },
@@ -2306,6 +2312,10 @@ function ctfGridNew(){
     decoDefault(kinds){ g.decoBase = kinds; return g; },
     lattice(o){ g.fields.push(o); return g; },
   };
+  { const ox = CTF_DIM.ox, wc = (name, f)=>{ const o = g[name]; g[name] = function(...a){ if(f(a) === false) return g; return o.apply(g, a); }; };
+    const cols = (i0, i1)=>a=>{ a[i0] += ox; if(i1 != null){ a[i1] += ox; if(a[i1] < 0) return false; if(a[i0] < 0) a[i0] = 0; } else if(a[i0] < 0) return false; };
+    wc('zone', cols(1, 3)); wc('back', cols(0, 2)); wc('skin', cols(0, 2)); wc('secret', cols(0, 2)); wc('keepClear', cols(0, 2)); wc('decoSet', cols(0, 2)); wc('elev', cols(0));
+    wc('deco', a=>{ a[1] += ox; if(a[1] + a[3] <= 0) return false; }); }
   const dr = CTF_DIM.dr; g.dr = dr;
   if(dr){ const w = (name, f)=>{ const o = g[name]; g[name] = function(...a){ f(a); return o.apply(g, a); }; };
     w('zone', a=>{ a[2] += dr; a[4] += dr; }); w('deco', a=>{ a[2] += dr; }); w('back', a=>{ a[1] += dr; a[3] += dr; }); w('skin', a=>{ a[1] += dr; a[3] += dr; }); w('secret', a=>{ a[1] += dr; a[3] += dr; });
@@ -2333,11 +2343,13 @@ function ctfMergeCells(cells, flat){   // cells: Set of "r,c" (flat: horizontal 
 // An ASYMMETRIC map (the owner, 2026-10-15: "SOME maps asymmetric", sides differ in style) has two builders: build is side A and buildB is side B, each written as a left half (home at column 0)
 // and turned over for the right half. Side A sits on the left unless the bid swaps them (swap: B on the left). The two halves are built apart and joined: the lists of a built half hold
 // each thing and its mirror in turn, so the left half is every first entry of A and the right half every second entry of B.
-function ctfMapBuild(id, swap){
+function ctfMapBuild(id, swap, band){
   const def = CTF_MAPS[id]; if(!def) return null;
-  if(!def.buildB){ const M = ctfMapBuildOne(id, def.build); M.gid = id; return M; }
-  const A = ctfMapBuildOne(id, swap ? def.buildB : def.build), B = ctfMapBuildOne(id, swap ? def.build : def.buildB);
-  return ctfMapMerge(A, B, def, !!swap, id);
+  band = def.bands ? (band == null ? 1 : band) : 1;
+  const sfx = def.bands ? CTF_BAND_SFX[band] : '';
+  if(!def.buildB){ const M = ctfMapBuildOne(id, def.build, band); M.gid = id + sfx; return M; }
+  const A = ctfMapBuildOne(id, swap ? def.buildB : def.build, band), B = ctfMapBuildOne(id, swap ? def.build : def.buildB, band);
+  const M = ctfMapMerge(A, B, def, !!swap, id); M.gid = id + (swap ? '~' : '') + sfx; return M;
 }
 function ctfMapMerge(A, B, def, swap, id){
   const M = Object.assign({}, A);
@@ -2346,14 +2358,14 @@ function ctfMapMerge(A, B, def, swap, id){
   M.homes = [A.homes[0], B.homes[1]]; M.jails = [A.jails[0], B.jails[1]];
   M.solids = M.plats.filter(p=>p.solid);
   M.theme = Object.assign({}, def.theme, { skinRects:pick(A._skin, B._skin) });
-  M.rowsR = B.rows; M.gid = id + (swap ? '~' : ''); M.asym = true; M.swap = swap;
+  M.rowsR = B.rows; M.asym = true; M.swap = swap;
   return M;
 }
-function ctfMapBuildOne(id, build){
+function ctfMapBuildOne(id, build, band){
   const def = CTF_MAPS[id]; if(!def) return null;
-  const size = def.size || {}; CTF_DIM.rows = size.rows || CTF_ROWS; CTF_DIM.half = size.half || CTF_HALF; CTF_DIM.dr = CTF_DIM.rows - CTF_ROWS;
+  const size = def.size || {}; CTF_DIM.rows = size.rows || CTF_ROWS; CTF_DIM.band = band == null ? 1 : band; CTF_DIM.ox = (def.bands && def.annex) ? def.annex[CTF_DIM.band] : 0; CTF_DIM.half = (size.half || CTF_HALF) + CTF_DIM.ox; CTF_DIM.dr = CTF_DIM.rows - CTF_ROWS;
   const g = ctfGridNew(); build(g);
-  const dr = CTF_DIM.dr; if(dr && g.info && g.info.supers) for(const sj of g.info.supers){ sj.pad.r += dr; sj.ledge.r += dr; }
+  const dr = CTF_DIM.dr; if(g.info && g.info.supers) for(const sj of g.info.supers){ sj.pad.r += dr; sj.ledge.r += dr; sj.pad.c += CTF_DIM.ox; sj.ledge.c0 += CTF_DIM.ox; sj.ledge.c1 += CTF_DIM.ox; }
   const WW = 2*CTF_DIM.half*CTF_CELL, WH = CTF_DIM.rows*CTF_CELL, HALF = WW/2;
   const mx = (x, w)=> WW - x - (w||0);
   const solids = new Set(), hops = new Set(), doorCells = {}, jailCells = new Set();
@@ -2746,6 +2758,7 @@ function ctfBaseKit(g, o){
 CTF_MAPS.castle = {
   name:'Castle Yoyleberry',
   size:{ rows:28, half:84 },
+  bands:true, annex:[0, 0, 24],   // small and medium teams: the castle (small without its wings); large: and an outer ward behind the home
   living:{ weather:['clear', 'snow', 'clear', 'fog'], night:true, critters:{ birds:7, bats:6, mice:16, fish:5 } },
   theme:{ neutral:30, pal:{ rock:'#8d96ab', wood:'#a8773f', snow:'#f6f9ff', leaf:'#3a8f58', metal:'#7a8aa0' }, sky:['#79c8f4','#eaf7ff'], far:['#c7d6f2','#a9ddb9'], bg:'castle', pat:'brick', back:'#b8a89a', backLine:'rgba(80,52,40,0.22)', wain:'#9c8878', trim:'#d8c8b6',
           solid:{ fill:'#a4a3b6', line:'#7c7b90', hi:'#c8c7da', edge:'#262532' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' },
@@ -2830,6 +2843,7 @@ CTF_MAPS.castle = {
     ZN('wind', 38, 3, 52, 8, 1, 1); ZN('float', 24, 0, 36, 6, 1); DC('cloud', 10, 2, 4, 2); DC('cloud', 36, 1, 5, 2); DC('castle', 28, 3, 5, 6);
     DC('peak', 70, -1, 8, 4);
 
+    g.wing(1, ()=>{
     // ---- 8. MORE ROOMS (the owner: "sides could have more rooms"): a dungeon wing under the jail (three rooms of three sizes, a secret doorway to the first), a way down into it from the corridor and from the
     // low road, an attic over the upper road, a second stair between the home hall and the corridor ----
     A(2, 23, 7, 26); A(10, 24, 15, 26); A(17, 24, 22, 26);                                              // the cells' cellar: big, low, and a pit under the low road
@@ -2859,6 +2873,18 @@ CTF_MAPS.castle = {
       g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c0 + 3)*CTF_CELL && rp.y > yLo && rp.y < yHi));
       A(c0, r0, c0 + 2, r1); STALK(c0, rb, rt);
     }
+    });
+    // ---- 12. THE OUTER WARD (large teams only: the annex, columns -24 to -1 behind the home keep): a tall hall with a ramp floor falling west to a deep chamber, a watchtower on the roof, more props ----
+    g.wing(2, ()=>{
+      S(-24, 9, -1, 27);
+      A(-22, 12, -1, 16); A(0, 14, 0, 16);                                                                // the hall, and a doorway through the keep's west wall into it
+      SL(-21, -6, 21, 17, 3);                                                                             // its floor falls west, gently, down to the chamber
+      A(-23, 22, -16, 26); g.ramps = g.ramps.filter(rp=>!(rp.x >= (-22 + g.ox)*CTF_CELL && rp.x < (-19 + g.ox)*CTF_CELL && rp.y > 2400 && rp.y < 2700)); A(-22, 21, -20, 21); STALK(-22, 26, 21);                                        // the deep chamber under the ramp's foot, a hole and a stair of hops
+      H(14, -20, -16); H(13, -12, -8); BK(-22, 12, -1, 16, 'brick'); BK(-23, 22, -16, 26, 'dirt'); DC('torch', -10, 12, 1, 3); DC('hang', -18, 12, 2, 3);
+      S(-14, 2, -9, 8); A(-13, 3, -10, 8); A(-14, 7, -14, 8); SHAFT(-13, 8, 3);   // a watchtower: a door at its foot, a shaft of hops to the top
+      P(26, -20, 'W'); P(26, -18, 'R'); P(16, -6, 'A'); P(16, -3, 'N');
+    });
+
     // ---- keys, boosts ----
     P(26, 50, 'a'); P(26, 46, 'g'); P(26, 44, 'h'); P(26, 69, 'u');
     g.decoDefault(['armor', 'urn', 'chest', 'hay', 'curtain', 'crate']);
@@ -2868,12 +2894,12 @@ CTF_MAPS.castle = {
     // ---- hiding places: props scattered along every flat floor and ledge, a kind to suit the place (nothing on a slope, nothing in the home or the jail) ----
     { const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {};
       const kindsAt = (r, c)=> c >= 56 ? (r < 10 ? ['n', 't', 'K'] : ['G', 'K', 'Q', 'R']) : (r >= 18 && c >= 18) ? ['R', 'G', 'K', 'W', 'M', 'Q'] : ['C', 'W', 'F', 'A', 'N', 'T', 'U', 'B'];
-      for(let r = 0; r < 27; r++) for(let c = 1; c <= D; c++){
-        if(rampCell.has(r + '.' + c) || (c < 17 && r >= 11)) continue;
+      for(let r = 0; r < 27; r++) for(let c = Math.min(1, -g.ox); c <= D; c++){
+        if(rampCell.has(r + '.' + (c + g.ox)) || (c >= 0 && c < 17 && r >= 11)) continue;
         const here = g.at(Y(r), c), below = g.at(Y(r) + 1, c);
         if(here !== '.' || (below !== '#' && below !== '=')) continue;
         if(r < 9 && c < 56) continue;
-        if(cellJitter(c, r, 41) > 0.5 || (last[r] != null && c - last[r] < 3)) continue;
+        if(cellJitter(c, r, 41) > [0.3, 0.5, 0.55][g.band] || (last[r] != null && c - last[r] < 3)) continue;
         const ks = kindsAt(r, c), ch = ks[Math.floor(cellJitter(c, r, 43)*ks.length)];
         if(ch === 'B' && r > 10) continue;
         g.put(Y(r), c, ch); last[r] = c;
@@ -3526,7 +3552,7 @@ function ctfMapIds(){ return Object.keys(CTF_MAPS).filter(k=>!CTF_MAPS[k].wip); 
 // A map marked BETA can be picked by name (its button says so) but Random leaves it out: the owner's rule (2026-10-14) that a map ships only once
 // its CPU-only probe passes; the factory's CPUs still search it too slowly.
 function ctfMapRandomIds(){ return ctfMapIds().filter(k=>!CTF_MAPS[k].beta); }
-function ctfMapGet(id, swap){ const k = id + (swap ? '~' : ''); return CTF.built[k] || (CTF.built[k] = ctfMapBuild(id, swap)); }
+function ctfMapGet(id, swap, band){ const d = CTF_MAPS[id], b = d && d.bands ? (band == null ? 1 : band) : 1, k = id + (swap ? '~' : '') + (d && d.bands ? CTF_BAND_SFX[b] : ''); return CTF.built[k] || (CTF.built[k] = ctfMapBuild(id, swap, b)); }
 function ctfNavId(){ return CTF.map && CTF.map.gid ? CTF.map.gid : CTF.mapId; }
 function ctfStageObj(id){
   if(!CTF.stageObjs[id]){ const M = ctfMapGet(id);
@@ -3564,8 +3590,8 @@ function ctfPickMap(){
 // setupWorld() for this mode: pick a map at random and lay it out. Pure given the map: the world holds no live state.
 function ctfBuildWorld(keep){   // keep: the same map again (the bid swapped the sides)
   const id = keep ? CTF.mapId : ctfPickMap();
-  if(!keep){ CTF.swap = false; CTF.bidRes = null; CTF.bidPre = null; }
-  const M = ctfMapGet(id, CTF.swap);
+  if(!keep){ CTF.swap = false; CTF.bidRes = null; CTF.bidPre = null; CTF.band = ctfBandOf(SETTINGS.count); }
+  const M = ctfMapGet(id, CTF.swap, CTF.band);
   CTF.lastMap = id; CTF.mapId = id; CTF.map = M;
   if(!(stage && String(stage.id).indexOf('ctf-') === 0)) CTF.prevStage = stage;
   stage = ctfStageObj(id);
@@ -6552,7 +6578,7 @@ function ctfNavMake(M){
 }
 function ctfGraphFetch(id){
   if(CTF_GRAPH_WAIT[id]) return CTF_GRAPH_WAIT[id];
-  return CTF_GRAPH_WAIT[id] = fetch('assets/ctf/' + id.replace('~', '-swap') + '-graph.json').then(r=>r.ok ? r.json() : null).then(d=>{ if(d && d.nodes) CTF_GRAPHS[id] = d; return !!CTF_GRAPHS[id]; }, ()=>false).then(ok=>{ delete CTF_GRAPH_WAIT[id]; return ok; });
+  return CTF_GRAPH_WAIT[id] = fetch('assets/ctf/' + id.replace('~', '-swap').replace('.', '-') + '-graph.json').then(r=>r.ok ? r.json() : null).then(d=>{ if(d && d.nodes) CTF_GRAPHS[id] = d; return !!CTF_GRAPHS[id]; }, ()=>false).then(ok=>{ delete CTF_GRAPH_WAIT[id]; return ok; });
 }
 // What each side's home can reach, doors ignored: where a flag may be hidden (a place the foe could never get to is no place for one).
 function ctfNavReach(nav){

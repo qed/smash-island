@@ -5,7 +5,8 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // a jail with its no-go zone clear of the spawns, doors and keys, a lift), and the CPU's graph of it says every hiding place, key, boost, pad and the jail's door can be reached from
 // home, with only the vaults behind their locked doors.
 
-const MAPS = ['castle', 'mines', 'factory', 'forest', 'sky', 'oak'];
+const MAPS = ['castle', 'castle.s', 'castle.l', 'mines', 'factory', 'forest', 'sky', 'oak'];   // (`.s` and `.l`: the small and the large build of a map with bands; the plain name is the medium one, 4v4 and 5v5)
+const baseOf = (id) => id.replace(/[.].*$/, ''), bandOf = (id) => id.endsWith('.s') ? 0 : id.endsWith('.l') ? 2 : 1;
 const ASYM = { oak: true };   // an asymmetric map (two different halves, the bid chooses the sides): not its own mirror; every check is made for both sides
 
 for (const id of MAPS) {
@@ -13,7 +14,7 @@ for (const id of MAPS) {
     it('has a home, a jail clear of the spawns, doors with keys, a lift, hiding places, and is its own mirror', { timeout: 120000 }, () => {
       const { window: w } = loadMonolith(51);
       const r = JSON.parse(w.eval(`(function(){
-        var M = ctfMapGet('${id}'), out = {};
+        var M = ctfMapGet('${baseOf(id)}', false, ${bandOf(id)}), out = {};
         out.WW = M.WW; out.plats = M.plats.length; out.spawns = M.homes.map(function(h){ return h.spawns.length; }); out.pads = M.homes.map(function(h){ return !!h.pad; });
         out.jails = M.jails.length;
         out.spawnInZone = [0, 1].some(function(t){ var z = M.jails[t].zone; return M.homes[t].spawns.some(function(s){ return s.x > z.x && s.x < z.x + z.w && s.y > z.y && s.y < z.y + z.h; }); });
@@ -27,8 +28,8 @@ for (const id of MAPS) {
         return JSON.stringify(out);
       })()`));
       // each map's world width: the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side); then 2026-10-15: "about 15 screens wide and 4 tall", "some maps could be small with good spots" (castle v4: 84 columns a side, 28 rows); the others are 108 a side now
-      expect(r.WW).toBe({ castle: 20160, mines: 25920, factory: 25920, forest: 25920, sky: 25920, oak: 20160 }[id]);
-      if (!ASYM[id]) expect(r.mirrored, 'the right half is the left half turned over').toBe(true);   // (an asymmetric map is two halves, each its own)
+      expect(r.WW).toBe({ castle: 20160, mines: 25920, factory: 25920, forest: 25920, sky: 25920, oak: 20160, 'castle.s': 20160, 'castle.l': 25920 }[id]);
+      if (!ASYM[baseOf(id)]) expect(r.mirrored, 'the right half is the left half turned over').toBe(true);   // (an asymmetric map is two halves, each its own)
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
       expect(r.jails).toBe(2);
@@ -36,7 +37,7 @@ for (const id of MAPS) {
       expect(r.doors, 'a vault with its doors').toBeGreaterThanOrEqual(4);
       expect(r.keys).toBeGreaterThanOrEqual(2);
       expect(r.elevs, 'a lift a side').toBeGreaterThanOrEqual(2);
-      expect(r.spots, 'places to hide').toBeGreaterThanOrEqual(80);
+      expect(r.spots, 'places to hide (a small team's map is compact: at least 10 a fighter of its biggest team, the owner 2026-10-15 "details and rooms should scale by number of ppl")').toBeGreaterThanOrEqual(bandOf(id) === 0 ? 60 : 80);
       expect(r.coverKinds, 'a wide choice of cover').toBeGreaterThanOrEqual(6);
       expect(r.zoneKinds, 'areas that do things').toBeGreaterThanOrEqual(3);
       expect(r.backKinds, 'more than one wall behind the rooms').toBeGreaterThanOrEqual(3);
@@ -45,7 +46,7 @@ for (const id of MAPS) {
     it('has no big empty rooms: no view at play zoom is mostly bare back wall (something to stand on, jump to or hide behind in reach of most of it)', { timeout: 120000 }, () => {
       const { window: w } = loadMonolith(53);
       const r = JSON.parse(w.eval(`(function(){
-  var M = ctfMapGet('${id}'), C = 120, cols = Math.round(M.WW/C), rows = Math.round(M.WH/C), z = (typeof CTF_ZOOM !== 'undefined' ? CTF_ZOOM : 0.75);
+  var M = ctfMapGet('${baseOf(id)}', false, ${bandOf(id)}), C = 120, cols = Math.round(M.WW/C), rows = Math.round(M.WH/C), z = (typeof CTF_ZOOM !== 'undefined' ? CTF_ZOOM : 0.75);
   var vw = Math.round(1280/z/C), vh = Math.round(720/z/C);   // the view in cells
   var solid = new Uint8Array(cols*rows), serve = new Uint8Array(cols*rows), inBack = new Uint8Array(cols*rows);
   var idx = function(c, r){ return r*cols + c; };
@@ -59,11 +60,11 @@ for (const id of MAPS) {
   (M.back || []).forEach(function(b){ if(b.kind === 'sky') return; var c0 = Math.floor(b.x/C), c1 = Math.ceil((b.x + b.w)/C) - 1, r0 = Math.floor(b.y/C), r1 = Math.ceil((b.y + b.h)/C) - 1;
     for(var r = r0; r <= r1; r++) for(var c = c0; c <= c1; c++) if(c >= 0 && c < cols && r >= 0 && r < rows) inBack[idx(c, r)] = 1; });
   var res = [], seen = 0;
-  for(var cr = 2; cr < rows - 1; cr += 3) for(var cc = 3; cc < ${ASYM[id] ? 'cols - 3' : 'cols/2'}; cc += 3){
+  for(var cr = 2; cr < rows - 1; cr += 3) for(var cc = 3; cc < ${ASYM[baseOf(id)] ? 'cols - 3' : 'cols/2'}; cc += 3){
     if(!inBack[idx(cc, cr)] || solid[idx(cc, cr)]) continue;
     var back = 0, bare = 0;
     for(var r = cr - Math.floor(vh/2); r < cr + Math.ceil(vh/2); r++) for(var c = cc - Math.floor(vw/2); c < cc + Math.ceil(vw/2); c++){
-      if(c < 0 || c >= ${ASYM[id] ? 'cols' : 'cols/2'} || r < 0 || r >= rows) continue; var i = idx(c, r); if(!inBack[i] || solid[i]) continue; back++; if(!serve[i]) bare++; }
+      if(c < 0 || c >= ${ASYM[baseOf(id)] ? 'cols' : 'cols/2'} || r < 0 || r >= rows) continue; var i = idx(c, r); if(!inBack[i] || solid[i]) continue; back++; if(!serve[i]) bare++; }
     seen++;
     if(back > 60 && bare/back > 0.6) res.push({ c:cc, r:cr - (M.dr || 0), f:Math.round(100*bare/back), back:back });
   }
@@ -76,7 +77,7 @@ for (const id of MAPS) {
     it('can be walked: every hiding place, key, boost, pad and the jail door is reachable, vaults only through their doors', { timeout: 180000 }, () => {
       const { window: w } = loadMonolith(52);
       const r = JSON.parse(w.eval(`(function(){
-        var M = ctfMapGet('${id}'), nav = ctfNavNew(M); while(!nav.ready) ctfNavTick(nav, 80);
+        var M = ctfMapGet('${baseOf(id)}', false, ${bandOf(id)}), nav = ctfNavNew(M); while(!nav.ready) ctfNavTick(nav, 80);
         var bad = [], chk = function(label, x, y, t){ var n = ctfNavNodeAt(nav, x, y, 10); if(!n) bad.push(label + '(' + Math.round(x/120) + ',' + Math.round(y/120) + ') no node'); else if(!nav.reach[t][n.id]) bad.push(label + '(' + Math.round(x/120) + ',' + Math.round(y/120) + ') unreachable'); };
         // every thing is checked from the home of the side it belongs to (both sides: an asymmetric map is two different halves)
         M.spots.forEach(function(s){ chk('spot' + s.team, s.x, s.y, s.team); });
