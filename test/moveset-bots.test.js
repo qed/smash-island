@@ -59,8 +59,25 @@ describe('the CPU uses the moveset', () => {
     for (const k of ['hyper', 'super', 'rev']) expect(r.used[k], k).toBeUndefined();
   });
   it('a fighter with no moveset is not given one: it never uses a moveset slot', () => {
-    const r = play('Firey', 'Pen', 31, 900);
+    // (restated each batch: Firey was the example until batch 2; now the first playable fighter with no MOVESETS entry stands in)
+    const todo = W.eval(`ROSTER.filter(function(r){ return r.play && r.kit && !MOVESETS[r.kit.special] && !r.prize; })[0].name`);
+    const r = play(todo, 'Pen', 31, 900);
     expect(Object.keys(r.used).filter((k) => !/^(grab|[fbud]throw)$/.test(k))).toEqual([]);
+  });
+});
+
+describe('the CPU uses the moves of batch 2 too, and only the ones that reach', () => {
+  it('each of the eight, played by the CPU, uses a tilt or an aerial of its own at least once (Pen, Blocky and Bomby keep most jab presses as the jab: their strength is built on it), and never errors', () => {
+    const bad = []; let total = 0;
+    for (const name of ['Firey', 'Pen', 'Blocky', 'Ice Cube', 'Match', 'Snowball', 'Pin', 'Bomby']) {
+      const r = play(name, 'Rocky', 14, 3600);
+      if (r.errs.length) bad.push(`${name}: ${r.errs[0]}`);
+      const n = ['ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da'].reduce((a, k) => a + (r.used[k] || 0), 0);
+      total += n;
+      if (n < 1) bad.push(`${name}: no tilt or aerial in 3600 frames (${JSON.stringify(r.used)})`);
+    }
+    if (total < 14) bad.push(`only ${total} tilts and aerials between the eight`);
+    expect(bad, bad.join(' ; ')).toEqual([]);
   });
 });
 

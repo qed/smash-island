@@ -26,8 +26,10 @@ describe('the move list', () => {
     expect(rows('Pencil')).toContain('Lead Jab');
     expect(rows('Pencil')).toContain("She's Got Him");
     expect(rows('Pencil')).toContain('CLINGS');
-    expect(rows('Firey')).toContain('until this fighter');
-    expect(rows('Firey')).toContain('Forward throw');
+    // (restated each batch: Firey was the example of a fighter not yet converted until batch 2; now the first playable fighter with no MOVESETS entry stands in)
+    const todo = J(`ROSTER.filter(function(r){ return r.play && r.kit && !MOVESETS[r.kit.special] && !r.prize; })[0].name`);
+    expect(rows(todo)).toContain('until this fighter');
+    expect(rows(todo)).toContain('Forward throw');
   });
   it('the pause menu has a Move list button that shows the list for the fighter you are playing', () => {
     expect(J('!!document.getElementById("pauseMovesBtn") && !!document.getElementById("pauseMoves")')).toBe(true);

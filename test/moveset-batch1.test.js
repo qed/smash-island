@@ -119,9 +119,9 @@ describe('combos', () => {
 });
 
 describe('movetech, as the owner asked', () => {
-  it('only Pencil clings; the flyers and the dasher do not', () => {
+  it('of batch 1 only Pencil clings; the flyers and the dasher do not', () => {   // (restated for batch 2: Snowball, Pin, Bomby and Blocky cling too, so the list is no longer just Pencil; see moveset-batch2)
     const c = JSON.parse(W.eval('JSON.stringify(CLINGERS)'));
-    expect(Object.keys(c)).toEqual(['van']);
+    expect(Object.keys(c)).toContain('van');
     for (const k of ['fly', 'chair', 'dash']) expect(c[k]).toBeUndefined();
   });
   it('flyers and dashers have at most one small move-cancel; Pencil has several', () => {

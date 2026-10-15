@@ -35057,7 +35057,9 @@ const wrapA = (a)=>{ while(a > Math.PI) a -= 2*Math.PI; while(a < -Math.PI) a +=
 // The limbs that move this frame and by how much, or null when nothing but the body moves.
 function limbMoves(f, rig, sp){
   if(!(f._atkAnim > 0) || !f._atkKind) return null;
-  const fwd = sp && sp.flip ? -1 : 1, pose = animPoses(f._atkKind, fwd);
+  const fwd = sp && sp.flip ? -1 : 1, mva = f._atkMove ? MVA[f._atkMove] : null;
+  if(mva) return mvaLimbMoves(f, rig, mva, fwd);   // a move of a converted fighter has limb work of its own (MOVE ANIMATIONS)
+  const pose = animPoses(f._atkKind, fwd);
   if(!pose) return null;
   const pool = pose.limb === 'leg' ? rig.legs : rig.arms;
   if(!pool || !pool.length) return null;
@@ -35094,11 +35096,12 @@ function drawRigged(im, dw, dh, rig, moves, c){
 // frame the attack has already resolved. Every attack entry point goes through here so the length
 // is recorded alongside the countdown (a smash runs longer than a jab, and the phase split has to
 // scale with it rather than clipping).
-function armAtk(f, len, kind){
+function armAtk(f, len, kind, move){
   f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   // `kind` is what the body does (see LIMB ANIMATION): punch, uppercut, kick, throw, spit, cast, slam, stomp, dash,
   // spin. Every move names one now, specials and smashes included. Render-only.
   f._atkKind = kind || null;
+  f._atkMove = move || null;   // which move (kit.slot: 'ember.ft'), for MOVE ANIMATIONS; a label the sim never reads
   f._atkAnim = len;
   f._atkLen  = len;
   f._atkPhase = "windup";   // interned literals; mirrored each tick in the fighter loop
@@ -35158,7 +35161,7 @@ function doAttack(f){
 
   f.flash=6;
   if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'jab');   // "and Pepper does the same a beat later"
-  armAtk(f, ATK_ANIM, animKindOf(f, 'jab'));   // render-only: spriteRig plays the windup/release/recover beats off this
+  armAtk(f, ATK_ANIM, animKindOf(f, 'jab'), mvId(f, 'jab'));   // render-only: spriteRig plays the windup/release/recover beats off this
   // THROWABLE: if holding a picked-up item, this attack hurls it instead of a normal swing
   if(f._holding){
     const h=f._holding; f._holding=null;
@@ -36188,7 +36191,7 @@ function doSmash(f){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
-  armAtk(f, ATK_ANIM+5, animKindOf(f, 'smash'));    // a smash lunges longer than a jab — the phase split scales with it
+  armAtk(f, ATK_ANIM+5, animKindOf(f, 'smash'), mvId(f, 'smash'));    // a smash lunges longer than a jab — the phase split scales with it
   if(f.you) questSmashArm(f);   // Win Tokens: the "land smashes" quests (a tally outside the fighter; see QSTAT)
   if(f.kit && f.kit.special==='saltpepper') pepperEcho(f,'smash');
   // Announce it. The sound fires for everyone; the name banner only for the local player, because
@@ -36403,7 +36406,7 @@ function riseShape(f, s){
 }
 function doUpSpecial(f){
   f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
-  armAtk(f, ATK_ANIM, animKindOf(f, 'up'));      // render-only: a recovery is the fighter ACTING, not being hit
+  armAtk(f, ATK_ANIM, animKindOf(f, 'up'), mvId(f, 'up'));      // render-only: a recovery is the fighter ACTING, not being hit
   const k=f.kit && f.kit.special;
   if(UPSPEC[k]){ riseShape(f, UPSPEC[k]); }
   else if(UPSPECIALS[k]){ UPSPECIALS[k](f); }
@@ -36917,7 +36920,7 @@ const DOWNSPECIALS = {
 };
 function doDownSpecial(f){
   f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
-  armAtk(f, ATK_ANIM, animKindOf(f, 'down'));
+  armAtk(f, ATK_ANIM, animKindOf(f, 'down'), mvId(f, 'down'));
   const k=f.kit && f.kit.special;
   if(DOWNSPECIALS[k]) DOWNSPECIALS[k](f);
   else { f.countering=22; f.flash=8;  }
@@ -36960,7 +36963,7 @@ function doAttackSpecial(f){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
-  armAtk(f, ATK_ANIM, animKindOf(f, 'finisher'));
+  armAtk(f, ATK_ANIM, animKindOf(f, 'finisher'), mvId(f, 'finisher'));
   const k=f.kit && f.kit.special;
   if(ATKSPECIALS[k]) ATKSPECIALS[k](f);
   else { const cx=f.x+f.face*28; f.flash=12; hitCircle(f,cx,f.y,f.r+26,14,14,f.face*12,-9);  }
@@ -37219,7 +37222,7 @@ function mvGrabStart(f){
   f._gb = { t: 0, G: G };
   { const U = f._used || (f._used = {}); U.grab = (U.grab || 0) + 1; }
   f.atkCd = G.whiff; f.flash = 4;
-  armAtk(f, G.whiff, 'grab');
+  armAtk(f, G.whiff, 'grab', mvId(f, 'grab'));
   return true;
 }
 // the grab's box comes out on frame G.st; the fighter cannot walk while it is out
@@ -37246,7 +37249,7 @@ function holdStart(f, t, G){
   f._hold = { idx: t.idx, t: 0, max: max, pumCd: 0, G: G, prev: { l: false, r: false, u: false, d: false, a: true } };   // (X must come up and go down again to pummel)
   t._heldBy = f.idx; t._stPrev = null;
   f.atkCd = 0; f.vx = 0; f.flash = 6;
-  armAtk(f, 16, 'grab');
+  armAtk(f, 16, 'grab', mvId(f, 'grab'));
   holdPlace(f, t);
   for(let i = 0; i < 6; i++) puff(t.x, t.y - 8, '#fff', 3);
 }
@@ -37283,7 +37286,7 @@ function holdTick(f, inp){
   else if(dirs[back] && !P[back]) kind = 'b';
   if(kind){ doThrow(f, t, kind); return; }
   if(dirs.a && !P.a && H.pumCd <= 0){
-    H.pumCd = G.pummel.every; f.flash = 5; armAtk(f, 10, 'punch');
+    H.pumCd = G.pummel.every; f.flash = 5; armAtk(f, 10, 'punch', mvId(f, 'pummel'));
     holdDamage(f, t, G.pummel.dmg);
     for(let i = 0; i < 4; i++) puff(t.x, t.y - 6, f.color, 3);
   }
@@ -37301,7 +37304,7 @@ function doThrow(f, t, kind){
   holdRelease(f, t, 0);
   if(kind === 'b') f.face = -f.face;
   const dir = f.face;
-  armAtk(f, T.lag + 6, T.pose);
+  armAtk(f, T.lag + 6, T.pose, mvId(f, kind + 'throw'));
   f.atkCd = Math.max(f.atkCd, T.lag); f.flash = 8;
   t.x = f.x + dir * (f.r + t.r) * 0.9; t.y = f.y + f.r - t.r;
   t.invuln = 0;
@@ -37355,7 +37358,7 @@ function mvTotal(S){ return S.st + S.act + S.end; }
 function mvStart(f, S, key, nofx){
   if(inOwnTeamZone(f) || f._mv) return false;
   const total = mvTotal(S);
-  armAtk(f, Math.max(10, total + 2), S.pose || 'punch');   // a new move (_atkSeq): only a NEW move may chain onto a foe in hitstun
+  armAtk(f, Math.max(10, total + 2), S.pose || 'punch', mvId(f, key));   // a new move (_atkSeq): only a NEW move may chain onto a foe in hitstun
   beginCombo(f);
   f._mv = { s:S, key:key, t:0, air:!f.onground, landed:false, hit:{}, boss:new Set() };
   f._lastKey = key; { const U = f._used || (f._used = {}); U[key] = (U[key] || 0) + 1; }   // (what a fighter has used, for the tests and the trainer)
@@ -37624,10 +37627,10 @@ function msReachWord(S){ const m = msReach(S); return m < 80 ? 'short reach' : (
 function msPct(d){ return (Math.round(d * 10) / 10) + '%'; }
 function msLine(S){
   const dm = Math.max.apply(null, (S.boxes || []).map(b => b.dmg).concat([0]));
-  return S.n + ' — ' + S.d + ' (' + msReachWord(S) + '). On hit: ' + (S.x || msPct(dm)) + '.';
+  return S.n + ' — ' + S.d + ' (' + msReachWord(S) + '). On hit: ' + (S.x || msPct(dm)) + (S.fxt ? ', ' + S.fxt : '') + '.';
 }
 function msThrowLine(T){ return T.n + ' — ' + T.d + '. On hit: ' + msPct(T.dmg) + '.'; }
-(function(){
+function msWords(){   // (every batch calls it once its fighters are in MOVESETS; it is safe to run again)
   for(const r of ROSTER){
     if(!r.play || !r.kit) continue;
     const ms = MOVESETS[r.kit.special], t = MOVE_TEXT[r.name];
@@ -37641,7 +37644,272 @@ function msThrowLine(T){ return T.n + ' — ' + T.d + '. On hit: ' + msPct(T.dmg
     }
     t.tech = (ms.tech || []).join(' ');
   }
-})();
+}
+msWords();
+
+// ============================================================
+//  MOVESETS, BATCH 2: Firey, Pen, Blocky, Ice Cube, Match, Snowball, Pin, Bomby
+// ============================================================
+// Built to batch 1's template (see MOVESETS, BATCH 1 above), every move hand-made: no two of these eight share a shape, a timing or a number
+// (the owner: "archetypes are annoying because i dont want to fight 20 pre-balance trees"). Pin, Snowball, Bomby and Blocky are the slow, heavy
+// ones, so they get the generous movetech (a wall cling, several cancels, momentum carried); Firey, Pen, Ice Cube and Match are quick, so they
+// get the plain share (short hop, fast fall, a wall jump, at most one small cancel). Their old "ranged" slot was the shared low sweep (none of
+// the eight ever shot from X), which is now each one's own down-tilt.
+// CANON: the wiki could not be reached while this batch was written, so the throws and specials lean on what each object IS in the show (a pin
+// pricks, a snowball packs and rolls, a match strikes and its head burns, an ice cube is armless and slides, a bomb goes off), and only on moments
+// already quoted in this file: Blocky "put a block around all of the earth" (Block Spawning) and the prankster of "Blocky's Funny Doings"; Bomby's
+// "Sorry! I get excited." Nothing is quoted from memory.
+Object.assign(CLINGERS, { tackle:50, pierce:66, bomb:40, anvil:44 });   // Pin's point sticks in the wall; Snowball packs onto it; the other two hold on for less
+const msBurn = (n) => (f, t) => { t.burn = Math.max(t.burn || 0, n); };
+const msFx = (name, n) => (f, t) => { if(SM_FX[name]) SM_FX[name](t, f, n); };
+Object.assign(MOVESETS, {
+  // ---- FIREY ("ember") -- the aggressive zoner: light, quick, and everything he touches starts to burn. A plain share of movetech.
+  ember: {
+    aiK: 0.6, aiG: 0.5, aiH: 0.6,
+    aiFit: true,   // the CPU takes a tilt or an aerial only when it reaches the foe where it stands (aiMovesetUse)
+    ft: { n:'Flame Lash', d:'lashes a quick lick of flame straight ahead', pose:'punch', st:3, act:2, end:6,
+      boxes:[{ s:MvC(12, -2, 58, -2, 13), dmg:4.2, kb:[3, -4.4], stun:22 }] },
+    ut: { n:'Cinder Column', d:'throws up a tall, narrow column of cinders that lingers a moment and singes anyone it lifts', pose:'uppercut', st:4, act:4, end:7, fxt:'sets them burning',
+      boxes:[{ s:MvC(14, -4, 16, -76, 15), dmg:4.6, kb:[0.7, -10.5], stun:27, fx:msBurn(30) }] },
+    dt: { n:'Floor Fire', d:'rolls a flame along the floor, far out at their feet, popping them up', pose:'kick', st:5, act:3, end:6,
+      boxes:[{ s:MvC(14, 20, 76, 20, 11), dmg:3.8, kb:[1.7, -7.2], stun:25 }] },
+    na: { n:'Flicker', d:'flickers into a ring of flame that licks everything near three times over', pose:'spin', st:3, act:7, end:5, land:5, ac:16, fxt:'sets them burning',
+      boxes:[{ s:MvO(0, 0, 40), dmg:2.4, kb:[1, -2.4], stun:19, rehit:3, fx:msBurn(30) }] },
+    fa: { n:'Fireball Punch', d:'punches forward with a ball of fire', pose:'punch', st:5, act:2, end:8, land:9, ac:15, fxt:'sets them burning',
+      boxes:[{ s:MvC(16, 0, 64, 0, 14), dmg:6, kb:[2.6, -2.8], stun:23, fx:msBurn(50) }] },
+    ba: { n:'Backdraft', d:'blasts a burst of flame out behind him; his strongest air hit', pose:'kickback', st:4, act:3, end:9, land:9, ac:17,
+      boxes:[{ s:MvC(-10, 0, -62, 0, 15), dmg:7.5, kb:[-8.4, -4.4], stun:14 }] },
+    ua: { n:'Hot Head', d:'flares his head straight up through whoever is above', pose:'kickup', st:3, act:3, end:5, land:5, ac:11,
+      boxes:[{ s:MvC(0, -14, 2, -72, 14), dmg:4.3, kb:[0.3, -8.6], stun:23 }] },
+    da: { n:'Meteor Cinder', d:'drops like a burning cinder: the very tip spikes whoever is below, the rest only pops them up', pose:'slam', st:7, act:4, end:11, land:11, ac:22,
+      x:'8% at the tip (4.5% elsewhere)',
+      boxes:[{ s:MvO(0, 54, 12), g:'a', t0:7, t1:10, dmg:8, kb:[0.4, 9], stun:14 }, { s:MvC(0, 12, 4, 44, 16), g:'a', t0:7, t1:10, dmg:4.5, kb:[0.5, -4.5], stun:18 }],
+      mv:[{ t0:7, t1:10, mode:'dive', vy:10 }] },
+    side: { n:'Hothead Rush', d:'streaks sideways in a trail of fire, singeing whoever is in the way; he can jump out of its end', pose:'dash', st:2, act:9, end:10, cd:60, jc:'end', fxt:'sets them burning',
+      boxes:[{ s:MvC(14, 4, 50, 4, 15), dmg:5.2, kb:[5.2, -3.4], stun:14, fx:msBurn(35) }], mv:[{ t0:0, t1:10, mode:'set', vx:9.8 }] },
+    grab: { reach:30, whiff:28, pummel:{ dmg:1.4, every:13, n:'Singe' }, hold:{ base:58 },
+      f:{ n:'Hot Potato', d:'tosses them ahead like a hot potato, smoking', dmg:7, kx:7.6, ky:-4.2, stun:0, pose:'throw', lag:20, fx:msBurn(50) },
+      b:{ n:'Cinder Heave', d:'spins and flings them behind him in a shower of sparks', dmg:7.4, kx:8.2, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Flame Geyser', d:'lifts them on a jet of flame, ready for an up-air', dmg:4.8, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Scorch Mark', d:'pins them to the floor and scorches them, leaving them down', dmg:4.6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Hothead Rush can be jump-cancelled when it ends.', 'No cling.'],
+  },
+  // ---- PEN ("cap") -- the zoner: tall and thin, all reach. His moves hit far out and thin, and he is slow to cover what is right beside him. A plain share.
+  cap: {
+    aiFit: true,   // the CPU takes a tilt or an aerial only when it reaches the foe where it stands (aiMovesetUse)
+    aiK: 0.3, aiG: 0.15, aiH: 0.3,   // the CPU turns few of his jab presses into tilts, aerials and grabs: its jab and its cap are what his strength is built on (aiMovesetUse)
+    ft: { n:'Cap Flick', d:'flicks his cap out ahead: it hits only at the far end, nothing up close', pose:'throw', st:5, act:2, end:8,
+      boxes:[{ s:MvO(70, -2, 12), dmg:7, kb:[4.4, -3.8], stun:23 }] },
+    ut: { n:'Nib Sweep', d:'sweeps his nib up and forward in a narrow arc', pose:'chop', st:5, act:3, end:8,
+      boxes:[{ s:MvF(30, 88, -1.9, -0.5, -12, 0), dmg:4.4, kb:[0.4, -10.8], stun:26 }] },
+    dt: { n:'Nib Tap', d:'taps the floor with his nib, quick and low, popping them up', pose:'stompdn', st:3, act:2, end:5,
+      boxes:[{ s:MvC(12, 24, 54, 24, 9), dmg:3, kb:[1.6, -5.6], stun:23 }] },
+    na: { n:'Pen Helicopter', d:'whirls flat like a helicopter blade, hitting both sides at chest height three times', pose:'spin', st:4, act:8, end:7, land:8, ac:18,
+      boxes:[{ s:MvC(-64, 4, 64, 4, 10), dmg:3.2, kb:[1.2, -2.6], stun:21, rehit:6 }] },
+    fa: { n:'Click-Click', d:'clicks twice: a light poke, then a harder one', pose:'throw', st:5, act:6, end:7, land:9, ac:17,
+      x:'3%, then 5.5%',
+      boxes:[{ s:MvC(12, 0, 60, 0, 10), g:'a', t0:5, t1:5, dmg:3, kb:[0.6, -1.4], stun:20, rehit:4 }, { s:MvC(12, 0, 70, 0, 10), g:'a', t0:9, t1:10, dmg:5.5, kb:[3.6, -3.2], stun:24, rehit:4 }] },
+    ba: { n:'Clip Back', d:'swings the clip end far out behind him', pose:'kickback', st:5, act:3, end:10, land:9, ac:19,
+      boxes:[{ s:MvC(-12, -2, -70, -2, 10), dmg:8.6, kb:[-8.6, -4.4], stun:15 }] },
+    ua: { n:'Cap Launch', d:'launches his cap up in a tall narrow cone that misses anyone right overhead', pose:'kickup', st:4, act:3, end:8, land:7, ac:13,
+      boxes:[{ s:MvF(30, 90, -1.95, -1.2, -6, 0), dmg:5, kb:[0.3, -8.8], stun:24 }] },
+    da: { n:'Cap Drop', d:'drops his cap on a slant ahead and below him, not straight down', pose:'stompdn', st:6, act:4, end:10, land:10, ac:20,
+      boxes:[{ s:MvC(12, 10, 58, 60, 12), dmg:7, kb:[1.2, 7.6], stun:14 }], mv:[{ t0:0, t1:5, mode:'stall', vy:-0.4 }] },
+    side: { n:'Ink Slide', d:'slides low on a slick of ink, tripping whoever is in the way and slowing them', pose:'dash', st:2, act:9, end:12, cd:58, fxt:'slows them',
+      boxes:[{ s:MvC(14, 18, 60, 18, 10), dmg:4.2, kb:[3.8, -4], stun:17, fx:msFx('slow', 70) }], mv:[{ t0:0, t1:10, mode:'set', vx:8.6 }] },
+    grab: { reach:34, whiff:30, pummel:{ dmg:1.6, every:14, n:'Scribble' }, hold:{ base:60 },
+      f:{ n:'Capped!', d:'caps them in his fist and flings them ahead', dmg:7, kx:7.8, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Flick Away', d:'flicks them over his shoulder', dmg:7.6, kx:8.4, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Pop the Top', d:'pops them up off his nib like the cap off a pen', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Ink Stamp', d:'stamps them into the floor with his nib', dmg:4.8, kx:1.8, ky:-8.8, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'No cling and no cancel: his reach is his way in.'],
+  },
+  // ---- BLOCKY ("anvil") -- the trapper, the prankster: slow to start, enormous when it lands. Block Spawning: "put a block around all of the earth" -- his
+  // moves conjure blocks out ahead, over him and under their feet rather than swinging a limb. The generous share.
+  anvil: {
+    aiFit: true,   // the CPU takes a tilt or an aerial only when it reaches the foe where it stands (aiMovesetUse)
+    aiK: 0.06, aiG: 0.08, aiH: 0.06,   // Blocky's jab is his big area hit, and the whole of his strength: the CPU keeps it nearly always (aiMovesetUse)
+    ft: { n:'Block Shove', d:'conjures a block in front of him and shoves it into whoever is there', pose:'punch', st:7, act:3, end:10,
+      boxes:[{ s:MvC(16, 0, 64, 0, 20), dmg:7.5, kb:[4.6, -4], stun:26 }] },
+    ut: { n:'Block Pop', d:'conjures a block over his head that pops up through whoever is above', pose:'uppercut', st:6, act:4, end:11,
+      boxes:[{ s:MvO(6, -60, 26), dmg:6.2, kb:[0.5, -11.2], stun:29 }] },
+    dt: { n:'Trip Block', d:'conjures a block under their feet, a few steps out, and trips them up', pose:'kick', st:6, act:3, end:9,
+      boxes:[{ s:MvC(40, 22, 78, 22, 17), dmg:5, kb:[1.6, -7.4], stun:26 }] },
+    na: { n:'Square Tumble', d:'tumbles as a square, its four corners clipping everything around him twice', pose:'spin', st:5, act:6, end:8, land:10, ac:16,
+      boxes:[{ s:MvC(-52, 0, 52, 0, 16), g:'a', dmg:4.4, kb:[1.6, -2.8], stun:21, rehit:5 }, { s:MvC(0, -48, 0, 48, 16), g:'a', dmg:4.4, kb:[1.6, -2.8], stun:21, rehit:5 }] },
+    fa: { n:'Face Plant', d:'falls forward corner-first, drifting ahead as he goes', pose:'throw', st:8, act:3, end:11, land:13, ac:19,
+      boxes:[{ s:MvC(18, 2, 62, 6, 22), dmg:9.8, kb:[3.8, -3], stun:26 }], mv:[{ t0:8, t1:10, mode:'add', vx:0.9 }] },
+    ba: { n:'Backward Fall', d:'topples backward onto whoever is behind him; the heaviest air hit he has', pose:'kickback', st:8, act:3, end:13, land:14, ac:22,
+      boxes:[{ s:MvC(-12, 2, -60, 2, 22), dmg:10.6, kb:[-9.2, -4.6], stun:16 }] },
+    ua: { n:'Top Corner', d:'bumps his top corner up into whoever is above; the very point hits hardest', pose:'uppercut', st:5, act:3, end:9, land:9, ac:15,
+      x:'8% at the point (5% elsewhere)',
+      boxes:[{ s:MvO(2, -66, 12), g:'a', dmg:8, kb:[0.4, -9.5], stun:25 }, { s:MvC(0, -12, 2, -52, 20), g:'a', dmg:5, kb:[0.3, -8], stun:24 }] },
+    da: { n:'Anvil Drop', d:'drops like his own anvil and spikes whoever is below; he can jump out of it once it hits', pose:'slam', st:11, act:4, end:14, land:16, ac:27, jc:'hit',
+      boxes:[{ s:MvC(0, 14, 4, 68, 24), t0:11, t1:14, dmg:11.5, kb:[0.8, 9.6], stun:14 }], mv:[{ t0:11, t1:14, mode:'dive', vy:11 }] },
+    side: { n:'Block Slide', d:'slides sideways on his flat face, shoving whoever is in the way; he can jump out of it', pose:'dash', st:3, act:11, end:12, cd:62, jc:'any',
+      boxes:[{ s:MvC(14, 4, 54, 4, 22), dmg:7, kb:[5.6, -4], stun:16 }], mv:[{ t0:0, t1:13, mode:'set', vx:7.2 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:15, n:'Corner Press' }, hold:{ base:64 },
+      f:{ n:'Block Toss', d:'hefts them and tosses them ahead like a block', dmg:8.5, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Prank Hurl', d:'spins and hurls them behind him, laughing', dmg:9, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Block Spawn', d:'spawns a block under them that pops them up', dmg:5.5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Funny Doings', d:'sits on them with a thump, then hops off', dmg:6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.7 s before he slides.', 'Anvil Drop and Block Slide jump-cancel.'],
+  },
+  // ---- ICE CUBE ("shatter") -- the fragile slipper: light, armless, and always sliding. Nothing of his uses a hand; every hit is a body, a shoulder or a foot,
+  // and his hits leave them slippery. A plain share.
+  shatter: {
+    aiFit: true,   // the CPU takes a tilt or an aerial only when it reaches the foe where it stands (aiMovesetUse)
+    aiK: 0.5, aiG: 0.6, aiH: 0.5,
+    ft: { n:'Shoulder Slide', d:'slides into them shoulder-first', pose:'kick', st:3, act:3, end:6,
+      boxes:[{ s:MvO(30, 4, 22), dmg:4.6, kb:[3.4, -4], stun:23 }], mv:[{ t0:3, t1:5, mode:'set', vx:4.5 }] },
+    ut: { n:'Ice Spike', d:'cracks a spike of ice up from the floor just ahead of him', pose:'kickup', st:4, act:3, end:8,
+      boxes:[{ s:MvC(32, 26, 32, -50, 13), dmg:4.2, kb:[1.2, -10], stun:25 }] },
+    dt: { n:'Skid Under', d:'skids low across the floor into their feet, popping them up', pose:'stompdn', st:3, act:4, end:6,
+      boxes:[{ s:MvC(8, 22, 56, 22, 13), dmg:3, kb:[1.4, -6.8], stun:23 }], mv:[{ t0:2, t1:6, mode:'set', vx:6 }] },
+    na: { n:'Cold Snap Ring', d:'spins in a mist of frost that nips everything near him twice and leaves it slippery', pose:'spin', st:3, act:5, end:5, land:6, ac:13, fxt:'makes them slippery',
+      boxes:[{ s:MvO(0, 0, 44), dmg:2.8, kb:[1.3, -2.6], stun:20, rehit:5, fx:msFx('ice', 70) }] },
+    fa: { n:'Ice Ram', d:'rams forward body-first, carrying him along', pose:'kick', st:4, act:3, end:7, land:7, ac:12,
+      boxes:[{ s:MvO(34, 2, 24), dmg:5.6, kb:[2.4, -2.6], stun:22 }], mv:[{ t0:4, t1:6, mode:'add', vx:1.1 }] },
+    ba: { n:'Icicle Kick', d:'kicks an icicle out behind him', pose:'kickback', st:4, act:2, end:8, land:8, ac:14,
+      boxes:[{ s:MvC(-12, 4, -56, 4, 13), dmg:6.8, kb:[-7.8, -4], stun:13 }] },
+    ua: { n:'Frozen Crown', d:'butts his chilly top up into whoever is above', pose:'kickup', st:3, act:3, end:5, land:5, ac:10,
+      boxes:[{ s:MvC(0, -8, 4, -58, 16), dmg:4, kb:[0.3, -8.6], stun:22 }] },
+    da: { n:'Drop Chill', d:'drops straight down in a cold snap onto whoever is below', pose:'stompdn', st:5, act:4, end:9, land:8, ac:16,
+      boxes:[{ s:MvC(0, 12, 4, 56, 15), t0:5, t1:8, dmg:5.8, kb:[0.6, 8], stun:13 }], mv:[{ t0:5, t1:8, mode:'dive', vy:8.5 }] },
+    side: { n:'Ice Slide', d:'slides far across the floor on a sheet of ice, nipping whoever is in the way; he can jump out of its end', pose:'dash', st:1, act:10, end:9, cd:54, jc:'end', fxt:'makes them slippery',
+      boxes:[{ s:MvC(10, 6, 44, 6, 15), dmg:4.8, kb:[4.6, -3.6], stun:14, fx:msFx('ice', 80) }], mv:[{ t0:0, t1:10, mode:'set', vx:11 }] },
+    grab: { reach:28, whiff:26, pummel:{ dmg:1.2, every:12, n:'Nip' }, hold:{ base:54 },
+      f:{ n:'Slush Toss', d:'flings them ahead in a spray of slush', dmg:6, kx:7.2, ky:-4, stun:0, pose:'throw', lag:18 },
+      b:{ n:'Cold Shoulder', d:'turns his cold shoulder and shoves them behind him', dmg:6.5, kx:7.8, ky:-4.6, stun:0, pose:'throwb', lag:20 },
+      u:{ n:'Ice Lift', d:'lifts them on a block of ice, ready for an up-air', dmg:4.5, kx:0.5, ky:-11.5, stun:30, pose:'uppercut', lag:14 },
+      d:{ n:'Freeze Press', d:'presses them flat to the floor with a chill', dmg:4.4, kx:1.8, ky:-8.5, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Ice Slide can be jump-cancelled when it ends.', 'No cling.'],
+  },
+  // ---- MATCH ("spark") -- the spread zoner: a thin stick with a hot head, whose body is fire-immune. Her moves are thin and straight, and light the foe up. A plain share.
+  spark: {
+    aiFit: true,   // the CPU takes a tilt or an aerial only when it reaches the foe where it stands (aiMovesetUse)
+    aiK: 0.6, aiH: 0.6,
+    ft: { n:'Strike', d:'strikes a spark off the floor ahead of her; the flame lingers a moment', pose:'punch', st:6, act:5, end:7, fxt:'sets them burning',
+      boxes:[{ s:MvC(10, -4, 52, -4, 12), dmg:4.4, kb:[2.6, -3.8], stun:26, fx:msBurn(60) }] },
+    ut: { n:'Head Flick', d:'flicks her hot head up in a narrow arc over her', pose:'chop', st:4, act:3, end:8, fxt:'sets them burning',
+      boxes:[{ s:MvF(0, 56, -2, -1, -10, 0), dmg:4, kb:[0.5, -11], stun:26, fx:msBurn(30) }] },
+    dt: { n:'Stick Poke', d:'pokes the thin end of her stick along the floor', pose:'stompdn', st:4, act:2, end:7,
+      boxes:[{ s:MvC(14, 24, 66, 24, 8), dmg:3.6, kb:[1.5, -7.4], stun:24 }] },
+    na: { n:'Spark Spin', d:'spins, shedding sparks round her; the last ones set them burning', pose:'spin', st:4, act:6, end:6, land:6, ac:14, fxt:'sets them burning',
+      boxes:[{ s:MvO(0, -6, 46), dmg:2.6, kb:[1.2, -2.6], stun:20, rehit:4, fx:msBurn(25) }] },
+    fa: { n:'Head Dive', d:'dives forward head-first, flaring on contact', pose:'throw', st:5, act:3, end:9, land:8, ac:15, fxt:'sets them burning',
+      boxes:[{ s:MvC(10, -18, 52, -6, 15), dmg:6, kb:[2.5, -2.8], stun:24, fx:msBurn(40) }] },
+    ba: { n:'Stick Sweep', d:'sweeps the long end of her stick low behind her', pose:'kickback', st:5, act:3, end:10, land:9, ac:17,
+      boxes:[{ s:MvC(-12, 6, -72, 6, 9), dmg:7.8, kb:[-8.2, -4.2], stun:14 }] },
+    ua: { n:'Flare Up', d:'flares a flame straight up above her head, past the reach of anyone beside her', pose:'kickup', st:4, act:3, end:7, land:7, ac:12, fxt:'sets them burning',
+      boxes:[{ s:MvC(0, -30, 0, -76, 13), dmg:4.6, kb:[0.3, -8.4], stun:23, fx:msBurn(30) }] },
+    da: { n:'Match Drop', d:'drops head-first like a lit match and burns whoever is below', pose:'slam', st:7, act:4, end:11, land:11, ac:22, fxt:'sets them burning',
+      boxes:[{ s:MvC(0, 14, 4, 72, 12), t0:7, t1:10, dmg:7.2, kb:[0.6, 8.2], stun:14, fx:msBurn(50) }], mv:[{ t0:7, t1:10, mode:'dive', vy:10 }] },
+    side: { n:'Spark Skim', d:'strikes herself against the floor and skims along it in a trail of sparks, singeing whoever is in the way', pose:'dash', st:2, act:9, end:12, cd:58, fxt:'sets them burning',
+      boxes:[{ s:MvC(10, 12, 44, 12, 13), dmg:4.4, kb:[4.8, -3.4], stun:14, fx:msBurn(40) }], mv:[{ t0:0, t1:10, mode:'set', vx:9.6 }] },
+    grab: { reach:30, whiff:28, pummel:{ dmg:1.4, every:13, n:'Scorch Tap' }, hold:{ base:58 },
+      f:{ n:'Strike Toss', d:'strikes them off ahead of her like a match', dmg:7, kx:7.6, ky:-4.2, stun:0, pose:'throw', lag:20, fx:msBurn(40) },
+      b:{ n:'Flick Away', d:'flicks them away behind her', dmg:7.5, kx:8.2, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Sparkler', d:'sends them up like a sparkler', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Snuff Out', d:'presses them flat like snuffing out a flame', dmg:4.8, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'No cling and no cancel: Spark Skim is her way in.'],
+  },
+  // ---- SNOWBALL ("tackle") -- the glass heavyweight: huge, round, angry, hard to stop (Rage Tackle). His slow moves come out braced, with armour in the first
+  // frames of the big ones. The generous share.
+  tackle: {
+    aiK: 0.7, aiG: 0.5, aiH: 0.7,
+    aiFit: true,   // the CPU takes a tilt or an aerial only when it reaches the foe where it stands (aiMovesetUse)
+    ft: { n:'Snow Shove', d:'braces and shoves forward with a roll of snow; armoured as it winds up', pose:'punch', st:6, act:3, end:10,
+      start:(f) => { f.armor = Math.max(f.armor || 0, 7); },
+      boxes:[{ s:MvO(38, 4, 28), dmg:7.2, kb:[4.4, -4], stun:26 }], mv:[{ t0:5, t1:7, mode:'add', vx:1.4 }] },
+    ut: { n:'Snow Scoop', d:'scoops a heap of snow up in a wide arc from behind him to over his head', pose:'uppercut', st:6, act:3, end:10,
+      boxes:[{ s:MvF(0, 74, -3, -0.2, 0, 0), dmg:6, kb:[0.6, -11], stun:28 }] },
+    dt: { n:'Drift Under', d:'rolls a drift of snow along the floor under their feet, carrying him with it', pose:'kick', st:5, act:3, end:9,
+      boxes:[{ s:MvC(8, 22, 66, 22, 15), dmg:4.6, kb:[1.7, -7.2], stun:26 }], mv:[{ t0:4, t1:7, mode:'add', vx:1.2 }] },
+    na: { n:'Roll Out', d:'curls up and rolls on the spot for a long moment, bumping everything round him', pose:'spin', st:4, act:8, end:7, land:9, ac:17,
+      boxes:[{ s:MvO(0, 2, 44), dmg:3.8, kb:[1.5, -2.8], stun:21, rehit:4 }] },
+    fa: { n:'Snow Slam', d:'slams a lump of snow forward, armoured as it winds up', pose:'throw', st:7, act:3, end:11, land:12, ac:17,
+      start:(f) => { f.armor = Math.max(f.armor || 0, 6); },
+      boxes:[{ s:MvC(16, 2, 66, 2, 22), dmg:9.6, kb:[3.6, -3], stun:26 }] },
+    ba: { n:'Snow Slump', d:'slumps backward onto whoever is behind him', pose:'kickback', st:7, act:3, end:13, land:13, ac:21,
+      boxes:[{ s:MvO(-34, 6, 30), dmg:10.2, kb:[-9, -4.6], stun:16 }] },
+    ua: { n:'Snow Plume', d:'throws a tall plume of snow straight up from his top', pose:'uppercut', st:5, act:3, end:9, land:9, ac:14,
+      boxes:[{ s:MvC(2, -20, 2, -70, 22), dmg:6, kb:[0.4, -8.6], stun:25 }] },
+    da: { n:'Avalanche', d:'comes down like an avalanche, crushing both sides and the ground below at once; he can jump out of it once it hits', pose:'slam', st:9, act:5, end:13, land:15, ac:26, jc:'hit',
+      boxes:[{ s:MvC(-40, 34, 40, 34, 16), t0:9, t1:13, dmg:9.5, kb:[0.6, 7.8], stun:14 }], mv:[{ t0:9, t1:13, mode:'dive', vy:11 }] },
+    side: { n:'Snow Roll', d:'rolls forward as a snowball, hopping at the end, and keeps his speed when he jumps out of it', pose:'dash', st:3, act:11, end:12, cd:64, jc:'any',
+      boxes:[{ s:MvO(20, 4, 30), dmg:7, kb:[5.6, -4], stun:15 }], mv:[{ t0:0, t1:12, mode:'set', vx:7.5 }, { t0:12, t1:12, mode:'set', vy:-5 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:15, n:'Pack' }, hold:{ base:64 },
+      f:{ n:'Snowball Toss', d:'packs them into a ball and tosses them ahead', dmg:8.5, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Roll Off', d:'rolls them up and off behind him', dmg:9, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Snow Lift', d:'heaves them up out of a drift, ready for an up-air', dmg:5.5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Pack Down', d:'packs them down into the snow', dmg:6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.8 s (the snow packs on) before he slides.', 'Avalanche and Snow Roll jump-cancel; Snow Roll keeps its speed.'],
+  },
+  // ---- PIN ("pierce") -- the heavy poker: a point, a wide head, and a temper. Every move is a thrust, a prick or a stab; the tip is where they hurt. The generous
+  // share, and her point sticks in the wall.
+  pierce: {
+    aiFit: true,   // the CPU takes a tilt or an aerial only when it reaches the foe where it stands (aiMovesetUse)
+    aiK: 0.5, aiG: 0.5, aiH: 0.5,   // the CPU keeps many of Pin's jab presses as the jab (aiMovesetUse)
+    ft: { n:'Point Prod', d:'prods her point straight ahead, hardest at the tip', pose:'punch', st:7, act:3, end:11,
+      x:'10% at the tip (6.8% elsewhere)',
+      boxes:[{ s:MvO(72, 0, 11), g:'a', dmg:10, kb:[5.4, -3.6], stun:27 }, { s:MvC(14, 0, 74, 0, 10), g:'a', dmg:6.8, kb:[4.2, -3.6], stun:27 }] },
+    ut: { n:'Hop and Point', d:'hops straight up, thrusting her point overhead', pose:'uppercut', st:5, act:3, end:10,
+      boxes:[{ s:MvC(2, -8, 2, -86, 12), dmg:6.6, kb:[0.5, -10.8], stun:28 }], mv:[{ t0:5, t1:5, mode:'set', vy:-4.5 }] },
+    dt: { n:'Low Prick', d:'pricks along the floor at their feet, far out in front', pose:'stompdn', st:5, act:2, end:9,
+      boxes:[{ s:MvC(12, 22, 72, 22, 10), dmg:4.8, kb:[1.8, -7.2], stun:25 }] },
+    na: { n:'Pinwheel', d:'spins like a pinwheel, her point pricking everything round her three times over', pose:'spin', st:5, act:9, end:8, land:9, ac:17,
+      boxes:[{ s:MvC(-46, -30, 46, 30, 9), g:'a', dmg:4.2, kb:[1.5, -2.8], stun:22, rehit:6 }, { s:MvC(-46, 30, 46, -30, 9), g:'a', dmg:4.2, kb:[1.5, -2.8], stun:22, rehit:6 }] },
+    fa: { n:'Prick Flurry', d:'pricks again and again straight ahead, a rapid string of tiny hits', pose:'throw', st:6, act:9, end:9, land:11, ac:20,
+      boxes:[{ s:MvC(14, 0, 76, 0, 9), dmg:2.2, kb:[0.9, -1.6], stun:18, rehit:3 }] },
+    ba: { n:'Head Back', d:'knocks her wide head back into whoever is behind her', pose:'kickback', st:7, act:3, end:11, land:12, ac:19,
+      boxes:[{ s:MvC(-12, -2, -62, -2, 19), dmg:9.8, kb:[-8.8, -4.4], stun:15 }] },
+    ua: { n:'Skewer Up', d:'thrusts her point straight up, hardest at the tip', pose:'kickup', st:5, act:3, end:8, land:8, ac:13,
+      x:'8.2% at the tip (5.6% elsewhere)',
+      boxes:[{ s:MvO(2, -88, 10), g:'a', dmg:8.2, kb:[0.4, -10], stun:26 }, { s:MvC(0, -12, 2, -82, 9), g:'a', dmg:5.6, kb:[0.4, -8.4], stun:25 }] },
+    da: { n:'Pin Drop', d:'dives point-first and pins whoever is below to the floor; she can jump out of it once it hits', pose:'stompdn', st:9, act:5, end:13, land:14, ac:25, jc:'hit', fxt:'roots them',
+      boxes:[{ s:MvC(0, 14, 4, 80, 11), t0:9, t1:13, dmg:9.5, kb:[0.4, 5.5], stun:22, fx:msFx('root', 40) }], mv:[{ t0:9, t1:13, mode:'dive', vy:10 }] },
+    side: { n:'Pin Leap', d:'hops forward point-first and can jump out of it', pose:'dash', st:3, act:8, end:12, cd:60, jc:'any',
+      boxes:[{ s:MvC(16, -2, 60, -2, 11), dmg:7.5, kb:[5.8, -4], stun:15 }], mv:[{ t0:0, t1:10, mode:'set', vx:8 }, { t0:0, t1:0, mode:'set', vy:-5.5 }] },
+    grab: { reach:34, whiff:30, pummel:{ dmg:2.2, every:14, n:'Prick' }, hold:{ base:62 },
+      f:{ n:'Pinned Toss', d:'skewers them and tosses them ahead', dmg:8, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Flip Over', d:'flips them over her point, behind her', dmg:8.5, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Skewer Up', d:'skewers them and thrusts them up, ready for an up-air', dmg:5.5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Pin Down', d:'pins them to the floor by the point', dmg:6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 1.1 s (her point sticks) before she slides.', 'Pin Drop and Pin Leap jump-cancel.'],
+  },
+  // ---- BOMBY ("bomb") -- the heaviest, the risk-and-reward: timid and jumpy ("Sorry! I get excited."), and it goes off. His moves are blasts set off at a
+  // distance, not a limb swung, and some of them throw him about too. The generous share.
+  bomb: {
+    aiFit: true,   // the CPU takes a tilt or an aerial only when it reaches the foe where it stands (aiMovesetUse)
+    aiK: 0.5, aiH: 0.5,
+    ft: { n:'Little Pop', d:'sets off a small blast just ahead of him', pose:'punch', st:7, act:2, end:11,
+      boxes:[{ s:MvO(52, -2, 24), dmg:6.8, kb:[5, -4.2], stun:26 }] },
+    ut: { n:'Pop Up', d:'sets off a blast over his head and lifts him a little', pose:'uppercut', st:6, act:3, end:10,
+      boxes:[{ s:MvO(4, -60, 28), dmg:6.2, kb:[0.6, -11.2], stun:28 }], mv:[{ t0:6, t1:6, mode:'set', vy:-3 }] },
+    dt: { n:'Floor Fizzle', d:'fizzles a little blast along the floor at their feet', pose:'kick', st:5, act:3, end:9,
+      boxes:[{ s:MvO(48, 24, 22), dmg:4.6, kb:[1.7, -7.2], stun:25 }] },
+    na: { n:'Blast Ring', d:'goes off in one big ring around him, once', pose:'spin', st:7, act:3, end:9, land:11, ac:18,
+      boxes:[{ s:MvO(0, 0, 62), dmg:6, kb:[2.2, -3.2], stun:24 }] },
+    fa: { n:'Cannonball', d:'blasts himself forward like a cannonball', pose:'throw', st:7, act:4, end:11, land:12, ac:17,
+      boxes:[{ s:MvC(16, 0, 60, 0, 21), dmg:9.6, kb:[3.8, -3], stun:26 }], mv:[{ t0:7, t1:10, mode:'set', vx:7 }] },
+    ba: { n:'Back Blast', d:'blasts out behind him, which shoves him forward', pose:'kickback', st:7, act:3, end:13, land:13, ac:20,
+      boxes:[{ s:MvO(-50, 0, 26), dmg:10.4, kb:[-9.2, -4.6], stun:16 }], mv:[{ t0:7, t1:9, mode:'set', vx:3.5 }] },
+    ua: { n:'Rocket Jump', d:'blasts upward, rising fast, and catches whoever is above', pose:'uppercut', st:5, act:3, end:9, land:9, ac:14,
+      boxes:[{ s:MvC(0, -12, 2, -58, 22), dmg:5.6, kb:[0.4, -8.8], stun:25 }], mv:[{ t0:5, t1:6, mode:'set', vy:-7 }] },
+    da: { n:'Bomb Drop', d:'drops like a bomb and blasts whoever is below down; he can jump out of it once it hits', pose:'slam', st:10, act:4, end:14, land:15, ac:25, jc:'hit',
+      boxes:[{ s:MvO(0, 52, 28), t0:10, t1:13, dmg:10.8, kb:[0.8, 9.6], stun:14 }], mv:[{ t0:10, t1:13, mode:'dive', vy:11 }] },
+    side: { n:'Blast Hop', d:'sets off a blast under him that throws him forward and up, bowling over whoever is in the way; he can jump out of it', pose:'dash', st:3, act:9, end:12, cd:64, jc:'any',
+      boxes:[{ s:MvO(30, 10, 26), dmg:6.8, kb:[5.4, -4], stun:15 }], mv:[{ t0:0, t1:11, mode:'set', vx:7 }, { t0:0, t1:0, mode:'set', vy:-8 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:15, n:'Fizz' }, hold:{ base:64 },
+      f:{ n:'Bomb Toss', d:'lobs them ahead like a bomb', dmg:8.5, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Sorry!', d:'blasts them off behind him, then says sorry', dmg:9, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Blast Up', d:'blasts them skyward, ready for an up-air', dmg:5.5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Fuse Stomp', d:'stamps them into the floor', dmg:6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.7 s before he slides.', 'Bomb Drop and Blast Hop jump-cancel; Rocket Jump gains height.'],
+  },
+});
+msWords();
 
 // ============================================================
 //  THE MOVE LIST, THE MOVES TAB, TRAINING
@@ -37752,6 +38020,13 @@ function aiMsOdds(pb, k, s){
   const m = PB_MS_MK[s];
   return Math.exp(0.7 * ((pb[m.b]||0) + (pb[m.d[k.d]]||0) + (pb[m.h[k.h]]||0) + (pb[m.o[k.o]]||0) + (pb[m.p[k.p]]||0)));
 }
+// does this move, started now, reach the foe where it stands? (the box at the fighter's place, facing `face`, against the foe's own hurtbox)
+function aiMoveFits(f, t, S, face){
+  if(!S || !S.boxes) return false;
+  const g = { x:f.x, y:f.y, face:face };
+  for(const b of S.boxes) if(shapeHits(mvShape(g, b.s), t)) return true;
+  return false;
+}
 function aiMovesetUse(f, inp, sp){
   const ms = msOf(f), t = f.aiTarget;
   if(!ms || !t || t.dead || f._runner || f._oneGhost || RACE.active) return;
@@ -37814,7 +38089,7 @@ function aiMovesetUse(f, inp, sp){
   // ---- the grab: close, on the ground, a foe on its feet (the better the more it counters or armours) ----
   if(f.onground && f.atkCd <= 0 && !t._isBoss && t.hitstun <= 0 && t.invuln <= 0 && t.onground !== false && gap < ms.grab.reach - 4 && Math.abs(dy) < 30 && t._heldBy == null){
     const stance = (t.countering > 0 || t.armor > 0 || t.reflecting > 0 || t._windup) ? 3 : 1;
-    if(rn < 0.035 * stance * aiMsOdds(pb, k, 'G') * (pressing ? 3 : 1)){ inp.grab = true; inp.attack = false; inp.special = false; inp.left = inp.right = false; return; }
+    if(rn < 0.035 * stance * (ms.aiG == null ? 1 : ms.aiG) * aiMsOdds(pb, k, 'G') * (pressing ? 3 : 1)){ inp.grab = true; inp.attack = false; inp.special = false; inp.left = inp.right = false; return; }
   }
   // ---- the legacy rules did not swing, but a foe is right here: a tilt or an aerial of its own accord (a fighter whose old rules only ever fired its shot) ----
   if(!pressing && ms.aiLand && !inp.special && !inp.smash && f.atkCd <= 0 && !(f.flying > 0) && !t._isBoss && gap < 44 && Math.abs(dy) < 70 && t.invuln <= 0 && rn < 0.03 * aiMsOdds(pb, k, f.onground ? 'L' : 'A')){ inp.attack = true; pressing = true; }
@@ -37826,7 +38101,8 @@ function aiMovesetUse(f, inp, sp){
     if(f.onground){
       const odds = aiMsOdds(pb, k, 'L');
       // the tilt that fits: up-tilt for a foe above, down-tilt for one low and close, side-tilt at a poke's range; weights, then a roll
-      const wU = (dy < -30 && adx < 80) ? 1.6 : 0, wD = (Math.abs(dy) < 34 && gap < 58) ? 1 : 0, wF = (gap > 12 && gap < 80) ? 1.2 : 0, tot = wU + wD + wF;
+      const fitK = ms.aiFit ? (kk) => aiMoveFits(f, t, ms[kk], (kk === 'ft' || kk === 'fa') ? toward : f.face) : null;   // (aiFit: only a tilt that reaches the foe where it stands)
+      const wU = fitK ? (fitK('ut') ? 1.6 : 0) : ((dy < -30 && adx < 80) ? 1.6 : 0), wD = fitK ? (fitK('dt') ? 1 : 0) : ((Math.abs(dy) < 34 && gap < 58) ? 1 : 0), wF = fitK ? (fitK('ft') ? 1.2 : 0) : ((gap > 12 && gap < 80) ? 1.2 : 0), tot = wU + wD + wF;
       if(tot > 0 && rn < AI_TILT_P * (ms.aiK || 1) * odds){
         inp.mv = true; inp.up = false; inp.down = false; inp.left = false; inp.right = false;
         let r = Math.random() * tot;
@@ -37836,7 +38112,12 @@ function aiMovesetUse(f, inp, sp){
       }
     } else {
       const odds = aiMsOdds(pb, k, 'A');
-      if(rn < AI_AIR_P * (ms.aiK || 1) * odds){
+      if(rn < AI_AIR_P * (ms.aiK || 1) * odds && ms.aiFit){
+        const fitK = (kk) => aiMoveFits(f, t, ms[kk], (kk === 'fa') ? toward : f.face);
+        let pick = null;
+        if(dy < -20 && fitK('ua')) pick = 'ua'; else if(dy > 20 && f.vy > -1 && fitK('da')) pick = 'da'; else if(behind && fitK('ba')) pick = 'ba'; else if(!behind && fitK('fa')) pick = 'fa'; else if(fitK('na')) pick = 'na';
+        if(pick){ inp.mv = true; inp.up = pick === 'ua'; inp.down = pick === 'da'; inp.left = (pick === 'fa' || pick === 'ba') && toward < 0; inp.right = (pick === 'fa' || pick === 'ba') && toward > 0; }
+      } else if(rn < AI_AIR_P * (ms.aiK || 1) * odds){
         inp.mv = true; inp.up = false; inp.down = false;
         if(dy < -26 && adx < 64) inp.up = true;                                         // above: up-air
         else if(dy > 30 && adx < 44 && f.vy > -1) inp.down = true;                      // below: down-air
@@ -37848,8 +38129,8 @@ function aiMovesetUse(f, inp, sp){
     return;
   }
   // ---- combo follow-up: a foe still in the stun of my last hit, and I am free: hop in (a quick press of jump) and go again ----
-  if(comboFoe && f.onground && !inp.attack && !inp.special && adx < 90 && Math.abs(dy) < 110 && rn < 0.1 * aiMsOdds(pb, k, 'W')){ inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
-  if(comboFoe && !f.onground && !inp.attack && gap < 70 && f.atkCd <= 0 && !inp.special && rn < 0.5){
+  if(comboFoe && f.onground && !inp.attack && !inp.special && adx < 90 && Math.abs(dy) < 110 && rn < 0.1 * (ms.aiH == null ? 1 : ms.aiH) * aiMsOdds(pb, k, 'W')){ inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
+  if(comboFoe && !f.onground && !inp.attack && gap < 70 && f.atkCd <= 0 && !inp.special && rn < 0.5 * (ms.aiH == null ? 1 : ms.aiH)){
     inp.attack = true; inp.mv = true; inp.left = inp.right = inp.up = inp.down = false;
     if(dy < -26 && adx < 64) inp.up = true; else if(dy > 30 && adx < 44) inp.down = true;
     else if(behind && adx > 12){ inp.left = toward < 0; inp.right = toward > 0; }
@@ -37861,9 +38142,9 @@ function aiMovesetUse(f, inp, sp){
     inp.special = true; inp.side = true; inp.up = false; inp.down = false; inp.attack = false; inp.left = toward < 0; inp.right = toward > 0; return;
   }
   // ---- a short hop in toward a foe on the ground (so an aerial can come out), and a fast fall once the swing is over ----
-  if(f.onground && !inp.jump && gap > 36 && gap < 120 && Math.abs(dy) < 40 && t.hitstun <= 0 && rn < 0.004 * aiMsOdds(pb, k, 'W')){ f._aiHop = 1; inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
+  if(f.onground && !inp.jump && gap > 36 && gap < 120 && Math.abs(dy) < 40 && t.hitstun <= 0 && rn < 0.004 * (ms.aiH == null ? 1 : ms.aiH) * aiMsOdds(pb, k, 'W')){ f._aiHop = 1; inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
   if(!f.onground && f._aiHop && inp.jump) inp.jump = false;   // let go at once: that is the short hop
-  if(!f.onground && f.vy > 0.5 && !f._ff && !f._lev && !(f.flying > 0) && f.atkCd <= 0 && dy > 40 && adx < 60 && rn < 0.05 * aiMsOdds(pb, k, 'W')) inp.down = !f._dnPrev;
+  if(!f.onground && f.vy > 0.5 && !f._ff && !f._lev && !(f.flying > 0) && f.atkCd <= 0 && dy > 40 && adx < 60 && !(ms.aiFit && inp.attack) && rn < 0.05 * (ms.aiH == null ? 1 : ms.aiH) * aiMsOdds(pb, k, 'W')) inp.down = !f._dnPrev;
   if(f.onground) f._aiHop = 0;
 }
 
@@ -38209,7 +38490,7 @@ function doSpecial(f){
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
-  armAtk(f, ATK_ANIM, animKindOf(f, 'special'));
+  armAtk(f, ATK_ANIM, animKindOf(f, 'special'), mvId(f, f._mv ? f._mv.key : 'special'));
   if(f.you) SFX.special();
   const k=f.kit.special;
   f._lastSpecialKind = k;   // Two's MIND READ copies this back at you
@@ -38740,7 +39021,7 @@ function doSpecial(f){
       const stroke = function(){
         n++; const last = n === 3, reach = f.r + 40;
         f._atkSeq = (f._atkSeq||0) + 1;   // each stroke is a new cut: it may land through the grace the last one opened (chainOpen)
-        armAtk(f, ATK_ANIM, animKindOf(f, 'special'));
+        armAtk(f, ATK_ANIM, animKindOf(f, 'special'), mvId(f, f._mv ? f._mv.key : 'special'));
         const sh = {kind:'capsule', x1:f.x + f.face*f.r*0.3, y1:f.y, x2:f.x + f.face*reach, y2:f.y, r:14};
         for(const t of shapeTargets(f, sh)) SM_FX.strip(t, f);
         hitShape(f, sh, last ? 6 : 3, last ? 6 : 3, f.face*(last ? 8 : 1.5), last ? -5 : -2);
@@ -49583,15 +49864,16 @@ function frPose(f, fd, sp){
     if(fi < 2){ P.eye = fd.hurt[0]; P.mouth = fd.hurt[1]; P.fx = FX_SWEAT; }
   } else if(u >= 0){
     // ---- ATTACK: wind-up, hit and recover, six held frames, by the kind of move it is
-    const ki = FR_KIND[f._atkKind] | 0, fi = (u*6 + 0.000001) | 0, fj = fi > 5 ? 5 : fi, o = (ki*6 + fj)*7, slot = fj < 2 ? 0 : (fj < 4 ? 1 : 2);
+    const kb = FR_KIND[f._atkKind] | 0, mk = f._atkMove ? FR_KIND[f._atkMove] : undefined, ki = mk === undefined ? kb : mk, fi = (u*6 + 0.000001) | 0, fj = fi > 5 ? 5 : fi, o = (ki*6 + fj)*7, slot = fj < 2 ? 0 : (fj < 4 ? 1 : 2);
     P.mom = FM_ATK; P.fi = fj;
     P.rot = face*amp*FR_ATK[o]; P.sx = 1 + (FR_ATK[o + 1] - 1)*qa; P.sy = 1 + (FR_ATK[o + 2] - 1)*qa; P.dx = face*amp*FR_ATK[o + 3];
     P.smear = FR_ATK[o + 4]; P.bulge = FR_ATK[o + 5]*fd.puff; P.spin = face*FR_ATK[o + 6];
     P.eye = fd.atk[slot*2]; P.mouth = fd.atk[slot*2 + 1];
+    if(MVA_FACE[ki*6 + slot*2] >= 0){ P.eye = MVA_FACE[ki*6 + slot*2]; P.mouth = MVA_FACE[ki*6 + slot*2 + 1]; }   // the move's own face (MOVE ANIMATIONS)
     P.sdx = -face*R*0.30;
-    if(ki === 1){ P.sdx = 0; P.sdy = R*0.28; } else if(ki === 6){ P.sdx = 0; P.sdy = -R*0.30; } else if(ki === 8){ P.sdx = -face*R*0.50; if(fj === 2) P.fx = FX_LINES; }
-    else if(ki === 10){ P.sdx = 0; P.sdy = R*0.2; P.fx = FX_SPARKLE | (fj > 2 ? FX_LINES : 0); }   // a Final Smash's coil: sparkles, and the lines of the rise
-    else if(ki === 11){ P.sdx = 0; P.sdy = -R*0.3; P.fx = FX_SPARKLE | FX_LINES; }
+    if(kb === 1){ P.sdx = 0; P.sdy = R*0.28; } else if(kb === 6){ P.sdx = 0; P.sdy = -R*0.30; } else if(kb === 8){ P.sdx = -face*R*0.50; if(fj === 2) P.fx = FX_LINES; }
+    else if(kb === 10){ P.sdx = 0; P.sdy = R*0.2; P.fx = FX_SPARKLE | (fj > 2 ? FX_LINES : 0); }   // a Final Smash's coil: sparkles, and the lines of the rise
+    else if(kb === 11){ P.sdx = 0; P.sdy = -R*0.3; P.fx = FX_SPARKLE | FX_LINES; }
     if(fd.vein && fj < 2) P.fx |= FX_VEIN;
   } else if(f.smashHold > 0){
     // ---- CHARGING a smash: set jaw, a tremble, the anger mark coming up
@@ -50525,6 +50807,227 @@ function frYinYangPose(f, P, sp){
 FRAME_SRC.Tissues.pose = frTissuesPose; FRAME_SRC['Yin-Yang'].pose = frYinYangPose;
 frBuild(FRAME_SRC);
 /* FRAME-LAYER-END */
+
+// ============================================================
+//  MOVE ANIMATIONS: every move of a converted fighter has a sequence of its own on the rig
+// ============================================================
+// "give animations to all the moves" (the owner, 2026-10-14): jab, the three tilts, the five aerials, grab, pummel, the four throws, the four specials, the smash
+// and the finisher each get a wind-up, a hit and a recover of their own -- limbs, body and face -- and no two moves of a fighter share a sequence. RENDER-ONLY, like the
+// frame layer it rides on: nothing here is read by the sim (a fighter's `_atkMove` is a label, set where `_atkKind` is), and a netcode client is shipped the label
+// (swingMove) beside the swing it already has.
+// How a sequence is made. A move is named by the fighter's kit and its slot ('ember.ft', 'bomb.uthrow'); mvaBuild gives it three things at boot, from the move's own
+// numbers, so a move that is changed is re-animated by changing it:
+//   LIMBS   the fighter's own painted limbs, aimed down the move's own hitbox: the front arm (or leg, for a kick) winds up AWAY from where the box is and strikes TOWARD it,
+//           so a fair reaches ahead, an up-air reaches up, a back-air kicks behind and a down-air stamps down; a second limb counterswings, trails or tucks (one of four,
+//           by the move's name); a fighter with no arms (Ice Cube, Match, Rocky) does it all with its legs. Throws, grabs and pummels have their own arm work.
+//   BODY    a strip of six held frames (the shape of FR_ATK) blended from the four directions' strips -- forward, up, down, back -- by the way the move points, scaled by
+//           its damage and wind-up, and spun for the ones that turn; the shove, lean, squash and smear are the move's.
+//   FACE    the eyes and mouth of the wind-up, the hit and the recover, by the kind of move (a heavy one grits and shouts, a quick one squints, a throw smirks), in the
+//           fighter's own temperament (a smug face stays smug; a deadpan one never opens its mouth).
+// A move may name its own with `anim: { limbs:[[pool, which, wind, strike]...], th, A, cls }` (pool 0 arms, 1 legs; which 0 front, 1 the other; angles in radians, 0 forward,
+// -pi/2 up, pi/2 down, for a fighter facing right). The fighter's own bespoke frames (Puffball's spit, a `pose` hook) are untouched: a move with no entry plays as it always did.
+const MVA = {};
+const MVA_FACE = [];   // six numbers a strip (eyes and mouth of the wind-up, the hit and the recover), -1: the fighter's own face; indexed like FR_ATK
+for(let _i = 0; _i < FR_KINDS.length * 6; _i++) MVA_FACE.push(-1);
+const MVA_PI = Math.PI;
+const MVA_SLOTS = ['jab', 'ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da', 'side', 'grab', 'pummel', 'fthrow', 'bthrow', 'uthrow', 'dthrow', 'special', 'up', 'down', 'smash', 'finisher'];
+const MVA_LEG_POSES = { kick:1, kickback:1, kickup:1, stomp:1, stompdn:1 };
+function mvaHash(s){ let h = 2166136261; for(let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
+function mvaRnd(id, n){ return mvaHash(id + '#' + n); }
+const mvaR = (x) => Math.round(x * 1000) / 1000;
+const mvaClamp = (x, a, b) => x < a ? a : (x > b ? b : x);
+// the faces, by the kind of move: [eyes, mouth] for the wind-up, the hit and the recover (FR_E, FR_M)
+const MVA_FACES = {
+  heavy:  'glare.grit,pain.shout,squint.frown', quick: 'squint.grit,wide.o,keep.grit', spin: 'squint.o,glare.shout,wide.o', up: 'wide.grit,joy.shout,wide.o',
+  down:   'glare.grit,pain.shout,squint.grit', back: 'squint.grit,glare.shout,wide.o', thrust: 'squint.flat,wide.o,squint.flat', move: 'squint.grit,wide.shout,keep.grit',
+  throw:  'smug.smirk,glare.shout,smug.grin', grab: 'wide.o,glare.grit,squint.grit', pummel: 'squint.grit,pain.grit,squint.grit', cast: 'wide.o,glare.shout,blink.o',
+  finale: 'glare.grit,pain.shout,joy.grin',
+};
+function mvaFace(cls, T){
+  const s = (MVA_FACES[cls] || MVA_FACES.quick).split(','), o = [];
+  for(let i = 0; i < 3; i++){
+    const p = s[i].split('.'); let e = FR_E[p[0]] | 0, m = FR_M[p[1]] | 0;
+    if(T === 'smug' && i !== 1){ e = FR_E.smug; m = FR_M.smirk; }
+    else if(T === 'smug' && m === FR_M.shout){ m = FR_M.grin; }
+    if(T === 'gentle' && (m === FR_M.shout || m === FR_M.grit)) m = FR_M.o;
+    if(T === 'deadpan'){ m = (m === FR_M.keep) ? m : FR_M.flat; if(e === FR_E.glare) e = FR_E.squint; }
+    o.push(e, m);
+  }
+  return o;
+}
+// the box a move strikes with: which way it points from the fighter (radians, 0 forward, y down), how hard, how far, and whether it is a ring round the body
+function mvaGeom(S){
+  let best = null;
+  for(const b of (S.boxes || [])) if(!best || b.dmg > best.dmg) best = b;
+  if(!best) return { th:0, dmg:4, reach:40, near:false, rehit:0 };
+  const s = best.s; let cx, cy;
+  if(s.k === 'f'){ const m = (s.a0 + s.a1)/2, r = (s.r0 + s.r1)/2; cx = s.ox + Math.cos(m)*r; cy = s.oy + Math.sin(m)*r; }
+  else if(s.k === 'c'){ cx = s.x1*0.35 + s.x2*0.65; cy = s.y1*0.35 + s.y2*0.65; }
+  else { cx = s.x; cy = s.y; }
+  const d = Math.hypot(cx, cy);
+  return { th: d < 16 ? 0 : Math.atan2(cy, cx), dmg: best.dmg, reach: d, near: d < 16 || (s.k === 'c' && Math.hypot(s.x1, s.y1) > 30 && s.x1*s.x2 < 0), rehit: best.rehit || 0 };
+}
+// the body strip: the four directions' strips (FR_ATK_SRC) blended by where the move points, then scaled
+function mvaRows(th, A, o, id){
+  const c = Math.cos(th), s = Math.sin(th);
+  const wF = Math.max(0, c), wB = Math.max(0, -c), wU = Math.max(0, -s), wD = Math.max(0, s), tot = (wF + wB + wU + wD) || 1;
+  const base = o.kind != null ? [o.kind] : null, rows = [];
+  for(let i = 0; i < 6; i++){
+    const r = [0, 1, 1, 0, 0, 0, 0];
+    for(let j = 0; j < 7; j++){
+      let v;
+      if(base) v = FR_ATK_SRC[base[0]][i][j];
+      else {
+        const F = FR_ATK_SRC[0][i][j], U = FR_ATK_SRC[1][i][j], D = FR_ATK_SRC[6][i][j];
+        let B = F; if(j === 0 || j === 3) B = -F;
+        v = (wF*F + wB*B + wU*U + wD*D) / tot;
+      }
+      r[j] = v;
+    }
+    r[0] *= A; r[1] = 1 + (r[1] - 1)*A; r[2] = 1 + (r[2] - 1)*A; r[3] *= A; r[4] = Math.min(1, r[4]*A);
+    if(o.spin){ const S = FR_ATK_SRC[9][i]; r[6] = S[6]*o.spin; r[4] = Math.max(r[4], S[4]); r[0] *= 0.3; r[3] *= 0.3; r[1] = 1 + (S[1] - 1)*A; r[2] = 1 + (S[2] - 1)*A; }
+    if(o.lunge) r[3] += o.lunge*(i === 2 || i === 3 ? 1 : (i === 4 ? 0.4 : 0));
+    if(o.wind && i < 2){ r[1] = 1 + (r[1] - 1)*o.wind; r[2] = 1 + (r[2] - 1)*o.wind; r[0] *= o.wind; }
+    r[0] += (mvaRnd(id, 10 + i) - 0.5)*0.03; r[3] += (mvaRnd(id, 20 + i) - 0.5)*0.05;
+    for(let j = 0; j < 7; j++) rows.push(mvaR(r[j]));
+  }
+  return rows;
+}
+// every limb swings at least this far between its wind-up and its strike (a role's offsets must never fold one flat)
+function mvaSpread(limbs){
+  return limbs.map((e) => { let w = mvaWrapA(e[2]), s = mvaWrapA(e[3]); const d = mvaWrapA(w - s); if(Math.abs(d) < 0.8) w = mvaWrapA(s + (d >= 0 ? 0.8 : -0.8)); return [e[0], e[1], mvaR(w), mvaR(s)]; });
+}
+function mvaAdd(id, limbs, rows, face){
+  limbs = mvaSpread(limbs);
+  const ki = FR_ATK.length / 42;
+  for(let i = 0; i < 42; i++) FR_ATK.push(rows[i]);
+  FR_KIND[id] = ki;
+  for(let i = 0; i < 6; i++) MVA_FACE.push(face ? face[i] : -1);
+  MVA[id] = { limbs: limbs, ki: ki, face: face };
+}
+// the limbs of a move that has a hitbox: aimed down it
+function mvaLimbs(id, S, G, P){
+  const h = mvaRnd(id, 1), out = [];
+  const j = (n, k) => (mvaRnd(id, 30 + n) - 0.5)*k;
+  const dash = S.pose === 'dash', spin = S.pose === 'spin';
+  let leg = !!MVA_LEG_POSES[S.pose];
+  if(!leg && !P.a) leg = true;
+  if(leg && !P.l) leg = false;
+  const pool = leg ? 1 : 0, other = leg ? 0 : 1;
+  if(spin){
+    out.push([pool, 0, -0.8 + j(1, 0.4), 0.05 + j(2, 0.3)], [pool, 1, -2.35 + j(3, 0.4), MVA_PI - 0.05 + j(4, 0.3)]);
+    out.push([other, 0, 0.3 + j(5, 0.3), -0.7 + j(6, 0.4)]);
+    return out;
+  }
+  if(dash){
+    out.push([pool, 0, 2.3 + j(1, 0.3), 3.0 + j(2, 0.2)], [pool, 1, 1.9 + j(3, 0.3), 2.8 + j(4, 0.2)]);
+    out.push([other, 0, -0.2 + j(5, 0.3), 0.8 + j(6, 0.3)]);
+    return out;
+  }
+  const strike = G.th + j(7, 0.14), wind = mvaWrapA(G.th + MVA_PI - 0.55 + j(8, 0.3));
+  out.push([pool, 0, wind, strike]);
+  const v = (h*4) | 0;
+  if(v === 0) out.push([other, 0, leg ? -0.6 + j(9, 0.3) : 0.35 + j(9, 0.3), leg ? 0.5 + j(10, 0.3) : -0.55 + j(10, 0.3)]);
+  else if(v === 1) out.push([pool, 1, strike + 0.7 + j(9, 0.3), wind - 0.5 + j(10, 0.3)]);
+  else if(v === 2) out.push([other, 1, 0.2 + j(9, 0.3), 1.0 + j(10, 0.3)]);
+  return out;
+}
+function mvaWrapA(a){ while(a > MVA_PI) a -= MVA_PI*2; while(a < -MVA_PI) a += MVA_PI*2; return a; }
+function mvaClassOf(S, G){
+  if(S.pose === 'dash') return 'move';
+  if(S.pose === 'spin' || G.near) return 'spin';
+  const s = Math.sin(G.th), c = Math.cos(G.th);
+  if(s < -0.6) return 'up';
+  if(s > 0.6) return 'down';
+  if(c < -0.5) return 'back';
+  if(G.dmg >= 8) return 'heavy';
+  if(G.reach > 66 && G.dmg < 8) return 'thrust';
+  return 'quick';
+}
+// grab, pummel and the four throws: their own arm work
+const MVA_ARMS = {
+  grab:    { th:0.05,        A:0.95, cls:'grab',   lunge:0.35, limbs:[[0, 0, 2.2, 0.1], [0, 1, 2.4, 0.3]] },
+  pummel:  { th:0.1,         A:0.55, cls:'pummel', limbs:[[0, 0, 0.6, -0.15], [0, 1, 0.95, 0.25]] },
+  fthrow:  { th:-0.35,       A:1.0,  cls:'throw',  limbs:[[0, 0, -2.4, 0.55], [0, 1, -2.1, 0.25]] },
+  bthrow:  { th:MVA_PI - 0.3, A:1.05, cls:'throw', limbs:[[0, 0, 0.7, -2.7], [0, 1, 0.3, -2.4]] },
+  uthrow:  { th:-MVA_PI/2,   A:1.0,  cls:'up',     limbs:[[0, 0, 1.0, -1.75], [0, 1, 1.0, -1.4]] },
+  dthrow:  { th:MVA_PI/2,    A:1.1,  cls:'down',   limbs:[[0, 0, -1.8, 1.5], [0, 1, -1.6, 1.3]] },
+};
+// today's moves with no hitbox data here (the jab, the neutral, up and down specials, the smash, the finisher): the kind of move they are, in a role of their own
+const MVA_ROLES = {
+  jab:      { dw:0,     ds:0,     A:1.0,  wind:1.0,  lean:0,     cls:'quick' },
+  special:  { dw:-0.25, ds:0.25,  A:1.12, wind:1.1,  lean:0.02,  cls:'cast' },
+  up:       { dw:0.3,   ds:-0.45, A:1.05, wind:1.2,  lean:-0.02, cls:'up' },
+  down:     { dw:-0.2,  ds:0.4,   A:1.08, wind:1.15, lean:0.01,  cls:'down' },
+  smash:    { dw:-0.5,  ds:0.1,   A:1.3,  wind:1.5,  lean:0.03,  cls:'heavy' },
+  finisher: { dw:0.4,   ds:-0.2,  A:1.25, wind:1.3,  lean:-0.03, cls:'finale' },
+  side:     { dw:0.5,   ds:-0.3,  A:1.2,  wind:1.0,  lean:0.04,  cls:'move' },   // (a side special with no hitbox of its own: Leafy's Sprint, angled)
+};
+function mvaBuild(kit, name){
+  const ms = MOVESETS[kit]; if(!ms) return;
+  const rig = (typeof LIMB_RIG !== 'undefined') && LIMB_RIG[name];
+  const P = { a: rig && rig.arms ? rig.arms.length : 0, l: rig && rig.legs ? rig.legs.length : 0 };
+  const fs = typeof FRAME_SRC !== 'undefined' && FRAME_SRC[name], T = (fs && fs.t) || 'plain';
+  const fake = { name: name, kit: { special: kit } };
+  for(const slot of MVA_SLOTS){
+    const id = kit + '.' + slot;
+    let S = ms[slot], limbs, rows, cls;
+    if(S && S.boxes){   // a tilt, an aerial or the side special: aimed down its own hitbox
+      const G = mvaGeom(S), A = mvaClamp(0.8 + G.dmg/16, 0.85, 1.35) + (mvaRnd(id, 2) - 0.5)*0.12, o = {};
+      cls = mvaClassOf(S, G);
+      if(S.anim && S.anim.cls) cls = S.anim.cls;
+      limbs = (S.anim && S.anim.limbs) || mvaLimbs(id, S, G, P);
+      if(S.pose === 'dash') o.kind = FR_KIND.dash;
+      else if(cls === 'spin') o.spin = (G.rehit ? 1.15 : 1) * (mvaRnd(id, 3) > 0.5 ? 1 : 0.94);
+      o.wind = mvaClamp(0.5 + S.st/10, 0.7, 1.4);
+      rows = mvaRows((S.anim && S.anim.th != null) ? S.anim.th : G.th, (S.anim && S.anim.A) || A, o, id);
+    } else if(MVA_ARMS[slot]){   // the grab, the pummel and the four throws
+      const a = MVA_ARMS[slot]; cls = a.cls;
+      const jt = (n) => (mvaRnd(id, 40 + n) - 0.5)*0.24;
+      limbs = a.limbs.map((e, n) => [e[0], e[1], mvaR(e[2] + jt(n*2)), mvaR(e[3] + jt(n*2 + 1))]);
+      if(!P.a) limbs = limbs.map((e) => [1, e[1], e[2], e[3]]);
+      rows = mvaRows(a.th + jt(9), a.A, { lunge: a.lunge || 0, wind: slot === 'pummel' ? 0.5 : 1 }, id);
+    } else if(MVA_ROLES[slot]){   // today's moves: the kind they are, in a role of their own
+      const R = MVA_ROLES[slot], kind = slot === 'side' ? (S && S.pose) : animKindOf(fake, slot);
+      if(!kind || kind === 'spit') continue;   // (Puffball's X is her spit: the body does it, and stays as it is)
+      const pose = animPoses(kind, 1); if(!pose) continue;
+      cls = R.cls;
+      let leg = pose.limb === 'leg';
+      if(leg && !P.l) leg = false; if(!leg && !P.a) leg = true;
+      const pool = leg ? 1 : 0, other = leg ? 0 : 1, j = (n, k) => (mvaRnd(id, 50 + n) - 0.5)*k;
+      limbs = [[pool, 0, mvaR(pose.front[0] + R.dw + j(1, 0.2)), mvaR(pose.front[1] + R.ds + j(2, 0.2))]];
+      if(pose.back) limbs.push([pool, 1, mvaR(pose.back[0] + R.dw*0.6 + j(3, 0.2)), mvaR(pose.back[1] + R.ds*0.6 + j(4, 0.2))]);
+      else if(slot !== 'jab') limbs.push([other, mvaRnd(id, 4) > 0.5 ? 0 : 1, mvaR(0.3 + R.dw + j(5, 0.3)), mvaR(-0.5 - R.ds + j(6, 0.3))]);
+      rows = mvaRows(0, R.A, { kind: FR_KIND[kind] | 0, wind: R.wind, lunge: R.lean*4 }, id);
+      for(let i = 0; i < 6; i++) rows[i*7] = mvaR(rows[i*7] + R.lean);
+    } else continue;
+    mvaAdd(id, limbs, rows, mvaFace(cls, T));
+  }
+}
+function mvaBuildAll(){
+  for(const r of ROSTER) if(r.play && r.kit && MOVESETS[r.kit.special]) mvaBuild(r.kit.special, r.name);
+}
+mvaBuildAll();
+// the label a move is armed with (armAtk): the kit and the slot, or null for a fighter with no moveset yet
+function mvId(f, slot){ const k = f && f.kit && f.kit.special; return (k && MOVESETS[k]) ? k + '.' + slot : null; }
+// the painted limbs of a move (limbMoves hands over here when the move has an entry): each entry is aimed from the limb's rest to the move's wind-up, strike and back
+function mvaLimbMoves(f, rig, mva, fwd){
+  const frontSide = fwd > 0 ? 'R' : 'L', out = [], ph = f._atkPhase, k = atkPhaseK(f), ease = (x)=> 1 - (1-x)*(1-x), E = mva.limbs;
+  for(let i = 0; i < E.length; i++){
+    const e = E[i], pool = e[0] ? rig.legs : rig.arms;
+    if(!pool || !pool.length) continue;
+    const front = pool.find((L)=>L.side === frontSide) || pool[0];
+    const L = e[1] ? pool.find((x)=>x !== front) : front;
+    if(!L) continue;
+    let dup = false; for(let n = 0; n < out.length; n++) if(out[n].limb === L) dup = true;
+    if(dup) continue;
+    const tw = fwd > 0 ? e[2] : MVA_PI - e[2], ts = fwd > 0 ? e[3] : MVA_PI - e[3];
+    const rest = Math.atan2(L.tip[1]-L.pivot[1], L.tip[0]-L.pivot[0]);
+    const dW = wrapA(tw - rest), dS = wrapA(ts - rest);
+    out.push({ limb:L, a: ph === 'windup' ? dW*k : ph === 'release' ? dW + (dS - dW)*ease(k) : dS*(1-k) });
+  }
+  return out.length ? out : null;
+}
 
 // Renders one sprite fighter in place of the roundBlob body. Called from inside drawFighter's
 // squash/stretch transform, so the art deforms with every jump, landing and run exactly like the
@@ -52207,6 +52710,7 @@ function netFighter(f){
   if(f._atkAnim > 0){
     o.swing = f._atkAnim;
     if(f._atkKind) o.swingKind = f._atkKind;   // what the body does: punch, kick, uppercut...
+    if(f._atkMove) o.swingMove = f._atkMove;   // which move it is, for its own limbs, body and face (MOVE ANIMATIONS)
     if(f._atkLen) o.swingLen = f._atkLen;      // a smash runs longer than a jab; the beats scale with it
   }
   if(f._plunge) o.plunge = 1;   // Meteor Puff's dive is on: a client draws her BFDIA 6 sprite for as long as it lasts (puffPose); the state itself stays on the host
@@ -52469,7 +52973,7 @@ function applySnapshot(s){
       placement:fd.place, killCount:0, deaths:0,   // (the comeback fighters' counters: a client keeps none)
       _kos:fd.kos||0, _falls:fd.falls||0, _dmgDealt:fd.dmg||0, _dmgTaken:fd.taken||0, _gone:fd.gone ? 1 : 0,   // the final snapshot's: the host's tallies, for the client's results
       _heatFx:fd.heatFx, _hookFx:fd.hookFx,
-      _atkAnim: fd.swing || 0, _atkKind: fd.swingKind || null, _atkLen: fd.swingLen, _hurtAnim: fd.hurtT,
+      _atkAnim: fd.swing || 0, _atkKind: fd.swingKind || null, _atkMove: fd.swingMove || null, _atkLen: fd.swingLen, _hurtAnim: fd.hurtT,
       _plunge: fd.plunge ? { from: 0, life: 0 } : null,   // (a client never simulates: this is only the flag puffPose reads)
       _windup: (fd.charge && typeof fd.charge === 'object') ? fd.charge : null,
       _atk0: fd.swing || 0,   // the swing timer as the snapshot has it (netSwing counts it down between snapshots)
