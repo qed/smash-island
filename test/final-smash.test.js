@@ -361,3 +361,13 @@ batchSuite("batch H", [
   ["Balloon", "tirade", 120, 600],
   ["Bomb", "literally", 100, 450]
 ]);
+batchSuite("batch I", [
+  ["Knife", "bagoftricks", 250, -300],
+  ["Lightbulb", "brightflash", 120, 600],
+  ["Paintbrush", "heatwaves", 250, 720],
+  ["Taco (II)", "lemonspit", 250, -300],
+  ["Marshmallow", "noway", 150, 640],
+  ["Apple", "pencilthrow", 250, -300],
+  ["Baseball", "groundpound", 250, 800],
+  ["Pickle", "loadsofexperience", 250, 560]
+]);
