@@ -2279,6 +2279,26 @@ function ctfGridNew(){
     // a lift: a platform c0..c0+w-1 wide that rides between the floor at row rTop and the one at row rBot, pausing at each end
     elev(c0, w, rTop, rBot){ g.elevs.push({ c0, w, rTop, rBot }); return g; },
     keepClear(c0,r0,c1,r1){ g.clear.push([c0,r0,c1,r1]); return g; },
+    // A SLOPE (the owner, 2026-10-15: "tunnels slope gently downward", slopes and uneven caves, not flat floors and stairs): a floor that climbs or falls from the start of column c0
+    // (its surface at row rA, a fraction allowed) to the end of column c1 (row rB), cut out of whatever is there with h rows of air over it (h 3 is a corridor, 2 a crawlspace a fighter
+    // just fits). The floor is a run of solid steps 60 px wide, none rising more than 24 px: a fighter walks up them without a jump (ctf step-up, in the fighter step) and the route
+    // graph joins them as one walk. o.fill: also fill with stone under it down to that row (a slope in the open air); o.rough: now and then a pocket one row higher in the ceiling.
+    slope(c0, c1, rA, rB, h, o){
+      o = o || {};
+      const cols = c1 - c0 + 1, n = cols*2, St = CTF_CELL/2;
+      if(Math.abs(rB - rA)*CTF_CELL/n > 24) throw new Error('slope too steep: ' + c0 + '-' + c1 + ' rows ' + rA + ' to ' + rB);
+      const ys = []; for(let i = 0; i < n; i++) ys.push(Math.round((rA + (rB - rA)*(i + 0.5)/n)*CTF_CELL));
+      const dr = CTF_DIM.dr, rowOf = y=>Math.floor((y - 1)/CTF_CELL);
+      for(let k = 0; k < cols; k++){
+        const c = c0 + k, ya = ys[2*k], yb = ys[2*k + 1], ra = rowOf(ya), rb = rowOf(yb), rMax = Math.max(ra, rb), rMin = Math.min(ra, rb);
+        let up = h; if(o.rough && cellJitter(c, Math.round(rA), 5) > 0.74) up++;
+        g.box(rMin - up + 1, c, rMax, c, '.');
+        if(o.fill != null) g.box(rMax + 1, c, o.fill, c, '#');
+        [[ya, 0], [yb, 1]].forEach(([y, j])=>{ const ph = (rMax + 1)*CTF_CELL - y; if(ph > 0) g.ramps.push({ x:c*CTF_CELL + j*St, y:y + dr*CTF_CELL, w:St, h:ph }); });
+      }
+      return g;
+    },
+    ramps: [],
     // what the decoration tool offers: a default set for the map and sets for areas (cells; the first area that holds the cursor wins)
     decoSets: [], decoBase: null,
     decoSet(c0, r0, c1, r1, kinds){ g.decoSets.push({ c0, r0, c1, r1, kinds }); return g; },
@@ -2317,7 +2337,7 @@ function ctfMapBuild(id){
   const WW = 2*CTF_DIM.half*CTF_CELL, WH = CTF_DIM.rows*CTF_CELL, HALF = WW/2;
   const mx = (x, w)=> WW - x - (w||0);
   const solids = new Set(), hops = new Set(), doorCells = {}, jailCells = new Set();
-  const M = { id, name:def.name, theme:def.theme, WW, WH, half:CTF_DIM.half, dr, plats:[], doors:[], keys:[], boosts:[], spots:[], homes:[], jails:[], buffs:[], elevs:[],
+  const M = { id, name:def.name, theme:def.theme, living:def.living || null, WW, WH, half:CTF_DIM.half, dr, plats:[], doors:[], keys:[], boosts:[], spots:[], homes:[], jails:[], buffs:[], elevs:[],
               pads:[], clear:[], G:0, info:g.info || null };
   const leftPlats = [], at = (r,c)=> ({ x:c*CTF_CELL+CTF_CELL/2, y:(r+1)*CTF_CELL });   // an object stands on the floor of its cell
   const objs = { keys:[], boosts:[], spots:[], spawns:[], pad:new Set(), slots:[], buffs:[] };
@@ -2337,6 +2357,11 @@ function ctfMapBuild(id){
   }
   for(const rc of ctfMergeCells(solids)) leftPlats.push({ ...rc, solid:true });
   for(const rc of ctfMergeCells(hops, true)) leftPlats.push({ x:rc.x, y:rc.y, w:rc.w, h:16, hop:true });
+  if(g.ramps.length){   // (the steps of a slope: see g.slope; the stone beside a step whose top is within a step's height of it is stepped onto the same way)
+    const edge = {}; for(const p of leftPlats) if(p.solid){ (edge[p.x] = edge[p.x] || []).push(p); (edge[p.x + p.w] = edge[p.x + p.w] || []).push(p); }
+    for(const rp of g.ramps){ for(const x of [rp.x, rp.x + rp.w]) for(const q of (edge[x] || [])) if(Math.abs(q.y - rp.y) <= 28) q.step = true; }
+    for(const rp of g.ramps) leftPlats.push({ x:rp.x, y:rp.y, w:rp.w, h:rp.h, solid:true, ramp:true });
+  }
   for(const o of g.fields) for(const p of ctfLattice(g, leftPlats, o)) leftPlats.push(p);
   for(const p of leftPlats){ const cx = (p.x + p.w/2)/CTF_CELL, cy = (p.y + p.h/2)/CTF_CELL; for(const k of g.skins) if(cx >= k.c0 && cx <= k.c1 + 1 && cy >= k.r0 && cy <= k.r1 + 1){ p.skin = k.kind; break; } }
   for(const p of leftPlats){ M.plats.push({ ...p }); M.plats.push({ ...p, x:mx(p.x,p.w) }); }
@@ -2691,188 +2716,115 @@ function ctfBaseKit(g, o){
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-//  1. CASTLE YOYLEBERRY, v3: bigger (110 columns a side, 48 rows), built by hand from set pieces (the left half; the right is its mirror), with the snowy MOUNTAIN in the CENTRE, its
-//  peak on the middle line, hollowed into an ANT FARM of narrow tunnels on six levels that cross the line inside the rock. Rows are written bottom-anchored: row 38 is the floor of the
-//  world, rows above 0 are negative (the sky). A "surface row" s is the row whose top you stand on.
-//    the zigzag stair TOWER over the HOME HALL and the JAIL BLOCK (cols 0-18), the GREAT HALL (19-44), the dirt CELLAR under it, the tall ZIGZAG STAIR ARTERY (47-49) from the cellar to the
-//    sky, the VAULT with its bell LOFT (51-60), the lift PIT with the crate WAREHOUSE over it (51-66), the MOUNTAIN (67-109) with its tunnels, chambers and chimneys onto the snow,
-//    the BATTLEMENTS and the SKY above (propeller blocks, grass islands, a super-jump ledge).
+//  1. CASTLE YOYLEBERRY, v4 (the owner, 2026-10-15: "complex and interconnected": about 15 screens wide and 4 tall, tunnels that slope gently downward, open sightlines, hubs, long cross-links, loops).
+//  84 columns a side and 28 rows (the left half by hand; the right is its mirror). The snowy MOUNTAIN stands on the middle line, hollowed into a heart cave, a vault, a gallery and a peak chamber,
+//  and a web of sloping tunnels reaches it from the HOME HALL and the JAIL BLOCK (cols 0-17) through the ATRIUM (18-41: a ramp, a bridge and a lift), the GORGE open to the sky (43-49) and the ROOF
+//  walk along the top. Four roads from the home to the heart: the roof, the upper road, the main road and the low road, joined by stairs of hops, a well, a lift and the gorge's ledges.
+//  The floors of the tunnels are slopes (g.slope: steps 60 px wide and at most 24 px high, walked up without a jump); rows are written as the grid's own (0 at the top, 27 the bottom floor).
 // ---------------------------------------------------------------------------------------------------------------
 CTF_MAPS.castle = {
   name:'Castle Yoyleberry',
-  size:{ rows:48, half:110 },
-  theme:{ neutral:43, pal:{ rock:'#8d96ab', wood:'#a8773f', snow:'#f6f9ff', leaf:'#3a8f58', metal:'#7a8aa0' }, sky:['#79c8f4','#eaf7ff'], far:['#c7d6f2','#a9ddb9'], bg:'castle', pat:'brick', back:'#b8a89a', backLine:'rgba(80,52,40,0.22)', wain:'#9c8878', trim:'#d8c8b6',
+  size:{ rows:28, half:84 },
+  living:{ weather:['clear', 'snow', 'clear', 'fog'], night:true, critters:{ birds:7, bats:6, mice:16, fish:5 } },
+  theme:{ neutral:30, pal:{ rock:'#8d96ab', wood:'#a8773f', snow:'#f6f9ff', leaf:'#3a8f58', metal:'#7a8aa0' }, sky:['#79c8f4','#eaf7ff'], far:['#c7d6f2','#a9ddb9'], bg:'castle', pat:'brick', back:'#b8a89a', backLine:'rgba(80,52,40,0.22)', wain:'#9c8878', trim:'#d8c8b6',
           solid:{ fill:'#a4a3b6', line:'#7c7b90', hi:'#c8c7da', edge:'#262532' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' },
           cover:{ bush:'#3f9a4c', crate:'#a8773f', banner:'#c9433f', barrel:'#7a4a2a', curtain:'#8a3a6a', rubble:'#7d7a88', rock:'#6a6a74' }, deco:{ a:'#9a8fd0', b:'#b9a8e8', c:'#ffe27a', d:'#4aa0d8' } },
   build(g){
-    const info = { supers:[], pieces:[] }, D = 109;
-    // the mass of the castle, rows 10 to 38; the roof walkway and the sky are above it
-    g.box(10, 0, 38, D, '#');
-    g.back(0, 10, 66, 38, 'brick');   // the dark wall behind everything inside the castle (each piece paints its own over it)
+    const info = { supers:[], pieces:[] }, D = 83, Y = r=>r + 11;   // (my rows 0-27 are the grid's own; the grid's frame is 11 more)
+    const A = (c0, r0, c1, r1)=>g.box(Y(r0), c0, Y(r1), c1, '.'), S = (c0, r0, c1, r1)=>g.box(Y(r0), c0, Y(r1), c1, '#'), H = (r, c0, c1)=>g.fill(Y(r), c0, c1, '=');
+    const P = (r, c, s)=>g.put(Y(r), c, s), SL = (c0, c1, rA, rB, h, o)=>g.slope(c0, c1, Y(rA), Y(rB), h, o && o.fill != null ? Object.assign({}, o, { fill:Y(o.fill) }) : o);
+    const BK = (c0, r0, c1, r1, k)=>g.back(c0, Y(r0), c1, Y(r1), k), DC = (k, c, r, w, h, o)=>g.deco(k, c, Y(r), w, h, o || {}), ZN = (t, c0, r0, c1, r1, s, d)=>g.zone(t, c0, Y(r0), c1, Y(r1), s, d);
+    const STALK = (c, rb, rt)=>g.stalk(c, Y(rb), Y(rt)), SHAFT = (c, rb, rt)=>g.shaft(c, Y(rb), Y(rt));
+    // ---- the mass: the castle (cols 0-55, roof at row 9) and the mountain (56-83): a gentle flank up to a plateau on the middle line ----
+    S(0, 9, 55, 27);
+    SL(56, 79, 9, 1, 3, { fill:27 }); S(80, 1, D, 27);
+    BK(0, 11, 55, 26, 'brick');
 
-    // ---- 1. THE STAIR TOWER (rows 11-21, cols 1-14): three floors, a hatch to the roof, thick walls, one hidden alcove ----
-    g.box(11, 1, 21, 14, '.');
-    g.box(14, 1, 14, 14, '#'); g.gap(14, 13, 14);                                                      // floor 3 (surface 14), a hole at its right end
-    g.box(18, 1, 18, 14, '#'); g.gap(18, 1, 2);                                                        // floor 2 (surface 18), a hole at its left end
-    g.gap(10, 1, 2);                                                                                    // the hatch in the roof
-    g.shaft(1, 21, 19); g.shaft(13, 17, 15); g.shaft(1, 13, 11);                                         // the stairs: F1 to F2 (left), F2 to F3 (right), F3 to the roof (left)
-    g.fill(16, 5, 6, '='); g.fill(20, 8, 9, '='); g.fill(12, 7, 8, '=');                                // tiny landings
-    g.put(15, 6, 'U'); g.put(19, 9, 'B'); g.put(21, 5, 'F');
-    g.box(16, 15, 17, 16, '.'); g.secret(15, 16, 15, 17); g.put(17, 16, 'K');                          // the hidden alcove in the wall: walk through the stone at the end of floor 2
-    g.back(1, 11, 14, 21, 'brick'); g.deco('lantern', 4, 15, 3, 3); g.deco('hang', 9, 11, 2, 3, {}); g.deco('hang', 3, 19, 2, 2, {});
-    g.box(12, 15, 13, 18, '.');                                                                         // the tunnel from the top floor into the great hall
+    // ---- 1. THE HOME HALL (cols 1-15, rows 11-16): a barracks balcony over the floor, a stair up through the roof, a hole down to the jail corridor ----
+    A(1, 11, 15, 16); H(14, 1, 12); P(16, 1, 'PP'); P(16, 3, 'HHH'); P(13, 2, 'HHHHH'); P(13, 7, 'U'); P(16, 7, 'C'); P(16, 9, 'C');
+    STALK(11, 16, 14);                                                                                  // from the floor to the balcony
+    g.box(Y(9), 8, Y(10), 10, '.'); STALK(8, 13, 10);                                                   // the hatch in the roof, and the hops up to it
+    A(16, 14, 17, 16);                                                                                  // the arch out to the atrium
+    BK(1, 11, 15, 16, 'brick'); DC('hang', 5, 11, 2, 3); DC('hang', 13, 11, 2, 3); DC('torch', 3, 12, 1, 2); DC('torch', 14, 13, 1, 3);
 
-    // ---- 2. THE HOME HALL (rows 24-30, cols 1-15) with the barracks balcony ----
-    g.box(24, 1, 30, 15, '.'); g.fill(27, 1, 15, '=');
-    g.put(30, 2, 'PP'); g.put(30, 5, 'HH'); g.put(26, 2, 'HHHHHH');
-    g.gap(22, 11, 12); g.gap(23, 11, 12); g.shaft(11, 30, 23);                                          // up into the tower
-    g.box(31, 14, 34, 15, '.');                                                                         // down to the corridor (its hops go in after the corridor is cut)
-    g.box(25, 16, 26, 18, '.');                                                                         // the tunnel to the great hall
-    g.back(1, 24, 15, 30, 'brick'); g.deco('hang', 6, 24, 2, 3, {}); g.deco('hang', 12, 24, 2, 3, {});
+    // ---- 2. THE JAIL BLOCK and the corridor out of it (rows 19-21): the cell, its door, and a gentle way east under the atrium ----
+    A(1, 19, 5, 21); g.col(6, Y(19), Y(21), 'J'); P(21, 2, 'ppp'); A(7, 19, 17, 21); g.keepClear(1, Y(19), 6, Y(21));
+    A(14, 17, 15, 18); SHAFT(14, 21, 18);                                                               // up into the home hall
+    BK(1, 19, 17, 21, 'dirt'); DC('torch', 9, 19, 1, 2); DC('torch', 16, 19, 1, 2);
 
-    // ---- 3. THE JAIL BLOCK (rows 35-37, cols 1-6) and the corridor out of it ----
-    g.box(35, 1, 37, 5, '.'); g.col(6, 35, 37, 'J'); g.put(37, 2, 'ppp');
-    g.box(35, 7, 37, 18, '.'); g.keepClear(1, 35, 6, 37); g.shaft(14, 37, 32);
+    // ---- 3. THE ATRIUM (cols 18-41, rows 11-26): the hub. A long ramp falls from the hall's floor to a landing; a bridge crosses it high up; a lift rides between ----
+    A(18, 11, 41, 26);
+    SL(18, 36, 17, 22, 3, { fill:27 }); S(37, 22, 41, 27);                                              // the ramp (5 rows over 19 columns) and the landing
+    S(38, 17, 41, 19);                                                                                  // the balcony the upper road leaves by
+    H(17, 21, 35);                                                                                      // the bridge across the atrium (open to the ramp and landing below)
+    H(14, 23, 28); H(14, 32, 36); H(12, 28, 33);
+    g.elev(36, 2, Y(17), Y(22));
+    STALK(28, 16, 10); g.box(Y(9), 28, Y(10), 30, '.');                                                  // a stair of hops up to a hatch in the roof
+    BK(18, 11, 41, 26, 'brick'); DC('chains', 24, 11, 3, 3); DC('chains', 33, 11, 3, 2); DC('hang', 20, 11, 2, 4); DC('hang', 38, 11, 2, 4); DC('window', 26, 12, 2, 3); DC('window', 31, 12, 2, 3);
 
-    // ---- 4. THE GREAT HALL (rows 11-27, cols 19-44): a wide tall hall, blue platforms hanging on chains, banners, ceiling teeth ----
-    g.box(11, 19, 27, 44, '.');
-    const hang = (s, c0, c1)=>{ g.fill(s, c0, c1, '='); g.deco('chains', c0 + 1, 11, 3, s - 11, {}); };
-    hang(26, 20, 24); hang(24, 26, 30); hang(22, 21, 25); hang(20, 27, 31); hang(18, 21, 25); hang(16, 27, 31); hang(14, 19, 24); hang(12, 26, 30);
-    hang(26, 36, 41); hang(24, 42, 44); hang(22, 37, 41); hang(20, 43, 44); hang(18, 33, 38); hang(14, 34, 38); hang(16, 40, 44);
-    hang(22, 32, 35); hang(26, 29, 33); hang(12, 40, 44); hang(13, 20, 24);   // more of them, so no stretch of the hall is bare
-    g.gap(10, 27, 28);                                                                                  // the roof hatch above the top ledge
-    g.put(23, 28, 'C'); g.put(23, 27, 'C'); g.put(27, 33, 'C'); g.put(27, 34, 'C'); g.put(27, 38, 'C'); g.put(27, 40, 'F'); g.put(27, 22, 'F'); g.put(27, 25, 'A');
-    g.put(19, 29, 'U'); g.put(17, 23, 'T'); g.put(11, 28, 'T'); g.put(13, 21, 'N'); g.put(21, 39, 'U'); g.put(17, 36, 'F');
-    g.put(21, 33, 'C'); g.put(21, 34, 'C'); g.put(25, 31, 'C'); g.put(25, 32, 'C'); g.put(11, 42, 'A'); g.put(21, 24, 'F'); g.put(15, 29, 'F'); g.put(15, 41, 'T'); g.put(21, 22, 'C');
-    g.deco('teeth', 19, 11, 26, 1, {}); g.deco('hang', 22, 11, 2, 4, {}); g.deco('hang', 33, 11, 2, 4, {}); g.deco('hang', 41, 11, 2, 4, {});
-    g.back(19, 11, 44, 27, 'brick');
-    g.box(28, 31, 34, 32, '.'); g.shaft(31, 37, 29);                                                    // the stairs down to the cellar
-    g.box(18, 45, 19, 46, '.');                                                                         // the arch out to the artery, at the bell loft's height
-    g.box(26, 45, 27, 46, '.');                                                                         // the arch out to the artery, at the vault door's height
-    g.box(12, 45, 13, 46, '.'); g.secret(45, 12, 46, 13); g.put(13, 46, 'g');                           // a crawl behind the wall by the top ledge: a ghost boost
+    // ---- 4. THE LOW ROAD (T3) and the MAIN ROAD (T2): both fall gently toward the heart of the mountain ----
+    SL(18, 41, 22, 27, 3, { rough:true });                                                              // from the jail corridor, down under the atrium
+    SL(42, 55, 27, 27, 3);                                                                              // the low road runs on at the bottom
+    SL(42, 55, 22, 24, 3, { rough:true });                                                              // from the landing, down toward the heart
+    A(39, 22, 40, 23); STALK(39, 26, 22);                                                               // a stair of hops from the low road up to the landing (a loop)
+    A(47, 18, 48, 19); STALK(47, 22, 18);                                                               // and from the main road up through the gorge's floor
+    BK(18, 19, 55, 26, 'dirt'); DC('mushroom', 30, 25, 2, 2); DC('torch', 44, 21, 1, 2);
 
-    // ---- 5. THE CELLAR (rows 35-37, cols 19-49): dirt, a long hallway, small chambers, a flooded stretch, a way into the artery ----
-    g.box(35, 19, 37, 49, '.');
-    g.box(31, 21, 33, 26, '.'); g.gap(34, 23, 24); g.shaft(23, 37, 35); g.put(33, 25, 'a'); g.put(33, 22, 'W');          // a chamber over the hallway with the vault's key
-    g.box(31, 36, 33, 41, '.'); g.gap(34, 37, 38); g.shaft(37, 37, 35); g.put(33, 39, 'Q');          // another, with a ghost boost
-    g.put(37, 45, 'W'); g.put(37, 44, 'C'); g.put(37, 47, 'M'); g.put(37, 28, 'G'); g.put(37, 33, 'W');
-    g.zone('water', 34, 35, 41, 37, 1);
-    g.back(7, 35, 18, 37, 'dirt'); g.back(19, 35, 49, 37, 'dirt'); g.back(21, 31, 26, 33, 'dirt'); g.back(36, 31, 41, 33, 'dirt'); g.back(31, 28, 32, 34, 'dirt');
-    g.deco('mushroom', 25, 33, 2, 2, {}); g.deco('lantern', 42, 35, 2, 2, {});
+    // ---- 5. THE UPPER ROAD (T1) and the GORGE (cols 43-49): a cut open to the sky, ledges up its walls, a pool at the bottom, tunnels out of its foot ----
+    SL(42, 42, 17, 17, 3);                                                                              // the upper road leaves the balcony
+    A(43, 9, 49, 17); S(43, 18, 49, 19);                                                                // the gorge: roof and rock cut away to a floor at 18
+    H(9, 43, 49);                                                                                       // the roof bridge across it
+    H(16, 44, 46); H(14, 46, 48); H(12, 44, 46); H(10, 46, 48);                                         // ledges up the walls
+    SL(50, 61, 18, 16, 3);                                                                              // the upper road goes on east, rising to the vault
+    SL(50, 60, 18, 22, 3, { rough:true });                                                              // and a ramp down into the heart
+    A(52, 9, 53, 15);                                                                                    // a well from the roof: a long drop onto the upper road
+    ZN('water', 43, 16, 46, 17, 1);
+    BK(43, 9, 49, 17, 'sky'); BK(42, 13, 61, 17, 'dirt');
+    DC('falls', 44, 9, 3, 8); DC('torch', 52, 14, 1, 2);
 
-    // ---- 6. THE VAULT (rows 21-27, cols 51-59) behind two locked doors, with a bell loft above it (rows 12-19, cols 50-60) ----
-    g.box(21, 51, 27, 59, '.'); g.col(50, 26, 27, '1'); g.col(60, 26, 27, '1');
-    g.fill(26, 56, 58, '='); g.fill(24, 52, 55, '='); g.put(23, 53, 'N'); g.put(27, 53, 'U'); g.put(27, 57, 'T'); g.put(27, 55, 'u');
-    g.back(51, 21, 59, 27, 'wood'); g.deco('crystal', 54, 21, 3, 3, {});
-    g.box(12, 50, 19, 60, '.'); g.ladder(52, 19, 12, 3); g.gap(10, 56, 57);
-    g.put(19, 59, 'F'); g.put(19, 51, 'B'); g.put(11, 56, 'C');
-    g.back(50, 12, 60, 19, 'wood'); g.deco('chains', 54, 11, 3, 3, {});
+    // ---- 6. THE MOUNTAIN: the vault (doors at 62 and 71), the heart cave under it, the upper gallery, the peak chamber ----
+    A(63, 12, 70, 15); g.col(62, Y(14), Y(15), '1'); g.col(71, Y(14), Y(15), '1');                       // the vault between its two doors
+    H(13, 64, 66); P(15, 65, 'N'); P(15, 68, 'T'); P(15, 63, 'u'); BK(63, 12, 70, 15, 'wood'); DC('crystal', 66, 12, 3, 3);
+    SL(72, 83, 16, 16, 3);                                                                              // the upper gallery east of the vault, to the middle line
+    A(56, 19, D, 26); SL(56, 83, 27, 27, 3);                                                             // the heart cave under it
+    SL(58, 62, 27, 25, 3, { fill:27 }); SL(63, 67, 25, 27, 3, { fill:27 }); SL(72, 76, 27, 25, 3, { fill:27 }); SL(77, 81, 25, 27, 3, { fill:27 });   // two humps in the cave floor
+    for(const [c, w, h] of [[58, 5, 2], [66, 6, 3], [74, 5, 2], [80, 4, 2]]) for(let i = 0; i < h; i++) g.fill(Y(19) + i, c + i, c + w - 1 - i, '#');   // stalactites
+    H(24, 62, 66); H(22, 67, 71); H(23, 69, 73); H(21, 77, 81); H(20, 61, 65);
+    A(74, 17, 76, 18); STALK(74, 21, 17);                                                                                  // up from the heart to the gallery
+    A(76, 4, D, 8); S(76, 9, D, 10);                                                                     // the peak chamber, floor at 9
+    A(78, 9, 80, 15); STALK(78, 15, 9);                                                                 // the chimney from the gallery up to the chamber
+    g.box(Y(1), 81, Y(8), 83, '.'); STALK(81, 8, 2);                                                     // out onto the plateau
+    P(8, 80, 'y');
+    BK(56, 19, D, 26, 'dirt'); BK(72, 13, D, 16, 'dirt'); BK(76, 4, D, 8, 'dirt');
+    ZN('dark', 64, 19, D, 26); ZN('dark', 76, 4, D, 8);
+    for(const c of [60, 68, 74]){ const sr = Math.round(9 - (c - 56)*8/24); ZN('ice', c, sr - 2, c + 2, sr - 1, 1); }
 
-    // ---- 7. THE LIFT PIT (rows 31-37, cols 51-66) and the crate WAREHOUSE above it (rows 21-27, cols 61-66) ----
-    g.box(31, 51, 37, 66, '.'); g.box(28, 62, 30, 64, '.');
-    g.box(21, 61, 27, 66, '.'); g.elev(62, 3, 28, 38);
-    g.fill(36, 53, 55, '='); g.fill(34, 56, 58, '='); g.fill(32, 59, 61, '='); g.put(35, 54, 'R'); g.put(33, 57, 'B'); g.put(31, 60, 'C'); g.put(37, 52, 'K'); g.put(37, 60, 'C');
-    g.put(27, 61, 'C'); g.put(27, 66, 'C'); g.put(27, 65, 'W'); g.put(22, 61, 'C');                      // the warehouse: crates stacked and tucked about
-    g.fill(25, 63, 65, '='); g.fill(23, 61, 63, '='); g.put(24, 64, 'W'); g.put(22, 62, 'T');
-    g.secret(50, 36, 50, 37); g.box(36, 50, 37, 50, '.');                                               // the hallway's dead end walks through the wall into the pit
-    g.back(51, 31, 66, 37, 'dirt'); g.back(61, 21, 66, 27, 'wood'); g.deco('lantern', 62, 21, 3, 3);
+    // ---- 7. THE ROOF: a wall-walk along the top, the flank beyond it, battlements, a super jump ledge ----
+    P(8, 14, 'v'); H(6, 13, 15); P(5, 14, 'X'); info.supers.push({ pad:{ c:14, r:Y(8) }, ledge:{ c0:13, c1:15, r:Y(6) } });
+    for(const c of [8, 20, 34, 40, 52]) DC('crenel', c, 8, 2, 1);
+    ZN('wind', 38, 3, 52, 8, 1, 1); ZN('float', 24, 0, 36, 6, 1); DC('cloud', 10, 2, 4, 2); DC('cloud', 36, 1, 5, 2); DC('castle', 28, 3, 5, 6);
+    DC('peak', 70, -1, 8, 4);
 
-    // ---- 8. THE ARTERY (cols 47-49): a narrow zigzag stair from the cellar up through the roof into the sky; the arches of the hall open onto it ----
-    g.box(-1, 47, 37, 49, '.');
-    for(let r = 36; r >= -1; r--) g.fill(r, r % 2 ? 48 : 47, r % 2 ? 49 : 48, '=');
-    g.back(47, 11, 49, 37, 'brick');
-
-    // ---- 9. THE MOUNTAIN (cols 67-109): a snowy rubble mountain with its peak on the middle line, hollowed into an ant farm ----
-    const top = {};
-    for(const [c0, c1, r] of [[67, 68, 27], [69, 70, 26], [71, 73, 25], [74, 75, 24], [76, 77, 23], [78, 81, 22], [82, 83, 21], [84, 85, 20], [86, 88, 19], [89, 90, 18], [91, 92, 17], [93, 95, 16],
-                              [96, 97, 15], [98, 99, 14], [100, 102, 13], [103, 104, 10], [105, 106, 6], [107, 109, 3]]) for(let c = c0; c <= c1; c++) top[c] = r;
-    g.box(10, 67, 37, D, '.'); g.box(-9, 67, 9, D, '.');
-    for(let c = 67; c <= D; c++) g.box(top[c], c, 37, c, '#');
-    g.skin(67, -9, D, 37, 'rubble');
-    // the levels of the ant farm: floors at rows 38, 33, 28, 23, 18, 13, 8 (a tunnel is the two rows over its floor; the rock must be two rows thick above it)
-    const LV = [38, 33, 28, 23, 18, 13, 8], span = {};
-    for(const s of LV){ let a = null, b = null; for(let c = 67; c <= D; c++) if(top[c] <= s - 4){ if(a === null) a = c; b = c; } span[s] = a === null ? null : [a, b]; }
-    const cross = { 38:1, 28:1, 18:1, 8:1 }, ends = { 33:106, 23:106, 13:108 };
-    // every tunnel is cut in stretches of different height: a crawlspace (one row, a fighter just fits and cannot jump), a doorway (two rows), an arch or a gallery (three): no two neighbours alike
-    const HT = { 38:[[67, 73, 2], [74, 79, 1], [80, 86, 2], [87, 95, 3], [96, 109, 2]], 33:[[67, 79, 3], [80, 84, 1], [85, 92, 2], [93, 106, 2]], 28:[[74, 81, 2], [82, 86, 1], [87, 89, 2], [90, 109, 3]],
-                 23:[[86, 95, 2], [96, 106, 3]], 18:[[98, 99, 1], [100, 109, 2]], 13:[[105, 108, 2]], 8:[[107, 109, 2]] };
-    for(const s of LV){ if(!span[s]) continue; const lim = cross[s] ? D : Math.min(span[s][1], ends[s] || span[s][1]);
-      for(const [a, b, h] of HT[s]){ if(a > lim) continue; const bb = Math.min(b, lim); g.box(s - h, a, s - 1, bb, '.'); g.back(a, s - h, bb, s - 1, 'dirt'); } }
-    // shafts from level to level: a three-row gap in the rock and a stack of hops, so a tunnel is a way up as well as along; two or three between every two levels, so there are loops
-    const link = (s, c)=>{ g.box(s - 5, c, s - 3, c + 1, '.'); g.shaft(c, s - 1, s - 5); g.back(c, s - 5, c + 1, s - 3, 'dirt'); };
-    for(const [s, cs] of [[38, [70, 80, 92]], [33, [76, 88, 100]], [28, [90, 102]], [23, [100, 104]], [18, [106]], [13, [107]]]) for(const c of cs) link(s, c);
-    // chambers: bulges of three or four rows (small rooms, cubbies and nooks to hide in)
-    const room = (s, c, w, h)=>{ g.box(s - h, c, s - 1, c + w - 1, '.'); g.back(c, s - h, c + w - 1, s - 1, 'dirt'); };
-    room(38, 72, 6, 4); room(38, 100, 8, 4); room(33, 82, 5, 4); room(33, 94, 6, 4); room(28, 92, 7, 4); room(23, 100, 5, 4); room(18, 103, 5, 4); room(13, 106, 3, 3); g.box(5, 107, 7, D, '.'); g.back(107, 5, D, 7, 'dirt');
-    // the ways out onto the snow: a chimney of hops through the rock to a ledge of the slope
-    for(const [s, c] of [[28, 76], [23, 86], [18, 98], [13, 105]]){ g.box(top[c], c, s - 3, c + 1, '.'); g.shaft(c, s - 1, top[c]); g.back(c, top[c], c + 1, s - 3, 'dirt'); }
-    // hide-and-seek in the rock: props in every chamber and tunnel
-    const kinds = ['K', 'R', 'G', 'C', 'W', 'Q'];
-    [[38, 73], [38, 75], [38, 102], [38, 104], [38, 106], [33, 83], [33, 85], [33, 96], [33, 98], [28, 93], [28, 96], [28, 98], [23, 101], [23, 103], [18, 104], [18, 106], [13, 107], [8, 108], [38, 85], [33, 70], [28, 80], [23, 94], [18, 100]].forEach(([s, c], i)=>{ if(span[s] && c >= span[s][0]) g.put(s - 1, c, kinds[i % kinds.length]); });
-    g.put(7, 108, 'y');                                                                                  // the reward in the peak chamber
-    g.put(37, 90, 'u'); g.put(32, 90, 'h'); g.put(22, 101, 'g'); g.put(17, 104, 'v'); g.put(7, 107, 'u'); g.put(27, 95, 'a');   // the boosts and a spare key: in the middle, where both sides come for them
-    // the snowy outside: spots and drifts and pines on the ledges, ice on some, caps of snow along the top
-    [[71, 'n'], [74, 't'], [78, 'K'], [80, 'n'], [84, 't'], [87, 'n'], [90, 'K'], [94, 't'], [97, 'n'], [101, 'K']].forEach(([c, ch])=>g.put(top[c] - 1, c, ch));
-    for(const c of [72, 79, 94, 101]) g.zone('ice', c, top[c] - 2, c + 1, top[c] - 1, 1);
-    g.fill(18, 70, 71, '='); g.fill(14, 74, 75, '='); g.fill(11, 80, 81, '='); g.fill(8, 87, 88, '='); g.fill(5, 94, 95, '=');                       // one-block platforms in the air near the slope: sneaky routes
-    g.shaft(67, 26, 11);                                                                                // up the castle wall's foot to the battlements
-    { const runs = []; for(let c = 67; c <= D;){ let c1 = c; while(c1 + 1 <= D && top[c1 + 1] === top[c]) c1++; runs.push([c, c1, top[c]]); c = c1 + 1; } for(const [c0, c1, r] of runs) g.skin(c0, r, c1, r, 'snowcap'); }
-    for(const c of [75, 83, 91, 99]) g.deco('pine', c, top[c] - 3, 1, 3, {});
-    g.deco('peak', 70, 2, 8, 5, {}); g.deco('peak', 92, -6, 8, 6, {}); g.deco('cloud', 80, -5, 5, 2, {}); g.deco('cloud', 100, -8, 5, 2, {}); g.deco('falls', 68, 11, 4, 5, {});
-    for(const c of [76, 86, 98, 105]) g.deco('lantern', c - 1, top[c] + 1, 2, 2, {});
-    g.zone('dark', 100, 34, 107, 37); g.zone('dark', 105, 5, D, 12); g.zone('dark', 94, 29, 99, 32);
-
-    // ---- 10. THE BATTLEMENTS (rows 6-9) and the SKY above (rows -9 to 5) ----
-    g.box(10, 0, 10, 66, '#'); g.gap(10, 1, 2); g.gap(10, 27, 28); g.gap(10, 56, 57); g.gap(10, 47, 49);
-    g.skin(0, 10, 66, 10, 'snowcap');
-    g.put(9, 36, 'v'); g.fill(7, 35, 37, '='); g.put(6, 36, 'X'); info.supers.push({ pad:{ c:36, r:9 }, ledge:{ c0:35, c1:37, r:7 } });
-    g.put(9, 14, 'B'); g.put(9, 45, 'C'); g.put(9, 22, 'R'); g.put(9, 62, 'K');
-    for(const c of [4, 10, 16, 22, 28, 40, 52, 58, 64]) g.deco('crenel', c, 8, 2, 1, {});
-    for(const [r, c] of [[8, 14], [6, 19], [4, 26], [6, 33], [4, 41], [6, 52], [3, 59], [5, 64]]){ g.put(r, c, '#'); g.deco('prop', c, r - 2, 1, 2, {}); }
-    g.fill(4, 21, 27, '='); g.put(3, 24, 'F'); g.deco('pillar', 23, 1, 1, 3, {});
-    g.zone('wind', 10, 0, 16, 6, 1, 1); g.zone('float', 40, 0, 52, 6, 1);
-    g.deco('castle', 30, 0, 6, 6, {}); g.deco('cloud', 8, 1, 4, 2, {}); g.deco('cloud', 36, 0, 5, 2, {}); g.deco('cloud', 58, 1, 4, 2, {});
-
-    // ---- 11. THE SKY FORTRESSES: stone castle chunks floating over the roof, joined by single propeller blocks ----
-    // FORTRESS A over the artery (cols 40-58): a hall the artery comes up into, a door at each end, banners and crates, ledges inside
-    g.box(-9, 40, -1, 58, '#'); g.box(-8, 41, -2, 57, '.'); g.box(-3, 40, -2, 40, '.'); g.box(-3, 58, -2, 58, '.');
-    g.box(-1, 47, -1, 49, '.'); g.fill(-1, 48, 49, '=');                                                // the artery's last hop is the hall's floor
-    g.fill(-2, 42, 43, '='); g.fill(-3, 44, 46, '='); g.fill(-2, 56, 57, '='); g.fill(-3, 52, 55, '='); g.fill(-4, 41, 43, '='); g.fill(-5, 43, 45, '='); g.fill(-6, 41, 43, '='); g.fill(-4, 53, 55, '='); g.fill(-5, 51, 53, '='); g.fill(-6, 53, 55, '=');
-    g.put(-5, 42, 'U'); g.put(-6, 44, 'A'); g.put(-7, 42, 'T'); g.put(-5, 54, 'N'); g.put(-6, 52, 'C'); g.put(-7, 54, 'F');                       // ledges, a row at a time up from the floor
-    g.put(-2, 44, 'C'); g.put(-2, 45, 'C'); g.put(-2, 54, 'F'); g.put(-2, 51, 'W'); g.put(-4, 45, 'U'); g.put(-4, 53, 'A'); g.put(-3, 42, 'C'); g.put(-3, 56, 'T'); g.put(-2, 41, 'C');
-    g.back(41, -8, 57, -2, 'brick'); g.deco('hang', 42, -8, 2, 4, {}); g.deco('hang', 55, -8, 2, 4, {}); g.deco('chains', 50, -8, 3, 3, {}); g.deco('crenel', 41, -10, 8, 1, {}); g.deco('crenel', 51, -10, 7, 1, {});
-    g.skin(40, -9, 58, -1, 'snowcap');
-    // FORTRESS B over the mountain's foot (cols 64-84): the long dark hall with no floor path, crossed on floating blocks; a door at each end
-    g.box(-9, 64, -1, 84, '#'); g.box(-8, 65, -2, 83, '.'); g.box(-3, 64, -2, 64, '.'); g.box(-3, 84, -2, 84, '.'); g.box(-1, 67, -1, 80, '.');
-    for(const c of [68, 71, 74, 77]){ g.put(-2, c, '#'); g.deco('prop', c, -4, 1, 2, {}); }
-    for(const c of [70, 73, 76, 79]){ g.put(-3, c, '#'); g.deco('prop', c, -5, 1, 2, {}); }
-    for(const c of [72, 75, 78]){ g.put(-4, c, '#'); g.deco('prop', c, -6, 1, 2, {}); }
-    g.put(-5, 72, 'K'); g.put(-5, 78, 'S');
-    g.put(-2, 66, 'C'); g.put(-2, 82, 'C'); g.put(-2, 65, 'W'); g.put(-2, 83, 'B'); g.put(-3, 71, 'S'); g.put(-3, 77, 'S'); g.put(-3, 74, 'K');
-    g.fill(-2, 80, 81, '='); g.put(-3, 81, 'T');
-    g.back(65, -8, 83, -2, 'metal'); g.zone('dark', 65, -8, 83, -2); g.deco('hang', 66, -8, 2, 4, {}); g.deco('hang', 81, -8, 2, 4, {}); g.deco('crenel', 65, -10, 9, 1, {}); g.deco('crenel', 75, -10, 9, 1, {});
-    g.skin(64, -9, 84, -1, 'snowcap');
-    // single propeller blocks between them, and out to the far sky: a flag on one lone block, reached by a chain of jumps
-    for(const c of [60, 62]){ g.put(-1, c, '#'); g.deco('prop', c, -3, 1, 2, {}); }
-    for(let i = 0; i < 6; i++){ const c = 86 + i*3, r = -1 - i; g.put(r, c, '#'); g.deco('prop', c, r - 2, 1, 2, {}); }
-    for(const c of [107, 109]){ g.put(-7, c, '#'); g.deco('prop', c, -9, 1, 2, {}); }   // and on across the line: a crossing in the sky
-    g.put(-7, 104, '#'); g.put(-8, 104, 'S'); g.deco('prop', 104, -9, 1, 2, {});
-    // a secret behind the wall of the bell loft: a nook with a chest
-    g.box(14, 61, 15, 62, '.'); g.secret(61, 14, 62, 15); g.put(15, 62, 'T');
-    // ---- light: torches on the walls of the halls and tunnels, windows with the last of the day in them, a shaft of light down the cellar stairs ----
-    for(const [c, r] of [[20, 15], [43, 15], [20, 22], [43, 22], [3, 25], [13, 25], [8, 12], [12, 19], [52, 22], [58, 22], [51, 13], [59, 13], [62, 22], [65, 22]]) g.deco('torch', c, r, 1, 3, {});
-    for(const c of [8, 28, 42, 56]) g.deco('torch', c, 35, 1, 2, {});
-    for(const [c, r] of [[24, 12], [30, 12], [36, 12], [4, 13], [10, 16]]) g.deco('window', c, r, 2, 4, {});
-    g.deco('beam', 30, 27, 4, 8, {});
-    for(const [s, c] of [[38, 74], [38, 102], [33, 84], [33, 96], [28, 94], [23, 102], [18, 105], [8, 108]]) g.deco('torch', c, s - 3, 1, 3, {});
-    for(const [c, r] of [[44, -6], [54, -6], [66, -6], [82, -6]]) g.deco('torch', c, r, 1, 3, {});
-    g.deco('window', 49, -8, 2, 4, {});
-    // what the decoration tool offers here: armour, urns and chests in the halls, snow and ice on the mountain, crates in the warehouse
+    // ---- keys, boosts ----
+    P(26, 50, 'a'); P(26, 46, 'g'); P(26, 44, 'h'); P(26, 69, 'u'); P(15, 82, 'v');
     g.decoDefault(['armor', 'urn', 'chest', 'hay', 'curtain', 'crate']);
-    g.decoSet(0, -9, D, 9, ['drift', 'banner', 'crate', 'rock']);
-    g.decoSet(67, 10, D, 38, ['drift', 'pine', 'rock', 'iceblock']);
-    g.decoSet(61, 21, 66, 27, ['crate', 'barrel', 'hay', 'chest']);
-    g.decoSet(19, 33, 66, 38, ['barrel', 'crate', 'hay', 'urn', 'rubble']);
+    g.decoSet(0, Y(0), D, Y(9), ['drift', 'banner', 'crate', 'rock']);
+    g.decoSet(56, Y(9), D, Y(27), ['drift', 'pine', 'rock', 'iceblock']);
+
+    // ---- hiding places: props scattered along every flat floor and ledge, a kind to suit the place (nothing on a slope, nothing in the home or the jail) ----
+    { const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {};
+      const kindsAt = (r, c)=> c >= 56 ? (r < 10 ? ['n', 't', 'K'] : ['G', 'K', 'Q', 'R']) : (r >= 18 && c >= 18) ? ['R', 'G', 'K', 'W', 'M', 'Q'] : ['C', 'W', 'F', 'A', 'N', 'T', 'U', 'B'];
+      for(let r = 0; r < 27; r++) for(let c = 1; c <= D; c++){
+        if(rampCell.has(r + '.' + c) || (c < 17 && r >= 11)) continue;
+        const here = g.at(Y(r), c), below = g.at(Y(r) + 1, c);
+        if(here !== '.' || (below !== '#' && below !== '=')) continue;
+        if(r < 9 && c < 56) continue;
+        if(cellJitter(c, r, 41) > 0.5 || (last[r] != null && c - last[r] < 3)) continue;
+        const ks = kindsAt(r, c), ch = ks[Math.floor(cellJitter(c, r, 43)*ks.length)];
+        if(ch === 'B' && r > 10) continue;
+        g.put(Y(r), c, ch); last[r] = c;
+      }
+    }
     g.info = info;
     return info;
   },
@@ -3435,6 +3387,7 @@ function ctfBuildWorld(){
   CAM_ZOOM = CTF_ZOOM;   // the rooms are drawn closer than the other big arenas: a screen is a room and a bit
   WW = M.WW; WH = M.WH; camX = 0; camY = 0; bases = []; spawnZones = []; worldZones = []; floors = [];
   worldPlats = M.plats.map(p=>({ ...p }));
+  CTF.rampIx = null; for(const p of worldPlats) if(p.ramp){ const ix = CTF.rampIx = CTF.rampIx || {}, k = Math.floor(p.x/60); (ix[k] = ix[k] || []).push(p); }
   worldZones = (M.zones || []).filter(z=>z.type !== 'dark').map(z=>({ ...z }));   // the game's own effect zones (ice, wind, belt...); dark is only drawn
   CTF.live = null;
 }
@@ -3607,6 +3560,13 @@ function ctfPlaceFlag(fl, x, y){
   for(let i = 0; i < 8; i++) puff(x, y - 16, TEAM_COLORS[fl.team % TEAM_COLORS.length], 4);
 }
 const CTF_CAM_SPEED = 26;
+// A fighter who has just been walking a slope and is a hair above its next step down stays on it (a step down is 24 px at most, a fall of several frames at a run).
+function ctfRampSnap(f){
+  const ix = CTF.rampIx; if(!ix) return;
+  const l = ix[Math.floor(f.x/60)]; if(!l) return;
+  const feet = f.y + f.r;
+  for(const p of l){ if(f.x > p.x && f.x < p.x + p.w && p.y >= feet - 2 && p.y <= feet + 30){ f.y = p.y - f.r; f.vy = 0; f.onground = true; f.jumps = 2; f._usedAirSpecial = false; f._rampT = 4; return; } }
+}
 function ctfInSolid(x, y){
   for(const p of worldPlats) if(p.solid && x > p.x && x < p.x + p.w && y > p.y && y < p.y + p.h) return true;
   for(const p of ctfDynSolids()) if(p.solid && !p.barrier && x > p.x && x < p.x + p.w && y > p.y && y < p.y + p.h) return true;
@@ -4669,6 +4629,10 @@ function ctfPaintPlatBase(g, p, th, X0, Y0, X1, Y1){
   }
   if(p.solid){
     ctfSolidFace(g, p, th, x0, y0, x1, y1, X0, Y0, X1, Y1);   // (art.js: a texture, lit from above)
+    if(p.ramp){   // a step of a slope: the run's top line is stroked once, after all the steps (ctfTile)
+      if(p.y >= Y0 && p.y < Y1){ g.fillStyle = ctfLight(th.solid.fill); g.fillRect(x0, p.y, x1 - x0, Math.min(8, p.h)); }
+      return;
+    }
     ctfOutline(g, 4); g.strokeRect(p.x, p.y, p.w, p.h);
     if(p.y >= Y0 && p.y < Y1) for(const k of (th.skinRects || [])) if(k.kind === 'turfcap' && p.y >= k.y - 2 && p.y < k.y + k.h + 2){ const a = Math.max(x0, k.x), b = Math.min(x1, k.x + k.w); if(b > a) ctfGrassLip(g, a, b, p.y); }   // grass over the forest floor
     if(p.y >= Y0 && p.y < Y1) for(const k of (th.skinRects || [])) if(k.kind === 'sandcap' && p.y >= k.y - 2 && p.y < k.y + k.h + 2){ const a = Math.max(x0, k.x), b = Math.min(x1, k.x + k.w); if(b > a) ctfSandLip(g, a, b, p.y); }
@@ -4739,6 +4703,19 @@ function ctfPaintBackBase(g, b, th, X0, Y0, X1, Y1){
   for(let y = Math.ceil(y0/bh)*bh; y < y1; y += bh){ g.moveTo(x0, y); g.lineTo(x1, y); const off = ((y/bh)|0) % 2 ? bw/2 : 0; for(let x = Math.ceil((x0 - off)/bw)*bw + off; x < x1; x += bw){ g.moveTo(x, y); g.lineTo(x, Math.min(y1, y + bh)); } }
   g.stroke();
 }
+// The outline of a slope: one line along the tops of its steps and down the risers that face the air, so a slope reads as a slope.
+function ctfRampLines(g, M, X0, Y0, X1, Y1){
+  if(!M._rampIx){ const ix = {}; for(const p of M.plats) if(p.ramp) ix[p.x] = p; M._rampIx = ix; }
+  const ix = M._rampIx; let any = false;
+  for(const k in ix){ const p = ix[k]; if(p.x >= X1 + 60 || p.x + p.w <= X0 - 60 || p.y >= Y1 || p.y + p.h <= Y0) continue;
+    if(!any){ ctfOutline(g, 4); g.beginPath(); any = true; }
+    g.moveTo(p.x, p.y); g.lineTo(p.x + p.w, p.y);
+    const L = ix[p.x - p.w], R = ix[p.x + p.w];
+    if(L && L.y > p.y){ g.moveTo(p.x, p.y); g.lineTo(p.x, L.y); } else if(L && L.y < p.y){ g.moveTo(p.x, L.y); g.lineTo(p.x, p.y); }
+    if(R && R.y > p.y){ g.moveTo(p.x + p.w, p.y); g.lineTo(p.x + p.w, R.y); }
+  }
+  if(any) g.stroke();
+}
 function ctfTile(M, tx, ty){
   const key = M.id + ':' + tx + ',' + ty;
   let t = CTF_TILES.get(key);
@@ -4754,6 +4731,7 @@ function ctfTile(M, tx, ty){
     for(const d of (M.decor || [])) if(d.x < X1 + 100 && d.x + d.w > X0 - 100 && d.y - 140 < Y1 && d.y + d.h + 80 > Y0) ctfDecorDraw(g, d, M.theme);
     for(const p of M.plats) if(p.x < X1 && p.x + p.w > X0 && p.y < Y1 && p.y + p.h > Y0) ctfPaintPlat(g, p, M.theme, X0, Y0, X1, Y1);
     for(const d of (M.front || [])) if(d.x < X1 && d.x + d.w > X0 && d.y < Y1 && d.y + d.h > Y0) ctfPaintPlat(g, { x:d.x, y:d.y, w:d.w, h:d.h, solid:true }, M.theme, X0, Y0, X1, Y1);   // a secret wall: stone you walk through
+    ctfRampLines(g, M, X0, Y0, X1, Y1);
   }
   CTF_TILES.set(key, cv);
   if(CTF_TILES.size > 60){ const first = CTF_TILES.keys().next().value; CTF_TILES.delete(first); }   // a few screens' worth stay; a long walk drops the oldest
@@ -5109,6 +5087,91 @@ function ctfFlagVisible(L, fl, vt){
   if(L.phase === 'hide') return false;
   return !!(L.seen[vt] && L.seen[vt][fl.id]);
 }
+// ---------------------------------------------------------------------------------------------------------------
+//  THE LIVING MAP (the owner, 2026-10-15: "weather and time (rain, fog, night changing what you can see)", "critters (harmless small animals)"). A map may say
+//  living:{ weather:[...four spells...], night:true, critters:{ birds, bats, mice, fish } }. Art only: nothing here is read by the simulation, and every number comes from the
+//  render clock (hazardT) and a hash of the map, so every screen shows the same sky. No words, no collisions.
+// ---------------------------------------------------------------------------------------------------------------
+function ctfSkyline(M){   // the top of the highest solid in each 120 px column: above it is open air
+  if(M._sky) return M._sky;
+  const n = Math.ceil(M.WW/CTF_CELL), a = new Float32Array(n).fill(M.WH);
+  for(const p of M.plats) if(p.solid){ const c0 = Math.max(0, Math.floor(p.x/CTF_CELL)), c1 = Math.min(n - 1, Math.floor((p.x + p.w - 1)/CTF_CELL)); for(let c = c0; c <= c1; c++) if(p.y < a[c]) a[c] = p.y; }
+  return M._sky = a;
+}
+const CTF_SPELL = 5400, CTF_DAY = 21600;   // a spell of weather is 90 s; a day is 6 minutes
+function ctfWeatherNow(M, T){
+  const lv = M.living; if(!lv) return null;
+  const sp = lv.weather || [], seg = Math.floor(T/CTF_SPELL), fr = (T % CTF_SPELL)/CTF_SPELL;
+  const kind = sp.length ? sp[seg % sp.length] : 'clear', k = kind === 'clear' ? 0 : Math.sin(Math.PI*fr);
+  const night = lv.night ? Math.max(0, Math.min(1, -Math.cos(2*Math.PI*T/CTF_DAY)*1.7 - 0.25)) : 0;   // the day starts bright; the night is the middle of it
+  return { kind, k, night };
+}
+function ctfDrawWeather(){
+  const M = CTF.map; if(!M || !M.living) return;
+  const T = hazardT, S = ctfWeatherNow(M, T); if(!S || (S.k < 0.02 && S.night < 0.02)) return;
+  const zm = viewZoom(), sky = ctfSkyline(M), col = Math.max(0, Math.min(sky.length - 1, Math.floor((camX + W/2)/CTF_CELL)));
+  const out = (camY + H/2) < sky[col] + 40 ? 1 : 0, k = CTF.outK = (CTF.outK || 0) + (out - (CTF.outK || 0))*0.05;   // indoors the weather thins out
+  ctx.save();
+  if(S.night > 0.02){ ctx.fillStyle = 'rgba(14,20,64,' + (0.46*S.night*(0.3 + 0.7*k)).toFixed(3) + ')'; ctx.fillRect(0, 0, W, H);
+    if(k > 0.15){ ctx.fillStyle = 'rgba(255,255,230,' + (0.9*S.night*k).toFixed(3) + ')'; for(let i = 0; i < 46; i++){ const x = (i*211 + 37) % W, y = ((i*127 + 11) % Math.floor(H*0.62)), tw = 0.6 + 0.4*Math.sin(T*0.05 + i*1.7); ctx.fillRect(x, y, 2*tw + 1, 2*tw + 1); } } }
+  if(S.k > 0.02 && k > 0.02){
+    const a = S.k*(0.25 + 0.75*k);
+    if(S.kind === 'snow'){ ctx.fillStyle = 'rgba(255,255,255,' + Math.min(0.95, 0.95*a).toFixed(3) + ')';
+      for(let i = 0; i < 90; i++){ const sp = 1.2 + (i % 5)*0.45, x = (((i*733) % W) + Math.sin(T*0.02 + i)*26 + T*0.35*(1 + (i % 3)*0.2) + W*4) % W, y = ((i*491) + T*sp) % (H + 20), r = 1.6 + (i % 3);
+        ctx.fillRect(x - r/2, y - r/2, r, r); } }
+    else if(S.kind === 'rain'){ ctx.strokeStyle = 'rgba(190,215,245,' + Math.min(0.8, 0.8*a).toFixed(3) + ')'; ctx.lineWidth = 2; ctx.beginPath();
+      for(let i = 0; i < 110; i++){ const x = (((i*733) % W) + T*2.2 + W*4) % W, y = ((i*491) + T*(16 + (i % 4)*3)) % (H + 40); ctx.moveTo(x, y); ctx.lineTo(x - 5, y + 16); } ctx.stroke(); }
+    else if(S.kind === 'fog'){ ctx.fillStyle = 'rgba(232,238,248,' + (0.42*a).toFixed(3) + ')'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(244,247,252,' + (0.3*a).toFixed(3) + ')'; for(let i = 0; i < 5; i++){ const x = (((i*401) + T*(0.25 + i*0.07)) % (W + 600)) - 300, y = H*(0.25 + 0.14*i); ctx.beginPath(); ctx.ellipse(x, y, 260, 46, 0, 0, 7); ctx.fill(); } }
+  }
+  ctx.restore();
+}
+function ctfCritterPlan(M){
+  if(M._crit) return M._crit;
+  const lv = M.living && M.living.critters || {}, plan = { birds:[], bats:[], mice:[], fish:[] };
+  for(let i = 0; i < (lv.birds || 0); i++) plan.birds.push({ i, x0:cellJitter(i, 3, 61)*M.WW, sp:(0.9 + cellJitter(i, 4, 62)*1.2)*(i % 2 ? 1 : -1), lift:160 + cellJitter(i, 5, 63)*520, ph:cellJitter(i, 6, 64)*7 });
+  const darks = (M.zones || []).filter(z=>z.type === 'dark');
+  for(let i = 0; i < (lv.bats || 0) && darks.length; i++){ const z = darks[i % darks.length]; plan.bats.push({ i, x:z.x + 90 + cellJitter(i, 7, 65)*(z.w - 180), y:z.y + 30 + cellJitter(i, 8, 66)*40, ph:cellJitter(i, 9, 67)*600 }); }
+  const floors = M.plats.filter(p=>p.solid && !p.ramp && p.w >= 240 && p.w <= 3200 && p.h >= 40);
+  for(let i = 0; i < (lv.mice || 0) && floors.length; i++){ const p = floors[Math.floor(cellJitter(i, 10, 68)*floors.length)]; plan.mice.push({ i, p, sp:0.008 + cellJitter(i, 11, 69)*0.01, ph:cellJitter(i, 12, 70)*40 }); }
+  const waters = (M.zones || []).filter(z=>z.type === 'water');
+  for(let i = 0; i < (lv.fish || 0) && waters.length; i++){ const z = waters[i % waters.length]; plan.fish.push({ i, z, x:z.x + 60 + cellJitter(i, 13, 71)*(z.w - 120), ph:cellJitter(i, 14, 72)*400 }); }
+  return M._crit = plan;
+}
+function ctfDrawCritters(vx, vy, vw, vh, T){
+  const M = CTF.map; if(!M || !M.living || !M.living.critters) return;
+  const P = ctfCritterPlan(M), sky = ctfSkyline(M), c = ctx;
+  c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; c.strokeStyle = CTF_LINE;
+  for(const b of P.birds){
+    const x = ((b.x0 + T*b.sp) % M.WW + M.WW) % M.WW, col = Math.min(sky.length - 1, Math.floor(x/CTF_CELL)), y = Math.max(60, sky[col] - b.lift) + Math.sin(T*0.02 + b.ph)*24;
+    if(x < vx - 40 || x > vx + vw + 40 || y < vy - 40 || y > vy + vh + 40) continue;
+    const fl = Math.sin(T*0.28 + b.ph*3), d = b.sp > 0 ? 1 : -1;
+    c.lineWidth = 4; c.beginPath(); c.moveTo(x - 15*d, y + 3 - 7*fl); c.quadraticCurveTo(x - 7*d, y - 8*fl - 2, x, y); c.quadraticCurveTo(x + 7*d, y - 8*fl - 2, x + 15*d, y + 3 - 7*fl); c.stroke();
+    c.fillStyle = '#f4efe2'; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y + 2, 6, 4.5, 0, 0, 7); c.fill(); c.stroke();
+  }
+  for(const b of P.bats){
+    const ph = (T + b.ph) % 600, fly = ph < 90, k = ph/90, x = b.x + (fly ? Math.sin(k*Math.PI*2)*160 : 0), y = b.y + (fly ? Math.sin(k*Math.PI)*70 : 0);
+    if(x < vx - 40 || x > vx + vw + 40 || y < vy - 40 || y > vy + vh + 40) continue;
+    c.fillStyle = '#4a3a5c'; c.lineWidth = 3;
+    if(fly){ const fl = Math.sin(T*0.5); c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x - 14, y - 12*fl - 4, x - 22, y + 2); c.quadraticCurveTo(x - 12, y + 2, x - 6, y + 6); c.lineTo(x + 6, y + 6); c.quadraticCurveTo(x + 12, y + 2, x + 22, y + 2); c.quadraticCurveTo(x + 14, y - 12*fl - 4, x, y); c.fill(); c.stroke(); }
+    else { c.beginPath(); c.ellipse(x, y + 8, 7, 11, 0, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#f4efe2'; c.fillRect(x - 4, y + 3, 2, 2); c.fillRect(x + 2, y + 3, 2, 2); }
+  }
+  for(const m of P.mice){
+    const p = m.p, u = 0.5 + 0.5*Math.sin(T*m.sp + m.ph), x = p.x + 24 + u*(p.w - 48), d = Math.cos(T*m.sp + m.ph) >= 0 ? 1 : -1, y = p.y;
+    if(x < vx - 30 || x > vx + vw + 30 || y < vy - 30 || y > vy + vh + 30) continue;
+    const hop = Math.abs(Math.sin(T*0.22 + m.i))*3;
+    c.fillStyle = m.i % 3 ? '#9a8f86' : '#d8cfc4'; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y - 8 - hop, 13, 8, 0, 0, 7); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(x - 12*d, y - 8 - hop); c.quadraticCurveTo(x - 24*d, y - 6 - hop, x - 26*d, y - 14 - hop); c.stroke();
+    c.beginPath(); c.arc(x + 9*d, y - 15 - hop, 4, 0, 7); c.fill(); c.stroke(); c.fillStyle = '#1c1c1c'; c.fillRect(x + 12*d - 1, y - 11 - hop, 2.5, 2.5);
+  }
+  for(const f of P.fish){
+    const ph = (T + f.ph) % 420; if(ph > 56) continue; const k = ph/56, x = f.x + k*70, y = f.z.y + 24 - Math.sin(k*Math.PI)*92, d = 1;
+    if(x < vx - 30 || x > vx + vw + 30 || y < vy - 30 || y > vy + vh + 30) continue;
+    c.fillStyle = '#ffb04a'; c.lineWidth = 3; c.beginPath(); c.ellipse(x, y, 15, 8, Math.cos(k*Math.PI)*0.8 + 0.2, 0, 7); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(x - 14, y); c.lineTo(x - 24, y - 7); c.lineTo(x - 24, y + 7); c.closePath(); c.fill(); c.stroke();
+  }
+  c.restore();
+}
 function ctfDrawWorld(){
   const M = CTF.map; if(!M) return;
   const L = CTF.live, z = viewZoom(), vw = W/z, vh = H/z, vx = camX + W/2 - vw/2, vy = camY + H/2 - vh/2;
@@ -5117,6 +5180,7 @@ function ctfDrawWorld(){
     if(tx < 0 || ty < 0 || tx*CTF_TILE >= M.WW || ty*CTF_TILE >= M.WH) continue;
     ctx.drawImage(ctfTile(M, tx, ty), tx*CTF_TILE, ty*CTF_TILE, CTF_TILE, CTF_TILE);
   }
+  try{ ctfDrawCritters(vx, vy, vw, vh, hazardT); }catch(e){}
   if(!L) return;
   const inView = (x, y, w, h)=> x + w > vx - 40 && x < vx + vw + 40 && y + h > vy - 40 && y < vy + vh + 40;
   const vt = ctfViewTeam(), T = hazardT;
@@ -5242,6 +5306,7 @@ function ctfHiddenFrom(f){ const vt = ctfViewTeam(); return (f._ghostT > 0 && f.
 // ---- the screen: the top bar (flags captured by each side, the hiding timer) --------------------------------------
 function drawCtfHud(){
   const L = CTF.live; if(!L) return;
+  ctfDrawWeather();
   ctfDrawDark();   // (under the scoreboard: a dark area blacks out the world, not the HUD)
   { const me = fighters.find(q=>q.you); if(me && me._jail != null){   // jailed: a lock, and the teammate you are watching
       ctx.save(); ctx.globalAlpha = 0.85; const lx = W/2, ly = H - 70; ctx.fillStyle = 'rgba(28,24,38,0.8)'; ctx.fillRect(lx - 90, ly - 34, 180, 68); ctx.strokeStyle = '#d8c46a'; ctx.lineWidth = 3; ctx.strokeRect(lx - 90, ly - 34, 180, 68);
@@ -5933,7 +5998,8 @@ function ctfNavNew(M, prev, diff){
   // two pieces of floor at one height with no gap between them are one walk
   for(const A of nav.nodes){
     for(const B of (nav.nb[ctfNavBucket(A.x1 + 12)] || [])){
-      if(B === A || Math.abs(B.y - A.y) > 1.5 || B.x0 < A.x1 - 1 || B.x0 > A.x1 + 14) continue;
+      if(B === A || B.x0 < A.x1 - 1 || B.x0 > A.x1 + 14) continue;
+      if(Math.abs(B.y - A.y) > 1.5 && !((A.p.ramp || B.p.ramp) && Math.abs(B.y - A.y) <= 26)) continue;   // (the steps of a slope are a walk, up or down)
       A.edges.push({ kind:'walk', from:A.id, to:B.id, xa:A.x1, xb:B.x0 + 2, dir:1, doors:[], cost:2 });
       B.edges.push({ kind:'walk', from:B.id, to:A.id, xa:B.x0, xb:A.x1 - 2, dir:-1, doors:[], cost:2 });
     }
@@ -6000,7 +6066,7 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
       if(!(x + R > p.x && x - R < p.x + p.w && y + R > p.y && y - R < p.y + p.h)) continue;
       const fl = p.x - (x + R), fr = (p.x + p.w) - (x - R), ft = p.y - (y + R), fb = (p.y + p.h) - (y - R);
       const ax = Math.abs(fl) < Math.abs(fr) ? fl : fr, ay = Math.abs(ft) < Math.abs(fb) ? ft : fb;
-      if(Math.abs(ax) < Math.abs(ay)){ x += ax; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
+      if(Math.abs(ax) < Math.abs(ay) && !((p.ramp === true || p.step === true) && ft < 0 && ft >= -28 && vy > -2)){ x += ax; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
       else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else vy = Math.max(0, vy); }
     }
     if(!landed && vy >= 0 && !(thru && t <= 10)){
@@ -6229,6 +6295,7 @@ function ctfNavSweep(nav, side){
   for(const n of nav.nodes){
     const cx = (n.x0 + n.x1)/2; if(side === 0 ? cx > mid - 100 : cx < mid + 100) continue;
     if(n.x1 - n.x0 < 50) continue;
+    if(n.p && n.p.ramp && Math.floor(n.p.x/60) % 5) continue;   // (a slope's steps: a search point every 300 px, not every step)
     const k = Math.max(1, Math.round((n.x1 - n.x0)/280));
     for(let i = 0; i < k; i++) pts.push({ x:n.x0 + (n.x1 - n.x0)*(i + 0.5)/k, y:n.y, node:n.id, cover:false, i:pts.length });
   }
@@ -6297,7 +6364,7 @@ function ctfNavFly(nav, s, ctl, free, thru, bst){
       if(!(x + R > p.x && x - R < p.x + p.w && y + R > p.y && y - R < p.y + p.h)) continue;
       const fl = p.x - (x + R), fr = (p.x + p.w) - (x - R), ft = p.y - (y + R), fb = (p.y + p.h) - (y - R);
       const ax = Math.abs(fl) < Math.abs(fr) ? fl : fr, ay = Math.abs(ft) < Math.abs(fb) ? ft : fb;
-      if(Math.abs(ax) < Math.abs(ay)){ x += ax; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
+      if(Math.abs(ax) < Math.abs(ay) && !((p.ramp === true || p.step === true) && ft < 0 && ft >= -28 && vy > -2)){ x += ax; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
       else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = p; } else vy = Math.max(0, vy); }
     }
     if(!landed && vy >= 0 && !(thru && t <= 10)){
@@ -6338,6 +6405,9 @@ function ctfAiFollow(f, ai, nav, inp, now){
   if(f.onground){
     if(!cn){ ai.lost = (ai.lost || 0) + 1; return ai.lost > 40 ? 'lost' : false; }
     ai.lost = 0;
+    if(ai.path && ai.pi < ai.path.length && cn.id !== ai.path[ai.pi].from && ai.phase !== 'air' && (!ai.edge || ai.edge.kind === 'walk')){
+      for(let j = ai.pi + 1; j < Math.min(ai.path.length, ai.pi + 14); j++){ if(ai.path[j - 1].kind !== 'walk') break; if(ai.path[j].from === cn.id){ ai.pi = j; ai.edge = null; ai.phase = ''; break; } }
+    }
     if(ai.phase === 'air'){   // came down
       const e = ai.edge; ai.edge = null; ai.phase = '';
       if(e && cn.id === e.to){ ai.pi++; ctfAiStat('edgeOK'); }
@@ -32999,7 +33069,9 @@ function step(){
       const fromBottom = ((p.y + ph) - (f.y - f.r));
       const ax = Math.abs(fromLeft) < Math.abs(fromRight) ? fromLeft : fromRight;
       const ay = Math.abs(fromTop)  < Math.abs(fromBottom) ? fromTop  : fromBottom;
-      if(Math.abs(ax) < Math.abs(ay)){
+      // Capture the Flag: a step of a slope (p.ramp) rises at most 24 px; a fighter on the move steps up onto it instead of stopping at it
+      const _stepUp = (p.ramp === true || p.step === true) && fromTop < 0 && fromTop >= -28 && f.vy > -2;
+      if(Math.abs(ax) < Math.abs(ay) && !_stepUp){
         // wall hit: push out horizontally and stop movement INTO the wall
         f.x += ax;
         f._wallSide = ax < 0 ? 1 : -1; f._wallT = hazardT; f._wallId = p.x + ':' + p.y;   // movetech: which side the wall is on, and which wall
@@ -33007,7 +33079,7 @@ function step(){
         if(ax > 0 && f.vx < 0) f.vx = 0;      // pushed right => was moving left into it
       } else {
         f.y += ay;
-        if(ay<0){ f.vy=Math.min(0,f.vy); f.onground=true; f.jumps=2; f._usedAirSpecial=false; }  // landed on top
+        if(ay<0){ f.vy=Math.min(0,f.vy); f.onground=true; f.jumps=2; f._usedAirSpecial=false; if(p.ramp === true || p.step === true) f._rampT = 4; }  // landed on top
         else { f.vy=Math.max(0,f.vy); }                                  // bonked the underside
       }
     }
@@ -33048,6 +33120,7 @@ function step(){
         }
       }
     }
+    if(f._rampT > 0){ f._rampT--; if(!f.onground && f.vy >= 0 && f.vy < 7) ctfRampSnap(f); }   // (Capture the Flag: walking down a slope keeps the feet on it)
     mtCling(f, inp);
     if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0; }   // landing refreshes the wall jump and the air dash
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
