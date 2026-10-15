@@ -3456,12 +3456,13 @@ function ctfKit28(g){
   k.BK = (c0, r0, c1, r1, kind)=>g.back(c0, Y(r0), c1, Y(r1), kind); k.DC = (kind, c, r, w, h, o)=>g.deco(kind, c, Y(r), w, h, o || {}); k.ZN = (t, c0, r0, c1, r1, st, d)=>g.zone(t, c0, Y(r0), c1, Y(r1), st, d);
   k.STALK = (c, rb, rt)=>g.stalk(c, Y(rb), Y(rt)); k.SHAFT = (c, rb, rt)=>g.shaft(c, Y(rb), Y(rt));
   // cut the steps of earlier slopes out of a box of cells (rows, columns), so a hole can go through a slope
-  k.CUT = (c0, r0, c1, r1)=>{ const dr = CTF_DIM.dr; c0 += g.ox; c1 += g.ox; g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c1 + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= r0 + dr + 11 && Math.floor((rp.y + 1)/CTF_CELL) <= r1 + dr + 11)); };
+  k.CUT = (c0, r0, c1, r1)=>{ const dr = CTF_DIM.dr; c0 = g.cx(c0); c1 = g.cx(c1); g.ramps = g.ramps.filter(rp=>!(rp.x >= c0*CTF_CELL && rp.x < (c1 + 1)*CTF_CELL && Math.floor((rp.y + 1)/CTF_CELL) >= r0 + dr + 11 && Math.floor((rp.y + 1)/CTF_CELL) <= r1 + dr + 11)); };
   // props along every flat floor and ledge, a kind to suit the place; kindsAt(r, c) -> a list; skip(r, c) -> true to leave the place bare
   k.scatter = (kindsAt, prob, gap, skip, salt)=>{
     const rampCell = new Set(g.ramps.map(rp=>Math.floor((rp.y + 1)/CTF_CELL) + '.' + Math.floor(rp.x/CTF_CELL))), last = {};
-    for(let r = 0; r < 27; r++) for(let c = Math.min(1, -g.ox); c <= D; c++){
-      if(rampCell.has(r + '.' + (c + g.ox)) || (skip && skip(r, c))) continue;
+    const cols = []; for(let c = Math.min(1, -g.ox); c <= D; c++) cols.push(c); for(let o = 0; o < g.mx; o++) cols.push(1000 + o);
+    for(let r = 0; r < 27; r++) for(const c of cols){
+      if(rampCell.has(r + '.' + g.cx(c)) || (skip && skip(r, c))) continue;
       const here = g.at(Y(r), c), below = g.at(Y(r) + 1, c);
       if(here !== '.' || (below !== '#' && below !== '=')) continue;
       if(cellJitter(c, r, salt || 41) > prob || (last[r] != null && c - last[r] < gap)) continue;
@@ -3497,7 +3498,6 @@ CTF_MAPS.oak = {
   size:{ rows:28, half:84 },
   bands:true, annex:[0, 0, 24],   // small: the core; medium: and the wings; large: and an annex behind each home
   asym:{ value:[0.64, 0.36], icons:['fort', 'run'], names:['Fortress', 'Meadow'] },
-  beta:true,   // pickable by name; Random leaves it out until its CPU-only probe passes
   living:{ weather:['clear', 'rain', 'clear', 'fog'], night:true, critters:{ birds:8, bats:5, mice:14, fish:5 } },
   theme:{ neutral:22, pal:{ rock:'#6b5a42', wood:'#8a5a2f', leaf:'#3f8f4a', sand:'#e8d49a', water:'#3a8fc0', bark:'#6b4a2a' }, sky:['#79cdf2','#e8f8ff'], far:['#b6e5b4','#87cc74'], bg:'forest', pat:'rock', back:'#9fc79b', backLine:'rgba(30,72,40,0.2)', dirt:'#a8835a', wain:'#7fa87c', trim:'#c8e4c2', autoCap:'grass',
           solid:{ fill:'#8c7855', line:'#6a5a40', hi:'#b09a72', edge:'#1c1c1c' }, hop:{ fill:'#a8773f', edge:'#3a2412', hi:'#c99a5c' },
@@ -6387,6 +6387,16 @@ function ctfNavNew(M, prev, diff){
       const rr = (A.p.ramp || B.p.ramp) && Math.abs(B.y - A.y) > 1.5;   // (a walk down a step of a slope goes on far enough to leave the step it stood on: the body is as wide as the fighter, 24 px each side)
       A.edges.push({ kind:'walk', from:A.id, to:B.id, xa:A.x1, xb:rr ? Math.min(B.x0 + 30, B.x1 - 6) : B.x0 + 2, dir:1, doors:[], cost:2 });
       B.edges.push({ kind:'walk', from:B.id, to:A.id, xa:B.x0, xb:rr ? Math.max(A.x1 - 30, A.x0 + 6) : A.x1 - 2, dir:-1, doors:[], cost:2 });
+    }
+  }
+  // a step of a slope that lies on a flat floor (the foot of a hill): the two overlap, and the fighter walks from one to the other
+  for(const R of nav.nodes){
+    if(!(R.p.ramp || R.p.step)) continue;
+    for(let k = ctfNavBucket(R.x0); k <= ctfNavBucket(R.x1); k++) for(const N of (nav.nb[k] || [])){
+      if(N === R || N.y <= R.y || N.y - R.y > 26 || N.x0 >= R.x1 || N.x1 <= R.x0 || (N.p.ramp || N.p.step) || R.edges.some(e=>e.kind === 'walk' && e.to === N.id)) continue;
+      const xr = Math.min(Math.max((R.x0 + R.x1)/2, N.x0 + 6), N.x1 - 6), xn = (R.x0 + R.x1)/2;
+      R.edges.push({ kind:'walk', from:R.id, to:N.id, xa:R.x1, xb:xr, dir:1, doors:[], cost:2 });
+      N.edges.push({ kind:'walk', from:N.id, to:R.id, xa:xr, xb:xn, dir:1, doors:[], cost:2 });
     }
   }
   nav.keyMap = {}; for(const n of nav.nodes) nav.keyMap[ctfNavKey(n)] = n;
