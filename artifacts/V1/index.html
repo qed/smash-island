@@ -2258,7 +2258,7 @@ function ctfGridNew(){
     band: CTF_DIM.band, ox: CTF_DIM.ox, mx: CTF_DIM.mx, cx: ctfCx,
     wing(minBand, fn){ if(g.band >= minBand) fn(); return g; },   // rooms and wings that only a bigger team's map has
     clear: [],        // [c0,r0,c1,r1] boxes the lattice keeps out of (room interiors)
-    fields: [], decor: [], front: [], zones: [], elevs: [], backs: [],
+    fields: [], decor: [], front: [], zones: [], elevs: [], backs: [], wheels: [],
     // the wall behind the rooms: a dark patterned fill over a region (cells)
     skins: [],
     // a skin for the platforms whose middle lies in a region of cells: snowrock (a rock slope under snow), snowcap (a castle roof under snow), ice
@@ -2281,6 +2281,10 @@ function ctfGridNew(){
     secret(c0, r0, c1, r1){ g.front.push({ kind:'secret', c:c0, r:r0, w:c1-c0+1, h:r1-r0+1 }); return g; },
     // a lift: a platform c0..c0+w-1 wide that rides between the floor at row rTop and the one at row rBot, pausing at each end
     elev(c0, w, rTop, rBot){ g.elevs.push({ c0, w, rTop, rBot }); return g; },
+    // A WHEEL (the owner, 2026-10-15: "the riverside mill should have a large spinning waterwheel"): paddles that go round a hub and stay level, like the cars of a Ferris wheel; each is a one-way ledge that carries
+    // whoever stands on it, and so the wheel is a lift that never stops. Its hub is at the left edge of column c (o.dx more, in pixels) on row r (a fraction allowed), the paddles ride R rows out, n of them, pw px wide;
+    // o.spd: how fast a paddle goes (px a step), o.dir: 1 turns clockwise, o.kind: 'wheel' (water and wood) or 'cog' (iron).
+    wheel(c, r, R, n, o){ g.wheels.push({ c, r, R, n, ...(o || {}) }); return g; },
     keepClear(c0,r0,c1,r1){ g.clear.push([c0,r0,c1,r1]); return g; },
     // A SLOPE (the owner, 2026-10-15: "tunnels slope gently downward", slopes and uneven caves, not flat floors and stairs): a floor that climbs or falls from the start of column c0
     // (its surface at row rA, a fraction allowed) to the end of column c1 (row rB), cut out of whatever is there with h rows of air over it (h 3 is a corridor, 2 a crawlspace a fighter
@@ -2311,12 +2315,12 @@ function ctfGridNew(){
   };
   { const wc = (name, f)=>{ const o = g[name]; g[name] = function(...a){ if(f(a) === false) return g; return o.apply(g, a); }; };
     const cols = (i0, i1)=>a=>{ a[i0] = ctfCx(a[i0]); if(i1 != null){ a[i1] = ctfCx(a[i1]); if(a[i1] < 0) return false; if(a[i0] < 0) a[i0] = 0; } else if(a[i0] < 0) return false; };
-    wc('zone', cols(1, 3)); wc('back', cols(0, 2)); wc('skin', cols(0, 2)); wc('secret', cols(0, 2)); wc('keepClear', cols(0, 2)); wc('decoSet', cols(0, 2)); wc('elev', cols(0));
+    wc('zone', cols(1, 3)); wc('back', cols(0, 2)); wc('skin', cols(0, 2)); wc('secret', cols(0, 2)); wc('keepClear', cols(0, 2)); wc('decoSet', cols(0, 2)); wc('elev', cols(0)); wc('wheel', cols(0));
     wc('deco', a=>{ a[1] = ctfCx(a[1]); if(a[1] + a[3] <= 0) return false; }); }
   const dr = CTF_DIM.dr; g.dr = dr;
   if(dr){ const w = (name, f)=>{ const o = g[name]; g[name] = function(...a){ f(a); return o.apply(g, a); }; };
     w('zone', a=>{ a[2] += dr; a[4] += dr; }); w('deco', a=>{ a[2] += dr; }); w('back', a=>{ a[1] += dr; a[3] += dr; }); w('skin', a=>{ a[1] += dr; a[3] += dr; }); w('secret', a=>{ a[1] += dr; a[3] += dr; });
-    w('elev', a=>{ a[2] += dr; a[3] += dr; }); w('keepClear', a=>{ a[1] += dr; a[3] += dr; }); w('decoSet', a=>{ a[1] += dr; a[3] += dr; }); }
+    w('elev', a=>{ a[2] += dr; a[3] += dr; }); w('wheel', a=>{ a[1] += dr; }); w('keepClear', a=>{ a[1] += dr; a[3] += dr; }); w('decoSet', a=>{ a[1] += dr; a[3] += dr; }); }
   return g;
 }
 
@@ -2351,7 +2355,7 @@ function ctfMapBuild(id, swap, band){
 function ctfMapMerge(A, B, def, swap, id){
   const M = Object.assign({}, A);
   const pick = (a, b)=>{ const out = []; for(let i = 0; i < a.length; i += 2) out.push(a[i]); for(let i = 1; i < b.length; i += 2) out.push(b[i]); return out; };
-  for(const k of ['plats', 'zones', 'decor', 'decoAreas', 'back', 'front', 'elevs', 'boosts', 'buffs', 'keys', 'doors', 'spots']) M[k] = pick(A[k], B[k]);
+  for(const k of ['plats', 'zones', 'decor', 'decoAreas', 'back', 'front', 'elevs', 'wheels', 'boosts', 'buffs', 'keys', 'doors', 'spots']) M[k] = pick(A[k], B[k]);
   M.homes = [A.homes[0], B.homes[1]]; M.jails = [A.jails[0], B.jails[1]];
   M.solids = M.plats.filter(p=>p.solid);
   M.theme = Object.assign({}, def.theme, { skinRects:pick(A._skin, B._skin) });
@@ -2412,6 +2416,11 @@ function ctfMapBuildOne(id, build, band){
   for(const e of g.elevs){
     const ee = { x:e.c0*CTF_CELL, w:e.w*CTF_CELL, y0:e.rTop*CTF_CELL, y1:e.rBot*CTF_CELL };
     M.elevs.push(ee); M.elevs.push({ ...ee, x:mx(ee.x, ee.w) });
+  }
+  M.wheels = [];
+  for(const e of g.wheels){   // the other half's wheel is this one turned over: the other way round
+    const ww = { x:e.c*CTF_CELL + (e.dx || 0), y:e.r*CTF_CELL, R:e.R*CTF_CELL, n:e.n, pw:e.pw || 200, spd:e.spd || 3, dir:e.dir || 1, a0:e.a0 || 0, kind:e.kind || 'wheel' };
+    M.wheels.push(ww); M.wheels.push({ ...ww, x:mx(ww.x, 0), dir:-ww.dir, a0:Math.PI - ww.a0 });
   }
   const doorOf = (r0,r1,c,n,team)=>({ id:team?n+'r':String(n), n, team, color:CTF_DOOR_COL[n-1], x:c*CTF_CELL+42, y:r0*CTF_CELL, w:36, h:(r1-r0+1)*CTF_CELL });
   const stacks = (cells)=>{ const byC = {}; for(const [r,c] of cells) (byC[c] = byC[c]||[]).push(r);
@@ -3496,19 +3505,59 @@ function oakHeart(k, g){
   // the cave under it all (the roots of the tree and the bowl): wide, low, humped
   A(58, 22, D, 26); SL(58, 83, 27, 27, 3);
   SL(60, 65, 27, 25, 3, { fill:27 }); SL(66, 71, 25, 27, 3, { fill:27 });                               // one hump in the cave floor
-  H(23, 61, 66); H(22, 82, 83); H(24, 68, 72);
+  H(24, 61, 65); H(22, 82, 83); H(24, 68, 72);   // (the first ledge one row lower than it was: the mill's module now ends the hump, and a ledge two rows above its top is too high to reach from that side)
   // two holes down from the bowl into the cave, and a stair of hops back up each
   CUT(73, 17, 75, 19); A(73, 18, 75, 21); STALK(73, 26, 18);
   CUT(77, 18, 79, 20); A(77, 19, 79, 21); STALK(77, 26, 19);
   // the canopy bridge across the line, with a vine to climb up to it from the rim
   H(9, 70, D); STALK(68, 13, 9);
-  BK(58, 22, D, 26, 'dirt'); ZN('dark', 62, 22, D, 26);
+  BK(58, 22, D, 26, 'dirt'); ZN('dark', 62, 22, 65, 26); ZN('dark', 66, 22, D, 26);   // (split: the mill's canyon between them is open to the sky)
   DC('cloud', 70, 2, 5, 2); DC('cloud', 56, 5, 4, 2);
+}
+// THE THIRD AREA, shared by both teams (the owner, 2026-10-15: "give all maps a third area"; "the riverside mill should have a large spinning waterwheel"): THE RIVERSIDE MILL, a module put in at column 66, just before the bowl,
+// so every road to the middle crosses it. A river canyon with a great WATER WHEEL turning slowly in it: its paddles stay level like the cars of a Ferris wheel and carry whoever stands on them (a lift that never stops), from the
+// pond at the bottom up to the WEIR, the walkway across the top; water spills off the paddles and the mill race and pond slow you. Beside it the MILL HOUSE: a hall with a turning iron cog (more moving ledges), a cellar for the
+// wheel's gear room (a door onto the wheel, and trapdoors up and down), a hatch to the roof. Underneath, the low road runs through the canyon. Small teams get a short canyon and a small wheel (14 columns), medium the big
+// wheel and a house (28), large a second house (40).
+function oakMill(k, g){
+  const { A, S, H, P, SL, BK, DC, ZN, STALK, SHAFT, CUT, Y } = k, M = g.mx; if(!M) return;
+  const m = o=>1000 + o, L = M - 1;
+  S(m(0), 14, m(L), 27); A(m(0), 22, m(L), 26); BK(m(0), 22, m(L), 26, 'dirt');                       // the ground, and the low road under it
+  ZN('dark', m(0), 22, m(2), 26); ZN('dark', m(L - 2), 22, m(L), 26);
+  // the canyon: open down to the low road, a pond in the bottom of it, a stair of hops up the west side, the weir across the top
+  const canyon = (c0, c1, hubO, R, hubRow, n, bed)=>{
+    A(m(c0), 14, m(c1), 26); BK(m(c0), 14, m(c1), 26, 'dirt'); H(14, m(c0), m(c1));
+    ZN('water', m(c0), bed ? 18 : 22, m(c1), bed ? 20 : 26, 1);
+    if(bed) H(21, m(c0), m(c1));
+    STALK(m(c0 + 1), 26, 14);
+    g.wheel(m(hubO), Y(hubRow), R, n, { kind:'wheel', pw:200, spd:bed ? 2.2 : 2.6 });
+    DC('cloud', m(c0 + 3), 3, 4, 2);
+  };
+  // a mill house: a hall on the road (a door at each end), a cog in it, a hatch to the roof, a cellar under the hall with trapdoors up and down (and a door onto the wheel in the first)
+  const house = (o0, w, cog, hat, grate, trap, door)=>{
+    S(m(o0), 6, m(o0 + w - 1), 27); A(m(o0 + 1), 8, m(o0 + w - 2), 13); A(m(o0), 12, m(o0), 13); A(m(o0 + w - 1), 12, m(o0 + w - 1), 13);
+    A(m(o0 + 1), 16, m(o0 + w - 2), 19); A(m(o0), 22, m(o0 + w - 1), 26);
+    BK(m(o0 + 1), 8, m(o0 + w - 2), 13, 'wood'); BK(m(o0 + 1), 16, m(o0 + w - 2), 19, 'dirt');
+    A(m(grate), 14, m(grate + 1), 15); H(14, m(grate), m(grate + 1));
+    A(m(trap), 20, m(trap + 1), 21); H(20, m(trap), m(trap + 1));
+    A(m(hat), 6, m(hat + 1), 7); STALK(m(hat), 13, 6);
+    if(door) A(m(o0), 17, m(o0), 19);
+    g.wheel(m(cog), Y(11), 1.5, 4, { kind:'cog', pw:120, spd:1.6 });
+    DC('lantern', m(o0 + 3), 9, 2, 2); DC('window', m(o0 + w - 3), 9, 1, 2);
+  };
+  if(M <= 14){ canyon(2, 9, 6, 3, 17, 5, true); }
+  else {
+    canyon(3, 18, 11, 6, 20, 8, false);
+    house(19, 9, 22, 24, 21, 24, true);
+    if(M > 28) house(28, 12, 32, 35, 30, 36, false);
+  }
+  SL(m(0), m(4), 25, 27, 3, { fill:27 }); SL(m(L - 4), m(L), 27, 25, 3, { fill:27 });                // (the cave floor's hump goes on across: it meets the bowl's at row 25)
+  DC('torch', m(1), 12, 1, 2);
 }
 CTF_MAPS.oak = {
   name:'The Old Oak and the Meadow',
   size:{ rows:28, half:84 },
-  bands:true, annex:[0, 0, 24],   // small: the core; medium: and the wings; large: and an annex behind each home
+  bands:true, annex:[0, 0, 24], mid:[14, 28, 40], midAt:66,   // the third area, the riverside mill, is a module of this many columns put in at column 66   // small: the core; medium: and the wings; large: and an annex behind each home
   asym:{ value:[0.64, 0.36], icons:['fort', 'run'], names:['Fortress', 'Meadow'] },
   living:{ weather:['clear', 'rain', 'clear', 'fog'], night:true, critters:{ birds:8, bats:5, mice:14, fish:5 } },
   theme:{ neutral:22, pal:{ rock:'#6b5a42', wood:'#8a5a2f', leaf:'#3f8f4a', sand:'#e8d49a', water:'#3a8fc0', bark:'#6b4a2a' }, sky:['#79cdf2','#e8f8ff'], far:['#b6e5b4','#87cc74'], bg:'forest', pat:'rock', back:'#9fc79b', backLine:'rgba(30,72,40,0.2)', dirt:'#a8835a', wain:'#7fa87c', trim:'#c8e4c2', autoCap:'grass',
@@ -3540,7 +3589,7 @@ CTF_MAPS.oak = {
     H(19, 62, 63); g.elev(62, 2, Y(19), Y(27));                                                       // a lift from the floor to the upper stair
     ZN('dark', 41, 18, 62, 26);
     // props everywhere in a fortress: roots, stumps, logs, ferns
-    oakHeart(k, g);
+    oakHeart(k, g); oakMill(k, g);
     k.scatter((r, c)=>(r > 13 ? ['I', 'O', 'V', 'K', 'G', 'W'] : ['I', 'O', 'V']), [0.5, 0.9, 0.95][g.band], 3, (r, c)=>(c < 17 && r >= 9 && r <= 20) || (c >= 6 && c <= 10 && r >= 12), 41);
     g.wing(1, ()=>{ H(4, 46, 49); H(3, 52, 55); H(4, 58, 61); H(3, 64, 67); });                          // the canopy: ledges over the limb, a third way to the middle (a wing)
     g.wing(2, ()=>{   // THE ROOT CELLARS (large teams): behind the home, a hollow branch hall level with its floor, a long ramp tunnel falling west, a deep cellar under it, ledges in the leaves
@@ -3580,7 +3629,7 @@ CTF_MAPS.oak = {
       A(-22, 24, -8, 26); A(-14, 22, -13, 23); SHAFT(-14, 26, 22); BK(-22, 24, -8, 26, 'dirt'); P(26, -20, 'W'); P(26, -16, 'R'); P(26, -10, 'K'); P(21, -8, 'Y'); P(21, -6, 'Y');
     });
     DC('cloud', 20, 3, 4, 2); DC('cloud', 46, 1, 5, 2); DC('hay', 5, 19, 3, 3);
-    oakHeart(k, g);
+    oakHeart(k, g); oakMill(k, g);
     k.scatter((r, c)=>(r < 22 ? ['Y', 'B', 'K', 'O', 'W'] : ['R', 'K', 'G', 'W']), [0.5, 0.85, 0.9][g.band], 3, (r, c)=>(c >= 14 && c <= 27 && r >= 16 && r <= 26) || (c >= 21 && c <= 31 && r >= 24) || (c >= 2 && c <= 27 && r <= 17), 41);
     g.info = info; return info;
   },
@@ -3779,6 +3828,10 @@ function ctfBegin(){
   M.boosts.forEach((b,i)=>L.boosts.push({ i, kind:b.kind, x:b.x, y:b.y, cd:0 }));
   L.buff = [0, 0]; L.buffs = (M.buffs || []).map((b, i)=>({ i, kind:b.kind, x:b.x, y:b.y, got:[false, false] }));   // a team's reward from a puzzle: once a team
   L.elevs = (M.elevs || []).map((e, i)=>({ i, x:e.x, w:e.w, y0:e.y0, y1:e.y1, y:e.y0, dir:1, pause:90, rect:{ x:e.x, y:e.y0, w:e.w, h:16, elev:true, hop:true } }));
+  // the wheels' paddles come after the lifts (so the lifts keep their numbers on the wire): each is a one-way ledge that ctfWheelPlace moves
+  L.wheels = (M.wheels || []).map((w, j)=>{ const wl = { j, ...w, a:w.a0, ids:[] };
+    for(let q = 0; q < w.n; q++){ const e = { i:L.elevs.length, x:0, w:w.pw, y0:0, y1:0, y:0, dir:1, pause:0, wheel:j, rect:{ x:0, y:0, w:w.pw, h:16, elev:true, hop:true } }; L.elevs.push(e); wl.ids.push(e.i); }
+    ctfWheelPlace(L, wl); return wl; });
   M.jails.forEach(j=>L.jails.push({ owner:j.owner, door:{ ...j.door, open:false, t:0 }, slots:j.slots, zone:j.zone, face:j.face, pris:[], hold:0, lock:0 }));
   L.rank = [0,0];
   for(const f of fighters){
@@ -3937,7 +3990,7 @@ function ctfHideValid(team, x, y){
 function ctfPlaceFlag(fl, x, y){
   fl.st = 1; fl.car = -1; fl.x = x; fl.y = y; fl.hx = x; fl.hy = y; fl.fall = false; fl.cover = false;
   fl.cover = ctfCoverAt(fl.team, x, y);
-  fl.elev = null; if(CTF.live) for(const e of (CTF.live.elevs || [])) if(Math.abs(e.y - y) < 8 && x >= e.x && x <= e.x + e.w) fl.elev = e.i;   // on a lift car: it goes where the car goes
+  fl.elev = null; if(CTF.live) for(const e of (CTF.live.elevs || [])) if(e.wheel == null && Math.abs(e.y - y) < 8 && x >= e.x && x <= e.x + e.w) fl.elev = e.i;   // on a lift car: it goes where the car goes
   for(let i = 0; i < 8; i++) puff(x, y - 16, TEAM_COLORS[fl.team % TEAM_COLORS.length], 4);
 }
 const CTF_CAM_SPEED = 26;
@@ -4196,9 +4249,27 @@ function ctfDropKey(k, f){
 // A lift runs between its two stops, pausing at each; whoever stands on it rides.
 const CTF_ELEV_SPEED = 3.6;
 // Whatever lies on a moving platform goes where it goes: which lift (if any) has its top at (x, y)?
-function ctfLiftUnder(L, x, y){ for(const e of (L.elevs || [])) if(x >= e.x - 2 && x <= e.x + e.w + 2 && Math.abs(e.y - y) < 8) return e.i; return null; }
+function ctfLiftUnder(L, x, y){ for(const e of (L.elevs || [])) if(e.wheel == null && x >= e.x - 2 && x <= e.x + e.w + 2 && Math.abs(e.y - y) < 8) return e.i; return null; }
+// A wheel: every paddle at its place round the hub, level.
+function ctfWheelPlace(L, wl){
+  wl.ids.forEach((id, q)=>{ const e = L.elevs[id], an = wl.a + q*2*Math.PI/wl.n;
+    e.x = wl.x + Math.cos(an)*wl.R - wl.pw/2; e.y = wl.y + Math.sin(an)*wl.R; e.rect.x = e.x; e.rect.y = e.y; e.y0 = e.y1 = e.y; });
+}
+function ctfStepWheels(L){
+  for(const wl of (L.wheels || [])){
+    const old = wl.ids.map(id=>({ x:L.elevs[id].x, y:L.elevs[id].y }));
+    wl.a += wl.dir*wl.spd/wl.R; ctfWheelPlace(L, wl);
+    wl.ids.forEach((id, q)=>{ const e = L.elevs[id], dx = e.x - old[q].x, dy = e.y - old[q].y, w = e.w;
+      const on = (x, y)=> x > old[q].x - 6 && x < old[q].x + w + 6 && Math.abs(y - old[q].y) < 8;   // standing on this paddle (where it was a step ago)
+      for(const f of fighters){ if(f.dead || f._jail != null || !f.onground) continue; if(on(f.x, f.y + f.r)){ f.x += dx; f.y += dy; f.vy = 0; } }
+      for(const fl of L.flags) if(fl.st === 3 && !fl.fall && on(fl.x, fl.y)){ fl.x += dx; fl.y += dy; }
+      for(const k of L.keys) if(k.st === 0 && !k.fall && on(k.x, k.y)){ k.x += dx; k.y += dy; } });
+  }
+}
 function ctfStepElevs(L){
+  ctfStepWheels(L);
   for(const e of L.elevs){
+    if(e.wheel != null) continue;
     if(e.pause > 0){ e.pause--; continue; }
     const target = e.dir > 0 ? e.y1 : e.y0, d = Math.sign(target - e.y)*Math.min(CTF_ELEV_SPEED, Math.abs(target - e.y));
     const top0 = e.y;
@@ -4520,7 +4591,7 @@ function ctfEditSettle(L){   // flags whose floor went away (a removed platform)
 }
 function ctfEditAdd(f, tool, kind, sh){
   const L = CTF.live, e = { id:++L.editSeq, team:f.team, owner:f.idx, tool, kind, x:sh.x, y:sh.y, w:sh.w, h:sh.h, fy:sh.fy, cx:sh.cx, cost:CTF_COSTS[tool], seq:L.editSeq, hp:tool === 'deco' ? 1 : 0, open:false, openT:0, stand:0 };
-  for(const lf of (L.elevs || [])) if(e.x < lf.x + lf.w && e.x + e.w > lf.x && Math.abs((e.y + e.h) - lf.y) < 8){ e.elev = lf.i; e.off = e.y - lf.y; break; }   // placed on a lift car: it rides
+  for(const lf of (L.elevs || [])) if(lf.wheel == null && e.x < lf.x + lf.w && e.x + e.w > lf.x && Math.abs((e.y + e.h) - lf.y) < 8){ e.elev = lf.i; e.off = e.y - lf.y; break; }   // placed on a lift car: it rides
   L.pts[f.idx] -= e.cost; L.edits.push(e); L.editT = L.t;
   if(ctfEditStructural(e) || kind === 'trapdoor') ctfRebuildDyn(L);
   if(tool === 'deco') for(const fl of L.flags) if(fl.st === 1 && fl.team === f.team) fl.cover = ctfCoverAt(fl.team, fl.x, fl.y);
@@ -4806,7 +4877,8 @@ function ctfNetOut(){
   o.j = L.jails.map(j=>[j.pris.slice(), j.hold | 0, j.lock | 0, j.door.open ? 1 : 0, j.door.t | 0]);
   o.b = L.boosts.map(b=>b.cd | 0);
   o.bf = L.buffs.map(b=>(b.got[0] ? 1 : 0) | (b.got[1] ? 2 : 0)); o.bt = L.buff.slice();
-  o.el = L.elevs.map(e=>[R(e.y), e.dir]);
+  o.el = L.elevs.filter(e=>e.wheel == null).map(e=>[R(e.y), e.dir]);
+  o.wa = (L.wheels || []).map(w=>Math.round(w.a*10000)/10000);   // a wheel is its angle: the paddles follow
   o.pt2 = fighters.map(f=>L.pts[f.idx] == null ? 0 : L.pts[f.idx]);
   o.dn = fighters.map(f=>L.done[f.idx] ? 1 : 0);
   o.pg = L.ping.map(p=>p ? [p.id, p.t | 0] : 0);
@@ -4860,7 +4932,8 @@ function ctfNetIn(c){
   (c.j || []).forEach((r, i)=>{ const j = L.jails[i]; if(!j) return; j.pris = r[0]; j.hold = r[1]; j.lock = r[2]; const open = !!r[3]; if(j.door.open !== open) dyn = true; j.door.open = open; j.door.t = r[4]; });
   (c.b || []).forEach((cd, i)=>{ if(L.boosts[i]) L.boosts[i].cd = cd; });
   (c.bf || []).forEach((m, i)=>{ if(L.buffs[i]) L.buffs[i].got = [!!(m & 1), !!(m & 2)]; }); if(c.bt) L.buff = c.bt;
-  (c.el || []).forEach((r, i)=>{ const e = L.elevs[i]; if(!e) return; e.y = r[0]; e.dir = r[1]; e.rect.y = e.y; });
+  (c.el || []).forEach((r, i)=>{ const e = L.elevs[i]; if(!e || e.wheel != null) return; e.y = r[0]; e.dir = r[1]; e.rect.y = e.y; });
+  (c.wa || []).forEach((a, j)=>{ const wl = (L.wheels || [])[j]; if(wl){ wl.a = a; ctfWheelPlace(L, wl); } });
   L.pts = {}; (c.pt2 || []).forEach((v, i)=>{ L.pts[i] = v; });
   L.done = {}; (c.dn || []).forEach((v, i)=>{ if(v) L.done[i] = true; });
   L.ping = (c.pg || [0, 0]).map(p=>p ? { id:p[0], t:p[1] } : null);
@@ -5646,8 +5719,27 @@ function ctfDrawWorld(){
       ctx.restore(); } }
   // the areas: what each one does is drawn in its own look (ctfDrawZone)
   for(const z of (M.zones || [])){ if(z.type === 'dark' || !inView(z.x, z.y, z.w, z.h)) continue; ctfDrawZone(z, T, vx, vy, vw, vh); }
+  // wheels: the water wheel (timber and rim) or the iron cog, its paddles level at the rim; the water running off the ones that are rising
+  for(const wl of (L.wheels || [])){ const ext = wl.R + wl.pw; if(!inView(wl.x - ext, wl.y - ext, 2*ext, 2*ext)) continue;
+    const cog = wl.kind === 'cog', wood = cog ? '#7d8795' : '#8a5a2f', dark = cog ? '#4b5360' : '#5a3a1c', hi = cog ? '#aab4c4' : '#b88a50';
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = Math.max(8, wl.R*0.05) + 6; ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R, 0, 7); ctx.stroke();
+    ctx.strokeStyle = wood; ctx.lineWidth = Math.max(8, wl.R*0.05); ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R, 0, 7); ctx.stroke();
+    ctx.strokeStyle = dark; ctx.lineWidth = Math.max(5, wl.R*0.03); ctx.beginPath(); ctx.arc(wl.x, wl.y, wl.R*0.62, 0, 7); ctx.stroke();
+    for(let q = 0; q < wl.n; q++){ const an = wl.a + q*2*Math.PI/wl.n, cx = Math.cos(an), cy = Math.sin(an);   // spokes, one to each paddle
+      ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(wl.x, wl.y); ctx.lineTo(wl.x + cx*wl.R, wl.y + cy*wl.R); ctx.stroke();
+      ctx.strokeStyle = hi; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(wl.x, wl.y); ctx.lineTo(wl.x + cx*wl.R, wl.y + cy*wl.R); ctx.stroke();
+      if(cog){ ctx.fillStyle = '#4b5360'; ctx.save(); ctx.translate(wl.x + cx*(wl.R + 10), wl.y + cy*(wl.R + 10)); ctx.rotate(an + Math.PI/2); ctx.fillRect(-14, -12, 28, 24); ctx.restore(); } }
+    ctx.fillStyle = dark; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.beginPath(); ctx.arc(wl.x, wl.y, Math.max(22, wl.R*0.1), 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = hi; ctx.beginPath(); ctx.arc(wl.x, wl.y, Math.max(9, wl.R*0.04), 0, 7); ctx.fill();
+    wl.ids.forEach((id, q)=>{ const e = L.elevs[id], an = wl.a + q*2*Math.PI/wl.n;   // the paddle: a board with a lip each end, its hangers to the rim
+      ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(e.x + 14, e.y + 16); ctx.lineTo(wl.x + Math.cos(an)*wl.R, wl.y + Math.sin(an)*wl.R + 2); ctx.lineTo(e.x + e.w - 14, e.y + 16); ctx.stroke();
+      ctx.fillStyle = hi; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillRect(e.x, e.y - 3, e.w, 20); ctx.strokeRect(e.x, e.y - 3, e.w, 20);
+      ctx.fillStyle = wood; ctx.fillRect(e.x, e.y - 16, 10, 14); ctx.fillRect(e.x + e.w - 10, e.y - 16, 10, 14); ctx.strokeRect(e.x, e.y - 16, 10, 14); ctx.strokeRect(e.x + e.w - 10, e.y - 16, 10, 14);
+      if(!cog && Math.sin(an) < 0.2 && wl.R > 300){ ctx.fillStyle = 'rgba(120,190,235,0.75)'; for(let d = 0; d < 4; d++){ const ph = (T*2.4 + d*17 + q*9) % 70; ctx.fillRect(e.x + 14 + d*(e.w - 28)/3, e.y + 18 + ph*1.6, 4, 12); } } });
+    ctx.restore(); }
   // lifts: a car on its chain-less rails, the shaft marked
-  for(const e of (L.elevs || [])){ if(!inView(e.x - 10, e.y0 - 60, e.w + 20, e.y1 - e.y0 + 120)) continue;
+  for(const e of (L.elevs || [])){ if(e.wheel != null || !inView(e.x - 10, e.y0 - 60, e.w + 20, e.y1 - e.y0 + 120)) continue;
     ctx.save(); ctx.strokeStyle = 'rgba(30,30,40,0.45)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(e.x + 4, e.y0); ctx.lineTo(e.x + 4, e.y1); ctx.moveTo(e.x + e.w - 4, e.y0); ctx.lineTo(e.x + e.w - 4, e.y1); ctx.stroke();
     ctx.fillStyle = '#6a8aa8'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = CTF_LW; ctx.fillRect(e.x, e.y - 4, e.w, 22); ctx.strokeRect(e.x, e.y - 4, e.w, 22);
     ctx.fillStyle = '#ffd23f'; for(let k = 0; k < 4; k++) ctx.fillRect(e.x + 12 + k*(e.w - 24)/4, e.y, 18, 10);

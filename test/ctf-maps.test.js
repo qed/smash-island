@@ -28,7 +28,7 @@ for (const id of MAPS) {
         return JSON.stringify(out);
       })()`));
       // each map's world width: the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side); then 2026-10-15: "about 15 screens wide and 4 tall", "some maps could be small with good spots" (castle v4: 84 columns a side, 28 rows); the others are 108 a side now
-      expect(r.WW).toBe({ castle: 26880, mines: 25920, factory: 25920, 'factory.s': 23040, 'factory.l': 34560, forest: 25920, sky: 25920, oak: 20160, 'oak.s': 20160, 'oak.l': 25920, 'castle.s': 23040, 'castle.l': 31680 }[id]);
+      expect(r.WW).toBe({ castle: 26880, mines: 25920, factory: 25920, 'factory.s': 23040, 'factory.l': 34560, forest: 25920, sky: 25920, oak: 26880, 'oak.s': 23520, 'oak.l': 35520, 'castle.s': 23040, 'castle.l': 31680 }[id]);
       if (!ASYM[baseOf(id)]) expect(r.mirrored, 'the right half is the left half turned over').toBe(true);   // (an asymmetric map is two halves, each its own)
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
@@ -57,6 +57,8 @@ for (const id of MAPS) {
   var mark = function(x, y, rr){ var c = Math.floor(x/C), r = Math.floor((y - 1)/C); for(var dr = -rr; dr <= rr; dr++) for(var dc = -rr; dc <= rr; dc++){ var cc = c + dc, r2 = r + dr; if(cc >= 0 && cc < cols && r2 >= 0 && r2 < rows) serve[idx(cc, r2)] = 1; } };
   M.spots.forEach(function(s){ mark(s.x, s.y, 1); }); M.keys.forEach(function(k){ mark(k.x, k.y, 1); }); M.boosts.forEach(function(b){ mark(b.x, b.y, 1); }); M.doors.forEach(function(d){ mark(d.x, d.y + d.h/2, 1); });
   M.buffs.forEach(function(b){ mark(b.x, b.y, 1); });
+  // a wheel's paddles (the owner, 2026-10-15: a big spinning waterwheel): ledges to ride and jump to all round its circle, so the ring serves the view it turns in
+  (M.wheels || []).forEach(function(w){ [1, 0.65, 0.3].forEach(function(k){ for(var q = 0; q < 24; q++){ var an = q*Math.PI/12; mark(w.x + Math.cos(an)*w.R*k, w.y + Math.sin(an)*w.R*k, 1); } }); });   // (and the disc inside it: a paddle comes by every few seconds)
   (M.back || []).forEach(function(b){ if(b.kind === 'sky') return; var c0 = Math.floor(b.x/C), c1 = Math.ceil((b.x + b.w)/C) - 1, r0 = Math.floor(b.y/C), r1 = Math.ceil((b.y + b.h)/C) - 1;
     for(var r = r0; r <= r1; r++) for(var c = c0; c <= c1; c++) if(c >= 0 && c < cols && r >= 0 && r < rows) inBack[idx(c, r)] = 1; });
   var res = [], seen = 0;
