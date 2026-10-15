@@ -2114,11 +2114,12 @@ const STAGES = [
 const DEFAULT_KEYS = {left:"ArrowLeft",right:"ArrowRight",jump:"ArrowUp",down:"ArrowDown",
   attack:"KeyX",special:"KeyC",smash:"KeyV",pause:"Escape",
   flag:"Space",   // Capture the Flag's hiding phase: puts your flag down (or picks it up again)
+  plan:"KeyP",    // Capture the Flag: the team planning menu
   edit:"KeyB"};   // ...and in the free camera, picks the next piece of the tool (attack picks the tool)
 // Multiplayer is ONLINE only (the owner, many times): one human at this keyboard, so one keymap.
 let KEYS = JSON.parse(JSON.stringify(DEFAULT_KEYS));
 const KEY_LABELS = {left:"Move Left",right:"Move Right",jump:"Jump",down:"Down / Crouch",
-  attack:"Attack (+ arrows: tilts and aerials)",special:"Special (+ arrows; with Attack: grab)",smash:"Smash (with Special: finisher)",pause:"Pause",flag:"Put flag down (Capture the Flag)",edit:"Next piece (Capture the Flag editing)"};
+  attack:"Attack (+ arrows: tilts and aerials)",special:"Special (+ arrows; with Attack: grab)",smash:"Smash (with Special: finisher)",pause:"Pause",flag:"Put flag down (Capture the Flag)",edit:"Next piece (Capture the Flag editing)", plan:"Team plan menu (Capture the Flag)"};
 
 // ---------- state ----------
 let chosen = ROSTER.find(r=>r.play);
@@ -3988,6 +3989,7 @@ function ctfFilterInput(f, inp){
   const L = CTF.live; if(!L || L.over) return inp;
   f._press = inp ? (inp.left ? -1 : inp.right ? 1 : 0) : 0;   // (the way held this frame: a door onto the wheel opens to a press into it)
   f._pressUp = !!(inp && (inp.up || inp.jump));   // (and Up held in front of a way out of the room)
+  if(f.you && ctfMenuOpen()) return CTF_NOINP;   // (the planning menu is open: this fighter stands while the match goes on)
   if(f._jail == null && inp && (inp.attack || inp.special || inp.smash)) f._ctfRevealT = CTF_HIDE_REVEAL;   // attacking from inside a prop shows you for a moment
   if(f._jail != null){   // a prisoner: attack = watch the next teammate, the flag key = ping the flag this fighter saw last
     const a = !!inp.attack, p = !!inp.flag;
@@ -4130,6 +4132,7 @@ function ctfStep(){
   if(CTF.nav && !CTF.nav.ready) ctfNavTick(CTF.nav, 40, L.phase === 'hide' ? 8 : 4);
   ctfStepElevs(L);
   ctfStepPortals(L);
+  if(L.phase === 'play'){ ctfPlanWatch(L); ctfPlanTick(L); }
   ctfEditStep(L);
   if(L.phase === 'fix'){ ctfFixStep(L); return; }
   if(L.phase === 'hide'){
@@ -4638,9 +4641,9 @@ function ctfEditShape(tool, kind, x, y){
 const ctfRectHit = (a, b, m)=> a.x < b.x + b.w + (m||0) && a.x + a.w > b.x - (m||0) && a.y < b.y + b.h + (m||0) && a.y + a.h > b.y - (m||0);
 // Why a piece may not go here (a short reason), or null if it may.
 function ctfEditCheck(f, tool, kind, sh){
-  if(CTF.map && CTF.map.rooms && CTF.map.rooms.some(r=>sh.x < r.x + r.w && sh.x + sh.w > r.x && sh.y < r.y + r.h && sh.y + sh.h > r.y)) return 'room';   // (the room apart is nobody's to build in)
   const L = CTF.live, M = CTF.map, mid = M.WW/2, t = f.team;
   if(!sh) return 'nothing under it';
+  if(CTF.map && CTF.map.rooms && CTF.map.rooms.some(r=>sh.x < r.x + r.w && sh.x + sh.w > r.x && sh.y < r.y + r.h && sh.y + sh.h > r.y)) return 'room';   // (the room apart is nobody's to build in)
   if(t === 0 ? sh.x + sh.w > mid - 500 : sh.x < mid + 500) return 'line';
   if(sh.x < 150 || sh.x + sh.w > M.WW - 150 || sh.y < 60 || sh.y + sh.h > M.WH - 60) return 'edge';
   for(const [px, py] of [[sh.x, sh.y + sh.h], [sh.x + sh.w, sh.y + sh.h], [sh.x + sh.w/2, sh.y + sh.h/2]]) if(!ctfHideValid(t, px, py)) return 'zone';
@@ -4908,6 +4911,10 @@ function ctfAiGauntlet(f, L, fl, n, more, put, pick){
 // What a CPU builds with its points, with a purpose (not a heap): ONE prop over its flag; a stun-pad gauntlet on the way in (the hard ones a longer row), the side's CPUs carrying a row on between
 // them; a wall or a platform that makes the way longer; decoys, one to a room, in different rooms. Easy CPUs place fewer and simpler things.
 function ctfAiBuild(f, L){
+  if(L.plans && !CTF.oldBuild){ const fl0 = L.flags[f.idx]; if(fl0 && fl0.st === 1) ctfPlanReady(L, f); return; }   // (the side builds as one: the plan)
+  return ctfAiBuildOld(f, L);
+}
+function ctfAiBuildOld(f, L){
   const fl = L.flags[f.idx]; if(!fl || fl.st !== 1) return;
   const nav = CTF.nav, sk = ctfAiSkill(), R = Math.random, pick = a=>a[Math.floor(R()*a.length)], t = f.team;
   L.bld = L.bld || { gaunt:[{}, {}], camps:[[], []], decoRooms:[{}, {}] };
@@ -4967,7 +4974,8 @@ function ctfNetOut(){
   o.b = L.boosts.map(b=>b.cd | 0);
   o.bf = L.buffs.map(b=>(b.got[0] ? 1 : 0) | (b.got[1] ? 2 : 0)); o.bt = L.buff.slice();
   o.el = L.elevs.filter(e=>e.wheel == null).map(e=>e.fx0 != null ? [R(e.y), e.dir, R(e.x)] : [R(e.y), e.dir]);
-  o.wa = (L.wheels || []).map(w=>Math.round(w.a*10000)/10000);   // a wheel is its angle: the paddles follow
+  o.wa = (L.wheels || []).map(w=>Math.round(w.a*10000)/10000);
+  o.pl = ctfPlanNetOut(L);   // a wheel is its angle: the paddles follow
   o.pt2 = fighters.map(f=>L.pts[f.idx] == null ? 0 : L.pts[f.idx]);
   o.dn = fighters.map(f=>L.done[f.idx] ? 1 : 0);
   o.pg = L.ping.map(p=>p ? [p.id, p.t | 0] : 0);
@@ -5023,6 +5031,7 @@ function ctfNetIn(c){
   (c.b || []).forEach((cd, i)=>{ if(L.boosts[i]) L.boosts[i].cd = cd; });
   (c.bf || []).forEach((m, i)=>{ if(L.buffs[i]) L.buffs[i].got = [!!(m & 1), !!(m & 2)]; }); if(c.bt) L.buff = c.bt;
   (c.el || []).forEach((r, i)=>{ const e = L.elevs[i]; if(!e || e.wheel != null) return; e.y = r[0]; e.dir = r[1]; e.rect.y = e.y; if(e.fx0 != null && r[2] != null){ e.x = r[2]; e.rect.x = e.x; } });
+  ctfPlanNetIn(L, c);
   (c.wa || []).forEach((a, j)=>{ const wl = (L.wheels || [])[j]; if(wl){ wl.a = a; ctfWheelPlace(L, wl); } });
   L.pts = {}; (c.pt2 || []).forEach((v, i)=>{ L.pts[i] = v; });
   L.done = {}; (c.dn || []).forEach((v, i)=>{ if(v) L.done[i] = true; });
@@ -5918,6 +5927,7 @@ function drawCtfHud(){
   ctfDrawWeather();
   ctfDrawDark();   // (under the scoreboard: a dark area blacks out the world, not the HUD)
   ctfDrawRoomMask();
+  ctfDrawPlanMenu();
   { const me = fighters.find(q=>q.you); if(me && me._jail != null){   // jailed: a lock, and the teammate you are watching
       ctx.save(); ctx.globalAlpha = 0.85; const lx = W/2, ly = H - 70; ctx.fillStyle = 'rgba(28,24,38,0.8)'; ctx.fillRect(lx - 90, ly - 34, 180, 68); ctx.strokeStyle = '#d8c46a'; ctx.lineWidth = 3; ctx.strokeRect(lx - 90, ly - 34, 180, 68);
       ctx.fillStyle = '#d8c46a'; ctx.fillRect(lx - 16, ly - 8, 32, 26); ctx.beginPath(); ctx.arc(lx, ly - 8, 12, Math.PI, 0); ctx.lineWidth = 6; ctx.strokeStyle = '#d8c46a'; ctx.stroke();
@@ -6966,6 +6976,7 @@ function ctfAiBegin(L, nav){
   if(CTF.skipNav || (typeof isNetClient === 'function' && isNetClient())){ CTF.nav = null; return; }   // (an online guest never plans: the host does)
   if(!CTF.navs) CTF.navs = {};
   CTF.nav = nav || CTF.navs[ctfNavId()] || (CTF.navs[ctfNavId()] = ctfNavMake(CTF.map));
+  ctfPlanBegin(L);
   L.ai = { visited:[null, null], visAt:[null, null], claims:[{}, {}], roomClaims:[{}, {}], hideTaken:{}, rescue:[0, 0], stat:{ nodes:CTF.nav.nodes.length } };
   for(const f of fighters){ f._ai = { goal:null, path:null, pi:0, edge:null, phase:'', t:0, lastX:f.x, still:0, ban:{}, replan:0, fight:0, role:'att', hide:null, hideT:0 }; }
   for(const t of [0, 1]){
@@ -7303,6 +7314,7 @@ function ctfAiInputRaw(f){
   // ordinary fighting whenever a foe is close, as it always was
   if(ai.fight > 0){ ai.fight--; return null; }
   const carrying = f._cf >= 0;
+  if(!carrying && !CTF.noPlan){ const vo = ctfAiVolley(f, ai, L); if(vo) return vo; }   // (a kit that throws, throws at what its shot will reach: aiProjInfo)
   const holding = ai.goal && ai.goal.kind === 'jail' && ai.goal.role === 'hold';
   let foe = ctfAiFoe(f, carrying ? 90 : (holding ? 130 : (ai.role === 'def' ? 520 : 300)));
   if(!foe && ai.role === 'def' && !carrying){ const sf = ctfAiFoe(f, 1000); if(sf && (sf.hitstun > 0 || sf._trapT > 0)) foe = sf; }   // a stunned intruder is worth a run
@@ -7404,6 +7416,7 @@ function ctfAiChoose(f, ai, L, nav, now){
     const guards = fighters.filter(g=>g.team !== t && g._jail == null && !g.dead && Math.hypot(g.x - cx, g.y - cy) < (humanIn ? 420 : 250)).length;
     const want = humanIn ? (guards > 0 ? 2 : 1) : (guards > 0 ? 0 : 1);
     if(!want) continue;
+    if(!humanIn && ctfPlanHoldRescue(L, f, j)) continue;   // (a jailbreak: the rescuer alone, once enough are in)
     const goalOf = g=>g._ai && g._ai.goal && g._ai.goal.kind === 'jail' && g._ai.goal.jail === jid && g._jail == null && !g.dead;
     const sent = mates.filter(goalOf), mineIn = sent.includes(f);
     if(!mineIn){
@@ -7418,6 +7431,8 @@ function ctfAiChoose(f, ai, L, nav, now){
     const out = j.face === 1 ? 1 : -1, fx = role === 'hold' ? j.door.x + (out === 1 ? j.door.w + 50 : -50) : j.door.x + (out === 1 ? j.door.w + 420 : -420);
     return set({ kind:'jail', jail:jid, role, x:fx, y:j.door.y + j.door.h });
   }
+  // 3b. the plan's own jobs (a rescuer waiting for a jailbreak, a key runner, a scout...)
+  if(ctfPlanChoose(f, ai, L, nav, now, set)) return;
   // 4. my side's flag lying about: put it back (defenders first, whoever is close)
   for(const fl of L.flags){
     if(fl.team !== t || fl.st !== 3) continue;
@@ -7431,7 +7446,7 @@ function ctfAiChoose(f, ai, L, nav, now){
     if(!L.seen[t][fl.id] && !(L.radar > 0) && !(fl.st === 1 && fl._radarT != null && L.playT - fl._radarT < 3600)) continue;   // (a flag the radar showed stays known for a minute while it sits where it was)
     if(ai.role === 'def' && !(fl.st === 3 && Math.abs(fl.x - M.WW/2) < M.WW*0.28)) continue;
     const claimed = mates.filter(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'flag' && g._ai.goal.id === fl.id && g._jail == null).length;
-    if(claimed >= 2) continue;
+    if(claimed >= ctfPlanClaimMax(L, f, fl)) continue;
     if(ai.dead && ai.dead['f' + fl.id] > now) continue;
     const d = Math.hypot(fl.x - f.x, (fl.y - f.y)*1.4); if(d < bd){ bd = d; best = fl; }
   }
@@ -7449,6 +7464,7 @@ function ctfAiChoose(f, ai, L, nav, now){
   }
   // 6. defenders stay with their own flags; attackers search (a few walk with a carrier)
   if(ai.role === 'def'){
+    if(ctfPlanDef(f, ai, L, nav, now, set)) return;   // (the plan's tactic for this defender)
     // the end of a gauntlet: every other defender camps there (outside the jail zone: the pads are in the open), to tag what comes out stunned
     const camps = (L.bld && L.bld.camps[t]) || [], defs = mates.filter(g=>g._ai && g._ai.role === 'def').sort((x, y)=>x.idx - y.idx), k = defs.indexOf(f), z0 = ctfAiSkip(f);
     if(k >= 0 && k % 3 === 1){   // a post on this side's edge of the middle, where the boosts and the ways across are: hold it and fight what comes
@@ -7474,6 +7490,7 @@ function ctfAiChoose(f, ai, L, nav, now){
     }
     const pad = M.homes[t].pad; return set({ kind:'guard', x:pad.x + pad.w + 180, y:pad.y });
   }
+  if(ctfPlanAtt(f, ai, L, nav, now, set)) return;   // (a feint, and the like)
   const carrier = mates.find(g=>g._cf >= 0 && g !== f && g._ai);
   if(carrier && (f.idx % 2 === 0) && Math.hypot(carrier.x - f.x, carrier.y - f.y) < 1600) return set({ kind:'escort', x:carrier.x, y:carrier.y + carrier.r, who:carrier.idx });
   return ctfAiSearch(f, ai, L, nav, now, set);
@@ -7538,12 +7555,13 @@ function ctfAiHide(f, ai, L, nav, inp, now){
   if(L.done[f.idx]) return ctfAiHideIdle(f, ai, L, nav, inp, now);   // ready: but a human may take minutes yet, so never stand frozen
   if(fl.st !== 1 && now % 30 === f.idx % 30){ if(ai.hx != null && Math.abs(f.x - ai.hx) + Math.abs(f.y - ai.hy) < 40) ai.hn = (ai.hn || 0) + 1; else ai.hn = 0; ai.hx = f.x; ai.hy = f.y; if(ai.hn >= 4){ ai.hn = 0; ctfAiStat('unstickHide'); ai.hide = null; ai.hideTry = (ai.hideTry || 0) + 1; ctfAiResetMove(ai); ai.fight = 0; } }
   if(fl.st === 1){   // put down: done a moment later
-    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2 && fl === L.flags[f.idx]){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT === 12) inp.special = true; return inp;
+    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2 && fl === L.flags[f.idx]){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT >= 12 && (!L.plans || CTF.oldBuild || L.plans[f.team].built)) inp.special = true; return inp;   // (done once the side has built, if it builds as one)
   }
   if(!ai.hide){
     const M = L.map, pts = ctfNavSweep(nav, f.team);
     const taken = L.ai.hideTaken, cand = [];
     for(const s of M.spots) if(s.team === f.team && !taken['s' + s.x + ',' + s.y]) cand.push(s);
+    if(L.plans && !CTF.oldBuild){ const c2 = ctfPlanHideCands(f, cand, nav, M); cand.length = 0; for(const q of c2) cand.push(q); }   // (the plan's: flags in different rooms, a few behind a door or in water or on ice)
     // a few take an ordinary place instead of a prepared one
     const own = pts.filter(p=>!p.cover && ctfHideValid(f.team, p.x, p.y) && ctfAiReachable(f.team, p.x, p.y));
     let pick = null;
@@ -7559,7 +7577,7 @@ function ctfAiHide(f, ai, L, nav, inp, now){
       else if(own.length) pick = own[Math.floor(Math.random()*own.length)];
     }
     if(!pick) pick = cand[0] || M.spots.find(s=>s.team === f.team);
-    taken['s' + pick.x + ',' + pick.y] = 1;
+    taken['s' + pick.x + ',' + pick.y] = 1; if(L.plans && L.plans[f.team]) L.plans[f.team].rooms[ctfRoomId(M, pick.x, pick.y)] = true;
     ai.hide = { x:pick.x, y:pick.y }; ai.hideT = 0; ai.hideTry = 0;
   }
   const h = ai.hide, cn = ctfNavNodeOf(nav, f), gn = ctfNavNodeAt(nav, h.x, h.y, 14);
@@ -7609,6 +7627,7 @@ function ctfAiHideIdle(f, ai, L, nav, inp, now){
   return inp;
 }
 function ctfAiHideTick(L){
+  ctfPlanHideTick(L);
   if(L.t === 900 && ctfAiSkill() === 2){ for(const t of [0, 1]){ const cpus = fighters.filter(f=>f.team === t && !ctfIsHuman(f)); if(cpus.length && !fighters.some(f=>f.team === t && ctfIsHuman(f)) && Math.random() < 0.45 && ctfPtsDiff(t) > -10) ctfSacrifice(L, t); } }   // a hard CPU side that means to rush trades 10 points for speed (never with a human on it: theirs to decide)
   // humans press their own keys; a CPU's flag is put down by its own walk.
   const nav = CTF.nav;
@@ -7618,6 +7637,681 @@ function ctfAiHideTick(L){
     const mine = CTF.map.spots.filter(s=>s.team === f.team), sp = mine[(f.idx*7 + 3) % mine.length];
     const fl = L.flags[f.idx]; if(fl.st === 0) ctfPlaceFlag(fl, sp.x, sp.y); L.done[f.idx] = true; } }
 }
+
+// @ctfplan:begin
+// =================================================================================================================================================================
+//  THE TEAM PLAN (the owner, 2026-10-15: "teach the ais strats on how to make flags harder to reach ... 1 person walls off easy exits/entrances, 2 ppl make a long corridor in a big room, 4 ppl make traps, and 1 person
+//  gets the speed boosts ... you want to make explicit setups and multi-player setups"). A CPU side builds and plays as a TEAM: it has a PLAN (L.plans[team]) with ROLES (waller, corridor builder, trapper, runner, and
+//  in play scout, raider, escort, guard ...) and picks named SETUPS (CTF_BUILDS: the owner's ticked builds), OFFENCE plays and DEFENCE tactics by SITUATION: the roster's numbers (weight, knockback, reach, how far it
+//  moves, read from the kits and from play, never an archetype table), the numbers on each side, the score and the time, the map's shape, the jails. Menu picks (ticks, assigned roles, a preset) force or weight them.
+// =================================================================================================================================================================
+const CTF_BUILD_ROLES = ['waller', 'corridor', 'trapper', 'runner'];   // the shares of a side: about 1 : 2 : 4 : 1 of every eight
+const CTF_BUILDS = {};
+const CTF_PRESETS = {};   // the menu's whole-team plans (filled below)
+function ctfBuildDef(id, name, roles, fit, run){ CTF_BUILDS[id] = { id, name, roles, fit, run }; }
+
+// ---- who is on the team: numbers read from the game, not names --------------------------------------------------------------------------------------------------
+// weight (the kit's weight), knockback and reach (the kit's own attack row: RANGE_PROFILE), whether it shoots, and how it moves in play (telemetry kept by ctfPlanWatch: the share of time in the air and the top speed).
+function ctfPlanTraits(f){
+  const rp = typeof rangeProfile === 'function' ? rangeProfile(f) : { reach:0, dmg:5, kb:7 }, tel = f._ptel || { air:0.3, top:6, n:0 };
+  const sp = f.kit && f.kit.special;
+  const pi = typeof aiProjInfo === 'function' ? aiProjInfo(f) : null;   // (how it shoots, from its own projectiles)
+  return { idx:f.idx, w:f.w || 90, kb:rp.kb || 7, dmg:rp.dmg || 5, reach:rp.reach || 0, ranged:!!(typeof RANGED_ATTACKERS === 'object' && RANGED_ATTACKERS[sp]), air:tel.air, top:tel.top, n:tel.n, shot:pi && pi.has ? { range:pi.range, through:pi.through, down:pi.canDown } : null };
+}
+// the team in numbers, each trait relative to everyone's average (so "heavy" and "fast" mean heavier or faster than the field)
+function ctfPlanRoster(L, t){
+  const all = fighters.map(ctfPlanTraits), mine = all.filter(a=>fighters[a.idx].team === t);
+  const avg = k=>all.reduce((s, a)=>s + a[k], 0)/Math.max(1, all.length), m = { w:avg('w'), kb:avg('kb'), reach:avg('reach'), air:avg('air'), top:avg('top') };
+  const rel = (k, a)=>a[k]/Math.max(0.01, m[k]);
+  const mean = k=>mine.reduce((s, a)=>s + rel(k, a), 0)/Math.max(1, mine.length);
+  return { mine, rel, heavy:mean('w'), kb:mean('kb'), reach:mean('reach'), air:mean('air'), fast:mean('top'), ranged:mine.filter(a=>a.ranged).length/Math.max(1, mine.length), lob:mine.filter(a=>a.shot && a.shot.down).length/Math.max(1, mine.length), shooters:mine.filter(a=>a.shot).length/Math.max(1, mine.length) };
+}
+// what a fighter's moving is like, kept as it plays
+function ctfPlanWatch(L){
+  for(const f of fighters){
+    if(f.dead || f._jail != null) continue;
+    const q = f._ptel = f._ptel || { air:0.3, top:6, n:0 };
+    q.n++; q.air += ((f.onground ? 0 : 1) - q.air)/Math.min(q.n, 240); q.top = Math.max(q.top*0.9995, Math.abs(f.vx));
+  }
+}
+// the situation of a side: the numbers up and down, the score and the time, the jails, how the map is shaped
+function ctfPlanSituation(L, t){
+  const mine = fighters.filter(f=>f.team === t), foes = fighters.filter(f=>f.team !== t);
+  const up = a=>a.filter(f=>!f.dead && f._jail == null).length, jailed = a=>a.filter(f=>f._jail != null).length;
+  const need = ctfNeed(L, t), needF = ctfNeed(L, 1 - t), M = L.map;
+  const sit = { upMine:up(mine), upFoe:up(foes), jailMine:jailed(mine), jailFoe:jailed(foes), score:L.score[t], scoreFoe:L.score[1 - t], need, needF, carry:mine.some(f=>f._cf >= 0), foeCarry:foes.some(f=>f._cf >= 0),
+    t:L.playT || 0, lead:L.score[t] - L.score[1 - t], narrow:M._planNarrow == null ? 0.5 : M._planNarrow };
+  sit.ahead = sit.lead > 0 || (sit.lead === 0 && sit.upMine > sit.upFoe), sit.behind = sit.lead < 0 || sit.upMine < sit.upFoe - 1;
+  sit.late = sit.t > 7200;
+  return sit;
+}
+function ctfPlanNew(L, t){
+  const cpus = fighters.filter(f=>f.team === t && !ctfIsHuman(f)).map(f=>f.idx);
+  const plan = { t, cpus, roles:{}, role2:{}, ticks:{}, votes:{}, assign:{}, preset:null, built:false, ready:{}, log:[], camps:[], ambush:[], overhangs:[], pref:{}, rooms:{}, sel:{} };
+  ctfPlanAssignBuildRoles(L, plan);
+  return plan;
+}
+function ctfPlanBegin(L){ if(!L.plans) L.plans = [0, 1].map(t=>ctfPlanNew(L, t)); }   // (once a match: the plan outlives the hiding)
+// build roles by size: the greedy fill of 1 waller : 2 corridor : 4 trapper : 1 runner, the heaviest taking the waller's job and the lightest the runner's
+function ctfPlanAssignBuildRoles(L, plan){
+  const n = plan.cpus.length, want = { waller:1, corridor:2, trapper:4, runner:1 }, have = { waller:0, corridor:0, trapper:0, runner:0 }, order = [];
+  for(let k = 0; k < n; k++){
+    let best = 'trapper', bd = -1e9; for(const r of CTF_BUILD_ROLES){ const d = want[r]*(k + 1)/8 - have[r]; if(d > bd + 1e-9 && !(r === 'runner' && n < 3 && k === 0)){ bd = d; best = r; } }
+    have[best]++; order.push(best);
+  }
+  const ws = plan.cpus.slice().sort((a, b)=>(fighters[b].w || 90) - (fighters[a].w || 90));   // heaviest first
+  const pri = ['waller', 'corridor', 'trapper', 'runner'];
+  const roles = order.slice().sort((a, b)=>pri.indexOf(a) - pri.indexOf(b));
+  ws.forEach((i, k)=>{ plan.roles[i] = roles[k]; });
+  for(const i of plan.cpus) if(CTF_BUILD_ROLES.indexOf(plan.assign[i]) >= 0) plan.roles[i] = plan.assign[i];   // (a menu's assignment: the role named)
+}
+
+// ---- the context a setup runs in ----------------------------------------------------------------------------------------------------------------------------------
+function ctfPlanCtx(L, plan){
+  const t = plan.t, M = L.map, nav = CTF.nav, sk = ctfAiSkill(), R = Math.random, mid = M.WW/2;
+  const cpuF = plan.cpus.map(i=>fighters[i]);
+  const c = { L, plan, t, M, nav, sk, R, mid, placed:0, flags:L.flags.filter(fl=>fl.team === t && fl.st === 1), cache:{}, dirE:t === 0 ? 1 : -1 };
+  const skip = cpuF.length ? ctfAiSkip(cpuF[0]) : (()=>false);
+  c.skip = skip;
+  // put one piece, from the points of the one whose job it is (the role), then of the others
+  c.put = (role, tool, kind, x, y, offs)=>{
+    const cost = CTF_COSTS[tool];
+    const order = cpuF.filter(f=>(L.pts[f.idx] || 0) >= cost).sort((a, b)=>((plan.roles[b.idx] === role) - (plan.roles[a.idx] === role)) || ((L.pts[b.idx] || 0) - (L.pts[a.idx] || 0)));
+    if(!order.length) return null;
+    for(const dx of (offs || [0])){ const e = ctfEditPlaceAt(order[0], tool, kind, x + dx, y); if(e){ c.placed++; return e; } }
+    return null;
+  };
+  c.pts = ()=>cpuF.reduce((s, f)=>s + (L.pts[f.idx] || 0), 0);
+  c.deco = (role, x, y, kind)=>c.put(role, 'deco', kind || (ctfDecoSet(x, y) || ['crate'])[Math.floor(R()*((ctfDecoSet(x, y) || ['crate']).length))], x, y, [0, 40, -40]);
+  // the way the other side takes to a flag: [{ nd, d (px from the flag), e (the move out of it), w }], start first
+  c.route = (fl, ban)=>{
+    const key = fl.x + ',' + fl.y + (ban ? 'b' : ''); if(c.cache[key] !== undefined) return c.cache[key];
+    let out = null;
+    try{
+      const gn = ctfNavNodeAt(nav, fl.x, fl.y, 14), sp = M.homes[1 - t].spawns[0], sn = ctfNavNodeAt(nav, sp.x, sp.y, 14);
+      if(gn && sn){
+        const r = ctfNavPath(nav, sn.id, gn.id, { doorOK:()=>true, now:0, ban:ban || undefined });
+        if(r && r.edges.length){ let acc = 0; const arr = []; for(let k = r.edges.length - 1; k >= 0; k--){ const e = r.edges[k], nd = nav.nodes[e.from]; acc += e.cost*6; arr.push({ nd, d:acc, e, w:nd.x1 - nd.x0 }); } out = { list:arr.reverse(), gn, key:r.edges.map(e=>e.from + '>' + e.to + ':' + Math.round(e.xa)) }; }
+      }
+    }catch(err){ out = null; }
+    return c.cache[key] = out;
+  };
+  // the stretches of the route in a range of distances from the flag, wide enough, on this side and out of the jail's zone
+  c.seg = (fl, lo, hi, minW)=>{ const r = c.route(fl); if(!r) return []; return r.list.filter(q=>q.d >= lo && q.d <= hi && q.w >= (minW || 100) && !skip(q.nd) && (t === 0 ? (q.nd.x0 + q.nd.x1)/2 < mid - 500 : (q.nd.x0 + q.nd.x1)/2 > mid + 500)); };
+  c.longest = (a)=>a.slice().sort((p, q)=>q.w - p.w)[0] || null;
+  c.pick = a=>a[Math.floor(R()*a.length)];
+  c.flagEnd = (nd, fl)=>Math.abs(nd.x0 - fl.x) < Math.abs(nd.x1 - fl.x) ? -1 : 1;   // which end of a floor is the flag's (-1 west)
+  c.anchor = ()=>c.anchorOverride || c.pick(c.flags) || null;
+  return c;
+}
+
+// ---- THE SETUPS (the owner's ticked builds) -----------------------------------------------------------------------------------------------------------------------
+// fit(c, fl) is how well it suits this team, this map, this flag (0 = not at all); run(c, fl) lays it and returns what it placed. Every one is built from the points of the CPUs of the roles named.
+ctfBuildDef('zigzag', 'Zigzag walls', ['corridor', 'corridor'], (c, fl)=>c.seg(fl, 300, 2600, 600).length ? 1.2 : 0, (c, fl)=>{
+  const nd = c.longest(c.seg(fl, 300, 2600, 600)).nd, east = c.flagEnd(nd, fl); let n = 0;
+  for(let k = 0; k < 6; k++){ const xx = east < 0 ? nd.x0 + 110 + k*200 : nd.x1 - 110 - k*200; if(xx < nd.x0 + 50 || xx > nd.x1 - 50) break;
+    if(c.put('corridor', 'wall', k % 2 ? 'wall' : 'block', xx, nd.y - (k % 2 ? 130 : 70), [0, 30, -30])) n++; }
+  return n; });
+ctfBuildDef('spikeplats', 'Platforms over spikes', ['trapper', 'corridor'], (c, fl)=>c.seg(fl, 300, 2600, 500).length ? 0.8 : 0, (c, fl)=>{
+  const nd = c.longest(c.seg(fl, 300, 2600, 500)).nd, a = c.flagEnd(nd, fl) < 0 ? nd.x0 + 80 : nd.x1 - 80, dir = a === nd.x0 + 80 ? 1 : -1; let n = 0;
+  for(let k = 0; k < 5; k++){ const x = a + dir*k*105; if(x < nd.x0 + 40 || x > nd.x1 - 40) break; if(c.put('trapper', 'trap', 'spikes', x, nd.y - 20)) n++; if(k % 2 === 0 && c.put('corridor', 'plat', 'plat', x + dir*50, nd.y - 200, [0, 30, -30])) n++; }
+  return n; });
+ctfBuildDef('seeit', 'See it, cannot reach', ['waller'], (c, fl)=>1, (c, fl)=>{
+  const x = fl.x + c.dirE*190; let n = 0;
+  if(c.put('waller', 'wall', 'wall', x, fl.y - 130, [0, 60, -60, 120])) n++;
+  if(c.put('waller', 'wall', 'block', x, fl.y - 300, [0, 60, -60])) n++;   // (a second above it: the way over is a long one)
+  return n; });
+ctfBuildDef('stunland', 'Stun the landing', ['trapper'], (c, fl)=>{ const r = c.route(fl); return r && r.list.some(q=>q.e && (q.e.kind === 'jump' || q.e.kind === 'drop') && q.d < 2800) ? 1.4 : 0; }, (c, fl)=>{
+  const r = c.route(fl), js = r.list.filter(q=>q.e && (q.e.kind === 'jump' || q.e.kind === 'drop') && q.d < 2800 && !c.skip(c.nav.nodes[q.e.to])); if(!js.length) return 0; const q = c.pick(js), n2 = c.nav.nodes[q.e.to];
+  const x = Math.min(Math.max(q.e.xb != null ? q.e.xb : (n2.x0 + n2.x1)/2, n2.x0 + 30), n2.x1 - 30);
+  return c.put('trapper', 'trap', 'stun', x, n2.y - 20, [0, 40, -40]) ? 1 : 0; });
+ctfBuildDef('camp', 'Guard camp', ['trapper'], (c, fl)=>0.9, (c, fl)=>{
+  const gn = ctfNavNodeAt(c.nav, fl.x, fl.y, 14); if(!gn || c.skip(gn)) return 0;
+  const camps = c.L.bld.camps[c.t]; if(!camps.some(q=>q.node === gn.id)) camps.push({ x:Math.min(Math.max(fl.x + c.dirE*90, gn.x0 + 30), gn.x1 - 30), y:gn.y, node:gn.id });
+  c.plan.camps.push({ x:fl.x, y:fl.y }); return 1; });
+ctfBuildDef('springback', 'Spring bounce-back', ['trapper'], (c, fl)=>c.seg(fl, 200, 2200, 150).length ? 0.7 : 0, (c, fl)=>{
+  const s = c.pick(c.seg(fl, 200, 2200, 150)), nd = s.nd, x = c.flagEnd(nd, fl) > 0 ? nd.x0 + 90 : nd.x1 - 90;   // on the end of the floor the way in comes from
+  let n = c.put('trapper', 'trap', 'spring', x, nd.y - 20, [0, 40, -40]) ? 1 : 0; n += c.put('trapper', 'trap', 'stun', x + c.dirE*-1*150, nd.y - 20, [0, 40, -40]) ? 1 : 0; return n; });
+ctfBuildDef('shell', 'Shell game', ['corridor'], (c, fl)=>1, (c, fl)=>{
+  const set = ctfDecoSet(fl.x, fl.y) || ['crate'], kind = set[Math.floor(c.R()*set.length)]; let n = c.put('corridor', 'deco', kind, fl.x + (c.R()*30 - 15), fl.y - 20, [0, 30, -30]) ? 1 : 0;
+  for(const off of [-420, -240, 240, 420, 600].sort(()=>c.R() - 0.5).slice(0, 3 + (c.sk >= 2 ? 1 : 0))) if(c.put('corridor', 'deco', kind, fl.x + off, fl.y - 20, [0, 40, -40])) n++;
+  return n; });
+ctfBuildDef('choke', 'One choke point', ['trapper', 'trapper', 'trapper'], (c, fl)=>c.seg(fl, 300, 2800, 40).length ? 1.5 : 0, (c, fl)=>{
+  const a = c.seg(fl, 300, 2800, 40).sort((p, q)=>p.w - q.w); const q = a[0], nd = q.nd, mx = (nd.x0 + nd.x1)/2; let n = 0;
+  const row = ['stun', 'stun', 'spikes', 'stun', 'spikes']; for(let k = 0; k < row.length; k++){ const x = nd.x1 - nd.x0 > 400 ? nd.x0 + 90 + k*110 : mx + (k - 2)*60; if(x < nd.x0 + 30 || x > nd.x1 - 30) break; if(c.put('trapper', 'trap', row[k], x, nd.y - 20)) n++; }
+  return n; });
+ctfBuildDef('fakegaunt', 'Fake gauntlet', ['trapper', 'trapper'], (c, fl)=>1, (c, fl)=>{
+  // a floor that leads nowhere: a place on this side with one way in and none through, far from every flag of the side
+  const t = c.t, nav = c.nav, deg = {}; for(const nd of nav.nodes) deg[nd.id] = new Set(nd.edges.map(e=>e.to));
+  const cand = nav.nodes.filter(nd=>{ const cx = (nd.x0 + nd.x1)/2; return nd.x1 - nd.x0 >= 420 && !c.skip(nd) && (t === 0 ? cx < c.mid - 900 : cx > c.mid + 900) && deg[nd.id].size <= 2 && c.flags.every(f=>Math.hypot((nd.x0 + nd.x1)/2 - f.x, nd.y - f.y) > 900); });
+  if(!cand.length) return 0; const nd = c.pick(cand); let n = 0;
+  for(let k = 0; k < 4; k++){ const x = nd.x0 + 90 + k*105; if(x > nd.x1 - 40) break; if(c.put('trapper', 'trap', k % 3 === 2 ? 'spikes' : 'stun', x, nd.y - 20)) n++; }
+  return n; });
+ctfBuildDef('wallshort', 'Wall the shortcut', ['waller'], (c, fl)=>c.seg(fl, 700, 3200, 40).length ? 1.3 : 0, (c, fl)=>{
+  const a = c.seg(fl, 700, 3200, 40).sort((p, q)=>p.w - q.w), nd = a[0].nd, mx = (nd.x0 + nd.x1)/2; let n = 0;
+  if(c.put('waller', 'wall', 'wall', mx, nd.y - 130, [0, 60, -60, 120, -120])) n++; if(c.put('waller', 'wall', 'block', mx, nd.y - 300, [0, 60, -60])) n++; return n; });
+ctfBuildDef('airlock', 'Airlock', ['waller', 'trapper'], (c, fl)=>c.seg(fl, 300, 2400, 700).length ? 1 : 0, (c, fl)=>{
+  const nd = c.longest(c.seg(fl, 300, 2400, 700)).nd, x = (nd.x0 + nd.x1)/2 - 165; let n = 0;
+  if(c.put('waller', 'wall', 'block', x, nd.y - 70, [0, 30])) n++; if(c.put('waller', 'wall', 'block', x + 330, nd.y - 70, [0, 30])) n++; if(c.put('trapper', 'trap', 'stun', x + 165, nd.y - 20, [0, 30, -30])) n++; return n; });
+ctfBuildDef('curtains', 'Curtain corridor', ['corridor'], (c, fl)=>c.seg(fl, 300, 2400, 500).length ? 0.7 : 0, (c, fl)=>{
+  const nd = c.longest(c.seg(fl, 300, 2400, 500)).nd; let n = 0; for(let x = nd.x0 + 120; x < nd.x1 - 100 && n < 5; x += 200) if(c.put('corridor', 'deco', 'curtain', x, nd.y - 20, [0, 30])) n++; return n; });
+ctfBuildDef('ambush', 'Prop ambush', ['corridor'], (c, fl)=>c.seg(fl, 300, 2200, 400).length ? 0.9 : 0, (c, fl)=>{
+  const nd = c.longest(c.seg(fl, 300, 2200, 400)).nd; let n = 0;
+  for(const x of [nd.x0 + 130, nd.x1 - 130]){ if(c.put('corridor', 'deco', 'bush', x, nd.y - 20, [0, 40, -40])) { n++; c.plan.ambush.push({ x, y:nd.y }); } }
+  return n; });
+ctfBuildDef('fork', 'Trapped fork', ['trapper', 'waller'], (c, fl)=>{ const r = c.route(fl); if(!r) return 0; return c.route(fl, Object.fromEntries(r.key.slice(Math.max(0, r.key.length - 4)).map(k=>[k, 1e9]))) ? 1 : 0; }, (c, fl)=>{
+  const r = c.route(fl), ban = Object.fromEntries(r.key.slice(Math.max(0, r.key.length - 4)).map(k=>[k, 1e9])), r2 = c.route(fl, ban); if(!r2) return 0;
+  const a = c.seg(fl, 300, 2400, 300); if(!a.length) return 0; const nd = c.longest(a).nd; let n = 0;
+  for(let k = 0; k < 3; k++){ const x = nd.x0 + 90 + k*120; if(x > nd.x1 - 40) break; if(c.put('trapper', 'trap', k % 2 ? 'spikes' : 'stun', x, nd.y - 20)) n++; } return n; });
+ctfBuildDef('keybait', 'Key bait', ['trapper'], (c, fl)=>c.L.keys.some(k=>c.t === 0 ? k.hx < c.mid - 400 : k.hx > c.mid + 400) ? 0.9 : 0, (c, fl)=>{
+  const ks = c.L.keys.filter(k=>c.t === 0 ? k.hx < c.mid - 400 : k.hx > c.mid + 400), k = c.pick(ks); let n = 0;
+  for(const dx of [-150, 150]) if(c.put('trapper', 'trap', 'stun', k.hx + dx, k.hy - 20, [0, 30, -30])) n++; return n; });
+ctfBuildDef('boostdeny', 'Boost denial', ['waller', 'trapper'], (c, fl)=>c.L.boosts.some(b=>c.t === 0 ? b.x < c.mid - 400 : b.x > c.mid + 400) ? 0.8 : 0, (c, fl)=>{
+  const bs = c.L.boosts.filter(b=>c.t === 0 ? b.x < c.mid - 400 : b.x > c.mid + 400), b = c.pick(bs); let n = 0;
+  if(c.put('trapper', 'trap', 'stun', b.x + c.dirE*170, b.y - 20, [0, 30, -30])) n++; if(c.put('waller', 'wall', 'block', b.x + c.dirE*330, b.y - 70, [0, 30, -30, 60])) n++; return n; });
+ctfBuildDef('stunchain', 'Stun chain', ['trapper'], (c, fl)=>c.seg(fl, 300, 2600, 400).length ? 1 : 0, (c, fl)=>{
+  const nd = c.longest(c.seg(fl, 300, 2600, 400)).nd, x = (nd.x0 + nd.x1)/2 - 85; let n = 0;
+  if(c.put('trapper', 'trap', 'stun', x, nd.y - 20, [0, 30, -30])) n++; if(c.put('trapper', 'trap', 'stun', x + 170, nd.y - 20, [0, 30, -30])) n++; return n; });
+ctfBuildDef('overhang', 'Overhang', ['corridor'], (c, fl)=>c.seg(fl, 300, 2400, 500).length ? 0.7 : 0, (c, fl)=>{
+  const nd = c.longest(c.seg(fl, 300, 2400, 500)).nd, x = (nd.x0 + nd.x1)/2; const e = c.put('corridor', 'plat', 'plat', x, nd.y - 330, [0, 60, -60, 120]);
+  if(e){ c.plan.overhangs.push({ x:e.x + e.w/2, y:e.y, below:nd.y }); return 1; } return 0; });
+ctfBuildDef('sealedbox', 'Sealed box', ['waller', 'trapper'], (c, fl)=>0.6, (c, fl)=>{
+  let n = 0; for(const dx of [-170, 170]) if(c.put('waller', 'wall', 'wall', fl.x + dx, fl.y - 130, [0, 60, -60])) n++;
+  if(c.put('trapper', 'trap', 'trapdoor', fl.x, fl.y - 360, [0, 30, -30, 60, -60])) n++; return n; });
+ctfBuildDef('catapult', 'Own catapult', ['runner'], (c, fl)=>0.5, (c, fl)=>{
+  const a = c.nav.nodes.filter(nd=>{ const cx = (nd.x0 + nd.x1)/2, d = c.t === 0 ? c.mid - cx : cx - c.mid; return d > 1100 && d < 3000 && nd.x1 - nd.x0 > 200 && !c.skip(nd); }); if(!a.length) return 0;
+  const nd = c.pick(a); return c.put('runner', 'trap', 'spring', (nd.x0 + nd.x1)/2, nd.y - 20, [0, 60, -60, 120]) ? 1 : 0; });
+ctfBuildDef('cutbridge', 'Cut the bridge', ['waller'], (c, fl)=>0.5, (c, fl)=>{
+  const a = c.nav.nodes.filter(nd=>{ const cx = (nd.x0 + nd.x1)/2, d = c.t === 0 ? c.mid - cx : cx - c.mid; return d > 700 && d < 2600 && nd.x1 - nd.x0 > 50 && nd.x1 - nd.x0 < 260 && !c.skip(nd); }); if(!a.length) return 0;
+  const nd = c.pick(a), mx = (nd.x0 + nd.x1)/2; return c.put('waller', 'wall', 'wall', mx, nd.y - 130, [0, 60, -60]) ? 1 : 0; });
+ctfBuildDef('moat', 'Spike moat', ['trapper'], (c, fl)=>1, (c, fl)=>{ let n = 0; for(const dx of [-110, 110, -230, 230]) if(c.put('trapper', 'trap', 'spikes', fl.x + dx, fl.y - 20, [0, 30, -30])) n++; return n; });
+ctfBuildDef('rings', 'Layered rings', ['waller', 'trapper', 'corridor'], (c, fl)=>1.1, (c, fl)=>{
+  let n = 0; for(const dx of [-380, 380]) if(c.put('waller', 'wall', 'block', fl.x + dx, fl.y - 70, [0, 40, -40])) n++;
+  for(const dx of [-210, 210]) if(c.put('trapper', 'trap', 'stun', fl.x + dx, fl.y - 20, [0, 30, -30])) n++;
+  const set = ctfDecoSet(fl.x, fl.y) || ['crate'], kind = set[Math.floor(c.R()*set.length)]; if(c.put('corridor', 'deco', kind, fl.x, fl.y - 20, [0, 30, -30])) n++; for(const dx of [-120, 120]) if(c.put('corridor', 'deco', kind, fl.x + dx, fl.y - 20, [0, 30, -30])) n++; return n; });
+ctfBuildDef('slide', 'Ice, belt or slope approach', ['trapper'], (c, fl)=>(c.M.zones || []).some(z=>(z.type === 'ice' || z.type === 'belt') && (c.t === 0 ? z.x + z.w < c.mid - 300 : z.x > c.mid + 300)) ? 1 : 0, (c, fl)=>{
+  const zs = (c.M.zones || []).filter(z=>(z.type === 'ice' || z.type === 'belt') && (c.t === 0 ? z.x + z.w < c.mid - 300 : z.x > c.mid + 300)), z = c.pick(zs); const sy = ctfSurfaceBelow(z.x + z.w/2, z.y, z.h + 200); if(sy == null) return 0;
+  let n = 0; for(const x of [z.x + 60, z.x + z.w - 60]) if(c.put('trapper', 'trap', 'stun', x, sy - 20, [0, 40, -40])) n++; return n; });
+ctfBuildDef('twin', 'Twin bases', ['corridor', 'trapper'], (c, fl)=>c.flags.length > 1 ? 0.6 : 0, (c, fl)=>0);   // (made by the plan itself: the same setup at a decoy)
+
+// ---- the architect: once every CPU of a side has put its flag down, the side builds as one ---------------------------------------------------------------------------
+function ctfPlanBuildTeam(L, plan){
+  if(plan.built) return;
+  plan.built = true;
+  const nav = CTF.nav; if(!nav || !nav.ready || !plan.cpus.length) return;
+  L.bld = L.bld || { gaunt:[{}, {}], camps:[[], []], decoRooms:[{}, {}] };
+  const c = ctfPlanCtx(L, plan), sk = ctfAiSkill(), fls = c.flags; if(!fls.length) return;
+  // the plan's picks: a menu's ticks first (a ticked setup is run), then the best fits by luck
+  const nSet = [2, 4, 6][sk] + (plan.cpus.length >= 6 ? 2 : 0), ticked = Object.keys(CTF_BUILDS).filter(id=>plan.ticks[id]);
+  const scored = [];
+  const bestFlag = {};
+  for(const id of Object.keys(CTF_BUILDS)){ if(id === 'twin') continue; const d = CTF_BUILDS[id]; let fit = 0, bf = null;
+    for(const fl of fls){ let q = 0; try{ q = d.fit(c, fl) || 0; }catch(err){ q = 0; } if(q > fit || (q > 0 && q === fit && c.R() < 0.5)){ fit = q; bf = fl; } }
+    if(!bf) bf = c.pick(fls); bestFlag[id] = bf;
+    if(plan.ticks[id]) fit = Math.max(fit, 1) + 2; if(plan.ticksOnly && !plan.ticks[id]) fit = 0; fit *= ctfPlanBuildBias(id, plan, L); if(fit > 0) scored.push({ id, fit: fit*(0.55 + c.R()) }); }
+  scored.sort((a, b)=>b.fit - a.fit);
+  const picks = scored.slice(0, Math.max(nSet, ticked.length)).map(s=>s.id);
+  const total = c.pts(); const budget = total*[0.55, 0.85, 0.97][sk];
+  const spent = ()=>total - c.pts();
+  for(const id of picks){
+    if(spent() >= budget) break;
+    const d = CTF_BUILDS[id], fl = bestFlag[id];
+    let n = 0; try{ n = d.run(c, fl) || 0; }catch(err){ console.error('ctf plan', id, err); }
+    plan.log.push({ id, n, flag:fl.id });
+    if(id !== 'camp' && n && plan.cpus.length >= 2 && c.flags.length > 1 && c.R() < 0.18 && !plan.ticksOnly){   // twin bases: the same setup again at a place that holds no flag (attackers cannot tell which is which)
+      const dec = c.nav.nodes.filter(nd=>{ const cx = (nd.x0 + nd.x1)/2; return nd.x1 - nd.x0 > 300 && (c.t === 0 ? cx < c.mid - 900 : cx > c.mid + 900) && !c.skip(nd) && fls.every(f=>Math.hypot(cx - f.x, nd.y - f.y) > 1200); });
+      if(dec.length){ const nd = c.pick(dec), fake = { x:(nd.x0 + nd.x1)/2, y:nd.y, team:c.t, id:-1 }; try{ const n2 = d.run(c, fake) || 0; if(n2) plan.log.push({ id:id + '*', n:n2, flag:-1 }); }catch(err){} }
+    }
+  }
+}
+// the menu's and the situation's lean on a setup (1 = none)
+function ctfPlanBuildBias(id, plan, L){
+  let b = 1; const ro = ctfPlanRoster(L, plan.t);
+  if(ro.heavy > 1.08 && (id === 'seeit' || id === 'wallshort' || id === 'sealedbox')) b *= 1.25;   // a heavy side walls
+  if(ro.kb > 1.1 && (id === 'springback' || id === 'moat')) b *= 1.2;
+  if(ro.fast > 1.1 && (id === 'catapult' || id === 'slide')) b *= 1.2;
+  if(plan.preset){ const P = CTF_PRESETS[plan.preset]; if(P && P.builds && P.builds.indexOf(id) >= 0) b *= 2.5; }
+  return b;
+}
+// a CPU's flag is down: tell the plan; when the side is all down, it builds
+function ctfPlanReady(L, f){
+  const pl = L.plans && L.plans[f.team]; if(!pl) return;
+  pl.ready[f.idx] = true;
+  if(!pl.built && pl.cpus.every(i=>pl.ready[i] || L.done[i])) ctfPlanBuildTeam(L, pl);
+}
+function ctfPlanHideTick(L){
+  if(!L.plans) return;
+  for(const pl of L.plans){ if(!pl.built && L.t >= 2100 && pl.cpus.length && pl.cpus.every(i=>pl.ready[i] || L.done[i] || L.flags[i].st === 1)) ctfPlanBuildTeam(L, pl); else if(!pl.built && L.t >= 2500) ctfPlanBuildTeam(L, pl); }
+}
+// where a CPU's flag may go, given the plan: the side's flags in different rooms (build 12), and a few behind a locked door, in water, or on ice or a belt (builds 16, 18, 36)
+function ctfPlanHideCands(f, cand, nav, M){
+  const L = CTF.live, pl = L.plans && L.plans[f.team]; if(!pl || !cand.length || CTF.oldBuild) return cand;
+  const room = s=>ctfRoomId(M, s.x, s.y);
+  let out = cand.filter(s=>!pl.rooms[room(s)]);   // spread: not a room a teammate's flag is in
+  if(!out.length) out = cand;
+  const info = pl.spotInfo || (pl.spotInfo = ctfPlanSpotInfo(nav, M, f.team)), pref = pl.pref[f.idx] === undefined ? (pl.pref[f.idx] = ctfPlanHidePref(pl, f, info, out)) : pl.pref[f.idx];
+  if(pref){ const m = out.filter(s=>info[s.x + ',' + s.y] && info[s.x + ',' + s.y][pref]); if(m.length) out = m; }
+  return out;
+}
+function ctfPlanHidePref(pl, f, info, cand){
+  const have = k=>cand.some(s=>info[s.x + ',' + s.y] && info[s.x + ',' + s.y][k]);
+  const opts = ['door', 'slow', 'slide'].filter(have); if(!opts.length || Math.random() > [0.15, 0.3, 0.45][ctfAiSkill()]) return null;
+  return opts[Math.floor(Math.random()*opts.length)];
+}
+function ctfPlanSpotInfo(nav, M, t){
+  const out = {}, zs = M.zones || [];
+  // behind a door: not reached from the other side's home with every door shut
+  const seen = new Uint8Array(nav.nodes.length), q = [], sp = M.homes[1 - t].spawns[0], s0 = ctfNavNodeAt(nav, sp.x, sp.y, 14); if(s0){ seen[s0.id] = 1; q.push(s0.id); }
+  while(q.length){ const id = q.pop(); for(const e of nav.nodes[id].edges){ if(e.doors && e.doors.length) continue; if(e.need) continue; if(!seen[e.to]){ seen[e.to] = 1; q.push(e.to); } } }
+  for(const s of M.spots){ if(s.team !== t) continue; const o = {}, n = ctfNavNodeAt(nav, s.x, s.y, 14);
+    if(n && !seen[n.id] && nav.reach[1 - t] && nav.reach[1 - t][n.id]) o.door = true;
+    for(const z of zs) if(s.x >= z.x && s.x <= z.x + z.w && s.y >= z.y && s.y <= z.y + z.h + 40){ if(z.type === 'water' || z.type === 'glue') o.slow = true; if(z.type === 'ice' || z.type === 'belt') o.slide = true; }
+    out[s.x + ',' + s.y] = o; }
+  return out;
+}
+
+// =================================================================================================================================================================
+//  IN PLAY: the roles, the offence plays and the defence tactics. Every few seconds a side's plan reads the situation and the roster, deals the CPUs their jobs (def or att, and a named job within it) and the jobs set the CPU's
+//  goals (ctfPlanChoose / ctfPlanDef / ctfPlanAtt are asked by ctfAiChoose). A menu's ticks weigh in (plan.ticks), an assigned role is kept (plan.assign), a preset sets several at once.
+// =================================================================================================================================================================
+const CTF_OFFENCE = ['scout', 'keyrunner', 'feint', 'twowave', 'jailbreak', 'swarm', 'pincer', 'rescuehit'];
+const CTF_DEFENCE = ['zone', 'mark', 'patrol', 'choke', 'jailguard', 'cutoff', 'chase', 'bait', 'fallback', 'push', 'decoy', 'mover', 'counter', 'layers', 'above', 'lurk'];
+const CTF_PLAY_NAMES = { scout:'Scout first', keyrunner:'Key runner', feint:'Feint raid', twowave:'Two waves', jailbreak:'Jailbreak drop', swarm:'Swarm a stash', pincer:'Pincer', rescuehit:'Hit during a rescue',
+  zone:'Zones', mark:'Marking', patrol:'Patrol loop', choke:'Hold the choke', jailguard:'Jail guard', cutoff:'Cut-off', chase:'Chase pair', bait:'Bait flag', fallback:'Fall back', push:'Push up', decoy:'Decoy guard', mover:'Mover control', counter:'Counter-raid', layers:'Two layers', above:'Drop from above', lurk:'Lurk unseen' };
+const CTF_SIDE_NODES = {};
+function ctfPlanSideNodes(nav, M, t, lo, hi, minW){   // the nodes of side t whose centre is lo..hi px from the middle line
+  const key = (M.gid || M.id) + '|' + t + '|' + lo + '|' + hi + '|' + minW; if(CTF_SIDE_NODES[key] && CTF_SIDE_NODES[key].nav === nav) return CTF_SIDE_NODES[key].a;
+  const mid = M.WW/2, a = nav.nodes.filter(n=>{ const cx = (n.x0 + n.x1)/2, d = t === 0 ? mid - cx : cx - mid; return d >= lo && d <= hi && n.x1 - n.x0 >= minW && n.y < (M.pocketY != null ? M.pocketY : 1e9); });
+  CTF_SIDE_NODES[key] = { nav, a }; return a;
+}
+function ctfPlanAt(nd){ return { x:nd.x0 + 20 + Math.random()*Math.max(1, nd.x1 - nd.x0 - 40), y:nd.y }; }
+function ctfPlanFoeNode(nav, foe){ let n = foe.onground ? ctfNavNodeOf(nav, foe) : null; if(!n && foe._ai && foe._ai.lastNode != null) n = nav.nodes[foe._ai.lastNode]; if(!n) n = ctfNavNodeAt(nav, foe.x, foe.y + foe.r, 60); return n; }
+// the map's shape: how much of it is narrow (a way is under 300 px wide)
+function ctfPlanNarrow(nav, M){ if(M._planNarrow != null) return M._planNarrow; const ns = nav.nodes.filter(n=>n.x1 - n.x0 > 30 && n.y < (M.pocketY != null ? M.pocketY : 1e9)); M._planNarrow = ns.length ? ns.filter(n=>n.x1 - n.x0 < 300).length/ns.length : 0.5; return M._planNarrow; }
+// deal the jobs: every ~2 s of play
+function ctfPlanTick(L){
+  if(!L.plans || L.playT % 60 !== 5) return;
+  const nav = CTF.nav; if(!nav || !nav.ready) return;
+  for(const pl of L.plans){ try{ ctfPlanDeal(L, pl, nav); }catch(err){ if(!CTF.errPlan){ CTF.errPlan = 1; console.error('ctfPlanDeal', err); } } }
+}
+function ctfPlanW(pl, id, w){ return Math.max(0.01, w + (pl.ticks[id] ? 4 : 0) + ((CTF_PRESETS[pl.preset] && CTF_PRESETS[pl.preset].plays && CTF_PRESETS[pl.preset].plays.indexOf(id) >= 0) ? 3 : 0)); }
+function ctfPlanDeal(L, pl, nav){
+  const t = pl.t, M = L.map, sk = ctfAiSkill(), cpus = pl.cpus.map(i=>fighters[i]).filter(f=>f && !f.dead), live = cpus.filter(f=>f._jail == null);
+  pl.pg = pl.pg || {};
+  if(!cpus.length) return;
+  const sit = ctfPlanSituation(L, t), ro = ctfPlanRoster(L, t), narrow = ctfPlanNarrow(nav, M);
+  pl.sit = sit; pl.narrow = narrow;
+  // ---- who defends and who attacks: the base share of the skill, moved by the score and the numbers (a side ahead late turtles, a side behind sends more) ----
+  let defShare = [0.4, 0.28, 0.22][sk];
+  if(sit.ahead) defShare += 0.12 + (sit.late ? 0.18 : 0);
+  if(sit.behind) defShare -= 0.1;
+  if(sit.upFoe > sit.upMine + 1) defShare += 0.12;
+  if(pl.ticks.turtle) defShare = 0.9;
+  if(pl.ticks.allout) defShare = 0.05;
+  if(CTF_PRESETS[pl.preset] && CTF_PRESETS[pl.preset].defShare != null) defShare = CTF_PRESETS[pl.preset].defShare;
+  const nDef = Math.max(live.length >= 2 ? 1 : 0, Math.min(live.length - (live.length >= 3 ? 1 : 0), Math.round(live.length*defShare)));
+  const cur = live.slice().sort((a, b)=>((a._ai && a._ai.role === 'def') ? 0 : 1) - ((b._ai && b._ai.role === 'def') ? 0 : 1) || a.idx - b.idx);
+  const DEFR = ['def', 'guard', 'jailguard'], ATTR = ['att', 'scout', 'raider', 'runner', 'keyrunner', 'rescuer'];
+  cur.forEach((f, k)=>{
+    if(!f._ai) return; const a = pl.assign[f.idx];
+    const want = DEFR.indexOf(a) >= 0 || CTF_DEFENCE.indexOf(a) >= 0 ? 'def' : (ATTR.indexOf(a) >= 0 || CTF_OFFENCE.indexOf(a) >= 0 ? 'att' : (k < nDef ? 'def' : 'att'));
+    if(f._ai.role !== want && f._cf < 0 && !(f._ai.goal && f._ai.goal.kind === 'jail')){ f._ai.role = want; f._ai.path = null; f._ai.edge = null; f._ai.goal = null; }
+  });
+  const defs = live.filter(f=>f._ai && f._ai.role === 'def'), atts = live.filter(f=>f._ai && f._ai.role === 'att');
+  // ---- the offence plays this side runs ----
+  const run = pl.run = pl.run || {}, att = atts.length, foeJail = L.jails.find(j=>j.owner !== t);
+  const fitO = {
+    scout:(att >= 2 && L.playT < 2400) ? 1.2 + (ro.fast - 1)*2 : 0,
+    keyrunner:(L.keys.some(k=>k.st === 0) && L.doors.some(d=>d.team !== t && !d.op[t])) ? 0.8 : 0,
+    feint:att >= 4 ? 0.5 + sk*0.35 : 0,
+    twowave:att >= 4 ? 0.4 + sk*0.3 : 0,
+    jailbreak:(att >= 3 && foeJail && !sit.behind && sit.upFoe >= 2) ? 0.3 + sk*0.5 + att*0.08 : 0,
+    swarm:1, pincer:att >= 3 ? 0.5 + sk*0.2 : 0, rescuehit:1 };
+  if(!pl.dealt){
+    pl.dealt = true;
+    for(const id of CTF_OFFENCE){ const w = ctfPlanW(pl, id, fitO[id]*(sk === 0 ? 0.4 : sk === 1 ? 0.8 : 1.2)); run[id] = (fitO[id] > 0 || pl.ticks[id]) && (!!pl.ticks[id] || Math.random() < Math.min(0.9, w/3)); }
+    if(sk === 0) for(const id of ['feint', 'twowave', 'jailbreak', 'pincer']) if(!pl.ticks[id]) run[id] = false;
+    if(run.twowave && run.feint) run.feint = false;
+    if(run.jailbreak && !run.twowave && Math.random() < 0.3) run.twowave = true;
+  }
+  const tags = {}, ranked = atts.slice().sort((a, b)=>((b._ptel ? b._ptel.top : 6) - (a._ptel ? a._ptel.top : 6))), free = ranked.slice();
+  const take = f=>{ const i = free.indexOf(f); if(i >= 0) free.splice(i, 1); return f; };
+  for(const f of atts){ const r = pl.assign[f.idx]; if(r === 'scout' || r === 'keyrunner' || r === 'rescuer' || r === 'runner'){ tags[f.idx] = r; take(f); } }
+  if(run.scout && L.playT < 2400 && free.length >= 2 && !Object.values(tags).includes('scout')){ const f = take(free[0]); tags[f.idx] = 'scout'; }
+  if(run.keyrunner && free.length >= 2 && !Object.values(tags).includes('keyrunner')){ const f = take(free[free.length - 1]); tags[f.idx] = 'keyrunner'; }
+  if(run.jailbreak && free.length >= 3){
+    if(!pl.jb || !pl.jb.active) pl.jb = { active:true, rescuer:null, need:Math.max(2, Math.min(5, Math.floor(free.length*0.7))), since:L.playT };
+    if(pl.jb.rescuer == null || !fighters[pl.jb.rescuer] || fighters[pl.jb.rescuer].dead || fighters[pl.jb.rescuer]._jail != null){ const r = free.slice().sort((a, b)=>(a.w || 90) - (b.w || 90))[0]; pl.jb.rescuer = r.idx; }
+    const r = fighters[pl.jb.rescuer]; if(r && free.includes(r)){ take(r); tags[r.idx] = 'rescuer'; }
+    for(const f of free) tags[f.idx] = 'jailer';
+    const inJ = foeJail ? foeJail.pris.map(i=>fighters[i]).filter(p=>p && p.team === t).length : 0;
+    if(inJ) pl.jb.seen = L.playT;
+    if(L.playT - Math.max(pl.jb.since, pl.jb.seen || 0) > 3600){ pl.jb.active = false; run.jailbreak = false; delete pl.jb.rescuer; }   // (nobody was caught in a minute: no jailbreak after all, the rescuer goes back to the raid)
+  } else if(pl.jb) pl.jb.active = false;
+  if(run.twowave && free.length >= 4){ free.forEach((f, k)=>{ tags[f.idx] = k % 2 ? 'wave2' : 'wave1'; }); }
+  else if(run.feint && free.length >= 4){ const k = Math.min(2, Math.floor(free.length/2)); free.forEach((f, i)=>{ tags[f.idx] = i < k ? 'feint' : 'real'; }); }
+  pl.tags = tags;
+  // ---- the defence tactics among the defenders ----
+  const own = L.flags.filter(fl=>fl.team === t && fl.st === 1);
+  const carrierFoe = fighters.find(g=>g.team !== t && g._cf >= 0 && !g.dead && L.flags[g._cf] && L.flags[g._cf].team === t);
+  const fitD = {
+    zone:1.6 - narrow,
+    mark:0.7 + Math.max(0, (ro.fast - 1)*3) + (ro.reach - 1)*0.5,
+    patrol:0.8,
+    choke:0.4 + narrow*2.4 + Math.max(0, (ro.heavy - 1)*3),
+    jailguard:sit.jailFoe > 0 ? 0.6 + sit.jailFoe*0.7 : 0.15,
+    cutoff:(carrierFoe ? 2.6 : 0.3) + Math.max(0, (ro.fast - 1)*2) + Math.max(0, (ro.air - 1)*2),
+    chase:(carrierFoe ? 2.2 : 0.2) + Math.max(0, (ro.fast - 1)*2),
+    bait:own.length >= 3 ? 0.5 : 0,
+    fallback:Math.max(0, (sit.upFoe - sit.upMine))*1.8 + (sit.late && sit.ahead ? 1 : 0),
+    push:0.5 + Math.max(0, (ro.kb - 1)*5) + Math.max(0, (sit.upMine - sit.upFoe))*0.7 + (sit.behind ? 0.3 : 0) - (sit.ahead && sit.late ? 0.8 : 0),
+    decoy:0.3 + sk*0.2,
+    mover:((M.elevs && M.elevs.length) || (M.wheels && M.wheels.length) || (M.ferries && M.ferries.length)) ? 0.5 : 0,
+    counter:(sit.upFoe >= 3 && L.playT > 1500 && fighters.filter(g=>g.team !== t && !g.dead && g._jail == null && (t === 0 ? g.x < M.WW/2 : g.x > M.WW/2)).length >= Math.ceil(sit.upFoe*0.6)) ? 1.6 : 0,
+    layers:defs.length >= 2 ? 0.7 : 0, above:((pl.overhangs.length || (M.elevs && M.elevs.length)) ? 0.6 : 0.15) + ro.lob*2.4 + ro.shooters*0.4, lurk:0.9 };
+  const taken = {}, defTags = {};
+  defs.forEach(f=>{
+    const as = pl.assign[f.idx];
+    if(as && CTF_DEFENCE.indexOf(as) >= 0){ defTags[f.idx] = as; taken[as] = (taken[as] || 0) + 1; return; }
+    const keep = pl.pg[f.idx]; if(keep && keep.until > L.playT && fitD[keep.id] > 0){ defTags[f.idx] = keep.id; taken[keep.id] = (taken[keep.id] || 0) + 1; return; }
+    let tot = 0; const ws = CTF_DEFENCE.map(id=>{ const w = (fitD[id] > 0 || pl.ticks[id]) ? ctfPlanW(pl, id, fitD[id])/(1 + (taken[id] || 0)*(id === 'zone' || id === 'patrol' ? 0.3 : 1.4)) : 0; tot += w; return w; });
+    let r = Math.random()*tot, pick = 'patrol'; for(let k = 0; k < ws.length; k++){ r -= ws[k]; if(r <= 0){ pick = CTF_DEFENCE[k]; break; } }
+    if(sk === 0 && ['layers', 'above', 'decoy', 'counter', 'mover', 'bait'].indexOf(pick) >= 0 && !pl.ticks[pick]) pick = 'zone';
+    pl.pg[f.idx] = { id:pick, until:L.playT + 700 + Math.floor(Math.random()*700) }; defTags[f.idx] = pick; taken[pick] = (taken[pick] || 0) + 1;
+  });
+  pl.defTags = defTags;
+}
+// ---- goals ----
+// before the ordinary errands for the flags: the jobs that override them. Returns true when it set a goal.
+function ctfPlanChoose(f, ai, L, nav, now, set){
+  const pl = L.plans && L.plans[f.team]; if(!pl || !pl.tags || CTF.noPlan) return false;
+  const tag = pl.tags[f.idx], t = f.team, M = L.map;
+  if(tag === 'scout' && L.playT < 2400 && f._cf < 0){   // sweep the enemy's rooms early without grabbing; what it sees the team knows
+    ctfAiSearch(f, ai, L, nav, now, set); return true;
+  }
+  if(tag === 'keyrunner' && f._cf < 0 && f._ck < 0){
+    let best = null, bd = 1e9; for(const k of L.keys){ if(k.st !== 0 || (ai.dead && ai.dead['k' + k.i] > now)) continue; const d = Math.hypot(k.x - f.x, (k.y - f.y)*1.4); if(d < bd){ bd = d; best = k; } }
+    if(best){ set({ kind:'key', id:best.i, x:best.x, y:best.y }); return true; }
+  }
+  if(tag === 'rescuer' && f._cf < 0 && pl.jb){
+    const j = L.jails.find(q=>q.owner !== t); if(!j) return false;
+    const mine = j.pris.map(i=>fighters[i]).filter(p=>p && p.team === t), age = mine.length ? Math.max(...mine.map(p=>p._jailT || 0)) : 0;
+    const go = mine.length >= pl.jb.need || (mine.length >= 2 && CTF_JAIL_AUTO - age < 1500) || (mine.length >= 1 && age > 3600);
+    const out = j.face === 1 ? 1 : -1;
+    if(go && j.lock <= 0){ set({ kind:'jail', jail:L.jails.indexOf(j), role:'hold', x:j.door.x + (out === 1 ? j.door.w + 50 : -50), y:j.door.y + j.door.h }); return true; }
+    set({ kind:'guard', x:j.door.x + (out === 1 ? j.door.w + 640 : -640), y:j.door.y + j.door.h, wait:true }); return true;   // out of the door's sight, waiting
+  }
+  if(tag === 'wave2' && L.playT < 9000){   // the second wave waits at the middle of its own side until the first has been in a while
+    const w1 = pl.cpus.map(i=>fighters[i]).filter(g=>pl.tags[g.idx] === 'wave1');
+    const engaged = w1.some(g=>g._jail != null) || w1.some(g=>Math.abs(g.x - M.WW/2) > M.WW*0.3 && (t === 0 ? g.x > M.WW/2 : g.x < M.WW/2));
+    if(engaged && !pl.w2t) pl.w2t = L.playT;
+    if(!(pl.w2t && L.playT - pl.w2t > 300)){ const ns = ctfPlanSideNodes(nav, M, t, 300, 1900, 80); if(ns.length){ const n = ns[(f.idx*7) % ns.length], q = ctfPlanAt(n); set({ kind:'guard', x:q.x, y:q.y, wait:true }); return true; } }
+  }
+  return false;
+}
+// the attackers' own ways: a feint
+function ctfPlanAtt(f, ai, L, nav, now, set){
+  const pl = L.plans && L.plans[f.team]; if(!pl || !pl.tags || CTF.noPlan) return false;
+  const tag = pl.tags[f.idx], t = f.team, M = L.map;
+  if(tag === 'feint'){   // loud: the nearest rooms of the enemy's side to the middle, where the defenders are, so they come
+    const ns = ctfPlanSideNodes(nav, M, 1 - t, 400, 2400, 150);
+    if(ns.length){ const n = ns[(f.idx*13 + Math.floor(now/1500)) % ns.length], q = ctfPlanAt(n); set({ kind:'guard', x:q.x, y:q.y, feint:true }); return true; }
+  }
+  return false;
+}
+// the defenders' jobs
+function ctfPlanDef(f, ai, L, nav, now, set){
+  const pl = L.plans && L.plans[f.team]; if(!pl || !pl.defTags || CTF.noPlan) return false;
+  const id = pl.defTags[f.idx]; if(!id) return false;
+  const t = f.team, M = L.map, mid = M.WW/2, z = ctfAiSkip(f), own = L.flags.filter(fl=>fl.team === t && fl.st === 1);
+  const stand = (ns, extra)=>{ ns = ns.filter(n=>!z(n)); if(!ns.length) return false; const n = ns[Math.floor(Math.random()*ns.length)], q = ctfPlanAt(n); set(Object.assign({ kind:'guard', x:q.x, y:q.y, plan:id }, extra || {})); return true; };
+  const defs = pl.cpus.map(i=>fighters[i]).filter(g=>g._ai && g._ai.role === 'def' && !g.dead && g._jail == null).sort((a, b)=>a.idx - b.idx), k = Math.max(0, defs.indexOf(f));
+  const high = n=>n.y < (M.pocketY != null ? M.pocketY : 1e9);
+  const near = (fl, r)=>nav.nodes.filter(n=>{ const cx = (n.x0 + n.x1)/2; return n.x1 - n.x0 > 60 && Math.abs(cx - fl.hx) < r && Math.abs(n.y - fl.hy) < 420 && high(n) && (t === 0 ? cx < mid - 500 : cx > mid + 500); });
+  const foes = fighters.filter(g=>g.team !== t && !g.dead && g._jail == null);
+  const carrier = foes.find(g=>g._cf >= 0 && L.flags[g._cf] && L.flags[g._cf].team === t);
+  switch(id){
+    case 'zone': { if(!own.length) return false; return stand(near(own[k % own.length], 650)); }
+    case 'patrol': { if(!own.length) return false; return stand(near(own[(Math.floor(now/700) + k) % own.length], 500)); }
+    case 'mark': {
+      let best = null, bd = 1e9;
+      for(const g of foes){ if(g._cf >= 0 && !carrier) continue; const d = Math.hypot(g.x - f.x, g.y - f.y); const claimed = defs.some(q=>q !== f && q._ai.goal && q._ai.goal.who === g.idx && q._ai.goal.plan === 'mark'); if(!claimed && d < bd){ bd = d; best = g; } }
+      if(best){ const n = ctfPlanFoeNode(nav, best); if(n && !z(n)){ set({ kind:'guard', x:Math.min(Math.max(best.x, n.x0 + 12), n.x1 - 12), y:n.y, who:best.idx, plan:id }); return true; } }
+      return false; }
+    case 'cutoff': {
+      if(!carrier) return false;
+      const ahead = carrier.x + (t === 0 ? 1 : -1)*900, ns = nav.nodes.filter(n=>n.x1 - n.x0 > 60 && !z(n) && high(n) && Math.abs((n.x0 + n.x1)/2 - ahead) < 500 && Math.abs(n.y - carrier.y) < 600);
+      if(ns.length){ const n = ns.sort((a, b)=>Math.abs((a.x0 + a.x1)/2 - ahead) - Math.abs((b.x0 + b.x1)/2 - ahead))[0], q = ctfPlanAt(n); set({ kind:'guard', x:q.x, y:q.y, plan:id, cut:true }); return true; }
+      return false; }
+    case 'chase': { if(!carrier) return false; const n = ctfPlanFoeNode(nav, carrier); if(n && !z(n)){ set({ kind:'guard', x:Math.min(Math.max(carrier.x, n.x0 + 12), n.x1 - 12), y:n.y, who:carrier.idx, plan:id }); return true; } return false; }
+    case 'push': return stand(ctfPlanSideNodes(nav, M, t, 250, 1700, 80));
+    case 'fallback': { if(!own.length) return false; return stand(near(own[0], 420)); }
+    case 'choke': {
+      const ns = ctfPlanSideNodes(nav, M, t, 500, 3200, 40).filter(n=>n.x1 - n.x0 < 260 && !z(n)); if(!ns.length) return false;
+      ns.sort((a, b)=>(a.x1 - a.x0) - (b.x1 - b.x0)); const n = ns[k % Math.min(3, ns.length)], q = ctfPlanAt(n); set({ kind:'guard', x:q.x, y:q.y, plan:id }); return true; }
+    case 'jailguard': { const j = L.jails.find(q=>q.owner === t); if(!j) return false; const out = j.face === 1 ? 1 : -1; set({ kind:'guard', x:j.door.x + (out === 1 ? j.door.w + 520 : -520), y:j.door.y + j.door.h, plan:id }); return true; }
+    case 'bait': { if(own.length < 2) return false; return stand(near(own.slice().sort((a, b)=>Math.abs(a.hx - mid) - Math.abs(b.hx - mid))[0], 400)); }
+    case 'decoy': {
+      const props = []; M.spots.forEach((s, i)=>{ if(s.team === t && s.cover && !(L.gone && L.gone[i]) && !own.some(fl=>Math.hypot(fl.hx - s.x, fl.hy - s.y) < 200)) props.push(s); }); if(!props.length) return false;
+      const s = props[(k*5 + Math.floor(now/2000)) % props.length], n = ctfNavNodeAt(nav, s.x, s.y, 14); if(n && !z(n)){ set({ kind:'guard', x:s.x, y:s.y, plan:id }); return true; } return false; }
+    case 'mover': {
+      const els = (M.elevs || []).filter(e=>(t === 0 ? e.x < mid - 400 : e.x > mid + 400)); if(!els.length) return false;
+      const e = els[k % els.length], n = ctfNavNodeAt(nav, e.x + e.w/2, e.y0, 30); if(n && !z(n)){ set({ kind:'guard', x:e.x + e.w/2, y:n.y, plan:id }); return true; } return false; }
+    case 'counter': { const fl = L.flags.find(q=>q.team !== t && q.st === 1 && L.seen[t][q.id]); if(fl){ set({ kind:'flag', id:fl.id, x:fl.x, y:fl.y, mine:'take' }); return true; } return false; }
+    case 'layers': { if(!own.length) return false; return k % 2 === 0 ? stand(near(own[0], 400)) : stand(ctfPlanSideNodes(nav, M, t, 1500, 2600, 120)); }
+    case 'lurk': { const a = pl.ambush; if(!a.length) return false; const o = a[(k + Math.floor(now/2500)) % a.length], n = ctfNavNodeAt(nav, o.x, o.y, 20); if(n && !z(n)){ set({ kind:'guard', x:o.x, y:o.y, plan:id, lurk:true }); return true; } return false; }   // (in the prop the ambush built beside the corridor)
+    case 'above': {
+      const o = pl.overhangs[k % Math.max(1, pl.overhangs.length)];
+      if(o){ const n = ctfNavNodeAt(nav, o.x, o.y, 30); if(n && !z(n)){ set({ kind:'guard', x:o.x, y:n.y, plan:id }); return true; } }
+      const hi = ctfPlanSideNodes(nav, M, t, 400, 3200, 100).filter(n=>n.y < M.WH*0.45 && !z(n)); return hi.length ? stand(hi) : false; }
+  }
+  return false;   // (lurk: the ordinary lurk, a prop close to a flag)
+}
+// how many may go for one flag: two, and more when the plan swarms a stash (flags close together) or hits while the other side's defenders are off freeing a jailed one
+function ctfPlanClaimMax(L, f, fl){
+  const pl = L.plans && L.plans[f.team]; if(!pl || !pl.run || CTF.noPlan) return 2;
+  let m = 2;
+  if(pl.run.swarm && L.flags.some(q=>q !== fl && q.team === fl.team && q.st === 1 && L.seen[f.team][q.id] && Math.hypot(q.x - fl.x, q.y - fl.y) < 800)) m = 4;   // swarm a stash
+  if(pl.run.rescuehit && fighters.some(g=>g.team !== f.team && !g.dead && g._ai && g._ai.goal && g._ai.goal.kind === 'jail')) m = Math.max(m, 3);   // hit during a rescue
+  return m;
+}
+// the jail rescue as the plan has it: a jailbreak holds the rest back until the rescuer has enough inside (ctfAiChoose, 3)
+function ctfPlanHoldRescue(L, f, j){
+  const pl = L.plans && L.plans[f.team]; if(!pl || !pl.jb || !pl.jb.active || CTF.noPlan) return false;
+  const rescuer = pl.jb.rescuer; if(rescuer == null || f.idx === rescuer) return false;
+  const rf = fighters[rescuer]; if(!rf || rf.dead || rf._jail != null) return false;
+  const mine = j.pris.map(i=>fighters[i]).filter(p=>p && p.team === f.team);
+  return mine.length < pl.jb.need;
+}
+
+// =================================================================================================================================================================
+//  THE PLANNING MENU (the owner, 2026-10-15: "can you have a planning menu where you can choose ideas for your team?"): opens any time with a key (P; hiding, the bid, mid-match) over a match that keeps running; a PRESET whole-team plan,
+//  or single build setups, offence plays and defence tactics ticked, and roles given to particular CPU teammates (the rest choose their own from what is ticked). Online every human on the side votes and the most-ticked
+//  ideas become the plan (a guest's vote goes to the host in a 'ctfvote' message; the host sends the plan back in its snapshot). Never opened: the CPUs use their own judgement. Words and icons are for the menu only.
+// =================================================================================================================================================================
+Object.assign(CTF_PRESETS, {
+  fortress:{ name:'Fortress', icon:'#', builds:['rings', 'moat', 'seeit', 'sealedbox', 'shell', 'wallshort'], plays:['zone', 'patrol', 'fallback', 'jailguard'], defShare:0.62, desc:'walls and traps, most stay home' },
+  jailbreak:{ name:'Jailbreak Rush', icon:'!', builds:['camp', 'fakegaunt'], plays:['jailbreak', 'twowave', 'scout'], defShare:0.2, desc:'get caught, then free them all' },
+  twowaves:{ name:'Two Waves', icon:'2', builds:['choke', 'stunland'], plays:['twowave', 'feint', 'pincer', 'rescuehit'], defShare:0.3, desc:'a wave to draw them, a wave to strike' },
+  traps:{ name:'Trap Alley', icon:'x', builds:['choke', 'stunchain', 'airlock', 'zigzag', 'fork', 'stunland', 'springback'], plays:['choke', 'mark', 'layers'], defShare:0.45, desc:'one narrow way, full of traps' },
+  allout:{ name:'All-out', icon:'>', builds:['camp'], plays:['scout', 'swarm', 'pincer', 'keyrunner'], defShare:0.05, desc:'everyone goes' },
+  turtle:{ name:'Turtle', icon:'o', builds:['rings', 'moat', 'shell', 'sealedbox', 'curtains', 'ambush'], plays:['zone', 'fallback', 'jailguard', 'choke', 'decoy'], defShare:0.9, desc:'everyone defends' } });
+const CTF_ROLE_CHOICES = ['auto', 'waller', 'corridor', 'trapper', 'runner', 'scout', 'keyrunner', 'att', 'def', 'jailguard'];
+const CTF_BUILD_NAMES = {};
+// ---- votes: each human of a side ticks things; the plan is what most of them ticked ----
+function ctfPlanHumans(L, t){ return fighters.filter(f=>f.team === t && ctfIsHuman(f)); }
+function ctfPlanVoteIn(L, t, idx, vote){
+  L.plans = L.plans || [0, 1].map(tt=>({ t:tt, cpus:[], roles:{}, ticks:{}, votes:{}, assign:{}, preset:null, ready:{}, log:[], camps:[], ambush:[], overhangs:[], pref:{}, rooms:{}, sel:{} }));
+  const pl = L.plans[t]; if(!pl) return;
+  pl.votes[idx] = { preset:vote.preset || null, ticks:Object.assign({}, vote.ticks || {}), assign:Object.assign({}, vote.assign || {}), at:L.t };
+  ctfPlanResolve(L, pl);
+}
+function ctfPlanResolve(L, pl){
+  const voters = Object.keys(pl.votes).map(k=>pl.votes[k]);
+  const humans = Math.max(1, ctfPlanHumans(L, pl.t).length || voters.length);
+  const cnt = {}; for(const v of voters) for(const id of Object.keys(v.ticks)) if(v.ticks[id]) cnt[id] = (cnt[id] || 0) + 1;
+  const ticks = {}; for(const id of Object.keys(cnt)) if(cnt[id]*2 >= humans) ticks[id] = true;   // (a tick from at least half the humans of the side; a lone human is the whole say)
+  const pc = {}; for(const v of voters) if(v.preset) pc[v.preset] = (pc[v.preset] || 0) + 1;
+  let preset = null, bc = 0; for(const k of Object.keys(pc)) if(pc[k] > bc && pc[k]*2 >= humans){ bc = pc[k]; preset = k; }
+  const assign = {}; for(const v of voters.slice().sort((a, b)=>a.at - b.at)) for(const k of Object.keys(v.assign)) { if(v.assign[k] && v.assign[k] !== 'auto') assign[k] = v.assign[k]; else delete assign[k]; }   // (the latest word on a teammate's role)
+  pl.ticks = ticks; pl.preset = preset; pl.assign = assign; pl.ticksOnly = false;
+  if(pl.cpus && pl.cpus.length && !pl.built) ctfPlanAssignBuildRoles(L, pl);
+  if(pl.cpus && pl.cpus.length){ pl.dealt = false; }   // the offence plays are dealt again from what is ticked
+}
+// a preset's own ticks: what choosing it puts in the vote
+function ctfPlanPresetTicks(id){ const P = CTF_PRESETS[id], o = {}; if(P){ for(const b of (P.builds || [])) o[b] = true; for(const p of (P.plays || [])) o[p] = true; } return o; }
+// ---- the menu itself ----
+function ctfMenuOpen(){ return !!(typeof CTF !== 'undefined' && CTF.menu && CTF.menu.open); }
+function ctfMenuRows(){
+  const L = CTF.live, me = fighters.find(f=>f.you); if(!L || !me) return [];
+  const m = CTF.menu, t = me.team;
+  if(m.tab === 0) return Object.keys(CTF_PRESETS).map(id=>({ id, text:CTF_PRESETS[id].name + ' - ' + CTF_PRESETS[id].desc, on:m.vote.preset === id, kind:'preset' }));
+  if(m.tab === 1) return Object.keys(CTF_BUILDS).filter(id=>id !== 'twin').map(id=>({ id, text:CTF_BUILDS[id].name, on:!!m.vote.ticks[id], kind:'tick' }));
+  if(m.tab === 2) return CTF_OFFENCE.map(id=>({ id, text:CTF_PLAY_NAMES[id], on:!!m.vote.ticks[id], kind:'tick' }));
+  if(m.tab === 3) return CTF_DEFENCE.map(id=>({ id, text:CTF_PLAY_NAMES[id], on:!!m.vote.ticks[id], kind:'tick' }));
+  return fighters.filter(f=>f.team === t && !ctfIsHuman(f)).map(f=>({ id:f.idx, text:f.name, role:m.vote.assign[f.idx] || 'auto', kind:'role' }));
+}
+function ctfMenuToggle(on){
+  const L = CTF.live, me = fighters.find(f=>f.you); if(!L || !me || !running || L.over) return;
+  CTF.menu = CTF.menu || { open:false, tab:0, cur:0, vote:{ preset:null, ticks:{}, assign:{} } };
+  CTF.menu.open = on == null ? !CTF.menu.open : !!on;
+  if(CTF.menu.open){ const pl = L.plans && L.plans[me.team], v = pl && pl.votes && pl.votes[me.idx]; if(v) CTF.menu.vote = { preset:v.preset, ticks:Object.assign({}, v.ticks), assign:Object.assign({}, v.assign) }; }
+}
+function ctfMenuSend(){
+  const L = CTF.live, me = fighters.find(f=>f.you); if(!L || !me) return;
+  const vote = CTF.menu.vote;
+  if(isNetClient()){ try{ window.NET.send({ t:'ctfvote', idx:window.NET.myIdx, vote }); }catch(e){} L.plans = L.plans || [0, 1].map(tt=>({ t:tt, cpus:[], roles:{}, ticks:{}, votes:{}, assign:{}, preset:null })); }
+  else ctfPlanVoteIn(L, me.team, me.idx, vote);
+}
+function ctfMenuKey(e){
+  if(typeof CTF === 'undefined' || SETTINGS.mode !== 'ctf' || !CTF.live || !running) return;
+  const code = e.code, open = ctfMenuOpen();
+  if(code === (KEYS.plan || 'KeyP') && !e.repeat && !(e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))){ ctfMenuToggle(); e.stopImmediatePropagation(); e.preventDefault(); return; }
+  if(!open) return;
+  const m = CTF.menu, rows = ctfMenuRows(), nt = 5;
+  const eat = ()=>{ e.stopImmediatePropagation(); e.preventDefault(); };
+  if(code === 'Escape'){ ctfMenuToggle(false); eat(); return; }
+  if(code === 'ArrowLeft' || code === 'ArrowRight'){ eat();
+    if(m.tab === 4 && rows.length && m.cur < rows.length){ const r = rows[m.cur], i = CTF_ROLE_CHOICES.indexOf(r.role), j = (i + (code === 'ArrowRight' ? 1 : CTF_ROLE_CHOICES.length - 1)) % CTF_ROLE_CHOICES.length; const v = CTF_ROLE_CHOICES[j]; if(v === 'auto') delete m.vote.assign[r.id]; else m.vote.assign[r.id] = v; ctfMenuSend(); return; }
+    m.tab = (m.tab + (code === 'ArrowRight' ? 1 : nt - 1)) % nt; m.cur = 0; return; }
+  if(code === 'ArrowUp' || code === 'ArrowDown'){ eat(); if(rows.length) m.cur = (m.cur + (code === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length; return; }
+  if(code === 'Space' || code === 'Enter' || code === 'KeyX'){ eat(); const r = rows[m.cur]; if(!r) return;
+    if(r.kind === 'preset'){ if(m.vote.preset === r.id){ m.vote.preset = null; for(const id of Object.keys(ctfPlanPresetTicks(r.id))) delete m.vote.ticks[id]; } else { m.vote.preset = r.id; Object.assign(m.vote.ticks, ctfPlanPresetTicks(r.id)); } }
+    else if(r.kind === 'tick'){ if(m.vote.ticks[r.id]) delete m.vote.ticks[r.id]; else m.vote.ticks[r.id] = true; }
+    ctfMenuSend(); return; }
+  if(code === 'KeyC' || code === 'Backspace'){ eat(); m.vote = { preset:null, ticks:{}, assign:{} }; ctfMenuSend(); return; }   // clear: back to the CPUs' own judgement
+  if(CTF_MENU_SWALLOW.indexOf(code) >= 0) eat();   // (the match's own keys do nothing while it is open)
+}
+const CTF_MENU_SWALLOW = ['KeyV', 'KeyB', 'Tab'];
+if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfMenuKeys){ window.__ctfMenuKeys = true; window.addEventListener('keydown', ctfMenuKey, true); }
+function ctfDrawPlanMenu(){
+  if(!ctfMenuOpen()) return;
+  const L = CTF.live, me = fighters.find(f=>f.you); if(!L || !me) return;
+  const m = CTF.menu, rows = ctfMenuRows(), tabs = ['Preset', 'Build', 'Offence', 'Defence', 'Roles'], x = 56, y = 120, w = 620, rh = 24, vis = 12;
+  const first = Math.max(0, Math.min(m.cur - 5, rows.length - vis)), shown = rows.slice(first, first + vis);
+  ctx.save(); ctx.fillStyle = 'rgba(16,14,26,0.88)'; ctx.strokeStyle = '#d8c46a'; ctx.lineWidth = 3; ctx.fillRect(x, y, w, 62 + vis*rh + 52); ctx.strokeRect(x, y, w, 62 + vis*rh + 52);
+  ctx.font = 'bold 15px sans-serif'; ctx.textBaseline = 'middle';
+  tabs.forEach((tb, i)=>{ const tx = x + 14 + i*120; ctx.fillStyle = i === m.tab ? '#d8c46a' : 'rgba(255,255,255,0.55)'; ctx.fillRect(tx, y + 12, 108, 28); ctx.fillStyle = i === m.tab ? '#1c1c1c' : '#14121e'; ctx.fillText(tb, tx + 10, y + 27); });
+  ctx.font = '14px sans-serif';
+  shown.forEach((r, k)=>{ const ry = y + 52 + k*rh, sel = (first + k) === m.cur;
+    if(sel){ ctx.fillStyle = 'rgba(216,196,106,0.28)'; ctx.fillRect(x + 8, ry - 2, w - 16, rh); }
+    ctx.fillStyle = '#fff';
+    if(r.kind === 'role'){ ctx.fillText(r.text, x + 18, ry + 10); ctx.fillStyle = r.role === 'auto' ? 'rgba(255,255,255,0.5)' : '#8fe08f'; ctx.fillText('< ' + r.role + ' >', x + 300, ry + 10); }
+    else { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(x + 18, ry + 3, 14, 14); if(r.on){ ctx.fillStyle = '#8fe08f'; ctx.fillRect(x + 21, ry + 6, 8, 8); } ctx.fillStyle = '#fff'; ctx.fillText(r.text, x + 42, ry + 10); } });
+  const pl = L.plans && L.plans[me.team], tickN = pl ? Object.keys(pl.ticks).length : 0, hum = ctfPlanHumans(L, me.team).length;
+  ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '12px sans-serif';
+  ctx.fillText('up/down: move   left/right: tab   space: tick   C: clear   P or Esc: close' + (hum > 1 ? '   (' + hum + ' vote)' : ''), x + 14, y + 62 + vis*rh + 14);
+  ctx.fillText('plan now: ' + (pl && pl.preset ? CTF_PRESETS[pl.preset].name + ', ' : '') + tickN + ' ticked' + (tickN || (pl && pl.preset) ? '' : ' (the CPUs judge)'), x + 14, y + 62 + vis*rh + 34);
+  ctx.restore();
+}
+// the host takes a guest's vote (checked: a human of that side, known ideas, roles that exist)
+function ctfPlanVoteMsg(m){
+  const L = typeof CTF !== 'undefined' && CTF.live; if(!L || !m || !Number.isInteger(m.idx) || m.idx < 0 || m.idx >= fighters.length || !m.vote || typeof m.vote !== 'object') return;
+  const f = fighters[m.idx]; if(!f || !ctfIsHuman(f)) return;
+  const known = id=>!!(CTF_BUILDS[id] || CTF_OFFENCE.indexOf(id) >= 0 || CTF_DEFENCE.indexOf(id) >= 0 || id === 'turtle' || id === 'allout');
+  const vote = { preset:(typeof m.vote.preset === 'string' && CTF_PRESETS[m.vote.preset]) ? m.vote.preset : null, ticks:{}, assign:{} };
+  for(const k of Object.keys(m.vote.ticks || {})) if(known(k) && m.vote.ticks[k]) vote.ticks[k] = true;
+  for(const k of Object.keys(m.vote.assign || {})){ const i = +k, g = fighters[i], r = m.vote.assign[k]; if(Number.isInteger(i) && g && g.team === f.team && !ctfIsHuman(g) && CTF_ROLE_CHOICES.indexOf(r) >= 0) vote.assign[i] = r; }
+  ctfPlanVoteIn(L, f.team, f.idx, vote);
+}
+// what goes over the wire: each side's plan (the preset, the ticked ideas, the roles given)
+function ctfPlanNetOut(L){ return L.plans ? L.plans.map(p=>[p.preset || 0, Object.keys(p.ticks), p.assign]) : 0; }
+function ctfPlanNetIn(L, c){
+  if(!c || !c.pl) return;
+  L.plans = L.plans || [0, 1].map(tt=>({ t:tt, cpus:[], roles:{}, ticks:{}, votes:{}, assign:{}, preset:null, ready:{}, log:[], camps:[], ambush:[], overhangs:[], pref:{}, rooms:{}, sel:{} }));
+  c.pl.forEach((r, t)=>{ const p = L.plans[t]; if(!p || !Array.isArray(r)) return; p.preset = r[0] || null; p.ticks = {}; for(const k of (r[1] || [])) p.ticks[k] = true; p.assign = r[2] || {}; });
+}
+
+// =================================================================================================================================================================
+//  WHAT A FIGHTER'S SHOTS ARE (the owner, 2026-10-15: "use projectiles that pass through platforms. make the bots have the knowledge of their projectile properties"). aiProjInfo(f) tells a CPU about its kit's projectiles, read out of
+//  the game's own code by scripts/ctf-proj-probe.mjs (each kit throws its attack and special in a bare arena and what lands in `projectiles` is summed: artifacts/V1/assets/ctf/proj-info.json, keyed by the kit's special), with the
+//  attack table (RANGED_ATTACKERS) as the fallback before the file is in. Derived from it: how far it goes, whether gravity arcs it, whether it passes platforms and walls (a straight shot does; a falling one stops on the first surface it
+//  comes down on, a bouncing one bounces off tops), pierce, homing, and whether it can reach a target at (dx, dy) at all (ctfProjWorks: the shot flown step by step the way the game flies it). Any AI may use it.
+// =================================================================================================================================================================
+const CTF_PROJ = { table:null, loading:false, cache:{} };
+function ctfProjLoad(){
+  if(CTF_PROJ.table || CTF_PROJ.loading || typeof fetch !== 'function' || (typeof CTF !== 'undefined' && CTF.noFetch)) return;
+  CTF_PROJ.loading = true;
+  try{ fetch('assets/ctf/proj-info.json').then(r=>r.ok ? r.json() : null).then(d=>{ if(d){ CTF_PROJ.table = d; CTF_PROJ.cache = {}; } CTF_PROJ.loading = false; }, ()=>{ CTF_PROJ.loading = false; }); }catch(e){ CTF_PROJ.loading = false; }
+}
+function aiProjInfo(f){
+  const sp = f && f.kit && f.kit.special; if(!sp) return null;
+  ctfProjLoad();
+  const key = sp + (CTF_PROJ.table ? '+' : ''); if(CTF_PROJ.cache[key]) return CTF_PROJ.cache[key];
+  const row = CTF_PROJ.table && CTF_PROJ.table[sp];
+  let atk = row && row.atk && row.atk[0], spc = row && row.sp && row.sp.find(p=>!p.trap && !p.orbit);
+  if(!atk && !row && typeof RANGED_ATTACKERS === 'object' && RANGED_ATTACKERS[sp]){ const RA = RANGED_ATTACKERS[sp]; atk = { speed:RA.speed, vx:RA.speed, vy:RA.bounce ? -5 : 0, life:Math.round(RA.life*(typeof PROJ_LIFE === 'number' ? PROJ_LIFE : 1.4)), r:RA.r, grav:!!RA.bounce, bounce:!!RA.bounce, pierce:false, breaks:false, trap:false, homing:false }; }
+  const use = atk || spc || null;   // the shot a CPU throws: the attack if it throws one, else a thrown special
+  const info = { sp, has:!!use, attack:!!atk, special:!!spc && !atk, use, atkP:atk || null, spP:spc || null };
+  if(use){
+    const g = (use.grav || use.bounce) ? 0.34 : 0, vx = Math.abs(use.vx), vy = use.vy;
+    // the flight: a straight shot goes speed x life; an arc goes until it has fallen six rows below where it left (or its life is up)
+    let t = use.life; if(g) t = Math.min(use.life, (-vy + Math.sqrt(vy*vy + 2*g*720))/g);
+    info.range = Math.round(vx*Math.max(1, t)); info.peak = g && vy < 0 ? Math.round(vy*vy/(2*g)) : 0;
+    info.through = !(use.grav || use.bounce || use.breaks);   // passes platforms and walls: only a falling shot stops at a surface, a bouncing one bounces off a top
+    info.arcs = !!g; info.pierce = !!use.pierce; info.homing = !!use.homing; info.canDown = !!(g || vy > 2);
+    info.speed = use.speed; info.life = use.life; info.r = use.r;
+  }
+  return CTF_PROJ.cache[key] = info;
+}
+// Would a shot of this kind thrown from (x, y), facing dir, come within its own radius of (tx, ty)? Flown the way the game flies it (a step: position by speed, gravity 0.34 if it arcs); a shot that falls onto a surface stops there, one that
+// bounces turns up off a top; a straight one goes on through everything.
+function ctfProjWorks(info, x, y, dir, tx, ty){
+  if(!info || !info.has) return false; const p = info.use, g = (p.grav || p.bounce) ? 0.34 : 0, rr = (p.r || 8) + 26;
+  let px = x + dir*34, py = y - 4, vx = dir*Math.abs(p.vx), vy = p.vy, bounces = 0;
+  for(let s = 0; s < Math.max(2, p.life); s++){
+    const ox = px, oy = py; px += vx; py += vy; if(g) vy += g;
+    if(Math.hypot(px - tx, py - ty) < rr) return true;
+    if(!info.through && vy > 0){
+      const sy = typeof ctfSurfaceBelow === 'function' ? ctfSurfaceBelow(px, oy - 2, py - oy + 6) : null;
+      if(sy !== null && sy <= py + 2 && sy >= oy - 2){ if(p.bounce && bounces < 2){ bounces++; vy = -Math.abs(vy)*0.82; py = sy - 6; } else return false; }
+    }
+    if((vx > 0 ? px > tx + 400 : px < tx - 400) && !p.boomerang && !g) return false;
+  }
+  return false;
+}
+// A CPU that can throw does: a foe in reach, the shot working out, the cooldown over: face it and throw (only when no melee fight is already on). Returns an input or null.
+function ctfAiVolley(f, ai, L){
+  if(f.atkCd > 0 && f.spCd > 0) return null; const info = aiProjInfo(f); if(!info || !info.has) return null;
+  if(info.attack ? f.atkCd > 0 : f.spCd > 0) return null;
+  if(ai.volleyT && L.t < ai.volleyT) return null;
+  let best = null, bd = 1e9;
+  for(const g of fighters){
+    if(g.team === f.team || g.dead || g._jail != null || g._ghostT > 0 || (g._room || null) !== (f._room || null) || (g._hid && Math.hypot(g.x - f.x, g.y - f.y) > CTF_HIDE_CLOSE)) continue;
+    const dx = g.x - f.x, dy = g.y - f.y, d = Math.hypot(dx, dy); if(d < 90 || d > (info.range || 0) + 80 || d >= bd) continue;
+    const dir = dx > 0 ? 1 : -1;
+    if(!ctfProjWorks(info, f.x, f.y, dir, g.x, g.y)) continue;
+    if(!info.through && !ctfLOS(f.x, f.y - 6, g.x, g.y - 6)) continue;   // a shot that stops at a surface is not fired into one
+    best = g; bd = d;
+  }
+  if(!best) return null;
+  ai.volleyT = L.t + 36 + Math.floor(Math.random()*20);
+  const inp = ctfAiInpNew(), dir = best.x > f.x ? 1 : -1;
+  if(f.face !== dir){ if(dir > 0) inp.right = true; else inp.left = true; ai.volleyT = L.t + 3; return inp; }   // (turn first)
+  if(info.attack) inp.attack = true; else inp.special = true;
+  ctfAiStat('volley'); return inp;
+}
+// @ctfplan:end
 
 // @ctf:end
 // ============================================================
@@ -53558,6 +54252,7 @@ window.NET = {
         L.at = hazardT; L.b[b] = true;
       }
     }
+    else if(m.t==="ctfvote" && this.role==="host"){ try{ ctfPlanVoteMsg(m); }catch(e){} }   // a guest's vote for its side's plan
     else if(m.t==="state" && this.role==="client"){ if(m.s && typeof m.s==='object') netSnapshotArrived(this, m.s); }
     else if(m.t==="start"){ this.beginMatch(m.settings, m.roster, m.ids, m.cos); }
     else if(m.t==="status"){ this.status(m.msg); }
