@@ -371,3 +371,13 @@ batchSuite("batch I", [
   ["Baseball", "groundpound", 250, 800],
   ["Pickle", "loadsofexperience", 250, 560]
 ]);
+batchSuite("batch J", [
+  ["Nickel (II)", "doublezinger", 120, 560],
+  ["Paper", "pianos", 250, null],
+  ["Microphone", "deafening", 300, -300],
+  ["Salt", "shake", 250, -300],
+  ["Test Tube", "glassup", 120, 600],
+  ["Box", "everythingpacked", 250, 560],
+  ["Trophy", "blackmail", 250, 560],
+  ["Goo", "engulf", 70, 260]
+]);
