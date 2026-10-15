@@ -351,3 +351,33 @@ batchSuite("batch G", [
   ["Ruler", "exactmeasure", 250, -300],
   ["Sidewalky", "physically", 250, 560]
 ]);
+batchSuite("batch H", [
+  ["Balloony", "airleak", 300, -300],
+  ["Roboty", "antennaspring", 150, 520],
+  ["Profily", "cactus", 250, 560],
+  ["Tree", "timber", 250, null],
+  ["Cake", "cakeatstake", 300, -300],
+  ["Donut", "sprinkleroll", 60, 220],
+  ["Balloon", "tirade", 120, 600],
+  ["Bomb", "literally", 100, 450]
+]);
+batchSuite("batch I", [
+  ["Knife", "bagoftricks", 250, -300],
+  ["Lightbulb", "brightflash", 120, 600],
+  ["Paintbrush", "heatwaves", 250, 720],
+  ["Taco (II)", "lemonspit", 250, -300],
+  ["Marshmallow", "noway", 150, 640],
+  ["Apple", "pencilthrow", 250, -300],
+  ["Baseball", "groundpound", 250, 800],
+  ["Pickle", "loadsofexperience", 250, 560]
+]);
+batchSuite("batch J", [
+  ["Nickel (II)", "doublezinger", 120, 560],
+  ["Paper", "pianos", 250, null],
+  ["Microphone", "deafening", 300, -300],
+  ["Salt", "shake", 250, -300],
+  ["Test Tube", "glassup", 120, 600],
+  ["Box", "everythingpacked", 250, 560],
+  ["Trophy", "blackmail", 250, 560],
+  ["Goo", "engulf", 70, 260]
+]);
