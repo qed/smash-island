@@ -381,3 +381,33 @@ batchSuite("batch J", [
   ["Trophy", "blackmail", 250, 560],
   ["Goo", "engulf", 70, 260]
 ]);
+batchSuite("batch K", [
+  ["Lifering", "sinker", 300, -300],
+  ["Bonesaw", "cutstothecore", 250, 560],
+  ["Spikey", "cantholditin", 200, null],
+  ["Candle", "crystalchime", 120, 600],
+  ["Cammy", "saycheese", 300, -300],
+  ["Cheesy", "kicksoccerpun", 300, -300],
+  ["Dough", "knockoff", 100, 560],
+  ["Fan", "leaveusalone", 300, -300]
+]);
+batchSuite("batch L", [
+  ["Soap", "scrubforhours", 60, 250],
+  ["Tissues", "achoo", 250, -300],
+  ["Yin-Yang", "yangthrowsyin", 250, 640],
+  ["Starfruit", "onehitwonder", 120, 600],
+  ["Blueberry", "palanquin", 250, 560],
+  ["Cherries", "playdirty", 250, -300],
+  ["Clover", "butterflies", 200, null],
+  ["Jack", "knuckles", 250, 560]
+]);
+batchSuite("batch M", [
+  ["Magnet", "likepolesrepel", 150, 600],
+  ["MeTag", "barrierwalls", 160, 600],
+  ["Poppy", "popcorn", 200, 800],
+  ["Silver Spoon", "glowinggold", 100, 560],
+  ["Tapey", "playback", 300, -300],
+  ["Tea Kettle", "mamasgotcha", 200, 560],
+  ["Teddy Bear", "ragesmash", 110, 560],
+  ["Bot", "gotcha", 250, 560]
+]);
