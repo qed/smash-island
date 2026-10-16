@@ -3568,7 +3568,7 @@ function ctfSpeedK(f){ return SETTINGS.mode === 'ctf' ? CTF_SPEED*(f._cf >= 0 ? 
 const CTF_N = 5, CTF_HIDE_STEPS = 18000, CTF_JAIL_AUTO = 5400, CTF_JAIL_OPEN = 150;   // (a prisoner is let out after 90 s, home to their own base, unless a teammate frees them sooner)
 const CTF_BIGHIT = 13, CTF_CARRY_SPEED = 0.78, CTF_CARRY_JUMP = 0.82, CTF_BOOST_JUMP = 1.45;   // (the super jump)
 const CTF_JAIL_HOLD = 120, CTF_JAIL_LOCK = 900, CTF_RESCUE_ZONE = 70;   // a rescuer holds the door for 2 s; after a jailbreak the door cannot be opened for 15 s
-const CTF_FREE_GRACE = 300, CTF_FREE_HASTE = 180, CTF_GHOST_STEPS = 420, CTF_REVEAL_GRAB = 300;
+const CTF_FREE_GRACE = 480, CTF_FREE_HASTE = 180, CTF_GHOST_STEPS = 420, CTF_REVEAL_GRAB = 300;
 // Damage on the enemy's side that sends you to their jail: higher in small teams, 120% at 2 a side down to 60% at 8 a side.
 function ctfJailThreshold(n){ return clamp(140 - 10*n, 50, 120); }
 const CTF_FLAG_R = 40, CTF_KEY_R = 42, CTF_BOOST_STEPS = 420, CTF_BOOST_CD = 1500;
@@ -4627,8 +4627,29 @@ function ctfEliminate(f){
 function ctfCheckWin(){
   const L = CTF.live; if(!L || L.over || L.explore) return;
   for(const t of [0,1]) if(L.score[t] >= ctfNeed(L, t)){ ctfEnd(t, 'flags'); return; }
-  // a whole side in jail at once: it is over
-  for(const t of [0,1]){ const mates = fighters.filter(f=>f.team === t); if(mates.length && mates.every(f=>f._jail != null)){ ctfEnd(1 - t, 'jail'); return; } }
+  // A WHOLE SIDE IN JAIL AT ONCE is a penalty, not the end (the owner, 2026-10-16: "most matches end in jail"; they picked "Penalty, not the end"):
+  // the jailed side gives back the last flag it captured (it goes home to its hiding place), or, with none to give, the other side scores one;
+  // then, after a short countdown, the whole side is let out and sent home with the long grace. Matches end on flags only.
+  for(const t of [0,1]){
+    const mates = fighters.filter(f=>f.team === t);
+    L.wipe = L.wipe || [0, 0];
+    if(L.wipe[t] > 0){ if(--L.wipe[t] === 0) ctfWipeRelease(L, t); continue; }
+    if(mates.length && mates.every(f=>f._jail != null)){ ctfWipePenalty(L, t); L.wipe[t] = CTF_WIPE_STEPS; if(L.over) return; }
+  }
+}
+const CTF_WIPE_STEPS = 180;   // 3 s between the penalty and the release
+function ctfWipePenalty(L, t){
+  let cap = -1; for(let i = L.capLog.length - 1; i >= 0; i--) if(L.capLog[i].team === t && !L.capLog[i].back){ cap = i; break; }
+  if(cap >= 0 && L.score[t] > 0){
+    const c = L.capLog[cap], fl = L.flags[c.flag]; c.back = true; L.score[t]--;
+    if(fl){ ctfReturnFlag(fl); fl.cover = ctfCoverAt(fl.team, fl.x, fl.y); }
+  } else { L.score[1 - t]++; L.lastCapT = L.playT; }
+  L.wipeLog = L.wipeLog || []; L.wipeLog.push({ team:t, t:L.playT, back:cap >= 0 });
+  L.flash = { team:1 - t, t:50 }; shake(5); ctfSfx('jail');
+  for(const u of [0, 1]) if(L.score[u] >= ctfNeed(L, u)){ ctfEnd(u, 'flags'); return; }
+}
+function ctfWipeRelease(L, t){
+  for(const j of L.jails) for(const idx of j.pris.slice()){ const p = fighters[idx]; if(p && p.team === t) ctfReleaseOnTimer(L, j, p); }
 }
 function ctfEnd(winTeam, why){
   const L = CTF.live; if(!L || L.over) return;
@@ -5134,7 +5155,7 @@ function ctfNetIn(c){
 function ctfNetFightersIn(){
   for(const f of fighters){
     f._cf = f.cf != null ? f.cf : -1; f._ck = f.ck != null ? f.ck : -1; f._jail = f.jl != null ? f.jl : null;
-    f._ctfFree = f.fr ? 300 : 0; f._ghostT = f.gh ? 1 : 0; f._hid = !!f.hd; f._pk = f.kp > 1 ? f.kp : !!f.kp; f._jailT = f.jtm | 0; f._propKey = f.pk || null; f._shield = f.sh ? 1 : 0; f._room = f.rm ? 1 : null; f._ctfJT = f.jt ? 1 : 0;
+    f._ctfFree = f.fr ? CTF_FREE_GRACE : 0; f._ghostT = f.gh ? 1 : 0; f._hid = !!f.hd; f._pk = f.kp > 1 ? f.kp : !!f.kp; f._jailT = f.jtm | 0; f._propKey = f.pk || null; f._shield = f.sh ? 1 : 0; f._room = f.rm ? 1 : null; f._ctfJT = f.jt ? 1 : 0;
     f._cam = f.cam ? { x:f.cam[0], y:f.cam[1] } : null; f._tool = f.tl || 0; f._piece = f.pc || 0; f._spec = f.sp != null ? f.sp : null;
     f.controller = f.hu ? 'remote' : 'ai';
   }

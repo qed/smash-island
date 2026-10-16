@@ -325,7 +325,7 @@ describe('capture the flag', () => {
     expect(w.eval(`CTF.map.zones.some(function(z){ return z.type==='dark'; })`)).toBe(true);
   });
 
-  it('a whole side in jail at once is over: the other side wins', () => {
+  it('a whole side in jail at once is a penalty, not the end: the other side scores, then the side is let out home ("most matches end in jail", 2026-10-16)', () => {
     const { window: w } = loadMonolith(10);
     start(w);
     const foe = spawn(w, 1);
@@ -334,10 +334,12 @@ describe('capture the flag', () => {
       put(w, a, foe.x, foe.y); w.eval(`eliminate(fighters[${a}])`);
       expect(w.eval(`fighters[${a}]._jail`)).toBe(1);
       logic(w, 1);
-      expect(w.eval('CTF.live.over'), 'after ' + (k + 1) + ' in jail').toBe(k === 4);
     }
-    expect(w.eval('CTF.live.winner')).toBe(1);
-    expect(w.eval('CTF.live.why')).toBe('jail');
+    expect(w.eval('CTF.live.over'), 'the match goes on').toBe(false);
+    expect(w.eval('CTF.live.score[1]'), 'no flag to give back: the other side scores one').toBe(1);
+    logic(w, 200);
+    expect(w.eval('fighters.filter(function(f){ return f.team===0 && f._jail != null; }).length'), 'all let out').toBe(0);
+    expect(w.eval('fighters.filter(function(f){ return f.team===0; }).every(function(f){ return f._ctfFree > 0; })'), 'with the grace').toBe(true);
   });
 
   it('a lift carries whoever stands on it; a team buff is claimed once per team', () => {
