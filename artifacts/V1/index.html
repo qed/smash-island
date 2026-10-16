@@ -430,6 +430,19 @@
   .ctfcup-picklist{display:flex; flex-wrap:wrap; gap:6px; max-width:900px; justify-content:center}
   .ctfcup-picklist .cupchip{display:flex; align-items:center; gap:5px; font-size:13px}
   .ctfcup-picklist .cupchip:disabled{opacity:.35; cursor:not-allowed}
+  .ctfcup-plan{font-family:inherit; font-weight:700; font-size:11px; text-align:left; border:2px dashed #1c1c1c; border-radius:7px; background:rgba(255,236,170,0.55); padding:2px 7px; cursor:pointer}
+  .ctfcup-tabs{display:flex; gap:6px}
+  .ctfcup-planlist{width:min(640px,94%); max-height:300px; overflow-y:auto; background:rgba(255,255,255,0.08); border-radius:8px; padding:4px}
+  .ctfcup-planrow{display:flex; align-items:center; gap:9px; color:#fff; font-size:14px; padding:3px 8px; border-radius:6px; cursor:pointer}
+  .ctfcup-planrow.cur{background:rgba(216,196,106,0.3)}
+  .ctfcup-planrow.off .ctfcup-rowtext{opacity:.45}
+  .ctfcup-rowtext{flex:1}
+  .ctfcup-box{width:13px; height:13px; border:2px solid #fff; border-radius:2px; display:inline-block; flex:none}
+  .ctfcup-box.on{background:#8fe08f}
+  .ctfcup-box.pre{border:2px dashed #d8c46a; background:rgba(216,196,106,0.5)}
+  .ctfcup-role{opacity:.55} .ctfcup-role.set{opacity:1; color:#8fe08f}
+  .ctfcup-plandesc{color:#f4ecc0; font-size:13px; min-height:48px; max-width:640px; text-align:center}
+  .ctfcup-planfoot{color:rgba(255,255,255,0.7); font-size:12px}
   .ctfcup-map{font-size:11px; opacity:.6; white-space:nowrap}
   .ctfcup-plans{font-size:11px; opacity:.65; text-align:center; margin:-2px 0 5px}
   .cupchips{display:flex; flex-wrap:wrap; gap:5px; max-width:430px}
@@ -1578,6 +1591,7 @@
       <button class="btn" onclick="ctfCupStart()">Kick Off ▶</button>
     </div>
     <div id="ctfCupPicker" class="ctfcup-picker" style="display:none"></div>
+    <div id="ctfCupPlanEd" class="ctfcup-picker" style="display:none"></div>
   </div>
 
   <!-- TOURNAMENT HUB -->
@@ -6652,13 +6666,25 @@ function ctfCupClean(o){
   const mapOk = v=>v === 'rotate' || v === 'random' || !!(typeof CTF_MAPS === 'object' && CTF_MAPS[v] && !CTF_MAPS[v].wip);
   const slots = [], skill = [];
   for(let i = 0; i < teams; i++){ const row = (Array.isArray(o.slots) && Array.isArray(o.slots[i])) ? o.slots[i] : []; slots.push(Array.from({ length:size }, (_, k)=>typeof row[k] === 'string' ? row[k] : null)); skill.push(one(o.skill && o.skill[i], [-1, 0, 1, 2], -1)); }
-  return { teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), adv:o.adv ? 1 : 0, gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill };
+  const strat = []; for(let i = 0; i < teams; i++) strat.push(ctfCupCleanStrat(o.strat && o.strat[i], size));
+  return { teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), adv:o.adv ? 1 : 0, gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill, strat };
 }
-let CTFCUP = ctfCupClean(null);
-(function ctfCupLoad(){ try{ const raw = localStorage.getItem(CTFCUP_KEY); if(raw) CTFCUP = ctfCupClean(JSON.parse(raw)); }catch(e){} })();
+// A team's STRATEGY setting (the owner, 2026-10-16: "add strategy settings"): mode 'auto' (the strategist), 'fixed' (the owner's plan all match, the strategist off) or 'adapt' (the owner's plan to begin with, then the strategist may switch).
+// The plan is the planning menu's own parts: a preset (or none), ticks for builds, offence and defence ideas, ideas of the preset switched off, and a role for each SEAT (0, 1, ...: the fighter in that seat; auto is no entry).
+const CTFCUP_MODES = ['auto', 'fixed', 'adapt'], CTFCUP_ROLES = ['waller', 'corridor', 'trapper', 'runner', 'scout', 'keyrunner', 'att', 'def', 'jailguard'];
+function ctfCupCleanStrat(o, size){
+  o = o || {}; const set = x=>{ const r = {}; if(x && typeof x === 'object') for(const k of Object.keys(x)) if(x[k] === true) r[String(k).slice(0, 24)] = true; return r; };
+  const assign = {}; if(o.assign && typeof o.assign === 'object') for(const k of Object.keys(o.assign)) if(+k >= 0 && +k < size && CTFCUP_ROLES.includes(o.assign[k])) assign[k] = o.assign[k];
+  return { mode:CTFCUP_MODES.includes(o.mode) ? o.mode : 'auto', preset:typeof o.preset === 'string' ? o.preset.slice(0, 24) : null, ticks:set(o.ticks), off:set(o.off), assign };
+}
+let CTFCUP = ctfCupClean(null), CTFCUP_LOADED = false;
+function ctfCupEnsure(){   // (the saved setup is read when the screen opens: the plan lists it checks against are defined further down the file)
+  if(CTFCUP_LOADED) return; CTFCUP_LOADED = true;
+  try{ const raw = localStorage.getItem(CTFCUP_KEY); if(raw) CTFCUP = ctfCupClean(JSON.parse(raw)); }catch(e){}
+}
 function ctfCupSave(){ try{ localStorage.setItem(CTFCUP_KEY, JSON.stringify(CTFCUP)); }catch(e){} }
 function ctfCupPool(){ return ROSTER.filter(r=>r.play && isUnlocked(r) && !oneBanned(r)); }
-function openCtfCup(){ CTFCUP = ctfCupClean(CTFCUP); go('ctfCupSetup'); }
+function openCtfCup(){ ctfCupEnsure(); CTFCUP = ctfCupClean(CTFCUP); go('ctfCupSetup'); }
 // ---- the setup screen ----
 const CTFCUP_ROWS = [
   ['teams', 'Teams', ()=>CTFCUP_SIZES.map(n=>[n, n + ' teams'])],
@@ -6707,9 +6733,13 @@ function ctfCupTeamsRender(){
     const sk = document.createElement('button'); sk.className = 'cupchip'; const SKN = ['Easy', 'Normal', 'Hard'];
     sk.textContent = CTFCUP.skill[i] < 0 ? 'CPU: cup default' : 'CPU: ' + SKN[CTFCUP.skill[i]]; sk.title = 'The CPU skill of this team (the cup default, or its own)';
     sk.onclick = ()=>{ CTFCUP.skill[i] = ((CTFCUP.skill[i] + 2) % 4) - 1; ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(sk);
+    const st = CTFCUP.strat[i], sb = document.createElement('button'); sb.className = 'cupchip' + (st.mode !== 'auto' ? ' on' : ''); sb.textContent = 'Plan: ' + { auto:'strategist', fixed:'fixed', adapt:'fixed, then adapt' }[st.mode];
+    sb.title = 'Strategy: the strategist chooses (auto); your own plan all match (fixed); your plan to begin with, then the strategist may switch (fixed, then adapt)';
+    sb.onclick = ()=>{ st.mode = CTFCUP_MODES[(CTFCUP_MODES.indexOf(st.mode) + 1) % 3]; ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(sb);
     const dice = document.createElement('button'); dice.className = 'cupchip'; dice.innerHTML = '&#127922; fill'; dice.title = 'Fill this team\'s empty seats from the draw';
     dice.onclick = ()=>{ ctfCupFillTeam(i, true); ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(dice);
     card.appendChild(head);
+    if(st.mode !== 'auto'){ const line = document.createElement('button'); line.className = 'ctfcup-plan'; line.textContent = ctfCupPlanText(i) + '  (edit)'; line.onclick = ()=>ctfCupPlanOpen(i); card.appendChild(line); }
     for(let k = 0; k < CTFCUP.size; k++){
       const nm = ctfCupSeatName(i, k), r = nm ? by(nm) : null, b = document.createElement('button'); b.className = 'ctfcup-seat' + (r ? ' on' : '');
       b.innerHTML = r ? '<span class="ctfcup-dot" style="background:' + r.color + '"></span>' + esc(r.name) : '<span class="ctfcup-dot"></span><i>random draw</i>';
@@ -6719,6 +6749,69 @@ function ctfCupTeamsRender(){
   }
   const sub = document.getElementById('ctfCupTeamsSub'); if(sub){ const have = CTFCUP.slots.reduce((s, r)=>s + r.filter(Boolean).length, 0); sub.textContent = have + ' of ' + (CTFCUP.teams*CTFCUP.size) + ' seats picked; the rest are drawn when the cup starts (nobody twice on a side)'; }
 }
+
+// ---- the plan editor: the planning menu's own tabs and lists, for one team, from the keyboard (Left/Right tab, Up/Down row, Space ticks, C clears, Esc closes) ----
+let CTFCUP_PLAN = null;   // { team, tab, cur } while the editor is open
+const CTFCUP_TABS = ['Preset', 'Build', 'Offence', 'Defence', 'Roles'];
+function ctfCupPlanText(i){
+  const st = CTFCUP.strat[i], P = st.preset && CTF_PRESETS[st.preset], n = Object.keys(st.ticks).length, r = Object.keys(st.assign).length;
+  return (P ? P.name : 'no preset') + ', ' + n + ' idea' + (n === 1 ? '' : 's') + ' ticked, ' + r + ' role' + (r === 1 ? '' : 's');
+}
+function ctfCupPlanRows(i, tab){
+  const st = CTFCUP.strat[i], m = { tab }, row = id=>({ id, text:CTF_PLAY_NAMES[id] || (CTF_BUILDS[id] && CTF_BUILDS[id].name) || id, on:!!st.ticks[id], pre:ctfPlanPresetHas(st.preset, id) && !st.off[id] && !st.ticks[id], off:ctfPlanPresetHas(st.preset, id) && !!st.off[id], kind:'tick', desc:ctfPlanDescOf('tick', id, m) });
+  if(tab === 0) return Object.keys(CTF_PRESETS).map(id=>({ id, text:CTF_PRESETS[id].name + ' - ' + CTF_PRESETS[id].desc, on:st.preset === id, kind:'preset', desc:ctfPlanDescOf('preset', id, m) }));
+  if(tab === 1) return Object.keys(CTF_BUILDS).filter(id=>id !== 'twin').map(row);
+  if(tab === 2) return CTF_OFFENCE.map(row);
+  if(tab === 3) return CTF_DEFENCE.concat(CTF_EXTRA_DEF).map(row);
+  return Array.from({ length:CTFCUP.size }, (_, k)=>{ const role = st.assign[k] || 'auto', nm = CTFCUP.slots[i][k]; return { id:k, text:(nm || 'Seat ' + (k + 1) + ' (random draw)'), role, kind:'role', desc:ctfPlanDescOf('role', role, m) }; });
+}
+// what a row does when it is toggled: the planning menu's own rules
+function ctfCupPlanToggle(i, r){
+  const st = CTFCUP.strat[i];
+  if(r.kind === 'preset'){ st.off = {}; st.preset = st.preset === r.id ? null : r.id; }
+  else if(r.kind === 'tick'){
+    if(st.ticks[r.id]) delete st.ticks[r.id];
+    else if(ctfPlanPresetHas(st.preset, r.id) && !st.off[r.id]) st.off[r.id] = true;
+    else if(st.off[r.id]) delete st.off[r.id];
+    else st.ticks[r.id] = true; }
+  else if(r.kind === 'role'){ const ch = CTF_ROLE_CHOICES, v = ch[(ch.indexOf(r.role) + 1) % ch.length]; if(v === 'auto') delete st.assign[r.id]; else st.assign[r.id] = v; }
+  ctfCupSave();
+}
+function ctfCupPlanOpen(i){
+  CTFCUP_PLAN = { team:i, tab:0, cur:0 }; ctfCupPlanDraw();
+}
+function ctfCupPlanClose(){ const ed = document.getElementById('ctfCupPlanEd'); if(ed) ed.style.display = 'none'; CTFCUP_PLAN = null; ctfCupTeamsRender(); }
+function ctfCupPlanDraw(){
+  const ed = document.getElementById('ctfCupPlanEd'), p = CTFCUP_PLAN; if(!ed || !p) return;
+  const rows = ctfCupPlanRows(p.team, p.tab); p.cur = Math.max(0, Math.min(p.cur, rows.length - 1));
+  ed.innerHTML = ''; ed.style.display = 'flex';
+  const head = document.createElement('div'); head.className = 'ctfcup-pickbar'; head.textContent = 'Team ' + (p.team + 1) + ' plan: ' + { fixed:'used all match, the strategist stays off', adapt:'used to begin with, then the strategist may switch', auto:'' }[CTFCUP.strat[p.team].mode]; ed.appendChild(head);
+  const tabs = document.createElement('div'); tabs.className = 'ctfcup-tabs';
+  CTFCUP_TABS.forEach((nm, k)=>{ const b = document.createElement('button'); b.className = 'cupchip' + (k === p.tab ? ' on' : ''); b.textContent = nm; b.onclick = ()=>{ p.tab = k; p.cur = 0; ctfCupPlanDraw(); }; tabs.appendChild(b); });
+  ed.appendChild(tabs);
+  const list = document.createElement('div'); list.className = 'ctfcup-planlist';
+  rows.forEach((r, k)=>{
+    const b = document.createElement('div'); b.className = 'ctfcup-planrow' + (k === p.cur ? ' cur' : '') + (r.off ? ' off' : ''); b.dataset.k = k;
+    const box = r.kind === 'role' ? '' : '<span class="ctfcup-box' + (r.on ? ' on' : r.pre ? ' pre' : '') + '"></span>';
+    b.innerHTML = box + '<span class="ctfcup-rowtext">' + esc(r.text) + '</span>' + (r.kind === 'role' ? '<span class="ctfcup-role' + (r.role === 'auto' ? '' : ' set') + '">[ ' + esc(r.role) + ' ]</span>' : '');
+    b.onclick = ()=>{ p.cur = k; ctfCupPlanToggle(p.team, r); ctfCupPlanDraw(); };
+    list.appendChild(b);
+  });
+  ed.appendChild(list);
+  const cur = rows[p.cur], d = document.createElement('div'); d.className = 'ctfcup-plandesc'; d.textContent = (cur && cur.desc) || ''; ed.appendChild(d);
+  const f = document.createElement('div'); f.className = 'ctfcup-planfoot'; f.textContent = 'Left/Right tab   Up/Down row   Space tick   C clear   Esc done   ·   ' + ctfCupPlanText(p.team); ed.appendChild(f);
+  const sel = list.querySelector('.cur'); if(sel && sel.scrollIntoView) try{ sel.scrollIntoView({ block:'nearest' }); }catch(e){}
+}
+function ctfCupPlanKey(e){
+  const p = CTFCUP_PLAN; if(!p) return;
+  const code = e.code, rows = ctfCupPlanRows(p.team, p.tab), eat = ()=>{ e.stopImmediatePropagation(); e.preventDefault(); };
+  if(code === 'Escape'){ eat(); ctfCupPlanClose(); return; }
+  if(code === 'ArrowLeft' || code === 'ArrowRight'){ eat(); p.tab = (p.tab + (code === 'ArrowRight' ? 1 : 4)) % 5; p.cur = 0; ctfCupPlanDraw(); return; }
+  if(code === 'ArrowUp' || code === 'ArrowDown'){ eat(); if(rows.length) p.cur = (p.cur + (code === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length; ctfCupPlanDraw(); return; }
+  if(code === 'Space' || code === 'Enter' || code === 'KeyX'){ eat(); const r = rows[p.cur]; if(r) ctfCupPlanToggle(p.team, r); ctfCupPlanDraw(); return; }
+  if(code === 'KeyC' || code === 'Backspace'){ eat(); CTFCUP.strat[p.team] = Object.assign(ctfCupCleanStrat(null, CTFCUP.size), { mode:CTFCUP.strat[p.team].mode }); ctfCupSave(); ctfCupPlanDraw(); return; }
+}
+if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfCupPlanKeys){ window.__ctfCupPlanKeys = true; window.addEventListener('keydown', ctfCupPlanKey, true); }
 function ctfCupPickOpen(team, seat){
   CTFCUP_PICK = { team, seat }; const box = document.getElementById('ctfCupPicker'); if(!box) return;
   const pool = ctfCupPool(), mates = new Set(CTFCUP.slots[team].filter((n, q)=>n && q !== seat));
@@ -6753,7 +6846,7 @@ function ctfCupMakeTeams(cfg){
     const members = cfg.slots[i].map(n=>(n && by(n)) || null);
     for(let k = 0; k < members.length; k++){ if(!members[k]) members[k] = draw(members.filter(Boolean)); }
     const ms = members.filter(Boolean);
-    teams.push({ id:i, name:teamName(ms, i), members:ms, tieKey:Math.random(), P:0, W:0, D:0, L:0, sf:0, sa:0, pts:0, group:Math.floor(i/4), groupRank:0, skill:cfg.skill[i] });
+    teams.push({ id:i, name:teamName(ms, i), members:ms, tieKey:Math.random(), P:0, W:0, D:0, L:0, sf:0, sa:0, pts:0, group:Math.floor(i/4), groupRank:0, skill:cfg.skill[i], strat:cfg.strat && cfg.strat[i] ? JSON.parse(JSON.stringify(cfg.strat[i])) : null });
   }
   return teams;
 }
@@ -7048,6 +7141,38 @@ function ctfStratLearn(fx, r){
     if(r.real && ps[i].swaps) for(const sw of ps[i].swaps) ctfStratBump(mm.all, sw, wgt*0.3, won);
   });
 }
+
+// ---- a team's own plan (its STRATEGY setting: 'fixed' all match, 'adapt' to begin with): it goes to the CPUs through the planning menu's own vote (ctfPlanVoteIn: pl.preset, pl.ticks, pl.assign, and pl.allow, so only the ticked ideas run) ----
+const CTF_FIXED = { name:'Fixed plan', preset:null, off:0.6, fort:0, ov:null, icon:'*' };
+function ctfStratDef(ss){ return ss.plan === 'custom' ? CTF_FIXED : CTF_STRATS[ss.plan]; }
+function ctfStratPlanObj(ss){ return ss.plan === 'custom' ? ss.model : Object.assign({ id:ss.plan }, CTF_STRATS[ss.plan]); }
+const CTF_ATT_ROLES = ['att', 'scout', 'keyrunner', 'runner'], CTF_DEF_ROLES = ['def', 'jailguard'];
+// the plan in the model's numbers: how many go out (the preset's lean, the roles given), how much the ticked builds protect, a jailbreak or two waves ticked
+function ctfStratFixedModel(st, n){
+  const P = st.preset && CTF_PRESETS[st.preset], has = id=>!!(st.ticks[id] || (ctfPlanPresetHas(st.preset, id) && !st.off[id]));
+  let off = P && P.defShare != null ? 1 - P.defShare : 0.6;
+  const roles = Object.keys(st.assign).map(k=>st.assign[k]), a = roles.filter(r=>CTF_ATT_ROLES.includes(r)).length, d = roles.filter(r=>CTF_DEF_ROLES.includes(r)).length;
+  if(a + d >= Math.ceil(n/2)) off = (a + (n - a - d)*off)/n;   // (the seats given a role count as they are, the rest as the preset leans)
+  let builds = 0; for(const id of Object.keys(CTF_BUILDS)) if(id !== 'twin' && has(id)) builds++;
+  return { id:'custom', off:clamp(off, 0, 1), fort:Math.min(0.3, 0.04*builds), jb:has('jailbreak'), tw:has('twowave'), ov:null };
+}
+// the plan it is nearest to, for what the opponents learn of it and what it teaches
+function ctfStratClassify(st, n){
+  const roles = Object.keys(st.assign).map(k=>st.assign[k]);
+  if(roles.length >= n && roles.every(r=>CTF_ATT_ROLES.includes(r))) return 'rush';
+  if(roles.length >= n && roles.every(r=>CTF_DEF_ROLES.includes(r))) return 'turtle';
+  const map = { fortress:'fortress', jailbreak:'jailbreak', twowaves:'twowaves', traps:'traps', allout:'hunt', turtle:'turtle' };
+  if(st.preset && map[st.preset]) return map[st.preset];
+  const off = ctfStratFixedModel(st, n).off;
+  return off >= 0.9 ? 'rush' : off <= 0.15 ? 'turtle' : off >= 0.75 ? 'hunt' : 'balanced';
+}
+function ctfStratFixedName(st){ const P = st.preset && CTF_PRESETS[st.preset], n = Object.keys(st.ticks).length; return 'Own plan' + (P ? ': ' + P.name : '') + (n ? ' + ' + n + ' ideas' : ''); }
+function ctfStratApplyFixed(L, t, st){
+  const pl = L.plans && L.plans[t], size = CTF.cupFix ? CTF.cupFix.size : 0; if(!pl) return;
+  const assign = {}; for(const k of Object.keys(st.assign)) assign[t*size + +k] = st.assign[k];   // (a seat's role goes to the fighter in it: team 0 holds fighters 0.., team 1 the ones after)
+  ctfPlanVoteIn(L, t, -1 - t, { preset:(st.preset && CTF_PRESETS[st.preset]) ? st.preset : null, ticks:Object.assign({}, st.ticks), off:Object.assign({}, st.off), assign });
+  pl.dealt = false;
+}
 // ---- the plan on the CPUs ----
 // the preset and the ticks a plan puts in the team plan (the same things the planning menu sets), and the roles it holds the CPUs to
 function ctfStratApply(L, t, id){
@@ -7055,9 +7180,9 @@ function ctfStratApply(L, t, id){
   pl.preset = def.preset && CTF_PRESETS[def.preset] ? def.preset : null;
   pl.ticks = def.preset ? ctfPlanPresetTicks(def.preset) : {};
   if(def.ov === 'def' && def.counter) pl.ticks.counter = true;
-  pl.assign = {}; pl.dealt = false;
+  pl.assign = {}; pl.dealt = false; pl.allow = null; pl.votes = {};   // (the owner's plan, if there was one, is let go of)
   if(!pl.built && pl.cpus.length) ctfPlanAssignBuildRoles(L, pl);
-  const ss = CTF.strat && CTF.strat[t]; if(ss){ ss.plan = id; ss.phase = def.ov === 'phase' ? ((L.playT || 0) > 600 ? 'back' : 'rush') : null; ss.phT = L.playT || 0; }   // (a plan taken up in mid-match starts at home, waiting)
+  const ss = CTF.strat && CTF.strat[t]; if(ss){ ss.model = null; ss.plan = id; ss.phase = def.ov === 'phase' ? ((L.playT || 0) > 600 ? 'back' : 'rush') : null; ss.phT = L.playT || 0; }   // (a plan taken up in mid-match starts at home, waiting)
 }
 // the known flags of a side: the other side's flags it has seen (or the radar showed), out where it can take them
 function ctfStratKnown(L, t){
@@ -7070,14 +7195,16 @@ function ctfStratBegin(L){
   if(!cf.pick){   // chosen once for the fixture (the side bid builds the match twice)
     const sides = (CTF.bidRes && CTF.bidRes.sd) ? CTF.bidRes.sd : null;
     cf.pick = ctfStratChoose(fx, cf.map, sides, cf.cap);
-    fx.plans = cf.pick.res.map(r=>({ id:r.id, name:CTF_STRATS[r.id].name, odds:r.odds, swaps:[] }));
+    [fx.a, fx.b].forEach((team, i)=>{ const st = team.strat, r = cf.pick.res[i];
+      if(st && st.mode !== 'auto'){ const cls = ctfStratClassify(st, cf.size); r.custom = st.mode; r.autoId = r.id; r.id = cls; if(r.all[cls] != null) r.odds = r.all[cls]; } });
+    fx.plans = cf.pick.res.map((r, i)=>{ const st = (i ? fx.b : fx.a).strat; return { id:r.id, name:r.custom ? ctfStratFixedName(st) + (r.custom === 'adapt' ? ' (may adapt)' : '') : CTF_STRATS[r.id].name, odds:r.odds, swaps:[], fixed:!!r.custom }; });
   }
   CTF.strat = [0, 1].map(t=>{
-    const r = cf.pick.res[t], team = t ? fx.b : fx.a;
-    const ss = { t, team, plan:r.id, first:r.id, phase:null, phT:0, odds:r.odds, all:r.all, talk:r.talk, talkLines:[], last:'', lastT:0, oppRaid:0.5, samples:0, swapT:0, seen:{} };
-    return ss;
+    const r = cf.pick.res[t], team = t ? fx.b : fx.a, own = !!r.custom, st = team.strat;
+    return { t, team, plan:own ? 'custom' : r.id, first:r.id, phase:null, phT:0, odds:r.odds, all:r.all, talk:own ? [] : r.talk, talkLines:[], last:'', lastT:0, oppRaid:0.5, samples:0, swapT:0, seen:{},
+      model:own ? ctfStratFixedModel(st, cf.size) : null, locked:r.custom === 'fixed', note:own ? (r.custom === 'fixed' ? 'The owner\'s plan, all match: the strategist stays off' : 'The owner\'s plan first: the strategist may switch') : '' };
   });
-  for(const t of [0, 1]) ctfStratApply(L, t, CTF.strat[t].plan);
+  for(const t of [0, 1]){ const ss = CTF.strat[t]; if(ss.plan === 'custom') ctfStratApplyFixed(L, t, ss.team.strat); else ctfStratApply(L, t, ss.plan); }
 }
 // the words of the discussion, in the spectator's panel: each member says what they would play, then the team settles
 function ctfStratTalk(L, ss){
@@ -7093,7 +7220,7 @@ function ctfStratStep(L){
 }
 function ctfStratTeam(L, ss, t){
   const pl = L.plans && L.plans[t]; if(!pl) return;
-  const def = CTF_STRATS[ss.plan], T = L.playT, o = 1 - t, cpus = pl.cpus.map(i=>fighters[i]).filter(Boolean), up = cpus.filter(f=>!f.dead && f._jail == null), mid = L.map.WW/2;
+  const def = ctfStratDef(ss), own = ss.plan === 'custom', T = L.playT, o = 1 - t, cpus = pl.cpus.map(i=>fighters[i]).filter(Boolean), up = cpus.filter(f=>!f.dead && f._jail == null), mid = L.map.WW/2;
   const need = ctfNeed(L, t), known = ctfStratKnown(L, t), kf = known/Math.max(1, need), jailMine = cpus.filter(f=>f._jail != null).length;
   // what this side has seen of the other: foes on its own half that one of its fighters (or a minimap) can place, as a share of the foes still free
   const foes = fighters.filter(g=>g.team === o && !g.dead && g._jail == null);
@@ -7111,9 +7238,9 @@ function ctfStratTeam(L, ss, t){
     ss.phase = ph; mode = ph === 'back' ? 'def' : 'att';
   }
   ss.mode = mode || 'auto';
-  for(const f of cpus){ if(mode) pl.assign[f.idx] = mode; else if(pl.assign[f.idx] === 'att' || pl.assign[f.idx] === 'def') delete pl.assign[f.idx]; }
+  if(!own) for(const f of cpus){ if(mode) pl.assign[f.idx] = mode; else if(pl.assign[f.idx] === 'att' || pl.assign[f.idx] === 'def') delete pl.assign[f.idx]; }   // (the owner's plan keeps its own roles)
   // a look again, every 10 s from the first 30 s: from the state of the match, which plan would be best now
-  if(T >= 1800 && T % 600 === 6 && T - ss.swapT >= 1200 && !CTF.stratFixed) ctfStratReeval(L, ss, t, { need, known, kf, jailMine, up:up.length });
+  if(T >= 1800 && T % 600 === 6 && T - ss.swapT >= 1200 && !CTF.stratFixed && !ss.locked) ctfStratReeval(L, ss, t, { need, known, kf, jailMine, up:up.length });
 }
 function ctfStratReeval(L, ss, t, k){
   const cf = CTF.cupFix, o = 1 - t, fx = cf.fx, ps = cf.pick, Mp = ps.Mp, T = ps.T, R = Math.random, ids = CTF_STRAT_IDS;
@@ -7124,28 +7251,30 @@ function ctfStratReeval(L, ss, t, k){
   // the foe is taken as it has been seen to play: the share of its fighters out on this side, with the walls the plan it is likely on would have
   const foeId = ps.res[o].id, foePl = { id:'seen', ov:null, fixed:clamp(0.15 + ss.oppRaid*1.1, 0.05, 1), fort:CTF_STRATS[foeId].fort, off:ss.oppRaid, jb:false, tw:false };
   const capT = Math.max(init.t + 2, ps.capT), cur = ss.plan, vals = {};
-  for(const p of ids){ const mine = Object.assign({ id:p }, CTF_STRATS[p]); vals[p] = (t === 0) ? ctfFluidP(T, Mp, mine, foePl, init, capT, 14, R) : 1 - ctfFluidP(T, Mp, foePl, mine, init, capT, 14, R); }
+  const val = mine=>(t === 0) ? ctfFluidP(T, Mp, mine, foePl, init, capT, 14, R) : 1 - ctfFluidP(T, Mp, foePl, mine, init, capT, 14, R);
+  for(const p of ids) vals[p] = val(Object.assign({ id:p }, CTF_STRATS[p]));
+  if(cur === 'custom') vals.custom = val(ss.model);
   let best = cur, bv = vals[cur] + 0.07;   // a clear gain to change
   for(const p of ids) if(vals[p] > bv){ bv = vals[p]; best = p; }
   ss.odds = vals[cur];
   if(best !== cur){
-    const from = cur; ss.swapT = L.playT; ss.last = 'switches from ' + CTF_STRATS[from].name.toLowerCase() + ' to ' + CTF_STRATS[best].name.toLowerCase() + ' (foe sends ' + Math.round(ss.oppRaid*100) + '%, ' + Math.round(vals[best]*100) + '% to win)'; ss.lastT = L.playT;
+    const from = cur; ss.swapT = L.playT; ss.last = 'switches from ' + ctfStratDef(ss).name.toLowerCase() + ' to ' + CTF_STRATS[best].name.toLowerCase() + ' (foe sends ' + Math.round(ss.oppRaid*100) + '%, ' + Math.round(vals[best]*100) + '% to win)'; ss.lastT = L.playT;
     ctfStratApply(L, t, best); ss.phT = L.playT;
-    const rec = fx.plans[t]; if(rec){ rec.swaps = rec.swaps || []; rec.swaps.push(best); rec.name = CTF_STRATS[rec.id].name + ' > ' + CTF_STRATS[best].name; }
+    const rec = fx.plans[t]; if(rec){ rec.swaps = rec.swaps || []; rec.swaps.push(best); rec.name = (rec.fixed ? 'Own plan' : CTF_STRATS[rec.id].name) + ' > ' + CTF_STRATS[best].name; }
   }
 }
 // ---- what the spectator panel says ----
 function ctfStratLine(t){
   const ss = CTF.strat && CTF.strat[t]; if(!ss) return null;
-  return CTF_STRATS[ss.plan].name;
+  return ctfStratDef(ss).name;
 }
 function ctfStratRows(L, t){
   const ss = CTF.strat && CTF.strat[t]; if(!ss) return null;
-  const def = CTF_STRATS[ss.plan], rows = [['Plan', def.name]];
-  const modeTxt = def.ov === 'phase' ? { rush:'rushing', back:'fallen back, waiting for a flag to show', strike:'striking' }[ss.phase] || '' : def.ov === 'att' ? 'everyone goes, nobody home' : def.ov === 'def' ? 'everyone home' : '';
+  const def = ctfStratDef(ss), own = ss.plan === 'custom', rows = [['Plan', own ? ctfStratFixedName(ss.team.strat) : def.name]];
+  const modeTxt = own ? (ss.locked ? 'owner\'s plan, strategist off' : 'owner\'s plan, strategist may switch') : def.ov === 'phase' ? { rush:'rushing', back:'fallen back, waiting for a flag to show', strike:'striking' }[ss.phase] || '' : def.ov === 'att' ? 'everyone goes, nobody home' : def.ov === 'def' ? 'everyone home' : '';
   if(modeTxt) rows.push(['Mode', modeTxt]);
   rows.push(['Odds', Math.round(ss.odds*100) + '% to win (its own count)']);
-  const talk = L.phase !== 'play' ? ctfStratTalk(L, ss) : [];
+  const talk = L.phase !== 'play' ? (own ? [ss.note] : ctfStratTalk(L, ss)) : [];
   if(talk.length){ const show = talk.slice(-2); for(const x of show) rows.push(['Talk', x]); }
   else if(ss.last) rows.push(['Last', ss.last + ' (' + Math.floor(ss.lastT/3600) + ':' + String(Math.floor(ss.lastT/60) % 60).padStart(2, '0') + ')']);
   return rows;
@@ -7159,10 +7288,16 @@ function ctfStratReport(){
 }
 // ---- a fixture nobody watches: the same strategists, the model run once ----
 function ctfStratSim(fx){
-  const mapId = ctfCupFxMap(fx), cap = ctfCupCap(fx), ch = ctfStratChoose(fx, mapId, null, cap), R = Math.random;
-  const pa = Object.assign({ id:ch.res[0].id }, CTF_STRATS[ch.res[0].id]), pb = Object.assign({ id:ch.res[1].id }, CTF_STRATS[ch.res[1].id]);
-  const S = ctfFluidRun(ch.T, ch.Mp, pa, pb, null, ch.capT, R);
-  fx.plans = ch.res.map(r=>({ id:r.id, name:CTF_STRATS[r.id].name, odds:r.odds, swaps:[] }));
+  const mapId = ctfCupFxMap(fx), cap = ctfCupCap(fx), ch = ctfStratChoose(fx, mapId, null, cap), R = Math.random, size = TOURNEY.teamSize;
+  const planOf = id=>Object.assign({ id }, CTF_STRATS[id]);
+  const own = [fx.a, fx.b].map((team, i)=>{ const st = team.strat; if(!st || st.mode === 'auto') return null; return { mode:st.mode, st, cls:ctfStratClassify(st, size), model:ctfStratFixedModel(st, size) }; });
+  const first = i=>own[i] ? own[i].model : planOf(ch.res[i].id), later = i=>(own[i] && own[i].mode === 'fixed') ? own[i].model : planOf(ch.res[i].id);   // (a fixed plan all match; 'adapt': the owner's plan, then the strategist's)
+  let S;
+  if(own.some(o=>o && o.mode === 'adapt')){   // the owner's plans for the first two ticks (40 s), then each adapting side on the strategist's plan
+    const S1 = ctfFluidNew(ch.T); while(!S1.over && S1.t < 2) ctfFluidStep(S1, ch.T, ch.Mp, [first(0), first(1)], R);
+    S = S1.over ? S1 : ctfFluidRun(ch.T, ch.Mp, later(0), later(1), { t:S1.t, c:S1.c, up:S1.up, jl:S1.jl, kn:S1.kn, lastCap:S1.lastCap, ph:S1.ph, pt:S1.pt }, ch.capT, R);
+  } else S = ctfFluidRun(ch.T, ch.Mp, first(0), first(1), null, ch.capT, R);
+  fx.plans = ch.res.map((r, i)=>{ const o = own[i]; return o ? { id:o.cls, name:ctfStratFixedName(o.st) + (o.mode === 'adapt' ? ' > ' + CTF_STRATS[r.id].name : ''), odds:r.all[o.cls] != null ? r.all[o.cls] : r.odds, swaps:o.mode === 'adapt' ? [r.id] : [], fixed:true } : { id:r.id, name:CTF_STRATS[r.id].name, odds:r.odds, swaps:[] }; });
   let win = S.win;
   if(win < 0 && fx.kind !== 'group') win = R() < 0.5 ? 0 : 1;
   return { sa:S.c[0], sb:S.c[1], win, why:'sim' };
@@ -7172,7 +7307,7 @@ function ctfStratSkipRoll(fx, L){
   const cf = CTF.cupFix, ps = cf && cf.pick; if(!ps || !CTF.strat) return null;
   const R = Math.random, cnt = (t, jl)=>fighters.filter(g=>g.team === t && !g.dead && ((g._jail != null) === jl)).length;
   const init = { t:Math.round(L.playT/60/CTF_FLUID_DT), c:L.score.slice(), up:[cnt(0, false), cnt(1, false)], jl:[cnt(0, true), cnt(1, true)], kn:[0, 1].map(t=>clamp(ctfStratKnown(L, t)/Math.max(1, ctfNeed(L, t)), 0, 1)), lastCap:Math.round(L.lastCapT/60/CTF_FLUID_DT) };
-  const pa = Object.assign({ id:CTF.strat[0].plan }, CTF_STRATS[CTF.strat[0].plan]), pb = Object.assign({ id:CTF.strat[1].plan }, CTF_STRATS[CTF.strat[1].plan]);
+  const pa = ctfStratPlanObj(CTF.strat[0]), pb = ctfStratPlanObj(CTF.strat[1]);
   const S = ctfFluidRun(ps.T, ps.Mp, pa, pb, init, Math.max(init.t + 2, ps.capT), R);
   let win = S.win; if(win < 0 && fx.kind !== 'group') win = R() < 0.5 ? 0 : 1;
   return { sa:S.c[0], sb:S.c[1], win, why:'skip' };
@@ -36749,7 +36884,7 @@ function step(){
     // control-reversed (Remote hack): handled in input reading below via f.ctrlRev
     // Leafy — Sharp Shadow dash: stay fast + invincible, damage anyone passed through (once each)
     if(f._dashing>0){
-      f._dashInfo = { down: f._dashVY > 0, spd: Math.abs(f._dashSpeed || 22), dir: f.face, t: hazardT };   // (dash tech: mtDashJump)
+      f._dashInfo = { down: f._dashVY > 0, air: !f.onground || !!(f._dashInfo && f._dashInfo.air && hazardT - f._dashInfo.t <= 1), spd: Math.abs(f._dashSpeed || 22), dir: f.face, t: hazardT };   // (dash tech: mtDashJump)
       f._dashing--;
       f.vx = f.face*(f._dashSpeed||22);      // dash speed set here; movement block skips the clamp while dashing
       if(f._dashVY){ f.vy = f._dashVY; }     // diagonal dash: up-dash / down-dash hold vertical speed
@@ -36865,7 +37000,7 @@ function step(){
       if(!inp.left&&!inp.right && f.onground && !(f._sm && f._sm.drive) && !(f._gotcha && f._gotcha.phase==='lunge')) f.vx*=(f.iceUntil>0?0.99:FRICTION);
       if(f.iceUntil>0) f.iceUntil--;
       if(f._dashing>0){ f.vx=f.face*(f._dashSpeed||22); }   // dash overrides normal movement/clamp
-      else if(f._hyperT>0 && !f.onground){ f._hyperT--; f.vx *= HYPER_DECAY; if(hazardT%2===0) puff(f.x - Math.sign(f.vx||1)*f.r, f.y + (Math.random()*16-8), f.color, 2); }   // a hyper's or a super's speed is carried to the landing (dash tech)
+      else if(f._hyperT>0 && !f.onground){ f._hyperT--; f.vx *= f._hyperWD ? WD_DECAY : HYPER_DECAY; if(hazardT%2===0) puff(f.x - Math.sign(f.vx||1)*f.r, f.y + (Math.random()*16-8), f.color, 2); }   // a hyper's or a super's speed is carried to the landing (dash tech)
       else if(f._gotcha && f._gotcha.phase==='lunge'){ f.vx=f.face*f._gotcha.spd; }   // Bot's GOTCHA! lunge holds its own speed
       else if(f._nail){ }                    // Naily's dash holds its own speed (see the _nail block)
       else if(f._sm && f._sm.drive){ if(f._sm.vmax){ const c = f._sm.vmax; f.vx = Math.max(-c, Math.min(c, f.vx)); } }   // so does a smash that moves you (SM_PAT); a steered hop is capped
@@ -39802,6 +39937,7 @@ function mtWallJump(f, inp){
 }
 function mtCling(f, inp){
   const lim = f.kit && CLINGERS[f.kit.special];
+  if(!isHumanCtrl(f) && (msOf(f) || {}).aiFit) return;   // (a CPU of batch 2 on never clings: it would hug a wall its old rules were only passing)
   if(!lim || !mtOn(f) || f.onground || f.hitstun > 0 || !f._wallSide || f._wallT !== hazardT) return;
   if(f._wallSide > 0 ? !inp.right : !inp.left) return;
   if(f.vy > 0 && (f._clingT || 0) < lim){ f.vy = Math.min(f.vy, 0.7); f._clingT = (f._clingT || 0) + 1; if(f._clingT % 9 === 1) puff(f.x + f._wallSide * f.r, f.y, '#fff', 1); }
@@ -39812,7 +39948,7 @@ function mtFastFall(f, inp){
   const blocked = f.onground || f.hitstun > 0 || f.frozen > 0 || f._lev || f.flying > 0 || f._floatT > 0 || f.vy < 0;
   if(blocked){ f._ff = false; return; }
   if(f._ff){ if(f.vy < FF_V) f.vy = FF_V; if(hazardT % 2 === 0) puff(f.x, f.y - f.r, '#fff', 1); return; }
-  if(edge && !inp.attack && !inp.special && !inp.smash && !inp.grab && !inp.fin && !f._mv && !f._grabHold){
+  if(edge && !inp.attack && !inp.special && !inp.smash && !inp.grab && !inp.fin && !f._mv && !f._grabHold && !(!isHumanCtrl(f) && (msOf(f) || {}).aiFit && f._aiFF !== hazardT)){   // (a CPU of batch 2 on fast-falls only when aiMovesetUse asks: its old rules press ↓ in the air for other reasons)
     f._ff = true; f.vy = Math.max(f.vy, FF_V); for(let i = 0; i < 3; i++) puff(f.x + (i - 1) * 8, f.y - f.r, '#fff', 1);
   }
 }
@@ -40785,6 +40921,243 @@ Object.assign(MOVESETS, {
 msWords();
 
 // ============================================================
+//  MOVESETS, BATCH 4: Tree, Roboty, David, Sidewalky, Bell, TV, Toothpaste, Lollipop
+// ============================================================
+// The slow, heavy and rooted fighters, who need the movetech most: Tree, Roboty, David, Sidewalky, Bell and TV get the generous share (a wall cling, several cancels, momentum
+// carried), and each one's side special is the way across the floor they never had. Toothpaste and Lollipop, the two trappers, get the plain share. Same template as
+// batches 1 to 3, every move hand-made. Their old "ranged" slot was the shared low sweep, now each one's own down-tilt. CANON: the wiki could not be reached, so the throws and
+// specials lean on what each object IS in the show (a tree drops branches, a bell rings, a TV shows static, paste sticks), and only on moments already quoted in this file.
+Object.assign(CLINGERS, { timber:70, antenna:36, seriously:38, slam:52, ring:46, static:34 });   // bark grips; magnet feet; David hangs on, annoyed; wet cement; a bell hangs; a TV's static clings
+Object.assign(MOVESETS, {
+  // ---- TREE ("timber") -- the rooted heavy: slow, enormous, and every hit is a branch, a root or a trunk. The generous share.
+  timber: {
+    aiFit: true, aiK: 0.15, aiG: 0.1, aiH: 0.15, aiS: 0.15,
+    ft: { n:'Branch Swing', d:'swings a thick branch round from high to low in front of him', pose:'punch', st:8, act:4, end:12,
+      boxes:[{ s:MvF(18, 86, -1.3, 0.3, -14, 0), dmg:9, kb:[4.8, -4], stun:28 }] },
+    ut: { n:'Canopy Lift', d:'heaves his leafy canopy up ahead of him and over his head', pose:'uppercut', st:7, act:5, end:12,
+      boxes:[{ s:MvO(22, -44, 40), dmg:7.2, kb:[0.5, -11.5], stun:31 }] },
+    dt: { n:'Root Trip', d:'whips a long root across the floor at their feet', pose:'kick', st:6, act:3, end:10,
+      boxes:[{ s:MvC(14, 30, 92, 30, 14), dmg:5.4, kb:[1.8, -7.4], stun:28 }] },
+    na: { n:'Leaf Storm', d:'shakes every leaf loose in a storm that scrapes everything round him five times over', pose:'spin', st:6, act:8, end:9, land:10, ac:18,
+      boxes:[{ s:MvO(0, -8, 64), dmg:3.4, kb:[1.6, -3], stun:22, rehit:5 }] },
+    fa: { n:'Timber Fall', d:'topples forward like a felled tree, crashing down ahead of him', pose:'throw', st:9, act:3, end:13, land:14, ac:22,
+      boxes:[{ s:MvC(20, -30, 76, 30, 22), dmg:11, kb:[4, -3.2], stun:28 }], mv:[{ t0:9, t1:11, mode:'add', vx:1.2 }] },
+    ba: { n:'Trunk Bump', d:'bumps his broad trunk back into whoever is behind him', pose:'kickback', st:8, act:3, end:13, land:14, ac:22,
+      boxes:[{ s:MvC(-14, -10, -70, -10, 22), dmg:10.8, kb:[-9.4, -4.8], stun:16 }] },
+    ua: { n:'Branch Up', d:'throws his branches up in a tall cone above and ahead of him', pose:'kickup', st:6, act:4, end:10, land:10, ac:15,
+      boxes:[{ s:MvF(0, 92, -2, -1.1, -16, 0), dmg:6.6, kb:[0.5, -9], stun:27 }] },
+    da: { n:'Stump Down', d:'drops like a stump and spikes whoever is below; he can jump out of it once it hits', pose:'slam', st:12, act:4, end:15, land:17, ac:28, jc:'hit',
+      boxes:[{ s:MvC(0, 16, 2, 72, 26), t0:12, t1:15, dmg:12.4, kb:[0.9, 9.8], stun:14 }], mv:[{ t0:12, t1:15, mode:'dive', vy:11 }] },
+    side: { n:'Root Shuffle', d:'shuffles forward on his roots, shoving whoever is in the way; he can jump out of it', pose:'dash', st:4, act:12, end:14, cd:66, jc:'any',
+      boxes:[{ s:MvC(14, 12, 56, 12, 22), dmg:7.8, kb:[5.8, -4], stun:16 }], mv:[{ t0:0, t1:15, mode:'set', vx:5.6 }] },
+    grab: { reach:38, whiff:34, pummel:{ dmg:2.2, every:16, n:'Bark Rub' }, hold:{ base:70 },
+      f:{ n:'Branch Toss', d:'plucks them up on a branch and tosses them ahead', dmg:9, kx:8.2, ky:-4.4, stun:0, pose:'throw', lag:24 },
+      b:{ n:'Leaf Pile', d:'swings them round and dumps them in a pile of leaves behind him', dmg:9.4, kx:8.8, ky:-5, stun:0, pose:'throwb', lag:26 },
+      u:{ n:'Treetop Lift', d:'lifts them to the treetop, ready for an up-air', dmg:6, kx:0.5, ky:-12.2, stun:33, pose:'uppercut', lag:15 },
+      d:{ n:'Rooted', d:'roots them in the ground at his feet', dmg:6.4, kx:1.8, ky:-9.2, stun:31, pose:'slam', lag:15 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 1.2 s (his bark grips) before he slides.', 'Stump Down and Root Shuffle jump-cancel.'],
+  },
+  // ---- ROBOTY ("antenna") -- the immobile tank: a boxy robot on treads with a springy antenna. His hits are an antenna, an arm and the exhaust. The generous share.
+  antenna: {
+    aiFit: true, aiK: 0.03, aiG: 0.03, aiH: 0.03, aiS: 0.03,
+    ft: { n:'Antenna Poke', d:'pokes his antenna out far ahead, thin and quick for his size', pose:'punch', st:7, act:3, end:11,
+      boxes:[{ s:MvC(14, -14, 82, -14, 10), dmg:8.6, kb:[5.1, -3.8], stun:26 }] },
+    ut: { n:'Dish Raise', d:'raises his antenna up and over in a high arc ahead of him', pose:'uppercut', st:6, act:4, end:11,
+      boxes:[{ s:MvF(16, 84, -2.4, -0.2, -20, 0), dmg:6.4, kb:[0.5, -11], stun:29 }] },
+    dt: { n:'Tread Roll', d:'rolls his treads over their feet, carrying him a step ahead', pose:'kick', st:5, act:3, end:10,
+      boxes:[{ s:MvC(10, 24, 66, 24, 17), dmg:5.2, kb:[1.7, -7.2], stun:26 }], mv:[{ t0:4, t1:7, mode:'add', vx:1.6 }] },
+    na: { n:'Radar Sweep', d:'sweeps his antenna round him in a full circle five times over', pose:'spin', st:5, act:8, end:9, land:10, ac:17,
+      boxes:[{ s:MvO(0, -10, 58), dmg:3.8, kb:[1.5, -2.8], stun:21, rehit:5 }] },
+    fa: { n:'Cannon Arm', d:'fires his arm forward like a cannon', pose:'throw', st:8, act:3, end:12, land:13, ac:19,
+      boxes:[{ s:MvC(18, -6, 66, -6, 16), dmg:10.6, kb:[3.9, -3], stun:26 }] },
+    ba: { n:'Tailpipe Blast', d:'vents a blast of exhaust out behind him', pose:'kickback', st:8, act:3, end:13, land:13, ac:21,
+      boxes:[{ s:MvO(-52, 2, 26), dmg:11.4, kb:[-9.8, -4.7], stun:16 }] },
+    ua: { n:'Beep Up', d:'fires his antenna straight up in a long beep', pose:'kickup', st:6, act:3, end:10, land:10, ac:15,
+      boxes:[{ s:MvC(2, -14, 6, -84, 12), dmg:6, kb:[0.4, -8.8], stun:26 }] },
+    da: { n:'Tank Drop', d:'drops like a tank and spikes whoever is below; he can jump out of it once it hits', pose:'slam', st:11, act:4, end:15, land:16, ac:27, jc:'hit',
+      boxes:[{ s:MvC(0, 14, 2, 66, 27), t0:11, t1:14, dmg:13.2, kb:[0.9, 9.8], stun:14 }], mv:[{ t0:11, t1:14, mode:'dive', vy:11 }] },
+    side: { n:'Tank Treads', d:'rolls forward on his treads, flattening whoever is in the way; he can jump out of it', pose:'dash', st:4, act:13, end:14, cd:66, jc:'any',
+      boxes:[{ s:MvC(14, 10, 58, 10, 22), dmg:7.4, kb:[5.6, -4], stun:16 }], mv:[{ t0:0, t1:16, mode:'set', vx:6.4 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:15, n:'Servo Squeeze' }, hold:{ base:66 },
+      f:{ n:'Conveyor', d:'carries them along on his belt and lets go ahead', dmg:8.6, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Reverse Gear', d:'throws it into reverse and sends them back behind him', dmg:9, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Lift Arm', d:'lifts them overhead on his arm, ready for an up-air', dmg:5.8, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:15 },
+      d:{ n:'Compactor', d:'presses them flat under his tread', dmg:6.2, kx:1.8, ky:-9, stun:30, pose:'slam', lag:15 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.6 s (magnet feet) before he slides.', 'Tank Drop and Tank Treads jump-cancel.'],
+  },
+  // ---- DAVID ("seriously") -- the super-heavy: tall, tired and not having it. "Aw, seriously?" is every one of his hits. The generous share.
+  seriously: {
+    aiFit: true, aiK: 0.8, aiG: 0.6, aiH: 0.6, aiS: 0.5,   // (the weakest fighter on the roster: his CPU uses his moves, and they are quicker and heavier than the rest of the batch's)
+    ft: { n:'Big Jab', d:'jabs one big fist straight out, annoyed', pose:'punch', st:5, act:3, end:9,
+      boxes:[{ s:MvC(14, 2, 64, 2, 16), dmg:8.3, kb:[4.8, -4], stun:25 }] },
+    ut: { n:'Hands Up', d:'throws both hands up in a wide arc over him', pose:'uppercut', st:5, act:4, end:9,
+      boxes:[{ s:MvF(8, 68, -2.5, -0.25, -6, 0), dmg:7.1, kb:[0.5, -11.2], stun:26 }] },
+    dt: { n:'Foot Stomp', d:'stamps a foot down on the floor in front of theirs', pose:'stompdn', st:5, act:2, end:8,
+      boxes:[{ s:MvC(10, 24, 62, 24, 16), dmg:6.2, kb:[1.7, -7.2], stun:24 }] },
+    na: { n:'Seriously Spin', d:'spins round with his arms out, slapping everything near him five times over', pose:'spin', st:5, act:7, end:8, land:9, ac:15,
+      boxes:[{ s:MvO(0, 0, 54), dmg:4.7, kb:[1.6, -2.8], stun:21, rehit:5 }] },
+    fa: { n:'Fed Up Punch', d:'throws a punch with everything he has left', pose:'punch', st:6, act:3, end:10, land:11, ac:17,
+      boxes:[{ s:MvC(16, 0, 66, 0, 18), dmg:11.7, kb:[4.7, -3.2], stun:25 }] },
+    ba: { n:'Fed-Up Elbow', d:'drives an elbow back into whoever is behind him', pose:'hook', st:6, act:3, end:10, land:11, ac:18,
+      boxes:[{ s:MvC(-12, -2, -60, -2, 17), dmg:12.3, kb:[-10.2, -4.8], stun:15 }] },
+    ua: { n:'Jumpscare Up', d:'jumps up yelling, hitting whoever is above', pose:'uppercut', st:4, act:4, end:8, land:8, ac:13,
+      boxes:[{ s:MvC(0, -12, 4, -66, 17), dmg:7.3, kb:[0.4, -9], stun:25 }] },
+    da: { n:'Ground Pound', d:'comes down for a pound and spikes whoever is below; he can jump out of it once it hits', pose:'slam', st:8, act:5, end:12, land:13, ac:22, jc:'hit',
+      boxes:[{ s:MvC(0, 14, 2, 60, 24), t0:8, t1:12, dmg:13.3, kb:[0.9, 10.2], stun:14 }], mv:[{ t0:8, t1:12, mode:'dive', vy:11.5 }] },
+    side: { n:'Stomp Along', d:'stomps forward in a huff, shoving whoever is in the way; he can jump out of it', pose:'dash', st:2, act:10, end:11, cd:52, jc:'any',
+      boxes:[{ s:MvC(14, 6, 52, 6, 19), dmg:8.8, kb:[6, -4.2], stun:16 }], mv:[{ t0:0, t1:11, mode:'set', vx:8.8 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:15, n:'Flick' }, hold:{ base:64 },
+      f:{ n:'Aw, Seriously', d:'sighs, picks them up and tosses them ahead', dmg:8.4, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Fed Up', d:'has had enough and hurls them behind him', dmg:8.9, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Big Lift', d:'lifts them overhead with a groan, ready for an up-air', dmg:5.6, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:15 },
+      d:{ n:'Sit On', d:'sits on them with a sigh', dmg:6.1, kx:1.8, ky:-9, stun:30, pose:'slam', lag:15 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.6 s (he hangs on, annoyed) before he slides.', 'Ground Pound and Stomp Along jump-cancel.'],
+  },
+  // ---- SIDEWALKY ("slam") -- the wall heavy: a slab of pavement. Armless, wide and flat; every hit is a slab, a curb or a crack. The generous share.
+  slam: {
+    aiFit: true, aiK: 0.3, aiG: 0.2, aiH: 0.3, aiS: 0.3,
+    ft: { n:'Slab Shove', d:'shoves his flat edge forward like a slab', pose:'kick', st:7, act:3, end:11,
+      boxes:[{ s:MvC(14, 6, 56, 6, 21), dmg:7, kb:[4.8, -4], stun:27 }] },
+    ut: { n:'Curb Lift', d:'tips up on a curb-corner and heaves whoever is in front or above him', pose:'uppercut', st:6, act:4, end:11,
+      boxes:[{ s:MvO(22, -36, 34), dmg:6.3, kb:[0.6, -11.3], stun:30 }] },
+    dt: { n:'Gutter Sweep', d:'sweeps the gutter along the floor at their feet', pose:'kick', st:5, act:3, end:10,
+      boxes:[{ s:MvC(8, 24, 72, 24, 15), dmg:5.1, kb:[1.7, -7.3], stun:26 }] },
+    na: { n:'Sidewalk Spin', d:'spins like a loose paving stone, clipping everything near him four times over', pose:'spin', st:6, act:6, end:9, land:10, ac:15,
+      boxes:[{ s:MvO(0, 4, 56), dmg:4.1, kb:[1.7, -2.8], stun:21, rehit:4 }] },
+    fa: { n:'Crack Slam', d:'slams his slab down in front of him with a crack', pose:'slam', st:8, act:3, end:12, land:13, ac:19,
+      boxes:[{ s:MvC(18, -6, 62, 14, 21), dmg:9.5, kb:[3.7, -3.1], stun:26 }] },
+    ba: { n:'Back Slab', d:'swings his back edge into whoever is behind him', pose:'kickback', st:7, act:3, end:12, land:13, ac:20,
+      boxes:[{ s:MvC(-12, 0, -60, 0, 21), dmg:10.2, kb:[-9, -4.6], stun:15 }] },
+    ua: { n:'Slab Up', d:'tips his slab up on end and raps it against whoever is above', pose:'uppercut', st:5, act:3, end:9, land:9, ac:14,
+      boxes:[{ s:MvC(8, -14, 8, -62, 20), dmg:6.2, kb:[0.4, -8.7], stun:26 }] },
+    da: { n:'Pavement Drop', d:'drops flat like a paving stone and spikes whoever is below; he can jump out of it once it hits', pose:'stompdn', st:10, act:4, end:14, land:15, ac:26, jc:'hit',
+      boxes:[{ s:MvC(-30, 30, 30, 30, 20), t0:10, t1:13, dmg:11.1, kb:[0.7, 9.4], stun:14 }], mv:[{ t0:10, t1:13, mode:'dive', vy:11 }] },
+    side: { n:'Concrete Slide', d:'slides on a skid of wet cement, shoving whoever is in the way; he can jump out of it', pose:'dash', st:3, act:11, end:13, cd:64, jc:'any',
+      boxes:[{ s:MvC(14, 8, 50, 8, 21), dmg:7.3, kb:[5.7, -4], stun:16 }], mv:[{ t0:0, t1:13, mode:'set', vx:7.4 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:15, n:'Grind' }, hold:{ base:64 },
+      f:{ n:'Paving Toss', d:'hefts them and tosses them ahead like a paving stone', dmg:8.5, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Curb Check', d:'checks them against the curb and sends them behind him', dmg:9, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Heave', d:'heaves them up on his edge, ready for an up-air', dmg:5.6, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:15 },
+      d:{ n:'Fresh Pour', d:'lays them flat in wet cement', dmg:6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:15 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.9 s (wet cement) before he slides.', 'Pavement Drop and Concrete Slide jump-cancel.'],
+  },
+  // ---- BELL ("ring") -- the tether heavy: a big brass bell. His hits are clangs, and the swing of the bell moves him. The generous share.
+  ring: {
+    aiFit: true, aiK: 0.15, aiG: 0.1, aiH: 0.15, aiS: 0.15,
+    ft: { n:'Clapper Swing', d:'swings his clapper out ahead of him with a clang', pose:'kick', st:7, act:3, end:11,
+      boxes:[{ s:MvO(46, 8, 24), dmg:7.1, kb:[4.7, -4], stun:27 }] },
+    ut: { n:'Crown Toss', d:'tosses his crown up in a high arc over his head', pose:'uppercut', st:6, act:4, end:11, fxt:'slows them',
+      boxes:[{ s:MvF(10, 74, -2.6, -0.25, -12, 0), dmg:6.1, kb:[0.5, -11.1], stun:29, fx:msFx('slow', 60) }] },
+    dt: { n:'Low Clang', d:'rings the rim of his bell along the floor at their feet', pose:'kick', st:5, act:3, end:10,
+      boxes:[{ s:MvC(10, 24, 68, 24, 16), dmg:5.2, kb:[1.7, -7.2], stun:27 }] },
+    na: { n:'Ring Around', d:'swings round on his own rope, clanging everything near him four times over', pose:'spin', st:6, act:7, end:9, land:10, ac:16,
+      boxes:[{ s:MvO(0, 0, 56), dmg:3.7, kb:[1.5, -2.8], stun:21, rehit:4 }] },
+    fa: { n:'Bell Toll', d:'tolls forward, throwing the whole bell at whoever is ahead', pose:'throw', st:8, act:3, end:12, land:13, ac:19,
+      boxes:[{ s:MvC(18, 2, 64, 2, 19), dmg:9.3, kb:[3.7, -3], stun:26 }] },
+    ba: { n:'Back Clang', d:'swings the bell back into whoever is behind him', pose:'kickback', st:8, act:3, end:12, land:13, ac:20,
+      boxes:[{ s:MvO(-46, 4, 26), dmg:10, kb:[-9, -4.6], stun:15 }] },
+    ua: { n:'Peal', d:'peals straight up, a tall ring of sound over his head', pose:'uppercut', st:5, act:4, end:9, land:9, ac:14,
+      boxes:[{ s:MvC(2, -16, 4, -70, 18), dmg:6, kb:[0.4, -8.8], stun:25 }] },
+    da: { n:'Bell Drop', d:'drops like a bell and spikes whoever is below, stunning them; he can jump out of it once it hits', pose:'slam', st:10, act:4, end:14, land:15, ac:26, jc:'hit', fxt:'stuns them',
+      boxes:[{ s:MvC(0, 14, 2, 62, 26), t0:10, t1:13, dmg:11.3, kb:[0.8, 9.3], stun:14, fx:msFx('stun', 24) }], mv:[{ t0:10, t1:13, mode:'dive', vy:11 }] },
+    side: { n:'Rope Swing', d:'swings forward on his rope, clanging whoever is in the way; he can jump out of it', pose:'dash', st:3, act:11, end:13, cd:64, jc:'any',
+      boxes:[{ s:MvO(26, -4, 28), dmg:7.3, kb:[5.5, -4.2], stun:17 }], mv:[{ t0:0, t1:13, mode:'set', vx:7.2 }, { t0:0, t1:0, mode:'set', vy:-4 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:15, n:'Ding' }, hold:{ base:64 },
+      f:{ n:'Ring Out', d:'rings them out ahead of him', dmg:8.4, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Backswing', d:'swings them under his bell and out behind him', dmg:9, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Rung Up', d:'rings them up high, ready for an up-air', dmg:5.6, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:15 },
+      d:{ n:'Under the Bell', d:'drops his bell over them and rings it', dmg:6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:15 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.8 s (he hangs there) before he slides.', 'Bell Drop and Rope Swing jump-cancel.'],
+  },
+  // ---- TV ("static") -- the area denier: a heavy set with a face for a screen. Every hit is a flash, a buzz or a shove. The generous share.
+  static: {
+    aiFit: true, aiK: 0.3, aiG: 0.2, aiH: 0.3, aiS: 0.3,
+    ft: { n:'Screen Bump', d:'bumps his screen forward with a buzz', pose:'kick', st:7, act:3, end:10,
+      boxes:[{ s:MvC(14, -2, 58, -2, 22), dmg:7.3, kb:[4.7, -4], stun:26 }] },
+    ut: { n:'Antenna Up', d:'flicks both antennas up and over in a wide arc', pose:'uppercut', st:6, act:4, end:10,
+      boxes:[{ s:MvF(4, 80, -2.5, -0.1, -22, 0), dmg:6.3, kb:[0.5, -11], stun:29 }] },
+    dt: { n:'Cable Trip', d:'whips his cable along the floor at their feet', pose:'kick', st:5, act:3, end:9,
+      boxes:[{ s:MvC(10, 24, 74, 24, 11), dmg:5.3, kb:[1.7, -7.2], stun:26 }] },
+    na: { n:'Static Spin', d:'spins in a halo of static that buzzes everything near him four times over', pose:'spin', st:5, act:7, end:8, land:9, ac:15, fxt:'stuns them briefly',
+      boxes:[{ s:MvO(0, 0, 58), dmg:3.6, kb:[1.5, -2.8], stun:21, rehit:4, fx:msFx('stun', 10) }] },
+    fa: { n:'Flash Slam', d:'slams his flashing screen forward', pose:'throw', st:8, act:3, end:11, land:12, ac:18,
+      boxes:[{ s:MvC(18, -4, 64, -4, 22), dmg:9.1, kb:[3.6, -3], stun:26 }] },
+    ba: { n:'Rear Panel', d:'bangs his rear panel into whoever is behind him', pose:'kickback', st:7, act:3, end:12, land:12, ac:20,
+      boxes:[{ s:MvC(-12, -4, -56, -4, 22), dmg:9.9, kb:[-9, -4.6], stun:15 }] },
+    ua: { n:'Channel Up', d:'changes the channel up through whoever is above him', pose:'kickup', st:5, act:3, end:9, land:9, ac:14,
+      boxes:[{ s:MvC(0, -14, 2, -66, 21), dmg:6.1, kb:[0.4, -8.7], stun:26 }] },
+    da: { n:'Power Cut', d:'drops like a plug pulled and spikes whoever is below; he can jump out of it once it hits', pose:'slam', st:10, act:4, end:14, land:15, ac:25, jc:'hit',
+      boxes:[{ s:MvC(0, 14, 2, 58, 25), t0:10, t1:13, dmg:11.6, kb:[0.8, 9.4], stun:14 }], mv:[{ t0:10, t1:13, mode:'dive', vy:11 }] },
+    side: { n:'Roll Cart', d:'rolls forward on his cart, shoving whoever is in the way; he can jump out of it', pose:'dash', st:3, act:12, end:13, cd:62, jc:'any',
+      boxes:[{ s:MvC(14, 6, 54, 6, 22), dmg:7.4, kb:[5.6, -4], stun:16 }], mv:[{ t0:0, t1:14, mode:'set', vx:7.6 }] },
+    grab: { reach:34, whiff:32, pummel:{ dmg:2, every:15, n:'Buzz' }, hold:{ base:64 },
+      f:{ n:'Rerun', d:'shows them a rerun and shoves them ahead', dmg:8.5, kx:8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Off Switch', d:'switches them off and sends them behind him', dmg:9, kx:8.6, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Volume Up', d:'turns the volume up and blasts them overhead, ready for an up-air', dmg:5.6, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:15 },
+      d:{ n:'Static Press', d:'presses them flat against his screen and fizzles', dmg:6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:15 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.6 s (static) before he slides.', 'Power Cut and Roll Cart jump-cancel.'],
+  },
+  // ---- TOOTHPASTE ("paste") -- the trapper: a squeezed-out tube whose paste sticks. Her hits are squirts, globs and smears, and the sticky ones root. A plain share.
+  paste: {
+    aiFit: true, aiK: 0.3, aiG: 0.2, aiH: 0.3, aiS: 0.3,
+    ft: { n:'Squirt', d:'squirts a short stream of paste straight ahead', pose:'punch', st:4, act:3, end:8,
+      boxes:[{ s:MvC(12, 0, 64, 0, 10), dmg:5.5, kb:[3.2, -4.2], stun:23 }] },
+    ut: { n:'Paste Plume', d:'squeezes a plume of paste up and forward over her head', pose:'uppercut', st:4, act:3, end:8,
+      boxes:[{ s:MvC(24, -4, 8, -74, 13), dmg:4.7, kb:[0.5, -10.6], stun:26 }] },
+    dt: { n:'Smear', d:'smears paste along the floor at their feet and roots them for a moment', pose:'stompdn', st:4, act:3, end:7, fxt:'roots them briefly',
+      boxes:[{ s:MvC(10, 24, 62, 24, 12), dmg:3.6, kb:[1.5, -7], stun:24, fx:msFx('root', 22) }] },
+    na: { n:'Squeeze Spin', d:'spins as she squeezes, flinging paste round her four times over', pose:'spin', st:4, act:7, end:6, land:7, ac:14,
+      boxes:[{ s:MvO(0, -2, 48), dmg:2.8, kb:[1.2, -2.6], stun:20, rehit:4 }] },
+    fa: { n:'Glob Punch', d:'punches forward with a sticky glob', pose:'punch', st:5, act:3, end:9, land:9, ac:15,
+      boxes:[{ s:MvC(14, -2, 62, -2, 14), dmg:6.1, kb:[2.6, -2.8], stun:24 }] },
+    ba: { n:'Back Squirt', d:'squirts a stream of paste out behind her', pose:'kickback', st:5, act:3, end:10, land:9, ac:17,
+      boxes:[{ s:MvC(-10, 0, -64, 0, 12), dmg:7.5, kb:[-8.2, -4.4], stun:14 }] },
+    ua: { n:'Tube Up', d:'pushes her cap straight up above her', pose:'kickup', st:4, act:3, end:7, land:7, ac:12,
+      boxes:[{ s:MvC(0, -12, 4, -66, 12), dmg:4.6, kb:[0.3, -8.6], stun:24 }] },
+    da: { n:'Paste Drop', d:'drops like a squeezed tube and sticks whoever is below to the floor', pose:'stompdn', st:7, act:4, end:11, land:10, ac:19, fxt:'roots them',
+      boxes:[{ s:MvC(0, 12, 2, 60, 14), t0:7, t1:10, dmg:7.4, kb:[0.4, 6], stun:20, fx:msFx('root', 36) }], mv:[{ t0:7, t1:10, mode:'dive', vy:9.5 }] },
+    side: { n:'Paste Skid', d:'slides forward on a slick of paste, sticking whoever is in the way', pose:'dash', st:2, act:9, end:11, cd:58, fxt:'roots them briefly',
+      boxes:[{ s:MvC(12, 14, 52, 14, 14), dmg:4.9, kb:[4.2, -3.8], stun:15, fx:msFx('root', 20) }], mv:[{ t0:0, t1:10, mode:'set', vx:8.8 }] },
+    grab: { reach:32, whiff:28, pummel:{ dmg:1.6, every:13, n:'Dab' }, hold:{ base:60 },
+      f:{ n:'Squeeze Out', d:'squeezes them out ahead like paste', dmg:7.2, kx:7.8, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Tube Flip', d:'flips them out behind her like a tube', dmg:7.6, kx:8.4, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Cap Pop', d:'pops them up off her cap, ready for an up-air', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Stuck Down', d:'sticks them to the floor with a smear', dmg:4.8, kx:1.8, ky:-8.8, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'No cling and no cancel: Slick Slide is her way in.'],
+  },
+  // ---- LOLLIPOP ("sucker") -- the controller: a candy on a stick. Her hits are licks, sticks and sticky twirls, and they root and scramble. A plain share.
+  sucker: {
+    aiFit: true, aiK: 0.03, aiG: 0.03, aiH: 0.03, aiS: 0.03,
+    ft: { n:'Stick Jab', d:'jabs her stick straight ahead, hardest at the sweet end', pose:'punch', st:4, act:3, end:8,
+      boxes:[{ s:MvC(12, -2, 66, -2, 10), dmg:6.4, kb:[3.5, -4.2], stun:23 }] },
+    ut: { n:'Candy Twirl Up', d:'twirls her candy up over her head and scrambles their controls', pose:'uppercut', st:5, act:3, end:9, fxt:'scrambles their controls',
+      boxes:[{ s:MvF(6, 66, -2.6, -0.25, -8, 0), dmg:4.5, kb:[0.5, -10.7], stun:26, fx:msFx('scramble', 40) }] },
+    dt: { n:'Sticky Trip', d:'drags her candy along the floor at their feet and roots them for a moment', pose:'kick', st:4, act:2, end:8, fxt:'roots them briefly',
+      boxes:[{ s:MvC(10, 24, 66, 24, 11), dmg:4.2, kb:[1.5, -7], stun:24, fx:msFx('root', 38) }] },
+    na: { n:'Lick Spin', d:'spins her candy round her in a sticky ring, four times over', pose:'spin', st:4, act:7, end:7, land:7, ac:15,
+      boxes:[{ s:MvO(0, -6, 50), dmg:2.9, kb:[1.2, -2.6], stun:20, rehit:4 }] },
+    fa: { n:'Candy Whack', d:'whacks her candy forward', pose:'throw', st:5, act:3, end:9, land:9, ac:15,
+      boxes:[{ s:MvC(14, -4, 60, -4, 15), dmg:7.2, kb:[2.9, -2.8], stun:24 }] },
+    ba: { n:'Stick Back', d:'jabs her stick end out behind her', pose:'kickback', st:5, act:3, end:10, land:9, ac:17,
+      boxes:[{ s:MvC(-10, 0, -66, 0, 9), dmg:8.6, kb:[-8.7, -4.4], stun:14 }] },
+    ua: { n:'Sweet Spot', d:'pops her candy up above her, hardest at the sweet end', pose:'uppercut', st:4, act:3, end:7, land:7, ac:12,
+      x:'6% at the candy (4.4% elsewhere)',
+      boxes:[{ s:MvO(2, -68, 14), g:'a', dmg:6, kb:[0.4, -9], stun:25 }, { s:MvC(0, -12, 2, -56, 10), g:'a', dmg:4.4, kb:[0.3, -8.4], stun:24 }] },
+    da: { n:'Candy Drop', d:'drops candy-end first and sticks whoever is below to the floor', pose:'stompdn', st:7, act:4, end:11, land:10, ac:19, fxt:'roots them',
+      boxes:[{ s:MvC(0, 12, 2, 62, 13), t0:7, t1:10, dmg:8, kb:[0.4, 6.2], stun:20, fx:msFx('root', 50) }], mv:[{ t0:7, t1:10, mode:'dive', vy:9.5 }] },
+    side: { n:'Sticky Skate', d:'skates forward on her candy, sticking whoever is in the way', pose:'dash', st:2, act:9, end:11, cd:58, fxt:'roots them briefly',
+      boxes:[{ s:MvC(12, 10, 52, 10, 14), dmg:5.6, kb:[4.5, -3.8], stun:15, fx:msFx('root', 32) }], mv:[{ t0:0, t1:10, mode:'set', vx:8.6 }] },
+    grab: { reach:32, whiff:28, pummel:{ dmg:1.6, every:13, n:'Lick' }, hold:{ base:60 },
+      f:{ n:'Sticky Toss', d:'tosses them ahead, covered in candy', dmg:7.2, kx:7.8, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Stick Swing', d:'swings them round on her stick and lets go behind her', dmg:7.6, kx:8.4, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Sucker Punch Up', d:'pops them up on her candy, ready for an up-air', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Stuck to the Floor', d:'sticks them to the floor like candy', dmg:4.8, kx:1.8, ky:-8.8, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'No cling and no cancel: Sticky Skate is her way in.'],
+  },
+});
+msWords();
+
+// ============================================================
 //  THE MOVE LIST, THE MOVES TAB, TRAINING
 // ============================================================
 // "How players learn the moves" (the owner, 2026-10-14): a MOVE LIST in the pause menu, a "moves" tab on the character-select card,
@@ -41017,7 +41390,7 @@ function aiMovesetUse(f, inp, sp){
   // ---- a short hop in toward a foe on the ground (so an aerial can come out), and a fast fall once the swing is over ----
   if(f.onground && !inp.jump && gap > 36 && gap < 120 && Math.abs(dy) < 40 && t.hitstun <= 0 && rn < 0.004 * (ms.aiH == null ? 1 : ms.aiH) * aiMsOdds(pb, k, 'W')){ f._aiHop = 1; inp.jump = true; inp.left = toward < 0; inp.right = toward > 0; return; }
   if(!f.onground && f._aiHop && inp.jump) inp.jump = false;   // let go at once: that is the short hop
-  if(!f.onground && f.vy > 0.5 && !f._ff && !f._lev && !(f.flying > 0) && f.atkCd <= 0 && dy > 40 && adx < 60 && !(ms.aiFit && inp.attack) && rn < 0.05 * (ms.aiH == null ? 1 : ms.aiH) * aiMsOdds(pb, k, 'W')) inp.down = !f._dnPrev;
+  if(!f.onground && f.vy > 0.5 && !f._ff && !f._lev && !(f.flying > 0) && f.atkCd <= 0 && dy > 40 && adx < 60 && !(ms.aiFit && inp.attack) && rn < 0.05 * (ms.aiH == null ? 1 : ms.aiH) * aiMsOdds(pb, k, 'W')){ inp.down = !f._dnPrev; f._aiFF = hazardT; }
   if(f.onground) f._aiHop = 0;
 }
 
@@ -41030,7 +41403,13 @@ function aiMovesetUse(f, inp, sp){
 // The dash refills on landing: one air dash an airtime (mtAirDashOk), so nothing chains in the air; the jump is the ground jump (one is used up,
 // the double jump is still there). The speed is carried until the fighter lands (_hyperT; the usual speed cap and the ground friction wait for the
 // landing) and a short trail of puffs shows it. Humans on any dasher, and the CPU on a converted one (Leafy): mtOn.
-const HYPER_K = 1.4, HYPER_JUMP = 0.5, REV_K = 0.8, HYPER_DECAY = 0.985, WD_GRACE = 5, DASH_JUMP_GRACE = 4;
+// HYPERS AND SUPERS NERFED too (the owner, 2026-10-16: "and hypers, supers"): a hyper is 1.25x the dash's speed (was 1.4x), a super keeps
+// SUPER_K of it (was all of it), and both fade a little faster in the air (HYPER_DECAY 0.98, was 0.985).
+const HYPER_K = 1.25, SUPER_K = 0.85, HYPER_JUMP = 0.5, REV_K = 0.8, HYPER_DECAY = 0.98, WD_GRACE = 3, DASH_JUMP_GRACE = 4;
+// WAVEDASHES NERFED (the owner, 2026-10-16: "nerf wavedashes"): a hyper out of an AIR dash that landed is WD_K times the dash's speed, not HYPER_K,
+// its speed fades faster in the air (WD_DECAY), and the jump has to come within WD_GRACE = 3 frames of the landing (was 5). A hyper off a dash
+// started on the ground, the super and the reverse hyper are as they were.
+const WD_K = 1.05, WD_DECAY = 0.97;
 // "hypers should only be in ctf" (the owner, 2026-10-15): the dash tech (hyper, super, wavedash, reverse hyper) works in Capture the Flag and nowhere else. In every other mode
 // (FFA, 1v1, teams, the World Cup, bosses, online, Training) a jump out of a dash is the plain jump it was before the movesets, and a dasher's CPU never tries one.
 function hyperOk(){ return SETTINGS.mode === 'ctf'; }
@@ -41044,11 +41423,11 @@ function mtDashJump(f, inp){
   const spd = I.spd, dir = I.dir || f.face, back = dir > 0 ? !!inp.left : !!inp.right;   // (the arrow already turned her round this frame: the dash's own way is what counts)
   let vx, vy;
   if(back){ vx = -dir * spd * REV_K; vy = JUMP * HYPER_JUMP; f.face = -dir; }             // reverse hyper
-  else if(I.down){ vx = dir * spd * HYPER_K; vy = JUMP * HYPER_JUMP; f.face = dir; }      // hyper
-  else { vx = dir * spd; vy = JUMP; f.face = dir; }                                       // super
+  else if(I.down){ vx = dir * spd * (I.air ? WD_K : HYPER_K); vy = JUMP * HYPER_JUMP; f.face = dir; }      // hyper (a wavedash's is weaker)
+  else { vx = dir * spd * SUPER_K; vy = JUMP; f.face = dir; }                             // super
   f._dashing = 0; f._dashHits = null; f._dashDmg = 0; f._dashVY = 0; f._dashSpeed = 0; f._dashArmored = false; f._dashBoom = false; f._dashMargin = null; f._dashCuff = false; f._dashSummonHits = null;
   f._dashInfo = null;
-  f.vx = vx; f.vy = vy; f.jumps--; f.onground = false; f._hop = false; f._hyperT = 140; f._hyperKind = back ? 'rev' : (I.down ? 'hyper' : 'super');
+  f.vx = vx; f.vy = vy; f.jumps--; f.onground = false; f._hop = false; f._hyperT = 140; f._hyperKind = back ? 'rev' : (I.down ? 'hyper' : 'super'); f._hyperWD = !back && !!I.down && !!I.air;
   { const U = f._used || (f._used = {}); U[f._hyperKind] = (U[f._hyperKind] || 0) + 1; }
   f.flash = 6; for(let i = 0; i < 8; i++) puff(f.x - Math.sign(vx) * (6 + i * 7), f.y + f.r - 4 - Math.random() * 10, f.color, 3);
   if(f.you) SFX.jump();
@@ -53392,6 +53771,8 @@ const FRAME_SRC = {
   Balloon:{ t:'fierce', amp:1.3, vein:1, winStyle:0, ex:{ win:'smug.shout' } },
   // Tapey: observant and exact, and she has no mouth: a recorder's face is the eyes alone.
   Tapey:  { t:'deadpan', amp:0.7, winStyle:1 },
+  // Tree: rooted and stiff ("I'm rooted here. You're not."): he had no frames, so his moves had no body animation; a rigid row gives him the same moments as everyone, with little sway (his painted face stays: no anchors)
+  Tree:   { t:'plain', amp:0.55, winStyle:1 },
   // Silver Spoon: posh, haughty, and offended by being hit: chin up in a win.
   'Silver Spoon': { t:'smug', amp:0.8, winStyle:1, ex:{ atk:'smug.smirk,glare.grit,smug.smirk', hurt:'pain.grit' } },
   // Puffball: bubbly, hypersonic, and the first to have her own spit frames: those are her own pictures on her base render (FIGHTER_ANIM.Puffball.body), and
@@ -53930,8 +54311,8 @@ Object.assign(MOVESETS, {
     aiFit: true, aiK: 0.15, aiG: 0.2, aiH: 0.2,
     ft: { n:'Shoulder Bump', d:'bumps a shoulder into them, the fuse fizzing', pose:'punch', st:5, act:3, end:9,
       boxes:[{ s:MvC(12, 0, 58, 0, 19), dmg:7, kb:[4.2, -4], stun:25 }] },
-    ut: { n:'Fuse Flare', d:'flares his fuse straight up in a narrow jet over his head', pose:'uppercut', st:5, act:4, end:9,
-      boxes:[{ s:MvC(2, -8, 6, -78, 15), dmg:5.2, kb:[0.5, -10.8], stun:27 }] },
+    ut: { n:'Fuse Flare', d:'flares his fuse up in a jet over his head', pose:'uppercut', st:5, act:4, end:9,
+      boxes:[{ s:MvF(8, 70, -2.2, -0.25, -4, 0), dmg:5.2, kb:[0.5, -10.8], stun:27 }] },
     dt: { n:'Sizzling Heel', d:'drags a sizzling heel along the floor at their feet', pose:'kick', st:4, act:3, end:8,
       boxes:[{ s:MvC(10, 20, 64, 20, 12), dmg:4.8, kb:[1.8, -7.2], stun:24 }] },
     na: { n:'Tick Tock', d:'ticks round in a spin, his fuse sparking everything near him twice', pose:'spin', st:6, act:6, end:9, land:10, ac:17,
@@ -54152,8 +54533,8 @@ Object.assign(MOVESETS, {
     ft: { n:'Slime Slap', d:'slaps a hand of slime out in front of him', pose:'punch', st:4, act:3, end:9,
       boxes:[{ s:MvC(12, 0, 60, 0, 16), dmg:5.2, kb:[3.2, -4], stun:24 }] },
     ut: { n:'Goo Geyser', d:'shoots a geyser of goo straight up from his top', pose:'uppercut', st:5, act:4, end:9,
-      boxes:[{ s:MvC(10, -6, 12, -76, 16), dmg:4.8, kb:[0.5, -10.4], stun:26 }] },
-    dt: { n:'Puddle Trip', d:'stretches a puddle out along the floor under their feet; the goo slows them', pose:'kick', st:4, act:3, end:8, fxt:'slows them',
+      boxes:[{ s:MvC(12, -4, 18, -78, 24), dmg:4.8, kb:[0.5, -10.4], stun:26 }] },
+    dt: { n:'Goo Snag', d:'stretches a puddle out along the floor under their feet; the goo slows them', pose:'kick', st:4, act:3, end:8, fxt:'slows them',
       boxes:[{ s:MvC(8, 22, 68, 22, 13), dmg:4.3, kb:[1.5, -6.8], stun:24, fx:msFx('slow', 50) }] },
     na: { n:'Splatter', d:'splatters goo out all round him, clipping everything near twice', pose:'spin', st:4, act:6, end:7, land:8, ac:14,
       boxes:[{ s:MvO(0, 0, 52), dmg:3.2, kb:[1.2, -2.6], stun:20, rehit:5 }] },
@@ -54319,6 +54700,225 @@ Object.assign(MOVESETS, {
       u:{ n:'Pop-Up Toss', d:'pops them up like a kernel, ready for an up-air', dmg:5.2, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
       d:{ n:'Vacuum Down', d:'vacuums them flat against the floor', dmg:5.4, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
     tech:['Short hop, fast fall and a plain wall jump.', 'Tool Cart Roll can be jump-cancelled when it ends.', 'No cling.'],
+  },
+});
+msWords();
+
+// ============================================================
+//  MOVESETS, INANIMATE INSANITY, BATCH 3: Magnet, Balloon, Cherries, Spikey, Cheesy, Pickle, Apple
+// ============================================================
+// The third seven. Magnet and Spikey are heavy and slow and get the generous movetech (a cling, cancels, speed carried); Balloon floats, so he gets the small share a flyer
+// gets (short hop, fast fall, a plain wall jump, one small cancel, no cling); Cherries, Cheesy, Pickle and Apple get the plain share. None of the seven ever fired a shot from
+// X, so the old "ranged" slot (the shared low sweep) is now each one's own down-tilt, and every neutral special stays on plain C: C'mon, Bestie!, Quick Air Release, Play Dirty,
+// Can't Hold It In (hold C, let go), Kick! Soccer! Pun!, Loads of Experience and the Pencil Throw.
+// CANON (only the moments this file already quotes): Magnet pulls Pepper along by the hand, "C'mon, bestie!" (All Play and No Work); Balloon "Where's my prize?! I demand a
+// prize! Now!" (A Lemony Lesson); Cherries poured olive oil, Soap slipped, then they slipped in their own oil (Fan the Flames); Spikey's spikes shake as it builds, "I just
+// can't hold it in anymore!" (Rock the Boat); Cheesy's "Kick! Soccer! Pun!" after the knee slapping (A Kick in the Right Direction); Pickle's "loads of experience" cliff dive
+// (The Crappy Cliff) and the needle that popped Balloon; Apple's doodle pencil, the platform technique and a lucky seven.
+Object.assign(CLINGERS, { bestie:46, spikeburst:40 });   // a magnet clings to the metal of a wall; the spikes dig in
+Object.assign(MOVESETS, {
+  // ---- MAGNET ("bestie") -- the crowd puller: slow and steady, she draws things to her and shoves them away. C'mon, Bestie! (pull the nearest foe in and hit them as they arrive) is C.
+  bestie: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Pole Push', d:'pushes the like pole of her magnet into whoever is in front of her', pose:'punch', st:5, act:3, end:9,
+      boxes:[{ s:MvC(14, 0, 62, 0, 16), dmg:6.2, kb:[4.4, -3.8], stun:25 }] },
+    ut: { n:'North Pole', d:'raises her north pole up over her head', pose:'uppercut', st:5, act:4, end:9,
+      boxes:[{ s:MvF(8, 64, -2.4, -0.3, -4, 0), dmg:5.2, kb:[0.5, -10.6], stun:26 }] },
+    dt: { n:'Drag In', d:'draws their feet in toward her along the floor, so they land close', pose:'kick', st:5, act:3, end:8, x:'4.4%, pulls them in',
+      boxes:[{ s:MvC(10, 20, 66, 20, 12), dmg:4.4, kb:[-2.4, -6.6], stun:25 }] },
+    na: { n:'Magnetic Field', d:'sets up a field round her that clips everything near twice', pose:'spin', st:5, act:6, end:8, land:9, ac:15,
+      boxes:[{ s:MvO(0, 0, 54), dmg:4.1, kb:[1.4, -2.7], stun:20, rehit:5 }] },
+    fa: { n:'South Pole Slug', d:'slugs ahead with her south pole', pose:'punch', st:6, act:3, end:10, land:10, ac:17,
+      boxes:[{ s:MvC(14, -2, 64, -2, 15), dmg:7.6, kb:[3.4, -3], stun:25 }] },
+    ba: { n:'Repel', d:'repels whoever is behind her with a burst of like poles', pose:'kickback', st:6, act:3, end:10, land:11, ac:18,
+      boxes:[{ s:MvO(-44, 0, 28), dmg:8.6, kb:[-8.8, -4.4], stun:15 }] },
+    ua: { n:'Pole Up', d:'points a pole straight up past her head', pose:'uppercut', st:4, act:3, end:8, land:8, ac:13,
+      boxes:[{ s:MvC(0, -12, 2, -70, 13), dmg:5.4, kb:[0.4, -9], stun:24 }] },
+    da: { n:'Magnetic Slam', d:'slams down on whoever is below with the weight of every pole; she can jump out of it once it hits', pose:'slam', st:8, act:4, end:12, land:13, ac:22, jc:'hit',
+      boxes:[{ s:MvC(0, 14, 4, 62, 17), t0:8, t1:11, dmg:8.8, kb:[0.7, 9], stun:14 }], mv:[{ t0:8, t1:11, mode:'dive', vy:10 }] },
+    side: { n:'Pole Position', d:'sets her poles and shoots forward on a push of like poles, shouldering whoever is in the way; she can jump out of its end', pose:'dash', st:4, act:11, end:11, cd:60, jc:'end',
+      boxes:[{ s:MvC(12, 0, 50, 0, 17), dmg:6, kb:[5.2, -3.8], stun:14 }], mv:[{ t0:0, t1:12, mode:'set', vx:8.2 }] },
+    // "C'mon, bestie!" as she pulls Pepper along by the hand (All Play and No Work); "a very magnetic presence" (Magnet, Personality)
+    grab: { reach:30, whiff:30, pummel:{ dmg:1.6, every:14, n:'Static Pinch' }, hold:{ base:60 },
+      f:{ n:'Bestie Toss', d:'takes them by the hand and tosses them off ahead', dmg:7.4, kx:7.6, ky:-4.2, stun:0, pose:'throw', lag:22 },
+      b:{ n:'Like Poles Repel', d:'flips her poles and repels them behind her', dmg:7.8, kx:8.2, ky:-4.8, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Climbing Gear', d:'hauls them up with her and lets go, ready for an up-air', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Attract Down', d:'draws them hard down against the floor', dmg:5.4, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.8 s (a magnet holds on to metal) before she slides.', 'Magnetic Slam and Pole Position jump-cancel.'],
+  },
+  // ---- BALLOON ("airrel") -- light, floaty and loud: a flyer, so a small share of movetech. Quick Air Release (the rocket through anyone in the way) is C.
+  airrel: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Rubber Bop', d:'bops a rubbery fist straight ahead', pose:'punch', st:3, act:2, end:6,
+      boxes:[{ s:MvC(12, -2, 54, -2, 13), dmg:4, kb:[3, -4.4], stun:20 }] },
+    ut: { n:'Helium Hoist', d:'hoists a fist up and over his head, light as air', pose:'uppercut', st:4, act:3, end:7,
+      boxes:[{ s:MvF(6, 58, -2.3, -0.4, -6, 0), dmg:4.1, kb:[0.5, -10.5], stun:23 }] },
+    dt: { n:'Squeak Sweep', d:'squeaks a foot along the floor into their ankles', pose:'kick', st:3, act:2, end:6,
+      boxes:[{ s:MvC(8, 20, 56, 20, 11), dmg:3.2, kb:[1.4, -6.8], stun:21 }] },
+    na: { n:'Balloon Spin', d:'spins round on his knot, clipping everything near twice', pose:'spin', st:3, act:6, end:6, land:6, ac:12,
+      boxes:[{ s:MvO(0, 0, 44), dmg:3, kb:[1.2, -2.6], stun:19, rehit:4 }] },
+    fa: { n:'Prize Punch', d:'demands a prize with a quick punch ahead', pose:'punch', st:4, act:2, end:7, land:7, ac:12,
+      boxes:[{ s:MvC(14, -2, 60, -2, 12), dmg:5.6, kb:[2.4, -2.8], stun:22 }] },
+    ba: { n:'Back Bounce', d:'bounces his rubbery back off whoever is behind him', pose:'kickback', st:4, act:3, end:9, land:8, ac:15,
+      boxes:[{ s:MvC(-12, 0, -56, 0, 13), dmg:6.8, kb:[-7.6, -4], stun:13 }] },
+    ua: { n:'Buoyant Rise', d:'floats up through whoever is above, gaining a little height', pose:'uppercut', st:3, act:3, end:6, land:5, ac:10,
+      boxes:[{ s:MvC(0, -10, 2, -62, 13), dmg:3.8, kb:[0.3, -8.6], stun:22 }], mv:[{ t0:3, t1:4, mode:'set', vy:-3.5 }] },
+    da: { n:'Deflate Drop', d:'lets the air out and drops onto whoever is below', pose:'slam', st:6, act:4, end:10, land:9, ac:18,
+      boxes:[{ s:MvC(0, 12, 4, 56, 12), t0:6, t1:9, dmg:6.5, kb:[0.6, 8.2], stun:13 }], mv:[{ t0:6, t1:9, mode:'dive', vy:8.5 }] },
+    side: { n:'Slow Leak', d:'drifts sideways on a slow leak of air, floating flat as he goes and bumping whoever is in the way; he can jump out of its end', pose:'dash', st:2, act:22, end:9, cd:58, jc:'end',
+      boxes:[{ s:MvO(24, 0, 22), dmg:4.4, kb:[4.2, -3.4], stun:12 }], mv:[{ t0:0, t1:23, mode:'stall', vy:-0.2, vx:5.6 }] },
+    // "Where's my prize?! I demand a prize! Now!" (Balloon/Quotes, A Lemony Lesson); the season-1 captain
+    grab: { reach:26, whiff:26, pummel:{ dmg:1.2, every:12, n:'Squeak' }, hold:{ base:52 },
+      f:{ n:'Demand a Prize', d:'shoves them off ahead, demanding a prize', dmg:6, kx:7, ky:-4, stun:0, pose:'throw', lag:18 },
+      b:{ n:'Captain\'s Order', d:'orders them off behind him with a shove', dmg:6.4, kx:7.6, ky:-4.4, stun:0, pose:'throwb', lag:20 },
+      u:{ n:'Helium Lift', d:'floats them up on a breath of helium, ready for an up-air', dmg:4.2, kx:0.5, ky:-11.5, stun:31, pose:'uppercut', lag:14 },
+      d:{ n:'Deflate', d:'sits on them and lets his air out', dmg:4.2, kx:1.8, ky:-8.5, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Slow Leak can be jump-cancelled when it ends.', 'No cling: he floats.'],
+  },
+  // ---- CHERRIES ("cherries") -- the trapper: two cherries on one stem, dirty and quick on their feet. Play Dirty (the olive oil on the floor ahead) is C. A plain share of movetech.
+  cherries: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Stem Whip', d:'whips the stem across in front of them', pose:'punch', st:4, act:3, end:8,
+      boxes:[{ s:MvC(12, 0, 60, 0, 12), dmg:5.8, kb:[3.6, -4.2], stun:23 }] },
+    ut: { n:'Cherry Lob Up', d:'lobs a cherry up over their head and catches it on the way down', pose:'uppercut', st:5, act:3, end:9,
+      boxes:[{ s:MvF(8, 62, -2.3, -0.4, -4, 0), dmg:5.1, kb:[0.5, -10.8], stun:25 }] },
+    dt: { n:'Oil Slick Trip', d:'slips a foot of olive oil under theirs', pose:'kick', st:4, act:3, end:9,
+      boxes:[{ s:MvC(10, 22, 68, 22, 12), dmg:4.5, kb:[1.7, -7], stun:24 }] },
+    na: { n:'Cherry Twirl', d:'twirls with a cherry out on each side, clipping everything near twice', pose:'spin', st:4, act:6, end:7, land:7, ac:13,
+      boxes:[{ s:MvC(-48, 0, 48, 0, 17), dmg:3.4, kb:[1.3, -2.6], stun:19, rehit:5 }] },
+    fa: { n:'Dirty Kick', d:'a low-down kick ahead', pose:'kick', st:5, act:2, end:9, land:9, ac:15,
+      boxes:[{ s:MvC(14, 4, 62, 4, 13), dmg:6.2, kb:[2.6, -2.8], stun:22 }] },
+    ba: { n:'Stem Snap', d:'snaps the stem back at whoever is behind them', pose:'kickback', st:5, act:3, end:10, land:10, ac:17,
+      boxes:[{ s:MvC(-12, 0, -60, 0, 13), dmg:7.6, kb:[-8.4, -4.4], stun:14 }] },
+    ua: { n:'Pit Pop', d:'pops a pit straight up past their head', pose:'kickup', st:4, act:3, end:8, land:7, ac:12,
+      boxes:[{ s:MvC(0, -12, 2, -70, 12), dmg:4.6, kb:[0.4, -8.8], stun:24 }] },
+    da: { n:'Pit Drop', d:'drops like a pit onto whoever is below', pose:'slam', st:7, act:4, end:11, land:11, ac:20,
+      boxes:[{ s:MvC(0, 14, 4, 62, 14), t0:7, t1:10, dmg:7.7, kb:[0.7, 8.6], stun:14 }], mv:[{ t0:7, t1:10, mode:'dive', vy:9.5 }] },
+    side: { n:'Slick Slide', d:'slides far on a sheet of olive oil, leaving whoever it knocks slippery; they can jump out of its end', pose:'dash', st:3, act:11, end:10, cd:58, jc:'end', fxt:'makes them slippery',
+      boxes:[{ s:MvC(10, 16, 50, 16, 14), dmg:5.2, kb:[4.8, -3.4], stun:13, fx:msFx('ice', 70) }], mv:[{ t0:0, t1:11, mode:'set', vx:8.4 }] },
+    // "they poured olive oil, Soap slipped, then they slipped in their own oil" (Fan the Flames)
+    grab: { reach:28, whiff:28, pummel:{ dmg:1.4, every:13, n:'Stem Pinch' }, hold:{ base:58 },
+      f:{ n:'Olive Oil Toss', d:'slicks them with olive oil and tosses them ahead', dmg:7, kx:7.6, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Slipped Up', d:'slips and sends them skidding off behind', dmg:7.4, kx:8.2, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Leg Up', d:'gives them a leg up, high, ready for an up-air', dmg:4.8, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'The Bait', d:'flops down with a fake boo-boo and pulls them down with her', dmg:5, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Slick Slide can be jump-cancelled when it ends.', 'No cling.'],
+  },
+  // ---- SPIKEY ("spikeburst") -- the burst: slow, round and spiked all over. Can't Hold It In (hold C, let go, every spike shoots off) is C. The generous share.
+  spikeburst: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Spike Poke', d:'pokes a spike straight out in front of him', pose:'punch', st:5, act:3, end:9,
+      boxes:[{ s:MvC(12, 0, 62, 0, 12), dmg:6.4, kb:[4, -4], stun:25 }] },
+    ut: { n:'Spike Crown', d:'raises a crown of spikes up over his head', pose:'uppercut', st:5, act:4, end:9,
+      boxes:[{ s:MvF(6, 60, -2.4, -0.3, -4, 0), dmg:5.6, kb:[0.5, -10.6], stun:26 }] },
+    dt: { n:'Spike Dig', d:'digs a row of spikes along the floor at their feet', pose:'kick', st:5, act:3, end:9,
+      boxes:[{ s:MvC(8, 22, 62, 22, 11), dmg:5.4, kb:[1.7, -7.2], stun:25 }] },
+    na: { n:'Spike Ring', d:'bristles all round, his spikes clipping everything near twice', pose:'spin', st:5, act:6, end:8, land:9, ac:15,
+      boxes:[{ s:MvO(0, 0, 54), dmg:3.5, kb:[1.4, -2.7], stun:20, rehit:5 }] },
+    fa: { n:'Spike Charge', d:'lowers his spikes and shoves forward', pose:'throw', st:6, act:3, end:10, land:10, ac:17,
+      boxes:[{ s:MvC(14, 0, 64, 0, 16), dmg:7.6, kb:[3.2, -3], stun:24 }], mv:[{ t0:6, t1:8, mode:'add', vx:0.9 }] },
+    ba: { n:'Spike Back', d:'bristles his back spikes at whoever is behind him', pose:'kickback', st:6, act:3, end:10, land:11, ac:18,
+      boxes:[{ s:MvO(-42, 0, 28), dmg:9, kb:[-9, -4.4], stun:15 }] },
+    ua: { n:'Spike Up', d:'shoots a few spikes straight up above him', pose:'uppercut', st:4, act:3, end:8, land:8, ac:13,
+      boxes:[{ s:MvC(0, -12, 2, -72, 13), dmg:5.6, kb:[0.4, -9], stun:24 }] },
+    da: { n:'Spike Drop', d:'drops spikes-first onto whoever is below; he can jump out of it once it hits', pose:'slam', st:8, act:4, end:12, land:12, ac:22, jc:'hit',
+      boxes:[{ s:MvC(0, 14, 4, 60, 17), t0:8, t1:11, dmg:9.0, kb:[0.7, 9], stun:14 }], mv:[{ t0:8, t1:11, mode:'dive', vy:10 }] },
+    side: { n:'Spiny Roll', d:'curls into a ball and rolls forward, spikes out, bumping whoever is in the way; he can jump out of its end', pose:'dash', st:3, act:12, end:11, cd:60, jc:'end',
+      boxes:[{ s:MvO(22, 4, 28), dmg:5.8, kb:[5, -3.6], stun:14 }], mv:[{ t0:0, t1:12, mode:'set', vx:7.8 }] },
+    // "I just can't hold it in anymore!" (Rock the Boat); his spikes grow back very fast (Abilities)
+    grab: { reach:28, whiff:30, pummel:{ dmg:1.8, every:14, n:'Prick' }, hold:{ base:62 },
+      f:{ n:'Spike Grab', d:'hooks them on a spike and flings them off ahead', dmg:7.8, kx:7.8, ky:-4.4, stun:0, pose:'throw', lag:22 },
+      b:{ n:"Can't Hold It", d:"can't hold it in, and sends them off behind him", dmg:8.2, kx:8.4, ky:-5, stun:0, pose:'throwb', lag:24 },
+      u:{ n:'Spike Lift', d:'lifts them on his spikes, ready for an up-air', dmg:5.2, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Pinned Down', d:'pins them to the floor on a bed of spikes', dmg:5.6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and wall jumps.', 'CLINGS to a wall for about 0.7 s (his spikes dig in) before he slides.', 'Spike Drop and Spiny Roll jump-cancel.'],
+  },
+  // ---- CHEESY ("pun") -- the charger: a groaning joker with a good leg. Kick! Soccer! Pun! (the soccer ball low along the floor) is C. A plain share of movetech.
+  pun: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Punch Line', d:'delivers a punch line straight ahead', pose:'punch', st:4, act:3, end:8,
+      boxes:[{ s:MvC(12, 0, 58, 0, 13), dmg:6.0, kb:[3.6, -4.2], stun:23 }] },
+    ut: { n:'Heckle Up', d:'jabs a finger up over their head at a heckler', pose:'uppercut', st:5, act:3, end:9,
+      boxes:[{ s:MvF(8, 60, -2.3, -0.4, -4, 0), dmg:5.3, kb:[0.5, -10.6], stun:25 }] },
+    dt: { n:'Knee Slap Sweep', d:'slaps his knee and sweeps the leg low at their feet', pose:'kick', st:4, act:3, end:8,
+      boxes:[{ s:MvC(10, 20, 60, 20, 12), dmg:4.5, kb:[1.6, -7], stun:24 }] },
+    na: { n:'Pun Spin', d:'spins in a pun, clipping everything near twice', pose:'spin', st:4, act:6, end:7, land:7, ac:13,
+      boxes:[{ s:MvO(0, 0, 46), dmg:3.1, kb:[1.2, -2.6], stun:19, rehit:4 }] },
+    fa: { n:'Header', d:'heads the ball, and whoever is in front, ahead', pose:'throw', st:5, act:3, end:9, land:9, ac:15,
+      boxes:[{ s:MvC(10, -14, 56, -12, 14), dmg:6.6, kb:[2.6, -2.9], stun:23 }] },
+    ba: { n:'Scissor Kick', d:'scissors a kick out behind him', pose:'kickback', st:5, act:3, end:10, land:10, ac:17,
+      boxes:[{ s:MvC(-12, 0, -62, 0, 13), dmg:8.1, kb:[-8.4, -4.4], stun:14 }] },
+    ua: { n:'Overhead Kick', d:'kicks the ball and whoever is above straight up', pose:'kickup', st:4, act:3, end:8, land:7, ac:12,
+      boxes:[{ s:MvC(0, -12, 2, -72, 13), dmg:4.7, kb:[0.4, -8.8], stun:24 }] },
+    da: { n:'Stomp-Pun', d:'stomps down with a groan on whoever is below', pose:'stompdn', st:7, act:4, end:11, land:11, ac:20,
+      boxes:[{ s:MvC(0, 14, 4, 62, 14), t0:7, t1:10, dmg:8.0, kb:[0.6, 8.6], stun:14 }], mv:[{ t0:7, t1:10, mode:'dive', vy:9.5 }] },
+    side: { n:'Breakaway', d:'breaks away at a sprint with a kick at the end of it; he can jump out of it, keeping his speed', pose:'dash', st:3, act:10, end:10, cd:56, jc:'any',
+      boxes:[{ s:MvC(12, 4, 52, 4, 14), dmg:5.4, kb:[5.2, -3.6], stun:13 }], mv:[{ t0:0, t1:11, mode:'set', vx:9.2 }] },
+    // "Kick! Soccer! Pun!" after the knee slapping gave his leg the endurance to kick one past Fan (A Kick in the Right Direction)
+    grab: { reach:28, whiff:28, pummel:{ dmg:1.4, every:13, n:'Groaner' }, hold:{ base:58 },
+      f:{ n:'Corner Kick', d:'takes a corner kick with them, ahead', dmg:7.2, kx:7.8, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Knee Slapper', d:'slaps his knee and sends them off behind him', dmg:7.6, kx:8.2, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Heckler Heave', d:'heaves a heckler up high, ready for an up-air', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Red Card', d:'shows the red card and puts them down hard', dmg:5.2, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Breakaway jump-cancels and keeps its speed.', 'No cling.'],
+  },
+  // ---- PICKLE ("pickle") -- the glass cannon: boxing gloves and a lot of experience; he hits harder the worse he is hurt. Loads of Experience (the belly-flop dive) is C. A plain share of movetech.
+  pickle: {
+    aiFit: true, aiK: 0.05, aiG: 0.1, aiH: 0.1,   // his jab is his strength (it grows as he is hurt): the CPU keeps it
+    ft: { n:"Boxer's Jab", d:'a quick, straight jab with a boxing glove', pose:'punch', st:4, act:2, end:7,
+      boxes:[{ s:MvC(12, 0, 62, 0, 10), dmg:5.2, kb:[3.8, -4.4], stun:21 }] },
+    ut: { n:'Haymaker Up', d:'swings a haymaker up and over his head', pose:'uppercut', st:5, act:3, end:9,
+      boxes:[{ s:MvF(8, 64, -2.4, -0.3, -4, 0), dmg:5.9, kb:[0.5, -11], stun:25 }] },
+    dt: { n:'Low Blow', d:'a low shot at their ankles', pose:'kick', st:4, act:3, end:8,
+      boxes:[{ s:MvC(10, 20, 64, 20, 11), dmg:5.1, kb:[1.7, -7.2], stun:24 }] },
+    na: { n:'Flurry', d:'throws a flurry of gloves on both sides, clipping everything near three times over', pose:'spin', st:4, act:7, end:7, land:7, ac:13,
+      boxes:[{ s:MvC(-46, -2, 46, -2, 18), dmg:2.9, kb:[1.2, -2.6], stun:19, rehit:3 }] },
+    fa: { n:'Cross', d:'a hard cross straight ahead', pose:'punch', st:5, act:2, end:8, land:8, ac:13,
+      boxes:[{ s:MvC(14, -2, 66, -2, 11), dmg:6.4, kb:[3, -2.9], stun:22 }] },
+    ba: { n:'Elbow Guard', d:'drives a guarded elbow back into whoever is behind him', pose:'kickback', st:5, act:3, end:10, land:10, ac:16,
+      boxes:[{ s:MvC(-12, 0, -62, 0, 12), dmg:8.3, kb:[-8.6, -4.4], stun:14 }] },
+    ua: { n:'Upper Cut', d:'an upper cut straight up past his head', pose:'uppercut', st:4, act:3, end:8, land:7, ac:12,
+      boxes:[{ s:MvC(0, -10, 2, -70, 12), dmg:5.8, kb:[0.4, -9], stun:24 }] },
+    da: { n:'Needle Dive', d:'dives point-first like the needle that popped Balloon: the very tip spikes whoever is below', pose:'stompdn', st:9, act:3, end:12, land:12, ac:22, x:'8.2% at the tip (4.2% elsewhere)',
+      boxes:[{ s:MvO(0, 66, 10), g:'a', t0:9, t1:11, dmg:8.2, kb:[0.5, 9.6], stun:14 }, { s:MvC(0, 12, 4, 52, 14), g:'a', t0:9, t1:11, dmg:4.2, kb:[0.5, -4.5], stun:18 }], mv:[{ t0:9, t1:11, mode:'dive', vy:10 }] },
+    side: { n:'Bob and Weave', d:'bobs and weaves forward under high hits with his gloves up, then jabs; he can jump out of it', pose:'dash', st:2, act:10, end:12, cd:54, jc:'any',
+      boxes:[{ s:MvC(10, 8, 54, 8, 13), dmg:4.8, kb:[4.8, -3.6], stun:13 }], mv:[{ t0:0, t1:11, mode:'set', vx:8.4 }] },
+    // "loads of experience" -- the cliff dive (The Crappy Cliff); the needle that popped Balloon; the Fist Thingy
+    grab: { reach:30, whiff:30, pummel:{ dmg:1.6, every:13, n:'Glove Rap' }, hold:{ base:56 },
+      f:{ n:'Haymaker Toss', d:'winds up and throws them ahead', dmg:7, kx:8, ky:-4.4, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Clinch', d:'clinches, spins, and lets them go behind him', dmg:7.4, kx:8.4, ky:-5, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Fist Thingy', d:'pops a giant fist up under them, ready for an up-air', dmg:5.4, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Pickled', d:'pickles them into the floor', dmg:5.6, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Bob and Weave can be jump-cancelled and keeps its speed.', 'No cling.'],
+  },
+  // ---- APPLE ("split") -- the bruiser: quick-tempered and quick-fisted. The Pencil Throw (point first, through everyone) is C. A plain share of movetech.
+  split: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Slap', d:'a hard slap straight across in front of her', pose:'punch', st:4, act:2, end:8,
+      boxes:[{ s:MvC(12, 0, 56, 0, 13), dmg:5.6, kb:[3.4, -4.2], stun:22 }] },
+    ut: { n:'Pencil Up', d:'jabs her pencil up over her head', pose:'uppercut', st:5, act:3, end:8,
+      boxes:[{ s:MvF(8, 62, -2.3, -0.4, -4, 0), dmg:4.9, kb:[0.5, -10.6], stun:24 }] },
+    dt: { n:'Platform Kick', d:'kicks low along the floor, the platform technique turned on their feet', pose:'kick', st:4, act:2, end:8,
+      boxes:[{ s:MvC(10, 22, 62, 22, 11), dmg:4.1, kb:[1.6, -7], stun:23 }] },
+    na: { n:'Apple Roll', d:'rolls round in the air, clipping everything near twice', pose:'spin', st:4, act:5, end:7, land:7, ac:12,
+      boxes:[{ s:MvO(0, 0, 44), dmg:3.2, kb:[1.3, -2.6], stun:20, rehit:4 }] },
+    fa: { n:'Sharp Slap', d:'a sharp slap ahead in the air', pose:'throw', st:5, act:2, end:8, land:8, ac:14,
+      boxes:[{ s:MvC(14, -4, 66, -4, 11), dmg:6, kb:[2.6, -2.9], stun:22 }] },
+    ba: { n:'Take That', d:'throws a backhand at whoever is behind her', pose:'kickback', st:5, act:3, end:9, land:9, ac:16,
+      boxes:[{ s:MvC(-12, 2, -58, 2, 13), dmg:7.6, kb:[-8.2, -4.2], stun:14 }] },
+    ua: { n:'Core Pop', d:'pops her core straight up through whoever is above', pose:'kickup', st:3, act:3, end:8, land:7, ac:11,
+      boxes:[{ s:MvC(0, -10, 2, -68, 12), dmg:4.5, kb:[0.4, -8.8], stun:23 }] },
+    da: { n:'Fall Apart', d:'comes down in two halves onto whoever is below', pose:'slam', st:7, act:4, end:11, land:11, ac:20,
+      boxes:[{ s:MvC(-14, 14, -10, 58, 13), g:'a', t0:7, t1:10, dmg:7.2, kb:[0.6, 8.4], stun:14 }, { s:MvC(14, 14, 18, 58, 13), g:'a', t0:7, t1:10, dmg:7.2, kb:[0.6, 8.4], stun:14 }], mv:[{ t0:7, t1:10, mode:'dive', vy:9.5 }] },
+    side: { n:'Rolling Apple', d:'rolls forward like a dropped apple, hopping at the end of it, bumping whoever is in the way; she can jump out of its end', pose:'dash', st:3, act:11, end:10, cd:56, jc:'end',
+      boxes:[{ s:MvO(22, 4, 26), dmg:5.6, kb:[4.8, -3.6], stun:13 }], mv:[{ t0:0, t1:12, mode:'set', vx:8.2 }, { t0:12, t1:12, mode:'set', vy:-4 }] },
+    // the doodle pencil she throws point first; "Platform Technique"; a lucky seven
+    grab: { reach:28, whiff:28, pummel:{ dmg:1.6, every:13, n:'Seed Flick' }, hold:{ base:58 },
+      f:{ n:'Bruiser Shove', d:'shoves them hard ahead', dmg:7.2, kx:7.8, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Core Toss', d:'tosses them away behind her like a core', dmg:7.6, kx:8.2, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Platform Boost', d:'boosts them up on the platform technique, ready for an up-air', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Lucky Seven', d:'slams them down with a guess that comes up seven', dmg:5.2, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Rolling Apple can be jump-cancelled when it ends.', 'No cling.'],
   },
 });
 msWords();

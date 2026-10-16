@@ -68,6 +68,11 @@ describe('dash tech (Leafy; Liy and Woody are the other dashers)', () => {
     const r = flight();
     expect(r.kind).toBe('hyper');
     expect(r.dx).toBeGreaterThan(300);
+    // "nerf wavedashes" (the owner, 2026-10-16): a wavedash's hyper goes clearly less far than a hyper off a dash started on the ground
+    stage(); hold(['right', 'down', 'special'], 1); steps(2); hold(['jump'], 1);
+    const h = flight();
+    expect(h.kind).toBe('hyper');
+    expect(r.dx, 'the wavedash is the shorter hyper').toBeLessThan(h.dx * 0.9);
   });
   it('one air dash an airtime, and the dash comes back on landing', () => {
     stage(); W.eval('fighters[0].y = groundY()-24-300; fighters[0].onground = false; fighters[0].vy = 0;');
