@@ -132,6 +132,22 @@ describe('the mill wheel', () => {
     expect(J(w, `ctfEditProblems(CTF.live, { nodes:[], nb:{}, reach:[[], []] }).filter(function(b){ return b === 'flag${fl}'; })`), 'not impossible').toEqual([]);
   });
 
+  it('you build in the mill on your own half like anywhere else, but never over its doors ("cant place anything except my flag in the mill", 2026-10-16)', () => {
+    const { window: w } = loadMonolith(49);
+    const r = J(w, `(function(){ SETTINGS.mode='ctf'; SETTINGS.count=10; CTF.forceMap='oak'; beginMatchNow(); var L = CTF.live, M = CTF.map;
+      var f = fighters.find(function(g){ return g.team===0; }); L.pts[f.idx] = 50;
+      var inRoom = function(s){ return (M.rooms||[]).some(function(r){ return s.x>r.x && s.x<r.x+r.w && s.y>r.y && s.y<r.y+r.h; }); };
+      var s0 = M.spots.find(function(s){ return s.team===0 && inRoom(s); });
+      var deco = ctfEditCheck(f, 'deco', ctfDecoSet(s0.x, s0.y)[0], ctfEditShape('deco', ctfDecoSet(s0.x, s0.y)[0], s0.x - 150, s0.y - 20));
+      var trap = ctfEditCheck(f, 'trap', 'stun', ctfEditShape('trap', 'stun', s0.x - 150, s0.y - 20));
+      var p = M.portals.find(function(q){ return inRoom(q) && q.x < M.WW/2; });
+      var door = ctfEditCheck(f, 'wall', 'block', ctfEditShape('wall', 'block', p.x + p.w/2, p.y + p.h - 70));
+      return { deco:deco, trap:trap, door:door }; })()`);
+    expect(r.deco, 'a prop in the mill').toBeNull();
+    expect(r.trap, 'a trap in the mill').toBeNull();
+    expect(r.door, 'a wall over a mill door').toBe('door');
+  });
+
   it('a trapdoor goes only over a drop: on a floor it would open onto the floor', () => {
     const { window: w } = loadMonolith(47);
     start(w, 'castle');
