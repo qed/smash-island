@@ -705,6 +705,19 @@ describe('capture the flag', () => {
     expect(w.eval(`fighters[${foe}].hitstun`), 'stunned').toBeGreaterThan(20);
   });
 
+  it('more than 5 stun pads in one area stun for less ("if there are more than 5 stunpads in 1 area, then stuntime should be reduced", 2026-10-16)', () => {
+    const { window: w } = loadMonolith(35);
+    const r = J(w, `(function(){ var L = { edits:[] }, pad = function(x){ var e = { tool:'trap', kind:'stun', team:0, x:x, y:1000, w:36, h:20 }; L.edits.push(e); return e; };
+      var first = pad(1000); for (var i = 1; i < 5; i++) pad(1000 + i*60); var five = ctfStunSteps(L, first);
+      for (var k = 0; k < 15; k++) pad(1300 + k*40); var twenty = ctfStunSteps(L, first);
+      var far = pad(1900 + CTF_STUN_AREA.dx*2), foe = { tool:'trap', kind:'stun', team:1, x:1000, y:1000, w:36, h:20 }; L.edits.push(foe);
+      return { five:five, twenty:twenty, far:ctfStunSteps(L, far), foe:ctfStunSteps(L, foe), full:CTF_STUN }; })()`);
+    expect(r.five, 'five pads: full stun').toBe(r.full);
+    expect(r.twenty, 'twenty pads: about a quarter').toBe(Math.round(r.full*5/20));
+    expect(r.far, 'a pad far away is on its own').toBe(r.full);
+    expect(r.foe, 'pads of the other side do not count').toBe(r.full);
+  });
+
   it('bargaining: the CPU side accepts an offer that is the same for both and declines a lopsided one; humans vote', () => {
     const { window: w } = loadMonolith(34);
     hideStart(w);
