@@ -55,12 +55,23 @@ describe('the team plan', () => {
     key('KeyP'); expect(w.eval('ctfMenuOpen()'), 'P opens it').toBe(true);
     expect(w.eval(`CTF_NOINP === ctfFilterInput(__me, { left:true, right:false, jump:false, down:false, up:false, attack:true, special:false, smash:false, flag:false, edit:false })`), 'the fighter stands').toBe(true);
     const t0 = w.eval('CTF.live.t'); step(w, 10); expect(w.eval('CTF.live.t') > t0, 'the match goes on behind it').toBe(true);
-    key('Space');   // the first preset row: ticked
+    key('Space');   // the first preset row: chosen
     expect(w.eval('CTF.live.plans[__me.team].preset'), 'the preset is the plan').toBe(w.eval('Object.keys(CTF_PRESETS)[0]'));
+    expect(w.eval('Object.keys(CTF.live.plans[__me.team].ticks).length'), 'choosing a preset ticks nothing for the human (the owner, 2026-10-16: the boxes show only what he ticked)').toBe(0);
+    const pid = w.eval('CTF.menu.vote.preset'), pbuild = w.eval(`CTF_PRESETS['${pid}'].builds[0]`), pplay = w.eval(`CTF_PRESETS['${pid}'].plays[0]`);
+    expect(w.eval(`!!CTF.live.plans[__me.team].allow['${pbuild}'] && !!CTF.live.plans[__me.team].allow['${pplay}']`), 'its ideas are in the plan').toBe(true);
+    // every row of every tab has a one-line description
+    for (let tab = 0; tab < 5; tab++) { w.eval(`CTF.menu.tab = ${tab}; CTF.menu.cur = 0;`); const rows = J(w, 'ctfMenuRows()'); expect(rows.length > 0 || tab === 4, 'tab ' + tab).toBe(true); for (const r of rows) expect(r.desc && r.desc.length > 12, 'tab ' + tab + ' row ' + r.id + ' has a description').toBe(true); }
+    w.eval('CTF.menu.tab = 0; CTF.menu.cur = 0;');
     key('ArrowRight'); key('ArrowDown'); key('Space');   // the Build tab, its second row
     const second = w.eval('Object.keys(CTF_BUILDS).filter(function(id){ return id !== "twin"; })[1]');
     expect(w.eval(`!!CTF.live.plans[__me.team].ticks['${second}']`), 'a ticked setup is in the plan').toBe(true);
+    // on the Build tab the preset's first setup shows as included (not ticked); a press switches it off, which takes it out of the plan
+    w.eval(`CTF.menu.tab = 1; CTF.menu.cur = Object.keys(CTF_BUILDS).filter(function(id){ return id !== "twin"; }).indexOf('${pbuild}');`);
+    let prow = J(w, `ctfMenuRows()[CTF.menu.cur]`); expect(prow.pre && !prow.on, 'included by the preset, not the human\'s own tick').toBe(true);
+    key('Space'); expect(w.eval(`!!CTF.live.plans[__me.team].allow['${pbuild}']`), 'unticked: out of the plan').toBe(false);
     key('KeyC'); expect(w.eval('Object.keys(CTF.live.plans[__me.team].ticks).length'), 'clear: back to the CPUs\' own judgement').toBe(0);
+    expect(w.eval('CTF.live.plans[__me.team].allow'), 'no plan: the CPUs judge for themselves').toBeNull();
     key('Escape'); expect(w.eval('ctfMenuOpen()'), 'Escape closes it').toBe(false);
   });
 
@@ -108,4 +119,25 @@ describe('the team plan', () => {
     w.eval(`fighters[3].x = 9000; fighters[2]._ai.volleyT = 0;`);
     expect(w.eval(`ctfAiVolley(fighters[2], fighters[2]._ai, CTF.live)`), 'nothing in reach: no throw').toBeNull();
   });
+
+  it('with a human plan the CPUs use ONLY the allowed ideas (the ticked ones and the chosen preset\'s), nothing unticked; a kind with nothing in it gets plain basics; no plan means their own judgement', { timeout:120000 }, () => {
+    const { window: w } = loadMonolith(76);
+    w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=16; SETTINGS.itemRate=0; CTF.skipNav=true; CTF.forceMap='castle'; beginMatchNow(); fighters.forEach(function(f){ f.controller='ai'; f.you=false; });`);
+    step(w, 60);
+    const L = 'CTF.live', deal = () => { w.eval(`(function(){ var pl = CTF.live.plans[1]; pl.dealt = false; pl.pg = {}; CTF.live.playT = 3000; ctfPlanDeal(CTF.live, pl, CTF.nav || {}); })()`); };
+    const used = () => J(w, `(function(){ var pl = CTF.live.plans[1]; return { run:Object.keys(pl.run || {}).filter(function(k){ return pl.run[k]; }), def:Object.keys(pl.defTags || {}).map(function(k){ return pl.defTags[k]; }), off:CTF_OFFENCE.length, allow:pl.allow }; })()`);
+    // a plan with one offence idea and one defence idea
+    w.eval(`ctfPlanVoteIn(${L}, 1, 1, { preset:null, ticks:{ swarm:true, mark:true }, off:{}, assign:{} });`);
+    for (let k = 0; k < 6; k++) { deal(); const u = used(); for (const id of u.run) expect(id, 'offence run: only the ticked').toBe('swarm'); for (const d of u.def) expect(d, 'defence: only the ticked').toBe('mark'); }
+    // a plan with offence only: the defenders are plain zone guards, no named tactics
+    w.eval(`ctfPlanVoteIn(${L}, 1, 1, { preset:null, ticks:{ scout:true }, off:{}, assign:{} });`);
+    for (let k = 0; k < 4; k++) { deal(); const u = used(); for (const d of u.def) expect(d, 'no defence ticked: plain zones').toBe('zone'); for (const id of u.run) expect(id).toBe('scout'); }
+    // a preset: its ideas count, one switched off does not; and the jail-line swap and the late turtle (not in it) do not run
+    w.eval(`ctfPlanVoteIn(${L}, 1, 1, { preset:'jailbreak', ticks:{}, off:{ twowave:true }, assign:{} });`);
+    for (let k = 0; k < 4; k++) { deal(); const u = used(); for (const id of u.run) expect(['jailbreak', 'scout'].indexOf(id) >= 0, 'run ' + id + ' is in the preset').toBe(true); expect(u.allow.twowave, 'switched off').toBeUndefined(); }
+    expect(w.eval(`ctfPlanOk(CTF.live.plans[1], 'lateturtle')`), 'a late turtle that was not ticked or in the preset does not run').toBe(false);
+    // cleared: the CPUs judge again, anything may run
+    w.eval(`ctfPlanVoteIn(${L}, 1, 1, { preset:null, ticks:{}, off:{}, assign:{} });`);
+    expect(w.eval('CTF.live.plans[1].allow'), 'no plan').toBeNull(); expect(w.eval(`ctfPlanOk(CTF.live.plans[1], 'lateturtle')`)).toBe(true);
+  });
 });
