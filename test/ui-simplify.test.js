@@ -98,7 +98,7 @@ describe('match settings — the three dials nobody changes are folded away', ()
     w.eval('buildSettings(); toggleAdvSettings()');
     const body = w.document.getElementById('advBody');
     const controls = [...body.querySelectorAll('button')];
-    expect(controls).toHaveLength(11);            // 3 CPU + 4 items + 4 map size
+    expect(controls).toHaveLength(13);            // 3 CPU + 4 items + 2 Smash Balls (the Final Smash on/off row, 2026-10-14) + 4 map size
     for (const b of controls) {
       expect(body.contains(b)).toBe(true);
       expect(b.disabled).toBe(false);
