@@ -7802,7 +7802,8 @@ function ctfStratFixedModel(st, n){
   const roles = Object.keys(st.assign).map(k=>st.assign[k]), a = roles.filter(r=>CTF_ATT_ROLES.includes(r)).length, d = roles.filter(r=>CTF_DEF_ROLES.includes(r)).length;
   if(a + d >= Math.ceil(n/2)) off = (a + (n - a - d)*off)/n;   // (the seats given a role count as they are, the rest as the preset leans)
   let builds = 0; for(const id of Object.keys(CTF_BUILDS)) if(id !== 'twin' && has(id)) builds++;
-  return { id:'custom', off:clamp(off, 0, 1), fort:Math.min(0.3, 0.04*builds), jb:has('jailbreak'), tw:has('twowave'), ov:null };
+  const model = { id:'custom', off:clamp(off, 0, 1), fort:Math.min(0.3, 0.04*builds), jb:has('jailbreak'), tw:has('twowave'), ov:null };
+  return typeof ctfKitModelAdjust === 'function' ? ctfKitModelAdjust(st, n, model) : model;   // (a kit's pieces and jobs lean the model a little)
 }
 // the plan it is nearest to, for what the opponents learn of it and what it teaches
 function ctfStratClassify(st, n){
@@ -10883,14 +10884,16 @@ function ctfKitClean(k){
     const rr = { if:{ kind:r.if.kind }, then:{ kind:r.then.kind }, once:!!r.once };
     if(r.if.n != null && Number.isFinite(+r.if.n)) rr.if.n = +r.if.n; if(r.if.who != null && seat(r.if.who) >= 0) rr.if.who = seat(r.if.who);
     const w = r.then.who; if(w === 'all') rr.then.who = 'all'; else if(w != null && seat(w) >= 0) rr.then.who = seat(w);
-    if(r.then.kind === 'role'){ if(!CTF_ROLE_CHOICES.includes(r.then.role) || r.then.role === 'auto' || rr.then.who == null) continue; rr.then.role = r.then.role; }
+    if(r.then.kind === 'role'){ if(!CTF_ROLE_CHOICES.includes(r.then.role) || r.then.role === 'auto' || rr.then.who == null) continue; rr.then.role = r.then.role; }   // (who: a seat, or 'all')
     if(r.then.kind === 'area'){ if(!CTF_KIT_AREAS.includes(r.then.area) || rr.then.who == null) continue; rr.then.area = r.then.area; }
     if(r.then.kind === 'preset'){ if(!CTF_PRESETS[r.then.preset]) continue; rr.then.preset = r.then.preset; }
     out.rules.push(rr);
   }
   return out;
 }
-function ctfKitOf(L, t){ const pl = L && L.plans && L.plans[t]; return pl && pl.kit ? pl.kit : null; }
+// a kit set on the plan from outside (pl.kit = the raw object, at kick-off) is taken up the first time anything asks: cleaned, its jobs and areas put in the vote
+function ctfKitEnsure(L, pl){ if(pl && pl.kit && pl.kit !== pl.kitDone){ const raw = pl.kit; ctfKitSet(L, pl.t, raw); } return pl && pl.kit ? pl.kit : null; }
+function ctfKitOf(L, t){ const pl = L && L.plans && L.plans[t]; return ctfKitEnsure(L, pl); }
 function ctfKitSeats(t){ return fighters.filter(f=>f.team === t).map(f=>f.idx); }
 function ctfKitSeatOf(f){ return ctfKitSeats(f.team).indexOf(f.idx); }
 // ---- areas by kind, on the real map ----
@@ -10909,7 +10912,7 @@ function ctfKitAreaId(M, t, kind){
 // ---- the plan takes the kit: seats become fighters ----
 function ctfKitSet(L, t, kit){
   const pl = L.plans && L.plans[t]; if(!pl) return false;
-  const k = ctfKitClean(kit); pl.kit = k; if(!k) return false;
+  const k = ctfKitClean(kit); pl.kit = k; pl.kitDone = k; if(!k) return false;
   pl.kitState = { was:[], fired:[], log:[], noChase:false, kitMode:null };
   const seats = ctfKitSeats(t), jobs = {}, areas = {};
   for(const id of Object.keys(k.jobs)){ const slots = ctfJobSlots(id); k.jobs[id].forEach((s, i)=>{ if(slots[i] && seats[s] != null) jobs[id + '.' + slots[i][0]] = seats[s]; }); }
@@ -10922,7 +10925,7 @@ function ctfKitBegin(L){ for(const t of [0, 1]) if(CTF.kitIn && CTF.kitIn[t]) ct
 // ---- the budget: the pieces each fighter buys (cost-checked at the placing: its points are 20 and the bonus) ----
 function ctfKitPieceType(tool, kind){ return tool === 'wall' ? 'wall' : tool === 'plat' ? 'plat' : tool === 'deco' ? 'deco' : (tool === 'trap' && CTF_KIT_PIECES.includes(kind)) ? kind : null; }
 function ctfKitBudgetState(plan){
-  const k = plan.kit; if(!k || !k.budget || !Object.keys(k.budget).length) return null;
+  const k = ctfKitEnsure(CTF.live, plan); if(!k || !k.budget || !Object.keys(k.budget).length) return null;
   const seats = ctfKitSeats(plan.t), st = {}; for(const s of Object.keys(k.budget)){ const idx = seats[+s]; if(idx != null) st[idx] = Object.assign({}, k.budget[s]); } return st;
 }
 // ---- the flags: the kinds of hiding place, read from the real map ----
@@ -10959,7 +10962,8 @@ function ctfKitFlagCands(f, cand, nav, M){
 function ctfKitHasFlag(f){ const k = ctfKitOf(CTF.live, f.team), fl = k && k.flags[ctfKitSeatOf(f)]; return !!(fl && (fl.spot || fl.cover !== 'any')); }
 // ---- the side bid ----
 function ctfKitBid(t, def){
-  const k = CTF.kitIn && CTF.kitIn[t] && ctfKitClean(CTF.kitIn[t]); if(!k || !k.bid) return null;
+  const cf = CTF.cupFix, team = cf ? (t === 0 ? cf.a : cf.b) : null, src = (CTF.kitIn && CTF.kitIn[t]) || (team && team.strat && team.strat.mode !== 'auto' && team.strat.kit) || null;
+  const k = src && ctfKitClean(src); if(!k || !k.bid) return null;
   const icons = (def.asym && def.asym.icons) || ['fort', 'run'], amt = Math.max(0, Math.min(CTF_BID_MAX, k.bid.pts));
   if(k.bid.side === 'any'){ const v = (def.asym && def.asym.value) || [0.5, 0.5]; return { side:v[0] >= v[1] ? 0 : 1, amt }; }
   const want = icons.indexOf(k.bid.side === 'fortress' ? 'fort' : 'run');
@@ -10973,7 +10977,7 @@ function ctfKitVerdict(L, o){
 }
 function ctfKitHideTick(L){
   if(!L.plans || !ctfAdvOn() || L.t < 240 || L.t % 120 !== 0 || L.offer || L.offerCool > 0) return;
-  for(const pl of L.plans){ const k = pl.kit; if(!k || !k.offers || !k.offers.propose.length) continue;
+  for(const pl of L.plans){ const k = ctfKitEnsure(L, pl); if(!k || !k.offers || !k.offers.propose.length) continue;
     pl.kitProposed = pl.kitProposed || 0; if(pl.kitProposed >= k.offers.propose.length) continue;
     const f = fighters.find(g=>g.team === pl.t && !ctfIsHuman(g)); if(!f) continue;
     f._piece = CTF_PIECES.offer.indexOf(k.offers.propose[pl.kitProposed]); pl.kitProposed++; ctfEditOffer(f); return; }
@@ -11007,8 +11011,8 @@ function ctfKitDo(L, pl, th){
   const t = pl.t, seats = ctfKitSeats(t), who = th.who === 'all' ? 'all' : (th.who != null ? seats[th.who] : null), st = pl.kitState;
   switch(th.kind){
     case 'preset': { if(!CTF_PRESETS[th.preset]) return false; for(const k of Object.keys(pl.votes)){ pl.votes[k].preset = th.preset; pl.votes[k].off = {}; } if(pl.kitVote){ pl.kitVote.preset = th.preset; pl.kitVote.off = {}; } ctfPlanResolve(L, pl); pl.dealt = false; return true; }
-    case 'role': { if(who == null || who === 'all') return false; ctfKitPlanVote(L, pl, { assign:{ [who]:th.role } }); return true; }
-    case 'area': { if(who == null || who === 'all') return false; const id = ctfKitAreaId(L.map, t, th.area); if(!id) return false; ctfKitPlanVote(L, pl, { areas:{ [who]:id } }); return true; }
+    case 'role': { if(who == null) return false; const as = {}; for(const i of (who === 'all' ? seats : [who])) as[i] = th.role; ctfKitPlanVote(L, pl, { assign:as }); return true; }
+    case 'area': { if(who == null) return false; const id = ctfKitAreaId(L.map, t, th.area); if(!id) return false; const ar = {}; for(const i of (who === 'all' ? seats : [who])) ar[i] = id; ctfKitPlanVote(L, pl, { areas:ar }); return true; }
     case 'allDefend': st.kitMode = 'def'; pl.dealt = false; return true;
     case 'allAttack': st.kitMode = 'att'; pl.dealt = false; return true;
     case 'counterRaid': st.counterUntil = L.playT + 1800; ctfKitPlanVote(L, pl, { ticks:{ counter:true } }); return true;
@@ -11021,7 +11025,7 @@ function ctfKitDo(L, pl, th){
 function ctfKitRules(L){
   if(!L.plans) return;
   for(const pl of L.plans){
-    const k = pl.kit; if(!k || !k.rules.length || !pl.kitState) continue; const st = pl.kitState;
+    const k = ctfKitEnsure(L, pl); if(!k || !k.rules.length || !pl.kitState) continue; const st = pl.kitState;
     k.rules.forEach((r, i)=>{
       let now = false; try{ now = !!ctfKitTrigger(L, pl.t, r.if); }catch(err){ now = false; }
       const was = !!st.was[i]; st.was[i] = now;
@@ -11041,7 +11045,7 @@ function ctfKitLogRow(t){
 }
 // after the jobs are dealt: what the rules ask of the roles and the tactics
 function ctfKitAfterDeal(L, pl, cx){
-  const st = pl.kitState; if(!st || !pl.kit) return;
+  ctfKitEnsure(L, pl); const st = pl.kitState; if(!st || !pl.kit) return;
   const { defs, tags, defTags } = cx, t = pl.t;
   if(st.noChase) for(const f of defs) if(['chase', 'cutoff', 'mark', 'chip'].includes(defTags[f.idx])) defTags[f.idx] = 'zone';
   if(st.counterUntil && L.playT < st.counterUntil){ const n = Math.max(1, Math.ceil(defs.length/2)); defs.slice(0, n).forEach(f=>{ defTags[f.idx] = 'counter'; }); }
@@ -11061,6 +11065,15 @@ function ctfKitRescueGoal(f, ai, L, nav, now, set){
   const out = j.face === 1 ? 1 : -1;
   if(j.lock <= 0){ set({ kind:'jail', jail:L.jails.indexOf(j), role:'hold', x:j.door.x + (out === 1 ? j.door.w + 50 : -50), y:j.door.y + j.door.h }); return true; }
   set({ kind:'guard', x:j.door.x + (out === 1 ? j.door.w + 640 : -640), y:j.door.y + j.door.h, wait:true }); return true;
+}
+// the strategist's model of a fixture nobody watches: a kit's pieces and jobs lean it a little (more walls and traps, more scouts and raiders), roughly
+function ctfKitModelAdjust(st, n, m){
+  const k = st && st.kit; if(!k) return m;
+  let wallish = 0; for(const s of Object.keys(k.budget || {})) for(const p of Object.keys(k.budget[s])) if(['wall', 'plat', 'spikes', 'stun', 'spring', 'trapdoor'].includes(p)) wallish += k.budget[s][p];
+  const jb = Object.keys(k.jobs || {}).filter(id=>['jailbreak', 'scout', 'pincer', 'feint', 'twowave'].includes(id)).length;
+  const dj = Object.keys(k.jobs || {}).filter(id=>['jailguard', 'zone', 'choke', 'mark', 'patrol', 'layers'].includes(id)).length;
+  const rl = (k.rules || []).reduce((a, r)=>a + (['allAttack', 'counterRaid'].includes(r.then.kind) ? 1 : ['allDefend', 'noChase'].includes(r.then.kind) ? -1 : 0), 0);
+  return Object.assign({}, m, { fort:Math.min(0.35, m.fort + Math.min(0.15, wallish*0.004)), off:clamp(m.off + 0.03*jb - 0.03*dj + 0.02*rl, 0, 1) });
 }
 // @ctfplan:end
 

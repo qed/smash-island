@@ -126,4 +126,17 @@ describe('a kit the CPUs honour', () => {
       ctfKitAfterDeal(CTF.live, ${pl}, { defs:defs, tags:{}, defTags:defTags }); return ids.map(function(i){ return defTags[i]; }); })()`);
     expect(dt, 'no chasing; two of four go counter-raiding').toEqual(['counter', 'counter', 'patrol', 'patrol']);
   });
+
+  it('a kit set on the plan from outside (the Flag Cup sets pl.kit at kick-off) is taken up the first time anything asks: cleaned, its jobs in the vote; and the kit of a Flag Cup team gives the bid before the match exists', () => {
+    const { window: w } = loadMonolith(98);
+    start(w);
+    w.eval(`CTF.live.plans[0].kit = { jobs:{ scout:[1] }, budget:{ 1:{ stun:1, bogus:5 } }, rules:[] };`);
+    expect(w.eval(`ctfKitBudgetState(CTF.live.plans[0])[${seat(w, 0, 1)}].stun`), 'the budget is read').toBe(1);
+    expect(w.eval(`CTF.live.plans[0].jobs['scout.scout']`), 'and the job is in the vote').toBe(seat(w, 0, 1));
+    expect(w.eval(`CTF.live.plans[0].kit.budget[1].bogus`), 'cleaned').toBeUndefined();
+    w.eval(`CTF.cupFix = { a:{ strat:{ mode:'fixed', kit:{ bid:{ side:'open', pts:2 } } } }, b:{ strat:{ mode:'auto', kit:{ bid:{ side:'open', pts:9 } } } } };`);
+    const def = 'CTF_MAPS.oak', run = w.eval(`${def}.asym.icons.indexOf('run')`);
+    expect(J(w, `ctfKitBid(0, ${def})`), 'the kit of a fixed team bids').toEqual({ side:run, amt:2 });
+    expect(w.eval(`ctfKitBid(1, ${def})`), 'a team on the strategist has no kit').toBe(null);
+  });
 });
