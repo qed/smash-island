@@ -3560,11 +3560,21 @@ CTF_MAPS.sky = {
 //   - while the hiding phase lasts every door stands open; they lock when it ends.
 // ---------------------------------------------------------------------------------------------------------------
 const CTF_SPEED = 1.5;   // every fighter's walk, run and air speed in this mode (jump height is the game's own)
+// ADVANCED RULES: bargaining (budget offers, the sacrifice) and points for speed are off unless the player turns them on in the CTF settings; online the host's choice is everyone's (it rides in the lobby and the start message).
+const CTF_ADV_KEY = 'bfsi:ctfadv';
+function ctfAdvOn(){
+  if(CTF.cupFix && typeof TOURNEY === 'object' && TOURNEY && TOURNEY.ctf && TOURNEY.ctf.cfg) return !!TOURNEY.ctf.cfg.adv;   // (a Flag Cup fixture: the cup's own switch)
+  if(typeof inNetSession === 'function' && inNetSession() && CTF.netAdv != null) return !!CTF.netAdv;   // (a guest plays by the host's choice)
+  if(SETTINGS.ctfAdv == null){ let v = false; try{ v = localStorage.getItem(CTF_ADV_KEY) === '1'; }catch(e){} SETTINGS.ctfAdv = v; }
+  return !!SETTINGS.ctfAdv;
+}
+function ctfAdvSet(v){ SETTINGS.ctfAdv = !!v; try{ localStorage.setItem(CTF_ADV_KEY, SETTINGS.ctfAdv ? '1' : '0'); }catch(e){} }
+function ctfToolN(){ return ctfAdvOn() ? CTF_TOOLS.length : CTF_TOOLS.length - 1; }   // (the offer tool is the last one: only with the advanced rules)
 // Points for speed, RELATIVE: only how far this side's net bargaining differs from the other side's counts. Both +10 or both -10: nobody changes. One side +10 that the other did not take: that side is 8% slower
 // (and the other 8% faster); a side that sacrifices 10: 8% faster. speed% = -8 * (mine - theirs) / 10, at most 16% either way.
 function ctfPtsDiff(t){ const b = CTF.live && CTF.live.bonus ? CTF.live.bonus : null; return b ? (b[t] || 0) - (b[1 - t] || 0) : 0; }
 function ctfPtsSpeed(t){ return Math.max(0.84, Math.min(1.16, 1 - 0.008*ctfPtsDiff(t))); }
-function ctfSpeedK(f){ return SETTINGS.mode === 'ctf' ? CTF_SPEED*(f._cf >= 0 ? CTF_CARRY_SPEED : 1)*((CTF.live && CTF.live.buff && CTF.live.buff[f.team]) || 1)*ctfPtsSpeed(f.team) : 1; }
+function ctfSpeedK(f){ return SETTINGS.mode === 'ctf' ? CTF_SPEED*(f._cf >= 0 ? CTF_CARRY_SPEED : 1)*((CTF.live && CTF.live.buff && CTF.live.buff[f.team]) || 1)*(ctfAdvOn() ? ctfPtsSpeed(f.team) : 1) : 1; }
 const CTF_N = 5, CTF_HIDE_STEPS = 18000, CTF_JAIL_AUTO = 5400, CTF_JAIL_OPEN = 150;   // (a prisoner is let out after 90 s, home to their own base, unless a teammate frees them sooner)
 const CTF_BIGHIT = 13, CTF_CARRY_SPEED = 0.78, CTF_CARRY_JUMP = 0.82, CTF_BOOST_JUMP = 1.45;   // (the super jump)
 const CTF_JAIL_HOLD = 120, CTF_JAIL_LOCK = 900, CTF_RESCUE_ZONE = 70;   // a rescuer holds the door for 2 s; after a jailbreak the door cannot be opened for 15 s
@@ -3776,7 +3786,7 @@ function ctfBuildMapButtons(){
   row.style.display = SETTINGS.mode === 'ctf' ? 'flex' : 'none'; if(SETTINGS.mode !== 'ctf') return;
   seg.innerHTML = ''; const cur = ctfMapPickGet();
   for(const [v, text] of ctfMapChoices()){ const b = document.createElement('button'); b.dataset.v = v; b.textContent = text; if(v === cur) b.classList.add('on');
-    b.onclick = ()=>{ ctfMapPickSet(v); seg.querySelectorAll('button').forEach(x=>{ if(x.dataset.v !== 'explore' && x.dataset.v !== 'spectate') x.classList.toggle('on', x === b); }); };
+    b.onclick = ()=>{ ctfMapPickSet(v); seg.querySelectorAll('button').forEach(x=>{ if(x.dataset.v !== 'explore' && x.dataset.v !== 'spectate' && x.dataset.v !== 'adv') x.classList.toggle('on', x === b); }); };
     seg.appendChild(b); }
   const eb = document.createElement('button'); eb.dataset.v = 'explore'; eb.textContent = 'Explore alone'; eb.title = 'Learn the map on your own: nobody moves, nothing to win'; if(ctfExploreOn()) eb.classList.add('on');
   eb.onclick = ()=>{ SETTINGS.ctfExplore = !ctfExploreOn(); try{ localStorage.setItem(CTF_EXPLORE_KEY, SETTINGS.ctfExplore ? '1' : '0'); }catch(e){} eb.classList.toggle('on', SETTINGS.ctfExplore); };
@@ -3784,6 +3794,9 @@ function ctfBuildMapButtons(){
   const sb = document.createElement('button'); sb.dataset.v = 'spectate'; sb.innerHTML = '&#128065; Spectate'; sb.title = 'Watch the CPUs play a whole match: nobody is yours, the camera follows the action (keys: 1 2 team, arrows fighter, Z whole map, 0 auto, O role icons, L plans)'; if(ctfSpectateOn()) sb.classList.add('on');
   sb.onclick = ()=>{ SETTINGS.ctfSpectate = !ctfSpectateOn(); try{ localStorage.setItem(CTF_SPEC_KEY, SETTINGS.ctfSpectate ? '1' : '0'); }catch(e){} sb.classList.toggle('on', SETTINGS.ctfSpectate); try{ updateSummary(); }catch(e){} };
   seg.appendChild(sb);
+  const ab = document.createElement('button'); ab.dataset.v = 'adv'; ab.textContent = 'Advanced rules'; ab.title = 'Bargaining (budget offers) and points for speed. Off: everyone builds with the same points and moves at one speed. Online, the host decides.'; if(ctfAdvOn()) ab.classList.add('on');
+  ab.onclick = ()=>{ ctfAdvSet(!ctfAdvOn()); ab.classList.toggle('on', ctfAdvOn()); try{ updateSummary(); }catch(e){} };
+  seg.appendChild(ab);
 }
 function ctfPickMap(){
   const ids = ctfMapRandomIds();
@@ -4087,7 +4100,7 @@ function ctfFilterInput(f, inp){
     const voting = ctfIsHuman(f) && L.offer && L.offer.to === f.team && L.offer.votes[f.idx] == null;
     if(voting){ if(fkE) ctfEditVote(f, true); else if(akE) ctfEditVote(f, false); }
     else if(f._cam){
-      if(akE){ f._tool = ((f._tool || 0) + 1) % CTF_TOOLS.length; f._piece = 0; }
+      if(akE){ f._tool = ((f._tool || 0) + 1) % ctfToolN(); f._piece = 0; }
       if(ekE) f._piece = (f._piece || 0) + 1;
       if(fkE) ctfEditAct(f);
     } else if(fkE) ctfHidePlace(f);
@@ -4840,13 +4853,14 @@ function ctfEditAct(f){
 // A team offers the other a change of budget: both +10, both -10, or just its own +10. The other side's humans vote (a majority accepts); with no
 // human on the other side the CPU answers: it accepts only what is the same for both.
 function ctfEditOffer(f){
-  const L = CTF.live; if(!L || L.offer || L.offerCool > 0) return false;
+  const L = CTF.live; if(!L || !ctfAdvOn() || L.offer || L.offerCool > 0) return false;
   const kind = CTF_PIECES.offer[(f._piece || 0) % CTF_PIECES.offer.length];
   if(kind === 'mine-'){ ctfSacrifice(L, f.team); L.offerCool = 300; return true; }   // giving up your own points needs nobody's yes
   L.offer = { from:f.team, to:1 - f.team, kind, t:0, votes:{} }; ctfSfx('pick'); return true;
 }
 // Sacrifice 10 of each of the side's points for the speed bonus (+8%): no vote, it costs only the side itself.
 function ctfSacrifice(L, team){
+  if(!ctfAdvOn()) return;
   for(const g of fighters) if(g.team === team) L.pts[g.idx] = Math.max(0, (L.pts[g.idx] || 0) - 10);
   L.bonus[team] -= 10; L.offerLast = { kind:'mine-', from:team, ok:true, t:90 }; ctfSfx('done');
 }
@@ -6638,7 +6652,7 @@ function ctfCupClean(o){
   const mapOk = v=>v === 'rotate' || v === 'random' || !!(typeof CTF_MAPS === 'object' && CTF_MAPS[v] && !CTF_MAPS[v].wip);
   const slots = [], skill = [];
   for(let i = 0; i < teams; i++){ const row = (Array.isArray(o.slots) && Array.isArray(o.slots[i])) ? o.slots[i] : []; slots.push(Array.from({ length:size }, (_, k)=>typeof row[k] === 'string' ? row[k] : null)); skill.push(one(o.skill && o.skill[i], [-1, 0, 1, 2], -1)); }
-  return { teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill };
+  return { teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), adv:o.adv ? 1 : 0, gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill };
 }
 let CTFCUP = ctfCupClean(null);
 (function ctfCupLoad(){ try{ const raw = localStorage.getItem(CTFCUP_KEY); if(raw) CTFCUP = ctfCupClean(JSON.parse(raw)); }catch(e){} })();
@@ -6651,6 +6665,7 @@ const CTFCUP_ROWS = [
   ['size', 'Team size', ()=>[2, 3, 4, 5, 6, 7, 8].map(n=>[n, n + 'v' + n])],
   ['map', 'Maps', ()=>[['rotate', 'Rotate with the rounds'], ['random', 'Random each match']].concat(ctfMapIds().map(id=>[id, CTF_MAPS[id].name + (CTF_MAPS[id].beta ? ' (beta)' : '')]))],
   ['cpu', 'CPU skill', ()=>[[0, 'Easy'], [1, 'Normal'], [2, 'Hard']]],
+  ['adv', 'Advanced rules', ()=>[[0, 'Off'], [1, 'On: bargaining and points for speed']]],   // (the AI teams bargain and trade points for speed only when it is on)
   ['gCap', 'Group match cap', ()=>CTFCUP_CAPS.map(n=>[n, n ? n + ' min' : 'None'])],
   ['kCap', 'Knockout cap', ()=>CTFCUP_CAPS.map(n=>[n, n ? n + ' min' : 'None'])] ];
 function ctfCupSyncUI(){
@@ -7328,14 +7343,14 @@ function ctfDrawEditHud(L, me){
   g.save(); g.textAlign = 'center'; g.textBaseline = 'middle';
   const pts = Math.max(0, L.pts[me.idx] || 0);
   if(me._cam){
-    const tool = CTF_TOOLS[me._tool || 0], bw = CTF_TOOLS.length*38 + 150, bx = cx - bw/2, by = H - 116;
+    const tool = CTF_TOOLS[me._tool || 0], bw = ctfToolN()*38 + 150, bx = cx - bw/2, by = H - 116;
     g.fillStyle = 'rgba(28,24,38,0.82)'; g.strokeStyle = '#f4efe2'; g.lineWidth = 3; g.fillRect(bx, by, bw, 52); g.strokeRect(bx, by, bw, 52);
-    CTF_TOOLS.forEach((t, i)=>{ const ix = bx + 24 + i*38, sel = i === (me._tool || 0);
+    CTF_TOOLS.slice(0, ctfToolN()).forEach((t, i)=>{ const ix = bx + 24 + i*38, sel = i === (me._tool || 0);
       if(sel){ g.fillStyle = 'rgba(255,255,255,0.2)'; g.fillRect(ix - 18, by + 4, 36, 44); g.strokeStyle = '#ffd23f'; g.lineWidth = 2; g.strokeRect(ix - 18, by + 4, 36, 44); }
       ctfEditToolIcon(g, t, ix, by + 22, 22, ctfColor(me.team));
       const np = t === 'deco' && me._cam ? ctfDecoSet(me._cam.x, me._cam.y).length : CTF_PIECES[t].length; if(np > 1){ for(let k = 0; k < np; k++){ g.fillStyle = sel && k === (me._piece || 0) % np ? '#ffd23f' : 'rgba(255,255,255,0.3)'; g.beginPath(); g.arc(ix - (np - 1)*3 + k*6, by + 44, 2, 0, 7); g.fill(); } } });
     // what is picked costs this much; this many points are left
-    const gx = bx + CTF_TOOLS.length*38 + 12;
+    const gx = bx + ctfToolN()*38 + 12;
     g.font = 'bold 20px sans-serif';
     const cost = CTF_COSTS[tool];
     if(cost != null){ g.fillStyle = cost > pts ? '#e0503a' : '#f4efe2'; g.textAlign = 'left'; g.fillText('-' + cost, gx, by + 18); }
@@ -7746,7 +7761,7 @@ function ctfNavKey(n){ return Math.round(n.x0) + '|' + Math.round(n.x1) + '|' + 
 function ctfNavNew(M, prev, diff){
   const R = 24, solids = M.plats.filter(p=>p.solid);
   const blockers = M.doors.map(d=>({ x:d.x, y:d.y, w:d.w, h:d.h, door:d.id })).concat(M.jails.map(j=>({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, door:'J' + j.owner })));
-  const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0 };
+  const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0, dense:Array.isArray(diff) };   // (dense: a graph patched at runtime for the pieces somebody built is probed more finely: the shipped graphs are made the plain way)
   // the areas that change a flight (water drags at you, glue stops you, wind pushes, thin air is light, a spring throws you): every simulated move feels them as the game does
   { const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring');   // ('float' is not here: the game sets its flag but never lowers gravity for it, so a flight is the same inside it)
     if(zs.length && !CTF.noZones){ nav.zb = {}; for(const z of zs) for(let b = ctfNavBucket(z.x); b <= ctfNavBucket(z.x + z.w); b++) (nav.zb[b] = nav.zb[b] || []).push(z); } }
@@ -7924,6 +7939,7 @@ function ctfNavSimThru(nav, n, xa){ return !!ctfNavSim(nav, n, xa, 0, 0, 0, 0, f
 const CTF_NAV_PROFILES = ['c'];
 function ctfNavProbe(nav, n){
   if(n.reused) return;
+  const dense = !!nav.dense && !CTF.probeOld;
   const P = ctfNavParams(), w = n.x1 - n.x0, found = {};
   // (a place a few steps of a slope away that can be WALKED to is never jumped to: the jump to it lands a step off, and the bot counts it a failed move)
   let walkSet = null;
@@ -7935,17 +7951,17 @@ function ctfNavProbe(nav, n){
   const K = w < 80 ? 1 : Math.max(3, Math.min(10, Math.ceil(w/250) + 1)), xs = [];
   for(let k = 0; k < K; k++) xs.push(K === 1 ? (n.x0 + n.x1)/2 : n.x0 + 14 + (w - 28)*k/(K - 1));
   // the very ends of the place too, and a finer set near what a jump could aim at: a one-row climb or a one-piece gap works from a narrow window (the owner, 2026-10-16: "the flagger is flagging 1-area gap setups which are possible by all fighters")
-  if(!CTF.probeOld && w >= 16){ xs.push(n.x0 + 3, n.x1 - 3); if(w < 80) for(let x = n.x0 + 11; x < n.x1 - 8; x += 8) xs.push(x); }   // (a narrow place: every few pixels along it)
+  if(dense && w >= 16){ xs.push(n.x0 + 3, n.x1 - 3); if(w < 80) for(let x = n.x0 + 11; x < n.x1 - 8; x += 8) xs.push(x); }   // (a narrow place: every few pixels along it)
   if(w >= 80){
     const seenB = {}, fine = [];
     for(let bk = ctfNavBucket(n.x0 - 600); bk <= ctfNavBucket(n.x1 + 600); bk++) for(const B of (nav.nb[bk] || [])){
       if(B === n || seenB[B.id]) continue; seenB[B.id] = 1;
       const dy = n.y - B.y; if(dy > 520 || dy < -300) continue;
       const a = Math.max(n.x0 + 14, B.x0 - 280), b = Math.min(n.x1 - 14, B.x1 + 280); if(b < a) continue;
-      for(let x = a; x <= b; x += (CTF.probeOld ? 70 : 30)) fine.push(x);
+      for(let x = a; x <= b; x += (dense ? 30 : 70)) fine.push(x);
     }
-    fine.sort((p, q)=>p - q); const keep = []; for(const x of fine) if(!keep.length || x - keep[keep.length - 1] >= (CTF.probeOld ? 48 : 22)) keep.push(x);
-    const CAPX = CTF.probeOld ? 22 : 64, step = keep.length > CAPX ? keep.length/CAPX : 1; for(let i = 0; i < keep.length; i += step) xs.push(keep[Math.floor(i)]);
+    fine.sort((p, q)=>p - q); const keep = []; for(const x of fine) if(!keep.length || x - keep[keep.length - 1] >= (dense ? 22 : 48)) keep.push(x);
+    const CAPX = dense ? 64 : 22, step = keep.length > CAPX ? keep.length/CAPX : 1; for(let i = 0; i < keep.length; i += step) xs.push(keep[Math.floor(i)]);
   }
   for(const prof of PROFS) for(const xa of xs) for(const dir of [-1, 0, 1]){
     const fr = prof === 'f', Pp = PR[prof];
@@ -7963,7 +7979,7 @@ function ctfNavProbe(nav, n){
   }
   // A second look at the places a jump could reach in principle but the sampled spots did not find: the best case (the nearest end, full speed) says whether it is possible at all, and then the takeoff is scanned every few pixels.
   // A one-row climb or a one-piece gap is made from a narrow window, and a fighter finds it by feel (the owner, 2026-10-16: "the flagger is flagging 1-area gap setups which are possible by all fighters").
-  if(!CTF.probeOld && !CTF.noRefine && w >= 8){
+  if(dense && !CTF.noRefine && w >= 8){
     const Pp = PR[PROFS[0]], cand = [], seenR = {};
     for(let bk = ctfNavBucket(n.x0 - 450); bk <= ctfNavBucket(n.x1 + 450); bk++) for(const B of (nav.nb[bk] || [])){
       if(B === n || seenR[B.id]) continue; seenR[B.id] = 1; if(found[B.id]) continue;
@@ -9207,7 +9223,8 @@ function ctfPlanDeal(L, pl, nav){
   if(run.scout && L.playT < 2400 && free.length >= 2 && !Object.values(tags).includes('scout')){ const f = take(free[0]); tags[f.idx] = 'scout'; }
   if(run.keyrunner && free.length >= 2 && !Object.values(tags).includes('keyrunner')){ const f = take(free[free.length - 1]); tags[f.idx] = 'keyrunner'; }
   if(run.jailbreak && free.length >= 3){
-    if(!pl.jb || !pl.jb.active) pl.jb = { active:true, rescuer:null, need:Math.max(2, Math.min(5, Math.floor(free.length*0.7))), since:L.playT };
+    // (a whole side in jail is no longer the end of the match: it costs a flag (ctfWipePenalty) and the side is sent home, so the drop may take a larger share of the attackers)
+    if(!pl.jb || !pl.jb.active) pl.jb = { active:true, rescuer:null, need:Math.max(2, Math.min(6, Math.floor(free.length*0.8))), since:L.playT };
     if(pl.jb.rescuer == null || !fighters[pl.jb.rescuer] || fighters[pl.jb.rescuer].dead || fighters[pl.jb.rescuer]._jail != null){ const r = free.slice().sort((a, b)=>(a.w || 90) - (b.w || 90))[0]; pl.jb.rescuer = r.idx; }
     const r = fighters[pl.jb.rescuer]; if(r && free.includes(r)){ take(r); tags[r.idx] = 'rescuer'; }
     for(const f of free) tags[f.idx] = 'jailer';
@@ -56223,7 +56240,7 @@ function lobbySummaryText(s){
   const mode = s.mode==='teams' ? (s.teamKey||'')+' Teams' : s.mode==='boss' ? 'Boss Rush' : s.mode==='ctf' ? 'Capture the Flag ' + Math.floor(s.count/2) + 'v' + Math.floor(s.count/2) : 'Free-for-all';
   const items=['no items','few items','normal items','lots of items'][s.itemRate] || 'normal items';
   const ai=['Easy','Normal','Hard'][s.ai] || 'Normal';
-  return [(st?st.name:'Stadium'), mode, s.count+' contestants', s.stocks+' stocks', ai+' CPU', items, size+' map'].join(' · ');
+  return [(st?st.name:'Stadium'), mode, s.count+' contestants', s.stocks+' stocks', ai+' CPU', items, size+' map'].concat(s.mode==='ctf' && s.ctfAdv ? ['advanced rules'] : []).join(' · ');
 }
 // A snapshot has landed (NET.onMessage). Only the newest is ever drawn, so the one-shot parts of an older one the
 // client never got to -- the world geometry, particle births, a banner -- are carried into the newer one.
@@ -56798,7 +56815,7 @@ window.NET = {
   lobby: null,
   lobbySettings(){
     return { mode:SETTINGS.mode, count:SETTINGS.count, stocks:SETTINGS.stocks, teamKey:SETTINGS.teamKey, mapSize:SETTINGS.mapSize,
-             stage: stage && stage.id, itemRate:SETTINGS.itemRate, ai:AI_LEVEL, smashBalls:SETTINGS.smashBalls===false ? 0 : 1 };
+             stage: stage && stage.id, itemRate:SETTINGS.itemRate, ai:AI_LEVEL, smashBalls:SETTINGS.smashBalls===false ? 0 : 1, ctfAdv:SETTINGS.mode==='ctf' ? ctfAdvOn() : false };
   },
   pushLobby(){ if(this.role==="host") this.send({t:"state", lobby:this.lobbySettings()}); },
   pickFighter(name){
@@ -56925,6 +56942,7 @@ window.NET = {
     const s=settings||{}, int=(v,lo,hi,d)=>{ v=Math.round(+v); return Number.isFinite(v) ? Math.max(lo,Math.min(hi,v)) : d; };
     SETTINGS.mode = ['ffa','teams','boss','ctf'].includes(s.mode) ? s.mode : 'ffa';
     if(SETTINGS.mode==='ctf') CTF.netMap = (typeof s.ctfMap==='string' && CTF_MAPS[s.ctfMap]) ? s.ctfMap : null;
+    CTF.netAdv = SETTINGS.mode==='ctf' ? !!s.ctfAdv : null;   // (an older host sends none: off)
     SETTINGS.count = int(s.count, 1, 20, SETTINGS.count||2);
     SETTINGS.stocks = int(s.stocks, 1, 5, 3);
     if(typeof s.teamKey==='string' && /^\d+(v\d+)*$/.test(s.teamKey)) SETTINGS.teamKey = s.teamKey;
