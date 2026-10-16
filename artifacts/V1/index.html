@@ -3793,7 +3793,7 @@ function ctfBuildWorld(keep){   // keep: the same map again (the bid swapped the
 }
 // Leaving the mode's screens puts the player's own stage back.
 function ctfStageRestore(){
-  CAM_ZOOM = 0.72; CTF.spec = null; CTF.cupFix = null; CTF.skillOf = null;
+  CAM_ZOOM = 0.72; CTF.spec = null; CTF.cupFix = null; CTF.skillOf = null; CTF.strat = null;
   if(CTF.prevStage && stage && String(stage.id).indexOf('ctf-') === 0){ stage = CTF.prevStage; }
   CTF.live = null;
 }
@@ -3958,6 +3958,7 @@ function ctfBegin(){
   const sk0 = CTF.skipNav; if(L.explore) CTF.skipNav = true;
   if(L.phase !== 'bid'){ try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); } }
   CTF.skipNav = sk0;
+  if(L.phase !== 'bid'){ try{ ctfStratBegin(L); }catch(e){ console.error('ctfStratBegin', e); } }   // a Flag Cup fixture: the teams' strategists settle their plans
   if(L.explore){ for(const f of fighters) if(!ctfIsHuman(f)) f.controller = 'still'; ctfEndHide(L); }   // the others stand where they are; play starts at once
   try{ ctfIntroCard(); }catch(e){}
 }
@@ -6294,8 +6295,8 @@ function ctfSpecSubjectName(sp){
 function ctfSpecPlanLines(L, t){
   const pl = L.plans && L.plans[t], out = [];
   if(!pl) return [['Plan', 'the CPUs judge']];
-  const st = typeof ctfStratLine === 'function' ? ctfStratLine(t) : null;
-  if(st) out.push(['Plan', st]);
+  const sr = typeof ctfStratRows === 'function' ? ctfStratRows(L, t) : null;
+  if(sr) sr.forEach(r=>out.push(r));
   else out.push(['Plan', pl.preset && CTF_PRESETS[pl.preset] ? CTF_PRESETS[pl.preset].name : (Object.keys(pl.ticks || {}).length ? 'picked ideas' : 'the CPUs judge')]);
   if(L.phase !== 'play'){
     const b = (pl.log || []).map(x=>{ const id = String(x.id).replace('*', ''); return CTF_BUILDS[id] ? CTF_BUILDS[id].name : id; });
@@ -6324,7 +6325,7 @@ function ctfDrawSpecHud(L){
   ctx.font = '12px sans-serif'; ctx.fillStyle = 'rgba(244,239,226,0.75)'; ctx.fillText(keys, bx + 48, by + 33);
   // the side panel, left
   if(sp.panel > 0){
-    const x = 12, w = 250; let y = 124;
+    const x = 12, w = 300; let y = 124;
     for(const t of [0, 1]){
       const lines = ctfSpecPlanLines(L, t), mates = fighters.filter(f=>f.team === t), roster = sp.panel > 1, h = 34 + lines.length*17 + (roster ? mates.length*17 + 4 : 0);
       ctx.fillStyle = 'rgba(28,24,38,0.8)'; ctx.strokeStyle = ctfColor(t); ctx.lineWidth = 3; ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
@@ -6333,7 +6334,7 @@ function ctfDrawSpecHud(L){
       const up = mates.filter(f=>f._jail == null && !f.dead).length, jl = mates.filter(f=>f._jail != null).length;
       ctx.textAlign = 'right'; ctx.fillText(up + ' up' + (jl ? '  ' + jl + ' jailed' : ''), x + w - 8, y + 12); ctx.textAlign = 'left';
       let ly = y + 37; ctx.font = '12px sans-serif';
-      for(const [k, v] of lines){ ctx.fillStyle = 'rgba(244,239,226,0.6)'; ctx.fillText(k, x + 8, ly); ctx.fillStyle = '#f4efe2'; ctx.fillText(String(v).slice(0, 34), x + 62, ly); ly += 17; }
+      for(const [k, v] of lines){ ctx.fillStyle = 'rgba(244,239,226,0.6)'; ctx.fillText(k, x + 8, ly); ctx.fillStyle = '#f4efe2'; ctx.fillText(String(v).slice(0, 44), x + 58, ly); ly += 17; }
       if(roster){ ly += 2; for(const f of mates){ const id = ctfSpecRole(f);
           ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(x + 14, ly, 5, 0, 7); ctx.fill(); ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 1.5; ctx.stroke();
           ctx.fillStyle = f._jail != null ? 'rgba(244,239,226,0.5)' : '#f4efe2'; ctx.fillText(String(f.name).slice(0, 13), x + 24, ly); ctx.fillStyle = 'rgba(244,239,226,0.8)'; ctx.fillText(ctfSpecRoleName(id, f), x + 120, ly); ly += 17; } }
@@ -6535,7 +6536,7 @@ function ctfCupDone(L, win, why, score){
   const cf = CTF.cupFix; if(!cf) return;
   const fx = cf.fx; CTF.cupFix = null; CTF.skillOf = null;
   const sc = score || L.score;
-  ctfCupRecord(fx, { sa:sc[0], sb:sc[1], win, why, real:true, L:score ? null : L });
+  ctfCupRecord(fx, { sa:sc[0], sb:sc[1], win, why, real:why !== 'skip', L:score ? null : L });
   TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false; running = false;
   const nm = win === 0 ? fx.a.name : win === 1 ? fx.b.name : null;
   try{ banner(nm ? nm + (fx.kind === 'group' ? ' win ' : ' advance ') + fx.result.sa + '-' + fx.result.sb : 'A draw ' + fx.result.sa + '-' + fx.result.sb, 1800); }catch(e){}
@@ -6568,6 +6569,12 @@ function ctfCupPWin(fx, L){
   return clamp(p, 0.04, 0.96);
 }
 function ctfCupSimRoll(fx, L){
+  const r = L ? ctfStratSkipRoll(fx, L) : ctfStratSim(fx);
+  if(r) return r;
+  return ctfCupSimRollPlain(fx, L);
+}
+// the rating roll the cup began with (kept for a skip with no strategist to ask)
+function ctfCupSimRollPlain(fx, L){
   const size = TOURNEY.teamSize, p = ctfCupPWin(fx, L), a0 = L ? L.score[0] : 0, b0 = L ? L.score[1] : 0;
   let win = Math.random() < p ? 0 : 1;
   const need = size + (L && L.xFlag ? 1 : 0);
@@ -6597,6 +6604,303 @@ function ctfCupHubExtras(brand, title, body){
 }
 function ctfCupChampNote(){ try{ return typeof ctfStratReport === 'function' ? ctfStratReport() : ''; }catch(e){ return ''; } }
 
+// ---------------------------------------------------------------------------------------------------------------
+//  THE STRATEGIST (the owner, 2026-10-16: "the ais discuss strats among themselves to make it AS HARD AS POSSIBLE for the enemies to win, even if that means no defense, just rush, go back, and wait on de until it shows
+//  where the flags are"). Every Flag Cup team has one. Before a fixture it settles the plan most likely to beat THIS opponent on THIS map, from a model of the match (ctfFluid: a coarse, quick simulation of raids, jails, searching and
+//  captures, run for every plan against every plan) corrected by what the cup has shown (the plans that won or lost against this opponent and on this map, and the plans this opponent has been seen to use), and with a say for each
+//  member (a light, hard-hitting or ranged fighter leans a way). The extreme plans are in the list on purpose: the all-out rush with nobody home; the rush that falls back and waits at home until a flag has shown itself (a seen flag
+//  is known to the whole team, a carrier shows on the minimap for 5 s, the radar after 3 minutes), then strikes; the full turtle. In a match the strategist looks again every ten seconds from where the match stands, and switches
+//  when another plan is clearly better (what it knows of the foe is what its side has seen: no peeking at the other side's knowledge). A skipped fixture is the same model, run once.
+//  The plans reach the CPUs only through what the team plan already takes: a preset and ticks (pl.preset, pl.ticks) and an assigned role for every CPU (pl.assign: 'att' or 'def'); nothing in the plan code is changed.
+// ---------------------------------------------------------------------------------------------------------------
+const CTF_STRATS = {
+  balanced:{ name:'Balanced', preset:null, off:0.6, fort:0, ov:null, icon:'=' },
+  rush:{ name:'All-out rush', preset:'allout', off:1, fort:0, ov:'att', icon:'>' },
+  rushback:{ name:'Rush, fall back, strike', preset:'fortress', off:0.6, fort:0.2, ov:'phase', icon:'<>' },
+  turtle:{ name:'Full turtle', preset:'turtle', off:0, fort:0.4, ov:'def', counter:true, icon:'o' },
+  fortress:{ name:'Fortress', preset:'fortress', off:0.38, fort:0.3, ov:null, icon:'#' },
+  jailbreak:{ name:'Jailbreak rush', preset:'jailbreak', off:0.82, fort:0, jb:true, ov:null, icon:'!' },
+  twowaves:{ name:'Two waves', preset:'twowaves', off:0.7, fort:0.1, tw:true, ov:null, icon:'2' },
+  traps:{ name:'Trap alley', preset:'traps', off:0.5, fort:0.3, ov:null, icon:'x' },
+  hunt:{ name:'Hunters', preset:'allout', off:0.85, fort:0, ov:null, icon:'~' } };
+const CTF_STRAT_IDS = Object.keys(CTF_STRATS);
+const CTF_FLUID_DT = 20;   // seconds a tick of the model stands for
+function ctfBin(n, p, R){ let k = 0; for(let i = 0; i < n; i++) if(R() < p) k++; return k; }
+// ---- the teams in numbers (read from the kits like the team plan does: weight, knockback, reach, shooting; and the World Cup's measured ratings) ----
+function ctfStratFeat(team){
+  const C = TOURNEY.ctf.feat = TOURNEY.ctf.feat || {};
+  if(C[team.id]) return C[team.id];
+  const trs = team.members.map((m, i)=>{ try{ return ctfPlanTraits(makeFighter({ ...m, you:false }, 0, 0, i)); }catch(e){ return { w:90, kb:7, reach:0, shot:null }; } });
+  const mean = k=>trs.reduce((s, a)=>s + (+a[k] || 0), 0)/Math.max(1, trs.length);
+  return C[team.id] = { n:team.members.length, rat:team.members.reduce((s, m)=>s + fighterRating(m), 0)/Math.max(1, team.members.length), w:mean('w'), kb:mean('kb'), reach:mean('reach'), shoot:trs.filter(a=>a.shot).length/Math.max(1, trs.length) };
+}
+// a map in numbers: how narrow it is (a share of its ways under 300 px: read from the map's graph once a match has built it, 0.5 until then: a skipped fixture never builds a map), and the value of the half a side plays (ctf asym)
+function ctfStratMap(id, sides){
+  const d = CTF_MAPS[id], K = TOURNEY.ctf.narrow = TOURNEY.ctf.narrow || {};
+  try{ if(CTF.map && CTF.mapId === id && CTF.nav && CTF.nav.ready) K[id] = ctfPlanNarrow(CTF.nav, CTF.map); }catch(e){}
+  const v = d && d.asym && d.asym.value ? d.asym.value : [0.5, 0.5];
+  return { id, trav:1, narrow:K[id] != null ? K[id] : 0.5, side:sides ? [v[sides[0]], v[sides[1]]] : [0.5, 0.5] };
+}
+// the pair: for each side, how hard it raids and how hard it guards (a fighter's rating is the strength of its side's whole fight; reach, knockback, weight and shooting move the two shares)
+function ctfStratPair(ta, tb, Mp){
+  const A = ctfStratFeat(ta), B = ctfStratFeat(tb), mk = (X, Y, i)=>{
+    const comb = Math.pow(2*X.rat/(X.rat + Y.rat), 0.9), rel = k=>X[k]/Math.max(0.01, (X[k] + Y[k])/2), sideK = 1 + 0.5*(Mp.side[i] - Mp.side[1 - i]);
+    return { n:X.n, raid:comb*sideK*(1 + 0.22*(X.shoot - Y.shoot) + 0.12*(rel('reach') - 1)), guard:comb*sideK*(1 + 0.25*(rel('kb') - 1) + 0.2*(rel('w') - 1) + 0.1*(rel('reach') - 1)), gb:comb*sideK };
+  };
+  return [mk(A, B, 0), mk(B, A, 1)];
+}
+// ---- the model: ticks of CTF_FLUID_DT seconds; each side sends a share of its free fighters (the plan decides), who meet the other side's guard, get caught or search, grab and carry ----
+function ctfFluidNew(T, init){
+  const S = { t:0, c:[0, 0], up:[T[0].n, T[1].n], jl:[0, 0], kn:[0, 0], ph:['rush', 'rush'], pt:[0, 0], arr:[0, 0], rt:[0, 0], lastCap:0, need:[T[1].n, T[0].n], over:false, win:-2, radar:false };
+  if(init){ S.t = init.t; S.c = init.c.slice(); S.up = init.up.slice(); S.jl = init.jl.slice(); S.kn = init.kn.slice(); S.lastCap = init.lastCap; S.ph = (init.ph || S.ph).slice(); S.pt = (init.pt || S.pt).slice(); S.arr = [S.t, S.t]; S.rt = [0, 0]; }
+  return S;
+}
+function ctfFluidShare(S, t, pl, T){
+  if(pl.ov === 'att') return 1;
+  if(pl.ov === 'def') return pl.counter && S.kn[t] > 0.5 && S.radar ? 0.2 : 0;
+  if(pl.ov === 'phase'){
+    let ph = S.ph[t];
+    if(ph === 'rush' && (S.t >= 2 || S.kn[t] >= 0.5)){ ph = 'back'; S.pt[t] = S.t; S.rt[t] = S.t + 1; }   // (the raiders walk home: half the guard for a tick)
+    else if(ph === 'back' && S.t - S.pt[t] >= 1 && (S.kn[t] >= 0.35 || S.radar)){ ph = 'strike'; S.pt[t] = S.t; S.arr[t] = S.t + 1; }   // (and the strike takes a tick to arrive)
+    else if(ph === 'strike' && (S.jl[t] >= 0.4*T[t].n || S.t - S.pt[t] >= 7)){ ph = 'back'; S.pt[t] = S.t; S.rt[t] = S.t + 1; }
+    S.ph[t] = ph; return ph === 'back' ? 0.05 : 1;
+  }
+  if(pl.fixed != null) return pl.fixed;
+  let s = pl.off; if(!pl.jb && !pl.tw && pl.id === 'balanced'){ const lead = S.c[t]/Math.max(1, S.need[t]) - S.c[1 - t]/Math.max(1, S.need[1 - t]); s += lead < 0 ? 0.1 : (lead > 0 && S.t > 18 ? -0.12 : 0); }
+  return s;
+}
+function ctfFluidStep(S, T, Mp, plans, R){
+  S.t++;
+  const sinceCap = S.t - S.lastCap; S.radar = sinceCap >= 9 && (sinceCap - 9) % 3 === 0;
+  const share = [ctfFluidShare(S, 0, plans[0], T), ctfFluidShare(S, 1, plans[1], T)], A = [0, 0], D = [0, 0], caught = [0, 0], capN = [0, 0];
+  for(const t of [0, 1]){ A[t] = Math.round(S.up[t]*share[t]); D[t] = (S.up[t] - A[t])*(S.t < S.rt[t] ? 0.5 : 1); }
+  const raid = [0, 0], guard = [0, 0];
+  for(const t of [0, 1]){ const o = 1 - t, pl = plans[t], po = plans[o];
+    raid[t] = A[t]*T[t].raid*((pl.tw && A[t] >= 4) ? 1.12 : 1);
+    guard[o] = D[o]*T[o].guard*(1 + po.fort + 0.25*Mp.narrow) + 0.45*T[o].gb*(1 + Math.max(0, po.fort)); }   // (the walls and traps guard with nobody home)
+  for(const t of [0, 1]){ const o = 1 - t, pl = plans[t]; if(S.t <= Mp.trav || S.t < S.arr[t] || A[t] <= 0) continue;
+    const pc = Math.min(0.8, 0.5*guard[o]/(guard[o] + 0.9*raid[t] + 0.8))*(pl.jb ? 1.3 : 1);
+    caught[t] = ctfBin(A[t], pc, R);
+    S.kn[t] = Math.min(1, S.kn[t] + A[t]*0.016*(1 - 0.5*S.kn[t])); if(S.radar) S.kn[t] = Math.max(S.kn[t], 0.85);
+    const free = A[t] - caught[t], left = Math.max(0, S.need[t] - S.c[t]);
+    const tries = Math.min(left, ctfBin(free, Math.min(0.9, 0.45*(0.12 + 0.88*S.kn[t])), R));
+    capN[t] = ctfBin(tries, 1 - 0.85*guard[o]/(guard[o] + raid[t] + 1.2), R); }
+  for(const t of [0, 1]){ const o = 1 - t, pl = plans[t];
+    S.c[t] = Math.min(S.need[t], S.c[t] + capN[t]); if(capN[t]) S.lastCap = S.t;
+    S.jl[t] += caught[t]; S.up[t] -= caught[t];
+    const auto = ctfBin(S.jl[t], 0.22, R), att = Math.min(S.jl[t] - auto, Math.floor(0.3*(A[t] - caught[t]))), rp = Math.min(0.95, (1 - 0.55*guard[o]/(guard[o] + raid[t] + 1))*(pl.jb ? 2 : 1)), resc = ctfBin(Math.max(0, att), rp, R);
+    S.jl[t] -= auto + resc; S.up[t] += auto + resc; }
+  for(const t of [0, 1]) if(S.c[t] >= S.need[t]){ S.over = true; S.win = t; return; }
+  for(const t of [0, 1]) if(S.jl[t] >= T[t].n){ S.over = true; S.win = 1 - t; return; }
+}
+// run to the cap: more flags, then more free fighters; level is a draw (-1)
+function ctfFluidRun(T, Mp, pa, pb, init, capT, R){
+  const S = ctfFluidNew(T, init), plans = [pa, pb];
+  while(!S.over && S.t < capT) ctfFluidStep(S, T, Mp, plans, R);
+  if(!S.over){ S.win = S.c[0] > S.c[1] ? 0 : S.c[1] > S.c[0] ? 1 : S.up[0] > S.up[1] ? 0 : S.up[1] > S.up[0] ? 1 : -1; S.over = true; }
+  return S;
+}
+function ctfFluidP(T, Mp, pa, pb, init, capT, n, R){ let w = 0; for(let i = 0; i < n; i++){ const S = ctfFluidRun(T, Mp, pa, pb, init, capT, R); w += S.win === 0 ? 1 : S.win < 0 ? 0.5 : 0; } return w/n; }
+// ---- what the cup has taught a strategist ----
+function ctfStratMemo(t){ const M = TOURNEY.ctf.memo; return M[t.id] || (M[t.id] = { all:{}, vs:{}, map:{}, seen:{} }); }
+function ctfStratBump(o, id, w, win){ const c = o[id] || (o[id] = { n:0, w:0 }); c.n += w; c.w += w*win; }
+// the plans the opponent is expected to play: what it has been seen to play (against us, on this map, at all), and what it would play against the way we have been seen to play (a plan to beat us)
+function ctfStratBelief(me, opp, mapId, W, meIsA){
+  const ids = CTF_STRAT_IDS, mo = ctfStratMemo(opp), mm = ctfStratMemo(me), hab = {};
+  let tot = 0; for(const q of ids){ hab[q] = 0.35 + (mm.vs[opp.id] && mm.vs[opp.id].opp[q] ? mm.vs[opp.id].opp[q] : 0)*1.2 + (mo.all[q] ? mo.all[q].n*0.35 : 0) + (mo.map[mapId] && mo.map[mapId][q] ? mo.map[mapId][q].n*0.6 : 0); tot += hab[q]; }
+  for(const q of ids) hab[q] /= tot;
+  // level one: its best answer to what I tend to play (its value for each of its plans against my record's plan mix)
+  const myMix = {}; let mt = 0; for(const p of ids){ myMix[p] = 0.35 + (mo.vs[me.id] && mo.vs[me.id].opp[p] ? mo.vs[me.id].opp[p]*1.2 : 0) + (mm.all[p] ? mm.all[p].n*0.35 : 0); mt += myMix[p]; }
+  const val = {}, resp = {}; let best = -1;
+  for(const q of ids){ let v = 0; for(const p of ids) v += (myMix[p]/mt)*(meIsA ? 1 - W[p][q] : W[q][p]); val[q] = v; if(v > best) best = v; }
+  let rt = 0; for(const q of ids){ resp[q] = Math.exp((val[q] - best)/0.04); rt += resp[q]; }
+  const seenAny = Object.keys(mm.vs[opp.id] ? mm.vs[opp.id].opp : {}).length > 0, wH = seenAny ? 0.6 : 0.25, out = {};
+  for(const q of ids) out[q] = wH*hab[q] + (1 - wH)*resp[q]/rt;
+  return out;
+}
+// each plan's value for a side: the model's chance against the opponent's likely plans, pulled toward what has actually happened (against this opponent, on this map, with this plan at all), with a little pull toward trying what has not been tried
+function ctfStratValues(me, opp, mapId, W, meIsA, extra){
+  const ids = CTF_STRAT_IDS, b = ctfStratBelief(me, opp, mapId, W, meIsA), mm = ctfStratMemo(me), out = {};
+  for(const p of ids){
+    let v = 0; for(const q of ids) v += b[q]*(meIsA ? W[p][q] : 1 - W[q][p]);
+    const mv = mm.vs[opp.id] && mm.vs[opp.id].plan[p], mp = mm.map[mapId] && mm.map[mapId][p], ma = mm.all[p];
+    if(mv) v = (v*3 + mv.w)/(3 + mv.n);
+    if(mp) v = (v*4 + mp.w)/(4 + mp.n);
+    if(ma) v = (v*6 + ma.w)/(6 + ma.n);
+    v += 0.05/Math.sqrt(1 + (ma ? ma.n : 0));
+    if(extra && extra[p]) v += extra[p];
+    out[p] = v;
+  }
+  return { v:out, belief:b };
+}
+// a member's lean: light, quick fighters want to go out, heavy hard hitters want to stay (small: the strategist's numbers settle it)
+function ctfStratLean(team, m){
+  let tr; try{ tr = ctfPlanTraits(makeFighter({ ...m, you:false }, 0, 0, 0)); }catch(e){ return { lean:0, why:'' }; }
+  const F = ctfStratFeat(team), light = F.w ? (F.w - tr.w)/F.w : 0, hit = F.kb ? (tr.kb - F.kb)/F.kb : 0, far = tr.shot ? 0.15 : 0;
+  const lean = clamp(0.8*light - 0.5*hit + far + 0.4*((tr.reach || 0) - F.reach)/Math.max(10, F.reach || 10), -0.6, 0.6);
+  return { lean, why:lean > 0.12 ? (light > 0.1 ? 'light, would go out' : 'long reach, would go out') : lean < -0.12 ? (hit > 0.1 ? 'hits hard, would stay' : 'heavy, would stay') : 'either way' };
+}
+function ctfStratPick(vals, leans){
+  let best = null, bv = -1e9; const out = {};
+  for(const p of CTF_STRAT_IDS){ const off = CTF_STRATS[p].off; let v = vals[p]; if(leans) v += 0.04*leans*(off - 0.55)*2; out[p] = v; if(v > bv){ bv = v; best = p; } }
+  return { id:best, v:bv, all:out };
+}
+// ---- a whole fixture: both sides' plans chosen (and the odds the two give themselves), from the model, the memory and the members ----
+function ctfStratChoose(fx, mapId, sides, capSteps){
+  const Mp = ctfStratMap(mapId, sides), T = ctfStratPair(fx.a, fx.b, Mp), capT = capSteps > 0 ? Math.round(capSteps/60/CTF_FLUID_DT) : 54, W = {};
+  const R = Math.random;
+  for(const p of CTF_STRAT_IDS){ W[p] = {}; for(const q of CTF_STRAT_IDS) W[p][q] = ctfFluidP(T, Mp, Object.assign({ id:p }, CTF_STRATS[p]), Object.assign({ id:q }, CTF_STRATS[q]), null, capT, 16, R); }
+  const res = [];
+  [fx.a, fx.b].forEach((team, i)=>{
+    const opp = i ? fx.a : fx.b, vv = ctfStratValues(team, opp, mapId, W, i === 0);
+    // each member's say: their own lean moves the plan a little, and each says what they would play
+    const talk = team.members.map(m=>{ const ln = ctfStratLean(team, m), pk = ctfStratPick(vv.v, ln.lean*0.8); return { name:m.name, lean:ln.lean, why:ln.why, plan:pk.id }; });
+    const meanLean = talk.reduce((s, x)=>s + x.lean, 0)/Math.max(1, talk.length), pick = ctfStratPick(vv.v, meanLean);
+    res.push({ id:pick.id, odds:vv.v[pick.id], all:pick.all, belief:vv.belief, talk, meanLean });
+  });
+  return { res, W, T, Mp, capT };
+}
+// ---- learning: what a finished fixture shows each side ----
+function ctfStratLearn(fx, r){
+  const ps = fx.plans; if(!ps || !ps[0] || !ps[1]) return;
+  const wgt = r.real ? 1 : 0.35, map = fx.map;
+  [fx.a, fx.b].forEach((team, i)=>{
+    const opp = i ? fx.a : fx.b, mm = ctfStratMemo(team), won = r.win < 0 ? 0.5 : (r.win === i ? 1 : 0), mine = ps[i].id, theirs = ps[1 - i].id;
+    ctfStratBump(mm.all, mine, wgt, won);
+    const vs = mm.vs[opp.id] || (mm.vs[opp.id] = { plan:{}, opp:{} }); ctfStratBump(vs.plan, mine, wgt, won); vs.opp[theirs] = (vs.opp[theirs] || 0) + wgt;
+    const mp = mm.map[map] || (mm.map[map] = {}); ctfStratBump(mp, mine, wgt, won);
+    if(r.real && ps[i].swaps) for(const sw of ps[i].swaps) ctfStratBump(mm.all, sw, wgt*0.3, won);
+  });
+}
+// ---- the plan on the CPUs ----
+// the preset and the ticks a plan puts in the team plan (the same things the planning menu sets), and the roles it holds the CPUs to
+function ctfStratApply(L, t, id){
+  const pl = L.plans && L.plans[t], def = CTF_STRATS[id]; if(!pl || !def) return;
+  pl.preset = def.preset && CTF_PRESETS[def.preset] ? def.preset : null;
+  pl.ticks = def.preset ? ctfPlanPresetTicks(def.preset) : {};
+  if(def.ov === 'def' && def.counter) pl.ticks.counter = true;
+  pl.assign = {}; pl.dealt = false;
+  if(!pl.built && pl.cpus.length) ctfPlanAssignBuildRoles(L, pl);
+  const ss = CTF.strat && CTF.strat[t]; if(ss){ ss.plan = id; ss.phase = def.ov === 'phase' ? ((L.playT || 0) > 600 ? 'back' : 'rush') : null; ss.phT = L.playT || 0; }   // (a plan taken up in mid-match starts at home, waiting)
+}
+// the known flags of a side: the other side's flags it has seen (or the radar showed), out where it can take them
+function ctfStratKnown(L, t){
+  let n = 0; for(const fl of L.flags){ if(fl.team === t || fl.st === 4 || fl.st === 2) continue; if(L.seen[t][fl.id] || L.radar > 0 || (fl.st === 1 && fl._radarT != null && L.playT - fl._radarT < 3600)) n++; }
+  return n;
+}
+function ctfStratBegin(L){
+  const cf = CTF.cupFix; if(!cf) { CTF.strat = null; return; }
+  const fx = cf.fx;
+  if(!cf.pick){   // chosen once for the fixture (the side bid builds the match twice)
+    const sides = (CTF.bidRes && CTF.bidRes.sd) ? CTF.bidRes.sd : null;
+    cf.pick = ctfStratChoose(fx, cf.map, sides, cf.cap);
+    fx.plans = cf.pick.res.map(r=>({ id:r.id, name:CTF_STRATS[r.id].name, odds:r.odds, swaps:[] }));
+  }
+  CTF.strat = [0, 1].map(t=>{
+    const r = cf.pick.res[t], team = t ? fx.b : fx.a;
+    const ss = { t, team, plan:r.id, first:r.id, phase:null, phT:0, odds:r.odds, all:r.all, talk:r.talk, talkLines:[], last:'', lastT:0, oppRaid:0.5, samples:0, swapT:0, seen:{} };
+    return ss;
+  });
+  for(const t of [0, 1]) ctfStratApply(L, t, CTF.strat[t].plan);
+}
+// the words of the discussion, in the spectator's panel: each member says what they would play, then the team settles
+function ctfStratTalk(L, ss){
+  const lines = [], k = Math.floor((L.t - 60)/70);
+  ss.talk.forEach((m, i)=>{ if(i <= k - 0) lines.push(m.name + ': ' + CTF_STRATS[m.plan].name.toLowerCase() + ', ' + m.why); });
+  if(k >= ss.talk.length) lines.push('Settled on ' + CTF_STRATS[ss.first].name.toLowerCase());
+  return lines;
+}
+// ---- in the match: each second ----
+function ctfStratStep(L){
+  if(!CTF.strat || !CTF.cupFix) return;
+  for(const t of [0, 1]){ try{ ctfStratTeam(L, CTF.strat[t], t); }catch(err){ if(!CTF.errStrat){ CTF.errStrat = 1; console.error('ctfStratTeam', err); } } }
+}
+function ctfStratTeam(L, ss, t){
+  const pl = L.plans && L.plans[t]; if(!pl) return;
+  const def = CTF_STRATS[ss.plan], T = L.playT, o = 1 - t, cpus = pl.cpus.map(i=>fighters[i]).filter(Boolean), up = cpus.filter(f=>!f.dead && f._jail == null), mid = L.map.WW/2;
+  const need = ctfNeed(L, t), known = ctfStratKnown(L, t), kf = known/Math.max(1, need), jailMine = cpus.filter(f=>f._jail != null).length;
+  // what this side has seen of the other: foes on its own half that one of its fighters (or a minimap) can place, as a share of the foes still free
+  const foes = fighters.filter(g=>g.team === o && !g.dead && g._jail == null);
+  const onMine = foes.filter(g=>(t === 0 ? g.x < mid : g.x > mid) && (g._cf >= 0 || up.some(f=>Math.hypot(f.x - g.x, f.y - g.y) < 1100))).length;
+  ss.samples++; ss.oppRaid += ((foes.length ? onMine/foes.length : 0.5) - ss.oppRaid)*0.04;
+  // the phases of the rush that falls back
+  let mode = null;
+  if(def.ov === 'att') mode = 'att';
+  else if(def.ov === 'def') mode = 'def';
+  else if(def.ov === 'phase'){
+    let ph = ss.phase || 'rush';
+    if(ph === 'rush' && (T >= 2400 || kf >= 0.5)){ ph = 'back'; ss.phT = T; ss.last = 'falls back to defend'; ss.lastT = T; }
+    else if(ph === 'back' && T - ss.phT >= 600 && (known >= Math.max(1, Math.ceil(need*0.3)) || L.radar > 0)){ ph = 'strike'; ss.phT = T; ss.last = 'a flag has shown: strikes (' + known + ' known)'; ss.lastT = T; }
+    else if(ph === 'strike' && (jailMine >= Math.ceil(0.4*cpus.length) || (known === 0 && !cpus.some(f=>f._cf >= 0)) || T - ss.phT > 8400)){ ph = 'back'; ss.phT = T; ss.last = 'falls back again'; ss.lastT = T; }
+    ss.phase = ph; mode = ph === 'back' ? 'def' : 'att';
+  }
+  ss.mode = mode || 'auto';
+  for(const f of cpus){ if(mode) pl.assign[f.idx] = mode; else if(pl.assign[f.idx] === 'att' || pl.assign[f.idx] === 'def') delete pl.assign[f.idx]; }
+  // a look again, every 10 s from the first 30 s: from the state of the match, which plan would be best now
+  if(T >= 1800 && T % 600 === 6 && T - ss.swapT >= 1200 && !CTF.stratFixed) ctfStratReeval(L, ss, t, { need, known, kf, jailMine, up:up.length });
+}
+function ctfStratReeval(L, ss, t, k){
+  const cf = CTF.cupFix, o = 1 - t, fx = cf.fx, ps = cf.pick, Mp = ps.Mp, T = ps.T, R = Math.random, ids = CTF_STRAT_IDS;
+  const upO = fighters.filter(g=>g.team === o && !g.dead && g._jail == null).length, jlO = fighters.filter(g=>g.team === o && g._jail != null).length;
+  const sc = L.score.slice(), kn = [0, 0]; kn[t] = clamp(k.kf, 0, 1); kn[o] = clamp(0.1 + 0.18*sc[o] + (L.playT > 10800 ? 0.3 : 0), 0, 0.9);
+  const init = { t:Math.round(L.playT/60/CTF_FLUID_DT), c:sc, up:[0, 0], jl:[0, 0], kn, lastCap:Math.round(L.lastCapT/60/CTF_FLUID_DT) };
+  init.up[t] = k.up; init.jl[t] = k.jailMine; init.up[o] = upO; init.jl[o] = jlO;
+  // the foe is taken as it has been seen to play: the share of its fighters out on this side, with the walls the plan it is likely on would have
+  const foeId = ps.res[o].id, foePl = { id:'seen', ov:null, fixed:clamp(0.15 + ss.oppRaid*1.1, 0.05, 1), fort:CTF_STRATS[foeId].fort, off:ss.oppRaid, jb:false, tw:false };
+  const capT = Math.max(init.t + 2, ps.capT), cur = ss.plan, vals = {};
+  for(const p of ids){ const mine = Object.assign({ id:p }, CTF_STRATS[p]); vals[p] = (t === 0) ? ctfFluidP(T, Mp, mine, foePl, init, capT, 14, R) : 1 - ctfFluidP(T, Mp, foePl, mine, init, capT, 14, R); }
+  let best = cur, bv = vals[cur] + 0.07;   // a clear gain to change
+  for(const p of ids) if(vals[p] > bv){ bv = vals[p]; best = p; }
+  ss.odds = vals[cur];
+  if(best !== cur){
+    const from = cur; ss.swapT = L.playT; ss.last = 'switches from ' + CTF_STRATS[from].name.toLowerCase() + ' to ' + CTF_STRATS[best].name.toLowerCase() + ' (foe sends ' + Math.round(ss.oppRaid*100) + '%, ' + Math.round(vals[best]*100) + '% to win)'; ss.lastT = L.playT;
+    ctfStratApply(L, t, best); ss.phT = L.playT;
+    const rec = fx.plans[t]; if(rec){ rec.swaps = rec.swaps || []; rec.swaps.push(best); rec.name = CTF_STRATS[rec.id].name + ' > ' + CTF_STRATS[best].name; }
+  }
+}
+// ---- what the spectator panel says ----
+function ctfStratLine(t){
+  const ss = CTF.strat && CTF.strat[t]; if(!ss) return null;
+  return CTF_STRATS[ss.plan].name;
+}
+function ctfStratRows(L, t){
+  const ss = CTF.strat && CTF.strat[t]; if(!ss) return null;
+  const def = CTF_STRATS[ss.plan], rows = [['Plan', def.name]];
+  const modeTxt = def.ov === 'phase' ? { rush:'rushing', back:'fallen back, waiting for a flag to show', strike:'striking' }[ss.phase] || '' : def.ov === 'att' ? 'everyone goes, nobody home' : def.ov === 'def' ? 'everyone home' : '';
+  if(modeTxt) rows.push(['Mode', modeTxt]);
+  rows.push(['Odds', Math.round(ss.odds*100) + '% to win (its own count)']);
+  const talk = L.phase !== 'play' ? ctfStratTalk(L, ss) : [];
+  if(talk.length){ const show = talk.slice(-2); for(const x of show) rows.push(['Talk', x]); }
+  else if(ss.last) rows.push(['Last', ss.last + ' (' + Math.floor(ss.lastT/3600) + ':' + String(Math.floor(ss.lastT/60) % 60).padStart(2, '0') + ')']);
+  return rows;
+}
+// the hub's closing note: how the plans did across the cup
+function ctfStratReport(){
+  const tot = {}; for(const id of Object.keys(TOURNEY.ctf.memo)){ const m = TOURNEY.ctf.memo[id]; for(const p of Object.keys(m.all)){ const c = tot[p] || (tot[p] = { n:0, w:0 }); c.n += m.all[p].n; c.w += m.all[p].w; } }
+  const rows = Object.keys(tot).filter(p=>CTF_STRATS[p] && tot[p].n >= 1).sort((a, b)=>tot[b].n - tot[a].n).slice(0, 6);
+  if(!rows.length) return '';
+  return '<div class="th-sub" style="text-align:center">How the plans did across the cup (wins / matches played with it):</div>' + rows.map(p=>'<div class="th-row" style="justify-content:center"><span class="th-tn" style="flex:none;min-width:200px">' + esc(CTF_STRATS[p].name) + '</span><span>' + Math.round(tot[p].w*10)/10 + ' / ' + Math.round(tot[p].n*10)/10 + '</span></div>').join('');
+}
+// ---- a fixture nobody watches: the same strategists, the model run once ----
+function ctfStratSim(fx){
+  const mapId = ctfCupFxMap(fx), cap = ctfCupCap(fx), ch = ctfStratChoose(fx, mapId, null, cap), R = Math.random;
+  const pa = Object.assign({ id:ch.res[0].id }, CTF_STRATS[ch.res[0].id]), pb = Object.assign({ id:ch.res[1].id }, CTF_STRATS[ch.res[1].id]);
+  const S = ctfFluidRun(ch.T, ch.Mp, pa, pb, null, ch.capT, R);
+  fx.plans = ch.res.map(r=>({ id:r.id, name:CTF_STRATS[r.id].name, odds:r.odds, swaps:[] }));
+  let win = S.win;
+  if(win < 0 && fx.kind !== 'group') win = R() < 0.5 ? 0 : 1;
+  return { sa:S.c[0], sb:S.c[1], win, why:'sim' };
+}
+// a fixture cut short (S): the rest of it by the model, from where it stands, each side on the plan it is playing
+function ctfStratSkipRoll(fx, L){
+  const cf = CTF.cupFix, ps = cf && cf.pick; if(!ps || !CTF.strat) return null;
+  const R = Math.random, cnt = (t, jl)=>fighters.filter(g=>g.team === t && !g.dead && ((g._jail != null) === jl)).length;
+  const init = { t:Math.round(L.playT/60/CTF_FLUID_DT), c:L.score.slice(), up:[cnt(0, false), cnt(1, false)], jl:[cnt(0, true), cnt(1, true)], kn:[0, 1].map(t=>clamp(ctfStratKnown(L, t)/Math.max(1, ctfNeed(L, t)), 0, 1)), lastCap:Math.round(L.lastCapT/60/CTF_FLUID_DT) };
+  const pa = Object.assign({ id:CTF.strat[0].plan }, CTF_STRATS[CTF.strat[0].plan]), pb = Object.assign({ id:CTF.strat[1].plan }, CTF_STRATS[CTF.strat[1].plan]);
+  const S = ctfFluidRun(ps.T, ps.Mp, pa, pb, init, Math.max(init.t + 2, ps.capT), R);
+  let win = S.win; if(win < 0 && fx.kind !== 'group') win = R() < 0.5 ? 0 : 1;
+  return { sa:S.c[0], sb:S.c[1], win, why:'skip' };
+}
 // ---- a skill of its own for each team (the Flag Cup): the game has one CPU skill (AI_LEVEL), read by every AI and plan call, so each team's calls run with that team's skill put in AI_LEVEL for the call ----
 function ctfSkillScope(t, fn){
   const so = CTF.skillOf; if(!so || so[t] == null) return fn();
