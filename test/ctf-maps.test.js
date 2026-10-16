@@ -5,9 +5,9 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // a jail with its no-go zone clear of the spawns, doors and keys, a lift), and the CPU's graph of it says every hiding place, key, boost, pad and the jail's door can be reached from
 // home, with only the vaults behind their locked doors.
 
-const MAPS = ['castle', 'castle.s', 'castle.l', 'mines', 'mines.s', 'mines.l', 'factory', 'factory.s', 'factory.l', 'forest', 'sky', 'oak', 'oak.s', 'oak.l'];   // (`.s` and `.l`: the small and the large build of a map with bands; the plain name is the medium one, 4v4 and 5v5)
+const MAPS = ['castle', 'castle.s', 'castle.l', 'mines', 'mines.s', 'mines.l', 'factory', 'factory.s', 'factory.l', 'forest', 'forest.s', 'forest.l', 'sky', 'sky.s', 'sky.l', 'oak', 'oak.s', 'oak.l'];   // (`.s` and `.l`: the small and the large build of a map with bands; the plain name is the medium one, 4v4 and 5v5)
 const baseOf = (id) => id.replace(/[.].*$/, ''), bandOf = (id) => id.endsWith('.s') ? 0 : id.endsWith('.l') ? 2 : 1;
-const ASYM = { oak: true, factory: true, mines: true };   // an asymmetric map (two different halves, the bid chooses the sides): not its own mirror; every check is made for both sides
+const ASYM = { oak: true, factory: true, mines: true, forest: true, sky: true };   // an asymmetric map (two different halves, the bid chooses the sides): not its own mirror; every check is made for both sides
 
 for (const id of MAPS) {
   describe(`map ${id}`, () => {
@@ -27,8 +27,8 @@ for (const id of MAPS) {
         out.mirrored = M.plats.every(function(p){ return set[key({ x:M.WW - p.x - p.w, y:p.y, w:p.w, h:p.h, solid:p.solid })]; });
         return JSON.stringify(out);
       })()`));
-      // each map's world width: the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side); then 2026-10-15: "about 15 screens wide and 4 tall", "some maps could be small with good spots" (castle v4: 84 columns a side, 28 rows); the others are 108 a side now
-      expect(r.WW).toBe({ castle: 26880, mines: 26880, 'mines.s': 23520, 'mines.l': 35520, factory: 25920, 'factory.s': 23040, 'factory.l': 34560, forest: 25920, sky: 25920, oak: 20160, 'oak.s': 20160, 'oak.l': 25920, 'castle.s': 23040, 'castle.l': 31680 }[id]);
+      // each map's world width: the castle was 21600 until the owner, 2026-10-14: "the map should be a bit bigger" (castle v3, 110 columns a side); then 2026-10-15: "about 15 screens wide and 4 tall", "some maps could be small with good spots" (castle v4: 84 columns a side, 28 rows); the forest was 108 a side until the owner, 2026-10-15 (asymmetric maps in the oak's style: two different halves, a bid, a third area, size bands): forest v2 is 84 columns a side like the mines, with its third area (the mushroom grove, 14, 28 or 40 columns) and an annex of 24 behind each home for large teams; the sky likewise (2026-10-15: the Skyline Hotel against the Cloud Gardens, asymmetric, a sky fair for a third area, three size bands): 84 a side with the same module widths
+      expect(r.WW).toBe({ castle: 26880, mines: 26880, 'mines.s': 23520, 'mines.l': 35520, factory: 25920, 'factory.s': 23040, 'factory.l': 34560, forest: 26880, 'forest.s': 23520, 'forest.l': 35520, sky: 26880, 'sky.s': 23520, 'sky.l': 35520, oak: 20160, 'oak.s': 20160, 'oak.l': 25920, 'castle.s': 23040, 'castle.l': 31680 }[id]);
       if (!ASYM[baseOf(id)]) expect(r.mirrored, 'the right half is the left half turned over').toBe(true);   // (an asymmetric map is two halves, each its own)
       expect(r.spawns[0], 'spawns').toBeGreaterThanOrEqual(8);
       expect(r.pads).toEqual([true, true]);
