@@ -6,7 +6,8 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // moves of a fighter share one. It is render-only: the frame-layer test plays whole matches with the frames drawn and stripped and finds the same ticks.
 // Exceptions that keep their old frames on purpose: Puffball's X is her spit (the body does it), and she has no neutral air.
 const FAKE = `window.__fake = function(sp){ sp._req = true; sp.img = { complete:true, naturalWidth:150, naturalHeight:200 }; }; true`;
-const KITS = { Puffball: 'fly', Bow: 'chair', Pencil: 'van', Leafy: 'dash', Firey: 'ember', Pen: 'cap', Blocky: 'anvil', 'Ice Cube': 'shatter', Match: 'spark', Snowball: 'tackle', Pin: 'pierce', Bomby: 'bomb' };
+const KITS = { Puffball: 'fly', Bow: 'chair', Pencil: 'van', Leafy: 'dash', Firey: 'ember', Pen: 'cap', Blocky: 'anvil', 'Ice Cube': 'shatter', Match: 'spark', Snowball: 'tackle', Pin: 'pierce', Bomby: 'bomb',
+  Needle: 'counter', Flower: 'quake', 'Tennis Ball': 'serve', Teardrop: 'kick', Bubble: 'float', Rocky: 'barf', Coiny: 'slap', 'Golf Ball': 'zapshooter' };
 const SLOTS = ['jab', 'ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da', 'side', 'grab', 'pummel', 'fthrow', 'bthrow', 'uthrow', 'dthrow', 'special', 'up', 'down', 'smash', 'finisher'];
 const OLD_FRAMES = ['fly.jab', 'fly.na'];
 let W, MVA, SPIT;   // SPIT: the moves whose kind is the spit (Firey's Ember Spit, Puffball's spit): the body swells and spits, which is its own frames already
