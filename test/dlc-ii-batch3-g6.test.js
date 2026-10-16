@@ -123,14 +123,14 @@ describe("Magnet: Polarity (attract, repel and metal; 2026-10-07)", () => {
   // "give metag and magnet new kits." The owner's reading is now physical magnetism (it was "personality pulls, no literal magnetism", Q11): C attracts and
   // hits, down repels, and metal fighters are pulled and pushed further. The old bestie haul (a 3% tap and a 4 s slow) and the brake (no hit) were promises the
   // owner replaced; each test below is restated to its new promise.
-  it("C'mon, Bestie! pulls the nearest foe in front toward her over about 16 frames and hits them as they arrive (9%, a real launch); only a foe in front, in reach", () => {
+  it("C'mon, Bestie! pulls the nearest foe in front toward her over about 16 frames and hits them as they arrive (12%, a real launch; it was 9% before the Magnet buff of 2026-10-16: the weakest II fighter); only a foe in front, in reach", () => {
     const r = arena('Magnet', `var d0 = D.x - A.x; fireSpecial(A, {}); for (var i=0;i<8;i++){ step(); D.dead=false; } var mid = D.x - A.x, early = D.pct - 30;
       var vx = 0; for (var i=0;i<14;i++){ step(); D.dead=false; if (!vx && D.pct > 30) vx = D.vx; } return { d0: d0, mid: mid, early: early, hit: D.pct - 30, vx: vx, cd: A.spCd };`, 600);
     expect(r.mid, 'drawn in over the first half').toBeLessThan(r.d0*0.75);
     expect(r.early, 'no hit until they arrive').toBe(0);
-    expect(r.hit).toBe(9);
+    expect(r.hit).toBe(12);
     expect(r.vx, 'launched away from her').toBeGreaterThan(6);
-    expect(r.cd, 'one pull at a time').toBeGreaterThan(60);
+    expect(r.cd, 'one pull at a time (the cooldown is 84 frames since the Magnet buff, was 120: 45 are left when this is read)').toBeGreaterThan(30);
     expect(arena('Magnet', `A.face = -1; fireSpecial(A, {}); ${run(30)} return D.pct - 30;`, 600), 'only a foe in front').toBe(0);
     expect(arena('Magnet', `fireSpecial(A, {}); ${run(30)} return { hit: D.pct - 30, moved: D.x };`, 740), 'a plain foe 340 px away is out of reach').toEqual({ hit: 0, moved: 740 });
   });
@@ -138,7 +138,7 @@ describe("Magnet: Polarity (attract, repel and metal; 2026-10-07)", () => {
   it('metal fighters are pulled from further (x1.4): Knife 320 px away is drawn in and hit, a Pen at the same distance is not', () => {
     const k = arena('Magnet', `fireSpecial(A, {}); ${run(30)} return { hit: D.pct - 30 };`, 720, 'Knife');
     const p = arena('Magnet', `fireSpecial(A, {}); ${run(30)} return { hit: D.pct - 30 };`, 720, 'Pen');
-    expect(k.hit).toBe(9);
+    expect(k.hit).toBe(12);
     expect(p.hit).toBe(0);
     const set = W.eval(`['Knife','Silver Spoon','Nickel','Nickel (II)','Coiny','Needle','Saw','Bonesaw','Bell','Trophy','Bot','Roboty','Naily'].every(function(n){ return METAL_FIGHTERS.has(n); }) && !METAL_FIGHTERS.has('Pin') && !METAL_FIGHTERS.has('Tea Kettle') && !METAL_FIGHTERS.has('Pen')`);
     expect(set, 'canon-metal objects only (Pin is a plastic pushpin, Tea Kettle a white teapot on the wiki)').toBe(true);
