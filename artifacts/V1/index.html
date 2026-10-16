@@ -4962,11 +4962,13 @@ function ctfEditProblems(L, nav){
   for(const j of L.jails){ const d = j.door, n = at(d.x + (j.face === 1 ? d.w + 50 : -50), d.y + d.h); if(!n || !nav.reach[1 - j.owner][n.id]) bad.push('jail' + j.owner); }
   return bad;
 }
+// A CPU that has built does not end the hiding until the graph with its pieces in it is made (the check at the end then takes a moment): at most 40 s more.
+function ctfPrebuildWait(L){ return !!(L.pre && L.pre.seq === L.editSeq && !L.pre.nav.ready && L.t - L.editT < 2400); }
 function ctfEditPrebuild(L){   // while they are still hiding: once the edits have been left alone for a couple of seconds, start the graph with them in it
   if(CTF.skipNav || !CTF.nav || !CTF.nav.ready) return;
   const st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).length; if(!st){ L.pre = null; return; }
-  if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 8, 5); return; }
-  if(L.t - L.editT >= 120) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
+  if(L.pre && L.pre.seq === L.editSeq){ if(!L.pre.nav.ready) ctfNavTick(L.pre.nav, 80, 3); return; }
+  if(L.t - L.editT >= 30) L.pre = { seq:L.editSeq, n:st, nav:ctfEditNav(L, st) };
 }
 function ctfFixBegin(L){
   const st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).sort((a, b)=>a.seq - b.seq);
@@ -4981,7 +4983,7 @@ function ctfFixStep(L){
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
   const key = ctfFixKey(F, F.keep);
   const nav = F.navs[key] || (F.navs[key] = F.keep === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.keep, F.set));
-  if(!nav.ready){ ctfNavTick(nav, 40, 10); return; }
+  if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
   const bad = F.keep === 0 ? [] : ctfEditProblems(L, nav);
   if(bad.length) F.hi = F.keep; else F.lo = F.keep;
   if(F.hi === null){ F.final = F.set.length; ctfFixFinish(L); return; }   // everything that is left is fine
@@ -7896,7 +7898,7 @@ function ctfNavKey(n){ return Math.round(n.x0) + '|' + Math.round(n.x1) + '|' + 
 function ctfNavNew(M, prev, diff){
   const R = 24, solids = M.plats.filter(p=>p.solid);
   const blockers = M.doors.map(d=>({ x:d.x, y:d.y, w:d.w, h:d.h, door:d.id })).concat(M.jails.map(j=>({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, door:'J' + j.owner })));
-  const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0, dense:Array.isArray(diff) };   // (dense: a graph patched at runtime for the pieces somebody built is probed more finely: the shipped graphs are made the plain way)
+  const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0, dense:Array.isArray(diff), diffRects:Array.isArray(diff) ? diff : [] };   // (dense: a graph patched at runtime for the pieces somebody built is probed more finely: the shipped graphs are made the plain way)
   // the areas that change a flight (water drags at you, glue stops you, wind pushes, thin air is light, a spring throws you): every simulated move feels them as the game does
   { const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring');   // ('float' is not here: the game sets its flag but never lowers gravity for it, so a flight is the same inside it)
     if(zs.length && !CTF.noZones){ nav.zb = {}; for(const z of zs) for(let b = ctfNavBucket(z.x); b <= ctfNavBucket(z.x + z.w); b++) (nav.zb[b] = nav.zb[b] || []).push(z); } }
@@ -8072,9 +8074,13 @@ function ctfNavSimThru(nav, n, xa){ return !!ctfNavSim(nav, n, xa, 0, 0, 0, 0, f
 // The moves are planned on a flag carrier's numbers (slower and lower than a free fighter's, so a move that works for a carrier works for anyone). Two profiles, a carrier's and a free fighter's, were tried
 // and did worse in the matches (more failed moves): the free fighter's extra speed is steered out in the air, not planned for.
 const CTF_NAV_PROFILES = ['c'];
-function ctfNavProbe(nav, n){
+// The moves of one place, in slices: it gives the frame back every few simulated moves (a generator), so a graph patched while the game runs costs a few milliseconds a frame and never one long stop (the shipped graphs are made
+// by running it through, at once). ctfNavTick drives it.
+function ctfNavProbe(nav, n){ const g = ctfNavProbeGen(nav, n); while(!g.next().done); }
+function* ctfNavProbeGen(nav, n){
   if(n.reused) return;
-  const dense = !!nav.dense && !CTF.probeOld;
+  let sc = 0;
+  const dense = !!nav.dense && !CTF.probeOld && nav.diffRects.some(r=>n.x1 > r.x - 450 && n.x0 < r.x + r.w + 450 && n.y > r.y - 600 && n.y < r.y + r.h + 600);   // (only the places close to a built piece: the rest of a patched graph is probed the plain way)
   const P = ctfNavParams(), w = n.x1 - n.x0, found = {};
   // (a place a few steps of a slope away that can be WALKED to is never jumped to: the jump to it lands a step off, and the bot counts it a failed move)
   let walkSet = null;
@@ -8103,6 +8109,7 @@ function ctfNavProbe(nav, n){
     const run = dir === 1 ? xa - n.x0 : dir === -1 ? n.x1 - xa : 0;
     const v0 = dir === 0 ? 0 : dir*Math.min(Pp.CAP, Math.sqrt(2*0.55*Math.min(run, 150)));
     for(const dj of [0, 1]) for(const T of (dir === 0 ? [0] : [4, 10, 30, 200])){
+      if((++sc & 15) === 0) yield;
       const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, true, fr);
       if(r && r.node !== n){ const hv = found[r.node.id + prof]; if(hv && hv.length >= 2 && hv.every(e=>!e.risky && e.cost <= r.t + 14 + dj*8)) continue; }   // two steady moves to that place already, and none cheaper than this one: no need to look closer
       if(r && r.node !== n && (PROFS.length > 1 || ctfNavSimBoth(nav, n, xa, dir, dj, T, true, run, r.node))){
@@ -8137,6 +8144,7 @@ function ctfNavProbe(nav, n){
         for(const dir of dirs){
           const run = dir === 1 ? xa - n.x0 : dir === -1 ? n.x1 - xa : 0, v0 = dir === 0 ? 0 : dir*Math.min(Pp.CAP, Math.sqrt(2*0.55*Math.min(run, 150)));
           for(const dj of [0, 1]) for(const T of (dir === 0 ? [0] : [4, 10, 30, 200])){
+            if((++sc & 15) === 0) yield;
             const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, true, false);
             if(r && r.node === B && ctfNavSimBoth(nav, n, xa, dir, dj, T, true, run, B)){
               const rb = (kk, dd)=>{ const r2 = ctfNavSim(nav, n, xa, v0*kk, dir, dj, T, true, false, false, false, { k:kk, dd, jv:0.985 }); return !!(r2 && r2.node === B); };
@@ -8157,6 +8165,7 @@ function ctfNavProbe(nav, n){
       const run = dir === 1 ? xa - n.x0 : dir === -1 ? n.x1 - xa : 0;
       const v0 = dir === 0 ? 0 : dir*Math.min(Pb.CAP, Math.sqrt(2*0.55*Math.min(run, 150)));
       for(const dj of [0, 1]) for(const T of (dir === 0 ? [0] : [4, 10, 30])){
+        if((++sc & 15) === 0) yield;
         const r = ctfNavSim(nav, n, xa, v0, dir, dj, T, true, true, false, true);
         if(r && r.node !== n && !found[r.node.id] && !extra[r.node.id] && ctfNavSimBoth(nav, n, xa, dir, dj, T, true, run, r.node, 1, true)) extra[r.node.id] = { kind:'jump', prof:'f', need:'jump', from:n.id, to:r.node.id, xa, dir, dj, T, v0, xb:r.x, run:Math.min(run, 150), cost:r.t + 30 + dj*8, doors:[] };
       }
@@ -8187,9 +8196,13 @@ function ctfNavProbe(nav, n){
 }
 function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds (the game builds the graph a slice a frame, so it never stutters)
   if(nav.pending) return;   // the map's shipped graph is being fetched: nothing to build unless it fails (ctfGraphFetch)
-  const t0 = ms ? performance.now() : 0;
-  for(let i = 0; i < count && nav.cursor < nav.nodes.length; i++){ ctfNavProbe(nav, nav.nodes[nav.cursor++]); if(ms && performance.now() - t0 > ms) break; }
-  if(nav.cursor >= nav.nodes.length && !nav.ready){ nav.ready = true; ctfNavReach(nav); }
+  const t0 = ms ? performance.now() : 0; let started = 0;
+  while(!nav.ready){
+    if(!nav.gen){ if(nav.cursor >= nav.nodes.length || started >= count) break; started++; nav.gen = ctfNavProbeGen(nav, nav.nodes[nav.cursor++]); }
+    if(nav.gen.next().done) nav.gen = null;
+    if(ms && performance.now() - t0 > ms) break;   // (a place is probed in slices: the budget holds even for a slow one)
+  }
+  if(nav.cursor >= nav.nodes.length && !nav.gen && !nav.ready){ nav.ready = true; ctfNavReach(nav); }
 }
 // ---- SHIPPED ROUTE GRAPHS ----------------------------------------------------------------------------------------------------------------------------------------
 // Building a map's graph takes 9-20 s of CPU (every move of every place is simulated), so scripts/ctf-build-graphs.mjs does it once, offline, and ships the moves as
@@ -8913,7 +8926,7 @@ function ctfAiHide(f, ai, L, nav, inp, now){
   if(L.done[f.idx]) return ctfAiHideIdle(f, ai, L, nav, inp, now);   // ready: but a human may take minutes yet, so never stand frozen
   if(fl.st !== 1 && now % 30 === f.idx % 30){ if(ai.hx != null && Math.abs(f.x - ai.hx) + Math.abs(f.y - ai.hy) < 40) ai.hn = (ai.hn || 0) + 1; else ai.hn = 0; ai.hx = f.x; ai.hy = f.y; if(ai.hn >= 4){ ai.hn = 0; ctfAiStat('unstickHide'); ai.hide = null; ai.hideTry = (ai.hideTry || 0) + 1; ctfAiResetMove(ai); ai.fight = 0; } }
   if(fl.st === 1){   // put down: done a moment later
-    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2 && fl === L.flags[f.idx]){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT >= 12 && (!L.plans || CTF.oldBuild || L.plans[f.team].built)) inp.special = true; return inp;   // (done once the side has built, if it builds as one)
+    ai.doneT = (ai.doneT || 0) + 1; if(ai.doneT === 2 && fl === L.flags[f.idx]){ try{ ctfAiBuild(f, L); }catch(e){ console.error('ctfAiBuild', e); } } if(ai.doneT >= 12 && (!L.plans || CTF.oldBuild || L.plans[f.team].built) && !ctfPrebuildWait(L)) inp.special = true; return inp;   // (done once the side has built, if it builds as one)
   }
   if(!ai.hide){
     const M = L.map, pts = ctfNavSweep(nav, f.team);
@@ -8990,7 +9003,7 @@ function ctfAiHideTick(L){
   // humans press their own keys; a CPU's flag is put down by its own walk.
   const nav = CTF.nav;
   // a CPU that cannot get anywhere with its flag puts it down where it stands after a minute
-  if(L.t === 2700 && nav){ for(const f of fighters){ if(!ctfIsHuman(f) && !L.done[f.idx]){ for(let k = 0; k < 2; k++){ const fl = ctfMyFlag(L, f); if(fl.st === 0) ctfHidePlace(f); } L.done[f.idx] = true; } } }
+  if(L.t >= 2700 && nav && !ctfPrebuildWait(L)){ for(const f of fighters){ if(!ctfIsHuman(f) && !L.done[f.idx]){ for(let k = 0; k < 2; k++){ const fl = ctfMyFlag(L, f); if(fl.st === 0) ctfHidePlace(f); } L.done[f.idx] = true; } } }
   if(!nav) { for(const f of fighters){ if(ctfIsHuman(f) || L.done[f.idx]) continue; if(L.t < 40 + f.idx*15) continue;
     const mine = CTF.map.spots.filter(s=>s.team === f.team), sp = mine[(f.idx*7 + 3) % mine.length];
     const fl = L.flags[f.idx]; if(fl.st === 0) ctfPlaceFlag(fl, sp.x, sp.y); L.done[f.idx] = true; } }

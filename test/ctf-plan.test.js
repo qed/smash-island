@@ -146,7 +146,7 @@ describe('the team plan', () => {
   const arena = (w, extra) => w.eval(`(function(){ var M = CTF.map, fl = { x:0, y:2160, w:4800, h:240, solid:true }, Yf = 2160;
     var B = function(x, y){ return { x:x, y:y, w:120, h:120, solid:true, hop:false }; }, W = function(x, y){ return { x:x, y:y, w:60, h:240, solid:true, hop:false }; }, P = function(x, y){ return { x:x, y:y, w:180, h:16, solid:false, hop:true }; };
     var pieces = (${extra})(B, W, P, Yf);
-    var nav = ctfNavNew(Object.assign({}, M, { plats:[fl].concat(pieces) }), null, []);   /* (a patched graph: the fine probe) */ while(!nav.ready) ctfNavTick(nav, 80);
+    var nav = ctfNavNew(Object.assign({}, M, { plats:[fl].concat(pieces) }), null, pieces.map(function(p){ return { x:p.x, y:p.y, w:p.w, h:p.h }; }));   /* (a patched graph, the pieces being what was built: the fine probe near them) */ while(!nav.ready) ctfNavTick(nav, 80);
     var left = ctfNavNodeAt(nav, 1000, Yf, 6), at = function(x, y){ var n = ctfNavNodeAt(nav, x, y, 6); return n && ctfNavPath(nav, left.id, n.id, { doorOK:function(){ return true; }, now:0 }) ? true : false; };
     return { nav:nav, at:at }; })()`);
   it('the graph agrees with the physics on one-piece gaps and one-row climbs: setups that were missed because the takeoff spots were sampled too coarsely are reachable', { timeout:150000 }, () => {
