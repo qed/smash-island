@@ -227,8 +227,10 @@ describe('no tap and no phone wording in anything a player reads', () => {
   it('every string the script can show says click, never tap', () => {
     // A move NAMED with the word is not touch wording: the owner, 2026-10-14, on MeTag's "Cuff-Tap" being renamed for this rule --
     // "WHAT, NO!!! i meant it as no hints to cobs". The rule is about touch controls and phone hints, so a move's name is exempt.
+    // The moveset tables name and describe each move in `n:` and `d:` (a pummel "Scorch Tap", a down-tilt that "taps the floor"): the same exemption.
     const MOVE_NAMES = /^Cuff-Tap — /;
-    expect(strings.filter((t) => TAP.test(t) && !MOVE_NAMES.test(t))).toEqual([]);
+    const MOVE_TEXT = new Set([...HTML.matchAll(/\b[nd]:'([^']*)'/g)].map((m) => m[1]));
+    expect(strings.filter((t) => TAP.test(t) && !MOVE_NAMES.test(t) && !MOVE_TEXT.has(t))).toEqual([]);
   });
 
   it('...and names no phone, tablet or touch screen as something the player holds', () => {
