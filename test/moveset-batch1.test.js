@@ -57,9 +57,10 @@ describe('every batch-1 fighter has the whole set', () => {
 });
 
 describe('the moves do what the card says', () => {
-  it('each tilt, aerial and the side special hits a foe in its reach for the damage its line names', () => {
+  it('each tilt and aerial hits a foe in its reach for the damage its line names', () => {
     const bad = [];
     for (const [name, k] of Object.entries(KITS)) for (const s of slotsOf(name)) {
+      if (s === 'side') continue;   // (the side specials are off, the owner, 2026-10-16: a direction + C is the neutral special; the side rows stay as data and nothing fires or lists them)
       const air = ['na', 'fa', 'ba', 'ua', 'da'].includes(s);
       const spots = air ? [[40, 0], [75, 0], [-40, 0], [8, -50], [8, 50]] : [[40, 0], [70, 0], [8, -50]];
       let best = null;

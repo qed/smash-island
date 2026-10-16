@@ -76,7 +76,7 @@ describe('dash tech (Leafy; Liy and Woody are the other dashers)', () => {
   });
   it('one air dash an airtime, and the dash comes back on landing', () => {
     stage(); W.eval('fighters[0].y = groundY()-24-300; fighters[0].onground = false; fighters[0].vy = 0;');
-    hold(['right', 'special'], 1); steps(2); hold(['right', 'special'], 1);   // (right + C is the side special: the first is the air dash)
+    hold(['right', 'special'], 1); steps(2); hold(['right', 'special'], 1);   // (right + C is the neutral special, aimed that way, and goes at once: the first is the air dash; side specials are gone, the owner, 2026-10-16)
     const first = J('fighters[0]._airDash');
     expect(first).toBe(true);
     W.eval('fighters[0].spCd = 0; fighters[0]._dashing = 0; fighters[0]._mv = null; fighters[0].atkCd = 0;'); steps(2);
