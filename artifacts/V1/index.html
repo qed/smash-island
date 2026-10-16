@@ -430,6 +430,19 @@
   .ctfcup-picklist{display:flex; flex-wrap:wrap; gap:6px; max-width:900px; justify-content:center}
   .ctfcup-picklist .cupchip{display:flex; align-items:center; gap:5px; font-size:13px}
   .ctfcup-picklist .cupchip:disabled{opacity:.35; cursor:not-allowed}
+  .ctfcup-plan{font-family:inherit; font-weight:700; font-size:11px; text-align:left; border:2px dashed #1c1c1c; border-radius:7px; background:rgba(255,236,170,0.55); padding:2px 7px; cursor:pointer}
+  .ctfcup-tabs{display:flex; gap:6px}
+  .ctfcup-planlist{width:min(640px,94%); max-height:300px; overflow-y:auto; background:rgba(255,255,255,0.08); border-radius:8px; padding:4px}
+  .ctfcup-planrow{display:flex; align-items:center; gap:9px; color:#fff; font-size:14px; padding:3px 8px; border-radius:6px; cursor:pointer}
+  .ctfcup-planrow.cur{background:rgba(216,196,106,0.3)}
+  .ctfcup-planrow.off .ctfcup-rowtext{opacity:.45}
+  .ctfcup-rowtext{flex:1}
+  .ctfcup-box{width:13px; height:13px; border:2px solid #fff; border-radius:2px; display:inline-block; flex:none}
+  .ctfcup-box.on{background:#8fe08f}
+  .ctfcup-box.pre{border:2px dashed #d8c46a; background:rgba(216,196,106,0.5)}
+  .ctfcup-role{opacity:.55} .ctfcup-role.set{opacity:1; color:#8fe08f}
+  .ctfcup-plandesc{color:#f4ecc0; font-size:13px; min-height:48px; max-width:640px; text-align:center}
+  .ctfcup-planfoot{color:rgba(255,255,255,0.7); font-size:12px}
   .ctfcup-map{font-size:11px; opacity:.6; white-space:nowrap}
   .ctfcup-plans{font-size:11px; opacity:.65; text-align:center; margin:-2px 0 5px}
   .cupchips{display:flex; flex-wrap:wrap; gap:5px; max-width:430px}
@@ -1578,6 +1591,7 @@
       <button class="btn" onclick="ctfCupStart()">Kick Off ▶</button>
     </div>
     <div id="ctfCupPicker" class="ctfcup-picker" style="display:none"></div>
+    <div id="ctfCupPlanEd" class="ctfcup-picker" style="display:none"></div>
   </div>
 
   <!-- TOURNAMENT HUB -->
@@ -6627,13 +6641,25 @@ function ctfCupClean(o){
   const mapOk = v=>v === 'rotate' || v === 'random' || !!(typeof CTF_MAPS === 'object' && CTF_MAPS[v] && !CTF_MAPS[v].wip);
   const slots = [], skill = [];
   for(let i = 0; i < teams; i++){ const row = (Array.isArray(o.slots) && Array.isArray(o.slots[i])) ? o.slots[i] : []; slots.push(Array.from({ length:size }, (_, k)=>typeof row[k] === 'string' ? row[k] : null)); skill.push(one(o.skill && o.skill[i], [-1, 0, 1, 2], -1)); }
-  return { teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill };
+  const strat = []; for(let i = 0; i < teams; i++) strat.push(ctfCupCleanStrat(o.strat && o.strat[i], size));
+  return { teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill, strat };
 }
-let CTFCUP = ctfCupClean(null);
-(function ctfCupLoad(){ try{ const raw = localStorage.getItem(CTFCUP_KEY); if(raw) CTFCUP = ctfCupClean(JSON.parse(raw)); }catch(e){} })();
+// A team's STRATEGY setting (the owner, 2026-10-16: "add strategy settings"): mode 'auto' (the strategist), 'fixed' (the owner's plan all match, the strategist off) or 'adapt' (the owner's plan to begin with, then the strategist may switch).
+// The plan is the planning menu's own parts: a preset (or none), ticks for builds, offence and defence ideas, ideas of the preset switched off, and a role for each SEAT (0, 1, ...: the fighter in that seat; auto is no entry).
+const CTFCUP_MODES = ['auto', 'fixed', 'adapt'], CTFCUP_ROLES = ['waller', 'corridor', 'trapper', 'runner', 'scout', 'keyrunner', 'att', 'def', 'jailguard'];
+function ctfCupCleanStrat(o, size){
+  o = o || {}; const set = x=>{ const r = {}; if(x && typeof x === 'object') for(const k of Object.keys(x)) if(x[k] === true) r[String(k).slice(0, 24)] = true; return r; };
+  const assign = {}; if(o.assign && typeof o.assign === 'object') for(const k of Object.keys(o.assign)) if(+k >= 0 && +k < size && CTFCUP_ROLES.includes(o.assign[k])) assign[k] = o.assign[k];
+  return { mode:CTFCUP_MODES.includes(o.mode) ? o.mode : 'auto', preset:typeof o.preset === 'string' ? o.preset.slice(0, 24) : null, ticks:set(o.ticks), off:set(o.off), assign };
+}
+let CTFCUP = ctfCupClean(null), CTFCUP_LOADED = false;
+function ctfCupEnsure(){   // (the saved setup is read when the screen opens: the plan lists it checks against are defined further down the file)
+  if(CTFCUP_LOADED) return; CTFCUP_LOADED = true;
+  try{ const raw = localStorage.getItem(CTFCUP_KEY); if(raw) CTFCUP = ctfCupClean(JSON.parse(raw)); }catch(e){}
+}
 function ctfCupSave(){ try{ localStorage.setItem(CTFCUP_KEY, JSON.stringify(CTFCUP)); }catch(e){} }
 function ctfCupPool(){ return ROSTER.filter(r=>r.play && isUnlocked(r) && !oneBanned(r)); }
-function openCtfCup(){ CTFCUP = ctfCupClean(CTFCUP); go('ctfCupSetup'); }
+function openCtfCup(){ ctfCupEnsure(); CTFCUP = ctfCupClean(CTFCUP); go('ctfCupSetup'); }
 // ---- the setup screen ----
 const CTFCUP_ROWS = [
   ['teams', 'Teams', ()=>CTFCUP_SIZES.map(n=>[n, n + ' teams'])],
@@ -6681,9 +6707,13 @@ function ctfCupTeamsRender(){
     const sk = document.createElement('button'); sk.className = 'cupchip'; const SKN = ['Easy', 'Normal', 'Hard'];
     sk.textContent = CTFCUP.skill[i] < 0 ? 'CPU: cup default' : 'CPU: ' + SKN[CTFCUP.skill[i]]; sk.title = 'The CPU skill of this team (the cup default, or its own)';
     sk.onclick = ()=>{ CTFCUP.skill[i] = ((CTFCUP.skill[i] + 2) % 4) - 1; ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(sk);
+    const st = CTFCUP.strat[i], sb = document.createElement('button'); sb.className = 'cupchip' + (st.mode !== 'auto' ? ' on' : ''); sb.textContent = 'Plan: ' + { auto:'strategist', fixed:'fixed', adapt:'fixed, then adapt' }[st.mode];
+    sb.title = 'Strategy: the strategist chooses (auto); your own plan all match (fixed); your plan to begin with, then the strategist may switch (fixed, then adapt)';
+    sb.onclick = ()=>{ st.mode = CTFCUP_MODES[(CTFCUP_MODES.indexOf(st.mode) + 1) % 3]; ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(sb);
     const dice = document.createElement('button'); dice.className = 'cupchip'; dice.innerHTML = '&#127922; fill'; dice.title = 'Fill this team\'s empty seats from the draw';
     dice.onclick = ()=>{ ctfCupFillTeam(i, true); ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(dice);
     card.appendChild(head);
+    if(st.mode !== 'auto'){ const line = document.createElement('button'); line.className = 'ctfcup-plan'; line.textContent = ctfCupPlanText(i) + '  (edit)'; line.onclick = ()=>ctfCupPlanOpen(i); card.appendChild(line); }
     for(let k = 0; k < CTFCUP.size; k++){
       const nm = ctfCupSeatName(i, k), r = nm ? by(nm) : null, b = document.createElement('button'); b.className = 'ctfcup-seat' + (r ? ' on' : '');
       b.innerHTML = r ? '<span class="ctfcup-dot" style="background:' + r.color + '"></span>' + esc(r.name) : '<span class="ctfcup-dot"></span><i>random draw</i>';
@@ -6693,6 +6723,69 @@ function ctfCupTeamsRender(){
   }
   const sub = document.getElementById('ctfCupTeamsSub'); if(sub){ const have = CTFCUP.slots.reduce((s, r)=>s + r.filter(Boolean).length, 0); sub.textContent = have + ' of ' + (CTFCUP.teams*CTFCUP.size) + ' seats picked; the rest are drawn when the cup starts (nobody twice on a side)'; }
 }
+
+// ---- the plan editor: the planning menu's own tabs and lists, for one team, from the keyboard (Left/Right tab, Up/Down row, Space ticks, C clears, Esc closes) ----
+let CTFCUP_PLAN = null;   // { team, tab, cur } while the editor is open
+const CTFCUP_TABS = ['Preset', 'Build', 'Offence', 'Defence', 'Roles'];
+function ctfCupPlanText(i){
+  const st = CTFCUP.strat[i], P = st.preset && CTF_PRESETS[st.preset], n = Object.keys(st.ticks).length, r = Object.keys(st.assign).length;
+  return (P ? P.name : 'no preset') + ', ' + n + ' idea' + (n === 1 ? '' : 's') + ' ticked, ' + r + ' role' + (r === 1 ? '' : 's');
+}
+function ctfCupPlanRows(i, tab){
+  const st = CTFCUP.strat[i], m = { tab }, row = id=>({ id, text:CTF_PLAY_NAMES[id] || (CTF_BUILDS[id] && CTF_BUILDS[id].name) || id, on:!!st.ticks[id], pre:ctfPlanPresetHas(st.preset, id) && !st.off[id] && !st.ticks[id], off:ctfPlanPresetHas(st.preset, id) && !!st.off[id], kind:'tick', desc:ctfPlanDescOf('tick', id, m) });
+  if(tab === 0) return Object.keys(CTF_PRESETS).map(id=>({ id, text:CTF_PRESETS[id].name + ' - ' + CTF_PRESETS[id].desc, on:st.preset === id, kind:'preset', desc:ctfPlanDescOf('preset', id, m) }));
+  if(tab === 1) return Object.keys(CTF_BUILDS).filter(id=>id !== 'twin').map(row);
+  if(tab === 2) return CTF_OFFENCE.map(row);
+  if(tab === 3) return CTF_DEFENCE.concat(CTF_EXTRA_DEF).map(row);
+  return Array.from({ length:CTFCUP.size }, (_, k)=>{ const role = st.assign[k] || 'auto', nm = CTFCUP.slots[i][k]; return { id:k, text:(nm || 'Seat ' + (k + 1) + ' (random draw)'), role, kind:'role', desc:ctfPlanDescOf('role', role, m) }; });
+}
+// what a row does when it is toggled: the planning menu's own rules
+function ctfCupPlanToggle(i, r){
+  const st = CTFCUP.strat[i];
+  if(r.kind === 'preset'){ st.off = {}; st.preset = st.preset === r.id ? null : r.id; }
+  else if(r.kind === 'tick'){
+    if(st.ticks[r.id]) delete st.ticks[r.id];
+    else if(ctfPlanPresetHas(st.preset, r.id) && !st.off[r.id]) st.off[r.id] = true;
+    else if(st.off[r.id]) delete st.off[r.id];
+    else st.ticks[r.id] = true; }
+  else if(r.kind === 'role'){ const ch = CTF_ROLE_CHOICES, v = ch[(ch.indexOf(r.role) + 1) % ch.length]; if(v === 'auto') delete st.assign[r.id]; else st.assign[r.id] = v; }
+  ctfCupSave();
+}
+function ctfCupPlanOpen(i){
+  CTFCUP_PLAN = { team:i, tab:0, cur:0 }; ctfCupPlanDraw();
+}
+function ctfCupPlanClose(){ const ed = document.getElementById('ctfCupPlanEd'); if(ed) ed.style.display = 'none'; CTFCUP_PLAN = null; ctfCupTeamsRender(); }
+function ctfCupPlanDraw(){
+  const ed = document.getElementById('ctfCupPlanEd'), p = CTFCUP_PLAN; if(!ed || !p) return;
+  const rows = ctfCupPlanRows(p.team, p.tab); p.cur = Math.max(0, Math.min(p.cur, rows.length - 1));
+  ed.innerHTML = ''; ed.style.display = 'flex';
+  const head = document.createElement('div'); head.className = 'ctfcup-pickbar'; head.textContent = 'Team ' + (p.team + 1) + ' plan: ' + { fixed:'used all match, the strategist stays off', adapt:'used to begin with, then the strategist may switch', auto:'' }[CTFCUP.strat[p.team].mode]; ed.appendChild(head);
+  const tabs = document.createElement('div'); tabs.className = 'ctfcup-tabs';
+  CTFCUP_TABS.forEach((nm, k)=>{ const b = document.createElement('button'); b.className = 'cupchip' + (k === p.tab ? ' on' : ''); b.textContent = nm; b.onclick = ()=>{ p.tab = k; p.cur = 0; ctfCupPlanDraw(); }; tabs.appendChild(b); });
+  ed.appendChild(tabs);
+  const list = document.createElement('div'); list.className = 'ctfcup-planlist';
+  rows.forEach((r, k)=>{
+    const b = document.createElement('div'); b.className = 'ctfcup-planrow' + (k === p.cur ? ' cur' : '') + (r.off ? ' off' : ''); b.dataset.k = k;
+    const box = r.kind === 'role' ? '' : '<span class="ctfcup-box' + (r.on ? ' on' : r.pre ? ' pre' : '') + '"></span>';
+    b.innerHTML = box + '<span class="ctfcup-rowtext">' + esc(r.text) + '</span>' + (r.kind === 'role' ? '<span class="ctfcup-role' + (r.role === 'auto' ? '' : ' set') + '">[ ' + esc(r.role) + ' ]</span>' : '');
+    b.onclick = ()=>{ p.cur = k; ctfCupPlanToggle(p.team, r); ctfCupPlanDraw(); };
+    list.appendChild(b);
+  });
+  ed.appendChild(list);
+  const cur = rows[p.cur], d = document.createElement('div'); d.className = 'ctfcup-plandesc'; d.textContent = (cur && cur.desc) || ''; ed.appendChild(d);
+  const f = document.createElement('div'); f.className = 'ctfcup-planfoot'; f.textContent = 'Left/Right tab   Up/Down row   Space tick   C clear   Esc done   ·   ' + ctfCupPlanText(p.team); ed.appendChild(f);
+  const sel = list.querySelector('.cur'); if(sel && sel.scrollIntoView) try{ sel.scrollIntoView({ block:'nearest' }); }catch(e){}
+}
+function ctfCupPlanKey(e){
+  const p = CTFCUP_PLAN; if(!p) return;
+  const code = e.code, rows = ctfCupPlanRows(p.team, p.tab), eat = ()=>{ e.stopImmediatePropagation(); e.preventDefault(); };
+  if(code === 'Escape'){ eat(); ctfCupPlanClose(); return; }
+  if(code === 'ArrowLeft' || code === 'ArrowRight'){ eat(); p.tab = (p.tab + (code === 'ArrowRight' ? 1 : 4)) % 5; p.cur = 0; ctfCupPlanDraw(); return; }
+  if(code === 'ArrowUp' || code === 'ArrowDown'){ eat(); if(rows.length) p.cur = (p.cur + (code === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length; ctfCupPlanDraw(); return; }
+  if(code === 'Space' || code === 'Enter' || code === 'KeyX'){ eat(); const r = rows[p.cur]; if(r) ctfCupPlanToggle(p.team, r); ctfCupPlanDraw(); return; }
+  if(code === 'KeyC' || code === 'Backspace'){ eat(); CTFCUP.strat[p.team] = Object.assign(ctfCupCleanStrat(null, CTFCUP.size), { mode:CTFCUP.strat[p.team].mode }); ctfCupSave(); ctfCupPlanDraw(); return; }
+}
+if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfCupPlanKeys){ window.__ctfCupPlanKeys = true; window.addEventListener('keydown', ctfCupPlanKey, true); }
 function ctfCupPickOpen(team, seat){
   CTFCUP_PICK = { team, seat }; const box = document.getElementById('ctfCupPicker'); if(!box) return;
   const pool = ctfCupPool(), mates = new Set(CTFCUP.slots[team].filter((n, q)=>n && q !== seat));
@@ -6727,7 +6820,7 @@ function ctfCupMakeTeams(cfg){
     const members = cfg.slots[i].map(n=>(n && by(n)) || null);
     for(let k = 0; k < members.length; k++){ if(!members[k]) members[k] = draw(members.filter(Boolean)); }
     const ms = members.filter(Boolean);
-    teams.push({ id:i, name:teamName(ms, i), members:ms, tieKey:Math.random(), P:0, W:0, D:0, L:0, sf:0, sa:0, pts:0, group:Math.floor(i/4), groupRank:0, skill:cfg.skill[i] });
+    teams.push({ id:i, name:teamName(ms, i), members:ms, tieKey:Math.random(), P:0, W:0, D:0, L:0, sf:0, sa:0, pts:0, group:Math.floor(i/4), groupRank:0, skill:cfg.skill[i], strat:cfg.strat && cfg.strat[i] ? JSON.parse(JSON.stringify(cfg.strat[i])) : null });
   }
   return teams;
 }
@@ -7022,6 +7115,38 @@ function ctfStratLearn(fx, r){
     if(r.real && ps[i].swaps) for(const sw of ps[i].swaps) ctfStratBump(mm.all, sw, wgt*0.3, won);
   });
 }
+
+// ---- a team's own plan (its STRATEGY setting: 'fixed' all match, 'adapt' to begin with): it goes to the CPUs through the planning menu's own vote (ctfPlanVoteIn: pl.preset, pl.ticks, pl.assign, and pl.allow, so only the ticked ideas run) ----
+const CTF_FIXED = { name:'Fixed plan', preset:null, off:0.6, fort:0, ov:null, icon:'*' };
+function ctfStratDef(ss){ return ss.plan === 'custom' ? CTF_FIXED : CTF_STRATS[ss.plan]; }
+function ctfStratPlanObj(ss){ return ss.plan === 'custom' ? ss.model : Object.assign({ id:ss.plan }, CTF_STRATS[ss.plan]); }
+const CTF_ATT_ROLES = ['att', 'scout', 'keyrunner', 'runner'], CTF_DEF_ROLES = ['def', 'jailguard'];
+// the plan in the model's numbers: how many go out (the preset's lean, the roles given), how much the ticked builds protect, a jailbreak or two waves ticked
+function ctfStratFixedModel(st, n){
+  const P = st.preset && CTF_PRESETS[st.preset], has = id=>!!(st.ticks[id] || (ctfPlanPresetHas(st.preset, id) && !st.off[id]));
+  let off = P && P.defShare != null ? 1 - P.defShare : 0.6;
+  const roles = Object.keys(st.assign).map(k=>st.assign[k]), a = roles.filter(r=>CTF_ATT_ROLES.includes(r)).length, d = roles.filter(r=>CTF_DEF_ROLES.includes(r)).length;
+  if(a + d >= Math.ceil(n/2)) off = (a + (n - a - d)*off)/n;   // (the seats given a role count as they are, the rest as the preset leans)
+  let builds = 0; for(const id of Object.keys(CTF_BUILDS)) if(id !== 'twin' && has(id)) builds++;
+  return { id:'custom', off:clamp(off, 0, 1), fort:Math.min(0.3, 0.04*builds), jb:has('jailbreak'), tw:has('twowave'), ov:null };
+}
+// the plan it is nearest to, for what the opponents learn of it and what it teaches
+function ctfStratClassify(st, n){
+  const roles = Object.keys(st.assign).map(k=>st.assign[k]);
+  if(roles.length >= n && roles.every(r=>CTF_ATT_ROLES.includes(r))) return 'rush';
+  if(roles.length >= n && roles.every(r=>CTF_DEF_ROLES.includes(r))) return 'turtle';
+  const map = { fortress:'fortress', jailbreak:'jailbreak', twowaves:'twowaves', traps:'traps', allout:'hunt', turtle:'turtle' };
+  if(st.preset && map[st.preset]) return map[st.preset];
+  const off = ctfStratFixedModel(st, n).off;
+  return off >= 0.9 ? 'rush' : off <= 0.15 ? 'turtle' : off >= 0.75 ? 'hunt' : 'balanced';
+}
+function ctfStratFixedName(st){ const P = st.preset && CTF_PRESETS[st.preset], n = Object.keys(st.ticks).length; return 'Own plan' + (P ? ': ' + P.name : '') + (n ? ' + ' + n + ' ideas' : ''); }
+function ctfStratApplyFixed(L, t, st){
+  const pl = L.plans && L.plans[t], size = CTF.cupFix ? CTF.cupFix.size : 0; if(!pl) return;
+  const assign = {}; for(const k of Object.keys(st.assign)) assign[t*size + +k] = st.assign[k];   // (a seat's role goes to the fighter in it: team 0 holds fighters 0.., team 1 the ones after)
+  ctfPlanVoteIn(L, t, -1 - t, { preset:(st.preset && CTF_PRESETS[st.preset]) ? st.preset : null, ticks:Object.assign({}, st.ticks), off:Object.assign({}, st.off), assign });
+  pl.dealt = false;
+}
 // ---- the plan on the CPUs ----
 // the preset and the ticks a plan puts in the team plan (the same things the planning menu sets), and the roles it holds the CPUs to
 function ctfStratApply(L, t, id){
@@ -7029,9 +7154,9 @@ function ctfStratApply(L, t, id){
   pl.preset = def.preset && CTF_PRESETS[def.preset] ? def.preset : null;
   pl.ticks = def.preset ? ctfPlanPresetTicks(def.preset) : {};
   if(def.ov === 'def' && def.counter) pl.ticks.counter = true;
-  pl.assign = {}; pl.dealt = false;
+  pl.assign = {}; pl.dealt = false; pl.allow = null; pl.votes = {};   // (the owner's plan, if there was one, is let go of)
   if(!pl.built && pl.cpus.length) ctfPlanAssignBuildRoles(L, pl);
-  const ss = CTF.strat && CTF.strat[t]; if(ss){ ss.plan = id; ss.phase = def.ov === 'phase' ? ((L.playT || 0) > 600 ? 'back' : 'rush') : null; ss.phT = L.playT || 0; }   // (a plan taken up in mid-match starts at home, waiting)
+  const ss = CTF.strat && CTF.strat[t]; if(ss){ ss.model = null; ss.plan = id; ss.phase = def.ov === 'phase' ? ((L.playT || 0) > 600 ? 'back' : 'rush') : null; ss.phT = L.playT || 0; }   // (a plan taken up in mid-match starts at home, waiting)
 }
 // the known flags of a side: the other side's flags it has seen (or the radar showed), out where it can take them
 function ctfStratKnown(L, t){
@@ -7044,14 +7169,16 @@ function ctfStratBegin(L){
   if(!cf.pick){   // chosen once for the fixture (the side bid builds the match twice)
     const sides = (CTF.bidRes && CTF.bidRes.sd) ? CTF.bidRes.sd : null;
     cf.pick = ctfStratChoose(fx, cf.map, sides, cf.cap);
-    fx.plans = cf.pick.res.map(r=>({ id:r.id, name:CTF_STRATS[r.id].name, odds:r.odds, swaps:[] }));
+    [fx.a, fx.b].forEach((team, i)=>{ const st = team.strat, r = cf.pick.res[i];
+      if(st && st.mode !== 'auto'){ const cls = ctfStratClassify(st, cf.size); r.custom = st.mode; r.autoId = r.id; r.id = cls; if(r.all[cls] != null) r.odds = r.all[cls]; } });
+    fx.plans = cf.pick.res.map((r, i)=>{ const st = (i ? fx.b : fx.a).strat; return { id:r.id, name:r.custom ? ctfStratFixedName(st) + (r.custom === 'adapt' ? ' (may adapt)' : '') : CTF_STRATS[r.id].name, odds:r.odds, swaps:[], fixed:!!r.custom }; });
   }
   CTF.strat = [0, 1].map(t=>{
-    const r = cf.pick.res[t], team = t ? fx.b : fx.a;
-    const ss = { t, team, plan:r.id, first:r.id, phase:null, phT:0, odds:r.odds, all:r.all, talk:r.talk, talkLines:[], last:'', lastT:0, oppRaid:0.5, samples:0, swapT:0, seen:{} };
-    return ss;
+    const r = cf.pick.res[t], team = t ? fx.b : fx.a, own = !!r.custom, st = team.strat;
+    return { t, team, plan:own ? 'custom' : r.id, first:r.id, phase:null, phT:0, odds:r.odds, all:r.all, talk:own ? [] : r.talk, talkLines:[], last:'', lastT:0, oppRaid:0.5, samples:0, swapT:0, seen:{},
+      model:own ? ctfStratFixedModel(st, cf.size) : null, locked:r.custom === 'fixed', note:own ? (r.custom === 'fixed' ? 'The owner\'s plan, all match: the strategist stays off' : 'The owner\'s plan first: the strategist may switch') : '' };
   });
-  for(const t of [0, 1]) ctfStratApply(L, t, CTF.strat[t].plan);
+  for(const t of [0, 1]){ const ss = CTF.strat[t]; if(ss.plan === 'custom') ctfStratApplyFixed(L, t, ss.team.strat); else ctfStratApply(L, t, ss.plan); }
 }
 // the words of the discussion, in the spectator's panel: each member says what they would play, then the team settles
 function ctfStratTalk(L, ss){
@@ -7067,7 +7194,7 @@ function ctfStratStep(L){
 }
 function ctfStratTeam(L, ss, t){
   const pl = L.plans && L.plans[t]; if(!pl) return;
-  const def = CTF_STRATS[ss.plan], T = L.playT, o = 1 - t, cpus = pl.cpus.map(i=>fighters[i]).filter(Boolean), up = cpus.filter(f=>!f.dead && f._jail == null), mid = L.map.WW/2;
+  const def = ctfStratDef(ss), own = ss.plan === 'custom', T = L.playT, o = 1 - t, cpus = pl.cpus.map(i=>fighters[i]).filter(Boolean), up = cpus.filter(f=>!f.dead && f._jail == null), mid = L.map.WW/2;
   const need = ctfNeed(L, t), known = ctfStratKnown(L, t), kf = known/Math.max(1, need), jailMine = cpus.filter(f=>f._jail != null).length;
   // what this side has seen of the other: foes on its own half that one of its fighters (or a minimap) can place, as a share of the foes still free
   const foes = fighters.filter(g=>g.team === o && !g.dead && g._jail == null);
@@ -7085,9 +7212,9 @@ function ctfStratTeam(L, ss, t){
     ss.phase = ph; mode = ph === 'back' ? 'def' : 'att';
   }
   ss.mode = mode || 'auto';
-  for(const f of cpus){ if(mode) pl.assign[f.idx] = mode; else if(pl.assign[f.idx] === 'att' || pl.assign[f.idx] === 'def') delete pl.assign[f.idx]; }
+  if(!own) for(const f of cpus){ if(mode) pl.assign[f.idx] = mode; else if(pl.assign[f.idx] === 'att' || pl.assign[f.idx] === 'def') delete pl.assign[f.idx]; }   // (the owner's plan keeps its own roles)
   // a look again, every 10 s from the first 30 s: from the state of the match, which plan would be best now
-  if(T >= 1800 && T % 600 === 6 && T - ss.swapT >= 1200 && !CTF.stratFixed) ctfStratReeval(L, ss, t, { need, known, kf, jailMine, up:up.length });
+  if(T >= 1800 && T % 600 === 6 && T - ss.swapT >= 1200 && !CTF.stratFixed && !ss.locked) ctfStratReeval(L, ss, t, { need, known, kf, jailMine, up:up.length });
 }
 function ctfStratReeval(L, ss, t, k){
   const cf = CTF.cupFix, o = 1 - t, fx = cf.fx, ps = cf.pick, Mp = ps.Mp, T = ps.T, R = Math.random, ids = CTF_STRAT_IDS;
@@ -7098,28 +7225,30 @@ function ctfStratReeval(L, ss, t, k){
   // the foe is taken as it has been seen to play: the share of its fighters out on this side, with the walls the plan it is likely on would have
   const foeId = ps.res[o].id, foePl = { id:'seen', ov:null, fixed:clamp(0.15 + ss.oppRaid*1.1, 0.05, 1), fort:CTF_STRATS[foeId].fort, off:ss.oppRaid, jb:false, tw:false };
   const capT = Math.max(init.t + 2, ps.capT), cur = ss.plan, vals = {};
-  for(const p of ids){ const mine = Object.assign({ id:p }, CTF_STRATS[p]); vals[p] = (t === 0) ? ctfFluidP(T, Mp, mine, foePl, init, capT, 14, R) : 1 - ctfFluidP(T, Mp, foePl, mine, init, capT, 14, R); }
+  const val = mine=>(t === 0) ? ctfFluidP(T, Mp, mine, foePl, init, capT, 14, R) : 1 - ctfFluidP(T, Mp, foePl, mine, init, capT, 14, R);
+  for(const p of ids) vals[p] = val(Object.assign({ id:p }, CTF_STRATS[p]));
+  if(cur === 'custom') vals.custom = val(ss.model);
   let best = cur, bv = vals[cur] + 0.07;   // a clear gain to change
   for(const p of ids) if(vals[p] > bv){ bv = vals[p]; best = p; }
   ss.odds = vals[cur];
   if(best !== cur){
-    const from = cur; ss.swapT = L.playT; ss.last = 'switches from ' + CTF_STRATS[from].name.toLowerCase() + ' to ' + CTF_STRATS[best].name.toLowerCase() + ' (foe sends ' + Math.round(ss.oppRaid*100) + '%, ' + Math.round(vals[best]*100) + '% to win)'; ss.lastT = L.playT;
+    const from = cur; ss.swapT = L.playT; ss.last = 'switches from ' + ctfStratDef(ss).name.toLowerCase() + ' to ' + CTF_STRATS[best].name.toLowerCase() + ' (foe sends ' + Math.round(ss.oppRaid*100) + '%, ' + Math.round(vals[best]*100) + '% to win)'; ss.lastT = L.playT;
     ctfStratApply(L, t, best); ss.phT = L.playT;
-    const rec = fx.plans[t]; if(rec){ rec.swaps = rec.swaps || []; rec.swaps.push(best); rec.name = CTF_STRATS[rec.id].name + ' > ' + CTF_STRATS[best].name; }
+    const rec = fx.plans[t]; if(rec){ rec.swaps = rec.swaps || []; rec.swaps.push(best); rec.name = (rec.fixed ? 'Own plan' : CTF_STRATS[rec.id].name) + ' > ' + CTF_STRATS[best].name; }
   }
 }
 // ---- what the spectator panel says ----
 function ctfStratLine(t){
   const ss = CTF.strat && CTF.strat[t]; if(!ss) return null;
-  return CTF_STRATS[ss.plan].name;
+  return ctfStratDef(ss).name;
 }
 function ctfStratRows(L, t){
   const ss = CTF.strat && CTF.strat[t]; if(!ss) return null;
-  const def = CTF_STRATS[ss.plan], rows = [['Plan', def.name]];
-  const modeTxt = def.ov === 'phase' ? { rush:'rushing', back:'fallen back, waiting for a flag to show', strike:'striking' }[ss.phase] || '' : def.ov === 'att' ? 'everyone goes, nobody home' : def.ov === 'def' ? 'everyone home' : '';
+  const def = ctfStratDef(ss), own = ss.plan === 'custom', rows = [['Plan', own ? ctfStratFixedName(ss.team.strat) : def.name]];
+  const modeTxt = own ? (ss.locked ? 'owner\'s plan, strategist off' : 'owner\'s plan, strategist may switch') : def.ov === 'phase' ? { rush:'rushing', back:'fallen back, waiting for a flag to show', strike:'striking' }[ss.phase] || '' : def.ov === 'att' ? 'everyone goes, nobody home' : def.ov === 'def' ? 'everyone home' : '';
   if(modeTxt) rows.push(['Mode', modeTxt]);
   rows.push(['Odds', Math.round(ss.odds*100) + '% to win (its own count)']);
-  const talk = L.phase !== 'play' ? ctfStratTalk(L, ss) : [];
+  const talk = L.phase !== 'play' ? (own ? [ss.note] : ctfStratTalk(L, ss)) : [];
   if(talk.length){ const show = talk.slice(-2); for(const x of show) rows.push(['Talk', x]); }
   else if(ss.last) rows.push(['Last', ss.last + ' (' + Math.floor(ss.lastT/3600) + ':' + String(Math.floor(ss.lastT/60) % 60).padStart(2, '0') + ')']);
   return rows;
@@ -7133,10 +7262,16 @@ function ctfStratReport(){
 }
 // ---- a fixture nobody watches: the same strategists, the model run once ----
 function ctfStratSim(fx){
-  const mapId = ctfCupFxMap(fx), cap = ctfCupCap(fx), ch = ctfStratChoose(fx, mapId, null, cap), R = Math.random;
-  const pa = Object.assign({ id:ch.res[0].id }, CTF_STRATS[ch.res[0].id]), pb = Object.assign({ id:ch.res[1].id }, CTF_STRATS[ch.res[1].id]);
-  const S = ctfFluidRun(ch.T, ch.Mp, pa, pb, null, ch.capT, R);
-  fx.plans = ch.res.map(r=>({ id:r.id, name:CTF_STRATS[r.id].name, odds:r.odds, swaps:[] }));
+  const mapId = ctfCupFxMap(fx), cap = ctfCupCap(fx), ch = ctfStratChoose(fx, mapId, null, cap), R = Math.random, size = TOURNEY.teamSize;
+  const planOf = id=>Object.assign({ id }, CTF_STRATS[id]);
+  const own = [fx.a, fx.b].map((team, i)=>{ const st = team.strat; if(!st || st.mode === 'auto') return null; return { mode:st.mode, st, cls:ctfStratClassify(st, size), model:ctfStratFixedModel(st, size) }; });
+  const first = i=>own[i] ? own[i].model : planOf(ch.res[i].id), later = i=>(own[i] && own[i].mode === 'fixed') ? own[i].model : planOf(ch.res[i].id);   // (a fixed plan all match; 'adapt': the owner's plan, then the strategist's)
+  let S;
+  if(own.some(o=>o && o.mode === 'adapt')){   // the owner's plans for the first two ticks (40 s), then each adapting side on the strategist's plan
+    const S1 = ctfFluidNew(ch.T); while(!S1.over && S1.t < 2) ctfFluidStep(S1, ch.T, ch.Mp, [first(0), first(1)], R);
+    S = S1.over ? S1 : ctfFluidRun(ch.T, ch.Mp, later(0), later(1), { t:S1.t, c:S1.c, up:S1.up, jl:S1.jl, kn:S1.kn, lastCap:S1.lastCap, ph:S1.ph, pt:S1.pt }, ch.capT, R);
+  } else S = ctfFluidRun(ch.T, ch.Mp, first(0), first(1), null, ch.capT, R);
+  fx.plans = ch.res.map((r, i)=>{ const o = own[i]; return o ? { id:o.cls, name:ctfStratFixedName(o.st) + (o.mode === 'adapt' ? ' > ' + CTF_STRATS[r.id].name : ''), odds:r.all[o.cls] != null ? r.all[o.cls] : r.odds, swaps:o.mode === 'adapt' ? [r.id] : [], fixed:true } : { id:r.id, name:CTF_STRATS[r.id].name, odds:r.odds, swaps:[] }; });
   let win = S.win;
   if(win < 0 && fx.kind !== 'group') win = R() < 0.5 ? 0 : 1;
   return { sa:S.c[0], sb:S.c[1], win, why:'sim' };
@@ -7146,7 +7281,7 @@ function ctfStratSkipRoll(fx, L){
   const cf = CTF.cupFix, ps = cf && cf.pick; if(!ps || !CTF.strat) return null;
   const R = Math.random, cnt = (t, jl)=>fighters.filter(g=>g.team === t && !g.dead && ((g._jail != null) === jl)).length;
   const init = { t:Math.round(L.playT/60/CTF_FLUID_DT), c:L.score.slice(), up:[cnt(0, false), cnt(1, false)], jl:[cnt(0, true), cnt(1, true)], kn:[0, 1].map(t=>clamp(ctfStratKnown(L, t)/Math.max(1, ctfNeed(L, t)), 0, 1)), lastCap:Math.round(L.lastCapT/60/CTF_FLUID_DT) };
-  const pa = Object.assign({ id:CTF.strat[0].plan }, CTF_STRATS[CTF.strat[0].plan]), pb = Object.assign({ id:CTF.strat[1].plan }, CTF_STRATS[CTF.strat[1].plan]);
+  const pa = ctfStratPlanObj(CTF.strat[0]), pb = ctfStratPlanObj(CTF.strat[1]);
   const S = ctfFluidRun(ps.T, ps.Mp, pa, pb, init, Math.max(init.t + 2, ps.capT), R);
   let win = S.win; if(win < 0 && fx.kind !== 'group') win = R() < 0.5 ? 0 : 1;
   return { sa:S.c[0], sb:S.c[1], win, why:'skip' };
