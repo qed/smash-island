@@ -67,7 +67,7 @@ describe('the team plan', () => {
     const second = w.eval('Object.keys(CTF_BUILDS).filter(function(id){ return id !== "twin"; })[1]');
     expect(w.eval(`!!CTF.live.plans[__me.team].ticks['${second}']`), 'a ticked setup is in the plan').toBe(true);
     // on the Build tab the preset's first setup shows as included (not ticked); a press switches it off, which takes it out of the plan
-    w.eval(`CTF.menu.tab = 1; CTF.menu.cur = Object.keys(CTF_BUILDS).filter(function(id){ return id !== "twin"; }).indexOf('${pbuild}');`);
+    w.eval(`CTF.menu.tab = 1; CTF.menu.cur = ctfMenuRows().findIndex(function(r){ return r.id === '${pbuild}'; });`);   // (a row that is in the plan is followed by its job slots, so the rows are looked up by name)
     let prow = J(w, `ctfMenuRows()[CTF.menu.cur]`); expect(prow.pre && !prow.on, 'included by the preset, not the human\'s own tick').toBe(true);
     key('Space'); expect(w.eval(`!!CTF.live.plans[__me.team].allow['${pbuild}']`), 'unticked: out of the plan').toBe(false);
     key('KeyC'); expect(w.eval('Object.keys(CTF.live.plans[__me.team].ticks).length'), 'clear: back to the CPUs\' own judgement').toBe(0);
@@ -139,5 +139,129 @@ describe('the team plan', () => {
     // cleared: the CPUs judge again, anything may run
     w.eval(`ctfPlanVoteIn(${L}, 1, 1, { preset:null, ticks:{}, off:{}, assign:{} });`);
     expect(w.eval('CTF.live.plans[1].allow'), 'no plan').toBeNull(); expect(w.eval(`ctfPlanOk(CTF.live.plans[1], 'lateturtle')`)).toBe(true);
+  });
+
+  // THE "MUST BE POSSIBLE" CHECK (the owner, 2026-10-16: "the flagger is flagging 1-area gap setups which are possible by all fighters"; "i had made a setup with 2 entrances from the top that would drop people into stunpads, that got removed
+  // and made open-air"). The graph has to agree with the physics: a one-row climb or a one-piece gap is made from a narrow window of takeoff spots, and a room with holes in its roof is entered by dropping through them.
+  const arena = (w, extra) => w.eval(`(function(){ var M = CTF.map, fl = { x:0, y:2160, w:4800, h:240, solid:true }, Yf = 2160;
+    var B = function(x, y){ return { x:x, y:y, w:120, h:120, solid:true, hop:false }; }, W = function(x, y){ return { x:x, y:y, w:60, h:240, solid:true, hop:false }; }, P = function(x, y){ return { x:x, y:y, w:180, h:16, solid:false, hop:true }; };
+    var pieces = (${extra})(B, W, P, Yf);
+    var nav = ctfNavNew(Object.assign({}, M, { plats:[fl].concat(pieces) }), null, pieces.map(function(p){ return { x:p.x, y:p.y, w:p.w, h:p.h }; }));   /* (a patched graph, the pieces being what was built: the fine probe near them) */ while(!nav.ready) ctfNavTick(nav, 80);
+    var left = ctfNavNodeAt(nav, 1000, Yf, 6), at = function(x, y){ var n = ctfNavNodeAt(nav, x, y, 6); return n && ctfNavPath(nav, left.id, n.id, { doorOK:function(){ return true; }, now:0 }) ? true : false; };
+    return { nav:nav, at:at }; })()`);
+  it('the graph agrees with the physics on one-piece gaps and one-row climbs: setups that were missed because the takeoff spots were sampled too coarsely are reachable', { timeout:150000 }, () => {
+    const { window: w } = loadMonolith(77);
+    w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.skipNav=true; CTF.forceMap='castle'; beginMatchNow();`);
+    // three random setups the old probe missed: a block top reached from the floor by a run and a double jump from a 30-pixel window; a plat one row up and 38 px off the end of a block; a wall top reached from a plat
+    const cases = [
+      ['(B, W, P, Y)=>[B(2280, Y-120), B(2400, Y-360), P(2460, Y-420), P(2430, Y-120), P(2490, Y-180), W(2880, Y-240), B(2640, Y-360), W(2940, Y-600), W(2160, Y-360)]', 2340, 2040],
+      ['(B, W, P, Y)=>[P(2550, Y-480), B(2400, Y-360), B(2520, Y-120), P(2490, Y-180), B(3000, Y-120), P(2100, Y-240), P(2280, Y-120)]', 2640, 1680],
+      ['(B, W, P, Y)=>[W(2220, Y-480), W(2820, Y-480), W(2460, Y-600), P(2490, Y-300), P(2310, Y-180), P(2160, Y-60), P(2520, Y-120)]', 2250, 1680]];
+    for (const [pc, x, y] of cases) { const a = arena(w, pc); expect(a.at(x, y), 'reachable: ' + pc.slice(0, 40)).toBe(true); }
+  });
+
+  it('a room with two holes in its roof is a way in (you drop through onto the stun pads), a roof with no hole is not, and stun pads are never walls', { timeout:150000 }, () => {
+    const { window: w } = loadMonolith(78);
+    w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.skipNav=true; CTF.forceMap='castle'; beginMatchNow();`);
+    // floor at 2160; stairs up to the roof (two plats, a row each); walls 2400 and 2940; a roof of blocks at 1800 with holes of one piece (120) or none
+    const room = (holes) => `(B, W, P, Y)=>[P(1980, Y-120), P(2160, Y-240), W(2400, Y-240), W(2940, Y-240), ${holes ? 'B(2400, Y-360), B(2640, Y-360), B(2880, Y-360)' : 'B(2400, Y-360), B(2520, Y-360), B(2640, Y-360), B(2760, Y-360), B(2880, Y-360)'}]`;
+    expect(arena(w, room(true)).at(2700, 2160), 'the room with two roof holes can be entered').toBe(true);
+    expect(arena(w, room(false)).at(2700, 2160), 'the room with a solid roof cannot').toBe(false);
+    // the check's own list of pieces never holds a trap: only walls, platforms and trapdoors count
+    expect(w.eval(`['spikes', 'stun', 'spring'].some(function(k){ return ctfEditStructural({ tool:'trap', kind:k }); })`), 'a trap is not a wall').toBe(false);
+  });
+
+  it.each([['factory', 5580, 3240], ['oak', 7080, 7560]])('(%s: the floor, and the mill under the map) when the check must take something away it takes only the piece that seals, not everything placed after it', { timeout:300000 }, (map, X0, Y0) => {
+    const { window: w } = loadMonolith(79);
+    w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap='${map}'; beginMatchNow(); fighters.forEach(function(f){ f.controller='ai'; f.you=false; });`);
+    for (let i = 0; i < 4000 && w.eval('!(CTF.nav && CTF.nav.ready && CTF.live.phase === "hide")'); i++) { w.eval('step()'); if (i % 50 === 0) w.eval('CTF.nav && !CTF.nav.ready && ctfNavTick(CTF.nav, 200)'); }
+    // a sealed room built on the factory's floor (the stairs and walls, then a roof of six blocks with no hole, the pads inside) in the clear space above it
+    const r = JSON.parse(w.eval(`JSON.stringify((function(){ var L = CTF.live, M = CTF.map, f = fighters.find(function(q){ return q.team === 0; }); L.pts[f.idx] = 9999; var X = ${X0}, Y = ${Y0};
+      M.plats = M.plats.filter(function(q){ return !(q.y < Y - 5 && q.y + q.h > Y - 800 && q.x < X + 900 && q.x + q.w > X - 520); }); ctfRebuildDyn(L);
+      var put = function(t, k, x, y){ return ctfEditPlaceAt(f, t, k, x, y); }, n = 0;
+      put('plat', 'plat', X - 300, Y - 120); put('plat', 'plat', X - 90, Y - 240); put('wall', 'wall', X + 30, Y + 120 - 240); put('wall', 'wall', X + 540 + 30, Y + 120 - 240);
+      for (var k = 0; k < 6; k++) if (put('wall', 'block', X + k*120 + 60, Y - 360 + 60)) n++;
+      put('trap', 'stun', X + 180, Y - 10); put('trap', 'stun', X + 420, Y - 10);
+      var fl = L.flags.find(function(q){ return q.team === 0; }); ctfPlaceFlag(fl, X + 300, Y);
+      var before = L.edits.filter(function(e){ return ctfEditStructural(e); }).length;
+      ctfFixBegin(L); var g = 0; while (L.fix && g++ < 60000) ctfFixStep(L);
+      return { roof:n, before:before, removed:L.removedByFix || 0, left:L.edits.filter(function(e){ return ctfEditStructural(e); }).length }; })())`));
+    expect(r.roof, 'the six roof blocks went down').toBe(6);
+    expect(r.removed, 'the sealed room lost the piece that sealed it').toBeGreaterThanOrEqual(1);
+    expect(r.removed, 'and only that piece (a stripped room, "open-air", was the bug)').toBeLessThanOrEqual(2);
+    expect(r.left, 'the rest of the room is still there').toBe(r.before - r.removed);
+  });
+
+  // JOBS AND AREAS (the owner, 2026-10-16: "select someone for that job"; "assign ppl areas"): a human picks which CPU fills a ticked idea's job slot and sends a CPU to an area (guard it on its own side, search and raid it on the other).
+  it('a picked teammate fills its job and goes to its area; picks that name a human, a stranger or an area that does not exist are dropped; a plan made in the bid is kept', () => {
+    const { window: w } = loadMonolith(80);
+    w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=16; SETTINGS.itemRate=0; CTF.skipNav=true; CTF.forceMap='castle'; beginMatchNow(); fighters[0].controller='local'; fighters[2].controller='remote';`);
+    w.eval(`ctfPlanBegin(CTF.live)`);
+    const cpus = J(w, `fighters.filter(function(f){ return f.team === 0 && !ctfIsHuman(f); }).map(function(f){ return f.idx; })`);
+    const [a, b, c, d] = cpus;
+    const areas = J(w, `ctfPlanAreas(CTF.live.map).map(function(q){ return { id:q.id, side:q.side, name:q.name, x0:q.x0, x1:q.x1, y0:q.y0, y1:q.y1, room:q.room }; })`);
+    const own = areas.find(q => q.side === 0 && !q.room), foe = areas.find(q => q.side === 1 && !q.room);
+    expect(areas.length, 'the map is split in areas').toBeGreaterThan(6); expect(areas.every(q => q.name && q.name.length < 24), 'each has a short name').toBe(true);
+    expect(new Set(areas.map(q => q.name)).size, 'names are all different').toBe(areas.length);
+    w.eval(`ctfPlanVoteIn(CTF.live, 0, 0, { preset:null, ticks:{ scout:true, jailguard:true }, off:{}, assign:{}, jobs:{ 'scout.scout':${a}, 'jailguard.d':${b} }, areas:{ ${c}:'${own.id}', ${d}:'${foe.id}' } });`);
+    expect(w.eval(`ctfPlanForcedRole(CTF.live.plans[0], ${a})`), 'a scout job is an attacker').toBe('att');
+    expect(w.eval(`ctfPlanForcedRole(CTF.live.plans[0], ${b})`), 'a jail guard job is a defender').toBe('def');
+    expect(w.eval(`ctfPlanForcedRole(CTF.live.plans[0], ${c})`), 'an area on its own side: defend').toBe('def');
+    expect(w.eval(`ctfPlanForcedRole(CTF.live.plans[0], ${d})`), 'an area on the other side: attack').toBe('att');
+    expect(w.eval(`ctfPlanJobDef(CTF.live.plans[0], ${b})`)).toBe('jailguard');
+    // the offence job overrules the dealt tags
+    w.eval(`fighters[${a}]._ai = fighters[${a}]._ai || {}; fighters[${a}]._ai.role = 'att'; window.__tags = {}; window.__run = {}; ctfPlanApplyJobs(CTF.live, CTF.live.plans[0], { tags:window.__tags, run:window.__run, take:function(){} });`);
+    expect(w.eval(`window.__tags[${a}]`), 'the picked teammate is the scout').toBe('scout');
+    // the area goal: a point inside the area (its own side: guard; the other side: guard it too until a flag is seen there)
+    for (const [idx, ar] of [[c, own], [d, foe]]) {
+      const g = J(w, `(function(){ var f = fighters[${idx}], got = null; f._cf = -1; f.dead = false; ctfPlanAreaGoal(f, f._ai || {}, CTF.live, null, 1000, function(x){ got = x; }); return got; })()`);
+      expect(g && g.area, 'a goal in area ' + ar.id).toBe(ar.id);
+      expect(g.x >= ar.x0 && g.x <= ar.x1 && g.y >= ar.y0 && g.y <= ar.y1, 'inside the area').toBe(true);
+    }
+    // a guest's vote is checked: a human as the job holder, a teammate of the other side, an area that is not there
+    w.eval(`ctfPlanVoteMsg({ idx:2, vote:{ preset:null, ticks:{ scout:true }, off:{}, assign:{}, jobs:{ 'scout.scout':0, 'scout.nothing':${a}, 'nonsense.x':${a} }, areas:{ ${c}:'zzz', 1:'${own.id}' } } });`);
+    const v = J(w, `CTF.live.plans[0].votes[2]`);
+    expect(Object.keys(v.jobs), 'no job held by a human or in a slot that is not one').toEqual([]); expect(Object.keys(v.areas), 'no area that does not exist, none for the other side').toEqual([]);
+    // a plan made in the bid holds only the humans' word (no CPUs yet): when the match begins, the real plan is made and takes that word in
+    w.eval(`CTF.live.plans = [0, 1].map(function(t){ return { t:t, cpus:[], votes:{}, ticks:{ zone:true }, allow:{ zone:true }, jobs:{}, areas:{}, assign:{}, preset:null }; }); ctfPlanBegin(CTF.live);`);
+    expect(w.eval('CTF.live.plans[0].allow.zone === true && CTF.live.plans[0].cpus.length > 0 && CTF.live.plans[0].begun === true'), 'the word is kept and the plan has its CPUs').toBe(true);
+  });
+
+  it('the menu: a ticked idea shows its job slots and Space picks a teammate for one; the Areas tab moves over the map\'s areas and Space sends the chosen teammate there; Left/Right still change the tab', () => {
+    const { window: w } = loadMonolith(81);
+    w.eval(`SETTINGS.mode='ctf'; SETTINGS.count=16; SETTINGS.itemRate=0; CTF.skipNav=true; CTF.forceMap='castle'; beginMatchNow(); fighters.forEach(function(f){ if(!f.you) f.controller='ai'; }); window.__me = fighters.find(function(f){ return f.you; });`);
+    step(w, 5);
+    const key = (code) => w.dispatchEvent(new w.KeyboardEvent('keydown', { code, bubbles: true, cancelable: true }));
+    key('KeyP'); key('ArrowRight'); key('ArrowRight');   // Preset > Build > Offence
+    expect(w.eval('CTF.menu.tab'), 'Left/Right change the tab').toBe(2);
+    const before = J(w, 'ctfMenuRows().length');
+    key('Space');   // tick the first idea (Scout first)
+    const rows = J(w, 'ctfMenuRows()');
+    expect(rows.length, 'its job slot appears under it').toBeGreaterThan(before);
+    expect(rows[1].kind, 'a job row').toBe('job'); expect(rows[1].whoName, 'empty slots fill by themselves').toBe('auto');
+    key('ArrowDown'); key('Space');   // the slot: the first CPU teammate
+    const jobs = J(w, 'CTF.live.plans[__me.team].jobs');
+    expect(Object.keys(jobs), 'the pick is in the plan').toEqual(['scout.scout']);
+    expect(w.eval(`fighters[${jobs['scout.scout']}].team === __me.team && !ctfIsHuman(fighters[${jobs['scout.scout']}])`), 'a CPU teammate').toBe(true);
+    for (let k = 0; k < 3; k++) key('ArrowRight');   // Offence > Defence > Roles > Areas
+    expect(w.eval('CTF.menu.tab'), 'the Areas tab').toBe(5);
+    key('ArrowDown'); key('ArrowDown'); key('Space');
+    const areas = J(w, 'CTF.live.plans[__me.team].areas'), ids = Object.keys(areas);
+    expect(ids.length, 'a teammate is sent to an area').toBe(1);
+    expect(w.eval(`ctfPlanAreas(CTF.live.map)[2].id`), 'the one under the cursor').toBe(areas[ids[0]]);
+    key('Space'); expect(Object.keys(J(w, 'CTF.live.plans[__me.team].areas')).length, 'again takes them back').toBe(0);
+    key('Escape'); expect(w.eval('ctfMenuOpen()')).toBe(false);
+  });
+
+  it('the Flag Cup has its own advanced-rules switch (off by default): a fixture of a cup with it on bargains, one with it off does not', () => {
+    const { window: w } = loadMonolith(82);
+    expect(w.eval('ctfCupClean(null).adv'), 'off by default').toBe(0);
+    expect(w.eval('ctfCupClean({ adv:1 }).adv'), 'remembered when on').toBe(1);
+    expect(w.eval(`CTFCUP_ROWS.some(function(r){ return r[0] === 'adv'; })`), 'a row on the setup screen').toBe(true);
+    expect(w.eval('ctfAdvOn()'), 'the player\'s own setting is off').toBe(false);
+    for (const adv of [1, 0]) {
+      w.eval(`CTF.cupFix = { fx:{}, a:0, b:1 }; TOURNEY = { active:true, game:'ctf', ctf:{ cfg:{ adv:${adv} } } };`);
+      expect(w.eval('ctfAdvOn()'), 'a cup with advanced rules ' + adv).toBe(adv === 1);
+    }
   });
 });
