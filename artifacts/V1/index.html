@@ -36620,7 +36620,7 @@ function step(){
     // control-reversed (Remote hack): handled in input reading below via f.ctrlRev
     // Leafy — Sharp Shadow dash: stay fast + invincible, damage anyone passed through (once each)
     if(f._dashing>0){
-      f._dashInfo = { down: f._dashVY > 0, spd: Math.abs(f._dashSpeed || 22), dir: f.face, t: hazardT };   // (dash tech: mtDashJump)
+      f._dashInfo = { down: f._dashVY > 0, air: !f.onground || !!(f._dashInfo && f._dashInfo.air && hazardT - f._dashInfo.t <= 1), spd: Math.abs(f._dashSpeed || 22), dir: f.face, t: hazardT };   // (dash tech: mtDashJump)
       f._dashing--;
       f.vx = f.face*(f._dashSpeed||22);      // dash speed set here; movement block skips the clamp while dashing
       if(f._dashVY){ f.vy = f._dashVY; }     // diagonal dash: up-dash / down-dash hold vertical speed
@@ -36736,7 +36736,7 @@ function step(){
       if(!inp.left&&!inp.right && f.onground && !(f._sm && f._sm.drive) && !(f._gotcha && f._gotcha.phase==='lunge')) f.vx*=(f.iceUntil>0?0.99:FRICTION);
       if(f.iceUntil>0) f.iceUntil--;
       if(f._dashing>0){ f.vx=f.face*(f._dashSpeed||22); }   // dash overrides normal movement/clamp
-      else if(f._hyperT>0 && !f.onground){ f._hyperT--; f.vx *= HYPER_DECAY; if(hazardT%2===0) puff(f.x - Math.sign(f.vx||1)*f.r, f.y + (Math.random()*16-8), f.color, 2); }   // a hyper's or a super's speed is carried to the landing (dash tech)
+      else if(f._hyperT>0 && !f.onground){ f._hyperT--; f.vx *= f._hyperWD ? WD_DECAY : HYPER_DECAY; if(hazardT%2===0) puff(f.x - Math.sign(f.vx||1)*f.r, f.y + (Math.random()*16-8), f.color, 2); }   // a hyper's or a super's speed is carried to the landing (dash tech)
       else if(f._gotcha && f._gotcha.phase==='lunge'){ f.vx=f.face*f._gotcha.spd; }   // Bot's GOTCHA! lunge holds its own speed
       else if(f._nail){ }                    // Naily's dash holds its own speed (see the _nail block)
       else if(f._sm && f._sm.drive){ if(f._sm.vmax){ const c = f._sm.vmax; f.vx = Math.max(-c, Math.min(c, f.vx)); } }   // so does a smash that moves you (SM_PAT); a steered hop is capped
@@ -40901,7 +40901,11 @@ function aiMovesetUse(f, inp, sp){
 // The dash refills on landing: one air dash an airtime (mtAirDashOk), so nothing chains in the air; the jump is the ground jump (one is used up,
 // the double jump is still there). The speed is carried until the fighter lands (_hyperT; the usual speed cap and the ground friction wait for the
 // landing) and a short trail of puffs shows it. Humans on any dasher, and the CPU on a converted one (Leafy): mtOn.
-const HYPER_K = 1.4, HYPER_JUMP = 0.5, REV_K = 0.8, HYPER_DECAY = 0.985, WD_GRACE = 5, DASH_JUMP_GRACE = 4;
+const HYPER_K = 1.4, HYPER_JUMP = 0.5, REV_K = 0.8, HYPER_DECAY = 0.985, WD_GRACE = 3, DASH_JUMP_GRACE = 4;
+// WAVEDASHES NERFED (the owner, 2026-10-16: "nerf wavedashes"): a hyper out of an AIR dash that landed is WD_K times the dash's speed, not HYPER_K,
+// its speed fades faster in the air (WD_DECAY), and the jump has to come within WD_GRACE = 3 frames of the landing (was 5). A hyper off a dash
+// started on the ground, the super and the reverse hyper are as they were.
+const WD_K = 1.15, WD_DECAY = 0.975;
 // "hypers should only be in ctf" (the owner, 2026-10-15): the dash tech (hyper, super, wavedash, reverse hyper) works in Capture the Flag and nowhere else. In every other mode
 // (FFA, 1v1, teams, the World Cup, bosses, online, Training) a jump out of a dash is the plain jump it was before the movesets, and a dasher's CPU never tries one.
 function hyperOk(){ return SETTINGS.mode === 'ctf'; }
@@ -40915,11 +40919,11 @@ function mtDashJump(f, inp){
   const spd = I.spd, dir = I.dir || f.face, back = dir > 0 ? !!inp.left : !!inp.right;   // (the arrow already turned her round this frame: the dash's own way is what counts)
   let vx, vy;
   if(back){ vx = -dir * spd * REV_K; vy = JUMP * HYPER_JUMP; f.face = -dir; }             // reverse hyper
-  else if(I.down){ vx = dir * spd * HYPER_K; vy = JUMP * HYPER_JUMP; f.face = dir; }      // hyper
+  else if(I.down){ vx = dir * spd * (I.air ? WD_K : HYPER_K); vy = JUMP * HYPER_JUMP; f.face = dir; }      // hyper (a wavedash's is weaker)
   else { vx = dir * spd; vy = JUMP; f.face = dir; }                                       // super
   f._dashing = 0; f._dashHits = null; f._dashDmg = 0; f._dashVY = 0; f._dashSpeed = 0; f._dashArmored = false; f._dashBoom = false; f._dashMargin = null; f._dashCuff = false; f._dashSummonHits = null;
   f._dashInfo = null;
-  f.vx = vx; f.vy = vy; f.jumps--; f.onground = false; f._hop = false; f._hyperT = 140; f._hyperKind = back ? 'rev' : (I.down ? 'hyper' : 'super');
+  f.vx = vx; f.vy = vy; f.jumps--; f.onground = false; f._hop = false; f._hyperT = 140; f._hyperKind = back ? 'rev' : (I.down ? 'hyper' : 'super'); f._hyperWD = !back && !!I.down && !!I.air;
   { const U = f._used || (f._used = {}); U[f._hyperKind] = (U[f._hyperKind] || 0) + 1; }
   f.flash = 6; for(let i = 0; i < 8; i++) puff(f.x - Math.sign(vx) * (6 + i * 7), f.y + f.r - 4 - Math.random() * 10, f.color, 3);
   if(f.you) SFX.jump();
