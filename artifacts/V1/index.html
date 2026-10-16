@@ -6994,7 +6994,7 @@ function ctfAiSee(L){
   for(const f of fighters){
     if(f._jail != null) continue;
     const t = f.team, pts = ctfNavSweep(nav, 1 - t), vis = ctfAiVisited(L, t);
-    const at = L.ai.visAt[t], SK = [0.7, 1, 1.15][ctfAiSkill()] || 1;
+    const at = L.ai.visAt[t], SK = ([0.7, 1, 1.15][ctfAiSkill()] || 1)*((L.plans && L.plans[t] && L.plans[t].tags && L.plans[t].tags[f.idx] === 'lookout') ? 1.9 : 1);   // (a lookout on high ground sees far)
     for(const p of pts){
       const dx = p.x - f.x, dy = p.y - f.y, lim = (p.cover ? 140 : 320)*SK;
       if(dx*dx + dy*dy > lim*lim) continue;
@@ -7318,6 +7318,7 @@ function ctfAiInputRaw(f){
   const holding = ai.goal && ai.goal.kind === 'jail' && ai.goal.role === 'hold';
   let foe = ctfAiFoe(f, carrying ? 90 : (holding ? 130 : (ai.role === 'def' ? 520 : 300)));
   if(!foe && ai.role === 'def' && !carrying){ const sf = ctfAiFoe(f, 1000); if(sf && (sf.hitstun > 0 || sf._trapT > 0)) foe = sf; }   // a stunned intruder is worth a run
+  { const pin = ctfPlanInput(f, ai, L, foe); if(pin) return pin; }   // (a jab to chip, a swing to smash a prop)
   if(foe && (carrying || (ai.role === 'def' ? foe.x < L.map.WW/2 === (f.team === 0) : true)) && ctfLOS(f.x, f.y - 6, foe.x, foe.y - 6)){
     if(carrying){ if(Math.abs(foe.x - f.x) < 80 && f.atkCd <= 0){ inp.attack = true; } }
     else { ai.fight = 20; ai.path = null; ai.edge = null; ai.phase = ''; return null; }
@@ -7397,7 +7398,7 @@ function ctfAiChoose(f, ai, L, nav, now){
       if(f.onground && (ai.placeT || 0) <= now && ctfHideValid(t, f.x, f.y + f.r)){ ai.placeT = now + 30; if(ctfPlaceCarried(f)) { ai.goal = null; return; } }
       const h = ctfAiHideGoal(f, nav, M); if(h) return set({ kind:'home', x:h.x, y:h.y });
     }
-    else { const h = ctfAiHomeGoal(f, nav, M); if(h) return set({ kind:'home', x:h.x, y:h.y }); }
+    else { if(ctfPlanCarry(f, ai, L, nav, now, set)) return; if(ctfPlanBoostRun(f, ai, L, nav, now, set)) return; const h = ctfAiHomeGoal(f, nav, M); if(h) return set({ kind:'home', x:h.x, y:h.y }); }
   }
   // 2. a key in hand goes to the door it opens (a place behind it waits there to be searched)
   if(f._ck >= 0){
@@ -7447,17 +7448,18 @@ function ctfAiChoose(f, ai, L, nav, now){
     if(ai.role === 'def' && !(fl.st === 3 && Math.abs(fl.x - M.WW/2) < M.WW*0.28)) continue;
     const claimed = mates.filter(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'flag' && g._ai.goal.id === fl.id && g._jail == null).length;
     if(claimed >= ctfPlanClaimMax(L, f, fl)) continue;
+    if(claimed === 1 && L.plans && L.plans[f.team] && L.plans[f.team].run && L.plans[f.team].run.pincer && !CTF.noPlan){ const o = mates.find(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'flag' && g._ai.goal.id === fl.id && g._jail == null); if(o) best = fl, bd = -1, ai.pincerSide = o.x < fl.x ? 1 : -1; }   // pincer: the second comes to it from the far side
     if(ai.dead && ai.dead['f' + fl.id] > now) continue;
     const d = Math.hypot(fl.x - f.x, (fl.y - f.y)*1.4); if(d < bd){ bd = d; best = fl; }
   }
   if(best) return set({ kind:'flag', id:best.id, x:best.x, y:best.y, mine:'take' });
   // 5b. the opening: an attacker standing by a speed boost takes it as play starts, then rushes
-  if(L.playT < 900 && ai.role === 'att' && !(f._hasteT > 0)){ const sb = L.boosts.find(b=>b.kind === 'speed' && b.cd <= 0 && !(ai.dead && ai.dead['b' + b.i] > now) && Math.abs(b.x - f.x) < 500 && Math.abs(b.y - f.y) < 260 && (b.x < M.WW/2) === (t === 0)); if(sb) return set({ kind:'boost', id:sb.i, x:sb.x, y:sb.y }); }
+  if(L.playT < 900 && ai.role === 'att' && !(f._hasteT > 0) && !ctfPlanBoostSaved(L, f)){ const sb = L.boosts.find(b=>b.kind === 'speed' && b.cd <= 0 && !(ai.dead && ai.dead['b' + b.i] > now) && Math.abs(b.x - f.x) < 500 && Math.abs(b.y - f.y) < 260 && (b.x < M.WW/2) === (t === 0)); if(sb) return set({ kind:'boost', id:sb.i, x:sb.x, y:sb.y }); }
   // 5c. the contested middle: in the first minute an attacker goes for a boost lying within about 3600 px of the line (two to a boost), then searches the rooms nearest the line first
   if(L.playT < 3600 && ai.role === 'att' && f._cf < 0){
     let bb = null, bdd = 1e9;
     for(const b of L.boosts){ if(b.cd > 0 || Math.abs(b.x - M.WW/2) > 3600 || (ai.dead && ai.dead['b' + b.i] > now)) continue;
-      if(b.kind === 'speed' && f._hasteT > 120) continue; if(b.kind === 'jump' && nav.boostOnly && !(nav.boostOnly[t] && Object.keys(nav.boostOnly[t]).length)) continue;
+      if(b.kind === 'speed' && (f._hasteT > 120 || ctfPlanBoostSaved(L, f))) continue; if(b.kind === 'jump' && nav.boostOnly && !(nav.boostOnly[t] && Object.keys(nav.boostOnly[t]).length)) continue;
       const taken = mates.filter(g=>g !== f && g._ai && g._ai.goal && g._ai.goal.kind === 'boost' && g._ai.goal.id === b.i && g._jail == null).length; if(taken >= 2) continue;
       const d = Math.hypot(b.x - f.x, (b.y - f.y)*1.4); if(d < bdd){ bdd = d; bb = b; } }
     if(bb && !(ai.dead && ai.dead['b' + bb.i] > now)) return set({ kind:'boost', id:bb.i, x:bb.x, y:bb.y });
@@ -7520,7 +7522,7 @@ function ctfAiSearch(f, ai, L, nav, now, set){
   for(const p of (room ? room.pts.map(i=>pts[i]) : pts)){
     if(!elig(p)) continue;
     const c = claims[p.i]; if(c && c.idx !== f.idx && c.until > now) continue;
-    const d = Math.hypot(p.x - f.x, (p.y - f.y)*1.5) - (p.cover ? 160 : 0) - (boosted && bo && bo[p.node] ? 700 : 0) - (L.playT < 6000 && Math.abs(p.x - L.map.WW/2) < 3400 ? 900 : 0);   // (the first minutes: the middle first)
+    const d = Math.hypot(p.x - f.x, (p.y - f.y)*1.5) - (p.cover ? 160 : 0) - (ctfPlanHighBonus(L, f, p)) - (boosted && bo && bo[p.node] ? 700 : 0) - (L.playT < 6000 && Math.abs(p.x - L.map.WW/2) < 3400 ? 900 : 0);   // (the first minutes: the middle first)
     if(d < bd){ bd = d; bestP = p; }
   }
   if(!bestP && room){ ai.room = null; for(const p of pts){ if(!elig(p)) continue; const c = claims[p.i]; if(c && c.idx !== f.idx && c.until > now) continue; const d = Math.hypot(p.x - f.x, (p.y - f.y)*1.5); if(d < bd){ bd = d; bestP = p; } } }
@@ -7914,9 +7916,9 @@ function ctfPlanSpotInfo(nav, M, t){
 //  IN PLAY: the roles, the offence plays and the defence tactics. Every few seconds a side's plan reads the situation and the roster, deals the CPUs their jobs (def or att, and a named job within it) and the jobs set the CPU's
 //  goals (ctfPlanChoose / ctfPlanDef / ctfPlanAtt are asked by ctfAiChoose). A menu's ticks weigh in (plan.ticks), an assigned role is kept (plan.assign), a preset sets several at once.
 // =================================================================================================================================================================
-const CTF_OFFENCE = ['scout', 'keyrunner', 'feint', 'twowave', 'jailbreak', 'swarm', 'pincer', 'rescuehit'];
+const CTF_OFFENCE = ['scout', 'keyrunner', 'feint', 'twowave', 'jailbreak', 'swarm', 'pincer', 'rescuehit', 'boostrun'];
 const CTF_DEFENCE = ['zone', 'mark', 'patrol', 'choke', 'jailguard', 'cutoff', 'chase', 'bait', 'fallback', 'push', 'decoy', 'mover', 'counter', 'layers', 'above', 'lurk'];
-const CTF_PLAY_NAMES = { scout:'Scout first', keyrunner:'Key runner', feint:'Feint raid', twowave:'Two waves', jailbreak:'Jailbreak drop', swarm:'Swarm a stash', pincer:'Pincer', rescuehit:'Hit during a rescue',
+const CTF_PLAY_NAMES = { scout:'Scout first', boostrun:'Boost for the run home', keyrunner:'Key runner', feint:'Feint raid', twowave:'Two waves', jailbreak:'Jailbreak drop', swarm:'Swarm a stash', pincer:'Pincer', rescuehit:'Hit during a rescue',
   zone:'Zones', mark:'Marking', patrol:'Patrol loop', choke:'Hold the choke', jailguard:'Jail guard', cutoff:'Cut-off', chase:'Chase pair', bait:'Bait flag', fallback:'Fall back', push:'Push up', decoy:'Decoy guard', mover:'Mover control', counter:'Counter-raid', layers:'Two layers', above:'Drop from above', lurk:'Lurk unseen' };
 const CTF_SIDE_NODES = {};
 function ctfPlanSideNodes(nav, M, t, lo, hi, minW){   // the nodes of side t whose centre is lo..hi px from the middle line
@@ -7946,6 +7948,7 @@ function ctfPlanDeal(L, pl, nav){
   if(sit.ahead) defShare += 0.12 + (sit.late ? 0.18 : 0);
   if(sit.behind) defShare -= 0.1;
   if(sit.upFoe > sit.upMine + 1) defShare += 0.12;
+  if(sit.late && sit.lead >= 1) defShare = Math.max(defShare, 0.85);   // late turtle: ahead late, everyone defends
   if(pl.ticks.turtle) defShare = 0.9;
   if(pl.ticks.allout) defShare = 0.05;
   if(CTF_PRESETS[pl.preset] && CTF_PRESETS[pl.preset].defShare != null) defShare = CTF_PRESETS[pl.preset].defShare;
@@ -7966,11 +7969,12 @@ function ctfPlanDeal(L, pl, nav){
     feint:att >= 4 ? 0.5 + sk*0.35 : 0,
     twowave:att >= 4 ? 0.4 + sk*0.3 : 0,
     jailbreak:(att >= 3 && foeJail && !sit.behind && sit.upFoe >= 2) ? 0.3 + sk*0.5 + att*0.08 : 0,
-    swarm:1, pincer:att >= 3 ? 0.5 + sk*0.2 : 0, rescuehit:1 };
+    swarm:1, pincer:att >= 3 ? 0.5 + sk*0.2 : 0, rescuehit:1, boostrun:sk >= 1 ? 0.9 : 0.2 };
+  Object.assign(fitO, ctfPlanFitMore(L, pl, { att, sk, ro, sit, t }));
   if(!pl.dealt){
     pl.dealt = true;
     for(const id of CTF_OFFENCE){ const w = ctfPlanW(pl, id, fitO[id]*(sk === 0 ? 0.4 : sk === 1 ? 0.8 : 1.2)); run[id] = (fitO[id] > 0 || pl.ticks[id]) && (!!pl.ticks[id] || Math.random() < Math.min(0.9, w/3)); }
-    if(sk === 0) for(const id of ['feint', 'twowave', 'jailbreak', 'pincer']) if(!pl.ticks[id]) run[id] = false;
+    if(sk === 0) for(const id of ['feint', 'twowave', 'jailbreak', 'pincer', 'baitguard', 'pickoff', 'tank', 'lookout', 'fakeout', 'carrierhide']) if(!pl.ticks[id]) run[id] = false;
     if(run.twowave && run.feint) run.feint = false;
     if(run.jailbreak && !run.twowave && Math.random() < 0.3) run.twowave = true;
   }
@@ -7990,7 +7994,11 @@ function ctfPlanDeal(L, pl, nav){
   } else if(pl.jb) pl.jb.active = false;
   if(run.twowave && free.length >= 4){ free.forEach((f, k)=>{ tags[f.idx] = k % 2 ? 'wave2' : 'wave1'; }); }
   else if(run.feint && free.length >= 4){ const k = Math.min(2, Math.floor(free.length/2)); free.forEach((f, i)=>{ tags[f.idx] = i < k ? 'feint' : 'real'; }); }
+  ctfPlanDealMore(L, pl, { free, tags, run, take, t });
   pl.tags = tags;
+  // ---- fresh swaps in: a defender close to the jail threshold changes places with an attacker who is fresh ----
+  { const hurt = defs.filter(f=>f._cf < 0 && f.pct > 0.7*(f.koCap || 200)).sort((a, b)=>b.pct - a.pct)[0], fresh = atts.filter(f=>f._cf < 0 && f.pct < 0.35*(f.koCap || 200) && !(f._ai.goal && f._ai.goal.kind === 'jail')).sort((a, b)=>a.pct - b.pct)[0];
+    if(hurt && fresh && (!pl.swapT || L.playT - pl.swapT > 900)){ pl.swapT = L.playT; hurt._ai.role = 'att'; fresh._ai.role = 'def'; hurt._ai.goal = null; fresh._ai.goal = null; hurt._ai.path = null; fresh._ai.path = null; } }
   // ---- the defence tactics among the defenders ----
   const own = L.flags.filter(fl=>fl.team === t && fl.st === 1);
   const carrierFoe = fighters.find(g=>g.team !== t && g._cf >= 0 && !g.dead && L.flags[g._cf] && L.flags[g._cf].team === t);
@@ -8008,6 +8016,7 @@ function ctfPlanDeal(L, pl, nav){
     decoy:0.3 + sk*0.2,
     mover:((M.elevs && M.elevs.length) || (M.wheels && M.wheels.length) || (M.ferries && M.ferries.length)) ? 0.5 : 0,
     counter:(sit.upFoe >= 3 && L.playT > 1500 && fighters.filter(g=>g.team !== t && !g.dead && g._jail == null && (t === 0 ? g.x < M.WW/2 : g.x > M.WW/2)).length >= Math.ceil(sit.upFoe*0.6)) ? 1.6 : 0,
+    edge:0.35 + (narrow < 0.4 ? 0.3 : 0), chip:0.4 + Math.max(0, (1 - ro.kb)*4) + sit.jailMine*0.2,
     layers:defs.length >= 2 ? 0.7 : 0, above:((pl.overhangs.length || (M.elevs && M.elevs.length)) ? 0.6 : 0.15) + ro.lob*2.4 + ro.shooters*0.4, lurk:0.9 };
   const taken = {}, defTags = {};
   defs.forEach(f=>{
@@ -8026,6 +8035,7 @@ function ctfPlanDeal(L, pl, nav){
 function ctfPlanChoose(f, ai, L, nav, now, set){
   const pl = L.plans && L.plans[f.team]; if(!pl || !pl.tags || CTF.noPlan) return false;
   const tag = pl.tags[f.idx], t = f.team, M = L.map;
+  if(ctfPlanChoose2(f, ai, L, nav, now, set)) return true;
   if(tag === 'scout' && L.playT < 2400 && f._cf < 0){   // sweep the enemy's rooms early without grabbing; what it sees the team knows
     ctfAiSearch(f, ai, L, nav, now, set); return true;
   }
@@ -8100,6 +8110,10 @@ function ctfPlanDef(f, ai, L, nav, now, set){
     case 'counter': { const fl = L.flags.find(q=>q.team !== t && q.st === 1 && L.seen[t][q.id]); if(fl){ set({ kind:'flag', id:fl.id, x:fl.x, y:fl.y, mine:'take' }); return true; } return false; }
     case 'layers': { if(!own.length) return false; return k % 2 === 0 ? stand(near(own[0], 400)) : stand(ctfPlanSideNodes(nav, M, t, 1500, 2600, 120)); }
     case 'lurk': { const a = pl.ambush; if(!a.length) return false; const o = a[(k + Math.floor(now/2500)) % a.length], n = ctfNavNodeAt(nav, o.x, o.y, 20); if(n && !z(n)){ set({ kind:'guard', x:o.x, y:o.y, plan:id, lurk:true }); return true; } return false; }   // (in the prop the ambush built beside the corridor)
+    case 'edge': { const es = ctfPlanEdgeNodes(L, t, nav, z); if(!es.length) return false; const e = es[k % es.length]; set({ kind:'guard', x:e.x, y:e.y, plan:id }); return true; }
+    case 'chip': {   // near the way in, on the nearest foe on this side (the jabs are in ctfPlanInput)
+      let best = null, bd = 1e9; for(const g of foes){ if(!(t === 0 ? g.x < mid : g.x > mid)) continue; const d = Math.hypot(g.x - f.x, g.y - f.y); if(d < bd){ bd = d; best = g; } }
+      if(best){ const n = ctfPlanFoeNode(nav, best); if(n && !z(n)){ set({ kind:'guard', x:Math.min(Math.max(best.x, n.x0 + 12), n.x1 - 12), y:n.y, who:best.idx, plan:id }); return true; } } return stand(ctfPlanSideNodes(nav, M, t, 300, 2400, 80)); }
     case 'above': {
       const o = pl.overhangs[k % Math.max(1, pl.overhangs.length)];
       if(o){ const n = ctfNavNodeAt(nav, o.x, o.y, 30); if(n && !z(n)){ set({ kind:'guard', x:o.x, y:n.y, plan:id }); return true; } }
@@ -8107,6 +8121,15 @@ function ctfPlanDef(f, ai, L, nav, now, set){
   }
   return false;   // (lurk: the ordinary lurk, a prop close to a flag)
 }
+// BOOST FOR THE RUN HOME: a carrier with a speed boost close to the way home takes it, so the boost is spent on the escape (the plan keeps the others off the boosts at the start: ctfPlanBoostSaved)
+function ctfPlanBoostRun(f, ai, L, nav, now, set){
+  const pl = L.plans && L.plans[f.team]; if(!pl || !pl.run || !pl.run.boostrun || CTF.noPlan || f._hasteT > 60) return false;
+  const t = f.team, home = t === 0 ? -1 : 1;
+  let best = null, bd = 1e9;
+  for(const b of L.boosts){ if(b.kind !== 'speed' || b.cd > 0 || (ai.dead && ai.dead['b' + b.i] > now)) continue; const ahead = (b.x - f.x)*home; if(ahead < -80 || ahead > 1100 || Math.abs(b.y - f.y) > 320) continue; const d = Math.hypot(b.x - f.x, b.y - f.y); if(d < bd){ bd = d; best = b; } }
+  if(best){ set({ kind:'boost', id:best.i, x:best.x, y:best.y }); return true; } return false;
+}
+function ctfPlanBoostSaved(L, f){ const pl = L.plans && L.plans[f.team]; return !!(pl && pl.run && pl.run.boostrun && !CTF.noPlan && f._cf < 0); }   // a side that saves its speed boosts for the run home does not take them on the way in
 // how many may go for one flag: two, and more when the plan swarms a stash (flags close together) or hits while the other side's defenders are off freeing a jailed one
 function ctfPlanClaimMax(L, f, fl){
   const pl = L.plans && L.plans[f.team]; if(!pl || !pl.run || CTF.noPlan) return 2;
@@ -8192,12 +8215,12 @@ function ctfMenuKey(e){
   const eat = ()=>{ e.stopImmediatePropagation(); e.preventDefault(); };
   if(code === 'Escape'){ ctfMenuToggle(false); eat(); return; }
   if(code === 'ArrowLeft' || code === 'ArrowRight'){ eat();
-    if(m.tab === 4 && rows.length && m.cur < rows.length){ const r = rows[m.cur], i = CTF_ROLE_CHOICES.indexOf(r.role), j = (i + (code === 'ArrowRight' ? 1 : CTF_ROLE_CHOICES.length - 1)) % CTF_ROLE_CHOICES.length; const v = CTF_ROLE_CHOICES[j]; if(v === 'auto') delete m.vote.assign[r.id]; else m.vote.assign[r.id] = v; ctfMenuSend(); return; }
     m.tab = (m.tab + (code === 'ArrowRight' ? 1 : nt - 1)) % nt; m.cur = 0; return; }
   if(code === 'ArrowUp' || code === 'ArrowDown'){ eat(); if(rows.length) m.cur = (m.cur + (code === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length; return; }
   if(code === 'Space' || code === 'Enter' || code === 'KeyX'){ eat(); const r = rows[m.cur]; if(!r) return;
     if(r.kind === 'preset'){ if(m.vote.preset === r.id){ m.vote.preset = null; for(const id of Object.keys(ctfPlanPresetTicks(r.id))) delete m.vote.ticks[id]; } else { m.vote.preset = r.id; Object.assign(m.vote.ticks, ctfPlanPresetTicks(r.id)); } }
     else if(r.kind === 'tick'){ if(m.vote.ticks[r.id]) delete m.vote.ticks[r.id]; else m.vote.ticks[r.id] = true; }
+    else if(r.kind === 'role'){ const i = CTF_ROLE_CHOICES.indexOf(r.role), v = CTF_ROLE_CHOICES[(i + 1) % CTF_ROLE_CHOICES.length]; if(v === 'auto') delete m.vote.assign[r.id]; else m.vote.assign[r.id] = v; }   // space steps a teammate's role
     ctfMenuSend(); return; }
   if(code === 'KeyC' || code === 'Backspace'){ eat(); m.vote = { preset:null, ticks:{}, assign:{} }; ctfMenuSend(); return; }   // clear: back to the CPUs' own judgement
   if(CTF_MENU_SWALLOW.indexOf(code) >= 0) eat();   // (the match's own keys do nothing while it is open)
@@ -8216,11 +8239,11 @@ function ctfDrawPlanMenu(){
   shown.forEach((r, k)=>{ const ry = y + 52 + k*rh, sel = (first + k) === m.cur;
     if(sel){ ctx.fillStyle = 'rgba(216,196,106,0.28)'; ctx.fillRect(x + 8, ry - 2, w - 16, rh); }
     ctx.fillStyle = '#fff';
-    if(r.kind === 'role'){ ctx.fillText(r.text, x + 18, ry + 10); ctx.fillStyle = r.role === 'auto' ? 'rgba(255,255,255,0.5)' : '#8fe08f'; ctx.fillText('< ' + r.role + ' >', x + 300, ry + 10); }
+    if(r.kind === 'role'){ ctx.fillText(r.text, x + 18, ry + 10); ctx.fillStyle = r.role === 'auto' ? 'rgba(255,255,255,0.5)' : '#8fe08f'; ctx.fillText('[ ' + r.role + ' ]', x + 300, ry + 10); }
     else { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(x + 18, ry + 3, 14, 14); if(r.on){ ctx.fillStyle = '#8fe08f'; ctx.fillRect(x + 21, ry + 6, 8, 8); } ctx.fillStyle = '#fff'; ctx.fillText(r.text, x + 42, ry + 10); } });
   const pl = L.plans && L.plans[me.team], tickN = pl ? Object.keys(pl.ticks).length : 0, hum = ctfPlanHumans(L, me.team).length;
   ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '12px sans-serif';
-  ctx.fillText('up/down: move   left/right: tab   space: tick   C: clear   P or Esc: close' + (hum > 1 ? '   (' + hum + ' vote)' : ''), x + 14, y + 62 + vis*rh + 14);
+  ctx.fillText('up/down: move   left/right: tab   space: ' + (m.tab === 4 ? 'change role' : 'tick') + '   C: clear   P or Esc: close' + (hum > 1 ? '   (' + hum + ' vote)' : ''), x + 14, y + 62 + vis*rh + 14);
   ctx.fillText('plan now: ' + (pl && pl.preset ? CTF_PRESETS[pl.preset].name + ', ' : '') + tickN + ' ticked' + (tickN || (pl && pl.preset) ? '' : ' (the CPUs judge)'), x + 14, y + 62 + vis*rh + 34);
   ctx.restore();
 }
@@ -8310,6 +8333,145 @@ function ctfAiVolley(f, ai, L){
   if(f.face !== dir){ if(dir > 0) inp.right = true; else inp.left = true; ai.volleyT = L.t + 3; return inp; }   // (turn first)
   if(info.attack) inp.attack = true; else inp.special = true;
   ctfAiStat('volley'); return inp;
+}
+
+// =================================================================================================================================================================
+//  MORE PLAYS (the owner approved the whole list): prop lurker, bait the guard, smash a shortcut, third-area return, flyers go high, pick off the guard, tank clears traps, carrier hides, minimap fake-out, lookout, pincer; and on defence
+//  edge guard, chip to jail and fresh swaps in. Each is a job a side's plan deals (a tag on an attacker or a defender) or a way the carrier goes home; they are asked for by ctfPlanChoose / ctfPlanDef / ctfPlanInput.
+// =================================================================================================================================================================
+CTF_OFFENCE.push('proplurk', 'baitguard', 'smash', 'thirdreturn', 'flyhigh', 'pickoff', 'tank', 'carrierhide', 'fakeout', 'lookout');
+CTF_DEFENCE.push('edge', 'chip');
+Object.assign(CTF_PLAY_NAMES, { proplurk:'Prop lurker', baitguard:'Bait the guard', smash:'Smash a shortcut', thirdreturn:'Third-area return', flyhigh:'Flyers go high', pickoff:'Pick off the guard', tank:'Tank clears traps',
+  carrierhide:'Carrier hides', fakeout:'Minimap fake-out', lookout:'Lookout', edge:'Edge guard', chip:'Chip to jail' });
+// the enemy's flags this side has seen and what guards them
+function ctfPlanGuarded(L, t){
+  const out = [];
+  for(const fl of L.flags){ if(fl.team === t || fl.st !== 1 || !L.seen[t][fl.id]) continue; const gs = fighters.filter(g=>g.team !== t && !g.dead && g._jail == null && Math.hypot(g.x - fl.x, g.y - fl.y) < 520); out.push({ fl, guards:gs }); }
+  return out;
+}
+function ctfPlanEnemyTraps(L, t){ return (L.edits || []).filter(e=>e.team !== t && e.tool === 'trap' && e.kind !== 'spring'); }
+function ctfPlanThirdZones(M){
+  if(M._third) return M._third;
+  const mid = M.WW/2, z = [];
+  const def = typeof CTF_MAPS !== 'undefined' ? CTF_MAPS[M.id] : null;
+  if(def && def.mid && M.gidMx != null){ /* (a module: its columns on each side) */ }
+  z.push({ x0:mid - 1700, x1:mid + 1700 });   // the middle of the map: where the third area is on every map built so far (the valley, the yard, the mill, the cavern lie across or beside the line)
+  return M._third = z;
+}
+// the fits of the added plays (merged into the dealing)
+function ctfPlanFitMore(L, pl, cx){
+  const { att, sk, ro, sit, t } = cx, guarded = ctfPlanGuarded(L, t), traps = ctfPlanEnemyTraps(L, t), M = L.map;
+  const foeDefs = fighters.filter(g=>g.team !== t && !g.dead && g._jail == null && g._ai && g._ai.role === 'def').length;
+  return {
+    proplurk:guarded.length && att >= 2 ? 0.6 + sk*0.3 : 0,
+    baitguard:guarded.length && att >= 3 ? 0.5 + sk*0.3 : 0,
+    smash:(L.edits || []).some(e=>e.team !== t && e.tool === 'deco' && e.hp > 0) ? 0.55 : 0,
+    thirdreturn:0.6 + sk*0.2,
+    flyhigh:ro.air > 1.1 ? 0.8 + (ro.air - 1)*3 : 0.1,
+    pickoff:(foeDefs >= 2 && L.playT < 4200 && att >= 3) ? 0.45 + sk*0.3 : 0,
+    tank:traps.length >= 2 && att >= 3 ? 0.5 + Math.max(0, (ro.heavy - 1)*3) : 0,
+    carrierhide:0.5 + sk*0.2, fakeout:0.4 + sk*0.3, lookout:(att >= 3 && L.playT < 3000) ? 0.5 + sk*0.2 : 0 };
+}
+// the jobs of the added plays among the attackers still free (called from the dealing)
+function ctfPlanDealMore(L, pl, cx){
+  const { free, tags, run, take, t } = cx, M = L.map, guarded = ctfPlanGuarded(L, t), traps = ctfPlanEnemyTraps(L, t);
+  const heavy = a=>a.slice().sort((p, q)=>(q.w || 90) - (p.w || 90))[0];
+  if(run.tank && traps.length >= 2 && free.length >= 3 && !Object.values(tags).includes('tank')){ const f = take(heavy(free)); tags[f.idx] = 'tank'; }
+  if(run.baitguard && guarded.length && free.length >= 3 && !Object.values(tags).includes('bait')){ const a = take(free[0]), b = take(free[0]); tags[a.idx] = 'bait'; tags[b.idx] = 'snatch'; }
+  if(run.proplurk && guarded.length && free.length >= 2 && !Object.values(tags).includes('lurker')){ const f = take(free[free.length - 1]); tags[f.idx] = 'lurker'; }
+  if(run.pickoff && free.length >= 3 && L.playT < 4200 && !Object.values(tags).includes('hunter')){ const f = take(free[Math.min(1, free.length - 1)]); tags[f.idx] = 'hunter'; }
+  if(run.lookout && free.length >= 3 && L.playT < 3000 && !Object.values(tags).includes('lookout')){ const f = take(free[free.length - 1]); tags[f.idx] = 'lookout'; }
+}
+// a goal for the added jobs; true when one was set (asked first by ctfPlanChoose)
+function ctfPlanChoose2(f, ai, L, nav, now, set){
+  const pl = L.plans && L.plans[f.team]; if(!pl || !pl.tags || CTF.noPlan) return false;
+  const tag = pl.tags[f.idx], t = f.team, M = L.map;
+  const guarded = ctfPlanGuarded(L, t);
+  const nearProps = (fl)=>{ const a = []; M.spots.forEach((s, i)=>{ if(s.team === fl.team && s.cover && !(L.gone && L.gone[i]) && Math.abs(s.x - fl.x) < 520 && Math.abs(s.y - fl.y) < 260) a.push(s); }); return a; };
+  if(tag === 'lurker' && f._cf < 0){   // inside an enemy prop near a flag that is guarded, waiting for the guard to leave; then take it
+    const g = guarded[0] || null; const fl = g ? g.fl : (pl.lurkFlag != null ? L.flags[pl.lurkFlag] : null); if(!fl) return false; pl.lurkFlag = fl.id;
+    const guards = fighters.filter(q=>q.team !== t && !q.dead && q._jail == null && Math.hypot(q.x - fl.x, q.y - fl.y) < 420).length;
+    if(!guards) return set({ kind:'flag', id:fl.id, x:fl.x, y:fl.y, mine:'take' }), true;
+    const ps = nearProps(fl); if(ps.length){ const s = ps.sort((a, b)=>Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0], n = ctfNavNodeAt(nav, s.x, s.y, 14); if(n) return set({ kind:'guard', x:s.x, y:s.y, lurk:true, plan:'proplurk' }), true; }
+    return false;
+  }
+  if(tag === 'bait' && f._cf < 0){   // pull a guard: stand where the guard can see you, on the way to the flag, and run
+    const g = guarded[0]; if(!g || !g.guards.length) return false; const gd = g.guards[0], n = ctfPlanFoeNode(nav, gd); if(!n) return false;
+    return set({ kind:'guard', x:Math.min(Math.max(gd.x + (t === 0 ? -1 : 1)*260, n.x0 + 15), n.x1 - 15), y:n.y, plan:'baitguard', bait:true }), true;
+  }
+  if(tag === 'snatch' && f._cf < 0){   // grab behind them once the guard is away
+    const g = guarded[0]; if(!g) return false;
+    const guards = fighters.filter(q=>q.team !== t && !q.dead && q._jail == null && Math.hypot(q.x - g.fl.x, q.y - g.fl.y) < 420).length;
+    if(guards) { const ns = ctfPlanSideNodes(nav, M, 1 - t, 600, 2600, 100).filter(n=>Math.hypot((n.x0 + n.x1)/2 - g.fl.x, n.y - g.fl.y) > 700 && Math.hypot((n.x0 + n.x1)/2 - g.fl.x, n.y - g.fl.y) < 1500); if(ns.length){ const q = ctfPlanAt(ns[(f.idx*3) % ns.length]); return set({ kind:'guard', x:q.x, y:q.y, wait:true }), true; } return false; }
+    return set({ kind:'flag', id:g.fl.id, x:g.fl.x, y:g.fl.y, mine:'take' }), true;
+  }
+  if(tag === 'hunter' && f._cf < 0 && L.playT < 4200){   // jail a defender first
+    const foes = fighters.filter(q=>q.team !== t && !q.dead && q._jail == null && q._ai && q._ai.role === 'def').sort((a, b)=>Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y));
+    if(foes.length){ const q = foes[0], n = ctfPlanFoeNode(nav, q); if(n) return set({ kind:'guard', x:Math.min(Math.max(q.x, n.x0 + 12), n.x1 - 12), y:n.y, who:q.idx, plan:'pickoff' }), true; }
+  }
+  if(tag === 'tank' && f._cf < 0){   // set off the other side's traps before the others come
+    const tr = ctfPlanEnemyTraps(L, t).sort((a, b)=>Math.hypot(a.cx - f.x, a.fy - f.y) - Math.hypot(b.cx - f.x, b.fy - f.y))[0];
+    if(tr){ const n = ctfNavNodeAt(nav, tr.cx, tr.fy, 16); if(n) return set({ kind:'guard', x:tr.cx, y:tr.fy, plan:'tank' }), true; }
+  }
+  if(tag === 'lookout' && f._cf < 0 && L.playT < 3200){   // high ground just over the line, seeing far
+    const ns = ctfPlanSideNodes(nav, M, 1 - t, 200, 1900, 80).filter(n=>n.y < M.WH*0.5).sort((a, b)=>a.y - b.y);
+    if(ns.length){ const n = ns[(f.idx % Math.min(4, ns.length))], q = ctfPlanAt(n); return set({ kind:'guard', x:q.x, y:q.y, wait:true, plan:'lookout' }), true; }
+  }
+  if(f._cf < 0 && pl.run && pl.run.smash && ai.role === 'att'){   // break the other side's props near the way: a built prop breaks to a swing
+    const e = (L.edits || []).filter(q=>q.team !== t && q.tool === 'deco' && q.hp > 0 && Math.hypot(q.cx - f.x, q.fy - f.y) < 900).sort((a, b)=>Math.hypot(a.cx - f.x, a.fy - f.y) - Math.hypot(b.cx - f.x, b.fy - f.y))[0];
+    if(e && ((f.idx*7 + Math.floor(now/900)) % 3 === 0)){ const n = ctfNavNodeAt(nav, e.cx, e.fy, 16); if(n) return set({ kind:'guard', x:e.cx - (f.x < e.cx ? 70 : -70), y:e.fy, smash:e.id, plan:'smash' }), true; }
+  }
+  return false;
+}
+// a carrier's own plays: bring it home by the third area, duck into a prop when chased, fake the minimap
+function ctfPlanCarry(f, ai, L, nav, now, set){
+  const pl = L.plans && L.plans[f.team]; if(!pl || !pl.run || CTF.noPlan) return false;
+  const t = f.team, M = L.map, mid = M.WW/2;
+  if(pl.run.carrierhide && !ai.hideUntil){   // chased and a prop is close: stand in it until they have passed
+    const chasers = fighters.filter(q=>q.team !== t && !q.dead && q._jail == null && Math.hypot(q.x - f.x, q.y - f.y) < 520 && Math.hypot(q.x - f.x, q.y - f.y) > 140);
+    if(chasers.length && (ai.hideAgain || 0) <= now){
+      let best = null, bd = 1e9; M.spots.forEach((s, i)=>{ if(!s.cover || (L.gone && L.gone[i])) return; const d = Math.hypot(s.x - f.x, s.y - f.y); if(d < 340 && d < bd && Math.abs(s.y - f.y) < 140){ bd = d; best = s; } });
+      if(best){ ai.hideUntil = now + 150; ai.hideAgain = now + 900; ai.hideSpot = best; }
+    }
+  }
+  if(ai.hideUntil && now < ai.hideUntil && ai.hideSpot){ set({ kind:'guard', x:ai.hideSpot.x, y:ai.hideSpot.y, plan:'carrierhide', keep:true }); return true; }
+  if(ai.hideUntil && now >= ai.hideUntil) ai.hideUntil = 0;
+  if(pl.run.fakeout){   // the carrier shows on the minimap for five seconds: run one way for them, then home the other
+    if(!ai.fakeT){ ai.fakeT = now; }
+    if(now - ai.fakeT < 300){ const ns = ctfPlanSideNodes(nav, M, t, 100, 2400, 100).sort((a, b)=>Math.abs((b.x0 + b.x1)/2 - f.x) - Math.abs((a.x0 + a.x1)/2 - f.x)); if(ns.length && f.onground){ const n = ns[(f.idx*5) % Math.min(6, ns.length)], q = ctfPlanAt(n); set({ kind:'home', x:q.x, y:q.y }); return true; } }
+  } else ai.fakeT = 0;
+  if(pl.run.thirdreturn){   // home by the third area, not the defended main road: a waypoint in it first
+    const zs = ctfPlanThirdZones(M), z = zs[0];
+    if(!(ai.thirdDone > now - 3000) && Math.abs(f.x - mid) > 500 && (f.x < mid) !== (t === 0)){   // still on the other side, not yet through
+      const ns = nav.nodes.filter(n=>n.x1 - n.x0 > 80 && (n.x0 + n.x1)/2 > z.x0 && (n.x0 + n.x1)/2 < z.x1 && n.y < (M.pocketY != null ? M.pocketY : 1e9)).sort((a, b)=>Math.hypot((a.x0 + a.x1)/2 - f.x, (a.y - f.y)*1.4) - Math.hypot((b.x0 + b.x1)/2 - f.x, (b.y - f.y)*1.4));
+      if(ns.length){ const n = ns[0], q = ctfPlanAt(n); if(Math.hypot(q.x - f.x, q.y - f.y) < 200) ai.thirdDone = now; else { set({ kind:'home', x:q.x, y:q.y }); return true; } }
+    }
+  }
+  return false;
+}
+// an input of its own for what a defender or an attacker does up close: jabs only (chip to jail), a swing at a prop to break it (smash)
+function ctfPlanInput(f, ai, L, foe){
+  const pl = L.plans && L.plans[f.team]; if(!pl || CTF.noPlan) return null;
+  const inp = ctfAiInpNew();
+  const g = ai.goal;
+  if(g && g.smash != null && f.onground){   // at the prop: face it, swing
+    const e = (L.edits || []).find(q=>q.id === g.smash); if(e && e.hp > 0 && Math.abs(e.cx - f.x) < 150 && Math.abs(e.fy - f.y) < 120){ const d = e.cx > f.x ? 1 : -1; if(f.face !== d){ if(d > 0) inp.right = true; else inp.left = true; return inp; } if(f.atkCd <= 0){ inp.attack = true; return inp; } }
+  }
+  if(foe && pl.defTags && pl.defTags[f.idx] === 'chip'){   // quick hits to the jail threshold rather than a big knock: jabs, facing it
+    const dx = foe.x - f.x, dy = Math.abs(foe.y - f.y); if(Math.abs(dx) < 110 && dy < 70 && f.onground){ const d = dx > 0 ? 1 : -1; if(f.face !== d){ if(d > 0) inp.right = true; else inp.left = true; return inp; } if(f.atkCd <= 0){ inp.attack = true; return inp; } return inp; }
+  }
+  return null;
+}
+// edge guard: the ledges of this side where a knock sends the other side down a drop
+function ctfPlanEdgeNodes(L, t, nav, z){
+  const M = L.map, out = [];
+  for(const n of ctfPlanSideNodes(nav, M, t, 300, 3400, 100)){ if(z(n)) continue; for(const e of n.edges){ if(e.kind === 'drop' && nav.nodes[e.to].y - n.y > 240){ out.push({ n, x:e.dir > 0 ? n.x1 - 40 : n.x0 + 40, y:n.y }); break; } } }
+  return out;
+}
+// flyers (and anything that spends its time in the air) search high: a pull toward the higher ledges and routes over the walls and trap rows
+function ctfPlanHighBonus(L, f, p){
+  const pl = L.plans && L.plans[f.team]; if(!pl || CTF.noPlan || !(pl.run && pl.run.flyhigh) || !f._ptel || f._ptel.air < 0.4) return 0;
+  return Math.max(0, Math.min(900, (L.map.WH*0.55 - p.y)*0.35));
 }
 // @ctfplan:end
 
