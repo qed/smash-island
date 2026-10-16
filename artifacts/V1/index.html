@@ -443,6 +443,11 @@
   .ctfcup-role{opacity:.55} .ctfcup-role.set{opacity:1; color:#8fe08f}
   .ctfcup-plandesc{color:#f4ecc0; font-size:13px; min-height:48px; max-width:640px; text-align:center}
   .ctfcup-planfoot{color:rgba(255,255,255,0.7); font-size:12px}
+  .ctfkit-input{font-family:inherit; font-size:16px; font-weight:700; padding:6px 10px; border:3px solid #1c1c1c; border-radius:8px; width:min(420px,90%); flex:1}
+  .ctfkit-msg{color:#f4ecc0; font-size:13px; min-height:18px}
+  .ctfkit-row{gap:8px}
+  .ctfkit-name{font-weight:800; min-width:90px}
+  .ctfkit-sum{flex:1; opacity:.75; font-size:12px}
   .ctfcup-map{font-size:11px; opacity:.6; white-space:nowrap}
   .ctfcup-plans{font-size:11px; opacity:.65; text-align:center; margin:-2px 0 5px}
   .cupchips{display:flex; flex-wrap:wrap; gap:5px; max-width:430px}
@@ -1592,6 +1597,7 @@
     </div>
     <div id="ctfCupPicker" class="ctfcup-picker" style="display:none"></div>
     <div id="ctfCupPlanEd" class="ctfcup-picker" style="display:none"></div>
+    <div id="ctfCupKitBox" class="ctfcup-picker" style="display:none"></div>
   </div>
 
   <!-- TOURNAMENT HUB -->
@@ -6713,6 +6719,10 @@ function ctfCupTeamsRender(){
     const dice = document.createElement('button'); dice.className = 'cupchip'; dice.innerHTML = '&#127922; fill'; dice.title = 'Fill this team\'s empty seats from the draw';
     dice.onclick = ()=>{ ctfCupFillTeam(i, true); ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(dice);
     card.appendChild(head);
+    const kr = document.createElement('div'); kr.className = 'ctfcup-head';
+    const sv = document.createElement('button'); sv.className = 'cupchip'; sv.textContent = 'Save kit'; sv.title = 'Save this team (fighters, plan, CPU skill) under a name'; sv.onclick = ()=>ctfKitOpen('save', i); kr.appendChild(sv);
+    const ld = document.createElement('button'); ld.className = 'cupchip'; ld.textContent = 'Load kit'; ld.title = 'Fill this team from a saved kit'; ld.onclick = ()=>ctfKitOpen('load', i); kr.appendChild(ld);
+    card.appendChild(kr);
     if(st.mode !== 'auto'){ const line = document.createElement('button'); line.className = 'ctfcup-plan'; line.textContent = ctfCupPlanText(i) + '  (edit)'; line.onclick = ()=>ctfCupPlanOpen(i); card.appendChild(line); }
     for(let k = 0; k < CTFCUP.size; k++){
       const nm = ctfCupSeatName(i, k), r = nm ? by(nm) : null, b = document.createElement('button'); b.className = 'ctfcup-seat' + (r ? ' on' : '');
@@ -6786,6 +6796,161 @@ function ctfCupPlanKey(e){
   if(code === 'KeyC' || code === 'Backspace'){ eat(); CTFCUP.strat[p.team] = Object.assign(ctfCupCleanStrat(null, CTFCUP.size), { mode:CTFCUP.strat[p.team].mode }); ctfCupSave(); ctfCupPlanDraw(); return; }
 }
 if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfCupPlanKeys){ window.__ctfCupPlanKeys = true; window.addEventListener('keydown', ctfCupPlanKey, true); }
+
+// ---- KITS (the owner, 2026-10-16: "can you give me a save kit button?"): a kit is a whole TEAM saved from the team builder under a name: its fighters in seat order, its strategy setting and plan (preset, ticks, roles by seat) and its CPU skill.
+// The kits are a named list, kept on this computer only (localStorage, every touch wrapped). A kit is made loadable when it is read: a fighter the game does not offer (gone, or not unlocked: nobody the game keeps behind a prize ever comes
+// through a kit) leaves its seat empty for the draw, and plan ids that are not in the planning menu's lists are dropped.
+const CTFKITS_KEY = 'bfsi:ctfkits';
+let CTFKITS = null, CTFKIT_UI = null;   // CTFKIT_UI: { mode:'save'|'load', team, ... } while the box is open
+function ctfKitRaw(k){
+  if(!k || typeof k !== 'object' || typeof k.name !== 'string') return null;
+  const name = k.name.trim().slice(0, 40); if(!name) return null;
+  return { name, fighters:(Array.isArray(k.fighters) ? k.fighters : []).slice(0, 8).map(n=>typeof n === 'string' ? n.slice(0, 40) : null), skill:[-1, 0, 1, 2].includes(+k.skill) ? +k.skill : -1, strat:ctfCupCleanStrat(k.strat, 8) };
+}
+function ctfKits(){
+  if(CTFKITS) return CTFKITS;
+  let a = []; try{ const raw = localStorage.getItem(CTFKITS_KEY); if(raw){ const j = JSON.parse(raw); if(Array.isArray(j)) a = j; } }catch(e){}
+  const seen = new Set(); CTFKITS = a.map(ctfKitRaw).filter(k=>{ if(!k || seen.has(k.name.toLowerCase())) return false; seen.add(k.name.toLowerCase()); return true; });
+  return CTFKITS;
+}
+function ctfKitsSave(){ try{ localStorage.setItem(CTFKITS_KEY, JSON.stringify(ctfKits())); }catch(e){} }
+function ctfKitIndex(name){ return ctfKits().findIndex(k=>k.name.toLowerCase() === String(name).trim().toLowerCase()); }
+// a kit as the game can load it now: { fighters (a name the game offers, or null), skill, strat, dropped (how many entries were let go) }
+function ctfKitSanitize(k){
+  const pool = ctfCupPool(), ok = n=>!!n && pool.some(r=>r.name === n), st = JSON.parse(JSON.stringify(k.strat)), valid = {}, seen = new Set(); let dropped = 0;
+  for(const id of Object.keys(CTF_BUILDS)) if(id !== 'twin') valid[id] = 1;
+  for(const id of CTF_OFFENCE.concat(CTF_DEFENCE, CTF_EXTRA_DEF)) valid[id] = 1;
+  const fighters = k.fighters.map(n=>{ if(!n) return null; if(!ok(n) || seen.has(n)){ dropped++; return null; } seen.add(n); return n; });
+  for(const f of ['ticks', 'off']) for(const id of Object.keys(st[f])) if(!valid[id]){ delete st[f][id]; dropped++; }
+  if(st.preset && !CTF_PRESETS[st.preset]){ st.preset = null; dropped++; }
+  for(const q of Object.keys(st.assign)) if(CTF_ROLE_CHOICES.indexOf(st.assign[q]) < 1){ delete st.assign[q]; dropped++; }
+  return { name:k.name, fighters, skill:k.skill, strat:st, dropped };
+}
+function ctfKitFromTeam(i, name){
+  const st = JSON.parse(JSON.stringify(CTFCUP.strat[i]));
+  return { name, fighters:CTFCUP.slots[i].slice(), skill:CTFCUP.skill[i], strat:st };
+}
+function ctfKitApply(i, kit){
+  const k = ctfKitSanitize(kit), size = CTFCUP.size;
+  for(let q = 0; q < size; q++) CTFCUP.slots[i][q] = k.fighters[q] || null;
+  CTFCUP.skill[i] = k.skill;
+  CTFCUP.strat[i] = ctfCupCleanStrat(k.strat, size);
+  ctfCupSave(); return k;
+}
+// save under a name (a name that exists is replaced: ctfKitSaveGo asks first); rename; delete
+function ctfKitPut(i, name){
+  name = String(name).trim().slice(0, 40); if(!name) return false;
+  const kit = ctfKitRaw(ctfKitFromTeam(i, name)), at = ctfKitIndex(name);
+  if(at >= 0) ctfKits()[at] = kit; else ctfKits().push(kit);
+  ctfKitsSave(); return true;
+}
+function ctfKitRename(from, to){
+  to = String(to).trim().slice(0, 40); const at = ctfKitIndex(from); if(at < 0 || !to) return false;
+  const clash = ctfKitIndex(to); if(clash >= 0 && clash !== at) return false;
+  ctfKits()[at].name = to; ctfKitsSave(); return true;
+}
+function ctfKitDelete(name){ const at = ctfKitIndex(name); if(at < 0) return false; ctfKits().splice(at, 1); ctfKitsSave(); return true; }
+// the four example kits (the four AIs' plans, as they are written in the planning menu's own words): one button brings them in as "AI 1" to "AI 4"
+const CTFKIT_EXAMPLES = [
+  { name:'AI 1', fighters:['Tennis Ball', 'Test Tube', 'Leafy', 'Pencil'], preset:null, roles:['def', 'def', 'runner', 'att'],
+    build:['One choke point', 'Stun the landing', 'Airlock', 'Wall the shortcut'], offence:['Scout first', 'Boost for the run home', 'Third-area return', 'Carrier hides'], defence:['Hold the choke', 'Zones', 'Two layers', 'Chip to jail'] },
+  { name:'AI 2', fighters:['Leafy', 'Liy', 'Bell', 'Tennis Ball'], preset:null, roles:['scout', 'att', 'trapper', 'def'],
+    build:['Layered rings', 'Shell game', 'Stun chain', 'One choke point', 'Wall the shortcut', 'Sealed box'], offence:['Scout first', 'Feint raid', 'Hit during a rescue', 'Third-area return', 'Boost for the run home', 'Carrier hides'], defence:['Hold the choke', 'Two layers', 'Lurk unseen', 'Chase pair', 'Cut-off', 'Fall back', 'Chip to jail'] },
+  { name:'AI 3', fighters:['Golf Ball', 'Yellow Face', 'Leafy', 'Fern'], preset:'turtle', roles:['def', 'def', 'scout', 'runner'],
+    build:['Layered rings', 'Shell game', 'Stun the landing', 'Spring bounce-back', 'Wall the shortcut', 'One choke point', 'Own catapult', 'Overhang', 'Stun chain', 'Prop ambush'],
+    offence:['Scout first', 'Feint raid', 'Pincer', 'Boost for the run home', 'Third-area return', 'Pick off the guard', 'Smash a shortcut', 'Hit during a rescue', 'Lookout'], defence:['Two layers', 'Zones', 'Patrol loop', 'Cut-off', 'Chase pair', 'Fall back', 'Chip to jail', 'Drop from above', 'Mover control'] },
+  { name:'AI 4', fighters:['Leafy', 'Tree', 'Lollipop', 'Gelatin'], preset:null, roles:['scout', 'att', 'def', 'def'],
+    build:['One choke point', 'Stun the landing', 'Stun chain', 'Layered rings', 'Shell game', 'Spike moat', 'Wall the shortcut', 'Airlock', 'Trapped fork', 'Boost denial', 'Ice, belt or slope approach', 'Own catapult'],
+    offence:['Scout first', 'Tank clears traps', 'Smash a shortcut', 'Pincer', 'Boost for the run home', 'Carrier hides', 'Minimap fake-out', 'Third-area return'], defence:['Zones', 'Two layers', 'Lurk unseen', 'Chip to jail', 'Cut-off', 'Counter-raid', 'Jail guard', 'Mover control'] } ];
+function ctfPlanIdByName(n){
+  for(const id of Object.keys(CTF_BUILDS)) if(CTF_BUILDS[id].name === n) return id;
+  for(const id of Object.keys(CTF_PLAY_NAMES)) if(CTF_PLAY_NAMES[id] === n) return id;
+  return null;
+}
+function ctfKitFromExample(x){
+  const ticks = {}, miss = [];
+  for(const n of x.build.concat(x.offence, x.defence)){ const id = ctfPlanIdByName(n); if(id) ticks[id] = true; else miss.push(n); }
+  const assign = {}; x.roles.forEach((r, k)=>{ assign[k] = r; });
+  return { kit:ctfKitRaw({ name:x.name, fighters:x.fighters, skill:2, strat:{ mode:'fixed', preset:x.preset, ticks, off:{}, assign } }), missing:miss };
+}
+function ctfKitImportExamples(){ for(const x of CTFKIT_EXAMPLES){ const k = ctfKitFromExample(x).kit, at = ctfKitIndex(k.name); if(at >= 0) ctfKits()[at] = k; else ctfKits().push(k); } ctfKitsSave(); }
+// ---- the box: Save kit asks for a name (a text field), Load kit shows the list ----
+function ctfKitSummary(k){
+  const f = ctfKitSanitize(k), st = f.strat, P = st.preset && CTF_PRESETS[st.preset], n = Object.keys(st.ticks).length;
+  return f.fighters.map(x=>x || '?').join(', ') + '  ·  ' + ({ auto:'strategist', fixed:'fixed plan', adapt:'fixed, then adapt' }[st.mode]) + (st.mode !== 'auto' ? ' (' + (P ? P.name + ', ' : '') + n + ' ideas)' : '') + '  ·  CPU ' + (f.skill < 0 ? 'cup default' : ['Easy', 'Normal', 'Hard'][f.skill]);
+}
+function ctfKitOpen(mode, team){
+  CTFKIT_UI = { mode, team, cur:0, rename:null, confirm:null, msg:'' };
+  if(mode === 'save'){ CTFKIT_UI.text = 'Team ' + (team + 1); }
+  ctfKitDraw();
+}
+function ctfKitClose(){ const box = document.getElementById('ctfCupKitBox'); if(box) box.style.display = 'none'; CTFKIT_UI = null; try{ ctfCupTeamsRender(); }catch(e){} }
+function ctfKitDraw(){
+  const box = document.getElementById('ctfCupKitBox'), u = CTFKIT_UI; if(!box || !u) return;
+  box.innerHTML = ''; box.style.display = 'flex';
+  const head = document.createElement('div'); head.className = 'ctfcup-pickbar'; head.textContent = u.mode === 'save' ? 'Save team ' + (u.team + 1) + ' as a kit' : 'Load a kit into team ' + (u.team + 1); box.appendChild(head);
+  const msg = document.createElement('div'); msg.className = 'ctfkit-msg'; msg.textContent = u.msg || '';
+  if(u.mode === 'save'){
+    const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 40; inp.className = 'ctfkit-input'; inp.id = 'ctfKitName'; inp.value = u.text; inp.oninput = ()=>{ u.text = inp.value; u.confirm = null; u.msg = ''; msg.textContent = ''; };
+    box.appendChild(inp); box.appendChild(msg);
+    const row = document.createElement('div'); row.className = 'ctfcup-tabs';
+    const ok = document.createElement('button'); ok.className = 'cupchip on'; ok.textContent = u.confirm ? 'Replace it' : 'Save'; ok.onclick = ctfKitSaveGo; row.appendChild(ok);
+    const no = document.createElement('button'); no.className = 'cupchip'; no.textContent = 'Cancel'; no.onclick = ctfKitClose; row.appendChild(no); box.appendChild(row);
+    const f = document.createElement('div'); f.className = 'ctfcup-planfoot'; f.textContent = 'Type a name, Enter saves, Esc cancels'; box.appendChild(f);
+    setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(e){} }, 0);
+    return;
+  }
+  const kits = ctfKits(); u.cur = Math.max(0, Math.min(u.cur, kits.length - 1));
+  const bar = document.createElement('div'); bar.className = 'ctfcup-tabs';
+  const ex = document.createElement('button'); ex.className = 'cupchip'; ex.textContent = 'Add the AI 1-4 example kits'; ex.title = 'Four plans written by different AIs: fighters, plan and skill'; ex.onclick = ()=>{ ctfKitImportExamples(); u.msg = 'AI 1 to AI 4 are in the list'; ctfKitDraw(); }; bar.appendChild(ex);
+  const x = document.createElement('button'); x.className = 'cupchip'; x.textContent = 'Close'; x.onclick = ctfKitClose; bar.appendChild(x); box.appendChild(bar); box.appendChild(msg);
+  const list = document.createElement('div'); list.className = 'ctfcup-planlist';
+  if(!kits.length){ const e = document.createElement('div'); e.className = 'ctfcup-planrow'; e.textContent = 'No kits yet: Save kit on a team makes one.'; list.appendChild(e); }
+  kits.forEach((k, q)=>{
+    const r = document.createElement('div'); r.className = 'ctfcup-planrow ctfkit-row' + (q === u.cur ? ' cur' : '');
+    if(u.rename === q){ const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 40; inp.className = 'ctfkit-input'; inp.id = 'ctfKitRename'; inp.value = u.text; inp.oninput = ()=>{ u.text = inp.value; }; r.appendChild(inp); setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(e){} }, 0); }
+    else { const nm = document.createElement('span'); nm.className = 'ctfkit-name'; nm.textContent = k.name; r.appendChild(nm); const sm = document.createElement('span'); sm.className = 'ctfkit-sum'; sm.textContent = ctfKitSummary(k); r.appendChild(sm); }
+    const mk = (label, fn)=>{ const b = document.createElement('button'); b.className = 'cupchip'; b.textContent = label; b.onclick = ev=>{ ev.stopPropagation(); u.cur = q; fn(); }; r.appendChild(b); };
+    mk('Load', ()=>ctfKitLoadGo(q)); mk('Rename', ()=>ctfKitRenameStart(q)); mk(u.confirm === q ? 'Sure?' : 'Delete', ()=>ctfKitDeleteGo(q));
+    r.onclick = ()=>{ u.cur = q; ctfKitDraw(); };
+    list.appendChild(r);
+  });
+  box.appendChild(list);
+  const f = document.createElement('div'); f.className = 'ctfcup-planfoot'; f.textContent = 'Up/Down choose   Enter load   R rename   Delete remove (twice)   I add the AI 1-4 examples   Esc close'; box.appendChild(f);
+}
+function ctfKitSaveGo(){
+  const u = CTFKIT_UI; if(!u || u.mode !== 'save') return;
+  const name = String(u.text || '').trim().slice(0, 40);
+  if(!name){ u.msg = 'A kit needs a name'; ctfKitDraw(); return; }
+  if(ctfKitIndex(name) >= 0 && u.confirm !== name){ u.confirm = name; u.msg = 'A kit called "' + name + '" is there: Enter again replaces it'; ctfKitDraw(); return; }
+  ctfKitPut(u.team, name); ctfKitClose();
+}
+function ctfKitLoadGo(q){ const k = ctfKits()[q], u = CTFKIT_UI; if(!k || !u) return; ctfKitApply(u.team, k); ctfKitClose(); }
+function ctfKitRenameStart(q){ const u = CTFKIT_UI, k = ctfKits()[q]; if(!u || !k) return; u.rename = q; u.text = k.name; u.msg = ''; ctfKitDraw(); }
+function ctfKitRenameGo(){
+  const u = CTFKIT_UI, k = u && ctfKits()[u.rename]; if(!k) return;
+  if(!ctfKitRename(k.name, u.text)){ u.msg = String(u.text).trim() ? 'That name is taken' : 'A kit needs a name'; ctfKitDraw(); return; }
+  u.rename = null; u.msg = ''; ctfKitDraw();
+}
+function ctfKitDeleteGo(q){ const u = CTFKIT_UI, k = ctfKits()[q]; if(!u || !k) return; if(u.confirm !== q){ u.confirm = q; u.msg = 'Press Delete again to remove "' + k.name + '"'; ctfKitDraw(); return; } ctfKitDelete(k.name); u.confirm = null; u.msg = ''; ctfKitDraw(); }
+function ctfKitKey(e){
+  const u = CTFKIT_UI; if(!u) return;
+  const code = e.code, typing = !!(e.target && /INPUT|TEXTAREA/.test(e.target.tagName)), eat = ()=>{ e.stopImmediatePropagation(); e.preventDefault(); };
+  if(typing){
+    if(code === 'Escape'){ eat(); if(u.mode === 'load' && u.rename != null){ u.rename = null; ctfKitDraw(); } else ctfKitClose(); }
+    else if(code === 'Enter'){ eat(); if(u.mode === 'save') ctfKitSaveGo(); else ctfKitRenameGo(); }
+    return;   // (anything else is typed)
+  }
+  if(code === 'Escape'){ eat(); ctfKitClose(); return; }
+  if(u.mode !== 'load') return;
+  const kits = ctfKits();
+  if(code === 'ArrowUp' || code === 'ArrowDown'){ eat(); if(kits.length) u.cur = (u.cur + (code === 'ArrowDown' ? 1 : kits.length - 1)) % kits.length; u.confirm = null; u.msg = ''; ctfKitDraw(); }
+  else if(code === 'Enter' || code === 'Space'){ eat(); ctfKitLoadGo(u.cur); }
+  else if(code === 'KeyR'){ eat(); ctfKitRenameStart(u.cur); }
+  else if(code === 'Delete' || code === 'Backspace'){ eat(); ctfKitDeleteGo(u.cur); }
+  else if(code === 'KeyI'){ eat(); ctfKitImportExamples(); u.msg = 'AI 1 to AI 4 are in the list'; ctfKitDraw(); }
+}
+if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfKitKeys){ window.__ctfKitKeys = true; window.addEventListener('keydown', ctfKitKey, true); }
 function ctfCupPickOpen(team, seat){
   CTFCUP_PICK = { team, seat }; const box = document.getElementById('ctfCupPicker'); if(!box) return;
   const pool = ctfCupPool(), mates = new Set(CTFCUP.slots[team].filter((n, q)=>n && q !== seat));
