@@ -443,6 +443,11 @@
   .ctfcup-role{opacity:.55} .ctfcup-role.set{opacity:1; color:#8fe08f}
   .ctfcup-plandesc{color:#f4ecc0; font-size:13px; min-height:48px; max-width:640px; text-align:center}
   .ctfcup-planfoot{color:rgba(255,255,255,0.7); font-size:12px}
+  .ctfkit-input{font-family:inherit; font-size:16px; font-weight:700; padding:6px 10px; border:3px solid #1c1c1c; border-radius:8px; width:min(420px,90%); flex:1}
+  .ctfkit-msg{color:#f4ecc0; font-size:13px; min-height:18px}
+  .ctfkit-row{gap:8px}
+  .ctfkit-name{font-weight:800; min-width:90px}
+  .ctfkit-sum{flex:1; opacity:.75; font-size:12px}
   .ctfcup-map{font-size:11px; opacity:.6; white-space:nowrap}
   .ctfcup-plans{font-size:11px; opacity:.65; text-align:center; margin:-2px 0 5px}
   .cupchips{display:flex; flex-wrap:wrap; gap:5px; max-width:430px}
@@ -1592,6 +1597,7 @@
     </div>
     <div id="ctfCupPicker" class="ctfcup-picker" style="display:none"></div>
     <div id="ctfCupPlanEd" class="ctfcup-picker" style="display:none"></div>
+    <div id="ctfCupKitBox" class="ctfcup-picker" style="display:none"></div>
   </div>
 
   <!-- TOURNAMENT HUB -->
@@ -1854,7 +1860,7 @@ const ROSTER = [
    kit:{special:"clover", desc:"Butterflies → four butterflies get in the way; a foe who touches one hits weaker for a moment"}},
   {name:"Jack",w:76,color:"#6ebadb", play:true, dlc:"Inanimate Insanity", arch:"Hothead",
    kit:{special:"jack", desc:"Pager Hurl → a low, fast throw that takes your legs out"}},
-  {name:"Magnet",w:88,color:"#4046B8", play:true, dlc:"Inanimate Insanity", arch:"Crowd Puller",
+  {name:"Magnet",w:118,color:"#4046B8", play:true, dlc:"Inanimate Insanity", arch:"Crowd Puller",
    kit:{special:"bestie", desc:"Polarity → C'mon, Bestie! pulls the nearest foe in and hits them as they arrive, Like Poles Repel blasts everyone away, and metal fighters (Knife, Silver Spoon, Needle, Saw...) are pulled from further and shoved harder"}},
   {name:"MeTag",w:78,color:"#9aa6b2", play:true, dlc:"Inanimate Insanity", arch:"Warden",
    kit:{special:"barrier", desc:"Enforcer → a cuffing dash roots the first foe it touches, Precision Finding marks one foe so their hits land 30% harder, and the smash drives a foe into a see-through wall that crushes"}},
@@ -6741,6 +6747,10 @@ function ctfCupTeamsRender(){
     const dice = document.createElement('button'); dice.className = 'cupchip'; dice.innerHTML = '&#127922; fill'; dice.title = 'Fill this team\'s empty seats from the draw';
     dice.onclick = ()=>{ ctfCupFillTeam(i, true); ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(dice);
     card.appendChild(head);
+    const kr = document.createElement('div'); kr.className = 'ctfcup-head';
+    const sv = document.createElement('button'); sv.className = 'cupchip'; sv.textContent = 'Save kit'; sv.title = 'Save this team (fighters, plan, CPU skill) under a name'; sv.onclick = ()=>ctfKitOpen('save', i); kr.appendChild(sv);
+    const ld = document.createElement('button'); ld.className = 'cupchip'; ld.textContent = 'Load kit'; ld.title = 'Fill this team from a saved kit'; ld.onclick = ()=>ctfKitOpen('load', i); kr.appendChild(ld);
+    card.appendChild(kr);
     if(st.mode !== 'auto'){ const line = document.createElement('button'); line.className = 'ctfcup-plan'; line.textContent = ctfCupPlanText(i) + '  (edit)'; line.onclick = ()=>ctfCupPlanOpen(i); card.appendChild(line); }
     for(let k = 0; k < CTFCUP.size; k++){
       const nm = ctfCupSeatName(i, k), r = nm ? by(nm) : null, b = document.createElement('button'); b.className = 'ctfcup-seat' + (r ? ' on' : '');
@@ -6814,6 +6824,161 @@ function ctfCupPlanKey(e){
   if(code === 'KeyC' || code === 'Backspace'){ eat(); CTFCUP.strat[p.team] = Object.assign(ctfCupCleanStrat(null, CTFCUP.size), { mode:CTFCUP.strat[p.team].mode }); ctfCupSave(); ctfCupPlanDraw(); return; }
 }
 if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfCupPlanKeys){ window.__ctfCupPlanKeys = true; window.addEventListener('keydown', ctfCupPlanKey, true); }
+
+// ---- KITS (the owner, 2026-10-16: "can you give me a save kit button?"): a kit is a whole TEAM saved from the team builder under a name: its fighters in seat order, its strategy setting and plan (preset, ticks, roles by seat) and its CPU skill.
+// The kits are a named list, kept on this computer only (localStorage, every touch wrapped). A kit is made loadable when it is read: a fighter the game does not offer (gone, or not unlocked: nobody the game keeps behind a prize ever comes
+// through a kit) leaves its seat empty for the draw, and plan ids that are not in the planning menu's lists are dropped.
+const CTFKITS_KEY = 'bfsi:ctfkits';
+let CTFKITS = null, CTFKIT_UI = null;   // CTFKIT_UI: { mode:'save'|'load', team, ... } while the box is open
+function ctfKitRaw(k){
+  if(!k || typeof k !== 'object' || typeof k.name !== 'string') return null;
+  const name = k.name.trim().slice(0, 40); if(!name) return null;
+  return { name, fighters:(Array.isArray(k.fighters) ? k.fighters : []).slice(0, 8).map(n=>typeof n === 'string' ? n.slice(0, 40) : null), skill:[-1, 0, 1, 2].includes(+k.skill) ? +k.skill : -1, strat:ctfCupCleanStrat(k.strat, 8) };
+}
+function ctfKits(){
+  if(CTFKITS) return CTFKITS;
+  let a = []; try{ const raw = localStorage.getItem(CTFKITS_KEY); if(raw){ const j = JSON.parse(raw); if(Array.isArray(j)) a = j; } }catch(e){}
+  const seen = new Set(); CTFKITS = a.map(ctfKitRaw).filter(k=>{ if(!k || seen.has(k.name.toLowerCase())) return false; seen.add(k.name.toLowerCase()); return true; });
+  return CTFKITS;
+}
+function ctfKitsSave(){ try{ localStorage.setItem(CTFKITS_KEY, JSON.stringify(ctfKits())); }catch(e){} }
+function ctfKitIndex(name){ return ctfKits().findIndex(k=>k.name.toLowerCase() === String(name).trim().toLowerCase()); }
+// a kit as the game can load it now: { fighters (a name the game offers, or null), skill, strat, dropped (how many entries were let go) }
+function ctfKitSanitize(k){
+  const pool = ctfCupPool(), ok = n=>!!n && pool.some(r=>r.name === n), st = JSON.parse(JSON.stringify(k.strat)), valid = {}, seen = new Set(); let dropped = 0;
+  for(const id of Object.keys(CTF_BUILDS)) if(id !== 'twin') valid[id] = 1;
+  for(const id of CTF_OFFENCE.concat(CTF_DEFENCE, CTF_EXTRA_DEF)) valid[id] = 1;
+  const fighters = k.fighters.map(n=>{ if(!n) return null; if(!ok(n) || seen.has(n)){ dropped++; return null; } seen.add(n); return n; });
+  for(const f of ['ticks', 'off']) for(const id of Object.keys(st[f])) if(!valid[id]){ delete st[f][id]; dropped++; }
+  if(st.preset && !CTF_PRESETS[st.preset]){ st.preset = null; dropped++; }
+  for(const q of Object.keys(st.assign)) if(CTF_ROLE_CHOICES.indexOf(st.assign[q]) < 1){ delete st.assign[q]; dropped++; }
+  return { name:k.name, fighters, skill:k.skill, strat:st, dropped };
+}
+function ctfKitFromTeam(i, name){
+  const st = JSON.parse(JSON.stringify(CTFCUP.strat[i]));
+  return { name, fighters:CTFCUP.slots[i].slice(), skill:CTFCUP.skill[i], strat:st };
+}
+function ctfKitApply(i, kit){
+  const k = ctfKitSanitize(kit), size = CTFCUP.size;
+  for(let q = 0; q < size; q++) CTFCUP.slots[i][q] = k.fighters[q] || null;
+  CTFCUP.skill[i] = k.skill;
+  CTFCUP.strat[i] = ctfCupCleanStrat(k.strat, size);
+  ctfCupSave(); return k;
+}
+// save under a name (a name that exists is replaced: ctfKitSaveGo asks first); rename; delete
+function ctfKitPut(i, name){
+  name = String(name).trim().slice(0, 40); if(!name) return false;
+  const kit = ctfKitRaw(ctfKitFromTeam(i, name)), at = ctfKitIndex(name);
+  if(at >= 0) ctfKits()[at] = kit; else ctfKits().push(kit);
+  ctfKitsSave(); return true;
+}
+function ctfKitRename(from, to){
+  to = String(to).trim().slice(0, 40); const at = ctfKitIndex(from); if(at < 0 || !to) return false;
+  const clash = ctfKitIndex(to); if(clash >= 0 && clash !== at) return false;
+  ctfKits()[at].name = to; ctfKitsSave(); return true;
+}
+function ctfKitDelete(name){ const at = ctfKitIndex(name); if(at < 0) return false; ctfKits().splice(at, 1); ctfKitsSave(); return true; }
+// the four example kits (the four AIs' plans, as they are written in the planning menu's own words): one button brings them in as "AI 1" to "AI 4"
+const CTFKIT_EXAMPLES = [
+  { name:'AI 1', fighters:['Tennis Ball', 'Test Tube', 'Leafy', 'Pencil'], preset:null, roles:['def', 'def', 'runner', 'att'],
+    build:['One choke point', 'Stun the landing', 'Airlock', 'Wall the shortcut'], offence:['Scout first', 'Boost for the run home', 'Third-area return', 'Carrier hides'], defence:['Hold the choke', 'Zones', 'Two layers', 'Chip to jail'] },
+  { name:'AI 2', fighters:['Leafy', 'Liy', 'Bell', 'Tennis Ball'], preset:null, roles:['scout', 'att', 'trapper', 'def'],
+    build:['Layered rings', 'Shell game', 'Stun chain', 'One choke point', 'Wall the shortcut', 'Sealed box'], offence:['Scout first', 'Feint raid', 'Hit during a rescue', 'Third-area return', 'Boost for the run home', 'Carrier hides'], defence:['Hold the choke', 'Two layers', 'Lurk unseen', 'Chase pair', 'Cut-off', 'Fall back', 'Chip to jail'] },
+  { name:'AI 3', fighters:['Golf Ball', 'Yellow Face', 'Leafy', 'Fern'], preset:'turtle', roles:['def', 'def', 'scout', 'runner'],
+    build:['Layered rings', 'Shell game', 'Stun the landing', 'Spring bounce-back', 'Wall the shortcut', 'One choke point', 'Own catapult', 'Overhang', 'Stun chain', 'Prop ambush'],
+    offence:['Scout first', 'Feint raid', 'Pincer', 'Boost for the run home', 'Third-area return', 'Pick off the guard', 'Smash a shortcut', 'Hit during a rescue', 'Lookout'], defence:['Two layers', 'Zones', 'Patrol loop', 'Cut-off', 'Chase pair', 'Fall back', 'Chip to jail', 'Drop from above', 'Mover control'] },
+  { name:'AI 4', fighters:['Leafy', 'Tree', 'Lollipop', 'Gelatin'], preset:null, roles:['scout', 'att', 'def', 'def'],
+    build:['One choke point', 'Stun the landing', 'Stun chain', 'Layered rings', 'Shell game', 'Spike moat', 'Wall the shortcut', 'Airlock', 'Trapped fork', 'Boost denial', 'Ice, belt or slope approach', 'Own catapult'],
+    offence:['Scout first', 'Tank clears traps', 'Smash a shortcut', 'Pincer', 'Boost for the run home', 'Carrier hides', 'Minimap fake-out', 'Third-area return'], defence:['Zones', 'Two layers', 'Lurk unseen', 'Chip to jail', 'Cut-off', 'Counter-raid', 'Jail guard', 'Mover control'] } ];
+function ctfPlanIdByName(n){
+  for(const id of Object.keys(CTF_BUILDS)) if(CTF_BUILDS[id].name === n) return id;
+  for(const id of Object.keys(CTF_PLAY_NAMES)) if(CTF_PLAY_NAMES[id] === n) return id;
+  return null;
+}
+function ctfKitFromExample(x){
+  const ticks = {}, miss = [];
+  for(const n of x.build.concat(x.offence, x.defence)){ const id = ctfPlanIdByName(n); if(id) ticks[id] = true; else miss.push(n); }
+  const assign = {}; x.roles.forEach((r, k)=>{ assign[k] = r; });
+  return { kit:ctfKitRaw({ name:x.name, fighters:x.fighters, skill:2, strat:{ mode:'fixed', preset:x.preset, ticks, off:{}, assign } }), missing:miss };
+}
+function ctfKitImportExamples(){ for(const x of CTFKIT_EXAMPLES){ const k = ctfKitFromExample(x).kit, at = ctfKitIndex(k.name); if(at >= 0) ctfKits()[at] = k; else ctfKits().push(k); } ctfKitsSave(); }
+// ---- the box: Save kit asks for a name (a text field), Load kit shows the list ----
+function ctfKitSummary(k){
+  const f = ctfKitSanitize(k), st = f.strat, P = st.preset && CTF_PRESETS[st.preset], n = Object.keys(st.ticks).length;
+  return f.fighters.map(x=>x || '?').join(', ') + '  ·  ' + ({ auto:'strategist', fixed:'fixed plan', adapt:'fixed, then adapt' }[st.mode]) + (st.mode !== 'auto' ? ' (' + (P ? P.name + ', ' : '') + n + ' ideas)' : '') + '  ·  CPU ' + (f.skill < 0 ? 'cup default' : ['Easy', 'Normal', 'Hard'][f.skill]);
+}
+function ctfKitOpen(mode, team){
+  CTFKIT_UI = { mode, team, cur:0, rename:null, confirm:null, msg:'' };
+  if(mode === 'save'){ CTFKIT_UI.text = 'Team ' + (team + 1); }
+  ctfKitDraw();
+}
+function ctfKitClose(){ const box = document.getElementById('ctfCupKitBox'); if(box) box.style.display = 'none'; CTFKIT_UI = null; try{ ctfCupTeamsRender(); }catch(e){} }
+function ctfKitDraw(){
+  const box = document.getElementById('ctfCupKitBox'), u = CTFKIT_UI; if(!box || !u) return;
+  box.innerHTML = ''; box.style.display = 'flex';
+  const head = document.createElement('div'); head.className = 'ctfcup-pickbar'; head.textContent = u.mode === 'save' ? 'Save team ' + (u.team + 1) + ' as a kit' : 'Load a kit into team ' + (u.team + 1); box.appendChild(head);
+  const msg = document.createElement('div'); msg.className = 'ctfkit-msg'; msg.textContent = u.msg || '';
+  if(u.mode === 'save'){
+    const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 40; inp.className = 'ctfkit-input'; inp.id = 'ctfKitName'; inp.value = u.text; inp.oninput = ()=>{ u.text = inp.value; u.confirm = null; u.msg = ''; msg.textContent = ''; };
+    box.appendChild(inp); box.appendChild(msg);
+    const row = document.createElement('div'); row.className = 'ctfcup-tabs';
+    const ok = document.createElement('button'); ok.className = 'cupchip on'; ok.textContent = u.confirm ? 'Replace it' : 'Save'; ok.onclick = ctfKitSaveGo; row.appendChild(ok);
+    const no = document.createElement('button'); no.className = 'cupchip'; no.textContent = 'Cancel'; no.onclick = ctfKitClose; row.appendChild(no); box.appendChild(row);
+    const f = document.createElement('div'); f.className = 'ctfcup-planfoot'; f.textContent = 'Type a name, Enter saves, Esc cancels'; box.appendChild(f);
+    setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(e){} }, 0);
+    return;
+  }
+  const kits = ctfKits(); u.cur = Math.max(0, Math.min(u.cur, kits.length - 1));
+  const bar = document.createElement('div'); bar.className = 'ctfcup-tabs';
+  const ex = document.createElement('button'); ex.className = 'cupchip'; ex.textContent = 'Add the AI 1-4 example kits'; ex.title = 'Four plans written by different AIs: fighters, plan and skill'; ex.onclick = ()=>{ ctfKitImportExamples(); u.msg = 'AI 1 to AI 4 are in the list'; ctfKitDraw(); }; bar.appendChild(ex);
+  const x = document.createElement('button'); x.className = 'cupchip'; x.textContent = 'Close'; x.onclick = ctfKitClose; bar.appendChild(x); box.appendChild(bar); box.appendChild(msg);
+  const list = document.createElement('div'); list.className = 'ctfcup-planlist';
+  if(!kits.length){ const e = document.createElement('div'); e.className = 'ctfcup-planrow'; e.textContent = 'No kits yet: Save kit on a team makes one.'; list.appendChild(e); }
+  kits.forEach((k, q)=>{
+    const r = document.createElement('div'); r.className = 'ctfcup-planrow ctfkit-row' + (q === u.cur ? ' cur' : '');
+    if(u.rename === q){ const inp = document.createElement('input'); inp.type = 'text'; inp.maxLength = 40; inp.className = 'ctfkit-input'; inp.id = 'ctfKitRename'; inp.value = u.text; inp.oninput = ()=>{ u.text = inp.value; }; r.appendChild(inp); setTimeout(()=>{ try{ inp.focus(); inp.select(); }catch(e){} }, 0); }
+    else { const nm = document.createElement('span'); nm.className = 'ctfkit-name'; nm.textContent = k.name; r.appendChild(nm); const sm = document.createElement('span'); sm.className = 'ctfkit-sum'; sm.textContent = ctfKitSummary(k); r.appendChild(sm); }
+    const mk = (label, fn)=>{ const b = document.createElement('button'); b.className = 'cupchip'; b.textContent = label; b.onclick = ev=>{ ev.stopPropagation(); u.cur = q; fn(); }; r.appendChild(b); };
+    mk('Load', ()=>ctfKitLoadGo(q)); mk('Rename', ()=>ctfKitRenameStart(q)); mk(u.confirm === q ? 'Sure?' : 'Delete', ()=>ctfKitDeleteGo(q));
+    r.onclick = ()=>{ u.cur = q; ctfKitDraw(); };
+    list.appendChild(r);
+  });
+  box.appendChild(list);
+  const f = document.createElement('div'); f.className = 'ctfcup-planfoot'; f.textContent = 'Up/Down choose   Enter load   R rename   Delete remove (twice)   I add the AI 1-4 examples   Esc close'; box.appendChild(f);
+}
+function ctfKitSaveGo(){
+  const u = CTFKIT_UI; if(!u || u.mode !== 'save') return;
+  const name = String(u.text || '').trim().slice(0, 40);
+  if(!name){ u.msg = 'A kit needs a name'; ctfKitDraw(); return; }
+  if(ctfKitIndex(name) >= 0 && u.confirm !== name){ u.confirm = name; u.msg = 'A kit called "' + name + '" is there: Enter again replaces it'; ctfKitDraw(); return; }
+  ctfKitPut(u.team, name); ctfKitClose();
+}
+function ctfKitLoadGo(q){ const k = ctfKits()[q], u = CTFKIT_UI; if(!k || !u) return; ctfKitApply(u.team, k); ctfKitClose(); }
+function ctfKitRenameStart(q){ const u = CTFKIT_UI, k = ctfKits()[q]; if(!u || !k) return; u.rename = q; u.text = k.name; u.msg = ''; ctfKitDraw(); }
+function ctfKitRenameGo(){
+  const u = CTFKIT_UI, k = u && ctfKits()[u.rename]; if(!k) return;
+  if(!ctfKitRename(k.name, u.text)){ u.msg = String(u.text).trim() ? 'That name is taken' : 'A kit needs a name'; ctfKitDraw(); return; }
+  u.rename = null; u.msg = ''; ctfKitDraw();
+}
+function ctfKitDeleteGo(q){ const u = CTFKIT_UI, k = ctfKits()[q]; if(!u || !k) return; if(u.confirm !== q){ u.confirm = q; u.msg = 'Press Delete again to remove "' + k.name + '"'; ctfKitDraw(); return; } ctfKitDelete(k.name); u.confirm = null; u.msg = ''; ctfKitDraw(); }
+function ctfKitKey(e){
+  const u = CTFKIT_UI; if(!u) return;
+  const code = e.code, typing = !!(e.target && /INPUT|TEXTAREA/.test(e.target.tagName)), eat = ()=>{ e.stopImmediatePropagation(); e.preventDefault(); };
+  if(typing){
+    if(code === 'Escape'){ eat(); if(u.mode === 'load' && u.rename != null){ u.rename = null; ctfKitDraw(); } else ctfKitClose(); }
+    else if(code === 'Enter'){ eat(); if(u.mode === 'save') ctfKitSaveGo(); else ctfKitRenameGo(); }
+    return;   // (anything else is typed)
+  }
+  if(code === 'Escape'){ eat(); ctfKitClose(); return; }
+  if(u.mode !== 'load') return;
+  const kits = ctfKits();
+  if(code === 'ArrowUp' || code === 'ArrowDown'){ eat(); if(kits.length) u.cur = (u.cur + (code === 'ArrowDown' ? 1 : kits.length - 1)) % kits.length; u.confirm = null; u.msg = ''; ctfKitDraw(); }
+  else if(code === 'Enter' || code === 'Space'){ eat(); ctfKitLoadGo(u.cur); }
+  else if(code === 'KeyR'){ eat(); ctfKitRenameStart(u.cur); }
+  else if(code === 'Delete' || code === 'Backspace'){ eat(); ctfKitDeleteGo(u.cur); }
+  else if(code === 'KeyI'){ eat(); ctfKitImportExamples(); u.msg = 'AI 1 to AI 4 are in the list'; ctfKitDraw(); }
+}
+if(typeof window !== 'undefined' && window.addEventListener && !window.__ctfKitKeys){ window.__ctfKitKeys = true; window.addEventListener('keydown', ctfKitKey, true); }
 function ctfCupPickOpen(team, seat){
   CTFCUP_PICK = { team, seat }; const box = document.getElementById('ctfCupPicker'); if(!box) return;
   const pool = ctfCupPool(), mates = new Set(CTFCUP.slots[team].filter((n, q)=>n && q !== seat));
@@ -11957,7 +12122,7 @@ const MOVE_TEXT = {
   "Cherries": {jab:"Attack — a punch just in front of them (short reach). On hit: 7%.", ranged:"Ranged — a low kick at the feet (short reach). On hit: 3%.", special:"Play Dirty — pours olive oil on the floor ahead (medium reach); the first to run onto it slips, the Cherries included. On hit: 4%, knocks them down.", up:"Leg Up the Wall — a rising kick up an invisible wall, hitting anyone beside them (short reach). On hit: 8%, stuns them.", down:"The Bait — they flop down with a fake boo-boo, and the first foe to come close is tripped by the other cherry (short reach). On hit: 6%, knocks them down.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Clover": {jab:"Attack — a leafy punch just in front of her (short reach). On hit: 5%.", ranged:"Ranged — a low kick at the feet (short reach). On hit: 3%.", special:"Butterflies — calls four butterflies that drift ahead (long reach) and catch a shot each in front of her; a foe who touches one hits weaker. On hit: 2%, weakens them.", up:"Lucky Wind — no hit: the wind lifts her high, with a jump back.", down:"Meant for Me — no hit: for half a second her luck turns the next hit away from her, and it lands on whoever threw it instead.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Jack": {jab:"Attack — a knuckle punch just in front of him (short reach). On hit: 5%.", ranged:"Ranged — a low kick at the feet (short reach). On hit: 3%.", special:"Pager Hurl — hurls his pager straight ahead at leg height, fast (very long reach). On hit: 6%, knocks them down.", up:"I Prefer to Wrestle — a rising grab that puts whoever he rises into over his shoulder, behind him (short reach). On hit: 9%, knocks them down.", down:"Knuckles — no hit: he glares and cracks his knuckles at whoever is in front (long reach); their hits are weaker for a while.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
-  "Magnet": {jab:"Attack — a punch just in front of her (short reach). On hit: 6.5%.", ranged:"Low Sweep — a quick sweep at the feet straight ahead that pops them up (short reach). On hit: 5%.", utilt:"Uppercut — a rising swing over the head that launches them straight up (short reach). On hit: 5%.", special:"C'mon, Bestie! — pulls the nearest foe in front toward her (medium reach) and hits them as they arrive; metal fighters are pulled from further and hit harder. On hit: 9%.", up:"Climbing Gear — a straight climb that hauls up whoever is right beside her (short reach). On hit: 7%, stuns them.", down:"Like Poles Repel — after a short wind-up, a blast all around her (short reach) shoves everyone away hard; metal fighters are shoved further. On hit: 7%.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
+  "Magnet": {jab:"Attack — a punch just in front of her (short reach). On hit: 8.5%.", ranged:"Low Sweep — a quick sweep at the feet straight ahead that pops them up (short reach). On hit: 5%.", utilt:"Uppercut — a rising swing over the head that launches them straight up (short reach). On hit: 5%.", special:"C'mon, Bestie! — pulls the nearest foe in front toward her (medium reach) and hits them as they arrive; metal fighters are pulled from further and hit harder. On hit: 12%.", up:"Climbing Gear — a straight climb that hauls up whoever is right beside her (short reach). On hit: 7%, stuns them.", down:"Like Poles Repel — after a short wind-up, a blast all around her (short reach) shoves everyone away hard; metal fighters are shoved further. On hit: 7%.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "MeTag": {jab:"Attack — a punch just in front of them (short reach). On hit: 6.5%.", ranged:"Low Sweep — a quick sweep at the feet straight ahead that pops them up (short reach). On hit: 5%.", utilt:"Uppercut — a rising swing over the head that launches them straight up (short reach). On hit: 5%.", special:"Cuffing Dash — a short dash (short reach); the first foe it touches is cuffed and rooted for about 0.6 seconds, and can mash out a little sooner. On hit: 6%.", up:"Barrier Step — no hit: they spring straight up off a pane of their own barrier.", down:"Precision Finding — no hit: the logo glows and locks on the nearest foe for 5 seconds; their hits on that foe land 30% harder. Tracking another foe moves the mark.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Poppy": {jab:"Attack — a punch just in front of them (short reach). On hit: 8%.", ranged:"Low Sweep — a quick sweep at the feet straight ahead that pops them up (short reach). On hit: 5%.", utilt:"Uppercut — a rising swing over the head that launches them straight up (short reach). On hit: 5%.", special:"Ghost Vacuum — rooted, sucks in every foe nearby, and whoever reaches the nozzle pops out in a pod (long reach). On hit: 8%, roots them.", up:"Pop-Up — bursts straight up like a popping kernel (short reach). On hit: 9%, knocks them down.", down:"Quick Fix — no hit: kneels and tinkers, mending about 10% over a second; a hit interrupts it.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Silver Spoon": {jab:"Attack — a punch just in front of him (short reach). On hit: 7.5%.", ranged:"Low Sweep — a quick sweep at the feet straight ahead that pops them up (short reach). On hit: 5%.", utilt:"Uppercut — a rising swing over the head that launches them straight up (short reach). On hit: 5%.", special:"Glowing Gold — a flash of gold pops foes right around him up as it takes hold (short reach), then he glows gold for 6 seconds, hitting harder and moving faster. On hit: 4%.", up:"Up, Up and Away — no hit: he rises in a gold glow, armoured for a moment.", down:"Scoop — a low sweep just in front that lifts the foe off the ground (short reach). On hit: 5%.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
@@ -36298,6 +36463,7 @@ function updateSummons(){
       const own = fighters[s.owner];
       if(!own || own.dead || !own.kit || own.kit.special!=='saltpepper'){ s.life=0; continue; }
       const want = own.x - own.face*32;                       // a step behind her, on her side
+      if(Math.abs(want - s.x) > 400 || Math.abs(own.y - s.y) > 300){ s.x = want; s.y = own.y; }   // Salt went far at once (a jail, a respawn, a mill door): Pepper is with her, not sliding through the walls after her
       s.vx = (want - s.x) * 0.22; s.x += s.vx; s.vy = 0;
       s.y += (own.y - s.y) * 0.25;
       s.face = own.face; if(s.flash>0) s.flash--;
@@ -36529,6 +36695,7 @@ function step(){
   try{ observePlaystyle(); }catch(e){}   // Wave 5: watch how the human plays this fighter
   testDpsTick();
   if(SETTINGS.mode!=='ctf') updateItems();
+  else updateSummons();   // (Capture the Flag has no items, but summons still live: Pepper, assists and the rest froze where they stood -- the owner, 2026-10-16: "pepper is bugged in ctf... cant move")
   fsStep();   // the Smash Ball and any Final Smash in progress (FINAL SMASH BALLS)
   if(TOURNEY_WATCHING) tourneyLiveTick();
   if(tendrils.length) updateTendrils();
@@ -37690,7 +37857,7 @@ const RANGE_PROFILE = {
   glaze:{reach:10,dmg:7,kb:7,   shock:"aoe", shockR:60, shockDmg:5},  // Donut
   barrier:{reach:3,dmg:6.5,kb:8, shock:"aoe", shockR:50, shockDmg:3},   // MeTag -- the default row, raised (ii-buffs)
   glowgold:{reach:4,dmg:7.5,kb:9, shock:"aoe", shockR:50, shockDmg:3},   // Silver Spoon -- the default row, raised (ii-buffs)
-  bestie:{reach:3,dmg:6.5,kb:8, shock:"aoe", shockR:50, shockDmg:3},   // Magnet -- the default row, raised (ii-buffs)
+  bestie:{reach:3,dmg:8.5,kb:9.5, shock:"aoe", shockR:50, shockDmg:3},   // Magnet -- the default row, raised (ii-buffs), and again with her moveset (the weakest II fighter: 10% on the panel)
   vacuum:{reach:5,dmg:8,kb:9, shock:"aoe", shockR:50, shockDmg:3},   // Poppy -- the default row, raised (ii-buffs)
   copycat:{reach:5,dmg:8.5,kb:9, shock:"aoe", shockR:50, shockDmg:3},   // Dough -- the default row, raised (ii-buffs)
   tape:{reach:4,dmg:7.5,kb:9, shock:"aoe", shockR:50, shockDmg:3},   // Tapey -- the default row, raised (ii-buffs)
@@ -38369,7 +38536,7 @@ function metagWallStep(pr){
 // these three, and Trophy, Bell, Bot and Silver Spoon, under Category:Metal Characters), Roboty (a red metal-plated robot) and Naily (a steel hardware nail).
 // Left out because the page does not say metal: Pin (a plastic pushpin with a silver tip) and Tea Kettle (a white teapot).
 const METAL_FIGHTERS = new Set(["Knife","Silver Spoon","Nickel","Nickel (II)","Coiny","Needle","Saw","Bonesaw","Bell","Trophy","Bot","Microphone","Salt","Spikey","Roboty","Naily"]);
-const MAG_REACH = 240, MAG_PULL_FRAMES = 16, MAG_HIT_DMG = 9, MAG_HIT_KB = 9, MAG_METAL = 1.4, MAG_REPEL_R = 105, MAG_REPEL_DMG = 7, MAG_REPEL_KB = 14, MAG_FX_FRAMES = 18;
+const MAG_REACH = 240, MAG_PULL_FRAMES = 16, MAG_HIT_DMG = 12, MAG_HIT_KB = 11, MAG_METAL = 1.4, MAG_REPEL_R = 105, MAG_REPEL_DMG = 7, MAG_REPEL_KB = 14, MAG_FX_FRAMES = 18;
 function magnetMetal(t){ return METAL_FIGHTERS.has(t.name); }
 // The pull, once a frame while she is pulling (from the fighter step): the foe slides to her side at an even pace; at the end they are hit. Ended by a hit on
 // either of them, a freeze, a KO or the foe getting out of her height.
@@ -42545,7 +42712,7 @@ function doSpecial(f){
       f.flash = 10;
       if(t){
         f._attract = { tgt:t.idx, t:MAG_PULL_FRAMES }; f._attractFx = { to:t.idx, until:hazardT + MAG_PULL_FRAMES + 8 };
-        f.rooted = Math.max(f.rooted||0, MAG_PULL_FRAMES + 2); f.spCd = 120;       // pulling: she stands her ground; one pull at a time
+        f.rooted = Math.max(f.rooted||0, MAG_PULL_FRAMES + 2); f.spCd = 84;       // pulling: she stands her ground; one pull at a time
       } else { const bs = summons.length ? nearestSummon(f, f.x, f.y, MAG_REACH, function(o){ return Math.sign(o.x - f.x) === f.face && Math.abs(o.y - f.y) < 90 + o.r; }) : null;
         if(bs){ damageSummon(f, bs, f.x, f.y, MAG_HIT_DMG); f._attractFx = { to:null, tx:bs.x, ty:bs.y, until:hazardT + 8 }; f.spCd = 120; }
         else { for(let i=0;i<4;i++) puff(f.x + f.face*24, f.y - 6, '#9aa8ff', 3); f.spCd = 40; } }   // nobody in reach: a fizzle, soon again
@@ -54732,7 +54899,7 @@ Object.assign(CLINGERS, { bestie:46, spikeburst:40 });   // a magnet clings to t
 Object.assign(MOVESETS, {
   // ---- MAGNET ("bestie") -- the crowd puller: slow and steady, she draws things to her and shoves them away. C'mon, Bestie! (pull the nearest foe in and hit them as they arrive) is C.
   bestie: {
-    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    aiFit: true, aiK: 0.9, aiG: 0.8, aiH: 0.8, aiS: 30,   // the weakest II fighter: her CPU uses her moves (a way in, a way back, a way to kill)
     ft: { n:'Pole Push', d:'pushes the like pole of her magnet into whoever is in front of her', pose:'punch', st:5, act:3, end:9,
       boxes:[{ s:MvC(14, 0, 62, 0, 16), dmg:6.2, kb:[4.4, -3.8], stun:25 }] },
     ut: { n:'North Pole', d:'raises her north pole up over her head', pose:'uppercut', st:5, act:4, end:9,
@@ -54742,15 +54909,16 @@ Object.assign(MOVESETS, {
     na: { n:'Magnetic Field', d:'sets up a field round her that clips everything near twice', pose:'spin', st:5, act:6, end:8, land:9, ac:15,
       boxes:[{ s:MvO(0, 0, 54), dmg:4.1, kb:[1.4, -2.7], stun:20, rehit:5 }] },
     fa: { n:'South Pole Slug', d:'slugs ahead with her south pole', pose:'punch', st:6, act:3, end:10, land:10, ac:17,
-      boxes:[{ s:MvC(14, -2, 64, -2, 15), dmg:7.6, kb:[3.4, -3], stun:25 }] },
+      boxes:[{ s:MvC(14, -2, 64, -2, 15), dmg:9.4, kb:[4.4, -3.4], stun:25 }] },
     ba: { n:'Repel', d:'repels whoever is behind her with a burst of like poles', pose:'kickback', st:6, act:3, end:10, land:11, ac:18,
-      boxes:[{ s:MvO(-44, 0, 28), dmg:8.6, kb:[-8.8, -4.4], stun:15 }] },
-    ua: { n:'Pole Up', d:'points a pole straight up past her head', pose:'uppercut', st:4, act:3, end:8, land:8, ac:13,
-      boxes:[{ s:MvC(0, -12, 2, -70, 13), dmg:5.4, kb:[0.4, -9], stun:24 }] },
+      boxes:[{ s:MvO(-44, 0, 28), dmg:11.2, kb:[-10.6, -4.8], stun:15 }] },
+    ua: { n:'Pole Up', d:'points a pole straight up and climbs it, gaining height as she catches whoever is above', pose:'uppercut', st:4, act:3, end:8, land:8, ac:13,
+      boxes:[{ s:MvC(0, -12, 2, -70, 13), dmg:6.7, kb:[0.4, -9], stun:24 }], mv:[{ t0:4, t1:6, mode:'set', vy:-6.2 }] },
     da: { n:'Magnetic Slam', d:'slams down on whoever is below with the weight of every pole; she can jump out of it once it hits', pose:'slam', st:8, act:4, end:12, land:13, ac:22, jc:'hit',
-      boxes:[{ s:MvC(0, 14, 4, 62, 17), t0:8, t1:11, dmg:8.8, kb:[0.7, 9], stun:14 }], mv:[{ t0:8, t1:11, mode:'dive', vy:10 }] },
-    side: { n:'Pole Position', d:'sets her poles and shoots forward on a push of like poles, shouldering whoever is in the way; she can jump out of its end', pose:'dash', st:4, act:11, end:11, cd:60, jc:'end',
-      boxes:[{ s:MvC(12, 0, 50, 0, 17), dmg:6, kb:[5.2, -3.8], stun:14 }], mv:[{ t0:0, t1:12, mode:'set', vx:8.2 }] },
+      boxes:[{ s:MvC(0, 14, 4, 62, 17), t0:8, t1:11, dmg:10.2, kb:[0.7, 9.4], stun:14 }], mv:[{ t0:8, t1:11, mode:'dive', vy:10 }] },
+    side: { n:'Pole Position', d:'sets her poles and shoots forward on a push of like poles, armoured as she starts, shouldering whoever is in the way; she can jump out of its end', pose:'dash', st:3, act:11, end:10, cd:54, jc:'end',
+      start:(f) => { f.armor = Math.max(f.armor || 0, 8); },
+      boxes:[{ s:MvC(12, 0, 54, 0, 18), dmg:8.2, kb:[6.4, -4], stun:15 }], mv:[{ t0:0, t1:12, mode:'set', vx:10.4 }] },
     // "C'mon, bestie!" as she pulls Pepper along by the hand (All Play and No Work); "a very magnetic presence" (Magnet, Personality)
     grab: { reach:30, whiff:30, pummel:{ dmg:1.6, every:14, n:'Static Pinch' }, hold:{ base:60 },
       f:{ n:'Bestie Toss', d:'takes them by the hand and tosses them off ahead', dmg:7.4, kx:7.6, ky:-4.2, stun:0, pose:'throw', lag:22 },
@@ -54932,6 +55100,225 @@ Object.assign(MOVESETS, {
       u:{ n:'Platform Boost', d:'boosts them up on the platform technique, ready for an up-air', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
       d:{ n:'Lucky Seven', d:'slams them down with a guess that comes up seven', dmg:5.2, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
     tech:['Short hop, fast fall and a plain wall jump.', 'Rolling Apple can be jump-cancelled when it ends.', 'No cling.'],
+  },
+});
+msWords();
+
+// ============================================================
+//  MOVESETS, INANIMATE INSANITY, BATCH 4: Knife, Lightbulb, Paintbrush, Nickel (II), Paper, Microphone, Salt
+// ============================================================
+// The fourth seven, all light or middling and quick on their feet, so every one gets the plain share of movetech (short hop, fast fall, a plain wall jump, at most one small cancel,
+// no cling). None of the seven ever fired a shot from X, so the old "ranged" slot (the shared low sweep) is now each one's own down-tilt, and every neutral special stays on plain C:
+// Knife's Bag of Tricks (in order), Lightbulb's Electric Ball, Paintbrush's Paint Bomb and Heat Explosion, Nickel's Double Zinger, Paper's Idiotic Island, Microphone's Yell at the
+// Ball and Salt's Shake. Salt's moves are echoed by Pepper a beat later, as every move of hers always was.
+// CANON (only the moments this file already quotes): Knife's Bag of Tricks, the Temporary Paralyzer and the Fist Thingy (Test Tube's inventions), his caltrops that draw blood;
+// Lightbulb "electrified a ball and threw it to Fan" and her love of cookies (Double Digit Desert); Paintbrush's rage and Heat Explosion; Nickel's Double Zinger "that blew Trophy
+// away" and Experiment 626; Paper "did it to Pickle in Inanimate Smackdown" (ripped him in half), the Water-Proof Bag and Idiotic Island; Microphone's "Yell at the Ball" (Kick the
+// Bucket) and her Power Button; Salt's "Peps, that's us! Recognition!" (The Stacker, Remastered) and Pepper doing the same a beat later.
+const msEcho = (S) => Object.assign(S, { start:(f) => { pepperEcho(f, 'jab'); } });   // Salt's moves: Pepper does the same a beat later (pepperEcho)
+Object.assign(MOVESETS, {
+  // ---- KNIFE ("tricks") -- the trickster: armless and thin, all edge and misdirection; his hits draw blood at the tip. Bag of Tricks (four tricks in order) is C.
+  tricks: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Quick Stab', d:'stabs straight ahead, quick and thin', pose:'punch', st:4, act:2, end:7,
+      boxes:[{ s:MvC(12, 0, 64, 0, 10), dmg:5.6, kb:[3.4, -4.2], stun:21 }] },
+    ut: { n:'Blade Flip', d:'flips his blade up in a narrow arc over his head', pose:'uppercut', st:5, act:3, end:8,
+      boxes:[{ s:MvF(6, 60, -2.3, -0.3, -4, 0), dmg:4.8, kb:[0.5, -10.6], stun:24 }] },
+    dt: { n:'Low Slash', d:'slashes low along the floor at their ankles', pose:'kick', st:4, act:2, end:7,
+      boxes:[{ s:MvC(10, 20, 66, 20, 9), dmg:4, kb:[1.6, -7], stun:22 }] },
+    na: { n:'Blade Spin', d:'spins on his point, his edge clipping everything near him twice', pose:'spin', st:4, act:5, end:7, land:7, ac:12,
+      boxes:[{ s:MvO(0, 0, 46), dmg:3.3, kb:[1.3, -2.6], stun:20, rehit:4 }] },
+    fa: { n:'Lunge', d:'lunges point-first; the very tip hits hardest and leaves them bleeding', pose:'throw', st:5, act:2, end:8, land:8, ac:13, x:'8.6% at the tip (6% elsewhere)', fxt:'bleeds at the tip',
+      boxes:[{ s:MvO(76, -2, 10), g:'a', dmg:8.6, kb:[3, -2.8], stun:22, fx:msFx('bleed', 90) }, { s:MvC(14, -2, 72, -2, 9), g:'a', dmg:6, kb:[2.4, -2.8], stun:22 }] },
+    ba: { n:'Back Stab', d:'stabs the blade backwards into whoever is behind him', pose:'kickback', st:5, act:3, end:9, land:9, ac:16,
+      boxes:[{ s:MvC(-12, 0, -60, 0, 10), dmg:8.2, kb:[-8.6, -4.4], stun:14 }] },
+    ua: { n:'Blade Up', d:'stabs the point straight up past his head', pose:'kickup', st:4, act:3, end:8, land:7, ac:12,
+      boxes:[{ s:MvC(0, -12, 2, -76, 10), dmg:6.0, kb:[0.4, -9], stun:24 }] },
+    da: { n:'Dive Stab', d:'dives point-first onto whoever is below', pose:'stompdn', st:8, act:3, end:11, land:11, ac:20,
+      boxes:[{ s:MvC(0, 12, 2, 66, 9), t0:8, t1:10, dmg:8.4, kb:[0.5, 9.4], stun:13 }], mv:[{ t0:8, t1:10, mode:'dive', vy:10 }] },
+    side: { n:'Slip Through', d:'slips forward low and fast with the blade out, cutting whoever is in the way; he can jump out of its end', pose:'dash', st:2, act:9, end:11, cd:54, jc:'end',
+      boxes:[{ s:MvC(10, 4, 52, 4, 11), dmg:5, kb:[4.8, -3.6], stun:13 }], mv:[{ t0:0, t1:10, mode:'set', vx:10.2 }] },
+    // the Temporary Paralyzer and the Fist Thingy (Test Tube's inventions in his bag), the caltrops that draw blood
+    grab: { reach:28, whiff:26, pummel:{ dmg:1.4, every:12, n:'Nick' }, hold:{ base:56 },
+      f:{ n:'Fist Thingy', d:'hauls them in on the Fist Thingy and sends them back out ahead', dmg:7, kx:7.6, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Boomerang', d:'throws them like a boomerang, off behind him', dmg:7.4, kx:8.2, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Paralyzer', d:'zaps them with the Temporary Paralyzer and tosses them up, ready for an up-air', dmg:4.8, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Caltrops', d:'drops them on a scatter of caltrops', dmg:5, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Slip Through can be jump-cancelled when it ends.', 'No cling.'],
+  },
+  // ---- LIGHTBULB ("eball") -- the zoner: light and quick, with a spark in everything. Electric Ball (a charged ball that arcs to a second foe) is C.
+  eball: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Static Zap', d:'zaps a spark straight ahead', pose:'punch', st:4, act:2, end:7,
+      boxes:[{ s:MvC(12, -2, 62, -2, 11), dmg:4.8, kb:[3.4, -4.2], stun:21 }] },
+    ut: { n:'Bright Idea', d:'lights up over her head, a flash that lofts them', pose:'uppercut', st:4, act:3, end:7,
+      boxes:[{ s:MvF(6, 58, -2.3, -0.4, -8, 0), dmg:4.2, kb:[0.5, -10.6], stun:23 }] },
+    dt: { n:'Cord Trip', d:'whips her cord along the floor to trip them', pose:'kick', st:3, act:2, end:7,
+      boxes:[{ s:MvC(8, 22, 66, 22, 9), dmg:3.4, kb:[1.5, -6.8], stun:22 }] },
+    na: { n:'Lumen Ring', d:'flares into a ring of light that stings everything near twice', pose:'spin', st:3, act:6, end:6, land:6, ac:12, fxt:'stuns them',
+      boxes:[{ s:MvO(0, 0, 42), dmg:2.8, kb:[1.1, -2.5], stun:19, rehit:4, fx:msFx('stun', 14) }] },
+    fa: { n:'Arc Jab', d:'jabs an arc of current ahead of her', pose:'punch', st:4, act:2, end:7, land:7, ac:12,
+      boxes:[{ s:MvC(14, -4, 70, -4, 9), dmg:5.4, kb:[2.4, -2.8], stun:22 }] },
+    ba: { n:'Backfire', d:'backfires a pop of current out behind her', pose:'kickback', st:4, act:3, end:9, land:8, ac:15,
+      boxes:[{ s:MvO(-44, -4, 22), dmg:6.6, kb:[-7.8, -4], stun:13 }] },
+    ua: { n:'Flicker Up', d:'flickers straight up through whoever is above her', pose:'kickup', st:3, act:3, end:6, land:5, ac:10,
+      boxes:[{ s:MvC(0, -12, 2, -68, 11), dmg:3.9, kb:[0.3, -8.6], stun:22 }] },
+    da: { n:'Burn Out', d:'burns out downward in a flash on whoever is below', pose:'slam', st:6, act:4, end:10, land:9, ac:18,
+      boxes:[{ s:MvC(0, 12, 4, 58, 12), t0:6, t1:9, dmg:6.8, kb:[0.6, 8.2], stun:13 }], mv:[{ t0:6, t1:9, mode:'dive', vy:9 }] },
+    side: { n:'Short Circuit', d:'short-circuits forward along the floor in a streak of sparks, stinging whoever is in the way; she can jump out of its end', pose:'dash', st:3, act:8, end:10, cd:54, jc:'end',
+      boxes:[{ s:MvO(24, 0, 22), dmg:4.8, kb:[4.4, -3.4], stun:13 }], mv:[{ t0:0, t1:9, mode:'set', vx:11.4 }] },
+    // "she electrified a ball and threw it to Fan"; her love of cookies (Double Digit Desert)
+    grab: { reach:26, whiff:26, pummel:{ dmg:1.2, every:12, n:'Spark' }, hold:{ base:52 },
+      f:{ n:'Shock Toss', d:'shocks them and tosses them off ahead', dmg:6, kx:7, ky:-4, stun:0, pose:'throw', lag:18 },
+      b:{ n:'Pull the Plug', d:'pulls the plug and flings them behind her', dmg:6.4, kx:7.6, ky:-4.4, stun:0, pose:'throwb', lag:20 },
+      u:{ n:'Light Show', d:'sends them up in a flash, ready for an up-air', dmg:4.2, kx:0.5, ky:-11.5, stun:31, pose:'uppercut', lag:14 },
+      d:{ n:'Cookie Crumble', d:'crumbles them like a cookie on the floor', dmg:4.2, kx:1.8, ky:-8.5, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Short Circuit can be jump-cancelled when it ends.', 'No cling.'],
+  },
+  // ---- PAINTBRUSH ("fury") -- the rager: no legs, bristles and a temper that grows. Paint Bomb (and the Heat Explosion at full rage) is C.
+  fury: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Bristle Swing', d:'swings the bristles across in front of them', pose:'punch', st:5, act:3, end:8,
+      boxes:[{ s:MvC(12, 0, 62, 0, 13), dmg:5.8, kb:[3.6, -4.2], stun:23 }] },
+    ut: { n:'Handle Up', d:'swings the handle up and over their head', pose:'uppercut', st:5, act:3, end:9,
+      boxes:[{ s:MvF(8, 62, -2.3, -0.35, -4, 0), dmg:5, kb:[0.5, -10.8], stun:24 }] },
+    dt: { n:'Paint Drag', d:'drags a smear of paint along the floor under their feet; it slows them', pose:'kick', st:4, act:3, end:8, fxt:'slows them',
+      boxes:[{ s:MvC(10, 20, 64, 20, 12), dmg:4.4, kb:[1.6, -7.2], stun:24, fx:msFx('slow', 50) }] },
+    na: { n:'Paint Whirl', d:'whirls a ring of paint round him, clipping everything near twice', pose:'spin', st:5, act:6, end:7, land:8, ac:14,
+      boxes:[{ s:MvO(0, 0, 50), dmg:3.2, kb:[1.3, -2.7], stun:19, rehit:5 }] },
+    fa: { n:'Brush Stroke', d:'a long, hard brush stroke straight ahead', pose:'throw', st:6, act:3, end:9, land:9, ac:15,
+      boxes:[{ s:MvC(14, -4, 70, -4, 14), dmg:7, kb:[3, -3], stun:24 }] },
+    ba: { n:'Splatter Back', d:'splatters paint back at whoever is behind him', pose:'kickback', st:5, act:3, end:10, land:10, ac:17,
+      boxes:[{ s:MvC(-12, 0, -60, 0, 14), dmg:8.2, kb:[-8.6, -4.4], stun:14 }] },
+    ua: { n:'Bristle Burst', d:'bursts his bristles straight up above him', pose:'uppercut', st:4, act:3, end:8, land:8, ac:12,
+      boxes:[{ s:MvC(0, -12, 2, -72, 13), dmg:6.2, kb:[0.4, -9], stun:24 }] },
+    da: { n:'Heat Drop', d:'drops with burning bristles onto whoever is below', pose:'slam', st:7, act:4, end:11, land:11, ac:20, fxt:'sets them burning',
+      boxes:[{ s:MvC(0, 14, 4, 62, 14), t0:7, t1:10, dmg:8.2, kb:[0.6, 8.8], stun:14, fx:msBurn(40) }], mv:[{ t0:7, t1:10, mode:'dive', vy:9.5 }] },
+    side: { n:'Fury Dash', d:'storms forward in a fury, bowling over whoever is in the way; he can jump out of its end', pose:'dash', st:4, act:11, end:10, cd:58, jc:'end',
+      boxes:[{ s:MvC(12, 0, 50, 0, 15), dmg:6.2, kb:[5.2, -3.8], stun:14 }], mv:[{ t0:0, t1:12, mode:'set', vx:8.6 }] },
+    // rage, and the Heat Explosion at full rage (his kit); he clashed with Apple and Marshmallow
+    grab: { reach:28, whiff:28, pummel:{ dmg:1.6, every:13, n:'Bristle Jab' }, hold:{ base:58 },
+      f:{ n:'Brush Off', d:'brushes them off ahead with a furious sweep', dmg:7.2, kx:7.8, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Paint Thinner', d:'thins them out behind him in a rage', dmg:7.6, kx:8.2, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Flame Bristles', d:'lifts them on burning bristles, ready for an up-air', dmg:5, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Heat Wave', d:'presses them into the floor in a wave of heat', dmg:5.4, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Fury Dash can be jump-cancelled when it ends.', 'No cling.'],
+  },
+  // ---- NICKEL (II) ("snark") -- the zoner who talks: armless, all legs and remarks. Double Zinger (two remarks that blow everyone away) is C.
+  snark: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Zinger Bubble', d:'sends a speech bubble out straight ahead', pose:'punch', st:4, act:3, end:8,
+      boxes:[{ s:MvC(12, -2, 70, -2, 12), dmg:5.2, kb:[3.4, -4], stun:23 }] },
+    ut: { n:'Spring Kick', d:'springs off both legs and kicks up over his head', pose:'kickup', st:5, act:3, end:8,
+      boxes:[{ s:MvF(8, 60, -2.2, -0.4, 0, 0), dmg:5.0, kb:[0.5, -10.6], stun:24 }] },
+    dt: { n:'Low Remark', d:'a low remark that sweeps their feet', pose:'kick', st:4, act:3, end:8,
+      boxes:[{ s:MvC(10, 22, 64, 22, 11), dmg:4.1, kb:[1.6, -7.2], stun:24 }] },
+    na: { n:'Backtalk Spin', d:'spins talking back at everyone, clipping everything near twice', pose:'spin', st:4, act:6, end:7, land:7, ac:13,
+      boxes:[{ s:MvO(0, 0, 48), dmg:3.3, kb:[1.2, -2.6], stun:19, rehit:5 }] },
+    fa: { n:'Snappy Remark', d:'a snappy remark ahead, a long way out', pose:'throw', st:5, act:2, end:8, land:8, ac:14,
+      boxes:[{ s:MvC(16, -2, 74, -2, 11), dmg:6.2, kb:[2.8, -2.9], stun:22 }] },
+    ba: { n:'Parting Shot', d:'fires a parting shot at whoever is behind him', pose:'kickback', st:5, act:3, end:11, land:10, ac:17,
+      boxes:[{ s:MvC(-12, 0, -64, 0, 12), dmg:8.6, kb:[-8.4, -4.4], stun:14 }] },
+    ua: { n:'Heels Over', d:'flips his heels up over his head', pose:'kickup', st:4, act:3, end:7, land:7, ac:12,
+      boxes:[{ s:MvC(0, -12, 2, -68, 12), dmg:5.0, kb:[0.4, -9], stun:24 }] },
+    da: { n:'Put-Down', d:'puts them down from above with both feet', pose:'stompdn', st:7, act:4, end:10, land:10, ac:19,
+      boxes:[{ s:MvC(0, 14, 4, 62, 13), t0:7, t1:10, dmg:7.6, kb:[0.7, 8.6], stun:14 }], mv:[{ t0:7, t1:10, mode:'dive', vy:9.5 }] },
+    side: { n:'Spring Step', d:'springs off both legs in a long, low hop, bumping whoever is in the way; he can jump out of it', pose:'dash', st:3, act:14, end:10, cd:58, jc:'any',
+      boxes:[{ s:MvO(26, 6, 22), dmg:5, kb:[4.6, -3.6], stun:13 }], mv:[{ t0:0, t1:14, mode:'set', vx:7.4 }, { t0:0, t1:0, mode:'set', vy:-7.2 }] },
+    // "the Double Zinger that blew Trophy away"; Experiment 626 (Light Nickel and Dark Nickel)
+    grab: { reach:26, whiff:26, pummel:{ dmg:1.4, every:12, n:'Quip' }, hold:{ base:54 },
+      f:{ n:'Zinged', d:'zings them off ahead with a remark', dmg:6.8, kx:7.4, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Blown Away', d:'turns and blows them away behind him', dmg:7.2, kx:8, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'Light Nickel', d:'lifts them up lightly and lets go, ready for an up-air', dmg:4.6, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Experiment 626', d:'lets Dark Nickel stamp them into the floor', dmg:5, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Spring Step can be jump-cancelled and keeps its speed.', 'No cling.'],
+  },
+  // ---- PAPER ("evilpaper") -- the stance fighter: light and flat, all edges. Idiotic Island (landing hits fills the meter; cash it in and Evil Paper fronts) is C.
+  evilpaper: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Paper Cut', d:'a thin, quick paper cut straight ahead', pose:'punch', st:3, act:2, end:7,
+      boxes:[{ s:MvC(12, 0, 60, 0, 9), dmg:4.6, kb:[3.2, -4.4], stun:21 }] },
+    ut: { n:'Fold Up', d:'folds up in an arc over his head', pose:'uppercut', st:4, act:3, end:7,
+      boxes:[{ s:MvF(6, 58, -2.3, -0.4, -4, 0), dmg:4.5, kb:[0.5, -10.6], stun:23 }] },
+    dt: { n:'Crease Trip', d:'creases a sharp edge along the floor into their ankles', pose:'kick', st:3, act:2, end:7,
+      boxes:[{ s:MvC(8, 20, 60, 20, 9), dmg:3.3, kb:[1.4, -6.8], stun:21 }] },
+    na: { n:'Paper Flutter', d:'flutters round, his edges clipping everything near twice', pose:'spin', st:3, act:6, end:6, land:6, ac:12,
+      boxes:[{ s:MvO(0, 0, 44), dmg:2.9, kb:[1.1, -2.5], stun:19, rehit:4 }] },
+    fa: { n:'Edge Slash', d:'slashes the edge of the page forward', pose:'throw', st:4, act:2, end:7, land:7, ac:12,
+      boxes:[{ s:MvC(14, -4, 70, -4, 8), dmg:5.8, kb:[2.4, -2.8], stun:22 }] },
+    ba: { n:'Backfold', d:'folds sharply back against whoever is behind him', pose:'kickback', st:4, act:3, end:9, land:8, ac:15,
+      boxes:[{ s:MvC(-12, 0, -58, 0, 10), dmg:7, kb:[-7.8, -4], stun:13 }] },
+    ua: { n:'Paper Plane Up', d:'launches up like a paper plane through whoever is above', pose:'uppercut', st:3, act:3, end:7, land:6, ac:10,
+      boxes:[{ s:MvC(0, -10, 2, -68, 10), dmg:4, kb:[0.3, -8.6], stun:22 }] },
+    da: { n:'Flat Drop', d:'drops flat onto whoever is below', pose:'slam', st:6, act:4, end:10, land:9, ac:18,
+      boxes:[{ s:MvC(0, 12, 4, 56, 13), t0:6, t1:9, dmg:6.7, kb:[0.6, 8.2], stun:13 }], mv:[{ t0:6, t1:9, mode:'dive', vy:8.5 }] },
+    side: { n:'Paper Airplane', d:'folds into a plane and glides forward, sinking slowly, bumping whoever is in the way; he can jump out of its end', pose:'dash', st:3, act:16, end:9, cd:56, jc:'end',
+      boxes:[{ s:MvO(24, 0, 20), dmg:4.6, kb:[4.4, -3.4], stun:12 }], mv:[{ t0:0, t1:17, mode:'stall', vy:0.6, vx:7.2 }] },
+    // "RIP IN HALF (he did it to Pickle in Inanimate Smackdown)"; the Water-Proof Bag
+    grab: { reach:26, whiff:26, pummel:{ dmg:1.2, every:12, n:'Page Flick' }, hold:{ base:50 },
+      f:{ n:'Origami Toss', d:'folds them up and tosses them ahead', dmg:6, kx:7, ky:-4, stun:0, pose:'throw', lag:18 },
+      b:{ n:'Flipped Page', d:'flips them over like a page, behind him', dmg:6.4, kx:7.6, ky:-4.4, stun:0, pose:'throwb', lag:20 },
+      u:{ n:'Paper Plane', d:'launches them upward like a paper plane, ready for an up-air', dmg:4.2, kx:0.5, ky:-11.5, stun:31, pose:'uppercut', lag:14 },
+      d:{ n:'Crumple', d:'crumples them flat on the floor', dmg:4.4, kx:1.8, ky:-8.5, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Paper Airplane can be jump-cancelled when it ends.', 'No cling.'],
+  },
+  // ---- MICROPHONE ("mic") -- the zoner who yells: loud, thin and wired. Yell at the Ball (toss it, shout it forward) is C.
+  mic: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: { n:'Mic Swing', d:'swings the microphone out in front of her', pose:'punch', st:4, act:3, end:8,
+      boxes:[{ s:MvC(12, 0, 62, 0, 12), dmg:6.2, kb:[3.6, -4.2], stun:23 }] },
+    ut: { n:'Stand Up', d:'swings the mic stand up over her head', pose:'uppercut', st:5, act:3, end:8,
+      boxes:[{ s:MvF(8, 62, -2.3, -0.4, -4, 0), dmg:5.2, kb:[0.5, -10.6], stun:24 }] },
+    dt: { n:'Cable Sweep', d:'sweeps the cable along the floor into their feet', pose:'kick', st:4, act:3, end:8,
+      boxes:[{ s:MvC(10, 22, 68, 22, 10), dmg:5.3, kb:[1.6, -7.2], stun:24 }] },
+    na: { n:'Feedback Loop', d:'whirls in a loop of feedback that clips everything near twice', pose:'spin', st:4, act:6, end:7, land:8, ac:14,
+      boxes:[{ s:MvO(0, 0, 50), dmg:3.2, kb:[1.4, -2.7], stun:19, rehit:4 }] },
+    fa: { n:'Boom', d:'booms a shout straight ahead', pose:'throw', st:5, act:3, end:9, land:9, ac:15,
+      boxes:[{ s:MvC(14, -2, 72, -2, 13), dmg:6.8, kb:[3.2, -3], stun:23 }] },
+    ba: { n:'Squeal Back', d:'squeals back at whoever is behind her', pose:'kickback', st:5, act:3, end:10, land:10, ac:17,
+      boxes:[{ s:MvO(-46, 0, 24), dmg:8.5, kb:[-8.6, -4.4], stun:14 }] },
+    ua: { n:'High Note', d:'hits a high note straight up through whoever is above her', pose:'kickup', st:4, act:3, end:8, land:7, ac:12,
+      boxes:[{ s:MvC(0, -12, 2, -74, 12), dmg:6.4, kb:[0.4, -8.8], stun:24 }] },
+    da: { n:'Mic Drop', d:'drops the mic onto whoever is below', pose:'slam', st:8, act:4, end:11, land:11, ac:21,
+      boxes:[{ s:MvC(0, 14, 4, 62, 15), t0:8, t1:11, dmg:8.2, kb:[0.7, 9], stun:14 }], mv:[{ t0:8, t1:11, mode:'dive', vy:10 }] },
+    side: { n:'Sound Check', d:'sound-checks forward with a wave of noise at the front of her; she can jump out of its end', pose:'dash', st:3, act:10, end:10, cd:56, jc:'end',
+      boxes:[{ s:MvC(12, 0, 58, 0, 15), dmg:5.6, kb:[5.4, -3.6], stun:13 }], mv:[{ t0:0, t1:11, mode:'set', vx:8.8 }] },
+    // "Yell at the Ball" (Kick the Bucket); the Power Button between Loud and Quiet
+    grab: { reach:26, whiff:26, pummel:{ dmg:1.4, every:12, n:'Knock Knock' }, hold:{ base:52 },
+      f:{ n:'Yelled Away', d:'yells them off ahead like the ball', dmg:6.6, kx:7.4, ky:-4.2, stun:0, pose:'throw', lag:20 },
+      b:{ n:'Feedback Flip', d:'squeals and flips them off behind her', dmg:7, kx:8, ky:-4.8, stun:0, pose:'throwb', lag:22 },
+      u:{ n:'High Note Lift', d:'hits a high note and sends them up, ready for an up-air', dmg:4.6, kx:0.5, ky:-12, stun:32, pose:'uppercut', lag:14 },
+      d:{ n:'Drop the Mic', d:'drops the mic and them on the floor', dmg:4.8, kx:1.8, ky:-9, stun:30, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Sound Check can be jump-cancelled when it ends.', 'No cling.'],
+  },
+  // ---- SALT ("saltpepper") -- the duo: light, vapid and never alone; Pepper does every move a beat later. Shake (salt in an arc, pepper after it) is C.
+  saltpepper: {
+    aiFit: true, aiK: 0.2, aiG: 0.2, aiH: 0.25,
+    ft: msEcho({ n:'Salt Slap', d:'slaps straight ahead, and Pepper does the same a beat later', pose:'punch', st:4, act:2, end:7,
+      boxes:[{ s:MvC(12, 0, 58, 0, 12), dmg:5, kb:[3.4, -4.2], stun:21 }] }),
+    ut: msEcho({ n:'Shaker Up', d:'shakes the shaker up over her head, Pepper a beat behind', pose:'uppercut', st:4, act:3, end:8,
+      boxes:[{ s:MvF(6, 60, -2.3, -0.4, -4, 0), dmg:5.5, kb:[0.5, -10.6], stun:24 }] }),
+    dt: ({ n:'Sprinkle Trip', d:'sprinkles a trip at their ankles', pose:'kick', st:3, act:3, end:7,
+      boxes:[{ s:MvC(8, 20, 62, 20, 11), dmg:3.6, kb:[1.5, -7], stun:23 }] }),
+    na: msEcho({ n:'Pinch Spin', d:'spins pinching at everything near her twice, with Pepper', pose:'spin', st:4, act:6, end:7, land:7, ac:13,
+      boxes:[{ s:MvO(0, 0, 46), dmg:3.6, kb:[1.2, -2.6], stun:19, rehit:4 }] }),
+    fa: msEcho({ n:'Grain Toss', d:'tosses a handful of grains ahead, Pepper after', pose:'throw', st:5, act:2, end:8, land:8, ac:13,
+      boxes:[{ s:MvC(14, -2, 64, -2, 12), dmg:6.6, kb:[2.6, -2.9], stun:22 }] }),
+    ba: msEcho({ n:'Salty Backhand', d:'a salty backhand at whoever is behind her, and Pepper does the same', pose:'kickback', st:5, act:3, end:9, land:9, ac:16,
+      boxes:[{ s:MvC(-12, 0, -58, 0, 13), dmg:7.2, kb:[-8, -4.2], stun:14 }] }),
+    ua: msEcho({ n:'Shake Up', d:'shakes straight up past her head, Pepper a beat behind', pose:'kickup', st:3, act:3, end:7, land:6, ac:11,
+      boxes:[{ s:MvC(0, -10, 2, -68, 12), dmg:4.2, kb:[0.4, -8.8], stun:23 }] }),
+    da: ({ n:'Shaker Drop', d:'drops like a salt shaker onto whoever is below', pose:'slam', st:7, act:4, end:10, land:10, ac:19,
+      boxes:[{ s:MvC(0, 14, 4, 60, 13), t0:7, t1:10, dmg:7, kb:[0.6, 8.4], stun:14 }], mv:[{ t0:7, t1:10, mode:'dive', vy:9.5 }] }),
+    side: msEcho({ n:'Hand in Hand', d:'runs ahead hand in hand with Pepper, who follows a beat behind, bumping whoever is in the way; she can jump out of its end', pose:'dash', st:3, act:11, end:10, cd:56, jc:'end',
+      boxes:[{ s:MvO(24, 0, 22), dmg:5.4, kb:[4.6, -3.6], stun:13 }], mv:[{ t0:0, t1:12, mode:'set', vx:8 }] }),
+    // "Peps, that's us! Recognition!" (The Stacker, Remastered); Pepper does the same a beat later
+    grab: { reach:26, whiff:26, pummel:{ dmg:1.2, every:12, n:'Pinch' }, hold:{ base:52 },
+      f:{ n:'Recognition!', d:'shows them off to Pepper and tosses them ahead', dmg:6.2, kx:7.2, ky:-4, stun:0, pose:'throw', lag:18 },
+      b:{ n:'Peps, Catch', d:'tosses them back for Pepper behind her', dmg:6.6, kx:7.8, ky:-4.6, stun:0, pose:'throwb', lag:20 },
+      u:{ n:'Hand-Hold Lift', d:'springs up hand in hand with Pepper, lifting them, ready for an up-air', dmg:4.4, kx:0.5, ky:-11.5, stun:31, pose:'uppercut', lag:14 },
+      d:{ n:'Trend Setter', d:'stamps them into the floor, and Pepper stamps after', dmg:4.6, kx:1.8, ky:-8.5, stun:29, pose:'slam', lag:14 } },
+    tech:['Short hop, fast fall and a plain wall jump.', 'Hand in Hand can be jump-cancelled when it ends; Pepper repeats every move.', 'No cling.'],
   },
 });
 msWords();

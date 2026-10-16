@@ -720,6 +720,17 @@ describe('capture the flag', () => {
     expect(r.foe, 'pads of the other side do not count').toBe(r.full);
   });
 
+  it('summons live in Capture the Flag: Pepper keeps up with Salt ("pepper is bugged in ctf... cant move", 2026-10-16)', () => {
+    const { window: w } = loadMonolith(36);
+    const r = J(w, `(function(){ SETTINGS.mode='ctf'; SETTINGS.count=4; CTF.forceMap='castle'; beginMatchNow();
+      var me = fighters.find(function(f){ return f.you; }), S = makeFighter(ROSTER.find(function(q){ return q.name==='Salt'; }), me.x, me.y, me.idx);
+      S.team = me.team; S.controller = 'local'; S.you = true; fighters[me.idx] = S; ctfEndHide(CTF.live); for (var i=0;i<30;i++) step();
+      down[KEYS.right] = true; for (var i=0;i<60;i++) step(); down[KEYS.right] = false; for (var i=0;i<20;i++) step();
+      var P = pepperOf(S); return { has:!!P, gap: P ? Math.abs(P.x - S.x) : 9999 }; })()`);
+    expect(r.has, 'Pepper is there').toBe(true);
+    expect(r.gap, 'and a step behind Salt, not left where she started').toBeLessThan(120);
+  });
+
   it('bargaining: the CPU side accepts an offer that is the same for both and declines a lopsided one; humans vote', () => {
     const { window: w } = loadMonolith(34); w.eval('ctfAdvSet(true)');   // (the advanced rules: off unless turned on)
     hideStart(w);
