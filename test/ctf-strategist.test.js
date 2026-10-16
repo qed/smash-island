@@ -75,6 +75,17 @@ describe('the strategist: choosing, remembering, adapting', () => {
     expect(r.turtleVsBalanced, 'a turtle that never leaves home cannot win against equals who go out').toBeLessThan(0.4);
   });
 
+  it('a whole side in jail is a penalty in the model too: a flag given back (or one scored by the other side), the side let out; not the end of the match', () => {
+    const { window: w } = loadMonolith(61);
+    cup(w, { teams:4, size:3, map:'castle' });
+    const r = J(w, `(function(){ var fx = TOURNEY.fixtures[0], Mp = ctfStratMap('castle', null), T = ctfStratPair(fx.a, fx.b, Mp), S = ctfFluidNew(T), plans = [CTF_STRATS.turtle, CTF_STRATS.turtle], R = function(){ return 0.99; };
+      S.t = 10; S.c = [1, 0]; S.jl = [3, 0]; S.up = [0, 3]; ctfFluidStep(S, T, Mp, plans, R); var a = { c:S.c.slice(), jl:S.jl.slice(), up:S.up.slice(), over:S.over };
+      S.c = [0, 0]; S.jl = [3, 0]; S.up = [0, 3]; ctfFluidStep(S, T, Mp, plans, R); var b = { c:S.c.slice(), over:S.over };
+      return { a:a, b:b }; })()`);
+    expect(r.a.c, 'it gave back the flag it had captured').toEqual([0, 0]); expect(r.a.over).toBe(false); expect(r.a.jl[0]).toBe(0); expect(r.a.up[0], 'and is let out').toBe(3);
+    expect(r.b.c, 'with none to give, the other side scores one').toEqual([0, 1]); expect(r.b.over).toBe(false);
+  });
+
   it('what the opponent has been seen to play shapes the belief about it; what a plan did against it shapes the plan\'s value', () => {
     const { window: w } = loadMonolith(56);
     cup(w, { teams:4, size:3, map:'castle' });
