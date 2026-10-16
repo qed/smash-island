@@ -8,9 +8,10 @@ import { loadMonolith } from './helpers/load-monolith.js';
 const FAKE = `window.__fake = function(sp){ sp._req = true; sp.img = { complete:true, naturalWidth:150, naturalHeight:200 }; }; true`;
 const KITS = { Puffball: 'fly', Bow: 'chair', Pencil: 'van', Leafy: 'dash', Firey: 'ember', Pen: 'cap', Blocky: 'anvil', 'Ice Cube': 'shatter', Match: 'spark', Snowball: 'tackle', Pin: 'pierce', Bomby: 'bomb',
   Needle: 'counter', Flower: 'quake', 'Tennis Ball': 'serve', Teardrop: 'kick', Bubble: 'float', Rocky: 'barf', Coiny: 'slap', 'Golf Ball': 'zapshooter',
-  Tree: 'timber', Roboty: 'antenna', David: 'seriously', Sidewalky: 'slam', Bell: 'ring', TV: 'static', Toothpaste: 'paste', Lollipop: 'sucker' };
+  Tree: 'timber', Roboty: 'antenna', David: 'seriously', Sidewalky: 'slam', Bell: 'ring', TV: 'static', Toothpaste: 'paste', Lollipop: 'sucker',
+  Book: 'define', Fries: 'fry', Gelatin: 'freeze', Nickel: 'flip', Ruby: 'beam', 'Yellow Face': 'buynow', 'Barf Bag': 'splash', Basketball: 'dribble' };
 const SLOTS = ['jab', 'ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da', 'side', 'grab', 'pummel', 'fthrow', 'bthrow', 'uthrow', 'dthrow', 'special', 'up', 'down', 'smash', 'finisher'];
-const OLD_FRAMES = ['fly.jab', 'fly.na'];
+const OLD_FRAMES = ['fly.jab', 'fly.na', 'beam.na'];
 let W, MVA, SPIT;   // SPIT: the moves whose kind is the spit (Firey's Ember Spit, Puffball's spit): the body swells and spits, which is its own frames already
 
 beforeAll(() => {

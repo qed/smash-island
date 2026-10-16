@@ -92,10 +92,12 @@ describe('the words match the moves', () => {
   it('the move card shows all eight lines for the chosen fighter (up+X joined it: the uppercut)', () => {
     const t = W.eval(`(function(){ chosen = ROSTER.find(function(r){ return r.name==='Gelatin'; }); refreshSel();
       return Array.prototype.map.call(document.querySelectorAll('#moveCard .mc-row'), function(e){ return e.textContent; }); })()`);
+    // (restated, batch 5: Gelatin has his own moveset now, so the card's down-tilt line is his own Ankle Jab, not the shared low sweep, and its up-tilt line is his own
+    // Fork Toss Up; the jab, the specials and the finisher lines are checked as strictly as before.)
     expect(t.length).toBe(8);
     expect(t[0]).toMatch(/^X.*syringe jabs.*the third one launches/);
-    expect(t[1]).toMatch(/^↓\+X.*Low Sweep/);
-    expect(t[2]).toMatch(/^↑\+X.*Uppercut/);
+    expect(t[1]).toMatch(/^↓\+X.*Ankle Jab/);
+    expect(t[2]).toMatch(/^↑\+X.*Fork Toss Up/);
     expect(t[5]).toMatch(/Freeze Mine/);
     expect(t[6]).toMatch(/^V.*Trap · Ice Breaker/);
   });
