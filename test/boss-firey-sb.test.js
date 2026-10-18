@@ -1230,16 +1230,21 @@ describe('the volcano: sky, ground, dust and drawing', () => {
     const { w, log } = bootRecording();
     // "Without the arena" is drawn on a custom level with nothing in it: since the stage backgrounds (69ee90d, 2026-10-13)
     // Goiky Field itself lays a textured ground band (STAGE ART: saGround) instead of the flat floor; a custom level, like a
-    // boss arena, still lays the flat one, in Goiky's green.
+    // boss arena, still lays the flat one, in Goiky's green. The volcano itself is laid over Goiky Field, as in a boss fight, so
+    // the arena has to turn the stage's STAGE ART off first (saFrame's guard: `if(BOSS_ARENA || !STAGE_ART[stage.id]) return false;`).
     w.eval(`queueCustomLevel({ name:'Plain', plats:[], spawns:[] }); SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
-    const gy = w.eval('groundY()'), green = w.eval('stage.ground');
+    let gy = w.eval('groundY()');
+    const green = w.eval('stage.ground');
     expect(green, "Goiky's green").toBe(w.eval("STAGES.find(function(s){ return s.id==='goiky'; }).ground"));
     const groundFill = () => log.filter((e) => e.op === 'fillRect' && e.args[0] === -20 && e.args[1] === gy).map((e) => e.fill);
     log.length = 0; w.eval('draw()');
     expect(groundFill()).toEqual([green]);
     const goikyDust = w.eval('impactGroundColor()');
+    w.eval(`CUSTOM_LEVEL = null; stage = STAGES.find(function(s){ return s.id==='goiky'; }); SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
+    gy = w.eval('groundY()');
     w.eval("BOSS_ARENA = 'volcano'");
     log.length = 0; w.eval('draw()');
+    expect(w.eval('SA.on'), "the volcano turns Goiky Field's STAGE ART off").toBe(false);
     expect(groundFill(), 'the rock').toEqual(['#26170f']);
     expect(log.filter((e) => e.op === 'stroke').map((e) => e.stroke), 'its own floor line').toContain('#0d0705');
     expect(log.filter((e) => e.op === 'fillRect' && e.fill === 'rgba(255,255,255,0.04)').length, 'its courses of stone').toBeGreaterThan(5);
