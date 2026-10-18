@@ -1228,8 +1228,12 @@ function bootRecording() {
 describe('the volcano: sky, ground, dust and drawing', () => {
   it("lays its own ground (dark rock, its own floor line and its glowing courses) and its dust takes the rock's colour; without the arena the ground is Goiky's green", () => {
     const { w, log } = bootRecording();
-    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
+    // "Without the arena" is drawn on a custom level with nothing in it: since the stage backgrounds (69ee90d, 2026-10-13)
+    // Goiky Field itself lays a textured ground band (STAGE ART: saGround) instead of the flat floor; a custom level, like a
+    // boss arena, still lays the flat one, in Goiky's green.
+    w.eval(`queueCustomLevel({ name:'Plain', plats:[], spawns:[] }); SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
     const gy = w.eval('groundY()'), green = w.eval('stage.ground');
+    expect(green, "Goiky's green").toBe(w.eval("STAGES.find(function(s){ return s.id==='goiky'; }).ground"));
     const groundFill = () => log.filter((e) => e.op === 'fillRect' && e.args[0] === -20 && e.args[1] === gy).map((e) => e.fill);
     log.length = 0; w.eval('draw()');
     expect(groundFill()).toEqual([green]);
