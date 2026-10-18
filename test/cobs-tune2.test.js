@@ -17,6 +17,9 @@ vi.setConfig({ testTimeout: 60000 });   // (the longer ones play a few hundred t
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+// THE OWNER, 2026-10-18: "cobs should have higher knockback and damage things." -- asked how much: "+25%". Every hit of his on a fighter now lands at COBS_POWER
+// (1.25) x what the move is written as, its cap and its launch with it (the arena's maze excepted); the pins here that read what reached a fighter, or a shot of his, say x POW.
+const POW = 1.25;
 
 // Start his fight as the chain does and hand the body `s` (him), `you` (player 1, parked), `park()`, `floorAt(f, x)`, `shots()` and `atTier(t)`; the same dice every time.
 const fight = (body, lineup = ['Knife']) => { W.Math.random = mulberry32(5); return W.eval(`(function(){
@@ -158,8 +161,8 @@ describe('OWNER (round 2): PULL THE PLUG! -- "damage for pull the plug should sc
         const hits = r.out[H];
         expect(hits.length, `tier ${t}, a ${H} px fall: one hit`).toBe(1);
         expect(hits[0].fell, `tier ${t}: the fall the game measured is the one dropped`).toBeCloseTo(H, 3);
-        expect(hits[0].d, `tier ${t}, ${H} px: ${k}x the row's shock`).toBeCloseTo(r.fshock * k, 6);
-        expect(hits[0].ky, 'bounced up (6, at his launch scale)').toBeCloseTo(-6 * r.kb, 9);
+        expect(hits[0].d, `tier ${t}, ${H} px: ${k}x the row's shock (x POW: "+25%")`).toBeCloseTo(r.fshock * k * POW, 6);
+        expect(hits[0].ky, 'bounced up (6, at his launch scale, x POW)').toBeCloseTo(-6 * r.kb * POW, 9);
         expect(hits[0].live && hits[0].ground, 'live, and on the floor').toBe(true);
       }
     }
@@ -170,10 +173,10 @@ describe('OWNER (round 2): PULL THE PLUG! -- "damage for pull the plug should sc
       var out = []; [60, 120, 200, 300, 400, 599, 600, 900, 1500].forEach(function(H){ var d = drop(H); out.push([H, d.hits.length ? d.hits[0].d : 0]); });
       return { out: out, dmg: rec.dmg };`);
     const want = (H) => 0.3 * r.dmg * Math.min(3, Math.max(0.5, H / 200));
-    for (const [H, d] of r.out) expect(d, `${H} px`).toBeCloseTo(want(H), 6);
+    for (const [H, d] of r.out) expect(d, `${H} px (x POW: "+25%")`).toBeCloseTo(want(H) * POW, 6);
     expect(r.out.map((q) => q[1]).every((d, i, a) => i === 0 || d >= a[i - 1] - 1e-9), 'a longer fall never costs less').toBe(true);
-    expect(Math.max(...r.out.map((q) => q[1])), 'capped at 3x: 29.7').toBeCloseTo(29.7, 6);
-    expect(r.out[0][1], 'floored at half: 4.95').toBeCloseTo(4.95, 6);
+    expect(Math.max(...r.out.map((q) => q[1])), 'capped at 3x: 29.7 (x POW)').toBeCloseTo(29.7 * POW, 6);
+    expect(r.out[0][1], 'floored at half: 4.95 (x POW)').toBeCloseTo(4.95 * POW, 6);
   });
 
   it('A STEP, A BOUNCE AND A HOP IN PLACE ARE NOT FALLS: under 40 px nothing lands (the floor stays safe to move on), and from 40 px it does -- at the half scale', () => {
@@ -182,7 +185,7 @@ describe('OWNER (round 2): PULL THE PLUG! -- "damage for pull the plug should sc
       return { out: out, fshock: rec.fshock, min: COBS_FALL.min };`);
     expect(r.min).toBe(40);
     for (const H of [0, 14, 30, 39]) expect(r.out[H], `a ${H} px drop is not a fall`).toEqual([]);
-    for (const H of [45, 60]) { expect(r.out[H].length, `a ${H} px fall counts`).toBe(1); expect(r.out[H][0], 'at the half scale').toBeCloseTo(r.fshock * 0.5, 6); }
+    for (const H of [45, 60]) { expect(r.out[H].length, `a ${H} px fall counts`).toBe(1); expect(r.out[H][0], 'at the half scale (x POW: "+25%")').toBeCloseTo(r.fshock * 0.5 * POW, 6); }
   });
 
   it('THE FALL IS TRACKED FROM WHERE YOU LEFT THE GROUND: a platform that goes from under you drops you its height -- nothing lands the moment it goes, and the fall onto the live floor costs by that height', () => {
@@ -205,7 +208,7 @@ describe('OWNER (round 2): PULL THE PLUG! -- "damage for pull the plug should sc
     expect(r.h, 'a real height to fall').toBeGreaterThan(150);
     expect(r.hits[0].fell, 'the fall is from the platform you stood on, to within a frame\'s gravity').toBeGreaterThan(r.h - 4);
     expect(r.hits[0].fell).toBeLessThanOrEqual(r.h + 1e-6);
-    expect(r.hits[0].d, 'scaled by the height of that platform').toBeCloseTo(r.fshock * Math.min(3, Math.max(0.5, r.hits[0].fell / 200)), 6);
+    expect(r.hits[0].d, 'scaled by the height of that platform (x POW: "+25%")').toBeCloseTo(r.fshock * Math.min(3, Math.max(0.5, r.hits[0].fell / 200)) * POW, 6);
   });
 
   it('THE BOUNCE AND THE GRACE STAY: a hit bounces you up; a second fall inside COBS_FLOOR_GRACE (50) frames deals nothing; one after it hurts again', () => {
@@ -218,11 +221,11 @@ describe('OWNER (round 2): PULL THE PLUG! -- "damage for pull the plug should sc
       return { first: first.hits, inside: inside.hits, after: after.hits, gap: gap, grace: COBS_FLOOR_GRACE, kb: rec.kb, fshock: rec.fshock };`);
     expect(r.grace).toBe(50);
     expect(r.first.length, 'the first fall hurts').toBe(1);
-    expect(r.first[0].ky, 'and bounces you up').toBeCloseTo(-6 * r.kb, 9);
+    expect(r.first[0].ky, 'and bounces you up (x POW: "+25%")').toBeCloseTo(-6 * r.kb * POW, 9);
     expect(r.gap, 'the second fall landed inside the grace').toBeLessThan(r.grace);
     expect(r.inside, 'and dealt nothing').toEqual([]);
     expect(r.after.length, 'a fall after the grace hurts again').toBe(1);
-    expect(r.after[0].d).toBeCloseTo(r.fshock * 2, 6);
+    expect(r.after[0].d, 'x POW ("+25%")').toBeCloseTo(r.fshock * 2 * POW, 6);
   });
 
   it('NO PILE-ON: a fall that lands in the grace of another hit, or under a MeTag\'s cuff, deals nothing -- and the same fall once that is over does', () => {
@@ -235,7 +238,7 @@ describe('OWNER (round 2): PULL THE PLUG! -- "damage for pull the plug should sc
     expect(r.grace, 'in a hit\'s grace').toEqual([]);
     expect(r.cuff, 'under a cuff').toEqual([]);
     expect(r.free.length, 'the same fall with nothing holding it off').toBe(1);
-    expect(r.free[0].d).toBeCloseTo(r.fshock * 2, 6);
+    expect(r.free[0].d, 'x POW ("+25%")').toBeCloseTo(r.fshock * 2 * POW, 6);
   });
 
   it('THE PANES ARE STILL THE SAFE FOOTING: a fall onto a pane he dropped deals nothing, however far -- it is not the floor', () => {
@@ -854,6 +857,9 @@ describe('OWNER: DEPLOYING UNITS! in his last tier -- "nerf the summoning units 
   it('in a minute of his last tier, never more than 2 units stand, and each fires no more often than every 90 frames and leaves within 7 s', () => {
     const r = JSON.parse(fight(`
       atTier(5); you.controller = 'still';
+      // (his first card of the minute is DEPLOYING UNITS!: which cards a minute draws is the dice's, and his new place by you -- THE OWNER, 2026-10-18: "he should be
+      // within dashing range" -- moves them, so the minute this reads no longer drew it by chance. The bag refills as ever after it.)
+      s._bag = ['deploy'];
       var hp0 = s.hp, peak = 0, seen = [], gaps = [], lived = [];
       for (var f = 0; f < 3600; f++) {
         s.hp = hp0; you.pct = 0; you.stocks = 3; you.dead = false;
