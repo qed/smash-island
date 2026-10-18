@@ -73,4 +73,18 @@ describe('timed pieces and tides', () => {
     w.eval(`ctfNetIn(${JSON.stringify(o)})`);
     expect(w.eval('CTF.live.timed[0].wp.w'), 'the guest sees it gone').toBe(0); expect(w.eval('CTF.live.timed[1].warn')).toBe(true);
   });
+  it('an updraft lifts whoever is inside it to a top speed and lets go at its top, and the route graph climbs it (the cloud sea in the sky is not a trap), and it is part of the map so every guest has it' , () => {
+    const { window: w } = loadMonolith(105);
+    start(w, 'sky');
+    const z = J(w, `CTF.map.zones.find(function(z){ return z.type === 'updraft'; })`);
+    expect(z, 'the sky has updrafts').toBeTruthy();
+    w.eval(`(function(){ var z = CTF.map.zones.find(function(z){ return z.type === 'updraft'; }), f = fighters[0]; f.dead = false; f.onground = false; f.x = z.x + z.w/2; f.y = z.y + z.h - 80; f.vx = 0; f.vy = 0; f.hitstun = 0; f.invuln = 999; })()`);
+    const y0 = w.eval('fighters[0].y'); w.eval('for(var i = 0; i < 40; i++) step()');
+    expect(w.eval('fighters[0].y'), 'carried up').toBeLessThan(y0 - 400); expect(w.eval('fighters[0].vy'), 'rising').toBeLessThan(-8);
+    w.eval(`(function(){ var z = CTF.map.zones.find(function(z){ return z.type === 'updraft'; }), f = fighters[0]; f.x = z.x + z.w/2; f.y = z.y - 600; f.vy = 0; })()`);
+    w.eval('for(var i = 0; i < 30; i++) step()');
+    expect(w.eval('fighters[0].vy'), 'above it, gravity again').toBeGreaterThan(0);
+    const r = J(w, `(function(){ var M = ctfMapGet('sky', false, 1), nav = ctfNavNew(M); while(!nav.ready) ctfNavTick(nav, 80); var sea = nav.nodes.filter(function(n){ return n.y === 26*120 && n.x1 - n.x0 > 5000; })[0]; return { up:sea.edges.filter(function(e){ return nav.nodes[e.to].y < 2400; }).length }; })()`);
+    expect(r.up, 'the graph has a way up from the cloud sea').toBeGreaterThan(0);
+  });
 });
