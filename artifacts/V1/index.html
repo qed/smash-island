@@ -47387,15 +47387,36 @@ function nearestDropX(f){
   // and the little hop pieces are skipped. On a single-screen stage drop-through is off (the physics
   // gates it on isBig), so EVERY platform -- hop pieces included -- is one you have to walk off.
   const small = !isBig();
+  // WALKING OFF A SOLID, on the teams arena. A one-way top is dropped through, so reaching its edge is enough; a solid one (the
+  // faces of the cross's arms, a home ledge) has to be walked OFF, and the physics holds a fighter up on it until its whole body
+  // is past the end. The point 14 px out, inside the 20-22 px the drop branches count as arrived, stopped the walk on the solid,
+  // and the fighter hopped in place at the lip of a doorway it never went through, then wandered back (playtest, 2026-10-18: 26 s
+  // on the arm's lower face, and the flanker that paced the upper one). So there the segment reaches a body out, and the point is
+  // a body and a step past the end -- over something to land on only: past the end of the world's floor there is nothing below,
+  // and the old point (a hop at the lip) is kept. Measured on the teams cross only, so the other big maps are left as they were.
+  // There the segment is also the one whose top is NEAREST the feet, not the first within 24 px: where the arm's lower face meets
+  // the centre shaft, the top of the shaft's wall sits 22 px under the face, and the two took turns sending the fighter left and
+  // right at the junction (a CPU stood there for 20 s).
+  const teamsBig = !small && SETTINGS.mode==='teams';
+  const walkOff = p => p.solid && teamsBig;
+  const body = Math.max(10, f.r);
   // find the platform segment directly under the fighter
-  let seg=null;
+  let seg=null, segD=24;
   for(const p of worldPlats){
     if(p.hop && !small) continue;
-    if(Math.abs((p.y) - (f.y+f.r)) < 24 && f.x>p.x-10 && f.x<p.x+p.w+10){ seg=p; break; }
+    const reach = walkOff(p) ? body : 10;
+    const d = Math.abs((p.y) - (f.y+f.r));
+    if(d < segD && f.x>p.x-reach && f.x<p.x+p.w+reach){ seg=p; if(!teamsBig) break; segD=d; }
   }
   if(!seg) return small ? null : f.x;   // big: not clearly on a segment — just drop where we are
   // choose whichever edge of this segment is nearer; stepping just past it opens a gap
-  const leftEdge=seg.x-14, rightEdge=seg.x+seg.w+14;
+  let leftEdge=seg.x-14, rightEdge=seg.x+seg.w+14;
+  if(walkOff(seg)){
+    const past = body + 30;
+    const below = x => worldPlats.some(p => p !== seg && p.y > seg.y && x > p.x && x < p.x + p.w) || floors.some(q => q.y > seg.y && x > q.x && x < q.x + q.w);
+    if(below(seg.x - past)) leftEdge = seg.x - past;
+    if(below(seg.x + seg.w + past)) rightEdge = seg.x + seg.w + past;
+  }
   return (Math.abs(leftEdge-f.x) < Math.abs(rightEdge-f.x)) ? leftEdge : rightEdge;
 }
 
@@ -48433,13 +48454,20 @@ function aiThink(f){
   if(!targets.length) return inp;
 
   // --- pick / keep a target ---
+  // TEAMS: a foe standing in its own safe zone cannot be hit (applyHit), so while another foe is out in the open the
+  // CPU picks from the open ones, and drops a target that has gone home. Only when every foe is home does it take one
+  // of them. (Playtest, 2026-10-18: three CPUs swung at each other inside one team's zone for 35 s and nothing landed.)
+  // Outside Teams, pickFrom IS targets, so nothing below changes and no extra dice are rolled.
+  let pickFrom = targets;
+  if(SETTINGS.mode==='teams'){ const open = targets.filter(t=>!inOwnTeamZone(t)); if(open.length) pickFrom = open; }
+  const wentHome = () => pickFrom !== targets && !!f.aiTarget && !pickFrom.includes(f.aiTarget);
   // If the pre-match plan assigned this team a focus target, prefer it (when alive & enemy).
   const focus = (TEAM_PLAN && TEAM_PLAN[f.team] && TEAM_PLAN[f.team].focusName)
-    ? targets.find(t=>t.name===TEAM_PLAN[f.team].focusName) : null;
-  if(focus && (!f.aiTarget || f.aiTarget.dead || f.aiTimer<=0)){ f.aiTarget=focus; f.aiTimer=40+Math.random()*30; }
-  if(!f.aiTarget||f.aiTarget.dead||f.aiTarget.team===f.team||f.aiTimer<=0){
-    let best=1e9; f.aiTarget=focus||targets[0];
-    if(!focus) for(const t of targets){ const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;f.aiTarget=t;} }
+    ? pickFrom.find(t=>t.name===TEAM_PLAN[f.team].focusName) : null;
+  if(focus && (!f.aiTarget || f.aiTarget.dead || f.aiTimer<=0 || wentHome())){ f.aiTarget=focus; f.aiTimer=40+Math.random()*30; }
+  if(!f.aiTarget||f.aiTarget.dead||f.aiTarget.team===f.team||f.aiTimer<=0||wentHome()){
+    let best=1e9; f.aiTarget=focus||pickFrom[0];
+    if(!focus) for(const t of pickFrom){ const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;f.aiTarget=t;} }
     f.aiTimer=30+Math.random()*30;
   }
   const t=f.aiTarget;
@@ -48565,8 +48593,12 @@ function aiThink(f){
   // the huge arenas instead of milling around near spawn.
   // TEAM FLANK (see teamSlotOf): the high road, until close enough that the drop logic takes over.
   // Not at kill percent -- danger mode below owns that -- and not when the target is well above already.
+  // Nor when the target is far BELOW (more than the high road's own height and a bit): that is not a flank, it is a
+  // drop, and the drop logic below walks to the doorway. With no lower limit the two took turns: this walked toward
+  // the target's x until the gap was FLANK_X, the drop walked back toward the doorway, and round again. (Playtest,
+  // 2026-10-18: Soap paced the cross's top arm for 100 s while its target sat in a corner 1100 px below.)
   if(SETTINGS.mode==='teams' && isBig() && teamSlotOf(f) % 2 === 1 && adx > FLANK_X && dy > -FLANK_RISE*0.5
-     && f.pct < f.koCap*0.7){
+     && dy < FLANK_RISE + 80 && f.pct < f.koCap*0.7){
     const above = { x: t.x, y: t.y - FLANK_RISE, r: t.r };
     if(adx > 30){ if(dx < 0) inp.left = true; else inp.right = true; }
     if(f.y > above.y + 40){
@@ -48576,7 +48608,10 @@ function aiThink(f){
     if(isZoner && f.spCd <= 0 && adx < 300 && rn < react*0.5) inp.special = true;   // poke from the high road
     return finishAI(f, inp, sp);
   }
-  if(scrolls() && dist > W*0.75){
+  // (Teams: a far target well BELOW is the drop branch's (wantDrop, below), not this one's. This walks at the target and hops a
+  // solid in the way, and in the air that pulled a fighter that had just walked off the lip of a doorway in the cross's arm
+  // straight back onto it, round and round. The drop branch walks to the lip, steps off, and falls through.)
+  if(scrolls() && dist > W*0.75 && !(SETTINGS.mode==='teams' && isBig() && dy > 130)){
     const wantDir = dx<0 ? -1 : 1;
     // if a SOLID block sits between us and the target, hop it or route around its edge
     const obst = navAround(f, wantDir);
@@ -48636,6 +48671,27 @@ function aiThink(f){
       else if(adx>26){ if(dx<0)inp.left=true; else inp.right=true; }
     }
     return finishAI(f,inp,sp);
+  }
+
+  // === TEAMS: OUT OF YOUR OWN ZONE BEFORE YOU SWING ===
+  // Nothing thrown from inside your own safe zone lands (applyHit), so a CPU standing in it walks out first, and does not
+  // swing on the way: toward its foe when the foe is off to one side of the zone, and out of the zone's open side (the one
+  // facing the middle of the map) when the foe is in the zone with it -- an intruder that follows it out can be hit there.
+  // The climb, drop and travel branches above still own a foe on another level or far away.
+  if(SETTINGS.mode==='teams' && inOwnTeamZone(f)){
+    const z = teamZoneOf(f.team);
+    const exitX = (t.x < z.x || t.x > z.x + z.w) ? t.x : (z.x + z.w/2 < WW/2 ? z.x + z.w + 40 : z.x - 40);
+    const wantDir = exitX < f.x ? -1 : 1;
+    const obst = navAround(f, wantDir);
+    if(obst && obst.detourX!=null){ inp.left = obst.detourX < f.x; inp.right = obst.detourX >= f.x; }
+    else {
+      inp.left = wantDir<0; inp.right = wantDir>0;
+      if(obst && (obst.jump || obst.climb) && (f.onground || f.jumps>0)) inp.jump = true;   // hop the low block, or climb the wall
+    }
+    f._aiCharging = 0; f._aiSmSent = false;   // a smash it had committed to would only be thrown from in here
+    const out = finishAI(f, inp, sp);
+    out.attack = false; out.special = false; out.smash = false; out.grab = false;
+    return out;
   }
 
   // === DANGER MODE: at kill percent, disengage and survive (applies to EVERY archetype) ===
