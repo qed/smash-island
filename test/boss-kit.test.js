@@ -382,11 +382,17 @@ describe('the fall drift: everything that falls moves sideways and lands on its 
   });
 });
 
+// The plain stage the next two tests draw on: a custom level with nothing in it. Since the stage backgrounds (69ee90d,
+// 2026-10-13) the ten normal stages paint their own sky, clouds and textured ground band (STAGE ART: saFrame, saGround), so
+// Goiky Field no longer draws the flat ground or the four drifting clouds these tests count. Boss arenas and custom levels
+// still do ("Boss arenas and custom levels keep their own sky"), and that flat path is the one BOSS_ARENA_GROUND and
+// BOSS_ARENA_ROOFED govern.
+const PLAIN_STAGE = `queueCustomLevel({ name:'Plain', plats:[], spawns:[] }); SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`;
+
 describe('BOSS_ARENA_GROUND: each arena its own ground', () => {
   it('an arena with an entry lays its fill, its floor line and its pattern; without one the ground is exactly as it was', () => {
     const { w, log } = bootRecording();
-    const setup = `SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`;
-    w.eval(setup);
+    w.eval(PLAIN_STAGE);
     const gy = w.eval('groundY()'), ground = w.eval('stage.ground');
     const groundFill = () => log.filter((e) => e.op === 'fillRect' && e.args[0] === -20 && e.args[1] === gy).map((e) => e.fill);
     const floorLine = () => log.filter((e) => e.op === 'stroke' && e.stroke !== undefined).map((e) => e.stroke);
@@ -413,7 +419,7 @@ describe('the stage\'s clouds stay out from under a roof', () => {
     // Four's builder, after the late batch (2026-10-01): the stage's clouds drifted across Eternal Algebra Class, a room.
     // Every arena still paints its own sky; only the generic clouds stop where there is no open sky.
     const { w, log } = bootRecording();
-    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
+    w.eval(PLAIN_STAGE);
     const clouds = () => log.filter((e) => e.op === 'ellipse' && e.fill === '#ffffff55' && e.args[2] === 40 && e.args[3] === 18).length;
     log.length = 0; w.eval('draw()');
     expect(clouds(), 'a plain stage').toBe(4);
@@ -423,7 +429,10 @@ describe('the stage\'s clouds stay out from under a roof', () => {
     }
     w.eval(`BOSS_ARENA = 'volcano'`); log.length = 0; w.eval('draw()');
     expect(clouds(), 'the volcano is outdoors').toBe(4);
-    w.eval('BOSS_ARENA = null');
+    w.eval(`BOSS_ARENA = null; CUSTOM_LEVEL = null; stage = STAGES.find(function(s){ return s.id==='goiky'; }); beginMatchNow(); running=false;`);
+    log.length = 0; w.eval('draw()');
+    expect(w.eval('SA.on'), 'Goiky Field paints its STAGE ART backdrop').toBe(true);
+    expect(clouds(), 'a normal stage draws its own clouds, never the generic four over them').toBe(0);
   });
 });
 
