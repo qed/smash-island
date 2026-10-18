@@ -48673,27 +48673,6 @@ function aiThink(f){
     return finishAI(f,inp,sp);
   }
 
-  // === TEAMS: OUT OF YOUR OWN ZONE BEFORE YOU SWING ===
-  // Nothing thrown from inside your own safe zone lands (applyHit), so a CPU standing in it walks out first, and does not
-  // swing on the way: toward its foe when the foe is off to one side of the zone, and out of the zone's open side (the one
-  // facing the middle of the map) when the foe is in the zone with it -- an intruder that follows it out can be hit there.
-  // The climb, drop and travel branches above still own a foe on another level or far away.
-  if(SETTINGS.mode==='teams' && inOwnTeamZone(f)){
-    const z = teamZoneOf(f.team);
-    const exitX = (t.x < z.x || t.x > z.x + z.w) ? t.x : (z.x + z.w/2 < WW/2 ? z.x + z.w + 40 : z.x - 40);
-    const wantDir = exitX < f.x ? -1 : 1;
-    const obst = navAround(f, wantDir);
-    if(obst && obst.detourX!=null){ inp.left = obst.detourX < f.x; inp.right = obst.detourX >= f.x; }
-    else {
-      inp.left = wantDir<0; inp.right = wantDir>0;
-      if(obst && (obst.jump || obst.climb) && (f.onground || f.jumps>0)) inp.jump = true;   // hop the low block, or climb the wall
-    }
-    f._aiCharging = 0; f._aiSmSent = false;   // a smash it had committed to would only be thrown from in here
-    const out = finishAI(f, inp, sp);
-    out.attack = false; out.special = false; out.smash = false; out.grab = false;
-    return out;
-  }
-
   // === DANGER MODE: at kill percent, disengage and survive (applies to EVERY archetype) ===
   // The higher the %, the earlier and harder the fighter backs off. This is what stops
   // e.g. a brawler from charging in at 145% and getting launched.
@@ -48737,6 +48716,30 @@ function aiThink(f){
     // -- the very scared hold out 5 s longer -- and the anti-stalemate ramp below takes over.
     const staleNow = Math.min(2.0, Math.max(0, (hazardT - lastKoFrame - 420)/600));
     if(retreatDir!==0 && (staleNow >= 1.5 || (!scared && staleNow >= 1.0))) retreatDir = 0;
+  }
+
+  // === TEAMS: OUT OF YOUR OWN ZONE BEFORE YOU SWING ===
+  // Nothing thrown from inside your own safe zone lands (applyHit), so a CPU standing in it walks out first, and does not
+  // swing on the way: toward its foe when the foe is off to one side of the zone, and out of the zone's open side (the one
+  // facing the middle of the map) when the foe is in the zone with it -- an intruder that follows it out can be hit there.
+  // The climb, drop and travel branches above still own a foe on another level or far away, and danger mode just above owns a
+  // CPU at kill percent that is backing off (retreatDir): home is where it is safe, so it is not walked back out at the foe it is
+  // running from. Run before danger mode, this sent a CPU at 140% out at a fresh foe 160 px away, and back in, and out: it lost
+  // the stock in 5 of 10 seeds, three of them inside half a second (2 of 10 before the walk-out; review, 2026-10-18).
+  if(SETTINGS.mode==='teams' && retreatDir===0 && inOwnTeamZone(f)){
+    const z = teamZoneOf(f.team);
+    const exitX = (t.x < z.x || t.x > z.x + z.w) ? t.x : (z.x + z.w/2 < WW/2 ? z.x + z.w + 40 : z.x - 40);
+    const wantDir = exitX < f.x ? -1 : 1;
+    const obst = navAround(f, wantDir);
+    if(obst && obst.detourX!=null){ inp.left = obst.detourX < f.x; inp.right = obst.detourX >= f.x; }
+    else {
+      inp.left = wantDir<0; inp.right = wantDir>0;
+      if(obst && (obst.jump || obst.climb) && (f.onground || f.jumps>0)) inp.jump = true;   // hop the low block, or climb the wall
+    }
+    f._aiCharging = 0; f._aiSmSent = false;   // a smash it had committed to would only be thrown from in here
+    const out = finishAI(f, inp, sp);
+    out.attack = false; out.special = false; out.smash = false; out.grab = false;
+    return out;
   }
 
   // === ITEM SEEKING: grab a nearby pickup — prioritize healing when hurt, and always want power/assist/boss ===
@@ -48986,7 +48989,8 @@ function finishAI(f,inp,sp){
   // NEEDLE'S THE POINT (up-special) is a rising jab whose only hit is on the cast frame, about 58 px from her centre. The CPU only
   // ever cast it to climb or recover, at foes 150+ px overhead, so it landed 0-2 times in ~80 casts. Now, from Normal up, it pokes
   // it at a foe touching her, level or a little above (owner, 2026-10-18: "Fix them"). No dice are rolled, and Easy is unchanged.
-  { const t = f.aiTarget; if(sp==='counter' && (f._lvlCache||0) >= 1 && t && !t.dead && !inp.special && !inp.smash && !inp.fin && f.spCd<=0 && !(f._aiSpGap>0) && f.hitstun<=0 && t.invuln<=0 && t.y - f.y < 10 && t.y - f.y > -70 && Math.abs(t.x - f.x) < f.r + t.r + 12){ inp.special=true; inp.up=true; inp.down=false; inp.attack=false; } }
+  // From the ground only: in the air the cast would spend her one air up-special, her recovery, on a 4% jab (review, 2026-10-18).
+  { const t = f.aiTarget; if(sp==='counter' && f.onground && (f._lvlCache||0) >= 1 && t && !t.dead && !inp.special && !inp.smash && !inp.fin && f.spCd<=0 && !(f._aiSpGap>0) && f.hitstun<=0 && t.invuln<=0 && t.y - f.y < 10 && t.y - f.y > -70 && Math.abs(t.x - f.x) < f.r + t.r + 12){ inp.special=true; inp.up=true; inp.down=false; inp.attack=false; } }
   if(inp.special && f._aiSpGap>0) inp.special=false;
   // SOAP's bot (see aiSoapSprayPays): the spray only with something to pause or clean, the grab-throw only when it pays. (special+attack is her finisher, and
   // special+up her cobweb hop: neither is held back.)

@@ -114,4 +114,37 @@ describe('safe zones and the CPU', () => {
     for (const k of [0, 1]) expect(r.inZone[k], `CPU ${k} spends most of the fight out of its zone`).toBeLessThan(420);
     expect(Math.max(...r.longest), 'no long stay at home').toBeLessThan(240);
   });
+
+  // Review, 2026-10-18: the walk-out ran BEFORE danger mode, so a CPU at kill percent that had backed into its zone was walked
+  // straight back out at the fresh foe it was running from, then danger mode sent it in again. Two teams (side-wall zones), a CPU
+  // at 140% in its zone 40 px from the edge, a foe at 0% 160 px outside. Before the walk-out these seeds kept the stock for the
+  // whole 600 frames, crossing the edge once; with it they lost it at frames 27 and 28.
+  it('a CPU at kill percent in its own zone is not walked back out at the foe it is backing off from', () => {
+    for (const seed of [2, 6]) {
+      const { window: w } = loadMonolith(seed);
+      const r = JSON.parse(w.eval(`(function(){
+        SETTINGS.mode='teams'; SETTINGS.teamKey='2v2'; SETTINGS.count=4; SETTINGS.stocks=3; SETTINGS.itemRate=0; running=true;
+        beginMatchNow();
+        fighters.forEach(function(o){ o.controller='ai'; o.you=false; o.pct=0; o.invuln=0; });
+        var z0 = teamZoneOf(0), home = z0.x < WW/2 ? 0 : 1, z = teamZoneOf(home);
+        var f = fighters.find(function(o){ return o.team===home; }), e = fighters.find(function(o){ return o.team!==home; });
+        fighters.forEach(function(o){ if(o!==f && o!==e){ o.controller='still'; o.dead=true; o.stocks=0; o.x=-5000; o.y=-5000; } });
+        var gy = floors[0].y;
+        f.x = z.x + z.w - 40; f.y = gy - f.r; f.pct = 140;
+        e.x = z.x + z.w + 160; e.y = gy - e.r; e.pct = 0;
+        [f, e].forEach(function(o){ o.vx = 0; o.vy = 0; o.onground = true; o.aiTarget = null; o.aiTimer = 0; });
+        lastKoFrame = hazardT;
+        var r = { start: inOwnTeamZone(f), lost: false, cross: 0 }, prev = r.start;
+        for (var i=0;i<90;i++){
+          step();
+          if (f.dead || f.stocks < 3){ r.lost = true; break; }
+          var now = inOwnTeamZone(f); if (now !== prev) r.cross++; prev = now;
+        }
+        return JSON.stringify(r);
+      })()`));
+      expect(r.start, `seed ${seed}: it starts at home`).toBe(true);
+      expect(r.lost, `seed ${seed}: it keeps the stock for 1.5 s`).toBe(false);
+      expect(r.cross, `seed ${seed}: no shuttling across the edge`).toBeLessThanOrEqual(2);
+    }
+  });
 });
