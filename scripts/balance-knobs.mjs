@@ -192,6 +192,10 @@ export function patch(knobName, factor) {
     const m = args.slice(0, -2);
     m[0] = args[0];
     const cur = k.read(m);
+    // A literal of 0 (or below) is left exactly as written, at any scale: it is an "off" (the grab's `f.atkCd = 0`, a `dmg:0` row), not a
+    // quantity, and the clamp's floor must never lift it (cd.attack's 6 would make the grab's 0 a 6-frame wait). It used to survive only
+    // because the clamp widens to a value already below it and 0 times anything is 0; now it is never touched at all.
+    if (!(cur > 0)) return args[0];
     // Whole numbers unless the knob says otherwise: a family written with decimals has to come back
     // with them, or a scale of 1.0 stops being a no-op (see verify) and every arm inherits the drift.
     const p = 10 ** (k.places || 0);
