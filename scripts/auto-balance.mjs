@@ -161,14 +161,18 @@ for (const [key, names] of Object.entries(byKey)) {
 }
 
 // ---- 3. RAW STATS: the weak get a little more of what --stats names ----------------------------
-// FIGHTER_STATS is JSON-shaped, one row a fighter ("*" is the default), so it is read and written whole.
+// FIGHTER_STATS is JSON-shaped, one row a line ("*" is the default), and a row may carry a // comment after it. Only the values a
+// pass changes are rewritten: the rest of the row, its comment and every other row stay as they were; a new row goes after the last.
 const FS_RE = /(const FIGHTER_STATS = \{)([\s\S]*?)(\r?\n\};)/;
+const ROW_RE = /"([^"]+)":\s*(\{[^}]*\})/;
+const codeOf = (l) => { const i = l.indexOf('//'); return i < 0 ? l : l.slice(0, i); };
 const statChanges = [];
 if (STATS_ON.length) {
   const fm = html.match(FS_RE);
   if (!fm) { console.error('FIGHTER_STATS not found in the monolith'); process.exit(1); }
-  const rows = {};
-  for (const r of fm[2].matchAll(/"([^"]+)":\s*(\{[^}]*\})/g)) rows[r[1]] = JSON.parse(r[2]);
+  const eol = fm[3].startsWith('\r') ? '\r\n' : '\n';
+  const lines = fm[2].split(eol), rows = {}, at = {};
+  lines.forEach((l, i) => { const m = codeOf(l).match(ROW_RE); if (m) { rows[m[1]] = JSON.parse(m[2]); at[m[1]] = i; } });
   const def = rows['*'] || {};
   for (const name of Object.keys(roster)) {
     const d = dev(name);
@@ -176,18 +180,28 @@ if (STATS_ON.length) {
     for (const k of STATS_ON) {
       const row = rows[name] || {};
       const cur = row[k] != null ? row[k] : (def[k] != null ? def[k] : 1);
+      if (cur >= STAT_BOUNDS[k][1]) continue;      // at the top already (or set above it by hand): never pulled back down
       const next = Math.min(STAT_BOUNDS[k][1], Math.max(STAT_BOUNDS[k][0], Math.round((cur + STAT_STEP) * 100) / 100));
-      if (next === cur) continue;
+      if (!(next > cur)) continue;                 // only ever up
       rows[name] = { ...row, [k]: next };
       statChanges.push({ name, stat: k, from: cur, to: next, dev: d });
     }
   }
   if (statChanges.length) {
-    const eol = fm[3].startsWith('\r') ? '\r\n' : '\n';
     const fmtRow = (o) => '{ ' + Object.entries(o).map(([k, v]) => `${JSON.stringify(k)}:${v}`).join(', ') + ' }';
-    const names = ['*', ...Object.keys(rows).filter(n => n !== '*').sort()];
-    const body = names.filter(n => rows[n]).map(n => `  ${JSON.stringify(n)}: ${fmtRow(rows[n])}`).join(',' + eol);
-    html = html.replace(FS_RE, (_m, a, _b, c) => a + eol + body + c);
+    for (const name of new Set(statChanges.map((x) => x.name))) {
+      if (at[name] != null) {                      // its own row: only the object is rewritten, its comment stays
+        const l = lines[at[name]], code = codeOf(l), m = code.match(ROW_RE);
+        lines[at[name]] = code.slice(0, m.index) + `${JSON.stringify(name)}: ${fmtRow(rows[name])}` + code.slice(m.index + m[0].length) + l.slice(code.length);
+      } else {                                     // a new row after the last one, which gets its comma
+        const last = Math.max(...Object.values(at)), l = lines[last], code = codeOf(l), m = code.match(ROW_RE), end = m.index + m[0].length;
+        if (!/^\s*,/.test(code.slice(end))) lines[last] = l.slice(0, end) + ',' + l.slice(end);
+        lines.splice(last + 1, 0, `  ${JSON.stringify(name)}: ${fmtRow(rows[name])}`);
+        for (const n of Object.keys(at)) if (at[n] > last) at[n]++;
+        at[name] = last + 1;
+      }
+    }
+    html = html.replace(FS_RE, (_m, a, _b, z) => a + lines.join(eol) + z);
   }
 }
 

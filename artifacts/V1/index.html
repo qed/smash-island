@@ -2088,9 +2088,10 @@ function installPrizeKit(){
   PRIZE_INSTALLED = true;
   const pct = (d)=> (Math.round(d*10)/10) + '%';
   for(const r of PRIZE_ROSTER){
-    const t = Object.assign({}, PRIZE_KIT.MOVE_TEXT[r.name]), f = { r:24, kit:r.kit }, d = dtiltStats(f), u = utiltStats(f);
-    t.ranged = "Low Sweep — a quick sweep at the feet straight ahead that pops them up (short reach). On hit: " + pct(d.dmg) + ".";
-    t.utilt  = "Uppercut — a rising swing over the head that launches them straight up (short reach). On hit: " + pct(u.dmg) + ".";
+    const t = Object.assign({}, PRIZE_KIT.MOVE_TEXT[r.name]), f = { r:24, kit:r.kit }, d = dtiltStats(f), u = utiltStats(f), dk = statsFor(r.name).dmg;
+    for(const key in t) t[key] = statWords(dk, t[key]);   // (FIGHTER STATS: the fighter's dmg in the words)
+    t.ranged = "Low Sweep — a quick sweep at the feet straight ahead that pops them up (short reach). On hit: " + pct(d.dmg*dk) + ".";
+    t.utilt  = "Uppercut — a rising swing over the head that launches them straight up (short reach). On hit: " + pct(u.dmg*dk) + ".";
     MOVE_TEXT[r.name] = t;
   }
   Object.assign(SMASH_ID, PRIZE_KIT.SMASH_ID); Object.assign(SMASH_SPEC, PRIZE_KIT.SMASH_SPEC); Object.assign(UPSPEC, PRIZE_KIT.UPSPEC);
@@ -9134,16 +9135,19 @@ function ctfAiWalk(f, inp, tx, tol){
 // Follow a path (an array of edges) to its end. Returns true on the end of the path, false while still on it, 'lost' when it cannot go on.
 // A flight from a live state: x, y, vx, vy, jumps and whether it stands on something. ctl(t, x, y, vx, vy, jumps) says what is held each step: { dir, jump }.
 // The same numbers as ctfNavSim (the game's own), so what it says is what the real fighter does if it holds the same keys. Returns { node, x, t } where it comes down, or null.
-function ctfNavFly(nav, s, ctl, free, thru, bst){
+function ctfNavFly(nav, s, ctl, free, thru, bst, st){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
+  // FIGHTER STATS (st: the live fighter's, from ctfAiPlanFly; with none it is every stat at 1): the run on the ground, the drift in
+  // the air (a running jump keeping the run's speed), the jump, and the fall on the way down, as step() moves the fighter.
+  const S = st || STAT_ONE, ACCg = P.ACC*S.run, ACCa = P.ACC*S.air, CAPg = P.CAP*S.run, CAPa = P.CAP*S.air, JV = P.JV*S.jump, GF = S.fall;
   let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, fl = !!s.fl, wt = -9, ws = 0;
   for(let t = 1; t <= 150; t++){
     const c = ctl(t, x, y, vx, vy, jumps) || {};
-    if(c.dir){ vx += c.dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
+    if(c.dir){ const v0 = vx < 0 ? -vx : vx; vx += c.dir*(ground ? ACCg : ACCa); let cap = ground ? CAPg : CAPa; if(!ground && CAPg > CAPa && v0 > cap) cap = Math.min(CAPg, v0); if(vx > cap) vx = cap; else if(vx < -cap) vx = -cap; }
     else if(ground) vx *= FRICTION;
-    if(c.jump){ if(jumps > 0 && !jp){ if(!ground && t - wt <= 3 && c.dir === ws && !CTF.wallOK) return null; vy = P.JV; jumps--; ground = false; jp = true; } } else jp = false;
+    if(c.jump){ if(jumps > 0 && !jp){ if(!ground && t - wt <= 3 && c.dir === ws && !CTF.wallOK) return null; vy = JV; jumps--; ground = false; jp = true; } } else jp = false;
     if(thru && t === 1){ y += R*0.6; vy = 5; ground = false; }
-    vy += fl ? P.G*0.35 : P.G; x += vx; const pb = y + R; y += vy;
+    vy += (fl ? P.G*0.35 : P.G)*(vy > 0 ? GF : 1); x += vx; const pb = y + R; y += vy;
     const list = (nav.pb[ctfNavBucket(x)] || []);
     let landed = null;
     for(const p of list){
@@ -9176,7 +9180,7 @@ function ctfAiPlanFly(nav, f, e, o){
     else if(o.dj && !djDone && jumps > 0 && (o.djNow || (t >= 6 && vy >= -0.4))){ c.jump = true; djDone = true; }
     return c;
   };
-  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, fl:f._floatT > 0 }, ctl, free, !!o.thru, bst);
+  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, fl:f._floatT > 0 }, ctl, free, !!o.thru, bst, f.st);
 }
 function ctfAiStat(k){ const S = CTF.stat = CTF.stat || {}; S[k] = (S[k] || 0) + 1; }
 // Follow the current path, one step at a time. Moves are steered from what the fighter is really doing: the jump goes at the moment a look ahead says it
@@ -12841,7 +12845,7 @@ function smashBlurb(f){
   if(SLAM_ROWS.has(sp)) what += ' (in the air, you slam down first)';
   const eff  = row.effect==='freeze' ? 'freezes them once they are above ' + freezePct(f) + '%' : SMASH_EFFECT_TEXT[row.effect];   // freeze needs them hurt first
   const kills = row.kb > row.dmg;                       // the ratio IS the move's job
-  return name + ' — ' + what + '. On hit: ' + Math.round(row.dmg*SMASH_DMG_MULT) + '%' + (eff ? ', ' + eff : '') + (kills ? ', launches far' : '') + '.';
+  return name + ' — ' + what + '. On hit: ' + Math.round(row.dmg*SMASH_DMG_MULT*statsFor(f && f.name).dmg) + '%' + (eff ? ', ' + eff : '') + (kills ? ', launches far' : '') + '.';   // (FIGHTER STATS: the fighter's dmg)
 }
 // The second line of the move card: the press, the charge, and -- only for a smash that hits -- the aim and the angle.
 const SMASH_NO_HIT = new Set(['counter', 'kick', 'zapshooter']);   // Needle, Teardrop, Golf Ball: stances and auras
@@ -12900,7 +12904,7 @@ const MOVE_TEXT = {
   "Balloony": {jab:"Attack — a jab just in front of you (short reach). On hit: 12%.", ranged:"Ranged — a low sweep around your feet hits foes on both sides (short reach). On hit: 6%.", special:"Air Leak — a jet of air zips you forward and shoves a foe right in front of you (short reach). On hit: 10%, launches far.", up:"Air Whirl — you rise on a whirl of leaking air that shoves foes beside you away (short reach), moving faster for a second. On hit: 4%.", down:"Deflate & Drift — no hit: you deflate and drift upward, untouchable for about a quarter of a second.", finisher:"Finisher — a big swing just in front of you (short reach). On hit: 14%."},
   "Cake": {jab:"Attack — a jab just in front of you (short reach). On hit: 6%.", ranged:"Ranged — a low sweep around your feet hits foes on both sides (short reach). On hit: 5%.", special:"Cake at Stake — lobs a slice that bounces along ahead of you (reaches the whole stage). On hit: 9%, heals you 6%.", up:"...and Eat It Too — you hop up with a slice at foes beside you (short reach), and your next Attack (X) hits much harder. On hit: 4% (7% point-blank).", down:"Recover a Slice — no hit: you heal up to 18% over about 1.7 seconds; getting hit pauses it.", finisher:"Finisher — a big swing just in front of you (short reach). On hit: 14%."},
   "Leafy": {jab:"Attack — a quick punch right in front of you (short reach). On hit: 3%.", ranged:"Ranged — a low kick sends a small shockwave out both ways around your feet (short reach). On hit: 3%.", special:"BFDIA Sprint — dashes forward (long reach), untouchable the whole way; anyone you run into takes the hit. On hit: 10%.", up:"Sprint Up — no hit: you blink straight up, untouchable for a moment. Hold left or right too and it becomes a BFDIA Sprint angled upward instead.", down:"Kindness Parry — no hit: a half-second stance; whoever hits you in it is countered and takes at least 12%.", finisher:"Finisher — a big swing right in front of you as you slide forward, untouchable for a moment (short reach). On hit: 14%."},
-  "Bubble": {jab:"Attack — three quick pops right in front of you (short reach). On hit: 3 hits of 2%.", ranged:"Ranged — a low kick sends a small shockwave out both ways around your feet (short reach). On hit: 3%.", special:"Thermal Rise — no hit: a little hop upward that gives you both of your jumps back.", up:"Pop & Reform — pops and reforms high above, untouchable for a moment, with a jump back; a soap drip falls below and leaves a slowing puddle. On hit: 3%.", down:"Bubble Shield — no hit: for 3 seconds you take 40% less damage and knockback.", finisher:"Finisher — a big swing right in front of you (short reach). On hit: 13%, launches far."},
+  "Bubble": {jab:"Attack — three quick pops right in front of you (short reach). On hit: 3 hits of 2%.", ranged:"Ranged — a low kick sends a small shockwave out both ways around your feet (short reach). On hit: 3%.", special:"Thermal Rise — no hit: a little hop upward that gives you both of your jumps back.", up:"Pop & Reform — pops and reforms high above, untouchable for a moment, with a jump back; a soap drip falls below and leaves a slowing puddle. On hit: 3% from the drip, 2% from the puddle.", down:"Bubble Shield — no hit: for 3 seconds you take 40% less damage and knockback.", finisher:"Finisher — a big swing right in front of you (short reach). On hit: 13%, launches far."},
   "Coiny": {jab:"Attack — a quick punch right in front of you (short reach). On hit: 9%.", ranged:"Ranged — a low kick sends a small shockwave out both ways around your feet (short reach). On hit: 4%.", special:"Slap — a fast slap right in front of you (short reach); Firey, Firey Jr. and Bomby take 13% instead. On hit: 9%.", up:"Rising Backhand — hops up with a backhand (short reach). On hit: 4%, or 8% right up close, stuns.", down:"Counter — no hit: a half-second stance; whoever hits you in it is countered and takes at least 12%.", finisher:"Finisher — a hard slap right in front of you (short reach). On hit: 8%."},
   "Book": {jab:"Attack — a quick punch right in front of you (short reach). On hit: 8%.", ranged:"Ranged — a low kick sends a wide shockwave out both ways around your feet (medium reach). On hit: 5%.", special:"Define — no hit: marks whoever last hit you (or a random foe) for 10 seconds; your hits on them do 15% more, stacking up to 5 times.", up:"Gravity Page — hops up swinging and gets a jump back (short reach). On hit: 3%, or 6% right up close, knocks them down.", down:"Brace — no hit: braces for under half a second, taking less damage and much less knockback.", finisher:"Finisher — a heavy swing right in front of you (short reach) that adds two Define marks. On hit: 13%, marks them to take more."},
   "Ruby": {jab:"Gem Bolt — fires a gem that bounces along the floor (very long reach); hold up or down right after to bend its arc. On hit: 4%.", ranged:"Ranged — fires a fast shot straight ahead (very long reach). On hit: 5%.", special:"Refraction Beam — no hit: charges your next Gem Bolt into a bouncing beam that goes through foes for 11%.", up:"Gem-Hard — blasts up with a swing and armour for a moment (short reach). On hit: 7% at the edge of the swing, 3% up close.", down:"Gem Trap — sets a gem trap just ahead of you that stays about 5 seconds; anyone standing on it keeps getting hit. On hit: 9%.", finisher:"Finisher — a big swing right in front of you (short reach). On hit: 14%."},
@@ -12946,7 +12950,7 @@ const MOVE_TEXT = {
   "Dough": {jab:"Attack — a ghostly slap just in front of him (short reach). On hit: 8.5%.", ranged:"Ranged — a low sweep of his tail (short reach). On hit: 3%.", special:"Shameless Knockoff — a beat late, does the last special a nearby foe used, weaker, or their last smash at full strength; with nothing to copy, a ghostly shove (short reach). On hit: 4%.", up:"Into the Ceiling — no hit: floats straight up through whatever is above, untouchable for a moment.", down:"They're the Best — bounces where he stands and lands on whoever is beside him, both sides (short reach). On hit: 7%.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Fan": {jab:"Attack — a paper-edge chop just in front of him (short reach). On hit: 5%.", ranged:"Ranged — a low paper-edge sweep (short reach). On hit: 3%.", special:"You Leave Us Alone! — an armoured charge straight through everyone in his way (long reach). On hit: 9%.", up:"Not Today! — no hit: a burst straight up that gives him a jump back.", down:"Fan Theory — no hit: he calls the next move; a hit in the next half-second he saw coming and answers, and if none comes he is stunned.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Soap": {jab:"Attack — a swipe of her cleaning cloth just in front of her (short reach). On hit: 6.5%.", ranged:"Ranged — a low swipe of the cloth (short reach). On hit: 3%.", special:"Secret Ingredient — sprays disinfectant ahead (medium reach): their armour, counter or reflect switches off for 1.5 s (then comes back), and burn, poison, slow and weaken come off her. On hit: 6%.", up:"It's a Cobweb! — leaps at a cobweb overhead, scrubbing with the cloth (short reach). On hit: 8%, knocks them down.", down:"They're the Mess, We Clean It — throws the foe beside her forward as ammo, and whoever they fly into takes 8% (short reach). On hit: 9%.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
-  "Tissues": {jab:"Attack — a quick punch just in front of him (short reach). On hit: 6%.", special:"CondiShAWn — sneezes a jet of snot straight ahead (medium reach); about one foe in two catches his condishawn and sneezes once or twice, hopping back. On hit: 6%.", up:"Sneeze Jump — sneezes at the floor and the blast throws him up; the spray under him sets off a short sneezing fit (short reach). On hit: 3%.", down:"Nap — dozes off and can't act for a moment; a hit wakes him, and if he sleeps it off he wakes with a start and sneezes all round him (short reach). On hit: 8%.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
+  "Tissues": {jab:"Attack — a quick punch just in front of him (short reach). On hit: 6%.", special:"CondiShAWn — sneezes a jet of snot straight ahead (medium reach); about one foe in two catches his condishawn and sneezes once or twice, hopping back. On hit: 6%.", up:"Sneeze Jump — sneezes at the floor and the blast throws him up; the spray under him sets off a short sneezing fit (short reach). On hit: 3% to 4%.", down:"Nap — dozes off and can't act for a moment; a hit wakes him, and if he sleeps it off he wakes with a start and sneezes all round him (short reach). On hit: 8%.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Yin-Yang": {jab:"Attack — a quick punch just in front of him (short reach). On hit: 5%.", special:"Yang Throws Yin — Yang hurls Yin, who rolls out and back and knocks down whoever he meets; alone, Yang hits harder until Yin is back (long reach). On hit: 10%.", up:"Through the Roof — Yang drives straight up through whoever is over him and knocks them down (short reach). On hit: 5% (9% up close).", down:"Mindful Positioning — no hit: Yang takes full control for 4 seconds, shaking off stuns, slows, roots and scrambles; no scramble or freeze can take hold.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Starfruit": {jab:"Attack — a quick punch just in front of him (short reach). On hit: 5%.", special:"One-Hit Wonder — belts into the mic, a blast just ahead (medium reach); once it lands he is a Has-Been and it only shoves until he Recycles. On hit: 14% the first time, then 3%.", up:"Flee! Flee! — no hit: bolts from the paparazzi and reappears higher up, briefly untouchable and running faster.", down:"Recycle — no hit: crushes his garbage self (3% to him), shakes off every status and gets his One-Hit Wonder back; once every 8 seconds.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
   "Blueberry": {jab:"Attack — a punch just in front of him (short reach). On hit: 5%.", ranged:"Ranged — a low kick at the feet (short reach). On hit: 3%.", special:"Palanquin Catch — arms up: he lifts whoever is right in front and slams them down (short reach), and a shot that reaches him goes straight back. On hit: 10%, knocks them down.", up:"Overhead Press — springs up with both arms thrust overhead, hitting anyone above (short reach). On hit: 9%, knocks them down.", down:"Play Dead — no hit: he drops flat and holds his breath, untouchable for most of a second; for a moment after he gets up his hits land harder.", finisher:"Finisher — a heavy swing right in front of you (short reach). On hit: 14%."},
@@ -16820,14 +16824,26 @@ addEventListener('keydown', e => {
 // A row names only what it changes; "*" is everyone's default. Keep "*" at 1: scripts/balance-knobs.mjs scales it (with every row)
 // to move the whole roster at once, and scripts/auto-balance.mjs --stats=... nudges single fighters' rows (bounds 0.85-1.15, dmg 0.85-1.2).
 // Written as JSON (quoted keys) so those scripts can read and rewrite it, and so `dmg:` knobs never mistake it for a move's damage.
+// A row may carry a // comment after it (auto-balance rewrites only the value it changes). The bounds are the balance tools': a
+// value set by hand outside them works in the game, and a sweep or a nudge never pushes it further out.
 // ONLINE: only the host simulates (a client draws its snapshots), and every device reads this by name: nothing of it is sent.
-// RUNNING! keeps every runner on 1 (its lanes are built on the shared MAXVX and JUMP). Capture the Flag's CPU route graphs are built
-// on the shared numbers too (ctfNavParams): a jump under 1 can come up short of a ledge they count on.
+// RUNNING! keeps every runner on 1 (its lanes are built on the shared MAXVX and JUMP), and so does a boss's ghost fighter
+// (spawnOneGhost: the boss phase is tuned on its own numbers, and a nudge for a weak fighter must not strengthen a boss).
+// Capture the Flag's CPU route graphs are prebuilt on the shared numbers (ctfNavParams: their edges assume every stat at 1, so a
+// jump under 1 can come up short of a ledge they count on); the live look-ahead that times a CPU's jumps (ctfAiPlanFly) uses the
+// fighter's own run, air, jump and fall.
+// How they meet the rest:
+//   * a running jump keeps the run's speed into the air (never more), so a run above the air still pays off off the ground;
+//   * dmg reaches everything a hit can break or hurt -- the Smash Ball, a turret, a boss's tongue, Teardrop's taunt bonus -- and a
+//     move's words (MOVE_TEXT's "On hit:" numbers, the smash line): a card states the hit as it lands;
+//   * a counter's return is built from the hit as it landed (the attacker's dmg in it) and is then the counterer's own hit (their
+//     dmg on top): both fighters' stats count, on purpose;
+//   * the hop smash's aim and MePhone4's portal fling, which plan an arc on gravity, plan it with the fall stat.
 const FIGHTER_STATS = {
   "*": { "run":1, "air":1, "jump":1, "fall":1, "dmg":1 }
 };
 const STAT_KEYS = ['run', 'air', 'jump', 'fall', 'dmg'];
-const STAT_ONE = Object.freeze({ run:1, air:1, jump:1, fall:1, dmg:1 });   // what a fighter with no `st` (a client's copy) reads
+const STAT_ONE = Object.freeze(Object.fromEntries(STAT_KEYS.map(k => [k, 1])));   // what a fighter with no `st` (a client's copy) reads (built from the keys, so a `dmg:` knob cannot reach it)
 // A fighter's own five, read once (makeFighter): its row's value, else the default's; anything that is not a positive number reads 1.
 function statsFor(name){
   const D = FIGHTER_STATS['*'] || STAT_ONE;
@@ -16837,6 +16853,15 @@ function statsFor(name){
 }
 // The damage `d` of a hit landed by `f` (a fighter, or anything else: only a fighter has stats).
 function statDmg(f, d){ const S = f && f.st; return (S && S.dmg !== 1) ? d*S.dmg : d; }
+// FIGHTER STATS in the words. A move's line states its hit as it lands, so a fighter's dmg reaches its "On hit:" numbers too
+// (test/move-text holds them to the measured hit). statPcts scales every N% of a phrase except the ones that are not a hit's damage:
+// a threshold ("above 40%"), a heal ("heals you 3%"), a cost ("costs him 3%") or a ratio ("20% extra", "40% less", "60% of it").
+// The lines built from numbers (msWords, the boot pass, the prize kit, smashBlurb) multiply their numbers; the hand-written ones are
+// scaled here, once, before any of those runs. At 1 nothing is touched.
+const STAT_PCT_RE = /(above |heals? you |costs? (?:you|him|her) |costing (?:you|him|her) )?(\d+(?:\.\d+)?)%( (?:less|extra|of it|harder|slower|faster))?/g;
+function statPcts(k, s){ return (k === 1 || typeof s !== 'string') ? s : s.replace(STAT_PCT_RE, (m, pre, n, post) => (pre || post) ? m : msPct(+n*k)); }
+function statWords(k, line){ if(k === 1 || typeof line !== 'string') return line; const i = line.indexOf('On hit:'); return i < 0 ? line : line.slice(0, i) + statPcts(k, line.slice(i)); }
+for(const n in MOVE_TEXT){ const k = statsFor(n).dmg; if(k === 1) continue; const t = MOVE_TEXT[n]; for(const key in t) t[key] = statWords(k, t[key]); }
 function makeFighter(r,x,y,idx){
   const kit=r.kit||{special:"basic"};
   const w=r.w||90;
@@ -17507,6 +17532,7 @@ function fsBallHit(f, cx, cy, rad, dmg){
   if(Math.hypot(b.x - cx, b.y - cy) >= rad + b.r) return false;
   if((b.gr[f.idx] || 0) > hazardT) return false;   // a lingering hitbox does not melt it in a frame
   b.gr[f.idx] = hazardT + FSBALL.grace;
+  dmg = statDmg(f, dmg);   // FIGHTER STATS: the striker's dmg (a swing's or a shot's), before the clamp
   b.hp -= clamp(dmg, FSBALL.minHit, FSBALL.maxHit); b.flash = 8; b.last = f.idx;
   b.vx += (Math.sign(b.x - f.x) || f.face || 1)*3.2; b.vy -= 1;
   for(let i = 0; i < 6; i++) puff(b.x, b.y, 'hsl(' + ((i*60 + hazardT*7) % 360) + ',95%,65%)', 4);
@@ -26316,7 +26342,8 @@ function mpFling(f, q){
 function mpFlingStep(f){
   const F = f._mpFl, u = Math.min(1, ++F.t/F.T);
   if(F.t > F.T){ f.vx = 0; f.vy = Math.min(f.vy, 0); f._mpFl = null; return; }   // it came down at the exit: the speed stops with it, and the hit-stun left over is the dizziness
-  f.vx = F.vx; f.vy = ((F.y1 - F.y0) - 4*F.A*(1 - 2*u))/F.T - GRAV; f.onground = false; f.hitstun = Math.max(f.hitstun || 0, 2);
+  const vt = ((F.y1 - F.y0) - 4*F.A*(1 - 2*u))/F.T;   // the speed this frame should have after the step's gravity, which pulls harder falling (FIGHTER STATS: fall)
+  f.vx = F.vx; f.vy = vt - (vt - GRAV > 0 ? GRAV*(f.st || STAT_ONE).fall : GRAV); f.onground = false; f.hitstun = Math.max(f.hitstun || 0, 2);
 }
 function mpPortalTick(s, tgt){
   const H = mpHz(s), P = MP4.portal, gy = groundY();
@@ -32815,6 +32842,7 @@ function oneNoDamage(s, msg){
 // Lightning's Chain Bolt linking into a boss ("Lightning's Chain Bolt can hit bosses EVERYWHERE, Boss Rush included"): One by
 // her own rules, Two's Power Ungrounded blocks it the way it blocks a punch, any other boss just takes it.
 function chainBoltBoss(s, dmg, from){
+  dmg = statDmg(from, dmg);   // FIGHTER STATS: her dmg (as bossTakeHit)
   let d = 0;
   if(s._oneFight) d = oneTakeDamage(s, dmg, from);
   else if(s._cobsFight) d = cobsTakeDamage(s, dmg, from);
@@ -32832,6 +32860,7 @@ function spawnOneGhost(s, T){
   const row = pool.length ? pool[Math.floor(Math.random()*pool.length)] : ROSTER.find(r=>r.play);
   const x = clamp(s.x - (s.face||1)*(s.r + 60), 60, WW - 60), y = s.y;
   const g = makeFighter({ ...row, you:false }, x, y, fighters.length);
+  g.st = { ...STAT_ONE };   // FIGHTER STATS: the ghost is a boss phase, tuned on its own (_ghostHit, haste): it does not take its fighter's stats
   Object.assign(g, { _oneGhost:true, team:-1, _origTeam:-1, controller:'ai', you:false, stocks:1, homeBase:null,
     _ghostHp:ONE_GHOST_HP, _ghostMax:ONE_GHOST_HP, _ghostHit:T.hit || 1, _ghostFx:T.fx || null, _ghostFxN:T.fxN || 0,
     _ghostLeash:0, invuln:30 });
@@ -37364,7 +37393,7 @@ function updateSummons(){
           if(!rider && owner && !owner.dead && owner.controller!=='local' && !owner.you){
             const odx = s.x - owner.x;
             if(Math.abs(odx) > 20){ owner.vx += Math.sign(odx)*0.5; }
-            else if(owner.onground && owner.y > s.y - s.r - 40){ owner.vy = -12; owner.onground=false; }
+            else if(owner.onground && owner.y > s.y - s.r - 40){ owner.vy = -12*(owner.st || STAT_ONE).jump; owner.onground=false; }   // (FIGHTER STATS: jump)
           }
           if(rider){
             s._ridden = 20;
@@ -37824,7 +37853,7 @@ function step(){
           const want = Math.max(-m.vmax, Math.min(m.vmax, (t.x - f.x)*0.15));
           f.vx += Math.max(-0.9, Math.min(0.9, want - f.vx));
         }
-        if(f.vy > 0 && !f.onground) f.vy += GRAV*0.5;
+        if(f.vy > 0 && !f.onground) f.vy += GRAV*0.5*(f.st || STAT_ONE).fall;   // (FIGHTER STATS: fall)
         const stomp = (f.vy > 0 && !f.onground) ? smashTargets(f, f.x, f.y+f.r*0.5, m.rad).filter(function(t){ return !m.hit[t.idx]; }) : [];
         if(stomp.length || (f.onground && f.vy>=0)){
           const hurt = f._hurtAnim;
@@ -38043,6 +38072,7 @@ function step(){
       // HASTE EASES OFF. It used to be 1.5x flat and then nothing, so the frame it ran out felt like the
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
       const fsk = f.onground ? fst.run : fst.air;   // FIGHTER STATS: the run on the ground, the drift in the air (on top of everything else)
+      const vx0 = Math.abs(f.vx);   // (the speed before this frame's push: see the cap)
       const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * ctfSpeedK(f) * fsk;   // (Capture the Flag: everyone 1.5x as fast, a flag carrier slower)
       const _face0 = f.face;
       if(inp.left){ f.vx-=mv; f.face=f.ctrlRev>0?1:-1; }
@@ -38059,7 +38089,12 @@ function step(){
       // The speed CAP eases off with the haste, the same way the acceleration does. This is where the cliff was:
       // 1.4x flat and then nothing, so the frame the buff expired took 2.56 off a held run in one step (G28).
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
-        const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*ctfSpeedK(f)*fsk; f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
+        const cb = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*ctfSpeedK(f);   // a tree walks; reserve power is slow
+        let cap = cb*fsk;
+        // FIGHTER STATS: a running jump keeps the run's speed. In the air the cap is the drift's, but it never cuts the speed the fighter
+        // already had below what the run allows: the momentum is kept (a drift against it still slows it), it is never added to.
+        if(!f.onground && fst.run > fst.air && vx0 > cap) cap = Math.min(cb*fst.run, vx0);
+        f.vx=Math.max(-cap,Math.min(cap,f.vx)); }
       // jump
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
       else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
@@ -39577,7 +39612,7 @@ const SM_PAT = {
   // on the way down is the hit, and so is landing next to them. It used to be a fixed arc that only landed
   // on someone who stood still for the whole of it.
   leap(f,s){
-    const rise = s.rise||11, air = 2*rise/GRAV, vmax = Math.max((s.fwd||7)*2, SMASH_HOP_VMAX);
+    const rise = s.rise||11, fk = (f.st || STAT_ONE).fall, air = fk === 1 ? 2*rise/GRAV : rise/GRAV*(1 + 1/Math.sqrt(fk)), vmax = Math.max((s.fwd||7)*2, SMASH_HOP_VMAX);   // (FIGHTER STATS: the way down takes 1/sqrt(fall) as long)
     const t = nearestFoe(f, SMASH_HOP_SEEK, SMASH_AIM_Y), ahead = t && (Math.sign(t.x - f.x) === f.face || Math.abs(t.x - f.x) < 12) && landable(t.x, t.y);
     f.vy = -rise; f.onground=false;
     const plain = landable(f.x + f.face*(s.fwd||7)*air, feetY(f) - 2) ? f.face*(s.fwd||7) : 0;   // nothing to land on ahead: hop in place
@@ -40300,7 +40335,8 @@ function doUpTilt(f){
 (function(){
   const pct = (d)=> (Math.round(d*10)/10) + '%';
   for(const r of ROSTER){ if(!r.play) continue; const t = MOVE_TEXT[r.name]; if(!t) continue;
-    const f = { r:24, kit:r.kit }, d = dtiltStats(f), u = utiltStats(f);
+    const f = { r:24, kit:r.kit }, dk = statsFor(r.name).dmg, d0 = dtiltStats(f), u0 = utiltStats(f);   // (FIGHTER STATS: the fighter's dmg in the words)
+    const d = dk === 1 ? d0 : { ...d0, dmg:d0.dmg*dk }, u = dk === 1 ? u0 : { ...u0, dmg:u0.dmg*dk };
     t.ranged = r.kit.special === 'cheer'   // Bot's down+X is a flick of spaghetti, not the sweep (doGroundMove, spaggers)
       ? "Spaggers! — flicks a clump of spaghetti along the floor ahead (short reach) that tangles whoever it touches for about half a second. On hit: " + pct(d.dmg) + ", roots them."
       : r.kit.special === 'barrier'   // MeTag's down+X snaps a cuff on the ankle (doGroundMove, METAG_TAP_ROOT)
@@ -41458,22 +41494,22 @@ function msReach(S){
 }
 function msReachWord(S){ const m = msReach(S); return m < 80 ? 'short reach' : (m < 140 ? 'medium reach' : 'long reach'); }
 function msPct(d){ return (Math.round(d * 10) / 10) + '%'; }
-function msLine(S){
+function msLine(S, dk = 1){   // dk: the fighter's dmg (FIGHTER STATS)
   const dm = Math.max.apply(null, (S.boxes || []).map(b => b.dmg).concat([0]));
-  return S.n + ' — ' + S.d + ' (' + msReachWord(S) + '). On hit: ' + (S.x || msPct(dm)) + (S.fxt ? ', ' + S.fxt : '') + '.';
+  return S.n + ' — ' + S.d + ' (' + msReachWord(S) + '). On hit: ' + (S.x ? statPcts(dk, S.x) : msPct(dm*dk)) + (S.fxt ? ', ' + statPcts(dk, S.fxt) : '') + '.';
 }
-function msThrowLine(T){ return T.n + ' — ' + T.d + '. On hit: ' + msPct(T.dmg) + '.'; }
+function msThrowLine(T, dk = 1){ return T.n + ' — ' + T.d + '. On hit: ' + msPct(T.dmg*dk) + '.'; }
 function msWords(){   // (every batch calls it once its fighters are in MOVESETS; it is safe to run again)
   for(const r of ROSTER){
     if(!r.play || !r.kit) continue;
-    const ms = MOVESETS[r.kit.special], t = MOVE_TEXT[r.name];
+    const ms = MOVESETS[r.kit.special], t = MOVE_TEXT[r.name], dk = statsFor(r.name).dmg;   // (FIGHTER STATS: the fighter's dmg in the words)
     if(!ms || !t) continue;
-    for(const [k, , key] of MS_SLOTS) if(ms[k]) t[key] = msLine(ms[k]);
+    for(const [k, , key] of MS_SLOTS) if(ms[k]) t[key] = msLine(ms[k], dk);
     const G = ms.grab;
     if(G){
-      t.grab = 'Grab — reaches a short way ahead on the ground; hold on and press X to pummel (' + G.pummel.n + ', ' + msPct(G.pummel.dmg) + '), or a direction to throw. No hit: it is a hold.';
-      t.pummel = G.pummel.n + ' — a quick pummel while you hold them. On hit: ' + msPct(G.pummel.dmg) + '.';
-      t.fthrow = msThrowLine(G.f); t.bthrow = msThrowLine(G.b); t.uthrow = msThrowLine(G.u); t.dthrow = msThrowLine(G.d);
+      t.grab = 'Grab — reaches a short way ahead on the ground; hold on and press X to pummel (' + G.pummel.n + ', ' + msPct(G.pummel.dmg*dk) + '), or a direction to throw. No hit: it is a hold.';
+      t.pummel = G.pummel.n + ' — a quick pummel while you hold them. On hit: ' + msPct(G.pummel.dmg*dk) + '.';
+      t.fthrow = msThrowLine(G.f, dk); t.bthrow = msThrowLine(G.b, dk); t.uthrow = msThrowLine(G.u, dk); t.dthrow = msThrowLine(G.d, dk);
     }
     t.tech = (ms.tech || []).join(' ');
   }
@@ -42907,7 +42943,7 @@ const GRAB_TEXT_SHARED = {
 };
 const SHARED_FALLBACK = 'Until this fighter’s batch of moves arrives it is the jab.';
 function moveRowsFor(r){
-  const mt = MOVE_TEXT[r.name] || {}, ms = r.kit && MOVESETS[r.kit.special], rows = [];
+  const mt = MOVE_TEXT[r.name] || {}, ms = r.kit && MOVESETS[r.kit.special], rows = [], dk = statsFor(r.name).dmg, GT = (k) => statWords(dk, GRAB_TEXT_SHARED[k]);   // (FIGHTER STATS: the shared grab lines in the fighter's dmg)
   const add = (k, t, wide) => { if(t) rows.push([k, t, !!wide]); };
   add('X', mt.jab);
   if(ms){
@@ -42917,10 +42953,10 @@ function moveRowsFor(r){
     add('←/→ + X', 'Side-tilt — ' + SHARED_FALLBACK); add('↑ + X', mt.utilt); add('↓ + X', mt.ranged);
     add('X in the air', 'Aerials — ' + SHARED_FALLBACK);
   }
-  add('X + C', (ms && mt.grab) || GRAB_TEXT_SHARED.grab);
-  add('X, holding', (ms && mt.pummel) || GRAB_TEXT_SHARED.pummel);
-  add('→, holding', (ms && mt.fthrow) || GRAB_TEXT_SHARED.fthrow); add('←, holding', (ms && mt.bthrow) || GRAB_TEXT_SHARED.bthrow);
-  add('↑, holding', (ms && mt.uthrow) || GRAB_TEXT_SHARED.uthrow); add('↓, holding', (ms && mt.dthrow) || GRAB_TEXT_SHARED.dthrow);
+  add('X + C', (ms && mt.grab) || GT('grab'));
+  add('X, holding', (ms && mt.pummel) || GT('pummel'));
+  add('→, holding', (ms && mt.fthrow) || GT('fthrow')); add('←, holding', (ms && mt.bthrow) || GT('bthrow'));
+  add('↑, holding', (ms && mt.uthrow) || GT('uthrow')); add('↓, holding', (ms && mt.dthrow) || GT('dthrow'));
   add('C', mt.special);
   add('←/→ + C', SIDE_SPECIALS && ms ? mt.side : 'The neutral special, aimed that way.');
   add('↑ + C', mt.up); add('↓ + C', mt.down);
@@ -43354,7 +43390,7 @@ function hitTurrets(f, cx, cy, rad, dmg){
     if(!pr.turret || pr.life <= 0) continue;
     const o = pr.ownerObj;
     if(o && (o === f || o.team === f.team)) continue;
-    if(Math.hypot(pr.x - cx, pr.y - cy) < rad + pr.r) damageTurret(pr, dmg);
+    if(Math.hypot(pr.x - cx, pr.y - cy) < rad + pr.r) damageTurret(pr, statDmg(f, dmg));   // (FIGHTER STATS: the swing's dmg)
   }
 }
 // An enemy shot that meets a turret breaks on it (a piercing one goes through, chipping it once).
@@ -43366,7 +43402,7 @@ function shotHitsTurret(pr, turrets){
     const to = t.ownerObj;
     if(!o || !to || o === to || o.team === to.team) continue;
     if(Math.hypot(pr.x - t.x, pr.y - t.y) < pr.r + t.r){
-      damageTurret(t, pr.dmg || 0);
+      damageTurret(t, statDmg(o, pr.dmg || 0));   // (FIGHTER STATS: the shooter's dmg)
       if(!pr.pierce && !pr.van){ pr.life = 0; puff(pr.x, pr.y, pr.color, 4); return true; }
     }
   }
@@ -44622,7 +44658,7 @@ function damageSummons(f, cx, cy, rad, dmg, only, once){
     // SWALLOW: a swallowed fighter's hits go into the tongue, not the boss body
     if(s.type==="boss" && s.attack==="swallow" && f._swallow>0 && s._tongueHp>0){
       if(once) once.add(s);
-      s._tongueHp -= dmg; for(let i=0;i<5;i++) puff(s._tongueX||s.x, s._tongueY||s.y, '#e05a7a', 4);
+      s._tongueHp -= statDmg(f, dmg); for(let i=0;i<5;i++) puff(s._tongueX||s.x, s._tongueY||s.y, '#e05a7a', 4);   // (FIGHTER STATS: the swallowed fighter's dmg)
       if(s._tongueHp<=0) freeFromStomach(f);   // no "TONGUE BEATEN" line ("Remove them all"); being spat out is visible
       continue;
     }
@@ -45122,6 +45158,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
       t._bossHitId = opts.bossAtk; t._bossHitDmg = Math.min(dmg, cap); dmg = t._bossHitDmg;
     }
   }
+  if(from && from !== t) dmg = statDmg(from, dmg);   // FIGHTER STATS: the attacker's dmg, first: an infected rebound takes it (its nested call has from === t, so nothing scales twice), and a counter answers the hit as it landed
   // OUTBREAK (FFA): an infected puppet is disoriented — its own attacks rebound onto itself
   // instead of hurting others. (In teams the puppet just fights for Barf Bag's team normally.)
   if(from && from!==t && from._infected>0 && SETTINGS.mode!=='teams' && !(opts && opts.selfRebound)){
@@ -45134,7 +45171,6 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(from && from!==t && from.team===t.team && !(opts && opts.reflected)) return;
   // friendly fire off — teammates can't damage each other (FFA = everyone own team)
   if(from && from.idx!==t.idx && from.team===t.team) return;
-  if(from && from !== t) dmg = statDmg(from, dmg);   // FIGHTER STATS: the attacker's dmg, first (a counter answers the hit as it landed)
   // COUNTER: if the target is in a counter stance, they nullify the hit and punish the attacker.
   if(t.countering>0 && from && from.idx!==t.idx && !from.dead && !(SMASH_PROJ && SMASH_PROJ.unbreakable)){   // (a counter does not nullify an `unbreakable` shot -- the Bug Swarm's dodgeball: it lands)
     t.countering=0; t.flash=12; t.invuln=Math.max(t.invuln,10);
@@ -45187,7 +45223,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // and decays, so it's real pressure you can recover from rather than a permanent crippling.
   if(from && from.curseStacks>0){ dmg *= Math.max(CURSE_FLOOR, 1 - 0.005*Math.min(CURSE_MAX_STACKS, from.curseStacks)); }
   // Teardrop's TAUNT: her next hit on a foe her Evaporate marked lands TAUNT_BONUS harder, once.
-  if(from && from.kit && from.kit.special==="kick" && t._taunted>0 && t._tauntedBy===from.idx){ dmg += TAUNT_BONUS; t._taunted=0; t._tauntedBy=null; }
+  if(from && from.kit && from.kit.special==="kick" && t._taunted>0 && t._tauntedBy===from.idx){ dmg += statDmg(from, TAUNT_BONUS); t._taunted=0; t._tauntedBy=null; }
   // Golf Ball payoff: SHE hits cursed targets harder — turns her debuffs into a solo win condition
   if(from && from.kit && from.kit.special==="zapshooter" && (t.curseStacks>0 || t.weakened>0)){
     const bonus = 1.0 + Math.min(0.22, (t.curseStacks||0)*0.014);   // up to ~1.22x — curse is now utility, not a kill combo

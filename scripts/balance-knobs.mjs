@@ -92,7 +92,7 @@ export const KNOBS = {
 
   // ---- RAW STATS (FIGHTER_STATS) -----------------------------------------------------------
   // The per-fighter multipliers beside weight (the owner, 2026-10-18: "add it, bcs its just a system extension"). The table is
-  // written with quoted keys, so these reach only it (and `dmg.all`, which matches `dmg:` with no quote, never does). A sweep
+  // written with quoted keys, so these reach only it (and `dmg.all`, which matches `dmg:` with no quote, never does: STAT_ONE is built from STAT_KEYS, not written out). A sweep
   // scales the "*" default and every fighter's own row together: the whole roster's run, jump... at once. Per-fighter nudges are
   // auto-balance.mjs's (--stats). The clamps are the sane bounds for a stat: 0.85-1.15, damage 0.85-1.2.
   'stat.run': {
@@ -195,7 +195,9 @@ export function patch(knobName, factor) {
     // Whole numbers unless the knob says otherwise: a family written with decimals has to come back
     // with them, or a scale of 1.0 stops being a no-op (see verify) and every arm inherits the drift.
     const p = 10 ** (k.places || 0);
-    const next = Math.max(k.clamp[0], Math.min(k.clamp[1], Math.round(cur * factor * p) / p));
+    // A literal already outside the clamp (set there by hand: FIGHTER_STATS allows it) is never pulled in by a scale of 1.0, nor
+    // pushed further out by any scale: the clamp widens to take it.
+    const next = Math.max(Math.min(k.clamp[0], cur), Math.min(Math.max(k.clamp[1], cur), Math.round(cur * factor * p) / p));
     return k.write(m, next);
   });
 }
