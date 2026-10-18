@@ -60,7 +60,9 @@ describe('the changelog', () => {
     expect(w.eval('MUSIC_SCREENS.changelog')).toBe('menu');
     const n = w.eval('CHANGELOG.length');
     expect(w.document.querySelectorAll('#changeList .clentry').length).toBe(n);
-    expect(w.document.querySelector('#changeList .cldate').textContent).toContain('14 October 2026');
+    // The newest entry's date. RESTATED 2026-10-18: it was v70's 14 October; the owner's change that day ("the move should be teleport-not
+    // levitate. it should go 340 px.") added v71 on top, so the first block is 18 October now.
+    expect(w.document.querySelector('#changeList .cldate').textContent).toContain('18 October 2026');
     const dates = w.eval('CHANGELOG.map(function(e){ return e.date; })');
     expect([...dates].sort().reverse(), 'newest first').toEqual(dates);
     expect(w.document.getElementById('changelog').innerHTML).toContain("go('title')");

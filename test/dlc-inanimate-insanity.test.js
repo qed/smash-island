@@ -258,14 +258,15 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       doSpecial(A); inputs[0] = { left: true }; for (var i=0;i<4;i++) step(); inputs[0] = { right: true }; for (var j=0;j<4;j++) step();
       out.turned = [Math.round(A.x - x0), Math.round(A.y - y0)];
       A.x = 500; A.y = groundY() - 220; A.vy = 0; A._tpUsed = false; A.spCd = 0; x0 = A.x; y0 = A.y;
-      doSpecial(A); inputs[0] = { jump: true }; for (var k=0;k<8;k++) step();
-      out.up = [Math.round(A.x - x0), Math.round(A.y - y0)]; out.jumps = A.jumps;
+      doSpecial(A); inputs[0] = { right: true, jump: true }; for (var k=0;k<8;k++) step();   // jump + right: up and right, so the jump key must be read as up
+      out.up = [Math.round(A.x - x0), Math.round(A.y - y0)];
+      inputs[0] = { jump: true }; for (var m=0;m<8;m++) step(); out.jumps = A.jumps;   // still held after she appears: not a fresh jump
       A._tpUsed = false; A.spCd = 0; doSpecial(A); inputs[0] = {}; step();
       netRemoteInput = saved; A.controller = 'still';
       eliminate(A); step(); out.afterKO = { tp: !!A._tp, used: !!A._tpUsed, fade: A._tpT || 0 }; return out;`);
     expect(r.turned, 'left at first, then right: the arrows held as the fade ends are the way she goes').toEqual([340, 0]);
-    expect(r.up, 'the jump key is her up while she fades').toEqual([0, -340]);
-    expect(r.jumps, 'and does not spend a jump').toBe(1);
+    expect(r.up, 'the jump key is her up while she fades (with right: the up-right diagonal)').toEqual([240, -240]);
+    expect(r.jumps, 'and does not spend a jump, even held on after she appears').toBe(1);
     expect(r.afterKO).toEqual({ tp: false, used: false, fade: 0 });
   });
 
@@ -342,7 +343,7 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       var y0 = A.y; D.x = A.x; D.y = y0 - 340; D.vy = 0; D.onground = false; D.pct = 40; doSpecial(A);
       var p0 = D.pct, hit = -1;
       for (var i=0;i<30 && hit < 0;i++){ step(); if (D.pct > p0 + 0.01) hit = i; else { D.x = A.x; D.y = y0 - 340; D.vy = 0; } }
-      for (var k=0;k<4;k++) step();                                   // inside the stun the pop left: the follow-up is a second link
+      for (var k=0;k<6;k++) step();                                   // inside the stun the pop left: the follow-up is a second link
       var before = D.pct; A.atkCd = 0; doUpTilt(A);
       for (var q=0;q<10;q++) step();   // Bow's up-tilt is her own move now (Chair Lift, 5 frames of startup): restated 2026-10-14, it used to land on the press
       return { first: +(before - 40).toFixed(1), second: D.pct > before + 0.01 };`);
@@ -387,7 +388,19 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       worldPlats = [{ x:300, y:gy - 24 - 200, w:200, h:40, solid:true }]; out.through = tp({}).d;
       worldPlats = []; air(400, 100); tp({ down: true }); out.floorFeet = Math.round(A.y + A.r - gy);
       air(1000, 100); tp({ right: true }); out.inWorld = A.x + A.r <= WW && A.x - A.r >= 0;
-      air(WW + 40, 100); var off = tp({}); out.offSide = { dy: off.d[1], inWorld: A.x + A.r <= WW && A.x - A.r >= 0 };   // knocked past the side of the screen
+      air(WW + 40, 100); var off = tp({}); out.offSide = { dy: off.d[1], len: off.len, inWorld: A.x + A.r <= WW && A.x - A.r >= 0 };   // knocked past the side of the screen
+      A.x = 500; A.y = -259; A.vx = 0; A.vy = 0; A.onground = false; A._tpUsed = false; var top = tp({ left: true });   // over the top of the screen, aimed left (the review's 443 px trip)
+      out.overTop = { dx: top.d[0], len: top.len, inWorld: A.y - A.r >= 0 && A.x - A.r >= 0 && A.x + A.r <= WW };
+      var savedBig = isBig, savedFloors = floors, savedBases = bases; isBig = function(){ return true; }; bases = [];   // a big arena: the main floor is a slab over the pit
+      floors = [{ level:0, y:gy, x:100, w:WW - 200 }]; worldPlats = [{ x:100, y:gy, w:WW - 200, h:46, solid:true }];
+      A.x = 500; A.y = gy - A.r; A.vx = 0; A.vy = 0; A.onground = true; A._tpUsed = false; step(); var slab = tp({ down: true });
+      out.slab = { dy: slab.d[1], above: A.y + A.r <= gy + 0.5 };
+      isBig = savedBig; floors = savedFloors; bases = savedBases; worldPlats = [];
+      air(400, 100); D.x = A.x + 50; D.y = A.y; D.vy = 0; D.invuln = 0; var pc0 = D.pct;
+      A._smQ = { angle:0, wait:0, held:false }; A.smashHold = smashFullOf(A) - 3; tp({ left: true });
+      out.smash = { dropped: !A._smQ && !A.smashHold, foeHit: D.pct > pc0 + 0.01 }; D.x = 2000;
+      air(400, 100); A.spCd = 0; fireSpecial(A, {}); inputs[0] = {}; step(); step(); A.hitstun = 5; step();
+      out.jolted = { tp: !!A._tp, spCd: A.spCd, used: !!A._tpUsed };   // a tick ignores the fade's grace: the trip never happened
       netRemoteInput = saved; return out;`);
     expect(r.up.d, 'nothing held: straight up, 340 px').toEqual([0, -340]);
     expect(r.up.still, 'she appears still').toEqual([0, 0]);
@@ -405,7 +418,17 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(r.through, 'outside Capture the Flag a solid in the way is passed through').toEqual([0, -340]);
     expect(r.floorFeet, 'down into the floor: she ends standing on it, not in it').toBeLessThanOrEqual(0);
     expect(r.inWorld, 'never out of the world').toBe(true);
-    expect(r.offSide, 'past the side of the screen, nothing held: still 340 px up, and back inside the world').toEqual({ dy: -340, inWorld: true });
+    // RESTATED (review, 2026-10-18): brought back inside the world, the trip is capped at 340 px end to end, so from past the side straight up
+    // is a little less than 340 px up (the rest is the step back inside).
+    expect(r.offSide.inWorld, 'past the side of the screen, nothing held: back inside the world').toBe(true);
+    expect(r.offSide.len, 'and never further than 340 px').toBeLessThanOrEqual(340);
+    expect(r.offSide.dy, 'still nearly all the way up').toBeLessThan(-320);
+    expect(r.overTop.inWorld, 'over the top of the screen: back inside the world').toBe(true);
+    expect(r.overTop.len, 'never further than 340 px (it was 443)').toBeLessThanOrEqual(340);
+    expect(r.overTop.dx, 'and still the way she aimed').toBeLessThan(-150);
+    expect(r.slab, 'a big arena: down from the main floor never puts her under it (a certain KO)').toEqual({ dy: 0, above: true });
+    expect(r.smash, 'a smash charging when she pressed is dropped: nothing swings from where she fades').toEqual({ dropped: true, foeHit: false });
+    expect(r.jolted, 'a tick during the fade ends it, and the move is hers again').toEqual({ tp: false, spCd: 0, used: false });
 
     // Capture the Flag (a fresh game on the castle map): a closed door and jail bars stop her at their face; the door open for her side does not.
     const { window: w } = loadMonolith(3);
@@ -422,6 +445,17 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       d.op[f.team] = true; ctfRebuildDyn(CTF.live); out.open = tp(d.x + d.w + 120, d.y + d.h, { left: true });
       d.op[f.team] = false; ctfRebuildDyn(CTF.live);
       f._cf = 0; out.carrier = tp(d.x + d.w + 400, d.y + d.h, { right: true }); f._cf = -1;
+      // A slope (the review, 2026-10-18: uphill she went 4 px, and pressed while walking up one, nothing at all): three ramp pieces rising to the right.
+      var ramps = worldPlats.filter(function(p){ return p.ramp === true; });
+      var above = function(x, y){ return ramps.find(function(q){ return q.x === x && q.y < y && q.y >= y - 24; }); };
+      var p1 = ramps.find(function(p){ var a = above(p.x + p.w, p.y), b = a && above(a.x + a.w, a.y); return !!(b && above(b.x + b.w, b.y)); });
+      var inSolid = function(){ return tpSolids(f).some(function(p){ var ph = p.h || 16; return f.x + f.r - 1 > p.x && f.x - f.r + 1 < p.x + p.w && f.y + f.r - 1 > p.y && f.y - f.r + 1 < p.y + ph; }); };
+      var slope = function(walk, hold){ f.x = p1.x + p1.w/2; f.y = p1.y - f.r; f.vx = 0; f.vy = 0; f.invuln = 0; f.hitstun = 0; f._tpUsed = false; f.onground = true; f._tpHang = 0;
+        inputs[0] = {}; step(); for (var t=0;t<walk;t++){ inputs[0] = { right: true }; step(); }
+        var x0 = f.x, y0 = f.y; f.spCd = 0; fireSpecial(f, {}); for (var i=0;i<20 && !(i > 0 && !f._tp);i++){ inputs[0] = hold; step(); }
+        return { len: Math.round(Math.hypot(f.x - x0, f.y - y0)), dx: Math.round(f.x - x0), inSolid: inSolid() }; };
+      out.ramp = !!p1; out.uphill = p1 && slope(0, { right: true });
+      out.walking = p1 ? [1,2,3,4,5,6,8,10,12].map(function(T){ var s = slope(T, { jump: true }); return s.len >= 330 && !s.inSolid; }) : [];
       netRemoteInput = saved; return out;
     })())`));
     expect(c.shut.dx, 'a closed door: she stops at it').toBeGreaterThan(-120);
@@ -429,6 +463,11 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(c.bar.x - c.r, 'jail bars stop her too').toBeGreaterThanOrEqual(c.bars[0] + c.bars[1] - 1);
     expect(c.open.dx, 'a door open for her side is not there for her').toBe(-340);
     expect(c.carrier.dx, 'a flag carrier goes half as far').toBe(170);
+    expect(c.ramp, 'the castle has a slope').toBe(true);
+    expect(c.uphill.dx, 'a slope is ground, not a wall: uphill she rises with it').toBeGreaterThan(250);
+    expect(c.uphill.len).toBeLessThanOrEqual(340);
+    expect(c.uphill.inSolid).toBe(false);
+    expect(c.walking, 'pressed while walking up it, straight up goes the whole way every time').toEqual(c.walking.map(function(){ return true; }));
   });
 
   it("Bow's chair slam gains no height, and Pepper echoes Salt's jab as well as her special", () => {

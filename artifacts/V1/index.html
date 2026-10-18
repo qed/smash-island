@@ -17587,6 +17587,7 @@ const FS_DEFAULT = {
 // walks away from a foe at arm's length to chase it.
 function fsBotInput(f, inp){
   if(f._fs || f.dead) return inp;
+  if(f._tp || (f._spPend > 0 && f.kit && f.kit.special === 'chair')) return inp;   // Bow's Teleport on its way: the arrows are her aim (aiBowTpHold), not a chase
   if(f.fsGlow > 0){
     inp.fin = false;
     const d = fsOf(f), ready = d.ai ? d.ai(f) : fsFoeNear(f, d.reach || 200);
@@ -38184,7 +38185,7 @@ function step(){
         }
       }
     }
-    if(f._rampT > 0){ f._rampT--; if(!f.onground && f.vy >= 0 && f.vy < 7) ctfRampSnap(f); }   // (Capture the Flag: walking down a slope keeps the feet on it)
+    if(f._rampT > 0){ f._rampT--; if(!f.onground && f.vy >= 0 && f.vy < 7 && !f._tp && !(f._tpHang > 0)) ctfRampSnap(f); }   // (Capture the Flag: walking down a slope keeps the feet on it. Not Bow fading into her Teleport or hanging where she appeared: she is held still, and a snap pulled her into the corner of the next step)
     mtCling(f, inp);
     if(f.onground){ f._wallUsed = null; f._clingT = 0; f._ff = false; f._airDash = false; f._hyperT = 0; }   // landing refreshes the wall jump and the air dash
     // land-squash: airborne last frame, grounded now, coming down with real speed → brief cartoony squat
@@ -42944,12 +42945,15 @@ function batteryShape(c, r){
 //     fades, not on the press: the arrows held when the fade ends pick one of 8 ways, and nothing held is straight up. TP.dist px whichever
 //     way (a diagonal is normalised, so it is the same trip), half that carrying a flag in Capture the Flag, 0.7x for Dough's copy.
 //   * Where she ends is open space: she may pass through platforms and the stage, and steps back along the line until her body fits --
-//     never in a solid, never out of the world. In Capture the Flag she does NOT pass through walls, closed doors, jail bars or locked vault
-//     doors: she stops at the first one in the way, so the locks mean what they say.
+//     never in a solid, never out of the world, and never under the main floor she started on or above (in the big arenas that floor is a
+//     slab over the pit: under it is a certain KO). Knocked past the side or the top of the world, she is brought just inside it, so that
+//     trip may leave the aimed line, but it is never longer than TP.dist. In Capture the Flag she does NOT pass through walls, closed doors,
+//     jail bars or locked vault doors: she stops at the first one in the way, so the locks mean what they say. A slope there is ground, not
+//     a wall: she rises with its steps as a walk does (TP.stepUp a step), and the trip is still TP.dist end to end.
 //   * She appears still (vx = vy = 0) for a beat (TP.hang), then falls as usual. Whoever is where she appears takes TP.dmg with an upward
 //     pop, once each (bosses and adds too); her own side never. Pink and white puffs at both ends; no words.
 //   * Once per airtime: it comes back when she lands or is hit, and spCd is TP.cd. The jumps she has left are left alone.
-const TP = { dist:340, vanish:8, hang:6, dmg:6, kb:[1.5,-7], reach:30, step:4, cd:100, carrier:0.5, copy:0.7 };
+const TP = { dist:340, vanish:8, hang:6, dmg:6, kb:[1.5,-7], reach:30, step:4, stepUp:28, cd:100, carrier:0.5, copy:0.7 };
 const TP_DIRS = [[0,-1],[1,-1],[-1,-1],[1,0],[-1,0],[1,1],[-1,1],[0,1]];   // the 8 ways the arrows aim it (up first: the CPU's ties go up)
 function tpScale(f){   // how far, as a share of TP.dist: Dough's copy is the 0.7x knockoff; a flag carrier goes half as far
   return (f._knockoff && f._knockoff.until > hazardT ? TP.copy : 1) * (SETTINGS.mode==='ctf' && f._cf >= 0 ? TP.carrier : 1);
@@ -42960,6 +42964,7 @@ function startTeleport(f){
   f._tpT = TP.vanish; f._tpUsed = true; f._tpHang = 0;
   f.invuln = Math.max(f.invuln||0, TP.vanish);   // untouchable while she fades (through the frame she appears)
   f.vx = 0; f.vy = 0;
+  f._smQ = null; f.smashHold = 0; f._smBuf = false;   // a smash charging when she pressed C is dropped: nothing swings from where she is fading out
   for(let i=0;i<6;i++) puff(f.x + (Math.random()*2-1)*(f.r+6), f.y + (Math.random()*2-1)*f.r, i%2 ? '#ffb3dc' : '#fff', 3);
 }
 function endTeleport(f){ f._tp = null; f._tpT = 0; }
@@ -42974,28 +42979,58 @@ function teleportHold(f, inp){
 function teleportStep(f){
   const T = f._tp;
   if(!T) return;
-  if(f.frozen > 0 || f.hitstun > 0){ endTeleport(f); return; }   // (she cannot be hit while she fades: this is something that ignores that)
+  if(f.frozen > 0 || f.hitstun > 0){ endTeleport(f); f.spCd = 0; f._tpUsed = false; return; }   // (she cannot be hit while she fades: this is something that ignores that, a sneeze's tick or a freeze. She went nowhere, so the move is hers again once the jolt ends)
   f.vx = 0; f.vy = 0;
   f._tpT = Math.max(0, TP.vanish - (++T.age));
   if(T.age % 2 === 0) puff(f.x + (Math.random()*2-1)*(f.r+8), f.y + (Math.random()*2-1)*(f.r+4), T.age % 4 ? '#ffb3dc' : '#fff', 2);
   if(T.age >= TP.vanish) teleportArrive(f);
 }
-// Where a trip of (dx, dy) from (x0, y0) ends. Capture the Flag: at the last place her body fits before the first solid in the way. Anywhere
-// else: the furthest place along the line, from the full trip back toward her start, where her body fits. Knocked past the side of the
-// world, the line may have no such place (straight up from off the screen): then the same walk back with each point brought just inside the
-// world's edges, so she still goes, and ends in it.
+// Where a trip of (dx, dy) from (x0, y0) ends. Capture the Flag: at the last place her body fits before the first solid in the way -- the steps
+// of a slope are stepped up onto (TP.stepUp at most, as a walk does: they are ground, not walls), and the trip stays as long as asked, end to
+// end. Anywhere else: the furthest place along the line, from the full trip back toward her start, where her body fits. Knocked past the side
+// or the top of the world, the line may have no such place (straight up from off the screen): then the same walk back with each point brought
+// just inside the world's edges and, where that made the trip longer than asked, drawn back toward her start to that length -- so she still
+// goes, ends in the world, and never further than TP.dist (the way she aimed is kept as far as that allows).
 function teleportDest(f, x0, y0, dx, dy){
-  const n = Math.max(1, Math.ceil(Math.hypot(dx, dy)/TP.step));
-  const solids = tpSolids(f);
+  const L = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(L/TP.step));
+  const solids = tpSolids(f), F = tpFloorUnder(f, y0);
   if(SETTINGS.mode === 'ctf'){
-    let x = x0, y = y0;
-    for(let i=1;i<=n;i++){ const px = x0 + dx*i/n, py = y0 + dy*i/n; if(!tpFits(f, px, py, solids)) break; x = px; y = py; }
+    let x = x0, y = y0, lift = 0;
+    for(let i=1;i<=n;i++){
+      const px = x0 + dx*i/n; let py = y0 + dy*i/n - lift;
+      if(!tpFits(f, px, py, solids, F)){
+        let up = 0;
+        if(dx && tpSlopeOnly(f, px, py, solids)) for(let u = TP.step; u <= TP.stepUp; u += TP.step){ if(tpFits(f, px, py - u, solids, F)){ up = u; break; } }
+        if(!up) break;
+        lift += up; py -= up;
+      }
+      if(Math.hypot(px - x0, py - y0) > L + 0.5) break;
+      x = px; y = py;
+    }
     return { x, y };
   }
-  for(let i=n;i>=1;i--){ const px = x0 + dx*i/n, py = y0 + dy*i/n; if(tpFits(f, px, py, solids)) return { x:px, y:py }; }
+  for(let i=n;i>=1;i--){ const px = x0 + dx*i/n, py = y0 + dy*i/n; if(tpFits(f, px, py, solids, F)) return { x:px, y:py }; }
   const inX = v => clamp(v, f.r + 1, WW - f.r - 1), inY = v => clamp(v, f.r + 1, WH - f.r - 1);
-  for(let i=n;i>=1;i--){ const px = inX(x0 + dx*i/n), py = inY(y0 + dy*i/n); if(tpFits(f, px, py, solids)) return { x:px, y:py }; }
+  for(let i=n;i>=1;i--){
+    let px = inX(x0 + dx*i/n), py = inY(y0 + dy*i/n);
+    const k = Math.hypot(px - x0, py - y0); if(k > L){ px = x0 + (px - x0)*L/k; py = y0 + (py - y0)*L/k; }
+    if(tpFits(f, px, py, solids, F)) return { x:px, y:py };
+  }
   return { x:x0, y:y0 };
+}
+// The big arenas' main floor (the teams map, and One's arena, built from it) is a slab over the pit: from on or above it, she never ends under it,
+// where nothing brings her back. (A single-screen floor is tpFits's own check; Capture the Flag's floors are solids she does not pass.)
+function tpFloorUnder(f, y0){
+  if(!isBig() || SETTINGS.mode === 'ctf') return null;
+  const F = floors && floors[0];
+  return (F && F.level === 0 && y0 + f.r <= F.y + 2) ? F : null;
+}
+// Capture the Flag: is what stops her at (x, y) only the steps of a slope (ramp and step pieces)?
+function tpSlopeOnly(f, x, y, solids){
+  const r = f.r - 1; let any = false;
+  for(const p of solids){ const ph = p.h || 16;
+    if(x + r > p.x && x - r < p.x + p.w && y + r > p.y && y - r < p.y + ph){ if(p.ramp !== true && p.step !== true) return false; any = true; } }
+  return any;
 }
 // What her body may not end inside: the solids the step pushes a fighter out of. In Capture the Flag that is the map's walls, floors and ceilings and
 // the solids that change (ctfDynSolids: closed doors, locked vault doors, jail bars, the hiding wall, what the players built) -- a door open for her
@@ -43004,9 +43039,10 @@ function tpSolids(f){
   const all = SETTINGS.mode === 'ctf' ? worldPlats.concat(ctfDynSolids()) : platRects();
   return all.filter(p => p.solid && !(p.dref !== undefined && p.dref.op[f.team]));
 }
-function tpFits(f, x, y, solids){
+function tpFits(f, x, y, solids, F){
   if(x - f.r < 0 || x + f.r > WW || y - f.r < 0 || y + f.r > WH) return false;   // never out of the world (the blast zones are further out still)
   if(!isBig() && y > groundY() - f.r + 0.5 && !springyHoleAt(x)) return false;   // not in the floor
+  if(F && x + f.r > F.x && x - f.r < F.x + F.w && y > F.y - f.r + 0.5) return false;   // nor under the big arenas' main floor, from on or above it (tpFloorUnder)
   const r = f.r - 1;   // (flush against a surface is not inside it: she may appear standing on a floor)
   for(const p of solids){ const ph = p.h || 16; if(x + r > p.x && x - r < p.x + p.w && y + r > p.y && y - r < p.y + ph) return false; }
   return true;
@@ -47365,35 +47401,55 @@ function aiBowAdrift(f){
   if(f.onground || surfaceBelow(clamp(f.x, 40, WW-40), feetY(f)) !== null) return false;
   return platRects().some(p => !p.rot && p.y < feetY(f) - 30);   // a platform above her feet, and nothing under them
 }
-// The way to aim to come down on something: of the 8, the trip that ends over a surface, the shortest fall from there, nearer the middle. Null if none does.
+// The way to aim to come down on something: of the 8, the trip that ends over a surface -- straight under where she appears, or a drift of 50 or
+// 100 px away when the fall there is long enough to drift that far (a ledge just beside a straight-up trip) -- the shortest fall from there, the
+// least drift, nearer the middle. Null if none does.
 function aiBowTpRecoverAim(f){
   let best = null, bs = -1e9;
   const d = TP.dist*tpScale(f);
   for(const [ax, ay] of TP_DIRS){
     const n = Math.hypot(ax, ay), p = teleportDest(f, f.x, f.y, ax/n*d, ay/n*d);
     if(Math.hypot(p.x - f.x, p.y - f.y) < d*0.25) continue;   // a trip that ends where it began (all in the floor or out of the world) is no way back
-    const under = surfaceBelow(clamp(p.x, 40, WW-40), p.y + f.r);
-    if(under === null) continue;
-    const s = -(under - (p.y + f.r)) - Math.abs(p.x - WW*0.5)*0.2;
-    if(s > bs){ bs = s; best = { ax, ay, why:'back' }; }
+    for(const off of [0, -50, 50, -100, 100]){
+      const under = surfaceBelow(clamp(p.x + off, 40, WW-40), p.y + f.r);
+      if(under === null) continue;
+      const fall = under - (p.y + f.r);
+      if(fall < Math.abs(off)*0.8) continue;   // too little fall to drift over to it before she is past it
+      const s = -fall - Math.abs(off)*2 - Math.abs(p.x - WW*0.5)*0.2;
+      if(s > bs){ bs = s; best = { ax, ay, why:'back' }; }
+    }
   }
   return best;
 }
-// Up, or up and across, into a foe: the trip ends on them (the pop, which the uppercut the class rules throw at a foe above can follow), and there is
-// something under the place she appears. Null if no way does.
+// Nothing in reach to come down on: the way (up or across, never down) that ends highest, and nearest where she is heading (tx) -- in practice
+// straight up beside the ledge, to drift onto it -- never a diagonal that the walk back leaves under the stage.
+function aiBowTpReach(f, tx){
+  let best = null, bs = -1e9;
+  const d = TP.dist*tpScale(f);
+  for(const [ax, ay] of TP_DIRS){
+    if(ay > 0) continue;
+    const n = Math.hypot(ax, ay), p = teleportDest(f, f.x, f.y, ax/n*d, ay/n*d);
+    const s = -p.y - Math.abs(p.x - tx)*0.5;
+    if(s > bs){ bs = s; best = { ax, ay, why:'back', tx }; }
+  }
+  return best;
+}
+// Up, or up and across, at a foe: the trip ends on them (the pop) or beside them, near enough for the swing that follows (her up-tilt or an
+// aerial), and there is something under the place she appears. The nearest such way; null if none.
 function aiBowTpInto(f, t){
   if(!t || t.dead || t.invuln > 0 || t.team === f.team) return null;
-  const d = TP.dist*tpScale(f);
+  const d = TP.dist*tpScale(f), reach = f.r + t.r + TP.reach + 26;
+  let best = null, bd = 1e9;
   for(const [ax, ay] of TP_DIRS){
     if(ay >= 0) continue;
     const n = Math.hypot(ax, ay);
-    if(Math.hypot(t.x - (f.x + ax/n*d), t.y - (f.y + ay/n*d)) > f.r + t.r + 6) continue;
-    const p = teleportDest(f, f.x, f.y, ax/n*d, ay/n*d);
-    if(Math.hypot(t.x - p.x, t.y - p.y) > f.r + t.r + 10) continue;
+    if(Math.hypot(t.x - (f.x + ax/n*d), t.y - (f.y + ay/n*d)) > reach + 20) continue;   // (the full trip is nowhere near them)
+    const p = teleportDest(f, f.x, f.y, ax/n*d, ay/n*d), g = Math.hypot(t.x - p.x, t.y - p.y);
+    if(g > reach || g >= bd) continue;
     if(surfaceBelow(clamp(p.x, 40, WW-40), p.y + f.r) === null) continue;
-    return { ax, ay, why:'foe' };
+    bd = g; best = { ax, ay, why:'foe' };
   }
-  return null;
+  return best;
 }
 // Pinned at the side of the stage with the foe between her and the middle: up and over them, toward the middle, if she comes down on something there.
 function aiBowTpAway(f, t){
@@ -47420,11 +47476,11 @@ function aiBowRecover(f, inp, upY){
   }
   if(f.jumps > 0){ if((f.vy > 0.5 || f.y > WH-140-upY) && !f._jp) inp.jump = true; }                       // the jump first...
   else if(hole && !f.onground && f.vy > -1 && f.spCd <= 0 && !f._tpUsed){                                   // ...then the teleport, at the top of it
-    f._aiTpAim = aiBowTpRecoverAim(f) || { ax: tx > f.x + 8 ? 1 : tx < f.x - 8 ? -1 : 0, ay:-1, why:'back' };   // (nothing in reach: up toward the nearest platform, and hope)
+    f._aiTpAim = aiBowTpRecoverAim(f) || aiBowTpReach(f, tx);   // (nothing in reach: the way that ends highest, nearest the platform she is heading for)
     inp.special = true; inp.up = false; inp.down = false; inp._kitRead = true;
   }
 }
-// ...and the press the class rules or the playbook make on their own (a plain neutral C) is kept only when the trip ends on a foe. Run from finishAI,
+// ...and the press the class rules or the playbook make on their own (a plain neutral C) is kept only when the trip ends on or beside a foe. Run from finishAI,
 // so it covers every branch of aiThink (the climbing and high-road ones press C too): an aimless teleport straight up is no poke.
 function aiBowVeto(f, t, inp){
   if(!inp.special || inp.up || inp.down || inp.attack || inp._kitRead || f._spPend > 0 || f._tp) return;
@@ -47439,7 +47495,7 @@ function aiBowTpHold(f, inp){
   if(f._spPend > 0 && !f._tp){ inp.up = false; inp.down = false; return; }
   if(!f._tp) return;
   const A = f._aiTpAim, t = f.aiTarget;
-  const a = (A && A.why === 'back' && aiBowTpRecoverAim(f)) || (A && A.why === 'foe' && aiBowTpInto(f, t)) || A
+  const a = (A && A.why === 'back' && (aiBowTpRecoverAim(f) || (A.tx != null && aiBowTpReach(f, A.tx)))) || (A && A.why === 'foe' && aiBowTpInto(f, t)) || A
          || (aiBowAdrift(f) && aiBowTpRecoverAim(f)) || { ax:0, ay:-1 };
   inp.left = a.ax < 0; inp.right = a.ax > 0; inp.up = a.ay < 0; inp.down = a.ay > 0;
   inp.jump = false; inp.attack = false; inp.smash = false;
@@ -47476,7 +47532,7 @@ function aiKitLessons(f, t, inp, dx, dy, dist, adx, rn, pb){
     else if(dist>220+g1*30 && dx*(t.vx||0) > 0.5 && f.spCd<=0 && rn<0.5){ inp.jump=true; inp.special=true; inp.up=true; }   // a chase being lost goes vertical
     if(f.flying>0 && adx<50+g2*15 && dy>40 && f.fnCd<=0){ inp.attack=true; inp.special=true; }               // over them: dive
   }
-  // BOW (Teleport, Chair Slam): the reads a player makes. A foe one trip above her (or up and across) is a Teleport into them, now and then: the pop
+  // BOW (Teleport, Chair Slam): the reads a player makes. A foe about one trip above her (or up and across) is a Teleport at them, now and then (also while she climbs toward them): the pop
   // where she appears is a juggle's start. Pinned at the side with the foe between her and the middle, now and then a Teleport up and over them.
   // A foe right below her in the air is the Chair Slam's drop: the falling chair hits them on the way down and the floor after, so never over a pit,
   // and never with the power spent. Her recovery is aiBowRecover; the aim is held while she fades (aiBowTpHold).
@@ -48517,7 +48573,7 @@ function aiThink(f){
       // up-special once the jumps are gone rather than drifting under them.
       if(f.jumps<=0 && !f.onground && dy<-120 && f.spCd<=0 && rn<0.5){ inp.special=true; inp.up=true; }
     }
-    if(sp==="fly") aiKitLessons(f, t, inp, dx, dy, dist, adx, rn, pb);   // Puffball climbs to a foe above; this block returns before the lessons below
+    if(sp==="fly" || sp==="chair") aiKitLessons(f, t, inp, dx, dy, dist, adx, rn, pb);   // Puffball climbs to a foe above, and Bow may Teleport up at one; this block returns before the lessons below
     if(isZoner && f.spCd<=0 && adx<220 && rn<react*0.5) inp.special=true;   // poke while climbing
     return finishAI(f,inp,sp);
   }
@@ -58915,7 +58971,8 @@ function applySnapshot(s){
       // HUD's "you" card and the minimap highlight all pointed at the host's fighter on every client.
       you: (myIdx != null) ? fd.idx === myIdx : !!fd.you,
     };
-    netGlide(f, wasF.get(fd.idx));
+    const was = wasF.get(fd.idx);
+    netGlide(f, (was && was._tpT > 0 && !(f._tpT > 0)) ? null : was);   // Bow's Teleport: the fade just ended, so she is somewhere else -- cut to it (a short trip is under NET_TELEPORT, and would glide)
     return f;
   });
   if(s.mode==='ctf'){ try{ ctfNetFightersIn(); }catch(e){ console.error('ctfNetFightersIn', e); } }
