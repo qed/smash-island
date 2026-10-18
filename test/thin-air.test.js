@@ -61,6 +61,25 @@ describe('thin air: Thermal Rise', () => {
     expect(downN, 'frames falling').toBeGreaterThan(20);
   });
 
+  it('a KO ends the float: Bubble reforms, and respawns on a new stock, on whole gravity', () => {
+    // Thermal Rise, a few frames of its second, then a KO: the first is her reform, the second a lost stock and a respawn
+    const r = JSON.parse(W.eval(`(function(){
+      var A = fighters[0], out = {};
+      A.spCd = 0; fireSpecial(A, {}); step(); step(); step(); out.before = A._floatT; out.reform = A.reform;
+      eliminate(A); out.afterReform = A._floatT;
+      A.spCd = 0; fireSpecial(A, {}); step(); step(); out.before2 = A._floatT; out.reform2 = A.reform; var st = A.stocks;
+      eliminate(A); out.afterRespawn = A._floatT; out.lostStock = st - A.stocks;
+      return JSON.stringify(out);
+    })()`));
+    expect(r.before, 'floating when knocked out').toBeGreaterThan(50);
+    expect(r.reform, 'the first KO is her reform').toBe(1);
+    expect(r.afterReform, 'reformed on whole gravity').toBe(0);
+    expect(r.before2).toBeGreaterThan(50);
+    expect(r.reform2).toBe(0);
+    expect(r.lostStock, 'the second KO costs a stock').toBe(1);
+    expect(r.afterRespawn, 'respawned on whole gravity').toBe(0);
+  });
+
   it("Bubble's move card says what it does", () => {
     const line = W.eval("MOVE_TEXT['Bubble'].special");
     expect(line).toMatch(/^Thermal Rise — no hit:/);
@@ -106,5 +125,42 @@ describe('thin air: Capture the Flag float areas', () => {
     expect(dleave[0]).toBeCloseTo(G * 0.35, 9);
     for (let i = 4; i < 8; i++) expect(dleave[i], `after leaving, frame ${i + 1}`).toBeCloseTo(G, 9);
     expect(r.t, 'the timer has run out').toBe(0);
+  });
+
+  // The CTF CPUs plan their jumps on a copy of the game's physics (ctfNavFly for a live look-ahead, ctfNavSim for the map's route graph).
+  // It left float areas out ("the game never lowers gravity for it"), and counted a Thermal Rise float for one step, so after "Fix it" a CPU
+  // in thin air planned on whole gravity. Its flight has to be the game's, step for step.
+  it("the CPUs' look-ahead flies through thin air as the game does: in a float area, and through a Thermal Rise's second", { timeout: 120000 }, () => {
+    for (const map of ['castle', 'factory', 'oak']) {
+      const { window: w } = loadMonolith(13);
+      w.eval(`CTF.skipNav=true; SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap=${JSON.stringify(map)}; beginMatchNow();
+              fighters.forEach(function(f){ f.controller='still'; f.you=false; }); ctfEndHide(CTF.live);`);
+      const r = JSON.parse(w.eval(`(function(){
+        var z = worldZones.filter(function(q){ return q.type==='float'; })[0]; if (!z) return JSON.stringify({ none:true });
+        var A = fighters[0], nav = ctfNavNew(CTF.map), plats = platRects();
+        var solidNear = function(x, y, m){ return plats.some(function(p){ return x+m > p.x && x-m < p.x+p.w && y+m > p.y && y-m < p.y+(p.h||16); }); };
+        var zoneNear = function(x, y){ return worldZones.some(function(q){ return x+60 > q.x && x-60 < q.x+q.w && y+300 > q.y && y-60 < q.y+q.h; }); };
+        // the same flight in the game and in the look-ahead (nothing held): the heights frame by frame
+        var run = function(x, y, vy, ft, n){
+          A.x=x; A.y=y; A.vx=0; A.vy=vy; A.onground=false; A._floatT=ft; A.hitstun=0; A.invuln=0; A.jumps=1;
+          var gy=[]; for (var i=0;i<n;i++){ step(); gy.push(A.y); }
+          var ny=[]; ctfNavFly(nav, { x:x, y:y, vx:0, vy:vy, jumps:1, g:false, jp:true, sp:0, ft:ft, at:5 }, function(t, X, Y){ ny.push(Y); return {}; }, true, false, false, null);
+          return { gy:gy, ny:ny.slice(1, n+1), y0:y };
+        };
+        var open = null;
+        for (var X = 200; X < CTF.map.WW - 200 && !open; X += 40) for (var Y = 300; Y < CTF.map.WH - 300 && !open; Y += 40) if (!solidNear(X, Y, 300) && !zoneNear(X, Y)) open = [X, Y];
+        return JSON.stringify({ inZone: run(z.x + z.w/2, z.y + z.h*0.35, JUMP, 0, 30), plain: open && run(open[0], open[1], -7, 0, 40), thermal: open && run(open[0], open[1], -7, 60, 40) });
+      })()`));
+      expect(r.none, `${map} has a float area`).toBeUndefined();
+      for (const k of ['inZone', 'plain', 'thermal']) {
+        const q = r[k];
+        expect(q, `${map}: a clear place in the open`).not.toBe(null);
+        expect(q.ny.length, `${map} ${k}: the look-ahead is still in the air`).toBe(q.gy.length);
+        for (let i = 0; i < q.gy.length; i++) expect(q.ny[i], `${map} ${k}: frame ${i + 1}`).toBeCloseTo(q.gy[i], 6);
+      }
+      // and the thin air is felt: higher than the same flight on whole gravity
+      expect(r.inZone.gy[29] - r.inZone.y0, `${map}: a standing jump in the float area rises about 260 px in 30 frames`).toBeLessThan(-240);
+      expect(r.thermal.gy[39], `${map}: a Thermal Rise float is higher after 40 frames than a plain hop`).toBeLessThan(r.plain.gy[39] - 100);
+    }
   });
 });

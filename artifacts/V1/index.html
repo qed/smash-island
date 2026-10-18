@@ -4736,7 +4736,7 @@ function ctfEliminate(f){
     const h = L.map.homes[f.team], sp = h.spawns[(L.respawnN[f.team]++) % h.spawns.length];
     f.x = sp.x; f.y = sp.y - f.r - 40; f.invuln = 90;
   }
-  f.vx = 0; f.vy = 0; f.pct = 0; f.hitstun = 0; f.burn = 0; f.bleed = 0; f._cookieT = 0; f._nail = null; f._stall = null; f._sm = null; f._windup = null; f.cloud = 0; f.frozen = 0;
+  f.vx = 0; f.vy = 0; f.pct = 0; f.hitstun = 0; f.burn = 0; f.bleed = 0; f._cookieT = 0; f._nail = null; f._stall = null; f._sm = null; f._windup = null; f.cloud = 0; f.frozen = 0; f._floatT = 0;
   dropInFlightMoves(f);
   return true;
 }
@@ -8650,7 +8650,7 @@ function ctfNavNew(M, prev, diff){
   const blockers = M.doors.map(d=>({ x:d.x, y:d.y, w:d.w, h:d.h, door:d.id })).concat(M.jails.map(j=>({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, door:'J' + j.owner })));
   const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0, dense:Array.isArray(diff), diffRects:Array.isArray(diff) ? diff : [] };   // (dense: a graph patched at runtime for the pieces somebody built is probed more finely: the shipped graphs are made the plain way)
   // the areas that change a flight (water drags at you, glue stops you, wind pushes, thin air is light, a spring throws you): every simulated move feels them as the game does
-  { const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring');   // ('float' is not here: the game sets its flag but never lowers gravity for it, so a flight is the same inside it)
+  { const zs = (M.zones || []).filter(ctfNavZoneMoves);
     if(zs.length && !CTF.noZones){ nav.zb = {}; for(const z of zs) for(let b = ctfNavBucket(z.x); b <= ctfNavBucket(z.x + z.w); b++) (nav.zb[b] = nav.zb[b] || []).push(z); } }
   for(const p of M.plats) for(let b = ctfNavBucket(p.x); b <= ctfNavBucket(p.x + p.w); b++) (nav.pb[b] = nav.pb[b] || []).push(p);
   // a closed door is a wall to every simulated move (the walk through it is its own link, below)
@@ -8744,10 +8744,13 @@ function ctfNavNew(M, prev, diff){
   }
   return nav;
 }
-// The game's own applyZone for the zones a flight meets (what a fighter feels at x, y): T holds vx, vy, jumps, the spring's rest steps; T.fl: thin air (a third of gravity).
-const CTF_ZT = { vx:0, vy:0, jumps:0, sp:0, fl:false };
+// The zones that change a flight, so the ones the planner models (and the shipped graphs' fingerprint reads). 'float' is one since the owner's
+// "Fix it" (2026-10-18) made thin air really lighten gravity: before that the game set its timer and never read it, and float areas were left out.
+function ctfNavZoneMoves(z){ return z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring' || z.type === 'float'; }
+// The game's own applyZone for the zones a flight meets (what a fighter feels at x, y): T holds vx, vy, jumps, the spring's rest steps and the
+// float timer (T.ft, the game's f._floatT: a float area holds it at 3, and gravity is at 0.35 while it runs, one off each step: gravFor in step()).
+const CTF_ZT = { vx:0, vy:0, jumps:0, sp:0, ft:0 };
 function ctfNavZoneFx(nav, x, y, R, T){
-  T.fl = false;
   const zl = nav.zb[ctfNavBucket(x)];
   if(zl) for(const z of zl){
     if(x < z.x || x > z.x + z.w || y + R < z.y || y > z.y + z.h) continue;
@@ -8755,10 +8758,15 @@ function ctfNavZoneFx(nav, x, y, R, T){
     if(z.type === 'water'){ T.vx *= 1 - 0.13*s; T.vy *= 1 - 0.05*s; }
     else if(z.type === 'glue') T.vx *= Math.max(0, 1 - 0.55*s);
     else if(z.type === 'wind'){ T.vx += (z.dir || 1)*0.6*s; T.vy -= 0.15*s; }
-    else if(z.type === 'float') T.fl = true;
+    else if(z.type === 'float') T.ft = Math.max(T.ft, 3);
     else if(z.type === 'spring' && !(T.sp > 0)){ T.vy = -24*s; T.jumps = 2; T.sp = 24; }
   }
   if(T.sp > 0) T.sp--;
+}
+// Standing in thin air (the game applies the zones on the ground too): the float timer is already 3 at the takeoff.
+function ctfNavFloatAt(nav, x, y, R){
+  for(const z of (nav.zb[ctfNavBucket(x)] || [])) if(z.type === 'float' && x >= z.x && x <= z.x + z.w && y + R >= z.y && y <= z.y + z.h) return true;
+  return false;
 }
 function ctfNavNodeAt(nav, x, top, slack){
   let best = null, bd = 1e9;
@@ -8783,13 +8791,14 @@ function ctfNavNodeOf(nav, f){
 function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
   if(pert){ P.CAP *= pert.k; P.ACC *= pert.k; if(pert.jv) P.JV *= pert.jv; }   // (a slightly slower fighter, a later second jump: does the move still come down on the same place?)
-  let x = xa, y = A.y - R, vy = 0, jumps = 2, sp = 0, fl = false, wt = -9, ws = 0;   // (wt, ws: when and on which side a wall was last touched)
+  let x = xa, y = A.y - R, vy = 0, jumps = 2, sp = 0, ft = 0, wt = -9, ws = 0;   // (wt, ws: when and on which side a wall was last touched; ft: the float timer)
+  if(nav.zb && ctfNavFloatAt(nav, x, y, R)) ft = 3;
   if(jump){ vy = P.JV; jumps = 1; }
   if(thru){ y += R*0.6; vy = 5; }   // down + jump on a one-way ledge: dropped through it (the game's own: dropping = 10 frames, vy 5)
   for(let t = 1; t <= 150; t++){
     if(dir !== 0 && t <= T){ vx += dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
     if(dj && jumps > 0 && t >= 6 + (pert ? pert.dd : 0) && vy >= -0.4){ if(t - wt <= 3 && dir === ws && t <= T && !CTF.wallOK) return null; vy = P.JV; jumps--; }   // (a jump against a wall held toward is the wall jump: the baseline fighter's plan never needs it, and it is not what the plan says)
-    vy += fl ? P.G*0.35 : P.G; x += vx; const pb = y + R; y += vy;
+    { const lt = ft > 0; if(lt) ft--; vy += lt ? P.G*0.35 : P.G; } x += vx; const pb = y + R; y += vy;   // (thin air: gravFor)
     const list = (nav.pb[ctfNavBucket(x)] || []);
     let landed = null;
     for(const p of list){
@@ -8806,7 +8815,7 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
         if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; break; }   // (the game's own test: no look at where the feet were a step ago)
       }
     }
-    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; fl = Z.fl; }
+    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; }
     if(landed){ const node = ctfNavNodeAt(nav, x, landed.y, 1.5); return node ? { node, x, t } : null; }
     if(y > WH + 100) return null;
   }
@@ -8961,7 +8970,7 @@ function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds 
 // builder to do the work exactly as before, and the players' own pieces still patch the graph at runtime (ctfEditNav).
 const CTF_GRAPH_V = 1, CTF_GRAPH_KINDS = ['jump', 'drop', 'thru'], CTF_GRAPHS = {}, CTF_GRAPH_WAIT = {};
 function ctfNavFingerprint(M){
-  const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring');
+  const zs = (M.zones || []).filter(ctfNavZoneMoves);
   const str = JSON.stringify([CTF_GRAPH_V, M.gid || M.id, M.WW, M.WH, M.plats.map(p=>[p.x, p.y, p.w, p.h, p.solid ? 1 : 0, p.hop ? 1 : 0]), M.doors.map(d=>[d.id, d.x, d.y, d.w, d.h]),
     M.jails.map(j=>[j.owner, j.door.x, j.door.y, j.door.w, j.door.h]), zs.map(z=>[z.type, z.x, z.y, z.w, z.h, z.strength || 1, z.dir || 1]), M.boosts.filter(b=>b.kind === 'jump').map(b=>[b.x, b.y]),
     [GRAV, MAXVX, MOVE, JUMP, CTF_SPEED, CTF_CARRY_SPEED, CTF_CARRY_JUMP, CTF_BOOST_JUMP, CTF_NAV_BUCKET], CTF.noZones ? 1 : 0]);
@@ -9141,7 +9150,7 @@ function ctfNavFly(nav, s, ctl, free, thru, bst, st){
   // the air (a running jump easing down from the run's speed: runEaseCap, on s.at, the frames already in the air), the jump, and the fall
   // on the way down, as step() moves the fighter.
   const S = st || STAT_ONE, ACCg = P.ACC*S.run, ACCa = P.ACC*S.air, CAPg = P.CAP*S.run, CAPa = P.CAP*S.air, JV = P.JV*S.jump, GF = S.fall;
-  let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, fl = !!s.fl, wt = -9, ws = 0, ta = s.at || 0;
+  let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, ft = s.ft || 0, wt = -9, ws = 0, ta = s.at || 0;   // (ft: the float timer, f._floatT)
   for(let t = 1; t <= 150; t++){
     ta = ground ? 0 : ta + 1;
     const c = ctl(t, x, y, vx, vy, jumps) || {};
@@ -9150,7 +9159,7 @@ function ctfNavFly(nav, s, ctl, free, thru, bst, st){
     else if(CAPg > CAPa){ const v0 = vx < 0 ? -vx : vx; if(v0 > CAPa){ const cap = Math.min(runEaseCap(CAPa, CAPg, ta), v0); if(vx > cap) vx = cap; else if(vx < -cap) vx = -cap; } }   // (nothing held in the air: the game's cap still eases a running jump down)
     if(c.jump){ if(jumps > 0 && !jp){ if(!ground && t - wt <= 3 && c.dir === ws && !CTF.wallOK) return null; vy = JV; jumps--; ground = false; jp = true; } } else jp = false;
     if(thru && t === 1){ y += R*0.6; vy = 5; ground = false; }
-    vy += (fl ? P.G*0.35 : P.G)*(vy > 0 ? GF : 1); x += vx; const pb = y + R; y += vy;
+    { const lt = ft > 0; if(lt) ft--; vy += (lt ? P.G*0.35 : P.G)*(vy > 0 ? GF : 1); } x += vx; const pb = y + R; y += vy;   // (thin air: gravFor)
     const list = (nav.pb[ctfNavBucket(x)] || []);
     let landed = null;
     for(const p of list){
@@ -9167,7 +9176,7 @@ function ctfNavFly(nav, s, ctl, free, thru, bst, st){
         if(y + R >= p.y && y + R <= p.y + 18 + vy){ landed = p; y = p.y - R; break; }   // (the game's own test: no look at where the feet were a step ago)
       }
     }
-    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; fl = Z.fl; }
+    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; Z.ft = ft; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; ft = Z.ft; }
     if(landed){ const node = ctfNavNodeAt(nav, x, landed.y, 1.5); return node ? { node, x, t } : null; }
     if(y > WH + 100) return null;
   }
@@ -9183,7 +9192,7 @@ function ctfAiPlanFly(nav, f, e, o){
     else if(o.dj && !djDone && jumps > 0 && (o.djNow || (t >= 6 && vy >= -0.4))){ c.jump = true; djDone = true; }
     return c;
   };
-  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, fl:f._floatT > 0, at:f._airT || 0 }, ctl, free, !!o.thru, bst, f.st);
+  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, ft:f._floatT || 0, at:f._airT || 0 }, ctl, free, !!o.thru, bst, f.st);
 }
 function ctfAiStat(k){ const S = CTF.stat = CTF.stat || {}; S[k] = (S[k] || 0) + 1; }
 // Follow the current path, one step at a time. Moves are steered from what the fighter is really doing: the jump goes at the moment a look ahead says it
@@ -37616,7 +37625,8 @@ function step(){
   // THIN AIR: Bubble's Thermal Rise (_floatT = 60) and Capture the Flag's float areas (applyZone 'float' holds it at 3 while you are
   // in one) are gravity at 0.35 while the timer runs. Read once a frame for every fighter, at the gravity line below, which is also
   // what runs the timer out (the owner, 2026-10-18, "Fix it": it was never called, so neither ever lightened anything, and once
-  // set the timer never ran down). The fall stat multiplies it on the way down there, as it does plain gravity.
+  // set the timer never ran down). The fall stat multiplies it on the way down there, as it does plain gravity. The CTF CPUs' flights
+  // (ctfNavSim, ctfNavFly) count the same timer.
   const gravFor = function(f){ if(f._floatT>0){ f._floatT--; return grav*0.35; } return grav; };
 
   for(const f of fighters){
@@ -45601,14 +45611,14 @@ function eliminate(f){
   }
   // Test mode: nobody is ever KO'd for good — just respawn at center
   if(TESTMODE.active){
-    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0;
+    f.x=camX+W*0.5; f.y=camY-40; f.vx=0; f.vy=0; f.pct=0; f.invuln=60; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
     dropInFlightMoves(f);
     puff(W*0.5, 40, f.color, 12);
     return;
   }
   // Bubble reform: the first KO each stock just "pops" her — she reforms at center, no stock lost
   if(f.reform>0){
-    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0;
+    f.reform--; f.x=camX+W*0.5; f.y=camY-30; f.vx=0; f.vy=0; f.pct=0; f.invuln=100; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0; f.frozen=0; f._floatT=0;
     dropInFlightMoves(f);
     for(let i=0;i<18;i++) puff(W*0.5, 60, '#bfe8ff', 6);   // no "YOYLEBERRY REFORM!" line ("Remove them all")
     return;
@@ -45670,6 +45680,7 @@ function eliminate(f){
     f.x=camX+W*0.5; f.y=camY-40;
   }
   f.vx=0; f.vy=0; f.pct=0; f.invuln=90; f.hitstun=0; f.burn=0; f.bleed=0; f._cookieT=0; f._nail=null; f._stall=null; f._sm=null; f._windup=null; f.cloud=0;
+  f._floatT=0;   // thin air (Thermal Rise's second, a float area's linger) does not outlive the stock: she comes back on whole gravity
   dropInFlightMoves(f);
   if(f.name==="Bubble") f.reform=1;   // Bubble regains her reform each new stock
 }
