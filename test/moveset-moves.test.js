@@ -84,13 +84,17 @@ describe('air: X is an aerial, and the arrows pick which', () => {
   });
 });
 
-describe('the side special', () => {
-  it('←/→ + C is the move that fighter has for it; C alone stays the neutral', () => {
-    stage(400); hold(['special', 'right'], 3);
-    expect(J('fighters[0]._mv && fighters[0]._mv.key')).toBe('side');
-    expect(J('fighters[0].spCd')).toBeGreaterThan(30);
+describe('no side special (the owner, 2026-10-16: "side specials should be neutral specials ... so basically just remove side specials")', () => {
+  it('←/→ + C is the neutral special, aimed that way, and it fires at once (C alone waits a few frames for a direction); no side move starts', () => {
+    stage(400); hold(['special', 'right'], 2);
+    expect(J('fighters[0].spCd'), 'the special went off inside two frames').toBeGreaterThan(0);
+    expect(J('fighters[0]._mv ? fighters[0]._mv.key : "-"')).not.toBe('side');
+    stage(400); hold(['special'], 2);
+    expect(J('fighters[0].spCd'), 'C alone still waits for a direction').toBe(0);
     stage(400); hold(['special'], 8);
-    expect(J('fighters[0]._mv ? fighters[0]._mv.key : "-"')).toBe('-');
+    expect(J('fighters[0].spCd')).toBeGreaterThan(0);
+    expect(J('SIDE_SPECIALS')).toBe(false);
+    expect(J('sideSpecialOf(fighters[0], { right:true })')).toBe(null);
   });
 });
 

@@ -28,7 +28,10 @@ describe('the move list', () => {
     expect(rows('Pencil')).toContain('CLINGS');
     // (restated each batch: Firey was the example of a fighter not yet converted until batch 2; now the first playable fighter with no MOVESETS entry stands in)
     const todo = J(`ROSTER.filter(function(r){ return r.play && r.kit && !MOVESETS[r.kit.special] && !r.prize; })[0].name`);
-    expect(rows(todo)).toContain('until this fighter');
+    // (restated 2026-10-16: the owner removed side specials, so the one line that said 'until this fighter...' is gone; every fighter's <-/-> + C line now reads the neutral special, aimed that way)
+    expect(rows(todo)).toContain('The neutral special, aimed that way.');
+    expect(rows('Pencil')).toContain('The neutral special, aimed that way.');
+    expect(rows('Pencil')).not.toContain('Side special');
     expect(rows(todo)).toContain('Forward throw');
   });
   it('the pause menu has a Move list button that shows the list for the fighter you are playing', () => {

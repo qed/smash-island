@@ -63,7 +63,7 @@ describe('every move has its own animation', () => {
 });
 
 describe('the moves are armed with their own label, and it goes out on the wire', () => {
-  it('jab, tilts, aerials, side special, grab, pummel, throws, specials, smash and finisher each arm their id', () => {
+  it('jab, tilts, aerials, grab, pummel, throws, specials, smash and finisher each arm their id', () => {
     const got = JSON.parse(W.eval(`JSON.stringify((function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false; worldPlats=[]; summons=[]; projectiles=[]; particles=[];
       var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
@@ -74,7 +74,7 @@ describe('the moves are armed with their own label, and it goes out on the wire'
       tryit('heavy.jab', function(){ doAttack(A); });
       ['ft','ut','dt'].forEach(function(k){ tryit('heavy.'+k, function(){ mvStart(A, MOVESETS.heavy[k], k); }); });
       ['na','fa','ba','ua','da'].forEach(function(k){ tryit('heavy.'+k, function(){ A.onground=false; A.y-=120; mvStart(A, MOVESETS.heavy[k], k); }); });
-      tryit('heavy.side', function(){ A._dirT = hazardT; fireSpecial(A, { right:true, side:true }); });
+      // (no side special: the owner turned them off, 2026-10-16; a direction + C is the neutral special, armed as 'heavy.special')
       tryit('heavy.special', function(){ doSpecial(A); });
       tryit('heavy.up', function(){ doUpSpecial(A); });
       tryit('heavy.down', function(){ doDownSpecial(A); });
@@ -88,7 +88,7 @@ describe('the moves are armed with their own label, and it goes out on the wire'
       A._atkAnim = 9; A._atkMove = 'heavy.fa'; A._atkKind = 'throw';
       var wire = netFighter(A); out.wire = wire.swingMove;
       return out; })())`));
-    for (const s of SLOTS) expect(got['heavy.' + s], s).toBe('heavy.' + s);
+    for (const s of SLOTS.filter((x) => x !== 'side')) expect(got['heavy.' + s], s).toBe('heavy.' + s);
     expect(got.wire).toBe('heavy.fa');
   });
 });

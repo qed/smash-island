@@ -57,9 +57,10 @@ describe('every batch-2 fighter has the whole set', () => {
 });
 
 describe('the moves do what the card says', () => {
-  it('each tilt, aerial and the side special hits a foe in its reach for the damage its line names', () => {
+  it('each tilt and aerial hits a foe in its reach for the damage its line names', () => {
     const bad = [];
     for (const [name, k] of Object.entries(KITS)) for (const s of slotsOf(name)) {
+      if (s === 'side') continue;   // (the side specials are off, the owner, 2026-10-16: a direction + C is the neutral special; the side rows stay as data and nothing fires or lists them)
       const air = ['na', 'fa', 'ba', 'ua', 'da'].includes(s);
       const spots = air ? [[40, 0], [75, 0], [-40, 0], [8, -50], [8, 50]] : [[40, 0], [70, 0], [8, -50]];
       let best = null;
@@ -146,7 +147,7 @@ describe('side effects are on the card', () => {
     const say = { ember: /burn/, spark: /burn/, cap: /slow/, shatter: /slippery/, pierce: /root/ };
     const fxMoves = JSON.parse(W.eval(`JSON.stringify((function(){ var o = {}; ${JSON.stringify(Object.values(KITS))}.forEach(function(k){ o[k] = []; ${JSON.stringify(SLOTS)}.forEach(function(s){ var S = MOVESETS[k][s]; if(S && S.fxt) o[k].push([s, S.fxt]); }); }); return o; })())`));
     for (const [name, k] of Object.entries(KITS)) for (const [s, fxt] of fxMoves[k]) {
-      if (!TEXT[name][TEXT_KEY[s]].includes(fxt)) bad.push(`${name} ${s}: the line does not say '${fxt}'`);
+      if (s !== 'side' && !TEXT[name][TEXT_KEY[s]].includes(fxt)) bad.push(`${name} ${s}: the line does not say '${fxt}'`);
       if (say[k] && !say[k].test(fxt)) bad.push(`${name} ${s}: odd effect '${fxt}'`);
     }
     expect(bad, bad.join(' ; ')).toEqual([]);
