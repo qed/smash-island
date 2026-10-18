@@ -742,3 +742,40 @@ describe("the owner's playtest of 2026-10-07", () => {
     expect(r.van, 'the van never holds it').toBe(true);
   });
 });
+
+// HIS ADDS WHERE THEY WERE. THE OWNER, 2026-10-18, of his closer orbit (320 -> 220 px, "within dashing range"): his MeTags and MePhone units, placed from where he
+// is, came about 100 px nearer the fighter with him -- less time to react -- so they are placed from where his old orbit had him (COBS_ADDS_ORBIT, 320 px, on the
+// line from you through him): as far from you as they were. He still circles at COBS_ORBIT_R.
+describe('THE OWNER, 2026-10-18: his MeTags and MePhone units appear as far from you as before his orbit came in', () => {
+  const ADDS = (rage) => fight(['Knife'], { story:true }, `
+    park(); floorAt(you, WW*0.5); you.invuln = 99999; s._marks = 0; s._rageT = ${rage ? 600 : 0}; projectiles = [];
+    var cx = you.x, cy = hurtCY(you), a = -0.55, R = COBS_ORBIT_R, out = { R: R, old: COBS_ADDS_ORBIT };
+    var put = function(){ s.x = cx + Math.cos(a)*R; s.y = cy + Math.sin(a)*R; s.vx = s.vy = 0; summons = summons.filter(function(m){ return m === s; }); };
+    var from = ${rage ? '{ x: cx + Math.cos(a)*R, y: cy + Math.sin(a)*R }' : '{ x: cx + Math.cos(a)*COBS_ADDS_ORBIT, y: cy + Math.sin(a)*COBS_ADDS_ORBIT }'};
+    put(); COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
+    out.tag = summons.filter(function(m){ return m.type === 'metag'; }).map(function(m){ return [m.x - (from.x + (m.x > from.x ? 1 : -1)*(s.r + 40)), m.y - (from.y - 20)]; });
+    put(); COBS_MOVES.deploy(s, you, ++BOSS_ATK_ID);
+    var us = summons.filter(function(m){ return m.type === 'mephoneunit'; });
+    out.unit = us.map(function(m){ return [m.x - (from.x + m._side*220), m.y - (from.y - 30)]; });
+    out.near = Math.min.apply(null, us.map(function(m){ return Math.hypot(m.x - cx, m.y - cy); }));
+    for (var i = 0; i < 30; i++){ s.x = cx + Math.cos(a)*R; s.y = cy + Math.sin(a)*R; s.vx = s.vy = 0; s._atkTimer = 1e9; you.invuln = 99999; us.forEach(function(m){ m._cd = 1e9; }); step(); }
+    out.hover = us.map(function(m){ return Math.round(Math.hypot(m.x - (from.x + m._side*220), m.y - Math.max(40, from.y - 30))); });
+    return out;`);
+
+  it('on his orbit: each tag and unit appears where it would have from his old 320 px orbit (not 100 px nearer), and a unit hovers off that point too', () => {
+    const r = ADDS(false);
+    expect(r.R, 'his orbit stays where the owner put it').toBe(220);
+    expect(r.old, 'the old orbit, the one his adds are placed from').toBe(320);
+    expect(r.tag.length).toBeGreaterThan(0);
+    for (const [dx, dy] of r.tag) { expect(Math.abs(dx), 'a MeTag: placed from his old place').toBeLessThan(1); expect(Math.abs(dy)).toBeLessThan(1); }
+    expect(r.unit.length).toBeGreaterThan(0);
+    for (const [dx, dy] of r.unit) { expect(Math.abs(dx), 'a MePhone unit: placed from his old place').toBeLessThan(1); expect(Math.abs(dy)).toBeLessThan(1); }
+    for (const d of r.hover) expect(d, 'and it hovers off that place, not off him (it does not glide 100 px in before its first round)').toBeLessThan(30);
+  });
+
+  it('on foot in the rage (his ring there did not change, 200 px) they come from where he is, as they always did', () => {
+    const r = ADDS(true);
+    for (const [dx, dy] of r.tag) { expect(Math.abs(dx)).toBeLessThan(1); expect(Math.abs(dy)).toBeLessThan(1); }
+    for (const [dx, dy] of r.unit) { expect(Math.abs(dx)).toBeLessThan(1); expect(Math.abs(dy)).toBeLessThan(1); }
+  });
+});
