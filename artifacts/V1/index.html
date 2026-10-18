@@ -36086,12 +36086,14 @@ function cobsThrowWatches(s, tgt, id, n, T, dmg, spread){
 }
 // Where his adds are placed from (HIS ADDS WHERE THEY WERE, COBS_ADDS_ORBIT): where his old orbit would have had him -- his place pushed out along the line from
 // the fighter he circles (oneChaseTarget) through him, by the 100 px the orbit came in. Only while he is on that orbit: on foot in the rage his ring did not
-// change (COBS_FOOT.orbitR), and a hop, a dive or a lunge never was the orbit; there, and with nobody to circle, it is where he is.
+// change (COBS_FOOT.orbitR), and a hop, a dive or a lunge never was the orbit; there, and with nobody to circle, it is where he is. The point is held where
+// his flight holds him (oneMove: x inside [r, WW - r], y no higher than r + 10), as the old orbit was, so near the top of the arena an add never appears above
+// the top edge -- off screen, and farther from you than it ever was.
 function cobsAddFrom(s, t){
   const f = oneChaseTarget(s, t);
   if(!f || s._rageT > 0 || s._hop || s._dive || s._lungeT > 0) return { x:s.x, y:s.y };
   const dx = s.x - f.x, dy = s.y - hurtCY(f), d = Math.hypot(dx, dy) || 1, k = COBS_ADDS_ORBIT - COBS_ORBIT_R;
-  return { x:s.x + dx/d*k, y:s.y + dy/d*k };
+  return { x:clamp(s.x + dx/d*k, s.r, WW - s.r), y:Math.max(s.r + 10, s.y + dy/d*k) };
 }
 function cobsSpawnUnit(s, T, side, tgt){
   const A = cobsAddFrom(s, tgt), x = clamp(A.x + side*220, 60, WW - 60), y = A.y - 30;
@@ -37660,6 +37662,7 @@ function step(){
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
     }
     f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
+    const inpPaired = inp;   // (the pairing changes this input in place; anything below that masks the input makes a new one: heldStruggle)
     if((ctrl==='local' || ctrl==='remote') && !RACE.active && !(SETTINGS.mode==='ctf' && CTF.live && (CTF.live.phase==='hide' || CTF.live.phase==='fix'))) comboInput(f, inp);   // X+C grab, V+C finisher (the Capture the Flag hiding phase reads the raw keys)
 
     // OUTBREAK: while infected by Barf Bag, this fighter mirrors HER inputs (puppet) and
@@ -37689,7 +37692,7 @@ function step(){
     if(f.hitstun>0 && (f._hold || f._heldBy!=null || f._gb || f._mv)) mvCancel(f);   // a hit lets go of a grab, a hold or a move in progress
     if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
-    if(f._heldBy!=null && heldStruggle(f, inp)) inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};   // held: only the struggle (each press takes frames off the hold)
+    if(f._heldBy!=null && heldStruggle(f, inp, inp === inpPaired ? f._rawKeys : null)) inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};   // held: only the struggle (each press takes frames off the hold)
     if(f._lag>0){ f._lag--; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // the recovery of a throw, a whiffed grab or a landing
     if(f.invuln>0) f.invuln--;
     if(f._graceLeft>0) f._graceLeft--;   // runs down beside invuln: how much of it is hit-grace
@@ -41199,11 +41202,15 @@ function doThrow(f, t, kind){
   f._thrown = { t: hazardT, kind: kind, idx: t.idx };
   { const U = f._used || (f._used = {}); U[kind + 'throw'] = (U[kind + 'throw'] || 0) + 1; }
 }
-// a held fighter's own frame: struggle, and nothing else (called where the inputs are masked)
-function heldStruggle(f, inp){
+// a held fighter's own frame: struggle, and nothing else (called where the inputs are masked). THE KEYS, NOT THE MOVES, as a cuff's mash (cuffKeys): `R` is
+// a human's attack, special, smash and jump as pressed (f._rawKeys, before the pairing), or X and C mashed together took nothing off the hold (the pairing
+// makes them the grab) and X counted CI_DELAY frames late. It is null for a CPU (nothing pairs its input) and on a frame something masked the input after
+// the pairing (a stun, a freeze, a puppet's strings): then the input is all there is, as it always was.
+function heldStruggle(f, inp, R){
   const h = fighters[f._heldBy];
   if(!h || h.dead || !h._hold || h._hold.idx !== f.idx){ f._heldBy = null; return false; }
-  const k = (inp.attack ? 1 : 0) | (inp.special ? 2 : 0) | (inp.jump ? 4 : 0) | (inp.left ? 8 : 0) | (inp.right ? 16 : 0) | (inp.down ? 32 : 0) | (inp.smash ? 64 : 0);
+  const A = R ? R[0] : inp.attack, S = R ? R[1] : inp.special, M = R ? R[2] : inp.smash, J = R ? R[3] : inp.jump;
+  const k = (A ? 1 : 0) | (S ? 2 : 0) | (J ? 4 : 0) | (inp.left ? 8 : 0) | (inp.right ? 16 : 0) | (inp.down ? 32 : 0) | (M ? 64 : 0);
   const prev = f._stPrev || 0; f._stPrev = k;
   const edges = k & ~prev;
   for(let b = 1; b <= 64; b <<= 1) if(edges & b) h._hold.t += STRUGGLE;
