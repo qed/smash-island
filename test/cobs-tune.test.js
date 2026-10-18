@@ -13,6 +13,9 @@ import { mulberry32 } from './helpers/prng.js';
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+// THE OWNER, 2026-10-18: "cobs should have higher knockback and damage things." -- asked how much: "+25%". Every hit of his on a fighter now lands at COBS_POWER
+// (1.25) x what the move is written as, its cap and its launch with it (the arena's maze excepted); the pins here that read what reached a fighter, or a shot of his, say x POW.
+const POW = 1.25;
 
 // Start his fight as the chain does and hand the body `s` (him), `you` (player 1, parked), `park()`, `floorAt(f, x)`, `shots()` and `atTier(t)`; the same dice every time.
 const fight = (body, lineup = ['Knife']) => { W.Math.random = mulberry32(5); return W.eval(`(function(){
@@ -85,7 +88,7 @@ describe('OWNER: FREE SAMPLES! -- no chasing, and the crumbs ride the way the va
     for (let t = 1; t <= 5; t++) {
       const q = r['t' + t];
       expect(q.n, `tier ${t}`).toBe(q.want); expect(q.spd).toBe(true); expect(q.ids).toBe(1); expect(q.id).toBe(true); expect(q.poison).toBe(true);
-      expect(q.dmg, 'half a hit, as before').toBeCloseTo(6.6, 5); expect(q.cap, 'the box\'s own cap').toBeCloseTo(13.2, 5);
+      expect(q.dmg, 'half a hit, as before (x POW: "+25%")').toBeCloseTo(6.6*POW, 5); expect(q.cap, 'the box\'s own cap (x POW)').toBeCloseTo(13.2*POW, 5);
     }
     expect([1, 2, 3, 4, 5].map((t) => r['t' + t].n), '4, 4, 6, 6, 8: unchanged').toEqual([4, 4, 6, 6, 8]);
   });
@@ -169,8 +172,8 @@ describe('OWNER: MEEPLE PORTAL! -- two from the start, three from tier 3, a stro
       expect(r.spd.every((v) => Math.abs(v - r.T.ringSpd) < 0.01), 'at the tier\'s speed').toBe(true);
       expect(r.gaps.every((g) => Math.abs(g - (Math.PI * 2) / r.n) < 0.01), 'evenly round').toBe(true);
       expect(r.id, 'the portal\'s one id').toBe(true); expect(r.ids).toBe(1);
-      expect(r.dmg, 'small: 0.4 of the portal\'s hit').toBeCloseTo(r.want, 5);
-      expect(r.cap, 'under the portal\'s own cap').toBeCloseTo(r.capWant, 5);
+      expect(r.dmg, 'small: 0.4 of the portal\'s hit (x POW: "+25%")').toBeCloseTo(r.want*POW, 5);
+      expect(r.cap, 'under the portal\'s own cap (x POW)').toBeCloseTo(r.capWant*POW, 5);
       expect(r.r, 'small shots').toBeLessThanOrEqual(8);
     }
   });
@@ -186,7 +189,7 @@ describe('OWNER: MEEPLE PORTAL! -- two from the start, three from tier 3, a stro
     expect(r.flung, 'it flung you').not.toBe(null);
     expect(r.burst, 'and burst once it had shut').not.toBe(null);
     expect(r.flung.t, 'it closed early (10 frames)').toBeLessThanOrEqual(10);
-    expect(r.pct, 'the fling and the ring together never exceed one portal hit').toBeLessThanOrEqual(r.dmg + 1e-6);
+    expect(r.pct, 'the fling and the ring together never exceed one portal hit (x POW: "+25%")').toBeLessThanOrEqual(r.dmg*POW + 1e-6);
   });
 
   it('three portals pull no harder than the strongest one: the vortex is not tripled by the second and third, so a fighter in reach of all of them is never lock-pulled', () => {
@@ -266,7 +269,7 @@ describe('OWNER: SUPER DEATH TRAP! -- a second row right behind the first, and t
       for (var i=0;i<140;i++){ s._atkTimer = 1e9; var p0 = you.pct; you.invuln = 0; step(); if (you.pct > p0) hits++; if (you.hitstun <= 0 && i > T.delay + 30){ you.x = PL[3].x + 120; you.y = PL[3].y - you.r; you.vx = 0; you.vy = 0; } }
       return { pct: you.pct, dmg: dmg, hits: hits };`);
     expect(r.hits, 'the spikes landed').toBeGreaterThan(0);
-    expect(r.pct, 'one hit however many spikes').toBeLessThanOrEqual(r.dmg + 1e-6);
+    expect(r.pct, 'one hit however many spikes (x POW: "+25%")').toBeLessThanOrEqual(r.dmg*POW + 1e-6);
   });
 
   it('THE LEAP, near the end of the attack: `lead` frames before the last spike rises the spikes leap to a platform next to the ones raised -- the one you STAND ON first', () => {
@@ -312,8 +315,8 @@ describe('OWNER: SUPER DEATH TRAP! -- a second row right behind the first, and t
         expect(q.delay, 'rises after the flight and a beat (read a frame or two after it was made)').toBeGreaterThanOrEqual(r.T.hop + r.T.ldelay - 3);
         expect(q.warn, 'the shadow is up the whole time').toBeGreaterThan(0);
         expect(q.id, 'the attack\'s one id').toBe(r.id);
-        expect(q.dmg, 'the same damage as the spikes it came from').toBeCloseTo(33*r.T.dmg, 5);
-        expect(q.cap).toBeCloseTo(33*r.T.dmg, 5);
+        expect(q.dmg, 'the same damage as the spikes it came from (x POW: "+25%")').toBeCloseTo(33*r.T.dmg*POW, 5);
+        expect(q.cap).toBeCloseTo(33*r.T.dmg*POW, 5);
       }
     }
     const err = fight(`
@@ -364,7 +367,7 @@ describe('OWNER: MePHONE X: DELETION! -- a double lunge, aimed longer, and talle
       expect(r.turns[0].reLunge - r.turns[0].f, '...and no more than that').toBeLessThanOrEqual(r.T.turn + 2);
       expect(r.left, 'both lunges done').toBe(0);
       expect(r.hits.length, 'turned away from both lunges: neither lands -- the one hit is the trail\'s zap, once, on a fighter who stood in it').toBe(1);
-      expect(r.pct, 'a part of X\'s hit, the tier\'s trailDmg, and no more').toBeCloseTo(r.dmg*r.T.trailDmg, 3);
+      expect(r.pct, 'a part of X\'s hit, the tier\'s trailDmg, and no more (x POW: "+25%")').toBeCloseTo(r.dmg*r.T.trailDmg*POW, 3);
       expect(r.ids.every((i) => i === r.idWant), 'the attack\'s one id').toBe(true);
       expect(r.spd, 'never faster: the same speed').toEqual([r.T.spd]);
     }
@@ -375,13 +378,13 @@ describe('OWNER: MePHONE X: DELETION! -- a double lunge, aimed longer, and talle
     expect(r.turns.length, 'it did turn').toBe(1);
     expect(r.hits.length, 'the second lunge landed').toBeGreaterThanOrEqual(1);
     expect(r.hits[r.hits.length - 1][0], 'after the turn').toBeGreaterThan(r.turns[0].f);
-    expect(r.pct, '1.6 x 33: the same hit as ever, however the trail and the second lunge share it').toBeCloseTo(52.8, 3);
+    expect(r.pct, '1.6 x 33: the same hit as ever, however the trail and the second lunge share it (x POW: "+25%")').toBeCloseTo(52.8*POW, 3);
   });
 
   it('caught by the first lunge, you take that hit and the second lunge adds nothing (one id, one cap), nor does it lock your special or "delete" you a second time', () => {
     const r = LUNGE(2, 's._xs[0].side', 150, 'if (i === 40) you.spCd = 0;');
     expect(r.hits.length, 'one hit').toBe(1);
-    expect(r.pct).toBeCloseTo(52.8, 3);
+    expect(r.pct, 'x POW ("+25%")').toBeCloseTo(52.8*POW, 3);
     expect(r.turns.length, 'it still turned and came again').toBe(1);
     expect(r.spCd, 'and the second lunge did not lock your special again (reset at frame 40, before it lands)').toBe(0);
   });
@@ -390,7 +393,7 @@ describe('OWNER: MePHONE X: DELETION! -- a double lunge, aimed longer, and talle
     const r = LUNGE(5, 's._xs[0].side', 200);
     expect(r.n).toBe(2);
     expect(r.turns.length, 'each turned once').toBe(2);
-    expect(r.pct, 'never more than the one hit (one id, one cap)').toBeLessThanOrEqual(r.dmg + 1e-6);
+    expect(r.pct, 'never more than the one hit (one id, one cap; x POW: "+25%")').toBeLessThanOrEqual(r.dmg*POW + 1e-6);
     expect(r.left, 'and it ends').toBe(0);
   });
 
@@ -417,8 +420,8 @@ describe('OWNER: MePHONE X: DELETION! -- a double lunge, aimed longer, and talle
     expect(r.h, 'twice as tall').toEqual([112]);
     expect(W.eval('COBS_TIERS.deletion.map(function(T){ return T.h; })'), 'at every tier').toEqual([112, 112, 112, 112, 112]);
     const low = run(40), mid = run(100), top = run(118), high = run(160);
-    expect(low.pct, 'a hop 40 px up is under its top: caught, airborne as you are').toBeCloseTo(52.8, 3);
-    expect(mid.pct, '100 px up is still inside it').toBeCloseTo(52.8, 3);
+    expect(low.pct, 'a hop 40 px up is under its top: caught, airborne as you are (x POW: "+25%")').toBeCloseTo(52.8*POW, 3);
+    expect(mid.pct, '100 px up is still inside it').toBeCloseTo(52.8*POW, 3);
     expect(top.pct, 'feet 118 px up clear its 112 px top').toBe(0);
     expect(high.pct, 'and so does a full jump').toBe(0);
   });
@@ -502,8 +505,8 @@ describe('OWNER: TICK, TOCK! -- one more watch at every tier, more ricochets (th
     for (const r of rs) {
       expect(r.shards, 'a watch\'s shards each, every one of them spent').toBeGreaterThanOrEqual(r.n0*r.T.shards - r.T.shards);
       expect(r.ids, 'on the throw\'s one id').toBe(1);
-      expect(r.shardDmg, 'small: 0.35 of the watch\'s hit').toBeCloseTo(33*r.T.dmg*0.35, 5);
-      expect(r.shardCap, 'under the watch\'s own cap').toBeCloseTo(33*r.T.dmg, 5);
+      expect(r.shardDmg, 'small: 0.35 of the watch\'s hit (x POW: "+25%")').toBeCloseTo(33*r.T.dmg*0.35*POW, 5);
+      expect(r.shardCap, 'under the watch\'s own cap (x POW)').toBeCloseTo(33*r.T.dmg*POW, 5);
     }
     const f = fight(`
       park(); atTier(5); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 0; you.pct = 0; projectiles = []; var T = cobsT(s, 'ticktock'), dmg = cobsDmg()*T.dmg, id = ++BOSS_ATK_ID;
@@ -514,7 +517,7 @@ describe('OWNER: TICK, TOCK! -- one more watch at every tier, more ricochets (th
     expect(f.made, 'every spent watch makes its shards').toBe(f.want);
     expect(f.up, 'up and out').toBeGreaterThan(f.made*0.8);
     expect(f.r, 'small').toBeLessThanOrEqual(6);
-    expect(f.pct, 'a fighter under all the shards of all the watches takes at most ONE watch hit (one id, one cap)').toBeLessThanOrEqual(f.dmg + 1e-6);
+    expect(f.pct, 'a fighter under all the shards of all the watches takes at most ONE watch hit (one id, one cap; x POW: "+25%")').toBeLessThanOrEqual(f.dmg*POW + 1e-6);
   });
 });
 
@@ -638,7 +641,7 @@ describe('OWNER: LOCKDOWN! (too hard) -- no pile-on, a third shorter, mash free,
       expect(r.cuffedAt, `tier ${t}: the tag cuffed on contact`).not.toBe(null);
       expect(r.freeAt - r.cuffedAt, 'rooted for the cuff\'s frames').toBeGreaterThanOrEqual(r.T.cuff - 2);
       expect(r.freeAt - r.cuffedAt).toBeLessThanOrEqual(r.T.cuff + 1);
-      expect(r.pct0, 'and the tag\'s own small hit lands: the cuff is still a hit').toBeCloseTo(33*r.T.dmg, 3);
+      expect(r.pct0, 'and the tag\'s own small hit lands: the cuff is still a hit (x POW: "+25%")').toBeCloseTo(33*r.T.dmg*POW, 3);
     }
     const pole = fight(`
       park(); atTier(5); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.invuln = 0; s.x = you.x + 400; s.y = you.y - 250; projectiles = []; summons = summons.filter(function(m){ return m === s; });

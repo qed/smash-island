@@ -16,6 +16,9 @@ import { bootValidating } from './helpers/validating-canvas.js';
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+// THE OWNER, 2026-10-18: "cobs should have higher knockback and damage things." -- asked how much: "+25%". Every hit of his on a fighter now lands at COBS_POWER
+// (1.25) x what the move is written as, its cap and its launch with it (the arena's maze excepted); the pins here that read what reached a fighter, or a shot of his, say x POW.
+const POW = 1.25;
 
 // Start his fight as the chain does and hand the body `s` (him), `you` (player 1, parked), `park()`, `floorAt(f, x)` and `shots()`.
 // Every fight starts from the same dice (the window's one random stream would otherwise be wherever the tests before it left it, and an
@@ -251,7 +254,7 @@ describe('THE MEEPLE VAN! -- thrown out the back, as it crosses you', () => {
       for (var i=0;i<200;i++){ s._atkTimer = 1e9; you.invuln = 0; var before = you.pct; step(); if (you.pct > before) hits++; you.x = fl.x + 700; }
       return { pct: you.pct, cap: cap, hits: hits };`);
     expect(r.pct).toBeGreaterThan(0);
-    expect(r.pct, 'the cap').toBeLessThanOrEqual(r.cap + 1e-6);
+    expect(r.pct, 'the cap (the van\'s hit, x POW: "+25%")').toBeLessThanOrEqual(r.cap*POW + 1e-6);
   });
 
   it('a van passing a fighter shakes the floor and leaves dust behind it (impact)', () => {
@@ -302,12 +305,12 @@ describe('CHAINSAWS! -- and lollipops (The Tile Divide)', () => {
         cobsTrack(s, p, 'lolli', { T:T, dmg:20, cap:20 }); var dust0 = IMPACT_DUST.length;
         for (var i=0;i<60 && !projectiles.some(function(q){ return q.shape === 'cobscandy'; });i++){ step(); you.invuln = 99999; }
         var sh = projectiles.filter(function(q){ return q.shape === 'cobscandy'; });
-        out['t' + t] = { shards: sh.length, want: T.shards, up: sh.filter(function(q){ return q.vy < 0; }).length, ids: new Set(sh.map(function(q){ return q.bossAtk; })).size, id: p.bossAtk, same: sh.every(function(q){ return q.bossAtk === p.bossAtk && q.bossCap === 20; }), dust: IMPACT_DUST.length > dust0 }; });
+        out['t' + t] = { shards: sh.length, want: T.shards, up: sh.filter(function(q){ return q.vy < 0; }).length, ids: new Set(sh.map(function(q){ return q.bossAtk; })).size, id: p.bossAtk, same: sh.every(function(q){ return q.bossAtk === p.bossAtk && q.bossCap === p.bossCap; }), dust: IMPACT_DUST.length > dust0 }; });
       return out;`);
     expect(r.t2.shards).toBe(6);
     expect(r.t3.shards, 'stronger at tier 3').toBe(8);
     expect(r.t5.shards).toBe(10);
-    for (const t of ['t2', 't3', 't5']) { expect(r[t].up, 'up and out').toBeGreaterThan(r[t].shards - 2); expect(r[t].same, 'same id, same cap').toBe(true); expect(r[t].dust).toBe(true); }
+    for (const t of ['t2', 't3', 't5']) { expect(r[t].up, 'up and out').toBeGreaterThan(r[t].shards - 2); expect(r[t].same, 'same id, same cap (the lollipop\'s own: its 20 x POW, "+25%")').toBe(true); expect(r[t].dust).toBe(true); }
   });
 });
 
@@ -414,7 +417,7 @@ describe('MeKNIFE! -- YANK IT OUT', () => {
     expect(r.slash.f - r.yank0.f, 'it comes only when the glint has run its frames').toBeGreaterThanOrEqual(r.yank0.T - 2);
     expect(r.slash.f - r.yank0.f).toBeLessThanOrEqual(r.yank0.T + 3);
     expect(r.slash.id, 'the stab\'s own id').toBe(r.id);
-    expect(r.slash.cap).toBeCloseTo(33*1.1, 3);
+    expect(r.slash.cap, 'the stab\'s own cap, x POW ("+25%")').toBeCloseTo(33*1.1*POW, 3);
     // the shot goes from where the blade stuck toward his hand
     const hx = r.slash.bx + (-1)*88*0.6, dir = Math.sign(hx - r.yank0.x);
     expect(Math.sign(r.slash.vx), 'toward him').toBe(dir);
@@ -426,7 +429,7 @@ describe('MeKNIFE! -- YANK IT OUT', () => {
     const r = STAB(2, true);
     expect(r.yank0, 'hit or whiff').not.toBe(null);
     expect(r.pct, 'the stab landed').toBeGreaterThan(0);
-    expect(r.pct, 'once: the cap').toBeLessThanOrEqual(33*1.1 + 1e-6);
+    expect(r.pct, 'once: the cap (x POW: "+25%")').toBeLessThanOrEqual(33*1.1*POW + 1e-6);
     expect(r.yank0.stuck, 'a stab that hit is not the whiff\'s counter-window').toBe(0);
   });
 
@@ -508,11 +511,11 @@ describe('MePHONE X: DELETION! -- an electric trail', () => {
     expect(t2.turned, 'the first lunge passed and X turned to come again').not.toBe(null);
     expect(t2.pctAtPass, 'X passes through a fighter who turned away: no hit').toBe(0);
     expect(t2.frames.length, 'then one zap, once (every node of an X shares one hit list)').toBe(1);
-    expect(t2.frames[0][1]).toBeCloseTo(33*1.6*0.3, 0);
+    expect(t2.frames[0][1], 'x POW ("+25%")').toBeCloseTo(33*1.6*0.3*POW, 0);
     expect(t3.frames[0][1], 'stronger at tier 3').toBeGreaterThan(t2.frames[0][1]);
-    expect(t2.pct, 'never more than X\'s own hit').toBeLessThanOrEqual(t2.dmg + 1e-6);
+    expect(t2.pct, 'never more than X\'s own hit (x POW: "+25%")').toBeLessThanOrEqual(t2.dmg*POW + 1e-6);
     const hit = TRAIL(2, false);
-    expect(hit.pct, 'a fighter X caught takes its hit and the trail and the second lunge add nothing (one id, one cap)').toBeLessThanOrEqual(hit.dmg + 1e-6);
+    expect(hit.pct, 'a fighter X caught takes its hit and the trail and the second lunge add nothing (one id, one cap)').toBeLessThanOrEqual(hit.dmg*POW + 1e-6);
   });
 
   it('draws the dim and the bright electricity without a throw', () => {
@@ -928,7 +931,7 @@ describe('OWNER: PULL THE PLUG! -- the live floor ("if you hit the floor during 
       const hits = r.hits.filter((h) => h.live);
       expect(hits.length, `${what}: only the second fall hurts`).toBe(1);
       expect(hits[0].f - r.liveAt, `${what}: and it is the one after it is over`).toBeGreaterThanOrEqual(100);
-      expect(hits[0].d, 'a 300 px fall: 1.5x the row\'s shock').toBeCloseTo(r.fshock * 1.5, 6);
+      expect(hits[0].d, 'a 300 px fall: 1.5x the row\'s shock (x POW: "+25%")').toBeCloseTo(r.fshock * 1.5 * POW, 6);
     }
   });
 
@@ -1195,8 +1198,8 @@ describe('POPPING POINT -- the burst ring', () => {
     expect(r.n).toBe(r.ring);
     for (const g of r.gaps) expect(g, 'evenly spaced round him').toBeCloseTo(2*Math.PI/r.ring, 1);
     expect(r.ids, 'one id').toBe(1);
-    expect(r.dmg, '2% each').toBe(2);
-    expect(r.cap, 'the old cap: 3 kernels\' worth').toBe(6);
+    expect(r.dmg, '2% each, x POW ("+25%"): 2.5').toBe(2*POW);
+    expect(r.cap, 'the old cap: 3 kernels\' worth (x POW)').toBe(6*POW);
     expect(Math.abs(r.mean), 'a ring, not a line at you').toBeLessThan(0.5);
     expect(r.shape).toBe('kernel');
   });

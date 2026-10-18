@@ -16,6 +16,9 @@ import { mulberry32 } from './helpers/prng.js';
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+// THE OWNER, 2026-10-18: "cobs should have higher knockback and damage things." -- asked how much: "+25%". Every hit of his on a fighter now lands at COBS_POWER
+// (1.25) x what the move is written as, its cap and its launch with it (the arena's maze excepted); the pins here that read what reached a fighter, or a shot of his, say x POW.
+const POW = 1.25;
 
 // Start his fight the way the chain will: startCobsFight(lineup, opts). onEnd returns true so no result screen is scheduled
 // in the middle of the next test. `s` is him, `you` player 1, parked (his attack timer far off, you standing still).
@@ -383,12 +386,12 @@ describe('the six personalised specials', () => {
     expect(caught.tel, 'tier 2\'s wind-up').toBe(66);
     expect(caught.red, 'the siren: the screen tints red').toBe(true);
     expect(caught.faced, 'X comes in on the side you face').toBe(true);
-    expect(caught.dmg, '1.6 x 33').toBeCloseTo(52.8, 3);
+    expect(caught.dmg, '1.6 x 33, x POW ("+25%")').toBeCloseTo(52.8*POW, 3);
     expect(caught.lock, 'specials locked 120 frames').toBeGreaterThanOrEqual(100);
     expect(caught.deleted).toBe(true);
     expect(caught.left).toBe(0);
     const away = run('you.face = -1;   // turned away', 'if (s._xs.length) you.face = -s._xs[0].side;');   // (turned away from the first lunge, and from the second one that comes back from the other side)
-    expect(away.dmg, '"simply not looking at him": neither lunge lands -- all that reaches a fighter who stood still in the trail (from tier 1 now: the owner, 2026-10-05) is its zap, 0.3 of the hit').toBeCloseTo(52.8*0.3, 3);
+    expect(away.dmg, '"simply not looking at him": neither lunge lands -- all that reaches a fighter who stood still in the trail (from tier 1 now: the owner, 2026-10-05) is its zap, 0.3 of the hit (x POW: "+25%")').toBeCloseTo(52.8*0.3*POW, 3);
     expect(away.lock).toBe(0);
     const air = run('you.y = airY; you.vy = 0;', 'you.y = airY; you.vy = 0;');
     expect(air.grounded.slice(1).some(g => g), 'held in the air').toBe(false);
@@ -485,7 +488,7 @@ describe('the six personalised specials', () => {
     expect(r.grounded.hits.every(h => h === 'low'), 'and only the low ones').toBe(true);
     expect(r.jumping.hits.length, 'in the air the high ring hits you').toBeGreaterThan(0);
     expect(r.jumping.hits.every(h => h === 'high'), 'and only that one').toBe(true);
-    expect(r.burstGround, 'CARE!: a grounded fighter takes the burst').toBeCloseTo(33, 3);
+    expect(r.burstGround, 'CARE!: a grounded fighter takes the burst (x POW: "+25%")').toBeCloseTo(33*POW, 3);
     expect(r.burstGround > 0 || !r.g1, 'grounded when it burst').toBe(true);
     expect(r.burstAir, 'airborne at the burst: blocked').toBe(0);
     expect(r.onPane).toBe(true);
@@ -606,7 +609,7 @@ describe('the passives ("Both in")', () => {
     expect(r.cd).toBeGreaterThan(0);
     expect(r.counts.every(n => n === r.ring), 'a ring of the same number a hit').toBe(true);
     expect(r.ring).toBeGreaterThanOrEqual(6);
-    expect(r.dmg, '2% each').toBe(2);
+    expect(r.dmg, '2% each, x POW ("+25%"): 2.5').toBe(2*POW);
     expect(r.shape).toBe('kernel');
     expect(r.look).toBe('cobshurt');
   });
