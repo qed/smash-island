@@ -115,6 +115,7 @@ const STATS = {
 // ------------------------------------------------------------------------------------------------------------------------------
 // Injected before the game's own script: words drawn on the canvas are captured (the stub context swallows fillText otherwise).
 function injectTransform(html) {
+  if (OPT.args.html) html = readFileSync(String(OPT.args.html), 'utf8');   // --arg html=PATH: play another build of the game (to reproduce a finding on the build it was found on)
   const pre = `<script>(function(){window.__ptCanvasText=Object.create(null);window.__ptCap=false;var o=HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.getContext=function(){var c=o.apply(this,arguments);return new Proxy(c,{get:function(t,p){
  if(p==='fillText'||p==='strokeText')return function(s){if(window.__ptCap){s=String(s);window.__ptCanvasText[s]=(window.__ptCanvasText[s]||0)+1;}};
@@ -152,6 +153,9 @@ const PAGE_HOOKS = `(function(){
     return r; }; });
   // the HUD is rebuilt through querySelector every step; in jsdom that is 40% of a frame and says nothing about the game, so it runs every 8th step (the HUD checks still see it)
   wrap('updateHUD', function(o){ var n = 0; return function(){ if((n++ & 7) === 0) return o.apply(this, arguments); }; });
+  // --arg prof=1: inclusive time of the systems a slow frame could come from, per frame (the playtester reads it on a spike)
+  P.fnT = Object.create(null);
+  if(window.__ptProf){ ['ctfNavTick','ctfAiSee','ctfStratTick','ctfPlanWatch','ctfReveal','ctfEditStep','ctfAiHideTick','ctfAiInputRaw','ctfStepKeys','ctfStepFlags','ctfStepElevs','ctfFixStep','ctfAiBegin','ctfEditNav','ctfStepJails','ctfStepZones','ctfAiTrack','aiThink','updateSummons','updateItems','fsStep','teamAiTick','comboInput','ctfRebuildDyn','ctfNavNew','ctfEditSettle','ctfEditResolve'].forEach(function(n){ wrap(n, function(o){ return function(){ var t = performance.now(); try{ return o.apply(this, arguments); } finally{ P.fnT[n] = (P.fnT[n] || 0) + performance.now() - t; } }; }); }); }
   wrap('eliminate', function(o){ return function(f){ try{ P.kos.push({ n: f.name, you: !!f.you, t: hazardT, by: f.lastHitBy != null && fighters[f.lastHitBy] ? fighters[f.lastHitBy].name : null }); }catch(e){} return o.apply(this, arguments); }; });
   wrap('showResult', function(o){ return function(winners, winTeam){ try{ P.result = { winners: (winners || []).map(function(x){ return x && x.name; }), winTeam: winTeam, t: hazardT }; }catch(e){} return o.apply(this, arguments); }; });
 })()`;
@@ -167,9 +171,15 @@ class World {
     w.addEventListener('error', (e) => wo.onConsole('error', 'window.onerror: ' + (e.message || e.error)));
     w.confirm = () => true; w.alert = () => {}; w.prompt = () => ''; w.open = () => null;
     w.WebSocket = class { constructor() { this.readyState = 3; setTimeout(() => { try { this.onerror && this.onerror({}); this.onclose && this.onclose({ code: 1006 }); } catch (e) { /* offline */ } }, 5); } send() {} close() {} addEventListener() {} removeEventListener() {} };
-    w.fetch = () => Promise.reject(new Error('offline (playtest)'));
+    // no network, but the game's own files are served from disk like a browser would (the CTF maps' shipped route graphs: without them the runtime graph builder runs and spikes the frame)
+    w.fetch = (url) => {
+      const u = String(url);
+      if (u.startsWith('assets/') || u.startsWith('./assets/')) { const p = path.join(ROOT, 'artifacts', 'V1', u.replace('./', '').split('?')[0]); if (existsSync(p)) { const txt = readFileSync(p, 'utf8'); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(JSON.parse(txt)), text: () => Promise.resolve(txt) }); } return Promise.resolve({ ok: false, status: 404, json: () => Promise.reject(new Error('404')), text: () => Promise.resolve('') }); }
+      return Promise.reject(new Error('offline (playtest)'));
+    };
     try { Object.defineProperty(w.navigator, 'clipboard', { value: { writeText: () => Promise.resolve() }, configurable: true }); } catch (e) { /* ignore */ }
     try { await Promise.race([w.eval('profileReady'), sleep(3000)]); } catch (e) { /* ignore */ }
+    if (OPT.args.prof) w.__ptProf = true;
     w.eval(PAGE_HOOKS);
     wo.bootMs = now() - t0;
     return wo;
@@ -248,6 +258,12 @@ function readMatch(wo) {
   })()`);
 }
 
+// a fighter's state in one line, for the detail of a finding
+function fdiag(wo, f) {
+  const ks = Object.keys(f).filter((k) => /^(_jail|_hold|_heldBy|_cf|_ck|_cam|_lag|_selfStun|_ctfJT|_ctfFree|_ghostT|_springT|_trapT|_stall|_nail|_windup|_sm|_mv|_gb|_infected|_grabbed|_plunge|hitstun|frozen|rooted|slowed|weakened|dropping|flying|invuln|atkCd|spCd|smCd|jumps|onground|vx|vy)$/.test(k) && f[k] != null && f[k] !== 0 && f[k] !== false).map((k) => k + '=' + (typeof f[k] === 'object' ? 'obj' : typeof f[k] === 'number' ? Math.round(f[k] * 10) / 10 : f[k]));
+  const ph = wo.E('CTF.live ? CTF.live.phase : "-"');
+  return `pos ${Math.round(f.x)},${Math.round(f.y)} ctf-phase ${ph} menu ${wo.E('typeof ctfMenuOpen === "function" && ctfMenuOpen()')} state {${ks.join(' ')}}`;
+}
 // the answer to "did the key I pressed do anything": signature of everything an input can change on a fighter
 function sig(f) {
   return [f.atkCd, f.spCd, f.smCd, f.fnCd, f._atkSeq || 0, f._atkAnim, f._spPend, f.jumps, Math.round(f.vx * 4), Math.round(f.vy * 4), f.onground ? 1 : 0, !!f._mv, !!f._hold, !!f._windup, !!f._sm, f._grabbed != null, !!f._gb, f.flying, f.dropping].join(',');
@@ -431,7 +447,7 @@ class Player {
   // ---------------------------------------------------------------- "can't" moments: the key was pressed and nothing happened
   armProbe(pr, me) {
     if (me.hitstun > 0 || me.frozen > 0 || me._lag > 0 || me._heldBy != null || me.rooted > 0 || me._selfStun > 0 || me.dead) return;   // not a fair test
-    if (me._jail != null || me._cam || me._ctfJT > 0 || this.wo.E('(typeof ctfMenuOpen === "function" && ctfMenuOpen()) || (SETTINGS.mode === "ctf" && CTF.live && CTF.live.phase !== "play")')) return;   // a prisoner, the free camera, the planning menu, a hiding phase: the game takes the keys on purpose
+    if (!OPT.args.legacy && (me._jail != null || me._cam || me._ctfJT > 0 || this.wo.E('(typeof ctfMenuOpen === "function" && ctfMenuOpen()) || (SETTINGS.mode === "ctf" && CTF.live && CTF.live.phase !== "play")'))) return;   // a prisoner, the free camera, the planning menu, a hiding phase: the game takes the keys on purpose
     const t = pr.type;
     if (t === 'atk' && me.atkCd > 0) return;
     if (t === 'special' && (me.spCd > 0 || me.atkCd > 12)) return;
@@ -453,7 +469,7 @@ class Player {
     for (const pr of this.probes) if (pr.bad) {
       this.stats.cants++;
       note('BUG', 'cant', `${pr.name}: "${pr.type === 'atk' ? 'attack (X)' : pr.type === 'special' ? 'special (C)' : pr.type === 'smash' ? 'smash (V)' : pr.type === 'grab' ? 'grab (X+C)' : 'finisher (V+C)'}" was pressed on a ready fighter and nothing happened for 14 frames`,
-        { detail: `fighter ${pr.name}, move ${pr.type}, the player's action ${pr.cat}, frame ${pr.t0}, mode ${S.mode}` });
+        { detail: `fighter ${pr.name}, move ${pr.type}, the player's action ${pr.cat}, frame ${pr.t0}, mode ${S.mode}; ${fdiag(this.wo, me)}` });
     }
     this.probes = this.probes.filter((pr) => !pr.ok);
   }
@@ -461,16 +477,16 @@ class Player {
   watchStuck(S, me) {
     const f = this.wo.frame;
     const moving = this.plan.hold.size > 0;
-    if (this.wo.E('(typeof ctfMenuOpen === "function" && ctfMenuOpen())')) { this.lastPos = null; return; }
+    if (!OPT.args.legacy && this.wo.E('(typeof ctfMenuOpen === "function" && ctfMenuOpen())')) { this.lastPos = null; return; }
     const busy = me.hitstun > 0 || me.frozen > 0 || me._heldBy != null || me.rooted > 0 || me.dead || me._jail != null || me._lag > 0;
     if (!this.lastPos || busy || !moving) { this.lastPos = { x: me.x, y: me.y, f, hops: 0 }; return; }
     if (this.wo.held.has(MOVE_KEYS.up) && !this._upWas) this.lastPos.hops = (this.lastPos.hops || 0) + 1;
     this._upWas = this.wo.held.has(MOVE_KEYS.up);
     if (Math.abs(me.x - this.lastPos.x) > 12 || Math.abs(me.y - this.lastPos.y) > 12) { this.lastPos = { x: me.x, y: me.y, f, hops: 0 }; return; }
-    if (f - this.lastPos.f >= 600 && (this.lastPos.hops || 0) < 3) { this.lastPos.f = f - 300; return; }   // a wall the player never tried to jump over is not a bug
+    if (!OPT.args.legacy && f - this.lastPos.f >= 600 && (this.lastPos.hops || 0) < 3) { this.lastPos.f = f - 300; return; }   // a wall the player never tried to jump over is not a bug
     if (f - this.lastPos.f >= 600) {
       this.stats.stuck++;
-      note('STUCK', 'fighter-stuck', `${me.name}: held a move key for 10 s and did not move (mode ${S.mode})`, { detail: `at x=${Math.round(me.x)} y=${Math.round(me.y)} onground=${me.onground} stage=${this.wo.E('stage.id')}` });
+      note('STUCK', 'fighter-stuck', `${me.name}: held a move key for 10 s and did not move (mode ${S.mode})`, { detail: `stage=${this.wo.E('stage.id')} ${fdiag(this.wo, me)}` });
       this.lastPos = { x: me.x, y: me.y, f, hops: 0 };
     }
   }
@@ -494,11 +510,13 @@ class Sim {
     if (!wo.running() || wo.paused()) return false;
     const S = readMatch(wo);
     if (this.player) this.player.tick(S);
+    if (OPT.args.prof) w.__pt.fnT = Object.create(null);
     const t0 = now();
     try { w.step(); } catch (e) { note('BUG', 'step-throws', `step() threw: ${clipMsg(e && e.message || e)}`, { detail: String(e && e.stack).split('\n').slice(0, 4).join(' | ') }); this.thrown = (this.thrown || 0) + 1; if (this.thrown > 5) return false; }
     const t1 = now();
     if (this.f % this.drawEvery === 0) { try { w.draw(); } catch (e) { note('BUG', 'draw-throws', `draw() threw: ${clipMsg(e && e.message || e)}`, { detail: String(e && e.stack).split('\n').slice(0, 4).join(' | ') }); this.thrownD = (this.thrownD || 0) + 1; if (this.thrownD > 5) return false; } }
     const dt = t1 - t0;
+    if (OPT.args.prof && dt > 40 && this.f > 90) { const top = Object.entries(w.__pt.fnT).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ${v.toFixed(0)}ms`); (STATS.spikes = STATS.spikes || []).push({ scene: CUR.scene, seed: CUR.seed, frame: this.f, ms: +dt.toFixed(0), phase: S.mode + ':' + (S.mode === 'ctf' ? this.wo.E('CTF.live ? CTF.live.phase : "-"') : 'play'), top }); }
     this.f++; wo.frame++; CUR.frame = wo.frame;
     this.perf(dt, S);
     if (this.f % 10 === 0) this.watch(S);
@@ -532,23 +550,25 @@ class Sim {
   }
   watchCpu(S, fs) {
     const live = fs.filter((f) => !f.dead && f.controller !== 'local' && !f.you && f.controller !== 'still' && f.controller !== 'trainer' && f.controller !== 'remote');
-    const foesAlive = fs.filter((f) => !f.dead).length > 1;
+    const foesAlive = fs.filter((f) => !f.dead).length > 1 && (S.mode !== 'boss' || (S.bosses && S.bosses.length > 0));   // Boss Rush: the gap between two bosses is not idling
     for (const f of live) {
       let c = this.cpu.get(f.idx);
       const s = [Math.round(f.x / 3), Math.round(f.y / 3), f.atkCd, f.spCd, f.jumps, f._atkSeq || 0].join(',');
       if (!c) { c = { s, t: this.f, reported: false }; this.cpu.set(f.idx, c); continue; }
+      if (!foesAlive) { c.t = this.f; c.s = s; continue; }
       if (c.s !== s || f.hitstun > 0 || f.frozen > 0 || f._heldBy != null || f.invuln > 100 || f.rooted > 0 || f._jail != null) { c.s = s; c.t = this.f; c.reported = false; }
       else if (this.f - c.t >= 600 && !c.reported && foesAlive && S.t > 240) {
         c.reported = true;
         STATS.cpuIdle.push({ fighter: f.name, mode: S.mode, stage: this.wo.E('stage.id'), scene: CUR.scene, seed: CUR.seed });
-        note('FEEL', 'cpu-idle', `a CPU (${f.name}) did not move or act for 10 s in a ${S.mode} match while foes were alive`, { detail: `${f.name} at x=${Math.round(f.x)} y=${Math.round(f.y)} on ${this.wo.E('stage.id')}` });
+        note('FEEL', 'cpu-idle', `a CPU (${f.name}) did not move or act for 10 s in a ${S.mode} match while foes were alive`, { detail: `${f.name} on ${this.wo.E('stage.id')}; aiMode ${f.aiMode} aiTarget ${f.aiTarget ? (f.aiTarget.name || f.aiTarget.type) : 'none'} aiTimer ${Math.round(f.aiTimer)}; boss ${this.wo.E('(function(){ var b = summons.find(function(s){return s.type==="boss"}); return b ? b.name + " tel " + b._telKind + " phase " + b._phase + " x" + Math.round(b.x) + " y" + Math.round(b.y) : "none"; })()')}; ${fdiag(this.wo, f)}` });
       }
     }
     // bunched in a corner
     if (this.f % 60 === 0 && live.length >= 3 && S.mode !== 'boss') {
-      const nearL = live.filter((f) => f.x < S.WW * 0.18).length, nearR = live.filter((f) => f.x > S.WW * 0.82).length;
+      const calm = (f) => !live.some((g) => g.team !== f.team && Math.hypot(g.x - f.x, g.y - f.y) < 450);   // a brawl at the spawn is a fight, not bunching
+      const nearL = live.filter((f) => f.x < S.WW * 0.18 && calm(f)).length, nearR = live.filter((f) => f.x > S.WW * 0.82 && calm(f)).length;
       if (nearL >= 3 || nearR >= 3) this.bunchT += 60; else this.bunchT = Math.max(0, this.bunchT - 120);
-      if (this.bunchT >= 600) { this.bunchT = -3000; STATS.bunched.push({ scene: CUR.scene, seed: CUR.seed, mode: S.mode }); note('FEEL', 'cpu-bunched', `3 or more CPUs stood bunched in one corner of the ${S.mode} arena for 10 s`, { detail: `stage ${this.wo.E('stage.id')}` }); }
+      if (this.bunchT >= 600) { this.bunchT = -3000; STATS.bunched.push({ scene: CUR.scene, seed: CUR.seed, mode: S.mode }); note('FEEL', 'cpu-bunched', `3 or more CPUs stood bunched in one corner of the ${S.mode} arena for 10 s`, { detail: `stage ${this.wo.E('stage.id')}, WW ${S.WW}; ${live.map((f) => f.name + ' team' + f.team + ' x' + Math.round(f.x) + ' y' + Math.round(f.y) + ' mode' + f.aiMode + ' tgt ' + (f.aiTarget ? f.aiTarget.name : '-')).join(', ')}` }); }
     }
   }
 }
@@ -920,7 +940,7 @@ async function bossScene(wo, rng, args) {
     if (bs.length) { sawBoss = true; const hp = bs[0].hp; if (bossHp0 == null) bossHp0 = hp; if (lastHp == null || hp < lastHp - 0.01) { noDamageSince = s.f; } lastHp = hp; }
     // the boss was beaten and the next one is up: one boss is enough for a scene (two when the first fell quickly)
     if (wo.E('BOSSRUSH.cleared') >= 2) return true;
-    if (sawBoss && s.f - noDamageSince > 2400 && s.f > 3000 && wo.E('summons.filter(function(m){return m.type==="boss"}).length')) { note('FEEL', 'boss-untouched', `${bossName}: the player could not damage the boss for 40 s (fighter ${you}, persona ${persona})`, { detail: `boss hp ${Math.round(lastHp)}/${Math.round(bossHp0)}` }); noDamageSince = s.f + 99999; }
+    if (sawBoss && s.f - noDamageSince > 2400 && s.f > 3000 && wo.E('summons.filter(function(m){return m.type==="boss"}).length')) { note('FEEL', 'boss-untouched', `${wo.E('(summons.find(function(m){return m.type==="boss"})||{}).name') || bossName}: nobody damaged the boss for 40 s (player ${you}, persona ${persona}, scene started at ${bossName})`, { detail: `boss hp ${Math.round(lastHp)}/${Math.round(bossHp0)}; ${wo.E('(function(){ var b = summons.find(function(s){return s.type==="boss"}); return b ? "tel " + b._telKind + " phase " + b._phase + " atk " + b.attack + " x" + Math.round(b.x) + " y" + Math.round(b.y) + " r" + Math.round(b.r) + " stationary " + b.stationary + " | " + fighters.map(function(f){ return f.name + (f.dead ? " dead" : " x" + Math.round(f.x) + " y" + Math.round(f.y) + " cd" + f.atkCd); }).join(" ; ") : "none"; })()')}` }); noDamageSince = s.f + 99999; }
     return false;
   });
   sim.player.releaseAll(); wo.w.__ptCap = false; sampleCanvasText(wo);
@@ -1432,6 +1452,7 @@ function writeReport(stamp, started, partial) {
   md.push('## Performance (step ms, headless; compare phases, not absolutes)');
   for (const p of perf.sort((a, b) => b.worstMs - a.worstMs)) md.push(`- ${p.phase}: ${p.frames} frames, avg ${p.avgMs} ms, p50 ${p.p50}, p99 ${p.p99}, worst ${p.worstMs} ms (${p.worstAt}), over 16 ms: ${p.over16}, over 50 ms: ${p.over50}`);
   md.push('');
+  if (STATS.spikes && STATS.spikes.length) { md.push('## Slow frames over 40 ms and what was in them (--arg prof=1)'); for (const sp of STATS.spikes.slice(0, 60)) md.push(`- ${sp.scene}#${sp.seed} frame ${sp.frame} (${sp.phase}) ${sp.ms} ms: ${sp.top.join(', ')}`); md.push(''); }
   md.push('## Feel and balance signals');
   for (const o of obs) md.push(`- ${o.text}`);
   md.push('');
