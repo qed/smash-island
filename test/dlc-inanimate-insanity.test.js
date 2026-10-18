@@ -391,7 +391,7 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       worldPlats = []; air(400, 100); tp({ down: true }); out.floorFeet = Math.round(A.y + A.r - gy);
       air(1000, 100); tp({ right: true }); out.inWorld = A.x + A.r <= WW && A.x - A.r >= 0;
       air(WW + 40, 100); var off = tp({}); out.offSide = { dy: off.d[1], len: off.len, inWorld: A.x + A.r <= WW && A.x - A.r >= 0 };   // knocked past the side of the screen
-      A.x = 500; A.y = -176; A.vx = 0; A.vy = 0; A.onground = false; A._tpUsed = false; var top = tp({ left: true });   // over the top of the screen, aimed left (the review's 443 px trip)
+      A.x = 500; A.y = -176; A.vx = 0; A.vy = 0; A.onground = false; A._tpUsed = false; var top = tp({ left: true });   // over the top of the screen, aimed left (the review's 443 px trip at 340; uncapped from here it would be 313 px)
       out.overTop = { dx: top.d[0], len: top.len, inWorld: A.y - A.r >= 0 && A.x - A.r >= 0 && A.x + A.r <= WW };
       var savedBig = isBig, savedFloors = floors, savedBases = bases; isBig = function(){ return true; }; bases = [];   // a big arena: the main floor is a slab over the pit
       floors = [{ level:0, y:gy, x:100, w:WW - 200 }]; worldPlats = [{ x:100, y:gy, w:WW - 200, h:46, solid:true }];

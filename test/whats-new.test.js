@@ -61,7 +61,8 @@ describe('the changelog', () => {
     const n = w.eval('CHANGELOG.length');
     expect(w.document.querySelectorAll('#changeList .clentry').length).toBe(n);
     // The newest entry's date. RESTATED 2026-10-18: it was v70's 14 October; the owner's change that day ("the move should be teleport-not
-    // levitate. it should go 340 px.") added v71 on top, so the first block is 18 October now.
+    // levitate. it should go 340 px.") added v71 on top, so the first block is 18 October now. (v72, the same day, tells players who saw v71
+    // that the trip is shorter now: "bows special should go less distance" -- "240 px".)
     expect(w.document.querySelector('#changeList .cldate').textContent).toContain('18 October 2026');
     const dates = w.eval('CHANGELOG.map(function(e){ return e.date; })');
     expect([...dates].sort().reverse(), 'newest first').toEqual(dates);
