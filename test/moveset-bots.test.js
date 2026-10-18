@@ -81,11 +81,12 @@ describe('the CPU uses the moves of batches 2 to 7 too, and only the ones that r
         return r;
       };
       let r = match(14);
-      const count = (u) => ['ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da'].reduce((a, k) => a + (u[k] || 0), 0);
-      let n = count(r.used);
       // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": the side-tilt
-      // is off on the ground, and Saw's one tilt in the seed-14 match was her side-tilt (Teeth Jab), so a fighter that shows none there plays one more match, seed 15)
-      if (n < 1) { r = match(15); n = count(r.used); }
+      // is off on the ground and can never be counted, so 'ft' is left out of the moves counted. TV's one tilt or aerial in the seed-14 match was a
+      // side-tilt ({"ft":1} before), and that press is now his jab, so TV alone -- no other fighter -- plays one more match, seed 15)
+      const count = (u) => ['ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da'].reduce((a, k) => a + (u[k] || 0), 0);
+      let n = count(r.used);
+      if (n < 1 && name === 'TV') { r = match(15); n = count(r.used); }
       total += n;
       if (n < 1) bad.push(`${name}: no tilt or aerial in 3600 frames (${JSON.stringify(r.used)})`);
     }
