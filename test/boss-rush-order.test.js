@@ -89,6 +89,8 @@ describe('Boss Rush difficulty, as measured', () => {
   // Two (Boss 10) was the same until the owner, 2026-10-03: "nerf two", landing "~2.2, between Dragon and Four", by "more delay between
   // when an attack is called and when it happens" (BOSS_TEL_PACE) and "Longer gaps between turns" (TWO.gaps), the Power of Two orbs
   // ("the attack that feels unfair") eased, and the phase-3 mace sinking while you ground him. His row is as it was.
+// After his grounding fix and dodge buffs (2026-10-05/06) he measured under the Dragon beyond the noise; asked, the owner chose "Make Two harder"
+// (2026-10-18): his gaps went halfway back to what they were before "nerf two" (TWO.gaps 140 / 110 / 95), nothing else of his changed.
   it('Evil Leafy and Two are measured too, with their rows as they were', () => {
     for (const n of ['Evil Leafy', 'Two']) expect(at(n).of).toBe(RUNS);
     const rows = JSON.parse(W.eval(`JSON.stringify(BOSS_ROSTER.filter(function(b){ return b.name==='Evil Leafy' || b.name==='Two'; })
