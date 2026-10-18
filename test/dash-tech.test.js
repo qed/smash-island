@@ -85,10 +85,10 @@ describe('dash tech (Leafy; Liy and Woody are the other dashers)', () => {
     W.eval('fighters[0].y = groundY()-24; fighters[0].onground = true; fighters[0].vy = 0;'); steps(2);
     expect(J('!!fighters[0]._airDash'), 'landing refills it').toBe(false);
   });
-  it('a dasher that is not a person or a converted fighter plays as it always did (no hyper from a CPU of an unconverted kit)', () => {
+  it('a CPU dasher plays as it always did: its jump turns a dash into a hyper only when its own moveset logic asks (restated 2026-10-18: Woody was the unconverted dasher; batch 7 converted him, so the pin is the CPU rule itself)', () => {
     stage('Woody'); W.eval('fighters[0].controller = "ai"; fighters[0].you = false;');
-    expect(J('mtOn(fighters[0])')).toBe(false);
-    expect(J('mtDashJump(fighters[0], { jump:true })')).toBe(false);
+    expect(J('mtOn(fighters[0])'), 'a converted fighter has movetech').toBe(true);
+    expect(J('mtDashJump(fighters[0], { jump:true })'), 'but a CPU jump alone is no hyper').toBe(false);
   });
   it('the switch is on in Capture the Flag and in no other mode', () => {
     const on = (mode) => J(`(function(){ var m = SETTINGS.mode; SETTINGS.mode = ${JSON.stringify(mode)}; var r = window.__hyperOk(); SETTINGS.mode = m; return r; })()`);
