@@ -41,6 +41,10 @@ const PUBLISHED_HTML = PUBLISHED_FILES.filter((f) => f.endsWith('.html'));
 const SOURCE = join(PUBLISH_ROOT, 'index.html');
 const MUSIC_DIR = `${PUBLISH_ROOT}/assets/music`;
 const SPRITE_DIR = `${PUBLISH_ROOT}/assets/sprites`;
+// Capture the Flag's data, fetched relative to index.html like the music and sprites: the route graphs (bd4d388, "route graphs
+// are made offline and shipped ... the game loads one at match start") and the projectile table aiProjInfo reads (351d575).
+// JSON data only, never code: the rule that contains it is in 'confines assets/' below.
+const CTF_DIR = `${PUBLISH_ROOT}/assets/ctf`;
 
 // ---------------------------------------------------------------------------------------------
 // RETARGETED when the thinking teammate landed (feat/team-ai). READ THIS BEFORE WIDENING ANYTHING.
@@ -116,6 +120,10 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
       // Search basics: what a crawler fetches before it indexes the page, both pointing at the production address.
       `${PUBLISH_ROOT}/robots.txt`,
       `${PUBLISH_ROOT}/sitemap.xml`,
+      // Capture the Flag data (bd4d388, 351d575): the projectile table by name; the route graphs by RULE below, one per map,
+      // side and size band the game's CTF_MAPS can build, checked against the game rather than a hand list.
+      `${CTF_DIR}/proj-info.json`,
+      ...PUBLISHED_FILES.filter(f => f.startsWith(`${CTF_DIR}/`) && f.endsWith('-graph.json')),
       // sprites are checked by RULE below rather than pinned by name — there are 59 of them and a
       // hand-maintained list would be pure noise that everyone learns to update without reading
       ...PUBLISHED_FILES.filter(f => f.startsWith(`${SPRITE_DIR}/`) && f.endsWith('.png')),
@@ -155,6 +163,14 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
         .map(src => `${PUBLISH_ROOT}/${src}`.replace(/\\/g, '/')));
     const orphans = published.map(f => f.replace(/\\/g, '/')).filter(f => !referenced.has(f));
     expect(orphans, 'sprite files that no fighter uses — dead weight on every page load').toEqual([]);
+    // The route graphs' version of the same rule, so the spread above cannot let a stray graph through: exactly one per map, side
+    // and size band the game can build, named the way ctfGraphFetch asks for it.
+    const wantGraphs = w.eval(`Object.keys(CTF_MAPS).reduce(function(a, id){ var d = CTF_MAPS[id];
+              (d.asym ? ['', '-swap'] : ['']).forEach(function(sw){ (d.bands ? CTF_BAND_SFX : ['']).forEach(function(b){
+                a.push(id + sw + b.replace('.', '-') + '-graph.json'); }); }); return a; }, [])`)
+      .map(n => `${CTF_DIR}/${n}`).sort();
+    expect(PUBLISHED_FILES.filter(f => f.startsWith(`${CTF_DIR}/`) && f.endsWith('-graph.json')).sort(),
+      'route graphs on the deploy vs the ones the game fetches').toEqual(wantGraphs);
     // …and nothing new at the top level either, so a stray sibling directory is caught even if the
     // recursive pin above is ever relaxed to a rule.
     expect(readdirSync(PUBLISH_ROOT).sort()).toEqual(['assets', 'index.html', 'og-image.png', 'robots.txt', 'sitemap.xml']);
@@ -167,11 +183,16 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     expect(PUBLISHED_FILES.filter((f) => /\.html?$/i.test(f))).toEqual([`${PUBLISH_ROOT}/index.html`]);
   });
 
-  it('confines assets/ to the music and sprite subtrees', () => {
-    // Two media subtrees are sanctioned; each has its own content rule below. Anything landing
-    // directly in assets/, or in a third subdirectory, belongs to neither rule and is an accident.
+  it('confines assets/ to the music, sprite and Capture the Flag data subtrees', () => {
+    // Three subtrees are sanctioned: the two media ones, each with its own content rule below, and Capture the Flag's
+    // data (bd4d388, 351d575), whose rule is here: the projectile table and route graphs, flat, named as the game fetches
+    // them, and every one real JSON (data, never a script or a saved error page). Anything landing directly in assets/,
+    // or in a fourth subdirectory, belongs to no rule and is an accident.
+    const ctfData = (f) => f.startsWith(`${CTF_DIR}/`)
+      && /^(proj-info|[a-z]+(-swap)?(-[sl])?-graph)\.json$/.test(f.slice(CTF_DIR.length + 1))
+      && (() => { try { JSON.parse(readFileSync(f, 'utf8')); return true; } catch { return false; } })();
     const stray = walk(join(PUBLISH_ROOT, 'assets'))
-      .filter((f) => !f.startsWith(`${MUSIC_DIR}/`) && !f.startsWith(`${SPRITE_DIR}/`));
+      .filter((f) => !f.startsWith(`${MUSIC_DIR}/`) && !f.startsWith(`${SPRITE_DIR}/`) && !ctfData(f));
     expect(stray, `unexpected files under the published assets/ tree: ${stray.join(', ')}`).toEqual([]);
   });
 
