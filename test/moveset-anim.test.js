@@ -10,7 +10,8 @@ const KITS = { Puffball: 'fly', Bow: 'chair', Pencil: 'van', Leafy: 'dash', Fire
   Needle: 'counter', Flower: 'quake', 'Tennis Ball': 'serve', Teardrop: 'kick', Bubble: 'float', Rocky: 'barf', Coiny: 'slap', 'Golf Ball': 'zapshooter',
   Tree: 'timber', Roboty: 'antenna', David: 'seriously', Sidewalky: 'slam', Bell: 'ring', TV: 'static', Toothpaste: 'paste', Lollipop: 'sucker',
   Book: 'define', Fries: 'fry', Gelatin: 'freeze', Nickel: 'flip', Ruby: 'beam', 'Yellow Face': 'buynow', 'Barf Bag': 'splash', Basketball: 'dribble',
-  Bracelety: 'sign', Fanny: 'gust', Gaty: 'reflect', Grassy: 'grasstree', Lightning: 'zap', Liy: 'switch', Loser: 'cool', Marker: 'ink' };
+  Bracelety: 'sign', Fanny: 'gust', Gaty: 'reflect', Grassy: 'grasstree', Lightning: 'zap', Liy: 'switch', Loser: 'cool', Marker: 'ink',
+  Money: 'payday', Naily: 'spike', Pillow: 'fluff', Remote: 'battery', Rose: 'thorn', Saw: 'saw', Taco: 'jawbreaker', Woody: 'fraidy' };
 const SLOTS = ['jab', 'ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da', 'side', 'grab', 'pummel', 'fthrow', 'bthrow', 'uthrow', 'dthrow', 'special', 'up', 'down', 'smash', 'finisher'];
 const OLD_FRAMES = ['fly.jab', 'fly.na', 'beam.na', 'gust.na'];
 let W, MVA, SPIT;   // SPIT: the moves whose kind is the spit (Firey's Ember Spit, Puffball's spit): the body swells and spits, which is its own frames already

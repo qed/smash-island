@@ -66,22 +66,22 @@ describe('the CPU uses the moveset', () => {
   });
 });
 
-describe('the CPU uses the moves of batches 2 to 6 too, and only the ones that reach', () => {
-  it('each of the forty, played by the CPU, uses a tilt or an aerial of its own at least once (the ones whose strength is built on the old rules keep most jab presses as the jab), and never errors', () => {
+describe('the CPU uses the moves of batches 2 to 7 too, and only the ones that reach', () => {
+  it('each of the forty-eight, played by the CPU, uses a tilt or an aerial of its own at least once (the ones whose strength is built on the old rules keep most jab presses as the jab), and never errors', () => {
     const bad = []; let total = 0;
-    for (const name of ['Firey', 'Pen', 'Blocky', 'Ice Cube', 'Match', 'Snowball', 'Pin', 'Bomby', 'Needle', 'Flower', 'Tennis Ball', 'Teardrop', 'Bubble', 'Rocky', 'Coiny', 'Golf Ball', 'Tree', 'Roboty', 'David', 'Sidewalky', 'Bell', 'TV', 'Toothpaste', 'Lollipop', 'Book', 'Fries', 'Gelatin', 'Nickel', 'Ruby', 'Yellow Face', 'Barf Bag', 'Basketball', 'Bracelety', 'Fanny', 'Gaty', 'Grassy', 'Lightning', 'Liy', 'Loser', 'Marker']) {
+    for (const name of ['Firey', 'Pen', 'Blocky', 'Ice Cube', 'Match', 'Snowball', 'Pin', 'Bomby', 'Needle', 'Flower', 'Tennis Ball', 'Teardrop', 'Bubble', 'Rocky', 'Coiny', 'Golf Ball', 'Tree', 'Roboty', 'David', 'Sidewalky', 'Bell', 'TV', 'Toothpaste', 'Lollipop', 'Book', 'Fries', 'Gelatin', 'Nickel', 'Ruby', 'Yellow Face', 'Barf Bag', 'Basketball', 'Bracelety', 'Fanny', 'Gaty', 'Grassy', 'Lightning', 'Liy', 'Loser', 'Marker', 'Money', 'Naily', 'Pillow', 'Remote', 'Rose', 'Saw', 'Taco', 'Woody']) {
       // a fighter whose CPU keeps nearly all its jab presses (aiK under 0.2: Blocky, Bubble, Tennis Ball, Tree, Roboty, Bell, Lollipop, Book, Fries, Gelatin, Ruby) is shown to be ABLE to use its moves with its knob lifted to 1
       const kit = W.eval(`ROSTER.find(function(r){ return r.name === ${JSON.stringify(name)}; }).kit.special`);
       const low = W.eval(`MOVESETS.${kit}.aiK != null && MOVESETS.${kit}.aiK < 0.2`);
       if (low) W.eval(`MOVESETS.${kit}._aiK0 = MOVESETS.${kit}.aiK; MOVESETS.${kit}.aiK = 1;`);
-      const r = play(name, 'Woody', 14, 3600);
+      const r = play(name, 'Pen', 14, 3600);   // (restated 2026-10-18: the stand-in foe was Woody, an unconverted fighter until batch 7; his converted CPU plays a different match)
       if (low) W.eval(`MOVESETS.${kit}.aiK = MOVESETS.${kit}._aiK0;`);
       if (r.errs.length) bad.push(`${name}: ${r.errs[0]}`);
       const n = ['ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da'].reduce((a, k) => a + (r.used[k] || 0), 0);
       total += n;
       if (n < 1) bad.push(`${name}: no tilt or aerial in 3600 frames (${JSON.stringify(r.used)})`);
     }
-    if (total < 40) bad.push(`only ${total} tilts and aerials between the forty`);
+    if (total < 48) bad.push(`only ${total} tilts and aerials between the forty-eight`);
     expect(bad, bad.join(' ; ')).toEqual([]);
   });
 });

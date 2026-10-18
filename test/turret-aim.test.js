@@ -51,3 +51,24 @@ describe('the turret misses now', () => {
     expect(strong.hits).toBeGreaterThanOrEqual(weak.hits);
   });
 });
+
+// "turret does nothing in boss rush" (the owner, 2026-10-18): it only looked for fighters to shoot, so with a boss alone on the
+// field it sat there. It now shoots a boss (or a boss's add) in range, and the shots land.
+describe('the turret in Boss Rush', () => {
+  it('shoots the boss, and the shots take its health down', () => {
+    const r = W.eval(`(function(){
+      SETTINGS.mode='boss'; SETTINGS.items=false; running=true; TESTMODE.active=false; BOSSRUSH={active:false,bossIdx:0,cleared:0,defeated:false,loop:0,dmgMult:1};
+      worldPlats=[]; summons=[]; projectiles=[]; items=[]; particles=[]; beams=[]; tendrils=[];
+      var A = makeFighter(ROSTER.find(function(r){ return r.name==='Tennis Ball'; }), 400, groundY()-24, 0);
+      A.team=0; A.controller='still'; A.stocks=99; A.face=1; A.you=true; fighters=[A];
+      spawnBossRushBoss(); var b = summons[0]; b._atkTimer=1e9; b.x = 400 + 300; b.hp = b.maxHp = 5000; step();
+      A.spCd=0; A.atkCd=0; A.invuln=0; A.hitstun=0; A._gadget='turret'; doSpecial(A);
+      var by0 = b.y, fired = 0, _add = addProj;
+      addProj = function(p){ if (p.shape==='gadgetShot') fired++; return _add(p); };
+      try { for (var i=0; i<160; i++){ b.x = 700; b.y = by0; b.vx = 0; b.vy = 0; step(); } } finally { addProj = _add; }
+      return { fired: fired, dealt: +(5000 - b.hp).toFixed(2) };
+    })()`);
+    expect(r.fired, 'the turret fires at the boss').toBeGreaterThan(0);
+    expect(r.dealt, 'and its shots land').toBeGreaterThan(0);
+  });
+});
