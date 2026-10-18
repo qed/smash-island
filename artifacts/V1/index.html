@@ -47872,6 +47872,14 @@ function climbJump(f){
   }
   return false;
 }
+// Up a wall navAround says to climb ({climb}): press into it, jump, the second jump near the top of the rise (climbJump: a jump
+// held down is not pressed again, so holding it from the ground spends only the first), and then the up-special. Not Bow's: hers
+// is a drop (aiBowRecover).
+function aiClimbWall(f, inp, dir, sp){
+  inp.left = dir < 0; inp.right = dir > 0;
+  if(climbJump(f)) inp.jump = true;
+  else if(!f.onground && f.jumps <= 0 && f.spCd <= 0 && !f._usedAirSpecial && sp !== 'chair'){ inp.special = true; inp.up = true; }
+}
 function navUp(f, t){
   // Find a platform the fighter can hop onto that gets it closer to a target ABOVE it.
   // Works in both single-screen (one-way tops) and big-tower mode.
@@ -49245,11 +49253,18 @@ function aiThink(f){
   if(f._recover>0){
     f._recover--;
     const dir = dx<0?-1:1;
-    // if we're wedged against a SOLID, go around its edge rather than jumping into it
+    // if we're wedged against a SOLID, go around its edge rather than jumping into it -- or up it, when it is low enough to climb.
+    // navAround answers {jump}, {climb} or {detourX}, never an x: this branch and the traversal's below read `obst.x`, which is
+    // undefined, so left and right were both false, and a CPU at a tall wall stood there hopping on the spot (owner, 2026-10-18:
+    // "Fix it"). Measured on the teams arena, a CPU sent from mid-map at foes up on the left stood at the shaft's outer wall and
+    // climbed 320 px on 4 of 8 seeds; with this it goes in by the shaft's floor doorway and climbs 799 on all 8.
     const obst = navAround(f, dir);
     if(obst && !obst.jump){
-      inp.left = obst.x < f.x; inp.right = obst.x >= f.x;
-      if(f.onground && rn<0.35) inp.jump=true;
+      if(obst.climb) aiClimbWall(f, inp, dir, sp);
+      else { inp.left = obst.detourX < f.x; inp.right = obst.detourX >= f.x;
+             if(f.onground && rn<0.35) inp.jump=true; }
+      if(f.x<100) { inp.left=false; inp.right=true; }
+      if(f.x>WW-100){ inp.right=false; inp.left=true; }
       return finishAI(f,inp,sp);
     }
     // jump up-and-over toward the target; use vertical special if available to clear tall geometry
@@ -49323,7 +49338,8 @@ function aiThink(f){
     const obst = navAround(f, wantDir);
     if(obst){
       if(obst.jump){ if(adx>30){ inp.left=wantDir<0; inp.right=wantDir>0; } if(f.onground||f.jumps>0) inp.jump=true; }
-      else { inp.left = obst.x < f.x; inp.right = obst.x >= f.x;
+      else if(obst.climb) aiClimbWall(f, inp, wantDir, sp);   // (see the stuck recovery above: this read obst.x, which there is none of)
+      else { inp.left = obst.detourX < f.x; inp.right = obst.detourX >= f.x;
              if(f.onground && rn<0.2) inp.jump=true; }
       if(f.x<90){ inp.left=false; inp.right=true; }
       if(f.x>WW-90){ inp.right=false; inp.left=true; }
