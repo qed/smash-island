@@ -906,14 +906,14 @@ describe('the turn order and the wind-ups: six attacks, the signature between ea
     expect(r.row).toEqual(ROW);
   });
 
-  it('the gap holds while a move of his is in the air and the gap starts when it ends: 180 / 150 / 130 ("nerf two": "Longer gaps between turns", 2026-10-03; it was 100 / 72 / 60), paced 1.2 -- and the shared SEEKERS! and RING are still the shared ones other bosses use', () => {
+  it('the gap holds while a move of his is in the air and the gap starts when it ends: 140 / 110 / 95 ("nerf two": "Longer gaps between turns", 2026-10-03, made 100 / 72 / 60 into 180 / 150 / 130; "Make Two harder", 2026-10-18, took them halfway back), paced 1.2 -- and the shared SEEKERS! and RING are still the shared ones other bosses use', () => {
     const r = W.eval(`(function(){
       var held = { attack:'two', _phase:1, _tw:{ k:'sun' } }, base = [1, 2, 3].map(function(ph){ return bossAtkGapBase({ attack:'two', _phase:ph }); });
       var paced = [1, 2, 3].map(function(ph){ return bossAtkGap({ attack:'two', _phase:ph }); });
       return { held: bossAtkGap(held), base: base, paced: paced, ring: typeof BOSS_MOVES.ring, seekers: typeof BOSS_MOVES.seekers, ringFour: BOSS_EXTRA['Four'] }; })()`);
     expect(r.held, 'a hold is no gap').toBe(1e6);
-    expect(r.base, 'his own 180 / 150 / 130 ("nerf two": "Longer gaps between turns", the owner, 2026-10-03)').toEqual([180, 150, 130]);
-    expect(r.paced, 'BOSS_PACE applied once, centrally').toEqual([216, 180, 156]);
+    expect(r.base, 'his own 140 / 110 / 95 ("nerf two" made them 180 / 150 / 130, the owner, 2026-10-03; halfway back for "Make Two harder", 2026-10-18)').toEqual([140, 110, 95]);
+    expect(r.paced, 'BOSS_PACE applied once, centrally').toEqual([168, 132, 114]);
     expect([r.ring, r.seekers], 'the shared moves stay for the bosses that use them').toEqual(['function', 'function']);
   });
 
@@ -928,8 +928,8 @@ describe('the turn order and the wind-ups: six attacks, the signature between ea
       summons = []; projectiles = []; return out; })()`);
     expect(r.held).toBe(true);
     expect(r.ended).toBe(true);
-    expect(r.gap, 'the gap counts down from the end of the move: 180 in phase 2').toBeLessThanOrEqual(180);
-    expect(r.gap).toBeGreaterThan(160);
+    expect(r.gap, 'the gap counts down from the end of the move: 132 in phase 2').toBeLessThanOrEqual(132);
+    expect(r.gap).toBeGreaterThan(112);
   });
 });
 

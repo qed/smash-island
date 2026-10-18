@@ -478,8 +478,15 @@ describe('TEAM_PLAN updates mid-match, and aiThink reads it', () => {
     // finishAI's new specialUsage branch must not consume a random draw on the DEFAULT path, or
     // every recorded golden would drift by one number and the whole golden suite would go red for
     // a feature nobody switched on. The `&&` chain short-circuits before Math.random() on 'normal'.
-    const w = huddle();
-    const draws = (plan) => w.eval(`
+    //
+    // Every count is taken on the SAME fighter in the SAME state: each draw boots its own window
+    // from the same seed, so startMatch deals the identical roster, positions and CPU, and the
+    // ONLY difference between the four runs is the plan. (This used to call startMatch four times
+    // in one window, which dealt a different random roster each time. finishAI also runs the
+    // fighter's moveset AI (aiMovesetUse), which rolls only for a fighter that has a moveset, so
+    // the counts drifted with WHICH fighter was dealt, not with the plan -- and went red the day
+    // Naily got a moveset, with the plan code untouched.)
+    const draws = (plan) => huddle().eval(`
       (function(){
         startMatch();
         TEAM_PLAN = {};
@@ -489,14 +496,15 @@ describe('TEAM_PLAN updates mid-match, and aiThink reads it', () => {
         Math.random = function(){ n++; return real(); };
         finishAI(f, {left:false,right:false,jump:false,attack:false,special:true,smash:false}, 'ember');
         Math.random = real;
-        return n;
+        return { n: n, who: f.name };
       })()`);
-    const baseline = draws(null);
-    expect(draws(null), 'the default path is stable').toBe(baseline);
-    expect(draws({ specialUsage: 'normal' }), "and a plan that says 'normal' costs nothing either")
-      .toBe(baseline);
-    expect(draws({ specialUsage: 'hoard' }), 'only an actual instruction reaches for the dice')
-      .toBe(baseline + 1);
+    const base = draws(null), again = draws(null);
+    const normal = draws({ specialUsage: 'normal' }), hoard = draws({ specialUsage: 'hoard' });
+    expect([again.who, normal.who, hoard.who], 'all four counts are taken on the same CPU fighter')
+      .toEqual([base.who, base.who, base.who]);
+    expect(again.n, 'the default path is stable').toBe(base.n);
+    expect(normal.n, "and a plan that says 'normal' costs nothing either").toBe(base.n);
+    expect(hoard.n, 'only an actual instruction reaches for the dice').toBe(base.n + 1);
   });
 });
 
