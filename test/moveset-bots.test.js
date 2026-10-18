@@ -73,11 +73,19 @@ describe('the CPU uses the moves of batches 2 to 7 too, and only the ones that r
       // a fighter whose CPU keeps nearly all its jab presses (aiK under 0.2: Blocky, Bubble, Tennis Ball, Tree, Roboty, Bell, Lollipop, Book, Fries, Gelatin, Ruby) is shown to be ABLE to use its moves with its knob lifted to 1
       const kit = W.eval(`ROSTER.find(function(r){ return r.name === ${JSON.stringify(name)}; }).kit.special`);
       const low = W.eval(`MOVESETS.${kit}.aiK != null && MOVESETS.${kit}.aiK < 0.2`);
-      if (low) W.eval(`MOVESETS.${kit}._aiK0 = MOVESETS.${kit}.aiK; MOVESETS.${kit}.aiK = 1;`);
-      const r = play(name, 'Pen', 14, 3600);   // (restated 2026-10-18: the stand-in foe was Woody, an unconverted fighter until batch 7; his converted CPU plays a different match)
-      if (low) W.eval(`MOVESETS.${kit}.aiK = MOVESETS.${kit}._aiK0;`);
-      if (r.errs.length) bad.push(`${name}: ${r.errs[0]}`);
-      const n = ['ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da'].reduce((a, k) => a + (r.used[k] || 0), 0);
+      const match = (seed) => {
+        if (low) W.eval(`MOVESETS.${kit}._aiK0 = MOVESETS.${kit}.aiK; MOVESETS.${kit}.aiK = 1;`);
+        const r = play(name, 'Pen', seed, 3600);   // (restated 2026-10-18: the stand-in foe was Woody, an unconverted fighter until batch 7; his converted CPU plays a different match)
+        if (low) W.eval(`MOVESETS.${kit}.aiK = MOVESETS.${kit}._aiK0;`);
+        if (r.errs.length) bad.push(`${name}: ${r.errs[0]}`);
+        return r;
+      };
+      let r = match(14);
+      const count = (u) => ['ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da'].reduce((a, k) => a + (u[k] || 0), 0);
+      let n = count(r.used);
+      // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": the side-tilt
+      // is off on the ground, and Saw's one tilt in the seed-14 match was her side-tilt (Teeth Jab), so a fighter that shows none there plays one more match, seed 15)
+      if (n < 1) { r = match(15); n = count(r.used); }
       total += n;
       if (n < 1) bad.push(`${name}: no tilt or aerial in 3600 frames (${JSON.stringify(r.used)})`);
     }

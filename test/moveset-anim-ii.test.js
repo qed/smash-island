@@ -72,7 +72,8 @@ describe('the moves are armed with their own label, and it goes out on the wire'
       var out = {};
       var tryit = function(id, fn){ fresh(); fn(); out[id] = A._atkMove; };
       tryit('heavy.jab', function(){ doAttack(A); });
-      ['ft','ut','dt'].forEach(function(k){ tryit('heavy.'+k, function(){ mvStart(A, MOVESETS.heavy[k], k); }); });
+      // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": no side-tilt; ←/→ + X on the ground is the jab, armed as 'heavy.jab')
+      ['ut','dt'].forEach(function(k){ tryit('heavy.'+k, function(){ mvStart(A, MOVESETS.heavy[k], k); }); });
       ['na','fa','ba','ua','da'].forEach(function(k){ tryit('heavy.'+k, function(){ A.onground=false; A.y-=120; mvStart(A, MOVESETS.heavy[k], k); }); });
       // (no side special: the owner turned them off, 2026-10-16; a direction + C is the neutral special, armed as 'heavy.special')
       tryit('heavy.special', function(){ doSpecial(A); });
@@ -88,7 +89,7 @@ describe('the moves are armed with their own label, and it goes out on the wire'
       A._atkAnim = 9; A._atkMove = 'heavy.fa'; A._atkKind = 'throw';
       var wire = netFighter(A); out.wire = wire.swingMove;
       return out; })())`));
-    for (const s of SLOTS.filter((x) => x !== 'side')) expect(got['heavy.' + s], s).toBe('heavy.' + s);
+    for (const s of SLOTS.filter((x) => x !== 'side' && x !== 'ft')) expect(got['heavy.' + s], s).toBe('heavy.' + s);
     expect(got.wire).toBe('heavy.fa');
   });
 });

@@ -23,11 +23,15 @@ describe('the move list', () => {
   });
   it('a converted fighter shows its own moves; one not yet converted says what stands in for them', () => {
     const rows = (n) => J(`moveRowsFor(ROSTER.find(function(r){ return r.name===${JSON.stringify(n)}; })).map(function(r){ return r[0] + ' | ' + r[1]; }).join('\\n')`);
-    expect(rows('Pencil')).toContain('Lead Jab');
+    // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": Lead Jab, her side-tilt, is no longer listed; her up-tilt stands in, and the ←/→ + X line reads the neutral attack, aimed that way)
+    expect(rows('Pencil')).toContain('Eraser Up');
+    expect(rows('Pencil')).not.toContain('Lead Jab');
+    expect(rows('Pencil')).toContain('←/→ + X | The neutral attack, aimed that way.');
     expect(rows('Pencil')).toContain("She's Got Him");
     expect(rows('Pencil')).toContain('CLINGS');
     // (restated each batch: Firey was the example of a fighter not yet converted until batch 2; now the first playable fighter with no MOVESETS entry stands in)
     const todo = J(`ROSTER.filter(function(r){ return r.play && r.kit && !MOVESETS[r.kit.special] && !r.prize; })[0].name`);
+    expect(rows(todo)).toContain('←/→ + X | The neutral attack, aimed that way.');
     // (restated 2026-10-16: the owner removed side specials, so the one line that said 'until this fighter...' is gone; every fighter's <-/-> + C line now reads the neutral special, aimed that way)
     expect(rows(todo)).toContain('The neutral special, aimed that way.');
     expect(rows('Pencil')).toContain('The neutral special, aimed that way.');
@@ -38,13 +42,13 @@ describe('the move list', () => {
     expect(J('!!document.getElementById("pauseMovesBtn") && !!document.getElementById("pauseMoves")')).toBe(true);
     W.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; running=true; fighters=[makeFighter(Object.assign({}, ROSTER.find(function(r){return r.name==='Bow';}), {you:true}), 300, 100, 0)]; setPaused(true); togglePauseMoves();`);
     expect(J('document.getElementById("pauseMoves").style.display')).toBe('block');
-    expect(J('document.getElementById("pauseMoves").textContent')).toContain('Chair Shove');
+    expect(J('document.getElementById("pauseMoves").textContent')).toContain('Chair Lift');   // (restated 2026-10-18: Chair Shove was her side-tilt, no longer listed -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)")
     W.eval('setPaused(false)');
     expect(J('PAUSE_MOVES_OPEN')).toBe(false);
   });
   it('the character card has a Kit tab and an All moves tab', () => {
     W.eval(`chosen = ROSTER.find(function(r){ return r.name==='Leafy'; }); setMcTab('moves');`);
-    expect(J('document.getElementById("moveCard").textContent')).toContain('Quick Kick');
+    expect(J('document.getElementById("moveCard").textContent')).toContain('Leaf Whip');   // (restated 2026-10-18: Quick Kick was her side-tilt, no longer listed -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)")
     W.eval(`setMcTab('kit');`);
     expect(J('document.getElementById("moveCard").textContent')).toContain('moves');
     expect(J('document.getElementById("moveCard").querySelectorAll("button").length')).toBe(2);
