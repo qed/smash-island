@@ -60,16 +60,19 @@ describe('the CPU uses the moveset', () => {
   });
   it('a fighter with no moveset is not given one: it never uses a moveset slot', () => {
     // (restated each batch: Firey was the example until batch 2; now the first playable fighter with no MOVESETS entry stands in)
-    const todo = W.eval(`ROSTER.filter(function(r){ return r.play && r.kit && !MOVESETS[r.kit.special] && !r.prize; })[0].name`);
+    // (restated 2026-10-18, batch 8: every playable fighter has a moveset now, so there is nobody left unconverted; Dora, with her moveset taken away for the length of the match, stands in)
+    const todo = 'Dora';
+    W.eval(`window.__keepMs = MOVESETS.rant; delete MOVESETS.rant;`);
     const r = play(todo, 'Pen', 31, 900);
+    W.eval(`MOVESETS.rant = window.__keepMs;`);
     expect(Object.keys(r.used).filter((k) => !/^(grab|[fbud]throw)$/.test(k))).toEqual([]);
   });
 });
 
-describe('the CPU uses the moves of batches 2 to 7 too, and only the ones that reach', () => {
-  it('each of the forty-eight, played by the CPU, uses a tilt or an aerial of its own at least once (the ones whose strength is built on the old rules keep most jab presses as the jab), and never errors', () => {
+describe('the CPU uses the moves of batches 2 to 8 too, and only the ones that reach', () => {
+  it('each of the fifty-six, played by the CPU, uses a tilt or an aerial of its own at least once (the ones whose strength is built on the old rules keep most jab presses as the jab), and never errors', () => {
     const bad = []; let total = 0;
-    for (const name of ['Firey', 'Pen', 'Blocky', 'Ice Cube', 'Match', 'Snowball', 'Pin', 'Bomby', 'Needle', 'Flower', 'Tennis Ball', 'Teardrop', 'Bubble', 'Rocky', 'Coiny', 'Golf Ball', 'Tree', 'Roboty', 'David', 'Sidewalky', 'Bell', 'TV', 'Toothpaste', 'Lollipop', 'Book', 'Fries', 'Gelatin', 'Nickel', 'Ruby', 'Yellow Face', 'Barf Bag', 'Basketball', 'Bracelety', 'Fanny', 'Gaty', 'Grassy', 'Lightning', 'Liy', 'Loser', 'Marker', 'Money', 'Naily', 'Pillow', 'Remote', 'Rose', 'Saw', 'Taco', 'Woody']) {
+    for (const name of ['Firey', 'Pen', 'Blocky', 'Ice Cube', 'Match', 'Snowball', 'Pin', 'Bomby', 'Needle', 'Flower', 'Tennis Ball', 'Teardrop', 'Bubble', 'Rocky', 'Coiny', 'Golf Ball', 'Tree', 'Roboty', 'David', 'Sidewalky', 'Bell', 'TV', 'Toothpaste', 'Lollipop', 'Book', 'Fries', 'Gelatin', 'Nickel', 'Ruby', 'Yellow Face', 'Barf Bag', 'Basketball', 'Bracelety', 'Fanny', 'Gaty', 'Grassy', 'Lightning', 'Liy', 'Loser', 'Marker', 'Money', 'Naily', 'Pillow', 'Remote', 'Rose', 'Saw', 'Taco', 'Woody', 'Dora', 'Firey Jr.', 'Fern', 'Ruler', 'Balloony', 'Profily', 'Cake', 'Donut']) {
       // a fighter whose CPU keeps nearly all its jab presses (aiK under 0.2: Blocky, Bubble, Tennis Ball, Tree, Roboty, Bell, Lollipop, Book, Fries, Gelatin, Ruby) is shown to be ABLE to use its moves with its knob lifted to 1
       const kit = W.eval(`ROSTER.find(function(r){ return r.name === ${JSON.stringify(name)}; }).kit.special`);
       const low = W.eval(`MOVESETS.${kit}.aiK != null && MOVESETS.${kit}.aiK < 0.2`);
@@ -81,7 +84,7 @@ describe('the CPU uses the moves of batches 2 to 7 too, and only the ones that r
       total += n;
       if (n < 1) bad.push(`${name}: no tilt or aerial in 3600 frames (${JSON.stringify(r.used)})`);
     }
-    if (total < 48) bad.push(`only ${total} tilts and aerials between the forty-eight`);
+    if (total < 56) bad.push(`only ${total} tilts and aerials between the fifty-six`);
     expect(bad, bad.join(' ; ')).toEqual([]);
   });
 });
