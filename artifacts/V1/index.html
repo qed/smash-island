@@ -9042,6 +9042,7 @@ function ctfNavPath(nav, from, to, opt){
     done.add(cur);
     for(const e of N[cur].edges){
       { const bk = e.from + '>' + e.to + ':' + Math.round(e.xa); if((opt.ban && opt.ban[bk] > opt.now) || (opt.gban && opt.gban[bk] > opt.now)) continue; }
+      if(opt.cs && e.cs && e.cs[opt.cs] === 0) continue;   // (a move this fighter's own stats cannot make: ctfNavStatOK)
       if(opt.noCross && ((N[e.from].x0 + N[e.from].x1)/2 < opt.mid) !== ((N[e.to].x0 + N[e.to].x1)/2 < opt.mid)) continue;   // (while hiding the wall across the middle is closed)
       let pen = 0;
       if(e.need && !(opt.has && opt.has[e.need])) continue;
@@ -9232,6 +9233,7 @@ function ctfAiFollow(f, ai, nav, inp, now){
   if(!ai.edge){
     if(!f.onground) return false;
     if(!cn || cn.id !== e.from){ ai.path = null; return 'lost'; }
+    { const cs = ctfStatSig(f); if(cs && !ctfNavStatOK(nav, e, f, cs)){ ctfAiStat('statSkip'); ai.path = null; return 'lost'; } }   // (a move its own stats cannot make: plan again without it)
     ai.edge = e; ai.phase = 'stage'; ai.et = 0; ai.dj = false; ai.etMax = 260 + Math.abs((e.kind === 'jump' && e.dir !== 0 ? e.xa - e.dir*(e.run || 0) : e.xa) - f.x)/7;
   }
   e = ai.edge; ai.et = (ai.et || 0) + 1;
@@ -9349,6 +9351,62 @@ function ctfAiSkip(f){   // places a CPU may not go: the zone round its own side
   const L = CTF.live, zs = L.jails.filter(j=>j.owner === f.team).map(j=>j.zone);
   return n=>{ const cx = (n.x0 + n.x1)/2; for(const z of zs) if(cx > z.x - 20 && cx < z.x + z.w + 20 && n.y > z.y && n.y < z.y + z.h + 10) return true; return false; };
 }
+// FIGHTER STATS ON THE ROUTES. The shipped graphs are planned on the shared numbers (every stat 1, with a carrier's load), so a move near the
+// edge of what a carrier can do comes up short for a lower jump or a heavier fall, and a faster run, a floatier fall or a higher jump can
+// sail past a ledge or meet a ceiling the plan passed under. A CPU whose run, air, jump or fall is not 1 checks each move of a path with its
+// own before it counts on it: ctfNavStatFly flies the move with the fighter's st the way the CPU takes it (ctfAiFollow): a jump from the
+// spots of its run-up nearest the planned take-off (from where the run starts, or 260 px before, to the end of the floor, or 260 px
+// past), at the speed its own run has there; a drop off the end at the speeds a walk-off has; then holding the way as planned, or letting
+// go sooner, or braking, the second jump at the top or none. A move none of them lands is left out of that fighter's routes; a move the same check cannot land with every stat at 1
+// either is the check's blind spot (the CPU's own steering in the air, a spring), not the stats', and stays. Cached on the move, per stat
+// set and load ('c' a carrier, 'f' free). A move is checked when the CPU comes to it on its path (ctfAiFollow: one a step at most, so the
+// work is spread out), and once turned down the planner leaves it out (ctfNavPath) and the CPU plans again from where it stands.
+function ctfStatSig(f){ const S = f && f.st; if(!S || (S.run === 1 && S.air === 1 && S.jump === 1 && S.fall === 1)) return ''; return S.run + ',' + S.air + ',' + S.jump + ',' + S.fall + (f._cf >= 0 ? 'c' : 'f'); }
+const CTF_STAT_HOLDS = [[-1, 0], [0, 0], [3, 0], [8, 0], [-1, 999], [8, 999], [3, 7], [0, 999]];   // [hold the way this many steps (-1: as planned), then brake this many]
+function ctfNavStatFly(nav, e, S, free){
+  const n = nav.nodes[e.from], P = ctfNavParams(free, false), R = 24, ACCg = P.ACC*S.run, CAPg = P.CAP*S.run, T0 = e.T >= 200 ? 999 : e.T, d0 = e.dir, djs = [!!e.dj, !e.dj];
+  const fly = (x, vx, jump, d, T, B, dj)=>{
+    let done = false, lj = false;
+    const r = ctfNavFly(nav, { x, y:n.y - R, vx, vy:0, jumps:2, g:jump, jp:false, sp:0, ft:0, at:0 }, (t, X, Y, VX, VY, J)=>{
+      if(jump && t === 1){ lj = true; return { dir:d, jump:true }; }
+      const c = { dir:t <= T ? d : (t <= T + B ? -d : 0), jump:false };
+      if(dj && !done && J > 0 && !lj && (jump ? t - 1 : t) >= 6 && VY >= -0.4){ c.jump = true; done = true; }
+      lj = c.jump; return c;
+    }, free, false, false, S);
+    return !!(r && r.node.id === e.to);
+  };
+  const holds = (x, v, jump)=>{ for(const [h, B] of CTF_STAT_HOLDS) for(const dj of djs) if(fly(x, v, jump, d0, h < 0 ? T0 : h, B, dj)) return true; return false; };
+  if(e.kind === 'drop'){
+    const xd = e.xa + d0*10;   // (a drop is flown from 6 px past the platform's end, as the builder does: e.xa is the place's end)
+    for(const v of [(e.v0 || 0)*S.run, d0*CAPg, d0*CAPg*0.5, d0*CAPg*0.25]) if(holds(xd, v, false)) return true;
+    return false;
+  }
+  if(d0 === 0){   // straight up: from about where it was planned, standing, then drifting either way or not at all
+    for(const o of [0, -12, 12, -30, 30, -60, 60, -90, 90]){ const x = e.xa + o; if(x < n.x0 + 3 || x > n.x1 - 3) continue;
+      for(const [d, T] of [[0, 0], [1, 999], [-1, 999], [1, 8], [-1, 8]]) for(const dj of djs) if(fly(x, 0, true, d, T, 0, dj)) return true; }
+    return false;
+  }
+  // a jump: the run starts about e.run behind the planned take-off (ctfAiFollow's stage); the take-off can be anywhere from there on
+  const xs0 = Math.min(Math.max(e.xa - d0*((e.run || 0) + 20), n.x0 + 4), n.x1 - 4), xEnd = d0 > 0 ? Math.min(n.x1 - 3, e.xa + 260) : Math.max(n.x0 + 3, e.xa - 260);
+  const xFrom = d0 > 0 ? Math.max(xs0, e.xa - 260) : Math.min(xs0, e.xa + 260), spots = [e.xa];
+  for(let x = xFrom; (xEnd - x)*d0 >= 0; x += d0*15) if(Math.abs(x - e.xa) > 4) spots.push(x);
+  spots.sort((p, q)=>Math.abs(p - e.xa) - Math.abs(q - e.xa)); if(spots.length > 20) spots.length = 20;   // (the 20 nearest the planned one: a move turned down costs a few hundred short flights, once)
+  for(const x of spots){
+    const run = (x - xs0)*d0; let v = Math.min(CAPg, ACCg), s2 = 0; while(s2 < run && v < CAPg){ s2 += v; v = Math.min(CAPg, v + ACCg); }
+    if(holds(x, d0*v, true)) return true;
+  }
+  return false;
+}
+function ctfNavStatOK(nav, e, f, sig){
+  if(!sig || (e.kind !== 'jump' && e.kind !== 'drop') || e.need) return true;
+  const C = e.cs || (e.cs = {});
+  if(C[sig] === undefined){
+    const free = sig.endsWith('f'), one = free ? '1f' : '1c';
+    if(C[one] === undefined) C[one] = ctfNavStatFly(nav, e, STAT_ONE, free) ? 1 : 0;
+    C[sig] = (!C[one] || ctfNavStatFly(nav, e, f.st, free)) ? 1 : 0;
+  }
+  return C[sig] === 1;
+}
 // Plan a path to (x, y); returns false when there is none (the goal is not reachable even with every door open) or sets ai.path.
 // With `closed` doors in the way it returns { need: door id }.
 function ctfAiPlan(f, ai, goalX, goalY, now){
@@ -9356,7 +9414,7 @@ function ctfAiPlan(f, ai, goalX, goalY, now){
   const cn = ctfNavNodeOf(nav, f) || (ai.lastNode != null ? nav.nodes[ai.lastNode] : null);
   const gn = ctfNavNodeAt(nav, goalX, goalY, 14);
   if(!cn || !gn) return false;
-  const opt = { prof:f._cf >= 0 ? 'c' : 'f', bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:L.ai && L.ai.gban, noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null };
+  const opt = { prof:f._cf >= 0 ? 'c' : 'f', bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:L.ai && L.ai.gban, noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null, cs:ctfStatSig(f) };
   let r = ctfNavPath(nav, cn.id, gn.id, opt);
   if(!r){
     opt.closed = true; r = ctfNavPath(nav, cn.id, gn.id, opt);
@@ -16814,8 +16872,8 @@ addEventListener('keydown', e => {
 // RUNNING! keeps every runner on 1 (its lanes are built on the shared MAXVX and JUMP), and so does a boss's ghost fighter
 // (spawnOneGhost: the boss phase is tuned on its own numbers, and a nudge for a weak fighter must not strengthen a boss).
 // Capture the Flag's CPU route graphs are prebuilt on the shared numbers (ctfNavParams: their edges assume every stat at 1, so a
-// jump under 1 can come up short of a ledge they count on); the live look-ahead that times a CPU's jumps (ctfAiPlanFly) uses the
-// fighter's own run, air, jump and fall.
+// jump under 1 can come up short of a ledge they count on); a CPU checks each move of its path with its own stats and leaves out the
+// ones it cannot make (ctfNavStatOK), and the live look-ahead that times its jumps (ctfAiPlanFly) uses its own run, air, jump and fall.
 // How they meet the rest:
 //   * a running jump takes off at the run's speed and eases down to the air's over RUN_EASE frames (never more), so a run above
 //     the air still pays off off the ground;
