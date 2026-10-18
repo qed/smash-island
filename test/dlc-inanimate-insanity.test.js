@@ -228,19 +228,21 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
   // Levitate", and gave "special permission to make a new, non-canon special".
   // RESTATED (2026-10-18): the owner changed the design again -- "the move should be teleport-not levitate. it should go 340 px." --
   // and picked "Aim with arrows", "Pop on arrival" and "Once per airtime". Each pin below is the old promise in Teleport's terms.
+  // RESTATED again (2026-10-18): "bows special should go less distance" -- and, asked how far, "240 px" (it was 340). Every trip below is
+  // 240 px now, and whoever stood at the old landing point (a foe, a boss, an add) stands at the new one, so each pin tests what it did.
   // The pins that stay: nobody changes sides, Possession's machinery is gone, nothing is thrown, a boss is hit only when she is in it.
-  it("Bow's special is Teleport: she fades out, appears 340 px up with nothing held, and pops the foe where she appears -- no snowballs, no Possession", () => {
+  it("Bow's special is Teleport: she fades out, appears 240 px up with nothing held, and pops the foe where she appears -- no snowballs, no Possession", () => {
     const r = arena('Bow', `
-      E.x = A.x + 400; var y0 = A.y, climb = null; D.x = A.x; D.y = y0 - 340; D.vy = 0; D.onground = false; doSpecial(A);
+      E.x = A.x + 400; var y0 = A.y, climb = null; D.x = A.x; D.y = y0 - 240; D.vy = 0; D.onground = false; doSpecial(A);
       var fading = !!A._tp, frames = 0, hits = [], last = D.pct;
-      for (var i=0;i<60;i++){ var was = !!A._tp; step(); if (was) frames++; if (A._tp){ D.x = A.x; D.y = y0 - 340; D.vy = 0; }
+      for (var i=0;i<60;i++){ var was = !!A._tp; step(); if (was) frames++; if (A._tp){ D.x = A.x; D.y = y0 - 240; D.vy = 0; }
         if (was && !A._tp) climb = Math.round(y0 - A.y);
         if (D.pct > last + 0.01){ hits.push(+(D.pct - last).toFixed(2)); last = D.pct; } D.invuln = 0; }
       return { fading: fading, frames: frames, climb: climb, hits: hits, shots: projectiles.filter(function(p){ return p.shape==='snowball' || p.tkHold !== undefined; }).length,
                sides: [D.team, E.team], possession: typeof endPossession !== 'undefined', card: MOVE_TEXT['Bow'].special, desc: A.kit.desc };`);
     expect(r.fading).toBe(true);
     expect(r.frames, 'a short fade (8 frames), then she is there').toBe(8);
-    expect(r.climb, '"it should go 340 px": straight up with nothing held').toBe(340);
+    expect(r.climb, '"bows special should go less distance" -- "240 px": straight up with nothing held').toBe(240);
     expect(r.hits, 'the foe where she appears takes 6%, once').toEqual([6]);
     expect(r.shots, 'the snowballs are gone').toBe(0);
     expect(r.sides, 'nobody changes sides any more').toEqual([1, 2]);
@@ -264,8 +266,8 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       A._tpUsed = false; A.spCd = 0; doSpecial(A); inputs[0] = {}; step();
       netRemoteInput = saved; A.controller = 'still';
       eliminate(A); step(); out.afterKO = { tp: !!A._tp, used: !!A._tpUsed, fade: A._tpT || 0 }; return out;`);
-    expect(r.turned, 'left at first, then right: the arrows held as the fade ends are the way she goes').toEqual([340, 0]);
-    expect(r.up, 'the jump key is her up while she fades (with right: the up-right diagonal)').toEqual([240, -240]);
+    expect(r.turned, 'left at first, then right: the arrows held as the fade ends are the way she goes').toEqual([240, 0]);
+    expect(r.up, 'the jump key is her up while she fades (with right: the up-right diagonal, 240 px long)').toEqual([170, -170]);
     expect(r.jumps, 'and does not spend a jump, even held on after she appears').toBe(1);
     expect(r.afterKO).toEqual({ tp: false, used: false, fade: 0 });
   });
@@ -280,7 +282,7 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       var inputs = {}; var saved = netRemoteInput; netRemoteInput = function(i){ return inputs[i] || null; };
       spawnBossRushBoss();
       var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9;
-      step(); A.invuln=300; A.spCd=0; var bx = b.x, by = b.y; A.x = bx - 340; A.y = by; A.vy = 0; A.onground = false; A.face = 1;
+      step(); A.invuln=300; A.spCd=0; var bx = b.x, by = b.y; A.x = bx - 240; A.y = by; A.vy = 0; A.onground = false; A.face = 1;
       var hp0 = b.hp; doSpecial(A);
       for (var i=0;i<12;i++){ inputs[0] = { right: true }; step(); if (A._tp){ b.x = bx; b.y = by; } b._atkTimer = 1e9; A.invuln = 300; A.hitstun = 0; }   // (his body hurts her too: this pins what SHE does to him)
       var first = hp0 - b.hp;
@@ -304,9 +306,9 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       spawnBossRushBoss();
       var b = summons.find(function(s){ return s.type==='boss'; }); b._atkTimer = 1e9; b.x = 900;
       step(); A.invuln=300; A.spCd=0; A.x = 300; A.face = 1;
-      var y0 = A.y, a = meLifeDownload(b, 1); a._dl = 0; a.x = A.x; a.y = y0 - 340; a.vx = 0; a.vy = 0;
+      var y0 = A.y, a = meLifeDownload(b, 1); a._dl = 0; a.x = A.x; a.y = y0 - 240; a.vx = 0; a.vy = 0;
       var ahp0 = a.hp; doSpecial(A);
-      for (var i=0;i<40;i++){ step(); b._atkTimer = 1e9; A.invuln = 300; a.x = 300; a.y = y0 - 340; a.vx = 0; a.vy = 0; }
+      for (var i=0;i<40;i++){ step(); b._atkTimer = 1e9; A.invuln = 300; a.x = 300; a.y = y0 - 240; a.vx = 0; a.vy = 0; }
       var out = { add: ahp0 - a.hp }; summons = []; projectiles = []; return out;
     })()`);
     expect(r.add, 'the add takes it').toBeGreaterThan(0);
@@ -340,9 +342,9 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(r.secondTeleport, 'once per airtime: a second press in the same fall goes nowhere').toBe(false);
 
     const link = arena('Bow', `
-      var y0 = A.y; D.x = A.x; D.y = y0 - 340; D.vy = 0; D.onground = false; D.pct = 40; doSpecial(A);
+      var y0 = A.y; D.x = A.x; D.y = y0 - 240; D.vy = 0; D.onground = false; D.pct = 40; doSpecial(A);
       var p0 = D.pct, hit = -1;
-      for (var i=0;i<30 && hit < 0;i++){ step(); if (D.pct > p0 + 0.01) hit = i; else { D.x = A.x; D.y = y0 - 340; D.vy = 0; } }
+      for (var i=0;i<30 && hit < 0;i++){ step(); if (D.pct > p0 + 0.01) hit = i; else { D.x = A.x; D.y = y0 - 240; D.vy = 0; } }
       for (var k=0;k<6;k++) step();                                   // inside the stun the pop left: the follow-up is a second link
       var before = D.pct; A.atkCd = 0; doUpTilt(A);
       for (var q=0;q<10;q++) step();   // Bow's up-tilt is her own move now (Chair Lift, 5 frames of startup): restated 2026-10-14, it used to land on the press
@@ -359,9 +361,9 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
   });
 
   // TELEPORT, directly (the owner, 2026-10-18: "the move should be teleport-not levitate. it should go 340 px." -- "Aim with arrows",
-  // "Pop on arrival", "Once per airtime"). Every promise of the move in one place: the trip, the aim, the pop, the once, where she may end,
+  // "Pop on arrival", "Once per airtime"; then "bows special should go less distance" -- "240 px", from 340). Every promise of the move in one place: the trip, the aim, the pop, the once, where she may end,
   // and Capture the Flag's walls, which she does not pass (the locks there mean what they say).
-  it("Teleport: 340 px up with nothing held, 340 px the way the arrows aim (a diagonal too), a 6% pop once, once per airtime, never in a solid, and stopped by a wall in Capture the Flag", () => {
+  it("Teleport: 240 px up with nothing held, 240 px the way the arrows aim (a diagonal too), a 6% pop once, once per airtime, never in a solid, and stopped by a wall in Capture the Flag", () => {
     const r = arena('Bow', `
       var saved = netRemoteInput, inputs = {}; netRemoteInput = function(i){ return inputs[i] || null; }; A.controller = 'remote';
       D.x = 2000; E.x = 2000;
@@ -373,23 +375,23 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       air(400, 100); out.up = tp({});
       air(200, 100); out.right = tp({ right: true });
       air(700, 60); var dg = tp({ left: true, jump: true }); out.diag = dg.d; out.diagLen = dg.len;   // (a player's up is the jump key)
-      air(400, 60); var y0 = A.y; D.x = A.x; D.y = y0 - 340; D.vy = 0; D.onground = false; D.invuln = 0; D.pct = 30;
+      air(400, 60); var y0 = A.y; D.x = A.x; D.y = y0 - 240; D.vy = 0; D.onground = false; D.invuln = 0; D.pct = 30;
       var hits = [], last = 30, seen = function(){ if (D.pct > last + 0.01){ hits.push(+(D.pct - last).toFixed(2)); last = D.pct; } D.invuln = 0; };
-      tp({}, function(){ if (A._tp){ D.x = A.x; D.y = y0 - 340; D.vy = 0; } seen(); });
+      tp({}, function(){ if (A._tp){ D.x = A.x; D.y = y0 - 240; D.vy = 0; } seen(); });
       for (var i=0;i<20;i++){ step(); seen(); }
       out.pop = hits; D.x = 2000;
       air(400, 60); tp({}); A.spCd = 0; fireSpecial(A, {}); out.spent = !!A._tp;
       for (var j=0;j<240 && !A.onground;j++){ inputs[0] = {}; step(); }
       out.landedBack = A.onground && !A._tpUsed; out.again = tp({}).d;
       var gy = groundY(); for (var k=0;k<240 && !A.onground;k++) step(); A.x = 400; step();
-      worldPlats = [{ x:300, y:gy - 24 - 340 - 40, w:200, h:80, solid:true }]; var p = worldPlats[0], s1 = tp({});
+      worldPlats = [{ x:300, y:gy - 24 - 240 - 40, w:200, h:80, solid:true }]; var p = worldPlats[0], s1 = tp({});
       out.blocked = { dy: s1.d[1], inside: A.x + A.r > p.x && A.x - A.r < p.x + p.w && A.y + A.r > p.y && A.y - A.r < p.y + p.h };
       worldPlats = []; for (var q=0;q<240 && !A.onground;q++) step(); A.x = 400; step();
-      worldPlats = [{ x:300, y:gy - 24 - 200, w:200, h:40, solid:true }]; out.through = tp({}).d;
+      worldPlats = [{ x:300, y:gy - 24 - 140, w:200, h:40, solid:true }]; out.through = tp({}).d;
       worldPlats = []; air(400, 100); tp({ down: true }); out.floorFeet = Math.round(A.y + A.r - gy);
       air(1000, 100); tp({ right: true }); out.inWorld = A.x + A.r <= WW && A.x - A.r >= 0;
       air(WW + 40, 100); var off = tp({}); out.offSide = { dy: off.d[1], len: off.len, inWorld: A.x + A.r <= WW && A.x - A.r >= 0 };   // knocked past the side of the screen
-      A.x = 500; A.y = -259; A.vx = 0; A.vy = 0; A.onground = false; A._tpUsed = false; var top = tp({ left: true });   // over the top of the screen, aimed left (the review's 443 px trip)
+      A.x = 500; A.y = -176; A.vx = 0; A.vy = 0; A.onground = false; A._tpUsed = false; var top = tp({ left: true });   // over the top of the screen, aimed left (the review's 443 px trip)
       out.overTop = { dx: top.d[0], len: top.len, inWorld: A.y - A.r >= 0 && A.x - A.r >= 0 && A.x + A.r <= WW };
       var savedBig = isBig, savedFloors = floors, savedBases = bases; isBig = function(){ return true; }; bases = [];   // a big arena: the main floor is a slab over the pit
       floors = [{ level:0, y:gy, x:100, w:WW - 200 }]; worldPlats = [{ x:100, y:gy, w:WW - 200, h:46, solid:true }];
@@ -402,30 +404,31 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
       air(400, 100); A.spCd = 0; fireSpecial(A, {}); inputs[0] = {}; step(); step(); A.hitstun = 5; step();
       out.jolted = { tp: !!A._tp, spCd: A.spCd, used: !!A._tpUsed };   // a tick ignores the fade's grace: the trip never happened
       netRemoteInput = saved; return out;`);
-    expect(r.up.d, 'nothing held: straight up, 340 px').toEqual([0, -340]);
+    expect(r.up.d, 'nothing held: straight up, 240 px').toEqual([0, -240]);
     expect(r.up.still, 'she appears still').toEqual([0, 0]);
-    expect(r.right.d, 'aimed right: 340 px right').toEqual([340, 0]);
-    expect(r.diag[0], 'up and left').toBeLessThan(-200);
-    expect(r.diag[1]).toBeLessThan(-200);
-    expect(r.diagLen, 'a diagonal is the same 340 px trip').toBe(340);
+    expect(r.right.d, 'aimed right: 240 px right').toEqual([240, 0]);
+    expect(r.diag[0], 'up and left (170 px each way)').toBeLessThan(-150);
+    expect(r.diag[1]).toBeLessThan(-150);
+    expect(r.diagLen, 'a diagonal is the same 240 px trip').toBe(240);
     expect(r.pop, 'the foe where she appears takes 6%, once').toEqual([6]);
     expect(r.spent, 'once per airtime: the second press in the same airtime goes nowhere').toBe(false);
     expect(r.landedBack, 'landing gives it back').toBe(true);
-    expect(r.again).toEqual([0, -340]);
+    expect(r.again).toEqual([0, -240]);
     expect(r.blocked.inside, 'a solid where she would end: she stops short of it, never in it').toBe(false);
-    expect(r.blocked.dy).toBeGreaterThan(-340);
-    expect(r.blocked.dy).toBeLessThan(-200);
-    expect(r.through, 'outside Capture the Flag a solid in the way is passed through').toEqual([0, -340]);
+    expect(r.blocked.dy).toBeGreaterThan(-240);
+    expect(r.blocked.dy, 'stopped just under it, most of the trip (with the solid 40 px past the 240 px landing point, -176)').toBeLessThan(-140);
+    expect(r.through, 'outside Capture the Flag a solid in the way is passed through').toEqual([0, -240]);
     expect(r.floorFeet, 'down into the floor: she ends standing on it, not in it').toBeLessThanOrEqual(0);
     expect(r.inWorld, 'never out of the world').toBe(true);
     // RESTATED (review, 2026-10-18): brought back inside the world, the trip is capped at 340 px end to end, so from past the side straight up
-    // is a little less than 340 px up (the rest is the step back inside).
+    // is a little less than 340 px up (the rest is the step back inside). RESTATED again ("bows special should go less distance" -- "240 px"):
+    // the cap is 240 px, and the start over the top of the screen is as far above it, as a share of the trip, as it was (283 px of 340: 200 of 240).
     expect(r.offSide.inWorld, 'past the side of the screen, nothing held: back inside the world').toBe(true);
-    expect(r.offSide.len, 'and never further than 340 px').toBeLessThanOrEqual(340);
-    expect(r.offSide.dy, 'still nearly all the way up').toBeLessThan(-320);
+    expect(r.offSide.len, 'and never further than 240 px').toBeLessThanOrEqual(240);
+    expect(r.offSide.dy, 'still nearly all the way up').toBeLessThan(-220);
     expect(r.overTop.inWorld, 'over the top of the screen: back inside the world').toBe(true);
-    expect(r.overTop.len, 'never further than 340 px (it was 443)').toBeLessThanOrEqual(340);
-    expect(r.overTop.dx, 'and still the way she aimed').toBeLessThan(-150);
+    expect(r.overTop.len, 'never further than 240 px (at 340 px, the review saw 443)').toBeLessThanOrEqual(240);
+    expect(r.overTop.dx, 'and still the way she aimed').toBeLessThan(-100);
     expect(r.slab, 'a big arena: down from the main floor never puts her under it (a certain KO)').toEqual({ dy: 0, above: true });
     expect(r.smash, 'a smash charging when she pressed is dropped: nothing swings from where she fades').toEqual({ dropped: true, foeHit: false });
     expect(r.jolted, 'a tick during the fade ends it, and the move is hers again').toEqual({ tp: false, spCd: 0, used: false });
@@ -455,17 +458,17 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
         var x0 = f.x, y0 = f.y; f.spCd = 0; fireSpecial(f, {}); for (var i=0;i<20 && !(i > 0 && !f._tp);i++){ inputs[0] = hold; step(); }
         return { len: Math.round(Math.hypot(f.x - x0, f.y - y0)), dx: Math.round(f.x - x0), inSolid: inSolid() }; };
       out.ramp = !!p1; out.uphill = p1 && slope(0, { right: true });
-      out.walking = p1 ? [1,2,3,4,5,6,8,10,12].map(function(T){ var s = slope(T, { jump: true }); return s.len >= 330 && !s.inSolid; }) : [];
+      out.walking = p1 ? [1,2,3,4,5,6,8,10,12].map(function(T){ var s = slope(T, { jump: true }); return s.len >= 230 && !s.inSolid; }) : [];
       netRemoteInput = saved; return out;
     })())`));
     expect(c.shut.dx, 'a closed door: she stops at it').toBeGreaterThan(-120);
     expect(c.shut.x - c.r, 'on her side of it, not in it').toBeGreaterThanOrEqual(c.door[0] + c.door[1] - 1);
     expect(c.bar.x - c.r, 'jail bars stop her too').toBeGreaterThanOrEqual(c.bars[0] + c.bars[1] - 1);
-    expect(c.open.dx, 'a door open for her side is not there for her').toBe(-340);
-    expect(c.carrier.dx, 'a flag carrier goes half as far').toBe(170);
+    expect(c.open.dx, 'a door open for her side is not there for her').toBe(-240);
+    expect(c.carrier.dx, 'a flag carrier goes half as far').toBe(120);
     expect(c.ramp, 'the castle has a slope').toBe(true);
-    expect(c.uphill.dx, 'a slope is ground, not a wall: uphill she rises with it').toBeGreaterThan(250);
-    expect(c.uphill.len).toBeLessThanOrEqual(340);
+    expect(c.uphill.dx, 'a slope is ground, not a wall: uphill she rises with it').toBeGreaterThan(175);
+    expect(c.uphill.len).toBeLessThanOrEqual(240);
     expect(c.uphill.inSolid).toBe(false);
     expect(c.walking, 'pressed while walking up it, straight up goes the whole way every time').toEqual(c.walking.map(function(){ return true; }));
   });
