@@ -11,9 +11,10 @@ const KITS = { Puffball: 'fly', Bow: 'chair', Pencil: 'van', Leafy: 'dash', Fire
   Tree: 'timber', Roboty: 'antenna', David: 'seriously', Sidewalky: 'slam', Bell: 'ring', TV: 'static', Toothpaste: 'paste', Lollipop: 'sucker',
   Book: 'define', Fries: 'fry', Gelatin: 'freeze', Nickel: 'flip', Ruby: 'beam', 'Yellow Face': 'buynow', 'Barf Bag': 'splash', Basketball: 'dribble',
   Bracelety: 'sign', Fanny: 'gust', Gaty: 'reflect', Grassy: 'grasstree', Lightning: 'zap', Liy: 'switch', Loser: 'cool', Marker: 'ink',
-  Money: 'payday', Naily: 'spike', Pillow: 'fluff', Remote: 'battery', Rose: 'thorn', Saw: 'saw', Taco: 'jawbreaker', Woody: 'fraidy' };
+  Money: 'payday', Naily: 'spike', Pillow: 'fluff', Remote: 'battery', Rose: 'thorn', Saw: 'saw', Taco: 'jawbreaker', Woody: 'fraidy',
+  Dora: 'rant', 'Firey Jr.': 'emberjr', Fern: 'photo', Ruler: 'measure', Balloony: 'airleak', Profily: 'pricetag', Cake: 'atstake', Donut: 'glaze' };
 const SLOTS = ['jab', 'ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da', 'side', 'grab', 'pummel', 'fthrow', 'bthrow', 'uthrow', 'dthrow', 'special', 'up', 'down', 'smash', 'finisher'];
-const OLD_FRAMES = ['fly.jab', 'fly.na', 'beam.na', 'gust.na'];
+const OLD_FRAMES = ['fly.jab', 'fly.na', 'beam.na', 'gust.na', 'measure.na'];
 let W, MVA, SPIT;   // SPIT: the moves whose kind is the spit (Firey's Ember Spit, Puffball's spit): the body swells and spits, which is its own frames already
 
 beforeAll(() => {
@@ -28,7 +29,7 @@ describe('every move has its own animation', () => {
     const missing = [];
     for (const [name, kit] of Object.entries(KITS)) for (const s of SLOTS) {
       const id = `${kit}.${s}`;
-      if (s === 'side' && !MVA[id]) continue;   // (batch 6 wrote no side specials: the owner turned them off, 2026-10-16; the earlier batches' side rows stay animated as data)
+      if ((s === 'side' || s === 'ft') && !MVA[id]) continue;   // (batches 6 to 8 wrote no side specials, the owner turned them off, 2026-10-16, and batch 8 no side-tilts, 2026-10-18; the earlier batches' side rows stay animated as data)
       if (OLD_FRAMES.includes(id) || SPIT.includes(id)) { expect(MVA[id], id).toBeUndefined(); continue; }
       const m = MVA[id];
       if (!m) { missing.push(`${name} ${id}`); continue; }

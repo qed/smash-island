@@ -30,13 +30,16 @@ describe('the move list', () => {
     expect(rows('Pencil')).toContain("She's Got Him");
     expect(rows('Pencil')).toContain('CLINGS');
     // (restated each batch: Firey was the example of a fighter not yet converted until batch 2; now the first playable fighter with no MOVESETS entry stands in)
-    const todo = J(`ROSTER.filter(function(r){ return r.play && r.kit && !MOVESETS[r.kit.special] && !r.prize; })[0].name`);
+    // (restated 2026-10-18, batch 8: every playable fighter has a moveset now, so nobody is left "not yet converted"; the stand-in is the last one converted, and the roster is shown to have none left)
+    const left = J(`ROSTER.filter(function(r){ return r.play && r.kit && !MOVESETS[r.kit.special] && !r.prize; }).map(function(r){ return r.name; })`);
+    expect(left, 'every playable fighter but the prize has a moveset').toEqual([]);
+    const todo = 'Donut';
     expect(rows(todo)).toContain('←/→ + X | The neutral attack, aimed that way.');
     // (restated 2026-10-16: the owner removed side specials, so the one line that said 'until this fighter...' is gone; every fighter's <-/-> + C line now reads the neutral special, aimed that way)
     expect(rows(todo)).toContain('The neutral special, aimed that way.');
     expect(rows('Pencil')).toContain('The neutral special, aimed that way.');
     expect(rows('Pencil')).not.toContain('Side special');
-    expect(rows(todo)).toContain('Forward throw');
+    expect(rows(todo)).toContain('Roll Out');   // (a converted fighter lists its own throws by name)
   });
   it('the pause menu has a Move list button that shows the list for the fighter you are playing', () => {
     expect(J('!!document.getElementById("pauseMovesBtn") && !!document.getElementById("pauseMoves")')).toBe(true);
