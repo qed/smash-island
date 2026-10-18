@@ -8912,13 +8912,16 @@ function* ctfNavProbeGen(nav, n){
     for(const e of keep) n.edges.push(e);
   }
 }
-function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds (the game builds the graph a slice a frame, so it never stutters)
+// A DETERMINISTIC BUDGET FOR HEADLESS RUNS (the owner's playtest, 2026-10-18: a test that passed alone failed on a busy laptop because the CPUs' route graph was built within so many MILLISECONDS a step, and a busy machine gets less done a step): in a browser the budget is still wall-clock (the graph is built
+// a slice a frame, so it never stutters); where there is no screen (jsdom: the tests, the probes) it is a number of slices of work a step (one slice is about a millisecond on an idle machine, so ms of them), the same on any machine at any load.
+function ctfNavDet(){ if(CTF.navDet == null) CTF.navDet = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent || ''); return CTF.navDet; }
+function ctfNavTick(nav, count, ms){   // ms: stop after that many milliseconds (or, headless, ms slices of work)
   if(nav.pending) return;   // the map's shipped graph is being fetched: nothing to build unless it fails (ctfGraphFetch)
-  const t0 = ms ? performance.now() : 0; let started = 0;
+  const det = !!ms && ctfNavDet(), cap = det ? Math.max(1, Math.round(ms)) : 0, t0 = ms && !det ? performance.now() : 0; let started = 0, slices = 0;
   while(!nav.ready){
     if(!nav.gen){ if(nav.cursor >= nav.nodes.length || started >= count) break; started++; nav.gen = ctfNavProbeGen(nav, nav.nodes[nav.cursor++]); }
     if(nav.gen.next().done) nav.gen = null;
-    if(ms && performance.now() - t0 > ms) break;   // (a place is probed in slices: the budget holds even for a slow one)
+    if(det){ if(++slices >= cap) break; } else if(ms && performance.now() - t0 > ms) break;   // (a place is probed in slices: the budget holds even for a slow one)
   }
   if(nav.cursor >= nav.nodes.length && !nav.gen && !nav.ready){ nav.ready = true; ctfNavReach(nav); }
 }
