@@ -47922,13 +47922,22 @@ function climbJump(f){
   return false;
 }
 // Up a wall navAround says to climb ({climb}): press into it, jump, the second jump near the top of the rise (climbJump: a jump
-// held down is not pressed again, so holding it from the ground spends only the first), and then the up-special. Not Bow's: hers
-// is a drop (aiBowRecover).
+// held down is not pressed again, so holding it from the ground spends only the first), and then the up-special at the top of
+// THAT rise. Not Bow's: hers is a drop (aiBowRecover).
+// The up-special waits for the top (vy > -1.5) because it sets vy rather than adding to it: fired the frame after the double jump
+// (vy -11.9 to -12.4) it threw the double jump's rise away. And the climb is LATCHED while airborne (aiWallClimbing): once the
+// feet are within 130 px of the top, navAround answers {jump}, and that branch only holds jump, so the up-special never came
+// until the CPU had fallen back to 130 below the top -- and from there it rose ~125 px and ended ~5 short, every time. Measured
+// with Firey on Grand Plains (its one-way platforms near the wall taken away): best 261 px against 280 and 310 px walls, never
+// over; with both, he peaks at 368 px and is over 250, 280 and 310 px walls in 46-52 frames.
 function aiClimbWall(f, inp, dir, sp){
   inp.left = dir < 0; inp.right = dir > 0;
+  f._climbT = hazardT + 60;
   if(climbJump(f)) inp.jump = true;
-  else if(!f.onground && f.jumps <= 0 && f.spCd <= 0 && !f._usedAirSpecial && sp !== 'chair'){ inp.special = true; inp.up = true; }
+  else if(!f.onground && f.jumps <= 0 && f.vy > -1.5 && f.spCd <= 0 && !f._usedAirSpecial && sp !== 'chair'){ inp.special = true; inp.up = true; }
 }
+// Still in the air from a wall climb aiClimbWall started (within its last 60 frames): its callers keep climbing.
+function aiWallClimbing(f){ return !f.onground && f._climbT > hazardT; }
 function navUp(f, t){
   // Find a platform the fighter can hop onto that gets it closer to a target ABOVE it.
   // Works in both single-screen (one-way tops) and big-tower mode.
@@ -49307,9 +49316,12 @@ function aiThink(f){
     // undefined, so left and right were both false, and a CPU at a tall wall stood there hopping on the spot (owner, 2026-10-18:
     // "Fix it"). Measured on the teams arena, a CPU sent from mid-map at foes up on the left stood at the shaft's outer wall and
     // climbed 320 px on 4 of 8 seeds; with this it goes in by the shaft's floor doorway and climbs 799 on all 8.
+    // (Capture the Flag too: aiThink is its fallback whenever ctfAiInput has nothing to say -- fighting, jailed, no goal.)
+    // A climb already in the air goes on climbing when the top gets near enough for navAround to call it a {jump} (aiClimbWall).
     const obst = navAround(f, dir);
-    if(obst && !obst.jump){
-      if(obst.climb) aiClimbWall(f, inp, dir, sp);
+    const climbing = aiWallClimbing(f);
+    if(obst && (!obst.jump || climbing)){
+      if(obst.climb || climbing) aiClimbWall(f, inp, dir, sp);
       else { inp.left = obst.detourX < f.x; inp.right = obst.detourX >= f.x;
              if(f.onground && rn<0.35) inp.jump=true; }
       if(f.x<100) { inp.left=false; inp.right=true; }
@@ -49386,8 +49398,9 @@ function aiThink(f){
     // if a SOLID block sits between us and the target, hop it or route around its edge
     const obst = navAround(f, wantDir);
     if(obst){
-      if(obst.jump){ if(adx>30){ inp.left=wantDir<0; inp.right=wantDir>0; } if(f.onground||f.jumps>0) inp.jump=true; }
-      else if(obst.climb) aiClimbWall(f, inp, wantDir, sp);   // (see the stuck recovery above: this read obst.x, which there is none of)
+      // (see the stuck recovery above: this read obst.x, which there is none of; and a climb in the air goes on to the top)
+      if(obst.climb || aiWallClimbing(f)) aiClimbWall(f, inp, wantDir, sp);
+      else if(obst.jump){ if(adx>30){ inp.left=wantDir<0; inp.right=wantDir>0; } if(f.onground||f.jumps>0) inp.jump=true; }
       else { inp.left = obst.detourX < f.x; inp.right = obst.detourX >= f.x;
              if(f.onground && rn<0.2) inp.jump=true; }
       if(f.x<90){ inp.left=false; inp.right=true; }

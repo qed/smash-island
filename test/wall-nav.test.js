@@ -54,14 +54,21 @@ describe('a CPU at a tall wall', () => {
     expect(r.left, 'the way the detour is').toBe(k.detourX < r.x);
   });
 
-  // 280 px: past what the two jumps clear, so it takes the up-special too. The old code never got over it in 300 frames; this is over by 80.
-  it('gets up and over it when left to play', () => {
+  // 280 and 310 px: past what the two jumps clear, so it takes the up-special too, at the top of the double jump's rise. Grand Plains'
+  // one-way platforms near the wall are taken away first (one hangs 171 px up right over the spawn: a CPU that landed on it got over
+  // a 280 px wall from there without ever climbing it), so this is the climb itself. Before: Firey's best was 261 px against both,
+  // never over (the up-special fired the frame after the double jump and threw its rise away, and once the top was within 130 px
+  // the {jump} answer held the key and never fired it at all). After: over both in about 50 frames, in either branch.
+  it.each([[280, false], [310, true]])('gets up and over a %s px one when left to play (stuck recovery %s)', (h, recover) => {
     const { window: w } = loadMonolith(5);
-    const out = JSON.parse(w.eval(`(function(){ ${setup(280, 4, false)}
-      var top = wall.y, best = c.y + c.r, x0 = c.x;
-      for (var k = 0; k < 150; k++){ step(); t.x = x0 - W*1.2; t.y = gy - t.r; t.vx = 0; t.vy = 0; best = Math.min(best, c.y + c.r); }
+    const out = JSON.parse(w.eval(`(function(){ ${setup(h, 4, false)}
+      for (var i = worldPlats.length - 1; i >= 0; i--){ var p = worldPlats[i];
+        if (!p.solid && !p.wall && p.y < gy - 4 && p.x < c.x + 700 && p.x + p.w > c.x - 700) worldPlats.splice(i, 1); }
+      var best = c.y + c.r, x0 = c.x;
+      for (var k = 0; k < 150; k++){ ${recover ? 'if (c._recover <= 0 && c.x >= wall.x) c._recover = 38;' : ''}
+        step(); t.x = x0 - W*1.2; t.y = gy - t.r; t.vx = 0; t.vy = 0; best = Math.min(best, c.y + c.r); }
       running = false;
-      return JSON.stringify({ kind: kind, rose: Math.round(gy - best), wall: 280, crossed: c.x < wall.x });
+      return JSON.stringify({ kind: kind, rose: Math.round(gy - best), wall: ${h}, crossed: c.x < wall.x });
     })()`));
     expect(out.kind).toBe('{"climb":true}');
     expect(out.rose, 'its feet got up to the top of the wall').toBeGreaterThanOrEqual(out.wall);
