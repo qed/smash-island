@@ -184,9 +184,9 @@ describe("Magnet: Polarity (attract, repel and metal; 2026-10-07)", () => {
 describe('MeTag: the cuff, the mark and the crushing wall (Enforcer, 2026-10-07)', () => {
   // "give metag and magnet new kits." The wall special, the wall-only tracking and the wall-smash's root were 0%-damage promises the owner replaced:
   // C is a cuffing dash, down marks a foe for +30%, and the wall moved to the smash and crushes. Each old test below is restated to its new promise.
-  it('Cuffing Dash: about 120 px, cuffs the first foe it touches (6%, rooted about 36 frames, stunned); a foe out of reach is missed', () => {
+  it('Cuffing Dash: about 120 px, cuffs the first foe it touches (8%, was 6% before the MeTag buff of 2026-10-17: rooted about 36 frames, stunned); a foe out of reach is missed', () => {
     const r = arena('MeTag', `fireSpecial(A, {}); ${run(12)} return { hit: D.pct - 30, rooted: D.rooted, cuff: !!D._mtCuff, dashing: A._dashing, cd: A.spCd, dx: D.x - A.x };`, 520);
-    expect(r.hit).toBe(6);
+    expect(r.hit).toBe(8);
     expect(r.cuff).toBe(true);
     expect(r.rooted).toBeGreaterThan(20);
     expect(r.dashing, 'the dash ends on the foe').toBe(0);
@@ -221,7 +221,7 @@ describe('MeTag: the cuff, the mark and the crushing wall (Enforcer, 2026-10-07)
     expect(r.marked / r.plain).toBeLessThan(1.35);
     const lapse = arena('MeTag', `fireSpecial(A, {down:true}); ${run(310)} D.pct = 30; D.invuln = 0; D.hitstun = 0; D.x = A.x + 40; A.atkCd = 0; doAttack(A); return { tracked: metagTracked(A) && metagTracked(A).idx, jab: D.pct - 30 };`, 480);
     expect(lapse.tracked, 'the lock runs out').toBeFalsy();
-    expect(lapse.jab).toBeLessThan(8);
+    expect(lapse.jab).toBeLessThan(9);   // her jab is 8.5% since the MeTag buff of 2026-10-17 (it was 6.5%, so this said 8)
     const mark = W.eval(`(function(){
       SETTINGS.mode='ffa'; SETTINGS.count=3; SETTINGS.items=false; running=true; worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
       var A = makeFighter(ROSTER.find(function(r){ return r.name==='MeTag'; }), 400, groundY()-24, 0), B = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 500, groundY()-24, 1), C = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), 160, groundY()-24, 2);
