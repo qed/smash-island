@@ -35400,6 +35400,11 @@ const COBS_FOOT = { gap:70, orbitR:200, swoopR:150, stride:90 };
 // for `t` frames of free movement, then comes back in along his orbit; a new wind-up ends it. The teleport is One's (to 300 px from you, and he comes in from
 // it), sooner: when you are COBS_TELE_DIST px off (hers is 1000), so a fighter who comes back from a knockout is not left to cross the arena to him.
 const COBS_ORBIT_R = 220, COBS_TELE_DIST = 700;
+// HIS ADDS WHERE THEY WERE. THE OWNER, 2026-10-18, of the orbit above: his MeTags and MePhone units are placed from where HE is, so they came in with him, about
+// 100 px nearer you -- less time to react -- "put their spawn distance relative to the fighter back". They are placed from COBS_ADDS_ORBIT: on the line from you
+// through him, as far out as his old orbit (320) had him (cobsAddFrom), so each appears as far from you as it did; and a unit hovers off that point too, as it
+// did off him, until its first blink (cobsMinionStep), or it would glide 100 px in before its first round. He himself still circles at COBS_ORBIT_R.
+const COBS_ADDS_ORBIT = 320;
 const COBS_BACK = { r:400, t:40 };
 const COBS_BIG = ["van", "device", "memurder", "meknife", "deletion", "cannon"];
 const COBS_MOVE = { orbitR:COBS_ORBIT_R, swoopR:180, ungroundR:180, w:ONE_ORBIT_W, end:ONE_ORBIT_END, flip:ONE_ORBIT_FLIP, lead:ONE_SWOOP_LEAD, hold:ONE_SWOOP_HOLD,
@@ -36136,11 +36141,23 @@ function cobsThrowWatches(s, tgt, id, n, T, dmg, spread){
   }
   for(let i=0;i<8;i++) puff(s.x + (s.face||1)*s.r*0.5, s.y - s.r*0.3, '#f4f4f8', 3);
 }
-function cobsSpawnUnit(s, T, side){
+// Where his adds are placed from (HIS ADDS WHERE THEY WERE, COBS_ADDS_ORBIT): where his old orbit would have had him -- his place pushed out along the line from
+// the fighter he circles (oneChaseTarget) through him, by the 100 px the orbit came in. Only while he is on that orbit: on foot in the rage his ring did not
+// change (COBS_FOOT.orbitR), and a hop, a dive or a lunge never was the orbit; there, and with nobody to circle, it is where he is. The point is held where
+// his flight holds him (oneMove: x inside [r, WW - r], y no higher than r + 10), as the old orbit was, so near the top of the arena an add never appears above
+// the top edge -- off screen, and farther from you than it ever was.
+function cobsAddFrom(s, t){
+  const f = oneChaseTarget(s, t);
+  if(!f || s._rageT > 0 || s._hop || s._dive || s._lungeT > 0) return { x:s.x, y:s.y };
+  const dx = s.x - f.x, dy = s.y - hurtCY(f), d = Math.hypot(dx, dy) || 1, k = COBS_ADDS_ORBIT - COBS_ORBIT_R;
+  return { x:clamp(s.x + dx/d*k, s.r, WW - s.r), y:Math.max(s.r + 10, s.y + dy/d*k) };
+}
+function cobsSpawnUnit(s, T, side, tgt){
+  const A = cobsAddFrom(s, tgt), x = clamp(A.x + side*220, 60, WW - 60), y = A.y - 30;
   summons.push({ type:"mephoneunit", name:"MePhone unit", color:'#3a3a44', team:-1, owner:-1, hostile:true, hover:true,
-    x:clamp(s.x + side*220, 60, WW - 60), y:s.y - 30, vx:0, vy:0, r:18, hp:T.hp, maxHp:T.hp, life:T.life, face:-side, _cd:40,
+    x, y, vx:0, vy:0, r:18, hp:T.hp, maxHp:T.hp, life:T.life, face:-side, _cd:40,
     _every:T.every, _spd:T.spd, _dmg:cobsDmg()*T.dmg, _side:side, _cobs:true, flash:0, _blink:T.blink || 0, _pencil:!!T.pencil, _post:null });
-  for(let i=0;i<10;i++) puff(clamp(s.x + side*220, 60, WW - 60), s.y - 30, '#7ff0ff', 4);
+  for(let i=0;i<10;i++) puff(x, y, '#7ff0ff', 4);
 }
 
 // ---- HIS OWN IMPACTS ----
@@ -36482,7 +36499,7 @@ const COBS_MOVES = {
     const T = cobsT(s, 'deploy'), n = Math.min(T.n, T.cap - cobsUnits().length);
     if(n <= 0){ for(let i=0;i<8;i++) puff(s.x, s.y, '#7ff0ff', 3); return 0; }
     const dir = tgt ? (Math.sign(tgt.x - s.x) || 1) : (s.face || 1);
-    for(let k=0;k<n;k++) cobsSpawnUnit(s, T, k%2===0 ? dir : -dir);
+    for(let k=0;k<n;k++) cobsSpawnUnit(s, T, k%2===0 ? dir : -dir, tgt);
     return n;
   },
   device(s, tgt, id){
@@ -36615,10 +36632,11 @@ const COBS_MOVES = {
   metags(s, tgt, id){
     const T = cobsT(s, 'metags'), dmg = cobsDmg()*T.dmg;
     if(cobsTags().length) return 0;   // ONE TAG AT A TIME: never a second while one stands
-    for(let i=0;i<T.n;i++){ const side = i%2===0 ? 1 : -1, x = clamp(s.x + side*(s.r + 40), 40, WW - 40);
-      summons.push({ type:"metag", name:"MeTag", color:'#9aa6b2', team:-1, owner:-1, hostile:true, hover:true, x, y:s.y - 20, vx:0, vy:0, r:22, hp:T.hp, maxHp:T.hp, life:1e9,
+    const A = cobsAddFrom(s, tgt);   // placed from where his old orbit had him (HIS ADDS WHERE THEY WERE)
+    for(let i=0;i<T.n;i++){ const side = i%2===0 ? 1 : -1, x = clamp(A.x + side*(s.r + 40), 40, WW - 40), y = A.y - 20;
+      summons.push({ type:"metag", name:"MeTag", color:'#9aa6b2', team:-1, owner:-1, hostile:true, hover:true, x, y, vx:0, vy:0, r:22, hp:T.hp, maxHp:T.hp, life:1e9,
         face:-side, _cd:30, _spd:T.spd, _homing:T.homing, _cuff:T.cuff, _mash:T.mash || 0, _dmg:dmg, _wall:T.wall, _poles:!!T.poles, _walled:false, _cobs:true, flash:0 });
-      for(let j=0;j<10;j++) puff(x, s.y - 20, '#cfe8ff', 4); }
+      for(let j=0;j<10;j++) puff(x, y, '#cfe8ff', 4); }
     return T.n;
   },
   cannon(s, tgt, id){
@@ -36998,7 +37016,8 @@ function cobsMinionStep(m){
       m._cd = 120; m.vx = -m.vx*0.5; m.vy = -Math.abs(m.vy) - 3;
     }
   } else {
-    const post = m._post, wx = post ? post.x : clamp(boss.x + m._side*220, 60, WW - 60), wy = post ? post.y : Math.max(40, boss.y - 30);   // a unit that has blinked hovers where it landed
+    const post = m._post, A = post || cobsAddFrom(boss, t);   // off where his old orbit had him, as it was placed (HIS ADDS WHERE THEY WERE)
+    const wx = post ? post.x : clamp(A.x + m._side*220, 60, WW - 60), wy = post ? post.y : Math.max(40, A.y - 30);   // a unit that has blinked hovers where it landed
     m.vx += (wx - m.x)*0.02; m.vy += (wy - m.y)*0.02; m.vx *= 0.9; m.vy *= 0.9; m.x += m.vx; m.y += m.vy;
     if(t && m._cd <= 0){
       const a = Math.atan2(hurtCY(t) - m.y, t.x - m.x);
@@ -37026,11 +37045,16 @@ function cobsCuff(boss, t, m){
 // Once a frame, while a MeTag's cuff holds a fighter. NO PILE-ON: their grace is held up (the shared projectile loop passes his shots by a fighter in grace), so nothing of his lands
 // until the cuff is over. MASH FREE: every NEW press of a button (attack, special, smash, jump -- read off the fighter's own input, even through the stun) takes `mash` frames
 // off the cuff, the root and the stun together; when nothing is left the cuff is over, and so is the protection.
+// THE KEYS, NOT THE MOVES (cuffKeys). The moveset's paired buttons (2026-10-14, comboInput) made the input a fighter records the MOVE its keys became: X and V
+// held back CI_DELAY frames in case C joins them, X+C turned into the grab and V+C into the finisher. A mash read off that missed every X+C and V+C (a mash of
+// X and C together took nothing off at all) and counted X and V late. A cuff counts the keys a human pressed, read before the pairing (f._rawKeys); a CPU's,
+// which nothing pairs, its input as recorded.
+function cuffKeys(f){ if(f._rawKeys) return f._rawKeys; const I = f._lastInput || {}; return [!!I.attack, !!I.special, !!I.smash, !!I.jump]; }
 function cobsCuffStep(){
   for(const f of cobsFoes()){
     if(!(f._cuffUntil > hazardT)){ if(f._cuffUntil){ f._cuffUntil = 0; f._cuffPrev = null; } continue; }
     f.invuln = Math.max(f.invuln || 0, 2);
-    const I = f._lastInput || {}, now = [!!I.attack, !!I.special, !!I.smash, !!I.jump], prev = f._cuffPrev || now;
+    const now = cuffKeys(f), prev = f._cuffPrev || now;
     let presses = 0; for(let i=0;i<4;i++) if(now[i] && !prev[i]) presses++;
     f._cuffPrev = now;
     if(presses > 0 && f._cuffMash > 0){
@@ -37694,6 +37718,8 @@ function step(){
       legacyFin(inp);   // the CPU's rules still press attack + special for the finisher; the engine reads `fin`
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
     }
+    f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
+    const inpPaired = inp;   // (the pairing changes this input in place; anything below that masks the input makes a new one: heldStruggle)
     if((ctrl==='local' || ctrl==='remote') && !RACE.active && !(SETTINGS.mode==='ctf' && CTF.live && (CTF.live.phase==='hide' || CTF.live.phase==='fix'))) comboInput(f, inp);   // X+C grab, V+C finisher (the Capture the Flag hiding phase reads the raw keys)
 
     // OUTBREAK: while infected by Barf Bag, this fighter mirrors HER inputs (puppet) and
@@ -37723,7 +37749,7 @@ function step(){
     if(f.hitstun>0 && (f._hold || f._heldBy!=null || f._gb || f._mv)) mvCancel(f);   // a hit lets go of a grab, a hold or a move in progress
     if(f.hitstun>0){ f.hitstun--; f._spPend=0; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
     if(f.frozen>0){ inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }
-    if(f._heldBy!=null && heldStruggle(f, inp)) inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};   // held: only the struggle (each press takes frames off the hold)
+    if(f._heldBy!=null && heldStruggle(f, inp, inp === inpPaired ? f._rawKeys : null)) inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};   // held: only the struggle (each press takes frames off the hold)
     if(f._lag>0){ f._lag--; inp={left:false,right:false,jump:false,attack:false,special:false,smash:false}; }   // the recovery of a throw, a whiffed grab or a landing
     if(f.invuln>0) f.invuln--;
     if(f._graceLeft>0) f._graceLeft--;   // runs down beside invuln: how much of it is hit-grace
@@ -39437,7 +39463,7 @@ function metagCuff(f, t){
 function metagCuffStep(f){
   const c = f._mtCuff;
   if(f.dead || !(f.rooted > 0) || c.until <= hazardT){ f._mtCuff = null; return; }
-  const I = f._lastInput || {}, now = [!!I.attack, !!I.special, !!I.smash, !!I.jump], prev = c.prev || now;
+  const now = cuffKeys(f), prev = c.prev || now;   // the keys, not the moves they paired into (cuffKeys)
   c.prev = now;
   if(hazardT - c.t0 < MT_CUFF_HOLD) return;
   let presses = 0; for(let i=0;i<4;i++) if(now[i] && !prev[i]) presses++;
@@ -41233,11 +41259,15 @@ function doThrow(f, t, kind){
   f._thrown = { t: hazardT, kind: kind, idx: t.idx };
   { const U = f._used || (f._used = {}); U[kind + 'throw'] = (U[kind + 'throw'] || 0) + 1; }
 }
-// a held fighter's own frame: struggle, and nothing else (called where the inputs are masked)
-function heldStruggle(f, inp){
+// a held fighter's own frame: struggle, and nothing else (called where the inputs are masked). THE KEYS, NOT THE MOVES, as a cuff's mash (cuffKeys): `R` is
+// a human's attack, special, smash and jump as pressed (f._rawKeys, before the pairing), or X and C mashed together took nothing off the hold (the pairing
+// makes them the grab) and X counted CI_DELAY frames late. It is null for a CPU (nothing pairs its input) and on a frame something masked the input after
+// the pairing (a stun, a freeze, a puppet's strings): then the input is all there is, as it always was.
+function heldStruggle(f, inp, R){
   const h = fighters[f._heldBy];
   if(!h || h.dead || !h._hold || h._hold.idx !== f.idx){ f._heldBy = null; return false; }
-  const k = (inp.attack ? 1 : 0) | (inp.special ? 2 : 0) | (inp.jump ? 4 : 0) | (inp.left ? 8 : 0) | (inp.right ? 16 : 0) | (inp.down ? 32 : 0) | (inp.smash ? 64 : 0);
+  const A = R ? R[0] : inp.attack, S = R ? R[1] : inp.special, M = R ? R[2] : inp.smash, J = R ? R[3] : inp.jump;
+  const k = (A ? 1 : 0) | (S ? 2 : 0) | (J ? 4 : 0) | (inp.left ? 8 : 0) | (inp.right ? 16 : 0) | (inp.down ? 32 : 0) | (M ? 64 : 0);
   const prev = f._stPrev || 0; f._stPrev = k;
   const edges = k & ~prev;
   for(let b = 1; b <= 64; b <<= 1) if(edges & b) h._hold.t += STRUGGLE;

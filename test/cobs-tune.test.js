@@ -704,6 +704,22 @@ describe('OWNER: LOCKDOWN! (too hard) -- no pile-on, a third shorter, mash free,
     for (const c of dead.cuts) expect(c, 'each kind of press takes 5 frames and the frame that passed: 7 in all').toBeGreaterThanOrEqual(5);
   });
 
+  // (2026-10-18: the moveset's paired buttons -- X+C the grab, V+C the finisher, X and V held back 2 frames in case C joins them -- had turned what a fighter records into
+  // the move, and the mash read that: X+C or V+C mashed together took nothing off, and X and V counted late. The cuff counts the keys now, read before the pairing: cuffKeys.)
+  it('MASH FREE counts the KEYS, not the moves they pair into: X and C (the grab) or V and C (the finisher) mashed together free you, as fast as any mash', () => {
+    const r = fight(`
+      park(); atTier(3); floorAt(you, WW*0.5); you.controller = 'local'; ['attack', 'special', 'smash', 'jump'].forEach(function(k){ down[KEYS[k]] = false; });
+      var out = {};
+      [['X', ['attack']], ['XC', ['attack', 'special']], ['VC', ['smash', 'special']]].forEach(function(c){
+        you.rooted = 40; you.hitstun = 30; you._cuffUntil = hazardT + 40; you._cuffId = 5151; you._cuffMash = 5; you._cuffPrev = null;
+        var fr = 0; for (; fr < 40 && you.rooted > 0; fr++){ c[1].forEach(function(k){ down[KEYS[k]] = fr % 2 === 0; }); s._atkTimer = 1e9; step(); }
+        c[1].forEach(function(k){ down[KEYS[k]] = false; }); s._atkTimer = 1e9; step(); step(); out[c[0]] = fr; });
+      return out;`);
+    expect(r.XC, 'X+C mashed: freed long before the cuff runs out (40 frames)').toBeLessThan(20);
+    expect(r.VC, 'V+C mashed: the same').toBeLessThan(20);
+    expect(r.XC, 'two keys a press free you at least as fast as one').toBeLessThanOrEqual(r.X);
+  });
+
   it('a cuff that is mashed off ends with its protection at once; his death ends every cuff', () => {
     const r = fight(`
       park(); atTier(3); ${FLOOR_ONLY} floorAt(you, WW*0.5); you.controller = 'local'; down[KEYS.attack] = false;
