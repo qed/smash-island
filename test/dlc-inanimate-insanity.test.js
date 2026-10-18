@@ -249,7 +249,41 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(r.possession, 'Possession and its machinery are gone').toBe(false);
     expect(r.card).toMatch(/^Teleport — /);
     expect(r.desc).toMatch(/^Teleport/);
-    expect(r.card + r.desc).not.toMatch(/possess|snowball|telekinesis → |levitat/i);
+    // RESTATED (2026-10-18, v72): "bow having no projectiles feels very annoying (except for the smash)" -- her DOWN-special throws two
+    // snowballs now, and her kit line says so in its "↓ + C" clause. The neutral (this card, and the rest of the kit line) still has none.
+    expect(r.card).not.toMatch(/possess|snowball|telekinesis → |levitat/i);
+    expect(r.desc).toMatch(/; ↓ \+ C [^;]*snowballs/);
+    expect(r.desc.replace(/; ↓ \+ C [^;]*/, '')).not.toMatch(/possess|snowball|telekinesis → |levitat/i);
+  });
+
+  // The owner (2026-10-18): "bow having no projectiles feels very annoying (except for the smash)"; picked her down-special, "2 in a
+  // 'sea-part' formation", "Both sides" (canon: in "Snow Bow" she levitated snowballs without touching them). See BOW_SNOW.
+  it("Bow's down-special throws exactly two snowballs, opposite ways: a foe each side is hit once for 6%, and the air throw flies straight", () => {
+    const g = arena('Bow', `D.x = A.x + 150; E.x = A.x - 150; D.y = A.y; E.y = A.y; fireSpecial(A, {down:true});
+      var ss = projectiles.filter(function(p){ return p.owner === A.idx; }), cd = A.spCd, dh = [], eh = [], ld = D.pct, le = E.pct;
+      for (var i=0;i<80;i++){ step(); D.x = Math.max(D.x, 60); D.dead = false; E.dead = false;
+        if (D.pct > ld + 0.01){ dh.push(+(D.pct - ld).toFixed(2)); ld = D.pct; } if (E.pct > le + 0.01){ eh.push(+(E.pct - le).toFixed(2)); le = E.pct; }
+        D.invuln = 0; E.invuln = 0; }
+      return { n: ss.length, dirs: ss.map(function(p){ return Math.sign(p.vx); }).sort(), vy: ss.map(function(p){ return p.vy; }), cd: cd, dh: dh, eh: eh,
+               left: projectiles.filter(function(p){ return p.owner === A.idx; }).length };`);
+    expect(g.n, 'two snowballs').toBe(2);
+    expect(g.dirs, 'one each way').toEqual([-1, 1]);
+    expect(g.vy, 'straight, level').toEqual([0, 0]);
+    expect(g.dh, 'the foe on her right: hit once, 6%').toEqual([6]);
+    expect(g.eh, 'the foe on her left: hit once, 6%').toEqual([6]);
+    expect(g.left, 'each is spent on the foe it hit').toBe(0);
+    expect(g.cd, 'about 45 frames before the next').toBe(45);
+    const a = arena('Bow', `D.x = 3000; E.x = -3000; A.y = groundY() - 260; A.onground = false; A.vy = 0; var err = null;
+      try { fireSpecial(A, {down:true}); } catch(e){ err = String(e); }
+      var ss = projectiles.filter(function(p){ return p.owner === A.idx; }), x0 = ss.map(function(p){ return p.x; }), y0 = ss.map(function(p){ return p.y; });
+      try { for (var i=0;i<90;i++){ step(); A.y = groundY() - 260; A.vy = 0; } } catch(e){ err = err || String(e); }
+      return { err: err, n: ss.length, travel: ss.map(function(p, k){ return Math.round(Math.abs(p.x - x0[k])); }), drop: ss.map(function(p, k){ return Math.round(p.y - y0[k]); }),
+               left: projectiles.filter(function(p){ return p.owner === A.idx; }).length };`);
+    expect(a.err, 'nothing in the air throw breaks').toBe(null);
+    expect(a.n, 'two in the air too').toBe(2);
+    expect(a.drop, 'no gravity: they fly level').toEqual([0, 0]);
+    expect(a.travel, 'about 420 px each, then gone').toEqual([420, 420]);
+    expect(a.left).toBe(0);
   });
 
   it("Bow aims where she holds while she fades (the last arrows count; the jump key is her up and spends no jump), and a KO ends it", () => {
@@ -500,10 +534,16 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(r.loud).toBeGreaterThan(r.quiet);
   });
 
-  it("Bow's chair catch gives her a jump back when it connects, Taco's arms drag a foe in, Apple's doodle goes through", () => {
-    const bow = arena('Bow', `A.jumps = 0; D.x = A.x + 20; D.y = feetY(A); D.invuln = 0; doDownSpecial(A);
-      return { jumps: A.jumps, hit: D.pct > 30 };`);
-    expect(bow.hit && bow.jumps > 0, 'catching someone with it is the recovery').toBe(true);
+  // RESTATED (2026-10-18, v72): Bow's down-special was the Chair Catch (a chair under her that spiked whoever was beneath and gave her a
+  // jump back). The owner: "bow having no projectiles feels very annoying (except for the smash)" -- her down-special is two snowballs now,
+  // one each way, and the jump back went with the chair (Teleport is her way back). The pin keeps its point, a foe beside her is hit by it,
+  // and now says the jump back is gone.
+  it("Bow's snowballs hit a foe right beside her, Taco's arms drag a foe in, Apple's doodle goes through", () => {
+    const bow = arena('Bow', `A.jumps = 0; D.x = A.x + 20; D.y = A.y; D.invuln = 0; doDownSpecial(A); var jumps = A.jumps;
+      for (var i=0;i<3;i++) step();
+      return { jumps: jumps, hit: D.pct > 30 };`);
+    expect(bow.hit, 'the snowball going their way hits them').toBe(true);
+    expect(bow.jumps, 'no jump back: that was the Chair Catch').toBe(0);
     const taco = arena('Taco (II)', `var x0 = D.x; doDownSpecial(A); for (var i=0;i<8;i++) step(); return { pulled: D.x < x0 };`, 540);
     expect(taco.pulled).toBe(true);
     const apple = arena('Apple', `doSpecial(A);

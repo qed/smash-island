@@ -17,8 +17,8 @@ beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
 const KEPT = ['dash', 'kick'];
 // Bow's chair slam gains no height on purpose -- "bow shouldnt go higher in her up-special" (2026-09-22).
-// Her recovery is her DOWN special, which hands her a jump back when the chair catches someone. Only the rise
-// assertion is skipped for her; every payoff her row declares is still checked.
+// Her recovery is her neutral special, Teleport (her down-special is two snowballs now, 2026-10-18; the Chair Catch's
+// jump back is gone). Only the rise assertion is skipped for her; every payoff her row declares is still checked.
 const NO_RISE = ['chair'];
 
 describe('every up-special DOES something', () => {
