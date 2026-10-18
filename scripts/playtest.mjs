@@ -431,6 +431,7 @@ class Player {
   // ---------------------------------------------------------------- "can't" moments: the key was pressed and nothing happened
   armProbe(pr, me) {
     if (me.hitstun > 0 || me.frozen > 0 || me._lag > 0 || me._heldBy != null || me.rooted > 0 || me._selfStun > 0 || me.dead) return;   // not a fair test
+    if (me._jail != null || me._cam || me._ctfJT > 0 || this.wo.E('(typeof ctfMenuOpen === "function" && ctfMenuOpen()) || (SETTINGS.mode === "ctf" && CTF.live && CTF.live.phase !== "play")')) return;   // a prisoner, the free camera, the planning menu, a hiding phase: the game takes the keys on purpose
     const t = pr.type;
     if (t === 'atk' && me.atkCd > 0) return;
     if (t === 'special' && (me.spCd > 0 || me.atkCd > 12)) return;
@@ -460,13 +461,17 @@ class Player {
   watchStuck(S, me) {
     const f = this.wo.frame;
     const moving = this.plan.hold.size > 0;
+    if (this.wo.E('(typeof ctfMenuOpen === "function" && ctfMenuOpen())')) { this.lastPos = null; return; }
     const busy = me.hitstun > 0 || me.frozen > 0 || me._heldBy != null || me.rooted > 0 || me.dead || me._jail != null || me._lag > 0;
-    if (!this.lastPos || busy || !moving) { this.lastPos = { x: me.x, y: me.y, f }; return; }
-    if (Math.abs(me.x - this.lastPos.x) > 12 || Math.abs(me.y - this.lastPos.y) > 12) { this.lastPos = { x: me.x, y: me.y, f }; return; }
+    if (!this.lastPos || busy || !moving) { this.lastPos = { x: me.x, y: me.y, f, hops: 0 }; return; }
+    if (this.wo.held.has(MOVE_KEYS.up) && !this._upWas) this.lastPos.hops = (this.lastPos.hops || 0) + 1;
+    this._upWas = this.wo.held.has(MOVE_KEYS.up);
+    if (Math.abs(me.x - this.lastPos.x) > 12 || Math.abs(me.y - this.lastPos.y) > 12) { this.lastPos = { x: me.x, y: me.y, f, hops: 0 }; return; }
+    if (f - this.lastPos.f >= 600 && (this.lastPos.hops || 0) < 3) { this.lastPos.f = f - 300; return; }   // a wall the player never tried to jump over is not a bug
     if (f - this.lastPos.f >= 600) {
       this.stats.stuck++;
       note('STUCK', 'fighter-stuck', `${me.name}: held a move key for 10 s and did not move (mode ${S.mode})`, { detail: `at x=${Math.round(me.x)} y=${Math.round(me.y)} onground=${me.onground} stage=${this.wo.E('stage.id')}` });
-      this.lastPos = { x: me.x, y: me.y, f };
+      this.lastPos = { x: me.x, y: me.y, f, hops: 0 };
     }
   }
 }
@@ -622,7 +627,11 @@ async function playOut(wo, sim, capFrames, until, stuckOnCap) {
     if (sim.f % 120 === 0) await maybeYield();
   }
   if (sim.f >= cap && wo.running()) {
-    note(stuckOnCap ? 'STUCK' : 'FEEL', stuckOnCap ? 'match-never-ends' : 'long-match', `${wo.E('SETTINGS.mode')} match on ${wo.E('stage.id')} did not end in ${Math.round(cap / 3600)} min of game time`, { detail: `${wo.E('fighters.map(function(f){return f.name+":"+f.stocks+"/"+Math.round(f.pct)}).join(" ")')}` });
+    // a stalemate is a match where nobody has lost a stock for the last minute; a match that is merely long is a design signal (an explorer never fights, so it says nothing)
+    const lastKo = wo.w.__pt.kos.reduce((m, k) => Math.max(m, k.t), 0), now0 = wo.E('hazardT'), stale = now0 - lastKo > 3600, explorer = sim.player && sim.player.name === 'explorer';
+    if (explorer && !wo.E('TOURNEY.active')) return 'cap';
+    const stuck = stuckOnCap && stale;
+    note(stuck ? 'STUCK' : 'FEEL', stuck ? 'match-never-ends' : 'long-match', `${wo.E('SETTINGS.mode')} match on ${wo.E('stage.id')} ${stuck ? 'is a stalemate: no stock lost for a minute and it did not end in' : 'was still going after'} ${Math.round(cap / 3600)} min of game time`, { detail: `${wo.E('fighters.map(function(f){return f.name+":"+f.stocks+"/"+Math.round(f.pct)}).join(" ")')}` });
     return 'cap';
   }
   return wo.screen() === 'result' ? 'result' : (wo.running() ? 'running' : 'ended');
