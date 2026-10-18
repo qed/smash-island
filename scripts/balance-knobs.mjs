@@ -1,8 +1,8 @@
 // ============================================================================
 //  balance-knobs.mjs — every stat a balance sweep can move, including the hidden ones
 // ============================================================================
-// auto-balance.mjs can only reach two things: per-fighter WEIGHT and the RANGE_PROFILE row
-// (reach/dmg/kb). Everything else that decides a fight — how long a move is on cooldown, how many
+// auto-balance.mjs reaches per-fighter WEIGHT, the RANGE_PROFILE row (reach/dmg/kb) and, with --stats, the raw
+// stats in FIGHTER_STATS (run, air, jump, fall, dmg). Everything else that decides a fight — how long a move is on cooldown, how many
 // ticks a burn runs for, how long a freeze locks you — is a bare literal somewhere in the monolith,
 // so nothing could measure it and nothing could sweep it.
 //
@@ -88,6 +88,37 @@ export const KNOBS = {
     doc: 'per-fighter weight in ROSTER — feeds koCap = 150 + w, i.e. how much damage you survive',
     find: /(\{name:"[^"]+",\s*w:)(\d+)/g,
     read: (m) => int(m[2]), write: (m, v) => m[1] + v, clamp: [40, 145],
+  },
+
+  // ---- RAW STATS (FIGHTER_STATS) -----------------------------------------------------------
+  // The per-fighter multipliers beside weight (the owner, 2026-10-18: "add it, bcs its just a system extension"). The table is
+  // written with quoted keys, so these reach only it (and `dmg.all`, which matches `dmg:` with no quote, never does). A sweep
+  // scales the "*" default and every fighter's own row together: the whole roster's run, jump... at once. Per-fighter nudges are
+  // auto-balance.mjs's (--stats). The clamps are the sane bounds for a stat: 0.85-1.15, damage 0.85-1.2.
+  'stat.run': {
+    doc: 'FIGHTER_STATS run: ground run acceleration and top speed (MOVE, MAXVX), per fighter and the "*" default',
+    find: /("run":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.15], places: 2,
+  },
+  'stat.air': {
+    doc: 'FIGHTER_STATS air: air drift acceleration and top speed',
+    find: /("air":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.15], places: 2,
+  },
+  'stat.jump': {
+    doc: 'FIGHTER_STATS jump: every jump\'s launch speed (JUMP, wall, dash and CTF jumps) and the short-hop cut',
+    find: /("jump":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.15], places: 2,
+  },
+  'stat.fall': {
+    doc: 'FIGHTER_STATS fall: gravity on the way down and the fast-fall speed (FF_V)',
+    find: /("fall":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.15], places: 2,
+  },
+  'stat.dmg': {
+    doc: 'FIGHTER_STATS dmg: the damage of every hit the fighter lands (not hazards, bleed, burn or healing)',
+    find: /("dmg":\s*)(\d+(?:\.\d+)?)/g,
+    read: (m) => parseFloat(m[2]), write: (m, v) => m[1] + keepPlaces(m[2], v), clamp: [0.85, 1.2], places: 2,
   },
 
   // ---- OFFENCE ------------------------------------------------------------------------------

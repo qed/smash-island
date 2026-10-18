@@ -1,15 +1,17 @@
 // ============================================================================
 //  auto-balance.mjs — apply one data-driven balance pass from a measurement
 // ============================================================================
-//   node scripts/auto-balance.mjs scripts/run1.json scripts/run2.json ... [--dry]
+//   node scripts/auto-balance.mjs scripts/run1.json scripts/run2.json ... [--dry] [--stats=run,air,jump,dmg]
 //
 // PASS SEVERAL RUNS OF THE SAME BUILD. One run cannot resolve anything finer than about 20
 // percentage points (see scripts/balance-noise.mjs), so a pass built on a single run is mostly
 // noise. Runs are POOLED, and the dead band shrinks as 1/sqrt(k) with the number supplied.
 //
-// Reads a ranking produced by balance-tournament.mjs and nudges the two levers a balance pass has:
+// Reads a ranking produced by balance-tournament.mjs and nudges the levers a balance pass has:
 // per-fighter WEIGHT (survivability, koCap = 150 + w) and the fighter's RANGE_PROFILE entry
 // (reach/dmg/kb — offence). Writes the changes into artifacts/V1/index.html and prints a report.
+// With --stats=... it also reaches the RAW STATS (FIGHTER_STATS: run, air, jump, fall, dmg -- multipliers, 1 = as shipped):
+// the owner, 2026-10-18, "add it, bcs its just a system extension", and earlier, "maybe you can change raw stats instead of moves".
 //
 // WHY THIS IS AUTOMATED AND CONSERVATIVE
 //
@@ -49,6 +51,15 @@ const DMG_MIN = 3, DMG_MAX = 13;
 const KB_MIN = 4, KB_MAX = 12;
 const REACH_MIN = -2, REACH_MAX = 26;
 const MIN_GAMES = 12;      // below this the sample is too thin to act on at all (per run, pooled)
+// RAW STATS (opt-in, --stats=run,air,jump,dmg): a step a pass, inside the sane bounds. Only UP, and only for the weak: the owner's
+// rule for this game is to buff the weak and never nerf the strong. `fall` has no plainly better direction (faster is harder to
+// juggle and worse to recover), so it is set by hand and never nudged here.
+const STAT_STEP = 0.02;
+const STAT_BOUNDS = { run: [0.85, 1.15], air: [0.85, 1.15], jump: [0.85, 1.15], fall: [0.85, 1.15], dmg: [0.85, 1.2] };
+const STAT_NUDGE = ['run', 'air', 'jump', 'dmg'];
+const statArg = process.argv.find(a => a.startsWith('--stats='));
+const STATS_ON = statArg ? statArg.slice(8).split(',').map(s => s.trim()).filter(Boolean) : [];
+for (const k of STATS_ON) if (!STAT_NUDGE.includes(k)) { console.error(`--stats: ${k} is not one of ${STAT_NUDGE.join(', ')}` + (k === 'fall' ? ' (fall is set by hand)' : '')); process.exit(1); }
 
 // Average every ranking supplied. This is the single most important change to how balancing works
 // here: one run cannot resolve anything finer than ~20pp, so a pass built on one run is mostly
@@ -149,6 +160,37 @@ for (const [key, names] of Object.entries(byKey)) {
   }
 }
 
+// ---- 3. RAW STATS: the weak get a little more of what --stats names ----------------------------
+// FIGHTER_STATS is JSON-shaped, one row a fighter ("*" is the default), so it is read and written whole.
+const FS_RE = /(const FIGHTER_STATS = \{)([\s\S]*?)(\r?\n\};)/;
+const statChanges = [];
+if (STATS_ON.length) {
+  const fm = html.match(FS_RE);
+  if (!fm) { console.error('FIGHTER_STATS not found in the monolith'); process.exit(1); }
+  const rows = {};
+  for (const r of fm[2].matchAll(/"([^"]+)":\s*(\{[^}]*\})/g)) rows[r[1]] = JSON.parse(r[2]);
+  const def = rows['*'] || {};
+  for (const name of Object.keys(roster)) {
+    const d = dev(name);
+    if (!(d <= -DEAD_BAND)) continue;              // weak only: nobody strong is touched
+    for (const k of STATS_ON) {
+      const row = rows[name] || {};
+      const cur = row[k] != null ? row[k] : (def[k] != null ? def[k] : 1);
+      const next = Math.min(STAT_BOUNDS[k][1], Math.max(STAT_BOUNDS[k][0], Math.round((cur + STAT_STEP) * 100) / 100));
+      if (next === cur) continue;
+      rows[name] = { ...row, [k]: next };
+      statChanges.push({ name, stat: k, from: cur, to: next, dev: d });
+    }
+  }
+  if (statChanges.length) {
+    const eol = fm[3].startsWith('\r') ? '\r\n' : '\n';
+    const fmtRow = (o) => '{ ' + Object.entries(o).map(([k, v]) => `${JSON.stringify(k)}:${v}`).join(', ') + ' }';
+    const names = ['*', ...Object.keys(rows).filter(n => n !== '*').sort()];
+    const body = names.filter(n => rows[n]).map(n => `  ${JSON.stringify(n)}: ${fmtRow(rows[n])}`).join(',' + eol);
+    html = html.replace(FS_RE, (_m, a, _b, c) => a + eol + body + c);
+  }
+}
+
 // ---- write -------------------------------------------------------------------------------------
 for (const c of weightChanges) {
   const re = new RegExp(`(\\{name:"${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}",\\s*w:)(\\d+)`);
@@ -168,5 +210,11 @@ for (const c of profileChanges.sort((a, b) => b.dev - a.dev)) {
   console.log(`  ${c.key.padEnd(10)} ${(c.dev * 100 >= 0 ? '+' : '')}${(c.dev * 100).toFixed(1)}pp  ${c.names.join('/')}`);
   console.log(`      ${c.from}`);
   console.log(`   -> ${c.to}`);
+}
+if (STATS_ON.length) {
+  console.log(`\nRAW STATS ${statChanges.length} changes (${STATS_ON.join(', ')}; weak fighters only, +${STAT_STEP} a pass)`);
+  for (const c of statChanges.sort((a, b) => a.dev - b.dev)) {
+    console.log(`  ${c.name.padEnd(14)} ${c.stat.padEnd(4)} ${c.from} -> ${c.to}   (${(c.dev * 100).toFixed(1)}pp)`);
+  }
 }
 if (DRY) console.log('\n(dry run — nothing written)');

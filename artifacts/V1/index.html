@@ -4694,7 +4694,7 @@ function ctfBigHit(t, from){
   if(!(t._cf >= 0)) return;
   if(Math.hypot(t.vx, t.vy) >= CTF_BIGHIT){ if(t._shield > 0){ t._shield = 0; for(let i=0;i<10;i++) puff(t.x, t.y, '#6ae0a0', 5); return; } ctfDropFlag(t, 'hit', from); ctfSfx('drop'); }
 }
-function ctfJumpV(f){ return JUMP * (f._cf >= 0 ? CTF_CARRY_JUMP : 1) * (f._ctfJT > 0 ? CTF_BOOST_JUMP : 1); }
+function ctfJumpV(f){ return JUMP * (f._cf >= 0 ? CTF_CARRY_JUMP : 1) * (f._ctfJT > 0 ? CTF_BOOST_JUMP : 1) * (f.st || STAT_ONE).jump; }   // (FIGHTER STATS: jump)
 function ctfEliminate(f){
   const L = CTF.live; if(!L || L.over) return false;
   SFX.ko();
@@ -16799,6 +16799,41 @@ addEventListener('keydown', e => {
   // (no banner: the owner, 2026-10-18, "Keep B, no banner" -- nothing is written on screen mid-match)
 });
 
+// ============================================================
+//  FIGHTER STATS: raw stats, per fighter
+// ============================================================
+// The owner (2026-10-18), asked about per-fighter run speed, jump height, fall speed and damage: "add it, bcs its just a system
+// extension". And earlier: "maybe you can change raw stats instead of moves" -- a balance pass reaches for these before a move.
+// WEIGHT (ROSTER w) was the only per-fighter raw stat; these five sit beside it. Each is a MULTIPLIER, and 1 is the game as it was:
+//   run   on the ground: the run's acceleration (MOVE) and its top speed (MAXVX)
+//   air   the same two in the air (drift)
+//   jump  every jump's launch speed (JUMP: first and double jumps, wall jumps, dash jumps, ctfJumpV) and the short-hop cut (SH_V)
+//   fall  gravity on the way down (a flyer's Flight included) and the fast-fall speed (FF_V). The engine has no terminal speed,
+//         so "falls faster" is "is pulled down harder": the fall speed at every moment scales by it. The way up is untouched.
+//   dmg   the damage of every hit the fighter lands: applyHit (attacks, specials, shots, finishers), the pummel (holdDamage), a boss
+//         (damageSummon, bossTakeHit) or a boss's add (hurtHostileAdd). Not hazards, bleed, burn or healing: none of them is a hit.
+// They MULTIPLY whatever else is on (Capture the Flag's 1.5x and a carrier's load, points for speed, haste and the other items, a
+// boss's buffs, a Final Smash, a flyer's Flight), never replace it. A dash's own speed is the move's, not the run's.
+// A row names only what it changes; "*" is everyone's default. Keep "*" at 1: scripts/balance-knobs.mjs scales it (with every row)
+// to move the whole roster at once, and scripts/auto-balance.mjs --stats=... nudges single fighters' rows (bounds 0.85-1.15, dmg 0.85-1.2).
+// Written as JSON (quoted keys) so those scripts can read and rewrite it, and so `dmg:` knobs never mistake it for a move's damage.
+// ONLINE: only the host simulates (a client draws its snapshots), and every device reads this by name: nothing of it is sent.
+// RUNNING! keeps every runner on 1 (its lanes are built on the shared MAXVX and JUMP). Capture the Flag's CPU route graphs are built
+// on the shared numbers too (ctfNavParams): a jump under 1 can come up short of a ledge they count on.
+const FIGHTER_STATS = {
+  "*": { "run":1, "air":1, "jump":1, "fall":1, "dmg":1 }
+};
+const STAT_KEYS = ['run', 'air', 'jump', 'fall', 'dmg'];
+const STAT_ONE = Object.freeze({ run:1, air:1, jump:1, fall:1, dmg:1 });   // what a fighter with no `st` (a client's copy) reads
+// A fighter's own five, read once (makeFighter): its row's value, else the default's; anything that is not a positive number reads 1.
+function statsFor(name){
+  const D = FIGHTER_STATS['*'] || STAT_ONE;
+  const R = (name && Object.prototype.hasOwnProperty.call(FIGHTER_STATS, name)) ? FIGHTER_STATS[name] : null, o = {};
+  for(const k of STAT_KEYS){ const v = +(R && R[k] != null ? R[k] : D[k]); o[k] = v > 0 ? v : 1; }
+  return o;
+}
+// The damage `d` of a hit landed by `f` (a fighter, or anything else: only a fighter has stats).
+function statDmg(f, d){ const S = f && f.st; return (S && S.dmg !== 1) ? d*S.dmg : d; }
 function makeFighter(r,x,y,idx){
   const kit=r.kit||{special:"basic"};
   const w=r.w||90;
@@ -16815,6 +16850,7 @@ function makeFighter(r,x,y,idx){
     rooted:0, ctrlRev:0, _revLock:0, slowed:0, _sawing:0, koCount:0, iceUntil:0, healing:0, _hurt:0, deaths:0, killCount:0, placement:null, _downOrder:0, _kos:0, _falls:0, _dmgDealt:0, _dmgTaken:0, _infected:0, _infectedBy:null, _origTeam:0, _lastInput:null, _empowerT:0, _hasteT:0, _bulletT:0, _plunge:null, _starT:0, _yoyleT:0, _holding:null, _bossHitId:-1, _bossHitDmg:0, _swallow:0, _swallowTick:0,
     flash:0, _atkAnim:0, _atkLen:ATK_ANIM, _atkPhase:null, _atkProg:0, _hurtAnim:0, _rigState:"idle", aiTimer:Math.random()*40, aiTarget:null, aiMode:0, _lastX:undefined, _stuck:0, _recover:0, _seekingSpawn:false,
     hurt: hurtboxFor(r && r.name),   // see HURTBOX; null falls back to the 24px circle
+    st: statsFor(r && r.name),   // FIGHTER STATS: run, air, jump, fall, dmg (all 1 unless FIGHTER_STATS says otherwise)
     r:24
   };
 }
@@ -25986,7 +26022,7 @@ function meLifeDownload(s, side, atX){
 // and melee and ranged players both get an answer to it. Beach Ball still pops on a pointed fighter, which is canon.
 // `from` (optional) is whoever dealt it, for a shot (which names no `by`): Steve Cobs's units take Knife's hits doubled, however they come (cobsKnifeMult; the owner, 2026-10-05).
 function hurtHostileAdd(s, dmg, shove, by, from){
-  s.hp -= dmg*cobsKnifeMult(s, from || by); s.flash = 6; s.vx += shove;
+  s.hp -= statDmg(from || by, dmg)*cobsKnifeMult(s, from || by); s.flash = 6; s.vx += shove;   // (FIGHTER STATS: the attacker's dmg)
   if(s.hp <= 0 || (by && popAssist(s, by))){ s.life = 0; for(let i=0;i<14;i++) puff(s.x, s.y, s.color, 5); }
 }
 // The round core of the old Rejection Portal and its snap-shut, kept for Steve Cobs's PORTAL (his own attack reads them, and drawRejectionPortal draws it): MePhone4's own portal is
@@ -34249,6 +34285,7 @@ function buildRaceRunners(){
   rows.forEach((r, i)=>{
     const x = i===0 ? RACE_START_X : i===1 ? RACE_START_X - 50 : RACE_START_X - 140 + (i-2)*44;
     const f = makeFighter({ ...r, you:i===0 }, x, fy - 60, i);
+    f.st = { ...STAT_ONE };   // FIGHTER STATS: the lanes are built on the shared MAXVX and JUMP (raceJumpFrames), so every runner runs on 1
     f.stocks = 1; f.homeBase = null; f.team = f._origTeam = (i<=1 ? 0 : i); f.face = 1;
     f.controller = i===0 ? 'local' : 'ai';
     if(i===1) f._marsh = true;
@@ -37537,6 +37574,7 @@ function step(){
 
   for(const f of fighters){
     if(f.dead) continue;
+    const fst = f.st || STAT_ONE;   // FIGHTER STATS
     if(TESTMODE.active) trainingPin(f);   // Training: the dummy's damage held where the player set it
     // ---- input (local human / remote player / AI) ----
     let inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};
@@ -37999,7 +38037,8 @@ function step(){
       if(f.ctrlRev>0){ const l=inp.left; inp.left=inp.right; inp.right=l; }  // Remote hack: reversed controls
       // HASTE EASES OFF. It used to be 1.5x flat and then nothing, so the frame it ran out felt like the
       // fighter had stopped dead while you were still holding the key. Over the last 20 frames it slides back.
-      const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * ctfSpeedK(f);   // (Capture the Flag: everyone 1.5x as fast, a flag carrier slower)
+      const fsk = f.onground ? fst.run : fst.air;   // FIGHTER STATS: the run on the ground, the drift in the air (on top of everything else)
+      const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * ctfSpeedK(f) * fsk;   // (Capture the Flag: everyone 1.5x as fast, a flag carrier slower)
       const _face0 = f.face;
       if(inp.left){ f.vx-=mv; f.face=f.ctrlRev>0?1:-1; }
       if(inp.right){ f.vx+=mv; f.face=f.ctrlRev>0?-1:1; }
@@ -38015,13 +38054,13 @@ function step(){
       // The speed CAP eases off with the haste, the same way the acceleration does. This is where the cliff was:
       // 1.4x flat and then nothing, so the frame the buff expired took 2.56 off a held run in one step (G28).
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
-        const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*ctfSpeedK(f); f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
+        const cap = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*ctfSpeedK(f)*fsk; f.vx=Math.max(-cap,Math.min(cap,f.vx)); }   // a tree walks; reserve power is slow
       // jump
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)
       else if(inp.jump && !f._jp && mtWallJump(f, inp)){ f._jp=true; }   // a wall jump (movetech): in the air, toward a wall, once per wall per airtime
-      else if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP); f._hop=f.onground && mtOn(f) && f.vy===JUMP && (isHumanCtrl(f) || !!f._aiHop);   /* a CPU's jumps stay the full jump unless it asked for a short hop (aiMovesetUse): its old rules tap jump */ /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
+      else if(inp.jump && !f._jp && f.jumps>0 && !f._lev && !(isBig()&&inp.down&&f.onground)){ f._jmp0={t:hazardT, y:f.y, jumps:f.jumps, ground:f.onground}; f.vy=(SETTINGS.mode==='ctf'?ctfJumpV(f):JUMP*fst.jump); f._hop=f.onground && mtOn(f) && f.vy===JUMP*fst.jump && (isHumanCtrl(f) || !!f._aiHop);   /* a CPU's jumps stay the full jump unless it asked for a short hop (aiMovesetUse): its old rules tap jump */ /* a boosted or laden jump is never cut short */ f.jumps--; f.onground=false; f._jp=true; puff(f.x,f.y+20,'#fff',4); if(f.you) SFX.jump(); }   // (while Bow floats the jump key is her UP: a player's up is the jump key, and it steers her instead of spending a jump)
       if(!inp.jump) f._jp=false;
-      if(f._hop){ if(f.vy>=0 || f.onground) f._hop=false; else if(!inp.jump){ if(f.vy < -SH_V) f.vy = -SH_V; f._hop=false; } }   // SHORT HOP: a tap of jump is cut (SH_V); held is the full jump
+      if(f._hop){ if(f.vy>=0 || f.onground) f._hop=false; else if(!inp.jump){ const shv = SH_V*fst.jump; if(f.vy < -shv) f.vy = -shv; f._hop=false; } }   // SHORT HOP: a tap of jump is cut (SH_V); held is the full jump
 
       // attacks
       const atkSp = !!inp.fin;   // V+C together = finisher (it was X+C until the grab took that pair, 2026-10-14)
@@ -38101,11 +38140,11 @@ function step(){
                            : (f.aiTarget && f.aiTarget.y < f.y-20);   // AI climbs only if target is above
       if(wantUp) f.vy-=0.9;
       else if(!f.you && f.aiTarget && f.aiTarget.y > f.y+20) f.vy+=0.7; // AI dives toward lower targets
-      f.vy+=grav*0.15; f.vy*=0.94;
+      f.vy += f.vy > 0 ? grav*0.15*fst.fall : grav*0.15; f.vy*=0.94;   // (FIGHTER STATS: fall pulls on the way down)
     } else if(f._lev){
       // Bow is held up by telekinesis: levitateStep set her climb for this frame, and gravity does not pull on it
     } else {
-      f.vy += (f.vy > 0 && f.kit && f.kit.special==='airrel') ? grav*0.55 : grav;   // Balloon: helium, Slow Falling
+      f.vy += f.vy > 0 ? ((f.kit && f.kit.special==='airrel') ? grav*0.55 : grav)*fst.fall : grav;   // Balloon: helium, Slow Falling (FIGHTER STATS: fall pulls on the way down)
       // Marshmallow has never once used gravity correctly -- she steps off a cliff and goes sideways. She keeps
       // almost all of her air speed instead of bleeding it off, so she drifts a long way from where she jumped.
       if(f.kit && f.kit.special==='wallmart' && !f.onground) f.vx *= 1.008;
@@ -40939,7 +40978,7 @@ function mtWallJump(f, inp){
   const used = f._wallUsed || (f._wallUsed = {});
   if(used[f._wallId]) return false;
   used[f._wallId] = 1;
-  f.vy = JUMP * WJ_VY; f.vx = -f._wallSide * WJ_VX; f.face = -f._wallSide; f._clingT = 0; f._hop = false;
+  f.vy = JUMP * WJ_VY * (f.st || STAT_ONE).jump; f.vx = -f._wallSide * WJ_VX; f.face = -f._wallSide; f._clingT = 0; f._hop = false;
   for(let i = 0; i < 5; i++) puff(f.x + f._wallSide * f.r, f.y + (i - 2) * 6, '#fff', 2);
   if(f.you) SFX.jump();
   return true;
@@ -40956,9 +40995,10 @@ function mtFastFall(f, inp){
   if(!mtOn(f)) return;
   const blocked = f.onground || f.hitstun > 0 || f.frozen > 0 || f._lev || f.flying > 0 || f._floatT > 0 || f.vy < 0;
   if(blocked){ f._ff = false; return; }
-  if(f._ff){ if(f.vy < FF_V) f.vy = FF_V; if(hazardT % 2 === 0) puff(f.x, f.y - f.r, '#fff', 1); return; }
+  const ffv = FF_V*(f.st || STAT_ONE).fall;   // FIGHTER STATS: fall
+  if(f._ff){ if(f.vy < ffv) f.vy = ffv; if(hazardT % 2 === 0) puff(f.x, f.y - f.r, '#fff', 1); return; }
   if(edge && !inp.attack && !inp.special && !inp.smash && !inp.grab && !inp.fin && !f._mv && !f._grabHold && !(!isHumanCtrl(f) && (msOf(f) || {}).aiFit && f._aiFF !== hazardT)){   // (a CPU of batch 2 on fast-falls only when aiMovesetUse asks: its old rules press ↓ in the air for other reasons)
-    f._ff = true; f.vy = Math.max(f.vy, FF_V); for(let i = 0; i < 3; i++) puff(f.x + (i - 1) * 8, f.y - f.r, '#fff', 1);
+    f._ff = true; f.vy = Math.max(f.vy, ffv); for(let i = 0; i < 3; i++) puff(f.x + (i - 1) * 8, f.y - f.r, '#fff', 1);
   }
 }
 const MOVESETS = {};   // kit.special -> the fighter's moves; each batch adds its fighters (piece 3 onward)
@@ -41075,6 +41115,7 @@ function holdTick(f, inp){
 // damage that is not a launch (the pummel): same bookkeeping as a hit, none of the knockback or stun
 function holdDamage(f, t, dmg){
   if(TESTMODE.active && !TESTMODE.damage) dmg = 0;
+  dmg = statDmg(f, dmg);   // FIGHTER STATS: the holder's dmg
   t.pct += dmg; t._dmgTaken = (t._dmgTaken || 0) + dmg; f._dmgDealt = (f._dmgDealt || 0) + dmg; t.lastHitBy = f;
   t.flash = 6; t._hurtAnim = HURT_ANIM;
   if(dmg > 0) SFX.hit(dmg);
@@ -42893,6 +42934,7 @@ function mtDashJump(f, inp){
   if(back){ vx = -dir * spd * REV_K; vy = JUMP * HYPER_JUMP; f.face = -dir; }             // reverse hyper
   else if(I.down){ vx = dir * spd * (I.air ? WD_K : HYPER_K); vy = JUMP * HYPER_JUMP; f.face = dir; }      // hyper (a wavedash's is weaker)
   else { vx = dir * spd * SUPER_K; vy = JUMP; f.face = dir; }                             // super
+  vy *= (f.st || STAT_ONE).jump;   // FIGHTER STATS: jump
   f._dashing = 0; f._dashHits = null; f._dashDmg = 0; f._dashVY = 0; f._dashSpeed = 0; f._dashArmored = false; f._dashBoom = false; f._dashMargin = null; f._dashCuff = false; f._dashSummonHits = null;
   f._dashInfo = null;
   f.vx = vx; f.vy = vy; f.jumps--; f.onground = false; f._hop = false; f._hyperT = 140; f._hyperKind = back ? 'rev' : (I.down ? 'hyper' : 'super'); f._hyperWD = !back && !!I.down && !!I.air;
@@ -44292,6 +44334,7 @@ function twoUngroundedBlocks(s){
 // inside damageSummons's loop, split out so a move that picks ONE target -- a grab, a lash, a haul (see nearestSummon) --
 // can land its damage on the boss it picked without a radius search. What each branch does is unchanged.
 function damageSummon(f, s, cx, cy, dmg){
+  const dmg0 = dmg; dmg = statDmg(f, dmg);   // FIGHTER STATS: the attacker's dmg (an add's is taken in hurtHostileAdd, so it gets dmg0)
   if(s.type==="boss"){
     // GRACE, PER ATTACKER (bossGraceRec): a hit that lands opens THIS character's grace on this boss, and until it runs out this
     // character's next hit does not land (a flurry or an aura through its own, a new move through an open chain: as on a fighter).
@@ -44309,7 +44352,7 @@ function damageSummon(f, s, cx, cy, dmg){
   // An assist is a CAMEO, not a combatant: it can be shoved around, but it cannot be killed.
   // It used to lose 30 life a connect out of 480, so any fighter who wandered into one deleted
   // it in half a second and the trophy you spent an item slot on was never seen again.
-  else if(s.hostile){ hurtHostileAdd(s, dmg, Math.sign(s.x-cx||1)*4, f); }   // ...except MePhone4's adds, which fight for the boss
+  else if(s.hostile){ hurtHostileAdd(s, dmg0, Math.sign(s.x-cx||1)*4, f); }   // ...except MePhone4's adds, which fight for the boss
   else if(s.type==="pepper"){ s.hp -= dmg; s.flash=6; s.vx += Math.sign(s.x-cx||1)*3; for(let i=0;i<4;i++) puff(s.x,s.y,'#3b3b46',4); }
   else { s.vx += Math.sign(s.x-cx||1)*4; if(s.mortal) popAssist(s, f); }
 }
@@ -44724,6 +44767,7 @@ function bossGraceBlocks(s, f, strict){
 function bossGraceNote(s, f, dmg){ stampHit(bossGraceRec(s, f, true), dmg, f, false); }
 // A boss hurt by a shot or a dash: damageSummon's own branches for a caller with no point to shove it from. Returns what it took.
 function bossTakeHit(s, dmg, from){
+  dmg = statDmg(from, dmg);   // FIGHTER STATS: the attacker's dmg
   let d = 0;
   if(s._oneFight) d = oneTakeDamage(s, dmg, from);
   else if(s._cobsFight) d = cobsTakeDamage(s, dmg, from);
@@ -44777,6 +44821,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(from && from!==t && from.team===t.team && !(opts && opts.reflected)) return;
   // friendly fire off — teammates can't damage each other (FFA = everyone own team)
   if(from && from.idx!==t.idx && from.team===t.team) return;
+  if(from && from !== t) dmg = statDmg(from, dmg);   // FIGHTER STATS: the attacker's dmg, first (a counter answers the hit as it landed)
   // COUNTER: if the target is in a counter stance, they nullify the hit and punish the attacker.
   if(t.countering>0 && from && from.idx!==t.idx && !from.dead && !(SMASH_PROJ && SMASH_PROJ.unbreakable)){   // (a counter does not nullify an `unbreakable` shot -- the Bug Swarm's dodgeball: it lands)
     t.countering=0; t.flash=12; t.invuln=Math.max(t.invuln,10);
