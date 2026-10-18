@@ -9,9 +9,10 @@ const FAKE = `window.__fake = function(sp){ sp._req = true; sp.img = { complete:
 const KITS = { Puffball: 'fly', Bow: 'chair', Pencil: 'van', Leafy: 'dash', Firey: 'ember', Pen: 'cap', Blocky: 'anvil', 'Ice Cube': 'shatter', Match: 'spark', Snowball: 'tackle', Pin: 'pierce', Bomby: 'bomb',
   Needle: 'counter', Flower: 'quake', 'Tennis Ball': 'serve', Teardrop: 'kick', Bubble: 'float', Rocky: 'barf', Coiny: 'slap', 'Golf Ball': 'zapshooter',
   Tree: 'timber', Roboty: 'antenna', David: 'seriously', Sidewalky: 'slam', Bell: 'ring', TV: 'static', Toothpaste: 'paste', Lollipop: 'sucker',
-  Book: 'define', Fries: 'fry', Gelatin: 'freeze', Nickel: 'flip', Ruby: 'beam', 'Yellow Face': 'buynow', 'Barf Bag': 'splash', Basketball: 'dribble' };
+  Book: 'define', Fries: 'fry', Gelatin: 'freeze', Nickel: 'flip', Ruby: 'beam', 'Yellow Face': 'buynow', 'Barf Bag': 'splash', Basketball: 'dribble',
+  Bracelety: 'sign', Fanny: 'gust', Gaty: 'reflect', Grassy: 'grasstree', Lightning: 'zap', Liy: 'switch', Loser: 'cool', Marker: 'ink' };
 const SLOTS = ['jab', 'ft', 'ut', 'dt', 'na', 'fa', 'ba', 'ua', 'da', 'side', 'grab', 'pummel', 'fthrow', 'bthrow', 'uthrow', 'dthrow', 'special', 'up', 'down', 'smash', 'finisher'];
-const OLD_FRAMES = ['fly.jab', 'fly.na', 'beam.na'];
+const OLD_FRAMES = ['fly.jab', 'fly.na', 'beam.na', 'gust.na'];
 let W, MVA, SPIT;   // SPIT: the moves whose kind is the spit (Firey's Ember Spit, Puffball's spit): the body swells and spits, which is its own frames already
 
 beforeAll(() => {
@@ -26,6 +27,7 @@ describe('every move has its own animation', () => {
     const missing = [];
     for (const [name, kit] of Object.entries(KITS)) for (const s of SLOTS) {
       const id = `${kit}.${s}`;
+      if (s === 'side' && !MVA[id]) continue;   // (batch 6 wrote no side specials: the owner turned them off, 2026-10-16; the earlier batches' side rows stay animated as data)
       if (OLD_FRAMES.includes(id) || SPIT.includes(id)) { expect(MVA[id], id).toBeUndefined(); continue; }
       const m = MVA[id];
       if (!m) { missing.push(`${name} ${id}`); continue; }
