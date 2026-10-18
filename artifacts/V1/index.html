@@ -9138,13 +9138,16 @@ function ctfAiWalk(f, inp, tx, tol){
 function ctfNavFly(nav, s, ctl, free, thru, bst, st){
   const P = ctfNavParams(free, bst), R = P.R, WH = nav.M.WH;
   // FIGHTER STATS (st: the live fighter's, from ctfAiPlanFly; with none it is every stat at 1): the run on the ground, the drift in
-  // the air (a running jump keeping the run's speed), the jump, and the fall on the way down, as step() moves the fighter.
+  // the air (a running jump easing down from the run's speed: runEaseCap, on s.at, the frames already in the air), the jump, and the fall
+  // on the way down, as step() moves the fighter.
   const S = st || STAT_ONE, ACCg = P.ACC*S.run, ACCa = P.ACC*S.air, CAPg = P.CAP*S.run, CAPa = P.CAP*S.air, JV = P.JV*S.jump, GF = S.fall;
-  let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, fl = !!s.fl, wt = -9, ws = 0;
+  let x = s.x, y = s.y, vx = s.vx, vy = s.vy, jumps = s.jumps, ground = !!s.g, jp = !!s.jp, sp = s.sp || 0, fl = !!s.fl, wt = -9, ws = 0, ta = s.at || 0;
   for(let t = 1; t <= 150; t++){
+    ta = ground ? 0 : ta + 1;
     const c = ctl(t, x, y, vx, vy, jumps) || {};
-    if(c.dir){ const v0 = vx < 0 ? -vx : vx; vx += c.dir*(ground ? ACCg : ACCa); let cap = ground ? CAPg : CAPa; if(!ground && CAPg > CAPa && v0 > cap) cap = Math.min(CAPg, v0); if(vx > cap) vx = cap; else if(vx < -cap) vx = -cap; }
+    if(c.dir){ const v0 = vx < 0 ? -vx : vx; vx += c.dir*(ground ? ACCg : ACCa); let cap = ground ? CAPg : CAPa; if(!ground && CAPg > CAPa && v0 > cap) cap = Math.min(runEaseCap(CAPa, CAPg, ta), v0); if(vx > cap) vx = cap; else if(vx < -cap) vx = -cap; }
     else if(ground) vx *= FRICTION;
+    else if(CAPg > CAPa){ const v0 = vx < 0 ? -vx : vx; if(v0 > CAPa){ const cap = Math.min(runEaseCap(CAPa, CAPg, ta), v0); if(vx > cap) vx = cap; else if(vx < -cap) vx = -cap; } }   // (nothing held in the air: the game's cap still eases a running jump down)
     if(c.jump){ if(jumps > 0 && !jp){ if(!ground && t - wt <= 3 && c.dir === ws && !CTF.wallOK) return null; vy = JV; jumps--; ground = false; jp = true; } } else jp = false;
     if(thru && t === 1){ y += R*0.6; vy = 5; ground = false; }
     vy += (fl ? P.G*0.35 : P.G)*(vy > 0 ? GF : 1); x += vx; const pb = y + R; y += vy;
@@ -9180,7 +9183,7 @@ function ctfAiPlanFly(nav, f, e, o){
     else if(o.dj && !djDone && jumps > 0 && (o.djNow || (t >= 6 && vy >= -0.4))){ c.jump = true; djDone = true; }
     return c;
   };
-  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, fl:f._floatT > 0 }, ctl, free, !!o.thru, bst, f.st);
+  return ctfNavFly(nav, { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp, sp:f._springT || 0, fl:f._floatT > 0, at:f._airT || 0 }, ctl, free, !!o.thru, bst, f.st);
 }
 function ctfAiStat(k){ const S = CTF.stat = CTF.stat || {}; S[k] = (S[k] || 0) + 1; }
 // Follow the current path, one step at a time. Moves are steered from what the fighter is really doing: the jump goes at the moment a look ahead says it
@@ -16833,7 +16836,8 @@ addEventListener('keydown', e => {
 // jump under 1 can come up short of a ledge they count on); the live look-ahead that times a CPU's jumps (ctfAiPlanFly) uses the
 // fighter's own run, air, jump and fall.
 // How they meet the rest:
-//   * a running jump keeps the run's speed into the air (never more), so a run above the air still pays off off the ground;
+//   * a running jump takes off at the run's speed and eases down to the air's over RUN_EASE frames (never more), so a run above
+//     the air still pays off off the ground;
 //   * dmg reaches everything a hit can break or hurt -- the Smash Ball, a turret, a boss's tongue, Teardrop's taunt bonus -- and a
 //     move's words (MOVE_TEXT's "On hit:" numbers, the smash line): a card states the hit as it lands;
 //   * a counter's return is built from the hit as it landed (the attacker's dmg in it) and is then the counterer's own hit (their
@@ -16853,6 +16857,12 @@ function statsFor(name){
 }
 // The damage `d` of a hit landed by `f` (a fighter, or anything else: only a fighter has stats).
 function statDmg(f, d){ const S = f && f.st; return (S && S.dmg !== 1) ? d*S.dmg : d; }
+// A RUNNING JUMP EASES DOWN (the owner, 2026-10-18: "Eases down"). A fighter whose run is above its air takes off at the run's speed,
+// and the most it may keep slides from the run's cap to the air's over RUN_EASE frames of airtime (smoothstep: it stays near the run
+// at first, then settles on the drift). It is a ceiling on the speed already carried, never a push: a drift against it still slows
+// it. airT is the fighter's frames in the air (f._airT; 1 on the first). With run == air (every fighter today) it is never read.
+const RUN_EASE = 30;
+function runEaseCap(capAir, capRun, airT){ const u = Math.min(1, Math.max(0, ((airT || 1) - 1)/RUN_EASE)); return capAir + (capRun - capAir)*(1 - u*u*(3 - 2*u)); }
 // FIGHTER STATS in the words. A move's line states its hit as it lands, so a fighter's dmg reaches its "On hit:" numbers too
 // (test/move-text holds them to the measured hit). statPcts scales every N% of a phrase except the ones that are not a hit's damage:
 // a threshold ("above 40%"), a heal ("heals you 3%"), a cost ("costs him 3%") or a ratio ("20% extra", "40% less", "60% of it").
@@ -38062,6 +38072,7 @@ function step(){
     if(f._attract) magnetPullStep(f);   // Magnet's C'MON, BESTIE!: the pull, and the hit as they arrive
 
     // ---- move ----
+    f._airT = f.onground ? 0 : (f._airT || 0) + 1;   // frames in the air (1 on the first): a running jump eases down over them (runEaseCap)
     if(f.hitstun<=0){
       if((inp.left && !f._pl) || (inp.right && !f._pr)) f._dirT = hazardT;
       f._pl = !!inp.left; f._pr = !!inp.right;
@@ -38091,9 +38102,10 @@ function step(){
       else { const hk = f._hasteT>0 ? (1 + 0.4*Math.min(1, f._hasteT/20)) : 1;
         const cb = (f.slowed>0?MAXVX*0.55:MAXVX)*hk*(f._grasstree>0?0.85:1)*(f._noBattery>0?0.75:1)*ctfSpeedK(f);   // a tree walks; reserve power is slow
         let cap = cb*fsk;
-        // FIGHTER STATS: a running jump keeps the run's speed. In the air the cap is the drift's, but it never cuts the speed the fighter
-        // already had below what the run allows: the momentum is kept (a drift against it still slows it), it is never added to.
-        if(!f.onground && fst.run > fst.air && vx0 > cap) cap = Math.min(cb*fst.run, vx0);
+        // FIGHTER STATS: a running jump eases down from the run's speed to the drift's (runEaseCap). In the air the cap is the drift's,
+        // but it never cuts the speed the fighter already had below the easing ceiling: the momentum is kept while the ceiling slides
+        // down (a drift against it still slows it), and it is never added to.
+        if(!f.onground && fst.run > fst.air && vx0 > cap) cap = Math.min(runEaseCap(cap, cb*fst.run, f._airT), vx0);
         f.vx=Math.max(-cap,Math.min(cap,f.vx)); }
       // jump
       if(inp.jump && !f._jp && mtDashJump(f, inp)){ f._jp=true; }   // a hyper, a super or a reverse hyper out of a dash (dashers)

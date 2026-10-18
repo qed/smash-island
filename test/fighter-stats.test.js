@@ -8,7 +8,7 @@ import { loadMonolith } from './helpers/load-monolith.js';
 //   * each one at 1.1 moves its own quantity by about 1.1 and leaves every other one exactly as it was;
 //   * the run multiplies Capture the Flag's 1.5x (and a carrier's jump), never replaces it;
 //   * dmg reaches everything a hit breaks or hurts (a boss through Chain Bolt, its tongue, the Smash Ball, a turret, an infected
-//     fighter's own rebound), a running jump keeps the run's speed, the CPU's Capture the Flag look-ahead jumps as the fighter
+//     fighter's own rebound), a running jump eases down from the run's speed ("Eases down", the owner, 2026-10-18), the CPU's Capture the Flag look-ahead jumps as the fighter
 //     really does, and a move's words state the hit as it lands (review fixes).
 // (Every bot golden staying identical, test/bot-playbooks.test.js, is the proof that the defaults change nothing anywhere else.)
 
@@ -122,26 +122,50 @@ describe('fighter stats (run, air, jump, fall, dmg)', () => {
     }
   });
 
-  it('a running jump keeps the run\'s speed (never more), and a standing drift is still the air\'s', () => {
+  // "Eases down" (the owner, 2026-10-18): a running jump with the run above the air takes off at the run's speed and eases down to
+  // the air's over about half a second (RUN_EASE, 30 frames). It used to keep the run's speed for the whole airtime (this test pinned
+  // that, 8 frames up). A drift against it still slows it, and with run == air nothing changes.
+  it('a running jump eases down from the run\'s speed to the air\'s (never more), and run == air is unchanged', () => {
     const r = JSON.parse(W.eval(`(function(){
-      var run = function(st){
+      var run = function(st, back){
         SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
         stage = Object.assign({}, STAGES[0], { plats:[], hazard:null }); worldPlats=[]; summons=[]; projectiles=[]; items=[];
         var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
         var A = mk('Pen', 150, 0), D = mk('Pencil', 1400, 1); Object.assign(A.st, st);
         A.team=0; D.team=1; A.controller='local'; A.you=true; D.controller='still'; fighters=[A,D]; for (var k in down) delete down[k]; step(); step();
-        down[KEYS.right]=true; for (var i=0;i<30;i++) step(); var g = A.vx; down[KEYS.jump]=true; step(); step(); var a1 = A.vx;
-        for (var i=0;i<6;i++) step(); var a2 = A.vx; down[KEYS.jump]=false; down[KEYS.right]=false;
-        return { ground:g, air:a1, air8:a2, inAir:!A.onground };
+        down[KEYS.right]=true; for (var i=0;i<30;i++) step(); var g = A.vx;
+        down[KEYS.jump]=true; step(); var tk = A.vx, up = !A.onground;   // the takeoff frame
+        if (back){ down[KEYS.right]=false; down[KEYS.left]=true; }
+        var vs = [], air = [];
+        for (var i=0;i<34;i++){ step(); vs.push(A.vx); air.push(!A.onground); }
+        for (var k in down) delete down[k];
+        return { ground:g, takeoff:tk, up:up, vs:vs, air:air };
       };
-      return JSON.stringify({ base:run({}), fast:run({ run:1.15 }), cap:MAXVX });
+      return JSON.stringify({ base:run({}), fast:run({ run:1.15 }), back:run({ run:1.15 }, true), even:run({ run:1.15, air:1.15 }), cap:MAXVX, ease:RUN_EASE });
     })()`));
-    expect(r.base.ground).toBe(r.cap);
-    expect(r.base.air).toBe(r.cap);
-    expect(r.fast.inAir).toBe(true);
-    expect(r.fast.ground / r.cap).toBeCloseTo(1.15, 9);
-    expect(r.fast.air, 'the run\'s speed is carried off the ground').toBe(r.fast.ground);
-    expect(r.fast.air8, 'and held through the airtime, never added to').toBe(r.fast.ground);
+    const C = r.cap, F = r.fast;
+    expect(r.ease, 'about half a second').toBe(30);
+    // run == air: exactly as before
+    expect(r.base.takeoff).toBe(C);
+    expect(r.base.vs.every((v) => v === C), 'run 1, air 1: the drift is the shared cap all the way').toBe(true);
+    expect(r.even.vs.every((v) => v === r.even.takeoff), 'run 1.15, air 1.15: the speed is kept all the way').toBe(true);
+    expect(r.even.takeoff / C).toBeCloseTo(1.15, 9);
+    // run 1.15, air 1: takes off at the run's cap...
+    expect(F.up).toBe(true);
+    expect(F.ground / C).toBeCloseTo(1.15, 9);
+    expect(F.takeoff, 'the takeoff speed is the run cap').toBe(F.ground);
+    expect(F.vs[0], 'and the first frame in the air still carries it').toBe(F.ground);
+    // ...eases down, never up and never past the run...
+    for (let i = 1; i < F.vs.length; i++) expect(F.vs[i], `frame ${i + 1} in the air`).toBeLessThanOrEqual(F.vs[i - 1]);
+    expect(F.vs[14], 'half way: between the two').toBeLessThan(F.ground);
+    expect(F.vs[14]).toBeGreaterThan(C);
+    // ...and about 30 frames later it is the air's cap (still in the air)
+    expect(F.air[30]).toBe(true);
+    expect(F.vs[30], '31 frames up: the air cap').toBeCloseTo(C, 9);
+    expect(F.vs[33]).toBeCloseTo(C, 9);
+    // a drift against it still slows it, faster than the ease alone
+    expect(r.back.takeoff).toBe(F.takeoff);
+    expect(r.back.vs[5], 'held back: slower than the eased run').toBeLessThan(F.vs[5] - 1);
   });
 
   it('a hazard is not a hit: dmg does not reach it', () => {
