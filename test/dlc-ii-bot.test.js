@@ -122,7 +122,7 @@ describe('the roster row and the render', () => {
     expect(t.length).toBe(8);
     expect(t[0]).toMatch(/^X.*There's More!.*2 hits of 4%/);
     expect(t[1]).toMatch(/^↓\+X.*Spaggers!/);
-    expect(t[2]).toMatch(/^↑\+X.*Uppercut/);
+    expect(t[2]).toMatch(/^↑\+X.*Stilt Up/);   // Bot's own up-tilt since the moveset (8e04043; the owner, 2026-10-14: every fighter grows to about 22 moves on the same keys)
     expect(t[3]).toMatch(/^C.*Cheer Factory!/);
     expect(t[4]).toMatch(/^↑\+C.*Bridge the Gap!/);
     expect(t[5]).toMatch(/^↓\+C.*Gotcha!/);
@@ -141,7 +141,7 @@ describe('every table has its row', () => {
         up: UPSPEC[k] && UPSPEC[k].shape, down: typeof DOWNSPECIALS[k], quip: victoryQuipFor('Bot'), cls: AI_CLASS[row.arch], aiClass: aiClass({ kit:{special:k}, arch:row.arch, name:'Bot' }),
         range: RANGE_PROFILE[k], jab: JAB_ANIM[k], anim: typeof (FIGHTER_ANIM.Bot||{}).over, show: SHOW_ORDER.indexOf('Bot'), prize: SHOW_ORDER.indexOf('OJ'), sprite: !!SPRITES.Bot,
         traced: [!!HURTBOX.Bot, !!HURT_POLY.Bot, !!LIMB_RIG.Bot] }; })()`);
-    expect(r.lines).toEqual(['down', 'finisher', 'jab', 'ranged', 'special', 'up', 'utilt']);
+    expect(r.lines).toEqual(['bair', 'bthrow', 'dair', 'down', 'dthrow', 'fair', 'finisher', 'fthrow', 'ftilt', 'grab', 'jab', 'nair', 'pummel', 'ranged', 'special', 'tech', 'uair', 'up', 'uthrow', 'utilt']);   // + the moveset's lines (8e04043)
     expect(r.sid).toEqual(['The One and Only!', '#f0fff3']);
     expect(r.spec).toEqual({ pat: 'leap', uncopyable: true, cost: ['stun'] });
     expect(r.specOthers, 'no other smash claims it cannot be copied').toEqual(['cheer']);
@@ -227,16 +227,17 @@ describe("THERE'S MORE!: two kicks from one press", () => {
   });
 });
 
-describe('SPAGGERS!: a clump flicked along the floor, 3%, a short tangle', () => {
-  const at = (name, dx) => arena(name, `A.atkCd = 0; D.x = 400 + ${dx}; var n0 = projectiles.length, p0 = particles.length; doGroundMove(A);
-    return { dmg: +(D.pct - 30).toFixed(2), vy: +D.vy.toFixed(2), rooted: D.rooted|0, stunFx: D._stunFx|0, shots: projectiles.length - n0, bits: particles.length - p0, flick: A._spagT === hazardT };`, 460, 3000);
+describe('SPAGGERS!: a clump flicked along the floor, 3.2%, a short tangle', () => {
+  // since the moveset (8e04043) the flick is Bot's down-tilt: 5 frames of startup, so the move is run out; the hit is read on the frame
+  // it lands, the tangle counted with that frame; the ordinary down+X is Tea Kettle's own down-tilt (421e587)
+  const at = (name, dx) => arena(name, `A.atkCd = 0; D.x = 400 + ${dx}; var n0 = projectiles.length; doGroundMove(A); var flick = A._spagT === hazardT, shots = 0, noodles = 0, vy = 0, rooted = 0, stunFx = 0; for (var i=0;i<20;i++){ var before = D.pct; step(); shots = Math.max(shots, projectiles.length - n0); noodles = Math.max(noodles, particles.filter(function(p){ return SPAGGERS_NOODLE.indexOf(p.color) >= 0; }).length); if (D.pct > before + 0.05){ vy = D.vy; stunFx = D._stunFx|0; rooted = D.rooted > 0 ? 1 : 0; while (D.rooted > 0 && rooted < 200){ step(); rooted++; } break; } } return { dmg: +(D.pct - 30).toFixed(2), vy: +vy.toFixed(2), rooted: rooted, stunFx: stunFx, shots: shots, bits: noodles, flick: flick };`, 460, 3000);
 
-  it('lands 3% and tangles them for about half a second (36 frames rooted, not stunned), without popping them up', () => {
+  it('lands 3.2% and tangles them for about half a second (36 frames rooted, not stunned), without popping them up', () => {
     const spag = at('Bot', 60), sweep = at('Tea Kettle', 60);
-    expect(spag.dmg).toBe(3);
+    expect(spag.dmg).toBe(3.2);
     expect(spag.rooted, 'a short tangle').toBe(36);
     expect(spag.stunFx, 'rooted, not stunned').toBe(0);
-    expect(sweep.vy, 'the ordinary sweep pops them up').toBeLessThan(-4);
+    expect(sweep.vy, "Tea Kettle's down-tilt pops them up").toBeLessThan(-4);
     expect(spag.vy, 'the flick does not').toBeGreaterThan(sweep.vy + 3);
   });
 
@@ -248,7 +249,7 @@ describe('SPAGGERS!: a clump flicked along the floor, 3%, a short tangle', () =>
   });
 
   it('reaches farther than any other fighter\'s sweep, one way only: ahead', () => {
-    expect(at('Bot', 95).dmg, 'out where a sweep does not reach').toBe(3);
+    expect(at('Bot', 95).dmg, 'out where a sweep does not reach').toBe(3.2);
     expect(at('Tea Kettle', 95).dmg).toBe(0);
     expect(at('Bot', 135).dmg, 'but it is short').toBe(0);
     expect(at('Bot', -40).dmg, 'never behind').toBe(0);
@@ -312,8 +313,8 @@ describe('CHEER FACTORY!: a confetti pulse for the allies, or for Bot alone', ()
     expect(r.first, 'the first kick: 4% x 1.3').toBe(5.2);
     expect(r.second, 'the second kick is the plain 4%').toBe(4);
     expect(r.spent, 'once').toBe(0);
-    const spag = arena('Bot', `D.x = 3000; E.x = 3100; fireSpecial(A, {}); D.x = 460; D.invuln = 0; A.atkCd = 0; D.pct = 30; doGroundMove(A); return +(D.pct - 30).toFixed(2);`);
-    expect(spag, 'the flick is the next hit too: 3% x 1.3').toBe(3.9);
+    const spag = arena('Bot', `D.x = 3000; E.x = 3100; fireSpecial(A, {}); D.x = 460; D.invuln = 0; A.atkCd = 0; D.pct = 30; doGroundMove(A); for (var i=0;i<12;i++){ step(); D.x = 460; } return +(D.pct - 30).toFixed(2);`);
+    expect(spag, 'the flick is the next hit too: 3.2% x 1.3').toBe(4.16);
   });
 
   it('a KO takes the cheer Bot gave themself with it, and the pulse itself hits nobody', () => {
@@ -629,14 +630,14 @@ describe('Boss Rush: every hitting move of Bot\'s lands on a boss too, the numbe
   // on him. The boss stands 100 px from Bot (GOTCHA!, which has to run at him, 260) and is parked; the hp he loses is read back.
   it.each([
     ['jab', 'A.atkCd = 0; doAttack(A)', 100, 8],                  // both kicks: 4 + 4
-    ['ranged', 'A.atkCd = 0; doGroundMove(A)', 100, 3],           // the flick of spaghetti
-    ['utilt', 'A.atkCd = 0; doUpTilt(A)', 100, 5],
+    ['ranged', 'A.atkCd = 0; doGroundMove(A)', 100, 3.2],         // the flick of spaghetti (the down-tilt, 8e04043)
+    ['utilt', 'A.atkCd = 0; doUpTilt(A)', 100, 5.9],             // Stilt Up (8e04043)
     ['up', 'fireSpecial(A, {up:true})', 100, 9],                  // the stomp
     ['down', 'fireSpecial(A, {down:true})', 260, 4],              // the tackle: a boss is too big to hold
     ['smash', 'doSmash(A)', 200, 21],                             // the joyful leap: with no fighter to steer at it hops about 270 px forward, so he stands 200 off
     ['finisher', 'doAttackSpecial(A)', 100, 14],
   ])('%s: %s', (move, cast, dx, lost) => {
-    expect(bossRun('Bot', dx, cast).lost, `Bot ${move} on the boss`).toBe(lost);
+    expect(+bossRun('Bot', dx, cast).lost.toFixed(2), `Bot ${move} on the boss`).toBe(lost);   // (3.2 arrives as 3.1999999999999886)
   });
 
   it('CHEER FACTORY! lands nothing on a boss (there is no hit), and is spent as a self-cheer with nobody to cheer', () => {
