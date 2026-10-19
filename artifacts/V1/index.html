@@ -4794,7 +4794,8 @@ function ctfSfx(kind){
 // In the free camera a player picks a TOOL (attack key cycles: flag, decoration, platform, wall, trap, remove, offer) and a PIECE (the edit key cycles the
 // kinds of that tool); Space uses it where the cursor is. Everything is paid for out of the player's points. Decorations, traps, thin platforms and walls
 // are placed on the player's own side only, and "must be possible": when the hiding ends the pieces are checked against the CPU graph (the same reach test the
-// flags pass) and any that make a flag, the jail or a key unreachable are taken away, the newest first, until all is reachable again.
+// flags pass) and any that make a flag, the jail or a key unreachable are taken away, one piece at a time, the smallest that opens a way first, until all is reachable again (ctfFixStep). In that graph
+// a wall jump is a move (the owner, 2026-10-18: "Count wall jumps"; ctfWjCtl).
 const CTF_EDIT_PTS = 20;
 // STUN PADS WEAR THIN IN A CROWD (the owner, 2026-10-16: "if there are more than 5 stunpads in 1 area, then stuntime should be reduced"): a pad's stun is
 // CTF_STUN steps while its side has at most CTF_STUN_FREE pads in the area around it (CTF_STUN_AREA: about a room), and shrinks in proportion beyond that
@@ -5045,31 +5046,88 @@ function ctfEditPrebuild(L){   // while they are still hiding: once the edits ha
 }
 function ctfFixBegin(L){
   const st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).sort((a, b)=>a.seq - b.seq);
-  L.phase = 'fix'; ctfRebuildDyn(L);
-  L.fix = { st, set:st.slice(), lo:0, hi:null, keep:st.length, navs:{}, culprits:0 };
+  L.phase = 'fix'; ctfRebuildDyn(L); L.fixGone = [];
+  L.fix = { st, set:st.slice(), lo:0, hi:null, keep:st.length, navs:{}, culprits:0, mode:'' };
   if(L.pre && L.pre.seq === L.editSeq && L.pre.n === st.length) L.fix.navs[ctfFixKey(L.fix, st.length)] = L.pre.nav;
 }
 function ctfFixKey(F, k){ return F.set.slice(0, k).map(e=>e.id).join(','); }
-// The pieces are tried oldest first: the largest prefix that still leaves everything reachable is found (a binary search), and the piece after it is the one that seals. ONLY that piece goes (the owner, 2026-10-16: it took away a whole room
-// that was passable, "made open-air"); the rest of the pieces are then tried again as they are, and the next one that seals goes, and so on. The pieces that did not seal anything stay.
+// THE SMALLEST PIECE (the owner, 2026-10-18, asked what to take away when something truly cannot be reached: "Smallest piece", just the one piece that blocks the route, never the whole
+// defense). The graph with every piece in it is made first (its moves include the wall jumps: ctfWjCtl); if everything is reachable nothing goes. Else each piece that stands between a place the
+// other side reaches and one it does not is tried on its own, the smallest first (ctfFixCands): the graph without just that piece, patched from the one with all of them. The first whose
+// removal makes everything reachable goes, ALONE. If none does it alone, the one that makes the most of it reachable goes and the rest is looked at again. If no single piece helps at all (two
+// layers of wall, say), the old search: the pieces oldest first, the largest prefix that still leaves everything reachable is found (a binary search), and the piece after it is the one that
+// seals; ONLY that piece goes (the owner, 2026-10-16: it took away a whole room that was passable, "made open-air"), and the rest is looked at again. The pieces that seal nothing stay.
+// A piece taken away puffs where it stood as before (no new words on the screen).
+const CTF_FIX_TRY = 8;
+function ctfEditNavLess(L, rest, gone, full){   // the graph without one piece: patched from the one with all of them, re-probed only round where that piece stood
+  const g = { x:gone.x, y:gone.y, w:gone.w, h:gone.h }, rects = rest.map(q=>({ x:q.x, y:q.y, w:q.w, h:q.h }));
+  return ctfNavNew(ctfEditMap(L, rest.length, rest), full, [g], rects.concat([g]), { dx:800, up:2400, down:800 });
+}
+// The pieces worth trying for what cannot be reached (bad: ctfEditProblems): those with a place the side in question reaches and one it does not both close beside them (only such a piece,
+// taken away, can join the two), the smallest first, the nearest to what cannot be reached among equals, then the newest; at most CTF_FIX_TRY of them.
+function ctfFixCands(L, F, nav, bad){
+  const pts = [];
+  for(const b of bad){
+    if(b.indexOf('flag') === 0){ const fl = L.flags.find(q=>'flag' + q.id === b); if(fl) pts.push({ x:fl.x, y:fl.y, sides:[1 - fl.team] }); }
+    else if(b.indexOf('key') === 0){ const k = L.keys.find(q=>'key' + q.i === b); if(k) pts.push({ x:k.hx, y:k.hy, sides:[0, 1] }); }
+    else if(b.indexOf('jail') === 0){ const j = L.jails.find(q=>'jail' + q.owner === b); if(j) pts.push({ x:j.door.x + j.door.w/2, y:j.door.y + j.door.h, sides:[1 - j.owner] }); }
+  }
+  if(!pts.length) return [];
+  const sides = [0, 1].filter(t=>pts.some(p=>p.sides.indexOf(t) >= 0));
+  const between = e=>{
+    for(const t of sides){
+      const rc = nav.reach[t]; if(!rc) continue; let a = false, b = false;
+      for(let bk = ctfNavBucket(e.x - 150); bk <= ctfNavBucket(e.x + e.w + 150); bk++) for(const n of (nav.nb[bk] || [])){
+        if(n.x1 < e.x - 150 || n.x0 > e.x + e.w + 150 || n.y < e.y - 220 || n.y > e.y + e.h + 260) continue;
+        if(rc[n.id]) a = true; else b = true;
+        if(a && b) return true;
+      }
+    }
+    return false;
+  };
+  const dist = e=>{ let d = 1e9; for(const p of pts) d = Math.min(d, Math.hypot(Math.max(0, Math.abs(p.x - (e.x + e.w/2)) - e.w/2), Math.max(0, Math.abs(p.y - (e.y + e.h/2)) - e.h/2))); return d; };
+  return F.set.filter(between).map(e=>({ e, a:e.w*e.h, d:dist(e) })).sort((p, q)=>p.a - q.a || p.d - q.d || q.e.seq - p.e.seq).slice(0, CTF_FIX_TRY).map(o=>o.e);
+}
+function ctfFixDrop(L, F, e, nav){   // this one piece goes; what is left is looked at again (its graph is the one just made, if any)
+  F.set.splice(F.set.indexOf(e), 1); F.culprits++; F.mode = ''; F.lo = 0; F.hi = null; F.keep = F.set.length;
+  if(nav) F.navs[ctfFixKey(F, F.set.length)] = nav;
+  if(!F.set.length){ F.final = 0; ctfFixFinish(L); }
+}
+function ctfFixTry(L, F){
+  if(F.ci >= F.cands.length){
+    F.mode = '';
+    if(F.best){ ctfFixDrop(L, F, F.best.e, F.best.nav); return; }
+    F.lo = 0; F.hi = F.set.length; F.keep = Math.floor(F.hi/2);   // no single piece helps: the old search
+    return;
+  }
+  const e = F.cands[F.ci], rest = F.set.filter(q=>q !== e), key = rest.map(q=>q.id).join(',');
+  const nav = F.navs[key] || (F.navs[key] = rest.length ? ctfEditNavLess(L, rest, e, F.full) : CTF.navs[ctfNavId()]);
+  if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
+  const bad = rest.length ? ctfEditProblems(L, nav) : [];
+  if(!bad.length){ ctfFixDrop(L, F, e, nav); return; }
+  const fixed = F.bad.filter(b=>bad.indexOf(b) < 0).length, worse = bad.some(b=>F.bad.indexOf(b) < 0);
+  if(fixed > 0 && !worse && (!F.best || fixed > F.best.fixed)) F.best = { e, nav, fixed };
+  F.ci++;
+}
 function ctfFixStep(L){
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
+  if(F.mode === 'try'){ ctfFixTry(L, F); return; }
   const key = ctfFixKey(F, F.keep);
   const nav = F.navs[key] || (F.navs[key] = F.keep === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.keep, F.set));
   if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
   const bad = F.keep === 0 ? [] : ctfEditProblems(L, nav);
+  if(bad.length && F.hi === null && F.keep === F.set.length && !CTF.fixOld){   // the whole of what is left, and something cannot be reached: the pieces one at a time, the smallest first
+    const cands = ctfFixCands(L, F, nav, bad);
+    if(cands.length){ F.mode = 'try'; F.full = nav; F.bad = bad; F.cands = cands; F.ci = 0; F.best = null; return; }
+  }
   if(bad.length) F.hi = F.keep; else F.lo = F.keep;
   if(F.hi === null){ F.final = F.set.length; ctfFixFinish(L); return; }   // everything that is left is fine
-  if(F.hi - F.lo <= 1){   // the piece at lo seals: out it goes alone, and the whole of the rest is looked at again
-    F.set.splice(F.lo, 1); F.culprits++; F.lo = 0; F.hi = null; F.keep = F.set.length;
-    if(!F.set.length){ F.final = 0; ctfFixFinish(L); }
-    return;
-  }
+  if(F.hi - F.lo <= 1){ ctfFixDrop(L, F, F.set[F.lo], null); return; }   // the piece at lo seals: out it goes alone, and the whole of the rest is looked at again
   F.keep = Math.floor((F.lo + F.hi)/2);
 }
 function ctfFixFinish(L){
   const F = L.fix, keepIds = new Set(F.set.map(e=>e.id));
-  for(const e of F.st) if(!keepIds.has(e.id)){ L.edits.splice(L.edits.indexOf(e), 1); L.removedByFix = (L.removedByFix || 0) + 1; for(let i = 0; i < 10; i++) puff(e.x + e.w/2, e.y + e.h/2, '#ffffff', 5); }
+  for(const e of F.st) if(!keepIds.has(e.id)){ L.edits.splice(L.edits.indexOf(e), 1); L.removedByFix = (L.removedByFix || 0) + 1; (L.fixGone = L.fixGone || []).push({ id:e.id, team:e.team, tool:e.tool, kind:e.kind, x:e.x, y:e.y, w:e.w, h:e.h }); for(let i = 0; i < 10; i++) puff(e.x + e.w/2, e.y + e.h/2, '#ffffff', 5); }
   ctfRebuildDyn(L); ctfEditSettle(L);
   const nav = F.navs[ctfFixKey(F, F.set.length)] || (F.set.length === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.set.length, F.set));
   L.fix = null;
@@ -8664,10 +8722,12 @@ function ctfNavBucket(x){ return Math.floor(x/CTF_NAV_BUCKET); }
 
 function ctfNavKey(n){ return Math.round(n.x0) + '|' + Math.round(n.x1) + '|' + Math.round(n.y) + '|' + (n.solid ? 1 : 0); }
 // prev + diff: a graph already made for the map without some rectangles (the players' walls); nodes further than 1500 px sideways from all of them keep the moves they had
-function ctfNavNew(M, prev, diff){
+function ctfNavNew(M, prev, diff, fine, band){   // fine: every built piece (default: diff), for the fine probe and the wall jumps; band: { dx, up, down } re-probed round diff (default: 1500 px sideways, every height)
   const R = 24, solids = M.plats.filter(p=>p.solid);
   const blockers = M.doors.map(d=>({ x:d.x, y:d.y, w:d.w, h:d.h, door:d.id })).concat(M.jails.map(j=>({ x:j.door.x, y:j.door.y, w:j.door.w, h:j.door.h, door:'J' + j.owner })));
   const nav = { M, nodes:[], nb:{}, pb:{}, ready:false, cursor:0, reach:[null, null], sweep:[null, null], built:0, dense:Array.isArray(diff), diffRects:Array.isArray(diff) ? diff : [] };   // (dense: a graph patched at runtime for the pieces somebody built is probed more finely: the shipped graphs are made the plain way)
+  if(Array.isArray(fine)) nav.fineRects = fine;
+  if(nav.dense){ nav.builtIds = {}; for(const r of (nav.fineRects || nav.diffRects)) nav.builtIds[r.x + ':' + r.y] = 1; }   // (the pieces a wall-jump route may start from: ctfNavWallGen)
   // the areas that change a flight (water drags at you, glue stops you, wind pushes, thin air is light, a spring throws you): every simulated move feels them as the game does
   { const zs = (M.zones || []).filter(z=>z.type === 'water' || z.type === 'glue' || z.type === 'wind' || z.type === 'spring' || z.type === 'updraft');   // ('float' is not here: the game sets its flag but never lowers gravity for it, so a flight is the same inside it)
     if(zs.length && !CTF.noZones){ nav.zb = {}; for(const z of zs) for(let b = ctfNavBucket(z.x); b <= ctfNavBucket(z.x + z.w); b++) (nav.zb[b] = nav.zb[b] || []).push(z); } }
@@ -8755,7 +8815,7 @@ function ctfNavNew(M, prev, diff){
   nav.keyMap = {}; for(const n of nav.nodes) nav.keyMap[ctfNavKey(n)] = n;
   if(prev && prev.keyMap && diff){
     for(const n of nav.nodes){
-      const pn = prev.keyMap[ctfNavKey(n)]; if(!pn || diff.some(r=>n.x1 > r.x - 1500 && n.x0 < r.x + r.w + 1500)) continue;
+      const pn = prev.keyMap[ctfNavKey(n)]; if(!pn || diff.some(r=>n.x1 > r.x - (band ? band.dx : 1500) && n.x0 < r.x + r.w + (band ? band.dx : 1500) && (!band || (n.y > r.y - band.up && n.y < r.y + r.h + band.down)))) continue;
       const copy = []; let ok = true;
       for(const e of pn.edges){ if(e.kind === 'walk' || e.kind === 'wheel' || e.kind === 'portal') continue; const nn = nav.keyMap[ctfNavKey(prev.nodes[e.to])]; if(!nn){ ok = false; break; } copy.push(Object.assign({}, e, { from:n.id, to:nn.id })); }
       if(ok){ for(const e of copy) n.edges.push(e); n.reused = true; }
@@ -8808,7 +8868,7 @@ function ctfNavSim(nav, A, xa, vx, dir, dj, T, jump, free, thru, bst, pert){
   if(thru){ y += R*0.6; vy = 5; }   // down + jump on a one-way ledge: dropped through it (the game's own: dropping = 10 frames, vy 5)
   for(let t = 1; t <= 150; t++){
     if(dir !== 0 && t <= T){ vx += dir*P.ACC; if(vx > P.CAP) vx = P.CAP; else if(vx < -P.CAP) vx = -P.CAP; }
-    if(dj && jumps > 0 && t >= 6 + (pert ? pert.dd : 0) && vy >= -0.4){ if(t - wt <= 3 && dir === ws && t <= T && !CTF.wallOK) return null; vy = P.JV; jumps--; }   // (a jump against a wall held toward is the wall jump: the baseline fighter's plan never needs it, and it is not what the plan says)
+    if(dj && jumps > 0 && t >= 6 + (pert ? pert.dd : 0) && vy >= -0.4){ if(t - wt <= 3 && dir === ws && t <= T && !CTF.wallOK) return null; vy = P.JV; jumps--; }   // (a jump against a wall held toward is the wall jump: these plain moves never plan one, and it is not what the plan says; a graph patched for built pieces has wall-jump moves of their own: ctfWjCtl)
     vy += fl ? P.G*0.35 : P.G; x += vx; const pb = y + R; y += vy;
     const list = (nav.pb[ctfNavBucket(x)] || []);
     let landed = null;
@@ -8840,6 +8900,136 @@ function ctfNavSimBoth(nav, n, xa, dir, dj, T, jump, run, want, frac, bst){
   return !!r;   // anywhere on the map at all (a miss is then noticed and the way round it planned: see ctfAiFollow)
 }
 function ctfNavSimThru(nav, n, xa){ return !!ctfNavSim(nav, n, xa, 0, 0, 0, 0, false, true, true); }
+// ---- WALL JUMPS IN THE CHECK OF WHAT PLAYERS BUILD (the owner, 2026-10-18: "the ai flagged a possible neutral-walljump neo as impossible, and removed my defense..."; asked, "Count wall jumps") ----
+// The game's wall jump (mtWallJump): in the air, touching a solid side within WALL_WINDOW steps while holding toward it, jump kicks off it (vy JUMP*WJ_VY, vx WJ_VX away), once per piece an airtime.
+// A NEUTRAL one keeps holding toward the wall and drifts straight back to it (up a column of stacked pieces, a kick off each); held away a few steps first, it gets out from under an overhang
+// and drifts back round its lip (a neo); turned to the far wall each time, it climbs a shaft. A route of such moves is a 'wall' edge: a small closed-loop controller (ctfWjCtl) and its numbers,
+// simulated with the game's own physics from a standing start (ctfNavWallFly) for the baseline fighter (every stat at 1), so a route counts only if the game's own wall jump does it. The same
+// controller plays it back in a match (ctfAiWallFollow), reading the live fighter. Only the graphs patched for what players built have these edges, only near the pieces, and only routes whose first
+// kick is off a built piece (a later one may be off anything: the lip of the map's own overhang, the far wall of a shaft): the shipped maps' graphs, the map probes and where a flag may be hidden
+// keep to the baseline moves with no wall jump, and so does the map's own geometry. A CPU takes one only when nothing else gets there (CTF_WJ_COST: a last resort).
+const CTF_WJ_COST = 1200, CTF_WJ_VY = [-7, -3, 0, 3], CTF_WJ_A1 = [0, 4, 8, 13], CTF_WJ_A2 = [0, 6], CTF_WJ_DJ = [-0.4, 3, null];
+// p: { wd: the side of the first wall (1 right, -1 left), vy: kick once vy >= this, a1/a2: steps held away after the first kick / each later one (0: the neutral kick), dj: the double jump once
+// vy >= this (null: none), zz: a shaft (each kick turns to the far wall) }. c: what it remembers. s: { t, g (on the ground), vy, jumps, wall (steps since a side was touched), ws (that side),
+// used (that piece already kicked off this airtime) }. Says what is held this step: { dir, jump } (jump: pressed this step; never two steps running, so every press is a new one).
+function ctfWjCtl(p, c, s){
+  if(c.side == null){ c.side = p.wd; c.out = 0; c.nw = 0; c.lj = false; }
+  const dir = c.out > 0 ? -c.side : c.side;
+  let jump = false;
+  if(s.t === 1) jump = true;   // the first jump, off the ground
+  else if(!s.g && !c.lj){
+    const touch = s.wall <= WALL_WINDOW && s.ws === c.side && !s.used;
+    if(touch && c.out === 0 && s.vy >= p.vy){ jump = true; c.nw++; if(p.zz) c.side = -c.side; else c.out = (c.nw === 1 ? p.a1 : p.a2) + 1; }
+    else if(p.dj != null && s.jumps > 0 && s.vy >= p.dj && !touch && c.nw > 0){ jump = true; }
+  }
+  if(c.out > 0) c.out--;
+  c.lj = jump;
+  return { dir, jump };
+}
+// The solids a body at x touches or may touch (the buckets of both its sides: a wall just over a bucket's edge is still felt).
+function ctfNavSolidsAt(nav, x, R){
+  const a = ctfNavBucket(x - R), b = ctfNavBucket(x + R), la = nav.pb[a] || [];
+  if(a === b) return la;
+  const lb = nav.pb[b] || []; if(!la.length) return lb; if(!lb.length) return la;
+  const out = la.slice(); for(const q of lb) if(out.indexOf(q) < 0) out.push(q); return out;
+}
+// One wall-jump route, step by step as step() moves a fighter: from s0 (a standing start on node A unless said), the controller p each step. P: the numbers (ctfNavParams, or a live fighter's);
+// S: the stats (STAT_ONE: the baseline). Returns { node, x, t, kicks } where it comes down, or null (no kick at all is no wall-jump route: the plain moves have those).
+function ctfNavWallFly(nav, A, s0, p, P, S){
+  S = S || STAT_ONE;
+  const R = P.R, WH = nav.M.WH, ACCg = P.ACC*S.run, ACCa = P.ACC*S.air, CAPg = P.CAP*S.run, CAPa = P.CAP*S.air, JV = P.JV*S.jump, WJV = JUMP*WJ_VY*S.jump, GF = S.fall;
+  let x = s0.x, y = s0.y != null ? s0.y : A.y - R, vx = s0.vx || 0, vy = s0.vy || 0, jumps = s0.jumps != null ? s0.jumps : 2, g = s0.g != null ? !!s0.g : true, jp = !!s0.jp, sp = 0, fl = false;
+  let wt = -99, ws = 0, wid = null, kicks = 0;
+  const used = {}, c = {};
+  for(let t = 1; t <= 170; t++){
+    const o = ctfWjCtl(p, c, { t, g, vy, jumps, wall:t - wt, ws, used:wid !== null && !!used[wid] });
+    if(o.dir){ const v0 = vx < 0 ? -vx : vx; vx += o.dir*(g ? ACCg : ACCa); let cap = g ? CAPg : CAPa; if(!g && CAPg > CAPa && v0 > cap) cap = Math.min(CAPg, v0); if(vx > cap) vx = cap; else if(vx < -cap) vx = -cap; }
+    else if(g) vx *= FRICTION;
+    if(o.jump && !jp){
+      if(!g && t - wt <= WALL_WINDOW && o.dir === ws && wid !== null && !used[wid]){ used[wid] = 1; vy = WJV; vx = -ws*WJ_VX; jp = true; kicks++; }   // mtWallJump
+      else if(jumps > 0){ vy = JV; jumps--; g = false; jp = true; }
+    } else if(!o.jump) jp = false;
+    vy += (fl ? P.G*0.35 : P.G)*(vy > 0 ? GF : 1); x += vx; y += vy;
+    g = false;
+    const list = ctfNavSolidsAt(nav, x, R);
+    let landed = null;
+    for(const q of list){
+      if(!q.solid) continue;
+      if(!(x + R > q.x && x - R < q.x + q.w && y + R > q.y && y - R < q.y + q.h)) continue;
+      const fL = q.x - (x + R), fR = (q.x + q.w) - (x - R), fT = q.y - (y + R), fB = (q.y + q.h) - (y - R);
+      const ax = Math.abs(fL) < Math.abs(fR) ? fL : fR, ay = Math.abs(fT) < Math.abs(fB) ? fT : fB;
+      if(Math.abs(ax) < Math.abs(ay) && !((q.ramp === true || q.step === true) && fT < 0 && fT >= -28 && vy > -2)){ x += ax; wt = t; ws = ax < 0 ? 1 : -1; wid = q.x + ':' + q.y; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
+      else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = q; } else vy = Math.max(0, vy); }
+    }
+    if(!landed && vy >= 0){
+      for(const q of list){
+        if(q.solid || !(x > q.x - 4 && x < q.x + q.w + 4)) continue;
+        if(y + R >= q.y && y + R <= q.y + 18 + vy){ landed = q; y = q.y - R; break; }
+      }
+    }
+    if(nav.zb && !landed){ const Z = CTF_ZT; Z.vx = vx; Z.vy = vy; Z.jumps = jumps; Z.sp = sp; ctfNavZoneFx(nav, x, y, R, Z); vx = Z.vx; vy = Z.vy; jumps = Z.jumps; sp = Z.sp; fl = Z.fl; }
+    if(landed){
+      if(!kicks) return null;
+      const node = ctfNavNodeAt(nav, x, landed.y, 1.5);
+      return node ? { node, x, t, kicks } : null;
+    }
+    if(y > WH + 100) return null;
+  }
+  return null;
+}
+// The wall-jump routes off one place (a generator, in slices like the rest of the probe): up the sides of the built pieces that stand near it, to places no plain move from here reaches (found).
+// The baseline fighter first (prof 'f'); then a flag carrier's numbers (slower, lower: prof 'c'), searched again on the faces where the free fighter found a route.
+function* ctfNavWallGen(nav, n, found, add){
+  const R = 24, built = nav.builtIds || {}, want = [];
+  for(let bk = ctfNavBucket(n.x0 - 520); bk <= ctfNavBucket(n.x1 + 520); bk++) for(const B of (nav.nb[bk] || [])){
+    if(B === n || want.indexOf(B) >= 0 || found[B.id] || B.y < n.y - 620 || B.y > n.y + 300) continue;
+    const gap = B.x0 > n.x1 ? B.x0 - n.x1 : B.x1 < n.x0 ? n.x0 - B.x1 : 0; if(gap > 520) continue;
+    want.push(B);
+  }
+  if(!want.length) return;
+  // the faces: a side of a built piece with room to stand beside it on this place, part of it within a jump of where it stands (one search per line: a column of stacked pieces is one face)
+  const faces = [], seenF = {};
+  for(let bk = ctfNavBucket(n.x0 - 260); bk <= ctfNavBucket(n.x1 + 260); bk++) for(const q of (nav.pb[bk] || [])){
+    if(!q.solid || !built[q.x + ':' + q.y] || q.h < 30 || q.y >= n.y - 2 || q.y + q.h <= n.y - 300 - R) continue;
+    for(const wd of [1, -1]){
+      const fx = wd === 1 ? q.x : q.x + q.w, k = Math.round(fx) + '|' + wd; if(seenF[k]) continue;
+      if(wd === 1 ? (n.x0 > fx - R - 2 || fx - n.x1 > 220) : (n.x1 < fx + R + 2 || n.x0 - fx > 220)) continue;
+      const near = want.filter(B=>B.x1 > fx - 360 && B.x0 < fx + 360);   // (what a climb of this face can come down on: close beside it, on top of it or over it)
+      if(!near.length) continue;
+      seenF[k] = 1; faces.push({ fx, wd, near });
+    }
+  }
+  if(!faces.length) return;
+  const Pf = ctfNavParams(true), Pc = ctfNavParams(false), best = {};
+  let sc = 0;
+  const robust = (xa, p, to, P)=>{ for(const [dx, k] of [[-4, 1], [4, 1], [0, 0.985]]){ const xb = Math.min(Math.max(xa + dx, n.x0 + 1), n.x1 - 1); const S = k === 1 ? STAT_ONE : Object.assign({}, STAT_ONE, { jump:k }); const r = ctfNavWallFly(nav, n, { x:xb }, p, P, S); if(!r || r.node !== to) return false; } return true; };
+  const take = (xa, p, r, prof)=>{
+    if(r.node === n || want.indexOf(r.node) < 0) return;
+    const k = r.node.id + prof, cost = r.t + CTF_WJ_COST;
+    if(best[k] && !best[k].risky && best[k].cost <= cost) return;
+    const rob = robust(xa, p, r.node, prof === 'c' ? Pc : Pf);
+    const e = { kind:'wall', prof, from:n.id, to:r.node.id, xa, dir:p.wd, dj:0, T:0, v0:0, wj:p, xb:r.x, run:0, cost:cost + (rob ? 0 : 300), risky:!rob, doors:[] };
+    if(!best[k] || (best[k].risky && rob) || (best[k].risky === !rob && best[k].cost > e.cost)) best[k] = e;
+  };
+  const search = function*(fc, prof, P){   // every take-off and every controller on one face, until each place it could lead to has a steady route
+    const xs = [], done = ()=>fc.near.every(B=>best[B.id + prof] && !best[B.id + prof].risky);
+    for(const d of [1, 30, 90, 180]){ const xa = Math.min(Math.max(fc.fx - fc.wd*(R + d), n.x0 + 3), n.x1 - 3); if((fc.fx - xa)*fc.wd >= R + 0.5 && !xs.some(q=>Math.abs(q - xa) < 6)) xs.push(xa); }
+    for(const xa of xs) for(const vy of CTF_WJ_VY) for(const dj of CTF_WJ_DJ){
+      if(done()) return;
+      const ps = [];
+      for(const a1 of CTF_WJ_A1) for(const a2 of CTF_WJ_A2) ps.push({ wd:fc.wd, vy, a1, a2, dj, zz:false });
+      ps.push({ wd:fc.wd, vy, a1:0, a2:0, dj, zz:true });
+      for(const p of ps){
+        if((++sc & 15) === 0) yield;
+        const r = ctfNavWallFly(nav, n, { x:xa }, p, P, STAT_ONE);
+        if(r && r.node !== n && want.indexOf(r.node) >= 0){ take(xa, p, r, prof); fc.hit = true; }
+      }
+    }
+  };
+  for(const fc of faces) yield* search(fc, 'f', Pf);
+  for(const fc of faces) if(fc.hit) yield* search(fc, 'c', Pc);   // a flag carrier (slower, lower): its own routes, on the faces where a free fighter found one
+  for(const k in best) add(best[k]);
+}
 // Every move off one place: the standing jumps (from three spots, running either way or straight up) and the walks off either end.
 // The moves are planned on a flag carrier's numbers (slower and lower than a free fighter's, so a move that works for a carrier works for anyone). Two profiles, a carrier's and a free fighter's, were tried
 // and did worse in the matches (more failed moves): the free fighter's extra speed is steered out in the air, not planned for.
@@ -8850,7 +9040,7 @@ function ctfNavProbe(nav, n){ const g = ctfNavProbeGen(nav, n); while(!g.next().
 function* ctfNavProbeGen(nav, n){
   if(n.reused) return;
   let sc = 0;
-  const dense = !!nav.dense && !CTF.probeOld && nav.diffRects.some(r=>n.x1 > r.x - 450 && n.x0 < r.x + r.w + 450 && n.y > r.y - 600 && n.y < r.y + r.h + 600);   // (only the places close to a built piece: the rest of a patched graph is probed the plain way)
+  const dense = !!nav.dense && !CTF.probeOld && (nav.fineRects || nav.diffRects).some(r=>n.x1 > r.x - 450 && n.x0 < r.x + r.w + 450 && n.y > r.y - 600 && n.y < r.y + r.h + 600);   // (only the places close to a built piece: the rest of a patched graph is probed the plain way)
   const P = ctfNavParams(), w = n.x1 - n.x0, found = {};
   // (a place a few steps of a slope away that can be WALKED to is never jumped to: the jump to it lands a step off, and the bot counts it a failed move)
   let walkSet = null;
@@ -8969,6 +9159,11 @@ function* ctfNavProbeGen(nav, n){
     for(const e of arr) if(keep.length < 2 && !keep.includes(e) && Math.abs(e.xa - keep[0].xa) > 60) keep.push(e);
     for(const e of keep) n.edges.push(e);
   }
+  // WALL JUMPS (ctfWjCtl): only in a graph patched for built pieces, only from the places close to one, only to places no plain move from here reaches
+  if(nav.dense && !CTF.noWallJump && (nav.fineRects || nav.diffRects).some(r=>n.x1 > r.x - 450 && n.x0 < r.x + r.w + 450 && n.y > r.y - 600 && n.y < r.y + r.h + 600)){
+    const direct = {}; for(const e of n.edges) direct[e.to] = 1;
+    yield* ctfNavWallGen(nav, n, direct, e=>n.edges.push(e));
+  }
 }
 // A DETERMINISTIC BUDGET FOR HEADLESS RUNS (the owner's playtest, 2026-10-18: a test that passed alone failed on a busy laptop because the CPUs' route graph was built within so many MILLISECONDS a step, and a busy machine gets less done a step): in a browser the budget is still wall-clock (the graph is built
 // a slice a frame, so it never stutters); where there is no screen (jsdom: the tests, the probes) it is a number of slices of work a step (one slice is about a millisecond on an idle machine, so ms of them), the same on any machine at any load.
@@ -9002,7 +9197,7 @@ function ctfNavFingerprint(M){
 function ctfNavPack(nav){
   const q = v=>v == null ? null : Math.round(v*100)/100;
   return { v:CTF_GRAPH_V, id:nav.M.gid || nav.M.id, fp:ctfNavFingerprint(nav.M), n:nav.nodes.length,
-    nodes:nav.nodes.map(n=>n.edges.filter(e=>e.kind !== 'walk' && e.kind !== 'wheel' && e.kind !== 'portal').map(e=>[CTF_GRAPH_KINDS.indexOf(e.kind), e.to, q(e.xa), e.dir, e.dj, e.T, q(e.v0), q(e.xb), q(e.run), q(e.cost), (e.risky ? 1 : 0) | (e.need ? 2 : 0) | (e.prof === 'f' ? 4 : 0)])) };
+    nodes:nav.nodes.map(n=>n.edges.filter(e=>e.kind !== 'walk' && e.kind !== 'wheel' && e.kind !== 'portal' && e.kind !== 'wall').map(e=>[CTF_GRAPH_KINDS.indexOf(e.kind), e.to, q(e.xa), e.dir, e.dj, e.T, q(e.v0), q(e.xb), q(e.run), q(e.cost), (e.risky ? 1 : 0) | (e.need ? 2 : 0) | (e.prof === 'f' ? 4 : 0)])) };
 }
 // Put a map's shipped moves into its (freshly made, unprobed) graph. False when the file is not this map's.
 function ctfNavAdopt(nav, data){
@@ -9094,6 +9289,7 @@ function ctfNavPath(nav, from, to, opt){
       let pen = 0;
       if(e.need && !(opt.has && opt.has[e.need])) continue;
       if(e.prof && opt.prof && e.prof !== opt.prof) continue;   // planned on the other kind of fighter's numbers
+      if(e.kind === 'wall' && opt.wallOK && !opt.wallOK(e)) continue;   // (a wall jump: only a fighter who has it, and whose numbers do this one)
       if(e.need && !(opt.bo && opt.bo[e.to])) pen += 600;   // a super jump only where nothing else gets there: it is the shakiest move there is
       if(e.doors.length){ let bad = 0; for(const d of e.doors) if(!opt.doorOK(d)) bad++; if(bad){ if(!opt.closed) continue; pen = 250*bad; } }
       if(opt.skip && opt.skip(N[e.to])) continue;
@@ -9294,6 +9490,7 @@ function ctfAiFollow(f, ai, nav, inp, now){
     if(f.onground && cn && cn.id === e.to){ ai.edge = null; ai.pi++; }
     return false;
   }
+  if(e.kind === 'wall') return ctfAiWallFollow(f, ai, nav, inp, now, e, cn);
   const n = nav.nodes[e.from], free = f._cf < 0;
   const hit = r=>!!(r && r.node.id === e.to);
   if(ai.phase === 'stage' || ai.phase === 'run'){
@@ -9358,7 +9555,56 @@ function ctfAiFollow(f, ai, nav, inp, now){
   }
   return false;
 }
-function ctfAiResetMove(ai){ ai.path = null; ai.edge = null; ai.phase = ''; ai.pi = 0; ai.dj = false; }
+function ctfAiResetMove(ai){ ai.path = null; ai.edge = null; ai.phase = ''; ai.pi = 0; ai.dj = false; ai.wjc = null; }
+// A WALL-JUMP edge (ctfWjCtl), played back: walk to the take-off, stand, and go once a look ahead from where the fighter really is (its own numbers: stats, a flag, a boost) comes down on the
+// place it is for; then the same controller, step by step, reading the live fighter (its last wall touch, which piece, whether it was kicked off already). The kick is asked for (f._aiWJ), as the
+// game wants of a CPU.
+function ctfWjLive(f){   // a live fighter's numbers for ctfNavWallFly (as step() moves it)
+  const k = ctfSpeedK(f);
+  return { R:f.r || 24, G:GRAV, CAP:MAXVX*k, ACC:MOVE*k, JV:JUMP*(f._cf >= 0 ? CTF_CARRY_JUMP : 1)*(f._ctfJT > 0 ? CTF_BOOST_JUMP : 1) };
+}
+function ctfAiWallLook(nav, f, e){
+  const r = ctfNavWallFly(nav, nav.nodes[e.from], { x:f.x, y:f.y, vx:f.vx, vy:f.vy, jumps:f.jumps, g:f.onground, jp:f._jp }, e.wj, ctfWjLive(f), f.st || STAT_ONE);
+  return !!(r && r.node.id === e.to);
+}
+// May this CPU plan this wall edge: it has the wall jump at all, and the route works on its own numbers from the take-off (remembered a while: the numbers change only with a buff or a flag).
+function ctfAiWallOK(f, nav){
+  const ai = f._ai || {}, can = mtOn(f);
+  return e=>{
+    if(!can) return false;
+    const C = ai.wjOK = ai.wjOK || {}, k = e.from + '>' + e.to + ':' + Math.round(e.xa) + (f._cf >= 0 ? 'c' : 'f'), now = CTF.live ? CTF.live.t : 0;
+    if(C[k] && C[k].t > now - 900) return C[k].ok;
+    const n = nav.nodes[e.from], r = ctfNavWallFly(nav, n, { x:e.xa }, e.wj, ctfWjLive(f), f.st || STAT_ONE), ok = !!(r && r.node.id === e.to);
+    C[k] = { ok, t:now }; return ok;
+  };
+}
+function ctfAiWallFollow(f, ai, nav, inp, now, e, cn){
+  const off = ()=>{ ai.edge = null; ai.phase = ''; ai.wjc = null; };
+  if(ai.phase !== 'wall'){
+    if(!f.onground) return false;
+    const dx = e.xa - f.x;
+    if(Math.abs(dx) > 36){ ctfAiWalk(f, inp, e.xa, 3); ai.rt = 0; return false; }
+    ai.rt = (ai.rt || 0) + 1;
+    const go = ctfAiWallLook(nav, f, e) || (ai.rt > 60 && Math.abs(dx) < 4 && Math.abs(f.vx) < 0.5);
+    if(!go){   // creep to the take-off and stand there (a tap at a time: a held key overshoots it)
+      if(Math.abs(dx) > 2 && (Math.abs(f.vx) < 0.8 || Math.sign(f.vx) !== Math.sign(dx)) && (ai.rt & 1)){ if(dx > 0) inp.right = true; else inp.left = true; }
+      return false;
+    }
+    ai.phase = 'wall'; ai.wt = 0; ai.wjc = {};
+  }
+  ai.wt++;
+  if(ai.wt > 1 && f.onground){   // came down
+    const ok = !!(cn && cn.id === e.to); off();
+    if(ok){ ai.pi++; ctfAiStat('wallOK'); return false; }
+    ctfAiStat('wallBad'); ctfAiBanEdge(ai, e, now); ai.path = null; return 'lost';
+  }
+  if(ai.wt > 180){ ctfAiStat('wallTimeout'); ctfAiBanEdge(ai, e, now); off(); ai.path = null; return 'lost'; }
+  const o = ctfWjCtl(e.wj, ai.wjc, { t:ai.wt, g:f.onground, vy:f.vy, jumps:f.jumps, wall:f._wallT != null ? hazardT - f._wallT : 99, ws:f._wallSide || 0, used:!!(f._wallUsed && f._wallUsed[f._wallId]) });
+  if(o.dir > 0) inp.right = true; else if(o.dir < 0) inp.left = true;
+  if(o.jump){ inp.jump = true; inp.up = true; }
+  f._aiWJ = hazardT;   // (a converted CPU kicks off a wall only when it asks to: mtWallJump)
+  return false;
+}
 
 // The nearest standing place on a carrier's own side of the middle line, a little way past the point where a capture counts.
 // Where an own flag picked up from the ground can be hidden again: the nearest standing place on my side that the hiding rules take.
@@ -9401,7 +9647,7 @@ function ctfAiPlan(f, ai, goalX, goalY, now){
   const cn = ctfNavNodeOf(nav, f) || (ai.lastNode != null ? nav.nodes[ai.lastNode] : null);
   const gn = ctfNavNodeAt(nav, goalX, goalY, 14);
   if(!cn || !gn) return false;
-  const opt = { prof:f._cf >= 0 ? 'c' : 'f', bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:L.ai && L.ai.gban, noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null };
+  const opt = { prof:f._cf >= 0 ? 'c' : 'f', bo:nav.boostOnly && nav.boostOnly[f.team], x0:f.x, doorOK:ctfAiDoorOK(L, f), skip:ctfAiSkip(f), ban:ai.ban, gban:L.ai && L.ai.gban, noCross:L.phase === 'hide', mid:L.map.WW/2, now, closed:false, has:f._ctfJT > 120 && f._cf < 0 ? { jump:true } : null, wallOK:ctfAiWallOK(f, nav) };
   let r = ctfNavPath(nav, cn.id, gn.id, opt);
   if(!r){
     opt.closed = true; r = ctfNavPath(nav, cn.id, gn.id, opt);
