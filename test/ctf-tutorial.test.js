@@ -213,11 +213,12 @@ describe('the Capture the Flag practice', () => {
     expect(w.eval('CTF.live.radar')).toBeGreaterThan(200);
   }, 120000);
 
-  it('the Flag Cup, Create Room, picking it in your own room and a room you join all go through it first', () => {
+  // RESTATED (the owner, 2026-10-19): the Flag Cup is watched, not played, so it no longer waits for the practice; matches you play still do.
+  it('the watch-only Flag Cup starts at once; Create Room, picking it in your own room and a room you join go through the practice first', () => {
+    { const { window: wc } = loadMonolith(46);   // (its own window: the cup really starts now, so it gets a fresh one)
+      wc.eval('ctfCupKickOff()');
+      expect(wc.eval('CTUT.active'), 'the watch-only cup does not wait for the practice').toBe(false); }
     const { window: w } = loadMonolith(46);
-    w.eval('ctfCupKickOff()');
-    expect(w.eval('CTUT.active')).toBe(true); expect(w.eval('CTUT.reason')).toBe('cup');
-    w.eval('quitMatch()');
 
     w.eval("SETTINGS.mode='ctf'; openLobby(); NET.host();");
     expect(w.eval('CTUT.active'), 'Create Room with the mode on').toBe(true);
