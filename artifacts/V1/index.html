@@ -2025,8 +2025,9 @@ const PRIZE_KIT = {
   // speed for as long as they are standing on it. it should move in 1 direction", and "finishers can be creative!". A big manila file slides under
   // her and glides the way she faces; standing on it she attacks 30% faster and her files fly at the nearest foe and boomerang back (case "files").
   // The ride is the shared engine's (THE BIG FILE: startFileRide, FILE_RIDE); this row is the only way in. The drawer opens as the file comes out.
+  // Only from the ground, inside the stage: in the air or over a gap no file comes (startFileRide says no) and the finisher is not spent.
   ATKSPECIALS: {
-    files(f){ startFileRide(f); f._drawerT = hazardT + 20; },
+    files(f){ if(!startFileRide(f)) return false; f._drawerT = hazardT + 20; },
   },
   VICTORY_QUIPS: {
     OJ:       "I did it! I won Inanimate Insanity!",   // OJ/Quotes, Journey Through Memory Lane (Part 2)
@@ -17200,7 +17201,7 @@ function interpRecord(client){
   const rec = (list)=>{ for(let i = 0; i < list.length; i++){ const e = list[i]; e._px = e.x; e._py = e.y; e._ipk = k; } };
   if(!client){
     for(const f of fighters){ if(f.dead) continue; f._px = f.x; f._py = f.y; f._ipk = k; }   // a KO'd fighter has no earlier position to blend from
-    rec(projectiles); rec(summons); rec(items); rec(worldPlats);
+    rec(projectiles); rec(summons); rec(items); rec(worldPlats); rec(FILE_RIDES);   // (FILE_RIDES: a big file and its rider blend together)
     if(evil){ evil._px = evil.x; evil._py = evil.y; evil._ipk = k; }
     S.cpx = camX; S.cpy = camY; S.camK = k;
   }
@@ -17228,7 +17229,7 @@ function interpBegin(a, client){
     }
   };
   if(!client){
-    blend(fighters); blend(projectiles); blend(summons); blend(items); blend(worldPlats);
+    blend(fighters); blend(projectiles); blend(summons); blend(items); blend(worldPlats); blend(FILE_RIDES);
     if(evil) blend([evil]);
     if(S.camK === k){
       const dx = camX - S.cpx, dy = camY - S.cpy, d2 = dx*dx + dy*dy;
@@ -38293,7 +38294,7 @@ function step(){
       // C still has to be let go before the special fires again, so a finisher does not spill into a special.
       if(atkSp && f.fsGlow>0 && fsTryFire(f)){ f._sp=true; }   // glowing: the finisher input is the FINAL SMASH (once)
       else if(atkSp && f.fnCd<=0){
-        doAttackSpecial(f); f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;
+        if(doAttackSpecial(f) !== false) f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;   // (false: it could not start here, and is not spent)
       } else if(atkSp){ } else {
         f._legacyMv = false;
         if(inp.attack && f.atkCd<=0 && !inp.grab){ f._xDir = inp.down ? 'd' : (inp.up ? 'u' : ((inp.left||inp.right) ? 's' : 'n')); f._xAir = !f.onground; f._xT = hazardT; }
@@ -41002,13 +41003,16 @@ const ATKSPECIALS = {
   anvil(f){ f.flash=14; let tgt=null,best=1e9; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.abs(t.x-f.x); if(d<best){best=d;tgt=t;} } const ax=tgt?tgt.x:f.x+f.face*60; dropProj(f, ax, tgt?tgt.y+tgt.r:feetY(f), {dmg:16,kb:10,r:18,color:'#3a3a3a',life:150});  },
 };
 function doAttackSpecial(f){
+  const seq0 = f._atkSeq, was = [f._atkKind, f._atkMove, f._atkAnim, f._atkLen, f._atkPhase, f._atkProg];
   f._atkSeq = (f._atkSeq||0) + 1;   // a new move (see chainOpen: only a NEW move may chain, never the same hitbox re-landing)
   // No attacking out of your own team zone — it is a place to recover, not a fort to hold.
   if(inOwnTeamZone(f)) return;
 
   armAtk(f, ATK_ANIM, animKindOf(f, 'finisher'), mvId(f, 'finisher'));
   const k=f.kit && f.kit.special;
-  if(ATKSPECIALS[k]) ATKSPECIALS[k](f);
+  // A row that returns false could not start here (the Big File off the ground): nothing happened. The pose and the move count are put back,
+  // and the caller does not spend the finisher (it returns false too).
+  if(ATKSPECIALS[k]){ if(ATKSPECIALS[k](f) === false){ f._atkSeq = seq0; [f._atkKind, f._atkMove, f._atkAnim, f._atkLen, f._atkPhase, f._atkProg] = was; return false; } }
   else { const cx=f.x+f.face*28; f.flash=12; hitCircle(f,cx,f.y,f.r+26,14,14,f.face*12,-9);  }
 }
 
@@ -41020,9 +41024,12 @@ function doAttackSpecial(f){
 // as long as they are standing on it. it should move in 1 direction" -- "and while theyre on it, their files boomerang, and they go onto the direction
 // on their opponents (not homing)". V + C (the kit's ATKSPECIALS row calls startFileRide) slides a big manila file under the fighter: a one-way platform
 // (FILE_RIDES, folded into platRects as Spongy is) that hovers FILE_RIDE.lift px over the surface under it and glides FILE_RIDE.speed px a frame -- about
-// a walking pace -- the way they faced, for FILE_RIDE.life frames (5 s). It stops for good at a wall (a solid block across the band a rider stands in),
-// at the side of the stage, or where nothing is under its leading edge, so it never carries anyone off the stage or toward a blast zone. Anyone who
-// stands on it rides it. While its OWNER stands on it, their attack timers run FILE_RIDE.atkSpd times as fast (atkSpeedSteps: the start-up of a
+// a walking pace -- the way they faced, for FILE_RIDE.life frames (5 s). It stops for good at a wall (a solid block across the band a rider stands in)
+// or at the side of the stage -- and, in the tower (teams, CTF: no floor everywhere), where nothing is under its leading edge -- so it never carries
+// anyone off the stage or toward a blast zone. On a single-screen stage the ground is under it everywhere, so summoned on a floating platform it glides
+// on past the platform's end, still at that height over the ground (still over the stage). It comes only from the ground, inside the stage
+// (fileRideCanStart): in the air or over a gap there is no file and the finisher is not spent -- summoned in the air it was a free platform anywhere,
+// stopping a launch dead and giving the jumps back (the review, 2026-10-19). Anyone who stands on it rides it. While its OWNER stands on it, their attack timers run FILE_RIDE.atkSpd times as fast (atkSpeedSteps: the start-up of a
 // wind-up, the recovery, the swing and every cooldown), and the kit's thrown file is aimed at the nearest foe at the moment it is thrown and comes
 // back to them (fileRideThrow, aimBoomStep) -- aimed, never homing. In the air over it -- a hop (carried along with it), or popped up by a hit (not
 // carried) -- they still ride it but have no buff, which is for standing; stepping off, being knocked past its end or its time running out ends
@@ -41042,7 +41049,15 @@ function atkSpeedSteps(f){
 }
 // On this file's top, feet down, this frame (the one-way landing puts the feet exactly on it).
 function rideStanding(f, p){ return !f.dead && f.onground && Math.abs(feetY(f) - p.y) < 3 && f.x > p.x - 4 && f.x < p.x + p.w + 4; }
+// Feet on a surface (within 8 px of it), inside the stage: the only place a big file can come.
+function fileRideCanStart(f){
+  if(!f || f.dead || !f.onground || !(f.x >= FILE_RIDE.edge && f.x <= WW - FILE_RIDE.edge)) return false;
+  const fy = feetY(f), sb = surfaceBelow(f.x, fy);
+  return sb !== null && sb - fy <= 8;
+}
+// Starts the ride and says true; off the ground (fileRideCanStart) it does nothing and says false.
 function startFileRide(f){
+  if(!fileRideCanStart(f)) return false;
   FILE_RIDES = FILE_RIDES.filter((p)=>{ if(p.owner !== f) return true; endFileRide(p); return false; });   // one at a time
   const R = FILE_RIDE, face = f.face < 0 ? -1 : 1;
   // under the feet, and never lower than its hover over whatever is below (on the ground it lifts them onto it)
@@ -41053,6 +41068,7 @@ function startFileRide(f){
   f.y = top - f.r; f.vy = 0; f.onground = true;
   f._fileRide = p; f.atkSpd = R.atkSpd; f.flash = 10;
   for(let i=0;i<8;i++) puff(p.x + p.w*(i + 0.5)/8, top + R.h, i%2 ? '#f2cf84' : '#fbf6e8', 3);
+  return true;
 }
 function endFileRide(p){
   const o = p.owner;
@@ -41060,7 +41076,8 @@ function endFileRide(p){
   if(o && !FILE_RIDES.some((q)=>q !== p && !q.dead && q.owner === o)) o.atkSpd = 1;
   for(let i=0;i<6;i++) puff(p.x + p.w*(i + 0.5)/6, p.y + p.h*0.5, i%2 ? '#f2cf84' : '#fbf6e8', 3);
 }
-// Whether the file would run into something by moving its leading edge to nx: the side of the stage, a wall, or no surface under it.
+// Whether the file would run into something by moving its leading edge to nx: the side of the stage, a wall, or no surface under it (only ever in
+// the tower: on a single-screen stage the ground counts everywhere).
 function fileRideBlocked(p, nx){
   const lead = p.vx > 0 ? nx + p.w : nx;
   if(lead < FILE_RIDE.edge || lead > WW - FILE_RIDE.edge) return true;
@@ -41106,7 +41123,7 @@ function fileRideThrow(f, o){
   let dx = f.face < 0 ? -1 : 1, dy = 0;
   if(tx !== null){ const ex = tx - f.x, ey = ty - cy, d = Math.hypot(ex, ey); if(d > 1){ dx = ex/d; dy = ey/d; } }
   const p = spawnProj(f, Object.assign({}, o, { x: f.x + dx*20, y: cy + dy*20, vx: dx*R.throwSpd, vy: dy*R.throwSpd, grav: false, life: R.throwLife,
-    noCull: true, aimBoom: { dx: dx, dy: dy, dec: R.throwDec, spd: R.throwSpd, back: false, v: 0 } }));
+    noCull: true, aimBoom: { dx: dx, dy: dy, dec: R.throwDec, spd: R.throwSpd, back: false, v: 0, by: f } }));
   if(p){ const sp = Math.hypot(p.vx, p.vy) || R.throwSpd; p.vx = dx*sp; p.vy = dy*sp; p.aimBoom.spd = sp; }   // (a speed-up at spawn keeps the aim)
   return p;
 }
@@ -41114,6 +41131,9 @@ function fileRideThrow(f, o){
 // and is gone when it reaches them; with nobody to come back to, it comes back along its line.
 function aimBoomStep(pr){
   const B = pr.aimBoom;
+  // Turned back by a reflector (or caught and thrown by someone else): no longer a boomerang -- it flies straight on like any reflected shot. (It
+  // used to come home to its new owner, the reflector, and vanish beside them.)
+  if(pr.reflected || pr.ownerObj !== B.by){ pr.aimBoom = null; if(pr.reflected) pr.life = Math.min(pr.life, 40); return; }
   if(!B.back){
     const along = pr.vx*B.dx + pr.vy*B.dy - B.dec;
     if(along > 0){ pr.vx = B.dx*along; pr.vy = B.dy*along; return; }
@@ -45109,7 +45129,8 @@ function doSpecial(f){
       // Standing on her Big File (the finisher, startFileRide), the file is aimed at the nearest foe as she throws it and comes back to her
       // (fileRideThrow): aimed, never homing. Off it, it flies flat and fast ahead, as it always has.
       const fo = {dmg:4, kb:3, r:9, color:'#f8e2b0', shape:'file', fxTag:'onfile', fxN:360};
-      if(f._fileRide) fileRideThrow(f, fo);
+      // (on the ride she turns to face the way it flies, so the throw and the drawer puffs go with it; the file glides on its own way)
+      if(f._fileRide){ const sh = fileRideThrow(f, fo); if(sh && Math.abs(sh.vx) > 1) f.face = sh.vx < 0 ? -1 : 1; }
       else spawnProj(f, Object.assign({vx:f.face*12, vy:0, grav:false, life:28}, fo));
       f._drawerT = hazardT + 14;
       for(let i=0;i<4;i++) puff(f.x + f.face*(f.r*0.7 + i*6), f.y + f.r*0.3, '#9ca8d9', 3);

@@ -442,7 +442,7 @@ describe('the filing-cabinet prize fighter: the Big File finisher', () => {
   const RIDER = NAMES.find((n) => KITS[n] === 'files');
 
   it('V + C: a big file under them glides one way and stops at the side; standing on it they attack 30% faster and each file flies at the nearest foe as thrown (not homing) and comes back; off it, none of it', () => {
-    // one way, the way they face, carrying them over the floor; gone after 5 s, and the finisher waits from then
+    // one way, the way they face, carrying them over the ground; gone after 5 s, and the finisher waits from then
     const ride = arena(RIDER, `A.face = -1; doAttackSpecial(A); var p = FILE_RIDES.find(function(q){ return q.owner === A; }); var x0 = p.x, a0 = A.x, back = 0, prev = p.x;
       for (var i=0;i<60;i++){ step(); if (p.x > prev) back++; prev = p.x; }
       var out = { moved: p.x - x0, carried: A.x - a0, back: back, standing: A._fileRide === p, k: A.atkSpd, lifted: feetY(A) <= groundY() - 20, foe: D.x };
@@ -460,6 +460,17 @@ describe('the filing-cabinet prize fighter: the Big File finisher', () => {
     expect(edge.stopped).toBe(true);
     expect(edge.ax).toBeLessThan(edge.ww - 20);
     expect([edge.dead, edge.on]).toEqual([false, true]);
+    // only from the ground: V + C by the keys while flying up (out of a hit) brings no file, the launch goes on and the finisher is not spent; landed, it comes
+    const air = arena(RIDER, `A.controller = 'local'; ['attack','special','smash','jump','left','right','down'].forEach(function(k){ down[KEYS[k]] = false; });
+      A.y = groundY() - A.r - 113; A.vy = -16; A.onground = false; A.fnCd = 0;
+      down[KEYS.smash] = true; down[KEYS.special] = true; step(); down[KEYS.smash] = false; down[KEYS.special] = false;
+      var out = { files: FILE_RIDES.length, vy: A.vy, cd: A.fnCd };
+      for (var i=0;i<150 && !A.onground;i++) step(); for (var k=0;k<30;k++) step();
+      down[KEYS.smash] = true; down[KEYS.special] = true; step(); down[KEYS.smash] = false; down[KEYS.special] = false;
+      out.landed = FILE_RIDES.length; A.controller = 'still'; return out;`);
+    expect([air.files, air.cd], 'no file in the air, and the finisher not spent').toEqual([0, 0]);
+    expect(air.vy, 'the launch goes on').toBeLessThan(-10);
+    expect(air.landed, 'from the ground it comes').toBe(1);
     // the buff holds only while standing on it: 30% faster cooldowns on it, none in a hop over it (the ride stays), back on landing, gone off it
     const buff = arena(RIDER, `doAttackSpecial(A); step(); A.atkCd = 26; for (var i=0;i<10;i++) step(); var onCd = A.atkCd;
       A.vy = -9; A.onground = false; step(); var hop = [A.atkSpd, !!A._fileRide, FILE_RIDES.length];
