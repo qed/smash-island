@@ -918,6 +918,13 @@
         <div class="opthint">A short lesson: moving, attacking, smashes, the grab and the finisher.</div>
       </div>
       <div class="optgrp">
+        <div class="optlabel">Capture the Flag</div>
+        <div class="row">
+          <button class="btn ghost sm" id="ctfTutBtn" onclick="openCtfTutorial()">🚩 Capture the Flag practice</button>
+        </div>
+        <div class="opthint">Play along on a small map: hide a flag, build, plan, steal, the jail and the keys. Everyone plays it once before their first Capture the Flag match.</div>
+      </div>
+      <div class="optgrp">
         <div class="optlabel">Practice</div>
         <div class="row">
           <button class="btn ghost sm" id="trainBtn" onclick="openTraining()">🥊 Training</button>
@@ -1594,7 +1601,7 @@
     <div class="row" style="justify-content:center;margin-top:14px">
       <button class="btn ghost sm" onclick="go('tourneySetup')">◀ Back</button>
       <button class="btn alt" onclick="go('ctfCupTeams')">Build the teams ▶</button>
-      <button class="btn" onclick="ctfCupStart()">Kick Off ▶</button>
+      <button class="btn" onclick="ctfCupKickOff()">Kick Off ▶</button>
     </div>
   </div>
   <div id="ctfCupTeams" class="screen">
@@ -1609,7 +1616,7 @@
     <div id="ctfCupTeamGrid" class="ctfcup-grid"></div>
     <div class="row" style="justify-content:center;margin-top:12px">
       <button class="btn ghost sm" onclick="go('ctfCupSetup')">◀ Back</button>
-      <button class="btn" onclick="ctfCupStart()">Kick Off ▶</button>
+      <button class="btn" onclick="ctfCupKickOff()">Kick Off ▶</button>
     </div>
     <div id="ctfCupPicker" class="ctfcup-picker" style="display:none"></div>
     <div id="ctfCupPlanEd" class="ctfcup-picker" style="display:none"></div>
@@ -3807,8 +3814,39 @@ CTF_MAPS.oak = {
   },
 };
 
+// ---------------------------------------------------------------------------------------------------------------
+//  THE PRACTICE HALL (the owner, 2026-10-19: "make a ctf tutorial", play-along): the Capture the Flag practice's own map (CTUT). Small and flat on
+//  purpose, 30 columns a side and 16 rows, so every rule can be shown a few screens from home. Never in the map lists or in Random (wip), and no shipped
+//  route graph (noGraph: the runtime builds this little one at once). The left half (team 0) by hand, the right its mirror:
+//    the JAIL in the corner (cols 1-3, its door at 4), the HOME pad and spawns (10-15), a stair of hops up to a BALCONY (18-26) with a VAULT on it behind a
+//    locked door and a speed boost inside (21-26), a CLOSED CAVE under the floor that nobody can reach (17-19: where a flag may not go), and props to hide in.
+//  Rows are the grid's own (0 the ceiling, 9 the hall's lowest air, 10-15 the floor's rock).
+// ---------------------------------------------------------------------------------------------------------------
+CTF_MAPS.practice = {
+  name:'Practice Hall', wip:true, tutorial:true, noGraph:true,
+  size:{ rows:16, half:30 },
+  cave:{ c0:17, c1:19, r0:11, r1:12 },   // (ctutCave: the practice points at it)
+  theme:Object.assign({}, CTF_MAPS.castle.theme, { skinRects:[] }),   // (a copy: a built map writes its own skinRects on its theme)
+  build(g){
+    const Y = r=>r + 23;   // (my rows 0-15 are the grid's own; the grid's frame is 23 more)
+    const A = (c0, r0, c1, r1)=>g.box(Y(r0), c0, Y(r1), c1, '.'), S = (c0, r0, c1, r1)=>g.box(Y(r0), c0, Y(r1), c1, '#'), P = (r, c, s)=>g.put(Y(r), c, s);
+    S(0, 0, 29, 15); A(1, 1, 29, 9);                                                    // the hall: a ceiling, the outer wall, a deep floor (the camera can look into the cave without the map's edge in the way)
+    S(1, 6, 4, 6); g.col(4, Y(7), Y(9), 'J'); P(9, 1, 'ppp'); g.keepClear(1, Y(7), 4, Y(9));   // the jail in the corner, its door onto the hall
+    P(9, 10, 'PP'); P(9, 13, 'HHH');                                                    // the home pad and the spawns
+    g.stalk(15, Y(9), Y(7)); S(18, 6, 26, 6);                                           // a stair of hops up to the balcony
+    S(21, 3, 26, 3); S(26, 4, 26, 5); g.col(21, Y(4), Y(5), '1'); P(5, 24, 'u');        // the vault on the balcony: a locked door, a speed boost inside
+    A(17, 11, 19, 12);                                                                  // the closed cave under the floor: no way in
+    P(9, 7, 'W'); P(9, 20, 'B'); P(9, 24, 'C'); P(5, 19, 'B'); P(9, 27, 'K');           // props to hide in
+    g.fill(Y(5), 27, 29, '=');                                                          // a ledge over the middle line
+    g.back(1, Y(1), 29, Y(9), 'brick'); g.back(17, Y(11), 19, Y(12), 'dirt'); g.back(22, Y(4), 25, Y(5), 'wood');
+    g.decoDefault(['crate', 'barrel', 'bush']);
+  },
+};
+
 const CTF_ZOOM = 0.9;
 const CTF = { live:null, map:null, mapId:null, prevStage:null, lastMap:null, built:{}, stageObjs:{}, forceMap:null };
+// The Capture the Flag practice's state (the practice itself is after How to Play: CTUT_STEPS). Here, before the mode's code, so every check of it is safe at any time.
+const CTUT = { active:false, setup:false, step:0, t:0, S:{}, prev:null, after:null, reason:null, code:null, enterHit:false, piece:null, door:null, sessionDone:false };
 
 function ctfOn(){ return SETTINGS.mode === 'ctf'; }
 function ctfMapIds(){ return Object.keys(CTF_MAPS).filter(k=>!CTF_MAPS[k].wip); }   // (a map marked wip is only played when asked for: CTF.forceMap)
@@ -4037,7 +4075,7 @@ function ctfBegin(){
   }
   ctfRebuildDyn(L);
   CTF.cpuHide = {};
-  L.explore = ctfExploreOn() && !(typeof inNetSession === 'function' && inNetSession()) && !CTF.spec;
+  L.explore = ctfExploreOn() && !(typeof inNetSession === 'function' && inNetSession()) && !CTF.spec && !CTUT.active;   // (never in the practice)
   try{ ctfTimedInit(L); }catch(e){ console.error('ctfTimedInit', e); }
   const sk0 = CTF.skipNav; if(L.explore) CTF.skipNav = true;
   if(L.phase !== 'bid'){ try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); } }
@@ -4056,7 +4094,7 @@ function ctfExploreOn(){
 function ctfIntroCard(){
   let seen = false; try{ seen = localStorage.getItem('bfsi:ctfintro') === '1'; }catch(e){}
   const old = document.getElementById('ctfIntro'); if(old) old.remove();
-  if(seen || !fighters.some(ctfIsHuman) || (CTF.live && CTF.live.explore)) return;
+  if(seen || CTUT.active || !fighters.some(ctfIsHuman) || (CTF.live && CTF.live.explore)) return;   // (the practice has its own cards)
   const d = document.createElement('div'); d.id = 'ctfIntro';
   d.style.cssText = 'position:fixed;left:50%;top:14%;transform:translateX(-50%);z-index:9000;max-width:540px;padding:18px 22px;background:rgba(28,24,38,0.94);color:#f4efe2;border:3px solid #f4efe2;border-radius:12px;font:16px/1.45 sans-serif;box-shadow:0 8px 30px rgba(0,0,0,0.5)';
   d.innerHTML = '<div style="font-weight:700;font-size:20px;margin-bottom:8px">Capture the Flag</div>'
@@ -4216,7 +4254,7 @@ function ctfHidePlace(f){
   const L = CTF.live, fl = ctfMyFlag(L, f); if(!fl || L.done[f.idx]) return false;
   if(f._cam){   // free camera: the flag goes where the cursor is, or nowhere
     const s = ctfCamSnap(f);
-    if(!s.ok){ puff(s.x, s.y, '#888', 6); return false; }
+    if(!s.ok){ puff(s.x, s.y, '#888', 6); f._ctfNo = L.t; return false; }   // (_ctfNo: when a place was refused, for the practice)
     ctfPlaceFlag(fl, s.x, s.y); ctfSfx('place'); return true;
   }
   if(fl.st === 0){
@@ -4229,6 +4267,7 @@ function ctfHidePlace(f){
 }
 function ctfToggleDone(f){
   const L = CTF.live; if(L.phase !== 'hide') return;
+  if(CTUT.active && f.you && CTUT.step < ctutIdx('done')){ ctfSfx('deny'); return; }   // the practice: done hiding waits for its own step
   const fl = ctfMyFlag(L, f);
   if(!L.done[f.idx]){
     if(fl.st === 0 && !ctfHidePlace(f)) return;   // still holding it: put it down where you stand, or it is not done
@@ -4281,7 +4320,7 @@ function ctfStep(){
     try{ ctfAiHideTick(L); }catch(e){ if(!CTF.errOnce){ CTF.errOnce = 1; console.error('ctfAiHideTick', e); } }
     const humans = fighters.filter(ctfIsHuman);
     const ready = humans.length ? humans.every(h=>L.done[h.idx]) : fighters.every(f=>L.done[f.idx]);
-    if(ready || L.t >= CTF_HIDE_STEPS) ctfEndHide(L);
+    if(ready || (L.t >= CTF_HIDE_STEPS && !CTUT.active)) ctfEndHide(L);   // (the practice's hiding lasts as long as its steps)
     return;
   }
   L.playT++;
@@ -4299,7 +4338,11 @@ function ctfStep(){
   if(L.playT % 8 === 0) ctfReveal(L);
   if(L.playT % 6 === 0 && CTF.nav) ctfAiSee(L);
   if(L.radar > 0) L.radar--;
-  { const q = L.playT - L.lastCapT - CTF_PING_FIRST; if(q >= 0 && q % CTF_PING_EVERY === 0 && !L.explore){ L.radar = CTF_PING_LEN; ctfSfx('ping'); for(const fl of L.flags) if(fl.st === 1) fl._radarT = L.playT; } }   // a stalemate: the radar pings
+  { const q = L.playT - L.lastCapT - CTF_PING_FIRST; if(q >= 0 && q % CTF_PING_EVERY === 0 && !L.explore) ctfRadarPing(L); }   // a stalemate: the radar pings
+}
+// The radar: every flag still out shows on the map for 5 s (the practice sets one off to show it).
+function ctfRadarPing(L){
+  L.radar = CTF_PING_LEN; ctfSfx('ping'); for(const fl of L.flags) if(fl.st === 1) fl._radarT = L.playT;
 }
 function ctfStepJails(L){
   if(L.freeFx) L.freeFx = L.freeFx.filter(q=>--q.t > 0);
@@ -4613,7 +4656,7 @@ function ctfStepBoosts(L){
         else if(b.kind === 'jump') f._ctfJT = CTF_BOOST_STEPS;
         else if(b.kind === 'ghost') f._ghostT = CTF_GHOST_STEPS;
         else if(b.kind === 'shield') f._shield = 1;
-        b.cd = CTF_BOOST_CD; ctfSfx('boost'); for(let i=0;i<10;i++) puff(b.x, b.y - 20, { speed:'#7ad0f0', jump:'#ffd23f', ghost:'#e8e8ff', shield:'#6ae0a0' }[b.kind], 5); break;
+        b.cd = CTF_BOOST_CD; b.by = f.idx; ctfSfx('boost'); for(let i=0;i<10;i++) puff(b.x, b.y - 20, { speed:'#7ad0f0', jump:'#ffd23f', ghost:'#e8e8ff', shield:'#6ae0a0' }[b.kind], 5); break;
       }
     }
   }
@@ -4639,7 +4682,7 @@ function ctfStepFlags(L){
       else if(fl.y > CTF.map.WH + 100){ if(fl.st === 1) ctfFlagResettle(L, fl, true); else ctfReturnFlag(fl); }
     }
     for(const f of fighters){
-      if(f._jail != null) continue;
+      if(f._jail != null || f.controller === 'ctut') continue;   // (the practice's CPUs walk past flags: one is for the player to find)
       if(Math.abs(f.x - fl.x) < CTF_FLAG_R + f.r*0.5 && f.y > fl.y - 100 && f.y < fl.y + 30){
         if(f.team === fl.team){   // its own side's flag, lying where it fell: picked up, to be hidden again somewhere new (the flag key)
           if(fl.st === 3 && f._cf < 0 && !(fl.lockT > 0 && fl.lockIdx === f.idx)){ fl.st = 2; fl.car = f.idx; f._cf = fl.id; fl.fall = false; fl.elev = null; fl.revealT = 0; ctfSfx('pick'); break; }
@@ -4769,7 +4812,7 @@ function ctfEliminate(f){
 
 // ---- the end ----------------------------------------------------------------------------------------------------
 function ctfCheckWin(){
-  const L = CTF.live; if(!L || L.over || L.explore) return;
+  const L = CTF.live; if(!L || L.over || L.explore || CTUT.active) return;   // (the practice never ends by itself: its last step does)
   for(const t of [0,1]) if(L.score[t] >= ctfNeed(L, t)){ ctfEnd(t, 'flags'); return; }
   // A WHOLE SIDE IN JAIL AT ONCE is a penalty, not the end (the owner, 2026-10-16: "most matches end in jail"; they picked "Penalty, not the end"):
   // the jailed side gives back the last flag it captured (it goes home to its hiding place), or, with none to give, the other side scores one;
@@ -6586,7 +6629,7 @@ function drawCtfHud(){
   // the middle: while hiding, an hourglass and a draining bar; in the match, a pair of crossed flags
   ctx.fillStyle = 'rgba(28,24,38,0.78)'; ctx.strokeStyle = '#f4efe2'; ctx.lineWidth = 3; ctx.fillRect(cx - 62, y, 124, 40); ctx.strokeRect(cx - 62, y, 124, 40);
   if(L.phase === 'hide' || L.phase === 'fix'){
-    const k = 1 - clamp(L.t/CTF_HIDE_STEPS, 0, 1);
+    const k = CTUT.active ? 1 : 1 - clamp(L.t/CTF_HIDE_STEPS, 0, 1);   // (the practice's hiding has no time limit: ctfStep)
     ctx.fillStyle = '#f4efe2'; ctx.beginPath(); ctx.moveTo(cx - 52, y + 8); ctx.lineTo(cx - 30, y + 8); ctx.lineTo(cx - 41, y + 20); ctx.lineTo(cx - 30, y + 32); ctx.lineTo(cx - 52, y + 32); ctx.lineTo(cx - 41, y + 20); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#3a3448'; ctx.fillRect(cx - 20, y + 14, 74, 12);
     ctx.fillStyle = k < 0.2 ? '#e0503a' : '#f2c033'; ctx.fillRect(cx - 20, y + 14, 74*k, 12);
@@ -6659,6 +6702,7 @@ function ctfSeesTeam(t){ return ctfSpecOn() || t === ctfViewTeam(); }   // (a sp
 function ctfSpecSetup(){
   CTF.spec = null;
   if(SETTINGS.mode !== 'ctf' || (typeof inNetSession === 'function' && inNetSession())) return;
+  if(CTUT.active){ ctutSeat(); return; }   // the Capture the Flag practice: its own three CPUs
   const cup = CTF.cupFix || null;
   if(!cup && !ctfSpectateOn()) return;
   if(cup && typeof ctfCupSeat === 'function') ctfCupSeat(cup);
@@ -9337,7 +9381,7 @@ function ctfNavAdopt(nav, data){
 // A graph for the map: the shipped one at once when its file is loaded, else the places only, to be filled by the fetch (nav.pending) or built by the ticker.
 function ctfNavMake(M){
   const nav = ctfNavNew(M);
-  if(CTF.noShipped) return nav;
+  if(CTF.noShipped || (CTF_MAPS[M.id] && CTF_MAPS[M.id].noGraph)) return nav;   // (a map with no shipped graph, the practice's: built here at once)
   const gid = M.gid || M.id;
   if(CTF_GRAPHS[gid]){ if(!ctfNavAdopt(nav, CTF_GRAPHS[gid])) delete CTF_GRAPHS[gid]; return nav; }
   if(typeof fetch === 'function' && !CTF.noFetch){
@@ -10148,6 +10192,7 @@ function ctfAiHideIdle(f, ai, L, nav, inp, now){
   return inp;
 }
 function ctfAiHideTick(L){
+  if(CTUT.active) return;   // the practice's CPUs hide their flags at once and build nothing (ctutSetup)
   ctfStratHideTick(L);
   if(L.t === 900 && ctfAiSkill() === 2){ for(const t of [0, 1]){ const cpus = fighters.filter(f=>f.team === t && !ctfIsHuman(f)); if(cpus.length && !fighters.some(f=>f.team === t && ctfIsHuman(f)) && Math.random() < 0.45 && ctfPtsDiff(t) > -10) ctfSacrifice(L, t); } }   // a hard CPU side that means to rush trades 10 points for speed (never with a human on it: theirs to decide)
   // humans press their own keys; a CPU's flag is put down by its own walk.
@@ -12663,6 +12708,7 @@ function go(id){
     const _rb = document.getElementById('resultRematch'); if(_rb) _rb.textContent = RACE.retry ? "Retry \u21bb" : "Rematch \u21bb"; }
   if(id!=='_none_' && id!=='result'){ try{ ctfStageRestore(); }catch(e){} }   // Capture the Flag: the player's own stage comes back
   if(id!=='_none_'){ if(COBSFIGHT.active) cobsFightRestore(); if(id!=='result') COBSFIGHT.retry = null; }   // and Steve Cobs's, the same way
+  if(id!=='_none_' && (CTUT.active || CTUT.prev)){ CTUT.active = false; CTUT.after = null; ctutRestore(); }   // the Capture the Flag practice left part-way: the player's own back (its step is saved)
   if(id==='title'){ TUT.active=false; TESTMODE.active=false; TOURNEY.active=false; TOURNEY_WATCHING=null; try{ tourneyRestore(); tutorialRestore(); }catch(e){} TOURNEY_MATCH_ACTIVE=false; BOSSRUSH.active=false; PENDING_TOURNEY=null; PENDING_CUSTOM=false;
     if(RUN_REC.recording) stopRunRecording();
     const rr=document.getElementById('runReview'); if(rr) rr.innerHTML='';
@@ -14088,6 +14134,7 @@ function rematch(){
 }
 function startMatch(){
   { const rb=document.getElementById('resultRematch'); if(rb) rb.style.display=''; }
+  if(CTUT.active){ ctutStart(CTUT.step); return; }   // R in the Capture the Flag practice: this step again, on a fresh map
   if(RACE.retry){ startRunningRace(RACE.retry.opts); return; }          // Retry from RUNNING!'s result screen
   if(RACE.active){ startRunningRace(RACE.opts); return; }              // R mid-race: the same race from the top
   if(ONEFIGHT.retry){ const r = ONEFIGHT.retry; startOneFight(r.lineup, r.opts); return; }   // Rematch from One's result screen
@@ -14121,6 +14168,8 @@ function startMatch(){
   if(oneWanted()){ startOneFight(oneLineup(), { onEnd:oneFightEnded }); return; }
   // Steve Cobs, for good, the same way: "Anyone" once his chain is done (cobsBeaten), your pick with AI allies up to the count.
   if(cobsWanted()){ startCobsFight(oneLineup(), { onEnd:cobsFightEnded }); return; }
+  // A player's first Capture the Flag match waits for the practice, and starts by itself once it is done (ctfTutGate). Spectating plays nothing, so it never waits.
+  if(SETTINGS.mode==='ctf' && !inNetSession() && !ctfSpectateOn() && ctfTutGate(()=>startMatch(), 'solo')) return;
   // The huddle's own controls are the plan the match STARTS with — read synchronously, so pressing
   // Start always starts a match at once. The CPU teams' opening plan is then requested in the
   // background, AFTER beginMatchNow has built the real roster and reset the per-match cost guard;
@@ -14342,6 +14391,350 @@ function finishTutorial(skip){
   markTutorialSeen(); try{ awardTutorialUnlock(); }catch(e){}
   tutorialRestore();
   go('select');
+}
+// ============================================================
+//  CAPTURE THE FLAG PRACTICE (the owner, 2026-10-19: "make a ctf tutorial"; chosen: "Play-along", teaching hiding and stealing, the jail and
+//  the keys, building, plans and the extras, and "a forced one": it comes before a player's first Capture the Flag match).
+//  A real match on the small PRACTICE HALL (CTF_MAPS.practice), two a side: you (Firey), a CPU teammate and two CPU foes who only do what a
+//  step needs (the 'ctut' controller, ctutInput). One card at a time, in How to Play's style; a step goes on when its real action happens in
+//  the real Capture the Flag code: a flag put down, a piece built and taken away, a flag refused where nobody could reach it, the plan menu
+//  opened, used and closed, done hiding, a flag found in a prop and captured, the jail and the rescue, a door opened with the personal key,
+//  a boost, the map, the radar. The match never ends by itself (ctfCheckWin), and C (done hiding) waits for its own step (ctfToggleDone).
+//  FORCED: the first Capture the Flag match of any kind (Start Match, the Flag Cup's Kick Off, Create Room with the mode on, the mode picked
+//  in your own empty room, a room you join that plays it) runs this first, and what was asked for carries on once it is done (CTUT.after).
+//  A room you join is left before the practice and joined again after it: the practice never runs in a lobby, and the host's room is not held up.
+//  Only the room's first settings after your own join are checked (NET._ctutCheck): a host who switches a room you are already in to the
+//  mode keeps you in it, and a line says the practice is under Learn.
+//  Done is a profile flag (PROFILE.ctfTutorialDone; bfsi:ctfTutorialDone too, for the moments before the profile loads). A player who had
+//  used the mode before the practice came counts as done: checked once, the first time this build asks (ctfTutGrandfather), from what Capture
+//  the Flag really leaves behind in storage (the first-match card seen, a map picked, the Flag Cup set, a kit saved, a setup toggle).
+//  The step is saved as it is reached (bfsi:ctfTutStep): quit, and the next time starts there. Learn has it too, to play again any time.
+// ============================================================
+const CTUT_DONE_KEY = 'bfsi:ctfTutorialDone', CTUT_STEP_KEY = 'bfsi:ctfTutStep';
+const CTUT_NOINP = { left:false, right:false, jump:false, up:false, down:false, attack:false, special:false, smash:false, flag:false, edit:false };
+function ctutYou(){ return fighters.find(f=>f.you) || null; }
+function ctutMate(){ const y = ctutYou(); return y ? fighters.find(f=>!f.you && f.team === y.team) || null : null; }
+function ctutPts(L, you){ return Math.max(0, (L.pts && L.pts[you.idx]) || 0); }
+function ctutOnFoeSide(L, f){ const mid = L.map.WW/2; return f.team === 0 ? f.x > mid : f.x < mid; }
+function ctutNearest(list, f){ let best = null, bd = 1e9; for(const q of list){ const d = Math.hypot((q.x + (q.w || 0)/2) - f.x, (q.y + (q.h || 0)/2) - f.y); if(d < bd){ bd = d; best = q; } } return best; }
+function ctutHunter(L, you){ return fighters.find(f=>f.team !== you.team && f._jail == null && !f.dead) || null; }
+function ctutVoted(){ const v = CTF.menu && CTF.menu.vote; return !!(v && (v.preset || [v.ticks, v.assign, v.jobs, v.areas].some(o=>o && Object.keys(o).length))); }
+// one hit from the jail: just under the damage that jails you on the enemy's side (ctfJailThreshold), so any hit there does it (and no knock-back carries you home first)
+function ctutHighDamage(L, you){ const thr = ctfJailThreshold(L.n); if(you.pct < thr - 1) you.pct = thr - 1; }
+// the closed cave of the practice map (no way in: where no flag may go), for side t
+function ctutCave(M, t){ const c = CTF_MAPS.practice.cave; if(!c || !M) return null; const r = { x:c.c0*CTF_CELL, y:c.r0*CTF_CELL, w:(c.c1 - c.c0 + 1)*CTF_CELL, h:(c.r1 - c.r0 + 1)*CTF_CELL }; return t === 0 ? r : { x:M.WW - r.x - r.w, y:r.y, w:r.w, h:r.h }; }
+function ctutWhy(){ return CTUT.reason === 'join' ? ' Then you join room ' + (CTUT.code || '') + ' again.' : ''; }
+function ctutForced(){ return !!CTUT.reason && CTUT.reason !== 'learn'; }
+
+// The steps. text: the card's main line; more: the line under it; enter: set up when the step begins; tick: each frame; check: true once it is done.
+const CTUT_STEPS = [
+  { id:'goal', label:'The goal',
+    text:()=>ctutForced() ? 'Before your first Capture the Flag match: a short practice.' : 'Capture the Flag: two teams. In a real match each side hides five flags.',
+    more:()=>(ctutForced() ? 'Two teams, five flags a side: steal theirs and keep yours hidden.' : 'Steal theirs, carry them to your side, and keep yours hidden.') + ctutWhy() + ' Press Enter.',
+    check:()=>CTUT.enterHit },
+  { id:'hide', label:'Hide your flag',
+    text:()=>'You are carrying your flag. Walk to a good spot and press Space to put it down.',
+    more:()=>'Not in the red: by the middle line, your home pad or your jail. A grey puff means no.',
+    check:(L, you)=>L.phase === 'hide' && L.flags[you.idx] && L.flags[you.idx].st === 1 },
+  { id:'build', label:'Build',
+    text:()=>'Press V for the build view. The arrows move it, X picks a tool.',
+    more:(L, you)=>'Pick the crate and press Space. Pieces cost points: you have ' + ctutPts(L, you) + '.',
+    enter:(L, you, S)=>{ S.seq = L.editSeq; },
+    check:(L, you, S)=>{ const e = L.edits.find(q=>q.owner === you.idx && q.seq > S.seq); if(e){ CTUT.piece = { id:e.id, cost:e.cost }; return true; } return false; } },
+  { id:'remove', label:'Take it away',
+    text:(L, you)=>!you._cam ? 'Now take it away: press V for the build view, X until the red cross, aim at your piece, press Space.'
+      : CTF_TOOLS[you._tool] !== 'remove' ? 'Now take it away: X until the red cross, aim at your piece, press Space.' : 'Now aim the red cross at your piece and press Space.',
+    more:(L, you)=>'You get its points back. You have ' + ctutPts(L, you) + '.',
+    enter:(L, you, S)=>{ S.id = CTUT.piece ? CTUT.piece.id : null; },
+    check:(L, you, S)=>S.id != null && !L.edits.some(e=>e.id === S.id) },
+  { id:'reach', label:'Reachable', top:true,   // (the cave is under the floor: the card goes up top, out of its way)
+    text:(L, you)=>!you._cam ? 'Every flag must be reachable. Press V for the build view. The flag tool is first; aim into the closed cave.'
+      : CTF_TOOLS[you._tool] !== 'flag' ? 'Every flag must be reachable. X until the flag, then aim into the closed cave.' : 'Every flag must be reachable. Aim the flag tool into the closed cave.',
+    more:()=>'The no-entry sign: nobody could walk in there, so no flag may go there. Press Space to try.',
+    enter:(L, you, S)=>{ S.t = L.t; },
+    check:(L, you, S)=>you._ctfNo != null && you._ctfNo >= S.t },
+  { id:'plan', label:'Plans',
+    text:()=>'Press P to open the plan menu.',
+    more:()=>'A plan tells your CPU teammates what to do.',
+    check:()=>ctfMenuOpen() },
+  { id:'pick', label:'Pick a plan',
+    text:()=>'Up and down move, Space picks. Pick a plan, or a role for your teammate.',
+    more:()=>ctfMenuOpen() ? 'Left and right change the tab: Roles is one of them.' : 'Press P to open the menu again.',
+    check:()=>ctutVoted() },
+  { id:'close', label:'Close it',
+    text:()=>'Press Esc to close the menu.',
+    more:()=>'P opens it again any time, while hiding or in the match.',
+    check:()=>!ctfMenuOpen() },
+  { id:'done', label:'Done hiding',
+    text:(L)=>L.phase === 'fix' ? 'One moment: every flag is checked to be reachable.' : 'Press C when you are done hiding.',
+    more:(L)=>L.phase === 'fix' ? 'A piece that shuts a flag in is taken away.' : 'It skips the rest of the hiding time. Play starts when everyone is done.',
+    check:(L)=>L.phase === 'play' },
+  { id:'find', label:'Find a flag',
+    text:()=>'Go! Their flags hide in props on their side. Find one: walk into the bushes and crates.',
+    more:(L, you, S)=>L.playT - S.t > 2700 ? 'Look for the white ring: a flag is there.' : 'A flag in a prop only shows up close.',
+    enter:(L, you, S)=>{ S.t = L.playT; },
+    tick:(L, you, S)=>{ const k = L.playT - S.t; if(k >= 2700 && (k - 2700) % 600 === 0){ const fl = ctutNearest(L.flags.filter(q=>q.team !== you.team && q.st === 1), you); if(fl) L.ping[you.team] = { id:fl.id, t:420 }; } },
+    check:(L, you)=>you._cf >= 0 && !!L.flags[you._cf] && L.flags[you._cf].team !== you.team },
+  { id:'carry', label:'Carry it home',
+    text:()=>'You have it! A carrier is slower. Carry it over the middle line to your side.',
+    more:()=>'That is a capture. Five win a real match.',
+    enter:(L, you, S)=>{ S.score = L.score[you.team]; },
+    tick:(L, you, S)=>{ if(!(you._cf >= 0) && L.score[you.team] <= S.score) ctutGo('find'); },
+    check:(L, you, S)=>L.score[you.team] > S.score },
+  { id:'jail', label:'Jail',
+    text:()=>'Now the jail. Go over to their side again.',
+    more:()=>'Damage there adds up: too much and you go to their jail. Yours is high now, so one hit will do it.',
+    enter:(L, you)=>{ you._ctfFree = 0; you._shield = 0;
+      for(const j of L.jails) for(const i of j.pris.slice()){ const p = fighters[i]; if(p && p.team !== you.team) ctfReleaseOnTimer(L, j, p); }   // (a foe the player jailed comes out: one has to be there)
+      ctutHighDamage(L, you); },
+    tick:(L, you)=>{ if(you._jail == null) ctutHighDamage(L, you); },
+    check:(L, you)=>you._jail != null },
+  { id:'freed', label:'Get freed',
+    text:()=>'You are in their jail. Wait: your teammate holds the door for 2 seconds to free you.',
+    more:()=>'Alone, you walk out after 90 seconds. In jail, X watches the next teammate.',
+    check:(L, you)=>you._jail == null },
+  { id:'key', label:'Keys',
+    text:()=>'You hold one key. It opens one locked door, for your whole team.',
+    more:()=>'Walk up to a locked door: there is one on the high ledge on each side.',
+    enter:(L, you)=>{ for(const d of L.doors) d.op = [false, false]; ctfRebuildDyn(L); if(!you._pk) you._pk = true; },
+    check:(L, you)=>L.doors.some(d=>d.op[you.team]) },
+  { id:'boost', label:'Boosts',
+    text:()=>'Behind the door: a boost. Walk over it.',
+    more:()=>'Boosts make you fast, jump high, see-through or shielded for a short time.',
+    enter:(L)=>{ for(const b of L.boosts){ b.cd = 0; b.by = -1; } },
+    check:(L, you)=>L.boosts.some(b=>b.by === you.idx) },
+  { id:'map', label:'The map',
+    text:()=>'Top right: the map. The white box is your screen, the dots are your team.',
+    more:()=>'Flags you have found show on it too. Press Enter.',
+    check:()=>CTUT.enterHit },
+  { id:'radar', label:'The radar',
+    text:()=>'The radar: after 3 minutes with no capture, every flag left shows for 5 seconds.',
+    more:()=>'Watch the rings on the map.',
+    enter:(L)=>{ ctfRadarPing(L); },
+    check:(L)=>!(L.radar > 0) },
+  { id:'ready', label:'Ready',
+    text:()=>'You are ready! Real matches are five a side, with more places to hide.',
+    more:()=>'Press Enter to finish.',
+    check:()=>CTUT.enterHit },
+];
+// A step that needs what an earlier one made (a piece, an open menu, a flag in hand, the jail, an open door) starts again from that one.
+const CTUT_RESUME = { remove:'build', pick:'plan', close:'plan', carry:'find', freed:'jail', boost:'key' };
+function ctutIdx(id){ return CTUT_STEPS.findIndex(s=>s.id === id); }
+function ctutResumeIdx(i){ const st = CTUT_STEPS[i], back = st && CTUT_RESUME[st.id]; return back ? ctutIdx(back) : i; }
+function ctutLoadIdx(){ let id = null; try{ id = localStorage.getItem(CTUT_STEP_KEY); }catch(e){} const i = CTUT_STEPS.findIndex(s=>s.id === id); return i < 0 ? 0 : i; }
+function ctutSave(i){ try{ const st = CTUT_STEPS[ctutResumeIdx(i)]; if(st) localStorage.setItem(CTUT_STEP_KEY, st.id); }catch(e){} }
+
+// ---- done, and who counts as done ----
+function ctfTutDone(){
+  if(CTUT.sessionDone) return true;
+  if(typeof PROFILE !== 'undefined' && PROFILE && PROFILE.ctfTutorialDone) return true;
+  try{ return localStorage.getItem(CTUT_DONE_KEY) === '1' || ctfTutGrandfather(); }
+  catch(e){ return true; }   // no storage at all: nothing could be remembered, so nobody is held back (the profile degrades open the same way)
+}
+function ctfTutMarkDone(){
+  CTUT.sessionDone = true;
+  try{ localStorage.setItem(CTUT_DONE_KEY, '1'); localStorage.setItem('bfsi:ctfintro', '1'); localStorage.removeItem(CTUT_STEP_KEY); }catch(e){}   // (the first-match card is the practice's job now)
+  if(typeof PROFILE !== 'undefined' && PROFILE && !PROFILE.ctfTutorialDone){ PROFILE.ctfTutorialDone = true; try{ saveProfile(); }catch(e){} }
+}
+// A player who used Capture the Flag before the practice existed counts as done. Capture the Flag matches never went in the match log, so this
+// reads the keys the mode's own setup writes (only someone who opened it has them). It is checked ONCE, the first time this build asks: after
+// that the same keys are written by new players too (a map picked before their first match), and they must not skip the practice by it.
+const CTUT_CHECK_KEY = 'bfsi:ctfTutChecked';
+const CTUT_FOOTPRINTS = ['bfsi:ctfintro', 'bfsi:ctfmap', 'bfsi:ctfcup', 'bfsi:ctfkits', 'bfsi:ctfadv', 'bfsi:ctfspec', 'bfsi:ctfexplore'];
+function ctfTutGrandfather(){
+  try{ if(typeof PROFILE !== 'undefined' && PROFILE && !PROFILE.ctfTutorialDone && localStorage.getItem(CTUT_DONE_KEY) === '1'){ PROFILE.ctfTutorialDone = true; saveProfile(); } }catch(e){}   // (done before the profile had loaded: it goes in now)
+  let checked = true, played = false;
+  try{ checked = localStorage.getItem(CTUT_CHECK_KEY) === '1'; if(!checked){ played = CTUT_FOOTPRINTS.some(k=>localStorage.getItem(k) != null); localStorage.setItem(CTUT_CHECK_KEY, '1'); } }catch(e){}
+  if(checked || !played) return false;
+  ctfTutMarkDone(); return true;
+}
+// The gate: true when the practice was started instead (after() runs once it is finished).
+function ctfTutGate(after, reason, code){
+  if(CTUT.active || ctfTutDone()) return false;
+  CTUT.after = after || null; CTUT.reason = reason || 'solo'; CTUT.code = code || null;
+  ctutStart(ctutLoadIdx());
+  return true;
+}
+// Learn's button: from the saved step if it was never finished, else from the top.
+function openCtfTutorial(){ CTUT.after = null; CTUT.reason = 'learn'; CTUT.code = null; ctutStart(ctfTutDone() ? 0 : ctutLoadIdx()); }
+// The host picks Capture the Flag in their own room before ever playing it. Alone in the room: it closes, the practice runs, a room opens again
+// with the mode on (a new code: nobody had the old one). With friends in it, nobody is kept waiting: the mode stays and the line says why.
+function ctfTutHostPick(){
+  if(ctfTutDone()) return false;
+  if((NET.players || []).length > 1){ NET.status('Capture the Flag needs a short practice first (it is under Learn), so the mode stays as it is.'); return true; }
+  NET.leave();
+  ctfTutGate(()=>{ SETTINGS.mode = 'ctf'; openLobby(); NET.host(); }, 'host');
+  return true;
+}
+// A room you just joined plays Capture the Flag and you have not had the practice: out of the room at once, the practice, then the same room again.
+// (Only for the room's first settings after your own join: NET._ctutCheck. A room you are already in that switches to the mode keeps you: ctfTutLobbyLine.)
+function ctfTutJoin(){
+  if(ctfTutDone()) return false;
+  const code = NET.room || NET.lastJoin || null;
+  NET.leave();
+  ctfTutGate(()=>{ openLobby(); const inp = document.getElementById('joinAddr'); if(inp && code) inp.value = code; if(code) NET.join(code); }, 'join', code);
+  return true;
+}
+// The host switched a room you are already in to Capture the Flag: you stay in it (the host's room is not touched), and a line says where the practice is.
+function ctfTutLobbyLine(){ if(!ctfTutDone()) NET.status('This room now plays Capture the Flag. You can play it; its short practice is under Learn.'); }
+// The Flag Cup's Kick Off buttons.
+// The Flag Cup is watched, not played, so it never waits for the practice (the owner, 2026-10-19: a watch-only cup shouldn't force it; a
+// played "normal" Flag Cup, when it exists, goes through ctfTutGate like any match you play).
+function ctfCupKickOff(){ ctfCupStart(); }
+
+// ---- the match ----
+function ctutStart(i){
+  i = ctutResumeIdx(Math.max(0, Math.min(CTUT_STEPS.length - 1, i | 0)));
+  if(!CTUT.prev) CTUT.prev = { mode:SETTINGS.mode, count:SETTINGS.count, chosen, stage, forceMap:CTF.forceMap, skipNav:CTF.skipNav };
+  TUT.active = false; TESTMODE.active = false; BOSSRUSH.active = false; CUSTOM_LEVEL = null; PENDING_TOURNEY = null; TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false;
+  SETTINGS.mode = 'ctf'; SETTINGS.count = 4; CTF.forceMap = 'practice'; CTF.skipNav = false; CTF.cupFix = null; CTF.netMap = null; CTF.menu = null;
+  chosen = ROSTER.find(r=>r.name === 'Firey' && r.play) || chosen;   // a recognisable, simple starter, as How to Play has
+  CTUT.active = true; CTUT.t = 0; CTUT.step = i; CTUT.S = {}; CTUT.enterHit = false; CTUT.piece = null; CTUT.door = null;
+  CTUT.setup = true;   // (beginMatchNow runs a first frame at once: no step is judged before its own set-up)
+  try{ beginMatchNow(); ctutSetup(i); ctutEnter(i); }   // (ctfSpecSetup seats the CPUs: ctutSeat)
+  finally{ CTUT.setup = false; }
+}
+// The seats (ctfTeamOf puts fighters 0 and 2 against 1 and 3): Leafy on your side, Pen and Blocky on theirs, all three on the practice's controller.
+function ctutSeat(){
+  const pick = n=>ROSTER.find(r=>r.name === n && r.play) || ROSTER.find(r=>r.play);
+  const cast = { 1:'Pen', 2:'Leafy', 3:'Blocky' };
+  fighters.forEach((f0, i)=>{
+    if(i === 0){ f0.controller = 'local'; f0.you = true; return; }
+    const f = makeFighter({ ...pick(cast[i] || 'Pen'), you:false }, f0.x, f0.y, f0.idx);
+    f.stocks = f0.stocks; f.homeBase = null; f.team = f0.team; f.controller = 'ctut'; f.you = false; fighters[i] = f;
+  });
+}
+// The CPUs' flags go into props on their own side at once (the foes': a bush and a crate past the middle). A later step begins with your flag
+// already hidden too, and from the steal on with the hiding over.
+function ctutSetup(i){
+  const L = CTF.live, M = CTF.map, you = ctutYou(); if(!L || !M || !you) return;
+  const spotOf = (t, cover)=>M.spots.filter(s=>s.team === t && s.cover === cover).sort((a, b)=>b.y - a.y)[0] || null;   // (the one on the floor)
+  const hide = (f, s)=>{ if(f && s && L.flags[f.idx]){ ctfPlaceFlag(L.flags[f.idx], s.x, s.y); L.done[f.idx] = true; } };
+  const foes = fighters.filter(f=>f.team !== you.team);
+  hide(ctutMate(), spotOf(you.team, 'crate'));
+  hide(foes[0], spotOf(1 - you.team, 'bush')); hide(foes[1], spotOf(1 - you.team, 'crate'));
+  for(const f of fighters) if(f !== you) f._ctutHome = f.x;
+  if(i > ctutIdx('hide')){ const s = spotOf(you.team, 'bush'); if(s) ctfPlaceFlag(L.flags[you.idx], s.x, s.y); }
+  if(i >= ctutIdx('find') && L.phase === 'hide') ctfEndHide(L);   // (nothing is built, so there is no check to wait for)
+}
+function ctutEnter(i){
+  CTUT.S = { t0:CTUT.t }; CTUT.enterHit = false;
+  const st = CTUT_STEPS[i], L = CTF.live, you = ctutYou();
+  if(!ctfTutDone()) ctutSave(i);
+  if(st && st.enter && L && you) st.enter(L, you, CTUT.S);
+}
+function ctutGo(id){ const i = ctutIdx(id); if(i < 0) return; CTUT.step = i; ctutEnter(i); }
+// Each frame, after the Capture the Flag step (so a check sees this frame's capture, jail or door).
+function ctutTick(){
+  const L = CTF.live; if(!CTUT.active || CTUT.setup || !L) return;
+  CTUT.t++;
+  if(L.phase === 'hide' && CTF.nav && !CTF.nav.ready && !CTF.nav.pending) ctfNavTick(CTF.nav, 200, CTUT_STEPS[CTUT.step] && CTUT_STEPS[CTUT.step].id === 'reach' ? 30 : 6);   // (the reach rule needs the route graph: on this little map it is soon made)
+  const you = ctutYou(), at = CTUT.step, st = CTUT_STEPS[at]; if(!you || !st) return;
+  if(st.tick){ st.tick(L, you, CTUT.S); if(CTUT.step !== at || !CTUT.active) return; }
+  if(!st.check(L, you, CTUT.S)) return;
+  if(st.id === 'key') CTUT.door = L.doors.find(d=>d.op[you.team]) || null;
+  CTUT.step++;
+  try{ SFX.ui(); }catch(e){}
+  if(CTUT.step >= CTUT_STEPS.length){ ctutComplete(); return; }
+  ctutEnter(CTUT.step);
+}
+function ctutComplete(){
+  const after = CTUT.after, learn = CTUT.reason === 'learn';
+  CTUT.after = null; CTUT.active = false; running = false;
+  ctfTutMarkDone();
+  ctutRestore();
+  go('title');
+  if(after){ try{ after(); }catch(e){ console.error('ctfTut after', e); } }
+  else if(learn) go('learn');
+}
+// Every way out puts the player's own mode, count, pick, stage and map choice back (go() calls it for a quit part-way).
+function ctutRestore(){
+  const p = CTUT.prev; if(!p) return; CTUT.prev = null;
+  SETTINGS.mode = p.mode; SETTINGS.count = p.count; if(p.chosen) chosen = p.chosen; if(p.stage) stage = p.stage;
+  CTF.forceMap = p.forceMap; CTF.skipNav = p.skipNav; CTF.menu = null;
+}
+// "Press Enter": the read-and-go-on steps. (The plan menu eats its own Enter first.)
+if(typeof window !== 'undefined' && window.addEventListener && !window.__ctutKeys){ window.__ctutKeys = true;
+  window.addEventListener('keydown', e=>{ if(CTUT.active && running && !paused && !e.repeat && (e.code === 'Enter' || e.code === 'NumpadEnter')) CTUT.enterHit = true; }); }
+
+// ---- the CPUs: only what the step needs ----
+function ctutWalk(f, tx){
+  const inp = Object.assign({}, CTUT_NOINP), dx = tx - f.x;
+  if(Math.abs(dx) < 24){ f._ctutStuck = 0; return inp; }
+  if(dx > 0) inp.right = true; else inp.left = true;
+  f._ctutStuck = (f.onground && Math.abs(f.vx) < 0.8) ? (f._ctutStuck || 0) + 1 : 0;   // held up (a piece somebody built): a jump
+  if(f._ctutStuck > 10){ inp.jump = inp.up = true; if(f._ctutStuck > 18) f._ctutStuck = 0; }
+  return inp;
+}
+function ctutInput(f){
+  const L = CTF.live, you = ctutYou(), st = CTUT_STEPS[CTUT.step];
+  if(!CTUT.active || !L || !you || !st || L.phase !== 'play') return Object.assign({}, CTUT_NOINP);
+  if(f.team === you.team){   // the teammate: to the jail door whenever you are inside (holding it 2 s frees you), near you on the way to the jail
+    if(you._jail != null){ const j = L.jails.find(q=>q.pris.indexOf(you.idx) >= 0); if(j){ const d = j.door; return ctutWalk(f, j.face === 1 ? d.x + d.w + 30 : d.x - 30); } }
+    if(st.id === 'jail' && Math.abs(you.x - f.x) > 360) return ctutWalk(f, you.x + (you.x > f.x ? -260 : 260));
+    return Object.assign({}, CTUT_NOINP);
+  }
+  // a foe: still, except one in the jail step, who comes for you while you are on their side and hits you
+  if(st.id !== 'jail' || you._jail != null || f !== ctutHunter(L, you)) return Object.assign({}, CTUT_NOINP);
+  if(!ctutOnFoeSide(L, you)) return ctutWalk(f, f._ctutHome != null ? f._ctutHome : f.x);
+  const dx = you.x - f.x, dy = you.y - f.y;
+  if(Math.abs(dx) > 64 || Math.abs(dy) > 70){ const inp = ctutWalk(f, you.x); if(dy < -110 && f.onground && CTUT.t % 30 < 6) inp.jump = inp.up = true; return inp; }
+  const inp = Object.assign({}, CTUT_NOINP), dir = dx >= 0 ? 1 : -1;
+  if(f.face !== dir){ if(dir > 0) inp.right = true; else inp.left = true; return inp; }
+  inp.attack = true; return inp;
+}
+
+// ---- drawing: only while the practice runs ----
+function ctutToScreen(x, y){ const z = viewZoom(), vx0 = camX + W/2 - W/(2*z), vy0 = camY + H/2 - H/(2*z); return { x:(x - vx0)*z, y:(y - vy0)*z }; }
+function ctutArrow(sx, sy, ang){ ctx.save(); ctx.translate(sx, sy); ctx.rotate(ang); const s = 24; ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(s, 0); ctx.lineTo(-s*0.6, -s*0.75); ctx.lineTo(-s*0.25, 0); ctx.lineTo(-s*0.6, s*0.75); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
+// a place in the world: an arrow bobbing over it when it is on the screen, at the edge pointing to it when it is not
+function ctutPointAt(x, y){
+  const p = ctutToScreen(x, y), b = 6*Math.sin(CTUT.t*0.15);
+  if(p.x > 40 && p.x < W - 40 && p.y > 130 && p.y < H - 150){ ctutArrow(p.x, p.y - 70 + b, Math.PI/2); return; }
+  const dx = p.x - W/2, dy = p.y - H/2, k = Math.min((W/2 - 50)/Math.max(1e-6, Math.abs(dx)), (H/2 - 130)/Math.max(1e-6, Math.abs(dy)));
+  ctutArrow(W/2 + dx*k, H/2 + dy*k, Math.atan2(dy, dx));
+}
+// In the world: where a flag may not go (the hiding steps), and the closed cave (the reach step).
+function ctutDrawWorld(){
+  if(!CTUT.active) return;
+  const L = CTF.live, you = ctutYou(), st = CTUT_STEPS[CTUT.step]; if(!L || !you || !st || L.phase !== 'hide') return;
+  const M = L.map, t = you.team;
+  ctx.save();
+  if(st.id === 'hide' || st.id === 'reach'){
+    const mid = M.WW/2, pad = M.homes[t] && M.homes[t].pad, j = M.jails.find(q=>q.owner === t), rs = [t === 0 ? { x:mid - 500, y:0, w:500, h:M.WH } : { x:mid, y:0, w:500, h:M.WH }];
+    if(pad) rs.push({ x:pad.x - 30, y:pad.y - 150, w:pad.w + 60, h:300 });
+    if(j) rs.push({ x:j.zone.x - 20, y:j.zone.y, w:j.zone.w + 40, h:j.zone.h + 40 });
+    for(const r of rs){ ctx.fillStyle = 'rgba(224,80,58,0.2)'; ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = 'rgba(224,80,58,0.75)'; ctx.lineWidth = 3; ctx.setLineDash([16, 10]); ctx.strokeRect(r.x, r.y, r.w, r.h); ctx.setLineDash([]); }
+  }
+  if(st.id === 'reach'){ const c = ctutCave(M, t); if(c){ ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 5; ctx.setLineDash([14, 10]); ctx.lineDashOffset = -CTUT.t; ctx.strokeRect(c.x - 6, c.y - 6, c.w + 12, c.h + 12); ctx.setLineDash([]); } }
+  ctx.restore();
+}
+// The card, in How to Play's style (dark, a gold edge, gold words), at the bottom; beside the plan menu while it is open. Arrows where a step points.
+function ctutDrawCard(){
+  if(!CTUT.active) return;
+  const L = CTF.live, you = ctutYou(), st = CTUT_STEPS[CTUT.step]; if(!L || !you || !st) return;
+  const t1 = st.text(L, you, CTUT.S), t2 = st.more ? st.more(L, you, CTUT.S) : '';
+  const side = ctfMenuOpen(), w = side ? Math.max(300, W - 712) : Math.min(W - 40, 820), x = side ? W - w - 16 : W/2 - w/2;
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.font = "700 21px 'Baloo 2', system-ui"; const l1 = ctfWrapText(t1, w - 36);
+  ctx.font = "600 15px 'Baloo 2', system-ui"; const l2 = t2 ? ctfWrapText(t2, w - 36) : [];
+  const h = 34 + l1.length*25 + l2.length*19 + 12, y = side ? 140 : st.top ? 136 : H - 132 - h;
+  ctx.fillStyle = 'rgba(28,24,38,0.88)'; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h);
+  ctx.font = "600 13px 'Baloo 2', system-ui"; ctx.fillStyle = '#fff';
+  { let hd = 'Capture the Flag practice  ·  Step ' + (CTUT.step + 1) + ' of ' + CTUT_STEPS.length + ': ' + st.label + '  ·  Esc to pause';
+    if(ctx.measureText(hd).width > w - 20) hd = 'Step ' + (CTUT.step + 1) + ' of ' + CTUT_STEPS.length + ': ' + st.label;   // (beside the plan menu the card is narrow)
+    ctx.fillText(hd, x + w/2, y + 19); }
+  ctx.font = "700 21px 'Baloo 2', system-ui"; ctx.fillStyle = '#ffd23f'; l1.forEach((s, i)=>ctx.fillText(s, x + w/2, y + 44 + i*25));
+  ctx.font = "600 15px 'Baloo 2', system-ui"; ctx.fillStyle = '#f4efe2'; l2.forEach((s, i)=>ctx.fillText(s, x + w/2, y + 44 + l1.length*25 + i*19));
+  ctx.restore();
+  const id = st.id, mid = L.map.WW/2;
+  if(id === 'carry' && ctutOnFoeSide(L, you)) ctutPointAt(you.team === 0 ? mid - 300 : mid + 300, you.y);
+  else if(id === 'jail' && you._jail == null && !ctutOnFoeSide(L, you)) ctutPointAt(you.team === 0 ? mid + 400 : mid - 400, you.y);
+  else if(id === 'key'){ const d = ctutNearest(L.doors.filter(q=>!q.op[you.team]), you); if(d) ctutPointAt(d.x + d.w/2, d.y + d.h/2); }
+  else if(id === 'boost'){ const b = ctutNearest(L.boosts.filter(q=>!(q.cd > 0)), CTUT.door ? { x:CTUT.door.x, y:CTUT.door.y } : you); if(b) ctutPointAt(b.x, b.y - 30); }
+  else if(id === 'map' || id === 'radar'){ const mw = 220, mh = Math.round(mw*L.map.WH/L.map.WW); ctutArrow(W - 12 - mw/2, 66 + mh + 36 + 6*Math.sin(CTUT.t*0.15), -Math.PI/2); }
 }
 // ---- PICK YOUR TEAMMATES (World Cup, normal mode, 2v2 / 3v3) ----
 // The fighter select again, one pick per seat: you, then each teammate ("pick your teammates ... in the same pick screen style as the fighter
@@ -38356,6 +38749,8 @@ function step(){
         inp.down=!!r.down; inp.attack=!!r.attack; inp.special=!!r.special; inp.smash=!!r.smash; inp.flag=!!r.flag; inp.edit=!!r.edit; }
     } else if(ctrl==="trainer"){
       inp = trainerInput(f);   // Training: a dummy that walks at you or hops about
+    } else if(ctrl==="ctut"){
+      inp = ctutInput(f);   // the Capture the Flag practice's CPUs: only what its step needs
     } else if(ctrl==="still"){
       // test-mode dummy: no input at all — just stands to be hit
     } else {
@@ -39344,7 +39739,7 @@ function step(){
   if(RACE.active) raceTick();   // RUNNING!: the line advances, the throw is charged and flies, the hazards fall and pound (see raceTick)
   updateCamera();
   updateHUD();
-  if(SETTINGS.mode==='ctf') ctfStep();
+  if(SETTINGS.mode==='ctf'){ ctfStep(); if(CTUT.active) ctutTick(); }   // (the practice checks its step after the mode's own)
   checkWin();
 }
 
@@ -47008,6 +47403,7 @@ function mergeProfiles(stored, mine){
   out.quests = mergeQuests(stored.quests, mine.quests);
   out.wallet = mergeWallet(stored.wallet, mine.wallet, stored.quests, mine.quests);
   out.cos    = mergeCos(stored.cos, mine.cos);
+  if(stored.ctfTutorialDone || mine.ctfTutorialDone) out.ctfTutorialDone = true;   // the Capture the Flag practice, done in either tab
   return out;
 }
 // Parse failure is treated as MISSING, not as an empty object. The usual try/JSON.parse/catch{}
@@ -52001,6 +52397,7 @@ function draw(){
   drawKitFx('under');   // the Heat Explosion, behind the fighters it catches
   for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId) fsDrawAura(f); drawFighter(f); if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
+  if(CTUT.active) ctutDrawWorld();   // the Capture the Flag practice: where a flag may not go
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
   if(SHOW_HITBOXES) drawHitboxOverlay();
 
@@ -52040,6 +52437,7 @@ function draw(){
   if(RACE.active) drawRaceBar();
   if(COBSFIGHT.active) drawCobsBar();
   drawTutorialPrompt();
+  ctutDrawCard();   // ...and the Capture the Flag practice's card (nothing outside the practice)
   // TEST MODE: DPS readout so you can measure damage output on an anchored dummy
   if(TESTMODE.active){
     const txt = testDpsText();
@@ -61291,6 +61689,7 @@ window.NET = {
   },
 
   host(){
+    if(SETTINGS.mode==='ctf' && this.role==='solo' && ctfTutGate(()=>{ openLobby(); NET.host(); }, 'host')) return;   // Capture the Flag on: the practice first, then the room
     this.role="host"; this.myIdx=0;
     this.room = this.makeRoomCode();     // give this game a shareable 4-letter code
     this.players=[{ id:this.myId, name:(chosen?chosen.name:"?"), isHost:true }];   // yourself, until the relay's roster replaces it
@@ -61302,6 +61701,8 @@ window.NET = {
     this.renderLobby();
   },
   join(code){
+    this.lastJoin = code;   // (what was typed: the Capture the Flag practice joins it again after, ctfTutJoin)
+    this._ctutCheck = true;   // (the room's first settings decide whether the practice comes first; a later switch to the mode never pulls you out)
     // The invite link, pasted whole: the code is after #room=. Stripping the link down to its letters made a room named
     // after the URL (HTTPLOCALHOSTROOMQXTR), which the relay cut to HTTPLOCA -- a friend who pasted the link landed alone.
     const link = /#room=([A-Za-z0-9]{1,8})/i.exec(code||"");
@@ -61333,7 +61734,7 @@ window.NET = {
   },
   leave(){
     if(this.ws){ try{this.ws.close();}catch(e){} }
-    this.role="solo"; this.ws=null; this.snapshot=null; this.players=[]; this.lobby=null;   // (lobby: the last room's settings are not the next room's)
+    this.role="solo"; this.ws=null; this.snapshot=null; this.players=[]; this.lobby=null; this._ctutCheck=false;   // (lobby: the last room's settings are not the next room's)
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
     window.__netRoster=null; window.__netHumanCount=0;
     NET_COS=[]; COS_KO_OUT=[];   // ...and so are the room's looks
@@ -61342,7 +61743,9 @@ window.NET = {
   send(obj){ if(this.ws && this.ws.readyState===1) this.ws.send(JSON.stringify(obj)); },
 
   onMessage(m){
-    if(m.t==="state" && m.lobby){ if(this.role==="client"){ this.lobby=m.lobby; this.renderLobbySettings(); } return; }   // the host's settings preview (no snapshot)
+    if(m.t==="state" && m.lobby){ if(this.role==="client"){ const was = this.lobby, first = this._ctutCheck; this._ctutCheck = false; this.lobby=m.lobby;
+        if(m.lobby.mode==='ctf' && !running){ if(first && ctfTutJoin()) return; if(!first && (!was || was.mode!=='ctf')){ this.renderLobbySettings(); ctfTutLobbyLine(); return; } }
+        this.renderLobbySettings(); } return; }   // (the room you just joined plays Capture the Flag, and no practice yet: out, the practice, back in; a later switch to it: a line only)   // the host's settings preview (no snapshot)
     if(m.t==="roster"){
       const was = this.players || []; this.players=m.players;
       // The host closed the tab: the relay's next roster has nobody flagged host. A client used to be re-indexed onto seat 0
@@ -61573,7 +61976,7 @@ window.NET = {
     STAGES.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.name + (st.big?' (big)':''); if(stage && stage.id===st.id) o.selected=true; ss.appendChild(o); });
     ss.onchange=()=>{ const st=STAGES.find(x=>x.id===ss.value); if(st) stage=st; changed(); };
     sg.appendChild(ss);
-    seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush'],['ctf','Capture the Flag']], SETTINGS.mode, v=>{ SETTINGS.mode=v; });
+    seg('Mode', 'lobbyMode', [['ffa','Free-for-all'],['teams','Teams'],['boss','Boss Rush'],['ctf','Capture the Flag']], SETTINGS.mode, v=>{ if(v==='ctf' && SETTINGS.mode!=='ctf' && ctfTutHostPick()) return; SETTINGS.mode=v; });   // (the practice first: ctfTutHostPick)
     if(SETTINGS.mode==='ctf') seg('Map', 'lobbyCtfMap', ctfMapChoices(), ctfMapPickGet(), v=>{ ctfMapPickSet(v); });   // the host's pick goes in the start (settings.ctfMap)
     // contestants: the main game's choices for this mode, never fewer than the humans in the room
     const humans=Math.max(1, this.players.length);
@@ -64761,7 +65164,7 @@ try{ refreshDailyCard(); }catch(e){}    // Wave 3.5: today's seeded matchup
 // The title's counts come off the rosters: the line said "59 fighters" while the Inanimate Insanity pack had made it 101.
 try{ document.getElementById('titleFighters').textContent = ROSTER.length; document.getElementById('titleBosses').textContent = BOSS_ROSTER.length; }catch(e){}
 profileReady = (async()=>{ try{ await loadProfile(); }catch(e){ PROFILE = openProfile('load-failed'); } })();
-profileReady.then(()=>{ try{ buildBoard(); }catch(e){} try{ refreshOneEntry(); }catch(e){} try{ seedFighterStats(); }catch(e){} });
+profileReady.then(()=>{ try{ buildBoard(); }catch(e){} try{ refreshOneEntry(); }catch(e){} try{ seedFighterStats(); }catch(e){} try{ ctfTutGrandfather(); }catch(e){} });
 
 buildBoard();
 // Both music buttons ship labelled "On"; a player who muted music last session must not be shown
