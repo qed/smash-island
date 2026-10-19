@@ -168,8 +168,12 @@ describe('the AI can climb the arena', () => {
   // it, but high enough to catch the two bugs that were found here — navUp aiming at ledges beyond
   // a double jump, and navUp treating a SOLID directly overhead as a step and jumping into its
   // underside on a loop.
-  it('gains real height when its target is above it', () => {
-    const { window: w } = loadMonolith();
+  // Two seeds, because one passing seed proved nothing: on 2026-10-18 the default seed climbed 472 px on the morning's build and
+  // 1937 on the afternoon's, with no climbing code changed between them -- other fighters' movesets had only nudged the
+  // trajectory. The CPU re-aimed at the step above the one it was jumping for and fell back, and whether it ever broke out was
+  // luck (seed 10: 283 px). navUp now keeps the step it jumped for on the teams arena too.
+  it.each([['default', undefined], ['10', 10]])('gains real height when its target is above it (seed %s)', (_name, seed) => {
+    const { window: w } = loadMonolith(seed);
     const gained = w.eval(`
       (function(){
         SETTINGS.mode='teams'; SETTINGS.teamKey='2v2'; SETTINGS.count=4;

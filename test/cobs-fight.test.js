@@ -16,6 +16,9 @@ import { mulberry32 } from './helpers/prng.js';
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
+// THE OWNER, 2026-10-18: "cobs should have higher knockback and damage things." -- asked how much: "+25%". Every hit of his on a fighter now lands at COBS_POWER
+// (1.25) x what the move is written as, its cap and its launch with it (the arena's maze excepted); the pins here that read what reached a fighter, or a shot of his, say x POW.
+const POW = 1.25;
 
 // Start his fight the way the chain will: startCobsFight(lineup, opts). onEnd returns true so no result screen is scheduled
 // in the middle of the next test. `s` is him, `you` player 1, parked (his attack timer far off, you standing still).
@@ -383,12 +386,12 @@ describe('the six personalised specials', () => {
     expect(caught.tel, 'tier 2\'s wind-up').toBe(66);
     expect(caught.red, 'the siren: the screen tints red').toBe(true);
     expect(caught.faced, 'X comes in on the side you face').toBe(true);
-    expect(caught.dmg, '1.6 x 33').toBeCloseTo(52.8, 3);
+    expect(caught.dmg, '1.6 x 33, x POW ("+25%")').toBeCloseTo(52.8*POW, 3);
     expect(caught.lock, 'specials locked 120 frames').toBeGreaterThanOrEqual(100);
     expect(caught.deleted).toBe(true);
     expect(caught.left).toBe(0);
     const away = run('you.face = -1;   // turned away', 'if (s._xs.length) you.face = -s._xs[0].side;');   // (turned away from the first lunge, and from the second one that comes back from the other side)
-    expect(away.dmg, '"simply not looking at him": neither lunge lands -- all that reaches a fighter who stood still in the trail (from tier 1 now: the owner, 2026-10-05) is its zap, 0.3 of the hit').toBeCloseTo(52.8*0.3, 3);
+    expect(away.dmg, '"simply not looking at him": neither lunge lands -- all that reaches a fighter who stood still in the trail (from tier 1 now: the owner, 2026-10-05) is its zap, 0.3 of the hit (x POW: "+25%")').toBeCloseTo(52.8*0.3*POW, 3);
     expect(away.lock).toBe(0);
     const air = run('you.y = airY; you.vy = 0;', 'you.y = airY; you.vy = 0;');
     expect(air.grounded.slice(1).some(g => g), 'held in the air').toBe(false);
@@ -485,7 +488,7 @@ describe('the six personalised specials', () => {
     expect(r.grounded.hits.every(h => h === 'low'), 'and only the low ones').toBe(true);
     expect(r.jumping.hits.length, 'in the air the high ring hits you').toBeGreaterThan(0);
     expect(r.jumping.hits.every(h => h === 'high'), 'and only that one').toBe(true);
-    expect(r.burstGround, 'CARE!: a grounded fighter takes the burst').toBeCloseTo(33, 3);
+    expect(r.burstGround, 'CARE!: a grounded fighter takes the burst (x POW: "+25%")').toBeCloseTo(33*POW, 3);
     expect(r.burstGround > 0 || !r.g1, 'grounded when it burst').toBe(true);
     expect(r.burstAir, 'airborne at the burst: blocked').toBe(0);
     expect(r.onPane).toBe(true);
@@ -526,31 +529,32 @@ describe('the six personalised specials', () => {
     expect(r.dash.hp).toBeLessThanOrEqual(0);
   });
 
-  it('TOXIC CANNON -- the ship crosses the sky sweeping a beam along the floor: jump it; it leaves poison puddles that poison whoever stands in them', () => {
+  // THE OWNER, 2026-10-18: "cobs should have the ships laser be a set of lasers that travel down the line, and have gaps you have to jump through." Restated: the ship no longer sails
+  // across the sky sweeping a beam you jump and leaving puddles; it hangs near you and its cannon fires laser walls down the line at you, each with one gap (test/cobs-lasers.test.js).
+  it('TOXIC CANNON -- the ship fires its tier\'s laser walls down the line toward you: outside a wall\'s gap it hits and poisons you, in its gap it passes you by; no puddles any more', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5 + 300); s.x = you.x - 300; s.y = you.y - 100; s._marks = 1;
       cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
-      var S = s._ship, T = cobsT(s, 'cannon'), out = { passes:S.left, want:T.n, dir:S.dir, fromFar: S.dir===1 ? S.x < you.x : S.x > you.x };
-      S.x = you.x - S.dir*(COBS_SHIP_LEAD + 160);   // bring it in, so the test is not a minute of sky
-      you.invuln = 0; var p0 = you.pct; for (var i=0;i<60;i++){ step(); you.invuln = 0; }
+      var S = s._ship, T = cobsT(s, 'cannon'), out = { walls:S.left, want:T.n, dir:S.dir, fromFar: S.dir===1 ? S.x < you.x : S.x > you.x };
+      // a wall whose gap is up out of reach of a fighter standing still: it hits, and poisons
+      S.gaps = S.gaps.map(function(){ return 2; }); S.arm = 0;
+      you.invuln = 0; var p0 = you.pct; for (var i=0;i<60;i++){ step(); you.invuln = 0; you.x = WW*0.5 + 300; }
       out.ground = { dmg:you.pct - p0, poisoned:you._poisonT > 0 };
-      var puddles = projectiles.filter(function(p){ return p.cobsPuddle && p.delay > 0; });
-      out.puddles = { n:puddles.length, life:puddles.length ? puddles[0].delay <= T.puddle : false };
-      // a second pass, jumped
-      s._ship = { x:you.x - 400, y:groundY() - COBS_SHIP_Y, dir:1, spd:T.spd, left:1, dmg:33, id:++BOSS_ATK_ID, puddle:T.puddle, hit:{}, x0:cobsFloor().x - 120, x1:cobsFloor().x + cobsFloor().w + 120, lastPud:you.x, t:0 };
-      you.pct = 0; you.burn = 0; you._poisonT = 0; for (var i=0;i<60;i++){ you.y = groundY() - 160; you.vy = 0; step(); }
-      out.jumped = you.pct;
-      // standing in a puddle poisons
-      you.burn = 0; you._poisonT = 0; if (puddles.length){ floorAt(you, puddles[0].x); for (var i=0;i<3;i++) step(); } out.inPuddle = you._poisonT > 0;
+      // a wall whose gap is the low one: standing in it, nothing
+      s._ship = null; projectiles = []; floorAt(you, WW*0.5 + 300); you.burn = 0; you._poisonT = 0;
+      cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID); S = s._ship; S.gaps = S.gaps.map(function(){ return 0; }); S.arm = 0;
+      you.pct = 0; for (var i=0;i<60;i++){ step(); you.invuln = 0; you.x = WW*0.5 + 300; }
+      out.inGap = { dmg:you.pct, poisoned:you._poisonT > 0, passed: S.walls.length > 0 && S.walls.every(function(w){ return w.dir*(w.x - you.x) > 0; }) };
+      out.puddles = projectiles.filter(function(p){ return p.cobsPuddle; }).length;
       return out;`);
-    expect(r.passes).toBe(r.want);
-    expect(r.fromFar, 'it sails toward you and across you (it appears near you now -- "the ship should spawn near you", the owner, 2026-10-06; test/cobs-tune2.test.js)').toBe(true);
-    expect(r.ground.dmg, 'on the floor in its path: the beam').toBeGreaterThan(0);
-    expect(r.ground.poisoned).toBe(true);
-    expect(r.puddles.n, 'it leaves puddles').toBeGreaterThan(0);
-    expect(r.puddles.life).toBe(true);
-    expect(r.jumped, 'in the air: it passes under you').toBe(0);
-    expect(r.inPuddle, 'the puddles poison').toBe(true);
+    expect(r.walls).toBe(r.want);
+    expect(r.fromFar, 'it fires toward you, from near you (it appears near you -- "the ship should spawn near you", the owner, 2026-10-06; test/cobs-tune2.test.js)').toBe(true);
+    expect(r.ground.dmg, 'outside the gap: the wall hits').toBeGreaterThan(0);
+    expect(r.ground.poisoned, '...and poisons (it is still the TOXIC cannon)').toBe(true);
+    expect(r.inGap.passed, 'the low walls went past').toBe(true);
+    expect(r.inGap.dmg, 'standing in the gap: nothing').toBe(0);
+    expect(r.inGap.poisoned).toBe(false);
+    expect(r.puddles, 'no puddles: the beam that left them is gone').toBe(0);
   });
 });
 
@@ -606,7 +610,7 @@ describe('the passives ("Both in")', () => {
     expect(r.cd).toBeGreaterThan(0);
     expect(r.counts.every(n => n === r.ring), 'a ring of the same number a hit').toBe(true);
     expect(r.ring).toBeGreaterThanOrEqual(6);
-    expect(r.dmg, '2% each').toBe(2);
+    expect(r.dmg, '2% each, x POW ("+25%"): 2.5').toBe(2*POW);
     expect(r.shape).toBe('kernel');
     expect(r.look).toBe('cobshurt');
   });
@@ -702,10 +706,14 @@ describe("the owner's playtest of 2026-10-07", () => {
     expect(r.groundHit, 'a low ring up on a platform does not reach the ground under it').toBe(0);
   });
 
-  it("TOXIC CANNON!'s beam hurts only at its splash, low enough that one jump is over it for most of a second", () => {
-    const r = W.eval(`(function(){ var y = 0, v = JUMP, over = 0; for (var t = 0; t < 120; t++){ v += GRAV; y -= v; if (y > COBS_BEAM_H) over++; if (y < 0) break; } return { h: COBS_BEAM_H, over: over }; })()`);
-    expect(r.h, 'was 100, which a jump cleared for a few frames at its top').toBeLessThanOrEqual(50);
-    expect(r.over, 'frames a plain jump stays over the splash').toBeGreaterThanOrEqual(25);
+  // "toxic cannon shoots an undodgeable line" (the owner, 2026-10-07) was the beam's splash, too tall to jump. The beam is gone -- THE OWNER, 2026-10-18: "cobs should have the ships laser
+  // be a set of lasers that travel down the line, and have gaps you have to jump through." -- and what keeps it dodgeable now is every wall's gap: room for the tallest fighter and more, and
+  // in reach of a jump (test/cobs-lasers.test.js measures the reach, at the lowest jump a fighter can have).
+  it("TOXIC CANNON! is never an undodgeable line: the splash is gone, and every laser wall's gap has room for the tallest fighter with 50 px to spare", () => {
+    const r = W.eval(`(function(){ var tall = 0; ROSTER.filter(function(q){ return q.play; }).forEach(function(q){ var f = makeFighter(q, 500, 500, 0), P = bodyPts(f), lo = 1e9, hi = -1e9; for (var i=1;i<P.length;i+=2){ lo = Math.min(lo, P[i]); hi = Math.max(hi, P[i]); } tall = Math.max(tall, hi - lo); });
+      return { beam: typeof COBS_BEAM_H, gap: Math.min.apply(null, COBS_LASER.gap), tall: tall }; })()`);   // (the smallest of the three gaps)
+    expect(r.beam, 'the splash is gone').toBe('undefined');
+    expect(r.gap - r.tall, 'room in every gap').toBeGreaterThanOrEqual(50);
   });
 
   it('one attack at a time: no wind-up while his turn runs, his whole gap after it -- and the passives do not hold the turn', () => {
@@ -737,5 +745,42 @@ describe("the owner's playtest of 2026-10-07", () => {
     expect(r.charging, 'the ship holds the turn while it hangs there charging').toBe(false);
     expect(r.sailing, '...not once it sails').toBe(true);
     expect(r.van, 'the van never holds it').toBe(true);
+  });
+});
+
+// HIS ADDS WHERE THEY WERE. THE OWNER, 2026-10-18, of his closer orbit (320 -> 220 px, "within dashing range"): his MeTags and MePhone units, placed from where he
+// is, came about 100 px nearer the fighter with him -- less time to react -- so they are placed from where his old orbit had him (COBS_ADDS_ORBIT, 320 px, on the
+// line from you through him): as far from you as they were. He still circles at COBS_ORBIT_R.
+describe('THE OWNER, 2026-10-18: his MeTags and MePhone units appear as far from you as before his orbit came in', () => {
+  const ADDS = (rage) => fight(['Knife'], { story:true }, `
+    park(); floorAt(you, WW*0.5); you.invuln = 99999; s._marks = 0; s._rageT = ${rage ? 600 : 0}; projectiles = [];
+    var cx = you.x, cy = hurtCY(you), a = -0.55, R = COBS_ORBIT_R, out = { R: R, old: COBS_ADDS_ORBIT };
+    var put = function(){ s.x = cx + Math.cos(a)*R; s.y = cy + Math.sin(a)*R; s.vx = s.vy = 0; summons = summons.filter(function(m){ return m === s; }); };
+    var from = ${rage ? '{ x: cx + Math.cos(a)*R, y: cy + Math.sin(a)*R }' : '{ x: cx + Math.cos(a)*COBS_ADDS_ORBIT, y: cy + Math.sin(a)*COBS_ADDS_ORBIT }'};
+    put(); COBS_MOVES.metags(s, you, ++BOSS_ATK_ID);
+    out.tag = summons.filter(function(m){ return m.type === 'metag'; }).map(function(m){ return [m.x - (from.x + (m.x > from.x ? 1 : -1)*(s.r + 40)), m.y - (from.y - 20)]; });
+    put(); COBS_MOVES.deploy(s, you, ++BOSS_ATK_ID);
+    var us = summons.filter(function(m){ return m.type === 'mephoneunit'; });
+    out.unit = us.map(function(m){ return [m.x - (from.x + m._side*220), m.y - (from.y - 30)]; });
+    out.near = Math.min.apply(null, us.map(function(m){ return Math.hypot(m.x - cx, m.y - cy); }));
+    for (var i = 0; i < 30; i++){ s.x = cx + Math.cos(a)*R; s.y = cy + Math.sin(a)*R; s.vx = s.vy = 0; s._atkTimer = 1e9; you.invuln = 99999; us.forEach(function(m){ m._cd = 1e9; }); step(); }
+    out.hover = us.map(function(m){ return Math.round(Math.hypot(m.x - (from.x + m._side*220), m.y - Math.max(40, from.y - 30))); });
+    return out;`);
+
+  it('on his orbit: each tag and unit appears where it would have from his old 320 px orbit (not 100 px nearer), and a unit hovers off that point too', () => {
+    const r = ADDS(false);
+    expect(r.R, 'his orbit stays where the owner put it').toBe(220);
+    expect(r.old, 'the old orbit, the one his adds are placed from').toBe(320);
+    expect(r.tag.length).toBeGreaterThan(0);
+    for (const [dx, dy] of r.tag) { expect(Math.abs(dx), 'a MeTag: placed from his old place').toBeLessThan(1); expect(Math.abs(dy)).toBeLessThan(1); }
+    expect(r.unit.length).toBeGreaterThan(0);
+    for (const [dx, dy] of r.unit) { expect(Math.abs(dx), 'a MePhone unit: placed from his old place').toBeLessThan(1); expect(Math.abs(dy)).toBeLessThan(1); }
+    for (const d of r.hover) expect(d, 'and it hovers off that place, not off him (it does not glide 100 px in before its first round)').toBeLessThan(30);
+  });
+
+  it('on foot in the rage (his ring there did not change, 200 px) they come from where he is, as they always did', () => {
+    const r = ADDS(true);
+    for (const [dx, dy] of r.tag) { expect(Math.abs(dx)).toBeLessThan(1); expect(Math.abs(dy)).toBeLessThan(1); }
+    for (const [dx, dy] of r.unit) { expect(Math.abs(dx)).toBeLessThan(1); expect(Math.abs(dy)).toBeLessThan(1); }
   });
 });
