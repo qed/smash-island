@@ -4887,6 +4887,32 @@ function ctfEditShape(tool, kind, x, y){
   return null;
 }
 const ctfRectHit = (a, b, m)=> a.x < b.x + b.w + (m||0) && a.x + a.w > b.x - (m||0) && a.y < b.y + b.h + (m||0) && a.y + a.h > b.y - (m||0);
+// YOUR OWN HOME STAYS OPEN (the owner, 2026-10-19, on the Fleet side of the sky map: "it doesnt work... i dont enter" the captain's cabin: a CPU teammate had stood a stone wall and a block
+// INSIDE the cabin, between the spawns and its door, and shut him in). No wall and no block (the solid pieces) goes in a side's own home, for people and CPUs alike: the open cells round its
+// spawns (a box from 360 px either side of them and 480 px over them down to their floor, filled from the spawns through what is not stone, so the far side of the home's own walls is not in it)
+// and its ways out: the two cells past each place where that open space leaves the box (a door, the far end of a room, a hole in its floor). Platforms, trapdoors, traps and props still go there.
+function ctfHomeCells(M, t){   // the cells of side t's home (keys r*4096 + c), worked out once a map
+  const C = M._homeCells || (M._homeCells = [null, null]); if(C[t]) return C[t];
+  const S = CTF_CELL, set = C[t] = new Set(), sp = (M.homes && M.homes[t] && M.homes[t].spawns) || []; if(!sp.length) return set;
+  const xs = sp.map(q=>q.x), ys = sp.map(q=>q.y), nc = Math.round(M.WW/S), nr = Math.round(M.WH/S);
+  const c0 = Math.floor((Math.min(...xs) - 360)/S), c1 = Math.floor((Math.max(...xs) + 359)/S), r0 = Math.floor((Math.min(...ys) - 480)/S), r1 = Math.floor((Math.max(...ys) - 1)/S);
+  const sol = M.plats.filter(p=>p.solid && !p.tm && p.x < (c1 + 4)*S && p.x + p.w > (c0 - 3)*S && p.y < (r1 + 4)*S && p.y + p.h > (r0 - 3)*S);   // (a plug that opens and shuts counts as open)
+  const stone = (cc, rr)=>{ if(cc < 0 || rr < 0 || cc >= nc || rr >= nr) return true; const x = (cc + 0.5)*S, y = (rr + 0.5)*S; return sol.some(p=>x >= p.x && x < p.x + p.w && y >= p.y && y < p.y + p.h); };
+  const inBox = (cc, rr)=>cc >= c0 && cc <= c1 && rr >= r0 && rr <= r1, q = [], out = [];
+  for(const p of sp){ const cc = Math.floor(p.x/S), rr = Math.floor((p.y - 1)/S); if(inBox(cc, rr) && !stone(cc, rr) && !set.has(rr*4096 + cc)){ set.add(rr*4096 + cc); q.push([cc, rr]); } }
+  while(q.length){ const [cc, rr] = q.pop();
+    for(const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]){ const a = cc + dc, b = rr + dr; if(stone(a, b)) continue;
+      if(!inBox(a, b)) out.push([a, b, dc, dr]); else if(!set.has(b*4096 + a)){ set.add(b*4096 + a); q.push([a, b]); } } }
+  for(const [a, b, dc, dr] of out) for(let k = 0; k < 2; k++){ const x = a + dc*k, y = b + dr*k; if(stone(x, y)) break; set.add(y*4096 + x); }   // (the way out: two cells past the box)
+  return set;
+}
+function ctfHomeHit(M, t, sh){   // does this shape stand in side t's home?
+  if(!sh || !M || !M.homes || !M.homes[t]) return false;
+  const set = ctfHomeCells(M, t), S = CTF_CELL;
+  for(let r = Math.floor((sh.y + 2)/S); r <= Math.floor((sh.y + sh.h - 3)/S); r++) for(let c = Math.floor((sh.x + 2)/S); c <= Math.floor((sh.x + sh.w - 3)/S); c++) if(set.has(r*4096 + c)) return true;
+  return false;
+}
+function ctfHomeBlocks(t, tool, kind, x, y){ return tool === 'wall' && ctfHomeHit(CTF.map, t, ctfEditShape(tool, kind, x, y)); }   // would a wall or a block put here stand in side t's home? (the CPU builders ask before they try)
 // Why a piece may not go here (a short reason), or null if it may.
 function ctfEditCheck(f, tool, kind, sh){
   const L = CTF.live, M = CTF.map, mid = M.WW/2, t = f.team;
@@ -4911,6 +4937,7 @@ function ctfEditCheck(f, tool, kind, sh){
     for(const b of L.boosts) if(Math.abs(b.x - (sh.x + sh.w/2)) < sh.w/2 + 50 && Math.abs(b.y - (sh.y + sh.h/2)) < sh.h/2 + 70) return 'pickup';
     for(const fl of L.flags) if(fl.st === 1 && fl.x > sh.x - 40 && fl.x < sh.x + sh.w + 40 && fl.y > sh.y - 40 && fl.y < sh.y + sh.h + 70) return 'flag';
     for(const g of fighters) if(g.x > sh.x - g.r - 8 && g.x < sh.x + sh.w + g.r + 8 && g.y > sh.y - g.r - 8 && g.y < sh.y + sh.h + g.r + 8) return 'fighter';
+    if(tool === 'wall' && ctfHomeHit(M, t, sh)) return 'home';   // (your own home and its way out stay open: the same grey puff and red ghost as any place a piece may not go)
   }
   for(const e of L.edits){ if(!ctfRectHit(sh, e, -4)) continue; if(structural || ctfEditStructural(e) || (e.tool === tool && Math.abs(e.cx - sh.cx) < 36)) return 'taken'; }
   return null;
@@ -5077,7 +5104,43 @@ function ctfEditProblems(L, nav){
  if(!n || !nav.reach[1 - fl.team][n.id]) bad.push('flag' + fl.id); }
   for(const k of L.keys){ const n = at(k.hx, k.hy); if(!n || !nav.reach[0][n.id] || !nav.reach[1][n.id]) bad.push('key' + k.i); }
   for(const j of L.jails){ const d = j.door, n = at(d.x + (j.face === 1 ? d.w + 50 : -50), d.y + d.h); if(!n || !nav.reach[1 - j.owner][n.id]) bad.push('jail' + j.owner); }
+  for(const t of [0, 1]) if(ctfHomeStuck(L, nav, t).length) bad.push('home' + t);
   return bad;
+}
+// THE WAY OUT OF HOME (the owner, 2026-10-19: shut in the captain's cabin by a teammate's wall, and the check passed: one spawn of the side stood outside the wall, and a side's reach is the reach
+// of all its spawns together). Each spawn on its own must still get across the middle line through what was built, with plain moves: a way out of your own home that needs a wall jump is no way
+// out (the graph counted wall jumps up the cabin wall and over the block; he could not get past them "even with jumps"); and to each of its side's own flags that the other side gets to, a wall
+// jump counting as it does for getting to any flag (the owner's choice; a flag nobody gets to is the flag's own problem, above). One the map itself lets through and the pieces do not is the side's 'home' problem, put right by the smallest-piece removal like any other (what
+// the map alone does not allow is never the pieces' doing: with nothing built, no problem).
+function ctfHomeNode(nav, sp){   // where a fighter put down at a spawn stands: there, or the first floor under it (a spawn in the air falls)
+  const n = ctfNavNodeAt(nav, sp.x, sp.y, 12); if(n) return n;
+  let best = null; for(const m of (nav.nb[ctfNavBucket(sp.x)] || [])) if(m.y >= sp.y && sp.x >= m.x0 - 12 && sp.x <= m.x1 + 12 && (!best || m.y < best.y)) best = m;
+  return best;
+}
+function ctfHomeReach(nav, id, plain){   // every place a fighter at this one can get to (plain: with no wall jump; never through a jail's door)
+  const seen = new Uint8Array(nav.nodes.length), q = [id]; seen[id] = 1;
+  while(q.length){ const k = q.pop(); for(const e of nav.nodes[k].edges){ if(seen[e.to] || (plain && e.kind === 'wall') || e.doors.some(d=>d[0] === 'J')) continue; seen[e.to] = 1; q.push(e.to); } }
+  return seen;
+}
+function ctfHomeStuck(L, nav, t){   // the spawns of side t that what was built shuts in: [{ x, y, seen (where it can still get to) }]
+  const base = CTF.navs && CTF.navs[ctfNavId()]; if(!base || !base.ready || base === nav || !nav || !nav.ready) return [];
+  const M = nav.M, mid = M.WW/2, memo = new Map(), out = [];
+  const fls = L.flags.filter(fl=>{ if(fl.team !== t || fl.st !== 1 || fl.elev != null || fl.pad != null) return false; const fn = ctfNavNodeAt(nav, fl.x, fl.y, 10); return !!(fn && nav.reach[1 - t][fn.id]); });
+  const goals = (g, n)=>{   // from place n of graph g: across the middle line (plain moves)? each of the side's flags (wall jumps too)?
+    const plain = ctfHomeReach(g, n.id, true); let across = false;
+    for(const m of g.nodes) if(plain[m.id] && (t === 0 ? m.x1 > mid + 1 : m.x0 < mid - 1)){ across = true; break; }
+    const all = fls.length ? ctfHomeReach(g, n.id, false) : plain;
+    return { seen:across ? all : plain, ok:[across].concat(fls.map(fl=>{ const fn = ctfNavNodeAt(g, fl.x, fl.y, 10); return !!(fn && all[fn.id]); })) };
+  };
+  for(const sp of M.homes[t].spawns){
+    const n = ctfHomeNode(nav, sp); if(!n) continue;
+    let r = memo.get(n.id);
+    if(!r){ const a = goals(nav, n); r = { seen:a.seen, stuck:false };
+      if(a.ok.some(v=>!v)){ const bn = ctfHomeNode(base, sp), b = bn ? goals(base, bn) : null; r.stuck = !!b && a.ok.some((v, i)=>!v && b.ok[i]); }
+      memo.set(n.id, r); }
+    if(r.stuck) out.push({ x:sp.x, y:sp.y, seen:r.seen });
+  }
+  return out;
 }
 // THE SECOND PASS: EVERYTHING THAT CAN GIVE WAY GONE (the owner, 2026-10-19: a flag high between two tall columns on a breakable platform "didnt get flagged"; once it broke the flag hung in the air). The
 // graphs count a crumbling ledge and a plug as ground (they are, most of the time), so the check asks again with all of them gone: a flag must be reachable both ways, and a flag resting on one (or
@@ -5179,13 +5242,16 @@ function ctfFixCands(L, F, nav, bad){
     if(b.indexOf('flag') === 0){ const fl = L.flags.find(q=>'flag' + q.id === b); if(fl) pts.push({ x:fl.x, y:fl.y, sides:[1 - fl.team] }); }
     else if(b.indexOf('key') === 0){ const k = L.keys.find(q=>'key' + q.i === b); if(k) pts.push({ x:k.hx, y:k.hy, sides:[0, 1] }); }
     else if(b.indexOf('jail') === 0){ const j = L.jails.find(q=>'jail' + q.owner === b); if(j) pts.push({ x:j.door.x + j.door.w/2, y:j.door.y + j.door.h, sides:[1 - j.owner] }); }
+    else if(b.indexOf('home') === 0){ for(const s of ctfHomeStuck(L, nav, +b.slice(4))) pts.push({ x:s.x, y:s.y - 60, sides:[], rc:s.seen }); }   // (a spawn shut in: the piece between where it can still get to and where it cannot)
   }
   if(!pts.length) return [];
   const sides = [0, 1].filter(t=>pts.some(p=>p.sides.indexOf(t) >= 0));
   const rA = ctfNavReachA(nav);   // (and the same with everything that can give way gone)
+  const rcs = []; for(const t of sides) for(const rc of (rA[t] === nav.reach[t] ? [nav.reach[t]] : [nav.reach[t], rA[t]])) if(rc) rcs.push(rc);
+  for(const p of pts) if(p.rc && rcs.indexOf(p.rc) < 0) rcs.push(p.rc);
   const between = e=>{
-    for(const t of sides) for(const rc of (rA[t] === nav.reach[t] ? [nav.reach[t]] : [nav.reach[t], rA[t]])){
-      if(!rc) continue; let a = false, b = false;
+    for(const rc of rcs){
+      let a = false, b = false;
       for(let bk = ctfNavBucket(e.x - 150); bk <= ctfNavBucket(e.x + e.w + 150); bk++) for(const n of (nav.nb[bk] || [])){
         if(n.x1 < e.x - 150 || n.x0 > e.x + e.w + 150 || n.y < e.y - 220 || n.y > e.y + e.h + 260) continue;
         if(rc[n.id]) a = true; else b = true;
@@ -5329,7 +5395,8 @@ function ctfAiBuildOld(f, L){
   // 3. a wall or a platform that makes the way longer (the check at the end of the hiding settles that the flag can still be reached)
   if(sk >= 1 && more(2)){
     for(let tries = 0; tries < 6; tries++){ const c = near(300, 1500), p = c.length ? pick(c) : { x:fl.x + (R() < 0.5 ? -1 : 1)*(380 + R()*260), y:fl.y };
-      if(R() < 0.6 ? put('wall', pick(['block', 'wall']), p.x + (R()*160 - 80), p.y - 70) : put('plat', 'plat', p.x + (R()*160 - 80), p.y - 200)) break; }
+      if(R() < 0.6){ const k = pick(['block', 'wall']), x = p.x + (R()*160 - 80); if(!ctfHomeBlocks(t, 'wall', k, x, p.y - 70) && put('wall', k, x, p.y - 70)) break; }   // (never in its own home)
+      else if(put('plat', 'plat', p.x + (R()*160 - 80), p.y - 200)) break; }
   }
   // 4. decoys, each in a different room of this side, never beside the flag
   if(nav && nav.ready){
@@ -10250,14 +10317,17 @@ function ctfPlanCtx(L, plan){
     if(bud){   // the one who bought this piece places it; nobody bought it: it is not built
       const who = cpuF.filter(f=>bud[f.idx] && type && bud[f.idx][type] > 0 && (L.pts[f.idx] || 0) >= cost).sort((a, b)=>((plan.roles[b.idx] === role) - (plan.roles[a.idx] === role)) || (bud[b.idx][type] - bud[a.idx][type]));
       if(!who.length) return null;
-      for(const dx of (offs || [0])){ const e = ctfEditPlaceAt(who[0], tool, kind, x + dx, y); if(e){ bud[who[0].idx][type]--; c.placed++; return e; } }
+      for(const dx of (offs || [0])){ if(ctfHomeBlocks(t, tool, kind, x + dx, y)) continue; const e = ctfEditPlaceAt(who[0], tool, kind, x + dx, y); if(e){ bud[who[0].idx][type]--; c.placed++; return e; } }
       return null;
     }
     const order = cpuF.filter(f=>(L.pts[f.idx] || 0) >= cost).sort((a, b)=>((plan.roles[b.idx] === role) - (plan.roles[a.idx] === role)) || ((L.pts[b.idx] || 0) - (L.pts[a.idx] || 0)));
     if(!order.length) return null;
-    for(const dx of (offs || [0])){ const e = ctfEditPlaceAt(order[0], tool, kind, x + dx, y); if(e){ c.placed++; return e; } }
+    for(const dx of (offs || [0])){ if(ctfHomeBlocks(t, tool, kind, x + dx, y)) continue; const e = ctfEditPlaceAt(order[0], tool, kind, x + dx, y); if(e){ c.placed++; return e; } }   // (a wall or a block never even tried in the side's own home)
     return null;
   };
+  // YOUR OWN HOME STAYS OPEN (see ctfHomeCells): can a wall or a block of this kind go at one of these spots, out of the side's home? How much of a floor is out of it, for a wall?
+  c.wallOK = (kind, x, y, offs)=>(offs || [0]).some(dx=>!ctfHomeBlocks(t, 'wall', kind, x + dx, y));
+  c.outW = nd=>{ let w = 0; for(let x = nd.x0 + 30; x < nd.x1; x += 60) if(!ctfHomeHit(M, t, { x:x - 30, y:nd.y - 240, w:60, h:240 })) w += 60; return w; };
   c.pts = ()=>bud ? cpuF.reduce((s, f)=>s + Math.min(L.pts[f.idx] || 0, Object.keys(bud[f.idx] || {}).reduce((q, p)=>q + (bud[f.idx][p] || 0)*(CTF_COSTS[p === 'wall' || p === 'plat' || p === 'deco' ? p : 'trap'] || 0), 0)), 0) : cpuF.reduce((s, f)=>s + (L.pts[f.idx] || 0), 0);
   c.deco = (role, x, y, kind)=>c.put(role, 'deco', kind || (ctfDecoSet(x, y) || ['crate'])[Math.floor(R()*((ctfDecoSet(x, y) || ['crate']).length))], x, y, [0, 40, -40]);
   // the way the other side takes to a flag: [{ nd, d (px from the flag), e (the move out of it), w }], start first
@@ -10275,6 +10345,7 @@ function ctfPlanCtx(L, plan){
   };
   // the stretches of the route in a range of distances from the flag, wide enough, on this side and out of the jail's zone
   c.seg = (fl, lo, hi, minW)=>{ const r = c.route(fl); if(!r) return []; return r.list.filter(q=>q.d >= lo && q.d <= hi && q.w >= (minW || 100) && !skip(q.nd) && (t === 0 ? (q.nd.x0 + q.nd.x1)/2 < mid - 500 : (q.nd.x0 + q.nd.x1)/2 > mid + 500)); };
+  c.segW = (fl, lo, hi, minW)=>c.seg(fl, lo, hi, minW).filter(q=>c.outW(q.nd) >= (minW || 100));   // (the same, for walls: enough of the floor out of the side's own home)
   c.longest = (a)=>a.slice().sort((p, q)=>q.w - p.w)[0] || null;
   c.pick = a=>a[Math.floor(R()*a.length)];
   c.flagEnd = (nd, fl)=>Math.abs(nd.x0 - fl.x) < Math.abs(nd.x1 - fl.x) ? -1 : 1;   // which end of a floor is the flag's (-1 west)
@@ -10284,8 +10355,8 @@ function ctfPlanCtx(L, plan){
 
 // ---- THE SETUPS (the owner's ticked builds) -----------------------------------------------------------------------------------------------------------------------
 // fit(c, fl) is how well it suits this team, this map, this flag (0 = not at all); run(c, fl) lays it and returns what it placed. Every one is built from the points of the CPUs of the roles named.
-ctfBuildDef('zigzag', 'Zigzag walls', ['corridor', 'corridor'], (c, fl)=>c.seg(fl, 300, 2600, 600).length ? 1.2 : 0, (c, fl)=>{
-  const nd = c.longest(c.seg(fl, 300, 2600, 600)).nd, east = c.flagEnd(nd, fl); let n = 0;
+ctfBuildDef('zigzag', 'Zigzag walls', ['corridor', 'corridor'], (c, fl)=>c.segW(fl, 300, 2600, 600).length ? 1.2 : 0, (c, fl)=>{
+  const s = c.longest(c.segW(fl, 300, 2600, 600)); if(!s) return 0; const nd = s.nd, east = c.flagEnd(nd, fl); let n = 0;
   for(let k = 0; k < 6; k++){ const xx = east < 0 ? nd.x0 + 110 + k*200 : nd.x1 - 110 - k*200; if(xx < nd.x0 + 50 || xx > nd.x1 - 50) break;
     if(c.put('corridor', 'wall', k % 2 ? 'wall' : 'block', xx, nd.y - (k % 2 ? 130 : 70), [0, 30, -30])) n++; }
   return n; });
@@ -10293,7 +10364,7 @@ ctfBuildDef('spikeplats', 'Platforms over spikes', ['trapper', 'corridor'], (c, 
   const nd = c.longest(c.seg(fl, 300, 2600, 500)).nd, a = c.flagEnd(nd, fl) < 0 ? nd.x0 + 80 : nd.x1 - 80, dir = a === nd.x0 + 80 ? 1 : -1; let n = 0;
   for(let k = 0; k < 5; k++){ const x = a + dir*k*105; if(x < nd.x0 + 40 || x > nd.x1 - 40) break; if(c.put('trapper', 'trap', 'spikes', x, nd.y - 20)) n++; if(k % 2 === 0 && c.put('corridor', 'plat', 'plat', x + dir*50, nd.y - 200, [0, 30, -30])) n++; }
   return n; });
-ctfBuildDef('seeit', 'See it, cannot reach', ['waller'], (c, fl)=>1, (c, fl)=>{
+ctfBuildDef('seeit', 'See it, cannot reach', ['waller'], (c, fl)=>c.wallOK('wall', fl.x + c.dirE*190, fl.y - 130, [0, 60, -60, 120]) ? 1 : 0, (c, fl)=>{   // (not for a flag in the side's own home: the wall would shut the home in)
   const x = fl.x + c.dirE*190; let n = 0;
   if(c.put('waller', 'wall', 'wall', x, fl.y - 130, [0, 60, -60, 120])) n++;
   if(c.put('waller', 'wall', 'block', x, fl.y - 300, [0, 60, -60])) n++;   // (a second above it: the way over is a long one)
@@ -10324,11 +10395,11 @@ ctfBuildDef('fakegaunt', 'Fake gauntlet', ['trapper', 'trapper'], (c, fl)=>1, (c
   if(!cand.length) return 0; const nd = c.pick(cand); let n = 0;
   for(let k = 0; k < 4; k++){ const x = nd.x0 + 90 + k*105; if(x > nd.x1 - 40) break; if(c.put('trapper', 'trap', k % 3 === 2 ? 'spikes' : 'stun', x, nd.y - 20)) n++; }
   return n; });
-ctfBuildDef('wallshort', 'Wall the shortcut', ['waller'], (c, fl)=>c.seg(fl, 700, 3200, 40).length ? 1.3 : 0, (c, fl)=>{
-  const a = c.seg(fl, 700, 3200, 40).sort((p, q)=>p.w - q.w), nd = a[0].nd, mx = (nd.x0 + nd.x1)/2; let n = 0;
+ctfBuildDef('wallshort', 'Wall the shortcut', ['waller'], (c, fl)=>c.segW(fl, 700, 3200, 40).length ? 1.3 : 0, (c, fl)=>{
+  const a = c.segW(fl, 700, 3200, 40).sort((p, q)=>p.w - q.w); if(!a.length) return 0; const nd = a[0].nd, mx = (nd.x0 + nd.x1)/2; let n = 0;
   if(c.put('waller', 'wall', 'wall', mx, nd.y - 130, [0, 60, -60, 120, -120])) n++; if(c.put('waller', 'wall', 'block', mx, nd.y - 300, [0, 60, -60])) n++; return n; });
-ctfBuildDef('airlock', 'Airlock', ['waller', 'trapper'], (c, fl)=>c.seg(fl, 300, 2400, 700).length ? 1 : 0, (c, fl)=>{
-  const nd = c.longest(c.seg(fl, 300, 2400, 700)).nd, x = (nd.x0 + nd.x1)/2 - 165; let n = 0;
+ctfBuildDef('airlock', 'Airlock', ['waller', 'trapper'], (c, fl)=>c.segW(fl, 300, 2400, 700).length ? 1 : 0, (c, fl)=>{
+  const s = c.longest(c.segW(fl, 300, 2400, 700)); if(!s) return 0; const nd = s.nd, x = (nd.x0 + nd.x1)/2 - 165; let n = 0;
   if(c.put('waller', 'wall', 'block', x, nd.y - 70, [0, 30])) n++; if(c.put('waller', 'wall', 'block', x + 330, nd.y - 70, [0, 30])) n++; if(c.put('trapper', 'trap', 'stun', x + 165, nd.y - 20, [0, 30, -30])) n++; return n; });
 ctfBuildDef('curtains', 'Curtain corridor', ['corridor'], (c, fl)=>c.seg(fl, 300, 2400, 500).length ? 0.7 : 0, (c, fl)=>{
   const nd = c.longest(c.seg(fl, 300, 2400, 500)).nd; let n = 0; for(let x = nd.x0 + 120; x < nd.x1 - 100 && n < 5; x += 200) if(c.put('corridor', 'deco', 'curtain', x, nd.y - 20, [0, 30])) n++; return n; });
@@ -10343,8 +10414,8 @@ ctfBuildDef('fork', 'Trapped fork', ['trapper', 'waller'], (c, fl)=>{ const r = 
 ctfBuildDef('keybait', 'Key bait', ['trapper'], (c, fl)=>c.L.keys.some(k=>c.t === 0 ? k.hx < c.mid - 400 : k.hx > c.mid + 400) ? 0.9 : 0, (c, fl)=>{
   const ks = c.L.keys.filter(k=>c.t === 0 ? k.hx < c.mid - 400 : k.hx > c.mid + 400), k = c.pick(ks); let n = 0;
   for(const dx of [-150, 150]) if(c.put('trapper', 'trap', 'stun', k.hx + dx, k.hy - 20, [0, 30, -30])) n++; return n; });
-ctfBuildDef('boostdeny', 'Boost denial', ['waller', 'trapper'], (c, fl)=>c.L.boosts.some(b=>c.t === 0 ? b.x < c.mid - 400 : b.x > c.mid + 400) ? 0.8 : 0, (c, fl)=>{
-  const bs = c.L.boosts.filter(b=>c.t === 0 ? b.x < c.mid - 400 : b.x > c.mid + 400), b = c.pick(bs); let n = 0;
+ctfBuildDef('boostdeny', 'Boost denial', ['waller', 'trapper'], (c, fl)=>c.L.boosts.some(b=>(c.t === 0 ? b.x < c.mid - 400 : b.x > c.mid + 400) && c.wallOK('block', b.x + c.dirE*330, b.y - 70, [0, 30, -30, 60])) ? 0.8 : 0, (c, fl)=>{
+  const bs = c.L.boosts.filter(b=>(c.t === 0 ? b.x < c.mid - 400 : b.x > c.mid + 400) && c.wallOK('block', b.x + c.dirE*330, b.y - 70, [0, 30, -30, 60])); if(!bs.length) return 0; const b = c.pick(bs); let n = 0;
   if(c.put('trapper', 'trap', 'stun', b.x + c.dirE*170, b.y - 20, [0, 30, -30])) n++; if(c.put('waller', 'wall', 'block', b.x + c.dirE*330, b.y - 70, [0, 30, -30, 60])) n++; return n; });
 ctfBuildDef('stunchain', 'Stun chain', ['trapper'], (c, fl)=>c.seg(fl, 300, 2600, 400).length ? 1 : 0, (c, fl)=>{
   const nd = c.longest(c.seg(fl, 300, 2600, 400)).nd, x = (nd.x0 + nd.x1)/2 - 85; let n = 0;
@@ -10352,17 +10423,17 @@ ctfBuildDef('stunchain', 'Stun chain', ['trapper'], (c, fl)=>c.seg(fl, 300, 2600
 ctfBuildDef('overhang', 'Overhang', ['corridor'], (c, fl)=>c.seg(fl, 300, 2400, 500).length ? 0.7 : 0, (c, fl)=>{
   const nd = c.longest(c.seg(fl, 300, 2400, 500)).nd, x = (nd.x0 + nd.x1)/2; const e = c.put('corridor', 'plat', 'plat', x, nd.y - 330, [0, 60, -60, 120]);
   if(e){ c.plan.overhangs.push({ x:e.x + e.w/2, y:e.y, below:nd.y }); return 1; } return 0; });
-ctfBuildDef('sealedbox', 'Sealed box', ['waller', 'trapper'], (c, fl)=>0.6, (c, fl)=>{
+ctfBuildDef('sealedbox', 'Sealed box', ['waller', 'trapper'], (c, fl)=>[-170, 170].every(dx=>c.wallOK('wall', fl.x + dx, fl.y - 130, [0, 60, -60])) ? 0.6 : 0, (c, fl)=>{
   let n = 0; for(const dx of [-170, 170]) if(c.put('waller', 'wall', 'wall', fl.x + dx, fl.y - 130, [0, 60, -60])) n++;
   if(c.put('trapper', 'trap', 'trapdoor', fl.x, fl.y - 360, [0, 30, -30, 60, -60])) n++; return n; });
 ctfBuildDef('catapult', 'Own catapult', ['runner'], (c, fl)=>0.5, (c, fl)=>{
   const a = c.nav.nodes.filter(nd=>{ const cx = (nd.x0 + nd.x1)/2, d = c.t === 0 ? c.mid - cx : cx - c.mid; return d > 1100 && d < 3000 && nd.x1 - nd.x0 > 200 && !c.skip(nd); }); if(!a.length) return 0;
   const nd = c.pick(a); return c.put('runner', 'trap', 'spring', (nd.x0 + nd.x1)/2, nd.y - 20, [0, 60, -60, 120]) ? 1 : 0; });
 ctfBuildDef('cutbridge', 'Cut the bridge', ['waller'], (c, fl)=>0.5, (c, fl)=>{
-  const a = c.nav.nodes.filter(nd=>{ const cx = (nd.x0 + nd.x1)/2, d = c.t === 0 ? c.mid - cx : cx - c.mid; return d > 700 && d < 2600 && nd.x1 - nd.x0 > 50 && nd.x1 - nd.x0 < 260 && !c.skip(nd); }); if(!a.length) return 0;
+  const a = c.nav.nodes.filter(nd=>{ const cx = (nd.x0 + nd.x1)/2, d = c.t === 0 ? c.mid - cx : cx - c.mid; return d > 700 && d < 2600 && nd.x1 - nd.x0 > 50 && nd.x1 - nd.x0 < 260 && !c.skip(nd) && c.outW(nd) >= 60; }); if(!a.length) return 0;
   const nd = c.pick(a), mx = (nd.x0 + nd.x1)/2; return c.put('waller', 'wall', 'wall', mx, nd.y - 130, [0, 60, -60]) ? 1 : 0; });
 ctfBuildDef('moat', 'Spike moat', ['trapper'], (c, fl)=>1, (c, fl)=>{ let n = 0; for(const dx of [-110, 110, -230, 230]) if(c.put('trapper', 'trap', 'spikes', fl.x + dx, fl.y - 20, [0, 30, -30])) n++; return n; });
-ctfBuildDef('rings', 'Layered rings', ['waller', 'trapper', 'corridor'], (c, fl)=>1.1, (c, fl)=>{
+ctfBuildDef('rings', 'Layered rings', ['waller', 'trapper', 'corridor'], (c, fl)=>[-380, 380].some(dx=>c.wallOK('block', fl.x + dx, fl.y - 70, [0, 40, -40])) ? 1.1 : 0.5, (c, fl)=>{   // (round a flag in the side's own home only the traps and the props: a weaker fit)
   let n = 0; for(const dx of [-380, 380]) if(c.put('waller', 'wall', 'block', fl.x + dx, fl.y - 70, [0, 40, -40])) n++;
   for(const dx of [-210, 210]) if(c.put('trapper', 'trap', 'stun', fl.x + dx, fl.y - 20, [0, 30, -30])) n++;
   const set = ctfDecoSet(fl.x, fl.y) || ['crate'], kind = set[Math.floor(c.R()*set.length)]; if(c.put('corridor', 'deco', kind, fl.x, fl.y - 20, [0, 30, -30])) n++; for(const dx of [-120, 120]) if(c.put('corridor', 'deco', kind, fl.x + dx, fl.y - 20, [0, 30, -30])) n++; return n; });
