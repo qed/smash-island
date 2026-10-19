@@ -1132,32 +1132,39 @@ describe('OWNER: LOCKDOWN! -- no barrier link', () => {
   });
 });
 
-describe('TOXIC CANNON! -- the sailboat rocks', () => {
+// THE OWNER, 2026-10-18: "cobs should have the ships laser be a set of lasers that travel down the line, and have gaps you have to jump through." The beam that swept the floor (and
+// its puddles) is gone; the twist stays the boat on the waves, now carrying the walls: as it fires it rides `rock` px to and fro along the line on a 40-frame sine, so its walls leave
+// from different spots. (Restated from the beam's floor point swinging round its lead, 100/140 px, and the puddles it left where it touched: a wall leaving from up to 100 px nearer
+// the fighter would cut a wall's 30-odd frames of travel by a quarter, so the swing is 40/60.)
+describe('TOXIC CANNON! -- the sailboat rocks (it carries the laser walls now)', () => {
   const ROCK = (t) => fight(`
     park(); atTier(${t}); floorAt(you, WW*0.5 - 1300); you.invuln = 99999; projectiles = [];
     cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
-    var S = s._ship, T = cobsT(s, 'cannon'), offs = [], puds = [], tilt = [];
-    for (var i=0;i<90;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); if (!s._ship) break; offs.push(Math.round((S.beamX - (S.x + S.dir*COBS_SHIP_LEAD))*10)/10); }
-    var pd = projectiles.filter(function(p){ return p.cobsPuddle && p.delay > 0; }).map(function(p){ return Math.round(p.x); });
-    return { T: T, offs: offs, rock: S.rock, pud: pd };`);
+    var S = s._ship, T = cobsT(s, 'cannon'), offs = [], from = [], seen = 0;
+    for (var i=0;i<140;i++){ s._atkTimer = 1e9; you.invuln = 99999; step(); if (!s._ship) break; if (S.arm <= 0) offs.push(Math.round((S.x - S.x0)*10)/10);
+      if (S.walls.length + (S.n - S.left - S.walls.length) > seen){ seen = S.n - S.left; var w = S.walls[S.walls.length - 1]; from.push({ x: Math.round(w.x - w.dir*w.spd), ship: Math.round(S.x + S.dir*COBS_LASER.muzzle) }); } }
+    return { T: T, offs: offs, rock: S.rock, from: from };`);
 
-  it('tier 1: the beam rides straight ahead of the boat; tier 2: its floor point swings 100 px either side of its lead on a 40-frame sine; tier 3 140', () => {
+  it('tier 1: the boat holds still as it fires; tier 2: it rides 40 px either way along the line on a 40-frame sine; tier 3 60', () => {
     const t1 = ROCK(1), t2 = ROCK(2), t3 = ROCK(3);
     expect(Math.max(...t1.offs.map(Math.abs)), 'tier 1: off').toBe(0);
-    expect(Math.max(...t2.offs), 'swings out...').toBeGreaterThan(95);
-    expect(Math.min(...t2.offs), '...and back').toBeLessThan(-95);
-    expect(Math.max(...t2.offs)).toBeLessThanOrEqual(100.01);
-    expect(Math.max(...t3.offs), 'stronger at tier 3').toBeGreaterThan(135);
+    expect(Math.max(...t2.offs), 'out...').toBeGreaterThan(38);
+    expect(Math.min(...t2.offs), '...and back').toBeLessThan(-38);
+    expect(Math.max(...t2.offs)).toBeLessThanOrEqual(40.01);
+    expect(Math.max(...t3.offs), 'stronger at tier 3').toBeGreaterThan(57);
     const o = t2.offs, down = o.findIndex((v, i) => i && o[i - 1] > 0 && v <= 0), up = o.findIndex((v, i) => i > down && o[i - 1] < 0 && v >= 0);
-    expect(up - down, 'a 40-frame sine: the swing is back through its lead every 20 frames').toBeGreaterThanOrEqual(19);
+    expect(up - down, 'a 40-frame sine: back through where it hung every 20 frames').toBeGreaterThanOrEqual(19);
     expect(up - down).toBeLessThanOrEqual(21);
   });
 
-  it('puddles are left where the beam touched (not where the boat was), and the boat is drawn pitching', () => {
+  it('each wall leaves from where the boat is when it fires (its cannon, COBS_LASER.muzzle px ahead), and the boat is drawn pitching, walls and all', () => {
     const t2 = ROCK(2);
-    expect(t2.pud.length, 'it leaves puddles').toBeGreaterThan(0);
+    expect(t2.from.length, 'it fires').toBeGreaterThan(1);
+    t2.from.forEach((q) => expect(Math.abs(q.x - q.ship), 'from its cannon, wherever the swell has it').toBeLessThanOrEqual(12));
+    expect(new Set(t2.from.map((q) => q.x)).size, 'not all from one spot').toBeGreaterThan(1);
     const r = fight(`
-      park(); atTier(2); floorAt(you, WW*0.5); s._ship = { x: you.x, y: groundY() - COBS_SHIP_Y, dir: 1, spd: 8, left: 1, dmg: 30, id: 1, puddle: 100, hit: {}, x0: 0, x1: WW, lastPud: -1e9, t: 7, rock: 100, beamX: you.x + 200 };
+      park(); atTier(2); floorAt(you, WW*0.5); cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
+      var S = s._ship; S.arm = 0; S.t = 7; cobsLaserFire(S); cobsLaserFire(S); S.walls[0].x += 300;
       var err = null; try { drawCobsFx(); } catch(e){ err = String(e && e.stack || e); } return err;`);
     expect(r).toBe(null);
   });
