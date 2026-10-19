@@ -529,31 +529,32 @@ describe('the six personalised specials', () => {
     expect(r.dash.hp).toBeLessThanOrEqual(0);
   });
 
-  it('TOXIC CANNON -- the ship crosses the sky sweeping a beam along the floor: jump it; it leaves poison puddles that poison whoever stands in them', () => {
+  // THE OWNER, 2026-10-18: "cobs should have the ships laser be a set of lasers that travel down the line, and have gaps you have to jump through." Restated: the ship no longer sails
+  // across the sky sweeping a beam you jump and leaving puddles; it hangs near you and its cannon fires laser walls down the line at you, each with one gap (test/cobs-lasers.test.js).
+  it('TOXIC CANNON -- the ship fires its tier\'s laser walls down the line toward you: outside a wall\'s gap it hits and poisons you, in its gap it passes you by; no puddles any more', () => {
     const r = fight(['Knife'], { story: true }, `
       park(); floorAt(you, WW*0.5 + 300); s.x = you.x - 300; s.y = you.y - 100; s._marks = 1;
       cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
-      var S = s._ship, T = cobsT(s, 'cannon'), out = { passes:S.left, want:T.n, dir:S.dir, fromFar: S.dir===1 ? S.x < you.x : S.x > you.x };
-      S.x = you.x - S.dir*(COBS_SHIP_LEAD + 160);   // bring it in, so the test is not a minute of sky
-      you.invuln = 0; var p0 = you.pct; for (var i=0;i<60;i++){ step(); you.invuln = 0; }
+      var S = s._ship, T = cobsT(s, 'cannon'), out = { walls:S.left, want:T.n, dir:S.dir, fromFar: S.dir===1 ? S.x < you.x : S.x > you.x };
+      // a wall whose gap is up out of reach of a fighter standing still: it hits, and poisons
+      S.gaps = S.gaps.map(function(){ return 2; }); S.arm = 0;
+      you.invuln = 0; var p0 = you.pct; for (var i=0;i<60;i++){ step(); you.invuln = 0; you.x = WW*0.5 + 300; }
       out.ground = { dmg:you.pct - p0, poisoned:you._poisonT > 0 };
-      var puddles = projectiles.filter(function(p){ return p.cobsPuddle && p.delay > 0; });
-      out.puddles = { n:puddles.length, life:puddles.length ? puddles[0].delay <= T.puddle : false };
-      // a second pass, jumped
-      s._ship = { x:you.x - 400, y:groundY() - COBS_SHIP_Y, dir:1, spd:T.spd, left:1, dmg:33, id:++BOSS_ATK_ID, puddle:T.puddle, hit:{}, x0:cobsFloor().x - 120, x1:cobsFloor().x + cobsFloor().w + 120, lastPud:you.x, t:0 };
-      you.pct = 0; you.burn = 0; you._poisonT = 0; for (var i=0;i<60;i++){ you.y = groundY() - 160; you.vy = 0; step(); }
-      out.jumped = you.pct;
-      // standing in a puddle poisons
-      you.burn = 0; you._poisonT = 0; if (puddles.length){ floorAt(you, puddles[0].x); for (var i=0;i<3;i++) step(); } out.inPuddle = you._poisonT > 0;
+      // a wall whose gap is the low one: standing in it, nothing
+      s._ship = null; projectiles = []; floorAt(you, WW*0.5 + 300); you.burn = 0; you._poisonT = 0;
+      cobsFightTelegraph(s, 'cannon', you); s._tel = 0; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID); S = s._ship; S.gaps = S.gaps.map(function(){ return 0; }); S.arm = 0;
+      you.pct = 0; for (var i=0;i<60;i++){ step(); you.invuln = 0; you.x = WW*0.5 + 300; }
+      out.inGap = { dmg:you.pct, poisoned:you._poisonT > 0, passed: S.walls.length > 0 && S.walls.every(function(w){ return w.dir*(w.x - you.x) > 0; }) };
+      out.puddles = projectiles.filter(function(p){ return p.cobsPuddle; }).length;
       return out;`);
-    expect(r.passes).toBe(r.want);
-    expect(r.fromFar, 'it sails toward you and across you (it appears near you now -- "the ship should spawn near you", the owner, 2026-10-06; test/cobs-tune2.test.js)').toBe(true);
-    expect(r.ground.dmg, 'on the floor in its path: the beam').toBeGreaterThan(0);
-    expect(r.ground.poisoned).toBe(true);
-    expect(r.puddles.n, 'it leaves puddles').toBeGreaterThan(0);
-    expect(r.puddles.life).toBe(true);
-    expect(r.jumped, 'in the air: it passes under you').toBe(0);
-    expect(r.inPuddle, 'the puddles poison').toBe(true);
+    expect(r.walls).toBe(r.want);
+    expect(r.fromFar, 'it fires toward you, from near you (it appears near you -- "the ship should spawn near you", the owner, 2026-10-06; test/cobs-tune2.test.js)').toBe(true);
+    expect(r.ground.dmg, 'outside the gap: the wall hits').toBeGreaterThan(0);
+    expect(r.ground.poisoned, '...and poisons (it is still the TOXIC cannon)').toBe(true);
+    expect(r.inGap.passed, 'the low walls went past').toBe(true);
+    expect(r.inGap.dmg, 'standing in the gap: nothing').toBe(0);
+    expect(r.inGap.poisoned).toBe(false);
+    expect(r.puddles, 'no puddles: the beam that left them is gone').toBe(0);
   });
 });
 
@@ -705,10 +706,14 @@ describe("the owner's playtest of 2026-10-07", () => {
     expect(r.groundHit, 'a low ring up on a platform does not reach the ground under it').toBe(0);
   });
 
-  it("TOXIC CANNON!'s beam hurts only at its splash, low enough that one jump is over it for most of a second", () => {
-    const r = W.eval(`(function(){ var y = 0, v = JUMP, over = 0; for (var t = 0; t < 120; t++){ v += GRAV; y -= v; if (y > COBS_BEAM_H) over++; if (y < 0) break; } return { h: COBS_BEAM_H, over: over }; })()`);
-    expect(r.h, 'was 100, which a jump cleared for a few frames at its top').toBeLessThanOrEqual(50);
-    expect(r.over, 'frames a plain jump stays over the splash').toBeGreaterThanOrEqual(25);
+  // "toxic cannon shoots an undodgeable line" (the owner, 2026-10-07) was the beam's splash, too tall to jump. The beam is gone -- THE OWNER, 2026-10-18: "cobs should have the ships laser
+  // be a set of lasers that travel down the line, and have gaps you have to jump through." -- and what keeps it dodgeable now is every wall's gap: room for the tallest fighter and more, and
+  // in reach of a jump (test/cobs-lasers.test.js measures the reach, at the lowest jump a fighter can have).
+  it("TOXIC CANNON! is never an undodgeable line: the splash is gone, and every laser wall's gap has room for the tallest fighter with 50 px to spare", () => {
+    const r = W.eval(`(function(){ var tall = 0; ROSTER.filter(function(q){ return q.play; }).forEach(function(q){ var f = makeFighter(q, 500, 500, 0), P = bodyPts(f), lo = 1e9, hi = -1e9; for (var i=1;i<P.length;i+=2){ lo = Math.min(lo, P[i]); hi = Math.max(hi, P[i]); } tall = Math.max(tall, hi - lo); });
+      return { beam: typeof COBS_BEAM_H, gap: Math.min.apply(null, COBS_LASER.gap), tall: tall }; })()`);   // (the smallest of the three gaps)
+    expect(r.beam, 'the splash is gone').toBe('undefined');
+    expect(r.gap - r.tall, 'room in every gap').toBeGreaterThanOrEqual(50);
   });
 
   it('one attack at a time: no wind-up while his turn runs, his whole gap after it -- and the passives do not hold the turn', () => {
