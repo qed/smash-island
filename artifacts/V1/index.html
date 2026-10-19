@@ -38146,6 +38146,7 @@ function step(){
       const fsk = f.onground ? fst.run : fst.air;   // FIGHTER STATS: the run on the ground, the drift in the air (on top of everything else)
       const vx0 = Math.abs(f.vx);   // (the speed before this frame's push: see the cap)
       const mv = (f.slowed>0 ? MOVE*0.5 : MOVE) * (f._hasteT>0 ? (1 + 0.5*Math.min(1, f._hasteT/20)) : 1) * ctfSpeedK(f) * fsk;   // (Capture the Flag: everyone 1.5x as fast, a flag carrier slower)
+      f._pushIn = (inp.left ? -1 : 0) + (inp.right ? 1 : 0); f._pushDn = !!inp.down; f._pushUp = !!inp.jump;   // (the keys this step, for the push zones: see pushPin)
       const _face0 = f.face;
       if(inp.left){ f.vx-=mv; f.face=f.ctrlRev>0?1:-1; }
       if(inp.right){ f.vx+=mv; f.face=f.ctrlRev>0?-1:1; }
@@ -38296,7 +38297,7 @@ function step(){
       } else {
         f.y += ay;
         if(ay<0){ f.vy=Math.min(0,f.vy); f.onground=true; f.jumps=2; f._usedAirSpecial=false; if(p.ramp === true || p.step === true) f._rampT = 4; }  // landed on top
-        else { f.vy=Math.max(0,f.vy); }                                  // bonked the underside
+        else { f.vy=Math.max(0,f.vy); f._bonkT = hazardT; }              // bonked the underside (an updraft stops lifting under a ceiling)
       }
     }
     // platforms / floors (one-way top) — skipped briefly while dropping through
@@ -38347,6 +38348,7 @@ function step(){
     // Aw Seriously, Snowball's Ground Pound, Rocky's Toxic Wave). The owner's call: "slam, then hit".
     if(f._slam){ if(f.onground){ const fire=f._slam.fire; f._slam=null; fire(); } else if(--f._slam.life<=0) f._slam=null; }
     // --- effect zones (glue/ice/bounce/damage/heal/wind) ---
+    if(f._pushOff > 0) f._pushOff--;
     if(worldZones && worldZones.length){
       for(const z of worldZones){
         if(f.x>=z.x && f.x<=z.x+z.w && f.y+f.r>=z.y && f.y<=z.y+z.h){
@@ -45640,6 +45642,17 @@ function knock(t,kx,ky){
   if(TESTMODE.active && TESTMODE.anchored && t.controller!=="local"){ t.vx=0; t.vy=0; return; }
   t.vx=kx; t.vy=ky; t.onground=false; t._hop=false; t._ff=false; t._hyperT=0;
 }
+const WIND_DRIFT = 3.2, PIN_STEPS = 36, PIN_FREE = 150;
+function pushPin(f){   // true while the push zones let this fighter go: a fighter pressing a key in a push zone who has not moved for PIN_STEPS steps (pinned in a corner, held under a lid) is let go for PIN_FREE
+  if(f._pushOff > 0) return true;
+  if(f._pinF === hazardT) return false;   // (once a step, however many zones)
+  f._pinF = hazardT;
+  const trying = !!(f._pushIn || f._pushDn || f._pushUp);
+  if(f._pinX == null || Math.abs(f.x - f._pinX) + Math.abs(f.y - f._pinY) > 70){ f._pinX = f.x; f._pinY = f.y; f._pinT = 0; }   // (it has got somewhere: start counting again from here; a fighter bobbing against a lid is still in one place)
+  else if(trying) f._pinT = (f._pinT || 0) + 1; else f._pinT = Math.max(0, (f._pinT || 0) - 1);
+  if(f._pinT >= PIN_STEPS){ f._pinT = 0; f._pushOff = PIN_FREE; return true; }
+  return false;
+}
 // custom effect zones from the level editor
 function applyZone(f, z){
   const s=z.strength||1;
@@ -45649,14 +45662,16 @@ function applyZone(f, z){
     case "bounce": if(f.vy>0){ f.vy=-Math.abs(f.vy)*(0.9+0.5*s) - 3*s; f.onground=false; f.jumps=2; if(hazardT%4===0) puff(f.x,f.y+f.r,'#e84b9c',4); } break;
     case "damage": f.pct+=0.35*s; if(hazardT%8===0){ puff(f.x,f.y,'#e0503a',3); } break;
     case "heal":   f.pct=Math.max(0, f.pct-0.3*s); if(hazardT%12===0){ puff(f.x,f.y-6,'#7bc043',3); } break;
-    case "wind":   f.vx += (z.dir||1)*0.6*s; f.vy -= 0.15*s; break;
+    // PUSH ZONES (the owner, 2026-10-19: "wind can get you stuck in a corner"; "sometimes you go in one direction without controlling anything"): a wind, an updraft and a belt push you, and you always win. A wind lets go while you press against it (a CPU's keys count the same) and, left alone,
+    // carries you at most WIND_DRIFT a step (you drift, you are not thrown); an updraft lets go while you hold Down and stops lifting under a ceiling; and whatever the shape of the place, a fighter who is pressing a key in a push zone and has not moved for PIN_STEPS steps is let go of by all of them for PIN_FREE steps.
+    case "wind":   { if(pushPin(f)) break; const d = z.dir||1; if(f._pushIn === -d) break; if(f.vx*d < WIND_DRIFT*s) f.vx += d*0.6*s; f.vy -= 0.15*s; break; }
     // Capture the Flag's areas: a conveyor belt (it carries whoever stands on it), a spring pad (it throws you up), thin air (low gravity: Bubble's
     // Thermal Rise float), and water (it drags at you, in the air and on the ground)
-    case "belt":   if(f.onground) f.x += (z.dir||1)*2.2*s; break;
+    case "belt":   if(f.onground && !pushPin(f)) f.x += (z.dir||1)*2.2*s; break;
     case "spring": if(!(f._springT>0)){ f.vy = -24*s; f.onground = false; f.jumps = 2; f._springT = 24; if(f.you) SFX.jump(); } break;
     case "float":  f._floatT = Math.max(f._floatT||0, 3); break;
     // an UPDRAFT (the owner, 2026-10-18, the sky: "a column of rising wind that lifts fighters while they are inside it"): it pulls harder than gravity, up to a top speed, so you climb it and are let go at its top
-    case "updraft": f.vy = Math.max(f.vy - 1.35*s, -9.5*s); if(f.vy < 0) f.onground = false; break;
+    case "updraft": if(pushPin(f) || f._pushDn || f._bonkT >= hazardT - 12) break; f.vy = Math.max(f.vy - 1.35*s, -9.5*s); if(f.vy < 0) f.onground = false; break;
     case "water":  f.vx *= 1 - 0.13*s; f.vy *= 1 - 0.05*s; break;
   }
 }
