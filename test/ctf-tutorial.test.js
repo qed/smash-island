@@ -11,6 +11,9 @@ const press = (w, code, frames = 3) => { w.eval(`down[${JSON.stringify(code)}]=t
 const key = (w, code) => { for (const t of ['keydown', 'keyup']) w.dispatchEvent(new w.KeyboardEvent(t, { code, key: code, bubbles: true })); };
 const at = (w) => w.eval('CTUT.active && CTUT_STEPS[CTUT.step] ? CTUT_STEPS[CTUT.step].id : "none"');
 const until = (w, cond, max) => { for (let i = 0; i < max; i++) { if (w.eval(cond)) return i; w.eval('step()'); } return -1; };
+const card = (w) => w.eval('(function(){ var st = CTUT_STEPS[CTUT.step]; return st.text(CTF.live, ctutYou(), CTUT.S); })()');
+// a browser that had these keys before this build ever ran (written before the game's own script, as an older build left them)
+const before = (pairs) => (raw) => raw.replace('<head>', '<head><script>' + pairs.map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('') + '</script>');
 const put = (w, i, x, y) => w.eval(`(function(){ var f=fighters[${i}]; f.x=${x}; f.y=${y}-f.r; f.vx=0; f.vy=0; })()`);
 // what the player asked for before the practice: a Capture the Flag match on the castle (no route graph, to keep it light)
 const ASK = `CTF.skipNav=true; CTF.forceMap='castle'; SETTINGS.mode='ctf'; SETTINGS.count=10;`;
@@ -56,8 +59,10 @@ describe('the Capture the Flag practice', () => {
     expect(w.eval('CTF.live.edits.length')).toBe(0);
     expect(w.eval('CTF.live.pts[0]'), 'the point back').toBe(pts0);
     expect(at(w)).toBe('reach');
+    expect(card(w), 'in the build view on another tool: X to the flag').toMatch(/X until the flag/);
     expect(until(w, 'CTF.nav && CTF.nav.ready', 4000), 'the little map\'s route graph is made').toBeGreaterThanOrEqual(0);
     press(w, 'KeyX'); expect(w.eval('CTF_TOOLS[fighters[0]._tool]')).toBe('flag');
+    expect(card(w)).toMatch(/Aim the flag tool/);
     const flag0 = J(w, '[CTF.live.flags[0].x, CTF.live.flags[0].y]');
     w.eval('fighters[0]._cam.x = 2220; fighters[0]._cam.y = 1440;');   // into the closed cave under the floor
     expect(w.eval('ctfCamSnap(fighters[0]).ok'), 'nobody could reach it: flagged').toBe(false);
@@ -103,6 +108,11 @@ describe('the Capture the Flag practice', () => {
     expect(w.eval('fighters[2]._freed'), 'by the teammate at the door').toBe(1);
     expect(w.eval('CTF.live.jails[1].lock'), 'a jailbreak: the door is locked for a while').toBeGreaterThan(0);
     step(w, 1); expect(at(w)).toBe('key');
+    // the practice's CPUs walk past flags (the teammate's way to the jail went through their props)
+    expect(w.eval('fighters.every(function(f){ return f.you || !(f._cf >= 0); })'), 'no CPU carries a flag').toBe(true);
+    const foeFlag = J(w, '(function(){ var q = CTF.live.flags.filter(function(f){ return f.team===1 && f.st===1; })[0]; return { x:q.x, y:q.y }; })()');
+    put(w, 2, foeFlag.x, foeFlag.y); step(w, 3);
+    expect(w.eval('fighters[2]._cf >= 0'), 'standing on a foe flag: not picked up').toBe(false);
 
     // 7. the personal key opens a locked door, for the team, and is used up
     expect(J(w, 'CTF.live.doors.map(function(d){ return d.op[0]; })')).toEqual([false, false]);
@@ -149,20 +159,25 @@ describe('the Capture the Flag practice', () => {
     w.eval('quitMatch()');
     expect(w.eval('CTUT.active')).toBe(false);
 
-    const { window: v } = loadMonolith(43);
-    v.eval("localStorage.setItem('bfsi:ctfintro', '1')");   // the old first-match card was seen: the mode was played
-    expect(v.eval('ctfTutDone()')).toBe(true);
-    v.eval(`${ASK} startMatch();`);
-    expect(v.eval('CTUT.active')).toBe(false);
+    // a player who used the mode before this build: the keys its setup writes (here: the old first-match card, a map picked) count, once
+    for (const [k, val] of [['bfsi:ctfintro', '1'], ['bfsi:ctfmap', 'castle']]) {
+      const { window: v } = loadMonolith(43, before([[k, val]]));
+      await v.eval('profileReady');
+      expect(v.eval('ctfTutDone()'), k + ' before this build: done').toBe(true);
+      expect(v.eval('PROFILE.ctfTutorialDone')).toBe(true);
+      v.eval(`${ASK} startMatch();`);
+      expect(v.eval('CTUT.active')).toBe(false);
+      expect(v.eval('CTF.mapId')).toBe('castle');
+    }
 
+    // a new player who picks a map (the same key, written now) is still sent to the practice
     const { window: u } = loadMonolith(44);
     await u.eval('profileReady');
-    await u.eval(`BStore.set('balance:matchlog', JSON.stringify([{ ts:1, mode:'ffa', fighters:[{ name:'Firey', you:true }] }]))`);
-    expect(await u.eval('ctfTutGrandfather()'), 'other modes do not count').toBe(false);
-    await u.eval(`BStore.set('balance:matchlog', JSON.stringify([{ ts:1, mode:'ctf', fighters:[{ name:'Firey', you:true, controller:'local' }] }]))`);
-    expect(await u.eval('ctfTutGrandfather()'), 'a Capture the Flag match of their own').toBe(true);
-    expect(u.eval('ctfTutDone()')).toBe(true);
-    expect(u.eval('PROFILE.ctfTutorialDone')).toBe(true);
+    u.eval("ctfMapPickSet('castle')");   // (what the setup's map button runs)
+    expect(u.eval("localStorage.getItem('bfsi:ctfmap')")).toBe('castle');
+    expect(u.eval('ctfTutDone()'), 'a map picked after the one check: not done').toBe(false);
+    u.eval(`${ASK} startMatch();`);
+    expect(u.eval('CTUT.active')).toBe(true);
   }, 120000);
 
   it('a quit part-way puts the player\'s settings back and keeps the step; the next start resumes there', () => {
@@ -181,6 +196,11 @@ describe('the Capture the Flag practice', () => {
     expect(at(w)).toBe('build');
     expect(w.eval('CTF.live.phase')).toBe('hide');
     expect(w.eval('CTF.live.flags[0].st'), 'its flag already hidden').toBe(1);
+    w.eval("quitMatch(); localStorage.setItem('bfsi:ctfTutStep', 'reach'); startMatch();"); step(w, 2);
+    expect(at(w)).toBe('reach');
+    expect(w.eval('!!fighters[0]._cam')).toBe(false);
+    expect(card(w), 'resumed outside the build view: V first').toMatch(/Press V for the build view/);
+    press(w, 'KeyV'); expect(card(w), 'V picks the flag tool first').toMatch(/Aim the flag tool/);
     w.eval("quitMatch(); localStorage.setItem('bfsi:ctfTutStep', 'freed'); startMatch();");
     expect(at(w), 'a step that needs the jail starts at the jail').toBe('jail');
     expect(w.eval('CTF.live.phase')).toBe('play');
@@ -214,19 +234,37 @@ describe('the Capture the Flag practice', () => {
     expect(w.eval('CTUT.active')).toBe(true); expect(w.eval('NET.role')).toBe('solo');
     w.eval('quitMatch()');
 
-    // a room you joined plays it: out of the room before anything else, the practice, then the same room again
-    w.eval("window.__joined = null; NET.join = function(c){ window.__joined = c; }; openLobby(); NET.role='client'; NET.room='BCDF';");
+    // a room you join plays it: out of the room before anything else, the practice, then the same room again (the real join; no socket)
+    w.eval("NET.connect = function(){}; openLobby(); NET.join('BCDF');");
+    expect(w.eval('NET.role')).toBe('client');
     w.eval("NET.onMessage({ t:'state', lobby:{ mode:'ctf', count:4 } })");
     expect(w.eval('CTUT.active')).toBe(true); expect(w.eval('CTUT.reason')).toBe('join');
     expect(w.eval('NET.role'), 'left the room: the practice never runs in a lobby').toBe('solo');
     w.eval('CTUT.step = CTUT_STEPS.length - 1; ctutEnter(CTUT.step);');
     key(w, 'Enter'); step(w, 1);
     expect(w.eval('CTUT.active')).toBe(false);
-    expect(w.eval('window.__joined'), 'joins the same room again').toBe('BCDF');
+    expect(J(w, '[NET.role, NET.room]'), 'joins the same room again').toEqual(['client', 'BCDF']);
     expect(w.eval("document.getElementById('lobby').classList.contains('active')")).toBe(true);
 
     // done: a room that plays it is just joined
-    w.eval("NET.role='client'; NET.room='BCDF'; NET.onMessage({ t:'state', lobby:{ mode:'ctf', count:4 } })");
+    w.eval("NET.onMessage({ t:'state', lobby:{ mode:'ctf', count:4 } })");
     expect(w.eval('CTUT.active')).toBe(false); expect(w.eval('NET.role')).toBe('client');
+  }, 120000);
+
+  it('a host who switches a room you are already in to Capture the Flag keeps you in the room', () => {
+    const { window: w } = loadMonolith(47);
+    w.eval("NET.connect = function(){}; openLobby(); NET.join('WXYZ');");
+    w.eval("NET.onMessage({ t:'state', lobby:{ mode:'ffa', count:3 } })");
+    expect(w.eval('NET.role')).toBe('client');
+    w.eval("NET.onMessage({ t:'state', lobby:{ mode:'ctf', count:3 } })");
+    expect(w.eval('CTUT.active'), 'never pulled out mid-lobby').toBe(false);
+    expect(J(w, '[NET.role, NET.room, NET.lobby.mode]')).toEqual(['client', 'WXYZ', 'ctf']);
+    expect(w.eval("document.getElementById('lobbyStatus').textContent")).toMatch(/practice is under Learn/);
+    expect(w.eval('ctfTutDone()'), 'still not done').toBe(false);
+    w.eval("NET.onMessage({ t:'state', lobby:{ mode:'ctf', count:4 } })");
+    expect(w.eval('CTUT.active')).toBe(false); expect(w.eval('NET.role')).toBe('client');
+    // their own first Capture the Flag match later still goes through it
+    w.eval(`NET.leave(); go('title'); ${ASK} startMatch();`);
+    expect(w.eval('CTUT.active')).toBe(true);
   }, 120000);
 });

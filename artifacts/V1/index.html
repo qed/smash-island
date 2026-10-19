@@ -4682,7 +4682,7 @@ function ctfStepFlags(L){
       else if(fl.y > CTF.map.WH + 100){ if(fl.st === 1) ctfFlagResettle(L, fl, true); else ctfReturnFlag(fl); }
     }
     for(const f of fighters){
-      if(f._jail != null) continue;
+      if(f._jail != null || f.controller === 'ctut') continue;   // (the practice's CPUs walk past flags: one is for the player to find)
       if(Math.abs(f.x - fl.x) < CTF_FLAG_R + f.r*0.5 && f.y > fl.y - 100 && f.y < fl.y + 30){
         if(f.team === fl.team){   // its own side's flag, lying where it fell: picked up, to be hidden again somewhere new (the flag key)
           if(fl.st === 3 && f._cf < 0 && !(fl.lockT > 0 && fl.lockIdx === f.idx)){ fl.st = 2; fl.car = f.idx; f._cf = fl.id; fl.fall = false; fl.elev = null; fl.revealT = 0; ctfSfx('pick'); break; }
@@ -6629,7 +6629,7 @@ function drawCtfHud(){
   // the middle: while hiding, an hourglass and a draining bar; in the match, a pair of crossed flags
   ctx.fillStyle = 'rgba(28,24,38,0.78)'; ctx.strokeStyle = '#f4efe2'; ctx.lineWidth = 3; ctx.fillRect(cx - 62, y, 124, 40); ctx.strokeRect(cx - 62, y, 124, 40);
   if(L.phase === 'hide' || L.phase === 'fix'){
-    const k = 1 - clamp(L.t/CTF_HIDE_STEPS, 0, 1);
+    const k = CTUT.active ? 1 : 1 - clamp(L.t/CTF_HIDE_STEPS, 0, 1);   // (the practice's hiding has no time limit: ctfStep)
     ctx.fillStyle = '#f4efe2'; ctx.beginPath(); ctx.moveTo(cx - 52, y + 8); ctx.lineTo(cx - 30, y + 8); ctx.lineTo(cx - 41, y + 20); ctx.lineTo(cx - 30, y + 32); ctx.lineTo(cx - 52, y + 32); ctx.lineTo(cx - 41, y + 20); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#3a3448'; ctx.fillRect(cx - 20, y + 14, 74, 12);
     ctx.fillStyle = k < 0.2 ? '#e0503a' : '#f2c033'; ctx.fillRect(cx - 20, y + 14, 74*k, 12);
@@ -14403,8 +14403,11 @@ function finishTutorial(skip){
 //  FORCED: the first Capture the Flag match of any kind (Start Match, the Flag Cup's Kick Off, Create Room with the mode on, the mode picked
 //  in your own empty room, a room you join that plays it) runs this first, and what was asked for carries on once it is done (CTUT.after).
 //  A room you join is left before the practice and joined again after it: the practice never runs in a lobby, and the host's room is not held up.
-//  Done is a profile flag (PROFILE.ctfTutorialDone; bfsi:ctfTutorialDone too, for the moments before the profile loads). A player who has
-//  played the mode before counts as done (the first-match card seen, or a Capture the Flag match of theirs in the match log: ctfTutGrandfather).
+//  Only the room's first settings after your own join are checked (NET._ctutCheck): a host who switches a room you are already in to the
+//  mode keeps you in it, and a line says the practice is under Learn.
+//  Done is a profile flag (PROFILE.ctfTutorialDone; bfsi:ctfTutorialDone too, for the moments before the profile loads). A player who had
+//  used the mode before the practice came counts as done: checked once, the first time this build asks (ctfTutGrandfather), from what Capture
+//  the Flag really leaves behind in storage (the first-match card seen, a map picked, the Flag Cup set, a kit saved, a setup toggle).
 //  The step is saved as it is reached (bfsi:ctfTutStep): quit, and the next time starts there. Learn has it too, to play again any time.
 // ============================================================
 const CTUT_DONE_KEY = 'bfsi:ctfTutorialDone', CTUT_STEP_KEY = 'bfsi:ctfTutStep';
@@ -14439,12 +14442,14 @@ const CTUT_STEPS = [
     enter:(L, you, S)=>{ S.seq = L.editSeq; },
     check:(L, you, S)=>{ const e = L.edits.find(q=>q.owner === you.idx && q.seq > S.seq); if(e){ CTUT.piece = { id:e.id, cost:e.cost }; return true; } return false; } },
   { id:'remove', label:'Take it away',
-    text:()=>'Now take it away: X until the red cross, aim at your piece, press Space.',
+    text:(L, you)=>!you._cam ? 'Now take it away: press V for the build view, X until the red cross, aim at your piece, press Space.'
+      : CTF_TOOLS[you._tool] !== 'remove' ? 'Now take it away: X until the red cross, aim at your piece, press Space.' : 'Now aim the red cross at your piece and press Space.',
     more:(L, you)=>'You get its points back. You have ' + ctutPts(L, you) + '.',
     enter:(L, you, S)=>{ S.id = CTUT.piece ? CTUT.piece.id : null; },
     check:(L, you, S)=>S.id != null && !L.edits.some(e=>e.id === S.id) },
   { id:'reach', label:'Reachable', top:true,   // (the cave is under the floor: the card goes up top, out of its way)
-    text:()=>'Every flag must be reachable. X until the flag, then aim into the closed cave.',
+    text:(L, you)=>!you._cam ? 'Every flag must be reachable. Press V for the build view. The flag tool is first; aim into the closed cave.'
+      : CTF_TOOLS[you._tool] !== 'flag' ? 'Every flag must be reachable. X until the flag, then aim into the closed cave.' : 'Every flag must be reachable. Aim the flag tool into the closed cave.',
     more:()=>'The no-entry sign: nobody could walk in there, so no flag may go there. Press Space to try.',
     enter:(L, you, S)=>{ S.t = L.t; },
     check:(L, you, S)=>you._ctfNo != null && you._ctfNo >= S.t },
@@ -14523,7 +14528,7 @@ function ctutSave(i){ try{ const st = CTUT_STEPS[ctutResumeIdx(i)]; if(st) local
 function ctfTutDone(){
   if(CTUT.sessionDone) return true;
   if(typeof PROFILE !== 'undefined' && PROFILE && PROFILE.ctfTutorialDone) return true;
-  try{ return localStorage.getItem(CTUT_DONE_KEY) === '1' || localStorage.getItem('bfsi:ctfintro') === '1'; }   // (bfsi:ctfintro: the first-match card was seen, so the mode was played)
+  try{ return localStorage.getItem(CTUT_DONE_KEY) === '1' || ctfTutGrandfather(); }
   catch(e){ return true; }   // no storage at all: nothing could be remembered, so nobody is held back (the profile degrades open the same way)
 }
 function ctfTutMarkDone(){
@@ -14531,17 +14536,17 @@ function ctfTutMarkDone(){
   try{ localStorage.setItem(CTUT_DONE_KEY, '1'); localStorage.setItem('bfsi:ctfintro', '1'); localStorage.removeItem(CTUT_STEP_KEY); }catch(e){}   // (the first-match card is the practice's job now)
   if(typeof PROFILE !== 'undefined' && PROFILE && !PROFILE.ctfTutorialDone){ PROFILE.ctfTutorialDone = true; try{ saveProfile(); }catch(e){} }
 }
-// A player with a Capture the Flag match of their own in the match log played the mode before the practice existed: done, once, at boot.
-async function ctfTutGrandfather(){
-  try{ if(PROFILE && !PROFILE.ctfTutorialDone && localStorage.getItem(CTUT_DONE_KEY) === '1'){ PROFILE.ctfTutorialDone = true; saveProfile(); } }catch(e){}   // (done before the profile had loaded: it goes in now)
-  if(ctfTutDone()) return false;
-  try{
-    if(!BStore.available()) return false;
-    const raw = await BStore.get('balance:matchlog'); if(!raw) return false;
-    const log = JSON.parse(raw);
-    if(Array.isArray(log) && log.some(m=>m && m.mode === 'ctf' && Array.isArray(m.fighters) && m.fighters.some(p=>p && (p.you || p.controller === 'local')))){ ctfTutMarkDone(); return true; }
-  }catch(e){}
-  return false;
+// A player who used Capture the Flag before the practice existed counts as done. Capture the Flag matches never went in the match log, so this
+// reads the keys the mode's own setup writes (only someone who opened it has them). It is checked ONCE, the first time this build asks: after
+// that the same keys are written by new players too (a map picked before their first match), and they must not skip the practice by it.
+const CTUT_CHECK_KEY = 'bfsi:ctfTutChecked';
+const CTUT_FOOTPRINTS = ['bfsi:ctfintro', 'bfsi:ctfmap', 'bfsi:ctfcup', 'bfsi:ctfkits', 'bfsi:ctfadv', 'bfsi:ctfspec', 'bfsi:ctfexplore'];
+function ctfTutGrandfather(){
+  try{ if(typeof PROFILE !== 'undefined' && PROFILE && !PROFILE.ctfTutorialDone && localStorage.getItem(CTUT_DONE_KEY) === '1'){ PROFILE.ctfTutorialDone = true; saveProfile(); } }catch(e){}   // (done before the profile had loaded: it goes in now)
+  let checked = true, played = false;
+  try{ checked = localStorage.getItem(CTUT_CHECK_KEY) === '1'; if(!checked){ played = CTUT_FOOTPRINTS.some(k=>localStorage.getItem(k) != null); localStorage.setItem(CTUT_CHECK_KEY, '1'); } }catch(e){}
+  if(checked || !played) return false;
+  ctfTutMarkDone(); return true;
 }
 // The gate: true when the practice was started instead (after() runs once it is finished).
 function ctfTutGate(after, reason, code){
@@ -14561,7 +14566,8 @@ function ctfTutHostPick(){
   ctfTutGate(()=>{ SETTINGS.mode = 'ctf'; openLobby(); NET.host(); }, 'host');
   return true;
 }
-// A room you joined plays Capture the Flag and you have not had the practice: out of the room at once, the practice, then the same room again.
+// A room you just joined plays Capture the Flag and you have not had the practice: out of the room at once, the practice, then the same room again.
+// (Only for the room's first settings after your own join: NET._ctutCheck. A room you are already in that switches to the mode keeps you: ctfTutLobbyLine.)
 function ctfTutJoin(){
   if(ctfTutDone()) return false;
   const code = NET.room || NET.lastJoin || null;
@@ -14569,6 +14575,8 @@ function ctfTutJoin(){
   ctfTutGate(()=>{ openLobby(); const inp = document.getElementById('joinAddr'); if(inp && code) inp.value = code; if(code) NET.join(code); }, 'join', code);
   return true;
 }
+// The host switched a room you are already in to Capture the Flag: you stay in it (the host's room is not touched), and a line says where the practice is.
+function ctfTutLobbyLine(){ if(!ctfTutDone()) NET.status('This room now plays Capture the Flag. You can play it; its short practice is under Learn.'); }
 // The Flag Cup's Kick Off buttons.
 function ctfCupKickOff(){ if(ctfTutGate(()=>ctfCupStart(), 'cup')) return; ctfCupStart(); }
 
@@ -61620,6 +61628,7 @@ window.NET = {
   },
   join(code){
     this.lastJoin = code;   // (what was typed: the Capture the Flag practice joins it again after, ctfTutJoin)
+    this._ctutCheck = true;   // (the room's first settings decide whether the practice comes first; a later switch to the mode never pulls you out)
     // The invite link, pasted whole: the code is after #room=. Stripping the link down to its letters made a room named
     // after the URL (HTTPLOCALHOSTROOMQXTR), which the relay cut to HTTPLOCA -- a friend who pasted the link landed alone.
     const link = /#room=([A-Za-z0-9]{1,8})/i.exec(code||"");
@@ -61651,7 +61660,7 @@ window.NET = {
   },
   leave(){
     if(this.ws){ try{this.ws.close();}catch(e){} }
-    this.role="solo"; this.ws=null; this.snapshot=null; this.players=[]; this.lobby=null;   // (lobby: the last room's settings are not the next room's)
+    this.role="solo"; this.ws=null; this.snapshot=null; this.players=[]; this.lobby=null; this._ctutCheck=false;   // (lobby: the last room's settings are not the next room's)
     // Cleared here too, not just in go('title'), so any other exit path is safe as well.
     window.__netRoster=null; window.__netHumanCount=0;
     NET_COS=[]; COS_KO_OUT=[];   // ...and so are the room's looks
@@ -61660,7 +61669,9 @@ window.NET = {
   send(obj){ if(this.ws && this.ws.readyState===1) this.ws.send(JSON.stringify(obj)); },
 
   onMessage(m){
-    if(m.t==="state" && m.lobby){ if(this.role==="client"){ this.lobby=m.lobby; if(m.lobby.mode==='ctf' && !running && ctfTutJoin()) return; this.renderLobbySettings(); } return; }   // (a room that plays Capture the Flag, and no practice yet: out, the practice, back in)   // the host's settings preview (no snapshot)
+    if(m.t==="state" && m.lobby){ if(this.role==="client"){ const was = this.lobby, first = this._ctutCheck; this._ctutCheck = false; this.lobby=m.lobby;
+        if(m.lobby.mode==='ctf' && !running){ if(first && ctfTutJoin()) return; if(!first && (!was || was.mode!=='ctf')){ this.renderLobbySettings(); ctfTutLobbyLine(); return; } }
+        this.renderLobbySettings(); } return; }   // (the room you just joined plays Capture the Flag, and no practice yet: out, the practice, back in; a later switch to it: a line only)   // the host's settings preview (no snapshot)
     if(m.t==="roster"){
       const was = this.players || []; this.players=m.players;
       // The host closed the tab: the relay's next roster has nobody flagged host. A client used to be re-indexed onto seat 0
