@@ -11,6 +11,11 @@ import { loadMonolith } from './helpers/load-monolith.js';
 // "Find another way". So a wall past the two jumps (235 px at jump 1) is {tall}, and the CPU goes up the steps on this side of it, or
 // off its ledge, or away from it -- not into it.
 //
+// Review of that (2026-10-19): the climb toward a foe above still aimed at a step past such a wall and pushed into it (Capture the
+// Flag); a one-way platform the CPU had only risen through was taken for the floor its jumps went up from, so the spare up-special
+// took it over a wall its two jumps did not clear; a block floating over the floor was taken for a wall; and with no other way, the
+// CPU paced to and fro 300 px from the wall (as far as navAround looks), or backed off the world's edge. Those cases are at the end.
+//
 // Each case puts one solid wall right beside a CPU standing on Grand Plains (a scrolling stage with no solids of its own), with its
 // foe far off past the wall, and reads what the CPU presses.
 
@@ -43,10 +48,11 @@ function pressOnce(seed, h, gap, recover, strip) {
 
 // Left to play for `frames`. pushed: frames it pressed into the wall while touching it with the top out of a hop's reach (130 px over
 // its feet) -- pushing into it, not hopping over it. upB: frames it pressed the up-special. away: how far it went back from the wall.
+// turnsNear: how often it turned round 150-450 px from the wall, about where navAround stops looking (300 px).
 function play(h, recover, strip, frames) {
   const { window: w } = loadMonolith(5);
   return JSON.parse(w.eval(`(function(){ ${setup(h, 4, false)} ${strip ? STRIP : ''}
-    var best = c.y + c.r, x0 = c.x, pushed = 0, upB = 0, away = 0, crossedAt = -1, keys = null;
+    var best = c.y + c.r, x0 = c.x, pushed = 0, upB = 0, away = 0, crossedAt = -1, keys = null, lastD = 0, turnsNear = 0;
     var a0 = aiThink; aiThink = function(f){ var o = a0.apply(this, arguments); if (f === c) keys = o; return o; };
     for (var k = 0; k < ${frames}; k++){ ${recover ? 'if (c._recover <= 0 && c.x >= wall.x) c._recover = 38;' : ''}
       keys = null; step(); t.x = x0 - W*1.2; t.y = gy - t.r; t.vx = 0; t.vy = 0; best = Math.min(best, c.y + c.r);
@@ -55,9 +61,12 @@ function play(h, recover, strip, frames) {
       if (keys && keys.special && keys.up) upB++;
       away = Math.max(away, c.x - x0);
       if (crossedAt < 0 && c.x < wall.x) crossedAt = k;
+      var d = keys ? (keys.left ? -1 : keys.right ? 1 : 0) : 0, off = c.x - (wall.x + wall.w);
+      if (d && lastD && d !== lastD && off >= 150 && off <= 450) turnsNear++;
+      if (d) lastD = d;
     }
     running = false;
-    return JSON.stringify({ kind: kind, rose: Math.round(gy - best), wall: ${h}, crossedAt: crossedAt, pushed: pushed, upB: upB, away: Math.round(away) });
+    return JSON.stringify({ kind: kind, rose: Math.round(gy - best), wall: ${h}, crossedAt: crossedAt, pushed: pushed, upB: upB, away: Math.round(away), turnsNear: turnsNear });
   })()`));
 }
 
@@ -107,12 +116,127 @@ describe('a CPU at a tall wall', () => {
 
   // 600 px with Grand Plains' platforms left in: "Find another way" -- it climbs the platforms on its side of the wall to the top, and
   // hops over from there, in under 5 s, never pushing into it. On e028e28 it pressed into the wall for all 300 frames and never rose
-  // past one hop (120 px).
+  // past one hop (120 px). And it gets there on its jumps, step by step: on 38e44dc the spare up-special took it the last 300 px from
+  // a platform it had only risen through (review), and its two jumps do not clear 300.
   it.each([false, true])('finds another way past a 600 px one: up the platforms beside it (stuck recovery %s)', (recover) => {
     const out = play(600, recover, false, 300);
     expect(JSON.parse(out.kind).tall).toBe(true);
     expect(out.pushed, 'frames pushing into it').toBeLessThanOrEqual(5);
     expect(out.rose, 'up the platforms to the top').toBeGreaterThanOrEqual(600);
     expect(out.crossedAt, 'and over to the far side').toBeGreaterThanOrEqual(0);
+    expect(out.upB, 'on its jumps, without the up-special').toBe(0);
+  });
+
+  // THE CLIMB TOWARD A FOE ABOVE (aiThink's climb branch: steerClimb) never asked navAround: it aimed at the best step anywhere, and
+  // here the only one near is past the wall, with the foe standing on it. On 38e44dc the CPU walked to the wall and pressed into it,
+  // under the step (review: in Capture the Flag, forest seed 2, Bonesaw pressed into a solid 600 px over his feet for 26 frames on
+  // end, aiming at a step past it). A step past a wall the two jumps do not clear is no step: with none on this side, another way.
+  it.each([1, 2])('does not climb toward a foe above by a step past a 600 px one (seed %s)', (seed) => {
+    const { window: w } = loadMonolith(seed);
+    const r = JSON.parse(w.eval(`(function(){ ${setup(600, 4, false)} ${STRIP}
+      var ledge = { x: wall.x - 300, y: gy - 150, w: 240, h: 16 };      // a one-way step past the wall, 150 px up
+      worldPlats.push(ledge);
+      var tx = ledge.x + 120; t.x = tx; t.y = ledge.y - t.r;           // the foe on it: above and near, so the climb branch
+      var first = aiThink(c), x0 = c.x, pushed = 0, away = 0, keys = null;
+      var a0 = aiThink; aiThink = function(f){ var o = a0.apply(this, arguments); if (f === c) keys = o; return o; };
+      for (var k = 0; k < 240; k++){ keys = null; step(); t.x = tx; t.y = ledge.y - t.r; t.vx = 0; t.vy = 0;
+        var touching = c.x > wall.x && c.x - c.r - (wall.x + wall.w) < 3 && c.y + c.r - wall.y > 130;
+        if (touching && keys && keys.left) pushed++;
+        away = Math.max(away, c.x - x0); }
+      running = false;
+      return JSON.stringify({ firstLeft: !!first.left, pushed: pushed, away: Math.round(away), crossed: c.x < wall.x });
+    })()`));
+    expect(r.firstLeft, 'not pressed into the wall').toBe(false);
+    expect(r.pushed, 'frames pushing into it').toBeLessThanOrEqual(5);
+    expect(r.crossed, 'not over it').toBe(false);
+  });
+
+  // BETWEEN TWO SUCH WALLS. aiWallWay climbs toward the top of the wall in its way by the steps on its side of it, and the step it
+  // picked was past a second wall behind it: Cherries pressed into that one for 68 frames on end (Capture the Flag, forest seed 2,
+  // while this was being fixed). A step past either is no step; here there is none between them, so it stays between them.
+  it('does not climb for one wall by a step past another behind it', () => {
+    const { window: w } = loadMonolith(5);
+    const r = JSON.parse(w.eval(`(function(){ ${setup(600, 4, false)} ${STRIP}
+      var wall2 = { x: c.x + 160, y: gy - 600, w: 22, h: 600, solid: true, wall: true }; worldPlats.push(wall2);
+      worldPlats.push({ x: wall2.x + 60, y: gy - 150, w: 240, h: 16 });   // the only step near: past the second wall
+      var pushed = 0, keys = null, x0 = c.x;
+      var a0 = aiThink; aiThink = function(f){ var o = a0.apply(this, arguments); if (f === c) keys = o; return o; };
+      for (var k = 0; k < 240; k++){ keys = null; step(); t.x = x0 - W*1.2; t.y = gy - t.r; t.vx = 0; t.vy = 0;
+        if (c.x < wall2.x && wall2.x - (c.x + c.r) < 3 && keys && keys.right) pushed++; }
+      running = false;
+      return JSON.stringify({ pushed: pushed, between: c.x > wall.x + wall.w && c.x < wall2.x });
+    })()`));
+    expect(r.pushed, 'frames pushing into the second wall').toBeLessThanOrEqual(5);
+    expect(r.between, 'still between them, over neither').toBe(true);
+  });
+
+  // FROM THE FLOOR IT JUMPED FROM. In the air, a wall's height was counted from whatever the CPU would land on, and that took a one-way
+  // platform it had only risen through for its floor: on 38e44dc a CPU that jumped from the floor beside a 300 px wall, up through a
+  // platform 150 px up, was told it was a climb, and the spare up-special took it over (Grand Plains, seeds 5 and 6, the review).
+  // Standing on that platform, the wall is a climb (150 px over it).
+  it('counts a wall from the floor it jumped from, not a one-way platform it only rose through', () => {
+    const { window: w } = loadMonolith(5);
+    const r = JSON.parse(w.eval(`(function(){ ${setup(300, 4, false)} ${STRIP}
+      worldPlats.push({ x: c.x - 30, y: gy - 150, w: 160, h: 16 });   // a one-way platform overhead, this side of the wall
+      c.controller = 'still'; step();                                 // a frame stood on the floor
+      c.x = WW*0.5; c.y = gy - 170 - c.r; c.vx = 0; c.vy = -3; c.onground = false; c.jumps = 0;   // up through the platform, jumps spent
+      var inAir = JSON.stringify(navAround(c, -1));
+      c.y = gy - 150 - c.r; c.vy = 0; c.onground = true; c.jumps = 2;                            // standing on the platform
+      var onPlat = JSON.stringify(navAround(c, -1));
+      running = false;
+      return JSON.stringify({ inAir: inAir, onPlat: onPlat });
+    })()`));
+    expect(JSON.parse(r.inAir).tall, 'risen through the platform: 300 px over the floor it jumped from').toBe(true);
+    expect(r.onPlat, 'stood on the platform: 150 px over it').toBe('{"climb":true}');
+  });
+
+  // A BLOCK FLOATING OVER THE FLOOR IS NOT A WALL. Pillars' 46 px block hangs 246 px up; counted from the floor far below it, a CPU in
+  // the air beside it with its jumps spent was told it was too tall to climb, and backed away in mid-air (38e44dc: 6 of 11 FFA runs
+  // no longer the same as main's, the review). It is answered as it always was: up near its top, a hop.
+  it('does not take a block floating over the floor for a wall', () => {
+    const { window: w } = loadMonolith(3);
+    const kind = w.eval(`(function(){
+      stage = STAGES.find(function(s){ return s.id==='grandplains'; });
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; SETTINGS.stocks=3; beginMatchNow();
+      var c = fighters[0], gy = groundY();
+      c.controller='ai'; c.you=false; c.x = WW*0.5; c.y = gy - 220 - c.r; c.vx = 0; c.vy = 0; c.onground = false; c.jumps = 0;
+      ${STRIP}
+      worldPlats.push({ x: c.x - c.r - 4 - 60, y: gy - 246, w: 60, h: 46, solid: true });
+      var k = JSON.stringify(navAround(c, -1)); running = false; return k;
+    })()`);
+    expect(kind).toBe('{"jump":true}');
+  });
+
+  // WITH NO WAY PAST FROM HERE (nothing to climb near it, no ledge to drop from), it keeps to the way it took -- off to the steps far
+  // along its side -- and does not turn back at it: on 38e44dc it turned round the moment it was 300 px off the wall (navAround looks
+  // no farther), walked back, and backed off again, 57 turns in 15 s, 284 px from the wall (review).
+  it('keeps to its other way past a 600 px one, not to and fro 300 px from it', () => {
+    const out = play(600, false, true, 600);
+    expect(out.turnsNear, 'turns 150-450 px from the wall').toBeLessThanOrEqual(4);
+    expect(out.pushed, 'frames pushing into it').toBeLessThanOrEqual(5);
+    expect(out.crossedAt, 'not climbed').toBe(-1);
+  });
+
+  // ...and not off the world. Its back to the world's edge, the wall in front and its foe just past it (the spacing approach, which
+  // clamps nothing at the world's edge): on 38e44dc it backed off to x = 25, and the off-stage recovery set in (review).
+  it.each([-1, 1])('backs off a wall only as far as the world lets it (world edge %s)', (side) => {
+    const { window: w } = loadMonolith(7);
+    const r = JSON.parse(w.eval(`(function(){
+      stage = STAGES.find(function(s){ return s.id==='grandplains'; });
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; SETTINGS.stocks=3; beginMatchNow();
+      var c = fighters[0], t = fighters[1], gy = groundY(), side = ${side};
+      c.controller='ai'; c.you=false; c._lvl=2; t.controller='still'; t.invuln=999999;
+      c.x = side > 0 ? WW - 110 : 110; c.y = gy - c.r; c.vx = 0; c.vy = 0; c.onground = true;
+      var wall = { x: side > 0 ? c.x - c.r - 4 - 22 : c.x + c.r + 4, y: gy - 600, w: 22, h: 600, solid: true, wall: true };
+      worldPlats.push(wall);
+      ${STRIP}
+      var tx = side > 0 ? wall.x - 220 : wall.x + wall.w + 220, stocks0 = c.stocks, edge = 1e9;
+      for (var k = 0; k < 400; k++){ step(); t.x = tx; t.y = gy - t.r; t.vx = 0; t.vy = 0;
+        if (!c.dead) edge = Math.min(edge, side > 0 ? WW - c.x : c.x); }
+      running = false;
+      return JSON.stringify({ edge: Math.round(edge), stocks0: stocks0, stocks: c.stocks });
+    })()`));
+    expect(r.edge, 'px from the world edge, at the closest').toBeGreaterThanOrEqual(90);
+    expect(r.stocks, 'no stock lost').toBe(r.stocks0);
   });
 });

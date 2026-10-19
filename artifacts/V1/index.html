@@ -38233,6 +38233,7 @@ function step(){
     }
     if(f._attract) magnetPullStep(f);   // Magnet's C'MON, BESTIE!: the pull, and the hit as they arrive
 
+    if(f.onground){ f._aiFloorY = f.y + f.r; f._aiFloorT = hazardT; }   // the floor its jumps go up from (aiJumpFloor, a CPU's walls)
     // ---- move ----
     if(f.hitstun<=0){
       if((inp.left && !f._pl) || (inp.right && !f._pr)) f._dirT = hazardT;
@@ -48019,35 +48020,37 @@ function navAround(f, dirX){
     const d = dirX>0 ? (p.x - f.x) : (f.x - (p.x+p.w));
     if(d>=0 && d<blockDist){ blockDist=d; block=p; }
   }
-  if(!block){ f._detour=0; return null; }
+  if(!block){ f._detour=0; return aiWallRecall(f, dirX); }
   const topGap = feet - block.y;
   // A WALL IS CLIMBED ONLY WHEN THE TWO JUMPS CLEAR IT (owner, 2026-10-18: bots should only climb walls their two jumps can clear,
-  // and for the rest, "Find another way"). Its height is counted from the floor the jumps start from, so a CPU already in the air
-  // beside it is not given a wall its jumps could not have cleared from the ground. Taller than that it is {tall}: the callers hand
-  // it to aiWallWay (up the steps on this side, off the ledge, or away), never into it. This used to call it a climb up to 320 px
+  // and for the rest, "Find another way"). Its height is counted from the floor the jumps went up from (aiWallFacts), so a CPU already
+  // in the air beside it is not given a wall its jumps could not have cleared from there. Taller than that it is {tall}: the callers
+  // hand it to aiWallWay (up the steps on this side, off the ledge, or away), never into it. This used to call it a climb up to 320 px
   // (the two jumps and the up-special) and anything taller a detour to its far side -- that is, straight into it: a CPU beside a
-  // 600 px wall on Grand Plains pressed into it, hopping, for all of the 300 frames it was watched.
-  const wallH = aiFloorUnder(f) - block.y;
-  const hop = aiRiseLeft(f, aiJumpV(f)), reach = 2*hop - 4, rise = f.onground ? 0 : aiRiseLeft(f);
-  const now = f.onground ? reach : rise + Math.max(0, f.jumps || 0)*hop - 4;   // what it can still clear from here
-  const tall = {tall:true, top:block.y, edgeX: dirX>0 ? block.x : block.x+block.w};
-  if(wallH > reach) return (topGap < 130 && topGap <= now) ? {jump:true} : tall;   // (up near its top already, on a step beside it: a hop)
-  // IN THE AIR at a wall one jump does not clear. Answered {jump} once the feet came within 130 px of its top, the second jump went
-  // off then and there, and a jump rises 120: Firey came up 5-8 px short of every wall from 150 to 260 px and never got over one
-  // (or it never went off at all: the {jump} branches hold the key down, and a key held down is not pressed again). So it is a
-  // {jump} when the rise under way clears it; while it is still rising and what is left (that rise and the jumps) clears it, a
-  // {climb}, and the second jump waits for the top of the rise (aiClimbWall); and when nothing left clears it, {tall}, so it lands
-  // on its step first instead of drifting off it into the wall -- unless it is right beside it, where aiClimbWall's spare
-  // up-special may still see it over. At the top of the rise and on the way down it is answered as it always was.
-  if(!f.onground && wallH > hop - 4){
-    if(topGap < 130 && topGap <= rise) return {jump:true};
-    if(topGap > now) return blockDist < 36 ? {climb:true} : tall;
-    if(f.vy < -1.5 && (topGap < 130 || blockDist < 36)) return {climb:true};
+  // 600 px wall on Grand Plains pressed into it, hopping, for all of the 300 frames it was watched. A block floating above the floor
+  // is not a wall (aiWallFacts: null), and is answered below as it always was.
+  const wf = aiWallFacts(f, block);
+  if(wf){
+    const tall = {tall:true, top:block.y, bottom:block.y + (block.h||16), edgeX: dirX>0 ? block.x : block.x+block.w};
+    if(wf.h > wf.reach) return (topGap < 130 && topGap <= wf.now) ? {jump:true} : tall;   // (up near its top already, on a step beside it: a hop)
+    // IN THE AIR at a wall one jump does not clear. Answered {jump} once the feet came within 130 px of its top, the second jump went
+    // off then and there, and a jump rises 120: Firey came up 5-8 px short of every wall from 150 to 260 px and never got over one
+    // (or it never went off at all: the {jump} branches hold the key down, and a key held down is not pressed again). So it is a
+    // {jump} when the rise under way clears it; while it is still rising and what is left (that rise and the jumps) clears it, a
+    // {climb}, and the second jump waits for the top of the rise (aiClimbWall); and when nothing left clears it, {tall}, so it lands
+    // on its step first instead of drifting off it into the wall -- unless it is right beside it, where aiClimbWall's spare
+    // up-special may still see it over (a wall the two jumps clear from where they went up: wf.h). At the top of the rise and on the
+    // way down it is answered as it always was.
+    if(!f.onground && wf.h > wf.hop - 4){
+      if(topGap < 130 && topGap <= wf.rise) return {jump:true};
+      if(topGap > wf.now) return blockDist < 36 ? {climb:true} : tall;
+      if(f.vy < -1.5 && (topGap < 130 || blockDist < 36)) return {climb:true};
+    }
   }
   // If the obstacle's top is not too high above our feet, hop over it.
   if(topGap < 130) return {jump:true};
-  // Wedged against a wall the two jumps clear: climb it (aiClimbWall).
-  if(blockDist < 36) return {climb:true};
+  // Wedged against a wall the two jumps clear: climb it (aiClimbWall). (A floating block, up to 320 px over the feet, as on main.)
+  if(blockDist < 36 && (wf || topGap < 320)) return {climb:true};
   // Otherwise route toward a vertical edge that actually gets us PAST the block
   // (not the edge we're already standing on) — and COMMIT to a side so we don't oscillate.
   if(!f._detour || f._detourExpire<hazardT){
@@ -48092,6 +48095,71 @@ function aiFloorUnder(f){
   for(const p of worldPlats) if(p.y >= feet - 2 && p.y < y && f.x > p.x && f.x < p.x + p.w) y = p.y;
   return y;
 }
+// The floor the fighter's jumps went up from: its feet when it stands; in the air, the floor it last stood on (f._aiFloorY, kept by
+// the physics), unless what is under it now is lower. aiFloorUnder alone took a one-way platform the fighter had just risen through,
+// and never stood on, for its floor: a CPU that last stood 300 px up, beside a 600 px wall, rose through a step above that, was told
+// the wall's top was in reach, and the spare up-special took it over (review, Grand Plains seeds 5 and 6). After 3 s in the air the
+// floor it left is forgotten.
+function aiJumpFloor(f, under){
+  if(f.onground) return f.y + f.r;
+  if(under === undefined) under = aiFloorUnder(f);
+  const y0 = f._aiFloorY;
+  return (y0 != null && hazardT - f._aiFloorT <= 180 && y0 > under) ? y0 : under;
+}
+// navAround's measure of a block in the way. A WALL is a solid that reaches down to the floor under the fighter; a block floating above
+// that floor is not one (null), and is hopped, climbed or walked round as it always was: measured from the floor far below it, a CPU
+// in the air beside Pillars' 46 px block 246 px up was told it was too tall to climb and backed away in mid-air (review: 6 of 11 FFA
+// runs no longer the same as main's). h: how far its top is over the floor the jumps went up from (aiJumpFloor). hop: one jump's
+// rise; reach: the two jumps' (aiClimbReach); rise: what the jump under way has left; now: what it can still clear from here.
+function aiWallFacts(f, p){
+  const under = aiFloorUnder(f);
+  if(p.y + (p.h||16) < under - 8) return null;
+  const hop = aiRiseLeft(f, aiJumpV(f)), reach = 2*hop - 4, rise = f.onground ? 0 : aiRiseLeft(f);
+  return { h: aiJumpFloor(f, under) - p.y, hop, reach, rise, now: f.onground ? reach : rise + Math.max(0, f.jumps || 0)*hop - 4 };
+}
+// The nearest wall the two jumps do not clear between the fighter and x, at the height it is at: navAround's {tall}, looked for all
+// the way to x rather than 300 px ahead, and keeping none of navAround's detour state. null when there is none. (steerClimb)
+function aiTallWallTo(f, x){
+  const dirX = x < f.x ? -1 : 1, feet = f.y + f.r, head = f.y - f.r;
+  let best = null, bestD = 1e9;
+  for(const p of worldPlats){
+    if(!p.solid && !p.wall) continue;
+    if(!(p.y < feet-2 && p.y + (p.h||16) > head+2)) continue;
+    if(!(dirX > 0 ? (p.x > f.x-4 && p.x < x) : (p.x+p.w < f.x+4 && p.x+p.w > x))) continue;
+    const d = dirX > 0 ? p.x - f.x : f.x - (p.x+p.w);
+    if(d >= bestD) continue;
+    const wf = aiWallFacts(f, p), topGap = feet - p.y;
+    if(!wf || wf.h <= wf.reach || (topGap < 130 && topGap <= wf.now)) continue;
+    best = { tall:true, top:p.y, bottom:p.y + (p.h||16), edgeX: dirX > 0 ? p.x : p.x+p.w }; bestD = d;
+  }
+  return best;
+}
+// Past the 300 px navAround looks ahead, the wall aiWallWay is finding another way past is still there (f._wallMem, kept while
+// aiWallWay keeps at it): a CPU walking off to a step on its side of it, or backing off it, turned round at 300 px and walked back at
+// it, and backed off again -- 57 turns in 15 s, 284 px from a 600 px wall on Grand Plains (review). Not once the CPU is past it, up
+// where its jumps clear it, above or below it, or far off.
+function aiWallRecall(f, dirX){
+  const m = f._wallMem;
+  if(!m || m.dir !== dirX || hazardT - m.t > 90) return null;
+  const feet = f.y + f.r, head = f.y - f.r;
+  if(dirX > 0 ? f.x >= m.edgeX : f.x <= m.edgeX) return null;
+  if(Math.abs(m.edgeX - f.x) > 1600 || !(m.top < feet - 2 && m.bottom > head + 2)) return null;
+  if(aiJumpFloor(f) - m.top <= aiClimbReach(f)) return null;
+  return { tall:true, top:m.top, bottom:m.bottom, edgeX:m.edgeX };
+}
+// May a CPU backing off a wall take a step that way? Not within 100 px of the world's edge (the stuck recovery's own clamp), not into
+// a solid right there, and on a single-screen stage not off the end of what it stands on.
+function aiSafeStep(f, dir){
+  const x = f.x + dir*(f.r + 12);
+  if(x < 100 || x > WW - 100) return false;
+  const feet = f.y + f.r, head = f.y - f.r;
+  for(const p of worldPlats){   // nor into a solid there: walking into one gets it nowhere (a CPU between two walls)
+    if((!p.solid && !p.wall) || !(p.y < feet - 2 && p.y + (p.h||16) > head + 2)) continue;
+    if(dir > 0 ? (p.x >= f.x && p.x - (f.x + f.r) < 6) : (p.x + p.w <= f.x && (f.x - f.r) - (p.x + p.w) < 6)) return false;
+  }
+  if(!f.onground || scrolls()) return true;
+  return worldPlats.some(p => p.y >= feet - 4 && p.y < feet + 400 && x > p.x && x < p.x + p.w) || floors.some(q => q.y >= feet - 4 && x > q.x && x < q.x + q.w);
+}
 // Up a wall navAround says to climb ({climb}, a wall the two jumps clear): press into it, jump, the second jump near the top of the
 // rise (climbJump: a jump held down is not pressed again, so holding it from the ground spends only the first). The up-special at
 // the top of the second rise is only a spare, for a CPU that comes up short of a wall its jumps should clear (it reached the wall
@@ -48105,28 +48173,35 @@ function aiClimbWall(f, inp, dir, sp){
 }
 // navAround's {tall}: a wall the two jumps do not clear stands between the fighter and goalX. FIND ANOTHER WAY (owner, 2026-10-18),
 // never into it: up the steps on this side of it toward its top (steerClimb, the ordinary climb, kept off steps past the wall; near
-// the top navAround calls it a hop or a climb), else off the ledge the fighter stands on to the floor below, else away from it, back
-// the way it came. Returns false when the wall is not in the way after all (goalX is this side of it).
+// the top navAround calls it a hop or a climb), else off the end of the floor the fighter stands on, the near end or the far one, to a
+// floor below, else back off out of navAround's reach and wait there for the way to open (the foe coming round, a step). One way is
+// kept to while it lasts (f._wallMem: navAround and aiWallRecall keep the wall in mind past the 300 px they look ahead): a CPU that
+// climbed for it is not walked back off its ledge, nor one that dropped for it sent back up, and one backing off does not pace to and
+// fro at the edge of navAround's reach. Returns false when the wall is not in the way after all (goalX is this side of it).
 function aiWallWay(f, inp, w, goalX){
   const dir = w.edgeX < f.x ? -1 : 1;
   if(dir < 0 ? goalX >= w.edgeX : goalX <= w.edgeX) return false;
+  let m = f._wallMem;
+  if(!m || m.edgeX !== w.edgeX || m.top !== w.top || hazardT - m.t > 90) m = f._wallMem = { edgeX:w.edgeX, top:w.top, bottom:w.bottom, dir, way:null };
+  m.t = hazardT; f._wallWayAt = hazardT;   // (the callers' up-special stays off while this has the keys: not up over it that way either)
   inp.left = false; inp.right = false; inp.jump = false; inp.down = false;
-  if(steerClimb(f, { x: w.edgeX - dir*(f.r + 16), y: w.top - f.r, r: f.r }, inp, w.edgeX)) return true;
+  if(m.way !== 'drop' && steerClimb(f, { x: w.edgeX - dir*(f.r + 16), y: w.top - f.r, r: f.r }, inp, w.edgeX)){ m.way = 'climb'; return true; }
   inp.left = false; inp.right = false; inp.jump = false;
   const feet = f.y + f.r;
-  if(f.onground){
-    const dropX = nearestDropX(f);
+  if(f.onground && m.way !== 'climb'){
     const below = x => (!isBig() && groundY() > feet + 40) || worldPlats.some(p => p.y > feet + 40 && x > p.x && x < p.x + p.w);
-    if(dropX != null && (dir < 0 ? dropX > w.edgeX : dropX < w.edgeX) && below(dropX)){
+    for(const dropX of [nearestDropX(f), nearestDropX(f, -dir)]){
+      if(dropX == null || (dir < 0 ? dropX <= w.edgeX : dropX >= w.edgeX) || !below(dropX)) continue;
+      m.way = 'drop';
       if(Math.abs(dropX - f.x) <= 20 && isBig() && onDropThroughPlat(f)){ inp.down = true; inp.jump = true; }   // a one-way top: through it
       else { const side = dropX !== f.x ? Math.sign(dropX - f.x) : -dir; inp.left = side < 0; inp.right = side > 0; }   // to the end, and off
       return true;
     }
   }
-  inp.left = dir > 0; inp.right = dir < 0;
+  if(Math.abs(f.x - w.edgeX) < 340 && aiSafeStep(f, -dir)){ inp.left = dir > 0; inp.right = dir < 0; }
   return true;
 }
-function navUp(f, t, wallX){
+function navUp(f, t, wallX, wallX2){
   // Find a platform the fighter can hop onto that gets it closer to a target ABOVE it.
   // Works in both single-screen (one-way tops) and big-tower mode.
   //
@@ -48143,8 +48218,10 @@ function navUp(f, t, wallX){
   // with this. (The boss arenas and the single-screen stages keep their climb.)
   const wideFFA = isBigFFA();
   const sticky = wideFFA || SETTINGS.mode === 'teams';
-  // wallX (aiWallWay): a wall the fighter cannot get through stands there, so a step wholly past it is not a step at all.
-  const past = (xL, xR) => wallX != null && (f.x < wallX ? xL >= wallX : xR <= wallX);
+  // wallX (aiWallWay, steerClimb), and wallX2 (a second one, on its other side): a wall the fighter cannot get through stands there, so
+  // a step wholly past it is not a step at all.
+  const past1 = (wx, xL, xR) => wx != null && (f.x < wx ? xL >= wx : xR <= wx);
+  const past = (xL, xR) => past1(wallX, xL, xR) || past1(wallX2, xL, xR);
   const st = sticky ? f._navStep : null;
   if(st && !f.onground && hazardT - st.t <= 50 && !past(st.xL, st.xR)){
     const feet = f.y + f.r;
@@ -48234,7 +48311,24 @@ function steerClimb(f, t, inp, wallX){
   // because a wall is overhead for most of the ascent, so the fighter kept breaking off to walk
   // sideways instead of going up and never regained the height. The doorway is instead made
   // climbable by the step built inside it (see setupWorld), which navUp finds like any other.
-  const nav = navUp(f, t, wallX);
+  let nav = navUp(f, t, wallX);
+  // NOT AT A STEP PAST A WALL THE TWO JUMPS DO NOT CLEAR. navUp picks the best step anywhere at a height it can reach, and with nothing
+  // to tell it about a wall in between, it picked one past it: in Capture the Flag (forest, seed 2) Bonesaw stood pressing into a
+  // solid whose top was 600 px over his feet, for 26 frames on end, aiming at a step on its far side (review: 114 frames of it in 2400,
+  // the general climb's, which never asked navAround). So a step past one is picked again from this side of it, and with none there
+  // aiWallWay has the keys (owner, 2026-10-18: "Find another way"). aiWallWay's own climb (wallX: the wall it is finding a way past)
+  // is held to the same: there the step it picked for the top of one wall was past another, behind it, and Cherries pressed into that
+  // one for 68 frames (forest, seed 2). Between two such walls the step is picked from between them, and with none there, there is no
+  // step (and aiWallWay, which asked, goes on to its other ways).
+  const w = aiTallWallTo(f, nav ? nav.x : t.x);
+  if(w && w.edgeX !== wallX){
+    nav = navUp(f, t, wallX != null ? wallX : w.edgeX, wallX != null ? w.edgeX : null);
+    if(nav && wallX == null){ const w2 = aiTallWallTo(f, nav.x); if(w2 && w2.edgeX !== w.edgeX) nav = navUp(f, t, w.edgeX, w2.edgeX); }
+    if(!nav){
+      if(wallX != null) return false;
+      const d = w.edgeX < f.x ? -1 : 1; aiWallWay(f, inp, w, w.edgeX + d*60); return true;
+    }
+  }
   const aimX = nav ? nav.x : t.x;
   const dxn = aimX - f.x;
   // Steering and jumping TOGETHER only on the teams arena. There it is a clear win — the platform
@@ -48261,7 +48355,7 @@ function steerClimb(f, t, inp, wallX){
 }
 // Where is the nearest gap edge on the fighter's current floor to drop through?
 // Returns an x just past the edge of the platform segment f is standing on.
-function nearestDropX(f){
+function nearestDropX(f, prefer){   // prefer (-1/1): that end of the segment instead of the nearer one (aiWallWay)
   // On a big stage a one-way platform can be dropped THROUGH, so only a solid segment needs an edge
   // and the little hop pieces are skipped. On a single-screen stage drop-through is off (the physics
   // gates it on isBig), so EVERY platform -- hop pieces included -- is one you have to walk off.
@@ -48296,6 +48390,7 @@ function nearestDropX(f){
     if(below(seg.x - past)) leftEdge = seg.x - past;
     if(below(seg.x + seg.w + past)) rightEdge = seg.x + seg.w + past;
   }
+  if(prefer) return prefer < 0 ? leftEdge : rightEdge;
   return (Math.abs(leftEdge-f.x) < Math.abs(rightEdge-f.x)) ? leftEdge : rightEdge;
 }
 
@@ -49614,7 +49709,7 @@ function aiThink(f){
     if(adx>30){ if(dx<0) inp.left=true; else inp.right=true; }
     if(dy < -90){                                   // target above — climb toward them
       steerClimb(f, t, inp);
-      if(dy<-160 && f.spCd<=0 && f.jumps<=0 && rn<0.4){ inp.special=true; inp.up=true; }
+      if(f._wallWayAt !== hazardT && dy<-160 && f.spCd<=0 && f.jumps<=0 && rn<0.4){ inp.special=true; inp.up=true; }
     } else if(dy > 130){                            // target below — drop toward them
       if(isBig()){ const gx=nearestDropX(f); if(gx!=null && Math.abs(gx-f.x)>22){ inp.left=gx<f.x; inp.right=gx>=f.x; } else if(f.onground){ inp.down=true; inp.jump=true; } }
       else if(f.onground){ const ex=nearestDropX(f); if(ex!=null){ inp.left=ex<f.x; inp.right=ex>=f.x; } }   // no drop-through here: walk off
@@ -49635,7 +49730,7 @@ function aiThink(f){
   const wantDrop  = dy > 110 && onDifferentLevel;
   if(wantClimb){
     if(steerClimb(f, t, inp)){
-      if(dy < -150 && f.spCd<=0 && (f.jumps<=0 || rn<0.3)){ inp.special=true; inp.up=true; }  // up-special boost
+      if(f._wallWayAt !== hazardT && dy < -150 && f.spCd<=0 && (f.jumps<=0 || rn<0.3)){ inp.special=true; inp.up=true; }  // up-special boost (not over a wall aiWallWay is finding another way past)
     } else {
       // No step within reach at all — steerClimb is already sliding toward the target. Spend the
       // up-special once the jumps are gone rather than drifting under them.
