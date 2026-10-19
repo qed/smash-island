@@ -4210,7 +4210,7 @@ function ctfCamSnap(f){
   const out = { x:c.x, y:c.y, ok:false };
   if(ctfInSolid(c.x, c.y)) return out;
   const sy = ctfSurfaceNear(c.x, c.y, 60, 300); if(sy === null) return out;
-  out.y = sy; out.ok = ctfHideValid(f.team, c.x, sy) && (typeof ctfAiReachable !== 'function' || ctfAiReachable(f.team, c.x, sy));
+  out.y = sy; out.ok = ctfHideValid(f.team, c.x, sy) && (typeof ctfAiReachable !== 'function' || ctfAiReachable(f.team, c.x, sy)) && !ctfOnBreakable(c.x, sy);   // (nor on a crumbling ledge or a trapdoor)
   return out;
 }
 function ctfHidePlace(f){
@@ -4222,7 +4222,7 @@ function ctfHidePlace(f){
   }
   if(fl.st === 0){
     const sy = ctfSurfaceNear(f.x, f.y + f.r, 30, 400);
-    if(sy === null || !ctfHideValid(f.team, f.x, sy) || (typeof ctfAiReachable === 'function' && !ctfAiReachable(f.team, f.x, sy))){ puff(f.x, f.y, '#888', 6); return false; }
+    if(sy === null || !ctfHideValid(f.team, f.x, sy) || (typeof ctfAiReachable === 'function' && !ctfAiReachable(f.team, f.x, sy)) || ctfOnBreakable(f.x, sy)){ puff(f.x, f.y, '#888', 6); return false; }
     ctfPlaceFlag(fl, f.x, sy); ctfSfx('place'); return true;
   }
   if(Math.hypot(f.x - fl.x, f.y - fl.y) < 130){ fl.st = 0; fl.car = f.idx; fl.cover = false; ctfSfx('pick'); return true; }   // pick it up again to move it
@@ -4251,7 +4251,7 @@ function ctfEndHide(L){
       if(o && sy !== null && ctfHideValid(o.team, o.x, sy)) ctfPlaceFlag(x, o.x, sy);
       else { let best = null, bd = 1e9; for(const sp of CTF.map.spots) if(sp.team === x.team && o){ const d = Math.hypot(sp.x - o.x, sp.y - o.y); if(d < bd){ bd = d; best = sp; } } if(best) ctfPlaceFlag(x, best.x, best.y); } } }
   for(const f of fighters) f._cam = null;
-  if(!CTF.skipNav && L.edits.some(e=>ctfEditStructural(e) && e.elev == null)){ ctfFixBegin(L); return; }   // walls and platforms were built: check the way is still open before the match starts
+  if(!CTF.skipNav && (L.edits.some(e=>ctfEditStructural(e) && e.elev == null) || ctfBreakSuspect(L))){ ctfFixBegin(L); return; }   // walls and platforms were built, or a flag may hang on something that gives way: check the way is still open before the match starts
   ctfStartPlay(L);
 }
 function ctfStartPlay(L){
@@ -4528,6 +4528,39 @@ function ctfStepTimed(L){
     }
   }
 }
+// WHAT CAN GIVE WAY UNDER A FLAG (the owner, 2026-10-19: "i made an unfeasible flag (breakable platform camp), and it didnt get flagged"): a crumbling ledge or a plug of the map (plat.tm: gone a while in a match) and
+// a trapdoor somebody built (it opens). A flag may not be hidden on one (ctfOnBreakable: the hiding refuses it as it refuses a place nobody can get to); the check at the end of the hiding asks that every flag
+// can be reached with all of them standing AND with all of them gone (ctfBreakProblems); and in a match a flag whose floor gave way anyway falls to what is under it (ctfFlagStranded, ctfFlagResettle).
+// Is (x, y) the top of such a piece, with no firm ground there as well?
+function ctfOnBreakable(x, y){
+  const L = CTF.live; let brk = false;
+  const on = (p, w)=> x >= p.x - 2 && x <= p.x + w + 2 && Math.abs(p.y - y) < 6;
+  if(L && L.timed) for(const q of L.timed) if(on(q.wp, q.w0)){ brk = true; break; }
+  if(!brk && L) for(const e of (L.edits || [])) if(e.kind === 'trapdoor' && on(e, e.w)){ brk = true; break; }
+  if(!brk) return false;
+  for(const p of worldPlats) if(!p.tm && !p.barrier && p.w > 0 && on(p, p.w)) return false;   // (firm ground there too: the flag stays up whatever goes)
+  for(const p of ctfDynSolids()) if(!p.trapdoor && !p.barrier && on(p, p.w)) return false;
+  return true;
+}
+// A flag lying still whose floor has given way (a crumbling ledge or a plug gone a while, a trapdoor open) with nothing else under it.
+function ctfFlagStranded(L, fl){
+  let gone = false;
+  for(const q of (L.timed || [])) if(q.st === 2 && fl.x >= q.wp.x - 2 && fl.x <= q.wp.x + q.w0 + 2 && Math.abs(q.wp.y - fl.y) < 6){ gone = true; break; }
+  if(!gone) for(const e of (L.edits || [])) if(e.kind === 'trapdoor' && e.open && fl.x >= e.x - 2 && fl.x <= e.x + e.w + 2 && Math.abs(e.y - fl.y) < 6){ gone = true; break; }
+  return gone && ctfSurfaceBelow(fl.x, fl.y, 4) === null;
+}
+// A hidden flag that fell is hidden where it came down, if its side may hide one there and the other side can get to it; else (or if it fell out of the world) at the nearest prepared place of its
+// side that is such a place and is not on something that gives way.
+function ctfFlagResettle(L, fl, lost){
+  const t = fl.team, ok = (x, y)=>ctfHideValid(t, x, y) && ctfAiReachable(t, x, y);
+  if(!lost && ok(fl.x, fl.y)){ ctfPlaceFlag(fl, fl.x, fl.y); return; }
+  let best = null, bd = 1e9, any = null, ad = 1e9;
+  for(const q of CTF.map.spots){ if(q.team !== t) continue; const d = Math.hypot(q.x - fl.x, q.y - fl.y);
+    if(d < ad){ ad = d; any = q; }
+    if(d < bd && ok(q.x, q.y) && !ctfOnBreakable(q.x, q.y)){ bd = d; best = q; } }
+  const q = best || any; if(!q) return;
+  ctfPlaceFlag(fl, q.x, q.y); if(L.seen) L.seen[1 - t][fl.id] = false; if(L.foundAt) delete L.foundAt[1 - t][fl.id];   // (somewhere else: what the other side saw of it no longer holds)
+}
 function ctfStepElevs(L){
   ctfStepWheels(L);
   for(const e of L.elevs){
@@ -4599,11 +4632,12 @@ function ctfStepFlags(L){
       if(fl.team !== c.team && (c.team === 0 ? c.x < mid - 40 : c.x > mid + 40)) ctfCapture(L, fl, c);
       continue;
     }
+    if(!fl.fall && fl.elev == null && fl.pad == null && ctfFlagStranded(L, fl)){ fl.fall = true; fl.vy = 0; }   // its floor gave way under it (hidden or dropped): it falls
     if(fl.fall){
       fl.vy += 0.5; fl.y += fl.vy;
       const s = ctfSurfaceBelow(fl.x, fl.y - fl.vy - 4, 300);
-      if(s !== null && fl.y >= s){ fl.y = s; fl.fall = false; fl.vy = 0; fl.elev = ctfLiftUnder(L, fl.x, fl.y); }
-      else if(fl.y > CTF.map.WH + 100) ctfReturnFlag(fl);
+      if(s !== null && fl.y >= s){ fl.y = s; fl.fall = false; fl.vy = 0; fl.elev = ctfLiftUnder(L, fl.x, fl.y); if(fl.st === 1) ctfFlagResettle(L, fl); }
+      else if(fl.y > CTF.map.WH + 100){ if(fl.st === 1) ctfFlagResettle(L, fl, true); else ctfReturnFlag(fl); }
     }
     for(const f of fighters){
       if(f._jail != null) continue;
@@ -4669,7 +4703,7 @@ function ctfCamFighter(you){ if(you._cam && CTF.live && CTF.live.phase === 'hide
 function ctfPing(f){ const L = CTF.live; let id = f._lastFlagSeen; if(!(id >= 0) || !L.seen[f.team][id] || L.flags[id].st === 4) id = L.flags.findIndex(q=>q.team !== f.team && L.seen[f.team][q.id] && q.st !== 4 && q.st !== 2); if(id >= 0){ L.ping[f.team] = { id, t:420 }; ctfSfx('pick'); } }
 // Dropped and lying on its own side's ground, an own flag is hidden again where its carrier stands (it must be somewhere a fighter can reach)
 function ctfPlaceCarried(f){ const L = CTF.live, fl = L.flags[f._cf]; if(!fl) return false; const sy = ctfSurfaceBelow(f.x, f.y + f.r - 10, 500);
-  if(sy === null || !ctfHideValid(f.team, f.x, sy) || !ctfAiReachable(f.team, f.x, sy)){ puff(f.x, f.y, '#888', 6); return false; }
+  if(sy === null || !ctfHideValid(f.team, f.x, sy) || !ctfAiReachable(f.team, f.x, sy) || ctfOnBreakable(f.x, sy)){ puff(f.x, f.y, '#888', 6); return false; }
   ctfPlaceFlag(fl, f.x, sy); f._cf = -1; L.seen[1 - f.team][fl.id] = false; delete L.foundAt[1 - f.team][fl.id]; ctfSfx('place'); return true; }
 function ctfStepDamageJail(L){
   const thr = ctfJailThreshold(L.n), mid = L.map.WW/2;
@@ -4804,7 +4838,8 @@ function ctfSfx(kind){
 // kinds of that tool); Space uses it where the cursor is. Everything is paid for out of the player's points. Decorations, traps, thin platforms and walls
 // are placed on the player's own side only, and "must be possible": when the hiding ends the pieces are checked against the CPU graph (the same reach test the
 // flags pass) and any that make a flag, the jail or a key unreachable are taken away, one piece at a time, the smallest that opens a way first, until all is reachable again (ctfFixStep). In that graph
-// a wall jump is a move (the owner, 2026-10-18: "Count wall jumps"; ctfWjCtl).
+// a wall jump is a move (the owner, 2026-10-18: "Count wall jumps"; ctfWjCtl). A flag must be reachable with everything that can give way (a crumbling ledge, a trapdoor) standing AND gone, and may
+// not rest on such a piece (the owner, 2026-10-19: "breakable platform camp"; ctfBreakProblems).
 const CTF_EDIT_PTS = 20;
 // STUN PADS WEAR THIN IN A CROWD (the owner, 2026-10-16: "if there are more than 5 stunpads in 1 area, then stuntime should be reduced"): a pad's stun is
 // CTF_STUN steps while its side has at most CTF_STUN_FREE pads in the area around it (CTF_STUN_AREA: about a room), and shrinks in proportion beyond that
@@ -5045,6 +5080,70 @@ function ctfEditProblems(L, nav){
   for(const j of L.jails){ const d = j.door, n = at(d.x + (j.face === 1 ? d.w + 50 : -50), d.y + d.h); if(!n || !nav.reach[1 - j.owner][n.id]) bad.push('jail' + j.owner); }
   return bad;
 }
+// THE SECOND PASS: EVERYTHING THAT CAN GIVE WAY GONE (the owner, 2026-10-19: a flag high between two tall columns on a breakable platform "didnt get flagged"; once it broke the flag hung in the air). The
+// graphs count a crumbling ledge and a plug as ground (they are, most of the time), so the check asks again with all of them gone: a flag must be reachable both ways, and a flag resting on one (or
+// on a trapdoor) never passes (ctfOnBreakable). The wall jumps count in both. The second answer is read off the first graph where it can be (ctfNavReachA: the same moves, the places on such pieces
+// and the moves onto them left out; a one-way ledge stops nothing that passes it, so a yes there is a yes); only where that says no is the graph without them made (ctfNavBroken: the places that had
+// a move onto one are probed again, the rest keep theirs).
+function ctfMapBreaks(M){ return !!(M && M.plats.some(p=>p.tm)); }
+function ctfNavReachA(nav){
+  if(nav.reachA) return nav.reachA;
+  if(!ctfMapBreaks(nav.M)) return nav.reachA = nav.reach;
+  const out = [null, null], brk = id=>{ const p = nav.nodes[id].p; return !!(p && p.tm); };
+  for(const t of [0, 1]){
+    const seen = new Uint8Array(nav.nodes.length), q = [];
+    for(const sp of nav.M.homes[t].spawns){ const n = ctfNavNodeAt(nav, sp.x, sp.y, 12); if(n && !brk(n.id) && !seen[n.id]){ seen[n.id] = 1; q.push(n.id); } }
+    while(q.length){ const id = q.pop(); for(const e of nav.nodes[id].edges){ if(e.doors.some(d=>d[0] === 'J') || seen[e.to] || brk(e.to)) continue; seen[e.to] = 1; q.push(e.to); } }
+    out[t] = seen;
+  }
+  return nav.reachA = out;
+}
+function ctfNavBroken(nav){
+  if(!nav.navB){ const M = nav.M, MB = Object.assign({}, M, { plats:M.plats.filter(p=>!p.tm) }); nav.navB = ctfNavNew(MB, nav, [], nav.fineRects || (nav.diffRects && nav.diffRects.length ? nav.diffRects : undefined)); }
+  return nav.navB;
+}
+// The flags (ids: only these; null: all) that the second pass says cannot be reached: one resting on something that gives way, or one that only a way over such things reaches. (One not reached even
+// with everything standing is ctfEditProblems' to say.) Needs the graph without them where ctfFixBReady made it.
+function ctfBreakProblems(L, nav, ids){
+  const bad = [], rA = ctfNavReachA(nav), nB = nav.navB && nav.navB.ready ? nav.navB : null;
+  for(const fl of L.flags){
+    if(fl.st !== 1 || fl.elev != null || fl.pad != null || (ids && !ids.has(fl.id))) continue;
+    const t = 1 - fl.team, n = ctfNavNodeAt(nav, fl.x, fl.y, 10); if(!n || !nav.reach[t][n.id]) continue;
+    if(ctfOnBreakable(fl.x, fl.y)){ bad.push('flag' + fl.id); continue; }
+    if(rA[t][n.id]) continue;
+    const m = nB && ctfNavNodeAt(nB, fl.x, fl.y, 10); if(!m || !nB.reach[t][m.id]) bad.push('flag' + fl.id);
+  }
+  return bad;
+}
+function ctfFixBReady(L, nav, ids){   // the graph without what gives way, made a slice a step, when a flag needs it: true once nothing is waiting for it
+  if(!ctfMapBreaks(nav.M)) return true;
+  const rA = ctfNavReachA(nav);
+  const need = L.flags.some(fl=>{ if(fl.st !== 1 || fl.elev != null || fl.pad != null || (ids && !ids.has(fl.id))) return false; const t = 1 - fl.team, n = ctfNavNodeAt(nav, fl.x, fl.y, 10); return !!(n && nav.reach[t][n.id] && !rA[t][n.id] && !ctfOnBreakable(fl.x, fl.y)); });
+  if(!need) return true;
+  const nb = ctfNavBroken(nav); if(nb.ready) return true;
+  ctfNavTick(nb, 80, 6); return false;
+}
+// The flags the second pass passes with nothing built: only for those is a failure the pieces' doing, so only those can make the check take a piece away. The rest (on a crumbling ledge, past a
+// rotten bridge, on a built piece) are put right when the check is over, by the rule for a flag with no road (ctfFixFinish): to the nearest prepared place that passes both.
+function ctfFixBInit(L, F){
+  const base = CTF.navs && CTF.navs[ctfNavId()]; if(!base){ F.bOK = new Set(); return true; }
+  if(!base.ready){ ctfNavTick(base, 80, 6); return false; }
+  if(!ctfFixBReady(L, base, null)) return false;
+  const bad = ctfBreakProblems(L, base, null);
+  F.bOK = new Set(L.flags.filter(fl=>{ const n = ctfNavNodeAt(base, fl.x, fl.y, 10); return !!(n && base.reach[1 - fl.team][n.id]) && bad.indexOf('flag' + fl.id) < 0; }).map(fl=>fl.id));
+  return true;
+}
+function ctfFixProblems(L, F, nav){ const bad = ctfEditProblems(L, nav); for(const b of ctfBreakProblems(L, nav, F.bOK)) if(bad.indexOf(b) < 0) bad.push(b); return bad; }
+// With nothing built, does any flag lie on something that gives way, or (read off the map's graph) need a way over such things? Then the check runs all the same.
+function ctfBreakSuspect(L){
+  const nav = CTF.nav, rd = !!(nav && nav.ready && ctfMapBreaks(nav.M));
+  for(const fl of L.flags){
+    if(fl.st !== 1 || fl.elev != null || fl.pad != null) continue;
+    if(ctfOnBreakable(fl.x, fl.y)) return true;
+    if(rd){ const t = 1 - fl.team, n = ctfNavNodeAt(nav, fl.x, fl.y, 10); if(n && nav.reach[t][n.id] && !ctfNavReachA(nav)[t][n.id]) return true; }
+  }
+  return false;
+}
 // A CPU that has built does not end the hiding until the graph with its pieces in it is made (the check at the end then takes a moment): at most 40 s more.
 function ctfPrebuildWait(L){ return !!(L.pre && L.pre.seq === L.editSeq && !L.pre.nav.ready && L.t - L.editT < 2400); }
 function ctfEditPrebuild(L){   // while they are still hiding: once the edits have been left alone for a couple of seconds, start the graph with them in it
@@ -5056,7 +5155,7 @@ function ctfEditPrebuild(L){   // while they are still hiding: once the edits ha
 function ctfFixBegin(L){
   const st = L.edits.filter(e=>ctfEditStructural(e) && e.elev == null).sort((a, b)=>a.seq - b.seq);
   L.phase = 'fix'; ctfRebuildDyn(L); L.fixGone = [];
-  L.fix = { st, set:st.slice(), lo:0, hi:null, keep:st.length, navs:{}, culprits:0, mode:'' };
+  L.fix = { st, set:st.slice(), lo:0, hi:null, keep:st.length, navs:{}, culprits:0, mode:'', bOK:null };
   if(L.pre && L.pre.seq === L.editSeq && L.pre.n === st.length) L.fix.navs[ctfFixKey(L.fix, st.length)] = L.pre.nav;
 }
 function ctfFixKey(F, k){ return F.set.slice(0, k).map(e=>e.id).join(','); }
@@ -5084,9 +5183,10 @@ function ctfFixCands(L, F, nav, bad){
   }
   if(!pts.length) return [];
   const sides = [0, 1].filter(t=>pts.some(p=>p.sides.indexOf(t) >= 0));
+  const rA = ctfNavReachA(nav);   // (and the same with everything that can give way gone)
   const between = e=>{
-    for(const t of sides){
-      const rc = nav.reach[t]; if(!rc) continue; let a = false, b = false;
+    for(const t of sides) for(const rc of (rA[t] === nav.reach[t] ? [nav.reach[t]] : [nav.reach[t], rA[t]])){
+      if(!rc) continue; let a = false, b = false;
       for(let bk = ctfNavBucket(e.x - 150); bk <= ctfNavBucket(e.x + e.w + 150); bk++) for(const n of (nav.nb[bk] || [])){
         if(n.x1 < e.x - 150 || n.x0 > e.x + e.w + 150 || n.y < e.y - 220 || n.y > e.y + e.h + 260) continue;
         if(rc[n.id]) a = true; else b = true;
@@ -5113,7 +5213,8 @@ function ctfFixTry(L, F){
   const e = F.cands[F.ci], rest = F.set.filter(q=>q !== e), key = rest.map(q=>q.id).join(',');
   const nav = F.navs[key] || (F.navs[key] = rest.length ? ctfEditNavLess(L, rest, e, F.full) : CTF.navs[ctfNavId()]);
   if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
-  const bad = rest.length ? ctfEditProblems(L, nav) : [];
+  if(rest.length && !ctfFixBReady(L, nav, F.bOK)) return;
+  const bad = rest.length ? ctfFixProblems(L, F, nav) : [];
   if(!bad.length){ ctfFixDrop(L, F, e, nav); return; }
   const fixed = F.bad.filter(b=>bad.indexOf(b) < 0).length, worse = bad.some(b=>F.bad.indexOf(b) < 0);
   if(fixed > 0 && !worse && (!F.best || fixed > F.best.fixed)) F.best = { e, nav, fixed };
@@ -5121,17 +5222,19 @@ function ctfFixTry(L, F){
 }
 function ctfFixStep(L){
   const F = L.fix; if(!F){ ctfStartPlay(L); return; }
+  if(F.bOK == null && !ctfFixBInit(L, F)) return;
   if(F.mode === 'try'){ ctfFixTry(L, F); return; }
   const key = ctfFixKey(F, F.keep);
   const nav = F.navs[key] || (F.navs[key] = F.keep === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.keep, F.set));
   if(!nav.ready){ ctfNavTick(nav, 80, 6); return; }
-  const bad = F.keep === 0 ? [] : ctfEditProblems(L, nav);
+  if(F.keep > 0 && !ctfFixBReady(L, nav, F.bOK)) return;
+  const bad = F.keep === 0 ? [] : ctfFixProblems(L, F, nav);
   if(bad.length && F.hi === null && F.keep === F.set.length && !CTF.fixOld){   // the whole of what is left, and something cannot be reached: the pieces one at a time, the smallest first
     const cands = ctfFixCands(L, F, nav, bad);
     if(cands.length){ F.mode = 'try'; F.full = nav; F.bad = bad; F.cands = cands; F.ci = 0; F.best = null; return; }
   }
   if(bad.length) F.hi = F.keep; else F.lo = F.keep;
-  if(F.hi === null){ F.final = F.set.length; ctfFixFinish(L); return; }   // everything that is left is fine
+  if(F.hi === null){ if(!ctfFixBReady(L, nav, null)) return; F.final = F.set.length; ctfFixFinish(L); return; }   // everything that is left is fine (the second pass made ready for every flag: the end puts right any it fails)
   if(F.hi - F.lo <= 1){ ctfFixDrop(L, F, F.set[F.lo], null); return; }   // the piece at lo seals: out it goes alone, and the whole of the rest is looked at again
   F.keep = Math.floor((F.lo + F.hi)/2);
 }
@@ -5141,10 +5244,16 @@ function ctfFixFinish(L){
   ctfRebuildDyn(L); ctfEditSettle(L);
   const nav = F.navs[ctfFixKey(F, F.set.length)] || (F.set.length === 0 ? CTF.navs[ctfNavId()] : ctfEditNav(L, F.set.length, F.set));
   L.fix = null;
-  // a flag that now has no road to it (it sat on something that went) goes to the nearest prepared place that has one
-  if(nav.ready) for(const fl of L.flags) if(fl.st === 1 && fl.elev == null){ const n = ctfNavNodeAt(nav, fl.x, fl.y, 10); if(n && nav.reach[1 - fl.team][n.id]) continue;
-    let best = null, bd = 1e9; for(const s of CTF.map.spots) if(s.team === fl.team){ const m = ctfNavNodeAt(nav, s.x, s.y, 10); if(m && nav.reach[1 - fl.team][m.id]){ const d = Math.hypot(s.x - fl.x, s.y - fl.y); if(d < bd){ bd = d; best = s; } } }
-    if(best) ctfPlaceFlag(fl, best.x, best.y); }
+  // a flag that now has no road to it (it sat on something that went), or none once everything that can give way is gone (it rests on a crumbling ledge or a trapdoor, or only a way over them gets
+  // there), goes to the nearest prepared place that has one both ways (or, if no prepared place has, one with a road)
+  if(nav.ready){
+    const rA = ctfNavReachA(nav), nB = nav.navB && nav.navB.ready ? nav.navB : null;
+    const okB = (t, x, y, n)=>{ if(ctfOnBreakable(x, y)) return false; if(rA[t][n.id]) return true; const m = nB && ctfNavNodeAt(nB, x, y, 10); return !!(m && nB.reach[t][m.id]); };
+    for(const fl of L.flags) if(fl.st === 1 && fl.elev == null){ const t = 1 - fl.team, n = ctfNavNodeAt(nav, fl.x, fl.y, 10); if(n && nav.reach[t][n.id] && (fl.pad != null || okB(t, fl.x, fl.y, n))) continue;
+      let best = null, bd = 1e9, road = null, rd = 1e9;
+      for(const s of CTF.map.spots) if(s.team === fl.team){ const m = ctfNavNodeAt(nav, s.x, s.y, 10); if(m && nav.reach[t][m.id]){ const d = Math.hypot(s.x - fl.x, s.y - fl.y); if(d < rd){ rd = d; road = s; } if(d < bd && okB(t, s.x, s.y, m)){ bd = d; best = s; } } }
+      if(best || road) ctfPlaceFlag(fl, (best || road).x, (best || road).y); }
+  }
   if(F.final > 0){ CTF.nav = nav; try{ ctfAiBegin(L, nav); }catch(e){ console.error('ctfAiBegin', e); } }
   ctfStartPlay(L);
 }
@@ -9972,11 +10081,11 @@ function ctfAiHide(f, ai, L, nav, inp, now){
   if(!ai.hide){
     const M = L.map, pts = ctfNavSweep(nav, f.team);
     const taken = L.ai.hideTaken, cand = [];
-    for(const s of M.spots) if(s.team === f.team && !taken['s' + s.x + ',' + s.y]) cand.push(s);
+    for(const s of M.spots) if(s.team === f.team && !taken['s' + s.x + ',' + s.y] && !ctfOnBreakable(s.x, s.y)) cand.push(s);   // (never on a crumbling ledge: ctfOnBreakable)
     if(L.plans && !CTF.oldBuild){ const c2 = ctfPlanHideCands(f, cand, nav, M); cand.length = 0; for(const q of c2) cand.push(q); }   // (the plan's: the side's flags grouped round one defended area, a few behind a door or in water or on ice)
     // a few take an ordinary place instead of a prepared one
     const kitFl = typeof ctfKitHasFlag === 'function' && ctfKitHasFlag(f);   // (a kit named the place: no ordinary place, no mill gamble)
-    const own = pts.filter(p=>!p.cover && ctfHideValid(f.team, p.x, p.y) && ctfAiReachable(f.team, p.x, p.y));
+    const own = pts.filter(p=>!p.cover && ctfHideValid(f.team, p.x, p.y) && ctfAiReachable(f.team, p.x, p.y) && !ctfOnBreakable(p.x, p.y));
     let pick = null;
     cand.sort((a, b)=>Math.hypot(a.x - f.x, (a.y - f.y)*1.5) - Math.hypot(b.x - f.x, (b.y - f.y)*1.5));
     const mo = ctfNavMoverOnly(nav), wo = cand.filter(s=>{ const n = ctfNavNodeAt(nav, s.x, s.y, 14); return n && mo[n.id] && nav.reach[f.team][n.id]; });   // (a place only a mover reaches, like the mill hall: some hide there, when it is not too far to go in the time there is)
