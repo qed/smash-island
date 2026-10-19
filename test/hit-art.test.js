@@ -313,7 +313,7 @@ describe('traps, shots and lingering zones: a disc of exactly pr.r', () => {
     expect(r.zone).toEqual([2, 'poison']);
     expect(r.zs).toEqual({ Pen: 'slick', Firey: 'burn', Marker: 'slow' });
     expect(r.never, 'a prop that never arms draws no reach').toBe(0);
-    expect(r.boss, "a boss's shots keep their own marks").toBe(0);
+    expect(r.boss, "a boss's flying shot carries its true disc too (audit C: its art was up to 3x what hits)").toBe(1);
     expect(r.assist).toBe(3);
     expect(r.net).toEqual([2, 0, 'poison']);
   });
@@ -368,5 +368,169 @@ describe('Final Smash rings and assist trophies', () => {
     expect(r.vortex.hits, 'every blade hit lands on a frame the ring flashes').toBe(r.vortex.ticks);
     expect(r.rush).toEqual({ w: 2 * (r.sr + 34), h: 2 * (r.sr + 30), cx: 0, cy: 0 });
     expect(r.flash).toEqual(['c260', 'ray']);
+  });
+});
+
+// ---- phase 3: per-fighter specials, down-specials, finishers and older smashes, and the bosses (audit B1-B3, C) ----
+
+// The moves that test their own circle or box (no hitCircle, so the hitbox view never saw them): the shape each draws on the press frame
+// is where it lands. The foe is a standard body (HURT_R0 round, no traced outline), level with the shape, slid until its outline is 1.5 px
+// inside, then 1.5 px outside, the drawn edge straight ahead (a cut disc's round front, a box's far side). Centre-judged moves are drawn at
+// a standard body's edge, so the same probe holds for them.
+const P3_HIT = 'D.pct !== 30 || D.hitstun > 0 || D._stunFx > 0 || D.weakened > 0 || D.slowed > 0 || D.ctrlRev > 0 || Math.abs(D.vx) > 0.5 || D._blackmailBy != null';
+const P3 = [
+  ['Coiny', 'doSpecial(A)', 'slap'], ['Yellow Face', 'doSpecial(A)', 'buynow'], ['Marker', 'doSpecial(A)', 'ink'], ['Teardrop', 'doSpecial(A)', 'kick'],
+  ['Bomby', 'doSpecial(A)', 'bomb'], ['Marshmallow', 'doSpecial(A)', 'scream'], ['Nickel (II)', 'doSpecial(A)', 'snark'], ['Paper', 'A._evil = 100; doSpecial(A)', 'rip'],
+  ['Baseball', 'doSpecial(A)', 'heavy'], ['Fern', 'doSpecial(A)', 'vine'], ['Sidewalky', 'doSpecial(A)', 'slam'], ['Balloony', 'doSpecial(A)', 'airleak'],
+  ['Liy', 'doSpecial(A)', 'switch'], ['Blueberry', 'doSpecial(A)', 'catch'], ['Trophy', 'doSpecial(A)', 'photo'], ['Goo', 'doSpecial(A)', 'engulf'],
+  ['Balloon', 'doDownSpecial(A)', 'airrel'], ['Lightbulb', 'doDownSpecial(A)', 'flash'], ['Salt', 'doDownSpecial(A)', 'stamp'], ['Dora', 'doDownSpecial(A)', 'rantStun'],
+  ['Jack', 'doDownSpecial(A)', 'glare'], ['Candle', 'doDownSpecial(A)', 'chime'], ['Bomb', 'doDownSpecial(A)', 'shout'], ['Marshmallow', 'doDownSpecial(A)', 'dropout'],
+  ['Bonesaw', 'doDownSpecial(A)', 'monster'], ['Apple', 'var mr = Math.random; Math.random = function(){ return 0.5; }; try { doDownSpecial(A); } finally { Math.random = mr; }', 'split'],
+  ['Teardrop', 'doAttackSpecial(A)', 'kick'], ['Bomby', 'doAttackSpecial(A)', 'blast'],
+  ['Firey', 'doAttackSpecial(A)', 'burn', 'D.burn > 0'], ['Book', 'doAttackSpecial(A)', 'define', 'D.defineStacks > 0'], ['Golf Ball', 'doAttackSpecial(A)', 'curse', 'D.curseStacks > 2'],
+];
+const p3Shape = (who, cast, key) => page(who, 300, 0, `
+  ${cast}; var e = HIT_ART.find(function(q){ return q.k === A.idx + ':' + ${JSON.stringify(key)}; });
+  return e ? { sh:e.sh, live:e.m === 'l' && e.t === hazardT, ax:A.x, ay:A.y } : null;`);
+const p3Probe = (who, cast, sh, ax, ay, gap, hit) => page(who, 300, 0, `
+  var dx = A.x - ${ax}, dy = A.y - ${ay}, s = ${JSON.stringify(sh)};
+  D.hurt = null; D.r = HURT_R0; D.onground = true; D.invuln = 0;
+  if (s.kind === 'box'){ D.x = s.x + s.w + HURT_R0 + (${gap}) + dx; D.y = s.y + s.h/2 + dy; }
+  else { D.x = s.x + s.r + HURT_R0 + (${gap}) + dx; D.y = s.y + dy; }
+  D.vx = 0; D.vy = 0;
+  ${cast};
+  return { hit: !!(${hit || P3_HIT}) };`);
+
+describe('per-fighter moves: what each draws is where it lands', () => {
+  it.each(P3)('%s %s (%s)', (who, cast, key, hit) => {
+    const g = p3Shape(who, cast, key);
+    expect(g, `${who} draws its '${key}'`).not.toBeNull();
+    expect(g.live, 'on the frame it lands').toBe(true);
+    const inside = p3Probe(who, cast, g.sh, g.ax, g.ay, -1.5, hit), outside = p3Probe(who, cast, g.sh, g.ax, g.ay, 1.5, hit);
+    expect(inside.hit, `${who} ${key}: a body 1.5 px inside the drawn ${g.sh.kind} is reached`).toBe(true);
+    expect(outside.hit, `${who} ${key}: 1.5 px outside it is not`).toBe(false);
+  });
+
+  it("a centre limit cuts the disc where a standard body touching it has its centre on the limit (Yellow Face's pitch: foes ahead only)", () => {
+    const r = page('Yellow Face', 300, 0, `
+      doSpecial(A); var e = HIT_ART.find(function(q){ return q.k === A.idx + ':buynow'; }); return { sh:e.sh, ax:A.x };`);
+    expect(r.sh.kind).toBe('cut');
+    expect(r.sh.x0).toBeCloseTo(r.ax + 24, 6);   // centres must be ahead of his: a body touching the cut has its centre on his
+  });
+
+  it("picks and holds: a ray or a tether to whoever was picked, following them; a miss shows how far it looked", () => {
+    const r = page('Rose', 200, 0, `
+      var out = {};
+      doSpecial(A); var e = HIT_ART.find(function(q){ return q.k === A.idx + ':thorn'; }); out.thorn = e ? { s:e.s, to:e.to } : null;
+      return out;`);
+    expect(r.thorn).toEqual({ s: 'tether', to: 1 });
+    const y = page('Yellow Face', 600, 0, `
+      doDownSpecial(A); var e = HIT_ART.find(function(q){ return q.k === A.idx + ':weaken'; }); return e ? { kind:e.sh.kind, r:e.sh.r, s:e.s } : null;`);
+    expect(y).toEqual({ kind: 'circle', r: 176, s: 'zone' });   // the nearest within 200 (centre to centre), drawn at a standard body's edge
+    const z = page('Lightning', 200, 0, `
+      doSpecial(A); return HIT_ART.filter(function(q){ return /:zap\\d$/.test(q.k); }).map(function(q){ return q.s; });`);
+    expect(z).toEqual(['strike']);
+  });
+
+  it("Candle's hold: a tether on the held foe, the slam it may become told round them and filling in, and that ring as it releases", () => {
+    const r = page('Candle', 120, 0, `
+      doSpecial(A); var ps = [], tethers = 0, ring = null;
+      for (var i=0;i<40;i++){ step(); if(A._windup && A._windup.sh) ps.push(A._windup.sh.p);
+        if(HIT_ART.some(function(q){ return q.k === A.idx + ':grip' && q.t === hazardT && q.to === D.idx; })) tethers++;
+        var s = HIT_ART.find(function(q){ return q.k === A.idx + ':slam' && q.t === hazardT; }); if(s && !ring) ring = { r:s.sh.r, want: 50 + D.r - HURT_R0 }; }
+      return { ps:ps, tethers:tethers, ring:ring };`);
+    expect(r.tethers).toBeGreaterThan(10);
+    expect(r.ps.length).toBeGreaterThan(10);
+    for (let i = 1; i < r.ps.length; i++) expect(r.ps[i]).toBeGreaterThanOrEqual(r.ps[i - 1]);
+    expect(r.ring && r.ring.r).toBe(r.ring && r.ring.want);
+  });
+
+  it("Flower's stomp: a crest on her floor exactly as long as it reaches a grounded foe", () => {
+    const probe = (gap) => page('Flower', 300, 0, `
+      D.hurt = null; D.r = HURT_R0; D.x = A.x + 96 + HURT_R0 + (${gap}); D.onground = true; D.vx = 0;
+      doDownSpecial(A); var e = HIT_ART.find(function(q){ return q.k === A.idx + ':quake0'; });
+      return { box: e ? [e.sh.x - A.x, e.sh.w, e.sh.y + e.sh.h - groundY()] : null, hit: D.pct !== 30 };`);
+    const inside = probe(-1.5), outside = probe(1.5);
+    expect(inside.box).toEqual([-96, 192, 0]);
+    expect(inside.hit).toBe(true);
+    expect(outside.hit).toBe(false);
+  });
+
+  it("Bow's teleport pop is her outline grown by its reach; Puffball's dive marks where it lands; Naily's jab back is drawn behind her", () => {
+    const b = page('Bow', 900, 0, `
+      A.y = groundY() - 200; A._tp = { ax:0, ay:-1 }; teleportArrive(A);
+      var e = HIT_ART.find(function(q){ return q.k === A.idx + ':tp'; }); if(!e) return null;
+      var worst = 0; for (var i=0;i<e.sh.pts.length;i+=2) worst = Math.max(worst, Math.abs(hurtGap(A, e.sh.pts[i], e.sh.pts[i+1]) - TP.reach));
+      return { n:e.sh.pts.length/2, worst:worst };`);
+    expect(b.n).toBe(48);
+    expect(b.worst).toBeLessThan(0.6);
+    const p = page('Puffball', 900, 0, `
+      A.y = groundY() - 260; A.onground = false; doSmash(A); for (var i=0;i<3;i++) step();
+      var e = HIT_ART.find(function(q){ return q.k === A.idx + ':meteorLand' && q.t === hazardT; });
+      return e ? { tell:e.m, y:e.sh.y - groundY(), r:e.sh.r - A.r } : null;`);
+    expect(p).toEqual({ tell: 't', y: 0, r: 40 });
+    const n = page('Naily', 900, 0, `
+      doSmash(A); var e = null; for (var i=0;i<20 && !e;i++){ step(); e = HIT_ART.find(function(q){ return q.k === A.idx + ':nail' && q.t === hazardT; }); }
+      return e ? { dx:(e.sh.x - A.x)*A.face, r:e.sh.r - A.r } : null;`);
+    expect(n).toEqual({ dx: -30, r: 30 });
+  });
+
+  it('the wire: a cut disc, an outline and a tether come back the same', () => {
+    const r = page('Coiny', 400, 0, `
+      var a = hitArt(A, 'w1', haAhead(A, A.x + 40, A.y, 50, 0, 70), {});
+      var b = hitArt(A, 'w2', { kind:'poly', pts:[1, 2, 30.5, 4, 12, 40] }, {});
+      var c = hitArt(A, 'w3', { kind:'capsule', x1:1, y1:2, x2:3, y2:4, r:3 }, { style:'tether', to:D.idx });
+      function back(e){ return haUnpack(JSON.parse(JSON.stringify(haPack(e)))); }
+      var A2 = back(a), B2 = back(b), C2 = back(c);
+      return { cut: [A2.sh.kind, A2.sh.r, A2.sh.x0 - a.sh.x0, A2.sh.y1 - a.sh.y1], poly: B2.sh.pts, to: C2.to, s: C2.s };`);
+    expect(r.cut[0]).toBe('cut');
+    expect(r.cut[1]).toBe(50);
+    expect(Math.abs(r.cut[2])).toBeLessThan(0.06);
+    expect(Math.abs(r.cut[3])).toBeLessThan(0.06);
+    expect(r.poly).toEqual([1, 2, 30.5, 4, 12, 40]);
+    expect(r.to).toBe(1);
+    expect(r.s).toBe('tether');
+  });
+});
+
+describe("bosses: each tell is the area that lands", () => {
+  it("Two's POWER DRAIN: told round him at its true reach through the read's wind-up, white once locked, and drawn full size as it lands", () => {
+    const r = page('Coiny', 400, 0, `
+      var calls = [], P0 = haPaint; haPaint = function(sh, o){ calls.push({ kind:sh.kind, r:sh.r, tell:!!o.tell, col:o.col }); };
+      try {
+        var b = { x:600, y:300, r:60, attack:'two', _telKind:'two', _tel:20, _telPh:3, _phase:3, _hz:{ rd:[400, 300, 1, 0, 0, hazardT - 16, 0] } };
+        twoDrawRead(b, b._hz); var during = calls.slice(); calls.length = 0;
+        b._tel = 0; b._hz.rd[6] = hazardT; twoDrawRead(b, b._hz); var landed = calls.slice();
+      } finally { haPaint = P0; }
+      return { during:during, landed:landed, want: TWO.read.drain[3] - HURT_R0, lime: TWO_LIME };`);
+    expect(r.during).toEqual([{ kind: 'circle', r: r.want, tell: true, col: '#ffffff' }]);
+    expect(r.landed).toEqual([{ kind: 'circle', r: r.want, tell: false, col: r.lime }]);
+  });
+
+  it("the Purple Dragon's tail: the club drawn at the tip it hits with, on its live frames, inside a swath told from the touchdown", () => {
+    const r = page('Coiny', 400, 0, `
+      var calls = [], P0 = haPaint; haPaint = function(sh, o){ calls.push({ sh:sh, tell:!!o.tell }); };
+      var out = [];
+      try {
+        var b = { x:600, y:groundY() - 80, r:90, face:1, _phase:1, hp:100, _hz:{ tail:[600, groundY(), 1, hazardT] } };
+        for (var u=0;u<=DRAGON.tailT;u++){ b._hz.tail[3] = hazardT - u; calls.length = 0; drawDragonFx(b);
+          var club = calls.find(function(c){ return c.sh.kind === 'circle'; }), sw = calls.find(function(c){ return c.sh.kind === 'poly'; });
+          var tip = dragonTailTip(b._hz.tail, u, b.r);
+          out.push({ u:u, club: club ? [Math.round(club.sh.x - tip.x), Math.round(club.sh.y - tip.y), club.sh.r] : null, swath: !!sw && sw.tell }); }
+      } finally { haPaint = P0; }
+      return { out:out, R:DRAGON.tailR, T:DRAGON.tailT };`);
+    expect(r.out[0].club, 'nothing hits on the touchdown frame').toBeNull();
+    for (const f of r.out.slice(1)) expect(f.club, `frame ${f.u}`).toEqual([0, 0, r.R]);
+    for (const f of r.out.slice(0, r.T)) expect(f.swath).toBe(true);
+  });
+
+  it("Four's GO BYE-BYE!: the capture ring at its true reach round the mouth (told for the first 6 frames of a breath), and the pull's edge", () => {
+    const r = page('Coiny', 400, 0, `
+      var calls = [], P0 = haPaint; haPaint = function(sh, o){ calls.push({ r:sh.r, tell:!!o.tell }); };
+      try { var b = { r:80 }; var Z = { inh:[500, 300, hazardT - 2, hazardT + 30, 600, 1] }; fourDrawInhale(Z, hazardT, groundY(), b); var early = calls.slice(); calls.length = 0;
+        Z.inh[2] = hazardT - 10; fourDrawInhale(Z, hazardT, groundY(), b); var late = calls.slice(); } finally { haPaint = P0; }
+      return { early:early, late:late, zr: FOUR.byeZone*80 };`);
+    expect(r.early).toEqual([{ r: 600, tell: true }, { r: r.zr, tell: true }]);
+    expect(r.late).toEqual([{ r: 600, tell: true }, { r: r.zr, tell: false }]);
   });
 });
