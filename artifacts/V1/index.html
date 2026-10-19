@@ -35456,7 +35456,7 @@ const COBS_TIERS = {
   // (and the puddles it left) is gone: its cannon fires `n` LASER WALLS, one every `every` frames, that travel down the line at `spd` px a frame, away from the ship, toward the fighter
   // and past them -- each a bar from the top of the arena to the floor with one open gap to be in as it passes (COBS_LASER, below). `dmg` a wall that touches you, poison with it, once a wall.
   // TWIST: THE SAILBOAT ROCKS (the boat on the waves, Through No Choice of Your Own): as it fires, the boat rides `rock` px to and fro along the line on a 40-frame sine,
-  // so its walls leave from different spots and the beat between them shifts.
+  // so its walls leave from different spots -- each timed to still come down the line on the beat, `every` frames after the one before (cobsLaserBeat).
   cannon:    [ { n:4, spd:12, dmg:1.1, every:64, rock:0 }, { n:5, spd:12.5, dmg:1.2, every:60, rock:40 }, { n:5, spd:13, dmg:1.3, every:58, rock:60 }, { n:6, spd:13.5, dmg:1.4, every:56, rock:70 }, { n:6, spd:14, dmg:1.5, every:54, rock:80 } ],
 };
 // The rage on foot, after his move: he settles toward the low hover, and each stride he covers puts a footfall into the floor under him.
@@ -35520,33 +35520,48 @@ function cobsShipSpot(s, tgt, side){
   return { x:clamp(tx + sd*COBS_SHIP_NEAR, fl.x + 40, fl.x + fl.w - 40), y:Math.min(gy - COBS_SHIP_Y, top - COBS_SHIP_ABOVE), dir:-sd, line:top };   // its walls travel toward them, and past
 }
 // TOXIC CANNON!'s LASER WALLS. THE OWNER, 2026-10-18: "cobs should have the ships laser be a set of lasers that travel down the line, and have gaps you have to jump through." Each wall leaves
-// the cannon (`muzzle` px ahead of the ship) and travels down the line: a green bar `w` px thick from the top of the arena to the floor, with ONE open gap `gap` px tall -- the tallest fighter's
-// outline (74 px) and 56 to spare. Its gap sits at one of three heights over its LINE (`lv`, px from the line to the gap's bottom edge): LOW, standing (its bottom is 16 px under the line, as
-// a fighter's outline dips 12 px under their feet); MID, one jump; HIGH, a double jump (set where a double jump at 0.88 tops out inside it, and a full double jump at 1 is
-// not much over it) -- never the same twice running, so you have to move. Every gap is in reach from the line for every
-// fighter, the lowest-jumping too: at a jump of 0.88 one jump tops out 92 px up and a double 184 (test/cobs-lasers.test.js measures it); a gap only a flier could reach is never laid.
+// the cannon (`muzzle` px ahead of the ship) and travels down the line: a green bar `w` px thick standing on its LINE (below) and reaching a screen over it (`roof` px, off the top of the
+// screen), with ONE open gap. Its gap sits at one of three heights over the line (`lv`, px from the line to the gap's bottom edge; `gap`, how tall it is): LOW, standing (its bottom is the
+// wall's own foot, `foot` px under the line, as a fighter's outline dips 12 px under their feet: a low gap has no bar under it at all); MID, one jump (130 px tall: the tallest fighter's
+// outline, 74 px, and 56 to spare); HIGH, a double jump (170 px tall, 140 to 310 px over the line: a double jump with its second press at the top of the first puts the tallest fighter's
+// whole outline in it at a jump of 0.88, topping out 184 px up, and at 1, 237 px up, alike) -- never the same twice running, so you have to move. Every gap is in reach from the line for every
+// fighter, the lowest-jumping too: at a jump of 0.88 one jump tops out 92 px up and a double 184 (test/cobs-lasers.test.js measures it, at a jump of 1 and a fall of 1.12 as well); a gap only a flier could reach is never laid.
 // A wall's LINE is the surface the fighter it is aimed at stands on (or last stood on, while in the air) when that wall's tell begins -- the first wall's, the surface under
 // them at the wind-up's lock -- so each gap is measured from where they are as it is shown, and a fighter knocked down off a platform (or who climbs one) mid-volley is not left
-// facing gaps measured from a surface they are no longer on.
+// facing gaps measured from a surface they are no longer on. A wall stands ON its line: with more than one fighter in the fight, one on a level under that line (on the floor under
+// the ledge it is aimed at) is out of its path, under its foot -- its gaps were measured from a surface they are not on, and it is drawn ending there.
 // Whoever's outline it touches outside the gap is hit, once a wall (each wall has its own id): one mistake, one hit -- and never while they are still tumbling from a hit
 // (in hitstun), from a wall or anything else of his: they could do nothing about it, and a second wall into a tumble would be two hits for one mistake. THE TELL: every wall's gap is shown `tell` frames before it fires -- its
-// ghost at the cannon and its two edges marked along its path for `lane` px (the first from the wind-up's lock, the last COBS_SHIP_LOCK frames, which is 37 frames ahead). A wall goes
-// out `range` px from the cannon, or at the end of the floor.
-const COBS_LASER = { w:22, gap:130, lv:[-16, 60, 140], tell:36, range:1700, muzzle:60, lane:800 };
-function cobsLaserGap(line, lv){ const bot = line - COBS_LASER.lv[lv]; return { top:bot - COBS_LASER.gap, bot }; }   // a gap's edges, world y
+// ghost where it will leave the cannon (cobsLaserFrom: a dashed white outline of its bars and white brackets at its gap's edges -- its own look, where a green column read as one of the maze's hedges) and its two edges
+// marked along its path for `lane` px (the first from the wind-up's lock, the last COBS_SHIP_LOCK frames, which is 37 frames ahead). A wall goes out `range` px from the cannon, or at the end of the floor.
+const COBS_LASER = { w:22, gap:[130, 130, 170], lv:[-16, 60, 140], foot:16, roof:1000, tell:36, range:1700, muzzle:60, lane:800 };
+function cobsLaserGap(line, lv){ const bot = line - COBS_LASER.lv[lv]; return { top:bot - COBS_LASER.gap[lv], bot, line, foot:line + COBS_LASER.foot, roof:line - COBS_LASER.roof }; }   // a gap's edges, and the wall's foot and roof, world y
 function cobsLaserLine(S, i){ return S.lines && S.lines[i] != null ? S.lines[i] : (S.stand != null ? S.stand : S.line); }   // wall i's line (see COBS_LASER)
 function cobsLaserGaps(n){   // the volley's gap heights (indexes into COBS_LASER.lv): any first, then never the one before
   const out = [];
   for(let i=0;i<n;i++){ const prev = out.length ? out[out.length - 1] : -1; let v = Math.floor(Math.random()*(prev < 0 ? 3 : 2)); if(prev >= 0 && v >= prev) v++; out.push(v); }
   return out;
 }
-// Does the wall swept over [a, b] this frame touch f's outline outside its gap (above `top`, or below `bot` down to the floor)? The outline is walked in 4 px steps, so a wall thinner
-// than a fighter cannot pass through them between two corners of it.
-function cobsLaserTouches(f, a, b, top, bot, gy){
+// THE BEAT. The sailboat rocks, so its cannon is never twice in one spot as it fires: these are the frames (the ship's own count, S.t) its walls leave the cannon so that each still comes
+// down the line `every` frames after the one before, wherever the swell has the boat -- one leaving from nearer the fighter leaves that much later, one from further back that much sooner.
+// (A wall leaving at t from x0 + rock*sin reaches any spot down the line at t - dir*rock*sin/spd, plus a constant; the boat never moves along the line as fast as a wall, so that only grows with t.)
+function cobsLaserBeat(S){
+  const sw = t=>S.rock ? S.rock*Math.sin(t*Math.PI*2/40) : 0, at = t=>t - S.dir*sw(t)/S.spd, out = [1];   // (the first leaves the frame after the charge)
+  for(let i=1;i<S.n;i++){ const want = at(1) + i*S.every; let best = out[i-1] + S.every, e = 1e9;
+    for(let t=out[i-1] + COBS_LASER.tell + 1; t<=out[i-1] + 2*S.every; t++){ const d = Math.abs(at(t) - want); if(d < e){ e = d; best = t; } }   // (never before the one before has gone and its tell has run)
+    out.push(best); }
+  return out;
+}
+// Where the ship's next wall will leave its cannon -- where the swell will have the boat on that frame (S.t + S.cd). Its tell's ghost stands there, still, and the rocking boat
+// comes over it as it fires: what is drawn says where the wall starts and (the cannon filling) when, so when it reaches you can be read as well as the beat can.
+function cobsLaserFrom(S){ return (S.rock ? S.x0 + S.rock*Math.sin((S.t + S.cd)*Math.PI*2/40) : S.x) + S.dir*COBS_LASER.muzzle; }
+// Does the wall `g` (its gap's top and bot, its foot and roof), swept over [a, b] this frame, touch f's outline outside its gap -- on its bar over the gap, up to its roof, or under it,
+// down to its foot? The outline is walked in 4 px steps, so a wall thinner than a fighter cannot pass through them between two corners of it.
+function cobsLaserTouches(f, a, b, g){
   const P = bodyPts(f), n = P.length;
   for(let i=0;i<n;i+=2){
     const x0 = P[i], y0 = P[i+1], x1 = P[(i+2)%n], y1 = P[(i+3)%n], k = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)/4));
-    for(let j=0;j<k;j++){ const x = x0 + (x1 - x0)*j/k, y = y0 + (y1 - y0)*j/k; if(x >= a && x <= b && (y < top || (y > bot && y < gy + 40))) return true; }
+    for(let j=0;j<k;j++){ const x = x0 + (x1 - x0)*j/k, y = y0 + (y1 - y0)*j/k; if(x >= a && x <= b && ((y < g.top && y > g.roof) || (y > g.bot && y < g.foot))) return true; }
   }
   return false;
 }
@@ -35560,12 +35575,12 @@ function cobsLaserTouches(f, a, b, top, bot, gy){
 // Only in his fight (the fighter step calls it while COBSFIGHT is on).
 const COBS_AI_LASER = 70, COBS_AI_LOW = 40;
 function cobsAiFeet(f, at, n, surf, from){   // its feet's y over the next n frames, pressing jump at the frames in `at` (each spends a jump while it has one); landing on `surf` gives both back
-  const J = JUMP*((f.st || STAT_ONE).jump), out = [];   // (`from`: true, start standing on `surf` with both jumps; or a state { y, vy, air, jumps }; else as it is now)
+  const J = JUMP*((f.st || STAT_ONE).jump), FG = GRAV*((f.kit && f.kit.special==='airrel') ? 0.55 : 1)*((f.st || STAT_ONE).fall), out = [];   // (`from`: true, start standing on `surf` with both jumps; or a state { y, vy, air, jumps }; else as it is now)
   const o = from === true ? { y:surf, vy:0, air:false, jumps:2 } : from || { y:feetY(f), vy:f.onground ? 0 : f.vy, air:!f.onground, jumps:f.jumps };
   let y = o.y, vy = o.vy, air = o.air, jumps = o.jumps;
   for(let t=0;t<n;t++){
     if(at.indexOf(t) >= 0 && jumps > 0){ vy = J; jumps--; air = true; }
-    if(air){ vy += GRAV; y += vy; if(vy > 0 && y >= surf){ y = surf; vy = 0; air = false; jumps = 2; } }
+    if(air){ vy += vy > 0 ? FG : GRAV; y += vy; if(vy > 0 && y >= surf){ y = surf; vy = 0; air = false; jumps = 2; } }   // (the engine's: the fall stat pulls on the way down)
     out.push(y);
   }
   return out;
@@ -35577,7 +35592,7 @@ function cobsAiLasers(f, inp){
   if(f.x < fl.x || f.x > fl.x + fl.w || ft > fl.y + 8) return;   // off the floor: its own recovery comes first, wall or no wall
   let w = null, eta = 1e9;
   for(const q of S.walls){ if(q.hit[f.idx]) continue; const d = q.dir*(f.x - q.x); if(d < 0) continue; if(d/q.spd < eta){ eta = d/q.spd; w = q; } }
-  const next = S.arm + S.cd, mx = (S.rock ? S.x0 + S.rock*Math.sin((S.t + S.cd)*Math.PI*2/40) : S.x) + S.dir*COBS_LASER.muzzle;   // where it will leave: the swell can be read
+  const next = S.arm + S.cd, mx = cobsLaserFrom(S);   // where it will leave: the swell can be read (its tell stands there)
   if(S.left > 0 && next <= COBS_LASER.tell && S.dir*(f.x - mx) >= 0 && next + S.dir*(f.x - mx)/S.spd < eta){   // the next wall, shown in the cannon, comes first
     eta = next + S.dir*(f.x - mx)/S.spd; w = cobsLaserGap(cobsLaserLine(S, S.n - S.left), S.gaps[S.n - S.left]); w.spd = S.spd; }
   if(!w || eta > COBS_AI_LASER){
@@ -35589,8 +35604,9 @@ function cobsAiLasers(f, inp){
   const P = bodyPts(f); let up = 0, dn = 0, half = 0;
   for(let i=0;i<P.length;i+=2){ up = Math.max(up, ft - P[i+1]); dn = Math.max(dn, P[i+1] - ft); half = Math.max(half, Math.abs(P[i] - f.x)); }
   const lo = w.top + up + 2, hi = w.bot - dn - 2, r = (COBS_LASER.w/2 + half)/w.spd + 1, t0 = Math.max(0, Math.floor(eta - r)), t1 = Math.ceil(eta + r), n = t1 + 1, surf = oneSurf(f.x, ft - 10);
-  // a plan's score: its worst frame in the gap while the wall passes (and, a little, its average: the middle of the gap is better); `ys(t)` its feet at frame t
-  const score = (ys)=>{ let m = 1e9, sum = 0, k = 0; for(let t=t0;t<=t1;t++){ const y = ys(t), q = Math.min(y - lo, hi - y); m = Math.min(m, q); sum += q; k++; } return m + 0.01*sum/Math.max(1, k); };
+  // a plan's score: its worst frame in the gap -- or out of the wall's path, wholly under its foot or over its roof -- while the wall passes (and, a little, its average: the middle of
+  // the gap is better); `ys(t)` its feet at frame t
+  const score = (ys)=>{ let m = 1e9, sum = 0, k = 0; for(let t=t0;t<=t1;t++){ const y = ys(t), q = Math.max(Math.min(y - lo, hi - y), y - up - 2 - w.foot, w.roof - y - dn - 2); m = Math.min(m, q); sum += q; k++; } return m + 0.01*sum/Math.max(1, k); };
   const still = cobsAiFeet(f, [], n, surf), stay = score(t=>still[t]);
   let best = stay, first = -1;   // the best plan, and when its first press is (-1: none)
   if(stay < 0 && f.jumps > 0){
@@ -35626,7 +35642,7 @@ function cobsAiLasers(f, inp){
 }
 function cobsLaserFire(S){
   const i = S.n - S.left, lv = S.gaps[i], g = cobsLaserGap(cobsLaserLine(S, i), lv), x = S.x + S.dir*COBS_LASER.muzzle;
-  S.walls.push({ k:i, x, px:x, dir:S.dir, spd:S.spd, lv, top:g.top, bot:g.bot, d:0, id:i === 0 ? S.id : ++BOSS_ATK_ID, hit:{} });   // the first wall is the move's own id; each after it, its own
+  S.walls.push({ k:i, x, px:x, dir:S.dir, spd:S.spd, lv, top:g.top, bot:g.bot, line:g.line, foot:g.foot, roof:g.roof, d:0, id:i === 0 ? S.id : ++BOSS_ATK_ID, hit:{} });   // the first wall is the move's own id; each after it, its own
   S.left--;
   for(let j=0;j<8;j++) puff(x, S.y + 20 + (j - 4)*10, '#7fd63a', 4);
   shake(2);
@@ -35638,7 +35654,7 @@ function cobsLaserStep(S, gy, fl){
     const a = Math.min(w.px, w.x) - hw, b = Math.max(w.px, w.x) + hw;   // swept: a fast wall never skips over anyone
     for(const f of cobsFoes()){
       const R = hurtReach(f);
-      if(w.hit[f.idx] || f.hitstun > 0 || f.x + R < a || f.x - R > b || !cobsLaserTouches(f, a, b, w.top, w.bot, gy)) continue;   // (never one tumbling from a hit: it could do nothing about it)
+      if(w.hit[f.idx] || f.hitstun > 0 || f.x + R < a || f.x - R > b || !cobsLaserTouches(f, a, b, w)) continue;   // (never one tumbling from a hit: it could do nothing about it)
       w.hit[f.idx] = 1;   // once a wall
       if(cobsHit(f, S.dmg, w.dir*9, -8, w.id, S.dmg)){ SM_FX.poison(f, null, 90); for(let j=0;j<6;j++) puff(f.x, hurtCY(f), '#7fd63a', 4); }
     }
@@ -36862,6 +36878,7 @@ const COBS_MOVES = {
     const at = s._shipAt || cobsShipSpot(s, tgt, 0), gaps = (s._shipGaps && s._shipGaps.length >= T.n) ? s._shipGaps.slice(0, T.n) : cobsLaserGaps(T.n); s._shipAt = null; s._shipGaps = null;
     const line = at.line != null ? at.line : groundY();
     s._ship = { x:at.x, x0:at.x, y:at.y, dir:at.dir, line, lines:[line], stand:line, ti:tgt ? tgt.idx : -1, spd:T.spd, n:T.n, left:T.n, every:T.every, cd:1, gaps, walls:[], dmg, id, t:0, rock:T.rock || 0, arm:COBS_SHIP_ARM, out:0 };
+    s._ship.fire = cobsLaserBeat(s._ship);   // when each wall leaves, so they come on the beat however the boat rocks
     for(let i=0;i<10;i++) puff(at.x + (i - 4.5)*12, at.y + 10, '#7fd63a', 4);   // it arrives
     shake(4);
   },
@@ -36989,7 +37006,7 @@ function cobsTickEntities(s, tgt){
     } else {
       S.t++;
       if(S.rock) S.x = S.x0 + S.rock*Math.sin(S.t*Math.PI*2/40);   // THE SAILBOAT ROCKS: to and fro along the line as it fires
-      if(S.left > 0 && --S.cd <= 0){ cobsLaserFire(S); S.cd = S.every; }
+      if(S.left > 0 && --S.cd <= 0){ cobsLaserFire(S); const nx = S.fire && S.fire[S.n - S.left]; S.cd = nx != null ? Math.max(1, nx - S.t) : S.every; }   // the next on the beat (cobsLaserBeat)
     }
     if(S.lines && S.left > 0 && S.arm + S.cd <= COBS_LASER.tell && S.lines[S.n - S.left] == null) S.lines[S.n - S.left] = S.stand;   // the next wall's tell begins: its gap is set from where they stand
     cobsLaserStep(S, gy, fl);
@@ -37413,7 +37430,7 @@ function drawCobsFx(){
       ctx.globalAlpha = 0.2 + 0.55*kk; drawCobsShip(at.x, at.y, at.dir);
       ctx.strokeStyle = locked ? '#ffffff' : '#7fd63a'; ctx.lineWidth = 2; ctx.globalAlpha = locked ? 0.9 : 0.3 + 0.3*kk; ctx.setLineDash([10, 8]);
       ctx.beginPath(); ctx.moveTo(at.x + at.dir*30, at.y + 20); ctx.lineTo(mx, ly - 2); ctx.lineTo(mx + at.dir*COBS_LASER.lane, ly - 2); ctx.stroke(); ctx.setLineDash([]);
-      if(locked && s._shipGaps && s._shipGaps.length) drawCobsLaserTell(mx, at.dir, cobsLaserGap(ly, s._shipGaps[0]), 1 - (s._tel + COBS_SHIP_ARM + 1)/(COBS_LASER.tell + 1), gy);
+      if(locked && s._shipGaps && s._shipGaps.length) drawCobsLaserTell(mx + (cobsT(s, 'cannon').rock || 0)*Math.sin(Math.PI*2/40), at.dir, cobsLaserGap(ly, s._shipGaps[0]), 1 - (s._tel + COBS_SHIP_ARM + 1)/(COBS_LASER.tell + 1), gy);   // (where the swell will have the cannon as it fires: cobsLaserFrom)
     } else if(k==="portal"){
       // every portal's spot (two from tier 1, three from tier 3), and how far each one's pull will reach, a dashed ring that firms up as the wind-up runs out
       const T = cobsT(s, 'portal');
@@ -37474,7 +37491,7 @@ function drawCobsFx(){
       ctx.restore(); }
   }
   // the ship, its laser walls, and the next wall's gap before it fires
-  if(s._ship){ const S = s._ship, mx = S.x + S.dir*COBS_LASER.muzzle, next = S.arm + S.cd;   // (frames until its next wall leaves the cannon)
+  if(s._ship){ const S = s._ship, mx = cobsLaserFrom(S), next = S.arm + S.cd;   // (where, and in how many frames, its next wall leaves the cannon: its tell stands there)
     for(const w of S.walls) drawCobsLaserWall(w, gy);
     if(S.left > 0 && next <= COBS_LASER.tell) drawCobsLaserTell(mx, S.dir, cobsLaserGap(cobsLaserLine(S, S.n - S.left), S.gaps[S.n - S.left]), 1 - next/(COBS_LASER.tell + 1), gy);
     if(S.left > 0){ const u = 1 - Math.min(1, next/COBS_LASER.tell);   // the cannon fills before each wall
@@ -37532,32 +37549,45 @@ function drawCobsShip(x, y, dir, tilt){
   ctx.fillStyle = '#7fd63a'; ctx.beginPath(); ctx.rect(20, 22, 24, 14); ctx.fill(); ctx.stroke();
   ctx.restore();
 }
-// A laser wall of TOXIC CANNON! (COBS_LASER): a bright green bar from the top of the screen to the floor with a glow round it and a white-hot core, a faint wake behind it,
-// and its gap left empty, its two lips lit so the opening reads at a glance.
+// The bars a wall `g` (or a tell's gap) is drawn with, world y: `over` the gap, from its roof (or just over the top of the screen) down to the gap's top; `under` it, from the gap's
+// bottom down to its foot (or the floor, which hides the rest) -- none under a LOW gap. Exactly where cobsLaserTouches hits: what is drawn is the wall.
+function cobsLaserBars(g, gy){
+  const sky = cobsTopY() - 40, top = Math.max(sky, g.roof), foot = Math.min(g.foot, gy);
+  return { sky, top, foot, over:[top, g.top], under:g.bot < foot - 1 ? [g.bot, foot] : null };
+}
+// A laser wall of TOXIC CANNON! (COBS_LASER): a bright green bar standing on its line and reaching off the top of the screen, with a glow round it and a white-hot core, a faint wake
+// behind it, and its gap left empty, its two lips lit so the opening reads at a glance -- and its foot lit where its line is over the floor (under it is out of its path).
 function drawCobsLaserWall(w, gy){
-  const top = cobsTopY() - 40, x = w.x, LW = COBS_LASER.w, fl = 0.85 + 0.15*Math.sin(hazardT*0.9 + w.id);
+  const B = cobsLaserBars(w, gy), sky = B.sky, top = B.top, foot = B.foot, x = w.x, LW = COBS_LASER.w, fl = 0.85 + 0.15*Math.sin(hazardT*0.9 + w.id);
   const seg = (a, b, wake)=>{ if(b <= a) return;
     if(wake){ ctx.globalAlpha = 0.12; ctx.fillStyle = '#7fd63a'; ctx.fillRect(x - w.dir*26 - LW/2, a, LW, b - a); ctx.globalAlpha = 0.06; ctx.fillRect(x - w.dir*52 - LW/2, a, LW, b - a); }
     ctx.globalAlpha = 0.22*fl; ctx.fillStyle = '#7fd63a'; ctx.fillRect(x - LW, a, LW*2, b - a);   // the glow
     ctx.globalAlpha = 0.85*fl; ctx.fillRect(x - LW/2, a, LW, b - a);                             // the bar
     ctx.globalAlpha = 0.95; ctx.fillStyle = '#e8ffd0'; ctx.fillRect(x - 3, a, 6, b - a); };     // its core
-  seg(top, w.top, true); seg(w.bot, gy, true);
-  ctx.globalAlpha = 0.95; ctx.fillStyle = '#e8ffd0'; ctx.fillRect(x - LW, w.top - 4, LW*2, 4); if(w.bot < gy) ctx.fillRect(x - LW, w.bot, LW*2, 4);   // the gap's lips
+  seg(B.over[0], B.over[1], true); if(B.under) seg(B.under[0], B.under[1], true);
+  ctx.globalAlpha = 0.95; ctx.fillStyle = '#e8ffd0'; ctx.fillRect(x - LW, w.top - 4, LW*2, 4);   // the gap's top lip
+  if(B.under){ ctx.fillRect(x - LW, w.bot, LW*2, 4); if(foot < gy - 1) ctx.fillRect(x - LW, foot - 4, LW*2, 4); }   // its bottom lip (a low gap has no bar under it), and its foot over the floor
+  if(top > sky) ctx.fillRect(x - LW, top, LW*2, 4);   // its roof, if the screen reaches it
   ctx.globalAlpha = 1;
 }
-// THE TELL for one wall, before it fires (`u` 0..1, how near it is): its ghost at the cannon, firming up, the gap empty, and the gap's two edges marked along the path it will travel --
-// white for its last third -- with a lit bracket at the cannon at each edge.
+// THE TELL for one wall, before it fires (`u` 0..1, how near it is): its ghost at the cannon -- a dashed WHITE outline of its bars, the dashes marching, filling faintly as it nears
+// (its own look: a green column there read as one of the maze's hedges) -- with white brackets at its gap's two edges from the first frame, and the gap's edges marked along the
+// path it will travel (white for its last third).
 function drawCobsLaserTell(x, dir, g, u, gy){
-  const top = cobsTopY() - 40, LW = COBS_LASER.w, L = COBS_LASER.lane; u = clamp(u, 0, 1);
-  const hot = u > 0.66, low = g.bot >= gy;   // (a LOW gap on the floor has no bar under it)
+  const B = cobsLaserBars(g, gy), top = B.top, foot = B.foot, LW = COBS_LASER.w, L = COBS_LASER.lane; u = clamp(u, 0, 1);
+  const hot = u > 0.66, under = !!B.under, edge = under ? g.bot : Math.min(g.bot, g.line), pulse = 0.5 + 0.5*Math.sin(hazardT*0.5);   // (a LOW gap has no bar under it: its lower bracket marks the line)
   ctx.save();
-  ctx.globalAlpha = 0.18 + 0.35*u; ctx.fillStyle = '#7fd63a';
+  ctx.globalAlpha = 0.06 + 0.14*u; ctx.fillStyle = '#ffffff';
   if(g.top > top) ctx.fillRect(x - LW/2, top, LW, g.top - top);
-  if(!low) ctx.fillRect(x - LW/2, g.bot, LW, gy - g.bot);
-  ctx.strokeStyle = hot ? '#ffffff' : '#d8ffb0'; ctx.lineWidth = 4; ctx.globalAlpha = 0.45 + 0.45*u; ctx.setLineDash([12, 10]);
-  ctx.beginPath(); ctx.moveTo(x, g.top); ctx.lineTo(x + dir*L, g.top); if(!low){ ctx.moveTo(x, g.bot); ctx.lineTo(x + dir*L, g.bot); } ctx.stroke(); ctx.setLineDash([]);
-  ctx.globalAlpha = 0.6 + 0.4*u; ctx.lineWidth = 4; ctx.strokeStyle = hot ? '#ffffff' : '#d8ffb0';
-  ctx.beginPath(); ctx.moveTo(x - 18, g.top); ctx.lineTo(x + 18, g.top); if(!low){ ctx.moveTo(x - 18, g.bot); ctx.lineTo(x + 18, g.bot); } ctx.stroke();
+  if(under) ctx.fillRect(x - LW/2, g.bot, LW, foot - g.bot);
+  ctx.globalAlpha = 0.55 + 0.25*pulse + 0.2*u; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.setLineDash([8, 6]); ctx.lineDashOffset = -((hazardT*1.5)%14);
+  if(g.top > top) ctx.strokeRect(x - LW/2, top, LW, g.top - top);
+  if(under) ctx.strokeRect(x - LW/2, g.bot, LW, foot - g.bot);
+  ctx.lineDashOffset = 0; ctx.strokeStyle = hot ? '#ffffff' : '#d8ffb0'; ctx.lineWidth = 4; ctx.globalAlpha = 0.45 + 0.45*u; ctx.setLineDash([12, 10]);
+  ctx.beginPath(); ctx.moveTo(x, g.top); ctx.lineTo(x + dir*L, g.top); if(under){ ctx.moveTo(x, g.bot); ctx.lineTo(x + dir*L, g.bot); } ctx.stroke(); ctx.setLineDash([]);
+  ctx.globalAlpha = 0.75 + 0.25*Math.max(u, pulse); ctx.lineWidth = 4; ctx.strokeStyle = '#ffffff';   // the brackets, opening into the gap
+  ctx.beginPath(); ctx.moveTo(x - 20, g.top + 12); ctx.lineTo(x - 20, g.top); ctx.lineTo(x + 20, g.top); ctx.lineTo(x + 20, g.top + 12);
+  ctx.moveTo(x - 20, edge - 12); ctx.lineTo(x - 20, edge); ctx.lineTo(x + 20, edge); ctx.lineTo(x + 20, edge - 12); ctx.stroke();
   ctx.restore();
 }
 // His MeTags and his MePhone units (drawSummon): a grey tag with the logo that glows while it tracks you, and a small dark

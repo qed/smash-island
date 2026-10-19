@@ -711,7 +711,7 @@ describe("the owner's playtest of 2026-10-07", () => {
   // in reach of a jump (test/cobs-lasers.test.js measures the reach, at the lowest jump a fighter can have).
   it("TOXIC CANNON! is never an undodgeable line: the splash is gone, and every laser wall's gap has room for the tallest fighter with 50 px to spare", () => {
     const r = W.eval(`(function(){ var tall = 0; ROSTER.filter(function(q){ return q.play; }).forEach(function(q){ var f = makeFighter(q, 500, 500, 0), P = bodyPts(f), lo = 1e9, hi = -1e9; for (var i=1;i<P.length;i+=2){ lo = Math.min(lo, P[i]); hi = Math.max(hi, P[i]); } tall = Math.max(tall, hi - lo); });
-      return { beam: typeof COBS_BEAM_H, gap: COBS_LASER.gap, tall: tall }; })()`);
+      return { beam: typeof COBS_BEAM_H, gap: Math.min.apply(null, COBS_LASER.gap), tall: tall }; })()`);   // (the smallest of the three gaps)
     expect(r.beam, 'the splash is gone').toBe('undefined');
     expect(r.gap - r.tall, 'room in every gap').toBeGreaterThanOrEqual(50);
   });
