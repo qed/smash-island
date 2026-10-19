@@ -417,6 +417,62 @@ describe('World Cup — pick your teammates', () => {
     expect(r.sizes).toBe(true);
   });
 
+  // The owner, 2026-10-18: "when i select a fighter, i cant go to select teammate". The teammate step hid the whole bottom row, and the Back
+  // and Next teammate / Kick Off buttons are in it: the test above calls startMatch() itself, so it never saw that nothing could be pressed.
+  // This one goes through the buttons and the keys a player has.
+  it('shows Back and Next on every seat, moves the focus there, and goes on by mouse and by keyboard', () => {
+    const { window: w } = loadMonolith();
+    const r = w.eval(`
+      (function(){
+        var scrolled = [];
+        HTMLElement.prototype.scrollIntoView = function(){ scrolled.push(this.id || this.className); };
+        function shown(el){ for(var n=el; n && n.nodeType===1; n=n.parentElement) if(getComputedStyle(n).display==='none') return false; return !!el; }
+        function key(code){ window.dispatchEvent(new KeyboardEvent('keydown', { code:code, key:code, bubbles:true, cancelable:true })); }
+        var sb = function(){ return document.getElementById('startBtn'); }, bb = function(){ return document.getElementById('selBackBtn'); };
+        function seat(){ return { title:document.getElementById('selTitle').textContent, start:sb().textContent, startShown:shown(sb()), backShown:shown(bb()),
+          focused:document.activeElement===sb(), flash:document.getElementById('select').classList.contains('cupstep'),
+          taken:[].map.call(document.querySelectorAll('#board .cell.taken'), function(c){ return c.dataset.name; }) }; }
+        TOURNEY_SETUP_MODE = 'normal'; TOURNEY_SETUP_SIZE = 3; TOURNEY_CFG.mates = 'pick'; TOURNEY_CFG.cup = 16;
+        kickOffTournament();
+        var out = { seats:[seat()] };
+        // you: a click on a fighter, then the button
+        var cells = document.querySelectorAll('#board .cell.play'); cells[3].click(); out.you = chosen.name;
+        scrolled.length = 0; sb().click();
+        out.seats.push(seat()); out.scrolled1 = scrolled.slice();
+        // teammate 1: the arrow keys, then Enter with the focus on nothing (a click on the grid leaves it there)
+        var before = chosen.name; key('ArrowRight'); out.moved = chosen.name !== before; out.mate1 = chosen.name;
+        document.activeElement.blur(); key('Enter');
+        out.seats.push(seat());
+        // Back from teammate 2, then on again with the button
+        bb().click(); out.back = seat(); out.backChosen = chosen.name;
+        sb().click(); out.mate2 = chosen.name; sb().click();
+        out.team = TOURNEY.myTeam ? TOURNEY.myTeam.members.map(function(m){ return m.name; }) : null; out.pending = PENDING_TOURNEY;
+        return out;
+      })()`);
+    const [lead, mate1, mate2] = r.seats;
+    expect(lead.title).toBe('Pick your fighter');
+    expect(lead.start).toMatch(/Pick teammates/);
+    expect(lead.startShown && lead.backShown, 'your own pick has its buttons').toBe(true);
+    expect(mate1.title).toBe('Pick teammate 1 of 2');
+    expect(mate1.startShown, 'Next teammate can be pressed on the teammate step').toBe(true);
+    expect(mate1.backShown, 'and so can Back').toBe(true);
+    expect(mate1.start).toMatch(/Next teammate/);
+    expect(mate1.focused, 'the keyboard is on Next teammate').toBe(true);
+    expect(mate1.flash, 'the step flashes').toBe(true);
+    expect(r.scrolled1, 'the button is scrolled into view').toContain('startBtn');
+    expect(mate1.taken, 'your fighter is dimmed').toEqual([r.you]);
+    expect(r.moved, 'the arrow keys move the pick').toBe(true);
+    expect(mate2.title, 'Enter went on to teammate 2').toBe('Pick teammate 2 of 2');
+    expect(mate2.startShown && mate2.backShown && mate2.focused).toBe(true);
+    expect(mate2.start).toMatch(/Kick Off/);
+    expect(mate2.taken.slice().sort()).toEqual([r.you, r.mate1].sort());
+    expect(r.back.title, 'Back goes to teammate 1').toBe('Pick teammate 1 of 2');
+    expect(r.back.startShown && r.back.backShown && r.back.focused).toBe(true);
+    expect(r.backChosen, 'with teammate 1 picked again on the grid').toBe(r.mate1);
+    expect(r.team, 'Kick Off seats the three picks, in order').toEqual([r.you, r.mate1, r.mate2]);
+    expect(r.pending).toBe(null);
+  });
+
   it('keeps the random draw when the setup says so, and for solo', () => {
     const { window: w } = loadMonolith();
     const r = w.eval(`
