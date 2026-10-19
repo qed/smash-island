@@ -38373,7 +38373,7 @@ function step(){
         // Spin, Donut's Sprinkle Roll and every 'spin' up-special (Firey, Flower, Match, Balloony, Bomb, Donut) did 0 in Boss Rush.
         // ...and as the fighters above do (graceBlocks), each tick lands through the grace the spin's own earlier ticks opened on the boss (f._combo).
         if(summons.length){ f._combo=true; damageSummons(f, f.x, f.y, f.r+(f._spinR||30), 4); f._combo=false; } }
-    } else f._sawOn = false;
+    } else { f._sawOn = false; f._spinR = null; f._spinKb = null; }   // the aura is over: its size and launch go with it (spinAura sets them per move)
     // Puffball — METEOR PUFF: the plunge is a live state, not a single frame. The smash commits her
     // downward and the hitbox tracks her all the way down, so the payoff can measure the thing it
     // is actually paying for: how far she FELL before she connected. Checking only the activation
@@ -40800,6 +40800,13 @@ const UPSPEC = {
   // its kb signs differ.
   cheer:      {shape:'plunge', power:-14, hang:10, rad:44, dmg:9, kb:[4,9], leave:'stun'},
 };
+// THE SPIN AURA (the fighter tick's `_sawing` block): whoever starts one says how long, how wide (_spinR, past the body) and which way it
+// throws (_spinKb), and the tick drops both when it ends. Only the rising up-specials used to set the size and the launch, and nothing reset
+// them, so a fighter with a grounded spin kept the last up-special's: after Donut's up-special her Sprinkle Roll was a 56 px upward launch for
+// the rest of the match, not its own 30 px outward push (the hitbox visuals audit, 2026-10-19). Saw's Spin Cycle and Defensive Spin and
+// Donut's Sprinkle Roll are SPIN_R_GROUND and 'out'; every 'spin' row in UPSPEC is SPIN_R_RISE and its own spinKb.
+const SPIN_R_GROUND = 30, SPIN_R_RISE = 56;
+function spinAura(f, frames, r, kb){ f._sawing = Math.max(f._sawing||0, frames); f._spinR = r; f._spinKb = kb; }
 // The one function behind every UPSPEC row. Warp moves the body; the other three launch it and
 // hand the rest to a frame block (spin -> _sawing, plunge -> _stall). Then the optional swing, the
 // optional drop, and whatever the row says it leaves behind.
@@ -40817,7 +40824,7 @@ function riseShape(f, s){
     // The aura ticks when _sawing (after its decrement) is a multiple of 6. Round the length up to 6k+1 so the
     // FIRST tick is the launch frame, while the neighbour is still beside you: an 18-frame spin used to tick
     // first on frame 5, by which point a -13 rise had carried the aura clear, and it landed once.
-    if(s.shape==='spin'){ f._sawing = Math.max(f._sawing||0, Math.ceil((s.frames||20)/6)*6 + 1); f._spinKb = s.spinKb||'out'; f._spinR = 56; }   // a rising aura is wider than Saw's grounded one, or it out-climbs its own hitbox
+    if(s.shape==='spin') spinAura(f, Math.ceil((s.frames||20)/6)*6 + 1, SPIN_R_RISE, s.spinKb||'out');   // a rising aura is wider than Saw's grounded one, or it out-climbs its own hitbox
     if(s.shape==='plunge'){ f._stall = { phase:'rise', hang:s.hang||6, rad:s.rad||40, dmg:s.dmg||10, kb:s.kb||[6,-8], leave:s.leave||null, ram:s.ram||0, life:90,
       fall:s.fall||null, air:wasAir, fHit:new Set() }; }
   }
@@ -40946,6 +40953,20 @@ function doUpTilt(f){
 // ============================================================
 //  DOWN-SPECIALS (Down+Special): traps, counters, stances, defense
 // ============================================================
+// REMOTE JAM (her card: "jams the nearest foe within medium reach, no aiming needed. On hit: no damage, scrambles their controls for about a
+// second"). The nearest foe within REMOTE_JAM_REACH of her has its controls scrambled for CTRLREV_MAX frames, the status every scramble uses
+// (applyCtrlRev: capped, then the re-scramble window). A foe in a dodge or a respawn shield (hardInvuln) is passed over, as a hit would be.
+// Seen, with no words: a red signal zig-zags from her to them (drawJamFx), a ring goes off on them, and the scramble icon sits over them while
+// it lasts. A boss is never jammed: a status is a fighter's field that nothing on a boss reads (the Selfie Stick's flash and Lightbulb's Bright
+// Flash pass a boss by the same way), and the jam has no damage to land instead. Its cooldown is every down-special's (fireSpecialInner).
+// (It did nothing from 55e6b3c on: taking the words off the screen took the scramble out along with its banner.)
+const REMOTE_JAM_REACH = 200, REMOTE_JAM_FX = 18;
+function remoteJamTarget(f){
+  let tgt = null, best = REMOTE_JAM_REACH;
+  for(const t of fighters){ if(t.dead || t.idx===f.idx || t.team===f.team || hardInvuln(t)) continue;
+    const d = Math.hypot(t.x-f.x, t.y-f.y); if(d < best){ best = d; tgt = t; } }
+  return tgt;
+}
 const DOWNSPECIALS = {
   // Inanimate Insanity DLC
   tricks(f){ f.flash=8; f.invuln=Math.max(f.invuln,12); f.vx=-f.face*9; puff(f.x,f.y-8,'#c9d1d9',6); },   // Knife -- fake-out: a quick hop back, untouchable
@@ -41051,7 +41072,7 @@ const DOWNSPECIALS = {
   // ---- next 10 ----
   zap(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:7,kb:5,r:13,color:'#f2e84b',life:260,trap:true,shape:'zaptrap'});  }, // Lightning — floor trap (was 5 dmg / 200 frames)
   spark(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*24,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:4,kb:3,r:12,color:'#e04b8a',life:200,trap:true,burn:true});  }, // Match — burn trap
-  saw(f){ f.flash=8; f.armor=30; f._sawing=Math.max(f._sawing||0,24);  }, // Saw — defensive spin
+  saw(f){ f.flash=8; f.armor=30; spinAura(f, 24, SPIN_R_GROUND, 'out');  }, // Saw — defensive spin
   jawbreaker(f){ // Taco -- KIT FIX (kit-roles): the salsa puddle at her feet never touched a foe in the probe. She has Taco (II)'s Retractable Arms now
     // ("they go out, and you come back", DOWNSPECIALS.lemon: 210 px, the nearest foe is dragged to her, 6% and 18 frames stunned), and the puddle
     // stays, laid where she stands: the foe is pulled in on top of her salsa, which is what the puddle was for.
@@ -41060,7 +41081,9 @@ const DOWNSPECIALS = {
   spike(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap
   sucker(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#c04be0',life:220,trap:true,root:true,arm:14});  }, // Lollipop — rooting trap
   static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff');  }, // TV — brace + nearby stun
-  battery(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ } }, // Remote — scramble nearest (capped, was an uncapped 120f)
+  battery(f){ f.flash=8; const t = remoteJamTarget(f);   // Remote — REMOTE JAM: scrambles the nearest foe in reach (see remoteJamTarget)
+    if(t && applyCtrlRev(t, CTRLREV_MAX)){ f._jamFx = { t:hazardT, to:t.idx };   // render-only: drawKitFx draws the signal (a net client gets it as jamFx)
+      particles.push({ x:t.x, y:t.y-6, vx:0, vy:-0.6, life:HITFX.ring, r:22, color:'r|#c04be0' }); } },   // a ring on them in the scramble icon's colour
   fluff(f){ f.flash=8; f.armor=40; f.vy=Math.min(f.vy,-3); puff(f.x,f.y-8,'#f2e0d0',6);  }, // Pillow — cushiony guard
   cool(f){ f.flash=8; f.armor=Math.max(f.armor,50); f.pct=Math.max(0,f.pct-8); puff(f.x,f.y-8,'#e8e8e8',6);  }, // Loser — armor + heal a little
   // ---- final 12 down-specials ----
@@ -44573,7 +44596,7 @@ function doSpecial(f){
       for(const dy of [-4,-1.5,1]){ spawnProj(f,{vx:f.face*8,vy:dy,grav:true,dmg:6,kb:5,r:8,color:'#e04b8a',burn:true,life:55}); }
       f.flash=8; f.spCd=57; break; }
     case "saw": { // Saw: whirling multi-hit blade around her, moves forward
-      f.flash=8; f.vx=f.face*8; f._sawing=Math.max(f._sawing||0,40);
+      f.flash=8; f.vx=f.face*8; spinAura(f, 40, SPIN_R_GROUND, 'out');
       for(let i=0;i<8;i++){ const a=i/8*Math.PI*2; puff(f.x+Math.cos(a)*30,f.y+Math.sin(a)*30,'#d0d0d0',3);} break; }
     case "jawbreaker": { // Taco: JAWBREAKER (BFB 2-3, where she was stuck inside one). A heavy bouncing ball; whoever it
       // hits is stuck in it -- rooted -- for JAWBREAKER_STUCK frames. Her salsa is still her smash, plunge and trap.
@@ -44722,7 +44745,7 @@ function doSpecial(f){
     case "atstake": { // Cake: lob a slice; Cake heals a little when it connects
       spawnProj(f,{vx:f.face*7,vy:-4,grav:true,bounce:true,dmg:9,kb:7,r:11,color:'#f5c88a',life:100,heals:f.idx});  f.flash=8; f.spCd=69; break; }
     case "glaze": { // Donut: roll forward as a spinning hitbox
-      f._sawing=Math.max(f._sawing||0,34); f.vx=f.face*10; f.flash=8;  f.spCd=101; break; }
+      spinAura(f, 34, SPIN_R_GROUND, 'out'); f.vx=f.face*10; f.flash=8;  f.spCd=101; break; }
     // ---- INANIMATE INSANITY DLC ----
     case "tricks": { // Knife: Bag of Tricks -- IN ORDER, so you can plan with it ("knife should have an order to
       // the abilities he uses from his bag of tricks"): the Paralyzer to break away, the blade to poke, caltrops to hold
@@ -49089,6 +49112,16 @@ function aiKitLessons(f, t, inp, dx, dy, dist, adx, rn, pb){
     else if(f.atkCd<=0){ inp.attack = true; inp.special = false; inp.down = false; }
     inp._kitRead = true;
   }
+  // REMOTE: Remote Jam (down) scrambles the nearest foe within REMOTE_JAM_REACH for about a second, and a jammed foe walks the wrong way. So she
+  // jams a foe that is on her or closing in (her jab and Hard Reset follow it), never one still scrambled or inside the re-scramble window,
+  // never with her battery out (no specials then). A down press that would jam nobody is dropped: always in Boss Rush, where a boss is never jammed.
+  if(sp==="battery"){
+    const jt = remoteJamTarget(f), takes = !!jt && !(jt.ctrlRev > 0) && !(jt._revLock > 0);
+    if(inp.special && inp.down && !inp.up && !inp.attack && !takes){ inp.special=false; inp.down=false; }
+    else if(takes && f.spCd<=0 && !(f._noBattery>0) && !inp.special
+            && (Math.hypot(jt.x-f.x, jt.y-f.y) < f.r+jt.r+60 || Math.sign(jt.x-f.x||1)*(jt.vx||0) < -1)){
+      inp.special=true; inp.down=true; inp.up=false; inp.attack=false; inp._kitRead=true; }
+  }
   if(sp==="fly"){
     if(dy < -70+g0*20 && !f.onground && f.jumps<=0 && f.spCd<=0){ inp.special=true; inp.up=true; }                       // climb to a foe above
     else if(dist>220+g1*30 && dx*(t.vx||0) > 0.5 && f.spCd<=0 && rn<0.5){ inp.jump=true; inp.special=true; inp.up=true; }   // a chase being lost goes vertical
@@ -52167,6 +52200,7 @@ function drawKitFx(layer){
     if(f.dead) continue;
     if(layer !== 'over' && f._heatFx != null){ const age = hazardT - f._heatFx; if(age >= 0 && age < HEAT_FX_FRAMES) drawHeatFx(f, age); }
     if(layer !== 'under' && f._hookFx){ const age = hazardT - f._hookFx.t; if(age >= 0 && age < HOOK_FX_FRAMES) drawHookFx(f, age); }
+    if(layer !== 'under' && f._jamFx){ const age = hazardT - f._jamFx.t; if(age >= 0 && age < REMOTE_JAM_FX) drawJamFx(f, age); else if(age >= REMOTE_JAM_FX) f._jamFx = null; }   // Remote Jam
     // MeTag's Enforcer (metagCuff, DOWNSPECIALS.barrier, metagWallStep): the cuffs on a held foe, the reticle and the lit logo of a lock, the crush.
     if(layer !== 'under' && f._mtCuff) drawCuffFx(f);
     if(layer !== 'under' && f._mtFreed != null){ const age = hazardT - f._mtFreed; if(age >= 0 && age < 12) drawCuffBreakFx(f, age); else f._mtFreed = null; }
@@ -52310,6 +52344,22 @@ function drawHookFx(f, age){
   if(im){ ctx.scale(-1, 1); ctx.drawImage(im, -gw*0.08, -gh/2, gw, gh); }
   else PROJ_SHAPE.hook.draw(ctx, 9, null);
   ctx.restore();
+}
+// Remote Jam's signal (DOWNSPECIALS.battery): a red zig-zag shoots from the front of her to the foe she jammed in four frames, crawling as it
+// holds, with two beam arcs at her end, and fades out by REMOTE_JAM_FX. Shapes only, no words.
+function drawJamFx(f, age){
+  const fx = f._jamFx, t = fighters.find(q=>q.idx===fx.to && !q.dead); if(!t) return;
+  const sx = f.x + Math.sign(t.x - f.x || f.face)*f.r*0.5, sy = f.y - f.r*0.5, tx = t.x, ty = t.y - 6;
+  const m = Math.min(1, (age + 1)/4), ex = sx + (tx - sx)*m, ey = sy + (ty - sy)*m, len = Math.hypot(ex - sx, ey - sy);
+  if(len < 2) return;
+  const ux = (ex - sx)/len, uy = (ey - sy)/len, n = Math.max(3, Math.round(len/16)), amp = 6, ang = Math.atan2(uy, ux);
+  ctx.save(); ctx.globalAlpha = age < 8 ? 1 : Math.max(0, 1 - (age - 8)/(REMOTE_JAM_FX - 8)); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(sx, sy);
+  for(let i = 1; i < n; i++){ const k = i/n, o = ((i + age) % 2 ? 1 : -1)*amp; ctx.lineTo(sx + (ex - sx)*k - uy*o, sy + (ey - sy)*k + ux*o); }
+  ctx.lineTo(ex, ey);
+  for(let j = 1; j <= 2; j++){ ctx.moveTo(sx + Math.cos(ang - 0.6)*(5 + j*6), sy + Math.sin(ang - 0.6)*(5 + j*6)); ctx.arc(sx, sy, 5 + j*6, ang - 0.6, ang + 0.6); }
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = '#e8506a'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.restore(); ctx.globalAlpha = 1;
 }
 // Official renders for the assist trophies ("sprites for assist trophies"). Each is a BFDI character on the BFDI wiki,
 // fetched by scripts/fetch-sprites.mjs (alpha and a face checked, facing measured, scaled to 200px tall) and credited with
@@ -60340,6 +60390,7 @@ function netFighter(f){
   if(f._hurtAnim != null) o.hurtT = f._hurtAnim;   // sent whenever set: wasHit tells 0 from "never set"
   if(f._heatFx) o.heatFx = f._heatFx;   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
   if(f._hookFx) o.hookFx = f._hookFx;
+  if(f._jamFx) o.jamFx = f._jamFx;   // Remote Jam's signal
   if(f._windup) o.charge = { t:f._windup.t, t0:f._windup.t0, color:f._windup.color };   // the smash charge ring
   if(SETTINGS.mode==='ctf') ctfNetFighter(f, o);
   return o;
@@ -60595,7 +60646,7 @@ function applySnapshot(s){
       reform:fd.reform||0, defineStacks:fd.defineStacks||0, curse:fd.curse||0, curseStacks:fd.curseStacks||0, weakened:fd.weakened||0, reflecting:fd.reflecting||0, dropping:0,
       placement:fd.place, killCount:0, deaths:0,   // (the comeback fighters' counters: a client keeps none)
       _kos:fd.kos||0, _falls:fd.falls||0, _dmgDealt:fd.dmg||0, _dmgTaken:fd.taken||0, _gone:fd.gone ? 1 : 0,   // the final snapshot's: the host's tallies, for the client's results
-      _heatFx:fd.heatFx, _hookFx:fd.hookFx,
+      _heatFx:fd.heatFx, _hookFx:fd.hookFx, _jamFx:fd.jamFx,
       _atkAnim: fd.swing || 0, _atkKind: fd.swingKind || null, _atkMove: fd.swingMove || null, _atkLen: fd.swingLen, _hurtAnim: fd.hurtT,
       _plunge: fd.plunge ? { from: 0, life: 0 } : null,   // (a client never simulates: this is only the flag puffPose reads)
       _windup: (fd.charge && typeof fd.charge === 'object') ? fd.charge : null,
