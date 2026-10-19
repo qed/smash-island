@@ -35748,6 +35748,17 @@ const COBS_ORBIT_R = 220, COBS_TELE_DIST = 700;
 const COBS_ADDS_ORBIT = 320;
 const COBS_BACK = { r:400, t:40 };
 const COBS_BIG = ["van", "device", "memurder", "meknife", "deletion", "cannon"];
+// THE INTENDED ATTACK. THE OWNER, 2026-10-19, of his other attacks landing on top of TOXIC CANNON!'s laser walls: "reduce attack speed during the ship. if attacks are
+// firing at the same time, increase cooldowns for his attacks while the 'intended' attack fires." A move marked here (COBS_INTENDED: the test that it is in flight) is
+// the one to read while it runs: until it is over, every other clock of his runs COBS_INTENDED_SLOW times slower -- the gap before his next wind-up (cobsPace on
+// _atkTimer), the TICK, TOCK! countdown, the maze's rayguns between volleys (the arena's, but fired by him: cobsMazeStep), and his MePhone units' and MeTags'
+// cooldowns (cobsMinionStep) -- and no other BIG attack (COBS_BIG) starts: one that comes up is held for after (cobsNextMove). A quick one can still come, less often.
+// Wind-ups, tells and everything already flying are untouched, and the moment it is over the pace is his own again. Only the ship is marked: from its arrival to
+// its last wall gone (its fade-out is not the attack).
+const COBS_INTENDED_SLOW = 2;
+const COBS_INTENDED = { cannon: s=>!!(s._ship && (s._ship.left > 0 || (s._ship.walls && s._ship.walls.length))) };
+function cobsIntendedLive(s){ for(const k in COBS_INTENDED) if(COBS_INTENDED[k](s)) return k; return null; }
+function cobsPace(s){ return s && cobsIntendedLive(s) ? 1/COBS_INTENDED_SLOW : 1; }   // how much of a frame his other clocks count this frame
 const COBS_MOVE = { orbitR:COBS_ORBIT_R, swoopR:180, ungroundR:180, w:ONE_ORBIT_W, end:ONE_ORBIT_END, flip:ONE_ORBIT_FLIP, lead:ONE_SWOOP_LEAD, hold:ONE_SWOOP_HOLD,
                     steer:ONE_STEER, noSwoop:COBS_NO_SWOOP, accel:ONE_ACCEL, max:ONE_CHASE_MAX, teleDist:COBS_TELE_DIST, teleHold:ONE_TELE_HOLD, teleCd:ONE_TELE_CD, aura:["#f4f4f8", "#c8d0e0"],
                     backR:COBS_BACK.r };
@@ -36011,7 +36022,7 @@ function cobsMazeStep(s, tgt){
   }
   if(s._atkTimer > 1e6 || !(s._introT <= 0) || !tgt || tgt.dead) return;   // (a boss parked for good fires nothing; none before the greeting)
   const ti = cobsTier(s) - 1;
-  if(M.volT > 0) M.volT--;
+  if(M.volT > 0) M.volT -= cobsPace(s);   // (slower while an intended attack of his runs: COBS_INTENDED; a volley's charge is its tell, and is not)
   if(M.vol){
     const V = M.vol;
     if(V.t > C.lock){ V.ax = tgt.x; V.ay = hurtCY(tgt); }   // the aim follows them until the last frames, then holds
@@ -36307,7 +36318,7 @@ function updateCobs(s, tgt){
   }
   if(s.flash > 0) s.flash--;
   if(s._turnLive && (cobsTurnOver(s, s._turnLive) || ++s._turnLive.t > COBS_TURN_MAX)) s._turnLive = null;   // over: the window starts now (the gap set when it fired was held, not counted, while it ran)
-  if(!s._turnLive && --s._atkTimer <= 0 && tgt && !s._dive && !s._chain && !s._hop){   // (no new turn while he is diving or the puddles are bursting; the maze is the arena's, and holds nothing of his: cobsMazeStep)
+  if(!s._turnLive && (s._atkTimer -= cobsPace(s)) <= 0 && tgt && !s._dive && !s._chain && !s._hop){   // (no new turn while he is diving or the puddles are bursting; the maze is the arena's, and holds nothing of his: cobsMazeStep; the clock runs slower while an intended attack runs: COBS_INTENDED)
     const k = cobsNextMove(s);
     cobsFightTelegraph(s, k, tgt);
     banner(cobsMoveLabel(s, k), 700, 'boss');
@@ -36434,10 +36445,13 @@ function cobsBurntSprite(key, im){
 // is still on the stage -- two tags standing, a plug pulled, the ship in the sky, a countdown running -- is skipped for the
 // next one; a deploy at its cap is put back in the bag.
 function cobsNextMove(s){
+  const calm = !!cobsIntendedLive(s);   // an intended attack is running: no other big attack starts (COBS_INTENDED)
   s._moveN = (s._moveN||0) + 1;
   if(s._moveN % 3 === 0){
     for(let tries=0; tries<COBS_SPECIALS.length; tries++){
-      const k = COBS_SPECIALS[(s._spN++) % COBS_SPECIALS.length];
+      const k = COBS_SPECIALS[(s._spN||0) % COBS_SPECIALS.length];
+      if(calm && COBS_BIG.indexOf(k) >= 0 && !(k==="cannon" && s._ship)){ s._moveN--; break; }   // held, not lost: it is the next special after
+      s._spN = (s._spN||0) + 1;
       if(k==="metags" && cobsTags().length) continue;
       if(k==="plug" && s._plug) continue;
       if(k==="cannon" && s._ship) continue;
@@ -36449,6 +36463,7 @@ function cobsNextMove(s){
     if(!s._bag.length){ s._bag = COBS_DECK.slice(); shuffle(s._bag); if(s._bag[0]===s._lastCard) s._bag.push(s._bag.shift()); }
     const k = s._bag.shift();
     if(k==="deploy" && cobsUnits().length >= cobsT(s, 'deploy').cap){ s._bag.push(k); continue; }
+    if(calm && COBS_BIG.indexOf(k) >= 0){ s._bag.push(k); continue; }   // a big card waits in the bag until it is over
     s._lastCard = k; return k;
   }
   return "boomerangs";
@@ -37222,7 +37237,7 @@ function cobsTickEntities(s, tgt){
   }
   // TICK, TOCK's countdown: at zero the volley, with no wind-up
   if(s._tick){
-    if(--s._tick.t <= 0){
+    if((s._tick.t -= cobsPace(s)) <= 0){   // (slower while an intended attack runs: COBS_INTENDED)
       const T = cobsT(s, 'ticktock'), id = ++BOSS_ATK_ID, dmg = cobsDmg()*T.dmg;
       cobsThrowWatches(s, tgt, id, T.volley, T, dmg, 0.3);
       if(T.pole && tgt) cobsPole(s, tgt.x, oneSurf(tgt.x, feetY(tgt) - 4), cobsT(s, 'memurder'), id, cobsDmg());
@@ -37489,6 +37504,7 @@ function cobsMinionStep(m){
   // twice as often as its tier says -- the last tier's "every 50" was every 25, three units seven rounds a second ("dude, i cant dodge
   // because there are 25 on my screen.", the owner, 2026-10-06) -- and a MeTag cuffed again after 60 frames, not 120.)
   const t = cobsNearest(m.x, m.y), gy = groundY();
+  if(m._cd > 0){ const pace = cobsPace(boss); if(pace < 1) m._cd += 1 - pace; }   // while an intended attack of his runs, their cooldowns count slower too (COBS_INTENDED)
   if(t) m.face = Math.sign(t.x - m.x) || m.face;
   if(m.type==="metag"){
     if(t){ const a = Math.atan2(hurtCY(t) - m.y, t.x - m.x); m.vx += Math.cos(a)*m._homing*8; m.vy += Math.sin(a)*m._homing*8; }
