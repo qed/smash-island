@@ -260,18 +260,21 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
   // 'sea-part' formation", "Both sides" (canon: in "Snow Bow" she levitated snowballs without touching them). See BOW_SNOW.
   it("Bow's down-special throws exactly two snowballs, opposite ways: a foe each side is hit once for 6%, and the air throw flies straight", () => {
     const g = arena('Bow', `D.x = A.x + 150; E.x = A.x - 150; D.y = A.y; E.y = A.y; fireSpecial(A, {down:true});
-      var ss = projectiles.filter(function(p){ return p.owner === A.idx; }), cd = A.spCd, dh = [], eh = [], ld = D.pct, le = E.pct;
+      var ss = projectiles.filter(function(p){ return p.owner === A.idx; }), cd = A.spCd, dh = [], eh = [], ld = D.pct, le = E.pct, left = null;
+      var life = ss.map(function(p){ return Math.round(p.life); });
       for (var i=0;i<80;i++){ step(); D.x = Math.max(D.x, 60); D.dead = false; E.dead = false;
         if (D.pct > ld + 0.01){ dh.push(+(D.pct - ld).toFixed(2)); ld = D.pct; } if (E.pct > le + 0.01){ eh.push(+(E.pct - le).toFixed(2)); le = E.pct; }
-        D.invuln = 0; E.invuln = 0; }
+        D.invuln = 0; E.invuln = 0;
+        if (i === 29) left = projectiles.filter(function(p){ return p.owner === A.idx; }).length; }   // both hits are in by now; an unspent one would still fly
       return { n: ss.length, dirs: ss.map(function(p){ return Math.sign(p.vx); }).sort(), vy: ss.map(function(p){ return p.vy; }), cd: cd, dh: dh, eh: eh,
-               left: projectiles.filter(function(p){ return p.owner === A.idx; }).length };`);
+               left: left, life: life };`);
     expect(g.n, 'two snowballs').toBe(2);
     expect(g.dirs, 'one each way').toEqual([-1, 1]);
     expect(g.vy, 'straight, level').toEqual([0, 0]);
     expect(g.dh, 'the foe on her right: hit once, 6%').toEqual([6]);
     expect(g.eh, 'the foe on her left: hit once, 6%').toEqual([6]);
-    expect(g.left, 'each is spent on the foe it hit').toBe(0);
+    expect(Math.min(...g.life), 'an unspent snowball would still be flying at frame 30').toBeGreaterThan(30);
+    expect(g.left, 'each is spent on the foe it hit (gone by frame 30, half its life)').toBe(0);
     expect(g.cd, 'about 45 frames before the next').toBe(45);
     const a = arena('Bow', `D.x = 3000; E.x = -3000; A.y = groundY() - 260; A.onground = false; A.vy = 0; var err = null;
       try { fireSpecial(A, {down:true}); } catch(e){ err = String(e); }
@@ -284,6 +287,21 @@ describe('the Inanimate Insanity DLC, batch 2', () => {
     expect(a.drop, 'no gravity: they fly level').toEqual([0, 0]);
     expect(a.travel, 'about 420 px each, then gone').toEqual([420, 420]);
     expect(a.left).toBe(0);
+  });
+
+  // Review (2026-10-19): the CPU's snowball read counted a foe behind a wall, and on the big tower in Teams a third of her throws went into
+  // solid blocks (where shotInWall breaks them), each one spending the cooldown her Teleport home uses.
+  it("Bow's CPU does not count a foe behind a wall for her snowballs, since the wall breaks that one", () => {
+    const r = arena('Bow', `D.x = A.x + 150; E.x = A.x - 150; D.y = A.y; E.y = A.y;
+      var open = aiBowSnowSides(A);
+      worldPlats = [{ x:A.x + 70, y:A.y - 60, w:30, h:120, solid:true }];
+      var walled = aiBowSnowSides(A), d0 = D.pct, e0 = E.pct;
+      fireSpecial(A, {down:true});
+      for (var i=0;i<30;i++){ step(); D.invuln = 0; E.invuln = 0; }
+      return { open: open, walled: walled, hit: [D.pct > d0 + 0.01, E.pct > e0 + 0.01] };`);
+    expect(r.open, 'a foe each side, level and in reach').toEqual({ L: 1, R: 1 });
+    expect(r.walled, 'the one behind the wall is not in reach').toEqual({ L: 1, R: 0 });
+    expect(r.hit, 'and the wall does stop that snowball').toEqual([false, true]);
   });
 
   it("Bow aims where she holds while she fades (the last arrows count; the jump key is her up and spends no jump), and a KO ends it", () => {
