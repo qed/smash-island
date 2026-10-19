@@ -52,7 +52,7 @@ describe('the gate, shut', () => {
     const r = W.eval(`({ rows: ROSTER.filter(function(r){ return ${JSON.stringify(NAMES)}.indexOf(r.name) >= 0 || r.prize; }).length,
       mt: ${JSON.stringify(NAMES)}.filter(function(n){ return MOVE_TEXT[n]; }), quips: ${JSON.stringify(NAMES)}.filter(function(n){ return VICTORY_QUIPS[n]; }),
       sprites: ${JSON.stringify(NAMES)}.filter(function(n){ return SPRITES[n]; }), hurt: ${JSON.stringify(NAMES)}.filter(function(n){ return HURTBOX[n]; }), anim: ${JSON.stringify(NAMES)}.filter(function(n){ return FIGHTER_ANIM[n]; }),
-      kits: ['spill','voices','files'].filter(function(k){ return SMASH_ID[k] || SMASH_SPEC[k] || UPSPEC[k] || DOWNSPECIALS[k]; }),
+      kits: ['spill','voices','files'].filter(function(k){ return SMASH_ID[k] || SMASH_SPEC[k] || UPSPEC[k] || DOWNSPECIALS[k] || ATKSPECIALS[k]; }),
       arch: ['Hotelier','Quartermaster','Archivist'].filter(function(a){ return AI_CLASS[a]; }),
       prize: PRIZE_ROSTER.map(function(r){ return [r.name, isUnlocked(r), onePickable(r)]; }) })`);
     expect(r.rows).toBe(0);
@@ -431,6 +431,74 @@ describe('Cabby: On File, Drawer Slam, Off the Cliff, Ride in the Drawer', () =>
     expect(boss.hp).toBe(94);
     expect(boss.carried).toBe(false);
     expect(boss.dashing).toBe(false);
+  });
+});
+
+// THE BIG FILE: the filing-cabinet prize fighter's finisher (V + C). The owner, 2026-10-19: a big file they stand on that moves one way and buffs
+// their attack speed for as long as they stand on it; on it, their files boomerang and go the way of their opponents (not homing). The fighter is
+// reached by its kit, the way every test here reaches them. A at 400 facing right, Pen (D) and Coiny (E) the foes.
+describe('the filing-cabinet prize fighter: the Big File finisher', () => {
+  beforeAll(() => openGate());
+  const RIDER = NAMES.find((n) => KITS[n] === 'files');
+
+  it('V + C: a big file under them glides one way and stops at the side; standing on it they attack 30% faster and each file flies at the nearest foe as thrown (not homing) and comes back; off it, none of it', () => {
+    // one way, the way they face, carrying them over the floor; gone after 5 s, and the finisher waits from then
+    const ride = arena(RIDER, `A.face = -1; doAttackSpecial(A); var p = FILE_RIDES.find(function(q){ return q.owner === A; }); var x0 = p.x, a0 = A.x, back = 0, prev = p.x;
+      for (var i=0;i<60;i++){ step(); if (p.x > prev) back++; prev = p.x; }
+      var out = { moved: p.x - x0, carried: A.x - a0, back: back, standing: A._fileRide === p, k: A.atkSpd, lifted: feetY(A) <= groundY() - 20, foe: D.x };
+      for (var j=0;j<300;j++) step();
+      out.gone = FILE_RIDES.length; out.k2 = A.atkSpd; out.wait = A.fnCd > 100; return out;`, 900, 1000);
+    expect(ride.moved).toBeCloseTo(-150, 0);
+    expect(ride.carried).toBeCloseTo(-150, 0);
+    expect(ride.back, 'never back the other way').toBe(0);
+    expect([ride.standing, ride.k, ride.lifted]).toEqual([true, 1.3, true]);
+    expect([ride.gone, ride.k2, ride.wait]).toEqual([0, 1, true]);
+    // it stops at the side of the stage: never off it, never toward the blast zone
+    const edge = arena(RIDER, `A.x = WW - 90; doAttackSpecial(A); var p = FILE_RIDES[0]; for (var i=0;i<120;i++) step();
+      return { right: p.x + p.w, ww: WW, stopped: p.vx === 0, ax: A.x, dead: A.dead, on: A._fileRide === p };`, 300, 200);
+    expect(edge.right).toBeLessThanOrEqual(edge.ww);
+    expect(edge.stopped).toBe(true);
+    expect(edge.ax).toBeLessThan(edge.ww - 20);
+    expect([edge.dead, edge.on]).toEqual([false, true]);
+    // the buff holds only while standing on it: 30% faster cooldowns on it, none in a hop over it (the ride stays), back on landing, gone off it
+    const buff = arena(RIDER, `doAttackSpecial(A); step(); A.atkCd = 26; for (var i=0;i<10;i++) step(); var onCd = A.atkCd;
+      A.vy = -9; A.onground = false; step(); var hop = [A.atkSpd, !!A._fileRide, FILE_RIDES.length];
+      for (var j=0;j<60 && !A.onground;j++) step(); step(); var landed = [A.atkSpd, !!A._fileRide];
+      var p = FILE_RIDES[0]; A.x = p.x - 150; A.y = groundY() - A.r; A.vy = 0; step(); step();
+      A.atkCd = 26; for (var k=0;k<10;k++) step();
+      return { onCd: onCd, hop: hop, landed: landed, gone: FILE_RIDES.length, k: A.atkSpd, offCd: A.atkCd };`, 900, 1000);
+    expect(buff.onCd, '10 frames on it take 13 off').toBe(13);
+    expect(buff.hop).toEqual([1, false, 1]);
+    expect(buff.landed).toEqual([1.3, true]);
+    expect([buff.gone, buff.k, buff.offCd]).toEqual([0, 1, 16]);
+    // on it, the file goes at the NEAREST foe as it is thrown (here behind them and above), keeps that line when the foe moves, and comes back to them
+    const thrown = arena(RIDER, `doAttackSpecial(A); step(); step();
+      D.x = A.x - 160; D.y = A.y - 140; E.x = A.x + 300; var want = Math.atan2(D.y - (A.y - 6), D.x - A.x);
+      fireSpecial(A, {}); var p = projectiles.find(function(q){ return q.shape==='file' && q.owner===A.idx; }), aim = Math.atan2(p.vy, p.vx);
+      D.x = 80; D.y = groundY() - 24; E.x = WW - 40;   // both foes move away at once (well clear of where the ride carries them)
+      var turned = 0, far = 0;
+      for (var i=0;i<30;i++){ step(); if (!p.aimBoom.back && Math.abs(Math.atan2(p.vy, p.vx) - aim) > 1e-9) turned++; far = Math.max(far, Math.hypot(p.x - A.x, p.y - A.y)); }
+      var t = 30; while (projectiles.indexOf(p) >= 0 && t < 200){ step(); t++; }
+      return { aim: aim, want: want, turned: turned, far: far, home: projectiles.indexOf(p) < 0, t: t, hits: D.pct + E.pct - 60 };`, 900, 1000);
+    expect(Math.abs(thrown.aim - thrown.want)).toBeLessThan(0.02);
+    expect(thrown.turned, 'aimed, not homing').toBe(0);
+    expect(thrown.far).toBeGreaterThan(150);
+    expect(thrown.home, 'back with the thrower').toBe(true);
+    expect(thrown.t).toBeLessThan(140);
+    expect(thrown.hits).toBe(0);
+    // ...and it still is the file: a foe left on its line takes the 4% and goes on file
+    const hit = arena(RIDER, `doAttackSpecial(A); step(); step(); D.x = A.x + 100; D.y = A.y - 80; var y0 = D.y; fireSpecial(A, {});
+      for (var i=0;i<40 && D.pct<=30;i++){ D.y = y0; D.vy = 0; step(); } return { pct: D.pct - 30, marked: D._onFile > hazardT };`, 460, 1000);
+    expect(hit.pct).toBeCloseTo(4, 0);
+    expect(hit.marked).toBe(true);
+    // off it, the file flies flat ahead as it always has, at normal speed
+    const off = arena(RIDER, `D.x = A.x - 160; D.y = A.y - 140; fireSpecial(A, {}); var p = projectiles.find(function(q){ return q.shape==='file'; });
+      return [p.vx, p.vy, !!p.aimBoom, A.atkSpd || 1, FILE_RIDES.length];`);
+    expect(off).toEqual([12, 0, false, 1, 0]);
+    // online: the host's snapshot carries it (where, which way, glowing, whose)
+    const net = arena(RIDER, `doAttackSpecial(A); step(); return serializeState(false).frd;`);
+    expect(net.length).toBe(1);
+    expect([net[0][4], net[0][5], net[0][7]]).toEqual([1, 1, 0]);
   });
 });
 
