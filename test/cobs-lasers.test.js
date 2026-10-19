@@ -239,3 +239,42 @@ describe('A CPU FIGHTER READS THE WALLS (they are not shots, so nothing it read 
     expect(cpu.hit / cpu.met, 'a CPU fighter: in the gap for most of them').toBeLessThan(0.34);
   });
 });
+
+describe('OWNER: THE INTENDED ATTACK -- "reduce attack speed during the ship. if attacks are firing at the same time, increase cooldowns for his attacks while the \'intended\' attack fires."', () => {
+  it('while the walls are in flight his clock and his countdown run COBS_INTENDED_SLOW times slower and no other big attack starts (a big one is held, not lost); the moment the volley is over his pace is his own', () => {
+    const r = fight(`
+      atTier(3); floorAt(you, X); you.invuln = 1e9;
+      s._holdT = 0; s._atkTimer = 1e9; s._turnLive = null;
+      var keep = function(){ you.invuln = 1e9; you.pct = 0; you.x = X; you.vx = 0; };
+      cobsFightTelegraph(s, 'cannon', you); s._tel = 0; s._telKind = null; COBS_MOVES.cannon(s, you, ++BOSS_ATK_ID);
+      var S = s._ship, n = 0;
+      while (S.arm > 0 && n++ < 100){ keep(); step(); }
+      // (a) his clock and the TICK, TOCK! countdown, 30 frames into the volley
+      s._atkTimer = 60; s._tick = { t:100, T:100 };
+      for (var i=0;i<30;i++){ keep(); step(); }
+      var during = { atk:60 - s._atkTimer, tick:100 - s._tick.t, live:cobsIntendedLive(s), walls:S.walls.length, left:S.left };
+      s._tick = null;
+      // (b) what starts while it runs: a special is due (MePhone X's deletion, a big one) and the bag's next cards are big ones; every turn is let start at once
+      s._moveN = 2; s._spN = COBS_SPECIALS.indexOf('deletion'); s._bag = ['van', 'device', 'meknife', 'boomerangs', 'springs'];
+      var started = [], k = 0;
+      for (k=0; k<900 && cobsIntendedLive(s); k++){ keep(); if (!s._turnLive && !(s._tel > 0)) s._atkTimer = Math.min(s._atkTimer, 1); var was = s._tel > 0; step(); if (!was && s._tel > 0) started.push(s._telKind); }
+      var over = !cobsIntendedLive(s);
+      // (c) after it: the held special comes first, and his clock runs at his own pace
+      var next = null;
+      for (var j=0; j<600 && !next; j++){ keep(); if (!s._turnLive && !(s._tel > 0)) s._atkTimer = Math.min(s._atkTimer, 1); var was2 = s._tel > 0; step(); if (!was2 && s._tel > 0) next = s._telKind; }
+      s._tel = 0; s._telKind = null; s._xs = []; s._redT = 0; s._turnLive = null; s._atkTimer = 60;
+      for (var q=0;q<30;q++){ keep(); step(); }
+      return { slow:COBS_INTENDED_SLOW, during:during, started:started, big:COBS_BIG, over:over, next:next, after:60 - s._atkTimer, pace:cobsPace(s) };`);
+    expect(r.slow, 'x1.75 to x2').toBeGreaterThanOrEqual(1.75);
+    expect(r.slow).toBeLessThanOrEqual(2);
+    expect(r.during.live, 'the walls are in flight').toBe('cannon');
+    expect(r.during.atk, 'his clock, 30 frames into the volley').toBeCloseTo(30 / r.slow, 5);
+    expect(r.during.tick, 'the countdown too').toBeCloseTo(30 / r.slow, 5);
+    expect(r.over, 'the volley ends').toBe(true);
+    expect(r.started.length, 'quick ones still come').toBeGreaterThan(0);
+    for (const k of r.started) expect(r.big, `${k} started during the volley`).not.toContain(k);
+    expect(r.next, 'the big special held during the volley is the first after it').toBe('deletion');
+    expect(r.pace).toBe(1);
+    expect(r.after, 'after the volley: his own pace, a frame a frame').toBe(30);
+  });
+});
