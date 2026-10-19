@@ -14169,7 +14169,7 @@ function startTutorial(){
     f.y=groundY()-f.r; f.pct=0;
   });
   running=true; paused=false; hazardT=0;
-  particles=[]; projectiles=[]; beams=[]; items=[]; summons=[]; tendrils=[]; itemTimer=1e9;  // no items during the tutorial
+  particles=[]; projectiles=[]; beams=[]; HIT_ART.length=0; items=[]; summons=[]; tendrils=[]; itemTimer=1e9;  // no items during the tutorial
   try{ clutchReset(); sndInit(); musicNewMatch('battle'); }catch(e){}
   buildHUD(); banner(TUT_STEPS[0].text, 2600); startLoop();
 }
@@ -14772,7 +14772,7 @@ function finishWatchSetup(fx, youPlay, size){
   running=true; paused=false; hazardT=0; window.__elimSeq=0;
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; f.killCount=0; });
   fx._stk0 = [cupTeamStocks(0), cupTeamStocks(1)];   // what each side started with, for scoring a fight that ends on the clock
-  particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null;
+  particles=[]; projectiles=[]; beams=[]; HIT_ART.length=0; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null;
   if(stage.hazard==='evilleafy'){ evil={x:WW*0.9,y:groundY()-40}; }   // the Evil Forest keeps the monster it has in any other match
   // Start the camera where updateCamera is heading (on you, or on the fight), not at the corner of the world.
   { const me = fighters.find(f=>f.you), foc = me ? { x:me.x, y:me.y } : cupCamFocus();
@@ -15650,7 +15650,7 @@ function beginMatchNow(){
   fighters.forEach(f=>{ f.placement=null; f._downOrder=0; f._kos=0; f._falls=0; f._dmgDealt=0; f._dmgTaken=0; });
   if(SETTINGS.mode==='ctf'){ try{ ctfSpecSetup(); }catch(e){ console.error('ctfSpecSetup', e); } ctfBegin(); }   // Capture the Flag: the flags, keys, doors, jails; everyone to their home (ctfSpecSetup: a spectated match has no human)
   try{ botAdaptBegin(); }catch(e){}   // the CPUs' in-browser adaptation to this player (BOT_ADAPT): decides whether this match adapts
-  particles=[]; projectiles=[]; beams=[]; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null; oneFx=[]; cobsFx=[];
+  particles=[]; projectiles=[]; beams=[]; HIT_ART.length=0; evil=null; items=[]; summons=[]; itemTimer=180; tendrils=[]; BOSS_ARENA=null; oneFx=[]; cobsFx=[];
   impactFxClear();   // no dust, debris or floor scar carries over from the last match (impact)
   try{ shopMatchReset(); }catch(e){}   // Win Tokens: this match's smash tally, KO bursts and quest line start empty
   // BOSS RUSH: all fighters join forces (team 0) and a boss is summoned as the enemy.
@@ -17164,6 +17164,72 @@ addEventListener('keydown', e => {
   if(!SHOW_HITBOXES) DEBUG_HITS.length = 0;
   // (no banner: the owner, 2026-10-18, "Keep B, no banner" -- nothing is written on screen mid-match)
 });
+
+// ============================================================
+//  HIT ART -- every hit area drawn at its true size, on its true frames
+// ============================================================
+// The owner (2026-10-19): "give shockwaves and other things like that sprites. its too hard to know whats in or out of hitboxes
+// without having hitboxes on, which is banned in competitions." So an attack's art IS its hit area: the same shape, the same size,
+// the same frames. Almost every hit is measured to the target's outline (hurtGap), so one rule covers it: touch the drawn shape with
+// any part of your body and you are hit.
+//   live  a translucent fill with a crisp edge on each frame the hit is tested, then HIT_ART_FADE frames fading out (it is over)
+//   tell  a dashed edge at the true size and spot, filling in from where it starts as the wind-up runs (nothing can hit yet)
+// The shapes are hitShape's own (fan, capsule) plus {kind:'circle', x, y, r} for hitCircle and the rings, and a box {kind:'box', x, y,
+// w, h}. The sim records them as it tests them -- hitShape, hitCircle, mvStrike, gbTick, the smash patterns, the up-specials, the
+// wind-ups' hits -- and drawHitArt draws them (the wind-up tells it draws from the fighter's own _windup.sh, see startWindup). Render-
+// only: nothing reads HIT_ART back, it spends no randomness, and it rides the snapshot (`ha`) so a client draws what the host tested.
+// This replaced the one white swipe every melee move drew (drawSwipeArc): about 50 px, always in front, and starting after the hit.
+const HIT_ART = [];
+const HIT_ART_FADE = 4;      // frames a live shape takes to fade once its hit is over
+const HIT_ART_MAX = 96;
+const HIT_FAN_PAD = 5;       // shapeHits gives a fan's limb this thickness (its `thick`): a fan reaches 5 px past its own lines, and is drawn so
+const HA_N = {};             // per fighter: how many automatic records this frame (each hit in one frame gets its own key)
+function haShape(sh){        // a copy of the drawing geometry only (a hit shape may also carry its sweet spot, or a body)
+  if(!sh) return null;
+  if(sh.kind === 'fan') return { kind:'fan', cx:sh.cx, cy:sh.cy, r0:sh.r0, r1:sh.r1, a0:sh.a0, a1:sh.a1, face:sh.face < 0 ? -1 : 1 };
+  if(sh.kind === 'capsule') return { kind:'capsule', x1:sh.x1, y1:sh.y1, x2:sh.x2, y2:sh.y2, r:sh.r };
+  if(sh.kind === 'circle') return { kind:'circle', x:sh.x, y:sh.y, r:sh.r };
+  if(sh.kind === 'box') return { kind:'box', x:sh.x, y:sh.y, w:sh.w, h:sh.h };
+  return null;   // 'body': the attacker's own outline is the hit, and the fighter is already drawn
+}
+function haSame(a, b){
+  if(!a || !b || a.kind !== b.kind) return false;
+  for(const k in a){ if(k === 'kind') continue; if(Math.abs((a[k] || 0) - (b[k] || 0)) > 1e-6) return false; }
+  return true;
+}
+// Record (or refresh) one shape. The key is per fighter: recorded again next frame it moves, so a box live for five frames is one
+// shape riding the swing. o: {tell, p (0..1, how far the wind-up is), color, style, world, fade, tick}
+//   style  ''  |  'ring' a shockwave's edge  |  'zone' an aura that ticks  |  'pull' a pull's reach  |  'grab' a grab's hand
+//   world  stays where it was cast instead of riding its fighter on the live frame (an up-special's ring, as the caster rises)
+//   tick   this frame is one of a multi-hit's hits: the shape flashes, so the hits can be counted
+function hitArt(f, key, sh, o){
+  const g = haShape(sh); if(!g) return null;
+  const own = f && f.idx != null ? f.idx : -1, k = own + ':' + key;
+  let e = null;
+  for(let i = HIT_ART.length - 1; i >= 0; i--){
+    const q = HIT_ART[i];
+    if(q.k === k){ e = q; continue; }
+    const age = hazardT - q.t;
+    if(age > (q.fd || HIT_ART_FADE) || age < -600 || (q.m === 't' && age > 0)) HIT_ART.splice(i, 1);   // over (a run that never draws keeps the list short here)
+  }
+  if(!e){ e = { k:k }; HIT_ART.push(e); if(HIT_ART.length > HIT_ART_MAX) HIT_ART.shift(); }
+  e.o = own; e.t = hazardT; e.sh = g; e.m = o && o.tell ? 't' : 'l'; e.p = o && o.p != null ? Math.max(0, Math.min(1, o.p)) : 1;
+  e.c = (o && o.color) || (f && f.color) || '#ffffff'; e.s = (o && o.style) || ''; e.w = o && o.world ? 1 : 0; e.fd = (o && o.fade) || 0;
+  if(o && o.tick) e.n = hazardT;
+  e.ox = f && f.x != null ? f.x : 0; e.oy = f && f.y != null ? f.y : 0;
+  return e;
+}
+// What hitShape and hitCircle record on their own. A move that drew this very hit already this frame (a lunge's wedge, an up-special's
+// ring, a plant's release) keeps its own record and style.
+function haAuto(f, sh){
+  if(!f) return;
+  const g = haShape(sh); if(!g) return;
+  const own = f.idx != null ? f.idx : -1;
+  for(const e of HIT_ART) if(e.o === own && e.t === hazardT && e.m === 'l' && haSame(e.sh, g)) return;
+  const c = HA_N[own] || (HA_N[own] = { t:-1, n:0 });
+  if(c.t !== hazardT){ c.t = hazardT; c.n = 0; }
+  hitArt(f, 'h' + (c.n++), g);
+}
 
 // ============================================================
 //  FIGHTER STATS: raw stats, per fighter
@@ -38362,6 +38428,7 @@ function step(){
     if(f._sawing>0){
       if(!f._sawOn){ f._sawOn = true; beginCombo(f); }   // a fresh spin is one move (see graceBlocks)
       f._sawing--;
+      hitArt(f, 'spin', { kind:'circle', x:f.x, y:f.y, r:f.r + (f._spinR||30) - HURT_R0 }, { style:'zone', tick:f._sawing%6===0 });   // HIT ART: the aura's reach, riding the fighter, flashing on each tick below
       for(let i=0;i<2;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*30,f.y+Math.sin(a)*30,'#d0d0d0',3); }
       if(f._sawing%6===0){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f))continue;
         if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+(f._spinR||30)){
@@ -38393,6 +38460,7 @@ function step(){
         if(!f.onground){ f.vy=Math.max(f.vy,12); if(hazardT%2===0) puff(f.x,f.y-f.r,f.color,3); }
         else {
           hitCircle(f, f.x, f.y+f.r, f.r+st.rad, st.dmg, st.dmg, f.face*st.kb[0], st.kb[1]);
+          if(st.leave==='stun' || st.leave==='knockdown') hitArt(f, 'plungeStun', { kind:'circle', x:f.x, y:f.y, r:f.r+st.rad }, { color:'#ffffff', world:true });   // HIT ART: the stun is judged from the body's centre, so it is a ring of its own, a body-half above the landing's
           if(st.leave==='stun'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<f.r+st.rad) stunFx(t,20); } }
           else if(st.leave==='knockdown'){ for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<f.r+st.rad) SM_FX.knockdown(t, f, 30); } }   // a landing that knocks them down, as a swing's eff would
           else if(st.leave){ spawnProj(f, Object.assign({vx:0,vy:0,grav:true,dmg:4,kb:2,r:10,color:f.color,life:40}, DROP_RIDERS[st.leave]||{})); }
@@ -38401,6 +38469,9 @@ function step(){
           f._stall=null;
         }
       }
+      // HIT ART: while hanging and falling, where the landing will hit: its circle on the surface below, dashed, filling in as it comes down
+      if(f._stall && (st.phase==='hang' || st.phase==='fall') && !f.onground){ const top = surfaceBelow(f.x, feetY(f));
+        if(top !== null) hitArt(f, 'plunge', { kind:'circle', x:f.x, y:top, r:f.r+st.rad }, { tell:true, p:1 - (top - feetY(f))/240 }); }
       if(f._stall && --st.life<=0) f._stall=null;
     }
     // A circle winding up (startWindup). Nothing lands until it runs out; a hit in the meantime
@@ -38446,8 +38517,12 @@ function step(){
         }
         if(f.vy > 0 && !f.onground) f.vy += GRAV*0.5*(f.st || STAT_ONE).fall;   // (FIGHTER STATS: fall)
         const stomp = (f.vy > 0 && !f.onground) ? smashTargets(f, f.x, f.y+f.r*0.5, m.rad).filter(function(t){ return !m.hit[t.idx]; }) : [];
+        // HIT ART: the stomp is live on every frame of the way down, so its ring rides the body; and from the hop on, where it will land
+        if(f.vy > 0 && !f.onground) hitArt(f, 'leap', { kind:'circle', x:f.x, y:f.y+f.r*0.5, r:m.rad }, { color:m.color, style:'ring' });
+        if(!f.onground){ const top = surfaceBelow(f.x, feetY(f)); if(top !== null) hitArt(f, 'leapLand', { kind:'circle', x:f.x, y:top - f.r*0.5, r:m.rad }, { tell:true, p:1 - (top - feetY(f))/200, color:m.color }); }
         if(stomp.length || (f.onground && f.vy>=0)){
           const hurt = f._hurtAnim;
+          hitArt(f, 'leap', { kind:'circle', x:f.x, y:f.y+f.r*0.5, r:m.rad }, { color:m.color, style:'ring' });   // HIT ART: the stomp that lands (a landing too, in the smash's colour)
           smashSwing(f, f.x, f.y+f.r*0.5, m.rad, m.dmg, m.kb, null, m.fx, m.n, m.up);
           for(let i=0;i<12;i++) puff(f.x+(Math.random()*70-35), f.y+f.r, m.color, 5);
           if(f._hurtAnim === hurt){ if(stomp.length && !f.onground) f.vy = -4; f.vx *= 0.4; }   // bounce off them
@@ -38456,11 +38531,13 @@ function step(){
       } else if(m.pat==='plant'){
         if(hazardT%3===0) puff(f.x+(Math.random()*30-15), f.y+f.r-4, m.color, 3);
         if(--m.t<=0){
+          hitArt(f, 'plant', { kind:'circle', x:f.x, y:f.y, r:m.rad }, { color:m.color, style:'ring' });   // HIT ART: the release, exactly where the tell said
           smashSwing(f, f.x, f.y, m.rad, m.dmg, m.kb, null, m.fx, m.n, m.up);
           for(let i=0;i<16;i++) puff(f.x+(Math.random()*m.rad*2-m.rad), f.y+f.r, m.color, 5);
           f._sm=null;
-        }
+        } else hitArt(f, 'plant', { kind:'circle', x:f.x, y:f.y, r:m.rad }, { tell:true, p:1 - m.t/(m.t0 || (m.t0 = m.t + 1)), color:m.color });   // HIT ART: rooted, winding up: the circle it will hit, filling in (t0: render-only)
       } else if(m.pat==='reel'){
+        hitArt(f, 'reel', { kind:'circle', x:f.x, y:f.y, r:m.R }, { color:m.color, style:'pull' });   // HIT ART: the pull's reach (a foe whose centre is inside it is dragged in)
         for(const t of fighters){
           if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
           if(Math.hypot(t.x-f.x,t.y-f.y) > m.R) continue;
@@ -38468,6 +38545,7 @@ function step(){
           if(hazardT%3===0) puff(t.x, t.y, m.color, 3);
         }
         if(--m.t<=0){
+          hitArt(f, 'reel', swingFan(f, f.x+f.face*14, f.y, m.reach), { color:m.color });   // HIT ART: the swing that collects them
           smashSwing(f, f.x+f.face*14, f.y, m.reach, m.dmg, m.kb, m.band, m.fx, m.n, m.up, swingFan(f, f.x+f.face*14, f.y, m.reach));
           for(let i=0;i<12;i++){ const a=i/12*Math.PI*2; puff(f.x+Math.cos(a)*40, f.y+Math.sin(a)*30, m.color, 4); }
           f._sm=null;
@@ -38476,6 +38554,7 @@ function step(){
         // The ring EXPANDS, so it catches someone walking in and can be outrun by someone leaving.
         const k = 1 - (m.t/(m.t0||(m.t0=m.t)));
         const R = m.r0 + (m.r1-m.r0)*k; noteHitbox(f.x, f.y, R);
+        hitArt(f, 'burst', { kind:'circle', x:f.x, y:f.y, r:R }, { color:m.color, style:'ring' });   // HIT ART: the ring at exactly R this frame, a full circle (it hits above and below too)
         for(const t of fighters){
           if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0||m.hit[t.idx]) continue;
           if(hurtGap(t, f.x, f.y) < R){
@@ -38497,6 +38576,7 @@ function step(){
     if(f._rant){   // Dora's flurry (see case "rant"): one jab every `every` frames until n are thrown; a hit on her ends it
       if(f.hitstun>0 || f.dead){ f._rant=null; }
       else if(--f._rant.t<=0){ const m=f._rant, cx=f.x+f.face*32; m.t=m.every;
+        hitArt(f, 'rant', { kind:'circle', x:cx, y:f.y, r:m.reach - HURT_R0 }, { color:'#f2a03a' });   // HIT ART: each jab's fist, at its true reach
         f._combo=true; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||graceBlocks(t,f))continue; if(hurtGap(t, cx, f.y) < -HURT_R0 + m.reach){ applyHit(t, m.dmg, f.face*(m.n===1?(m.finKb||7):2), m.n===1?(m.finUp||-4):-1, f); } } if(summons.length) damageSummons(f, cx, f.y, m.reach, m.dmg); f._combo=false;   // each jab reaches a boss too (it looped over fighters only: 0 in Boss Rush)
         for(let i=0;i<3;i++) puff(cx+Math.random()*18-9,f.y+Math.random()*18-9,'#f2a03a',3);
         if(--m.n<=0) f._rant=null; }
@@ -40180,6 +40260,7 @@ function smashObjects(f, cx, cy, rad, seen){
 // standing (the press frame), where how close you are is a choice. Travelling in, a hilt could never be sweet.
 function lungeSwing(f, m, moving){
   const cx = f.x + f.face*m.fx, cy = f.y + m.fy, fan = swingFan(f, cx, cy, m.reach);
+  hitArt(f, 'lunge', fan, { color:m.color });   // HIT ART: the wedge is tested on every frame of the lunge, so it rides the fighter on every one
   if(!shapeTargets(f, fan).length && !smashObjects(f, cx, cy, m.reach).length) return false;
   const hurt = f._hurtAnim;
   smashSwing(f, cx, cy, m.reach, m.dmg, m.kb, moving ? null : m.band, m.eff, m.n, m.up, fan);
@@ -40286,7 +40367,7 @@ const SM_PAT = {
       dmg:s.dmg, kb:s.kb, fx:s.effect, n:s.n, color:s.color||f.color, hit:{}, up:s.up};
     // A ring around you winds up before it expands -- see CIRCLE_WINDUP. The cost was already
     // paid in runSmashSpec, so a ring that gets interrupted still costs what it would have.
-    startWindup(f, s.wind==null ? CIRCLE_WINDUP : s.wind, function(){ f._sm = sm; }, sm.color);
+    startWindup(f, s.wind==null ? CIRCLE_WINDUP : s.wind, function(){ f._sm = sm; }, sm.color, { kind:'circle', r:sm.r1 });   // the tell: the ring's full size
     if(f._windup) f._windup.smash = true;   // the angle waits for it (SMASH_ANGLE_FRAMES)
   },
   // An instant line to the edge of the stage. No travel time, so it is answered by position only.
@@ -40306,7 +40387,7 @@ const SM_PAT = {
     // in Boss Rush. Judged at the point of the line nearest each body, the way the fighters are; once per summon.
     if(summons.length){ const once=new Set(); for(const o of summons){ if(o.team===f.team) continue; const px=Math.max(lo, Math.min(hi, o.x));
       if(Math.hypot(o.x-px, o.y-y) < o.r+(s.wide||18)) damageSummons(f, px, y, s.wide||18, s.dmg, null, once); } }
-    beams.push({x0, y, x1, face:f.face, color:s.color||f.color, life:14, owner:f.idx});
+    beams.push({x0, y, x1, face:f.face, color:s.color||f.color, life:14, owner:f.idx, w:s.wide||18});   // w: how far either side of the line it hits (HIT ART: its band)
     return n;
   },
 };
@@ -40831,6 +40912,7 @@ function riseShape(f, s){
   if(s.hit){
     const h=s.hit, cx=f.x+f.face*(h.fx||0), cy=f.y+(h.off==null?-14:h.off), reach=f.r+(h.reach||18);
     const fan = upFan(f, cx, cy, reach), hitList = shapeTargets(f, fan);   // the arc of an uppercut, evaluated before the hit lands
+    hitArt(f, 'up', fan, { world:true, fade:9 });   // HIT ART: it lands on the cast frame at the cast point -- all round the caster when upFan is a full ring -- and stays there as they rise
     const n = hitShape(f, fan, h.dmg[0], h.dmg[1], f.face*h.kb[0], h.kb[1], h.band==null?undefined:h.band);
     if(n>0 && s.leave==='lifesteal'){ f.pct=Math.max(0,f.pct-3); for(let i=0;i<5;i++) puff(f.x,f.y-8,'#f5c88a',3); }
     if(n>0 && s.leave==='define'){ for(const t of hitList){ t.defined=600; t.defineStacks=Math.min((t.defineStacks||0)+2,5); } }
@@ -40839,9 +40921,11 @@ function riseShape(f, s){
   if(s.shot){ const P=s.shot;
     spawnProj(f, Object.assign({}, P, {vx:f.face*(P.vx||8), vy:P.vy||0, grav:!!P.grav, dmg:P.dmg||6, kb:P.kb||5, r:P.r||8, color:P.color||f.color, life:P.life||60})); }
   if(s.leave==='stun' && s.shape!=='plunge'){ const R = s.hit ? f.r+(s.hit.reach||18) : (s.stunR||70);   // a plunge's stun is its landing's (see _stall)
+    hitArt(f, 'leave', { kind:'circle', x:f.x, y:f.y, r:R }, { color:'#ffffff', world:true, fade:8 });   // HIT ART: the stun's reach
     for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, f.x, f.y)<R) stunFx(t,20); }
     for(let i=0;i<14;i++) puff(f.x+(Math.random()*R*2-R),f.y+(Math.random()*40-20),'#fff',4); }
   if(s.leave==='taunt'){ const R = s.stunR||70, x0=f._castX==null?f.x:f._castX, y0=f._castY==null?f.y:f._castY;   // Teardrop: from where she stood
+    hitArt(f, 'leave', { kind:'circle', x:x0, y:y0, r:R }, { color:'#6fb7ff', world:true, fade:8 });   // HIT ART: the taunt's reach, where she stood
     for(const t of fighters){ if(t.dead||t.team===f.team) continue; if(hurtGap(t, x0, y0)<R){ t._taunted=TAUNT_FRAMES; t._tauntedBy=f.idx; } }
     for(let i=0;i<8;i++) puff(x0+(Math.random()*R*2-R),y0-10,'#6fb7ff',4); }
   if(s.drop){
@@ -41042,7 +41126,7 @@ const DOWNSPECIALS = {
   beam(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:6,kb:4,r:12,color:'#e0384b',life:220,trap:true});  }, // Ruby — gem trap
   gust(f){ f.flash=8; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.abs(t.y-f.y)<70 && Math.abs(t.x-f.x)<170){ t.vx += Math.sign(t.x-f.x||f.face)*7; t.onground=false; } } for(let i=0;i<10;i++) puff(f.x+(Math.random()*120-60),f.y,'#bfe8ff',4);  }, // Fanny — push everyone away
   reflect(f){ f.flash=10; f.reflecting=44; puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
-  ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b');  }, // Bell — brace + nearby stun
+  ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'ring', { kind:'circle', x:f.x, y:f.y, r:f.r+50-HURT_R0 }, { color:'#f2c84b' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b', { kind:'circle', r:f.r+50-HURT_R0 });  }, // Bell — brace + nearby stun
   sign(f){ f.flash=8; f.armor=28; f._empower=1; puff(f.x,f.y-8,'#6fb7ff',6);  }, // Bracelety — self-empower next hit
   dribble(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:5,kb:8,r:13,color:'#e08a3a',life:220,trap:true,arm:24});  }, // Basketball — bouncy mine
   buynow(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ tgt.weakened=160; } }, // Yellow Face — weaken nearest
@@ -41059,7 +41143,7 @@ const DOWNSPECIALS = {
     addProj({owner:f.idx,ownerObj:f,x:f.x,y:groundY()-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:18,color:'#f2c84b',life:220,trap:true,slow:true});  }, // Taco -- arms, then an instant salsa puddle
   spike(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap
   sucker(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#c04be0',life:220,trap:true,root:true,arm:14});  }, // Lollipop — rooting trap
-  static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff');  }, // TV — brace + nearby stun
+  static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'static', { kind:'circle', x:f.x, y:f.y, r:f.r+50-HURT_R0 }, { color:'#8fd0ff' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff', { kind:'circle', r:f.r+50-HURT_R0 });  }, // TV — brace + nearby stun
   battery(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ } }, // Remote — scramble nearest (capped, was an uncapped 120f)
   fluff(f){ f.flash=8; f.armor=40; f.vy=Math.min(f.vy,-3); puff(f.x,f.y-8,'#f2e0d0',6);  }, // Pillow — cushiony guard
   cool(f){ f.flash=8; f.armor=Math.max(f.armor,50); f.pct=Math.max(0,f.pct-8); puff(f.x,f.y-8,'#e8e8e8',6);  }, // Loser — armor + heal a little
@@ -41222,6 +41306,7 @@ const DOWNSPECIALS = {
   condishawn(f){
     if(f._windup) return;
     startWindup(f, 50, function(){
+      hitArt(f, 'sneeze', { kind:'circle', x:f.x, y:f.y, r:f.r + 44 }, { color:'#7cc242' });   // HIT ART: the sneeze, at its reach
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
         if(hurtGap(t, f.x, f.y) >= f.r + 44) continue;
         applyHit(t, 8, Math.sign(t.x - f.x || f.face)*9, -6, f);
@@ -41235,7 +41320,7 @@ const DOWNSPECIALS = {
       if(summons.length) damageSummons(f, f.x, f.y, f.r+44, 8);   // the wake-up sneeze reaches a boss too (it looped over fighters only: 0 in Boss Rush)
       for(let i=0;i<14;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*44, f.y+Math.sin(a)*30, '#7cc242', 4); }
       f.flash = 8;
-    }, '#18eac1');
+    }, '#18eac1', { kind:'circle', r:f.r + 44 });
     if(f._windup){ f._windup.nap = true; f.hitstun = Math.max(f.hitstun||0, 50); }   // asleep: no input until he wakes (FIGHTER_ANIM draws him sitting)
   },
   // Yin-Yang -- MINDFUL POSITIONING. Mindful positioning lets one half take full control (Yin-Yang, Abilities); with it
@@ -41301,7 +41386,7 @@ const DOWNSPECIALS = {
         for(let i=0;i<5;i++) puff(t.x, t.y - 6, i%2 ? '#ffffff' : '#9aa8ff', 4); }
       if(summons.length) damageSummons(f, f.x, f.y, f.r + MAG_REPEL_R, MAG_REPEL_DMG);
       f._repelFx = { t:hazardT, R:far }; shake(3);
-    }, '#4046B8');
+    }, '#4046B8', { kind:'circle', r:MAG_REPEL_R, r2: fighters.some(function(t){ return !t.dead && t.team!==f.team && magnetMetal(t); }) ? MAG_REPEL_R*MAG_METAL : 0 });   // (r2: the reach on a metal foe, when one is in the match)
     f.spCd = 110;
   },
   barrier(f){ // MeTag -- PRECISION FINDING: tracking is their species ability, and "the logo glows when tracking someone" (their
@@ -41690,6 +41775,8 @@ function mvGrabStart(f){
 function gbTick(f, inp){
   const g = f._gb, G = g.G;
   inp.left = false; inp.right = false; inp.jump = false;
+  // HIT ART: the grab's reach comes out over its first frames (a hand sliding to the tip), then closes on frame G.st -- white on a catch, grey on a whiff
+  if(g.t < G.st) hitArt(f, 'grab', { kind:'capsule', x1: f.x + f.face * f.r * 0.2, y1: f.y, x2: f.x + f.face * (f.r + G.reach), y2: f.y, r: 15 }, { tell:true, p:g.t / G.st, color:'#ffffff', style:'grab' });
   if(g.t === G.st){
     const sh = { kind:'capsule', x1: f.x + f.face * f.r * 0.2, y1: f.y, x2: f.x + f.face * (f.r + G.reach), y2: f.y, r: 15 };
     if(SHOW_HITBOXES) DEBUG_HITS.push({ shape: sh, pts: shapePts(sh), t: 10 });
@@ -41699,6 +41786,7 @@ function gbTick(f, inp){
       if(!shapeHits(sh, t)) continue;
       const d = Math.abs(t.x - f.x); if(d < bd){ bd = d; best = t; }
     }
+    hitArt(f, 'grab', sh, { color: best ? '#ffffff' : '#9aa7b0', style:'grab' });
     if(best) holdStart(f, best, G);
   }
   if(++g.t > G.whiff + 2) f._gb = null;
@@ -41873,6 +41961,9 @@ function mvTick(f, inp){
 function mvStrike(f, mv, b, gi){
   const sh = mvShape(f, b.s), bb = shapeBounds(sh), key = b.g || ('b' + gi);
   if(SHOW_HITBOXES) DEBUG_HITS.push({ shape:sh, pts:shapePts(sh), t:6 });
+  // HIT ART: each box on each of its live frames, mirrored as the move faces -- a back-air behind, a down-air under -- and flashing on
+  // each of a rehitting box's hits (a neutral air's spins can be counted)
+  { const b0 = b.t0 == null ? mv.s.st : b.t0; hitArt(f, 'mv' + gi, sh, { tick: !!b.rehit && (mv.t - b0) % b.rehit === 0 }); }
   hitTurrets(f, bb.cx, bb.cy, bb.rad, b.dmg);
   const hs = mv.hit[key] || (mv.hit[key] = new Map());
   const fresh = shapeTargets(f, sh).filter(t => !hs.has(t.idx));
@@ -44080,11 +44171,17 @@ const CIRCLE_WINDUP = 8;
 const FLUFF_REACH = 96;
 const DOUGH_SMASH_WINDOW = 300;   // Dough: how long after a foe's smash the Knockoff can still copy it (5 s)
 const KNOCKOFF_FRAMES = 90;   // Dough: how long a copy stays "weaker" (case "copycat"): Candle's 32-frame hold and Bonesaw's three strokes fit inside
-function startWindup(f, frames, fire, color){
+// `sh` (HIT ART) is what the wind-up will hit, so its tell is drawn at the true size and spot (drawHitArt), relative to the fighter:
+//   {kind:'circle', r, x?, y?}   centred x forward and y down from them (a ring round them: just r); {wx, wy} for a spot fixed in the world
+//   {kind:'capsule', x1, y1, x2, y2, r}   forward-relative, like a moveset box
+//   r2: a second, fainter ring (Magnet's reach on metal); c: the tell's colour when the wind-up's own is see-through
+// With no shape (a counter's read, a held charge, a whistle, shots still to come) the cue hugs the body instead (drawWindupCue): no
+// ring that reads as a reach. A see-through colour and no shape draws nothing (a carry, a grip: the move draws itself).
+function startWindup(f, frames, fire, color, sh){
   if(f._windup) return;              // already committed to one; a second press is simply eaten
   // `falls` pins the wind-up to this life: every KO path bumps _falls, so a ring started just
   // before a KO can never go off at the respawn point, whichever respawn route ran.
-  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0 };
+  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, sh: sh || null };
 }
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
@@ -44518,6 +44615,7 @@ function doSpecial(f){
       startWindup(f, CIRCLE_WINDUP, function(){
         if(f._infected>0) return;   // turned during the wind-up: a puppet cannot spread it
       const R=95; let caught=0;
+      hitArt(f, 'outbreak', { kind:'circle', x:f.x, y:f.y, r:R - HURT_R0 }, { color:'#b8c04b' });   // HIT ART: the cloud's reach
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue;
         if(hurtGap(t, f.x, f.y) < -HURT_R0 + R && t._infected<=0){
           t._origTeam=t.team; t.team=f.team; t._infected=110; t._infectedBy=f.idx;   // ~1.8s zombified
@@ -44526,7 +44624,7 @@ function doSpecial(f){
         }
       }
       for(let i=0;i<20;i++){ const a=Math.random()*Math.PI*2, d=Math.random()*R; puff(f.x+Math.cos(a)*d,f.y+Math.sin(a)*d,'#b8c04b',4); }
-      }, '#b8c04b');
+      }, '#b8c04b', { kind:'circle', r:95 - HURT_R0 });
        f.flash=10; f.spCd=173; break; }
     case "dribble": { // Basketball: ricocheting ball that speeds up per bounce
       addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*18,y:f.y,vx:f.face*8,vy:-2,grav:true,bounce:true,dmg:7,kb:6,r:9,color:'#e08a3a',life:130,accel:true,aimWindow:30}); f.flash=6; break; }
@@ -44534,13 +44632,14 @@ function doSpecial(f){
       // It had no team check: applyHit refused an ally the damage, but the stun below was set
       // directly, so Bell froze her own teammates for 20 frames. It skips her side now.
       startWindup(f, CIRCLE_WINDUP, function(){
+      hitArt(f, 'ring', { kind:'circle', x:f.x, y:f.y, r:f.r+80-HURT_R0 }, { color:'#f2c84b', style:'ring' });   // HIT ART: the bell's wave, at its reach
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+80){ applyHit(t,6,Math.sign(t.x-f.x||1)*5,-5,f); stunFx(t,20);} }
       if(summons.length) damageSummons(f, f.x, f.y, f.r+80, 6);   // reaches a boss too (it looped over fighters only: 0 in Boss Rush)
       for(let i=0;i<14;i++){ const a=i/14*Math.PI*2; puff(f.x+Math.cos(a)*40,f.y+Math.sin(a)*40,'#f2c84b',3);}
-      }, '#f2c84b');  f.spCd=69; break; }
+      }, '#f2c84b', { kind:'circle', r:f.r+80-HURT_R0 });  f.spCd=69; break; }
     case "sign": spawnProj(f,{vx:f.face*10,vy:0,grav:false,boomerang:true,ownerFace:f.face,dmg:10,kb:8,r:9,color:'#6fb7ff',life:70}); f.flash=6; f.spCd=46; break; // Bracelety (buffed: weak)
     case "gust": f._empower=1; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#bfe8ff',5);  f.spCd=67; break; // Fanny: charge next air blast
-    case "reflect": f.reflecting=36; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+comebackRange(f); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } if(summons.length) damageSummons(f, f.x, f.y, rr, 5); }, '#e8e8e8'); puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
+    case "reflect": f.reflecting=36; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+comebackRange(f); hitArt(f, 'reflect', { kind:'circle', x:f.x, y:f.y, r:rr-HURT_R0 }, { color:'#e8e8e8' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } if(summons.length) damageSummons(f, f.x, f.y, rr, 5); }, '#e8e8e8', { kind:'circle', r:f.r+44+comebackRange(f)-HURT_R0 }); puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
     case "grasstree": { // Grassy: GRASSTREE (TPOT 16-17: he pilots Tree's body). For GRASSTREE_FRAMES he is up a
       // tree: armoured, a tree's reach and weight behind every swing, and slower. Using it again refreshes it.
       f._grasstree = GRASSTREE_FRAMES; f.flash=10;
@@ -44589,10 +44688,11 @@ function doSpecial(f){
       spawnProj(f,{vx:f.face*9,vy:0,grav:false,dmg:5,kb:2,r:9,color:'#c04be0',life:50,root:true}); f.flash=6; f.spCd=67; break; }
     case "static": { // TV: stunning burst around itself
       startWindup(f, CIRCLE_WINDUP, function(){
+      hitArt(f, 'static', { kind:'circle', x:f.x, y:f.y, r:f.r+70-HURT_R0 }, { color:'#8fd0ff' });   // HIT ART: the static's reach
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+70){ applyHit(t,7,Math.sign(t.x-f.x||1)*4,-4,f); stunFx(t,30);} }
       if(summons.length) damageSummons(f, f.x, f.y, f.r+70, 7);   // reaches a boss too (it looped over fighters only: 0 in Boss Rush)
       for(let i=0;i<16;i++){ const a=i/16*Math.PI*2; puff(f.x+Math.cos(a)*(30+Math.random()*30),f.y+Math.sin(a)*(24+Math.random()*20),'#8fd0ff',4);}
-      }, '#8fd0ff'); f.flash=10; f.spCd=74;  break; }
+      }, '#8fd0ff', { kind:'circle', r:f.r+70-HURT_R0 }); f.flash=10; f.spCd=74;  break; }
     case "battery": { // Remote: BATTERY SWAP. She pops her battery out and hurls it -- heavy, bouncing, it stuns
       // what it hits -- and until a fresh one clicks in (BATTERY_OUT frames) she runs on reserve power: slower,
       // no specials. Without batteries she would die; this is the closest a fighter gets to that.
@@ -44601,10 +44701,11 @@ function doSpecial(f){
       f._noBattery = BATTERY_OUT; f.flash=8; for(let i=0;i<6;i++) puff(f.x,f.y-6,'#f2d84b',4); f.spCd=60; break; }
     case "fluff": { // Pillow: springy shockwave that pops foes up (low damage, sets up juggles)
       startWindup(f, CIRCLE_WINDUP, function(){
+      hitArt(f, 'fluff', { kind:'circle', x:f.x, y:f.y, r:f.r+FLUFF_REACH-HURT_R0 }, { color:'#f2e0d0', style:'ring' });   // HIT ART: the shockwave, at its reach
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+FLUFF_REACH){ applyHit(t,16,Math.sign(t.x-f.x||1)*4,-12,f); } }   // 7 -> 16: the lowest damage in the game (96 a match)
       if(summons.length) damageSummons(f, f.x, f.y, f.r+FLUFF_REACH, 16);   // the shockwave reaches a boss too (it looped over fighters only: 0 in Boss Rush)
       f.vy=Math.min(f.vy,-4); for(let i=0;i<10;i++) puff(f.x+(Math.random()*FLUFF_REACH*1.1-FLUFF_REACH*0.55),f.y+10,'#f2e0d0',5);   // (the burst's puffs spread across the reach)
-      }, '#f2e0d0'); f.flash=8; f.spCd=48; break; }
+      }, '#f2e0d0', { kind:'circle', r:f.r+FLUFF_REACH-HURT_R0 }); f.flash=8; f.spCd=48; break; }
     case "cool": { // Loser: self-buff — armor + empowered next hit
       // KIT FIX (kit-roles): both his specials were armour stances. Stay Cool now ENDS in a cold blast: when the armour runs out (LOSER_COOL_FRAMES after it
       // went up, if nothing has knocked him out of the stance) a chill goes off around him and pops every foe right beside him up, 3% and a lift, so the stance is
@@ -44951,9 +45052,9 @@ function doSpecial(f){
         for(const t of shapeTargets(f, sh)) SM_FX.strip(t, f);
         hitShape(f, sh, last ? 6 : 3, last ? 6 : 3, f.face*(last ? 8 : 1.5), last ? -5 : -2);
         for(let i=0;i<4;i++) puff(f.x + f.face*(f.r + 20), f.y, i%2 ? '#924e3c' : '#d9d2c4', 3);
-        if(!last) startWindup(f, 6, stroke, 'rgba(0,0,0,0)');
+        if(!last) startWindup(f, 6, stroke, 'rgba(0,0,0,0)', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14, c:'#924e3c' });
       };
-      startWindup(f, 8, stroke, '#924e3c');
+      startWindup(f, 8, stroke, '#924e3c', { kind:'capsule', x1:f.r*0.3, y1:0, x2:f.r + 40, y2:0, r:14 });   // the tell is the stroke's own line (it was a circle)
       f.flash=8; f.spCd=40; break; }
     case "spikeburst": { // Spikey: CAN'T HOLD IT IN. When he is distressed he shoots off all his spikes, and they grow back
       // very fast (Abilities); in Rock the Boat they shake as it builds, then all go ("I just can't hold it in anymore!").
@@ -45025,9 +45126,10 @@ function doSpecial(f){
         f._atkSeq = (f._atkSeq||0) + 1;
         for(const o of fighters){ if(o.dead||o.idx===f.idx||o.team===f.team||(o.invuln>0 && !chainOpen(o,f))) continue;
           if(hurtGap(o, px, py) < 44){ applyHit(o, 4, f.face*2, -3, f); stunFx(o, 18); SM_FX.define(o, f, 2); } }
+        hitArt(f, 'snap', { kind:'circle', x:px, y:py, r:44 }, { color:'#ffffff' });   // HIT ART: the flash, in frame
         if(summons.length) damageSummons(f, px, py, 44, 4);   // a boss in frame takes the flash too (it looped over fighters only: 0 in Boss Rush)
         for(let i=0;i<14;i++){ const a=i/14*Math.PI*2; puff(px+Math.cos(a)*30, py+Math.sin(a)*24, i%2 ? '#ffffff' : '#bfe6ff', 4); }
-      }, 'rgba(0,0,0,0)'); if(f._windup) f._windup.b3 = 'snap';
+      }, 'rgba(0,0,0,0)', { kind:'circle', wx:px, wy:py, r:44, c:'#dff3ff' }); if(f._windup) f._windup.b3 = 'snap';
       f.flash=8; f.spCd=50; break; }
     case "pun": { // Cheesy: KICK! SOCCER! PUN! His line from A Kick in the Right Direction, after the knee slapping gave his
       // leg the endurance to kick one past Fan. A soccer ball low along the floor; every banked Knee Slap (down-special) is
@@ -45548,6 +45650,7 @@ function nearestSummon(f, x, y, range, pred){
 // the effect and damage will apply". The sweet spot is a launch bonus, not a damage tax.
 function hitCircle(f,cx,cy,rad,dmgLow,dmgHigh,kbx,kby,band,sourKb,once){
   noteHitbox(cx, cy, rad);
+  haAuto(f, { kind:'circle', x:cx, y:cy, r:rad });   // HIT ART: the disc it tests, on this frame
   hitTurrets(f, cx, cy, rad, dmgHigh);   // Tennis Ball's turret can be broken (see damageTurret)
   let landed = 0;
   const b = band==null ? 1 : Math.abs(band), tip = band!=null && band<0;
@@ -45681,6 +45784,7 @@ function shapeTargets(f, sh){
 // hitCircle's twin for a shape. Sweet and sour work the same way, on the distance from the shape's origin.
 function hitShape(f, sh, dmgLow, dmgHigh, kbx, kby, band, sourKb, once){
   if(SHOW_HITBOXES) DEBUG_HITS.push({ shape:sh, pts:shapePts(sh), t:10 });
+  haAuto(f, sh);   // HIT ART: the shape it tests, on this frame
   const bb = shapeBounds(sh);
   hitTurrets(f, bb.cx, bb.cy, bb.rad, dmgHigh);
   let landed = 0;
@@ -51509,6 +51613,9 @@ function draw(){
   // laser beams (Ruby) — bright fading line
   for(const bm of beams){
     const a=bm.life/10;
+    // HIT ART: the band it really hit -- `w` either side of the line, a body's outline touching it is hit -- full as it lands, then
+    // fading; the bright line rides its middle. (Dora's and Cammy's are 70 px tall walls; they were drawn as an 8 px stroke.)
+    if(bm.w > 0){ const k = Math.max(0, Math.min(1, (bm.life - 4)/9)); if(k > 0){ ctx.save(); haDraw(ctx, { kind:'capsule', x1:bm.x0, y1:bm.y, x2:bm.x1, y2:bm.y, r:bm.w }, { k:k, col:bm.color }); ctx.restore(); } }
     ctx.globalAlpha=a; ctx.strokeStyle=bm.color; ctx.lineWidth=8; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(bm.x0,bm.y); ctx.lineTo(bm.x1,bm.y); ctx.stroke();
     ctx.globalAlpha=a*0.5; ctx.strokeStyle='#fff'; ctx.lineWidth=3;
@@ -51619,6 +51726,7 @@ function draw(){
   for(const f of fighters){ if(f.dead) continue; if(SETTINGS.mode==='ctf' && ctfHiddenFrom(f)) continue; if(f._oneGhost) drawOneGhostAura(f); if(f.fsGlow>0 || f.fsId) fsDrawAura(f); drawFighter(f); if(SETTINGS.mode==='ctf'){ ctfDrawCarry(f); if(CTF.spec) ctfSpecDrawChip(f); } }
   if(SETTINGS.mode==='ctf') ctfDrawCoverFront();   // the props a friend stands in, see-through, over the fighters
   drawKitFx('over');    // the Fist Thingy's arm, over the fighters it reaches across
+  drawHitArt();         // HIT ART: every hit's real area, over the bodies it reaches
   if(SHOW_HITBOXES) drawHitboxOverlay();
 
   // …and the shots still coming OUT of a fighter, drawn last so the launch is on top of the
@@ -52263,12 +52371,16 @@ function drawAttractFx(f){
   ctx.restore(); ctx.globalAlpha = 1;
 }
 // Magnet's repel: two rings thrown out from her to the blast's reach, with chevrons pointing away riding the outer one, fading over MAG_FX_FRAMES.
+// HIT ART: the repel lands on its first frame at its full reach (hurtGap < R, to the outline), so the ring is at exactly R from that frame
+// and fades. It used to grow out from nothing over MAG_FX_FRAMES -- a fraction of its size on the frame it hit -- and end 40% of a body past it.
 function drawRepelFx(f, age){
-  const k = age/MAG_FX_FRAMES, e = 1 - (1 - k)*(1 - k), R = f._repelFx.R + f.r*0.4;
+  const k = age/MAG_FX_FRAMES, e = 1, R = f._repelFx.R;
   ctx.save(); ctx.translate(f.x, f.y); ctx.globalAlpha = 1 - k; ctx.lineCap = 'round';
+  if(age < 5){ ctx.globalAlpha = 0.22*(1 - age/5); ctx.fillStyle = '#9aa8ff'; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill(); ctx.globalAlpha = 1 - k; }
+  ctx.strokeStyle = '#1c1c1c'; ctx.globalAlpha = 0.45*(1 - k); ctx.lineWidth = 5*(1 - k) + 4; ctx.beginPath(); ctx.arc(0, 0, R*e, 0, 7); ctx.stroke(); ctx.globalAlpha = 1 - k;
   ctx.strokeStyle = '#9aa8ff'; ctx.lineWidth = 5*(1 - k) + 1.5; ctx.beginPath(); ctx.arc(0, 0, R*e, 0, 7); ctx.stroke();
   ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.2*(1 - k) + 1; ctx.beginPath(); ctx.arc(0, 0, R*e*0.72, 0, 7); ctx.stroke();
-  for(let i=0;i<10;i++){ const a = i/10*Math.PI*2 + 0.3, r0 = R*e*0.9, r1 = R*e*1.07;
+  for(let i=0;i<10;i++){ const a = i/10*Math.PI*2 + 0.3, r0 = R*e*0.84, r1 = R*e;
     ctx.beginPath(); ctx.moveTo(Math.cos(a - 0.07)*r0, Math.sin(a - 0.07)*r0); ctx.lineTo(Math.cos(a)*r1, Math.sin(a)*r1); ctx.lineTo(Math.cos(a + 0.07)*r0, Math.sin(a + 0.07)*r0); ctx.stroke(); }
   ctx.restore(); ctx.globalAlpha = 1;
 }
@@ -52546,13 +52658,16 @@ function drawBossSprite(s){
   const R=s.r;
   if(s._cobsFight && s._gone) return;   // his ending: after the boom he is popcorn, and a husk (cobsEndStep)
   if(s.sprite==="one") drawOneAura(s);   // the power she stole shows round her (TPOT 19), stronger each phase
-  // telegraph aura: pulsing warning ring while winding up (Silksong-style tell)
+  // telegraph: three warning pips over his head that light one by one as the wind-up runs (Silksong-style tell). It was a pulsing ring
+  // at R+10 to R+24 round him for every move, which read as the reach of whatever came next (HIT ART: no art may promise a reach the move
+  // does not have); a move's own tell draws its own area.
   if(s._tel>0){
-    const p = 1 - s._tel/bossTelLen(s);
-    ctx.globalAlpha = 0.35 + 0.35*Math.sin(hazardT*0.4);
-    ctx.strokeStyle = s._telKind==="melife" ? "#5ad85a" : "#ffd23f"; ctx.lineWidth=4;   // MeLife: his screen goes green while he generates (Mazed and Confused)
-    ctx.beginPath(); ctx.arc(0,0,R+10+p*14,0,7); ctx.stroke();
-    ctx.globalAlpha=1;
+    const p = Math.max(0, Math.min(1, 1 - s._tel/bossTelLen(s))), col = s._telKind==="melife" ? "#5ad85a" : "#ffd23f";   // MeLife: his screen goes green while he generates (Mazed and Confused)
+    ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = "#1c1c1c";
+    for(let i=0;i<3;i++){ const on = p*3 > i, x = (i-1)*15, y = -R - 18, sz = on ? 6.5 + (p*3 < i+1 ? 1.2*Math.sin(hazardT*0.5) : 0) : 4.5;
+      ctx.globalAlpha = on ? 0.95 : 0.45; ctx.fillStyle = on ? col : "#ffffff";
+      ctx.beginPath(); ctx.moveTo(x, y - sz); ctx.lineTo(x + sz*0.72, y); ctx.lineTo(x, y + sz); ctx.lineTo(x - sz*0.72, y); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.restore(); ctx.globalAlpha=1;
   }
   // Steve Cobs's SCREEN CRACKER: while he winds it up, a pale band along the row it will go, as far as either fist can hit
   // -- the lunge and the second punch from where it stops (cobsPunchSpan), brighter over the first fist's reach. The tell
@@ -54458,7 +54573,6 @@ const FIGHTER_ANIM = {
     anchor: {x:0.7, y:0.3},      // her mouth as the spit frame snaps forward, upper half (the shot flies a little above the mouth): where a spat shot comes out (visLaunch / projVisLerp)
     diveFlash: false,            // her own attack flash does not wash her dive white either: the sprite is the point (drawSpriteBody)
     spitFlash: false,            // her own attack flash does not wash a spit white (drawSpriteBody)...
-    spitSwipe: false,            // ...nor does it throw a blade's swipe: she has nothing to swing (drawFighter)
     atkDrive(f){ return puffSpitDrive(f); },       // spriteRig: her own lunge for the spit (gather, snap, recoil, settle)
     poses: {
       puff:   puffPoseSprite("puffball-spit-1.png", 3.176),
@@ -58886,14 +59000,11 @@ function drawFighter(f){
     ctx.globalAlpha = ending ? 0.3 : 0.55 + 0.4*k; ctx.stroke();
     ctx.restore();
   }
-  // CIRCLE WIND-UP telegraph (see startWindup): a ring closing IN on the fighter, so the commitment
-  // is readable before it lands. Drawn here rather than as sim puffs so it spends no simulation
-  // randomness -- a seeded match replays identically whether or not it is on screen.
-  if(f._windup){
-    const wu=f._windup, k=wu.t/wu.t0, rr=f.r+10+40*k;
-    ctx.save(); ctx.globalAlpha=0.35+0.5*(1-k); ctx.strokeStyle=wu.color; ctx.lineWidth=3;
-    ctx.beginPath(); ctx.arc(0,0,rr,0,7); ctx.stroke(); ctx.restore();
-  }
+  // WIND-UP (see startWindup). One whose hit has an area draws that area at its true size and spot (drawHitArt); one with no area of
+  // its own -- a counter's read, a held charge, a whistle, shots still to come -- gets a cue that hugs the body (drawWindupCue), so it
+  // never reads as a reach. It was one ring closing from 74 px to about 36 for every move, whatever came next: half the hit's size as it
+  // landed. Drawn, not puffed, so it spends no simulation randomness.
+  if(f._windup && (!f._windup.sh || f._windup.sh.kind === 'body')) drawWindupCue(f);
   // COSMETICS (see WIN TOKENS): whatever this fighter wears. The trail goes behind the body; the skin and the hat are
   // put on with the body below. Looks only: nothing here is read back by the sim.
   const cos = cosOf(f), skin = cos && cos.skin ? cosItem(cos.skin) : null;
@@ -58998,10 +59109,9 @@ function drawFighter(f){
   // character deforms (4-12% scale, ~0.2rad) move roughly FIVE pixels for 13 frames. They were
   // working exactly as written and were still not readable in play — "I'm not seeing any attack
   // animations" was correct. Deform alone cannot fix that at this sprite size; the eye needs
-  // punctuation it can catch, so every attack now throws a swipe and every sprint kicks dust.
-  // Both are pure render: nothing is pushed to `particles`, so the sim, netcode and goldens are
-  // untouched (which is why this cannot use puff()).
-  if(f._atkAnim > 0 && !(anim && anim.spitSwipe === false && f._atkKind === 'spit')){ ctx.save(); drawSwipeArc(f); ctx.restore(); }   // (Puffball's spit has no blade to swing: it is the rainbow that is thrown)
+  // punctuation it can catch, so every sprint kicks dust, and every attack draws its real hit area (HIT ART, drawn over all the
+  // fighters by drawHitArt: it replaced the one swipe every attack threw here). Both are pure render: nothing is pushed to
+  // `particles`, so the sim, netcode and goldens are untouched (which is why this cannot use puff()).
   if(f.onground !== false && Math.abs(f.vx||0) > 4){ ctx.save(); drawRunDust(f); ctx.restore(); }
   if(hurtK(f) > 0){ ctx.save(); drawHitSpark(f); ctx.restore(); }
   // POST-BODY pass: overlays/effects (trails, afterimages, glows) in unscaled space
@@ -60173,41 +60283,181 @@ function starShape(c,r,pts){
   }
   c.closePath(); c.fill(); c.stroke();
 }
-// A swipe arc thrown in the direction of the swing. This is what actually makes an attack read at
-// gameplay size — it is large (well outside the body), bright, and lasts the whole swing, none of
-// which is true of a few pixels of scale on the sprite itself. Pure render, no particles.
-function drawSwipeArc(f){
-  const R = f.r;
-  // PHASED. The streak belongs to the RELEASE, not to the whole timer: during the gather nothing
-  // has swung yet, so a blade trail hanging in the air there is the single clearest way to make an
-  // anticipation read as a mistake. It blooms the instant the strike starts and trails off through
-  // the settle.
-  const u = atkU(f);
-  if(u < ATK_WINDUP) return;
-  const q = (u - ATK_WINDUP)/(1 - ATK_WINDUP);   // 0 as the strike starts -> 1 as it settles out
-  const t = 1 - q;                          // kept as the old name: 1 at the strike -> 0 at the end
-  const p = Math.sin(Math.pow(q, 0.6)*Math.PI); // blooms fast, fades slow
-  if(p <= 0.02) return;
-  const dir = f.face < 0 ? -1 : 1;
-  // The arc sweeps from high to low across the swing, like a blade coming down and through.
-  const sweep = (1 - t) * 2.1 - 1.05;       // -1.05 -> +1.05 rad
-  const rad = R * (1.35 + 0.35*(1 - t));
-  ctx.globalAlpha = 0.85 * p;
-  ctx.strokeStyle = f.smashHold > 0 ? smashColorOf(f) : "#ffffff";
-  ctx.lineCap = "round";
-  for(let i=0;i<2;i++){
-    ctx.lineWidth = (i ? 3 : 7) * (0.5 + 0.5*p);
-    ctx.globalAlpha = (i ? 0.9 : 0.45) * p;
-    ctx.beginPath();
-    ctx.arc(dir*R*0.35, -R*0.15, rad - i*2, sweep - 0.55, sweep + 0.55, false);
-    ctx.stroke();
+// ---- HIT ART: the drawing (the shapes come from the sim: see HIT ART) --------------------------------------------------------------------
+// One look for every hit: a translucent fill in the attacker's colour and a crisp edge -- a dark line under a bright one, so it reads on
+// a bright painted sky and a dark stage alike -- with the far end (a fan's reach, a capsule's tip) in white so the direction reads. A tell
+// is the same shape dashed, filling in from where it starts. Only live frames are filled solid, so a busy fight does not turn to soup.
+const HA_DARK = new Map();   // colour -> too dark to edge a shape with on a dark stage (that edge goes white)
+function haDark(col){
+  let v = HA_DARK.get(col);
+  if(v === undefined){
+    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(col || ''); v = false;
+    if(m){ let h = m[1]; if(h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+      v = (0.299*parseInt(h.slice(0,2),16) + 0.587*parseInt(h.slice(2,4),16) + 0.114*parseInt(h.slice(4,6),16)) < 70; }
+    if(HA_DARK.size < 256) HA_DARK.set(col, v);
   }
-  // a bright leading tick at the head of the arc, so the direction is unmistakable
-  ctx.globalAlpha = p;
-  ctx.lineWidth = 3;
-  const hx = dir*R*0.35 + Math.cos(sweep + 0.55)*rad;
-  const hy = -R*0.15 + Math.sin(sweep + 0.55)*rad;
-  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + dir*R*0.28, hy); ctx.stroke();
+  return v;
+}
+function haClear(col){ return !col || col === 'transparent' || /^rgba\([^)]*,\s*0\s*\)$/.test(col); }
+// A fan grown by e px all round (shapeHits' limb thickness), and cut at p of its reach (a tell filling in). Built in the fan's own frame
+// (mirrored by its facing): the reach, a rounded corner, the inner edge, round the inside, back out.
+function haFanPath(c, sh, e, p){
+  const r0 = sh.r0, r1 = r0 + (sh.r1 - r0)*p, a0 = sh.a0, a1 = sh.a1, H = Math.PI/2;
+  c.save(); c.translate(sh.cx, sh.cy); c.scale(sh.face < 0 ? -1 : 1, 1);
+  if(a1 - a0 >= Math.PI*2 - 1e-6){ c.arc(0, 0, r1 + e, 0, Math.PI*2); c.restore(); return; }   // all round: a disc (the hole at its middle is inside the caster)
+  c.arc(0, 0, r1 + e, a0, a1);
+  c.arc(Math.cos(a1)*r1, Math.sin(a1)*r1, e, a1, a1 + H);
+  if(r0 > e){
+    const qx = Math.cos(a1)*r0, qy = Math.sin(a1)*r0;
+    c.lineTo(qx + Math.cos(a1 + H)*e, qy + Math.sin(a1 + H)*e); c.arc(qx, qy, e, a1 + H, a1 + Math.PI);
+    c.arc(0, 0, r0 - e, a1, a0, true);
+    c.arc(Math.cos(a0)*r0, Math.sin(a0)*r0, e, a0 + Math.PI, a0 + 3*H);
+  } else {
+    c.lineTo(Math.cos(a1 + H)*e, Math.sin(a1 + H)*e);
+    if(a1 - a0 < Math.PI) c.arc(0, 0, e, a1 + H, a0 + 3*H);   // round behind the point
+    c.lineTo(Math.cos(a0 - H)*e, Math.sin(a0 - H)*e);
+  }
+  c.lineTo(Math.cos(a0)*r1 + Math.cos(a0 - H)*e, Math.sin(a0)*r1 + Math.sin(a0 - H)*e);
+  c.arc(Math.cos(a0)*r1, Math.sin(a0)*r1, e, a0 - H, a0);
+  c.closePath(); c.restore();
+}
+// The path of a shape at its true size, or the part of it a tell has filled (p < 1).
+function haPath(c, sh, p){
+  if(p == null) p = 1;
+  c.beginPath();
+  if(sh.kind === 'circle'){ c.arc(sh.x, sh.y, Math.max(0.5, sh.r*p), 0, Math.PI*2); return; }
+  if(sh.kind === 'capsule'){
+    const x2 = sh.x1 + (sh.x2 - sh.x1)*p, y2 = sh.y1 + (sh.y2 - sh.y1)*p, r = sh.r;
+    if(Math.hypot(x2 - sh.x1, y2 - sh.y1) < 0.5){ c.arc(sh.x1, sh.y1, r, 0, Math.PI*2); return; }
+    const a = Math.atan2(y2 - sh.y1, x2 - sh.x1);
+    c.arc(x2, y2, r, a - Math.PI/2, a + Math.PI/2); c.arc(sh.x1, sh.y1, r, a + Math.PI/2, a + Math.PI*1.5); c.closePath(); return;
+  }
+  if(sh.kind === 'box'){ const w = sh.w*p, h = sh.h*p; c.rect(sh.x + (sh.w - w)/2, sh.y + (sh.h - h)/2, w, h); return; }
+  if(sh.kind === 'fan') haFanPath(c, sh, HIT_FAN_PAD, p);
+}
+// The far end, for the white mark: a fan's reach, a capsule's tip. False for a shape with no direction.
+function haTip(c, sh){
+  if(sh.kind === 'fan'){
+    if(sh.a1 - sh.a0 >= Math.PI*2 - 1e-6) return false;
+    c.beginPath(); c.save(); c.translate(sh.cx, sh.cy); c.scale(sh.face < 0 ? -1 : 1, 1); c.arc(0, 0, sh.r1 + HIT_FAN_PAD, sh.a0, sh.a1); c.restore(); return true;
+  }
+  if(sh.kind === 'capsule'){
+    const L = Math.hypot(sh.x2 - sh.x1, sh.y2 - sh.y1); if(L < 2) return false;
+    const a = Math.atan2(sh.y2 - sh.y1, sh.x2 - sh.x1);
+    c.beginPath(); c.arc(sh.x2, sh.y2, sh.r, a - Math.PI/2, a + Math.PI/2); return true;
+  }
+  return false;
+}
+// A grab's hand: open while it slides out along the reach, shut on the frame it closes.
+function haClaw(c, sh, p, shut, k, col){
+  const a = Math.atan2(sh.y2 - sh.y1, sh.x2 - sh.x1), x = sh.x1 + (sh.x2 - sh.x1)*p, y = sh.y1 + (sh.y2 - sh.y1)*p, L = sh.r*0.9, sp = shut ? 0.22 : 0.85;
+  c.beginPath();
+  for(let i = -1; i <= 1; i++){ const b = a + i*sp; c.moveTo(x - Math.cos(a)*L*0.4, y - Math.sin(a)*L*0.4); c.lineTo(x + Math.cos(b)*L, y + Math.sin(b)*L); }
+  c.globalAlpha = 0.5*k; c.strokeStyle = '#1c1c1c'; c.lineWidth = 5; c.stroke();
+  c.globalAlpha = 0.95*k; c.strokeStyle = col; c.lineWidth = 3; c.stroke();
+}
+// Draw one shape. o: {tell, p, k (0..1 fade), col, style, tick} -- see hitArt.
+function haDraw(c, sh, o){
+  const k = o.k == null ? 1 : o.k; if(k <= 0.01) return;
+  const col = o.col || '#ffffff', edge = haDark(col) ? '#ffffff' : col, st = o.style || '';
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  if(o.tell || st === 'pull'){
+    const p = o.tell ? (o.p || 0) : 0;
+    if(p > 0.02){ haPath(c, sh, p); c.globalAlpha = 0.2*k; c.fillStyle = col; c.fill(); }
+    haPath(c, sh, 1); c.setLineDash([7, 6]);
+    c.globalAlpha = 0.45*k; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.stroke();
+    c.globalAlpha = 0.9*k; c.strokeStyle = edge; c.lineWidth = 2; c.stroke();
+    c.setLineDash([]);
+    if(st === 'pull' && sh.kind === 'circle'){   // streaks running inward: it drags
+      c.beginPath();
+      for(let i = 0; i < 8; i++){ const a = i/8*Math.PI*2 + 0.2, u = (hazardT*0.05 + i*0.37) % 1, ro = sh.r*(1 - 0.4*u), ri = Math.max(0, ro - 16);
+        c.moveTo(sh.x + Math.cos(a)*ro, sh.y + Math.sin(a)*ro); c.lineTo(sh.x + Math.cos(a)*ri, sh.y + Math.sin(a)*ri); }
+      c.globalAlpha = 0.7*k; c.strokeStyle = edge; c.lineWidth = 2.5; c.stroke();
+    }
+    if(st === 'grab' && sh.kind === 'capsule') haClaw(c, sh, p, false, k, edge);
+    return;
+  }
+  haPath(c, sh, 1);
+  c.globalAlpha = Math.min(0.45, (st === 'zone' ? 0.12 : st === 'ring' ? 0.15 : 0.22)*(o.tick ? 2 : 1))*k; c.fillStyle = col; c.fill();
+  const w = st === 'ring' ? 2 : 1;
+  c.globalAlpha = 0.5*k; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4*w + 0.5; c.stroke();
+  c.globalAlpha = 0.95*k; c.strokeStyle = edge; c.lineWidth = 2*w; c.stroke();
+  if(o.tick || st === 'ring'){ c.globalAlpha = 0.85*k; c.strokeStyle = '#ffffff'; c.lineWidth = o.tick ? 2.5 : 1.2; c.stroke(); }
+  if(haTip(c, sh)){ c.globalAlpha = 0.9*k; c.strokeStyle = '#ffffff'; c.lineWidth = 2.2; c.stroke(); }
+  if(st === 'grab' && sh.kind === 'capsule') haClaw(c, sh, 1, true, k, edge);
+}
+function haMove(sh, dx, dy){
+  if(sh.kind === 'fan') return { kind:'fan', cx:sh.cx + dx, cy:sh.cy + dy, r0:sh.r0, r1:sh.r1, a0:sh.a0, a1:sh.a1, face:sh.face };
+  if(sh.kind === 'capsule') return { kind:'capsule', x1:sh.x1 + dx, y1:sh.y1 + dy, x2:sh.x2 + dx, y2:sh.y2 + dy, r:sh.r };
+  if(sh.kind === 'box') return { kind:'box', x:sh.x + dx, y:sh.y + dy, w:sh.w, h:sh.h };
+  return { kind:'circle', x:sh.x + dx, y:sh.y + dy, r:sh.r };
+}
+// A wind-up's shape (startWindup's `sh`, written relative to its fighter) where it is in the world now.
+function haWorld(f, rel){
+  const d = f.face < 0 ? -1 : 1;
+  if(rel.kind === 'circle') return rel.wx != null ? { kind:'circle', x:rel.wx, y:rel.wy, r:rel.r } : { kind:'circle', x:f.x + (rel.x || 0)*d, y:f.y + (rel.y || 0), r:rel.r };
+  if(rel.kind === 'capsule') return { kind:'capsule', x1:f.x + rel.x1*d, y1:f.y + rel.y1, x2:f.x + rel.x2*d, y2:f.y + rel.y2, r:rel.r };
+  return null;
+}
+function haOwner(o){ for(const f of fighters) if(f.idx === o) return f; return null; }
+function haHidden(f){ return !!f && SETTINGS.mode === 'ctf' && typeof ctfHiddenFrom === 'function' && ctfHiddenFrom(f); }   // a fighter hidden from this player shows no hit art either
+// The pass, over the fighters (so the edge of a hit can be seen crossing a body): the wind-ups' tells, then every recorded shape.
+function drawHitArt(){
+  const c = ctx;
+  let any = HIT_ART.length > 0;
+  if(!any) for(const f of fighters) if(f._windup && f._windup.sh){ any = true; break; }
+  if(!any) return;
+  c.save();
+  for(const f of fighters){
+    const wu = f._windup; if(f.dead || !wu || !wu.sh || !(wu.t0 > 0) || haHidden(f)) continue;
+    const g = haWorld(f, wu.sh); if(!g) continue;
+    const col = wu.sh.c || (haClear(wu.color) ? '#ffffff' : wu.color), p = Math.max(0, Math.min(1, 1 - wu.t/wu.t0));
+    haDraw(c, g, { tell:true, p:p, col:col });
+    if(wu.sh.r2 > 0 && g.kind === 'circle') haDraw(c, { kind:'circle', x:g.x, y:g.y, r:wu.sh.r2 }, { tell:true, p:0, col:col, k:0.45 });
+  }
+  for(let i = HIT_ART.length - 1; i >= 0; i--){
+    const e = HIT_ART[i], age = hazardT - e.t;
+    if(age > (e.fd || HIT_ART_FADE) || age < -600 || (e.m === 't' && age > 0)) HIT_ART.splice(i, 1);
+  }
+  for(const e of HIT_ART){
+    const f = haOwner(e.o); if(haHidden(f)) continue;
+    const age = Math.max(0, hazardT - e.t), fd = e.fd || HIT_ART_FADE;
+    let sh = e.sh;
+    // On its live frame a shape rides its fighter where the fighter is DRAWN (between steps on a fast screen, or gliding between snapshots
+    // on a client), so the two never part; once its hit is over it stays where it was.
+    if(age === 0 && !e.w && f && !f.dead){ const dx = f.x - e.ox, dy = f.y - e.oy; if((dx || dy) && Math.abs(dx) + Math.abs(dy) < 120) sh = haMove(sh, dx, dy); }
+    haDraw(c, sh, { tell:e.m === 't', p:e.p, k:age === 0 ? 1 : Math.max(0, 1 - age/(fd + 1)), col:e.c, style:e.s, tick:e.n != null && hazardT - e.n <= 1 && age <= 1 });
+  }
+  c.restore(); c.globalAlpha = 1; c.setLineDash([]);
+}
+// A wind-up with no area of its own: three short brackets hugging the body and turning, brighter as it comes to the boil. Tight to the
+// outline on purpose: it says "something is coming" without drawing a reach the move does not have.
+function drawWindupCue(f){
+  const wu = f._windup; if(haClear(wu.color) || (wu.sh && wu.sh.kind === 'none')) return;
+  const k = wu.t0 > 0 ? Math.max(0, Math.min(1, 1 - wu.t/wu.t0)) : 1, R = f.r + 5, spin = hazardT*0.12;
+  ctx.save(); ctx.lineCap = 'round';
+  for(let i = 0; i < 3; i++){ const a = spin + i*Math.PI*2/3;
+    ctx.beginPath(); ctx.arc(0, 0, R, a, a + 0.7);
+    ctx.globalAlpha = 0.4; ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 5; ctx.stroke();
+    ctx.globalAlpha = 0.5 + 0.45*k; ctx.strokeStyle = wu.color; ctx.lineWidth = 3; ctx.stroke(); }
+  ctx.restore();
+}
+// The wire: [owner, frame, tell?, p%, colour, style, world?, owner x, owner y, fade, tick frame, [kind, ...geometry]]
+function haPack(e){
+  const s = e.sh, r1 = (v)=>Math.round((+v||0)*10)/10, r3 = (v)=>Math.round((+v||0)*1000)/1000;
+  const g = s.kind === 'fan' ? [0, r1(s.cx), r1(s.cy), r1(s.r0), r1(s.r1), r3(s.a0), r3(s.a1), s.face < 0 ? -1 : 1]
+          : s.kind === 'capsule' ? [1, r1(s.x1), r1(s.y1), r1(s.x2), r1(s.y2), r1(s.r)]
+          : s.kind === 'box' ? [3, r1(s.x), r1(s.y), r1(s.w), r1(s.h)] : [2, r1(s.x), r1(s.y), r1(s.r)];
+  return [e.o, e.t, e.m === 't' ? 1 : 0, Math.round(e.p*100), e.c, e.s || 0, e.w ? 1 : 0, Math.round(e.ox), Math.round(e.oy), e.fd || 0, e.n == null ? -1 : e.n, g];
+}
+function haUnpack(r){
+  if(!Array.isArray(r) || !Array.isArray(r[11])) return null;
+  const g = r[11], K = ['fan', 'capsule', 'circle', 'box'][g[0]]; if(!K) return null;
+  const sh = K === 'fan' ? { kind:K, cx:g[1], cy:g[2], r0:g[3], r1:g[4], a0:g[5], a1:g[6], face:g[7] }
+           : K === 'capsule' ? { kind:K, x1:g[1], y1:g[2], x2:g[3], y2:g[4], r:g[5] }
+           : K === 'box' ? { kind:K, x:g[1], y:g[2], w:g[3], h:g[4] } : { kind:K, x:g[1], y:g[2], r:g[3] };
+  return { k:'', o:r[0], t:r[1], m:r[2] ? 't' : 'l', p:(r[3] || 0)/100, c:typeof r[4] === 'string' ? r[4] : '#ffffff', s:typeof r[5] === 'string' ? r[5] : '',
+    w:r[6] ? 1 : 0, ox:r[7], oy:r[8], fd:r[9] || 0, n:r[10] >= 0 ? r[10] : null, sh:sh };
 }
 // TAKING A HIT. The rig already shakes a hurt fighter, but a shake of a few pixels on a 67px
 // sprite is the same problem the attack had — real in the numbers, invisible in play. A burst of
@@ -60340,7 +60590,7 @@ function netFighter(f){
   if(f._hurtAnim != null) o.hurtT = f._hurtAnim;   // sent whenever set: wasHit tells 0 from "never set"
   if(f._heatFx) o.heatFx = f._heatFx;   // Paintbrush's Heat Explosion and Knife's Fist Thingy: drawKitFx draws them from these
   if(f._hookFx) o.hookFx = f._hookFx;
-  if(f._windup) o.charge = { t:f._windup.t, t0:f._windup.t0, color:f._windup.color };   // the smash charge ring
+  if(f._windup) o.charge = { t:f._windup.t, t0:f._windup.t0, color:f._windup.color, sh:f._windup.sh || undefined };   // the wind-up: its clock, and what it will hit (HIT ART)
   if(SETTINGS.mode==='ctf') ctfNetFighter(f, o);
   return o;
 }
@@ -60446,7 +60696,7 @@ function serializeState(withGeo){
     mode: SETTINGS.mode,
     fighters: fighters.map(netFighter),
     pj: netProjectiles(),
-    beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life})),
+    beams: beams.map(b=>({x0:Math.round(b.x0),y:Math.round(b.y),x1:Math.round(b.x1),color:b.color,life:b.life,w:b.w})),
     // Items and summons (assists, bosses) were never sent, so a client saw no pickups, no assist trophies
     // and no Boss Rush boss. These are the fields drawItem, drawSummon, drawBossSprite and drawBossBar read.
     items: items.filter(it=>!it.taken).map(it=>({x:Math.round(it.x),y:Math.round(it.y),r:it.r,kind:it.kind})),
@@ -60520,6 +60770,7 @@ function serializeState(withGeo){
   if(SETTINGS.mode==='ctf') s.ctf = ctfNetOut();   // Capture the Flag: the map by its id and the live state (ctfNetOut)
   if(COS_KO_OUT.length) s.ko = COS_KO_OUT.splice(0);   // cosmetic KO bursts since the last snapshot, [x, y, which]: only on a KO
   if(IMPACT_OUT.length) s.imp = IMPACT_OUT.splice(0);  // impacts since the last snapshot (impact), at most IMPACT_FX.netMax: a client plays them
+  if(HIT_ART.length) s.ha = HIT_ART.map(haPack);       // HIT ART: the hit areas being drawn (f._sm and the auras never reached a client)
   // Evil Forest's Evil Leafy and her tendrils were never sent: a client kept its own Evil Leafy standing in the corner
   // while the host's chased and hit players from nowhere, and was launched by vines it could not see.
   if(evil) s.evil = [Math.round(evil.x), Math.round(evil.y)];
@@ -60624,6 +60875,7 @@ function applySnapshot(s){
     });
   } else projectiles=(s.projectiles||[]).map(p=>({...p, ownerObj:null}));
   beams=(s.beams||[]);
+  HIT_ART.length = 0; if(Array.isArray(s.ha)) for(const r of s.ha){ const e = haUnpack(r); if(e) HIT_ART.push(e); }   // the host's hit areas, as it tested them
   { const wasE = evil; evil = Array.isArray(s.evil) ? {x:s.evil[0], y:s.evil[1]} : null; if(evil) netGlide(evil, fresh ? null : wasE); }
   tendrils = (s.tend||[]).map(r=>({ x:r[0], h:r[1], maxH:r[1], grow:0, life:1, _hit:true }));   // drawTendrils reads x and h
   items=(s.items||[]).map(it=>({...it, taken:false}));
@@ -61400,7 +61652,7 @@ function resetTest(){
   if(!TESTMODE.active) return;
   buildFighters();
   for(const f of fighters){ f.pct = (TESTMODE.training && f.controller!=='local') ? TESTMODE.pct : 0; f.stocks=99; }
-  particles=[]; projectiles=[]; beams=[];
+  particles=[]; projectiles=[]; beams=[]; HIT_ART.length=0;
   TESTMODE.dpsT=0; TESTMODE.dpsDmg=0;   // reset the DPS meter with the dummy
   banner("RESET",700);
 }
