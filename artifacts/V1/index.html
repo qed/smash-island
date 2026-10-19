@@ -9354,23 +9354,24 @@ function ctfAiSkip(f){   // places a CPU may not go: the zone round its own side
 // FIGHTER STATS ON THE ROUTES. The shipped graphs are planned on the shared numbers (every stat 1, with a carrier's load), so a move near the
 // edge of what a carrier can do comes up short for a lower jump or a heavier fall, and a faster run, a floatier fall or a higher jump can
 // sail past a ledge or meet a ceiling the plan passed under. A CPU whose run, air, jump or fall is not 1 checks each move of a path with its
-// own before it counts on it: ctfNavStatFly flies the move with the fighter's st the way the CPU takes it (ctfAiFollow): a jump from the
-// spots of its run-up nearest the planned take-off (from where the run starts, or 260 px before, to the end of the floor, or 260 px
-// past), at the speed its own run has there; a drop off the end at the speeds a walk-off has; then holding the way as planned, or letting
-// go sooner, or braking, the second jump at the top or none. A move none of them lands is left out of that fighter's routes; a move the same check cannot land with every stat at 1
+// own before it counts on it: ctfNavStatFly flies the move with the fighter's st the way the CPU takes it (ctfAiFollow): a jump from
+// any spot of its run-up (every 20 px from where the run starts, or 260 px before the planned take-off, to the end of the floor, or 260
+// px past it) at the speed its own run has there; a drop off the end at the speeds a walk-off has; then holding the way as planned, or
+// letting go sooner, or braking, and the second jump at the top, early, late or not at all (the CPU may take it at any step). A move none of them lands is left out of that fighter's routes; a move the same check cannot land with every stat at 1
 // either is the check's blind spot (the CPU's own steering in the air, a spring), not the stats', and stays. Cached on the move, per stat
 // set and load ('c' a carrier, 'f' free). A move is checked when the CPU comes to it on its path (ctfAiFollow: one a step at most, so the
 // work is spread out), and once turned down the planner leaves it out (ctfNavPath) and the CPU plans again from where it stands.
 function ctfStatSig(f){ const S = f && f.st; if(!S || (S.run === 1 && S.air === 1 && S.jump === 1 && S.fall === 1)) return ''; return S.run + ',' + S.air + ',' + S.jump + ',' + S.fall + (f._cf >= 0 ? 'c' : 'f'); }
 const CTF_STAT_HOLDS = [[-1, 0], [0, 0], [3, 0], [8, 0], [-1, 999], [8, 999], [3, 7], [0, 999]];   // [hold the way this many steps (-1: as planned), then brake this many]
 function ctfNavStatFly(nav, e, S, free){
-  const n = nav.nodes[e.from], P = ctfNavParams(free, false), R = 24, ACCg = P.ACC*S.run, CAPg = P.CAP*S.run, T0 = e.T >= 200 ? 999 : e.T, d0 = e.dir, djs = [!!e.dj, !e.dj];
+  const n = nav.nodes[e.from], P = ctfNavParams(free, false), R = 24, ACCg = P.ACC*S.run, CAPg = P.CAP*S.run, T0 = e.T >= 200 ? 999 : e.T, d0 = e.dir;
+  const djs = e.dj ? [1, 0, 2, 3] : [0, 1, 3, 2];   // the second jump: 0 none, 1 at the top, 2 early, 3 late (falling); the planned one first
   const fly = (x, vx, jump, d, T, B, dj)=>{
     let done = false, lj = false;
     const r = ctfNavFly(nav, { x, y:n.y - R, vx, vy:0, jumps:2, g:jump, jp:false, sp:0, ft:0, at:0 }, (t, X, Y, VX, VY, J)=>{
       if(jump && t === 1){ lj = true; return { dir:d, jump:true }; }
       const c = { dir:t <= T ? d : (t <= T + B ? -d : 0), jump:false };
-      if(dj && !done && J > 0 && !lj && (jump ? t - 1 : t) >= 6 && VY >= -0.4){ c.jump = true; done = true; }
+      if(dj && !done && J > 0 && !lj){ const ta = jump ? t - 1 : t; if((dj === 1 && ta >= 6 && VY >= -0.4) || (dj === 2 && ta >= 3) || (dj === 3 && VY >= 3)){ c.jump = true; done = true; } }
       lj = c.jump; return c;
     }, free, false, false, S);
     return !!(r && r.node.id === e.to);
@@ -9389,8 +9390,8 @@ function ctfNavStatFly(nav, e, S, free){
   // a jump: the run starts about e.run behind the planned take-off (ctfAiFollow's stage); the take-off can be anywhere from there on
   const xs0 = Math.min(Math.max(e.xa - d0*((e.run || 0) + 20), n.x0 + 4), n.x1 - 4), xEnd = d0 > 0 ? Math.min(n.x1 - 3, e.xa + 260) : Math.max(n.x0 + 3, e.xa - 260);
   const xFrom = d0 > 0 ? Math.max(xs0, e.xa - 260) : Math.min(xs0, e.xa + 260), spots = [e.xa];
-  for(let x = xFrom; (xEnd - x)*d0 >= 0; x += d0*15) if(Math.abs(x - e.xa) > 4) spots.push(x);
-  spots.sort((p, q)=>Math.abs(p - e.xa) - Math.abs(q - e.xa)); if(spots.length > 20) spots.length = 20;   // (the 20 nearest the planned one: a move turned down costs a few hundred short flights, once)
+  for(let x = xFrom; (xEnd - x)*d0 >= 0; x += d0*20) if(Math.abs(x - e.xa) > 4) spots.push(x);
+  spots.sort((p, q)=>Math.abs(p - e.xa) - Math.abs(q - e.xa));   // (the planned spot first, then outward: a move that works is found in a flight or two; one turned down costs a few hundred, once)
   for(const x of spots){
     const run = (x - xs0)*d0; let v = Math.min(CAPg, ACCg), s2 = 0; while(s2 < run && v < CAPg){ s2 += v; v = Math.min(CAPg, v + ACCg); }
     if(holds(x, d0*v, true)) return true;
@@ -9402,8 +9403,8 @@ function ctfNavStatOK(nav, e, f, sig){
   const C = e.cs || (e.cs = {});
   if(C[sig] === undefined){
     const free = sig.endsWith('f'), one = free ? '1f' : '1c';
-    if(C[one] === undefined) C[one] = ctfNavStatFly(nav, e, STAT_ONE, free) ? 1 : 0;
-    C[sig] = (!C[one] || ctfNavStatFly(nav, e, f.st, free)) ? 1 : 0;
+    if(ctfNavStatFly(nav, e, f.st, free)) C[sig] = 1;
+    else { if(C[one] === undefined) C[one] = ctfNavStatFly(nav, e, STAT_ONE, free) ? 1 : 0; C[sig] = C[one] ? 0 : 1; }   // (with every stat at 1 it cannot land either: the check's blind spot, kept)
   }
   return C[sig] === 1;
 }
