@@ -203,3 +203,170 @@ describe('the wire', () => {
     expect(r[2].m).toBe('t');
   });
 });
+
+// ---- phase 2: finishers and pops, counters and reflects, traps and shots, Final Smash rings, assist trophies (audit A4-A6) ----
+
+// Slide the foe along x (it keeps its height) until its outline is `want` px from (cx, cy), by bisection on the real hurtGap.
+const PLACE = `function place(cx, cy, want){ var lo = cx, hi = cx + 900; for (var k=0;k<60;k++){ var mid = (lo+hi)/2; D.x = mid; if(hurtGap(D, cx, cy) < want) lo = mid; else hi = mid; } D.x = (lo+hi)/2; D.vx = 0; D.vy = 0; return hurtGap(D, cx, cy); }`;
+
+describe('finishers and pops: the impact is the disc that hits', () => {
+  it('the shared finisher draws the disc it tests on the press frame, and it lingers as an impact', () => {
+    const r = page('Coiny', 400, 0, `
+      var who = ROSTER.find(function(q){ return q.play && q.kit && !ATKSPECIALS[q.kit.special]; });
+      A.kit = who.kit; A.name = who.name;
+      var e = null;
+      var fr = frames(10, function(){ doAttackSpecial(A); e = HIT_ART.find(function(q){ return q.o === A.idx && q.m === 'l'; }) || null; });
+      return { who:who.name, bad:fr.filter(function(f){ return f.dbg > 0 ? !(f.every && f.live === f.dbg) : f.live !== 0; }).map(function(f){ return f.i; }),
+        lit:fr.filter(function(f){ return f.dbg > 0; }).map(function(f){ return f.i; }), fd: e ? e.fd : null, want: FIN_ART_FADE, r0: fr[0].sh.length ? fr[0].sh[0].sh.r : null, rr: A.r + 26 };`);
+    expect(r.lit, `${r.who}: the finisher is one frame`).toEqual([0]);
+    expect(r.bad).toEqual([]);
+    expect(r.r0).toBe(r.rr);
+    expect(r.fd, 'it fades as an impact').toBe(r.want);
+  });
+
+  it("Silver Spoon's Glowing Gold: the pop's ring is drawn at its reach on the frame it pops; a foe 1.5 px inside is popped, 1.5 px outside is not", () => {
+    const probe = (gap) => page('Silver Spoon', 300, 0, `${PLACE}
+      var R = A.r + 56; place(A.x, A.y, R + ${gap}); var p0 = D.pct;
+      doSpecial(A);
+      var e = HIT_ART.find(function(q){ return q.k === A.idx + ':pop'; });
+      return { r: e ? e.sh.r : null, t: e ? e.t : null, now: hazardT, R: R, popped: D.pct > p0 };`);
+    const inside = probe(-1.5), outside = probe(1.5);
+    expect(inside.r).toBe(inside.R);
+    expect(inside.t).toBe(inside.now);
+    expect(inside.popped).toBe(true);
+    expect(outside.popped).toBe(false);
+  });
+
+  it("Loser's Stay Cool tells the cold blast at its reach, filling in, and the pop lands exactly there", () => {
+    const r = page('Loser', 400, 0, `
+      doSpecial(A); var tells = [], pop = null;
+      for (var i=0;i<LOSER_COOL_FRAMES + 2 && !pop;i++){ step();
+        var t = HIT_ART.find(function(q){ return q.k === A.idx + ':cool' && q.t === hazardT; }); if(t) tells.push({ r:t.sh.r, p:t.p, m:t.m });
+        var e = HIT_ART.find(function(q){ return q.k === A.idx + ':pop' && q.t === hazardT; }); if(e) pop = { r:e.sh.r }; }
+      return { tells:tells, pop:pop, want:A.r + 60 };`);
+    expect(r.tells.length).toBeGreaterThan(15);
+    for (const t of r.tells) { expect(t.m).toBe('t'); expect(t.r).toBe(r.want); }
+    for (let i = 1; i < r.tells.length; i++) expect(r.tells[i].p).toBeGreaterThan(r.tells[i - 1].p);
+    expect(r.pop).toEqual({ r: r.want });
+  });
+});
+
+describe('counters and reflects: the window is the outline, and the answer is a path to the attacker', () => {
+  it('a countered jab draws the strike back from the counterer to the attacker; Needle sends a needle', () => {
+    const r = page('Coiny', 40, 0, `
+      var out = {};
+      D.countering = 20; D._riposte = false; A.atkCd = 0; var a0 = A.pct, d0 = D.pct; doAttack(A);
+      var e = HIT_ART.find(function(q){ return q.k === D.idx + ':riposte'; });
+      out.gen = e ? { s:e.s, x1:e.sh.x1, x2:e.sh.x2, w:e.w } : null; out.ax = A.x; out.dx = D.x; out.hurtA = A.pct > a0; out.hurtD = D.pct > d0;
+      return out;`);
+    expect(r.hurtD, 'the counter took the jab').toBe(false);
+    expect(r.hurtA, 'and answered it').toBe(true);
+    expect(r.gen).toEqual({ s: 'strike', x1: r.dx, x2: r.ax, w: 1 });
+    const n = page('Coiny', 40, 0, `
+      D.countering = 20; D._riposte = true; A.atkCd = 0; doAttack(A);
+      var e = HIT_ART.find(function(q){ return q.k === D.idx + ':riposte'; }); return e ? e.s : null;`, 'Needle');
+    expect(n).toBe('needle');
+  });
+
+  it("a turned shot leaves a glint where it turned, and the stances ride the net's own flags", () => {
+    const r = page('Ruby', 120, 0, `
+      D.reflecting = 30; spawnProj(A, { vx:8, vy:0, grav:false, dmg:5, kb:4, r:9, color:'#e0384b', life:60 });
+      var g = null; for (var i=0;i<30 && !g;i++){ step(); g = HIT_ART.find(function(q){ return q.k === D.idx + ':turn'; }) || null; }
+      return { s: g && g.s, w: g && g.w, flags: ['countering','reflecting'].every(function(k){ return NET_FIGHTER_FLAGS.indexOf(k) >= 0; }) };`);
+    expect(r.s).toBe('glint');
+    expect(r.w).toBe(1);
+    expect(r.flags).toBe(true);
+  });
+});
+
+describe('traps, shots and lingering zones: a disc of exactly pr.r', () => {
+  it("Bomby's mine: dashed while it falls and arms (filling in), solid once armed -- and the drawn edge is where it goes off", () => {
+    const probe = (gap) => page('Bomby', 600, 0, `${PLACE}
+      DOWNSPECIALS.bomb(A); var pr = projectiles[projectiles.length-1], seen = [];
+      for (var i=0;i<200 && haShotState(pr) !== 2;i++){ seen.push({ st:haShotState(pr), p:haShotArm(pr) }); step(); }
+      var armedAt = i; place(pr.x, pr.y, pr.r + ${gap}); var p0 = D.pct; D.invuln = 0;
+      step();
+      return { seen:seen, armedAt:armedAt, hit: D.pct > p0 || pr.life <= 0 };`);
+    const inside = probe(-1.5), outside = probe(1.5);
+    expect(inside.armedAt).toBeLessThan(200);
+    expect(inside.seen.every((x) => x.st === 3)).toBe(true);
+    const ps = inside.seen.map((x) => x.p);
+    for (let i = 1; i < ps.length; i++) expect(ps[i]).toBeGreaterThanOrEqual(ps[i - 1]);
+    expect(ps[ps.length - 1]).toBeGreaterThan(0.9);
+    expect(inside.hit, 'a foe 1.5 px inside the armed disc sets it off').toBe(true);
+    expect(outside.hit, 'a foe 1.5 px outside does not').toBe(false);
+  });
+
+  it('what each shot shows: in flight, armed, a zone and what it does, a trap that never arms, a boss shot, an assist mine -- and the snapshot carries it', () => {
+    const r = page('Rocky', 900, 0, `
+      var out = {};
+      spawnProj(A, { vx:8, vy:0, grav:false, dmg:5, kb:4, r:9, color:'#fff', life:60 }); out.flight = haShotState(projectiles[projectiles.length-1]);
+      projectiles = []; DOWNSPECIALS.barf(A); var pz = projectiles[0]; for (var i=0;i<80 && pz.falling;i++) step();
+      out.zone = [haShotState(pz), haShotZone(pz)];
+      var zs = {}; [['Pen','cap'],['Firey','ember'],['Marker','ink']].forEach(function(q){ projectiles = []; DOWNSPECIALS[q[1]](A); zs[q[0]] = haShotZone(projectiles[0]); }); out.zs = zs;
+      projectiles = []; addProj({ owner:A.idx, ownerObj:A, x:500, y:groundY()-20, vx:0, vy:0, grav:false, dmg:0, kb:0, r:16, color:'#fff', life:100, trap:true, arm:1e9, noFall:true }); out.never = haShotState(projectiles[0]);
+      projectiles = []; addProj({ owner:-2, ownerObj:{ team:-1, idx:-2 }, x:500, y:300, vx:4, vy:0, grav:false, dmg:5, kb:3, r:12, color:'#f00', life:60 }); out.boss = haShotState(projectiles[0]);
+      projectiles = []; addProj({ owner:-2, ownerObj:{ team:0, idx:-2 }, x:500, y:groundY()-8, vx:0, vy:0, grav:false, dmg:12, kb:11, r:12, color:'#4a9c6a', life:480, trap:true, arm:30, assist:true, noFall:true }); out.assist = haShotState(projectiles[0]);
+      projectiles = [pz]; var s = serializeState(false); var row = s.pj.a[0]; out.net = row[8] && row[8].hz;
+      return out;`);
+    expect(r.flight).toBe(1);
+    expect(r.zone).toEqual([2, 'poison']);
+    expect(r.zs).toEqual({ Pen: 'slick', Firey: 'burn', Marker: 'slow' });
+    expect(r.never, 'a prop that never arms draws no reach').toBe(0);
+    expect(r.boss, "a boss's shots keep their own marks").toBe(0);
+    expect(r.assist).toBe(3);
+    expect(r.net).toEqual([2, 0, 'poison']);
+  });
+});
+
+describe('Final Smash rings and assist trophies', () => {
+  it("a pin lock's ring is its catch edge: a standard body touching it is caught, 1.5 px off it is not", () => {
+    const probe = (gap) => page('Golf Ball', 200, 0, `
+      var S = FINAL_SMASHES['Golf Ball'], st = { hit:new Set(), caught:[] }, w = S.wind, R = 80;
+      D.hurt = null; D.r = HURT_R0; D.invuln = 0;
+      S.start(A, st); for (var t=0;t<=w - 18;t++) S.tick(A, st, t);
+      D.x = A.fsAx + fsPinEdge(R) + HURT_R0 + ${gap}; D.y = A.fsAy;
+      for (var t2=w - 17;t2<=w;t2++) S.tick(A, st, t2);
+      return { caught: st.caught.indexOf(D.idx) >= 0, edge: fsPinEdge(R) };`);
+    expect(probe(-1.5).caught).toBe(true);
+    expect(probe(1.5).caught).toBe(false);
+  });
+
+  it("a second ring is told from the start and drawn full size on the frame it lands; the first, too", () => {
+    const r = page('Gelatin', 900, 0, `
+      var S = FINAL_SMASHES['Gelatin'], w = S.wind, calls = [], L0 = fsLandRing, T0 = fsTellRing, A0 = fsArchTell;
+      fsLandRing = function(c, x, y, R, col, u){ calls.push({ t:A.fsT, k:'land', R:R, u:u }); };
+      fsTellRing = function(c, x, y, R, col, p){ calls.push({ t:A.fsT, k:'tell', R:R }); };
+      fsArchTell = function(){};
+      try { A.fsWind = w; for (var t=0;t<w + 40;t++){ A.fsT = t; S.draw(A, ctx); } } finally { fsLandRing = L0; fsTellRing = T0; fsArchTell = A0; }
+      return { w:w, calls:calls };`);
+    const tells = r.calls.filter((c) => c.k === 'tell'), lands = r.calls.filter((c) => c.k === 'land');
+    expect(tells.length).toBe(r.w + 12);
+    for (const t of tells) expect(t.R).toBe(320);
+    expect(lands.find((c) => c.t === r.w)).toEqual({ t: r.w, k: 'land', R: 230, u: 0 });
+    expect(lands.find((c) => c.t === r.w + 12 && c.R === 320)).toEqual({ t: r.w + 12, k: 'land', R: 320, u: 0 });
+  });
+
+  it("assists: Black Hole's pull and the Blender's blades at their reach (flashing as they land), the 8-Ball's band, the Selfie Stick's flash and rays", () => {
+    const r = page('Coiny', 100, 0, `
+      var out = {}; function stage(act){ summons = []; HIT_ART.length = 0; var s = summonAssistNamed(A, ASSIST_ROSTER.find(function(x){ return x.act === act; })); return s; }
+      var s = stage('pull'); D.x = s.x + 200; D.y = s.y; for (var i=0;i<12;i++){ step(); D.x = s.x + 200; }
+      var e = HIT_ART.find(function(q){ return q.s === 'pull' && q.t === hazardT; }); out.pull = e ? e.sh.r : null;
+      s = stage('vortex'); var ticks = 0, hits = 0, frames2 = 0;
+      for (var i=0;i<40;i++){ D.x = s.x + 60; D.y = s.y; D.invuln = 0; var p0 = D.pct; step();
+        var v = HIT_ART.find(function(q){ return q.s === 'zone' && q.t === hazardT && q.sh.r === 120; }); if(v) frames2++;
+        var hit = D.pct > p0, tick = !!(v && v.n === hazardT); if(tick) ticks++; if(hit && !tick) hits = -999; if(hit) hits++; }
+      out.vortex = { frames:frames2, ticks:ticks, hits:hits };
+      s = stage('rush'); D.x = s.x + 300; D.y = s.y; step();
+      var b = HIT_ART.find(function(q){ return q.sh.kind === 'box' && q.t === hazardT; }); out.rush = b ? { w:b.sh.w, h:b.sh.h, cx:b.sh.x + b.sh.w/2 - b.ox, cy:b.sh.y + b.sh.h/2 - b.oy } : null; out.sr = s.r;
+      s = stage('flash'); D.x = s.x + 120; D.y = s.y; D.face = -1; D.hitstun = 0; updateSummons();
+      out.flash = HIT_ART.filter(function(q){ return q.t === hazardT; }).map(function(q){ return q.sh.kind === 'circle' ? 'c' + q.sh.r : q.s; }).sort();
+      return out;`);
+    expect(r.pull).toBe(320);
+    expect(r.vortex.frames).toBe(40);
+    expect(r.vortex.ticks).toBeGreaterThan(2);
+    expect(r.vortex.hits, 'every blade hit lands on a frame the ring flashes').toBe(r.vortex.ticks);
+    expect(r.rush).toEqual({ w: 2 * (r.sr + 34), h: 2 * (r.sr + 30), cx: 0, cy: 0 });
+    expect(r.flash).toEqual(['c260', 'ray']);
+  });
+});
