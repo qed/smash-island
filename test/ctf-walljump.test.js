@@ -126,7 +126,9 @@ describe('capture the flag: wall jumps count when the check looks at what player
     expect(s.cf, 'still carrying it').toBe(w.eval('__F.id'));
   });
 
-  it('a flag shut in a sealed box: only ONE piece is taken away (the smallest, the nearest of equals), everything else stands and the flag can be reached', { timeout: 300000 }, () => {
+  // (a wall, 60 x 240, and a block, 120 x 120, are the same area: among the solid pieces the one taken is the nearest to the flag, then the newest. The two walls are 120 px from the flag and the
+  // roof blocks 240 px over it, so it is the right wall, the newer of the two; the old code took the right roof block. The platform outside, smaller, is one-way and is tried last.)
+  it('a flag shut in a sealed box: only ONE piece is taken away (the nearest solid one, the newest of equals: the right wall), everything else stands and the flag can be reached', { timeout: 300000 }, () => {
     const w = boot(92);
     const pieces = build(w, 'box');
     expect(pieces.every(Boolean), 'the box went down').toBe(true);
@@ -134,8 +136,8 @@ describe('capture the flag: wall jumps count when the check looks at what player
     expect(r.removed, 'one piece out').toBe(1);
     expect(r.left.length, 'the other five stand').toBe(r.before - 1);
     expect(r.problems, 'and the flag can be reached').toEqual([]);
-    const g = r.gone[0], sizes = pieces.filter(p => p.kind !== 'plat').map(p => p.w * p.h);
-    expect(g.w * g.h, 'the smallest of the pieces that shut it').toBe(Math.min(...sizes));
+    const g = r.gone[0];
     expect(g.kind, 'never the harmless platform outside').not.toBe('plat');
+    expect({ id: g.id, x: g.x, w: g.w, h: g.h }, 'the right wall (X..X+60): as near the flag as the left one, and newer').toEqual({ id: pieces[1].id, x: X, w: 60, h: 240 });
   });
 });

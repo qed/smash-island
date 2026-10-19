@@ -5073,7 +5073,8 @@ function ctfEditNavLess(L, rest, gone, full){   // the graph without one piece: 
   return ctfNavNew(ctfEditMap(L, rest.length, rest), full, [g], rects.concat([g]), { dx:800, up:2400, down:800 });
 }
 // The pieces worth trying for what cannot be reached (bad: ctfEditProblems): those with a place the side in question reaches and one it does not both close beside them (only such a piece,
-// taken away, can join the two), the smallest first, the nearest to what cannot be reached among equals, then the newest; at most CTF_FIX_TRY of them.
+// taken away, can join the two), the solid ones first (a thin platform is one-way: taking it away never opens a way, so it is tried last, if at all), then the smallest, then the nearest to
+// what cannot be reached, then the newest; at most CTF_FIX_TRY of them. (A wall and a block are the same area, 60 x 240 and 120 x 120, so among solids it comes down to the nearest, then the newest.)
 function ctfFixCands(L, F, nav, bad){
   const pts = [];
   for(const b of bad){
@@ -5095,7 +5096,7 @@ function ctfFixCands(L, F, nav, bad){
     return false;
   };
   const dist = e=>{ let d = 1e9; for(const p of pts) d = Math.min(d, Math.hypot(Math.max(0, Math.abs(p.x - (e.x + e.w/2)) - e.w/2), Math.max(0, Math.abs(p.y - (e.y + e.h/2)) - e.h/2))); return d; };
-  return F.set.filter(between).map(e=>({ e, a:e.w*e.h, d:dist(e) })).sort((p, q)=>p.a - q.a || p.d - q.d || q.e.seq - p.e.seq).slice(0, CTF_FIX_TRY).map(o=>o.e);
+  return F.set.filter(between).map(e=>({ e, s:e.tool === 'wall' ? 0 : 1, a:e.w*e.h, d:dist(e) })).sort((p, q)=>p.s - q.s || p.a - q.a || p.d - q.d || q.e.seq - p.e.seq).slice(0, CTF_FIX_TRY).map(o=>o.e);
 }
 function ctfFixDrop(L, F, e, nav){   // this one piece goes; what is left is looked at again (its graph is the one just made, if any)
   F.set.splice(F.set.indexOf(e), 1); F.culprits++; F.mode = ''; F.lo = 0; F.hi = null; F.keep = F.set.length;
@@ -8910,17 +8911,20 @@ function ctfNavSimBoth(nav, n, xa, dir, dj, T, jump, run, want, frac, bst){
 }
 function ctfNavSimThru(nav, n, xa){ return !!ctfNavSim(nav, n, xa, 0, 0, 0, 0, false, true, true); }
 // ---- WALL JUMPS IN THE CHECK OF WHAT PLAYERS BUILD (the owner, 2026-10-18: "the ai flagged a possible neutral-walljump neo as impossible, and removed my defense..."; asked, "Count wall jumps") ----
-// The game's wall jump (mtWallJump): in the air, touching a solid side within WALL_WINDOW steps while holding toward it, jump kicks off it (vy JUMP*WJ_VY, vx WJ_VX away), once per piece an airtime.
-// A NEUTRAL one keeps holding toward the wall and drifts straight back to it (up a column of stacked pieces, a kick off each); held away a few steps first, it gets out from under an overhang
-// and drifts back round its lip (a neo); turned to the far wall each time, it climbs a shaft. A route of such moves is a 'wall' edge: a small closed-loop controller (ctfWjCtl) and its numbers,
+// The game's wall jump (mtWallJump): in the air, touching a solid side within WALL_WINDOW steps while holding toward it, jump kicks off it (vy JUMP*WJ_VY, vx WJ_VX away), once per wall FACE an
+// airtime (the face line, side + x to WALL_FACE_SNAP: a column of stacked pieces is one wall), and a real jump (a double jump, not a fall) gives the kicks back, as landing does.
+// A NEUTRAL one keeps holding toward the wall and drifts straight back to it (up a column: a kick, a double jump, a kick again off the same face); held away a few steps first, it gets out
+// from under an overhang and drifts back round its lip (a neo: the lip is a face of its own); turned to the far wall each time, it climbs a shaft. A route of such moves is a 'wall' edge: a small closed-loop controller (ctfWjCtl) and its numbers,
 // simulated with the game's own physics from a standing start (ctfNavWallFly) for the baseline fighter (every stat at 1), so a route counts only if the game's own wall jump does it. The same
-// controller plays it back in a match (ctfAiWallFollow), reading the live fighter. Only the graphs patched for what players built have these edges, only near the pieces, and only routes whose first
-// kick is off a built piece (a later one may be off anything: the lip of the map's own overhang, the far wall of a shaft): the shipped maps' graphs, the map probes and where a flag may be hidden
-// keep to the baseline moves with no wall jump, and so does the map's own geometry. A CPU takes one only when nothing else gets there (CTF_WJ_COST: a last resort).
+// controller plays it back in a match (ctfAiWallFollow), reading the live fighter. Only the graphs patched for what players built have these edges, only from places close to a built piece, each
+// route taking off beside a built piece's face and coming down where no plain move from there gets. Its kicks are off whatever the flight touches, as the game's are: the built piece, or the map's
+// own wall or overhang beside it (a route the game's wall jump can do counts, whoever's wall it kicks off). The shipped maps' graphs and the map probes keep to the baseline moves with no wall
+// jump. Where a flag may be hidden (ctfAiReachable) reads the graph in use: the map's (no wall jump) until the check at the end of the hiding, the checked one after it, so a place that check
+// counted reachable by a wall jump past built pieces is one the flag may go back to. A CPU takes one only when nothing else gets there (CTF_WJ_COST: a last resort).
 const CTF_WJ_COST = 1200, CTF_WJ_VY = [-7, -3, 0, 3], CTF_WJ_A1 = [0, 4, 8, 13], CTF_WJ_A2 = [0, 6], CTF_WJ_DJ = [-0.4, 3, null];
 // p: { wd: the side of the first wall (1 right, -1 left), vy: kick once vy >= this, a1/a2: steps held away after the first kick / each later one (0: the neutral kick), dj: the double jump once
 // vy >= this (null: none), zz: a shaft (each kick turns to the far wall) }. c: what it remembers. s: { t, g (on the ground), vy, jumps, wall (steps since a side was touched), ws (that side),
-// used (that piece already kicked off this airtime) }. Says what is held this step: { dir, jump } (jump: pressed this step; never two steps running, so every press is a new one).
+// used (that wall face already kicked off since the last landing or real jump) }. Says what is held this step: { dir, jump } (jump: pressed this step; never two steps running, so every press is a new one).
 function ctfWjCtl(p, c, s){
   if(c.side == null){ c.side = p.wd; c.out = 0; c.nw = 0; c.lj = false; }
   const dir = c.out > 0 ? -c.side : c.side;
@@ -8948,15 +8952,15 @@ function ctfNavWallFly(nav, A, s0, p, P, S){
   S = S || STAT_ONE;
   const R = P.R, WH = nav.M.WH, ACCg = P.ACC*S.run, ACCa = P.ACC*S.air, CAPg = P.CAP*S.run, CAPa = P.CAP*S.air, JV = P.JV*S.jump, WJV = JUMP*WJ_VY*S.jump, GF = S.fall;
   let x = s0.x, y = s0.y != null ? s0.y : A.y - R, vx = s0.vx || 0, vy = s0.vy || 0, jumps = s0.jumps != null ? s0.jumps : 2, g = s0.g != null ? !!s0.g : true, jp = !!s0.jp, sp = 0, fl = false;
-  let wt = -99, ws = 0, wid = null, kicks = 0;
-  const used = {}, c = {};
+  let wt = -99, ws = 0, wid = null, kicks = 0, used = {};
+  const c = {};
   for(let t = 1; t <= 170; t++){
     const o = ctfWjCtl(p, c, { t, g, vy, jumps, wall:t - wt, ws, used:wid !== null && !!used[wid] });
     if(o.dir){ const v0 = vx < 0 ? -vx : vx; vx += o.dir*(g ? ACCg : ACCa); let cap = g ? CAPg : CAPa; if(!g && CAPg > CAPa && v0 > cap) cap = Math.min(CAPg, v0); if(vx > cap) vx = cap; else if(vx < -cap) vx = -cap; }
     else if(g) vx *= FRICTION;
     if(o.jump && !jp){
       if(!g && t - wt <= WALL_WINDOW && o.dir === ws && wid !== null && !used[wid]){ used[wid] = 1; vy = WJV; vx = -ws*WJ_VX; jp = true; kicks++; }   // mtWallJump
-      else if(jumps > 0){ vy = JV; jumps--; g = false; jp = true; }
+      else if(jumps > 0){ vy = JV; jumps--; g = false; jp = true; used = {}; }   // (a real jump gives the wall jumps back: step())
     } else if(!o.jump) jp = false;
     vy += (fl ? P.G*0.35 : P.G)*(vy > 0 ? GF : 1); x += vx; y += vy;
     g = false;
@@ -8967,7 +8971,7 @@ function ctfNavWallFly(nav, A, s0, p, P, S){
       if(!(x + R > q.x && x - R < q.x + q.w && y + R > q.y && y - R < q.y + q.h)) continue;
       const fL = q.x - (x + R), fR = (q.x + q.w) - (x - R), fT = q.y - (y + R), fB = (q.y + q.h) - (y - R);
       const ax = Math.abs(fL) < Math.abs(fR) ? fL : fR, ay = Math.abs(fT) < Math.abs(fB) ? fT : fB;
-      if(Math.abs(ax) < Math.abs(ay) && !((q.ramp === true || q.step === true) && fT < 0 && fT >= -28 && vy > -2)){ x += ax; wt = t; ws = ax < 0 ? 1 : -1; wid = q.x + ':' + q.y; if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }
+      if(Math.abs(ax) < Math.abs(ay) && !((q.ramp === true || q.step === true) && fT < 0 && fT >= -28 && vy > -2)){ x += ax; wt = t; ws = ax < 0 ? 1 : -1; wid = ws + ':' + Math.round((ax < 0 ? q.x : q.x + q.w)/WALL_FACE_SNAP); if((ax < 0 && vx > 0) || (ax > 0 && vx < 0)) vx = 0; }   // (which wall: its face, as step() counts it)
       else { y += ay; if(ay < 0){ vy = Math.min(0, vy); landed = q; } else vy = Math.max(0, vy); }
     }
     if(!landed && vy >= 0){
@@ -9566,7 +9570,7 @@ function ctfAiFollow(f, ai, nav, inp, now){
 }
 function ctfAiResetMove(ai){ ai.path = null; ai.edge = null; ai.phase = ''; ai.pi = 0; ai.dj = false; ai.wjc = null; }
 // A WALL-JUMP edge (ctfWjCtl), played back: walk to the take-off, stand, and go once a look ahead from where the fighter really is (its own numbers: stats, a flag, a boost) comes down on the
-// place it is for; then the same controller, step by step, reading the live fighter (its last wall touch, which piece, whether it was kicked off already). The kick is asked for (f._aiWJ), as the
+// place it is for; then the same controller, step by step, reading the live fighter (its last wall touch, which face, whether it was kicked off already). The kick is asked for (f._aiWJ), as the
 // game wants of a CPU.
 function ctfWjLive(f){   // a live fighter's numbers for ctfNavWallFly (as step() moves it)
   const k = ctfSpeedK(f);
