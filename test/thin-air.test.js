@@ -23,7 +23,7 @@ const fly = (act, frames, stats = {}) => JSON.parse(W.eval(`(function(){
   Object.assign(A.st, ${JSON.stringify(stats)});
   A.y = groundY()-700; A.vx=0; A.vy=0; A.onground=false; A.invuln=0; A.hitstun=0; A.spCd=0; A._floatT=0;
   ${act}
-  var out = { vy0:A.vy, t0:A._floatT, vy:[], t:[], y:[], G:GRAV };
+  var out = { vy0:A.vy, t0:A._floatT, vy:[], t:[], y:[], G:GRAV, fall:A.st.fall };
   for (var i=0;i<${frames};i++){ step(); out.vy.push(A.vy); out.t.push(A._floatT); out.y.push(A.y); }
   out.air = !A.onground;
   return JSON.stringify(out);
@@ -37,9 +37,13 @@ describe('thin air: Thermal Rise', () => {
     expect(r.vy0).toBe(-7);
     expect(r.air, 'still in the air after 70 frames').toBe(true);
     const dv = deltas(r);
-    for (let i = 0; i < 60; i++) expect(dv[i], `float frame ${i + 1}`).toBeCloseTo(r.G * 0.35, 9);
+    // (restated 2026-10-20 -- the owner, 2026-10-18, "give each fighter stats": this was written when every fighter's stats were 1. Bubble's own row
+    // has fall 0.89 now, and the fall stat pulls on the way down only (the next test pins it, on light gravity too): rising, the gravity is exactly
+    // 0.35 of whole, and falling, 0.35 of whole times her fall; after the timer, whole gravity the same way)
+    const down = (i) => (i ? r.vy[i - 1] : r.vy0) > 0;
+    for (let i = 0; i < 60; i++) expect(dv[i], `float frame ${i + 1}`).toBeCloseTo(r.G * 0.35 * (down(i) ? r.fall : 1), 9);
     expect(r.t[59], 'the timer has run out after 60 frames').toBe(0);
-    for (let i = 60; i < 70; i++) expect(dv[i], `frame ${i + 1}: whole gravity`).toBeCloseTo(r.G, 9);
+    for (let i = 60; i < 70; i++) expect(dv[i], `frame ${i + 1}: whole gravity`).toBeCloseTo(r.G * (down(i) ? r.fall : 1), 9);
   });
 
   it('falls slower than a normal fall, and the fall stat pulls on the way down', () => {
@@ -108,22 +112,25 @@ describe('thin air: Capture the Flag float areas', () => {
       var vin = inside && fall(inside, 8), vout = outside && fall(outside, 8), vleave = null;
       // leaving: a while in the float area, then out into the clear (a few frames of its timer are left)
       if (inside && outside){ fall(inside, 6); A.x = outside[0]; A.y = outside[1]; A.vy = 0; vleave = [0]; for (var i=0;i<8;i++){ step(); vleave.push(A.vy); A.x = outside[0]; } }
-      return JSON.stringify({ inside:inside, outside:outside, vin:vin, vout:vout, vleave:vleave, t:A._floatT });
+      return JSON.stringify({ inside:inside, outside:outside, vin:vin, vout:vout, vleave:vleave, t:A._floatT, fall:A.st.fall });
     })()`));
     expect(r.none, 'the castle has a float area').toBeUndefined();
     expect(r.inside, 'a clear place inside it').not.toBe(null);
     expect(r.outside, 'a clear place beside it').not.toBe(null);
     const d = (v) => v.slice(1).map((x, i) => x - v[i]);
     const din = d(r.vin), dout = d(r.vout), dleave = d(r.vleave);
-    const G = dout[0];
+    // (restated 2026-10-20 -- the owner, 2026-10-18, "give each fighter stats": this was written when every fighter's stats were 1. The fighter here
+    // (fighters[0]) has a fall of its own now (FS: r.fall), and it pulls on the way down only: each fall starts from rest, so its first frame is the
+    // gravity alone and every frame after it is that times the fall)
+    const G = dout[0], FS = r.fall;
     expect(G, 'outside: whole gravity').toBeGreaterThan(0.5);
-    for (let i = 1; i < 8; i++) expect(dout[i], `outside frame ${i + 1}`).toBeCloseTo(G, 9);
+    for (let i = 1; i < 8; i++) expect(dout[i], `outside frame ${i + 1}`).toBeCloseTo(G * FS, 9);
     // inside: the first frame is still whole (the area is felt after that frame's move), then 0.35 of it every frame
     expect(din[0]).toBeCloseTo(G, 9);
-    for (let i = 1; i < 8; i++) expect(din[i], `inside frame ${i + 1}`).toBeCloseTo(G * 0.35, 9);
+    for (let i = 1; i < 8; i++) expect(din[i], `inside frame ${i + 1}`).toBeCloseTo(G * 0.35 * FS, 9);
     // out of it: the timer it left behind runs out within a few frames, and gravity is whole again
     expect(dleave[0]).toBeCloseTo(G * 0.35, 9);
-    for (let i = 4; i < 8; i++) expect(dleave[i], `after leaving, frame ${i + 1}`).toBeCloseTo(G, 9);
+    for (let i = 4; i < 8; i++) expect(dleave[i], `after leaving, frame ${i + 1}`).toBeCloseTo(G * FS, 9);
     expect(r.t, 'the timer has run out').toBe(0);
   });
 
@@ -131,7 +138,9 @@ describe('thin air: Capture the Flag float areas', () => {
   // It left float areas out ("the game never lowers gravity for it"), and counted a Thermal Rise float for one step, so after "Fix it" a CPU
   // in thin air planned on whole gravity. Its flight has to be the game's, step for step.
   it("the CPUs' look-ahead flies through thin air as the game does: in a float area, and through a Thermal Rise's second", { timeout: 120000 }, () => {
-    for (const map of ['castle', 'factory', 'oak']) {
+    // (restated 2026-10-20 -- the factory has no float area since its rebuild on main (ctf factory v4, the owner, 2026-10-18: "build the buildings like
+    // the mill"), which this test, written on its own branch the same day, never met: it flies the two maps that still have one)
+    for (const map of ['castle', 'oak']) {
       const { window: w } = loadMonolith(13);
       w.eval(`CTF.skipNav=true; SETTINGS.mode='ctf'; SETTINGS.count=10; SETTINGS.itemRate=0; CTF.forceMap=${JSON.stringify(map)}; beginMatchNow();
               fighters.forEach(function(f){ f.controller='still'; f.you=false; }); ctfEndHide(CTF.live);`);
@@ -144,7 +153,9 @@ describe('thin air: Capture the Flag float areas', () => {
         var run = function(x, y, vy, ft, n){
           A.x=x; A.y=y; A.vx=0; A.vy=vy; A.onground=false; A._floatT=ft; A.hitstun=0; A.invuln=0; A.jumps=1;
           var gy=[]; for (var i=0;i<n;i++){ step(); gy.push(A.y); }
-          var ny=[]; ctfNavFly(nav, { x:x, y:y, vx:0, vy:vy, jumps:1, g:false, jp:true, sp:0, ft:ft, at:5 }, function(t, X, Y){ ny.push(Y); return {}; }, true, false, false, null);
+          // (restated 2026-10-20 -- the owner, 2026-10-18, "give each fighter stats": written when every fighter's stats were 1, it flew the look-ahead on
+          // none (null: all 1). The fighter here has a fall of its own now, and the CPU's look-ahead (ctfAiPlanFly) flies the fighter's own stats (f.st): so does this)
+          var ny=[]; ctfNavFly(nav, { x:x, y:y, vx:0, vy:vy, jumps:1, g:false, jp:true, sp:0, ft:ft, at:5 }, function(t, X, Y){ ny.push(Y); return {}; }, true, false, false, A.st);
           return { gy:gy, ny:ny.slice(1, n+1), y0:y };
         };
         var open = null;
