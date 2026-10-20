@@ -428,6 +428,7 @@
   #select .cell.taken{opacity:.35; filter:grayscale(.7)}
   .ctfcup-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; width:min(1000px,96%); max-height:400px; overflow-y:auto; margin:0 auto; padding:2px}
   .ctfcup-team{border:3px solid #1c1c1c; border-radius:10px; background:var(--panel); padding:6px 8px; display:flex; flex-direction:column; gap:3px}
+  .ctfcup-team.mine{border-color:var(--gold); box-shadow:0 0 0 2px var(--gold)}
   .ctfcup-head{display:flex; align-items:center; gap:5px; font-weight:800; font-size:13px}
   .ctfcup-head span{flex:1}
   .ctfcup-seat{font-family:inherit; font-weight:700; font-size:12px; text-align:left; border:2px solid #1c1c1c; border-radius:7px; background:rgba(255,255,255,0.5); padding:2px 7px; cursor:pointer; display:flex; align-items:center; gap:6px}
@@ -1597,7 +1598,7 @@
     <h1>Capture the Flag Tournament</h1>
     <div class="sub" style="text-align:center" id="ctfCupSummary"></div>
     <div class="cupgrid" style="grid-template-columns:1fr"><div class="cupcol" id="ctfCupRows" style="align-items:center"></div></div>
-    <div class="foot" style="text-align:center;margin-top:8px;max-width:760px">Every match is played by the CPUs. Watch a fixture live (the camera follows the action) or skip it and the cup simulates it. Each team has a strategist: it settles the plan most likely to beat this opponent on this map, and learns as the cup goes on.</div>
+    <div class="foot" id="ctfCupFoot" style="text-align:center;margin-top:8px;max-width:760px">Every match is played by the CPUs. Watch a fixture live (the camera follows the action) or skip it and the cup simulates it. Each team has a strategist: it settles the plan most likely to beat this opponent on this map, and learns as the cup goes on.</div>
     <div class="row" style="justify-content:center;margin-top:14px">
       <button class="btn ghost sm" onclick="go('tourneySetup')">◀ Back</button>
       <button class="btn alt" onclick="go('ctfCupTeams')">Build the teams ▶</button>
@@ -4075,7 +4076,7 @@ function ctfBegin(){
   }
   ctfRebuildDyn(L);
   CTF.cpuHide = {};
-  L.explore = ctfExploreOn() && !(typeof inNetSession === 'function' && inNetSession()) && !CTF.spec && !CTUT.active;   // (never in the practice)
+  L.explore = ctfExploreOn() && !(typeof inNetSession === 'function' && inNetSession()) && !CTF.spec && !CTF.cupFix && !CTUT.active;   // (never in the practice, never in a Flag Cup fixture)
   try{ ctfTimedInit(L); }catch(e){ console.error('ctfTimedInit', e); }
   const sk0 = CTF.skipNav; if(L.explore) CTF.skipNav = true;
   if(L.phase !== 'bid'){ try{ ctfAiBegin(L); }catch(e){ console.error('ctfAiBegin', e); } }
@@ -6774,6 +6775,7 @@ function ctfSpecSetup(){
   const cup = CTF.cupFix || null;
   if(!cup && !ctfSpectateOn()) return;
   if(cup && typeof ctfCupSeat === 'function') ctfCupSeat(cup);
+  if(cup && cup.you >= 0){ try{ ctfCupYouMenu(cup.you); }catch(e){} return; }   // a Normal Flag Cup's fixture with your team in it: you play it (the Spectate toggle never makes it a watched one)
   for(const f of fighters){ f.controller = 'ai'; f.you = false; }
   CTF.spec = { on:true, mode:'auto', team:0, lock:-1, cur:null, next:0, icons:false, panel:1, zoom:false, vt:0, room:null, cut:0, fz:CTF_ZOOM, seq:0, speed:1 };
 }
@@ -7042,7 +7044,9 @@ function ctfCupClean(o){
   const slots = [], skill = [];
   for(let i = 0; i < teams; i++){ const row = (Array.isArray(o.slots) && Array.isArray(o.slots[i])) ? o.slots[i] : []; slots.push(Array.from({ length:size }, (_, k)=>typeof row[k] === 'string' ? row[k] : null)); skill.push(one(o.skill && o.skill[i], [-1, 0, 1, 2], -1)); }
   const strat = []; for(let i = 0; i < teams; i++) strat.push(ctfCupCleanStrat(o.strat && o.strat[i], size));
-  return { teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), adv:o.adv ? 1 : 0, gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill, strat };
+  // play: 0 the watch-only cup (every match the CPUs'), 1 Normal (the owner, 2026-10-19: "flag cup should have a 'normal' option"): you play your team's matches. mine: your team (its card in the builder).
+  const mine = Math.max(0, Math.min(teams - 1, Math.round(+o.mine) || 0));
+  return { play:one(o.play, [0, 1], 0), mine, teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), adv:o.adv ? 1 : 0, gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill, strat };
 }
 // A team's STRATEGY setting (the owner, 2026-10-16: "add strategy settings"): mode 'auto' (the strategist), 'fixed' (the owner's plan all match, the strategist off) or 'adapt' (the owner's plan to begin with, then the strategist may switch).
 // The plan is the planning menu's own parts: a preset (or none), ticks for builds, offence and defence ideas, ideas of the preset switched off, and a role for each SEAT (0, 1, ...: the fighter in that seat; auto is no entry).
@@ -7109,6 +7113,7 @@ function ctfCupPool(){ return ROSTER.filter(r=>r.play && isUnlocked(r) && !oneBa
 function openCtfCup(){ ctfCupEnsure(); CTFCUP = ctfCupClean(CTFCUP); go('ctfCupSetup'); }
 // ---- the setup screen ----
 const CTFCUP_ROWS = [
+  ['play', 'Mode', ()=>[[0, 'Watch (CPUs only)'], [1, 'Normal (you play)']]],
   ['teams', 'Teams', ()=>CTFCUP_SIZES.map(n=>[n, n + ' teams'])],
   ['size', 'Team size', ()=>[2, 3, 4, 5, 6, 7, 8].map(n=>[n, n + 'v' + n])],
   ['map', 'Maps', ()=>[['rotate', 'Rotate with the rounds'], ['random', 'Random each match']].concat(ctfMapIds().map(id=>[id, CTF_MAPS[id].name + (CTF_MAPS[id].beta ? ' (beta)' : '')]))],
@@ -7129,7 +7134,11 @@ function ctfCupSyncUI(){
   }
   const n = CTFCUP.teams, adv = n/2, ko = Math.round(Math.log2(adv));
   const sum = document.getElementById('ctfCupSummary');
-  if(sum) sum.textContent = n + ' teams of ' + CTFCUP.size + ' · ' + (n/4) + ' group' + (n === 4 ? '' : 's') + ' of 4 · top 2 of each group go through · ' + (3 + ko) + ' matches to win the cup';
+  if(sum) sum.textContent = n + ' teams of ' + CTFCUP.size + ' · ' + (n/4) + ' group' + (n === 4 ? '' : 's') + ' of 4 · top 2 of each group go through · ' + (3 + ko) + ' matches to win the cup' + (CTFCUP.play ? ' · you play your team\'s matches (3 to ' + (3 + ko) + ')' : '');
+  const foot = document.getElementById('ctfCupFoot');
+  if(foot) foot.textContent = CTFCUP.play
+    ? 'You play your team\'s matches: seat 1 of the team marked Your team in the builder. Your CPU teammates follow your strategist\'s plan until you set your own in the plan menu during the match. The other matches are the CPUs\': watch one live, or skip it and the cup simulates it. Your first Capture the Flag match waits for the short practice.'
+    : 'Every match is played by the CPUs. Watch a fixture live (the camera follows the action) or skip it and the cup simulates it. Each team has a strategist: it settles the plan most likely to beat this opponent on this map, and learns as the cup goes on.';
 }
 // ---- the team builder ----
 let CTFCUP_PICK = null;   // { team, seat } while the fighter list is open
@@ -7149,15 +7158,27 @@ function ctfCupTeamsRender(){
   const pool = ctfCupPool(), by = n=>pool.find(r=>r.name === n);
   grid.innerHTML = '';
   for(let i = 0; i < CTFCUP.teams; i++){
-    const card = document.createElement('div'); card.className = 'ctfcup-team';
+    const mine = !!CTFCUP.play && CTFCUP.mine === i;   // a Normal cup: the team you play for (seat 1 is you, the rest your CPU teammates)
+    const card = document.createElement('div'); card.className = 'ctfcup-team' + (mine ? ' mine' : '');
+    if(CTFCUP.play){ const yr = document.createElement('div'); yr.className = 'ctfcup-head'; const yb = document.createElement('button'); yb.className = 'cupchip' + (mine ? ' on' : '');
+      yb.textContent = mine ? 'Your team' : 'Make this my team'; yb.title = mine ? 'You play seat 1 of this team; seats 2+ are your CPU teammates' : 'Play for this team instead';
+      yb.onclick = ()=>{ CTFCUP.mine = i; ctfCupSave(); ctfCupTeamsRender(); }; yr.appendChild(yb); card.appendChild(yr); }
     const head = document.createElement('div'); head.className = 'ctfcup-head';
     const title = document.createElement('span'); title.textContent = 'Team ' + (i + 1); head.appendChild(title);
     const sk = document.createElement('button'); sk.className = 'cupchip'; const SKN = ['Easy', 'Normal', 'Hard'];
-    sk.textContent = CTFCUP.skill[i] < 0 ? 'CPU: cup default' : 'CPU: ' + SKN[CTFCUP.skill[i]]; sk.title = 'The CPU skill of this team (the cup default, or its own)';
+    sk.textContent = CTFCUP.skill[i] < 0 ? 'CPU: cup default' : 'CPU: ' + SKN[CTFCUP.skill[i]]; sk.title = mine ? 'The CPU skill of your teammates (the cup default, or its own)' : 'The CPU skill of this team (the cup default, or its own)';
     sk.onclick = ()=>{ CTFCUP.skill[i] = ((CTFCUP.skill[i] + 2) % 4) - 1; ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(sk);
-    const st = CTFCUP.strat[i], sb = document.createElement('button'); sb.className = 'cupchip' + (st.mode !== 'auto' ? ' on' : ''); sb.textContent = 'Plan: ' + { auto:'strategist', fixed:'fixed', adapt:'fixed, then adapt' }[st.mode];
-    sb.title = 'Strategy: the strategist chooses (auto); your own plan all match (fixed); your plan to begin with, then the strategist may switch (fixed, then adapt)';
-    sb.onclick = ()=>{ st.mode = CTFCUP_MODES[(CTFCUP_MODES.indexOf(st.mode) + 1) % 3]; ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(sb);
+    const st = CTFCUP.strat[i], sb = document.createElement('button'); sb.className = 'cupchip' + (st.mode !== 'auto' ? ' on' : '');
+    if(mine){   // your team: the strategist plans for your CPU teammates, or your saved plan is where your own plan starts; in the match, the plan menu is yours and overrides it
+      sb.textContent = 'Your plan: ' + (st.mode === 'auto' ? 'strategist' : 'saved plan');
+      sb.title = 'Your team\'s plan to start with: the strategist\'s, or your saved plan. In the match, what you set in the plan menu wins; clearing it gives the plan back to the strategist';
+      sb.onclick = ()=>{ st.mode = st.mode === 'auto' ? 'fixed' : 'auto'; ctfCupSave(); ctfCupTeamsRender(); };
+    } else {
+      sb.textContent = 'Plan: ' + { auto:'strategist', fixed:'fixed', adapt:'fixed, then adapt' }[st.mode];
+      sb.title = 'Strategy: the strategist chooses (auto); your own plan all match (fixed); your plan to begin with, then the strategist may switch (fixed, then adapt)';
+      sb.onclick = ()=>{ st.mode = CTFCUP_MODES[(CTFCUP_MODES.indexOf(st.mode) + 1) % 3]; ctfCupSave(); ctfCupTeamsRender(); };
+    }
+    head.appendChild(sb);
     const dice = document.createElement('button'); dice.className = 'cupchip'; dice.innerHTML = '&#127922; fill'; dice.title = 'Fill this team\'s empty seats from the draw';
     dice.onclick = ()=>{ ctfCupFillTeam(i, true); ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(dice);
     card.appendChild(head);
@@ -7168,7 +7189,7 @@ function ctfCupTeamsRender(){
     if(st.mode !== 'auto'){ const line = document.createElement('button'); line.className = 'ctfcup-plan'; line.textContent = ctfCupPlanText(i) + '  (edit)'; line.onclick = ()=>ctfCupPlanOpen(i); card.appendChild(line); }
     for(let k = 0; k < CTFCUP.size; k++){
       const nm = ctfCupSeatName(i, k), r = nm ? by(nm) : null, b = document.createElement('button'); b.className = 'ctfcup-seat' + (r ? ' on' : '');
-      b.innerHTML = r ? '<span class="ctfcup-dot" style="background:' + r.color + '"></span>' + esc(r.name) : '<span class="ctfcup-dot"></span><i>random draw</i>';
+      b.innerHTML = (mine && k === 0 ? '<b>You:</b> ' : '') + (r ? '<span class="ctfcup-dot" style="background:' + r.color + '"></span>' + esc(r.name) : '<span class="ctfcup-dot"></span><i>random draw</i>');
       b.onclick = ()=>ctfCupPickOpen(i, k); card.appendChild(b);
     }
     grid.appendChild(card);
@@ -7823,7 +7844,7 @@ function ctfCupPickOpen(team, seat){
   CTFCUP_PICK = { team, seat }; const box = document.getElementById('ctfCupPicker'); if(!box) return;
   const pool = ctfCupPool(), mates = new Set(CTFCUP.slots[team].filter((n, q)=>n && q !== seat));
   box.innerHTML = '';
-  const bar = document.createElement('div'); bar.className = 'ctfcup-pickbar'; bar.textContent = 'Team ' + (team + 1) + ', seat ' + (seat + 1) + ': pick a fighter';
+  const bar = document.createElement('div'); bar.className = 'ctfcup-pickbar'; bar.textContent = (CTFCUP.play && CTFCUP.mine === team && seat === 0) ? 'Your team: pick the fighter you play' : 'Team ' + (team + 1) + ', seat ' + (seat + 1) + ': pick a fighter';
   const rnd = document.createElement('button'); rnd.className = 'cupchip'; rnd.textContent = 'Random draw'; rnd.onclick = ()=>{ CTFCUP.slots[team][seat] = null; ctfCupPickClose(); };
   const x = document.createElement('button'); x.className = 'cupchip'; x.textContent = 'Cancel'; x.onclick = ()=>ctfCupPickClose(false);
   bar.appendChild(rnd); bar.appendChild(x); box.appendChild(bar);
@@ -7859,15 +7880,20 @@ function ctfCupMakeTeams(cfg){
 }
 function ctfCupStart(){
   CTFCUP = ctfCupClean(CTFCUP); ctfCupSave();
+  PENDING_UNLOCKS.length = 0;   // (nothing left over from an earlier screen is announced as this cup's)
   const cfg = CTFCUP, N = cfg.teams;
   if(!TOURNEY_PREV) TOURNEY_PREV = { mode:SETTINGS.mode, count:SETTINGS.count, stage, teamKey:SETTINGS.teamKey, stocks:SETTINGS.stocks, itemRate:SETTINGS.itemRate, ai:AI_LEVEL };
-  const teams = ctfCupMakeTeams(cfg);
-  TOURNEY = { active:true, game:'ctf', teamSize:cfg.size, mode:'spectate', teams, cfg:Object.assign({}, TOURNEY_CFG, { cup:N, gTime:0, kTime:0 }), cupSize:N,
-    groups:Array.from({ length:N/4 }, (_, g)=>teams.filter(t=>t.group === g)), stage:'group', round:0, fixtures:[], fxIndex:0, bracket:[], knockoutRound:0, champion:null, myTeam:null, eliminated:false,
+  const teams = ctfCupMakeTeams(cfg), mine = cfg.play ? teams[cfg.mine] : null;
+  TOURNEY = { active:true, game:'ctf', teamSize:cfg.size, mode:mine ? 'normal' : 'spectate', teams, cfg:Object.assign({}, TOURNEY_CFG, { cup:N, gTime:0, kTime:0 }), cupSize:N,
+    groups:Array.from({ length:N/4 }, (_, g)=>teams.filter(t=>t.group === g)), stage:'group', round:0, fixtures:[], fxIndex:0, bracket:[], knockoutRound:0, champion:null, myTeam:mine, eliminated:false,
     ctf:{ cfg:JSON.parse(JSON.stringify(cfg)), memo:{}, played:0 } };
   buildGroupFixtures(); showTourneyHub();
+  { const want = cfg.play && cfg.slots[cfg.mine] && cfg.slots[cfg.mine][0], got = mine && mine.members[0];   // your pick is not in the pool any more (locked, or erased): who you got instead
+    if(want && got && got.name !== want) try{ banner('You play ' + got.name + ' (' + want + ' is not available)', 2600); }catch(e){} }
 }
 function ctfCupOn(){ return !!(TOURNEY && TOURNEY.active && TOURNEY.game === 'ctf'); }
+// You are playing your own Flag Cup fixture now (a Normal cup).
+function ctfCupYouPlay(){ return !!(typeof CTF !== 'undefined' && CTF.cupFix && CTF.cupFix.you >= 0); }
 // The map of a fixture, fixed when it is first asked for: the cup's one map, a random one, or the round's turn in the rotation (a group matchday, then the knockout rounds).
 function ctfCupFxMap(fx){
   if(fx.map) return fx.map;
@@ -7878,22 +7904,26 @@ function ctfCupFxMap(fx){
 function ctfCupCap(fx){ const c = TOURNEY.ctf.cfg; return (fx.kind === 'group' ? c.gCap : c.kCap)*60*60; }   // (steps)
 function ctfCupSkillOf(t){ return t.skill != null && t.skill >= 0 ? t.skill : TOURNEY.ctf.cfg.cpu; }
 // Watch a fixture: a spectated match of the fixture's two teams on its map, through the same entry as any CTF match (beginMatchNow, ctfSpecSetup, ctfCupSeat).
+// A Normal cup's fixture with your team in it is yours whichever way it is opened: you play seat 1 of your side (cupFix.you: 0 team A, 1 team B; -1 a CPU fixture), it is never spectated and never simulated.
 function ctfCupWatch(fx){
   if(fx.played) return;
-  const T = TOURNEY, size = T.teamSize;
+  const T = TOURNEY, size = T.teamSize, my = (T.mode === 'normal' && !T.eliminated) ? T.myTeam : null;
+  const you = my && fx.a === my ? 0 : my && fx.b === my ? 1 : -1;
   TOURNEY_WATCHING = fx; TOURNEY_MATCH_ACTIVE = true;
   SETTINGS.mode = 'ctf'; SETTINGS.count = size*2; SETTINGS.teamKey = '';
-  CTF.cupFix = { fx, a:fx.a, b:fx.b, size, map:ctfCupFxMap(fx), cap:ctfCupCap(fx), t0:Date.now() };
+  CTF.menu = null; CTF.strat = null;   // (no plan menu or strategist carried over from the last fixture)
+  CTF.cupFix = { fx, a:fx.a, b:fx.b, size, map:ctfCupFxMap(fx), cap:ctfCupCap(fx), t0:Date.now(), you, mine:null };   // mine: your own plan rules your side (true), the strategist's (false), not settled yet (null)
   beginMatchNow();
   banner((fx.kind === 'group' ? 'GROUP ' : 'KNOCKOUT ') + fx.a.name + ' vs ' + fx.b.name, 1600);   // (the fixture banner, as the World Cup has it)
 }
 // Seat the fixture's fighters (ctfSpecSetup calls it): each seat is REBUILT as its team member, team A on side 0 and team B on side 1; the skill of each team.
+// Your fixture (a Normal cup): seat 1 of your side is you (the keyboard's own controller), the rest CPUs.
 function ctfCupSeat(cup){
-  const size = cup.size, rows = [cup.a.members, cup.b.members];
+  const size = cup.size, rows = [cup.a.members, cup.b.members], you = cup.you != null ? cup.you : -1;
   fighters.forEach((f0, i)=>{
-    const slot = i < size ? 0 : 1, mem = rows[slot][i % size] || rows[slot][0];
-    const f = makeFighter({ ...mem, you:false }, f0.x, f0.y, f0.idx);
-    f.stocks = f0.stocks; f.homeBase = null; f.team = slot; f.controller = 'ai'; f.you = false; fighters[i] = f;
+    const slot = i < size ? 0 : 1, mem = rows[slot][i % size] || rows[slot][0], me = slot === you && i % size === 0;
+    const f = makeFighter({ ...mem, you:me }, f0.x, f0.y, f0.idx);
+    f.stocks = f0.stocks; f.homeBase = null; f.team = slot; f.controller = me ? 'local' : 'ai'; f.you = me; fighters[i] = f;
   });
   CTF.skillOf = [ctfCupSkillOf(cup.a), ctfCupSkillOf(cup.b)];
 }
@@ -7909,13 +7939,21 @@ function ctfCupCapEnd(L){
 // A match played to its end (ctfEnd) or cut short (skip): the score goes in the table, the hub comes back.
 function ctfCupDone(L, win, why, score){
   const cf = CTF.cupFix; if(!cf) return;
-  const fx = cf.fx; CTF.cupFix = null; CTF.skillOf = null;
+  const fx = cf.fx, mine = cf.you >= 0;
+  if(mine){   // your own fixture counts as a Capture the Flag match (progress, unlocks, quests); a watched or simulated one earns nothing
+    for(const f of fighters) f.placement = win < 0 ? null : f.team === win ? 1 : 2;
+    try{ awardMatchProgress(win); }catch(e){} try{ commitPlaystyles(); }catch(e){} try{ botAdaptCommit(); }catch(e){}
+  }
+  CTF.cupFix = null; CTF.skillOf = null;
   const sc = score || L.score;
   ctfCupRecord(fx, { sa:sc[0], sb:sc[1], win, why, real:why !== 'skip', L:score ? null : L });
   TOURNEY_WATCHING = null; TOURNEY_MATCH_ACTIVE = false; running = false;
   const nm = win === 0 ? fx.a.name : win === 1 ? fx.b.name : null;
   try{ banner(nm ? nm + (fx.kind === 'group' ? ' win ' : ' advance ') + fx.result.sa + '-' + fx.result.sb : 'A draw ' + fx.result.sa + '-' + fx.result.sb, 1800); }catch(e){}
-  setTimeout(()=>{ if(ctfCupOn()) showTourneyHub(); }, 2300);
+  setTimeout(()=>{   // your final decides the cup and nothing is left in the round to sim: crowned on the spot (as the World Cup's finishWatchedKnockout)
+    if(!ctfCupOn()) return;
+    if(mine && TOURNEY.stage === 'knockout' && TOURNEY.fixtures.length === 1 && TOURNEY.fixtures.every(f=>f.played)) advanceKnockout(); else showTourneyHub();
+  }, 2300);
 }
 // The result of a fixture, watched or simulated: the group table or the bracket. A win is always more flags than the other side's on the board (a win on jail or the cap still reads as a win).
 function ctfCupRecord(fx, r){
@@ -7930,7 +7968,7 @@ function ctfCupRecord(fx, r){
 }
 // Skip the rest of the fixture being watched (S): it is settled the way a skipped one is, from where it stands.
 function ctfCupSkip(){
-  const cf = CTF.cupFix, L = CTF.live; if(!cf || !L || L.over) return;
+  const cf = CTF.cupFix, L = CTF.live; if(!cf || !L || L.over || cf.you >= 0) return;   // (your own fixture is never settled for you)
   const r = ctfCupSimRoll(cf.fx, L);
   L.over = true; L.winner = r.win; running = false;
   ctfCupDone(L, r.win, 'skip', [r.sa, r.sb]);
@@ -7968,14 +8006,24 @@ function ctfCupSimFixture(fx){
 // ---- the hub: the map of each fixture, and what the strategists did ----
 function ctfCupHubExtras(brand, title, body){
   brand.textContent = 'Flag Cup · ' + brand.textContent;
-  const rows = body.querySelectorAll('.th-fx');
+  const rows = body.querySelectorAll('.th-fx'), my = (TOURNEY.mode === 'normal' && !TOURNEY.eliminated) ? TOURNEY.myTeam : null;
+  const un = ctfCupUnlockText();
+  if(un){ const d = document.createElement('div'); d.className = 'tourney-champ'; d.style.fontSize = '16px'; d.textContent = un; body.insertBefore(d, body.firstChild); }
   TOURNEY.fixtures.forEach((fx, i)=>{
     const row = rows[i]; if(!row) return;
+    if(my && (fx.a === my || fx.b === my) && !fx.played){ row.classList.add('th-mine'); const b = row.querySelector('.th-watch'); if(b) b.textContent = '▶ Play'; }
     const map = ctfCupFxMap(fx), span = document.createElement('span'); span.className = 'ctfcup-map';
     span.textContent = CTF_MAPS[map].name + (fx.played ? (fx.how === 'sim' ? ' · simulated' : fx.how === 'time' ? ' · on the cap' : fx.how === 'jail' ? ' · by jail' : fx.how === 'skip' ? ' · skipped' : '') : '');
     row.appendChild(span);
     if(fx.played && fx.plans){ const pl = document.createElement('div'); pl.className = 'ctfcup-plans'; pl.textContent = fx.plans.map(p=>p && p.name).filter(Boolean).join('  vs  '); row.parentNode.insertBefore(pl, row.nextSibling); }
   });
+}
+// What your fixtures unlocked (a Normal cup): your matches never reach the result screen, so it is said on the next hub, and the last of it (your final,
+// the cup win's trophy) with the champions. Drains the queue (as showUnlockNote does), so nothing is left over for the next result screen or the next cup.
+function ctfCupUnlockText(){
+  if(!TOURNEY || TOURNEY.mode !== 'normal' || !PENDING_UNLOCKS.length) return '';
+  const fresh = [...new Set(PENDING_UNLOCKS)]; PENDING_UNLOCKS.length = 0;
+  return fresh.length === 1 ? '★ NEW FIGHTER UNLOCKED: ' + fresh[0] + '!' : '★ ' + fresh.length + ' NEW FIGHTERS: ' + fresh.join(', ') + '!';
 }
 function ctfCupChampNote(){ try{ return typeof ctfStratReport === 'function' ? ctfStratReport() : ''; }catch(e){ return ''; } }
 
@@ -8184,14 +8232,15 @@ function ctfStratApplyFixed(L, t, st){
 }
 // ---- the plan on the CPUs ----
 // the preset and the ticks a plan puts in the team plan (the same things the planning menu sets), and the roles it holds the CPUs to
+function ctfStratTicks(def){ const o = def.preset ? ctfPlanPresetTicks(def.preset) : {}; if(def.ov === 'def' && def.counter) o.counter = true; return o; }
 function ctfStratApply(L, t, id){
   const pl = L.plans && L.plans[t], def = CTF_STRATS[id]; if(!pl || !def) return;
   pl.preset = def.preset && CTF_PRESETS[def.preset] ? def.preset : null;
-  pl.ticks = def.preset ? ctfPlanPresetTicks(def.preset) : {};
-  if(def.ov === 'def' && def.counter) pl.ticks.counter = true;
+  pl.ticks = ctfStratTicks(def);
   pl.assign = {}; pl.dealt = false; pl.allow = null; pl.votes = {}; pl.kit = null;   // (the owner's plan, if there was one, is let go of)
   if(!pl.built && pl.cpus.length) ctfPlanAssignBuildRoles(L, pl);
   const ss = CTF.strat && CTF.strat[t]; if(ss){ ss.model = null; ss.plan = id; ss.phase = def.ov === 'phase' ? ((L.playT || 0) > 600 ? 'back' : 'rush') : null; ss.phT = L.playT || 0; }   // (a plan taken up in mid-match starts at home, waiting)
+  if(ss && ss.you) ctfCupYouLayer(L, t);   // (a Normal cup: the roles, areas and jobs you set go back over it)
 }
 // the known flags of a side: the other side's flags it has seen (or the radar showed), out where it can take them
 function ctfStratKnown(L, t){
@@ -8205,7 +8254,7 @@ function ctfStratBegin(L){
     const sides = (CTF.bidRes && CTF.bidRes.sd) ? CTF.bidRes.sd : null;
     cf.pick = ctfStratChoose(fx, cf.map, sides, cf.cap);
     [fx.a, fx.b].forEach((team, i)=>{ const st = team.strat, r = cf.pick.res[i];
-      if(st && st.mode !== 'auto'){ const cls = ctfStratClassify(st, cf.size); r.custom = st.mode; r.autoId = r.id; r.id = cls; if(r.all[cls] != null) r.odds = r.all[cls]; } });
+      if(st && st.mode !== 'auto' && i !== cf.you){ const cls = ctfStratClassify(st, cf.size); r.custom = st.mode; r.autoId = r.id; r.id = cls; if(r.all[cls] != null) r.odds = r.all[cls]; } });   // (your side's saved plan is your own vote, never the strategist's: ctfCupYouBegin)
     fx.plans = cf.pick.res.map((r, i)=>{ const st = (i ? fx.b : fx.a).strat; return { id:r.id, name:r.custom ? ctfStratFixedName(st) + (r.custom === 'adapt' ? ' (may adapt)' : '') : CTF_STRATS[r.id].name, odds:r.odds, swaps:[], fixed:!!r.custom }; });
   }
   CTF.strat = [0, 1].map(t=>{
@@ -8213,7 +8262,87 @@ function ctfStratBegin(L){
     return { t, team, plan:own ? 'custom' : r.id, first:r.id, phase:null, phT:0, odds:r.odds, all:r.all, talk:own ? [] : r.talk, talkLines:[], last:'', lastT:0, oppRaid:0.5, samples:0, swapT:0, seen:{},
       model:own ? ctfStratFixedModel(st, cf.size) : null, locked:r.custom === 'fixed', note:own ? (r.custom === 'fixed' ? 'The owner\'s plan, all match: the strategist stays off' : 'The owner\'s plan first: the strategist may switch') : '' };
   });
-  for(const t of [0, 1]){ const ss = CTF.strat[t]; if(ss.plan === 'custom') ctfStratApplyFixed(L, t, ss.team.strat); else ctfStratApply(L, t, ss.plan); }
+  for(const t of [0, 1]){ const ss = CTF.strat[t]; if(t === cf.you) ctfCupYouBegin(L, t, ss); else if(ss.plan === 'custom') ctfStratApplyFixed(L, t, ss.team.strat); else ctfStratApply(L, t, ss.plan); }
+}
+// ---- your side in a Normal Flag Cup (the owner, 2026-10-19: the strategist is "On, I can override") ----
+// Your strategist plans for your CPU teammates (ctfStratApply) until you set a plan of your own in the plan menu: from then your vote is your side's plan and the
+// strategist neither applies a plan nor holds your teammates to its roles. Its own pseudo-vote is never used on your side (it would be merged with yours and you
+// could never untick it). Clearing your vote (C in the menu) gives the plan back to the strategist. A saved plan (or a loaded kit) on your card is where your own
+// plan starts: it goes in as YOUR vote, which you can change or clear; the kit's jobs, areas, budgets, flag spots and rules steer your teammates while it holds.
+// A vote of roles, areas or jobs only (no preset, nothing ticked) overrides only what it sets: it is laid over the strategist's plan (cf.layer, ctfCupYouLayer),
+// whose preset and ideas stay and which still looks again; the teammates you gave a role keep it, the rest follow the strategist.
+function ctfCupYouIdx(t){ const me = fighters.find(f=>f.you && f.team === t); return me ? me.idx : -1; }
+function ctfCupVoteEmpty(v){ return !(v && (v.preset || [v.ticks, v.assign, v.jobs, v.areas].some(o=>o && Object.keys(o).some(k=>o[k] != null && o[k] !== false)))); }
+// a whole plan of your own: a preset or an idea ticked (roles, areas and jobs alone are laid over the strategist's plan)
+function ctfCupVotePlan(v){ return !!(v && (v.preset || Object.keys(v.ticks || {}).some(k=>v.ticks[k]))); }
+// your roles, areas and jobs over the strategist's plan: put back each time the strategist applies one (ctfStratApply), and kept as your vote for the menu
+function ctfCupYouLayer(L, t){
+  const cf = CTF.cupFix, pl = L.plans && L.plans[t], v = cf && !cf.mine && cf.you === t ? cf.layer : null, me = ctfCupYouIdx(t); if(!pl || !v || me < 0) return;
+  pl.votes = {}; pl.votes[me] = v;
+  pl.assign = {}; for(const k of Object.keys(v.assign || {})) if(v.assign[k] && v.assign[k] !== 'auto') pl.assign[k] = v.assign[k];
+  pl.jobs = Object.assign({}, v.jobs || {}); pl.areas = Object.assign({}, v.areas || {}); pl.dealt = false;
+}
+// the roles you gave on your side (laid over the strategist's plan), which its own roles never replace
+function ctfCupYouRoles(ss){ const cf = CTF.cupFix; return ss && ss.you && cf && !cf.mine && cf.layer ? cf.layer.assign || {} : null; }
+// your card's saved plan as a vote: the preset, the ticks, the ideas switched off and a role for each teammate (by seat on the card, so by fighter here)
+function ctfCupYouSeed(st, t, size){
+  if(!st || st.mode === 'auto') return null;
+  const assign = {}; for(const k of Object.keys(st.assign || {})){ const idx = t*size + +k; if(fighters[idx] && !fighters[idx].you) assign[idx] = st.assign[k]; }
+  return { preset:(st.preset && CTF_PRESETS[st.preset]) ? st.preset : null, ticks:Object.assign({}, st.ticks || {}), off:Object.assign({}, st.off || {}), assign, jobs:{}, areas:{} };
+}
+function ctfCupYouBegin(L, t, ss){
+  const cf = CTF.cupFix, pl = L.plans && L.plans[t], me = ctfCupYouIdx(t);
+  ss.you = true; ss.locked = false; ss.note = '';
+  if(!pl || me < 0) return;
+  if(!cf.begun){   // first time: your card's saved plan, if it has one, is your starting plan (unless you already set one in the side bid)
+    cf.begun = true;
+    const st = ss.team.strat, seed = ctfCupYouSeed(st, t, cf.size);
+    if(cf.kit == null) cf.kit = !!(seed && st.kit);
+    if(cf.mine == null){
+      cf.mine = false;
+      if(seed){   // (an empty one, nothing set and no kit, is no plan: the strategist keeps your side)
+        ctfCupYouMenu(t);
+        if(!ctfCupVoteEmpty(seed)) ctfPlanVoteIn(L, t, me, seed); else if(cf.kit) cf.mine = true;
+      }
+    }
+    if(cf.mine && cf.kit && st && st.kit) pl.kit = JSON.parse(JSON.stringify(st.kit));   // (the kit's jobs, areas, budgets, flag spots and rules, for your teammates)
+  }
+  if(!cf.mine) ctfStratApply(L, t, ss.plan);   // (with your roles, areas and jobs over it, if you set only those: ctfCupYouLayer)
+  ctfCupYouRec(L, t);
+}
+// the plan menu opens on your card's saved plan (from the seating, so it is there in the side bid too)
+// cf.kit: your card's kit is part of your plan (from the seating, so a vote in the side bid keeps it), until you clear your plan or set only roles, areas or jobs
+function ctfCupYouMenu(t){
+  const cf = CTF.cupFix, team = cf && (t ? cf.b : cf.a), seed = team ? ctfCupYouSeed(team.strat, t, cf.size) : null, kit = !!(seed && team.strat.kit);
+  if(cf && cf.kit == null) cf.kit = kit;
+  if(seed && (kit || !ctfCupVoteEmpty(seed))) CTF.menu = { open:false, tab:0, cur:0, areaCur:0, mate:0, vote:JSON.parse(JSON.stringify(seed)) };
+}
+// your vote has come in (ctfPlanVoteIn): a plan of your own takes your side from the strategist; an empty one (cleared) gives it back
+function ctfCupYouVoted(L, t, idx){
+  const cf = CTF.cupFix; if(!cf || cf.you !== t || idx !== ctfCupYouIdx(t)) return;
+  const pl = L.plans && L.plans[t]; if(!pl) return;
+  const v = pl.votes[idx], ss = CTF.strat && CTF.strat[t];
+  if(ctfCupVotePlan(v) || (cf.kit && !ctfCupVoteEmpty(v))){ cf.mine = true; cf.layer = null; ctfCupYouRec(L, t); return; }   // (your card's kit makes any vote with it yours)
+  cf.mine = false; cf.kit = false;
+  if(!ctfCupVoteEmpty(v)){   // roles, areas or jobs only: laid over the strategist's plan, which keeps its preset and ideas (and its phase)
+    cf.layer = JSON.parse(JSON.stringify(v));
+    const def = ss && ss.you ? CTF_STRATS[ss.plan] : null;
+    if(def){ pl.preset = def.preset && CTF_PRESETS[def.preset] ? def.preset : null; pl.ticks = ctfStratTicks(def); pl.allow = null; pl.kit = null; }
+    ctfCupYouLayer(L, t); ctfCupYouRec(L, t); return;
+  }
+  cf.layer = null; delete pl.votes[idx];
+  if(ss && ss.you) ctfStratApply(L, t, ss.plan);   // the strategist's current plan, at once
+  else ctfPlanResolve(L, pl);                      // (the side bid: the strategist settles its plan when the hiding begins)
+  ctfCupYouRec(L, t);
+}
+// what the hub says your side played: your plan, or the strategist's; and the plan the other teams learn you used
+function ctfCupYouRec(L, t){
+  const cf = CTF.cupFix, ss = CTF.strat && CTF.strat[t], rec = cf && cf.fx.plans && cf.fx.plans[t]; if(!rec || !ss) return;
+  if(cf.mine){
+    const pl = L.plans[t], v = pl.votes[ctfCupYouIdx(t)] || { preset:null, ticks:{}, off:{}, assign:{} }, seats = ctfKitSeats(t), assign = {};
+    for(const k of Object.keys(v.assign || {})){ const s2 = seats.indexOf(+k); if(s2 >= 0) assign[s2] = v.assign[k]; }
+    rec.id = ctfStratClassify({ preset:v.preset, ticks:v.ticks || {}, off:v.off || {}, assign, kit:pl.kit || null }, cf.size); rec.name = 'Your plan'; rec.fixed = true; rec.you = true;
+  } else { rec.id = ss.plan; rec.name = CTF_STRATS[ss.plan].name; rec.fixed = false; rec.you = false; }
 }
 // the words of the discussion, in the spectator's panel: each member says what they would play, then the team settles
 function ctfStratTalk(L, ss){
@@ -8247,9 +8376,11 @@ function ctfStratTeam(L, ss, t){
     ss.phase = ph; mode = ph === 'back' ? 'def' : 'att';
   }
   ss.mode = mode || 'auto';
-  if(!own) for(const f of cpus){ if(mode) pl.assign[f.idx] = mode; else if(pl.assign[f.idx] === 'att' || pl.assign[f.idx] === 'def') delete pl.assign[f.idx]; }   // (the owner's plan keeps its own roles)
+  const yours = !!(ss.you && CTF.cupFix && CTF.cupFix.mine);   // (a Normal cup: your own plan holds your side, so the strategist keeps out)
+  const kept = ctfCupYouRoles(ss);   // (a teammate you gave a role keeps it)
+  if(!own && !yours) for(const f of cpus){ if(kept && kept[f.idx] && kept[f.idx] !== 'auto') continue; if(mode) pl.assign[f.idx] = mode; else if(pl.assign[f.idx] === 'att' || pl.assign[f.idx] === 'def') delete pl.assign[f.idx]; }   // (the owner's plan keeps its own roles)
   // a look again, every 10 s from the first 30 s: from the state of the match, which plan would be best now
-  if(T >= 1800 && T % 600 === 6 && T - ss.swapT >= 1200 && !CTF.stratFixed && !ss.locked) ctfStratReeval(L, ss, t, { need, known, kf, jailMine, up:up.length });
+  if(T >= 1800 && T % 600 === 6 && T - ss.swapT >= 1200 && !CTF.stratFixed && !ss.locked && !yours) ctfStratReeval(L, ss, t, { need, known, kf, jailMine, up:up.length });
 }
 function ctfStratReeval(L, ss, t, k){
   const cf = CTF.cupFix, o = 1 - t, fx = cf.fx, ps = cf.pick, Mp = ps.Mp, T = ps.T, R = Math.random, ids = CTF_STRAT_IDS;
@@ -8269,7 +8400,7 @@ function ctfStratReeval(L, ss, t, k){
   if(best !== cur){
     const from = cur; ss.swapT = L.playT; ss.last = 'switches from ' + ctfStratDef(ss).name.toLowerCase() + ' to ' + CTF_STRATS[best].name.toLowerCase() + ' (foe sends ' + Math.round(ss.oppRaid*100) + '%, ' + Math.round(vals[best]*100) + '% to win)'; ss.lastT = L.playT;
     ctfStratApply(L, t, best); ss.phT = L.playT;
-    const rec = fx.plans[t]; if(rec){ rec.swaps = rec.swaps || []; rec.swaps.push(best); rec.name = (rec.fixed ? 'Own plan' : CTF_STRATS[rec.id].name) + ' > ' + CTF_STRATS[best].name; }
+    const rec = fx.plans[t]; if(rec){ rec.swaps = rec.swaps || []; rec.swaps.push(best); rec.name = (rec.fixed ? 'Own plan' : CTF_STRATS[rec.id].name) + ' > ' + CTF_STRATS[best].name; if(ss.you){ rec.id = best; rec.name = CTF_STRATS[best].name; } }   // (your side: what the strategist plays now)
   }
 }
 // ---- what the spectator panel says ----
@@ -11073,6 +11204,7 @@ function ctfPlanVoteIn(L, t, idx, vote){
   const pl = L.plans[t]; if(!pl) return;
   pl.votes[idx] = { preset:vote.preset || null, ticks:Object.assign({}, vote.ticks || {}), off:Object.assign({}, vote.off || {}), assign:Object.assign({}, vote.assign || {}), jobs:Object.assign({}, vote.jobs || {}), areas:Object.assign({}, vote.areas || {}), at:L.t };
   ctfPlanResolve(L, pl);
+  if(CTF.cupFix && CTF.cupFix.you === t && typeof ctfCupYouVoted === 'function') ctfCupYouVoted(L, t, idx);   // a Normal Flag Cup: your plan takes your side from the strategist, or gives it back
 }
 function ctfPlanResolve(L, pl){
   const voters = Object.keys(pl.votes).map(k=>pl.votes[k]);
@@ -13848,7 +13980,7 @@ function releaseMappedKeys(){ for(const k in KEYS) if(down[KEYS[k]]) down[KEYS[k
 // here, so it never comes back (test/computer-only.test.js).
 try{ localStorage.removeItem('bfsi:touchMode'); }catch(e){}
 // (Not on an online client: it restarted a match of its own under the host's, and with it another recorder.)
-addEventListener('keydown',e=>{ if(e.code==='KeyR' && running && !isNetClient()){ if(TESTMODE.active) resetTest(); else startMatch(); }});
+addEventListener('keydown',e=>{ if(e.code==='KeyR' && running && !isNetClient() && !ctfCupYouPlay()){ if(TESTMODE.active) resetTest(); else startMatch(); }});   // (never in your Flag Cup fixture: it would play a losing fixture again from the start)
 
 // gamepad polling (face buttons auto-mapped)
 function pollPad(){
@@ -14725,7 +14857,7 @@ function ctutVoted(){ const v = CTF.menu && CTF.menu.vote; return !!(v && (v.pre
 function ctutHighDamage(L, you){ const thr = ctfJailThreshold(L.n); if(you.pct < thr - 1) you.pct = thr - 1; }
 // the closed cave of the practice map (no way in: where no flag may go), for side t
 function ctutCave(M, t){ const c = CTF_MAPS.practice.cave; if(!c || !M) return null; const r = { x:c.c0*CTF_CELL, y:c.r0*CTF_CELL, w:(c.c1 - c.c0 + 1)*CTF_CELL, h:(c.r1 - c.r0 + 1)*CTF_CELL }; return t === 0 ? r : { x:M.WW - r.x - r.w, y:r.y, w:r.w, h:r.h }; }
-function ctutWhy(){ return CTUT.reason === 'join' ? ' Then you join room ' + (CTUT.code || '') + ' again.' : ''; }
+function ctutWhy(){ return CTUT.reason === 'join' ? ' Then you join room ' + (CTUT.code || '') + ' again.' : CTUT.reason === 'cup' ? ' Then your Flag Cup starts.' : ''; }
 function ctutForced(){ return !!CTUT.reason && CTUT.reason !== 'learn'; }
 
 // The steps. text: the card's main line; more: the line under it; enter: set up when the step begins; tick: each frame; check: true once it is done.
@@ -14879,10 +15011,14 @@ function ctfTutJoin(){
 }
 // The host switched a room you are already in to Capture the Flag: you stay in it (the host's room is not touched), and a line says where the practice is.
 function ctfTutLobbyLine(){ if(!ctfTutDone()) NET.status('This room now plays Capture the Flag. You can play it; its short practice is under Learn.'); }
-// The Flag Cup's Kick Off buttons.
-// The Flag Cup is watched, not played, so it never waits for the practice (the owner, 2026-10-19: a watch-only cup shouldn't force it; a
-// played "normal" Flag Cup, when it exists, goes through ctfTutGate like any match you play).
-function ctfCupKickOff(){ ctfCupStart(); }
+// The Flag Cup's Kick Off buttons (the setup screen and the builder).
+// The watch-only Flag Cup is watched, not played, so it never waits for the practice (the owner, 2026-10-19: a watch-only cup shouldn't force it).
+// A Normal Flag Cup (you play your team's matches) goes through ctfTutGate like any match you play: the practice first, then the cup starts by itself.
+// The gate is at Kick Off, never at a fixture: finishing the practice goes to the title, which would end a running cup.
+function ctfCupKickOff(){
+  if(CTFCUP.play && ctfTutGate(()=>ctfCupStart(), 'cup')) return;
+  ctfCupStart();
+}
 
 // ---- the match ----
 function ctutStart(i){
@@ -15469,7 +15605,7 @@ function advanceKnockout(){
   const cur = TOURNEY.bracket[TOURNEY.knockoutRound];
   const winners = cur.map(fx=> fx.winner);
   if(winners.length===1){ TOURNEY.champion=winners[0]; TOURNEY.stage="done";
-    try{ if(TOURNEY.game !== 'ctf') awardWorldCup(TOURNEY.champion); }catch(e){}   // award AT assignment, guarded + idempotent
+    try{ awardWorldCup(TOURNEY.champion); }catch(e){}   // award AT assignment, guarded + idempotent (a watch-only cup earns nothing; a Normal Flag Cup win is a cup win, without the secret chains)
     showTourneyHub(); return; }
   const next=[];
   for(let i=0;i<winners.length;i+=2){ next.push({ kind:"ko", a:winners[i], b:winners[i+1], played:false, result:null }); }
@@ -15510,7 +15646,7 @@ function proceedAfterRound(){
 let TOURNEY_WATCHING = null;
 function watchFixture(fx, youPlay){
   if(fx.played){ return; }
-  if(TOURNEY.game === 'ctf'){ ctfCupWatch(fx); return; }   // the Flag Cup: a spectated Capture the Flag match
+  if(TOURNEY.game === 'ctf'){ ctfCupWatch(fx); return; }   // the Flag Cup: a spectated Capture the Flag match, or (a Normal cup) your own fixture, which you always play
   TOURNEY_WATCHING = fx;
   { const cfg0 = TOURNEY.cfg || TOURNEY_CFG, secs = (fx.kind==="group") ? cfg0.gTime : cfg0.kTime; TOURNEY.liveTimer = secs ? secs*60*tourneyTeamSize() : 0; }   // a clock only if the setup gave one (a group fight's is a cap, a knockout runs to elimination), per fighter on a side: a 3v3 has three times the stocks to get through
   const size = tourneyTeamSize(), cfg = TOURNEY.cfg || TOURNEY_CFG;
@@ -15661,13 +15797,14 @@ function showTourneyHub(){
     brand.textContent="Champions";
     const won = TOURNEY.mode==="normal" && TOURNEY.champion===TOURNEY.myTeam;
     title.textContent="🏆 "+TOURNEY.champion.name;
-    // ONE'S CHAIN: the cup that is won with only Lightning left cracks the Moon, and the Moon plays by itself (oneMoonAuto).
-    const moon = won && oneQ().stage===ONE_STAGE.MOON;
-    body.innerHTML = oneHubNote() + '<div class="tourney-champ">'+(won?"YOU win the World Cup! 🎉":TOURNEY.champion.name+' win the World Cup!')+'</div>'
+    // ONE'S CHAIN: the cup that is won with only Lightning left cracks the Moon, and the Moon plays by itself (oneMoonAuto). Never a Flag Cup.
+    const moon = won && TOURNEY.game !== 'ctf' && oneQ().stage===ONE_STAGE.MOON, erased = oneHubNote();
+    body.innerHTML = erased + '<div class="tourney-champ">'+(won?"YOU win the World Cup! 🎉":TOURNEY.champion.name+' win the World Cup!')+'</div>'
       + (moon ? '<div class="tourney-champ" style="font-size:16px;opacity:.85">…something up there just cracked.</div>' : '');
     if(moon){ proceed.textContent="Look up 🌕"; proceed.onclick=()=>{ endTournament(); playMoonScene(); }; oneMoonAuto(); }
     else { proceed.textContent="Back to Title"; proceed.onclick=()=>{ endTournament(); go('title'); }; }
-    if(TOURNEY.game === 'ctf'){ brand.textContent = 'Flag Cup champions'; body.innerHTML = '<div class="tourney-champ">' + esc(TOURNEY.champion.name) + ' win the Flag Cup!</div>' + ctfCupChampNote(); }
+    if(TOURNEY.game === 'ctf'){ const un = ctfCupUnlockText(); brand.textContent = 'Flag Cup champions';   // (what your final and the cup win unlocked: ctfCupUnlockText)
+      body.innerHTML = erased + '<div class="tourney-champ">' + (won ? 'You win the Flag Cup!' : esc(TOURNEY.champion.name) + ' win the Flag Cup!') + '</div>' + (un ? '<div class="tourney-champ" style="font-size:16px">' + esc(un) + '</div>' : '') + ctfCupChampNote(); }
     return;
   }
   // NORMAL MODE: if your team has an unplayed fixture this round, you must play it before continuing.
@@ -48409,8 +48546,10 @@ function awardWorldCup(team){
   if(TOURNEY.awarded) return [];
   TOURNEY.awarded = true;
   PROFILE.wcTitles++;
-  try{ oneWorldCupHook(); }catch(e){}   // One's chain: "then you have to win the world cup"
-  try{ cobsCupWon(); }catch(e){}   // Cobs's chain: "winning the world cup as all 2nd place characters in ii" -- each of the three once, in any order
+  if(TOURNEY.game !== 'ctf'){   // the secret chains are the World Cup's alone: a Flag Cup win never moves them (the owner, 2026-10-19)
+    try{ oneWorldCupHook(); }catch(e){}   // One's chain: "then you have to win the world cup"
+    try{ cobsCupWon(); }catch(e){}   // Cobs's chain: "winning the world cup as all 2nd place characters in ii" -- each of the three once, in any order
+  }
   return awardTrophy('wc');
 }
 
