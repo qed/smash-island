@@ -60,6 +60,7 @@ describe('the moves do what the card says', () => {
   it('each tilt and aerial hits a foe in its reach for the damage its line names', () => {
     const bad = [];
     for (const [name, k] of Object.entries(KITS)) for (const s of slotsOf(name)) {
+      if (s === 'ft') continue;   // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": ←/→ + X on the ground is the jab, aimed that way; the side-tilt rows stay as data, with no line on the card, and nothing fires them)
       const air = ['na', 'fa', 'ba', 'ua', 'da'].includes(s);
       const spots = air ? [[40, 0], [75, 0], [-40, 0], [8, -50], [8, 50]] : [[40, 0], [70, 0], [8, -50]];   // Liy's angled Flip Switch rises forward
       let best = null;
@@ -144,8 +145,14 @@ describe('side effects are on the card', () => {
   it('a move that slows, stuns, scrambles, bleeds or roots says so on its line', () => {
     const bad = [];
     const fxMoves = JSON.parse(W.eval(`JSON.stringify((function(){ var o = {}; ${JSON.stringify(Object.values(KITS))}.forEach(function(k){ o[k] = []; ${JSON.stringify(SLOTS)}.forEach(function(s){ var S = MOVESETS[k][s]; if(S && S.fxt) o[k].push([s, S.fxt]); }); }); return o; })())`));
-    for (const [name, k] of Object.entries(KITS)) for (const [s, fxt] of fxMoves[k]) if (!TEXT[name][TEXT_KEY[s]].includes(fxt)) bad.push(`${name} ${s}: the line does not say '${fxt}'`);
+    for (const [name, k] of Object.entries(KITS)) for (const [s, fxt] of fxMoves[k]) if (s !== 'ft' && !TEXT[name][TEXT_KEY[s]].includes(fxt)) bad.push(`${name} ${s}: the line does not say '${fxt}'`);
     expect(bad, bad.join(' ; ')).toEqual([]);
-    expect(fxMoves.payday.length + fxMoves.thorn.length + fxMoves.saw.length, 'Money, Rose and Saw bleed').toBeGreaterThanOrEqual(3);
+    // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": only the moves that still fire are counted, not the
+    // side-tilt rows kept as data. Saw's one bleeding move was her side-tilt (Teeth Jab), so she no longer bleeds with any move; Money and Rose still do)
+    // (restated back up 2026-10-18 -- the owner, 2026-10-18, on Saw's lost bleed: "Onto a tilt". Her down-tilt, Ground Grind, bleeds now (the same 50 frames
+    // Teeth Jab had), so Money, Rose and Saw each bleed again with a move that fires: 3, as it was)
+    const live = (k) => fxMoves[k].filter(([s]) => s !== 'ft' && s !== 'side');
+    expect(live('payday').length + live('thorn').length + live('saw').length, 'Money, Rose and Saw bleed (Saw with her down-tilt)').toBeGreaterThanOrEqual(3);
+    expect(live('saw').map(([s, fxt]) => s + ' ' + fxt), 'Saw bleeds with a tilt that fires').toContain('dt leaves them bleeding');
   });
 });

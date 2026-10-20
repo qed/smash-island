@@ -61,6 +61,7 @@ describe('the moves do what the card says', () => {
     const bad = [];
     for (const [name, k] of Object.entries(KITS)) for (const s of slotsOf(name)) {
       if (s === 'side') continue;   // (the side specials are off, the owner, 2026-10-16: a direction + C is the neutral special; the side rows stay as data and nothing fires or lists them)
+      if (s === 'ft') continue;   // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": ←/→ + X on the ground is the jab, aimed that way; the side-tilt rows stay as data, with no line on the card, and nothing fires them)
       const air = ['na', 'fa', 'ba', 'ua', 'da'].includes(s);
       const spots = air ? [[40, 0], [75, 0], [-40, 0], [8, -50], [8, 50]] : [[40, 0], [70, 0], [8, -50]];
       let best = null;
@@ -145,9 +146,10 @@ describe('side effects are on the card', () => {
   it('a move that burns, slows, roots or makes slippery says so on its line', () => {
     const bad = [];
     const say = { ember: /burn/, spark: /burn/, cap: /slow/, shatter: /slippery/, pierce: /root/ };
+    // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": the side-tilt is off on the ground, so its row has no line on the card to check)
     const fxMoves = JSON.parse(W.eval(`JSON.stringify((function(){ var o = {}; ${JSON.stringify(Object.values(KITS))}.forEach(function(k){ o[k] = []; ${JSON.stringify(SLOTS)}.forEach(function(s){ var S = MOVESETS[k][s]; if(S && S.fxt) o[k].push([s, S.fxt]); }); }); return o; })())`));
     for (const [name, k] of Object.entries(KITS)) for (const [s, fxt] of fxMoves[k]) {
-      if (s !== 'side' && !TEXT[name][TEXT_KEY[s]].includes(fxt)) bad.push(`${name} ${s}: the line does not say '${fxt}'`);
+      if (s !== 'side' && s !== 'ft' && !TEXT[name][TEXT_KEY[s]].includes(fxt)) bad.push(`${name} ${s}: the line does not say '${fxt}'`);
       if (say[k] && !say[k].test(fxt)) bad.push(`${name} ${s}: odd effect '${fxt}'`);
     }
     expect(bad, bad.join(' ; ')).toEqual([]);
@@ -159,7 +161,7 @@ describe('side effects are on the card', () => {
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false; worldPlats=[]; summons=[]; projectiles=[];
       var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
       var A = mk('Snowball', 400, 0), D = mk('Pen', 900, 1); A.team=0; D.team=1; A.controller='still'; D.controller='still'; fighters=[A,D]; step(); step();
-      A.armor = 0; A.atkCd = 0; mvStart(A, MOVESETS.tackle.ft, 'ft'); var a = A.armor; return a; })()`);
+      A.armor = 0; A.atkCd = 0; A.onground = false; A.y -= 120; mvStart(A, MOVESETS.tackle.fa, 'fa'); var a = A.armor; return a; })()`);   // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": his braced side-tilt, Snow Shove, no longer fires, so the brace is shown on Snow Slam, his armoured forward-air)
     expect(r).toBeGreaterThan(0);
   });
 });

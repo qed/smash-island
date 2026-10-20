@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootMonolith } from './helpers/smash-golden.js';
+import { SETUP_SRC } from './helpers/match-setup.js';
 
 // The move runner behind every converted fighter's tilts, aerials and side special, and the movetech that goes with it
 // (the owner, 2026-10-14). A throwaway moveset is put on Coiny's kit so the test measures the SYSTEM, not any fighter's numbers
@@ -38,16 +39,17 @@ const J = (code) => W.eval(`(function(){ return ${code}; })()`);
 const key = () => J('fighters[0]._mv ? fighters[0]._mv.key : (fighters[0]._lastKey || null)');
 
 describe('ground: the arrows pick the move', () => {
-  it('X is the jab; side, up and down with X are the side-, up- and down-tilt', () => {
+  // (restated 2026-10-18 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)"; asked, "Ground only" and "Keep them": side with X on the ground is the jab, aimed that way; up and down stay the tilts)
+  it('X is the jab; side with X is the jab too; up and down with X are the up- and down-tilt', () => {
     const out = {};
-    for (const [name, keys] of [['jab', ['attack']], ['ft', ['attack', 'right']], ['ut', ['attack', 'jump']], ['dt', ['attack', 'down']]]) {
+    for (const [name, keys] of [['jab', ['attack']], ['side', ['attack', 'right']], ['ut', ['attack', 'jump']], ['dt', ['attack', 'down']]]) {
       stage(45); hold(keys, 4); out[name] = J('fighters[0]._mv ? fighters[0]._mv.key : "-"');
     }
-    expect(out).toEqual({ jab: '-', ft: 'ft', ut: 'ut', dt: 'dt' });
+    expect(out).toEqual({ jab: '-', side: '-', ut: 'ut', dt: 'dt' });
   });
   it('a tilt hits its own foe, leaves it in the stun the move names, and cannot be walked out of', () => {
-    stage(45); hold(['attack', 'right'], 4); steps(1);
-    expect(J('fighters[1].pct')).toBeCloseTo(5, 1);
+    stage(45); hold(['attack', 'down', 'right'], 4); steps(1);   // (restated 2026-10-18: it was the side-tilt, which is off on the ground -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)"; the down-tilt, with → held to walk)
+    expect(J('fighters[1].pct')).toBeCloseTo(4, 1);
     expect(J('fighters[1].hitstun')).toBeGreaterThan(10);
     expect(J('Math.abs(fighters[0].x - 400)')).toBeLessThan(12);
   });
@@ -95,6 +97,57 @@ describe('no side special (the owner, 2026-10-16: "side specials should be neutr
     expect(J('fighters[0].spCd')).toBeGreaterThan(0);
     expect(J('SIDE_SPECIALS')).toBe(false);
     expect(J('sideSpecialOf(fighters[0], { right:true })')).toBe(null);
+  });
+});
+
+describe('no side-tilt on the ground (the owner, 2026-10-18: "side attacks should be merged into neutral attacks (the same thing as specials)"; asked, "Ground only" and "Keep them")', () => {
+  it('on the ground ←/→ + X is the jab, facing the pressed side, at once; ↑ + X and ↓ + X stay the tilts; in the air → + X stays the forward-air; the CPU never starts a side-tilt', () => {
+    // a real converted fighter (Pencil, whose side-tilt was Lead Jab), played by a person
+    const as = (dx, face, air = false) => W.eval(`(function(){
+      SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
+      worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
+      var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
+      var A = mk('Pencil', 400, 0), D = mk('Pen', 400 + ${dx}, 1);
+      A.team=0; D.team=1; A.controller='local'; A.you=true; D.controller='still'; A.stocks=9; D.stocks=9;
+      fighters=[A,D]; for (var k in down) delete down[k];
+      step(); step();
+      fighters.forEach(function(f){ f.invuln=0; f.hitstun=0; f.atkCd=0; f.spCd=0; f.pct=0; f.vx=0; f.vy=0; });
+      A.face=${face}; D.face=${-face}; A._used = {}; A._atkMove = null;
+      ${air ? 'A.y = groundY()-24-90; A.onground=false; D.y = A.y; D.onground=false; D.vy=-0.01;' : ''}
+    })()`);
+    const now = () => JSON.parse(J(`JSON.stringify({ mv: fighters[0]._mv ? fighters[0]._mv.key : '-', move: fighters[0]._atkMove, face: fighters[0].face, ft: (fighters[0]._used || {}).ft || 0, foe: fighters[1].pct })`));
+    expect(J('SIDE_TILTS')).toBe(false);
+    // → + X facing left: she turns right and jabs, on the second frame (the grab pair's short wait; a plain X waits longer for C)
+    as(45, -1); hold(['attack', 'right'], 2);
+    let r = now();
+    expect(r, 'right + X on the ground').toMatchObject({ mv: '-', move: 'van.jab', face: 1, ft: 0 });
+    steps(4); expect(now().foe, 'the jab lands on the foe on the side pressed').toBeGreaterThan(0);
+    // ← + X facing right: she turns left and jabs
+    as(-45, 1); hold(['attack', 'left'], 2);
+    expect(now(), 'left + X on the ground').toMatchObject({ mv: '-', move: 'van.jab', face: -1, ft: 0 });
+    // ↑ + X and ↓ + X are still the up-tilt and the down-tilt
+    as(45, 1); hold(['attack', 'jump'], 4); expect(now().mv, 'up + X').toBe('ut');
+    as(45, 1); hold(['attack', 'down'], 4); expect(now().mv, 'down + X').toBe('dt');
+    // in the air → + X is still the forward-air
+    as(400, 1, true); hold(['attack', 'right'], 4); expect(now().mv, 'right + X in the air').toBe('fa');
+    // the CPU: four converted fighters kept close for 600 frames start tilts and aerials, and never a side-tilt
+    W.eval(SETUP_SRC);
+    const R0 = W.Math.random;
+    W.Math.random = ((a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; })(77);
+    const cpu = JSON.parse(W.eval(`(function(){
+      __setupCustomMatch(['Snowball', 'Pencil', 'Leafy', 'Bow'], 3, 2, 0);
+      fighters.forEach(function(f){ f._used = {}; });
+      for (var i = 0; i < 600; i++) {
+        if (i % 60 === 0) fighters.forEach(function(f, j){ if (!f.dead) { f.x = 380 + j * 40; f.y = groundY() - f.r; f.vx = 0; f.vy = 0; } });
+        step();
+      }
+      var o = { ft: 0, moves: 0 };
+      fighters.forEach(function(f){ var U = f._used || {}; o.ft += U.ft || 0; ['ut','dt','na','fa','ba','ua','da'].forEach(function(k){ o.moves += U[k] || 0; }); });
+      return JSON.stringify(o);
+    })()`));
+    W.Math.random = R0;
+    expect(cpu.moves, 'the CPUs did use their moveset').toBeGreaterThan(0);
+    expect(cpu.ft, 'a CPU started a side-tilt').toBe(0);
   });
 });
 
