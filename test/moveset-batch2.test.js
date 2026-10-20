@@ -99,7 +99,7 @@ describe('combos', () => {
     expect(bad, bad.join(' ; ')).toEqual([]);
   });
   it('a down-tilt into a short hop and a neutral air lands both, at 0% and 30%, for all eight', () => {
-    const link = (name, pct, wait, aer) => W.eval(`(function(){
+    const link = (name, pct, wait, aer) => JSON.parse(W.eval(`(function(){
       SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
       worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
       var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
@@ -107,18 +107,24 @@ describe('combos', () => {
       A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='local'; A.you=true; D.controller='still'; A.stocks=9; D.stocks=9;
       fighters=[A,D]; for (var k in down) delete down[k]; step(); step();
       fighters.forEach(function(f){ f.invuln=0; f.hitstun=0; f.atkCd=0; f.spCd=0; f.vx=0; f.vy=0; f.pct=${pct}; });
-      var keys = {}, hits = [];
-      var hold = function(ks, n){ for (var i=0;i<n;i++){ for (var k in down) down[k]=false; ks.forEach(function(x){ down[KEYS[x]]=true; }); var p=D.pct; step(); if (D.pct>p+0.05) hits.push(A._lastKey); } };
+      var keys = {}, hits = [], stun = -1;   // stun: the foe's stun left from the down-tilt on the frame the aerial lands (above 0: it could not act yet)
+      var hold = function(ks, n){ for (var i=0;i<n;i++){ for (var k in down) down[k]=false; ks.forEach(function(x){ down[KEYS[x]]=true; }); var p=D.pct, hs=D.hitstun; step();
+        if (D.pct>p+0.05){ if (hits.length && hits.indexOf(A._lastKey) < 0 && stun < 0) stun = hs; hits.push(A._lastKey); } } };
       hold(['attack','down'], 3);
       var g = 0; while (!(hits.length >= 1 && !A._mv && A.atkCd <= 0 && !(A._lag>0)) && g++ < 60) hold([], 1);
       hold(['jump'], 1);
       g = 0; while (A.onground && g++ < 4) hold([], 1);
       hold(['right'], ${wait}); hold(${JSON.stringify(aer)}, 3); hold([], 14);   // (a player drifts toward the foe while the hop starts)
       for (var k2 in down) down[k2]=false;
-      return hits.filter(function(h, i){ return hits.indexOf(h) === i; }).length;
-    })()`);
+      return JSON.stringify({ n: hits.filter(function(h, i){ return hits.indexOf(h) === i; }).length, stun: stun });
+    })()`));
     const bad = [];
-    for (const name of Object.keys(KITS)) for (const pct of [0, 30]) if (![0, 1, 2, 3, 4, 5].some((w) => link(name, pct, w, ['attack']) >= 2)) bad.push(`${name} at ${pct}%`);
+    // (restated 2026-10-20 -- the owner, 2026-10-18, "give each fighter stats": a fighter's jump lifts its short hop too (SH_V), so a high jumper's hop
+    // rises a little higher and its aerial reaches a foe on the ground a frame later than the old waits (0-5) looked. The waits run on to 8 frames, still
+    // early in a short hop; a wait past 5 counts only when the aerial lands while the foe is still in the down-tilt's stun, so a hit on a foe that is
+    // free again never passes)
+    const lands = (name, pct) => [0, 1, 2, 3, 4, 5, 6, 7, 8].some((w) => { const r = link(name, pct, w, ['attack']); return r.n >= 2 && (w <= 5 || r.stun > 0); });
+    for (const name of Object.keys(KITS)) for (const pct of [0, 30]) if (!lands(name, pct)) bad.push(`${name} at ${pct}%`);
     expect(bad, bad.join(' ; ')).toEqual([]);
   });
 });
