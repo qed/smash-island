@@ -229,8 +229,10 @@ describe("THERE'S MORE!: two kicks from one press", () => {
 
 describe('SPAGGERS!: a clump flicked along the floor, 3.2%, a short tangle', () => {
   // since the moveset (8e04043) the flick is Bot's down-tilt: 5 frames of startup, so the move is run out; the hit is read on the frame
-  // it lands, the tangle counted with that frame; the ordinary down+X is Tea Kettle's own down-tilt (421e587)
-  const at = (name, dx) => arena(name, `A.atkCd = 0; D.x = 400 + ${dx}; var n0 = projectiles.length; doGroundMove(A); var flick = A._spagT === hazardT, shots = 0, noodles = 0, vy = 0, rooted = 0, stunFx = 0; for (var i=0;i<20;i++){ var before = D.pct; step(); shots = Math.max(shots, projectiles.length - n0); noodles = Math.max(noodles, particles.filter(function(p){ return SPAGGERS_NOODLE.indexOf(p.color) >= 0; }).length); if (D.pct > before + 0.05){ vy = D.vy; stunFx = D._stunFx|0; rooted = D.rooted > 0 ? 1 : 0; while (D.rooted > 0 && rooted < 200){ step(); rooted++; } break; } } return { dmg: +(D.pct - 30).toFixed(2), vy: +vy.toFixed(2), rooted: rooted, stunFx: stunFx, shots: shots, bits: noodles, flick: flick };`, 460, 3000);
+  // it lands, the tangle counted with that frame; the ordinary down+X is Tea Kettle's own down-tilt (421e587). `bits` is the flick's own
+  // streak: the noodle-coloured particles running out ahead (vx 4-8 along Bot's facing), counted on the press, when the move's start
+  // throws them -- before the hit, so the tangle's noodle-coloured puffs where it lands (slow, |vx| <= 2, five frames later) are not in it
+  const at = (name, dx) => arena(name, `A.atkCd = 0; D.x = 400 + ${dx}; var n0 = projectiles.length; doGroundMove(A); var flick = A._spagT === hazardT, shots = 0, vy = 0, rooted = 0, stunFx = 0; var noodles = particles.filter(function(p){ return SPAGGERS_NOODLE.indexOf(p.color) >= 0 && p.vx * A.face >= 4; }).length; for (var i=0;i<20;i++){ var before = D.pct; step(); shots = Math.max(shots, projectiles.length - n0); if (D.pct > before + 0.05){ vy = D.vy; stunFx = D._stunFx|0; rooted = D.rooted > 0 ? 1 : 0; while (D.rooted > 0 && rooted < 200){ step(); rooted++; } break; } } return { dmg: +(D.pct - 30).toFixed(2), vy: +vy.toFixed(2), rooted: rooted, stunFx: stunFx, shots: shots, bits: noodles, flick: flick };`, 460, 3000);
 
   it('lands 3.2% and tangles them for about half a second (36 frames rooted, not stunned), without popping them up', () => {
     const spag = at('Bot', 60), sweep = at('Tea Kettle', 60);
@@ -244,7 +246,7 @@ describe('SPAGGERS!: a clump flicked along the floor, 3.2%, a short tangle', () 
   it('is a flick, never a shot: down+X throws nothing (the owner: "down-attacks shouldnt be projectiles")', () => {
     const r = at('Bot', 60);
     expect(r.shots).toBe(0);
-    expect(r.bits, 'a streak of noodle-coloured particles, a client sees them too').toBeGreaterThan(8);
+    expect(r.bits, 'a streak of noodle-coloured particles thrown ahead (the eight spagFlick throws, not the puffs where it lands), a client sees them too').toBeGreaterThanOrEqual(8);
     expect(r.flick, 'and the render pass is told').toBe(true);
   });
 
