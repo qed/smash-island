@@ -18552,21 +18552,29 @@ const FS = { next:0, seq:0, rng:1, lastT:0, by:null };   // by: the fighter whos
 // FS_DMG_MULT harder and launches fsKbMult times as far, in applyHit: each row keeps its own shape, reach, angle and order of hits (a
 // partial hit, the outer ring, stays weaker than the clean one), and a hit on the holder is never scaled.
 //   - The launch is the row's own launch from the % the foe would be on WITHOUT the extra damage (st.bonus: what this Final Smash has
-//     added on top so far), times fsKbMult: FS_KB.lo at 0%, rising to FS_KB.hi from FS_KB.at% on. So a row of many hits does not snowball
-//     (its third hit is not launched off a % its first two doubled), a foe near 0% takes the big damage and stays in the fight, and a
-//     foe past ~60% is launched out. The extra % stays: their next hits launch from the real %.
+//     added on top so far), times fsKbMult: never less than the row's own (FS_KB.lo, up to FS_KB.from%), rising to FS_KB.hi at FS_KB.at%
+//     and past it. So a row of many hits does not snowball (its third hit is not launched off a % its first two doubled), a foe below
+//     ~20% takes the big damage and is launched as far as the row always launched them (no new early KO), and a foe past ~60% is
+//     launched out. The extra % stays: their next hits launch from the real %.
+//   - What else a hit's size sets (its hit-grace and stun, Tapey's tape, Paper's evil meter, Paintbrush's rage) reads the row's own
+//     damage (fsRow in applyHit), so a spray still lands every shot it used to, each at double.
 //   - A status's ticks (burn, poison) are not hits of the Final Smash and are not scaled: the total is KO-level, not each tick.
 //   - FS_KO_FIX: the rows the measure found out of line with the rest, by id: their own launch multiplier on top.
-// The measure (reports/moves/final-smash-ko.md): a clean hit on Pen in the middle of Goiky Field (a CPU from the moment it is hit,
-// steering back) KOs from about 60% or lower, and not at 0%.
+// The measure (reports/moves/final-smash-ko.md): a clean hit on Pen (a CPU from the moment it is hit, steering back), the median of 8
+// placements on Goiky Field and Yoyleland, KOs from about 60% or lower and not below 20% (on the big stages, later).
 const FS_DMG_MULT = 2;
-const FS_KB = { lo:0.75, hi:1.4, at:60 };
+const FS_KB = { lo:1, hi:1.4, from:20, at:60 };
 // FS_KO_FIX: id -> its own launch multiplier (on top of fsKbMult), for the rows whose clean hit the measure found out of line (Pen KO'd
-// below 20% or not by 80%). Under 1: a row of many hits or a big total (its last hit lands on a foe already high) that KO'd near 0%;
-// over 1: a spray whose shots push the foe out of the rest, and the default (one hit). The measure's numbers are in the report.
-const FS_KO_FIX = { rant:0.6, avalanche:0.55, cakeatstake:0.67, achoo:0.55, pencilthrow:0.63, enemynow:0.87, cantholditin:0.72, butterflies:0.77,
-  kicksoccerpun:0.72, detonation:0.75, refraction:0.8, hurricane:0.87, monitor:1.3, bagoftricks:1.35, surge:1.8 };
-function fsKbMult(t, st){ const p = Math.max(0, (t.pct || 0) - (st.bonus[t.idx] || 0)); return (FS_KB.lo + (FS_KB.hi - FS_KB.lo)*Math.min(1, p/FS_KB.at))*(FS_KO_FIX[st.d.id] || 1); }
+// below 20% or not by 80%, the median of 8 placements). Under 1, a cut, at every %: a row that already KO'd near 0% before KO-LEVEL
+// (the report lists these for the owner), or a row of many hits whose last hits land on a foe already high. Over 1, a boost that grows
+// in with the launch (none at FS_KB.from%, all of it from FS_KB.at%): a spray of light pushes, which never KO'd, and still lands every
+// shot on a foe at low %. The measure's numbers are in the report.
+const FS_KO_FIX = { enemynow:0.5, achoo:0.5, detonation:0.75, nailedit:0.92, kicksoccerpun:0.7, pencilthrow:0.87, rant:0.9, saycheese:0.97,
+  pianos:0.95, swingopen:0.95, butterflies:0.85, refraction:0.95, bagoftricks:4, nothingbutnet:4, ballmachine:4, cakeatstake:2.35 };
+function fsKbMult(t, st){
+  const p = Math.max(0, (t.pct || 0) - (st.bonus[t.idx] || 0)), r = clamp((p - FS_KB.from)/(FS_KB.at - FS_KB.from), 0, 1), fix = FS_KO_FIX[st.d.id] || 1;
+  return (FS_KB.lo + (FS_KB.hi - FS_KB.lo)*r)*(fix < 1 ? fix : 1 + (fix - 1)*r);   // a cut holds at every %; a boost grows in with the launch
+}
 let SMASHBALL = null;   // { x, y, vx, vy, hp, hpMax, r, t, life, wx, wy, wt, gr:{idx:frame}, seq, flash, last }
 const FINAL_SMASHES = {};   // fighter name -> { id, wind, dur, reach, start?, tick, end?, ai?, draw } (the batches below fill it in)
 function fsRand(){ FS.rng = (Math.imul(FS.rng, 1664525) + 1013904223) >>> 0; return FS.rng / 4294967296; }
@@ -18683,8 +18691,11 @@ function fsOnKo(f){
 }
 // ---- firing -------------------------------------------------------------------------------------------------------------
 function fsOf(f){ return FINAL_SMASHES[f.name] || FS_DEFAULT; }
+// Barf Bag's Outbreak (FFA): an infected fighter's hits come back on themself (applyHit), so a Final Smash fired then would KO its own
+// user. It waits until the infection wears off (110 frames); the press is held meanwhile (the CPU holds it too: fsBotInput).
+function fsRebounds(f){ return f._infected > 0 && SETTINGS.mode !== 'teams'; }
 function fsCanFire(f){
-  return f.fsGlow > 0 && !f._fs && !f.dead && !(f.hitstun > 0) && !(f.frozen > 0) && f._heldBy == null && !f._gb && !RACE.active && !inOwnTeamZone(f);
+  return f.fsGlow > 0 && !fsRebounds(f) && !f._fs && !f.dead && !(f.hitstun > 0) && !(f.frozen > 0) && f._heldBy == null && !f._gb && !RACE.active && !inOwnTeamZone(f);
 }
 // The finisher input (V + C) while glowing: the Final Smash instead. True if it took the press.
 function fsTryFire(f){
@@ -18747,8 +18758,11 @@ const FS_DEFAULT = {
     if(t === 0){ shake(6); armAtk(f, this.wind, 'fsgather'); for(let i = 0; i < 10; i++) puff(f.x, f.y, f.color, 6); }
     if(t === this.wind){
       shake(12);
-      fsBurst(f, st, f.x, f.y, FS_SURGE_R, 24, 20, -13);
-      doAttackSpecial(f);   // their own finisher, in the middle of it
+      // Their own finisher, in the middle of it, at its own size (KO-LEVEL scales the surge alone), and THEN the surge: a launch sets the
+      // foe's speed (knock), so the last hit is the one that counts, and a finisher landing after the surge took its launch away.
+      const x = f.x, y = f.y, by = FS.by; FS.by = null;
+      try { doAttackSpecial(f); } finally { FS.by = by; }
+      fsBurst(f, st, x, y, FS_SURGE_R, 24, 20, -13);
       armAtk(f, 34, 'fsburst');
       for(let i = 0; i < 22; i++) puff(f.x, f.y, i % 2 ? f.color : '#fff', 7);
     }
@@ -18784,6 +18798,7 @@ function fsBotInput(f, inp){
   if(f._tp || (f._spPend > 0 && f.kit && f.kit.special === 'chair')) return inp;   // Bow's Teleport on its way: the arrows are her aim (aiBowTpHold), not a chase
   if(f.fsGlow > 0){
     inp.fin = false;
+    if(fsRebounds(f)) return inp;   // infected: it would come back on them (fsRebounds)
     const d = fsOf(f), ready = d.ai ? d.ai(f) : fsFoeNear(f, d.reach || 200);
     if(ready || (f.fsGlow < 150 && fsFoeNear(f, 420))){ inp.fin = true; inp.attack = false; inp.special = false; inp.smash = false; }
     return inp;
@@ -39607,7 +39622,7 @@ function step(){
       const atkSp = !!inp.fin;   // V+C together = finisher (it was X+C until the grab took that pair, 2026-10-14)
       // The finisher has its own cooldown too (fnCd): it no longer locks the jab or the special, and they do not hold it back.
       // C still has to be let go before the special fires again, so a finisher does not spill into a special.
-      if(atkSp && f.fsGlow>0 && fsTryFire(f)){ f._sp=true; }   // glowing: the finisher input is the FINAL SMASH (once)
+      if(atkSp && f.fsGlow>0 && (fsTryFire(f) || fsRebounds(f))){ f._sp=true; }   // glowing: the finisher input is the FINAL SMASH (once); infected, it is held (fsRebounds)
       else if(atkSp && f.fnCd<=0){
         if(doAttackSpecial(f) !== false) f.fnCd = ATKSPECIALS[f.kit && f.kit.special] ? FIN_CD : FIN_CD_SHARED; f._sp=true;   // (false: it could not start here, and is not spent)
       } else if(atkSp){ } else {
@@ -47243,6 +47258,10 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   }
   const fsSt = from && from !== t ? fsHitBy(from) : null;   // FINAL SMASH: KO-level (FS_DMG_MULT, fsKbMult; the launch's % is below)
   if(fsSt){ const k = fsKbMult(t, fsSt); dmg *= FS_DMG_MULT; kbx *= k; kby *= k; }
+  // ...and what a hit's size sets besides the % and the launch (the hit-grace and stun, Tapey's tape, Paper's evil meter, Paintbrush's
+  // rage) reads the row's own damage: with the doubled one a spray's later shots passed through the foe's longer grace, and a taped Final
+  // Smash replayed at double.
+  const fsRow = fsSt ? 1/FS_DMG_MULT : 1;
   if(from && from.idx!==t.idx){ t.lastHitBy=from; }   // remember who last damaged us
   // Show-accurate: Firey (and Firey Jr.) have aquaphobia — water-y attackers hurt them extra & douse them
   if(from && (t.name==="Firey"||t.name==="Firey Jr.") && /Teardrop|Barf Bag|Bubble/.test(from.name)){
@@ -47280,7 +47299,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // Paintbrush's RAGE ("rage meter should give bonus base attack damage"): up to +50% on their hits, and at half rage
   // their bristles burn, so their hits set foes burning. It fills from the hits they take (below).
   if(from && from !== t && from.kit && from.kit.special==="fury" && (from._fury||0) > 0){ dmg *= 1 + Math.min(0.5, from._fury/200); if(from._fury >= 50) t.burn = Math.max(t.burn||0, 60); }
-  if(t.kit && t.kit.special==="fury" && from && from !== t && !(opts && opts.tick)){ t._fury = Math.min(100, (t._fury||0) + dmg*2.5); }
+  if(t.kit && t.kit.special==="fury" && from && from !== t && !(opts && opts.tick)){ t._fury = Math.min(100, (t._fury||0) + dmg*fsRow*2.5); }
   // PICKLE, the most injured contestant on the wiki: the worse he is hurt, the harder he swings. Up to +10%.
   if(from && from !== t && from.kit && from.kit.special==="pickle"){ dmg *= 1 + Math.min(0.10, from.pct/260); }   // 0.45 -> 0.25 -> 0.10: he was 63%, 58%, 67%
   // NICKEL: sarcasm runs on the reaction it gets. The more they have taken, the more it lands.
@@ -47296,12 +47315,12 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // PAPER: landing hits is what brings the other one out ("except its when he hits ppl"), and Evil hits harder.
   if(from && from !== t && from.kit && from.kit.special==="evilpaper"){
     if(from._evil>0) dmg *= 1.4;
-    else if(!(opts && opts.tick)){ from._evilM = Math.min(100, (from._evilM||0) + dmg*4.4);   // was 2.2: he never got there
+    else if(!(opts && opts.tick)){ from._evilM = Math.min(100, (from._evilM||0) + dmg*fsRow*4.4);   // was 2.2: he never got there
       }
   }
   // …and a little from being hit, so a Paper who is losing can still get there ("1 and 3", balance 2026-09-23).
   if(t.kit && t.kit.special==="evilpaper" && !(t._evil>0) && from && from!==t && !(opts && opts.tick)){
-    t._evilM = Math.min(100, (t._evilM||0) + dmg*1.2);
+    t._evilM = Math.min(100, (t._evilM||0) + dmg*fsRow*1.2);
   }
   // …and the bag takes the sting out of one hit, which fills the meter outright.
   if(t.kit && t.kit.special==="evilpaper" && t._paperBag>0 && from && from!==t){ dmg *= 0.35; t._paperBag=0; t._evilM=100;
@@ -47342,7 +47361,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // used to read the damage racked up since Record (two 5% pokes replayed as 10%) and skipped a whole entry when her own poke
   // was the last hit on it (a 12% hit taped earlier was gone). Her own hits never go on the tape, and neither does Bot's THE ONE
   // AND ONLY! (SMASH_SPEC.cheer, uncopyable): "Who aren't just... copies."
-  if(dmg > 0 && !(from && from._noCopyT > hazardT)) for(const r of fighters){ const rec = r._rec; if(rec && r !== from){ for(const s of rec.snap) if(s[0]===t.idx){ if(!(s[3] >= dmg)) s[3] = dmg; break; } } }
+  if(dmg > 0 && !(from && from._noCopyT > hazardT)) for(const r of fighters){ const rec = r._rec; if(rec && r !== from){ for(const s of rec.snap) if(s[0]===t.idx){ if(!(s[3] >= dmg*fsRow)) s[3] = dmg*fsRow; break; } } }
   if(t._oneGhost && oneGhostHurt(t, dmg)) return;   // "1 ghost fighter with 100 hp" -- 70 since "Nerf: 70 HP ghost": that much damage and it is gone
   if(dmg>0) SFX.hit(dmg);
   // TEST MODE DPS: tally damage the local player deals to dummies
@@ -47371,7 +47390,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
   // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
-  stampHit(t, dmg, from, isTick, opts && opts.stun, opts && opts.mvKey);
+  stampHit(t, dmg*fsRow, from, isTick, opts && opts.stun, opts && opts.mvKey);   // (fsRow: a Final Smash's hit stamps its row's own size)
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;

@@ -104,6 +104,19 @@ describe('V + C while glowing', () => {
     expect(r.again).toBe(false);
   });
 
+  it("infected by Barf Bag's Outbreak (free-for-all), the glowing holder's press is held: no Final Smash, no finisher, until it wears off", () => {
+    const r = arena(110, `
+      A.controller='local'; A.you=true; A.fsGlow = 900; A._infected = 20; A._origTeam = A.team; A._infectedBy = null;
+      down[KEYS.smash] = true; down[KEYS.special] = true; step(); step();
+      var held = { fs: !!A._fs, fin: A.fnCd > 0, glow: A.fsGlow > 0, stocks: A.stocks, pct: A.pct };
+      down[KEYS.smash] = false; down[KEYS.special] = false; for (var i=0;i<30;i++) step();
+      down[KEYS.smash] = true; down[KEYS.special] = true; step();
+      return { held: held, infected: A._infected, fired: A.fsId };`);
+    expect(r.held).toEqual({ fs: false, fin: false, glow: true, stocks: 9, pct: 0 });
+    expect(r.infected).toBe(0);
+    expect(r.fired).toBe('surge');
+  });
+
   it('not glowing, V + C is still the ordinary finisher', () => {
     const r = arena(120, `
       A.controller='local'; A.you=true;
@@ -118,8 +131,8 @@ describe('V + C while glowing', () => {
       A.fsGlow = 900; fsTryFire(A);
       for (var i=0;i<160;i++) step();
       return { pct: D.pct, stocks: D.stocks };`, { pct: 60 });
-    // KO-level (the owner, 2026-10-18: "smash balls feel like they dont do enough damage"; chosen: "KO-level"): 52% on top of 60 (it was
-    // 26%) and a launch: out (the stock is gone, the % starts over)
+    // KO-level (the owner, 2026-10-18: "smash balls feel like they dont do enough damage"; chosen: "KO-level"): the surge's 48% (24
+    // before) on top of 60, the fighter's own finisher at its own size, and a launch: out (the stock is gone, the % starts over)
     expect(near).toEqual({ pct: 0, stocks: 8 });
     const far = arena(520, `
       A.fsGlow = 900; fsTryFire(A);
@@ -418,16 +431,18 @@ batchSuite("batch M", [
 // KO-LEVEL. The owner, 2026-10-18: "smash balls feel like they dont do enough damage. I got one, and sidewalky went from 9 percent to 39
 // percent". Chosen: "KO-level" (big damage AND big knockback, so a Final Smash usually KOs anyone above ~60%, like in Smash), and knockback
 // "Yes, same amount". A clean hit on Pen standing in the middle of Goiky Field, Pen a CPU from the moment it is hit (steering back, as the
-// measure in reports/moves/final-smash-ko.md does): at 60% Pen is out; at 0% Pen stays in, having taken double what the row used to deal.
-// One row of most shapes, the default among them; the holder is never hurt by their own Final Smash.
+// measure in reports/moves/final-smash-ko.md does): at 60% Pen is out; at 0% Pen stays in, having taken double what the row used to deal
+// (every shot of a spray still lands: a hit's grace and stun are its row's own). One row of most shapes, the default among them (the
+// surge doubled, the fighter's own finisher at its own size); the holder is never hurt by their own Final Smash.
 describe('KO-level Final Smashes (the owner, 2026-10-18)', () => {
   const clean = (name, dx, pct) => { W.Math.random = mulberry32(5); return W.eval(`(function(){
     SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=2; SETTINGS.smashBalls=true; running=true;
     RACE.active=false; ONEFIGHT.active=false; COBSFIGHT.active=false; TESTMODE.active=false; BOSSRUSH.active=false; TOURNEY.active=false; TUT.active=false;
     CUSTOM_LEVEL=null; stage = STAGES.find(function(s){ return s.id==='goiky'; }); setupWorld();
     summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[]; itemTimer=1e9;
-    var def = ${JSON.stringify(name)} === 'default';
-    var A = makeFighter(ROSTER.find(function(r){ return r.name===(def ? 'Coiny' : ${JSON.stringify(name)}); }), WW/2 - ${dx}, groundY()-24, 0);
+    var def = ${JSON.stringify(name)} === 'default', prize = ${JSON.stringify(name)}.indexOf('prize:') === 0 ? +${JSON.stringify(name)}.slice(6) : -1, had = PRIZE_INSTALLED;
+    if (prize >= 0) installPrizeKit();   // (a hidden prize fighter, by its place in PRIZE_ROSTER: they play the default)
+    var A = makeFighter(prize >= 0 ? PRIZE_ROSTER[prize] : ROSTER.find(function(r){ return r.name===(def ? 'Coiny' : ${JSON.stringify(name)}); }), WW/2 - ${dx}, groundY()-24, 0);
     var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), WW/2, groundY()-24, 1);
     A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
     if (def) A._fsForce = FS_DEFAULT;
@@ -442,27 +457,38 @@ describe('KO-level Final Smashes (the owner, 2026-10-18)', () => {
       step(); if (D.pct !== prev && D.controller === 'still') D.controller = 'ai'; prev = D.pct;
       if (A._fs || i <= dur) { hs = A.stocks; hp = A.pct; }   // the holder through their Final Smash (after it, Pen is a CPU and fights back)
     }
-    return { id: id, ko: D.stocks < 9, dmg: Math.round(D._dmgTaken), holder: hs, holderPct: Math.round(hp) };
+    var out = { id: id, ko: D.stocks < 9, dmg: Math.round(D._dmgTaken), holder: hs, holderPct: Math.round(hp) };
+    if (prize >= 0 && !had) uninstallPrizeKit();
+    return out;
   })()`); };
-  // name, id, the holder's distance behind Pen, the damage this clean hit dealt at 0% before (it is double that now)
+  // name, id, the holder's distance behind Pen, the damage this clean hit dealt at 0% before, and now (double, but for the default)
   const rows = [
-    ['default',   'surge',        60, 32],   // circle (the default: everyone without a row of their own)
-    ['David',     'awseriously', 120, 22],   // circle
-    ['Sidewalky', 'physically',  250, 28],   // lock (the owner's: "sidewalky went from 9 percent to 39 percent")
-    ['Tree',      'timber',      250, 18],   // rain
-    ['Baseball',  'groundpound', 250, 18],   // lane
-    ['Fries',     'fryfan',      200, 18],   // fan
+    ['default',   'surge',        60, 32, 56],   // circle (the default: the surge 24 -> 48, Coiny's own finisher as it was)
+    ['David',     'awseriously', 120, 22, 44],   // circle
+    ['Sidewalky', 'physically',  250, 28, 56],   // lock (the owner's: "sidewalky went from 9 percent to 39 percent")
+    ['Tree',      'timber',      250, 18, 36],   // rain
+    ['Baseball',  'groundpound', 250, 18, 36],   // lane
+    ['Fries',     'fryfan',      200, 18, 36],   // fan
+    ['Marker',    'permanentrecord', 200, 20, 40],   // fan, four volleys: all four still land (the first pass's doubled grace let 2 through)
   ];
-  for (const [name, id, dx, was] of rows) {
-    it(name + ': ' + id + ' KOs Pen at 60%, and at 0% deals double (' + 2 * was + '%) without the KO', () => {
+  for (const [name, id, dx, was, now] of rows) {
+    it(name + ': ' + id + ' KOs Pen at 60%, and at 0% deals ' + now + '% (it was ' + was + '%) without the KO', () => {
       const hi = clean(name, dx, 60), lo = clean(name, dx, 0);
       expect(hi.id).toBe(id);
       expect(hi.ko, JSON.stringify(hi)).toBe(true);
       expect(lo.ko, JSON.stringify(lo)).toBe(false);
-      expect(lo.dmg).toBe(2 * was);
+      expect(lo.dmg).toBe(now);
       expect([hi.holder, hi.holderPct, lo.holder, lo.holderPct]).toEqual([9, 0, 9, 0]);   // never their own hit, through the whole Final Smash
     });
   }
+  // The default is played only by the three hidden prize fighters (every roster fighter has a row of their own). Their own finishers
+  // differ a lot, so only the surge is scaled, and it lands after the finisher (a launch sets the speed: the last hit counts).
+  for (const i of [0, 1, 2]) it('the default, as hidden prize fighter #' + i + ' plays it, KOs Pen at 60% and not at 0%', () => {
+    const hi = clean('prize:' + i, 60, 60), lo = clean('prize:' + i, 60, 0);
+    expect(hi.id).toBe('surge');
+    expect([hi.ko, lo.ko], JSON.stringify([hi, lo])).toEqual([true, false]);
+    expect([hi.holder, hi.holderPct, lo.holder, lo.holderPct]).toEqual([9, 0, 9, 0]);
+  });
   it('an edge hit stays weaker than a clean one (Gelatin: the outer ring, 12 -> 24, under the inner one, 18 -> 36)', () => {
     expect(clean('Gelatin', 120, 0).dmg).toBe(36);
     expect(clean('Gelatin', 290, 0).dmg).toBe(24);
