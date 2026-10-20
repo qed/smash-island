@@ -168,8 +168,9 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     const orphans = published.map(f => f.replace(/\\/g, '/')).filter(f => !referenced.has(f));
     expect(orphans, 'sprite files that no fighter uses — dead weight on every page load').toEqual([]);
     // The route graphs' version of the same rule, so the spread above cannot let a stray graph through: exactly one per map, side
-    // and size band the game can build, named the way ctfGraphFetch asks for it.
-    const wantGraphs = w.eval(`Object.keys(CTF_MAPS).reduce(function(a, id){ var d = CTF_MAPS[id];
+    // and size band the game can build, named the way ctfGraphFetch asks for it -- except a map marked noGraph, whose graph the game
+    // builds itself and never fetches (the Practice Hall, d0edb16: ctfNavMake returns before any fetch), so a file for it is a stray too.
+    const wantGraphs = w.eval(`Object.keys(CTF_MAPS).filter(function(id){ return !CTF_MAPS[id].noGraph; }).reduce(function(a, id){ var d = CTF_MAPS[id];
               (d.asym ? ['', '-swap'] : ['']).forEach(function(sw){ (d.bands ? CTF_BAND_SFX : ['']).forEach(function(b){
                 a.push(id + sw + b.replace('.', '-') + '-graph.json'); }); }); return a; }, [])`)
       .map(n => `${CTF_DIR}/${n}`).sort();
