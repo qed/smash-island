@@ -10,7 +10,8 @@ import { REACT_SRC, MATCH_SRC, firstDiff, changes } from './helpers/cpu-human.js
 // Normal CPU answered a foe's swing on the very next frame and changed its keys up to 30 times inside one second. The owner's picks: Normal
 // reacts "About 1/3 s" late to anything new a foe does (20 frames), Hard "Human-fast too" (10), both at "Human input speed" (about 8 changes
 // a second to the keys it holds), Easy unchanged, bit for bit. A CPU sees its foes as they were that many frames ago (it knows its own body
-// now); its keys change at most tapBurst times back to back and then once every inputGap frames.
+// now); it makes at most tapBurst inputs back to back and then one every inputGap frames (an input: a key pressed, the arrows turned or
+// stopped; a button let go of after its tap is part of the tap).
 //
 // Each reaction case: a CPU beside a foe that does nothing, then the foe does one thing (starts a smash, jumps, or a shot of its comes in).
 // The same run with the foe doing nothing is the yardstick: the first frame the CPU's keys differ between the two is when it answered.
@@ -25,7 +26,8 @@ beforeAll(() => {
 
 const react = (cpu, foe, lvl, ev, gap) => {
   const base = W.eval(REACT_SRC(cpu, foe, lvl, 'none', gap));
-  const hit = W.eval(REACT_SRC(cpu, foe, lvl, ev, gap));
+  const side = Math.sign(base.xs[30] - base.xs[0]) || 1;   // (a shot comes from the way the CPU goes next: it meets it)
+  const hit = W.eval(REACT_SRC(cpu, foe, lvl, ev, gap, 70, side));
   return firstDiff(base.got, hit.got);
 };
 
@@ -55,10 +57,11 @@ describe('a human CPU (CPU_HUMAN)', () => {
     }
   });
 
-  it('... a shot coming in (Box packs away a shot that comes near): not seen until it is 20 frames old on Normal, 10 on Hard', () => {
+  it('... a shot coming in (Box packs away a shot that comes near): not seen until it is 20 frames old on Normal, 10 on Hard (and she does see it)', () => {
     for (const [lvl, late] of [[1, 20], [2, 10]]) {
       const d = react('Box', 'Pen', lvl, 'shot', 150);
       expect(d, `level ${lvl}: first changed key on frame ${d}`).toBeGreaterThanOrEqual(late);
+      expect(d, `level ${lvl}: it never answered`).toBeGreaterThanOrEqual(0);
     }
   });
 
@@ -77,13 +80,17 @@ describe('a human CPU (CPU_HUMAN)', () => {
     for (const i of [0, 1]) expect(a.got[i], `CPU ${i}'s keys`).toEqual(b.got[i]);
   });
 
-  it('Normal and Hard: the keys a CPU holds never change more than 9 times in any 60 frames of a 30 s CPU-v-CPU match (its rules asked for far more)', () => {
+  it('Normal and Hard: in a fight a CPU never makes more than 9 inputs (a press, a turn, a stop) in any 60 frames of a 30 s CPU-v-CPU match, nor more than 18 changes counting the let-gos (its rules asked for far more)', () => {
+    // (the hands are a fight's: they count while a foe is within CPU_HUMAN.fightReach of what the CPU sees; a 1v1 on the flat stage is nearly all fight.
+    // A button let go of after its tap is part of that tap: the press is the input.)
     for (const lvl of [1, 2]) {
       const m = W.eval(MATCH_SRC(['Firey', 'Pen'], lvl, 501, 1800));
       for (const i of [0, 1]) {
-        const got = changes(m.got[i]), want = changes(m.want[i]);
-        expect(got.most, `level ${lvl}, CPU ${i}: ${got.most} changes in 60 frames`).toBeLessThanOrEqual(9);
-        expect(got.total / (m.frames / 60), `level ${lvl}, CPU ${i}: changes a second`).toBeLessThanOrEqual(8);
+        const got = changes(m.got[i], true, true), all = changes(m.got[i], true), want = changes(m.want[i], false, true);
+        expect(got.fight / got.frames, `level ${lvl}, CPU ${i}: frames in a fight`).toBeGreaterThan(0.6);
+        expect(got.most, `level ${lvl}, CPU ${i}: ${got.most} inputs in 60 frames`).toBeLessThanOrEqual(9);
+        expect(got.total / (got.fight / 60), `level ${lvl}, CPU ${i}: inputs a second in a fight`).toBeLessThanOrEqual(8);
+        expect(all.most, `level ${lvl}, CPU ${i}: ${all.most} changes in 60 frames, the let-gos too`).toBeLessThanOrEqual(18);
         expect(want.most, `level ${lvl}, CPU ${i}: what its rules asked for (the hands have work to do)`).toBeGreaterThan(9);
       }
     }
@@ -92,7 +99,7 @@ describe('a human CPU (CPU_HUMAN)', () => {
   it('a hold stays held, a tap stays a tap, and a press held on by the hands is never long enough for a second jab', () => {
     const r = JSON.parse(W.eval(`(function(){
       var keep = hazardT, K = function(o){ return Object.assign({ left:false, right:false, jump:false, down:false, attack:false, special:false, smash:false, up:false }, o || {}); };
-      var drive = function(wants){ var f = { idx: 3 }, out = []; hazardT = 100000; for (var i = 0; i < wants.length; i++){ hazardT++; out.push(cpuHumanKeys(f, wants[i], CPU_HUMAN.inputGap[1])); } return out; };
+      var drive = function(wants, free){ var f = { idx: 3 }, out = []; hazardT = 100000; for (var i = 0; i < wants.length; i++){ hazardT++; out.push(cpuHumanKeys(f, wants[i], CPU_HUMAN.inputGap[1], !free)); } return out; };
       var run = function(out, key, from){ var n = 0; for (var i = from; i < out.length && out[i][key]; i++) n++; return n; };
       var res = {};
       // a special held 40 frames from rest: pressed at once, held all 40, never let go in between
@@ -107,7 +114,16 @@ describe('a human CPU (CPU_HUMAN)', () => {
       for (var i = 1; i < o.length; i++) if (!!o[i].left !== !!o[i-1].left || !!o[i].right !== !!o[i-1].right){ at.push(i); shortest = Math.min(shortest, i - last); last = i; }
       var most = 0; for (var a = 0, b = 0; b < at.length; b++){ while (at[b] - at[a] >= 60) a++; most = Math.max(most, b - a + 1); }
       res.jiggleMost = most; res.jiggleShortest = shortest;
-      // a 1-frame jab that spends the last of the hands: held on until they come back, and let go well before a jab's cooldown ends
+      // the same with no foe near (getting somewhere, not fighting): every change goes as it comes
+      o = drive(w, true); var free = 0; for (var i = 1; i < o.length; i++) if (!!o[i].left !== !!o[i-1].left) free++;
+      res.freeChanges = free;
+      // a grab decided while the hands are busy, and the jab its rules fall back on the frames after: the grab is what goes out
+      w = [K({ right: true }), K({ right: true }), K({ right: true }), K({ left: true }), K({ grab: true })]; for (var i = 0; i < 20; i++) w.push(K({ attack: true }));
+      o = drive(w); res.grabAt = -1; for (var i = 4; i < o.length; i++) if (o[i].grab){ res.grabAt = i - 4; break; }
+      // a jab decided while the hands are busy, then a grab the frame after (its odds go up while it jabs): the bigger move takes the jab's place
+      w = [K({ right: true }), K({ right: true }), K({ right: true }), K({ left: true }), K({ attack: true }), K({ grab: true })]; for (var i = 0; i < 20; i++) w.push(K({ attack: true }));
+      o = drive(w); res.grab2At = -1; res.jabBefore = false; for (var i = 4; i < o.length; i++){ if (o[i].grab){ res.grab2At = i - 4; break; } if (o[i].attack) res.jabBefore = true; }
+      // a 1-frame jab that spends the last of the hands: let go tapMin frames after it goes out (free: the tap is one input), well before a jab's cooldown ends
       w = [K({ right: true }), K({ right: true }), K({ right: true }), K({ right: true, attack: true })]; for (var i = 0; i < 30; i++) w.push(K({ right: true }));
       o = drive(w); var j0 = -1; for (var i = 0; i < o.length; i++) if (o[i].attack){ j0 = i; break; }
       res.jabRun = j0 < 0 ? 0 : run(o, 'attack', j0); res.jabCd = JAB_HIT_CD;
@@ -123,21 +139,30 @@ describe('a human CPU (CPU_HUMAN)', () => {
     expect(r.tapRun, 'a tap is a tap').toBe(W.eval('CPU_HUMAN.tapMin'));
     expect(r.jiggleMost).toBeLessThanOrEqual(9);
     expect(r.jiggleShortest).toBeGreaterThanOrEqual(W.eval('CPU_HUMAN.tapMin'));
+    expect(r.freeChanges, 'out of a fight a CPU presses at its own pace').toBe(119);
+    expect(r.grabAt, 'the grab decided while the hands were busy went out when they came back').toBeGreaterThanOrEqual(0);
+    expect(r.grabAt).toBeLessThanOrEqual(10);
+    expect(r.grab2At, 'a grab decided after a waiting jab went out instead of it').toBeGreaterThanOrEqual(0);
+    expect(r.grab2At).toBeLessThanOrEqual(10);
+    expect(r.jabBefore, 'and the jab did not go first').toBe(false);
     expect(r.jabRun, 'the jab press went through').toBeGreaterThan(0);
+    expect(r.jabRun, 'a tap: let go as soon as it has been down tapMin frames').toBe(W.eval('CPU_HUMAN.tapMin'));
     expect(r.jabRun, 'held on shorter than the jab cooldown: one jab').toBeLessThan(r.jabCd);
     expect(r.smashAt, 'the smash press waited for the hands, then went').toBeGreaterThanOrEqual(0);
     expect(r.smashAt).toBeLessThanOrEqual(10);
   });
 
-  it('Normal CPUs still charge and throw their smashes, fire every Final Smash they win (some land), and Bow still Teleports at her foes', () => {
+  it('Normal CPUs still charge and throw their smashes, fire every Final Smash they win (some land), and Bow still Teleports at her foes, aimed the way she holds', () => {
     const r = JSON.parse(W.eval(`(function(){
       var mk = window.__mk || ${'function(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; var t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }'};
-      var tot = { sm: 0, commits: 0, glows: 0, fsFire: 0, fsHit: 0, wasted: 0, tps: 0, tpNear: 0 };
-      var f0 = fireSmash, t0 = fsTryFire, a0 = teleportArrive;
+      var tot = { sm: 0, commits: 0, glows: 0, fsFire: 0, fsHit: 0, wasted: 0, tps: 0, tpFoe: 0, tpAimLost: 0 };
+      var f0 = fireSmash, t0 = fsTryFire, a0 = teleportArrive, s0 = startTeleport, b0 = fsBotInput;
+      // (the way her CPU wants to go on each frame she fades, after all its rules: what teleportHold should be reading when she arrives)
+      fsBotInput = function(f, inp){ var r = b0.apply(this, arguments); if (f._tp) f.__aim = [(inp.right ? 1 : 0) - (inp.left ? 1 : 0), (inp.down ? 1 : 0) - (inp.up ? 1 : 0)]; return r; };
+      startTeleport = function(f){ if (f._aiTpAim && f._aiTpAim.why === 'foe') tot.tpFoe++; f.__aim = null; return s0.apply(this, arguments); };
       fireSmash = function(f){ tot.sm++; return f0.apply(this, arguments); };
       fsTryFire = function(f){ var r = t0.apply(this, arguments); if (r) tot.fsFire++; return r; };
-      teleportArrive = function(f){ var r = a0.apply(this, arguments); tot.tps++;
-        if (fighters.some(function(t){ return t !== f && !t.dead && t.team !== f.team && Math.hypot(t.x - f.x, t.y - f.y) < f.r + t.r + 40; })) tot.tpNear++; return r; };
+      teleportArrive = function(f){ tot.tps++; if (f.__aim && (f._tp.ax !== f.__aim[0] || f._tp.ay !== f.__aim[1])) tot.tpAimLost++; return a0.apply(this, arguments); };
       try {
         [['Firey', 'Pen', 'Rocky', 'Leafy'], ['Bow', 'Pen', 'Bow', 'Firey']].forEach(function(names, li){
           Math.random = mk(400 + li * 2);
@@ -147,24 +172,27 @@ describe('a human CPU (CPU_HUMAN)', () => {
             if (!SMASHBALL && !fighters.some(function(f){ return f.fsGlow > 0 || f._fs; })) FS.next = Math.min(FS.next, 1);   // a Smash Ball whenever none is out
             step();
             fighters.forEach(function(f){ var c = f._aiCharging > 0, g = f.fsGlow > 0;
-              if (c && !prevC[f.idx]) tot.commits++; if (g && !prevG[f.idx]) tot.glows++; if (!g && prevG[f.idx] && !f._fs) tot.wasted++;
+              if (c && !prevC[f.idx]) tot.commits++; if (!g && prevG[f.idx]){ if (f._fs) tot.glows++; else if (!f.dead){ tot.glows++; tot.wasted++; } }   // (a glow counted when it ends: fired, or run out unused; a KO takes it with the stock)
               prevC[f.idx] = c; prevG[f.idx] = g;
               if (f._fs){ live.add(f); best[f.idx] = Math.max(best[f.idx] || 0, f._fs.hit.size); }
               else if (live.has(f)){ live.delete(f); if (best[f.idx] > 0) tot.fsHit++; best[f.idx] = 0; } });
           }
           running = false;
         });
-      } finally { fireSmash = f0; fsTryFire = t0; teleportArrive = a0; }
+      } finally { fireSmash = f0; fsTryFire = t0; teleportArrive = a0; startTeleport = s0; fsBotInput = b0; }
       return JSON.stringify(tot);
     })()`));
     expect(r.commits, 'smash commitments in the sample').toBeGreaterThan(10);
     expect(r.sm, `${r.sm} smashes thrown for ${r.commits} commitments`).toBeGreaterThanOrEqual(Math.floor(r.commits * 0.9));
     expect(r.glows, 'Smash Balls won').toBeGreaterThan(5);
-    expect(r.fsFire, 'every glow became a Final Smash').toBe(r.glows);
+    expect(r.fsFire, 'every glow that ended became a Final Smash').toBe(r.glows);
     expect(r.wasted, 'no glow ran out unused').toBe(0);
     expect(r.fsHit, 'Final Smashes that landed').toBeGreaterThan(0);
     expect(r.tps, 'Bow Teleported').toBeGreaterThan(0);
-    expect(r.tpNear, 'and came out beside a foe').toBeGreaterThan(0);
+    expect(r.tpFoe, 'some of them at her foes').toBeGreaterThan(0);
+    // (Where she comes out depends on where the foe has gone since she saw it -- 28 frames on Normal with the fade; on the build before this
+    // about one foe-aimed trip in eight came out beside them. What the hands must never do is change the way she aims.)
+    expect(r.tpAimLost, 'trips whose aim was not the way her CPU held while she faded').toBe(0);
   });
 
   it('knows its own body: flung out past the side, a Normal or Hard CPU gets back whenever it does with the eyes and hands taken off', () => {
