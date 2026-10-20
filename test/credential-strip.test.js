@@ -45,6 +45,10 @@ const SPRITE_DIR = `${PUBLISH_ROOT}/assets/sprites`;
 // are made offline and shipped ... the game loads one at match start") and the projectile table aiProjInfo reads (351d575).
 // JSON data only, never code: the rule that contains it is in 'confines assets/' below.
 const CTF_DIR = `${PUBLISH_ROOT}/assets/ctf`;
+// Every published file under it. Each one is served at its own public URL like the page, so the token and host rules that hold
+// for the page hold for these too (the two it.each below): "if you add a credential surface, add the rule that contains it in
+// the same commit".
+const CTF_DATA = PUBLISHED_FILES.filter((f) => f.startsWith(`${CTF_DIR}/`));
 
 // ---------------------------------------------------------------------------------------------
 // RETARGETED when the thinking teammate landed (feat/team-ai). READ THIS BEFORE WIDENING ANYTHING.
@@ -279,7 +283,7 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     expect(shipped.match(/\*\*Source\*\* \|/g) || []).toHaveLength(5);
   });
 
-  it.each(PUBLISHED_HTML)('%s contains none of the forbidden credential tokens', (file) => {
+  it.each([...PUBLISHED_HTML, ...CTF_DATA])('%s contains none of the forbidden credential tokens', (file) => {
     const src = readFileSync(file, 'utf8');
     const found = FORBIDDEN
       .filter(({ re }) => re.test(src))
@@ -291,14 +295,17 @@ describe('Workstream 0 — credential surface is fully stripped', () => {
     expect(found, `forbidden credential tokens still present:\n  ${found.join('\n  ')}`).toEqual([]);
   });
 
-  it.each(PUBLISHED_HTML)('%s contacts no host beyond the single sanctioned one', (file) => {
+  it.each([...PUBLISHED_HTML, ...CTF_DATA])('%s contacts no host beyond the single sanctioned one', (file) => {
     const src = readFileSync(file, 'utf8');
     const externals = [...src.matchAll(/https?:\/\/([^/"'\s)]+)/g)]
       .map((m) => m[1])
       .filter((host) => !/^(localhost|127\.0\.0\.1)/.test(host));
     // Was `toEqual([])`. It is now an allowlist of exactly one, which is the same guarantee with one
     // named exception rather than none: a second host still fails, and so does a typo'd first one.
-    expect([...new Set(externals)].sort()).toEqual([...SANCTIONED_HOSTS, ...NAMED_ONLY_HOSTS].sort());
+    // Capture the Flag's data is read by the page, never run as one, and names no host at all: the sanctioned host is the
+    // page's own Advanced path and the named-only ones are the page's own previews, so none of them belongs in a data file.
+    const allowed = file.endsWith('.html') ? [...SANCTIONED_HOSTS, ...NAMED_ONLY_HOSTS].sort() : [];
+    expect([...new Set(externals)].sort()).toEqual(allowed);
   });
 
   it('reaches its own endpoint same-origin, with no credential in the browser', () => {
