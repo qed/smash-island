@@ -141,7 +141,9 @@ describe('every table has its row', () => {
         up: UPSPEC[k] && UPSPEC[k].shape, down: typeof DOWNSPECIALS[k], quip: victoryQuipFor('Bot'), cls: AI_CLASS[row.arch], aiClass: aiClass({ kit:{special:k}, arch:row.arch, name:'Bot' }),
         range: RANGE_PROFILE[k], jab: JAB_ANIM[k], anim: typeof (FIGHTER_ANIM.Bot||{}).over, show: SHOW_ORDER.indexOf('Bot'), prize: SHOW_ORDER.indexOf('OJ'), sprite: !!SPRITES.Bot,
         traced: [!!HURTBOX.Bot, !!HURT_POLY.Bot, !!LIMB_RIG.Bot] }; })()`);
-    expect(r.lines).toEqual(['bair', 'bthrow', 'dair', 'down', 'dthrow', 'fair', 'finisher', 'fthrow', 'ftilt', 'grab', 'jab', 'nair', 'pummel', 'ranged', 'special', 'tech', 'uair', 'up', 'uthrow', 'utilt']);   // + the moveset's lines (8e04043)
+    // (restated 2026-10-20 -- the owner, 2026-10-18, "side attacks should be merged into neutral attacks (the same thing as specials)": with SIDE_TILTS off the
+    // moveset writes no side-tilt line, so 'ftilt' is no longer one of Bot's lines; every other line is as it was)
+    expect(r.lines).toEqual(['bair', 'bthrow', 'dair', 'down', 'dthrow', 'fair', 'finisher', 'fthrow', 'grab', 'jab', 'nair', 'pummel', 'ranged', 'special', 'tech', 'uair', 'up', 'uthrow', 'utilt']);   // + the moveset's lines (8e04043)
     expect(r.sid).toEqual(['The One and Only!', '#f0fff3']);
     expect(r.spec).toEqual({ pat: 'leap', uncopyable: true, cost: ['stun'] });
     expect(r.specOthers, 'no other smash claims it cannot be copied').toEqual(['cheer']);
