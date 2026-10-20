@@ -39547,7 +39547,7 @@ function step(){
       const _face0 = f.face;
       if(inp.left){ f.vx-=mv; f.face=f.ctrlRev>0?1:-1; }
       if(inp.right){ f.vx+=mv; f.face=f.ctrlRev>0?-1:1; }
-      if(f._mv && !(f._mv.s.turn)) f.face=_face0;   // a move in progress does not turn her round
+      if(f._mv && (f._mv.air || f._mv.key === 'side') && !(f._mv.s.turn)) f.face=_face0;   // an aerial in progress does not turn her round (a back-air is a back-air); a ground move turns with the arrows (mvTick)
       if(f.face!==_face0){ f._turnT=hazardT; f._turnFrom=_face0; }
       if(!inp.left&&!inp.right && f.onground && !(f._sm && f._sm.drive) && !(f._gotcha && f._gotcha.phase==='lunge')) f.vx*=(f.iceUntil>0?0.99:FRICTION);
       if(f.iceUntil>0) f.iceUntil--;
@@ -42933,8 +42933,8 @@ function heldStruggle(f, inp, R){
 //                      boxes:[{ t0,t1, s:shape, dmg, kb:[kx,ky], stun, g:group, rehit, fx }], mv:[{ t0,t1, mode, vx, vy }], jc, sc, cd }
 // Frames count from the press (frame 0). A box is live from t0 to t1 (default: the move's live frames) and hits each foe once per
 // group `g` (a sweet-spot box goes first in its group; a foe it hit is not hit again by the sour box behind it), or again every
-// `rehit` frames. Coordinates are forward-relative (x grows the way the fighter faced when the move began; y grows down), so a
-// back-air's box simply sits at a negative x with a negative kx. kb is the launch before the target's % scales it; stun is the
+// `rehit` frames. Coordinates are forward-relative (x grows the way the fighter faces on that frame -- an aerial keeps the facing it began
+// with, a ground move turns with the arrows, see mvTick; y grows down), so a back-air's box simply sits at a negative x with a negative kx. kb is the launch before the target's % scales it; stun is the
 // hitstun the target is left in (a long stun and a short launch is a combo starter, a short stun and a long launch a finisher).
 //   mv modes: 'set' (vx/vy replace the speed), 'add', 'stall' (vy held at or above vy: a hover), 'dive' (vy held at or below vy)
 //   jc: 'hit' | 'end' | 'any'  jump-cancel: once it connects (or its live frames end, or either) a press of jump leaves the move
@@ -42950,6 +42950,12 @@ function mvShape(f, s){
   return { kind:'capsule', x1:f.x + s.x*d, y1:f.y + s.y, x2:f.x + s.x*d, y2:f.y + s.y, r:s.r };
 }
 function mvTotal(S){ return S.st + S.act + S.end; }
+// Does the move push the fighter itself on frame t (an `mv` step with a speed, live this frame)? On those frames a ground move's push wins over the arrows.
+function mvPushes(S, t){
+  if(!S.mv) return false;
+  for(const m of S.mv){ if(m.vx != null && t >= m.t0 && t <= (m.t1 == null ? m.t0 : m.t1)) return true; }
+  return false;
+}
 function mvStart(f, S, key, nofx){
   if(inOwnTeamZone(f) || f._mv) return false;
   const total = mvTotal(S);
@@ -42973,9 +42979,15 @@ function mvTick(f, inp){
     f._mv = null; f.atkCd = Math.max(0, f.atkCd - Math.max(0, total - t)); f._atkAnim = Math.min(f._atkAnim, lag + 2);
     return;
   }
-  // inputs while a move is out: no walking on the ground, no turning, no special / smash / grab (unless `sc`), jump only to cancel
+  // inputs while a move is out. A GROUND move walks, runs and turns round (the owner, 2026-10-20: "attacks are weird, you should be able to move
+  // while doing them" -- "Full speed, can turn"): the arrows move the fighter at their own walking and running speed (the movement block, as with
+  // no move out), and pressing the other way turns them, the move with them -- its boxes, its hit art and its knockback face the new way from the
+  // next frame on (mvStrike reads f.face), as does the sprite. Only on the frames the move's own push acts (an `mv` step that sets or adds speed:
+  // a slide, a lunge, a shove) are the arrows set aside, so the push wins there exactly as it always did. An aerial drifts and keeps the facing it
+  // began with (the movement block); the side special (off: SIDE_SPECIALS) drives its own motion and keeps both. No special / smash / grab (unless
+  // `sc`), jump only to cancel.
   const done = t >= live1;
-  if(!mv.air && !S.walk){ inp.left = false; inp.right = false; }
+  if(!mv.air && (mv.key === 'side' || mvPushes(S, t))){ inp.left = false; inp.right = false; }
   const jcOk = S.jc && ((S.jc === 'hit' && mv.landed) || (S.jc === 'end' && done) || (S.jc === 'any' && (mv.landed || done)));
   if(jcOk && inp.jump && !f._jp && (f.jumps > 0 || f.onground)){ f._mv = null; f.atkCd = 0; f._atkAnim = 0; return; }
   if(!(S.sc && done)){ inp.special = false; inp.smash = false; inp.fin = false; inp.grab = false; inp.attack = false; }
