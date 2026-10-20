@@ -297,7 +297,8 @@ describe('what does not change', () => {
   // Recorded on MAIN (fc0b69d: the game without moving-while-attacking, with the per-fighter stats in -- Bomby runs 0.94, Snowball 0.91), in a
   // scratch checkout of it: where the fighter is, frame by frame, holding an arrow through the move ('L' = facing left). A Root & blast smash
   // (Bomby's: it charges as he walks, then roots him) and a finisher that drives its own speed (Snowball's tackle). This branch has to match main
-  // frame for frame: moving while attacking changes no smash and no finisher.
+  // frame for frame: moving while attacking changes no smash and no finisher -- except, on purpose, Needle's smash (Riposte), a counter stance
+  // that now holds him still while it is up (the owner, 2026-10-20: "Hold them still"; pinned in STANCES).
   // RESTATED (the merge with main): these were recorded on cfa6dea, before the stats (every run 1); main's own frames are the claim now.
   const run = (name, keys, keysN, holdKey, n) => W.eval(`(function(){
     SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
