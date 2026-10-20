@@ -22,14 +22,16 @@ const three = `SETTINGS.mode='ffa'; SETTINGS.count=3; SETTINGS.items=false; runn
   fighters=[A,T,B]; step(); A.invuln=0; T.invuln=0; B.invuln=0;`;
 
 describe('how much', () => {
-  it('scales with the hit, about double the old light end, capped at 24', () => {
+  // The cap moved from 24 to 30 with the stun (COMBOS, the owner 2026-10-20: "Flat +1/10 s" on every hit's stun, and grace +6 with it
+  // so it still covers the stun as much as it did).
+  it('scales with the hit, about double the old light end, capped at 30', () => {
     const g = W.eval(`(function(){ ${three}
       var out = {};
       [5, 18, 60].forEach(function(d){ T.invuln=0; T.pct=0; applyHit(T, d, 1, -1, null); out[d] = T.invuln; });
       return out; })()`);
     expect(g[5], 'a light poke (was 6)').toBeGreaterThanOrEqual(10);
     expect(g[18]).toBeGreaterThan(g[5]);
-    expect(g[60]).toBe(24);
+    expect(g[60]).toBe(30);
   });
 });
 

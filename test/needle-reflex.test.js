@@ -68,7 +68,7 @@ const arena = `
   [N,E].forEach(function(f){ f.controller='still'; f.invuln=0; f.spCd=0; f.atkCd=0; f.stocks=9; });
   fighters=[N,E]; step(); N.invuln=0; E.invuln=0; N.pct=0; E.pct=0;
   var pin=function(){ N.x=300; N.vx=0; E.x=340; E.vx=0; };
-  var jab=function(){ E.atkCd=0; E.hitstun=0; E.invuln=0; doAttack(E); for (var i=0;i<14;i++){ pin(); step(); } };`;
+  var jab=function(){ E.atkCd=0; E.hitstun=0; E.invuln=0; doAttack(E); for (var i=0;i<14+6+hitStopFrames(3);i++){ pin(); step(); } };`;   // (restated for COMBOS and the HIT FREEZE, the owner 2026-10-20: the jab's grace is 6 frames longer and it holds its target still a moment, so the wait after it is as long again)
 
 describe('the Riposte Stance (smash)', () => {
   it('returns the whole hit, amplified, and takes none of it', async () => {

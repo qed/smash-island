@@ -392,9 +392,11 @@ describe('GOTCHA!: a tackle that holds the nearest foe, and shuts their specials
   });
 
   it('lets go after 60 frames', () => {
-    const r = gotcha(`var g = -1, freed = -1;
-      for (var i=0;i<140;i++){ step(); if (g < 0 && A._gotcha && A._gotcha.phase === 'hold') g = i; if (g >= 0 && freed < 0 && !A._gotcha){ freed = i; break; } }
-      return { held: freed - g, foeStun: D.hitstun, holdT: A._holdT|0 };`);
+    // (restated for the HIT FREEZE, the owner 2026-10-20: "Yes, tiny" -- the hold is 60 of Bot's own frames; the frames Bot stands held
+    // still by the tackle's hit are not theirs)
+    const r = gotcha(`var g = -1, freed = -1, still = 0;
+      for (var i=0;i<140;i++){ step(); if (g >= 0 && A._hsHeld === hazardT) still++; if (g < 0 && A._gotcha && A._gotcha.phase === 'hold') g = i; if (g >= 0 && freed < 0 && !A._gotcha){ freed = i; break; } }
+      return { held: freed - g - still, foeStun: D.hitstun, holdT: A._holdT|0 };`);
     expect(r.held, 'about a second').toBeGreaterThanOrEqual(59);
     expect(r.held).toBeLessThanOrEqual(61);
     expect(r.foeStun, 'and their stun ends with the hold').toBeLessThanOrEqual(2);
@@ -554,9 +556,9 @@ describe("Test Tube's TRANQUILIZING TRACKING DART BLASTER! (\"New move for Test 
 
   it('they are out for 72 frames and no longer, and cannot act while they are', () => {
     const r = arena('Test Tube', `
-      fireSpecial(A, {}); var hitAt = -1, out = { canAct: [] };
-      for (var i=0;i<200;i++){ step(); D.invuln = 0; if (hitAt < 0 && D.pct > 30) hitAt = i; if (hitAt >= 0){ var k = i - hitAt; if (k === 10 || k === 60 || k === 71 || k === 74) out.canAct.push([k, D.hitstun > 0]); } }
-      return out;`, 460, 3000);
+      fireSpecial(A, {}); var hitAt = -1, out = { canAct: [] }, still = 0;
+      for (var i=0;i<200;i++){ step(); D.invuln = 0; if (hitAt < 0 && D.pct > 30) hitAt = i; if (hitAt >= 0 && D._hsHeld === hazardT) still++; if (hitAt >= 0){ var k = i - hitAt - still; if (D._hsHeld !== hazardT && (k === 10 || k === 60 || k === 71 || k === 74)) out.canAct.push([k, D.hitstun > 0]); } }
+      return out;`, 460, 3000);   // (restated for the HIT FREEZE, the owner 2026-10-20: "Yes, tiny" -- 72 of the foe's own frames; the frames the dart's hit holds them still are not)
     expect(r.canAct).toEqual([[10, true], [60, true], [71, true], [74, false]]);
   });
 
@@ -577,7 +579,7 @@ describe("Test Tube's TRANQUILIZING TRACKING DART BLASTER! (\"New move for Test 
     expect(r.awake).toBe(true);
     expect(r.dmg2, 'the second dart still hurts').toBe(6);
     expect(r.ko2, 'but they do not go under').toBe(0);
-    expect(r.hitstun2).toBeLessThanOrEqual(12);
+    expect(r.hitstun2).toBeLessThanOrEqual(12 + 6);   // (restated for COMBOS, the owner 2026-10-20: "Flat +1/10 s" -- every hit's stun is 6 frames longer)
     expect(r.dmg3).toBe(6);
     expect(r.ko3, 'and once the grogginess is gone they do').toBeGreaterThan(50);
   });

@@ -109,7 +109,7 @@ describe('who a boss keeps a grace for ("give bosses by-character iframes")', ()
       for(var k = 1; k <= grace + 1; k++){ step(); out.push(hit()); }
       return { grace: grace, out: out };
     `);
-    expect(r.grace, 'a 5-damage hit gives 12 frames of grace').toBe(12);
+    expect(r.grace, 'a 5-damage hit gives 18 frames of grace (12 before COMBOS: the owner, 2026-10-20, "Flat +1/10 s" on the stun, and grace +6 with it)').toBe(18);
     expect(r.out[0], 'the first hit').toBe(5);
     for (let k = 1; k < r.grace; k++) expect(r.out[k], `frame ${k}, inside the grace`).toBe(0);
     expect(r.out[r.grace], `frame ${r.grace}, the grace is over`).toBe(5);
@@ -130,7 +130,7 @@ describe('who a boss keeps a grace for ("give bosses by-character iframes")', ()
       expect(r[d].boss, `grace of a ${d}-damage hit`).toBe(r[d].fighter);
       expect(r[d].bossStun, `hitstun of a ${d}-damage hit`).toBe(r[d].fighterStun);
     }
-    expect(r[60].boss, 'capped at 24, as a fighter\'s is').toBe(24);
+    expect(r[60].boss, 'capped at 30, as a fighter\'s is (24 before COMBOS: grace grew by the stun\'s +6, cap and all)').toBe(30);
   });
 
   it('an assist trophy\'s hit does not use up its owner\'s grace, nor the owner\'s the trophy\'s', () => {
@@ -213,7 +213,9 @@ describe('what a boss lets through a grace, as a fighter does ("give bosses by-c
     const swings = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30];
     const boss = series('boss', swings), fighter = series('fighter', swings);
     expect(fighter.landed.length, 'a fighter takes the first jab and the links that follow it').toBeGreaterThanOrEqual(3);
-    expect(fighter.landed.length, 'and not every one of eleven').toBeLessThan(swings.length);
+    // (restated for COMBOS, the owner 2026-10-20: a chain has no cap any more -- "if i can get them into a position where i can combo
+    // relentlessly ... I should be rewarded for that, right?" -- so every new swing inside the stun links; there were the first and three)
+    expect(fighter.landed.length, 'and every one of eleven, each a new move inside the stun').toBe(swings.length);
     expect(boss.landed, 'the same frames on a boss').toEqual(fighter.landed);
     expect(boss.total, 'the same number').toBeCloseTo(fighter.total, 5);
   });
@@ -230,14 +232,15 @@ describe('what a boss lets through a grace, as a fighter does ("give bosses by-c
     expect(r).toEqual([5, 0, 5]);
   });
 
-  it('a chain is the first hit and three links on a boss as on a fighter: the next new move inside the grace is turned away', () => {
+  // (restated for COMBOS, the owner 2026-10-20: no cap on a chain -- there were the first hit and three links, then the grace turned the next away)
+  it('a chain has no cap on a boss, as on a fighter: every new move inside the stun links', () => {
     const chain = (who) => stage(`
       var A = fighter('Pen', 300, 0, 1, 0), t = target(${J(who)}, A, 420, 354), out = [];
       for(var k = 0; k < 6; k++){ A._atkSeq = (A._atkSeq || 0) + 1; var h = t.val(); hitCircle(A, t.x - 20, t.y, 100, 3, 3, 3, -3); out.push(+(t.val() - h).toFixed(3)); step(); t.park(); }
       return out;
     `);
     const fighter = chain('fighter'), boss = chain('boss');
-    expect(fighter.slice(0, 5), 'a fighter: the first hit, three links, then the grace').toEqual([3, 3, 3, 3, 0]);
+    expect(fighter, 'a fighter: the first hit and a link for every new move after it').toEqual([3, 3, 3, 3, 3, 3]);
     expect(boss, 'a boss: the same').toEqual(fighter);
   });
 
@@ -245,14 +248,17 @@ describe('what a boss lets through a grace, as a fighter does ("give bosses by-c
     const run = (who) => stage(`
       var A = fighter('Saw', 300, 0, 1, 0), t = target(${J(who)}, A, 300 + A.r + 85 + 6, 330);
       fireSpecial(A, none());
-      var frames = [], last = t.val(); if(last > 0) frames.push(-1);
-      for(var i = 0; i < 80; i++){ step(); t.park(); A.x = 300; A.vx = 0; if(t.val() > last + 1e-9){ frames.push(i); last = t.val(); } }
-      return { frames: frames, total: t.val() };
+      var frames = [], last = t.val(), held = 0; if(last > 0) frames.push(-1);
+      for(var i = 0; i < 80; i++){ step(); t.park(); A.x = 300; A.vx = 0; if(A._hsHeld === hazardT) held++; if(t.val() > last + 1e-9){ frames.push(i); last = t.val(); } }
+      return { frames: frames, total: t.val(), held: held, k: hitStopFrames(4) };
     `);
     const boss = run('boss'), fighter = run('fighter');
     expect(fighter.frames.length, 'the aura ticks on a fighter').toBeGreaterThanOrEqual(5);
     expect(boss.frames, 'on a boss: the same frames').toEqual(fighter.frames);
-    for (let i = 1; i < boss.frames.length; i++) expect(boss.frames[i] - boss.frames[i - 1], 'six frames apart').toBe(6);
+    // (restated for the HIT FREEZE, the owner 2026-10-20: "Yes, tiny" -- a move that hits many times holds its user once, on its first hit,
+    // so the first gap is six of Saw's own frames plus the frames he stood held; the rest are six apart)
+    expect(boss.held, 'Saw is held once, for the first tick').toBe(boss.k);
+    for (let i = 1; i < boss.frames.length; i++) expect(boss.frames[i] - boss.frames[i - 1], 'six frames apart').toBe(i === 1 ? 6 + boss.held : 6);
     expect(boss.total, 'the same number, 4 a tick').toBeCloseTo(fighter.total, 5);
   });
 
