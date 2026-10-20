@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootMonolith } from './helpers/smash-golden.js';
 import { loadMonolith } from './helpers/load-monolith.js';
+import { mulberry32 } from './helpers/prng.js';
 
 // FINAL SMASH BALLS (the owner, 2026-10-14, "pipis"): a rare Smash Ball floats about a normal match; whoever breaks it glows and fires
 // their Final Smash ONCE with the finisher input (V + C). Direct checks only: the ball breaks and grants the glow; V + C fires it once;
@@ -117,7 +118,9 @@ describe('V + C while glowing', () => {
       A.fsGlow = 900; fsTryFire(A);
       for (var i=0;i<160;i++) step();
       return { pct: D.pct, stocks: D.stocks };`, { pct: 60 });
-    expect(near).toEqual({ pct: 0, stocks: 8 });   // 26% on top of 60 and a launch: out (the stock is gone, the % starts over)
+    // KO-level (the owner, 2026-10-18: "smash balls feel like they dont do enough damage"; chosen: "KO-level"): 52% on top of 60 (it was
+    // 26%) and a launch: out (the stock is gone, the % starts over)
+    expect(near).toEqual({ pct: 0, stocks: 8 });
     const far = arena(520, `
       A.fsGlow = 900; fsTryFire(A);
       for (var i=0;i<160;i++) step();
@@ -411,3 +414,57 @@ batchSuite("batch M", [
   ["Teddy Bear", "ragesmash", 110, 560],
   ["Bot", "gotcha", 250, 560]
 ]);
+
+// KO-LEVEL. The owner, 2026-10-18: "smash balls feel like they dont do enough damage. I got one, and sidewalky went from 9 percent to 39
+// percent". Chosen: "KO-level" (big damage AND big knockback, so a Final Smash usually KOs anyone above ~60%, like in Smash), and knockback
+// "Yes, same amount". A clean hit on Pen standing in the middle of Goiky Field, Pen a CPU from the moment it is hit (steering back, as the
+// measure in reports/moves/final-smash-ko.md does): at 60% Pen is out; at 0% Pen stays in, having taken double what the row used to deal.
+// One row of most shapes, the default among them; the holder is never hurt by their own Final Smash.
+describe('KO-level Final Smashes (the owner, 2026-10-18)', () => {
+  const clean = (name, dx, pct) => { W.Math.random = mulberry32(5); return W.eval(`(function(){
+    SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=2; SETTINGS.smashBalls=true; running=true;
+    RACE.active=false; ONEFIGHT.active=false; COBSFIGHT.active=false; TESTMODE.active=false; BOSSRUSH.active=false; TOURNEY.active=false; TUT.active=false;
+    CUSTOM_LEVEL=null; stage = STAGES.find(function(s){ return s.id==='goiky'; }); setupWorld();
+    summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[]; itemTimer=1e9;
+    var def = ${JSON.stringify(name)} === 'default';
+    var A = makeFighter(ROSTER.find(function(r){ return r.name===(def ? 'Coiny' : ${JSON.stringify(name)}); }), WW/2 - ${dx}, groundY()-24, 0);
+    var D = makeFighter(ROSTER.find(function(r){ return r.name==='Pen'; }), WW/2, groundY()-24, 1);
+    A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='still'; D.controller='still'; A.stocks=9; D.stocks=9;
+    if (def) A._fsForce = FS_DEFAULT;
+    fighters=[A,D]; hazardT=5; fsReset(); SMASHBALL=null; FS.next=99999;
+    step();
+    [A,D].forEach(function(f){ f.invuln=0; f.hitstun=0; f.spCd=0; f.atkCd=0; f.armor=0; f.fnCd=0; f.vx=0; f.vy=0; });
+    A.pct=0; D.pct=${pct}; D._dmgTaken=0;
+    for (var k in down) down[k]=false;
+    A.fsGlow = 900; fsTryFire(A);
+    var id = A.fsId, dur = A.fsDur, prev = D.pct, hs = A.stocks, hp = A.pct;
+    for (var i = 0; i < dur + 320 && D.stocks === 9; i++) {
+      step(); if (D.pct !== prev && D.controller === 'still') D.controller = 'ai'; prev = D.pct;
+      if (A._fs || i <= dur) { hs = A.stocks; hp = A.pct; }   // the holder through their Final Smash (after it, Pen is a CPU and fights back)
+    }
+    return { id: id, ko: D.stocks < 9, dmg: Math.round(D._dmgTaken), holder: hs, holderPct: Math.round(hp) };
+  })()`); };
+  // name, id, the holder's distance behind Pen, the damage this clean hit dealt at 0% before (it is double that now)
+  const rows = [
+    ['default',   'surge',        60, 32],   // circle (the default: everyone without a row of their own)
+    ['David',     'awseriously', 120, 22],   // circle
+    ['Sidewalky', 'physically',  250, 28],   // lock (the owner's: "sidewalky went from 9 percent to 39 percent")
+    ['Tree',      'timber',      250, 18],   // rain
+    ['Baseball',  'groundpound', 250, 18],   // lane
+    ['Fries',     'fryfan',      200, 18],   // fan
+  ];
+  for (const [name, id, dx, was] of rows) {
+    it(name + ': ' + id + ' KOs Pen at 60%, and at 0% deals double (' + 2 * was + '%) without the KO', () => {
+      const hi = clean(name, dx, 60), lo = clean(name, dx, 0);
+      expect(hi.id).toBe(id);
+      expect(hi.ko, JSON.stringify(hi)).toBe(true);
+      expect(lo.ko, JSON.stringify(lo)).toBe(false);
+      expect(lo.dmg).toBe(2 * was);
+      expect([hi.holder, hi.holderPct, lo.holder, lo.holderPct]).toEqual([9, 0, 9, 0]);   // never their own hit, through the whole Final Smash
+    });
+  }
+  it('an edge hit stays weaker than a clean one (Gelatin: the outer ring, 12 -> 24, under the inner one, 18 -> 36)', () => {
+    expect(clean('Gelatin', 120, 0).dmg).toBe(36);
+    expect(clean('Gelatin', 290, 0).dmg).toBe(24);
+  });
+});
