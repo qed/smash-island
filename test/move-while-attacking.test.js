@@ -17,6 +17,15 @@ import { makeRoom } from './helpers/net-room.js';
 //      run or turn; free again the frame it ends. Timing, damage and what the stances do are unchanged.
 //   3) The three lasting slowdowns (Grasstree, Battery Swap, the cork) stay as they are.
 //   4) The turn frame: the sprite, the box, the hit art and the knockback all turn on the same frame (the box used to turn a frame after the sprite).
+// His answers to the second review (2026-10-20):
+//   1) "Only pure stances": counters, reflects and armour BRACES hold you still; attacks and buffs that merely have armour let you walk (a brace is a
+//      move whose point is to stand and take it). Freed by name: Money's Payday, Bracelety's sign, Dora's rant, Bell's ring, TV's static, Saw's Defensive
+//      Spin, Liy's switch-on, Fern's regen, Pillow's guard. By the same rule (each card checked): Loser's Stay Cool (a buff with armour), and the
+//      reflects that ride on an attack, Gaty's Swing Open and Blueberry's Palanquin Catch (his own root still plants him, as it always did).
+//   2) "Free once it answers": a counter that answers frees the fighter at once, even with armour left (Golf Ball's Crusher stop, Needle's Riposte).
+//   3) "No turning in a stance": a smash pressed while a stance is up fires the way the fighter already faces (smashAim does not turn them).
+// The reviewer's other findings: a CPU in a stance that asks for a move keeps its arrows (they choose the move); Fanny's gust (onground=false, no lift)
+// no longer cancels a tilt on flat ground -- only really leaving the ground does ("walking off cancels the tilt").
 
 let W;
 beforeAll(async () => {
@@ -212,6 +221,24 @@ describe('walking off cancels the tilt (the owner, 2026-10-20: "Walking off canc
     expect(A('_mv')).toBeNull();
     expect(A('vy')).toBeLessThan(-5);
   });
+  it('a push that only marks him airborne does not: Fanny\'s gust on flat ground leaves the tilt running, and it runs out on the floor (the reviewer, 2026-10-20)', () => {
+    const runOut = (gust) => {
+      stage('Coiny', [-100]);
+      press(['attack', 'right'], 2);
+      expect(A('_mv.key')).toBe('ft');
+      if (gust) {
+        W.eval('DOWNSPECIALS.gust(fighters[1])');  // the dummy behind him blows him away: t.onground = false, with no lift and the floor still under him
+        expect(A('vx'), 'the gust pushed him').toBeGreaterThan(5);
+        expect(A('onground'), 'the gust marked him airborne').toBe(false);
+        hold([]);
+        expect(A('_mv'), 'the tilt is still out').toBeTruthy();
+        expect(A('onground'), 'back on the floor after his own step').toBe(true);
+      } else hold([]);
+      let n = 1; while (A('_mv') && n++ < 30) hold([]);
+      return n;
+    };
+    expect(runOut(true), 'the move ran all its frames out, as with no gust').toBe(runOut(false));
+  });
   it('on the ground nothing changes: the same tilt run out on the platform keeps its frames', () => {
     ledge('Coiny', 300);
     press(['attack', 'right'], 2);
@@ -306,30 +333,40 @@ describe('specials: you walk and turn through them, except the ones built around
   });
 });
 
-describe('hold them still (the owner, 2026-10-20: "Hold them still"): every counter, reflect and armour stance', () => {
+describe('hold them still (the owner, 2026-10-20: "Hold them still", then "Only pure stances"): every counter, reflect and armour brace', () => {
   // Every stance in the game, II and the prize fighters included (found by firing every fighter's neutral, down and up special, smash and finisher and
-  // reading countering, reflecting and armour; an armour stance is the armour a stance puts up -- braceUp -- not a dash's, a lift's or a move's).
+  // reading countering, reflecting and armour; an armour stance is the armour a brace puts up -- braceUp -- not a dash's, a lift's or a move's).
   // [fighter, how it is fired ('D' special+down, 'N' special alone, 'S' smash), its flag, the frames it is up]. Held = frames - 1: the stance goes
   // up after the press frame's step has moved them, and the step on which its flag runs out moves them again.
+  // RESTATED (the owner, 2026-10-20, second review, answer 1: "Only pure stances"): this list held every armour and reflect stance; the ones whose
+  // armour or reflect rides on an attack or a buff walk again and are in FREED below.
   const STANCES = [
     ['Leafy', 'D', 'countering', 26], ['Needle', 'N', 'countering', 26], ['Needle', 'D', 'countering', 32], ['Needle', 'S', 'countering', 60],
     ['Teardrop', 'D', 'countering', 24], ['Coiny', 'D', 'countering', 24], ['Golf Ball', 'D', 'countering', 28], ['Rose', 'D', 'countering', 28],
     ['Ruler', 'D', 'countering', 22], ['Ice Cube', 'D', 'countering', 26], ['Pickle', 'D', 'countering', 28], ['Fan', 'D', 'countering', 38],
     ['Clover', 'D', 'countering', 30],
-    ['Gaty', 'N', 'reflecting', 36], ['Gaty', 'D', 'reflecting', 44], ['Blueberry', 'N', 'reflecting', 24],
+    ['Gaty', 'D', 'reflecting', 44],
     ['Pin', 'D', 'armor', 40], ['Snowball', 'D', 'armor', 50], ['Pencil', 'D', 'armor', 36], ['Book', 'D', 'armor', 24], ['Nickel', 'D', 'armor', 44],
-    ['Bell', 'D', 'armor', 30], ['Bracelety', 'D', 'armor', 28], ['Grassy', 'D', 'armor', 36], ['Liy', 'D', 'armor', 16], ['Loser', 'N', 'armor', 22],
-    ['Loser', 'D', 'armor', 50], ['Money', 'D', 'armor', 24], ['Pillow', 'D', 'armor', 40], ['Saw', 'D', 'armor', 30], ['TV', 'D', 'armor', 30],
-    ['Dora', 'D', 'armor', 20], ['David', 'D', 'armor', 44], ['Fern', 'D', 'armor', 20], ['Sidewalky', 'D', 'armor', 50], ['Roboty', 'D', 'armor', 44],
+    ['Grassy', 'D', 'armor', 36], ['Loser', 'D', 'armor', 50], ['David', 'D', 'armor', 44], ['Sidewalky', 'D', 'armor', 50], ['Roboty', 'D', 'armor', 44],
     ['Tree', 'D', 'armor', 50], ['Baseball', 'N', 'armor', 26], ['Box', 'D', 'armor', 36],
   ];
+  // the armour on an attack or a buff, and the reflect on an attack: they walk and turn while it is up, as before the stances held anyone
+  // [fighter, how, its flag, the frames it is up]
+  const FREED = [
+    ['Money', 'D', 'armor', 24], ['Bracelety', 'D', 'armor', 28], ['Dora', 'D', 'armor', 20], ['Bell', 'D', 'armor', 30], ['TV', 'D', 'armor', 30],
+    ['Saw', 'D', 'armor', 30], ['Liy', 'D', 'armor', 16], ['Fern', 'D', 'armor', 20], ['Pillow', 'D', 'armor', 40], ['Loser', 'N', 'armor', 22],
+    ['Gaty', 'N', 'reflecting', 36], ['Blueberry', 'N', 'reflecting', 24],
+  ];
   const upExpr = (kind) => kind === 'armor' ? 'fighters[0]._braceT > 0 && fighters[0].armor > 0' : `fighters[0].${kind} > 0`;
-  // fire it standing still, then hold the arrow AWAY from the way they face every frame: held, they neither move nor turn; the frame the flag is down they do
-  const run = (name, how, kind) => {
+  const fire = (name, how) => {
     stage(name, [700]);
     if (name === 'Nickel') W.eval('var _r = Math.random; Math.random = function(){ return 0; }');   // heads: the armour (tails is a stumble, no stance)
     hold(how === 'D' ? ['special', 'down'] : how === 'N' ? ['special'] : ['smash']);
     if (name === 'Nickel') W.eval('Math.random = _r');
+  };
+  // fire it standing still, then hold the arrow AWAY from the way they face every frame: held, they neither move nor turn; the frame the flag is down they do
+  const run = (name, how, kind) => {
+    fire(name, how);
     let n = 0; while (!J(upExpr(kind)) && n++ < 80) hold([]);
     const up0 = J(kind === 'armor' ? 'fighters[0]._braceT' : 'fighters[0].' + kind), x0 = A('x');
     let held = 0, bad = null, free = null, px = x0;
@@ -355,6 +392,26 @@ describe('hold them still (the owner, 2026-10-20: "Hold them still"): every coun
     }
     expect(wrong).toEqual([]);
   });
+  it('the armour on an attack or a buff, and the reflect on an attack, hold no one: they walk and turn while it is up (answer 1, "Only pure stances")', () => {
+    const wrong = [];
+    for (const [name, how, kind, frames] of FREED) {
+      fire(name, how);
+      const up = kind === 'armor' ? 'fighters[0].armor > 0' : 'fighters[0].reflecting > 0', id = `${name} ${how}`;
+      let w = 0; while (!J(up) && w++ < 80) hold([]);
+      const up0 = J('fighters[0].' + kind), x0 = A('x');
+      if (up0 !== frames) wrong.push(`${id}: up ${up0} frames, listed ${frames}`);
+      if (J('fighters[0]._braceT > 0')) wrong.push(`${id}: still puts up a brace`);
+      let walked = false, still = false, n = 0;
+      while (J(up) && n++ < frames) {
+        hold(['left']);
+        if (J('stanceStill(fighters[0])')) still = true;
+        if (J(up) && A('face') === -1 && A('x') < x0 - 1) walked = true;
+      }
+      if (still) wrong.push(`${id}: held still`);
+      if (!walked) wrong.push(`${id}: did not walk and turn while it was up`);
+    }
+    expect(wrong).toEqual([]);
+  });
   it('a counter that answers a hit comes down at once, and frees them that frame', () => {
     stage('Coiny', [60]);
     hold(['special', 'down']);
@@ -366,13 +423,49 @@ describe('hold them still (the owner, 2026-10-20: "Hold them still"): every coun
     expect(A('face')).toBe(-1);
     expect(A('x')).toBeLessThan(x0);
   });
-  it('in the air no drift changes: Pillow\'s guard hops her up, and the arrows do not move her until it ends', () => {
-    stage('Pillow', [700]);
+  it('a counter that answers frees them at once even with armour left: Golf Ball\'s Crusher stop, Needle\'s Riposte (answer 2, "Free once it answers")', () => {
+    for (const [name, keys] of [['Golf Ball', ['special', 'down']], ['Needle', ['smash']]]) {
+      stage(name, [60]);
+      hold(keys);
+      let n = 0; while (!(A('countering') > 0) && n++ < 60) hold([]);
+      expect(A('countering'), name + ': the stance is up').toBeGreaterThan(0);
+      W.eval('applyHit(fighters[0], 8, -4, -3, fighters[1])');   // the foe's hit lands in it: the counter answers
+      expect(A('countering'), name).toBe(0);
+      expect(A('armor'), name + ': armour left').toBeGreaterThan(1);
+      expect(J('stanceStill(fighters[0])'), name).toBe(false);
+      const x0 = A('x');
+      hold(['left']);
+      expect(A('face'), name + ': turns at once').toBe(-1);
+      expect(A('x'), name + ': walks at once').toBeLessThan(x0);
+      expect(A('armor'), name + ': with the armour still on').toBeGreaterThan(0);
+    }
+  });
+  // RESTATED (the owner, 2026-10-20, second review, answer 1: "Only pure stances"): this used Pillow's guard, whose hop now drifts and turns again (it
+  // is in FREED); a pure counter fired in the air is the stance that holds the drift now.
+  it('in the air no drift changes: Coiny\'s counter fired in the air, the arrows neither move nor turn him until it ends', () => {
+    stage('Coiny', [700], true);
     hold(['special', 'down']);
+    expect(A('countering')).toBeGreaterThan(0);
     for (let i = 0; i < 3; i++) hold(['left']);
-    expect(A('onground'), 'up in the hop').toBe(false);
+    expect(A('onground'), 'in the air').toBe(false);
     expect(A('vx')).toBe(0);
     expect(A('face')).toBe(1);
+  });
+  it('no turning in a stance: a smash pressed while one is up fires the way the fighter already faces, never turned toward a foe behind (answer 3)', () => {
+    const smashBehind = (stance) => {
+      stage('Snowball', [-150]);
+      if (stance) { hold(['special', 'down']); expect(J('stanceStill(fighters[0])'), 'Dig In is up').toBe(true); }
+      press(['smash']);
+      let n = 0; while (!J('fighters[0]._lastSmashAt > 0') && n++ < 60) hold([]);   // it charges, then goes off by itself
+      return { face: A('face'), still: J('stanceStill(fighters[0])'), fired: J('fighters[0]._lastSmashAt > 0') };
+    };
+    const free = smashBehind(false);
+    expect(free.fired).toBe(true);
+    expect(free.face, 'out of a stance the smash aims round at the foe behind, as always').toBe(-1);
+    const held = smashBehind(true);
+    expect(held.fired).toBe(true);
+    expect(held.still, 'it fired inside Dig In').toBe(true);
+    expect(held.face, 'in the stance it fires the way he faced').toBe(1);
   });
   it('armour from anything that is not a stance does not hold anyone: a dash, an up-special\'s lift, Grassy\'s Grasstree (a lasting slowdown, kept as it was)', () => {
     stage('Snowball', [700]);
@@ -396,6 +489,13 @@ describe('hold them still (the owner, 2026-10-20: "Hold them still"): every coun
     const r = J(`(function(){ var f = fighters[0]; f._lvlCache = 2; f.countering = 12; f.onground = true;
       var a = finishAI(f, { left:true }, 'slap').left; f.countering = 0; var b = finishAI(f, { left:true }, 'slap').left; return [a, b]; })()`);
     expect(r).toEqual([false, true]);
+  });
+  it('...but a CPU that asks for a move in its stance keeps its arrows: they choose the move, so a side move stays a side move, not a jab (the reviewer, 2026-10-20)', () => {
+    stage('Coiny', [300]);
+    const r = J(`(function(){ var f = fighters[0]; f._lvlCache = 2; f.countering = 12; f.onground = true;
+      var a = finishAI(f, { right:true, attack:true }, 'slap'), b = finishAI(f, { right:true, smash:true }, 'slap'); f.countering = 0;
+      return [a.right, a.attack, b.right]; })()`);
+    expect(r).toEqual([true, true, true]);
   });
 });
 
