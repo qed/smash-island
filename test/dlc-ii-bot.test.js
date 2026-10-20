@@ -251,7 +251,7 @@ describe('SPAGGERS!: a clump flicked along the floor, 3.2%, a short tangle', () 
   });
 
   it('reaches farther than any other fighter\'s down-tilt, one way only: ahead', () => {
-    expect(at('Bot', 95).dmg, 'out where a sweep does not reach').toBe(3.2);
+    expect(at('Bot', 95).dmg, 'it lands 95 px out').toBe(3.2);
     expect(at('Bot', 135).dmg, 'but it is short').toBe(0);
     expect(at('Bot', -40).dmg, 'never behind').toBe(0);
     // Against EVERY other fighter in ROSTER, each measured the same way (at(): their own down+X, Pen standing dx ahead, the hit read
