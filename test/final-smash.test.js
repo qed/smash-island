@@ -477,7 +477,9 @@ describe('KO-level Final Smashes (the owner, 2026-10-18)', () => {
       expect(hi.id).toBe(id);
       expect(hi.ko, JSON.stringify(hi)).toBe(true);
       expect(lo.ko, JSON.stringify(lo)).toBe(false);
-      expect(lo.dmg).toBe(now);
+      // ...times the holder's own dmg stat (FIGHTER STATS, the owner 2026-10-18: "give each fighter stats"; Sidewalky 1.05, Tree 1.04)
+      const dk = W.eval(`statsFor(${JSON.stringify(name === 'default' ? 'Coiny' : name)}).dmg`);
+      expect(lo.dmg).toBe(Math.round(now * dk));
       expect([hi.holder, hi.holderPct, lo.holder, lo.holderPct]).toEqual([9, 0, 9, 0]);   // never their own hit, through the whole Final Smash
     });
   }
