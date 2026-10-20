@@ -10,6 +10,13 @@ import { makeRoom } from './helpers/net-room.js';
 // What it was: mvTick set the arrows aside for the whole of every ground tilt, and the movement block kept the facing, so a jab or a tilt rooted
 // you to the spot and could not turn. A move's own push (an `mv` step that sets or adds speed) still wins on the frames it acts, and an aerial
 // still drifts and keeps the facing it began with.
+// His answers to the review (2026-10-20):
+//   1) "Walking off cancels the tilt": a fighter who leaves the ground during a ground jab or tilt (walked or carried off a ledge or a platform's edge,
+//      the move's own push included) ends the move at once -- no box of it in the air, no facing kept -- and can jump, double-jump or up-special at once.
+//   2) "Hold them still": while a counter, reflect or armour stance is up (its countering / reflecting / armour flag, per kit) the fighter cannot walk,
+//      run or turn; free again the frame it ends. Timing, damage and what the stances do are unchanged.
+//   3) The three lasting slowdowns (Grasstree, Battery Swap, the cork) stay as they are.
+//   4) The turn frame: the sprite, the box, the hit art and the knockback all turn on the same frame (the box used to turn a frame after the sprite).
 
 let W;
 beforeAll(async () => {
@@ -119,21 +126,98 @@ describe('turning round mid-tilt turns the move', () => {
     expect(J('fighters[2].vx'), '...knocked the new way').toBeLessThan(0);
     expect(J('fighters[1].pct'), 'the foe on the old side').toBe(0);
   });
-  it('pressing the other way while it is live: the very next live frame hits the foe on the new side, and its hit art turns with it', () => {
+  // RESTATED (the owner, 2026-10-20, answer 4: the reviewer saw the sprite turn a frame before the box -- "make all of them turn on the same frame"):
+  // this pinned that the turn frame's box was still out the old way and the foe behind was hit only on the frame after. Now the turn frame hits it.
+  it('pressing the other way while it is live: that very frame the box hits the foe on the new side as the sprite turns, and its hit art and knockback turn with it', () => {
     stage('Coiny', [40, -40]);
     press(['attack', 'right'], 2);
     let n = 0; while (J('fighters[1].pct') === 0 && n++ < 12) hold(['right']);
     expect(J('fighters[1].pct'), 'the first live frame hit the foe in front').toBeCloseTo(5, 1);
     expect(A('_mv') && A('_mv.t') < A('_mv.s.st') + A('_mv.s.act')).toBeTruthy();   // still live
-    hold(['left']);                              // this frame's box was already out the old way; the turn happens after it
+    hold(['left']);                              // the turn frame: the sprite and this frame's box both face the new way
     expect(A('face')).toBe(-1);
-    expect(J('fighters[2].pct')).toBe(0);
-    hold(['left']);                              // the next live frame: the box is out the new way
-    expect(J('fighters[2].pct'), 'the foe on the new side').toBeCloseTo(5, 1);
+    expect(J('fighters[2].pct'), 'the foe on the new side, on the turn frame').toBeCloseTo(5, 1);
+    expect(J('fighters[2].vx'), '...knocked the new way').toBeLessThan(0);
     const art = J(`(function(){ var A = fighters[0], e = HIT_ART.find(function(q){ return q.k === A.idx + ':mv0'; }); return e ? [e.sh.x1, e.sh.x2, A.x] : null; })()`);
     expect(art, 'the move\'s hit art').not.toBeNull();
     expect(art[1]).toBeLessThan(art[2] - 30);   // drawn out the new way (behind where it began)
     expect(J('fighters[1].pct'), 'the old side is not hit again').toBeCloseTo(5, 1);
+  });
+  it('the turn frame\'s box is the sprite\'s: flipping the arrows every frame of a live tilt, the box drawn each frame faces the way the fighter does', () => {
+    stage('Coiny', [600]);
+    press(['attack', 'right'], 2);
+    expect(A('_mv.key')).toBe('ft');
+    const rows = [];
+    for (let i = 0; i < 16 && A('_mv'); i++) {
+      W.eval('HIT_ART.length = 0');
+      hold([i % 2 ? 'right' : 'left']);
+      const r = J(`(function(){ var A = fighters[0], e = HIT_ART.find(function(q){ return q.k === A.idx + ':mv0'; }); return e ? [Math.sign(e.sh.x2 - e.ox), A.face] : null; })()`);
+      if (r) rows.push(r);
+    }
+    expect(rows.length, 'live frames seen').toBeGreaterThan(4);
+    expect(new Set(rows.map((r) => r[1])).size, 'it turned both ways').toBe(2);
+    rows.forEach((r, i) => expect(r[0], 'live frame ' + i + ': the box faces the sprite').toBe(r[1]));
+  });
+});
+
+describe('walking off cancels the tilt (the owner, 2026-10-20: "Walking off cancels the tilt")', () => {
+  // `name` standing on a platform 160 px up whose right edge is `edge` px ahead of them, facing it
+  const ledge = (name, edge) => {
+    stage(name, [600]);
+    W.eval(`(function(){ var gy = groundY(), A = fighters[0]; worldPlats = [{ x:150, y:gy - 160, w:250 + ${edge}, h:16 }];
+      A.x = 400; A.y = gy - 160 - A.r; A.vx = 0; A.vy = 0; step(); A.x = 400; A.vx = 0; A.face = 1; A.atkCd = 0; A.spCd = 0; })()`);
+    expect(A('onground'), 'standing on the platform').toBe(true);
+  };
+  // walk right through a side-tilt until the fighter leaves the platform; returns the frames the move still had to run
+  const walkOff = (name, edge, keys = ['right']) => {
+    ledge(name, edge);
+    press(['attack', 'right'], 2);
+    expect(A('_mv.key')).toBe('ft');
+    let n = 0; while (A('onground') && n++ < 24) hold(keys);
+    expect(A('onground'), 'off the edge').toBe(false);
+    return J('fighters[0]._mv ? mvTotal(fighters[0]._mv.s) - fighters[0]._mv.t : 0');
+  };
+  it('walking off a ledge mid-tilt: the move ends, and jump works on the very next frame (it used to wait out the move)', () => {
+    const left = walkOff('Coiny', 24);
+    expect(left, 'the tilt still had frames to run').toBeGreaterThan(3);
+    const jumps = A('jumps');
+    hold(['jump', 'right']);
+    expect(A('_mv'), 'the move is over').toBeNull();
+    expect(A('vy'), 'he jumped').toBeLessThan(-5);
+    expect(A('jumps')).toBe(jumps - 1);
+    for (let i = 0; i < 3; i++) hold([]);
+    hold(['jump']);                              // and the double jump after it
+    expect(A('jumps')).toBe(jumps - 2);
+  });
+  it('...and the up-special is free on that frame too, with nothing of the tilt left in the air and the air turn back', () => {
+    walkOff('Coiny', 24);
+    W.eval('HIT_ART.length = 0');
+    hold(['special', 'jump']);                   // (up is the jump key)
+    expect(A('_mv')).toBeNull();
+    expect(A('_usedAirSpecial'), 'the up-special went off').toBe(true);
+    expect(J(`HIT_ART.some(function(q){ return q.k === fighters[0].idx + ':mv0'; })`), 'no box of the tilt in the air').toBe(false);
+    walkOff('Coiny', 24);
+    hold(['left']);
+    expect(A('face'), 'he turns in the air as a fighter with no move out does').toBe(-1);
+    expect(A('_mv')).toBeNull();
+  });
+  it('a move whose own push carries him off works the same way: Snowball\'s slide takes him over the edge, and he can jump the next frame', () => {
+    ledge('Snowball', 14);
+    press(['attack', 'right'], 2);               // (two frames of the arrow walk him a step; the slide takes him the rest of the way over)
+    expect(A('_mv.key')).toBe('ft');
+    let n = 0; while (A('onground') && n++ < 12) hold([]);
+    expect(A('onground'), 'the slide carried him off').toBe(false);
+    expect(A('_mv'), 'the move was still out as he left').toBeTruthy();
+    hold(['jump']);
+    expect(A('_mv')).toBeNull();
+    expect(A('vy')).toBeLessThan(-5);
+  });
+  it('on the ground nothing changes: the same tilt run out on the platform keeps its frames', () => {
+    ledge('Coiny', 300);
+    press(['attack', 'right'], 2);
+    let n = 0; while (A('_mv') && n++ < 30) hold(['right']);
+    expect(A('onground')).toBe(true);
+    expect(n + 2, 'the whole move, start-up to recovery').toBeGreaterThanOrEqual(J('mvTotal(MOVESETS.slap.ft)'));
   });
 });
 
@@ -187,10 +271,11 @@ describe('specials: you walk and turn through them, except the ones built around
     const go = (keys) => { stage(name); hold(keys); for (let i = 0; i < n; i++) hold(['right']); return A('x') - 400; };
     return go(['special'].concat(dir ? [dir] : [])) / go([]);
   };
+  // RESTATED (the owner, 2026-10-20, answer 2: "Hold them still"): Gaty's down-special, a reflect that does not plant, was the third row here; a
+  // reflect stance now holds you still while it is up (see 'hold them still' below).
   it('a shot, a wind-up and a held charge do not slow a walk', () => {
     expect(spWalk('Firey', null)).toBeGreaterThan(0.97);      // Fireball: a shot
     expect(spWalk('Pillow', null)).toBeGreaterThan(0.97);     // Fluff Bounce: a ring's wind-up
-    expect(spWalk('Gaty', 'down')).toBeGreaterThan(0.97);     // a reflect that does not plant
   });
   it('turning during a wind-up turns what it fires: Lifering\'s sprint goes the way he faces when the whistle ends', () => {
     stage('Lifering');
@@ -207,13 +292,110 @@ describe('specials: you walk and turn through them, except the ones built around
     expect(spWalk('Blueberry', null, 16)).toBeLessThan(0.4);
     expect(spWalk('Jack', 'down', 14)).toBeLessThan(0.4);
   });
-  it('a counter is left as it was: it never held you still, and walking does not take its stance down', () => {
+  // RESTATED (the owner, 2026-10-20, answer 2: "Hold them still"): this pinned that a counter never held you still. It does now, while it is up;
+  // holding an arrow still does not take its stance down.
+  it('a counter holds you still and unturned while it is up, and holding an arrow does not take its stance down', () => {
     stage('Needle');
     hold(['special', 'down']);
     expect(A('countering')).toBeGreaterThan(0);
-    for (let i = 0; i < 10; i++) hold(['right']);
+    const x0 = A('x');
+    for (let i = 0; i < 10; i++) hold(['left']);
     expect(A('countering')).toBeGreaterThan(0);
-    expect(spWalk('Needle', 'down')).toBeGreaterThan(0.97);
+    expect(A('x')).toBeCloseTo(x0, 1);
+    expect(A('face')).toBe(1);
+  });
+});
+
+describe('hold them still (the owner, 2026-10-20: "Hold them still"): every counter, reflect and armour stance', () => {
+  // Every stance in the game, II and the prize fighters included (found by firing every fighter's neutral, down and up special, smash and finisher and
+  // reading countering, reflecting and armour; an armour stance is the armour a stance puts up -- braceUp -- not a dash's, a lift's or a move's).
+  // [fighter, how it is fired ('D' special+down, 'N' special alone, 'S' smash), its flag, the frames it is up]. Held = frames - 1: the stance goes
+  // up after the press frame's step has moved them, and the step on which its flag runs out moves them again.
+  const STANCES = [
+    ['Leafy', 'D', 'countering', 26], ['Needle', 'N', 'countering', 26], ['Needle', 'D', 'countering', 32], ['Needle', 'S', 'countering', 60],
+    ['Teardrop', 'D', 'countering', 24], ['Coiny', 'D', 'countering', 24], ['Golf Ball', 'D', 'countering', 28], ['Rose', 'D', 'countering', 28],
+    ['Ruler', 'D', 'countering', 22], ['Ice Cube', 'D', 'countering', 26], ['Pickle', 'D', 'countering', 28], ['Fan', 'D', 'countering', 38],
+    ['Clover', 'D', 'countering', 30],
+    ['Gaty', 'N', 'reflecting', 36], ['Gaty', 'D', 'reflecting', 44], ['Blueberry', 'N', 'reflecting', 24],
+    ['Pin', 'D', 'armor', 40], ['Snowball', 'D', 'armor', 50], ['Pencil', 'D', 'armor', 36], ['Book', 'D', 'armor', 24], ['Nickel', 'D', 'armor', 44],
+    ['Bell', 'D', 'armor', 30], ['Bracelety', 'D', 'armor', 28], ['Grassy', 'D', 'armor', 36], ['Liy', 'D', 'armor', 16], ['Loser', 'N', 'armor', 22],
+    ['Loser', 'D', 'armor', 50], ['Money', 'D', 'armor', 24], ['Pillow', 'D', 'armor', 40], ['Saw', 'D', 'armor', 30], ['TV', 'D', 'armor', 30],
+    ['Dora', 'D', 'armor', 20], ['David', 'D', 'armor', 44], ['Fern', 'D', 'armor', 20], ['Sidewalky', 'D', 'armor', 50], ['Roboty', 'D', 'armor', 44],
+    ['Tree', 'D', 'armor', 50], ['Baseball', 'N', 'armor', 26], ['Box', 'D', 'armor', 36],
+  ];
+  const upExpr = (kind) => kind === 'armor' ? 'fighters[0]._braceT > 0 && fighters[0].armor > 0' : `fighters[0].${kind} > 0`;
+  // fire it standing still, then hold the arrow AWAY from the way they face every frame: held, they neither move nor turn; the frame the flag is down they do
+  const run = (name, how, kind) => {
+    stage(name, [700]);
+    if (name === 'Nickel') W.eval('var _r = Math.random; Math.random = function(){ return 0; }');   // heads: the armour (tails is a stumble, no stance)
+    hold(how === 'D' ? ['special', 'down'] : how === 'N' ? ['special'] : ['smash']);
+    if (name === 'Nickel') W.eval('Math.random = _r');
+    let n = 0; while (!J(upExpr(kind)) && n++ < 80) hold([]);
+    const up0 = J(kind === 'armor' ? 'fighters[0]._braceT' : 'fighters[0].' + kind), x0 = A('x');
+    let held = 0, bad = null, free = null, px = x0;
+    for (let i = 0; i < 90; i++) {
+      hold(['left']);
+      if (J(upExpr(kind))) { held++; if (!bad && (A('face') !== 1 || Math.abs(A('x') - x0) > 0.5)) bad = `frame ${i}: face ${A('face')} x ${(A('x') - x0).toFixed(2)}`; px = A('x'); }
+      else { free = { face: A('face'), dx: A('x') - px, stun: A('hitstun') }; break; }
+    }
+    return { up0, held, bad, free };
+  };
+  it('each holds its fighter still and unturned for exactly the frames it is up, and frees them the frame it ends', () => {
+    const wrong = [];
+    for (const [name, how, kind, frames] of STANCES) {
+      const r = run(name, how, kind), id = `${name} ${how}`;
+      if (r.up0 !== frames) wrong.push(`${id}: up ${r.up0} frames, listed ${frames}`);
+      if (r.bad) wrong.push(`${id}: moved or turned while up (${r.bad})`);
+      // Fan Theory takes itself down when its read breaks (34 frames in) and leaves him stunned: held until then, and the stun is the move's own
+      const heldWant = name === 'Fan' ? 33 : frames - 1;
+      if (r.held !== heldWant) wrong.push(`${id}: held ${r.held} steps, want ${heldWant}`);
+      if (!r.free) wrong.push(`${id}: never came down`);
+      else if (name === 'Fan') { if (!(r.free.stun > 0)) wrong.push(`${id}: the broken read should stun him`); }
+      else if (r.free.face !== -1 || !(r.free.dx < 0)) wrong.push(`${id}: not freed the frame it ended (face ${r.free.face}, dx ${r.free.dx.toFixed(2)})`);
+    }
+    expect(wrong).toEqual([]);
+  });
+  it('a counter that answers a hit comes down at once, and frees them that frame', () => {
+    stage('Coiny', [60]);
+    hold(['special', 'down']);
+    expect(A('countering')).toBeGreaterThan(0);
+    W.eval('applyHit(fighters[0], 8, -4, -3, fighters[1])');   // the foe's hit lands in the stance: the counter answers it
+    expect(A('countering')).toBe(0);
+    const x0 = A('x');
+    hold(['left']);
+    expect(A('face')).toBe(-1);
+    expect(A('x')).toBeLessThan(x0);
+  });
+  it('in the air no drift changes: Pillow\'s guard hops her up, and the arrows do not move her until it ends', () => {
+    stage('Pillow', [700]);
+    hold(['special', 'down']);
+    for (let i = 0; i < 3; i++) hold(['left']);
+    expect(A('onground'), 'up in the hop').toBe(false);
+    expect(A('vx')).toBe(0);
+    expect(A('face')).toBe(1);
+  });
+  it('armour from anything that is not a stance does not hold anyone: a dash, an up-special\'s lift, Grassy\'s Grasstree (a lasting slowdown, kept as it was)', () => {
+    stage('Snowball', [700]);
+    hold(['special']); for (let i = 0; i < 5; i++) hold([]);   // Rage Tackle: an armoured charge
+    expect(A('armor'), 'the armour of Rage Tackle').toBeGreaterThan(0);
+    expect(J('stanceStill(fighters[0])')).toBe(false);
+    stage('Grassy', [700]);
+    hold(['special']); for (let i = 0; i < 6; i++) hold([]);   // Grasstree: up the tree, armoured every frame, slower
+    expect(A('_grasstree'), 'up the tree').toBeGreaterThan(0);
+    const x0 = A('x');
+    for (let i = 0; i < 10; i++) hold(['left']);
+    expect(A('face')).toBe(-1);
+    expect(A('x')).toBeLessThan(x0 - 10);
+    stage('Ruby', [700]);
+    hold(['special', 'jump']); hold([]);                        // Gem-Hard: an up-special with armour on the way up (up is the jump key)
+    expect(A('armor'), 'the armour of Gem-Hard').toBeGreaterThan(0);
+    expect(J('stanceStill(fighters[0])')).toBe(false);
+  });
+  it('the CPU waits in its stance: with one up on the ground it lets go of the arrows (they could not walk it anywhere)', () => {
+    stage('Coiny', [300]);
+    const r = J(`(function(){ var f = fighters[0]; f._lvlCache = 2; f.countering = 12; f.onground = true;
+      var a = finishAI(f, { left:true }, 'slap').left; f.countering = 0; var b = finishAI(f, { left:true }, 'slap').left; return [a, b]; })()`);
+    expect(r).toEqual([false, true]);
   });
 });
 
