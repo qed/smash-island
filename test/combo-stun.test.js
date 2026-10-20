@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootMonolith } from './helpers/smash-golden.js';
+import { makePair } from './helpers/net-pair.js';
 
 // COMBOS AND THE HIT FREEZE (the owner, 2026-10-20: "give a tiny stun during hits, to allow combos, because I cant spam at the
 // speed of light..."; "like, an attack stun").
@@ -237,4 +238,32 @@ describe('the hit freeze ("Yes, tiny")', () => {
     expect(r.fs).toEqual([0, 0]);
     expect(r.tick).toBe(0);
   });
+});
+
+// Online the host runs the freeze and a client draws the snapshots (test/helpers/net-pair.js: fake sockets, never the relay).
+describe('the hit freeze online', () => {
+  it("a client sees the two held: the target stands where the host holds it, and the swing's pose never steps back while held", async () => {
+    const p = await makePair({ mode: 'ffa', stageId: 'goiky', count: 2 });
+    for (let i = 0; i < 40; i++) p.frame([]);
+    // the longest hold (6), so it spans several snapshots; Pen's forward tilt lands mid-swing, its timer part-way down
+    p.Hh.eval(`window.__hsf = hitStopFrames; hitStopFrames = function(){ return 6; };
+      var A = fighters[0], T = fighters[1]; T.controller = 'still';
+      T.x = A.x + A.r + T.r + 4; T.y = A.y; A.face = 1; T.face = -1; A.vx = A.vy = T.vx = T.vy = 0; A.atkCd = 0; T.invuln = 0; A.invuln = 0;`);
+    for (let i = 0; i < 6; i++) p.frame([], 'fighters[1].controller = "still";');
+    p.Hh.eval('fighters[0].atkCd = 0; fighters[1].invuln = 0;');
+    const swing = [], tx = [], held = [];
+    for (let i = 0; i < 30; i++) {
+      p.frame([], 'fighters[1].controller = "still"; for (var k in down) delete down[k];' + (i === 0 ? ' down[KEYS.attack] = true; down[KEYS.right] = true;' : ''));
+      held.push(p.Hh.eval('fighters[0]._hitStop || 0'));
+      const c = p.Cc.eval('(function(){ var A = fighters.find(function(f){ return f.idx === 0; }), T = fighters.find(function(f){ return f.idx === 1; }); return [A._atkAnim || 0, T.x]; })()');
+      swing.push(c[0]); tx.push(c[1]);
+    }
+    p.Hh.eval('hitStopFrames = window.__hsf;');
+    expect(Math.max(...held), 'the host held its fighter in the tilt').toBe(6);
+    const back = swing.slice(1).filter((s, i) => swing[i] > 0 && s > swing[i]).length;
+    expect(back, "frames the client's swing pose stepped back (it counted back up from the same timer each snapshot of the hold)").toBe(0);
+    let rev = 0, dir = 0;
+    for (let i = 1; i < tx.length; i++) { const d = Math.sign(tx[i] - tx[i - 1]); if (d && dir && d !== dir) rev++; if (d) dir = d; }
+    expect(rev, 'the target never jitters back and forth').toBe(0);
+  }, 240000);
 });
