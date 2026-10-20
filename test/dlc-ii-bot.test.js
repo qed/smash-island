@@ -637,7 +637,7 @@ describe('Boss Rush: every hitting move of Bot\'s lands on a boss too, the numbe
     ['smash', 'doSmash(A)', 200, 21],                             // the joyful leap: with no fighter to steer at it hops about 270 px forward, so he stands 200 off
     ['finisher', 'doAttackSpecial(A)', 100, 14],
   ])('%s: %s', (move, cast, dx, lost) => {
-    expect(+bossRun('Bot', dx, cast).lost.toFixed(2), `Bot ${move} on the boss`).toBe(lost);   // (3.2 arrives as 3.1999999999999886)
+    expect(bossRun('Bot', dx, cast).lost, `Bot ${move} on the boss`).toBeCloseTo(lost, 9);   // (3.2 arrives as 3.1999999999999886; the whole-number rows stay exact)
   });
 
   it('CHEER FACTORY! lands nothing on a boss (there is no hit), and is spent as a self-cheer with nobody to cheer', () => {
