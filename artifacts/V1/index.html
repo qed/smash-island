@@ -17221,6 +17221,7 @@ function hitArt(f, key, sh, o){
   e.c = (o && o.color) || (f && f.color) || '#ffffff'; e.s = (o && o.style) || ''; e.w = o && o.world ? 1 : 0; e.fd = (o && o.fade) || 0;
   if(o && o.tick) e.n = hazardT;
   e.to = o && o.to != null ? o.to : null;   // a path's far end follows this fighter (a hold, a yank: style 'tether')
+  e.sw = o && o.sweet ? [o.sweet.x, o.sweet.y, o.sweet.r, o.sweet.tip ? 1 : 0] : null;   // a swing's sweet spot (haSweet): the band's disc, and whether the tip (past it) or the hilt (in it) is sweet
   e.ox = f && f.x != null ? f.x : 0; e.oy = f && f.y != null ? f.y : 0;
   return e;
 }
@@ -17301,9 +17302,10 @@ function haGrownBody(f, m){
 }
 // A shockwave along the floor (Flower's stomps). It reaches every GROUNDED foe whose centre is within `half` across her, so it is drawn as
 // a crest -- a low band on top of each surface in that span, as long as a standard body touching its end is reached (half - HURT_R0 each
-// way). own: only the surface under her (feet within 12 of hers: her special and her finisher's wave); else every surface in the span, at
+// way), and HURT_R0 tall: a standard body standing exactly at the limit has its centre HURT_R0 up and HURT_R0 out from the end, so it
+// touches the end's top corner (a 14 px crest left it about 2 px short there). own: only the surface under her (feet within 12 of hers: her special and her finisher's wave); else every surface in the span, at
 // any height, because that is what the down-special hits (whether it should is the audit's question 2, the owner's). The nearest 12.
-const HA_CREST = 14;
+const HA_CREST = HURT_R0;
 function haCrest(f, key, half, own, color){
   const w = Math.max(4, half - HURT_R0), x0 = f.x - w, x1 = f.x + w, fy = feetY(f);
   let tops = [];
@@ -19991,15 +19993,17 @@ function assistHitSummon(s, t, dmg, gapped){
 let ASSIST_KEY_SEQ = 0;
 // HIT ART (A6): an assist trophy's reach, drawn at its true size while it can use it. Black Hole drags in whoever's centre is within 320 of
 // his; the Blender's blades land every 10 frames on whoever's centre is within 120 of it, flashing on each. Both judge the centre (the
-// audit's question 3), so their rings are at the centre's line. The 8-Ball, the Selfie Stick and Stapy draw theirs where they act. The
-// owner is no fighter (idx -2) and the key is the summon's own (_haK: a render-only counter, read by nothing else).
+// audit's question 3). The Blender's blades are a hit, so their ring is where a standard body touching it has its centre on the line
+// (haEdgeR, as the other centre-judged hits): touch it and you are hit. Black Hole's is a PULL, which drags a centre, so his ring is at the
+// centre's own line (like the reel's pull). The 8-Ball, the Selfie Stick and Stapy draw theirs where they act. The owner is no fighter
+// (idx -2) and the key is the summon's own (_haK: a render-only counter, read by nothing else).
 let HA_SUMMON_SEQ = 0;
 function haAssistOwner(s){ return { idx:-2, x:s.x, y:s.y, color:s.color }; }
 function haAssistKey(s, what){ return 'as' + (s._haK || (s._haK = ++HA_SUMMON_SEQ)) + ':' + what; }
 function haAssistZone(s){
   const act = s.act || 'rush';
   if(act === 'pull') hitArt(haAssistOwner(s), haAssistKey(s, 'pull'), { kind:'circle', x:s.x, y:s.y, r:320 }, { color:'#8a6ae0', style:'pull' });
-  else if(act === 'vortex') hitArt(haAssistOwner(s), haAssistKey(s, 'vortex'), { kind:'circle', x:s.x, y:s.y, r:120 }, { color:'#9ac0d8', style:'zone', tick:s._cd === 10 });
+  else if(act === 'vortex') hitArt(haAssistOwner(s), haAssistKey(s, 'vortex'), { kind:'circle', x:s.x, y:s.y, r:haEdgeR(120) }, { color:'#9ac0d8', style:'zone', tick:s._cd === 10 });
 }
 function assistFighter(s){ return s._as || (s._as = { team:s.team, idx:-2, _asKey:'a'+(++ASSIST_KEY_SEQ) }); }
 
@@ -24494,7 +24498,10 @@ function swarmHatchDraw(c, r, pr){   // a hatchling: a larva at first, then a bu
   // while it is held (it has not hatched: it hurts nobody) it squirms out of the cracked sac, growing into its size
   const e = pr && pr.hw > 0 && pr.delay > 0 ? Math.max(0, Math.min(1, 1 - pr.delay/pr.hw)) : 1;
   if(e < 1){ c.globalAlpha = 0.45 + 0.55*e; c.rotate(Math.sin(hazardT*0.8 + (pr.bob || 0))*0.35*(1 - e)); }
-  swarmBugAt(c, key, 0, 0, r*2.5*(0.45 + 0.55*e), pr && (pr.vx < 0 || (!pr.vx && pr.hd < 0)));
+  // HIT ART (C): grown, its long side is the width of what hits, 2r (it was drawn 2.5r tall, so 3.2-4.2r long: the swollen ones read far
+  // bigger than their hit)
+  const im = attackImage(key), asp = im ? im.naturalWidth/im.naturalHeight : 1, H = Math.min(r*2.5, 2*r/Math.max(1, asp));
+  swarmBugAt(c, key, 0, 0, H*(0.45 + 0.55*e), pr && (pr.vx < 0 || (!pr.vx && pr.hd < 0)));
 }
 function swarmBallDraw(c, r, pr){   // the ball of bugs (the caller spins it): a dark heart, and bugs anchored all round it
   c.fillStyle = '#231a33'; c.strokeStyle = '#9f00ff'; c.lineWidth = Math.max(2, r*0.1);
@@ -24564,7 +24571,8 @@ function swarmDrawTell(s){
 function swarmDrawShot(pr){
   const c = ctx, t = hazardT || 0;
   if(pr.swarm === 'sting'){   // POISON STING!: the pounce trails a green streak and afterimages along its line; the art then draws the bug itself on top (false: not the whole shot)
-    const sp = Math.hypot(pr.vx || 0, pr.vy || 0) || 1, ux = (pr.vx || 0)/sp, uy = (pr.vy || 0)/sp, r = Math.max(4, Math.min(pr.r || 20, 40)), h = 24*r/8;
+    const sp = Math.hypot(pr.vx || 0, pr.vy || 0) || 1, ux = (pr.vx || 0)/sp, uy = (pr.vy || 0)/sp, r = Math.max(4, Math.min(pr.r || 20, 40)), sim = attackImage('bugsting');
+    const h = haFitH('bugsting', r, 24*r/8, sim ? sim.naturalWidth/sim.naturalHeight : 1);   // the afterimages at the bug's own size (HA_FIT: its long side 2r)
     c.save(); c.strokeStyle = 'rgba(127,214,58,0.45)'; c.lineWidth = Math.max(2, r*0.5); c.lineCap = 'round';
     c.beginPath(); c.moveTo(pr.x - ux*r*4.5, pr.y - uy*r*4.5); c.lineTo(pr.x, pr.y); c.stroke();
     for(let i = 1; i <= 3; i++){ c.globalAlpha = 0.34 - i*0.08; swarmBugAt(c, 'bugsting', pr.x - ux*i*r*1.1, pr.y - uy*i*r*1.1, h, ux < 0); }
@@ -28557,6 +28565,21 @@ function s4Muzzle(s, ax, ay){
     a = Math.atan2(ay - m.y, ax - m.x);
   }
   return { x:m.x, y:m.y, a:a };
+}
+// HIT ART: how far along its line a round fired from (mx, my) at angle a can still hit -- render-only, the rounds' own path and test. It
+// moves S4.bullet a frame for its life (s4Gun's 60, times PROJ_LIFE, as addProj gives it), and is tested after each move; one heading down
+// ends on the first surface top its bottom (4 below its centre) crosses -- the shots' surface test (breaksOnSurface: vanTopsAt) -- and is
+// not tested on that frame, so its last hit is one step before. A freeze in phase 2 stops it on a step and starts it again from there, so
+// the steps do not move. The locked lanes are drawn this long, so none shows reach behind cover.
+function s4LaneLen(mx, my, a){
+  const vx = Math.cos(a)*S4.bullet, vy = Math.sin(a)*S4.bullet, n = Math.round(60*PROJ_LIFE);
+  let x = mx, y = my;
+  for(let i = 1; i <= n; i++){
+    x += vx; y += vy;
+    if(vy > 0){ const bN = y + 4, bP = bN - vy;
+      for(const t of vanTopsAt(x)) if(t.y >= bP - 1 && t.y <= bN + 1) return (i - 1)*S4.bullet; }
+  }
+  return n*S4.bullet;
 }
 function s4Gun(s, tgt, id){
   const ph = s4PhT(s), R = s.r, f = s.face < 0 ? -1 : 1, hand = s4Hand(s, false), H = s4Hz(s);
@@ -32920,6 +32943,9 @@ function oneShot(s, o){
 function oneHit(f, dmg, kx, ky, id, cap){ applyHit(f, dmg, kx*ONE_KB, ky*ONE_KB, null, { bossAtk:id, bossCap:(cap!=null ? cap : dmg) }); }
 function oneFoes(){ return fighters.filter(f=>!f.dead && !f._oneGhost); }   // her ghost is on her side
 function onePhase(s){ return Math.min(3, 1 + (s._marks||0)); }             // Four's and Two's phase values: 2000-1501 is 1, 1500-1001 is 2, then 3
+// HIT ART: how far her POWER DRAIN reaches, as the art draws it: every outline within (340 in phase 3, else 260) - HURT_R0 of her middle
+// (mindread's own test, hurtGap < R - HURT_R0). Render-only.
+function oneDrainR(s){ return (onePhase(s) >= 3 ? 340 : 260) - HURT_R0; }
 function oneGap(s){ return Math.round([100, 72, 52, 52][Math.min(3, s._marks||0)]*ONE_GAP_MULT); }   // bossAtkGap's own 100/72/52
 // The row a move reads: a special's by its tier (three of the five step up at each phase line), one of the eight inherited moves'
 // by her phase (ONE_DECK_TIERS) -- oneTierN is that tier, 1 to 3, which is what the twists switch on (off at 1, on from 2).
@@ -33930,6 +33956,7 @@ const ONE_MOVES = {
       if(T.volleys > 1) oneSeqEnd(s, (T.volleys - 1)*T.vgap + 12);
     }
     let drained = 0; const R = onePhase(s)>=3 ? 340 : 260;
+    hitArt({ idx:-2, x:s.x, y:s.y }, 'onedrain', { kind:'circle', x:s.x, y:s.y, r:oneDrainR(s) }, { color:'#f0d24b', style:'ring', world:true, fade:8 });   // HIT ART: the drain's reach, on the frame it lands
     for(const f of oneFoes()){ if(f.invuln>0) continue;
       if(hurtGap(f, s.x, s.y) < -HURT_R0 + R){
         f.pct += 6*ONE_DMG_MULT; drained += 6*ONE_DMG_MULT;
@@ -34194,6 +34221,8 @@ function drawOneFx(){
       for(let i=0;i<3;i++){ const q = ((1 - s._tel/ONE_TEL.screechy)*2 + i/3) % 1; ctx.globalAlpha = (1 - q)*0.6; ctx.beginPath(); ctx.arc(s.x, s.y, s.r + 20 + q*110, 0, 7); ctx.stroke(); }
     } else if(k==="mindread"){   // she reads: a star-shaped glow where she will catch what you throw
       ctx.globalAlpha = 0.25 + pulse*0.5; ctx.fillStyle = '#f0d24b'; oneStarPath(ctx, s.x, s.y, s.r*1.5, s.r*0.9, 5, hazardT*0.03); ctx.fill();
+      // HIT ART: the drain that lands with the read reaches every outline within ONE_DRAIN_R of her middle -- dashed, filling in as she winds up
+      ctx.globalAlpha = 1; haPaint({ kind:'circle', x:s.x, y:s.y, r:oneDrainR(s) }, { tell:true, p:clamp(1 - s._tel/bossTelLen(s), 0, 1), col:'#f0d24b', k:0.85 });
     }
   }
   for(const e of oneFx){
@@ -38227,7 +38256,10 @@ function updateSummons(){
           if(!s._announced){ s._announced=true; }
           s.vx += Math.sign(dx||1)*0.5; s.vx = clamp(s.vx,-9,9);
           const big = tgt.type==="boss" ? tgt.r : 0;   // a boss is as wide as its radius (Bot's rule)
-          hitArt(haAssistOwner(s), haAssistKey(s, 'rush'), { kind:'box', x:s.x-(s.r+34+big), y:s.y-(s.r+30+big), w:2*(s.r+34+big), h:2*(s.r+30+big) }, { color:'#c8b48a', style:'zone' });   // HIT ART: the band it rolls through (a centre inside it is hit), on each frame it can hit
+          // HIT ART: the band it rolls through, on each frame it can hit. It judges the target's CENTRE (inside s.r+34+big by s.r+30+big), so the
+          // band is drawn where a body touching it has its centre on that line: a standard body's (haCentreBox), or a boss's, as wide as its radius.
+          hitArt(haAssistOwner(s), haAssistKey(s, 'rush'), big ? { kind:'box', x:s.x-(s.r+34), y:s.y-(s.r+30), w:2*(s.r+34), h:2*(s.r+30) }
+            : haCentreBox(s.x-(s.r+34), s.y-(s.r+30), s.x+(s.r+34), s.y+(s.r+30)), { color:'#c8b48a', style:'zone' });
           if(Math.abs(dx)<s.r+34+big && Math.abs(tgt.y-s.y)<s.r+30+big && !(s.hostile && tgt.invuln>0)){   // (a hostile add's hit waits out a fighter's hit grace, like any boss hit: MeLife glitch, Round 17)
             if(isAssistFoe(tgt)) assistHitSummon(s, tgt, addDmg(s, 10), false);   // the boss's side: through its own damage path
             else applyHit(tgt, addDmg(s, 10), s.face*11, -9, {team:s.team,idx:-2});
@@ -38326,7 +38358,7 @@ function updateSummons(){
         } else if(act==="flash"){                // Selfie Stick: flash photo — the doc is specific that
           // it stuns "everyone FACING the camera". Stunning someone who had their back to it was
           // both wrong and unreadable: there was no way to play around a flash you cannot look away from.
-          hitArt(haAssistOwner(s), haAssistKey(s, 'flash'), { kind:'circle', x:s.x, y:s.y, r:260 }, { color:'#ffffff', world:true, fade:10 });   // HIT ART: the flash's reach (a centre inside it, facing the camera, is caught) and a ray to each face it caught
+          hitArt(haAssistOwner(s), haAssistKey(s, 'flash'), { kind:'circle', x:s.x, y:s.y, r:haEdgeR(260) }, { color:'#ffffff', world:true, fade:10 });   // HIT ART: the flash's reach (a centre within 260, facing the camera, is caught: drawn at a standard body's edge, haEdgeR) and a ray to each face it caught
           for(const f of fighters){ if(f.dead||f.team===s.team) continue;
             if(Math.hypot(f.x-s.x,f.y-s.y)<260 && Math.sign(s.x-f.x)===Math.sign(f.face||1)){
               hitArt(haAssistOwner(s), haAssistKey(s, 'ray' + f.idx), { kind:'capsule', x1:s.x, y1:s.y, x2:f.x, y2:f.y, r:3 }, { color:'#ffffff', style:'ray', world:true, fade:10 });
@@ -40423,7 +40455,10 @@ function smashObjects(f, cx, cy, rad, seen){
 // standing (the press frame), where how close you are is a choice. Travelling in, a hilt could never be sweet.
 function lungeSwing(f, m, moving){
   const cx = f.x + f.face*m.fx, cy = f.y + m.fy, fan = swingFan(f, cx, cy, m.reach);
-  hitArt(f, 'lunge', fan, { color:m.color });   // HIT ART: the wedge is tested on every frame of the lunge, so it rides the fighter on every one
+  // HIT ART: the wedge is tested on every frame of the lunge, so it rides the fighter on every one. Thrown standing (the press frame) it has a
+  // sweet spot -- hitShape judges it on the circle the move was written with (cx, cy, reach): a body touching reach*|band| of it is the hilt,
+  // one clear of it the tip -- and that part of the wedge is brighter (haSweet). Moving in, the whole wedge is full launch, so none is.
+  hitArt(f, 'lunge', fan, { color:m.color, sweet: !moving && m.band != null ? { x:cx, y:cy, r:m.reach*Math.abs(m.band), tip:m.band < 0 } : null });
   if(!shapeTargets(f, fan).length && !smashObjects(f, cx, cy, m.reach).length) return false;
   const hurt = f._hurtAnim;
   smashSwing(f, cx, cy, m.reach, m.dmg, m.kb, moving ? null : m.band, m.eff, m.n, m.up, fan);
@@ -45105,7 +45140,8 @@ function doSpecial(f){
         if(hurtGap(t,f.x,f.y) < f.r+92){ const d=Math.sign(t.x-f.x||f.face); applyHit(t,7,d*13,-8,f); n++; } }
       if(summons.length) damageSummons(f, f.x, f.y, f.r+92, 7);   // reaches a boss too (it looped over fighters only: 0 in Boss Rush)
       projectiles = projectiles.filter(p=>{ if(p.owner===f.idx || p.unbreakable) return true; if(Math.hypot(p.x-f.x,p.y-f.y) > 110) return true; puff(p.x,p.y,'#cfd8de',4); return false; });   // (an `unbreakable` shot is not shredded)
-      hitArt(f, 'snark', { kind:'circle', x:f.x, y:f.y, r:f.r + 92 }, { color:'#cfd8de', style:'ring', fade:8 });   // HIT ART: the zinger, at its reach (it shreds a shot whose centre is within 110: about the same line)
+      hitArt(f, 'snark', { kind:'circle', x:f.x, y:f.y, r:f.r + 92 }, { color:'#cfd8de', style:'ring', fade:8 });   // HIT ART: the zinger, at its reach
+      hitArt(f, 'snarkShots', { kind:'circle', x:f.x, y:f.y, r:110 }, { color:'#cfd8de', style:'zone', fade:8 });   // ...and the shots it shreds: a shot whose centre is within 110, a faint line just inside it (a shot-eating zone is drawn at the centre's line, as Marshmallow's)
       shake(4); for(let i=0;i<14;i++){ const a=Math.random()*Math.PI*2; puff(f.x+Math.cos(a)*70,f.y+Math.sin(a)*46,'#cfd8de',5); }
       f.flash=10; f.spCd=58; break; }
     case "evilpaper": { // Paper: the words that bring the other one out -- but only once he has earned it
@@ -51849,9 +51885,10 @@ function draw(){
     // leaving a mouth sits ON the character who spat it, and this pass runs underneath them —
     // measured on the real canvas, Firey's own body hid the exact moment the feature is about.
     const zone = drawShotArea(pr);   // HIT ART (A5): its real reach under it -- at the shot's true spot, even while its art is still lerping out of a mouth
-    if(projVisLerp(pr)) continue;
+    if(projVisLerp(pr)){ drawShotArea(pr, true); continue; }
     if(zone){ ctx.save(); ctx.translate(pr.x, pr.y); ctx.scale(ZONE_ICON, ZONE_ICON); ctx.translate(-pr.x, -pr.y); drawProjectile(pr); ctx.restore(); }   // a zone's own glyph, as a small icon on its decal
     else drawProjectile(pr);
+    drawShotArea(pr, true);   // ...and a trap's edge over its art: the dashed arming tell and the solid armed rim stay visible on a small trap
   }
 
   // items on the stage
@@ -52970,13 +53007,15 @@ function drawBossSprite(s){
   // MePhone4S's gun sight, from his hand on past the point it is on: red while it follows its mark, white once it has
   // locked. The telegraph, not a detail from the wiki. Drawn before the art, so it shows with the render too.
   if(s._tel>0 && s._telKind===s.attack && typeof s._aimX==='number' && typeof s._aimY==='number'){
-    const M=s4Muzzle(s, s._aimX, s._aimY), hx=M.x-s.x, hy=M.y-s.y, dx=s._aimX-s.x-hx, dy=s._aimY-s.y-hy, k=1600/(Math.hypot(dx,dy)||1);   // from the pistol's muzzle: the line is the round's own
+    const M=s4Muzzle(s, s._aimX, s._aimY), hx=M.x-s.x, hy=M.y-s.y, dx=s._aimX-s.x-hx, dy=s._aimY-s.y-hy, k=(s._aimLock ? s4LaneLen(M.x, M.y, M.a) : 1600)/(Math.hypot(dx,dy)||1);   // from the pistol's muzzle: the line is the round's own (locked, only as far as a round down it can hit: s4LaneLen)
     ctx.save(); ctx.globalAlpha = s._aimLock ? 0.9 : 0.45; ctx.strokeStyle = s._aimLock ? "#ffffff" : "#ff2a2a"; ctx.lineWidth = s._aimLock ? 3 : 2;
     ctx.beginPath(); ctx.moveTo(hx,hy); ctx.lineTo(hx+dx*k, hy+dy*k); ctx.stroke(); ctx.restore();
     // HIT ART: locked, the rounds' lanes: each round (r 8, to the outline) leaves along the aim plus its share of the spread (s4Gun), so
-    // each lane is a band 16 wide down its own line. Dashed: they have not fired yet.
+    // each lane is a band 16 wide down its own line, as far as that round can hit (s4LaneLen: it breaks on the first surface it comes down
+    // on). Dashed: they have not fired yet.
     if(s._aimLock){ const n = S4.rounds[s4PhT(s)] || 1;
-      for(let i=0;i<n;i++){ const a = M.a + (i - (n - 1)/2)*S4.spread; haPaint({ kind:'capsule', x1:hx, y1:hy, x2:hx + Math.cos(a)*1600, y2:hy + Math.sin(a)*1600, r:8 }, { tell:true, p:0, col:'#ffffff', k:0.9 }); } }
+      for(let i=0;i<n;i++){ const a = M.a + (i - (n - 1)/2)*S4.spread, L = s4LaneLen(M.x, M.y, a);
+        haPaint({ kind:'capsule', x1:hx, y1:hy, x2:hx + Math.cos(a)*L, y2:hy + Math.sin(a)*L, r:8 }, { tell:true, p:0, col:'#ffffff', k:0.9 }); } }
   }
   // QUICKSAND SHOVE!: he crouches into the charge, leaning the way he will go (his render's lean and squash carry on to the art, drawSummon restores them)
   if(s._tel>0 && s._telKind==="s4shove" && s._s4 && s._s4.dir){ const u = 1 - s._tel/bossTelLen(s); ctx.translate(0, R*0.1*u); ctx.rotate(s._s4.dir*0.28*u); ctx.scale(1 + 0.05*u, 1 - 0.09*u); }
@@ -59656,11 +59695,18 @@ function attackSpriteAngle(e, pr){
   if(e.aim) return Math.atan2(pr.vy||0, pr.vx||0) + (e.rot || 0);
   return 0;
 }
+// HIT ART (A5, C): art that reached well past what hits. A shot hits a body whose outline comes within its r, and each of these was drawn
+// 1.4-3x that across its long side (Pen's cap 2.75r long, Gelatin's syringe 3.25r, the Bug Swarm's stinger 5.9r wide). The files are cropped
+// tight, so the drawn box is the art: these are drawn with their long side no longer than the disc's width, 2r, and the art never promises
+// more than the hit. Only these keys -- every other shot's art is drawn at or inside its disc already (the Firey Speaker Box's pieces, Evil
+// Leafy's frozen self, Purple Face's magnet and Springy's toy hit nobody: no disc to match). Delete a key to draw that art at its old size.
+const HA_FIT = { cap:1, freeze:1, bugsting:1 };
+function haFitH(key, r, h, asp){ if(!HA_FIT[key] || !(r > 0)) return h; const L = Math.max(h, h*asp); return L > 2*r ? h*2*r/L : h; }
 // Draw a loaded attack sprite for a shot, on any context (the test hands in a counting one).
 function drawAttackSprite(c, pr, key, im){
   const e = ATTACK_SPRITES[key];
-  const k = e.fixed ? 1 : Math.min((pr.r||8)/8, e.cap || Infinity);
-  const h = e.h * k, w = h * (im.naturalWidth / im.naturalHeight);
+  const k = e.fixed ? 1 : Math.min((pr.r||8)/8, e.cap || Infinity), asp = im.naturalWidth / im.naturalHeight;
+  const h = haFitH(key, pr.r, e.h * k, asp), w = h * asp;
   c.save(); c.translate(pr.x, pr.y);
   if(e.glow){ c.fillStyle = e.glow; c.beginPath(); c.arc(0, 0, Math.max(w, h)*0.72, 0, 7); c.fill(); }
   const a = attackSpriteAngle(e, pr); if(a) c.rotate(a);
@@ -60648,6 +60694,7 @@ function haStrike(c, sh, k, col, edge, st){
   c.globalAlpha = 0.95*k; c.fillStyle = col; c.fill();
   c.globalAlpha = 0.9*k; c.strokeStyle = '#ffffff'; c.lineWidth = 1.2; c.stroke();
 }
+// o.part: 'fill' draws only the fill (and a tell's filled part), 'edge' only the edge -- so a trap's ring can go over its own art (drawShotArea).
 function haDraw(c, sh, o){
   const k = o.k == null ? 1 : o.k; if(k <= 0.01) return;
   const col = o.col || '#ffffff', edge = haDark(col) ? '#ffffff' : col, st = o.style || '';
@@ -60655,7 +60702,8 @@ function haDraw(c, sh, o){
   if(st === 'strike' || st === 'needle' || st === 'ray' || st === 'glint' || st === 'tether'){ haStrike(c, sh, k, col, edge, st); return; }
   if(o.tell || st === 'pull'){
     const p = o.tell ? (o.p || 0) : 0;
-    if(p > 0.02){ haPath(c, sh, p); c.globalAlpha = 0.2*k; c.fillStyle = col; c.fill(); }
+    if(p > 0.02 && o.part !== 'edge'){ haPath(c, sh, p); c.globalAlpha = 0.2*k; c.fillStyle = col; c.fill(); }
+    if(o.part === 'fill') return;
     haPath(c, sh, 1); c.setLineDash([7, 6]);
     c.globalAlpha = 0.45*k; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4; c.stroke();
     c.globalAlpha = 0.9*k; c.strokeStyle = edge; c.lineWidth = 2; c.stroke();
@@ -60670,7 +60718,8 @@ function haDraw(c, sh, o){
     return;
   }
   haPath(c, sh, 1);
-  c.globalAlpha = Math.min(0.45, (st === 'zone' ? 0.12 : st === 'ring' ? 0.15 : 0.22)*(o.tick ? 2 : 1))*k; c.fillStyle = col; c.fill();
+  if(o.part !== 'edge'){ c.globalAlpha = Math.min(0.45, (st === 'zone' ? 0.12 : st === 'ring' ? 0.15 : 0.22)*(o.tick ? 2 : 1))*k; c.fillStyle = col; c.fill(); }
+  if(o.part === 'fill') return;
   const w = st === 'ring' ? 2 : 1;
   c.globalAlpha = 0.5*k; c.strokeStyle = '#1c1c1c'; c.lineWidth = 4*w + 0.5; c.stroke();
   c.globalAlpha = 0.95*k; c.strokeStyle = edge; c.lineWidth = 2*w; c.stroke();
@@ -60716,15 +60765,28 @@ function drawHitArt(){
   for(const e of HIT_ART){
     const f = haOwner(e.o); if(haHidden(f)) continue;
     const age = Math.max(0, hazardT - e.t), fd = e.fd || HIT_ART_FADE;
-    let sh = e.sh;
+    let sh = e.sh, sw = e.sw;
     // On its live frame a shape rides its fighter where the fighter is DRAWN (between steps on a fast screen, or gliding between snapshots
     // on a client), so the two never part; once its hit is over it stays where it was.
-    if(age === 0 && !e.w && f && !f.dead){ const dx = f.x - e.ox, dy = f.y - e.oy; if((dx || dy) && Math.abs(dx) + Math.abs(dy) < 120) sh = haMove(sh, dx, dy); }
+    if(age === 0 && !e.w && f && !f.dead){ const dx = f.x - e.ox, dy = f.y - e.oy; if((dx || dy) && Math.abs(dx) + Math.abs(dy) < 120){ sh = haMove(sh, dx, dy); if(sw) sw = [sw[0] + dx, sw[1] + dy, sw[2], sw[3]]; } }
     if(e.to != null && sh.kind === 'capsule'){ const g = haOwner(e.to); if(!g || g.dead || haHidden(g)) continue;   // a tether: from where its owner is to where the one held is
       const a = f && !f.dead ? f : null; sh = { kind:'capsule', x1:a ? a.x : sh.x1, y1:a ? a.y : sh.y1, x2:g.x, y2:g.y, r:sh.r }; }
-    haDraw(c, sh, { tell:e.m === 't', p:e.p, k:age === 0 ? 1 : Math.max(0, 1 - age/(fd + 1)), col:e.c, style:e.s, tick:e.n != null && hazardT - e.n <= 1 && age <= 1 });
+    const k = age === 0 ? 1 : Math.max(0, 1 - age/(fd + 1));
+    haDraw(c, sh, { tell:e.m === 't', p:e.p, k:k, col:e.c, style:e.s, tick:e.n != null && hazardT - e.n <= 1 && age <= 1 });
+    if(sw && e.m !== 't' && k > 0.01) haSweet(c, sh, sw, e.c, k);
   }
   c.restore(); c.globalAlpha = 1; c.setLineDash([]);
+}
+// A swing's sweet spot (sw: [x, y, r, tip]): the part of its shape where it lands at full launch, filled brighter and clipped to the shape --
+// the hilt is the part inside the disc (x, y, r), the tip the part clear of it -- with the disc's edge, where sweet turns sour, dashed.
+function haSweet(c, sh, sw, col, k){
+  if(!(sw[2] > 0)) return;
+  c.save(); haPath(c, sh, 1); c.clip();
+  c.beginPath(); if(sw[3]) c.rect(-1e5, -1e5, 2e5, 2e5); c.moveTo(sw[0] + sw[2], sw[1]); c.arc(sw[0], sw[1], sw[2], 0, Math.PI*2);
+  c.globalAlpha = 0.28*k; c.fillStyle = haDark(col) ? '#ffffff' : col; c.fill(sw[3] ? 'evenodd' : 'nonzero');
+  c.beginPath(); c.arc(sw[0], sw[1], sw[2], 0, Math.PI*2); c.setLineDash([5, 4]);
+  c.globalAlpha = 0.8*k; c.strokeStyle = '#ffffff'; c.lineWidth = 1.5; c.stroke();
+  c.restore(); c.setLineDash([]);
 }
 // ---- HIT ART: counter and reflect stances (A4) -------------------------------------------------------------------------------------
 // A counter answers any hit that lands on the fighter's own outline, and a reflect turns back any enemy shot that touches it, so the art is
@@ -60801,20 +60863,26 @@ function haZoneDecal(c, x, y, r, col, zone){
   c.restore();
 }
 // One shot's disc, under its art. Returns the zone it is ('' if none), so the pass can shrink a zone's glyph to an icon.
-function drawShotArea(pr){
+// edge: the second call, after the art -- a trap's (or a zone's) edge, dashed while it arms and solid once armed, goes OVER its own art,
+// so a small trap's sprite cannot hide which it is; the first call drew only its fill. A shot in flight is all drawn by the first call.
+function drawShotArea(pr, edge){
   const z = Array.isArray(pr.hz) ? pr.hz : null, st = z ? (z[0] | 0) : haShotState(pr);
-  if(!st || !(pr.r > 0)) return '';
+  if(!st || !(pr.r > 0) || (edge && st === 1)) return '';
   const zone = z ? (z[2] || '') : (st >= 2 ? haShotZone(pr) : '');
   const col = pr.color || '#ffffff', sh = { kind:'circle', x:pr.x, y:pr.y, r:pr.r }, c = ctx;
   c.save();
+  const part = edge ? 'edge' : 'fill';
   if(st === 1){   // in flight: faint, so a volley does not turn to soup -- the edge is what matters
     const edge = haDark(col) ? '#ffffff' : col;
     c.beginPath(); c.arc(pr.x, pr.y, pr.r, 0, Math.PI*2);
     c.globalAlpha = 0.12; c.fillStyle = col; c.fill();
     c.globalAlpha = 0.35; c.strokeStyle = '#1c1c1c'; c.lineWidth = 2.6; c.stroke();
     c.globalAlpha = 0.85; c.strokeStyle = edge; c.lineWidth = 1.2; c.stroke();
-  } else if(st === 3) haDraw(c, sh, { tell:true, p: z ? (z[1] || 0)/100 : haShotArm(pr), col:col });
-  else { if(zone) haZoneDecal(c, pr.x, pr.y, pr.r, col, zone); haDraw(c, sh, { col:col, style:'zone' }); }
+  } else if(st === 3) haDraw(c, sh, { tell:true, p: z ? (z[1] || 0)/100 : haShotArm(pr), col:col, part:part });
+  else { if(zone && !edge) haZoneDecal(c, pr.x, pr.y, pr.r, col, zone); haDraw(c, sh, { col:col, style:'zone', part:part }); }
+  if(edge){   // and a thin white core on that edge (dashed with it while it arms): a trap's art is often its own colour and its size, which hid the edge
+    c.beginPath(); c.arc(pr.x, pr.y, pr.r, 0, Math.PI*2); if(st === 3) c.setLineDash([7, 6]);
+    c.globalAlpha = 0.9; c.strokeStyle = '#ffffff'; c.lineWidth = 1.2; c.stroke(); }
   c.restore(); c.globalAlpha = 1; c.setLineDash([]);
   return zone;
 }
@@ -60840,7 +60908,8 @@ function haPack(e){
           : s.kind === 'box' ? [3, r1(s.x), r1(s.y), r1(s.w), r1(s.h)]
           : s.kind === 'cut' ? [4, r1(s.x), r1(s.y), r1(s.r), r1(s.x0), r1(s.y0), r1(s.x1), r1(s.y1)]
           : s.kind === 'poly' ? [5].concat(s.pts.map(r1)) : [2, r1(s.x), r1(s.y), r1(s.r)];
-  return [e.o, e.t, e.m === 't' ? 1 : 0, Math.round(e.p*100), e.c, e.s || 0, e.w ? 1 : 0, Math.round(e.ox), Math.round(e.oy), e.fd || 0, e.n == null ? -1 : e.n, g, e.to == null ? -1 : e.to];
+  return [e.o, e.t, e.m === 't' ? 1 : 0, Math.round(e.p*100), e.c, e.s || 0, e.w ? 1 : 0, Math.round(e.ox), Math.round(e.oy), e.fd || 0, e.n == null ? -1 : e.n, g, e.to == null ? -1 : e.to,
+    e.sw ? [r1(e.sw[0]), r1(e.sw[1]), r1(e.sw[2]), e.sw[3] ? 1 : 0] : -1];
 }
 function haUnpack(r){
   if(!Array.isArray(r) || !Array.isArray(r[11])) return null;
@@ -60851,7 +60920,8 @@ function haUnpack(r){
            : K === 'cut' ? { kind:K, x:g[1], y:g[2], r:g[3], x0:g[4], y0:g[5], x1:g[6], y1:g[7] }
            : K === 'poly' ? { kind:K, pts:g.slice(1) } : { kind:K, x:g[1], y:g[2], r:g[3] };
   return { k:'', o:r[0], t:r[1], m:r[2] ? 't' : 'l', p:(r[3] || 0)/100, c:typeof r[4] === 'string' ? r[4] : '#ffffff', s:typeof r[5] === 'string' ? r[5] : '',
-    w:r[6] ? 1 : 0, ox:r[7], oy:r[8], fd:r[9] || 0, n:r[10] >= 0 ? r[10] : null, to:r[12] >= 0 ? r[12] : null, sh:sh };
+    w:r[6] ? 1 : 0, ox:r[7], oy:r[8], fd:r[9] || 0, n:r[10] >= 0 ? r[10] : null, to:r[12] >= 0 ? r[12] : null, sh:sh,
+    sw:Array.isArray(r[13]) && r[13].length === 4 ? r[13] : null };
 }
 // TAKING A HIT. The rig already shakes a hurt fighter, but a shake of a few pixels on a 67px
 // sprite is the same problem the attack had — real in the numbers, invisible in play. A burst of

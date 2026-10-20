@@ -347,6 +347,8 @@ describe('Final Smash rings and assist trophies', () => {
     expect(lands.find((c) => c.t === r.w + 12 && c.R === 320)).toEqual({ t: r.w + 12, k: 'land', R: 320, u: 0 });
   });
 
+  // The Blender, the 8-Ball and the Selfie Stick judge a target's CENTRE, so each is drawn where a standard body touching it has its centre on the
+  // line (HURT_R0 in from it); Black Hole's pull drags a centre and stays at the centre's own line.
   it("assists: Black Hole's pull and the Blender's blades at their reach (flashing as they land), the 8-Ball's band, the Selfie Stick's flash and rays", () => {
     const r = page('Coiny', 100, 0, `
       var out = {}; function stage(act){ summons = []; HIT_ART.length = 0; var s = summonAssistNamed(A, ASSIST_ROSTER.find(function(x){ return x.act === act; })); return s; }
@@ -354,7 +356,7 @@ describe('Final Smash rings and assist trophies', () => {
       var e = HIT_ART.find(function(q){ return q.s === 'pull' && q.t === hazardT; }); out.pull = e ? e.sh.r : null;
       s = stage('vortex'); var ticks = 0, hits = 0, frames2 = 0;
       for (var i=0;i<40;i++){ D.x = s.x + 60; D.y = s.y; D.invuln = 0; var p0 = D.pct; step();
-        var v = HIT_ART.find(function(q){ return q.s === 'zone' && q.t === hazardT && q.sh.r === 120; }); if(v) frames2++;
+        var v = HIT_ART.find(function(q){ return q.s === 'zone' && q.t === hazardT && q.sh.r === 120 - HURT_R0; }); if(v) frames2++;
         var hit = D.pct > p0, tick = !!(v && v.n === hazardT); if(tick) ticks++; if(hit && !tick) hits = -999; if(hit) hits++; }
       out.vortex = { frames:frames2, ticks:ticks, hits:hits };
       s = stage('rush'); D.x = s.x + 300; D.y = s.y; step();
@@ -366,8 +368,8 @@ describe('Final Smash rings and assist trophies', () => {
     expect(r.vortex.frames).toBe(40);
     expect(r.vortex.ticks).toBeGreaterThan(2);
     expect(r.vortex.hits, 'every blade hit lands on a frame the ring flashes').toBe(r.vortex.ticks);
-    expect(r.rush).toEqual({ w: 2 * (r.sr + 34), h: 2 * (r.sr + 30), cx: 0, cy: 0 });
-    expect(r.flash).toEqual(['c260', 'ray']);
+    expect(r.rush).toEqual({ w: 2 * (r.sr + 34 - 24), h: 2 * (r.sr + 30 - 24), cx: 0, cy: 0 });
+    expect(r.flash).toEqual(['c236', 'ray']);
   });
 });
 
