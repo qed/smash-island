@@ -304,14 +304,16 @@ function lollipop() {
     emit(F, 'sucker', L.trim(im, 2), { src: ['LipOpened.png', 'lollipop.png (her stick, limbs and eyes)'], method: 'official head on her own stick, with her own eyes', flip: false }); }
   // CANDY TWIRL (drawn: no show file of it exists): her own render turning round once. A candy head is a ball, so its outline stays; her face
   // slides round it and squeezes as it turns, gone round the back; her arms and legs swap sides past the quarter turn.
-  [0, 60, 120, 180, 240, 300].forEach((deg, i) => {
+  // From 90 to 270 degrees the face is round the back and the head is the same ball, so 120, 180 and 240 are ONE picture: twirl-3 is made
+  // once and shown for all three steps (POSE_SETS.Lollipop), and the keys keep their degrees (twirl-6 is 300).
+  [[0, 1], [60, 2], [120, 3], [300, 6]].forEach(([deg, n]) => {
     const a = deg * Math.PI / 180, c = Math.cos(a), back = c < 0;
     const im = back ? L.flipX(blankHead) : L.clone(blankHead);
     if (back) {   // the head's shine stays where the light is
       const head = L.crop(blankHead, hb.x - 1, hb.y - 1, hb.w + 2, hb.h + 2); L.paste(im, head, { x: hb.x - 1, y: hb.y - 1 });
     }
     if (c > 0.08) putFace(im, ownFace, faceRect.x + faceRect.w / 2 + Math.sin(a) * hb.w * 0.36, faceRect.y + faceRect.h / 2, { squeeze: c });
-    emit(F, `twirl-${i + 1}`, L.trim(im, 2), { src: ['lollipop.png'], method: 'drawn: her own render turned (no show file)', faceless: c <= 0.08, note: c <= 0.08 ? 'turned away: the back of her head' : '', flip: true });   // one flag for the whole turn: hers
+    emit(F, `twirl-${n}`, L.trim(im, 2), { src: ['lollipop.png'], method: 'drawn: her own render turned (no show file)', faceless: c <= 0.08, note: c <= 0.08 ? 'turned away: the back of her head' : '', flip: true });   // one flag for the whole turn: hers
   });
   emit(F, 'flung-1', toBase(flung1, F), { src: ['Lollipop - Flung and Kicked0001.png'], method: 'cut-out (wiki pose)' });
   emit(F, 'flung-2', toBase(S('Lollipop - Flung and Kicked0002.png'), F), { src: ['Lollipop - Flung and Kicked0002.png'], method: 'cut-out (wiki pose)' });
@@ -354,9 +356,22 @@ function goo() {
     squeezeEyes(im, b.x + b.w * 0.5, b.y + b.h * 0.3, b.w * 0.26, b.h * 0.16, 4);
     putFace(im, M(28), b.x + b.w * 0.5, b.y + b.h * 0.66, { s: ms * 0.7, fx: 175, fy: 117 });
     emit(F, 'splat', im, { src: ['Goo Form D 2.png', 'GooMouth0028.png'], method: 'official form + official mouth, eyes drawn', flip: false }); }
-  emit(F, 'arm', toBase(L.load(join(SRC, "Goo's Muscular Arm (S4E4).png")), F, 0.9), { src: ["Goo's Muscular Arm (S4E4).png"], method: 'cut-out (wiki pose)' });
+  // his arm: he faces right in it, his eyes and grin turned to the arm; the measure (-0.036) reads the arm's bulk as ink, so the flag is by eye
+  emit(F, 'arm', toBase(L.load(join(SRC, "Goo's Muscular Arm (S4E4).png")), F, 0.9), { src: ["Goo's Muscular Arm (S4E4).png"], method: 'cut-out (wiki pose)', flip: false });
   emit(F, 'hand', toBase(D('Goo raises his hand in the S4.png'), F), { src: ['Goo raises his hand in the S4.webp'], method: 'cut-out (wiki pose)' });
-  emit(F, 'scream', toBase(S('Goo screaming.png'), F), { src: ['Goo screaming.png'], method: 'cut-out (wiki pose)' });
+  // HURT: screaming. The file is small (148x142, so blown up) and was cut off a red ground, whose tint runs up to ~5px in: those pixels go to
+  // his outline's blue (a red or purple pixel within 6px of the edge: r over g, which none of his blues is; his red mouth is far inside), and
+  // his blue, a purple-blue in this frame (hue ~229), is turned to his own (~215).
+  { const im = toBase(S('Goo screaming.png'), F);
+    L.decontaminate(im, (r, g, b) => r > g, { band: 6, reach: 3, passes: 6 });
+    for (let i = 0; i < im.d.length; i += 4) {
+      const r = im.d[i], g = im.d[i + 1], b = im.d[i + 2]; if (!im.d[i + 3] || !(b > r + 40 && b > g + 20)) continue;
+      const lo = Math.min(r, g), hue = 60 * (4 + (r - g) / (b - lo)), to = hue - 14 * Math.max(0, Math.min(1, (hue - 195) / 20));
+      if (to === hue) continue;
+      const t = (4 - to / 60) * (b - lo);   // b stays the max and lo the min: solve the hue for the middle channel
+      if (t >= 0) { im.d[i] = lo; im.d[i + 1] = lo + t; } else { im.d[i + 1] = lo; im.d[i] = lo - t; }
+    }
+    emit(F, 'scream', im, { src: ['Goo screaming.png'], method: 'cut-out (wiki pose), its red fringe cleaned and its blue matched to his render' }); }
   emit(F, 'happy', toBase(S('Goo happy s4.png'), F), { src: ['Goo happy s4.png'], method: 'cut-out (wiki pose)' });
 }
 
@@ -368,11 +383,34 @@ function tissues() {
   const F = 'Tissues', base = B(F);
   const faceRect = { x: 36, y: 74, w: 98, h: 76 };
   emit(F, 'sniff', toBase(S('TissuesSniff.png'), F), { src: ['TissuesSniff.png'], method: 'cut-out (wiki pose)' });
-  // the sneeze: Tissues Sneezing.png with its green jet taken off (the jet is the attack's own art, attacks/condishawn.png)
-  { const im = S('Tissues Sneezing.png');
-    for (let i = 0; i < im.d.length; i += 4) { const [r, g, b] = [im.d[i], im.d[i + 1], im.d[i + 2]]; if ((b < 110 && g > r + 25 && g > b + 25) || (g > r + 25 && g > b + 55)) im.d[i + 3] = 0; }   // the jet, and its pale highlight
+  // the sneeze: Tissues Sneezing.png with its green jet taken off (the jet is the attack's own art, attacks/condishawn.png). The jet's green is
+  // looked for only left of his lips (x < 222: the green drop under his eye is his, and stays); its soft edge goes with it. The notch its root
+  // cut in his face, from the box's left edge to his lips, is filled from the face above and below it, along the edge's slant; then
+  // everything left of that edge (x = 179 at y = 200, 0.1385 px further right a row) down to his foot goes: the jet's dark outline, its splash.
+  { const im = S('Tissues Sneezing.png'), w = im.w, slant = 0.1385, edge = (y) => 179 + (y - 200) * slant;
+    const jet = (r, g, b) => (b < 110 && g > r + 25 && g > b + 25) || (g > r + 25 && g > b + 55);   // the jet, and its pale highlight
+    const hole = new Uint8Array(w * im.h);
+    for (let y = 0; y < im.h; y++) for (let x = 0; x < 222; x++) { const i = (y * w + x) * 4; if (im.d[i + 3] > 0 && jet(im.d[i], im.d[i + 1], im.d[i + 2])) hole[y * w + x] = 1; }
+    for (let pass = 0; pass < 2; pass++) {   // its soft edge: a pixel by the hole greener than his face (g - b over 28; his teal is ~18)
+      const grow = [];
+      for (let y = 1; y < im.h - 1; y++) for (let x = 1; x < 222; x++) { const p = y * w + x, i = p * 4;
+        if (hole[p] || !(im.d[i + 1] - im.d[i + 2] > 28)) continue;
+        if (hole[p - 1] || hole[p + 1] || hole[p - w] || hole[p + w]) grow.push(p); }
+      for (const p of grow) hole[p] = 1;
+    }
+    const src = L.clone(im);
+    for (let y = 250; y <= 310; y++) for (let x = Math.floor(edge(y)) - 1; x < 222; x++) {
+      const p = y * w + x; if (!hole[p]) continue;
+      let a = -1, b = -1, ka = 0, kb = 0;
+      for (let k = 1; k < 40 && a < 0; k++) { const pp = (y - k) * w + Math.round(x - k * slant); if (!hole[pp]) { a = pp; ka = k; } }
+      for (let k = 1; k < 40 && b < 0; k++) { const pp = (y + k) * w + Math.round(x + k * slant); if (!hole[pp]) { b = pp; kb = k; } }
+      const t = ka / (ka + kb), i = p * 4;
+      for (let ch = 0; ch < 4; ch++) im.d[i + ch] = src.d[a * 4 + ch] * (1 - t) + src.d[b * 4 + ch] * t;
+    }
+    for (let y = 0; y < im.h; y++) for (let x = 0; x < w; x++) { const p = y * w + x;
+      if ((y >= 240 && y <= 346 && x < Math.floor(edge(y)) - 1) || (hole[p] && x < Math.floor(edge(y)) - 1)) im.d[p * 4 + 3] = 0; }
     L.keepParts(im, (p) => p.n > 400);
-    emit(F, 'sneeze', toBase(im, F), { src: ['Tissues Sneezing.png'], method: 'cut-out (wiki pose), the snot jet taken off', flip: true }); }   // the jet went left: he sneezes to his left
+    emit(F, 'sneeze', toBase(im, F), { src: ['Tissues Sneezing.png'], method: 'cut-out (wiki pose), the snot jet taken off', flip: true }); }   // he faces left (the jet went left): he sneezes to his left
   // the four face frames (Tissues Face 1-4, on flat backgrounds): keyed against the border's colour
   for (const n of [1, 2, 3, 4]) {
     const fr = S(`Tissues Face ${n}.png`), bg = L.borderColour(fr);
@@ -398,10 +436,13 @@ function tissues() {
 function box() {
   const F = 'Box';
   // Everything Packed: her flaps opening, the S4E6 set, all four at ONE scale (one shot of the episode: the box is the same size in each),
-  // her front face 160px across as in her render (500px in the frames). Frame 1 is the file box-open-flaps.png was made from.
-  for (const n of [1, 2, 3, 4]) emit(F, `flaps-${n}`, L.trim(L.scaleBy(L.trim(S(`Box with Open Flaps ${n} (S4E6).png`), 0), 160 / 500), 2), { src: [`Box with Open Flaps ${n} (S4E6).png`], method: 'cut-out (wiki pose)' });
-  emit(F, 'running', toBase(S('Box Running Out of the Maze (S4E3).png'), F), { src: ['Box Running Out of the Maze (S4E3).png'], method: 'cut-out (wiki pose)' });
-  emit(F, 'panicked', toBase(S('Box in a Panicked Expression (S4E3).png'), F), { src: ['Box in a Panicked Expression (S4E3).png'], method: 'cut-out (wiki pose)' });
+  // her front face 160px across as in her render (500px in the frames). Frame 1 is the file the g1 box-open-flaps.png (gone now) was made from.
+  // Frames 1-3 face the front; frame 4 has turned three-quarters to the viewer's left, so it is flipped (she turns to the foe).
+  for (const n of [1, 2, 3, 4]) emit(F, `flaps-${n}`, L.trim(L.scaleBy(L.trim(S(`Box with Open Flaps ${n} (S4E6).png`), 0), 160 / 500), 2), { src: [`Box with Open Flaps ${n} (S4E6).png`], method: 'cut-out (wiki pose)', flip: n === 4 });
+  // running and panicked face right, as her render does (the side panel on the left, the eyes shifted right, the front leg striding right);
+  // the measure (-0.037, -0.041) reads the side panel as ink, so their flags are by eye
+  emit(F, 'running', toBase(S('Box Running Out of the Maze (S4E3).png'), F), { src: ['Box Running Out of the Maze (S4E3).png'], method: 'cut-out (wiki pose)', flip: false });
+  emit(F, 'panicked', toBase(S('Box in a Panicked Expression (S4E3).png'), F), { src: ['Box in a Panicked Expression (S4E3).png'], method: 'cut-out (wiki pose)', flip: false });
   emit(F, 'smiling', toBase(S('Box Smiling (S4E3).png'), F), { src: ['Box Smiling (S4E3).png'], method: 'cut-out (wiki pose)' });
   // KO: crushed and bandaged. The fill is a different shape (squashed flat), so it is sized by eye to her width rather than by area.
   emit(F, 'damaged', toBase(S('Box Damage.png'), F, 1.0), { src: ['Box Damage.png'], method: 'cut-out (wiki pose)', faceless: true, note: 'no face: her crushed, bandaged body' });
@@ -425,8 +466,9 @@ function bell() {
     if (c > 0.12) putFace(body, face, cx + fdx + Math.sin(a) * body.w * 0.34, cy + fdy, { squeeze: c });
     emit(F, `spin-${i + 1}`, body, { src: [`Bell Body Side turn000${n}.png`, 'bell.png (her face)'], method: 'official body + her own face', faceless: c <= 0.12, note: c > 0.12 ? '' : 'turned away: the back of the bell', flip: false });   // one flag for the whole turn: hers
   });
-  // HIT: the official zapped bodies (tipped over, a two-frame flicker), her shouting face turned with them.
-  for (const n of [1, 2, 3, 4]) {
+  // HIT: the official zapped bodies (tipped over, a two-frame flicker), her shouting face turned with them. The wiki's zapped0003 and 0004
+  // are byte for byte 0001 and 0002, so the flicker is two pictures.
+  for (const n of [1, 2]) {
     const body = toBase(S(`Bell zapped000${n}.png`), F), [cx, cy] = fillCentre(body), rot = 0.42, s = Math.sin(rot), c = Math.cos(rot);
     putFace(body, face, cx + fdx * c - fdy * s, cy + fdx * s + fdy * c, { rot });
     emit(F, `zapped-${n}`, body, { src: [`Bell zapped000${n}.png`, 'bell.png (her face)'], method: 'official body + her own face' });
@@ -436,7 +478,12 @@ function bell() {
 // ---- TEDDY BEAR ------------------------------------------------------------------------------------------------------------------------
 function teddy() {
   const F = 'Teddy Bear';
-  emit(F, 'paint', toBase(S('Teddy Bear Paint.png'), F), { src: ['Teddy Bear Paint.png'], method: 'cut-out (wiki pose)' });
+  // the paint hit: the cut-out carries a white-to-grey fringe (round her tail's curl, and paling her outline by it) and a green one (round her
+  // feet) from old grounds; in the 2px edge band those go to the colour inside (her limbs' black, her outline's brown: neither is grey, pale
+  // or green)
+  { const im = toBase(S('Teddy Bear Paint.png'), F);
+    L.decontaminate(im, (r, g, b) => (g > r + 12 && g > b + 12) || (Math.max(r, g, b) > 40 && Math.max(r, g, b) - Math.min(r, g, b) < 30) || (Math.max(r, g, b) > 150 && Math.max(r, g, b) - Math.min(r, g, b) < 60), { band: 2, reach: 4, passes: 2 });
+    emit(F, 'paint', im, { src: ['Teddy Bear Paint.png'], method: 'cut-out (wiki pose), its white and green fringes cleaned' }); }
   emit(F, 'fists', toBase(S('TB.png'), F), { src: ['TB.png'], method: 'cut-out (wiki pose)' });
   emit(F, 'mad', toBase(S('TeddyBearMad.png'), F), { src: ['TeddyBearMad.png'], method: 'cut-out (wiki pose)' });
   emit(F, 'grief', toBase(S('TeddyBear-Grief.png'), F), { src: ['TeddyBear-Grief.png'], method: 'cut-out (wiki pose)' });
@@ -446,15 +493,14 @@ function teddy() {
   const union = frames.map((f) => L.bbox(f)).reduce((u, b) => ({ x0: Math.min(u.x0, b.x), y0: Math.min(u.y0, b.y), x1: Math.max(u.x1, b.x + b.w), y1: Math.max(u.y1, b.y + b.h) }), { x0: 1e9, y0: 1e9, x1: 0, y1: 0 });
   frames.forEach((f, i) => {
     const c = L.crop(f, union.x0 - 2, union.y0 - 2, union.x1 - union.x0 + 4, union.y1 - union.y0 + 4);
-    emit(F, `laugh-${String(i + 1).padStart(2, '0')}`, L.scaleBy(c, s), { src: ['Teddy bear laugh gif transparent.gif'], method: `official GIF, frame ${i + 1} of 17`, flip: true });   // the gun points left
+    emit(F, `laugh-${String(i + 1).padStart(2, '0')}`, L.keepParts(L.scaleBy(c, s), (p) => p.n >= 40), { src: ['Teddy bear laugh gif transparent.gif'], method: `official GIF, frame ${i + 1} of 17`, flip: true });   // the gun points left
   });
-  // HURT ("No!!") and FRONT OF THE CROWD (Teddy runs for Bell): both episode frames are cut off at her hips by the frame's edge, so their
-  // faces go on her own render (the scream with her hands on her head; the tear as she runs), which already stands braced to charge.
+  // HURT ("No!!"): the episode frame is cut off at her hips by the frame's edge, so its face goes on her own render (the scream with her hands
+  // on her head). (Front of the Crowd had a swap like it off "Teddy runs for Bell.png": a ghost head edge and a cut nose, and the face reads
+  // as crying, not barging; the down special wears her 'mad' picture until a clean barging frame is cut.)
   const base = B(F), faceRect = { x: 40, y: 27, w: 58, h: 64 };
   emit(F, 'no', L.trim(swapFace(base, faceRect, S('Teddy _No!!_.png'), { x: 352, y: 100, w: 166, h: 238 }, { scale: 0.33, dy: 4 }), 2),
     { src: ['Teddy \"No!!\".png', 'teddy-bear.png'], method: 'face swap: her face (a cropped frame) on her own render' });
-  emit(F, 'barge', L.trim(swapFace(base, faceRect, S('Teddy runs for Bell.png'), { x: 200, y: 105, w: 165, h: 185 }, { scale: 0.31, dy: 2 }), 2),
-    { src: ['Teddy runs for Bell.png', 'teddy-bear.png'], method: 'face swap: her face (a cropped frame) on her own render' });
 }
 
 // ---- PAINTBRUSH ---------------------------------------------------------------------------------------------------------------------------

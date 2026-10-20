@@ -76,27 +76,27 @@ const runs = (seq) => seq.filter((s, i) => s !== seq[i - 1]).filter((s) => s !==
 const SCREECH = Array.from({ length: 15 }, (_, i) => `screech-${String(i + 1).padStart(2, '0')}`);
 const SPEC = {
   Donut: { moves: { jab: ['o', 'open-side', 'smile-side'], finisher: ['frown-side', 'open-side', 'smile-side'], special: ['roll'], up: ['up'],
-      down: ['frown', 'open', 'n'], smash: ['angry', 'open-side', 'smile-side'], dt: ['n-side', 'kick', 'smile-side'] },
+      down: ['frown', 'open', 'n'], smash: ['angry', 'open-side', 'smile-side'], dt: ['n-side', 'kick-fwd', 'smile-side'] },   // (the kick's leg ahead of him: 'kick' itself is Rear Roll's, behind)
     hurt: ['screeched'], states: { ko: 'o', charge: 'angry' }, win: 'up' },
-  Sidewalky: { moves: { special: ['crush', 'enraged'], smash: ['crush', 'enraged'], finisher: ['crush', 'enraged'], up: ['jump'], down: ['brace'] },
+  Sidewalky: { moves: { special: ['enraged'], smash: ['crush', 'enraged'], finisher: ['crush', 'enraged'], up: ['jump'], down: ['brace'] },
     hurt: ['breaking', 'cracked'], states: { charge: 'crush', frozen: 'frozen', armor: 'brace' }, ko: ['fall-1', 'fall-2', 'fall-3', 'fall-4', 'fall-5'], win: 'laughing' },
-  Lollipop: { moves: { special: ['sucker'], up: ['twirl-1', 'twirl-2', 'twirl-3', 'twirl-4', 'twirl-5', 'twirl-6'], smash: { loop: SCREECH } },
+  Lollipop: { moves: { special: ['sucker'], up: ['twirl-1', 'twirl-2', 'twirl-3', 'twirl-6'], smash: { loop: SCREECH } },
     hurt: ['flung-1', 'flung-2'], states: { ko: 'pieces' }, charge: SCREECH, win: 'laughing' },
   Box: { moves: { special: ['flaps-1', 'flaps-2', 'flaps-3', 'flaps-4'], up: ['running'], down: ['limp'] },
     hurt: ['panicked'], states: { ko: 'damaged', armor: 'limp' }, win: 'smiling' },
-  Tissues: { moves: { jab: ['face-1'], finisher: ['face-1'], special: ['sniff', 'sneeze', 'face-3'], up: ['sneeze', 'face-3'], smash: ['sneeze', 'face-4'] },
+  Tissues: { moves: { jab: ['face-1'], finisher: ['face-1'], special: ['sneeze', 'face-3'], up: ['sneeze', 'face-3'], smash: ['sneeze', 'face-4'] },
     hurt: ['scared'], states: { ko: 'out', charge: 'sniff', frozen: 'face-2' }, win: 'happy' },
   Goo: { moves: { jab: ['arm'], finisher: ['arm'], up: ['hand'], special: { then: ['engulf-1', 'engulf-2', 'engulf-3', 'engulf-4'], hold: ['engulf-5', 'engulf-6'] } },
     hurt: ['scream'], states: { ko: 'splat' }, win: 'happy' },
   Bell: { moves: { jab: ['spin-8', 'spin-1', 'spin-2', 'spin-1'], finisher: ['spin-8', 'spin-1', 'spin-2', 'spin-1'], special: ['before-ring', 'ding'],
       up: ['spin-1', 'spin-2', 'spin-3', 'spin-4', 'spin-5', 'spin-6', 'spin-7', 'spin-8', 'spin-1'], down: ['avoid'], smash: ['angry', 'ding'] },
-    hurtLoop: ['zapped-1', 'zapped-2', 'zapped-3', 'zapped-4'], states: { charge: 'angry', armor: 'avoid' }, ko: ['zapped-1', 'zapped-2', 'zapped-3', 'zapped-4'], win: 'happy' },
+    hurtLoop: ['zapped-1', 'zapped-2'], states: { charge: 'angry', armor: 'avoid' }, ko: ['zapped-1', 'zapped-2'], win: 'happy' },
   Paintbrush: { moves: { up: ['rage-2'] }, hurt: ['shocked'], states: { ko: 'tired' }, win: 'win',
     meter: [[0, null], [33, null], [34, 'rage-1'], [66, 'rage-1'], [67, 'rage-2'], [98, 'rage-2'], [100, 'rage-3']] },
-  'Teddy Bear': { moves: { special: ['laugh-01'], up: ['fists'], finisher: ['fists'], down: ['barge'], smash: ['mad'] },
+  'Teddy Bear': { moves: { special: ['laugh-01'], up: ['fists'], finisher: ['fists'], down: ['mad'], smash: ['mad'] },
     hurt: ['paint', 'no'], states: { ko: 'grief', charge: 'mad' }, winLoop: Array.from({ length: 17 }, (_, i) => `laugh-${String(i + 1).padStart(2, '0')}`) },
 };
-const LEGACY = ['flaps', 'limp', 'giant', 'puddle', 'nap'];   // the older swaps, host only (Box's g1 flaps and limp, Goo's giant and puddle, Tissues' nap)
+const LEGACY = ['limp', 'giant', 'puddle', 'nap'];   // the older swaps, host only (Box's g1 limp, Goo's giant and puddle, Tissues' nap); Box's g1 flaps no longer follows her four flap frames
 const STATE = { ko: 'F.hitstun = 12; F.vx = 12; F.vy = -6; F.onground = false;', charge: 'F.smashHold = 20;', frozen: 'F.frozen = 40;', armor: 'F.armor = 20;' };
 
 // The client's copy of the fighter, rebuilt from the wire the way applySnapshot rebuilds it (only the fields poseKey can read).
@@ -177,6 +177,9 @@ for (const [name, spec] of Object.entries(SPEC)) {
         expect(new Set(loop), 'a held smash: the whole loop').toEqual(new Set(spec.charge));
       }
       if (spec.meter) for (const [v, want] of spec.meter) expect(w.eval(`(function(){ ${ARENA(name)} F._fury = ${v}; return poseKey(F); })()`), `rage ${v}`).toBe(want);
+      if (spec.meter) for (const act of [`${ACT.jab}; step();`, STATE.charge]) {   // a move with no picture of its own keeps the render and its painted swing, rage or not
+        expect(w.eval(`(function(){ ${ARENA(name)} F._fury = 100; ${act} return poseKey(F); })()`), `full rage, then ${act}`).toBe(null);
+      }
       // the set is theirs: another fighter in the same states wears nothing of it
       expect(w.eval(`(function(){ ${ARENA('Coiny')} ${STATE.ko} return poseKey(F); })()`)).toBe(null);
     });
@@ -187,8 +190,8 @@ for (const [name, spec] of Object.entries(SPEC)) {
       const acts = Object.keys(spec.moves).map((a) => ACT[a]).concat(['F._hurtAnim = HURT_ANIM; F.flash = 8;', STATE.ko, STATE.charge, STATE.frozen, STATE.armor, 'F._fury = 100;']);
       for (const act of acts) {
         const r = w.eval(`(function(){ ${ARENA(name)} var mk = ${CLIENT}; ${act}; var out = [], keys = {};
-          for (var t = 0; t < 40; t++){ var h = poseKey(F), c = poseKey(mk(F)), v2 = (F.vx||0)*(F.vx||0) + (F.vy||0)*(F.vy||0);
-            if (h !== c && Math.abs(v2 - 100) > 3) out.push(t + ':' + h + '/' + c);   // (a launch's speed is sent to a tenth: the tick it crosses the line can differ)
+          for (var t = 0; t < 40; t++){ var h = poseKey(F), c = poseKey(mk(F));
+            if (h !== c) out.push(t + ':' + h + '/' + c);   // (a launch's speed is sent to a tenth, and poseKey reads it to a tenth: the same tick on both)
             Object.keys(netFighter(F)).forEach(function(k){ keys[k] = 1; });
             if (F._hurtAnim > 0) F._hurtAnim--; step(); }
           return { out: out, keys: Object.keys(keys) }; })()`);

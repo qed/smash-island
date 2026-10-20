@@ -196,6 +196,46 @@ export function keepParts(im, keep) {
   for (const pt of all) if (!keep(pt)) for (const p of pt.px) im.d[p * 4 + 3] = 0;
   return im;
 }
+// DECONTAMINATE the edge band. A cut-out keyed off a coloured ground keeps that ground's tint in its outermost pixels (a red fringe round
+// a blue body, white or green round a black limb). Every pixel within `band` px of the clear (alpha under the floor, or off the canvas)
+// that `bad(r, g, b)` accepts takes the colour of the nearest pixel deeper in that it does not accept (within `reach`; failing that, the
+// nearest clean pixel of the band itself); its alpha is kept, so the edge stays as soft as it was. A tint that runs deep (an upscaled
+// file) takes `passes`: each pass reads the last one's colours, so the clean colour walks out to the edge.
+export function decontaminate(im, bad, { band = 2, reach = 4, passes = 1 } = {}) {
+  let total = 0;
+  for (let pass = 0; pass < passes; pass++) { const n = decontaminateOnce(im, bad, band, reach); total += n; if (!n) break; }
+  return total;
+}
+function decontaminateOnce(im, bad, band, reach) {
+  const { w, h, d } = im, src = new Uint8ClampedArray(d), dist = new Int32Array(w * h).fill(1 << 20), q = [];
+  for (let p = 0; p < w * h; p++) if (d[p * 4 + 3] < ALPHA_FLOOR) { dist[p] = 0; q.push(p); }
+  for (let p = 0; p < w * h; p++) { const x = p % w, y = (p / w) | 0; if (dist[p] && (x === 0 || y === 0 || x === w - 1 || y === h - 1)) { dist[p] = 1; q.push(p); } }
+  for (let qi = 0; qi < q.length; qi++) {
+    const p = q[qi], x = p % w, y = (p / w) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      const pp = yy * w + xx; if (dist[pp] > dist[p] + 1) { dist[pp] = dist[p] + 1; q.push(pp); }
+    }
+  }
+  const clean = (pp, deep) => { const j = pp * 4; return src[j + 3] >= (deep ? 250 : 128) && (deep ? dist[pp] > band : true) && !bad(src[j], src[j + 1], src[j + 2]); };
+  let n = 0;
+  for (let p = 0; p < w * h; p++) {
+    const i = p * 4; if (!dist[p] || dist[p] > band || !bad(src[i], src[i + 1], src[i + 2])) continue;
+    const x = p % w, y = (p / w) | 0;
+    let best = -1;
+    for (const deep of [true, false]) {
+      let bd = 1e9;
+      for (let dy = -reach; dy <= reach; dy++) for (let dx = -reach; dx <= reach; dx++) {
+        const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        const pp = yy * w + xx, dd = dx * dx + dy * dy; if (dd && dd < bd && clean(pp, deep)) { bd = dd; best = pp; }
+      }
+      if (best >= 0) break;
+    }
+    if (best < 0) continue;
+    d[i] = src[best * 4]; d[i + 1] = src[best * 4 + 1]; d[i + 2] = src[best * 4 + 2]; n++;
+  }
+  return n;
+}
 // Erase a rectangle / a polygon outright (another character's arm reaching in, a stray prop).
 export function eraseRect(im, x, y, w, h) { for (let yy = Math.max(0, y); yy < Math.min(im.h, y + h); yy++) for (let xx = Math.max(0, x); xx < Math.min(im.w, x + w); xx++) im.d[(yy * im.w + xx) * 4 + 3] = 0; return im; }
 export function erasePoly(im, poly) {

@@ -114,9 +114,11 @@ const ADJUDICATED_POSE = [
   [/^lollipop-screech-\d+\.png$/, 'a frame of her screech, front-on by fetch-sprites\' measure (under 0.03): it keeps her render\'s flag, one for all fifteen'],
   [/^(lollipop-twirl|bell-spin)-\d\.png$/, 'a step of a turn: one flag for the whole turn, or the fighter would jump sides mid-spin'],
   [/^teddy-bear-laugh-\d+\.png$/, 'her laugh GIF: the paint gun points left in the art, so it is flipped to point at the foe; her face, looking back, fools the measure'],
-  [/^tissues-sneeze\.png$/, 'the snot jet left his nose to the left in the art: flipped so he sneezes forward'],
+  [/^tissues-sneeze\.png$/, 'he faces left in the art (the snot jet, taken off, went left): flipped so he sneezes forward'],
   [/^sidewalky-(breaking|frozen)\.png$/, 'his flag goes by his side band (on the left, as on his render), which the measure reads as ink'],
-  [/^box-flaps-4\.png$/, 'three-quarter view: the side panel reads as ink; one flag for all four flap frames'],
+  [/^box-flaps-4\.png$/, 'three-quarter view turned to the viewer\'s left (frames 1-3 face the front): flipped by eye so she turns to the foe'],
+  [/^box-(running|panicked)\.png$/, 'she faces right, as her render does (side panel on the left, eyes shifted right): the side panel reads as ink'],
+  [/^goo-arm\.png$/, 'he faces right: his eyes and grin are turned to the muscular arm on his right, whose bulk the measure reads as ink'],
   [/^goo-(engulf-\d|splat)\.png$/, 'one flag for the whole Engulf: his form, not his face, sets the side'],
   [/^(teddy-bear-paint|paintbrush-shocked|tissues-scared)\.png$/, 'front-on by fetch-sprites\' measure (under 0.03): it keeps the render\'s flag'],
 ];
