@@ -24,6 +24,8 @@ const setup = (h, gap, recover) => `
   SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; SETTINGS.stocks=3; beginMatchNow();
   var c = fighters[0], t = fighters[1], gy = groundY();
   c.controller='ai'; c.you=false; c._lvl=2;          // Hard: no handicap tail swapping left and right
+  c.st = Object.assign({}, STAT_ONE);                // the walls here are counted at jump 1 (235 px for the two jumps): the seed's fighter (Firey) has his own
+                                                     // jump now (the owner, 2026-10-18: "give each fighter stats"; his 1.09 clears 280), so he gets the baseline's numbers
   t.controller='still'; t.invuln=999999;
   c.x = WW*0.5; c.y = gy - c.r; c.vx = 0; c.vy = 0; c.onground = true; c.pct = 0;
   t.x = c.x - W*1.2; t.y = c.y; t.vx = 0; t.vy = 0;   // far off to the left: the traversal branch (dist > W*0.75)

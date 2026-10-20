@@ -3,19 +3,22 @@ import { bootMonolith } from './helpers/smash-golden.js';
 import { loadMonolith } from './helpers/load-monolith.js';
 
 // FIGHTER STATS (the owner, 2026-10-18: "add it, bcs its just a system extension"; earlier: "maybe you can change raw stats instead
-// of moves"). Five per-fighter multipliers beside WEIGHT -- run, air, jump, fall, dmg -- all 1 by default (FIGHTER_STATS). These pin:
+// of moves"). Five per-fighter multipliers beside WEIGHT -- run, air, jump, fall, dmg -- 1 by default (FIGHTER_STATS' "*" row), and
+// since "give each fighter stats" / "Character, then balance" (the owner, 2026-10-18; spread "8-12%, damage smaller", draft "Looks
+// good") a row of the fighter's own for 95 of them (run, air, jump, fall within 0.88-1.12, dmg 1-1.05). These pin:
 //   * at 1 a fighter runs, drifts, jumps, falls and hits exactly as the shared numbers say (MAXVX, JUMP, GRAV, FF_V, the hit's damage);
 //   * each one at 1.1 moves its own quantity by about 1.1 and leaves every other one exactly as it was;
 //   * the run multiplies Capture the Flag's 1.5x (and a carrier's jump), never replaces it;
 //   * dmg reaches everything a hit breaks or hurts (a boss through Chain Bolt, its tongue, the Smash Ball, a turret, an infected
-//     fighter's own rebound), a running jump keeps the run's speed, the CPU's Capture the Flag look-ahead jumps as the fighter
+//     fighter's own rebound), a running jump eases down from the run's speed ("Eases down", the owner, 2026-10-18), the CPU's Capture the Flag look-ahead jumps as the fighter
 //     really does, and a move's words state the hit as it lands (review fixes).
-// (Every bot golden staying identical, test/bot-playbooks.test.js, is the proof that the defaults change nothing anywhere else.)
+// (Pen is measured with his own row set back to 1: the shared numbers are the baseline every stat is held against.)
 
 let W;
 beforeAll(async () => { W = bootMonolith(); await W.eval('profileReady'); });
 
-// A flat field with nothing on it: Pen (no odd air rules) for the player, Pencil to be hit. `stats` go on Pen's own block.
+// A flat field with nothing on it: Pen (no odd air rules) for the player, Pencil to be hit. Pen's block is set to all 1 and `stats`
+// go on it (his own row is not what is measured here).
 const measure = (stats = {}) => JSON.parse(W.eval(`(function(){
   var setup = function(){
     SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
@@ -23,7 +26,7 @@ const measure = (stats = {}) => JSON.parse(W.eval(`(function(){
     summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
     var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
     var A = mk('Pen', 150, 0), D = mk('Pencil', 900, 1);
-    Object.assign(A.st, ${JSON.stringify(stats)});
+    A.st = Object.assign({ run:1, air:1, jump:1, fall:1, dmg:1 }, ${JSON.stringify(stats)});
     A.team=0; D.team=1; A.face=1; D.face=-1; A.controller='local'; A.you=true; D.controller='still'; A.stocks=9; D.stocks=9;
     fighters=[A,D]; for (var k in down) delete down[k]; step(); step();
     fighters.forEach(function(f){ f.invuln=0; f.hitstun=0; f.atkCd=0; f.spCd=0; f.vx=0; f.vy=0; f.pct=0; });
@@ -56,12 +59,22 @@ describe('fighter stats (run, air, jump, fall, dmg)', () => {
   let base;
   beforeAll(() => { base = measure(); });
 
-  it('default to 1 for every fighter, and the table only holds the all-1 default', () => {
-    const r = JSON.parse(W.eval(`JSON.stringify({ keys:Object.keys(FIGHTER_STATS), def:FIGHTER_STATS['*'],
-      off:ROSTER.filter(function(r){ var s = makeFighter(r, 0, 0, 0).st; return STAT_KEYS.some(function(k){ return s[k] !== 1; }); }).map(function(r){ return r.name; }) })`));
-    expect(r.keys).toEqual(['*']);
-    expect(r.def).toEqual({ run: 1, air: 1, jump: 1, fall: 1, dmg: 1 });
-    expect(r.off, 'fighters whose stats are not all 1').toEqual([]);
+  // Restated for "give each fighter stats" (the owner, 2026-10-18): this pinned a table holding only the all-1 default. Now the
+  // default stays all 1, every row names a real fighter and stays inside the bounds, and each fighter reads its row (else 1).
+  it('the default is all 1, and each fighter reads its own row, inside the bounds', () => {
+    const r = JSON.parse(W.eval(`JSON.stringify({ T:FIGHTER_STATS, names:ROSTER.map(function(r){ return r.name; }),
+      st:ROSTER.map(function(r){ return makeFighter(r, 0, 0, 0).st; }) })`));
+    expect(r.T['*']).toEqual({ run: 1, air: 1, jump: 1, fall: 1, dmg: 1 });
+    for (const [n, row] of Object.entries(r.T)) {
+      if (n === '*') continue;
+      expect(r.names, `${n} is a fighter`).toContain(n);
+      for (const [k, v] of Object.entries(row)) {
+        expect(['run', 'air', 'jump', 'fall', 'dmg'], `${n}.${k}`).toContain(k);
+        if (k === 'dmg') { expect(v, `${n}.dmg`).toBeGreaterThanOrEqual(1); expect(v, `${n}.dmg`).toBeLessThanOrEqual(1.05); }
+        else { expect(v, `${n}.${k}`).toBeGreaterThanOrEqual(0.88); expect(v, `${n}.${k}`).toBeLessThanOrEqual(1.12); }
+      }
+    }
+    r.names.forEach((n, i) => { for (const k of ['run', 'air', 'jump', 'fall', 'dmg']) expect(r.st[i][k], `${n}.${k}`).toBe(r.T[n] && r.T[n][k] != null ? r.T[n][k] : 1); });
   });
 
   it('at 1, a fighter runs, drifts, jumps, falls and hits by the shared numbers, exactly', () => {
@@ -122,26 +135,50 @@ describe('fighter stats (run, air, jump, fall, dmg)', () => {
     }
   });
 
-  it('a running jump keeps the run\'s speed (never more), and a standing drift is still the air\'s', () => {
+  // "Eases down" (the owner, 2026-10-18): a running jump with the run above the air takes off at the run's speed and eases down to
+  // the air's over about half a second (RUN_EASE, 30 frames). It used to keep the run's speed for the whole airtime (this test pinned
+  // that, 8 frames up). A drift against it still slows it, and with run == air nothing changes.
+  it('a running jump eases down from the run\'s speed to the air\'s (never more), and run == air is unchanged', () => {
     const r = JSON.parse(W.eval(`(function(){
-      var run = function(st){
+      var run = function(st, back){
         SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
         stage = Object.assign({}, STAGES[0], { plats:[], hazard:null }); worldPlats=[]; summons=[]; projectiles=[]; items=[];
         var mk=function(n,x,i){ return makeFighter(ROSTER.find(function(r){return r.name===n;}), x, groundY()-24, i); };
-        var A = mk('Pen', 150, 0), D = mk('Pencil', 1400, 1); Object.assign(A.st, st);
+        var A = mk('Pen', 150, 0), D = mk('Pencil', 1400, 1); A.st = Object.assign({ run:1, air:1, jump:1, fall:1, dmg:1 }, st);
         A.team=0; D.team=1; A.controller='local'; A.you=true; D.controller='still'; fighters=[A,D]; for (var k in down) delete down[k]; step(); step();
-        down[KEYS.right]=true; for (var i=0;i<30;i++) step(); var g = A.vx; down[KEYS.jump]=true; step(); step(); var a1 = A.vx;
-        for (var i=0;i<6;i++) step(); var a2 = A.vx; down[KEYS.jump]=false; down[KEYS.right]=false;
-        return { ground:g, air:a1, air8:a2, inAir:!A.onground };
+        down[KEYS.right]=true; for (var i=0;i<30;i++) step(); var g = A.vx;
+        down[KEYS.jump]=true; step(); var tk = A.vx, up = !A.onground;   // the takeoff frame
+        if (back){ down[KEYS.right]=false; down[KEYS.left]=true; }
+        var vs = [], air = [];
+        for (var i=0;i<34;i++){ step(); vs.push(A.vx); air.push(!A.onground); }
+        for (var k in down) delete down[k];
+        return { ground:g, takeoff:tk, up:up, vs:vs, air:air };
       };
-      return JSON.stringify({ base:run({}), fast:run({ run:1.15 }), cap:MAXVX });
+      return JSON.stringify({ base:run({}), fast:run({ run:1.15 }), back:run({ run:1.15 }, true), even:run({ run:1.15, air:1.15 }), cap:MAXVX, ease:RUN_EASE });
     })()`));
-    expect(r.base.ground).toBe(r.cap);
-    expect(r.base.air).toBe(r.cap);
-    expect(r.fast.inAir).toBe(true);
-    expect(r.fast.ground / r.cap).toBeCloseTo(1.15, 9);
-    expect(r.fast.air, 'the run\'s speed is carried off the ground').toBe(r.fast.ground);
-    expect(r.fast.air8, 'and held through the airtime, never added to').toBe(r.fast.ground);
+    const C = r.cap, F = r.fast;
+    expect(r.ease, 'about half a second').toBe(30);
+    // run == air: exactly as before
+    expect(r.base.takeoff).toBe(C);
+    expect(r.base.vs.every((v) => v === C), 'run 1, air 1: the drift is the shared cap all the way').toBe(true);
+    expect(r.even.vs.every((v) => v === r.even.takeoff), 'run 1.15, air 1.15: the speed is kept all the way').toBe(true);
+    expect(r.even.takeoff / C).toBeCloseTo(1.15, 9);
+    // run 1.15, air 1: takes off at the run's cap...
+    expect(F.up).toBe(true);
+    expect(F.ground / C).toBeCloseTo(1.15, 9);
+    expect(F.takeoff, 'the takeoff speed is the run cap').toBe(F.ground);
+    expect(F.vs[0], 'and the first frame in the air still carries it').toBe(F.ground);
+    // ...eases down, never up and never past the run...
+    for (let i = 1; i < F.vs.length; i++) expect(F.vs[i], `frame ${i + 1} in the air`).toBeLessThanOrEqual(F.vs[i - 1]);
+    expect(F.vs[14], 'half way: between the two').toBeLessThan(F.ground);
+    expect(F.vs[14]).toBeGreaterThan(C);
+    // ...and about 30 frames later it is the air's cap (still in the air)
+    expect(F.air[30]).toBe(true);
+    expect(F.vs[30], '31 frames up: the air cap').toBeCloseTo(C, 9);
+    expect(F.vs[33]).toBeCloseTo(C, 9);
+    // a drift against it still slows it, faster than the ease alone
+    expect(r.back.takeoff).toBe(F.takeoff);
+    expect(r.back.vs[5], 'held back: slower than the eased run').toBeLessThan(F.vs[5] - 1);
   });
 
   it('a hazard is not a hit: dmg does not reach it', () => {
@@ -189,12 +226,13 @@ describe('fighter stats stack with Capture the Flag', () => {
 
 describe('fighter stats in the words', () => {
   it('a move\'s "On hit:" numbers follow the fighter\'s dmg; thresholds and other fighters stay', () => {
-    const row = '"*": { "run":1, "air":1, "jump":1, "fall":1, "dmg":1 }';
-    const { window: w } = loadMonolith(5, (src) => src.replace(row, row + ',\r\n  "Gelatin": { "dmg":1.2 }'));
+    // (Gelatin's own FIGHTER_STATS row is swapped for dmg 1.2 alone; the shipped build, W, is the baseline: Gelatin ships at dmg 1)
+    const { window: w } = loadMonolith(5, (src) => src.replace(/"Gelatin": \{ "(?:run|air|jump|fall|dmg)":[^}]*\}/, '"Gelatin": { "dmg":1.2 }'));
     const r = JSON.parse(w.eval(`JSON.stringify({ k:statsFor('Gelatin').dmg, g:MOVE_TEXT.Gelatin, p:MOVE_TEXT.Pen,
       smash:smashBlurb(ROSTER.find(function(r){ return r.name==='Gelatin'; })) })`));
     expect(r.k).toBe(1.2);
-    const W0 = JSON.parse(W.eval(`JSON.stringify({ g:MOVE_TEXT.Gelatin, p:MOVE_TEXT.Pen, smash:smashBlurb(ROSTER.find(function(r){ return r.name==='Gelatin'; })) })`));
+    const W0 = JSON.parse(W.eval(`JSON.stringify({ k0:statsFor('Gelatin').dmg, g:MOVE_TEXT.Gelatin, p:MOVE_TEXT.Pen, smash:smashBlurb(ROSTER.find(function(r){ return r.name==='Gelatin'; })) })`));
+    expect(W0.k0, 'Gelatin ships at dmg 1 (this measures 1 -> 1.2)').toBe(1);
     expect(r.p, 'another fighter\'s words are untouched').toEqual(W0.p);
     const nums = (l) => [...l.slice(l.indexOf('On hit:')).matchAll(/(\d+(?:\.\d+)?)%/g)].map((x) => +x[1]);
     let scaled = 0;
