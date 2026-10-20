@@ -250,12 +250,20 @@ describe('SPAGGERS!: a clump flicked along the floor, 3.2%, a short tangle', () 
     expect(r.flick, 'and the render pass is told').toBe(true);
   });
 
-  it('reaches farther than any other fighter\'s sweep, one way only: ahead', () => {
+  it('reaches farther than any other fighter\'s down-tilt, one way only: ahead', () => {
     expect(at('Bot', 95).dmg, 'out where a sweep does not reach').toBe(3.2);
-    expect(at('Tea Kettle', 95).dmg).toBe(0);
     expect(at('Bot', 135).dmg, 'but it is short').toBe(0);
     expect(at('Bot', -40).dmg, 'never behind').toBe(0);
-  });
+    // Against EVERY other fighter in ROSTER, each measured the same way (at(): their own down+X, Pen standing dx ahead, the hit read
+    // over the move's frames): Bot's farthest landing distance, to the pixel, and nobody else's down-tilt lands there or out past it
+    // (the far points catch a box that only starts out there). Measured on 2026-10-20: Bot 120 px, then Tree 115, Blocky 104 and
+    // Flower 99 -- Tree's also lands at 95, 105 and 115 and misses at 125, as Bot's does, so one or two distances cannot tell them apart.
+    let reach = 95; while (reach < 300 && at('Bot', reach + 1).dmg > 0) reach++;
+    const others = W.eval(`ROSTER.map(function(r){ return r.name; })`).filter((n) => n !== 'Bot');
+    expect(others, 'the whole roster, the runner-up and the old comparison among them').toEqual(expect.arrayContaining(['Tree', 'Blocky', 'Tea Kettle']));
+    const asFar = others.filter((n) => [reach, reach + 10, reach + 40, reach + 80].some((dx) => at(n, dx).dmg > 0));
+    expect(asFar, `down-tilts that land ${reach} px ahead or farther, as far as Bot's or past it`).toEqual([]);
+  }, 120000);
 
   it('the render pass draws the noodle clump for 22 frames after the flick, and nothing before or after', () => {
     const quiet = overOps('A._stall = null');
