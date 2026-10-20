@@ -39770,6 +39770,7 @@ function step(){
     else if(isBig() && f.onground && inp.down && inp.jump && !f._drop){ f.dropping=10; f.vy=5; f.onground=false; f.y+=f.r*0.6; f._drop=true; }
     if(!inp.jump) f._drop=false;
     if(f.dropping>0) f.dropping--;
+    f._footing = f.onground;   // where its own step left it: on a floor or not (WALKING OFF CANCELS THE TILT reads this, not a push that only marks it airborne)
     // MARSHMALLOW'S GRAVITY, the half that helps: halted right before the saw and flung back upwards (War De
     // Guacamole). Involuntary, once a stock, and only on the way down to a knockout.
     if(f.kit && f.kit.special==='wallmart' && !f._gravSaved && f.vy > 0 && f.y > WH + 60 && f.y <= WH + 160 && !f.dead){
@@ -40984,6 +40985,7 @@ function nearestFoe(f, rx, ry, ok){
 // roller looks as far as it reaches.
 function smashAim(f, inp){
   if(inp && (inp.left || inp.right)) return;
+  if(stanceStill(f)) return;   // NO TURNING IN A STANCE (the owner, 2026-10-20): a smash pressed while a stance is up fires the way they already face
   const sp = f.kit && f.kit.special;
   if(sp==='fly') return;
   const row = SMASH_SPEC[sp] || null, pat = row ? row.pat : null;
@@ -41864,12 +41866,19 @@ function remoteJamTarget(f){
 // HOLD THEM STILL (the owner, 2026-10-20, on moving while attacking: "Hold them still"). While a COUNTER stance (countering), a REFLECT stance
 // (reflecting) or an ARMOUR stance -- a brace (braceUp) -- is up, the fighter cannot walk or run and cannot turn: the arrows do nothing on the ground
 // (friction slows them as if nothing were held) and in the air change no drift beyond what the stance itself did (the movement block, and a ground
-// move's turn in mvTick). For exactly the frames the stance is up, per kit: its own flag. A counter that answers a hit, a grab, a strip or a scrub
-// takes the flag down and frees them that same frame. Timing, damage and what each stance does are unchanged; a jump is not touched.
-// A BRACE is the armour a stance puts up (Snowball's Dig In, Grassy's Armored Stance, Pin's, Pencil's...): its own clock, _braceT, runs with the
-// armour, so armour from anything else -- a dash, an up-special's lift, a move's armoured frames, Grassy's Grasstree -- never holds anyone still.
+// move's turn in mvTick), and a smash pressed in it fires the way they already face (smashAim). For exactly the frames the stance is up, per kit: its
+// own flag. A counter that answers a hit, a grab, a strip or a scrub takes the flag down and frees them that same frame -- a counter that answers
+// frees them even with armour left (Golf Ball's Crusher stop, Needle's Riposte: applyHit). Timing, damage and what each stance does are unchanged; a
+// jump is not touched.
+// ONLY PURE STANCES (the owner, 2026-10-20, on the second review): counters, reflects and armour braces hold you still; attacks and buffs that merely
+// have armour let you walk. A BRACE is a move whose point is to stand and take it -- Pin's and Pencil's Super Armour, Snowball's Dig In, Book's Brace,
+// Nickel's Gamble Defense (heads), Grassy's Armored Stance, Loser's Heal Up, David's Big Armor, Sidewalky's Heavy Brace, Roboty's Tank Armour, Tree's
+// Rooted Armour, Box's Lifeless Body, Baseball's Too Heavy: its own clock, _braceT, runs with the armour. Armour from anything else never holds anyone:
+// a dash, an up-special's lift, a move's armoured frames, Grassy's Grasstree, and the armour on an attack or a buff (Money's Bank It, Bracelety's Power
+// Up, Dora's Jabby Brace, Bell's Brace, TV's Static Brace, Saw's Defensive Spin, Liy's lights-on, Fern's Regen Stance, Pillow's Cushiony Guard,
+// Loser's Stay Cool). Nor does a reflect that rides on an attack (_reflAtk: Gaty's Swing Open, Blueberry's Palanquin Catch); Gaty's Reflect Stance does.
 function braceUp(f, n){ f._braceT = n; }
-function stanceStill(f){ return f.countering > 0 || f.reflecting > 0 || (f._braceT > 0 && f.armor > 0); }
+function stanceStill(f){ return f.countering > 0 || (f.reflecting > 0 && !f._reflAtk) || (f._braceT > 0 && f.armor > 0); }
 const DOWNSPECIALS = {
   // Inanimate Insanity DLC
   tricks(f){ f.flash=8; f.invuln=Math.max(f.invuln,12); f.vx=-f.face*9; puff(f.x,f.y-8,'#c9d1d9',6); },   // Knife -- fake-out: a quick hop back, untouchable
@@ -41977,9 +41986,9 @@ const DOWNSPECIALS = {
   fly(f){ f.flash=8; f.flying=Math.max(f.flying,90); f.vy=Math.min(f.vy,-2); puff(f.x,f.y-8,'#e6a6e0',6);  }, // Puffball — sustained hover
   beam(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:6,kb:4,r:12,color:'#e0384b',life:220,trap:true});  }, // Ruby — gem trap
   gust(f){ f.flash=8; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(Math.abs(t.y-f.y)<70 && Math.abs(t.x-f.x)<170){ t.vx += Math.sign(t.x-f.x||f.face)*7; t.onground=false; } } for(let i=0;i<10;i++) puff(f.x+(Math.random()*120-60),f.y,'#bfe8ff',4);  }, // Fanny — push everyone away
-  reflect(f){ f.flash=10; f.reflecting=44; puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
-  ring(f){ f.flash=8; f.armor=30; braceUp(f, 30); startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'ring', { kind:'circle', x:f.x, y:f.y, r:f.r+50-HURT_R0 }, { color:'#f2c84b' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b', { kind:'circle', r:f.r+50-HURT_R0 });  }, // Bell — brace + nearby stun
-  sign(f){ f.flash=8; f.armor=28; braceUp(f, 28); f._empower=1; puff(f.x,f.y-8,'#6fb7ff',6);  }, // Bracelety — self-empower next hit
+  reflect(f){ f.flash=10; f.reflecting=44; f._reflAtk=false; puff(f.x,f.y-8,'#e8e8e8',6);  }, // Gaty — long reflect stance
+  ring(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'ring', { kind:'circle', x:f.x, y:f.y, r:f.r+50-HURT_R0 }, { color:'#f2c84b' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#f2c84b',6); }, '#f2c84b', { kind:'circle', r:f.r+50-HURT_R0 });  }, // Bell — brace + nearby stun
+  sign(f){ f.flash=8; f.armor=28; f._empower=1; puff(f.x,f.y-8,'#6fb7ff',6);  }, // Bracelety — self-empower next hit
   dribble(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:5,kb:8,r:13,color:'#e08a3a',life:220,trap:true,arm:24});  }, // Basketball — bouncy mine
   buynow(f){ f.flash=8; let tgt=null,best=200; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; const d=Math.hypot(t.x-f.x,t.y-f.y); if(d<best){best=d;tgt=t;} } if(tgt){ tgt.weakened=160; } haPick(f, 'weaken', tgt, 200, '#f2d84b'); }, // Yellow Face — weaken nearest (HIT ART: a ray to whoever, or how far it looked)
   splash(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:16,color:'#c9c04b',life:240,trap:true,poison:true});  }, // Barf Bag — poison puddle
@@ -41987,7 +41996,7 @@ const DOWNSPECIALS = {
   // ---- next 10 ----
   zap(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:7,kb:5,r:13,color:'#f2e84b',life:260,trap:true,shape:'zaptrap'});  }, // Lightning — floor trap (was 5 dmg / 200 frames)
   spark(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*24,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:4,kb:3,r:12,color:'#e04b8a',life:200,trap:true,burn:true});  }, // Match — burn trap
-  saw(f){ f.flash=8; f.armor=30; braceUp(f, 30); spinAura(f, 24, SPIN_R_GROUND, 'out');  }, // Saw — defensive spin
+  saw(f){ f.flash=8; f.armor=30; spinAura(f, 24, SPIN_R_GROUND, 'out');  }, // Saw — defensive spin
   jawbreaker(f){ // Taco -- KIT FIX (kit-roles): the salsa puddle at her feet never touched a foe in the probe. She has Taco (II)'s Retractable Arms now
     // ("they go out, and you come back", DOWNSPECIALS.lemon: 210 px, the nearest foe is dragged to her, 6% and 18 frames stunned), and the puddle
     // stays, laid where she stands: the foe is pulled in on top of her salsa, which is what the puddle was for.
@@ -41995,11 +42004,11 @@ const DOWNSPECIALS = {
     addProj({owner:f.idx,ownerObj:f,x:f.x,y:groundY()-6,vx:0,vy:0,grav:false,dmg:2,kb:1,r:18,color:'#f2c84b',life:220,trap:true,slow:true});  }, // Taco -- arms, then an instant salsa puddle
   spike(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:6,kb:5,r:12,color:'#c0c0c0',life:220,trap:true,arm:16});  }, // Naily — spike trap
   sucker(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:13,color:'#c04be0',life:220,trap:true,root:true,arm:14});  }, // Lollipop — rooting trap
-  static(f){ f.flash=8; f.armor=30; braceUp(f, 30); startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'static', { kind:'circle', x:f.x, y:f.y, r:f.r+50-HURT_R0 }, { color:'#8fd0ff' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff', { kind:'circle', r:f.r+50-HURT_R0 });  }, // TV — brace + nearby stun
+  static(f){ f.flash=8; f.armor=30; startWindup(f, CIRCLE_WINDUP, function(){ hitArt(f, 'static', { kind:'circle', x:f.x, y:f.y, r:f.r+50-HURT_R0 }, { color:'#8fd0ff' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + f.r+50){ stunFx(t,18);} } puff(f.x,f.y-8,'#8fd0ff',6); }, '#8fd0ff', { kind:'circle', r:f.r+50-HURT_R0 });  }, // TV — brace + nearby stun
   battery(f){ f.flash=8; hitArt(f, 'jam', { kind:'circle', x:f.x, y:f.y, r:haEdgeR(REMOTE_JAM_REACH) }, { color:'#c04be0', style:'ring' }); const t = remoteJamTarget(f);   // Remote — REMOTE JAM: scrambles the nearest foe in reach (see remoteJamTarget); the ring is that reach (centre-judged: haEdgeR)
     if(t && applyCtrlRev(t, CTRLREV_MAX)){ f._jamFx = { t:hazardT, to:t.idx };   // render-only: drawKitFx draws the signal (a net client gets it as jamFx)
       particles.push({ x:t.x, y:t.y-6, vx:0, vy:-0.6, life:HITFX.ring, r:22, color:'r|#c04be0' }); } },   // a ring on them in the scramble icon's colour
-  fluff(f){ f.flash=8; f.armor=40; braceUp(f, 40); f.vy=Math.min(f.vy,-3); puff(f.x,f.y-8,'#f2e0d0',6);  }, // Pillow — cushiony guard
+  fluff(f){ f.flash=8; f.armor=40; f.vy=Math.min(f.vy,-3); puff(f.x,f.y-8,'#f2e0d0',6);  }, // Pillow — cushiony guard
   cool(f){ f.flash=8; f.armor=Math.max(f.armor,50); braceUp(f, 50); f.pct=Math.max(0,f.pct-8); puff(f.x,f.y-8,'#e8e8e8',6);  }, // Loser — armor + heal a little
   // ---- final 12 down-specials ----
   switch(f){ f.flash=10; // Liy — HURL: fling the grabbed enemy, or toggle lights off
@@ -42013,20 +42022,20 @@ const DOWNSPECIALS = {
     } else {
       // no grab held — just flip the switch off (settle) / on
       f._switchOn=!f._switchOn;
-      if(f._switchOn){ f._empower=1; f.armor=Math.max(f.armor,16); braceUp(f, 16); }
+      if(f._switchOn){ f._empower=1; f.armor=Math.max(f.armor,16);  }
       else 
       f.spCd=28;
     }
   }, // Liy
   ink(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:3,kb:1,r:16,color:'#4bb0c0',life:240,trap:true,slow:true});  }, // Marker — slowing puddle
-  payday(f){ f.flash=8; f.armor=24; braceUp(f, 24); f._empower=1; for(let i=0;i<8;i++) puff(f.x,f.y-8,'#ffd23f',4);  }, // Money — bank an empowered hit
+  payday(f){ f.flash=8; f.armor=24; f._empower=1; for(let i=0;i<8;i++) puff(f.x,f.y-8,'#ffd23f',4);  }, // Money — bank an empowered hit
   thorn(f){ f.flash=8; f.countering=28; puff(f.x,f.y-10,'#e0384b',6);  }, // Rose — counter
   fraidy(f){ f.flash=8; f.invuln=Math.max(f.invuln,20); f.vx=-f.face*8; for(let i=0;i<6;i++) puff(f.x,f.y-8,'#e8c84b',4);  }, // Woody — brief dodge
   paste(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x+f.face*20,y:feetY(f)-6,vx:0,vy:0,grav:false,dmg:4,kb:2,r:14,color:'#f0f0f0',life:260,trap:true,root:true,arm:12});  }, // Toothpaste — root trap
-  rant(f){ f.flash=6; f.armor=20; braceUp(f, 20); const cx=f.x+f.face*24; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t,cx,f.y)<40-HURT_R0){ stunFx(t,16);} } hitArt(f, 'rantStun', { kind:'circle', x:cx, y:f.y, r:40 - HURT_R0 }, { color:'#f2a03a', fade:6 }); puff(f.x,f.y-8,'#f2a03a',5);  }, // Dora (HIT ART: the stun's reach) — jabby brace
+  rant(f){ f.flash=6; f.armor=20; const cx=f.x+f.face*24; for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t,cx,f.y)<40-HURT_R0){ stunFx(t,16);} } hitArt(f, 'rantStun', { kind:'circle', x:cx, y:f.y, r:40 - HURT_R0 }, { color:'#f2a03a', fade:6 }); puff(f.x,f.y-8,'#f2a03a',5);  }, // Dora (HIT ART: the stun's reach) — jabby brace
   seriously(f){ f.flash=8; f.armor=Math.max(f.armor,44); braceUp(f, 44); puff(f.x,f.y-8,'#4a90c0',6);  }, // David — big armor (trimmed)
   emberjr(f){ f.flash=8; addProj({owner:f.idx,ownerObj:f,x:f.x,y:feetY(f)-8,vx:0,vy:0,grav:false,dmg:3,kb:2,r:12,color:'#f0803a',life:220,trap:true,burn:true});  }, // Firey Jr. — small fire trap
-  photo(f){ f.flash=8; f.healing=Math.max(f.healing||0,130); f.armor=20; braceUp(f, 20); for(let i=0;i<8;i++) puff(f.x,f.y-8,'#4b9c5a',5);  }, // Fern — strong regen stance
+  photo(f){ f.flash=8; f.healing=Math.max(f.healing||0,130); f.armor=20; for(let i=0;i<8;i++) puff(f.x,f.y-8,'#4b9c5a',5);  }, // Fern — strong regen stance
   measure(f){ f.flash=8; f.countering=22; puff(f.x,f.y-10,'#b0b0b0',5);  }, // Ruler — precise counter
   slam(f){ f.flash=8; f.armor=Math.max(f.armor,50); braceUp(f, 50); f.vy=Math.min(f.vy,-2); puff(f.x,f.y-8,'#9a9a9a',6);  }, // Sidewalky — heavy brace
   // ---- new roster down-specials (v23+) ----
@@ -42994,7 +43003,9 @@ function mvTick(f, inp){
   // platform's edge, by the arrows or by the move's own push -- ends at once: no box of it lingers in the air, nothing keeps its facing, and the jump,
   // the double jump and the up-special are free this very frame (the inputs below are not set aside), with the air control of a fighter with no move
   // out. Only a move that lifts the fighter itself (an `mv` step that sends them up: mv.lift) is left to run in the air, as it always did.
-  if(!mv.air && !f.onground && !mv.lift){
+  // Only a fighter that really left the ground: its own last physics step found no floor under its feet (_footing). A push that merely marks a fighter
+  // airborne with no lift (Fanny's gust: onground=false, and the floor is still under them) does not cancel a tilt on flat ground.
+  if(!mv.air && !f.onground && !mv.lift && !f._footing){
     f._mv = null; f.atkCd = Math.max(0, f.atkCd - Math.max(0, total - t)); f._atkAnim = Math.min(f._atkAnim, 2);
     return;
   }
@@ -45724,7 +45735,7 @@ function doSpecial(f){
       }, '#f2c84b', { kind:'circle', r:f.r+80-HURT_R0 });  f.spCd=69; break; }
     case "sign": spawnProj(f,{vx:f.face*10,vy:0,grav:false,boomerang:true,ownerFace:f.face,dmg:10,kb:8,r:9,color:'#6fb7ff',life:70}); f.flash=6; f.spCd=46; break; // Bracelety (buffed: weak)
     case "gust": f._empower=1; f.flash=10; for(let i=0;i<8;i++) puff(f.x,f.y-6,'#bfe8ff',5);  f.spCd=67; break; // Fanny: charge next air blast
-    case "reflect": f.reflecting=36; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+comebackRange(f); hitArt(f, 'reflect', { kind:'circle', x:f.x, y:f.y, r:rr-HURT_R0 }, { color:'#e8e8e8' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } if(summons.length) damageSummons(f, f.x, f.y, rr, 5); }, '#e8e8e8', { kind:'circle', r:f.r+44+comebackRange(f)-HURT_R0 }); puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
+    case "reflect": f.reflecting=36; f._reflAtk=true; f.flash=10; startWindup(f, CIRCLE_WINDUP, function(){ const rr=f.r+44+comebackRange(f); hitArt(f, 'reflect', { kind:'circle', x:f.x, y:f.y, r:rr-HURT_R0 }, { color:'#e8e8e8' }); for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0)continue; if(hurtGap(t, f.x, f.y) < -HURT_R0 + rr){ applyHit(t,5,Math.sign(t.x-f.x||1)*6,-4,f);} } if(summons.length) damageSummons(f, f.x, f.y, rr, 5); }, '#e8e8e8', { kind:'circle', r:f.r+44+comebackRange(f)-HURT_R0 }); puff(f.x,f.y-8,'#e8e8e8',5);  break; // Gaty
     case "grasstree": { // Grassy: GRASSTREE (TPOT 16-17: he pilots Tree's body). For GRASSTREE_FRAMES he is up a
       // tree: armoured, a tree's reach and weight behind every swing, and slower. Using it again refreshes it.
       f._grasstree = GRASSTREE_FRAMES; f.flash=10;
@@ -45796,7 +45807,7 @@ function doSpecial(f){
       // KIT FIX (kit-roles): both his specials were armour stances. Stay Cool now ENDS in a cold blast: when the armour runs out (LOSER_COOL_FRAMES after it
       // went up, if nothing has knocked him out of the stance) a chill goes off around him and pops every foe right beside him up, 3% and a lift, so the stance is
       // the opener he lacked. The armour and the empowered next hit are as they were.
-      f.armor=Math.max(f.armor,22); braceUp(f, 22); f._empower=1; f._coolT = LOSER_COOL_FRAMES; f.flash=12; for(let i=0;i<10;i++) puff(f.x,f.y-8,'#e8e8e8',5);  f.spCd=138; break; }
+      f.armor=Math.max(f.armor,22); f._empower=1; f._coolT = LOSER_COOL_FRAMES; f.flash=12; for(let i=0;i<10;i++) puff(f.x,f.y-8,'#e8e8e8',5);  f.spCd=138; break; }
     // ---- final 12 characters ----
     case "switch": { // Liy: FLIP THE SWITCH — lights-on blitz forward, grab the first enemy, pull them in
       // Trimmed hard: at 100% win rate in real 1v1s this grab was uncontestable. Slower blitz, no
@@ -46371,7 +46382,7 @@ function doSpecial(f){
       // dropped it on Silver (Super Strength). Arms up: a shot that reaches him in the stance goes straight back (the engine's
       // reflect -- catching one and lobbing it onto a foe would need a new branch in the projectile loop), and whoever is right
       // in front is lifted and slammed down. He cannot walk with his arms up.
-      f.reflecting = Math.max(f.reflecting||0, 24); f.rooted = Math.max(f.rooted||0, 16);
+      f.reflecting = Math.max(f.reflecting||0, 24); f._reflAtk = true; f.rooted = Math.max(f.rooted||0, 16);   // (an attack's reflect: it does not hold him -- his own root does, as it always did; see stanceStill)
       let n = 0;
       for(const t of fighters){ if(t.dead||t.idx===f.idx||t.team===f.team||t.invuln>0) continue;
         if(Math.sign(t.x - f.x) !== f.face && Math.abs(t.x - f.x) > f.r) continue;
@@ -47209,7 +47220,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   if(from && from.idx!==t.idx && from.team===t.team) return;
   // COUNTER: if the target is in a counter stance, they nullify the hit and punish the attacker.
   if(t.countering>0 && from && from.idx!==t.idx && !from.dead && !(SMASH_PROJ && SMASH_PROJ.unbreakable)){   // (a counter does not nullify an `unbreakable` shot -- the Bug Swarm's dodgeball: it lands)
-    t.countering=0; t.flash=12; t.invuln=Math.max(t.invuln,10);
+    t.countering=0; t._braceT=0; t.flash=12; t.invuln=Math.max(t.invuln,10);   // (FREE ONCE IT ANSWERS, the owner, 2026-10-20: the fighter moves at once, even with armour left -- see stanceStill)
     const bodied = Number.isFinite(from.x) && Number.isFinite(from.y);   // a boss's shot names its owner {team:-1, idx:-2}: nothing there to punish, and a hit on it puffed sparks at (undefined, undefined)
     if(t.kit && t.kit.special==="counter" && t._riposte){
       // Needle's SMASH, the Riposte Stance: sixty committed frames priced at cd 56, and this is the
@@ -50627,7 +50638,7 @@ function aiMinnowReads(f, t, inp, dx, dy, dist, adx, ady){
       if(plain && (f._empower > 0 || dist > 220 || face !== toward)) veto();
       if(f.spCd <= 0 && !inp.special){
         if(safeFloor && f.pct >= 25 && dist < 420) press(true, false);
-        else if(!(f._empower > 0) && dist > 70 && dist < 200 && face === toward && ady < 50 && t.invuln <= 0 && dx*(t.vx||0) < -0.5) press(false, true);   // ...and only with the foe coming at him: the stance holds him still (stanceStill), so he waits in it for them rather than walk in under it
+        else if(!(f._empower > 0) && dist > 70 && dist < 200 && face === toward && ady < 50 && t.invuln <= 0) press(false, true);
       }
     }
     else if(sp === 'atstake'){
@@ -51764,9 +51775,9 @@ function finishAI(f,inp,sp){
   if(sp==='chair') aiBowVeto(f, f.aiTarget, inp);   // Bow: a Teleport that lands on no one is not pressed, whichever branch asked
   if(inp._kitRead){ if(inp.special) inp.attack=false; delete inp._kitRead; }
   if(sp==='chair') aiBowTpHold(f, inp);   // Bow: a Teleport on its way keeps its press neutral, and its aim is held while she fades
-  // HOLD THEM STILL (stanceStill): with its counter, reflect or armour stance up on the ground a CPU waits in it -- it lets go of the arrows, which could
-  // not walk it anywhere, rather than press them to walk into position.
-  if(f.onground && stanceStill(f)){ inp.left = false; inp.right = false; }
+  // HOLD THEM STILL (stanceStill): with its counter, reflect or armour stance up on the ground and nothing else asked for, a CPU waits in it -- it lets
+  // go of the arrows, which could not walk it anywhere. With a move asked for the arrows stay: they choose it (a side move is not turned into a jab).
+  if(f.onground && stanceStill(f) && !(inp.attack || inp.special || inp.smash || inp.grab || inp.fin || inp.side || inp.jump)){ inp.left = false; inp.right = false; }
   // difficulty handicap: lower levels drop offensive inputs & hesitate (movement still works so they don't look frozen)
   const lvl = (f._lvlCache!=null)?f._lvlCache:1;
   if(lvl===0){                       // easy: frequently fails to attack, sometimes wrong-foots itself
