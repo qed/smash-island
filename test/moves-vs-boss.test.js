@@ -74,9 +74,12 @@ describe('a fighter move that reaches a boss by two paths lands on it once', () 
     expect(r.hits.length).toBe(1);
   });
 
-  it('Coiny\'s finisher is one slap of 8 on a boss, not two (it took 16)', () => {
+  // (Restated 2026-10-20: the owner approved replacing Coiny's finisher -- "i approve them", finisher-ideas-v2.md. Slap Fight Rematch has no
+  // slap fight with a boss: the finale's 10 lands as one plain hit, still never twice.)
+  it('Coiny\'s finisher is one plain hit of 10 on a boss (Slap Fight Rematch: no slap fight with a boss), not two', () => {
     const r = run('Coiny', 'ground', 'doAttackSpecial(f);');
-    expect(r.lost).toBe(8);
+    expect(r.lost).toBe(10);
+    expect(r.hits.length).toBe(1);
   });
 
   it('Dough\'s down-special is one bounce of 7 on a boss that stands on both sides of him, not one a side (it took 14)', () => {

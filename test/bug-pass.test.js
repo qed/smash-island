@@ -573,7 +573,7 @@ describe('Boss Rush, round 2: the fighter-vs-fighter numbers of the rerouted mov
   const BEFORE = [['Firey','up',8,4,0],['Flower','up',11,7,0],['Match','up',8,4,0],['Balloony','up',4,4,0],['Donut','up',11,7,0],['Bomb','up',8,4,0],['Bell','up',10,6,0],['Spikey','up',14,4,0],
     ['Saw','special',28,24,0],['Saw','down',0,0,0],['Donut','special',24,20,0],['Naily','smash',42.28,42.22,41.81],['Ruby','smash',26.2,26.2,26.2],['Remote','smash',15,15,15],['TV','smash',18,18,18],
     ['Dora','smash',26,26,26],['Ruler','smash',18,18,18],['Lightbulb','smash',20,20,20],['Nickel (II)','smash',23.86,23.86,23.86],['Cammy','smash',20,20,20],['Tissues','smash',20,20,20],['Tapey','smash',20,20,20],
-    ['Bomby','xc',18,18,0],['Teardrop','xc',18,18,0],['Flower','special',14,14,14],['Flower','down',5,5,0],['Coiny','special',9,0,0],['Yellow Face','special',7,7,0],['Bell','special',6,6,0],['Gaty','special',5,0,0],
+    ['Bomby','xc',18,18,0],['Teardrop','xc',11,11,11],['Flower','special',14,14,14],['Flower','down',5,5,0],['Coiny','special',9,0,0],['Yellow Face','special',7,7,0],['Bell','special',6,6,0],['Gaty','special',5,0,0],
     ['Marker','special',9,9,0],['Rose','special',7,7,7],['TV','special',7,7,0],['Dora','special',15,15,0],['David','special',11,10,7],['Fern','special',8,8,0],['Sidewalky','special',10,0,0],['Balloony','special',10,10,0],
     ['Marshmallow','special',8,8,8],['Marshmallow','down',9,9,0],['Nickel (II)','special',7.95,7.95,7.95],['Goo','special',8,8,0],['Candle','special',9,9,9],['Cammy','special',0,0,4],['Cammy','down',5,5,0],
     ['Blueberry','special',10,10,0],['Cherries','special',4,4,0],['Magnet','special',12,12,12],['Liy','special',54,66,60],['Taco (II)','down',6,6,6],['Apple','down',6,6,0],['Salt','down',7,7,0],['Spikey','down',8,8,0],
@@ -591,6 +591,8 @@ describe('Boss Rush, round 2: the fighter-vs-fighter numbers of the rerouted mov
     for(var i=0;i<150;i++){ step(); D.x=dx0; D.y=dy0; D.vx=0; D.vy=0; D.dead=false; D.invuln=0; D.hitstun=0; }
     return +(D.pct-p0).toFixed(2); })()`;
   // (Magnet's special: 9 -> 12 at every range, restated 2026-10-18 with the owner's OK -- "Update the test" -- after the deliberate II moveset lift of Magnet.)
+  // (Teardrop's finisher: 18, 18, 0 -> 11 at every range, restated 2026-10-20: the owner approved replacing it with Silent Puddle Ambush -- "i approve them",
+  // finisher-ideas-v2.md -- a puddle that slides under the nearest foe within 300 px and erupts as an 11% geyser.)
   it('every rerouted move does to Pen exactly what it did before', async () => {
     const F = bootMonolith(); await F.eval('profileReady');   // a fresh boot, as the numbers were taken
     const diffs = [];
