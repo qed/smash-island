@@ -26,20 +26,25 @@ import { makeRoom } from './helpers/net-room.js';
 //   3) "No turning in a stance": a smash pressed while a stance is up fires the way the fighter already faces (smashAim does not turn them).
 // The reviewer's other findings: a CPU in a stance that asks for a move keeps its arrows (they choose the move); Fanny's gust (onground=false, no lift)
 // no longer cancels a tilt on flat ground -- only really leaving the ground does ("walking off cancels the tilt").
+// ON THE MERGE WITH MAIN (2026-10-20): main had turned the ground side-tilt off (SIDE_TILTS, the owner, 2026-10-18: on the ground ←/→ + X is the jab,
+// aimed that way -- it never rooted anyone) and given every fighter its own run, air and fall (FIGHTER_STATS). So the tilts measured here are the
+// up- and down-tilt (the long throwaway side-tilt became the down-tilt, frame for frame), ←/→ + X is pinned as the jab that walks, every walk is
+// held to the fighter's own run, and 'what does not change' is pinned to main's own frames (recorded on main, fc0b69d, with the stats in).
 
 let W;
 beforeAll(async () => {
   W = bootMonolith(); await W.eval('profileReady');
   // throwaway moves on two kits, so the SYSTEM is measured, not a fighter's numbers: Coiny's ('slap') have no push of their own; Snowball's
-  // ('tackle') side-tilt pushes him forward on frames 2-5
+  // ('tackle') down-tilt pushes him forward on frames 2-5. Coiny's down-tilt is the long poke this file first measured as a side-tilt (a box
+  // straight out in front, live six frames); his `ft` row is kept as data, and never fires (SIDE_TILTS is off: ←/→ + X on the ground is the jab)
   W.eval(`MOVESETS.slap = {
     ft:{n:'T',pose:'punch',st:6,act:6,end:8,boxes:[{s:MvC(10,0,60,0,14),dmg:5,kb:[5,-2],stun:16}]},
     ut:{n:'U',pose:'uppercut',st:4,act:4,end:9,boxes:[{s:MvF(10,60,-1.8,-0.3,0),dmg:4,kb:[1,-7],stun:18}]},
-    dt:{n:'D',pose:'kick',st:4,act:3,end:8,boxes:[{s:MvC(10,20,60,20,12),dmg:4,kb:[2,-4],stun:20}]},
+    dt:{n:'D',pose:'kick',st:6,act:6,end:8,boxes:[{s:MvC(10,0,60,0,14),dmg:5,kb:[5,-2],stun:16}]},
     fa:{n:'F',pose:'punch',st:5,act:6,end:10,land:9,ac:16,boxes:[{s:MvC(10,0,60,0,14),dmg:7,kb:[6,-3],stun:16}]},
   };
   MOVESETS.tackle = Object.assign({}, MOVESETS.tackle, {
-    ft:{n:'P',pose:'punch',st:7,act:3,end:8,boxes:[{s:MvC(10,0,60,0,14),dmg:5,kb:[5,-2],stun:16}],mv:[{t0:2,t1:5,mode:'set',vx:6}]},
+    dt:{n:'P',pose:'kick',st:7,act:3,end:8,boxes:[{s:MvC(10,0,60,0,14),dmg:5,kb:[5,-2],stun:16}],mv:[{t0:2,t1:5,mode:'set',vx:6}]},
   });`);
 });
 
@@ -61,26 +66,43 @@ const press = (keys, n = 1) => W.eval(`(function(){ for (var i = 0; i < ${n}; i+
 const J = (code) => W.eval(`(function(){ return ${code}; })()`);
 const A = (field) => J('fighters[0].' + field);
 const hold = (keys) => W.eval(`(function(){ for (var k in down) delete down[k]; ${JSON.stringify(keys)}.forEach(function(k){ down[KEYS[k]] = true; }); step(); for (var k in down) delete down[k]; })()`);
-// the frames hold right for, after the press: a timeline that starts with `pre` (held `preN` frames, right with it) and holds right after
-function walkWith(name, pre, preN, n) {
+// the frames hold `dir` for, after the press: a timeline that starts with `pre` (held `preN` frames, `dir` with it) and holds `dir` after.
+// key: the first moveset move seen out; move: the attack label the press left (a moveset move's or the jab's: _atkMove), with atkCd after it
+function walkWith(name, pre, preN, n, dir = 'right') {
   stage(name);
   const keys = [];
+  let move = null, cd = 0, face0 = null;
   for (let i = 0; i < preN + n; i++) {
-    hold(i < preN ? pre.concat(['right']) : ['right']);
+    hold(i < preN ? pre.concat([dir]) : [dir]);
     if (A('_mv')) keys.push(A('_mv.key'));
+    if (i === preN - 1) { move = A('_atkMove'); cd = A('atkCd'); face0 = A('face'); }
   }
-  return { dx: A('x') - 400, key: keys[0] || null, face: A('face') };
+  return { dx: A('x') - 400, key: keys[0] || null, face: A('face'), move, cd, face0, ft: J('(fighters[0]._used || {}).ft || 0') };
 }
-const walkOnly = (name, n) => walkWith(name, [], 0, n).dx;
+const walkOnly = (name, n, dir) => walkWith(name, [], 0, n, dir).dx;
+const TILT_KEYS = { ut: ['attack', 'jump'], dt: ['attack', 'down'] };   // (up is the jump key)
 
 describe('a ground jab or tilt walks at full speed', () => {
-  it('holding right through a side-tilt, an up-tilt and a down-tilt covers what walking does over the same frames', () => {
+  // RESTATED (the merge with main: no side-tilt on the ground, SIDE_TILTS): this held right through a side-tilt too. On the ground ←/→ + X is the jab
+  // now, aimed that way: it is pinned here as the jab (not a moveset move, though Coiny's throwaway kit still has an `ft` row) and as walking too.
+  it('holding right through an up-tilt and a down-tilt covers what walking does over the same frames; ←/→ + X on the ground is the jab, aimed that way, and walks too', () => {
     const N = 28, walk = walkOnly('Coiny', N + 2);
     expect(walk).toBeGreaterThan(120);
-    for (const [k, pre] of [['ft', ['attack']], ['ut', ['attack', 'jump']], ['dt', ['attack', 'down']]]) {
-      const r = walkWith('Coiny', pre, 2, N);
+    for (const k of ['ut', 'dt']) {
+      const r = walkWith('Coiny', TILT_KEYS[k], 2, N);
       expect(r.key, k + ' came out').toBe(k);
+      expect(r.move, k + ': the move the press started').toBe('slap.' + k);
       expect(Math.abs(r.dx - walk), `${k}: walked ${r.dx.toFixed(1)} px against ${walk.toFixed(1)}`).toBeLessThan(2);
+    }
+    expect(J('SIDE_TILTS')).toBe(false);
+    for (const [dir, face] of [['right', 1], ['left', -1]]) {
+      const w = walkOnly('Coiny', N + 2, dir), r = walkWith('Coiny', ['attack'], 2, N, dir);
+      expect(r.move, `${dir} + X: the jab`).toBe('slap.jab');
+      expect(r.cd, `${dir} + X: it went off`).toBeGreaterThan(0);
+      expect(r.key, `${dir} + X: no moveset move came out`).toBeNull();
+      expect(r.ft, `${dir} + X: never the side-tilt`).toBe(0);
+      expect(r.face0, `${dir} + X: aimed the side pressed`).toBe(face);
+      expect(Math.abs(r.dx - w), `${dir} + X: walked ${r.dx.toFixed(1)} px against ${w.toFixed(1)}`).toBeLessThan(2);
     }
   });
   it('the jab (X with no arrow) does not stop a walk either', () => {
@@ -93,25 +115,35 @@ describe('a ground jab or tilt walks at full speed', () => {
     stage('Coiny'); press([], 6); const x1 = A('x'); for (let i = 0; i < 20; i++) hold(['right']);
     expect(Math.abs(jabbed - (A('x') - x1))).toBeLessThan(1);
   });
-  it('every fighter\'s own tilts walk (a tilt with a push of its own only slows on the push frames)', () => {
+  // RESTATED (the merge with main): this walked every fighter's side-tilt too, which no longer fires on the ground (SIDE_TILTS), and measured each
+  // walk against the fighter's own with every run and drift the same. Now each fighter has its own run and air (FIGHTER_STATS): the walk each tilt
+  // is held to is first pinned to that fighter's own run -- its run stat times a run-1 fighter's walk -- so "full speed" is the fighter's own speed.
+  // A tilt that lifts its fighter itself (an `mv` step sending them up: Pin's Hop and Point, Bomby's Pop Up) has them in the air for a few frames,
+  // where the arrows drift them at their own air stat, as any hop does: for those the walk may run between the run's and the air's speed.
+  it('every fighter\'s own up- and down-tilt walk at that fighter\'s own speed, its run stat (a tilt with a push of its own only slows on the push frames; one that lifts them drifts at their air stat while up)', () => {
     const rows = J(`ROSTER.filter(function(r){ var ms = MOVESETS[r.kit && r.kit.special]; return ms && r.kit.special !== 'slap' && r.kit.special !== 'tackle'; })
-      .map(function(r){ var ms = MOVESETS[r.kit.special]; return [r.name, ['ft','ut','dt'].filter(function(k){ return ms[k]; }).map(function(k){ return [k, !!(ms[k].mv && ms[k].mv.some(function(m){ return m.vx != null; }))]; })]; })`);
+      .map(function(r){ var ms = MOVESETS[r.kit.special], S = statsFor(r.name); return [r.name, S.run, S.air, ['ut','dt'].filter(function(k){ return ms[k]; }).map(function(k){
+        return [k, !!(ms[k].mv && ms[k].mv.some(function(m){ return m.vx != null; })), !!(ms[k].mv && ms[k].mv.some(function(m){ return m.vy != null && m.vy < 0; }))]; })]; })`);
     expect(rows.length).toBeGreaterThan(60);
-    const bad = [];
-    for (const [name, moves] of rows) {
+    expect(rows.filter((r) => r[1] !== 1).length, 'fighters whose run is their own').toBeGreaterThan(40);
+    expect(rows.reduce((n, r) => n + r[3].length, 0), 'tilts walked').toBeGreaterThan(120);
+    expect(J('statsFor("Pen").run')).toBe(1);
+    const base = walkOnly('Pen', 24), bad = [];
+    for (const [name, run, air, moves] of rows) {
       const walk = walkOnly(name, 24);
-      for (const [k, pushes] of moves) {
-        const r = walkWith(name, k === 'ft' ? ['attack'] : k === 'ut' ? ['attack', 'jump'] : ['attack', 'down'], 2, 22);
-        const ratio = r.dx / walk;
-        if (r.key !== k || ratio < (pushes ? 0.8 : 0.97) || ratio > 1.03) bad.push(`${name} ${k} ${r.key} ${ratio.toFixed(2)}`);
+      if (Math.abs(walk / (base * run) - 1) > 0.01) bad.push(`${name} walks ${(walk / base).toFixed(3)} of a run-1 walk, its run is ${run}`);
+      for (const [k, pushes, lifts] of moves) {
+        const r = walkWith(name, TILT_KEYS[k], 2, 22);
+        const ratio = r.dx / walk, ak = lifts ? air / run : 1;
+        if (r.key !== k || ratio < (pushes ? 0.8 : 0.97) * Math.min(1, ak) || ratio > 1.03 * Math.max(1, ak)) bad.push(`${name} ${k} ${r.key} ${ratio.toFixed(2)}`);
       }
     }
     expect(bad).toEqual([]);
   });
   it('the move\'s own push still wins on the frames it acts: holding back, the slide carries him forward, then he turns and walks', () => {
     stage('Snowball');
-    press(['attack', 'right'], 2);
-    expect(A('_mv.key')).toBe('ft');
+    press(['attack', 'down', 'right'], 2);
+    expect(A('_mv.key')).toBe('dt');
     while (A('_mv.t') < 2) hold([]);           // up to the push's first frame
     const xs = [], faces = [];
     for (let i = 0; i < 20; i++){ hold(['left']); xs.push(A('x')); faces.push(A('face')); }
@@ -127,8 +159,8 @@ describe('a ground jab or tilt walks at full speed', () => {
 describe('turning round mid-tilt turns the move', () => {
   it('pressing the other way during the start-up: the box comes out behind, on the new side, and never on the old', () => {
     stage('Coiny', [45, -45]);
-    press(['attack', 'right'], 2);
-    expect(A('_mv.key')).toBe('ft');
+    press(['attack', 'down', 'right'], 2);
+    expect(A('_mv.key')).toBe('dt');
     for (let i = 0; i < 12; i++) hold(['left']);
     expect(A('face')).toBe(-1);
     expect(J('fighters[2].pct'), 'the foe on the new side').toBeCloseTo(5, 1);
@@ -139,7 +171,8 @@ describe('turning round mid-tilt turns the move', () => {
   // this pinned that the turn frame's box was still out the old way and the foe behind was hit only on the frame after. Now the turn frame hits it.
   it('pressing the other way while it is live: that very frame the box hits the foe on the new side as the sprite turns, and its hit art and knockback turn with it', () => {
     stage('Coiny', [40, -40]);
-    press(['attack', 'right'], 2);
+    press(['attack', 'down', 'right'], 2);
+    expect(A('_mv.key')).toBe('dt');
     let n = 0; while (J('fighters[1].pct') === 0 && n++ < 12) hold(['right']);
     expect(J('fighters[1].pct'), 'the first live frame hit the foe in front').toBeCloseTo(5, 1);
     expect(A('_mv') && A('_mv.t') < A('_mv.s.st') + A('_mv.s.act')).toBeTruthy();   // still live
@@ -154,8 +187,8 @@ describe('turning round mid-tilt turns the move', () => {
   });
   it('the turn frame\'s box is the sprite\'s: flipping the arrows every frame of a live tilt, the box drawn each frame faces the way the fighter does', () => {
     stage('Coiny', [600]);
-    press(['attack', 'right'], 2);
-    expect(A('_mv.key')).toBe('ft');
+    press(['attack', 'down', 'right'], 2);
+    expect(A('_mv.key')).toBe('dt');
     const rows = [];
     for (let i = 0; i < 16 && A('_mv'); i++) {
       W.eval('HIT_ART.length = 0');
@@ -177,11 +210,11 @@ describe('walking off cancels the tilt (the owner, 2026-10-20: "Walking off canc
       A.x = 400; A.y = gy - 160 - A.r; A.vx = 0; A.vy = 0; step(); A.x = 400; A.vx = 0; A.face = 1; A.atkCd = 0; A.spCd = 0; })()`);
     expect(A('onground'), 'standing on the platform').toBe(true);
   };
-  // walk right through a side-tilt until the fighter leaves the platform; returns the frames the move still had to run
+  // walk right through a down-tilt until the fighter leaves the platform; returns the frames the move still had to run
   const walkOff = (name, edge, keys = ['right']) => {
     ledge(name, edge);
-    press(['attack', 'right'], 2);
-    expect(A('_mv.key')).toBe('ft');
+    press(['attack', 'down', 'right'], 2);
+    expect(A('_mv.key')).toBe('dt');
     let n = 0; while (A('onground') && n++ < 24) hold(keys);
     expect(A('onground'), 'off the edge').toBe(false);
     return J('fighters[0]._mv ? mvTotal(fighters[0]._mv.s) - fighters[0]._mv.t : 0');
@@ -212,8 +245,8 @@ describe('walking off cancels the tilt (the owner, 2026-10-20: "Walking off canc
   });
   it('a move whose own push carries him off works the same way: Snowball\'s slide takes him over the edge, and he can jump the next frame', () => {
     ledge('Snowball', 14);
-    press(['attack', 'right'], 2);               // (two frames of the arrow walk him a step; the slide takes him the rest of the way over)
-    expect(A('_mv.key')).toBe('ft');
+    press(['attack', 'down', 'right'], 2);       // (two frames of the arrow walk him a step; the slide takes him the rest of the way over)
+    expect(A('_mv.key')).toBe('dt');
     let n = 0; while (A('onground') && n++ < 12) hold([]);
     expect(A('onground'), 'the slide carried him off').toBe(false);
     expect(A('_mv'), 'the move was still out as he left').toBeTruthy();
@@ -224,8 +257,8 @@ describe('walking off cancels the tilt (the owner, 2026-10-20: "Walking off canc
   it('a push that only marks him airborne does not: Fanny\'s gust on flat ground leaves the tilt running, and it runs out on the floor (the reviewer, 2026-10-20)', () => {
     const runOut = (gust) => {
       stage('Coiny', [-100]);
-      press(['attack', 'right'], 2);
-      expect(A('_mv.key')).toBe('ft');
+      press(['attack', 'down', 'right'], 2);
+      expect(A('_mv.key')).toBe('dt');
       if (gust) {
         W.eval('DOWNSPECIALS.gust(fighters[1])');  // the dummy behind him blows him away: t.onground = false, with no lift and the floor still under him
         expect(A('vx'), 'the gust pushed him').toBeGreaterThan(5);
@@ -241,10 +274,11 @@ describe('walking off cancels the tilt (the owner, 2026-10-20: "Walking off canc
   });
   it('on the ground nothing changes: the same tilt run out on the platform keeps its frames', () => {
     ledge('Coiny', 300);
-    press(['attack', 'right'], 2);
+    press(['attack', 'down', 'right'], 2);
+    expect(A('_mv.key')).toBe('dt');
     let n = 0; while (A('_mv') && n++ < 30) hold(['right']);
     expect(A('onground')).toBe(true);
-    expect(n + 2, 'the whole move, start-up to recovery').toBeGreaterThanOrEqual(J('mvTotal(MOVESETS.slap.ft)'));
+    expect(n + 2, 'the whole move, start-up to recovery').toBeGreaterThanOrEqual(J('mvTotal(MOVESETS.slap.dt)'));
   });
 });
 
@@ -260,8 +294,11 @@ describe('what does not change', () => {
     expect(J('fighters[1].pct'), 'the foe in front').toBeCloseTo(7, 1);
     expect(J('fighters[2].pct'), 'the foe behind').toBe(0);
   });
-  // Recorded on the build before this change (cfa6dea): where the fighter is, frame by frame, holding an arrow through the move ('L' = facing
-  // left). A Root & blast smash (Bomby's: it charges as he walks, then roots him) and a finisher that drives its own speed (Snowball's tackle).
+  // Recorded on MAIN (fc0b69d: the game without moving-while-attacking, with the per-fighter stats in -- Bomby runs 0.94, Snowball 0.91), in a
+  // scratch checkout of it: where the fighter is, frame by frame, holding an arrow through the move ('L' = facing left). A Root & blast smash
+  // (Bomby's: it charges as he walks, then roots him) and a finisher that drives its own speed (Snowball's tackle). This branch has to match main
+  // frame for frame: moving while attacking changes no smash and no finisher.
+  // RESTATED (the merge with main): these were recorded on cfa6dea, before the stats (every run 1); main's own frames are the claim now.
   const run = (name, keys, keysN, holdKey, n) => W.eval(`(function(){
     SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.itemRate=0; running=true; TESTMODE.active=false;
     worldPlats=[]; summons=[]; projectiles=[]; beams=[]; tendrils=[]; items=[]; particles=[];
@@ -283,12 +320,12 @@ describe('what does not change', () => {
     return xs.join(' ');
   })()`);
   it('a smash still roots as before (Bomby\'s Root & blast), whichever way is held', () => {
-    expect(run('Bomby', ['smash'], 2, 'right', 50)).toBe('0 0 0.9 2.7 5.4 9 13.5 18.9 25.2 31.6 38 44.4 50.8 57.2 63.6 70 76.4 82.8 89.2 95.6 102 108.4 114.8 121.2 127.6 134 140.4 146.8 153.2 159.6 160.5 161.4 162.3 163.2 164.1 165 165.9 166.8 167.7 168.6 169.5 170.4 171.3 172.2 173.1 174 174.9 175.8 176.7 177.6');
-    expect(run('Bomby', ['smash'], 2, 'left', 50)).toBe('0 0 -0.9L -2.7L -5.4L -9L -13.5L -18.9L -25.2L -31.6L -38L -44.4L -50.8L -57.2L -63.6L -70L -76.4L -82.8L -89.2L -95.6L -102L -108.4L -114.8L -121.2L -127.6L -134L -140.4L -146.8L -153.2L -159.6L -160.5L -161.4L -162.3L -163.2L -164.1L -165L -165.9L -166.8L -167.7L -168.6L -169.5L -170.4L -171.3L -172.2L -173.1L -174L -174.9L -175.8L -176.7L -177.6L');
+    expect(run('Bomby', ['smash'], 2, 'right', 50)).toBe('0 0 0.85 2.54 5.08 8.46 12.69 17.77 23.69 29.7 35.72 41.74 47.75 53.77 59.78 65.8 71.82 77.83 83.85 89.86 95.88 101.9 107.91 113.93 119.94 125.96 131.98 137.99 144.01 150.02 150.87 151.72 152.56 153.41 154.25 155.1 155.95 156.79 157.64 158.48 159.33 160.18 161.02 161.87 162.71 163.56 164.41 165.25 166.1 166.94');
+    expect(run('Bomby', ['smash'], 2, 'left', 50)).toBe('0 0 -0.85L -2.54L -5.08L -8.46L -12.69L -17.77L -23.69L -29.7L -35.72L -41.74L -47.75L -53.77L -59.78L -65.8L -71.82L -77.83L -83.85L -89.86L -95.88L -101.9L -107.91L -113.93L -119.94L -125.96L -131.98L -137.99L -144.01L -150.02L -150.87L -151.72L -152.56L -153.41L -154.25L -155.1L -155.95L -156.79L -157.64L -158.48L -159.33L -160.18L -161.02L -161.87L -162.71L -163.56L -164.41L -165.25L -166.1L -166.94L');
   });
   it('a finisher moves exactly as before (Snowball\'s tackle carries him; holding back turns him only as it always did)', () => {
-    expect(run('Snowball', ['smash', 'special'], 1, 'left', 30)).toBe('17 23.4L 28.9L 33.5L 37.2L 40L 41.9L 42.9L 43L 42.2L 40.5L 37.9L 34.4L 30L 24.7L 18.5L 12.1L 5.7L -0.7L -7.1L -13.5L -19.9L -26.3L -32.7L -39.1L -45.5L -51.9L -58.3L -64.7L -71.1L');
-    expect(run('Snowball', ['smash', 'special'], 1, 'right', 30)).toBe('17 23.4 29.8 36.2 42.6 49 55.4 61.8 68.2 74.6 81 87.4 93.8 100.2 106.6 113 119.4 125.8 132.2 138.6 145 151.4 157.8 164.2 170.6 177 183.4 189.8 196.2 202.6');
+    expect(run('Snowball', ['smash', 'special'], 1, 'left', 30)).toBe('17 22.82L 27.83L 32.01L 35.38L 37.93L 39.66L 40.57L 40.66L 39.93L 38.38L 36.02L 32.83L 28.83L 24.01L 18.37L 12.54L 6.72L 0.89L -4.93L -10.76L -16.58L -22.4L -28.23L -34.05L -39.88L -45.7L -51.52L -57.35L -63.17L');
+    expect(run('Snowball', ['smash', 'special'], 1, 'right', 30)).toBe('17 22.82 28.65 34.47 40.3 46.12 51.94 57.77 63.59 69.42 75.24 81.06 86.89 92.71 98.54 104.36 110.18 116.01 121.83 127.66 133.48 139.3 145.13 150.95 156.78 162.6 168.42 174.25 180.07 185.9');
   });
 });
 
@@ -514,16 +551,16 @@ describe('online: the host runs it, and a client sees the turned attack', () => 
     room.flush();
     expect(H.eval('running') && C.eval('running')).toBe(true);
     for (let i = 0; i < 30; i++) room.frame();
-    // the host's world: p2 (Coiny, the friend's) on the floor facing right, the host's own fighter 45 px BEHIND p2; a long side-tilt on Coiny's kit
-    H.eval(`MOVESETS.slap = Object.assign({}, MOVESETS.slap, { ft:{n:'T',pose:'punch',st:10,act:6,end:8,boxes:[{s:MvC(10,0,60,0,14),dmg:5,kb:[5,-2],stun:16}]} });
+    // the host's world: p2 (Coiny, the friend's) on the floor facing right, the host's own fighter 45 px BEHIND p2; a long down-tilt on Coiny's kit
+    H.eval(`MOVESETS.slap = Object.assign({}, MOVESETS.slap, { dt:{n:'T',pose:'kick',st:10,act:6,end:8,boxes:[{s:MvC(10,0,60,0,14),dmg:5,kb:[5,-2],stun:16}]} });
       (function(){ var P = fighters[1], O = fighters[0]; P.x = 600; P.face = 1; P.vx = 0; P.atkCd = 0; P.invuln = 0; O.x = 555; O.vx = 0; O.invuln = 0; O.pct = 0; O.controller = 'still'; })();`);
     room.frame();
     const me = C.eval('NET.myIdx');
     expect(me).toBe(1);
-    const K = C.eval('({ x: KEYS.attack, r: KEYS.right, l: KEYS.left })');
-    key(C, K.x, true); key(C, K.r, true);
+    const K = C.eval('({ x: KEYS.attack, r: KEYS.right, l: KEYS.left, d: KEYS.down })');
+    key(C, K.x, true); key(C, K.d, true); key(C, K.r, true);
     for (let i = 0; i < 3; i++) room.frame();
-    key(C, K.x, false); key(C, K.r, false); key(C, K.l, true);
+    key(C, K.x, false); key(C, K.d, false); key(C, K.r, false); key(C, K.l, true);
     let seenTurned = false, seenArtBehind = false;
     for (let i = 0; i < 16; i++) {
       room.frame();
@@ -534,7 +571,7 @@ describe('online: the host runs it, and a client sees the turned attack', () => 
       if (v.art && v.art[1] < v.art[2] - 30 && v.art[0] < v.art[2]) seenArtBehind = true;
     }
     key(C, K.l, false);
-    expect(H.eval('fighters[1]._lastKey'), 'the host ran p2\'s side-tilt').toBe('ft');
+    expect(H.eval('fighters[1]._lastKey'), 'the host ran p2\'s down-tilt').toBe('dt');
     expect(H.eval('fighters[0].pct'), 'the foe behind p2 was hit, on the host').toBeGreaterThan(0);
     expect(H.eval('fighters[0].vx < 0 || fighters[0].x < 555'), '...knocked the new way').toBe(true);
     expect(seenTurned, 'the friend sees p2 face the other way').toBe(true);
