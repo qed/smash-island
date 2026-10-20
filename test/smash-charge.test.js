@@ -54,7 +54,9 @@ describe('the fixture holds at range and in time, too (O13)', () => {
     const w = await boot();
     const off = [];
     for (const n of NAMES) {
-      const g = GOLDEN[n][140], r = measureSmash(w, n, 140);
+      // (restated for the HIT FREEZE, the owner 2026-10-20: "Yes, tiny" -- while a hit holds the two still, nothing of theirs counts down,
+      // so a burn the smash lit (Match's) starts after the hold; the 120 frames of the total are the fighters' own frames now)
+      const g = GOLDEN[n][140], r = measureSmash(w, n, 140, 5, true);
       if (!close(r.dmg1, g.dmg1, 0.01) || !close(r.dmg, g.dmg, 0.01) || !close(r.kvx, g.kvx, 0.02) || !close(r.kvy, g.kvy, 0.02)) {
         off.push(`${n}: ${r.dmg1}/${r.dmg} (${r.kvx},${r.kvy}) vs golden ${g.dmg1}/${g.dmg} (${g.kvx},${g.kvy})`);
       }

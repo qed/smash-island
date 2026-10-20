@@ -37,7 +37,9 @@ export function bootMonolith(seed = 5) {
   return dom.window;
 }
 
-export function measureSmash(w, name, dist, seed = 5) {
+// `own`: the window is GOLDEN_FRAMES of the two fighters' OWN frames -- a frame either stands held by a hit's freeze (HIT FREEZE,
+// 2026-10-20) is not counted, as their timers do not run in it (a burn the smash lit starts after the hold).
+export function measureSmash(w, name, dist, seed = 5, own = false) {
   w.Math.random = mulberry32(seed);   // every measurement starts from the same dice
   return w.eval(`
     (function(){
@@ -59,9 +61,10 @@ export function measureSmash(w, name, dist, seed = 5) {
       var hitFrame=-1, kvx=0, kvy=0, dmg1=0, total=0;
       if (D.pct>p0){ hitFrame=0; kvx=D.vx; kvy=D.vy; dmg1=D.pct-p0; total=dmg1; }
       var dx0=D.x, dy0=D.y;
-      for (var i=0; i<${GOLDEN_FRAMES}; i++){
+      for (var i=0, held=0; i<${GOLDEN_FRAMES}+held; i++){
         step();
-        if (hitFrame<0 && D.pct>p0){ hitFrame=i+1; kvx=D.vx; kvy=D.vy; dmg1=D.pct-p0; }
+        if (${own ? 1 : 0} && held < 30 && (A._hsHeld === hazardT || D._hsHeld === hazardT)) held++;
+        if (hitFrame<0 && D.pct>p0){ hitFrame=i+1-held; kvx=D.vx; kvy=D.vy; dmg1=D.pct-p0; }
         total = Math.max(total, D.pct-p0);
         // Pin the dummy back where it stood. The knockback was already read on the hit frame; left
         // to fly it reaches the blast line inside the budget, respawns at 0% and erases the total.
