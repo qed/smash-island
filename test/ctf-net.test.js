@@ -18,7 +18,7 @@ const hold = (w, action, frames) => { const code = w.eval(`KEYS.${action}`); key
 
 function ctfRoom() {
   room.reset();
-  for (const w of [H, A]) w.eval(`CTF.skipNav = true; CTF.forceMap = 'castle';`);
+  for (const w of [H, A]) w.eval(`CTF.skipNav = true; CTF.forceMap = 'castle'; localStorage.setItem('bfsi:ctfTutorialDone', '1');`);   // (both have had the Capture the Flag practice: it comes before a first match)
   const code = room.host('H', 'Pen');
   room.join('A', code, 'Firey');
   click(H, '#lobbyMode button[data-v="ctf"]');
