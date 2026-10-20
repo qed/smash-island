@@ -47,7 +47,7 @@ describe('batch 3 (g1): the roster rows and the art', () => {
   it('every render and pose is a transparent PNG at most 200px tall, credited with its exact source', () => {
     const credits = readFileSync('artifacts/V1/assets/sprites/CREDITS.md', 'utf8');
     const ii = JSON.parse(readFileSync('scripts/sprite-manifest-inanimateinsanity.json', 'utf8'));
-    const files = ['box', 'box-open-flaps', 'box-lifeless', 'trophy', 'goo', 'goo-giant', 'goo-puddle', 'lifering', 'lifering-dive', 'lifering-first-aid'];
+    const files = ['box', 'box-lifeless', 'trophy', 'goo', 'goo-giant', 'goo-puddle', 'lifering', 'lifering-dive', 'lifering-first-aid'];   // (box-open-flaps.png went with animation batch 1: her four flap frames, POSE_SETS.Box)
     for (const f of files) {
       const png = PNG.sync.read(readFileSync(`artifacts/V1/assets/sprites/${f}.png`));
       let clear = 0; for (let i = 3; i < png.data.length; i += 4) if (png.data[i] < 16) clear++;

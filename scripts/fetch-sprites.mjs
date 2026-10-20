@@ -30,6 +30,7 @@
 // sits left of the body's middle, i.e. the art natively faces LEFT and needs `flip:true`.
 
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
 // --wiki=<fandom subdomain> fetches from another show's wiki: the Inanimate Insanity DLC's renders come from
@@ -98,7 +99,7 @@ function decode(buf) {
 // last round carried ~1000 of them as a halo. Treated as empty, and erased on write.
 const ALPHA_FLOOR = 24;
 
-function analyse(png) {
+export function analyse(png) {
   const { width: w, height: h, data } = png;
   let opaque = 0, transparent = 0, stray = 0;
   let bodySumX = 0, bodyN = 0;
@@ -166,7 +167,7 @@ function analyse(png) {
 
 // A render must be transparent, substantial, and have a face. Each rejection reason is reported
 // rather than silently swallowed, so a skipped fighter is a decision on the record.
-function verdict(a) {
+export function verdict(a) {
   const bad = [];
   if (a.transparent === 0) bad.push('opaque background (no alpha at all) — would render as a pasted rectangle');
   if (a.coverage > 0.92) bad.push(`covers ${(a.coverage * 100).toFixed(0)}% of its canvas — background, not a cut-out`);
@@ -177,7 +178,7 @@ function verdict(a) {
 }
 
 // Erase the invisible halo so it can never skew a later audit or leave a faint fringe on canvas.
-function clean(png) {
+export function clean(png) {
   let cleaned = 0;
   for (let i = 0; i < png.data.length; i += 4) {
     const a = png.data[i + 3];
@@ -222,12 +223,16 @@ async function fetchOne(spec) {
   }
 }
 
-const names = process.argv.slice(2).filter(x => !x.startsWith('--'));
-if (!names.length) {
+// The checks above are exported (scripts/make-anim-batch1.mjs holds every pose picture to them); the fetch itself runs only when
+// this file is the one node was started on.
+const MAIN = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const names = MAIN ? process.argv.slice(2).filter(x => !x.startsWith('--')) : [];
+if (MAIN && !names.length) {
   console.error('usage: node scripts/fetch-sprites.mjs "Needle" "Pin" ...');
   process.exit(1);
 }
 
+if (MAIN) {
 const results = [];
 for (const spec of names) {
   const n = spec.split("=")[0];
@@ -246,3 +251,4 @@ writeFileSync(MANIFEST, JSON.stringify(prev, null, 2));
 
 const ok = results.filter(r => r.ok).length;
 console.log(`\n${ok}/${results.length} accepted; manifest -> ${MANIFEST}`);
+}
