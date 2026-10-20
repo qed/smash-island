@@ -45,11 +45,13 @@ describe('ground: the arrows pick the move', () => {
     }
     expect(out).toEqual({ jab: '-', ft: 'ft', ut: 'ut', dt: 'dt' });
   });
-  it('a tilt hits its own foe, leaves it in the stun the move names, and cannot be walked out of', () => {
+  // (It was "and cannot be walked out of": a ground tilt rooted you. The owner, 2026-10-20: "attacks are weird, you should be able to move
+  // while doing them" -- a ground move walks with the arrows now; test/move-while-attacking.test.js measures it in full.)
+  it('a tilt hits its own foe, leaves it in the stun the move names, and walks with the arrow held', () => {
     stage(45); hold(['attack', 'right'], 4); steps(1);
     expect(J('fighters[1].pct')).toBeCloseTo(5, 1);
     expect(J('fighters[1].hitstun')).toBeGreaterThan(10);
-    expect(J('Math.abs(fighters[0].x - 400)')).toBeLessThan(12);
+    expect(J('fighters[0].x - 400')).toBeGreaterThan(8);   // walked on (a rooted tilt slid about 3 px)
   });
   it('the up-tilt comes out when up and X go down together on the ground, not a hop with a swing in it', () => {
     stage(45); hold(['attack', 'jump'], 4);
