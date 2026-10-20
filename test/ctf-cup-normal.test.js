@@ -15,7 +15,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const myFx = (w) => J(w, `(function(){ var my = TOURNEY.myTeam, i = TOURNEY.fixtures.findIndex(function(fx){ return !fx.played && (fx.a === my || fx.b === my); }); return i < 0 ? null : { i:i, side:TOURNEY.fixtures[i].a === my ? 0 : 1 }; })()`);
 // side t carries every flag of the other side home
 const winFor = (w, t) => w.eval(`(function(){ var L = CTF.live; ctfEndHide(L); var c = fighters.find(function(f){ return f.team === ${t}; }); L.flags.filter(function(fl){ return fl.team !== ${t}; }).forEach(function(fl){ ctfCapture(L, fl, c); }); ctfCheckWin(); })()`);
-const planOf = (w, t) => J(w, `(function(){ var pl = CTF.live.plans[${t}]; return { preset:pl.preset, votes:Object.keys(pl.votes), assign:pl.assign, mine:CTF.cupFix.mine }; })()`);
+const planOf = (w, t) => J(w, `(function(){ var pl = CTF.live.plans[${t}]; return { preset:pl.preset, votes:Object.keys(pl.votes), assign:pl.assign, mine:CTF.cupFix.mine, ticks:Object.keys(pl.ticks || {}).length }; })()`);
+// send a vote from the plan menu, as its keys would
+const vote = (w, v) => w.eval(`CTF.menu = { open:true, tab:4, cur:0, areaCur:0, mate:0, vote:Object.assign({ preset:null, ticks:{}, off:{}, assign:{}, jobs:{}, areas:{} }, ${JSON.stringify(v)}) }; ctfMenuSend();`);
 
 describe('the Normal Flag Cup', () => {
   it('the setup has a Mode row; the builder marks Your team, seat 1 is You, and another card can be made yours', () => {
@@ -119,6 +121,52 @@ describe('the Normal Flag Cup', () => {
     w.eval('quitMatch()');
   }, 120000);
 
+  it('an empty saved plan on your card is no plan: the strategist keeps your side', () => {
+    const { window: w } = loadMonolith(69);
+    cup(w, { play:1, mine:0, teams:4, size:3, map:'castle', strat:[{ mode:'fixed', preset:null, ticks:{}, off:{}, assign:{} }, {}, {}, {}] });
+    const m = myFx(w), t = m.side;
+    w.eval(`watchFixture(TOURNEY.fixtures[${m.i}], true)`);
+    const p = planOf(w, t), sp = w.eval(`CTF_STRATS[CTF.strat[${t}].plan].preset || null`);
+    expect(p.mine, 'nothing set: not a plan of yours').toBe(false);
+    expect(p.votes).toEqual([]);
+    expect(p.preset, 'the strategist\'s plan is on your side').toBe(sp);
+    expect(J(w, `TOURNEY.fixtures[${m.i}].plans[${t}].name`)).toBe(w.eval(`CTF_STRATS[CTF.strat[${t}].plan].name`));
+    w.eval('quitMatch()');
+  }, 120000);
+
+  it('a vote of roles only is laid over the strategist\'s plan: its preset and ideas stay, your role holds, clearing gives it all back', () => {
+    const { window: w } = loadMonolith(70);
+    cup(w, { play:1, mine:0, teams:4, size:3, map:'castle' });
+    const m = myFx(w), t = m.side;
+    w.eval(`watchFixture(TOURNEY.fixtures[${m.i}], true)`);
+    const mates = J(w, `fighters.filter(function(f){ return f.team === ${t} && !f.you; }).map(function(f){ return f.idx; })`), meIdx = w.eval('fighters.find(function(f){ return f.you; }).idx');
+    w.eval(`ctfStratApply(CTF.live, ${t}, 'traps')`);
+    const full = planOf(w, t);
+    expect(full.preset).toBe('traps'); expect(full.ticks).toBeGreaterThan(0);
+    // one teammate a Waller, nothing else
+    vote(w, { assign:{ [mates[0]]:'waller' } });
+    let p = planOf(w, t);
+    expect(p.mine, 'roles alone do not take your side from the strategist').toBe(false);
+    expect(p.preset, 'its preset stays').toBe('traps'); expect(p.ticks, 'and its ideas').toBe(full.ticks);
+    expect(p.assign).toEqual({ [mates[0]]:'waller' });
+    expect(p.votes, 'kept as your vote, for the menu').toEqual([String(meIdx)]);
+    // the strategist switches plan (a look again): your role goes back over the new one; its own roles go only to the teammate you left alone
+    w.eval(`ctfStratApply(CTF.live, ${t}, 'rush'); ctfStratTeam(CTF.live, CTF.strat[${t}], ${t});`);
+    p = planOf(w, t);
+    expect(p.preset).toBe('allout');
+    expect(p.assign).toEqual({ [mates[0]]:'waller', [mates[1]]:'att' });
+    // clearing gives the whole plan back
+    vote(w, {});
+    p = planOf(w, t);
+    expect(p.mine).toBe(false); expect(p.votes).toEqual([]); expect(p.preset).toBe('allout');
+    expect(p.assign[String(mates[0])], 'your role is let go of').not.toBe('waller');
+    // a preset is a whole plan of yours
+    vote(w, { preset:'turtle', assign:{ [mates[0]]:'waller' } });
+    p = planOf(w, t);
+    expect(p.mine).toBe(true); expect(p.preset).toBe('turtle'); expect(p.assign).toEqual({ [mates[0]]:'waller' });
+    w.eval('quitMatch()');
+  }, 120000);
+
   it('only Normal waits for the practice, and the cup starts by itself after it; Watch never waits', () => {
     const { window: w } = loadMonolith(65);
     w.eval(`CTFCUP = ctfCupClean({ play:1, teams:4, size:2 }); ctfCupKickOff();`);
@@ -157,7 +205,9 @@ describe('the Normal Flag Cup', () => {
   it('your final crowns you at once: "You win the Flag Cup!", a cup title, and never One\'s Moon or Steve Cobs\'s cups', async () => {
     const { window: w } = loadMonolith(68);
     await w.eval('profileReady');
+    w.eval(`PENDING_UNLOCKS.push('Leftover')`);   // (left from an earlier screen: never said as this cup's)
     cup(w, { play:1, mine:0, teams:4, size:2, map:'castle' });
+    expect(w.eval(`document.getElementById('tourneyHubBody').textContent`), 'the first hub').not.toContain('Leftover');
     // straight to the final, your team against team 1
     w.eval(`(function(){ var T = TOURNEY, fin = { kind:'ko', a:T.teams[1], b:T.myTeam, played:false, result:null };
       T.stage = 'knockout'; T.knockoutRound = 1; T.bracket = [[], [fin]]; T.fixtures = [fin]; T.eliminated = false; showTourneyHub(); })()`);
@@ -165,7 +215,7 @@ describe('the Normal Flag Cup', () => {
     expect(w.eval(`document.querySelector('#tourneyHubBody .th-mine .th-watch').textContent`), 'your knockout match reads Play').toContain('Play');
     w.eval(`var __hits = []; oneWorldCupHook = function(){ __hits.push('one'); return false; }; cobsCupWon = function(){ __hits.push('cobs'); return false; };
       oneQ().stage = ONE_STAGE.MOON;`);
-    const titles = w.eval('PROFILE.wcTitles');
+    const titles = w.eval('PROFILE.wcTitles'), had = J(w, 'PROFILE.unlocked.slice()');
     w.eval(`document.getElementById('tourneyProceedBtn').click()`);
     expect(w.eval('CTF.cupFix.you')).toBe(1);
     winFor(w, 1);
@@ -176,5 +226,10 @@ describe('the Normal Flag Cup', () => {
     expect(J(w, '__hits'), 'the secret chains never hear of it').toEqual([]);
     expect(w.eval(`document.getElementById('tourneyProceedBtn').textContent`), 'no Moon').toBe('Back to Title');
     expect(w.eval(`document.getElementById('tourneyHubBody').textContent`)).not.toContain('cracked');
+    // what the final and the cup win unlocked is said here, with the champions, and nothing is left over for the next screen
+    const got = J(w, 'PROFILE.unlocked').filter(n => !had.includes(n));
+    expect(got, 'the cup win\'s trophy').toContain('David');
+    for(const n of got) expect(w.eval(`document.getElementById('tourneyHubBody').textContent`)).toContain(n);
+    expect(w.eval('PENDING_UNLOCKS.length')).toBe(0);
   }, 120000);
 });
