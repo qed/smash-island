@@ -400,8 +400,8 @@ describe('drawing', () => {
       drawAttackSprite(c, { x:0, y:0, vx:3, vy:0, r:10 }, 'eball', { complete:true, naturalWidth:58, naturalHeight:56 });
       return { mine: size('freeze', 20), shot: size('freeze', 8), taserSmall: size('smokering', 20), taserBig: size('smokering', 120), glow: calls.fill || 0, img: calls.drawImage };
     })()`);
-    expect(r.shot).toBe(26);
-    expect(r.mine, 'a 20px syringe mine is capped at 1.5x').toBe(39);
+    expect(r.shot, 'the syringe is drawn no longer than what hits, 2r (HA_FIT: it was 26, 3.25r)').toBe(16);
+    expect(r.mine, 'a 20px syringe mine is capped at 1.5x (39: inside its 40px disc)').toBe(39);
     expect(r.taserSmall).toBe(r.taserBig);
     expect(r.glow, 'the glow behind the orb').toBe(1);
     expect(r.img).toBe(1);
