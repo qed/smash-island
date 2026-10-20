@@ -39026,6 +39026,7 @@ function updateSummons(){
 }
 function step(){
   hazardT++;
+  STEP_F = null;   // (HIT FREEZE: set while each fighter's own frame runs, below)
   // Clutch-time music. Deliberately NOT per frame: twice a second is far more often than the
   // condition can meaningfully change, and it keeps audio work out of the hot loop.
   if(hazardT % CLUTCH_CHECK_FRAMES === 0){ try{ clutchTick(); }catch(e){} }
@@ -39051,9 +39052,13 @@ function step(){
   const gravFor = function(f){ if(f._floatT>0){ f._floatT--; return grav*0.35; } return grav; };   // Bubble's Thermal Rise
 
   for(const f of fighters){
-    if(f.dead) continue;
+    if(f.dead){ f._hitStop = 0; f._hsBuf = null; continue; }
     const fst = f.st || STAT_ONE;   // FIGHTER STATS
     if(TESTMODE.active) trainingPin(f);   // Training: the dummy's damage held where the player set it
+    // HIT FREEZE: held still by a hit they are in. Nothing of theirs runs this frame -- no move, no timer, no thinking -- so every
+    // countdown picks up where it stopped; a person's presses wait for the frame it ends (hitStopHold).
+    if(f._hitStop > 0 && f._hsAt !== hazardT){ hitStopHold(f, f.controller || (f.you ? "local" : "ai"), pad); continue; }
+    STEP_F = f;
     // ---- input (local human / remote player / AI) ----
     let inp={left:false,right:false,jump:false,attack:false,special:false,smash:false};
     const ctrl = f.controller || (f.you ? "local" : "ai");
@@ -39086,6 +39091,7 @@ function step(){
       legacyFin(inp);   // the CPU's rules still press attack + special for the finisher; the engine reads `fin`
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
     }
+    if(f._hsBuf){ for(const b in f._hsBuf) inp[b] = true; f._hsBuf = null; }   // HIT FREEZE: a button pressed while held still is pressed now
     f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
     const inpPaired = inp;   // (the pairing changes this input in place; anything below that masks the input makes a new one: heldStruggle)
     if((ctrl==='local' || ctrl==='remote') && !RACE.active && !(SETTINGS.mode==='ctf' && CTF.live && (CTF.live.phase==='hide' || CTF.live.phase==='fix'))) comboInput(f, inp);   // X+C grab, V+C finisher (the Capture the Flag hiding phase reads the raw keys)
@@ -39786,8 +39792,9 @@ function step(){
     }
   }
 
+  STEP_F = null;
   // DROPS CARRY: whoever a plunging fighter falls into goes down with them (see updateDropCarry).
-  for(const f of fighters) updateDropCarry(f);
+  for(const f of fighters) if(f._hsHeld !== hazardT) updateDropCarry(f);   // (not one held still by a hit this frame: HIT FREEZE)
 
   // evil leafy hazard
   if(evil){
@@ -40966,6 +40973,58 @@ const SELF_STUN_SCALE = 0.6;                      // cost.stun freezes movement 
 // with the target's damage) carries the foe out of reach. _chain still counts the links (a string's length).
 const HIT_STUN_PLUS = 6;
 function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx && t._chainSeq !== f._atkSeq; }
+// HIT FREEZE ("Yes, tiny" -- the owner, 2026-10-20). A hit that lands holds the two fighters in it still for a moment: HITSTOP_MIN
+// frames for a 3% jab up to HITSTOP_MAX for an 18% heavy (hitStopFrames). Only those two: never the match, the clock, anyone
+// else, a shot or a boss. While held, a fighter's frame does not run at all (step), so their stun, cooldowns, move timers and
+// grace all wait, and the timing between the two is the same after it as before. The rules:
+//   - a swing, a dash, a body -- anything a fighter lands during their own frame (STEP_F) -- holds the attacker and the target;
+//   - a shot holds only the target, and the shot flies on (shots are moved after the fighters, outside anyone's frame);
+//   - a move that hits more than once holds once, on its first hit (hitStopKey: the move, _atkSeq, and its multi-hit, _comboTok),
+//     so a spin does not crawl;
+//   - a boss is never held; the fighter who hits one is, and that fighter's grace record on the boss waits with them (bossGraceNote);
+//   - never in RUNNING!, never while a Final Smash plays, never for a tick (burn, poison, bleed, a shot's lingering damage: opts.tick),
+//     and never for damage from no fighter (an arena hazard, a boss, an assist trophy).
+// A person's attack, special, smash and jump pressed while held count on the first frame after (hitStopHold); a client is sent the
+// positions as they are, so it sees them hold.
+const HITSTOP_MIN = 2, HITSTOP_MAX = 6;
+const HITSTOP_KEYS = ['attack', 'special', 'smash', 'jump'];
+let STEP_F = null;   // the fighter whose own frame is running in step(), or null
+function hitStopFrames(dmg){ return Math.max(HITSTOP_MIN, Math.min(HITSTOP_MAX, Math.round(2 + (dmg - 3)*4/15))); }   // 3% -> 2, 10% -> 4, 18% -> 6
+function hitStopOff(){
+  if(RACE.active) return true;
+  for(const f of fighters) if(f._fs) return true;   // a Final Smash is playing
+  return false;
+}
+function hitStopKey(f){ return (f._atkSeq||0) + ':' + (f._comboTok||0); }
+// The attacker, once a move. Returns how many frames they are held from the next frame on (0: not held).
+function hitStopSelf(f, dmg){
+  if(!f || f !== STEP_F || !(dmg > 0) || hitStopOff()) return 0;
+  const key = hitStopKey(f);
+  if(f._hsOwn === key) return f._hsAt === hazardT ? (f._hitStop||0) : 0;   // this move held them already (a second target in the same frame shares it)
+  f._hsOwn = key; f._hitStop = hitStopFrames(dmg); f._hsAt = hazardT;
+  return f._hitStop;
+}
+// A fighter `t` hit by `from` (applyHit, not a tick): the target is held, once for each of the attacker's moves, and the attacker too
+// if it was their own frame.
+function hitStopHit(t, from, dmg){
+  if(!from || !(dmg > 0) || t.dead || from === t || fighters[from.idx] !== from || hitStopOff()) return;   // (a fighter's hit: a boss's, an assist's and a hazard's hold no one)
+  const key = hitStopKey(from);
+  if(!(t._hsBy === from.idx && t._hsKey === key)){
+    if(!(t._hitStop > 0)) t._hsAt = hazardT;   // (held from the next frame; one already held stays held)
+    t._hitStop = Math.max(t._hitStop||0, hitStopFrames(dmg)); t._hsBy = from.idx; t._hsKey = key;
+  }
+  hitStopSelf(from, dmg);
+}
+// One frame of being held: counted down, and a person's buttons noted for the frame it ends (a remote player's press is latched
+// for one frame only, so it is read here or lost).
+function hitStopHold(f, ctrl, pad){
+  f._hitStop--; f._hsHeld = hazardT;
+  let r = null;
+  if(ctrl === 'local'){ const K = KEYS; r = { attack:down[K.attack]||pad?.attack, special:down[K.special]||pad?.special, smash:down[K.smash]||pad?.smash, jump:down[K.jump]||pad?.jump }; }
+  else if(ctrl === 'remote') r = netRemoteInput(f.idx);
+  if(!r) return;
+  for(const b of HITSTOP_KEYS) if(r[b]) (f._hsBuf || (f._hsBuf = {}))[b] = true;
+}
 // One place a smash actually goes off, so the buffered release and the live one cannot drift apart.
 // AIM. Half a second of charge is long enough for anyone with movement to get behind you, and a smash
 // thrown at where they were is the "hard to use against enemies with movetech" half of the complaint.
@@ -47061,7 +47120,7 @@ function graceBlocks(t, f){
   return t.invuln > 0 && !(f && t._graceBy === f.idx && t._graceTok === (f._comboTok||0) && t.invuln <= (t._graceLeft||0));
 }
 // Two launchers ignore hit-grace by design, and told it apart by size alone: above 16, the old grace
-// cap, was real invulnerability. Grace reaches 24 now, so they keep that rule but never count grace.
+// cap, was real invulnerability. Grace reaches 30 now (COMBOS), so they keep that rule but never count grace.
 function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
 // WHAT A HIT DOES TO ITS TARGET'S GRACE AND CHAIN -- one place, for a fighter (applyHit) and for a boss (bossGraceNote).
 // Hit-grace scales with the hit's weight: light/fast pokes give little grace (so rapid pokes connect), heavy hits give more
@@ -47107,10 +47166,13 @@ function bossGraceRec(s, f, make){
   if(!R){
     if(!make) return null;
     R = G[k] = { invuln:0, hitstun:0, _graceLeft:0, _graceBy:-1, _graceTok:0, _chainBy:-1, _chain:0, _chainSeq:-1, at:hazardT };
-    for(const k2 in G) if(G[k2] !== R && hazardT - G[k2].at >= 40) delete G[k2];   // a record untouched for 40 frames has run out (grace and stun top out at 24), and a missing one reads the same: so the trophies of a long fight do not pile up
+    for(const k2 in G) if(G[k2] !== R && hazardT - G[k2].at >= 40) delete G[k2];   // a record untouched for 40 frames has run out (grace and stun top out at 30), and a missing one reads the same: so the trophies of a long fight do not pile up
   }
   const dt = hazardT - R.at;
-  if(dt !== 0){ R.at = hazardT; if(dt > 0){ R.invuln = Math.max(0, R.invuln - dt); R._graceLeft = Math.max(0, R._graceLeft - dt); R.hitstun = Math.max(0, R.hitstun - dt); } }
+  if(dt !== 0){ R.at = hazardT;
+    if(dt > 0){ const run = Math.max(0, dt - (R._hold||0)); R._hold = Math.max(0, (R._hold||0) - dt);   // (_hold: frames the attacker stood held by the hit -- HIT FREEZE)
+      R.invuln = Math.max(0, R.invuln - run); R._graceLeft = Math.max(0, R._graceLeft - run); R.hitstun = Math.max(0, R.hitstun - run); }
+    else R._hold = 0; }
   return R;
 }
 // Does this attacker's grace on this boss stop the hit? The rule is the fighter's: a move built to hit more than once (f._combo)
@@ -47122,7 +47184,14 @@ function bossGraceBlocks(s, f, strict){
   return f._combo ? graceBlocks(R, f) : (strict || !chainOpen(R, f));
 }
 // A hit landed on the boss: it opens this attacker's grace, for as long as the same hit gives a fighter.
-function bossGraceNote(s, f, dmg){ stampHit(bossGraceRec(s, f, true), dmg, f, false); }
+// HIT FREEZE: the boss is never held, the fighter who hit it is (their own swing: hitStopSelf), and their record on the boss skips the
+// frames they stand held (_hold), as their stun and grace on a fighter would.
+function bossGraceNote(s, f, dmg){
+  const R = bossGraceRec(s, f, true);
+  stampHit(R, dmg, f, false);
+  const k = hitStopSelf(f, dmg);
+  if(k > 0) R._hold = k;
+}
 // A boss hurt by a shot or a dash: damageSummon's own branches for a caller with no point to shove it from. Returns what it took.
 function bossTakeHit(s, dmg, from){
   dmg = statDmg(from, dmg);   // FIGHTER STATS: the attacker's dmg
@@ -47341,6 +47410,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
   stampHit(t, dmg, from, isTick, opts && opts.stun, opts && opts.mvKey);
+  if(!isTick) hitStopHit(t, from, dmg);   // HIT FREEZE: the two of them are held still a moment
   // A circle still winding up is lost to any hit that connects first -- the counterplay that turns
   // a ring from an answer to everything into a read (see CIRCLE_WINDUP).
   if(t._windup) t._windup=null;
