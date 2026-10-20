@@ -80,7 +80,10 @@ describe('the moves do what the card says', () => {
     for (const [name, k] of Object.entries(KITS)) for (const [t, key] of [['f', 'fthrow'], ['b', 'bthrow'], ['u', 'uthrow'], ['d', 'dthrow']]) {
       const T = MS[k].grab[t], line = TEXT[name][key];
       expect(line, `${name} ${key}`).toContain(T.n);
-      expect(+line.match(/On hit: ([\d.]+)%/)[1], `${name} ${key}`).toBeCloseTo(T.dmg, 1);
+      // (restated 2026-10-20 -- the owner, 2026-10-18, "give each fighter stats" / "8-12%, damage smaller": a throw lands its damage times the thrower's
+      // dmg (applyHit takes it), and the line states the hit as it lands, rounded to a tenth like every line (msPct))
+      const dk = W.eval(`statsFor(${JSON.stringify(name)}).dmg`);
+      expect(+line.match(/On hit: ([\d.]+)%/)[1], `${name} ${key}`).toBeCloseTo(Math.round(T.dmg * dk * 10) / 10, 5);
     }
   });
 });
