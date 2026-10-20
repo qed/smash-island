@@ -36,6 +36,9 @@ const PLAY_FFA = (P) => {
     applyHit(f[1], 30, 0, 0, f[0]); applyHit(f[1], 20, 0, 0, f[0]); applyHit(f[3], 10, 0, 0, f[0]);
     applyHit(f[0], 40, 0, 0, f[2]); applyHit(f[2], 15, 0, 0, f[1]);
   })()`);
+  // (restated for the HIT FREEZE, the owner 2026-10-20: "Yes, tiny" -- a hit holds its target still, and nothing of theirs runs while held,
+  // the blast zone's KO included: the holds these hits put on run out first, or Leafy, held 6 frames, went off the stage after the computer)
+  run(P, +P.Hh.eval('Math.max.apply(null, fighters.map(function(f){ return f._hitStop || 0; }))') || 0);
   const ko = (idx, by) => { P.Hh.eval(`(function(){ var t = fighters[${idx}]; if (${by} >= 0) applyHit(t, 5, 0, 0, fighters[${by}]); t.x = -300; })()`); run(P, 4); };
   ko(1, 0);    // Pen KOs Leafy: 4th of 4
   ko(3, 0);    // Pen KOs the computer: 3rd

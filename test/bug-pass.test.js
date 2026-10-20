@@ -588,7 +588,9 @@ describe('Boss Rush, round 2: the fighter-vs-fighter numbers of the rerouted mov
     step(); A.smCd=0; A.spCd=0; A.atkCd=0; A.invuln=0; A.hitstun=0; A.pct=30; D.invuln=0; D.pct=30; D.hitstun=0;
     var dx0=D.x, dy0=D.y, p0=D.pct;
     ${move};
-    for(var i=0;i<150;i++){ step(); D.x=dx0; D.y=dy0; D.vx=0; D.vy=0; D.dead=false; D.invuln=0; D.hitstun=0; }
+    // (restated for the HIT FREEZE, the owner 2026-10-20: "Yes, tiny" -- while a hit holds the two still nothing of theirs counts down, so
+    // the bleed Naily's smash leaves ticks after the hold; the 150 frames are the fighters' own frames: one either stands held is not counted)
+    for(var i=0, held=0;i<150+held;i++){ step(); if(held < 30 && (A._hsHeld===hazardT || D._hsHeld===hazardT)) held++; D.x=dx0; D.y=dy0; D.vx=0; D.vy=0; D.dead=false; D.invuln=0; D.hitstun=0; }
     return +(D.pct-p0).toFixed(2); })()`;
   // (Magnet's special: 9 -> 12 at every range, restated 2026-10-18 with the owner's OK -- "Update the test" -- after the deliberate II moveset lift of Magnet.)
   it('every rerouted move does to Pen exactly what it did before', async () => {
