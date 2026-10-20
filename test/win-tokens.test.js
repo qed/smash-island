@@ -97,12 +97,25 @@ const settle = (w) => w.eval('new Promise(function(r){ setTimeout(r, 0); })');
 // The first day on or after `from` whose three dailies include quest `id`.
 const dayWith = (w, id, from) => w.eval(`(function(){ for (var d = 0; d < 400; d++){ var t = ${from} + d*${ONE_DAY};
   if (questsFor('daily', new Date(t)).some(function(q){ return q.id === ${JSON.stringify(id)}; })) return t; } return null; })()`);
-// Only the quest under test on the day's board. The quests are picked from the date and DAY follows the real calendar, so the day dayWith
-// finds can also hold a quest that the same plain match ends finish: on 2026-10-12 it was "Win a match without losing a stock" (18), which
-// every won matchEnd completes, and the wallet counted both. A test of one quest paying once takes the day's other two dailies off its
-// board (each test boots its own page, so nothing carries over).
+// Only the quest under test on the day's board, and nothing on the week's that these tests' match ends can finish. The quests are picked
+// from the date and DAY follows the real calendar, so the day dayWith finds can also hold a quest that the same plain match ends finish:
+// on 2026-10-12 it was "Win a match without losing a stock" (18), which every won matchEnd completes, and the wallet counted both; run on
+// 2026-10-20, the day it found (2026-10-26) sat in a WEEK whose board held "Win 3 matches without losing a stock" (72), finished
+// inside the same three wins (81 where 9 was due) -- and the rest of that board (the Daily Match three times, 15 smashes) counted no
+// plain match at all.
+// So the day's other two dailies come off its board, and the week's board is 'Play 15 matches' alone: a weekly that every match counts
+// (so "the week counted the same matches" still has something to count) and that no test here can finish, none playing more than
+// WEEK_MOST match ends in one week. Every other weekly is off: the ones a plain match end can finish (a flawless win, a win, a fighter
+// played, the Daily Match) and the ones it never moves alike, so the week's board no longer depends on the date at all. 'onlyQuest,
+// whatever the week' below plays WEEK_MOST match ends in a week whose real board holds each weekly in turn and finds only the quest
+// under test paid. (Each test boots its own page, so nothing carries over.)
+const WEEK_MOST = 7;   // 'pays the moment it is done' plays four match ends on one day and three on the next, which can be the same week
 const onlyQuest = (w, id) => w.eval(`(function(){ if (!window.__questsFor) window.__questsFor = questsFor;
-  questsFor = function(kind, t){ var r = window.__questsFor(kind, t); return kind === 'daily' ? r.filter(function(q){ return q.id === ${JSON.stringify(id)}; }) : r; };
+  var play = QUESTS.weekly.find(function(q){ return q.id === 'w_play15'; });
+  questsFor = function(kind, t){ var r = window.__questsFor(kind, t);
+    if (kind === 'daily') return r.filter(function(q){ return q.id === ${JSON.stringify(id)}; });
+    if (kind === 'weekly') return [Object.assign({}, play, { kind: 'weekly', reward: QUEST_REWARD.weekly[play.tier] })];
+    return r; };
   return true; })()`);
 // One ordinary match's end, as checkWin reaches it: you on team 0 against one foe, `won` deciding who took it.
 const matchEnd = (w, won = true, setup = '') => w.eval(`(function(){ ${setup};
@@ -314,6 +327,7 @@ describe('quests', () => {
     expect(w.eval('walletBalance()'), 'a fourth match pays nothing more').toBe(9);
     const wk = w.eval('JSON.stringify(questState().wp)');
     expect(wk, 'the week counted the same matches').not.toBe('{}');
+    expect(JSON.parse(wk), "all four, on the week's 'Play 15 matches'").toEqual({ w_play15: 4 });
     // The next day that has it again: fresh, and paid once more when finished.
     const D2 = dayWith(w, 'd_play3', D + ONE_DAY);
     w.eval(`SHOP_CLOCK = ${D2}`); onlyQuest(w, 'd_play3');
@@ -349,6 +363,36 @@ describe('quests', () => {
     expect(final.wallet.earned, 'one quest, finished in both tabs, paid once').toBe(9);
     expect(final.quests.claims[key]).toBe(9);
     expect(w.eval(`questRows('daily').filter(function(r){ return r.quest.id==='d_play3'; })[0]`)).toMatchObject({ prog: 3, done: true, paid: true });
+  });
+
+  it('onlyQuest, whatever the week: the most match ends a test here plays in one week pay the quest under test, once, and nothing else', async () => {
+    // The two tests above, on the weeks the calendar has not reached yet. For each weekly in the game, the first day from DAY that has
+    // the quest under test and whose REAL weekly board holds that weekly (so "Win 3 matches without losing a stock", which broke them,
+    // "Win 8 matches", "Play 4 different fighters" and the rest are each on the real board of one of these weeks); played in date order,
+    // so a later day never finds its progress thrown away as stale (see DAY). In each: WEEK_MOST won match ends, and only the 9 for
+    // "Play 3 matches", once.
+    const w = await ready();
+    const days = w.eval(`(function(){ var out = [], weeks = {};
+      QUESTS.weekly.forEach(function(wq){
+        for (var d = 0; d < 4000; d++){ var at = new Date(${DAY} + d*${ONE_DAY});
+          if (!questsFor('weekly', at).some(function(q){ return q.id === wq.id; })) continue;
+          if (!questsFor('daily', at).some(function(q){ return q.id === 'd_play3'; })) continue;
+          if (!weeks[shopWeekNo(at)]){ weeks[shopWeekNo(at)] = true; out.push([at.getTime(), wq.id]); }
+          return; }
+        out.push([null, wq.id]); });
+      return out; })()`);
+    expect(days.filter((d) => d[0] === null).map((d) => d[1]), 'every weekly is on a real board within 4000 days').toEqual([]);
+    days.sort((a, b) => a[0] - b[0]);
+    expect(days.length, 'several weeks').toBeGreaterThan(3);
+    for (const [t, held] of days) {
+      const day = new Date(t).toISOString().slice(0, 10);
+      w.eval(`SHOP_CLOCK = ${t}`); onlyQuest(w, 'd_play3');
+      expect(w.eval(`questsFor('weekly').map(function(q){ return q.id; })`), `${day} (its real board holds ${held})`).toEqual(['w_play15']);
+      const before = w.eval('walletBalance()');
+      for (let i = 0; i < WEEK_MOST; i++) matchEnd(w);
+      expect(w.eval('walletBalance()') - before, `${day} (its real board holds ${held}): "Play 3 matches", once`).toBe(9);
+      expect(w.eval('JSON.stringify(questState().wp)'), `${day}: the week counted them`).toBe(`{"w_play15":${WEEK_MOST}}`);
+    }
   });
 
   it('a save from before -- a quest finished and left unclaimed -- is paid when the game loads, once', async () => {
