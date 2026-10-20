@@ -162,19 +162,21 @@ describe('Dough: Shameless Knockoff copies, a beat late and weaker', () => {
     expect(r.last).toBe('copycat');
   });
 
-  it("copying Bow is the joke, and it works: her Teleport takes him 0.7x as far (238 px) and pops whoever is where he appears, at 0.7x", () => {
+  it("copying Bow is the joke, and it works: her Teleport takes him 0.7x as far (168 px) and pops whoever is where he appears, at 0.7x", () => {
     // RESTATED (2026-10-13). Bow's special was Telekinesis (three held snowballs; Possession before that) and the owner replaced it with
     // Levitate ("Recover: Levitate", non-canon by his permission). RESTATED again (2026-10-18): the owner made it a Teleport -- "the move
     // should be teleport-not levitate. it should go 340 px." The knockoff is still the joke and still weaker like everything he copies: a
     // teleport of his own that goes 0.7x as far, straight up (he aims nothing), and the pop where he appears is 6% at 0.7x.
+    // RESTATED (2026-10-18, again): "bows special should go less distance" -- "240 px", from 340 -- so his copy goes 168 px (it was 238),
+    // and the foe stands at his new landing point.
     const r = arena('Dough', `D._lastSpecialKind = 'chair'; var y0 = A.y, x0 = A.x; fireSpecial(A, {}); run(13);
       var out = { fading: !!A._tp, shots: projectiles.filter(function(p){ return p.owner === A.idx; }).length };
-      for (var i=0;i<20 && A._tp;i++){ D.x = A.x; D.y = y0 - 238; D.vy = 0; D.onground = false; D.invuln = 0; step(); E.dead = false; }
+      for (var i=0;i<20 && A._tp;i++){ D.x = A.x; D.y = y0 - 168; D.vy = 0; D.onground = false; D.invuln = 0; step(); E.dead = false; }
       out.rose = Math.round(y0 - A.y); out.dx = Math.round(A.x - x0);
       run(10); out.dealt = +(D.pct - 30).toFixed(2); return out;`, 425);
     expect(r.fading, 'the copy is a teleport').toBe(true);
     expect(r.shots, 'no snowballs any more').toBe(0);
-    expect(r.rose, '0.7x of the 340 px trip').toBe(238);
+    expect(r.rose, '0.7x of the 240 px trip').toBe(168);
     expect(r.dx).toBe(0);
     expect(r.dealt).toBeCloseTo(6 * 0.7, 5);
   });
