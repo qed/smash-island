@@ -38723,6 +38723,7 @@ function step(){
   let grav=GRAV; if(stage.hazard==='lowgrav') grav*=0.7;
   const gravFor = function(f){ if(f._floatT>0){ f._floatT--; return grav*0.35; } return grav; };   // Bubble's Thermal Rise
 
+  cpuSeeRecord();   // what every fighter, shot and summon looks like as this frame begins: what a CPU sees, late (CPU_HUMAN)
   for(const f of fighters){
     if(f.dead) continue;
     const fst = f.st || STAT_ONE;   // FIGHTER STATS
@@ -38754,10 +38755,16 @@ function step(){
     } else if(ctrl==="still"){
       // test-mode dummy: no input at all — just stands to be hit
     } else {
+      // A HUMAN'S EYES AND HANDS (CPU_HUMAN): from Normal up a CPU sees its foes as they were a moment ago, and its keys change at a
+      // person's pace. Easy (hl 0) is this code as it always was.
+      const hl = cpuHumanLevel(f), seen = hl ? cpuSeeBegin(f, CPU_HUMAN.react[hl]) : null;
+      try {
       inp = (SETTINGS.mode==='ctf' && ctfAiInput(f)) || aiThink(f);
       if(COBSFIGHT.active) cobsAiLasers(f, inp);   // Steve Cobs's laser walls: a CPU jumps for the gap as a player does (no other fight has them)
       legacyFin(inp);   // the CPU's rules still press attack + special for the finisher; the engine reads `fin`
       fsBotInput(f, inp);   // chases the Smash Ball, and holds a Final Smash until it will hit
+      } finally { if(seen) cpuSeeEnd(seen); }
+      if(hl) inp = cpuHumanKeys(f, inp, CPU_HUMAN.inputGap[hl]);
     }
     f._rawKeys = (ctrl==='local' || ctrl==='remote') ? [!!inp.attack, !!inp.special, !!inp.smash, !!inp.jump] : null;   // a human's buttons as pressed, before the pairing below: what a cuff's mash counts (cuffKeys)
     const inpPaired = inp;   // (the pairing changes this input in place; anything below that masks the input makes a new one: heldStruggle)
@@ -51310,6 +51317,144 @@ function finishAI(f,inp,sp){
   }
   if(f._fileRide) fileRideAiHold(f, inp);   // on its own big file (THE BIG FILE): it stays on
   return inp;
+}
+
+// ============================================================
+//  A HUMAN'S EYES AND HANDS: the CPU's reaction time and input speed (Normal and Hard)
+// ============================================================
+// THE OWNER, 2026-10-20: "bots on easy are easy, but bots on normal are going an absurd jump!!! it is inhuman reactions and inputs..."
+// Every CPU ran aiThink once a frame with perfect, current knowledge of every foe ("difficulty is a handicap applied in finishAI"), so
+// it answered anything a foe did on the very next frame and could change its keys every frame: a Normal 1v1 measured 12-13 changes a
+// second on average and up to 30 inside one second. Asked, the owner picked: Normal reacts "About 1/3 s" late to anything new a foe
+// does, Hard "Human-fast too" (about 1/6 s), both at "Human input speed", and Easy unchanged, bit for bit. So, from Normal up:
+//   EYES (cpuSeeBegin): a CPU knows its own body as it is now (its recovery, ledges and wall jumps do not lag), but it sees its foes,
+//     and their shots, traps and summons, as they were react[level] frames ago: an attack starting, a jump, a turn, a shot fired all
+//     reach it that much later. A shot is not seen at all until it is that old. A foe that has just come back from a KO is not seen
+//     until it has been back that long. Teammates and their things are seen as they are: you know your own side's plan.
+//   HANDS (cpuHumanKeys): the set of keys a CPU holds changes at most about 8 times a second. A held key stays held. A change that
+//     comes too soon waits, and when it may go it is whatever the CPU wants by then (the newest wins). Each change spends one of
+//     tapBurst; one comes back every inputGap frames (that or one more, so it is not a metronome), and no two changes are closer than
+//     tapMin frames. So a quick tap is still a tap (pressed, and let go tapMin frames later: a short hop stays a short hop, a jab is one
+//     jab), a hold is never cut short, and no 60 frames hold more than tapBurst + 60/inputGap = 9 changes.
+// Not Easy (react 0 and inputGap 0: today's AI to the last die), not a boss, not One's ghost, not a RUNNING! runner (their own pacing),
+// not the trainer's, the tutorials' or a test's dummies (controllers of their own), never a person. The finishAI handicap is as it was.
+const CPU_HUMAN = { react:[0, 20, 10], inputGap:[0, 8, 8], tapBurst:2, tapMin:3 };
+// The skill a CPU plays at: its own (a test's f._lvl), else the Flag Cup's for its team (ctfSkillScope), else the CPU Skill setting.
+// 0 = today's AI: Easy, and the CPUs with a pacing of their own.
+function cpuHumanLevel(f){
+  if(f._oneGhost || (RACE.active && f._runner)) return 0;
+  let lvl = (f._lvl != null) ? f._lvl : AI_LEVEL;
+  if(f._lvl == null && SETTINGS.mode === 'ctf' && CTF.skillOf && CTF.skillOf[f.team] != null) lvl = CTF.skillOf[f.team];
+  return (CPU_HUMAN.react[lvl] > 0 || CPU_HUMAN.inputGap[lvl] > 0) ? lvl : 0;
+}
+// ---- EYES. What a CPU may read off a foe, kept for the last SEE_R frames: where it is and how it moves, what it is swinging or charging
+// or casting, its guard and its state. (Anything not listed is read as it is now: its name, its kit, its damage, its stocks.)
+const SEE_F = ['x','y','vx','vy','face','onground','jumps','flying','dropping','_floatT',
+  'atkCd','spCd','smCd','fnCd','smashHold','_smQ','_sm','_windup','_atkAnim','_mv','_gb','_hold','_slam','_plunge','_nail','_dashing','_gotcha',
+  '_spPend','_tp','_tpHang','_airDash','_hyperT','_ff','_fs','fsId','fsGlow',
+  'invuln','_graceLeft','countering','reflecting','armor','rooted','cloud','curse','_empower','_shield',
+  'hitstun','frozen','ctrlRev','_revLock','_mtCuff','_heldBy','_grabbed','_lag','_onFile','_hid','_ghostT','_cf','_trapT'];
+const SEE_DEAD = SEE_F.length;          // (the row's last slot: whether it was down then)
+const SEE_P = ['x','y','vx','vy'];      // a shot's or a summon's
+const SEE_R = 32;                       // frames kept: a power of two longer than the longest delay
+const _cpuSeen = new WeakMap();         // fighter, shot or summon -> { s: first frame kept, l: last frame kept, v: rows by frame }
+let _cpuSeeT = 0;
+function cpuSeeKeep(o, F, t, dead){
+  let h = _cpuSeen.get(o);
+  if(!h || h.l !== t - 1){ h = { s:t, l:t, v:new Array(SEE_R) }; _cpuSeen.set(o, h); }   // new, or back after a gap: its story starts now
+  h.l = t;
+  const i = t & (SEE_R - 1); let row = h.v[i];
+  if(!row) row = h.v[i] = new Array(F.length + 1);
+  for(let k = 0; k < F.length; k++) row[k] = o[F[k]];
+  row[F.length] = dead;
+}
+// Once a frame, before anyone thinks (step). It only reads: nothing in the game changes, so Easy plays today's match to the frame.
+function cpuSeeRecord(){
+  const t = ++_cpuSeeT;
+  for(const o of fighters) cpuSeeKeep(o, SEE_F, t, !!o.dead);
+  for(const p of projectiles) cpuSeeKeep(p, SEE_P, t, false);
+  for(const s of summons) cpuSeeKeep(s, SEE_P, t, false);
+}
+function cpuSeeSwap(o, F, row, saved){
+  for(let k = 0; k < F.length; k++){
+    const key = F[k], v = row[k], cur = o[key];
+    if(v === cur) continue;
+    saved.push(o, key, cur, Object.prototype.hasOwnProperty.call(o, key));
+    o[key] = v;
+  }
+}
+// Its own side's: the CPU's, a teammate's, or one they own.
+function cpuSeeOwn(f, o){
+  if(!o) return false;
+  return o === f || (o.team != null && o.team === f.team);
+}
+// Shows CPU f the world n frames late, IN PLACE: each foe (and each foe's shot and summon) is given the numbers it had then, and the
+// shots too new to have been seen are taken out of `projectiles` for the call. cpuSeeEnd puts every number back, so nothing the AI
+// does with them leaks, and every object is still itself (f.aiTarget, ===, indexOf all work as before).
+function cpuSeeBegin(f, n){
+  if(!(n > 0)) return null;
+  const t = _cpuSeeT, w = t - n, saved = [];
+  for(const o of fighters){
+    if(o.dead || cpuSeeOwn(f, o)) continue;
+    const h = _cpuSeen.get(o); if(!h || h.l !== t) continue;
+    const row = h.v[Math.max(h.s, w) & (SEE_R - 1)];
+    if(row[SEE_DEAD]){ saved.push(o, 'dead', o.dead, Object.prototype.hasOwnProperty.call(o, 'dead')); o.dead = true; continue; }   // still down, as far as it has seen
+    cpuSeeSwap(o, SEE_F, row, saved);
+  }
+  const real = projectiles; let shown = null;
+  for(let i = 0; i < real.length; i++){
+    const p = real[i];
+    const ow = p.ownerObj || (typeof p.owner === 'number' ? fighters.find(o=>o.idx === p.owner) : null);
+    if(cpuSeeOwn(f, ow)){ if(shown) shown.push(p); continue; }
+    const h = _cpuSeen.get(p);
+    if(!h || h.l !== t || h.s > w){ if(!shown) shown = real.slice(0, i); continue; }   // fired too lately to have been seen
+    if(shown) shown.push(p);
+    cpuSeeSwap(p, SEE_P, h.v[w & (SEE_R - 1)], saved);
+  }
+  for(const s of summons){
+    if(cpuSeeOwn(f, s) || s.owner === f.idx) continue;
+    const h = _cpuSeen.get(s); if(!h || h.l !== t) continue;
+    cpuSeeSwap(s, SEE_P, h.v[Math.max(h.s, w) & (SEE_R - 1)], saved);
+  }
+  if(shown) projectiles = shown;
+  return { saved, real: shown ? real : null, shown, n0: shown ? shown.length : 0 };
+}
+function cpuSeeEnd(S){
+  const sv = S.saved;
+  for(let i = sv.length - 4; i >= 0; i -= 4){ if(sv[i + 3]) sv[i][sv[i + 1]] = sv[i + 2]; else delete sv[i][sv[i + 1]]; }
+  if(S.real){
+    const extra = (projectiles === S.shown && S.shown.length > S.n0) ? S.shown.slice(S.n0) : null;   // (nothing a CPU thinks adds a shot; if one ever did, it stays)
+    projectiles = S.real;
+    if(extra) for(const p of extra) projectiles.push(p);
+  }
+}
+// ---- HANDS. The keys a CPU presses (and which move it asked for with them), as one number.
+const CPU_KEYS = ['left','right','jump','up','down','attack','special','smash','grab','fin','flag','edit'];
+function cpuKeySig(inp){
+  let s = 0;
+  for(let i = 0; i < CPU_KEYS.length; i++) if(inp[CPU_KEYS[i]]) s |= 1 << i;
+  if(inp.attack && inp.mv) s |= 1 << 12;      // X as the tilt or aerial aiMovesetUse asked for
+  if(inp.special && inp.side) s |= 1 << 13;   // C as the side special
+  return s;
+}
+// The wait before the next change comes back: inputGap or one more, worked out from the fighter and the count (no dice: none rolled).
+function cpuHandGap(f, gap, n){ return gap + ((Math.imul((f.idx|0) + 7, 0x9E3779B1) ^ Math.imul(n, 0x85EBCA6B)) >>> 16 & 1); }
+const _cpuHands = new WeakMap();        // fighter -> { sig, keys, tok, next, last, n }
+function cpuHumanKeys(f, inp, gap){
+  if(!(gap > 0) || !inp) return inp;
+  const now = hazardT, cap = CPU_HUMAN.tapBurst;
+  let h = _cpuHands.get(f);
+  if(!h || now < h.last){ h = { sig:0, keys:null, tok:cap, next:0, last:-1e9, n:0 }; _cpuHands.set(f, h); }   // (a new match's clock: a fresh hand)
+  while(h.tok < cap && now >= h.next){ h.tok++; if(h.tok < cap) h.next += cpuHandGap(f, gap, ++h.n); }
+  const want = cpuKeySig(inp);
+  if(want === h.sig) return inp;                                   // nothing changes: what it wants is what it holds
+  if(h.tok >= 1 && now - h.last >= CPU_HUMAN.tapMin){              // a change it has the hands for: it goes now
+    if(h.tok === cap) h.next = now + cpuHandGap(f, gap, ++h.n);
+    h.tok--; h.last = now; h.sig = want; h.keys = Object.assign({}, inp);
+    return inp;
+  }
+  // too soon: it holds what it held (a fresh copy -- step changes an input in place)
+  return h.keys ? Object.assign({}, h.keys) : { left:false, right:false, jump:false, down:false, attack:false, special:false, smash:false, up:false };
 }
 
 // ============================================================
