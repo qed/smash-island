@@ -40951,14 +40951,21 @@ const SMASH_CD_SCALE = 0.75;                      // every declared smash cost, 
 const SELF_STUN_SCALE = 0.6;                      // cost.stun freezes movement too; 24 fighters sat out up to 34 frames
 
 // CHAINING. The same attacker may follow up through the grace their own hit opened, but only while the
-// target is still in hitstun, only with a swing (projectiles test invuln in their own loop, so a wall of
-// shots still cannot chain-stun), and only CHAIN_MAX times. Each link cuts the next hitstun by
-// CHAIN_DECAY and knockback grows with the target's damage, so a chain runs out on its own. A chained
-// hit has to come from a NEW move (_atkSeq): a hitbox that lingers over several frames, like Meteor
-// Puff's fall, may not re-land through the grace its own first hit opened -- the golden fixture is
-// what caught that.
-const CHAIN_MAX = 3, CHAIN_DECAY = 0.75;
-function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx && t._chainSeq !== f._atkSeq && (t._chain||0) < CHAIN_MAX; }
+// target is still in hitstun, and only with a swing (projectiles test invuln in their own loop, so a wall of
+// shots still cannot chain-stun). A chained hit has to come from a NEW move (_atkSeq): a hitbox that lingers
+// over several frames, like Meteor Puff's fall, may not re-land through the grace its own first hit opened --
+// the golden fixture is what caught that.
+// COMBOS (the owner, 2026-10-20: "give a tiny stun during hits, to allow combos, because I cant spam at the speed of
+// light..."; "like, an attack stun"). Every hit stuns HIT_STUN_PLUS frames longer than it did ("Flat +1/10 s"): a 3% jab
+// stunned 9 frames and the next jab was ready at 12 (JAB_HIT_CD), so a follow-up needed inhuman speed; it stuns 15 now,
+// and a jab pressed two frames after it is ready still links. Hit-grace grows by the same amount (hitGraceFrames), so it
+// covers the stun exactly as much as before for shots and for anyone else. And a chain has no end of its own any more --
+// no cap on its links and no shrinking stun (there were CHAIN_MAX = 3 links, each 0.75 the stun of the last): "if i can get
+// them into a position where i can combo relentlessly, and then i dont make a mistake that lets them get away, then I
+// should be rewarded for that, right?" A combo ends when the attacker misses, is too slow, or the knockback (which grows
+// with the target's damage) carries the foe out of reach. _chain still counts the links (a string's length).
+const HIT_STUN_PLUS = 6;
+function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx && t._chainSeq !== f._atkSeq; }
 // One place a smash actually goes off, so the buffered release and the live one cannot drift apart.
 // AIM. Half a second of charge is long enough for anyone with movement to get behind you, and a smash
 // thrown at where they were is the "hard to use against enemies with movetech" half of the complaint.
@@ -42598,13 +42605,14 @@ function updateDropCarry(f){
     // BOW'S EXTRA HIT ON THE WAY DOWN ("bows up special should deal damage on the way down(extra)"): the chair that falls through
     // someone hits them first, once, and the slam at the bottom is the second link of the same chain -- the hit's own grace and
     // the _chainSeq reset below are what let it land (hitCircle asks chainOpen), so the 13% and the stun still come after it.
+    // (It also held the link count down so the slam fitted under the old cap of three; a chain has no cap now: COMBOS.)
     const st = f._stall;
     if(st && st.fall && st.air && st.fHit && !st.fHit.has(t.idx)){
       st.fHit.add(t.idx);
       applyHit(t, st.fall.dmg, 0, st.fall.kb, f);
       for(let i=0;i<6;i++) puff(t.x, t.y - 6, i%2 ? '#f06fa8' : '#fff', 4);
       if(t.dead) continue;
-      t._chainSeq = -1; t._chain = Math.min(t._chain||0, CHAIN_MAX - 2);
+      t._chainSeq = -1;
     }
     const reach = (f.r + t.r)*0.8;
     (f._carrying = f._carrying || []).push({ idx: t.idx, dx: Math.max(-reach, Math.min(reach, t.x - f.x)), dy: Math.max(-f.r, Math.min(f.r*0.4, t.y - f.y)) });
@@ -47061,19 +47069,22 @@ function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
 // projectile wall or a fast multi-hit chained someone with no gap to answer in. Roughly doubled at the light end, and the cap
 // raised so a big hit still buys more room than a small one. Comeback scaling: a designated fighter's attacks impose less
 // hit-grace (down to a floor), so their pokes chain better the more they've died / KO'd.
-function hitGraceFrames(dmg, from){
-  let grace = Math.round(9 + dmg*0.6);        // ~12 for a 5-dmg poke, ~20 for an 18-dmg hit, capped at 24
+// COMBOS: grace grows by the stun's HIT_STUN_PLUS, cap and all, so it still covers a hit's stun exactly as much as it did. A tick
+// (a shot's lingering damage, a poison cloud: opts.tick) is not an attack's hit, and keeps the stun and the grace it had.
+function hitGraceFrames(dmg, from, tick){
+  const plus = tick ? 0 : HIT_STUN_PLUS;
+  let grace = Math.round(9 + plus + dmg*0.6);        // ~18 for a 5-dmg poke, ~26 for an 18-dmg hit, capped at 30 (ticks: 12, 20, 24)
   if(from && from.kit && COMEBACK[from.kit.special]){ grace = Math.max(COMEBACK_IFRAME_FLOOR, grace - comebackPoints(from)); }
-  return Math.min(24, grace);
+  return Math.min(24 + plus, grace);
 }
-function hitStunFrames(dmg, chained){ return Math.max(4, Math.round(Math.min(24, 6+dmg) * Math.pow(CHAIN_DECAY, chained))); }
+function hitStunFrames(dmg, tick){ const plus = tick ? 0 : HIT_STUN_PLUS; return Math.round(Math.min(24 + plus, 6 + plus + dmg)); }   // 15 for a 3% jab (was 9), 30 at the cap (was 24)
 // `t` is anything with a fighter's invuln / hitstun / chain / grace fields: a fighter, or a boss's record of one attacker.
 function stampHit(t, dmg, from, isTick, stunOvr, mvKey){
   let chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
   if(mvKey && chained > 0 && t._chainSeq === from._atkSeq) chained--;   // a moveset move's own second hit (a spin that hits twice) is not another link of the chain
   if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
-  t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr * Math.pow(CHAIN_DECAY, chained))) : hitStunFrames(dmg, chained);   // (stunOvr: a moveset move's own stun)
-  const grace = hitGraceFrames(dmg, from);
+  t.hitstun = stunOvr ? Math.round(stunOvr) + (isTick ? 0 : HIT_STUN_PLUS) : hitStunFrames(dmg, isTick);   // (stunOvr: a moveset move's own stun, +6 like every hit's: COMBOS)
+  const grace = hitGraceFrames(dmg, from, isTick);
   t.invuln = Math.max(t.invuln, grace);
   t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
   t._graceLeft = Math.max(t._graceLeft||0, grace);
@@ -47326,8 +47337,7 @@ function applyHit(t, dmg, kbx, kby, from, opts){
   const hitGround = t.onground;   // (for the dust a launch kicks up: hitFx)
   knock(t, kbx*scale, kby*scale - t.pct*0.025);
   if(SETTINGS.mode==='ctf') ctfBigHit(t, from);   // a big enough launch makes a flag carrier drop the flag
-  // Each link of a chain stuns for less, so a chain ends even before CHAIN_MAX (see chainOpen). The stun, the chain and the
-  // hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
+  // The stun, the chain and the hit-grace this hit gives are all set by stampHit: the one place that says what a hit does to its target's grace, which a
   // boss's grace for each attacker (bossGraceNote) runs through as well.
   const isTick = !!(opts && opts.tick);
   stampHit(t, dmg, from, isTick, opts && opts.stun, opts && opts.mvKey);
