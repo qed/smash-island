@@ -1308,13 +1308,14 @@ describe('nothing is sold', () => {
     const money = lines.filter((l) => /[$€£¥]\s?\d|\d\s?(?:USD|EUR|GBP)\b|\b(?:USD|EUR|GBP)\s?\d/.test(l) && !/BUY MY VICTORY/.test(l));
     expect(money, 'a price in money').toEqual([]);
     expect(lines.filter((l) => /(?:token|coin|gem|currency|win ?token)s?\s*(?:packs?|bundles?)/i.test(l)), 'a currency pack').toEqual([]);
-    // "One Purchase Later" is the name of Marshmallow's smash (her Wal-mart, from Inanimate Insanity) and "Checkout" is Profily's
-    // forward throw (a price tag ringing a foe up): moves' names, not sales, so the names themselves are cut from the line and the
-    // rest of it is still searched. 'stripe' is a back wall's pattern (a lighthouse's red and cream bands), an English word; Stripe
-    // the payment provider is caught by what an integration has to write -- its domain (js.stripe.com, buy.stripe.com,
-    // checkout.stripe.com) or its capitalised SDK name, Stripe(...).
-    const sale = /\b(?:purchase|checkout|payment|paywall|billing|in-?app|paypal|braintree|gumroad|patreon|buymeacoffee|ko-?fi\.com)\w*/i;
-    expect(lines.map((l) => l.replace(/One Purchase Later|n:'Checkout'/g, '')).filter((l) => sale.test(l) || /stripe\.com|\bStripe\b/.test(l)), 'a purchase path or a payment provider').toEqual([]);
+    // "One Purchase Later" is the name of Marshmallow's smash (her Wal-mart, from Inanimate Insanity), "Checkout" is Profily's
+    // forward throw (a price tag ringing a foe up) and 'stripe' is a back wall's kind (a lighthouse's red and cream bands: BK(...,
+    // 'stripe'), kind === 'stripe'): names, not sales. So those literals themselves are cut from the line and the rest of it is still
+    // searched, for stripe as well: Stripe the payment provider (stripe.redirectToCheckout(...), loadStripe from @stripe/stripe-js) is
+    // still caught by the word, and as extra by what an integration has to write -- its domain (js.stripe.com, buy.stripe.com,
+    // checkout.stripe.com), its capitalised SDK name, Stripe(...), or its loader, loadStripe(...).
+    const sale = /\b(?:purchase|checkout|payment|paywall|billing|in-?app|stripe|paypal|braintree|gumroad|patreon|buymeacoffee|ko-?fi\.com)\w*/i;
+    expect(lines.map((l) => l.replace(/One Purchase Later|n:'Checkout'|'stripe'/g, '')).filter((l) => sale.test(l) || /stripe\.com|\bStripe\b|loadStripe/.test(l)), 'a purchase path or a payment provider').toEqual([]);
     expect(code).not.toMatch(/PaymentRequest|navigator\.pay|google\.payments|ApplePaySession/);
   });
 
