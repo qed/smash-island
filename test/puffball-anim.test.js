@@ -153,7 +153,9 @@ describe('her spit: four frames, and the shot leaves on the spit', () => {
       return rec.filter((c) => c.op === 'arc' && c.args[2] > 20).length;
     };
     expect(arcs('spit'), 'no swipe on the spit').toBe(0);
-    expect(arcs('punch'), 'the swipe is still there for every other swing').toBeGreaterThan(0);
+    // The fixed swipe arc every other swing drew is gone: the hit art draws each swing's real hit area instead (55e7ada; the owner,
+    // 2026-10-19: 'give shockwaves and other things like that sprites ... hitboxes on ... is banned in competitions').
+    expect(arcs('punch'), 'no fixed swipe arc on any swing now (the hit art draws the real area)').toBe(0);
   });
 
   it('blows a rainbow out of her mouth on the spit frame: six bands in the colours of her barf, the way she faces, and on no other frame', () => {
