@@ -83,16 +83,18 @@ describe('visualFace — a sprinting fighter is drawn the way they are moving', 
 });
 
 describe('action feedback exists for every state a player needs to read', () => {
-  it('draws a swipe on attack, dust on a sprint, and a spark on taking a hit', () => {
+  it('draws an attack, dust on a sprint, and a spark on taking a hit', () => {
     // These are what make the states readable at ~67px. Deform alone measured as "working" and was
     // invisible in play, which is exactly what was reported.
+    // An attack used to throw one white swipe (drawSwipeArc) whatever the move; since 2026-10-19 it draws its real hit area instead
+    // (HIT ART: "its too hard to know whats in or out of hitboxes without having hitboxes on"), over all the fighters (drawHitArt).
     const { window: w } = loadMonolith();
-    // simpler and more direct: the three helpers must exist and be reachable from drawFighter
-    for (const fn of ['drawSwipeArc', 'drawRunDust', 'drawHitSpark']) {
+    // simpler and more direct: the helpers must exist and be reachable from the draw
+    for (const fn of ['drawHitArt', 'drawRunDust', 'drawHitSpark']) {
       expect(w.eval(`typeof ${fn}`), `${fn} exists`).toBe('function');
     }
     const src = w.eval(`String(drawFighter)`);
-    expect(src, 'attack swipe is wired into drawFighter').toContain('drawSwipeArc');
+    expect(w.eval(`String(draw)`), 'the hit art is wired into the draw').toContain('drawHitArt()');
     expect(src, 'run dust is wired in').toContain('drawRunDust');
     expect(src, 'hit spark is wired in').toContain('drawHitSpark');
   });
@@ -100,7 +102,7 @@ describe('action feedback exists for every state a player needs to read', () => 
   it('gates each overlay on its own state, so nothing draws at rest', () => {
     const { window: w } = loadMonolith();
     const src = w.eval(`String(drawFighter)`);
-    expect(src).toMatch(/_atkAnim\s*>\s*0[^;]*drawSwipeArc|drawSwipeArc/);
+    expect(w.eval(`String(drawHitArt)`), 'the hit art draws only what the hits recorded').toContain('HIT_ART');
     expect(src, 'dust requires being grounded and fast').toMatch(/onground[\s\S]{0,60}drawRunDust/);
     expect(src, 'the spark requires hitstun').toMatch(/hurtK\(f\)[\s\S]{0,30}drawHitSpark/);
   });
