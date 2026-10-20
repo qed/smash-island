@@ -382,27 +382,43 @@ describe('the fall drift: everything that falls moves sideways and lands on its 
   });
 });
 
+// The plain stage the next two tests draw their NO-ARENA baseline on: a custom level with nothing in it. Since the stage
+// backgrounds (69ee90d, 2026-10-13) the ten normal stages paint their own sky, clouds and textured ground band (STAGE ART:
+// saFrame, saGround), so Goiky Field no longer draws the flat ground or the four drifting clouds these tests count. Boss arenas
+// and custom levels still do ("Boss arenas and custom levels keep their own sky"), and that flat path is the one
+// BOSS_ARENA_GROUND and BOSS_ARENA_ROOFED govern.
+const PLAIN_STAGE = `queueCustomLevel({ name:'Plain', plats:[], spawns:[] }); SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`;
+// The ARENA parts are drawn over Goiky Field, a stage that has STAGE ART, as a boss fight is: the arena has to turn the stage's
+// own backdrop off (saFrame's guard, `if(BOSS_ARENA || !STAGE_ART[stage.id]) return false;`) before its flat sky and ground
+// show. On the custom level that guard would pass for the wrong reason (no STAGE_ART at all), so it is not used there.
+const GOIKY_STAGE = `CUSTOM_LEVEL = null; stage = STAGES.find(function(s){ return s.id==='goiky'; }); SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`;
+
 describe('BOSS_ARENA_GROUND: each arena its own ground', () => {
   it('an arena with an entry lays its fill, its floor line and its pattern; without one the ground is exactly as it was', () => {
     const { w, log } = bootRecording();
-    const setup = `SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`;
-    w.eval(setup);
-    const gy = w.eval('groundY()'), ground = w.eval('stage.ground');
+    w.eval(PLAIN_STAGE);
+    let gy = w.eval('groundY()');
+    const ground = w.eval('stage.ground');
     const groundFill = () => log.filter((e) => e.op === 'fillRect' && e.args[0] === -20 && e.args[1] === gy).map((e) => e.fill);
     const floorLine = () => log.filter((e) => e.op === 'stroke' && e.stroke !== undefined).map((e) => e.stroke);
     log.length = 0; w.eval('draw()');
     expect(groundFill()).toEqual([ground]);
     expect(w.eval('BOSS_ARENA_GROUND.studio'), 'no arena has one yet: the builders lay them').toBe(undefined);
+    w.eval(GOIKY_STAGE); gy = w.eval('groundY()');
     w.eval(`window.__pat = [];
       BOSS_ARENA_SKY.__kit = ['#101010', '#202020'];
       BOSS_ARENA_GROUND.__kit = { fill:'#123456', line:'#abcdef', pattern:function(c, gy, x0, x1, bottom, G){ window.__pat.push([gy, x0, x1, bottom > gy, G.fill]); c.fillRect(0, gy + 10, 5, 5); } };
       BOSS_ARENA = '__kit';`);
     log.length = 0; w.eval('draw()');
+    expect(w.eval('SA.on'), "the arena turns Goiky Field's STAGE ART off").toBe(false);
     expect(groundFill()).toEqual(['#123456']);
     expect(w.eval('window.__pat')).toEqual([[gy, -20, w.eval('WW') + 20, true, '#123456']]);
     expect(floorLine()).toContain('#abcdef');
     expect(w.eval('impactOpts({}).color === null && impactGroundColor() !== impactTint(stage.ground, 0.35)'), 'the dust takes the arena\'s ground').toBe(true);
     w.eval('BOSS_ARENA = null; delete BOSS_ARENA_GROUND.__kit; delete BOSS_ARENA_SKY.__kit;');
+    log.length = 0; w.eval('draw()');
+    expect(w.eval('SA.on'), 'with the arena gone Goiky Field paints its own backdrop again').toBe(true);
+    w.eval(PLAIN_STAGE); gy = w.eval('groundY()');
     log.length = 0; w.eval('draw()');
     expect(groundFill()).toEqual([ground]);
   });
@@ -413,17 +429,23 @@ describe('the stage\'s clouds stay out from under a roof', () => {
     // Four's builder, after the late batch (2026-10-01): the stage's clouds drifted across Eternal Algebra Class, a room.
     // Every arena still paints its own sky; only the generic clouds stop where there is no open sky.
     const { w, log } = bootRecording();
-    w.eval(`SETTINGS.mode='ffa'; SETTINGS.count=2; SETTINGS.items=false; beginMatchNow(); running=false;`);
+    w.eval(PLAIN_STAGE);
     const clouds = () => log.filter((e) => e.op === 'ellipse' && e.fill === '#ffffff55' && e.args[2] === 40 && e.args[3] === 18).length;
     log.length = 0; w.eval('draw()');
     expect(clouds(), 'a plain stage').toBe(4);
+    w.eval(GOIKY_STAGE);
     for (const k of ['exitclass', 'fourest', 'warehouse', 'hive', 'meeplehq']) {
       w.eval(`BOSS_ARENA = '${k}'`); log.length = 0; w.eval('draw()');
+      expect(w.eval('SA.on'), `${k} turns Goiky Field's STAGE ART off`).toBe(false);
       expect(clouds(), k).toBe(0);
     }
     w.eval(`BOSS_ARENA = 'volcano'`); log.length = 0; w.eval('draw()');
+    expect(w.eval('SA.on'), "the volcano turns Goiky Field's STAGE ART off").toBe(false);
     expect(clouds(), 'the volcano is outdoors').toBe(4);
-    w.eval('BOSS_ARENA = null');
+    w.eval(`BOSS_ARENA = null`);
+    log.length = 0; w.eval('draw()');
+    expect(w.eval('SA.on'), 'Goiky Field paints its STAGE ART backdrop').toBe(true);
+    expect(clouds(), 'a normal stage draws its own clouds, never the generic four over them').toBe(0);
   });
 });
 
