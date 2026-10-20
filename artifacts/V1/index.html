@@ -428,6 +428,7 @@
   #select .cell.taken{opacity:.35; filter:grayscale(.7)}
   .ctfcup-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; width:min(1000px,96%); max-height:400px; overflow-y:auto; margin:0 auto; padding:2px}
   .ctfcup-team{border:3px solid #1c1c1c; border-radius:10px; background:var(--panel); padding:6px 8px; display:flex; flex-direction:column; gap:3px}
+  .ctfcup-team.mine{border-color:var(--gold); box-shadow:0 0 0 2px var(--gold)}
   .ctfcup-head{display:flex; align-items:center; gap:5px; font-weight:800; font-size:13px}
   .ctfcup-head span{flex:1}
   .ctfcup-seat{font-family:inherit; font-weight:700; font-size:12px; text-align:left; border:2px solid #1c1c1c; border-radius:7px; background:rgba(255,255,255,0.5); padding:2px 7px; cursor:pointer; display:flex; align-items:center; gap:6px}
@@ -1597,7 +1598,7 @@
     <h1>Capture the Flag Tournament</h1>
     <div class="sub" style="text-align:center" id="ctfCupSummary"></div>
     <div class="cupgrid" style="grid-template-columns:1fr"><div class="cupcol" id="ctfCupRows" style="align-items:center"></div></div>
-    <div class="foot" style="text-align:center;margin-top:8px;max-width:760px">Every match is played by the CPUs. Watch a fixture live (the camera follows the action) or skip it and the cup simulates it. Each team has a strategist: it settles the plan most likely to beat this opponent on this map, and learns as the cup goes on.</div>
+    <div class="foot" id="ctfCupFoot" style="text-align:center;margin-top:8px;max-width:760px">Every match is played by the CPUs. Watch a fixture live (the camera follows the action) or skip it and the cup simulates it. Each team has a strategist: it settles the plan most likely to beat this opponent on this map, and learns as the cup goes on.</div>
     <div class="row" style="justify-content:center;margin-top:14px">
       <button class="btn ghost sm" onclick="go('tourneySetup')">◀ Back</button>
       <button class="btn alt" onclick="go('ctfCupTeams')">Build the teams ▶</button>
@@ -6974,7 +6975,9 @@ function ctfCupClean(o){
   const slots = [], skill = [];
   for(let i = 0; i < teams; i++){ const row = (Array.isArray(o.slots) && Array.isArray(o.slots[i])) ? o.slots[i] : []; slots.push(Array.from({ length:size }, (_, k)=>typeof row[k] === 'string' ? row[k] : null)); skill.push(one(o.skill && o.skill[i], [-1, 0, 1, 2], -1)); }
   const strat = []; for(let i = 0; i < teams; i++) strat.push(ctfCupCleanStrat(o.strat && o.strat[i], size));
-  return { teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), adv:o.adv ? 1 : 0, gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill, strat };
+  // play: 0 the watch-only cup (every match the CPUs'), 1 Normal (the owner, 2026-10-19: "flag cup should have a 'normal' option"): you play your team's matches. mine: your team (its card in the builder).
+  const mine = Math.max(0, Math.min(teams - 1, Math.round(+o.mine) || 0));
+  return { play:one(o.play, [0, 1], 0), mine, teams, size, map:mapOk(o.map) ? o.map : 'rotate', cpu:one(o.cpu, [0, 1, 2], 1), adv:o.adv ? 1 : 0, gCap:one(o.gCap, CTFCUP_CAPS, 8), kCap:one(o.kCap, CTFCUP_CAPS, 12), slots, skill, strat };
 }
 // A team's STRATEGY setting (the owner, 2026-10-16: "add strategy settings"): mode 'auto' (the strategist), 'fixed' (the owner's plan all match, the strategist off) or 'adapt' (the owner's plan to begin with, then the strategist may switch).
 // The plan is the planning menu's own parts: a preset (or none), ticks for builds, offence and defence ideas, ideas of the preset switched off, and a role for each SEAT (0, 1, ...: the fighter in that seat; auto is no entry).
@@ -7041,6 +7044,7 @@ function ctfCupPool(){ return ROSTER.filter(r=>r.play && isUnlocked(r) && !oneBa
 function openCtfCup(){ ctfCupEnsure(); CTFCUP = ctfCupClean(CTFCUP); go('ctfCupSetup'); }
 // ---- the setup screen ----
 const CTFCUP_ROWS = [
+  ['play', 'Mode', ()=>[[0, 'Watch (CPUs only)'], [1, 'Normal (you play)']]],
   ['teams', 'Teams', ()=>CTFCUP_SIZES.map(n=>[n, n + ' teams'])],
   ['size', 'Team size', ()=>[2, 3, 4, 5, 6, 7, 8].map(n=>[n, n + 'v' + n])],
   ['map', 'Maps', ()=>[['rotate', 'Rotate with the rounds'], ['random', 'Random each match']].concat(ctfMapIds().map(id=>[id, CTF_MAPS[id].name + (CTF_MAPS[id].beta ? ' (beta)' : '')]))],
@@ -7061,7 +7065,11 @@ function ctfCupSyncUI(){
   }
   const n = CTFCUP.teams, adv = n/2, ko = Math.round(Math.log2(adv));
   const sum = document.getElementById('ctfCupSummary');
-  if(sum) sum.textContent = n + ' teams of ' + CTFCUP.size + ' · ' + (n/4) + ' group' + (n === 4 ? '' : 's') + ' of 4 · top 2 of each group go through · ' + (3 + ko) + ' matches to win the cup';
+  if(sum) sum.textContent = n + ' teams of ' + CTFCUP.size + ' · ' + (n/4) + ' group' + (n === 4 ? '' : 's') + ' of 4 · top 2 of each group go through · ' + (3 + ko) + ' matches to win the cup' + (CTFCUP.play ? ' · you play your team\'s matches (3 to ' + (3 + ko) + ')' : '');
+  const foot = document.getElementById('ctfCupFoot');
+  if(foot) foot.textContent = CTFCUP.play
+    ? 'You play your team\'s matches: seat 1 of the team marked Your team in the builder. Your CPU teammates follow your strategist\'s plan until you set your own in the plan menu (P) during the match. The other matches are the CPUs\': watch one live, or skip it and the cup simulates it. Your first Capture the Flag match waits for the short practice.'
+    : 'Every match is played by the CPUs. Watch a fixture live (the camera follows the action) or skip it and the cup simulates it. Each team has a strategist: it settles the plan most likely to beat this opponent on this map, and learns as the cup goes on.';
 }
 // ---- the team builder ----
 let CTFCUP_PICK = null;   // { team, seat } while the fighter list is open
@@ -7081,15 +7089,27 @@ function ctfCupTeamsRender(){
   const pool = ctfCupPool(), by = n=>pool.find(r=>r.name === n);
   grid.innerHTML = '';
   for(let i = 0; i < CTFCUP.teams; i++){
-    const card = document.createElement('div'); card.className = 'ctfcup-team';
+    const mine = !!CTFCUP.play && CTFCUP.mine === i;   // a Normal cup: the team you play for (seat 1 is you, the rest your CPU teammates)
+    const card = document.createElement('div'); card.className = 'ctfcup-team' + (mine ? ' mine' : '');
+    if(CTFCUP.play){ const yr = document.createElement('div'); yr.className = 'ctfcup-head'; const yb = document.createElement('button'); yb.className = 'cupchip' + (mine ? ' on' : '');
+      yb.textContent = mine ? 'Your team' : 'Make this my team'; yb.title = mine ? 'You play seat 1 of this team; seats 2+ are your CPU teammates' : 'Play for this team instead';
+      yb.onclick = ()=>{ CTFCUP.mine = i; ctfCupSave(); ctfCupTeamsRender(); }; yr.appendChild(yb); card.appendChild(yr); }
     const head = document.createElement('div'); head.className = 'ctfcup-head';
     const title = document.createElement('span'); title.textContent = 'Team ' + (i + 1); head.appendChild(title);
     const sk = document.createElement('button'); sk.className = 'cupchip'; const SKN = ['Easy', 'Normal', 'Hard'];
-    sk.textContent = CTFCUP.skill[i] < 0 ? 'CPU: cup default' : 'CPU: ' + SKN[CTFCUP.skill[i]]; sk.title = 'The CPU skill of this team (the cup default, or its own)';
+    sk.textContent = CTFCUP.skill[i] < 0 ? 'CPU: cup default' : 'CPU: ' + SKN[CTFCUP.skill[i]]; sk.title = mine ? 'The CPU skill of your teammates (the cup default, or its own)' : 'The CPU skill of this team (the cup default, or its own)';
     sk.onclick = ()=>{ CTFCUP.skill[i] = ((CTFCUP.skill[i] + 2) % 4) - 1; ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(sk);
-    const st = CTFCUP.strat[i], sb = document.createElement('button'); sb.className = 'cupchip' + (st.mode !== 'auto' ? ' on' : ''); sb.textContent = 'Plan: ' + { auto:'strategist', fixed:'fixed', adapt:'fixed, then adapt' }[st.mode];
-    sb.title = 'Strategy: the strategist chooses (auto); your own plan all match (fixed); your plan to begin with, then the strategist may switch (fixed, then adapt)';
-    sb.onclick = ()=>{ st.mode = CTFCUP_MODES[(CTFCUP_MODES.indexOf(st.mode) + 1) % 3]; ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(sb);
+    const st = CTFCUP.strat[i], sb = document.createElement('button'); sb.className = 'cupchip' + (st.mode !== 'auto' ? ' on' : '');
+    if(mine){   // your team: the strategist plans for your CPU teammates, or your saved plan is where your own plan starts; in the match, the plan menu is yours and overrides it
+      sb.textContent = 'Your plan: ' + (st.mode === 'auto' ? 'strategist' : 'saved plan');
+      sb.title = 'Your team\'s plan to start with: the strategist\'s, or your saved plan. In the match, what you set in the plan menu wins; clearing it gives the plan back to the strategist';
+      sb.onclick = ()=>{ st.mode = st.mode === 'auto' ? 'fixed' : 'auto'; ctfCupSave(); ctfCupTeamsRender(); };
+    } else {
+      sb.textContent = 'Plan: ' + { auto:'strategist', fixed:'fixed', adapt:'fixed, then adapt' }[st.mode];
+      sb.title = 'Strategy: the strategist chooses (auto); your own plan all match (fixed); your plan to begin with, then the strategist may switch (fixed, then adapt)';
+      sb.onclick = ()=>{ st.mode = CTFCUP_MODES[(CTFCUP_MODES.indexOf(st.mode) + 1) % 3]; ctfCupSave(); ctfCupTeamsRender(); };
+    }
+    head.appendChild(sb);
     const dice = document.createElement('button'); dice.className = 'cupchip'; dice.innerHTML = '&#127922; fill'; dice.title = 'Fill this team\'s empty seats from the draw';
     dice.onclick = ()=>{ ctfCupFillTeam(i, true); ctfCupSave(); ctfCupTeamsRender(); }; head.appendChild(dice);
     card.appendChild(head);
@@ -7100,7 +7120,7 @@ function ctfCupTeamsRender(){
     if(st.mode !== 'auto'){ const line = document.createElement('button'); line.className = 'ctfcup-plan'; line.textContent = ctfCupPlanText(i) + '  (edit)'; line.onclick = ()=>ctfCupPlanOpen(i); card.appendChild(line); }
     for(let k = 0; k < CTFCUP.size; k++){
       const nm = ctfCupSeatName(i, k), r = nm ? by(nm) : null, b = document.createElement('button'); b.className = 'ctfcup-seat' + (r ? ' on' : '');
-      b.innerHTML = r ? '<span class="ctfcup-dot" style="background:' + r.color + '"></span>' + esc(r.name) : '<span class="ctfcup-dot"></span><i>random draw</i>';
+      b.innerHTML = (mine && k === 0 ? '<b>You:</b> ' : '') + (r ? '<span class="ctfcup-dot" style="background:' + r.color + '"></span>' + esc(r.name) : '<span class="ctfcup-dot"></span><i>random draw</i>');
       b.onclick = ()=>ctfCupPickOpen(i, k); card.appendChild(b);
     }
     grid.appendChild(card);
@@ -7755,7 +7775,7 @@ function ctfCupPickOpen(team, seat){
   CTFCUP_PICK = { team, seat }; const box = document.getElementById('ctfCupPicker'); if(!box) return;
   const pool = ctfCupPool(), mates = new Set(CTFCUP.slots[team].filter((n, q)=>n && q !== seat));
   box.innerHTML = '';
-  const bar = document.createElement('div'); bar.className = 'ctfcup-pickbar'; bar.textContent = 'Team ' + (team + 1) + ', seat ' + (seat + 1) + ': pick a fighter';
+  const bar = document.createElement('div'); bar.className = 'ctfcup-pickbar'; bar.textContent = (CTFCUP.play && CTFCUP.mine === team && seat === 0) ? 'Your team: pick the fighter you play' : 'Team ' + (team + 1) + ', seat ' + (seat + 1) + ': pick a fighter';
   const rnd = document.createElement('button'); rnd.className = 'cupchip'; rnd.textContent = 'Random draw'; rnd.onclick = ()=>{ CTFCUP.slots[team][seat] = null; ctfCupPickClose(); };
   const x = document.createElement('button'); x.className = 'cupchip'; x.textContent = 'Cancel'; x.onclick = ()=>ctfCupPickClose(false);
   bar.appendChild(rnd); bar.appendChild(x); box.appendChild(bar);
