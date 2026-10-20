@@ -196,6 +196,19 @@ describe('the hit freeze ("Yes, tiny")', () => {
     expect(r.held, 'and holds its spinner for one hit\'s freeze').toBeLessThanOrEqual(2);
   });
 
+  it('a move that strikes in a string of wind-ups (Bonesaw\'s three strokes, each a new move so it links) holds once too', () => {
+    const r = run(`
+      var S = mk('Bonesaw', 400, 0, 0, 1); fighters = [S, T, B]; S.invuln = 0; S.spCd = 0; T.invuln = 0; T._graceLeft = 0; S.controller = 'still';
+      doSpecial(S);
+      var held = 0, tHeld = 0, hits = 0, last = T.pct;
+      for (var i = 0; i < 60; i++) { step(); pin(); if (S._hsHeld === hazardT) held++; if (T._hsHeld === hazardT) tHeld++; if (T.pct > last + 1e-9) { hits++; last = T.pct; } }
+      return { held: held, tHeld: tHeld, hits: hits, k: hitStopFrames(3) };
+    `);
+    expect(r.hits, 'all three strokes land').toBe(3);
+    expect(r.held, 'Bonesaw is held once, for the first stroke (it was 2 + 2 + 3)').toBe(r.k);
+    expect(r.tHeld, 'and so is the foe').toBe(r.k);
+  });
+
   it('a boss hit holds the hitter, never the boss, and the hitter\'s grace on the boss waits with them', () => {
     const r = run(`
       SETTINGS.mode = 'boss'; fighters = [A]; summons = [];

@@ -39280,7 +39280,7 @@ function step(){
     if(f._windup){
       const wu = f._windup;
       if(wu.falls !== (f._falls||0)) f._windup = null;          // KO'd since it started
-      else if((wu.t -= aS) <= 0){ f._windup = null; wu.fire(); }
+      else if((wu.t -= aS) <= 0){ f._windup = null; f._wuRoot = wu.root || wu; try{ wu.fire(); } finally { f._wuRoot = null; } }   // (_wuRoot: which string of wind-ups this is -- HIT FREEZE)
     }
     // SMASH PATTERNS that live across frames (see SM_PAT). Naily's _nail below is the same idea
     // written by hand first; these are the general versions the other thirty-nine use.
@@ -40980,7 +40980,8 @@ function chainOpen(t, f){ return !!f && t.hitstun > 0 && t._chainBy === f.idx &&
 //   - a swing, a dash, a body -- anything a fighter lands during their own frame (STEP_F) -- holds the attacker and the target;
 //   - a shot holds only the target, and the shot flies on (shots are moved after the fighters, outside anyone's frame);
 //   - a move that hits more than once holds once, on its first hit (hitStopKey: the move, _atkSeq, and its multi-hit, _comboTok),
-//     so a spin does not crawl;
+//     so a spin does not crawl; a move that strikes in a string of wind-ups (Bonesaw's three strokes, each a new _atkSeq so it can
+//     link) is one move too: the strokes share the first wind-up of the string (_wuRoot);
 //   - a boss is never held; the fighter who hits one is, and that fighter's grace record on the boss waits with them (bossGraceNote);
 //   - never in RUNNING!, never while a Final Smash plays, never for a tick (burn, poison, bleed, a shot's lingering damage: opts.tick),
 //     and never for damage from no fighter (an arena hazard, a boss, an assist trophy).
@@ -40995,7 +40996,12 @@ function hitStopOff(){
   for(const f of fighters) if(f._fs) return true;   // a Final Smash is playing
   return false;
 }
-function hitStopKey(f){ return (f._atkSeq||0) + ':' + (f._comboTok||0); }
+let HITSTOP_WU = 0;
+function hitStopKey(f){
+  const w = f._wuRoot;
+  if(w) return 'w' + (w.hsId || (w.hsId = ++HITSTOP_WU));   // a wind-up going off: the string it belongs to
+  return (f._atkSeq||0) + ':' + (f._comboTok||0);
+}
 // The attacker, once a move. Returns how many frames they are held from the next frame on (0: not held).
 function hitStopSelf(f, dmg){
   if(!f || f !== STEP_F || !(dmg > 0) || hitStopOff()) return 0;
@@ -45289,7 +45295,7 @@ function startWindup(f, frames, fire, color, sh){
   if(f._windup) return;              // already committed to one; a second press is simply eaten
   // `falls` pins the wind-up to this life: every KO path bumps _falls, so a ring started just
   // before a KO can never go off at the respawn point, whichever respawn route ran.
-  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, sh: sh || null };
+  f._windup = { t: frames, t0: frames, fire: fire, color: color || f.color, falls: f._falls||0, sh: sh || null, root: f._wuRoot || null };   // (root: the wind-up this one was started from, for a move that strikes in strokes -- HIT FREEZE)
 }
 // set the fighter's vertical dash velocity from the directions they were holding at cast time
 function applyDashVY(f, upSpeed, downSpeed){
@@ -47133,16 +47139,16 @@ function hardInvuln(t){ return t.invuln > 16 && t.invuln > (t._graceLeft||0); }
 function hitGraceFrames(dmg, from, tick){
   const plus = tick ? 0 : HIT_STUN_PLUS;
   let grace = Math.round(9 + plus + dmg*0.6);        // ~18 for a 5-dmg poke, ~26 for an 18-dmg hit, capped at 30 (ticks: 12, 20, 24)
-  if(from && from.kit && COMEBACK[from.kit.special]){ grace = Math.max(COMEBACK_IFRAME_FLOOR, grace - comebackPoints(from)); }
+  if(from && from.kit && COMEBACK[from.kit.special]){ grace = Math.max(COMEBACK_IFRAME_FLOOR + plus, grace - comebackPoints(from)); }   // (the floor moves too: 9, was 3)
   return Math.min(24 + plus, grace);
 }
-function hitStunFrames(dmg, tick){ const plus = tick ? 0 : HIT_STUN_PLUS; return Math.round(Math.min(24 + plus, 6 + plus + dmg)); }   // 15 for a 3% jab (was 9), 30 at the cap (was 24)
+function hitStunFrames(dmg, tick){ return Math.max(4, Math.round(Math.min(24, 6 + dmg))) + (tick ? 0 : HIT_STUN_PLUS); }   // 15 for a 3% jab (was 9), 30 at the cap (was 24)
 // `t` is anything with a fighter's invuln / hitstun / chain / grace fields: a fighter, or a boss's record of one attacker.
 function stampHit(t, dmg, from, isTick, stunOvr, mvKey){
   let chained = (!isTick && from && t._chainBy === from.idx && t.hitstun > 0) ? (t._chain||0) + 1 : 0;
   if(mvKey && chained > 0 && t._chainSeq === from._atkSeq) chained--;   // a moveset move's own second hit (a spin that hits twice) is not another link of the chain
   if(!isTick){ t._chainBy = from ? from.idx : -1; t._chain = chained; t._chainSeq = from ? from._atkSeq : -1; }
-  t.hitstun = stunOvr ? Math.round(stunOvr) + (isTick ? 0 : HIT_STUN_PLUS) : hitStunFrames(dmg, isTick);   // (stunOvr: a moveset move's own stun, +6 like every hit's: COMBOS)
+  t.hitstun = stunOvr ? Math.max(4, Math.round(stunOvr)) + (isTick ? 0 : HIT_STUN_PLUS) : hitStunFrames(dmg, isTick);   // (stunOvr: a moveset move's own stun, +6 like every hit's: COMBOS)
   const grace = hitGraceFrames(dmg, from, isTick);
   t.invuln = Math.max(t.invuln, grace);
   t._graceBy = from ? from.idx : -1; t._graceTok = from ? (from._comboTok||0) : 0;
